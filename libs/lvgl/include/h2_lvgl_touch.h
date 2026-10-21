@@ -13,12 +13,12 @@ extern "C" {
 typedef struct h2_lvgl_touch h2_lvgl_touch_t;
 
 typedef struct h2_lvgl_touch_config {
-    /** Borrowed Touch provider that must outlive the returned adapter. */
-    const h2_pal_touch_api_t *touch;
-    /** Borrowed allocator that must outlive the returned adapter. */
-    const h2_pal_mem_api_t *allocator;
-    /** Borrowed display that must outlive the returned adapter. */
-    lv_display_t *display;
+  /** Borrowed Touch provider that must outlive the returned adapter. */
+  const h2_pal_touch_api_t* touch;
+  /** Borrowed allocator that must outlive the returned adapter. */
+  const h2_pal_mem_api_t* allocator;
+  /** Borrowed display that must outlive the returned adapter. */
+  lv_display_t* display;
 } h2_lvgl_touch_config_t;
 
 /**
@@ -26,15 +26,14 @@ typedef struct h2_lvgl_touch_config {
  *
  * The Touch viewport must exactly match display resolution.
  */
-h2_pal_result_t h2_lvgl_touch_create(
-    const h2_lvgl_touch_config_t *config,
-    h2_lvgl_touch_t **out_touch);
+h2_pal_result_t h2_lvgl_touch_create(const h2_lvgl_touch_config_t* config,
+                                     h2_lvgl_touch_t** out_touch);
 
 /** Return the latest provider result observed by the LVGL read callback. */
-h2_pal_result_t h2_lvgl_touch_last_result(const h2_lvgl_touch_t *touch);
+h2_pal_result_t h2_lvgl_touch_last_result(const h2_lvgl_touch_t* touch);
 
 /** Delete the LVGL indev, close Touch PAL, and release adapter state. */
-void h2_lvgl_touch_destroy(h2_lvgl_touch_t *touch);
+void h2_lvgl_touch_destroy(h2_lvgl_touch_t* touch);
 
 #ifdef __cplusplus
 }

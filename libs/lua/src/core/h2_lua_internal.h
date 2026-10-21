@@ -6,12 +6,12 @@
 #include "lua.h"
 
 struct h2_lua_vm {
-  lua_State *state;
+  lua_State* state;
   h2_lua_vm_config_t config;
   size_t memory_used;
 };
 
-void h2_lua_copy_message(const char *message, char *buffer, size_t capacity,
-                         size_t *out_size);
+void h2_lua_copy_message(const char* message, char* buffer, size_t capacity,
+                         size_t* out_size);
 
 #endif

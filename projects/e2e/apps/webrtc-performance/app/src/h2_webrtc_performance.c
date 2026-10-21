@@ -34,14 +34,14 @@ static const uint64_t h2_webrtc_perf_transfer_timeout_ns =
     UINT64_C(300000000000);
 
 typedef struct h2_webrtc_performance_state {
-  const h2_pal_webrtc_api_t *api;
-  const h2_webrtc_performance_config_t *config;
-  h2_runtime_t *runtime;
-  h2_pal_webrtc_peer_t *peer;
+  const h2_pal_webrtc_api_t* api;
+  const h2_webrtc_performance_config_t* config;
+  h2_runtime_t* runtime;
+  h2_pal_webrtc_peer_t* peer;
   h2_pal_webrtc_peer_state_t peer_state;
-  h2_pal_webrtc_channel_t *packet;
-  h2_pal_webrtc_channel_t *event;
-  h2_pal_webrtc_channel_t *requests[H2_WEBRTC_PERF_REQUEST_COUNT];
+  h2_pal_webrtc_channel_t* packet;
+  h2_pal_webrtc_channel_t* event;
+  h2_pal_webrtc_channel_t* requests[H2_WEBRTC_PERF_REQUEST_COUNT];
   unsigned request_count;
   unsigned request_expected_reply_mask;
   unsigned persistent_open_mask;
@@ -89,8 +89,8 @@ typedef struct h2_webrtc_performance_transfer {
   uint64_t download_elapsed_ns;
 } h2_webrtc_performance_transfer_t;
 
-static uint64_t
-h2_webrtc_perf_now_ns(const h2_webrtc_performance_state_t *state) {
+static uint64_t h2_webrtc_perf_now_ns(
+    const h2_webrtc_performance_state_t* state) {
   uint64_t now_us = 0u;
   if (h2_pal_time_get_monotonic_us(state->runtime->time, &now_us) !=
       H2_PAL_OK) {
@@ -99,47 +99,46 @@ h2_webrtc_perf_now_ns(const h2_webrtc_performance_state_t *state) {
   return now_us * 1000u;
 }
 
-static void h2_webrtc_perf_sleep_ms(const h2_webrtc_performance_state_t *state,
+static void h2_webrtc_perf_sleep_ms(const h2_webrtc_performance_state_t* state,
                                     uint32_t milliseconds) {
   (void)h2_pal_time_sleep_ms(state->runtime->time, milliseconds);
 }
 
-static void
-h2_webrtc_perf_checkpoint(const h2_webrtc_performance_state_t *state,
-                          const char *name) {
+static void h2_webrtc_perf_checkpoint(
+    const h2_webrtc_performance_state_t* state, const char* name) {
   if (state->config->checkpoint != NULL) {
     state->config->checkpoint(state->config->checkpoint_user, name);
   }
 }
 
-static void h2_webrtc_perf_write_u16(uint8_t *out, uint16_t value) {
+static void h2_webrtc_perf_write_u16(uint8_t* out, uint16_t value) {
   out[0] = (uint8_t)(value >> 8u);
   out[1] = (uint8_t)value;
 }
 
-static void h2_webrtc_perf_write_u32(uint8_t *out, uint32_t value) {
+static void h2_webrtc_perf_write_u32(uint8_t* out, uint32_t value) {
   out[0] = (uint8_t)(value >> 24u);
   out[1] = (uint8_t)(value >> 16u);
   out[2] = (uint8_t)(value >> 8u);
   out[3] = (uint8_t)value;
 }
 
-static void h2_webrtc_perf_write_u64(uint8_t *out, uint64_t value) {
+static void h2_webrtc_perf_write_u64(uint8_t* out, uint64_t value) {
   for (unsigned index = 0u; index < 8u; ++index) {
     out[index] = (uint8_t)(value >> (56u - index * 8u));
   }
 }
 
-static uint16_t h2_webrtc_perf_read_u16(const uint8_t *data) {
+static uint16_t h2_webrtc_perf_read_u16(const uint8_t* data) {
   return (uint16_t)((uint16_t)data[0] << 8u | data[1]);
 }
 
-static uint32_t h2_webrtc_perf_read_u32(const uint8_t *data) {
+static uint32_t h2_webrtc_perf_read_u32(const uint8_t* data) {
   return (uint32_t)data[0] << 24u | (uint32_t)data[1] << 16u |
          (uint32_t)data[2] << 8u | data[3];
 }
 
-static uint64_t h2_webrtc_perf_read_u64(const uint8_t *data) {
+static uint64_t h2_webrtc_perf_read_u64(const uint8_t* data) {
   uint64_t value = 0u;
   for (unsigned index = 0u; index < 8u; ++index) {
     value = value << 8u | data[index];
@@ -147,7 +146,7 @@ static uint64_t h2_webrtc_perf_read_u64(const uint8_t *data) {
   return value;
 }
 
-static void h2_webrtc_perf_header(uint8_t *out, uint8_t op, uint8_t flags,
+static void h2_webrtc_perf_header(uint8_t* out, uint8_t op, uint8_t flags,
                                   uint16_t sequence, uint32_t total,
                                   uint32_t offset) {
   memset(out, 0, H2_WEBRTC_PERF_HEADER_SIZE);
@@ -159,9 +158,9 @@ static void h2_webrtc_perf_header(uint8_t *out, uint8_t op, uint8_t flags,
   h2_webrtc_perf_write_u32(out + 12u, offset);
 }
 
-static int
-h2_webrtc_perf_request_index(const h2_webrtc_performance_state_t *state,
-                             h2_pal_webrtc_channel_t *channel) {
+static int h2_webrtc_perf_request_index(
+    const h2_webrtc_performance_state_t* state,
+    h2_pal_webrtc_channel_t* channel) {
   for (int index = 0; index < H2_WEBRTC_PERF_REQUEST_COUNT; ++index) {
     if (state->requests[index] == channel) {
       return index;
@@ -170,17 +169,17 @@ h2_webrtc_perf_request_index(const h2_webrtc_performance_state_t *state,
   return -1;
 }
 
-static void h2_webrtc_perf_on_peer_state(void *user, h2_pal_webrtc_peer_t *peer,
+static void h2_webrtc_perf_on_peer_state(void* user, h2_pal_webrtc_peer_t* peer,
                                          h2_pal_webrtc_peer_state_t state) {
   (void)peer;
-  ((h2_webrtc_performance_state_t *)user)->peer_state = state;
+  ((h2_webrtc_performance_state_t*)user)->peer_state = state;
 }
 
-static void h2_webrtc_perf_on_local_sdp(void *user, h2_pal_webrtc_peer_t *peer,
+static void h2_webrtc_perf_on_local_sdp(void* user, h2_pal_webrtc_peer_t* peer,
                                         h2_pal_webrtc_sdp_type_t type,
                                         h2_pal_webrtc_str_t sdp) {
   (void)peer;
-  h2_webrtc_performance_state_t *state = user;
+  h2_webrtc_performance_state_t* state = user;
   if (type != H2_PAL_WEBRTC_SDP_OFFER || state->offer_len != 0u ||
       sdp.data == NULL || sdp.len == 0u || sdp.len >= sizeof(state->offer)) {
     state->callback_error = 1;
@@ -192,13 +191,12 @@ static void h2_webrtc_perf_on_local_sdp(void *user, h2_pal_webrtc_peer_t *peer,
   state->offer_len = sdp.len;
 }
 
-static void
-h2_webrtc_perf_on_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
-                                h2_pal_webrtc_channel_t *channel,
-                                const h2_pal_webrtc_channel_info_t *info,
-                                h2_pal_webrtc_channel_state_t channel_state) {
+static void h2_webrtc_perf_on_channel_state(
+    void* user, h2_pal_webrtc_peer_t* peer, h2_pal_webrtc_channel_t* channel,
+    const h2_pal_webrtc_channel_info_t* info,
+    h2_pal_webrtc_channel_state_t channel_state) {
   (void)peer;
-  h2_webrtc_performance_state_t *state = user;
+  h2_webrtc_performance_state_t* state = user;
   if (info == NULL || !info->has_stream_id) {
     state->callback_error = 1;
     state->callback_error_reason = 2;
@@ -256,12 +254,12 @@ h2_webrtc_perf_on_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
 }
 
 static void h2_webrtc_perf_on_channel_message(
-    void *user, h2_pal_webrtc_peer_t *peer, h2_pal_webrtc_channel_t *channel,
-    const h2_pal_webrtc_channel_info_t *info, const uint8_t *data, size_t len,
+    void* user, h2_pal_webrtc_peer_t* peer, h2_pal_webrtc_channel_t* channel,
+    const h2_pal_webrtc_channel_info_t* info, const uint8_t* data, size_t len,
     int is_text) {
   (void)peer;
   (void)info;
-  h2_webrtc_performance_state_t *state = user;
+  h2_webrtc_performance_state_t* state = user;
   if (is_text || data == NULL || len < H2_WEBRTC_PERF_HEADER_SIZE ||
       memcmp(data, h2_webrtc_perf_magic, sizeof(h2_webrtc_perf_magic)) != 0) {
     state->callback_error = 1;
@@ -315,10 +313,11 @@ static void h2_webrtc_perf_on_channel_message(
           elapsed_ns == 0u ? 0u
                            : (uint64_t)state->download_bytes *
                                  UINT64_C(1000000000) / elapsed_ns;
-      printf("H2_WEBRTC_PERF download_progress bytes=%zu total=%u "
-             "elapsed_ms=%" PRIu64 " Bps=%" PRIu64 "\n",
-             state->download_bytes, H2_WEBRTC_PERF_TRANSFER_SIZE,
-             elapsed_ns / UINT64_C(1000000), bytes_per_second);
+      printf(
+          "H2_WEBRTC_PERF download_progress bytes=%zu total=%u "
+          "elapsed_ms=%" PRIu64 " Bps=%" PRIu64 "\n",
+          state->download_bytes, H2_WEBRTC_PERF_TRANSFER_SIZE,
+          elapsed_ns / UINT64_C(1000000), bytes_per_second);
       h2_webrtc_perf_checkpoint(state, "download_progress");
     }
     if ((flags & H2_WEBRTC_PERF_LAST) != 0u) {
@@ -341,10 +340,10 @@ static void h2_webrtc_perf_on_channel_message(
   state->callback_error = 1;
 }
 
-static void h2_webrtc_perf_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
-                                   const uint8_t *opus, size_t opus_len) {
+static void h2_webrtc_perf_on_opus(void* user, h2_pal_webrtc_peer_t* peer,
+                                   const uint8_t* opus, size_t opus_len) {
   (void)peer;
-  h2_webrtc_performance_state_t *state = user;
+  h2_webrtc_performance_state_t* state = user;
   if (opus == NULL || opus_len != 10u) {
     state->callback_error = 1;
     return;
@@ -355,7 +354,7 @@ static void h2_webrtc_perf_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
     return;
   }
   const uint8_t sequence_mask = (uint8_t)(1u << (sequence & 7u));
-  uint8_t *const seen = &state->audio_seen[sequence >> 3u];
+  uint8_t* const seen = &state->audio_seen[sequence >> 3u];
   if ((*seen & sequence_mask) != 0u) {
     state->audio_duplicates++;
     return;
@@ -365,9 +364,10 @@ static void h2_webrtc_perf_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
     state->audio_reordered++;
   }
   if (sequence > state->audio_next_sequence) {
-    printf("H2_WEBRTC_PERF audio_sequence_gap expected=%u actual=%u "
-           "received=%u\n",
-           state->audio_next_sequence, sequence, state->audio_received);
+    printf(
+        "H2_WEBRTC_PERF audio_sequence_gap expected=%u actual=%u "
+        "received=%u\n",
+        state->audio_next_sequence, sequence, state->audio_received);
   }
   const uint64_t now_ns = h2_webrtc_perf_now_ns(state);
   const uint64_t sent_ns = h2_webrtc_perf_read_u64(opus + 2u);
@@ -400,7 +400,7 @@ static void h2_webrtc_perf_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
   state->audio_received++;
 }
 
-static int h2_webrtc_perf_poll(h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_poll(h2_webrtc_performance_state_t* state) {
   state->poll_calls++;
   h2_pal_webrtc_event_t event = {0};
   const h2_pal_result_t result =
@@ -412,26 +412,28 @@ static int h2_webrtc_perf_poll(h2_webrtc_performance_state_t *state) {
   }
   if (result == H2_PAL_OK) {
     switch (event.kind) {
-    case H2_PAL_WEBRTC_EVENT_PEER_STATE:
-      h2_webrtc_perf_on_peer_state(state, event.peer, event.peer_state);
-      break;
-    case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
-      h2_webrtc_perf_on_local_sdp(state, event.peer, event.sdp_type, event.sdp);
-      break;
-    case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
-      h2_webrtc_perf_on_channel_state(state, event.peer, event.channel,
-                                      &event.channel_info, event.channel_state);
-      break;
-    case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
-      h2_webrtc_perf_on_channel_message(state, event.peer, event.channel,
-                                        &event.channel_info, event.data,
-                                        event.data_len, event.is_text);
-      break;
-    case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
-      h2_webrtc_perf_on_opus(state, event.peer, event.data, event.data_len);
-      break;
-    default:
-      break;
+      case H2_PAL_WEBRTC_EVENT_PEER_STATE:
+        h2_webrtc_perf_on_peer_state(state, event.peer, event.peer_state);
+        break;
+      case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
+        h2_webrtc_perf_on_local_sdp(state, event.peer, event.sdp_type,
+                                    event.sdp);
+        break;
+      case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
+        h2_webrtc_perf_on_channel_state(state, event.peer, event.channel,
+                                        &event.channel_info,
+                                        event.channel_state);
+        break;
+      case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+        h2_webrtc_perf_on_channel_message(state, event.peer, event.channel,
+                                          &event.channel_info, event.data,
+                                          event.data_len, event.is_text);
+        break;
+      case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
+        h2_webrtc_perf_on_opus(state, event.peer, event.data, event.data_len);
+        break;
+      default:
+        break;
     }
     h2_pal_webrtc_event_release(&event);
   }
@@ -441,10 +443,9 @@ static int h2_webrtc_perf_poll(h2_webrtc_performance_state_t *state) {
   return 0;
 }
 
-static int
-h2_webrtc_perf_wait(h2_webrtc_performance_state_t *state,
-                    int (*done)(const h2_webrtc_performance_state_t *),
-                    uint32_t timeout_ms) {
+static int h2_webrtc_perf_wait(
+    h2_webrtc_performance_state_t* state,
+    int (*done)(const h2_webrtc_performance_state_t*), uint32_t timeout_ms) {
   const uint64_t deadline =
       h2_webrtc_perf_now_ns(state) + (uint64_t)timeout_ms * 1000000u;
   while (!done(state) && !state->callback_error &&
@@ -457,35 +458,35 @@ h2_webrtc_perf_wait(h2_webrtc_performance_state_t *state,
   return done(state) && !state->callback_error ? 0 : -1;
 }
 
-static int
-h2_webrtc_perf_connected(const h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_connected(
+    const h2_webrtc_performance_state_t* state) {
   return state->peer_state == H2_PAL_WEBRTC_PEER_CONNECTED &&
          state->persistent_open_mask == 3u;
 }
 
-static int
-h2_webrtc_perf_offer_ready(const h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_offer_ready(
+    const h2_webrtc_performance_state_t* state) {
   return state->offer_len != 0u;
 }
 
-static int
-h2_webrtc_perf_requests_open(const h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_requests_open(
+    const h2_webrtc_performance_state_t* state) {
   return state->request_open_mask == (1u << state->request_count) - 1u;
 }
 
-static int
-h2_webrtc_perf_requests_done(const h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_requests_done(
+    const h2_webrtc_performance_state_t* state) {
   return state->request_reply_mask == state->request_expected_reply_mask;
 }
 
-static int
-h2_webrtc_perf_requests_closed(const h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_requests_closed(
+    const h2_webrtc_performance_state_t* state) {
   return state->request_close_mask == (1u << state->request_count) - 1u;
 }
 
-static h2_pal_result_t h2_webrtc_perf_send(h2_webrtc_performance_state_t *state,
-                                           h2_pal_webrtc_channel_t *channel,
-                                           const uint8_t *data, size_t len) {
+static h2_pal_result_t h2_webrtc_perf_send(h2_webrtc_performance_state_t* state,
+                                           h2_pal_webrtc_channel_t* channel,
+                                           const uint8_t* data, size_t len) {
   const uint64_t deadline = h2_webrtc_perf_now_ns(state) + 10000000000u;
   do {
     const h2_pal_result_t result =
@@ -500,7 +501,7 @@ static h2_pal_result_t h2_webrtc_perf_send(h2_webrtc_performance_state_t *state,
   return H2_PAL_ERR_TIMEOUT;
 }
 
-static int h2_webrtc_perf_create_requests(h2_webrtc_performance_state_t *state,
+static int h2_webrtc_perf_create_requests(h2_webrtc_performance_state_t* state,
                                           unsigned request_count) {
   if (request_count == 0u || request_count > H2_WEBRTC_PERF_REQUEST_COUNT) {
     return -1;
@@ -511,7 +512,7 @@ static int h2_webrtc_perf_create_requests(h2_webrtc_performance_state_t *state,
   state->request_reply_mask = 0u;
   memset(state->request_rtt_ns, 0, sizeof(state->request_rtt_ns));
   memset(state->request_sids, 0, sizeof(state->request_sids));
-  const char *label = "giznet/v1/service/0";
+  const char* label = "giznet/v1/service/0";
   const h2_pal_webrtc_channel_config_t config = {
       .label = {.data = label, .len = strlen(label)},
       .ordered = 1,
@@ -527,7 +528,7 @@ static int h2_webrtc_perf_create_requests(h2_webrtc_performance_state_t *state,
   return h2_webrtc_perf_wait(state, h2_webrtc_perf_requests_open, 10000u);
 }
 
-static int h2_webrtc_perf_send_requests(h2_webrtc_performance_state_t *state,
+static int h2_webrtc_perf_send_requests(h2_webrtc_performance_state_t* state,
                                         unsigned first_request) {
   if (first_request >= state->request_count) {
     return -1;
@@ -550,7 +551,7 @@ static int h2_webrtc_perf_send_requests(h2_webrtc_performance_state_t *state,
   return 0;
 }
 
-static int h2_webrtc_perf_close_requests(h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_close_requests(h2_webrtc_performance_state_t* state) {
   for (size_t index = 0u; index < state->request_count; ++index) {
     h2_pal_webrtc_channel_close(state->api, state->requests[index]);
   }
@@ -563,8 +564,8 @@ static int h2_webrtc_perf_close_requests(h2_webrtc_performance_state_t *state) {
   return 0;
 }
 
-static uint64_t
-h2_webrtc_perf_request_max_rtt(const h2_webrtc_performance_state_t *state) {
+static uint64_t h2_webrtc_perf_request_max_rtt(
+    const h2_webrtc_performance_state_t* state) {
   uint64_t maximum = 0u;
   for (size_t index = 0u; index < H2_WEBRTC_PERF_REQUEST_COUNT; ++index) {
     if (state->request_rtt_ns[index] > maximum) {
@@ -574,9 +575,8 @@ h2_webrtc_perf_request_max_rtt(const h2_webrtc_performance_state_t *state) {
   return maximum;
 }
 
-static uint64_t
-h2_webrtc_perf_median(uint64_t values[H2_WEBRTC_PERF_MAX_ITERATIONS],
-                      unsigned count) {
+static uint64_t h2_webrtc_perf_median(
+    uint64_t values[H2_WEBRTC_PERF_MAX_ITERATIONS], unsigned count) {
   for (size_t index = 1u; index < count; ++index) {
     const uint64_t value = values[index];
     size_t insert = index;
@@ -594,8 +594,8 @@ h2_webrtc_perf_median(uint64_t values[H2_WEBRTC_PERF_MAX_ITERATIONS],
   return lower / 2u + upper / 2u + (lower % 2u + upper % 2u) / 2u;
 }
 
-static uint64_t
-h2_webrtc_perf_audio_gap_p99(const h2_webrtc_performance_state_t *state) {
+static uint64_t h2_webrtc_perf_audio_gap_p99(
+    const h2_webrtc_performance_state_t* state) {
   uint64_t values[H2_WEBRTC_PERF_AUDIO_FRAMES];
   const size_t count = state->audio_received;
   for (size_t index = 0u; index < count; ++index) {
@@ -616,10 +616,9 @@ h2_webrtc_perf_audio_gap_p99(const h2_webrtc_performance_state_t *state) {
   return values[(count * 99u + 99u) / 100u - 1u];
 }
 
-static int
-h2_webrtc_perf_run_transfer(h2_webrtc_performance_state_t *state, int loaded,
-                            int download_only,
-                            h2_webrtc_performance_transfer_t *out_transfer) {
+static int h2_webrtc_perf_run_transfer(
+    h2_webrtc_performance_state_t* state, int loaded, int download_only,
+    h2_webrtc_performance_transfer_t* out_transfer) {
   state->download_bytes = 0u;
   state->upload_bytes = 0u;
   state->upload_started_ns = 0u;
@@ -764,7 +763,7 @@ h2_webrtc_perf_run_transfer(h2_webrtc_performance_state_t *state, int loaded,
   return -1;
 }
 
-static int h2_webrtc_perf_run_audio_only(h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_run_audio_only(h2_webrtc_performance_state_t* state) {
   state->audio_received = 0u;
   state->audio_next_sequence = 0u;
   memset(state->audio_seen, 0, sizeof(state->audio_seen));
@@ -821,13 +820,13 @@ static int h2_webrtc_perf_run_audio_only(h2_webrtc_performance_state_t *state) {
   return -1;
 }
 
-static int h2_webrtc_perf_connect(h2_webrtc_performance_state_t *state) {
+static int h2_webrtc_perf_connect(h2_webrtc_performance_state_t* state) {
   if (h2_pal_webrtc_peer_create(state->api, &state->peer) != H2_PAL_OK) {
     printf("H2_WEBRTC_PERF stage=peer_create status=ERROR\n");
     return -1;
   }
-  const char *labels[2] = {"giznet/v1/packet", "giznet/v1/service/32"};
-  h2_pal_webrtc_channel_t **channels[2] = {&state->packet, &state->event};
+  const char* labels[2] = {"giznet/v1/packet", "giznet/v1/service/32"};
+  h2_pal_webrtc_channel_t** channels[2] = {&state->packet, &state->event};
   for (size_t index = 0u; index < 2u; ++index) {
     const h2_pal_webrtc_channel_config_t config = {
         .label = {.data = labels[index], .len = strlen(labels[index])},
@@ -838,9 +837,10 @@ static int h2_webrtc_perf_connect(h2_webrtc_performance_state_t *state) {
         h2_pal_webrtc_peer_create_data_channel(state->api, state->peer, &config,
                                                channels[index]);
     if (channel_result != H2_PAL_OK) {
-      printf("H2_WEBRTC_PERF stage=channel_create status=ERROR index=%zu "
-             "rc=%d\n",
-             index, channel_result);
+      printf(
+          "H2_WEBRTC_PERF stage=channel_create status=ERROR index=%zu "
+          "rc=%d\n",
+          index, channel_result);
       return -1;
     }
   }
@@ -866,9 +866,10 @@ static int h2_webrtc_perf_connect(h2_webrtc_performance_state_t *state) {
     return -1;
   }
   if (h2_webrtc_perf_wait(state, h2_webrtc_perf_offer_ready, 10000u) != 0) {
-    printf("H2_WEBRTC_PERF stage=offer_wait status=ERROR callback_error=%d "
-           "offer_len=%zu\n",
-           state->callback_error, state->offer_len);
+    printf(
+        "H2_WEBRTC_PERF stage=offer_wait status=ERROR callback_error=%d "
+        "offer_len=%zu\n",
+        state->callback_error, state->offer_len);
     return -1;
   }
   char answer[16384];
@@ -893,17 +894,18 @@ static int h2_webrtc_perf_connect(h2_webrtc_performance_state_t *state) {
   const int connected_result =
       h2_webrtc_perf_wait(state, h2_webrtc_perf_connected, 20000u);
   if (connected_result != 0) {
-    printf("H2_WEBRTC_PERF stage=connected_wait status=ERROR peer_state=%d "
-           "open_mask=%u callback_error=%d callback_reason=%d\n",
-           state->peer_state, state->persistent_open_mask,
-           state->callback_error, state->callback_error_reason);
+    printf(
+        "H2_WEBRTC_PERF stage=connected_wait status=ERROR peer_state=%d "
+        "open_mask=%u callback_error=%d callback_reason=%d\n",
+        state->peer_state, state->persistent_open_mask, state->callback_error,
+        state->callback_error_reason);
   }
   return connected_result;
 }
 
-int h2_webrtc_performance_run(h2_runtime_t *runtime,
-                              const h2_webrtc_performance_config_t *config,
-                              h2_webrtc_performance_result_t *out_result) {
+int h2_webrtc_performance_run(h2_runtime_t* runtime,
+                              const h2_webrtc_performance_config_t* config,
+                              h2_webrtc_performance_result_t* out_result) {
   if (runtime == NULL || runtime->time == NULL || runtime->webrtc == NULL ||
       config == NULL || config->profile == NULL ||
       config->exchange_offer == NULL || out_result == NULL) {
@@ -951,9 +953,10 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
     if (h2_webrtc_perf_create_requests(&state, 1u) != 0 ||
         h2_webrtc_perf_run_transfer(&state, 0, 1, &download) != 0 ||
         h2_webrtc_perf_close_requests(&state) != 0) {
-      printf("H2_WEBRTC_PERF download_only status=FAIL bytes=%zu "
-             "callback=%d\n",
-             state.download_bytes, state.callback_error);
+      printf(
+          "H2_WEBRTC_PERF download_only status=FAIL bytes=%zu "
+          "callback=%d\n",
+          state.download_bytes, state.callback_error);
       goto cleanup;
     }
     const uint64_t download_bytes_per_second =
@@ -961,11 +964,11 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
             ? 0u
             : (uint64_t)state.download_bytes * UINT64_C(1000000000) /
                   download.download_elapsed_ns;
-    printf("H2_WEBRTC_PERF download_only status=PASS bytes=%zu "
-           "elapsed_ms=%" PRIu64 " Bps=%" PRIu64 " poll_calls=%" PRIu64 "\n",
-           state.download_bytes,
-           download.download_elapsed_ns / UINT64_C(1000000),
-           download_bytes_per_second, state.poll_calls);
+    printf(
+        "H2_WEBRTC_PERF download_only status=PASS bytes=%zu "
+        "elapsed_ms=%" PRIu64 " Bps=%" PRIu64 " poll_calls=%" PRIu64 "\n",
+        state.download_bytes, download.download_elapsed_ns / UINT64_C(1000000),
+        download_bytes_per_second, state.poll_calls);
     *out_result = (h2_webrtc_performance_result_t){
         .iterations = 1u,
         .median_download_bytes_per_second = download_bytes_per_second,
@@ -993,32 +996,36 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
     if (h2_webrtc_perf_create_requests(&state, 1u) != 0 ||
         h2_webrtc_perf_run_transfer(&state, 0, 0, &data_only) != 0 ||
         h2_webrtc_perf_close_requests(&state) != 0) {
-      printf("H2_WEBRTC_PERF data-only transfer failed upload=%d/%zu "
-             "download=%d/%zu callback=%d\n",
-             state.upload_done, state.upload_bytes, state.download_done,
-             state.download_bytes, state.callback_error);
+      printf(
+          "H2_WEBRTC_PERF data-only transfer failed upload=%d/%zu "
+          "download=%d/%zu callback=%d\n",
+          state.upload_done, state.upload_bytes, state.download_done,
+          state.download_bytes, state.callback_error);
       goto cleanup;
     }
-    printf("H2_WEBRTC_PERF data_only status=PASS upload_bytes=%zu "
-           "upload_elapsed_ms=%" PRIu64 " upload_Bps=%" PRIu64 " "
-           "download_bytes=%zu download_elapsed_ms=%" PRIu64 " "
-           "download_Bps=%" PRIu64 "\n",
-           state.upload_bytes, data_only.upload_elapsed_ns / UINT64_C(1000000),
-           data_only.upload_elapsed_ns == 0u
-               ? 0u
-               : (uint64_t)state.upload_bytes * UINT64_C(1000000000) /
-                     data_only.upload_elapsed_ns,
-           state.download_bytes,
-           data_only.download_elapsed_ns / UINT64_C(1000000),
-           data_only.download_elapsed_ns == 0u
-               ? 0u
-               : (uint64_t)state.download_bytes * UINT64_C(1000000000) /
-                     data_only.download_elapsed_ns);
+    printf(
+        "H2_WEBRTC_PERF data_only status=PASS upload_bytes=%zu "
+        "upload_elapsed_ms=%" PRIu64 " upload_Bps=%" PRIu64
+        " "
+        "download_bytes=%zu download_elapsed_ms=%" PRIu64
+        " "
+        "download_Bps=%" PRIu64 "\n",
+        state.upload_bytes, data_only.upload_elapsed_ns / UINT64_C(1000000),
+        data_only.upload_elapsed_ns == 0u
+            ? 0u
+            : (uint64_t)state.upload_bytes * UINT64_C(1000000000) /
+                  data_only.upload_elapsed_ns,
+        state.download_bytes, data_only.download_elapsed_ns / UINT64_C(1000000),
+        data_only.download_elapsed_ns == 0u
+            ? 0u
+            : (uint64_t)state.download_bytes * UINT64_C(1000000000) /
+                  data_only.download_elapsed_ns);
     if (h2_webrtc_perf_run_audio_only(&state) != 0) {
-      printf("H2_WEBRTC_PERF audio-only failed received=%u late=%u "
-             "deadline=%u callback=%d\n",
-             state.audio_received, state.audio_late_gaps,
-             state.audio_deadline_misses, state.callback_error);
+      printf(
+          "H2_WEBRTC_PERF audio-only failed received=%u late=%u "
+          "deadline=%u callback=%d\n",
+          state.audio_received, state.audio_late_gaps,
+          state.audio_deadline_misses, state.callback_error);
       goto cleanup;
     }
     const uint64_t audio_only_p99_gap_ns = h2_webrtc_perf_audio_gap_p99(&state);
@@ -1035,15 +1042,17 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
     }
     h2_webrtc_performance_transfer_t loaded = {0};
     if (h2_webrtc_perf_run_transfer(&state, 1, 0, &loaded) != 0) {
-      printf("H2_WEBRTC_PERF loaded failed upload=%d download=%d/%zu "
-             "requests=0x%x audio=%u late=%u deadline=%u events=%u "
-             "packet=%u max_gap_ns=%" PRIu64 " max_gap_sequence=%u "
-             "callback=%d\n",
-             state.upload_done, state.download_done, state.download_bytes,
-             state.request_reply_mask, state.audio_received,
-             state.audio_late_gaps, state.audio_deadline_misses,
-             state.event_echoes, state.packet_echoes, state.audio_max_gap_ns,
-             state.audio_max_gap_sequence, state.callback_error);
+      printf(
+          "H2_WEBRTC_PERF loaded failed upload=%d download=%d/%zu "
+          "requests=0x%x audio=%u late=%u deadline=%u events=%u "
+          "packet=%u max_gap_ns=%" PRIu64
+          " max_gap_sequence=%u "
+          "callback=%d\n",
+          state.upload_done, state.download_done, state.download_bytes,
+          state.request_reply_mask, state.audio_received, state.audio_late_gaps,
+          state.audio_deadline_misses, state.event_echoes, state.packet_echoes,
+          state.audio_max_gap_ns, state.audio_max_gap_sequence,
+          state.callback_error);
       goto cleanup;
     }
     const uint64_t loaded_batch_ns = state.request_batch_elapsed_ns;
@@ -1096,80 +1105,86 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
          (state.audio_deadline_misses == 0u && state.audio_would_block == 0u));
     const int iteration_ok =
         fairness_permille >= 800u && audio_only_ok && loaded_audio_ok;
-    printf("H2_WEBRTC_PERF iteration=%u requests=3 "
-           "idle_batch_ns=%" PRIu64 " idle_max_rtt_ns=%" PRIu64 " "
-           "loaded_batch_ns=%" PRIu64 " loaded_max_rtt_ns=%" PRIu64 " "
-           "upload_bytes=%u download_bytes=%zu "
-           "data_only_bulk_ns=%" PRIu64 " data_only_sequential_Bps=%" PRIu64 " "
-           "loaded_bulk_ns=%" PRIu64 " loaded_sequential_Bps=%" PRIu64 " "
-           "upload_elapsed_ns=%" PRIu64 " upload_Bps=%" PRIu64 " "
-           "download_elapsed_ns=%" PRIu64 " download_Bps=%" PRIu64 " "
-           "loaded_to_data_only_permille=%" PRIu64
-           " audio_only_p99_gap_ns=%" PRIu64 " audio_only_max_gap_ns=%" PRIu64
-           " audio_only_max_rtt_ns=%" PRIu64
-           " audio_only_frames=%u audio_only_missing=%u "
-           "audio_only_duplicates=%u audio_only_reordered=%u audio_frames=%u "
-           "audio_max_gap_ns=%" PRIu64 " audio_max_rtt_ns=%" PRIu64
-           " audio_late_gaps=%u audio_deadline_misses=%u "
-           "audio_would_block=%u audio_missing=%u audio_duplicates=%u "
-           "audio_reordered=%u events=%u packet=%u poll_calls=%" PRIu64 "\n",
-           iteration, idle_batch_ns, idle_max_rtt_ns, loaded_batch_ns,
-           loaded_max_rtt_ns, H2_WEBRTC_PERF_TRANSFER_SIZE,
-           state.download_bytes, data_only.bulk_elapsed_ns,
-           data_only_throughput_bps, loaded.bulk_elapsed_ns,
-           loaded_throughput_bps, loaded.upload_elapsed_ns,
-           upload_throughput_bps, loaded.download_elapsed_ns,
-           download_throughput_bps, fairness_permille, audio_only_p99_gap_ns,
-           audio_only_max_gap_ns, audio_only_max_rtt_ns, audio_only_received,
-           audio_only_missing, audio_only_duplicates, audio_only_reordered,
-           state.audio_received, state.audio_max_gap_ns, state.audio_max_rtt_ns,
-           state.audio_late_gaps, state.audio_deadline_misses,
-           state.audio_would_block, loaded_audio_missing,
-           state.audio_duplicates, state.audio_reordered, state.event_echoes,
-           state.packet_echoes, state.poll_calls - poll_calls_before);
-    printf("{\"schema_version\":1,\"profile\":\"%s\","
-           "\"target\":\"%s\",\"provider\":\"%s\","
-           "\"transport\":\"udp\","
-           "\"iteration\":%u,\"request_channels\":3,"
-           "\"transfer_order\":\"download_then_upload\","
-           "\"receive_mode\":\"pull\","
-           "\"request_sids\":[%u,%u,%u],"
-           "\"bytes_each_direction\":%u,"
-           "\"idle_batch_ns\":%" PRIu64 ",\"loaded_batch_ns\":%" PRIu64
-           ",\"data_only_sequential_Bps\":%" PRIu64
-           ",\"loaded_sequential_Bps\":%" PRIu64 ",\"upload_Bps\":%" PRIu64
-           ",\"download_Bps\":%" PRIu64
-           ",\"loaded_to_data_only_permille\":%" PRIu64
-           ",\"audio_budget_ms\":%u,\"audio_host_tolerance_ms\":%u"
-           ",\"audio_gap_limit_ms\":%" PRIu64
-           ",\"audio_only_p99_gap_ns\":%" PRIu64
-           ",\"audio_only_max_gap_ns\":%" PRIu64
-           ",\"audio_only_frames\":%u,\"audio_only_missing\":%u"
-           ",\"audio_only_duplicates\":%u,\"audio_only_reordered\":%u"
-           ",\"loaded_audio_p99_gap_ns\":%" PRIu64
-           ",\"loaded_audio_max_gap_ns\":%" PRIu64
-           ",\"loaded_audio_max_rtt_ns\":%" PRIu64
-           ",\"loaded_audio_frames\":%u,\"loaded_audio_missing\":%u"
-           ",\"loaded_audio_duplicates\":%u,\"loaded_audio_reordered\":%u"
-           ",\"audio_late_gaps\":%u,\"audio_deadline_misses\":%u,"
-           "\"audio_would_block\":%u,\"poll_calls\":%" PRIu64
-           ",\"result\":\"%s\"}\n",
-           config->profile, config->target == NULL ? "unknown" : config->target,
-           config->provider == NULL ? "unknown" : config->provider, iteration,
-           state.request_sids[0], state.request_sids[1], state.request_sids[2],
-           H2_WEBRTC_PERF_TRANSFER_SIZE, idle_batch_ns, loaded_batch_ns,
-           data_only_throughput_bps, loaded_throughput_bps,
-           upload_throughput_bps, download_throughput_bps, fairness_permille,
-           H2_WEBRTC_PERF_AUDIO_LATE_GAP_MS,
-           H2_WEBRTC_PERF_AUDIO_HOST_TOLERANCE_MS,
-           audio_gap_limit_ns / UINT64_C(1000000), audio_only_p99_gap_ns,
-           audio_only_max_gap_ns, audio_only_received, audio_only_missing,
-           audio_only_duplicates, audio_only_reordered, loaded_audio_p99_gap_ns,
-           state.audio_max_gap_ns, state.audio_max_rtt_ns, state.audio_received,
-           loaded_audio_missing, state.audio_duplicates, state.audio_reordered,
-           state.audio_late_gaps, state.audio_deadline_misses,
-           state.audio_would_block, state.poll_calls - poll_calls_before,
-           iteration_ok ? "pass" : "fail");
+    printf(
+        "H2_WEBRTC_PERF iteration=%u requests=3 "
+        "idle_batch_ns=%" PRIu64 " idle_max_rtt_ns=%" PRIu64
+        " "
+        "loaded_batch_ns=%" PRIu64 " loaded_max_rtt_ns=%" PRIu64
+        " "
+        "upload_bytes=%u download_bytes=%zu "
+        "data_only_bulk_ns=%" PRIu64 " data_only_sequential_Bps=%" PRIu64
+        " "
+        "loaded_bulk_ns=%" PRIu64 " loaded_sequential_Bps=%" PRIu64
+        " "
+        "upload_elapsed_ns=%" PRIu64 " upload_Bps=%" PRIu64
+        " "
+        "download_elapsed_ns=%" PRIu64 " download_Bps=%" PRIu64
+        " "
+        "loaded_to_data_only_permille=%" PRIu64
+        " audio_only_p99_gap_ns=%" PRIu64 " audio_only_max_gap_ns=%" PRIu64
+        " audio_only_max_rtt_ns=%" PRIu64
+        " audio_only_frames=%u audio_only_missing=%u "
+        "audio_only_duplicates=%u audio_only_reordered=%u audio_frames=%u "
+        "audio_max_gap_ns=%" PRIu64 " audio_max_rtt_ns=%" PRIu64
+        " audio_late_gaps=%u audio_deadline_misses=%u "
+        "audio_would_block=%u audio_missing=%u audio_duplicates=%u "
+        "audio_reordered=%u events=%u packet=%u poll_calls=%" PRIu64 "\n",
+        iteration, idle_batch_ns, idle_max_rtt_ns, loaded_batch_ns,
+        loaded_max_rtt_ns, H2_WEBRTC_PERF_TRANSFER_SIZE, state.download_bytes,
+        data_only.bulk_elapsed_ns, data_only_throughput_bps,
+        loaded.bulk_elapsed_ns, loaded_throughput_bps, loaded.upload_elapsed_ns,
+        upload_throughput_bps, loaded.download_elapsed_ns,
+        download_throughput_bps, fairness_permille, audio_only_p99_gap_ns,
+        audio_only_max_gap_ns, audio_only_max_rtt_ns, audio_only_received,
+        audio_only_missing, audio_only_duplicates, audio_only_reordered,
+        state.audio_received, state.audio_max_gap_ns, state.audio_max_rtt_ns,
+        state.audio_late_gaps, state.audio_deadline_misses,
+        state.audio_would_block, loaded_audio_missing, state.audio_duplicates,
+        state.audio_reordered, state.event_echoes, state.packet_echoes,
+        state.poll_calls - poll_calls_before);
+    printf(
+        "{\"schema_version\":1,\"profile\":\"%s\","
+        "\"target\":\"%s\",\"provider\":\"%s\","
+        "\"transport\":\"udp\","
+        "\"iteration\":%u,\"request_channels\":3,"
+        "\"transfer_order\":\"download_then_upload\","
+        "\"receive_mode\":\"pull\","
+        "\"request_sids\":[%u,%u,%u],"
+        "\"bytes_each_direction\":%u,"
+        "\"idle_batch_ns\":%" PRIu64 ",\"loaded_batch_ns\":%" PRIu64
+        ",\"data_only_sequential_Bps\":%" PRIu64
+        ",\"loaded_sequential_Bps\":%" PRIu64 ",\"upload_Bps\":%" PRIu64
+        ",\"download_Bps\":%" PRIu64
+        ",\"loaded_to_data_only_permille\":%" PRIu64
+        ",\"audio_budget_ms\":%u,\"audio_host_tolerance_ms\":%u"
+        ",\"audio_gap_limit_ms\":%" PRIu64 ",\"audio_only_p99_gap_ns\":%" PRIu64
+        ",\"audio_only_max_gap_ns\":%" PRIu64
+        ",\"audio_only_frames\":%u,\"audio_only_missing\":%u"
+        ",\"audio_only_duplicates\":%u,\"audio_only_reordered\":%u"
+        ",\"loaded_audio_p99_gap_ns\":%" PRIu64
+        ",\"loaded_audio_max_gap_ns\":%" PRIu64
+        ",\"loaded_audio_max_rtt_ns\":%" PRIu64
+        ",\"loaded_audio_frames\":%u,\"loaded_audio_missing\":%u"
+        ",\"loaded_audio_duplicates\":%u,\"loaded_audio_reordered\":%u"
+        ",\"audio_late_gaps\":%u,\"audio_deadline_misses\":%u,"
+        "\"audio_would_block\":%u,\"poll_calls\":%" PRIu64
+        ",\"result\":\"%s\"}\n",
+        config->profile, config->target == NULL ? "unknown" : config->target,
+        config->provider == NULL ? "unknown" : config->provider, iteration,
+        state.request_sids[0], state.request_sids[1], state.request_sids[2],
+        H2_WEBRTC_PERF_TRANSFER_SIZE, idle_batch_ns, loaded_batch_ns,
+        data_only_throughput_bps, loaded_throughput_bps, upload_throughput_bps,
+        download_throughput_bps, fairness_permille,
+        H2_WEBRTC_PERF_AUDIO_LATE_GAP_MS,
+        H2_WEBRTC_PERF_AUDIO_HOST_TOLERANCE_MS,
+        audio_gap_limit_ns / UINT64_C(1000000), audio_only_p99_gap_ns,
+        audio_only_max_gap_ns, audio_only_received, audio_only_missing,
+        audio_only_duplicates, audio_only_reordered, loaded_audio_p99_gap_ns,
+        state.audio_max_gap_ns, state.audio_max_rtt_ns, state.audio_received,
+        loaded_audio_missing, state.audio_duplicates, state.audio_reordered,
+        state.audio_late_gaps, state.audio_deadline_misses,
+        state.audio_would_block, state.poll_calls - poll_calls_before,
+        iteration_ok ? "pass" : "fail");
     idle_batch_samples[iteration] = idle_batch_ns;
     loaded_batch_samples[iteration] = loaded_batch_ns;
     data_only_throughput_samples[iteration] = data_only_throughput_bps;
@@ -1189,12 +1204,13 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
       goto cleanup;
     }
     if (!loaded_audio_ok) {
-      printf("H2_WEBRTC_PERF loaded audio scheduling gate failed frames=%u "
-             "missing=%u duplicates=%u reordered=%u deadline=%u "
-             "would_block=%u\n",
-             state.audio_received, loaded_audio_missing, state.audio_duplicates,
-             state.audio_reordered, state.audio_deadline_misses,
-             state.audio_would_block);
+      printf(
+          "H2_WEBRTC_PERF loaded audio scheduling gate failed frames=%u "
+          "missing=%u duplicates=%u reordered=%u deadline=%u "
+          "would_block=%u\n",
+          state.audio_received, loaded_audio_missing, state.audio_duplicates,
+          state.audio_reordered, state.audio_deadline_misses,
+          state.audio_would_block);
       goto cleanup;
     }
     if (h2_webrtc_perf_close_requests(&state) != 0) {
@@ -1204,8 +1220,9 @@ int h2_webrtc_performance_run(h2_runtime_t *runtime,
   const uint64_t median_fairness =
       h2_webrtc_perf_median(fairness_samples, iterations);
   if (median_fairness < 800u) {
-    printf("H2_WEBRTC_PERF median loaded throughput below 80%% of "
-           "data-only throughput\n");
+    printf(
+        "H2_WEBRTC_PERF median loaded throughput below 80%% of "
+        "data-only throughput\n");
     goto cleanup;
   }
   printf("H2_WEBRTC_PERF summary iterations=%u median_idle_batch_ns=%" PRIu64

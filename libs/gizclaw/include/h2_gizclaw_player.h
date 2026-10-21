@@ -45,7 +45,8 @@ typedef struct h2_gizclaw_player_playlist {
   /** Absent until a track is selected; a pushed playlist starts unselected. */
   bool has_current_index;
   uint32_t current_index;
-  /** Moves on every set/append/local play; unchanged means nothing to redraw. */
+  /** Moves on every set/append/local play; unchanged means nothing to redraw.
+   */
   uint32_t playlist_revision;
   /** off, one or all. */
   char repeat[5];
@@ -73,13 +74,13 @@ typedef struct h2_gizclaw_player_playlist_entry {
 /** Replace the playlist with one HTTPS audio URL and begin asynchronously.
  * Copies the URL before returning. OK means accepted, not playback completed.
  * Uses the same player, cancellation and telemetry as remote audio RPCs. */
-h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t* service,
                                        h2_gizclaw_str_t url);
 /** Start the already-queued item the user picked, the same way the remote
  * audioplayer.play RPC selects one. An index at or past the
  * playlist length is INVALID_ARG and leaves playback untouched. Same as
  * play_index_at(service, index, 0). */
-h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t* service,
                                              uint32_t index);
 /** Start queued item `index` start_ms into the track; 0 is play_index.
  * Needs the item's duration_ms from playlist_set: without it the item plays
@@ -99,7 +100,7 @@ h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
  * next item at 0. INVALID_ARG for a bad index or start_ms at or past a
  * known duration_ms, before anything is touched; otherwise the same results
  * as play_index. */
-h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t* service,
                                                 uint32_t index,
                                                 uint64_t start_ms);
 /** Replace the playlist with a caller-owned array, the same way the remote
@@ -111,13 +112,13 @@ h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
  * Deliberately does not start playback: the write is pure on both paths, so a
  * product that wants the album to begin follows it with play_index(0). */
 h2_pal_result_t h2_gizclaw_player_playlist_set(
-    h2_gizclaw_service_t *service,
-    const h2_gizclaw_player_playlist_entry_t *items, uint32_t count);
+    h2_gizclaw_service_t* service,
+    const h2_gizclaw_player_playlist_entry_t* items, uint32_t count);
 /** Select off, one or all, the values audioplayer.mode.set
  * accepts; anything else is INVALID_ARG and leaves the mode as it was. The
  * library owns end-of-track advance and looping, so a product picks the mode
  * here instead of re-implementing "next track, wrap at the end". */
-h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t* service,
                                              h2_gizclaw_str_t repeat);
 /** Play at rate_permille of the recorded speed, keeping pitch (speech tempo
  * change, not resampling). A property of the player, not of one play: it
@@ -130,15 +131,15 @@ h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
  * ~5.5 KiB work buffer while an item plays, and if that cannot be allocated
  * the item plays at NORMAL instead of failing. Outside MIN..MAX is
  * INVALID_ARG and leaves the rate unchanged. */
-h2_pal_result_t h2_gizclaw_player_rate_set(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_player_rate_set(h2_gizclaw_service_t* service,
                                            uint32_t rate_permille);
-h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service);
-h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
-                                             h2_gizclaw_player_status_t *out);
+h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t* service);
+h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t* service,
+                                             h2_gizclaw_player_status_t* out);
 /** Copy the current playlist. Never performs a network round trip; takes the
  * same device lock as the player commands. */
 h2_pal_result_t h2_gizclaw_player_playlist_snapshot(
-    h2_gizclaw_service_t *service, h2_gizclaw_player_playlist_t *out);
+    h2_gizclaw_service_t* service, h2_gizclaw_player_playlist_t* out);
 #ifdef __cplusplus
 }
 #endif

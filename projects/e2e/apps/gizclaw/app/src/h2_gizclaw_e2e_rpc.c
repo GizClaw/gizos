@@ -16,8 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static int append_run_suffix(char *destination, size_t capacity,
-                             const char *run_prefix, const char *suffix) {
+static int append_run_suffix(char* destination, size_t capacity,
+                             const char* run_prefix, const char* suffix) {
   if (destination == NULL || capacity == 0u || run_prefix == NULL ||
       suffix == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -31,25 +31,24 @@ static int append_run_suffix(char *destination, size_t capacity,
 }
 
 bool h2_gizclaw_e2e_workspace_response_ready(
-    const h2_gizclaw_workspace_t *workspace, const char *expected_name) {
+    const h2_gizclaw_workspace_t* workspace, const char* expected_name) {
   return workspace != NULL && workspace->available && workspace->name != NULL &&
          expected_name != NULL && strcmp(workspace->name, expected_name) == 0;
 }
 
-static int run_catalog_workspace(h2_gizclaw_e2e_fixture_t *fixture,
-                                 h2_gizclaw_resp_storage_t *storage) {
+static int run_catalog_workspace(h2_gizclaw_e2e_fixture_t* fixture,
+                                 h2_gizclaw_resp_storage_t* storage) {
   int rc = h2_gizclaw_e2e_run_workflow(fixture, storage);
   return rc == H2_PAL_OK ? h2_gizclaw_e2e_run_workspace(fixture, storage, true)
                          : rc;
 }
 
-static int run_workspace_reconnect(h2_gizclaw_e2e_fixture_t *fixture,
-                                   h2_gizclaw_resp_storage_t *storage) {
+static int run_workspace_reconnect(h2_gizclaw_e2e_fixture_t* fixture,
+                                   h2_gizclaw_resp_storage_t* storage) {
   int rc =
       h2_gizclaw_e2e_fixture_reconnect_actor(fixture, H2_GIZCLAW_E2E_OWNER);
-  if (rc != H2_PAL_OK)
-    return rc;
-  h2_gizclaw_service_t *service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
+  if (rc != H2_PAL_OK) return rc;
+  h2_gizclaw_service_t* service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
   h2_gizclaw_workspace_t workspace = {0};
   h2_gizclaw_workspace_get_result_t workspace_result = {0};
   rc = h2_gizclaw_rpc_workspace_get(service,
@@ -71,34 +70,30 @@ static int run_workspace_reconnect(h2_gizclaw_e2e_fixture_t *fixture,
   }
   storage->used = 0u;
   h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=workspace_reconnect result=%s\n",
-         rc == H2_PAL_OK ? "PASS" : "FAIL");
+                      rc == H2_PAL_OK ? "PASS" : "FAIL");
   return rc;
 }
 
-static int run_group(h2_gizclaw_e2e_fixture_t *fixture,
-                     h2_gizclaw_resp_storage_t *storage) {
+static int run_group(h2_gizclaw_e2e_fixture_t* fixture,
+                     h2_gizclaw_resp_storage_t* storage) {
   int rc = h2_gizclaw_e2e_run_group_management(fixture, storage);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   return h2_gizclaw_e2e_run_group_talk(fixture);
 }
 
-static void keep_first_failure(int candidate, int *result) {
-  if (*result == H2_PAL_OK && candidate != H2_PAL_OK)
-    *result = candidate;
+static void keep_first_failure(int candidate, int* result) {
+  if (*result == H2_PAL_OK && candidate != H2_PAL_OK) *result = candidate;
 }
 
-static int run_peer_name_isolation(h2_gizclaw_e2e_fixture_t *fixture,
-                                   h2_gizclaw_resp_storage_t *storage) {
-  h2_gizclaw_service_t *service =
+static int run_peer_name_isolation(h2_gizclaw_e2e_fixture_t* fixture,
+                                   h2_gizclaw_resp_storage_t* storage) {
+  h2_gizclaw_service_t* service =
       fixture->actors[H2_GIZCLAW_E2E_FRIEND].service;
-  if (service == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (service == NULL) return H2_PAL_ERR_INVALID_STATE;
   char peer_display_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   int rc = append_run_suffix(peer_display_name, sizeof(peer_display_name),
                              fixture->run_prefix, " peer-b");
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   int result = H2_PAL_OK;
 
   h2_gizclaw_workspace_t workspace = {0};
@@ -188,31 +183,38 @@ static int run_peer_name_isolation(h2_gizclaw_e2e_fixture_t *fixture,
 
   /* Fixture cleanup owns all three obligations, also on timeout or failure. */
   h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=peer_name_isolation result=%s\n",
-         result == H2_PAL_OK ? "PASS" : "FAIL");
+                      result == H2_PAL_OK ? "PASS" : "FAIL");
   return result;
 }
 
 /* Keep failed/undrained state on the actor for stop -> drain -> destroy. */
-static int run_api_key_state(h2_gizclaw_e2e_fixture_t *fixture) {
-  h2_gizclaw_e2e_actor_t *actor = &fixture->actors[H2_GIZCLAW_E2E_OWNER];
+static int run_api_key_state(h2_gizclaw_e2e_fixture_t* fixture) {
+  h2_gizclaw_e2e_actor_t* actor = &fixture->actors[H2_GIZCLAW_E2E_OWNER];
   h2_gizclaw_api_key_state_config_t config = {
-      .service = actor->service, .mem = fixture->allocator,
-      .sync = fixture->runtime->sync, .time = fixture->time,
+      .service = actor->service,
+      .mem = fixture->allocator,
+      .sync = fixture->runtime->sync,
+      .time = fixture->time,
       .display_name = h2_gizclaw_e2e_str("e2e async temporary"),
       .timeout_ms = 30000u};
   h2_gizclaw_api_key_snapshot_t initial = {0}, ready = {0}, closed = {0};
   int rc = h2_gizclaw_api_key_state_create(&config, &actor->api_key_state);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_create", "api-key-state", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_create", "api-key-state",
+                          rc);
   if (rc != H2_PAL_OK) return rc;
   rc = h2_gizclaw_api_key_state_snapshot(actor->api_key_state, &initial);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
-  if (rc == H2_PAL_OK && (initial.valid || !initial.stale || initial.busy ||
-      initial.closed || initial.key.name[0] || initial.key.secret[0]))
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state",
+                          rc);
+  if (rc == H2_PAL_OK &&
+      (initial.valid || !initial.stale || initial.busy || initial.closed ||
+       initial.key.name[0] || initial.key.secret[0]))
     rc = H2_PAL_ERR_INVALID_STATE;
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_create-assert", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot",
+                          "api_key_state_create-assert", rc);
   if (rc != H2_PAL_OK) return rc;
   rc = h2_gizclaw_api_key_state_request_refresh(actor->api_key_state, false);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_request_refresh", "api-key-state", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_request_refresh",
+                          "api-key-state", rc);
   if (rc != H2_PAL_OK) return rc;
   uint64_t start = 0u, now = 0u;
   rc = h2_pal_time_get_monotonic_ms(fixture->time, &start);
@@ -224,21 +226,26 @@ static int run_api_key_state(h2_gizclaw_e2e_fixture_t *fixture) {
     if (rc != H2_PAL_OK || !ready.busy) break;
     rc = h2_pal_time_get_monotonic_ms(fixture->time, &now);
     if (rc == H2_PAL_OK && (now - start >= 30000u ||
-        !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)))
+                            !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)))
       rc = H2_PAL_ERR_TIMEOUT;
     if (rc == H2_PAL_OK) rc = h2_pal_time_sleep_ms(fixture->time, 1u);
   }
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
-  if (rc == H2_PAL_OK && (!ready.valid || ready.stale || ready.busy ||
-      ready.closed || ready.last_error != H2_PAL_OK ||
-      ready.revision <= initial.revision || !ready.key.name[0] || !ready.key.secret[0]))
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state",
+                          rc);
+  if (rc == H2_PAL_OK &&
+      (!ready.valid || ready.stale || ready.busy || ready.closed ||
+       ready.last_error != H2_PAL_OK || ready.revision <= initial.revision ||
+       !ready.key.name[0] || !ready.key.secret[0]))
     rc = H2_PAL_ERR_INVALID_STATE;
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_request_refresh-assert", rc);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_snapshot-assert", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot",
+                          "api_key_state_request_refresh-assert", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot",
+                          "api_key_state_snapshot-assert", rc);
   if (rc != H2_PAL_OK) return rc;
   uint64_t ready_revision = ready.revision;
   rc = h2_gizclaw_api_key_state_request_revoke(actor->api_key_state);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_request_revoke", "api-key-state", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_request_revoke",
+                          "api-key-state", rc);
   if (rc != H2_PAL_OK) return rc;
   start = now = 0u;
   rc = h2_pal_time_get_monotonic_ms(fixture->time, &start);
@@ -250,68 +257,82 @@ static int run_api_key_state(h2_gizclaw_e2e_fixture_t *fixture) {
     if (rc != H2_PAL_OK || !ready.busy) break;
     rc = h2_pal_time_get_monotonic_ms(fixture->time, &now);
     if (rc == H2_PAL_OK && (now - start >= 30000u ||
-        !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)))
+                            !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)))
       rc = H2_PAL_ERR_TIMEOUT;
     if (rc == H2_PAL_OK) rc = h2_pal_time_sleep_ms(fixture->time, 1u);
   }
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
-  if (rc == H2_PAL_OK && (ready.valid || ready.busy || ready.stale ||
-      ready.last_error != H2_PAL_OK || ready.revision <= ready_revision ||
-      ready.key.name[0] || ready.key.secret[0]))
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state",
+                          rc);
+  if (rc == H2_PAL_OK &&
+      (ready.valid || ready.busy || ready.stale ||
+       ready.last_error != H2_PAL_OK || ready.revision <= ready_revision ||
+       ready.key.name[0] || ready.key.secret[0]))
     rc = H2_PAL_ERR_INVALID_STATE;
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_request_revoke-assert", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot",
+                          "api_key_state_request_revoke-assert", rc);
   if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_api_key_state_close(actor->api_key_state);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_close", "api-key-state", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_close", "api-key-state",
+                            rc);
     if (rc == H2_PAL_OK) {
       rc = h2_gizclaw_api_key_state_snapshot(actor->api_key_state, &closed);
-      h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot",
+                              "api-key-state", rc);
     }
-    if (rc == H2_PAL_OK && (!closed.closed || closed.busy || closed.valid ||
-        !closed.stale || closed.last_error != H2_PAL_ERR_CLOSED ||
-        closed.revision <= ready.revision ||
-        memcmp(&closed.key, &ready.key, sizeof(ready.key)) != 0 ||
-        h2_gizclaw_api_key_state_request_refresh(actor->api_key_state, false) != H2_PAL_ERR_CLOSED))
+    if (rc == H2_PAL_OK &&
+        (!closed.closed || closed.busy || closed.valid || !closed.stale ||
+         closed.last_error != H2_PAL_ERR_CLOSED ||
+         closed.revision <= ready.revision ||
+         memcmp(&closed.key, &ready.key, sizeof(ready.key)) != 0 ||
+         h2_gizclaw_api_key_state_request_refresh(actor->api_key_state,
+                                                  false) != H2_PAL_ERR_CLOSED))
       rc = H2_PAL_ERR_INVALID_STATE;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_close-assert", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot",
+                            "api_key_state_close-assert", rc);
   }
   /* Close does not revoke remotely. Peer deletion covers uncertain creates. */
   if (ready.key.name[0])
-    keep_first_failure(h2_gizclaw_rpc_api_key_revoke(actor->service,
-        h2_gizclaw_e2e_str(ready.key.name), 30000u), &rc);
+    keep_first_failure(
+        h2_gizclaw_rpc_api_key_revoke(
+            actor->service, h2_gizclaw_e2e_str(ready.key.name), 30000u),
+        &rc);
   memset(&ready, 0, sizeof(ready));
   memset(&closed, 0, sizeof(closed));
   if (rc != H2_PAL_OK) return rc;
   rc = h2_gizclaw_api_key_state_destroy(&actor->api_key_state);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_destroy", "api-key-state", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_destroy", "api-key-state",
+                          rc);
   if (rc == H2_PAL_OK && actor->api_key_state != NULL)
     rc = H2_PAL_ERR_INVALID_STATE;
-  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_destroy", "api_key_state_destroy-assert", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_destroy",
+                          "api_key_state_destroy-assert", rc);
   return rc;
 }
 
 /* Each key belongs to the fixture peer; fixture deletion also revokes keys if
  * a create reply is lost before the test can learn its name. */
-static int run_api_key(h2_gizclaw_e2e_fixture_t *fixture,
-                       h2_gizclaw_resp_storage_t *storage) {
+static int run_api_key(h2_gizclaw_e2e_fixture_t* fixture,
+                       h2_gizclaw_resp_storage_t* storage) {
   (void)storage;
-  h2_gizclaw_service_t *service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
+  h2_gizclaw_service_t* service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
   for (unsigned api = 0; api < 2; ++api) {
     h2_gizclaw_api_key_t key = {0};
-    h2_gizclaw_req_t *request = NULL;
-    const char *create = api ? "h2_gizclaw_rpc_api_key_create" :
-                              "h2_gizclaw_resp_parse_api_key_create";
-    const char *revoke = api ? "h2_gizclaw_rpc_api_key_revoke" :
-                              "h2_gizclaw_resp_parse_api_key_revoke";
+    h2_gizclaw_req_t* request = NULL;
+    const char* create = api ? "h2_gizclaw_rpc_api_key_create"
+                             : "h2_gizclaw_resp_parse_api_key_create";
+    const char* revoke = api ? "h2_gizclaw_rpc_api_key_revoke"
+                             : "h2_gizclaw_resp_parse_api_key_revoke";
     int rc;
     if (api) {
-      rc = h2_gizclaw_rpc_api_key_create(service,
-          h2_gizclaw_e2e_str("e2e temporary"), false, 30000u, &key);
+      rc = h2_gizclaw_rpc_api_key_create(
+          service, h2_gizclaw_e2e_str("e2e temporary"), false, 30000u, &key);
       h2_gizclaw_e2e_evidence(create, "api-key", rc);
     } else {
-      rc = h2_gizclaw_req_create_api_key_create(service, 0,
-          h2_gizclaw_e2e_str("e2e temporary"), false, 30000u, &request);
-      h2_gizclaw_e2e_evidence("h2_gizclaw_req_create_api_key_create", "api-key", rc);
+      rc = h2_gizclaw_req_create_api_key_create(
+          service, 0, h2_gizclaw_e2e_str("e2e temporary"), false, 30000u,
+          &request);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_req_create_api_key_create", "api-key",
+                              rc);
       if (rc == H2_PAL_OK) {
         rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
         h2_gizclaw_e2e_evidence("h2_gizclaw_req_do", "api-key", rc);
@@ -333,12 +354,14 @@ static int run_api_key(h2_gizclaw_e2e_fixture_t *fixture,
     memset(key.secret, 0, sizeof(key.secret));
     if (rc != H2_PAL_OK) return rc;
     if (api) {
-      rc = h2_gizclaw_rpc_api_key_revoke(service, h2_gizclaw_e2e_str(key.name), 30000u);
+      rc = h2_gizclaw_rpc_api_key_revoke(service, h2_gizclaw_e2e_str(key.name),
+                                         30000u);
       h2_gizclaw_e2e_evidence(revoke, "api-key", rc);
     } else {
-      rc = h2_gizclaw_req_create_api_key_revoke(service, 0,
-          h2_gizclaw_e2e_str(key.name), 30000u, &request);
-      h2_gizclaw_e2e_evidence("h2_gizclaw_req_create_api_key_revoke", "api-key", rc);
+      rc = h2_gizclaw_req_create_api_key_revoke(
+          service, 0, h2_gizclaw_e2e_str(key.name), 30000u, &request);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_req_create_api_key_revoke", "api-key",
+                              rc);
       if (rc == H2_PAL_OK) {
         rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
         h2_gizclaw_e2e_evidence("h2_gizclaw_req_do", "api-key", rc);
@@ -355,20 +378,22 @@ static int run_api_key(h2_gizclaw_e2e_fixture_t *fixture,
     }
     h2_gizclaw_e2e_evidence(revoke, "api_key_revoke-assert", rc);
     if (rc != H2_PAL_OK) {
-      (void)h2_gizclaw_rpc_api_key_revoke(service, h2_gizclaw_e2e_str(key.name), 30000u);
+      (void)h2_gizclaw_rpc_api_key_revoke(service, h2_gizclaw_e2e_str(key.name),
+                                          30000u);
       return rc;
     }
   }
   return run_api_key_state(fixture);
 }
 
-static int run_profile(h2_gizclaw_e2e_fixture_t *fixture,
-                        h2_gizclaw_resp_storage_t *storage) {
+static int run_profile(h2_gizclaw_e2e_fixture_t* fixture,
+                       h2_gizclaw_resp_storage_t* storage) {
   int rc = h2_gizclaw_e2e_run_profile(fixture, storage);
-  return rc == H2_PAL_OK ? h2_gizclaw_e2e_run_public_profile(fixture, storage) : rc;
+  return rc == H2_PAL_OK ? h2_gizclaw_e2e_run_public_profile(fixture, storage)
+                         : rc;
 }
 
-int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
+int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t* fixture) {
   if (fixture == NULL || fixture->pcm == NULL || fixture->pcm_len == 0u)
     return H2_PAL_ERR_INVALID_ARG;
   enum rpc_domain_index {
@@ -386,9 +411,9 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
     RPC_DOMAIN_COUNT,
   };
   struct rpc_domain {
-    const char *name;
-    int (*run)(h2_gizclaw_e2e_fixture_t *fixture,
-               h2_gizclaw_resp_storage_t *storage);
+    const char* name;
+    int (*run)(h2_gizclaw_e2e_fixture_t* fixture,
+               h2_gizclaw_resp_storage_t* storage);
     uint16_t dependencies;
   };
   static const struct rpc_domain domains[] = {
@@ -409,7 +434,8 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
                                               (1u << RPC_DOMAIN_GROUP)},
       [RPC_DOMAIN_TELEMETRY] = {"telemetry", h2_gizclaw_e2e_run_telemetry, 0u},
       [RPC_DOMAIN_API_KEY] = {"api-key", run_api_key, 0u},
-      [RPC_DOMAIN_APP_CONFIG] = {"app-config", h2_gizclaw_e2e_run_app_config, 0u},
+      [RPC_DOMAIN_APP_CONFIG] = {"app-config", h2_gizclaw_e2e_run_app_config,
+                                 0u},
   };
   _Static_assert(sizeof(domains) / sizeof(domains[0]) == RPC_DOMAIN_COUNT,
                  "RPC domain table and index must remain synchronized");
@@ -421,16 +447,15 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
       return H2_PAL_ERR_INVALID_STATE;
     }
   }
-  void *scratch = h2_pal_mem_alloc(fixture->allocator, 65536u);
-  if (scratch == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  void* scratch = h2_pal_mem_alloc(fixture->allocator, 65536u);
+  if (scratch == NULL) return H2_PAL_ERR_NO_MEMORY;
   h2_gizclaw_resp_storage_t storage = {.data = scratch, .capacity = 65536u};
   int first_rc = H2_PAL_OK;
   for (size_t index = 0u; index < RPC_DOMAIN_COUNT; ++index) {
     h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-begin case=rpc/%s\n",
-           domains[index].name);
+                        domains[index].name);
     h2_gizclaw_e2e_case_status_t status = H2_GIZCLAW_E2E_CASE_PASS;
-    const char *blocked_by = NULL;
+    const char* blocked_by = NULL;
     int domain_rc = H2_PAL_OK;
     const bool cancelled =
         fixture->cancel_requested ||
@@ -463,14 +488,16 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
       h2_pal_mem_free(fixture->allocator, scratch);
       return report_rc;
     }
-    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=rpc-domain case=%s status=%s rc=%d "
-           "blocked_by=%s\n",
-           domains[index].name, h2_gizclaw_e2e_case_status_name(status),
-           domain_rc, blocked_by == NULL ? "-" : blocked_by);
-    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-end case=rpc/%s status=%s rc=%d "
-           "cleanup_rc=0\n",
-           domains[index].name, h2_gizclaw_e2e_case_status_name(status),
-           domain_rc);
+    h2_gizclaw_e2e_emit(
+        "H2_GIZCLAW_E2E stage=rpc-domain case=%s status=%s rc=%d "
+        "blocked_by=%s\n",
+        domains[index].name, h2_gizclaw_e2e_case_status_name(status), domain_rc,
+        blocked_by == NULL ? "-" : blocked_by);
+    h2_gizclaw_e2e_emit(
+        "H2_GIZCLAW_E2E stage=coverage-end case=rpc/%s status=%s rc=%d "
+        "cleanup_rc=0\n",
+        domains[index].name, h2_gizclaw_e2e_case_status_name(status),
+        domain_rc);
     if (first_rc == H2_PAL_OK && status != H2_GIZCLAW_E2E_CASE_PASS) {
       first_rc = domain_rc;
     }
@@ -478,11 +505,12 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_e2e_report_cleanup(&report, H2_PAL_OK);
   const h2_gizclaw_e2e_summary_t summary =
       h2_gizclaw_e2e_report_summarize(&report);
-  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=rpc-summary selected=%zu pass=%zu fail=%zu "
-         "error=%zu blocked=%zu cancelled=%zu terminal=%zu complete=%s\n",
-         summary.selected, summary.pass, summary.fail, summary.error,
-         summary.blocked, summary.cancelled, summary.terminal,
-         summary.complete ? "true" : "false");
+  h2_gizclaw_e2e_emit(
+      "H2_GIZCLAW_E2E stage=rpc-summary selected=%zu pass=%zu fail=%zu "
+      "error=%zu blocked=%zu cancelled=%zu terminal=%zu complete=%s\n",
+      summary.selected, summary.pass, summary.fail, summary.error,
+      summary.blocked, summary.cancelled, summary.terminal,
+      summary.complete ? "true" : "false");
   h2_pal_mem_free(fixture->allocator, scratch);
   if (!summary.complete) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -490,52 +518,60 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
   return first_rc;
 }
 
-int h2_gizclaw_e2e_prepare_voice(h2_gizclaw_e2e_fixture_t *fixture) {
+int h2_gizclaw_e2e_prepare_voice(h2_gizclaw_e2e_fixture_t* fixture) {
   if (fixture == NULL || fixture->pcm == NULL || fixture->pcm_len == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  void *scratch = h2_pal_mem_alloc(fixture->allocator, 65536u);
-  if (scratch == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  void* scratch = h2_pal_mem_alloc(fixture->allocator, 65536u);
+  if (scratch == NULL) return H2_PAL_ERR_NO_MEMORY;
   h2_gizclaw_resp_storage_t storage = {.data = scratch, .capacity = 65536u};
-  h2_gizclaw_session_t *session = fixture->actors[H2_GIZCLAW_E2E_OWNER].session;
+  h2_gizclaw_session_t* session = fixture->actors[H2_GIZCLAW_E2E_OWNER].session;
   if (session != NULL) {
     h2_gizclaw_workflow_page_t catalog = {0};
     int rc = h2_gizclaw_session_refresh(session, 30000u);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session-refresh", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session-refresh",
+                            rc);
     if (rc == H2_PAL_OK)
       rc = h2_gizclaw_session_catalog_copy(session, &storage, &catalog);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session-catalog", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy",
+                            "session-catalog", rc);
     if (rc == H2_PAL_OK)
       rc = h2_gizclaw_e2e_select_workflow_name(&catalog, fixture->workflow_name,
-                                             sizeof(fixture->workflow_name));
+                                               sizeof(fixture->workflow_name));
     h2_gizclaw_session_state_t state;
-    if (rc == H2_PAL_OK)
-      rc = h2_gizclaw_session_snapshot(session, &state);
-    if (rc == H2_PAL_OK && (state.catalog != H2_GIZCLAW_SESSION_READY ||
-        state.workflow_count != catalog.count ||
-        strcmp(state.profile_name, catalog.runtime_profile_name) != 0 ||
-        strcmp(state.profile_revision, catalog.runtime_profile_revision) != 0))
+    if (rc == H2_PAL_OK) rc = h2_gizclaw_session_snapshot(session, &state);
+    if (rc == H2_PAL_OK &&
+        (state.catalog != H2_GIZCLAW_SESSION_READY ||
+         state.workflow_count != catalog.count ||
+         strcmp(state.profile_name, catalog.runtime_profile_name) != 0 ||
+         strcmp(state.profile_revision, catalog.runtime_profile_revision) != 0))
       rc = H2_PAL_ERR_INVALID_STATE;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session_refresh-assert", rc);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session_catalog_copy-assert", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh",
+                            "session_refresh-assert", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy",
+                            "session_catalog_copy-assert", rc);
     if (rc == H2_PAL_OK) {
       const h2_gizclaw_session_selection_t selection = {
           .workflow_name = fixture->workflow_name,
           .workspace_name = fixture->workspace_name};
-      fixture->workspace_created = true; /* Retain uncertain creates for cleanup. */
+      fixture->workspace_created =
+          true; /* Retain uncertain creates for cleanup. */
       fixture->workspace_actor_role = H2_GIZCLAW_E2E_OWNER;
       rc = h2_gizclaw_session_select(session, &selection, 30000u);
-      h2_gizclaw_e2e_evidence("h2_gizclaw_session_select", "session-select", rc);
-      if (rc == H2_PAL_OK)
-        rc = h2_gizclaw_session_snapshot(session, &state);
-      h2_gizclaw_e2e_evidence("h2_gizclaw_session_snapshot", "session-snapshot", rc);
-      if (rc == H2_PAL_OK && (!state.can_start ||
-          strcmp(state.current_workspace, fixture->workspace_name) != 0 ||
-          strcmp(state.workflow_name, fixture->workflow_name) != 0))
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_select", "session-select",
+                              rc);
+      if (rc == H2_PAL_OK) rc = h2_gizclaw_session_snapshot(session, &state);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_snapshot", "session-snapshot",
+                              rc);
+      if (rc == H2_PAL_OK &&
+          (!state.can_start ||
+           strcmp(state.current_workspace, fixture->workspace_name) != 0 ||
+           strcmp(state.workflow_name, fixture->workflow_name) != 0))
         rc = H2_PAL_ERR_INVALID_STATE;
-      h2_gizclaw_e2e_evidence("h2_gizclaw_session_select", "session_select-assert", rc);
-      h2_gizclaw_e2e_evidence("h2_gizclaw_session_snapshot", "session_snapshot-assert", rc);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_select",
+                              "session_select-assert", rc);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_snapshot",
+                              "session_snapshot-assert", rc);
     }
     h2_pal_mem_free(fixture->allocator, scratch);
     return rc;

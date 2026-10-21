@@ -15,9 +15,9 @@ const h2_bk7258_audio_config_t h2_bk7258_audio_config = {
 };
 
 const h2_bk7258_button_adc_range_t h2_bk7258_button_ranges[] = {
-    { .id = 102u, .min_mv = 1u, .max_mv = 100u },
-    { .id = 101u, .min_mv = 800u, .max_mv = 930u },
-    { .id = 104u, .min_mv = 1600u, .max_mv = 1800u },
+    {.id = 102u, .min_mv = 1u, .max_mv = 100u},
+    {.id = 101u, .min_mv = 800u, .max_mv = 930u},
+    {.id = 104u, .min_mv = 1600u, .max_mv = 1800u},
 };
 
 const size_t h2_bk7258_button_range_count =

@@ -2,8 +2,8 @@
 
 #include <stdio.h>
 
-static int exchange_offer(void *user, h2_pal_webrtc_str_t offer, char *answer,
-                          size_t answer_capacity, size_t *answer_len) {
+static int exchange_offer(void* user, h2_pal_webrtc_str_t offer, char* answer,
+                          size_t answer_capacity, size_t* answer_len) {
   (void)user;
   (void)offer;
   (void)answer;
@@ -24,8 +24,8 @@ int main(void) {
     fprintf(stderr, "invalid Runtime dependencies were accepted\n");
     return 1;
   }
-  runtime.time = (const h2_pal_time_api_t *)1;
-  runtime.webrtc = (const h2_pal_webrtc_api_t *)1;
+  runtime.time = (const h2_pal_time_api_t*)1;
+  runtime.webrtc = (const h2_pal_webrtc_api_t*)1;
   h2_webrtc_performance_config_t invalid_profile = config;
   invalid_profile.profile = "invalid";
   if (h2_webrtc_performance_run(&runtime, &invalid_profile, &result) != 2) {

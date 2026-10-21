@@ -32,8 +32,7 @@ typedef struct h2_ios_platform_config {
  * Call this function on the UIKit main thread. The returned platform owns its
  * surface until h2_ios_platform_destroy().
  */
-h2_ios_platform_t *
-h2_ios_platform_create(const h2_ios_platform_config_t *config);
+h2_ios_platform_t *h2_ios_platform_create(const h2_ios_platform_config_t *config);
 
 /**
  * @brief Detach the UIKit surface and destroy the platform.
@@ -55,8 +54,7 @@ UIView *h2_ios_platform_view(h2_ios_platform_t *platform);
 const h2_pal_mem_api_t *h2_ios_platform_mem_api(void);
 const h2_pal_time_api_t *h2_ios_platform_time_api(void);
 const h2_pal_queue_api_t *h2_ios_platform_queue_api(void);
-const h2_pal_display_api_t *
-h2_ios_platform_display_api(h2_ios_platform_t *platform);
+const h2_pal_display_api_t *h2_ios_platform_display_api(h2_ios_platform_t *platform);
 
 /** Native AudioQueue input/output owner. */
 typedef struct h2_ios_audio h2_ios_audio_t;
@@ -81,16 +79,16 @@ void h2_ios_audio_destroy(h2_ios_audio_t *audio);
  * the allocator supplied to Audio Decoder open(). */
 const h2_pal_audio_decoder_api_t *h2_ios_platform_audio_decoder_api(void);
 
-h2_pal_result_t h2_ios_platform_read_pointer(void *user, int32_t *out_x,
-                                             int32_t *out_y, int *out_pressed);
+h2_pal_result_t h2_ios_platform_read_pointer(void *user, int32_t *out_x, int32_t *out_y,
+                                             int *out_pressed);
 
 const h2_pal_system_event_api_t *h2_ios_system_event_api(void);
 h2_pal_ble_t *h2_ios_corebluetooth_ble(const h2_pal_mem_api_t *allocator);
 
 /* Quiescent counters cover PAL-owned resources, not process RSS. */
 typedef struct h2_ios_platform_resource_stats {
-    size_t tasks, task_stack_bytes, queues, mutexes, semaphores, conditions, timers;
-    size_t allocations, allocation_bytes;
+  size_t tasks, task_stack_bytes, queues, mutexes, semaphores, conditions, timers;
+  size_t allocations, allocation_bytes;
 } h2_ios_platform_resource_stats_t;
 const h2_pal_task_api_t *h2_ios_platform_task_api(void);
 const h2_pal_sync_api_t *h2_ios_platform_sync_api(void);
@@ -112,8 +110,8 @@ h2_pal_result_t h2_ios_platform_core_shutdown(void);
  * file, namespace and cursor before destroy. No existing directory is cleared.
  */
 typedef struct h2_ios_storage h2_ios_storage_t;
-h2_pal_result_t h2_ios_storage_create(const char *directory,
-    const char *portable_root, h2_ios_storage_t **out);
+h2_pal_result_t h2_ios_storage_create(const char *directory, const char *portable_root,
+                                      h2_ios_storage_t **out);
 const h2_pal_fs_api_t *h2_ios_storage_fs_api(h2_ios_storage_t *storage);
 const h2_pal_pref_api_t *h2_ios_storage_pref_api(h2_ios_storage_t *storage);
 void h2_ios_storage_destroy(h2_ios_storage_t *storage);
@@ -134,8 +132,8 @@ void h2_ios_platform_crypto_shutdown(void);
  * owner holds its own TLS lifecycle reference, independent of Crypto callers.
  */
 typedef struct h2_ios_http h2_ios_http_t;
-h2_pal_result_t h2_ios_http_create(const uint8_t *root_ca_pem,
-    size_t root_ca_pem_len, h2_ios_http_t **out);
+h2_pal_result_t h2_ios_http_create(const uint8_t *root_ca_pem, size_t root_ca_pem_len,
+                                   h2_ios_http_t **out);
 const h2_pal_http_api_t *h2_ios_http_api(h2_ios_http_t *http);
 void h2_ios_http_destroy(h2_ios_http_t *http);
 

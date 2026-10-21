@@ -17,7 +17,7 @@ extern "C" {
  * Only Workspace requests project this result; unrelated RPC/transport errors
  * retain their original mapping. req_wait, typed parsers and sync RPCs agree.
  * The name remains reserved until asynchronous cleanup completes. */
-#define H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION ((h2_pal_result_t)-1002)
+#define H2_GIZCLAW_WORKSPACE_ERR_PENDING_DELETION ((h2_pal_result_t) - 1002)
 
 #define H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES 255u
 #define H2_GIZCLAW_WORKSPACE_PAGE_MAX_ITEMS 64u
@@ -33,24 +33,24 @@ extern "C" {
  * The compressed body is retained in PAL memory before playback; allocation
  * failure is reported by req_wait. PCM buffering is bounded to one packet. */
 h2_pal_result_t h2_gizclaw_req_create_audio_play(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_str_t workspace_name, h2_gizclaw_str_t history_name,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 typedef struct h2_gizclaw_workspace {
-  char *name;
-  char *workflow_name;
+  char* name;
+  char* workflow_name;
   bool system;
   bool available;
 } h2_gizclaw_workspace_t;
 
 typedef struct h2_gizclaw_workspace_page {
-  h2_gizclaw_workspace_t *items;
+  h2_gizclaw_workspace_t* items;
   size_t count;
   bool has_next;
-  char *next_cursor;
-  char *runtime_profile_name;
-  char *runtime_profile_revision;
+  char* next_cursor;
+  char* runtime_profile_name;
+  char* runtime_profile_revision;
 } h2_gizclaw_workspace_page_t;
 
 typedef enum h2_gizclaw_workspace_input_mode {
@@ -70,23 +70,23 @@ typedef enum h2_gizclaw_workspace_history_order {
 } h2_gizclaw_workspace_history_order_t;
 
 typedef struct h2_gizclaw_workspace_history_entry {
-  char *created_at;
-  char *gear_id;
+  char* created_at;
+  char* gear_id;
   /** History ID copied verbatim from the wire history entry name. */
-  char *id;
-  char *name;
-  char *text;
+  char* id;
+  char* name;
+  char* text;
   h2_gizclaw_workspace_history_type_t type;
   bool replay_available;
 } h2_gizclaw_workspace_history_entry_t;
 
 typedef struct h2_gizclaw_workspace_history_page {
-  h2_gizclaw_workspace_history_entry_t *items;
+  h2_gizclaw_workspace_history_entry_t* items;
   size_t count;
   bool available;
   bool has_next;
-  char *message;
-  char *next_cursor;
+  char* message;
+  char* next_cursor;
 } h2_gizclaw_workspace_history_page_t;
 
 typedef enum h2_gizclaw_workspace_runtime_state {
@@ -99,10 +99,10 @@ typedef enum h2_gizclaw_workspace_runtime_state {
 } h2_gizclaw_workspace_runtime_state_t;
 
 typedef struct h2_gizclaw_workspace_activation {
-  char *workspace_name;
-  char *active_workspace_name;
-  char *pending_workspace_name;
-  char *workflow_name;
+  char* workspace_name;
+  char* active_workspace_name;
+  char* pending_workspace_name;
+  char* workflow_name;
   h2_gizclaw_workspace_runtime_state_t runtime_state;
 } h2_gizclaw_workspace_activation_t;
 
@@ -112,9 +112,9 @@ typedef struct h2_gizclaw_workspace_get_result {
   h2_gizclaw_workspace_t workspace;
   /** Server creation timestamp, optional; identifies a recreated name for
    * activation-cache validation. Borrowed from caller response storage. */
-  char *created_at;
-  char *runtime_profile_name;
-  char *runtime_profile_revision;
+  char* created_at;
+  char* runtime_profile_name;
+  char* runtime_profile_revision;
   /** Server-stored selection. This does not prove the Workflow injected its
    * prompt; compare the Profile revision and reload result separately. */
   bool has_safety_fence_level;
@@ -136,28 +136,27 @@ typedef struct h2_gizclaw_workspace_list_options {
 /** List accessible Workspaces without a required filter. Cursor and output
  * storage retain the usual request-copy and response-storage contracts. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_list(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
-    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 /** List with optional prefix and system selectors. NULL options lists all.
  * Values are copied at creation. Reuse the same selectors for subsequent
  * pages; changing them requires an empty cursor. Parse with
  * h2_gizclaw_resp_parse_workspace_list(). */
 h2_pal_result_t h2_gizclaw_req_create_workspace_list_with_options(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_workspace_list_options_t *options,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_workspace_list_options_t* options, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_get(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 /** Create by stable workflow name. Tags do not participate in identity. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_create(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_str_t workflow_name, h2_gizclaw_str_t name, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_req_t** out_request);
 
 typedef enum h2_gizclaw_conversation_initiative {
   H2_GIZCLAW_CONVERSATION_INITIATIVE_PEER = 1,
@@ -207,109 +206,103 @@ typedef struct h2_gizclaw_workspace_parameters_patch {
 } h2_gizclaw_workspace_parameters_patch_t;
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    const h2_gizclaw_workspace_parameters_patch_t *parameters,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t* parameters,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_delete(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 /** Select the run workspace (SET only). Does not implicitly reload it. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_activate(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 /** Explicitly reload the currently selected run workspace. */
-h2_pal_result_t
-h2_gizclaw_req_create_workspace_reload(h2_gizclaw_service_t *service,
-                                       uint64_t identity, uint32_t timeout_ms,
-                                       h2_gizclaw_req_t **out_request);
+h2_pal_result_t h2_gizclaw_req_create_workspace_reload(
+    h2_gizclaw_service_t* service, uint64_t identity, uint32_t timeout_ms,
+    h2_gizclaw_req_t** out_request);
 
 /** Reload with optional workspace selection and parameter patch.
  * A zero-length name keeps the current selection; NULL parameters leaves them
  * unchanged. Values are copied at request creation. Unsupported parameter
  * fields are ignored by the server. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    const h2_gizclaw_workspace_parameters_patch_t *parameters,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t* parameters,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_history_list(
-    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_service_t* service, uint64_t identity,
     h2_gizclaw_str_t workspace_name, h2_gizclaw_str_t cursor, size_t limit,
     h2_gizclaw_workspace_history_order_t order, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_req_t** out_request);
 
 /* parse */
-h2_pal_result_t
-h2_gizclaw_resp_parse_workspace_list(const h2_gizclaw_req_t *request,
-                                     h2_gizclaw_resp_storage_t *storage,
-                                     h2_gizclaw_workspace_page_t *out_result);
+h2_pal_result_t h2_gizclaw_resp_parse_workspace_list(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_page_t* out_result);
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_get(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_get_result_t *out_result);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_get_result_t* out_result);
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_workspace_create(const h2_gizclaw_req_t *request,
-                                       h2_gizclaw_resp_storage_t *storage,
-                                       h2_gizclaw_workspace_t *out_result);
+h2_pal_result_t h2_gizclaw_resp_parse_workspace_create(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_t* out_result);
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_set_parameters(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_t *out_result);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_t* out_result);
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_workspace_delete(const h2_gizclaw_req_t *request,
-                                       h2_gizclaw_resp_storage_t *storage,
-                                       h2_gizclaw_workspace_t *out_result);
+h2_pal_result_t h2_gizclaw_resp_parse_workspace_delete(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_t* out_result);
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_activate(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_activation_t *out_result);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_activation_t* out_result);
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_reload(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_activation_t *out_result);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_activation_t* out_result);
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_reload_with_options(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_activation_t *out_result);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_activation_t* out_result);
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_history_list(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_history_page_t *out_result);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_history_page_t* out_result);
 
 /* sync */
 h2_pal_result_t h2_gizclaw_rpc_workspace_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_page_t *out_result);
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_page_t* out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_list_with_options(
-    h2_gizclaw_service_t *service,
-    const h2_gizclaw_workspace_list_options_t *options,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_page_t *out_result);
+    h2_gizclaw_service_t* service,
+    const h2_gizclaw_workspace_list_options_t* options, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_page_t* out_result);
 
-h2_pal_result_t
-h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
-                             h2_gizclaw_str_t name, uint32_t timeout_ms,
-                             h2_gizclaw_resp_storage_t *storage,
-                             h2_gizclaw_workspace_get_result_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_workspace_get(
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_get_result_t* out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_create(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t workflow_name,
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t workflow_name,
     h2_gizclaw_str_t name, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result);
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workspace_t* out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    const h2_gizclaw_workspace_parameters_patch_t *parameters,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_t *out_result);
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t* parameters,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_t* out_result);
 
 /** Delete a Workspace. With a Session attached to service, deleting the
  * Session's current Workspace first stops its conversation (waiting up to
@@ -321,8 +314,8 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
  * timeout, marks the Session workspace FAILED. Deleting another Workspace
  * leaves the Session unchanged; a closed Session rejects delete with CLOSED. */
 h2_pal_result_t h2_gizclaw_rpc_workspace_delete(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result);
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workspace_t* out_result);
 
 /** Stop the Peer's server run without deleting its Workspace. With a Session,
  * first stop its conversation using CANCEL_WORKSPACE and wait up to timeout_ms
@@ -340,28 +333,27 @@ h2_pal_result_t h2_gizclaw_rpc_run_stop(h2_gizclaw_service_t* service,
                                         h2_gizclaw_resp_storage_t* storage);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_activate(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_activation_t *out_result);
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_activation_t* out_result);
 
-h2_pal_result_t
-h2_gizclaw_rpc_workspace_reload(h2_gizclaw_service_t *service,
-                                uint32_t timeout_ms,
-                                h2_gizclaw_resp_storage_t *storage,
-                                h2_gizclaw_workspace_activation_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_workspace_reload(
+    h2_gizclaw_service_t* service, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_activation_t* out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    const h2_gizclaw_workspace_parameters_patch_t *parameters,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_activation_t *out_result);
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t* parameters,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_activation_t* out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_history_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t workspace_name,
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t workspace_name,
     h2_gizclaw_str_t cursor, size_t limit,
     h2_gizclaw_workspace_history_order_t order, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_history_page_t *out_result);
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_history_page_t* out_result);
 
 #ifdef __cplusplus
 }

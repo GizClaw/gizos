@@ -3,18 +3,17 @@
 
 #define H2_LVGL_BUTTON_MAX 32u
 
-static h2_lvgl_button_t *s_button_bindings[H2_LVGL_BUTTON_MAX];
+static h2_lvgl_button_t* s_button_bindings[H2_LVGL_BUTTON_MAX];
 
-h2_pal_result_t h2_lvgl_button_registry_claim(
-    h2_lvgl_button_t *binding,
-    h2_runtime_t *runtime,
-    h2_pal_periph_id_t periph_id) {
+h2_pal_result_t h2_lvgl_button_registry_claim(h2_lvgl_button_t* binding,
+                                              h2_runtime_t* runtime,
+                                              h2_pal_periph_id_t periph_id) {
   if (binding == NULL || runtime == NULL || periph_id == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   size_t free_index = H2_LVGL_BUTTON_MAX;
   for (size_t index = 0u; index < H2_LVGL_BUTTON_MAX; ++index) {
-    h2_lvgl_button_t *current = s_button_bindings[index];
+    h2_lvgl_button_t* current = s_button_bindings[index];
     if (current == NULL) {
       if (free_index == H2_LVGL_BUTTON_MAX) {
         free_index = index;
@@ -37,7 +36,7 @@ h2_pal_result_t h2_lvgl_button_registry_claim(
   return H2_PAL_OK;
 }
 
-void h2_lvgl_button_registry_release(h2_lvgl_button_t *binding) {
+void h2_lvgl_button_registry_release(h2_lvgl_button_t* binding) {
   if (binding == NULL) {
     return;
   }
@@ -50,21 +49,21 @@ void h2_lvgl_button_registry_release(h2_lvgl_button_t *binding) {
 }
 
 h2_pal_result_t h2_lvgl_button_validate_periph(
-    const h2_pal_periph_info_t *info) {
+    const h2_pal_periph_info_t* info) {
   if (info == NULL || info->type != H2_PAL_PERIPH_TYPE_SINGLE_BUTTON ||
       info->payload == NULL ||
       info->payload_size < sizeof(h2_pal_periph_single_button_payload_t)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  const h2_pal_periph_single_button_payload_t *payload =
-      (const h2_pal_periph_single_button_payload_t *)info->payload;
+  const h2_pal_periph_single_button_payload_t* payload =
+      (const h2_pal_periph_single_button_payload_t*)info->payload;
   return payload->delivery == H2_PAL_BUTTON_DELIVERY_PUSH_EDGE
              ? H2_PAL_OK
              : H2_PAL_ERR_INVALID_ARG;
 }
 
-static void lvgl_button_event(lv_event_t *event) {
-  h2_lvgl_button_t *binding = lv_event_get_user_data(event);
+static void lvgl_button_event(lv_event_t* event) {
+  h2_lvgl_button_t* binding = lv_event_get_user_data(event);
   if (binding == NULL || binding->runtime == NULL) {
     return;
   }
@@ -83,8 +82,8 @@ static void lvgl_button_event(lv_event_t *event) {
     has_edge = 1;
   }
   if (has_edge != 0) {
-    binding->last_result = h2_runtime_button_push_edge(
-        binding->runtime, binding->periph_id, edge);
+    binding->last_result =
+        h2_runtime_button_push_edge(binding->runtime, binding->periph_id, edge);
   }
   if (code == LV_EVENT_DELETE) {
     h2_lvgl_button_registry_release(binding);
@@ -93,11 +92,10 @@ static void lvgl_button_event(lv_event_t *event) {
   }
 }
 
-h2_pal_result_t h2_lvgl_button_bind(
-    h2_lvgl_button_t *binding,
-    h2_runtime_t *runtime,
-    h2_runtime_component_id_t component_id,
-    lv_obj_t *object) {
+h2_pal_result_t h2_lvgl_button_bind(h2_lvgl_button_t* binding,
+                                    h2_runtime_t* runtime,
+                                    h2_runtime_component_id_t component_id,
+                                    lv_obj_t* object) {
   if (binding == NULL || runtime == NULL ||
       component_id == H2_RUNTIME_COMPONENT_ID_NONE || object == NULL ||
       runtime->periph == NULL) {

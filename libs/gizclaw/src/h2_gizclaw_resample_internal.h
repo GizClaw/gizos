@@ -34,17 +34,17 @@ typedef struct h2_gizclaw_resample {
 /* Start a run at `rate` whose first output lies phase / 16000 source samples
  * after the first source sample pushed; phase < rate. False for a rate
  * outside MIN..MAX or a phase out of range. */
-bool h2_gizclaw_resample_reset(h2_gizclaw_resample_t *r, uint32_t rate,
+bool h2_gizclaw_resample_reset(h2_gizclaw_resample_t* r, uint32_t rate,
                                uint32_t phase);
 /* Output samples a push of `count` source samples can produce at most. */
-size_t h2_gizclaw_resample_capacity(const h2_gizclaw_resample_t *r,
+size_t h2_gizclaw_resample_capacity(const h2_gizclaw_resample_t* r,
                                     size_t count);
 /* Consume count <= INPUT_MAX source samples and write every output whose
  * filter window is now complete. out must hold capacity(count) samples. */
-size_t h2_gizclaw_resample_push(h2_gizclaw_resample_t *r, const int16_t *in,
-                                size_t count, int16_t *out);
+size_t h2_gizclaw_resample_push(h2_gizclaw_resample_t* r, const int16_t* in,
+                                size_t count, int16_t* out);
 /* End of the run: write the outputs that lie before the end of the source,
  * zero-padding their windows. At most capacity(0) samples. */
-size_t h2_gizclaw_resample_flush(h2_gizclaw_resample_t *r, int16_t *out);
+size_t h2_gizclaw_resample_flush(h2_gizclaw_resample_t* r, int16_t* out);
 
 #endif

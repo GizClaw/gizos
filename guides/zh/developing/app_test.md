@@ -566,7 +566,7 @@ rendered pixel、perceived audio、真实网络或产品验收。
 - Voice 使用 Testing Audio 注入 PCM。AMOLED 借用真实 Audio PAL，持续 drain 麦克风并记录采集健康；主机边界测试使用 Audio fake。暂停、恢复和同格式素材替换不重启物理麦克风。512 sample 采集帧到 320 sample 上行块的适配仍由 GizClaw consumer 负责。
 - RPC Speech 的转写／提取使用 Audio fake 与 Testing Audio 注入素材；Track 背压时保留尚未接受的完整帧，只在写入成功后推进上传计数。
 - Device API 使用 Testing Audio 的仅播放模式（创建时 fixture 为 NULL）。真机委托真实扬声器；虚拟设备委托 Audio fake 并配置 `playback_time`，以真实／可让出的时间等待播放时长。输出字节、S16LE 峰值和 Track 生命周期由 decorator 记录。先停止 Service 和播放 worker，再释放 PAL；关闭失败保留对象供重试。
-- WebRTC 使用公共 decorator 委托真实连接，GizClaw callback 只判断自己的 service label、stream ID 和 channel 数量。Callback 借用事件，既不能释放也不能保留；消费方仍按 PAL 契约释放 owned event。包装后的 peer/channel 只能配合 decorator API 使用，media track 原样委托。
+- WebRTC 使用公共 decorator 委托真实连接，GizClaw callback 只判断自己的 service label、stream ID 和 channel 数量。Callback 借用事件，既不能释放也不能保留；消费方仍按 PAL 契约释放 owned event。包装后的 peer/channel 只能配合 decorator API 使用，media track 原样委托。带配置的 peer 创建透传调用方指定的 allocator 和底层错误；只有原 PAL 允许的默认配置才沿其兼容规则回退。
 - 主机边界测试复用 Memory、Time、Task、Sync 和 Crypto fixture。Request/Session/Resource 替身、远端响应脚本和资源清理断言仍在 GizClaw 测试中。串行 Task/Sync fake 不能用于真实 Service worker；并发测试继续使用真实／libco provider。
 
 这些接入不需要第二个 Runtime。真实 E2E 保留真实网络、加密、存储和调度；Testing PAL 证据补充业务断言，不替代服务器结果和真机验收。

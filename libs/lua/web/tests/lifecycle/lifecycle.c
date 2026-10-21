@@ -12,36 +12,36 @@
 #include <stdio.h>
 #include <string.h>
 
-const uint8_t *test_source;
+const uint8_t* test_source;
 size_t test_source_size;
 static int mode;
-static h2_web_platform_t *platform;
-static h2_runtime_t *runtime;
-static h2_web_fs_t *fixture_fs;
-static const h2_pal_fs_api_t *retained_fs;
-static h2_pal_fs_file_t *retained_file;
-static h2_lua_host_t *lua_host;
-static const h2_pal_display_api_t *base_display;
-static const h2_pal_task_api_t *base_tasks;
+static h2_web_platform_t* platform;
+static h2_runtime_t* runtime;
+static h2_web_fs_t* fixture_fs;
+static const h2_pal_fs_api_t* retained_fs;
+static h2_pal_fs_file_t* retained_file;
+static h2_lua_host_t* lua_host;
+static const h2_pal_display_api_t* base_display;
+static const h2_pal_task_api_t* base_tasks;
 static h2_pal_display_api_t display;
 static h2_pal_task_api_t tasks;
 static h2_pal_task_t *display_task, *input_task;
 static _Atomic unsigned closes, presents, failed_joins;
-static int display_open(void *user) {
+static int display_open(void* user) {
   assert(user == &display);
   return h2_pal_display_open(base_display);
 }
-static int display_info(void *user, h2_display_info_t *info) {
+static int display_info(void* user, h2_display_info_t* info) {
   assert(user == &display);
   return h2_pal_display_get_info(base_display, info);
 }
-static int display_bitmap(void *user, const h2_display_rect_t *rect,
-                          const void *pixels, size_t stride,
+static int display_bitmap(void* user, const h2_display_rect_t* rect,
+                          const void* pixels, size_t stride,
                           h2_display_pixel_format_t format) {
   assert(user == &display);
   return h2_pal_display_draw_bitmap(base_display, rect, pixels, stride, format);
 }
-static int display_present(void *user) {
+static int display_present(void* user) {
   assert(user == &display);
   atomic_fetch_add(&presents, 1u);
   if (mode == 4) {
@@ -51,7 +51,7 @@ static int display_present(void *user) {
   int rc = h2_pal_display_present(base_display);
   return mode == 2 ? H2_PAL_ERR_IO : rc;
 }
-static int display_close(void *user) {
+static int display_close(void* user) {
   assert(user == &display);
   atomic_fetch_add(&closes, 1u);
   return h2_pal_display_close(base_display);
@@ -63,9 +63,9 @@ static const h2_pal_display_vtable_t display_vtable = {
     .present = display_present,
     .close = display_close,
 };
-static int task_start(void *user, const h2_pal_task_options_t *options,
-                      h2_pal_task_entry_t entry, void *context,
-                      h2_pal_task_t **out) {
+static int task_start(void* user, const h2_pal_task_options_t* options,
+                      h2_pal_task_entry_t entry, void* context,
+                      h2_pal_task_t** out) {
   assert(user == &tasks);
   int rc = h2_pal_task_start(base_tasks, options, entry, context, out);
   if (rc == H2_PAL_OK && strcmp(options->name, "$lua/display") == 0)
@@ -74,7 +74,7 @@ static int task_start(void *user, const h2_pal_task_options_t *options,
     input_task = *out;
   return rc;
 }
-static int task_join(void *user, h2_pal_task_t *task) {
+static int task_join(void* user, h2_pal_task_t* task) {
   assert(user == &tasks);
   if ((mode == 3 && task == display_task) ||
       ((mode == 5 || mode == 6) && task == input_task)) {
@@ -88,8 +88,8 @@ static const h2_pal_task_vtable_t task_vtable = {
     .join = task_join,
 };
 
-static h2_web_platform_t *
-create_platform(const h2_web_platform_config_t *config) {
+static h2_web_platform_t* create_platform(
+    const h2_web_platform_config_t* config) {
   platform = h2_web_platform_create(config);
   assert(platform != NULL);
   const h2_web_fs_config_t fs_config = {.persistent_root = "/lifecycle"};
@@ -97,8 +97,8 @@ create_platform(const h2_web_platform_config_t *config) {
   retained_fs = h2_web_fs_api(fixture_fs);
   return platform;
 }
-static h2_pal_result_t create_runtime(const h2_runtime_config_t *config,
-                                      h2_runtime_t **out) {
+static h2_pal_result_t create_runtime(const h2_runtime_config_t* config,
+                                      h2_runtime_t** out) {
   h2_runtime_config_t copy = *config;
   base_display = copy.display;
   base_tasks = copy.task;
@@ -111,13 +111,13 @@ static h2_pal_result_t create_runtime(const h2_runtime_config_t *config,
   runtime = *out;
   return rc;
 }
-static h2_pal_result_t create_lua(const h2_lua_host_config_t *config,
-                                  h2_lua_host_t **out) {
+static h2_pal_result_t create_lua(const h2_lua_host_config_t* config,
+                                  h2_lua_host_t** out) {
   h2_pal_result_t rc = h2_lua_host_create(config, out);
   lua_host = *out;
   return rc;
 }
-static h2_pal_result_t destroy_platform(h2_web_platform_t *value) {
+static h2_pal_result_t destroy_platform(h2_web_platform_t* value) {
   assert(value == platform);
   if (mode == 7) {
     assert(h2_pal_fs_open(retained_fs, "/lifecycle/held",
@@ -125,8 +125,7 @@ static h2_pal_result_t destroy_platform(h2_web_platform_t *value) {
                           &retained_file) == H2_PAL_OK);
   }
   h2_pal_result_t rc = h2_web_fs_close(fixture_fs);
-  if (rc == H2_PAL_ERR_BUSY || rc == H2_PAL_ERR_TIMEOUT)
-    return rc;
+  if (rc == H2_PAL_ERR_BUSY || rc == H2_PAL_ERR_TIMEOUT) return rc;
   assert(rc == H2_PAL_OK);
   fixture_fs = NULL;
   return h2_web_platform_destroy(value);
@@ -161,10 +160,10 @@ EM_JS(void, read_mode,
 
 int main(void) {
   mode = h2_web_main_call(read_mode, NULL).i32;
-  test_source = (const uint8_t *)(mode == 1   ? "error('ordinary script error')"
-                                  : mode == 4 ? stop_script
-                                              : normal_script);
-  test_source_size = strlen((const char *)test_source);
+  test_source = (const uint8_t*)(mode == 1   ? "error('ordinary script error')"
+                                 : mode == 4 ? stop_script
+                                             : normal_script);
+  test_source_size = strlen((const char*)test_source);
   double began = emscripten_get_now();
   int rc = lua_app_main();
   if (mode == 7) {
@@ -198,10 +197,11 @@ int main(void) {
     }
     assert(mode != 2 || atomic_load(&closes) == 0);
     assert(mode != 3 || atomic_load(&closes) == 1);
-    printf("LIFECYCLE retained_tasks=%zu stacks=%zu allocations=%zu bytes=%zu "
-           "joins_failed=%u\n",
-           stats.live_tasks, stats.task_stack_bytes, stats.allocations,
-           stats.allocation_bytes, atomic_load(&failed_joins));
+    printf(
+        "LIFECYCLE retained_tasks=%zu stacks=%zu allocations=%zu bytes=%zu "
+        "joins_failed=%u\n",
+        stats.live_tasks, stats.task_stack_bytes, stats.allocations,
+        stats.allocation_bytes, atomic_load(&failed_joins));
   } else {
     assert(rc == (mode == 1 ? 1 : 0));
     assert(owned_platform == NULL && owned_runtime == NULL &&
@@ -209,7 +209,7 @@ int main(void) {
     assert(mode != 4 || (atomic_load(&presents) == 1 &&
                          emscripten_get_now() - began >= 2400.0));
     mode = 0;
-    test_source = (const uint8_t *)normal_script;
+    test_source = (const uint8_t*)normal_script;
     test_source_size = strlen(normal_script);
     assert(lua_app_main() == 0);
   }

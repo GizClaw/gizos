@@ -19,8 +19,8 @@ typedef struct web_hardware {
   volatile int edges;
   volatile int accepted;
   int mode, releases, entry_done;
-  const h2_pal_fs_api_t *fs;
-  h2_pal_fs_file_t *file;
+  const h2_pal_fs_api_t* fs;
+  h2_pal_fs_file_t* file;
 } web_hardware_t;
 
 /* clang-format off */
@@ -46,12 +46,11 @@ static h2_pal_periph_info_t button_info(void) {
   return info;
 }
 
-static h2_pal_result_t periph_list(void *user, h2_pal_periph_type_t filter,
+static h2_pal_result_t periph_list(void* user, h2_pal_periph_type_t filter,
                                    h2_pal_periph_cb_t callback,
-                                   void *callback_user) {
+                                   void* callback_user) {
   (void)user;
-  if (callback == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (callback == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (filter != H2_PAL_PERIPH_TYPE_ANY &&
       filter != H2_PAL_PERIPH_TYPE_SINGLE_BUTTON)
     return H2_PAL_OK;
@@ -59,23 +58,20 @@ static h2_pal_result_t periph_list(void *user, h2_pal_periph_type_t filter,
   return callback(callback_user, &info);
 }
 
-static h2_pal_result_t periph_get(void *user, h2_pal_periph_id_t id,
-                                  h2_pal_periph_info_t *out_info) {
+static h2_pal_result_t periph_get(void* user, h2_pal_periph_id_t id,
+                                  h2_pal_periph_info_t* out_info) {
   (void)user;
-  if (out_info == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (id != WEB_HARDWARE_PERIPH)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (out_info == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (id != WEB_HARDWARE_PERIPH) return H2_PAL_ERR_NOT_FOUND;
   *out_info = button_info();
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t mapper_list(void *user, h2_runtime_component_t filter,
+static h2_pal_result_t mapper_list(void* user, h2_runtime_component_t filter,
                                    h2_runtime_component_mapping_cb_t callback,
-                                   void *callback_user) {
+                                   void* callback_user) {
   (void)user;
-  if (callback == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (callback == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (filter != H2_RUNTIME_COMPONENT_NONE &&
       filter != H2_RUNTIME_COMPONENT_BUTTON)
     return H2_PAL_OK;
@@ -86,14 +82,12 @@ static h2_pal_result_t mapper_list(void *user, h2_runtime_component_t filter,
   return callback(callback_user, &entry);
 }
 
-static h2_pal_result_t mapper_get(void *user,
+static h2_pal_result_t mapper_get(void* user,
                                   h2_runtime_component_id_t component_id,
-                                  h2_pal_periph_id_t *out_id) {
+                                  h2_pal_periph_id_t* out_id) {
   (void)user;
-  if (out_id == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (component_id != WEB_HARDWARE_COMPONENT)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (out_id == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (component_id != WEB_HARDWARE_COMPONENT) return H2_PAL_ERR_NOT_FOUND;
   *out_id = WEB_HARDWARE_PERIPH;
   return H2_PAL_OK;
 }
@@ -111,9 +105,9 @@ static const h2_runtime_component_mapper_t k_mapper = {
     .vtable = &k_mapper_vtable,
 };
 
-static h2_pal_result_t configure_runtime(void *user,
-                                         h2_runtime_config_t *config) {
-  web_hardware_t *hardware = user;
+static h2_pal_result_t configure_runtime(void* user,
+                                         h2_runtime_config_t* config) {
+  web_hardware_t* hardware = user;
   config->board = "web-hardware";
   config->periph = &k_periph;
   config->component_mapper = &k_mapper;
@@ -125,26 +119,23 @@ static h2_pal_result_t configure_runtime(void *user,
   return rc != H2_PAL_OK ? rc : hardware->mode == 1 ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
-static h2_pal_result_t release_runtime(void *user) {
-  web_hardware_t *hardware = user;
+static h2_pal_result_t release_runtime(void* user) {
+  web_hardware_t* hardware = user;
   assert(++hardware->releases == 1);
   assert(hardware->entry_done == (hardware->mode != 1));
-  if (hardware->mode == 2)
-    return H2_PAL_ERR_IO;
+  if (hardware->mode == 2) return H2_PAL_ERR_IO;
   const h2_pal_result_t rc =
       (h2_pal_result_t)h2_pal_fs_close(hardware->fs, hardware->file);
-  if (rc == H2_PAL_OK)
-    hardware->file = NULL;
+  if (rc == H2_PAL_OK) hardware->file = NULL;
   printf("H2_WEB_HARDWARE release=%d rc=%d\n", hardware->releases, (int)rc);
   return rc;
 }
 
-static h2_pal_result_t button(void *user, h2_runtime_t *runtime,
+static h2_pal_result_t button(void* user, h2_runtime_t* runtime,
                               h2_runtime_component_id_t component_id,
                               int pressed) {
-  web_hardware_t *hardware = user;
-  if (component_id != WEB_HARDWARE_COMPONENT)
-    return H2_PAL_ERR_NOT_FOUND;
+  web_hardware_t* hardware = user;
+  if (component_id != WEB_HARDWARE_COMPONENT) return H2_PAL_ERR_NOT_FOUND;
   const h2_pal_result_t result = h2_runtime_button_push_edge(
       runtime, WEB_HARDWARE_PERIPH,
       pressed ? H2_RUNTIME_BUTTON_EDGE_DOWN : H2_RUNTIME_BUTTON_EDGE_UP);
@@ -165,20 +156,19 @@ EM_JS(void, page_input,
 });
 /* clang-format on */
 static int page_action(int action) {
-  return h2_web_main_call(page_input, (const void *[]){&action}).i32;
+  return h2_web_main_call(page_input, (const void*[]){&action}).i32;
 }
 int main(void) {
   static web_hardware_t hardware;
   hardware.mode = h2_web_main_call(fixture_mode, NULL).i32;
   const h2_web_platform_config_t platform_config = {240, 240};
-  h2_web_platform_t *platform = h2_web_platform_create(&platform_config);
-  if (platform == NULL)
-    return 1;
+  h2_web_platform_t* platform = h2_web_platform_create(&platform_config);
+  if (platform == NULL) return 1;
   hardware.prepared = 1;
   const h2_web_fs_config_t fs_config = {.persistent_root = "/hardware"};
-  h2_web_fs_t *fs = NULL;
+  h2_web_fs_t* fs = NULL;
   int rc = h2_web_fs_open(platform, &fs_config, &fs);
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   h2_runtime_config_t config = h2_smoke_host_runtime_config(
       "web-hardware", "webassembly", "wasm32", h2_web_platform_mem_api(),
       h2_web_platform_time_api(platform), h2_web_platform_queue_api(platform),
@@ -186,12 +176,9 @@ int main(void) {
   config.task = h2_web_platform_task_api(platform);
   config.sync = h2_web_platform_sync_api(platform);
   config.fs = h2_web_fs_api(fs);
-  if (rc == H2_PAL_OK)
-    rc = configure_runtime(&hardware, &config);
-  if (rc == H2_PAL_OK)
-    rc = h2_runtime_init(&config, &runtime);
-  if (rc == H2_PAL_OK)
-    rc = h2_runtime_input_start(runtime, NULL);
+  if (rc == H2_PAL_OK) rc = configure_runtime(&hardware, &config);
+  if (rc == H2_PAL_OK) rc = h2_runtime_init(&config, &runtime);
+  if (rc == H2_PAL_OK) rc = h2_runtime_input_start(runtime, NULL);
   if (rc == H2_PAL_OK) {
     printf("H2_WEB_HARDWARE prepared=%d configured=%d board=%s\n",
            hardware.prepared, hardware.configured, runtime->board);

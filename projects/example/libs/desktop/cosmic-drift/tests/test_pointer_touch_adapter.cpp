@@ -7,7 +7,7 @@ int main() {
   assert(h2_pal_touch_open(invalid_adapter.api()) == H2_PAL_ERR_INVALID_ARG);
 
   h2::cosmic_drift::PointerTouchAdapter adapter(368u, 448u);
-  const h2_pal_touch_api_t *api = adapter.api();
+  const h2_pal_touch_api_t* api = adapter.api();
   h2_pal_touch_event_t event = {};
   h2_pal_touch_info_t info = {};
   assert(h2_pal_touch_get_info(api, &info) == H2_PAL_ERR_INVALID_STATE);

@@ -12,7 +12,10 @@ cc_library(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src"],
+    includes = [
+        "include",
+        "src",
+    ],
     deps = [
         "//libs/pal",
         "//libs/runtime",

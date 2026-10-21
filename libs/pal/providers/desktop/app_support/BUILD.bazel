@@ -29,7 +29,10 @@ cc_test(
         "@platforms//os:macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":app_support", "//libs/atomic/providers/c11"],
+    deps = [
+        ":app_support",
+        "//libs/atomic/providers/c11",
+    ],
 )
 
 cc_test(
@@ -161,9 +164,9 @@ cc_library(
     name = "capture",
     srcs = ["src/h2_desktop_capture.cpp"],
     hdrs = ["include/h2_desktop_capture.h"],
-    includes = ["include"],
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
     deps = [
         "//libs/pal/providers/portaudio",
         "//libs/pal/providers/sdl3",

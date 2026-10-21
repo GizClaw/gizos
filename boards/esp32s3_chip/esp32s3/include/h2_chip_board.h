@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-const char *h2_chip_board_name(void);
+const char* h2_chip_board_name(void);
 
 #ifdef __cplusplus
 }

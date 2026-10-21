@@ -12,13 +12,13 @@ extern "C" {
  * The caller explicitly injects the API into Runtime; default AppHost is not
  * changed. Close all clients and quiesce operations before destroying owner. */
 typedef struct h2_ios_mqtt h2_ios_mqtt_t;
-h2_pal_result_t h2_ios_mqtt_create(const h2_pal_mem_api_t *allocator,
-    h2_ios_mqtt_t **out);
+h2_pal_result_t h2_ios_mqtt_create(const h2_pal_mem_api_t* allocator,
+                                   h2_ios_mqtt_t** out);
 /** @brief Borrow the MQTT API until destroy; NULL selects unsupported. */
-const h2_pal_mqtt_api_t *h2_ios_mqtt_api(h2_ios_mqtt_t *owner);
+const h2_pal_mqtt_api_t* h2_ios_mqtt_api(h2_ios_mqtt_t* owner);
 /** @brief Release provider and TLS reference; clear owner only on success.
  * NULL *owner is allowed. A busy TLS owner is retained for retry. */
-h2_pal_result_t h2_ios_mqtt_destroy(h2_ios_mqtt_t **owner);
+h2_pal_result_t h2_ios_mqtt_destroy(h2_ios_mqtt_t** owner);
 #ifdef __cplusplus
 }
 #endif

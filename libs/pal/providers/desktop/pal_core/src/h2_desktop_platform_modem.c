@@ -7,24 +7,22 @@ static char s_operator_name[H2_PAL_MODEM_OPERATOR_MAX];
 static h2_pal_modem_data_state_t s_data_state = H2_PAL_MODEM_DATA_CLOSED;
 static h2_pal_modem_call_status_t s_call_status;
 static int32_t s_next_call_id = 1;
-static const h2_pal_system_event_api_t *s_system_event;
+static const h2_pal_system_event_api_t* s_system_event;
 
-static int system_event_valid(
-    const h2_pal_system_event_api_t *system_event) {
+static int system_event_valid(const h2_pal_system_event_api_t* system_event) {
   return system_event != NULL && system_event->vtable != NULL &&
          system_event->vtable->post != NULL;
 }
 
 static int32_t next_call_id(void) {
   const int32_t call_id = s_next_call_id;
-  s_next_call_id =
-      s_next_call_id == INT32_MAX ? 1 : s_next_call_id + 1;
+  s_next_call_id = s_next_call_id == INT32_MAX ? 1 : s_next_call_id + 1;
   return call_id;
 }
 
 int h2_desktop_platform_inject_modem_call_event(
     h2_pal_periph_id_t source_id, h2_pal_system_event_type_t type,
-    const h2_pal_modem_call_status_t *status) {
+    const h2_pal_modem_call_status_t* status) {
   if (source_id == 0u || status == NULL ||
       (type != H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING &&
        type != H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED &&
@@ -44,7 +42,7 @@ int h2_desktop_platform_inject_modem_call_event(
 }
 
 int h2_desktop_platform_inject_incoming_call_number(
-    h2_pal_periph_id_t source_id, const char *number) {
+    h2_pal_periph_id_t source_id, const char* number) {
   if (number == NULL || number[0] == '\0' ||
       strlen(number) >= sizeof(s_call_status.number)) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -61,7 +59,7 @@ int h2_desktop_platform_inject_incoming_call_number(
 
 int h2_desktop_platform_inject_incoming_call(h2_pal_periph_id_t source_id) {
   return h2_desktop_platform_inject_incoming_call_number(source_id,
-                                                          "13800000000");
+                                                         "13800000000");
 }
 
 static h2_pal_result_t post_call_state(h2_pal_modem_call_state_t state,
@@ -74,7 +72,7 @@ static h2_pal_result_t post_call_state(h2_pal_modem_call_state_t state,
 }
 
 int h2_desktop_platform_configure_modem(
-    const h2_desktop_modem_config_t *config) {
+    const h2_desktop_modem_config_t* config) {
   if (config == NULL ||
       (config->operator_name != NULL &&
        strlen(config->operator_name) >= H2_PAL_MODEM_OPERATOR_MAX) ||
@@ -98,8 +96,8 @@ int h2_desktop_platform_configure_modem(
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_desktop_modem_get_capabilities(void *user, uint32_t *out_capabilities) {
+static h2_pal_result_t h2_desktop_modem_get_capabilities(
+    void* user, uint32_t* out_capabilities) {
   (void)user;
   if (out_capabilities == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -110,8 +108,8 @@ h2_desktop_modem_get_capabilities(void *user, uint32_t *out_capabilities) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_desktop_modem_get_status(void *user, h2_pal_modem_status_t *out_status) {
+static h2_pal_result_t h2_desktop_modem_get_status(
+    void* user, h2_pal_modem_status_t* out_status) {
   (void)user;
   if (out_status == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -131,14 +129,11 @@ h2_desktop_modem_get_status(void *user, h2_pal_modem_status_t *out_status) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_desktop_modem_get_operator(void *user,
-                              h2_pal_modem_operator_t *out_operator) {
+static h2_pal_result_t h2_desktop_modem_get_operator(
+    void* user, h2_pal_modem_operator_t* out_operator) {
   (void)user;
-  if (out_operator == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (!s_config.available)
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (out_operator == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!s_config.available) return H2_PAL_ERR_UNAVAILABLE;
   memset(out_operator, 0, sizeof(*out_operator));
   if (s_config.operator_name != NULL) {
     strncpy(out_operator->name, s_config.operator_name,
@@ -148,34 +143,29 @@ h2_desktop_modem_get_operator(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_desktop_modem_data_open(void *user,
+static h2_pal_result_t h2_desktop_modem_data_open(void* user,
                                                   uint32_t timeout_ms) {
   (void)user;
   (void)timeout_ms;
-  if (!s_config.available)
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (!s_config.available) return H2_PAL_ERR_UNAVAILABLE;
   s_data_state = H2_PAL_MODEM_DATA_OPEN;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_desktop_modem_data_close(void *user,
+static h2_pal_result_t h2_desktop_modem_data_close(void* user,
                                                    uint32_t timeout_ms) {
   (void)user;
   (void)timeout_ms;
-  if (!s_config.available)
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (!s_config.available) return H2_PAL_ERR_UNAVAILABLE;
   s_data_state = H2_PAL_MODEM_DATA_CLOSED;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_desktop_modem_get_data_status(void *user,
-                                 h2_pal_modem_data_status_t *out_status) {
+static h2_pal_result_t h2_desktop_modem_get_data_status(
+    void* user, h2_pal_modem_data_status_t* out_status) {
   (void)user;
-  if (out_status == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (!s_config.available)
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!s_config.available) return H2_PAL_ERR_UNAVAILABLE;
   memset(out_status, 0, sizeof(*out_status));
   out_status->state = s_data_state;
   out_status->last_error = H2_PAL_OK;
@@ -187,8 +177,8 @@ h2_desktop_modem_get_data_status(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_desktop_modem_get_signal(void *user, h2_pal_modem_signal_t *out_signal) {
+static h2_pal_result_t h2_desktop_modem_get_signal(
+    void* user, h2_pal_modem_signal_t* out_signal) {
   (void)user;
   if (out_signal == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -208,9 +198,8 @@ h2_desktop_modem_get_signal(void *user, h2_pal_modem_signal_t *out_signal) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-h2_desktop_modem_get_call_status(void *user,
-                                 h2_pal_modem_call_status_t *out_status) {
+static h2_pal_result_t h2_desktop_modem_get_call_status(
+    void* user, h2_pal_modem_call_status_t* out_status) {
   (void)user;
   if (out_status == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -220,23 +209,21 @@ h2_desktop_modem_get_call_status(void *user,
 }
 
 static h2_pal_result_t h2_desktop_modem_call_dial(
-    void *user, const h2_pal_modem_call_request_t *request) {
+    void* user, const h2_pal_modem_call_request_t* request) {
   (void)user;
   if (request == NULL || request->number[0] == '\0' ||
       memchr(request->number, '\0', sizeof(request->number)) == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (!s_config.available)
-    return H2_PAL_ERR_UNAVAILABLE;
-  if (s_config.dial_result != H2_PAL_OK)
-    return s_config.dial_result;
+  if (!s_config.available) return H2_PAL_ERR_UNAVAILABLE;
+  if (s_config.dial_result != H2_PAL_OK) return s_config.dial_result;
   memset(&s_call_status, 0, sizeof(s_call_status));
   s_call_status.call_id = next_call_id();
   s_call_status.direction = H2_PAL_MODEM_CALL_DIRECTION_OUTGOING;
   memcpy(s_call_status.number, request->number, strlen(request->number) + 1u);
-  h2_pal_result_t rc = post_call_state(
-      H2_PAL_MODEM_CALL_STATE_DIALING,
-      H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED);
+  h2_pal_result_t rc =
+      post_call_state(H2_PAL_MODEM_CALL_STATE_DIALING,
+                      H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED);
   if (rc == H2_PAL_OK) {
     rc = post_call_state(H2_PAL_MODEM_CALL_STATE_ALERTING,
                          H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED);
@@ -248,12 +235,11 @@ static h2_pal_result_t h2_desktop_modem_call_dial(
   return rc;
 }
 
-static h2_pal_result_t h2_desktop_modem_call_answer(void *user,
+static h2_pal_result_t h2_desktop_modem_call_answer(void* user,
                                                     uint32_t timeout_ms) {
   (void)user;
   (void)timeout_ms;
-  if (!s_config.available)
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (!s_config.available) return H2_PAL_ERR_UNAVAILABLE;
   if (s_call_status.direction != H2_PAL_MODEM_CALL_DIRECTION_INCOMING ||
       s_call_status.state != H2_PAL_MODEM_CALL_STATE_INCOMING) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -262,12 +248,11 @@ static h2_pal_result_t h2_desktop_modem_call_answer(void *user,
                          H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED);
 }
 
-static h2_pal_result_t h2_desktop_modem_call_hangup(void *user,
+static h2_pal_result_t h2_desktop_modem_call_hangup(void* user,
                                                     uint32_t timeout_ms) {
   (void)user;
   (void)timeout_ms;
-  if (!s_config.available)
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (!s_config.available) return H2_PAL_ERR_UNAVAILABLE;
   if (s_call_status.state == H2_PAL_MODEM_CALL_STATE_IDLE ||
       s_call_status.state == H2_PAL_MODEM_CALL_STATE_ENDED) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -276,8 +261,8 @@ static h2_pal_result_t h2_desktop_modem_call_hangup(void *user,
                          H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED);
 }
 
-h2_pal_modem_t *h2_desktop_platform_modem(
-    const h2_pal_system_event_api_t *system_event) {
+h2_pal_modem_t* h2_desktop_platform_modem(
+    const h2_pal_system_event_api_t* system_event) {
   static const h2_pal_modem_vtable_t vtable = {
       .get_capabilities = h2_desktop_modem_get_capabilities,
       .get_status = h2_desktop_modem_get_status,

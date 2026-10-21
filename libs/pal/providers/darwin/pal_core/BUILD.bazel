@@ -145,7 +145,10 @@ cc_test(
     ],
     linkopts = ["-lpthread"],
     target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
-    deps = ["//libs/atomic/providers/c11", "//libs/pal"],
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//libs/pal",
+    ],
 )
 
 cc_test(

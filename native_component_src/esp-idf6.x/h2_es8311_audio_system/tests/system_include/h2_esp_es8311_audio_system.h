@@ -27,7 +27,7 @@ typedef enum h2_esp_es8311_aec_nlp_level {
 } h2_esp_es8311_aec_nlp_level_t;
 
 typedef struct h2_audio_frame {
-  void *data;
+  void* data;
   size_t capacity;
   size_t bytes;
   uint32_t sample_rate_hz;
@@ -36,7 +36,7 @@ typedef struct h2_audio_frame {
   int sample_format;
 } h2_audio_frame_t;
 
-static inline size_t h2_audio_frame_frame_bytes(const h2_audio_frame_t *frame) {
+static inline size_t h2_audio_frame_frame_bytes(const h2_audio_frame_t* frame) {
   return frame != NULL && frame->sample_format == H2_AUDIO_SAMPLE_S16LE
              ? (size_t)frame->channels * sizeof(int16_t)
              : 0u;
@@ -59,12 +59,12 @@ typedef struct h2_esp_es8311_audio_system_config {
   uint8_t mic_queue_frames;
   uint32_t mic_task_stack_size;
   uint32_t speaker_task_stack_size;
-  const h2_pal_queue_api_t *queue_api;
-  const h2_pal_sync_api_t *sync_api;
+  const h2_pal_queue_api_t* queue_api;
+  const h2_pal_sync_api_t* sync_api;
   int enable_aec;
   h2_esp_es8311_aec_nlp_level_t aec_nlp_level;
-    /** Optional board curve; zero initialization preserves legacy mapping. */
-    h2_es8311_volume_config_t speaker_volume;
+  /** Optional board curve; zero initialization preserves legacy mapping. */
+  h2_es8311_volume_config_t speaker_volume;
 } h2_esp_es8311_audio_system_config_t;
 
 typedef struct h2_esp_es8311_sr_state {
@@ -80,16 +80,16 @@ typedef struct h2_esp_es8311_audio_system {
 } h2_esp_es8311_audio_system_t;
 
 int h2_esp_es8311_audio_system_init(
-    h2_esp_es8311_audio_system_t *system,
-    const h2_esp_es8311_audio_system_config_t *config);
-int h2_esp_es8311_audio_system_process_mic(h2_esp_es8311_audio_system_t *system,
-                                           const h2_audio_frame_t *raw_frame,
-                                           h2_audio_frame_t *out_frame,
+    h2_esp_es8311_audio_system_t* system,
+    const h2_esp_es8311_audio_system_config_t* config);
+int h2_esp_es8311_audio_system_process_mic(h2_esp_es8311_audio_system_t* system,
+                                           const h2_audio_frame_t* raw_frame,
+                                           h2_audio_frame_t* out_frame,
                                            uint32_t timeout_ms);
-int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t *state,
-                          const h2_esp_es8311_audio_system_config_t *config);
-int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t *state,
-                             const h2_audio_frame_t *raw_frame,
-                             h2_audio_frame_t *out_frame, uint32_t timeout_ms);
+int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* state,
+                          const h2_esp_es8311_audio_system_config_t* config);
+int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* state,
+                             const h2_audio_frame_t* raw_frame,
+                             h2_audio_frame_t* out_frame, uint32_t timeout_ms);
 
 #endif

@@ -8,6 +8,8 @@ typedef int err_t;
 #define PPP_PHASE_ESTABLISH 6u
 #define PPP_PHASE_TERMINATE 11u
 #define PPP_PHASE_DISCONNECT 12u
-typedef struct ppp_pcb { uint8_t phase; } ppp_pcb;
-err_t ppp_close(ppp_pcb *pcb, uint8_t nocarrier);
+typedef struct ppp_pcb {
+  uint8_t phase;
+} ppp_pcb;
+err_t ppp_close(ppp_pcb* pcb, uint8_t nocarrier);
 #endif

@@ -1,5 +1,6 @@
 """Exercise the shipping STA persistence callback with real shared transaction logic."""
 from pathlib import Path
+import re
 import subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[3]
 class SaveTest(unittest.TestCase):
@@ -21,7 +22,8 @@ class SaveTest(unittest.TestCase):
         source=(ROOT/'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
         shared=(ROOT/'libs/wifi_sta/tests/test_wifi_sta.c').read_text()
         fixture=shared[:shared.index('static void run_cases')]
-        begin=source.find('static int sta_connect_and_save(void *user,')
+        match=re.search(r'\bstatic\s+int\s+sta_connect_and_save\s*\(\s*void\s*\*\s*user\s*,', source)
+        begin=match.start() if match else -1
         callback='' if begin<0 else source[begin:source.index('\n}\n',begin)+3]
         helper_begin=source.index('static int sta_validate_sdk_password(')
         helper=source[helper_begin:source.index('\n}\n',helper_begin)+3]

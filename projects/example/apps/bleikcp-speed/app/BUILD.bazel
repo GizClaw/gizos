@@ -40,8 +40,8 @@ cc_library(
         "include",
     ],
     deps = [
-        ":tasks",
         ":protocol",
+        ":tasks",
         "//libs/atomic",
         "//libs/bleikcp",
         "//libs/pal",

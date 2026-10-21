@@ -9,8 +9,10 @@
  * not a nesting count. A failed restore poisons future opens until reboot.
  * This restores the SDK's configured value, not independently read status bits.
  */
-typedef struct { int active; } h2_jieli_flash_window_t;
-int h2_jieli_flash_window_open(h2_jieli_flash_window_t *window);
-int h2_jieli_flash_window_close(h2_jieli_flash_window_t *window);
+typedef struct {
+  int active;
+} h2_jieli_flash_window_t;
+int h2_jieli_flash_window_open(h2_jieli_flash_window_t* window);
+int h2_jieli_flash_window_close(h2_jieli_flash_window_t* window);
 
 #endif

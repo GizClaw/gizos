@@ -7,8 +7,7 @@
 extern "C" {
 #endif
 
-int h2_posix_serial_host_run_tests(
-    const h2_pal_serial_host_api_t *serial_host);
+int h2_posix_serial_host_run_tests(const h2_pal_serial_host_api_t* serial_host);
 
 #ifdef __cplusplus
 }

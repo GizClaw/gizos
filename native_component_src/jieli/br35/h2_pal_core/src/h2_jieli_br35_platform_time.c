@@ -19,7 +19,7 @@ static uint64_t monotonic_ms(void) {
   return result;
 }
 
-static h2_pal_result_t time_get_monotonic_ms(void *user, uint64_t *out_ms) {
+static h2_pal_result_t time_get_monotonic_ms(void* user, uint64_t* out_ms) {
   (void)user;
   if (out_ms == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -28,7 +28,7 @@ static h2_pal_result_t time_get_monotonic_ms(void *user, uint64_t *out_ms) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t time_get_monotonic_us(void *user, uint64_t *out_us) {
+static h2_pal_result_t time_get_monotonic_us(void* user, uint64_t* out_us) {
   (void)user;
   if (out_us == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -37,14 +37,14 @@ static h2_pal_result_t time_get_monotonic_us(void *user, uint64_t *out_us) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t time_set_wall_ms(void *user, uint64_t wall_ms) {
+static h2_pal_result_t time_set_wall_ms(void* user, uint64_t wall_ms) {
   (void)user;
   (void)wall_ms;
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t
-time_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
+static h2_pal_result_t time_get_wall_status(
+    void* user, h2_pal_time_wall_status_t* out_status) {
   (void)user;
   if (out_status == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -54,7 +54,7 @@ time_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t time_sleep_ms(void *user, uint32_t ms) {
+static h2_pal_result_t time_sleep_ms(void* user, uint32_t ms) {
   (void)user;
   h2_jieli_sdk_sleep_ms(ms);
   return H2_PAL_OK;
@@ -74,6 +74,6 @@ static const h2_pal_time_api_t s_time_api = {
     .vtable = &s_time_vtable,
 };
 
-const h2_pal_time_api_t *h2_jieli_br35_platform_time_api(void) {
+const h2_pal_time_api_t* h2_jieli_br35_platform_time_api(void) {
   return &s_time_api;
 }

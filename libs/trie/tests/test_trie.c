@@ -5,19 +5,20 @@
 #include <string.h>
 
 typedef struct handler_state {
-  const char *name;
-  const char *path;
-  const char *remainder;
+  const char* name;
+  const char* path;
+  const char* remainder;
 } handler_state_t;
 
-static h2_pal_result_t
-record_handler(const void *user, const h2_trie_match_t *match, void *response) {
-  handler_state_t *state = (handler_state_t *)response;
+static h2_pal_result_t record_handler(const void* user,
+                                      const h2_trie_match_t* match,
+                                      void* response) {
+  handler_state_t* state = (handler_state_t*)response;
 
   assert(user != NULL);
   assert(match != NULL);
   assert(state != NULL);
-  state->name = (const char *)user;
+  state->name = (const char*)user;
   state->path = match->path;
   state->remainder = match->remainder;
   return H2_PAL_OK;
@@ -92,21 +93,21 @@ static void test_tokenized_lookup(void) {
       {"  root  ", H2_TRIE_ROUTE_EXACT_OR_PREFIX, record_handler, "root"},
       {"root\tchild", H2_TRIE_ROUTE_EXACT_OR_PREFIX, record_handler, "child"},
   };
-  static const char *const exact_tokens[] = {"root", "child"};
-  static const char *const prefix_tokens[] = {"root", "child", "argument"};
-  static const char *const parent_tokens[] = {"root", "other"};
+  static const char* const exact_tokens[] = {"root", "child"};
+  static const char* const prefix_tokens[] = {"root", "child", "argument"};
+  static const char* const parent_tokens[] = {"root", "other"};
   h2_trie_node_t nodes[32];
   h2_trie_t trie;
-  const h2_trie_route_t *route = NULL;
+  const h2_trie_route_t* route = NULL;
 
   assert(h2_trie_build_tokens(&trie, nodes, 32u, routes,
                               sizeof(routes) / sizeof(routes[0])) == H2_PAL_OK);
   assert(h2_trie_find_tokens(&trie, 2u, exact_tokens, &route) == H2_PAL_OK);
-  assert(strcmp((const char *)route->user, "child") == 0);
+  assert(strcmp((const char*)route->user, "child") == 0);
   assert(h2_trie_find_tokens(&trie, 3u, prefix_tokens, &route) == H2_PAL_OK);
-  assert(strcmp((const char *)route->user, "child") == 0);
+  assert(strcmp((const char*)route->user, "child") == 0);
   assert(h2_trie_find_tokens(&trie, 2u, parent_tokens, &route) == H2_PAL_OK);
-  assert(strcmp((const char *)route->user, "root") == 0);
+  assert(strcmp((const char*)route->user, "root") == 0);
 }
 
 static void test_validation_and_capacity(void) {

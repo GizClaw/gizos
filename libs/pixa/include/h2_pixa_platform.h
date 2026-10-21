@@ -14,10 +14,10 @@ extern "C" {
  * @brief Borrowed PAL capabilities used by one PIXA platform bridge.
  */
 typedef struct h2_pixa_platform_config {
-    /** Filesystem API borrowed for the complete initialized lifetime. */
-    const h2_pal_fs_api_t *fs;
-    /** Memory API borrowed for the complete initialized lifetime. */
-    const h2_pal_mem_api_t *mem;
+  /** Filesystem API borrowed for the complete initialized lifetime. */
+  const h2_pal_fs_api_t* fs;
+  /** Memory API borrowed for the complete initialized lifetime. */
+  const h2_pal_mem_api_t* mem;
 } h2_pixa_platform_config_t;
 
 /**
@@ -28,11 +28,11 @@ typedef struct h2_pixa_platform_config {
  * state must remain at the same address and must not be copied.
  */
 typedef struct h2_pixa_platform {
-    const h2_pal_fs_api_t *fs;
-    const h2_pal_mem_api_t *mem;
-    pixa_osal_api_t osal;
-    pixa_alloc_t allocator;
-    int initialized;
+  const h2_pal_fs_api_t* fs;
+  const h2_pal_mem_api_t* mem;
+  pixa_osal_api_t osal;
+  pixa_alloc_t allocator;
+  int initialized;
 } h2_pixa_platform_t;
 
 /**
@@ -43,32 +43,32 @@ typedef struct h2_pixa_platform {
  * @return H2_PAL_OK on success or H2_PAL_ERR_INVALID_ARG for an incomplete
  *         configuration.
  */
-h2_pal_result_t h2_pixa_platform_init(
-    h2_pixa_platform_t *platform,
-    const h2_pixa_platform_config_t *config);
+h2_pal_result_t h2_pixa_platform_init(h2_pixa_platform_t* platform,
+                                      const h2_pixa_platform_config_t* config);
 
 /**
- * @brief Invalidate a PIXA platform bridge without destroying borrowed PAL APIs.
+ * @brief Invalidate a PIXA platform bridge without destroying borrowed PAL
+ * APIs.
  *
  * @param platform Caller-owned state; NULL is accepted.
  */
-void h2_pixa_platform_deinit(h2_pixa_platform_t *platform);
+void h2_pixa_platform_deinit(h2_pixa_platform_t* platform);
 
 /**
  * @brief Borrow the upstream PIXA filesystem API.
  *
  * @return The initialized OSAL API, or NULL after deinitialization.
  */
-const pixa_osal_api_t *h2_pixa_platform_osal(
-    const h2_pixa_platform_t *platform);
+const pixa_osal_api_t* h2_pixa_platform_osal(
+    const h2_pixa_platform_t* platform);
 
 /**
  * @brief Borrow the upstream PIXA allocator.
  *
  * @return The initialized allocator, or NULL after deinitialization.
  */
-const pixa_alloc_t *h2_pixa_platform_allocator(
-    const h2_pixa_platform_t *platform);
+const pixa_alloc_t* h2_pixa_platform_allocator(
+    const h2_pixa_platform_t* platform);
 
 #ifdef __cplusplus
 }

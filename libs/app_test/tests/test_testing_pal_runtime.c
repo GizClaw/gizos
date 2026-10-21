@@ -28,21 +28,19 @@ typedef struct environment {
   h2_app_test_fs_t fs;
   h2_app_test_crypto_t crypto;
   h2_app_test_audio_fake_t audio;
-  h2_libco_t *executor;
-  h2_runtime_t *runtime;
+  h2_libco_t* executor;
+  h2_runtime_t* runtime;
   bool complete;
 } environment_t;
-static void *alloc(void *u, size_t size) {
-  return test_alloc(&((environment_t *)u)->memory, size);
+static void* alloc(void* u, size_t size) {
+  return test_alloc(&((environment_t*)u)->memory, size);
 }
-static void release(void *u, void *p) {
-  test_free(&((environment_t *)u)->memory, p);
+static void release(void* u, void* p) {
+  test_free(&((environment_t*)u)->memory, p);
 }
-static uint64_t now(void *u) {
-  return ((environment_t *)u)->clock.monotonic_ms;
-}
-static int mappings(void *u, h2_runtime_component_t filter,
-                    h2_runtime_component_mapping_cb_t cb, void *ctx) {
+static uint64_t now(void* u) { return ((environment_t*)u)->clock.monotonic_ms; }
+static int mappings(void* u, h2_runtime_component_t filter,
+                    h2_runtime_component_mapping_cb_t cb, void* ctx) {
   (void)u;
   const h2_runtime_component_t kinds[] = {H2_RUNTIME_COMPONENT_BUTTON,
                                           H2_RUNTIME_COMPONENT_BATTERY,
@@ -51,15 +49,14 @@ static int mappings(void *u, h2_runtime_component_t filter,
     if (filter == H2_RUNTIME_COMPONENT_NONE || filter == kinds[i]) {
       h2_runtime_component_mapping_entry_t entry = {11u + i, 91u + i};
       int rc = cb(ctx, &entry);
-      if (rc)
-        return rc;
+      if (rc) return rc;
     }
   return 0;
 }
 static const h2_runtime_component_mapper_vtable_t mapper_vtable = {
     .list = mappings};
 static const h2_runtime_component_mapper_t mapper = {.vtable = &mapper_vtable};
-static h2_runtime_config_t runtime_config(environment_t *e) {
+static h2_runtime_config_t runtime_config(environment_t* e) {
   return (h2_runtime_config_t){
       .board = "app-test",
       .target = "memory",
@@ -111,9 +108,9 @@ static h2_runtime_config_t runtime_config(environment_t *e) {
 }
 /* A real cooperative worker must suspend on retry; no inline task-name bypass.
  */
-static void settings_worker(void *u) {
-  environment_t *e = u;
-  h2_runtime_test_control_t *control = NULL;
+static void settings_worker(void* u) {
+  environment_t* e = u;
+  h2_runtime_test_control_t* control = NULL;
   OK(h2_runtime_test_control_open(e->runtime, &control));
   OK(h2_runtime_test_button_action(control, 11u, 100u, 120u, 120u));
   h2_runtime_button_state_t button;
@@ -129,7 +126,7 @@ static void settings_worker(void *u) {
   memcpy(&action, event.payload, sizeof(action));
   assert(action.pressed_at_ms == 100u && action.released_at_ms == 120u);
   h2_runtime_test_control_close(control);
-  h2_pal_pref_namespace_t *ns = NULL;
+  h2_pal_pref_namespace_t* ns = NULL;
   OK(h2_pal_pref_open(e->runtime->pref, "settings", H2_PAL_PREF_OPEN_READ_WRITE,
                       &ns));
   OK(ns->set_u32(ns, "volume", 37u));
@@ -145,8 +142,8 @@ static void settings_worker(void *u) {
   OK(h2_pal_pwm_switch_set_duty(e->runtime->pwm_switch, id, 4000u));
   e->complete = true;
 }
-static void cleanup_runtime(void *user) {
-  environment_t *e = user;
+static void cleanup_runtime(void* user) {
+  environment_t* e = user;
   h2_runtime_deinit(e->runtime);
   e->runtime = NULL;
 }
@@ -170,7 +167,7 @@ int main(void) {
   for (uint32_t i = 0; i < 3; ++i) {
     h2_pal_periph_info_t info = {
         .id = 91u + i, .type = types[i], .name = "test"};
-    h2_app_test_periph_entry_t *entry;
+    h2_app_test_periph_entry_t* entry;
     OK(h2_app_test_periph_add(&e.periph, &info, &entry));
   }
   e.periph.entries[1].battery = (h2_pal_battery_reading_t){
@@ -183,8 +180,9 @@ int main(void) {
   assert(h2_libco_create(&executor_config, &e.executor) == H2_LIBCO_OK);
   h2_runtime_config_t config = runtime_config(&e);
   OK(h2_runtime_init(&config, &e.runtime));
-  e.pref.commit = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u, .calls = 0u};
-  h2_pal_task_t *task = NULL;
+  e.pref.commit = (h2_app_test_fault_t){
+      .result = H2_PAL_ERR_IO, .remaining = 1u, .calls = 0u};
+  h2_pal_task_t* task = NULL;
   h2_pal_task_options_t options = {.name = "test/settings",
                                    .min_stack_size = 65536u};
   OK(h2_pal_task_start(e.runtime->task, &options, settings_worker, &e, &task));
@@ -201,7 +199,7 @@ int main(void) {
   task = NULL;
   assert(e.audio.volume_percent == 37u && e.display.brightness_percent == 60u &&
          e.periph.entries[2].duty_x100 == 4000u);
-  h2_pal_pref_namespace_t *reader;
+  h2_pal_pref_namespace_t* reader;
   OK(h2_pal_pref_open(e.runtime->pref, "settings", H2_PAL_PREF_OPEN_READ_ONLY,
                       &reader));
   uint32_t value = 0;

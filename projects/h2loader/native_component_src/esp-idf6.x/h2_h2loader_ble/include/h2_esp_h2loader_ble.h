@@ -11,40 +11,38 @@ extern "C" {
 
 /** Runs the blocking ESP H2Loader with the BLE command service attached. */
 void h2_esp_h2loader_run_with_ble_config(
-    h2_runtime_t *runtime,
-    const h2_esp_h2loader_config_t *config);
+    h2_runtime_t* runtime, const h2_esp_h2loader_config_t* config);
 
 /**
  * App command identity and service config; strings remain borrowed while
  * services run. The App partition is derived from the running boot partition.
  */
 typedef struct h2_esp_h2loader_app_commands_config {
-    const char *active_name;
-    const char *active_version;
-    uint32_t hardware_capabilities;
-    uint32_t h2loader_partition_id;
-    uint32_t coredump_partition_id;
-    /** Optional fallback name when Runtime has no canonical product name.
-     * Runtime ble_local_name takes precedence so Loader/App share one spelling.
-     * Borrowed until start completes, then copied by the portable service.
-     * NULL and an unnamed Runtime preserve unnamed advertising. */
-    const char *ble_local_name;
+  const char* active_name;
+  const char* active_version;
+  uint32_t hardware_capabilities;
+  uint32_t h2loader_partition_id;
+  uint32_t coredump_partition_id;
+  /** Optional fallback name when Runtime has no canonical product name.
+   * Runtime ble_local_name takes precedence so Loader/App share one spelling.
+   * Borrowed until start completes, then copied by the portable service.
+   * NULL and an unnamed Runtime preserve unnamed advertising. */
+  const char* ble_local_name;
 } h2_esp_h2loader_app_commands_config_t;
 
 /**
  * Starts the singleton serial recovery command service before Runtime init.
- * The runtime config and command strings remain borrowed while the service runs.
+ * The runtime config and command strings remain borrowed while the service
+ * runs.
  */
 int h2_esp_h2loader_app_commands_prepare_serial_with_config(
-    const h2_runtime_config_t *runtime_config,
-    const h2_esp_h2loader_app_commands_config_t *config);
+    const h2_runtime_config_t* runtime_config,
+    const h2_esp_h2loader_app_commands_config_t* config);
 
 /** Starts the serial recovery command service before Runtime init. */
 int h2_esp_h2loader_app_commands_prepare_serial(
-    const h2_runtime_config_t *runtime_config,
-    const char *active_name,
-    uint32_t h2loader_partition_id,
-    uint32_t coredump_partition_id);
+    const h2_runtime_config_t* runtime_config, const char* active_name,
+    uint32_t h2loader_partition_id, uint32_t coredump_partition_id);
 
 /**
  * Attaches the BLE command service after Runtime init.
@@ -53,15 +51,13 @@ int h2_esp_h2loader_app_commands_prepare_serial(
  * remains available.
  */
 int h2_esp_h2loader_app_commands_start_with_config(
-    h2_runtime_t *runtime,
-    const h2_esp_h2loader_app_commands_config_t *config);
+    h2_runtime_t* runtime, const h2_esp_h2loader_app_commands_config_t* config);
 
 /** Attaches the BLE H2Loader command service after Runtime init. */
-int h2_esp_h2loader_app_commands_start(
-    h2_runtime_t *runtime,
-    const char *active_name,
-    uint32_t h2loader_partition_id,
-    uint32_t coredump_partition_id);
+int h2_esp_h2loader_app_commands_start(h2_runtime_t* runtime,
+                                       const char* active_name,
+                                       uint32_t h2loader_partition_id,
+                                       uint32_t coredump_partition_id);
 
 /** Pauses the App command service advertisement while a Central scan runs. */
 int h2_esp_h2loader_app_commands_pause_ble_advertising(void);
@@ -71,15 +67,17 @@ int h2_esp_h2loader_app_commands_resume_ble_advertising(void);
 
 /** Add one App-owned GATT service UUID to the shared command advertisement. */
 int h2_esp_h2loader_app_commands_advertise_ble_service(
-    const h2_pal_ble_uuid_t *service_uuid);
+    const h2_pal_ble_uuid_t* service_uuid);
 
 /** Copy the initialized App command configuration without starting a service.
- * Call after command-service startup, before publishing to other tasks. Pointers
- * remain borrowed for the service lifetime. The consumer must serialize ALL
- * Stage, digest and reboot operations with operation_sync/operation_mutex, and
- * release the mutex on the same task that acquired it. Clears output on error.
+ * Call after command-service startup, before publishing to other tasks.
+ * Pointers remain borrowed for the service lifetime. The consumer must
+ * serialize ALL Stage, digest and reboot operations with
+ * operation_sync/operation_mutex, and release the mutex on the same task that
+ * acquired it. Clears output on error.
  */
-int h2_esp_h2loader_app_commands_get_config(h2_loader_app_client_config_t *out_config);
+int h2_esp_h2loader_app_commands_get_config(
+    h2_loader_app_client_config_t* out_config);
 
 #ifdef __cplusplus
 }

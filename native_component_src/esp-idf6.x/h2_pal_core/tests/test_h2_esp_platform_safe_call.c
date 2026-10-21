@@ -9,30 +9,30 @@
 #include <string.h>
 
 typedef struct test_task_capture {
-  const char *name;
+  const char* name;
   uint32_t stack_size;
   UBaseType_t priority;
   BaseType_t core;
   TaskFunction_t entry;
-  void *context;
+  void* context;
 } test_task_capture_t;
 
 static test_task_capture_t s_task;
 static unsigned char s_stack[16384];
 static int s_task_handle;
 
-void *heap_caps_malloc(size_t size, unsigned int caps) {
+void* heap_caps_malloc(size_t size, unsigned int caps) {
   assert(size == sizeof(s_stack));
   assert(caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   return s_stack;
 }
 
-int esp_ptr_internal(const void *pointer) {
+int esp_ptr_internal(const void* pointer) {
   (void)pointer;
   return 0;
 }
 
-int esp_ptr_in_iram(const void *pointer) {
+int esp_ptr_in_iram(const void* pointer) {
   (void)pointer;
   return 0;
 }
@@ -41,12 +41,12 @@ BaseType_t xPortInIsrContext(void) { return 0; }
 
 SemaphoreHandle_t xSemaphoreCreateBinary(void) { return NULL; }
 
-SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *storage) {
+SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t* storage) {
   assert(storage != NULL);
   return storage;
 }
 
-SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage) {
+SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* storage) {
   assert(storage != NULL);
   return storage;
 }
@@ -64,10 +64,10 @@ BaseType_t xSemaphoreTake(SemaphoreHandle_t semaphore, uint32_t timeout) {
 
 void vSemaphoreDelete(SemaphoreHandle_t semaphore) { (void)semaphore; }
 
-BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry, const char *name,
-                                   uint32_t stack_size, void *ctx,
-                                   UBaseType_t priority,
-                                   TaskHandle_t *out_task, BaseType_t core) {
+BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry, const char* name,
+                                   uint32_t stack_size, void* ctx,
+                                   UBaseType_t priority, TaskHandle_t* out_task,
+                                   BaseType_t core) {
   (void)entry;
   (void)name;
   (void)stack_size;
@@ -79,8 +79,8 @@ BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry, const char *name,
 }
 
 TaskHandle_t xTaskCreateStaticPinnedToCore(
-    TaskFunction_t entry, const char *name, uint32_t stack_size, void *ctx,
-    UBaseType_t priority, StackType_t *stack, StaticTask_t *task_storage,
+    TaskFunction_t entry, const char* name, uint32_t stack_size, void* ctx,
+    UBaseType_t priority, StackType_t* stack, StaticTask_t* task_storage,
     BaseType_t core) {
   assert(entry != NULL);
   assert(stack == s_stack);
@@ -96,15 +96,15 @@ TaskHandle_t xTaskCreateStaticPinnedToCore(
   return &s_task_handle;
 }
 
-StackType_t *xTaskGetStackStart(TaskHandle_t task) {
+StackType_t* xTaskGetStackStart(TaskHandle_t task) {
   assert(task == NULL);
   return NULL;
 }
 
 void vTaskDelete(TaskHandle_t task) { (void)task; }
 
-static void callback(void *context) {
-  int *value = (int *)context;
+static void callback(void* context) {
+  int* value = (int*)context;
   *value = 2;
 }
 

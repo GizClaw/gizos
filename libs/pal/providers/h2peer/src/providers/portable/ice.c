@@ -31,7 +31,7 @@ static uint16_t ice_candidate_local_preference(IceCandidate* candidate) {
   return candidate->tcp_type == ICE_TCP_TYPE_ACTIVE ? 32768u : 0u;
 }
 
-static void ice_candidate_priority(IceCandidate *candidate) {
+static void ice_candidate_priority(IceCandidate* candidate) {
   // priority = (2^24)*(type preference) + (2^8)*(local preference) + (256 -
   // component ID)
   candidate->priority =
@@ -40,13 +40,14 @@ static void ice_candidate_priority(IceCandidate *candidate) {
       (256 - candidate->component);
 }
 
-void ice_candidate_create(
-    IceCandidate* candidate, int foundation, IceCandidateType type,
-    const h2_pal_net_addr_t* addr) {
+void ice_candidate_create(IceCandidate* candidate, int foundation,
+                          IceCandidateType type,
+                          const h2_pal_net_addr_t* addr) {
   candidate->addr = *addr;
   candidate->type = type;
 
-  snprintf(candidate->foundation, sizeof(candidate->foundation), "%d", foundation);
+  snprintf(candidate->foundation, sizeof(candidate->foundation), "%d",
+           foundation);
   // 1: RTP, 2: RTCP
   candidate->component = 1;
   candidate->transport = ICE_TRANSPORT_UDP;
@@ -54,59 +55,54 @@ void ice_candidate_create(
   ice_candidate_priority(candidate);
 }
 
-void ice_candidate_create_tcp_active(
-    IceCandidate* candidate, int foundation,
-    const h2_pal_net_addr_t* source_addr) {
-  ice_candidate_create(
-      candidate, foundation, ICE_CANDIDATE_TYPE_HOST, source_addr);
+void ice_candidate_create_tcp_active(IceCandidate* candidate, int foundation,
+                                     const h2_pal_net_addr_t* source_addr) {
+  ice_candidate_create(candidate, foundation, ICE_CANDIDATE_TYPE_HOST,
+                       source_addr);
   candidate->transport = ICE_TRANSPORT_TCP;
   candidate->tcp_type = ICE_TCP_TYPE_ACTIVE;
   candidate->addr.port = 9u;
   ice_candidate_priority(candidate);
 }
 
-void ice_candidate_to_description(IceCandidate* candidate, char* description, int length) {
+void ice_candidate_to_description(IceCandidate* candidate, char* description,
+                                  int length) {
   char addr_string[H2_PEER_NET_ADDR_STRING_SIZE];
   char typ_raddr[128];
 
   memset(typ_raddr, 0, sizeof(typ_raddr));
-  h2_peer_net_addr_format(
-      &candidate->raddr, addr_string, sizeof(addr_string));
+  h2_peer_net_addr_format(&candidate->raddr, addr_string, sizeof(addr_string));
 
   switch (candidate->type) {
     case ICE_CANDIDATE_TYPE_HOST:
       snprintf(typ_raddr, sizeof(typ_raddr), "host");
       break;
     case ICE_CANDIDATE_TYPE_SRFLX:
-      snprintf(typ_raddr, sizeof(typ_raddr), "srflx raddr %s rport %d", addr_string, candidate->raddr.port);
+      snprintf(typ_raddr, sizeof(typ_raddr), "srflx raddr %s rport %d",
+               addr_string, candidate->raddr.port);
       break;
     case ICE_CANDIDATE_TYPE_RELAY:
-      snprintf(typ_raddr, sizeof(typ_raddr), "relay raddr %s rport %d", addr_string, candidate->raddr.port);
+      snprintf(typ_raddr, sizeof(typ_raddr), "relay raddr %s rport %d",
+               addr_string, candidate->raddr.port);
     default:
       break;
   }
 
-  h2_peer_net_addr_format(
-      &candidate->addr, addr_string, sizeof(addr_string));
-  snprintf(description, length, "a=candidate:%s %d %s %" PRIu32 " %s %d typ %s%s\r\n",
-           candidate->foundation,
-           candidate->component,
+  h2_peer_net_addr_format(&candidate->addr, addr_string, sizeof(addr_string));
+  snprintf(description, length,
+           "a=candidate:%s %d %s %" PRIu32 " %s %d typ %s%s\r\n",
+           candidate->foundation, candidate->component,
            candidate->transport == ICE_TRANSPORT_TCP ? "TCP" : "UDP",
-           candidate->priority,
-           addr_string,
-           candidate->addr.port,
-           typ_raddr,
-           candidate->transport == ICE_TRANSPORT_TCP
-               ? " tcptype active"
-               : "");
+           candidate->priority, addr_string, candidate->addr.port, typ_raddr,
+           candidate->transport == ICE_TRANSPORT_TCP ? " tcptype active" : "");
 }
 
 static int ice_ascii_equal(const char* first, const char* second) {
   while (*first != '\0' && *second != '\0') {
-    char a = *first >= 'A' && *first <= 'Z' ? (char)(*first + 'a' - 'A')
-                                             : *first;
+    char a =
+        *first >= 'A' && *first <= 'Z' ? (char)(*first + 'a' - 'A') : *first;
     char b = *second >= 'A' && *second <= 'Z' ? (char)(*second + 'a' - 'A')
-                                               : *second;
+                                              : *second;
     if (a != b) {
       return 0;
     }
@@ -137,16 +133,15 @@ static char* ice_next_token(char** cursor) {
 static int ice_parse_u32(const char* token, uint32_t* out_value) {
   char* end = NULL;
   unsigned long value = strtoul(token, &end, 10);
-  if (token[0] == '\0' || end == token || *end != '\0' ||
-      value > UINT32_MAX) {
+  if (token[0] == '\0' || end == token || *end != '\0' || value > UINT32_MAX) {
     return -1;
   }
   *out_value = (uint32_t)value;
   return 0;
 }
 
-static int ice_parse_candidate_type(
-    const char* token, IceCandidateType* out_type) {
+static int ice_parse_candidate_type(const char* token,
+                                    IceCandidateType* out_type) {
   if (ice_ascii_equal(token, "host")) {
     *out_type = ICE_CANDIDATE_TYPE_HOST;
   } else if (ice_ascii_equal(token, "srflx")) {
@@ -162,9 +157,7 @@ static int ice_parse_candidate_type(
 }
 
 IceCandidateParseResult ice_candidate_from_description(
-    const h2_pal_net_api_t* net,
-    IceCandidate* candidate,
-    char* description,
+    const h2_pal_net_api_t* net, IceCandidate* candidate, char* description,
     char* end) {
   if (net == NULL || candidate == NULL || description == NULL || end == NULL ||
       end < description) {
@@ -206,14 +199,14 @@ IceCandidateParseResult ice_candidate_from_description(
     return ICE_CANDIDATE_PARSE_INVALID;
   }
   memset(candidate, 0, sizeof(*candidate));
-  snprintf(candidate->foundation, sizeof(candidate->foundation), "%s", tokens[0]);
+  snprintf(candidate->foundation, sizeof(candidate->foundation), "%s",
+           tokens[0]);
   uint32_t component = 0u;
   uint32_t port = 0u;
   if (ice_parse_u32(tokens[1], &component) != 0 || component == 0u ||
       component > INT32_MAX ||
       ice_parse_u32(tokens[3], &candidate->priority) != 0 ||
-      ice_parse_u32(tokens[5], &port) != 0 || port == 0u ||
-      port > UINT16_MAX ||
+      ice_parse_u32(tokens[5], &port) != 0 || port == 0u || port > UINT16_MAX ||
       ice_parse_candidate_type(tokens[7], &candidate->type) != 0) {
     return ICE_CANDIDATE_PARSE_INVALID;
   }
@@ -259,23 +252,23 @@ IceCandidateParseResult ice_candidate_from_description(
   return ICE_CANDIDATE_PARSE_OK;
 }
 
-int ice_candidate_equal(
-    const IceCandidate* first, const IceCandidate* second) {
+int ice_candidate_equal(const IceCandidate* first, const IceCandidate* second) {
   if (first == NULL || second == NULL ||
       strcmp(first->foundation, second->foundation) != 0 ||
       first->component != second->component ||
-      first->transport != second->transport ||
-      first->type != second->type || first->tcp_type != second->tcp_type ||
+      first->transport != second->transport || first->type != second->type ||
+      first->tcp_type != second->tcp_type ||
       first->addr.family != second->addr.family ||
-      first->addr.port != second->addr.port || first->addr.scope_id != second->addr.scope_id) {
+      first->addr.port != second->addr.port ||
+      first->addr.scope_id != second->addr.scope_id) {
     return 0;
   }
   size_t address_len = first->addr.family == H2_PAL_NET_FAMILY_IPV6 ? 16u : 4u;
   return memcmp(first->addr.ip, second->addr.ip, address_len) == 0;
 }
 
-int ice_candidate_pair_is_compatible(
-    const IceCandidate* local, const IceCandidate* remote) {
+int ice_candidate_pair_is_compatible(const IceCandidate* local,
+                                     const IceCandidate* remote) {
   if (local == NULL || remote == NULL ||
       local->component != remote->component ||
       local->addr.family != remote->addr.family ||

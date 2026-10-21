@@ -20,16 +20,16 @@
 #define H2_GIZCLAW_E2E_RPC_SERVICE_LABEL "giznet/v1/service/0"
 
 typedef struct observed_channel {
-  h2_pal_webrtc_channel_t *channel;
+  h2_pal_webrtc_channel_t* channel;
   uint16_t stream_id;
   bool open;
 } observed_channel_t;
 
 typedef struct webrtc_observer {
-  const h2_pal_webrtc_api_t *upstream;
-  const h2_pal_sync_api_t *sync;
-  h2_app_test_webrtc_t *wrapper;
-  h2_pal_mutex_t *mutex;
+  const h2_pal_webrtc_api_t* upstream;
+  const h2_pal_sync_api_t* sync;
+  h2_app_test_webrtc_t* wrapper;
+  h2_pal_mutex_t* mutex;
   observed_channel_t channels[H2_GIZCLAW_E2E_OBSERVER_CHANNEL_CAPACITY];
   uint16_t stream_ids[H2_GIZCLAW_E2E_OBSERVER_STREAM_CAPACITY];
   size_t stream_id_count;
@@ -42,15 +42,15 @@ typedef struct webrtc_observer {
 
 static webrtc_observer_t s_webrtc_observer;
 
-static bool observed_rpc_service(const h2_pal_webrtc_channel_info_t *info) {
+static bool observed_rpc_service(const h2_pal_webrtc_channel_info_t* info) {
   static const char label[] = H2_GIZCLAW_E2E_RPC_SERVICE_LABEL;
   return info != NULL && info->label.data != NULL &&
          info->label.len == sizeof(label) - 1u &&
          memcmp(info->label.data, label, sizeof(label) - 1u) == 0;
 }
 
-static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
-                                const h2_pal_webrtc_channel_info_t *info,
+static void observe_rpc_channel(h2_pal_webrtc_channel_t* channel,
+                                const h2_pal_webrtc_channel_info_t* info,
                                 h2_pal_webrtc_channel_state_t state) {
   if (!s_webrtc_observer.initialized || channel == NULL ||
       !observed_rpc_service(info) ||
@@ -58,7 +58,7 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
     return;
   }
   (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed_channel_t *observed = NULL;
+  observed_channel_t* observed = NULL;
   for (size_t index = 0u; index < H2_GIZCLAW_E2E_OBSERVER_CHANNEL_CAPACITY;
        ++index) {
     if (s_webrtc_observer.channels[index].channel == channel) {
@@ -75,8 +75,7 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
     if (!info->has_stream_id) {
       s_webrtc_observer.invalid = true;
     }
-    if (observed->channel == NULL)
-      observed->channel = channel;
+    if (observed->channel == NULL) observed->channel = channel;
     if (observed->open) {
       s_webrtc_observer.invalid = true;
     } else {
@@ -102,10 +101,12 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
             s_webrtc_observer.channels[i].stream_id == info->stream_id)
           s_webrtc_observer.invalid = true;
       if (!known) {
-        if (s_webrtc_observer.stream_id_count == H2_GIZCLAW_E2E_OBSERVER_STREAM_CAPACITY)
+        if (s_webrtc_observer.stream_id_count ==
+            H2_GIZCLAW_E2E_OBSERVER_STREAM_CAPACITY)
           s_webrtc_observer.invalid = true;
         else
-          s_webrtc_observer.stream_ids[s_webrtc_observer.stream_id_count++] = info->stream_id;
+          s_webrtc_observer.stream_ids[s_webrtc_observer.stream_id_count++] =
+              info->stream_id;
       }
     }
   } else if (state == H2_PAL_WEBRTC_CHANNEL_CLOSED ||
@@ -122,15 +123,16 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
 }
 
-static void observe_event(void *user, const h2_pal_webrtc_event_t *event) {
+static void observe_event(void* user, const h2_pal_webrtc_event_t* event) {
   (void)user;
   if (event->kind == H2_PAL_WEBRTC_EVENT_CHANNEL_STATE)
-    observe_rpc_channel(event->channel, &event->channel_info, event->channel_state);
+    observe_rpc_channel(event->channel, &event->channel_info,
+                        event->channel_state);
 }
 
-static int observer_init(const h2_pal_webrtc_api_t *upstream,
-                         const h2_pal_sync_api_t *sync,
-                         const h2_pal_mem_api_t *allocator) {
+static int observer_init(const h2_pal_webrtc_api_t* upstream,
+                         const h2_pal_sync_api_t* sync,
+                         const h2_pal_mem_api_t* allocator) {
   if (upstream == NULL || sync == NULL || allocator == NULL ||
       s_webrtc_observer.initialized) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -148,7 +150,7 @@ static int observer_init(const h2_pal_webrtc_api_t *upstream,
   s_webrtc_observer.upstream = upstream;
   s_webrtc_observer.sync = sync;
   rc = h2_app_test_webrtc_create(allocator, upstream, observe_event, NULL,
-                                  &s_webrtc_observer.wrapper);
+                                 &s_webrtc_observer.wrapper);
   if (rc != H2_PAL_OK) {
     (void)h2_pal_mutex_destroy(sync, s_webrtc_observer.mutex);
     memset(&s_webrtc_observer, 0, sizeof(s_webrtc_observer));
@@ -159,8 +161,7 @@ static int observer_init(const h2_pal_webrtc_api_t *upstream,
 }
 
 static int observer_deinit(void) {
-  if (!s_webrtc_observer.initialized)
-    return H2_PAL_OK;
+  if (!s_webrtc_observer.initialized) return H2_PAL_OK;
   int rc = h2_app_test_webrtc_destroy(s_webrtc_observer.wrapper);
   if (rc != H2_PAL_OK) return rc;
   s_webrtc_observer.initialized = false;
@@ -172,8 +173,7 @@ static int observer_deinit(void) {
 }
 
 void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void) {
-  if (!s_webrtc_observer.initialized)
-    return;
+  if (!s_webrtc_observer.initialized) return;
   (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   memset(s_webrtc_observer.channels, 0, sizeof(s_webrtc_observer.channels));
   memset(s_webrtc_observer.stream_ids, 0, sizeof(s_webrtc_observer.stream_ids));
@@ -185,9 +185,9 @@ void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void) {
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
 }
 
-int h2_gizclaw_e2e_fixture_rpc_channel_observation(
-    size_t *out_max_open, size_t *out_opened_channels,
-    size_t *out_open_channels) {
+int h2_gizclaw_e2e_fixture_rpc_channel_observation(size_t* out_max_open,
+                                                   size_t* out_opened_channels,
+                                                   size_t* out_open_channels) {
   if (!s_webrtc_observer.initialized || out_max_open == NULL ||
       out_opened_channels == NULL || out_open_channels == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -211,7 +211,7 @@ static const uint8_t s_client_identifiers_response[] = {
     0x0a, 0x0c, 0x0a, 0x0a, 'h', '2', '-', 'p', 'a', 'l', '-', 'e', '2', 'e',
 };
 
-static int key_to_base58(const uint8_t *bytes, size_t len, char *out,
+static int key_to_base58(const uint8_t* bytes, size_t len, char* out,
                          size_t out_cap) {
   static const char alphabet[] =
       "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -251,15 +251,14 @@ static int key_to_base58(const uint8_t *bytes, size_t len, char *out,
   return H2_PAL_OK;
 }
 
-static bool all_zero(const uint8_t *bytes, size_t len) {
+static bool all_zero(const uint8_t* bytes, size_t len) {
   uint8_t aggregate = 0u;
-  for (size_t index = 0u; index < len; ++index)
-    aggregate |= bytes[index];
+  for (size_t index = 0u; index < len; ++index) aggregate |= bytes[index];
   return aggregate == 0u;
 }
 
-static bool append_name_suffix(char *destination, size_t capacity,
-                               const char *prefix, const char *suffix) {
+static bool append_name_suffix(char* destination, size_t capacity,
+                               const char* prefix, const char* suffix) {
   if (destination == NULL || capacity == 0u || prefix == NULL ||
       suffix == NULL) {
     return false;
@@ -274,29 +273,31 @@ static bool append_name_suffix(char *destination, size_t capacity,
   return true;
 }
 
-h2_gizclaw_str_t h2_gizclaw_e2e_str(const char *value) {
+h2_gizclaw_str_t h2_gizclaw_e2e_str(const char* value) {
   return (h2_gizclaw_str_t){
       .data = value,
       .len = value == NULL ? 0u : strlen(value),
   };
 }
 
-void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage,
+void h2_gizclaw_e2e_evidence(const char* symbol, const char* stage,
                              int result) {
   h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n",
-         symbol == NULL ? "-" : symbol, stage == NULL ? "-" : stage,
-         result == H2_PAL_OK ? "PASS" : "FAIL", result);
+                      symbol == NULL ? "-" : symbol,
+                      stage == NULL ? "-" : stage,
+                      result == H2_PAL_OK ? "PASS" : "FAIL", result);
 }
 
-int h2_gizclaw_e2e_decode_social_ping(h2_gizclaw_rpc_bytes_t payload,
-                                     h2_gizclaw_e2e_social_observation_t *out) {
+int h2_gizclaw_e2e_decode_social_ping(
+    h2_gizclaw_rpc_bytes_t payload, h2_gizclaw_e2e_social_observation_t* out) {
   if (!out || !payload.data || !payload.len || payload.len > 583u)
     return H2_PAL_ERR_INVALID_ARG;
   *out = (h2_gizclaw_e2e_social_observation_t){0};
   unsigned seen = 0u;
   for (size_t offset = 0u; offset < payload.len;) {
     const uint8_t tag = payload.data[offset++];
-    if ((tag != 10u && tag != 18u && tag != 26u) || (seen & (1u << (tag >> 3u))))
+    if ((tag != 10u && tag != 18u && tag != 26u) ||
+        (seen & (1u << (tag >> 3u))))
       return H2_PAL_ERR_FORMAT;
     seen |= 1u << (tag >> 3u);
     size_t length = 0u;
@@ -308,32 +309,39 @@ int h2_gizclaw_e2e_decode_social_ping(h2_gizclaw_rpc_bytes_t payload,
       length |= (size_t)(part & 127u) << shift;
       shift += 7u;
     } while (part & 128u);
-    if (length > payload.len - offset || memchr(payload.data + offset, 0, length))
+    if (length > payload.len - offset ||
+        memchr(payload.data + offset, 0, length))
       return H2_PAL_ERR_FORMAT;
-    char *dest = tag == 10u ? out->sender : tag == 26u ? out->group : NULL;
-    size_t cap = tag == 10u ? sizeof(out->sender) : tag == 26u ? sizeof(out->group) : 257u;
+    char* dest = tag == 10u ? out->sender : tag == 26u ? out->group : NULL;
+    size_t cap = tag == 10u   ? sizeof(out->sender)
+                 : tag == 26u ? sizeof(out->group)
+                              : 257u;
     if (length >= cap) return H2_PAL_ERR_FORMAT;
-    if (dest) { memcpy(dest, payload.data + offset, length); dest[length] = '\0'; }
+    if (dest) {
+      memcpy(dest, payload.data + offset, length);
+      dest[length] = '\0';
+    }
     offset += length;
   }
   return out->sender[0] ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
 }
 
 int h2_gizclaw_e2e_fixture_social_observation(
-    h2_gizclaw_e2e_fixture_t *fixture, h2_gizclaw_e2e_actor_role_t role,
-    h2_gizclaw_e2e_social_observation_t *out) {
+    h2_gizclaw_e2e_fixture_t* fixture, h2_gizclaw_e2e_actor_role_t role,
+    h2_gizclaw_e2e_social_observation_t* out) {
   if (!fixture || !out || (unsigned)role >= H2_GIZCLAW_E2E_ACTOR_COUNT ||
-      !s_webrtc_observer.initialized) return H2_PAL_ERR_INVALID_ARG;
+      !s_webrtc_observer.initialized)
+    return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   if (rc != H2_PAL_OK) return rc;
   *out = fixture->actors[role].social_ping;
   return h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
 }
 
-static int provider_call(void *user, h2_gizclaw_tool_t method,
+static int provider_call(void* user, h2_gizclaw_tool_t method,
                          h2_gizclaw_rpc_bytes_t request_payload,
-                         h2_gizclaw_rpc_provider_response_t *out_response) {
-  h2_gizclaw_e2e_actor_t *actor = user;
+                         h2_gizclaw_rpc_provider_response_t* out_response) {
+  h2_gizclaw_e2e_actor_t* actor = user;
   if (actor == NULL || out_response == NULL ||
       (request_payload.data == NULL && request_payload.len != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -361,7 +369,8 @@ static int provider_call(void *user, h2_gizclaw_tool_t method,
   }
   if (method == H2_GIZCLAW_TOOL_SOCIAL_PING) {
     h2_gizclaw_e2e_social_observation_t observed = {0};
-    const int parsed = h2_gizclaw_e2e_decode_social_ping(request_payload, &observed);
+    const int parsed =
+        h2_gizclaw_e2e_decode_social_ping(request_payload, &observed);
     int rc = h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
     if (rc != H2_PAL_OK) return rc;
     observed.count = actor->social_ping.count + 1u;
@@ -382,10 +391,9 @@ static int provider_call(void *user, h2_gizclaw_tool_t method,
   return H2_PAL_OK;
 }
 
-static bool cancel_requested(void *user) {
-  const h2_gizclaw_e2e_fixture_t *fixture = user;
-  if (fixture == NULL || !s_webrtc_observer.initialized)
-    return true;
+static bool cancel_requested(void* user) {
+  const h2_gizclaw_e2e_fixture_t* fixture = user;
+  if (fixture == NULL || !s_webrtc_observer.initialized) return true;
   (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   const bool cleanup = fixture->cleanup_started;
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
@@ -398,8 +406,8 @@ static bool cancel_requested(void *user) {
   return !h2_gizclaw_e2e_fixture_has_time(fixture, 1u);
 }
 
-static int actor_create_identity(h2_gizclaw_e2e_fixture_t *fixture,
-                                 h2_gizclaw_e2e_actor_t *actor) {
+static int actor_create_identity(h2_gizclaw_e2e_fixture_t* fixture,
+                                 h2_gizclaw_e2e_actor_t* actor) {
   h2_pal_x25519_keypair_t keypair;
   memset(&keypair, 0, sizeof(keypair));
   int rc = h2_pal_crypto_x25519_keypair_generate(fixture->crypto, &keypair);
@@ -421,62 +429,57 @@ static int actor_create_identity(h2_gizclaw_e2e_fixture_t *fixture,
   return rc;
 }
 
-static int actor_session_dispose(h2_gizclaw_e2e_actor_t *actor) {
-  if (actor->session == NULL)
-    return H2_PAL_OK;
+static int actor_session_dispose(h2_gizclaw_e2e_actor_t* actor) {
+  if (actor->session == NULL) return H2_PAL_OK;
   int rc = h2_gizclaw_session_close(actor->session);
   h2_gizclaw_e2e_evidence("h2_gizclaw_session_close", "session-close", rc);
   h2_gizclaw_session_state_t state;
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_session_snapshot(actor->session, &state);
-  if (rc == H2_PAL_OK && (state.can_start ||
-                          state.blocking_reason != H2_GIZCLAW_SESSION_BLOCK_CLOSED))
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_session_snapshot(actor->session, &state);
+  if (rc == H2_PAL_OK &&
+      (state.can_start ||
+       state.blocking_reason != H2_GIZCLAW_SESSION_BLOCK_CLOSED))
     rc = H2_PAL_ERR_INVALID_STATE;
-  h2_gizclaw_e2e_evidence("h2_gizclaw_session_close", "session_close-assert", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_session_close", "session_close-assert",
+                          rc);
   if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_session_destroy(&actor->session);
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_destroy", "session-destroy", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_destroy", "session-destroy",
+                            rc);
     if (rc == H2_PAL_OK && actor->session != NULL)
       rc = H2_PAL_ERR_INVALID_STATE;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_session_destroy", "session_destroy-assert", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_destroy",
+                            "session_destroy-assert", rc);
   }
   return rc;
 }
 
-static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
-  if (actor->service == NULL)
-    return H2_PAL_OK;
+static int actor_stop(h2_gizclaw_e2e_actor_t* actor) {
+  if (actor->service == NULL) return H2_PAL_OK;
   if (actor->api_key_state != NULL) {
     int close_rc = h2_gizclaw_api_key_state_close(actor->api_key_state);
-    if (close_rc != H2_PAL_OK)
-      return close_rc;
+    if (close_rc != H2_PAL_OK) return close_rc;
   }
-  int rc = actor->session == NULL ? H2_PAL_OK : h2_gizclaw_session_close(actor->session);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_service_stop(actor->service);
+  int rc = actor->session == NULL ? H2_PAL_OK
+                                  : h2_gizclaw_session_close(actor->session);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_service_stop(actor->service);
   h2_gizclaw_e2e_evidence("h2_gizclaw_service_stop", "fixture-stop", rc);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   /* The worker has joined: the bounded queue can no longer grow. */
   for (size_t attempt = 0u; attempt < 32u; ++attempt) {
     size_t dispatched = 0u;
     rc = h2_gizclaw_service_poll(actor->service, 8u, &dispatched);
     h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "fixture-drain", rc);
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (dispatched > 8u)
-      return H2_PAL_ERR_INVALID_STATE;
+    if (rc != H2_PAL_OK) return rc;
+    if (dispatched > 8u) return H2_PAL_ERR_INVALID_STATE;
     if (dispatched == 0u) {
       /* The stopped Service has no remaining dispatch notifications. Do not
        * claim that stop alone dispatched hooks or released their resources. */
       h2_gizclaw_e2e_evidence("h2_gizclaw_service_stop", "service_stop-assert",
                               H2_PAL_OK);
       rc = h2_gizclaw_api_key_state_destroy(&actor->api_key_state);
-      if (rc != H2_PAL_OK)
-        return rc;
+      if (rc != H2_PAL_OK) return rc;
       rc = actor_session_dispose(actor);
-      if (rc != H2_PAL_OK)
-        return rc;
+      if (rc != H2_PAL_OK) return rc;
       rc = h2_gizclaw_service_deinit(actor->service);
       h2_gizclaw_e2e_evidence("h2_gizclaw_service_deinit", "fixture-deinit",
                               rc);
@@ -492,11 +495,9 @@ static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
   return H2_PAL_ERR_INVALID_STATE;
 }
 
-
-static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
-                         h2_gizclaw_e2e_actor_t *actor, const char *stage) {
-  if (actor->service != NULL)
-    return H2_PAL_ERR_INVALID_STATE;
+static int actor_connect(h2_gizclaw_e2e_fixture_t* fixture,
+                         h2_gizclaw_e2e_actor_t* actor, const char* stage) {
+  if (actor->service != NULL) return H2_PAL_ERR_INVALID_STATE;
   actor->tool_handlers[0] = (h2_gizclaw_tool_handler_t){
       H2_GIZCLAW_TOOL_INFO_GET, provider_call, actor};
   actor->tool_handlers[1] = (h2_gizclaw_tool_handler_t){
@@ -522,7 +523,7 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .vtable = fixture->device_vtable,
       .lua_apps = fixture->device_lua_apps,
       .user = fixture,
-      .audio_buffer_bytes = fixture->device_audio ? 65536u : 0,
+      .audio_buffer_bytes = fixture->device_audio ? 65536u : 0u,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .tool_handlers = device ? &actor->tool_handlers[2] : actor->tool_handlers,
       .tool_handler_count = device ? 1u : 3u,
@@ -540,29 +541,27 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
   };
   int rc = h2_gizclaw_service_init(&config, &actor->service);
   h2_gizclaw_e2e_evidence("h2_gizclaw_service_init", stage, rc);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (actor->service == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (rc != H2_PAL_OK) return rc;
+  if (actor->service == NULL) return H2_PAL_ERR_INVALID_STATE;
   /* A partial start can already have connected its network task before a
    * later audio task fails. Conservatively retain the remote obligation. */
   actor->peer_delete_required = true;
   rc = h2_gizclaw_service_start(actor->service);
   h2_gizclaw_e2e_evidence("h2_gizclaw_service_start", stage, rc);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   /* Connection may succeed even if the following registration times out.
    * Retain the identity for cleanup rather than assuming no remote Peer. */
   h2_gizclaw_registration_result_t registration = {0};
   if (fixture->use_session) {
-    static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
+    actor->workflow_tag =
+        h2_gizclaw_e2e_str(h2_gizclaw_e2e_workflow_tag(fixture->config));
     const h2_gizclaw_session_config_t session_config = {
         .service = actor->service,
         .mem = fixture->allocator,
         .sync = fixture->runtime->sync,
         .time = fixture->time,
         .runtime = fixture->runtime,
-        .tags = tags,
+        .tags = &actor->workflow_tag,
         .tag_count = 1u,
         .max_workflows = 128u,
         .catalog_bytes = 65536u};
@@ -571,35 +570,44 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
     if (rc == H2_PAL_OK) {
       h2_gizclaw_session_state_t state;
       rc = h2_gizclaw_session_snapshot(actor->session, &state);
-      if (rc == H2_PAL_OK && (state.can_start ||
-          state.blocking_reason != H2_GIZCLAW_SESSION_BLOCK_REGISTRATION))
+      if (rc == H2_PAL_OK &&
+          (state.can_start ||
+           state.blocking_reason != H2_GIZCLAW_SESSION_BLOCK_REGISTRATION))
         rc = H2_PAL_ERR_INVALID_STATE;
-      h2_gizclaw_e2e_evidence("h2_gizclaw_session_create", "session_create-assert", rc);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_create",
+                              "session_create-assert", rc);
     }
     if (rc == H2_PAL_OK) {
-      rc = h2_gizclaw_session_register(actor->session, fixture->registration_token,
-                                      H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS);
-      h2_gizclaw_e2e_evidence("h2_gizclaw_session_register", "session-register", rc);
+      rc = h2_gizclaw_session_register(actor->session,
+                                       fixture->registration_token,
+                                       H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_register", "session-register",
+                              rc);
       h2_gizclaw_session_state_t state;
-      const int snapshot_rc = h2_gizclaw_session_snapshot(actor->session, &state);
-      if (snapshot_rc == H2_PAL_OK && state.registration == H2_GIZCLAW_SESSION_READY) {
-        actor->registered = true; /* Catalog failure must still clean up Peer. */
+      const int snapshot_rc =
+          h2_gizclaw_session_snapshot(actor->session, &state);
+      if (snapshot_rc == H2_PAL_OK &&
+          state.registration == H2_GIZCLAW_SESSION_READY) {
+        actor->registered =
+            true; /* Catalog failure must still clean up Peer. */
         memcpy(registration.runtime_profile_name, state.profile_name,
                sizeof(registration.runtime_profile_name));
       }
-      if (rc == H2_PAL_OK && (snapshot_rc != H2_PAL_OK ||
-          state.registration != H2_GIZCLAW_SESSION_READY ||
-          state.catalog != H2_GIZCLAW_SESSION_READY || state.can_start))
+      if (rc == H2_PAL_OK &&
+          (snapshot_rc != H2_PAL_OK ||
+           state.registration != H2_GIZCLAW_SESSION_READY ||
+           state.catalog != H2_GIZCLAW_SESSION_READY || state.can_start))
         rc = H2_PAL_ERR_INVALID_STATE;
-      h2_gizclaw_e2e_evidence("h2_gizclaw_session_register", "session_register-assert", rc);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_register",
+                              "session_register-assert", rc);
     }
   } else {
     rc = h2_gizclaw_rpc_register(actor->service, fixture->registration_token,
-                                H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS, &registration);
+                                 H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS,
+                                 &registration);
     h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_register", stage, rc);
   }
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (registration.runtime_profile_name[0] == '\0' ||
       memchr(registration.runtime_profile_name, '\0',
              sizeof(registration.runtime_profile_name)) == NULL)
@@ -628,18 +636,16 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
   return H2_PAL_OK;
 }
 
-static int fixture_http(h2_gizclaw_e2e_fixture_t *fixture) {
-  const char *hex = fixture->config->tls_root_ca_hex;
-  if (!hex || !*hex)
-    return H2_PAL_OK;
+static int fixture_http(h2_gizclaw_e2e_fixture_t* fixture) {
+  const char* hex = fixture->config->tls_root_ca_hex;
+  if (!hex || !*hex) return H2_PAL_OK;
   size_t length = strlen(hex), capacity = 0, decoded = 0;
   if (length > 32768u || length % 2u ||
       h2_encoding_max_decoded_len(&h2_encoding_hex, length, &capacity) !=
           H2_ENCODING_OK)
     return H2_PAL_ERR_INVALID_ARG;
-  uint8_t *pem = h2_pal_mem_alloc(fixture->allocator, capacity);
-  if (!pem)
-    return H2_PAL_ERR_NO_MEMORY;
+  uint8_t* pem = h2_pal_mem_alloc(fixture->allocator, capacity);
+  if (!pem) return H2_PAL_ERR_NO_MEMORY;
   int rc = h2_encoding_decode(&h2_encoding_hex, hex, length, pem, capacity,
                               &decoded) == H2_ENCODING_OK
                ? H2_PAL_OK
@@ -655,14 +661,13 @@ static int fixture_http(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = h2_corehttp_create(&config, &fixture->http_owned,
                             &fixture->configured_http);
   h2_pal_mem_free(fixture->allocator, pem);
-  if (rc == H2_PAL_OK)
-    fixture->http = &fixture->configured_http;
+  if (rc == H2_PAL_OK) fixture->http = &fixture->configured_http;
   return rc;
 }
 
-int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
-                                h2_runtime_t *runtime,
-                                const h2_gizclaw_e2e_config_t *config,
+int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t* fixture,
+                                h2_runtime_t* runtime,
+                                const h2_gizclaw_e2e_config_t* config,
                                 uint32_t suite_timeout_ms) {
   if (fixture == NULL || runtime == NULL || config == NULL ||
       suite_timeout_ms == 0u || runtime->mem == NULL ||
@@ -681,14 +686,20 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
              config->registration_token.len) != NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (config->fixture_allocator != NULL &&
+      (config->fixture_allocator->vtable == NULL ||
+       config->fixture_allocator->vtable->alloc == NULL ||
+       config->fixture_allocator->vtable->free == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
   /* Only one observer-backed fixture may be live. Reject before clearing
    * caller storage so accidental re-init cannot orphan active Services. */
-  if (s_webrtc_observer.initialized)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (s_webrtc_observer.initialized) return H2_PAL_ERR_INVALID_STATE;
   memset(fixture, 0, sizeof(*fixture));
   fixture->runtime = runtime;
   fixture->config = config;
-  fixture->allocator = runtime->mem;
+  fixture->allocator = config->fixture_allocator != NULL
+                           ? config->fixture_allocator
+                           : runtime->mem;
   fixture->crypto = runtime->crypto;
   fixture->http = runtime->http;
   fixture->log = runtime->log;
@@ -744,7 +755,7 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
     fixture->registration_token = NULL;
     return H2_PAL_ERR_INVALID_STATE;
   }
-  rc = observer_init(fixture->webrtc, runtime->sync, runtime->mem);
+  rc = observer_init(fixture->webrtc, runtime->sync, fixture->allocator);
   if (rc != H2_PAL_OK) {
     memset(fixture->registration_token, 0, config->registration_token.len + 1u);
     h2_pal_mem_free(fixture->allocator, fixture->registration_token);
@@ -762,7 +773,7 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
   return rc;
 }
 
-int h2_gizclaw_e2e_fixture_connect_actors(h2_gizclaw_e2e_fixture_t *fixture,
+int h2_gizclaw_e2e_fixture_connect_actors(h2_gizclaw_e2e_fixture_t* fixture,
                                           size_t actor_count) {
   if (fixture == NULL || actor_count == 0u ||
       actor_count > H2_GIZCLAW_E2E_ACTOR_COUNT) {
@@ -778,17 +789,16 @@ int h2_gizclaw_e2e_fixture_connect_actors(h2_gizclaw_e2e_fixture_t *fixture,
     rc = actor_create_identity(fixture, &fixture->actors[index]);
     if (rc == H2_PAL_OK)
       rc = actor_connect(fixture, &fixture->actors[index], "registration");
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_e2e_fixture_reconnect_actor(h2_gizclaw_e2e_fixture_t *fixture,
+int h2_gizclaw_e2e_fixture_reconnect_actor(h2_gizclaw_e2e_fixture_t* fixture,
                                            h2_gizclaw_e2e_actor_role_t role) {
   if (fixture == NULL || (unsigned int)role > H2_GIZCLAW_E2E_GROUP_MEMBER)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_e2e_actor_t *actor = &fixture->actors[role];
+  h2_gizclaw_e2e_actor_t* actor = &fixture->actors[role];
   if (actor->private_key[0] == '\0' || !actor->peer_delete_required)
     return H2_PAL_ERR_INVALID_STATE;
   const int rc = actor_stop(actor);
@@ -796,14 +806,14 @@ int h2_gizclaw_e2e_fixture_reconnect_actor(h2_gizclaw_e2e_fixture_t *fixture,
 }
 
 typedef struct sync_job {
-  int (*fn)(void *ctx);
-  void *ctx;
+  int (*fn)(void* ctx);
+  void* ctx;
   int result;
   h2_atomic_bool_t returned;
 } sync_job_t;
 
-static void sync_job_entry(void *user) {
-  sync_job_t *job = user;
+static void sync_job_entry(void* user) {
+  sync_job_t* job = user;
   job->result = job->fn(job->ctx);
   h2_atomic_store_explicit(&job->returned, true, H2_ATOMIC_RELEASE);
 }
@@ -813,32 +823,29 @@ static void sync_job_entry(void *user) {
 #define SYNC_JOB_JOIN_INTERVAL_MS 10u
 
 /* Retry-join a returned job task within the bounded window. */
-static int join_job_task(h2_gizclaw_e2e_fixture_t *fixture,
-                         h2_pal_task_t *task) {
+static int join_job_task(h2_gizclaw_e2e_fixture_t* fixture,
+                         h2_pal_task_t* task) {
   int rc = H2_PAL_ERR_INVALID_STATE;
   for (unsigned attempt = 0u; attempt < SYNC_JOB_JOIN_ATTEMPTS; ++attempt) {
     rc = h2_pal_task_join(fixture->runtime->task, task);
-    if (rc == H2_PAL_OK || attempt + 1u >= SYNC_JOB_JOIN_ATTEMPTS)
-      break;
+    if (rc == H2_PAL_OK || attempt + 1u >= SYNC_JOB_JOIN_ATTEMPTS) break;
     (void)h2_pal_time_sleep_ms(fixture->time, SYNC_JOB_JOIN_INTERVAL_MS);
   }
   return rc;
 }
 
 /* Reclaim a previously retained job task, if any, before reuse or release. */
-static int reclaim_retained_job_task(h2_gizclaw_e2e_fixture_t *fixture) {
-  if (fixture->retained_job_task == NULL)
-    return H2_PAL_OK;
+static int reclaim_retained_job_task(h2_gizclaw_e2e_fixture_t* fixture) {
+  if (fixture->retained_job_task == NULL) return H2_PAL_OK;
   const int rc = join_job_task(fixture, fixture->retained_job_task);
   h2_gizclaw_e2e_evidence("h2_pal_task_join", "sync-job-retained", rc);
-  if (rc == H2_PAL_OK)
-    fixture->retained_job_task = NULL;
+  if (rc == H2_PAL_OK) fixture->retained_job_task = NULL;
   return rc;
 }
 
-int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
-                                     h2_gizclaw_service_t *service,
-                                     int (*fn)(void *ctx), void *ctx) {
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t* fixture,
+                                     h2_gizclaw_service_t* service,
+                                     int (*fn)(void* ctx), void* ctx) {
   if (fixture == NULL || fixture->runtime == NULL || fixture->time == NULL ||
       service == NULL || fn == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -846,8 +853,7 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
    * second job that could overwrite and leak it. Reclaim it first. */
   if (fixture->retained_job_task != NULL) {
     const int rc = reclaim_retained_job_task(fixture);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   sync_job_t job = {.fn = fn, .ctx = ctx, .result = H2_PAL_ERR_INVALID_STATE};
   if (h2_atomic_init(&job.returned, false) != H2_ATOMIC_OK)
@@ -856,7 +862,7 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
       .name = h2_gizclaw_e2e_job_task_name,
       .min_stack_size = 32768u,
   };
-  h2_pal_task_t *task = NULL;
+  h2_pal_task_t* task = NULL;
   int rc = h2_pal_task_start(fixture->runtime->task, &options, sync_job_entry,
                              &job, &task);
   h2_gizclaw_e2e_evidence("h2_pal_task_start", "sync-job", rc);
@@ -886,8 +892,7 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
       if (first_error == H2_PAL_OK)
         first_error = stop_rc == H2_PAL_OK ? H2_PAL_ERR_TIMEOUT : stop_rc;
     }
-    if (dispatched == 0u)
-      (void)h2_pal_time_sleep_ms(fixture->time, 1u);
+    if (dispatched == 0u) (void)h2_pal_time_sleep_ms(fixture->time, 1u);
   }
   rc = join_job_task(fixture, task);
   h2_gizclaw_e2e_evidence("h2_pal_task_join", "sync-job", rc);
@@ -903,7 +908,7 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
   return first_error != H2_PAL_OK ? first_error : job.result;
 }
 
-bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
+bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t* fixture,
                                      uint32_t required_ms) {
   if (fixture == NULL || fixture->time == NULL ||
       !s_webrtc_observer.initialized)
@@ -917,7 +922,7 @@ bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
   return now_ms <= deadline_ms && deadline_ms - now_ms >= required_ms;
 }
 
-int h2_gizclaw_e2e_fixture_set_deadline(h2_gizclaw_e2e_fixture_t *fixture,
+int h2_gizclaw_e2e_fixture_set_deadline(h2_gizclaw_e2e_fixture_t* fixture,
                                         uint32_t timeout_ms) {
   if (fixture == NULL || fixture->time == NULL || timeout_ms == 0u ||
       !s_webrtc_observer.initialized)
@@ -934,7 +939,7 @@ int h2_gizclaw_e2e_fixture_set_deadline(h2_gizclaw_e2e_fixture_t *fixture,
   return rc;
 }
 
-int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t *fixture,
+int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t* fixture,
                                 h2_gizclaw_e2e_actor_role_t role,
                                 uint32_t duration_ms) {
   if (fixture == NULL || (unsigned int)role > H2_GIZCLAW_E2E_GROUP_MEMBER ||
@@ -947,8 +952,7 @@ int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t *fixture,
     size_t dispatched = 0u;
     rc =
         h2_gizclaw_service_poll(fixture->actors[role].service, 8u, &dispatched);
-    if (rc != H2_PAL_OK)
-      break;
+    if (rc != H2_PAL_OK) break;
     uint64_t now_ms = 0u;
     rc = h2_pal_time_get_monotonic_ms(fixture->time, &now_ms);
     if (rc != H2_PAL_OK ||
@@ -960,13 +964,12 @@ int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t *fixture,
   return rc;
 }
 
-static void keep_first_failure(int candidate, int *result) {
-  if (*result == H2_PAL_OK && candidate != H2_PAL_OK)
-    *result = candidate;
+static void keep_first_failure(int candidate, int* result) {
+  if (*result == H2_PAL_OK && candidate != H2_PAL_OK) *result = candidate;
 }
 
-static bool cleanup_owns(const h2_gizclaw_resp_storage_t *storage,
-                         const void *pointer, size_t size) {
+static bool cleanup_owns(const h2_gizclaw_resp_storage_t* storage,
+                         const void* pointer, size_t size) {
   const uintptr_t base = (uintptr_t)storage->data;
   const uintptr_t value = (uintptr_t)pointer;
   return pointer != NULL && storage->used <= storage->capacity &&
@@ -974,19 +977,18 @@ static bool cleanup_owns(const h2_gizclaw_resp_storage_t *storage,
          size <= storage->used - (value - base);
 }
 
-static bool cleanup_text(const h2_gizclaw_resp_storage_t *storage,
-                         const char *text) {
-  if (!cleanup_owns(storage, text, 1u))
-    return false;
+static bool cleanup_text(const h2_gizclaw_resp_storage_t* storage,
+                         const char* text) {
+  if (!cleanup_owns(storage, text, 1u)) return false;
   const size_t available =
       storage->used - ((uintptr_t)text - (uintptr_t)storage->data);
   return text[0] != '\0' && memchr(text, '\0', available) != NULL;
 }
 
-static int find_friend_for_cleanup(h2_gizclaw_e2e_fixture_t *fixture,
-                                   h2_gizclaw_service_t *owner,
-                                   h2_gizclaw_resp_storage_t *storage) {
-  const char *peer = fixture->actors[H2_GIZCLAW_E2E_FRIEND].public_key;
+static int find_friend_for_cleanup(h2_gizclaw_e2e_fixture_t* fixture,
+                                   h2_gizclaw_service_t* owner,
+                                   h2_gizclaw_resp_storage_t* storage) {
+  const char* peer = fixture->actors[H2_GIZCLAW_E2E_FRIEND].public_key;
   if (peer[0] == '\0' ||
       memchr(peer, '\0', sizeof(fixture->actors[0].public_key)) == NULL)
     return H2_PAL_ERR_INVALID_STATE;
@@ -1007,7 +1009,7 @@ static int find_friend_for_cleanup(h2_gizclaw_e2e_fixture_t *fixture,
                          page.count * sizeof(*page.items))))))
       rc = H2_PAL_ERR_FORMAT;
     for (size_t i = 0u; rc == H2_PAL_OK && i < page.count; ++i) {
-      const h2_gizclaw_friend_t *value = &page.items[i];
+      const h2_gizclaw_friend_t* value = &page.items[i];
       if (!cleanup_text(storage, value->id) ||
           !cleanup_text(storage, value->peer_public_key)) {
         rc = H2_PAL_ERR_FORMAT;
@@ -1030,13 +1032,11 @@ static int find_friend_for_cleanup(h2_gizclaw_e2e_fixture_t *fixture,
         memcpy(cursor, page.next_cursor, strlen(page.next_cursor) + 1u);
     }
     storage->used = 0u;
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     if (!page.has_next) {
       /* Absence does not fence a late, previously timed-out creation. Keep the
        * cleanup obligation until a deletion is actually acknowledged. */
-      if (found_id[0] == '\0')
-        return H2_PAL_ERR_NOT_FOUND;
+      if (found_id[0] == '\0') return H2_PAL_ERR_NOT_FOUND;
       memcpy(fixture->friend_id, found_id, strlen(found_id) + 1u);
       return H2_PAL_OK;
     }
@@ -1044,11 +1044,11 @@ static int find_friend_for_cleanup(h2_gizclaw_e2e_fixture_t *fixture,
   return H2_PAL_ERR_NO_SPACE;
 }
 
-static int find_group_member(h2_gizclaw_e2e_fixture_t *f,
-                             h2_gizclaw_resp_storage_t *s) {
+static int find_group_member(h2_gizclaw_e2e_fixture_t* f,
+                             h2_gizclaw_resp_storage_t* s) {
   if (!f || !s || !s->data || !s->capacity || !f->actors[0].service)
     return H2_PAL_ERR_INVALID_ARG;
-  const char *peer = f->actors[H2_GIZCLAW_E2E_GROUP_MEMBER].public_key;
+  const char* peer = f->actors[H2_GIZCLAW_E2E_GROUP_MEMBER].public_key;
   if (!peer[0] || !memchr(peer, '\0', sizeof(f->actors[0].public_key)) ||
       !f->friend_group_name[0] ||
       !memchr(f->friend_group_name, '\0', sizeof(f->friend_group_name)))
@@ -1062,8 +1062,7 @@ static int find_group_member(h2_gizclaw_e2e_fixture_t *f,
   char found[sizeof(f->friend_group_member_id)] = {0};
   for (unsigned index = 0u; index < 32u; ++index) {
     s->used = 0u;
-    if (!h2_gizclaw_e2e_fixture_has_time(f, 15000u))
-      return H2_PAL_ERR_TIMEOUT;
+    if (!h2_gizclaw_e2e_fixture_has_time(f, 15000u)) return H2_PAL_ERR_TIMEOUT;
     h2_gizclaw_friend_group_member_page_t page = {0};
     int rc = h2_gizclaw_rpc_friend_group_member_list(
         f->actors[0].service, h2_gizclaw_e2e_str(f->friend_group_name),
@@ -1078,7 +1077,7 @@ static int find_group_member(h2_gizclaw_e2e_fixture_t *f,
                _Alignof(h2_gizclaw_friend_group_member_t)))))
       rc = H2_PAL_ERR_FORMAT;
     for (size_t i = 0u; rc == H2_PAL_OK && i < page.count; ++i) {
-      const h2_gizclaw_friend_group_member_t *m = &page.items[i];
+      const h2_gizclaw_friend_group_member_t* m = &page.items[i];
       if (!cleanup_text(s, m->id) || !cleanup_text(s, m->peer_public_key) ||
           !cleanup_text(s, m->friend_group_name) ||
           strcmp(m->friend_group_name, f->friend_group_name)) {
@@ -1086,8 +1085,7 @@ static int find_group_member(h2_gizclaw_e2e_fixture_t *f,
         break;
       }
       for (size_t j = 0u; j < i; ++j)
-        if (!strcmp(m->id, page.items[j].id))
-          rc = H2_PAL_ERR_FORMAT;
+        if (!strcmp(m->id, page.items[j].id)) rc = H2_PAL_ERR_FORMAT;
       if (!strcmp(m->peer_public_key, peer)) {
         if (found[0] || strlen(m->id) >= sizeof(found))
           rc = H2_PAL_ERR_FORMAT;
@@ -1104,11 +1102,9 @@ static int find_group_member(h2_gizclaw_e2e_fixture_t *f,
         memcpy(cursor, page.next_cursor, strlen(page.next_cursor) + 1u);
     }
     s->used = 0u;
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     if (!page.has_next) {
-      if (!found[0])
-        return H2_PAL_ERR_NOT_FOUND;
+      if (!found[0]) return H2_PAL_ERR_NOT_FOUND;
       memcpy(f->friend_group_member_id, found, strlen(found) + 1u);
       return H2_PAL_OK;
     }
@@ -1116,14 +1112,12 @@ static int find_group_member(h2_gizclaw_e2e_fixture_t *f,
   return H2_PAL_ERR_NO_SPACE;
 }
 
-static int remove_group_member(h2_gizclaw_e2e_fixture_t *f,
-                               h2_gizclaw_resp_storage_t *s) {
+static int remove_group_member(h2_gizclaw_e2e_fixture_t* f,
+                               h2_gizclaw_resp_storage_t* s) {
   int rc = find_group_member(f, s);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   s->used = 0u;
-  if (!h2_gizclaw_e2e_fixture_has_time(f, 15000u))
-    return H2_PAL_ERR_TIMEOUT;
+  if (!h2_gizclaw_e2e_fixture_has_time(f, 15000u)) return H2_PAL_ERR_TIMEOUT;
   h2_gizclaw_friend_group_member_t m = {0};
   rc = h2_gizclaw_rpc_friend_group_member_delete(
       f->actors[0].service, h2_gizclaw_e2e_str(f->friend_group_name),
@@ -1139,16 +1133,15 @@ static int remove_group_member(h2_gizclaw_e2e_fixture_t *f,
               f->actors[H2_GIZCLAW_E2E_GROUP_MEMBER].public_key)))
     rc = H2_PAL_ERR_FORMAT;
   s->used = 0u;
-  if (rc == H2_PAL_OK)
-    f->friend_group_member_joined = false;
+  if (rc == H2_PAL_OK) f->friend_group_member_joined = false;
   return rc;
 }
 
-static int cleanup_workspace(h2_gizclaw_e2e_fixture_t *fixture,
-                             h2_gizclaw_service_t *service,
-                             h2_gizclaw_resp_storage_t *storage, bool *pending,
-                             bool *acknowledged) {
-  const char *name = fixture->workspace_name;
+static int cleanup_workspace(h2_gizclaw_e2e_fixture_t* fixture,
+                             h2_gizclaw_service_t* service,
+                             h2_gizclaw_resp_storage_t* storage, bool* pending,
+                             bool* acknowledged) {
+  const char* name = fixture->workspace_name;
   if (name[0] == '\0' ||
       memchr(name, '\0', sizeof(fixture->workspace_name)) == NULL)
     return H2_PAL_ERR_INVALID_STATE;
@@ -1167,8 +1160,7 @@ static int cleanup_workspace(h2_gizclaw_e2e_fixture_t *fixture,
     h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_workspace_delete", "cleanup", rc);
     /* NOT_FOUND without a prior delete acknowledgement does not fence a
      * potentially late creation. Keep both the obligation and the Peer. */
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     *acknowledged = true;
   }
   /* Workspace deletion currently finalizes asynchronously. Do not issue a
@@ -1180,7 +1172,7 @@ static int cleanup_workspace(h2_gizclaw_e2e_fixture_t *fixture,
   return H2_PAL_OK;
 }
 
-static bool actor_has_pending_resources(const h2_gizclaw_e2e_fixture_t *fixture,
+static bool actor_has_pending_resources(const h2_gizclaw_e2e_fixture_t* fixture,
                                         size_t role) {
   const bool owns_workspace =
       fixture->workspace_created && fixture->workspace_actor_role == role;
@@ -1198,7 +1190,7 @@ static bool actor_has_pending_resources(const h2_gizclaw_e2e_fixture_t *fixture,
   return owns_workspace || fixture->friend_group_member_joined;
 }
 
-int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
+int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t* fixture) {
   if (fixture == NULL || !s_webrtc_observer.initialized)
     return H2_PAL_ERR_INVALID_ARG;
   (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
@@ -1206,31 +1198,37 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   if (fixture->case_cleanup != NULL) {
     const int rc = fixture->case_cleanup(fixture);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   /* All Session operations and conversation callbacks have joined. End its
    * ownership before the resource-ledger cleanup uses low-level deletion. */
   for (size_t i = 0u; i < H2_GIZCLAW_E2E_ACTOR_COUNT; ++i) {
     const int rc = actor_session_dispose(&fixture->actors[i]);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   int result = H2_PAL_OK;
-  uint8_t *buffer = h2_pal_mem_alloc(fixture->allocator, 65536u);
-  if (buffer == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  h2_gizclaw_resp_storage_t storage = {.data = buffer, .capacity = 65536u};
-  h2_gizclaw_service_t *owner = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
-  h2_gizclaw_service_t *friend_service =
+  const bool needs_storage =
+      fixture->workspace_created || fixture->contact_created ||
+      fixture->friendship_created || fixture->friend_group_created ||
+      fixture->friend_group_member_joined || fixture->isolation_group_pending ||
+      fixture->isolation_contact_pending ||
+      fixture->isolation_workspace_pending;
+  /* Peer deletion and invitation clearing have no response arena. Keep these
+   * recovery paths usable when the failed case has exhausted its allocator. */
+  uint8_t* buffer =
+      needs_storage ? h2_pal_mem_alloc(fixture->allocator, 65536u) : NULL;
+  if (needs_storage && buffer == NULL) return H2_PAL_ERR_NO_MEMORY;
+  h2_gizclaw_resp_storage_t storage = {.data = buffer,
+                                       .capacity = needs_storage ? 65536u : 0u};
+  h2_gizclaw_service_t* owner = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
+  h2_gizclaw_service_t* friend_service =
       fixture->actors[H2_GIZCLAW_E2E_FRIEND].service;
   if (friend_service != NULL && fixture->friend_invite_created) {
     int rc = h2_gizclaw_rpc_friend_invite_token_clear(friend_service, 15000u);
     h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_friend_invite_token_clear",
                             "cleanup", rc);
     keep_first_failure(rc, &result);
-    if (rc == H2_PAL_OK)
-      fixture->friend_invite_created = false;
+    if (rc == H2_PAL_OK) fixture->friend_invite_created = false;
   }
   if (owner != NULL && fixture->friend_group_invite_created &&
       fixture->friend_group_name[0] != '\0') {
@@ -1239,8 +1237,7 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
     h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_friend_group_invite_token_clear",
                             "cleanup", rc);
     keep_first_failure(rc, &result);
-    if (rc == H2_PAL_OK)
-      fixture->friend_group_invite_created = false;
+    if (rc == H2_PAL_OK) fixture->friend_group_invite_created = false;
   }
   if (owner != NULL && fixture->friend_group_member_joined) {
     int rc = remove_group_member(fixture, &storage);
@@ -1257,8 +1254,7 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
     h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_friend_group_delete", "cleanup",
                             rc);
     keep_first_failure(rc, &result);
-    if (rc == H2_PAL_OK)
-      fixture->friend_group_created = false;
+    if (rc == H2_PAL_OK) fixture->friend_group_created = false;
   }
   if (owner != NULL && fixture->friendship_created &&
       fixture->friend_id[0] == '\0') {
@@ -1284,8 +1280,7 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
     storage.used = 0u;
     h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_friend_delete", "cleanup", rc);
     keep_first_failure(rc, &result);
-    if (rc == H2_PAL_OK)
-      fixture->friendship_created = false;
+    if (rc == H2_PAL_OK) fixture->friendship_created = false;
   }
   if (owner != NULL && fixture->contact_created) {
     h2_gizclaw_contact_t contact = {0};
@@ -1295,10 +1290,9 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
     storage.used = 0u;
     h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_contact_delete", "cleanup", rc);
     keep_first_failure(rc, &result);
-    if (rc == H2_PAL_OK)
-      fixture->contact_created = false;
+    if (rc == H2_PAL_OK) fixture->contact_created = false;
   }
-  h2_gizclaw_service_t *workspace_service =
+  h2_gizclaw_service_t* workspace_service =
       fixture->workspace_actor_role < H2_GIZCLAW_E2E_ACTOR_COUNT
           ? fixture->actors[fixture->workspace_actor_role].service
           : NULL;
@@ -1319,8 +1313,7 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
         &storage, &value);
     storage.used = 0u;
     keep_first_failure(rc, &result);
-    if (rc == H2_PAL_OK)
-      fixture->isolation_group_pending = false;
+    if (rc == H2_PAL_OK) fixture->isolation_group_pending = false;
   }
   if (friend_service != NULL && fixture->isolation_contact_pending) {
     h2_gizclaw_contact_t value = {0};
@@ -1329,8 +1322,7 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
         &storage, &value);
     storage.used = 0u;
     keep_first_failure(rc, &result);
-    if (rc == H2_PAL_OK)
-      fixture->isolation_contact_pending = false;
+    if (rc == H2_PAL_OK) fixture->isolation_contact_pending = false;
   }
   if (friend_service != NULL && fixture->isolation_workspace_pending) {
     int rc =
@@ -1340,23 +1332,20 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
     keep_first_failure(rc, &result);
   }
   for (size_t index = 0u; index < H2_GIZCLAW_E2E_ACTOR_COUNT; ++index) {
-    h2_gizclaw_e2e_actor_t *actor = &fixture->actors[index];
+    h2_gizclaw_e2e_actor_t* actor = &fixture->actors[index];
     /* Deleting the peer first would revoke the identity needed for retries. */
     if (actor_has_pending_resources(fixture, index)) {
       keep_first_failure(H2_PAL_ERR_INVALID_STATE, &result);
       continue;
     }
-    if (!actor->peer_delete_required)
-      continue;
+    if (!actor->peer_delete_required) continue;
     if (actor->service == NULL || !actor->registered) {
       const int stop_rc = actor_stop(actor);
       keep_first_failure(stop_rc, &result);
-      if (stop_rc != H2_PAL_OK)
-        continue;
+      if (stop_rc != H2_PAL_OK) continue;
       const int connect_rc = actor_connect(fixture, actor, "cleanup-reconnect");
       keep_first_failure(connect_rc, &result);
-      if (connect_rc != H2_PAL_OK)
-        continue;
+      if (connect_rc != H2_PAL_OK) continue;
     }
     /* A closed transport is not proof of deletion. Only a valid response
      * clears the recovery obligation. */
@@ -1376,25 +1365,22 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
         rc = h2_gizclaw_e2e_fixture_has_time(fixture, 1u)
                  ? h2_gizclaw_rpc_peer_delete(actor->service, 15000u)
                  : H2_PAL_ERR_TIMEOUT;
-        h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_peer_delete", "cleanup-retry", rc);
+        h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_peer_delete", "cleanup-retry",
+                                rc);
       }
     }
     keep_first_failure(rc, &result);
-    if (rc == H2_PAL_OK)
-      actor->peer_delete_requested = true;
-    if (rc == H2_PAL_OK)
-      actor->peer_delete_required = false;
-    if (rc == H2_PAL_OK)
-      actor->registered = false;
+    if (rc == H2_PAL_OK) actor->peer_delete_requested = true;
+    if (rc == H2_PAL_OK) actor->peer_delete_required = false;
+    if (rc == H2_PAL_OK) actor->registered = false;
   }
   h2_pal_mem_free(fixture->allocator, buffer);
   return result;
 }
 
-static size_t emit_retained_resource(const h2_gizclaw_e2e_fixture_t *fixture,
-                                     const char *resource, bool retained) {
-  if (!retained)
-    return 0u;
+static size_t emit_retained_resource(const h2_gizclaw_e2e_fixture_t* fixture,
+                                     const char* resource, bool retained) {
+  if (!retained) return 0u;
   char message[H2_PAL_LOG_MESSAGE_MAX];
   (void)snprintf(message, sizeof(message),
                  "stage=recovery resource=%s retained=true", resource);
@@ -1403,9 +1389,8 @@ static size_t emit_retained_resource(const h2_gizclaw_e2e_fixture_t *fixture,
 }
 
 size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
-    const h2_gizclaw_e2e_fixture_t *fixture) {
-  if (fixture == NULL || fixture->log == NULL)
-    return 0u;
+    const h2_gizclaw_e2e_fixture_t* fixture) {
+  if (fixture == NULL || fixture->log == NULL) return 0u;
   size_t retained = 0u;
   retained += emit_retained_resource(fixture, "case-hooks-track",
                                      fixture->case_state != NULL);
@@ -1438,41 +1423,36 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
   return retained;
 }
 
-int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t *fixture) {
-  if (fixture == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t* fixture) {
+  if (fixture == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (fixture->case_cleanup != NULL) {
     /* Stop publishers before draining retained case callbacks. Service itself
      * must remain alive until the case releases Conversation/Track handles. */
     int rc = fixture->actors[0].service == NULL
                  ? H2_PAL_OK
                  : h2_gizclaw_service_stop(fixture->actors[0].service);
-    if (rc == H2_PAL_OK)
-      rc = fixture->case_cleanup(fixture);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc == H2_PAL_OK) rc = fixture->case_cleanup(fixture);
+    if (rc != H2_PAL_OK) return rc;
   }
   int result = H2_PAL_OK;
   /* A retained job task cannot be freed with the fixture; reclaim it first,
    * and keep the fixture alive if its join still cannot complete. */
   keep_first_failure(reclaim_retained_job_task(fixture), &result);
   for (size_t index = 0u; index < H2_GIZCLAW_E2E_ACTOR_COUNT; ++index) {
-    h2_gizclaw_e2e_actor_t *actor = &fixture->actors[index];
+    h2_gizclaw_e2e_actor_t* actor = &fixture->actors[index];
     const int rc = actor_stop(actor);
     keep_first_failure(rc, &result);
     if (rc == H2_PAL_OK)
       memset(actor->private_key, 0, sizeof(actor->private_key));
   }
   /* Keep borrowed configuration, providers and credentials alive on failure. */
-  if (result != H2_PAL_OK)
-    return result;
+  if (result != H2_PAL_OK) return result;
   if (fixture->device_cleanup != NULL) {
     result = fixture->device_cleanup(fixture);
     if (result != H2_PAL_OK) return result;
   }
   result = h2_gizclaw_pcm_track_destroy(&fixture->speech_track);
-  if (result != H2_PAL_OK)
-    return result;
+  if (result != H2_PAL_OK) return result;
   fixture->speech_track_bound = false;
   if (fixture->speech_cleanup != NULL) {
     result = fixture->speech_cleanup(fixture);

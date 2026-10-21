@@ -18,12 +18,10 @@ static const h2_iperf_e2e_case_t cases[] = {
     {"udp_rx_40m", H2_IPERF_PROTOCOL_UDP, true, 1200u, 40000000u, 0u},
 };
 
-h2_pal_result_t
-h2_iperf_client_app_run(h2_runtime_t *runtime,
-                        const h2_iperf_client_app_config_t *config,
-                        h2_iperf_client_app_report_t *out_report) {
-  if (out_report != NULL)
-    memset(out_report, 0, sizeof(*out_report));
+h2_pal_result_t h2_iperf_client_app_run(
+    h2_runtime_t* runtime, const h2_iperf_client_app_config_t* config,
+    h2_iperf_client_app_report_t* out_report) {
+  if (out_report != NULL) memset(out_report, 0, sizeof(*out_report));
   if (runtime == NULL || config == NULL || out_report == NULL ||
       runtime->mem == NULL || runtime->net == NULL || runtime->time == NULL ||
       (config->mode != H2_IPERF_CLIENT_APP_IPV4 &&
@@ -35,10 +33,9 @@ h2_iperf_client_app_run(h2_runtime_t *runtime,
       (config->mode != H2_IPERF_CLIENT_APP_IPV4 &&
        config->ipv6.family != H2_PAL_NET_FAMILY_IPV6))
     return H2_PAL_ERR_INVALID_ARG;
-  const char *board = config->target == NULL ? "client" : config->target;
+  const char* board = config->target == NULL ? "client" : config->target;
   size_t length = strlen(board);
-  if (length == 0u || length > 16u)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (length == 0u || length > 16u) return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0u; i < length; ++i)
     if (!((board[i] >= 'a' && board[i] <= 'z') ||
           (board[i] >= '0' && board[i] <= '9') || board[i] == '-' ||
@@ -71,8 +68,7 @@ h2_iperf_client_app_run(h2_runtime_t *runtime,
           .checkpoint_user = config->checkpoint_user};
       h2_iperf_e2e_report_t report = {0};
       int rc = h2_iperf_e2e_run(&matrix, &report);
-      if (rc == H2_PAL_ERR_INVALID_ARG)
-        return rc;
+      if (rc == H2_PAL_ERR_INVALID_ARG) return rc;
       out_report->total += report.total;
       out_report->passed += report.passed;
     }

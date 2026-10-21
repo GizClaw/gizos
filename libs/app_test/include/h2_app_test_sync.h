@@ -18,7 +18,7 @@ typedef struct h2_app_test_sync {
   } mutexes[H2_APP_TEST_SYNC_MUTEXES_MAX];
   h2_app_test_fault_t create, destroy, lock, unlock;
 } h2_app_test_sync_t;
-void h2_app_test_sync_init(h2_app_test_sync_t *sync);
+void h2_app_test_sync_init(h2_app_test_sync_t* sync);
 #ifdef __cplusplus
 }
 #endif

@@ -7,16 +7,15 @@
 #include <vector>
 
 namespace {
-void check(std::vector<std::string> values, const char *reason,
-           const char *token = "synthetic-token",
-           const char *override = nullptr, bool pion = false,
+void check(std::vector<std::string> values, const char* reason,
+           const char* token = "synthetic-token",
+           const char* override = nullptr, bool pion = false,
            uint32_t expected_suites = H2_GIZCLAW_E2E_SUITE_ALL) {
-  std::vector<char *> argv;
-  for (std::string &value : values)
-    argv.push_back(value.data());
+  std::vector<char*> argv;
+  for (std::string& value : values) argv.push_back(value.data());
   H2GizclawDesktopOptions out;
   out.endpoint = "stale";
-  const char *actual = h2_gizclaw_e2e_desktop_parse_options(
+  const char* actual = h2_gizclaw_e2e_desktop_parse_options(
       static_cast<int>(argv.size()), argv.data(), token, override, pion, &out);
   if (reason != nullptr) {
     assert(actual != nullptr && std::strcmp(actual, reason) == 0);
@@ -31,27 +30,30 @@ void check(std::vector<std::string> values, const char *reason,
                                            : argv[2]) == 0);
     assert(out.suites == expected_suites);
     if (expected_suites == H2_GIZCLAW_E2E_SUITE_FENCE) {
-      assert(std::strcmp(out.fence_workflow_name, "safety-fence-flowcraft") == 0);
+      assert(std::strcmp(out.fence_workflow_name, "safety-fence-flowcraft") ==
+             0);
       assert(std::strcmp(out.fence_first_id, "safe") == 0);
       assert(std::strcmp(out.fence_second_id, "strict") == 0);
     }
   }
 }
-} // namespace
+}  // namespace
 
 int main() {
   const std::string endpoint = "--endpoint=edge-bj-01.e2e.gizclaw.com:9821";
   const std::vector<std::string> valid = {"e2e", "voice.pcm", "all", endpoint};
   check(valid, nullptr);
   const std::vector<std::string> fence = {
-      "e2e", "voice.pcm", "fence", endpoint,
+      "e2e",
+      "voice.pcm",
+      "fence",
+      endpoint,
       "--fence-workflow=safety-fence-flowcraft",
-      "--fence-first=safe", "--fence-second=strict"};
-  check(fence, nullptr, "token", nullptr, false,
-        H2_GIZCLAW_E2E_SUITE_FENCE);
+      "--fence-first=safe",
+      "--fence-second=strict"};
+  check(fence, nullptr, "token", nullptr, false, H2_GIZCLAW_E2E_SUITE_FENCE);
   check(fence, "unsupported-pion-suite", "token", nullptr, true);
-  check({"e2e", "voice.pcm", "fence", endpoint},
-        "invalid-fence-fixture");
+  check({"e2e", "voice.pcm", "fence", endpoint}, "invalid-fence-fixture");
   auto invalid_fence = fence;
   invalid_fence.back() = "--fence-second=Invalid";
   check(invalid_fence, "invalid-fence-fixture");
@@ -64,14 +66,13 @@ int main() {
   invalid_fence = fence;
   invalid_fence.push_back("--fence-first=other");
   check(invalid_fence, "duplicate-fence-first");
-  check({"e2e", "voice.pcm", "all", endpoint,
-         "--fence-first=safe"},
+  check({"e2e", "voice.pcm", "all", endpoint, "--fence-first=safe"},
         "unexpected-fence-fixture");
   struct Suite {
-    const char *name;
+    const char* name;
     uint32_t mask;
   };
-  for (const Suite &suite :
+  for (const Suite& suite :
        {Suite{"all", H2_GIZCLAW_E2E_SUITE_ALL},
         Suite{"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY},
         Suite{"rpc", H2_GIZCLAW_E2E_SUITE_RPC},
@@ -90,7 +91,8 @@ int main() {
   check(valid, nullptr, "token", "rpc", true, H2_GIZCLAW_E2E_SUITE_RPC);
   check(valid, nullptr, "token", "firmware-voice", true,
         H2_GIZCLAW_E2E_SUITE_FIRMWARE | H2_GIZCLAW_E2E_SUITE_VOICE);
-  check(valid, nullptr, "token", "resource", true, H2_GIZCLAW_E2E_SUITE_RESOURCE);
+  check(valid, nullptr, "token", "resource", true,
+        H2_GIZCLAW_E2E_SUITE_RESOURCE);
   check(valid, "unsupported-pion-suite", "token", nullptr, true);
   check(valid, "unsupported-pion-suite", "token", "service", true);
   check(valid, "invalid-suite", "token", "unknown");
@@ -110,7 +112,7 @@ int main() {
   check({"e2e", "voice.pcm", "all", endpoint, "--ignored"}, "unknown-argument");
   check({"e2e", "voice.pcm", "all", "--endpoint", "host:9821"},
         "unknown-argument");
-  for (const std::string &value :
+  for (const std::string& value :
        std::vector<std::string>{std::string(""),
                                 "host",
                                 ":9821",
@@ -145,7 +147,7 @@ int main() {
     check({"e2e", "voice.pcm", "all", "--endpoint=" + value},
           "invalid-endpoint");
   }
-  for (const char *value :
+  for (const char* value :
        {"localhost:1", "127.0.0.1:65535", "a-b.example:09821"}) {
     check({"e2e", "voice.pcm", "all", std::string("--endpoint=") + value},
           nullptr);
@@ -169,7 +171,7 @@ int main() {
                          0, nullptr, "token", nullptr, false, nullptr),
                      "invalid-output") == 0);
   char program[] = "e2e", pcm[] = "voice.pcm", suite[] = "all";
-  char *null_flag[] = {program, pcm, suite, nullptr};
+  char* null_flag[] = {program, pcm, suite, nullptr};
   assert(std::strcmp(h2_gizclaw_e2e_desktop_parse_options(4, null_flag, "token",
                                                           nullptr, false, &out),
                      "unknown-argument") == 0);

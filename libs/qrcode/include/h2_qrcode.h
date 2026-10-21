@@ -34,11 +34,11 @@ extern "C" {
  * requested `max_version`. Requires H2_QRCODE_VERSION_MIN <= version <=
  * H2_QRCODE_VERSION_MAX; the expression is usable as an array bound.
  */
-#define H2_QRCODE_BUFFER_LEN_FOR_VERSION(version)                              \
+#define H2_QRCODE_BUFFER_LEN_FOR_VERSION(version) \
   ((((version) * 4 + 17) * ((version) * 4 + 17) + 7) / 8 + 1)
 
 /** Byte length that holds any encodable symbol. */
-#define H2_QRCODE_BUFFER_LEN_MAX                                               \
+#define H2_QRCODE_BUFFER_LEN_MAX \
   H2_QRCODE_BUFFER_LEN_FOR_VERSION(H2_QRCODE_VERSION_MAX)
 
 /** Modules per side of the smallest symbol, version 1. */
@@ -74,7 +74,7 @@ typedef enum h2_qrcode_ecc {
  */
 typedef struct h2_qrcode {
   /** Borrowed encoded module storage owned by the caller. */
-  const uint8_t *modules;
+  const uint8_t* modules;
   /**
    * Symbol width and height in modules, always `4 * version + 17` and so in
    * [H2_QRCODE_SIZE_MIN, H2_QRCODE_SIZE_MAX]. Layout and rasterization reject
@@ -123,18 +123,18 @@ typedef struct h2_qrcode_layout {
  *         argument, H2_PAL_ERR_NO_SPACE when a buffer is too short, or
  *         H2_PAL_ERR_FULL when the payload does not fit `max_version`.
  */
-h2_pal_result_t h2_qrcode_encode_text(const char *text, h2_qrcode_ecc_t ecc,
-                                      int max_version, uint8_t *modules,
-                                      size_t modules_len, uint8_t *scratch,
+h2_pal_result_t h2_qrcode_encode_text(const char* text, h2_qrcode_ecc_t ecc,
+                                      int max_version, uint8_t* modules,
+                                      size_t modules_len, uint8_t* scratch,
                                       size_t scratch_len,
-                                      h2_qrcode_t *out_qrcode);
+                                      h2_qrcode_t* out_qrcode);
 
 /**
  * @brief Report whether the module at (x, y) is dark.
  *
  * Coordinates outside the symbol read as light, which matches the quiet zone.
  */
-bool h2_qrcode_module_is_dark(const h2_qrcode_t *qrcode, int x, int y);
+bool h2_qrcode_module_is_dark(const h2_qrcode_t* qrcode, int x, int y);
 
 /**
  * @brief Choose the largest integer scale that centers a symbol in a surface.
@@ -149,10 +149,10 @@ bool h2_qrcode_module_is_dark(const h2_qrcode_t *qrcode, int x, int y);
  *         argument, or H2_PAL_ERR_NO_SPACE when the surface cannot hold the
  *         symbol and its quiet zone at scale 1.
  */
-h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t *qrcode,
+h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t* qrcode,
                                         int surface_width, int surface_height,
                                         int quiet_modules,
-                                        h2_qrcode_layout_t *out_layout);
+                                        h2_qrcode_layout_t* out_layout);
 
 /**
  * @brief Rasterize one horizontal band of the surface as RGB565 pixels.
@@ -171,9 +171,9 @@ h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t *qrcode,
  *         argument, or H2_PAL_ERR_NO_SPACE when `out_pixels_len` is too small.
  */
 h2_pal_result_t h2_qrcode_render_rgb565_band(
-    const h2_qrcode_t *qrcode, const h2_qrcode_layout_t *layout,
+    const h2_qrcode_t* qrcode, const h2_qrcode_layout_t* layout,
     uint16_t dark_color, uint16_t light_color, uint16_t background_color,
-    int band_y, int band_width, int band_height, uint16_t *out_pixels,
+    int band_y, int band_width, int band_height, uint16_t* out_pixels,
     size_t out_pixels_len);
 
 #ifdef __cplusplus

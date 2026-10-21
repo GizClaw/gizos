@@ -10,14 +10,14 @@ extern "C" {
 #endif
 
 /** Receives the result of the first dashboard render. */
-typedef void (*h2_smoke_wifi_csi_ready_fn)(void *user, int result);
+typedef void (*h2_smoke_wifi_csi_ready_fn)(void* user, int result);
 
 /** Returns nonzero when the app main loop should stop. */
-typedef int (*h2_smoke_wifi_csi_should_stop_fn)(void *user);
+typedef int (*h2_smoke_wifi_csi_should_stop_fn)(void* user);
 
 /** Configures the portable Wi-Fi CSI dashboard. */
 typedef struct h2_smoke_wifi_csi_config {
-  void *user;
+  void* user;
   h2_smoke_wifi_csi_ready_fn ready;
   h2_smoke_wifi_csi_should_stop_fn should_stop;
   uint32_t wifi_connect_timeout_ms;
@@ -35,8 +35,8 @@ typedef struct h2_smoke_wifi_csi_config {
  * @param config Required dashboard configuration, borrowed for this call.
  * @return H2_PAL_OK after an intentional stop; otherwise the first error.
  */
-int h2_smoke_wifi_csi_run(h2_runtime_t *runtime,
-                          const h2_smoke_wifi_csi_config_t *config);
+int h2_smoke_wifi_csi_run(h2_runtime_t* runtime,
+                          const h2_smoke_wifi_csi_config_t* config);
 
 #ifdef __cplusplus
 }

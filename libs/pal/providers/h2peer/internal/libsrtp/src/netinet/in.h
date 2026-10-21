@@ -17,14 +17,14 @@
  */
 
 static inline uint16_t h2_libsrtp_network_u16(uint16_t value) {
-    return (uint16_t)((value >> 8u) | (value << 8u));
+  return (uint16_t)((value >> 8u) | (value << 8u));
 }
 
 static inline uint32_t h2_libsrtp_network_u32(uint32_t value) {
-    return ((value & UINT32_C(0x000000ff)) << 24u) |
-           ((value & UINT32_C(0x0000ff00)) << 8u) |
-           ((value & UINT32_C(0x00ff0000)) >> 8u) |
-           ((value & UINT32_C(0xff000000)) >> 24u);
+  return ((value & UINT32_C(0x000000ff)) << 24u) |
+         ((value & UINT32_C(0x0000ff00)) << 8u) |
+         ((value & UINT32_C(0x00ff0000)) >> 8u) |
+         ((value & UINT32_C(0xff000000)) >> 24u);
 }
 
 #ifndef htons

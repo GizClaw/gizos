@@ -21,16 +21,15 @@ typedef struct h2_yyjson_json h2_yyjson_json_t;
  * @param out_provider Required output, cleared before validation.
  * @return PAL result.
  */
-h2_pal_result_t h2_yyjson_json_create(
-    const h2_pal_mem_api_t *mem,
-    h2_yyjson_json_t **out_provider);
+h2_pal_result_t h2_yyjson_json_create(const h2_pal_mem_api_t* mem,
+                                      h2_yyjson_json_t** out_provider);
 
 /**
  * @brief Return the provider API, or the canonical unsupported API for NULL.
  * @param provider Borrowed provider instance, or NULL.
  * @return Borrowed API valid until successful provider destruction.
  */
-const h2_pal_json_api_t *h2_yyjson_json_api(h2_yyjson_json_t *provider);
+const h2_pal_json_api_t* h2_yyjson_json_api(h2_yyjson_json_t* provider);
 
 /**
  * @brief Destroy the provider and clear the caller handle.
@@ -41,7 +40,7 @@ const h2_pal_json_api_t *h2_yyjson_json_api(h2_yyjson_json_t *provider);
  * @param provider Required pointer to the owned provider handle.
  * @return PAL result; success clears the caller handle.
  */
-h2_pal_result_t h2_yyjson_json_destroy(h2_yyjson_json_t **provider);
+h2_pal_result_t h2_yyjson_json_destroy(h2_yyjson_json_t** provider);
 
 #ifdef __cplusplus
 }

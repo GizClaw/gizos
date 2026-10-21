@@ -6,8 +6,8 @@ package(default_visibility = ["//visibility:public"])
 # Tests inspect private state; declare their private header inputs explicitly.
 filegroup(
     name = "test_internal_headers",
-    srcs = glob(["src/*.h"]),
     testonly = True,
+    srcs = glob(["src/*.h"]),
     visibility = ["//visibility:private"],
 )
 
@@ -47,10 +47,10 @@ cc_library(
 cc_test(
     name = "association_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_association.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -67,10 +67,10 @@ cc_test(
 cc_test(
     name = "stream_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_stream.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -87,10 +87,10 @@ cc_test(
 cc_test(
     name = "lifecycle_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_lifecycle.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -107,10 +107,10 @@ cc_test(
 cc_test(
     name = "malformed_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_malformed.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -127,10 +127,10 @@ cc_test(
 cc_test(
     name = "reliability_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_reliability.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -147,10 +147,10 @@ cc_test(
 cc_test(
     name = "packet_pool_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_packet_pool.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -171,10 +171,10 @@ cc_test(
 cc_test(
     name = "timer_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_timer.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -191,10 +191,10 @@ cc_test(
 cc_test(
     name = "wire_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_reference_vectors.c",
         "tests/h2_sctp_reference_vectors.h",
         "tests/test_wire.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -211,12 +211,12 @@ cc_test(
 cc_test(
     name = "conformance_test",
     srcs = [
-        ":test_internal_headers",
         "tests/h2_sctp_reference_vectors.c",
         "tests/h2_sctp_reference_vectors.h",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_conformance.c",
+        ":test_internal_headers",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,

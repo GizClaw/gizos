@@ -7,25 +7,22 @@
 #include "h2_gizclaw_e2e_voice.h"
 #include "h2_gizclaw_e2e_resource.h"
 
-static int prepare_session(h2_gizclaw_e2e_fixture_t *fixture) {
+static int prepare_session(h2_gizclaw_e2e_fixture_t* fixture) {
   fixture->use_session = true;
   return H2_PAL_OK;
 }
 
-static int run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
+static int run_voice(h2_gizclaw_e2e_fixture_t* fixture) {
   int rc = h2_gizclaw_e2e_prepare_voice(fixture);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_e2e_run_voice(fixture);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_e2e_run_session_cancel(fixture);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_e2e_run_voice(fixture);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_e2e_run_session_cancel(fixture);
   /* Session owns its route; raw Conversation and Service audio APIs require
    * their own run after Session teardown. Its internal calls are not evidence
    * that an application can use those public APIs directly. */
   if (rc == H2_PAL_OK) {
     fixture->use_session = false;
     rc = h2_gizclaw_e2e_fixture_reconnect_actor(fixture, H2_GIZCLAW_E2E_OWNER);
-    if (rc == H2_PAL_OK)
-      rc = h2_gizclaw_e2e_run_voice(fixture);
+    if (rc == H2_PAL_OK) rc = h2_gizclaw_e2e_run_voice(fixture);
   }
   return rc;
 }

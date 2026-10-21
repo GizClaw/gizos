@@ -9,27 +9,28 @@
 EM_JS(int, worker, (), { return ENVIRONMENT_IS_PTHREAD && typeof window === 'undefined' ? 1 : 0; });
 /* clang-format on */
 static unsigned calls, errors;
-static void observed(const char *slot, int rc) {
+static void observed(const char* slot, int rc) {
   ++calls;
-  if (rc != H2_PAL_ERR_UNSUPPORTED)
-    ++errors;
-  printf("H2_PAL_NET_TLS_CAPABILITY "
-         "{\"slot\":\"%s\",\"status\":\"UNSUPPORTED\",\"result\":%d}\n",
-         slot, rc);
+  if (rc != H2_PAL_ERR_UNSUPPORTED) ++errors;
+  printf(
+      "H2_PAL_NET_TLS_CAPABILITY "
+      "{\"slot\":\"%s\",\"status\":\"UNSUPPORTED\",\"result\":%d}\n",
+      slot, rc);
 }
-static void observed_void(const char *slot) {
+static void observed_void(const char* slot) {
   ++calls;
-  printf("H2_PAL_NET_TLS_CAPABILITY "
-         "{\"slot\":\"%s\",\"status\":\"UNSUPPORTED_NOOP\",\"result\":null,"
-         "\"owned_handle\":false}\n",
-         slot);
+  printf(
+      "H2_PAL_NET_TLS_CAPABILITY "
+      "{\"slot\":\"%s\",\"status\":\"UNSUPPORTED_NOOP\",\"result\":null,"
+      "\"owned_handle\":false}\n",
+      slot);
 }
-static h2_pal_result_t boundary(h2_runtime_t *runtime) {
+static h2_pal_result_t boundary(h2_runtime_t* runtime) {
   if (!worker() || emscripten_is_main_runtime_thread() || !runtime->net ||
       !runtime->net->vtable)
     return H2_PAL_ERR_INVALID_STATE;
-  const h2_pal_net_vtable_t *v = runtime->net->vtable;
-  void *context = runtime->net->user;
+  const h2_pal_net_vtable_t* v = runtime->net->vtable;
+  void* context = runtime->net->user;
   int socket = -1;
   uint8_t byte = 0u;
   h2_pal_net_addr_t addr = {.family = H2_PAL_NET_FAMILY_IPV4,
@@ -38,7 +39,7 @@ static h2_pal_result_t boundary(h2_runtime_t *runtime) {
                     out = {0};
   h2_pal_net_bind_t bind = {.type = H2_PAL_NET_BIND_SOURCE_ADDR,
                             .source_addr = addr};
-  h2_pal_net_resolver_t *resolver = NULL;
+  h2_pal_net_resolver_t* resolver = NULL;
   h2_pal_net_tls_config_t tls = {.server_name = "pal-net-tls.test",
                                  .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED};
   h2_pal_net_icmp_echo_result_t echo = {0};
@@ -68,33 +69,31 @@ static h2_pal_result_t boundary(h2_runtime_t *runtime) {
   observed("tcp_listen",
            v->tcp_listen(context, addr.family, 0u, NULL, &socket, &out));
   observed("tcp_accept", v->tcp_accept(context, 0, &socket, &out, 1u));
-  printf("H2_PAL_NET_TLS_WEB_BOUNDARY "
-         "{\"platform\":\"wasm\",\"worker\":%d,\"main_runtime_thread\":%d,"
-         "\"operations\":%u,\"unexpected_results\":%u,\"core_qualified\":false,"
-         "\"full_net_qualified\":false,\"reason\":\"Web raw Net uses "
-         "canonical unsupported API; browser HOST exposes Fetch/WebRTC\"}\n",
-         worker(), emscripten_is_main_runtime_thread(), calls, errors);
+  printf(
+      "H2_PAL_NET_TLS_WEB_BOUNDARY "
+      "{\"platform\":\"wasm\",\"worker\":%d,\"main_runtime_thread\":%d,"
+      "\"operations\":%u,\"unexpected_results\":%u,\"core_qualified\":false,"
+      "\"full_net_qualified\":false,\"reason\":\"Web raw Net uses "
+      "canonical unsupported API; browser HOST exposes Fetch/WebRTC\"}\n",
+      worker(), emscripten_is_main_runtime_thread(), calls, errors);
   return errors || calls != 21u ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 int main(void) {
   const h2_web_platform_config_t config = {1, 1};
-  h2_web_platform_t *platform = h2_web_platform_create(&config);
-  if (platform == NULL)
-    return 1;
+  h2_web_platform_t* platform = h2_web_platform_create(&config);
+  if (platform == NULL) return 1;
   h2_runtime_config_t rcfg = h2_smoke_host_runtime_config(
       "browser", "webassembly", "wasm32", h2_web_platform_mem_api(),
       h2_web_platform_time_api(platform), h2_web_platform_queue_api(platform),
       h2_web_platform_display_api(platform));
   rcfg.task = h2_web_platform_task_api(platform);
   rcfg.sync = h2_web_platform_sync_api(platform);
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&rcfg, &runtime);
-  if (rc == H2_PAL_OK)
-    rc = boundary(runtime);
+  if (rc == H2_PAL_OK) rc = boundary(runtime);
   h2_runtime_deinit(runtime);
   int destroyed = h2_web_platform_destroy(platform);
-  if (rc == H2_PAL_OK)
-    rc = destroyed;
+  if (rc == H2_PAL_OK) rc = destroyed;
   printf(
       "H2_WEB_APP name=pal-net-tls-boundary result=%s rc=%d fs=0 destroy=%d\n",
       rc == H2_PAL_OK ? "PASS" : "FAIL", rc, destroyed);

@@ -41,7 +41,7 @@ static const struct low_power_param power_param = {
 };
 
 REGISTER_DEVICES(device_table) = {
-    {"uart2", &uart_dev_ops, (void *)&uart2_data},
+    {"uart2", &uart_dev_ops, (void*)&uart2_data},
     {"rtc", &rtc_dev_ops, NULL},
 };
 

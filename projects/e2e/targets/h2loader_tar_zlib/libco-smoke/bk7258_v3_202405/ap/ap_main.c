@@ -9,14 +9,14 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-static void h2_bk_serial_log_string(int port, const char *string) {
+static void h2_bk_serial_log_string(int port, const char* string) {
   (void)port;
   os_printf("%s", string);
 }
 
 #define emergency_uart_write_string h2_bk_serial_log_string
 
-static void h2_bk_libco_smoke_emit_marker(const char *fmt, ...) {
+static void h2_bk_libco_smoke_emit_marker(const char* fmt, ...) {
   char line[128];
   va_list ap;
 
@@ -27,9 +27,9 @@ static void h2_bk_libco_smoke_emit_marker(const char *fmt, ...) {
   emergency_uart_write_string(0, "\r\n");
 }
 
-static void h2_bk_libco_smoke_log_marker(h2_runtime_t *runtime,
+static void h2_bk_libco_smoke_log_marker(h2_runtime_t* runtime,
                                          h2_pal_log_level_t level,
-                                         const char *fmt, ...) {
+                                         const char* fmt, ...) {
   char line[128];
   va_list ap;
 
@@ -47,17 +47,17 @@ static void h2_bk_libco_smoke_wait_forever(void) {
   }
 }
 
-static void
-h2_bk_libco_smoke_recover_before_command_transport(const char *stage, int rc) {
+static void h2_bk_libco_smoke_recover_before_command_transport(
+    const char* stage, int rc) {
   h2_bk_libco_smoke_emit_marker("H2_BK_LIBCO_SMOKE_FAIL stage=%s rc=%d", stage,
                                 rc);
   (void)h2_bk_h2loader_reboot_to_loader();
   h2_bk_libco_smoke_wait_forever();
 }
 
-static void h2_bk_libco_smoke_app_entry(void *user) {
+static void h2_bk_libco_smoke_app_entry(void* user) {
   h2_runtime_config_t runtime_config;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   const h2_libco_smoke_config_t smoke_config = {
       .task_stack_size = H2_LIBCO_SMOKE_DEFAULT_STACK_SIZE,
       .switch_iterations = H2_LIBCO_SMOKE_DEFAULT_SWITCH_ITERATIONS,
@@ -108,9 +108,9 @@ static void h2_bk_libco_smoke_app_entry(void *user) {
 }
 
 int main(void) {
-    if (h2_bk_target_task_policy_install() != H2_PAL_OK) {
-        return -1;
-    }
+  if (h2_bk_target_task_policy_install() != H2_PAL_OK) {
+    return -1;
+  }
   emergency_uart_write_string(
       0, "H2_BK_AP_MAIN image=libco-smoke stage=before_bk_init\r\n");
   bk_init();

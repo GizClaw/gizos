@@ -16,26 +16,24 @@
 
 static uint16_t framebuffer[368 * 448];
 typedef struct listener_fixture {
-  const h2_pal_net_api_t *base;
+  const h2_pal_net_api_t* base;
   h2_pal_net_socket_t reserved[2], owned[2];
   h2_pal_net_addr_t addresses[2];
   unsigned opened, closed;
 } listener_fixture_t;
 static listener_fixture_t listeners;
 
-static int reserve_ipv6(const h2_pal_net_api_t *net,
-                        h2_pal_net_socket_t ipv4,
-                        const h2_pal_net_addr_t *bound,
-                        listener_fixture_t *out, int *bind_errno) {
-  *out = (listener_fixture_t){.base = net,
-                              .reserved = {ipv4, -1},
-                              .owned = {-1, -1}};
+static int reserve_ipv6(const h2_pal_net_api_t* net, h2_pal_net_socket_t ipv4,
+                        const h2_pal_net_addr_t* bound, listener_fixture_t* out,
+                        int* bind_errno) {
+  *out = (listener_fixture_t){
+      .base = net, .reserved = {ipv4, -1}, .owned = {-1, -1}};
   out->addresses[0] = *bound;
   const h2_pal_net_bind_t bind = {
       .type = H2_PAL_NET_BIND_SOURCE_ADDR,
       .source_addr = {.family = H2_PAL_NET_FAMILY_IPV6, .ip = {[15] = 1}}};
   int rc = h2_pal_net_tcp_listen(net, H2_PAL_NET_FAMILY_IPV6, bound->port,
-                                &bind, &out->reserved[1], &out->addresses[1]);
+                                 &bind, &out->reserved[1], &out->addresses[1]);
   *bind_errno = rc == H2_PAL_OK ? 0 : errno;
   if (rc != H2_PAL_OK) {
     h2_pal_net_close(net, ipv4);
@@ -44,39 +42,38 @@ static int reserve_ipv6(const h2_pal_net_api_t *net,
   return rc;
 }
 
-static void reserve_listeners(const h2_pal_net_api_t *net,
-                               listener_fixture_t *out) {
+static void reserve_listeners(const h2_pal_net_api_t* net,
+                              listener_fixture_t* out) {
   const h2_pal_net_bind_t bind = {
       .type = H2_PAL_NET_BIND_SOURCE_ADDR,
-      .source_addr = {.family = H2_PAL_NET_FAMILY_IPV4,
-                      .ip = {127, 0, 0, 1}}};
+      .source_addr = {.family = H2_PAL_NET_FAMILY_IPV4, .ip = {127, 0, 0, 1}}};
   for (unsigned attempt = 0; attempt < 32; ++attempt) {
     h2_pal_net_socket_t ipv4 = -1;
     h2_pal_net_addr_t bound;
-    assert(h2_pal_net_tcp_listen(net, H2_PAL_NET_FAMILY_IPV4, 0, &bind,
-                                 &ipv4, &bound) == H2_PAL_OK);
+    assert(h2_pal_net_tcp_listen(net, H2_PAL_NET_FAMILY_IPV4, 0, &bind, &ipv4,
+                                 &bound) == H2_PAL_OK);
     assert(bound.port != 0);
     int bind_errno = 0;
     int rc = reserve_ipv6(net, ipv4, &bound, out, &bind_errno);
-    if (rc == H2_PAL_OK)
-      return;
+    if (rc == H2_PAL_OK) return;
     /* Retry only a real cross-family collision, before the UI starts. */
     assert(rc == H2_PAL_ERR_IO && bind_errno == EADDRINUSE);
   }
   assert(!"no port available for both real loopback listeners");
 }
 
-static int reserved_listen(void *user, h2_pal_net_family_t family,
-                            uint16_t port, const h2_pal_net_bind_t *bind,
-                            h2_pal_net_socket_t *out_socket,
-                            h2_pal_net_addr_t *out_bound) {
+static int reserved_listen(void* user, h2_pal_net_family_t family,
+                           uint16_t port, const h2_pal_net_bind_t* bind,
+                           h2_pal_net_socket_t* out_socket,
+                           h2_pal_net_addr_t* out_bound) {
   unsigned index = family == H2_PAL_NET_FAMILY_IPV4 ? 0u : 1u;
   assert(family == H2_PAL_NET_FAMILY_IPV4 || family == H2_PAL_NET_FAMILY_IPV6);
-  assert(user == listeners.base->user && port == listeners.addresses[index].port);
+  assert(user == listeners.base->user &&
+         port == listeners.addresses[index].port);
   assert(bind != NULL && bind->type == H2_PAL_NET_BIND_SOURCE_ADDR);
   assert(bind->source_addr.family == family);
   assert(memcmp(bind->source_addr.ip, listeners.addresses[index].ip,
-                 family == H2_PAL_NET_FAMILY_IPV4 ? 4u : 16u) == 0);
+                family == H2_PAL_NET_FAMILY_IPV4 ? 4u : 16u) == 0);
   assert(listeners.owned[index] < 0);
   /* The fixture retains the reservation across modes; each production server
    * owns a distinct descriptor of the actual family/port listener. */
@@ -89,7 +86,7 @@ static int reserved_listen(void *user, h2_pal_net_family_t family,
   return H2_PAL_OK;
 }
 
-static void close_owned(void *user, h2_pal_net_socket_t socket) {
+static void close_owned(void* user, h2_pal_net_socket_t socket) {
   assert(socket != listeners.reserved[0] && socket != listeners.reserved[1]);
   bool owned = false;
   for (unsigned i = 0; i < 2; ++i) {
@@ -100,11 +97,10 @@ static void close_owned(void *user, h2_pal_net_socket_t socket) {
     }
   }
   listeners.base->vtable->close(user, socket);
-  if (owned)
-    assert(fcntl(socket, F_GETFD) == -1 && errno == EBADF);
+  if (owned) assert(fcntl(socket, F_GETFD) == -1 && errno == EBADF);
 }
 
-static void reject_ipv6_collision(const h2_pal_net_api_t *net) {
+static void reject_ipv6_collision(const h2_pal_net_api_t* net) {
   listener_fixture_t busy;
   reserve_listeners(net, &busy);
   h2_pal_net_socket_t ipv4 = busy.reserved[0];
@@ -123,8 +119,8 @@ static void reject_ipv6_collision(const h2_pal_net_api_t *net) {
 }
 
 typedef struct fixture {
-  h2_iperf_server_app_t *app;
-  const h2_pal_time_api_t *time;
+  h2_iperf_server_app_t* app;
+  const h2_pal_time_api_t* time;
   bool ready;
   bool pressed;
   bool bad_viewport;
@@ -138,14 +134,14 @@ typedef struct fixture {
   unsigned display_open, display_close, touch_open, touch_close, starts, stops;
   uint64_t deadline, next_edge;
 } fixture_t;
-static uint64_t now(fixture_t *f) {
+static uint64_t now(fixture_t* f) {
   uint64_t ms;
   assert(h2_pal_time_get_monotonic_ms(f->time, &ms) == H2_PAL_OK);
   return ms;
 }
-static int network_start(void *user, h2_iperf_server_app_mode_t mode,
-                         h2_iperf_server_app_network_t *out) {
-  fixture_t *f = user;
+static int network_start(void* user, h2_iperf_server_app_mode_t mode,
+                         h2_iperf_server_app_network_t* out) {
+  fixture_t* f = user;
   ++f->starts;
   if (mode != H2_IPERF_SERVER_APP_MODE_IPV6) {
     out->ipv4 = h2_iperf_test_loopback(0);
@@ -158,61 +154,59 @@ static int network_start(void *user, h2_iperf_server_app_mode_t mode,
   }
   return H2_PAL_OK;
 }
-static int network_stop(void *user) {
-  fixture_t *f = user;
+static int network_stop(void* user) {
+  fixture_t* f = user;
   assert(listeners.owned[0] < 0 && listeners.owned[1] < 0);
-  if (++f->stop_attempts == 1u)
-    return H2_PAL_ERR_IO;
+  if (++f->stop_attempts == 1u) return H2_PAL_ERR_IO;
   ++f->stops;
   return H2_PAL_OK;
 }
-static int display_open(void *user) {
-  ++((fixture_t *)user)->display_open;
+static int display_open(void* user) {
+  ++((fixture_t*)user)->display_open;
   return H2_PAL_OK;
 }
-static int display_info(void *user, h2_display_info_t *info) {
+static int display_info(void* user, h2_display_info_t* info) {
   (void)user;
   *info = (h2_display_info_t){
       .width = 368, .height = 448, .native_format = H2_DISPLAY_PIXEL_RGB565};
   return H2_PAL_OK;
 }
-static int draw(void *user, const h2_display_rect_t *rect, const void *pixels,
+static int draw(void* user, const h2_display_rect_t* rect, const void* pixels,
                 size_t stride, h2_display_pixel_format_t format) {
-  if (((fixture_t *)user)->fail_draw)
-    return H2_PAL_ERR_IO;
+  if (((fixture_t*)user)->fail_draw) return H2_PAL_ERR_IO;
   assert(format == H2_DISPLAY_PIXEL_RGB565);
   assert(rect->x >= 0 && rect->y >= 0 && rect->x + rect->width <= 368 &&
          rect->y + rect->height <= 448);
   for (int y = 0; y < rect->height; ++y)
     memcpy(framebuffer + (rect->y + y) * 368 + rect->x,
-           (const uint8_t *)pixels + (size_t)y * stride,
+           (const uint8_t*)pixels + (size_t)y * stride,
            (size_t)rect->width * 2);
   return H2_PAL_OK;
 }
-static int present(void *user) {
+static int present(void* user) {
   (void)user;
   return H2_PAL_OK;
 }
-static int display_close(void *user) {
-  ++((fixture_t *)user)->display_close;
+static int display_close(void* user) {
+  ++((fixture_t*)user)->display_close;
   return H2_PAL_OK;
 }
-static int touch_open(void *user) {
-  ++((fixture_t *)user)->touch_open;
+static int touch_open(void* user) {
+  ++((fixture_t*)user)->touch_open;
   return H2_PAL_OK;
 }
-static int touch_info(void *user, h2_pal_touch_info_t *info) {
+static int touch_info(void* user, h2_pal_touch_info_t* info) {
   *info = (h2_pal_touch_info_t){
-      .width = 368, .height = ((fixture_t *)user)->bad_viewport ? 449 : 448};
+      .width = 368, .height = ((fixture_t*)user)->bad_viewport ? 449 : 448};
   return H2_PAL_OK;
 }
 static const int taps[9][2] = {{70, 105},  {180, 290}, {180, 290},
                                {180, 105}, {180, 290}, {180, 290},
                                {290, 105}, {180, 290}, {180, 290}};
 static bool tap_ready(unsigned step) {
-  lv_obj_t *screen = lv_screen_active();
+  lv_obj_t* screen = lv_screen_active();
   for (uint32_t i = 0; i < lv_obj_get_child_count(screen); ++i) {
-    lv_obj_t *object = lv_obj_get_child(screen, (int32_t)i);
+    lv_obj_t* object = lv_obj_get_child(screen, (int32_t)i);
     lv_area_t area;
     lv_obj_get_coords(object, &area);
     if (taps[step][0] >= area.x1 && taps[step][0] <= area.x2 &&
@@ -224,14 +218,14 @@ static bool tap_ready(unsigned step) {
   return false;
 }
 static bool retry_stop_ready(void) {
-  lv_obj_t *screen = lv_screen_active();
+  lv_obj_t* screen = lv_screen_active();
   for (uint32_t i = 0; i < lv_obj_get_child_count(screen); ++i) {
-    lv_obj_t *object = lv_obj_get_child(screen, (int32_t)i);
+    lv_obj_t* object = lv_obj_get_child(screen, (int32_t)i);
     if (!lv_obj_is_clickable(object) ||
         lv_obj_has_state(object, LV_STATE_DISABLED))
       continue;
     for (uint32_t j = 0; j < lv_obj_get_child_count(object); ++j) {
-      lv_obj_t *child = lv_obj_get_child(object, (int32_t)j);
+      lv_obj_t* child = lv_obj_get_child(object, (int32_t)j);
       if (lv_obj_check_type(child, &lv_label_class) &&
           strcmp(lv_label_get_text(child), "Retry stop") == 0)
         return true;
@@ -239,10 +233,9 @@ static bool retry_stop_ready(void) {
   }
   return false;
 }
-static int touch_poll(void *user, h2_pal_touch_event_t *event) {
-  fixture_t *f = user;
-  if (f->fail_touch)
-    return H2_PAL_ERR_IO;
+static int touch_poll(void* user, h2_pal_touch_event_t* event) {
+  fixture_t* f = user;
+  if (f->fail_touch) return H2_PAL_ERR_IO;
   if (f->ready && f->step == 0 && f->touch_errors == 0) {
     ++f->touch_errors;
     return H2_PAL_ERR_TIMEOUT;
@@ -259,40 +252,37 @@ static int touch_poll(void *user, h2_pal_touch_event_t *event) {
   if (f->step == 3u && !f->retried_stop &&
       snapshot.phase == H2_IPERF_SERVER_APP_STOPPING &&
       snapshot.error == H2_PAL_ERR_IO) {
-    if (!retry_stop_ready())
-      return H2_PAL_ERR_WOULD_BLOCK;
-    *event = (h2_pal_touch_event_t){.kind = f->pressed ? H2_PAL_TOUCH_EVENT_UP
-                                                       : H2_PAL_TOUCH_EVENT_DOWN,
-                                    .x = 180, .y = 290};
+    if (!retry_stop_ready()) return H2_PAL_ERR_WOULD_BLOCK;
+    *event = (h2_pal_touch_event_t){
+        .kind = f->pressed ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
+        .x = 180,
+        .y = 290};
     f->pressed = !f->pressed;
-    if (!f->pressed)
-      f->retried_stop = true;
+    if (!f->pressed) f->retried_stop = true;
     f->next_edge = now(f) + 100u;
     return H2_PAL_OK;
   }
   if (!f->pressed) {
     if (f->step == 1 && f->touch_errors == 2 && !f->retry_cancelled_click)
       assert(f->starts ==
-             0); // A failed read must not synthesize a start click.
-    if (!tap_ready(f->step))
-      return H2_PAL_ERR_WOULD_BLOCK;
+             0);  // A failed read must not synthesize a start click.
+    if (!tap_ready(f->step)) return H2_PAL_ERR_WOULD_BLOCK;
     // Wait until the previous click actually completed through LVGL/controller.
     unsigned local = f->step % 3;
     h2_iperf_server_app_mode_t mode =
         f->step < 3   ? H2_IPERF_SERVER_APP_MODE_IPV4
         : f->step < 6 ? H2_IPERF_SERVER_APP_MODE_IPV6
                       : H2_IPERF_SERVER_APP_MODE_DUAL;
-    if (local == 1 && snapshot.mode != mode)
-      return H2_PAL_ERR_WOULD_BLOCK;
+    if (local == 1 && snapshot.mode != mode) return H2_PAL_ERR_WOULD_BLOCK;
     if (local == 2 && snapshot.phase != H2_IPERF_SERVER_APP_LISTENING)
       return H2_PAL_ERR_WOULD_BLOCK;
     if (local == 0 && snapshot.phase != H2_IPERF_SERVER_APP_STOPPED)
       return H2_PAL_ERR_WOULD_BLOCK;
   }
-  *event = (h2_pal_touch_event_t){.kind = f->pressed ? H2_PAL_TOUCH_EVENT_UP
-                                                     : H2_PAL_TOUCH_EVENT_DOWN,
-                                  .x = taps[f->step][0],
-                                  .y = taps[f->step][1]};
+  *event = (h2_pal_touch_event_t){
+      .kind = f->pressed ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
+      .x = taps[f->step][0],
+      .y = taps[f->step][1]};
   f->pressed = !f->pressed;
   if (!f->pressed) {
     if (f->retry_cancelled_click)
@@ -303,19 +293,19 @@ static int touch_poll(void *user, h2_pal_touch_event_t *event) {
   f->next_edge = now(f) + 100;
   return H2_PAL_OK;
 }
-static int touch_close(void *user) {
-  ++((fixture_t *)user)->touch_close;
+static int touch_close(void* user) {
+  ++((fixture_t*)user)->touch_close;
   return H2_PAL_OK;
 }
-static int ui_ready(void *user) {
-  fixture_t *f = user;
+static int ui_ready(void* user) {
+  fixture_t* f = user;
   f->ready = true;
   // Save production LVGL pixels for visual inspection, independent of UI state.
-  const char *directory = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
+  const char* directory = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
   if (directory != NULL) {
     char path[1024];
     assert(snprintf(path, sizeof(path), "%s/iperf-server.ppm", directory) > 0);
-    FILE *file = fopen(path, "wb");
+    FILE* file = fopen(path, "wb");
     assert(file != NULL);
     fputs("P6\n368 448\n255\n", file);
     for (unsigned i = 0; i < 368 * 448; ++i) {
@@ -329,14 +319,13 @@ static int ui_ready(void *user) {
   }
   return H2_PAL_OK;
 }
-static bool finished(void *user) {
-  fixture_t *f = user;
+static bool finished(void* user) {
+  fixture_t* f = user;
   if (now(f) > f->deadline) {
     fprintf(stderr, "touch script stuck at step %u\n", f->step);
     assert(false);
   }
-  if (f->step < 9)
-    return false;
+  if (f->step < 9) return false;
   h2_iperf_server_app_snapshot_t snapshot;
   assert(h2_iperf_server_app_snapshot(f->app, &snapshot) == H2_PAL_OK);
   return snapshot.phase == H2_IPERF_SERVER_APP_STOPPED;
@@ -421,9 +410,10 @@ int main(void) {
     assert(fcntl(listeners.reserved[i], F_GETFD) == -1 && errno == EBADF);
   }
   h2_iperf_test_env_deinit(&env);
-  puts("H2_IPERF_SERVER_UI_PASS touch-clicks=10 modes=3 display-closed=1 "
-       "touch-closed=1 failed-ui-unconfirmed=3 touch-faults-recovered=2 "
-       "cancelled-click=1 failed-stop-retry=1 ipv6-port-collision-rejected=1 "
-       "owned-listeners-closed=4 reservations-closed=2");
+  puts(
+      "H2_IPERF_SERVER_UI_PASS touch-clicks=10 modes=3 display-closed=1 "
+      "touch-closed=1 failed-ui-unconfirmed=3 touch-faults-recovered=2 "
+      "cancelled-click=1 failed-stop-retry=1 ipv6-port-collision-rejected=1 "
+      "owned-listeners-closed=4 reservations-closed=2");
   return 0;
 }

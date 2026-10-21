@@ -11,7 +11,7 @@
  * FlashDB can report failure either before a single-key commit or after it. */
 static struct {
   char key[FDB_KV_NAME_MAX];
-  void *data;
+  void* data;
   size_t size;
 } entries[64];
 static size_t write_count;
@@ -26,27 +26,25 @@ static unsigned mutexes[4], mutex_count;
 static unsigned diagnostic_records;
 
 /* Diagnostics may block: require every real provider mutex to be released. */
-int h2_test_pref_printf(const char *format, ...) {
+int h2_test_pref_printf(const char* format, ...) {
   (void)format;
-  for (unsigned i = 0; i < mutex_count; ++i)
-    assert(mutexes[i] == 0u);
+  for (unsigned i = 0; i < mutex_count; ++i) assert(mutexes[i] == 0u);
   ++diagnostic_records;
   return 0;
 }
 
-static h2_pal_result_t diagnostic_now(void *user, uint64_t *out) {
+static h2_pal_result_t diagnostic_now(void* user, uint64_t* out) {
   static uint64_t now;
   (void)user;
   *out = (now += 1000u); /* Exercise each slow-call diagnostic boundary. */
   return H2_PAL_OK;
 }
-static int find(const char *key) {
+static int find(const char* key) {
   for (unsigned i = 0; i < 64; ++i)
-    if (entries[i].data && !strcmp(entries[i].key, key))
-      return (int)i;
+    if (entries[i].data && !strcmp(entries[i].key, key)) return (int)i;
   return -1;
 }
-static void store(const char *key, const void *data, size_t size) {
+static void store(const char* key, const void* data, size_t size) {
   int index = find(key);
   if (index < 0) {
     for (unsigned i = 0; i < 64; ++i)
@@ -56,7 +54,7 @@ static void store(const char *key, const void *data, size_t size) {
       }
   }
   assert(index >= 0 && size && strlen(key) < FDB_KV_NAME_MAX);
-  void *copy = malloc(size);
+  void* copy = malloc(size);
   assert(copy);
   memcpy(copy, data, size);
   free(entries[index].data);
@@ -64,54 +62,51 @@ static void store(const char *key, const void *data, size_t size) {
   entries[index].size = size;
   strcpy(entries[index].key, key);
 }
-void fdb_kvdb_control(fdb_kvdb_t db, int command, void *value) {
+void fdb_kvdb_control(fdb_kvdb_t db, int command, void* value) {
   (void)db;
   (void)command;
   (void)value;
 }
-fdb_err_t fdb_kvdb_init(fdb_kvdb_t db, const char *name, const char *path,
-                        void *defaults, void *user) {
+fdb_err_t fdb_kvdb_init(fdb_kvdb_t db, const char* name, const char* path,
+                        void* defaults, void* user) {
   (void)name;
   (void)path;
   (void)defaults;
   db->parent.user_data = user;
   return FDB_NO_ERR;
 }
-fdb_blob_t fdb_blob_make(fdb_blob_t blob, const void *data, size_t size) {
-  blob->buf = (void *)data;
+fdb_blob_t fdb_blob_make(fdb_blob_t blob, const void* data, size_t size) {
+  blob->buf = (void*)data;
   blob->size = size;
   return blob;
 }
-struct fdb_kv *fdb_kv_get_obj(fdb_kvdb_t db, const char *key,
-                              struct fdb_kv *out) {
+struct fdb_kv* fdb_kv_get_obj(fdb_kvdb_t db, const char* key,
+                              struct fdb_kv* out) {
   (void)db;
   int i = find(key);
-  if (i < 0)
-    return NULL;
+  if (i < 0) return NULL;
   strcpy(out->name, key);
   out->value_len = entries[i].size;
   return out;
 }
-size_t fdb_kv_get_blob(fdb_kvdb_t db, const char *key, fdb_blob_t blob) {
+size_t fdb_kv_get_blob(fdb_kvdb_t db, const char* key, fdb_blob_t blob) {
   (void)db;
   int i = find(key);
-  if (i < 0 || fail_reads)
-    return 0;
+  if (i < 0 || fail_reads) return 0;
   size_t n = entries[i].size < blob->size ? entries[i].size : blob->size;
   memcpy(blob->buf, entries[i].data, n);
   return n;
 }
-fdb_err_t fdb_kv_set_blob(fdb_kvdb_t db, const char *key, fdb_blob_t blob) {
+fdb_err_t fdb_kv_set_blob(fdb_kvdb_t db, const char* key, fdb_blob_t blob) {
   (void)db;
   assert(write_count < 256);
   strcpy(write_keys[write_count++], key);
   int metadata = !strncmp(key, "$h2t.", 5);
   int fail = metadata ? fail_metadata : fail_value;
-  if (!fail || fail_after_commit)
-    store(key, blob->buf, blob->size);
+  if (!fail || fail_after_commit) store(key, blob->buf, blob->size);
   return fail ? write_error : FDB_NO_ERR;
 }
-fdb_err_t fdb_kv_del(fdb_kvdb_t db, const char *key) {
+fdb_err_t fdb_kv_del(fdb_kvdb_t db, const char* key) {
   (void)db;
   int i = find(key);
   if (i >= 0) {
@@ -120,10 +115,10 @@ fdb_err_t fdb_kv_del(fdb_kvdb_t db, const char *key) {
   }
   return FDB_NO_ERR;
 }
-void fdb_kv_iterator_init(struct fdb_kv_iterator *iterator) {
+void fdb_kv_iterator_init(struct fdb_kv_iterator* iterator) {
   memset(iterator, 0, sizeof(*iterator));
 }
-bool fdb_kv_iterate(fdb_kvdb_t db, struct fdb_kv_iterator *iterator) {
+bool fdb_kv_iterate(fdb_kvdb_t db, struct fdb_kv_iterator* iterator) {
   for (; iterator->index < 64;) {
     unsigned i = (unsigned)iterator->index++;
     if (entries[i].data) {
@@ -134,78 +129,75 @@ bool fdb_kv_iterate(fdb_kvdb_t db, struct fdb_kv_iterator *iterator) {
   return false;
 }
 int easyflash_init(void) { return EF_NO_ERR; }
-size_t ef_get_env_blob(const char *key, void *data, size_t size,
-                       size_t *saved) {
+size_t ef_get_env_blob(const char* key, void* data, size_t size,
+                       size_t* saved) {
   size_t n = legacy_size && !strcmp(key, legacy_key) ? legacy_size : 0;
-  if (saved)
-    *saved = n;
+  if (saved) *saved = n;
   if (data) {
-    if (n > size)
-      n = size;
+    if (n > size) n = size;
     memcpy(data, legacy_data, n);
   }
   return n;
 }
-int ef_del_env(const char *key) {
-  if (fail_legacy_delete)
-    return -1;
-  if (!strcmp(key, legacy_key))
-    legacy_size = 0;
+int ef_del_env(const char* key) {
+  if (fail_legacy_delete) return -1;
+  if (!strcmp(key, legacy_key)) legacy_size = 0;
   return EF_NO_ERR;
 }
-const h2_pal_time_api_t *h2_bk_platform_time_api(void) {
-  static const h2_pal_time_vtable_t vtable = {.get_monotonic_ms = diagnostic_now};
+const h2_pal_time_api_t* h2_bk_platform_time_api(void) {
+  static const h2_pal_time_vtable_t vtable = {.get_monotonic_ms =
+                                                  diagnostic_now};
   static const h2_pal_time_api_t api = {.vtable = &vtable};
   return &api;
 }
-int rtos_init_mutex(beken_mutex_t *mutex) {
+int rtos_init_mutex(beken_mutex_t* mutex) {
   assert(mutex_count < 4);
   *mutex = &mutexes[mutex_count++];
   return 0;
 }
-int rtos_deinit_mutex(beken_mutex_t *mutex) {
+int rtos_deinit_mutex(beken_mutex_t* mutex) {
   *mutex = NULL;
   return 0;
 }
-int rtos_lock_mutex(beken_mutex_t *mutex) {
-  unsigned *state = *mutex;
+int rtos_lock_mutex(beken_mutex_t* mutex) {
+  unsigned* state = *mutex;
   assert(state && !*state);
   *state = 1;
   return 0;
 }
-int rtos_unlock_mutex(beken_mutex_t *mutex) {
-  unsigned *state = *mutex;
+int rtos_unlock_mutex(beken_mutex_t* mutex) {
+  unsigned* state = *mutex;
   assert(state && *state);
   *state = 0;
   return 0;
 }
-void *os_malloc(size_t size) { return fail_alloc ? NULL : malloc(size); }
-void *os_zalloc(size_t size) { return fail_alloc ? NULL : calloc(1, size); }
-void *os_realloc(void *p, size_t size) {
+void* os_malloc(size_t size) { return fail_alloc ? NULL : malloc(size); }
+void* os_zalloc(size_t size) { return fail_alloc ? NULL : calloc(1, size); }
+void* os_realloc(void* p, size_t size) {
   return fail_alloc ? NULL : realloc(p, size);
 }
-void os_free(void *p) { free(p); }
-static void *allocate(void *user, size_t size) {
+void os_free(void* p) { free(p); }
+static void* allocate(void* user, size_t size) {
   (void)user;
   return malloc(size);
 }
-static void release(void *user, void *p) {
+static void release(void* user, void* p) {
   (void)user;
   free(p);
 }
 static const h2_pal_mem_vtable_t mem_methods = {.alloc = allocate,
                                                 .free = release};
 static const h2_pal_mem_api_t mem = {.vtable = &mem_methods};
-static h2_pal_pref_namespace_t *open_namespace(const char *name) {
-  h2_pal_pref_namespace_t *ns = NULL;
+static h2_pal_pref_namespace_t* open_namespace(const char* name) {
+  h2_pal_pref_namespace_t* ns = NULL;
   assert(h2_pal_pref_open(h2_bk_platform_pref_api(), name,
                           H2_PAL_PREF_OPEN_READ_WRITE, &ns) == 0);
   assert(ns);
   return ns;
 }
-static void expect_type(h2_pal_pref_namespace_t *ns, const char *key,
+static void expect_type(h2_pal_pref_namespace_t* ns, const char* key,
                         h2_pal_pref_entry_type_t type) {
-  h2_pal_pref_cursor_t *cursor = NULL;
+  h2_pal_pref_cursor_t* cursor = NULL;
   h2_pal_pref_entry_t entry;
   int found = 0, rc;
   while ((rc = ns->iterate(ns, &cursor, &entry)) == 0) {
@@ -218,9 +210,9 @@ static void expect_type(h2_pal_pref_namespace_t *ns, const char *key,
   assert(rc == H2_PAL_ERR_NOT_FOUND && found == 1);
   assert(ns->iterate_close(ns, &cursor) == 0 && !cursor);
 }
-static void expect_blob(h2_pal_pref_namespace_t *ns, const char *key,
-                        const void *expected, size_t size) {
-  void *out = NULL;
+static void expect_blob(h2_pal_pref_namespace_t* ns, const char* key,
+                        const void* expected, size_t size) {
+  void* out = NULL;
   size_t length = 0;
   assert(ns->get_blob(ns, &mem, key, &out, &length) == 0);
   assert(length == size && !memcmp(out, expected, size));
@@ -234,17 +226,17 @@ static void reset_faults(void) {
   write_error = FDB_WRITE_ERR;
 }
 static void reserved_namespace(void) {
-  const char *names[] = {"$h2t", "$h2t.child"};
+  const char* names[] = {"$h2t", "$h2t.child"};
   for (unsigned i = 0; i < 2; ++i)
     for (int mode = 0; mode < 2; ++mode) {
-      h2_pal_pref_namespace_t *ns = (void *)(uintptr_t)1;
+      h2_pal_pref_namespace_t* ns = (void*)(uintptr_t)1;
       assert(h2_pal_pref_open(h2_bk_platform_pref_api(), names[i],
                               mode ? H2_PAL_PREF_OPEN_READ_WRITE
                                    : H2_PAL_PREF_OPEN_READ_ONLY,
                               &ns) == H2_PAL_ERR_INVALID_ARG);
       assert(!ns);
     }
-  h2_pal_pref_namespace_t *near = open_namespace("$h2tx");
+  h2_pal_pref_namespace_t* near = open_namespace("$h2tx");
   assert(near->set_bool(near, "ordinary", 1) == 0);
   assert(near->clear(near) == 0 && near->close(near) == 0);
 }
@@ -253,7 +245,7 @@ static void write_failures(void) {
   for (int after = 0; after < 2; ++after)
     for (int metadata = 0; metadata < 2; ++metadata) {
       reset_faults();
-      h2_pal_pref_namespace_t *ns = open_namespace("failure");
+      h2_pal_pref_namespace_t* ns = open_namespace("failure");
       assert(ns->set_blob(ns, "value", original, sizeof(original)) == 0);
       reset_faults();
       fail_metadata = metadata;
@@ -263,8 +255,7 @@ static void write_failures(void) {
       /* No fallible compensating writes; metadata always precedes value. */
       assert(write_count == (metadata ? 1u : 2u));
       assert(!strncmp(write_keys[0], "$h2t.", 5));
-      if (!metadata)
-        assert(!strcmp(write_keys[1], "failure.value"));
+      if (!metadata) assert(!strcmp(write_keys[1], "failure.value"));
       reset_faults();
       assert(ns->close(ns) == 0);
       ns = open_namespace("failure");
@@ -281,7 +272,7 @@ static void write_failures(void) {
     }
 }
 static void new_value_failure(void) {
-  h2_pal_pref_namespace_t *ns = open_namespace("new");
+  h2_pal_pref_namespace_t* ns = open_namespace("new");
   for (int metadata = 0; metadata < 2; ++metadata) {
     reset_faults();
     fail_metadata = metadata;
@@ -289,7 +280,7 @@ static void new_value_failure(void) {
     write_error = FDB_SAVED_FULL;
     assert(ns->set_string(ns, "missing", "value") == H2_PAL_ERR_NO_SPACE);
     reset_faults();
-    char *value = NULL;
+    char* value = NULL;
     assert(ns->get_string(ns, &mem, "missing", &value) ==
                H2_PAL_ERR_NOT_FOUND &&
            !value);
@@ -299,7 +290,7 @@ static void new_value_failure(void) {
   assert(ns->clear(ns) == 0 && ns->close(ns) == 0);
 }
 static void identical_bytes_and_types(void) {
-  h2_pal_pref_namespace_t *ns = open_namespace("same");
+  h2_pal_pref_namespace_t* ns = open_namespace("same");
   uint32_t value = 27;
   assert(ns->set_blob(ns, "key", &value, sizeof(value)) == 0);
   reset_faults();
@@ -332,7 +323,7 @@ static void identical_bytes_and_types(void) {
   assert(ns->clear(ns) == 0 && ns->close(ns) == 0);
 }
 static void read_and_allocation_failures(void) {
-  h2_pal_pref_namespace_t *ns = open_namespace("read");
+  h2_pal_pref_namespace_t* ns = open_namespace("read");
   assert(ns->set_u32(ns, "key", 42) == 0);
   reset_faults();
   fail_alloc = 1;
@@ -351,7 +342,7 @@ static void read_and_allocation_failures(void) {
   assert(ns->clear(ns) == 0 && ns->close(ns) == 0);
 }
 static void legacy_update(void) {
-  h2_pal_pref_namespace_t *ns = open_namespace("legacy");
+  h2_pal_pref_namespace_t* ns = open_namespace("legacy");
   strcpy(legacy_key, "legacy.key");
   memcpy(legacy_data, "old!", 4);
   legacy_size = 4;
@@ -359,7 +350,7 @@ static void legacy_update(void) {
   fail_legacy_delete = 1;
   assert(ns->set_string(ns, "key", "new") == H2_PAL_ERR_IO);
   reset_faults();
-  char *value = NULL;
+  char* value = NULL;
   assert(ns->get_string(ns, &mem, "key", &value) == 0 &&
          !strcmp(value, "old!"));
   free(value);
@@ -376,7 +367,7 @@ static void v1_and_legacy_compatibility(void) {
   const uint8_t bytes[] = {0x78, 0x56, 0x34, 0x12};
   store("compat.key", bytes, sizeof(bytes));
   store("$h2t.b9a1a25d2840b83a", record, sizeof(record));
-  h2_pal_pref_namespace_t *ns = open_namespace("compat");
+  h2_pal_pref_namespace_t* ns = open_namespace("compat");
   uint32_t value = 0;
   assert(ns->get_u32(ns, "key", &value) == 0 && value == 0x12345678u);
   expect_type(ns, "key", H2_PAL_PREF_ENTRY_U32);
@@ -392,7 +383,7 @@ static void v1_and_legacy_compatibility(void) {
   expect_blob(ns, "key", replacement, sizeof(replacement));
   /* An older Loader may subsequently write unrelated raw bytes. */
   store("compat.key", "old firmware", 12);
-  char *string = NULL;
+  char* string = NULL;
   assert(ns->get_string(ns, &mem, "key", &string) == 0 &&
          !strcmp(string, "old firmware"));
   free(string);
@@ -401,8 +392,8 @@ static void v1_and_legacy_compatibility(void) {
 }
 
 static void failed_creation_cleanup(void) {
-  h2_pal_pref_namespace_t *ns = open_namespace("orphan");
-  h2_pal_pref_namespace_t *other = open_namespace("other");
+  h2_pal_pref_namespace_t* ns = open_namespace("orphan");
+  h2_pal_pref_namespace_t* other = open_namespace("other");
   assert(other->set_u32(other, "keep", 73) == 0);
   reset_faults();
   fail_value = 1;
@@ -410,7 +401,7 @@ static void failed_creation_cleanup(void) {
   char metadata[FDB_KV_NAME_MAX];
   strcpy(metadata, write_keys[0]);
   reset_faults();
-  h2_pal_pref_cursor_t *cursor = NULL;
+  h2_pal_pref_cursor_t* cursor = NULL;
   h2_pal_pref_entry_t entry;
   assert(ns->iterate(ns, &cursor, &entry) == H2_PAL_ERR_NOT_FOUND);
   assert(ns->iterate_close(ns, &cursor) == 0);
@@ -429,23 +420,22 @@ static void failed_creation_cleanup(void) {
 }
 
 static void simultaneous_handles(void) {
-  h2_pal_pref_namespace_t *handles[8] = {0};
+  h2_pal_pref_namespace_t* handles[8] = {0};
   for (size_t i = 0; i < 8; ++i) {
-    assert(h2_pal_pref_open(h2_bk_platform_pref_api(), "parallel",
-                            i % 2 ? H2_PAL_PREF_OPEN_READ_ONLY
-                                  : H2_PAL_PREF_OPEN_READ_WRITE,
-                            &handles[i]) == H2_PAL_OK);
+    assert(h2_pal_pref_open(
+               h2_bk_platform_pref_api(), "parallel",
+               i % 2 ? H2_PAL_PREF_OPEN_READ_ONLY : H2_PAL_PREF_OPEN_READ_WRITE,
+               &handles[i]) == H2_PAL_OK);
     assert(handles[i]);
-    for (size_t j = 0; j < i; ++j)
-      assert(handles[i] != handles[j]);
+    for (size_t j = 0; j < i; ++j) assert(handles[i] != handles[j]);
   }
   assert(handles[0]->set_u32(handles[0], "value", 42u) == H2_PAL_OK);
   assert(handles[0]->commit(handles[0]) == H2_PAL_OK);
-  h2_pal_pref_namespace_t *failed = (void *)(uintptr_t)1;
+  h2_pal_pref_namespace_t* failed = (void*)(uintptr_t)1;
   fail_alloc = 1;
   assert(h2_pal_pref_open(h2_bk_platform_pref_api(), "parallel",
-                          H2_PAL_PREF_OPEN_READ_ONLY, &failed) ==
-         H2_PAL_ERR_NO_MEMORY);
+                          H2_PAL_PREF_OPEN_READ_ONLY,
+                          &failed) == H2_PAL_ERR_NO_MEMORY);
   assert(!failed);
   fail_alloc = 0;
   for (size_t i = 0; i < 8; ++i) {
@@ -454,7 +444,7 @@ static void simultaneous_handles(void) {
            value == 42u);
     assert(handles[i]->close(handles[i]) == H2_PAL_OK);
   }
-  h2_pal_pref_namespace_t *reopened = open_namespace("parallel");
+  h2_pal_pref_namespace_t* reopened = open_namespace("parallel");
   assert(reopened->clear(reopened) == H2_PAL_OK);
   assert(reopened->close(reopened) == H2_PAL_OK);
 }
@@ -477,12 +467,11 @@ int main(void) {
   failed_creation_cleanup();
   reset_faults();
   simultaneous_handles();
-  for (unsigned i = 0; i < 64; ++i)
-    free(entries[i].data);
-  for (unsigned i = 0; i < mutex_count; ++i)
-    assert(mutexes[i] == 0);
+  for (unsigned i = 0; i < 64; ++i) free(entries[i].data);
+  for (unsigned i = 0; i < mutex_count; ++i) assert(mutexes[i] == 0);
   assert(diagnostic_records != 0u);
-  puts("BK Preferences: namespace isolation and metadata/value failure "
-       "consistency PASS");
+  puts(
+      "BK Preferences: namespace isolation and metadata/value failure "
+      "consistency PASS");
   return 0;
 }

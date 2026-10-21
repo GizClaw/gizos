@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /** ESP component-private observer for disruptive Wi-Fi radio transitions. */
-typedef void (*h2_esp_platform_wifi_activity_fn)(void *user, bool active);
+typedef void (*h2_esp_platform_wifi_activity_fn)(void* user, bool active);
 
 /**
  * Install the single process-wide Wi-Fi activity observer.
@@ -24,8 +24,7 @@ typedef void (*h2_esp_platform_wifi_activity_fn)(void *user, bool active);
  * it must not block and must not re-enter the Wi-Fi API.
  */
 void h2_esp_platform_wifi_set_activity_observer(
-    h2_esp_platform_wifi_activity_fn callback,
-    void *user);
+    h2_esp_platform_wifi_activity_fn callback, void* user);
 
 #ifdef __cplusplus
 }

@@ -18,15 +18,15 @@
 #define H2_ESP_BLE_MAX_GATT_SERVICES 6u
 #define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE 3u
 #define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS \
-    (H2_ESP_BLE_MAX_GATT_SERVICES * \
-     H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)
+  (H2_ESP_BLE_MAX_GATT_SERVICES *           \
+   H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)
 
 /** Whether a registration request fits the static schema. */
-static inline bool h2_esp_ble_gatt_schema_accepts(
-    size_t service_count,
-    size_t characteristic_count) {
-    return service_count <= H2_ESP_BLE_MAX_GATT_SERVICES &&
-           characteristic_count <= H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE;
+static inline bool h2_esp_ble_gatt_schema_accepts(size_t service_count,
+                                                  size_t characteristic_count) {
+  return service_count <= H2_ESP_BLE_MAX_GATT_SERVICES &&
+         characteristic_count <=
+             H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE;
 }
 
 /**
@@ -37,11 +37,10 @@ static inline bool h2_esp_ble_gatt_schema_accepts(
  * leave later slots reading as zero and dispatch one characteristic's reads
  * and writes to another.
  */
-static inline size_t h2_esp_ble_gatt_schema_slot(
-    size_t service_index,
-    size_t characteristic_index) {
-    return service_index * H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE +
-           characteristic_index;
+static inline size_t h2_esp_ble_gatt_schema_slot(size_t service_index,
+                                                 size_t characteristic_index) {
+  return service_index * H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE +
+         characteristic_index;
 }
 
 /**
@@ -54,13 +53,11 @@ static inline size_t h2_esp_ble_gatt_schema_slot(
  * the later characteristics of the second registered service.
  */
 static inline void h2_esp_ble_gatt_schema_bind_indices(
-    uint8_t *indices,
-    size_t service_index,
-    size_t characteristic_count) {
-    for (size_t i = 0u; i < characteristic_count; ++i) {
-        size_t slot = h2_esp_ble_gatt_schema_slot(service_index, i);
-        indices[slot] = (uint8_t)slot;
-    }
+    uint8_t* indices, size_t service_index, size_t characteristic_count) {
+  for (size_t i = 0u; i < characteristic_count; ++i) {
+    size_t slot = h2_esp_ble_gatt_schema_slot(service_index, i);
+    indices[slot] = (uint8_t)slot;
+  }
 }
 
 #endif

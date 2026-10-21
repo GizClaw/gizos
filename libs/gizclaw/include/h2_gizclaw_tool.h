@@ -44,14 +44,14 @@ typedef enum h2_gizclaw_tool {
  * destroy the Service. on_complete retains the response-completion contract
  * in h2_gizclaw_rpc.h. */
 typedef int (*h2_gizclaw_tool_invoke_fn)(
-    void *user, h2_gizclaw_tool_t tool, h2_gizclaw_rpc_bytes_t request_payload,
-    h2_gizclaw_rpc_provider_response_t *out_response);
+    void* user, h2_gizclaw_tool_t tool, h2_gizclaw_rpc_bytes_t request_payload,
+    h2_gizclaw_rpc_provider_response_t* out_response);
 
 /** Immutable registration borrowed for the Client or Service lifetime. */
 typedef struct h2_gizclaw_tool_handler {
   h2_gizclaw_tool_t tool;
   h2_gizclaw_tool_invoke_fn invoke;
-  void *user;
+  void* user;
 } h2_gizclaw_tool_handler_t;
 
 #ifdef __cplusplus

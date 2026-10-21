@@ -7,7 +7,7 @@ extern int h2_jieli_wl82_exception_log_clear(void) __attribute__((weak));
 
 static int usb_debug_started;
 
-const char *h2_jieli_ac791n_devkit_board_name(void) {
+const char* h2_jieli_ac791n_devkit_board_name(void) {
   return "jieli_ac791n_devkit";
 }
 

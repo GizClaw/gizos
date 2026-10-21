@@ -24,20 +24,20 @@ typedef struct h2_esp_task_policy {
   h2_esp_task_stack_region_t stack_region;
 } h2_esp_task_policy_t;
 
-typedef h2_pal_result_t (*h2_esp_task_policy_resolver_t)(
-    void *, const char *, h2_esp_task_policy_t *);
+typedef h2_pal_result_t (*h2_esp_task_policy_resolver_t)(void*, const char*,
+                                                         h2_esp_task_policy_t*);
 
 typedef struct h2_esp_task_policy_config {
   h2_esp_task_policy_resolver_t resolver;
-  void *resolver_user;
+  void* resolver_user;
   /** Borrowed PSRAM stack allocator with alloc/free; NULL keeps WithCaps.
    * Used only when the resolved policy selects PSRAM. Must provide 8-bit
    * PSRAM storage aligned for StackType_t and live until all tasks join.
    * TCB storage remains internal RAM; internal-policy stacks ignore this. */
-  const h2_pal_mem_api_t *psram_stack_allocator;
+  const h2_pal_mem_api_t* psram_stack_allocator;
 } h2_esp_task_policy_config_t;
 
-h2_pal_result_t
-h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config);
+h2_pal_result_t h2_esp_platform_task_configure(
+    const h2_esp_task_policy_config_t* config);
 
 #endif

@@ -15,8 +15,8 @@ typedef struct {
   struct netif n;
   esp_netif_ip_info_t info;
 } esp_netif_t;
-void *esp_netif_get_netif_impl(esp_netif_t *);
-int esp_netif_is_netif_up(esp_netif_t *);
-int esp_netif_get_ip_info(esp_netif_t *, esp_netif_ip_info_t *);
-int esp_netif_get_all_preferred_ip6(esp_netif_t *, esp_ip6_addr_t *);
+void* esp_netif_get_netif_impl(esp_netif_t*);
+int esp_netif_is_netif_up(esp_netif_t*);
+int esp_netif_get_ip_info(esp_netif_t*, esp_netif_ip_info_t*);
+int esp_netif_get_all_preferred_ip6(esp_netif_t*, esp_ip6_addr_t*);
 #endif

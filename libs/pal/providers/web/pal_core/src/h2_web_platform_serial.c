@@ -21,12 +21,12 @@ typedef struct h2_web_serial_operation {
 
 struct h2_pal_serial_host_snapshot {
   size_t count;
-  h2_pal_serial_host_port_info_t *ports;
+  h2_pal_serial_host_port_info_t* ports;
 };
 
 struct h2_pal_serial_host_session {
-  h2_web_platform_t *owner;
-  h2_pal_serial_host_session_t *next;
+  h2_web_platform_t* owner;
+  h2_pal_serial_host_session_t* next;
   h2_pal_uart_io_stream_config_t config;
   h2_pal_uart_io_stream_api_t stream;
   h2_web_serial_operation_t operation;
@@ -35,9 +35,9 @@ struct h2_pal_serial_host_session {
 };
 
 typedef struct h2_web_serial_state {
-  h2_web_platform_t *owner;
-  h2_pal_serial_host_session_t *sessions;
-  h2_pal_serial_host_port_info_t *scan_ports;
+  h2_web_platform_t* owner;
+  h2_pal_serial_host_session_t* sessions;
+  h2_pal_serial_host_port_info_t* scan_ports;
   size_t scan_count;
   uint64_t scan_token;
   h2_pal_result_t scan_result;
@@ -57,24 +57,24 @@ typedef struct h2_web_serial_state {
   h2_pal_result_t shutdown_result;
 } h2_web_serial_state_t;
 
-static h2_web_serial_state_t *h2_web_serial_state(h2_web_platform_t *platform) {
+static h2_web_serial_state_t* h2_web_serial_state(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
   return platform == NULL ? NULL : platform->serial_state;
 }
 
 static bool h2_web_serial_session_shutting_down(
-    const h2_pal_serial_host_session_t *session) {
+    const h2_pal_serial_host_session_t* session) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = session == NULL
-      ? NULL : h2_web_serial_state(session->owner);
+  h2_web_serial_state_t* state =
+      session == NULL ? NULL : h2_web_serial_state(session->owner);
   return state == NULL || state->shutting_down;
 }
 
-static h2_pal_serial_host_session_t *h2_web_serial_find_session(
-    h2_web_serial_state_t *state, uintptr_t address) {
+static h2_pal_serial_host_session_t* h2_web_serial_find_session(
+    h2_web_serial_state_t* state, uintptr_t address) {
   H2_WEB_STATE_GUARD();
-  for (h2_pal_serial_host_session_t *session = state->sessions;
-       session != NULL; session = session->next) {
+  for (h2_pal_serial_host_session_t* session = state->sessions; session != NULL;
+       session = session->next) {
     if ((uintptr_t)session == address) {
       return session;
     }
@@ -579,14 +579,15 @@ EMSCRIPTEN_KEEPALIVE int h2_web_serial_scan_reset(uintptr_t platform_address,
                                                   uint64_t token,
                                                   size_t count) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(
-      (h2_web_platform_t *)platform_address);
+  h2_web_serial_state_t* state =
+      h2_web_serial_state((h2_web_platform_t*)platform_address);
   if (state == NULL || !state->scan_pending || token != state->scan_token ||
       count > SIZE_MAX / sizeof(*state->scan_ports)) {
     return 0;
   }
   free(state->scan_ports);
-  state->scan_ports = count == 0u ? NULL : calloc(count, sizeof(*state->scan_ports));
+  state->scan_ports =
+      count == 0u ? NULL : calloc(count, sizeof(*state->scan_ports));
   state->scan_count = state->scan_ports == NULL && count != 0u ? 0u : count;
   return count == 0u || state->scan_ports != NULL;
 }
@@ -596,13 +597,13 @@ EMSCRIPTEN_KEEPALIVE void h2_web_serial_scan_port(
     unsigned int port_number, unsigned int vid, unsigned int pid, int has_vid,
     int has_pid, int has_signals) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(
-      (h2_web_platform_t *)platform_address);
+  h2_web_serial_state_t* state =
+      h2_web_serial_state((h2_web_platform_t*)platform_address);
   if (state == NULL || !state->scan_pending || token != state->scan_token ||
       index >= state->scan_count) {
     return;
   }
-  h2_pal_serial_host_port_info_t *info = &state->scan_ports[index];
+  h2_pal_serial_host_port_info_t* info = &state->scan_ports[index];
   (void)snprintf(info->port_id, sizeof(info->port_id), "web-serial-%u",
                  port_number);
   (void)snprintf(info->endpoint, sizeof(info->endpoint), "web-serial-%u",
@@ -624,23 +625,23 @@ EMSCRIPTEN_KEEPALIVE void h2_web_serial_scan_port(
 EMSCRIPTEN_KEEPALIVE void h2_web_serial_scan_complete(
     uintptr_t platform_address, uint64_t token, int result) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(
-      (h2_web_platform_t *)platform_address);
+  h2_web_serial_state_t* state =
+      h2_web_serial_state((h2_web_platform_t*)platform_address);
   if (state == NULL || !state->scan_pending || token != state->scan_token) {
     return;
   }
   state->scan_result = (h2_pal_result_t)result;
   state->scan_done = true;
   h2_web_state_notify();
-  h2_web_platform_request_pump((h2_web_platform_t *)platform_address, 0u);
+  h2_web_platform_request_pump((h2_web_platform_t*)platform_address, 0u);
 }
 
 EMSCRIPTEN_KEEPALIVE void h2_web_serial_authorization_complete(
     uintptr_t platform_address, uint64_t token, int result,
     unsigned int port_number) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(
-      (h2_web_platform_t *)platform_address);
+  h2_web_serial_state_t* state =
+      h2_web_serial_state((h2_web_platform_t*)platform_address);
   if (state == NULL || !state->authorization_pending ||
       token != state->authorization_token) {
     return;
@@ -650,35 +651,34 @@ EMSCRIPTEN_KEEPALIVE void h2_web_serial_authorization_complete(
   state->authorization_result = (h2_pal_result_t)result;
   state->authorized_port_id[0] = '\0';
   if (result == H2_PAL_OK) {
-    (void)snprintf(state->authorized_port_id,
-                   sizeof(state->authorized_port_id), "web-serial-%u",
-                   port_number);
+    (void)snprintf(state->authorized_port_id, sizeof(state->authorized_port_id),
+                   "web-serial-%u", port_number);
   }
-  h2_web_platform_request_pump((h2_web_platform_t *)platform_address, 0u);
+  h2_web_platform_request_pump((h2_web_platform_t*)platform_address, 0u);
 }
 
 EMSCRIPTEN_KEEPALIVE void h2_web_serial_forget_complete(
     uintptr_t platform_address, uint64_t token, int result) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(
-      (h2_web_platform_t *)platform_address);
+  h2_web_serial_state_t* state =
+      h2_web_serial_state((h2_web_platform_t*)platform_address);
   if (state == NULL || !state->forget_pending || token != state->forget_token) {
     return;
   }
   state->forget_pending = false;
   state->forget_terminal = true;
   state->forget_result = (h2_pal_result_t)result;
-  h2_web_platform_request_pump((h2_web_platform_t *)platform_address, 0u);
+  h2_web_platform_request_pump((h2_web_platform_t*)platform_address, 0u);
 }
 
 EMSCRIPTEN_KEEPALIVE void h2_web_serial_session_complete(
     uintptr_t platform_address, uintptr_t session_address, uint64_t token,
     int result, size_t count) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(
-      (h2_web_platform_t *)platform_address);
-  h2_pal_serial_host_session_t *session = state == NULL
-      ? NULL : h2_web_serial_find_session(state, session_address);
+  h2_web_serial_state_t* state =
+      h2_web_serial_state((h2_web_platform_t*)platform_address);
+  h2_pal_serial_host_session_t* session =
+      state == NULL ? NULL : h2_web_serial_find_session(state, session_address);
   if (session == NULL || !session->operation.pending ||
       token != session->operation.token) {
     return;
@@ -687,16 +687,16 @@ EMSCRIPTEN_KEEPALIVE void h2_web_serial_session_complete(
   session->operation.count = count;
   session->operation.done = true;
   h2_web_state_notify();
-  h2_web_platform_request_pump((h2_web_platform_t *)platform_address, 0u);
+  h2_web_platform_request_pump((h2_web_platform_t*)platform_address, 0u);
 }
 
 EMSCRIPTEN_KEEPALIVE int h2_web_serial_session_token_valid(
     uintptr_t platform_address, uintptr_t session_address, uint64_t token) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(
-      (h2_web_platform_t *)platform_address);
-  h2_pal_serial_host_session_t *session = state == NULL
-      ? NULL : h2_web_serial_find_session(state, session_address);
+  h2_web_serial_state_t* state =
+      h2_web_serial_state((h2_web_platform_t*)platform_address);
+  h2_pal_serial_host_session_t* session =
+      state == NULL ? NULL : h2_web_serial_find_session(state, session_address);
   return session != NULL && session->operation.pending &&
          token == session->operation.token;
 }
@@ -704,36 +704,33 @@ EMSCRIPTEN_KEEPALIVE int h2_web_serial_session_token_valid(
 /* Called with the browser-state guard held. Completion callbacks acquire the
  * same guard, and each sleep releases it, retaining early completion results.
  */
-static h2_pal_result_t h2_web_serial_wait_flag(h2_web_platform_t *platform,
-                                               const bool *flag, bool value,
+static h2_pal_result_t h2_web_serial_wait_flag(h2_web_platform_t* platform,
+                                               const bool* flag, bool value,
                                                uint32_t timeout_ms) {
   const double deadline = emscripten_get_now() + timeout_ms;
   while (*flag != value) {
-    if (emscripten_get_now() >= deadline)
-      return H2_PAL_ERR_TIMEOUT;
+    if (emscripten_get_now() >= deadline) return H2_PAL_ERR_TIMEOUT;
     if (h2_web_thread_core_is_current_task_cancelled(platform->executor))
       return H2_PAL_ERR_CLOSED;
     double remaining = deadline - emscripten_get_now();
-    if (remaining <= 0.0)
-      return H2_PAL_ERR_TIMEOUT;
+    if (remaining <= 0.0) return H2_PAL_ERR_TIMEOUT;
     h2_web_state_wait(remaining > 10.0 ? 10u : (uint32_t)remaining + 1u);
   }
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_serial_wait(
-    h2_pal_serial_host_session_t *session, uint32_t timeout_ms) {
+static h2_pal_result_t h2_web_serial_wait(h2_pal_serial_host_session_t* session,
+                                          uint32_t timeout_ms) {
   H2_WEB_STATE_GUARD();
   h2_pal_result_t rc = h2_web_serial_wait_flag(
       session->owner, &session->operation.done, true, timeout_ms);
-  if (rc != H2_PAL_OK)
-    ++session->operation.token;
+  if (rc != H2_PAL_OK) ++session->operation.token;
   session->operation.pending = false;
   h2_web_state_notify();
   return rc == H2_PAL_OK ? session->operation.result : rc;
 }
 
-static uint64_t h2_web_serial_begin(h2_pal_serial_host_session_t *session) {
+static uint64_t h2_web_serial_begin(h2_pal_serial_host_session_t* session) {
   H2_WEB_STATE_GUARD();
   ++session->operation.token;
   session->operation = (h2_web_serial_operation_t){
@@ -745,10 +742,10 @@ static uint64_t h2_web_serial_begin(h2_pal_serial_host_session_t *session) {
 }
 
 static h2_pal_result_t h2_web_serial_scan(
-    void *user, h2_pal_serial_host_snapshot_t **out_snapshot) {
+    void* user, h2_pal_serial_host_snapshot_t** out_snapshot) {
   H2_WEB_STATE_GUARD();
-  h2_web_platform_t *platform = user;
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_platform_t* platform = user;
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   if (out_snapshot != NULL) {
     *out_snapshot = NULL;
   }
@@ -765,11 +762,10 @@ static h2_pal_result_t h2_web_serial_scan(
   state->scan_wake_recorded = false;
   state->scan_result = H2_PAL_ERR_WOULD_BLOCK;
   (void)h2_web_main_call(h2_web_serial_scan_js,
-                         (const void *[]){&(uintptr_t){(uintptr_t)platform},
-                                          &(uint64_t){state->scan_token}});
+                         (const void*[]){&(uintptr_t){(uintptr_t)platform},
+                                         &(uint64_t){state->scan_token}});
   const h2_pal_result_t wait_result = h2_web_serial_wait_flag(
-      platform, &state->scan_done, true,
-      H2_WEB_SERIAL_OPERATION_TIMEOUT_MS);
+      platform, &state->scan_done, true, H2_WEB_SERIAL_OPERATION_TIMEOUT_MS);
   if (wait_result != H2_PAL_OK || !state->scan_done) {
     ++state->scan_token;
     state->scan_pending = false;
@@ -777,7 +773,7 @@ static h2_pal_result_t h2_web_serial_scan(
     state->scan_ports = NULL;
     state->scan_count = 0u;
     return wait_result == H2_PAL_ERR_TIMEOUT ? H2_PAL_ERR_TIMEOUT
-                                               : H2_PAL_ERR_INVALID_STATE;
+                                             : H2_PAL_ERR_INVALID_STATE;
   }
   state->scan_pending = false;
   if (state->scan_result != H2_PAL_OK) {
@@ -786,7 +782,7 @@ static h2_pal_result_t h2_web_serial_scan(
     state->scan_count = 0u;
     return state->scan_result;
   }
-  h2_pal_serial_host_snapshot_t *snapshot = calloc(1u, sizeof(*snapshot));
+  h2_pal_serial_host_snapshot_t* snapshot = calloc(1u, sizeof(*snapshot));
   if (snapshot == NULL) {
     free(state->scan_ports);
     state->scan_ports = NULL;
@@ -802,8 +798,8 @@ static h2_pal_result_t h2_web_serial_scan(
 }
 
 static h2_pal_result_t h2_web_serial_snapshot_count(
-    void *user, const h2_pal_serial_host_snapshot_t *snapshot,
-    size_t *out_count) {
+    void* user, const h2_pal_serial_host_snapshot_t* snapshot,
+    size_t* out_count) {
   H2_WEB_STATE_GUARD();
   (void)user;
   if (snapshot == NULL || out_count == NULL) {
@@ -814,8 +810,8 @@ static h2_pal_result_t h2_web_serial_snapshot_count(
 }
 
 static h2_pal_result_t h2_web_serial_snapshot_get(
-    void *user, const h2_pal_serial_host_snapshot_t *snapshot, size_t index,
-    h2_pal_serial_host_port_info_t *out_info) {
+    void* user, const h2_pal_serial_host_snapshot_t* snapshot, size_t index,
+    h2_pal_serial_host_port_info_t* out_info) {
   H2_WEB_STATE_GUARD();
   (void)user;
   if (snapshot == NULL || out_info == NULL || index >= snapshot->count) {
@@ -826,7 +822,7 @@ static h2_pal_result_t h2_web_serial_snapshot_get(
 }
 
 static h2_pal_result_t h2_web_serial_snapshot_destroy(
-    void *user, h2_pal_serial_host_snapshot_t **inout_snapshot) {
+    void* user, h2_pal_serial_host_snapshot_t** inout_snapshot) {
   H2_WEB_STATE_GUARD();
   (void)user;
   if (inout_snapshot == NULL) {
@@ -840,16 +836,16 @@ static h2_pal_result_t h2_web_serial_snapshot_destroy(
   return H2_PAL_OK;
 }
 
-static int h2_web_serial_port_number(const char *port_id,
-                                     unsigned int *out_number) {
+static int h2_web_serial_port_number(const char* port_id,
+                                     unsigned int* out_number) {
   H2_WEB_STATE_GUARD();
   static const char prefix[] = "web-serial-";
   if (port_id == NULL || out_number == NULL ||
       strncmp(port_id, prefix, sizeof(prefix) - 1u) != 0) {
     return 0;
   }
-  const char *digits = port_id + sizeof(prefix) - 1u;
-  char *end = NULL;
+  const char* digits = port_id + sizeof(prefix) - 1u;
+  char* end = NULL;
   errno = 0;
   const unsigned long value = strtoul(digits, &end, 10);
   if (errno != 0 || end == digits || *end != '\0' || value > UINT_MAX) {
@@ -860,7 +856,7 @@ static int h2_web_serial_port_number(const char *port_id,
 }
 
 static h2_pal_result_t h2_web_serial_config_validate(
-    const h2_pal_uart_io_stream_config_t *config) {
+    const h2_pal_uart_io_stream_config_t* config) {
   H2_WEB_STATE_GUARD();
   if (config == NULL || config->baud_rate == 0u || config->data_bits < 5u ||
       config->data_bits > 8u ||
@@ -882,27 +878,27 @@ static h2_pal_result_t h2_web_serial_config_validate(
 }
 
 static h2_pal_result_t h2_web_serial_open(
-    void *user, const char *port_id,
-    const h2_pal_uart_io_stream_config_t *config,
-    h2_pal_serial_host_session_t **out_session) {
+    void* user, const char* port_id,
+    const h2_pal_uart_io_stream_config_t* config,
+    h2_pal_serial_host_session_t** out_session) {
   H2_WEB_STATE_GUARD();
-  h2_web_platform_t *platform = user;
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_platform_t* platform = user;
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   unsigned int port_number = 0u;
   if (out_session != NULL) {
     *out_session = NULL;
   }
   if (state == NULL || port_id == NULL || config == NULL ||
-      out_session == NULL || !h2_web_serial_port_number(port_id, &port_number)) {
+      out_session == NULL ||
+      !h2_web_serial_port_number(port_id, &port_number)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (state->shutting_down) return H2_PAL_ERR_CLOSED;
-  const h2_pal_result_t config_result =
-      h2_web_serial_config_validate(config);
+  const h2_pal_result_t config_result = h2_web_serial_config_validate(config);
   if (config_result != H2_PAL_OK) {
     return config_result;
   }
-  h2_pal_serial_host_session_t *session = calloc(1u, sizeof(*session));
+  h2_pal_serial_host_session_t* session = calloc(1u, sizeof(*session));
   if (session == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -913,18 +909,18 @@ static h2_pal_result_t h2_web_serial_open(
   const uint64_t token = h2_web_serial_begin(session);
   (void)h2_web_main_call(
       h2_web_serial_open_js,
-      (const void *[]){
+      (const void*[]){
           &(uintptr_t){(uintptr_t)platform}, &(uintptr_t){(uintptr_t)session},
           &(uint64_t){token}, &(unsigned int){port_number},
           &(uint32_t){config->baud_rate}, &(int){config->data_bits},
           &(int){config->stop_bits}, &(int){config->parity},
           &(int){config->flow_control}, &(size_t){config->rx_buffer_size}});
-  const h2_pal_result_t result = h2_web_serial_wait(
-      session, H2_WEB_SERIAL_OPERATION_TIMEOUT_MS);
+  const h2_pal_result_t result =
+      h2_web_serial_wait(session, H2_WEB_SERIAL_OPERATION_TIMEOUT_MS);
   if (result != H2_PAL_OK) {
     state->sessions = session->next;
     (void)h2_web_main_call(h2_web_serial_force_close_js,
-                           (const void *[]){&(uintptr_t){(uintptr_t)session}});
+                           (const void*[]){&(uintptr_t){(uintptr_t)session}});
     free(session);
     return result;
   }
@@ -934,19 +930,18 @@ static h2_pal_result_t h2_web_serial_open(
 }
 
 static h2_pal_result_t h2_web_serial_stream_configure(
-    void *user, const h2_pal_uart_io_stream_config_t *config) {
+    void* user, const h2_pal_uart_io_stream_config_t* config) {
   H2_WEB_STATE_GUARD();
-  h2_pal_serial_host_session_t *session = user;
+  h2_pal_serial_host_session_t* session = user;
   if (config == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (session == NULL || !session->opened) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_web_serial_state_t *state = h2_web_serial_state(session->owner);
+  h2_web_serial_state_t* state = h2_web_serial_state(session->owner);
   if (state == NULL || state->shutting_down) return H2_PAL_ERR_CLOSED;
-  const h2_pal_result_t config_result =
-      h2_web_serial_config_validate(config);
+  const h2_pal_result_t config_result = h2_web_serial_config_validate(config);
   if (config_result != H2_PAL_OK) {
     return config_result;
   }
@@ -961,11 +956,12 @@ static h2_pal_result_t h2_web_serial_stream_configure(
              : H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t h2_web_serial_stream_read(
-    void *user, void *buffer, size_t length, size_t *out_read,
-    uint32_t timeout_ms) {
+static h2_pal_result_t h2_web_serial_stream_read(void* user, void* buffer,
+                                                 size_t length,
+                                                 size_t* out_read,
+                                                 uint32_t timeout_ms) {
   H2_WEB_STATE_GUARD();
-  h2_pal_serial_host_session_t *session = user;
+  h2_pal_serial_host_session_t* session = user;
   if (out_read != NULL) {
     *out_read = 0u;
   }
@@ -979,10 +975,10 @@ static h2_pal_result_t h2_web_serial_stream_read(
   const uint64_t token = h2_web_serial_begin(session);
   (void)h2_web_main_call(
       h2_web_serial_read_js,
-      (const void *[]){&(uintptr_t){(uintptr_t)session->owner},
-                       &(uintptr_t){(uintptr_t)session}, &(uint64_t){token},
-                       &(uintptr_t){(uintptr_t)buffer}, &(size_t){length},
-                       &(uint32_t){timeout_ms}});
+      (const void*[]){&(uintptr_t){(uintptr_t)session->owner},
+                      &(uintptr_t){(uintptr_t)session}, &(uint64_t){token},
+                      &(uintptr_t){(uintptr_t)buffer}, &(size_t){length},
+                      &(uint32_t){timeout_ms}});
   const h2_pal_result_t result = h2_web_serial_wait(session, timeout_ms);
   if (result == H2_PAL_OK) {
     *out_read = session->operation.count;
@@ -990,11 +986,13 @@ static h2_pal_result_t h2_web_serial_stream_read(
   return result;
 }
 
-static h2_pal_result_t h2_web_serial_stream_write(
-    void *user, const void *buffer, size_t length, size_t *out_written,
-    uint32_t timeout_ms) {
+static h2_pal_result_t h2_web_serial_stream_write(void* user,
+                                                  const void* buffer,
+                                                  size_t length,
+                                                  size_t* out_written,
+                                                  uint32_t timeout_ms) {
   H2_WEB_STATE_GUARD();
-  h2_pal_serial_host_session_t *session = user;
+  h2_pal_serial_host_session_t* session = user;
   if (out_written != NULL) {
     *out_written = 0u;
   }
@@ -1009,16 +1007,16 @@ static h2_pal_result_t h2_web_serial_stream_write(
   const uint64_t token = h2_web_serial_begin(session);
   (void)h2_web_main_call(
       h2_web_serial_write_js,
-      (const void *[]){&(uintptr_t){(uintptr_t)session->owner},
-                       &(uintptr_t){(uintptr_t)session}, &(uint64_t){token},
-                       &(uintptr_t){(uintptr_t)buffer}, &(size_t){length},
-                       &(uint32_t){timeout_ms}});
+      (const void*[]){&(uintptr_t){(uintptr_t)session->owner},
+                      &(uintptr_t){(uintptr_t)session}, &(uint64_t){token},
+                      &(uintptr_t){(uintptr_t)buffer}, &(size_t){length},
+                      &(uint32_t){timeout_ms}});
   const h2_pal_result_t result = h2_web_serial_wait(session, timeout_ms);
   if (result == H2_PAL_ERR_TIMEOUT) {
     // The native deadline can win before the browser timer callback. Mark the
     // same terminal state synchronously so a second write cannot race through.
     (void)h2_web_main_call(h2_web_serial_write_timeout_js,
-                           (const void *[]){&(uintptr_t){(uintptr_t)session}});
+                           (const void*[]){&(uintptr_t){(uintptr_t)session}});
   }
   if (result == H2_PAL_OK) {
     *out_written = session->operation.count;
@@ -1026,9 +1024,9 @@ static h2_pal_result_t h2_web_serial_stream_write(
   return result;
 }
 
-static h2_pal_result_t h2_web_serial_stream_flush(void *user) {
+static h2_pal_result_t h2_web_serial_stream_flush(void* user) {
   H2_WEB_STATE_GUARD();
-  h2_pal_serial_host_session_t *session = user;
+  h2_pal_serial_host_session_t* session = user;
   if (session == NULL || !session->opened || session->closing ||
       session->operation.pending) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -1039,14 +1037,14 @@ static h2_pal_result_t h2_web_serial_stream_flush(void *user) {
   const uint64_t token = h2_web_serial_begin(session);
   (void)h2_web_main_call(
       h2_web_serial_flush_js,
-      (const void *[]){&(uintptr_t){(uintptr_t)session->owner},
-                       &(uintptr_t){(uintptr_t)session}, &(uint64_t){token}});
+      (const void*[]){&(uintptr_t){(uintptr_t)session->owner},
+                      &(uintptr_t){(uintptr_t)session}, &(uint64_t){token}});
   return h2_web_serial_wait(session, H2_PAL_SERIAL_HOST_FLUSH_TIMEOUT_MS);
 }
 
 static h2_pal_result_t h2_web_serial_session_stream(
-    void *user, h2_pal_serial_host_session_t *session,
-    const h2_pal_uart_io_stream_api_t **out_stream) {
+    void* user, h2_pal_serial_host_session_t* session,
+    const h2_pal_uart_io_stream_api_t** out_stream) {
   H2_WEB_STATE_GUARD();
   if (out_stream != NULL) {
     *out_stream = NULL;
@@ -1073,7 +1071,7 @@ static h2_pal_result_t h2_web_serial_session_stream(
 }
 
 static h2_pal_result_t h2_web_serial_set_control_lines(
-    void *user, h2_pal_serial_host_session_t *session, uint32_t line_mask,
+    void* user, h2_pal_serial_host_session_t* session, uint32_t line_mask,
     uint32_t asserted_lines) {
   H2_WEB_STATE_GUARD();
   if (user == NULL || session == NULL || session->owner != user ||
@@ -1086,7 +1084,7 @@ static h2_pal_result_t h2_web_serial_set_control_lines(
   const uint64_t token = h2_web_serial_begin(session);
   (void)h2_web_main_call(
       h2_web_serial_signals_js,
-      (const void *[]){
+      (const void*[]){
           &(uintptr_t){(uintptr_t)session->owner},
           &(uintptr_t){(uintptr_t)session}, &(uint64_t){token},
           &(int){(line_mask & H2_PAL_SERIAL_HOST_CONTROL_DTR) != 0u},
@@ -1097,8 +1095,8 @@ static h2_pal_result_t h2_web_serial_set_control_lines(
 }
 
 static h2_pal_result_t h2_web_serial_get_control_lines(
-    void *user, h2_pal_serial_host_session_t *session,
-    uint32_t *out_asserted_lines) {
+    void* user, h2_pal_serial_host_session_t* session,
+    uint32_t* out_asserted_lines) {
   H2_WEB_STATE_GUARD();
   (void)user;
   (void)session;
@@ -1109,36 +1107,36 @@ static h2_pal_result_t h2_web_serial_get_control_lines(
 }
 
 static h2_pal_result_t h2_web_serial_close(
-    void *user, h2_pal_serial_host_session_t **inout_session) {
+    void* user, h2_pal_serial_host_session_t** inout_session) {
   H2_WEB_STATE_GUARD();
-  h2_web_platform_t *platform = user;
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_platform_t* platform = user;
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   if (state == NULL || inout_session == NULL || *inout_session == NULL ||
       (*inout_session)->owner != platform) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_pal_serial_host_session_t *session = *inout_session;
+  h2_pal_serial_host_session_t* session = *inout_session;
   if (session->closing) {
     return H2_PAL_ERR_BUSY;
   }
   if (session->operation.pending) {
     const h2_pal_result_t wait_result =
         h2_web_serial_wait_flag(platform, &session->operation.pending, false,
-        H2_WEB_SERIAL_OPERATION_TIMEOUT_MS);
+                                H2_WEB_SERIAL_OPERATION_TIMEOUT_MS);
     if (session->operation.pending) {
       return wait_result == H2_PAL_ERR_TIMEOUT ? H2_PAL_ERR_TIMEOUT
-                                                 : H2_PAL_ERR_BUSY;
+                                               : H2_PAL_ERR_BUSY;
     }
   }
   if (state->shutting_down) {
-    h2_pal_serial_host_session_t **cursor = &state->sessions;
+    h2_pal_serial_host_session_t** cursor = &state->sessions;
     while (*cursor != NULL && *cursor != session) {
       cursor = &(*cursor)->next;
     }
     if (*cursor == session) *cursor = session->next;
     ++session->operation.token;
     (void)h2_web_main_call(h2_web_serial_force_close_js,
-                           (const void *[]){&(uintptr_t){(uintptr_t)session}});
+                           (const void*[]){&(uintptr_t){(uintptr_t)session}});
     session->opened = false;
     free(session);
     *inout_session = NULL;
@@ -1146,17 +1144,17 @@ static h2_pal_result_t h2_web_serial_close(
   }
   session->closing = true;
   const uint64_t token = h2_web_serial_begin(session);
-  (void)h2_web_main_call(h2_web_serial_close_js,
-                         (const void *[]){&(uintptr_t){(uintptr_t)platform},
-                                          &(uintptr_t){(uintptr_t)session},
-                                          &(uint64_t){token}});
-  const h2_pal_result_t result = h2_web_serial_wait(
-      session, H2_WEB_SERIAL_OPERATION_TIMEOUT_MS);
+  (void)h2_web_main_call(
+      h2_web_serial_close_js,
+      (const void*[]){&(uintptr_t){(uintptr_t)platform},
+                      &(uintptr_t){(uintptr_t)session}, &(uint64_t){token}});
+  const h2_pal_result_t result =
+      h2_web_serial_wait(session, H2_WEB_SERIAL_OPERATION_TIMEOUT_MS);
   if (result != H2_PAL_OK) {
     session->closing = false;
     return result;
   }
-  h2_pal_serial_host_session_t **cursor = &state->sessions;
+  h2_pal_serial_host_session_t** cursor = &state->sessions;
   while (*cursor != NULL && *cursor != session) {
     cursor = &(*cursor)->next;
   }
@@ -1169,7 +1167,7 @@ static h2_pal_result_t h2_web_serial_close(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_web_platform_serial_init(h2_web_platform_t *platform) {
+h2_pal_result_t h2_web_platform_serial_init(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
   static const h2_pal_serial_host_vtable_t vtable = {
       .scan = h2_web_serial_scan,
@@ -1182,7 +1180,7 @@ h2_pal_result_t h2_web_platform_serial_init(h2_web_platform_t *platform) {
       .get_control_lines = h2_web_serial_get_control_lines,
       .close = h2_web_serial_close,
   };
-  h2_web_serial_state_t *state = calloc(1u, sizeof(*state));
+  h2_web_serial_state_t* state = calloc(1u, sizeof(*state));
   if (state == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -1191,7 +1189,7 @@ h2_pal_result_t h2_web_platform_serial_init(h2_web_platform_t *platform) {
   state->forget_result = H2_PAL_ERR_WOULD_BLOCK;
   platform->serial_state = state;
   (void)h2_web_main_call(h2_web_serial_platform_register_js,
-                         (const void *[]){&(uintptr_t){(uintptr_t)platform}});
+                         (const void*[]){&(uintptr_t){(uintptr_t)platform}});
   platform->serial_api = (h2_pal_serial_host_api_t){
       .user = platform,
       .vtable = &vtable,
@@ -1199,24 +1197,24 @@ h2_pal_result_t h2_web_platform_serial_init(h2_web_platform_t *platform) {
   return H2_PAL_OK;
 }
 
-void h2_web_platform_serial_deinit(h2_web_platform_t *platform) {
+void h2_web_platform_serial_deinit(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   if (state == NULL) {
     return;
   }
   (void)h2_web_main_call(h2_web_serial_platform_unregister_js,
-                         (const void *[]){&(uintptr_t){(uintptr_t)platform}});
+                         (const void*[]){&(uintptr_t){(uintptr_t)platform}});
   ++state->scan_token;
   ++state->authorization_token;
   ++state->forget_token;
   free(state->scan_ports);
   while (state->sessions != NULL) {
-    h2_pal_serial_host_session_t *session = state->sessions;
+    h2_pal_serial_host_session_t* session = state->sessions;
     state->sessions = session->next;
     ++session->operation.token;
     (void)h2_web_main_call(h2_web_serial_force_close_js,
-                           (const void *[]){&(uintptr_t){(uintptr_t)session}});
+                           (const void*[]){&(uintptr_t){(uintptr_t)session}});
     free(session);
   }
   free(state);
@@ -1224,10 +1222,10 @@ void h2_web_platform_serial_deinit(h2_web_platform_t *platform) {
   platform->serial_api = (h2_pal_serial_host_api_t){0};
 }
 
-h2_pal_result_t
-h2_web_platform_serial_request_port(h2_web_platform_t *platform) {
+h2_pal_result_t h2_web_platform_serial_request_port(
+    h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   if (state == NULL || platform->shutting_down || state->shutting_down) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -1241,21 +1239,20 @@ h2_web_platform_serial_request_port(h2_web_platform_t *platform) {
   state->authorized_port_id[0] = '\0';
   (void)h2_web_main_call(
       h2_web_serial_request_port_js,
-      (const void *[]){&(uintptr_t){(uintptr_t)platform},
-                       &(uint64_t){state->authorization_token}});
+      (const void*[]){&(uintptr_t){(uintptr_t)platform},
+                      &(uint64_t){state->authorization_token}});
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_web_platform_serial_shutdown(h2_web_platform_t *platform) {
+h2_pal_result_t h2_web_platform_serial_shutdown(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   if (state == NULL) return H2_PAL_ERR_INVALID_STATE;
   if (state->shutting_down) return state->shutdown_result;
   const bool had_active_session = state->sessions != NULL;
   state->shutting_down = true;
-  state->shutdown_result = had_active_session
-      ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK;
+  state->shutdown_result =
+      had_active_session ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK;
   ++state->authorization_token;
   state->authorization_pending = false;
   state->authorization_terminal = true;
@@ -1272,8 +1269,8 @@ h2_web_platform_serial_shutdown(h2_web_platform_t *platform) {
     h2_web_state_notify();
     state->scan_wake_recorded = false;
   }
-  for (h2_pal_serial_host_session_t *session = state->sessions;
-       session != NULL; session = session->next) {
+  for (h2_pal_serial_host_session_t* session = state->sessions; session != NULL;
+       session = session->next) {
     ++session->operation.token;
     if (session->operation.pending) {
       session->operation.result = H2_PAL_ERR_CLOSED;
@@ -1283,16 +1280,16 @@ h2_web_platform_serial_shutdown(h2_web_platform_t *platform) {
       session->operation.wake_recorded = false;
     }
     (void)h2_web_main_call(h2_web_serial_force_close_js,
-                           (const void *[]){&(uintptr_t){(uintptr_t)session}});
+                           (const void*[]){&(uintptr_t){(uintptr_t)session}});
   }
   h2_web_platform_request_pump(platform, 0u);
   return state->shutdown_result;
 }
 
 h2_pal_result_t h2_web_platform_serial_authorization(
-    h2_web_platform_t *platform, char *out_port_id, size_t out_size) {
+    h2_web_platform_t* platform, char* out_port_id, size_t out_size) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   if (out_port_id != NULL && out_size != 0u) {
     out_port_id[0] = '\0';
   }
@@ -1313,10 +1310,10 @@ h2_pal_result_t h2_web_platform_serial_authorization(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_web_platform_serial_forget_port(
-    h2_web_platform_t *platform, const char *port_id) {
+h2_pal_result_t h2_web_platform_serial_forget_port(h2_web_platform_t* platform,
+                                                   const char* port_id) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   unsigned int port_number = 0u;
   if (state == NULL || platform->shutting_down || state->shutting_down) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -1332,16 +1329,16 @@ h2_pal_result_t h2_web_platform_serial_forget_port(
   state->forget_terminal = false;
   state->forget_result = H2_PAL_ERR_WOULD_BLOCK;
   (void)h2_web_main_call(h2_web_serial_forget_port_js,
-                         (const void *[]){&(uintptr_t){(uintptr_t)platform},
-                                          &(uint64_t){state->forget_token},
-                                          &(unsigned int){port_number}});
+                         (const void*[]){&(uintptr_t){(uintptr_t)platform},
+                                         &(uint64_t){state->forget_token},
+                                         &(unsigned int){port_number}});
   return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_web_platform_serial_forget_result(
-    h2_web_platform_t *platform) {
+    h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
-  h2_web_serial_state_t *state = h2_web_serial_state(platform);
+  h2_web_serial_state_t* state = h2_web_serial_state(platform);
   if (state == NULL) return H2_PAL_ERR_INVALID_STATE;
   if (state->forget_pending || !state->forget_terminal) {
     return H2_PAL_ERR_WOULD_BLOCK;

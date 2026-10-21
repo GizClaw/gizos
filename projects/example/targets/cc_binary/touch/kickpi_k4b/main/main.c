@@ -12,7 +12,7 @@
 static volatile sig_atomic_t s_stop_requested;
 
 typedef struct touch_periph_overlay {
-  const h2_pal_periph_api_t *base;
+  const h2_pal_periph_api_t* base;
 } touch_periph_overlay_t;
 
 static const h2_pal_periph_single_button_payload_t s_push_button = {
@@ -27,12 +27,11 @@ static const h2_pal_periph_info_t s_touch_action_button = {
     .payload_size = sizeof(s_push_button),
 };
 
-static h2_pal_result_t touch_periph_list(
-    void *user,
-    h2_pal_periph_type_t type_filter,
-    h2_pal_periph_cb_t callback,
-    void *callback_user) {
-  touch_periph_overlay_t *overlay = user;
+static h2_pal_result_t touch_periph_list(void* user,
+                                         h2_pal_periph_type_t type_filter,
+                                         h2_pal_periph_cb_t callback,
+                                         void* callback_user) {
+  touch_periph_overlay_t* overlay = user;
   if (overlay == NULL || overlay->base == NULL || callback == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -46,11 +45,10 @@ static h2_pal_result_t touch_periph_list(
   return callback(callback_user, &s_touch_action_button);
 }
 
-static h2_pal_result_t touch_periph_get(
-    void *user,
-    h2_pal_periph_id_t periph_id,
-    h2_pal_periph_info_t *out_info) {
-  touch_periph_overlay_t *overlay = user;
+static h2_pal_result_t touch_periph_get(void* user,
+                                        h2_pal_periph_id_t periph_id,
+                                        h2_pal_periph_info_t* out_info) {
+  touch_periph_overlay_t* overlay = user;
   if (overlay == NULL || overlay->base == NULL || out_info == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -66,11 +64,10 @@ static const h2_pal_periph_vtable_t s_touch_periph_vtable = {
     .get = touch_periph_get,
 };
 
-static h2_pal_result_t mapper_list(
-    void *user,
-    h2_runtime_component_t component_filter,
-    h2_runtime_component_mapping_cb_t callback,
-    void *callback_user) {
+static h2_pal_result_t mapper_list(void* user,
+                                   h2_runtime_component_t component_filter,
+                                   h2_runtime_component_mapping_cb_t callback,
+                                   void* callback_user) {
   (void)user;
   if (callback == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -86,10 +83,9 @@ static h2_pal_result_t mapper_list(
   return callback(callback_user, &entry);
 }
 
-static h2_pal_result_t mapper_get(
-    void *user,
-    h2_runtime_component_id_t component_id,
-    h2_pal_periph_id_t *out_periph_id) {
+static h2_pal_result_t mapper_get(void* user,
+                                  h2_runtime_component_id_t component_id,
+                                  h2_pal_periph_id_t* out_periph_id) {
   (void)user;
   if (out_periph_id == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -116,7 +112,7 @@ static void request_stop(int signal_number) {
   s_stop_requested = 1;
 }
 
-static int should_stop(void *user) {
+static int should_stop(void* user) {
   (void)user;
   return s_stop_requested != 0;
 }
@@ -127,8 +123,7 @@ int main(void) {
   (void)sigemptyset(&action.sa_mask);
   if (sigaction(SIGTERM, &action, NULL) != 0 ||
       sigaction(SIGINT, &action, NULL) != 0) {
-    fprintf(stderr, "H2_TOUCH_SMOKE_FAIL stage=signal rc=%d\n",
-            H2_PAL_ERR_IO);
+    fprintf(stderr, "H2_TOUCH_SMOKE_FAIL stage=signal rc=%d\n", H2_PAL_ERR_IO);
     return 1;
   }
 
@@ -143,7 +138,7 @@ int main(void) {
       .user = &touch_periph_overlay,
       .vtable = &s_touch_periph_vtable,
   };
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   h2_pal_result_t result =
       h2_kickpi_k4b_board_runtime_config(&runtime_config, &providers);
   if (result == H2_PAL_OK) {
@@ -159,13 +154,12 @@ int main(void) {
   }
   h2_pal_periph_id_t action_button_periph_id = 0u;
   if (result == H2_PAL_OK) {
-    result = h2_runtime_periph_id(
-        runtime, H2_TOUCH_SMOKE_COMPONENT_ACTION_BUTTON,
-        &action_button_periph_id);
+    result =
+        h2_runtime_periph_id(runtime, H2_TOUCH_SMOKE_COMPONENT_ACTION_BUTTON,
+                             &action_button_periph_id);
   }
   if (result == H2_PAL_OK &&
-      action_button_periph_id !=
-          H2_KICKPI_K4B_TOUCH_ACTION_BUTTON_PERIPH_ID) {
+      action_button_periph_id != H2_KICKPI_K4B_TOUCH_ACTION_BUTTON_PERIPH_ID) {
     result = H2_PAL_ERR_INVALID_STATE;
   }
   if (result == H2_PAL_OK) {

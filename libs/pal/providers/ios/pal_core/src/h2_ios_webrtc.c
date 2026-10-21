@@ -7,18 +7,16 @@
 #include "h2_wolfssl.h"
 #include <string.h>
 struct h2_ios_webrtc {
-  h2_peer_t *peer;
-  h2_sctp_t *sctp;
+  h2_peer_t* peer;
+  h2_sctp_t* sctp;
 };
-h2_pal_result_t h2_ios_webrtc_create(h2_ios_webrtc_t **out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_ios_webrtc_create(h2_ios_webrtc_t** out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
   int rc = h2_ios_tls_acquire();
-  if (rc != H2_PAL_OK)
-    return (h2_pal_result_t)rc;
-  const h2_pal_mem_api_t *memory = h2_ios_platform_mem_api();
-  h2_ios_webrtc_t *owner = h2_pal_mem_alloc(memory, sizeof(*owner));
+  if (rc != H2_PAL_OK) return (h2_pal_result_t)rc;
+  const h2_pal_mem_api_t* memory = h2_ios_platform_mem_api();
+  h2_ios_webrtc_t* owner = h2_pal_mem_alloc(memory, sizeof(*owner));
   if (!owner) {
     (void)h2_ios_tls_release();
     return H2_PAL_ERR_NO_MEMORY;
@@ -51,22 +49,18 @@ h2_pal_result_t h2_ios_webrtc_create(h2_ios_webrtc_t **out) {
   *out = owner;
   return H2_PAL_OK;
 }
-const h2_pal_webrtc_api_t *h2_ios_webrtc_api(h2_ios_webrtc_t *owner) {
+const h2_pal_webrtc_api_t* h2_ios_webrtc_api(h2_ios_webrtc_t* owner) {
   return owner ? h2_peer_webrtc_api(owner->peer)
                : h2_pal_unsupported_webrtc_api();
 }
-h2_pal_result_t h2_ios_webrtc_destroy(h2_ios_webrtc_t **owner) {
-  if (!owner || !*owner)
-    return H2_PAL_OK;
+h2_pal_result_t h2_ios_webrtc_destroy(h2_ios_webrtc_t** owner) {
+  if (!owner || !*owner) return H2_PAL_OK;
   h2_peer_destroy(&(*owner)->peer);
-  if ((*owner)->peer)
-    return H2_PAL_ERR_BUSY;
+  if ((*owner)->peer) return H2_PAL_ERR_BUSY;
   int rc = h2_sctp_destroy(&(*owner)->sctp);
-  if (rc != H2_PAL_OK)
-    return (h2_pal_result_t)rc;
+  if (rc != H2_PAL_OK) return (h2_pal_result_t)rc;
   rc = h2_ios_tls_release();
-  if (rc != H2_PAL_OK)
-    return (h2_pal_result_t)rc;
+  if (rc != H2_PAL_OK) return (h2_pal_result_t)rc;
   h2_pal_mem_free(h2_ios_platform_mem_api(), *owner);
   *owner = NULL;
   return H2_PAL_OK;

@@ -9,11 +9,11 @@ extern "C" {
 #endif
 
 /** Called once after the symbol is presented; the App forwards its result. */
-typedef h2_pal_result_t (*h2_qrcode_example_ready_fn)(void *user);
+typedef h2_pal_result_t (*h2_qrcode_example_ready_fn)(void* user);
 
 typedef struct h2_qrcode_example_config {
   /** Borrowed NUL-terminated payload encoded into the symbol. */
-  const char *text;
+  const char* text;
   /** Minimum error correction level. */
   h2_qrcode_ecc_t ecc;
   /** Largest version the encoder may select; 0 selects version 10. */
@@ -23,7 +23,7 @@ typedef struct h2_qrcode_example_config {
   /** Display brightness applied before drawing; 0 keeps the current level. */
   uint8_t brightness_percent;
   /** Opaque user pointer passed to `on_ready`. */
-  void *on_ready_user;
+  void* on_ready_user;
   /** Optional callback invoked once after the symbol is presented. */
   h2_qrcode_example_ready_fn on_ready;
 } h2_qrcode_example_config_t;
@@ -41,9 +41,8 @@ typedef struct h2_qrcode_example_config {
  *         or Display capability, H2_PAL_ERR_NO_MEMORY when a buffer cannot be
  *         allocated, or the failing encode, layout, or Display PAL result.
  */
-h2_pal_result_t
-h2_qrcode_example_run(h2_runtime_t *runtime,
-                      const h2_qrcode_example_config_t *config);
+h2_pal_result_t h2_qrcode_example_run(h2_runtime_t* runtime,
+                                      const h2_qrcode_example_config_t* config);
 
 #ifdef __cplusplus
 }

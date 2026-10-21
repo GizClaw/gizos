@@ -20,6 +20,11 @@ extern "C" {
 #define H2_GIZCLAW_E2E_ACTOR_COUNT 3u
 #define H2_GIZCLAW_E2E_NAME_CAPACITY 256u
 
+static inline const char* h2_gizclaw_e2e_workflow_tag(
+    const h2_gizclaw_e2e_config_t* config) {
+  return config != NULL && config->workflow_tag != NULL ? config->workflow_tag
+                                                        : "assistants";
+}
 
 typedef enum h2_gizclaw_e2e_actor_role {
   H2_GIZCLAW_E2E_OWNER = 0,
@@ -35,9 +40,11 @@ typedef struct h2_gizclaw_e2e_social_observation {
 } h2_gizclaw_e2e_social_observation_t;
 
 typedef struct h2_gizclaw_e2e_actor {
-  h2_gizclaw_service_t *service;
-  h2_gizclaw_api_key_state_t *api_key_state;
-  h2_gizclaw_session_t *session;
+  h2_gizclaw_service_t* service;
+  h2_gizclaw_api_key_state_t* api_key_state;
+  h2_gizclaw_session_t* session;
+  /* Session borrows the view; its text has the config's full-run lifetime. */
+  h2_gizclaw_str_t workflow_tag;
   h2_gizclaw_config_t config;
   h2_gizclaw_tool_handler_t tool_handlers[3];
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
@@ -53,7 +60,7 @@ typedef struct h2_gizclaw_e2e_actor {
 /* Callback storage belongs to the fixture, not the call/wait stack. A failed
  * wait may leave accepted hooks pending until fixture shutdown drains them. */
 typedef struct h2_gizclaw_e2e_speed_hooks {
-  h2_gizclaw_req_t *request;
+  h2_gizclaw_req_t* request;
   size_t expected_bytes, bytes, chunks;
   unsigned responses, eos, completions;
   int error, result;
@@ -61,28 +68,28 @@ typedef struct h2_gizclaw_e2e_speed_hooks {
 
 struct h2_gizclaw_e2e_lua_state;
 typedef struct h2_gizclaw_e2e_fixture {
-  h2_runtime_t *runtime;
-  const h2_pal_audio_api_t *device_audio;
-  h2_app_test_audio_t *device_audio_wrapper;
+  h2_runtime_t* runtime;
+  const h2_pal_audio_api_t* device_audio;
+  h2_app_test_audio_t* device_audio_wrapper;
   h2_app_test_audio_fake_t device_audio_fake;
-  int (*device_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
-  const h2_gizclaw_vtable_t *device_vtable;
-  h2_lua_apps_t *device_lua_apps;
-  struct h2_gizclaw_e2e_lua_state *lua_state;
-  const h2_gizclaw_e2e_config_t *config;
-  const h2_pal_mem_api_t *allocator;
-  const h2_pal_crypto_api_t *crypto;
-  const h2_pal_http_api_t *http;
-  struct h2_corehttp *http_owned;
+  int (*device_cleanup)(struct h2_gizclaw_e2e_fixture* fixture);
+  const h2_gizclaw_vtable_t* device_vtable;
+  h2_lua_apps_t* device_lua_apps;
+  struct h2_gizclaw_e2e_lua_state* lua_state;
+  const h2_gizclaw_e2e_config_t* config;
+  const h2_pal_mem_api_t* allocator;
+  const h2_pal_crypto_api_t* crypto;
+  const h2_pal_http_api_t* http;
+  struct h2_corehttp* http_owned;
   h2_pal_http_api_t configured_http;
-  const h2_pal_log_api_t *log;
-  const h2_pal_time_api_t *time;
-  const h2_pal_webrtc_api_t *webrtc;
+  const h2_pal_log_api_t* log;
+  const h2_pal_time_api_t* time;
+  const h2_pal_webrtc_api_t* webrtc;
   h2_gizclaw_e2e_actor_t actors[H2_GIZCLAW_E2E_ACTOR_COUNT];
   uint64_t started_ms;
   uint64_t deadline_ms;
   char endpoint[H2_GIZCLAW_E2E_ENDPOINT_CAPACITY];
-  char *registration_token;
+  char* registration_token;
   char runtime_profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
   char run_prefix[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char workflow_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
@@ -94,21 +101,21 @@ typedef struct h2_gizclaw_e2e_fixture {
   char friend_group_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char friend_group_workspace_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char friend_group_member_id[H2_GIZCLAW_E2E_NAME_CAPACITY];
-  const uint8_t *pcm;
+  const uint8_t* pcm;
   size_t pcm_len;
   /* Owned by the heap fixture, including after a failed Track unset. */
-  h2_gizclaw_track_t *speech_track;
-  h2_app_test_audio_t *speech_audio;
+  h2_gizclaw_track_t* speech_track;
+  h2_app_test_audio_t* speech_audio;
   h2_app_test_audio_fake_t speech_audio_fake;
   uint8_t speech_pending[640];
   size_t speech_pending_bytes;
   bool speech_mic_started;
-  int (*speech_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
+  int (*speech_cleanup)(struct h2_gizclaw_e2e_fixture* fixture);
   h2_atomic_size_t speech_offset;
   bool speech_track_bound;
   /* A case may retain borrowed Track/hook state through failed teardown. */
-  void *case_state;
-  int (*case_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
+  void* case_state;
+  int (*case_cleanup)(struct h2_gizclaw_e2e_fixture* fixture);
   bool use_session;
   bool workspace_created;
   h2_gizclaw_e2e_actor_role_t workspace_actor_role;
@@ -130,31 +137,31 @@ typedef struct h2_gizclaw_e2e_fixture {
   bool cleanup_started;
   /* A job task whose join never succeeded. The handle stays owned here and
    * blocks fixture release until a later join reclaims it. */
-  h2_pal_task_t *retained_job_task;
+  h2_pal_task_t* retained_job_task;
 } h2_gizclaw_e2e_fixture_t;
 
 int h2_gizclaw_e2e_fixture_social_observation(
-    h2_gizclaw_e2e_fixture_t *fixture, h2_gizclaw_e2e_actor_role_t role,
-    h2_gizclaw_e2e_social_observation_t *out);
+    h2_gizclaw_e2e_fixture_t* fixture, h2_gizclaw_e2e_actor_role_t role,
+    h2_gizclaw_e2e_social_observation_t* out);
 /* Bounded decoder for the three string fields in the pinned reverse RPC.
  * It lives in the App fixture, independent of an SDK/platform provider. */
 int h2_gizclaw_e2e_decode_social_ping(h2_gizclaw_rpc_bytes_t payload,
-                                     h2_gizclaw_e2e_social_observation_t *out);
+                                      h2_gizclaw_e2e_social_observation_t* out);
 
-int h2_gizclaw_e2e_run_session_cancel(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_run_session_cancel(h2_gizclaw_e2e_fixture_t* fixture);
 
-int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
-                                h2_runtime_t *runtime,
-                                const h2_gizclaw_e2e_config_t *config,
+int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t* fixture,
+                                h2_runtime_t* runtime,
+                                const h2_gizclaw_e2e_config_t* config,
                                 uint32_t suite_timeout_ms);
-int h2_gizclaw_e2e_fixture_connect_actors(h2_gizclaw_e2e_fixture_t *fixture,
+int h2_gizclaw_e2e_fixture_connect_actors(h2_gizclaw_e2e_fixture_t* fixture,
                                           size_t actor_count);
-int h2_gizclaw_e2e_fixture_reconnect_actor(h2_gizclaw_e2e_fixture_t *fixture,
+int h2_gizclaw_e2e_fixture_reconnect_actor(h2_gizclaw_e2e_fixture_t* fixture,
                                            h2_gizclaw_e2e_actor_role_t role);
-int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t *fixture,
+int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t* fixture,
                                 h2_gizclaw_e2e_actor_role_t role,
                                 uint32_t duration_ms);
-bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
+bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t* fixture,
                                      uint32_t required_ms);
 /* Run `fn` on a job task while this (App) task polls `service` until it
  * returns; the synchronous data-down helpers need their output dispatched by
@@ -164,24 +171,24 @@ bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
  * within a bounded window; a task that never joins is counted in
  * retained_job_tasks. Returns the first failure among task start, poll,
  * deadline (H2_PAL_ERR_TIMEOUT) and join, otherwise `fn`'s result. */
-int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
-                                     h2_gizclaw_service_t *service,
-                                     int (*fn)(void *ctx), void *ctx);
-int h2_gizclaw_e2e_fixture_set_deadline(h2_gizclaw_e2e_fixture_t *fixture,
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t* fixture,
+                                     h2_gizclaw_service_t* service,
+                                     int (*fn)(void* ctx), void* ctx);
+int h2_gizclaw_e2e_fixture_set_deadline(h2_gizclaw_e2e_fixture_t* fixture,
                                         uint32_t timeout_ms);
 void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void);
-int h2_gizclaw_e2e_fixture_rpc_channel_observation(
-    size_t *out_max_open, size_t *out_opened_channels,
-    size_t *out_open_channels);
-int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_fixture_rpc_channel_observation(size_t* out_max_open,
+                                                   size_t* out_opened_channels,
+                                                   size_t* out_open_channels);
+int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t* fixture);
 size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
-    const h2_gizclaw_e2e_fixture_t *fixture);
+    const h2_gizclaw_e2e_fixture_t* fixture);
 /* On failure the caller must retain the fixture and its providers, then retry.
  */
-int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t* fixture);
 
-h2_gizclaw_str_t h2_gizclaw_e2e_str(const char *value);
-void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int result);
+h2_gizclaw_str_t h2_gizclaw_e2e_str(const char* value);
+void h2_gizclaw_e2e_evidence(const char* symbol, const char* stage, int result);
 
 #ifdef __cplusplus
 }

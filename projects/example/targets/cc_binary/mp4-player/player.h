@@ -3,7 +3,7 @@
 
 #include "h2_desktop_app_support.h"
 
-int h2_desktop_mp4_player_main(const h2::desktop::Layout &layout,
-                               const char *media_resource);
+int h2_desktop_mp4_player_main(const h2::desktop::Layout& layout,
+                               const char* media_resource);
 
 #endif

@@ -12,9 +12,9 @@ typedef struct received_file {
 } received_file_t;
 
 typedef struct h2_lua_app_install {
-  h2_lua_apps_t *apps;
+  h2_lua_apps_t* apps;
   h2_pal_http_cancel_fn cancel;
-  void *cancel_user;
+  void* cancel_user;
   z_stream z;
   bool z_started, z_finished;
   h2_sha256_t compressed_sha, file_sha;
@@ -29,30 +29,29 @@ typedef struct h2_lua_app_install {
   char manifest[H2_LUA_APP_MANIFEST_MAX];
   size_t manifest_size;
   received_file_t files[H2_LUA_APP_FILES_MAX];
-  h2_pal_fs_file_t *file;
+  h2_pal_fs_file_t* file;
   uint8_t input[4096], output[4096];
   app_manifest_t parsed;
 } install_t;
 
-static bool cancelled(install_t *s) {
+static bool cancelled(install_t* s) {
   return s->cancel && s->cancel(s->cancel_user);
 }
 static voidpf z_alloc(voidpf user, uInt items, uInt size) {
-  h2_lua_apps_t *apps = user;
-  if (size && items > SIZE_MAX / size)
-    return NULL;
+  h2_lua_apps_t* apps = user;
+  if (size && items > SIZE_MAX / size) return NULL;
   return h2_pal_mem_alloc(apps->config.allocator, (size_t)items * size);
 }
 static void z_free(voidpf user, voidpf value) {
-  h2_pal_mem_free(((h2_lua_apps_t *)user)->config.allocator, value);
+  h2_pal_mem_free(((h2_lua_apps_t*)user)->config.allocator, value);
 }
-static int stage_path(install_t *s, size_t number,
+static int stage_path(install_t* s, size_t number,
                       char out[H2_LUA_APP_PATH_MAX]) {
   char name[32];
   (void)snprintf(name, sizeof(name), ".stage/%zu", number);
   return h2_lua_apps_join(out, s->apps->root, name);
 }
-static void clean_stage(install_t *s) {
+static void clean_stage(install_t* s) {
   for (size_t i = 0; i < H2_LUA_APP_FILES_MAX; ++i) {
     char path[H2_LUA_APP_PATH_MAX];
     if (stage_path(s, i, path) == H2_PAL_OK)
@@ -60,14 +59,13 @@ static void clean_stage(install_t *s) {
   }
 }
 
-static int finish_file(install_t *s) {
+static int finish_file(install_t* s) {
   int rc = H2_PAL_OK;
   if (!s->is_manifest) {
     rc = h2_pal_fs_sync(s->apps->config.fs, s->file);
     int close_rc = h2_lua_apps_close(s->apps, s->file);
     s->file = NULL;
-    if (rc == H2_PAL_OK)
-      rc = close_rc;
+    if (rc == H2_PAL_OK) rc = close_rc;
     uint8_t digest[32];
     h2_sha256_finish(&s->file_sha, digest);
     h2_sha256_hex(digest, s->files[s->count - 1u].file.sha256);
@@ -76,12 +74,11 @@ static int finish_file(install_t *s) {
   return rc;
 }
 
-static int begin_file(install_t *s) {
+static int begin_file(install_t* s) {
   h2_bundle_entry_t entry = {0};
   int result = 0;
   int rc = h2_bundle_tar_parse_header(s->header, &entry, &result);
-  if (rc != H2_PAL_OK)
-    return H2_PAL_ERR_FORMAT;
+  if (rc != H2_PAL_OK) return H2_PAL_ERR_FORMAT;
   if (result == H2_BUNDLE_TAR_HEADER_ZERO) {
     ++s->zero_blocks;
     return H2_PAL_OK;
@@ -112,43 +109,36 @@ static int begin_file(install_t *s) {
         entry.size > s->apps->config.app_limit_bytes)
       return H2_PAL_ERR_NO_SPACE;
     for (size_t i = 0; i < s->count; ++i)
-      if (!strcmp(s->files[i].file.path, entry.path))
-        return H2_PAL_ERR_FORMAT;
-    received_file_t *f = &s->files[s->count];
+      if (!strcmp(s->files[i].file.path, entry.path)) return H2_PAL_ERR_FORMAT;
+    received_file_t* f = &s->files[s->count];
     strcpy(f->file.path, entry.path);
     f->file.size = entry.size;
     char path[H2_LUA_APP_PATH_MAX];
     rc = stage_path(s, s->count++, path);
-    if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_mkdirs(s->apps, path);
+    if (rc == H2_PAL_OK) rc = h2_lua_apps_mkdirs(s->apps, path);
     if (rc == H2_PAL_OK)
       rc = h2_pal_fs_open(s->apps->config.fs, path,
                           H2_PAL_FS_OPEN_WRITE_TRUNCATE, &s->file);
-    if (rc == H2_PAL_OK && !s->file)
-      rc = H2_PAL_ERR_IO;
+    if (rc == H2_PAL_OK && !s->file) rc = H2_PAL_ERR_IO;
     h2_sha256_init(&s->file_sha);
   }
-  if (rc == H2_PAL_OK && s->remaining == 0)
-    rc = finish_file(s);
+  if (rc == H2_PAL_OK && s->remaining == 0) rc = finish_file(s);
   return rc;
 }
 
-static int tar_bytes(install_t *s, const uint8_t *bytes, size_t size) {
-  if (size > s->limit - s->expanded)
-    return H2_PAL_ERR_NO_SPACE;
+static int tar_bytes(install_t* s, const uint8_t* bytes, size_t size) {
+  if (size > s->limit - s->expanded) return H2_PAL_ERR_NO_SPACE;
   s->expanded += size;
   while (size) {
-    if (cancelled(s))
-      return H2_PAL_ERR_CLOSED;
+    if (cancelled(s)) return H2_PAL_ERR_CLOSED;
     size_t take = size;
     if (s->in_file) {
-      if (take > s->remaining)
-        take = (size_t)s->remaining;
+      if (take > s->remaining) take = (size_t)s->remaining;
       if (s->is_manifest) {
         memcpy(s->manifest + s->manifest_size, bytes, take);
         s->manifest_size += take;
       } else {
-        received_file_t *f = &s->files[s->count - 1u];
+        received_file_t* f = &s->files[s->count - 1u];
         if (memchr(bytes, 0, take) ||
             (s->remaining == f->file.size && take && bytes[0] == 0x1b))
           f->invalid_text = true;
@@ -158,25 +148,20 @@ static int tar_bytes(install_t *s, const uint8_t *bytes, size_t size) {
           size_t written = 0;
           int rc = h2_pal_fs_write(s->apps->config.fs, s->file, bytes + offset,
                                    take - offset, &written);
-          if (rc != H2_PAL_OK)
-            return rc;
-          if (!written || written > take - offset)
-            return H2_PAL_ERR_IO;
+          if (rc != H2_PAL_OK) return rc;
+          if (!written || written > take - offset) return H2_PAL_ERR_IO;
           offset += written;
         }
       }
       s->remaining -= take;
       if (!s->remaining) {
         int rc = finish_file(s);
-        if (rc != H2_PAL_OK)
-          return rc;
+        if (rc != H2_PAL_OK) return rc;
       }
     } else if (s->padding) {
-      if (take > s->padding)
-        take = (size_t)s->padding;
+      if (take > s->padding) take = (size_t)s->padding;
       for (size_t i = 0; i < take; ++i)
-        if (bytes[i])
-          return H2_PAL_ERR_FORMAT;
+        if (bytes[i]) return H2_PAL_ERR_FORMAT;
       s->padding -= take;
     } else {
       if (take > sizeof(s->header) - s->header_size)
@@ -185,8 +170,7 @@ static int tar_bytes(install_t *s, const uint8_t *bytes, size_t size) {
       s->header_size += take;
       if (s->header_size == sizeof(s->header)) {
         int rc = begin_file(s);
-        if (rc != H2_PAL_OK)
-          return rc;
+        if (rc != H2_PAL_OK) return rc;
         s->header_size = 0;
       }
     }
@@ -196,22 +180,20 @@ static int tar_bytes(install_t *s, const uint8_t *bytes, size_t size) {
   return H2_PAL_OK;
 }
 
-static int receive(void *user, const h2_pal_http_request_t *request,
-                   const uint8_t *bytes, size_t size, size_t total,
+static int receive(void* user, const h2_pal_http_request_t* request,
+                   const uint8_t* bytes, size_t size, size_t total,
                    size_t remaining) {
   (void)request;
   (void)remaining;
-  install_t *s = user;
-  if (cancelled(s))
-    return H2_PAL_ERR_CLOSED;
-  if (!size)
-    return total == s->received ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
+  install_t* s = user;
+  if (cancelled(s)) return H2_PAL_ERR_CLOSED;
+  if (!size) return total == s->received ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
   if (size > UINT_MAX || s->z_finished || size > s->limit - s->received ||
       total != s->received + size)
     return H2_PAL_ERR_FORMAT;
   s->received += size;
   h2_sha256_update(&s->compressed_sha, bytes, size);
-  s->z.next_in = (Bytef *)bytes;
+  s->z.next_in = (Bytef*)bytes;
   s->z.avail_in = (uInt)size;
   do {
     s->z.next_out = s->output;
@@ -222,14 +204,12 @@ static int receive(void *user, const h2_pal_http_request_t *request,
       return H2_PAL_ERR_FORMAT;
     size_t produced = sizeof(s->output) - s->z.avail_out;
     int rc = tar_bytes(s, s->output, produced);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     if (zrc == Z_STREAM_END) {
       s->z_finished = true;
       return s->z.avail_in ? H2_PAL_ERR_FORMAT : H2_PAL_OK;
     }
-    if (!produced && before == s->z.avail_in)
-      break;
+    if (!produced && before == s->z.avail_in) break;
   } while (s->z.avail_in || s->z.avail_out == 0);
   return s->z.avail_in ? H2_PAL_ERR_FORMAT : H2_PAL_OK;
 }
@@ -244,8 +224,7 @@ static bool url_valid(h2_lua_app_source_t uri) {
   while (host_end < uri.size && uri.data[host_end] != '/' &&
          uri.data[host_end] != '?' && uri.data[host_end] != '#')
     ++host_end;
-  if (host_end == scheme)
-    return false;
+  if (host_end == scheme) return false;
   for (size_t i = 0; i < uri.size; ++i) {
     unsigned char c = (unsigned char)uri.data[i];
     if (c <= 32u || c == 127u || c == '\\' || c == '#' ||
@@ -255,19 +234,16 @@ static bool url_valid(h2_lua_app_source_t uri) {
   return true;
 }
 
-static bool name_is(h2_pal_http_str_t name, const char *expected) {
-  if (name.len != strlen(expected))
-    return false;
+static bool name_is(h2_pal_http_str_t name, const char* expected) {
+  if (name.len != strlen(expected)) return false;
   for (size_t i = 0; i < name.len; ++i) {
     char c = name.data[i];
-    if (c >= 'A' && c <= 'Z')
-      c += 'a' - 'A';
-    if (c != expected[i])
-      return false;
+    if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+    if (c != expected[i]) return false;
   }
   return true;
 }
-static int header(void *user, const h2_pal_http_request_t *request,
+static int header(void* user, const h2_pal_http_request_t* request,
                   h2_pal_http_str_t name, h2_pal_http_str_t value) {
   (void)user;
   (void)request;
@@ -283,13 +259,12 @@ static int header(void *user, const h2_pal_http_request_t *request,
                  ? H2_PAL_OK
                  : H2_PAL_ERR_FORMAT;
     if (value.len > 1u && url[0] == '/' && url[1] == '/') {
-      const char *scheme = request && request->url.len >= 8u &&
+      const char* scheme = request && request->url.len >= 8u &&
                                    !memcmp(request->url.data, "https://", 8u)
                                ? "https:"
                                : "http:";
       size_t prefix = strlen(scheme);
-      if (value.len + prefix >= sizeof(url))
-        return H2_PAL_ERR_FORMAT;
+      if (value.len + prefix >= sizeof(url)) return H2_PAL_ERR_FORMAT;
       memmove(url + prefix, url, value.len + 1u);
       memcpy(url, scheme, prefix);
       return url_valid((h2_lua_app_source_t){url, value.len + prefix})
@@ -308,7 +283,7 @@ static int header(void *user, const h2_pal_http_request_t *request,
   return H2_PAL_OK;
 }
 
-static int verify(install_t *s, const char *expected) {
+static int verify(install_t* s, const char* expected) {
   if (!s->z_finished || s->in_file || s->padding || s->header_size ||
       s->zero_blocks < 2u || !s->manifest_seen)
     return H2_PAL_ERR_FORMAT;
@@ -317,53 +292,45 @@ static int verify(install_t *s, const char *expected) {
   h2_sha256_finish(&s->compressed_sha, digest);
   h2_sha256_hex(digest, hex);
   if (expected && *expected) {
-    if (strlen(expected) != 64u)
-      return H2_PAL_ERR_INVALID_ARG;
+    if (strlen(expected) != 64u) return H2_PAL_ERR_INVALID_ARG;
     for (size_t i = 0; i < 64u; ++i) {
       char c = expected[i];
-      if (c >= 'A' && c <= 'F')
-        c += 'a' - 'A';
-      if (c != hex[i])
-        return H2_PAL_ERR_FORMAT;
+      if (c >= 'A' && c <= 'F') c += 'a' - 'A';
+      if (c != hex[i]) return H2_PAL_ERR_FORMAT;
     }
   }
-  yyjson_doc *doc = yyjson_read_opts(s->manifest, s->manifest_size, 0,
+  yyjson_doc* doc = yyjson_read_opts(s->manifest, s->manifest_size, 0,
                                      &s->apps->json_allocator, NULL);
   int rc =
       doc ? h2_lua_apps_manifest(s->apps, yyjson_doc_get_root(doc), &s->parsed)
           : H2_PAL_ERR_FORMAT;
   yyjson_doc_free(doc);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (s->count != s->parsed.count)
-    return H2_PAL_ERR_FORMAT;
+  if (rc != H2_PAL_OK) return rc;
+  if (s->count != s->parsed.count) return H2_PAL_ERR_FORMAT;
   for (size_t i = 0; i < s->parsed.count; ++i) {
-    app_file_t *f = &s->parsed.files[i];
+    app_file_t* f = &s->parsed.files[i];
     bool found = false;
     for (size_t j = 0; j < s->count; ++j) {
-      received_file_t *r = &s->files[j];
-      if (strcmp(f->path, r->file.path))
-        continue;
+      received_file_t* r = &s->files[j];
+      if (strcmp(f->path, r->file.path)) continue;
       if (f->size != r->file.size || strcmp(f->sha256, r->file.sha256) ||
           (!strcmp(f->path, s->parsed.entry) && r->invalid_text))
         return H2_PAL_ERR_FORMAT;
       found = true;
     }
-    if (!found)
-      return H2_PAL_ERR_FORMAT;
+    if (!found) return H2_PAL_ERR_FORMAT;
   }
   return H2_PAL_OK;
 }
 
-static int commit(install_t *s, h2_lua_app_info_t *out) {
-  h2_lua_apps_t *apps = s->apps;
+static int commit(install_t* s, h2_lua_app_info_t* out) {
+  h2_lua_apps_t* apps = s->apps;
   int position = h2_lua_apps_find(apps, s->parsed.info.app_id);
   if (position < 0 && apps->count == apps->config.max_apps)
     return H2_PAL_ERR_NO_SPACE;
   uint64_t used = 0;
   for (size_t i = 0; i < apps->count; ++i) {
-    if ((int)i == position || apps->records[i].slot < 0)
-      continue;
+    if ((int)i == position || apps->records[i].slot < 0) continue;
     if (apps->records[i].bytes > apps->config.installed_limit_bytes - used)
       return H2_PAL_ERR_NO_SPACE;
     used += apps->records[i].bytes;
@@ -376,13 +343,12 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
    * before any cleanup so a new identity cannot erase another app's files. */
   for (unsigned candidate = 0; candidate < 2u; ++candidate) {
     char relative[40], location[H2_LUA_APP_PATH_MAX];
-    (void)snprintf(relative, sizeof(relative), "%s/%u",
-                     s->parsed.info.app_id, candidate);
+    (void)snprintf(relative, sizeof(relative), "%s/%u", s->parsed.info.app_id,
+                   candidate);
     int rc = h2_lua_apps_join(location, apps->root, relative);
     if (rc == H2_PAL_OK)
       rc = h2_lua_apps_check_slot(apps, location, s->parsed.info.app_id);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
   }
   char name[40], base[H2_LUA_APP_PATH_MAX] = {0},
                  manifest_path[H2_LUA_APP_PATH_MAX],
@@ -409,10 +375,8 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
     }
     char from[H2_LUA_APP_PATH_MAX], to[H2_LUA_APP_PATH_MAX];
     rc = stage_path(s, i, from);
-    if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_join(to, base, s->files[i].file.path);
-    if (rc == H2_PAL_OK)
-      rc = h2_lua_apps_mkdirs(apps, to);
+    if (rc == H2_PAL_OK) rc = h2_lua_apps_join(to, base, s->files[i].file.path);
+    if (rc == H2_PAL_OK) rc = h2_lua_apps_mkdirs(apps, to);
     if (rc == H2_PAL_OK) {
       h2_pal_fs_stat_t existing = {0};
       int stat_rc = h2_pal_fs_stat(apps->config.fs, to, &existing);
@@ -422,13 +386,10 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
            : stat_rc == H2_PAL_OK          ? H2_PAL_ERR_FORMAT
                                            : stat_rc;
     }
-    if (rc == H2_PAL_OK)
-      rc = h2_pal_fs_rename(apps->config.fs, from, to);
+    if (rc == H2_PAL_OK) rc = h2_pal_fs_rename(apps->config.fs, from, to);
   }
-  if (rc == H2_PAL_OK)
-    rc = h2_lua_apps_resolve(apps, &s->parsed, base);
-  if (rc == H2_PAL_OK && cancelled(s))
-    rc = H2_PAL_ERR_CLOSED;
+  if (rc == H2_PAL_OK) rc = h2_lua_apps_resolve(apps, &s->parsed, base);
+  if (rc == H2_PAL_OK && cancelled(s)) rc = H2_PAL_ERR_CLOSED;
   if (rc == H2_PAL_OK) {
     app_record_t record = {
         .info = s->parsed.info,
@@ -439,8 +400,7 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
                              position < 0 ? apps->count : (size_t)position);
   }
   if (rc != H2_PAL_OK) {
-    if (*base)
-      (void)h2_lua_apps_remove_slot(apps, base, s->parsed.info.app_id);
+    if (*base) (void)h2_lua_apps_remove_slot(apps, base, s->parsed.info.app_id);
     return rc;
   }
   *out = s->parsed.info;
@@ -456,29 +416,26 @@ static int commit(install_t *s, h2_lua_app_info_t *out) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t *apps,
+h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t* apps,
                                          uint64_t compressed_size,
-                                         const char *sha256,
+                                         const char* sha256,
                                          h2_pal_http_cancel_fn cancel,
-                                         void *cancel_user,
-                                         h2_lua_app_install_t **out_install) {
-  if (out_install == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+                                         void* cancel_user,
+                                         h2_lua_app_install_t** out_install) {
+  if (out_install == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_install = NULL;
   if (sha256 && (strlen(sha256) != 64u ||
                  strspn(sha256, "0123456789abcdefABCDEF") != 64u))
     return H2_PAL_ERR_INVALID_ARG;
-  if (!h2_lua_apps_can_install(apps))
-    return H2_PAL_ERR_UNSUPPORTED;
+  if (!h2_lua_apps_can_install(apps)) return H2_PAL_ERR_UNSUPPORTED;
   int rc = h2_lua_apps_try_lock(apps);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (apps->close_error) {
     rc = apps->close_error;
     h2_lua_apps_unlock(apps);
     return rc;
   }
-  install_t *s = h2_pal_mem_alloc(apps->config.allocator, sizeof(*s));
+  install_t* s = h2_pal_mem_alloc(apps->config.allocator, sizeof(*s));
   if (!s) {
     h2_lua_apps_unlock(apps);
     return H2_PAL_ERR_NO_MEMORY;
@@ -488,8 +445,7 @@ h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t *apps,
   s->cancel = cancel;
   s->cancel_user = cancel_user;
   s->expected_size = compressed_size;
-  if (sha256)
-    strcpy(s->expected_sha256, sha256);
+  if (sha256) strcpy(s->expected_sha256, sha256);
   s->limit = apps->config.app_limit_bytes + H2_LUA_APP_MANIFEST_MAX +
              (apps->config.max_files + 2u) * 1024u + 16384u;
   if (compressed_size > s->limit) {
@@ -504,8 +460,7 @@ h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t *apps,
   s->z.opaque = apps;
   rc = inflateInit(&s->z) == Z_OK ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
   s->z_started = rc == H2_PAL_OK;
-  if (rc == H2_PAL_OK && cancelled(s))
-    rc = H2_PAL_ERR_CLOSED;
+  if (rc == H2_PAL_OK && cancelled(s)) rc = H2_PAL_ERR_CLOSED;
   if (rc != H2_PAL_OK) {
     h2_lua_app_install_abort(&s);
     return rc;
@@ -514,74 +469,61 @@ h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t *apps,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_lua_app_install_write(h2_lua_app_install_t *s,
-                                         const uint8_t *bytes, size_t size) {
-  if (!s || (!bytes && size))
-    return H2_PAL_ERR_INVALID_ARG;
-  if (s->error != H2_PAL_OK)
-    return s->error;
+h2_pal_result_t h2_lua_app_install_write(h2_lua_app_install_t* s,
+                                         const uint8_t* bytes, size_t size) {
+  if (!s || (!bytes && size)) return H2_PAL_ERR_INVALID_ARG;
+  if (s->error != H2_PAL_OK) return s->error;
   if (s->expected_size && size > s->expected_size - s->received)
     return s->error = H2_PAL_ERR_FORMAT;
-  if (!size)
-    return H2_PAL_OK;
+  if (!size) return H2_PAL_OK;
   return s->error =
              receive(s, NULL, bytes, size, (size_t)s->received + size, 0);
 }
 
-void h2_lua_app_install_abort(h2_lua_app_install_t **install) {
-  if (!install || !*install)
-    return;
-  install_t *s = *install;
+void h2_lua_app_install_abort(h2_lua_app_install_t** install) {
+  if (!install || !*install) return;
+  install_t* s = *install;
   *install = NULL;
-  h2_lua_apps_t *apps = s->apps;
-  if (s->file)
-    (void)h2_lua_apps_close(apps, s->file);
-  if (s->z_started)
-    (void)inflateEnd(&s->z);
+  h2_lua_apps_t* apps = s->apps;
+  if (s->file) (void)h2_lua_apps_close(apps, s->file);
+  if (s->z_started) (void)inflateEnd(&s->z);
   clean_stage(s);
   h2_pal_mem_free(apps->config.allocator, s);
   h2_lua_apps_unlock(apps);
 }
 
-h2_pal_result_t h2_lua_app_install_finish(h2_lua_app_install_t **install,
-                                          h2_lua_app_info_t *out) {
-  if (!install || !*install)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (out)
-    memset(out, 0, sizeof(*out));
-  install_t *s = *install;
+h2_pal_result_t h2_lua_app_install_finish(h2_lua_app_install_t** install,
+                                          h2_lua_app_info_t* out) {
+  if (!install || !*install) return H2_PAL_ERR_INVALID_ARG;
+  if (out) memset(out, 0, sizeof(*out));
+  install_t* s = *install;
   int rc = !out ? H2_PAL_ERR_INVALID_ARG : s->error;
   if (rc == H2_PAL_OK && s->expected_size && s->expected_size != s->received)
     rc = H2_PAL_ERR_FORMAT;
-  if (rc == H2_PAL_OK && cancelled(s))
-    rc = H2_PAL_ERR_CLOSED;
-  if (rc == H2_PAL_OK)
-    rc = verify(s, s->expected_sha256);
-  if (rc == H2_PAL_OK)
-    rc = commit(s, out);
+  if (rc == H2_PAL_OK && cancelled(s)) rc = H2_PAL_ERR_CLOSED;
+  if (rc == H2_PAL_OK) rc = verify(s, s->expected_sha256);
+  if (rc == H2_PAL_OK) rc = commit(s, out);
   h2_lua_app_install_abort(install);
   return rc;
 }
 
-h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t *apps,
-                                    const h2_pal_http_api_t *http,
+h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t* apps,
+                                    const h2_pal_http_api_t* http,
                                     h2_lua_app_source_t source,
-                                    const char *sha256, uint32_t timeout_ms,
+                                    const char* sha256, uint32_t timeout_ms,
                                     h2_pal_http_cancel_fn cancel,
-                                    void *cancel_user, h2_lua_app_info_t *out) {
-  if (out == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+                                    void* cancel_user, h2_lua_app_info_t* out) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   if (!source.data || !url_valid(source) || !timeout_ms ||
       timeout_ms > 110000u || (sha256 && *sha256 && strlen(sha256) != 64u))
     return H2_PAL_ERR_INVALID_ARG;
   if (!h2_lua_apps_can_install(apps) || http == NULL)
     return H2_PAL_ERR_UNSUPPORTED;
-  install_t *s = NULL;
+  install_t* s = NULL;
   int rc = h2_lua_app_install_begin(apps, 0, sha256 && *sha256 ? sha256 : NULL,
                                     cancel, cancel_user, &s);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_pal_http_request_t request = {.method = H2_PAL_HTTP_GET,
                                    .url = {source.data, source.size},
                                    .timeout_ms = (int)timeout_ms,
@@ -595,18 +537,14 @@ h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t *apps,
                                    .response_header_cb = header,
                                    .allocator = apps->config.allocator};
   h2_pal_http_response_t response = {0};
-  if (rc == H2_PAL_OK && cancelled(s))
-    rc = H2_PAL_ERR_CLOSED;
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_http_request(http, &request, &response);
-  if (rc == H2_PAL_OK &&
-      (response.status_code != 200 ||
-       (response.content_length >= 0 &&
-        (uint64_t)response.content_length != s->received)))
+  if (rc == H2_PAL_OK && cancelled(s)) rc = H2_PAL_ERR_CLOSED;
+  if (rc == H2_PAL_OK) rc = h2_pal_http_request(http, &request, &response);
+  if (rc == H2_PAL_OK && (response.status_code != 200 ||
+                          (response.content_length >= 0 &&
+                           (uint64_t)response.content_length != s->received)))
     rc = H2_PAL_ERR_IO;
   h2_pal_http_response_free(http, &response);
-  if (rc == H2_PAL_OK)
-    return h2_lua_app_install_finish(&s, out);
+  if (rc == H2_PAL_OK) return h2_lua_app_install_finish(&s, out);
   h2_lua_app_install_abort(&s);
   return rc;
 }

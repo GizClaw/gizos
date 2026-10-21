@@ -42,15 +42,15 @@ cc_library(
 
 cc_library(
     name = "engine",
-    hdrs = [
-        "include/h2_bloomspeaker_task_names.h",
-    ],
     srcs = [
         "src/h2_bloomspeaker_audio.c",
         "src/h2_bloomspeaker_audio.h",
         "src/h2_bloomspeaker_engine.c",
         "src/h2_bloomspeaker_engine.h",
         "src/h2_bloomspeaker_task_names.c",
+    ],
+    hdrs = [
+        "include/h2_bloomspeaker_task_names.h",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -91,13 +91,13 @@ cc_library(
     includes = ["include"],
     tags = ["h2-ci-native-package"],
     deps = [
-        "//libs/atomic",
-        "//libs/lua",
-        "//libs/runtime",
         ":controller",
         ":engine",
         ":lua_bloomspeaker_script",
         ":tasks",
+        "//libs/atomic",
+        "//libs/lua",
+        "//libs/runtime",
     ],
 )
 

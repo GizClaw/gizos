@@ -18,7 +18,7 @@ typedef enum h2_pal_audio_e2e_case {
 extern const char h2_pal_audio_e2e_runner_task_name[];
 
 typedef struct h2_pal_audio_e2e_case_result {
-  const char *id;
+  const char* id;
   int passed;
   int blocked;
   int detail;
@@ -40,12 +40,12 @@ typedef struct h2_pal_audio_e2e_result {
 
 typedef struct h2_pal_audio_e2e_config {
   /** Borrowed real platform Audio PAL. It must remain alive through return. */
-  const h2_pal_audio_api_t *audio;
-  const h2_pal_time_api_t *time;
+  const h2_pal_audio_api_t* audio;
+  const h2_pal_time_api_t* time;
   /** Zero disables the additional sustained record/playback run. */
   uint32_t stability_ms;
-  void (*report)(void *user, const h2_pal_audio_e2e_case_result_t *result);
-  void *report_user;
+  void (*report)(void* user, const h2_pal_audio_e2e_case_result_t* result);
+  void* report_user;
 } h2_pal_audio_e2e_config_t;
 
 /** Runs the complete mandatory case registry. Missing provider operations fail.
@@ -53,8 +53,8 @@ typedef struct h2_pal_audio_e2e_config {
  * incomplete track close at most three times, retaining its handle between
  * attempts. A cleanup failure prevents qualification; the launcher must then
  * tear down the provider, which may still own an attached track. */
-int h2_pal_audio_e2e_run(const h2_pal_audio_e2e_config_t *config,
-                         h2_pal_audio_e2e_result_t *out_result);
+int h2_pal_audio_e2e_run(const h2_pal_audio_e2e_config_t* config,
+                         h2_pal_audio_e2e_result_t* out_result);
 
 #ifdef __cplusplus
 }

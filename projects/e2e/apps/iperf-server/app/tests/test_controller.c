@@ -14,18 +14,16 @@
 static unsigned starts, stops;
 static bool fail_start;
 static h2_pal_net_addr_t loopback(unsigned family, uint16_t port) {
-  if (family == 4)
-    return h2_iperf_test_loopback(port);
+  if (family == 4) return h2_iperf_test_loopback(port);
   h2_pal_net_addr_t address = {.family = H2_PAL_NET_FAMILY_IPV6, .port = port};
   address.ip[15] = 1;
   return address;
 }
-static int network_start(void *user, h2_iperf_server_app_mode_t mode,
-                         h2_iperf_server_app_network_t *out) {
+static int network_start(void* user, h2_iperf_server_app_mode_t mode,
+                         h2_iperf_server_app_network_t* out) {
   (void)user;
   ++starts;
-  if (fail_start)
-    return H2_PAL_ERR_IO;
+  if (fail_start) return H2_PAL_ERR_IO;
   if (mode != H2_IPERF_SERVER_APP_MODE_IPV6) {
     out->ipv4 = loopback(4, 0);
     strcpy(out->ipv4_text, "127.0.0.1");
@@ -36,25 +34,24 @@ static int network_start(void *user, h2_iperf_server_app_mode_t mode,
   }
   return H2_PAL_OK;
 }
-static int network_stop(void *user) {
+static int network_stop(void* user) {
   (void)user;
   ++stops;
   return H2_PAL_OK;
 }
-static uint64_t now(const h2_pal_time_api_t *time) {
+static uint64_t now(const h2_pal_time_api_t* time) {
   uint64_t ms;
   assert(h2_pal_time_get_monotonic_ms(time, &ms) == H2_PAL_OK);
   return ms;
 }
-static h2_iperf_server_app_snapshot_t
-wait_phase(h2_iperf_server_app_t *app, h2_iperf_server_app_phase_t phase,
-           const h2_pal_time_api_t *time) {
+static h2_iperf_server_app_snapshot_t wait_phase(
+    h2_iperf_server_app_t* app, h2_iperf_server_app_phase_t phase,
+    const h2_pal_time_api_t* time) {
   uint64_t deadline = now(time) + 2000;
   h2_iperf_server_app_snapshot_t snapshot;
   do {
     assert(h2_iperf_server_app_snapshot(app, &snapshot) == H2_PAL_OK);
-    if (snapshot.phase == phase)
-      return snapshot;
+    if (snapshot.phase == phase) return snapshot;
     h2_iperf_test_sleep_ms(5);
   } while (now(time) < deadline);
   fprintf(stderr, "wanted phase %d, got %d, error %d\n", phase, snapshot.phase,
@@ -62,27 +59,27 @@ wait_phase(h2_iperf_server_app_t *app, h2_iperf_server_app_phase_t phase,
   assert(false);
   return snapshot;
 }
-static void stop(h2_iperf_server_app_t *app, h2_iperf_server_app_mode_t mode,
-                 const h2_pal_time_api_t *time) {
+static void stop(h2_iperf_server_app_t* app, h2_iperf_server_app_mode_t mode,
+                 const h2_pal_time_api_t* time) {
   uint64_t begin = now(time);
   assert(h2_iperf_server_app_request(app, mode, false) == H2_PAL_OK);
   (void)wait_phase(app, H2_IPERF_SERVER_APP_STOPPED, time);
   assert(now(time) - begin < 500);
 }
-static void run_client(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
+static void run_client(h2_iperf_server_app_t* app, h2_iperf_test_env_t* env,
                        unsigned family, uint16_t port, bool udp, bool reverse) {
   h2_iperf_server_app_snapshot_t before, after;
   assert(h2_iperf_server_app_snapshot(app, &before) == H2_PAL_OK);
   unsigned index = family == 4 ? 0 : 1;
-  h2_iperf_client_params_t params = {.server_addr = loopback(family, port),
-                                     .port = port,
-                                     .protocol = udp ? H2_IPERF_PROTOCOL_UDP
-                                                     : H2_IPERF_PROTOCOL_TCP,
-                                     .reverse = reverse,
-                                     .duration_ms = 180,
-                                     .block_len = udp ? 1200u : 16384u,
-                                     .bitrate_bps = 2000000u,
-                                     .control_timeout_ms = 2000u};
+  h2_iperf_client_params_t params = {
+      .server_addr = loopback(family, port),
+      .port = port,
+      .protocol = udp ? H2_IPERF_PROTOCOL_UDP : H2_IPERF_PROTOCOL_TCP,
+      .reverse = reverse,
+      .duration_ms = 180,
+      .block_len = udp ? 1200u : 16384u,
+      .bitrate_bps = 2000000u,
+      .control_timeout_ms = 2000u};
   h2_iperf_result_t result;
   assert(h2_iperf_client_run(&env->config, &params, &result) == H2_PAL_OK);
   for (unsigned i = 0; i < 200; ++i) {
@@ -101,9 +98,9 @@ static void run_client(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
   printf("PASS family=%u protocol=%s reverse=%d\n", family, udp ? "udp" : "tcp",
          reverse);
 }
-static void send_all(const h2_iperf_config_t *config, int sock,
-                     const void *bytes, size_t len) {
-  const uint8_t *data = bytes;
+static void send_all(const h2_iperf_config_t* config, int sock,
+                     const void* bytes, size_t len) {
+  const uint8_t* data = bytes;
   while (len) {
     int sent = h2_pal_net_tcp_send_timeout(config->net, sock, data, len, 1000);
     assert(sent > 0);
@@ -111,7 +108,7 @@ static void send_all(const h2_iperf_config_t *config, int sock,
     len -= (size_t)sent;
   }
 }
-static int connect_ctrl(h2_iperf_test_env_t *env, unsigned family,
+static int connect_ctrl(h2_iperf_test_env_t* env, unsigned family,
                         uint16_t port) {
   int sock;
   assert(h2_pal_net_tcp_open_bound(env->config.net, family, NULL, &sock) ==
@@ -121,19 +118,19 @@ static int connect_ctrl(h2_iperf_test_env_t *env, unsigned family,
          H2_PAL_OK);
   return sock;
 }
-static void wait_state(h2_iperf_test_env_t *env, int sock, uint8_t expected) {
+static void wait_state(h2_iperf_test_env_t* env, int sock, uint8_t expected) {
   uint8_t value = 0;
   assert(h2_pal_net_tcp_recv(env->config.net, sock, &value, 1, 1000) == 1);
   assert(value == expected);
 }
-static void parameters(h2_iperf_test_env_t *env, int sock, const char *json) {
+static void parameters(h2_iperf_test_env_t* env, int sock, const char* json) {
   uint32_t length = (uint32_t)strlen(json);
   const uint8_t header[] = {(uint8_t)(length >> 24), (uint8_t)(length >> 16),
                             (uint8_t)(length >> 8), (uint8_t)length};
   send_all(&env->config, sock, header, sizeof(header));
   send_all(&env->config, sock, json, length);
 }
-static void recv_all(h2_iperf_test_env_t *env, int sock, uint8_t *data,
+static void recv_all(h2_iperf_test_env_t* env, int sock, uint8_t* data,
                      size_t len) {
   while (len != 0) {
     int got = h2_pal_net_tcp_recv(env->config.net, sock, data, len, 1000);
@@ -142,7 +139,7 @@ static void recv_all(h2_iperf_test_env_t *env, int sock, uint8_t *data,
     data += got;
   }
 }
-static void cancel_setup(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
+static void cancel_setup(h2_iperf_server_app_t* app, h2_iperf_test_env_t* env,
                          uint16_t port, unsigned stage) {
   assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_IPV6,
                                      true) == H2_PAL_OK);
@@ -183,7 +180,7 @@ static void cancel_setup(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
         assert(length < 2048);
         uint8_t result[2048];
         recv_all(env, sock, result, length);
-        wait_state(env, sock, 14); // Withhold IPERF_DONE, then cancel.
+        wait_state(env, sock, 14);  // Withhold IPERF_DONE, then cancel.
       }
     }
   }
@@ -196,7 +193,7 @@ static void cancel_setup(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
   h2_pal_net_close(env->config.net, data_sock);
   printf("PASS cancellation control-stage=%u\n", stage);
 }
-static void reject_limits(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
+static void reject_limits(h2_iperf_server_app_t* app, h2_iperf_test_env_t* env,
                           uint16_t port) {
   assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_IPV6,
                                      true) == H2_PAL_OK);
@@ -210,9 +207,9 @@ static void reject_limits(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
       parameters(env, sock,
                  "{\"tcp\":true,\"parallel\":1,\"time\":1,\"len\":262144}");
       wait_state(env, sock,
-                 254); // SERVER_ERROR, before allocating a data block.
+                 254);  // SERVER_ERROR, before allocating a data block.
     } else {
-      const uint8_t header[] = {0, 0, 0x10, 1}; // 4097 exceeds the JSON limit.
+      const uint8_t header[] = {0, 0, 0x10, 1};  // 4097 exceeds the JSON limit.
       send_all(&env->config, sock, header, sizeof(header));
       uint8_t byte;
       assert(h2_pal_net_tcp_recv(env->config.net, sock, &byte, 1, 1000) ==
@@ -221,7 +218,7 @@ static void reject_limits(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
     h2_pal_net_close(env->config.net, sock);
   }
   run_client(app, env, 6, port, false,
-             false); // Rejected clients do not poison the listener.
+             false);  // Rejected clients do not poison the listener.
   stop(app, H2_IPERF_SERVER_APP_MODE_IPV6, env->config.time);
   puts("PASS bounded-block-and-json recovery=1");
 }
@@ -231,13 +228,13 @@ typedef struct client_thread {
   h2_iperf_client_params_t params;
   int rc;
 } client_thread_t;
-static void *long_client(void *user) {
-  client_thread_t *client = user;
+static void* long_client(void* user) {
+  client_thread_t* client = user;
   h2_iperf_result_t result;
   client->rc = h2_iperf_client_run(&client->config, &client->params, &result);
   return NULL;
 }
-static void cancel_running(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
+static void cancel_running(h2_iperf_server_app_t* app, h2_iperf_test_env_t* env,
                            uint16_t port, bool udp, bool reverse) {
   assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL,
                                      true) == H2_PAL_OK);
@@ -273,12 +270,12 @@ static void cancel_running(h2_iperf_server_app_t *app, h2_iperf_test_env_t *env,
 }
 
 typedef struct cleanup_fixture {
-  const h2_pal_task_api_t *task;
-  const h2_pal_sync_api_t *sync;
+  const h2_pal_task_api_t* task;
+  const h2_pal_sync_api_t* sync;
   h2_pal_task_entry_t manager_entry;
-  void *manager_context;
-  h2_pal_task_t *manager;
-  h2_pal_task_t *workers[2];
+  void* manager_context;
+  h2_pal_task_t* manager;
+  h2_pal_task_t* workers[2];
   h2_atomic_bool_t fail_manager_lock;
   h2_atomic_bool_t manager_lock_failed;
   bool invalid_ipv6;
@@ -290,59 +287,54 @@ typedef struct cleanup_fixture {
 } cleanup_fixture_t;
 
 static _Thread_local bool cleanup_manager_thread;
-static void cleanup_manager_entry(void *user) {
-  cleanup_fixture_t *f = user;
+static void cleanup_manager_entry(void* user) {
+  cleanup_fixture_t* f = user;
   cleanup_manager_thread = true;
   f->manager_entry(f->manager_context);
 }
-static int cleanup_task_start(void *user, const h2_pal_task_options_t *options,
-                              h2_pal_task_entry_t entry, void *context,
-                              h2_pal_task_t **out) {
-  cleanup_fixture_t *f = user;
+static int cleanup_task_start(void* user, const h2_pal_task_options_t* options,
+                              h2_pal_task_entry_t entry, void* context,
+                              h2_pal_task_t** out) {
+  cleanup_fixture_t* f = user;
   if (strcmp(options->name, "iperf-server/control") == 0) {
     f->manager_entry = entry;
     f->manager_context = context;
     int rc = h2_pal_task_start(f->task, options, cleanup_manager_entry, f, out);
-    if (rc == H2_PAL_OK)
-      f->manager = *out;
+    if (rc == H2_PAL_OK) f->manager = *out;
     return rc;
   }
   unsigned index = strcmp(options->name, "iperf-server/ipv4") == 0 ? 0u : 1u;
   int rc = h2_pal_task_start(f->task, options, entry, context, out);
-  if (rc == H2_PAL_OK)
-    f->workers[index] = *out;
+  if (rc == H2_PAL_OK) f->workers[index] = *out;
   return rc;
 }
-static int cleanup_task_join(void *user, h2_pal_task_t *task) {
-  cleanup_fixture_t *f = user;
+static int cleanup_task_join(void* user, h2_pal_task_t* task) {
+  cleanup_fixture_t* f = user;
   if (task == f->manager) {
     int rc = h2_pal_task_join(f->task, task);
-    if (rc == H2_PAL_OK)
-      f->manager = NULL;
+    if (rc == H2_PAL_OK) f->manager = NULL;
     return rc;
   }
   for (unsigned i = 0; i < 2u; ++i) {
-    if (task != f->workers[i])
-      continue;
-    if (f->fail_worker_join)
-      return H2_PAL_ERR_IO;
+    if (task != f->workers[i]) continue;
+    if (f->fail_worker_join) return H2_PAL_ERR_IO;
     int rc = h2_pal_task_join(f->task, task);
-    if (rc == H2_PAL_OK)
-      f->workers[i] = NULL;
+    if (rc == H2_PAL_OK) f->workers[i] = NULL;
     return rc;
   }
   return h2_pal_task_join(f->task, task);
 }
-static h2_pal_result_t cleanup_mutex_create(void *user,
-                                            const h2_pal_mutex_config_t *config,
-                                            h2_pal_mutex_t **out) {
-  return h2_pal_mutex_create(((cleanup_fixture_t *)user)->sync, config, out);
+static h2_pal_result_t cleanup_mutex_create(void* user,
+                                            const h2_pal_mutex_config_t* config,
+                                            h2_pal_mutex_t** out) {
+  return h2_pal_mutex_create(((cleanup_fixture_t*)user)->sync, config, out);
 }
-static h2_pal_result_t cleanup_mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
-  return h2_pal_mutex_destroy(((cleanup_fixture_t *)user)->sync, mutex);
+static h2_pal_result_t cleanup_mutex_destroy(void* user,
+                                             h2_pal_mutex_t* mutex) {
+  return h2_pal_mutex_destroy(((cleanup_fixture_t*)user)->sync, mutex);
 }
-static h2_pal_result_t cleanup_mutex_lock(void *user, h2_pal_mutex_t *mutex) {
-  cleanup_fixture_t *f = user;
+static h2_pal_result_t cleanup_mutex_lock(void* user, h2_pal_mutex_t* mutex) {
+  cleanup_fixture_t* f = user;
   if (cleanup_manager_thread &&
       h2_atomic_bool_load(&f->fail_manager_lock, H2_ATOMIC_ACQUIRE)) {
     h2_atomic_bool_store(&f->manager_lock_failed, true, H2_ATOMIC_RELEASE);
@@ -350,43 +342,40 @@ static h2_pal_result_t cleanup_mutex_lock(void *user, h2_pal_mutex_t *mutex) {
   }
   return h2_pal_mutex_lock(f->sync, mutex);
 }
-static h2_pal_result_t cleanup_mutex_unlock(void *user, h2_pal_mutex_t *mutex) {
-  return h2_pal_mutex_unlock(((cleanup_fixture_t *)user)->sync, mutex);
+static h2_pal_result_t cleanup_mutex_unlock(void* user, h2_pal_mutex_t* mutex) {
+  return h2_pal_mutex_unlock(((cleanup_fixture_t*)user)->sync, mutex);
 }
-static int cleanup_network_start(void *user, h2_iperf_server_app_mode_t mode,
-                                 h2_iperf_server_app_network_t *out) {
-  cleanup_fixture_t *f = user;
+static int cleanup_network_start(void* user, h2_iperf_server_app_mode_t mode,
+                                 h2_iperf_server_app_network_t* out) {
+  cleanup_fixture_t* f = user;
   assert(mode == H2_IPERF_SERVER_APP_MODE_DUAL);
   f->network_active = true;
-  if (f->fail_network_start)
-    return H2_PAL_ERR_IO;
+  if (f->fail_network_start) return H2_PAL_ERR_IO;
   out->ipv4 = loopback(4u, 0u);
-  if (!f->invalid_ipv6)
-    out->ipv6 = loopback(6u, 0u);
+  if (!f->invalid_ipv6) out->ipv6 = loopback(6u, 0u);
   return H2_PAL_OK;
 }
-static int cleanup_network_stop(void *user) {
-  cleanup_fixture_t *f = user;
+static int cleanup_network_stop(void* user) {
+  cleanup_fixture_t* f = user;
   /* No AP teardown is allowed while a failed join retains worker ownership. */
   assert(f->workers[0] == NULL && f->workers[1] == NULL);
   (void)h2_atomic_u32_fetch_add(&f->stop_calls, 1u, H2_ATOMIC_RELAXED);
-  if (f->fail_network_stop)
-    return H2_PAL_ERR_IO;
+  if (f->fail_network_stop) return H2_PAL_ERR_IO;
   f->network_active = false;
   return H2_PAL_OK;
 }
 typedef struct destroy_attempt {
-  h2_iperf_server_app_t *app;
+  h2_iperf_server_app_t* app;
   h2_atomic_bool_t done;
   int rc;
 } destroy_attempt_t;
-static void *destroy_once(void *user) {
-  destroy_attempt_t *attempt = user;
+static void* destroy_once(void* user) {
+  destroy_attempt_t* attempt = user;
   attempt->rc = h2_iperf_server_app_destroy(&attempt->app);
   h2_atomic_bool_store(&attempt->done, true, H2_ATOMIC_RELEASE);
   return NULL;
 }
-static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
+static void test_cleanup_failure(h2_iperf_test_env_t* env, unsigned scenario) {
   cleanup_fixture_t f = {.task = h2_desktop_platform_task_api(),
                          .sync = h2_desktop_platform_sync_api(),
                          .invalid_ipv6 = scenario == 1u,
@@ -396,8 +385,8 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
   assert(h2_atomic_bool_init(&f.fail_manager_lock, false) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&f.manager_lock_failed, false) == H2_ATOMIC_OK);
   assert(h2_atomic_u32_init(&f.stop_calls, 0u) == H2_ATOMIC_OK);
-  const h2_pal_task_vtable_t task_vtable = {
-      .start = cleanup_task_start, .join = cleanup_task_join};
+  const h2_pal_task_vtable_t task_vtable = {.start = cleanup_task_start,
+                                            .join = cleanup_task_join};
   const h2_pal_task_api_t task = {&f, &task_vtable};
   const h2_pal_sync_vtable_t sync_vtable = {
       .create_mutex = cleanup_mutex_create,
@@ -417,10 +406,10 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
       .network_start = cleanup_network_start,
       .network_stop = cleanup_network_stop,
       .port = h2_iperf_test_free_port(env->config.net)};
-  h2_iperf_server_app_t *app = NULL;
+  h2_iperf_server_app_t* app = NULL;
   assert(h2_iperf_server_app_create(&runtime, &config, &app) == H2_PAL_OK);
-  assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL, true) ==
-         H2_PAL_OK);
+  assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL,
+                                     true) == H2_PAL_OK);
   if (scenario != 1u && scenario != 4u)
     (void)wait_phase(app, H2_IPERF_SERVER_APP_LISTENING, env->config.time);
   uint64_t deadline = now(env->config.time) + 2000u;
@@ -436,9 +425,9 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
                                          false) == H2_PAL_OK);
     h2_iperf_server_app_snapshot_t snapshot;
     do {
-      snapshot = wait_phase(app, H2_IPERF_SERVER_APP_STOPPING, env->config.time);
-      if (snapshot.error == H2_PAL_ERR_IO)
-        break;
+      snapshot =
+          wait_phase(app, H2_IPERF_SERVER_APP_STOPPING, env->config.time);
+      if (snapshot.error == H2_PAL_ERR_IO) break;
       h2_iperf_test_sleep_ms(5u);
     } while (now(env->config.time) < deadline);
     assert(snapshot.error == H2_PAL_ERR_IO);
@@ -482,8 +471,8 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
   if (scenario == 2u)
     assert(h2_atomic_u32_load(&f.stop_calls, H2_ATOMIC_RELAXED) == 0u &&
            f.workers[0] != NULL);
-  assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL, false) ==
-         H2_PAL_ERR_CLOSED);
+  assert(h2_iperf_server_app_request(app, H2_IPERF_SERVER_APP_MODE_DUAL,
+                                     false) == H2_PAL_ERR_CLOSED);
   f.fail_network_stop = false;
   f.fail_worker_join = false;
   h2_atomic_bool_store(&f.fail_manager_lock, false, H2_ATOMIC_RELEASE);
@@ -496,7 +485,7 @@ static void test_cleanup_failure(h2_iperf_test_env_t *env, unsigned scenario) {
   printf("PASS cleanup failure scenario=%u retained=1 destroy-retry=1\n",
          scenario);
 }
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   assert(argc == 2);
   h2_iperf_test_env_t env;
   h2_iperf_test_env_init(&env, false);
@@ -511,7 +500,7 @@ int main(int argc, char **argv) {
   h2_iperf_server_app_config_t config = {.network_start = network_start,
                                          .network_stop = network_stop,
                                          .port = port};
-  h2_iperf_server_app_t *app;
+  h2_iperf_server_app_t* app;
   assert(h2_iperf_server_app_create(&runtime, &config, &app) == H2_PAL_OK);
   assert(h2_iperf_server_app_request(app, 5, true) == H2_PAL_ERR_INVALID_ARG);
   fail_start = true;
@@ -555,17 +544,15 @@ int main(int argc, char **argv) {
   for (unsigned family = 4; family <= 6; family += 2) {
     for (unsigned proto = 0; proto < 2; ++proto) {
       for (unsigned reverse = 0; reverse < 2; ++reverse) {
-        char *args[24] = {argv[1], family == 4 ? "-4" : "-6",
+        char* args[24] = {argv[1], family == 4 ? "-4" : "-6",
                           "-c",    family == 4 ? "127.0.0.1" : "::1",
                           "-p",    port_text,
                           "-t",    "1",
                           "-l",    proto ? "1200" : "16384",
                           "-b",    "2M"};
         unsigned n = 12;
-        if (proto)
-          args[n++] = "-u";
-        if (reverse)
-          args[n++] = "-R";
+        if (proto) args[n++] = "-u";
+        if (reverse) args[n++] = "-R";
         args[n] = NULL;
         pid_t pid = h2_iperf_test_spawn(args);
         assert(pid > 0);
@@ -581,11 +568,12 @@ int main(int argc, char **argv) {
                                      false) == H2_PAL_OK);
   (void)wait_phase(app, H2_IPERF_SERVER_APP_STOPPED, env.config.time);
   assert(h2_iperf_server_app_destroy(&app) == H2_PAL_OK && app == NULL);
-  assert(starts == stops); // Every start attempt has a matching cleanup.
+  assert(starts == stops);  // Every start attempt has a matching cleanup.
   for (unsigned scenario = 0u; scenario < 5u; ++scenario)
     test_cleanup_failure(&env, scenario);
   h2_iperf_test_env_deinit(&env);
-  puts("H2_IPERF_SERVER_CONTROLLER_PASS modes=3 pal-wire=16 official-wire=8 "
-       "control-cancel=6 active-cancel=4 limits=2");
+  puts(
+      "H2_IPERF_SERVER_CONTROLLER_PASS modes=3 pal-wire=16 official-wire=8 "
+      "control-cancel=6 active-cancel=4 limits=2");
   return 0;
 }

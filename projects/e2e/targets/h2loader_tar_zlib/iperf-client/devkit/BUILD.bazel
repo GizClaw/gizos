@@ -6,6 +6,15 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":launcher"],
@@ -79,6 +88,8 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    cmake_definitions = {"H2_ESP_CONSOLE_DEFAULTS": "loader_usb.defaults"},
+    graph = [":launcher"],
     layout_files = {
         "partition": "//boards/devkit/esp32s3/layouts/h2loader:partition.csv",
         "project_support_files": [
@@ -87,8 +98,6 @@ h2loader_esp_idf_firmware(
         ],
         "support_files": ["//boards/devkit/esp32s3/layouts/h2loader:loader_usb.defaults"],
     },
-    cmake_definitions = {"H2_ESP_CONSOLE_DEFAULTS": "loader_usb.defaults"},
-    graph = [":launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_iperf_client",
     target = "esp32s3",

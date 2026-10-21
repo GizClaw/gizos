@@ -1,6 +1,7 @@
 """Real netif provider snapshots run on the TCP/IP owner and retain radio use."""
 from pathlib import Path
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -14,7 +15,7 @@ class NetifSnapshotTest(unittest.TestCase):
         source = source[source.index('static '):source.index('\n#else')]
         wifi = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
         pack = wifi[wifi.index('static uint32_t pack_ip4('):wifi.index('static h2_pal_wifi_security_t')]
-        refresh = wifi[wifi.index('static void update_sta_snapshot(h2_pal_wifi_sta_status_t *status) {'):wifi.index('static int sta_get_status(')]
+        refresh = wifi[re.search(r'\bstatic\s+void\s+update_sta_snapshot\s*\(\s*h2_pal_wifi_sta_status_t\s*\*\s*status\s*\)\s*\{', wifi).start():wifi.index('static int sta_get_status(')]
         source += pack + refresh
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_netif_snapshot.c').read_text()
         with tempfile.TemporaryDirectory() as directory:

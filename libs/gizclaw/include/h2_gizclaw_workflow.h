@@ -33,39 +33,39 @@ typedef struct h2_gizclaw_safety_fence_option {
 } h2_gizclaw_safety_fence_option_t;
 
 typedef struct h2_gizclaw_workflow_i18n {
-  char *locale;
-  char *display_name;
-  char *description;
+  char* locale;
+  char* display_name;
+  char* description;
 } h2_gizclaw_workflow_i18n_t;
 
 /** Owned safe projection of one Runtime Profile workflow. */
 typedef struct h2_gizclaw_workflow {
   /** Owned opaque UTF-8 tags in wire order; no tags means an empty set. */
-  char **tags;
+  char** tags;
   size_t tag_count;
-  char *name;
-  h2_gizclaw_workflow_i18n_t *i18n;
+  char* name;
+  h2_gizclaw_workflow_i18n_t* i18n;
   size_t i18n_count;
-  char *workspace_lang_pair;
+  char* workspace_lang_pair;
 } h2_gizclaw_workflow_t;
 
 /** Page whose variable-sized fields live in caller-owned response storage. */
 typedef struct h2_gizclaw_workflow_page {
-  h2_gizclaw_workflow_t *items;
+  h2_gizclaw_workflow_t* items;
   size_t count;
   bool has_next;
-  char *next_cursor;
-  char *runtime_profile_name;
-  char *runtime_profile_revision;
+  char* next_cursor;
+  char* runtime_profile_name;
+  char* runtime_profile_revision;
   /** All options supported by this Profile, repeated on every catalog page. */
-  h2_gizclaw_safety_fence_option_t *safety_fences;
+  h2_gizclaw_safety_fence_option_t* safety_fences;
   size_t safety_fence_count;
 } h2_gizclaw_workflow_page_t;
 
 typedef struct h2_gizclaw_workflow_get_result {
   h2_gizclaw_workflow_t workflow;
-  char *runtime_profile_name;
-  char *runtime_profile_revision;
+  char* runtime_profile_name;
+  char* runtime_profile_revision;
 } h2_gizclaw_workflow_get_result_t;
 
 /** List workflows matching every tag exactly. Zero tags returns all.
@@ -73,32 +73,30 @@ typedef struct h2_gizclaw_workflow_get_result {
  * permitted. Request creation copies their encoded bytes before returning.
  * Tags affect filtering only; Workflow identity remains name. */
 h2_pal_result_t h2_gizclaw_req_create_workflow_list(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_str_t *tags, size_t tag_count, h2_gizclaw_str_t cursor,
-    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_str_t* tags, size_t tag_count, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 h2_pal_result_t h2_gizclaw_req_create_workflow_get(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request);
 
 /** Parsed strings, items and i18n entries live in caller-owned storage. */
-h2_pal_result_t
-h2_gizclaw_resp_parse_workflow_list(const h2_gizclaw_req_t *request,
-                                    h2_gizclaw_resp_storage_t *storage,
-                                    h2_gizclaw_workflow_page_t *out_page);
+h2_pal_result_t h2_gizclaw_resp_parse_workflow_list(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_page_t* out_page);
 h2_pal_result_t h2_gizclaw_resp_parse_workflow_get(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workflow_get_result_t *out_result);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_get_result_t* out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workflow_list(
-    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
+    h2_gizclaw_service_t* service, const h2_gizclaw_str_t* tags,
     size_t tag_count, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workflow_page_t *out_page);
-h2_pal_result_t
-h2_gizclaw_rpc_workflow_get(h2_gizclaw_service_t *service,
-                            h2_gizclaw_str_t name, uint32_t timeout_ms,
-                            h2_gizclaw_resp_storage_t *storage,
-                            h2_gizclaw_workflow_get_result_t *out_result);
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_page_t* out_page);
+h2_pal_result_t h2_gizclaw_rpc_workflow_get(
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_get_result_t* out_result);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,7 @@
 """Threaded execution of the actual BLE host start/stop/INIT lifecycle."""
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -8,7 +9,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 
 def function(source, signature):
-    begin = source.index(signature)
+    tokens = re.findall(r'\w+|[^\w\s]', signature)
+    pattern = r'\s*'.join(r'\b' + re.escape(token) + r'\b' if re.fullmatch(r'\w+', token) else re.escape(token) for token in tokens)
+    begin = re.search(pattern, source).start()
     brace = source.index('{', begin)
     depth = 1
     end = brace + 1

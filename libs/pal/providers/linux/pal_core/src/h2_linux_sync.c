@@ -10,28 +10,28 @@
 
 struct h2_pal_mutex {
   pthread_mutex_t native;
-  const h2_pal_mem_api_t *allocator;
+  const h2_pal_mem_api_t* allocator;
   int recursive;
 };
 
 struct h2_pal_semaphore {
   pthread_mutex_t mutex;
   pthread_cond_t condition;
-  const h2_pal_mem_api_t *allocator;
+  const h2_pal_mem_api_t* allocator;
   uint32_t count;
   uint32_t max_count;
 };
 
 struct h2_pal_cond {
   pthread_cond_t native;
-  const h2_pal_mem_api_t *allocator;
+  const h2_pal_mem_api_t* allocator;
 };
 
-static void *sync_alloc(const h2_pal_mem_api_t *allocator, size_t size) {
+static void* sync_alloc(const h2_pal_mem_api_t* allocator, size_t size) {
   return allocator != NULL ? h2_pal_mem_alloc(allocator, size) : malloc(size);
 }
 
-static void sync_free(const h2_pal_mem_api_t *allocator, void *memory) {
+static void sync_free(const h2_pal_mem_api_t* allocator, void* memory) {
   if (allocator != NULL) {
     h2_pal_mem_free(allocator, memory);
   } else {
@@ -40,7 +40,7 @@ static void sync_free(const h2_pal_mem_api_t *allocator, void *memory) {
 }
 
 static h2_pal_result_t sync_deadline(uint32_t timeout_ms,
-                                     struct timespec *out_deadline) {
+                                     struct timespec* out_deadline) {
   if (clock_gettime(CLOCK_MONOTONIC, out_deadline) != 0) {
     return H2_PAL_ERR_IO;
   }
@@ -53,7 +53,7 @@ static h2_pal_result_t sync_deadline(uint32_t timeout_ms,
   return H2_PAL_OK;
 }
 
-static int sync_condition_init(pthread_cond_t *condition) {
+static int sync_condition_init(pthread_cond_t* condition) {
   pthread_condattr_t attributes;
   if (pthread_condattr_init(&attributes) != 0) {
     return -1;
@@ -66,16 +66,16 @@ static int sync_condition_init(pthread_cond_t *condition) {
   return result;
 }
 
-static h2_pal_result_t
-linux_sync_create_mutex(void *user, const h2_pal_mutex_config_t *config,
-                        h2_pal_mutex_t **out_mutex) {
+static h2_pal_result_t linux_sync_create_mutex(
+    void* user, const h2_pal_mutex_config_t* config,
+    h2_pal_mutex_t** out_mutex) {
   (void)user;
   if (config == NULL || out_mutex == NULL ||
       (config->flags & ~H2_PAL_MUTEX_FLAG_RECURSIVE) != 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_mutex = NULL;
-  h2_pal_mutex_t *mutex = sync_alloc(config->allocator, sizeof(*mutex));
+  h2_pal_mutex_t* mutex = sync_alloc(config->allocator, sizeof(*mutex));
   if (mutex == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -104,8 +104,8 @@ linux_sync_create_mutex(void *user, const h2_pal_mutex_config_t *config,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t linux_sync_destroy_mutex(void *user,
-                                                h2_pal_mutex_t *mutex) {
+static h2_pal_result_t linux_sync_destroy_mutex(void* user,
+                                                h2_pal_mutex_t* mutex) {
   (void)user;
   if (mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -114,19 +114,19 @@ static h2_pal_result_t linux_sync_destroy_mutex(void *user,
   if (result != 0) {
     return result == EBUSY ? H2_PAL_ERR_BUSY : H2_PAL_ERR_IO;
   }
-  const h2_pal_mem_api_t *allocator = mutex->allocator;
+  const h2_pal_mem_api_t* allocator = mutex->allocator;
   sync_free(allocator, mutex);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t linux_sync_lock_mutex(void *user,
-                                             h2_pal_mutex_t *mutex) {
+static h2_pal_result_t linux_sync_lock_mutex(void* user,
+                                             h2_pal_mutex_t* mutex) {
   (void)user;
   return pthread_mutex_lock(&mutex->native) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t linux_sync_try_lock_mutex(void *user,
-                                                 h2_pal_mutex_t *mutex) {
+static h2_pal_result_t linux_sync_try_lock_mutex(void* user,
+                                                 h2_pal_mutex_t* mutex) {
   (void)user;
   const int result = pthread_mutex_trylock(&mutex->native);
   if (result == 0) {
@@ -135,22 +135,22 @@ static h2_pal_result_t linux_sync_try_lock_mutex(void *user,
   return result == EBUSY ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t linux_sync_unlock_mutex(void *user,
-                                               h2_pal_mutex_t *mutex) {
+static h2_pal_result_t linux_sync_unlock_mutex(void* user,
+                                               h2_pal_mutex_t* mutex) {
   (void)user;
   return pthread_mutex_unlock(&mutex->native) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t
-linux_sync_create_semaphore(void *user, const h2_pal_semaphore_config_t *config,
-                            h2_pal_semaphore_t **out_semaphore) {
+static h2_pal_result_t linux_sync_create_semaphore(
+    void* user, const h2_pal_semaphore_config_t* config,
+    h2_pal_semaphore_t** out_semaphore) {
   (void)user;
   if (config == NULL || out_semaphore == NULL || config->max_count == 0u ||
       config->initial_count > config->max_count) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_semaphore = NULL;
-  h2_pal_semaphore_t *semaphore =
+  h2_pal_semaphore_t* semaphore =
       sync_alloc(config->allocator, sizeof(*semaphore));
   if (semaphore == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
@@ -172,8 +172,8 @@ linux_sync_create_semaphore(void *user, const h2_pal_semaphore_config_t *config,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-linux_sync_destroy_semaphore(void *user, h2_pal_semaphore_t *semaphore) {
+static h2_pal_result_t linux_sync_destroy_semaphore(
+    void* user, h2_pal_semaphore_t* semaphore) {
   (void)user;
   if (semaphore == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -194,13 +194,13 @@ linux_sync_destroy_semaphore(void *user, h2_pal_semaphore_t *semaphore) {
   if (mutex_result != 0) {
     return mutex_result == EBUSY ? H2_PAL_ERR_BUSY : H2_PAL_ERR_IO;
   }
-  const h2_pal_mem_api_t *allocator = semaphore->allocator;
+  const h2_pal_mem_api_t* allocator = semaphore->allocator;
   sync_free(allocator, semaphore);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t linux_sync_take_semaphore(void *user,
-                                                 h2_pal_semaphore_t *semaphore,
+static h2_pal_result_t linux_sync_take_semaphore(void* user,
+                                                 h2_pal_semaphore_t* semaphore,
                                                  uint32_t timeout_ms) {
   (void)user;
   if (pthread_mutex_lock(&semaphore->mutex) != 0) {
@@ -237,8 +237,8 @@ static h2_pal_result_t linux_sync_take_semaphore(void *user,
   return result;
 }
 
-static h2_pal_result_t
-linux_sync_give_semaphore(void *user, h2_pal_semaphore_t *semaphore) {
+static h2_pal_result_t linux_sync_give_semaphore(
+    void* user, h2_pal_semaphore_t* semaphore) {
   (void)user;
   if (pthread_mutex_lock(&semaphore->mutex) != 0) {
     return H2_PAL_ERR_IO;
@@ -258,15 +258,14 @@ linux_sync_give_semaphore(void *user, h2_pal_semaphore_t *semaphore) {
   return result;
 }
 
-static h2_pal_result_t
-linux_sync_create_cond(void *user, const h2_pal_cond_config_t *config,
-                       h2_pal_cond_t **out_cond) {
+static h2_pal_result_t linux_sync_create_cond(
+    void* user, const h2_pal_cond_config_t* config, h2_pal_cond_t** out_cond) {
   (void)user;
   if (config == NULL || out_cond == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_cond = NULL;
-  h2_pal_cond_t *condition = sync_alloc(config->allocator, sizeof(*condition));
+  h2_pal_cond_t* condition = sync_alloc(config->allocator, sizeof(*condition));
   if (condition == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -280,8 +279,8 @@ linux_sync_create_cond(void *user, const h2_pal_cond_config_t *config,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t linux_sync_destroy_cond(void *user,
-                                               h2_pal_cond_t *condition) {
+static h2_pal_result_t linux_sync_destroy_cond(void* user,
+                                               h2_pal_cond_t* condition) {
   (void)user;
   if (condition == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -290,14 +289,14 @@ static h2_pal_result_t linux_sync_destroy_cond(void *user,
   if (result != 0) {
     return result == EBUSY ? H2_PAL_ERR_BUSY : H2_PAL_ERR_IO;
   }
-  const h2_pal_mem_api_t *allocator = condition->allocator;
+  const h2_pal_mem_api_t* allocator = condition->allocator;
   sync_free(allocator, condition);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t linux_sync_wait_cond(void *user,
-                                            h2_pal_cond_t *condition,
-                                            h2_pal_mutex_t *mutex,
+static h2_pal_result_t linux_sync_wait_cond(void* user,
+                                            h2_pal_cond_t* condition,
+                                            h2_pal_mutex_t* mutex,
                                             uint32_t timeout_ms) {
   (void)user;
   if (mutex->recursive != 0) {
@@ -324,15 +323,15 @@ static h2_pal_result_t linux_sync_wait_cond(void *user,
   return result == ETIMEDOUT ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t linux_sync_signal_cond(void *user,
-                                              h2_pal_cond_t *condition) {
+static h2_pal_result_t linux_sync_signal_cond(void* user,
+                                              h2_pal_cond_t* condition) {
   (void)user;
   return pthread_cond_signal(&condition->native) == 0 ? H2_PAL_OK
                                                       : H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t linux_sync_broadcast_cond(void *user,
-                                                 h2_pal_cond_t *condition) {
+static h2_pal_result_t linux_sync_broadcast_cond(void* user,
+                                                 h2_pal_cond_t* condition) {
   (void)user;
   return pthread_cond_broadcast(&condition->native) == 0 ? H2_PAL_OK
                                                          : H2_PAL_ERR_IO;
@@ -360,4 +359,4 @@ static const h2_pal_sync_api_t s_linux_sync_api = {
     .vtable = &s_linux_sync_vtable,
 };
 
-const h2_pal_sync_api_t *h2_linux_sync_api(void) { return &s_linux_sync_api; }
+const h2_pal_sync_api_t* h2_linux_sync_api(void) { return &s_linux_sync_api; }

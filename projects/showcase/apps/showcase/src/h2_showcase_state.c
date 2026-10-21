@@ -8,13 +8,13 @@
 #define H2_SHOWCASE_ADJACENT_TAP_MS UINT64_C(500)
 #define H2_SHOWCASE_LONG_PRESS_MS UINT64_C(500)
 
-static void reset_taps(h2_showcase_state_t *state) {
+static void reset_taps(h2_showcase_state_t* state) {
   state->first_tap_ms = 0u;
   state->previous_release_ms = 0u;
   state->tap_count = 0u;
 }
 
-void h2_showcase_state_init(h2_showcase_state_t *state) {
+void h2_showcase_state_init(h2_showcase_state_t* state) {
   if (state == NULL) {
     return;
   }
@@ -22,7 +22,7 @@ void h2_showcase_state_init(h2_showcase_state_t *state) {
   state->mode = H2_SHOWCASE_MODE_IDLE;
 }
 
-void h2_showcase_state_button_down(h2_showcase_state_t *state,
+void h2_showcase_state_button_down(h2_showcase_state_t* state,
                                    uint64_t timestamp_ms) {
   if (state == NULL || state->pressed ||
       state->mode == H2_SHOWCASE_MODE_CONSOLE) {
@@ -32,7 +32,7 @@ void h2_showcase_state_button_down(h2_showcase_state_t *state,
   state->press_started_ms = timestamp_ms;
 }
 
-void h2_showcase_state_button_up(h2_showcase_state_t *state,
+void h2_showcase_state_button_up(h2_showcase_state_t* state,
                                  uint64_t timestamp_ms) {
   if (state == NULL) {
     return;
@@ -68,7 +68,7 @@ void h2_showcase_state_button_up(h2_showcase_state_t *state,
   }
 }
 
-void h2_showcase_state_tick(h2_showcase_state_t *state, uint64_t timestamp_ms) {
+void h2_showcase_state_tick(h2_showcase_state_t* state, uint64_t timestamp_ms) {
   if (state == NULL || !state->pressed ||
       state->mode == H2_SHOWCASE_MODE_CONSOLE ||
       timestamp_ms < state->press_started_ms ||
@@ -79,7 +79,7 @@ void h2_showcase_state_tick(h2_showcase_state_t *state, uint64_t timestamp_ms) {
   state->mode = H2_SHOWCASE_MODE_CONVERSATION;
 }
 
-void h2_showcase_state_close_console(h2_showcase_state_t *state) {
+void h2_showcase_state_close_console(h2_showcase_state_t* state) {
   if (state == NULL || state->mode != H2_SHOWCASE_MODE_CONSOLE) {
     return;
   }

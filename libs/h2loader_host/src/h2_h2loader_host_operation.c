@@ -7,396 +7,362 @@
 #define H2_H2LOADER_HOST_STAGE_ATTEMPTS 2u
 
 static void emit_event(
-    const h2_h2loader_host_managed_operation_config_t *config,
-    h2_h2loader_host_operation_phase_t phase,
-    h2_pal_result_t result) {
-    if (config->on_event != NULL) {
-        config->on_event(config->event_user, phase, result);
-    }
+    const h2_h2loader_host_managed_operation_config_t* config,
+    h2_h2loader_host_operation_phase_t phase, h2_pal_result_t result) {
+  if (config->on_event != NULL) {
+    config->on_event(config->event_user, phase, result);
+  }
 }
 
 static int operation_cancelled(
-    const h2_h2loader_host_managed_operation_config_t *config) {
-    return config->is_cancelled != NULL &&
-        config->is_cancelled(config->cancel_user);
+    const h2_h2loader_host_managed_operation_config_t* config) {
+  return config->is_cancelled != NULL &&
+         config->is_cancelled(config->cancel_user);
 }
 
 static int transport_valid(
-    const h2_h2loader_host_managed_transport_t *transport) {
-    return transport != NULL && transport->vtable != NULL &&
-        transport->vtable->connect != NULL &&
-        transport->vtable->stage != NULL &&
-        transport->vtable->activate != NULL &&
-        transport->vtable->disconnect != NULL &&
-        transport->vtable->rediscover != NULL;
+    const h2_h2loader_host_managed_transport_t* transport) {
+  return transport != NULL && transport->vtable != NULL &&
+         transport->vtable->connect != NULL &&
+         transport->vtable->stage != NULL &&
+         transport->vtable->activate != NULL &&
+         transport->vtable->disconnect != NULL &&
+         transport->vtable->rediscover != NULL;
 }
 
 static int stage_transport_valid(
-    const h2_h2loader_host_managed_transport_t *transport) {
-    return transport != NULL && transport->vtable != NULL &&
-        transport->vtable->connect != NULL &&
-        transport->vtable->stage != NULL &&
-        transport->vtable->disconnect != NULL &&
-        transport->vtable->rediscover != NULL;
+    const h2_h2loader_host_managed_transport_t* transport) {
+  return transport != NULL && transport->vtable != NULL &&
+         transport->vtable->connect != NULL &&
+         transport->vtable->stage != NULL &&
+         transport->vtable->disconnect != NULL &&
+         transport->vtable->rediscover != NULL;
 }
 
 static h2_pal_result_t disconnect_after(
-    const h2_h2loader_host_managed_operation_config_t *config,
+    const h2_h2loader_host_managed_operation_config_t* config,
     h2_pal_result_t rc) {
-    h2_pal_result_t close_rc =
-        config->transport.vtable->disconnect(config->transport.user);
-    return rc == H2_PAL_OK ? close_rc : rc;
+  h2_pal_result_t close_rc =
+      config->transport.vtable->disconnect(config->transport.user);
+  return rc == H2_PAL_OK ? close_rc : rc;
 }
 
 static int stage_status_compatible(
-    const h2_h2loader_host_status_t *status,
-    const h2_h2loader_host_catalog_entry_t *asset) {
-    h2_h2loader_host_active_role_t active_role =
-        h2_h2loader_host_status_active_role(status);
-    return strcmp(status->board, asset->board) == 0 &&
-        strcmp(status->target, asset->target) == 0 &&
-        (active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-         active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    const h2_h2loader_host_status_t* status,
+    const h2_h2loader_host_catalog_entry_t* asset) {
+  h2_h2loader_host_active_role_t active_role =
+      h2_h2loader_host_status_active_role(status);
+  return strcmp(status->board, asset->board) == 0 &&
+         strcmp(status->target, asset->target) == 0 &&
+         (active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+          active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
 }
 
-static int stage_status_matches(
-    const h2_h2loader_host_status_t *status,
-    const h2_h2loader_host_catalog_entry_t *asset) {
-    return stage_status_compatible(status, asset) && status->stage.valid &&
-        status->stage.package_size == asset->bytes &&
-        strcmp(status->stage.package_checksum, asset->sha256) == 0;
+static int stage_status_matches(const h2_h2loader_host_status_t* status,
+                                const h2_h2loader_host_catalog_entry_t* asset) {
+  return stage_status_compatible(status, asset) && status->stage.valid &&
+         status->stage.package_size == asset->bytes &&
+         strcmp(status->stage.package_checksum, asset->sha256) == 0;
 }
 
 static h2_pal_result_t reconnect_after_stage_interruption(
-    const h2_h2loader_host_managed_operation_config_t *config,
-    h2_h2loader_host_status_t *out_status) {
-    uint32_t attempts = config->reconnect_attempts == 0u
-        ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_ATTEMPTS
-        : config->reconnect_attempts;
-    uint32_t delay_ms = config->reconnect_delay_ms == 0u
-        ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_DELAY_MS
-        : config->reconnect_delay_ms;
-    h2_pal_result_t rc = H2_PAL_ERR_TIMEOUT;
-    for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
-        if (operation_cancelled(config)) {
-            return H2_PAL_EXIT;
-        }
-        rc = h2_pal_time_sleep_ms(config->time, delay_ms);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-        rc = config->transport.vtable->rediscover(config->transport.user);
-        if (rc != H2_PAL_OK) {
-            continue;
-        }
-        memset(out_status, 0, sizeof(*out_status));
-        rc = config->transport.vtable->connect(
-            config->transport.user, out_status);
-        if (rc == H2_PAL_ERR_INVALID_STATE) {
-            return rc;
-        }
-        if (rc == H2_PAL_OK) {
-            return rc;
-        }
+    const h2_h2loader_host_managed_operation_config_t* config,
+    h2_h2loader_host_status_t* out_status) {
+  uint32_t attempts = config->reconnect_attempts == 0u
+                          ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_ATTEMPTS
+                          : config->reconnect_attempts;
+  uint32_t delay_ms = config->reconnect_delay_ms == 0u
+                          ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_DELAY_MS
+                          : config->reconnect_delay_ms;
+  h2_pal_result_t rc = H2_PAL_ERR_TIMEOUT;
+  for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
+    if (operation_cancelled(config)) {
+      return H2_PAL_EXIT;
     }
-    return rc;
+    rc = h2_pal_time_sleep_ms(config->time, delay_ms);
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+    rc = config->transport.vtable->rediscover(config->transport.user);
+    if (rc != H2_PAL_OK) {
+      continue;
+    }
+    memset(out_status, 0, sizeof(*out_status));
+    rc = config->transport.vtable->connect(config->transport.user, out_status);
+    if (rc == H2_PAL_ERR_INVALID_STATE) {
+      return rc;
+    }
+    if (rc == H2_PAL_OK) {
+      return rc;
+    }
+  }
+  return rc;
 }
 
 static h2_pal_result_t stage_with_recovery(
-    const h2_h2loader_host_managed_operation_config_t *config,
-    h2_h2loader_host_status_t *out_status) {
-    for (uint32_t attempt = 0u;
-         attempt < H2_H2LOADER_HOST_STAGE_ATTEMPTS;
-         ++attempt) {
-        if ((out_status->command_availability &
-             H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_PAYLOAD) == 0u) {
-            return H2_PAL_ERR_INVALID_STATE;
-        }
-        h2_pal_result_t rc = config->transport.vtable->stage(
-            config->transport.user,
-            config->asset,
-            config->read_payload,
-            config->payload_user,
-            config->is_cancelled,
-            config->cancel_user,
-            config->on_progress,
-            config->progress_user);
-        if (rc == H2_PAL_OK ||
-            (rc != H2_PAL_ERR_CLOSED && rc != H2_PAL_ERR_TIMEOUT &&
-             rc != H2_PAL_ERR_WOULD_BLOCK) ||
-            attempt + 1u == H2_H2LOADER_HOST_STAGE_ATTEMPTS) {
-            return rc;
-        }
-        h2_pal_result_t close_rc =
-            config->transport.vtable->disconnect(config->transport.user);
-        if (close_rc != H2_PAL_OK) {
-            return close_rc;
-        }
-        rc = reconnect_after_stage_interruption(config, out_status);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-        if (stage_status_matches(out_status, config->asset)) {
-            return H2_PAL_OK;
-        }
-        if (!stage_status_compatible(out_status, config->asset) ||
-            out_status->stage.valid) {
-            return H2_PAL_ERR_INVALID_STATE;
-        }
+    const h2_h2loader_host_managed_operation_config_t* config,
+    h2_h2loader_host_status_t* out_status) {
+  for (uint32_t attempt = 0u; attempt < H2_H2LOADER_HOST_STAGE_ATTEMPTS;
+       ++attempt) {
+    if ((out_status->command_availability &
+         H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_PAYLOAD) == 0u) {
+      return H2_PAL_ERR_INVALID_STATE;
     }
-    return H2_PAL_ERR_INVALID_STATE;
+    h2_pal_result_t rc = config->transport.vtable->stage(
+        config->transport.user, config->asset, config->read_payload,
+        config->payload_user, config->is_cancelled, config->cancel_user,
+        config->on_progress, config->progress_user);
+    if (rc == H2_PAL_OK ||
+        (rc != H2_PAL_ERR_CLOSED && rc != H2_PAL_ERR_TIMEOUT &&
+         rc != H2_PAL_ERR_WOULD_BLOCK) ||
+        attempt + 1u == H2_H2LOADER_HOST_STAGE_ATTEMPTS) {
+      return rc;
+    }
+    h2_pal_result_t close_rc =
+        config->transport.vtable->disconnect(config->transport.user);
+    if (close_rc != H2_PAL_OK) {
+      return close_rc;
+    }
+    rc = reconnect_after_stage_interruption(config, out_status);
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+    if (stage_status_matches(out_status, config->asset)) {
+      return H2_PAL_OK;
+    }
+    if (!stage_status_compatible(out_status, config->asset) ||
+        out_status->stage.valid) {
+      return H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  return H2_PAL_ERR_INVALID_STATE;
 }
 
 h2_pal_result_t h2_h2loader_host_managed_operation_run(
-    const h2_h2loader_host_managed_operation_config_t *config,
-    h2_h2loader_host_status_t *out_final_status) {
-    h2_h2loader_host_status_t status;
-    uint32_t attempts;
-    uint32_t delay_ms;
-    h2_pal_result_t rc;
+    const h2_h2loader_host_managed_operation_config_t* config,
+    h2_h2loader_host_status_t* out_final_status) {
+  h2_h2loader_host_status_t status;
+  uint32_t attempts;
+  uint32_t delay_ms;
+  h2_pal_result_t rc;
 
-    if (out_final_status != NULL) {
-        memset(out_final_status, 0, sizeof(*out_final_status));
-    }
-    if (config == NULL || out_final_status == NULL ||
-        config->time == NULL || !transport_valid(&config->transport) ||
-        config->asset == NULL || config->read_payload == NULL ||
-        config->asset->operation !=
-            H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (operation_cancelled(config)) {
-        emit_event(
-            config, H2_H2LOADER_HOST_OPERATION_CONNECT, H2_PAL_EXIT);
-        return H2_PAL_EXIT;
-    }
-    emit_event(config, H2_H2LOADER_HOST_OPERATION_CONNECT, H2_PAL_OK);
-    memset(&status, 0, sizeof(status));
-    rc = config->transport.vtable->connect(
-        config->transport.user, &status);
-    if (rc != H2_PAL_OK) {
-        emit_event(config, H2_H2LOADER_HOST_OPERATION_CONNECT, rc);
-        return rc;
-    }
-    emit_event(config, H2_H2LOADER_HOST_OPERATION_PRECHECK, H2_PAL_OK);
-    if (strcmp(status.board, config->asset->board) != 0 ||
-        strcmp(status.target, config->asset->target) != 0) {
-        rc = disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
-        emit_event(config, H2_H2LOADER_HOST_OPERATION_PRECHECK, rc);
-        return rc;
-    }
-    if (operation_cancelled(config)) {
-        rc = disconnect_after(config, H2_PAL_EXIT);
-        emit_event(
-            config, H2_H2LOADER_HOST_OPERATION_PRECHECK, rc);
-        return rc;
-    }
-    emit_event(config, H2_H2LOADER_HOST_OPERATION_STAGE, H2_PAL_OK);
-    rc = stage_with_recovery(config, &status);
-    if (rc != H2_PAL_OK) {
-        rc = disconnect_after(config, rc);
-        emit_event(config, H2_H2LOADER_HOST_OPERATION_STAGE, rc);
-        return rc;
-    }
-    if (operation_cancelled(config)) {
-        rc = disconnect_after(config, H2_PAL_EXIT);
-        emit_event(config, H2_H2LOADER_HOST_OPERATION_STAGE, rc);
-        return rc;
-    }
-    emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, H2_PAL_OK);
-    rc = config->transport.vtable->activate(
-        config->transport.user, config->asset);
-    /* Transport adapters normalize an already-vanished reboot peer to OK.
-       Any remaining disconnect error means local teardown did not complete,
-       so rediscovery must not start on top of a live or indeterminate link. */
-    h2_pal_result_t close_rc =
-        config->transport.vtable->disconnect(config->transport.user);
-    if (rc != H2_PAL_OK) {
-        emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, rc);
-        return rc;
-    }
-    if (close_rc != H2_PAL_OK) {
-        emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, close_rc);
-        return close_rc;
-    }
-
-    attempts = config->reconnect_attempts == 0u
-        ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_ATTEMPTS
-        : config->reconnect_attempts;
-    delay_ms = config->reconnect_delay_ms == 0u
-        ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_DELAY_MS
-        : config->reconnect_delay_ms;
-    rc = H2_PAL_ERR_TIMEOUT;
-    for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
-        if (operation_cancelled(config)) {
-            emit_event(
-                config,
-                H2_H2LOADER_HOST_OPERATION_REDISCOVER,
-                H2_PAL_EXIT);
-            return H2_PAL_EXIT;
-        }
-        h2_pal_result_t sleep_rc =
-            h2_pal_time_sleep_ms(config->time, delay_ms);
-        if (sleep_rc != H2_PAL_OK) {
-            emit_event(
-                config,
-                H2_H2LOADER_HOST_OPERATION_REDISCOVER,
-                sleep_rc);
-            return sleep_rc;
-        }
-        emit_event(
-            config, H2_H2LOADER_HOST_OPERATION_REDISCOVER, H2_PAL_OK);
-        rc = config->transport.vtable->rediscover(
-            config->transport.user);
-        if (rc != H2_PAL_OK) {
-            continue;
-        }
-        memset(&status, 0, sizeof(status));
-        rc = config->transport.vtable->connect(
-            config->transport.user, &status);
-        if (rc == H2_PAL_ERR_INVALID_STATE) {
-            emit_event(
-                config,
-                H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY,
-                rc);
-            return rc;
-        }
-        if (rc != H2_PAL_OK) {
-            continue;
-        }
-        rc = h2_h2loader_host_status_verify_asset(
-            &status, config->asset);
-        rc = disconnect_after(config, rc);
-        if (rc == H2_PAL_OK) {
-            *out_final_status = status;
-            emit_event(
-                config,
-                H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY,
-                H2_PAL_OK);
-            emit_event(
-                config,
-                H2_H2LOADER_HOST_OPERATION_COMPLETE,
-                H2_PAL_OK);
-            return H2_PAL_OK;
-        }
-    }
-    emit_event(
-        config, H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY, rc);
+  if (out_final_status != NULL) {
+    memset(out_final_status, 0, sizeof(*out_final_status));
+  }
+  if (config == NULL || out_final_status == NULL || config->time == NULL ||
+      !transport_valid(&config->transport) || config->asset == NULL ||
+      config->read_payload == NULL ||
+      config->asset->operation !=
+          H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (operation_cancelled(config)) {
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_CONNECT, H2_PAL_EXIT);
+    return H2_PAL_EXIT;
+  }
+  emit_event(config, H2_H2LOADER_HOST_OPERATION_CONNECT, H2_PAL_OK);
+  memset(&status, 0, sizeof(status));
+  rc = config->transport.vtable->connect(config->transport.user, &status);
+  if (rc != H2_PAL_OK) {
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_CONNECT, rc);
     return rc;
-}
+  }
+  emit_event(config, H2_H2LOADER_HOST_OPERATION_PRECHECK, H2_PAL_OK);
+  if (strcmp(status.board, config->asset->board) != 0 ||
+      strcmp(status.target, config->asset->target) != 0) {
+    rc = disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_PRECHECK, rc);
+    return rc;
+  }
+  if (operation_cancelled(config)) {
+    rc = disconnect_after(config, H2_PAL_EXIT);
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_PRECHECK, rc);
+    return rc;
+  }
+  emit_event(config, H2_H2LOADER_HOST_OPERATION_STAGE, H2_PAL_OK);
+  rc = stage_with_recovery(config, &status);
+  if (rc != H2_PAL_OK) {
+    rc = disconnect_after(config, rc);
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_STAGE, rc);
+    return rc;
+  }
+  if (operation_cancelled(config)) {
+    rc = disconnect_after(config, H2_PAL_EXIT);
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_STAGE, rc);
+    return rc;
+  }
+  emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, H2_PAL_OK);
+  rc =
+      config->transport.vtable->activate(config->transport.user, config->asset);
+  /* Transport adapters normalize an already-vanished reboot peer to OK.
+     Any remaining disconnect error means local teardown did not complete,
+     so rediscovery must not start on top of a live or indeterminate link. */
+  h2_pal_result_t close_rc =
+      config->transport.vtable->disconnect(config->transport.user);
+  if (rc != H2_PAL_OK) {
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, rc);
+    return rc;
+  }
+  if (close_rc != H2_PAL_OK) {
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, close_rc);
+    return close_rc;
+  }
 
-h2_pal_result_t h2_h2loader_host_stage_operation_run(
-    const h2_h2loader_host_managed_operation_config_t *config,
-    h2_h2loader_host_status_t *out_final_status) {
-    h2_h2loader_host_status_t status;
-    uint32_t attempts;
-    uint32_t delay_ms;
-    h2_pal_result_t rc;
-
-    if (out_final_status != NULL) {
-        memset(out_final_status, 0, sizeof(*out_final_status));
-    }
-    if (config == NULL || out_final_status == NULL || config->time == NULL ||
-        !stage_transport_valid(&config->transport) || config->asset == NULL ||
-        config->read_payload == NULL || config->asset->operation !=
-            H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
+  attempts = config->reconnect_attempts == 0u
+                 ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_ATTEMPTS
+                 : config->reconnect_attempts;
+  delay_ms = config->reconnect_delay_ms == 0u
+                 ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_DELAY_MS
+                 : config->reconnect_delay_ms;
+  rc = H2_PAL_ERR_TIMEOUT;
+  for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
     if (operation_cancelled(config)) {
-        return H2_PAL_EXIT;
+      emit_event(config, H2_H2LOADER_HOST_OPERATION_REDISCOVER, H2_PAL_EXIT);
+      return H2_PAL_EXIT;
+    }
+    h2_pal_result_t sleep_rc = h2_pal_time_sleep_ms(config->time, delay_ms);
+    if (sleep_rc != H2_PAL_OK) {
+      emit_event(config, H2_H2LOADER_HOST_OPERATION_REDISCOVER, sleep_rc);
+      return sleep_rc;
+    }
+    emit_event(config, H2_H2LOADER_HOST_OPERATION_REDISCOVER, H2_PAL_OK);
+    rc = config->transport.vtable->rediscover(config->transport.user);
+    if (rc != H2_PAL_OK) {
+      continue;
     }
     memset(&status, 0, sizeof(status));
     rc = config->transport.vtable->connect(config->transport.user, &status);
+    if (rc == H2_PAL_ERR_INVALID_STATE) {
+      emit_event(config, H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY, rc);
+      return rc;
+    }
     if (rc != H2_PAL_OK) {
-        return rc;
+      continue;
     }
-    h2_h2loader_host_active_role_t active_role =
-        h2_h2loader_host_status_active_role(&status);
-    if (strcmp(status.board, config->asset->board) != 0 ||
-        strcmp(status.target, config->asset->target) != 0 ||
-        (active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
-         active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_APP)) {
-        return disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
+    rc = h2_h2loader_host_status_verify_asset(&status, config->asset);
+    rc = disconnect_after(config, rc);
+    if (rc == H2_PAL_OK) {
+      *out_final_status = status;
+      emit_event(config, H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY, H2_PAL_OK);
+      emit_event(config, H2_H2LOADER_HOST_OPERATION_COMPLETE, H2_PAL_OK);
+      return H2_PAL_OK;
     }
-    rc = stage_with_recovery(config, &status);
-    if (rc == H2_PAL_OK &&
-        config->transport.vtable->read_status != NULL) {
-        memset(&status, 0, sizeof(status));
-        rc = config->transport.vtable->read_status(
-            config->transport.user, &status);
-        if (rc == H2_PAL_OK &&
-            (strcmp(status.board, config->asset->board) != 0 ||
-             strcmp(status.target, config->asset->target) != 0 ||
-             (h2_h2loader_host_status_active_role(&status) !=
-                  H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
-              h2_h2loader_host_status_active_role(&status) !=
-                  H2_H2LOADER_HOST_ACTIVE_ROLE_APP) ||
-             !status.stage.valid ||
-             status.stage.package_size != config->asset->bytes ||
-             strcmp(status.stage.package_checksum, config->asset->sha256) != 0)) {
-            rc = H2_PAL_ERR_INVALID_STATE;
-        }
-        if (rc == H2_PAL_OK) {
-            *out_final_status = status;
-            return disconnect_after(config, H2_PAL_OK);
-        }
-        /* A large package can be fully acknowledged before the device has
-           finished publishing and re-reading staged metadata. Treat a failed
-           same-session status read as a reconnect boundary and verify the
-           durable staged identity below instead of reporting a false send
-           failure after every byte was accepted. */
-        h2_pal_result_t close_rc =
-            config->transport.vtable->disconnect(config->transport.user);
-        if (close_rc != H2_PAL_OK) {
-            return close_rc;
-        }
-    } else {
-        rc = disconnect_after(config, rc);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-    }
+  }
+  emit_event(config, H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY, rc);
+  return rc;
+}
 
-    attempts = config->reconnect_attempts == 0u
-        ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_ATTEMPTS
-        : config->reconnect_attempts;
-    delay_ms = config->reconnect_delay_ms == 0u
-        ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_DELAY_MS
-        : config->reconnect_delay_ms;
-    rc = H2_PAL_ERR_TIMEOUT;
-    for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
-        if (operation_cancelled(config)) {
-            return H2_PAL_EXIT;
-        }
-        rc = h2_pal_time_sleep_ms(config->time, delay_ms);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-        rc = config->transport.vtable->rediscover(config->transport.user);
-        if (rc != H2_PAL_OK) {
-            continue;
-        }
-        memset(&status, 0, sizeof(status));
-        rc = config->transport.vtable->connect(config->transport.user, &status);
-        if (rc == H2_PAL_ERR_INVALID_STATE) {
-            return rc;
-        }
-        if (rc != H2_PAL_OK) {
-            continue;
-        }
-        if (strcmp(status.board, config->asset->board) == 0 &&
-            strcmp(status.target, config->asset->target) == 0 &&
-            (h2_h2loader_host_status_active_role(&status) ==
-                 H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-             h2_h2loader_host_status_active_role(&status) ==
-                 H2_H2LOADER_HOST_ACTIVE_ROLE_APP) &&
-            status.stage.valid &&
-            status.stage.package_size == config->asset->bytes &&
-            strcmp(status.stage.package_checksum, config->asset->sha256) == 0) {
-            *out_final_status = status;
-            return disconnect_after(config, H2_PAL_OK);
-        }
-        rc = disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
-    }
+h2_pal_result_t h2_h2loader_host_stage_operation_run(
+    const h2_h2loader_host_managed_operation_config_t* config,
+    h2_h2loader_host_status_t* out_final_status) {
+  h2_h2loader_host_status_t status;
+  uint32_t attempts;
+  uint32_t delay_ms;
+  h2_pal_result_t rc;
+
+  if (out_final_status != NULL) {
+    memset(out_final_status, 0, sizeof(*out_final_status));
+  }
+  if (config == NULL || out_final_status == NULL || config->time == NULL ||
+      !stage_transport_valid(&config->transport) || config->asset == NULL ||
+      config->read_payload == NULL ||
+      config->asset->operation !=
+          H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (operation_cancelled(config)) {
+    return H2_PAL_EXIT;
+  }
+  memset(&status, 0, sizeof(status));
+  rc = config->transport.vtable->connect(config->transport.user, &status);
+  if (rc != H2_PAL_OK) {
     return rc;
+  }
+  h2_h2loader_host_active_role_t active_role =
+      h2_h2loader_host_status_active_role(&status);
+  if (strcmp(status.board, config->asset->board) != 0 ||
+      strcmp(status.target, config->asset->target) != 0 ||
+      (active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+       active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_APP)) {
+    return disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
+  }
+  rc = stage_with_recovery(config, &status);
+  if (rc == H2_PAL_OK && config->transport.vtable->read_status != NULL) {
+    memset(&status, 0, sizeof(status));
+    rc = config->transport.vtable->read_status(config->transport.user, &status);
+    if (rc == H2_PAL_OK &&
+        (strcmp(status.board, config->asset->board) != 0 ||
+         strcmp(status.target, config->asset->target) != 0 ||
+         (h2_h2loader_host_status_active_role(&status) !=
+              H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+          h2_h2loader_host_status_active_role(&status) !=
+              H2_H2LOADER_HOST_ACTIVE_ROLE_APP) ||
+         !status.stage.valid ||
+         status.stage.package_size != config->asset->bytes ||
+         strcmp(status.stage.package_checksum, config->asset->sha256) != 0)) {
+      rc = H2_PAL_ERR_INVALID_STATE;
+    }
+    if (rc == H2_PAL_OK) {
+      *out_final_status = status;
+      return disconnect_after(config, H2_PAL_OK);
+    }
+    /* A large package can be fully acknowledged before the device has
+       finished publishing and re-reading staged metadata. Treat a failed
+       same-session status read as a reconnect boundary and verify the
+       durable staged identity below instead of reporting a false send
+       failure after every byte was accepted. */
+    h2_pal_result_t close_rc =
+        config->transport.vtable->disconnect(config->transport.user);
+    if (close_rc != H2_PAL_OK) {
+      return close_rc;
+    }
+  } else {
+    rc = disconnect_after(config, rc);
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+  }
+
+  attempts = config->reconnect_attempts == 0u
+                 ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_ATTEMPTS
+                 : config->reconnect_attempts;
+  delay_ms = config->reconnect_delay_ms == 0u
+                 ? H2_H2LOADER_HOST_DEFAULT_RECONNECT_DELAY_MS
+                 : config->reconnect_delay_ms;
+  rc = H2_PAL_ERR_TIMEOUT;
+  for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
+    if (operation_cancelled(config)) {
+      return H2_PAL_EXIT;
+    }
+    rc = h2_pal_time_sleep_ms(config->time, delay_ms);
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+    rc = config->transport.vtable->rediscover(config->transport.user);
+    if (rc != H2_PAL_OK) {
+      continue;
+    }
+    memset(&status, 0, sizeof(status));
+    rc = config->transport.vtable->connect(config->transport.user, &status);
+    if (rc == H2_PAL_ERR_INVALID_STATE) {
+      return rc;
+    }
+    if (rc != H2_PAL_OK) {
+      continue;
+    }
+    if (strcmp(status.board, config->asset->board) == 0 &&
+        strcmp(status.target, config->asset->target) == 0 &&
+        (h2_h2loader_host_status_active_role(&status) ==
+             H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+         h2_h2loader_host_status_active_role(&status) ==
+             H2_H2LOADER_HOST_ACTIVE_ROLE_APP) &&
+        status.stage.valid &&
+        status.stage.package_size == config->asset->bytes &&
+        strcmp(status.stage.package_checksum, config->asset->sha256) == 0) {
+      *out_final_status = status;
+      return disconnect_after(config, H2_PAL_OK);
+    }
+    rc = disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
+  }
+  return rc;
 }

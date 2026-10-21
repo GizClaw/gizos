@@ -21,7 +21,7 @@ typedef struct fake_audio {
   h2_pal_audio_track_t track;
 } fake_audio_t;
 
-static int get_info(void *user, h2_audio_info_t *info) {
+static int get_info(void* user, h2_audio_info_t* info) {
   (void)user;
   *info = (h2_audio_info_t){
       .available = 1,
@@ -34,29 +34,29 @@ static int get_info(void *user, h2_audio_info_t *info) {
       .max_tracks = 1u};
   return H2_AUDIO_OK;
 }
-static int mic_control(void *user) {
+static int mic_control(void* user) {
   (void)user;
   return H2_AUDIO_OK;
 }
-static int speaker_start(void *user) {
-  ((fake_audio_t *)user)->speaker_started = 1;
+static int speaker_start(void* user) {
+  ((fake_audio_t*)user)->speaker_started = 1;
   return H2_AUDIO_OK;
 }
-static int speaker_stop(void *user) {
-  fake_audio_t *fake = user;
+static int speaker_stop(void* user) {
+  fake_audio_t* fake = user;
   ++fake->speaker_stop_calls;
   assert(!fake->track_live);
   fake->speaker_started = 0;
   return H2_AUDIO_OK;
 }
-static int mic_read(void *user, h2_audio_frame_t *frame, uint32_t timeout_ms) {
+static int mic_read(void* user, h2_audio_frame_t* frame, uint32_t timeout_ms) {
   (void)user;
   (void)frame;
   (void)timeout_ms;
   return H2_AUDIO_ERR_INVALID_STATE;
 }
-static int track_write(h2_pal_audio_track_t *track,
-                       const h2_audio_frame_t *frame, uint32_t timeout_ms) {
+static int track_write(h2_pal_audio_track_t* track,
+                       const h2_audio_frame_t* frame, uint32_t timeout_ms) {
   (void)track;
   (void)timeout_ms;
   if (frame->sample_rate_hz != 16000u || frame->channels != 1u ||
@@ -65,8 +65,8 @@ static int track_write(h2_pal_audio_track_t *track,
   /* Fail a real case after creating a track, so terminal cleanup owns it. */
   return H2_AUDIO_ERR_IO;
 }
-static int track_close(h2_pal_audio_track_t *track) {
-  fake_audio_t *fake = track->user;
+static int track_close(h2_pal_audio_track_t* track) {
+  fake_audio_t* fake = track->user;
   assert(fake->track_live);
   ++fake->close_calls;
   if (fake->close_consumes_on_error) {
@@ -80,54 +80,56 @@ static int track_close(h2_pal_audio_track_t *track) {
   fake->track_live = 0;
   return H2_AUDIO_OK;
 }
-static int track_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
+static int track_drain(h2_pal_audio_track_t* track, uint32_t timeout_ms) {
   (void)track;
   (void)timeout_ms;
   return H2_AUDIO_OK;
 }
-static int track_get_volume(h2_pal_audio_track_t *track, uint32_t *out) {
-  *out = ((fake_audio_t *)track->user)->track_volume;
+static int track_get_volume(h2_pal_audio_track_t* track, uint32_t* out) {
+  *out = ((fake_audio_t*)track->user)->track_volume;
   return H2_AUDIO_OK;
 }
-static int track_set_volume(h2_pal_audio_track_t *track, uint32_t value) {
-  ((fake_audio_t *)track->user)->track_volume = value;
+static int track_set_volume(h2_pal_audio_track_t* track, uint32_t value) {
+  ((fake_audio_t*)track->user)->track_volume = value;
   return H2_AUDIO_OK;
 }
-static int create_track(void *user, const h2_audio_track_config_t *config,
-                        h2_pal_audio_track_t **out_track) {
-  fake_audio_t *fake = user;
+static int create_track(void* user, const h2_audio_track_config_t* config,
+                        h2_pal_audio_track_t** out_track) {
+  fake_audio_t* fake = user;
   *out_track = NULL;
   if (config->format.sample_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_AUDIO_ERR_INVALID_ARG;
   if (!fake->track_enabled) return H2_AUDIO_ERR_UNSUPPORTED;
   assert(!fake->track_live);
-  fake->track = (h2_pal_audio_track_t){
-      .user = fake, .audio = &fake->api, .write = track_write,
-      .close = track_close, .drain = track_drain,
-      .get_volume_factor = track_get_volume,
-      .set_volume_factor = track_set_volume};
+  fake->track = (h2_pal_audio_track_t){.user = fake,
+                                       .audio = &fake->api,
+                                       .write = track_write,
+                                       .close = track_close,
+                                       .drain = track_drain,
+                                       .get_volume_factor = track_get_volume,
+                                       .set_volume_factor = track_set_volume};
   fake->track_volume = config->volume_factor_milli;
   fake->track_live = 1;
   *out_track = &fake->track;
   return H2_AUDIO_OK;
 }
-static int get_speaker(void *user, uint32_t *out) {
-  *out = ((fake_audio_t *)user)->volume;
+static int get_speaker(void* user, uint32_t* out) {
+  *out = ((fake_audio_t*)user)->volume;
   return H2_AUDIO_OK;
 }
-static int set_speaker(void *user, uint32_t value) {
-  fake_audio_t *fake = user;
+static int set_speaker(void* user, uint32_t value) {
+  fake_audio_t* fake = user;
   if (value > 100u) return H2_AUDIO_ERR_INVALID_ARG;
   if (value == 100u) ++fake->volume_restores;
   fake->volume = value;
   return H2_AUDIO_OK;
 }
-static int get_gain(void *user, uint32_t *out) {
-  *out = ((fake_audio_t *)user)->gain;
+static int get_gain(void* user, uint32_t* out) {
+  *out = ((fake_audio_t*)user)->gain;
   return H2_AUDIO_OK;
 }
-static int set_gain(void *user, uint32_t value) {
-  fake_audio_t *fake = user;
+static int set_gain(void* user, uint32_t value) {
+  fake_audio_t* fake = user;
   if (value > 100u) return H2_AUDIO_ERR_INVALID_ARG;
   if (value == 50u) ++fake->gain_restores;
   fake->gain = value;
@@ -161,7 +163,9 @@ static void check_missing_track(void) {
 }
 
 static void check_close_failure(unsigned failures, int consumes_on_error) {
-  fake_audio_t fake = {.gain = 50u, .volume = 100u, .track_enabled = 1,
+  fake_audio_t fake = {.gain = 50u,
+                       .volume = 100u,
+                       .track_enabled = 1,
                        .close_failures = failures,
                        .close_consumes_on_error = consumes_on_error};
   fake.api = (h2_pal_audio_api_t){.user = &fake, .vtable = &vtable};

@@ -16,7 +16,7 @@ extern "C" {
  * @param runtime Borrowed initialized Runtime providing a usable Log service.
  * @return H2_PAL_OK on success, otherwise an argument or Log provider error.
  */
-int h2_log_example_run(h2_runtime_t *runtime);
+int h2_log_example_run(h2_runtime_t* runtime);
 
 #ifdef __cplusplus
 }

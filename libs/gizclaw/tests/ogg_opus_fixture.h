@@ -14,18 +14,17 @@ typedef struct fixture {
   size_t packet_len;
 } fixture_t;
 
-static void put32(uint8_t *p, uint32_t n) {
-  for (unsigned i = 0; i < 4; ++i)
-    p[i] = (uint8_t)(n >> (8 * i));
+static void put32(uint8_t* p, uint32_t n) {
+  for (unsigned i = 0; i < 4; ++i) p[i] = (uint8_t)(n >> (8 * i));
 }
 
-static void put64(uint8_t *p, uint64_t n) {
+static void put64(uint8_t* p, uint64_t n) {
   put32(p, (uint32_t)n);
   put32(p + 4, (uint32_t)(n >> 32));
 }
 
 /* Separate table-driven Ogg checksum oracle, not the decoder implementation. */
-static uint32_t checksum(const uint8_t *p, size_t len) {
+static uint32_t checksum(const uint8_t* p, size_t len) {
   uint32_t table[256];
   for (unsigned i = 0; i < 256; ++i) {
     uint32_t r = i << 24;
@@ -34,17 +33,16 @@ static uint32_t checksum(const uint8_t *p, size_t len) {
     table[i] = r;
   }
   uint32_t r = 0;
-  for (size_t i = 0; i < len; ++i)
-    r = (r << 8) ^ table[(r >> 24) ^ p[i]];
+  for (size_t i = 0; i < len; ++i) r = (r << 8) ^ table[(r >> 24) ^ p[i]];
   return r;
 }
 
-static size_t page(fixture_t *f, unsigned flags, uint64_t granule,
-                   uint32_t serial, uint32_t sequence, const uint8_t *laces,
-                   size_t count, const uint8_t *data, size_t len) {
+static size_t page(fixture_t* f, unsigned flags, uint64_t granule,
+                   uint32_t serial, uint32_t sequence, const uint8_t* laces,
+                   size_t count, const uint8_t* data, size_t len) {
   size_t start = f->len, size = 27 + count + len;
   assert(count <= 255 && size <= sizeof(f->bytes) - start);
-  uint8_t *p = f->bytes + start;
+  uint8_t* p = f->bytes + start;
   memset(p, 0, size);
   memcpy(p, "OggS", 4);
   p[5] = (uint8_t)flags;
@@ -52,18 +50,16 @@ static size_t page(fixture_t *f, unsigned flags, uint64_t granule,
   put32(p + 14, serial);
   put32(p + 18, sequence);
   p[26] = (uint8_t)count;
-  if (count)
-    memcpy(p + 27, laces, count);
-  if (len)
-    memcpy(p + 27 + count, data, len);
+  if (count) memcpy(p + 27, laces, count);
+  if (len) memcpy(p + 27 + count, data, len);
   put32(p + 22, checksum(p, size));
   f->len += size;
   return start;
 }
 
-static size_t packet_page(fixture_t *f, unsigned flags, uint64_t granule,
+static size_t packet_page(fixture_t* f, unsigned flags, uint64_t granule,
                           uint32_t serial, uint32_t sequence,
-                          const uint8_t *packet, size_t len) {
+                          const uint8_t* packet, size_t len) {
   uint8_t laces[255];
   size_t count = len / 255 + 1;
   assert(count <= sizeof(laces));
@@ -72,7 +68,7 @@ static size_t packet_page(fixture_t *f, unsigned flags, uint64_t granule,
   return page(f, flags, granule, serial, sequence, laces, count, packet, len);
 }
 
-static void headers(fixture_t *f, uint32_t serial, unsigned channels,
+static void headers(fixture_t* f, uint32_t serial, unsigned channels,
                     unsigned skip, int gain) {
   uint8_t head[19] = "OpusHead";
   head[8] = 1;
@@ -91,7 +87,7 @@ static void headers(fixture_t *f, uint32_t serial, unsigned channels,
  * sequence 2. One packet per page, or pages flushed once their body reaches
  * page_body bytes so packets straddle pages. The last page is EOS and trims
  * eos_trim samples. Returns the byte offset of the first audio page. */
-static size_t paginate(fixture_t *f, uint32_t serial, unsigned packets,
+static size_t paginate(fixture_t* f, uint32_t serial, unsigned packets,
                        size_t page_body, uint64_t eos_trim) {
   const size_t first = f->len;
   uint8_t laces[255], body[255 * 255];
@@ -102,7 +98,8 @@ static size_t paginate(fixture_t *f, uint32_t serial, unsigned packets,
   assert(f->packet_len % 255 != 0);
   for (unsigned index = 0; index < packets; ++index) {
     for (size_t offset = 0;;) {
-      size_t segment = f->packet_len - offset < 255 ? f->packet_len - offset : 255;
+      size_t segment =
+          f->packet_len - offset < 255 ? f->packet_len - offset : 255;
       laces[lace_count++] = (uint8_t)segment;
       memcpy(body + body_len, f->packet + offset, segment);
       body_len += segment;
@@ -112,24 +109,24 @@ static size_t paginate(fixture_t *f, uint32_t serial, unsigned packets,
         granule += 960;
         page_granule = granule;
       }
-      if (last || lace_count == 255 || (page_body ? body_len >= page_body : done)) {
+      if (last || lace_count == 255 ||
+          (page_body ? body_len >= page_body : done)) {
         page(f, (continued ? 1u : 0u) | (last ? 4u : 0u),
-             last ? granule - eos_trim : page_granule, serial, sequence++, laces,
-             lace_count, body, body_len);
+             last ? granule - eos_trim : page_granule, serial, sequence++,
+             laces, lace_count, body, body_len);
         continued = !done;
         lace_count = body_len = 0;
         page_granule = UINT64_MAX;
       }
-      if (done)
-        break;
+      if (done) break;
     }
   }
   return first;
 }
 
-static void make_packet(fixture_t *f, unsigned channels) {
+static void make_packet(fixture_t* f, unsigned channels) {
   int rc;
-  OpusEncoder *encoder =
+  OpusEncoder* encoder =
       opus_encoder_create(16000, (int)channels, OPUS_APPLICATION_AUDIO, &rc);
   assert(encoder && rc == OPUS_OK);
   assert(opus_encoder_ctl(encoder, OPUS_SET_BITRATE(128000)) == OPUS_OK);

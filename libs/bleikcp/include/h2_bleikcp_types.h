@@ -28,33 +28,33 @@ typedef struct h2_bleikcp h2_bleikcp_t;
 typedef struct h2_bleikcp_server h2_bleikcp_server_t;
 
 typedef enum h2_bleikcp_event {
-    H2_BLEIKCP_EVENT_CONNECTED = 0,
-    H2_BLEIKCP_EVENT_READY,
-    H2_BLEIKCP_EVENT_DISCONNECTED,
-    H2_BLEIKCP_EVENT_BACKPRESSURE,
-    H2_BLEIKCP_EVENT_PROTOCOL_ERROR,
-    H2_BLEIKCP_EVENT_FATAL_ERROR,
+  H2_BLEIKCP_EVENT_CONNECTED = 0,
+  H2_BLEIKCP_EVENT_READY,
+  H2_BLEIKCP_EVENT_DISCONNECTED,
+  H2_BLEIKCP_EVENT_BACKPRESSURE,
+  H2_BLEIKCP_EVENT_PROTOCOL_ERROR,
+  H2_BLEIKCP_EVENT_FATAL_ERROR,
 } h2_bleikcp_event_t;
 
 typedef struct h2_bleikcp_stats {
-    uint16_t att_mtu;
-    uint16_t kcp_mtu;
-    uint64_t tx_bytes;
-    uint64_t rx_bytes;
-    uint64_t tx_frames;
-    uint64_t rx_frames;
-    uint64_t input_errors;
-    /** Datagrams dropped because the input frame queue was full when they
-     * arrived. The stream stays open and the peer's KCP retransmits them. */
-    uint64_t dropped_input;
-    uint64_t output_blocked;
-    uint64_t output_retries;
-    uint64_t retransmits;
-    uint64_t disconnects;
-    uint32_t waitsnd;
-    size_t input_high_water;
-    size_t tx_high_water;
-    size_t rx_high_water;
+  uint16_t att_mtu;
+  uint16_t kcp_mtu;
+  uint64_t tx_bytes;
+  uint64_t rx_bytes;
+  uint64_t tx_frames;
+  uint64_t rx_frames;
+  uint64_t input_errors;
+  /** Datagrams dropped because the input frame queue was full when they
+   * arrived. The stream stays open and the peer's KCP retransmits them. */
+  uint64_t dropped_input;
+  uint64_t output_blocked;
+  uint64_t output_retries;
+  uint64_t retransmits;
+  uint64_t disconnects;
+  uint32_t waitsnd;
+  size_t input_high_water;
+  size_t tx_high_water;
+  size_t rx_high_water;
 } h2_bleikcp_stats_t;
 
 /*
@@ -62,53 +62,50 @@ typedef struct h2_bleikcp_stats {
  * PROTOCOL_ERROR notifications. Callbacks must return promptly and must not
  * close a non-NULL stream from its own worker task.
  */
-typedef void (*h2_bleikcp_event_fn)(
-    void *user,
-    h2_bleikcp_t *stream,
-    h2_bleikcp_event_t event,
-    uint16_t conn_handle,
-    int status);
+typedef void (*h2_bleikcp_event_fn)(void* user, h2_bleikcp_t* stream,
+                                    h2_bleikcp_event_t event,
+                                    uint16_t conn_handle, int status);
 
 typedef struct h2_bleikcp_api {
-    const h2_pal_ble_host_api_t *ble;
-    const h2_pal_task_api_t *task;
-    const h2_pal_time_api_t *time;
-    const h2_pal_sync_api_t *sync;
-    const h2_pal_system_event_api_t *system_event;
-    const h2_pal_mem_api_t *allocator;
+  const h2_pal_ble_host_api_t* ble;
+  const h2_pal_task_api_t* task;
+  const h2_pal_time_api_t* time;
+  const h2_pal_sync_api_t* sync;
+  const h2_pal_system_event_api_t* system_event;
+  const h2_pal_mem_api_t* allocator;
 } h2_bleikcp_api_t;
 
 typedef struct h2_bleikcp_config {
-    h2_pal_ble_uuid_t service_uuid;
-    h2_pal_ble_uuid_t tx_char_uuid;
-    h2_pal_ble_uuid_t rx_char_uuid;
-    uint32_t conv;
-    uint16_t max_datagram_len;
-    uint16_t send_window;
-    uint16_t recv_window;
-    uint16_t input_frame_capacity;
-    size_t tx_buffer_size;
-    size_t rx_buffer_size;
-    int nodelay;
-    int interval_ms;
-    int resend;
-    /** Zero enables the standard KCP congestion window; nonzero disables it. */
-    int no_congestion_control;
-    uint32_t setup_timeout_ms;
-    uint32_t output_retry_count;
-    uint32_t output_retry_delay_ms;
-    h2_pal_task_options_t worker_task_options;
-    h2_pal_task_options_t server_task_options;
-    h2_bleikcp_event_fn on_event;
-    void *user;
-    /**
-     * Server only: caller-owned characteristics registered in the same
-     * service after TX and RX, in order. The array, UUIDs, callbacks and
-     * handle storage stay borrowed until h2_bleikcp_server_close() returns.
-     * At most H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX; clients ignore it.
-     */
-    const h2_pal_ble_gatt_characteristic_t *extra_characteristics;
-    size_t extra_characteristic_count;
+  h2_pal_ble_uuid_t service_uuid;
+  h2_pal_ble_uuid_t tx_char_uuid;
+  h2_pal_ble_uuid_t rx_char_uuid;
+  uint32_t conv;
+  uint16_t max_datagram_len;
+  uint16_t send_window;
+  uint16_t recv_window;
+  uint16_t input_frame_capacity;
+  size_t tx_buffer_size;
+  size_t rx_buffer_size;
+  int nodelay;
+  int interval_ms;
+  int resend;
+  /** Zero enables the standard KCP congestion window; nonzero disables it. */
+  int no_congestion_control;
+  uint32_t setup_timeout_ms;
+  uint32_t output_retry_count;
+  uint32_t output_retry_delay_ms;
+  h2_pal_task_options_t worker_task_options;
+  h2_pal_task_options_t server_task_options;
+  h2_bleikcp_event_fn on_event;
+  void* user;
+  /**
+   * Server only: caller-owned characteristics registered in the same
+   * service after TX and RX, in order. The array, UUIDs, callbacks and
+   * handle storage stay borrowed until h2_bleikcp_server_close() returns.
+   * At most H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX; clients ignore it.
+   */
+  const h2_pal_ble_gatt_characteristic_t* extra_characteristics;
+  size_t extra_characteristic_count;
 } h2_bleikcp_config_t;
 
 #ifdef __cplusplus

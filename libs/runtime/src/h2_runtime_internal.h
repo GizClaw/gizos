@@ -13,7 +13,7 @@ extern "C" {
 
 #ifndef H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX
 #define H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX \
-    ((size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u)
+  ((size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u)
 #endif
 
 #define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 4u
@@ -28,86 +28,94 @@ extern "C" {
 #define H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS 1000u
 
 typedef enum h2_runtime_input_source_kind {
-    H2_RUNTIME_INPUT_SOURCE_NONE = 0,
-    H2_RUNTIME_INPUT_SOURCE_SINGLE_BUTTON,
-    H2_RUNTIME_INPUT_SOURCE_RADIO_BUTTON,
-    H2_RUNTIME_INPUT_SOURCE_NFC_READER,
-    H2_RUNTIME_INPUT_SOURCE_IMU,
-    H2_RUNTIME_INPUT_SOURCE_BATTERY,
-    H2_RUNTIME_INPUT_SOURCE_TEMPERATURE,
+  H2_RUNTIME_INPUT_SOURCE_NONE = 0,
+  H2_RUNTIME_INPUT_SOURCE_SINGLE_BUTTON,
+  H2_RUNTIME_INPUT_SOURCE_RADIO_BUTTON,
+  H2_RUNTIME_INPUT_SOURCE_NFC_READER,
+  H2_RUNTIME_INPUT_SOURCE_IMU,
+  H2_RUNTIME_INPUT_SOURCE_BATTERY,
+  H2_RUNTIME_INPUT_SOURCE_TEMPERATURE,
 } h2_runtime_input_source_kind_t;
 
-#define H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS \
-    h2_runtime_system_event_time_adjusted_t time_adjusted; \
-    h2_runtime_system_event_gpio_irq_t gpio_irq; \
-    h2_runtime_system_event_wifi_sta_t wifi_sta; \
-    h2_runtime_system_event_wifi_ap_t wifi_ap; \
-    h2_runtime_system_event_wifi_ap_client_t wifi_ap_client; \
-    h2_runtime_system_event_ble_connection_t ble_connection; \
-    h2_runtime_system_event_ble_advertising_set_t ble_advertising_set; \
-    h2_runtime_system_event_ble_connection_params_t ble_connection_params; \
-    h2_runtime_system_event_ble_disconnected_t ble_disconnected; \
-    h2_runtime_system_event_ble_mtu_t ble_mtu; \
-    h2_runtime_system_event_ble_subscription_t ble_subscription; \
-    h2_runtime_system_event_ble_gatt_client_value_t ble_gatt_client_value; \
-    h2_runtime_system_event_modem_error_t modem_error; \
-    h2_runtime_system_event_modem_sim_t modem_sim; \
-    h2_runtime_system_event_modem_registration_t modem_registration; \
-    h2_runtime_system_event_modem_packet_t modem_packet; \
-    h2_runtime_system_event_modem_signal_t modem_signal; \
-    h2_runtime_system_event_modem_data_t modem_data; \
-    h2_runtime_system_event_modem_call_t modem_call; \
-    h2_runtime_system_event_netif_default_changed_t netif_default_changed
+#define H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS                           \
+  h2_runtime_system_event_time_adjusted_t time_adjusted;                 \
+  h2_runtime_system_event_gpio_irq_t gpio_irq;                           \
+  h2_runtime_system_event_wifi_sta_t wifi_sta;                           \
+  h2_runtime_system_event_wifi_ap_t wifi_ap;                             \
+  h2_runtime_system_event_wifi_ap_client_t wifi_ap_client;               \
+  h2_runtime_system_event_ble_connection_t ble_connection;               \
+  h2_runtime_system_event_ble_advertising_set_t ble_advertising_set;     \
+  h2_runtime_system_event_ble_connection_params_t ble_connection_params; \
+  h2_runtime_system_event_ble_disconnected_t ble_disconnected;           \
+  h2_runtime_system_event_ble_mtu_t ble_mtu;                             \
+  h2_runtime_system_event_ble_subscription_t ble_subscription;           \
+  h2_runtime_system_event_ble_gatt_client_value_t ble_gatt_client_value; \
+  h2_runtime_system_event_modem_error_t modem_error;                     \
+  h2_runtime_system_event_modem_sim_t modem_sim;                         \
+  h2_runtime_system_event_modem_registration_t modem_registration;       \
+  h2_runtime_system_event_modem_packet_t modem_packet;                   \
+  h2_runtime_system_event_modem_signal_t modem_signal;                   \
+  h2_runtime_system_event_modem_data_t modem_data;                       \
+  h2_runtime_system_event_modem_call_t modem_call;                       \
+  h2_runtime_system_event_netif_default_changed_t netif_default_changed
 
 typedef union h2_runtime_queued_payload {
-    unsigned char bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    h2_runtime_custom_event_payload_t custom;
-    H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS;
+  unsigned char bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_custom_event_payload_t custom;
+  H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS;
 } h2_runtime_queued_payload_t;
 
 typedef union h2_runtime_system_event_schema {
-    H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS;
+  H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS;
 } h2_runtime_system_event_schema_t;
 
 #undef H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS
 
-#define H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(type) \
-    _Static_assert(sizeof(type) <= H2_RUNTIME_EVENT_PAYLOAD_MAX, \
-                   #type " exceeds H2_RUNTIME_EVENT_PAYLOAD_MAX")
+#define H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(type)            \
+  _Static_assert(sizeof(type) <= H2_RUNTIME_EVENT_PAYLOAD_MAX, \
+                 #type " exceeds H2_RUNTIME_EVENT_PAYLOAD_MAX")
 
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_gpio_irq_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_wifi_sta_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_wifi_ap_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_wifi_ap_client_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_ble_connection_t);
-H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_ble_advertising_set_t);
-H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_ble_connection_params_t);
-H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_ble_disconnected_t);
+H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(
+    h2_runtime_system_event_ble_advertising_set_t);
+H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(
+    h2_runtime_system_event_ble_connection_params_t);
+H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(
+    h2_runtime_system_event_ble_disconnected_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_ble_mtu_t);
-H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_ble_subscription_t);
-H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_ble_gatt_client_value_t);
+H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(
+    h2_runtime_system_event_ble_subscription_t);
+H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(
+    h2_runtime_system_event_ble_gatt_client_value_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_modem_error_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_modem_sim_t);
-H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_modem_registration_t);
+H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(
+    h2_runtime_system_event_modem_registration_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_modem_packet_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_modem_signal_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_modem_data_t);
 H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_modem_call_t);
-H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(h2_runtime_system_event_netif_default_changed_t);
+H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS(
+    h2_runtime_system_event_netif_default_changed_t);
 
 #undef H2_RUNTIME_ASSERT_QUEUED_PAYLOAD_FITS
 
-_Static_assert(sizeof(h2_runtime_queued_payload_t) == H2_RUNTIME_EVENT_PAYLOAD_MAX,
-               "queued payload union must match the Runtime payload upper bound");
+_Static_assert(
+    sizeof(h2_runtime_queued_payload_t) == H2_RUNTIME_EVENT_PAYLOAD_MAX,
+    "queued payload union must match the Runtime payload upper bound");
 
 typedef struct h2_runtime_queued_event {
-    h2_runtime_event_kind_t kind;
-    h2_runtime_component_t component;
-    h2_runtime_component_id_t component_id;
-    h2_runtime_sequence_t sequence;
-    h2_runtime_timestamp_ms_t timestamp_ms;
-    size_t payload_size;
-    h2_runtime_queued_payload_t payload;
+  h2_runtime_event_kind_t kind;
+  h2_runtime_component_t component;
+  h2_runtime_component_id_t component_id;
+  h2_runtime_sequence_t sequence;
+  h2_runtime_timestamp_ms_t timestamp_ms;
+  size_t payload_size;
+  h2_runtime_queued_payload_t payload;
 } h2_runtime_queued_event_t;
 
 _Static_assert(offsetof(h2_runtime_queued_event_t, payload) %
@@ -121,90 +129,89 @@ _Static_assert(offsetof(h2_runtime_queued_event_t, payload) %
  * The owed flags track which of those events still have to be delivered.
  */
 typedef struct h2_runtime_button_retained_edge {
-    h2_runtime_timestamp_ms_t pressed_at_ms;
-    h2_runtime_timestamp_ms_t released_at_ms;
-    uint8_t release;
-    uint8_t edge_owed;
-    uint8_t action_owed;
+  h2_runtime_timestamp_ms_t pressed_at_ms;
+  h2_runtime_timestamp_ms_t released_at_ms;
+  uint8_t release;
+  uint8_t edge_owed;
+  uint8_t action_owed;
 } h2_runtime_button_retained_edge_t;
 
 typedef struct h2_runtime_button_recognizer {
-    int initialized;
-    int is_pressed;
-    h2_runtime_timestamp_ms_t pressed_at_ms;
-    /*
-     * Oldest first. While non-empty, every new event of this source is routed
-     * here (edges) or dropped (held repeats) instead of entering the pending
-     * list, so a source never has pending and retained events at once.
-     */
-    size_t retained_count;
-    h2_runtime_button_retained_edge_t
-        retained[H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX];
+  int initialized;
+  int is_pressed;
+  h2_runtime_timestamp_ms_t pressed_at_ms;
+  /*
+   * Oldest first. While non-empty, every new event of this source is routed
+   * here (edges) or dropped (held repeats) instead of entering the pending
+   * list, so a source never has pending and retained events at once.
+   */
+  size_t retained_count;
+  h2_runtime_button_retained_edge_t
+      retained[H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX];
 } h2_runtime_button_recognizer_t;
 
 typedef struct h2_runtime_button_push_edge {
-    h2_pal_periph_id_t periph_id;
-    h2_runtime_button_edge_t edge;
-    h2_runtime_timestamp_ms_t timestamp_ms;
+  h2_pal_periph_id_t periph_id;
+  h2_runtime_button_edge_t edge;
+  h2_runtime_timestamp_ms_t timestamp_ms;
 } h2_runtime_button_push_edge_t;
 
 typedef struct h2_runtime_imu_recognizer {
-    int shaking;
-    int free_falling;
-    h2_runtime_timestamp_ms_t shake_started_ms;
-    h2_runtime_timestamp_ms_t free_fall_started_ms;
-    h2_runtime_timestamp_ms_t last_tilt_at_ms;
-    h2_runtime_timestamp_ms_t last_flip_at_ms;
+  int shaking;
+  int free_falling;
+  h2_runtime_timestamp_ms_t shake_started_ms;
+  h2_runtime_timestamp_ms_t free_fall_started_ms;
+  h2_runtime_timestamp_ms_t last_tilt_at_ms;
+  h2_runtime_timestamp_ms_t last_flip_at_ms;
 } h2_runtime_imu_recognizer_t;
 
 typedef struct h2_runtime_input_source {
-    h2_runtime_input_source_kind_t kind;
-    h2_runtime_component_t component;
-    h2_runtime_component_id_t component_id;
-    h2_pal_periph_id_t periph_id;
-    h2_pal_periph_id_t group_id;
-    h2_pal_button_delivery_t button_delivery;
-    int skip_poll_once;
-    uint32_t poll_interval_ms;
-    h2_runtime_timestamp_ms_t next_due_ms;
-    h2_runtime_sequence_t sequence;
-    h2_runtime_timestamp_ms_t timestamp_ms;
+  h2_runtime_input_source_kind_t kind;
+  h2_runtime_component_t component;
+  h2_runtime_component_id_t component_id;
+  h2_pal_periph_id_t periph_id;
+  h2_pal_periph_id_t group_id;
+  h2_pal_button_delivery_t button_delivery;
+  int skip_poll_once;
+  uint32_t poll_interval_ms;
+  h2_runtime_timestamp_ms_t next_due_ms;
+  h2_runtime_sequence_t sequence;
+  h2_runtime_timestamp_ms_t timestamp_ms;
 
-    h2_runtime_button_state_t button_state;
-    h2_runtime_nfc_state_t nfc_state;
-    h2_runtime_imu_state_t imu_state;
-    h2_runtime_battery_state_t battery_state;
-    h2_runtime_temperature_state_t temperature_state;
+  h2_runtime_button_state_t button_state;
+  h2_runtime_nfc_state_t nfc_state;
+  h2_runtime_imu_state_t imu_state;
+  h2_runtime_battery_state_t battery_state;
+  h2_runtime_temperature_state_t temperature_state;
 
-    h2_runtime_button_recognizer_t button;
-    h2_runtime_imu_recognizer_t imu;
+  h2_runtime_button_recognizer_t button;
+  h2_runtime_imu_recognizer_t imu;
 } h2_runtime_input_source_t;
 
-
 typedef union h2_runtime_input_event_payload {
-    h2_runtime_button_down_event_t button_down;
-    h2_runtime_button_up_event_t button_up;
-    h2_runtime_button_action_event_t button_action;
-    h2_runtime_nfc_state_t nfc_state;
-    h2_runtime_imu_gesture_event_t imu_gesture;
-    h2_pal_result_t error;
+  h2_runtime_button_down_event_t button_down;
+  h2_runtime_button_up_event_t button_up;
+  h2_runtime_button_action_event_t button_action;
+  h2_runtime_nfc_state_t nfc_state;
+  h2_runtime_imu_gesture_event_t imu_gesture;
+  h2_pal_result_t error;
 } h2_runtime_input_event_payload_t;
 
 typedef struct h2_runtime_input_pending_event {
-    h2_runtime_event_kind_t kind;
-    /* Button press edge, release edge or final action: kept when FULL. */
-    int retain;
-    h2_runtime_component_t component;
-    h2_runtime_component_id_t component_id;
-    h2_runtime_sequence_t sequence;
-    h2_runtime_timestamp_ms_t timestamp_ms;
-    size_t payload_size;
-    h2_runtime_input_event_payload_t payload;
+  h2_runtime_event_kind_t kind;
+  /* Button press edge, release edge or final action: kept when FULL. */
+  int retain;
+  h2_runtime_component_t component;
+  h2_runtime_component_id_t component_id;
+  h2_runtime_sequence_t sequence;
+  h2_runtime_timestamp_ms_t timestamp_ms;
+  size_t payload_size;
+  h2_runtime_input_event_payload_t payload;
 } h2_runtime_input_pending_event_t;
 
 typedef struct h2_runtime_input_nfc_result {
-    h2_pal_periph_id_t periph_id;
-    h2_pal_nfc_scan_t scan;
+  h2_pal_periph_id_t periph_id;
+  h2_pal_nfc_scan_t scan;
 } h2_runtime_input_nfc_result_t;
 
 /*
@@ -215,41 +222,41 @@ typedef struct h2_runtime_input_nfc_result {
  * The mechanism is owned by h2_runtime_state.c; input is its first producer.
  */
 typedef struct h2_runtime_state_entry {
-    h2_runtime_component_t component;
-    h2_runtime_component_id_t component_id;
-    union {
-        h2_runtime_button_state_t button;
-        h2_runtime_nfc_state_t nfc;
-        h2_runtime_imu_state_t imu;
-        h2_runtime_battery_state_t battery;
-        h2_runtime_temperature_state_t temperature;
-    } state;
+  h2_runtime_component_t component;
+  h2_runtime_component_id_t component_id;
+  union {
+    h2_runtime_button_state_t button;
+    h2_runtime_nfc_state_t nfc;
+    h2_runtime_imu_state_t imu;
+    h2_runtime_battery_state_t battery;
+    h2_runtime_temperature_state_t temperature;
+  } state;
 } h2_runtime_state_entry_t;
 
 typedef struct h2_runtime_state_bank {
-    h2_runtime_state_entry_t *entries;
-    size_t entry_capacity;
-    size_t entry_count;
-    uint64_t generation;
-    h2_runtime_sequence_t event_sequence_ceiling;
+  h2_runtime_state_entry_t* entries;
+  size_t entry_capacity;
+  size_t entry_count;
+  uint64_t generation;
+  h2_runtime_sequence_t event_sequence_ceiling;
 } h2_runtime_state_bank_t;
 
 #define H2_RUNTIME_STATE_SLOT_COUNT 3u
 
 typedef struct h2_runtime_state_publication {
-    h2_atomic_int_t ready;
-    h2_atomic_uint_t active_index;
-    /*
-     * Guards reader_count updates where atomic add is not lock-free (ARMv5):
-     * the counters then use load/store under this test-and-set lock, taken
-     * Unused where fetch_add is lock-free.
-     */
-    h2_atomic_flag_t reader_lock;
-    h2_atomic_uint_t reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
-    h2_runtime_state_bank_t banks[H2_RUNTIME_STATE_SLOT_COUNT];
-    uint64_t copy_count;
-    uint64_t switch_count;
-    uint64_t deferred_count;
+  h2_atomic_int_t ready;
+  h2_atomic_uint_t active_index;
+  /*
+   * Guards reader_count updates where atomic add is not lock-free (ARMv5):
+   * the counters then use load/store under this test-and-set lock, taken
+   * Unused where fetch_add is lock-free.
+   */
+  h2_atomic_flag_t reader_lock;
+  h2_atomic_uint_t reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
+  h2_runtime_state_bank_t banks[H2_RUNTIME_STATE_SLOT_COUNT];
+  uint64_t copy_count;
+  uint64_t switch_count;
+  uint64_t deferred_count;
 } h2_runtime_state_publication_t;
 
 /*
@@ -264,244 +271,242 @@ typedef struct h2_runtime_state_publication {
  * two events away, and station events arrive in bursts.
  */
 typedef struct h2_runtime_system_state_publication {
-    /*
-     * One short critical section per publication and per read. A snapshot is
-     * a plain struct, so a sequence counter alone would only detect a torn
-     * copy after racing on it; the copy itself would still be a data race.
-     * Both sides are bounded memcpys off any hot path: the writer runs on the
-     * system-event ingest, the reader polls.
-     */
-    h2_pal_mutex_t *mutex;
-    h2_runtime_system_wifi_sta_state_t wifi_sta;
-    h2_runtime_system_modem_state_t modem;
+  /*
+   * One short critical section per publication and per read. A snapshot is
+   * a plain struct, so a sequence counter alone would only detect a torn
+   * copy after racing on it; the copy itself would still be a data race.
+   * Both sides are bounded memcpys off any hot path: the writer runs on the
+   * system-event ingest, the reader polls.
+   */
+  h2_pal_mutex_t* mutex;
+  h2_runtime_system_wifi_sta_state_t wifi_sta;
+  h2_runtime_system_modem_state_t modem;
 } h2_runtime_system_state_publication_t;
 
 /* Creates and releases the system state lock; see h2_runtime_system_state.c. */
-h2_pal_result_t h2_runtime_system_state_init(h2_runtime_t *runtime);
-void h2_runtime_system_state_release(h2_runtime_t *runtime);
+h2_pal_result_t h2_runtime_system_state_init(h2_runtime_t* runtime);
+void h2_runtime_system_state_release(h2_runtime_t* runtime);
 
 /* Publishes one station snapshot; see h2_runtime_system_state.c. */
 void h2_runtime_system_state_publish_wifi_sta(
-    h2_runtime_t *runtime,
-    const h2_runtime_system_wifi_sta_state_t *state);
+    h2_runtime_t* runtime, const h2_runtime_system_wifi_sta_state_t* state);
 
 /* Merges one modem event into the modem snapshot; see
  * h2_runtime_system_state.c. `kind` selects the fields the event reports. */
 void h2_runtime_system_state_publish_modem(
-    h2_runtime_t *runtime,
-    h2_runtime_event_kind_t kind,
-    const h2_runtime_system_modem_state_t *reported);
+    h2_runtime_t* runtime, h2_runtime_event_kind_t kind,
+    const h2_runtime_system_modem_state_t* reported);
 
 /* Replaces the whole modem snapshot; for the test control. */
 void h2_runtime_system_state_replace_modem(
-    h2_runtime_t *runtime,
-    const h2_runtime_system_modem_state_t *state);
+    h2_runtime_t* runtime, const h2_runtime_system_modem_state_t* state);
 
 typedef struct h2_runtime_component_mapping {
-    h2_runtime_component_t component;
-    h2_runtime_component_id_t component_id;
-    h2_pal_periph_id_t periph_id;
+  h2_runtime_component_t component;
+  h2_runtime_component_id_t component_id;
+  h2_pal_periph_id_t periph_id;
 } h2_runtime_component_mapping_t;
 
-void h2_runtime_audio_bind(h2_runtime_t *runtime);
+void h2_runtime_audio_bind(h2_runtime_t* runtime);
 
 struct h2_runtime_private {
-    int initialized;
-    h2_runtime_system_state_publication_t system_state;
-    size_t allocation_size;
-    h2_pal_queue_t *event_queue;
-    /*
-     * One-slot wake token. Every producer gives it after a successful
-     * enqueue and h2_runtime_notify() gives it directly; a full slot means a
-     * wake is already pending, so any number of gives between two waits
-     * collapse into one h2_runtime_wait_notify() return.
-     */
-    h2_pal_queue_t *wake_queue;
-    struct h2_runtime_test_control *test_control;
+  int initialized;
+  h2_runtime_system_state_publication_t system_state;
+  size_t allocation_size;
+  h2_pal_queue_t* event_queue;
+  /*
+   * One-slot wake token. Every producer gives it after a successful
+   * enqueue and h2_runtime_notify() gives it directly; a full slot means a
+   * wake is already pending, so any number of gives between two waits
+   * collapse into one h2_runtime_wait_notify() return.
+   */
+  h2_pal_queue_t* wake_queue;
+  struct h2_runtime_test_control* test_control;
 
-    h2_pal_mem_api_t mem_proxy;
-    h2_pal_firmware_info_api_t firmware_info_proxy;
-    h2_pal_log_api_t log_proxy;
-    h2_pal_time_api_t time_proxy;
-    h2_pal_time_api_t time_provider;
-    h2_pal_timer_api_t timer_proxy;
-    h2_pal_task_api_t task_proxy;
-    h2_pal_queue_api_t queue_proxy;
-    h2_pal_sync_api_t sync_proxy;
-    h2_pal_fs_api_t fs_proxy;
-    h2_pal_disk_api_t disk_proxy;
-    h2_pal_pref_api_t pref_proxy;
-    h2_pal_crypto_api_t crypto_proxy;
-    h2_pal_http_api_t http_proxy;
-    h2_pal_net_api_t net_proxy;
-    h2_pal_netif_api_t netif_proxy;
-    h2_pal_mqtt_api_t mqtt_proxy;
-    h2_pal_webrtc_api_t webrtc_proxy;
-    h2_atomic_flag_t wifi_busy;
-    h2_atomic_uint_t wifi_saved_revision;
-    h2_pal_wifi_sta_api_t wifi_sta_proxy;
-    h2_pal_wifi_ap_api_t wifi_ap_proxy;
-    h2_pal_wifi_csi_api_t wifi_csi_proxy;
-    h2_pal_wifi_settings_api_t wifi_settings_proxy;
-    h2_pal_ble_host_api_t ble_host_proxy;
-    h2_pal_modem_api_t modem_proxy;
-    h2_pal_power_api_t power_proxy;
-    h2_pal_display_api_t display_proxy;
-    /* All Audio proxy volume operations share this Runtime-owned state. */
-    h2_pal_audio_api_t audio_backend;
-    h2_atomic_flag_t audio_state_busy;
-    bool audio_state_valid;
-    h2_runtime_system_audio_state_t audio_state;
-    /*
-     * Latest measured frame level per direction, published from the audio hot
-     * path by the mic_read and track write thunks.
-     *
-     * Two 32-bit atomics per direction rather than one 64-bit word packing
-     * level and timestamp: a 64-bit atomic lowers to a libatomic call on the
-     * ARMv5 target (bk3633), whose SDK does not provide one, while a 32-bit
-     * atomic load/store is a plain instruction everywhere the Runtime builds.
-     * Level and timestamp are therefore two independent stores, so a reader
-     * racing a frame can pair a new level with the previous frame's timestamp.
-     * The two frames are one frame period apart (10-20 ms), which no level
-     * meter can show, and no consumer may key a decision off the pairing.
-     *
-     * The timestamp holds the low 32 bits of the monotonic millisecond clock
-     * and is widened against the current clock on read; bit 8 of the level word
-     * marks that a frame has ever been measured, which keeps a genuine level of
-     * zero distinct from "no audio yet".
-     */
+  h2_pal_mem_api_t mem_proxy;
+  h2_pal_firmware_info_api_t firmware_info_proxy;
+  h2_pal_log_api_t log_proxy;
+  h2_pal_time_api_t time_proxy;
+  h2_pal_time_api_t time_provider;
+  h2_pal_timer_api_t timer_proxy;
+  h2_pal_task_api_t task_proxy;
+  h2_pal_queue_api_t queue_proxy;
+  h2_pal_sync_api_t sync_proxy;
+  h2_pal_fs_api_t fs_proxy;
+  h2_pal_disk_api_t disk_proxy;
+  h2_pal_pref_api_t pref_proxy;
+  h2_pal_crypto_api_t crypto_proxy;
+  h2_pal_http_api_t http_proxy;
+  h2_pal_net_api_t net_proxy;
+  h2_pal_netif_api_t netif_proxy;
+  h2_pal_mqtt_api_t mqtt_proxy;
+  h2_pal_webrtc_api_t webrtc_proxy;
+  h2_atomic_flag_t wifi_busy;
+  h2_atomic_uint_t wifi_saved_revision;
+  h2_pal_wifi_sta_api_t wifi_sta_proxy;
+  h2_pal_wifi_ap_api_t wifi_ap_proxy;
+  h2_pal_wifi_csi_api_t wifi_csi_proxy;
+  h2_pal_wifi_settings_api_t wifi_settings_proxy;
+  h2_pal_ble_host_api_t ble_host_proxy;
+  h2_pal_modem_api_t modem_proxy;
+  h2_pal_power_api_t power_proxy;
+  h2_pal_display_api_t display_proxy;
+  /* All Audio proxy volume operations share this Runtime-owned state. */
+  h2_pal_audio_api_t audio_backend;
+  h2_atomic_flag_t audio_state_busy;
+  bool audio_state_valid;
+  h2_runtime_system_audio_state_t audio_state;
+  /*
+   * Latest measured frame level per direction, published from the audio hot
+   * path by the mic_read and track write thunks.
+   *
+   * Two 32-bit atomics per direction rather than one 64-bit word packing
+   * level and timestamp: a 64-bit atomic lowers to a libatomic call on the
+   * ARMv5 target (bk3633), whose SDK does not provide one, while a 32-bit
+   * atomic load/store is a plain instruction everywhere the Runtime builds.
+   * Level and timestamp are therefore two independent stores, so a reader
+   * racing a frame can pair a new level with the previous frame's timestamp.
+   * The two frames are one frame period apart (10-20 ms), which no level
+   * meter can show, and no consumer may key a decision off the pairing.
+   *
+   * The timestamp holds the low 32 bits of the monotonic millisecond clock
+   * and is widened against the current clock on read; bit 8 of the level word
+   * marks that a frame has ever been measured, which keeps a genuine level of
+   * zero distinct from "no audio yet".
+   */
 #if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
-    h2_atomic_uint_t audio_capture_level;
-    h2_atomic_uint_t audio_capture_level_ms;
-    h2_atomic_uint_t audio_playback_level;
-    h2_atomic_uint_t audio_playback_level_ms;
+  h2_atomic_uint_t audio_capture_level;
+  h2_atomic_uint_t audio_capture_level_ms;
+  h2_atomic_uint_t audio_playback_level;
+  h2_atomic_uint_t audio_playback_level_ms;
 #endif
-    h2_pal_audio_api_t audio_proxy;
-    h2_pal_audio_decoder_api_t audio_decoder_proxy;
-    h2_pal_periph_api_t periph_proxy;
-    h2_pal_button_api_t button_proxy;
-    h2_pal_touch_api_t touch_proxy;
-    h2_pal_buzzer_api_t buzzer_proxy;
-    h2_pal_nfc_api_t nfc_proxy;
-    h2_pal_nfc_card_emulation_api_t nfc_card_emulation_proxy;
-    h2_pal_imu_api_t imu_proxy;
-    h2_pal_gpio_irq_api_t gpio_irq_proxy;
-    h2_pal_led_api_t led_proxy;
-    h2_pal_switch_api_t switch_proxy;
-    h2_pal_pwm_switch_api_t pwm_switch_proxy;
-    h2_pal_input_api_t input_proxy;
-    h2_pal_system_event_api_t system_event_proxy;
-    h2_pal_video_decoder_api_t video_decoder_proxy;
+  h2_pal_audio_api_t audio_proxy;
+  h2_pal_audio_decoder_api_t audio_decoder_proxy;
+  h2_pal_periph_api_t periph_proxy;
+  h2_pal_button_api_t button_proxy;
+  h2_pal_touch_api_t touch_proxy;
+  h2_pal_buzzer_api_t buzzer_proxy;
+  h2_pal_nfc_api_t nfc_proxy;
+  h2_pal_nfc_card_emulation_api_t nfc_card_emulation_proxy;
+  h2_pal_imu_api_t imu_proxy;
+  h2_pal_gpio_irq_api_t gpio_irq_proxy;
+  h2_pal_led_api_t led_proxy;
+  h2_pal_switch_api_t switch_proxy;
+  h2_pal_pwm_switch_api_t pwm_switch_proxy;
+  h2_pal_input_api_t input_proxy;
+  h2_pal_system_event_api_t system_event_proxy;
+  h2_pal_video_decoder_api_t video_decoder_proxy;
 
-    /*
-     * Custom event producer guard: h2_runtime_post_custom_event() may run on
-     * any task, so deinit closes the door and drains the in-flight posters
-     * before the event queue is destroyed. With lock-free atomic add the
-     * counter is a plain fetch_add; otherwise (ARMv5) updates run under
-     * custom_event_lock.
-     */
-    h2_atomic_flag_t custom_event_lock;
-    h2_atomic_uint_t custom_event_in_flight;
-    h2_atomic_int_t custom_event_closed;
+  /*
+   * Custom event producer guard: h2_runtime_post_custom_event() may run on
+   * any task, so deinit closes the door and drains the in-flight posters
+   * before the event queue is destroyed. With lock-free atomic add the
+   * counter is a plain fetch_add; otherwise (ARMv5) updates run under
+   * custom_event_lock.
+   */
+  h2_atomic_flag_t custom_event_lock;
+  h2_atomic_uint_t custom_event_in_flight;
+  h2_atomic_int_t custom_event_closed;
 
-    /*
-     * Same split: fetch_add where it is lock-free, sequence_lock where not.
-     */
-    h2_atomic_flag_t sequence_lock;
-    h2_atomic_uint_t next_sequence;
-    /*
-     * Events a full queue refused. Written by every producer task, read by
-     * h2_runtime_dropped_event_count(). The linked atomic provider supplies
-     * fetch_add. The last_dropped_* fields only feed
-     * the WARN line, so a reader pairing fields of two drops is harmless.
-     */
-    h2_atomic_uint_t dropped_event_count;
-    h2_atomic_int_t last_dropped_kind;
-    h2_atomic_int_t last_dropped_component;
-    h2_atomic_uint_t last_dropped_component_id;
-    /*
-     * Rate limit for the WARN line. drop_report_lock is only ever tried,
-     * never spun on: a producer that loses the race skips reporting and the
-     * winner (or the next input tick) reports the newer total.
-     */
-    h2_atomic_flag_t drop_report_lock;
-    int drop_reported_once;
-    uint32_t drop_reported_count;
-    h2_runtime_timestamp_ms_t drop_reported_at_ms;
+  /*
+   * Same split: fetch_add where it is lock-free, sequence_lock where not.
+   */
+  h2_atomic_flag_t sequence_lock;
+  h2_atomic_uint_t next_sequence;
+  /*
+   * Events a full queue refused. Written by every producer task, read by
+   * h2_runtime_dropped_event_count(). The linked atomic provider supplies
+   * fetch_add. The last_dropped_* fields only feed
+   * the WARN line, so a reader pairing fields of two drops is harmless.
+   */
+  h2_atomic_uint_t dropped_event_count;
+  h2_atomic_int_t last_dropped_kind;
+  h2_atomic_int_t last_dropped_component;
+  h2_atomic_uint_t last_dropped_component_id;
+  /*
+   * Rate limit for the WARN line. drop_report_lock is only ever tried,
+   * never spun on: a producer that loses the race skips reporting and the
+   * winner (or the next input tick) reports the newer total.
+   */
+  h2_atomic_flag_t drop_report_lock;
+  int drop_reported_once;
+  uint32_t drop_reported_count;
+  h2_runtime_timestamp_ms_t drop_reported_at_ms;
 
-    h2_atomic_int_t system_event_active;
-    h2_pal_system_event_subscription_t *
-        system_event_subscriptions[H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX];
-    size_t system_event_subscription_count;
+  h2_atomic_int_t system_event_active;
+  h2_pal_system_event_subscription_t*
+      system_event_subscriptions[H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX];
+  size_t system_event_subscription_count;
 
-    h2_atomic_int_t input_phase;
-    h2_atomic_int_t input_stop_requested;
-    h2_atomic_int_t input_worker_result;
-    uint32_t input_tick_ms;
-    uint32_t input_button_poll_interval_ms;
-    uint32_t input_nfc_poll_interval_ms;
-    uint32_t input_imu_poll_interval_ms;
-    uint32_t input_battery_poll_interval_ms;
-    uint32_t input_temperature_poll_interval_ms;
-    h2_pal_task_t *input_task;
-    h2_pal_task_t *input_nfc_task;
-    h2_pal_queue_t *input_push_edge_queue;
-    h2_pal_queue_t *input_nfc_result_queue;
-    h2_pal_mutex_t *input_writer_mutex;
-    int input_sources_ready;
-    h2_runtime_component_mapping_t *component_mappings;
-    size_t component_mapping_capacity;
-    size_t component_mapping_count;
-    h2_runtime_input_source_t *input_sources;
-    size_t input_source_capacity;
-    size_t input_source_count;
-    h2_runtime_input_pending_event_t *input_pending_events;
-    size_t input_pending_event_capacity;
-    size_t input_pending_event_count;
-    size_t event_payload_capacity;
-    h2_runtime_sequence_t input_event_sequence_ceiling;
-    /*
-     * The stage of the poll in progress that failed, and that poll's clock;
-     * both belong to the poll and live under the writer mutex.
-     */
-    h2_runtime_input_stage_t input_error_stage;
-    h2_runtime_timestamp_ms_t input_poll_now_ms;
-    /*
-     * Input worker health reported by h2_runtime_input_status(). Its own
-     * mutex guards it, so a worker that cannot take the writer mutex can
-     * still record that, and status never reads it unlocked.
-     */
-    h2_pal_mutex_t *input_health_mutex;
-    h2_pal_result_t input_last_error;
-    h2_runtime_input_stage_t input_last_error_stage;
-    h2_runtime_timestamp_ms_t input_last_error_at_ms;
-    uint32_t input_error_count;
-    uint32_t input_consecutive_error_count;
-    uint32_t input_poll_count;
-    h2_runtime_timestamp_ms_t input_last_poll_ok_at_ms;
-    uint32_t input_snapshot_deferred_count;
-    /* State publication (owned by h2_runtime_state.c). */
-    h2_runtime_state_publication_t state_publication;
-    int state_dirty;
-    uint64_t state_generation;
-    uint32_t state_publish_interval_ms;
-    h2_runtime_timestamp_ms_t state_next_publish_ms;
+  h2_atomic_int_t input_phase;
+  h2_atomic_int_t input_stop_requested;
+  h2_atomic_int_t input_worker_result;
+  uint32_t input_tick_ms;
+  uint32_t input_button_poll_interval_ms;
+  uint32_t input_nfc_poll_interval_ms;
+  uint32_t input_imu_poll_interval_ms;
+  uint32_t input_battery_poll_interval_ms;
+  uint32_t input_temperature_poll_interval_ms;
+  h2_pal_task_t* input_task;
+  h2_pal_task_t* input_nfc_task;
+  h2_pal_queue_t* input_push_edge_queue;
+  h2_pal_queue_t* input_nfc_result_queue;
+  h2_pal_mutex_t* input_writer_mutex;
+  int input_sources_ready;
+  h2_runtime_component_mapping_t* component_mappings;
+  size_t component_mapping_capacity;
+  size_t component_mapping_count;
+  h2_runtime_input_source_t* input_sources;
+  size_t input_source_capacity;
+  size_t input_source_count;
+  h2_runtime_input_pending_event_t* input_pending_events;
+  size_t input_pending_event_capacity;
+  size_t input_pending_event_count;
+  size_t event_payload_capacity;
+  h2_runtime_sequence_t input_event_sequence_ceiling;
+  /*
+   * The stage of the poll in progress that failed, and that poll's clock;
+   * both belong to the poll and live under the writer mutex.
+   */
+  h2_runtime_input_stage_t input_error_stage;
+  h2_runtime_timestamp_ms_t input_poll_now_ms;
+  /*
+   * Input worker health reported by h2_runtime_input_status(). Its own
+   * mutex guards it, so a worker that cannot take the writer mutex can
+   * still record that, and status never reads it unlocked.
+   */
+  h2_pal_mutex_t* input_health_mutex;
+  h2_pal_result_t input_last_error;
+  h2_runtime_input_stage_t input_last_error_stage;
+  h2_runtime_timestamp_ms_t input_last_error_at_ms;
+  uint32_t input_error_count;
+  uint32_t input_consecutive_error_count;
+  uint32_t input_poll_count;
+  h2_runtime_timestamp_ms_t input_last_poll_ok_at_ms;
+  uint32_t input_snapshot_deferred_count;
+  /* State publication (owned by h2_runtime_state.c). */
+  h2_runtime_state_publication_t state_publication;
+  int state_dirty;
+  uint64_t state_generation;
+  uint32_t state_publish_interval_ms;
+  h2_runtime_timestamp_ms_t state_next_publish_ms;
 };
 
-static inline int h2_runtime_ready(const h2_runtime_t *runtime) {
-    return runtime != NULL && runtime->private_state != NULL &&
-           runtime->private_state->initialized != 0;
+static inline int h2_runtime_ready(const h2_runtime_t* runtime) {
+  return runtime != NULL && runtime->private_state != NULL &&
+         runtime->private_state->initialized != 0;
 }
 
-static inline h2_runtime_timestamp_ms_t h2_runtime_now_ms(const h2_pal_time_api_t *time) {
-    uint64_t now = 0u;
-    if (h2_pal_time_get_monotonic_ms(time, &now) != H2_PAL_OK) {
-        return 0u;
-    }
-    return (h2_runtime_timestamp_ms_t)now;
+static inline h2_runtime_timestamp_ms_t h2_runtime_now_ms(
+    const h2_pal_time_api_t* time) {
+  uint64_t now = 0u;
+  if (h2_pal_time_get_monotonic_ms(time, &now) != H2_PAL_OK) {
+    return 0u;
+  }
+  return (h2_runtime_timestamp_ms_t)now;
 }
 
-h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime);
+h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t* runtime);
 
 /*
  * 1 when a 32-bit atomic add is a single lock-free instruction (Xtensa,
@@ -519,48 +524,54 @@ h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime);
 /* The linked platform implementation provides fetch_add semantics. */
 #define H2_RUNTIME_ATOMIC_FETCH_ADD 1
 
-static inline void h2_runtime_flag_lock(h2_atomic_flag_t *flag) {
-    while (h2_atomic_flag_test_and_set(flag, H2_ATOMIC_ACQUIRE)) {
-    }
+static inline void h2_runtime_flag_lock(h2_atomic_flag_t* flag) {
+  while (h2_atomic_flag_test_and_set(flag, H2_ATOMIC_ACQUIRE)) {
+  }
 }
 
-static inline void h2_runtime_flag_unlock(h2_atomic_flag_t *flag) {
-    h2_atomic_flag_clear(flag, H2_ATOMIC_RELEASE);
+static inline void h2_runtime_flag_unlock(h2_atomic_flag_t* flag) {
+  h2_atomic_flag_clear(flag, H2_ATOMIC_RELEASE);
 }
 
-h2_pal_result_t h2_runtime_emit_event(
-    h2_runtime_t *runtime,
-    h2_runtime_event_kind_t kind,
-    h2_runtime_component_t component,
-    h2_runtime_component_id_t component_id,
-    h2_runtime_sequence_t sequence,
-    h2_runtime_timestamp_ms_t timestamp_ms,
-    const void *payload,
-    size_t payload_size);
+h2_pal_result_t h2_runtime_emit_event(h2_runtime_t* runtime,
+                                      h2_runtime_event_kind_t kind,
+                                      h2_runtime_component_t component,
+                                      h2_runtime_component_id_t component_id,
+                                      h2_runtime_sequence_t sequence,
+                                      h2_runtime_timestamp_ms_t timestamp_ms,
+                                      const void* payload, size_t payload_size);
+
+/*
+ * Normal drop-on-full policy with immediate atomic accounting at the failed
+ * send. Clears *report_needed first; the caller must synchronously report after
+ * returning from any large payload frame when it is set. Other provider errors
+ * propagate unchanged, including WOULD_BLOCK.
+ */
+h2_pal_result_t h2_runtime_enqueue_event_deferred_report(
+    h2_runtime_t* runtime, const h2_runtime_queued_event_t* queued,
+    int* report_needed);
 
 h2_pal_result_t h2_runtime_enqueue_event(
-    h2_runtime_t *runtime,
-    const h2_runtime_queued_event_t *queued);
+    h2_runtime_t* runtime, const h2_runtime_queued_event_t* queued);
 
 /*
  * Counts one event a full queue refused and reports it through the rate
  * limited WARN below. Safe from any producer task.
  */
-void h2_runtime_record_dropped_event(
-    h2_runtime_t *runtime,
-    h2_runtime_event_kind_t kind,
-    h2_runtime_component_t component,
-    h2_runtime_component_id_t component_id);
+void h2_runtime_record_dropped_event(h2_runtime_t* runtime,
+                                     h2_runtime_event_kind_t kind,
+                                     h2_runtime_component_t component,
+                                     h2_runtime_component_id_t component_id);
 
 /*
  * Logs one WARN when the dropped total moved since the last report and at
  * least H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS passed (the first drop is
  * reported at once). Never blocks on another reporter.
  */
-void h2_runtime_report_dropped_events(h2_runtime_t *runtime);
+void h2_runtime_report_dropped_events(h2_runtime_t* runtime);
 
 /* Gives the coalescing wake token; never blocks, never fails. */
-void h2_runtime_notify_internal(h2_runtime_t *runtime);
+void h2_runtime_notify_internal(h2_runtime_t* runtime);
 
 /*
  * Enqueues without the drop-on-full policy the input and system event
@@ -568,89 +579,75 @@ void h2_runtime_notify_internal(h2_runtime_t *runtime);
  * counted as a dropped event.
  */
 h2_pal_result_t h2_runtime_enqueue_event_strict(
-    h2_runtime_t *runtime,
-    const h2_runtime_queued_event_t *queued,
+    h2_runtime_t* runtime, const h2_runtime_queued_event_t* queued,
     uint32_t timeout_ms);
 
 /* Custom events (h2_runtime_custom_event.c). */
 /* Refuses further posts and waits for in-flight posters to leave. */
-void h2_runtime_custom_event_close(h2_runtime_t *runtime);
+void h2_runtime_custom_event_close(h2_runtime_t* runtime);
 
-h2_runtime_input_source_t *h2_runtime_find_input_source(
-    h2_runtime_t *runtime,
-    h2_runtime_component_t component,
+h2_runtime_input_source_t* h2_runtime_find_input_source(
+    h2_runtime_t* runtime, h2_runtime_component_t component,
     h2_runtime_component_id_t component_id);
 
-const h2_runtime_input_source_t *h2_runtime_find_input_source_const(
-    const h2_runtime_t *runtime,
-    h2_runtime_component_t component,
+const h2_runtime_input_source_t* h2_runtime_find_input_source_const(
+    const h2_runtime_t* runtime, h2_runtime_component_t component,
     h2_runtime_component_id_t component_id);
 
 h2_runtime_component_t h2_runtime_component_from_periph_type(
     h2_pal_periph_type_t type);
 
 h2_pal_result_t h2_runtime_build_component_mappings(
-    h2_runtime_t *runtime,
-    const h2_runtime_component_mapper_t *mapper);
+    h2_runtime_t* runtime, const h2_runtime_component_mapper_t* mapper);
 
-const h2_runtime_component_mapping_t *h2_runtime_find_component_mapping_by_periph(
-    const h2_runtime_t *runtime,
-    h2_pal_periph_id_t periph_id);
+const h2_runtime_component_mapping_t*
+h2_runtime_find_component_mapping_by_periph(const h2_runtime_t* runtime,
+                                            h2_pal_periph_id_t periph_id);
 
 /* State publication (h2_runtime_state.c). */
-typedef void (*h2_runtime_state_fill_fn)(
-    h2_runtime_t *runtime,
-    h2_runtime_state_bank_t *bank);
-h2_pal_result_t h2_runtime_state_publication_init(h2_runtime_t *runtime);
-void h2_runtime_state_publication_deinit(h2_runtime_t *runtime);
-int h2_runtime_state_publication_ready(const h2_runtime_t *runtime);
-void h2_runtime_state_set_publish_interval(
-    h2_runtime_t *runtime,
-    uint32_t interval_ms);
-void h2_runtime_state_mark_dirty(h2_runtime_t *runtime);
+typedef void (*h2_runtime_state_fill_fn)(h2_runtime_t* runtime,
+                                         h2_runtime_state_bank_t* bank);
+h2_pal_result_t h2_runtime_state_publication_init(h2_runtime_t* runtime);
+void h2_runtime_state_publication_deinit(h2_runtime_t* runtime);
+int h2_runtime_state_publication_ready(const h2_runtime_t* runtime);
+void h2_runtime_state_set_publish_interval(h2_runtime_t* runtime,
+                                           uint32_t interval_ms);
+void h2_runtime_state_mark_dirty(h2_runtime_t* runtime);
 /*
  * Copies the current states into a retired slot and switches the active
  * index. `fill` populates the bank entries (NULL publishes an empty bank).
  * Returns H2_PAL_ERR_WOULD_BLOCK when readers pin every retired slot.
  */
 h2_pal_result_t h2_runtime_state_publish(
-    h2_runtime_t *runtime,
-    h2_runtime_state_fill_fn fill,
+    h2_runtime_t* runtime, h2_runtime_state_fill_fn fill,
     h2_runtime_sequence_t event_sequence_ceiling);
 /* Publishes a dirty bank once the publish interval elapsed (or on force). */
 h2_pal_result_t h2_runtime_state_publish_if_due(
-    h2_runtime_t *runtime,
-    h2_runtime_timestamp_ms_t now_ms,
-    int force,
+    h2_runtime_t* runtime, h2_runtime_timestamp_ms_t now_ms, int force,
     h2_runtime_state_fill_fn fill,
     h2_runtime_sequence_t event_sequence_ceiling);
 h2_pal_result_t h2_runtime_state_read_begin(
-    const h2_runtime_t *runtime,
-    const h2_runtime_state_bank_t **out_bank,
-    uint8_t *out_slot_index);
-h2_pal_result_t h2_runtime_state_read_end(
-    const h2_runtime_t *runtime,
-    uint8_t slot_index);
+    const h2_runtime_t* runtime, const h2_runtime_state_bank_t** out_bank,
+    uint8_t* out_slot_index);
+h2_pal_result_t h2_runtime_state_read_end(const h2_runtime_t* runtime,
+                                          uint8_t slot_index);
 /* h2_runtime_input_start() and h2_runtime_input_stop() are public API declared
  * in h2_runtime_input.h, which h2_runtime.h pulls in above. They only switch
  * the poller on and off; the writer mutex, the input source table and the
  * state publication are built once by h2_runtime_input_prepare() during init
  * and released by h2_runtime_input_release() during deinit. */
-h2_pal_result_t h2_runtime_input_prepare(h2_runtime_t *runtime);
-void h2_runtime_input_release(h2_runtime_t *runtime);
-h2_pal_result_t h2_runtime_input_poll_once(h2_runtime_t *runtime);
-h2_pal_result_t h2_runtime_input_poll_sensors_once(h2_runtime_t *runtime);
+h2_pal_result_t h2_runtime_input_prepare(h2_runtime_t* runtime);
+void h2_runtime_input_release(h2_runtime_t* runtime);
+h2_pal_result_t h2_runtime_input_poll_once(h2_runtime_t* runtime);
+h2_pal_result_t h2_runtime_input_poll_sensors_once(h2_runtime_t* runtime);
 h2_pal_result_t h2_runtime_input_test_session_open(
-    h2_runtime_t *runtime,
-    struct h2_runtime_test_control *control);
-h2_pal_result_t h2_runtime_input_test_writer_lock(h2_runtime_t *runtime);
-h2_pal_result_t h2_runtime_input_test_writer_unlock(h2_runtime_t *runtime);
-h2_pal_result_t h2_runtime_input_test_publish(
-    h2_runtime_t *runtime);
-h2_pal_result_t h2_runtime_input_test_session_close(
-    h2_runtime_t *runtime);
-h2_pal_result_t h2_runtime_start_system_events(h2_runtime_t *runtime);
-void h2_runtime_stop_system_events(h2_runtime_t *runtime);
+    h2_runtime_t* runtime, struct h2_runtime_test_control* control);
+h2_pal_result_t h2_runtime_input_test_writer_lock(h2_runtime_t* runtime);
+h2_pal_result_t h2_runtime_input_test_writer_unlock(h2_runtime_t* runtime);
+h2_pal_result_t h2_runtime_input_test_publish(h2_runtime_t* runtime);
+h2_pal_result_t h2_runtime_input_test_session_close(h2_runtime_t* runtime);
+h2_pal_result_t h2_runtime_start_system_events(h2_runtime_t* runtime);
+void h2_runtime_stop_system_events(h2_runtime_t* runtime);
 size_t h2_runtime_system_event_payload_capacity_min(void);
 
 #ifdef __cplusplus

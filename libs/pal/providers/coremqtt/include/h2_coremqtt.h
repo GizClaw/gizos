@@ -16,12 +16,12 @@ extern "C" {
 typedef struct h2_coremqtt h2_coremqtt_t;
 
 typedef struct h2_coremqtt_config {
-    const h2_pal_mem_api_t *allocator;
-    const h2_pal_net_api_t *net;
-    const h2_pal_time_api_t *time;
-    const h2_pal_log_api_t *log;
-    size_t outgoing_publish_records;
-    size_t incoming_publish_records;
+  const h2_pal_mem_api_t* allocator;
+  const h2_pal_net_api_t* net;
+  const h2_pal_time_api_t* time;
+  const h2_pal_log_api_t* log;
+  size_t outgoing_publish_records;
+  size_t incoming_publish_records;
 } h2_coremqtt_config_t;
 
 /*
@@ -35,12 +35,11 @@ typedef struct h2_coremqtt_config {
  * of the opened client. network_buffer is caller-owned and must remain valid
  * until close().
  */
-h2_pal_result_t h2_coremqtt_create(
-    const h2_coremqtt_config_t *config,
-    h2_coremqtt_t **out_mqtt,
-    h2_pal_mqtt_api_t *out_api);
+h2_pal_result_t h2_coremqtt_create(const h2_coremqtt_config_t* config,
+                                   h2_coremqtt_t** out_mqtt,
+                                   h2_pal_mqtt_api_t* out_api);
 
-void h2_coremqtt_destroy(h2_coremqtt_t *mqtt);
+void h2_coremqtt_destroy(h2_coremqtt_t* mqtt);
 
 #ifdef __cplusplus
 }

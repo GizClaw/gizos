@@ -10,19 +10,20 @@ extern "C" {
 #endif
 
 typedef struct h2_smoke_audio_system_config {
-    /** Optional music path; NULL uses the packaged smoke asset. */
-    const char *music_path;
-    /** Speaker volume in percent; zero preserves the historical 100% default. */
-    uint32_t speaker_volume_percent;
+  /** Optional music path; NULL uses the packaged smoke asset. */
+  const char* music_path;
+  /** Speaker volume in percent; zero preserves the historical 100% default. */
+  uint32_t speaker_volume_percent;
 } h2_smoke_audio_system_config_t;
 
 typedef struct h2_smoke_audio_system_stats {
-    uint32_t mic_frames;   /* Nonempty frames returned by mic_read since run(). */
-    uint32_t music_frames; /* Frames accepted by the music track since run(). */
+  uint32_t mic_frames;   /* Nonempty frames returned by mic_read since run(). */
+  uint32_t music_frames; /* Frames accepted by the music track since run(). */
 } h2_smoke_audio_system_stats_t;
 
-/** Nonblocking atomic snapshot, available from any task while active or inactive. */
-void h2_smoke_audio_system_get_stats(h2_smoke_audio_system_stats_t *out);
+/** Nonblocking atomic snapshot, available from any task while active or
+ * inactive. */
+void h2_smoke_audio_system_get_stats(h2_smoke_audio_system_stats_t* out);
 
 /**
  * @brief Start the audio scene and its worker tasks.
@@ -31,9 +32,8 @@ void h2_smoke_audio_system_get_stats(h2_smoke_audio_system_stats_t *out);
  * h2_smoke_audio_system_stop() before deinitializing Runtime. Startup failures
  * roll back all resources acquired by this call.
  */
-int h2_smoke_audio_system_run(
-    h2_runtime_t *runtime,
-    const h2_smoke_audio_system_config_t *config);
+int h2_smoke_audio_system_run(h2_runtime_t* runtime,
+                              const h2_smoke_audio_system_config_t* config);
 
 /**
  * @brief Stop the audio workers and release resources retained by the app.

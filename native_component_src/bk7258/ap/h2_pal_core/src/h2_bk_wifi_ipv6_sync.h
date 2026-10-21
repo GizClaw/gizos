@@ -6,9 +6,9 @@
  * ERR_BUF rejects a snapshot that cannot fit before changing addresses,
  * status, or the installed generation. Slot zero is reserved for link-local.
  */
-void h2_bk_wifi_ipv6_clear(struct netif *sta);
-err_t h2_bk_wifi_ipv6_install(struct netif *sta,
-                              const h2_bk_wifi_ipv6_snapshot_t *snapshot,
-                              h2_pal_wifi_sta_status_t *status,
-                              uint32_t *cp_generation);
+void h2_bk_wifi_ipv6_clear(struct netif* sta);
+err_t h2_bk_wifi_ipv6_install(struct netif* sta,
+                              const h2_bk_wifi_ipv6_snapshot_t* snapshot,
+                              h2_pal_wifi_sta_status_t* status,
+                              uint32_t* cp_generation);
 #endif

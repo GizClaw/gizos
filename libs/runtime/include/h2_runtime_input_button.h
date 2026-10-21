@@ -25,28 +25,28 @@ extern "C" {
 
 /** Button-down sample emitted on every due poll while pressed. */
 typedef struct h2_runtime_button_down_event {
-    /** Runtime monotonic timestamp when the pressed state was first observed. */
-    h2_runtime_timestamp_ms_t pressed_at_ms;
+  /** Runtime monotonic timestamp when the pressed state was first observed. */
+  h2_runtime_timestamp_ms_t pressed_at_ms;
 } h2_runtime_button_down_event_t;
 
 /** Immediate button-up edge payload. */
 typedef struct h2_runtime_button_up_event {
-    /** Runtime monotonic timestamp of the matching button-down edge. */
-    h2_runtime_timestamp_ms_t pressed_at_ms;
-    /** Runtime monotonic timestamp when the released state was first observed. */
-    h2_runtime_timestamp_ms_t released_at_ms;
+  /** Runtime monotonic timestamp of the matching button-down edge. */
+  h2_runtime_timestamp_ms_t pressed_at_ms;
+  /** Runtime monotonic timestamp when the released state was first observed. */
+  h2_runtime_timestamp_ms_t released_at_ms;
 } h2_runtime_button_up_event_t;
 
 /** Two-timestamp Button action emitted throughout one physical press. */
 typedef struct h2_runtime_button_action_event {
-    h2_runtime_timestamp_ms_t pressed_at_ms;
-    /** Zero while held; the release timestamp on the final action. */
-    h2_runtime_timestamp_ms_t released_at_ms;
+  h2_runtime_timestamp_ms_t pressed_at_ms;
+  /** Zero while held; the release timestamp on the final action. */
+  h2_runtime_timestamp_ms_t released_at_ms;
 } h2_runtime_button_action_event_t;
 
 static inline bool h2_runtime_button_action_is_released(
-    const h2_runtime_button_action_event_t *action) {
-    return action != NULL && action->released_at_ms != 0u;
+    const h2_runtime_button_action_event_t* action) {
+  return action != NULL && action->released_at_ms != 0u;
 }
 
 /**
@@ -55,16 +55,16 @@ static inline bool h2_runtime_button_action_is_released(
  * `pressed_at_ms` is the first observation timestamp for the current press.
  */
 typedef struct h2_runtime_button_state {
-    bool pressed;
-    h2_runtime_timestamp_ms_t pressed_at_ms;
-    h2_runtime_timestamp_ms_t updated_at_ms;
-    h2_pal_result_t result;
+  bool pressed;
+  h2_runtime_timestamp_ms_t pressed_at_ms;
+  h2_runtime_timestamp_ms_t updated_at_ms;
+  h2_pal_result_t result;
 } h2_runtime_button_state_t;
 
 /** One raw edge produced by a mapped PUSH_EDGE Button periph. */
 typedef enum h2_runtime_button_edge {
-    H2_RUNTIME_BUTTON_EDGE_DOWN = 1,
-    H2_RUNTIME_BUTTON_EDGE_UP,
+  H2_RUNTIME_BUTTON_EDGE_DOWN = 1,
+  H2_RUNTIME_BUTTON_EDGE_UP,
 } h2_runtime_button_edge_t;
 
 /**
@@ -77,10 +77,9 @@ typedef enum h2_runtime_button_edge {
  * Test Control. The adapter must call it from task/event-dispatch context, not
  * directly from an ISR, and must stop its producer before Runtime deinit.
  */
-h2_pal_result_t h2_runtime_button_push_edge(
-    h2_runtime_t *runtime,
-    h2_pal_periph_id_t periph_id,
-    h2_runtime_button_edge_t edge);
+h2_pal_result_t h2_runtime_button_push_edge(h2_runtime_t* runtime,
+                                            h2_pal_periph_id_t periph_id,
+                                            h2_runtime_button_edge_t edge);
 
 #ifdef __cplusplus
 }

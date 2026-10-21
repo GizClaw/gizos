@@ -12,8 +12,8 @@ extern "C" {
 
 /** Borrowed string pair, mapped directly to a Lua Host argument. */
 typedef struct h2_gizclaw_lua_app_param {
-  const char *name;
-  const char *value;
+  const char* name;
+  const char* value;
 } h2_gizclaw_lua_app_param_t;
 
 /** Borrowed only during prepare_lua_app_run. Copy the app snapshot and every
@@ -32,7 +32,7 @@ typedef struct h2_gizclaw_lua_app_run {
  * The completion user must outlive Service deinit. */
 typedef struct h2_gizclaw_lua_app_handoff {
   h2_gizclaw_rpc_response_complete_fn complete;
-  void *user;
+  void* user;
 } h2_gizclaw_lua_app_handoff_t;
 
 #ifdef __cplusplus

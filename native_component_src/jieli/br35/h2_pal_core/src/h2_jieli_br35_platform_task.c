@@ -11,24 +11,24 @@
 
 struct h2_pal_task {
   h2_pal_task_entry_t entry;
-  void *ctx;
+  void* ctx;
   char name[16];
   volatile uint32_t done;
-  const void *owner;
+  const void* owner;
 };
 
-static void task_trampoline(void *arg) {
-  h2_pal_task_t *task = (h2_pal_task_t *)arg;
+static void task_trampoline(void* arg) {
+  h2_pal_task_t* task = (h2_pal_task_t*)arg;
   task->entry(task->ctx);
   h2_jieli_atomic_store_u32(&task->done, 1u);
   /* The joining owner deletes the parked native task before freeing us. */
   h2_jieli_sdk_task_park();
 }
 
-static int task_start(void *user, const h2_pal_task_options_t *options,
-                      h2_pal_task_entry_t entry, void *ctx,
-                      h2_pal_task_t **out_task) {
-  h2_pal_task_t *task;
+static int task_start(void* user, const h2_pal_task_options_t* options,
+                      h2_pal_task_entry_t entry, void* ctx,
+                      h2_pal_task_t** out_task) {
+  h2_pal_task_t* task;
   size_t stack_bytes = H2_JIELI_BR35_TASK_DEFAULT_STACK_BYTES;
   static volatile uint32_t sequence;
   uint32_t id;
@@ -42,7 +42,7 @@ static int task_start(void *user, const h2_pal_task_options_t *options,
       stack_bytes = options->min_stack_size;
     }
   }
-  task = (h2_pal_task_t *)h2_jieli_sdk_malloc(sizeof(*task));
+  task = (h2_pal_task_t*)h2_jieli_sdk_malloc(sizeof(*task));
   if (task == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -63,17 +63,15 @@ static int task_start(void *user, const h2_pal_task_options_t *options,
   return H2_PAL_OK;
 }
 
-static int task_join(void *user, h2_pal_task_t *task) {
+static int task_join(void* user, h2_pal_task_t* task) {
   (void)user;
   if (task == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (task->owner != h2_jieli_sdk_task_current())
     return H2_PAL_ERR_INVALID_STATE;
-  while (!h2_jieli_atomic_load_u32(&task->done))
-    h2_jieli_sdk_sleep_ms(10u);
-  if (h2_jieli_sdk_task_delete(task->name) != 0)
-    return H2_PAL_ERR_BUSY;
+  while (!h2_jieli_atomic_load_u32(&task->done)) h2_jieli_sdk_sleep_ms(10u);
+  if (h2_jieli_sdk_task_delete(task->name) != 0) return H2_PAL_ERR_BUSY;
   h2_jieli_sdk_free(task);
   return H2_PAL_OK;
 }
@@ -88,6 +86,6 @@ static const h2_pal_task_api_t s_task_api = {
     .vtable = &s_task_vtable,
 };
 
-const h2_pal_task_api_t *h2_jieli_br35_platform_task_api(void) {
+const h2_pal_task_api_t* h2_jieli_br35_platform_task_api(void) {
   return &s_task_api;
 }

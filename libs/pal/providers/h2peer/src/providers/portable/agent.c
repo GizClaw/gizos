@@ -31,16 +31,15 @@ static void agent_write_u64(uint8_t out[8], uint64_t value) {
 }
 
 static int agent_now_ms(Agent* agent, uint64_t* now_ms) {
-  return h2_pal_time_get_monotonic_ms(agent->time, now_ms) == H2_PAL_OK
-             ? 0
-             : -1;
+  return h2_pal_time_get_monotonic_ms(agent->time, now_ms) == H2_PAL_OK ? 0
+                                                                        : -1;
 }
 
-static int agent_stun_msg_create(
-    Agent* agent, StunMessage* message, uint16_t type) {
+static int agent_stun_msg_create(Agent* agent, StunMessage* message,
+                                 uint16_t type) {
   uint8_t transaction_id[12];
-  if (h2_pal_crypto_random(
-          agent->crypto, transaction_id, sizeof(transaction_id)) != H2_PAL_OK) {
+  if (h2_pal_crypto_random(agent->crypto, transaction_id,
+                           sizeof(transaction_id)) != H2_PAL_OK) {
     return -1;
   }
   stun_msg_create(message, type);
@@ -73,7 +72,7 @@ int agent_create(Agent* agent) {
                         H2_PAL_NET_FAMILY_IPV4, 0u);
 #if CONFIG_IPV6
   int ipv6_result = udp_socket_open(&agent->udp_sockets[1], agent->net,
-                                   H2_PAL_NET_FAMILY_IPV6, 0u);
+                                    H2_PAL_NET_FAMILY_IPV6, 0u);
   if (ret < 0 && ipv6_result < 0) {
     return ret;
   }
@@ -107,8 +106,8 @@ void agent_destroy(Agent* agent) {
 #endif
 }
 
-static int agent_socket_recv(
-    Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf, int len) {
+static int agent_socket_recv(Agent* agent, h2_pal_net_addr_t* addr,
+                             uint8_t* buf, int len) {
   memset(buf, 0, (size_t)len);
   unsigned first = 0u;
 #if CONFIG_IPV6
@@ -122,20 +121,17 @@ static int agent_socket_recv(
 #endif
 #if CONFIG_IPV6
   unsigned other = first ^ 1u;
-  if (agent->udp_sockets[first].fd >= 0 &&
-      agent->udp_sockets[other].fd >= 0) {
+  if (agent->udp_sockets[first].fd >= 0 && agent->udp_sockets[other].fd >= 0) {
     /* Ready traffic never waits behind an empty other-family queue. */
-    int ret = udp_socket_recvfrom(&agent->udp_sockets[first], addr, buf, len, 0u);
-    if (ret != 0)
-      return ret;
+    int ret =
+        udp_socket_recvfrom(&agent->udp_sockets[first], addr, buf, len, 0u);
+    if (ret != 0) return ret;
     ret = udp_socket_recvfrom(&agent->udp_sockets[other], addr, buf, len, 0u);
-    if (ret != 0)
-      return ret;
+    if (ret != 0) return ret;
     /* With both queues empty, spend at most one receive budget. */
     ret = udp_socket_recvfrom(&agent->udp_sockets[first], addr, buf, len,
-                             AGENT_POLL_TIMEOUT);
-    if (ret != 0)
-      return ret;
+                              AGENT_POLL_TIMEOUT);
+    if (ret != 0) return ret;
     return udp_socket_recvfrom(&agent->udp_sockets[other], addr, buf, len, 0u);
   }
 #endif
@@ -145,9 +141,8 @@ static int agent_socket_recv(
   return 0;
 }
 
-static int agent_socket_recv_attempts(
-    Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf, int len,
-    int maxtimes) {
+static int agent_socket_recv_attempts(Agent* agent, h2_pal_net_addr_t* addr,
+                                      uint8_t* buf, int len, int maxtimes) {
   int ret = -1;
   int i = 0;
   for (i = 0; i < maxtimes; i++) {
@@ -158,9 +153,8 @@ static int agent_socket_recv_attempts(
   return ret;
 }
 
-static int agent_socket_send(
-    Agent* agent, const h2_pal_net_addr_t* addr,
-    const uint8_t* buf, int len) {
+static int agent_socket_send(Agent* agent, const h2_pal_net_addr_t* addr,
+                             const uint8_t* buf, int len) {
   switch (addr->family) {
     case H2_PAL_NET_FAMILY_IPV6:
       return udp_socket_sendto(&agent->udp_sockets[1], addr, buf, len);
@@ -181,15 +175,15 @@ static int agent_addr_equal(const h2_pal_net_addr_t* left,
   return memcmp(left->ip, right->ip, ip_len) == 0;
 }
 
-static int agent_turn_write_peer_address(
-    StunMessage* msg, const h2_pal_net_addr_t* peer_addr) {
+static int agent_turn_write_peer_address(StunMessage* msg,
+                                         const h2_pal_net_addr_t* peer_addr) {
   uint8_t value[20] = {0};
   uint8_t mask[16] = {0};
   if (stun_msg_get_xor_mask(msg, mask) != 0) {
     return -1;
   }
-  int value_len = stun_set_mapped_address(
-      value, sizeof(value), mask, peer_addr);
+  int value_len =
+      stun_set_mapped_address(value, sizeof(value), mask, peer_addr);
   if (value_len < 0) {
     return -1;
   }
@@ -247,8 +241,9 @@ static int agent_turn_request(Agent* agent, StunMessage* send_msg,
   return 0;
 }
 
-static int agent_turn_create_permission(
-    Agent* agent, const h2_pal_net_addr_t* peer_addr, int force_refresh) {
+static int agent_turn_create_permission(Agent* agent,
+                                        const h2_pal_net_addr_t* peer_addr,
+                                        int force_refresh) {
   if (!agent->turn_enabled) {
     return 0;
   }
@@ -257,11 +252,11 @@ static int agent_turn_create_permission(
   }
   StunMessage msg;
   memset(&msg, 0, sizeof(msg));
-  if (agent_stun_msg_create(
-          agent, &msg, STUN_METHOD_CREATE_PERMISSION) != 0 ||
+  if (agent_stun_msg_create(agent, &msg, STUN_METHOD_CREATE_PERMISSION) != 0 ||
       agent_turn_write_peer_address(&msg, peer_addr) != 0 ||
       agent_turn_write_auth(agent, &msg) != 0 ||
-      agent_turn_request(agent, &msg, STUN_METHOD_CREATE_PERMISSION, NULL) != 0) {
+      agent_turn_request(agent, &msg, STUN_METHOD_CREATE_PERMISSION, NULL) !=
+          0) {
     return -1;
   }
   agent->turn_peer_addr = *peer_addr;
@@ -289,12 +284,12 @@ static int agent_turn_maintain(Agent* agent) {
     memset(&response, 0, sizeof(response));
     if (agent_stun_msg_create(agent, &request, STUN_METHOD_REFRESH) != 0 ||
         agent_turn_write_auth(agent, &request) != 0 ||
-        agent_turn_request(agent, &request, STUN_METHOD_REFRESH,
-                           &response) != 0) {
+        agent_turn_request(agent, &request, STUN_METHOD_REFRESH, &response) !=
+            0) {
       return -1;
     }
-    h2_peer_turn_record_allocation(
-        &agent->turn_refresh, now_ms, response.lifetime);
+    h2_peer_turn_record_allocation(&agent->turn_refresh, now_ms,
+                                   response.lifetime);
   }
   if (agent->turn_permission_created &&
       h2_peer_turn_permission_due(&agent->turn_refresh, now_ms) &&
@@ -304,8 +299,8 @@ static int agent_turn_maintain(Agent* agent) {
   return 0;
 }
 
-static int agent_turn_send_data(
-    Agent* agent, const h2_pal_net_addr_t* peer_addr,
+static int agent_turn_send_data(Agent* agent,
+                                const h2_pal_net_addr_t* peer_addr,
                                 const uint8_t* buf, int len) {
   StunMessage msg;
   if (len < 0 || (size_t)len > sizeof(msg.data) ||
@@ -314,11 +309,10 @@ static int agent_turn_send_data(
     return -1;
   }
   memset(&msg, 0, sizeof(msg));
-  if (agent_stun_msg_create(
-          agent, &msg, STUN_CLASS_INDICATION | STUN_METHOD_SEND) != 0 ||
+  if (agent_stun_msg_create(agent, &msg,
+                            STUN_CLASS_INDICATION | STUN_METHOD_SEND) != 0 ||
       agent_turn_write_peer_address(&msg, peer_addr) != 0 ||
-      stun_msg_write_attr(&msg, STUN_ATTR_TYPE_DATA, (uint16_t)len,
-                          buf) != 0) {
+      stun_msg_write_attr(&msg, STUN_ATTR_TYPE_DATA, (uint16_t)len, buf) != 0) {
     return -1;
   }
   int sent = agent_socket_send(agent, &agent->turn_server_addr, msg.buf,
@@ -326,19 +320,16 @@ static int agent_turn_send_data(
   return sent < 0 ? sent : len;
 }
 
-static int agent_send_to_peer(
-    Agent* agent, const h2_pal_net_addr_t* peer_addr,
-    const uint8_t* buf, int len) {
+static int agent_send_to_peer(Agent* agent, const h2_pal_net_addr_t* peer_addr,
+                              const uint8_t* buf, int len) {
   if (agent->transport_pair == NULL || len < 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   if (agent->transport_pair->local->transport == ICE_TRANSPORT_TCP) {
-    return ice_transport_send_packet(
-        &agent->transport, buf, (size_t)len, 0u);
+    return ice_transport_send_packet(&agent->transport, buf, (size_t)len, 0u);
   }
-  return agent->turn_enabled
-             ? agent_turn_send_data(agent, peer_addr, buf, len)
-             : agent_socket_send(agent, peer_addr, buf, len);
+  return agent->turn_enabled ? agent_turn_send_data(agent, peer_addr, buf, len)
+                             : agent_socket_send(agent, peer_addr, buf, len);
 }
 
 static void agent_turn_deallocate(Agent* agent) {
@@ -350,8 +341,8 @@ static void agent_turn_deallocate(Agent* agent) {
   const uint8_t lifetime[4] = {0};
   memset(&msg, 0, sizeof(msg));
   if (agent_stun_msg_create(agent, &msg, STUN_METHOD_REFRESH) == 0 &&
-      stun_msg_write_attr(&msg, STUN_ATTR_TYPE_LIFETIME,
-                          sizeof(lifetime), lifetime) == 0 &&
+      stun_msg_write_attr(&msg, STUN_ATTR_TYPE_LIFETIME, sizeof(lifetime),
+                          lifetime) == 0 &&
       agent_turn_write_auth(agent, &msg) == 0) {
     (void)agent_turn_request(agent, &msg, STUN_METHOD_REFRESH, NULL);
   }
@@ -363,9 +354,10 @@ static int agent_create_host_addr(Agent* agent) {
   int i, j;
   const char* iface_prefx[] = {CONFIG_IFACE_PREFIX};
   IceCandidate* ice_candidate;
-  h2_pal_net_family_t addr_type[] = {H2_PAL_NET_FAMILY_IPV4,
+  h2_pal_net_family_t addr_type[] = {
+      H2_PAL_NET_FAMILY_IPV4,
 #if CONFIG_IPV6
-                                     H2_PAL_NET_FAMILY_IPV6,
+      H2_PAL_NET_FAMILY_IPV6,
 #endif
   };
 
@@ -381,7 +373,8 @@ static int agent_create_host_addr(Agent* agent) {
       }
       ice_candidate = agent->local_candidates + agent->local_candidates_count;
       // only copy port and family to addr of ice candidate
-      ice_candidate_create(ice_candidate, agent->local_candidates_count, ICE_CANDIDATE_TYPE_HOST,
+      ice_candidate_create(ice_candidate, agent->local_candidates_count,
+                           ICE_CANDIDATE_TYPE_HOST,
                            &agent->udp_sockets[i].bind_addr);
       // if resolve host addr, add to local candidate
       if (ports_get_host_addr(agent->net, &ice_candidate->addr,
@@ -390,7 +383,8 @@ static int agent_create_host_addr(Agent* agent) {
             ice_candidate->addr.scope_id != 0u) {
           continue;
         }
-        if (host_source_count < sizeof(host_sources) / sizeof(host_sources[0])) {
+        if (host_source_count <
+            sizeof(host_sources) / sizeof(host_sources[0])) {
           host_sources[host_source_count++] = ice_candidate->addr;
         }
         agent->local_candidates_count++;
@@ -411,8 +405,8 @@ static int agent_create_host_addr(Agent* agent) {
   return 0;
 }
 
-static int agent_create_stun_addr(
-    Agent* agent, const h2_pal_net_addr_t* serv_addr) {
+static int agent_create_stun_addr(Agent* agent,
+                                  const h2_pal_net_addr_t* serv_addr) {
   int ret = -1;
   h2_pal_net_addr_t bind_addr;
   StunMessage send_msg;
@@ -420,8 +414,8 @@ static int agent_create_stun_addr(
   memset(&send_msg, 0, sizeof(send_msg));
   memset(&recv_msg, 0, sizeof(recv_msg));
 
-  if (agent_stun_msg_create(
-          agent, &send_msg, STUN_CLASS_REQUEST | STUN_METHOD_BINDING) != 0) {
+  if (agent_stun_msg_create(agent, &send_msg,
+                            STUN_CLASS_REQUEST | STUN_METHOD_BINDING) != 0) {
     return -1;
   }
 
@@ -462,15 +456,18 @@ static int agent_create_stun_addr(
   if (agent->local_candidates_count >= AGENT_MAX_CANDIDATES) {
     return -1;
   }
-  IceCandidate* ice_candidate = agent->local_candidates + agent->local_candidates_count++;
-  ice_candidate_create(ice_candidate, agent->local_candidates_count, ICE_CANDIDATE_TYPE_SRFLX, &bind_addr);
+  IceCandidate* ice_candidate =
+      agent->local_candidates + agent->local_candidates_count++;
+  ice_candidate_create(ice_candidate, agent->local_candidates_count,
+                       ICE_CANDIDATE_TYPE_SRFLX, &bind_addr);
   ice_candidate->raddr = base_candidate->addr;
   return ret;
 }
 
-static int agent_create_turn_addr(
-    Agent* agent, const h2_pal_net_addr_t* serv_addr,
-    const char* username, const char* credential) {
+static int agent_create_turn_addr(Agent* agent,
+                                  const h2_pal_net_addr_t* serv_addr,
+                                  const char* username,
+                                  const char* credential) {
   int ret = -1;
   const uint8_t requested_transport[4] = {17u, 0u, 0u, 0u};
   h2_pal_net_addr_t turn_addr;
@@ -479,12 +476,11 @@ static int agent_create_turn_addr(
   memset(&recv_msg, 0, sizeof(recv_msg));
   memset(&send_msg, 0, sizeof(send_msg));
   if (agent_stun_msg_create(agent, &send_msg, STUN_METHOD_ALLOCATE) != 0 ||
-      stun_msg_write_attr(
-          &send_msg, STUN_ATTR_TYPE_REQUESTED_TRANSPORT,
-          sizeof(requested_transport), requested_transport) != 0 ||
-      stun_msg_write_attr(
-          &send_msg, STUN_ATTR_TYPE_USERNAME,
-          (uint16_t)strlen(username), username) != 0) {
+      stun_msg_write_attr(&send_msg, STUN_ATTR_TYPE_REQUESTED_TRANSPORT,
+                          sizeof(requested_transport),
+                          requested_transport) != 0 ||
+      stun_msg_write_attr(&send_msg, STUN_ATTR_TYPE_USERNAME,
+                          (uint16_t)strlen(username), username) != 0) {
     return -1;
   }
 
@@ -507,28 +503,29 @@ static int agent_create_turn_addr(
     return -1;
   }
 
-  if (recv_msg.stunclass == STUN_CLASS_ERROR && recv_msg.stunmethod == STUN_METHOD_ALLOCATE) {
+  if (recv_msg.stunclass == STUN_CLASS_ERROR &&
+      recv_msg.stunmethod == STUN_METHOD_ALLOCATE) {
     memset(&send_msg, 0, sizeof(send_msg));
     if (agent_stun_msg_create(agent, &send_msg, STUN_METHOD_ALLOCATE) != 0 ||
-        stun_msg_write_attr(
-            &send_msg, STUN_ATTR_TYPE_REQUESTED_TRANSPORT,
-            sizeof(requested_transport), requested_transport) != 0 ||
-        stun_msg_write_attr(
-            &send_msg, STUN_ATTR_TYPE_USERNAME,
-            (uint16_t)strlen(username), username) != 0 ||
-        stun_msg_write_attr(
-            &send_msg, STUN_ATTR_TYPE_NONCE,
-            (uint16_t)strlen(recv_msg.nonce), recv_msg.nonce) != 0 ||
-        stun_msg_write_attr(
-            &send_msg, STUN_ATTR_TYPE_REALM,
-            (uint16_t)strlen(recv_msg.realm), recv_msg.realm) != 0) {
+        stun_msg_write_attr(&send_msg, STUN_ATTR_TYPE_REQUESTED_TRANSPORT,
+                            sizeof(requested_transport),
+                            requested_transport) != 0 ||
+        stun_msg_write_attr(&send_msg, STUN_ATTR_TYPE_USERNAME,
+                            (uint16_t)strlen(username), username) != 0 ||
+        stun_msg_write_attr(&send_msg, STUN_ATTR_TYPE_NONCE,
+                            (uint16_t)strlen(recv_msg.nonce),
+                            recv_msg.nonce) != 0 ||
+        stun_msg_write_attr(&send_msg, STUN_ATTR_TYPE_REALM,
+                            (uint16_t)strlen(recv_msg.realm),
+                            recv_msg.realm) != 0) {
       return -1;
     }
-    snprintf(agent->turn_realm, sizeof(agent->turn_realm), "%s", recv_msg.realm);
-    snprintf(agent->turn_nonce, sizeof(agent->turn_nonce), "%s", recv_msg.nonce);
-    if (stun_msg_finish(
-            agent->crypto, &send_msg, STUN_CREDENTIAL_LONG_TERM,
-            credential, strlen(credential)) != 0) {
+    snprintf(agent->turn_realm, sizeof(agent->turn_realm), "%s",
+             recv_msg.realm);
+    snprintf(agent->turn_nonce, sizeof(agent->turn_nonce), "%s",
+             recv_msg.nonce);
+    if (stun_msg_finish(agent->crypto, &send_msg, STUN_CREDENTIAL_LONG_TERM,
+                        credential, strlen(credential)) != 0) {
       return -1;
     }
   } else {
@@ -563,7 +560,8 @@ static int agent_create_turn_addr(
   turn_addr = recv_msg.relayed_addr;
   agent->turn_server_addr = *serv_addr;
   snprintf(agent->turn_username, sizeof(agent->turn_username), "%s", username);
-  snprintf(agent->turn_credential, sizeof(agent->turn_credential), "%s", credential);
+  snprintf(agent->turn_credential, sizeof(agent->turn_credential), "%s",
+           credential);
   agent->turn_enabled = 1;
   agent->turn_permission_created = 0;
   uint64_t now_ms = 0u;
@@ -571,22 +569,21 @@ static int agent_create_turn_addr(
     agent->turn_enabled = 0;
     return -1;
   }
-  h2_peer_turn_record_allocation(
-      &agent->turn_refresh, now_ms, recv_msg.lifetime);
+  h2_peer_turn_record_allocation(&agent->turn_refresh, now_ms,
+                                 recv_msg.lifetime);
   if (agent->local_candidates_count >= AGENT_MAX_CANDIDATES) {
     agent_turn_deallocate(agent);
     return -1;
   }
-  IceCandidate* ice_candidate = agent->local_candidates + agent->local_candidates_count++;
-  ice_candidate_create(ice_candidate, agent->local_candidates_count, ICE_CANDIDATE_TYPE_RELAY, &turn_addr);
+  IceCandidate* ice_candidate =
+      agent->local_candidates + agent->local_candidates_count++;
+  ice_candidate_create(ice_candidate, agent->local_candidates_count,
+                       ICE_CANDIDATE_TYPE_RELAY, &turn_addr);
   return ret;
 }
 
-int agent_gather_candidate(
-    Agent* agent,
-    const char* urls,
-    const char* username,
-    const char* credential) {
+int agent_gather_candidate(Agent* agent, const char* urls, const char* username,
+                           const char* credential) {
   const char* pos;
   char hostname[64];
   char addr_string[H2_PEER_NET_ADDR_STRING_SIZE];
@@ -601,7 +598,7 @@ int agent_gather_candidate(
     H2_PEER_LOGE(agent->log, "Unsupported ICE server URL");
     return -1;
   }
-  const char *hostname_start = urls + 5;
+  const char* hostname_start = urls + 5;
   if (*hostname_start == '[') {
     ++hostname_start;
     pos = strchr(hostname_start, ']');
@@ -614,7 +611,7 @@ int agent_gather_candidate(
       return -1;
     }
   }
-  const char *port_start = *pos == ']' ? pos + 2 : pos + 1;
+  const char* port_start = *pos == ']' ? pos + 2 : pos + 1;
 
   size_t hostname_len = (size_t)(pos - hostname_start);
   if (hostname_len == 0u || hostname_len >= sizeof(hostname)) {
@@ -635,7 +632,8 @@ int agent_gather_candidate(
   hostname[hostname_len] = '\0';
 
   h2_pal_net_addr_list_t servers = {0};
-  int lookup = h2_pal_net_resolve_all(agent->net, hostname, H2_PAL_NET_FAMILY_ANY, &servers);
+  int lookup = h2_pal_net_resolve_all(agent->net, hostname,
+                                      H2_PAL_NET_FAMILY_ANY, &servers);
   if (lookup == H2_PAL_ERR_UNSUPPORTED) {
     lookup = ports_resolve_addr(agent->net, hostname, &servers.addrs[0]);
     servers.count = lookup == 0 ? 1u : 0u;
@@ -645,26 +643,28 @@ int agent_gather_candidate(
   }
   for (size_t i = 0u; i < servers.count; ++i) {
     resolved_addr = servers.addrs[i];
-    size_t socket_index = resolved_addr.family == H2_PAL_NET_FAMILY_IPV6 ? 1u : 0u;
+    size_t socket_index =
+        resolved_addr.family == H2_PAL_NET_FAMILY_IPV6 ? 1u : 0u;
     if (agent->udp_sockets[socket_index].fd < 0) {
       continue;
     }
-      resolved_addr.port = (uint16_t)port;
-      h2_peer_net_addr_format(&resolved_addr, addr_string, sizeof(addr_string));
-      H2_PEER_LOGI(agent->log, "Resolved stun/turn server %s:%d", addr_string,
-                   port);
+    resolved_addr.port = (uint16_t)port;
+    h2_peer_net_addr_format(&resolved_addr, addr_string, sizeof(addr_string));
+    H2_PEER_LOGI(agent->log, "Resolved stun/turn server %s:%d", addr_string,
+                 port);
 
-      if (strncmp(urls, "stun:", 5) == 0) {
-        H2_PEER_LOGD(agent->log, "Create stun addr");
-        if (agent_create_stun_addr(agent, &resolved_addr) >= 0) {
-          return 0;
-        }
-      } else if (strncmp(urls, "turn:", 5) == 0) {
-        H2_PEER_LOGD(agent->log, "Create turn addr");
-        if (agent_create_turn_addr(agent, &resolved_addr, username, credential) >= 0) {
-          return 0;
-        }
+    if (strncmp(urls, "stun:", 5) == 0) {
+      H2_PEER_LOGD(agent->log, "Create stun addr");
+      if (agent_create_stun_addr(agent, &resolved_addr) >= 0) {
+        return 0;
       }
+    } else if (strncmp(urls, "turn:", 5) == 0) {
+      H2_PEER_LOGD(agent->log, "Create turn addr");
+      if (agent_create_turn_addr(agent, &resolved_addr, username, credential) >=
+          0) {
+        return 0;
+      }
+    }
   }
   return -1;
 }
@@ -679,7 +679,9 @@ void agent_create_ice_credential(Agent* agent) {
 
 void agent_get_local_description(Agent* agent, char* description, int length) {
   for (int i = 0; i < agent->local_candidates_count; i++) {
-    ice_candidate_to_description(&agent->local_candidates[i], description + strlen(description), length - strlen(description));
+    ice_candidate_to_description(&agent->local_candidates[i],
+                                 description + strlen(description),
+                                 length - strlen(description));
   }
 
   // remove last \n
@@ -688,15 +690,15 @@ void agent_get_local_description(Agent* agent, char* description, int length) {
                agent->local_candidates_count);
 }
 
-int agent_send(Agent *agent, const uint8_t *buf, int len) {
+int agent_send(Agent* agent, const uint8_t* buf, int len) {
   if (agent == NULL || agent->nominated_pair == NULL || len < 0 ||
       agent->transport_pair != agent->nominated_pair) {
-    H2_PEER_LOGE(agent == NULL ? NULL : agent->log,
-                 "agent send invalid state len %d nominated %d "
-                 "transport_match %d",
-                 len, agent != NULL && agent->nominated_pair != NULL,
-                 agent != NULL &&
-                     agent->transport_pair == agent->nominated_pair);
+    H2_PEER_LOGE(
+        agent == NULL ? NULL : agent->log,
+        "agent send invalid state len %d nominated %d "
+        "transport_match %d",
+        len, agent != NULL && agent->nominated_pair != NULL,
+        agent != NULL && agent->transport_pair == agent->nominated_pair);
     return -1;
   }
   /* TURN/UDP is an existing transport policy: once configured, all UDP peer
@@ -713,32 +715,32 @@ int agent_send(Agent *agent, const uint8_t *buf, int len) {
   return result;
 }
 
-static int agent_create_binding_response(
-    Agent* agent, StunMessage* msg, const h2_pal_net_addr_t* addr) {
+static int agent_create_binding_response(Agent* agent, StunMessage* msg,
+                                         const h2_pal_net_addr_t* addr) {
   int size = 0;
   char username[584];
   uint8_t mapped_address[20];
   uint8_t mask[16] = {0};
   stun_msg_create(msg, STUN_CLASS_RESPONSE | STUN_METHOD_BINDING);
   stun_msg_set_transaction_id(msg, agent->transaction_id);
-  snprintf(username, sizeof(username), "%s:%s", agent->local_ufrag, agent->remote_ufrag);
+  snprintf(username, sizeof(username), "%s:%s", agent->local_ufrag,
+           agent->remote_ufrag);
   if (stun_msg_get_xor_mask(msg, mask) != 0) {
     return -1;
   }
-  size = stun_set_mapped_address(
-      mapped_address, sizeof(mapped_address), mask, addr);
+  size = stun_set_mapped_address(mapped_address, sizeof(mapped_address), mask,
+                                 addr);
   if (size < 0) {
     return -1;
   }
-  return stun_msg_write_attr(
-             msg, STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS,
-             (uint16_t)size, mapped_address) == 0 &&
-                 stun_msg_write_attr(
-                     msg, STUN_ATTR_TYPE_USERNAME,
-                     (uint16_t)strlen(username), username) == 0 &&
-                 stun_msg_finish(
-                     agent->crypto, msg, STUN_CREDENTIAL_SHORT_TERM,
-                     agent->local_upwd, strlen(agent->local_upwd)) == 0
+  return stun_msg_write_attr(msg, STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS,
+                             (uint16_t)size, mapped_address) == 0 &&
+                 stun_msg_write_attr(msg, STUN_ATTR_TYPE_USERNAME,
+                                     (uint16_t)strlen(username),
+                                     username) == 0 &&
+                 stun_msg_finish(agent->crypto, msg, STUN_CREDENTIAL_SHORT_TERM,
+                                 agent->local_upwd,
+                                 strlen(agent->local_upwd)) == 0
              ? 0
              : -1;
 }
@@ -746,54 +748,50 @@ static int agent_create_binding_response(
 static int agent_create_binding_request(Agent* agent, StunMessage* msg) {
   uint64_t tie_breaker = 0;  // always be controlled
   // send binding request
-  if (agent_stun_msg_create(
-          agent, msg, STUN_CLASS_REQUEST | STUN_METHOD_BINDING) != 0) {
+  if (agent_stun_msg_create(agent, msg,
+                            STUN_CLASS_REQUEST | STUN_METHOD_BINDING) != 0) {
     return -1;
   }
   char username[584];
   memset(username, 0, sizeof(username));
-  snprintf(username, sizeof(username), "%s:%s", agent->remote_ufrag, agent->local_ufrag);
+  snprintf(username, sizeof(username), "%s:%s", agent->remote_ufrag,
+           agent->local_ufrag);
   uint8_t priority[4];
   uint8_t encoded_tie_breaker[8];
   agent_write_u32(priority, (uint32_t)agent->nominated_pair->priority);
   agent_write_u64(encoded_tie_breaker, tie_breaker);
-  if (stun_msg_write_attr(
-          msg, STUN_ATTR_TYPE_USERNAME,
-          (uint16_t)strlen(username), username) != 0 ||
-      stun_msg_write_attr(
-          msg, STUN_ATTR_TYPE_PRIORITY, sizeof(priority), priority) != 0) {
+  if (stun_msg_write_attr(msg, STUN_ATTR_TYPE_USERNAME,
+                          (uint16_t)strlen(username), username) != 0 ||
+      stun_msg_write_attr(msg, STUN_ATTR_TYPE_PRIORITY, sizeof(priority),
+                          priority) != 0) {
     return -1;
   }
   if (agent->mode == AGENT_MODE_CONTROLLING) {
-    if (stun_msg_write_attr(
-            msg, STUN_ATTR_TYPE_USE_CANDIDATE, 0, NULL) != 0 ||
-        stun_msg_write_attr(
-            msg, STUN_ATTR_TYPE_ICE_CONTROLLING,
-            sizeof(encoded_tie_breaker), encoded_tie_breaker) != 0) {
+    if (stun_msg_write_attr(msg, STUN_ATTR_TYPE_USE_CANDIDATE, 0, NULL) != 0 ||
+        stun_msg_write_attr(msg, STUN_ATTR_TYPE_ICE_CONTROLLING,
+                            sizeof(encoded_tie_breaker),
+                            encoded_tie_breaker) != 0) {
       return -1;
     }
   } else {
-    if (stun_msg_write_attr(
-            msg, STUN_ATTR_TYPE_ICE_CONTROLLED,
-            sizeof(encoded_tie_breaker), encoded_tie_breaker) != 0) {
+    if (stun_msg_write_attr(msg, STUN_ATTR_TYPE_ICE_CONTROLLED,
+                            sizeof(encoded_tie_breaker),
+                            encoded_tie_breaker) != 0) {
       return -1;
     }
   }
-  return stun_msg_finish(
-      agent->crypto, msg, STUN_CREDENTIAL_SHORT_TERM,
-      agent->remote_upwd, strlen(agent->remote_upwd));
+  return stun_msg_finish(agent->crypto, msg, STUN_CREDENTIAL_SHORT_TERM,
+                         agent->remote_upwd, strlen(agent->remote_upwd));
 }
 
-void agent_process_stun_request(
-    Agent* agent, StunMessage* stun_msg, const h2_pal_net_addr_t* addr) {
+void agent_process_stun_request(Agent* agent, StunMessage* stun_msg,
+                                const h2_pal_net_addr_t* addr) {
   StunMessage msg;
   switch (stun_msg->stunmethod) {
     case STUN_METHOD_BINDING:
-      if (stun_msg_is_valid(
-              agent->crypto, stun_msg->buf, stun_msg->size,
-              agent->local_upwd) == 0) {
-        if (stun_msg_get_transaction_id(
-                stun_msg, agent->transaction_id) != 0) {
+      if (stun_msg_is_valid(agent->crypto, stun_msg->buf, stun_msg->size,
+                            agent->local_upwd) == 0) {
+        if (stun_msg_get_transaction_id(stun_msg, agent->transaction_id) != 0) {
           return;
         }
         if (agent_create_binding_response(agent, &msg, addr) != 0 ||
@@ -814,9 +812,8 @@ void agent_process_stun_request(
 void agent_process_stun_response(Agent* agent, StunMessage* stun_msg) {
   switch (stun_msg->stunmethod) {
     case STUN_METHOD_BINDING:
-      if (stun_msg_is_valid(
-              agent->crypto, stun_msg->buf, stun_msg->size,
-              agent->remote_upwd) == 0) {
+      if (stun_msg_is_valid(agent->crypto, stun_msg->buf, stun_msg->size,
+                            agent->remote_upwd) == 0) {
         agent->nominated_pair->state = ICE_CANDIDATE_STATE_SUCCEEDED;
         (void)agent_now_ms(agent, &agent->ice_activity_time_ms);
       }
@@ -828,18 +825,17 @@ void agent_process_stun_response(Agent* agent, StunMessage* stun_msg) {
 
 int agent_async_receive_supported(const Agent* agent) {
   return agent != NULL && agent->transport_pair != NULL &&
-         agent->transport.protocol == ICE_TRANSPORT_UDP &&
-         !agent->turn_enabled;
+         agent->transport.protocol == ICE_TRANSPORT_UDP && !agent->turn_enabled;
 }
 
-int agent_recv_raw(Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf,
-                   int len, uint32_t timeout_ms) {
+int agent_recv_raw(Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf, int len,
+                   uint32_t timeout_ms) {
   if (!agent_async_receive_supported(agent) || addr == NULL || buf == NULL ||
       len <= 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  return ice_transport_receive_packet(
-      &agent->transport, addr, buf, (size_t)len, timeout_ms);
+  return ice_transport_receive_packet(&agent->transport, addr, buf, (size_t)len,
+                                      timeout_ms);
 }
 
 int agent_process_received(Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf,
@@ -855,8 +851,7 @@ int agent_process_received(Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf,
     if (stun_parse_msg_buf(&stun_msg) != 0) {
       return -1;
     }
-    if (agent->turn_enabled &&
-        stun_msg.stunclass == STUN_CLASS_INDICATION &&
+    if (agent->turn_enabled && stun_msg.stunclass == STUN_CLASS_INDICATION &&
         stun_msg.stunmethod == STUN_METHOD_DATA &&
         stun_msg.data_len <= (size_t)len) {
       if (!h2_peer_net_addr_family_is_valid(stun_msg.peer_addr.family)) {
@@ -903,13 +898,12 @@ int agent_recv(Agent* agent, uint8_t* buf, int len, uint32_t timeout_ms) {
   }
   if (agent->transport_pair != NULL) {
     int flush_result = ice_transport_flush(&agent->transport, 0u);
-    if (flush_result != H2_PAL_OK &&
-        flush_result != H2_PAL_ERR_WOULD_BLOCK &&
+    if (flush_result != H2_PAL_OK && flush_result != H2_PAL_ERR_WOULD_BLOCK &&
         flush_result != H2_PAL_ERR_TIMEOUT) {
       return flush_result;
     }
-    ret = ice_transport_receive_packet(
-        &agent->transport, &addr, buf, (size_t)len, timeout_ms);
+    ret = ice_transport_receive_packet(&agent->transport, &addr, buf,
+                                       (size_t)len, timeout_ms);
   } else {
     ret = agent_socket_recv(agent, &addr, buf, len);
   }
@@ -941,33 +935,29 @@ int agent_set_remote_description(Agent* agent, char* description) {
                          "ICE rejected: ufrag length");
         goto rollback;
       }
-      memcpy(agent->remote_ufrag,
-             line_start + strlen("a=ice-ufrag:"), value_len);
+      memcpy(agent->remote_ufrag, line_start + strlen("a=ice-ufrag:"),
+             value_len);
       agent->remote_ufrag[value_len] = '\0';
 
     } else if (strncmp(line_start, "a=ice-pwd:", strlen("a=ice-pwd:")) == 0) {
-      size_t value_len =
-          (size_t)(line_end - line_start) - strlen("a=ice-pwd:");
+      size_t value_len = (size_t)(line_end - line_start) - strlen("a=ice-pwd:");
       if (value_len >= sizeof(agent->remote_upwd)) {
         h2_pal_log_write(agent->log, H2_PAL_LOG_ERROR, "h2peer",
                          "ICE rejected: password length");
         goto rollback;
       }
-      memcpy(agent->remote_upwd,
-             line_start + strlen("a=ice-pwd:"), value_len);
+      memcpy(agent->remote_upwd, line_start + strlen("a=ice-pwd:"), value_len);
       agent->remote_upwd[value_len] = '\0';
 
-    } else if (strncmp(line_start, "a=candidate:", strlen("a=candidate:")) == 0) {
+    } else if (strncmp(line_start, "a=candidate:", strlen("a=candidate:")) ==
+               0) {
       IceCandidate candidate;
       memset(&candidate, 0, sizeof(candidate));
       IceCandidateParseResult parse_result = ice_candidate_from_description(
-          agent->net,
-          &candidate,
-          line_start, line_end);
+          agent->net, &candidate, line_start, line_end);
       if (parse_result == ICE_CANDIDATE_PARSE_OK) {
         for (i = 0; i < agent->remote_candidates_count; i++) {
-          if (ice_candidate_equal(
-                  &agent->remote_candidates[i], &candidate)) {
+          if (ice_candidate_equal(&agent->remote_candidates[i], &candidate)) {
             break;
           }
         }
@@ -1017,13 +1007,12 @@ int agent_update_candidate_pairs(Agent* agent) {
   int missing_pairs = 0;
   for (i = 0; i < agent->local_candidates_count; i++) {
     for (j = 0; j < agent->remote_candidates_count; j++) {
-      if (!ice_candidate_pair_is_compatible(
-              &agent->local_candidates[i], &agent->remote_candidates[j])) {
+      if (!ice_candidate_pair_is_compatible(&agent->local_candidates[i],
+                                            &agent->remote_candidates[j])) {
         continue;
       }
       int existing = 0;
-      for (int pair_index = 0;
-           pair_index < agent->candidate_pairs_num;
+      for (int pair_index = 0; pair_index < agent->candidate_pairs_num;
            ++pair_index) {
         if (agent->candidate_pairs[pair_index].local ==
                 &agent->local_candidates[i] &&
@@ -1046,13 +1035,12 @@ int agent_update_candidate_pairs(Agent* agent) {
   // Please set gather candidates before set remote description
   for (i = 0; i < agent->local_candidates_count; i++) {
     for (j = 0; j < agent->remote_candidates_count; j++) {
-      if (!ice_candidate_pair_is_compatible(
-              &agent->local_candidates[i], &agent->remote_candidates[j])) {
+      if (!ice_candidate_pair_is_compatible(&agent->local_candidates[i],
+                                            &agent->remote_candidates[j])) {
         continue;
       }
       int existing = 0;
-      for (int pair_index = 0;
-           pair_index < agent->candidate_pairs_num;
+      for (int pair_index = 0; pair_index < agent->candidate_pairs_num;
            ++pair_index) {
         if (agent->candidate_pairs[pair_index].local ==
                 &agent->local_candidates[i] &&
@@ -1075,8 +1063,7 @@ int agent_update_candidate_pairs(Agent* agent) {
       uint32_t maximum = pair.local->priority > pair.remote->priority
                              ? pair.local->priority
                              : pair.remote->priority;
-      pair.priority = ((uint64_t)minimum << 32u) +
-                      (uint64_t)maximum * 2u +
+      pair.priority = ((uint64_t)minimum << 32u) + (uint64_t)maximum * 2u +
                       (pair.local->priority > pair.remote->priority ? 1u : 0u);
       pair.state = ICE_CANDIDATE_STATE_FROZEN;
       int insert = agent->candidate_pairs_num;
@@ -1112,8 +1099,7 @@ int agent_update_candidate_pairs(Agent* agent) {
   return 0;
 }
 
-int agent_add_remote_candidate(
-    Agent* agent, const IceCandidate* candidate) {
+int agent_add_remote_candidate(Agent* agent, const IceCandidate* candidate) {
   if (agent == NULL || candidate == NULL) {
     return -1;
   }
@@ -1149,8 +1135,8 @@ int agent_connectivity_check(Agent* agent, uint32_t timeout_ms) {
 
   if (agent->nominated_pair->local->transport == ICE_TRANSPORT_TCP &&
       !agent->transport.tcp_connected) {
-    int connect_result = ice_transport_progress_tcp_connect(
-        &agent->transport, timeout_ms);
+    int connect_result =
+        ice_transport_progress_tcp_connect(&agent->transport, timeout_ms);
     if (connect_result == H2_PAL_ERR_TIMEOUT ||
         connect_result == H2_PAL_ERR_WOULD_BLOCK) {
       return -1;
@@ -1183,11 +1169,9 @@ int agent_connectivity_check(Agent* agent, uint32_t timeout_ms) {
     }
   }
 
-  uint32_t check_wait_ms = timeout_ms < AGENT_POLL_TIMEOUT
-                               ? timeout_ms
-                               : AGENT_POLL_TIMEOUT;
-  int receive_result = agent_recv(
-      agent, buf, sizeof(buf), check_wait_ms);
+  uint32_t check_wait_ms =
+      timeout_ms < AGENT_POLL_TIMEOUT ? timeout_ms : AGENT_POLL_TIMEOUT;
+  int receive_result = agent_recv(agent, buf, sizeof(buf), check_wait_ms);
   if (receive_result < 0) {
     agent->nominated_pair->state = ICE_CANDIDATE_STATE_FAILED;
     ice_transport_close(&agent->transport);
@@ -1229,23 +1213,21 @@ int agent_keepalive(Agent* agent) {
              : -1;
 }
 
-static int agent_begin_candidate_pair(
-    Agent* agent, IceCandidatePair* pair, uint32_t timeout_ms) {
+static int agent_begin_candidate_pair(Agent* agent, IceCandidatePair* pair,
+                                      uint32_t timeout_ms) {
   ice_transport_close(&agent->transport);
   agent->transport_pair = NULL;
   int result = 0;
   if (pair->local->transport == ICE_TRANSPORT_TCP) {
     h2_pal_net_addr_t source_addr = pair->local->addr;
     source_addr.port = 0u;
-    result = ice_transport_init_tcp(
-        &agent->transport, agent->net, &source_addr,
-        &pair->remote->addr, timeout_ms);
+    result = ice_transport_init_tcp(&agent->transport, agent->net, &source_addr,
+                                    &pair->remote->addr, timeout_ms);
   } else {
     UdpSocket* socket = pair->local->addr.family == H2_PAL_NET_FAMILY_IPV6
                             ? &agent->udp_sockets[1]
                             : &agent->udp_sockets[0];
-    ice_transport_init_udp(
-        &agent->transport, socket, &pair->remote->addr);
+    ice_transport_init_udp(&agent->transport, socket, &pair->remote->addr);
   }
   if (result != H2_PAL_OK && result != H2_PAL_ERR_TIMEOUT &&
       result != H2_PAL_ERR_WOULD_BLOCK) {
@@ -1269,19 +1251,19 @@ int agent_select_candidate_pair(Agent* agent, uint32_t timeout_ms) {
       agent->nominated_pair = &agent->candidate_pairs[i];
       agent->candidate_pairs[i].conncheck = 0;
       agent->candidate_pairs[i].state = ICE_CANDIDATE_STATE_INPROGRESS;
-      if (agent_begin_candidate_pair(
-              agent, &agent->candidate_pairs[i], timeout_ms) != 0) {
+      if (agent_begin_candidate_pair(agent, &agent->candidate_pairs[i],
+                                     timeout_ms) != 0) {
         agent->candidate_pairs[i].state = ICE_CANDIDATE_STATE_FAILED;
         return 0;
       }
       return 0;
-    } else if (agent->candidate_pairs[i].state == ICE_CANDIDATE_STATE_INPROGRESS) {
+    } else if (agent->candidate_pairs[i].state ==
+               ICE_CANDIDATE_STATE_INPROGRESS) {
       agent->candidate_pairs[i].conncheck++;
       uint64_t now_ms = 0u;
       if (agent_now_ms(agent, &now_ms) == 0 &&
           now_ms >= agent->ice_activity_time_ms &&
-          now_ms - agent->ice_activity_time_ms <
-              AGENT_CONNCHECK_TIMEOUT_MS) {
+          now_ms - agent->ice_activity_time_ms < AGENT_CONNCHECK_TIMEOUT_MS) {
         return 0;
       }
       agent->candidate_pairs[i].state = ICE_CANDIDATE_STATE_FAILED;
@@ -1290,7 +1272,8 @@ int agent_select_candidate_pair(Agent* agent, uint32_t timeout_ms) {
         agent->transport_pair = NULL;
       }
     } else if (agent->candidate_pairs[i].state == ICE_CANDIDATE_STATE_FAILED) {
-    } else if (agent->candidate_pairs[i].state == ICE_CANDIDATE_STATE_SUCCEEDED) {
+    } else if (agent->candidate_pairs[i].state ==
+               ICE_CANDIDATE_STATE_SUCCEEDED) {
       agent->selected_pair = &agent->candidate_pairs[i];
       return 0;
     }

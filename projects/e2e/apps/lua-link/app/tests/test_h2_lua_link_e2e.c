@@ -12,21 +12,21 @@
  * two boards do, so the script itself is checked before any flash. */
 
 typedef struct side {
-  h2_runtime_t *runtime;
-  const char *role;
+  h2_runtime_t* runtime;
+  const char* role;
   int hold;
   h2_pal_result_t rc;
 } side_t;
 
-static void *run_side(void *user) {
-  side_t *side = user;
-  side->rc = h2_lua_link_e2e_run(
-      side->runtime, &(h2_lua_link_e2e_config_t){
-                         .role = side->role,
-                         .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
-                         .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
-                         .hold = side->hold,
-                     });
+static void* run_side(void* user) {
+  side_t* side = user;
+  side->rc = h2_lua_link_e2e_run(side->runtime,
+                                 &(h2_lua_link_e2e_config_t){
+                                     .role = side->role,
+                                     .adv_type = H2_PAL_BLE_ADV_TYPE_EXTENDED,
+                                     .scan_type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
+                                     .hold = side->hold,
+                                 });
   return NULL;
 }
 
@@ -37,8 +37,8 @@ static void run_pair(int hold) {
   fake_air_init(&air);
   for (int i = 0; i < 2; ++i) {
     sides[i] = (side_t){
-        .runtime = fake_create_runtime(&air.devices[i].ble,
-                                       &air.devices[i].events),
+        .runtime =
+            fake_create_runtime(&air.devices[i].ble, &air.devices[i].events),
         .role = i == 0 ? "host" : "join",
         .hold = hold,
         .rc = H2_PAL_ERR_INVALID_STATE,
@@ -69,7 +69,7 @@ static void run_pair(int hold) {
 static void test_rejected_runs(void) {
   fake_air_t air;
   fake_air_init(&air);
-  h2_runtime_t *runtime =
+  h2_runtime_t* runtime =
       fake_create_runtime(&air.devices[0].ble, &air.devices[0].events);
   const h2_lua_link_e2e_config_t good = {
       .role = "host",

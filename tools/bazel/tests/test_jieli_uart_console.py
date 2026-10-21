@@ -1,5 +1,6 @@
 """Host regression for the real board UART console with mocked SDK I/O."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -363,7 +364,7 @@ int main(void) {
     def test_app_boot_logs_before_command_transport(self):
         app = (ROOT / "projects/example/native_component_src/jieli/wl82/"
                "devkit_app/src/color_bar_pal.c").read_text()
-        start = app.index("static void usb_write_status(const char *format, ...) {")
+        start = re.search(r"\bstatic\s+void\s+usb_write_status\s*\(\s*const\s+char\s*\*\s*format\s*,\s*\.\.\.\s*\)\s*\{", app).start()
         end = app.index("static void report_previous_exception(void)", start)
         stub = r'''
 #include <assert.h>

@@ -2,7 +2,7 @@
 
 #include <assert.h>
 
-static void tap(h2_showcase_state_t *state, uint64_t down_ms, uint64_t up_ms) {
+static void tap(h2_showcase_state_t* state, uint64_t down_ms, uint64_t up_ms) {
   h2_showcase_state_button_down(state, down_ms);
   h2_showcase_state_button_up(state, up_ms);
 }

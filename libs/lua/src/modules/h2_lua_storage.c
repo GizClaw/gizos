@@ -33,56 +33,56 @@ typedef struct storage_entry {
  * entry more than app_max_files so a rename can record its target before the
  * source leaves the index. */
 struct h2_lua_storage_scratch {
-  storage_entry_t *entries;
+  storage_entry_t* entries;
   size_t entry_capacity;
   size_t count;
   int dirty;
   int kv_exists;
   uint64_t kv_size;
-  char *text;
+  char* text;
   size_t text_capacity;
 };
 
 typedef struct h2_lua_storage_scratch storage_scratch_t;
 
-static const char *storage_message(storage_status_t status) {
+static const char* storage_message(storage_status_t status) {
   switch (status) {
-  case STORAGE_UNAVAILABLE:
-    return "storage: unavailable";
-  case STORAGE_INVALID_NAME:
-    return "storage: invalid name";
-  case STORAGE_NOT_FOUND:
-    return "storage: not found";
-  case STORAGE_QUOTA_EXCEEDED:
-    return "storage: quota exceeded";
-  case STORAGE_TOO_MANY_FILES:
-    return "storage: too many files";
-  case STORAGE_NO_SPACE:
-    return "storage: no space";
-  case STORAGE_BUSY:
-  case STORAGE_CHANGED:
-    return "storage: busy";
-  case STORAGE_OK:
-  case STORAGE_IO:
-  default:
-    return "storage: io error";
+    case STORAGE_UNAVAILABLE:
+      return "storage: unavailable";
+    case STORAGE_INVALID_NAME:
+      return "storage: invalid name";
+    case STORAGE_NOT_FOUND:
+      return "storage: not found";
+    case STORAGE_QUOTA_EXCEEDED:
+      return "storage: quota exceeded";
+    case STORAGE_TOO_MANY_FILES:
+      return "storage: too many files";
+    case STORAGE_NO_SPACE:
+      return "storage: no space";
+    case STORAGE_BUSY:
+    case STORAGE_CHANGED:
+      return "storage: busy";
+    case STORAGE_OK:
+    case STORAGE_IO:
+    default:
+      return "storage: io error";
   }
 }
 
 static storage_status_t from_pal(int result) {
   switch (result) {
-  case H2_PAL_OK:
-    return STORAGE_OK;
-  case H2_PAL_ERR_NOT_FOUND:
-    return STORAGE_NOT_FOUND;
-  case H2_PAL_ERR_NO_SPACE:
-    return STORAGE_NO_SPACE;
-  default:
-    return STORAGE_IO;
+    case H2_PAL_OK:
+      return STORAGE_OK;
+    case H2_PAL_ERR_NOT_FOUND:
+      return STORAGE_NOT_FOUND;
+    case H2_PAL_ERR_NO_SPACE:
+      return STORAGE_NO_SPACE;
+    default:
+      return STORAGE_IO;
   }
 }
 
-int h2_lua_storage_name_is_valid(const char *name, size_t max_length) {
+int h2_lua_storage_name_is_valid(const char* name, size_t max_length) {
   size_t i;
   if (name == NULL || name[0] == '\0' || name[0] == '.') {
     return 0;
@@ -97,8 +97,8 @@ int h2_lua_storage_name_is_valid(const char *name, size_t max_length) {
   return 1;
 }
 
-h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t *config) {
-  const h2_pal_fs_vtable_t *vtable;
+h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t* config) {
+  const h2_pal_fs_vtable_t* vtable;
   size_t root_length;
   if (config == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -133,10 +133,10 @@ h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t *config) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host) {
-  const h2_lua_storage_config_t *config = &host->config.storage;
-  const h2_pal_mem_api_t *mem = host->config.allocator;
-  storage_scratch_t *scratch;
+h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t* host) {
+  const h2_lua_storage_config_t* config = &host->config.storage;
+  const h2_pal_mem_api_t* mem = host->config.allocator;
+  storage_scratch_t* scratch;
   size_t entry_capacity;
   h2_pal_result_t result;
   if (config->fs == NULL) {
@@ -168,8 +168,8 @@ h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host) {
   return result;
 }
 
-void h2_lua_storage_host_deinit(h2_lua_host_t *host) {
-  const h2_pal_mem_api_t *mem = host->config.allocator;
+void h2_lua_storage_host_deinit(h2_lua_host_t* host) {
+  const h2_pal_mem_api_t* mem = host->config.allocator;
   if (host->storage_mutex != NULL) {
     (void)h2_pal_mutex_destroy(host->config.runtime->sync, host->storage_mutex);
     host->storage_mutex = NULL;
@@ -182,23 +182,23 @@ void h2_lua_storage_host_deinit(h2_lua_host_t *host) {
   }
 }
 
-static h2_lua_job_t *storage_job(lua_State *state) {
+static h2_lua_job_t* storage_job(lua_State* state) {
   return lua_touserdata(state, lua_upvalueindex(1));
 }
 
-static const h2_pal_fs_api_t *storage_fs(const h2_lua_job_t *job) {
+static const h2_pal_fs_api_t* storage_fs(const h2_lua_job_t* job) {
   return job->host->config.storage.fs;
 }
 
-int h2_lua_storage_available(const h2_lua_job_t *job) {
+int h2_lua_storage_available(const h2_lua_job_t* job) {
   return storage_fs(job) != NULL && job->host->storage_mutex != NULL &&
          job->app_id[0] != '\0';
 }
 
 /* Writes `<root>/<app_id>` or `<root>/<app_id>/<name>`. Bounded by the
  * root, app id and name limits, so it always fits H2_LUA_PATH_MAX. */
-static void storage_path(const h2_lua_job_t *job, const char *name,
-                         char *out_path) {
+static void storage_path(const h2_lua_job_t* job, const char* name,
+                         char* out_path) {
   size_t offset = strlen(job->host->storage_root);
   size_t length;
   memcpy(out_path, job->host->storage_root, offset);
@@ -215,19 +215,19 @@ static void storage_path(const h2_lua_job_t *job, const char *name,
   out_path[offset] = '\0';
 }
 
-storage_status_t h2_lua_storage_lock(h2_lua_job_t *job) {
+storage_status_t h2_lua_storage_lock(h2_lua_job_t* job) {
   return h2_pal_mutex_lock(job->host->config.runtime->sync,
                            job->host->storage_mutex) == H2_PAL_OK
              ? STORAGE_OK
              : STORAGE_BUSY;
 }
 
-void h2_lua_storage_unlock(h2_lua_job_t *job) {
+void h2_lua_storage_unlock(h2_lua_job_t* job) {
   (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
                             job->host->storage_mutex);
 }
 
-static long storage_find(const storage_scratch_t *scratch, const char *name) {
+static long storage_find(const storage_scratch_t* scratch, const char* name) {
   size_t i;
   for (i = 0u; i < scratch->count; ++i) {
     if (strcmp(scratch->entries[i].name, name) == 0) {
@@ -237,19 +237,18 @@ static long storage_find(const storage_scratch_t *scratch, const char *name) {
   return -1;
 }
 
-static void storage_drop(storage_scratch_t *scratch, size_t index) {
+static void storage_drop(storage_scratch_t* scratch, size_t index) {
   memmove(&scratch->entries[index], &scratch->entries[index + 1u],
           (scratch->count - index - 1u) * sizeof(scratch->entries[0]));
   scratch->count--;
 }
 
-static uint64_t storage_used_except(const storage_scratch_t *scratch,
+static uint64_t storage_used_except(const storage_scratch_t* scratch,
                                     long except, int include_kv) {
   uint64_t used = include_kv ? scratch->kv_size : 0u;
   size_t i;
   for (i = 0u; i < scratch->count; ++i) {
-    if ((long)i == except)
-      continue;
+    if ((long)i == except) continue;
     if (UINT64_MAX - used < scratch->entries[i].size) {
       return UINT64_MAX;
     }
@@ -258,16 +257,16 @@ static uint64_t storage_used_except(const storage_scratch_t *scratch,
   return used;
 }
 
-static storage_status_t storage_read_exact(const h2_pal_fs_api_t *fs,
-                                           const char *path, void *data,
-                                           size_t length, size_t *out_read,
+static storage_status_t storage_read_exact(const h2_pal_fs_api_t* fs,
+                                           const char* path, void* data,
+                                           size_t length, size_t* out_read,
                                            int allow_short) {
-  h2_pal_fs_file_t *file = NULL;
+  h2_pal_fs_file_t* file = NULL;
   size_t offset = 0u;
   int result = h2_pal_fs_open(fs, path, H2_PAL_FS_OPEN_READ, &file);
   while (result == H2_PAL_OK && offset < length) {
     size_t read_size = 0u;
-    result = h2_pal_fs_read(fs, file, (uint8_t *)data + offset, length - offset,
+    result = h2_pal_fs_read(fs, file, (uint8_t*)data + offset, length - offset,
                             &read_size);
     if (result == H2_PAL_OK && read_size == 0u) {
       if (!allow_short) {
@@ -287,15 +286,15 @@ static storage_status_t storage_read_exact(const h2_pal_fs_api_t *fs,
   return from_pal(result);
 }
 
-static storage_status_t storage_write_whole(const h2_pal_fs_api_t *fs,
-                                            const char *path, const void *data,
+static storage_status_t storage_write_whole(const h2_pal_fs_api_t* fs,
+                                            const char* path, const void* data,
                                             size_t length) {
-  h2_pal_fs_file_t *file = NULL;
+  h2_pal_fs_file_t* file = NULL;
   size_t offset = 0u;
   int result = h2_pal_fs_open(fs, path, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &file);
   while (result == H2_PAL_OK && offset < length) {
     size_t written = 0u;
-    result = h2_pal_fs_write(fs, file, (const uint8_t *)data + offset,
+    result = h2_pal_fs_write(fs, file, (const uint8_t*)data + offset,
                              length - offset, &written);
     if (result == H2_PAL_OK && written == 0u) {
       result = H2_PAL_ERR_IO;
@@ -316,11 +315,11 @@ static storage_status_t storage_write_whole(const h2_pal_fs_api_t *fs,
 
 /* Replaces `target_name` in the app directory as a whole, or leaves it
  * untouched on failure. */
-static storage_status_t storage_replace(h2_lua_job_t *job,
-                                        const char *temp_name,
-                                        const char *target_name,
-                                        const void *data, size_t length) {
-  const h2_pal_fs_api_t *fs = storage_fs(job);
+static storage_status_t storage_replace(h2_lua_job_t* job,
+                                        const char* temp_name,
+                                        const char* target_name,
+                                        const void* data, size_t length) {
+  const h2_pal_fs_api_t* fs = storage_fs(job);
   char temp_path[H2_LUA_PATH_MAX];
   char target_path[H2_LUA_PATH_MAX];
   storage_status_t status;
@@ -340,8 +339,8 @@ static storage_status_t storage_replace(h2_lua_job_t *job,
   return status;
 }
 
-static storage_status_t storage_ensure_dir(h2_lua_job_t *job) {
-  const h2_pal_fs_api_t *fs = storage_fs(job);
+static storage_status_t storage_ensure_dir(h2_lua_job_t* job) {
+  const h2_pal_fs_api_t* fs = storage_fs(job);
   char path[H2_LUA_PATH_MAX];
   h2_pal_fs_stat_t stat;
   size_t i;
@@ -362,8 +361,8 @@ static storage_status_t storage_ensure_dir(h2_lua_job_t *job) {
   return STORAGE_OK;
 }
 
-static storage_status_t storage_save_index(h2_lua_job_t *job) {
-  storage_scratch_t *scratch = job->host->storage_scratch;
+static storage_status_t storage_save_index(h2_lua_job_t* job) {
+  storage_scratch_t* scratch = job->host->storage_scratch;
   size_t offset = 0u;
   size_t i;
   storage_status_t status;
@@ -384,9 +383,9 @@ static storage_status_t storage_save_index(h2_lua_job_t *job) {
 /* Loads the app index and the current size of every live entry. Entries that
  * are malformed, duplicated or have no file are dropped and mark the index
  * dirty; the next mutation persists the pruned index. */
-static storage_status_t storage_load_index(h2_lua_job_t *job) {
-  const h2_pal_fs_api_t *fs = storage_fs(job);
-  storage_scratch_t *scratch = job->host->storage_scratch;
+static storage_status_t storage_load_index(h2_lua_job_t* job) {
+  const h2_pal_fs_api_t* fs = storage_fs(job);
+  storage_scratch_t* scratch = job->host->storage_scratch;
   char path[H2_LUA_PATH_MAX];
   h2_pal_fs_stat_t stat;
   size_t text_length = 0u;
@@ -424,7 +423,7 @@ static storage_status_t storage_load_index(h2_lua_job_t *job) {
   }
   for (i = 0u; i <= text_length; ++i) {
     size_t length;
-    storage_entry_t *entry;
+    storage_entry_t* entry;
     if (i < text_length && scratch->text[i] != '\n') {
       continue;
     }
@@ -469,10 +468,10 @@ static storage_status_t storage_load_index(h2_lua_job_t *job) {
   return STORAGE_OK;
 }
 
-static storage_status_t storage_write_locked(h2_lua_job_t *job,
-                                             const char *name, const char *data,
+static storage_status_t storage_write_locked(h2_lua_job_t* job,
+                                             const char* name, const char* data,
                                              size_t length) {
-  storage_scratch_t *scratch = job->host->storage_scratch;
+  storage_scratch_t* scratch = job->host->storage_scratch;
   uint64_t quota = job->host->config.storage.app_quota_bytes;
   uint64_t used;
   long index;
@@ -494,7 +493,7 @@ static storage_status_t storage_write_locked(h2_lua_job_t *job,
     return status;
   }
   if (index < 0) {
-    storage_entry_t *entry = &scratch->entries[scratch->count++];
+    storage_entry_t* entry = &scratch->entries[scratch->count++];
     memcpy(entry->name, name, strlen(name) + 1u);
     entry->size = 0u;
     scratch->dirty = 1;
@@ -515,9 +514,9 @@ static storage_status_t storage_write_locked(h2_lua_job_t *job,
   return status;
 }
 
-static storage_status_t storage_remove_locked(h2_lua_job_t *job,
-                                              const char *name) {
-  storage_scratch_t *scratch = job->host->storage_scratch;
+static storage_status_t storage_remove_locked(h2_lua_job_t* job,
+                                              const char* name) {
+  storage_scratch_t* scratch = job->host->storage_scratch;
   char path[H2_LUA_PATH_MAX];
   storage_status_t status = storage_load_index(job);
   long index;
@@ -540,10 +539,10 @@ static storage_status_t storage_remove_locked(h2_lua_job_t *job,
   return STORAGE_OK;
 }
 
-static storage_status_t storage_rename_locked(h2_lua_job_t *job,
-                                              const char *old_name,
-                                              const char *new_name) {
-  storage_scratch_t *scratch = job->host->storage_scratch;
+static storage_status_t storage_rename_locked(h2_lua_job_t* job,
+                                              const char* old_name,
+                                              const char* new_name) {
+  storage_scratch_t* scratch = job->host->storage_scratch;
   char old_path[H2_LUA_PATH_MAX];
   char new_path[H2_LUA_PATH_MAX];
   storage_status_t status = storage_load_index(job);
@@ -563,7 +562,7 @@ static storage_status_t storage_rename_locked(h2_lua_job_t *job,
   size = scratch->entries[old_index].size;
   new_index = storage_find(scratch, new_name);
   if (new_index < 0) {
-    storage_entry_t *entry;
+    storage_entry_t* entry;
     if (scratch->count >= scratch->entry_capacity) {
       return STORAGE_TOO_MANY_FILES;
     }
@@ -596,9 +595,9 @@ static storage_status_t storage_rename_locked(h2_lua_job_t *job,
 /* Returns the file size under the lock, then the caller allocates a Lua
  * buffer unlocked. A concurrent writer may replace the file in between, so
  * the read re-checks the size under the lock and asks for a retry. */
-static storage_status_t storage_size_locked(h2_lua_job_t *job, const char *name,
-                                            uint64_t *out_size) {
-  storage_scratch_t *scratch = job->host->storage_scratch;
+static storage_status_t storage_size_locked(h2_lua_job_t* job, const char* name,
+                                            uint64_t* out_size) {
+  storage_scratch_t* scratch = job->host->storage_scratch;
   storage_status_t status = storage_load_index(job);
   long index;
   if (status != STORAGE_OK) {
@@ -612,9 +611,9 @@ static storage_status_t storage_size_locked(h2_lua_job_t *job, const char *name,
   return STORAGE_OK;
 }
 
-static storage_status_t storage_read_locked(h2_lua_job_t *job, const char *name,
-                                            void *data, size_t expected_size) {
-  const h2_pal_fs_api_t *fs = storage_fs(job);
+static storage_status_t storage_read_locked(h2_lua_job_t* job, const char* name,
+                                            void* data, size_t expected_size) {
+  const h2_pal_fs_api_t* fs = storage_fs(job);
   char path[H2_LUA_PATH_MAX];
   h2_pal_fs_stat_t stat;
   size_t read_size = 0u;
@@ -633,21 +632,21 @@ static storage_status_t storage_read_locked(h2_lua_job_t *job, const char *name,
   return storage_read_exact(fs, path, data, expected_size, &read_size, 0);
 }
 
-static int push_failure(lua_State *state, storage_status_t status) {
+static int push_failure(lua_State* state, storage_status_t status) {
   lua_pushnil(state);
   lua_pushstring(state, storage_message(status));
   return 2;
 }
 
-static int push_success(lua_State *state) {
+static int push_success(lua_State* state) {
   lua_pushboolean(state, 1);
   return 1;
 }
 
 /* Returns the name argument, or NULL when it is not a valid storage name. */
-static const char *check_name(lua_State *state, int argument) {
+static const char* check_name(lua_State* state, int argument) {
   size_t length = 0u;
-  const char *name = luaL_checklstring(state, argument, &length);
+  const char* name = luaL_checklstring(state, argument, &length);
   if (length != strlen(name) ||
       !h2_lua_storage_name_is_valid(name, H2_LUA_STORAGE_NAME_MAX)) {
     return NULL;
@@ -655,7 +654,7 @@ static const char *check_name(lua_State *state, int argument) {
   return name;
 }
 
-static int storage_get_root_dir(lua_State *state) {
+static int storage_get_root_dir(lua_State* state) {
   if (!h2_lua_storage_available(storage_job(state))) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
@@ -665,7 +664,7 @@ static int storage_get_root_dir(lua_State *state) {
   return 1;
 }
 
-static int storage_join_path(lua_State *state) {
+static int storage_join_path(lua_State* state) {
   int count = lua_gettop(state);
   luaL_Buffer buffer;
   int wrote = 0;
@@ -674,7 +673,7 @@ static int storage_join_path(lua_State *state) {
   luaL_buffinit(state, &buffer);
   for (i = 1; i <= count; ++i) {
     size_t length = 0u;
-    const char *part = luaL_checklstring(state, i, &length);
+    const char* part = luaL_checklstring(state, i, &length);
     size_t start = 0u;
     size_t end = length;
     if (wrote) {
@@ -699,9 +698,9 @@ static int storage_join_path(lua_State *state) {
   return 1;
 }
 
-static int storage_exists(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
-  const char *name = check_name(state, 1);
+static int storage_exists(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
+  const char* name = check_name(state, 1);
   uint64_t size = 0u;
   storage_status_t status;
   if (!h2_lua_storage_available(job)) {
@@ -723,9 +722,9 @@ static int storage_exists(lua_State *state) {
   return 1;
 }
 
-static int storage_stat(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
-  const char *name = check_name(state, 1);
+static int storage_stat(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
+  const char* name = check_name(state, 1);
   uint64_t size = 0u;
   storage_status_t status;
   if (!h2_lua_storage_available(job)) {
@@ -750,9 +749,9 @@ static int storage_stat(lua_State *state) {
   return 1;
 }
 
-static int storage_read_file(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
-  const char *name = check_name(state, 1);
+static int storage_read_file(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
+  const char* name = check_name(state, 1);
   storage_status_t status = STORAGE_CHANGED;
   int attempt;
   if (!h2_lua_storage_available(job)) {
@@ -765,7 +764,7 @@ static int storage_read_file(lua_State *state) {
        attempt < STORAGE_READ_ATTEMPTS && status == STORAGE_CHANGED;
        ++attempt) {
     uint64_t size = 0u;
-    void *data;
+    void* data;
     status = h2_lua_storage_lock(job);
     if (status == STORAGE_OK) {
       status = storage_size_locked(job, name, &size);
@@ -794,11 +793,11 @@ static int storage_read_file(lua_State *state) {
   return push_failure(state, status);
 }
 
-static int storage_write_file(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
-  const char *name = check_name(state, 1);
+static int storage_write_file(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
+  const char* name = check_name(state, 1);
   size_t length = 0u;
-  const char *data = luaL_checklstring(state, 2, &length);
+  const char* data = luaL_checklstring(state, 2, &length);
   storage_status_t status;
   if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
@@ -815,9 +814,9 @@ static int storage_write_file(lua_State *state) {
                               : push_failure(state, status);
 }
 
-static int storage_remove(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
-  const char *name = check_name(state, 1);
+static int storage_remove(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
+  const char* name = check_name(state, 1);
   storage_status_t status;
   if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
@@ -834,10 +833,10 @@ static int storage_remove(lua_State *state) {
                               : push_failure(state, status);
 }
 
-static int storage_rename(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
-  const char *old_name = check_name(state, 1);
-  const char *new_name = check_name(state, 2);
+static int storage_rename(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
+  const char* old_name = check_name(state, 1);
+  const char* new_name = check_name(state, 2);
   storage_status_t status;
   if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
@@ -854,11 +853,11 @@ static int storage_rename(lua_State *state) {
                               : push_failure(state, status);
 }
 
-static int storage_listdir(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
+static int storage_listdir(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
   size_t path_length = 0u;
-  const char *path = luaL_optlstring(state, 1, "", &path_length);
-  storage_entry_t *entries;
+  const char* path = luaL_optlstring(state, 1, "", &path_length);
+  storage_entry_t* entries;
   size_t count = 0u;
   size_t i;
   storage_status_t status;
@@ -901,8 +900,8 @@ static int storage_listdir(lua_State *state) {
   return 1;
 }
 
-static int storage_get_free_space(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
+static int storage_get_free_space(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
   uint64_t quota;
   uint64_t used = 0u;
   storage_status_t status;
@@ -931,15 +930,15 @@ static int storage_get_free_space(lua_State *state) {
   return 1;
 }
 
-static void set_storage_function(lua_State *state, const char *name,
-                                 lua_CFunction function, h2_lua_job_t *job) {
+static void set_storage_function(lua_State* state, const char* name,
+                                 lua_CFunction function, h2_lua_job_t* job) {
   lua_pushlightuserdata(state, job);
   lua_pushcclosure(state, function, 1);
   lua_setfield(state, -2, name);
 }
 
-int h2_lua_open_storage(lua_State *state) {
-  h2_lua_job_t *job = storage_job(state);
+int h2_lua_open_storage(lua_State* state) {
+  h2_lua_job_t* job = storage_job(state);
   lua_createtable(state, 0, 10);
   set_storage_function(state, "get_root_dir", storage_get_root_dir, job);
   set_storage_function(state, "join_path", storage_join_path, job);
@@ -956,37 +955,32 @@ int h2_lua_open_storage(lua_State *state) {
 
 /* Reserved KV paths bypass the public filename/index surface. All helpers
  * below require storage_mutex; they never allocate or invoke Lua. */
-storage_status_t h2_lua_storage_kv_size_locked(h2_lua_job_t *job,
-                                               uint64_t *size) {
+storage_status_t h2_lua_storage_kv_size_locked(h2_lua_job_t* job,
+                                               uint64_t* size) {
   char path[H2_LUA_PATH_MAX];
   h2_pal_fs_stat_t stat;
   storage_status_t status;
   storage_path(job, STORAGE_KV_NAME, path);
   status = from_pal(h2_pal_fs_stat(storage_fs(job), path, &stat));
   *size = 0u;
-  if (status == STORAGE_NOT_FOUND)
-    return STORAGE_OK;
-  if (status != STORAGE_OK)
-    return status;
-  if (stat.is_dir)
-    return STORAGE_IO;
-  if (stat.size == 0u)
-    return STORAGE_CORRUPT;
+  if (status == STORAGE_NOT_FOUND) return STORAGE_OK;
+  if (status != STORAGE_OK) return status;
+  if (stat.is_dir) return STORAGE_IO;
+  if (stat.size == 0u) return STORAGE_CORRUPT;
   *size = stat.size;
   return STORAGE_OK;
 }
 
-storage_status_t h2_lua_storage_kv_read_locked(h2_lua_job_t *job, void *data,
+storage_status_t h2_lua_storage_kv_read_locked(h2_lua_job_t* job, void* data,
                                                size_t size) {
-  if (size == 0u)
-    return STORAGE_OK;
+  if (size == 0u) return STORAGE_OK;
   return storage_read_locked(job, STORAGE_KV_NAME, data, size);
 }
 
-storage_status_t h2_lua_storage_kv_commit_locked(h2_lua_job_t *job,
-                                                 const void *data,
+storage_status_t h2_lua_storage_kv_commit_locked(h2_lua_job_t* job,
+                                                 const void* data,
                                                  size_t size) {
-  storage_scratch_t *scratch = job->host->storage_scratch;
+  storage_scratch_t* scratch = job->host->storage_scratch;
   storage_status_t status;
   uint64_t used;
   uint64_t quota = job->host->config.storage.app_quota_bytes;
@@ -996,8 +990,7 @@ storage_status_t h2_lua_storage_kv_commit_locked(h2_lua_job_t *job,
     return from_pal(h2_pal_fs_remove(storage_fs(job), path));
   }
   status = storage_load_index(job);
-  if (status != STORAGE_OK)
-    return status;
+  if (status != STORAGE_OK) return status;
   if (!scratch->kv_exists &&
       scratch->count >= job->host->config.storage.app_max_files)
     return STORAGE_TOO_MANY_FILES;
@@ -1005,7 +998,7 @@ storage_status_t h2_lua_storage_kv_commit_locked(h2_lua_job_t *job,
   if ((uint64_t)size > quota || used > quota - size)
     return STORAGE_QUOTA_EXCEEDED;
   status = storage_ensure_dir(job);
-  if (status != STORAGE_OK)
-    return status;
-  return storage_replace(job, STORAGE_KV_TEMP_NAME, STORAGE_KV_NAME, data, size);
+  if (status != STORAGE_OK) return status;
+  return storage_replace(job, STORAGE_KV_TEMP_NAME, STORAGE_KV_NAME, data,
+                         size);
 }

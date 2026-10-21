@@ -9,8 +9,12 @@ typedef uint32_t TickType_t;
 #define configTICK_RATE_HZ 1000u
 #endif
 #define pdMS_TO_TICKS(ms) ((TickType_t)((ms) * configTICK_RATE_HZ / 1000u))
-typedef struct { unsigned char storage[64]; } StaticSemaphore_t;
-typedef struct { unsigned char storage[64]; } StaticTask_t;
+typedef struct {
+  unsigned char storage[64];
+} StaticSemaphore_t;
+typedef struct {
+  unsigned char storage[64];
+} StaticTask_t;
 typedef int portMUX_TYPE;
 #define pdPASS 1
 #define pdTRUE 1

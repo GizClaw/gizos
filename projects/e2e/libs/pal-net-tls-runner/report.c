@@ -1,6 +1,6 @@
 #include "runner.h"
 
-static void case_json(FILE *file, const h2_net_tls_case_result_t *item) {
+static void case_json(FILE* file, const h2_net_tls_case_result_t* item) {
   fprintf(
       file,
       "{\"id\":\"%s\",\"mandatory\":%s,\"status\":\"%s\",\"detail\":%d,"
@@ -17,14 +17,14 @@ static void case_json(FILE *file, const h2_net_tls_case_result_t *item) {
       (unsigned)item->observed_ipv4[0], (unsigned)item->observed_ipv4[1],
       (unsigned)item->observed_ipv4[2], (unsigned)item->observed_ipv4[3]);
 }
-void h2_net_tls_report(void *user, const h2_net_tls_case_result_t *item) {
-  FILE *file = user ? user : stdout;
+void h2_net_tls_report(void* user, const h2_net_tls_case_result_t* item) {
+  FILE* file = user ? user : stdout;
   fputs("H2_PAL_NET_TLS_CASE ", file);
   case_json(file, item);
   fputc('\n', file);
   fflush(file);
 }
-void h2_net_tls_summary(FILE *file, const h2_net_tls_result_t *result, int rc,
+void h2_net_tls_summary(FILE* file, const h2_net_tls_result_t* result, int rc,
                         int cleanup) {
   fprintf(
       file,
@@ -42,12 +42,11 @@ void h2_net_tls_summary(FILE *file, const h2_net_tls_result_t *result, int rc,
       result->retained_resolvers, result->retained_allocations, rc, cleanup);
   fflush(file);
 }
-int h2_net_tls_write_report(const char *path, const char *platform,
-                            const h2_net_tls_result_t *result, int rc,
+int h2_net_tls_write_report(const char* path, const char* platform,
+                            const h2_net_tls_result_t* result, int rc,
                             int cleanup) {
-  FILE *file = fopen(path, "w");
-  if (!file)
-    return H2_PAL_ERR_IO;
+  FILE* file = fopen(path, "w");
+  if (!file) return H2_PAL_ERR_IO;
   fprintf(
       file,
       "{\"platform\":\"%s\",\"profile\":\"net-tls-core\",\"operations\":21,"
@@ -63,13 +62,11 @@ int h2_net_tls_write_report(const char *path, const char *platform,
       result->unsupported, result->not_assessed, result->retained_sockets,
       result->retained_resolvers, result->retained_allocations, rc, cleanup);
   for (unsigned i = 0u; i < H2_NET_TLS_CASE_COUNT; ++i) {
-    if (i)
-      fputc(',', file);
+    if (i) fputc(',', file);
     case_json(file, &result->cases[i]);
   }
   fputs("]}\n", file);
   int error = ferror(file);
-  if (fclose(file) || error)
-    return H2_PAL_ERR_IO;
+  if (fclose(file) || error) return H2_PAL_ERR_IO;
   return H2_PAL_OK;
 }

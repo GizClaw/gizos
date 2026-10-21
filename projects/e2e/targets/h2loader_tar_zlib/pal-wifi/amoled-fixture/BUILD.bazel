@@ -31,10 +31,10 @@ firmware_lib_component(
     deps = [
         "//libs/atomic",
         "//libs/audio_mixer",
-        "//libs/drivers/audio/es8311",
         "//libs/bleikcp",
         "//libs/bundle",
         "//libs/command",
+        "//libs/drivers/audio/es8311",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",

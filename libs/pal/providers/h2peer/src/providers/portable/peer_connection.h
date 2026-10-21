@@ -78,11 +78,11 @@ typedef struct IceServer {
 } IceServer;
 
 typedef struct PeerConfiguration {
-  const h2_pal_log_api_t *log;
-  const h2_pal_mem_api_t *mem;
-  const h2_pal_mem_api_t *allocator;
-  const h2_pal_net_api_t *net;
-  const h2_pal_time_api_t *time;
+  const h2_pal_log_api_t* log;
+  const h2_pal_mem_api_t* mem;
+  const h2_pal_mem_api_t* allocator;
+  const h2_pal_net_api_t* net;
+  const h2_pal_time_api_t* time;
   const h2_pal_crypto_api_t* crypto;
   const h2_pal_dtls_api_t* dtls;
   const h2_pal_sctp_api_t* sctp;
@@ -103,9 +103,9 @@ typedef struct PeerConfiguration {
 typedef struct PeerConnection PeerConnection;
 typedef struct SctpRemoteChannel SctpRemoteChannel;
 typedef int (*PeerConnectionRtpProtectFn)(void* user, uint8_t* packet,
-                                         int* packet_len);
+                                          int* packet_len);
 typedef int (*PeerConnectionRtpSendFn)(void* user, const uint8_t* packet,
-                                      int packet_len);
+                                       int packet_len);
 
 const char* peer_connection_state_to_string(PeerConnectionState state);
 
@@ -113,7 +113,8 @@ PeerConnectionState peer_connection_get_state(PeerConnection* pc);
 
 /* Internal fixture telemetry; read on the protocol owner thread. */
 h2_pal_result_t peer_connection_selected_pair(PeerConnection* pc,
-    h2_pal_net_addr_t* local, h2_pal_net_addr_t* remote);
+                                              h2_pal_net_addr_t* local,
+                                              h2_pal_net_addr_t* remote);
 
 h2_pal_result_t peer_connection_classify_dtls_handshake_result(
     int handshake_result, PeerConnectionState* out_terminal_state);
@@ -132,7 +133,7 @@ h2_pal_result_t peer_connection_rtp_flush(uint8_t* pending_packet,
 
 void* peer_connection_get_sctp(PeerConnection* pc);
 h2_pal_result_t peer_connection_sctp_is_writable(PeerConnection* pc,
-                                                  bool* out_writable);
+                                                 bool* out_writable);
 
 PeerConnection* peer_connection_create(PeerConfiguration* config);
 
@@ -161,9 +162,11 @@ int peer_connection_create_datachannel(PeerConnection* pc,
 int peer_connection_create_datachannel_sid(
     PeerConnection* pc, DecpChannelType channel_type, uint16_t priority,
     uint32_t reliability_parameter, char* label, char* protocol, uint16_t sid);
-int peer_connection_register_negotiated_channel(
-    PeerConnection* pc, DecpChannelType channel_type,
-    uint32_t reliability_parameter, const char* label, uint16_t sid);
+int peer_connection_register_negotiated_channel(PeerConnection* pc,
+                                                DecpChannelType channel_type,
+                                                uint32_t reliability_parameter,
+                                                const char* label,
+                                                uint16_t sid);
 
 /**
  * @brief send message to data channel
@@ -244,12 +247,11 @@ void peer_connection_oniceconnectionstatechange(
  * @param[in] callback function when connection is opened
  * @param[in] callback function when connection is closed
  */
-void peer_connection_ondatachannel(PeerConnection* pc,
-                                   h2_pal_result_t (*onmessage)(
-                                       char* msg, size_t len, void* userdata,
-                                       uint16_t sid, int is_text),
-                                   void (*onopen)(void* userdata),
-                                   void (*onclose)(void* userdata));
+void peer_connection_ondatachannel(
+    PeerConnection* pc,
+    h2_pal_result_t (*onmessage)(char* msg, size_t len, void* userdata,
+                                 uint16_t sid, int is_text),
+    void (*onopen)(void* userdata), void (*onclose)(void* userdata));
 
 void peer_connection_onstreamreset(
     PeerConnection* pc,

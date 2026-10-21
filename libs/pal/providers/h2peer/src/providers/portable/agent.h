@@ -45,10 +45,10 @@ typedef enum AgentMode {
 typedef struct Agent Agent;
 
 struct Agent {
-  const h2_pal_log_api_t *log;
-  const h2_pal_net_api_t *net;
-  const h2_pal_time_api_t *time;
-  const h2_pal_crypto_api_t *crypto;
+  const h2_pal_log_api_t* log;
+  const h2_pal_net_api_t* net;
+  const h2_pal_time_api_t* time;
+  const h2_pal_crypto_api_t* crypto;
 
   char remote_ufrag[ICE_UFRAG_LENGTH + 1];
   char remote_upwd[ICE_UPWD_LENGTH + 1];
@@ -94,11 +94,8 @@ struct Agent {
   h2_peer_turn_refresh_t turn_refresh;
 };
 
-int agent_gather_candidate(
-    Agent* agent,
-    const char* urls,
-    const char* username,
-    const char* credential);
+int agent_gather_candidate(Agent* agent, const char* urls, const char* username,
+                           const char* credential);
 
 void agent_create_ice_credential(Agent* agent);
 
@@ -115,8 +112,7 @@ int agent_process_received(Agent* agent, h2_pal_net_addr_t* addr, uint8_t* buf,
 
 int agent_set_remote_description(Agent* agent, char* description);
 
-int agent_add_remote_candidate(
-    Agent* agent, const IceCandidate* candidate);
+int agent_add_remote_candidate(Agent* agent, const IceCandidate* candidate);
 
 int agent_select_candidate_pair(Agent* agent, uint32_t timeout_ms);
 

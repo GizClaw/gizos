@@ -19,28 +19,29 @@ extern "C" {
 #define H2_FM175XX_UID_MAX_LEN 15u
 
 typedef struct h2_fm175xx_transport {
-    void *user;
-    int (*write_reg)(void *user, uint8_t reg, uint8_t value);
-    int (*write_regs)(void *user, uint8_t reg, const uint8_t *data, size_t len);
-    int (*read_reg)(void *user, uint8_t reg, uint8_t *out_value);
-    int (*read_regs)(void *user, uint8_t reg, uint8_t *out_data, size_t len);
-    void (*sleep_ms)(void *user, uint32_t ms);
+  void* user;
+  int (*write_reg)(void* user, uint8_t reg, uint8_t value);
+  int (*write_regs)(void* user, uint8_t reg, const uint8_t* data, size_t len);
+  int (*read_reg)(void* user, uint8_t reg, uint8_t* out_value);
+  int (*read_regs)(void* user, uint8_t reg, uint8_t* out_data, size_t len);
+  void (*sleep_ms)(void* user, uint32_t ms);
 } h2_fm175xx_transport_t;
 
 typedef struct h2_fm175xx {
-    h2_fm175xx_transport_t transport;
+  h2_fm175xx_transport_t transport;
 } h2_fm175xx_t;
 
 typedef struct h2_fm175xx_type_a_card {
-    uint8_t atqa[2];
-    uint8_t uid[H2_FM175XX_UID_MAX_LEN];
-    uint8_t uid_len;
-    uint8_t sak[3];
-    uint8_t sak_len;
+  uint8_t atqa[2];
+  uint8_t uid[H2_FM175XX_UID_MAX_LEN];
+  uint8_t uid_len;
+  uint8_t sak[3];
+  uint8_t sak_len;
 } h2_fm175xx_type_a_card_t;
 
-int h2_fm175xx_init(h2_fm175xx_t *reader, const h2_fm175xx_transport_t *transport);
-int h2_fm175xx_open_type_a(h2_fm175xx_t *reader);
+int h2_fm175xx_init(h2_fm175xx_t* reader,
+                    const h2_fm175xx_transport_t* transport);
+int h2_fm175xx_open_type_a(h2_fm175xx_t* reader);
 /**
  * Select a Type A card for subsequent reads. Each call ends a preceding
  * selection with HLTA and wakes IDLE/HALT cards with WUPA, so repeated polls
@@ -48,8 +49,10 @@ int h2_fm175xx_open_type_a(h2_fm175xx_t *reader);
  * expected; register/transport errors still propagate. The caller serializes
  * this operation with all other reader operations.
  */
-int h2_fm175xx_type_a_activate(h2_fm175xx_t *reader, h2_fm175xx_type_a_card_t *out_card);
-int h2_fm175xx_ntag_read_all(h2_fm175xx_t *reader, uint8_t *out_data, size_t capacity, size_t *out_len);
+int h2_fm175xx_type_a_activate(h2_fm175xx_t* reader,
+                               h2_fm175xx_type_a_card_t* out_card);
+int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
+                             size_t capacity, size_t* out_len);
 
 #ifdef __cplusplus
 }

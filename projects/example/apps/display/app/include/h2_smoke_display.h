@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-int h2_smoke_display_run(h2_runtime_t *runtime);
+int h2_smoke_display_run(h2_runtime_t* runtime);
 
 #ifdef __cplusplus
 }

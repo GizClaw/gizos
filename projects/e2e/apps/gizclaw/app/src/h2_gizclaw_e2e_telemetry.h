@@ -7,8 +7,8 @@
 extern "C" {
 #endif
 
-int h2_gizclaw_e2e_run_telemetry(h2_gizclaw_e2e_fixture_t *fixture,
-                                 h2_gizclaw_resp_storage_t *storage);
+int h2_gizclaw_e2e_run_telemetry(h2_gizclaw_e2e_fixture_t* fixture,
+                                 h2_gizclaw_resp_storage_t* storage);
 
 #ifdef __cplusplus
 }

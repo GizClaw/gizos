@@ -15,7 +15,7 @@ struct DesktopTimer {
   std::condition_variable changed;
   std::thread worker;
   h2_pal_timer_cb_t callback = nullptr;
-  void *callback_user = nullptr;
+  void* callback_user = nullptr;
   uint32_t period_ms = 0u;
   uint64_t generation = 0u;
   Clock::time_point deadline;
@@ -28,25 +28,24 @@ struct DesktopTimer {
   bool self_cleanup = false;
 };
 
-void dispose(DesktopTimer *timer) {
+void dispose(DesktopTimer* timer) {
   delete timer;
   h2_desktop_resource_release(h2_desktop_resource_kind::timer);
 }
 
-void arm(DesktopTimer *timer) {
+void arm(DesktopTimer* timer) {
   timer->running = true;
   timer->deadline = Clock::now() + std::chrono::milliseconds(timer->period_ms);
   ++timer->generation;
   timer->changed.notify_all();
 }
 
-void timer_worker(DesktopTimer *timer) {
+void timer_worker(DesktopTimer* timer) {
   std::unique_lock<std::mutex> lock(timer->mutex);
   while (!timer->destroying) {
     timer->changed.wait(
         lock, [timer] { return timer->running || timer->destroying; });
-    if (timer->destroying)
-      break;
+    if (timer->destroying) break;
     const uint64_t generation = timer->generation;
     const Clock::time_point deadline = timer->deadline;
     if (timer->changed.wait_until(lock, deadline, [timer, generation] {
@@ -54,12 +53,11 @@ void timer_worker(DesktopTimer *timer) {
                  timer->generation != generation;
         }))
       continue;
-    if (!timer->repeat)
-      timer->running = false;
+    if (!timer->repeat) timer->running = false;
     timer->in_callback = true;
     lock.unlock();
     timer->callback(timer->callback_user,
-                    reinterpret_cast<h2_pal_timer_t *>(timer));
+                    reinterpret_cast<h2_pal_timer_t*>(timer));
     lock.lock();
     timer->in_callback = false;
     timer->changed.notify_all();
@@ -75,22 +73,19 @@ void timer_worker(DesktopTimer *timer) {
   }
   const bool self_cleanup = timer->self_cleanup;
   lock.unlock();
-  if (self_cleanup)
-    dispose(timer);
+  if (self_cleanup) dispose(timer);
 }
 
-h2_pal_result_t timer_create(void *, const h2_pal_timer_config_t *config,
-                             h2_pal_timer_t **out_timer) {
-  if (out_timer != nullptr)
-    *out_timer = nullptr;
+h2_pal_result_t timer_create(void*, const h2_pal_timer_config_t* config,
+                             h2_pal_timer_t** out_timer) {
+  if (out_timer != nullptr) *out_timer = nullptr;
   if (config == nullptr || out_timer == nullptr || config->cb == nullptr ||
       config->period_ms == 0u ||
       (config->flags &
        ~(H2_PAL_TIMER_FLAG_REPEAT | H2_PAL_TIMER_FLAG_AUTO_START)) != 0u)
     return H2_PAL_ERR_INVALID_ARG;
-  DesktopTimer *timer = new (std::nothrow) DesktopTimer();
-  if (timer == nullptr)
-    return H2_PAL_ERR_NO_MEMORY;
+  DesktopTimer* timer = new (std::nothrow) DesktopTimer();
+  if (timer == nullptr) return H2_PAL_ERR_NO_MEMORY;
   timer->callback = config->cb;
   timer->callback_user = config->cb_user;
   timer->period_ms = config->period_ms;
@@ -98,8 +93,7 @@ h2_pal_result_t timer_create(void *, const h2_pal_timer_config_t *config,
   // A started worker cannot enter a callback before its std::thread handle and
   // resource ownership have both been published under this lock.
   std::unique_lock<std::mutex> lock(timer->mutex);
-  if ((config->flags & H2_PAL_TIMER_FLAG_AUTO_START) != 0u)
-    arm(timer);
+  if ((config->flags & H2_PAL_TIMER_FLAG_AUTO_START) != 0u) arm(timer);
   try {
     timer->worker = std::thread(timer_worker, timer);
   } catch (...) {
@@ -108,14 +102,13 @@ h2_pal_result_t timer_create(void *, const h2_pal_timer_config_t *config,
     return H2_PAL_ERR_UNAVAILABLE;
   }
   h2_desktop_resource_acquire(h2_desktop_resource_kind::timer);
-  *out_timer = reinterpret_cast<h2_pal_timer_t *>(timer);
+  *out_timer = reinterpret_cast<h2_pal_timer_t*>(timer);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t timer_destroy(void *, h2_pal_timer_t *raw_timer) {
-  if (raw_timer == nullptr)
-    return H2_PAL_ERR_INVALID_ARG;
-  auto *timer = reinterpret_cast<DesktopTimer *>(raw_timer);
+h2_pal_result_t timer_destroy(void*, h2_pal_timer_t* raw_timer) {
+  if (raw_timer == nullptr) return H2_PAL_ERR_INVALID_ARG;
+  auto* timer = reinterpret_cast<DesktopTimer*>(raw_timer);
   std::unique_lock<std::mutex> lock(timer->mutex);
   if (timer->stopping || timer->joining || timer->self_cleanup)
     return H2_PAL_ERR_BUSY;
@@ -148,31 +141,24 @@ h2_pal_result_t timer_destroy(void *, h2_pal_timer_t *raw_timer) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t timer_start(void *, h2_pal_timer_t *raw_timer) {
-  if (raw_timer == nullptr)
-    return H2_PAL_ERR_INVALID_ARG;
-  auto *timer = reinterpret_cast<DesktopTimer *>(raw_timer);
+h2_pal_result_t timer_start(void*, h2_pal_timer_t* raw_timer) {
+  if (raw_timer == nullptr) return H2_PAL_ERR_INVALID_ARG;
+  auto* timer = reinterpret_cast<DesktopTimer*>(raw_timer);
   std::lock_guard<std::mutex> lock(timer->mutex);
-  if (timer->destroying)
-    return H2_PAL_ERR_INVALID_STATE;
-  if (timer->stopping)
-    return H2_PAL_ERR_BUSY;
-  if (timer->running)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (timer->destroying) return H2_PAL_ERR_INVALID_STATE;
+  if (timer->stopping) return H2_PAL_ERR_BUSY;
+  if (timer->running) return H2_PAL_ERR_INVALID_STATE;
   arm(timer);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t timer_stop(void *, h2_pal_timer_t *raw_timer) {
-  if (raw_timer == nullptr)
-    return H2_PAL_ERR_INVALID_ARG;
-  auto *timer = reinterpret_cast<DesktopTimer *>(raw_timer);
+h2_pal_result_t timer_stop(void*, h2_pal_timer_t* raw_timer) {
+  if (raw_timer == nullptr) return H2_PAL_ERR_INVALID_ARG;
+  auto* timer = reinterpret_cast<DesktopTimer*>(raw_timer);
   std::unique_lock<std::mutex> lock(timer->mutex);
-  if (timer->destroying)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (timer->destroying) return H2_PAL_ERR_INVALID_STATE;
   const bool self = timer->worker.get_id() == std::this_thread::get_id();
-  if (timer->stopping && !self)
-    return H2_PAL_ERR_BUSY;
+  if (timer->stopping && !self) return H2_PAL_ERR_BUSY;
   timer->running = false;
   ++timer->generation;
   timer->changed.notify_all();
@@ -184,45 +170,36 @@ h2_pal_result_t timer_stop(void *, h2_pal_timer_t *raw_timer) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t timer_reset(void *, h2_pal_timer_t *raw_timer) {
-  if (raw_timer == nullptr)
-    return H2_PAL_ERR_INVALID_ARG;
-  auto *timer = reinterpret_cast<DesktopTimer *>(raw_timer);
+h2_pal_result_t timer_reset(void*, h2_pal_timer_t* raw_timer) {
+  if (raw_timer == nullptr) return H2_PAL_ERR_INVALID_ARG;
+  auto* timer = reinterpret_cast<DesktopTimer*>(raw_timer);
   std::lock_guard<std::mutex> lock(timer->mutex);
-  if (timer->destroying)
-    return H2_PAL_ERR_INVALID_STATE;
-  if (timer->stopping)
-    return H2_PAL_ERR_BUSY;
+  if (timer->destroying) return H2_PAL_ERR_INVALID_STATE;
+  if (timer->stopping) return H2_PAL_ERR_BUSY;
   arm(timer);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t timer_set_period(void *, h2_pal_timer_t *raw_timer,
+h2_pal_result_t timer_set_period(void*, h2_pal_timer_t* raw_timer,
                                  uint32_t period_ms) {
-  if (raw_timer == nullptr || period_ms == 0u)
-    return H2_PAL_ERR_INVALID_ARG;
-  auto *timer = reinterpret_cast<DesktopTimer *>(raw_timer);
+  if (raw_timer == nullptr || period_ms == 0u) return H2_PAL_ERR_INVALID_ARG;
+  auto* timer = reinterpret_cast<DesktopTimer*>(raw_timer);
   std::lock_guard<std::mutex> lock(timer->mutex);
-  if (timer->destroying)
-    return H2_PAL_ERR_INVALID_STATE;
-  if (timer->stopping)
-    return H2_PAL_ERR_BUSY;
+  if (timer->destroying) return H2_PAL_ERR_INVALID_STATE;
+  if (timer->stopping) return H2_PAL_ERR_BUSY;
   timer->period_ms = period_ms;
-  if (timer->running)
-    arm(timer);
+  if (timer->running) arm(timer);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t timer_is_running(void *, h2_pal_timer_t *raw_timer,
-                                 int *out_running) {
-  if (out_running != nullptr)
-    *out_running = 0;
+h2_pal_result_t timer_is_running(void*, h2_pal_timer_t* raw_timer,
+                                 int* out_running) {
+  if (out_running != nullptr) *out_running = 0;
   if (raw_timer == nullptr || out_running == nullptr)
     return H2_PAL_ERR_INVALID_ARG;
-  auto *timer = reinterpret_cast<DesktopTimer *>(raw_timer);
+  auto* timer = reinterpret_cast<DesktopTimer*>(raw_timer);
   std::lock_guard<std::mutex> lock(timer->mutex);
-  if (timer->destroying)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (timer->destroying) return H2_PAL_ERR_INVALID_STATE;
   *out_running = timer->running ? 1 : 0;
   return H2_PAL_OK;
 }
@@ -231,8 +208,8 @@ const h2_pal_timer_vtable_t timer_vtable = {
     timer_create, timer_destroy,    timer_start,     timer_stop,
     timer_reset,  timer_set_period, timer_is_running};
 const h2_pal_timer_api_t timer_api = {nullptr, &timer_vtable};
-} // namespace
+}  // namespace
 
-extern "C" const h2_pal_timer_api_t *h2_desktop_platform_timer_api(void) {
+extern "C" const h2_pal_timer_api_t* h2_desktop_platform_timer_api(void) {
   return &timer_api;
 }

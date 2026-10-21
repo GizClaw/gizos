@@ -181,7 +181,7 @@ EM_JS(void, h2_web_pref_iterate_js,
 });
 /* clang-format on */
 
-static size_t bounded_strlen(const char *text, size_t max_len) {
+static size_t bounded_strlen(const char* text, size_t max_len) {
   H2_WEB_STATE_GUARD();
   size_t length = 0u;
   if (text == NULL) return 0u;
@@ -189,45 +189,44 @@ static size_t bounded_strlen(const char *text, size_t max_len) {
   return length;
 }
 
-static int valid_text(const char *text, size_t max_len) {
+static int valid_text(const char* text, size_t max_len) {
   H2_WEB_STATE_GUARD();
   const size_t length = bounded_strlen(text, max_len);
   return text != NULL && length > 0u && length <= max_len;
 }
 
-static h2_web_pref_namespace_t *pref_namespace(
-    h2_pal_pref_namespace_t *name_space) {
+static h2_web_pref_namespace_t* pref_namespace(
+    h2_pal_pref_namespace_t* name_space) {
   H2_WEB_STATE_GUARD();
   return name_space == NULL ? NULL : name_space->user;
 }
 
-static int pref_close(h2_pal_pref_namespace_t *name_space) {
+static int pref_close(h2_pal_pref_namespace_t* name_space) {
   H2_WEB_STATE_GUARD();
-  h2_web_pref_namespace_t *store = pref_namespace(name_space);
+  h2_web_pref_namespace_t* store = pref_namespace(name_space);
   if (store == NULL) return H2_PAL_ERR_INVALID_ARG;
   free(store);
   return H2_PAL_OK;
 }
 
-static int pref_read(h2_web_pref_namespace_t *store, const char *key,
-                     h2_pal_pref_entry_type_t type, void *out,
-                     size_t out_size, size_t *out_len) {
+static int pref_read(h2_web_pref_namespace_t* store, const char* key,
+                     h2_pal_pref_entry_type_t type, void* out, size_t out_size,
+                     size_t* out_len) {
   H2_WEB_STATE_GUARD();
   if (store == NULL || !valid_text(key, H2_WEB_PREF_KEY_MAX) ||
       out_len == NULL || (out == NULL && out_size != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return (
-      (int)h2_web_main_call(
-          h2_web_pref_read_js,
-          (const void *[]){&(const char *){store->name_space},
-                           &(const char *){key}, &(int){type}, &(void *){out},
-                           &(size_t){out_size}, &(size_t *){out_len}})
-          .i32);
+  return ((int)h2_web_main_call(
+              h2_web_pref_read_js,
+              (const void*[]){&(const char*){store->name_space},
+                              &(const char*){key}, &(int){type}, &(void*){out},
+                              &(size_t){out_size}, &(size_t*){out_len}})
+              .i32);
 }
 
-static int pref_write(h2_web_pref_namespace_t *store, const char *key,
-                      h2_pal_pref_entry_type_t type, const void *data,
+static int pref_write(h2_web_pref_namespace_t* store, const char* key,
+                      h2_pal_pref_entry_type_t type, const void* data,
                       size_t data_len) {
   H2_WEB_STATE_GUARD();
   if (store == NULL || store->mode != H2_PAL_PREF_OPEN_READ_WRITE ||
@@ -239,28 +238,28 @@ static int pref_write(h2_web_pref_namespace_t *store, const char *key,
   }
   return ((int)h2_web_main_call(
               h2_web_pref_write_js,
-              (const void *[]){&(const char *){store->name_space},
-                               &(const char *){key}, &(int){type},
-                               &(const void *){data}, &(size_t){data_len}})
+              (const void*[]){&(const char*){store->name_space},
+                              &(const char*){key}, &(int){type},
+                              &(const void*){data}, &(size_t){data_len}})
               .i32);
 }
 
-static int pref_get_blob(h2_pal_pref_namespace_t *name_space,
-                         const h2_pal_mem_api_t *allocator, const char *key,
-                         void **out_data, size_t *out_len) {
+static int pref_get_blob(h2_pal_pref_namespace_t* name_space,
+                         const h2_pal_mem_api_t* allocator, const char* key,
+                         void** out_data, size_t* out_len) {
   H2_WEB_STATE_GUARD();
-  h2_web_pref_namespace_t *store = pref_namespace(name_space);
+  h2_web_pref_namespace_t* store = pref_namespace(name_space);
   size_t length = 0u;
   int rc;
-  if (store == NULL || allocator == NULL || out_data == NULL ||
-      out_len == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (store == NULL || allocator == NULL || out_data == NULL || out_len == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
   *out_data = NULL;
   *out_len = 0u;
   rc = pref_read(store, key, H2_PAL_PREF_ENTRY_BLOB, NULL, 0u, &length);
   if (rc != H2_PAL_ERR_NO_SPACE && !(rc == H2_PAL_OK && length == 0u)) {
     return rc;
   }
-  void *data = h2_pal_mem_alloc(allocator, length == 0u ? 1u : length);
+  void* data = h2_pal_mem_alloc(allocator, length == 0u ? 1u : length);
   if (data == NULL) return H2_PAL_ERR_NO_MEMORY;
   rc = pref_read(store, key, H2_PAL_PREF_ENTRY_BLOB, data, length, &length);
   if (rc != H2_PAL_OK) {
@@ -272,18 +271,18 @@ static int pref_get_blob(h2_pal_pref_namespace_t *name_space,
   return H2_PAL_OK;
 }
 
-static int pref_set_blob(h2_pal_pref_namespace_t *name_space,
-                         const char *key, const void *data, size_t data_len) {
+static int pref_set_blob(h2_pal_pref_namespace_t* name_space, const char* key,
+                         const void* data, size_t data_len) {
   H2_WEB_STATE_GUARD();
   return pref_write(pref_namespace(name_space), key, H2_PAL_PREF_ENTRY_BLOB,
                     data, data_len);
 }
 
-static int pref_get_string(h2_pal_pref_namespace_t *name_space,
-                           const h2_pal_mem_api_t *allocator, const char *key,
-                           char **out_value) {
+static int pref_get_string(h2_pal_pref_namespace_t* name_space,
+                           const h2_pal_mem_api_t* allocator, const char* key,
+                           char** out_value) {
   H2_WEB_STATE_GUARD();
-  h2_web_pref_namespace_t *store = pref_namespace(name_space);
+  h2_web_pref_namespace_t* store = pref_namespace(name_space);
   size_t length = 0u;
   int rc;
   if (store == NULL || allocator == NULL || out_value == NULL) {
@@ -294,7 +293,7 @@ static int pref_get_string(h2_pal_pref_namespace_t *name_space,
   if (rc != H2_PAL_ERR_NO_SPACE && !(rc == H2_PAL_OK && length == 0u)) {
     return rc;
   }
-  char *value = h2_pal_mem_alloc(allocator, length + 1u);
+  char* value = h2_pal_mem_alloc(allocator, length + 1u);
   if (value == NULL) return H2_PAL_ERR_NO_MEMORY;
   rc = pref_read(store, key, H2_PAL_PREF_ENTRY_STRING, value, length, &length);
   if (rc != H2_PAL_OK) {
@@ -306,65 +305,63 @@ static int pref_get_string(h2_pal_pref_namespace_t *name_space,
   return H2_PAL_OK;
 }
 
-static int pref_set_string(h2_pal_pref_namespace_t *name_space,
-                           const char *key, const char *value) {
+static int pref_set_string(h2_pal_pref_namespace_t* name_space, const char* key,
+                           const char* value) {
   H2_WEB_STATE_GUARD();
   if (value == NULL) return H2_PAL_ERR_INVALID_ARG;
   const size_t length = bounded_strlen(value, H2_WEB_PREF_VALUE_MAX);
   if (length > H2_WEB_PREF_VALUE_MAX) return H2_PAL_ERR_INVALID_ARG;
-  return pref_write(pref_namespace(name_space), key,
-                    H2_PAL_PREF_ENTRY_STRING, value, length);
+  return pref_write(pref_namespace(name_space), key, H2_PAL_PREF_ENTRY_STRING,
+                    value, length);
 }
 
-static int pref_get_u32(h2_pal_pref_namespace_t *name_space, const char *key,
-                        uint32_t *out_value) {
+static int pref_get_u32(h2_pal_pref_namespace_t* name_space, const char* key,
+                        uint32_t* out_value) {
   H2_WEB_STATE_GUARD();
   size_t length = 0u;
   if (out_value == NULL) return H2_PAL_ERR_INVALID_ARG;
-  const int rc = pref_read(pref_namespace(name_space), key,
-                           H2_PAL_PREF_ENTRY_U32, out_value,
-                           sizeof(*out_value), &length);
-  return rc == H2_PAL_OK && length != sizeof(*out_value)
-             ? H2_PAL_ERR_FORMAT
-             : rc;
+  const int rc =
+      pref_read(pref_namespace(name_space), key, H2_PAL_PREF_ENTRY_U32,
+                out_value, sizeof(*out_value), &length);
+  return rc == H2_PAL_OK && length != sizeof(*out_value) ? H2_PAL_ERR_FORMAT
+                                                         : rc;
 }
 
-static int pref_set_u32(h2_pal_pref_namespace_t *name_space, const char *key,
+static int pref_set_u32(h2_pal_pref_namespace_t* name_space, const char* key,
                         uint32_t value) {
   H2_WEB_STATE_GUARD();
   return pref_write(pref_namespace(name_space), key, H2_PAL_PREF_ENTRY_U32,
                     &value, sizeof(value));
 }
 
-static int pref_get_i32(h2_pal_pref_namespace_t *name_space, const char *key,
-                        int32_t *out_value) {
+static int pref_get_i32(h2_pal_pref_namespace_t* name_space, const char* key,
+                        int32_t* out_value) {
   H2_WEB_STATE_GUARD();
   size_t length = 0u;
   if (out_value == NULL) return H2_PAL_ERR_INVALID_ARG;
-  const int rc = pref_read(pref_namespace(name_space), key,
-                           H2_PAL_PREF_ENTRY_I32, out_value,
-                           sizeof(*out_value), &length);
-  return rc == H2_PAL_OK && length != sizeof(*out_value)
-             ? H2_PAL_ERR_FORMAT
-             : rc;
+  const int rc =
+      pref_read(pref_namespace(name_space), key, H2_PAL_PREF_ENTRY_I32,
+                out_value, sizeof(*out_value), &length);
+  return rc == H2_PAL_OK && length != sizeof(*out_value) ? H2_PAL_ERR_FORMAT
+                                                         : rc;
 }
 
-static int pref_set_i32(h2_pal_pref_namespace_t *name_space, const char *key,
+static int pref_set_i32(h2_pal_pref_namespace_t* name_space, const char* key,
                         int32_t value) {
   H2_WEB_STATE_GUARD();
   return pref_write(pref_namespace(name_space), key, H2_PAL_PREF_ENTRY_I32,
                     &value, sizeof(value));
 }
 
-static int pref_get_bool(h2_pal_pref_namespace_t *name_space, const char *key,
-                         int *out_value) {
+static int pref_get_bool(h2_pal_pref_namespace_t* name_space, const char* key,
+                         int* out_value) {
   H2_WEB_STATE_GUARD();
   int32_t stored = 0;
   size_t length = 0u;
   if (out_value == NULL) return H2_PAL_ERR_INVALID_ARG;
-  const int rc = pref_read(pref_namespace(name_space), key,
-                           H2_PAL_PREF_ENTRY_BOOL, &stored, sizeof(stored),
-                           &length);
+  const int rc =
+      pref_read(pref_namespace(name_space), key, H2_PAL_PREF_ENTRY_BOOL,
+                &stored, sizeof(stored), &length);
   if (rc != H2_PAL_OK) return rc;
   if (length != sizeof(stored) || (stored != 0 && stored != 1)) {
     return H2_PAL_ERR_FORMAT;
@@ -373,7 +370,7 @@ static int pref_get_bool(h2_pal_pref_namespace_t *name_space, const char *key,
   return H2_PAL_OK;
 }
 
-static int pref_set_bool(h2_pal_pref_namespace_t *name_space, const char *key,
+static int pref_set_bool(h2_pal_pref_namespace_t* name_space, const char* key,
                          int value) {
   H2_WEB_STATE_GUARD();
   const int32_t stored = value != 0 ? 1 : 0;
@@ -381,9 +378,9 @@ static int pref_set_bool(h2_pal_pref_namespace_t *name_space, const char *key,
                     &stored, sizeof(stored));
 }
 
-static int pref_remove(h2_pal_pref_namespace_t *name_space, const char *key) {
+static int pref_remove(h2_pal_pref_namespace_t* name_space, const char* key) {
   H2_WEB_STATE_GUARD();
-  h2_web_pref_namespace_t *store = pref_namespace(name_space);
+  h2_web_pref_namespace_t* store = pref_namespace(name_space);
   if (store == NULL || !valid_text(key, H2_WEB_PREF_KEY_MAX)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -392,35 +389,35 @@ static int pref_remove(h2_pal_pref_namespace_t *name_space, const char *key) {
   }
   return (
       (int)h2_web_main_call(h2_web_pref_remove_js,
-                            (const void *[]){&(const char *){store->name_space},
-                                             &(const char *){key}})
+                            (const void*[]){&(const char*){store->name_space},
+                                            &(const char*){key}})
           .i32);
 }
 
-static int pref_clear(h2_pal_pref_namespace_t *name_space) {
+static int pref_clear(h2_pal_pref_namespace_t* name_space) {
   H2_WEB_STATE_GUARD();
-  h2_web_pref_namespace_t *store = pref_namespace(name_space);
+  h2_web_pref_namespace_t* store = pref_namespace(name_space);
   if (store == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (store->mode != H2_PAL_PREF_OPEN_READ_WRITE) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  return ((int)h2_web_main_call(
-              h2_web_pref_clear_js,
-              (const void *[]){&(const char *){store->name_space}})
-              .i32);
+  return (
+      (int)h2_web_main_call(h2_web_pref_clear_js,
+                            (const void*[]){&(const char*){store->name_space}})
+          .i32);
 }
 
-static int pref_commit(h2_pal_pref_namespace_t *name_space) {
+static int pref_commit(h2_pal_pref_namespace_t* name_space) {
   H2_WEB_STATE_GUARD();
   return pref_namespace(name_space) == NULL ? H2_PAL_ERR_INVALID_ARG
-                                             : H2_PAL_OK;
+                                            : H2_PAL_OK;
 }
 
-static int pref_iterate(h2_pal_pref_namespace_t *name_space,
-                        h2_pal_pref_cursor_t **cursor,
-                        h2_pal_pref_entry_t *out_entry) {
+static int pref_iterate(h2_pal_pref_namespace_t* name_space,
+                        h2_pal_pref_cursor_t** cursor,
+                        h2_pal_pref_entry_t* out_entry) {
   H2_WEB_STATE_GUARD();
-  h2_web_pref_namespace_t *store = pref_namespace(name_space);
+  h2_web_pref_namespace_t* store = pref_namespace(name_space);
   if (store == NULL || cursor == NULL || out_entry == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -433,10 +430,10 @@ static int pref_iterate(h2_pal_pref_namespace_t *name_space,
   const int rc =
       ((int)h2_web_main_call(
            h2_web_pref_iterate_js,
-           (const void *[]){
-               &(const char *){store->name_space}, &(size_t){(*cursor)->index},
-               &(char *){(*cursor)->key}, &(size_t){sizeof((*cursor)->key)},
-               &(int *){&type}, &(size_t *){&value_size}})
+           (const void*[]){
+               &(const char*){store->name_space}, &(size_t){(*cursor)->index},
+               &(char*){(*cursor)->key}, &(size_t){sizeof((*cursor)->key)},
+               &(int*){&type}, &(size_t*){&value_size}})
            .i32);
   if (rc != H2_PAL_OK) {
     if (rc == H2_PAL_ERR_NOT_FOUND) {
@@ -452,8 +449,8 @@ static int pref_iterate(h2_pal_pref_namespace_t *name_space,
   return H2_PAL_OK;
 }
 
-static int pref_iterate_close(h2_pal_pref_namespace_t *name_space,
-                              h2_pal_pref_cursor_t **cursor) {
+static int pref_iterate_close(h2_pal_pref_namespace_t* name_space,
+                              h2_pal_pref_cursor_t** cursor) {
   H2_WEB_STATE_GUARD();
   if (pref_namespace(name_space) == NULL || cursor == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -463,11 +460,11 @@ static int pref_iterate_close(h2_pal_pref_namespace_t *name_space,
   return H2_PAL_OK;
 }
 
-static int pref_open(void *user, const char *name_space,
+static int pref_open(void* user, const char* name_space,
                      h2_pal_pref_open_mode_t mode,
-                     h2_pal_pref_namespace_t **out_namespace) {
+                     h2_pal_pref_namespace_t** out_namespace) {
   H2_WEB_STATE_GUARD();
-  h2_web_platform_t *platform = user;
+  h2_web_platform_t* platform = user;
   if (out_namespace != NULL) *out_namespace = NULL;
   if (platform == NULL || out_namespace == NULL ||
       !valid_text(name_space, H2_WEB_PREF_NAMESPACE_MAX) ||
@@ -475,8 +472,9 @@ static int pref_open(void *user, const char *name_space,
        mode != H2_PAL_PREF_OPEN_READ_WRITE)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (!((int)h2_web_main_call(h2_web_pref_storage_available_js, NULL).i32)) return H2_PAL_ERR_UNAVAILABLE;
-  h2_web_pref_namespace_t *store = calloc(1u, sizeof(*store));
+  if (!((int)h2_web_main_call(h2_web_pref_storage_available_js, NULL).i32))
+    return H2_PAL_ERR_UNAVAILABLE;
+  h2_web_pref_namespace_t* store = calloc(1u, sizeof(*store));
   if (store == NULL) return H2_PAL_ERR_NO_MEMORY;
   store->mode = mode;
   memcpy(store->name_space, name_space, strlen(name_space) + 1u);
@@ -505,7 +503,7 @@ static const h2_pal_pref_vtable_t pref_vtable = {
     .open = pref_open,
 };
 
-void h2_web_platform_pref_init(h2_web_platform_t *platform) {
+void h2_web_platform_pref_init(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
   platform->pref_api.user = platform;
   platform->pref_api.vtable = &pref_vtable;

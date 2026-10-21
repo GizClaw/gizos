@@ -18,18 +18,18 @@ typedef enum {
   FDB_WRITE_ERR
 } fdb_err_t;
 struct fdb_db {
-  void *user_data;
+  void* user_data;
 };
-typedef struct fdb_db *fdb_db_t;
+typedef struct fdb_db* fdb_db_t;
 struct fdb_kvdb {
   struct fdb_db parent;
 };
-typedef struct fdb_kvdb *fdb_kvdb_t;
+typedef struct fdb_kvdb* fdb_kvdb_t;
 struct fdb_blob {
-  void *buf;
+  void* buf;
   size_t size;
 };
-typedef struct fdb_blob *fdb_blob_t;
+typedef struct fdb_blob* fdb_blob_t;
 struct fdb_kv {
   char name[FDB_KV_NAME_MAX];
   size_t value_len;
@@ -38,15 +38,15 @@ struct fdb_kv_iterator {
   size_t index;
   struct fdb_kv curr_kv;
 };
-void fdb_kvdb_control(fdb_kvdb_t db, int command, void *value);
-fdb_err_t fdb_kvdb_init(fdb_kvdb_t db, const char *name, const char *path,
-                        void *defaults, void *user);
-fdb_blob_t fdb_blob_make(fdb_blob_t blob, const void *data, size_t length);
-struct fdb_kv *fdb_kv_get_obj(fdb_kvdb_t db, const char *key,
-                              struct fdb_kv *out);
-size_t fdb_kv_get_blob(fdb_kvdb_t db, const char *key, fdb_blob_t blob);
-fdb_err_t fdb_kv_set_blob(fdb_kvdb_t db, const char *key, fdb_blob_t blob);
-fdb_err_t fdb_kv_del(fdb_kvdb_t db, const char *key);
-void fdb_kv_iterator_init(struct fdb_kv_iterator *iterator);
-bool fdb_kv_iterate(fdb_kvdb_t db, struct fdb_kv_iterator *iterator);
+void fdb_kvdb_control(fdb_kvdb_t db, int command, void* value);
+fdb_err_t fdb_kvdb_init(fdb_kvdb_t db, const char* name, const char* path,
+                        void* defaults, void* user);
+fdb_blob_t fdb_blob_make(fdb_blob_t blob, const void* data, size_t length);
+struct fdb_kv* fdb_kv_get_obj(fdb_kvdb_t db, const char* key,
+                              struct fdb_kv* out);
+size_t fdb_kv_get_blob(fdb_kvdb_t db, const char* key, fdb_blob_t blob);
+fdb_err_t fdb_kv_set_blob(fdb_kvdb_t db, const char* key, fdb_blob_t blob);
+fdb_err_t fdb_kv_del(fdb_kvdb_t db, const char* key);
+void fdb_kv_iterator_init(struct fdb_kv_iterator* iterator);
+bool fdb_kv_iterate(fdb_kvdb_t db, struct fdb_kv_iterator* iterator);
 #endif

@@ -39,23 +39,23 @@ typedef struct h2_gizclaw_speech_extract_response {
  * wait alone does not end recording. timeout_ms bounds the network operation.
  */
 h2_pal_result_t h2_gizclaw_req_create_speech_transcribe(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_speech_transcribe_options_t *options, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_speech_transcribe_options_t* options, uint32_t timeout_ms,
+    h2_gizclaw_req_t** out_request);
 h2_pal_result_t h2_gizclaw_req_create_speech_extract(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_speech_extract_options_t *options, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_speech_extract_options_t* options, uint32_t timeout_ms,
+    h2_gizclaw_req_t** out_request);
 
 /** Parse a successful terminal response into caller-owned storage. Views remain
  * valid after request release / Service deinit. Failure clears out_response
  * and leaves storage->used unchanged. */
 h2_pal_result_t h2_gizclaw_resp_parse_speech_transcribe(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_speech_transcribe_response_t *out_response);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_speech_transcribe_response_t* out_response);
 h2_pal_result_t h2_gizclaw_resp_parse_speech_extract(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_speech_extract_response_t *out_response);
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_speech_extract_response_t* out_response);
 
 #ifdef __cplusplus
 }

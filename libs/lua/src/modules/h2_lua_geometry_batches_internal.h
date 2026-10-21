@@ -10,15 +10,15 @@ typedef struct h2_geometry_part {
 typedef struct h2_geometry_batch {
   size_t n, parts;
   double direction[4];
-  double *base; /* packed x,y,w0,w1; immutable after construction */
-  h2_geometry_part_t *topology;
+  double* base; /* packed x,y,w0,w1; immutable after construction */
+  h2_geometry_part_t* topology;
 } h2_geometry_batch_t;
 typedef struct h2_geometry_pose {
-  h2_geometry_batch_t *geometry; /* retained through userdata slot 1 */
+  h2_geometry_batch_t* geometry; /* retained through userdata slot 1 */
   int valid, projected;
   double inputs[14];
   size_t generation;
   double *positions, *staged, *screen;
 } h2_geometry_pose_t;
-void h2_geometry_batches_register(lua_State *s);
+void h2_geometry_batches_register(lua_State* s);
 #endif

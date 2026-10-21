@@ -1,6 +1,6 @@
-load("//tools/bazel:mobile_package.bzl", "h2_android_aar", "h2_mobile_archive_import")
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test", "cc_shared_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_package.bzl", "h2_android_aar", "h2_mobile_archive_import")
 load("//tools/bazel/platforms:compatibility.bzl", "ANDROID_ARM64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -41,19 +41,23 @@ cc_library(
     name = "pal_core",
     srcs = [
         "src/h2_android_audio_decoder.c",
-        "src/h2_android_platform.c",
         "src/h2_android_core.c",
         "src/h2_android_crypto.c",
-        "src/h2_android_json.c",
         "src/h2_android_http.c",
-        "src/h2_android_net.c",
+        "src/h2_android_json.c",
         "src/h2_android_mqtt.c",
-        "src/h2_android_webrtc.c",
-        "src/h2_android_tls_internal.h",
+        "src/h2_android_net.c",
+        "src/h2_android_platform.c",
         "src/h2_android_storage.c",
+        "src/h2_android_tls_internal.h",
         "src/h2_android_video_decoder.c",
+        "src/h2_android_webrtc.c",
     ],
-    hdrs = ["include/h2_android_platform.h", "include/h2_android_net.h", "include/h2_android_mqtt.h"],
+    hdrs = [
+        "include/h2_android_mqtt.h",
+        "include/h2_android_net.h",
+        "include/h2_android_platform.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS + [
         "-Wno-deprecated-declarations",
@@ -71,17 +75,19 @@ cc_library(
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
         ":contracts",
+        "//libs/atomic/providers/pthread",
+        "//libs/pal",
         "//libs/pal:unsupported",
-        "//libs/pal/providers/wolfssl",
-        "//libs/pal/providers/yyjson:yyjson",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/coremqtt",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
-        "//libs/atomic/providers/pthread",
+        "//libs/pal/providers/posix/pal_core:host_fs",
+        "//libs/pal/providers/posix/pal_core:mobile_core",
         "//libs/pal/providers/posix/pal_core:net",
-        "//libs/pal",
-        "//libs/pal/providers/posix/pal_core:mobile_core", "//libs/pal/providers/posix/pal_core:host_fs", "//libs/pal/providers/sqlite",
+        "//libs/pal/providers/sqlite",
+        "//libs/pal/providers/wolfssl",
+        "//libs/pal/providers/yyjson",
     ],
 )
 
@@ -130,28 +136,40 @@ cc_test(
     deps = [":video_contract"],
 )
 
-
 cc_shared_library(
     name = "sdk_binary",
     shared_lib_name = "libh2_pal_core.so",
-    deps = [":pal_core"],
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
 )
+
 h2_android_aar(
     name = "aar",
-    shared_library = ":sdk_binary",
-    headers = ["include/h2_android_platform.h", "include/h2_android_net.h", "include/h2_android_mqtt.h", "//libs/pal:pal_header_files", "//libs/pal/providers/yyjson:include/h2_yyjson_json.h"],
+    headers = [
+        "include/h2_android_platform.h",
+        "include/h2_android_net.h",
+        "include/h2_android_mqtt.h",
+        "//libs/pal:pal_header_files",
+        "//libs/pal/providers/yyjson:include/h2_yyjson_json.h",
+    ],
     module_name = "h2-pal-core",
-    version = "2.0.0",
+    shared_library = ":sdk_binary",
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
+    version = "2.0.0",
 )
-filegroup(name = "aar_archive", srcs = [":aar"], output_group = "artifact")
+
+filegroup(
+    name = "aar_archive",
+    srcs = [":aar"],
+    output_group = "artifact",
+)
+
 h2_mobile_archive_import(
     name = "packaged",
     archive = ":aar_archive",
-    member = "jni/arm64-v8a/libh2_pal_core.so",
-    header_prefix = "prefab/modules/h2_pal_core/include/",
     binary_name = "libh2_pal_core.so",
+    header_prefix = "prefab/modules/h2_pal_core/include/",
+    member = "jni/arm64-v8a/libh2_pal_core.so",
     shared = True,
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
 )

@@ -6,18 +6,18 @@
 
 namespace h2::starboy {
 
-void *find_global_mouse_window(const char *window_title) {
+void* find_global_mouse_window(const char* window_title) {
   if (window_title == nullptr) {
     return nullptr;
   }
   int window_count = 0;
-  SDL_Window **windows = SDL_GetWindows(&window_count);
+  SDL_Window** windows = SDL_GetWindows(&window_count);
   if (windows == nullptr) {
     return nullptr;
   }
-  SDL_Window *matched = nullptr;
+  SDL_Window* matched = nullptr;
   for (int index = 0; index < window_count; ++index) {
-    const char *title = SDL_GetWindowTitle(windows[index]);
+    const char* title = SDL_GetWindowTitle(windows[index]);
     if (title != nullptr && std::strcmp(title, window_title) == 0) {
       matched = windows[index];
       break;
@@ -27,10 +27,9 @@ void *find_global_mouse_window(const char *window_title) {
   return matched;
 }
 
-bool sample_global_mouse_relative(void *window_pointer,
-                                  std::int32_t *out_x,
-                                  std::int32_t *out_y) {
-  auto *window = static_cast<SDL_Window *>(window_pointer);
+bool sample_global_mouse_relative(void* window_pointer, std::int32_t* out_x,
+                                  std::int32_t* out_y) {
+  auto* window = static_cast<SDL_Window*>(window_pointer);
   if (window == nullptr || out_x == nullptr || out_y == nullptr) {
     return false;
   }

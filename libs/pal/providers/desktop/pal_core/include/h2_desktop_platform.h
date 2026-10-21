@@ -109,7 +109,7 @@ typedef struct h2_desktop_power_snapshot {
 /** Keyboard-presented deterministic NFC tag fixture. */
 typedef struct h2_desktop_nfc_fixture {
   h2_pal_periph_id_t periph_id;
-  const uint8_t *ntag_pages;
+  const uint8_t* ntag_pages;
   size_t ntag_pages_len;
   uint8_t uid_len;
   uint8_t uid[H2_PAL_NFC_UID_MAX_LEN];
@@ -117,9 +117,9 @@ typedef struct h2_desktop_nfc_fixture {
 
 /** One access point returned by the simulated Desktop Wi-Fi scan. */
 typedef struct h2_desktop_wifi_scan_entry_config {
-  const char *ssid;
+  const char* ssid;
   size_t ssid_len;
-  const char *password;
+  const char* password;
   size_t password_len;
   int rssi_dbm;
   uint8_t channel;
@@ -136,12 +136,12 @@ typedef enum h2_desktop_wifi_scan_outcome {
 /** Initial state for the simulated Desktop Wi-Fi STA provider. */
 typedef struct h2_desktop_wifi_sta_config {
   int connected;
-  const char *ssid;
+  const char* ssid;
   int rssi_dbm;
   uint8_t channel;
   h2_desktop_wifi_scan_outcome_t scan_outcome;
   uint32_t scan_delay_ms;
-  const h2_desktop_wifi_scan_entry_config_t *scan_entries;
+  const h2_desktop_wifi_scan_entry_config_t* scan_entries;
   size_t scan_entry_count;
 } h2_desktop_wifi_sta_config_t;
 
@@ -149,7 +149,7 @@ typedef struct h2_desktop_wifi_sta_config {
 typedef struct h2_desktop_modem_config {
   int available;
   int mobile_data_enabled;
-  const char *operator_name;
+  const char* operator_name;
   int32_t rssi_dbm;
   h2_pal_modem_rat_t rat;
   /** Source attached to deterministic call events; zero uses source 1. */
@@ -158,15 +158,15 @@ typedef struct h2_desktop_modem_config {
   h2_pal_result_t dial_result;
 } h2_desktop_modem_config_t;
 
-h2_pal_mem_api_t *h2_desktop_platform_default_allocator(void);
-h2_pal_mem_api_t *h2_desktop_platform_psram_allocator(void);
-h2_pal_mem_api_t *h2_desktop_platform_internal_allocator(void);
-h2_pal_mem_api_t *h2_desktop_platform_dma_allocator(void);
-const h2_pal_sync_api_t *h2_desktop_platform_sync_api(void);
-const h2_pal_queue_api_t *h2_desktop_platform_queue_api(void);
-const h2_pal_log_api_t *h2_desktop_platform_log_api(void);
-const h2_pal_time_api_t *h2_desktop_platform_time_api(void);
-const h2_pal_task_api_t *h2_desktop_platform_task_api(void);
+h2_pal_mem_api_t* h2_desktop_platform_default_allocator(void);
+h2_pal_mem_api_t* h2_desktop_platform_psram_allocator(void);
+h2_pal_mem_api_t* h2_desktop_platform_internal_allocator(void);
+h2_pal_mem_api_t* h2_desktop_platform_dma_allocator(void);
+const h2_pal_sync_api_t* h2_desktop_platform_sync_api(void);
+const h2_pal_queue_api_t* h2_desktop_platform_queue_api(void);
+const h2_pal_log_api_t* h2_desktop_platform_log_api(void);
+const h2_pal_time_api_t* h2_desktop_platform_time_api(void);
+const h2_pal_task_api_t* h2_desktop_platform_task_api(void);
 /** Real steady-clock timers, each with one serial callback worker.
  * start rejects an already-running timer. reset starts/restarts from now;
  * set_period_ms rearms a running timer and leaves a stopped timer stopped.
@@ -177,7 +177,7 @@ const h2_pal_task_api_t *h2_desktop_platform_task_api(void);
  * must serialize destroy against other external users of the same raw handle.
  * Callbacks remain short/non-blocking per PAL and must not throw exceptions.
  */
-const h2_pal_timer_api_t *h2_desktop_platform_timer_api(void);
+const h2_pal_timer_api_t* h2_desktop_platform_timer_api(void);
 
 typedef struct h2_desktop_firmware_info h2_desktop_firmware_info_t;
 /** Copy version metadata embedded in the calling executable's image.
@@ -186,10 +186,10 @@ typedef struct h2_desktop_firmware_info h2_desktop_firmware_info_t;
  * Destroy only after all borrowed API users (including Runtime) have stopped.
  */
 h2_pal_result_t h2_desktop_firmware_info_create(
-    const char *embedded_version, h2_desktop_firmware_info_t **out);
-const h2_pal_firmware_info_api_t *h2_desktop_firmware_info_api(
-    h2_desktop_firmware_info_t *owner);
-void h2_desktop_firmware_info_destroy(h2_desktop_firmware_info_t *owner);
+    const char* embedded_version, h2_desktop_firmware_info_t** out);
+const h2_pal_firmware_info_api_t* h2_desktop_firmware_info_api(
+    h2_desktop_firmware_info_t* owner);
+void h2_desktop_firmware_info_destroy(h2_desktop_firmware_info_t* owner);
 
 /** Actual live provider objects, not counts of calls made by a test wrapper.
  * Tasks remain live after entry returns, until successful join. Stack bytes
@@ -207,55 +207,57 @@ typedef struct h2_desktop_platform_resource_stats {
   size_t live_firmware_infos;
 } h2_desktop_platform_resource_stats_t;
 h2_pal_result_t h2_desktop_platform_get_resource_stats(
-    h2_desktop_platform_resource_stats_t *out);
+    h2_desktop_platform_resource_stats_t* out);
 
 /** Optional task-stack allocator/policy, configured before its borrowers start.
  * resolve returns a minimum byte count (zero adds no policy floor). The native
  * default and options.min_stack_size are also respected, with page alignment.
  * It must not reenter configure. NULL restores the default allocator/policy.
- * The allocated storage is the actual pthread stack and remains owned until join.
- * Allocator/resolver/user are borrowed through all successful joins. Configure
- * returns BUSY while a configured start/join is outstanding. Resolution or
- * allocation failure prevents starting the thread and publishes no handle.
+ * The allocated storage is the actual pthread stack and remains owned until
+ * join. Allocator/resolver/user are borrowed through all successful joins.
+ * Configure returns BUSY while a configured start/join is outstanding.
+ * Resolution or allocation failure prevents starting the thread and publishes
+ * no handle.
  */
 typedef struct h2_desktop_task_stack_config {
-  const h2_pal_mem_api_t *allocator;
-  h2_pal_result_t (*resolve)(void *user, const h2_pal_task_options_t *options,
-                             size_t *out_bytes);
-  void *user;
+  const h2_pal_mem_api_t* allocator;
+  h2_pal_result_t (*resolve)(void* user, const h2_pal_task_options_t* options,
+                             size_t* out_bytes);
+  void* user;
 } h2_desktop_task_stack_config_t;
 /** @brief Copy or clear the process-wide desktop task-stack policy.
- * @param config Copied value, or NULL to disable; referenced objects are borrowed.
+ * @param config Copied value, or NULL to disable; referenced objects are
+ * borrowed.
  * @return OK, INVALID_ARG for an incomplete config, or BUSY while a configured
  * start/join is outstanding. Does not alter existing OS thread stacks.
  */
 h2_pal_result_t h2_desktop_platform_configure_task_stacks(
-    const h2_desktop_task_stack_config_t *config);
+    const h2_desktop_task_stack_config_t* config);
 
 /** Return the configured simulated peripheral enumeration API. */
-const h2_pal_periph_api_t *h2_desktop_platform_periph_api(void);
+const h2_pal_periph_api_t* h2_desktop_platform_periph_api(void);
 /** Return the keyboard-backed single-button API. */
-const h2_pal_button_api_t *h2_desktop_platform_button_api(void);
+const h2_pal_button_api_t* h2_desktop_platform_button_api(void);
 /** Return the simulated NFC reader API. */
-const h2_pal_nfc_api_t *h2_desktop_platform_nfc_api(void);
+const h2_pal_nfc_api_t* h2_desktop_platform_nfc_api(void);
 /** Configure the tag returned while the NFC reader's optional key is held. */
 int h2_desktop_platform_configure_nfc_fixture(
-    const h2_desktop_nfc_fixture_t *fixture);
+    const h2_desktop_nfc_fixture_t* fixture);
 /** Return the simulated IMU API. */
-const h2_pal_imu_api_t *h2_desktop_platform_imu_api(void);
+const h2_pal_imu_api_t* h2_desktop_platform_imu_api(void);
 /** Return the simulated battery input API. */
-const h2_pal_input_api_t *h2_desktop_platform_input_api(void);
+const h2_pal_input_api_t* h2_desktop_platform_input_api(void);
 /** Return the simulated PWM switch API. */
-const h2_pal_pwm_switch_api_t *h2_desktop_platform_pwm_switch_api(void);
+const h2_pal_pwm_switch_api_t* h2_desktop_platform_pwm_switch_api(void);
 /** Return the simulated power lifecycle API. */
-const h2_pal_power_api_t *h2_desktop_platform_power_api(void);
+const h2_pal_power_api_t* h2_desktop_platform_power_api(void);
 /**
  * @brief Return the simulated Desktop BLE provider using borrowed events.
  * @param system_event Non-NULL event API kept alive while the provider is used.
  * @return Provider instance, or NULL for invalid or conflicting configuration.
  */
-h2_pal_ble_t *h2_desktop_platform_ble(
-    const h2_pal_system_event_api_t *system_event);
+h2_pal_ble_t* h2_desktop_platform_ble(
+    const h2_pal_system_event_api_t* system_event);
 /** Configure whether the Desktop fake accepts Extended Advertising. */
 int h2_desktop_platform_configure_ble_extended_advertising(int supported);
 /** Configure whether the Desktop fake accepts Extended Scanning. */
@@ -264,22 +266,22 @@ int h2_desktop_platform_configure_ble_extended_scanning(int supported);
 int h2_desktop_platform_configure_ble_advertising_start_result(
     h2_pal_result_t result);
 /** Copy the Desktop fake's backend-owned encoded advertising data for tests. */
-int h2_desktop_platform_copy_ble_staged_adv_data(uint8_t *out, size_t out_size,
-                                                 size_t *out_len);
+int h2_desktop_platform_copy_ble_staged_adv_data(uint8_t* out, size_t out_size,
+                                                 size_t* out_len);
 /** Copy one multiple-set fake payload for deterministic tests. */
-int h2_desktop_platform_copy_ble_adv_set_data(h2_pal_ble_adv_set_t *set,
-                                              uint8_t *out, size_t out_size,
-                                              size_t *out_len);
-h2_pal_wifi_sta_t *h2_desktop_platform_wifi_sta(void);
-h2_pal_wifi_ap_t *h2_desktop_platform_wifi_ap(void);
-h2_pal_wifi_settings_t *h2_desktop_platform_wifi_settings(void);
+int h2_desktop_platform_copy_ble_adv_set_data(h2_pal_ble_adv_set_t* set,
+                                              uint8_t* out, size_t out_size,
+                                              size_t* out_len);
+h2_pal_wifi_sta_t* h2_desktop_platform_wifi_sta(void);
+h2_pal_wifi_ap_t* h2_desktop_platform_wifi_ap(void);
+h2_pal_wifi_settings_t* h2_desktop_platform_wifi_settings(void);
 /**
  * @brief Return the simulated Desktop modem provider using borrowed events.
  * @param system_event Non-NULL event API kept alive while the provider is used.
  * @return Provider instance, or NULL for invalid or conflicting configuration.
  */
-h2_pal_modem_t *h2_desktop_platform_modem(
-    const h2_pal_system_event_api_t *system_event);
+h2_pal_modem_t* h2_desktop_platform_modem(
+    const h2_pal_system_event_api_t* system_event);
 /**
  * @brief Replace the simulated Wi-Fi STA and scan state.
  *
@@ -290,7 +292,7 @@ h2_pal_modem_t *h2_desktop_platform_modem(
  * @return H2_PAL_OK or H2_PAL_ERR_INVALID_ARG.
  */
 int h2_desktop_platform_configure_wifi_sta(
-    const h2_desktop_wifi_sta_config_t *config);
+    const h2_desktop_wifi_sta_config_t* config);
 /**
  * @brief Replace the simulated modem state.
  *
@@ -301,7 +303,7 @@ int h2_desktop_platform_configure_wifi_sta(
  * @return H2_PAL_OK or H2_PAL_ERR_INVALID_ARG.
  */
 int h2_desktop_platform_configure_modem(
-    const h2_desktop_modem_config_t *config);
+    const h2_desktop_modem_config_t* config);
 /**
  * @brief Replace the complete simulated peripheral set before runtime
  * initialization.
@@ -314,7 +316,7 @@ int h2_desktop_platform_configure_modem(
  * @return H2_PAL_OK or H2_PAL_ERR_INVALID_ARG.
  */
 int h2_desktop_platform_configure_peripherals(
-    const h2_desktop_peripheral_config_t *peripherals, size_t peripheral_count);
+    const h2_desktop_peripheral_config_t* peripherals, size_t peripheral_count);
 /**
  * @brief Apply one keyboard transition to every matching button peripheral.
  * @param key Configured Desktop key.
@@ -341,13 +343,13 @@ int h2_desktop_platform_inject_gpio_wake(h2_pal_periph_id_t source_id);
 int h2_desktop_platform_inject_incoming_call(h2_pal_periph_id_t source_id);
 /** Inject an incoming call with an explicit complete phone number. */
 int h2_desktop_platform_inject_incoming_call_number(
-    h2_pal_periph_id_t source_id, const char *number);
+    h2_pal_periph_id_t source_id, const char* number);
 /** Inject one exact Modem call event for ordering and failure tests. */
 int h2_desktop_platform_inject_modem_call_event(
     h2_pal_periph_id_t source_id, h2_pal_system_event_type_t type,
-    const h2_pal_modem_call_status_t *status);
+    const h2_pal_modem_call_status_t* status);
 int h2_desktop_platform_get_power_snapshot(
-    h2_desktop_power_snapshot_t *out_snapshot);
+    h2_desktop_power_snapshot_t* out_snapshot);
 /** Release all simulated buttons when the SDL window loses focus. */
 void h2_desktop_platform_handle_focus_lost(void);
 /**
@@ -361,9 +363,9 @@ void h2_desktop_platform_handle_focus_lost(void);
  * @param out_help_text_len Receives the copied byte length excluding NUL.
  * @return H2_PAL_OK or H2_PAL_ERR_INVALID_ARG.
  */
-int h2_desktop_platform_copy_help_text(char *out_help_text,
+int h2_desktop_platform_copy_help_text(char* out_help_text,
                                        size_t help_text_size,
-                                       size_t *out_help_text_len);
+                                       size_t* out_help_text_len);
 #ifdef __cplusplus
 }
 #endif

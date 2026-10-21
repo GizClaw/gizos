@@ -52,12 +52,12 @@ void signal_handler(int signal_number) {
   g_cancelled = 1;
 }
 
-int is_cancelled(void *user) {
+int is_cancelled(void* user) {
   (void)user;
   return g_cancelled != 0;
 }
 
-void usage(const char *program, FILE *stream) {
+void usage(const char* program, FILE* stream) {
   std::fprintf(
       stream,
       "usage: %s (--uart ENDPOINT | --ble-id ENDPOINT | both) [options]\n"
@@ -91,12 +91,11 @@ void usage(const char *program, FILE *stream) {
       program);
 }
 
-bool parse_u64(const char *value, std::uint64_t minimum, std::uint64_t maximum,
-               std::uint64_t *out) {
-  if (value == nullptr || value[0] == '\0' || value[0] == '-')
-    return false;
+bool parse_u64(const char* value, std::uint64_t minimum, std::uint64_t maximum,
+               std::uint64_t* out) {
+  if (value == nullptr || value[0] == '\0' || value[0] == '-') return false;
   errno = 0;
-  char *end = nullptr;
+  char* end = nullptr;
   const unsigned long long parsed = std::strtoull(value, &end, 10);
   if (errno != 0 || end == value || *end != '\0' || parsed < minimum ||
       parsed > maximum) {
@@ -106,9 +105,8 @@ bool parse_u64(const char *value, std::uint64_t minimum, std::uint64_t maximum,
   return true;
 }
 
-bool sha256_valid(const std::string &value) {
-  if (value.size() != H2_H2LOADER_HOST_SHA256_HEX_LEN)
-    return false;
+bool sha256_valid(const std::string& value) {
+  if (value.size() != H2_H2LOADER_HOST_SHA256_HEX_LEN) return false;
   for (const char character : value) {
     if (!((character >= '0' && character <= '9') ||
           (character >= 'a' && character <= 'f'))) {
@@ -118,14 +116,13 @@ bool sha256_valid(const std::string &value) {
   return true;
 }
 
-bool set_once(std::uint64_t bit, std::uint64_t *seen) {
-  if ((*seen & bit) != 0u)
-    return false;
+bool set_once(std::uint64_t bit, std::uint64_t* seen) {
+  if ((*seen & bit) != 0u) return false;
   *seen |= bit;
   return true;
 }
 
-bool parse_options(int argc, char **argv, Options *out) {
+bool parse_options(int argc, char** argv, Options* out) {
   enum : std::uint64_t {
     kUart = 1ull << 0,
     kBle = 1ull << 1,
@@ -150,14 +147,13 @@ bool parse_options(int argc, char **argv, Options *out) {
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
-    const char *name = argv[index];
+    const char* name = argv[index];
     if (std::strcmp(name, "--help") == 0 || std::strcmp(name, "-h") == 0) {
       out->help = true;
       continue;
     }
-    if (index + 1 >= argc)
-      return false;
-    const char *value = argv[++index];
+    if (index + 1 >= argc) return false;
+    const char* value = argv[++index];
     std::uint64_t bit = 0u;
     if (std::strcmp(name, "--uart") == 0) {
       bit = kUart;
@@ -214,26 +210,22 @@ bool parse_options(int argc, char **argv, Options *out) {
     } else if (std::strcmp(name, "--repeat") == 0) {
       bit = kRepeat;
       std::uint64_t parsed = 0u;
-      if (!parse_u64(value, 1u, 50u, &parsed))
-        return false;
+      if (!parse_u64(value, 1u, 50u, &parsed)) return false;
       out->repeat = static_cast<std::uint32_t>(parsed);
     } else if (std::strcmp(name, "--timeout-ms") == 0) {
       bit = kTimeout;
       std::uint64_t parsed = 0u;
-      if (!parse_u64(value, 1u, 3600000u, &parsed))
-        return false;
+      if (!parse_u64(value, 1u, 3600000u, &parsed)) return false;
       out->timeout_ms = static_cast<std::uint32_t>(parsed);
     } else if (std::strcmp(name, "--baud") == 0) {
       bit = kBaud;
       std::uint64_t parsed = 0u;
-      if (!parse_u64(value, 1200u, 4000000u, &parsed))
-        return false;
+      if (!parse_u64(value, 1200u, 4000000u, &parsed)) return false;
       out->baud = static_cast<std::uint32_t>(parsed);
     } else if (std::strcmp(name, "--monitor-ms") == 0) {
       bit = kMonitor;
       std::uint64_t parsed = 0u;
-      if (!parse_u64(value, 100u, 60000u, &parsed))
-        return false;
+      if (!parse_u64(value, 100u, 60000u, &parsed)) return false;
       out->monitor_ms = static_cast<std::uint32_t>(parsed);
     } else if (std::strcmp(name, "--report") == 0) {
       bit = kReport;
@@ -241,36 +233,32 @@ bool parse_options(int argc, char **argv, Options *out) {
     } else {
       return false;
     }
-    if (value[0] == '\0' || !set_once(bit, &seen))
-      return false;
+    if (value[0] == '\0' || !set_once(bit, &seen)) return false;
   }
-  if (out->help)
-    return true;
-  if (out->uart.empty() && out->ble_id.empty())
-    return false;
+  if (out->help) return true;
+  if (out->uart.empty() && out->ble_id.empty()) return false;
   const bool has_url = !out->firmware_url.empty();
   if (has_url != (out->firmware_url_bytes != 0u) ||
       has_url != !out->firmware_url_sha256.empty() ||
       (has_url && !sha256_valid(out->firmware_url_sha256))) {
     return false;
   }
-  if (out->wifi_ssid.empty() != out->wifi_password_env.empty())
-    return false;
-  if (!out->loader_firmware.empty() && out->app_firmware.empty())
-    return false;
-  if (out->coredump_bytes != 0u && out->repeat != 1u)
-    return false;
+  if (out->wifi_ssid.empty() != out->wifi_password_env.empty()) return false;
+  if (!out->loader_firmware.empty() && out->app_firmware.empty()) return false;
+  if (out->coredump_bytes != 0u && out->repeat != 1u) return false;
   if (!out->crash_firmware.empty() &&
       (out->repeat != 1u || out->coredump_bytes != 0u))
     return false;
-  if (out->monitor_ms != 0u && out->uart.empty())
-    return false;
+  if (out->monitor_ms != 0u && out->uart.empty()) return false;
   const std::size_t cases =
       5u + (!out->checksum_fixtures[0].empty() ? 5u : 0u) +
       (!out->checksum_fixtures[1].empty() ? 5u : 0u) +
-      (!out->checksum_fixtures[0].empty() && !out->checksum_fixtures[1].empty() ? 8u : 0u) + (!out->wifi_ssid.empty() ? 3u : 0u) +
+      (!out->checksum_fixtures[0].empty() && !out->checksum_fixtures[1].empty()
+           ? 8u
+           : 0u) +
+      (!out->wifi_ssid.empty() ? 3u : 0u) +
       (!out->app_firmware.empty() ? 2u : 0u) + (has_url ? 2u : 0u) +
-                            (!out->loader_firmware.empty() ? 4u : 0u) +
+      (!out->loader_firmware.empty() ? 4u : 0u) +
       (out->coredump_bytes != 0u || !out->crash_firmware.empty() ? 4u : 0u);
   const std::size_t transports =
       (!out->uart.empty() ? 1u : 0u) + (!out->ble_id.empty() ? 1u : 0u);
@@ -280,70 +268,68 @@ bool parse_options(int argc, char **argv, Options *out) {
          H2_H2LOADER_E2E_MAX_CASES;
 }
 
-std::filesystem::path resolve_input_path(const std::filesystem::path &path) {
-  if (path.empty() || path.is_absolute())
-    return path;
-  const char *working_directory = std::getenv("BUILD_WORKING_DIRECTORY");
+std::filesystem::path resolve_input_path(const std::filesystem::path& path) {
+  if (path.empty() || path.is_absolute()) return path;
+  const char* working_directory = std::getenv("BUILD_WORKING_DIRECTORY");
   return working_directory == nullptr
              ? std::filesystem::absolute(path)
              : std::filesystem::path(working_directory) / path;
 }
 
-bool load_file(const std::filesystem::path &path,
-               std::vector<std::uint8_t> *out) {
+bool load_file(const std::filesystem::path& path,
+               std::vector<std::uint8_t>* out) {
   std::ifstream input(path, std::ios::binary);
-  if (!input)
-    return false;
+  if (!input) return false;
   out->assign(std::istreambuf_iterator<char>(input), {});
   return !out->empty() && (input.good() || input.eof());
 }
 
-std::string json_escape(const std::string &value) {
+std::string json_escape(const std::string& value) {
   std::ostringstream output;
   for (const unsigned char character : value) {
     switch (character) {
-    case '"':
-      output << "\\\"";
-      break;
-    case '\\':
-      output << "\\\\";
-      break;
-    case '\b':
-      output << "\\b";
-      break;
-    case '\f':
-      output << "\\f";
-      break;
-    case '\n':
-      output << "\\n";
-      break;
-    case '\r':
-      output << "\\r";
-      break;
-    case '\t':
-      output << "\\t";
-      break;
-    default:
-      if (character < 0x20u) {
-        output << "\\u" << std::hex << std::setw(4) << std::setfill('0')
-               << static_cast<unsigned int>(character) << std::dec;
-      } else {
-        output << static_cast<char>(character);
-      }
+      case '"':
+        output << "\\\"";
+        break;
+      case '\\':
+        output << "\\\\";
+        break;
+      case '\b':
+        output << "\\b";
+        break;
+      case '\f':
+        output << "\\f";
+        break;
+      case '\n':
+        output << "\\n";
+        break;
+      case '\r':
+        output << "\\r";
+        break;
+      case '\t':
+        output << "\\t";
+        break;
+      default:
+        if (character < 0x20u) {
+          output << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+                 << static_cast<unsigned int>(character) << std::dec;
+        } else {
+          output << static_cast<char>(character);
+        }
     }
   }
   return output.str();
 }
 
-void case_event(void *user, const h2_h2loader_e2e_case_result_t *result,
+void case_event(void* user, const h2_h2loader_e2e_case_result_t* result,
                 int started) {
   (void)user;
   if (started) {
-    std::printf("H2_LOADER_E2E_CASE state=start transport=%s iteration=%u "
-                "name=%s\n",
-                h2_h2loader_e2e_transport_name(result->transport),
-                result->iteration,
-                h2_h2loader_e2e_case_name(result->test_case));
+    std::printf(
+        "H2_LOADER_E2E_CASE state=start transport=%s iteration=%u "
+        "name=%s\n",
+        h2_h2loader_e2e_transport_name(result->transport), result->iteration,
+        h2_h2loader_e2e_case_name(result->test_case));
   } else {
     std::printf(
         "H2_LOADER_E2E_CASE state=complete transport=%s iteration=%u "
@@ -358,40 +344,37 @@ void case_event(void *user, const h2_h2loader_e2e_case_result_t *result,
   std::fflush(stdout);
 }
 
-void progress_event(void *user, const h2_h2loader_e2e_case_result_t *result) {
+void progress_event(void* user, const h2_h2loader_e2e_case_result_t* result) {
   (void)user;
   const double percent =
       result->total_bytes == 0u
           ? 0.0
           : 100.0 * static_cast<double>(result->acknowledged_bytes) /
                 static_cast<double>(result->total_bytes);
-  std::printf("H2_LOADER_E2E_PROGRESS transport=%s iteration=%u name=%s "
-              "acked=%llu total=%llu percent=%.1f\n",
-              h2_h2loader_e2e_transport_name(result->transport),
-              result->iteration, h2_h2loader_e2e_case_name(result->test_case),
-              static_cast<unsigned long long>(result->acknowledged_bytes),
-              static_cast<unsigned long long>(result->total_bytes), percent);
+  std::printf(
+      "H2_LOADER_E2E_PROGRESS transport=%s iteration=%u name=%s "
+      "acked=%llu total=%llu percent=%.1f\n",
+      h2_h2loader_e2e_transport_name(result->transport), result->iteration,
+      h2_h2loader_e2e_case_name(result->test_case),
+      static_cast<unsigned long long>(result->acknowledged_bytes),
+      static_cast<unsigned long long>(result->total_bytes), percent);
   std::fflush(stdout);
 }
 
-const char *status_role_name(h2_h2loader_host_active_role_t role) {
-  if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP)
-    return "app";
-  if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER)
-    return "loader";
+const char* status_role_name(h2_h2loader_host_active_role_t role) {
+  if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP) return "app";
+  if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) return "loader";
   return "unknown";
 }
 
-const char *boot_intent_name(h2_h2loader_host_boot_intent_t intent) {
-  if (intent == H2_H2LOADER_HOST_BOOT_INTENT_LOADER)
-    return "loader";
-  if (intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO)
-    return "auto";
+const char* boot_intent_name(h2_h2loader_host_boot_intent_t intent) {
+  if (intent == H2_H2LOADER_HOST_BOOT_INTENT_LOADER) return "loader";
+  if (intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO) return "auto";
   return "unknown";
 }
 
-void write_metadata(std::ostream &output,
-                    const h2_h2loader_host_metadata_t &metadata) {
+void write_metadata(std::ostream& output,
+                    const h2_h2loader_host_metadata_t& metadata) {
   output << "{\"valid\": " << (metadata.valid != 0u ? "true" : "false")
          << ", \"package_checksum\": \""
          << json_escape(metadata.package_checksum)
@@ -404,17 +387,18 @@ void write_metadata(std::ostream &output,
          << json_escape(metadata.target) << "\"}";
 }
 
-bool write_report(const std::filesystem::path &path, const Options &options,
-                  const h2_h2loader_e2e_result_t &result) {
-  if (path.empty())
-    return true;
+bool write_report(const std::filesystem::path& path, const Options& options,
+                  const h2_h2loader_e2e_result_t& result) {
+  if (path.empty()) return true;
   const std::filesystem::path resolved = resolve_input_path(path);
   std::ofstream output(resolved, std::ios::binary | std::ios::trunc);
-  if (!output)
-    return false;
+  if (!output) return false;
   output << "{\n"
          << "  \"schema\": \"h2loader-e2e-report/v"
-         << ((!options.checksum_fixtures[0].empty() || !options.checksum_fixtures[1].empty()) ? 2 : 1)
+         << ((!options.checksum_fixtures[0].empty() ||
+              !options.checksum_fixtures[1].empty())
+                 ? 2
+                 : 1)
          << "\",\n"
          << "  \"result\": \"" << (result.result == H2_PAL_OK ? "PASS" : "FAIL")
          << "\",\n"
@@ -446,7 +430,7 @@ bool write_report(const std::filesystem::path &path, const Options &options,
          << ", \"elapsed_ms\": " << result.elapsed_ms << "},\n"
          << "  \"cases\": [\n";
   for (std::size_t index = 0u; index < result.case_count; ++index) {
-    const auto &entry = result.cases[index];
+    const auto& entry = result.cases[index];
     output << "    {\"transport\": \""
            << h2_h2loader_e2e_transport_name(entry.transport)
            << "\", \"iteration\": " << entry.iteration << ", \"name\": \""
@@ -459,29 +443,40 @@ bool write_report(const std::filesystem::path &path, const Options &options,
            << ", \"total_bytes\": " << entry.total_bytes
            << ", \"output_bytes\": " << entry.output_bytes
            << ", \"log_bytes\": " << entry.log_bytes
-           << ", \"reconnect_attempts\": " << entry.reconnect_attempts
-           ;
-    const bool checksum_report = !options.checksum_fixtures[0].empty() || !options.checksum_fixtures[1].empty();
+           << ", \"reconnect_attempts\": " << entry.reconnect_attempts;
+    const bool checksum_report = !options.checksum_fixtures[0].empty() ||
+                                 !options.checksum_fixtures[1].empty();
     if (checksum_report) output << ", \"checksum_case\": ";
     if (checksum_report && entry.package_format != 0u) {
       output << "{\"format\": " << entry.package_format
              << ", \"source_format\": " << entry.source_package_format
-             << ", \"before_package_sha256\": \"" << json_escape(entry.before_package_sha256) << "\""
-             << ", \"package_sha256\": \"" << json_escape(entry.package_sha256) << "\""
-             << ", \"expected_update_app\": " << (!entry.checksum_expectations_valid ? "null" : entry.expected_update_app ? "true" : "false")
-             << ", \"expected_update_data\": " << (!entry.checksum_expectations_valid ? "null" : entry.expected_update_data ? "true" : "false")
-             << ", \"before_image_sha256\": \"" << json_escape(entry.before_image_sha256)
-             << "\", \"before_data_sha256\": \"" << json_escape(entry.before_data_sha256)
+             << ", \"before_package_sha256\": \""
+             << json_escape(entry.before_package_sha256) << "\""
+             << ", \"package_sha256\": \"" << json_escape(entry.package_sha256)
+             << "\""
+             << ", \"expected_update_app\": "
+             << (!entry.checksum_expectations_valid ? "null"
+                 : entry.expected_update_app        ? "true"
+                                                    : "false")
+             << ", \"expected_update_data\": "
+             << (!entry.checksum_expectations_valid ? "null"
+                 : entry.expected_update_data       ? "true"
+                                                    : "false")
+             << ", \"before_image_sha256\": \""
+             << json_escape(entry.before_image_sha256)
+             << "\", \"before_data_sha256\": \""
+             << json_escape(entry.before_data_sha256)
              << "\", \"data_sha256\": \"" << json_escape(entry.data_sha256)
-             << "\", \"verified\": " << (entry.data_checksum_valid ? "true" : "false") << "}";
-    } else if (checksum_report) output << "null";
+             << "\", \"verified\": "
+             << (entry.data_checksum_valid ? "true" : "false") << "}";
+    } else if (checksum_report)
+      output << "null";
     output << ", \"status\": ";
     if (entry.status_valid != 0u) {
       output << "{\"board\": \"" << json_escape(entry.status.board)
              << "\", \"target\": \"" << json_escape(entry.status.target)
              << "\", \"chip\": \"" << json_escape(entry.status.chip)
-             << "\", \"device_uid\": \""
-             << json_escape(entry.status.device_uid)
+             << "\", \"device_uid\": \"" << json_escape(entry.status.device_uid)
              << "\", \"capabilities\": " << entry.status.capabilities
              << ", \"command_availability\": "
              << entry.status.command_availability << ", \"active_role\": \""
@@ -511,9 +506,9 @@ bool write_report(const std::filesystem::path &path, const Options &options,
   return output.good();
 }
 
-} // namespace
+}  // namespace
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   Options options;
   if (!parse_options(argc, argv, &options)) {
     usage(argv[0], stderr);
@@ -556,18 +551,20 @@ int main(int argc, char **argv) {
       return 2;
     }
   }
-  static const std::array<const char *, 5> checksum_names = {
+  static const std::array<const char*, 5> checksum_names = {
       "baseline", "unchanged", "app-only", "data-only", "both-changed"};
   std::array<std::array<std::vector<std::uint8_t>, 5>, 2> checksum_packages;
   for (std::size_t format = 0u; format < 2u; ++format) {
     if (options.checksum_fixtures[format].empty()) continue;
-    options.checksum_fixtures[format] = resolve_input_path(options.checksum_fixtures[format]);
-    const char *suffix = format == 0u ? ".update.tar.zlib" : ".update.tar";
+    options.checksum_fixtures[format] =
+        resolve_input_path(options.checksum_fixtures[format]);
+    const char* suffix = format == 0u ? ".update.tar.zlib" : ".update.tar";
     for (std::size_t index = 0u; index < checksum_names.size(); ++index) {
       const auto path = options.checksum_fixtures[format] /
-          (std::string(checksum_names[index]) + suffix);
+                        (std::string(checksum_names[index]) + suffix);
       if (!load_file(path, &checksum_packages[format][index])) {
-        std::fprintf(stderr, "h2loader-e2e: cannot read checksum fixture: %s\n", path.string().c_str());
+        std::fprintf(stderr, "h2loader-e2e: cannot read checksum fixture: %s\n",
+                     path.string().c_str());
         return 2;
       }
     }
@@ -575,8 +572,8 @@ int main(int argc, char **argv) {
   std::unique_ptr<h2_h2loader_e2e_result_t> result_storage(
       new (std::nothrow) h2_h2loader_e2e_result_t{});
   if (!result_storage) return 2;
-  auto &result = *result_storage;
-  const char *wifi_password = nullptr;
+  auto& result = *result_storage;
+  const char* wifi_password = nullptr;
   if (!options.wifi_password_env.empty()) {
     wifi_password = std::getenv(options.wifi_password_env.c_str());
     if (wifi_password == nullptr) {
@@ -590,9 +587,9 @@ int main(int argc, char **argv) {
   (void)std::signal(SIGINT, signal_handler);
   (void)std::signal(SIGTERM, signal_handler);
   const bool needs_ble = !options.ble_id.empty();
-  const h2_pal_system_event_api_t *system_event =
+  const h2_pal_system_event_api_t* system_event =
       h2::desktop::system_event_api();
-  const h2_pal_ble_host_api_t *ble = nullptr;
+  const h2_pal_ble_host_api_t* ble = nullptr;
   bool system_event_started = false;
   bool ble_started = false;
   h2_pal_result_t rc = H2_PAL_OK;
@@ -606,10 +603,9 @@ int main(int argc, char **argv) {
     }
   }
 
-  h2_runtime_t *runtime = nullptr;
+  h2_runtime_t* runtime = nullptr;
   h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
-  if (rc == H2_PAL_OK)
-    rc = h2_runtime_init(&runtime_config, &runtime);
+  if (rc == H2_PAL_OK) rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc == H2_PAL_OK) {
     h2_h2loader_e2e_config_t config = {
         .runtime = runtime,
@@ -675,9 +671,12 @@ int main(int argc, char **argv) {
     };
     for (std::size_t format = 0u; format < 2u; ++format)
       for (std::size_t index = 0u; index < checksum_names.size(); ++index) {
-        config.checksum_packages[format][index].data = checksum_packages[format][index].empty()
-            ? nullptr : checksum_packages[format][index].data();
-        config.checksum_packages[format][index].size = checksum_packages[format][index].size();
+        config.checksum_packages[format][index].data =
+            checksum_packages[format][index].empty()
+                ? nullptr
+                : checksum_packages[format][index].data();
+        config.checksum_packages[format][index].size =
+            checksum_packages[format][index].size();
       }
     rc = h2_h2loader_e2e_run(&config, &result);
   } else {
@@ -689,23 +688,18 @@ int main(int argc, char **argv) {
   if (!report_ok) {
     std::fprintf(stderr, "h2loader-e2e: cannot write report: %s\n",
                  options.report.string().c_str());
-    if (rc == H2_PAL_OK)
-      rc = H2_PAL_ERR_IO;
+    if (rc == H2_PAL_OK) rc = H2_PAL_ERR_IO;
   }
-  std::printf("H2_LOADER_E2E result=%s rc=%d cases=%zu passed=%zu failed=%zu "
-              "elapsed_ms=%llu report=%s\n",
-              rc == H2_PAL_OK ? "PASS" : "FAIL", rc, result.case_count,
-              result.passed, result.failed,
-              static_cast<unsigned long long>(result.elapsed_ms),
-              options.report.empty() ? "" : options.report.string().c_str());
+  std::printf(
+      "H2_LOADER_E2E result=%s rc=%d cases=%zu passed=%zu failed=%zu "
+      "elapsed_ms=%llu report=%s\n",
+      rc == H2_PAL_OK ? "PASS" : "FAIL", rc, result.case_count, result.passed,
+      result.failed, static_cast<unsigned long long>(result.elapsed_ms),
+      options.report.empty() ? "" : options.report.string().c_str());
 
-  if (runtime != nullptr)
-    h2_runtime_deinit(runtime);
-  if (ble_started)
-    (void)h2_pal_ble_stop(ble);
-  if (system_event_started)
-    h2_pal_system_event_deinit(system_event);
-  if (g_cancelled != 0)
-    return 130;
+  if (runtime != nullptr) h2_runtime_deinit(runtime);
+  if (ble_started) (void)h2_pal_ble_stop(ble);
+  if (system_event_started) h2_pal_system_event_deinit(system_event);
+  if (g_cancelled != 0) return 130;
   return rc == H2_PAL_OK ? 0 : 1;
 }

@@ -15,9 +15,9 @@ static unsigned s_budget_calls, s_fail_budget, s_fail_clock;
 static unsigned s_speed[2], s_deleted[2];
 static bool s_id_used[64], s_emit;
 static uint64_t s_now;
-static h2_gizclaw_req_t *s_pending;
-static h2_gizclaw_req_t *s_tail;
-static h2_gizclaw_req_t *s_late;
+static h2_gizclaw_req_t* s_pending;
+static h2_gizclaw_req_t* s_tail;
+static h2_gizclaw_req_t* s_late;
 static bool s_late_injected;
 struct h2_gizclaw_req {
   enum method method;
@@ -25,60 +25,60 @@ struct h2_gizclaw_req {
   size_t upload, download;
   h2_gizclaw_req_input_read_fn input_read;
   h2_gizclaw_req_output_write_fn output_write;
-  void *user;
+  void* user;
   size_t hook_bytes;
   bool released, canceled;
   bool hook_pending;
-  h2_gizclaw_req_t *next;
+  h2_gizclaw_req_t* next;
 };
 
 static int stage(void) {
   return ++s_stage == s_fail_stage ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
-static void service_check(h2_gizclaw_service_t *service, enum method method,
+static void service_check(h2_gizclaw_service_t* service, enum method method,
                           unsigned api) {
-  assert(service == (h2_gizclaw_service_t
-                         *)&s_services[method == DELETE && api == 1u ? 1 : 0]);
+  assert(service ==
+         (h2_gizclaw_service_t*)&s_services[method == DELETE && api == 1u ? 1
+                                                                          : 0]);
 }
-static int create(h2_gizclaw_service_t *service, uint64_t identity,
+static int create(h2_gizclaw_service_t* service, uint64_t identity,
                   uint32_t timeout, enum method method,
-                  h2_gizclaw_req_t **out) {
+                  h2_gizclaw_req_t** out) {
   service_check(service, method, 0u);
   assert(timeout == 30000u && identity < 64u && !s_id_used[identity]);
   s_id_used[identity] = true;
   *out = NULL;
   int rc = stage();
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   *out = calloc(1u, sizeof(**out));
   assert(*out != NULL);
   (*out)->method = method;
   ++s_live;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_req_create_ping(h2_gizclaw_service_t *s, uint64_t id,
+h2_pal_result_t h2_gizclaw_req_create_ping(h2_gizclaw_service_t* s, uint64_t id,
                                            uint32_t timeout,
-                                           h2_gizclaw_req_t **out) {
+                                           h2_gizclaw_req_t** out) {
   return create(s, id, timeout, PING, out);
 }
-h2_pal_result_t h2_gizclaw_req_create_register(h2_gizclaw_service_t *s,
-                                               uint64_t id, const char *token,
+h2_pal_result_t h2_gizclaw_req_create_register(h2_gizclaw_service_t* s,
+                                               uint64_t id, const char* token,
                                                uint32_t timeout,
-                                               h2_gizclaw_req_t **out) {
+                                               h2_gizclaw_req_t** out) {
   assert(strcmp(token, "synthetic-registration") == 0);
   return create(s, id, timeout, REGISTER, out);
 }
-h2_pal_result_t h2_gizclaw_req_create_peer_delete(h2_gizclaw_service_t *s,
+h2_pal_result_t h2_gizclaw_req_create_peer_delete(h2_gizclaw_service_t* s,
                                                   uint64_t id, uint32_t timeout,
-                                                  h2_gizclaw_req_t **out) {
+                                                  h2_gizclaw_req_t** out) {
   assert(s_speed[0] == 6u && s_speed[1] == 6u);
   return create(s, id, timeout, DELETE, out);
 }
-h2_pal_result_t h2_gizclaw_req_create_speedtest(h2_gizclaw_service_t *s,
+h2_pal_result_t h2_gizclaw_req_create_speedtest(h2_gizclaw_service_t* s,
                                                 uint64_t id, size_t upload,
                                                 size_t download,
                                                 uint32_t timeout,
-                                                h2_gizclaw_req_t **out) {
+                                                h2_gizclaw_req_t** out) {
   assert((upload == 0u) != (download == 0u));
   assert(upload + download == 2u * 1024u * 1024u);
   ++s_speed[0];
@@ -89,8 +89,7 @@ h2_pal_result_t h2_gizclaw_req_create_speedtest(h2_gizclaw_service_t *s,
   }
   return rc;
 }
-h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *req,
-                                  void *user,
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t* req, void* user,
                                   h2_gizclaw_req_input_read_fn input_read,
                                   h2_gizclaw_req_output_write_fn output_write,
                                   h2_gizclaw_req_complete_fn on_complete) {
@@ -114,12 +113,10 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *req,
   }
   return rc;
 }
-h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *req, uint32_t timeout) {
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t* req, uint32_t timeout) {
   assert(req->started && (timeout == 1u || timeout == 30000u));
-  if (req->method == SPEED && req->hook_pending)
-    return H2_PAL_ERR_TIMEOUT;
-  if (req->waited)
-    return H2_PAL_OK;
+  if (req->method == SPEED && req->hook_pending) return H2_PAL_ERR_TIMEOUT;
+  if (req->waited) return H2_PAL_OK;
   int rc = stage();
   s_now += 100u;
   if (rc == H2_PAL_OK && req->method == SPEED &&
@@ -128,12 +125,12 @@ h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *req, uint32_t timeout) {
   req->waited = rc == H2_PAL_OK;
   return rc;
 }
-h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *req) {
+h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t* req) {
   assert(req != NULL);
   req->canceled = true;
   return s_mode == 12u ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
-void h2_gizclaw_req_release(h2_gizclaw_req_t *req) {
+void h2_gizclaw_req_release(h2_gizclaw_req_t* req) {
   if (req != NULL) {
     if (req->hook_pending) {
       req->released = true;
@@ -146,61 +143,56 @@ void h2_gizclaw_req_release(h2_gizclaw_req_t *req) {
   }
 }
 
-h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
-                                        size_t budget, size_t *dispatched) {
+h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
+                                        size_t budget, size_t* dispatched) {
   service_check(service, SPEED, 0u);
   assert(budget == 8u);
   *dispatched = 0u;
-  if (s_mode == 11u || s_mode == 12u || s_mode == 23u)
-    return H2_PAL_OK;
+  if (s_mode == 11u || s_mode == 12u || s_mode == 23u) return H2_PAL_OK;
   while (s_pending != NULL && *dispatched < budget) {
-    h2_gizclaw_req_t *req = s_pending;
+    h2_gizclaw_req_t* req = s_pending;
     uint8_t payload[32768];
     for (size_t i = 0u; i < sizeof(payload); ++i)
       payload[i] = (uint8_t)(req->hook_bytes + i);
     if (!req->canceled && req->hook_bytes < req->upload) {
       size_t read = 0u;
-      const int rc = req->input_read(req->user, payload, sizeof(payload), &read);
+      const int rc =
+          req->input_read(req->user, payload, sizeof(payload), &read);
       assert(rc == H2_PAL_OK && read <= sizeof(payload));
       req->hook_bytes += read;
     } else if (!req->canceled && req->hook_bytes < req->download) {
       size_t count = req->download - req->hook_bytes;
-      if (count > sizeof(payload))
-        count = sizeof(payload);
+      if (count > sizeof(payload)) count = sizeof(payload);
       size_t written = 0u;
-      const int rc =
-          req->output_write(req->user, payload, count, &written);
+      const int rc = req->output_write(req->user, payload, count, &written);
       assert(rc == H2_PAL_OK && written == count);
       req->hook_bytes += count;
     }
     ++*dispatched;
     if (req->canceled || req->hook_bytes == req->upload + req->download) {
       s_pending = req->next;
-      if (s_pending == NULL)
-        s_tail = NULL;
+      if (s_pending == NULL) s_tail = NULL;
       req->hook_pending = false;
-      if (req->released)
-        h2_gizclaw_req_release(req);
+      if (req->released) h2_gizclaw_req_release(req);
     }
   }
   return H2_PAL_OK;
 }
-static void registration(h2_gizclaw_registration_result_t *out, unsigned api) {
+static void registration(h2_gizclaw_registration_result_t* out, unsigned api) {
   memset(out, 0, sizeof(*out));
   strcpy(out->runtime_profile_name, "default");
   if ((s_mode == 1u && api == 0u) || (s_mode == 2u && api == 1u))
     strcpy(out->runtime_profile_name, "wrong-profile");
   if (s_mode == 3u)
     memset(out->runtime_profile_name, 'x', sizeof(out->runtime_profile_name));
-  if (s_mode == 4u)
-    out->runtime_profile_name[0] = '\0';
+  if (s_mode == 4u) out->runtime_profile_name[0] = '\0';
 }
-static void ping(h2_gizclaw_ping_result_t *out) {
+static void ping(h2_gizclaw_ping_result_t* out) {
   *out = (h2_gizclaw_ping_result_t){.round_trip_ms = 0u,
                                     .server_time_ms = s_mode == 5u ? 0 : 1000};
 }
 static void speed(size_t upload, size_t download,
-                  h2_gizclaw_speedtest_result_t *out) {
+                  h2_gizclaw_speedtest_result_t* out) {
   *out = (h2_gizclaw_speedtest_result_t){
       .upload_bytes = upload,
       .download_bytes = download,
@@ -208,115 +200,102 @@ static void speed(size_t upload, size_t download,
       .elapsed_ms = download ? 100u : 0u,
       .upload_bits_per_second = upload * 80u,
       .download_bits_per_second = download * 80u};
-  if (s_mode == 6u)
-    ++out->download_bytes;
-  if (s_mode == 7u)
-    out->elapsed_ms = out->upload_elapsed_ms = 0u;
+  if (s_mode == 6u) ++out->download_bytes;
+  if (s_mode == 7u) out->elapsed_ms = out->upload_elapsed_ms = 0u;
   if (s_mode == 8u) {
     ++out->upload_bits_per_second;
     ++out->download_bits_per_second;
   }
 }
-h2_pal_result_t
-h2_gizclaw_resp_parse_register(const h2_gizclaw_req_t *req,
-                               h2_gizclaw_registration_result_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_register(
+    const h2_gizclaw_req_t* req, h2_gizclaw_registration_result_t* out) {
   assert(req->method == REGISTER && req->waited);
   int rc = stage();
-  if (rc == H2_PAL_OK)
-    registration(out, 0u);
+  if (rc == H2_PAL_OK) registration(out, 0u);
   return rc;
 }
-h2_pal_result_t h2_gizclaw_resp_parse_ping(const h2_gizclaw_req_t *req,
-                                           h2_gizclaw_ping_result_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_ping(const h2_gizclaw_req_t* req,
+                                           h2_gizclaw_ping_result_t* out) {
   assert(req->method == PING && req->waited);
   int rc = stage();
-  if (rc == H2_PAL_OK)
-    ping(out);
+  if (rc == H2_PAL_OK) ping(out);
   return rc;
 }
-h2_pal_result_t
-h2_gizclaw_resp_parse_speedtest(const h2_gizclaw_req_t *req,
-                                h2_gizclaw_speedtest_result_t *out) {
+h2_pal_result_t h2_gizclaw_resp_parse_speedtest(
+    const h2_gizclaw_req_t* req, h2_gizclaw_speedtest_result_t* out) {
   assert(req->method == SPEED && req->waited);
   int rc = stage();
-  if (rc == H2_PAL_OK)
-    speed(req->upload, req->download, out);
+  if (rc == H2_PAL_OK) speed(req->upload, req->download, out);
   return rc;
 }
-h2_pal_result_t h2_gizclaw_resp_parse_peer_delete(const h2_gizclaw_req_t *req) {
+h2_pal_result_t h2_gizclaw_resp_parse_peer_delete(const h2_gizclaw_req_t* req) {
   assert(req->method == DELETE && req->waited);
   int rc = stage();
-  if (rc == H2_PAL_OK)
-    ++s_deleted[0];
+  if (rc == H2_PAL_OK) ++s_deleted[0];
   return rc;
 }
-h2_pal_result_t h2_gizclaw_rpc_register(h2_gizclaw_service_t *s,
-                                        const char *token, uint32_t timeout,
-                                        h2_gizclaw_registration_result_t *out) {
+h2_pal_result_t h2_gizclaw_rpc_register(h2_gizclaw_service_t* s,
+                                        const char* token, uint32_t timeout,
+                                        h2_gizclaw_registration_result_t* out) {
   service_check(s, REGISTER, 1u);
   assert(strcmp(token, "synthetic-registration") == 0 && timeout == 30000u);
   int rc = stage();
-  if (rc == H2_PAL_OK)
-    registration(out, 1u);
+  if (rc == H2_PAL_OK) registration(out, 1u);
   return rc;
 }
-h2_pal_result_t h2_gizclaw_rpc_ping(h2_gizclaw_service_t *s, uint32_t timeout,
-                                    h2_gizclaw_ping_result_t *out) {
+h2_pal_result_t h2_gizclaw_rpc_ping(h2_gizclaw_service_t* s, uint32_t timeout,
+                                    h2_gizclaw_ping_result_t* out) {
   service_check(s, PING, 1u);
   assert(timeout == 30000u);
   int rc = stage();
-  if (rc == H2_PAL_OK)
-    ping(out);
+  if (rc == H2_PAL_OK) ping(out);
   return rc;
 }
-h2_pal_result_t h2_gizclaw_rpc_speedtest(h2_gizclaw_service_t *s, size_t upload,
+h2_pal_result_t h2_gizclaw_rpc_speedtest(h2_gizclaw_service_t* s, size_t upload,
                                          size_t download, uint32_t timeout,
-                                         h2_gizclaw_speedtest_result_t *out) {
+                                         h2_gizclaw_speedtest_result_t* out) {
   service_check(s, SPEED, 1u);
   assert(timeout == 30000u && ((upload == 0u) != (download == 0u)));
   assert(upload + download == 2u * 1024u * 1024u);
   ++s_speed[1];
   int rc = stage();
   s_now += 100u;
-  if (rc == H2_PAL_OK)
-    speed(upload, download, out);
+  if (rc == H2_PAL_OK) speed(upload, download, out);
   return rc;
 }
-h2_pal_result_t h2_gizclaw_rpc_peer_delete(h2_gizclaw_service_t *s,
+h2_pal_result_t h2_gizclaw_rpc_peer_delete(h2_gizclaw_service_t* s,
                                            uint32_t timeout) {
   service_check(s, DELETE, 1u);
   assert(timeout == 30000u && s_deleted[0] == 1u);
   int rc = stage();
-  if (rc == H2_PAL_OK)
-    ++s_deleted[1];
+  if (rc == H2_PAL_OK) ++s_deleted[1];
   return rc;
 }
-void h2_gizclaw_e2e_evidence(const char *symbol, const char *where, int rc) {
+void h2_gizclaw_e2e_evidence(const char* symbol, const char* where, int rc) {
   if (s_emit)
     printf("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n", symbol, where,
            rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
 }
-int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
-                                     h2_gizclaw_service_t *service,
-                                     int (*fn)(void *ctx), void *ctx) {
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t* fixture,
+                                     h2_gizclaw_service_t* service,
+                                     int (*fn)(void* ctx), void* ctx) {
   assert(fixture != NULL && service != NULL && fn != NULL);
   return fn(ctx);
 }
-bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
+bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t* fixture,
                                      uint32_t ms) {
   ++s_budget_calls;
   return s_mode != 10u && s_budget_calls != s_fail_budget &&
          s_now + ms <= fixture->deadline_ms;
 }
-static int clock_now(void *user, uint64_t *out) {
+static int clock_now(void* user, uint64_t* out) {
   (void)user;
   ++s_clock_calls;
-  if (s_clock_calls == s_fail_clock)
-    return H2_PAL_ERR_IO;
+  if (s_clock_calls == s_fail_clock) return H2_PAL_ERR_IO;
   *out = s_mode == 9u && s_clock_calls % 2u == 0u ? s_now - 200u : s_now;
   return H2_PAL_OK;
 }
-static int sleep_ms(void *user, uint32_t ms) {
+static int sleep_ms(void* user, uint32_t ms) {
   (void)user;
   s_now += ms;
   return H2_PAL_OK;
@@ -334,10 +313,10 @@ static void run(unsigned fail_stage, unsigned mode, unsigned fail_budget,
   memset(s_speed, 0, sizeof(s_speed));
   memset(s_deleted, 0, sizeof(s_deleted));
   memset(s_id_used, 0, sizeof(s_id_used));
-  const h2_pal_time_vtable_t vtable = {
-      .get_monotonic_ms = clock_now, .sleep_ms = sleep_ms};
+  const h2_pal_time_vtable_t vtable = {.get_monotonic_ms = clock_now,
+                                       .sleep_ms = sleep_ms};
   const h2_pal_time_api_t time = {.vtable = &vtable};
-  h2_gizclaw_e2e_fixture_t *fixture = calloc(1u, sizeof(*fixture));
+  h2_gizclaw_e2e_fixture_t* fixture = calloc(1u, sizeof(*fixture));
   assert(fixture != NULL);
   fixture->time = &time;
   fixture->registration_token = "synthetic-registration";
@@ -345,12 +324,11 @@ static void run(unsigned fail_stage, unsigned mode, unsigned fail_budget,
   strcpy(fixture->runtime_profile_name, "default");
   strcpy(fixture->endpoint, "example.invalid:9821");
   for (unsigned i = 0u; i < 2u; ++i) {
-    fixture->actors[i].service = (h2_gizclaw_service_t *)&s_services[i];
+    fixture->actors[i].service = (h2_gizclaw_service_t*)&s_services[i];
     fixture->actors[i].registered = true;
     fixture->actors[i].peer_delete_required = true;
   }
-  if (s_emit)
-    printf("H2_GIZCLAW_E2E stage=coverage-begin case=connectivity\n");
+  if (s_emit) printf("H2_GIZCLAW_E2E stage=coverage-begin case=connectivity\n");
   int rc = h2_gizclaw_e2e_run_connectivity(fixture);
   int expected = fail_stage || fail_clock   ? H2_PAL_ERR_IO
                  : fail_budget              ? H2_PAL_ERR_TIMEOUT
@@ -381,12 +359,13 @@ static void run(unsigned fail_stage, unsigned mode, unsigned fail_budget,
     assert(s_stage == 45u && s_deleted[0] == 1u && s_deleted[1] == 1u &&
            s_speed[0] == 6u && s_speed[1] == 6u);
   if (s_emit)
-    printf("H2_GIZCLAW_E2E stage=coverage-end case=connectivity status=%s "
-           "rc=%d cleanup_rc=0\n",
-           rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
+    printf(
+        "H2_GIZCLAW_E2E stage=coverage-end case=connectivity status=%s "
+        "rc=%d cleanup_rc=0\n",
+        rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
   free(fixture);
 }
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   if (argc == 6 && strcmp(argv[1], "--emit-evidence") == 0) {
     unsigned fail = (unsigned)atoi(argv[2]), mode = (unsigned)atoi(argv[3]);
     unsigned budget = (unsigned)atoi(argv[4]), clock = (unsigned)atoi(argv[5]);
@@ -396,13 +375,9 @@ int main(int argc, char **argv) {
     return 0;
   }
   run(0u, 0u, 0u, 0u);
-  for (unsigned stage = 1u; stage <= 45u; ++stage)
-    run(stage, 0u, 0u, 0u);
-  for (unsigned mode = 1u; mode <= 12u; ++mode)
-    run(0u, mode, 0u, 0u);
-  for (unsigned budget = 1u; budget <= 18u; ++budget)
-    run(0u, 0u, budget, 0u);
-  for (unsigned clock = 1u; clock <= 24u; ++clock)
-    run(0u, 0u, 0u, clock);
+  for (unsigned stage = 1u; stage <= 45u; ++stage) run(stage, 0u, 0u, 0u);
+  for (unsigned mode = 1u; mode <= 12u; ++mode) run(0u, mode, 0u, 0u);
+  for (unsigned budget = 1u; budget <= 18u; ++budget) run(0u, 0u, budget, 0u);
+  for (unsigned clock = 1u; clock <= 24u; ++clock) run(0u, 0u, 0u, clock);
   return 0;
 }

@@ -34,7 +34,7 @@ class BleVtableTest(unittest.TestCase):
         body = header.split('typedef struct h2_pal_ble_vtable {')[1].split('}')[0]
         operations = dict(re.findall(r'h2_pal_result_t \(\*(\w+)\)\((.*?)\);', body, re.S))
         source = (ROOT / BOARD).read_text()
-        start = source.index('const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(')
+        start = re.search(r'\bconst\s+h2_pal_ble_host_api_t\s*\*\s*h2_jieli_ac791n_devkit_ble_host_api\s*\(', source).start()
         factory = source[start:source.index('\n#else', start)]
         code = '#include <assert.h>\n#include "h2/pal/h2_pal_unsupported.h"\n'
         code += 'static int h2_ble_log_bind(const h2_pal_log_api_t *log) { (void)log; return 1; }\n'

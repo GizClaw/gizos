@@ -12,8 +12,8 @@
  * Buffers hold binary64 (default "f64") or binary32 ("f32") values, fixed at
  * creation, plus equally sized private transactional scratch. Payload including
  * scratch costs 16 bytes per f64 element or 8 per f32 element, plus fixed
- * metadata/userdata overhead. Except for the explicit prepared operations below,
- * all buffer operands in one call must have the same kind, including
+ * metadata/userdata overhead. Except for the explicit prepared operations
+ * below, all buffer operands in one call must have the same kind, including
  * coefficients, indices, masks, camera and mesh topology;
  * mismatches raise "mixed numeric buffer kinds (f32/f64)" even for empty calls.
  * All-f32 operations compute in float; scalar arguments are validated before
@@ -26,9 +26,9 @@
  * Values and results must be finite with absolute value <= 1e6. Sizes/indices
  * must be integers. Every misuse raises a Lua error; failed operations preserve
  * public buffer and mesh contents. Scratch contents are unspecified on error.
- * Successful operations allocate only at constructors/bind/first require(); call
- * setup outside frame loops. Error construction can allocate. Numeric kernels
- * never yield, call Lua, access hardware, or retain external pointers.
+ * Successful operations allocate only at constructors/bind/first require();
+ * call setup outside frame loops. Error construction can allocate. Numeric
+ * kernels never yield, call Lua, access hardware, or retain external pointers.
  *
  * Lua API (arguments required unless marked optional, indices one-based):
  * - vmath.buffer(count[,kind]) -> b: zeroed fixed buffer, count in 0..65536;
@@ -79,7 +79,8 @@
  *   coincident endpoints (<1e-12 distance) and fully pinned edges. With true,
  *   lambda <= 0 (tension only); false is bilateral. Writable p/lambda must
  *   be distinct from each other and every input. Read lambda/dt^2 as force.
- * - vmath.relax_sweep(p,edges,weights,lambda,dt,n,m,reverse,tension_only[,epsilon])
+ * -
+ * vmath.relax_sweep(p,edges,weights,lambda,dt,n,m,reverse,tension_only[,epsilon])
  *   -> nothing: one ordered XPBD sweep, retaining/updating lambda. Edge rows
  *   as relax; weights are per-edge {wa,wb}, nonnegative. n in 1..256,
  *   m <= 512, dt in [1e-6,.1]. reverse/tension_only are required booleans.
@@ -137,9 +138,10 @@
  * contracts below; existing calls above are unchanged). Storage is bounded
  * VM userdata. Warm methods run synchronously without callbacks, allocations
  * or yielding on success; constructors and bind may allocate. Inputs are
- * finite +/-1e6; non-finite intermediates/results raise errors. Each phase commits atomically; earlier successful phases remain.
- * Small values round/underflow in the explicitly selected float arithmetic.
- * All workspace input buffers in one call must be distinct, as must outputs.
+ * finite +/-1e6; non-finite intermediates/results raise errors. Each phase
+ * commits atomically; earlier successful phases remain. Small values
+ * round/underflow in the explicitly selected float arithmetic. All workspace
+ * input buffers in one call must be distinct, as must outputs.
  * - vmath.constraints(node_capacity,edge_capacity) -> workspace: capacities
  *   1..256 and 0..512. Unloaded methods except load/bind raise errors.
  * - w:load(p,previous,edges,n,m,dt): packed xyz and six-value edge rows
@@ -150,10 +152,10 @@
  *   When bound, successful load first copies into owned storage, then releases
  *   both bindings. Rejected load preserves the existing state and bindings.
  * - w:bind(p,previous,edges,n,m,dt): opt into caller-created authoritative
- *   f64 state, with the same inputs/limits/reset semantics as load. Bind retains
- *   p/previous without changing their contents, and copies/prepares edges.
- *   The workspace strongly references both buffers; a buffer can be bound to
- *   only one live workspace, including cross-aliases. Binding/rebinding stages
+ *   f64 state, with the same inputs/limits/reset semantics as load. Bind
+ * retains p/previous without changing their contents, and copies/prepares
+ * edges. The workspace strongly references both buffers; a buffer can be bound
+ * to only one live workspace, including cross-aliases. Binding/rebinding stages
  *   all validation/allocation before replacing the old binding. Rebinding even
  *   the same buffers resets multipliers/parity/span; active/topology changes
  *   require bind/load. Construction and bind may allocate VM-accounted storage.
@@ -273,8 +275,8 @@
 extern "C" {
 #endif
 struct lua_State;
-int h2_lua_open_vmath(struct lua_State *state);
-int h2_lua_open_geometry(struct lua_State *state);
+int h2_lua_open_vmath(struct lua_State* state);
+int h2_lua_open_geometry(struct lua_State* state);
 #ifdef __cplusplus
 }
 #endif

@@ -35,8 +35,8 @@ cc_library(
     ],
     tags = ["h2-ci-native-package"],
     deps = [
-        ":tasks",
         ":flappybird_script",
+        ":tasks",
         "//libs/lua",
         "//libs/runtime",
     ],

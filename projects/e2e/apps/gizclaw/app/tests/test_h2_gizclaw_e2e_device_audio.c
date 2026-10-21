@@ -24,7 +24,7 @@ int main(void) {
   uint8_t pcm[640] = {0xff, 0x7f, 0x00, 0x80};
   h2_audio_track_config_t track_config = {
       .format = {16000, 320, 1, H2_AUDIO_SAMPLE_S16LE}};
-  h2_pal_audio_track_t *track = NULL;
+  h2_pal_audio_track_t* track = NULL;
   assert(h2_pal_audio_create_track(fixture.device_audio, &track_config,
                                    &track) == H2_PAL_OK);
   h2_audio_frame_t frame =

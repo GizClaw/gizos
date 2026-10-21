@@ -12,9 +12,17 @@ extern const char h2_pal_http_device_runner_task_name[];
  * Only public test fixture inputs come from build definitions; credentials stay
  * in the existing board settings. No reboot, erase or install occurs here.
  */
-int h2_pal_http_device_run(h2_runtime_t *runtime, h2_pal_http_e2e_result_t *result);
+int h2_pal_http_device_run(h2_runtime_t* runtime,
+                           h2_pal_http_e2e_result_t* result);
+/** Borrow optional fixture credentials until return; NULL keeps the original
+ * network setup. Explicit credentials use non-saving PAL connect with the
+ * existing setup budgets; no credential or Runtime-set persistence occurs. */
+int h2_pal_http_device_run_with_wifi(h2_runtime_t* runtime,
+                                     const h2_pal_wifi_sta_config_t* wifi,
+                                     h2_pal_http_e2e_result_t* result);
 /** Replay an immutable result; never reruns network requests. */
-void h2_pal_http_device_report(const h2_runtime_t *runtime, const h2_pal_http_e2e_result_t *result);
+void h2_pal_http_device_report(const h2_runtime_t* runtime,
+                               const h2_pal_http_e2e_result_t* result);
 #ifdef __cplusplus
 }
 #endif

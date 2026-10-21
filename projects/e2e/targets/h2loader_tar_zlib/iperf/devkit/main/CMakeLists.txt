@@ -30,6 +30,8 @@ idf_component_register(
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
 
+include("${H2_REPO_ROOT}/projects/e2e/targets/h2loader_tar_zlib/fixture-wifi/fixture_wifi.cmake")
+
 # Operator-selected LAN peer and Wi-Fi policy enter through the allowlisted
 # CMake cache of this firmware action only (`--define=H2_IPERF_SERVER=...`).
 if(DEFINED H2_IPERF_SERVER)

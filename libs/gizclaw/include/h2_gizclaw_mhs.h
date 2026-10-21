@@ -39,12 +39,12 @@ typedef union h2_gizclaw_mhs_write {
  * out write may already have changed hardware; callers must re-read.
  * RuntimeProfile manifest ownership is separate from device registration. */
 typedef struct h2_gizclaw_mhs_device {
-  const char *id;
+  const char* id;
   gizclaw_rpc_v1_ClientHwd hwd;
-  h2_pal_result_t (*read)(void *user, h2_gizclaw_mhs_read_t *out);
-  h2_pal_result_t (*write)(void *user, const h2_gizclaw_mhs_write_t *request,
-                           h2_gizclaw_mhs_read_t *out_applied);
-  void *user;
+  h2_pal_result_t (*read)(void* user, h2_gizclaw_mhs_read_t* out);
+  h2_pal_result_t (*write)(void* user, const h2_gizclaw_mhs_write_t* request,
+                           h2_gizclaw_mhs_read_t* out_applied);
+  void* user;
 } h2_gizclaw_mhs_device_t;
 
 #ifdef __cplusplus

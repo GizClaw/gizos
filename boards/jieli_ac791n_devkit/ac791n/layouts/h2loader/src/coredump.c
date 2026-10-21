@@ -14,10 +14,10 @@
 
 #define H2_JIELI_COREDUMP_MAGIC UINT32_C(0x52433248) /* H2CR */
 #define H2_JIELI_COREDUMP_VERSION UINT32_C(2)
-#define H2_JIELI_COREDUMP_COMMITTED UINT32_C(0x54494d43) /* CMIT */
-#define H2_JIELI_CRASH_PENDING UINT32_C(0x48535243) /* CRSH */
+#define H2_JIELI_COREDUMP_COMMITTED UINT32_C(0x54494d43)  /* CMIT */
+#define H2_JIELI_CRASH_PENDING UINT32_C(0x48535243)       /* CRSH */
 #define H2_JIELI_CRASH_ORIGIN_LOADER UINT32_C(0x5244414c) /* LADR */
-#define H2_JIELI_RETAINED_LOG_MAGIC UINT32_C(0x474f4c48) /* HLOG */
+#define H2_JIELI_RETAINED_LOG_MAGIC UINT32_C(0x474f4c48)  /* HLOG */
 #define H2_JIELI_RETAINED_LOG_LOADER UINT32_C(1)
 #define H2_JIELI_RETAINED_LOG_DIRTY UINT32_C(0x80000000)
 #define H2_JIELI_RETAINED_LOG_CAPACITY 2048u
@@ -31,8 +31,8 @@ struct h2_jieli_wl82_boot_marker {
 };
 
 extern volatile struct h2_jieli_wl82_boot_marker h2_jieli_wl82_ram_marker;
-extern int printf(const char *format, ...);
-extern void put_buf(const uint8_t *buffer, int length);
+extern int printf(const char* format, ...);
+extern void put_buf(const uint8_t* buffer, int length);
 
 struct h2_jieli_coredump_record {
   /* The shared H2Loader coredump command requires total size in word zero. */
@@ -52,7 +52,8 @@ struct h2_jieli_coredump_record {
 };
 
 /* sdfile.h defines the NOR erase sector (4096 bytes), not a 512-byte disk
- * block. Keep the single-sector write/size checks valid as this record grows. */
+ * block. Keep the single-sector write/size checks valid as this record grows.
+ */
 _Static_assert(sizeof(struct h2_jieli_coredump_record) <= SDFILE_SECTOR_SIZE,
                "coredump record exceeds its erased sector");
 
@@ -81,7 +82,8 @@ struct h2_jieli_coredump_retained h2_jieli_coredump_retained
 #define crash_pending h2_jieli_coredump_retained.crash_pending
 #define crash_origin h2_jieli_coredump_retained.crash_origin
 #define retained_log h2_jieli_coredump_retained.log
-_Static_assert(__builtin_offsetof(struct h2_jieli_coredump_retained, log) == 2108u,
+_Static_assert(__builtin_offsetof(struct h2_jieli_coredump_retained, log) ==
+                   2108u,
                "retained log offset changed");
 _Static_assert(sizeof(struct h2_jieli_coredump_retained) == 4168u,
                "retained coredump size changed");
@@ -109,14 +111,14 @@ static int h2_jieli_log_valid(void) {
          retained_log.head < sizeof(retained_log.data);
 }
 
-static uint32_t h2_jieli_checksum(
-    const struct h2_jieli_coredump_record *record) SEC(.volatile_ram_code);
-static int h2_jieli_write_record(
-    const struct h2_jieli_coredump_record *record) SEC(.volatile_ram_code);
+static uint32_t h2_jieli_checksum(const struct h2_jieli_coredump_record* record)
+    SEC(.volatile_ram_code);
+static int h2_jieli_write_record(const struct h2_jieli_coredump_record* record)
+    SEC(.volatile_ram_code);
 
 static uint32_t h2_jieli_checksum(
-    const struct h2_jieli_coredump_record *record) {
-  const uint8_t *bytes = (const uint8_t *)record;
+    const struct h2_jieli_coredump_record* record) {
+  const uint8_t* bytes = (const uint8_t*)record;
   uint32_t checksum = UINT32_C(0x811c9dc5);
   const size_t count = offsetof(struct h2_jieli_coredump_record, checksum);
   for (size_t i = 0u; i < count; ++i) {
@@ -127,7 +129,7 @@ static uint32_t h2_jieli_checksum(
 }
 
 static int h2_jieli_record_valid(
-    const struct h2_jieli_coredump_record *record) {
+    const struct h2_jieli_coredump_record* record) {
   return record->magic == H2_JIELI_COREDUMP_MAGIC &&
          record->version == H2_JIELI_COREDUMP_VERSION &&
          record->size == sizeof(*record) &&
@@ -141,7 +143,8 @@ void h2_jieli_wl82_log_byte(char value) SEC(.volatile_ram_code);
 void h2_jieli_wl82_log_byte(char value) {
   if (h2_jieli_atomic_load_u32(&capture_ready) == 0u ||
       h2_jieli_atomic_load_u32(&suppress_log_capture) != 0u ||
-      !h2_jieli_sdk_try_lock_byte(&log_lock)) return;
+      !h2_jieli_sdk_try_lock_byte(&log_lock))
+    return;
   if (!h2_jieli_log_valid()) {
     retained_log.head = 0u;
     retained_log.total = 0u;
@@ -158,15 +161,12 @@ void h2_jieli_wl82_log_byte(char value) {
   h2_jieli_sdk_unlock_byte(&log_lock);
 }
 
-static void h2_jieli_build_record(
-    struct h2_jieli_coredump_record *record,
-    uint32_t reset_reason,
-    void *caller) SEC(.volatile_ram_code);
+static void h2_jieli_build_record(struct h2_jieli_coredump_record* record,
+                                  uint32_t reset_reason, void* caller)
+    SEC(.volatile_ram_code);
 
-static void h2_jieli_build_record(
-    struct h2_jieli_coredump_record *record,
-    uint32_t reset_reason,
-    void *caller) {
+static void h2_jieli_build_record(struct h2_jieli_coredump_record* record,
+                                  uint32_t reset_reason, void* caller) {
   memset(record, 0, sizeof(*record));
   record->size = sizeof(*record);
   record->magic = H2_JIELI_COREDUMP_MAGIC;
@@ -211,7 +211,7 @@ static void h2_jieli_build_record(
  * exception logger uses while normal filesystem services may be unavailable.
  */
 static int h2_jieli_write_record(
-    const struct h2_jieli_coredump_record *record) {
+    const struct h2_jieli_coredump_record* record) {
   if (coredump_sdfile_addr == 0u) {
     return -1;
   }
@@ -221,36 +221,35 @@ static int h2_jieli_write_record(
    * set_os_init_flag(0) tears down the live OS contract and can strand USB
    * before the erase completes.  Normal SDK users call the reserve-zone API
    * directly from task context. */
-  if (sdfile_reserve_zone_erase(
-          coredump_sdfile_addr, SDFILE_SECTOR_SIZE, 0) < 0) {
+  if (sdfile_reserve_zone_erase(coredump_sdfile_addr, SDFILE_SECTOR_SIZE, 0) <
+      0) {
     return -1;
   }
   if (sdfile_reserve_zone_write(
-      (void *)record, coredump_sdfile_addr,
-      offsetof(struct h2_jieli_coredump_record, committed), 0) !=
-      offsetof(struct h2_jieli_coredump_record, committed)) {
+          (void*)record, coredump_sdfile_addr,
+          offsetof(struct h2_jieli_coredump_record, committed),
+          0) != offsetof(struct h2_jieli_coredump_record, committed)) {
     return -1;
   }
 
   const uint32_t committed = H2_JIELI_COREDUMP_COMMITTED;
   if (sdfile_reserve_zone_write(
-      (void *)&committed,
-      coredump_sdfile_addr +
-          offsetof(struct h2_jieli_coredump_record, committed),
-      sizeof(committed), 0) != sizeof(committed)) {
+          (void*)&committed,
+          coredump_sdfile_addr +
+              offsetof(struct h2_jieli_coredump_record, committed),
+          sizeof(committed), 0) != sizeof(committed)) {
     return -1;
   }
   return 0;
 }
 
-void h2_jieli_wl82_assert_reset_hook(void *caller) SEC(.volatile_ram_code);
+void h2_jieli_wl82_assert_reset_hook(void* caller) SEC(.volatile_ram_code);
 
-void h2_jieli_wl82_assert_reset_hook(void *caller) {
+void h2_jieli_wl82_assert_reset_hook(void* caller) {
   if (!h2_jieli_sdk_try_lock_byte(&capture_lock)) return;
   crash_pending = H2_JIELI_CRASH_PENDING;
   crash_origin = running_loader != 0u ? H2_JIELI_CRASH_ORIGIN_LOADER : 0u;
-  h2_jieli_build_record(
-      &pending_record, H2_JIELI_EXCEPTION_REASON, caller);
+  h2_jieli_build_record(&pending_record, H2_JIELI_EXCEPTION_REASON, caller);
   h2_jieli_sdk_unlock_byte(&capture_lock);
   /* Exception context may have interrupts disabled or another core paused.
    * Persisting through the NOR driver here can therefore deadlock before the
@@ -269,12 +268,12 @@ void h2_jieli_wl82_reset_recovery_hook(uint32_t reset_reason) {
                    h2_jieli_wl82_coredump_loader_image != 0u;
   if ((reset_reason & SYS_RST_WDT) != 0u) {
     crash_pending = H2_JIELI_CRASH_PENDING;
-    crash_origin =
-        (previous_magic & ~(H2_JIELI_RETAINED_LOG_DIRTY |
-                            H2_JIELI_RETAINED_LOG_LOADER)) ==
-                H2_JIELI_RETAINED_LOG_MAGIC &&
-            (previous_magic & H2_JIELI_RETAINED_LOG_LOADER) != 0u
-        ? H2_JIELI_CRASH_ORIGIN_LOADER : 0u;
+    crash_origin = (previous_magic & ~(H2_JIELI_RETAINED_LOG_DIRTY |
+                                       H2_JIELI_RETAINED_LOG_LOADER)) ==
+                               H2_JIELI_RETAINED_LOG_MAGIC &&
+                           (previous_magic & H2_JIELI_RETAINED_LOG_LOADER) != 0u
+                       ? H2_JIELI_CRASH_ORIGIN_LOADER
+                       : 0u;
     h2_jieli_build_record(&pending_record, reset_reason, NULL);
   }
   if (!h2_jieli_log_valid()) {
@@ -313,9 +312,8 @@ int h2_jieli_wl82_coredump_flush_pending(void) {
   /* Native flash calls run without either capture lock. A newer exception
    * record remains pending if it arrives while this snapshot is persisted. */
   if (h2_jieli_write_record(&snapshot) != 0) return -1;
-  if (sdfile_reserve_zone_read(
-          &verified, coredump_sdfile_addr,
-          sizeof(verified), 0) != sizeof(verified) ||
+  if (sdfile_reserve_zone_read(&verified, coredump_sdfile_addr,
+                               sizeof(verified), 0) != sizeof(verified) ||
       !h2_jieli_record_valid(&verified) ||
       memcmp(&snapshot, &verified, sizeof(snapshot)) != 0) {
     return -1;
@@ -329,13 +327,13 @@ int h2_jieli_wl82_coredump_flush_pending(void) {
 }
 
 static int h2_jieli_coredump_init(void) {
-  static const char *const paths[] = {
+  static const char* const paths[] = {
       "mnt/sdfile/EXT_RESERVED/H2CORE",
       "mnt/sdfile/EXT_RESERVED/h2core",
   };
 
   for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
-    FILE *file = fopen(paths[i], "r");
+    FILE* file = fopen(paths[i], "r");
     if (file == NULL) {
       continue;
     }
@@ -363,21 +361,18 @@ static int h2_jieli_coredump_init(void) {
    * would make the only recovery diagnostics disappear. loader_task flushes
    * this retained record after USB and storage are both online. */
   if (coredump_sdfile_addr != 0u &&
-      sdfile_reserve_zone_read(
-          &replay_record, coredump_sdfile_addr,
-          sizeof(replay_record), 0) == sizeof(replay_record) &&
+      sdfile_reserve_zone_read(&replay_record, coredump_sdfile_addr,
+                               sizeof(replay_record),
+                               0) == sizeof(replay_record) &&
       h2_jieli_record_valid(&replay_record)) {
     h2_jieli_atomic_store_u32(&suppress_log_capture, 1u);
     printf(
         "H2_JIELI_COREDUMP_REPLAY sequence=%u reset_reason=0x%x "
         "boot_stage=%u caller=0x%x marker_result=%d log_bytes=%u "
         "log_total=%u\r\n",
-        (unsigned)replay_record.sequence,
-        (unsigned)replay_record.reset_reason,
-        (unsigned)replay_record.boot_stage,
-        (unsigned)replay_record.caller,
-        (int)replay_record.marker_result,
-        (unsigned)replay_record.log_bytes,
+        (unsigned)replay_record.sequence, (unsigned)replay_record.reset_reason,
+        (unsigned)replay_record.boot_stage, (unsigned)replay_record.caller,
+        (int)replay_record.marker_result, (unsigned)replay_record.log_bytes,
         (unsigned)replay_record.log_total);
     printf("H2_JIELI_COREDUMP_LOG_BEGIN\r\n");
     if (replay_record.log_bytes != 0u) {

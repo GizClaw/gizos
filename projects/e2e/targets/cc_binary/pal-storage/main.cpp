@@ -31,36 +31,31 @@ union Header {
   std::size_t size;
 };
 std::atomic<size_t> allocations{0}, bytes{0};
-void *allocate(void *, size_t size) {
-  if (size > SIZE_MAX - sizeof(Header))
-    return nullptr;
-  auto *p = static_cast<Header *>(std::malloc(sizeof(Header) + size));
-  if (!p)
-    return nullptr;
+void* allocate(void*, size_t size) {
+  if (size > SIZE_MAX - sizeof(Header)) return nullptr;
+  auto* p = static_cast<Header*>(std::malloc(sizeof(Header) + size));
+  if (!p) return nullptr;
   p->size = size;
   ++allocations;
   bytes += size;
   return p + 1;
 }
-void release(void *, void *pointer) {
-  if (!pointer)
-    return;
-  auto *p = static_cast<Header *>(pointer) - 1;
+void release(void*, void* pointer) {
+  if (!pointer) return;
+  auto* p = static_cast<Header*>(pointer) - 1;
   --allocations;
   bytes -= p->size;
   std::free(p);
 }
-void *resize(void *user, void *pointer, size_t size) {
-  if (!pointer)
-    return allocate(user, size);
+void* resize(void* user, void* pointer, size_t size) {
+  if (!pointer) return allocate(user, size);
   if (!size) {
     release(user, pointer);
     return nullptr;
   }
-  auto *old = static_cast<Header *>(pointer) - 1;
-  void *next = allocate(user, size);
-  if (!next)
-    return nullptr;
+  auto* old = static_cast<Header*>(pointer) - 1;
+  void* next = allocate(user, size);
+  if (!next) return nullptr;
   std::memcpy(next, pointer, old->size < size ? old->size : size);
   release(user, pointer);
   return next;
@@ -71,31 +66,29 @@ struct Reporter {
   unsigned phase;
   uint32_t nonce;
 };
-void report(void *user, const char *id, h2_pal_storage_status_t status,
+void report(void* user, const char* id, h2_pal_storage_status_t status,
             h2_pal_result_t rc) {
-  auto *reporter = static_cast<Reporter *>(user);
-  static const char *names[] = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"};
+  auto* reporter = static_cast<Reporter*>(user);
+  static const char* names[] = {"NOT_RUN", "PASS", "FAIL", "BLOCKED"};
   std::printf(
       "H2_STORAGE_CASE "
       "{\"id\":\"%s\",\"status\":\"%s\",\"rc\":%d,\"phase\":%u,\"nonce\":%u}\n",
       id, names[status], rc, reporter->phase, reporter->nonce);
   std::fflush(stdout);
 }
-} // namespace
-int main(int argc, char **argv) {
-  if (argc != 4 && argc != 5)
-    return 2;
+}  // namespace
+int main(int argc, char** argv) {
+  if (argc != 4 && argc != 5) return 2;
   unsigned phase = static_cast<unsigned>(std::strtoul(argv[1], nullptr, 10));
   uint32_t nonce = static_cast<uint32_t>(std::strtoul(argv[3], nullptr, 10));
   std::filesystem::path root = argv[2];
   const std::string fs_path = (root / "files").string(),
                     db_path = (root / "preferences.sqlite").string();
   const char *sources[] = {fs_path.c_str()}, *targets[] = {"/storage"};
-  host_fs_t *fs = nullptr;
-  h2_sqlite_t *pref = nullptr;
-  h2_runtime_t *runtime = nullptr;
-  if (host_fs_create(sources, targets, 1, &fs) != H2_PAL_OK)
-    return 3;
+  host_fs_t* fs = nullptr;
+  h2_sqlite_t* pref = nullptr;
+  h2_runtime_t* runtime = nullptr;
+  if (host_fs_create(sources, targets, 1, &fs) != H2_PAL_OK) return 3;
   const h2_sqlite_config_t database = {db_path.c_str()};
   if (h2_sqlite_create(&database, &pref) != H2_PAL_OK) {
     host_fs_destroy(fs);
@@ -125,25 +118,23 @@ int main(int argc, char **argv) {
   const int rc = device_control
                      ? h2_storage_device_run(runtime, tests.root, argv[4])
                      : h2_pal_storage_e2e_run(runtime, &tests, &result);
-  if (device_control)
-    h2_storage_device_replay(runtime);
+  if (device_control) h2_storage_device_replay(runtime);
   bool balanced = allocations == before_allocations && bytes == before_bytes;
   if (device_control) {
     std::printf(
         "H2_STORAGE_DEVICE_EXIT {\"rc\":%d,\"pid\":%ld,\"balanced\":%s}\n", rc,
         static_cast<long>(getpid()), balanced ? "true" : "false");
   } else {
-    std::printf("H2_STORAGE_PHASE "
-                "{\"contract\":%u,\"phase\":%u,\"nonce\":%u,\"pid\":%ld,"
-                "\"passed\":%zu,\"failed\":%zu,"
-                "\"blocked\":%zu,\"cleanup\":%d,\"balanced\":%s}\n",
-                H2_PAL_STORAGE_CONTRACT_VERSION, phase, nonce,
-                static_cast<long>(getpid()), result.passed, result.failed,
-                result.blocked, result.cleanup_result,
-                balanced ? "true" : "false");
+    std::printf(
+        "H2_STORAGE_PHASE "
+        "{\"contract\":%u,\"phase\":%u,\"nonce\":%u,\"pid\":%ld,"
+        "\"passed\":%zu,\"failed\":%zu,"
+        "\"blocked\":%zu,\"cleanup\":%d,\"balanced\":%s}\n",
+        H2_PAL_STORAGE_CONTRACT_VERSION, phase, nonce,
+        static_cast<long>(getpid()), result.passed, result.failed,
+        result.blocked, result.cleanup_result, balanced ? "true" : "false");
   }
-  if (result.retained_cleanup || (device_control && !balanced))
-    return 6;
+  if (result.retained_cleanup || (device_control && !balanced)) return 6;
   h2_runtime_deinit(runtime);
   h2_sqlite_destroy(pref);
   host_fs_destroy(fs);

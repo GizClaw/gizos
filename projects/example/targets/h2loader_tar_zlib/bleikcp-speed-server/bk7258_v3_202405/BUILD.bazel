@@ -35,7 +35,6 @@ firmware_lib_component(
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/coremqtt",
         "//libs/pal/providers/h2peer",
@@ -43,6 +42,7 @@ firmware_lib_component(
         "//libs/pal/providers/libco",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
     ],
 )
 
@@ -75,8 +75,6 @@ firmware_native_component(
         "manual",
     ],
     deps = [
-        "//projects/h2loader/apps/loader/app:tasks",
-        "//projects/example/apps/bleikcp-speed/app:tasks",
         ":ap_launcher_component",
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",
@@ -86,6 +84,8 @@ firmware_native_component(
         "//native_component_src/bk7258/ap/h2_pal_core",
         "//native_component_src/bk7258/ap/zlib",
         "//native_component_src/bk7258/cp/h2_pal_core",
+        "//projects/example/apps/bleikcp-speed/app:tasks",
+        "//projects/h2loader/apps/loader/app:tasks",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
         "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",

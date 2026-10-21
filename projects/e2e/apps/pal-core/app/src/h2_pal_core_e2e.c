@@ -6,53 +6,51 @@
 #include <string.h>
 
 struct h2_pal_core_e2e_owner {
-  h2_runtime_t *runtime;
-  const h2_pal_core_e2e_config_t *config;
+  h2_runtime_t* runtime;
+  const h2_pal_core_e2e_config_t* config;
   uint32_t timeout_ms;
-  h2_pal_timer_t *timer;
-  h2_pal_queue_t *queue;
+  h2_pal_timer_t* timer;
+  h2_pal_queue_t* queue;
   int queue_closed;
-  h2_pal_mutex_t *mutex;
-  h2_pal_cond_t *condition;
-  h2_pal_semaphore_t *semaphore;
-  h2_pal_semaphore_t *ready;
-  h2_pal_task_t *task;
+  h2_pal_mutex_t* mutex;
+  h2_pal_cond_t* condition;
+  h2_pal_semaphore_t* semaphore;
+  h2_pal_semaphore_t* ready;
+  h2_pal_task_t* task;
   h2_pal_result_t worker_result;
   int worker_value;
   int worker_mode;
-  h2_pal_system_event_subscription_t *subscriptions[2];
+  h2_pal_system_event_subscription_t* subscriptions[2];
   int events_initialized;
   h2_pal_netif_default_changed_t event_payload;
   h2_pal_system_event_t event;
   int wall_restore_pending;
   uint64_t restore_wall;
   uint64_t restore_started;
-  h2_pal_core_extended_t *extension;
+  h2_pal_core_extended_t* extension;
 };
 
 typedef h2_pal_core_e2e_owner_t owner_t;
 
-static const char *const case_ids[H2_PAL_CORE_E2E_CASE_COUNT] = {
+static const char* const case_ids[H2_PAL_CORE_E2E_CASE_COUNT] = {
 #define H2_PAL_CORE_CASE(id) id,
 #include "h2_pal_core_cases.inc"
 #undef H2_PAL_CORE_CASE
 };
 
-#define TRY(expr)                                                              \
-  do {                                                                         \
-    rc = (h2_pal_result_t)(expr);                                              \
-    if (rc != H2_PAL_OK)                                                       \
-      return rc;                                                               \
+#define TRY(expr)                   \
+  do {                              \
+    rc = (h2_pal_result_t)(expr);   \
+    if (rc != H2_PAL_OK) return rc; \
   } while (0)
-#define REQUIRE(expr)                                                          \
-  do {                                                                         \
-    if (!(expr))                                                               \
-      return H2_PAL_ERR_INVALID_STATE;                                         \
+#define REQUIRE(expr)                             \
+  do {                                            \
+    if (!(expr)) return H2_PAL_ERR_INVALID_STATE; \
   } while (0)
 
-static h2_pal_result_t memory_case(h2_runtime_t *r) {
-  uint8_t *p = h2_pal_mem_alloc(r->mem, 31u);
-  uint8_t *q = h2_pal_mem_realloc(r->mem, NULL, 13u);
+static h2_pal_result_t memory_case(h2_runtime_t* r) {
+  uint8_t* p = h2_pal_mem_alloc(r->mem, 31u);
+  uint8_t* q = h2_pal_mem_realloc(r->mem, NULL, 13u);
   h2_pal_result_t rc = H2_PAL_OK;
   if (p == NULL || q == NULL) {
     rc = H2_PAL_ERR_NO_MEMORY;
@@ -60,27 +58,24 @@ static h2_pal_result_t memory_case(h2_runtime_t *r) {
   }
   memset(p, 0xa5, 31u);
   memset(q, 0x3c, 13u);
-  uint8_t *grown = h2_pal_mem_realloc(r->mem, p, 97u);
+  uint8_t* grown = h2_pal_mem_realloc(r->mem, p, 97u);
   if (grown == NULL) {
     rc = H2_PAL_ERR_NO_MEMORY;
     goto done;
   }
   p = grown;
   for (size_t i = 0; i < 31u; ++i)
-    if (p[i] != 0xa5u)
-      rc = H2_PAL_ERR_INVALID_STATE;
+    if (p[i] != 0xa5u) rc = H2_PAL_ERR_INVALID_STATE;
   for (size_t i = 0; i < 13u; ++i)
-    if (q[i] != 0x3cu)
-      rc = H2_PAL_ERR_INVALID_STATE;
-  uint8_t *shrunk = h2_pal_mem_realloc(r->mem, p, 7u);
+    if (q[i] != 0x3cu) rc = H2_PAL_ERR_INVALID_STATE;
+  uint8_t* shrunk = h2_pal_mem_realloc(r->mem, p, 7u);
   if (shrunk == NULL) {
     rc = H2_PAL_ERR_NO_MEMORY;
     goto done;
   }
   p = shrunk;
   for (size_t i = 0; i < 7u; ++i)
-    if (p[i] != 0xa5u)
-      rc = H2_PAL_ERR_INVALID_STATE;
+    if (p[i] != 0xa5u) rc = H2_PAL_ERR_INVALID_STATE;
 done:
   h2_pal_mem_free(r->mem, q);
   h2_pal_mem_free(r->mem, p);
@@ -88,9 +83,8 @@ done:
   return rc;
 }
 
-static h2_pal_result_t log_case(owner_t *o) {
-  if (o->config->observe_log == NULL)
-    return H2_PAL_ERR_UNAVAILABLE;
+static h2_pal_result_t log_case(owner_t* o) {
+  if (o->config->observe_log == NULL) return H2_PAL_ERR_UNAVAILABLE;
   h2_pal_result_t rc;
   for (int level = H2_PAL_LOG_DEBUG; level <= H2_PAL_LOG_ERROR; ++level) {
     char message[H2_PAL_LOG_MESSAGE_MAX];
@@ -100,21 +94,23 @@ static h2_pal_result_t log_case(owner_t *o) {
     message[sizeof(message) - 1u] = '\0';
     TRY(h2_pal_log_write(o->runtime->log, (h2_pal_log_level_t)level, "pal-core",
                          message));
-    TRY(o->config->observe_log(o->config->observer_user,
-                               (h2_pal_log_level_t)level, "pal-core", message));
+    if (level >= (int)o->config->log_min_level)
+      TRY(o->config->observe_log(o->config->observer_user,
+                                 (h2_pal_log_level_t)level, "pal-core",
+                                 message));
   }
   REQUIRE(h2_pal_log_write(o->runtime->log, H2_PAL_LOG_INFO, "pal-core",
                            NULL) == H2_PAL_ERR_INVALID_ARG);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t observe(owner_t *o, uint64_t *us) {
+static h2_pal_result_t observe(owner_t* o, uint64_t* us) {
   return o->config->observe_monotonic_us == NULL
              ? H2_PAL_ERR_UNAVAILABLE
              : o->config->observe_monotonic_us(o->config->observer_user, us);
 }
 
-static h2_pal_result_t time_case(owner_t *o) {
+static h2_pal_result_t time_case(owner_t* o) {
   h2_pal_result_t rc;
   uint64_t external_before, external_after, ms_before, ms_after, us_before,
       us_after;
@@ -135,7 +131,7 @@ static h2_pal_result_t time_case(owner_t *o) {
   return h2_pal_time_sleep_ms(o->runtime->time, 0u);
 }
 
-static h2_pal_result_t wall_read_case(owner_t *o) {
+static h2_pal_result_t wall_read_case(owner_t* o) {
   h2_pal_result_t rc;
   h2_pal_time_wall_status_t status;
   TRY(h2_pal_time_get_wall_status(o->runtime->time, &status));
@@ -151,11 +147,11 @@ static h2_pal_result_t wall_read_case(owner_t *o) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t wall_set_case(owner_t *o) {
-  if (!o->config->allow_wall_set)
-    return H2_PAL_ERR_UNAVAILABLE;
+static h2_pal_result_t wall_set_case(owner_t* o) {
+  if (!o->config->allow_wall_set) return H2_PAL_ERR_UNAVAILABLE;
   h2_pal_result_t rc;
-  uint64_t original = 0, before = 0, after = 0, wall = 0, ext_before = 0, ext_after = 0;
+  uint64_t original = 0, before = 0, after = 0, wall = 0, ext_before = 0,
+           ext_after = 0;
   TRY(h2_pal_time_get_wall_ms(o->runtime->time, &original));
   TRY(observe(o, &ext_before));
   TRY(h2_pal_time_get_monotonic_us(o->runtime->time, &before));
@@ -170,8 +166,7 @@ static h2_pal_result_t wall_set_case(owner_t *o) {
   if (rc == H2_PAL_OK)
     rc = h2_pal_time_get_monotonic_us(o->runtime->time, &after);
   h2_pal_result_t clock_rc = observe(o, &ext_after);
-  if (rc == H2_PAL_OK)
-    rc = clock_rc;
+  if (rc == H2_PAL_OK) rc = clock_rc;
   if (rc == H2_PAL_OK &&
       (after < before || after - before > ext_after - ext_before + 2000u))
     rc = H2_PAL_ERR_INVALID_STATE;
@@ -180,12 +175,11 @@ static h2_pal_result_t wall_set_case(owner_t *o) {
       o->runtime->time,
       original +
           (clock_rc == H2_PAL_OK ? (ext_after - ext_before) / 1000u : 0u));
-  if (restore == H2_PAL_OK)
-    o->wall_restore_pending = 0;
+  if (restore == H2_PAL_OK) o->wall_restore_pending = 0;
   return restore != H2_PAL_OK ? restore : rc;
 }
 
-static h2_pal_result_t make_queue(owner_t *o, size_t capacity) {
+static h2_pal_result_t make_queue(owner_t* o, size_t capacity) {
   h2_pal_queue_config_t cfg = {.name = "pal-core",
                                .item_size = sizeof(int),
                                .item_count = capacity,
@@ -194,7 +188,7 @@ static h2_pal_result_t make_queue(owner_t *o, size_t capacity) {
                                               &o->queue);
 }
 
-static h2_pal_result_t queue_case(owner_t *o) {
+static h2_pal_result_t queue_case(owner_t* o) {
   if (o->config->queue_latest == H2_PAL_CORE_QUEUE_LATEST_UNSPECIFIED)
     return H2_PAL_ERR_UNAVAILABLE;
   h2_pal_result_t rc;
@@ -231,7 +225,7 @@ static h2_pal_result_t queue_case(owner_t *o) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t mutex_case(owner_t *o) {
+static h2_pal_result_t mutex_case(owner_t* o) {
   const h2_pal_mutex_config_t cfg = {.name = "pal-core-recursive",
                                      .allocator = o->runtime->mem,
                                      .flags = H2_PAL_MUTEX_FLAG_RECURSIVE};
@@ -239,13 +233,12 @@ static h2_pal_result_t mutex_case(owner_t *o) {
   TRY(h2_pal_mutex_create(o->runtime->sync, &cfg, &o->mutex));
   TRY(h2_pal_mutex_lock(o->runtime->sync, o->mutex));
   rc = h2_pal_mutex_try_lock(o->runtime->sync, o->mutex);
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_mutex_unlock(o->runtime->sync, o->mutex);
+  if (rc == H2_PAL_OK) rc = h2_pal_mutex_unlock(o->runtime->sync, o->mutex);
   h2_pal_result_t unlock = h2_pal_mutex_unlock(o->runtime->sync, o->mutex);
   return rc == H2_PAL_OK ? unlock : rc;
 }
 
-static h2_pal_result_t make_semaphore(owner_t *o) {
+static h2_pal_result_t make_semaphore(owner_t* o) {
   const h2_pal_semaphore_config_t cfg = {.name = "pal-core-sem",
                                          .allocator = o->runtime->mem,
                                          .initial_count = 0u,
@@ -253,7 +246,7 @@ static h2_pal_result_t make_semaphore(owner_t *o) {
   return h2_pal_semaphore_create(o->runtime->sync, &cfg, &o->semaphore);
 }
 
-static h2_pal_result_t semaphore_case(owner_t *o) {
+static h2_pal_result_t semaphore_case(owner_t* o) {
   h2_pal_result_t rc;
   TRY(make_semaphore(o));
   REQUIRE(h2_pal_semaphore_take(o->runtime->sync, o->semaphore, 0u) ==
@@ -268,7 +261,7 @@ static h2_pal_result_t semaphore_case(owner_t *o) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t condition_case(owner_t *o) {
+static h2_pal_result_t condition_case(owner_t* o) {
   h2_pal_result_t rc;
   const h2_pal_mutex_config_t mutex_cfg = {.name = "pal-core-cond",
                                            .allocator = o->runtime->mem,
@@ -290,8 +283,7 @@ static h2_pal_result_t condition_case(owner_t *o) {
       rc = H2_PAL_OK;
       break;
     }
-    if (rc == H2_PAL_OK)
-      rc = observe(o, &now);
+    if (rc == H2_PAL_OK) rc = observe(o, &now);
     if (rc == H2_PAL_OK &&
         (now - start >= (uint64_t)o->timeout_ms * 1000u || i == 99u))
       rc = H2_PAL_ERR_TIMEOUT;
@@ -301,11 +293,10 @@ static h2_pal_result_t condition_case(owner_t *o) {
   return rc == H2_PAL_OK ? unlock : rc;
 }
 
-static void worker(void *user) {
-  owner_t *o = user;
+static void worker(void* user) {
+  owner_t* o = user;
   o->worker_result = h2_pal_semaphore_give(o->runtime->sync, o->ready);
-  if (o->worker_result != H2_PAL_OK)
-    return;
+  if (o->worker_result != H2_PAL_OK) return;
   if (o->worker_mode == 1) {
     o->worker_result = (h2_pal_result_t)h2_pal_queue_recv(
         o->runtime->queue, o->queue, &o->worker_value, o->timeout_ms);
@@ -315,7 +306,7 @@ static void worker(void *user) {
   }
 }
 
-static h2_pal_result_t join(owner_t *o) {
+static h2_pal_result_t join(owner_t* o) {
   h2_pal_result_t rc;
   uint64_t start, now;
   TRY(observe(o, &start));
@@ -325,8 +316,7 @@ static h2_pal_result_t join(owner_t *o) {
       o->task = NULL;
       return rc;
     }
-    if (rc != H2_PAL_ERR_BUSY)
-      return rc;
+    if (rc != H2_PAL_ERR_BUSY) return rc;
     TRY(observe(o, &now));
     if (now - start >= (uint64_t)o->timeout_ms * 1000u)
       return H2_PAL_ERR_TIMEOUT;
@@ -335,7 +325,7 @@ static h2_pal_result_t join(owner_t *o) {
   return H2_PAL_ERR_TIMEOUT;
 }
 
-static h2_pal_result_t wake_case(owner_t *o, int queue) {
+static h2_pal_result_t wake_case(owner_t* o, int queue) {
   h2_pal_result_t rc;
   if (queue) {
     TRY(make_queue(o, 1u));
@@ -369,14 +359,14 @@ static h2_pal_result_t wake_case(owner_t *o, int queue) {
   return H2_PAL_OK;
 }
 
-static void timer_callback(void *user, h2_pal_timer_t *timer) {
+static void timer_callback(void* user, h2_pal_timer_t* timer) {
   (void)timer;
-  owner_t *o = user;
+  owner_t* o = user;
   const int message = 73;
   (void)h2_pal_queue_send(o->runtime->queue, o->queue, &message, 0u);
 }
 
-static h2_pal_result_t timer_case(owner_t *o) {
+static h2_pal_result_t timer_case(owner_t* o) {
   h2_pal_result_t rc;
   TRY(make_queue(o, 16u));
   const h2_pal_timer_config_t cfg = {.name = "pal-core-repeat",
@@ -411,7 +401,7 @@ static h2_pal_result_t timer_case(owner_t *o) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t oneshot_case(owner_t *o) {
+static h2_pal_result_t oneshot_case(owner_t* o) {
   h2_pal_result_t rc;
   TRY(make_queue(o, 8u));
   const h2_pal_timer_config_t cfg = {.name = "pal-core-oneshot",
@@ -433,13 +423,13 @@ static h2_pal_result_t oneshot_case(owner_t *o) {
   return H2_PAL_OK;
 }
 
-static int event_handler(void *user, const h2_pal_system_event_t *event) {
-  owner_t *o = user;
+static int event_handler(void* user, const h2_pal_system_event_t* event) {
+  owner_t* o = user;
   int message = 0;
   if (event->source_id == 0x50414cu && event->timestamp_ms == 123u &&
       event->type == H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED &&
       event->payload_size == sizeof(h2_pal_netif_default_changed_t)) {
-    const h2_pal_netif_default_changed_t *change = event->payload;
+    const h2_pal_netif_default_changed_t* change = event->payload;
     if (change->current_valid &&
         change->current.type == H2_PAL_NETIF_REF_NAME &&
         strcmp(change->current.name, "e2e0") == 0)
@@ -448,17 +438,16 @@ static int event_handler(void *user, const h2_pal_system_event_t *event) {
   return h2_pal_queue_send(o->runtime->queue, o->queue, &message, 0u);
 }
 
-static int other_event_handler(void *user, const h2_pal_system_event_t *event) {
+static int other_event_handler(void* user, const h2_pal_system_event_t* event) {
   (void)event;
-  owner_t *o = user;
+  owner_t* o = user;
   int message = -1;
   return h2_pal_queue_send(o->runtime->queue, o->queue, &message, 0u);
 }
 
-static h2_pal_result_t events_case(owner_t *o) {
-  const h2_pal_system_event_api_t *api = o->config->event_fixture;
-  if (api == NULL)
-    return H2_PAL_ERR_UNAVAILABLE;
+static h2_pal_result_t events_case(owner_t* o) {
+  const h2_pal_system_event_api_t* api = o->config->event_fixture;
+  if (api == NULL) return H2_PAL_ERR_UNAVAILABLE;
   if (api->vtable == NULL || api->vtable->init == NULL ||
       api->vtable->deinit == NULL || api->vtable->unsubscribe == NULL)
     return H2_PAL_ERR_UNSUPPORTED;
@@ -500,7 +489,7 @@ static h2_pal_result_t events_case(owner_t *o) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t firmware_case(owner_t *o) {
+static h2_pal_result_t firmware_case(owner_t* o) {
   h2_pal_result_t rc;
   h2_pal_firmware_info_t first, second;
   TRY(h2_pal_firmware_info_get_current(o->runtime->firmware_info, &first));
@@ -513,15 +502,15 @@ static h2_pal_result_t firmware_case(owner_t *o) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t release(owner_t *o) {
+static h2_pal_result_t release(owner_t* o) {
   h2_pal_result_t rc;
   TRY(h2_pal_core_extended_cleanup(&o->extension));
   if (o->wall_restore_pending) {
     uint64_t now;
     TRY(observe(o, &now));
-    TRY(h2_pal_time_set_wall_ms(o->runtime->time,
-                                o->restore_wall +
-                                    (now - o->restore_started) / 1000u));
+    TRY(h2_pal_time_set_wall_ms(
+        o->runtime->time,
+        o->restore_wall + (now - o->restore_started) / 1000u));
     o->wall_restore_pending = 0;
   }
   if (o->task != NULL) {
@@ -573,17 +562,16 @@ static h2_pal_result_t release(owner_t *o) {
   return H2_PAL_OK;
 }
 
-#define HAS(api, op)                                                           \
+#define HAS(api, op) \
   ((api) != NULL && (api)->vtable != NULL && (api)->vtable->op != NULL)
-static int ready(h2_runtime_t *r, const h2_pal_core_e2e_config_t *cfg,
+static int ready(h2_runtime_t* r, const h2_pal_core_e2e_config_t* cfg,
                  size_t index) {
   if (index == 0u || index == 1u || index == 3u || index == 4u || index == 16u)
     return 1;
   if (!HAS(r->time, get_monotonic_ms) || !HAS(r->time, sleep_ms) ||
       cfg->observe_monotonic_us == NULL)
     return 0;
-  if (index == 2u)
-    return HAS(r->time, get_monotonic_us);
+  if (index == 2u) return HAS(r->time, get_monotonic_us);
   if (index == 5u || index == 6u) {
     if (!HAS(r->timer, create) || !HAS(r->timer, destroy) ||
         !HAS(r->timer, start) || !HAS(r->timer, stop) ||
@@ -593,8 +581,7 @@ static int ready(h2_runtime_t *r, const h2_pal_core_e2e_config_t *cfg,
   }
   if (index == 7u || index == 8u || index == 12u || index == 14u ||
       index >= 17u) {
-    if (!HAS(r->task, start) || !HAS(r->task, join))
-      return 0;
+    if (!HAS(r->task, start) || !HAS(r->task, join)) return 0;
   }
   if (index == 5u || index == 6u || index == 8u || index == 9u ||
       index == 14u || index == 15u || index == 17u) {
@@ -608,8 +595,7 @@ static int ready(h2_runtime_t *r, const h2_pal_core_e2e_config_t *cfg,
         !HAS(r->sync, lock_mutex) || !HAS(r->sync, unlock_mutex))
       return 0;
   }
-  if (index == 10u && !HAS(r->sync, try_lock_mutex))
-    return 0;
+  if (index == 10u && !HAS(r->sync, try_lock_mutex)) return 0;
   if (index == 11u || index == 17u || index == 18u) {
     if (!HAS(r->sync, create_semaphore) || !HAS(r->sync, destroy_semaphore) ||
         !HAS(r->sync, take_semaphore) || !HAS(r->sync, give_semaphore))
@@ -625,22 +611,22 @@ static int ready(h2_runtime_t *r, const h2_pal_core_e2e_config_t *cfg,
 }
 #undef HAS
 
-static void summarize(h2_pal_core_e2e_result_t *result) {
+static void summarize(h2_pal_core_e2e_result_t* result) {
   result->passed = result->failed = result->blocked = result->not_run = 0;
   for (size_t i = 0; i < H2_PAL_CORE_E2E_CASE_COUNT; ++i) {
     switch (result->cases[i].status) {
-    case H2_PAL_CORE_E2E_PASS:
-      ++result->passed;
-      break;
-    case H2_PAL_CORE_E2E_FAIL:
-      ++result->failed;
-      break;
-    case H2_PAL_CORE_E2E_BLOCKED:
-      ++result->blocked;
-      break;
-    default:
-      ++result->not_run;
-      break;
+      case H2_PAL_CORE_E2E_PASS:
+        ++result->passed;
+        break;
+      case H2_PAL_CORE_E2E_FAIL:
+        ++result->failed;
+        break;
+      case H2_PAL_CORE_E2E_BLOCKED:
+        ++result->blocked;
+        break;
+      default:
+        ++result->not_run;
+        break;
     }
   }
   result->complete = result->not_run == 0;
@@ -650,17 +636,14 @@ static void summarize(h2_pal_core_e2e_result_t *result) {
                       result->retained_cleanup == NULL;
 }
 
-h2_pal_result_t h2_pal_core_e2e_cleanup(h2_runtime_t *runtime,
-                                        h2_pal_core_e2e_result_t *result) {
-  if (runtime == NULL || result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_pal_core_e2e_cleanup(h2_runtime_t* runtime,
+                                        h2_pal_core_e2e_result_t* result) {
+  if (runtime == NULL || result == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = h2_pal_core_baseline_cleanup(runtime, &result->baseline);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (result->retained_cleanup != NULL) {
     rc = release(result->retained_cleanup);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     h2_pal_mem_free(runtime->mem, result->retained_cleanup);
     result->retained_cleanup = NULL;
   }
@@ -668,16 +651,16 @@ h2_pal_result_t h2_pal_core_e2e_cleanup(h2_runtime_t *runtime,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_pal_core_e2e_run(h2_runtime_t *runtime,
-                                    const h2_pal_core_e2e_config_t *config,
-                                    h2_pal_core_e2e_result_t *result) {
-  if (result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_pal_core_e2e_run(h2_runtime_t* runtime,
+                                    const h2_pal_core_e2e_config_t* config,
+                                    h2_pal_core_e2e_result_t* result) {
+  if (result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(result, 0, sizeof(*result));
   for (size_t i = 0; i < H2_PAL_CORE_E2E_CASE_COUNT; ++i)
     result->cases[i].id = case_ids[i];
   if (runtime == NULL || config == NULL ||
       (unsigned)config->queue_latest > H2_PAL_CORE_QUEUE_LATEST_FALLBACK ||
+      (unsigned)config->log_min_level > H2_PAL_LOG_ERROR ||
       (config->timeout_ms != 0u &&
        (config->timeout_ms < 100u || config->timeout_ms > 60000u))) {
     summarize(result);
@@ -699,7 +682,7 @@ h2_pal_result_t h2_pal_core_e2e_run(h2_runtime_t *runtime,
       config->observe_resources == NULL
           ? H2_PAL_ERR_UNAVAILABLE
           : config->observe_resources(config->observer_user, &resources_before);
-  owner_t *o = h2_pal_mem_alloc(runtime->mem, sizeof(*o));
+  owner_t* o = h2_pal_mem_alloc(runtime->mem, sizeof(*o));
   if (o == NULL) {
     summarize(result);
     return H2_PAL_ERR_NO_MEMORY;
@@ -712,72 +695,71 @@ h2_pal_result_t h2_pal_core_e2e_run(h2_runtime_t *runtime,
     if (config->case_begin != NULL)
       config->case_begin(config->observer_user, case_ids[i]);
     h2_pal_result_t rc = H2_PAL_ERR_UNSUPPORTED;
-    if (i >= 19u || ready(runtime, config, i))
-      switch (i) {
-      case 0:
-        rc = memory_case(runtime);
-        break;
-      case 1:
-        rc = log_case(o);
-        break;
-      case 2:
-        rc = time_case(o);
-        break;
-      case 3:
-        rc = wall_read_case(o);
-        break;
-      case 4:
-        rc = wall_set_case(o);
-        break;
-      case 5:
-        rc = oneshot_case(o);
-        break;
-      case 6:
-        rc = timer_case(o);
-        break;
-      case 7:
-        rc = h2_pal_core_baseline_task(runtime, &result->baseline);
-        break;
-      case 8:
-        rc = h2_pal_core_baseline_queue(runtime, &result->baseline);
-        break;
-      case 9:
-        rc = queue_case(o);
-        break;
-      case 10:
-        rc = mutex_case(o);
-        break;
-      case 11:
-        rc = semaphore_case(o);
-        break;
-      case 12:
-        rc = h2_pal_core_baseline_condition(runtime, &result->baseline);
-        break;
-      case 13:
-        rc = condition_case(o);
-        break;
-      case 14:
-        rc = h2_pal_core_baseline_concurrency(runtime, &result->baseline);
-        break;
-      case 15:
-        rc = events_case(o);
-        break;
-      case 16:
-        rc = firmware_case(o);
-        break;
-      case 17:
-        rc = wake_case(o, 1);
-        break;
-      case 18:
-        rc = wake_case(o, 0);
-        break;
-      default:
-        rc = h2_pal_core_extended_run(runtime, config, i - 19u, &o->extension);
-        break;
+    if (i >= 19u || ready(runtime, config, i)) switch (i) {
+        case 0:
+          rc = memory_case(runtime);
+          break;
+        case 1:
+          rc = log_case(o);
+          break;
+        case 2:
+          rc = time_case(o);
+          break;
+        case 3:
+          rc = wall_read_case(o);
+          break;
+        case 4:
+          rc = wall_set_case(o);
+          break;
+        case 5:
+          rc = oneshot_case(o);
+          break;
+        case 6:
+          rc = timer_case(o);
+          break;
+        case 7:
+          rc = h2_pal_core_baseline_task(runtime, &result->baseline);
+          break;
+        case 8:
+          rc = h2_pal_core_baseline_queue(runtime, &result->baseline);
+          break;
+        case 9:
+          rc = queue_case(o);
+          break;
+        case 10:
+          rc = mutex_case(o);
+          break;
+        case 11:
+          rc = semaphore_case(o);
+          break;
+        case 12:
+          rc = h2_pal_core_baseline_condition(runtime, &result->baseline);
+          break;
+        case 13:
+          rc = condition_case(o);
+          break;
+        case 14:
+          rc = h2_pal_core_baseline_concurrency(runtime, &result->baseline);
+          break;
+        case 15:
+          rc = events_case(o);
+          break;
+        case 16:
+          rc = firmware_case(o);
+          break;
+        case 17:
+          rc = wake_case(o, 1);
+          break;
+        case 18:
+          rc = wake_case(o, 0);
+          break;
+        default:
+          rc =
+              h2_pal_core_extended_run(runtime, config, i - 19u, &o->extension);
+          break;
       }
     h2_pal_result_t cleanup = release(o);
-    if (cleanup == H2_PAL_OK)
-      cleanup = result->baseline.cleanup_result;
+    if (cleanup == H2_PAL_OK) cleanup = result->baseline.cleanup_result;
     if (cleanup != H2_PAL_OK) {
       result->cleanup_result = cleanup;
       rc = cleanup;
@@ -808,7 +790,7 @@ h2_pal_result_t h2_pal_core_e2e_run(h2_runtime_t *runtime,
                  sizeof(resources_before)) != 0)
         resource_rc = H2_PAL_ERR_INVALID_STATE;
     }
-    h2_pal_core_e2e_case_result_t *last =
+    h2_pal_core_e2e_case_result_t* last =
         &result->cases[H2_PAL_CORE_E2E_CASE_COUNT - 1u];
     last->result = resource_rc;
     last->status = resource_rc == H2_PAL_OK ? H2_PAL_CORE_E2E_PASS
@@ -823,15 +805,15 @@ h2_pal_result_t h2_pal_core_e2e_run(h2_runtime_t *runtime,
                                 : H2_PAL_ERR_UNAVAILABLE;
 }
 
-const char *h2_pal_core_e2e_status_name(h2_pal_core_e2e_status_t status) {
+const char* h2_pal_core_e2e_status_name(h2_pal_core_e2e_status_t status) {
   switch (status) {
-  case H2_PAL_CORE_E2E_PASS:
-    return "PASS";
-  case H2_PAL_CORE_E2E_FAIL:
-    return "FAIL";
-  case H2_PAL_CORE_E2E_BLOCKED:
-    return "BLOCKED";
-  default:
-    return "NOT_RUN";
+    case H2_PAL_CORE_E2E_PASS:
+      return "PASS";
+    case H2_PAL_CORE_E2E_FAIL:
+      return "FAIL";
+    case H2_PAL_CORE_E2E_BLOCKED:
+      return "BLOCKED";
+    default:
+      return "NOT_RUN";
   }
 }

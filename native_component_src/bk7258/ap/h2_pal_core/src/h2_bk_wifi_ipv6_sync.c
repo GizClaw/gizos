@@ -2,7 +2,7 @@
 #include "lwip/nd6.h"
 #include <string.h>
 
-void h2_bk_wifi_ipv6_clear(struct netif *sta) {
+void h2_bk_wifi_ipv6_clear(struct netif* sta) {
 #if LWIP_IPV6
   netif_set_ip6_autoconfig_enabled(sta, 0);
   nd6_cleanup_netif(sta);
@@ -15,16 +15,15 @@ void h2_bk_wifi_ipv6_clear(struct netif *sta) {
 #endif
 }
 
-err_t h2_bk_wifi_ipv6_install(struct netif *sta,
-                              const h2_bk_wifi_ipv6_snapshot_t *snapshot,
-                              h2_pal_wifi_sta_status_t *status,
-                              uint32_t *cp_generation) {
+err_t h2_bk_wifi_ipv6_install(struct netif* sta,
+                              const h2_bk_wifi_ipv6_snapshot_t* snapshot,
+                              h2_pal_wifi_sta_status_t* status,
+                              uint32_t* cp_generation) {
 #if LWIP_IPV6
   /* Slot zero belongs to link-local. Validate a complete fitting snapshot
    * before clearing the prior generation or publishing any new IP status. */
   if (snapshot->connected) {
-    if (snapshot->count > H2_BK_WIFI_IPV6_MAX)
-      return ERR_BUF;
+    if (snapshot->count > H2_BK_WIFI_IPV6_MAX) return ERR_BUF;
     unsigned non_link_local = 0u;
     for (uint32_t i = 0u; i < snapshot->count; ++i) {
       ip6_addr_t address = {0};
@@ -43,8 +42,7 @@ err_t h2_bk_wifi_ipv6_install(struct netif *sta,
     netif_set_link_down(sta);
     netif_set_down(sta);
     netif_set_addr(sta, &zero, &zero, &zero);
-    if (netif_default == sta)
-      netif_set_default(NULL);
+    if (netif_default == sta) netif_set_default(NULL);
     return ERR_OK;
   }
   /* CP owns SLAAC and DAD for the radio. AP owns the socket stack and
@@ -70,7 +68,7 @@ err_t h2_bk_wifi_ipv6_install(struct netif *sta,
       netif_ip6_addr_set(sta, slot, &address);
     netif_ip6_addr_set_state(sta, slot, IP6_ADDR_PREFERRED);
     if (!status->ip.ip6_valid && h2_pal_net_ipv6_is_non_link_local_unicast(
-                                     (const uint8_t *)address.addr)) {
+                                     (const uint8_t*)address.addr)) {
       memcpy(status->ip.ip6, address.addr, 16u);
       status->ip.ip6_valid = 1u;
     }
@@ -82,8 +80,7 @@ err_t h2_bk_wifi_ipv6_install(struct netif *sta,
     }
   netif_set_link_up(sta);
   netif_set_up(sta);
-  if (netif_default == NULL)
-    netif_set_default(sta);
+  if (netif_default == NULL) netif_set_default(sta);
   const uint32_t ip4 = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(sta)));
   if (ip4 != 0u) {
     status->ip.ip4 = ip4;

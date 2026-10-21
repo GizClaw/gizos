@@ -5,253 +5,245 @@
 #include <string.h>
 
 typedef struct advertising_fake {
-    unsigned calls;
-    h2_pal_ble_adv_params_t params;
-    unsigned set_data_calls;
-    unsigned set_encoded_data_calls;
-    const uint8_t *encoded_data;
-    size_t encoded_data_len;
-    unsigned set_scan_response_data_calls;
-    unsigned set_start_calls;
-    unsigned set_stop_calls;
-    unsigned set_destroy_calls;
+  unsigned calls;
+  h2_pal_ble_adv_params_t params;
+  unsigned set_data_calls;
+  unsigned set_encoded_data_calls;
+  const uint8_t* encoded_data;
+  size_t encoded_data_len;
+  unsigned set_scan_response_data_calls;
+  unsigned set_start_calls;
+  unsigned set_stop_calls;
+  unsigned set_destroy_calls;
 } advertising_fake_t;
 
-static h2_pal_result_t start_advertising(void *user, const h2_pal_ble_adv_params_t *params) {
-    advertising_fake_t *fake = (advertising_fake_t *)user;
-    assert(fake != NULL);
-    assert(params != NULL);
-    fake->calls += 1u;
-    fake->params = *params;
-    return H2_PAL_OK;
+static h2_pal_result_t start_advertising(
+    void* user, const h2_pal_ble_adv_params_t* params) {
+  advertising_fake_t* fake = (advertising_fake_t*)user;
+  assert(fake != NULL);
+  assert(params != NULL);
+  fake->calls += 1u;
+  fake->params = *params;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t adv_set_create(
-    void *user,
-    const h2_pal_ble_adv_params_t *params,
-    h2_pal_ble_adv_set_t **out_set) {
-    advertising_fake_t *fake = user;
-    assert(fake != NULL);
-    assert(params != NULL);
-    assert(out_set != NULL);
-    fake->params = *params;
-    *out_set = (h2_pal_ble_adv_set_t *)fake;
-    return H2_PAL_OK;
+static h2_pal_result_t adv_set_create(void* user,
+                                      const h2_pal_ble_adv_params_t* params,
+                                      h2_pal_ble_adv_set_t** out_set) {
+  advertising_fake_t* fake = user;
+  assert(fake != NULL);
+  assert(params != NULL);
+  assert(out_set != NULL);
+  fake->params = *params;
+  *out_set = (h2_pal_ble_adv_set_t*)fake;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t adv_set_set_data(
-    void *user,
-    h2_pal_ble_adv_set_t *set,
-    const h2_pal_ble_adv_data_t *data) {
-    advertising_fake_t *fake = user;
-    assert(set == (h2_pal_ble_adv_set_t *)fake);
-    assert(data != NULL);
-    ++fake->set_data_calls;
-    return H2_PAL_OK;
+static h2_pal_result_t adv_set_set_data(void* user, h2_pal_ble_adv_set_t* set,
+                                        const h2_pal_ble_adv_data_t* data) {
+  advertising_fake_t* fake = user;
+  assert(set == (h2_pal_ble_adv_set_t*)fake);
+  assert(data != NULL);
+  ++fake->set_data_calls;
+  return H2_PAL_OK;
 }
 
 static h2_pal_result_t adv_set_set_scan_response_data(
-    void *user,
-    h2_pal_ble_adv_set_t *set,
-    const h2_pal_ble_adv_data_t *data) {
-    advertising_fake_t *fake = user;
-    assert(set == (h2_pal_ble_adv_set_t *)fake);
-    assert(data != NULL);
-    ++fake->set_scan_response_data_calls;
-    return H2_PAL_OK;
+    void* user, h2_pal_ble_adv_set_t* set, const h2_pal_ble_adv_data_t* data) {
+  advertising_fake_t* fake = user;
+  assert(set == (h2_pal_ble_adv_set_t*)fake);
+  assert(data != NULL);
+  ++fake->set_scan_response_data_calls;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t adv_set_set_encoded_data(
-    void *user,
-    h2_pal_ble_adv_set_t *set,
-    const uint8_t *encoded_data,
-    size_t encoded_data_len) {
-    advertising_fake_t *fake = user;
-    assert(set == (h2_pal_ble_adv_set_t *)fake);
-    ++fake->set_encoded_data_calls;
-    fake->encoded_data = encoded_data;
-    fake->encoded_data_len = encoded_data_len;
-    return H2_PAL_OK;
+static h2_pal_result_t adv_set_set_encoded_data(void* user,
+                                                h2_pal_ble_adv_set_t* set,
+                                                const uint8_t* encoded_data,
+                                                size_t encoded_data_len) {
+  advertising_fake_t* fake = user;
+  assert(set == (h2_pal_ble_adv_set_t*)fake);
+  ++fake->set_encoded_data_calls;
+  fake->encoded_data = encoded_data;
+  fake->encoded_data_len = encoded_data_len;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t adv_set_start(void *user, h2_pal_ble_adv_set_t *set) {
-    advertising_fake_t *fake = user;
-    assert(set == (h2_pal_ble_adv_set_t *)fake);
-    ++fake->set_start_calls;
-    return H2_PAL_OK;
+static h2_pal_result_t adv_set_start(void* user, h2_pal_ble_adv_set_t* set) {
+  advertising_fake_t* fake = user;
+  assert(set == (h2_pal_ble_adv_set_t*)fake);
+  ++fake->set_start_calls;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t adv_set_stop(void *user, h2_pal_ble_adv_set_t *set) {
-    advertising_fake_t *fake = user;
-    assert(set == (h2_pal_ble_adv_set_t *)fake);
-    ++fake->set_stop_calls;
-    return H2_PAL_OK;
+static h2_pal_result_t adv_set_stop(void* user, h2_pal_ble_adv_set_t* set) {
+  advertising_fake_t* fake = user;
+  assert(set == (h2_pal_ble_adv_set_t*)fake);
+  ++fake->set_stop_calls;
+  return H2_PAL_OK;
 }
 
-static h2_pal_result_t adv_set_destroy(void *user, h2_pal_ble_adv_set_t *set) {
-    advertising_fake_t *fake = user;
-    assert(set == (h2_pal_ble_adv_set_t *)fake);
-    ++fake->set_destroy_calls;
-    return H2_PAL_OK;
+static h2_pal_result_t adv_set_destroy(void* user, h2_pal_ble_adv_set_t* set) {
+  advertising_fake_t* fake = user;
+  assert(set == (h2_pal_ble_adv_set_t*)fake);
+  ++fake->set_destroy_calls;
+  return H2_PAL_OK;
 }
 
 int main(void) {
-    advertising_fake_t fake;
-    memset(&fake, 0, sizeof(fake));
-    const h2_pal_ble_vtable_t vtable = {
-        .start_advertising = start_advertising,
-        .adv_set_create = adv_set_create,
-        .adv_set_set_data = adv_set_set_data,
-        .adv_set_set_encoded_data = adv_set_set_encoded_data,
-        .adv_set_set_scan_response_data = adv_set_set_scan_response_data,
-        .adv_set_start = adv_set_start,
-        .adv_set_stop = adv_set_stop,
-        .adv_set_destroy = adv_set_destroy,
-    };
-    const h2_pal_ble_host_api_t api = {
-        .user = &fake,
-        .vtable = &vtable,
-    };
+  advertising_fake_t fake;
+  memset(&fake, 0, sizeof(fake));
+  const h2_pal_ble_vtable_t vtable = {
+      .start_advertising = start_advertising,
+      .adv_set_create = adv_set_create,
+      .adv_set_set_data = adv_set_set_data,
+      .adv_set_set_encoded_data = adv_set_set_encoded_data,
+      .adv_set_set_scan_response_data = adv_set_set_scan_response_data,
+      .adv_set_start = adv_set_start,
+      .adv_set_stop = adv_set_stop,
+      .adv_set_destroy = adv_set_destroy,
+  };
+  const h2_pal_ble_host_api_t api = {
+      .user = &fake,
+      .vtable = &vtable,
+  };
 
-    h2_pal_ble_adv_params_t params = {
-        .mode = H2_PAL_BLE_ADV_MODE_NON_CONNECTABLE,
-        .interval_min_ms = 100u,
-        .interval_max_ms = 150u,
-    };
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_OK);
-    assert(fake.calls == 1u);
-    assert(fake.params.type == H2_PAL_BLE_ADV_TYPE_LEGACY);
-    assert(fake.params.duration_ms == 0u);
-    assert(fake.params.max_adv_events == 0u);
+  h2_pal_ble_adv_params_t params = {
+      .mode = H2_PAL_BLE_ADV_MODE_NON_CONNECTABLE,
+      .interval_min_ms = 100u,
+      .interval_max_ms = 150u,
+  };
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_OK);
+  assert(fake.calls == 1u);
+  assert(fake.params.type == H2_PAL_BLE_ADV_TYPE_LEGACY);
+  assert(fake.params.duration_ms == 0u);
+  assert(fake.params.max_adv_events == 0u);
 
-    params.type = H2_PAL_BLE_ADV_TYPE_EXTENDED;
-    params.primary_phy = H2_PAL_BLE_PHY_CODED;
-    params.secondary_phy = H2_PAL_BLE_PHY_2M;
-    params.sid = 7u;
-    params.duration_ms = 250u;
-    params.max_adv_events = 5u;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_OK);
-    assert(fake.calls == 2u);
-    assert(fake.params.sid == 7u);
+  params.type = H2_PAL_BLE_ADV_TYPE_EXTENDED;
+  params.primary_phy = H2_PAL_BLE_PHY_CODED;
+  params.secondary_phy = H2_PAL_BLE_PHY_2M;
+  params.sid = 7u;
+  params.duration_ms = 250u;
+  params.max_adv_events = 5u;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_OK);
+  assert(fake.calls == 2u);
+  assert(fake.params.sid == 7u);
 
-    h2_pal_ble_adv_set_t *set = NULL;
-    assert(h2_pal_ble_adv_set_create(&api, &params, &set) == H2_PAL_OK);
-    assert(set == (h2_pal_ble_adv_set_t *)&fake);
-    h2_pal_ble_adv_data_t data = { .local_name = "multiple-set" };
-    assert(h2_pal_ble_adv_set_set_data(&api, set, &data) == H2_PAL_OK);
-    const uint8_t repeated_manufacturer_data[] = {
-        3u, 0xffu, 0x01u, 0x02u,
-        2u, 0x09u, 0x61u,
-        3u, 0xffu, 0x03u, 0x04u,
-        2u, 0xffu, 0x05u,
-    };
-    assert(h2_pal_ble_adv_set_set_encoded_data(
-               &api,
-               set,
-               repeated_manufacturer_data,
-               sizeof(repeated_manufacturer_data)) == H2_PAL_OK);
-    assert(fake.set_encoded_data_calls == 1u);
-    assert(fake.encoded_data == repeated_manufacturer_data);
-    assert(fake.encoded_data_len == sizeof(repeated_manufacturer_data));
-    assert(h2_pal_ble_adv_set_set_encoded_data(&api, set, NULL, 0u) ==
-           H2_PAL_OK);
-    assert(fake.set_encoded_data_calls == 2u);
-    const uint8_t zero_length[] = { 0u };
-    const uint8_t truncated[] = { 3u, 0xffu, 0x01u };
-    assert(h2_pal_ble_adv_set_set_encoded_data(
-               &api, set, zero_length, sizeof(zero_length)) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_ble_adv_set_set_encoded_data(
-               &api, set, truncated, sizeof(truncated)) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_ble_adv_set_set_encoded_data(&api, set, NULL, 1u) ==
-           H2_PAL_ERR_INVALID_ARG);
-    uint8_t oversized[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN + 1u] = { 0 };
-    assert(h2_pal_ble_adv_set_set_encoded_data(
-               &api, set, oversized, sizeof(oversized)) ==
-           H2_PAL_ERR_NO_SPACE);
-    assert(fake.set_encoded_data_calls == 2u);
-    assert(h2_pal_ble_adv_set_set_scan_response_data(&api, set, &data) ==
-           H2_PAL_OK);
-    assert(h2_pal_ble_adv_set_start(&api, set) == H2_PAL_OK);
-    assert(h2_pal_ble_adv_set_stop(&api, set) == H2_PAL_OK);
-    assert(h2_pal_ble_adv_set_destroy(&api, set) == H2_PAL_OK);
-    assert(fake.set_data_calls == 1u);
-    assert(fake.set_scan_response_data_calls == 1u);
-    assert(fake.set_start_calls == 1u);
-    assert(fake.set_stop_calls == 1u);
-    assert(fake.set_destroy_calls == 1u);
+  h2_pal_ble_adv_set_t* set = NULL;
+  assert(h2_pal_ble_adv_set_create(&api, &params, &set) == H2_PAL_OK);
+  assert(set == (h2_pal_ble_adv_set_t*)&fake);
+  h2_pal_ble_adv_data_t data = {.local_name = "multiple-set"};
+  assert(h2_pal_ble_adv_set_set_data(&api, set, &data) == H2_PAL_OK);
+  const uint8_t repeated_manufacturer_data[] = {
+      3u, 0xffu, 0x01u, 0x02u, 2u, 0x09u, 0x61u,
+      3u, 0xffu, 0x03u, 0x04u, 2u, 0xffu, 0x05u,
+  };
+  assert(h2_pal_ble_adv_set_set_encoded_data(
+             &api, set, repeated_manufacturer_data,
+             sizeof(repeated_manufacturer_data)) == H2_PAL_OK);
+  assert(fake.set_encoded_data_calls == 1u);
+  assert(fake.encoded_data == repeated_manufacturer_data);
+  assert(fake.encoded_data_len == sizeof(repeated_manufacturer_data));
+  assert(h2_pal_ble_adv_set_set_encoded_data(&api, set, NULL, 0u) == H2_PAL_OK);
+  assert(fake.set_encoded_data_calls == 2u);
+  const uint8_t zero_length[] = {0u};
+  const uint8_t truncated[] = {3u, 0xffu, 0x01u};
+  assert(h2_pal_ble_adv_set_set_encoded_data(&api, set, zero_length,
+                                             sizeof(zero_length)) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_ble_adv_set_set_encoded_data(&api, set, truncated,
+                                             sizeof(truncated)) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_ble_adv_set_set_encoded_data(&api, set, NULL, 1u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  uint8_t oversized[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN + 1u] = {0};
+  assert(h2_pal_ble_adv_set_set_encoded_data(
+             &api, set, oversized, sizeof(oversized)) == H2_PAL_ERR_NO_SPACE);
+  assert(fake.set_encoded_data_calls == 2u);
+  assert(h2_pal_ble_adv_set_set_scan_response_data(&api, set, &data) ==
+         H2_PAL_OK);
+  assert(h2_pal_ble_adv_set_start(&api, set) == H2_PAL_OK);
+  assert(h2_pal_ble_adv_set_stop(&api, set) == H2_PAL_OK);
+  assert(h2_pal_ble_adv_set_destroy(&api, set) == H2_PAL_OK);
+  assert(fake.set_data_calls == 1u);
+  assert(fake.set_scan_response_data_calls == 1u);
+  assert(fake.set_start_calls == 1u);
+  assert(fake.set_stop_calls == 1u);
+  assert(fake.set_destroy_calls == 1u);
 
-    assert(h2_pal_ble_adv_set_set_scan_response_data(NULL, set, &data) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_ble_adv_set_set_scan_response_data(&api, NULL, &data) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_ble_adv_set_set_scan_response_data(&api, set, NULL) ==
-           H2_PAL_ERR_INVALID_ARG);
-    h2_pal_ble_vtable_t missing_operation_vtable = vtable;
-    missing_operation_vtable.adv_set_set_scan_response_data = NULL;
-    const h2_pal_ble_host_api_t missing_operation_api = {
-        .user = &fake,
-        .vtable = &missing_operation_vtable,
-    };
-    assert(h2_pal_ble_adv_set_set_scan_response_data(
-               &missing_operation_api, set, &data) ==
-           H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_pal_ble_adv_set_set_scan_response_data(
-               h2_pal_unsupported_ble_host_api(), set, &data) ==
-           H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_pal_ble_adv_set_set_encoded_data(
-               h2_pal_unsupported_ble_host_api(), set, NULL, 0u) ==
-           H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_ble_adv_set_set_scan_response_data(NULL, set, &data) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_ble_adv_set_set_scan_response_data(&api, NULL, &data) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_ble_adv_set_set_scan_response_data(&api, set, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  h2_pal_ble_vtable_t missing_operation_vtable = vtable;
+  missing_operation_vtable.adv_set_set_scan_response_data = NULL;
+  const h2_pal_ble_host_api_t missing_operation_api = {
+      .user = &fake,
+      .vtable = &missing_operation_vtable,
+  };
+  assert(h2_pal_ble_adv_set_set_scan_response_data(
+             &missing_operation_api, set, &data) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_ble_adv_set_set_scan_response_data(
+             h2_pal_unsupported_ble_host_api(), set, &data) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_ble_adv_set_set_encoded_data(h2_pal_unsupported_ble_host_api(),
+                                             set, NULL,
+                                             0u) == H2_PAL_ERR_UNSUPPORTED);
 
-    params.type = (h2_pal_ble_adv_type_t)9;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.type = H2_PAL_BLE_ADV_TYPE_EXTENDED;
-    params.mode = (h2_pal_ble_adv_mode_t)9;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.mode = H2_PAL_BLE_ADV_MODE_NON_CONNECTABLE;
-    params.interval_min_ms = 19u;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.interval_min_ms = 151u;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.interval_min_ms = 100u;
-    params.primary_phy = H2_PAL_BLE_PHY_2M;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.primary_phy = H2_PAL_BLE_PHY_1M;
-    params.secondary_phy = (h2_pal_ble_phy_t)9;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.secondary_phy = H2_PAL_BLE_PHY_1M;
-    params.sid = 16u;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.sid = 0u;
-    params.interval_min_ms = H2_PAL_BLE_EXT_ADV_INTERVAL_MAX_MS;
-    params.interval_max_ms = H2_PAL_BLE_EXT_ADV_INTERVAL_MAX_MS;
-    params.duration_ms = H2_PAL_BLE_ADV_DURATION_MAX_MS;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_OK);
-    assert(fake.calls == 3u);
-    params.interval_max_ms = H2_PAL_BLE_EXT_ADV_INTERVAL_MAX_MS + 1u;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.interval_min_ms = 100u;
-    params.interval_max_ms = 150u;
-    params.duration_ms = H2_PAL_BLE_ADV_DURATION_MAX_MS + 1u;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    assert(fake.calls == 3u);
+  params.type = (h2_pal_ble_adv_type_t)9;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.type = H2_PAL_BLE_ADV_TYPE_EXTENDED;
+  params.mode = (h2_pal_ble_adv_mode_t)9;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.mode = H2_PAL_BLE_ADV_MODE_NON_CONNECTABLE;
+  params.interval_min_ms = 19u;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.interval_min_ms = 151u;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.interval_min_ms = 100u;
+  params.primary_phy = H2_PAL_BLE_PHY_2M;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.primary_phy = H2_PAL_BLE_PHY_1M;
+  params.secondary_phy = (h2_pal_ble_phy_t)9;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.secondary_phy = H2_PAL_BLE_PHY_1M;
+  params.sid = 16u;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.sid = 0u;
+  params.interval_min_ms = H2_PAL_BLE_EXT_ADV_INTERVAL_MAX_MS;
+  params.interval_max_ms = H2_PAL_BLE_EXT_ADV_INTERVAL_MAX_MS;
+  params.duration_ms = H2_PAL_BLE_ADV_DURATION_MAX_MS;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_OK);
+  assert(fake.calls == 3u);
+  params.interval_max_ms = H2_PAL_BLE_EXT_ADV_INTERVAL_MAX_MS + 1u;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.interval_min_ms = 100u;
+  params.interval_max_ms = 150u;
+  params.duration_ms = H2_PAL_BLE_ADV_DURATION_MAX_MS + 1u;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  assert(fake.calls == 3u);
 
-    params.type = H2_PAL_BLE_ADV_TYPE_LEGACY;
-    params.duration_ms = 1u;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
-    params.duration_ms = 0u;
-    params.max_adv_events = 1u;
-    assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.type = H2_PAL_BLE_ADV_TYPE_LEGACY;
+  params.duration_ms = 1u;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
+  params.duration_ms = 0u;
+  params.max_adv_events = 1u;
+  assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
 
-    const h2_pal_ble_host_api_t unsupported = {0};
-    params.max_adv_events = 0u;
-    assert(h2_pal_ble_start_advertising(&unsupported, &params) == H2_PAL_ERR_UNSUPPORTED);
-    set = (h2_pal_ble_adv_set_t *)&fake;
-    assert(h2_pal_ble_adv_set_create(&unsupported, &params, &set) == H2_PAL_ERR_UNSUPPORTED);
-    assert(set == NULL);
-    assert(h2_pal_ble_adv_set_create(&api, NULL, &set) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_ble_adv_set_create(&api, &params, NULL) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_ble_adv_set_set_data(&api, NULL, &data) == H2_PAL_ERR_INVALID_ARG);
-    return 0;
+  const h2_pal_ble_host_api_t unsupported = {0};
+  params.max_adv_events = 0u;
+  assert(h2_pal_ble_start_advertising(&unsupported, &params) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  set = (h2_pal_ble_adv_set_t*)&fake;
+  assert(h2_pal_ble_adv_set_create(&unsupported, &params, &set) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(set == NULL);
+  assert(h2_pal_ble_adv_set_create(&api, NULL, &set) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_ble_adv_set_create(&api, &params, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_ble_adv_set_set_data(&api, NULL, &data) ==
+         H2_PAL_ERR_INVALID_ARG);
+  return 0;
 }

@@ -2,7 +2,8 @@ local vmath = require("vmath")
 local geometry = require("geometry")
 local points, output, mask = vmath.buffer(3), vmath.buffer(2), vmath.buffer(1)
 local camera = vmath.buffer(5)
-points:load({2, 4, 2}); camera:load({10, -10, 20, 30, 0.1})
+points:load({ 2, 4, 2 })
+camera:load({ 10, -10, 20, 30, 0.1 })
 geometry.project_points(output, mask, points, camera, 1)
 assert(output:get(1) == 30 and output:get(2) == 10 and mask:get(1) == 1)
 
@@ -16,14 +17,14 @@ assert(tonumber(args.back) == 3)
 
 local x, step = 0, 4
 runtime.components.on(tonumber(args.ok), runtime.event.BUTTON_UP, function()
-    step = -step
-    print("H2_WEB_LUA_APP_SMOKE ok=up")
+  step = -step
+  print("H2_WEB_LUA_APP_SMOKE ok=up")
 end)
 while true do
-    x = (x + step) % 200
-    display.clear({r = 10, g = 13, b = 35})
-    display.fill_rect(20 + x, 110, 20, 20, {r = 80, g = 200, b = 255})
-    display.draw_text(20, 20, "LUA SCRIPT", {font_size = 14})
-    display.present()
-    runtime.sleep(50)
+  x = (x + step) % 200
+  display.clear({ r = 10, g = 13, b = 35 })
+  display.fill_rect(20 + x, 110, 20, 20, { r = 80, g = 200, b = 255 })
+  display.draw_text(20, 20, "LUA SCRIPT", { font_size = 14 })
+  display.present()
+  runtime.sleep(50)
 end

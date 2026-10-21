@@ -1,7 +1,7 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -41,12 +41,18 @@ jieli_target_task_policy(
     h2loader_jieli_firmware(
         name = name + "_firmware",
         board = "jieli_ac791n_devkit",
-        graph = [":launcher", "//boards/jieli_ac791n_devkit/ac791n"],
+        graph = [
+            ":launcher",
+            "//boards/jieli_ac791n_devkit/ac791n",
+        ],
         image = image,
         target = "wl82",
         task_policy = ":task_policy",
     )
-    for name, image in [("smoke", "coredump-smoke"), ("minimal", "coredump-minimal")]
+    for name, image in [
+        ("smoke", "coredump-smoke"),
+        ("minimal", "coredump-minimal"),
+    ]
 ]
 
 [
@@ -59,5 +65,8 @@ jieli_target_task_policy(
         tags = ["no-release"],
         target = "wl82",
     )
-    for name, image in [("smoke", "coredump-smoke"), ("minimal", "coredump-minimal")]
+    for name, image in [
+        ("smoke", "coredump-smoke"),
+        ("minimal", "coredump-minimal"),
+    ]
 ]

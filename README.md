@@ -75,6 +75,12 @@ To verify that public targets also work when GizOS is consumed as a dependency:
 make bazel-test-downstream-consumer
 ```
 
+Run `make format` before committing. It formats changes since `origin/main` with pinned tools: clang-format 22.1.5 for C/C++ (changed lines only; paths in `.clang-format-ignore` are skipped), StyLua 2.5.2 for Lua and buildifier 10.0.1 for Bazel files (whole changed files). StyLua and buildifier are downloaded and checksum-verified on first use. `make format-check` checks changes without modifying files. CI runs `scripts/config/format-check.sh --all` on the full source tree and requires it through `CI required`.
+
+The command entries are `scripts/config/format.sh` and `scripts/config/format-check.sh`, with shared logic in `scripts/common/format.sh`. Both commands fail on tool errors while still checking the other languages. A successful C/C++ rewrite is accepted in fix mode; Lua fixes must stabilize within five passes. Run `python3 scripts/common/test_format.py` for the isolated failure-path regression tests; they need no formatter downloads.
+
+Keep embedded JavaScript in `EM_JS` / `EM_ASM` calls between `/* clang-format off */` and `/* clang-format on */` guards. A one-time full reformat uses `scripts/config/format.sh --all`, followed by `scripts/config/format-check.sh --all`. Long C/C++ string literals remain unbroken to avoid array string-concatenation warnings. Use `git blame --ignore-revs-file .git-blame-ignore-revs <path>` to look past the one-time formatting commit.
+
 ## Use GizOS from Bzlmod
 
 Add GizOS as a module override in the consuming repository and depend on public targets through `@gizos//...`:

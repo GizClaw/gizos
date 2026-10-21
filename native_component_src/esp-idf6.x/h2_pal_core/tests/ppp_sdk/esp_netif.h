@@ -10,8 +10,8 @@ typedef int esp_err_t;
 typedef unsigned esp_netif_flags_t;
 typedef struct esp_netif {
   esp_netif_flags_t flags;
-  struct netif *impl;
+  struct netif* impl;
 } esp_netif_t;
-esp_netif_flags_t esp_netif_get_flags(esp_netif_t *netif);
-esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void *), void *user);
+esp_netif_flags_t esp_netif_get_flags(esp_netif_t* netif);
+esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void*), void* user);
 #endif

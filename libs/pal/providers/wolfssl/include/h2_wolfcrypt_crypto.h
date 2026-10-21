@@ -23,10 +23,7 @@ extern "C" {
  * @param len Number of bytes to fill.
  * @return `H2_PAL_OK` after filling all bytes, or a stable H2 PAL error.
  */
-typedef int (*h2_wolfcrypt_entropy_fn)(
-    void *user,
-    uint8_t *out,
-    size_t len);
+typedef int (*h2_wolfcrypt_entropy_fn)(void* user, uint8_t* out, size_t len);
 
 /**
  * Configures the process-wide wolfCrypt Crypto PAL provider.
@@ -35,10 +32,10 @@ typedef int (*h2_wolfcrypt_entropy_fn)(
  * itself may be released after `h2_wolfcrypt_crypto_init()` returns.
  */
 typedef struct h2_wolfcrypt_crypto_config {
-    /** Borrowed context passed unchanged to `entropy`. */
-    void *entropy_user;
-    /** Required entropy callback; the function pointer is copied by init. */
-    h2_wolfcrypt_entropy_fn entropy;
+  /** Borrowed context passed unchanged to `entropy`. */
+  void* entropy_user;
+  /** Required entropy callback; the function pointer is copied by init. */
+  h2_wolfcrypt_entropy_fn entropy;
 } h2_wolfcrypt_crypto_config_t;
 
 /**
@@ -52,8 +49,7 @@ typedef struct h2_wolfcrypt_crypto_config {
  * @return `H2_PAL_OK`, `H2_PAL_ERR_INVALID_ARG`, or
  * `H2_PAL_ERR_INVALID_STATE` when already initialized.
  */
-int h2_wolfcrypt_crypto_init(
-    const h2_wolfcrypt_crypto_config_t *config);
+int h2_wolfcrypt_crypto_init(const h2_wolfcrypt_crypto_config_t* config);
 
 /**
  * Deinitializes the provider and clears its private state.
@@ -69,7 +65,7 @@ void h2_wolfcrypt_crypto_deinit(void);
  *
  * @return A borrowed, non-NULL Crypto PAL API object.
  */
-const h2_pal_crypto_api_t *h2_wolfcrypt_crypto_api(void);
+const h2_pal_crypto_api_t* h2_wolfcrypt_crypto_api(void);
 
 #ifdef __cplusplus
 }

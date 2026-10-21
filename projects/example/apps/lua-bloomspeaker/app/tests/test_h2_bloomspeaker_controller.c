@@ -23,16 +23,16 @@ int main(void) {
   assert(snapshot.state_entered_ms == 10u);
   assert(!snapshot.native_audio);
 
-  h2_bloomspeaker_controller_set_state(
-      &controller, (h2_bloomspeaker_state_t)-1, 11u, 1u, 1);
-  h2_bloomspeaker_controller_set_state(
-      &controller, (h2_bloomspeaker_state_t)8, 12u, 1u, 1);
+  h2_bloomspeaker_controller_set_state(&controller, (h2_bloomspeaker_state_t)-1,
+                                       11u, 1u, 1);
+  h2_bloomspeaker_controller_set_state(&controller, (h2_bloomspeaker_state_t)8,
+                                       12u, 1u, 1);
   assert(!h2_bloomspeaker_controller_transition(
-      &controller, (h2_bloomspeaker_state_t)-1,
-      H2_BLOOMSPEAKER_STATE_PAIRING, 13u, 1u, 1));
+      &controller, (h2_bloomspeaker_state_t)-1, H2_BLOOMSPEAKER_STATE_PAIRING,
+      13u, 1u, 1));
   assert(!h2_bloomspeaker_controller_transition(
-      &controller, H2_BLOOMSPEAKER_STATE_IDLE,
-      (h2_bloomspeaker_state_t)8, 14u, 1u, 1));
+      &controller, H2_BLOOMSPEAKER_STATE_IDLE, (h2_bloomspeaker_state_t)8, 14u,
+      1u, 1));
   h2_bloomspeaker_controller_snapshot(&controller, &snapshot);
   assert(snapshot.state == H2_BLOOMSPEAKER_STATE_IDLE);
   assert(snapshot.state_entered_ms == 10u);
@@ -61,8 +61,8 @@ int main(void) {
   assert(snapshot.peer_tag == 0u);
   assert(snapshot.last_error == 0);
   assert(h2_bloomspeaker_controller_transition(
-      &controller, H2_BLOOMSPEAKER_STATE_IDLE,
-      H2_BLOOMSPEAKER_STATE_CONNECTING, 33u, 321u, 0));
+      &controller, H2_BLOOMSPEAKER_STATE_IDLE, H2_BLOOMSPEAKER_STATE_CONNECTING,
+      33u, 321u, 0));
   h2_bloomspeaker_controller_snapshot(&controller, &snapshot);
   assert(snapshot.state == H2_BLOOMSPEAKER_STATE_CONNECTING);
   assert(snapshot.state_entered_ms == 33u);
@@ -70,8 +70,7 @@ int main(void) {
 
   h2_bloomspeaker_controller_set_state(
       &controller, H2_BLOOMSPEAKER_STATE_TALKING, 40u, 123u, 0);
-  h2_bloomspeaker_controller_set_levels(&controller, -1.0f, 0.5f, 0.25f,
-                                        2.0f);
+  h2_bloomspeaker_controller_set_levels(&controller, -1.0f, 0.5f, 0.25f, 2.0f);
   h2_bloomspeaker_controller_snapshot(&controller, &snapshot);
   assert(snapshot.peer_tag == 123u);
   assert(snapshot.local_level == 0.0f);

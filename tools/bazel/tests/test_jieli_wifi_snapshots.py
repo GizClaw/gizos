@@ -1,6 +1,7 @@
 """Exercise actual Wi-Fi SDK events and cached readers with real pthreads."""
 from pathlib import Path
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -12,8 +13,9 @@ ROOT = Path(__file__).resolve().parents[3]
 class WifiSnapshotsTest(unittest.TestCase):
     def test_snapshots(self):
         source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
-        state_begin = source.index('enum { H2_JIELI_AP_STATION_SLOTS') if 'enum { H2_JIELI_AP_STATION_SLOTS' in source else source.index('typedef struct h2_jieli_wifi_state')
-        state = source[state_begin:source.index('enum { SCAN_IDLE')]
+        slots = re.search(r'\benum\s*\{\s*H2_JIELI_AP_STATION_SLOTS\b', source)
+        state_begin = slots.start() if slots else source.index('typedef struct h2_jieli_wifi_state')
+        state = source[state_begin:re.search(r'\benum\s*\{\s*SCAN_IDLE\b', source).start()]
         posts = source[source.index('static void post_sta_event('):source.index('static uint32_t pack_ip4(')]
         event = source[source.index('static int wifi_event('):source.index('static int ensure_wifi_on(')]
         sta = source[source.index('static int sta_get_status('):source.index('static int sta_scan(')]
@@ -21,19 +23,19 @@ class WifiSnapshotsTest(unittest.TestCase):
         clients = source[source.index('static int ap_get_clients('):source.index('/* Serialize task-side')]
         admission = source[source.index('static unsigned wifi_operation_busy;'):source.index('static int guarded_sta_scan(')]
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_wifi_snapshots.c').read_text()
-        if 'update_sta_snapshot(h2_pal_wifi_sta_status_t *status)' in state:
+        if re.search(r'\bupdate_sta_snapshot\s*\(\s*h2_pal_wifi_sta_status_t\s*\*\s*status\s*\)', state):
             fixture = fixture.replace('static void update_sta_snapshot(void) { fake_sdk_refresh(); }',
                 'static void update_sta_snapshot(h2_pal_wifi_sta_status_t *status) { status->ip_valid = !refresh_error; fake_sdk_refresh(); }')
         if 'wifi_state_gate' in state:
             # Instrument ownership without replacing the real lock algorithm.
             state = state.replace('static void wifi_state_lock(void)',
                 'static _Thread_local unsigned gate_owned;\nstatic void wifi_state_lock(void)')
-            state = state.replace('if (h2_jieli_atomic_cas_u32(&wifi_state_gate, &expected, 1u)) return;',
+            state = re.sub(r'if\s*\(\s*h2_jieli_atomic_cas_u32\s*\(\s*&wifi_state_gate\s*,\s*&expected\s*,\s*1u\s*\)\s*\)\s*return\s*;',
                 'if (h2_jieli_atomic_cas_u32(&wifi_state_gate, &expected, 1u)) {\n'
-                '      assert(gate_owned == 0);\n      gate_owned = 1;\n      return;\n    }')
-            state = state.replace('  h2_jieli_atomic_store_u32(&wifi_state_gate, 0u);',
+                '      assert(gate_owned == 0);\n      gate_owned = 1;\n      return;\n    }', state)
+            state = re.sub(r'h2_jieli_atomic_store_u32\s*\(\s*&wifi_state_gate\s*,\s*0u\s*\)\s*;',
                 '  assert(gate_owned == 1);\n  gate_owned = 0;\n'
-                '  h2_jieli_atomic_store_u32(&wifi_state_gate, 0u);')
+                '  h2_jieli_atomic_store_u32(&wifi_state_gate, 0u);', state)
         fixture = fixture.replace('/* SDK_GATE_CHECK */',
             'assert(gate_owned == 0);' if 'wifi_state_gate' in state else '')
         with tempfile.TemporaryDirectory() as directory:

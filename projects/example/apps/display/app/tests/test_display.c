@@ -14,14 +14,14 @@ typedef struct test_display {
   int next_y;
 } test_display_t;
 
-static int fake_open(void *user) {
-  test_display_t *display = (test_display_t *)user;
+static int fake_open(void* user) {
+  test_display_t* display = (test_display_t*)user;
   ++display->open_calls;
   return H2_DISPLAY_OK;
 }
 
-static int fake_get_info(void *user, h2_display_info_t *info) {
-  test_display_t *display = (test_display_t *)user;
+static int fake_get_info(void* user, h2_display_info_t* info) {
+  test_display_t* display = (test_display_t*)user;
   ++display->info_calls;
   info->width = 8;
   info->height = 17;
@@ -29,14 +29,14 @@ static int fake_get_info(void *user, h2_display_info_t *info) {
   return H2_DISPLAY_OK;
 }
 
-static int fake_draw_bitmap(void *user, const h2_display_rect_t *rect,
-                            const void *pixels, size_t stride_bytes,
+static int fake_draw_bitmap(void* user, const h2_display_rect_t* rect,
+                            const void* pixels, size_t stride_bytes,
                             h2_display_pixel_format_t format) {
   static const uint16_t expected_colors[] = {
       0xffffu, 0xffe0u, 0x07ffu, 0x07e0u, 0xf81fu, 0xf800u, 0x001fu, 0x0000u,
   };
-  test_display_t *display = (test_display_t *)user;
-  const uint16_t *row = (const uint16_t *)pixels;
+  test_display_t* display = (test_display_t*)user;
+  const uint16_t* row = (const uint16_t*)pixels;
   assert(rect->x == 0);
   assert(rect->y == display->next_y);
   assert(rect->width == 8);
@@ -51,20 +51,20 @@ static int fake_draw_bitmap(void *user, const h2_display_rect_t *rect,
   return H2_DISPLAY_OK;
 }
 
-static int fake_present(void *user) {
-  test_display_t *display = (test_display_t *)user;
+static int fake_present(void* user) {
+  test_display_t* display = (test_display_t*)user;
   ++display->present_calls;
   return H2_DISPLAY_OK;
 }
 
-static int fake_set_brightness(void *user, uint32_t percent) {
-  test_display_t *display = (test_display_t *)user;
+static int fake_set_brightness(void* user, uint32_t percent) {
+  test_display_t* display = (test_display_t*)user;
   assert(percent == 90u);
   ++display->brightness_calls;
   return H2_DISPLAY_OK;
 }
 
-static int fake_close(void *user) {
+static int fake_close(void* user) {
   (void)user;
   return H2_DISPLAY_OK;
 }

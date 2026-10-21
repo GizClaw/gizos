@@ -7,10 +7,9 @@
 /* The browser UI only publishes completion. The waiting Worker releases the
  * mutex atomically with its condition wait, so early completions are retained.
  */
-void h2_web_async_begin(h2_web_platform_t *platform, h2_web_async_t *op) {
+void h2_web_async_begin(h2_web_platform_t* platform, h2_web_async_t* op) {
   pthread_mutex_lock(&platform->async_mutex);
-  *op = (h2_web_async_t){
-      .result = H2_PAL_ERR_WOULD_BLOCK};
+  *op = (h2_web_async_t){.result = H2_PAL_ERR_WOULD_BLOCK};
   do {
     op->id = ++platform->async_next_id;
   } while (op->id == 0u);
@@ -19,7 +18,7 @@ void h2_web_async_begin(h2_web_platform_t *platform, h2_web_async_t *op) {
   pthread_mutex_unlock(&platform->async_mutex);
 }
 
-void h2_web_async_signal(h2_web_platform_t *platform, h2_web_async_t *op,
+void h2_web_async_signal(h2_web_platform_t* platform, h2_web_async_t* op,
                          int result) {
   pthread_mutex_lock(&platform->async_mutex);
   if (!op->done) {
@@ -32,12 +31,11 @@ void h2_web_async_signal(h2_web_platform_t *platform, h2_web_async_t *op,
 
 EMSCRIPTEN_KEEPALIVE int h2_web_async_complete(uintptr_t address, uint32_t id,
                                                int result) {
-  h2_web_platform_t *platform = (h2_web_platform_t *)address;
-  if (platform == NULL || id == 0u)
-    return 0;
+  h2_web_platform_t* platform = (h2_web_platform_t*)address;
+  if (platform == NULL || id == 0u) return 0;
   pthread_mutex_lock(&platform->async_mutex);
   int delivered = 0;
-  for (h2_web_async_t *op = platform->async_ops; op != NULL; op = op->next) {
+  for (h2_web_async_t* op = platform->async_ops; op != NULL; op = op->next) {
     if (op->id == id && !op->done) {
       op->result = result;
       op->done = true;
@@ -50,8 +48,8 @@ EMSCRIPTEN_KEEPALIVE int h2_web_async_complete(uintptr_t address, uint32_t id,
   return delivered;
 }
 
-h2_pal_result_t h2_web_async_wait(h2_web_platform_t *platform,
-                                  h2_web_async_t *op, uint32_t timeout_ms) {
+h2_pal_result_t h2_web_async_wait(h2_web_platform_t* platform,
+                                  h2_web_async_t* op, uint32_t timeout_ms) {
   const bool forever = timeout_ms == H2_WEB_ASYNC_WAIT_FOREVER;
   const double deadline = emscripten_get_now() + timeout_ms;
   h2_pal_result_t result = H2_PAL_OK;
@@ -79,39 +77,34 @@ h2_pal_result_t h2_web_async_wait(h2_web_platform_t *platform,
     pthread_cond_timedwait(&platform->async_changed, &platform->async_mutex,
                            &wake);
   }
-  if (op->done)
-    result = H2_PAL_OK;
+  if (op->done) result = H2_PAL_OK;
   --platform->async_waiters;
   pthread_mutex_unlock(&platform->async_mutex);
   h2_web_state_resume(depth);
   return result;
 }
 
-void h2_web_async_end(h2_web_platform_t *platform,
-                                h2_web_async_t *op) {
+void h2_web_async_end(h2_web_platform_t* platform, h2_web_async_t* op) {
   pthread_mutex_lock(&platform->async_mutex);
-  h2_web_async_t **cursor = &platform->async_ops;
-  while (*cursor != NULL && *cursor != op)
-    cursor = &(*cursor)->next;
-  if (*cursor == op)
-    *cursor = op->next;
+  h2_web_async_t** cursor = &platform->async_ops;
+  while (*cursor != NULL && *cursor != op) cursor = &(*cursor)->next;
+  if (*cursor == op) *cursor = op->next;
   op->next = NULL;
   pthread_mutex_unlock(&platform->async_mutex);
 }
 
-int h2_web_async_finish(h2_web_platform_t *platform, h2_web_async_t *op,
-                         int started) {
+int h2_web_async_finish(h2_web_platform_t* platform, h2_web_async_t* op,
+                        int started) {
   int result = started;
   if (result == H2_PAL_OK) {
     result = h2_web_async_wait(platform, op, H2_WEB_ASYNC_WAIT_FOREVER);
-    if (result == H2_PAL_OK)
-      result = op->result;
+    if (result == H2_PAL_OK) result = op->result;
   }
   h2_web_async_end(platform, op);
   return result;
 }
 
-h2_pal_result_t h2_web_platform_sleep_ms(h2_web_platform_t *platform,
+h2_pal_result_t h2_web_platform_sleep_ms(h2_web_platform_t* platform,
                                          uint32_t duration_ms) {
   unsigned depth = h2_web_state_pause();
   h2_pal_result_t rc =

@@ -18,9 +18,9 @@ constexpr h2::desktop::Layout kLayout = {
     h2_desktop_layout::normalized_json,
 };
 
-h2_pal_result_t list_components(void *user, h2_runtime_component_t filter,
+h2_pal_result_t list_components(void* user, h2_runtime_component_t filter,
                                 h2_runtime_component_mapping_cb_t callback,
-                                void *callback_user) {
+                                void* callback_user) {
   (void)user;
   h2_runtime_component_mapping_entry_t entry{};
   if (callback == nullptr) {
@@ -33,9 +33,9 @@ h2_pal_result_t list_components(void *user, h2_runtime_component_t filter,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t get_periph_id(void *user,
+h2_pal_result_t get_periph_id(void* user,
                               h2_runtime_component_id_t component_id,
-                              h2_pal_periph_id_t *out_periph_id) {
+                              h2_pal_periph_id_t* out_periph_id) {
   (void)user;
   if (out_periph_id == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -58,12 +58,12 @@ const h2_runtime_component_mapper_t kMapper = {
 };
 
 struct AppContext {
-  h2::desktop::OwnedDisplay *display;
-  h2::cosmic_drift::PointerTouchAdapter *pointer_touch;
+  h2::desktop::OwnedDisplay* display;
+  h2::cosmic_drift::PointerTouchAdapter* pointer_touch;
 };
 
-int should_stop(void *user) {
-  auto *context = static_cast<AppContext *>(user);
+int should_stop(void* user) {
+  auto* context = static_cast<AppContext*>(user);
   if (context == nullptr || context->display == nullptr ||
       context->pointer_touch == nullptr ||
       h2::desktop::poll_events(context->display) != 0) {
@@ -76,7 +76,7 @@ int should_stop(void *user) {
   return 0;
 }
 
-} // namespace
+}  // namespace
 
 int main() {
   h2::desktop::OwnedDisplay display;
@@ -86,7 +86,7 @@ int main() {
                  kLayout.app_name);
     return 1;
   }
-  h2_pal_display_t *display_api = display.display();
+  h2_pal_display_t* display_api = display.display();
   if (h2_pal_display_open(display_api) != H2_DISPLAY_OK) {
     std::fprintf(stderr, "desktop %s: display open failed\n", kLayout.app_name);
     return 1;
@@ -98,7 +98,7 @@ int main() {
   runtime_config.display = display_api;
   runtime_config.touch = pointer_touch.api();
   runtime_config.component_mapper = &kMapper;
-  h2_runtime_t *runtime = nullptr;
+  h2_runtime_t* runtime = nullptr;
   h2_pal_result_t result = h2_runtime_init(&runtime_config, &runtime);
   if (result != H2_PAL_OK) {
     std::fprintf(stderr, "desktop %s: Runtime init failed (%d)\n",

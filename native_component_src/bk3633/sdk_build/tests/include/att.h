@@ -14,6 +14,6 @@
 #define PERM_POS_SVC_SECONDARY 7u
 
 #define PERM(access, right) \
-    ((PERM_RIGHT_##right << PERM_POS_##access) & PERM_MASK_##access)
+  ((PERM_RIGHT_##right << PERM_POS_##access) & PERM_MASK_##access)
 
 #endif

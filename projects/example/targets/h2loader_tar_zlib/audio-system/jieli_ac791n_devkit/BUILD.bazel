@@ -1,11 +1,11 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
-load("//tools/bazel:build_setting_header.bzl", "build_setting_header")
-load("//tools/bazel:tasks.bzl", "h2_tasks")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
-load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:build_setting_header.bzl", "build_setting_header")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -59,7 +59,10 @@ AUDIO_SDK_POLICIES = [
 jieli_target_task_policy(
     name = "audio_system_task_policy",
     default_policy = AUDIO_DEFAULT_POLICY,
-    graph = [":audio_system_target", "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher"],
+    graph = [
+        ":audio_system_target",
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher",
+    ],
     policies = AUDIO_POLICIES,
     sdk_policies = AUDIO_SDK_POLICIES,
 )
@@ -67,7 +70,10 @@ jieli_target_task_policy(
 jieli_target_task_policy(
     name = "audio_stop_restart_task_policy",
     default_policy = AUDIO_DEFAULT_POLICY,
-    graph = [":audio_stop_restart_target", "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher"],
+    graph = [
+        ":audio_stop_restart_target",
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher",
+    ],
     policies = AUDIO_POLICIES + ["audio-cycle 10 32768 128"],
     sdk_policies = AUDIO_SDK_POLICIES,
 )
@@ -87,20 +93,20 @@ firmware_native_component(
         "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system.h",
         "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system_task_names.h",
     ],
+    component_name = "jieli_ac791n_devkit_audio_system_target",
     include_roots = ["projects/example/apps/audio-system/app/include"],
     native_srcs = [
         "//projects/example/apps/audio-system/app:src/app.c",
         "//projects/example/apps/audio-system/app:src/task_names.c",
     ],
-    component_name = "jieli_ac791n_devkit_audio_system_target",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
-        "//projects/example/apps/audio-system/app:tasks",
         ":audio_system_libs",
         "//boards/jieli_ac791n_devkit/ac791n",
         "//libs/pal:pal_header_files",
         "//native_component_src/jieli/wl82/opus_port",
+        "//projects/example/apps/audio-system/app:tasks",
     ],
 )
 
@@ -138,11 +144,11 @@ string_flag(
 
 build_setting_header(
     name = "stop_restart_config",
+    out = "h2_audio_stop_restart_config.h",
     flag = ":stop_restart_cycles",
     macro = "H2_AUDIO_STOP_RESTART_CYCLES",
     maximum = 1000,
     minimum = 1,
-    out = "h2_audio_stop_restart_config.h",
 )
 
 h2_tasks(
@@ -158,22 +164,22 @@ firmware_native_component(
         "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system.h",
         "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system_task_names.h",
     ],
+    component_name = "jieli_ac791n_devkit_audio_stop_restart_target",
     include_roots = ["projects/example/apps/audio-system/app/include"],
     native_srcs = [
         "//projects/example/apps/audio-system/app:src/app.c",
         "//projects/example/apps/audio-system/app:src/task_names.c",
     ],
-    component_name = "jieli_ac791n_devkit_audio_stop_restart_target",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
-        "//libs/atomic",
         ":audio_stop_restart_tasks",
-        "//projects/example/apps/audio-system/app:tasks",
         ":audio_system_libs",
         "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/atomic",
         "//libs/pal:pal_header_files",
         "//native_component_src/jieli/wl82/opus_port",
+        "//projects/example/apps/audio-system/app:tasks",
     ],
 )
 
@@ -197,8 +203,10 @@ h2loader_tar_zlib(
     image = "audio-stop-restart",
     package_data = ["//projects/example/apps/audio-system:data/audio/music_loop.ogg"],
     package_data_root = "projects/example/apps/audio-system/data",
-    tags = ["no-release", "manual"],
     role = "app",
+    tags = [
+        "manual",
+        "no-release",
+    ],
     target = "wl82",
 )
-

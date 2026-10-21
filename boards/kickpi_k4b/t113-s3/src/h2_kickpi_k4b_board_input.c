@@ -16,10 +16,10 @@ static const h2_pal_periph_info_t s_kickpi_k4b_action_button = {
     .payload_size = sizeof(s_pull_button),
 };
 
-static h2_pal_result_t kickpi_k4b_periph_list(void *user,
+static h2_pal_result_t kickpi_k4b_periph_list(void* user,
                                               h2_pal_periph_type_t type_filter,
                                               h2_pal_periph_cb_t callback,
-                                              void *callback_user) {
+                                              void* callback_user) {
   (void)user;
   if (callback == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -31,9 +31,9 @@ static h2_pal_result_t kickpi_k4b_periph_list(void *user,
   return callback(callback_user, &s_kickpi_k4b_action_button);
 }
 
-static h2_pal_result_t kickpi_k4b_periph_get(void *user,
+static h2_pal_result_t kickpi_k4b_periph_get(void* user,
                                              h2_pal_periph_id_t periph_id,
-                                             h2_pal_periph_info_t *out_info) {
+                                             h2_pal_periph_info_t* out_info) {
   (void)user;
   if (out_info == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -78,6 +78,6 @@ h2_pal_result_t h2_kickpi_k4b_board_configure_input(void) {
   return h2_linux_configure_evdev_touch(&touch);
 }
 
-const h2_pal_periph_api_t *h2_kickpi_k4b_board_periph_api(void) {
+const h2_pal_periph_api_t* h2_kickpi_k4b_board_periph_api(void) {
   return &s_kickpi_k4b_periph_api;
 }

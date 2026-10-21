@@ -11,9 +11,9 @@ typedef struct test_log_state {
   int result;
 } test_log_state_t;
 
-static int test_log_write(void *user, h2_pal_log_level_t level,
-                          const char *scope, const char *message) {
-  test_log_state_t *state = (test_log_state_t *)user;
+static int test_log_write(void* user, h2_pal_log_level_t level,
+                          const char* scope, const char* message) {
+  test_log_state_t* state = (test_log_state_t*)user;
   assert(state != NULL);
   assert(scope != NULL);
   assert(message != NULL);
@@ -24,7 +24,7 @@ static int test_log_write(void *user, h2_pal_log_level_t level,
   return state->result;
 }
 
-static h2_runtime_t test_runtime(test_log_state_t *state) {
+static h2_runtime_t test_runtime(test_log_state_t* state) {
   static const h2_pal_log_vtable_t vtable = {
       .write = test_log_write,
   };

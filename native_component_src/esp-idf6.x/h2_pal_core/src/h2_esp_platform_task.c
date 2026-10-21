@@ -17,7 +17,7 @@
 #define H2_ESP_HAS_PSRAM 0
 #endif
 
-#if H2_ESP_HAS_PSRAM &&                                                        \
+#if H2_ESP_HAS_PSRAM && \
     (!defined(CONFIG_SPIRAM_XIP_FROM_PSRAM) || !CONFIG_SPIRAM_XIP_FROM_PSRAM)
 #error "ESP targets with PSRAM must enable CONFIG_SPIRAM_XIP_FROM_PSRAM"
 #endif
@@ -27,11 +27,11 @@ struct h2_pal_task {
   size_t stack_size;
   SemaphoreHandle_t done;
   h2_pal_task_entry_t entry;
-  void *ctx;
+  void* ctx;
   int stack_with_caps;
-  const h2_pal_mem_api_t *stack_allocator;
-  StackType_t *stack;
-  StaticTask_t *task_storage;
+  const h2_pal_mem_api_t* stack_allocator;
+  StackType_t* stack;
+  StaticTask_t* task_storage;
 };
 
 static h2_esp_task_policy_config_t s_task_config;
@@ -46,30 +46,30 @@ void h2_esp_platform_task_test_reset(void) {
 }
 #endif
 
-static const char *esp_task_name(const char *name) {
+static const char* esp_task_name(const char* name) {
   return name != NULL && name[0] != '\0' ? name : "h2_task";
 }
 
-static void esp_task_fail(const char *name, const char *stage,
-                          const char *reason) {
+static void esp_task_fail(const char* name, const char* stage,
+                          const char* reason) {
   printf("H2_PAL_TASK_POLICY_FAIL name=%s stage=%s reason=%s\n",
          esp_task_name(name), stage, reason);
 }
 
-static bool esp_policy_shape_valid(const h2_esp_task_policy_t *policy) {
+static bool esp_policy_shape_valid(const h2_esp_task_policy_t* policy) {
   return policy != NULL && policy->min_stack_size != 0u &&
          (policy->core == H2_ESP_TASK_CORE_ANY || policy->core >= 0) &&
          (policy->stack_region == H2_ESP_TASK_STACK_INTERNAL ||
           policy->stack_region == H2_ESP_TASK_STACK_PSRAM);
 }
 
-static BaseType_t esp_policy_core(const h2_esp_task_policy_t *policy) {
+static BaseType_t esp_policy_core(const h2_esp_task_policy_t* policy) {
   return policy->core == H2_ESP_TASK_CORE_ANY ? tskNO_AFFINITY
                                               : (BaseType_t)policy->core;
 }
 
-static h2_pal_result_t esp_policy_resolve(const char *name,
-                                          h2_esp_task_policy_t *out_policy) {
+static h2_pal_result_t esp_policy_resolve(const char* name,
+                                          h2_esp_task_policy_t* out_policy) {
   h2_pal_result_t rc =
       s_task_config.resolver(s_task_config.resolver_user, name, out_policy);
   if (rc == H2_PAL_OK) {
@@ -83,8 +83,8 @@ static h2_pal_result_t esp_policy_resolve(const char *name,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-static h2_pal_result_t esp_policy_validate(const char *name,
-                                           const h2_esp_task_policy_t *policy) {
+static h2_pal_result_t esp_policy_validate(const char* name,
+                                           const h2_esp_task_policy_t* policy) {
   if (!esp_policy_shape_valid(policy) ||
       policy->priority >= configMAX_PRIORITIES) {
     esp_task_fail(name, "validate", "invalid-policy");
@@ -108,9 +108,10 @@ static h2_pal_result_t esp_policy_validate(const char *name,
  * workers directly, without allocating another task under memory pressure.
  * Internal stacks keep self-deletion so delayed joins do not retain scarce
  * Internal memory needed during startup. */
-static void esp_task_trampoline(void *raw) {
-  h2_pal_task_t *task = (h2_pal_task_t *)raw;
-  const int stack_with_caps = task->stack_with_caps || task->stack_allocator != NULL;
+static void esp_task_trampoline(void* raw) {
+  h2_pal_task_t* task = (h2_pal_task_t*)raw;
+  const int stack_with_caps =
+      task->stack_with_caps || task->stack_allocator != NULL;
   task->entry(task->ctx);
   /* Join may free the PAL handle as soon as this signal is consumed. Do not
    * access task or the entry context after giving the semaphore. */
@@ -125,9 +126,9 @@ static void esp_task_trampoline(void *raw) {
   }
 }
 
-static int esp_task_start(void *user, const h2_pal_task_options_t *options,
-                          h2_pal_task_entry_t entry, void *ctx,
-                          h2_pal_task_t **out_task) {
+static int esp_task_start(void* user, const h2_pal_task_options_t* options,
+                          h2_pal_task_entry_t entry, void* ctx,
+                          h2_pal_task_t** out_task) {
   (void)user;
   if (out_task != NULL) {
     *out_task = NULL;
@@ -162,7 +163,7 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
     stack_size = policy.min_stack_size;
   }
 
-  h2_pal_task_t *task = (h2_pal_task_t *)calloc(1u, sizeof(*task));
+  h2_pal_task_t* task = (h2_pal_task_t*)calloc(1u, sizeof(*task));
   if (task == NULL) {
     esp_task_fail(options->name, "allocate", "task");
     return H2_PAL_ERR_NO_MEMORY;
@@ -215,18 +216,18 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
     esp_task_fail(options->name, "create", "sdk");
     return H2_PAL_ERR_TASK;
   }
-  printf("H2_PAL_TASK_READY name=%s priority=%lu core=%ld stack=%s size=%lu\n",
-         esp_task_name(options->name), (unsigned long)policy.priority,
-         (long)policy.core,
-         policy.stack_region == H2_ESP_TASK_STACK_INTERNAL ? "internal"
-                                                           : "psram",
-         (unsigned long)stack_size);
+  printf(
+      "H2_PAL_TASK_READY name=%s priority=%lu core=%ld stack=%s size=%lu\n",
+      esp_task_name(options->name), (unsigned long)policy.priority,
+      (long)policy.core,
+      policy.stack_region == H2_ESP_TASK_STACK_INTERNAL ? "internal" : "psram",
+      (unsigned long)stack_size);
   h2_esp_resource_acquire(H2_ESP_RESOURCE_TASK, stack_size);
   *out_task = task;
   return H2_PAL_OK;
 }
 
-static int esp_task_join(void *user, h2_pal_task_t *task) {
+static int esp_task_join(void* user, h2_pal_task_t* task) {
   (void)user;
   if (task == NULL || task->done == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -244,7 +245,8 @@ static int esp_task_join(void *user, h2_pal_task_t *task) {
     vTaskSuspend(task->task);
     for (;;) {
       bool running = false;
-      for (BaseType_t core = 0; core < CONFIG_FREERTOS_NUMBER_OF_CORES; ++core) {
+      for (BaseType_t core = 0; core < CONFIG_FREERTOS_NUMBER_OF_CORES;
+           ++core) {
         if (xTaskGetCurrentTaskHandleForCore(core) == task->task) {
           running = true;
           break;
@@ -266,8 +268,8 @@ static int esp_task_join(void *user, h2_pal_task_t *task) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config) {
+h2_pal_result_t h2_esp_platform_task_configure(
+    const h2_esp_task_policy_config_t* config) {
   if (s_task_configured || s_task_started) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -275,7 +277,7 @@ h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config) {
     esp_task_fail(NULL, "configure", "invalid-config");
     return H2_PAL_ERR_INVALID_ARG;
   }
-  const h2_pal_mem_api_t *allocator = config->psram_stack_allocator;
+  const h2_pal_mem_api_t* allocator = config->psram_stack_allocator;
   if (allocator != NULL &&
       (allocator->vtable == NULL || allocator->vtable->alloc == NULL ||
        allocator->vtable->free == NULL)) {
@@ -287,7 +289,7 @@ h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config) {
   return H2_PAL_OK;
 }
 
-const h2_pal_task_api_t *h2_esp_platform_task_api(void) {
+const h2_pal_task_api_t* h2_esp_platform_task_api(void) {
   static const h2_pal_task_vtable_t vtable = {
       .start = esp_task_start,
       .join = esp_task_join,

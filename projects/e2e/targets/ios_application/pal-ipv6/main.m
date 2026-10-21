@@ -16,12 +16,9 @@ typedef struct mobile_owner {
 static mobile_owner_t *retained_owner;
 static int cleanup_owner(mobile_owner_t *owner) {
   int rc = h2_ipv6_mobile_cleanup(&owner->result);
-  if (rc == H2_PAL_OK)
-    rc = h2_ios_webrtc_destroy(&owner->webrtc);
-  if (rc == H2_PAL_OK)
-    rc = h2_ios_net_destroy(&owner->net);
-  if (rc == H2_PAL_OK)
-    rc = h2_ios_platform_core_shutdown();
+  if (rc == H2_PAL_OK) rc = h2_ios_webrtc_destroy(&owner->webrtc);
+  if (rc == H2_PAL_OK) rc = h2_ios_net_destroy(&owner->net);
+  if (rc == H2_PAL_OK) rc = h2_ios_platform_core_shutdown();
   return rc;
 }
 static void release_owner(mobile_owner_t *owner) {
@@ -31,7 +28,9 @@ static void release_owner(mobile_owner_t *owner) {
 static dispatch_queue_t ipv6_run_queue(void) {
   static dispatch_queue_t queue;
   static dispatch_once_t once;
-  dispatch_once(&once, ^{ queue = dispatch_queue_create("pal-ipv6.run", DISPATCH_QUEUE_SERIAL); });
+  dispatch_once(&once, ^{
+    queue = dispatch_queue_create("pal-ipv6.run", DISPATCH_QUEUE_SERIAL);
+  });
   return queue;
 }
 
@@ -41,30 +40,23 @@ static dispatch_queue_t ipv6_run_queue(void) {
 - (void)viewDidLoad {
   [super viewDidLoad];
   UITextView *view = [[UITextView alloc] initWithFrame:self.view.bounds];
-  view.autoresizingMask =
-      UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+  view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
   view.editable = NO;
   view.text = @"PAL IPv6 E2E running…";
   [self.view addSubview:view];
-  NSString *documents = NSSearchPathForDirectoriesInDomains(
-                            NSDocumentDirectory, NSUserDomainMask, YES)
-                            .firstObject;
-  NSString *report =
-      [documents stringByAppendingPathComponent:@"pal-ipv6-result.json"];
+  NSString *documents =
+      NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+  NSString *report = [documents stringByAppendingPathComponent:@"pal-ipv6-result.json"];
   dispatch_async(ipv6_run_queue(), ^{
     @autoreleasepool {
       NSData *data = [NSData
-          dataWithContentsOfFile:
-              [documents stringByAppendingPathComponent:@"fixture.json"]];
-      NSDictionary *fixture = data
-                                  ? [NSJSONSerialization JSONObjectWithData:data
-                                                                    options:0
-                                                                      error:nil]
-                                  : nil;
+          dataWithContentsOfFile:[documents stringByAppendingPathComponent:@"fixture.json"]];
+      NSDictionary *fixture =
+          data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
       if (retained_owner) {
         int cleanup = cleanup_owner(retained_owner);
         (void)h2_ipv6_write_report(retained_owner->report_path, "ios-simulator",
-            &retained_owner->result, retained_owner->rc, cleanup);
+                                   &retained_owner->result, retained_owner->rc, cleanup);
         if (cleanup != H2_PAL_OK) {
           dispatch_async(dispatch_get_main_queue(), ^{
             view.text = [NSString stringWithFormat:@"PAL IPv6: FAIL (%d)", cleanup];
@@ -75,8 +67,7 @@ static dispatch_queue_t ipv6_run_queue(void) {
         retained_owner = NULL;
       }
       mobile_owner_t *owner = calloc(1u, sizeof(*owner));
-      if (!owner)
-        return;
+      if (!owner) return;
       owner->report_path = malloc(strlen(report.fileSystemRepresentation) + 1u);
       if (!owner->report_path) {
         free(owner);
@@ -84,35 +75,28 @@ static dispatch_queue_t ipv6_run_queue(void) {
       }
       strcpy(owner->report_path, report.fileSystemRepresentation);
       NSData *pem = [fixture[@"ca"] dataUsingEncoding:NSUTF8StringEncoding];
-      NSData *wrong =
-          [fixture[@"wrong_ca"] dataUsingEncoding:NSUTF8StringEncoding];
-      int rc =
-          pem && wrong ? h2_ios_net_create(&owner->net) : H2_PAL_ERR_INVALID_ARG;
-      if (rc == H2_PAL_OK)
-        rc = h2_ios_webrtc_create(&owner->webrtc);
+      NSData *wrong = [fixture[@"wrong_ca"] dataUsingEncoding:NSUTF8StringEncoding];
+      int rc = pem && wrong ? h2_ios_net_create(&owner->net) : H2_PAL_ERR_INVALID_ARG;
+      if (rc == H2_PAL_OK) rc = h2_ios_webrtc_create(&owner->webrtc);
       if (rc == H2_PAL_OK) {
         h2_runtime_config_t config = h2_mobile_e2e_runtime_config();
         config.net = h2_ios_net_api(owner->net);
         config.webrtc = h2_ios_webrtc_api(owner->webrtc);
         rc = h2_ipv6_mobile_run(
-            config, [fixture[@"host"] UTF8String],
-            (uint16_t)[fixture[@"port"] unsignedIntValue],
-            [fixture[@"session"] UTF8String], pem.bytes, pem.length,
-            wrong.bytes, wrong.length, [fixture[@"dns_host"] UTF8String],
-            [fixture[@"dns_ip"] UTF8String], [fixture[@"http_url"] UTF8String],
-            [fixture[@"fallback_url"] UTF8String],
-            (uint16_t)[fixture[@"mqtt_port"] unsignedIntValue],
-            [fixture[@"offer"] UTF8String], [fixture[@"stun"] UTF8String],
-            (uint16_t)[fixture[@"dns_port"] unsignedIntValue], &owner->result);
+            config, [fixture[@"host"] UTF8String], (uint16_t)[fixture[@"port"] unsignedIntValue],
+            [fixture[@"session"] UTF8String], pem.bytes, pem.length, wrong.bytes, wrong.length,
+            [fixture[@"dns_host"] UTF8String], [fixture[@"dns_ip"] UTF8String],
+            [fixture[@"http_url"] UTF8String], [fixture[@"fallback_url"] UTF8String],
+            (uint16_t)[fixture[@"mqtt_port"] unsignedIntValue], [fixture[@"offer"] UTF8String],
+            [fixture[@"stun"] UTF8String], (uint16_t)[fixture[@"dns_port"] unsignedIntValue],
+            &owner->result);
       }
       owner->rc = rc;
       int teardown = cleanup_owner(owner);
-      int written = h2_ipv6_write_report(owner->report_path, "ios-simulator",
-                                         &owner->result, rc, teardown);
-      if (rc == H2_PAL_OK && teardown != H2_PAL_OK)
-        rc = teardown;
-      if (written != H2_PAL_OK)
-        rc = written;
+      int written =
+          h2_ipv6_write_report(owner->report_path, "ios-simulator", &owner->result, rc, teardown);
+      if (rc == H2_PAL_OK && teardown != H2_PAL_OK) rc = teardown;
+      if (written != H2_PAL_OK) rc = written;
       if (teardown != H2_PAL_OK)
         retained_owner = owner;
       else
@@ -122,8 +106,7 @@ static dispatch_queue_t ipv6_run_queue(void) {
                                                     error:nil];
       dispatch_async(dispatch_get_main_queue(), ^{
         view.text = [NSString stringWithFormat:@"PAL IPv6: %@ (%d)\n%@",
-                                               rc == 0 ? @"PASS" : @"FAIL", rc,
-                                               text ?: @""];
+                                               rc == 0 ? @"PASS" : @"FAIL", rc, text ?: @""];
       });
     }
   });
@@ -151,16 +134,14 @@ static dispatch_queue_t ipv6_run_queue(void) {
                                    options:(UISceneConnectionOptions *)options {
   (void)app;
   (void)options;
-  UISceneConfiguration *config =
-      [[UISceneConfiguration alloc] initWithName:@"Default"
-                                     sessionRole:session.role];
+  UISceneConfiguration *config = [[UISceneConfiguration alloc] initWithName:@"Default"
+                                                                sessionRole:session.role];
   config.delegateClass = IPv6SceneDelegate.class;
   return config;
 }
 @end
 int main(int argc, char **argv) {
   @autoreleasepool {
-    return UIApplicationMain(argc, argv, nil,
-                             NSStringFromClass(IPv6AppDelegate.class));
+    return UIApplicationMain(argc, argv, nil, NSStringFromClass(IPv6AppDelegate.class));
   }
 }

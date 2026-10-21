@@ -8,7 +8,7 @@
 #define FRIEND_MAX_PAGES 32u
 
 enum method { ADD, INFO, LIST, DELETE, TOKEN_CREATE, TOKEN_GET, TOKEN_CLEAR };
-static const char *const rpc_symbols[] = {
+static const char* const rpc_symbols[] = {
     "h2_gizclaw_rpc_friend_add",
     "h2_gizclaw_rpc_friend_info_get",
     "h2_gizclaw_rpc_friend_list",
@@ -16,7 +16,7 @@ static const char *const rpc_symbols[] = {
     "h2_gizclaw_rpc_friend_invite_token_create",
     "h2_gizclaw_rpc_friend_invite_token_get",
     "h2_gizclaw_rpc_friend_invite_token_clear"};
-static const char *const parse_symbols[] = {
+static const char* const parse_symbols[] = {
     "h2_gizclaw_resp_parse_friend_add",
     "h2_gizclaw_resp_parse_friend_info_get",
     "h2_gizclaw_resp_parse_friend_list",
@@ -24,7 +24,7 @@ static const char *const parse_symbols[] = {
     "h2_gizclaw_resp_parse_friend_invite_token_create",
     "h2_gizclaw_resp_parse_friend_invite_token_get",
     "h2_gizclaw_resp_parse_friend_invite_token_clear"};
-static const char *const assertions[] = {"friend_add-assert",
+static const char* const assertions[] = {"friend_add-assert",
                                          "friend_info_get-assert",
                                          "friend_list-assert",
                                          "friend_delete-assert",
@@ -32,7 +32,7 @@ static const char *const assertions[] = {"friend_add-assert",
                                          "friend_invite_token_get-assert",
                                          "friend_invite_token_clear-assert"};
 
-static int checked(const char *symbol, const char *stage, int rc) {
+static int checked(const char* symbol, const char* stage, int rc) {
   h2_gizclaw_e2e_evidence(symbol, stage, rc);
   return rc;
 }
@@ -40,88 +40,84 @@ static int proof(bool req_api, enum method method, int rc) {
   return checked(req_api ? parse_symbols[method] : rpc_symbols[method],
                  assertions[method], rc);
 }
-static bool owned(const h2_gizclaw_resp_storage_t *storage, const void *ptr,
+static bool owned(const h2_gizclaw_resp_storage_t* storage, const void* ptr,
                   size_t size) {
   const uintptr_t base = (uintptr_t)storage->data, value = (uintptr_t)ptr;
   return ptr != NULL && storage->used <= storage->capacity && value >= base &&
          value - base <= storage->used &&
          size <= storage->used - (value - base);
 }
-static bool text_valid(const h2_gizclaw_resp_storage_t *storage,
-                       const char *value, bool required) {
-  if (value == NULL)
-    return !required;
-  if (!owned(storage, value, 1u))
-    return false;
+static bool text_valid(const h2_gizclaw_resp_storage_t* storage,
+                       const char* value, bool required) {
+  if (value == NULL) return !required;
+  if (!owned(storage, value, 1u)) return false;
   const size_t left =
       storage->used - ((uintptr_t)value - (uintptr_t)storage->data);
   return memchr(value, '\0', left) != NULL && (!required || value[0] != '\0');
 }
-static void record_obligation(h2_gizclaw_e2e_fixture_t *fixture,
+static void record_obligation(h2_gizclaw_e2e_fixture_t* fixture,
                               enum method method) {
-  if (method == TOKEN_CREATE)
-    fixture->friend_invite_created = true;
-  if (method == ADD)
-    fixture->friendship_created = true;
+  if (method == TOKEN_CREATE) fixture->friend_invite_created = true;
+  if (method == ADD) fixture->friendship_created = true;
 }
-static int call(h2_gizclaw_e2e_fixture_t *fixture,
-                h2_gizclaw_resp_storage_t *storage, bool req_api,
-                enum method method, uint64_t *identity, const char *argument,
-                h2_gizclaw_friend_t *object, h2_gizclaw_friend_page_t *page,
-                h2_gizclaw_invite_token_t *token) {
+static int call(h2_gizclaw_e2e_fixture_t* fixture,
+                h2_gizclaw_resp_storage_t* storage, bool req_api,
+                enum method method, uint64_t* identity, const char* argument,
+                h2_gizclaw_friend_t* object, h2_gizclaw_friend_page_t* page,
+                h2_gizclaw_invite_token_t* token) {
   storage->used = 0u;
   if (!h2_gizclaw_e2e_fixture_has_time(fixture, FRIEND_TIMEOUT_MS))
     return H2_PAL_ERR_TIMEOUT;
-  h2_gizclaw_service_t *service =
+  h2_gizclaw_service_t* service =
       fixture
           ->actors[method >= TOKEN_CREATE ? H2_GIZCLAW_E2E_FRIEND
                                           : H2_GIZCLAW_E2E_OWNER]
           .service;
   const h2_gizclaw_str_t arg = h2_gizclaw_e2e_str(argument);
   int rc = H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   if (req_api) {
     const uint64_t id = (*identity)++;
     switch (method) {
-    case ADD:
-      rc = checked("h2_gizclaw_req_create_friend_add", "friend-req",
-                   h2_gizclaw_req_create_friend_add(
-                       service, id, arg, FRIEND_TIMEOUT_MS, &request));
-      break;
-    case INFO:
-      rc = checked("h2_gizclaw_req_create_friend_info_get", "friend-req",
-                   h2_gizclaw_req_create_friend_info_get(
-                       service, id, arg, FRIEND_TIMEOUT_MS, &request));
-      break;
-    case LIST:
-      rc = checked(
-          "h2_gizclaw_req_create_friend_list", "friend-req",
-          h2_gizclaw_req_create_friend_list(service, id, arg, FRIEND_PAGE_LIMIT,
-                                            FRIEND_TIMEOUT_MS, &request));
-      break;
-    case DELETE:
-      rc = checked("h2_gizclaw_req_create_friend_delete", "friend-req",
-                   h2_gizclaw_req_create_friend_delete(
-                       service, id, arg, FRIEND_TIMEOUT_MS, &request));
-      break;
-    case TOKEN_CREATE:
-      rc = checked("h2_gizclaw_req_create_friend_invite_token_create",
-                   "friend-req",
-                   h2_gizclaw_req_create_friend_invite_token_create(
-                       service, id, FRIEND_TIMEOUT_MS, &request));
-      break;
-    case TOKEN_GET:
-      rc =
-          checked("h2_gizclaw_req_create_friend_invite_token_get", "friend-req",
-                  h2_gizclaw_req_create_friend_invite_token_get(
-                      service, id, FRIEND_TIMEOUT_MS, &request));
-      break;
-    case TOKEN_CLEAR:
-      rc = checked("h2_gizclaw_req_create_friend_invite_token_clear",
-                   "friend-req",
-                   h2_gizclaw_req_create_friend_invite_token_clear(
-                       service, id, FRIEND_TIMEOUT_MS, &request));
-      break;
+      case ADD:
+        rc = checked("h2_gizclaw_req_create_friend_add", "friend-req",
+                     h2_gizclaw_req_create_friend_add(
+                         service, id, arg, FRIEND_TIMEOUT_MS, &request));
+        break;
+      case INFO:
+        rc = checked("h2_gizclaw_req_create_friend_info_get", "friend-req",
+                     h2_gizclaw_req_create_friend_info_get(
+                         service, id, arg, FRIEND_TIMEOUT_MS, &request));
+        break;
+      case LIST:
+        rc = checked("h2_gizclaw_req_create_friend_list", "friend-req",
+                     h2_gizclaw_req_create_friend_list(
+                         service, id, arg, FRIEND_PAGE_LIMIT, FRIEND_TIMEOUT_MS,
+                         &request));
+        break;
+      case DELETE:
+        rc = checked("h2_gizclaw_req_create_friend_delete", "friend-req",
+                     h2_gizclaw_req_create_friend_delete(
+                         service, id, arg, FRIEND_TIMEOUT_MS, &request));
+        break;
+      case TOKEN_CREATE:
+        rc = checked("h2_gizclaw_req_create_friend_invite_token_create",
+                     "friend-req",
+                     h2_gizclaw_req_create_friend_invite_token_create(
+                         service, id, FRIEND_TIMEOUT_MS, &request));
+        break;
+      case TOKEN_GET:
+        rc = checked("h2_gizclaw_req_create_friend_invite_token_get",
+                     "friend-req",
+                     h2_gizclaw_req_create_friend_invite_token_get(
+                         service, id, FRIEND_TIMEOUT_MS, &request));
+        break;
+      case TOKEN_CLEAR:
+        rc = checked("h2_gizclaw_req_create_friend_invite_token_clear",
+                     "friend-req",
+                     h2_gizclaw_req_create_friend_invite_token_clear(
+                         service, id, FRIEND_TIMEOUT_MS, &request));
+        break;
     }
     if (rc == H2_PAL_OK) {
       record_obligation(fixture, method);
@@ -133,39 +129,41 @@ static int call(h2_gizclaw_e2e_fixture_t *fixture,
                    h2_gizclaw_req_wait(request, FRIEND_TIMEOUT_MS));
     if (rc == H2_PAL_OK) {
       switch (method) {
-      case ADD:
-        rc =
-            checked(parse_symbols[method], "friend-req",
-                    h2_gizclaw_resp_parse_friend_add(request, storage, object));
-        break;
-      case INFO:
-        rc = checked(
-            parse_symbols[method], "friend-req",
-            h2_gizclaw_resp_parse_friend_info_get(request, storage, object));
-        break;
-      case LIST:
-        rc = checked(parse_symbols[method], "friend-req",
-                     h2_gizclaw_resp_parse_friend_list(request, storage, page));
-        break;
-      case DELETE:
-        rc = checked(
-            parse_symbols[method], "friend-req",
-            h2_gizclaw_resp_parse_friend_delete(request, storage, object));
-        break;
-      case TOKEN_CREATE:
-        rc = checked(parse_symbols[method], "friend-req",
-                     h2_gizclaw_resp_parse_friend_invite_token_create(
-                         request, storage, token));
-        break;
-      case TOKEN_GET:
-        rc = checked(parse_symbols[method], "friend-req",
-                     h2_gizclaw_resp_parse_friend_invite_token_get(
-                         request, storage, token));
-        break;
-      case TOKEN_CLEAR:
-        rc = checked(parse_symbols[method], "friend-req",
-                     h2_gizclaw_resp_parse_friend_invite_token_clear(request));
-        break;
+        case ADD:
+          rc = checked(
+              parse_symbols[method], "friend-req",
+              h2_gizclaw_resp_parse_friend_add(request, storage, object));
+          break;
+        case INFO:
+          rc = checked(
+              parse_symbols[method], "friend-req",
+              h2_gizclaw_resp_parse_friend_info_get(request, storage, object));
+          break;
+        case LIST:
+          rc = checked(
+              parse_symbols[method], "friend-req",
+              h2_gizclaw_resp_parse_friend_list(request, storage, page));
+          break;
+        case DELETE:
+          rc = checked(
+              parse_symbols[method], "friend-req",
+              h2_gizclaw_resp_parse_friend_delete(request, storage, object));
+          break;
+        case TOKEN_CREATE:
+          rc = checked(parse_symbols[method], "friend-req",
+                       h2_gizclaw_resp_parse_friend_invite_token_create(
+                           request, storage, token));
+          break;
+        case TOKEN_GET:
+          rc = checked(parse_symbols[method], "friend-req",
+                       h2_gizclaw_resp_parse_friend_invite_token_get(
+                           request, storage, token));
+          break;
+        case TOKEN_CLEAR:
+          rc =
+              checked(parse_symbols[method], "friend-req",
+                      h2_gizclaw_resp_parse_friend_invite_token_clear(request));
+          break;
       }
     }
     if (rc != H2_PAL_OK && request != NULL)
@@ -175,49 +173,49 @@ static int call(h2_gizclaw_e2e_fixture_t *fixture,
   } else {
     record_obligation(fixture, method);
     switch (method) {
-    case ADD:
-      rc = checked(rpc_symbols[method], "friend-rpc",
-                   h2_gizclaw_rpc_friend_add(service, arg, FRIEND_TIMEOUT_MS,
-                                             storage, object));
-      break;
-    case INFO:
-      rc = checked(rpc_symbols[method], "friend-rpc",
-                   h2_gizclaw_rpc_friend_info_get(
-                       service, arg, FRIEND_TIMEOUT_MS, storage, object));
-      break;
-    case LIST:
-      rc =
-          checked(rpc_symbols[method], "friend-rpc",
-                  h2_gizclaw_rpc_friend_list(service, arg, FRIEND_PAGE_LIMIT,
-                                             FRIEND_TIMEOUT_MS, storage, page));
-      break;
-    case DELETE:
-      rc = checked(rpc_symbols[method], "friend-rpc",
-                   h2_gizclaw_rpc_friend_delete(service, arg, FRIEND_TIMEOUT_MS,
-                                                storage, object));
-      break;
-    case TOKEN_CREATE:
-      rc = checked(rpc_symbols[method], "friend-rpc",
-                   h2_gizclaw_rpc_friend_invite_token_create(
-                       service, FRIEND_TIMEOUT_MS, storage, token));
-      break;
-    case TOKEN_GET:
-      rc = checked(rpc_symbols[method], "friend-rpc",
-                   h2_gizclaw_rpc_friend_invite_token_get(
-                       service, FRIEND_TIMEOUT_MS, storage, token));
-      break;
-    case TOKEN_CLEAR:
-      rc = checked(
-          rpc_symbols[method], "friend-rpc",
-          h2_gizclaw_rpc_friend_invite_token_clear(service, FRIEND_TIMEOUT_MS));
-      break;
+      case ADD:
+        rc = checked(rpc_symbols[method], "friend-rpc",
+                     h2_gizclaw_rpc_friend_add(service, arg, FRIEND_TIMEOUT_MS,
+                                               storage, object));
+        break;
+      case INFO:
+        rc = checked(rpc_symbols[method], "friend-rpc",
+                     h2_gizclaw_rpc_friend_info_get(
+                         service, arg, FRIEND_TIMEOUT_MS, storage, object));
+        break;
+      case LIST:
+        rc = checked(
+            rpc_symbols[method], "friend-rpc",
+            h2_gizclaw_rpc_friend_list(service, arg, FRIEND_PAGE_LIMIT,
+                                       FRIEND_TIMEOUT_MS, storage, page));
+        break;
+      case DELETE:
+        rc = checked(rpc_symbols[method], "friend-rpc",
+                     h2_gizclaw_rpc_friend_delete(
+                         service, arg, FRIEND_TIMEOUT_MS, storage, object));
+        break;
+      case TOKEN_CREATE:
+        rc = checked(rpc_symbols[method], "friend-rpc",
+                     h2_gizclaw_rpc_friend_invite_token_create(
+                         service, FRIEND_TIMEOUT_MS, storage, token));
+        break;
+      case TOKEN_GET:
+        rc = checked(rpc_symbols[method], "friend-rpc",
+                     h2_gizclaw_rpc_friend_invite_token_get(
+                         service, FRIEND_TIMEOUT_MS, storage, token));
+        break;
+      case TOKEN_CLEAR:
+        rc = checked(rpc_symbols[method], "friend-rpc",
+                     h2_gizclaw_rpc_friend_invite_token_clear(
+                         service, FRIEND_TIMEOUT_MS));
+        break;
     }
   }
   return rc;
 }
 
-static bool valid_relationship(const h2_gizclaw_resp_storage_t *storage,
-                               const h2_gizclaw_friend_t *value) {
+static bool valid_relationship(const h2_gizclaw_resp_storage_t* storage,
+                               const h2_gizclaw_friend_t* value) {
   return text_valid(storage, value->id, true) &&
          text_valid(storage, value->peer_public_key, true) &&
          text_valid(storage, value->workspace_name, true) &&
@@ -228,12 +226,12 @@ static bool valid_relationship(const h2_gizclaw_resp_storage_t *storage,
          text_valid(storage, value->last_seen_at, false);
 }
 
-static int verify_list(h2_gizclaw_e2e_fixture_t *fixture,
-                       h2_gizclaw_resp_storage_t *storage, bool req_api,
-                       uint64_t *identity, bool present) {
+static int verify_list(h2_gizclaw_e2e_fixture_t* fixture,
+                       h2_gizclaw_resp_storage_t* storage, bool req_api,
+                       uint64_t* identity, bool present) {
   char cursor[256] = {0};
   size_t found = 0u;
-  const char *peer = fixture->actors[H2_GIZCLAW_E2E_FRIEND].public_key;
+  const char* peer = fixture->actors[H2_GIZCLAW_E2E_FRIEND].public_key;
   for (unsigned i = 0; i < FRIEND_MAX_PAGES; ++i) {
     h2_gizclaw_friend_page_t page = {0};
     int rc = call(fixture, storage, req_api, LIST, identity, cursor, NULL,
@@ -245,7 +243,7 @@ static int verify_list(h2_gizclaw_e2e_fixture_t *fixture,
            !owned(storage, page.items, page.count * sizeof(*page.items))))))
       rc = H2_PAL_ERR_INVALID_STATE;
     for (size_t j = 0; rc == H2_PAL_OK && j < page.count; ++j) {
-      const h2_gizclaw_friend_t *value = &page.items[j];
+      const h2_gizclaw_friend_t* value = &page.items[j];
       if (!valid_relationship(storage, value)) {
         rc = H2_PAL_ERR_INVALID_STATE;
         break;
@@ -273,19 +271,18 @@ static int verify_list(h2_gizclaw_e2e_fixture_t *fixture,
         memcpy(cursor, page.next_cursor, strlen(page.next_cursor) + 1u);
     }
     storage->used = 0u;
-    if (rc != H2_PAL_OK)
-      return proof(req_api, LIST, rc);
+    if (rc != H2_PAL_OK) return proof(req_api, LIST, rc);
     if (!page.has_next)
-      return proof(req_api, LIST,
-                   found == (present ? 1u : 0u) ? H2_PAL_OK
-                                                : H2_PAL_ERR_INVALID_STATE);
+      return proof(
+          req_api, LIST,
+          found == (present ? 1u : 0u) ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE);
   }
   return proof(req_api, LIST, H2_PAL_ERR_NO_SPACE);
 }
 
-static int token_create_and_read(h2_gizclaw_e2e_fixture_t *fixture,
-                                 h2_gizclaw_resp_storage_t *storage,
-                                 bool req_api, uint64_t *identity,
+static int token_create_and_read(h2_gizclaw_e2e_fixture_t* fixture,
+                                 h2_gizclaw_resp_storage_t* storage,
+                                 bool req_api, uint64_t* identity,
                                  char token_value[512]) {
   h2_gizclaw_invite_token_t token = {0};
   char expires[128];
@@ -315,9 +312,9 @@ static int token_create_and_read(h2_gizclaw_e2e_fixture_t *fixture,
   return proof(req_api, TOKEN_CREATE, rc);
 }
 
-static int token_clear_and_read(h2_gizclaw_e2e_fixture_t *fixture,
-                                h2_gizclaw_resp_storage_t *storage,
-                                bool req_api, uint64_t *identity) {
+static int token_clear_and_read(h2_gizclaw_e2e_fixture_t* fixture,
+                                h2_gizclaw_resp_storage_t* storage,
+                                bool req_api, uint64_t* identity) {
   int rc = call(fixture, storage, req_api, TOKEN_CLEAR, identity, "", NULL,
                 NULL, NULL);
   h2_gizclaw_invite_token_t token = {0};
@@ -326,14 +323,13 @@ static int token_clear_and_read(h2_gizclaw_e2e_fixture_t *fixture,
               &token);
   if (rc == H2_PAL_OK && (token.value != NULL || token.expires_at != NULL))
     rc = H2_PAL_ERR_INVALID_STATE;
-  if (rc == H2_PAL_OK)
-    fixture->friend_invite_created = false;
+  if (rc == H2_PAL_OK) fixture->friend_invite_created = false;
   storage->used = 0u;
   return proof(req_api, TOKEN_CLEAR, rc);
 }
 
-int h2_gizclaw_e2e_run_friend(h2_gizclaw_e2e_fixture_t *fixture,
-                              h2_gizclaw_resp_storage_t *storage) {
+int h2_gizclaw_e2e_run_friend(h2_gizclaw_e2e_fixture_t* fixture,
+                              h2_gizclaw_resp_storage_t* storage) {
   if (fixture == NULL || storage == NULL || storage->data == NULL ||
       storage->capacity == 0u ||
       fixture->actors[H2_GIZCLAW_E2E_OWNER].service == NULL ||
@@ -342,7 +338,7 @@ int h2_gizclaw_e2e_run_friend(h2_gizclaw_e2e_fixture_t *fixture,
   if (fixture->friendship_created || fixture->friend_invite_created ||
       fixture->friend_id[0] != '\0')
     return H2_PAL_ERR_INVALID_STATE;
-  const char *peer = fixture->actors[H2_GIZCLAW_E2E_FRIEND].public_key;
+  const char* peer = fixture->actors[H2_GIZCLAW_E2E_FRIEND].public_key;
   if (peer[0] == '\0' ||
       memchr(peer, '\0', sizeof(fixture->actors[0].public_key)) == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -354,8 +350,7 @@ int h2_gizclaw_e2e_run_friend(h2_gizclaw_e2e_fixture_t *fixture,
       "h2_gizclaw_rpc_profile_get", "friend-profile",
       h2_gizclaw_rpc_profile_get(fixture->actors[H2_GIZCLAW_E2E_FRIEND].service,
                                  FRIEND_TIMEOUT_MS, &profile));
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if ((profile.has_name &&
        memchr(profile.name, '\0', sizeof(profile.name)) == NULL) ||
       (profile.has_emoji &&

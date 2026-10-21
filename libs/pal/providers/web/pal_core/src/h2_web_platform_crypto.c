@@ -33,7 +33,7 @@ EM_JS(void, h2_web_crypto_entropy_js,
 });
 /* clang-format on */
 
-static int h2_web_crypto_entropy(void *user, uint8_t *out, size_t len) {
+static int h2_web_crypto_entropy(void* user, uint8_t* out, size_t len) {
   H2_WEB_STATE_GUARD();
   (void)user;
   if (out == NULL && len != 0u) {
@@ -41,11 +41,11 @@ static int h2_web_crypto_entropy(void *user, uint8_t *out, size_t len) {
   }
   return (
       (int)h2_web_main_call(h2_web_crypto_entropy_js,
-                            (const void *[]){&(uint8_t *){out}, &(size_t){len}})
+                            (const void*[]){&(uint8_t*){out}, &(size_t){len}})
           .i32);
 }
 
-int h2_web_platform_crypto_init(h2_web_platform_t *platform) {
+int h2_web_platform_crypto_init(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
   if (platform == NULL || platform->crypto_ready) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -65,7 +65,7 @@ int h2_web_platform_crypto_init(h2_web_platform_t *platform) {
   return H2_PAL_OK;
 }
 
-void h2_web_platform_crypto_deinit(h2_web_platform_t *platform) {
+void h2_web_platform_crypto_deinit(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
   if (platform == NULL || !platform->crypto_ready) {
     return;
@@ -79,8 +79,8 @@ void h2_web_platform_crypto_deinit(h2_web_platform_t *platform) {
   }
 }
 
-const h2_pal_crypto_api_t *
-h2_web_platform_crypto_api(h2_web_platform_t *platform) {
+const h2_pal_crypto_api_t* h2_web_platform_crypto_api(
+    h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
   if (platform == NULL || !platform->crypto_ready) {
     return h2_pal_unsupported_crypto_api();

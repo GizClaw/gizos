@@ -18,38 +18,38 @@
 
 namespace {
 
-void *desktop_alloc(void *, size_t len) { return std::malloc(len); }
+void* desktop_alloc(void*, size_t len) { return std::malloc(len); }
 
-void *desktop_realloc(void *, void *ptr, size_t len) {
+void* desktop_realloc(void*, void* ptr, size_t len) {
   return std::realloc(ptr, len);
 }
 
-void desktop_free(void *, void *ptr) { std::free(ptr); }
+void desktop_free(void*, void* ptr) { std::free(ptr); }
 
 h2_pal_mem_vtable_t allocator_vtable = {};
 h2_pal_mem_api_t allocators[4] = {};
 
-int desktop_log_write(void *, h2_pal_log_level_t level, const char *scope,
-                      const char *message) {
+int desktop_log_write(void*, h2_pal_log_level_t level, const char* scope,
+                      const char* message) {
   if (message == nullptr) {
     return H2_PAL_LOG_ERR_INVALID_ARG;
   }
-  const char *level_name = "unknown";
+  const char* level_name = "unknown";
   switch (level) {
-  case H2_PAL_LOG_DEBUG:
-    level_name = "debug";
-    break;
-  case H2_PAL_LOG_INFO:
-    level_name = "info";
-    break;
-  case H2_PAL_LOG_WARN:
-    level_name = "warn";
-    break;
-  case H2_PAL_LOG_ERROR:
-    level_name = "error";
-    break;
-  default:
-    break;
+    case H2_PAL_LOG_DEBUG:
+      level_name = "debug";
+      break;
+    case H2_PAL_LOG_INFO:
+      level_name = "info";
+      break;
+    case H2_PAL_LOG_WARN:
+      level_name = "warn";
+      break;
+    case H2_PAL_LOG_ERROR:
+      level_name = "error";
+      break;
+    default:
+      break;
   }
   std::fprintf(stderr, "H2_LOG level=%s scope=%s message=%s\n", level_name,
                scope != nullptr && scope[0] != '\0' ? scope : "h2", message);
@@ -59,12 +59,12 @@ int desktop_log_write(void *, h2_pal_log_level_t level, const char *scope,
 h2_pal_log_vtable_t log_vtable = {};
 h2_pal_log_api_t log_api = {};
 
-void *api_alloc(const h2_pal_mem_api_t *allocator, size_t len) {
+void* api_alloc(const h2_pal_mem_api_t* allocator, size_t len) {
   return allocator != nullptr ? h2_pal_mem_alloc(allocator, len)
                               : std::malloc(len);
 }
 
-void api_free(const h2_pal_mem_api_t *allocator, void *ptr) {
+void api_free(const h2_pal_mem_api_t* allocator, void* ptr) {
   if (ptr == nullptr) {
     return;
   }
@@ -79,18 +79,18 @@ struct DesktopQueue {
   std::mutex mutex;
   std::condition_variable not_empty;
   std::condition_variable not_full;
-  const h2_pal_mem_api_t *allocator = nullptr;
+  const h2_pal_mem_api_t* allocator = nullptr;
   size_t item_size = 0;
   size_t item_count = 0;
   size_t head = 0;
   size_t count = 0;
   bool closed = false;
-  unsigned char *items = nullptr;
+  unsigned char* items = nullptr;
 };
 
 template <typename Predicate>
-int wait_with_timeout(std::condition_variable &condition,
-                      std::unique_lock<std::mutex> &lock, uint32_t timeout_ms,
+int wait_with_timeout(std::condition_variable& condition,
+                      std::unique_lock<std::mutex>& lock, uint32_t timeout_ms,
                       Predicate predicate, int timeout_result) {
   if (predicate()) {
     return H2_PAL_OK;
@@ -107,23 +107,23 @@ int wait_with_timeout(std::condition_variable &condition,
   return ready ? H2_PAL_OK : timeout_result;
 }
 
-int queue_create(void *, const h2_pal_queue_config_t *config,
-                 h2_pal_queue_t **out_queue) {
+int queue_create(void*, const h2_pal_queue_config_t* config,
+                 h2_pal_queue_t** out_queue) {
   if (config == nullptr || out_queue == nullptr || config->item_size == 0u ||
       config->item_count == 0u ||
       config->item_size > SIZE_MAX / config->item_count) {
     return H2_PAL_QUEUE_ERR_INVALID_ARG;
   }
   *out_queue = nullptr;
-  void *raw_queue = api_alloc(config->allocator, sizeof(DesktopQueue));
+  void* raw_queue = api_alloc(config->allocator, sizeof(DesktopQueue));
   if (raw_queue == nullptr) {
     return H2_PAL_QUEUE_ERR_NO_MEMORY;
   }
-  DesktopQueue *queue = new (raw_queue) DesktopQueue();
+  DesktopQueue* queue = new (raw_queue) DesktopQueue();
   queue->allocator = config->allocator;
   queue->item_size = config->item_size;
   queue->item_count = config->item_count;
-  queue->items = static_cast<unsigned char *>(
+  queue->items = static_cast<unsigned char*>(
       api_alloc(config->allocator, config->item_size * config->item_count));
   if (queue->items == nullptr) {
     queue->~DesktopQueue();
@@ -131,34 +131,34 @@ int queue_create(void *, const h2_pal_queue_config_t *config,
     return H2_PAL_QUEUE_ERR_NO_MEMORY;
   }
   h2_desktop_resource_acquire(h2_desktop_resource_kind::queue);
-  *out_queue = reinterpret_cast<h2_pal_queue_t *>(queue);
+  *out_queue = reinterpret_cast<h2_pal_queue_t*>(queue);
   return H2_PAL_QUEUE_OK;
 }
 
-void queue_destroy(void *, h2_pal_queue_t *raw_queue) {
+void queue_destroy(void*, h2_pal_queue_t* raw_queue) {
   if (raw_queue == nullptr) {
     return;
   }
-  DesktopQueue *queue = reinterpret_cast<DesktopQueue *>(raw_queue);
+  DesktopQueue* queue = reinterpret_cast<DesktopQueue*>(raw_queue);
   {
     std::lock_guard<std::mutex> lock(queue->mutex);
     queue->closed = true;
   }
   queue->not_empty.notify_all();
   queue->not_full.notify_all();
-  const h2_pal_mem_api_t *allocator = queue->allocator;
+  const h2_pal_mem_api_t* allocator = queue->allocator;
   api_free(allocator, queue->items);
   queue->~DesktopQueue();
   api_free(allocator, queue);
   h2_desktop_resource_release(h2_desktop_resource_kind::queue);
 }
 
-int queue_send(void *, h2_pal_queue_t *raw_queue, const void *item,
+int queue_send(void*, h2_pal_queue_t* raw_queue, const void* item,
                uint32_t timeout_ms) {
   if (raw_queue == nullptr || item == nullptr) {
     return H2_PAL_QUEUE_ERR_INVALID_ARG;
   }
-  DesktopQueue *queue = reinterpret_cast<DesktopQueue *>(raw_queue);
+  DesktopQueue* queue = reinterpret_cast<DesktopQueue*>(raw_queue);
   std::unique_lock<std::mutex> lock(queue->mutex);
   const int wait_result = wait_with_timeout(
       queue->not_full, lock, timeout_ms,
@@ -178,11 +178,11 @@ int queue_send(void *, h2_pal_queue_t *raw_queue, const void *item,
   return H2_PAL_QUEUE_OK;
 }
 
-int queue_send_latest(void *, h2_pal_queue_t *raw_queue, const void *item) {
+int queue_send_latest(void*, h2_pal_queue_t* raw_queue, const void* item) {
   if (raw_queue == nullptr || item == nullptr) {
     return H2_PAL_QUEUE_ERR_INVALID_ARG;
   }
-  DesktopQueue *queue = reinterpret_cast<DesktopQueue *>(raw_queue);
+  DesktopQueue* queue = reinterpret_cast<DesktopQueue*>(raw_queue);
   std::lock_guard<std::mutex> lock(queue->mutex);
   if (queue->closed) {
     return H2_PAL_QUEUE_ERR_CLOSED;
@@ -199,12 +199,12 @@ int queue_send_latest(void *, h2_pal_queue_t *raw_queue, const void *item) {
   return H2_PAL_QUEUE_OK;
 }
 
-int queue_recv(void *, h2_pal_queue_t *raw_queue, void *out_item,
+int queue_recv(void*, h2_pal_queue_t* raw_queue, void* out_item,
                uint32_t timeout_ms) {
   if (raw_queue == nullptr || out_item == nullptr) {
     return H2_PAL_QUEUE_ERR_INVALID_ARG;
   }
-  DesktopQueue *queue = reinterpret_cast<DesktopQueue *>(raw_queue);
+  DesktopQueue* queue = reinterpret_cast<DesktopQueue*>(raw_queue);
   std::unique_lock<std::mutex> lock(queue->mutex);
   const int wait_result = wait_with_timeout(
       queue->not_empty, lock, timeout_ms,
@@ -225,11 +225,11 @@ int queue_recv(void *, h2_pal_queue_t *raw_queue, void *out_item,
   return H2_PAL_QUEUE_OK;
 }
 
-int queue_reset(void *, h2_pal_queue_t *raw_queue) {
+int queue_reset(void*, h2_pal_queue_t* raw_queue) {
   if (raw_queue == nullptr) {
     return H2_PAL_QUEUE_ERR_INVALID_ARG;
   }
-  DesktopQueue *queue = reinterpret_cast<DesktopQueue *>(raw_queue);
+  DesktopQueue* queue = reinterpret_cast<DesktopQueue*>(raw_queue);
   std::lock_guard<std::mutex> lock(queue->mutex);
   queue->head = 0u;
   queue->count = 0u;
@@ -237,11 +237,11 @@ int queue_reset(void *, h2_pal_queue_t *raw_queue) {
   return H2_PAL_QUEUE_OK;
 }
 
-int queue_close(void *, h2_pal_queue_t *raw_queue) {
+int queue_close(void*, h2_pal_queue_t* raw_queue) {
   if (raw_queue == nullptr) {
     return H2_PAL_QUEUE_ERR_INVALID_ARG;
   }
-  DesktopQueue *queue = reinterpret_cast<DesktopQueue *>(raw_queue);
+  DesktopQueue* queue = reinterpret_cast<DesktopQueue*>(raw_queue);
   {
     std::lock_guard<std::mutex> lock(queue->mutex);
     queue->closed = true;
@@ -257,59 +257,58 @@ h2_pal_queue_api_t queue_api = {};
 struct DesktopMutex {
   std::mutex normal;
   std::recursive_mutex recursive;
-  const h2_pal_mem_api_t *allocator = nullptr;
+  const h2_pal_mem_api_t* allocator = nullptr;
   bool is_recursive = false;
 };
 
 struct DesktopSemaphore {
   std::mutex mutex;
   std::condition_variable condition;
-  const h2_pal_mem_api_t *allocator = nullptr;
+  const h2_pal_mem_api_t* allocator = nullptr;
   uint32_t count = 0u;
   uint32_t max_count = 0u;
 };
 
 struct DesktopCondition {
   std::condition_variable condition;
-  const h2_pal_mem_api_t *allocator = nullptr;
+  const h2_pal_mem_api_t* allocator = nullptr;
 };
 
-h2_pal_result_t mutex_create(void *, const h2_pal_mutex_config_t *config,
-                             h2_pal_mutex_t **out_mutex) {
+h2_pal_result_t mutex_create(void*, const h2_pal_mutex_config_t* config,
+                             h2_pal_mutex_t** out_mutex) {
   if (config == nullptr || out_mutex == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_mutex = nullptr;
-  void *raw = api_alloc(config->allocator, sizeof(DesktopMutex));
+  void* raw = api_alloc(config->allocator, sizeof(DesktopMutex));
   if (raw == nullptr) {
     return H2_PAL_ERR_NO_MEMORY;
   }
-  DesktopMutex *mutex = new (raw) DesktopMutex();
+  DesktopMutex* mutex = new (raw) DesktopMutex();
   mutex->allocator = config->allocator;
-  mutex->is_recursive =
-      (config->flags & H2_PAL_MUTEX_FLAG_RECURSIVE) != 0u;
+  mutex->is_recursive = (config->flags & H2_PAL_MUTEX_FLAG_RECURSIVE) != 0u;
   h2_desktop_resource_acquire(h2_desktop_resource_kind::mutex);
-  *out_mutex = reinterpret_cast<h2_pal_mutex_t *>(mutex);
+  *out_mutex = reinterpret_cast<h2_pal_mutex_t*>(mutex);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t mutex_destroy(void *, h2_pal_mutex_t *raw_mutex) {
+h2_pal_result_t mutex_destroy(void*, h2_pal_mutex_t* raw_mutex) {
   if (raw_mutex == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopMutex *mutex = reinterpret_cast<DesktopMutex *>(raw_mutex);
-  const h2_pal_mem_api_t *allocator = mutex->allocator;
+  DesktopMutex* mutex = reinterpret_cast<DesktopMutex*>(raw_mutex);
+  const h2_pal_mem_api_t* allocator = mutex->allocator;
   mutex->~DesktopMutex();
   api_free(allocator, mutex);
   h2_desktop_resource_release(h2_desktop_resource_kind::mutex);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t mutex_lock(void *, h2_pal_mutex_t *raw_mutex) {
+h2_pal_result_t mutex_lock(void*, h2_pal_mutex_t* raw_mutex) {
   if (raw_mutex == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopMutex *mutex = reinterpret_cast<DesktopMutex *>(raw_mutex);
+  DesktopMutex* mutex = reinterpret_cast<DesktopMutex*>(raw_mutex);
   if (mutex->is_recursive) {
     mutex->recursive.lock();
   } else {
@@ -318,21 +317,21 @@ h2_pal_result_t mutex_lock(void *, h2_pal_mutex_t *raw_mutex) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t mutex_try_lock(void *, h2_pal_mutex_t *raw_mutex) {
+h2_pal_result_t mutex_try_lock(void*, h2_pal_mutex_t* raw_mutex) {
   if (raw_mutex == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopMutex *mutex = reinterpret_cast<DesktopMutex *>(raw_mutex);
+  DesktopMutex* mutex = reinterpret_cast<DesktopMutex*>(raw_mutex);
   const bool locked = mutex->is_recursive ? mutex->recursive.try_lock()
                                           : mutex->normal.try_lock();
   return locked ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
 }
 
-h2_pal_result_t mutex_unlock(void *, h2_pal_mutex_t *raw_mutex) {
+h2_pal_result_t mutex_unlock(void*, h2_pal_mutex_t* raw_mutex) {
   if (raw_mutex == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopMutex *mutex = reinterpret_cast<DesktopMutex *>(raw_mutex);
+  DesktopMutex* mutex = reinterpret_cast<DesktopMutex*>(raw_mutex);
   if (mutex->is_recursive) {
     mutex->recursive.unlock();
   } else {
@@ -341,47 +340,46 @@ h2_pal_result_t mutex_unlock(void *, h2_pal_mutex_t *raw_mutex) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t semaphore_create(void *,
-                                 const h2_pal_semaphore_config_t *config,
-                                 h2_pal_semaphore_t **out_semaphore) {
+h2_pal_result_t semaphore_create(void*, const h2_pal_semaphore_config_t* config,
+                                 h2_pal_semaphore_t** out_semaphore) {
   if (config == nullptr || out_semaphore == nullptr ||
       config->max_count == 0u || config->initial_count > config->max_count) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_semaphore = nullptr;
-  void *raw = api_alloc(config->allocator, sizeof(DesktopSemaphore));
+  void* raw = api_alloc(config->allocator, sizeof(DesktopSemaphore));
   if (raw == nullptr) {
     return H2_PAL_ERR_NO_MEMORY;
   }
-  DesktopSemaphore *semaphore = new (raw) DesktopSemaphore();
+  DesktopSemaphore* semaphore = new (raw) DesktopSemaphore();
   semaphore->allocator = config->allocator;
   semaphore->count = config->initial_count;
   semaphore->max_count = config->max_count;
   h2_desktop_resource_acquire(h2_desktop_resource_kind::semaphore);
-  *out_semaphore = reinterpret_cast<h2_pal_semaphore_t *>(semaphore);
+  *out_semaphore = reinterpret_cast<h2_pal_semaphore_t*>(semaphore);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t semaphore_destroy(void *, h2_pal_semaphore_t *raw_semaphore) {
+h2_pal_result_t semaphore_destroy(void*, h2_pal_semaphore_t* raw_semaphore) {
   if (raw_semaphore == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopSemaphore *semaphore =
-      reinterpret_cast<DesktopSemaphore *>(raw_semaphore);
-  const h2_pal_mem_api_t *allocator = semaphore->allocator;
+  DesktopSemaphore* semaphore =
+      reinterpret_cast<DesktopSemaphore*>(raw_semaphore);
+  const h2_pal_mem_api_t* allocator = semaphore->allocator;
   semaphore->~DesktopSemaphore();
   api_free(allocator, semaphore);
   h2_desktop_resource_release(h2_desktop_resource_kind::semaphore);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t semaphore_take(void *, h2_pal_semaphore_t *raw_semaphore,
+h2_pal_result_t semaphore_take(void*, h2_pal_semaphore_t* raw_semaphore,
                                uint32_t timeout_ms) {
   if (raw_semaphore == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopSemaphore *semaphore =
-      reinterpret_cast<DesktopSemaphore *>(raw_semaphore);
+  DesktopSemaphore* semaphore =
+      reinterpret_cast<DesktopSemaphore*>(raw_semaphore);
   std::unique_lock<std::mutex> lock(semaphore->mutex);
   const int wait_result = wait_with_timeout(
       semaphore->condition, lock, timeout_ms,
@@ -393,12 +391,12 @@ h2_pal_result_t semaphore_take(void *, h2_pal_semaphore_t *raw_semaphore,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t semaphore_give(void *, h2_pal_semaphore_t *raw_semaphore) {
+h2_pal_result_t semaphore_give(void*, h2_pal_semaphore_t* raw_semaphore) {
   if (raw_semaphore == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopSemaphore *semaphore =
-      reinterpret_cast<DesktopSemaphore *>(raw_semaphore);
+  DesktopSemaphore* semaphore =
+      reinterpret_cast<DesktopSemaphore*>(raw_semaphore);
   std::lock_guard<std::mutex> lock(semaphore->mutex);
   if (semaphore->count == semaphore->max_count) {
     return H2_PAL_ERR_FULL;
@@ -408,45 +406,44 @@ h2_pal_result_t semaphore_give(void *, h2_pal_semaphore_t *raw_semaphore) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t condition_create(void *, const h2_pal_cond_config_t *config,
-                                 h2_pal_cond_t **out_condition) {
+h2_pal_result_t condition_create(void*, const h2_pal_cond_config_t* config,
+                                 h2_pal_cond_t** out_condition) {
   if (config == nullptr || out_condition == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_condition = nullptr;
-  void *raw = api_alloc(config->allocator, sizeof(DesktopCondition));
+  void* raw = api_alloc(config->allocator, sizeof(DesktopCondition));
   if (raw == nullptr) {
     return H2_PAL_ERR_NO_MEMORY;
   }
-  DesktopCondition *condition = new (raw) DesktopCondition();
+  DesktopCondition* condition = new (raw) DesktopCondition();
   condition->allocator = config->allocator;
   h2_desktop_resource_acquire(h2_desktop_resource_kind::condition);
-  *out_condition = reinterpret_cast<h2_pal_cond_t *>(condition);
+  *out_condition = reinterpret_cast<h2_pal_cond_t*>(condition);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t condition_destroy(void *, h2_pal_cond_t *raw_condition) {
+h2_pal_result_t condition_destroy(void*, h2_pal_cond_t* raw_condition) {
   if (raw_condition == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopCondition *condition =
-      reinterpret_cast<DesktopCondition *>(raw_condition);
-  const h2_pal_mem_api_t *allocator = condition->allocator;
+  DesktopCondition* condition =
+      reinterpret_cast<DesktopCondition*>(raw_condition);
+  const h2_pal_mem_api_t* allocator = condition->allocator;
   condition->~DesktopCondition();
   api_free(allocator, condition);
   h2_desktop_resource_release(h2_desktop_resource_kind::condition);
   return H2_PAL_OK;
 }
 
-h2_pal_result_t condition_wait(void *, h2_pal_cond_t *raw_condition,
-                               h2_pal_mutex_t *raw_mutex,
-                               uint32_t timeout_ms) {
+h2_pal_result_t condition_wait(void*, h2_pal_cond_t* raw_condition,
+                               h2_pal_mutex_t* raw_mutex, uint32_t timeout_ms) {
   if (raw_condition == nullptr || raw_mutex == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  DesktopCondition *condition =
-      reinterpret_cast<DesktopCondition *>(raw_condition);
-  DesktopMutex *mutex = reinterpret_cast<DesktopMutex *>(raw_mutex);
+  DesktopCondition* condition =
+      reinterpret_cast<DesktopCondition*>(raw_condition);
+  DesktopMutex* mutex = reinterpret_cast<DesktopMutex*>(raw_mutex);
   if (mutex->is_recursive) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
@@ -465,19 +462,19 @@ h2_pal_result_t condition_wait(void *, h2_pal_cond_t *raw_condition,
   return result;
 }
 
-h2_pal_result_t condition_signal(void *, h2_pal_cond_t *raw_condition) {
+h2_pal_result_t condition_signal(void*, h2_pal_cond_t* raw_condition) {
   if (raw_condition == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  reinterpret_cast<DesktopCondition *>(raw_condition)->condition.notify_one();
+  reinterpret_cast<DesktopCondition*>(raw_condition)->condition.notify_one();
   return H2_PAL_OK;
 }
 
-h2_pal_result_t condition_broadcast(void *, h2_pal_cond_t *raw_condition) {
+h2_pal_result_t condition_broadcast(void*, h2_pal_cond_t* raw_condition) {
   if (raw_condition == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  reinterpret_cast<DesktopCondition *>(raw_condition)->condition.notify_all();
+  reinterpret_cast<DesktopCondition*>(raw_condition)->condition.notify_all();
   return H2_PAL_OK;
 }
 
@@ -491,14 +488,14 @@ size_t task_stack_borrowers = 0;
 struct DesktopTask {
   pthread_t thread{};
   h2_pal_task_entry_t entry = nullptr;
-  void *context = nullptr;
-  const h2_pal_mem_api_t *stack_allocator = nullptr;
-  void *stack = nullptr;
+  void* context = nullptr;
+  const h2_pal_mem_api_t* stack_allocator = nullptr;
+  void* stack = nullptr;
   size_t stack_bytes = 0u;
   bool configured = false;
 };
 
-void release_task_stack(DesktopTask *task) {
+void release_task_stack(DesktopTask* task) {
   api_free(task->stack_allocator, task->stack);
   h2_desktop_task_stack_release(task->stack_bytes);
   if (task->configured) {
@@ -507,18 +504,18 @@ void release_task_stack(DesktopTask *task) {
   }
 }
 
-void *desktop_task_entry(void *context) {
-  auto *task = static_cast<DesktopTask *>(context);
+void* desktop_task_entry(void* context) {
+  auto* task = static_cast<DesktopTask*>(context);
   task->entry(task->context);
   return nullptr;
 }
 
-int task_start(void *, const h2_pal_task_options_t *options,
-               h2_pal_task_entry_t entry, void *context,
-               h2_pal_task_t **out_task) {
+int task_start(void*, const h2_pal_task_options_t* options,
+               h2_pal_task_entry_t entry, void* context,
+               h2_pal_task_t** out_task) {
   if (out_task != nullptr) *out_task = nullptr;
   if (entry == nullptr || out_task == nullptr) return H2_PAL_ERR_INVALID_ARG;
-  auto *task = new (std::nothrow) DesktopTask();
+  auto* task = new (std::nothrow) DesktopTask();
   if (task == nullptr) return H2_PAL_ERR_NO_MEMORY;
   task->entry = entry;
   task->context = context;
@@ -533,12 +530,14 @@ int task_start(void *, const h2_pal_task_options_t *options,
     }
   }
   size_t resolved = 0;
-  int rc = config.resolve == nullptr ? H2_PAL_OK :
-      config.resolve(config.user, options, &resolved);
+  int rc = config.resolve == nullptr
+               ? H2_PAL_OK
+               : config.resolve(config.user, options, &resolved);
   pthread_attr_t attributes;
   bool attributes_live = false;
   if (rc == H2_PAL_OK) {
-    rc = pthread_attr_init(&attributes) == 0 ? H2_PAL_OK : H2_PAL_ERR_UNAVAILABLE;
+    rc = pthread_attr_init(&attributes) == 0 ? H2_PAL_OK
+                                             : H2_PAL_ERR_UNAVAILABLE;
     attributes_live = rc == H2_PAL_OK;
   }
   size_t bytes = 0;
@@ -548,24 +547,30 @@ int task_start(void *, const h2_pal_task_options_t *options,
     // Keep the platform's normal pthread default; the requested minimum and
     // configured memory policy can increase it. This allocation is supplied
     // to pthread_create, rather than merely mirroring stack bytes in a counter.
-    bytes = std::max(bytes, std::max(resolved, options ? options->min_stack_size : 0u));
+    bytes = std::max(
+        bytes, std::max(resolved, options ? options->min_stack_size : 0u));
     const long page = sysconf(_SC_PAGESIZE);
     const size_t alignment = page > 0 ? static_cast<size_t>(page) : 4096u;
-    if (bytes > SIZE_MAX - (alignment - 1u)) rc = H2_PAL_ERR_INVALID_ARG;
+    if (bytes > SIZE_MAX - (alignment - 1u))
+      rc = H2_PAL_ERR_INVALID_ARG;
     else {
       bytes = (bytes + alignment - 1u) / alignment * alignment;
-      if (bytes > SIZE_MAX - (alignment - 1u)) rc = H2_PAL_ERR_INVALID_ARG;
+      if (bytes > SIZE_MAX - (alignment - 1u))
+        rc = H2_PAL_ERR_INVALID_ARG;
       else {
         task->stack = api_alloc(task->stack_allocator, bytes + alignment - 1u);
-        if (task->stack == nullptr) rc = H2_PAL_ERR_NO_MEMORY;
+        if (task->stack == nullptr)
+          rc = H2_PAL_ERR_NO_MEMORY;
         else {
           task->stack_bytes = bytes;
           h2_desktop_task_stack_acquire(bytes);
           const uintptr_t address = reinterpret_cast<uintptr_t>(task->stack);
-          void *base = reinterpret_cast<void *>((address + alignment - 1u) / alignment * alignment);
+          void* base = reinterpret_cast<void*>((address + alignment - 1u) /
+                                               alignment * alignment);
           if (pthread_attr_setstack(&attributes, base, bytes) != 0)
             rc = H2_PAL_ERR_INVALID_ARG;
-          else if (pthread_create(&task->thread, &attributes, desktop_task_entry, task) != 0)
+          else if (pthread_create(&task->thread, &attributes,
+                                  desktop_task_entry, task) != 0)
             rc = H2_PAL_ERR_UNAVAILABLE;
         }
       }
@@ -578,14 +583,15 @@ int task_start(void *, const h2_pal_task_options_t *options,
     return rc;
   }
   h2_desktop_resource_acquire(h2_desktop_resource_kind::task);
-  *out_task = reinterpret_cast<h2_pal_task_t *>(task);
+  *out_task = reinterpret_cast<h2_pal_task_t*>(task);
   return H2_PAL_OK;
 }
 
-int task_join(void *, h2_pal_task_t *raw_task) {
+int task_join(void*, h2_pal_task_t* raw_task) {
   if (raw_task == nullptr) return H2_PAL_ERR_INVALID_ARG;
-  auto *task = reinterpret_cast<DesktopTask *>(raw_task);
-  if (pthread_equal(task->thread, pthread_self())) return H2_PAL_ERR_INVALID_STATE;
+  auto* task = reinterpret_cast<DesktopTask*>(raw_task);
+  if (pthread_equal(task->thread, pthread_self()))
+    return H2_PAL_ERR_INVALID_STATE;
   // A failed native join keeps the handle and its actual work stack for retry.
   if (pthread_join(task->thread, nullptr) != 0) return H2_PAL_ERR_IO;
   release_task_stack(task);
@@ -603,7 +609,7 @@ int64_t wall_offset_ms = 0;
 bool wall_valid = true;
 h2_pal_time_wall_source_t wall_source = H2_PAL_TIME_WALL_SOURCE_UNKNOWN;
 
-h2_pal_result_t time_get_monotonic(void *, uint64_t *out_ms) {
+h2_pal_result_t time_get_monotonic(void*, uint64_t* out_ms) {
   if (out_ms == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -614,7 +620,7 @@ h2_pal_result_t time_get_monotonic(void *, uint64_t *out_ms) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t time_get_monotonic_us(void *, uint64_t *out_us) {
+h2_pal_result_t time_get_monotonic_us(void*, uint64_t* out_us) {
   if (out_us == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -625,7 +631,7 @@ h2_pal_result_t time_get_monotonic_us(void *, uint64_t *out_us) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t time_get_wall(void *, uint64_t *out_ms) {
+h2_pal_result_t time_get_wall(void*, uint64_t* out_ms) {
   if (out_ms == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -642,7 +648,7 @@ h2_pal_result_t time_get_wall(void *, uint64_t *out_ms) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t time_set_wall(void *, uint64_t wall_ms) {
+h2_pal_result_t time_set_wall(void*, uint64_t wall_ms) {
   if (wall_ms == 0u || wall_ms > static_cast<uint64_t>(INT64_MAX)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -656,8 +662,7 @@ h2_pal_result_t time_set_wall(void *, uint64_t wall_ms) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t time_get_status(void *,
-                                h2_pal_time_wall_status_t *out_status) {
+h2_pal_result_t time_get_status(void*, h2_pal_time_wall_status_t* out_status) {
   if (out_status == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -667,7 +672,7 @@ h2_pal_result_t time_get_status(void *,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t time_sleep(void *, uint32_t ms) {
+h2_pal_result_t time_sleep(void*, uint32_t ms) {
   std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   return H2_PAL_OK;
 }
@@ -679,7 +684,7 @@ void initialize_core_apis() {
   allocator_vtable.alloc = desktop_alloc;
   allocator_vtable.realloc = desktop_realloc;
   allocator_vtable.free = desktop_free;
-  for (h2_pal_mem_api_t &allocator : allocators) {
+  for (h2_pal_mem_api_t& allocator : allocators) {
     allocator.user = nullptr;
     allocator.vtable = &allocator_vtable;
   }
@@ -732,71 +737,70 @@ void initialize_core_apis() {
 
 std::once_flag core_once;
 
-void ensure_core_apis() {
-  std::call_once(core_once, initialize_core_apis);
-}
+void ensure_core_apis() { std::call_once(core_once, initialize_core_apis); }
 
-} // namespace
+}  // namespace
 
 extern "C" {
 
-h2_pal_mem_api_t *h2_desktop_platform_default_allocator(void) {
+h2_pal_mem_api_t* h2_desktop_platform_default_allocator(void) {
   ensure_core_apis();
   return &allocators[0];
 }
 
-h2_pal_mem_api_t *h2_desktop_platform_psram_allocator(void) {
+h2_pal_mem_api_t* h2_desktop_platform_psram_allocator(void) {
   ensure_core_apis();
   return &allocators[1];
 }
 
-h2_pal_mem_api_t *h2_desktop_platform_internal_allocator(void) {
+h2_pal_mem_api_t* h2_desktop_platform_internal_allocator(void) {
   ensure_core_apis();
   return &allocators[2];
 }
 
-h2_pal_mem_api_t *h2_desktop_platform_dma_allocator(void) {
+h2_pal_mem_api_t* h2_desktop_platform_dma_allocator(void) {
   ensure_core_apis();
   return &allocators[3];
 }
 
-const h2_pal_log_api_t *h2_desktop_platform_log_api(void) {
+const h2_pal_log_api_t* h2_desktop_platform_log_api(void) {
   ensure_core_apis();
   return &log_api;
 }
 
-const h2_pal_queue_api_t *h2_desktop_platform_queue_api(void) {
+const h2_pal_queue_api_t* h2_desktop_platform_queue_api(void) {
   ensure_core_apis();
   return &queue_api;
 }
 
-const h2_pal_sync_api_t *h2_desktop_platform_sync_api(void) {
+const h2_pal_sync_api_t* h2_desktop_platform_sync_api(void) {
   ensure_core_apis();
   return &sync_api;
 }
 
-const h2_pal_task_api_t *h2_desktop_platform_task_api(void) {
+const h2_pal_task_api_t* h2_desktop_platform_task_api(void) {
   ensure_core_apis();
   return &task_api;
 }
 
-const h2_pal_time_api_t *h2_desktop_platform_time_api(void) {
+const h2_pal_time_api_t* h2_desktop_platform_time_api(void) {
   ensure_core_apis();
   return &time_api;
 }
 
-} // extern "C"
+}  // extern "C"
 
 h2_pal_result_t h2_desktop_platform_configure_task_stacks(
-    const h2_desktop_task_stack_config_t *config) {
+    const h2_desktop_task_stack_config_t* config) {
   if (config != nullptr &&
       (config->allocator == nullptr || config->allocator->vtable == nullptr ||
        config->allocator->vtable->alloc == nullptr ||
-       config->allocator->vtable->free == nullptr || config->resolve == nullptr))
+       config->allocator->vtable->free == nullptr ||
+       config->resolve == nullptr))
     return H2_PAL_ERR_INVALID_ARG;
   std::lock_guard<std::mutex> guard(task_stack_mutex);
-  if (task_stack_borrowers != 0)
-    return H2_PAL_ERR_BUSY;
-  task_stack_config = config != nullptr ? *config : h2_desktop_task_stack_config_t{};
+  if (task_stack_borrowers != 0) return H2_PAL_ERR_BUSY;
+  task_stack_config =
+      config != nullptr ? *config : h2_desktop_task_stack_config_t{};
   return H2_PAL_OK;
 }

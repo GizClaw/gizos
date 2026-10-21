@@ -28,16 +28,14 @@ EM_JS(void, h2_web_led_output_js,
 });
 /* clang-format on */
 
-static h2_pal_result_t led_descriptor(h2_web_platform_t *platform,
+static h2_pal_result_t led_descriptor(h2_web_platform_t* platform,
                                       h2_pal_led_id_t id,
-                                      h2_pal_periph_info_t *out_periph,
-                                      h2_pal_led_info_t *out_info) {
+                                      h2_pal_periph_info_t* out_periph,
+                                      h2_pal_led_info_t* out_info) {
   *out_info = (h2_pal_led_info_t){0};
-  if (!platform->led_periph.vtable)
-    return H2_PAL_ERR_UNSUPPORTED;
+  if (!platform->led_periph.vtable) return H2_PAL_ERR_UNSUPPORTED;
   h2_pal_result_t rc = h2_pal_periph_get(&platform->led_periph, id, out_periph);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (out_periph->type != H2_PAL_PERIPH_TYPE_LED_STRIP)
     return H2_PAL_ERR_NOT_FOUND;
   if (!out_periph->payload ||
@@ -56,27 +54,24 @@ static h2_pal_result_t led_descriptor(h2_web_platform_t *platform,
                                   .frame_commit_is_atomic = 1};
   return H2_PAL_OK;
 }
-static h2_pal_result_t led_info(void *user, h2_pal_led_id_t id,
-                                h2_pal_led_info_t *out_info) {
+static h2_pal_result_t led_info(void* user, h2_pal_led_id_t id,
+                                h2_pal_led_info_t* out_info) {
   H2_WEB_STATE_GUARD();
-  if (!out_info)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (!out_info) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_periph_info_t periph = {0};
   return led_descriptor(user, id, &periph, out_info);
 }
-static h2_pal_result_t led_write(void *user, h2_pal_led_id_t id,
-                                 const h2_pal_led_color_t *pixels, size_t count,
+static h2_pal_result_t led_write(void* user, h2_pal_led_id_t id,
+                                 const h2_pal_led_color_t* pixels, size_t count,
                                  int operation, uint32_t value) {
   H2_WEB_STATE_GUARD();
   h2_pal_periph_info_t periph = {0};
   h2_pal_led_info_t info;
   h2_pal_result_t rc = led_descriptor(user, id, &periph, &info);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   if (operation == 0 && (!pixels || count != info.pixel_count))
     return H2_PAL_ERR_INVALID_ARG;
-  if (operation == 2 && value > 100)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (operation == 2 && value > 100) return H2_PAL_ERR_INVALID_ARG;
   /* Explicit RGBA bytes avoid coupling JavaScript to C struct layout. */
   uint8_t bytes[256 * 4];
   if (operation == 0)
@@ -90,50 +85,47 @@ static h2_pal_result_t led_write(void *user, h2_pal_led_id_t id,
     }
   if (operation == 1 && info.channels_per_pixel == 3 && (value >> 24))
     return H2_PAL_ERR_UNSUPPORTED;
-  const char *name = periph.name;
-  const uint8_t *data = bytes;
+  const char* name = periph.name;
+  const uint8_t* data = bytes;
   uint32_t length = info.pixel_count;
   (void)h2_web_main_call(
       h2_web_led_output_js,
-      (const void *[]){&id, &name, &data, &length, &operation, &value});
+      (const void*[]){&id, &name, &data, &length, &operation, &value});
   return H2_PAL_OK;
 }
-static h2_pal_result_t led_frame(void *user, h2_pal_led_id_t id,
-                                 const h2_pal_led_color_t *pixels,
+static h2_pal_result_t led_frame(void* user, h2_pal_led_id_t id,
+                                 const h2_pal_led_color_t* pixels,
                                  size_t count) {
   return led_write(user, id, pixels, count, 0, 0);
 }
-static h2_pal_result_t led_solid(void *user, h2_pal_led_id_t id,
+static h2_pal_result_t led_solid(void* user, h2_pal_led_id_t id,
                                  h2_pal_led_color_t color) {
   const uint32_t value = color.r | ((uint32_t)color.g << 8) |
                          ((uint32_t)color.b << 16) | ((uint32_t)color.w << 24);
   return led_write(user, id, NULL, 0, 1, value);
 }
-static h2_pal_result_t led_clear(void *user, h2_pal_led_id_t id) {
+static h2_pal_result_t led_clear(void* user, h2_pal_led_id_t id) {
   return led_solid(user, id, (h2_pal_led_color_t){0});
 }
-static h2_pal_result_t led_brightness(void *user, h2_pal_led_id_t id,
+static h2_pal_result_t led_brightness(void* user, h2_pal_led_id_t id,
                                       uint8_t percent) {
   return led_write(user, id, NULL, 0, 2, percent);
 }
-h2_pal_result_t
-h2_web_platform_configure_leds(h2_web_platform_t *platform,
-                               const h2_pal_periph_api_t *periph) {
+h2_pal_result_t h2_web_platform_configure_leds(
+    h2_web_platform_t* platform, const h2_pal_periph_api_t* periph) {
   H2_WEB_STATE_GUARD();
-  if (!platform || !periph)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (platform->led_api.vtable)
-    return H2_PAL_ERR_INVALID_STATE;
-  static const h2_pal_led_vtable_t vtable = {.get_info = led_info,
-                                             .set_frame = led_frame,
-                                             .set_solid = led_solid,
-                                             .clear = led_clear,
-                                             .set_brightness_percent =
-                                                 led_brightness};
+  if (!platform || !periph) return H2_PAL_ERR_INVALID_ARG;
+  if (platform->led_api.vtable) return H2_PAL_ERR_INVALID_STATE;
+  static const h2_pal_led_vtable_t vtable = {
+      .get_info = led_info,
+      .set_frame = led_frame,
+      .set_solid = led_solid,
+      .clear = led_clear,
+      .set_brightness_percent = led_brightness};
   platform->led_periph = *periph;
   platform->led_api = (h2_pal_led_api_t){platform, &vtable};
   return H2_PAL_OK;
 }
-const h2_pal_led_api_t *h2_web_platform_led_api(h2_web_platform_t *platform) {
+const h2_pal_led_api_t* h2_web_platform_led_api(h2_web_platform_t* platform) {
   return platform ? &platform->led_api : NULL;
 }

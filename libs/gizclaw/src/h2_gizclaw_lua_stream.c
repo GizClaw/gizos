@@ -14,11 +14,11 @@
 
 struct h2_gizclaw_lua_stream {
   h2_gizclaw_config_t config;
-  const h2_pal_task_api_t *task_api;
-  const h2_pal_sync_api_t *sync;
-  h2_pal_task_t *task;
-  h2_pal_mutex_t *mutex;
-  h2_pal_cond_t *cond;
+  const h2_pal_task_api_t* task_api;
+  const h2_pal_sync_api_t* sync;
+  h2_pal_task_t* task;
+  h2_pal_mutex_t* mutex;
+  h2_pal_cond_t* cond;
   h2_atomic_bool_t stopping, canceled;
   bool atomics_ready, active, closed, eos, ready;
   uint64_t length;
@@ -30,34 +30,32 @@ struct h2_gizclaw_lua_stream {
   gzc_rpc_stream_provider_t provider;
 };
 
-static void lock(h2_gizclaw_lua_stream_t *s) {
+static void lock(h2_gizclaw_lua_stream_t* s) {
   (void)h2_pal_mutex_lock(s->sync, s->mutex);
 }
-static void unlock(h2_gizclaw_lua_stream_t *s) {
+static void unlock(h2_gizclaw_lua_stream_t* s) {
   (void)h2_pal_mutex_unlock(s->sync, s->mutex);
 }
-static void wake(h2_gizclaw_lua_stream_t *s) {
+static void wake(h2_gizclaw_lua_stream_t* s) {
   (void)h2_pal_cond_broadcast(s->sync, s->cond);
 }
-static int canceled(void *user) {
-  h2_gizclaw_lua_stream_t *s = user;
+static int canceled(void* user) {
+  h2_gizclaw_lua_stream_t* s = user;
   return h2_atomic_load(&s->stopping) || h2_atomic_load(&s->canceled) ||
          (s->config.cancel_requested &&
           s->config.cancel_requested(s->config.cancel_user));
 }
 static int sdk_result(int result) {
-  if (result == H2_PAL_OK)
-    return GZC_OK;
+  if (result == H2_PAL_OK) return GZC_OK;
   if (result == H2_PAL_ERR_FORMAT || result == H2_PAL_ERR_INVALID_ARG)
     return GZC_ERR_INVALID_ARGUMENT;
   if (result == H2_PAL_ERR_UNSUPPORTED || result == H2_PAL_ERR_NO_SPACE)
     return GZC_ERR_UNSUPPORTED;
-  if (result == H2_PAL_ERR_CLOSED)
-    return GZC_ERR_CLOSED;
+  if (result == H2_PAL_ERR_CLOSED) return GZC_ERR_CLOSED;
   return GZC_ERR_RPC;
 }
 
-static int backpressure(h2_gizclaw_lua_stream_t *s) {
+static int backpressure(h2_gizclaw_lua_stream_t* s) {
   /* The SDK may retry from event-stream reads as well as top-level poll.
    * Yield only after consuming nothing: a high-priority poll owner must let
    * the installation worker progress even when both share one CPU. */
@@ -66,15 +64,14 @@ static int backpressure(h2_gizclaw_lua_stream_t *s) {
              : GZC_ERR_RPC;
 }
 
-static void worker(void *user) {
-  h2_gizclaw_lua_stream_t *s = user;
+static void worker(void* user) {
+  h2_gizclaw_lua_stream_t* s = user;
   lock(s);
   while (!h2_atomic_load(&s->stopping)) {
     while (!s->active && !h2_atomic_load(&s->stopping))
       (void)h2_pal_cond_wait(s->sync, s->cond, s->mutex, 100u);
-    if (!s->active)
-      break;
-    h2_lua_app_install_t *install = NULL;
+    if (!s->active) break;
+    h2_lua_app_install_t* install = NULL;
     unlock(s);
     int result = h2_lua_app_install_begin(s->config.lua_apps, s->length,
                                           s->sha256, canceled, s, &install);
@@ -88,8 +85,7 @@ static void worker(void *user) {
         size_t size = s->pending;
         unlock(s);
         result = h2_lua_app_install_write(install, s->bytes, size);
-        if (result != H2_PAL_OK)
-          h2_lua_app_install_abort(&install);
+        if (result != H2_PAL_OK) h2_lua_app_install_abort(&install);
         lock(s);
         s->pending = 0;
         if (result != H2_PAL_OK) {
@@ -102,8 +98,7 @@ static void worker(void *user) {
         result = h2_lua_app_install_finish(&install, &info);
         lock(s);
         s->result = result;
-        if (result == H2_PAL_OK)
-          s->info = info;
+        if (result == H2_PAL_OK) s->info = info;
         s->ready = true;
       } else {
         (void)h2_pal_cond_wait(s->sync, s->cond, s->mutex, 100u);
@@ -118,14 +113,14 @@ static void worker(void *user) {
   unlock(s);
 }
 
-static int begin(void *user, int method, gzc_str_t metadata,
-                 void **out_session) {
+static int begin(void* user, int method, gzc_str_t metadata,
+                 void** out_session) {
   (void)method;
-  h2_gizclaw_lua_stream_t *s = user;
+  h2_gizclaw_lua_stream_t* s = user;
   *out_session = NULL;
   gizclaw_rpc_v1_ClientLuaAppInstallStreamRequest request = {0};
   pb_istream_t input =
-      pb_istream_from_buffer((const pb_byte_t *)metadata.data, metadata.len);
+      pb_istream_from_buffer((const pb_byte_t*)metadata.data, metadata.len);
   if (!pb_decode(&input, gizclaw_rpc_v1_ClientLuaAppInstallStreamRequest_fields,
                  &request) ||
       !request.content_length || request.content_length > 512u * 1024u ||
@@ -151,8 +146,8 @@ static int begin(void *user, int method, gzc_str_t metadata,
   unlock(s);
   return GZC_OK;
 }
-static int write_chunk(void *session, const uint8_t *bytes, size_t size) {
-  h2_gizclaw_lua_stream_t *s = session;
+static int write_chunk(void* session, const uint8_t* bytes, size_t size) {
+  h2_gizclaw_lua_stream_t* s = session;
   if (!bytes || !size || size > sizeof(s->bytes))
     return GZC_ERR_INVALID_ARGUMENT;
   bool interrupted = canceled(s);
@@ -172,11 +167,10 @@ static int write_chunk(void *session, const uint8_t *bytes, size_t size) {
   unlock(s);
   return result == GZC_ERR_WOULD_BLOCK ? backpressure(s) : result;
 }
-static int finish(void *session, gzc_rpc_provider_respond_fn respond,
-                  void *user) {
-  h2_gizclaw_lua_stream_t *s = session;
-  if (!respond)
-    return GZC_ERR_INVALID_ARGUMENT;
+static int finish(void* session, gzc_rpc_provider_respond_fn respond,
+                  void* user) {
+  h2_gizclaw_lua_stream_t* s = session;
+  if (!respond) return GZC_ERR_INVALID_ARGUMENT;
   bool interrupted = canceled(s);
   lock(s);
   if (!s->active || s->closed || interrupted) {
@@ -221,11 +215,10 @@ static int finish(void *session, gzc_rpc_provider_respond_fn respond,
   }
   return respond(user, &response);
 }
-static void close_stream(void *session, int status) {
-  h2_gizclaw_lua_stream_t *s = session;
+static void close_stream(void* session, int status) {
+  h2_gizclaw_lua_stream_t* s = session;
   lock(s);
-  if (status != GZC_OK)
-    h2_atomic_store(&s->canceled, true);
+  if (status != GZC_OK) h2_atomic_store(&s->canceled, true);
   s->closed = true;
   wake(s);
   unlock(s);
@@ -233,25 +226,22 @@ static void close_stream(void *session, int status) {
    * consumed the installer. stop joins that worker before destroy frees it. */
 }
 
-int h2_gizclaw_lua_stream_create_internal(const h2_gizclaw_config_t *config,
-                                          const h2_pal_task_api_t *task,
-                                          const h2_pal_sync_api_t *sync,
-                                          h2_gizclaw_lua_stream_t **out) {
+int h2_gizclaw_lua_stream_create_internal(const h2_gizclaw_config_t* config,
+                                          const h2_pal_task_api_t* task,
+                                          const h2_pal_sync_api_t* sync,
+                                          h2_gizclaw_lua_stream_t** out) {
   *out = NULL;
-  if (!h2_lua_apps_can_install(config->lua_apps))
-    return H2_PAL_OK;
+  if (!h2_lua_apps_can_install(config->lua_apps)) return H2_PAL_OK;
   if (!config->time || !config->time->vtable || !config->time->vtable->sleep_ms)
     return H2_PAL_ERR_UNSUPPORTED;
-  h2_gizclaw_lua_stream_t *s = h2_pal_mem_alloc(config->allocator, sizeof(*s));
-  if (!s)
-    return H2_PAL_ERR_NO_MEMORY;
+  h2_gizclaw_lua_stream_t* s = h2_pal_mem_alloc(config->allocator, sizeof(*s));
+  if (!s) return H2_PAL_ERR_NO_MEMORY;
   memset(s, 0, sizeof(*s));
   s->config = *config;
   s->task_api = task;
   s->sync = sync;
   int rc = H2_PAL_ERR_NO_MEMORY;
-  if (h2_atomic_bool_init(&s->stopping, false) != H2_ATOMIC_OK)
-    goto fail;
+  if (h2_atomic_bool_init(&s->stopping, false) != H2_ATOMIC_OK) goto fail;
   if (h2_atomic_bool_init(&s->canceled, false) != H2_ATOMIC_OK) {
     h2_atomic_bool_destroy(&s->stopping);
     goto fail;
@@ -262,10 +252,8 @@ int h2_gizclaw_lua_stream_create_internal(const h2_gizclaw_config_t *config,
   const h2_pal_cond_config_t cond = {.name = "lua-install",
                                      .allocator = config->allocator};
   rc = h2_pal_mutex_create(sync, &mutex, &s->mutex);
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_cond_create(sync, &cond, &s->cond);
-  if (rc != H2_PAL_OK)
-    goto fail;
+  if (rc == H2_PAL_OK) rc = h2_pal_cond_create(sync, &cond, &s->cond);
+  if (rc != H2_PAL_OK) goto fail;
   s->provider =
       (gzc_rpc_stream_provider_t){s, begin, write_chunk, finish, close_stream};
   *out = s;
@@ -274,49 +262,40 @@ fail:
   h2_gizclaw_lua_stream_destroy_internal(s);
   return rc;
 }
-int h2_gizclaw_lua_stream_start_internal(h2_gizclaw_lua_stream_t *s) {
-  if (!s)
-    return H2_PAL_OK;
-  if (s->task || h2_atomic_load(&s->stopping))
-    return H2_PAL_ERR_INVALID_STATE;
+int h2_gizclaw_lua_stream_start_internal(h2_gizclaw_lua_stream_t* s) {
+  if (!s) return H2_PAL_OK;
+  if (s->task || h2_atomic_load(&s->stopping)) return H2_PAL_ERR_INVALID_STATE;
   const h2_pal_task_options_t options = {
       .name = H2_GIZCLAW_LUA_INSTALL_TASK_NAME_VALUE, .min_stack_size = 8192u};
   return h2_pal_task_start(s->task_api, &options, worker, s, &s->task);
 }
-void h2_gizclaw_lua_stream_cancel_internal(h2_gizclaw_lua_stream_t *s) {
-  if (!s)
-    return;
+void h2_gizclaw_lua_stream_cancel_internal(h2_gizclaw_lua_stream_t* s) {
+  if (!s) return;
   h2_atomic_store(&s->stopping, true);
   h2_atomic_store(&s->canceled, true);
   lock(s);
   wake(s);
   unlock(s);
 }
-int h2_gizclaw_lua_stream_stop_internal(h2_gizclaw_lua_stream_t *s) {
-  if (!s)
-    return H2_PAL_OK;
+int h2_gizclaw_lua_stream_stop_internal(h2_gizclaw_lua_stream_t* s) {
+  if (!s) return H2_PAL_OK;
   h2_gizclaw_lua_stream_cancel_internal(s);
-  if (!s->task)
-    return H2_PAL_OK;
+  if (!s->task) return H2_PAL_OK;
   int rc = h2_pal_task_join(s->task_api, s->task);
-  if (rc == H2_PAL_OK)
-    s->task = NULL;
+  if (rc == H2_PAL_OK) s->task = NULL;
   return rc;
 }
-void h2_gizclaw_lua_stream_destroy_internal(h2_gizclaw_lua_stream_t *s) {
-  if (!s || s->task)
-    return;
-  if (s->cond)
-    (void)h2_pal_cond_destroy(s->sync, s->cond);
-  if (s->mutex)
-    (void)h2_pal_mutex_destroy(s->sync, s->mutex);
+void h2_gizclaw_lua_stream_destroy_internal(h2_gizclaw_lua_stream_t* s) {
+  if (!s || s->task) return;
+  if (s->cond) (void)h2_pal_cond_destroy(s->sync, s->cond);
+  if (s->mutex) (void)h2_pal_mutex_destroy(s->sync, s->mutex);
   if (s->atomics_ready) {
     h2_atomic_bool_destroy(&s->canceled);
     h2_atomic_bool_destroy(&s->stopping);
   }
   h2_pal_mem_free(s->config.allocator, s);
 }
-const gzc_rpc_stream_provider_t *
-h2_gizclaw_lua_stream_provider_internal(h2_gizclaw_lua_stream_t *s) {
+const gzc_rpc_stream_provider_t* h2_gizclaw_lua_stream_provider_internal(
+    h2_gizclaw_lua_stream_t* s) {
   return s ? &s->provider : NULL;
 }

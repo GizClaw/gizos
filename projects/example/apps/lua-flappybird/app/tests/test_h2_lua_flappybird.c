@@ -15,21 +15,21 @@ typedef struct fixture {
   size_t ready;
 } fixture_t;
 
-static int display_open(void *user) {
-  ((fixture_t *)user)->display_open++;
+static int display_open(void* user) {
+  ((fixture_t*)user)->display_open++;
   return H2_PAL_OK;
 }
 
-static int display_info(void *user, h2_display_info_t *out_info) {
+static int display_info(void* user, h2_display_info_t* out_info) {
   (void)user;
   *out_info = (h2_display_info_t){368, 448, H2_DISPLAY_PIXEL_RGB565};
   return H2_PAL_OK;
 }
 
-static int draw_bitmap(void *user, const h2_display_rect_t *rect,
-                       const void *pixels, size_t stride,
+static int draw_bitmap(void* user, const h2_display_rect_t* rect,
+                       const void* pixels, size_t stride,
                        h2_display_pixel_format_t format) {
-  fixture_t *fixture = user;
+  fixture_t* fixture = user;
   assert(rect->x == 0 && rect->y == 0 && rect->width == 368 &&
          rect->height == 448);
   assert(pixels != NULL && stride == 368u * sizeof(uint16_t));
@@ -38,42 +38,42 @@ static int draw_bitmap(void *user, const h2_display_rect_t *rect,
   return H2_PAL_OK;
 }
 
-static int display_present(void *user) {
-  ((fixture_t *)user)->present++;
+static int display_present(void* user) {
+  ((fixture_t*)user)->present++;
   return H2_PAL_OK;
 }
 
-static int display_close(void *user) {
-  ((fixture_t *)user)->display_close++;
+static int display_close(void* user) {
+  ((fixture_t*)user)->display_close++;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_open(void *user) {
-  ((fixture_t *)user)->touch_open++;
+static h2_pal_result_t touch_open(void* user) {
+  ((fixture_t*)user)->touch_open++;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_info(void *user, h2_pal_touch_info_t *out_info) {
+static h2_pal_result_t touch_info(void* user, h2_pal_touch_info_t* out_info) {
   (void)user;
   *out_info = (h2_pal_touch_info_t){368u, 448u};
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out_event) {
+static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out_event) {
   (void)user;
   (void)out_event;
   return H2_PAL_ERR_WOULD_BLOCK;
 }
 
-static h2_pal_result_t touch_close(void *user) {
-  ((fixture_t *)user)->touch_close++;
+static h2_pal_result_t touch_close(void* user) {
+  ((fixture_t*)user)->touch_close++;
   return H2_PAL_OK;
 }
 
-static int should_stop(void *user) { return ((fixture_t *)user)->ready != 0u; }
+static int should_stop(void* user) { return ((fixture_t*)user)->ready != 0u; }
 
-static h2_pal_result_t ready(void *user) {
-  ((fixture_t *)user)->ready++;
+static h2_pal_result_t ready(void* user) {
+  ((fixture_t*)user)->ready++;
   return H2_PAL_OK;
 }
 
@@ -102,7 +102,7 @@ int main(void) {
   runtime_config.task = h2_desktop_platform_task_api();
   runtime_config.sync = h2_desktop_platform_sync_api();
   runtime_config.touch = &touch;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&runtime_config, &runtime) == H2_PAL_OK);
   assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
   assert(h2_lua_flappybird_run(

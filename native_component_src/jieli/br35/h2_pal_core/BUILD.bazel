@@ -22,8 +22,8 @@ PROVIDER_SRCS = [
 firmware_native_component(
     name = "h2_pal_core",
     srcs = PROVIDER_SRCS + [
-        "src/h2_jieli_br35_sdk_port.c",
         "src/h2_jieli_br35_atomic_provider.c",
+        "src/h2_jieli_br35_sdk_port.c",
     ],
     hdrs = glob(["include/*.h"]),
     component_name = "h2_pal_core",
@@ -33,7 +33,11 @@ firmware_native_component(
         "native_component_src/jieli/br35/h2_pal_core/include",
     ],
     tags = ["manual"],
-    deps = ["//libs/atomic", "//libs/atomic:unsupported_template", "//libs/pal"],
+    deps = [
+        "//libs/atomic",
+        "//libs/atomic:unsupported_template",
+        "//libs/pal",
+    ],
 )
 
 cc_library(

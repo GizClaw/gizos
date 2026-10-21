@@ -29,20 +29,19 @@ typedef uint32_t h2_runtime_sequence_t;
  * so any real sequence is after it and nothing is after a real sequence
  * when compared with 0 on the left.
  */
-static inline int h2_runtime_sequence_after(
-    h2_runtime_sequence_t a,
-    h2_runtime_sequence_t b) {
-    if (a == 0u || b == 0u) {
-        return a != 0u && b == 0u;
-    }
-    return (int32_t)(a - b) > 0;
+static inline int h2_runtime_sequence_after(h2_runtime_sequence_t a,
+                                            h2_runtime_sequence_t b) {
+  if (a == 0u || b == 0u) {
+    return a != 0u && b == 0u;
+  }
+  return (int32_t)(a - b) > 0;
 }
 typedef uint64_t h2_runtime_timestamp_ms_t;
 
 typedef struct h2_runtime_string {
-    /* Byte span; data is not guaranteed to be NUL-terminated. */
-    const char *data;
-    size_t len;
+  /* Byte span; data is not guaranteed to be NUL-terminated. */
+  const char* data;
+  size_t len;
 } h2_runtime_string_t;
 
 #ifdef __cplusplus

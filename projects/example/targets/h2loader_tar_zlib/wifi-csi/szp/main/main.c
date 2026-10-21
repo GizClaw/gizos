@@ -13,13 +13,13 @@
 
 #include <stdio.h>
 
-static int
-smoke_start_return_console(const h2_runtime_config_t *runtime_config) {
-  return h2_esp_h2loader_app_commands_prepare_serial(
-      runtime_config, "smoke-wifi-csi", 1u, 3u);
+static int smoke_start_return_console(
+    const h2_runtime_config_t* runtime_config) {
+  return h2_esp_h2loader_app_commands_prepare_serial(runtime_config,
+                                                     "smoke-wifi-csi", 1u, 3u);
 }
 
-static void smoke_confirm_app(h2_runtime_t *runtime) {
+static void smoke_confirm_app(h2_runtime_t* runtime) {
   h2_pal_result_t confirm_rc = h2_esp_platform_confirm_running_app();
   if (confirm_rc != H2_PAL_OK) {
     printf("H2_SMOKE_WIFI_CSI_FAIL stage=ota_confirm rc=%d\n", (int)confirm_rc);
@@ -31,8 +31,8 @@ static void smoke_confirm_app(h2_runtime_t *runtime) {
   }
 }
 
-static void smoke_ready(void *user, int rc) {
-  h2_runtime_t *runtime = user;
+static void smoke_ready(void* user, int rc) {
+  h2_runtime_t* runtime = user;
   if (rc != H2_DISPLAY_OK) {
     printf("H2_SMOKE_WIFI_CSI_FAIL stage=initial_render rc=%d\n", rc);
     return;
@@ -41,10 +41,10 @@ static void smoke_ready(void *user, int rc) {
   smoke_confirm_app(runtime);
 }
 
-static void image_entry(void *user) {
+static void image_entry(void* user) {
   (void)user;
   h2_runtime_config_t board_config = {0};
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   int rc = h2_esp_board_runtime_config(&board_config);
   if (rc != H2_PAL_OK) {
     printf("H2_SMOKE_WIFI_CSI_FAIL stage=runtime_config rc=%d\n", rc);
@@ -83,9 +83,9 @@ static void image_entry(void *user) {
 }
 
 void app_main(void) {
-    if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
-        return;
-    }
+  if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
+    return;
+  }
   h2_pal_result_t rc =
       h2_esp_board_start_entry_task("szp/wifi-csi", image_entry, NULL);
   if (rc != H2_PAL_OK) {

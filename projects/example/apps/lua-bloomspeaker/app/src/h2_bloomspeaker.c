@@ -31,15 +31,15 @@ static int supported_event(h2_runtime_event_kind_t kind) {
          kind == H2_RUNTIME_COMPONENT_EVENT_ERROR;
 }
 
-static h2_pal_result_t poll_button_state(
-    h2_runtime_t *runtime, h2_runtime_component_id_t component_id,
-    h2_runtime_button_state_t *out_state) {
+static h2_pal_result_t poll_button_state(h2_runtime_t* runtime,
+                                         h2_runtime_component_id_t component_id,
+                                         h2_runtime_button_state_t* out_state) {
   if (component_id == H2_RUNTIME_COMPONENT_ID_NONE) {
     return H2_PAL_ERR_NOT_FOUND;
   }
   h2_runtime_button_state_t state = {0};
-  h2_pal_result_t result = h2_runtime_component_state_button(
-      runtime, component_id, &state);
+  h2_pal_result_t result =
+      h2_runtime_component_state_button(runtime, component_id, &state);
   if (result != H2_PAL_OK) {
     return result;
   }
@@ -53,18 +53,17 @@ static h2_pal_result_t poll_button_state(
   return H2_PAL_OK;
 }
 
-static void report_pair_button(h2_bloomspeaker_controller_t *controller,
-                               const char *action) {
+static void report_pair_button(h2_bloomspeaker_controller_t* controller,
+                               const char* action) {
   h2_bloomspeaker_snapshot_t snapshot;
   h2_bloomspeaker_controller_snapshot(controller, &snapshot);
-  printf("H2_BLOOMSPEAKER_BUTTON component=pair action=%s state=%s\n",
-         action, h2_bloomspeaker_state_name(snapshot.state));
+  printf("H2_BLOOMSPEAKER_BUTTON component=pair action=%s state=%s\n", action,
+         h2_bloomspeaker_state_name(snapshot.state));
 }
 
-h2_pal_result_t h2_bloomspeaker_run(
-    h2_runtime_t *runtime,
-    const h2_bloomspeaker_config_t *config) {
-  h2_lua_host_t *host = NULL;
+h2_pal_result_t h2_bloomspeaker_run(h2_runtime_t* runtime,
+                                    const h2_bloomspeaker_config_t* config) {
+  h2_lua_host_t* host = NULL;
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   h2_lua_job_status_t status;
   h2_pal_result_t result;
@@ -72,7 +71,7 @@ h2_pal_result_t h2_bloomspeaker_run(
   h2_bloomspeaker_controller_t controller;
   h2_bloomspeaker_hold_tracker_t power_hold = {0};
   h2_bloomspeaker_hold_tracker_t pairing_hold = {0};
-  h2_bloomspeaker_engine_t *engine = NULL;
+  h2_bloomspeaker_engine_t* engine = NULL;
   h2_atomic_bool_t shutdown_fade_requested = {0};
   h2_bloomspeaker_lua_context_t lua_context = {
       .runtime = runtime,
@@ -110,12 +109,10 @@ h2_pal_result_t h2_bloomspeaker_run(
   result = h2_bloomspeaker_engine_start(
       runtime, &controller,
       &(h2_bloomspeaker_engine_config_t){
-          .pause_management_advertising =
-              config->pause_management_advertising,
+          .pause_management_advertising = config->pause_management_advertising,
           .resume_management_advertising =
               config->resume_management_advertising,
-          .management_advertising_user =
-              config->management_advertising_user,
+          .management_advertising_user = config->management_advertising_user,
       },
       &engine);
   if (result != H2_PAL_OK) {
@@ -169,18 +166,18 @@ h2_pal_result_t h2_bloomspeaker_run(
       (void)h2_lua_job_cancel(host, job_id);
     }
     h2_runtime_button_state_t power_state = {0};
-    h2_pal_result_t power_result = poll_button_state(
-        runtime, config->power_component_id, &power_state);
+    h2_pal_result_t power_result =
+        poll_button_state(runtime, config->power_component_id, &power_state);
     if (power_result == H2_PAL_OK) {
-      if (h2_bloomspeaker_hold_tracker_update(
-              &power_hold, power_state.pressed, now_ms,
-              H2_BLOOMSPEAKER_POWER_HOLD_MS)) {
+      if (h2_bloomspeaker_hold_tracker_update(&power_hold, power_state.pressed,
+                                              now_ms,
+                                              H2_BLOOMSPEAKER_POWER_HOLD_MS)) {
         if (!shutdown_requested) {
           shutdown_requested = 1;
           shutdown_deadline_ms =
               now_ms + H2_BLOOMSPEAKER_SHUTDOWN_FADE_TIMEOUT_MS;
           h2_atomic_store_explicit(&shutdown_fade_requested, true,
-                                H2_ATOMIC_RELEASE);
+                                   H2_ATOMIC_RELEASE);
           printf("H2_BLOOMSPEAKER_POWER action=fade_requested\n");
         }
       }
@@ -192,12 +189,12 @@ h2_pal_result_t h2_bloomspeaker_run(
     h2_pal_result_t pairing_result = poll_button_state(
         runtime, config->pairing_component_id, &pairing_state);
     if (!shutdown_requested && pairing_result == H2_PAL_OK) {
-      const int released_after_trigger =
-          pairing_hold.pressed && pairing_hold.triggered &&
-          !pairing_state.pressed;
-      if (h2_bloomspeaker_hold_tracker_update(
-              &pairing_hold, pairing_state.pressed, now_ms,
-              H2_BLOOMSPEAKER_PAIR_HOLD_MS)) {
+      const int released_after_trigger = pairing_hold.pressed &&
+                                         pairing_hold.triggered &&
+                                         !pairing_state.pressed;
+      if (h2_bloomspeaker_hold_tracker_update(&pairing_hold,
+                                              pairing_state.pressed, now_ms,
+                                              H2_BLOOMSPEAKER_PAIR_HOLD_MS)) {
         h2_bloomspeaker_controller_long_press(&controller, now_ms);
         report_pair_button(&controller, "hold");
       } else if (released_after_trigger) {
@@ -265,8 +262,8 @@ h2_pal_result_t h2_bloomspeaker_run(
                      "terminal state=%d resumes=%llu memory=%zu message=%s",
                      (int)status.state, (unsigned long long)status.resume_count,
                      status.memory_used, status.message);
-      (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO,
-                             "lua-bloomspeaker", diagnostic);
+      (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "lua-bloomspeaker",
+                             diagnostic);
     }
     if (status.state == H2_LUA_JOB_FAILED ||
         status.state == H2_LUA_JOB_TIMED_OUT) {
@@ -284,8 +281,7 @@ h2_pal_result_t h2_bloomspeaker_run(
     result = engine_result;
   }
   if (shutdown_requested) {
-    h2_pal_result_t shutdown_result =
-        h2_pal_power_shutdown(runtime->power, 0u);
+    h2_pal_result_t shutdown_result = h2_pal_power_shutdown(runtime->power, 0u);
     printf("H2_BLOOMSPEAKER_POWER action=shutdown rc=%d\n",
            (int)shutdown_result);
     if (result == H2_PAL_OK) {

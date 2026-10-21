@@ -2,176 +2,193 @@
 
 #include <string.h>
 
-static void counter_increment(h2_atomic_u32_t *counter) {
-    (void)h2_atomic_u32_fetch_add(counter, 1u, H2_ATOMIC_RELAXED);
+static void counter_increment(h2_atomic_u32_t* counter) {
+  (void)h2_atomic_u32_fetch_add(counter, 1u, H2_ATOMIC_RELAXED);
 }
 
-static uint32_t counter_load(const h2_atomic_u32_t *counter) {
-    return h2_atomic_u32_load(counter, H2_ATOMIC_RELAXED);
+static uint32_t counter_load(const h2_atomic_u32_t* counter) {
+  return h2_atomic_u32_load(counter, H2_ATOMIC_RELAXED);
 }
 
-static void counters_destroy(h2_modem_urc_worker_t *worker) {
-    h2_atomic_u32_destroy(&worker->accepted_atomic);
-    h2_atomic_u32_destroy(&worker->handled_atomic);
-    h2_atomic_u32_destroy(&worker->full_atomic);
-    h2_atomic_u32_destroy(&worker->truncated_atomic);
+static void counters_destroy(h2_modem_urc_worker_t* worker) {
+  h2_atomic_u32_destroy(&worker->accepted_atomic);
+  h2_atomic_u32_destroy(&worker->handled_atomic);
+  h2_atomic_u32_destroy(&worker->full_atomic);
+  h2_atomic_u32_destroy(&worker->truncated_atomic);
 }
 
 typedef struct urc_line {
-    char text[H2_MODEM_URC_LINE_MAX];
+  char text[H2_MODEM_URC_LINE_MAX];
 } urc_line_t;
 
-static void urc_task(void *user) {
-    h2_modem_urc_worker_t *worker = user;
-    for (;;) {
-        urc_line_t line;
-        h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_recv(
-            worker->queue_api, worker->queue, &line,
-            worker->idle != NULL ? worker->idle_timeout_ms : H2_PAL_QUEUE_WAIT_FOREVER);
-        if (rc == H2_PAL_ERR_TIMEOUT && worker->idle != NULL) {
-            worker->idle(worker->user);
-            continue;
-        }
-        if (rc != H2_PAL_OK) {
-            worker->result = rc == H2_PAL_ERR_CLOSED ? H2_PAL_OK : rc;
-            return;
-        }
-        worker->handler(worker->user, line.text);
-        counter_increment(&worker->handled_atomic);
+static void urc_task(void* user) {
+  h2_modem_urc_worker_t* worker = user;
+  for (;;) {
+    urc_line_t line;
+    h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_recv(
+        worker->queue_api, worker->queue, &line,
+        worker->idle != NULL ? worker->idle_timeout_ms
+                             : H2_PAL_QUEUE_WAIT_FOREVER);
+    if (rc == H2_PAL_ERR_TIMEOUT && worker->idle != NULL) {
+      worker->idle(worker->user);
+      continue;
     }
-}
-
-h2_pal_result_t h2_modem_urc_start(
-    h2_modem_urc_worker_t *worker,
-    const h2_pal_task_api_t *task_api,
-    const h2_pal_queue_api_t *queue_api,
-    const h2_pal_mem_api_t *allocator,
-    h2_modem_urc_handler_t handler,
-    void *user) {
-    return h2_modem_urc_start_idle(worker, task_api, queue_api, allocator, handler, user, NULL, 0u);
-}
-
-h2_pal_result_t h2_modem_urc_start_idle(
-    h2_modem_urc_worker_t *worker, const h2_pal_task_api_t *task_api,
-    const h2_pal_queue_api_t *queue_api, const h2_pal_mem_api_t *allocator,
-    h2_modem_urc_handler_t handler, void *user, void (*idle)(void *user),
-    uint32_t idle_timeout_ms) {
-    if ((idle != NULL && (idle_timeout_ms == 0u || idle_timeout_ms == H2_PAL_QUEUE_WAIT_FOREVER)) ||
-        worker == NULL || handler == NULL || task_api == NULL ||
-        task_api->vtable == NULL || task_api->vtable->start == NULL ||
-        task_api->vtable->join == NULL || queue_api == NULL ||
-        queue_api->vtable == NULL || queue_api->vtable->create == NULL ||
-        queue_api->vtable->destroy == NULL || queue_api->vtable->send == NULL ||
-        queue_api->vtable->recv == NULL || queue_api->vtable->close == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (worker->task != NULL || worker->queue != NULL) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    *worker = (h2_modem_urc_worker_t){
-        .task_api = task_api, .queue_api = queue_api, .handler = handler, .user = user,
-        .idle = idle, .idle_timeout_ms = idle_timeout_ms,
-    };
-    h2_atomic_result_t atomic_rc = h2_atomic_u32_init(&worker->accepted_atomic, 0u);
-    if (atomic_rc == H2_ATOMIC_OK) atomic_rc = h2_atomic_u32_init(&worker->handled_atomic, 0u);
-    if (atomic_rc == H2_ATOMIC_OK) atomic_rc = h2_atomic_u32_init(&worker->full_atomic, 0u);
-    if (atomic_rc == H2_ATOMIC_OK) atomic_rc = h2_atomic_u32_init(&worker->truncated_atomic, 0u);
-    if (atomic_rc != H2_ATOMIC_OK) {
-        counters_destroy(worker);
-        return atomic_rc == H2_ATOMIC_UNSUPPORTED
-            ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_NO_MEMORY;
-    }
-    h2_pal_queue_config_t queue_config = {
-        .name = H2_MODEM_URC_TASK_NAME,
-        .item_size = sizeof(urc_line_t),
-        .item_count = H2_MODEM_URC_QUEUE_SIZE,
-        .allocator = allocator,
-    };
-    h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_create(queue_api, &queue_config, &worker->queue);
     if (rc != H2_PAL_OK) {
-        counters_destroy(worker);
-        return rc;
+      worker->result = rc == H2_PAL_ERR_CLOSED ? H2_PAL_OK : rc;
+      return;
     }
-    h2_pal_task_options_t options = {.name = H2_MODEM_URC_TASK_NAME, .min_stack_size = 4096u};
-    rc = h2_pal_task_start(task_api, &options, urc_task, worker, &worker->task);
-    if (rc != H2_PAL_OK) {
-        h2_pal_queue_destroy(queue_api, worker->queue);
-        worker->queue = NULL;
-        counters_destroy(worker);
-    }
-    return rc;
+    worker->handler(worker->user, line.text);
+    counter_increment(&worker->handled_atomic);
+  }
 }
 
-h2_pal_result_t h2_modem_urc_post(h2_modem_urc_worker_t *worker, const char *line) {
-    if (worker == NULL || line == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (worker->queue == NULL) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    size_t len = 0u;
-    while (len < H2_MODEM_URC_LINE_MAX && line[len] != '\0') { len++; }
-    if (len == H2_MODEM_URC_LINE_MAX) {
-        counter_increment(&worker->truncated_atomic);
-        return H2_PAL_ERR_TRUNCATED;
-    }
-    if (len == 0u) {
-        return H2_PAL_OK;
-    }
-    urc_line_t item = {0};
-    memcpy(item.text, line, len);
-    h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_send(
-        worker->queue_api, worker->queue, &item, H2_PAL_QUEUE_NO_WAIT);
-    if (rc == H2_PAL_OK) {
-        counter_increment(&worker->accepted_atomic);
-    } else if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_FULL) {
-        counter_increment(&worker->full_atomic);
-        rc = H2_PAL_ERR_FULL;
-    }
-    return rc;
+h2_pal_result_t h2_modem_urc_start(h2_modem_urc_worker_t* worker,
+                                   const h2_pal_task_api_t* task_api,
+                                   const h2_pal_queue_api_t* queue_api,
+                                   const h2_pal_mem_api_t* allocator,
+                                   h2_modem_urc_handler_t handler, void* user) {
+  return h2_modem_urc_start_idle(worker, task_api, queue_api, allocator,
+                                 handler, user, NULL, 0u);
 }
 
-h2_pal_result_t h2_modem_urc_stop(h2_modem_urc_worker_t *worker) {
-    if (worker == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (worker->task == NULL) {
-        return H2_PAL_OK;
-    }
-    if (!worker->stopping) {
-        h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_close(worker->queue_api, worker->queue);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-        worker->stopping = 1;
-    }
-    h2_pal_result_t rc = h2_pal_task_join(worker->task_api, worker->task);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    worker->task = NULL;
-    h2_pal_queue_destroy(worker->queue_api, worker->queue);
-    worker->queue = NULL;
-    worker->stats.accepted = counter_load(&worker->accepted_atomic);
-    worker->stats.handled = counter_load(&worker->handled_atomic);
-    worker->stats.full = counter_load(&worker->full_atomic);
-    worker->stats.truncated = counter_load(&worker->truncated_atomic);
+h2_pal_result_t h2_modem_urc_start_idle(h2_modem_urc_worker_t* worker,
+                                        const h2_pal_task_api_t* task_api,
+                                        const h2_pal_queue_api_t* queue_api,
+                                        const h2_pal_mem_api_t* allocator,
+                                        h2_modem_urc_handler_t handler,
+                                        void* user, void (*idle)(void* user),
+                                        uint32_t idle_timeout_ms) {
+  if ((idle != NULL && (idle_timeout_ms == 0u ||
+                        idle_timeout_ms == H2_PAL_QUEUE_WAIT_FOREVER)) ||
+      worker == NULL || handler == NULL || task_api == NULL ||
+      task_api->vtable == NULL || task_api->vtable->start == NULL ||
+      task_api->vtable->join == NULL || queue_api == NULL ||
+      queue_api->vtable == NULL || queue_api->vtable->create == NULL ||
+      queue_api->vtable->destroy == NULL || queue_api->vtable->send == NULL ||
+      queue_api->vtable->recv == NULL || queue_api->vtable->close == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (worker->task != NULL || worker->queue != NULL) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  *worker = (h2_modem_urc_worker_t){
+      .task_api = task_api,
+      .queue_api = queue_api,
+      .handler = handler,
+      .user = user,
+      .idle = idle,
+      .idle_timeout_ms = idle_timeout_ms,
+  };
+  h2_atomic_result_t atomic_rc =
+      h2_atomic_u32_init(&worker->accepted_atomic, 0u);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_u32_init(&worker->handled_atomic, 0u);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_u32_init(&worker->full_atomic, 0u);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_u32_init(&worker->truncated_atomic, 0u);
+  if (atomic_rc != H2_ATOMIC_OK) {
     counters_destroy(worker);
-    return worker->result;
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                              : H2_PAL_ERR_NO_MEMORY;
+  }
+  h2_pal_queue_config_t queue_config = {
+      .name = H2_MODEM_URC_TASK_NAME,
+      .item_size = sizeof(urc_line_t),
+      .item_count = H2_MODEM_URC_QUEUE_SIZE,
+      .allocator = allocator,
+  };
+  h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_create(
+      queue_api, &queue_config, &worker->queue);
+  if (rc != H2_PAL_OK) {
+    counters_destroy(worker);
+    return rc;
+  }
+  h2_pal_task_options_t options = {.name = H2_MODEM_URC_TASK_NAME,
+                                   .min_stack_size = 4096u};
+  rc = h2_pal_task_start(task_api, &options, urc_task, worker, &worker->task);
+  if (rc != H2_PAL_OK) {
+    h2_pal_queue_destroy(queue_api, worker->queue);
+    worker->queue = NULL;
+    counters_destroy(worker);
+  }
+  return rc;
 }
 
-h2_pal_result_t h2_modem_urc_get_stats(
-    const h2_modem_urc_worker_t *worker, h2_modem_urc_stats_t *out_stats) {
-    if (worker == NULL || out_stats == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (worker->task == NULL) {
-        *out_stats = worker->stats;
-    } else {
-        out_stats->accepted = counter_load(&worker->accepted_atomic);
-        out_stats->handled = counter_load(&worker->handled_atomic);
-        out_stats->full = counter_load(&worker->full_atomic);
-        out_stats->truncated = counter_load(&worker->truncated_atomic);
-    }
+h2_pal_result_t h2_modem_urc_post(h2_modem_urc_worker_t* worker,
+                                  const char* line) {
+  if (worker == NULL || line == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (worker->queue == NULL) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  size_t len = 0u;
+  while (len < H2_MODEM_URC_LINE_MAX && line[len] != '\0') {
+    len++;
+  }
+  if (len == H2_MODEM_URC_LINE_MAX) {
+    counter_increment(&worker->truncated_atomic);
+    return H2_PAL_ERR_TRUNCATED;
+  }
+  if (len == 0u) {
     return H2_PAL_OK;
+  }
+  urc_line_t item = {0};
+  memcpy(item.text, line, len);
+  h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_send(
+      worker->queue_api, worker->queue, &item, H2_PAL_QUEUE_NO_WAIT);
+  if (rc == H2_PAL_OK) {
+    counter_increment(&worker->accepted_atomic);
+  } else if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_FULL) {
+    counter_increment(&worker->full_atomic);
+    rc = H2_PAL_ERR_FULL;
+  }
+  return rc;
+}
+
+h2_pal_result_t h2_modem_urc_stop(h2_modem_urc_worker_t* worker) {
+  if (worker == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (worker->task == NULL) {
+    return H2_PAL_OK;
+  }
+  if (!worker->stopping) {
+    h2_pal_result_t rc =
+        (h2_pal_result_t)h2_pal_queue_close(worker->queue_api, worker->queue);
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+    worker->stopping = 1;
+  }
+  h2_pal_result_t rc = h2_pal_task_join(worker->task_api, worker->task);
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  worker->task = NULL;
+  h2_pal_queue_destroy(worker->queue_api, worker->queue);
+  worker->queue = NULL;
+  worker->stats.accepted = counter_load(&worker->accepted_atomic);
+  worker->stats.handled = counter_load(&worker->handled_atomic);
+  worker->stats.full = counter_load(&worker->full_atomic);
+  worker->stats.truncated = counter_load(&worker->truncated_atomic);
+  counters_destroy(worker);
+  return worker->result;
+}
+
+h2_pal_result_t h2_modem_urc_get_stats(const h2_modem_urc_worker_t* worker,
+                                       h2_modem_urc_stats_t* out_stats) {
+  if (worker == NULL || out_stats == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (worker->task == NULL) {
+    *out_stats = worker->stats;
+  } else {
+    out_stats->accepted = counter_load(&worker->accepted_atomic);
+    out_stats->handled = counter_load(&worker->handled_atomic);
+    out_stats->full = counter_load(&worker->full_atomic);
+    out_stats->truncated = counter_load(&worker->truncated_atomic);
+  }
+  return H2_PAL_OK;
 }

@@ -20,7 +20,10 @@ h2_lua_web_app(
     name = "lua-script-vector",
     board = "//projects/example/libs/web/demo_board",
     canvas_min = 1000,
-    clicks = [["LUA_VECTOR pixels=PASS", "#stop"]],
+    clicks = [[
+        "LUA_VECTOR pixels=PASS",
+        "#stop",
+    ]],
     evals = [[
         "H2_WEB_APP name=lua-script-vector stage=ready",
         """(() => {

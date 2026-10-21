@@ -211,7 +211,7 @@ EM_JS(void, h2_web_mic_read_js,
 });
 });
 /* clang-format on */
-static int h2_web_mic_pause(h2_web_platform_t *platform) {
+static int h2_web_mic_pause(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
   const int result =
       h2_pal_time_sleep_ms(h2_web_platform_time_api(platform), 1u);
@@ -220,24 +220,23 @@ static int h2_web_mic_pause(h2_web_platform_t *platform) {
 
 int h2_web_platform_mic_supported(void) {
   H2_WEB_STATE_GUARD();
-  return ((int)h2_web_main_call(h2_web_mic_supported_js, NULL).i32); }
+  return ((int)h2_web_main_call(h2_web_mic_supported_js, NULL).i32);
+}
 
-int h2_web_platform_mic_stop(void *user) {
+int h2_web_platform_mic_stop(void* user) {
   H2_WEB_STATE_GUARD();
-  h2_web_platform_t *platform = user;
-  if (platform == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  h2_web_platform_t* platform = user;
+  if (platform == NULL) return H2_PAL_ERR_INVALID_ARG;
   ++platform->mic_generation;
   (void)h2_web_main_call(h2_web_mic_stop_js,
-                         (const void *[]){&(uintptr_t){(uintptr_t)platform}});
+                         (const void*[]){&(uintptr_t){(uintptr_t)platform}});
   return H2_PAL_OK;
 }
 
-int h2_web_platform_mic_start(void *user) {
+int h2_web_platform_mic_start(void* user) {
   H2_WEB_STATE_GUARD();
-  h2_web_platform_t *platform = user;
-  if (platform == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  h2_web_platform_t* platform = user;
+  if (platform == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (platform->shutting_down || platform->mic_starting)
     return H2_PAL_ERR_INVALID_STATE;
   if (!((int)h2_web_main_call(h2_web_mic_supported_js, NULL).i32))
@@ -246,21 +245,20 @@ int h2_web_platform_mic_start(void *user) {
   ++platform->mic_calls;
   const uint64_t generation = platform->mic_generation;
   const double deadline = emscripten_get_now() + H2_WEB_MIC_START_TIMEOUT_MS;
-  int result = ((int)h2_web_main_call(
-                    h2_web_mic_begin_js,
-                    (const void *[]){&(uintptr_t){(uintptr_t)platform}})
-                    .i32);
+  int result =
+      ((int)h2_web_main_call(h2_web_mic_begin_js,
+                             (const void*[]){&(uintptr_t){(uintptr_t)platform}})
+           .i32);
   while (result == H2_PAL_ERR_WOULD_BLOCK) {
     result = h2_web_mic_pause(platform);
-    if (result != H2_PAL_OK)
-      break;
+    if (result != H2_PAL_OK) break;
     if (generation != platform->mic_generation) {
       result = H2_PAL_ERR_CLOSED;
       break;
     }
     result = ((int)h2_web_main_call(
                   h2_web_mic_status_js,
-                  (const void *[]){&(uintptr_t){(uintptr_t)platform}})
+                  (const void*[]){&(uintptr_t){(uintptr_t)platform}})
                   .i32);
     if (result == H2_PAL_ERR_WOULD_BLOCK && emscripten_get_now() >= deadline) {
       result = H2_PAL_ERR_TIMEOUT;
@@ -275,17 +273,15 @@ int h2_web_platform_mic_start(void *user) {
   return result;
 }
 
-int h2_web_platform_mic_read(void *user, h2_audio_frame_t *frame,
+int h2_web_platform_mic_read(void* user, h2_audio_frame_t* frame,
                              uint32_t timeout_ms) {
   H2_WEB_STATE_GUARD();
-  h2_web_platform_t *platform = user;
-  if (frame != NULL)
-    frame->bytes = 0u;
+  h2_web_platform_t* platform = user;
+  if (frame != NULL) frame->bytes = 0u;
   if (platform == NULL || frame == NULL || frame->data == NULL ||
       frame->capacity < H2_WEB_MIC_SAMPLES * sizeof(int16_t))
     return H2_PAL_ERR_INVALID_ARG;
-  if (platform->mic_reading)
-    return H2_PAL_ERR_BUSY;
+  if (platform->mic_reading) return H2_PAL_ERR_BUSY;
   platform->mic_reading = true;
   ++platform->mic_calls;
   const uint64_t generation = platform->mic_generation;
@@ -294,28 +290,25 @@ int h2_web_platform_mic_read(void *user, h2_audio_frame_t *frame,
   for (;;) {
     result = ((int)h2_web_main_call(
                   h2_web_mic_read_js,
-                  (const void *[]){&(uintptr_t){(uintptr_t)platform},
-                                   &(uint8_t *){frame->data}})
+                  (const void*[]){&(uintptr_t){(uintptr_t)platform},
+                                  &(uint8_t*){frame->data}})
                   .i32);
-    if (result != H2_PAL_ERR_WOULD_BLOCK || timeout_ms == 0u)
-      break;
+    if (result != H2_PAL_ERR_WOULD_BLOCK || timeout_ms == 0u) break;
     if (emscripten_get_now() >= deadline) {
       result = H2_PAL_ERR_TIMEOUT;
       break;
     }
     result = h2_web_mic_pause(platform);
-    if (result != H2_PAL_OK)
-      break;
+    if (result != H2_PAL_OK) break;
     if (generation != platform->mic_generation) {
       result = H2_PAL_ERR_CLOSED;
       break;
     }
   }
   if (result == H2_PAL_OK) {
-    uint8_t *pcm = frame->data;
+    uint8_t* pcm = frame->data;
     const uint32_t gain = atomic_load(&platform->mic_gain_percent);
-    for (size_t offset = 0u;
-         offset < H2_WEB_MIC_SAMPLES * sizeof(int16_t);
+    for (size_t offset = 0u; offset < H2_WEB_MIC_SAMPLES * sizeof(int16_t);
          offset += sizeof(int16_t)) {
       int16_t sample = 0;
       memcpy(&sample, pcm + offset, sizeof(sample));

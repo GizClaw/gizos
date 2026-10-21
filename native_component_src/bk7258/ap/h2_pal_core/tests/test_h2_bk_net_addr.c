@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static void assert_same_address(const h2_pal_net_addr_t *left,
-                                  const h2_pal_net_addr_t *right) {
+static void assert_same_address(const h2_pal_net_addr_t* left,
+                                const h2_pal_net_addr_t* right) {
   /* Struct padding is unspecified, including after compound-literal copies. */
   assert(left->family == right->family && left->port == right->port &&
          left->scope_id == right->scope_id &&
@@ -24,7 +24,7 @@ int main(void) {
   assert(h2_bk_net_to_sockaddr(&addr, &storage, &size) == H2_PAL_OK);
   assert(size == sizeof(struct sockaddr_in6));
   h2_pal_net_addr_t got;
-  assert(h2_bk_net_from_sockaddr((struct sockaddr *)&storage, &got) ==
+  assert(h2_bk_net_from_sockaddr((struct sockaddr*)&storage, &got) ==
          H2_PAL_OK);
   assert_same_address(&got, &addr);
   addr.ip[0] = 0xfe;
@@ -33,7 +33,7 @@ int main(void) {
          H2_PAL_ERR_INVALID_ARG);
   addr.scope_id = 2;
   assert(h2_bk_net_to_sockaddr(&addr, &storage, &size) == H2_PAL_OK);
-  assert(h2_bk_net_from_sockaddr((struct sockaddr *)&storage, &got) ==
+  assert(h2_bk_net_from_sockaddr((struct sockaddr*)&storage, &got) ==
          H2_PAL_OK);
   assert(got.scope_id == 2 && !memcmp(got.ip, addr.ip, 16));
   addr.scope_id = 256;
@@ -42,7 +42,7 @@ int main(void) {
   addr = (h2_pal_net_addr_t){
       .family = H2_PAL_NET_FAMILY_IPV4, .ip = {192, 0, 2, 1}, .port = 5201};
   assert(h2_bk_net_to_sockaddr(&addr, &storage, &size) == H2_PAL_OK);
-  assert(h2_bk_net_from_sockaddr((struct sockaddr *)&storage, &got) ==
+  assert(h2_bk_net_from_sockaddr((struct sockaddr*)&storage, &got) ==
          H2_PAL_OK);
   assert_same_address(&addr, &got);
   h2_pal_net_addr_list_t list;

@@ -37,7 +37,7 @@ typedef enum h2_bk_task_stack_region {
 } h2_bk_task_stack_region_t;
 
 typedef struct h2_bk_task_policy {
-  const char *sdk_name;
+  const char* sdk_name;
   uint32_t core;
   uint32_t priority;
   uint32_t min_stack_size;
@@ -45,14 +45,14 @@ typedef struct h2_bk_task_policy {
 } h2_bk_task_policy_t;
 
 typedef h2_pal_result_t (*h2_bk_task_policy_resolver_t)(
-    void *user, const char *name, h2_bk_task_policy_t *out_policy);
+    void* user, const char* name, h2_bk_task_policy_t* out_policy);
 
 typedef struct h2_bk_task_policy_config {
   h2_bk_task_policy_resolver_t resolver;
-  void *resolver_user;
-  const h2_pal_mem_api_t *task_allocator;
+  void* resolver_user;
+  const h2_pal_mem_api_t* task_allocator;
   /** Optional actual PSRAM stack allocator. Borrowed until every task joins. */
-  const h2_pal_mem_api_t *psram_stack_allocator;
+  const h2_pal_mem_api_t* psram_stack_allocator;
 } h2_bk_task_policy_config_t;
 
 typedef struct h2_bk_platform_resource_stats {
@@ -63,42 +63,43 @@ typedef struct h2_bk_platform_resource_stats {
 } h2_bk_platform_resource_stats_t;
 /** Actual live native PAL objects and allocator usable bytes. Task stack
  * reservations remain owned until join. Compare snapshots at quiescence. */
-h2_pal_result_t h2_bk_platform_get_resource_stats(h2_bk_platform_resource_stats_t *out);
-const h2_pal_timer_api_t *h2_bk_platform_timer_api(void);
+h2_pal_result_t h2_bk_platform_get_resource_stats(
+    h2_bk_platform_resource_stats_t* out);
+const h2_pal_timer_api_t* h2_bk_platform_timer_api(void);
 
-h2_pal_mem_api_t *h2_bk_platform_default_allocator(void);
-h2_pal_mem_api_t *h2_bk_platform_sram_allocator(void);
-h2_pal_mem_api_t *h2_bk_platform_psram_allocator(void);
-const h2_pal_log_api_t *h2_bk_platform_log_api(void);
-const h2_pal_firmware_info_api_t *h2_bk_platform_firmware_info_api(void);
-const h2_pal_net_api_t *h2_bk_platform_net_api(void);
-const h2_pal_netif_api_t *h2_bk_platform_netif_api(void);
-void h2_bk_platform_netif_register(void *netif_handle,
+h2_pal_mem_api_t* h2_bk_platform_default_allocator(void);
+h2_pal_mem_api_t* h2_bk_platform_sram_allocator(void);
+h2_pal_mem_api_t* h2_bk_platform_psram_allocator(void);
+const h2_pal_log_api_t* h2_bk_platform_log_api(void);
+const h2_pal_firmware_info_api_t* h2_bk_platform_firmware_info_api(void);
+const h2_pal_net_api_t* h2_bk_platform_net_api(void);
+const h2_pal_netif_api_t* h2_bk_platform_netif_api(void);
+void h2_bk_platform_netif_register(void* netif_handle,
                                    h2_pal_netif_kind_t kind);
-void h2_bk_platform_netif_unregister(void *netif_handle);
+void h2_bk_platform_netif_unregister(void* netif_handle);
 h2_pal_result_t h2_bk_platform_netif_monitor_init(void);
 void h2_bk_platform_netif_monitor_deinit(void);
 h2_pal_result_t h2_bk_platform_netif_reconcile_default(void);
 h2_pal_result_t h2_bk_platform_netif_reconcile_default_async(void);
-const h2_pal_sync_api_t *h2_bk_platform_sync_api(void);
-const h2_pal_task_api_t *h2_bk_platform_task_api(void);
-h2_pal_result_t
-h2_bk_platform_task_configure(const h2_bk_task_policy_config_t *config);
-const h2_pal_queue_api_t *h2_bk_platform_queue_api(void);
-const h2_pal_time_api_t *h2_bk_platform_time_api(void);
-const h2_pal_system_event_api_t *h2_bk_platform_system_event_api(void);
-const h2_pal_crypto_api_t *h2_bk_platform_crypto_api(void);
-const h2_pal_dtls_api_t *h2_bk_platform_dtls_api(void);
-const h2_pal_pref_api_t *h2_bk_platform_pref_api(void);
-const h2_pal_mqtt_api_t *h2_bk_platform_mqtt_api(void);
-const h2_pal_webrtc_api_t *h2_bk_platform_webrtc_api(void);
-h2_pal_ble_t *h2_bk_platform_ble(void);
-h2_pal_wifi_sta_t *h2_bk_platform_wifi_sta(void);
-h2_pal_wifi_ap_t *h2_bk_platform_wifi_ap(void);
-h2_pal_wifi_settings_t *h2_bk_platform_wifi_settings(void);
-const h2_pal_wifi_csi_api_t *h2_bk_platform_wifi_csi(void);
-h2_pal_modem_t *h2_bk_platform_modem_unsupported(void);
-const h2_pal_uart_io_stream_api_t *h2_bk_platform_uart_io_stream_api(void);
+const h2_pal_sync_api_t* h2_bk_platform_sync_api(void);
+const h2_pal_task_api_t* h2_bk_platform_task_api(void);
+h2_pal_result_t h2_bk_platform_task_configure(
+    const h2_bk_task_policy_config_t* config);
+const h2_pal_queue_api_t* h2_bk_platform_queue_api(void);
+const h2_pal_time_api_t* h2_bk_platform_time_api(void);
+const h2_pal_system_event_api_t* h2_bk_platform_system_event_api(void);
+const h2_pal_crypto_api_t* h2_bk_platform_crypto_api(void);
+const h2_pal_dtls_api_t* h2_bk_platform_dtls_api(void);
+const h2_pal_pref_api_t* h2_bk_platform_pref_api(void);
+const h2_pal_mqtt_api_t* h2_bk_platform_mqtt_api(void);
+const h2_pal_webrtc_api_t* h2_bk_platform_webrtc_api(void);
+h2_pal_ble_t* h2_bk_platform_ble(void);
+h2_pal_wifi_sta_t* h2_bk_platform_wifi_sta(void);
+h2_pal_wifi_ap_t* h2_bk_platform_wifi_ap(void);
+h2_pal_wifi_settings_t* h2_bk_platform_wifi_settings(void);
+const h2_pal_wifi_csi_api_t* h2_bk_platform_wifi_csi(void);
+h2_pal_modem_t* h2_bk_platform_modem_unsupported(void);
+const h2_pal_uart_io_stream_api_t* h2_bk_platform_uart_io_stream_api(void);
 void h2_bk_platform_uart_io_stream_deinit(void);
 
 #ifdef __cplusplus

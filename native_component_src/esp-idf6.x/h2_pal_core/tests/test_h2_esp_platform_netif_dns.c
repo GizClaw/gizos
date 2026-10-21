@@ -8,7 +8,7 @@
 #include <string.h>
 
 static esp_netif_t s_wifi = {.key = "WIFI_STA_DEF", .index = 1};
-static esp_netif_t *s_default;
+static esp_netif_t* s_default;
 static ip_addr_t s_servers[DNS_MAX_SERVERS];
 static unsigned s_cache_clears;
 static unsigned s_server_writes;
@@ -21,7 +21,7 @@ static unsigned s_route_events;
 
 esp_err_t esp_netif_init(void) { return ESP_OK; }
 esp_err_t esp_event_loop_create_default(void) { return ESP_OK; }
-esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void *), void *context) {
+esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void*), void* context) {
   assert(!s_tcpip);
   if (s_tcpip_failures != 0u) {
     --s_tcpip_failures;
@@ -32,26 +32,26 @@ esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void *), void *context) {
   s_tcpip = 0;
   return result;
 }
-esp_netif_t *esp_netif_get_default_netif(void) {
+esp_netif_t* esp_netif_get_default_netif(void) {
   assert(s_tcpip);
   return s_default;
 }
-esp_netif_t *esp_netif_next_unsafe(esp_netif_t *netif) {
+esp_netif_t* esp_netif_next_unsafe(esp_netif_t* netif) {
   return netif == NULL ? &s_wifi : NULL;
 }
-const char *esp_netif_get_ifkey(esp_netif_t *netif) { return netif->key; }
-int esp_netif_get_netif_impl_index(esp_netif_t *netif) { return netif->index; }
-bool esp_netif_is_netif_up(esp_netif_t *netif) {
+const char* esp_netif_get_ifkey(esp_netif_t* netif) { return netif->key; }
+int esp_netif_get_netif_impl_index(esp_netif_t* netif) { return netif->index; }
+bool esp_netif_is_netif_up(esp_netif_t* netif) {
   (void)netif;
   return true;
 }
-esp_err_t esp_netif_get_ip_info(esp_netif_t *netif, esp_netif_ip_info_t *ip) {
+esp_err_t esp_netif_get_ip_info(esp_netif_t* netif, esp_netif_ip_info_t* ip) {
   (void)netif;
   memset(ip, 0, sizeof(*ip));
   return ESP_OK;
 }
 #if LWIP_IPV6
-int esp_netif_get_all_ip6(esp_netif_t *netif, esp_ip6_addr_t *addresses) {
+int esp_netif_get_all_ip6(esp_netif_t* netif, esp_ip6_addr_t* addresses) {
   assert(s_tcpip);
   assert(netif->ipv6_count >= 0 &&
          netif->ipv6_count <= CONFIG_LWIP_IPV6_NUM_ADDRESSES);
@@ -59,40 +59,39 @@ int esp_netif_get_all_ip6(esp_netif_t *netif, esp_ip6_addr_t *addresses) {
          (size_t)netif->ipv6_count * sizeof(*addresses));
   return netif->ipv6_count;
 }
-int esp_netif_get_all_preferred_ip6(esp_netif_t *netif,
-                                    esp_ip6_addr_t *addresses) {
+int esp_netif_get_all_preferred_ip6(esp_netif_t* netif,
+                                    esp_ip6_addr_t* addresses) {
   assert(s_tcpip);
   assert(netif->ipv6_count >= 0 &&
          netif->ipv6_count <= CONFIG_LWIP_IPV6_NUM_ADDRESSES);
   int count = 0;
   for (int i = 0; i < netif->ipv6_count; ++i) {
-    if (netif->ipv6_preferred[i] != 0u)
-      addresses[count++] = netif->ipv6[i];
+    if (netif->ipv6_preferred[i] != 0u) addresses[count++] = netif->ipv6[i];
   }
   return count;
 }
 #endif
-esp_err_t esp_netif_get_mac(esp_netif_t *netif, uint8_t *mac) {
+esp_err_t esp_netif_get_mac(esp_netif_t* netif, uint8_t* mac) {
   (void)netif;
   memset(mac, 0, 6u);
   return ESP_OK;
 }
-esp_err_t esp_netif_get_mtu(esp_netif_t *netif, uint16_t *mtu) {
+esp_err_t esp_netif_get_mtu(esp_netif_t* netif, uint16_t* mtu) {
   (void)netif;
   *mtu = 1500u;
   return ESP_OK;
 }
-esp_err_t esp_netif_get_dns_info(esp_netif_t *netif, esp_netif_dns_type_t type,
-                                 esp_netif_dns_info_t *dns) {
+esp_err_t esp_netif_get_dns_info(esp_netif_t* netif, esp_netif_dns_type_t type,
+                                 esp_netif_dns_info_t* dns) {
   assert(s_tcpip);
   *dns = netif->dns[type];
   return netif->dns_result[type];
 }
-esp_err_t esp_netif_set_default_netif(esp_netif_t *netif) {
+esp_err_t esp_netif_set_default_netif(esp_netif_t* netif) {
   s_default = netif;
   return ESP_OK;
 }
-size_t test_netif_strlcpy(char *dst, const char *src, size_t size) {
+size_t test_netif_strlcpy(char* dst, const char* src, size_t size) {
   size_t length = strlen(src);
   if (size != 0u) {
     size_t copied = length < size ? length : size - 1u;
@@ -101,18 +100,17 @@ size_t test_netif_strlcpy(char *dst, const char *src, size_t size) {
   }
   return length;
 }
-char *ipaddr_ntoa_r(const ip_addr_t *ip, char *buffer, int length) {
+char* ipaddr_ntoa_r(const ip_addr_t* ip, char* buffer, int length) {
   (void)ip;
   assert(length > 0);
   buffer[0] = '\0';
   return buffer;
 }
-void test_netif_log(const char *tag, const char *format, ...) {
+void test_netif_log(const char* tag, const char* format, ...) {
   (void)tag;
-  if (strstr(format, "cache=cleared") != NULL)
-    ++s_clear_logs;
+  if (strstr(format, "cache=cleared") != NULL) ++s_clear_logs;
 }
-SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage) {
+SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* storage) {
   return storage;
 }
 BaseType_t xSemaphoreTake(SemaphoreHandle_t semaphore, uint32_t timeout) {
@@ -124,11 +122,11 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t semaphore) {
   assert(semaphore != NULL);
   return pdTRUE;
 }
-const ip_addr_t *dns_getserver(u8_t index) {
+const ip_addr_t* dns_getserver(u8_t index) {
   assert(s_tcpip && index < DNS_MAX_SERVERS);
   return &s_servers[index];
 }
-void dns_setserver(u8_t index, const ip_addr_t *server) {
+void dns_setserver(u8_t index, const ip_addr_t* server) {
   assert(s_tcpip && index < DNS_MAX_SERVERS);
   s_servers[index] = *server;
   ++s_server_writes;
@@ -139,8 +137,8 @@ void dns_clear_cache(void) {
   s_terminated_queries += s_pending_queries;
   s_pending_queries = 0u;
 }
-static h2_pal_result_t post_event(void *user,
-                                  const h2_pal_system_event_t *event,
+static h2_pal_result_t post_event(void* user,
+                                  const h2_pal_system_event_t* event,
                                   uint32_t timeout_ms) {
   (void)user;
   assert(event->type == H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED);
@@ -148,12 +146,12 @@ static h2_pal_result_t post_event(void *user,
   (void)timeout_ms;
   return H2_PAL_OK;
 }
-const h2_pal_system_event_api_t *h2_esp_platform_system_event_api(void) {
+const h2_pal_system_event_api_t* h2_esp_platform_system_event_api(void) {
   static const h2_pal_system_event_vtable_t vtable = {.post = post_event};
   static const h2_pal_system_event_api_t api = {.vtable = &vtable};
   return &api;
 }
-static void sdk_set_dns(esp_netif_t *netif, u8_t index, uint32_t address) {
+static void sdk_set_dns(esp_netif_t* netif, u8_t index, uint32_t address) {
   memset(&netif->dns[index], 0, sizeof(netif->dns[index]));
   netif->dns[index].ip.u_addr.ip4.addr = address;
   memset(&s_servers[index], 0, sizeof(s_servers[index]));
@@ -260,7 +258,7 @@ static void test_default_query_failure(void) {
   assert(h2_esp_platform_netif_reconcile_default() == H2_PAL_ERR_IO);
   assert(s_cache_clears == 1u);
   int index = s_wifi.index;
-  const char *key = s_wifi.key;
+  const char* key = s_wifi.key;
   s_wifi.index = 0;
   s_wifi.key = "";
   assert(h2_esp_platform_netif_reconcile_default() == H2_PAL_ERR_NOT_FOUND);
@@ -352,16 +350,16 @@ static void test_incomplete_and_invalid_reads(void) {
 static void test_ipv6_netif_and_dns_scope(void) {
   begin_monitor();
   const uint8_t link_local[16] = {0xfeu, 0x80u, 0, 0, 0, 0, 0, 0,
-                                0, 0, 0, 0, 0, 0, 0, 1u};
+                                  0,     0,     0, 0, 0, 0, 0, 1u};
   const uint8_t global[16] = {0xfdu, 0x53u, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0, 0, 2u};
+                              0,     0,     0, 0, 0, 0, 0, 2u};
   memcpy(s_wifi.ipv6[0].addr, link_local, sizeof(link_local));
   s_wifi.ipv6_preferred[0] = 1u;
   s_wifi.ipv6_count = 1;
   s_wifi.dns[1].ip.type = ESP_IPADDR_TYPE_V6;
   memcpy(s_wifi.dns[1].ip.u_addr.ip6.addr, link_local, sizeof(link_local));
   h2_pal_netif_status_t status;
-  const h2_pal_netif_api_t *api = h2_esp_platform_netif_api();
+  const h2_pal_netif_api_t* api = h2_esp_platform_netif_api();
   assert(h2_pal_netif_get_status(api, NULL, &status) == H2_PAL_OK);
   assert((status.flags & H2_PAL_NETIF_FLAG_HAS_IPV6) != 0u);
   assert(status.ipv6.family == H2_PAL_NET_FAMILY_IPV6);

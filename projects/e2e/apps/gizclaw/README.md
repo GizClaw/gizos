@@ -230,6 +230,16 @@ Workspace 覆盖包含 30 个函数。创建后分别运行原未筛选入口与
 
 ## 显式 AppConfig fixture
 
+E2E config 的可选 `fixture_allocator` 只选择 case、Service/client 及其缓冲区的分配来源，NULL 保持 Runtime Mem；allocator 必须覆盖全部借用者及失败后的 retained 状态。ESP DevKit launcher 可由 consumer 用 CMake scalar `H2_GIZCLAW_E2E_ALLOCATOR_ACCESSOR=<C identifier>` 显式提供现有 allocator accessor，同时用该 allocator 保存完整分页账本；显式 accessor 返回 NULL 或耗尽即失败，不回退原 heap。此输入不改变 Runtime、Board、SDK 默认值、用例、数据、断言或时间预算。
+
+可选 `--//projects/e2e/apps/gizclaw:app_config_fixture_workflow_tag=<tag>` 默认仍为 `assistants`；当前采用结构化标签的 fixture 可显式选择 `category:assistants`。Session 与两套 Workflow list API 使用同一 selector，原成员标签、非空目录、Profile metadata 和完整业务断言仍须满足，空结果不会回退为全目录。Device fixture 使用 64 KiB 压缩音频 ring 和既有客户端默认预缓冲，继续完整流式播放并执行原 PCM、时长及状态断言；不修改 SDK、用例数或超时。
+
+DevKit 的设备证据账本按需分块分配，保留 384 KiB 逻辑上限、全部原始记录、完整字节计数和 CRC32。冻结后直接按块重播，不再为重播分配连续副本；分配失败、溢出或不完整记录仍阻止确认。顶层 case 继续逐个执行并完成原清理，所有业务断言、并发请求矩阵和接口审计要求保持。
+
+DevKit consumer 可将现有 `device_app` 与 launcher 的 `H2_GIZCLAW_E2E_DEVICE_ONLY=1` 配对，单独诊断原 Device API 用例；该选择与 Firmware、Voice、Concurrency selector 互斥。它沿用完整流程的 allocator、音频 fixture、断言和时间预算，但省略其他 case 的执行历史。原播放器状态记录同时输出已用时间及既有 speaker/track 计数，以区分 Track 创建与 PCM 写入阶段。单 case 诊断不满足原八项确认门禁，保持 `admitted=0`，即使用例通过也不确认 App；完整资格仍须使用默认 all 入口和原验收器。
+
+Fixture 只为 workspace、contact、friend/group 等需要响应存储的清理申请 64 KiB arena；仅删除 peer 或清除 invitation token 时不额外申请该 arena。删除仍须收到真实 ACK 才清除义务；分配失败时保留身份和未完成义务以供原清理重试。WebRTC 观察包装器透传请求的 peer allocator，保留底层的 unsupported 和错误结果。
+
 `gizclaw_e2e_fixture` macro 生成只包含非敏感 key 的 C 配置及 JSON contract。RPC/all 必须通过 `--//projects/e2e/apps/gizclaw:app_config_fixture_key=<key>`、`app_config_fixture_profile=<profile>`、`app_config_fixture_value=<known-value>` 明确传入受控 E2E profile 的 key 和期望 bytes；为空在注册和业务资源 mutation 之前失败，不再从列表任取第一项。两套 list 必须找到该 key，两套 get 验证 profile/revision、storage ownership、长度和逐字节一致性。凭据仍独立注入，key 不进入日志。
 
 只读核对 Deploy 的 E2E 资源 checkpoint：`RuntimeProfile/default` 当前没有 `app_config`；`h106-tiga`、`h106-zero` 各有 64 项，例如非敏感的 `media.songs.en-us`。选择这些受控 E2E profile 时必须同时显式使用其注册 fixture 身份并保存全新结果，不能在 default 结果中使用其他 profile 的 key。此源码改动未修改服务器、Terraform、旧设备证据或旧通过记录。
@@ -240,9 +250,13 @@ Workspace 覆盖包含 30 个函数。创建后分别运行原未筛选入口与
 
 Device/all 实板还须显式传入 `app_config_fixture_device_api_url` 与 `app_config_fixture_audio_url` 的HTTPS输入，不在源码固定GitHub地址，不允许明文音频输入绕过TLS。受控E2E profile的已部署非敏感media对象可作为输入；绑定实际HTTP对象身份、大小和SHA，并保留全新六端结果。注册、RPC、Device API、Firmware metadata和语音业务仍使用真实E2E服务。
 
+Device playlist 第三项的已知时长默认仍为 32000 ms。受控媒体不同时，可仅对 `h2_gizclaw_e2e_device.c` 使用普通 Bazel `--per_file_copt` 设置 `H2_GIZCLAW_E2E_DEVICE_AUDIO_DURATION_MS`，值必须为 1001 到 `UINT32_MAX` 的整数毫秒；例如已核对元数据为 167983 ms 的媒体使用 `167983u`。该输入只用于原 1000 ms seek 的 playlist metadata，不改变解码所得 status duration、真实 PCM、原断言或时间预算；其他 32 秒 fixture 默认值保持原样。长媒体以 software audio 输入时，保持 `app_config_fixture_physical_audio=false`，不构成 physical-ended 资格。
+
 Firmware 完整下载使用至多300秒且不超过剩余case预算的有界超时；HTTP在已有有界job任务内运行，App任务持续poll真实Service，包括DNS/握手/receive阻塞阶段，避免慢传输期间Peer失活；同一Service不由两任务并发poll。任何poll错误、取消、截断、长度或SHA-256不匹配仍失败，不能只验证前30秒或部分bytes。
 
 ESP32-S3还要求显式 `app_config_fixture_time_server=<DNS-or-IPv4>`，由本次网络fixture提供真实NTP时间，不使用源码固定外网pool。SNTP失败保持pending、不启动业务套件；TLS校验仍使用同步后的真实UTC且不关闭验证。H2Loader CLI upgrade的短验证窗口可能先于长业务套件的最后confirmation结束，必须另接当前boot的日志并最终核对package/P1/Stage/coredump，不能提前确认来绕过该窗口。
+
+DevKit 启动入口在缺少保存的 Wi-Fi 配置时，可通过 Native `H2_E2E_WIFI_SSID` / `H2_E2E_WIFI_PASSWORD` 输入使用非保存连接。未提供输入时保留原保存配置等待路径；已有连接、保存配置、重试间隔、业务用例和验收要求保持原行为。
 
 业务验收的board音频delegate由 `app_config_fixture_physical_audio` bool macro参数显式选择，默认software（确定性PCM输入和真实回复解码/Track消费）；true才借用实际BSP capture/speaker。software资格不是物理speaker/capture资格，任何physical-only故障单独保留，不伪装成physical PASS。
 

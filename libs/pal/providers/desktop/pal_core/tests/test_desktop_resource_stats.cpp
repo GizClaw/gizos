@@ -20,15 +20,15 @@ struct Done {
   bool value = false;
   uintptr_t stack_address = 0;
 };
-void finish(void *user) {
-  auto *done = static_cast<Done *>(user);
+void finish(void* user) {
+  auto* done = static_cast<Done*>(user);
   std::lock_guard<std::mutex> lock(done->mutex);
   int stack_local;
   done->stack_address = reinterpret_cast<uintptr_t>(&stack_local);
   done->value = true;
   done->changed.notify_all();
 }
-h2_pal_result_t stack_size(void *, const h2_pal_task_options_t *, size_t *out) {
+h2_pal_result_t stack_size(void*, const h2_pal_task_options_t*, size_t* out) {
   *out = 4096u;
   return H2_PAL_OK;
 }
@@ -39,36 +39,34 @@ struct Allocator {
   uintptr_t last_address = 0;
   size_t last_size = 0;
 };
-void *allocate(void *user, size_t len) {
-  auto *allocator = static_cast<Allocator *>(user);
-  if (++allocator->calls == allocator->fail_at)
-    return nullptr;
-  void *p = std::malloc(len);
+void* allocate(void* user, size_t len) {
+  auto* allocator = static_cast<Allocator*>(user);
+  if (++allocator->calls == allocator->fail_at) return nullptr;
+  void* p = std::malloc(len);
   allocator->last_address = reinterpret_cast<uintptr_t>(p);
   allocator->last_size = len;
-  if (p != nullptr)
-    ++allocator->live;
+  if (p != nullptr) ++allocator->live;
   return p;
 }
-void release(void *user, void *p) {
+void release(void* user, void* p) {
   if (p != nullptr) {
-    --static_cast<Allocator *>(user)->live;
+    --static_cast<Allocator*>(user)->live;
     std::free(p);
   }
 }
-} // namespace
+}  // namespace
 
 int main() {
   assert(h2_desktop_platform_get_resource_stats(nullptr) ==
          H2_PAL_ERR_INVALID_ARG);
   const auto baseline = snapshot();
-  auto *mem = h2_desktop_platform_default_allocator();
-  const auto *queue_api = h2_desktop_platform_queue_api();
-  const auto *sync = h2_desktop_platform_sync_api();
-  h2_pal_queue_t *queue = nullptr;
-  h2_pal_mutex_t *mutex = nullptr;
-  h2_pal_semaphore_t *semaphore = nullptr;
-  h2_pal_cond_t *condition = nullptr;
+  auto* mem = h2_desktop_platform_default_allocator();
+  const auto* queue_api = h2_desktop_platform_queue_api();
+  const auto* sync = h2_desktop_platform_sync_api();
+  h2_pal_queue_t* queue = nullptr;
+  h2_pal_mutex_t* mutex = nullptr;
+  h2_pal_semaphore_t* semaphore = nullptr;
+  h2_pal_cond_t* condition = nullptr;
   const h2_pal_queue_config_t queue_config = {"stats", sizeof(int), 2u, mem};
   const h2_pal_mutex_config_t mutex_config = {"stats", mem,
                                               H2_PAL_MUTEX_FLAG_NONE};
@@ -94,7 +92,7 @@ int main() {
   const h2_pal_mem_api_t tracked = {&allocator, &allocator_vtable};
   h2_pal_queue_config_t fail_queue = queue_config;
   fail_queue.allocator = &tracked;
-  allocator.fail_at = 2u; // real queue object allocated, backing storage fails
+  allocator.fail_at = 2u;  // real queue object allocated, backing storage fails
   assert(h2_pal_queue_create(queue_api, &fail_queue, &queue) ==
          H2_PAL_ERR_NO_MEMORY);
   assert(queue == nullptr && allocator.live == 0u);
@@ -107,8 +105,8 @@ int main() {
   allocator.fail_at = 1u;
   Done done;
   const h2_pal_task_options_t options = {"stats", 4096u};
-  const auto *task_api = h2_desktop_platform_task_api();
-  h2_pal_task_t *task = nullptr;
+  const auto* task_api = h2_desktop_platform_task_api();
+  h2_pal_task_t* task = nullptr;
   assert(h2_pal_task_start(task_api, &options, finish, &done, &task) ==
          H2_PAL_ERR_NO_MEMORY);
   assert(task == nullptr && allocator.live == 0u);

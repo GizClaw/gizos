@@ -32,7 +32,7 @@
 #endif
 
 typedef struct h2_webrtc_performance_devkit_context {
-  h2_runtime_t *runtime;
+  h2_runtime_t* runtime;
   char offer_url[192];
 } h2_webrtc_performance_devkit_context_t;
 
@@ -42,39 +42,39 @@ static void hold(void) {
   }
 }
 
-static void memory_checkpoint(const char *name) {
-  printf("H2_WEBRTC_PERF_MEMORY checkpoint=%s internal_free_kib=%u "
-         "internal_min_kib=%u dma_free_kib=%u dma_min_kib=%u "
-         "psram_free_kib=%u psram_min_kib=%u\n",
-         name,
-         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL |
-                                            MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL |
-                                                    MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_DMA |
-                                                    MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM |
-                                            MALLOC_CAP_8BIT) /
-                    1024u),
-         (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM |
-                                                    MALLOC_CAP_8BIT) /
-                    1024u));
+static void memory_checkpoint(const char* name) {
+  printf(
+      "H2_WEBRTC_PERF_MEMORY checkpoint=%s internal_free_kib=%u "
+      "internal_min_kib=%u dma_free_kib=%u dma_min_kib=%u "
+      "psram_free_kib=%u psram_min_kib=%u\n",
+      name,
+      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL |
+                                         MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL |
+                                                 MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_DMA |
+                                                 MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) /
+                 1024u),
+      (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM |
+                                                 MALLOC_CAP_8BIT) /
+                 1024u));
   fflush(stdout);
 }
 
-static void benchmark_checkpoint(void *user, const char *name) {
+static void benchmark_checkpoint(void* user, const char* name) {
   (void)user;
   memory_checkpoint(name);
 }
 
-static int exchange_offer(void *raw, h2_pal_webrtc_str_t offer, char *answer,
-                          size_t answer_capacity, size_t *answer_len) {
-  h2_webrtc_performance_devkit_context_t *context = raw;
+static int exchange_offer(void* raw, h2_pal_webrtc_str_t offer, char* answer,
+                          size_t answer_capacity, size_t* answer_len) {
+  h2_webrtc_performance_devkit_context_t* context = raw;
   static const h2_pal_http_header_t headers[] = {
       {{"Content-Type", sizeof("Content-Type") - 1u},
        {"application/sdp", sizeof("application/sdp") - 1u}},
@@ -86,23 +86,25 @@ static int exchange_offer(void *raw, h2_pal_webrtc_str_t offer, char *answer,
       .url = {context->offer_url, strlen(context->offer_url)},
       .headers = headers,
       .header_count = sizeof(headers) / sizeof(headers[0]),
-      .body = (const uint8_t *)offer.data,
+      .body = (const uint8_t*)offer.data,
       .body_len = offer.len,
       .timeout_ms = 20000,
       .retry_count = 0,
-      .response_buf = (uint8_t *)answer,
+      .response_buf = (uint8_t*)answer,
       .response_buf_cap = answer_capacity,
   };
   h2_pal_http_response_t response;
   h2_pal_http_response_reset(&response);
-  const int rc = h2_pal_http_request(context->runtime->http, &request, &response);
+  const int rc =
+      h2_pal_http_request(context->runtime->http, &request, &response);
   if (rc != H2_PAL_OK || response.status_code != 200 || response.body == NULL ||
       response.body_len == 0u || response.body_len >= answer_capacity) {
-    printf("H2_WEBRTC_PERF stage=signaling status=ERROR rc=%d http=%d len=%zu\n",
-           rc, response.status_code, response.body_len);
+    printf(
+        "H2_WEBRTC_PERF stage=signaling status=ERROR rc=%d http=%d len=%zu\n",
+        rc, response.status_code, response.body_len);
     return -1;
   }
-  if (response.body != (uint8_t *)answer) {
+  if (response.body != (uint8_t*)answer) {
     memcpy(answer, response.body, response.body_len);
   }
   answer[response.body_len] = '\0';
@@ -110,7 +112,7 @@ static int exchange_offer(void *raw, h2_pal_webrtc_str_t offer, char *answer,
   return 0;
 }
 
-static void fail(const char *stage, int rc, int commands_started) {
+static void fail(const char* stage, int rc, int commands_started) {
   printf("H2_WEBRTC_PERF_DEVKIT stage=%s status=ERROR rc=%d\n", stage, rc);
   fflush(stdout);
   if (!commands_started) {
@@ -119,13 +121,12 @@ static void fail(const char *stage, int rc, int commands_started) {
   hold();
 }
 
-static void wait_for_wifi(h2_runtime_t *runtime,
-                          const h2_pal_wifi_sta_config_t *wifi) {
+static void wait_for_wifi(h2_runtime_t* runtime,
+                          const h2_pal_wifi_sta_config_t* wifi) {
   for (;;) {
     const int rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, wifi, 20000u);
     if (rc == H2_PAL_OK) {
-      const TickType_t deadline =
-          xTaskGetTickCount() + pdMS_TO_TICKS(20000u);
+      const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(20000u);
       do {
         h2_pal_wifi_sta_status_t status = {0};
         const int status_rc =
@@ -135,9 +136,10 @@ static void wait_for_wifi(h2_runtime_t *runtime,
             status.ip.ip4 != 0u) {
           uint8_t ip[4];
           h2_pal_wifi_ip4_to_bytes(status.ip.ip4, ip);
-          printf("H2_WEBRTC_PERF_DEVKIT stage=wifi status=READY "
-                 "ip=%u.%u.%u.%u\n",
-                 ip[0], ip[1], ip[2], ip[3]);
+          printf(
+              "H2_WEBRTC_PERF_DEVKIT stage=wifi status=READY "
+              "ip=%u.%u.%u.%u\n",
+              ip[0], ip[1], ip[2], ip[3]);
           fflush(stdout);
           return;
         }
@@ -149,18 +151,19 @@ static void wait_for_wifi(h2_runtime_t *runtime,
         vTaskDelay(pdMS_TO_TICKS(100u));
       } while ((int32_t)(deadline - xTaskGetTickCount()) > 0);
     }
-    printf("H2_WEBRTC_PERF_DEVKIT stage=wifi status=WAIT rc=%d "
-           "retry_ms=3000\n",
-           rc);
+    printf(
+        "H2_WEBRTC_PERF_DEVKIT stage=wifi status=WAIT rc=%d "
+        "retry_ms=3000\n",
+        rc);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(3000u));
   }
 }
 
-static void image_entry(void *user) {
+static void image_entry(void* user) {
   (void)user;
   h2_runtime_config_t runtime_config = {0};
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   memory_checkpoint("entry");
   int rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc != H2_PAL_OK) {
@@ -175,8 +178,8 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("runtime_init", rc, 0);
   }
-  rc = h2_esp_h2loader_app_commands_start(runtime, "webrtc-performance", 1u,
-                                           3u);
+  rc =
+      h2_esp_h2loader_app_commands_start(runtime, "webrtc-performance", 1u, 3u);
   if (rc != H2_PAL_OK) {
     fail("command_start", rc, 0);
   }
@@ -219,15 +222,16 @@ static void image_entry(void *user) {
     memory_checkpoint("benchmark_start");
     rc = h2_webrtc_performance_run(runtime, &config, &result);
     memory_checkpoint("benchmark_end");
-    printf("H2_WEBRTC_PERF_DEVKIT stage=summary status=%s rc=%d "
-           "upload_Bps=%llu download_Bps=%llu loaded_Bps=%llu "
-           "request_batch_ns=%llu audio_p99_gap_ns=%llu\n",
-           rc == 0 ? "PASS" : "FAIL", rc,
-           (unsigned long long)result.median_upload_bytes_per_second,
-           (unsigned long long)result.median_download_bytes_per_second,
-           (unsigned long long)result.median_loaded_bytes_per_second,
-           (unsigned long long)result.median_request_batch_ns,
-           (unsigned long long)result.median_audio_p99_gap_ns);
+    printf(
+        "H2_WEBRTC_PERF_DEVKIT stage=summary status=%s rc=%d "
+        "upload_Bps=%llu download_Bps=%llu loaded_Bps=%llu "
+        "request_batch_ns=%llu audio_p99_gap_ns=%llu\n",
+        rc == 0 ? "PASS" : "FAIL", rc,
+        (unsigned long long)result.median_upload_bytes_per_second,
+        (unsigned long long)result.median_download_bytes_per_second,
+        (unsigned long long)result.median_loaded_bytes_per_second,
+        (unsigned long long)result.median_request_batch_ns,
+        (unsigned long long)result.median_audio_p99_gap_ns);
     fflush(stdout);
     if (rc == 0) {
       break;
@@ -240,9 +244,9 @@ static void image_entry(void *user) {
 }
 
 void app_main(void) {
-    if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
-        return;
-    }
+  if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
+    return;
+  }
   const h2_pal_result_t rc = h2_esp_board_start_entry_task(
       "devkit/webrtc-performance", image_entry, NULL);
   if (rc != H2_PAL_OK) {

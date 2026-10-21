@@ -73,10 +73,10 @@ cc_library(
         "src/h2_web_platform_crypto.c",
         "src/h2_web_platform_display.c",
         "src/h2_web_platform_fake_network.c",
-        "src/h2_web_platform_led.c",
         "src/h2_web_platform_fs.c",
         "src/h2_web_platform_http.c",
         "src/h2_web_platform_internal.h",
+        "src/h2_web_platform_led.c",
         "src/h2_web_platform_mic.c",
         "src/h2_web_platform_netif.c",
         "src/h2_web_platform_pref.c",
@@ -624,7 +624,10 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal", "//libs/pal/providers/posix/pal_core:thread_core"],
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/posix/pal_core:thread_core",
+    ],
 )
 
 cc_binary(

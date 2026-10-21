@@ -15,13 +15,10 @@
  *
  * Returns 1 and fills out when the path was rewritten into a mount, 0 when it
  * should be passed through unchanged (PAL then reports its own error). */
-int h2_h2loader_cli_host_path_resolve(
-    const char *base_dir,
-    const char *const *sources,
-    const char *const *targets,
-    size_t mount_count,
-    const char *path,
-    char *out,
-    size_t out_size);
+int h2_h2loader_cli_host_path_resolve(const char* base_dir,
+                                      const char* const* sources,
+                                      const char* const* targets,
+                                      size_t mount_count, const char* path,
+                                      char* out, size_t out_size);
 
 #endif

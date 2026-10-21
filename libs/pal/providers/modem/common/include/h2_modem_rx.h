@@ -7,13 +7,13 @@
 extern "C" {
 #endif
 
-typedef h2_pal_result_t (*h2_modem_rx_line_fn)(void *user, const char *line);
+typedef h2_pal_result_t (*h2_modem_rx_line_fn)(void* user, const char* line);
 
 typedef struct h2_modem_rx {
-    uint64_t next_offset;
-    size_t length;
-    uint8_t discarding;
-    char line[H2_MODEM_URC_LINE_MAX];
+  uint64_t next_offset;
+  size_t length;
+  uint8_t discarding;
+  char line[H2_MODEM_URC_LINE_MAX];
 } h2_modem_rx_t;
 
 /** @brief Frame an ordered physical RX stream, ignoring replayed byte offsets.
@@ -32,13 +32,9 @@ typedef struct h2_modem_rx {
  * is returned, never retry the snapshot to redeliver a failed notification.
  * No allocation, logging, content deduplication or solicited filtering occurs.
  */
-h2_pal_result_t h2_modem_rx_feed(
-    h2_modem_rx_t *receiver,
-    uint64_t offset,
-    const uint8_t *data,
-    size_t length,
-    h2_modem_rx_line_fn handler,
-    void *user);
+h2_pal_result_t h2_modem_rx_feed(h2_modem_rx_t* receiver, uint64_t offset,
+                                 const uint8_t* data, size_t length,
+                                 h2_modem_rx_line_fn handler, void* user);
 
 #ifdef __cplusplus
 }

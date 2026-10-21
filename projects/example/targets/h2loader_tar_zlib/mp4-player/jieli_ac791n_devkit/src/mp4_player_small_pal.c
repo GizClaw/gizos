@@ -25,10 +25,9 @@
 #include <stdint.h>
 #include <string.h>
 
-
 static h2_loader_app_client_t loader_client;
 static h2_pal_firmware_info_t firmware_info;
-static h2_pal_task_t *runtime_task;
+static h2_pal_task_t* runtime_task;
 static uint16_t trial_recovery_timer;
 static uint32_t next_boot_partition = H2_JIELI_PARTITION_APP;
 static uint32_t boot_reset_reason;
@@ -38,9 +37,7 @@ static h2_pal_fs_api_t mp4_fs;
 /* This must be a link-time-overridable function rather than a weak const.
  * Defining a weak const in this translation unit lets LTO fold every check to
  * zero before the direct target's strong definition is resolved. */
-__attribute__((weak)) int h2_jieli_mp4_is_direct_boot(void) {
-  return 0;
-}
+__attribute__((weak)) int h2_jieli_mp4_is_direct_boot(void) { return 0; }
 
 typedef struct h2_jieli_mp4_boot_marker {
   char magic[8];
@@ -50,10 +47,10 @@ typedef struct h2_jieli_mp4_boot_marker {
 
 static volatile h2_jieli_mp4_boot_marker_t last_boot_marker;
 
-extern int vsnprintf(
-    char *buffer, size_t size, const char *format, va_list arguments);
-extern int snprintf(char *buffer, size_t size, const char *format, ...);
-extern int printf(const char *format, ...);
+extern int vsnprintf(char* buffer, size_t size, const char* format,
+                     va_list arguments);
+extern int snprintf(char* buffer, size_t size, const char* format, ...);
+extern int printf(const char* format, ...);
 
 static void boot_marker(uint32_t stage, int32_t result) {
   static const char magic[8] = {'H', '2', 'M', 'P', '4', 'D', 'B', 'G'};
@@ -70,24 +67,23 @@ static void boot_marker(uint32_t stage, int32_t result) {
 void h2_jieli_wl82_boot_probe(uint32_t stage) {
   boot_marker(stage, H2_PAL_OK);
   char line[80];
-  int length = snprintf(line, sizeof(line),
-                        "H2_JIELI_MP4_BOOT_STAGE stage=%u\r\n",
-                        (unsigned)stage);
+  int length =
+      snprintf(line, sizeof(line), "H2_JIELI_MP4_BOOT_STAGE stage=%u\r\n",
+               (unsigned)stage);
   if (length > 0 && (size_t)length < sizeof(line)) {
-    (void)h2_jieli_ac791n_devkit_console_write(
-        line, (size_t)length, 100u);
+    (void)h2_jieli_ac791n_devkit_console_write(line, (size_t)length, 100u);
   }
 }
 
-extern const char *os_current_task_rom(void);
+extern const char* os_current_task_rom(void);
 extern uint32_t get_malloc_remain_heap_size(void);
 extern size_t malloc_max_footprint(void);
 extern uint8_t HEAP_BEGIN;
 extern uint8_t HEAP_END;
-extern const h2_pal_audio_api_t *h2_pal_unsupported_audio_api(void);
-extern const h2_pal_audio_decoder_api_t *h2_linux_fdk_aac_decoder_api(void);
+extern const h2_pal_audio_api_t* h2_pal_unsupported_audio_api(void);
+extern const h2_pal_audio_decoder_api_t* h2_linux_fdk_aac_decoder_api(void);
 
-static void emit(const char *format, ...) {
+static void emit(const char* format, ...) {
   /* Each call owns its formatting buffer and the board console serializes the
    * complete line.  Early boot diagnostics must not depend on the App command
    * transport, which is initialized later in app_main(). */
@@ -97,31 +93,31 @@ static void emit(const char *format, ...) {
   int length = vsnprintf(status_line, sizeof(status_line), format, arguments);
   va_end(arguments);
   if (length > 0 && (size_t)length < sizeof(status_line)) {
-    (void)h2_jieli_ac791n_devkit_console_write(
-        status_line, (size_t)length, 100u);
+    (void)h2_jieli_ac791n_devkit_console_write(status_line, (size_t)length,
+                                               100u);
   }
 }
 
-static int usb_log_write(
-    void *user, h2_pal_log_level_t level, const char *scope,
-    const char *message) {
+static int usb_log_write(void* user, h2_pal_log_level_t level,
+                         const char* scope, const char* message) {
   (void)user;
-  char level_char = level == H2_PAL_LOG_ERROR ? 'E' :
-                    level == H2_PAL_LOG_WARN ? 'W' :
-                    level == H2_PAL_LOG_DEBUG ? 'D' : 'I';
-  emit("[%c][%s] %s\r\n", level_char,
-       scope != NULL ? scope : "mp4-player", message);
+  char level_char = level == H2_PAL_LOG_ERROR   ? 'E'
+                    : level == H2_PAL_LOG_WARN  ? 'W'
+                    : level == H2_PAL_LOG_DEBUG ? 'D'
+                                                : 'I';
+  emit("[%c][%s] %s\r\n", level_char, scope != NULL ? scope : "mp4-player",
+       message);
   return H2_PAL_OK;
 }
 
-static const h2_pal_log_api_t *usb_log_api(void) {
+static const h2_pal_log_api_t* usb_log_api(void) {
   static const h2_pal_log_vtable_t vtable = {.write = usb_log_write};
   static const h2_pal_log_api_t api = {.user = NULL, .vtable = &vtable};
   return &api;
 }
 
-static int power_get_running(
-    void *user, h2_pal_power_boot_partition_t *out_partition) {
+static int power_get_running(void* user,
+                             h2_pal_power_boot_partition_t* out_partition) {
   (void)user;
   if (out_partition == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_partition, 0, sizeof(*out_partition));
@@ -133,24 +129,24 @@ static int power_get_running(
   return H2_PAL_OK;
 }
 
-static int power_get_next(
-    void *user, h2_pal_power_boot_partition_t *out_partition) {
+static int power_get_next(void* user,
+                          h2_pal_power_boot_partition_t* out_partition) {
   (void)user;
   if (out_partition == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_partition, 0, sizeof(*out_partition));
   out_partition->id = next_boot_partition;
   out_partition->flags = H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE |
                          H2_PAL_POWER_BOOT_PARTITION_FLAG_NEXT |
-      (next_boot_partition == H2_JIELI_PARTITION_LOADER
-           ? H2_PAL_POWER_BOOT_PARTITION_FLAG_RECOVERY
-           : H2_PAL_POWER_BOOT_PARTITION_FLAG_APP);
-  (void)snprintf(out_partition->name, sizeof(out_partition->name), "%s",
-                 next_boot_partition == H2_JIELI_PARTITION_LOADER
-                     ? "h2loader" : "app");
+                         (next_boot_partition == H2_JIELI_PARTITION_LOADER
+                              ? H2_PAL_POWER_BOOT_PARTITION_FLAG_RECOVERY
+                              : H2_PAL_POWER_BOOT_PARTITION_FLAG_APP);
+  (void)snprintf(
+      out_partition->name, sizeof(out_partition->name), "%s",
+      next_boot_partition == H2_JIELI_PARTITION_LOADER ? "h2loader" : "app");
   return H2_PAL_OK;
 }
 
-static int power_set_next(void *user, uint32_t partition_id) {
+static int power_set_next(void* user, uint32_t partition_id) {
   (void)user;
   if (partition_id != H2_JIELI_PARTITION_LOADER &&
       partition_id != H2_JIELI_PARTITION_APP) {
@@ -160,10 +156,10 @@ static int power_set_next(void *user, uint32_t partition_id) {
   return H2_PAL_OK;
 }
 
-static int power_reboot(void *user, uint32_t reason) {
+static int power_reboot(void* user, uint32_t reason) {
   (void)user;
-  int rc = h2_jieli_app_loader_prepare_reboot(
-      &loader_client.config, next_boot_partition);
+  int rc = h2_jieli_app_loader_prepare_reboot(&loader_client.config,
+                                              next_boot_partition);
   if (rc != H2_PAL_OK) return rc;
   emit("JIELI_APP_REBOOT source=power_api reason=%u next=%u\r\n",
        (unsigned)reason, (unsigned)next_boot_partition);
@@ -172,7 +168,7 @@ static int power_reboot(void *user, uint32_t reason) {
   return H2_PAL_OK;
 }
 
-static const h2_pal_power_api_t *power_api(void) {
+static const h2_pal_power_api_t* power_api(void) {
   static const h2_pal_power_vtable_t vtable = {
       .get_running_boot_partition = power_get_running,
       .get_next_boot_partition = power_get_next,
@@ -183,11 +179,11 @@ static const h2_pal_power_api_t *power_api(void) {
   return &api;
 }
 
-static int enter_trial_boot(int *out_trial) {
+static int enter_trial_boot(int* out_trial) {
   if (out_trial == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_trial = 0;
-  const h2_pal_pref_api_t *pref = h2_jieli_ac791n_devkit_pref_api();
-  const h2_pal_mem_api_t *allocator = h2_jieli_wl82_platform_mem_api();
+  const h2_pal_pref_api_t* pref = h2_jieli_ac791n_devkit_pref_api();
+  const h2_pal_mem_api_t* allocator = h2_jieli_wl82_platform_mem_api();
   h2_loader_status_t status;
   int result = h2_loader_read_pref_status(pref, allocator, &status);
   if (result != H2_PAL_OK) return result;
@@ -201,16 +197,14 @@ static int enter_trial_boot(int *out_trial) {
     return H2_PAL_ERR_INVALID_STATE;
   }
 
-  h2_pal_pref_namespace_t *name_space = NULL;
-  result = h2_pal_pref_open(
-      pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE,
-      &name_space);
-  char *previous_checksum = NULL;
+  h2_pal_pref_namespace_t* name_space = NULL;
+  result = h2_pal_pref_open(pref, H2_LOADER_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_WRITE, &name_space);
+  char* previous_checksum = NULL;
   int repeated_trial = 0;
   if (result == H2_PAL_OK) {
     result = name_space->get_string(
-        name_space, allocator, H2_JIELI_TRIAL_CHECKSUM_KEY,
-        &previous_checksum);
+        name_space, allocator, H2_JIELI_TRIAL_CHECKSUM_KEY, &previous_checksum);
     if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
   }
   if (result == H2_PAL_OK && previous_checksum != NULL) {
@@ -221,13 +215,12 @@ static int enter_trial_boot(int *out_trial) {
     h2_pal_mem_free(allocator, previous_checksum);
   }
   if (result == H2_PAL_OK && !repeated_trial) {
-    result = name_space->set_string(
-        name_space, H2_JIELI_TRIAL_CHECKSUM_KEY,
-        status.partition_2.image_checksum);
+    result = name_space->set_string(name_space, H2_JIELI_TRIAL_CHECKSUM_KEY,
+                                    status.partition_2.image_checksum);
   }
   if (result == H2_PAL_OK && repeated_trial) {
-    result = name_space->set_u32(
-        name_space, H2_JIELI_TRIAL_RESET_REASON_KEY, boot_reset_reason);
+    result = name_space->set_u32(name_space, H2_JIELI_TRIAL_RESET_REASON_KEY,
+                                 boot_reset_reason);
   }
   if (result == H2_PAL_OK && name_space->commit != NULL) {
     result = name_space->commit(name_space);
@@ -243,7 +236,7 @@ static int enter_trial_boot(int *out_trial) {
   return H2_PAL_ERR_INVALID_STATE;
 }
 
-static void early_trial_timeout(void *user) {
+static void early_trial_timeout(void* user) {
   (void)user;
   trial_recovery_timer = 0u;
   /* Keep timeout recovery independent of SD, Pref and the App transport. */
@@ -252,7 +245,8 @@ static void early_trial_timeout(void *user) {
 
 /* H2Loader-layout SDK hook: run immediately after board_early_init(), before
  * every SDK initcall. Arm recovery before reading Pref: early flash or Pref
- * access is itself part of the trial and must not be able to bypass rollback. */
+ * access is itself part of the trial and must not be able to bypass rollback.
+ */
 int h2_jieli_ac791n_devkit_early_app_boot(void) {
   boot_reset_reason = system_reset_reason_get();
   emit("H2_JIELI_MP4_EARLY step=enter reset_reason=0x%x\r\n",
@@ -286,8 +280,8 @@ int h2_jieli_ac791n_devkit_early_app_boot(void) {
     return H2_PAL_ERR_INVALID_STATE;
   }
 
-  trial_recovery_timer = sys_timeout_add_to_task(
-      "sys_timer", NULL, early_trial_timeout, 30000u);
+  trial_recovery_timer =
+      sys_timeout_add_to_task("sys_timer", NULL, early_trial_timeout, 30000u);
   emit("H2_JIELI_MP4_EARLY step=trial-timer timer=%u\r\n",
        (unsigned)trial_recovery_timer);
   if (trial_recovery_timer == 0u) {
@@ -302,24 +296,25 @@ int h2_jieli_ac791n_devkit_early_app_boot(void) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t memory_stats_read(
-    void *user, h2_loader_memory_stats_t *out_stats) {
+static h2_pal_result_t memory_stats_read(void* user,
+                                         h2_loader_memory_stats_t* out_stats) {
   (void)user;
   if (out_stats == NULL) return H2_PAL_ERR_INVALID_ARG;
   size_t total = (size_t)(&HEAP_END - &HEAP_BEGIN);
   size_t peak = malloc_max_footprint();
   *out_stats = (h2_loader_memory_stats_t){
-      .internal = {
-          .total_bytes = total,
-          .free_bytes = get_malloc_remain_heap_size(),
-          .minimum_free_bytes = peak < total ? total - peak : 0u,
-      },
+      .internal =
+          {
+              .total_bytes = total,
+              .free_bytes = get_malloc_remain_heap_size(),
+              .minimum_free_bytes = peak < total ? total - peak : 0u,
+          },
   };
   return H2_PAL_OK;
 }
 
 static void report_previous_exception(void) {
-  FILE *file = fopen("mnt/sdfile/EXT_RESERVED/log", "r");
+  FILE* file = fopen("mnt/sdfile/EXT_RESERVED/log", "r");
   if (file == NULL) return;
   struct vfs_attr attributes;
   memset(&attributes, 0, sizeof(attributes));
@@ -333,11 +328,10 @@ static void report_previous_exception(void) {
   log[640] = '\0';
   if (result != 640 || (uint8_t)log[0] == UINT8_C(0xff)) return;
   emit("JIELI_EXCEPTION_LOG %s\r\n", log);
-  (void)sdfile_reserve_zone_erase(
-      attributes.sclust, SDFILE_SECTOR_SIZE, 0);
+  (void)sdfile_reserve_zone_erase(attributes.sclust, SDFILE_SECTOR_SIZE, 0);
 }
 
-static h2_pal_result_t confirm_ready(void *user) {
+static h2_pal_result_t confirm_ready(void* user) {
   (void)user;
   if (h2_jieli_mp4_is_direct_boot()) {
     emit("H2_JIELI_MP4_READY rc=0 mode=direct heap_free=%u heap_peak=%u\r\n",
@@ -345,11 +339,11 @@ static h2_pal_result_t confirm_ready(void *user) {
          (unsigned)malloc_max_footprint());
     return H2_PAL_OK;
   }
-  h2_pal_result_t result = (h2_pal_result_t)
-      h2_jieli_app_loader_confirm(&loader_client.config);
+  h2_pal_result_t result =
+      (h2_pal_result_t)h2_jieli_app_loader_confirm(&loader_client.config);
   boot_marker(10u, result);
-  emit("H2_JIELI_MP4_READY rc=%d heap_free=%u heap_peak=%u\r\n",
-       result, (unsigned)get_malloc_remain_heap_size(),
+  emit("H2_JIELI_MP4_READY rc=%d heap_free=%u heap_peak=%u\r\n", result,
+       (unsigned)get_malloc_remain_heap_size(),
        (unsigned)malloc_max_footprint());
   if (result == H2_PAL_OK && trial_recovery_timer != 0u) {
     uint16_t timer_to_delete = trial_recovery_timer;
@@ -365,7 +359,7 @@ static h2_pal_result_t confirm_ready(void *user) {
   return result;
 }
 
-static int mp4_watchdog_poll(void *user) {
+static int mp4_watchdog_poll(void* user) {
   (void)user;
   /* The common player invokes should_stop while waiting for and pacing video
    * frames.  Tie the board watchdog to real playback progress: a healthy
@@ -375,7 +369,7 @@ static int mp4_watchdog_poll(void *user) {
   return 0;
 }
 
-static h2_pal_result_t mp4_runtime_config(h2_runtime_config_t *out_config) {
+static h2_pal_result_t mp4_runtime_config(h2_runtime_config_t* out_config) {
   if (out_config == NULL) return H2_PAL_ERR_INVALID_ARG;
 
   /* app_main can run before the asynchronous SD probe reports sd0 online.
@@ -451,12 +445,13 @@ static h2_pal_result_t mp4_runtime_config(h2_runtime_config_t *out_config) {
   return H2_PAL_OK;
 }
 
-/* Playback owns Runtime while running; a returned player releases that owner. */
-static void mp4_runtime(void *user) {
+/* Playback owns Runtime while running; a returned player releases that owner.
+ */
+static void mp4_runtime(void* user) {
   (void)user;
   boot_marker(7u, H2_PAL_OK);
   h2_runtime_config_t config;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   h2_pal_result_t result = mp4_runtime_config(&config);
   boot_marker(8u, result);
   if (result == H2_PAL_OK) {
@@ -478,7 +473,7 @@ static void mp4_runtime(void *user) {
   if (result == H2_PAL_OK) {
     /* Both package variants share this firmware: the small archive carries
      * startup.mp4, while the board showcase archive carries showcase.mp4. */
-    const char *media_path = "/data/media/showcase.mp4";
+    const char* media_path = "/data/media/showcase.mp4";
     h2_pal_fs_stat_t media_stat;
     if (h2_pal_fs_stat(runtime->fs, media_path, &media_stat) ==
         H2_PAL_ERR_NOT_FOUND) {
@@ -534,9 +529,9 @@ void app_main(void) {
         .name = "h2mp4/runtime",
         .min_stack_size = 131072u,
     };
-    result = h2_pal_task_start(
-        h2_jieli_wl82_platform_task_api(), &direct_options,
-        mp4_runtime, NULL, &runtime_task);
+    result =
+        h2_pal_task_start(h2_jieli_wl82_platform_task_api(), &direct_options,
+                          mp4_runtime, NULL, &runtime_task);
     boot_marker(6u, result);
     emit("H2_JIELI_MP4_TASK rc=%d mode=direct\r\n", result);
     return;
@@ -547,8 +542,8 @@ void app_main(void) {
   int is_trial = 0;
   result = enter_trial_boot(&is_trial);
   boot_marker(2u, result);
-  emit("H2_JIELI_MP4_TRIAL step=enter result=%d trial=%d\r\n",
-       result, is_trial);
+  emit("H2_JIELI_MP4_TRIAL step=enter result=%d trial=%d\r\n", result,
+       is_trial);
   if (result != H2_PAL_OK) {
     emit("H2_JIELI_MP4_TRIAL step=rollback action=reset\r\n");
     system_reset();
@@ -569,13 +564,13 @@ void app_main(void) {
   result = h2_loader_app_client_init(&loader_client, &client_config);
   boot_marker(4u, result);
   if (result != H2_PAL_OK) return;
-  result = h2_jieli_app_iostreamikcp_start(
-      &loader_client, h2_jieli_wl82_platform_task_api(),
-      h2_jieli_wl82_platform_mem_api());
+  result = h2_jieli_app_iostreamikcp_start(&loader_client,
+                                           h2_jieli_wl82_platform_task_api(),
+                                           h2_jieli_wl82_platform_mem_api());
   boot_marker(5u, result);
   if (result != H2_PAL_OK) {
-    (void)h2_loader_reboot_h2loader_with_transition(
-        &loader_client.loader, NULL, NULL);
+    (void)h2_loader_reboot_h2loader_with_transition(&loader_client.loader, NULL,
+                                                    NULL);
     return;
   }
   report_previous_exception();
@@ -586,13 +581,12 @@ void app_main(void) {
       .name = "h2mp4/runtime",
       .min_stack_size = 131072u,
   };
-  result = h2_pal_task_start(
-      h2_jieli_wl82_platform_task_api(), &options,
-      mp4_runtime, NULL, &runtime_task);
+  result = h2_pal_task_start(h2_jieli_wl82_platform_task_api(), &options,
+                             mp4_runtime, NULL, &runtime_task);
   boot_marker(6u, result);
   emit("H2_JIELI_MP4_TASK rc=%d\r\n", result);
   if (result != H2_PAL_OK) {
-    (void)h2_loader_reboot_h2loader_with_transition(
-        &loader_client.loader, NULL, NULL);
+    (void)h2_loader_reboot_h2loader_with_transition(&loader_client.loader, NULL,
+                                                    NULL);
   }
 }

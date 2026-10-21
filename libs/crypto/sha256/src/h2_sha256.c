@@ -31,26 +31,25 @@ static uint32_t rotate_right(uint32_t value, uint32_t amount) {
   return (value >> amount) | (value << (32u - amount));
 }
 
-static uint32_t read_be32(const uint8_t *data) {
+static uint32_t read_be32(const uint8_t* data) {
   return ((uint32_t)data[0] << 24u) | ((uint32_t)data[1] << 16u) |
          ((uint32_t)data[2] << 8u) | (uint32_t)data[3];
 }
 
-static void write_be32(uint8_t *out, uint32_t value) {
+static void write_be32(uint8_t* out, uint32_t value) {
   out[0] = (uint8_t)(value >> 24u);
   out[1] = (uint8_t)(value >> 16u);
   out[2] = (uint8_t)(value >> 8u);
   out[3] = (uint8_t)value;
 }
 
-static void transform(h2_sha256_t *sha, const uint8_t block[64]) {
+static void transform(h2_sha256_t* sha, const uint8_t block[64]) {
   uint32_t schedule[64];
   uint32_t a = sha->state[0], b = sha->state[1], c = sha->state[2];
   uint32_t d = sha->state[3], e = sha->state[4], f = sha->state[5];
   uint32_t g = sha->state[6], h = sha->state[7];
 
-  for (size_t i = 0; i < 16u; ++i)
-    schedule[i] = read_be32(&block[i * 4u]);
+  for (size_t i = 0; i < 16u; ++i) schedule[i] = read_be32(&block[i * 4u]);
   for (size_t i = 16u; i < 64u; ++i) {
     uint32_t s0 = rotate_right(schedule[i - 15u], 7u) ^
                   rotate_right(schedule[i - 15u], 18u) ^
@@ -88,7 +87,7 @@ static void transform(h2_sha256_t *sha, const uint8_t block[64]) {
   sha->state[7] += h;
 }
 
-void h2_sha256_init(h2_sha256_t *sha) {
+void h2_sha256_init(h2_sha256_t* sha) {
   static const uint32_t initial[8] = {
       UINT32_C(0x6a09e667), UINT32_C(0xbb67ae85), UINT32_C(0x3c6ef372),
       UINT32_C(0xa54ff53a), UINT32_C(0x510e527f), UINT32_C(0x9b05688c),
@@ -98,9 +97,8 @@ void h2_sha256_init(h2_sha256_t *sha) {
   memcpy(sha->state, initial, sizeof(initial));
 }
 
-void h2_sha256_update(h2_sha256_t *sha, const uint8_t *data, size_t len) {
-  if (sha == NULL || (len != 0u && data == NULL))
-    return;
+void h2_sha256_update(h2_sha256_t* sha, const uint8_t* data, size_t len) {
+  if (sha == NULL || (len != 0u && data == NULL)) return;
   sha->total_bytes += len;
   while (len != 0u) {
     size_t available = sizeof(sha->block) - sha->block_len;
@@ -116,7 +114,7 @@ void h2_sha256_update(h2_sha256_t *sha, const uint8_t *data, size_t len) {
   }
 }
 
-void h2_sha256_finish(h2_sha256_t *sha, uint8_t out[32]) {
+void h2_sha256_finish(h2_sha256_t* sha, uint8_t out[32]) {
   uint64_t total_bits = sha->total_bytes * UINT64_C(8);
   sha->block[sha->block_len++] = 0x80u;
   if (sha->block_len > 56u) {
@@ -129,8 +127,7 @@ void h2_sha256_finish(h2_sha256_t *sha, uint8_t out[32]) {
     sha->block[63u - i] = (uint8_t)(total_bits >> (i * 8u));
   }
   transform(sha, sha->block);
-  for (size_t i = 0; i < 8u; ++i)
-    write_be32(&out[i * 4u], sha->state[i]);
+  for (size_t i = 0; i < 8u; ++i) write_be32(&out[i * 4u], sha->state[i]);
   memset(sha, 0, sizeof(*sha));
 }
 

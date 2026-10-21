@@ -18,7 +18,7 @@
 
 #define H2_SHOWCASE_WIDTH 1024
 #define H2_SHOWCASE_HEIGHT 600
-#define H2_SHOWCASE_FRAME_BYTES                                                \
+#define H2_SHOWCASE_FRAME_BYTES \
   ((size_t)H2_SHOWCASE_WIDTH * H2_SHOWCASE_HEIGHT * sizeof(uint16_t))
 #define H2_SHOWCASE_FRAME_TIMEOUT_MS 1u
 #define H2_SHOWCASE_AUDIO_SAMPLE_RATE_HZ 16000u
@@ -37,9 +37,9 @@ typedef enum h2_showcase_gizclaw_status {
 } h2_showcase_gizclaw_status_t;
 
 typedef struct h2_showcase_gizclaw_state {
-  struct h2_showcase_app *app;
-  h2_pal_task_t *task;
-  h2_gizclaw_service_t *service;
+  struct h2_showcase_app* app;
+  h2_pal_task_t* task;
+  h2_gizclaw_service_t* service;
   /* Borrowed by the service until deinit, so it must outlive gizclaw_init. */
   h2_gizclaw_config_t client_config;
   h2_atomic_bool_t stop;
@@ -47,12 +47,12 @@ typedef struct h2_showcase_gizclaw_state {
 } h2_showcase_gizclaw_state_t;
 
 typedef struct h2_showcase_audio_state {
-  const uint8_t *pcm_data;
+  const uint8_t* pcm_data;
   size_t pcm_size;
   h2_audio_info_t info;
-  h2_pal_audio_track_t *track;
-  h2_pal_task_t *task;
-  uint8_t *frame_buffer;
+  h2_pal_audio_track_t* track;
+  h2_pal_task_t* task;
+  uint8_t* frame_buffer;
   size_t frame_bytes;
   size_t offset;
   h2_atomic_bool_t stop;
@@ -61,26 +61,26 @@ typedef struct h2_showcase_audio_state {
 } h2_showcase_audio_state_t;
 
 typedef struct h2_showcase_app {
-  h2_runtime_t *runtime;
-  const h2_showcase_config_t *config;
+  h2_runtime_t* runtime;
+  const h2_showcase_config_t* config;
   h2_showcase_state_t state;
-  uint16_t *background_buffer;
-  uint16_t *render_buffer;
-  lv_display_t *display;
-  lv_indev_t *pointer;
-  h2_lvgl_touch_t *touch_adapter;
-  lv_font_t *font;
-  lv_obj_t *background;
-  lv_obj_t *console;
-  lv_obj_t *list;
-  lv_obj_t *video_tab;
-  lv_obj_t *character_tab;
-  lv_obj_t *page_title;
-  lv_obj_t *current_video_label;
-  lv_obj_t *current_character_label;
-  lv_obj_t *status_label;
-  lv_obj_t *conversation;
-  lv_obj_t *conversation_bars[3];
+  uint16_t* background_buffer;
+  uint16_t* render_buffer;
+  lv_display_t* display;
+  lv_indev_t* pointer;
+  h2_lvgl_touch_t* touch_adapter;
+  lv_font_t* font;
+  lv_obj_t* background;
+  lv_obj_t* console;
+  lv_obj_t* list;
+  lv_obj_t* video_tab;
+  lv_obj_t* character_tab;
+  lv_obj_t* page_title;
+  lv_obj_t* current_video_label;
+  lv_obj_t* current_character_label;
+  lv_obj_t* status_label;
+  lv_obj_t* conversation;
+  lv_obj_t* conversation_bars[3];
   int active_tab;
   int active_video;
   int selected_video;
@@ -90,8 +90,8 @@ typedef struct h2_showcase_app {
   uint32_t animation_step;
   uint64_t lvgl_last_tick_ms;
   int lvgl_tick_started;
-  h2_mp4_decoder_t *decoder;
-  h2_pal_fs_file_t *decoder_file;
+  h2_mp4_decoder_t* decoder;
+  h2_pal_fs_file_t* decoder_file;
   uint64_t decoder_file_position;
   uint64_t decoder_base_clock_ms;
   int64_t decoder_base_pts_us;
@@ -99,42 +99,40 @@ typedef struct h2_showcase_app {
   int display_opened;
   int platform_initialized;
   int lvgl_initialized;
-  h2_showcase_audio_state_t *audio;
-  h2_showcase_gizclaw_state_t *gizclaw;
+  h2_showcase_audio_state_t* audio;
+  h2_showcase_gizclaw_state_t* gizclaw;
 } h2_showcase_app_t;
 
-static bool gizclaw_cancel_requested(void *user) {
-  h2_showcase_gizclaw_state_t *state = user;
+static bool gizclaw_cancel_requested(void* user) {
+  h2_showcase_gizclaw_state_t* state = user;
   return state == NULL ||
          h2_atomic_load_explicit(&state->stop, H2_ATOMIC_ACQUIRE);
 }
 
-static void gizclaw_log(h2_showcase_app_t *app, h2_pal_log_level_t level,
-                        const char *message) {
+static void gizclaw_log(h2_showcase_app_t* app, h2_pal_log_level_t level,
+                        const char* message) {
   if (app->runtime->log != NULL) {
     (void)h2_pal_log_write(app->runtime->log, level, "showcase", message);
   }
 }
 
-static h2_pal_result_t
-gizclaw_finish_registration(h2_showcase_gizclaw_state_t *state,
-                            h2_gizclaw_req_t *request) {
-  h2_showcase_app_t *app = state->app;
+static h2_pal_result_t gizclaw_finish_registration(
+    h2_showcase_gizclaw_state_t* state, h2_gizclaw_req_t* request) {
+  h2_showcase_app_t* app = state->app;
   h2_gizclaw_registration_result_t registration;
   h2_pal_result_t result = h2_gizclaw_req_wait(request, 30000u);
   if (result == H2_PAL_OK)
-    result =
-      h2_gizclaw_resp_parse_register(request, &registration);
+    result = h2_gizclaw_resp_parse_register(request, &registration);
   if (result == H2_PAL_OK &&
       strcmp(registration.runtime_profile_name,
              app->config->gizclaw_runtime_profile_name) == 0) {
     h2_atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_CONNECTED,
-                          H2_ATOMIC_RELEASE);
+                             H2_ATOMIC_RELEASE);
     gizclaw_log(app, H2_PAL_LOG_INFO,
                 "H2_SHOWCASE_GIZCLAW connected profile=showcase");
   } else {
     h2_atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
-                          H2_ATOMIC_RELEASE);
+                             H2_ATOMIC_RELEASE);
     gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
     h2_atomic_store_explicit(&state->stop, true, H2_ATOMIC_RELEASE);
   }
@@ -142,23 +140,23 @@ gizclaw_finish_registration(h2_showcase_gizclaw_state_t *state,
   return result;
 }
 
-static void gizclaw_terminal(void *user, h2_pal_result_t result) {
+static void gizclaw_terminal(void* user, h2_pal_result_t result) {
   (void)result;
-  h2_showcase_gizclaw_state_t *state = user;
+  h2_showcase_gizclaw_state_t* state = user;
   if (!gizclaw_cancel_requested(state)) {
     h2_atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
-                          H2_ATOMIC_RELEASE);
+                             H2_ATOMIC_RELEASE);
     gizclaw_log(state->app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
     h2_atomic_store_explicit(&state->stop, true, H2_ATOMIC_RELEASE);
   }
 }
 
-static void gizclaw_task_entry(void *context) {
-  h2_showcase_gizclaw_state_t *state = context;
-  h2_showcase_app_t *app = state->app;
-  const h2_showcase_config_t *showcase = app->config;
+static void gizclaw_task_entry(void* context) {
+  h2_showcase_gizclaw_state_t* state = context;
+  h2_showcase_app_t* app = state->app;
+  const h2_showcase_config_t* showcase = app->config;
   h2_pal_result_t result = H2_PAL_OK;
-  h2_gizclaw_req_t *registration = NULL;
+  h2_gizclaw_req_t* registration = NULL;
   if (result == H2_PAL_OK) {
     result = h2_gizclaw_req_create_register(
         state->service, 1u, showcase->gizclaw_registration_token, 30000u,
@@ -173,13 +171,13 @@ static void gizclaw_task_entry(void *context) {
   }
   if (!gizclaw_cancel_requested(state) && result != H2_PAL_OK) {
     h2_atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
-                          H2_ATOMIC_RELEASE);
+                             H2_ATOMIC_RELEASE);
     gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
   }
 }
 
-static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
-  const h2_showcase_config_t *config = app->config;
+static h2_pal_result_t gizclaw_init(h2_showcase_app_t* app) {
+  const h2_showcase_config_t* config = app->config;
   const int any_config = config->gizclaw_server_endpoint != NULL ||
                          config->gizclaw_private_key != NULL ||
                          config->gizclaw_registration_token != NULL;
@@ -280,7 +278,7 @@ static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
   return result;
 }
 
-static h2_pal_result_t gizclaw_deinit(h2_showcase_app_t *app) {
+static h2_pal_result_t gizclaw_deinit(h2_showcase_app_t* app) {
   if (app->gizclaw == NULL) {
     return H2_PAL_OK;
   }
@@ -294,19 +292,15 @@ static h2_pal_result_t gizclaw_deinit(h2_showcase_app_t *app) {
   }
   if (app->gizclaw->service != NULL) {
     result = h2_gizclaw_service_stop(app->gizclaw->service);
-    if (result != H2_PAL_OK)
-      return result;
+    if (result != H2_PAL_OK) return result;
     for (;;) {
       size_t dispatched = 0u;
-      result =
-          h2_gizclaw_service_poll(app->gizclaw->service, 8u, &dispatched);
-      if (result != H2_PAL_OK || dispatched == 0u)
-        break;
+      result = h2_gizclaw_service_poll(app->gizclaw->service, 8u, &dispatched);
+      if (result != H2_PAL_OK || dispatched == 0u) break;
     }
     if (result == H2_PAL_OK)
       result = h2_gizclaw_service_deinit(app->gizclaw->service);
-    if (result != H2_PAL_OK)
-      return result;
+    if (result != H2_PAL_OK) return result;
     app->gizclaw->service = NULL;
   }
   h2_atomic_destroy(&app->gizclaw->stop);
@@ -316,9 +310,9 @@ static h2_pal_result_t gizclaw_deinit(h2_showcase_app_t *app) {
   return result;
 }
 
-static void display_flush(lv_display_t *display, const lv_area_t *area,
-                          uint8_t *pixels) {
-  h2_showcase_app_t *app = lv_display_get_user_data(display);
+static void display_flush(lv_display_t* display, const lv_area_t* area,
+                          uint8_t* pixels) {
+  h2_showcase_app_t* app = lv_display_get_user_data(display);
   const h2_display_rect_t rect = {
       .x = area->x1,
       .y = area->y1,
@@ -333,8 +327,8 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
   lv_display_flush_ready(display);
 }
 
-static void pointer_read(lv_indev_t *indev, lv_indev_data_t *data) {
-  h2_showcase_app_t *app = lv_indev_get_user_data(indev);
+static void pointer_read(lv_indev_t* indev, lv_indev_data_t* data) {
+  h2_showcase_app_t* app = lv_indev_get_user_data(indev);
   h2_showcase_pointer_state_t state = {0};
   if (app->config->read_pointer != NULL &&
       app->config->read_pointer(app->config->pointer_user, &state) ==
@@ -348,7 +342,7 @@ static void pointer_read(lv_indev_t *indev, lv_indev_data_t *data) {
   }
 }
 
-static void style_button(lv_obj_t *button, uint32_t color) {
+static void style_button(lv_obj_t* button, uint32_t color) {
   lv_obj_set_style_bg_color(button, lv_color_hex(color), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(button, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_radius(button, 12, LV_PART_MAIN);
@@ -356,9 +350,9 @@ static void style_button(lv_obj_t *button, uint32_t color) {
   lv_obj_set_style_pad_all(button, 12, LV_PART_MAIN);
 }
 
-static lv_obj_t *add_label(h2_showcase_app_t *app, lv_obj_t *parent,
-                           const char *text) {
-  lv_obj_t *label = lv_label_create(parent);
+static lv_obj_t* add_label(h2_showcase_app_t* app, lv_obj_t* parent,
+                           const char* text) {
+  lv_obj_t* label = lv_label_create(parent);
   if (label != NULL) {
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, app->font, LV_PART_MAIN);
@@ -367,7 +361,7 @@ static lv_obj_t *add_label(h2_showcase_app_t *app, lv_obj_t *parent,
   return label;
 }
 
-static int find_video(const h2_showcase_config_t *config, const char *id) {
+static int find_video(const h2_showcase_config_t* config, const char* id) {
   for (size_t index = 0; index < config->video_count; ++index) {
     if (strcmp(config->videos[index].id, id) == 0) {
       return (int)index;
@@ -376,7 +370,7 @@ static int find_video(const h2_showcase_config_t *config, const char *id) {
   return -1;
 }
 
-static int find_character(const h2_showcase_config_t *config, const char *id) {
+static int find_character(const h2_showcase_config_t* config, const char* id) {
   for (size_t index = 0; index < config->character_count; ++index) {
     if (strcmp(config->characters[index].id, id) == 0) {
       return (int)index;
@@ -385,17 +379,17 @@ static int find_character(const h2_showcase_config_t *config, const char *id) {
   return -1;
 }
 
-static void load_preferences(h2_showcase_app_t *app) {
+static void load_preferences(h2_showcase_app_t* app) {
   if (app->runtime->pref == NULL) {
     return;
   }
-  h2_pal_pref_namespace_t *pref = NULL;
+  h2_pal_pref_namespace_t* pref = NULL;
   if (h2_pal_pref_open(app->runtime->pref, H2_SHOWCASE_PREF_NAMESPACE,
                        H2_PAL_PREF_OPEN_READ_ONLY, &pref) != H2_PAL_OK ||
       pref == NULL) {
     return;
   }
-  char *value = NULL;
+  char* value = NULL;
   if (pref->get_string != NULL &&
       pref->get_string(pref, app->runtime->mem, H2_SHOWCASE_PREF_VIDEO_ID,
                        &value) == H2_PAL_OK &&
@@ -428,12 +422,12 @@ static void load_preferences(h2_showcase_app_t *app) {
   }
 }
 
-static h2_pal_result_t save_preference(h2_showcase_app_t *app, const char *key,
-                                       const char *value) {
+static h2_pal_result_t save_preference(h2_showcase_app_t* app, const char* key,
+                                       const char* value) {
   if (app->runtime->pref == NULL) {
     return H2_PAL_ERR_UNAVAILABLE;
   }
-  h2_pal_pref_namespace_t *pref = NULL;
+  h2_pal_pref_namespace_t* pref = NULL;
   h2_pal_result_t result = (h2_pal_result_t)h2_pal_pref_open(
       app->runtime->pref, H2_SHOWCASE_PREF_NAMESPACE,
       H2_PAL_PREF_OPEN_READ_WRITE, &pref);
@@ -452,14 +446,14 @@ static h2_pal_result_t save_preference(h2_showcase_app_t *app, const char *key,
   return result == H2_PAL_OK ? close_result : result;
 }
 
-static void set_status(h2_showcase_app_t *app, const char *text,
+static void set_status(h2_showcase_app_t* app, const char* text,
                        uint32_t color) {
   lv_label_set_text(app->status_label, text);
   lv_obj_set_style_text_color(app->status_label, lv_color_hex(color),
                               LV_PART_MAIN);
 }
 
-static void refresh_current_labels(h2_showcase_app_t *app) {
+static void refresh_current_labels(h2_showcase_app_t* app) {
   char text[192];
   (void)snprintf(text, sizeof(text), "当前视频\n%s",
                  app->config->videos[app->active_video].display_name);
@@ -469,9 +463,9 @@ static void refresh_current_labels(h2_showcase_app_t *app) {
   lv_label_set_text(app->current_character_label, text);
 }
 
-static void refresh_list(h2_showcase_app_t *app);
+static void refresh_list(h2_showcase_app_t* app);
 
-static void refresh_selection_styles(h2_showcase_app_t *app) {
+static void refresh_selection_styles(h2_showcase_app_t* app) {
   const int selected =
       app->active_tab == 0 ? app->selected_video : app->selected_character;
   const uint32_t count = lv_obj_get_child_count(app->list);
@@ -481,9 +475,9 @@ static void refresh_selection_styles(h2_showcase_app_t *app) {
   }
 }
 
-static void list_clicked(lv_event_t *event) {
-  h2_showcase_app_t *app = lv_event_get_user_data(event);
-  lv_obj_t *target = lv_event_get_target_obj(event);
+static void list_clicked(lv_event_t* event) {
+  h2_showcase_app_t* app = lv_event_get_user_data(event);
+  lv_obj_t* target = lv_event_get_target_obj(event);
   const uint32_t count = lv_obj_get_child_count(app->list);
   for (uint32_t index = 0; index < count; ++index) {
     if (lv_obj_get_child(app->list, (int32_t)index) != target) {
@@ -499,32 +493,32 @@ static void list_clicked(lv_event_t *event) {
   }
 }
 
-static void refresh_list(h2_showcase_app_t *app) {
+static void refresh_list(h2_showcase_app_t* app) {
   lv_obj_clean(app->list);
   const size_t count = app->active_tab == 0 ? app->config->video_count
                                             : app->config->character_count;
   const int selected =
       app->active_tab == 0 ? app->selected_video : app->selected_character;
   for (size_t index = 0; index < count; ++index) {
-    lv_obj_t *button = lv_button_create(app->list);
+    lv_obj_t* button = lv_button_create(app->list);
     if (button == NULL) {
       return;
     }
     lv_obj_set_width(button, lv_pct(100));
     style_button(button, (int)index == selected ? 0x315c9b : 0x202735);
     lv_obj_add_event_cb(button, list_clicked, LV_EVENT_CLICKED, app);
-    const char *name = app->active_tab == 0
+    const char* name = app->active_tab == 0
                            ? app->config->videos[index].display_name
                            : app->config->characters[index].display_name;
-    lv_obj_t *label = add_label(app, button, name);
+    lv_obj_t* label = add_label(app, button, name);
     if (label != NULL) {
       lv_obj_center(label);
     }
   }
 }
 
-static void tab_clicked(lv_event_t *event) {
-  h2_showcase_app_t *app = lv_event_get_user_data(event);
+static void tab_clicked(lv_event_t* event) {
+  h2_showcase_app_t* app = lv_event_get_user_data(event);
   app->active_tab = lv_event_get_target_obj(event) == app->character_tab;
   style_button(app->video_tab, app->active_tab == 0 ? 0x315c9b : 0x202735);
   style_button(app->character_tab, app->active_tab == 1 ? 0x315c9b : 0x202735);
@@ -534,8 +528,8 @@ static void tab_clicked(lv_event_t *event) {
   refresh_list(app);
 }
 
-static void close_console(lv_event_t *event) {
-  h2_showcase_app_t *app = lv_event_get_user_data(event);
+static void close_console(lv_event_t* event) {
+  h2_showcase_app_t* app = lv_event_get_user_data(event);
   app->selected_video = app->active_video;
   app->selected_character = app->active_character;
   app->pending_video = -1;
@@ -544,8 +538,8 @@ static void close_console(lv_event_t *event) {
   lv_obj_set_hidden(app->console, true);
 }
 
-static void confirm_selection(lv_event_t *event) {
-  h2_showcase_app_t *app = lv_event_get_user_data(event);
+static void confirm_selection(lv_event_t* event) {
+  h2_showcase_app_t* app = lv_event_get_user_data(event);
   if (app->active_tab == 0) {
     if (app->selected_video == app->active_video) {
       const h2_pal_result_t result =
@@ -560,7 +554,7 @@ static void confirm_selection(lv_event_t *event) {
     }
     return;
   }
-  const h2_showcase_character_entry_t *character =
+  const h2_showcase_character_entry_t* character =
       &app->config->characters[app->selected_character];
   const h2_pal_result_t result =
       save_preference(app, H2_SHOWCASE_PREF_CHARACTER_ID, character->id);
@@ -573,7 +567,7 @@ static void confirm_selection(lv_event_t *event) {
   set_status(app, "角色已保存", 0x91d5a9u);
 }
 
-static int create_console(h2_showcase_app_t *app, lv_obj_t *screen) {
+static int create_console(h2_showcase_app_t* app, lv_obj_t* screen) {
   app->console = lv_obj_create(screen);
   if (app->console == NULL) {
     return 0;
@@ -588,7 +582,7 @@ static int create_console(h2_showcase_app_t *app, lv_obj_t *screen) {
   lv_obj_set_style_radius(app->console, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(app->console, 28, LV_PART_MAIN);
 
-  lv_obj_t *sidebar = lv_obj_create(app->console);
+  lv_obj_t* sidebar = lv_obj_create(app->console);
   if (sidebar == NULL) {
     return 0;
   }
@@ -609,15 +603,15 @@ static int create_console(h2_showcase_app_t *app, lv_obj_t *screen) {
   style_button(app->character_tab, 0x202735);
   lv_obj_add_event_cb(app->video_tab, tab_clicked, LV_EVENT_CLICKED, app);
   lv_obj_add_event_cb(app->character_tab, tab_clicked, LV_EVENT_CLICKED, app);
-  lv_obj_t *video_label = add_label(app, app->video_tab, "视频");
-  lv_obj_t *character_label = add_label(app, app->character_tab, "对话角色");
+  lv_obj_t* video_label = add_label(app, app->video_tab, "视频");
+  lv_obj_t* character_label = add_label(app, app->character_tab, "对话角色");
   if (video_label == NULL || character_label == NULL) {
     return 0;
   }
   lv_obj_center(video_label);
   lv_obj_center(character_label);
 
-  lv_obj_t *sidebar_spacer = lv_obj_create(sidebar);
+  lv_obj_t* sidebar_spacer = lv_obj_create(sidebar);
   if (sidebar_spacer == NULL) {
     return 0;
   }
@@ -663,8 +657,8 @@ static int create_console(h2_showcase_app_t *app, lv_obj_t *screen) {
   }
   lv_obj_align(app->status_label, LV_ALIGN_BOTTOM_LEFT, 286, -15);
 
-  lv_obj_t *close = lv_button_create(app->console);
-  lv_obj_t *confirm = lv_button_create(app->console);
+  lv_obj_t* close = lv_button_create(app->console);
+  lv_obj_t* confirm = lv_button_create(app->console);
   if (close == NULL || confirm == NULL) {
     return 0;
   }
@@ -676,8 +670,8 @@ static int create_console(h2_showcase_app_t *app, lv_obj_t *screen) {
   style_button(confirm, 0x315c9b);
   lv_obj_add_event_cb(close, close_console, LV_EVENT_CLICKED, app);
   lv_obj_add_event_cb(confirm, confirm_selection, LV_EVENT_CLICKED, app);
-  lv_obj_t *close_label = add_label(app, close, "关闭");
-  lv_obj_t *confirm_label = add_label(app, confirm, "确认");
+  lv_obj_t* close_label = add_label(app, close, "关闭");
+  lv_obj_t* confirm_label = add_label(app, confirm, "确认");
   if (close_label == NULL || confirm_label == NULL) {
     return 0;
   }
@@ -687,8 +681,8 @@ static int create_console(h2_showcase_app_t *app, lv_obj_t *screen) {
   return 1;
 }
 
-static int create_conversation_effect(h2_showcase_app_t *app,
-                                      lv_obj_t *screen) {
+static int create_conversation_effect(h2_showcase_app_t* app,
+                                      lv_obj_t* screen) {
   app->conversation = lv_obj_create(screen);
   if (app->conversation == NULL) {
     return 0;
@@ -721,7 +715,7 @@ static int create_conversation_effect(h2_showcase_app_t *app,
   return 1;
 }
 
-static h2_pal_result_t ui_init(h2_showcase_app_t *app) {
+static h2_pal_result_t ui_init(h2_showcase_app_t* app) {
   h2_display_info_t info = {0};
   if (h2_pal_display_open(app->runtime->display) != H2_DISPLAY_OK) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -765,7 +759,7 @@ static h2_pal_result_t ui_init(h2_showcase_app_t *app) {
   lv_display_set_buffers(app->display, app->render_buffer, NULL,
                          H2_SHOWCASE_FRAME_BYTES, LV_DISPLAY_RENDER_MODE_FULL);
 
-  lv_obj_t *screen = lv_screen_active();
+  lv_obj_t* screen = lv_screen_active();
   lv_obj_set_scrollable(screen, false);
   lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000u), LV_PART_MAIN);
   app->background = lv_canvas_create(screen);
@@ -804,7 +798,7 @@ static h2_pal_result_t ui_init(h2_showcase_app_t *app) {
   return H2_PAL_OK;
 }
 
-static void ui_deinit(h2_showcase_app_t *app) {
+static void ui_deinit(h2_showcase_app_t* app) {
   if (app->touch_adapter != NULL) {
     h2_lvgl_touch_destroy(app->touch_adapter);
     app->touch_adapter = NULL;
@@ -836,8 +830,8 @@ static void ui_deinit(h2_showcase_app_t *app) {
   }
 }
 
-static void audio_task_entry(void *context) {
-  h2_showcase_audio_state_t *audio = context;
+static void audio_task_entry(void* context) {
+  h2_showcase_audio_state_t* audio = context;
   while (!h2_atomic_load_explicit(&audio->stop, H2_ATOMIC_ACQUIRE)) {
     size_t copied = 0u;
     while (copied < audio->frame_bytes) {
@@ -872,8 +866,8 @@ static void audio_task_entry(void *context) {
   }
 }
 
-static h2_pal_result_t audio_init(h2_showcase_app_t *app) {
-  const h2_showcase_video_entry_t *video =
+static h2_pal_result_t audio_init(h2_showcase_app_t* app) {
+  const h2_showcase_video_entry_t* video =
       &app->config->videos[app->active_video];
   if (video->audio_pcm_data == NULL || video->audio_pcm_size == 0u ||
       (video->audio_pcm_size % sizeof(int16_t)) != 0u ||
@@ -896,7 +890,7 @@ static h2_pal_result_t audio_init(h2_showcase_app_t *app) {
     return H2_PAL_ERR_NO_MEMORY;
   }
   int result = h2_pal_audio_get_info(app->runtime->audio, &app->audio->info);
-  const h2_audio_pcm_format_t *format = &app->audio->info.playback_format;
+  const h2_audio_pcm_format_t* format = &app->audio->info.playback_format;
   if (result != H2_AUDIO_OK || !app->audio->info.available ||
       !app->audio->info.playback_supported ||
       format->sample_rate_hz != H2_SHOWCASE_AUDIO_SAMPLE_RATE_HZ ||
@@ -942,11 +936,11 @@ static h2_pal_result_t audio_init(h2_showcase_app_t *app) {
   return result;
 }
 
-static h2_pal_result_t audio_deinit(h2_showcase_app_t *app) {
+static h2_pal_result_t audio_deinit(h2_showcase_app_t* app) {
   if (app->audio == NULL) {
     return H2_PAL_OK;
   }
-  h2_showcase_audio_state_t *audio = app->audio;
+  h2_showcase_audio_state_t* audio = app->audio;
   h2_pal_result_t result = H2_PAL_OK;
   h2_atomic_store_explicit(&audio->stop, true, H2_ATOMIC_RELEASE);
   if (audio->task != NULL) {
@@ -982,10 +976,10 @@ static h2_pal_result_t audio_deinit(h2_showcase_app_t *app) {
   return result;
 }
 
-static h2_pal_result_t decoder_read_at(void *user, uint64_t offset,
-                                       void *buffer, size_t capacity,
-                                       size_t *out_read) {
-  h2_showcase_app_t *app = user;
+static h2_pal_result_t decoder_read_at(void* user, uint64_t offset,
+                                       void* buffer, size_t capacity,
+                                       size_t* out_read) {
+  h2_showcase_app_t* app = user;
   if (app == NULL || app->decoder_file == NULL || out_read == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -1007,7 +1001,7 @@ static h2_pal_result_t decoder_read_at(void *user, uint64_t offset,
   return result;
 }
 
-static h2_pal_result_t decoder_deinit(h2_showcase_app_t *app) {
+static h2_pal_result_t decoder_deinit(h2_showcase_app_t* app) {
   h2_pal_result_t result = H2_PAL_OK;
   if (app->decoder != NULL) {
     result = h2_mp4_decoder_close(app->decoder);
@@ -1025,8 +1019,8 @@ static h2_pal_result_t decoder_deinit(h2_showcase_app_t *app) {
   return result;
 }
 
-static h2_pal_result_t decoder_init(h2_showcase_app_t *app) {
-  const char *path = app->config->videos[app->active_video].path;
+static h2_pal_result_t decoder_init(h2_showcase_app_t* app) {
+  const char* path = app->config->videos[app->active_video].path;
   h2_pal_fs_stat_t stat = {0};
   h2_pal_result_t result = h2_pal_fs_stat(app->runtime->fs, path, &stat);
   if (result != H2_PAL_OK || stat.is_dir || stat.size == 0u) {
@@ -1066,7 +1060,7 @@ static h2_pal_result_t decoder_init(h2_showcase_app_t *app) {
   return result;
 }
 
-static h2_pal_result_t apply_pending_video(h2_showcase_app_t *app) {
+static h2_pal_result_t apply_pending_video(h2_showcase_app_t* app) {
   if (app->pending_video < 0) {
     return H2_PAL_OK;
   }
@@ -1123,7 +1117,7 @@ static h2_pal_result_t apply_pending_video(h2_showcase_app_t *app) {
   return audio_result;
 }
 
-static int frame_plane_covers_rows(const h2_mp4_decoder_frame_info_t *info) {
+static int frame_plane_covers_rows(const h2_mp4_decoder_frame_info_t* info) {
   const size_t row_bytes = (size_t)info->width * sizeof(uint16_t);
   const size_t preceding_rows = (size_t)info->height - 1u;
   if (preceding_rows > 0u && info->video_planes[0].stride_bytes >
@@ -1134,8 +1128,8 @@ static int frame_plane_covers_rows(const h2_mp4_decoder_frame_info_t *info) {
          preceding_rows * info->video_planes[0].stride_bytes + row_bytes;
 }
 
-static h2_pal_result_t update_video(h2_showcase_app_t *app) {
-  h2_mp4_decoder_frame_t *frame = NULL;
+static h2_pal_result_t update_video(h2_showcase_app_t* app) {
+  h2_mp4_decoder_frame_t* frame = NULL;
   h2_pal_result_t result = h2_mp4_decoder_acquire_frame(
       app->decoder, H2_SHOWCASE_FRAME_TIMEOUT_MS, &frame);
   if (result == H2_PAL_EXIT) {
@@ -1184,8 +1178,8 @@ static h2_pal_result_t update_video(h2_showcase_app_t *app) {
     }
   }
   if (result == H2_PAL_OK) {
-    const uint8_t *source = info.video_planes[0].data;
-    uint8_t *destination = (uint8_t *)app->background_buffer;
+    const uint8_t* source = info.video_planes[0].data;
+    uint8_t* destination = (uint8_t*)app->background_buffer;
     const size_t row_bytes = H2_SHOWCASE_WIDTH * sizeof(uint16_t);
     for (size_t row = 0; row < H2_SHOWCASE_HEIGHT; ++row) {
       memcpy(destination + row * row_bytes,
@@ -1198,7 +1192,7 @@ static h2_pal_result_t update_video(h2_showcase_app_t *app) {
   return result == H2_PAL_OK ? release_result : result;
 }
 
-static void update_projection(h2_showcase_app_t *app) {
+static void update_projection(h2_showcase_app_t* app) {
   if (app->state.mode == H2_SHOWCASE_MODE_CONSOLE) {
     lv_obj_set_hidden(app->console, false);
     lv_obj_set_hidden(app->conversation, true);
@@ -1217,7 +1211,7 @@ static void update_projection(h2_showcase_app_t *app) {
   }
 }
 
-static void process_runtime_events(h2_showcase_app_t *app) {
+static void process_runtime_events(h2_showcase_app_t* app) {
   const h2_showcase_mode_t previous_mode = app->state.mode;
   bool processed_event = false;
   h2_runtime_event_payload_buffer_t payload;
@@ -1231,8 +1225,8 @@ static void process_runtime_events(h2_showcase_app_t *app) {
     const h2_pal_result_t rc =
         h2_gizclaw_service_poll(app->gizclaw->service, 8u, NULL);
     if (rc != H2_PAL_OK) {
-      h2_atomic_store_explicit(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_FAILED,
-                            H2_ATOMIC_RELEASE);
+      h2_atomic_store_explicit(&app->gizclaw->status,
+                               H2_SHOWCASE_GIZCLAW_FAILED, H2_ATOMIC_RELEASE);
       gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW dispatch failed");
     }
   }
@@ -1246,7 +1240,7 @@ static void process_runtime_events(h2_showcase_app_t *app) {
     }
     if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
         event.payload_size >= sizeof(h2_runtime_button_action_event_t)) {
-      const h2_runtime_button_action_event_t *action = event.payload;
+      const h2_runtime_button_action_event_t* action = event.payload;
       if (action->released_at_ms == 0u &&
           event.timestamp_ms == action->pressed_at_ms) {
         h2_showcase_state_button_down(&app->state, event.timestamp_ms);
@@ -1265,8 +1259,7 @@ static void process_runtime_events(h2_showcase_app_t *app) {
         h2_gizclaw_service_poll(app->gizclaw->service, 8u, NULL);
     if (rc != H2_PAL_OK) {
       h2_atomic_store_explicit(&app->gizclaw->status,
-                            H2_SHOWCASE_GIZCLAW_FAILED,
-                            H2_ATOMIC_RELEASE);
+                               H2_SHOWCASE_GIZCLAW_FAILED, H2_ATOMIC_RELEASE);
       gizclaw_log(app, H2_PAL_LOG_ERROR,
                   "H2_SHOWCASE_GIZCLAW fallback dispatch failed");
     }
@@ -1284,7 +1277,7 @@ static void process_runtime_events(h2_showcase_app_t *app) {
     refresh_list(app);
   }
   if (app->runtime->log != NULL && app->state.mode != previous_mode) {
-    const char *message = app->state.mode == H2_SHOWCASE_MODE_CONSOLE
+    const char* message = app->state.mode == H2_SHOWCASE_MODE_CONSOLE
                               ? "H2_SHOWCASE_MODE console"
                           : app->state.mode == H2_SHOWCASE_MODE_CONVERSATION
                               ? "H2_SHOWCASE_MODE conversation"
@@ -1294,7 +1287,7 @@ static void process_runtime_events(h2_showcase_app_t *app) {
   }
 }
 
-static h2_pal_result_t update_lvgl(h2_showcase_app_t *app) {
+static h2_pal_result_t update_lvgl(h2_showcase_app_t* app) {
   uint64_t now_ms = 0u;
   h2_pal_result_t result =
       h2_pal_time_get_monotonic_ms(app->runtime->time, &now_ms);
@@ -1321,8 +1314,8 @@ static h2_pal_result_t update_lvgl(h2_showcase_app_t *app) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_showcase_run(h2_runtime_t *runtime,
-                                const h2_showcase_config_t *config) {
+h2_pal_result_t h2_showcase_run(h2_runtime_t* runtime,
+                                const h2_showcase_config_t* config) {
   if (runtime == NULL || config == NULL || config->videos == NULL ||
       config->video_count == 0u || config->characters == NULL ||
       config->character_count == 0u || config->video_count > (size_t)INT_MAX ||
@@ -1334,7 +1327,7 @@ h2_pal_result_t h2_showcase_run(h2_runtime_t *runtime,
     return H2_PAL_ERR_INVALID_ARG;
   }
   for (size_t index = 0; index < config->video_count; ++index) {
-    const h2_showcase_video_entry_t *video = &config->videos[index];
+    const h2_showcase_video_entry_t* video = &config->videos[index];
     if (video->id == NULL || video->id[0] == '\0' ||
         video->display_name == NULL || video->display_name[0] == '\0' ||
         video->path == NULL || video->path[0] == '\0' ||
@@ -1349,7 +1342,7 @@ h2_pal_result_t h2_showcase_run(h2_runtime_t *runtime,
     }
   }
   for (size_t index = 0; index < config->character_count; ++index) {
-    const h2_showcase_character_entry_t *character = &config->characters[index];
+    const h2_showcase_character_entry_t* character = &config->characters[index];
     if (character->id == NULL || character->id[0] == '\0' ||
         character->display_name == NULL || character->display_name[0] == '\0') {
       return H2_PAL_ERR_INVALID_ARG;

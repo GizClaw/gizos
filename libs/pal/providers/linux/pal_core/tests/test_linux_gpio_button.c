@@ -5,7 +5,7 @@
 #include <string.h>
 
 typedef struct fake_gpio_reader_state {
-  const char *expected_chip_label;
+  const char* expected_chip_label;
   uint32_t expected_line_offset;
   int expected_active_low;
   h2_pal_button_state_t state;
@@ -13,10 +13,10 @@ typedef struct fake_gpio_reader_state {
   unsigned int calls;
 } fake_gpio_reader_state_t;
 
-static h2_pal_result_t fake_gpio_read(void *user, const char *chip_label,
+static h2_pal_result_t fake_gpio_read(void* user, const char* chip_label,
                                       uint32_t line_offset, int active_low,
-                                      h2_pal_button_state_t *out_state) {
-  fake_gpio_reader_state_t *state = user;
+                                      h2_pal_button_state_t* out_state) {
+  fake_gpio_reader_state_t* state = user;
   assert(strcmp(chip_label, state->expected_chip_label) == 0);
   assert(line_offset == state->expected_line_offset);
   assert(active_low == state->expected_active_low);
@@ -48,7 +48,7 @@ static void test_configuration_and_reads(void) {
   h2_linux_gpio_test_set_reader(fake_gpio_read, &reader);
 
   h2_pal_single_button_reading_t reading = {0};
-  const h2_pal_button_api_t *api = h2_linux_gpio_button_api();
+  const h2_pal_button_api_t* api = h2_linux_gpio_button_api();
   assert(h2_pal_button_read_single_button(api, 7u, &reading) == H2_PAL_OK);
   assert(reading.id == 7u);
   assert(reading.state == H2_PAL_BUTTON_STATE_RELEASED);
@@ -114,14 +114,14 @@ static void test_chip_node_name_discovery(void) {
 }
 
 static void test_discovery_fails_closed_on_unreadable_candidates(void) {
-  assert(h2_linux_gpio_test_discovery_result(
-             1, H2_PAL_ERR_NOT_FOUND) == H2_PAL_OK);
-  assert(h2_linux_gpio_test_discovery_result(
-             0, H2_PAL_ERR_NOT_FOUND) == H2_PAL_ERR_NOT_FOUND);
-  assert(h2_linux_gpio_test_discovery_result(
-             1, H2_PAL_ERR_UNAVAILABLE) == H2_PAL_ERR_UNAVAILABLE);
-  assert(h2_linux_gpio_test_discovery_result(
-             1, H2_PAL_ERR_IO) == H2_PAL_ERR_IO);
+  assert(h2_linux_gpio_test_discovery_result(1, H2_PAL_ERR_NOT_FOUND) ==
+         H2_PAL_OK);
+  assert(h2_linux_gpio_test_discovery_result(0, H2_PAL_ERR_NOT_FOUND) ==
+         H2_PAL_ERR_NOT_FOUND);
+  assert(h2_linux_gpio_test_discovery_result(1, H2_PAL_ERR_UNAVAILABLE) ==
+         H2_PAL_ERR_UNAVAILABLE);
+  assert(h2_linux_gpio_test_discovery_result(1, H2_PAL_ERR_IO) ==
+         H2_PAL_ERR_IO);
 }
 
 int main(void) {

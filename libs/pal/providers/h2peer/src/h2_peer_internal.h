@@ -19,9 +19,9 @@
 typedef struct h2_peer_media_frame h2_peer_media_frame_t;
 
 typedef struct h2_peer_ice_server {
-  char *url;
-  char *username;
-  char *credential;
+  char* url;
+  char* username;
+  char* credential;
 } h2_peer_ice_server_t;
 
 typedef struct h2_peer_stream_reset {
@@ -33,7 +33,7 @@ typedef struct h2_peer_stream_reset {
 } h2_peer_stream_reset_t;
 
 typedef struct h2_peer_tx_item {
-  uint8_t *data;
+  uint8_t* data;
   size_t len;
   size_t capacity;
   int is_text;
@@ -52,12 +52,11 @@ enum {
   H2_PEER_NETWORK_CHANNEL_ROUND_MESSAGES = 8,
 };
 
-
 struct h2_pal_webrtc_channel {
-  struct h2_pal_webrtc_peer *owner;
-  struct h2_pal_webrtc_channel *next;
+  struct h2_pal_webrtc_peer* owner;
+  struct h2_pal_webrtc_channel* next;
   h2_pal_webrtc_channel_info_t info;
-  char *label;
+  char* label;
   uint32_t generation;
   h2_atomic_int_t open;
   int wire_opened;
@@ -68,23 +67,23 @@ struct h2_pal_webrtc_channel {
   h2_atomic_u8_t ready_slot;
   /* Ring of queued messages: producers fill at tx_tail, the network task
    * drains from tx_head. tx_state per slot: 0 free, 1 filling, 2 ready. */
-  h2_peer_tx_item_t *tx_storage[H2_PEER_INPUT_SLOT_COUNT];
+  h2_peer_tx_item_t* tx_storage[H2_PEER_INPUT_SLOT_COUNT];
   h2_atomic_u8_t tx_state[H2_PEER_INPUT_SLOT_COUNT];
   h2_atomic_u8_t tx_head;
   h2_atomic_u8_t tx_tail;
 };
 
 struct h2_pal_webrtc_peer {
-  h2_peer_t *owner;
-  const h2_pal_mem_api_t *allocator;
-  struct h2_pal_webrtc_peer *next;
-  h2_pal_webrtc_track_t *media_track;
+  h2_peer_t* owner;
+  const h2_pal_mem_api_t* allocator;
+  struct h2_pal_webrtc_peer* next;
+  h2_pal_webrtc_track_t* media_track;
   uint8_t media_pending_opus[H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE];
   size_t media_pending_opus_len;
-  h2_peer_media_frame_t *media_receive_head;
-  h2_peer_media_frame_t *media_receive_tail;
+  h2_peer_media_frame_t* media_receive_head;
+  h2_peer_media_frame_t* media_receive_tail;
   size_t media_receive_count;
-  h2_pal_webrtc_channel_t *channels;
+  h2_pal_webrtc_channel_t* channels;
   h2_peer_ice_server_t ice_servers[H2_PEER_ICE_SERVER_MAX];
   size_t ice_server_count;
   h2_atomic_int_t state;
@@ -92,18 +91,18 @@ struct h2_pal_webrtc_peer {
   uint16_t next_stream_id;
   uint16_t local_stream_first;
   h2_pal_result_t stream_reset_failure;
-  void *production_pc;
+  void* production_pc;
   int offer_started;
   int remote_answer_set;
   int production_sctp_open;
   h2_atomic_int_t closed;
   /* One live handle/worker reference, plus one per owned event. */
   h2_atomic_uint_t refs;
-  h2_pal_queue_t *network_commands;
-  h2_pal_queue_t *network_responses;
-  h2_pal_queue_t *network_events;
-  h2_pal_mutex_t *network_request_mutex;
-  h2_pal_task_t *network_task;
+  h2_pal_queue_t* network_commands;
+  h2_pal_queue_t* network_responses;
+  h2_pal_queue_t* network_events;
+  h2_pal_mutex_t* network_request_mutex;
+  h2_pal_task_t* network_task;
   h2_atomic_uint_t network_event_count;
   h2_atomic_size_t network_event_bytes;
   h2_atomic_int_t network_send_wakeup_queued;
@@ -115,7 +114,7 @@ struct h2_pal_webrtc_peer {
   h2_atomic_int_t network_transport_result;
   h2_atomic_int_t network_error_reported;
   h2_atomic_ptr_t rtp_pending;
-  h2_peer_tx_item_t *rtp_storage;
+  h2_peer_tx_item_t* rtp_storage;
   h2_atomic_u32_t channel_ready;
   uint8_t channel_round_robin;
 };
@@ -123,66 +122,67 @@ struct h2_pal_webrtc_peer {
 struct h2_peer {
   h2_peer_config_t config;
   h2_pal_webrtc_api_t webrtc_api;
-  h2_pal_webrtc_peer_t *peers;
+  h2_pal_webrtc_peer_t* peers;
   /* One public owner reference, plus one per allocated peer. */
   h2_atomic_uint_t refs;
   int destroying;
 };
 
 /* Internal lifecycle helpers also used by direct scheduler fixtures. */
-h2_pal_result_t h2_peer_connection_atomic_init(h2_pal_webrtc_peer_t *peer);
-void h2_peer_connection_atomic_destroy(h2_pal_webrtc_peer_t *peer);
+h2_pal_result_t h2_peer_connection_atomic_init(h2_pal_webrtc_peer_t* peer);
+void h2_peer_connection_atomic_destroy(h2_pal_webrtc_peer_t* peer);
 
-static inline const h2_pal_mem_api_t *h2_peer_mem(const h2_pal_webrtc_peer_t *peer) {
+static inline const h2_pal_mem_api_t* h2_peer_mem(
+    const h2_pal_webrtc_peer_t* peer) {
   return peer->allocator != NULL ? peer->allocator : peer->owner->config.mem;
 }
 
 void h2_peer_webrtc_on_stream_reset(
-    h2_pal_webrtc_peer_t *peer, const h2_pal_sctp_stream_reset_event_t *event);
+    h2_pal_webrtc_peer_t* peer, const h2_pal_sctp_stream_reset_event_t* event);
 
-void h2_peer_webrtc_on_sctp_closed(h2_pal_webrtc_peer_t *peer);
+void h2_peer_webrtc_on_sctp_closed(h2_pal_webrtc_peer_t* peer);
 
 h2_pal_result_t h2_peer_webrtc_on_remote_channel_open(
-    h2_pal_webrtc_peer_t *peer, h2_pal_webrtc_str_t label, uint16_t stream_id,
+    h2_pal_webrtc_peer_t* peer, h2_pal_webrtc_str_t label, uint16_t stream_id,
     int ordered, int reliable);
 
-void h2_peer_webrtc_emit_peer_state(h2_pal_webrtc_peer_t *peer,
+void h2_peer_webrtc_emit_peer_state(h2_pal_webrtc_peer_t* peer,
                                     h2_pal_webrtc_peer_state_t state);
 
-void h2_peer_webrtc_emit_channel_state(h2_pal_webrtc_channel_t *channel,
+void h2_peer_webrtc_emit_channel_state(h2_pal_webrtc_channel_t* channel,
                                        h2_pal_webrtc_channel_state_t state);
 
-void h2_peer_webrtc_emit_local_sdp(h2_pal_webrtc_peer_t *peer,
+void h2_peer_webrtc_emit_local_sdp(h2_pal_webrtc_peer_t* peer,
                                    h2_pal_webrtc_sdp_type_t type,
                                    h2_pal_webrtc_str_t sdp);
 
 h2_pal_result_t h2_peer_webrtc_emit_channel_message(
-    h2_pal_webrtc_peer_t *peer, h2_pal_webrtc_channel_t *channel,
-    const uint8_t *data, size_t len, int is_text);
+    h2_pal_webrtc_peer_t* peer, h2_pal_webrtc_channel_t* channel,
+    const uint8_t* data, size_t len, int is_text);
 
-void h2_peer_webrtc_emit_opus_frame(h2_pal_webrtc_peer_t *peer,
-                                    const uint8_t *opus, size_t opus_len);
-
-/* Network-task-owned media pump/cleanup; not part of the public PAL API. */
-h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer);
-void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t *peer);
-
-/* Channel TX ring and its network-round scheduler; exposed for unit tests. */
-h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
-                                        const uint8_t *data, size_t len,
-                                        int is_text);
-int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
-                                    uint32_t *snapshot);
+void h2_peer_webrtc_emit_opus_frame(h2_pal_webrtc_peer_t* peer,
+                                    const uint8_t* opus, size_t opus_len);
 
 /* Network-task-owned media pump/cleanup; not part of the public PAL API. */
-h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer);
-void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t *peer);
+h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t* peer);
+void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t* peer);
 
 /* Channel TX ring and its network-round scheduler; exposed for unit tests. */
-h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
-                                        const uint8_t *data, size_t len,
+h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t* channel,
+                                        const uint8_t* data, size_t len,
                                         int is_text);
-int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
-                                    uint32_t *snapshot);
+int h2_peer_network_service_channel(h2_pal_webrtc_peer_t* peer,
+                                    uint32_t* snapshot);
+
+/* Network-task-owned media pump/cleanup; not part of the public PAL API. */
+h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t* peer);
+void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t* peer);
+
+/* Channel TX ring and its network-round scheduler; exposed for unit tests. */
+h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t* channel,
+                                        const uint8_t* data, size_t len,
+                                        int is_text);
+int h2_peer_network_service_channel(h2_pal_webrtc_peer_t* peer,
+                                    uint32_t* snapshot);
 
 #endif

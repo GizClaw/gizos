@@ -10,20 +10,20 @@
 #include <stdint.h>
 
 typedef struct h2_gizclaw_pcm_ring {
-  const h2_pal_mem_api_t *allocator;
-  uint8_t *bytes;
+  const h2_pal_mem_api_t* allocator;
+  uint8_t* bytes;
   size_t capacity;
   h2_atomic_size_t write_index;
   h2_atomic_size_t read_index;
   h2_atomic_bool_t closed;
 } h2_gizclaw_pcm_ring_t;
 
-h2_pal_result_t h2_gizclaw_pcm_ring_init(h2_gizclaw_pcm_ring_t *ring,
-                                         const h2_pal_mem_api_t *allocator,
+h2_pal_result_t h2_gizclaw_pcm_ring_init(h2_gizclaw_pcm_ring_t* ring,
+                                         const h2_pal_mem_api_t* allocator,
                                          size_t capacity);
-void h2_gizclaw_pcm_ring_close(h2_gizclaw_pcm_ring_t *ring);
-void h2_gizclaw_pcm_ring_deinit(h2_gizclaw_pcm_ring_t *ring);
-size_t h2_gizclaw_pcm_ring_available(const h2_gizclaw_pcm_ring_t *ring);
+void h2_gizclaw_pcm_ring_close(h2_gizclaw_pcm_ring_t* ring);
+void h2_gizclaw_pcm_ring_deinit(h2_gizclaw_pcm_ring_t* ring);
+size_t h2_gizclaw_pcm_ring_available(const h2_gizclaw_pcm_ring_t* ring);
 
 /**
  * Append PCM without waiting.
@@ -31,11 +31,11 @@ size_t h2_gizclaw_pcm_ring_available(const h2_gizclaw_pcm_ring_t *ring);
  * When there is not enough room, return WOULD_BLOCK without consuming or
  * overwriting any data. This ring has exactly one producer and one consumer.
  */
-h2_pal_result_t h2_gizclaw_pcm_ring_write(h2_gizclaw_pcm_ring_t *ring,
-                                          const uint8_t *pcm, size_t pcm_len);
+h2_pal_result_t h2_gizclaw_pcm_ring_write(h2_gizclaw_pcm_ring_t* ring,
+                                          const uint8_t* pcm, size_t pcm_len);
 
 /** Read exactly pcm_len bytes, or return WOULD_BLOCK without consuming. */
-h2_pal_result_t h2_gizclaw_pcm_ring_read(h2_gizclaw_pcm_ring_t *ring,
-                                         uint8_t *pcm, size_t pcm_len);
+h2_pal_result_t h2_gizclaw_pcm_ring_read(h2_gizclaw_pcm_ring_t* ring,
+                                         uint8_t* pcm, size_t pcm_len);
 
 #endif

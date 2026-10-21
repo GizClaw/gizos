@@ -15,59 +15,53 @@ typedef struct test_state {
 } test_state_t;
 static h2_atomic_int_t s_fail_next_alloc;
 static h2_atomic_size_t s_allocations;
-static const h2_pal_task_api_t *s_real_task;
+static const h2_pal_task_api_t* s_real_task;
 static int s_fail_start, s_fail_join;
 static unsigned s_started, s_joined;
 
-static int start_task(void *user, const h2_pal_task_options_t *options,
-                      h2_pal_task_entry_t entry, void *context,
-                      h2_pal_task_t **out) {
+static int start_task(void* user, const h2_pal_task_options_t* options,
+                      h2_pal_task_entry_t entry, void* context,
+                      h2_pal_task_t** out) {
   if (s_fail_start) {
     *out = NULL;
     return H2_PAL_ERR_TASK;
   }
   int rc = s_real_task->vtable->start(user, options, entry, context, out);
-  if (rc == H2_PAL_OK)
-    s_started++;
+  if (rc == H2_PAL_OK) s_started++;
   return rc;
 }
 
-static int join_task(void *user, h2_pal_task_t *task) {
-  if (s_fail_join)
-    return H2_PAL_ERR_TASK;
+static int join_task(void* user, h2_pal_task_t* task) {
+  if (s_fail_join) return H2_PAL_ERR_TASK;
   int rc = s_real_task->vtable->join(user, task);
-  if (rc == H2_PAL_OK)
-    s_joined++;
+  if (rc == H2_PAL_OK) s_joined++;
   return rc;
 }
 
-static void *test_alloc(void *user, size_t len) {
+static void* test_alloc(void* user, size_t len) {
   (void)user;
   if (h2_atomic_exchange(&s_fail_next_alloc, 0)) {
     return NULL;
   }
-  void *ptr = malloc(len);
-  if (ptr != NULL)
-    h2_atomic_fetch_add(&s_allocations, 1u);
+  void* ptr = malloc(len);
+  if (ptr != NULL) h2_atomic_fetch_add(&s_allocations, 1u);
   return ptr;
 }
-static void *test_realloc(void *user, void *ptr, size_t len) {
+static void* test_realloc(void* user, void* ptr, size_t len) {
   (void)user;
   // These tests require the provider to preserve ownership across realloc.
-  if (ptr == NULL)
-    return test_alloc(user, len);
+  if (ptr == NULL) return test_alloc(user, len);
   assert(len != 0u);
   return realloc(ptr, len);
 }
-static void test_free(void *user, void *ptr) {
+static void test_free(void* user, void* ptr) {
   (void)user;
-  if (ptr != NULL)
-    h2_atomic_fetch_sub(&s_allocations, 1u);
+  if (ptr != NULL) h2_atomic_fetch_sub(&s_allocations, 1u);
   free(ptr);
 }
 
-static h2_pal_result_t failed_read(void *user, uint8_t *opus, size_t capacity,
-                                   size_t *out_len) {
+static h2_pal_result_t failed_read(void* user, uint8_t* opus, size_t capacity,
+                                   size_t* out_len) {
   (void)user;
   (void)opus;
   (void)capacity;
@@ -75,21 +69,18 @@ static h2_pal_result_t failed_read(void *user, uint8_t *opus, size_t capacity,
   return H2_PAL_ERR_FORMAT;
 }
 
-static int contains_bytes(const char *data, size_t len, const char *needle,
+static int contains_bytes(const char* data, size_t len, const char* needle,
                           size_t needle_len) {
-  if (needle_len == 0u || needle_len > len)
-    return 0;
+  if (needle_len == 0u || needle_len > len) return 0;
   for (size_t offset = 0u; offset <= len - needle_len; ++offset)
-    if (memcmp(data + offset, needle, needle_len) == 0)
-      return 1;
+    if (memcmp(data + offset, needle, needle_len) == 0) return 1;
   return 0;
 }
 
-static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
-                                       size_t capacity, size_t *out_len) {
-  test_state_t *test = user;
-  if (h2_atomic_load(&test->track_reads) != 0u)
-    return H2_PAL_ERR_WOULD_BLOCK;
+static h2_pal_result_t test_track_read(void* user, uint8_t* opus,
+                                       size_t capacity, size_t* out_len) {
+  test_state_t* test = user;
+  if (h2_atomic_load(&test->track_reads) != 0u) return H2_PAL_ERR_WOULD_BLOCK;
   assert(capacity >= 2u);
   opus[0] = 0xf8u;
   opus[1] = 0x42u;
@@ -99,14 +90,14 @@ static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
 }
 
 typedef struct blocked_poll_state {
-  const h2_pal_webrtc_api_t *api;
-  h2_pal_webrtc_peer_t *peer;
+  const h2_pal_webrtc_api_t* api;
+  h2_pal_webrtc_peer_t* peer;
   volatile int entered;
   volatile int result;
 } blocked_poll_state_t;
 
-static void blocked_poll_entry(void *ctx) {
-  blocked_poll_state_t *state = ctx;
+static void blocked_poll_entry(void* ctx) {
+  blocked_poll_state_t* state = ctx;
   h2_pal_webrtc_event_t event = {0};
   int rc = H2_PAL_ERR_BUSY;
   /* The prober holds the slot for the length of one non-blocking poll, so
@@ -125,7 +116,7 @@ int main(void) {
   h2_pal_mem_api_t mem = {.user = NULL, .vtable = &mem_vtable};
   assert(h2_atomic_int_init(&s_fail_next_alloc, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_size_init(&s_allocations, 0u) == H2_ATOMIC_OK);
-  h2_pion_t *provider = NULL;
+  h2_pion_t* provider = NULL;
   assert(h2_pion_create(NULL, &provider) == H2_PAL_ERR_INVALID_ARG);
   s_real_task = h2_desktop_platform_task_api();
   h2_pal_task_vtable_t task_vtable = *s_real_task->vtable;
@@ -140,14 +131,15 @@ int main(void) {
       .time = h2_desktop_platform_time_api(),
   };
   assert(h2_pion_create(&config, &provider) == H2_PAL_OK);
-  const h2_pal_webrtc_api_t *api = h2_pion_webrtc_api(provider);
+  const h2_pal_webrtc_api_t* api = h2_pion_webrtc_api(provider);
   assert(api != NULL);
 
-  h2_pal_webrtc_peer_t *peer = NULL;
+  h2_pal_webrtc_peer_t* peer = NULL;
   size_t baseline = h2_atomic_load(&s_allocations);
   s_fail_start = 1;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_ERR_TASK);
-  assert(peer == NULL && s_started == 0u && h2_atomic_load(&s_allocations) == baseline);
+  assert(peer == NULL && s_started == 0u &&
+         h2_atomic_load(&s_allocations) == baseline);
   s_fail_start = 0;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
   test_state_t test = {0};
@@ -178,7 +170,7 @@ int main(void) {
   assert(h2_pion_test_remote_channel(peer) == H2_PAL_ERR_NO_MEMORY);
   h2_pal_webrtc_channel_config_t channel_config = {
       .label = {.data = "rpc", .len = 3u}, .ordered = 1, .reliable = 1};
-  h2_pal_webrtc_channel_t *channel = NULL;
+  h2_pal_webrtc_channel_t* channel = NULL;
   assert(h2_pal_webrtc_peer_create_data_channel(api, peer, &channel_config,
                                                 &channel) == H2_PAL_OK);
   assert(h2_pal_webrtc_peer_start_offer(api, peer) == H2_PAL_OK);
@@ -198,7 +190,7 @@ int main(void) {
    * semaphore, mutex and peer under it. */
   blocked_poll_state_t blocked = {.api = api, .peer = peer};
   const h2_pal_task_options_t blocked_options = {.name = "pion/test/poll"};
-  h2_pal_task_t *blocked_task = NULL;
+  h2_pal_task_t* blocked_task = NULL;
   assert(h2_pal_task_start(&task_api, &blocked_options, blocked_poll_entry,
                            &blocked, &blocked_task) == H2_PAL_OK);
   while (!blocked.entered)
@@ -207,8 +199,7 @@ int main(void) {
   for (unsigned n = 0; n < 5000u && busy_result != H2_PAL_ERR_BUSY; ++n) {
     h2_pal_webrtc_event_t busy_event = {0};
     busy_result = h2_pal_webrtc_peer_poll(api, peer, 0, &busy_event);
-    if (busy_result == H2_PAL_OK)
-      h2_pal_webrtc_event_release(&busy_event);
+    if (busy_result == H2_PAL_OK) h2_pal_webrtc_event_release(&busy_event);
     if (busy_result != H2_PAL_ERR_BUSY)
       assert(h2_pal_time_sleep_ms(config.time, 1u) == H2_PAL_OK);
   }
@@ -263,7 +254,8 @@ int main(void) {
   assert(h2_pal_webrtc_peer_poll(api, peer, 0, &event) == H2_PAL_ERR_CLOSED);
   s_fail_join = 0;
   h2_pion_destroy(&provider);
-  assert(provider == NULL && s_started == s_joined && h2_atomic_load(&s_allocations) == 0u);
+  assert(provider == NULL && s_started == s_joined &&
+         h2_atomic_load(&s_allocations) == 0u);
   h2_atomic_size_destroy(&test.track_reads);
   h2_atomic_size_destroy(&s_allocations);
   h2_atomic_int_destroy(&s_fail_next_alloc);

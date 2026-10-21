@@ -13,6 +13,9 @@ class DecodedMonitor(unittest.TestCase):
         start = serial.index('/* A USB-UART adapter survives')
         end = serial.index('static h2_pal_result_t serial_wait_ready_marker(', start)
         callback = serial[start:end]
+        start = serial.index('typedef struct serial_status_output serial_status_output_t;')
+        end = serial.index('static h2_pal_result_t serial_finish_command_response(', start)
+        definitions = serial[start:end]
         start = serial.index('/* Console output during a monitor session')
         end = serial.index('h2_pal_result_t h2_h2loader_host_serial_disconnect(', start)
         monitor = serial[start:end]
@@ -23,6 +26,10 @@ class DecodedMonitor(unittest.TestCase):
         end = serial.index('static h2_pal_result_t serial_wait_delivery(', start)
         pump = serial[start:end]
         fixture = (ROOT / 'tools/bazel/tests/fixtures/h2loader_decoded_monitor.c').read_text()
+        # Keep the real connection/helpers alongside the existing stream stub.
+        start = fixture.index('struct h2_h2loader_host_serial_connection {')
+        end = fixture.index('struct h2_iostreamikcp {', start)
+        fixture = fixture[:start] + definitions + fixture[end:]
         fixture = fixture.replace('/* SERIAL_LOG */', callback).replace('/* MONITOR */', monitor)
         fixture = fixture.replace('/* SERIAL_NOW */', now).replace('/* SERIAL_PUMP */', pump)
         with tempfile.TemporaryDirectory() as directory:

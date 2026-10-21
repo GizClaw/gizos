@@ -10,5 +10,8 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
-    deps = ["//libs/raster2d", "//libs/runtime"],
+    deps = [
+        "//libs/raster2d",
+        "//libs/runtime",
+    ],
 )

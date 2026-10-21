@@ -6,7 +6,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 
-static void *default_realloc(void *user, void *ptr, size_t old_size,
+static void* default_realloc(void* user, void* ptr, size_t old_size,
                              size_t new_size) {
   (void)user;
   (void)old_size;
@@ -17,11 +17,11 @@ static void *default_realloc(void *user, void *ptr, size_t old_size,
   return realloc(ptr, new_size);
 }
 
-static void *lua_allocator(void *user, void *ptr, size_t old_size,
+static void* lua_allocator(void* user, void* ptr, size_t old_size,
                            size_t new_size) {
-  h2_lua_vm_t *vm = (h2_lua_vm_t *)user;
+  h2_lua_vm_t* vm = (h2_lua_vm_t*)user;
   size_t accounted_old_size = ptr == NULL ? 0u : old_size;
-  void *next;
+  void* next;
 
   if (new_size > accounted_old_size &&
       new_size - accounted_old_size >
@@ -40,16 +40,16 @@ static void *lua_allocator(void *user, void *ptr, size_t old_size,
   return next;
 }
 
-static int safe_traceback(lua_State *state) {
-  const char *message = luaL_optstring(state, 1, NULL);
+static int safe_traceback(lua_State* state) {
+  const char* message = luaL_optstring(state, 1, NULL);
   int level = (int)luaL_optinteger(state, 2, 1);
   luaL_traceback(state, state, message, level);
   return 1;
 }
 
-h2_lua_vm_result_t h2_lua_vm_create(const h2_lua_vm_config_t *config,
-                                    h2_lua_vm_t **out_vm) {
-  h2_lua_vm_t *vm;
+h2_lua_vm_result_t h2_lua_vm_create(const h2_lua_vm_config_t* config,
+                                    h2_lua_vm_t** out_vm) {
+  h2_lua_vm_t* vm;
   h2_lua_vm_config_t normalized;
 
   if (config == NULL || out_vm == NULL) {
@@ -66,8 +66,8 @@ h2_lua_vm_result_t h2_lua_vm_create(const h2_lua_vm_config_t *config,
     return H2_LUA_VM_INVALID_ARGUMENT;
   }
 
-  vm = (h2_lua_vm_t *)normalized.realloc_fn(normalized.allocator_user, NULL, 0u,
-                                            sizeof(*vm));
+  vm = (h2_lua_vm_t*)normalized.realloc_fn(normalized.allocator_user, NULL, 0u,
+                                           sizeof(*vm));
   if (vm == NULL) {
     return H2_LUA_VM_OUT_OF_MEMORY;
   }
@@ -124,7 +124,7 @@ h2_lua_vm_result_t h2_lua_vm_create(const h2_lua_vm_config_t *config,
   return H2_LUA_VM_OK;
 }
 
-void h2_lua_vm_close(h2_lua_vm_t *vm) {
+void h2_lua_vm_close(h2_lua_vm_t* vm) {
   h2_lua_vm_config_t config;
   if (vm == NULL) {
     return;
@@ -136,12 +136,12 @@ void h2_lua_vm_close(h2_lua_vm_t *vm) {
   config.realloc_fn(config.allocator_user, vm, sizeof(*vm), 0u);
 }
 
-size_t h2_lua_vm_memory_used(const h2_lua_vm_t *vm) {
+size_t h2_lua_vm_memory_used(const h2_lua_vm_t* vm) {
   return vm == NULL ? 0u : vm->memory_used;
 }
 
-void h2_lua_copy_message(const char *message, char *buffer, size_t capacity,
-                         size_t *out_size) {
+void h2_lua_copy_message(const char* message, char* buffer, size_t capacity,
+                         size_t* out_size) {
   size_t length = message == NULL ? 0u : strlen(message);
   size_t copied = capacity == 0u           ? 0u
                   : length < capacity - 1u ? length

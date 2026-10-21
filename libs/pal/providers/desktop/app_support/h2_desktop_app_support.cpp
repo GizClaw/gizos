@@ -31,54 +31,49 @@
 namespace h2::desktop {
 namespace {
 
-int reset_network_services(OwnedNetworkServices *services) {
-  auto *peer = static_cast<h2_peer_t *>(services->peer_handle);
+int reset_network_services(OwnedNetworkServices* services) {
+  auto* peer = static_cast<h2_peer_t*>(services->peer_handle);
   h2_peer_destroy(&peer);
   services->peer_handle = peer;
-  if (peer != nullptr)
-    return H2_PAL_ERR_IO;
-  auto *sctp = static_cast<h2_sctp_t *>(services->sctp_handle);
+  if (peer != nullptr) return H2_PAL_ERR_IO;
+  auto* sctp = static_cast<h2_sctp_t*>(services->sctp_handle);
   const int sctp_rc = h2_sctp_destroy(&sctp);
   services->sctp_handle = sctp;
-  if (sctp_rc != H2_PAL_OK)
-    return sctp_rc;
-  h2_coremqtt_destroy(static_cast<h2_coremqtt_t *>(services->mqtt_handle));
+  if (sctp_rc != H2_PAL_OK) return sctp_rc;
+  h2_coremqtt_destroy(static_cast<h2_coremqtt_t*>(services->mqtt_handle));
   services->mqtt_handle = nullptr;
   services->mqtt_view = {};
   if (services->wolfssl_owner) {
     const int rc = h2_wolfssl_deinit();
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     services->wolfssl_owner = false;
   }
   return H2_PAL_OK;
 }
 
-void reset_lvgl(OwnedLvgl *lvgl) {
+void reset_lvgl(OwnedLvgl* lvgl) {
   h2_desktop_lvgl_input_destroy(
-      static_cast<H2DesktopLvglInput *>(lvgl->input_bridge));
+      static_cast<H2DesktopLvglInput*>(lvgl->input_bridge));
   lvgl->input_bridge = nullptr;
-  h2_lvgl_touch_destroy(static_cast<h2_lvgl_touch_t *>(lvgl->touch_adapter));
+  h2_lvgl_touch_destroy(static_cast<h2_lvgl_touch_t*>(lvgl->touch_adapter));
   lvgl->touch_adapter = nullptr;
   h2_lvgl_display_destroy(
-      static_cast<h2_lvgl_display_t *>(lvgl->display_adapter));
+      static_cast<h2_lvgl_display_t*>(lvgl->display_adapter));
   lvgl->display_adapter = nullptr;
 }
 
 std::filesystem::path runfiles_root() {
-  if (const char *resource_root =
-          std::getenv("H2_DESKTOP_RESOURCE_ROOT");
+  if (const char* resource_root = std::getenv("H2_DESKTOP_RESOURCE_ROOT");
       resource_root != nullptr && resource_root[0] != '\0') {
     return resource_root;
   }
-  if (const char *workspace =
-          std::getenv("BUILD_WORKSPACE_DIRECTORY");
+  if (const char* workspace = std::getenv("BUILD_WORKSPACE_DIRECTORY");
       workspace != nullptr && workspace[0] != '\0') {
     return workspace;
   }
-  if (const char *runfiles = std::getenv("RUNFILES_DIR");
+  if (const char* runfiles = std::getenv("RUNFILES_DIR");
       runfiles != nullptr && runfiles[0] != '\0') {
-    for (const char *workspace_name : {"_main", "firmwares"}) {
+    for (const char* workspace_name : {"_main", "firmwares"}) {
       std::filesystem::path candidate =
           std::filesystem::path(runfiles) / workspace_name;
       std::error_code error;
@@ -90,41 +85,41 @@ std::filesystem::path runfiles_root() {
   return std::filesystem::current_path();
 }
 
-} // namespace
+}  // namespace
 
 OwnedFilesystem::~OwnedFilesystem() {
 #if defined(__APPLE__)
-  h2_darwin_host_fs_destroy(static_cast<h2_darwin_host_fs_t *>(handle));
+  h2_darwin_host_fs_destroy(static_cast<h2_darwin_host_fs_t*>(handle));
 #else
-  h2_linux_host_fs_destroy(static_cast<h2_linux_host_fs_t *>(handle));
+  h2_linux_host_fs_destroy(static_cast<h2_linux_host_fs_t*>(handle));
 #endif
 }
 
-const h2_pal_fs_api_t *OwnedFilesystem::api() const {
+const h2_pal_fs_api_t* OwnedFilesystem::api() const {
 #if defined(__APPLE__)
-  return h2_darwin_host_fs_api(static_cast<h2_darwin_host_fs_t *>(handle));
+  return h2_darwin_host_fs_api(static_cast<h2_darwin_host_fs_t*>(handle));
 #else
-  return h2_linux_host_fs_api(static_cast<h2_linux_host_fs_t *>(handle));
+  return h2_linux_host_fs_api(static_cast<h2_linux_host_fs_t*>(handle));
 #endif
 }
 
 OwnedPreference::~OwnedPreference() { h2_sqlite_destroy(handle); }
 
-const h2_pal_pref_api_t *OwnedPreference::api() const {
+const h2_pal_pref_api_t* OwnedPreference::api() const {
   return h2_sqlite_pref_api(handle);
 }
 
 OwnedAudio::~OwnedAudio() { h2_portaudio_destroy(handle); }
 
-h2_pal_audio_t *OwnedAudio::api() const { return h2_portaudio_audio(handle); }
+h2_pal_audio_t* OwnedAudio::api() const { return h2_portaudio_audio(handle); }
 
 OwnedDisplay::~OwnedDisplay() { h2_sdl3_destroy(handle); }
 
-h2_pal_display_t *OwnedDisplay::display() const {
+h2_pal_display_t* OwnedDisplay::display() const {
   return h2_sdl3_display(handle);
 }
 
-const h2_pal_touch_api_t *OwnedDisplay::touch() const {
+const h2_pal_touch_api_t* OwnedDisplay::touch() const {
   return h2_sdl3_touch(handle);
 }
 
@@ -138,49 +133,47 @@ OwnedNetworkServices::~OwnedNetworkServices() {
 
 int OwnedNetworkServices::reset() { return reset_network_services(this); }
 
-const h2_pal_crypto_api_t *OwnedNetworkServices::crypto() const {
+const h2_pal_crypto_api_t* OwnedNetworkServices::crypto() const {
   return wolfssl_owner ? h2_wolfssl_crypto_api()
                        : h2_pal_unsupported_crypto_api();
 }
 
-const h2_pal_dtls_api_t *OwnedNetworkServices::dtls() const {
-  return wolfssl_owner ? h2_wolfssl_dtls_api()
-                       : h2_pal_unsupported_dtls_api();
+const h2_pal_dtls_api_t* OwnedNetworkServices::dtls() const {
+  return wolfssl_owner ? h2_wolfssl_dtls_api() : h2_pal_unsupported_dtls_api();
 }
 
-const h2_pal_mqtt_api_t *OwnedNetworkServices::mqtt() const {
+const h2_pal_mqtt_api_t* OwnedNetworkServices::mqtt() const {
   return mqtt_handle == nullptr ? h2_pal_unsupported_mqtt_api() : &mqtt_view;
 }
 
-const h2_pal_webrtc_api_t *OwnedNetworkServices::webrtc() const {
+const h2_pal_webrtc_api_t* OwnedNetworkServices::webrtc() const {
   return peer_handle == nullptr
              ? h2_pal_unsupported_webrtc_api()
-             : h2_peer_webrtc_api(static_cast<h2_peer_t *>(peer_handle));
+             : h2_peer_webrtc_api(static_cast<h2_peer_t*>(peer_handle));
 }
 
 OwnedLvgl::~OwnedLvgl() { reset_lvgl(this); }
 
-void *OwnedLvgl::display() const {
-  return h2_lvgl_display_lvgl(
-      static_cast<h2_lvgl_display_t *>(display_adapter));
+void* OwnedLvgl::display() const {
+  return h2_lvgl_display_lvgl(static_cast<h2_lvgl_display_t*>(display_adapter));
 }
 
-void *OwnedLvgl::keyboard() const {
+void* OwnedLvgl::keyboard() const {
   return h2_desktop_lvgl_input_keyboard(
-      static_cast<H2DesktopLvglInput *>(input_bridge));
+      static_cast<H2DesktopLvglInput*>(input_bridge));
 }
 
-void *OwnedLvgl::wheel() const {
+void* OwnedLvgl::wheel() const {
   return h2_desktop_lvgl_input_wheel(
-      static_cast<H2DesktopLvglInput *>(input_bridge));
+      static_cast<H2DesktopLvglInput*>(input_bridge));
 }
 
-int configure_layout(const Layout &layout) {
-  return h2_desktop_platform_configure_peripherals(
-      layout.peripherals, layout.peripheral_count);
+int configure_layout(const Layout& layout) {
+  return h2_desktop_platform_configure_peripherals(layout.peripherals,
+                                                   layout.peripheral_count);
 }
 
-int open_filesystem(const Layout &layout, OwnedFilesystem *filesystem) {
+int open_filesystem(const Layout& layout, OwnedFilesystem* filesystem) {
   if (filesystem == nullptr || filesystem->handle != nullptr ||
       (layout.mounts == nullptr && layout.mount_count != 0u)) {
     return H2_PAL_FS_ERR_INVALID_ARG;
@@ -193,8 +186,7 @@ int open_filesystem(const Layout &layout, OwnedFilesystem *filesystem) {
     filesystem->source_paths.reserve(layout.mount_count);
     filesystem->targets.reserve(layout.mount_count);
     for (std::size_t index = 0; index < layout.mount_count; ++index) {
-      filesystem->sources.push_back(
-          resource_path(layout.mounts[index].source));
+      filesystem->sources.push_back(resource_path(layout.mounts[index].source));
     }
     for (std::size_t index = 0; index < layout.mount_count; ++index) {
       filesystem->source_paths.push_back(filesystem->sources[index].c_str());
@@ -207,14 +199,14 @@ int open_filesystem(const Layout &layout, OwnedFilesystem *filesystem) {
     return H2_PAL_FS_ERR_NO_MEMORY;
   }
 #if defined(__APPLE__)
-  h2_darwin_host_fs_t *handle = nullptr;
+  h2_darwin_host_fs_t* handle = nullptr;
   const int result = h2_darwin_host_fs_create(
       filesystem->source_paths.empty() ? nullptr
                                        : filesystem->source_paths.data(),
       filesystem->targets.empty() ? nullptr : filesystem->targets.data(),
       filesystem->targets.size(), &handle);
 #else
-  h2_linux_host_fs_t *handle = nullptr;
+  h2_linux_host_fs_t* handle = nullptr;
   const int result = h2_linux_host_fs_create(
       filesystem->source_paths.empty() ? nullptr
                                        : filesystem->source_paths.data(),
@@ -225,14 +217,14 @@ int open_filesystem(const Layout &layout, OwnedFilesystem *filesystem) {
   return result;
 }
 
-int open_preference(OwnedPreference *preference) {
+int open_preference(OwnedPreference* preference) {
   if (preference == nullptr || preference->handle != nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   std::string value;
   try {
     std::filesystem::path path = "prefs.sqlite";
-    if (const char *root = std::getenv("H2_DESKTOP_STORAGE_ROOT");
+    if (const char* root = std::getenv("H2_DESKTOP_STORAGE_ROOT");
         root != nullptr && root[0] != '\0') {
       path = std::filesystem::path(root) / "prefs.sqlite";
     }
@@ -244,7 +236,7 @@ int open_preference(OwnedPreference *preference) {
   return h2_sqlite_create(&config, &preference->handle);
 }
 
-int open_audio(bool require_real_devices, OwnedAudio *audio) {
+int open_audio(bool require_real_devices, OwnedAudio* audio) {
   if (audio == nullptr || audio->handle != nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -257,7 +249,7 @@ int open_audio(bool require_real_devices, OwnedAudio *audio) {
   return h2_portaudio_create(&config, &audio->handle);
 }
 
-int open_display(const Layout &layout, OwnedDisplay *display) {
+int open_display(const Layout& layout, OwnedDisplay* display) {
   if (display == nullptr || display->handle != nullptr) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -266,7 +258,7 @@ int open_display(const Layout &layout, OwnedDisplay *display) {
 }
 
 int open_network_services(bool with_mqtt, bool with_webrtc,
-                          OwnedNetworkServices *services) {
+                          OwnedNetworkServices* services) {
   if (services == nullptr || services->wolfssl_owner ||
       services->mqtt_handle != nullptr || services->sctp_handle != nullptr ||
       services->peer_handle != nullptr) {
@@ -295,7 +287,7 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
         8u,
         8u,
     };
-    h2_coremqtt_t *provider = nullptr;
+    h2_coremqtt_t* provider = nullptr;
     result = h2_coremqtt_create(&mqtt, &provider, &services->mqtt_view);
     services->mqtt_handle = provider;
   }
@@ -304,7 +296,7 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
         h2_desktop_platform_default_allocator(), services->crypto(),
         /* packet_mem: pooled packets use the default allocator. */ nullptr,
         /* packet_pool_size: H2_SCTP_DEFAULT_PACKET_POOL_SIZE. */ 0u};
-    h2_sctp_t *provider = nullptr;
+    h2_sctp_t* provider = nullptr;
     result = h2_sctp_create(&sctp, &provider);
     services->sctp_handle = provider;
     if (result == H2_PAL_OK) {
@@ -320,7 +312,7 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
           services->dtls(),
           h2_sctp_api(provider),
       };
-      h2_peer_t *peer_provider = nullptr;
+      h2_peer_t* peer_provider = nullptr;
       result = h2_peer_create(&peer, &peer_provider);
       services->peer_handle = peer_provider;
     }
@@ -331,7 +323,7 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
   return result;
 }
 
-int open_lvgl(OwnedDisplay *display, OwnedLvgl *lvgl) {
+int open_lvgl(OwnedDisplay* display, OwnedLvgl* lvgl) {
   if (display == nullptr || display->handle == nullptr || lvgl == nullptr ||
       lvgl->display_adapter != nullptr || lvgl->touch_adapter != nullptr ||
       lvgl->input_bridge != nullptr || !lv_is_initialized()) {
@@ -339,7 +331,7 @@ int open_lvgl(OwnedDisplay *display, OwnedLvgl *lvgl) {
   }
   const h2_lvgl_display_config_t display_config = {
       display->display(), h2_desktop_platform_default_allocator(), 32u};
-  h2_lvgl_display_t *display_adapter = nullptr;
+  h2_lvgl_display_t* display_adapter = nullptr;
   h2_pal_result_t result =
       h2_lvgl_display_create(&display_config, &display_adapter);
   lvgl->display_adapter = display_adapter;
@@ -347,14 +339,14 @@ int open_lvgl(OwnedDisplay *display, OwnedLvgl *lvgl) {
     const h2_lvgl_touch_config_t touch_config = {
         display->touch(), h2_desktop_platform_default_allocator(),
         h2_lvgl_display_lvgl(display_adapter)};
-    h2_lvgl_touch_t *touch_adapter = nullptr;
+    h2_lvgl_touch_t* touch_adapter = nullptr;
     result = h2_lvgl_touch_create(&touch_config, &touch_adapter);
     lvgl->touch_adapter = touch_adapter;
   }
   if (result == H2_PAL_OK) {
-    H2DesktopLvglInput *input = nullptr;
+    H2DesktopLvglInput* input = nullptr;
     result = static_cast<h2_pal_result_t>(h2_desktop_lvgl_input_create(
-        static_cast<lv_display_t *>(lvgl->display()), &input));
+        static_cast<lv_display_t*>(lvgl->display()), &input));
     lvgl->input_bridge = input;
   }
   if (result != H2_PAL_OK) {
@@ -363,7 +355,7 @@ int open_lvgl(OwnedDisplay *display, OwnedLvgl *lvgl) {
   return result;
 }
 
-std::string resource_path(const char *relative) {
+std::string resource_path(const char* relative) {
   if (relative == nullptr || relative[0] == '\0') {
     return {};
   }
@@ -372,8 +364,7 @@ std::string resource_path(const char *relative) {
   return path.lexically_normal().string();
 }
 
-bool load_resource(const char *relative,
-                   std::vector<std::uint8_t> *output) {
+bool load_resource(const char* relative, std::vector<std::uint8_t>* output) {
   if (output == nullptr) {
     return false;
   }
@@ -391,20 +382,18 @@ bool load_resource(const char *relative,
   return !stream.bad() && !output->empty();
 }
 
-bool load_file(const h2_pal_fs_api_t *fs, const char *path,
-               std::vector<std::uint8_t> *output) {
+bool load_file(const h2_pal_fs_api_t* fs, const char* path,
+               std::vector<std::uint8_t>* output) {
   if (fs == nullptr || path == nullptr || output == nullptr) {
     return false;
   }
-  h2_pal_fs_file_t *file = nullptr;
-  if (h2_pal_fs_open(fs, path, H2_PAL_FS_OPEN_READ, &file) !=
-          H2_PAL_FS_OK ||
+  h2_pal_fs_file_t* file = nullptr;
+  if (h2_pal_fs_open(fs, path, H2_PAL_FS_OPEN_READ, &file) != H2_PAL_FS_OK ||
       file == nullptr) {
     return false;
   }
   h2_pal_fs_stat_t stat = {};
-  if (h2_pal_fs_stat(fs, path, &stat) != H2_PAL_FS_OK ||
-      stat.size > SIZE_MAX) {
+  if (h2_pal_fs_stat(fs, path, &stat) != H2_PAL_FS_OK || stat.size > SIZE_MAX) {
     (void)h2_pal_fs_close(fs, file);
     return false;
   }
@@ -417,9 +406,8 @@ bool load_file(const h2_pal_fs_api_t *fs, const char *path,
   std::size_t total = 0u;
   while (total < output->size()) {
     std::size_t received = 0u;
-    if (h2_pal_fs_read(fs, file, output->data() + total,
-                       output->size() - total, &received) !=
-            H2_PAL_FS_OK ||
+    if (h2_pal_fs_read(fs, file, output->data() + total, output->size() - total,
+                       &received) != H2_PAL_FS_OK ||
         received == 0u) {
       (void)h2_pal_fs_close(fs, file);
       return false;
@@ -429,7 +417,7 @@ bool load_file(const h2_pal_fs_api_t *fs, const char *path,
   return h2_pal_fs_close(fs, file) == H2_PAL_FS_OK;
 }
 
-int poll_events(OwnedDisplay *display, OwnedLvgl *lvgl) {
+int poll_events(OwnedDisplay* display, OwnedLvgl* lvgl) {
   if (display == nullptr || display->handle == nullptr) {
     return 1;
   }
@@ -437,43 +425,42 @@ int poll_events(OwnedDisplay *display, OwnedLvgl *lvgl) {
   while (h2_sdl3_poll_event(display->handle, &event) == H2_PAL_OK) {
     if (lvgl != nullptr && lvgl->input_bridge != nullptr) {
       h2_desktop_lvgl_input_handle(
-          static_cast<H2DesktopLvglInput *>(lvgl->input_bridge), event);
+          static_cast<H2DesktopLvglInput*>(lvgl->input_bridge), event);
     }
     switch (event.kind) {
-    case H2_SDL3_EVENT_CLOSE:
-      return 1;
-    case H2_SDL3_EVENT_FOCUS_LOST:
-      h2_desktop_platform_handle_focus_lost();
-      break;
-    case H2_SDL3_EVENT_KEY:
-      if (event.key >= H2_SDL3_KEY_SPACE &&
-          event.key <= H2_SDL3_KEY_DIGIT_9) {
-        (void)h2_desktop_platform_handle_key(
-            static_cast<h2_desktop_key_t>(event.key), event.pressed,
-            event.repeat);
-      }
-      break;
-    case H2_SDL3_EVENT_TEXT:
-    case H2_SDL3_EVENT_WHEEL:
-      break;
+      case H2_SDL3_EVENT_CLOSE:
+        return 1;
+      case H2_SDL3_EVENT_FOCUS_LOST:
+        h2_desktop_platform_handle_focus_lost();
+        break;
+      case H2_SDL3_EVENT_KEY:
+        if (event.key >= H2_SDL3_KEY_SPACE &&
+            event.key <= H2_SDL3_KEY_DIGIT_9) {
+          (void)h2_desktop_platform_handle_key(
+              static_cast<h2_desktop_key_t>(event.key), event.pressed,
+              event.repeat);
+        }
+        break;
+      case H2_SDL3_EVENT_TEXT:
+      case H2_SDL3_EVENT_WHEEL:
+        break;
     }
   }
   return 0;
 }
 
-int read_pointer(OwnedDisplay *display, h2_sdl3_pointer_state_t *out_state) {
-  return display == nullptr
-             ? H2_PAL_ERR_INVALID_ARG
-             : h2_sdl3_read_pointer(display->handle, out_state);
+int read_pointer(OwnedDisplay* display, h2_sdl3_pointer_state_t* out_state) {
+  return display == nullptr ? H2_PAL_ERR_INVALID_ARG
+                            : h2_sdl3_read_pointer(display->handle, out_state);
 }
 
-void wait_for_close(OwnedDisplay *display, std::uint32_t interval_ms) {
+void wait_for_close(OwnedDisplay* display, std::uint32_t interval_ms) {
   while (poll_events(display) == 0) {
     std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
   }
 }
 
-const h2_pal_netif_api_t *netif_api() {
+const h2_pal_netif_api_t* netif_api() {
 #if defined(__APPLE__)
   return h2_darwin_netif_api();
 #else
@@ -481,7 +468,7 @@ const h2_pal_netif_api_t *netif_api() {
 #endif
 }
 
-const h2_pal_net_api_t *host_net_api() {
+const h2_pal_net_api_t* host_net_api() {
 #if defined(__APPLE__)
   return h2_darwin_net_api();
 #else
@@ -489,7 +476,7 @@ const h2_pal_net_api_t *host_net_api() {
 #endif
 }
 
-const h2_pal_system_event_api_t *system_event_api() {
+const h2_pal_system_event_api_t* system_event_api() {
 #if defined(__APPLE__)
   return h2_darwin_system_event_api();
 #else
@@ -497,7 +484,7 @@ const h2_pal_system_event_api_t *system_event_api() {
 #endif
 }
 
-const h2_pal_serial_host_api_t *serial_host_api() {
+const h2_pal_serial_host_api_t* serial_host_api() {
 #if defined(__APPLE__)
   return h2_darwin_serial_host_api();
 #else
@@ -505,16 +492,16 @@ const h2_pal_serial_host_api_t *serial_host_api() {
 #endif
 }
 
-const h2_pal_ble_host_api_t *corebluetooth_api() {
+const h2_pal_ble_host_api_t* corebluetooth_api() {
 #if defined(__APPLE__)
-  return h2_darwin_corebluetooth_ble(
-      h2_desktop_platform_default_allocator(), h2_desktop_platform_log_api());
+  return h2_darwin_corebluetooth_ble(h2_desktop_platform_default_allocator(),
+                                     h2_desktop_platform_log_api());
 #else
   return h2_pal_unsupported_ble_host_api();
 #endif
 }
 
-h2_runtime_config_t runtime_config(const h2_pal_fs_api_t *fs) {
+h2_runtime_config_t runtime_config(const h2_pal_fs_api_t* fs) {
   h2_runtime_config_t config = {};
   config.board = "desktop";
   config.target = "host";
@@ -561,9 +548,8 @@ h2_runtime_config_t runtime_config(const h2_pal_fs_api_t *fs) {
   config.system_event = system_event_api();
   config.video_decoder = h2_ffmpeg_video_decoder_api();
   config.component_mapper = nullptr;
-  config.event_queue_capacity =
-      H2_RUNTIME_DEFAULT_EVENT_QUEUE_CAPACITY;
+  config.event_queue_capacity = H2_RUNTIME_DEFAULT_EVENT_QUEUE_CAPACITY;
   return config;
 }
 
-} // namespace h2::desktop
+}  // namespace h2::desktop

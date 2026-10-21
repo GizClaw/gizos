@@ -8,11 +8,11 @@ extern "C" {
  * Packed RGB565 words use panel byte order. Callback must return promptly,
  * cannot reenter Display, and borrows rect/pixels only for this call.
  * Configure/unregister only after quiescing display callers. */
-typedef void (*h2_amoled_transfer_capture_fn)(void *user,
-                                              const h2_display_rect_t *rect,
-                                              const uint16_t *pixels);
+typedef void (*h2_amoled_transfer_capture_fn)(void* user,
+                                              const h2_display_rect_t* rect,
+                                              const uint16_t* pixels);
 void h2_amoled_display_set_transfer_capture(
-    h2_amoled_transfer_capture_fn capture, void *user);
+    h2_amoled_transfer_capture_fn capture, void* user);
 #ifdef __cplusplus
 }
 #endif

@@ -25,7 +25,7 @@ extern "C" {
  * when the window expired unused, H2_PAL_ERR_UNSUPPORTED when the Runtime
  * lacks a required capability, or the underlying failure.
  */
-int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime);
+int h2_smoke_ble_wifi_config_run(h2_runtime_t* runtime);
 
 #ifdef __cplusplus
 }

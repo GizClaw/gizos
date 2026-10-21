@@ -28,10 +28,10 @@
 #include <string.h>
 
 #if defined(H2_GIZCLAW_TESTING)
-int h2_gizclaw_test_try_write_bytes(h2_gizclaw_client_t *client,
-                                    h2_pal_webrtc_channel_t *channel,
-                                    const uint8_t *data, size_t len,
-                                    size_t *offset, bool *blocked);
+int h2_gizclaw_test_try_write_bytes(h2_gizclaw_client_t* client,
+                                    h2_pal_webrtc_channel_t* channel,
+                                    const uint8_t* data, size_t len,
+                                    size_t* offset, bool* blocked);
 #endif
 
 static int test_send_calls;
@@ -59,10 +59,10 @@ static int test_opus_receive_calls;
 static int test_peer_close_calls;
 
 int h2_gizclaw_home_tests(void);
-static int expect(int condition, const char *message);
+static int expect(int condition, const char* message);
 
 typedef struct test_event_stream {
-  gzc_event_stream_t *stream;
+  gzc_event_stream_t* stream;
   size_t send_count;
   size_t read_count;
   size_t close_count;
@@ -70,7 +70,7 @@ typedef struct test_event_stream {
   int send_result;
   int read_result;
   gzc_peer_event_t read_event;
-  h2_gizclaw_conversation_t *conversation;
+  h2_gizclaw_conversation_t* conversation;
   bool conversation_invalidated_when_closed;
 } test_event_stream_t;
 
@@ -78,25 +78,25 @@ typedef struct test_client_poll {
   int result;
   int calls;
   int timeout_ms;
-  gzc_client_t *client;
+  gzc_client_t* client;
 } test_client_poll_t;
 
-static void *test_alloc(void *user, size_t len) {
+static void* test_alloc(void* user, size_t len) {
   (void)user;
   return malloc(len);
 }
-static void *test_realloc(void *user, void *ptr, size_t len) {
+static void* test_realloc(void* user, void* ptr, size_t len) {
   (void)user;
   return realloc(ptr, len);
 }
 
-static void test_free(void *user, void *ptr) {
+static void test_free(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
 
-static bool test_encode_registration_response(uint8_t *buffer, size_t capacity,
-                                              size_t *out_len) {
+static bool test_encode_registration_response(uint8_t* buffer, size_t capacity,
+                                              size_t* out_len) {
   gizclaw_rpc_v1_ServerRegisterResponse response =
       gizclaw_rpc_v1_ServerRegisterResponse_init_zero;
   (void)snprintf(response.runtime_profile_name,
@@ -112,13 +112,14 @@ static bool test_encode_registration_response(uint8_t *buffer, size_t capacity,
 
 static char last_input_stream[65];
 
-static int test_event_send(void *user, gzc_event_stream_t *stream,
-                           const gzc_peer_event_t *event) {
-  test_event_stream_t *test = user;
+static int test_event_send(void* user, gzc_event_stream_t* stream,
+                           const gzc_peer_event_t* event) {
+  test_event_stream_t* test = user;
   if (test == NULL || stream != test->stream || event == NULL)
     return GZC_ERR_INVALID_ARGUMENT;
   if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS)
-    snprintf(last_input_stream, sizeof(last_input_stream), "%s", event->payload.bos.stream_id);
+    snprintf(last_input_stream, sizeof(last_input_stream), "%s",
+             event->payload.bos.stream_id);
   ++test->send_count;
   if (test->fail_on_send_count != 0u &&
       test->send_count >= test->fail_on_send_count)
@@ -127,20 +128,27 @@ static int test_event_send(void *user, gzc_event_stream_t *stream,
 }
 
 /* Exercise readiness separately from successful BOS transport acceptance. */
-static int test_open_ready(h2_gizclaw_client_t *client, h2_gizclaw_str_t workspace,
-                          uint64_t generation, int timeout,
-                          h2_gizclaw_conversation_t **out) {
-  int rc = h2_gizclaw_conversation_wire_open_internal(client, workspace, generation, timeout, out);
+static int test_open_ready(h2_gizclaw_client_t* client,
+                           h2_gizclaw_str_t workspace, uint64_t generation,
+                           int timeout, h2_gizclaw_conversation_t** out) {
+  int rc = h2_gizclaw_conversation_wire_open_internal(client, workspace,
+                                                      generation, timeout, out);
   if (rc != H2_PAL_OK) return rc;
   assert(!h2_gizclaw_conversation_wire_input_ready_internal(*out));
-  gzc_peer_event_t event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
-  event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
+  gzc_peer_event_t event =
+      (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
+  event.type =
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
   event.which_payload = gizclaw_events_v1_PeerEvent_audio_input_ready_tag;
-  snprintf(event.payload.audio_input_ready.stream_id, sizeof(event.payload.audio_input_ready.stream_id), "%s", "wrong-stream");
+  snprintf(event.payload.audio_input_ready.stream_id,
+           sizeof(event.payload.audio_input_ready.stream_id), "%s",
+           "wrong-stream");
   assert(!h2_gizclaw_conversation_accepts_peer_event_internal(*out, &event));
   h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
   assert(!h2_gizclaw_conversation_wire_input_ready_internal(*out));
-  snprintf(event.payload.audio_input_ready.stream_id, sizeof(event.payload.audio_input_ready.stream_id), "%s", last_input_stream);
+  snprintf(event.payload.audio_input_ready.stream_id,
+           sizeof(event.payload.audio_input_ready.stream_id), "%s",
+           last_input_stream);
   assert(h2_gizclaw_conversation_accepts_peer_event_internal(*out, &event));
   h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
   h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
@@ -155,22 +163,21 @@ static int test_open_ready(h2_gizclaw_client_t *client, h2_gizclaw_str_t workspa
   h2_gizclaw_conversation_describe_peer_event_internal(*out, &event, detail,
                                                        sizeof(detail));
   char expected[64];
-  snprintf(expected, sizeof(expected), "generation=%llu input=",
-           (unsigned long long)generation);
+  snprintf(expected, sizeof(expected),
+           "generation=%llu input=", (unsigned long long)generation);
   assert(strstr(detail, expected) == detail);
   assert(strstr(detail, "ready=1 committed=0 canceled=0") != NULL);
   return rc;
 }
 
-static int test_event_read(void *user, gzc_event_stream_t *stream,
-                           int timeout_ms, gzc_peer_event_t *out_event) {
-  test_event_stream_t *test = user;
+static int test_event_read(void* user, gzc_event_stream_t* stream,
+                           int timeout_ms, gzc_peer_event_t* out_event) {
+  test_event_stream_t* test = user;
   (void)timeout_ms;
   if (test == NULL || stream != test->stream || out_event == NULL)
     return GZC_ERR_INVALID_ARGUMENT;
   ++test->read_count;
-  if (test->read_result == GZC_OK)
-    *out_event = test->read_event;
+  if (test->read_result == GZC_OK) *out_event = test->read_event;
   return test->read_result;
 }
 
@@ -180,10 +187,9 @@ typedef struct test_workspace_history_notification {
   size_t calls;
 } test_workspace_history_notification_t;
 
-static void
-test_workspace_history_notification(void *user,
-                                    const h2_gizclaw_client_event_t *event) {
-  test_workspace_history_notification_t *notification = user;
+static void test_workspace_history_notification(
+    void* user, const h2_gizclaw_client_event_t* event) {
+  test_workspace_history_notification_t* notification = user;
   assert(notification != NULL && event != NULL);
   assert(event->kind == H2_GIZCLAW_CLIENT_EVENT_WORKSPACE_HISTORY_UPDATED);
   assert(event->workspace_name.len < sizeof(notification->workspace_name));
@@ -194,8 +200,8 @@ test_workspace_history_notification(void *user,
   ++notification->calls;
 }
 
-static int test_packet_read(void *user, gzc_client_t *client, int timeout_ms,
-                            uint8_t *out_protocol, gzc_buf_t *out_payload) {
+static int test_packet_read(void* user, gzc_client_t* client, int timeout_ms,
+                            uint8_t* out_protocol, gzc_buf_t* out_payload) {
   (void)user;
   (void)client;
   (void)timeout_ms;
@@ -204,8 +210,8 @@ static int test_packet_read(void *user, gzc_client_t *client, int timeout_ms,
   return GZC_ERR_WOULD_BLOCK;
 }
 
-static void test_event_close(void *user, gzc_event_stream_t *stream) {
-  test_event_stream_t *test = user;
+static void test_event_close(void* user, gzc_event_stream_t* stream) {
+  test_event_stream_t* test = user;
   assert(test != NULL);
   assert(stream == test->stream);
   if (test->conversation != NULL)
@@ -214,9 +220,9 @@ static void test_event_close(void *user, gzc_event_stream_t *stream) {
   ++test->close_count;
 }
 
-static int test_client_poll_call(void *user, gzc_client_t *client,
+static int test_client_poll_call(void* user, gzc_client_t* client,
                                  int timeout_ms) {
-  test_client_poll_t *test = user;
+  test_client_poll_t* test = user;
   assert(test != NULL);
   ++test->calls;
   test->client = client;
@@ -227,27 +233,26 @@ static int test_client_poll_call(void *user, gzc_client_t *client,
 typedef struct test_event_sink {
   h2_pal_result_t result;
   unsigned calls, accepted;
-  const char *expected_name;
+  const char* expected_name;
   int64_t expected_timestamp;
 } test_event_sink_t;
 
-static h2_pal_result_t test_event_sink(void *user,
-                                       const h2_gizclaw_client_event_t *event) {
-  test_event_sink_t *sink = user;
+static h2_pal_result_t test_event_sink(void* user,
+                                       const h2_gizclaw_client_event_t* event) {
+  test_event_sink_t* sink = user;
   assert(event->workspace_name.len == strlen(sink->expected_name));
   assert(memcmp(event->workspace_name.data, sink->expected_name,
                 event->workspace_name.len) == 0);
   assert(event->last_updated_at_unix_ms == sink->expected_timestamp);
   ++sink->calls;
-  if (sink->result == H2_PAL_OK)
-    ++sink->accepted;
+  if (sink->result == H2_PAL_OK) ++sink->accepted;
   return sink->result;
 }
 
-static int test_client_event_backpressure(const h2_gizclaw_config_t *config) {
-  h2_gizclaw_client_t *client = NULL;
+static int test_client_event_backpressure(const h2_gizclaw_config_t* config) {
+  h2_gizclaw_client_t* client = NULL;
   assert(h2_gizclaw_client_init(config, &client) == H2_PAL_OK);
-  test_event_stream_t event = {.stream = (gzc_event_stream_t *)(uintptr_t)0x39u,
+  test_event_stream_t event = {.stream = (gzc_event_stream_t*)(uintptr_t)0x39u,
                                .read_result = GZC_OK};
   test_client_poll_t poll = {.result = GZC_ERR_WOULD_BLOCK};
   test_event_sink_t sink = {.result = H2_PAL_ERR_WOULD_BLOCK,
@@ -297,17 +302,16 @@ static int test_client_event_backpressure(const h2_gizclaw_config_t *config) {
   return 0;
 }
 
-static int test_closed_poll_mapping(const h2_gizclaw_config_t *config) {
+static int test_closed_poll_mapping(const h2_gizclaw_config_t* config) {
   int fails = 0;
-  h2_gizclaw_client_t *client = NULL;
-  fails += expect(h2_gizclaw_client_init(config, &client) == H2_PAL_OK &&
-                      client != NULL,
-                  "closed-poll mapping test initializes an independent client");
-  if (client == NULL)
-    return fails;
+  h2_gizclaw_client_t* client = NULL;
+  fails += expect(
+      h2_gizclaw_client_init(config, &client) == H2_PAL_OK && client != NULL,
+      "closed-poll mapping test initializes an independent client");
+  if (client == NULL) return fails;
 
   test_event_stream_t event = {
-      .stream = (gzc_event_stream_t *)(uintptr_t)0x38u,
+      .stream = (gzc_event_stream_t*)(uintptr_t)0x38u,
   };
   test_client_poll_t poll = {
       .result = GZC_ERR_WOULD_BLOCK,
@@ -322,12 +326,11 @@ static int test_closed_poll_mapping(const h2_gizclaw_config_t *config) {
       .data = "demo-poll",
       .len = 9u,
   };
-  h2_gizclaw_conversation_t *conversation = NULL;
-  fails +=
-      expect(test_open_ready(
-                 client, workspace, 11u, 1000, &conversation) == H2_PAL_OK &&
-                 conversation != NULL && event.send_count == 2u,
-             "closed-poll mapping test opens an active conversation");
+  h2_gizclaw_conversation_t* conversation = NULL;
+  fails += expect(test_open_ready(client, workspace, 11u, 1000,
+                                  &conversation) == H2_PAL_OK &&
+                      conversation != NULL && event.send_count == 2u,
+                  "closed-poll mapping test opens an active conversation");
   event.conversation = conversation;
   fails += expect(
       h2_gizclaw_client_poll(client, 17) == H2_PAL_ERR_WOULD_BLOCK &&
@@ -368,14 +371,13 @@ static int test_closed_poll_mapping(const h2_gizclaw_config_t *config) {
   return fails;
 }
 
-static int test_unresponsive_peer_closes(const h2_gizclaw_config_t *config) {
+static int test_unresponsive_peer_closes(const h2_gizclaw_config_t* config) {
   int fails = 0;
-  h2_gizclaw_client_t *client = NULL;
-  fails += expect(h2_gizclaw_client_init(config, &client) == H2_PAL_OK &&
-                      client != NULL,
-                  "unresponsive-peer test initializes an independent client");
-  if (client == NULL)
-    return fails;
+  h2_gizclaw_client_t* client = NULL;
+  fails += expect(
+      h2_gizclaw_client_init(config, &client) == H2_PAL_OK && client != NULL,
+      "unresponsive-peer test initializes an independent client");
+  if (client == NULL) return fails;
   test_client_poll_t poll = {.result = GZC_ERR_WOULD_BLOCK};
   h2_gizclaw_test_set_client_poll(test_client_poll_call, &poll);
 
@@ -389,28 +391,26 @@ static int test_unresponsive_peer_closes(const h2_gizclaw_config_t *config) {
                   "the client open");
 
   h2_gizclaw_test_rpc_complete_on_client(client, GZC_ERR_TIMEOUT, false);
-  fails += expect(h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_CLOSED &&
-                      poll.calls == 2 &&
-                      h2_gizclaw_test_client_terminal_closed(client) &&
-                      test_warn_logs == 1 &&
-                      strstr(test_last_log_message,
-                             "stage=peer_unresponsive") != NULL,
-                  "a timeout with nothing received closes the client so the "
-                  "service reconnects");
-  fails += expect(h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_CLOSED &&
-                      poll.calls == 2,
-                  "the closed client stays terminal");
+  fails += expect(
+      h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_CLOSED &&
+          poll.calls == 2 && h2_gizclaw_test_client_terminal_closed(client) &&
+          test_warn_logs == 1 &&
+          strstr(test_last_log_message, "stage=peer_unresponsive") != NULL,
+      "a timeout with nothing received closes the client so the "
+      "service reconnects");
+  fails += expect(
+      h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_CLOSED && poll.calls == 2,
+      "the closed client stays terminal");
   h2_gizclaw_client_deinit(client);
   h2_gizclaw_test_set_client_poll(NULL, NULL);
   return fails;
 }
 
-static int
-test_event_failures_poison_client(h2_gizclaw_client_t *client,
-                                  const h2_gizclaw_config_t *config) {
+static int test_event_failures_poison_client(
+    h2_gizclaw_client_t* client, const h2_gizclaw_config_t* config) {
   int fails = 0;
   test_event_stream_t test = {
-      .stream = (gzc_event_stream_t *)(uintptr_t)0x40u,
+      .stream = (gzc_event_stream_t*)(uintptr_t)0x40u,
       .read_result = GZC_OK,
   };
   test.read_event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
@@ -436,12 +436,11 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
       .data = "demo-chat",
       .len = 9u,
   };
-  h2_gizclaw_conversation_t *conversation = NULL;
-  fails +=
-      expect(test_open_ready(
-                 client, workspace, 9u, 1000, &conversation) == H2_PAL_OK &&
-                 conversation != NULL && test.send_count == 2u,
-             "closed-poll test opens an active logical conversation");
+  h2_gizclaw_conversation_t* conversation = NULL;
+  fails += expect(test_open_ready(client, workspace, 9u, 1000, &conversation) ==
+                          H2_PAL_OK &&
+                      conversation != NULL && test.send_count == 2u,
+                  "closed-poll test opens an active logical conversation");
   test_workspace_history_notification_t notification = {0};
   fails +=
       expect(h2_gizclaw_client_dispatch_event(
@@ -480,12 +479,12 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   h2_gizclaw_test_set_packet_read(NULL, NULL);
   h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
 
-  h2_gizclaw_client_t *send_client = NULL;
+  h2_gizclaw_client_t* send_client = NULL;
   fails += expect(h2_gizclaw_client_init(config, &send_client) == H2_PAL_OK &&
                       send_client != NULL,
                   "send-failure test initializes an independent client");
   test_event_stream_t send_test = {
-      .stream = (gzc_event_stream_t *)(uintptr_t)0x50u,
+      .stream = (gzc_event_stream_t*)(uintptr_t)0x50u,
       .fail_on_send_count = 3u,
       .send_result = GZC_ERR_RPC,
   };
@@ -494,10 +493,9 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   fails += expect(h2_gizclaw_test_replace_event_stream(
                       send_client, send_test.stream) == NULL,
                   "send-failure test installs the client Event access handle");
-  h2_gizclaw_conversation_t *send_conversation = NULL;
-  fails += expect(test_open_ready(
-                      send_client, workspace, 10u, 1000, &send_conversation) ==
-                          H2_PAL_OK &&
+  h2_gizclaw_conversation_t* send_conversation = NULL;
+  fails += expect(test_open_ready(send_client, workspace, 10u, 1000,
+                                  &send_conversation) == H2_PAL_OK &&
                       send_conversation != NULL && send_test.send_count == 2u,
                   "send-failure test opens an active logical conversation");
   fails += expect(
@@ -517,9 +515,9 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   return fails;
 }
 
-static gzc_peer_event_t test_reply_event(int type, const char *label,
-                                         const char *id, const char *text,
-                                         const char *error_code) {
+static gzc_peer_event_t test_reply_event(int type, const char* label,
+                                         const char* id, const char* text,
+                                         const char* error_code) {
   gzc_peer_event_t event =
       (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
   event.version = GZC_PEER_EVENT_VERSION;
@@ -565,9 +563,9 @@ static gzc_peer_event_t test_reply_event(int type, const char *label,
 }
 
 /* Downstream audio boundary: only these carry conversation state. */
-static gzc_peer_event_t test_audio_event(int type, const char *label,
-                                         const char *id,
-                                         const char *error_code) {
+static gzc_peer_event_t test_audio_event(int type, const char* label,
+                                         const char* id,
+                                         const char* error_code) {
   gzc_peer_event_t event = test_reply_event(type, label, id, "", error_code);
   if (type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS)
     event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
@@ -579,8 +577,8 @@ static gzc_peer_event_t test_audio_event(int type, const char *label,
 /* Feeds one peer event through the client and returns the wire poll result;
  * `out` receives the projected conversation event. */
 static h2_pal_result_t test_feed_reply_event(
-    test_event_stream_t *stream, h2_gizclaw_conversation_t *conv,
-    const gzc_peer_event_t *event, h2_gizclaw_conversation_event_t *out) {
+    test_event_stream_t* stream, h2_gizclaw_conversation_t* conv,
+    const gzc_peer_event_t* event, h2_gizclaw_conversation_event_t* out) {
   stream->read_event = *event;
   stream->read_result = GZC_OK;
   const size_t reads = stream->read_count;
@@ -591,33 +589,41 @@ static h2_pal_result_t test_feed_reply_event(
   return rc;
 }
 
-
 /* Audio BOS and input end retry transport backpressure without skipping a
  * boundary. */
-static void test_audio_bos_backpressure(const h2_gizclaw_config_t *config) {
-  h2_gizclaw_client_t *client = NULL;
+static void test_audio_bos_backpressure(const h2_gizclaw_config_t* config) {
+  h2_gizclaw_client_t* client = NULL;
   assert(h2_gizclaw_client_init(config, &client) == H2_PAL_OK);
-  test_event_stream_t stream = {
-      .stream = (gzc_event_stream_t *)(uintptr_t)0x70u,
-      .fail_on_send_count = 2u, .send_result = GZC_ERR_WOULD_BLOCK};
-  h2_gizclaw_test_set_event_ops(test_event_send, NULL, test_event_close, &stream);
+  test_event_stream_t stream = {.stream = (gzc_event_stream_t*)(uintptr_t)0x70u,
+                                .fail_on_send_count = 2u,
+                                .send_result = GZC_ERR_WOULD_BLOCK};
+  h2_gizclaw_test_set_event_ops(test_event_send, NULL, test_event_close,
+                                &stream);
   assert(h2_gizclaw_test_replace_event_stream(client, stream.stream) == NULL);
-  h2_gizclaw_conversation_t *conv = NULL;
+  h2_gizclaw_conversation_t* conv = NULL;
   assert(h2_gizclaw_conversation_wire_open_internal(
-      client, (h2_gizclaw_str_t){"workspace", 9u}, 30u, 1000, &conv) == H2_PAL_OK);
-  assert(h2_gizclaw_conversation_wire_begin_audio_internal(conv) == H2_PAL_ERR_WOULD_BLOCK);
-  assert(h2_gizclaw_conversation_wire_finish_input_internal(conv, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+             client, (h2_gizclaw_str_t){"workspace", 9u}, 30u, 1000, &conv) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_conversation_wire_begin_audio_internal(conv) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_gizclaw_conversation_wire_finish_input_internal(conv, 0u) ==
+         H2_PAL_ERR_WOULD_BLOCK);
   assert(stream.send_count == 2u); /* No EOS was attempted. */
   stream.fail_on_send_count = 0u;
   assert(h2_gizclaw_conversation_wire_begin_audio_internal(conv) == H2_PAL_OK);
   assert(!h2_gizclaw_conversation_wire_input_ready_internal(conv));
-  gzc_peer_event_t ready = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
-  ready.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
+  gzc_peer_event_t ready =
+      (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
+  ready.type =
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
   snprintf(ready.payload.audio_input_ready.stream_id,
-      sizeof(ready.payload.audio_input_ready.stream_id), "%s", last_input_stream);
+           sizeof(ready.payload.audio_input_ready.stream_id), "%s",
+           last_input_stream);
   h2_gizclaw_conversation_enqueue_peer_event_internal(conv, &ready);
-  assert(h2_gizclaw_conversation_wire_finish_input_internal(conv, 0u) == H2_PAL_OK);
-  assert(stream.send_count == 5u); /* Retried audio BOS, audio EOS, control EOS. */
+  assert(h2_gizclaw_conversation_wire_finish_input_internal(conv, 0u) ==
+         H2_PAL_OK);
+  assert(stream.send_count ==
+         5u); /* Retried audio BOS, audio EOS, control EOS. */
   h2_gizclaw_conversation_wire_destroy_internal(conv);
   h2_gizclaw_client_deinit(client);
   h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
@@ -628,7 +634,7 @@ static void test_audio_bos_backpressure(const h2_gizclaw_config_t *config) {
  * the wire poll only forwards text; the one error is the server refusing our
  * own input. Downstream audio plays through the Track independently. */
 static int test_downstream_events_carry_no_state(
-    const h2_gizclaw_config_t *config) {
+    const h2_gizclaw_config_t* config) {
   static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
   static const int DELTA =
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
@@ -638,14 +644,13 @@ static int test_downstream_events_carry_no_state(
   int fails = 0;
   /* 0: realtime (input open). 1: push-to-talk after the input is sent. */
   for (unsigned mode = 0; mode < 2u; ++mode) {
-    h2_gizclaw_client_t *client = NULL;
-    fails += expect(h2_gizclaw_client_init(config, &client) == H2_PAL_OK &&
-                        client != NULL,
-                    "downstream test initializes an independent client");
-    if (client == NULL)
-      return fails;
+    h2_gizclaw_client_t* client = NULL;
+    fails += expect(
+        h2_gizclaw_client_init(config, &client) == H2_PAL_OK && client != NULL,
+        "downstream test initializes an independent client");
+    if (client == NULL) return fails;
     test_event_stream_t stream = {
-        .stream = (gzc_event_stream_t *)(uintptr_t)(0x60u + mode),
+        .stream = (gzc_event_stream_t*)(uintptr_t)(0x60u + mode),
         .read_result = GZC_ERR_WOULD_BLOCK,
     };
     h2_gizclaw_test_set_event_ops(test_event_send, test_event_read,
@@ -654,7 +659,7 @@ static int test_downstream_events_carry_no_state(
     fails += expect(
         h2_gizclaw_test_replace_event_stream(client, stream.stream) == NULL,
         "downstream test installs the client Event handle");
-    h2_gizclaw_conversation_t *conv = NULL;
+    h2_gizclaw_conversation_t* conv = NULL;
     fails += expect(test_open_ready(client, (h2_gizclaw_str_t){"demo-home", 9u},
                                     20u + mode, 1000, &conv) == H2_PAL_OK &&
                         conv != NULL,
@@ -669,10 +674,10 @@ static int test_downstream_events_carry_no_state(
     /* Boundaries of any stream, however they interleave, are no events. */
     const struct {
       int type;
-      const char *label;
-      const char *id;
+      const char* label;
+      const char* id;
       bool audio;
-      const char *error;
+      const char* error;
     } silent[] = {
         {BOS, "transcript", input, false, NULL},
         {BOS, "assistant", "reply-1", false, NULL},
@@ -690,36 +695,36 @@ static int test_downstream_events_carry_no_state(
     };
     for (size_t i = 0u; i < sizeof(silent) / sizeof(silent[0]); ++i) {
       gzc_peer_event_t event =
-          silent[i].audio
-              ? test_audio_event(silent[i].type, silent[i].label, silent[i].id,
-                                 silent[i].error)
-              : test_reply_event(silent[i].type, silent[i].label, silent[i].id,
-                                 "", silent[i].error);
-      fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(
-                          conv, &event),
-                      "a downstream boundary is consumed");
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                      "a downstream boundary produces no event");
+          silent[i].audio ? test_audio_event(silent[i].type, silent[i].label,
+                                             silent[i].id, silent[i].error)
+                          : test_reply_event(silent[i].type, silent[i].label,
+                                             silent[i].id, "", silent[i].error);
+      fails += expect(
+          h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+          "a downstream boundary is consumed");
+      fails += expect(
+          test_feed_reply_event(&stream, conv, &event, &out) == H2_PAL_OK &&
+              out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
+          "a downstream boundary produces no event");
     }
     gzc_peer_event_t event =
         test_reply_event(DELTA, "assistant", "reply-2", "hel", NULL);
-    fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                            H2_PAL_OK &&
-                        out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA &&
-                        out.text_len == 3u,
-                    "text delta is forwarded");
+    fails += expect(
+        test_feed_reply_event(&stream, conv, &event, &out) == H2_PAL_OK &&
+            out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA &&
+            out.text_len == 3u,
+        "text delta is forwarded");
     event = test_reply_event(DONE, "transcript", input, "ni hao", NULL);
-    fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                            H2_PAL_OK &&
-                        out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE &&
-                        out.text_len == 6u,
-                    "text done is forwarded");
+    fails += expect(
+        test_feed_reply_event(&stream, conv, &event, &out) == H2_PAL_OK &&
+            out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE &&
+            out.text_len == 6u,
+        "text done is forwarded");
     /* New error names travel in existing string fields, including names this
-     * client has never seen. Decode the wire before testing their projection. */
+     * client has never seen. Decode the wire before testing their projection.
+     */
     const struct {
-      const char *code;
+      const char* code;
       bool retryable;
     } refusals[] = {
         {"INPUT_DENIED", false},
@@ -736,19 +741,19 @@ static int test_downstream_events_carry_no_state(
       gzc_peer_event_t decoded = gizclaw_events_v1_PeerEvent_init_zero;
       pb_istream_t wire = pb_istream_from_buffer(bytes, encoded.bytes_written);
       assert(pb_decode(&wire, gizclaw_events_v1_PeerEvent_fields, &decoded));
-      fails += expect(test_feed_reply_event(&stream, conv, &decoded, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR &&
-                          out.error_code != NULL &&
-                          strcmp(out.error_code, refusals[i].code) == 0 &&
-                          out.retryable == refusals[i].retryable,
-                      "input refusals preserve unfamiliar codes and retryability");
+      fails += expect(
+          test_feed_reply_event(&stream, conv, &decoded, &out) == H2_PAL_OK &&
+              out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR &&
+              out.error_code != NULL &&
+              strcmp(out.error_code, refusals[i].code) == 0 &&
+              out.retryable == refusals[i].retryable,
+          "input refusals preserve unfamiliar codes and retryability");
     }
     event = test_reply_event(EOS, "demo-home", input, "", "INPUT_DENIED");
-    fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                            H2_PAL_OK &&
-                        out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR,
-                    "a refusal echoing our label is an error");
+    fails += expect(
+        test_feed_reply_event(&stream, conv, &event, &out) == H2_PAL_OK &&
+            out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR,
+        "a refusal echoing our label is an error");
     h2_gizclaw_conversation_wire_destroy_internal(conv);
     fails += expect(h2_gizclaw_client_close(client) == H2_PAL_OK,
                     "downstream test closes the client");
@@ -759,17 +764,17 @@ static int test_downstream_events_carry_no_state(
   return fails;
 }
 
-static int test_conversation_event_lease(h2_gizclaw_client_t *client) {
+static int test_conversation_event_lease(h2_gizclaw_client_t* client) {
   int fails = 0;
-  h2_gizclaw_conversation_t *first =
-      (h2_gizclaw_conversation_t *)(uintptr_t)0x10u;
-  h2_gizclaw_conversation_t *second =
-      (h2_gizclaw_conversation_t *)(uintptr_t)0x20u;
-  gzc_event_stream_t *events = (gzc_event_stream_t *)(uintptr_t)0x30u;
+  h2_gizclaw_conversation_t* first =
+      (h2_gizclaw_conversation_t*)(uintptr_t)0x10u;
+  h2_gizclaw_conversation_t* second =
+      (h2_gizclaw_conversation_t*)(uintptr_t)0x20u;
+  gzc_event_stream_t* events = (gzc_event_stream_t*)(uintptr_t)0x30u;
   fails += expect(h2_gizclaw_test_replace_event_stream(client, events) == NULL,
                   "test installs one client-owned Event access handle");
 
-  gzc_event_stream_t *borrowed_events = NULL;
+  gzc_event_stream_t* borrowed_events = NULL;
   uint64_t stream_sequence = 0u;
   fails += expect(
       h2_gizclaw_client_conversation_acquire_internal(
@@ -794,11 +799,11 @@ static int test_conversation_event_lease(h2_gizclaw_client_t *client) {
       expect(!h2_gizclaw_client_conversation_active_internal(client, first),
              "the active conversation releases its logical lease");
 
-  fails += expect(h2_gizclaw_client_conversation_acquire_internal(
-                      client, second, &borrowed_events, &stream_sequence) ==
-                          H2_PAL_OK &&
-                      borrowed_events == events && stream_sequence == 2u,
-                  "a later conversation receives a unique stream sequence");
+  fails += expect(
+      h2_gizclaw_client_conversation_acquire_internal(
+          client, second, &borrowed_events, &stream_sequence) == H2_PAL_OK &&
+          borrowed_events == events && stream_sequence == 2u,
+      "a later conversation receives a unique stream sequence");
   h2_gizclaw_client_conversation_release_internal(client, second);
 
   /* Route rotation and stale-event rejection exercise the actual wire owner
@@ -811,7 +816,7 @@ static int test_conversation_event_lease(h2_gizclaw_client_t *client) {
   return fails;
 }
 
-static int test_stable_registration_token_reuse(h2_gizclaw_client_t *client) {
+static int test_stable_registration_token_reuse(h2_gizclaw_client_t* client) {
   (void)client;
   int fails = 0;
   const char token[] = "stable-product-token";
@@ -853,9 +858,9 @@ typedef struct test_telemetry_send {
   bool mapped;
 } test_telemetry_send_t;
 
-static int test_telemetry_send_call(void *user,
-                                    const gzc_telemetry_frame_t *frame) {
-  test_telemetry_send_t *mock = user;
+static int test_telemetry_send_call(void* user,
+                                    const gzc_telemetry_frame_t* frame) {
+  test_telemetry_send_t* mock = user;
   ++mock->calls;
   mock->sequence = frame->sequence;
   mock->observed_at_unix_ms = frame->observed_at_unix_ms;
@@ -884,7 +889,7 @@ static int test_telemetry_send_call(void *user,
   return mock->result;
 }
 
-static int test_telemetry_adapter(h2_gizclaw_client_t *client) {
+static int test_telemetry_adapter(h2_gizclaw_client_t* client) {
   int fails = 0;
   h2_gizclaw_telemetry_observation_t observations[4] = {
       {
@@ -949,21 +954,21 @@ static int test_telemetry_adapter(h2_gizclaw_client_t *client) {
   observations[0].value.battery.percent = 72.5;
 
   mock.result = GZC_ERR_TIMEOUT;
-  fails += expect(h2_gizclaw_test_telemetry_send(client, &frame) ==
-                          H2_PAL_ERR_TIMEOUT &&
-                      mock.calls == 2,
-                  "telemetry maps a bounded transport timeout");
+  fails += expect(
+      h2_gizclaw_test_telemetry_send(client, &frame) == H2_PAL_ERR_TIMEOUT &&
+          mock.calls == 2,
+      "telemetry maps a bounded transport timeout");
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
   return fails;
 }
 
-static h2_pal_result_t test_get_monotonic_ms(void *user, uint64_t *out_ms) {
+static h2_pal_result_t test_get_monotonic_ms(void* user, uint64_t* out_ms) {
   (void)user;
   *out_ms = test_monotonic_ms;
   return test_monotonic_result;
 }
 
-static h2_pal_result_t test_sleep_ms(void *user, uint32_t ms) {
+static h2_pal_result_t test_sleep_ms(void* user, uint32_t ms) {
   (void)user;
   ++test_sleep_calls;
   test_last_sleep_ms = ms;
@@ -973,8 +978,8 @@ static h2_pal_result_t test_sleep_ms(void *user, uint32_t ms) {
   return test_sleep_result;
 }
 
-static int test_log_write(void *user, h2_pal_log_level_t level,
-                          const char *scope, const char *message) {
+static int test_log_write(void* user, h2_pal_log_level_t level,
+                          const char* scope, const char* message) {
   (void)user;
   assert(strcmp(scope, "gizclaw") == 0);
   if (level == H2_PAL_LOG_ERROR) {
@@ -989,23 +994,23 @@ static int test_log_write(void *user, h2_pal_log_level_t level,
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_test_http_request(h2_gizclaw_client_t *client,
-                                 const gzc_http_request_t *request,
-                                 gzc_http_response_t *response);
+int h2_gizclaw_test_http_request(h2_gizclaw_client_t* client,
+                                 const gzc_http_request_t* request,
+                                 gzc_http_response_t* response);
 
 static int test_http_rc;
 static int test_http_status;
-static int test_http_request(void *user, const h2_pal_http_request_t *request,
-                             h2_pal_http_response_t *response) {
+static int test_http_request(void* user, const h2_pal_http_request_t* request,
+                             h2_pal_http_response_t* response) {
   (void)user;
   (void)request;
   test_monotonic_ms += 37u;
   response->status_code = test_http_status;
-  response->body = (uint8_t *)"SECRET_RESPONSE";
+  response->body = (uint8_t*)"SECRET_RESPONSE";
   response->body_len = strlen("SECRET_RESPONSE");
   return test_http_rc;
 }
-static void test_http_free(void *user, h2_pal_http_response_t *response) {
+static void test_http_free(void* user, h2_pal_http_response_t* response) {
   (void)user;
   (void)response;
 }
@@ -1016,9 +1021,9 @@ static void test_http_diagnostics(h2_gizclaw_config_t config) {
   };
   const h2_pal_http_api_t http = {.vtable = &vtable};
   config.http = &http;
-  h2_gizclaw_client_t *client = NULL;
+  h2_gizclaw_client_t* client = NULL;
   assert(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK);
-  const char *urls[] = {
+  const char* urls[] = {
       "http://user:SECRET_USER@ap.example:9821/server-info?key=SECRET_QUERY",
       "https://[::1]:443/SECRET_PATH?key=SECRET_QUERY#SECRET_FRAGMENT",
       "http://bad\nhost/SECRET_PATH",
@@ -1047,8 +1052,7 @@ static void test_http_diagnostics(h2_gizclaw_config_t config) {
       if (i == 1u)
         assert(strstr(test_last_error, "endpoint=[::1]:443 path=redacted") !=
                NULL);
-      if (i == 2u)
-        assert(strstr(test_last_error, "endpoint=redacted") != NULL);
+      if (i == 2u) assert(strstr(test_last_error, "endpoint=redacted") != NULL);
     }
   }
   test_http_rc = H2_PAL_ERR_TIMEOUT;
@@ -1057,15 +1061,15 @@ static void test_http_diagnostics(h2_gizclaw_config_t config) {
   h2_gizclaw_client_deinit(client);
 }
 
-static h2_pal_result_t test_get_monotonic_ms_unsupported(void *user,
-                                                         uint64_t *out_ms) {
+static h2_pal_result_t test_get_monotonic_ms_unsupported(void* user,
+                                                         uint64_t* out_ms) {
   (void)user;
   (void)out_ms;
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t test_channel_send(h2_pal_webrtc_channel_t *channel,
-                                         const uint8_t *data, size_t len,
+static h2_pal_result_t test_channel_send(h2_pal_webrtc_channel_t* channel,
+                                         const uint8_t* data, size_t len,
                                          int is_text) {
   (void)channel;
   (void)data;
@@ -1076,9 +1080,9 @@ static h2_pal_result_t test_channel_send(h2_pal_webrtc_channel_t *channel,
                                                         : test_send_result;
 }
 
-static h2_pal_result_t test_peer_poll(h2_pal_webrtc_peer_t *peer,
+static h2_pal_result_t test_peer_poll(h2_pal_webrtc_peer_t* peer,
                                       int timeout_ms,
-                                      h2_pal_webrtc_event_t *out_event) {
+                                      h2_pal_webrtc_event_t* out_event) {
   (void)peer;
   test_poll_calls++;
   test_last_poll_timeout_ms = timeout_ms;
@@ -1096,15 +1100,15 @@ static h2_pal_result_t test_peer_poll(h2_pal_webrtc_peer_t *peer,
   return test_poll_result;
 }
 
-static bool test_cancel(void *user) {
+static bool test_cancel(void* user) {
   (void)user;
   return test_cancel_requested;
 }
 
-static h2_pal_result_t test_peer_send_opus(h2_pal_webrtc_peer_t *peer,
-                                           const uint8_t *opus,
+static h2_pal_result_t test_peer_send_opus(h2_pal_webrtc_peer_t* peer,
+                                           const uint8_t* opus,
                                            size_t opus_len) {
-  assert(peer == (h2_pal_webrtc_peer_t *)0x2);
+  assert(peer == (h2_pal_webrtc_peer_t*)0x2);
   assert(opus != NULL);
   assert(opus_len <= sizeof(test_opus_bytes));
   memcpy(test_opus_bytes, opus, opus_len);
@@ -1114,10 +1118,10 @@ static h2_pal_result_t test_peer_send_opus(h2_pal_webrtc_peer_t *peer,
 }
 
 static size_t test_media_track_bind_calls;
-static h2_pal_webrtc_track_t *test_expected_track;
+static h2_pal_webrtc_track_t* test_expected_track;
 
-static h2_pal_result_t test_track_read(void *user, uint8_t *data,
-                                       size_t capacity, size_t *out_len) {
+static h2_pal_result_t test_track_read(void* user, uint8_t* data,
+                                       size_t capacity, size_t* out_len) {
   (void)user;
   (void)data;
   (void)capacity;
@@ -1125,21 +1129,21 @@ static h2_pal_result_t test_track_read(void *user, uint8_t *data,
   return H2_PAL_ERR_WOULD_BLOCK;
 }
 
-static const h2_pal_mem_api_t *test_peer_allocator;
+static const h2_pal_mem_api_t* test_peer_allocator;
 static unsigned test_legacy_peer_creates;
 static h2_pal_result_t test_peer_config_result = H2_PAL_OK;
 
-static h2_pal_result_t
-test_webrtc_peer_create(void *user, h2_pal_webrtc_peer_t **out_peer) {
+static h2_pal_result_t test_webrtc_peer_create(
+    void* user, h2_pal_webrtc_peer_t** out_peer) {
   (void)user;
   ++test_legacy_peer_creates;
-  *out_peer = (h2_pal_webrtc_peer_t *)0x2;
+  *out_peer = (h2_pal_webrtc_peer_t*)0x2;
   return H2_PAL_OK;
 }
 
 static h2_pal_result_t test_webrtc_peer_create_with_config(
-    void *user, const h2_pal_webrtc_peer_config_t *config,
-    h2_pal_webrtc_peer_t **out_peer) {
+    void* user, const h2_pal_webrtc_peer_config_t* config,
+    h2_pal_webrtc_peer_t** out_peer) {
   assert(config != NULL && config->allocator == test_peer_allocator);
   if (test_peer_config_result != H2_PAL_OK) {
     return test_peer_config_result;
@@ -1147,36 +1151,36 @@ static h2_pal_result_t test_webrtc_peer_create_with_config(
   return test_webrtc_peer_create(user, out_peer);
 }
 
-static h2_pal_result_t test_peer_set_track(h2_pal_webrtc_peer_t *peer,
-                                                 h2_pal_webrtc_track_t *track) {
-  assert(peer == (h2_pal_webrtc_peer_t *)0x2);
+static h2_pal_result_t test_peer_set_track(h2_pal_webrtc_peer_t* peer,
+                                           h2_pal_webrtc_track_t* track) {
+  assert(peer == (h2_pal_webrtc_peer_t*)0x2);
   assert(track == test_expected_track);
   ++test_media_track_bind_calls;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_peer_unset_track(h2_pal_webrtc_peer_t *peer,
-                                             h2_pal_webrtc_track_t *track) {
-  assert(peer == (h2_pal_webrtc_peer_t *)0x2);
+static h2_pal_result_t test_peer_unset_track(h2_pal_webrtc_peer_t* peer,
+                                             h2_pal_webrtc_track_t* track) {
+  assert(peer == (h2_pal_webrtc_peer_t*)0x2);
   assert(track == test_expected_track);
   return H2_PAL_OK;
 }
 
-static void test_peer_close(h2_pal_webrtc_peer_t *peer) {
-  assert(peer == (h2_pal_webrtc_peer_t *)0x2);
+static void test_peer_close(h2_pal_webrtc_peer_t* peer) {
+  assert(peer == (h2_pal_webrtc_peer_t*)0x2);
   ++test_peer_close_calls;
 }
 
-static void test_opus_receive(void *user, gzc_rtc_peer_t *peer,
-                              const uint8_t *opus, size_t opus_len) {
-  assert(user == (void *)0x3);
-  assert(peer == (gzc_rtc_peer_t *)0x2);
+static void test_opus_receive(void* user, gzc_rtc_peer_t* peer,
+                              const uint8_t* opus, size_t opus_len) {
+  assert(user == (void*)0x3);
+  assert(peer == (gzc_rtc_peer_t*)0x2);
   assert(opus_len == 3u);
   assert(memcmp(opus, "\xf8\xff\xfe", 3u) == 0);
   ++test_opus_receive_calls;
 }
 
-static int expect(int condition, const char *message) {
+static int expect(int condition, const char* message) {
   if (condition) {
     return 0;
   }
@@ -1190,15 +1194,15 @@ typedef struct provider_completion_fixture {
   int results[8];
 } provider_completion_fixture_t;
 
-static void provider_complete(void *user, int result) {
-  provider_completion_fixture_t *fixture = user;
+static void provider_complete(void* user, int result) {
+  provider_completion_fixture_t* fixture = user;
   fixture->results[fixture->calls++] = result;
   fixture->result = result;
 }
 
-static int completion_provider(void *user, h2_gizclaw_tool_t method,
+static int completion_provider(void* user, h2_gizclaw_tool_t method,
                                h2_gizclaw_rpc_bytes_t request,
-                               h2_gizclaw_rpc_provider_response_t *out) {
+                               h2_gizclaw_rpc_provider_response_t* out) {
   (void)request;
   assert(method == H2_GIZCLAW_TOOL_DEVICE_REBOOT);
   out->on_complete = provider_complete;
@@ -1207,7 +1211,7 @@ static int completion_provider(void *user, h2_gizclaw_tool_t method,
 }
 
 static unsigned provider_channel_closes;
-static void provider_channel_close(h2_pal_webrtc_channel_t *channel) {
+static void provider_channel_close(h2_pal_webrtc_channel_t* channel) {
   assert(channel != NULL);
   ++provider_channel_closes;
 }
@@ -1227,12 +1231,13 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
   config.tool_handlers = &handler;
   config.tool_handler_count = 1;
   for (int scenario = 0; scenario < 6; ++scenario) {
-    h2_gizclaw_client_t *client = NULL;
+    h2_gizclaw_client_t* client = NULL;
     assert(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK);
-    h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)0x121;
+    h2_pal_webrtc_channel_t* channel = (h2_pal_webrtc_channel_t*)0x121;
     fixture = (provider_completion_fixture_t){0};
     const int respond_result = scenario == 3 ? GZC_ERR_NO_MEMORY : GZC_OK;
-    assert(h2_gizclaw_test_provider_response(client, channel, respond_result) == respond_result);
+    assert(h2_gizclaw_test_provider_response(client, channel, respond_result) ==
+           respond_result);
     assert(fixture.calls == 0);
     test_client_poll_t poll = {.result = GZC_OK};
     h2_gizclaw_test_set_client_poll(test_client_poll_call, &poll);
@@ -1259,7 +1264,8 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
       }
       if (scenario == 0) {
         const uint8_t eos[] = {0, 0, 0, 0};
-        assert(h2_gizclaw_test_provider_send(channel, eos, sizeof(eos)) == GZC_OK);
+        assert(h2_gizclaw_test_provider_send(channel, eos, sizeof(eos)) ==
+               GZC_OK);
       }
       h2_gizclaw_test_provider_channel_close(client, channel, scenario == 1);
       assert(fixture.calls == 0);
@@ -1281,16 +1287,17 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
   /* Successful A must survive B's timeout in the same SDK poll. Exercise
    * split headers/payloads and an EOS-shaped payload, plus blocked retries. */
   for (int failure = 0; failure < 3; ++failure) {
-    h2_gizclaw_client_t *pair = NULL;
+    h2_gizclaw_client_t* pair = NULL;
     provider_completion_fixture_t a = {0};
     handler.user = &a;
     assert(h2_gizclaw_client_init(&config, &pair) == H2_PAL_OK);
-    h2_pal_webrtc_channel_t *ca = (h2_pal_webrtc_channel_t *)0x401;
-    h2_pal_webrtc_channel_t *cb = (h2_pal_webrtc_channel_t *)0x402;
+    h2_pal_webrtc_channel_t* ca = (h2_pal_webrtc_channel_t*)0x401;
+    h2_pal_webrtc_channel_t* cb = (h2_pal_webrtc_channel_t*)0x402;
     assert(h2_gizclaw_test_provider_response(pair, ca, GZC_OK) == GZC_OK);
     const uint8_t response[] = {4, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     test_send_result = H2_PAL_ERR_WOULD_BLOCK;
-    assert(h2_gizclaw_test_provider_send(ca, response, sizeof(response)) == GZC_ERR_WOULD_BLOCK);
+    assert(h2_gizclaw_test_provider_send(ca, response, sizeof(response)) ==
+           GZC_ERR_WOULD_BLOCK);
     test_send_result = H2_PAL_OK;
     for (size_t i = 0; i < sizeof(response); ++i)
       assert(h2_gizclaw_test_provider_send(ca, response + i, 1) == GZC_OK);
@@ -1299,14 +1306,16 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
     assert(h2_gizclaw_test_provider_response(pair, cb, GZC_OK) == GZC_OK);
     if (failure == 1) {
       test_send_result = H2_PAL_ERR_IO;
-      assert(h2_gizclaw_test_provider_send(cb, response, sizeof(response)) != GZC_OK);
+      assert(h2_gizclaw_test_provider_send(cb, response, sizeof(response)) !=
+             GZC_OK);
       test_send_result = H2_PAL_OK;
     } else {
       /* No EOS: merely sending an all-zero payload cannot mean completion. */
       assert(h2_gizclaw_test_provider_send(cb, response, 8) == GZC_OK);
     }
     h2_gizclaw_test_provider_channel_close(pair, cb, false);
-    test_client_poll_t poll = {.result = failure == 0 ? GZC_ERR_TIMEOUT : GZC_OK};
+    test_client_poll_t poll = {.result =
+                                   failure == 0 ? GZC_ERR_TIMEOUT : GZC_OK};
     h2_gizclaw_test_set_client_poll(test_client_poll_call, &poll);
     (void)h2_gizclaw_client_poll(pair, 0);
     assert(a.calls == 2);
@@ -1321,11 +1330,12 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
    * timeout; stop/deinit cannot redeliver it or retain the deferred channel. */
   handler.user = &fixture;
   for (unsigned terminal = 0u; terminal < 2u; ++terminal) {
-    h2_gizclaw_client_t *pending = NULL;
+    h2_gizclaw_client_t* pending = NULL;
     fixture = (provider_completion_fixture_t){0};
     assert(h2_gizclaw_client_init(&config, &pending) == H2_PAL_OK);
-    h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)0x501;
-    assert(h2_gizclaw_test_provider_response(pending, channel, GZC_OK) == GZC_OK);
+    h2_pal_webrtc_channel_t* channel = (h2_pal_webrtc_channel_t*)0x501;
+    assert(h2_gizclaw_test_provider_response(pending, channel, GZC_OK) ==
+           GZC_OK);
     const uint8_t eos[] = {0, 0, 0, 0};
     assert(h2_gizclaw_test_provider_send(channel, eos, sizeof(eos)) == GZC_OK);
     h2_gizclaw_test_provider_channel_close(pending, channel, false);
@@ -1335,8 +1345,9 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
     (void)h2_gizclaw_client_poll(pending, 0);
     assert(fixture.calls == 0 && provider_channel_closes == closes);
     if (terminal == 0u) {
-      test_monotonic_ms += (uint64_t)(config.write_timeout_ms > 0
-          ? config.write_timeout_ms : config.connect_timeout_ms);
+      test_monotonic_ms +=
+          (uint64_t)(config.write_timeout_ms > 0 ? config.write_timeout_ms
+                                                 : config.connect_timeout_ms);
       (void)h2_gizclaw_client_poll(pending, 0);
       assert(fixture.calls == 1 && fixture.result == H2_PAL_ERR_TIMEOUT);
     } else {
@@ -1350,19 +1361,21 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
     assert(provider_channel_closes == closes);
   }
   for (unsigned when = 0u; when < 2u; ++when) {
-    h2_gizclaw_client_t *pending = NULL;
+    h2_gizclaw_client_t* pending = NULL;
     fixture = (provider_completion_fixture_t){0};
     assert(h2_gizclaw_client_init(&config, &pending) == H2_PAL_OK);
-    h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)0x601;
+    h2_pal_webrtc_channel_t* channel = (h2_pal_webrtc_channel_t*)0x601;
     if (when == 0u) test_monotonic_result = H2_PAL_ERR_IO;
-    const int response = h2_gizclaw_test_provider_response(pending, channel, GZC_OK);
+    const int response =
+        h2_gizclaw_test_provider_response(pending, channel, GZC_OK);
     if (when == 0u) {
       assert(response == GZC_ERR_RPC && fixture.calls == 1 &&
              fixture.result == H2_PAL_ERR_IO);
     } else {
       assert(response == GZC_OK && fixture.calls == 0);
       const uint8_t eos[] = {0, 0, 0, 0};
-      assert(h2_gizclaw_test_provider_send(channel, eos, sizeof(eos)) == GZC_OK);
+      assert(h2_gizclaw_test_provider_send(channel, eos, sizeof(eos)) ==
+             GZC_OK);
       h2_gizclaw_test_provider_channel_close(pending, channel, false);
       const unsigned closes = provider_channel_closes;
       test_client_poll_t poll = {.result = GZC_OK};
@@ -1378,16 +1391,17 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
     assert(fixture.calls == 1);
   }
   handler.user = &fixture;
-  h2_gizclaw_client_t *client = NULL;
+  h2_gizclaw_client_t* client = NULL;
   fixture = (provider_completion_fixture_t){0};
   assert(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK);
   for (uintptr_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
-    assert(h2_gizclaw_test_provider_response(client,
-        (h2_pal_webrtc_channel_t *)(0x200u + i), GZC_OK) == GZC_OK);
+    assert(h2_gizclaw_test_provider_response(
+               client, (h2_pal_webrtc_channel_t*)(0x200u + i), GZC_OK) ==
+           GZC_OK);
   }
   assert(fixture.calls == 0);
-  assert(h2_gizclaw_test_provider_response(client,
-      (h2_pal_webrtc_channel_t *)0x300u, GZC_OK) == GZC_ERR_RPC);
+  assert(h2_gizclaw_test_provider_response(
+             client, (h2_pal_webrtc_channel_t*)0x300u, GZC_OK) == GZC_ERR_RPC);
   assert(fixture.calls == 1 && fixture.result == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_client_close(client) == H2_PAL_OK);
   assert(fixture.calls == 1 + GZC_RPC_MAX_INBOUND_CHANNELS);
@@ -1411,9 +1425,9 @@ int main(void) {
                       H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING == 124 &&
                       H2_GIZCLAW_RPC_SERVER_PROFILE_GET == 125,
                   "social ping and public profile wire methods are 123-125");
-  fails += expect(H2_GIZCLAW_TOOL_DEVICE_FIND == 6 &&
-                      H2_GIZCLAW_TOOL_SOCIAL_PING == 21,
-                  "device find and social ping tools are 6 and 21");
+  fails += expect(
+      H2_GIZCLAW_TOOL_DEVICE_FIND == 6 && H2_GIZCLAW_TOOL_SOCIAL_PING == 21,
+      "device find and social ping tools are 6 and 21");
   h2_gizclaw_config_t config;
   memset(&config, 0, sizeof(config));
   config.server_endpoint.data = "127.0.0.1:19820";
@@ -1484,14 +1498,15 @@ int main(void) {
     const h2_pal_webrtc_api_t fallback_api = {.vtable = &fallback_vtable};
     h2_gizclaw_config_t fallback_config = config;
     fallback_config.webrtc = &fallback_api;
-    h2_gizclaw_client_t *fallback_client = NULL;
-    assert(h2_gizclaw_client_init(&fallback_config, &fallback_client) == H2_PAL_OK);
-    test_peer_config_result = mode == 2u ? H2_PAL_ERR_NO_MEMORY
-                                         : H2_PAL_ERR_UNSUPPORTED;
+    h2_gizclaw_client_t* fallback_client = NULL;
+    assert(h2_gizclaw_client_init(&fallback_config, &fallback_client) ==
+           H2_PAL_OK);
+    test_peer_config_result =
+        mode == 2u ? H2_PAL_ERR_NO_MEMORY : H2_PAL_ERR_UNSUPPORTED;
     test_legacy_peer_creates = 0u;
     test_error_logs = 0;
     test_last_error[0] = '\0';
-    h2_pal_webrtc_peer_t *fallback_peer = NULL;
+    h2_pal_webrtc_peer_t* fallback_peer = NULL;
     int result = h2_gizclaw_test_peer_create(fallback_client, &fallback_peer);
     if (mode == 2u) {
       assert(result == GZC_ERR_WEBRTC && fallback_peer == NULL);
@@ -1501,17 +1516,18 @@ int main(void) {
       assert(result == GZC_OK && fallback_peer != NULL);
       assert(test_legacy_peer_creates == 1u && test_error_logs == 1);
       assert(strstr(test_last_error, "peer_allocator_unsupported") != NULL);
-      h2_gizclaw_test_media_close_peer(fallback_client, (gzc_rtc_peer_t *)fallback_peer);
+      h2_gizclaw_test_media_close_peer(fallback_client,
+                                       (gzc_rtc_peer_t*)fallback_peer);
     }
     h2_gizclaw_client_deinit(fallback_client);
   }
   test_peer_config_result = H2_PAL_OK;
 
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)0x1;
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)0x1;
   fails +=
       expect(h2_gizclaw_client_init(NULL, &client) == H2_PAL_ERR_INVALID_ARG,
              "init rejects null config");
-  fails += expect(client == (h2_gizclaw_client_t *)0x1,
+  fails += expect(client == (h2_gizclaw_client_t*)0x1,
                   "failed init leaves output untouched before validation");
   config.connect_timeout_ms = -1;
   fails +=
@@ -1536,7 +1552,7 @@ int main(void) {
       .vtable = &unsupported_time_vtable,
   };
   config.time = &unsupported_time;
-  client = (h2_gizclaw_client_t *)0x1;
+  client = (h2_gizclaw_client_t*)0x1;
   fails +=
       expect(h2_gizclaw_client_init(&config, &client) == H2_PAL_ERR_UNSUPPORTED,
              "init rejects a monotonic clock that reports unsupported");
@@ -1556,13 +1572,13 @@ int main(void) {
   };
   test_expected_track = &test_track;
   config.webrtc_media_track = &test_track;
-  h2_gizclaw_client_t *track_client = NULL;
+  h2_gizclaw_client_t* track_client = NULL;
   fails += expect(h2_gizclaw_client_init(&config, &track_client) == H2_PAL_OK,
                   "track-mode init accepts an opaque provider track");
-  h2_pal_webrtc_peer_t *track_peer = NULL;
+  h2_pal_webrtc_peer_t* track_peer = NULL;
   fails +=
       expect(h2_gizclaw_test_peer_create(track_client, &track_peer) == GZC_OK &&
-                 track_peer == (h2_pal_webrtc_peer_t *)0x2 &&
+                 track_peer == (h2_pal_webrtc_peer_t*)0x2 &&
                  test_media_track_bind_calls == 1u,
              "GizClaw binds the opaque track before offer setup");
   const struct {
@@ -1600,7 +1616,7 @@ int main(void) {
   const uint8_t opus_payload[] = {0xf8u, 0xffu, 0xfeu};
   test_opus_send_result = H2_PAL_ERR_WOULD_BLOCK;
   fails += expect(
-      h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t *)0x2,
+      h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t*)0x2,
                                       opus_payload, sizeof(opus_payload)) ==
               GZC_ERR_WOULD_BLOCK &&
           test_opus_send_calls == 1u && test_opus_len == sizeof(opus_payload) &&
@@ -1608,73 +1624,73 @@ int main(void) {
       "Opus adapter preserves raw payload and backpressure");
   test_opus_send_result = H2_PAL_OK;
   fails += expect(h2_gizclaw_test_media_send_opus(
-                      client, (gzc_rtc_peer_t *)0x2, opus_payload,
+                      client, (gzc_rtc_peer_t*)0x2, opus_payload,
                       sizeof(opus_payload)) == GZC_OK &&
                       test_opus_send_calls == 2u,
                   "Opus adapter consumes the same frame after retry succeeds");
   fails +=
-      expect(h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t *)0x2,
+      expect(h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t*)0x2,
                                              opus_payload,
                                              0u) == GZC_ERR_INVALID_ARGUMENT &&
                  test_opus_send_calls == 2u,
              "Opus adapter rejects an empty frame before provider dispatch");
   fails += expect(
-      h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t *)0x2,
-                                      opus_payload,
-                                      H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE +
-                                          1u) == GZC_ERR_INVALID_ARGUMENT &&
+      h2_gizclaw_test_media_send_opus(
+          client, (gzc_rtc_peer_t*)0x2, opus_payload,
+          H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE + 1u) ==
+              GZC_ERR_INVALID_ARGUMENT &&
           test_opus_send_calls == 2u,
       "Opus adapter rejects an oversized frame before provider dispatch");
   uint8_t opus_max[H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE];
   memset(opus_max, 0u, sizeof(opus_max));
-  fails += expect(h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t *)0x2,
+  fails += expect(h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t*)0x2,
                                                   opus_max, 1u) == GZC_OK &&
                       test_opus_send_calls == 3u && test_opus_len == 1u,
                   "Opus adapter accepts the minimum complete packet");
   fails += expect(
-      h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t *)0x2, opus_max,
+      h2_gizclaw_test_media_send_opus(client, (gzc_rtc_peer_t*)0x2, opus_max,
                                       sizeof(opus_max)) == GZC_OK &&
           test_opus_send_calls == 4u && test_opus_len == sizeof(opus_max),
       "Opus adapter accepts the maximum complete packet");
   test_opus_send_result = H2_PAL_ERR_UNSUPPORTED;
   fails += expect(h2_gizclaw_test_media_send_opus(
-                      client, (gzc_rtc_peer_t *)0x2, opus_payload,
+                      client, (gzc_rtc_peer_t*)0x2, opus_payload,
                       sizeof(opus_payload)) == GZC_ERR_UNSUPPORTED &&
                       test_opus_send_calls == 5u,
                   "Opus adapter preserves explicit provider unsupported");
   test_opus_send_result = H2_PAL_OK;
   fails += expect(h2_gizclaw_test_media_set_opus_frame_callback(
-                      client, (gzc_rtc_peer_t *)0x2, test_opus_receive,
-                      (void *)0x3) == GZC_OK,
+                      client, (gzc_rtc_peer_t*)0x2, test_opus_receive,
+                      (void*)0x3) == GZC_OK,
                   "Opus adapter accepts a receive callback");
-  h2_gizclaw_test_media_emit_opus(client, (gzc_rtc_peer_t *)0x2, opus_payload,
+  h2_gizclaw_test_media_emit_opus(client, (gzc_rtc_peer_t*)0x2, opus_payload,
                                   sizeof(opus_payload));
-  h2_gizclaw_test_media_emit_opus(client, (gzc_rtc_peer_t *)0x4, opus_payload,
+  h2_gizclaw_test_media_emit_opus(client, (gzc_rtc_peer_t*)0x4, opus_payload,
                                   sizeof(opus_payload));
   fails += expect(test_opus_receive_calls == 1u,
                   "Opus adapter forwards only the registered peer payload");
   fails += expect(h2_gizclaw_test_media_set_opus_frame_callback(
-                      client, (gzc_rtc_peer_t *)0x2, NULL, NULL) == GZC_OK &&
+                      client, (gzc_rtc_peer_t*)0x2, NULL, NULL) == GZC_OK &&
                       h2_gizclaw_test_media_set_opus_frame_callback(
-                          client, (gzc_rtc_peer_t *)0x2, NULL, NULL) == GZC_OK,
+                          client, (gzc_rtc_peer_t*)0x2, NULL, NULL) == GZC_OK,
                   "Opus callback unregister is idempotent");
-  h2_gizclaw_test_media_emit_opus(client, (gzc_rtc_peer_t *)0x2, opus_payload,
+  h2_gizclaw_test_media_emit_opus(client, (gzc_rtc_peer_t*)0x2, opus_payload,
                                   sizeof(opus_payload));
   fails += expect(test_opus_receive_calls == 1u,
                   "Opus callback does not run after unregister");
   fails += expect(h2_gizclaw_test_media_set_opus_frame_callback(
-                      client, (gzc_rtc_peer_t *)0x2, test_opus_receive,
-                      (void *)0x3) == GZC_OK,
+                      client, (gzc_rtc_peer_t*)0x2, test_opus_receive,
+                      (void*)0x3) == GZC_OK,
                   "Opus callback can be registered again");
-  h2_gizclaw_test_media_close_peer(client, (gzc_rtc_peer_t *)0x2);
-  h2_gizclaw_test_media_emit_opus(client, (gzc_rtc_peer_t *)0x2, opus_payload,
+  h2_gizclaw_test_media_close_peer(client, (gzc_rtc_peer_t*)0x2);
+  h2_gizclaw_test_media_emit_opus(client, (gzc_rtc_peer_t*)0x2, opus_payload,
                                   sizeof(opus_payload));
   fails += expect(test_peer_close_calls == 1u && test_opus_receive_calls == 1u,
                   "peer close clears the Opus callback before provider close");
   const uint8_t payload[] = {1u, 2u, 3u};
   size_t offset = 0u;
   bool blocked = false;
-  h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)(uintptr_t)1u;
+  h2_pal_webrtc_channel_t* channel = (h2_pal_webrtc_channel_t*)(uintptr_t)1u;
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
                                       &offset, &blocked) == GZC_OK &&
@@ -1716,18 +1732,18 @@ int main(void) {
   test_send_would_block_count = 3000;
   offset = 0u;
   blocked = false;
-  fails += expect(h2_gizclaw_test_try_write_bytes(client, channel, payload,
-                                                  sizeof(payload), &offset,
-                                                  &blocked) == GZC_OK &&
-                      offset == 0u && blocked && test_send_calls == 1 &&
-                      test_poll_calls == 0,
-                  "adapter returns persistent PAL backpressure immediately");
+  fails += expect(
+      h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
+                                      &offset, &blocked) == GZC_OK &&
+          offset == 0u && blocked && test_send_calls == 1 &&
+          test_poll_calls == 0,
+      "adapter returns persistent PAL backpressure immediately");
   config.write_timeout_ms = 7;
-  h2_gizclaw_client_t *short_timeout_client = NULL;
-  fails += expect(h2_gizclaw_client_init(&config, &short_timeout_client) ==
-                          H2_PAL_OK &&
-                      short_timeout_client != NULL,
-                  "client accepts a write timeout below the backoff cap");
+  h2_gizclaw_client_t* short_timeout_client = NULL;
+  fails += expect(
+      h2_gizclaw_client_init(&config, &short_timeout_client) == H2_PAL_OK &&
+          short_timeout_client != NULL,
+      "client accepts a write timeout below the backoff cap");
   test_send_calls = 0;
   test_poll_calls = 0;
   test_sleep_calls = 0;
@@ -1763,12 +1779,12 @@ int main(void) {
   test_poll_result = H2_PAL_ERR_CLOSED;
   offset = 0u;
   blocked = false;
-  fails += expect(h2_gizclaw_test_try_write_bytes(client, channel, payload,
-                                                  sizeof(payload), &offset,
-                                                  &blocked) == GZC_OK &&
-                      offset == 0u && blocked && test_send_calls == 1 &&
-                      test_poll_calls == 0,
-                  "send path does not consume unrelated terminal poll state");
+  fails += expect(
+      h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
+                                      &offset, &blocked) == GZC_OK &&
+          offset == 0u && blocked && test_send_calls == 1 &&
+          test_poll_calls == 0,
+      "send path does not consume unrelated terminal poll state");
   test_poll_result = H2_PAL_ERR_IO;
   test_send_calls = 0;
   test_poll_calls = 0;
@@ -1809,7 +1825,7 @@ int main(void) {
   fails += expect(h2_gizclaw_client_poll(NULL, 0) == H2_PAL_ERR_INVALID_ARG,
                   "poll rejects null client");
   h2_gizclaw_rpc_response_t rpc_response = {0};
-  h2_gizclaw_rpc_request_t *rpc_request = (h2_gizclaw_rpc_request_t *)1;
+  h2_gizclaw_rpc_request_t* rpc_request = (h2_gizclaw_rpc_request_t*)1;
   fails +=
       expect(h2_gizclaw_client_rpc_request_start(
                  NULL, H2_GIZCLAW_RPC_ALL_PING, (h2_gizclaw_rpc_bytes_t){0},
@@ -1823,7 +1839,7 @@ int main(void) {
   h2_gizclaw_rpc_request_destroy(NULL);
   fails += expect(h2_gizclaw_client_close(NULL) == H2_PAL_ERR_INVALID_ARG,
                   "close rejects null client");
-  h2_gizclaw_req_t *social_request = NULL;
+  h2_gizclaw_req_t* social_request = NULL;
   fails += expect(h2_gizclaw_req_create_friend_group_list(
                       NULL, 0u, (h2_gizclaw_str_t){0}, 8u, 1000u,
                       &social_request) == H2_PAL_ERR_INVALID_ARG,
@@ -1831,11 +1847,11 @@ int main(void) {
   h2_gizclaw_profile_t profile = {0};
   uint8_t profile_request[16];
   size_t profile_request_len = 0u;
-  fails += expect(h2_gizclaw_profile_encode_name_request(
-                      (h2_gizclaw_str_t){.data = "Alice", .len = 5u},
-                      profile_request, sizeof(profile_request),
-                      &profile_request_len) == H2_PAL_OK,
-                  "profile name request encodes");
+  fails += expect(
+      h2_gizclaw_profile_encode_name_request(
+          (h2_gizclaw_str_t){.data = "Alice", .len = 5u}, profile_request,
+          sizeof(profile_request), &profile_request_len) == H2_PAL_OK,
+      "profile name request encodes");
   const uint8_t expected_name_request[] = {
       0x0a, 0x07, 0x0a, 0x05, 'A', 'l', 'i', 'c', 'e',
   };
@@ -1859,22 +1875,22 @@ int main(void) {
       0x0a, 0x0d, 0x12, 0x05, 'A',  'l',  'i',  'c',
       'e',  0x22, 0x04, 0xf0, 0x9f, 0xa4, 0x96,
   };
-  fails += expect(h2_gizclaw_profile_decode_info_response(
-                      profile_response, sizeof(profile_response), &profile) ==
-                      H2_PAL_OK,
-                  "profile response decodes");
+  fails += expect(
+      h2_gizclaw_profile_decode_info_response(
+          profile_response, sizeof(profile_response), &profile) == H2_PAL_OK,
+      "profile response decodes");
   fails += expect(profile.has_name && strcmp(profile.name, "Alice") == 0 &&
                       profile.has_emoji && strcmp(profile.emoji, "🤖") == 0,
                   "profile response preserves name and emoji");
   const uint8_t overflowing_profile_response[] = {
       0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02,
   };
-  fails += expect(h2_gizclaw_profile_decode_info_response(
-                      overflowing_profile_response,
-                      sizeof(overflowing_profile_response),
-                      &profile) == H2_PAL_ERR_FORMAT,
-                  "profile response rejects overflowing varint");
-  h2_gizclaw_req_t *speech = (h2_gizclaw_req_t *)1;
+  fails += expect(
+      h2_gizclaw_profile_decode_info_response(
+          overflowing_profile_response, sizeof(overflowing_profile_response),
+          &profile) == H2_PAL_ERR_FORMAT,
+      "profile response rejects overflowing varint");
+  h2_gizclaw_req_t* speech = (h2_gizclaw_req_t*)1;
   fails +=
       expect(h2_gizclaw_req_create_speech_transcribe(
                  NULL, 0u, NULL, 1000u, &speech) == H2_PAL_ERR_INVALID_ARG &&
@@ -1898,7 +1914,7 @@ int main(void) {
   char oversized_contact_name[H2_GIZCLAW_CONTACT_NAME_MAX_BYTES + 1u];
   memset(oversized_contact_name, 'a', sizeof(oversized_contact_name));
   fails += expect(h2_gizclaw_req_create_contact_get(
-                      (h2_gizclaw_service_t *)0x1, 0u,
+                      (h2_gizclaw_service_t*)0x1, 0u,
                       (h2_gizclaw_str_t){.data = oversized_contact_name,
                                          .len = sizeof(oversized_contact_name)},
                       1000u, &social_request) == H2_PAL_ERR_INVALID_ARG,
@@ -1918,10 +1934,10 @@ int main(void) {
                       NULL, 0u, (h2_gizclaw_str_t){0}, 8u, 1000u,
                       &social_request) == H2_PAL_ERR_INVALID_ARG,
                   "friend list rejects invalid arguments");
-  fails += expect(h2_gizclaw_req_create_friend_info_get(NULL, 0u, id, 1000u,
-                                                        &social_request) ==
-                      H2_PAL_ERR_INVALID_ARG,
-                  "friend info rejects invalid arguments");
+  fails += expect(
+      h2_gizclaw_req_create_friend_info_get(
+          NULL, 0u, id, 1000u, &social_request) == H2_PAL_ERR_INVALID_ARG,
+      "friend info rejects invalid arguments");
   fails += expect(
       h2_gizclaw_req_create_friend_add(NULL, 0u, id, 1000u, &social_request) ==
               H2_PAL_ERR_INVALID_ARG &&
@@ -1957,13 +1973,13 @@ int main(void) {
       .data = oversized_group_name, .len = sizeof(oversized_group_name)};
   fails += expect(
       h2_gizclaw_req_create_friend_group_get(
-          (h2_gizclaw_service_t *)0x1, 0u, oversized_group, 1000u,
+          (h2_gizclaw_service_t*)0x1, 0u, oversized_group, 1000u,
           &social_request) == H2_PAL_ERR_INVALID_ARG &&
           h2_gizclaw_req_create_friend_group_create(
-              (h2_gizclaw_service_t *)0x1, 0u, oversized_group, id, id, 1000u,
+              (h2_gizclaw_service_t*)0x1, 0u, oversized_group, id, id, 1000u,
               &social_request) == H2_PAL_ERR_INVALID_ARG &&
           h2_gizclaw_req_create_friend_group_join(
-              (h2_gizclaw_service_t *)0x1, 0u, id, oversized_group, 1000u,
+              (h2_gizclaw_service_t*)0x1, 0u, id, oversized_group, 1000u,
               &social_request) == H2_PAL_ERR_INVALID_ARG,
       "friend group operations reject oversized names before allocation");
   fails += expect(
@@ -1987,7 +2003,7 @@ int main(void) {
   {
     /* Each call breaks exactly one argument, so the fake service is never
      * reached; a request is created only after every argument is valid. */
-    h2_gizclaw_service_t *const unused = (h2_gizclaw_service_t *)0x1;
+    h2_gizclaw_service_t* const unused = (h2_gizclaw_service_t*)0x1;
     char long_key[H2_GIZCLAW_PEER_PUBLIC_KEY_MAX_BYTES + 1u];
     memset(long_key, 'k', sizeof(long_key));
     const h2_gizclaw_str_t key = {.data = "pk", .len = 2u};
@@ -2015,7 +2031,7 @@ int main(void) {
     const h2_gizclaw_friend_group_role_t member_role =
         H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER;
     for (size_t i = 0u; i < sizeof(bad_keys) / sizeof(bad_keys[0]); ++i) {
-      social_request = (h2_gizclaw_req_t *)0x1;
+      social_request = (h2_gizclaw_req_t*)0x1;
       rejected &= h2_gizclaw_req_create_friend_group_member_add(
                       unused, 0u, id, bad_keys[i], id, member_role, 1000u,
                       &social_request) == H2_PAL_ERR_INVALID_ARG &&

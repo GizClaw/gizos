@@ -10,27 +10,23 @@
 namespace {
 
 constexpr h2::desktop::Layout kLayout = {
-    h2_desktop_layout::app_name,
-    h2_desktop_layout::title,
-    h2_desktop_layout::width,
-    h2_desktop_layout::height,
-    h2_desktop_layout::mounts,
-    h2_desktop_layout::mount_count,
-    h2_desktop_layout::peripherals,
-    h2_desktop_layout::peripheral_count,
+    h2_desktop_layout::app_name,        h2_desktop_layout::title,
+    h2_desktop_layout::width,           h2_desktop_layout::height,
+    h2_desktop_layout::mounts,          h2_desktop_layout::mount_count,
+    h2_desktop_layout::peripherals,     h2_desktop_layout::peripheral_count,
     h2_desktop_layout::normalized_json,
 };
 
 struct AppContext {
-  h2::desktop::OwnedDisplay *display = nullptr;
-  h2::starboy::MouseTouchAdapter *mouse_touch = nullptr;
+  h2::desktop::OwnedDisplay* display = nullptr;
+  h2::starboy::MouseTouchAdapter* mouse_touch = nullptr;
   h2_sdl3_pointer_state_t pointer = {};
   bool global_mouse_checked = false;
   bool global_mouse_available = false;
 };
 
-int should_stop(void *user) {
-  auto *context = static_cast<AppContext *>(user);
+int should_stop(void* user) {
+  auto* context = static_cast<AppContext*>(user);
   if (context == nullptr || context->display == nullptr ||
       context->mouse_touch == nullptr ||
       h2::desktop::poll_events(context->display) != 0) {
@@ -44,11 +40,10 @@ int should_stop(void *user) {
   if (context->global_mouse_available &&
       context->mouse_touch->sample_global_mouse()) {
     // Global desktop coordinates keep gaze active outside the app window.
-  } else if (h2::desktop::read_pointer(
-                 context->display, &context->pointer) == H2_PAL_OK) {
+  } else if (h2::desktop::read_pointer(context->display, &context->pointer) ==
+             H2_PAL_OK) {
     // The native pressed bit is deliberately ignored: hover drives gaze.
-    context->mouse_touch->update(
-        true, context->pointer.x, context->pointer.y);
+    context->mouse_touch->update(true, context->pointer.x, context->pointer.y);
   } else {
     context->mouse_touch->update(false, 0, 0);
   }
@@ -77,7 +72,7 @@ int main() {
   runtime_config.display = display.display();
   runtime_config.touch = mouse_touch.api();
   runtime_config.audio = audio.api();
-  h2_runtime_t *runtime = nullptr;
+  h2_runtime_t* runtime = nullptr;
   const h2_pal_result_t runtime_result =
       h2_runtime_init(&runtime_config, &runtime);
   if (runtime_result != H2_PAL_OK || runtime == nullptr) {

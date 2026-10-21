@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /** Scan for and record portable BLE advertising reports. */
-int h2_smoke_ble_observer_run(h2_runtime_t *runtime);
+int h2_smoke_ble_observer_run(h2_runtime_t* runtime);
 
 #ifdef __cplusplus
 }

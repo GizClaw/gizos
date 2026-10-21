@@ -20,16 +20,15 @@
  * @param connect_pending Whether a local connect() is waiting.
  * @param from_adv_set Whether the event arrived through an advertising set.
  */
-static inline bool h2_esp_ble_connect_event_is_central(
-    int status,
-    bool has_desc,
-    bool desc_central,
-    bool connect_pending,
-    bool from_adv_set) {
-    if (status == 0 && has_desc) {
-        return desc_central;
-    }
-    return connect_pending && !from_adv_set;
+static inline bool h2_esp_ble_connect_event_is_central(int status,
+                                                       bool has_desc,
+                                                       bool desc_central,
+                                                       bool connect_pending,
+                                                       bool from_adv_set) {
+  if (status == 0 && has_desc) {
+    return desc_central;
+  }
+  return connect_pending && !from_adv_set;
 }
 
 #endif

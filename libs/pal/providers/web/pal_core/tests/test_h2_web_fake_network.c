@@ -6,12 +6,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#define CHECK(test)                                                            \
-  do {                                                                         \
-    if (!(test)) {                                                             \
-      fprintf(stderr, "fake network line %d: %s\n", __LINE__, #test);          \
-      emscripten_force_exit(1);                                                \
-    }                                                                          \
+#define CHECK(test)                                                   \
+  do {                                                                \
+    if (!(test)) {                                                    \
+      fprintf(stderr, "fake network line %d: %s\n", __LINE__, #test); \
+      emscripten_force_exit(1);                                       \
+    }                                                                 \
   } while (0)
 
 /* clang-format off */
@@ -28,20 +28,19 @@ EM_JS(void, configure, (void *context, h2_web_main_result_t *result, h2_web_main
 /* clang-format on */
 
 static void set_mode(int mode) {
-  (void)h2_web_main_call(configure, (const void *[]){&mode});
+  (void)h2_web_main_call(configure, (const void*[]){&mode});
 }
-static h2_pal_result_t destroy_idle(h2_web_platform_t *platform) {
+static h2_pal_result_t destroy_idle(h2_web_platform_t* platform) {
   h2_pal_result_t rc = H2_PAL_ERR_BUSY;
   for (unsigned i = 0; i < 1000 && rc == H2_PAL_ERR_BUSY; ++i) {
     rc = h2_web_platform_destroy(platform);
-    if (rc == H2_PAL_ERR_BUSY)
-      emscripten_thread_sleep(1);
+    if (rc == H2_PAL_ERR_BUSY) emscripten_thread_sleep(1);
   }
   return rc;
 }
 
-static bool scan(void *user, const h2_pal_wifi_scan_entry_t *entry) {
-  ++*(int *)user;
+static bool scan(void* user, const h2_pal_wifi_scan_entry_t* entry) {
+  ++*(int*)user;
   CHECK(strcmp(entry->ssid, "Browser Wi-Fi") == 0);
   CHECK(entry->security == H2_PAL_WIFI_SECURITY_OPEN);
   return false;
@@ -51,7 +50,7 @@ int main(void) {
   const h2_web_platform_config_t config = {.display_width = 1,
                                            .display_height = 1};
   set_mode(0);
-  h2_web_platform_t *p = h2_web_platform_create(&config);
+  h2_web_platform_t* p = h2_web_platform_create(&config);
   CHECK(p != NULL);
   CHECK(h2_web_platform_fake_wifi_sta_api(p) == NULL);
   CHECK(h2_web_platform_fake_modem_api(p) == NULL);
@@ -61,10 +60,10 @@ int main(void) {
   set_mode(1);
   p = h2_web_platform_create(&config);
   CHECK(p != NULL);
-  const h2_pal_wifi_sta_api_t *wifi = h2_web_platform_fake_wifi_sta_api(p);
-  const h2_pal_wifi_settings_api_t *settings =
+  const h2_pal_wifi_sta_api_t* wifi = h2_web_platform_fake_wifi_sta_api(p);
+  const h2_pal_wifi_settings_api_t* settings =
       h2_web_platform_fake_wifi_settings_api(p);
-  const h2_pal_modem_api_t *modem = h2_web_platform_fake_modem_api(p);
+  const h2_pal_modem_api_t* modem = h2_web_platform_fake_modem_api(p);
   CHECK(wifi && settings && modem);
   h2_pal_wifi_sta_status_t status;
   CHECK(h2_pal_wifi_sta_get_status(wifi, &status) == H2_PAL_OK);
@@ -112,7 +111,7 @@ int main(void) {
   set_mode(2);
   CHECK(h2_pal_wifi_sta_get_status(wifi, &status) == H2_PAL_OK &&
         !status.ip_valid);
-  const h2_pal_netif_api_t *netif = h2_web_platform_netif_api(p);
+  const h2_pal_netif_api_t* netif = h2_web_platform_netif_api(p);
   const h2_pal_netif_ref_t ref = h2_pal_netif_default_ref();
   h2_pal_netif_status_t net;
   CHECK(h2_pal_netif_get_status(netif, &ref, &net) == H2_PAL_OK);

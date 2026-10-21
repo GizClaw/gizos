@@ -20,8 +20,8 @@ extern "C" {
 #include <vector>
 
 namespace {
-void check_fragment_layout(const char *path) {
-  FILE *file = std::fopen(path, "rb");
+void check_fragment_layout(const char* path) {
+  FILE* file = std::fopen(path, "rb");
   assert(file != nullptr);
   unsigned fragments = 0u;
   unsigned char header[8];
@@ -41,14 +41,14 @@ void check_fragment_layout(const char *path) {
   assert(std::fclose(file) == 0);
 }
 
-void inspect(const char *path) {
-  AVFormatContext *format = nullptr;
+void inspect(const char* path) {
+  AVFormatContext* format = nullptr;
   assert(avformat_open_input(&format, path, nullptr, nullptr) == 0);
   assert(avformat_find_stream_info(format, nullptr) >= 0);
   assert(format->nb_streams == 2u);
   int video = -1, audio = -1;
   for (unsigned index = 0; index < format->nb_streams; ++index) {
-    const AVCodecParameters *codec = format->streams[index]->codecpar;
+    const AVCodecParameters* codec = format->streams[index]->codecpar;
     if (codec->codec_type == AVMEDIA_TYPE_VIDEO) {
       video = static_cast<int>(index);
       assert(codec->width == 64 && codec->height == 48);
@@ -60,7 +60,7 @@ void inspect(const char *path) {
     }
   }
   assert(video >= 0 && audio >= 0);
-  AVPacket *packet = av_packet_alloc();
+  AVPacket* packet = av_packet_alloc();
   assert(packet != nullptr);
   int counts[2] = {0, 0};
   int64_t last[2] = {INT64_MIN, INT64_MIN};
@@ -91,31 +91,33 @@ struct AudioWindow {
   size_t samples = 0u;
 };
 
-void inspect_audio(const char *path, std::vector<AudioWindow> windows) {
-  AVFormatContext *format = nullptr;
+void inspect_audio(const char* path, std::vector<AudioWindow> windows) {
+  AVFormatContext* format = nullptr;
   assert(avformat_open_input(&format, path, nullptr, nullptr) == 0);
   assert(avformat_find_stream_info(format, nullptr) >= 0);
-  const AVCodec *codec = nullptr;
-  const int stream = av_find_best_stream(format, AVMEDIA_TYPE_AUDIO, -1, -1,
-                                        &codec, 0);
+  const AVCodec* codec = nullptr;
+  const int stream =
+      av_find_best_stream(format, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
   assert(stream >= 0 && codec != nullptr);
-  AVCodecContext *decoder = avcodec_alloc_context3(codec);
+  AVCodecContext* decoder = avcodec_alloc_context3(codec);
   assert(decoder != nullptr);
   assert(avcodec_parameters_to_context(decoder,
-                                      format->streams[stream]->codecpar) == 0);
+                                       format->streams[stream]->codecpar) == 0);
   assert(avcodec_open2(decoder, codec, nullptr) == 0);
-  AVPacket *packet = av_packet_alloc();
-  AVFrame *frame = av_frame_alloc();
+  AVPacket* packet = av_packet_alloc();
+  AVFrame* frame = av_frame_alloc();
   assert(packet != nullptr && frame != nullptr);
   auto drain = [&]() {
     int rc;
     while ((rc = avcodec_receive_frame(decoder, frame)) == 0) {
-      assert(frame->format == AV_SAMPLE_FMT_FLTP && frame->ch_layout.nb_channels == 1);
-      const auto *pcm = reinterpret_cast<const float *>(frame->extended_data[0]);
-      const double start = frame->pts * av_q2d(format->streams[stream]->time_base);
+      assert(frame->format == AV_SAMPLE_FMT_FLTP &&
+             frame->ch_layout.nb_channels == 1);
+      const auto* pcm = reinterpret_cast<const float*>(frame->extended_data[0]);
+      const double start =
+          frame->pts * av_q2d(format->streams[stream]->time_base);
       for (int i = 0; i < frame->nb_samples; ++i) {
         const double at = start + static_cast<double>(i) / frame->sample_rate;
-        for (auto &window : windows) {
+        for (auto& window : windows) {
           if (at >= window.start && at < window.end) {
             window.peak = std::max(window.peak, std::abs(pcm[i]));
             ++window.samples;
@@ -134,7 +136,7 @@ void inspect_audio(const char *path, std::vector<AudioWindow> windows) {
   }
   assert(avcodec_send_packet(decoder, nullptr) == 0);
   drain();
-  for (const auto &window : windows) {
+  for (const auto& window : windows) {
     const size_t minimum_samples =
         static_cast<size_t>((window.end - window.start) * 16000.0 * 0.9);
     assert(window.samples >= minimum_samples);
@@ -147,21 +149,21 @@ void inspect_audio(const char *path, std::vector<AudioWindow> windows) {
   avformat_close_input(&format);
 }
 
-void inspect_video_colors(const char *path) {
-  AVFormatContext *format = nullptr;
+void inspect_video_colors(const char* path) {
+  AVFormatContext* format = nullptr;
   assert(avformat_open_input(&format, path, nullptr, nullptr) == 0);
   assert(avformat_find_stream_info(format, nullptr) >= 0);
-  const AVCodec *codec = nullptr;
-  const int stream = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1,
-                                        &codec, 0);
+  const AVCodec* codec = nullptr;
+  const int stream =
+      av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
   assert(stream >= 0 && codec != nullptr);
-  AVCodecContext *decoder = avcodec_alloc_context3(codec);
+  AVCodecContext* decoder = avcodec_alloc_context3(codec);
   assert(decoder != nullptr);
   assert(avcodec_parameters_to_context(decoder,
-                                      format->streams[stream]->codecpar) == 0);
+                                       format->streams[stream]->codecpar) == 0);
   assert(avcodec_open2(decoder, codec, nullptr) == 0);
-  AVPacket *packet = av_packet_alloc();
-  AVFrame *frame = av_frame_alloc();
+  AVPacket* packet = av_packet_alloc();
+  AVFrame* frame = av_frame_alloc();
   assert(packet != nullptr && frame != nullptr);
   size_t frames = 0u;
   bool saw_red = false;
@@ -187,8 +189,8 @@ void inspect_video_colors(const char *path) {
   }
   assert(avcodec_send_packet(decoder, nullptr) == 0);
   drain();
-  assert(saw_red && frames > 1u &&
-         last_y > 100 && last_u < 100 && last_v < 100); // green tail
+  assert(saw_red && frames > 1u && last_y > 100 && last_u < 100 &&
+         last_v < 100);  // green tail
   av_frame_free(&frame);
   av_packet_free(&packet);
   avcodec_free_context(&decoder);
@@ -213,24 +215,24 @@ size_t fill_pipe(int fd) {
   return count;
 }
 
-void delayed_output(const char *temporary) {
+void delayed_output(const char* temporary) {
   int pipe_fd[2];
   assert(pipe(pipe_fd) == 0);
   size_t padding = fill_pipe(pipe_fd[1]);
   const std::string path = std::string(temporary) + "/delayed-output.mp4";
   h2_desktop_recording_encoder_config_t config = {
       path.c_str(), 64u, 48u, h2_desktop_recording_now_us(), pipe_fd[1]};
-  h2_desktop_recording_encoder_t *state = nullptr;
+  h2_desktop_recording_encoder_t* state = nullptr;
   assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_OK);
-  assert(close(pipe_fd[1]) == 0); // encoder owns its duplicate
+  assert(close(pipe_fd[1]) == 0);  // encoder owns its duplicate
   std::vector<uint16_t> pixels(64u * 48u);
   std::vector<int16_t> samples(1600u, 12000);
   for (unsigned i = 0u; i < 32u; ++i) {
     pixels.assign(pixels.size(), i < 16u ? 0xf800u : 0x07e0u);
     const uint64_t now = h2_desktop_recording_now_us();
     h2_sdl3_capture_frame_t video = {pixels.data(), 64u, 48u, 128u, 255u, now};
-    h2_portaudio_capture_frame_t audio = {
-        samples.data(), samples.size(), 16000u, 1u, now + 200000u};
+    h2_portaudio_capture_frame_t audio = {samples.data(), samples.size(),
+                                          16000u, 1u, now + 200000u};
     h2_desktop_recording_encoder_video(state, &video);
     h2_desktop_recording_encoder_audio(state, &audio);
     assert(h2_desktop_recording_encoder_result(state) == H2_PAL_OK);
@@ -239,7 +241,7 @@ void delayed_output(const char *temporary) {
   // More than the entire two-second PCM capacity arrived while write() was
   // blocked. Recover the actual sequential MP4 bytes and decode both tracks.
   std::thread reader([&] {
-    FILE *file = std::fopen(path.c_str(), "wb");
+    FILE* file = std::fopen(path.c_str(), "wb");
     assert(file != nullptr);
     uint8_t bytes[4096];
     ssize_t count;
@@ -262,8 +264,7 @@ void delayed_output(const char *temporary) {
   inspect(path.c_str());
   check_fragment_layout(path.c_str());
   inspect_video_colors(path.c_str());
-  inspect_audio(path.c_str(), {{1.3, 1.8, 0.1f, 1.0f},
-                              {2.3, 2.8, 0.1f, 1.0f}});
+  inspect_audio(path.c_str(), {{1.3, 1.8, 0.1f, 1.0f}, {2.3, 2.8, 0.1f, 1.0f}});
 }
 
 void output_boundaries() {
@@ -275,7 +276,8 @@ void output_boundaries() {
   std::vector<uint8_t> bytes(h2_desktop_recording_output::capacity);
   for (size_t i = 0u; i < bytes.size(); ++i)
     bytes[i] = static_cast<uint8_t>(i * 37u + i / 65536u);
-  assert(output.append(bytes.data(), bytes.size()) == static_cast<int>(bytes.size()));
+  assert(output.append(bytes.data(), bytes.size()) ==
+         static_cast<int>(bytes.size()));
   assert(output.pending() == bytes.size());
   assert(output.append(bytes.data(), 1u) == -ENOBUFS);
   std::vector<uint8_t> received;
@@ -302,7 +304,8 @@ void output_boundaries() {
   reader.join();
   std::vector<uint8_t> expected = bytes;
   for (unsigned i = 0u; i < 5u; ++i)
-    expected.insert(expected.end(), bytes.begin(), bytes.begin() + bytes.size() / 3u);
+    expected.insert(expected.end(), bytes.begin(),
+                    bytes.begin() + bytes.size() / 3u);
   assert(received == expected);
 
   assert(pipe(pipe_fd) == 0);
@@ -314,18 +317,18 @@ void output_boundaries() {
   assert(broken.append(bytes.data(), 1u) == -EPIPE);
 }
 
-void failed_output(const char *temporary) {
+void failed_output(const char* temporary) {
   int pipe_fd[2];
   assert(pipe(pipe_fd) == 0);
   const std::string path = std::string(temporary) + "/broken-output.mp4";
   h2_desktop_recording_encoder_config_t config = {
       path.c_str(), 64u, 48u, h2_desktop_recording_now_us(), pipe_fd[1]};
-  h2_desktop_recording_encoder_t *state = nullptr;
+  h2_desktop_recording_encoder_t* state = nullptr;
   assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_OK);
   assert(close(pipe_fd[0]) == 0 && close(pipe_fd[1]) == 0);
   std::vector<uint16_t> pixels(64u * 48u, 0xf800u);
-  h2_sdl3_capture_frame_t video = {
-      pixels.data(), 64u, 48u, 128u, 255u, config.start_us};
+  h2_sdl3_capture_frame_t video = {pixels.data(), 64u,  48u,
+                                   128u,          255u, config.start_us};
   h2_desktop_recording_encoder_video(state, &video);
   const uint64_t deadline = h2_desktop_recording_now_us() + 3000000u;
   while (h2_desktop_recording_encoder_result(state) == H2_PAL_OK &&
@@ -336,10 +339,10 @@ void failed_output(const char *temporary) {
              state, h2_desktop_recording_now_us(), nullptr) == H2_PAL_ERR_IO);
   h2_desktop_recording_encoder_destroy(state);
 }
-} // namespace
+}  // namespace
 
 int main() {
-  const char *temporary = std::getenv("TEST_TMPDIR");
+  const char* temporary = std::getenv("TEST_TMPDIR");
   assert(temporary != nullptr);
   assert(std::signal(SIGPIPE, SIG_DFL) != SIG_ERR);
   output_boundaries();
@@ -352,7 +355,7 @@ int main() {
   const uint64_t start = h2_desktop_recording_now_us();
   h2_desktop_recording_encoder_config_t config = {path.c_str(), 64u, 48u,
                                                   start};
-  h2_desktop_recording_encoder_t *state = nullptr;
+  h2_desktop_recording_encoder_t* state = nullptr;
   config.width = 63u;
   assert(h2_desktop_recording_encoder_create(&config, &state) ==
          H2_PAL_ERR_INVALID_ARG);
@@ -384,7 +387,7 @@ int main() {
   check_fragment_layout(path.c_str());
   state = nullptr;
   assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
-  assert(state == nullptr); // never overwrite an existing artifact
+  assert(state == nullptr);  // never overwrite an existing artifact
   // A scheduling gap is silence, not queued PCM. A future chunk must fit in
   // an empty bounded queue even when its timestamp is more than two seconds
   // beyond the encoder cursor.
@@ -403,8 +406,8 @@ int main() {
   assert(stats.duration_us == 3100000u && stats.late_audio_frames == 0u);
   h2_desktop_recording_encoder_destroy(state);
   inspect(gap_path.c_str());
-  inspect_audio(gap_path.c_str(), {{1.0, 2.5, 0.0f, 0.001f},
-                                  {3.0, 3.2, 0.1f, 1.0f}});
+  inspect_audio(gap_path.c_str(),
+                {{1.0, 2.5, 0.0f, 0.001f}, {3.0, 3.2, 0.1f, 1.0f}});
   config.path = "/nonexistent-directory/h2-recording.mp4";
   assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
   const std::string overflow_path = std::string(temporary) + "/overflow.mp4";
@@ -440,9 +443,10 @@ int main() {
   future.frames = 6400u;
   future.timestamp_us = h2_desktop_recording_now_us() + 3000000u;
   h2_desktop_recording_encoder_audio(state, &future);
-  assert(h2_desktop_recording_encoder_finish(state, future.timestamp_us + 400000u,
-                                             &stats) == H2_PAL_OK);
-  assert(stats.captured_audio_frames == 38400u && stats.late_audio_frames == 0u);
+  assert(h2_desktop_recording_encoder_finish(
+             state, future.timestamp_us + 400000u, &stats) == H2_PAL_OK);
+  assert(stats.captured_audio_frames == 38400u &&
+         stats.late_audio_frames == 0u);
   h2_desktop_recording_encoder_destroy(state);
   inspect(wrap_path.c_str());
   const double wrap_start =
@@ -484,7 +488,8 @@ int main() {
   h2_desktop_recording_encoder_destroy(state);
   inspect_video_colors(burst_path.c_str());
 
-  const std::string backlog_path = std::string(temporary) + "/video-backlog.mp4";
+  const std::string backlog_path =
+      std::string(temporary) + "/video-backlog.mp4";
   config.path = backlog_path.c_str();
   config.start_us = h2_desktop_recording_now_us();
   assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_OK);
@@ -530,7 +535,8 @@ int main() {
   assert(h2_desktop_recording_encoder_result(state) == H2_PAL_ERR_INVALID_ARG);
   const uint64_t before_wait = h2_desktop_recording_now_us();
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-  assert(h2_desktop_recording_encoder_finish(state, h2_desktop_recording_now_us(),
+  assert(h2_desktop_recording_encoder_finish(state,
+                                             h2_desktop_recording_now_us(),
                                              &stats) == H2_PAL_ERR_INVALID_ARG);
   const uint64_t limit = before_wait - config.start_us + 100000u;
   assert(stats.duration_us < limit);

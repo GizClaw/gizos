@@ -10,7 +10,7 @@
 #define TEST_HEIGHT 448
 
 typedef struct fake_display {
-  uint16_t *frame;
+  uint16_t* frame;
   int open_count;
   int present_count;
   uint32_t brightness_percent;
@@ -20,16 +20,16 @@ typedef struct fake_display {
 
 static size_t s_live_allocations;
 
-static void *test_alloc(void *user, size_t len) {
+static void* test_alloc(void* user, size_t len) {
   (void)user;
-  void *ptr = malloc(len);
+  void* ptr = malloc(len);
   if (ptr != NULL) {
     ++s_live_allocations;
   }
   return ptr;
 }
 
-static void *test_realloc(void *user, void *ptr, size_t len) {
+static void* test_realloc(void* user, void* ptr, size_t len) {
   (void)user;
   (void)ptr;
   (void)len;
@@ -38,7 +38,7 @@ static void *test_realloc(void *user, void *ptr, size_t len) {
   return NULL;
 }
 
-static void test_free(void *user, void *ptr) {
+static void test_free(void* user, void* ptr) {
   (void)user;
   if (ptr != NULL) {
     assert(s_live_allocations > 0u);
@@ -53,13 +53,13 @@ static const h2_pal_mem_vtable_t kMemVtable = {
     test_free,
 };
 
-static int fake_open(void *user) {
-  fake_display_t *display = (fake_display_t *)user;
+static int fake_open(void* user) {
+  fake_display_t* display = (fake_display_t*)user;
   ++display->open_count;
   return H2_DISPLAY_OK;
 }
 
-static int fake_get_info(void *user, h2_display_info_t *out_info) {
+static int fake_get_info(void* user, h2_display_info_t* out_info) {
   (void)user;
   memset(out_info, 0, sizeof(*out_info));
   out_info->width = TEST_WIDTH;
@@ -67,11 +67,11 @@ static int fake_get_info(void *user, h2_display_info_t *out_info) {
   return H2_DISPLAY_OK;
 }
 
-static int fake_draw_bitmap(void *user, const h2_display_rect_t *rect,
-                            const void *pixels, size_t stride_bytes,
+static int fake_draw_bitmap(void* user, const h2_display_rect_t* rect,
+                            const void* pixels, size_t stride_bytes,
                             h2_display_pixel_format_t format) {
-  fake_display_t *display = (fake_display_t *)user;
-  const uint8_t *source = (const uint8_t *)pixels;
+  fake_display_t* display = (fake_display_t*)user;
+  const uint8_t* source = (const uint8_t*)pixels;
 
   assert(format == H2_DISPLAY_PIXEL_RGB565);
   assert(rect != NULL && pixels != NULL);
@@ -89,31 +89,31 @@ static int fake_draw_bitmap(void *user, const h2_display_rect_t *rect,
   return H2_DISPLAY_OK;
 }
 
-static int fake_present(void *user) {
-  fake_display_t *display = (fake_display_t *)user;
+static int fake_present(void* user) {
+  fake_display_t* display = (fake_display_t*)user;
   ++display->present_count;
   return H2_DISPLAY_OK;
 }
 
-static int fake_set_brightness(void *user, uint32_t percent) {
-  fake_display_t *display = (fake_display_t *)user;
+static int fake_set_brightness(void* user, uint32_t percent) {
+  fake_display_t* display = (fake_display_t*)user;
   display->brightness_percent = percent;
   ++display->brightness_calls;
   return H2_DISPLAY_OK;
 }
 
-static int fake_close(void *user) {
+static int fake_close(void* user) {
   (void)user;
   return H2_DISPLAY_OK;
 }
 
 static const h2_pal_display_vtable_t kDisplayVtable = {
-    fake_open, fake_get_info,  fake_draw_bitmap,
+    fake_open,    fake_get_info,       fake_draw_bitmap,
     fake_present, fake_set_brightness, fake_close,
 };
 
-static h2_pal_result_t count_ready(void *user) {
-  ++*(int *)user;
+static h2_pal_result_t count_ready(void* user) {
+  ++*(int*)user;
   return H2_PAL_OK;
 }
 

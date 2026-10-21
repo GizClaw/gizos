@@ -50,7 +50,7 @@ typedef struct h2_gizclaw_time_sync_status {
  * Returns INVALID_ARG for NULL inputs, or mutex errors.
  */
 h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
-    h2_gizclaw_service_t *service, h2_gizclaw_time_sync_status_t *out_status);
+    h2_gizclaw_service_t* service, h2_gizclaw_time_sync_status_t* out_status);
 
 /** A valid RPC error response, distinct from PAL transport/format failures.
  * A canonical NOT_FOUND status instead returns H2_PAL_ERR_NOT_FOUND from
@@ -58,18 +58,23 @@ h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
  * status codes remain H2_GIZCLAW_ERR_REMOTE for generic/Social requests.
  * API-key create documents its scoped RESOURCE_EXHAUSTED projection in
  * h2_gizclaw_api_key.h; Workspace requests document their scoped pending
- * deletion result in h2_gizclaw_workspace.h. Neither changes generic mapping. */
+ * deletion result in h2_gizclaw_workspace.h. Neither changes generic mapping.
+ */
 #define H2_GIZCLAW_ERR_REMOTE ((h2_pal_result_t) - 1000)
 
 /** Fill at most capacity bytes for one data-up request. `OK` with zero bytes
  * closes the request input; `WOULD_BLOCK` keeps it active for a later retry. */
-typedef h2_pal_result_t (*h2_gizclaw_req_input_read_fn)(
-    void *user, uint8_t *buffer, size_t capacity, size_t *out_read);
+typedef h2_pal_result_t (*h2_gizclaw_req_input_read_fn)(void* user,
+                                                        uint8_t* buffer,
+                                                        size_t capacity,
+                                                        size_t* out_read);
 
 /** Consume data-down bytes on the task calling service_poll(). Partial writes
  * and `WOULD_BLOCK` retain the remaining bytes for a later poll. */
-typedef h2_pal_result_t (*h2_gizclaw_req_output_write_fn)(
-    void *user, const uint8_t *data, size_t length, size_t *out_written);
+typedef h2_pal_result_t (*h2_gizclaw_req_output_write_fn)(void* user,
+                                                          const uint8_t* data,
+                                                          size_t length,
+                                                          size_t* out_written);
 
 /** Terminal state delivered exactly once for every accepted operation. */
 typedef enum h2_gizclaw_operation_terminal_kind {
@@ -95,8 +100,8 @@ typedef struct h2_gizclaw_operation_result {
  * request completion does not wait for this hook. If the bounded dispatch
  * queue is full, the request ends with WOULD_BLOCK and the hook is dropped. */
 typedef void (*h2_gizclaw_req_complete_fn)(
-    void *user, h2_gizclaw_req_t *request,
-    const h2_gizclaw_operation_result_t *result);
+    void* user, h2_gizclaw_req_t* request,
+    const h2_gizclaw_operation_result_t* result);
 
 /**
  * Report one fatal connection failure on the dispatch caller thread.
@@ -104,30 +109,30 @@ typedef void (*h2_gizclaw_req_complete_fn)(
  * Dispatch invokes this callback exactly once after all affected operation
  * callbacks. Explicit service stop does not invoke it.
  */
-typedef void (*h2_gizclaw_service_terminal_fn)(void *user,
+typedef void (*h2_gizclaw_service_terminal_fn)(void* user,
                                                h2_pal_result_t result);
 
 /** Run caller-owned preparation on the service worker before client creation.
  */
 typedef h2_pal_result_t (*h2_gizclaw_service_prepare_fn)(
-    void *user, h2_gizclaw_cancel_fn cancel_requested, void *cancel_user);
+    void* user, h2_gizclaw_cancel_fn cancel_requested, void* cancel_user);
 
 /** Release caller-owned client resources on the worker before client close. */
-typedef void (*h2_gizclaw_service_cleanup_fn)(void *user,
-                                              h2_gizclaw_client_t *client);
+typedef void (*h2_gizclaw_service_cleanup_fn)(void* user,
+                                              h2_gizclaw_client_t* client);
 
 typedef struct h2_gizclaw_service_config {
   /** Borrowed until `h2_gizclaw_service_deinit()` returns. Requires a
    * monotonic-ms time provider for the 20 ms audio schedule. */
-  const h2_gizclaw_config_t *client_config;
+  const h2_gizclaw_config_t* client_config;
   /** Borrowed PAL APIs; their providers outlive the service. */
-  const h2_pal_task_api_t *task;
-  const h2_pal_queue_api_t *queue;
-  const h2_pal_sync_api_t *sync;
+  const h2_pal_task_api_t* task;
+  const h2_pal_queue_api_t* queue;
+  const h2_pal_sync_api_t* sync;
   /** Optional Runtime to wake. When set, the Service calls
    * h2_runtime_notify() whenever caller-thread work becomes available; the
    * Runtime coalesces those wakes. The Runtime must outlive the Service. */
-  h2_runtime_t *runtime;
+  h2_runtime_t* runtime;
   /** Stack requirements for the system-owned `$gizclaw/net` task. */
   h2_pal_task_options_t net_task_options;
   /** Maximum admitted operations across all lifecycle states. */
@@ -136,15 +141,15 @@ typedef struct h2_gizclaw_service_config {
   int client_poll_timeout_ms;
   /** Optional Peer Event handler, invoked during caller-thread dispatch. */
   h2_gizclaw_client_event_fn on_event;
-  void *event_user;
+  void* event_user;
   /** Optional worker-side preparation performed before client creation. */
   h2_gizclaw_service_prepare_fn prepare;
-  void *prepare_user;
+  void* prepare_user;
   /** Optional worker-side cleanup performed before client close/deinit. */
   h2_gizclaw_service_cleanup_fn cleanup;
-  void *cleanup_user;
+  void* cleanup_user;
   h2_gizclaw_service_terminal_fn terminal;
-  void *terminal_user;
+  void* terminal_user;
 } h2_gizclaw_service_config_t;
 
 /**
@@ -153,9 +158,9 @@ typedef struct h2_gizclaw_service_config {
  * The returned service is caller-owned until successful deinit. Init, start,
  * stop, poll and deinit belong to one lifecycle task.
  */
-h2_pal_result_t
-h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
-                        h2_gizclaw_service_t **out_service);
+h2_pal_result_t h2_gizclaw_service_init(
+    const h2_gizclaw_service_config_t* config,
+    h2_gizclaw_service_t** out_service);
 
 /** Start the network, PCM audio-up/audio-down and data-up/data-down tasks
  * once. Each direction owns at most one active request; another request for the
@@ -163,28 +168,28 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
  * remain independent. Partial startup failure attempts to stop already-started
  * tasks and returns the original start error. Call stop to finish cleanup
  * before deinit. */
-h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service);
+h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t* service);
 
 /** Bind one library-created PCM Track until unset succeeds. Applications use
  * pcm_track_write/read for their mic/speaker pumps, not a callback vtable.
  * Rebinding is rejected while the previous audio route is still active. */
-h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t *service,
-                                             h2_gizclaw_track_t *track);
+h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t* service,
+                                             h2_gizclaw_track_t* track);
 /** Stop admitting Track accesses and wait for in-flight reads/writes. Active
  * audio requests observe CLOSED on their next Track access. */
-h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t *service,
-                                               h2_gizclaw_track_t *track);
+h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t* service,
+                                               h2_gizclaw_track_t* track);
 
 /** Start the currently registered ASR or Conversation audio route. Requests
  * alone never consume mic PCM. Old buffered PCM is discarded by uplink. */
-h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t *service);
+h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t* service);
 
 /** End the current recording, without a request handle or waiting for upload.
  * Uplink copies the frozen PCM tail before releasing its read cursor, then
  * sends the tail and protocol EOS. The mic producer continues independently.
  * Repeated end is harmless; calling before audio_start returns INVALID_STATE.
  */
-h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service);
+h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t* service);
 
 typedef enum h2_gizclaw_audio_input_route {
   H2_GIZCLAW_AUDIO_INPUT_NONE = 0,
@@ -217,9 +222,10 @@ typedef struct h2_gizclaw_audio_input_state {
  * the call. Takes existing owner mutexes, so use task context, not an ISR or an
  * internal callback holding those mutexes. Does not start or retry an input.
  * Returns INVALID_ARG for NULL, otherwise propagates PAL locking errors.
- * On failure, a non-NULL output is cleared. Deinit requires callers quiescent. */
+ * On failure, a non-NULL output is cleared. Deinit requires callers quiescent.
+ */
 h2_pal_result_t h2_gizclaw_service_audio_input_snapshot(
-    h2_gizclaw_service_t *service, h2_gizclaw_audio_input_state_t *out_state);
+    h2_gizclaw_service_t* service, h2_gizclaw_audio_input_state_t* out_state);
 
 /** Unified request lifecycle.
  *
@@ -235,8 +241,7 @@ h2_pal_result_t h2_gizclaw_service_audio_input_snapshot(
  * start when the network task starts the request; they do not bound queue time.
  * A failed do does not consume the caller's request reference.
  */
-h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
-                                  void *user,
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t* request, void* user,
                                   h2_gizclaw_req_input_read_fn input_read,
                                   h2_gizclaw_req_output_write_fn output_write,
                                   h2_gizclaw_req_complete_fn on_complete);
@@ -244,13 +249,13 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
 /** Wait for execution terminal state and return its result, without polling
  * or dispatching callbacks. A timeout neither cancels nor finishes input.
  * Repeated/concurrent waits observe the same terminal result. */
-h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request,
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t* request,
                                     uint32_t timeout_ms);
 /** Idempotently cancel the request; this is not an input half-close. */
-h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *request);
+h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t* request);
 /** Drop the caller reference, without canceling. Execution and queued callbacks
  * hold internal references. The handle must not be used after this call. */
-void h2_gizclaw_req_release(h2_gizclaw_req_t *request);
+void h2_gizclaw_req_release(h2_gizclaw_req_t* request);
 
 /**
  * Invoke at most `max_callbacks` callbacks on the calling task.
@@ -267,9 +272,9 @@ void h2_gizclaw_req_release(h2_gizclaw_req_t *request);
  * must not recursively call poll or deinit. Pending callbacks remain valid
  * after stop and are drained by poll.
  */
-h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
                                         size_t max_callbacks,
-                                        size_t *out_dispatched);
+                                        size_t* out_dispatched);
 
 /**
  * Stop and join the network, uplink and downlink tasks without invoking pending
@@ -287,7 +292,7 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
  * caller-thread operation callbacks still require poll. Retained local result
  * handles return BUSY; release and retry.
  */
-h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service);
+h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t* service);
 
 /**
  * Release a stopped, fully dispatched service with no caller-owned handles.
@@ -295,7 +300,7 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service);
  * This lifecycle-task API must not race submit, cancel, release or dispatch.
  * Local request handles and adapter borrows prevent release with BUSY.
  */
-h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service);
+h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t* service);
 
 #ifdef __cplusplus
 }

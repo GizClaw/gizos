@@ -19,7 +19,7 @@
 
 typedef struct h2_bk_wifi_csi_state {
   h2_pal_wifi_csi_frame_fn frame_cb;
-  void *frame_user;
+  void* frame_user;
   uint8_t bssid[6];
   uint8_t bssid_set;
   uint32_t min_delivery_interval_ms;
@@ -34,40 +34,40 @@ static h2_bk_wifi_csi_state_t s_h2_bk_wifi_csi;
 
 static h2_pal_result_t h2_bk_wifi_csi_map_error(bk_err_t error) {
   switch (error) {
-  case BK_OK:
-    return H2_PAL_OK;
-  case BK_ERR_PARAM:
-  case BK_ERR_NULL_PARAM:
-    return H2_PAL_ERR_INVALID_ARG;
-  case BK_ERR_NO_MEM:
-    return H2_PAL_ERR_NO_MEMORY;
-  case BK_ERR_TIMEOUT:
-    return H2_PAL_ERR_TIMEOUT;
-  case BK_ERR_NOT_SUPPORT:
-    return H2_PAL_ERR_UNSUPPORTED;
-  case BK_ERR_BUSY:
-  case BK_ERR_IN_PROGRESS:
-  case BK_ERR_STATE:
-    return H2_PAL_ERR_INVALID_STATE;
-  case BK_ERR_WIFI_NOT_INIT:
-    return H2_PAL_ERR_UNAVAILABLE;
-  default:
-    return H2_PAL_ERR_IO;
+    case BK_OK:
+      return H2_PAL_OK;
+    case BK_ERR_PARAM:
+    case BK_ERR_NULL_PARAM:
+      return H2_PAL_ERR_INVALID_ARG;
+    case BK_ERR_NO_MEM:
+      return H2_PAL_ERR_NO_MEMORY;
+    case BK_ERR_TIMEOUT:
+      return H2_PAL_ERR_TIMEOUT;
+    case BK_ERR_NOT_SUPPORT:
+      return H2_PAL_ERR_UNSUPPORTED;
+    case BK_ERR_BUSY:
+    case BK_ERR_IN_PROGRESS:
+    case BK_ERR_STATE:
+      return H2_PAL_ERR_INVALID_STATE;
+    case BK_ERR_WIFI_NOT_INIT:
+      return H2_PAL_ERR_UNAVAILABLE;
+    default:
+      return H2_PAL_ERR_IO;
   }
 }
 
 static h2_pal_wifi_csi_phy_t h2_bk_wifi_csi_phy(uint8_t format) {
   switch (format) {
-  case H2_BK_WIFI_CSI_NON_HT_RX_FORMAT:
-    return H2_PAL_WIFI_CSI_PHY_NON_HT;
-  case H2_BK_WIFI_CSI_HT_RX_FORMAT:
-    return H2_PAL_WIFI_CSI_PHY_HT;
-  case 0x04u:
-    return H2_PAL_WIFI_CSI_PHY_VHT;
-  case 0x05u:
-    return H2_PAL_WIFI_CSI_PHY_HE;
-  default:
-    return H2_PAL_WIFI_CSI_PHY_UNKNOWN;
+    case H2_BK_WIFI_CSI_NON_HT_RX_FORMAT:
+      return H2_PAL_WIFI_CSI_PHY_NON_HT;
+    case H2_BK_WIFI_CSI_HT_RX_FORMAT:
+      return H2_PAL_WIFI_CSI_PHY_HT;
+    case 0x04u:
+      return H2_PAL_WIFI_CSI_PHY_VHT;
+    case 0x05u:
+      return H2_PAL_WIFI_CSI_PHY_HE;
+    default:
+      return H2_PAL_WIFI_CSI_PHY_UNKNOWN;
   }
 }
 
@@ -79,16 +79,16 @@ static int16_t h2_bk_wifi_csi_signed_13(uint32_t value) {
   return (int16_t)sample;
 }
 
-static void h2_bk_wifi_csi_callback_done(h2_bk_wifi_csi_state_t *state) {
+static void h2_bk_wifi_csi_callback_done(h2_bk_wifi_csi_state_t* state) {
   uint32_t interrupt_level = rtos_enter_critical();
   state->callback_in_flight--;
   rtos_exit_critical(interrupt_level);
 }
 
-static void h2_bk_wifi_csi_receive(struct wifi_csi_info_t *info) {
-  h2_bk_wifi_csi_state_t *state = &s_h2_bk_wifi_csi;
+static void h2_bk_wifi_csi_receive(struct wifi_csi_info_t* info) {
+  h2_bk_wifi_csi_state_t* state = &s_h2_bk_wifi_csi;
   h2_pal_wifi_csi_frame_fn frame_cb;
-  void *frame_user;
+  void* frame_user;
   uint32_t interrupt_level;
   uint32_t now_ms;
   uint32_t diagnostic_frame_count;
@@ -185,7 +185,7 @@ static void h2_bk_wifi_csi_receive(struct wifi_csi_info_t *info) {
   h2_bk_wifi_csi_callback_done(state);
 }
 
-static void h2_bk_wifi_csi_wait_for_callbacks(h2_bk_wifi_csi_state_t *state) {
+static void h2_bk_wifi_csi_wait_for_callbacks(h2_bk_wifi_csi_state_t* state) {
   for (;;) {
     uint32_t callback_in_flight;
     uint32_t interrupt_level = rtos_enter_critical();
@@ -199,7 +199,7 @@ static void h2_bk_wifi_csi_wait_for_callbacks(h2_bk_wifi_csi_state_t *state) {
 }
 
 static h2_pal_result_t h2_bk_wifi_csi_get_capabilities(
-    void *user, h2_pal_wifi_csi_capabilities_t *out_capabilities) {
+    void* user, h2_pal_wifi_csi_capabilities_t* out_capabilities) {
   (void)user;
   if (out_capabilities == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -214,10 +214,10 @@ static h2_pal_result_t h2_bk_wifi_csi_get_capabilities(
 #endif
 }
 
-static h2_pal_result_t
-h2_bk_wifi_csi_start(void *user, const h2_pal_wifi_csi_config_t *config,
-                     h2_pal_wifi_csi_frame_fn frame_cb, void *frame_user) {
-  h2_bk_wifi_csi_state_t *state = user;
+static h2_pal_result_t h2_bk_wifi_csi_start(
+    void* user, const h2_pal_wifi_csi_config_t* config,
+    h2_pal_wifi_csi_frame_fn frame_cb, void* frame_user) {
+  h2_bk_wifi_csi_state_t* state = user;
 #if H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH
   wifi_link_status_t link_status;
   bk_err_t vendor_rc;
@@ -295,8 +295,8 @@ h2_bk_wifi_csi_start(void *user, const h2_pal_wifi_csi_config_t *config,
 #endif
 }
 
-static h2_pal_result_t h2_bk_wifi_csi_stop(void *user) {
-  h2_bk_wifi_csi_state_t *state = user;
+static h2_pal_result_t h2_bk_wifi_csi_stop(void* user) {
+  h2_bk_wifi_csi_state_t* state = user;
 #if H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH
   bk_err_t vendor_rc;
   uint32_t interrupt_level;
@@ -341,6 +341,6 @@ static const h2_pal_wifi_csi_api_t s_h2_bk_wifi_csi_api = {
     .vtable = &s_h2_bk_wifi_csi_vtable,
 };
 
-const h2_pal_wifi_csi_api_t *h2_bk_platform_wifi_csi(void) {
+const h2_pal_wifi_csi_api_t* h2_bk_platform_wifi_csi(void) {
   return &s_h2_bk_wifi_csi_api;
 }

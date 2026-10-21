@@ -4,23 +4,23 @@
 
 #include "lauxlib.h"
 
-static h2_lua_vm_result_t copy_error(h2_lua_vm_t *vm,
-                                     h2_lua_vm_execution_t *execution,
+static h2_lua_vm_result_t copy_error(h2_lua_vm_t* vm,
+                                     h2_lua_vm_execution_t* execution,
                                      h2_lua_vm_result_t result) {
-  const char *message = lua_tostring(vm->state, -1);
+  const char* message = lua_tostring(vm->state, -1);
   h2_lua_copy_message(message, execution->error, execution->error_capacity,
                       &execution->error_size);
   lua_settop(vm->state, 0);
   return result;
 }
 
-h2_lua_vm_result_t h2_lua_vm_execute_text(h2_lua_vm_t *vm,
-                                          const char *chunk_name,
-                                          const uint8_t *source,
+h2_lua_vm_result_t h2_lua_vm_execute_text(h2_lua_vm_t* vm,
+                                          const char* chunk_name,
+                                          const uint8_t* source,
                                           size_t source_size,
-                                          h2_lua_vm_execution_t *execution) {
+                                          h2_lua_vm_execution_t* execution) {
   int status;
-  const char *output;
+  const char* output;
   size_t output_size;
 
   if (vm == NULL || chunk_name == NULL || source == NULL || execution == NULL ||
@@ -49,7 +49,7 @@ h2_lua_vm_result_t h2_lua_vm_execute_text(h2_lua_vm_t *vm,
   }
 
   lua_settop(vm->state, 0);
-  status = luaL_loadbufferx(vm->state, (const char *)source, source_size,
+  status = luaL_loadbufferx(vm->state, (const char*)source, source_size,
                             chunk_name, "t");
   if (status != LUA_OK) {
     return copy_error(vm, execution, H2_LUA_VM_SYNTAX_ERROR);

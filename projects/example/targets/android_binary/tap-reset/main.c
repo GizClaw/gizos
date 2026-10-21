@@ -9,25 +9,25 @@
 #include <stdlib.h>
 
 typedef struct h2_mobile_android_context {
-  h2_android_platform_t *host;
-  h2_runtime_t *runtime;
+  h2_android_platform_t* host;
+  h2_runtime_t* runtime;
   h2_atomic_bool_t stop;
   pthread_t thread;
   int thread_started;
 } h2_mobile_android_context_t;
 
-static h2_mobile_android_context_t *context_from_handle(jlong handle) {
-  return (h2_mobile_android_context_t *)(uintptr_t)handle;
+static h2_mobile_android_context_t* context_from_handle(jlong handle) {
+  return (h2_mobile_android_context_t*)(uintptr_t)handle;
 }
 
-static int android_should_stop(void *user) {
-  h2_mobile_android_context_t *context = user;
+static int android_should_stop(void* user) {
+  h2_mobile_android_context_t* context = user;
   return context == NULL ||
          h2_atomic_load_explicit(&context->stop, H2_ATOMIC_ACQUIRE);
 }
 
-static h2_pal_result_t
-android_read_pointer(void *user, h2_mobile_pointer_state_t *out_state) {
+static h2_pal_result_t android_read_pointer(
+    void* user, h2_mobile_pointer_state_t* out_state) {
   if (out_state == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -35,8 +35,8 @@ android_read_pointer(void *user, h2_mobile_pointer_state_t *out_state) {
                                           &out_state->pressed);
 }
 
-static void *android_app_thread(void *user) {
-  h2_mobile_android_context_t *context = user;
+static void* android_app_thread(void* user) {
+  h2_mobile_android_context_t* context = user;
   const h2_mobile_app_config_t config = {
       .platform = H2_MOBILE_PLATFORM_ANDROID,
       .read_pointer = android_read_pointer,
@@ -50,9 +50,9 @@ static void *android_app_thread(void *user) {
 
 JNIEXPORT jlong JNICALL
 Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativeCreate(
-    JNIEnv *env, jclass clazz, jobject view) {
+    JNIEnv* env, jclass clazz, jobject view) {
   (void)clazz;
-  h2_mobile_android_context_t *context = calloc(1u, sizeof(*context));
+  h2_mobile_android_context_t* context = calloc(1u, sizeof(*context));
   if (context == NULL) {
     return 0;
   }
@@ -75,10 +75,10 @@ Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativeCreate(
 
 JNIEXPORT jboolean JNICALL
 Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativeStart(
-    JNIEnv *env, jclass clazz, jlong handle) {
+    JNIEnv* env, jclass clazz, jlong handle) {
   (void)env;
   (void)clazz;
-  h2_mobile_android_context_t *context = context_from_handle(handle);
+  h2_mobile_android_context_t* context = context_from_handle(handle);
   if (context == NULL || context->thread_started) {
     return JNI_FALSE;
   }
@@ -101,9 +101,9 @@ Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativeStart(
 
 JNIEXPORT void JNICALL
 Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativeRender(
-    JNIEnv *env, jclass clazz, jlong handle, jobject bitmap) {
+    JNIEnv* env, jclass clazz, jlong handle, jobject bitmap) {
   (void)clazz;
-  h2_mobile_android_context_t *context = context_from_handle(handle);
+  h2_mobile_android_context_t* context = context_from_handle(handle);
   if (context != NULL) {
     (void)h2_android_platform_copy_frame(context->host, env, bitmap);
   }
@@ -111,10 +111,10 @@ Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativeRender(
 
 JNIEXPORT void JNICALL
 Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativePointer(
-    JNIEnv *env, jclass clazz, jlong handle, jint x, jint y, jboolean pressed) {
+    JNIEnv* env, jclass clazz, jlong handle, jint x, jint y, jboolean pressed) {
   (void)env;
   (void)clazz;
-  h2_mobile_android_context_t *context = context_from_handle(handle);
+  h2_mobile_android_context_t* context = context_from_handle(handle);
   if (context != NULL) {
     h2_android_platform_update_pointer(context->host, x, y,
                                        pressed == JNI_TRUE);
@@ -123,10 +123,10 @@ Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativePointer(
 
 JNIEXPORT void JNICALL
 Java_com_haivivi_firmwares_smokeapps_tapreset_MainActivity_nativeStop(
-    JNIEnv *env, jclass clazz, jlong handle) {
+    JNIEnv* env, jclass clazz, jlong handle) {
   (void)env;
   (void)clazz;
-  h2_mobile_android_context_t *context = context_from_handle(handle);
+  h2_mobile_android_context_t* context = context_from_handle(handle);
   if (context == NULL) {
     return;
   }

@@ -28,8 +28,7 @@ typedef struct RtcpHeader {
 
 int rtcp_probe(uint8_t* packet, size_t size);
 
-int rtcp_parse_header(
-    const uint8_t* packet, size_t size, RtcpHeader* header);
+int rtcp_parse_header(const uint8_t* packet, size_t size, RtcpHeader* header);
 
 int rtcp_get_pli(uint8_t* packet, int len, uint32_t ssrc);
 

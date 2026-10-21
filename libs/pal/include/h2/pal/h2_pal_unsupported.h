@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 #define H2_PAL_DECLARE_UNSUPPORTED_API(name, type) \
-    const type *h2_pal_unsupported_##name##_api(void)
+  const type* h2_pal_unsupported_##name##_api(void)
 
 H2_PAL_DECLARE_UNSUPPORTED_API(audio, h2_pal_audio_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(audio_decoder, h2_pal_audio_decoder_api_t);
@@ -37,9 +37,8 @@ H2_PAL_DECLARE_UNSUPPORTED_API(mqtt, h2_pal_mqtt_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(net, h2_pal_net_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(netif, h2_pal_netif_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(nfc, h2_pal_nfc_api_t);
-H2_PAL_DECLARE_UNSUPPORTED_API(
-    nfc_card_emulation,
-    h2_pal_nfc_card_emulation_api_t);
+H2_PAL_DECLARE_UNSUPPORTED_API(nfc_card_emulation,
+                               h2_pal_nfc_card_emulation_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(periph, h2_pal_periph_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(power, h2_pal_power_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(pref, h2_pal_pref_api_t);
@@ -54,7 +53,8 @@ H2_PAL_DECLARE_UNSUPPORTED_API(task, h2_pal_task_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(time, h2_pal_time_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(timer, h2_pal_timer_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(uart_io_stream, h2_pal_uart_io_stream_api_t);
-H2_PAL_DECLARE_UNSUPPORTED_API(usb_jtag_io_stream, h2_pal_usb_jtag_io_stream_api_t);
+H2_PAL_DECLARE_UNSUPPORTED_API(usb_jtag_io_stream,
+                               h2_pal_usb_jtag_io_stream_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(video_decoder, h2_pal_video_decoder_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(webrtc, h2_pal_webrtc_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(wifi_ap, h2_pal_wifi_ap_api_t);
@@ -66,78 +66,46 @@ H2_PAL_DECLARE_UNSUPPORTED_API(wifi_sta, h2_pal_wifi_sta_api_t);
  * unsupported API, PAL inline wrappers validate arguments before dispatch;
  * these entries return UNSUPPORTED without touching the provider state. */
 h2_pal_result_t h2_pal_unsupported_ble_adv_set_set_encoded_data(
-    void *user,
-    h2_pal_ble_adv_set_t *set,
-    const uint8_t *encoded_data,
+    void* user, h2_pal_ble_adv_set_t* set, const uint8_t* encoded_data,
     size_t encoded_data_len);
 h2_pal_result_t h2_pal_unsupported_ble_adv_set_set_scan_response_data(
-    void *user,
-    h2_pal_ble_adv_set_t *set,
-    const h2_pal_ble_adv_data_t *data);
+    void* user, h2_pal_ble_adv_set_t* set, const h2_pal_ble_adv_data_t* data);
 h2_pal_result_t h2_pal_unsupported_ble_start_scan(
-    void *user,
-    const h2_pal_ble_scan_params_t *params,
-    h2_pal_ble_scan_result_fn on_result,
-    void *scan_user);
-h2_pal_result_t h2_pal_unsupported_ble_stop_scan(
-    void *user);
+    void* user, const h2_pal_ble_scan_params_t* params,
+    h2_pal_ble_scan_result_fn on_result, void* scan_user);
+h2_pal_result_t h2_pal_unsupported_ble_stop_scan(void* user);
 h2_pal_result_t h2_pal_unsupported_ble_unregister_gatt_service(
-    void *user,
-    const h2_pal_ble_uuid_t *service_uuid);
-h2_pal_result_t h2_pal_unsupported_ble_indicate(
-    void *user,
-    uint16_t conn_handle,
-    uint16_t attr_handle,
-    const uint8_t *data,
-    size_t len,
-    uint32_t timeout_ms);
+    void* user, const h2_pal_ble_uuid_t* service_uuid);
+h2_pal_result_t h2_pal_unsupported_ble_indicate(void* user,
+                                                uint16_t conn_handle,
+                                                uint16_t attr_handle,
+                                                const uint8_t* data, size_t len,
+                                                uint32_t timeout_ms);
 h2_pal_result_t h2_pal_unsupported_ble_connect(
-    void *user,
-    const h2_pal_ble_addr_t *addr,
-    const h2_pal_ble_connect_params_t *params,
-    uint16_t *out_conn_handle);
+    void* user, const h2_pal_ble_addr_t* addr,
+    const h2_pal_ble_connect_params_t* params, uint16_t* out_conn_handle);
 h2_pal_result_t h2_pal_unsupported_ble_configure_pairing(
-    void *user,
-    const h2_pal_ble_pairing_config_t *config);
-h2_pal_result_t h2_pal_unsupported_ble_pair(
-    void *user,
-    uint16_t conn_handle,
-    uint32_t timeout_ms);
-h2_pal_result_t h2_pal_unsupported_ble_read_phy(
-    void *user,
-    uint16_t conn_handle,
-    h2_pal_ble_phy_info_t *out_phy,
-    uint32_t timeout_ms);
+    void* user, const h2_pal_ble_pairing_config_t* config);
+h2_pal_result_t h2_pal_unsupported_ble_pair(void* user, uint16_t conn_handle,
+                                            uint32_t timeout_ms);
+h2_pal_result_t h2_pal_unsupported_ble_read_phy(void* user,
+                                                uint16_t conn_handle,
+                                                h2_pal_ble_phy_info_t* out_phy,
+                                                uint32_t timeout_ms);
 h2_pal_result_t h2_pal_unsupported_ble_gatt_discover(
-    void *user,
-    uint16_t conn_handle,
-    const h2_pal_ble_gatt_discovery_request_t *request,
-    h2_pal_ble_gatt_discovery_entry_t *entries,
-    size_t max_entries,
-    size_t *out_count,
-    uint32_t timeout_ms);
+    void* user, uint16_t conn_handle,
+    const h2_pal_ble_gatt_discovery_request_t* request,
+    h2_pal_ble_gatt_discovery_entry_t* entries, size_t max_entries,
+    size_t* out_count, uint32_t timeout_ms);
 h2_pal_result_t h2_pal_unsupported_ble_gatt_read(
-    void *user,
-    uint16_t conn_handle,
-    uint16_t attr_handle,
-    uint16_t offset,
-    uint8_t *out,
-    size_t out_size,
-    size_t *out_len,
-    uint32_t timeout_ms);
+    void* user, uint16_t conn_handle, uint16_t attr_handle, uint16_t offset,
+    uint8_t* out, size_t out_size, size_t* out_len, uint32_t timeout_ms);
 h2_pal_result_t h2_pal_unsupported_ble_gatt_write(
-    void *user,
-    uint16_t conn_handle,
-    uint16_t attr_handle,
-    const uint8_t *data,
-    size_t len,
-    bool with_response,
-    uint32_t timeout_ms);
+    void* user, uint16_t conn_handle, uint16_t attr_handle, const uint8_t* data,
+    size_t len, bool with_response, uint32_t timeout_ms);
 h2_pal_result_t h2_pal_unsupported_ble_gatt_subscribe(
-    void *user,
-    uint16_t conn_handle,
-    const h2_pal_ble_gatt_subscribe_t *subscribe,
-    uint32_t timeout_ms);
+    void* user, uint16_t conn_handle,
+    const h2_pal_ble_gatt_subscribe_t* subscribe, uint32_t timeout_ms);
 
 #undef H2_PAL_DECLARE_UNSUPPORTED_API
 

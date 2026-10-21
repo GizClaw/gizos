@@ -9,15 +9,15 @@ extern "C" {
 
 /* GCC emutls ABI: machine-word size/alignment, location, template pointer. */
 typedef struct h2_bk_emutls_control {
-    uintptr_t size;
-    uintptr_t alignment;
-    uintptr_t location;
-    const void *initial_value;
+  uintptr_t size;
+  uintptr_t alignment;
+  uintptr_t location;
+  const void* initial_value;
 } h2_bk_emutls_control_t;
 
-void *__wrap___emutls_get_address(h2_bk_emutls_control_t *control);
-int *__wrap___errno(void);
-void h2_bk_task_tls_cleanup(void *task);
+void* __wrap___emutls_get_address(h2_bk_emutls_control_t* control);
+int* __wrap___errno(void);
+void h2_bk_task_tls_cleanup(void* task);
 
 #ifdef __cplusplus
 }

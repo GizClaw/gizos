@@ -25,19 +25,18 @@ typedef struct h2_posix_thread_core_resource_stats {
  * requested size). These are the running threads' real stacks, not
  * placeholders. The owner must serialize core destruction against new API
  * users. */
-h2_pal_result_t
-h2_posix_thread_core_create(const h2_pal_mem_api_t *task_allocator,
-                            h2_posix_thread_core_t **out);
+h2_pal_result_t h2_posix_thread_core_create(
+    const h2_pal_mem_api_t* task_allocator, h2_posix_thread_core_t** out);
 /** BUSY preserves ownership while any object/start/cleanup is live. */
-h2_pal_result_t h2_posix_thread_core_destroy(h2_posix_thread_core_t **core);
-const h2_pal_task_api_t *
-h2_posix_thread_core_task_api(h2_posix_thread_core_t *core);
-const h2_pal_queue_api_t *
-h2_posix_thread_core_queue_api(h2_posix_thread_core_t *core);
-const h2_pal_sync_api_t *
-h2_posix_thread_core_sync_api(h2_posix_thread_core_t *core);
-const h2_pal_timer_api_t *
-h2_posix_thread_core_timer_api(h2_posix_thread_core_t *core);
+h2_pal_result_t h2_posix_thread_core_destroy(h2_posix_thread_core_t** core);
+const h2_pal_task_api_t* h2_posix_thread_core_task_api(
+    h2_posix_thread_core_t* core);
+const h2_pal_queue_api_t* h2_posix_thread_core_queue_api(
+    h2_posix_thread_core_t* core);
+const h2_pal_sync_api_t* h2_posix_thread_core_sync_api(
+    h2_posix_thread_core_t* core);
+const h2_pal_timer_api_t* h2_posix_thread_core_timer_api(
+    h2_posix_thread_core_t* core);
 
 /** Cooperative cancellation: never pthread_cancel or force-kill a Worker.
  * Blocking queue/semaphore/mutex/condition operations observe the flag in
@@ -45,18 +44,18 @@ h2_posix_thread_core_timer_api(h2_posix_thread_core_t *core);
  * join and timer stop/destroy drain ownership despite cancellation.
  * Join blocks on Workers; on the browser UI thread it tries once and reports
  * BUSY until native pthread termination can be reaped safely. */
-h2_pal_result_t h2_posix_thread_core_task_cancel(h2_posix_thread_core_t *core,
-                                                 h2_pal_task_t *task);
+h2_pal_result_t h2_posix_thread_core_task_cancel(h2_posix_thread_core_t* core,
+                                                 h2_pal_task_t* task);
 int h2_posix_thread_core_is_current_task_cancelled(
-    h2_posix_thread_core_t *core);
+    h2_posix_thread_core_t* core);
 /** UI sleep with nonzero duration is INVALID_STATE; zero is a nonblocking
  * cancellation check. Worker sleep is interruptible by cooperative cancel. */
-h2_pal_result_t h2_posix_thread_core_sleep_ms(h2_posix_thread_core_t *core,
+h2_pal_result_t h2_posix_thread_core_sleep_ms(h2_posix_thread_core_t* core,
                                               uint32_t ms);
 /** Atomic individual counters; compare snapshots at quiescent boundaries.
  * Completed tasks remain live until a successful native pthread join. */
 h2_pal_result_t h2_posix_thread_core_get_resource_stats(
-    h2_posix_thread_core_t *core, h2_posix_thread_core_resource_stats_t *out);
+    h2_posix_thread_core_t* core, h2_posix_thread_core_resource_stats_t* out);
 
 #ifdef __cplusplus
 }

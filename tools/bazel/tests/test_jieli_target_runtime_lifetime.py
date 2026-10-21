@@ -1,6 +1,7 @@
 """Execute target entry/worker ownership with injected failures and pthread handoff."""
 from pathlib import Path
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -47,7 +48,8 @@ class RuntimeLifetimeTest(unittest.TestCase):
                     code += text[text.index('static int should_stop('):]
                 elif name == 'mp4-player':
                     code = text[text.index('static void mp4_runtime('):text.index('  emit("H2_JIELI_MP4_FAIL')]
-                    code = code.replace('static void mp4_runtime(void *user)', 'int h2_jieli_target_application_run(void)').replace('  (void)user;\n', '')
+                    code = re.sub(r'\bstatic\s+void\s+mp4_runtime\s*\(\s*void\s*\*\s*user\s*\)', 'int h2_jieli_target_application_run(void)', code)
+                    code = re.sub(r'(?m)^\s*\(void\)user;\n', '', code)
                     code += '  return result;\n}\n'
                 else:
                     code = function(text, 'int h2_jieli_target_application_run(')

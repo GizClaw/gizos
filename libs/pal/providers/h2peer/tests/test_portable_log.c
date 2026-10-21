@@ -12,13 +12,13 @@ typedef struct log_capture {
   size_t calls;
   int result;
   h2_pal_log_level_t level;
-  const char *scope;
+  const char* scope;
   char message[H2_PAL_LOG_MESSAGE_MAX];
 } log_capture_t;
 
-static int capture_log(void *user, h2_pal_log_level_t level, const char *scope,
-                       const char *message) {
-  log_capture_t *capture = user;
+static int capture_log(void* user, h2_pal_log_level_t level, const char* scope,
+                       const char* message) {
+  log_capture_t* capture = user;
   capture->calls++;
   capture->level = level;
   capture->scope = scope;

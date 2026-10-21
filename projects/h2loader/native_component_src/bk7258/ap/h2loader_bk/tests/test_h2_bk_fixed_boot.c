@@ -9,7 +9,8 @@
 #define NATIVE_CONTROL 0x0075f000u
 /* The first four App window sectors; the relay-head test uses them all. */
 #define APP_MODEL (4u * SECTOR)
-static uint8_t native_sector[SECTOR], request_sector[SECTOR], app_sector[APP_MODEL];
+static uint8_t native_sector[SECTOR], request_sector[SECTOR],
+    app_sector[APP_MODEL];
 static uint8_t native_slot;
 static unsigned native_erases, request_erases;
 /* Board partition table (Loader image): Loader window 2380 KiB, App window
@@ -21,12 +22,13 @@ static unsigned native_erases, request_erases;
 #define APP_SIZE (5100u * 1024u)
 #define CONTROL 0x77f000u
 static bk_logic_partition_t cp = {LOADER_OFFSET, LOADER_CP};
-static bk_logic_partition_t ap = {LOADER_OFFSET + LOADER_CP, LOADER_SIZE - LOADER_CP};
+static bk_logic_partition_t ap = {LOADER_OFFSET + LOADER_CP,
+                                  LOADER_SIZE - LOADER_CP};
 static bk_logic_partition_t s_app = {APP_OFFSET, APP_SIZE};
 static bk_logic_partition_t control = {CONTROL, SECTOR};
 static bk_logic_partition_t native = {NATIVE_CONTROL, SECTOR};
 
-static uint8_t *sector_at(uint32_t address, uint32_t size) {
+static uint8_t* sector_at(uint32_t address, uint32_t size) {
   if (address >= NATIVE_CONTROL && address + size <= NATIVE_CONTROL + SECTOR)
     return native_sector + (address - NATIVE_CONTROL);
   if (address >= control.partition_start_addr &&
@@ -38,39 +40,46 @@ static uint8_t *sector_at(uint32_t address, uint32_t size) {
   assert(!"flash access outside modeled sectors");
   return NULL;
 }
-const bk_logic_partition_t *bk_flash_partition_get_info(bk_partition_t id) {
-  return id == BK_PARTITION_APPLICATION      ? &cp
-         : id == BK_PARTITION_APPLICATION1   ? &ap
-         : id == BK_PARTITION_S_APP          ? &s_app
+const bk_logic_partition_t* bk_flash_partition_get_info(bk_partition_t id) {
+  return id == BK_PARTITION_APPLICATION       ? &cp
+         : id == BK_PARTITION_APPLICATION1    ? &ap
+         : id == BK_PARTITION_S_APP           ? &s_app
          : id == BK_PARTITION_H2_BOOT_REQUEST ? &control
-                                             : &native;
+                                              : &native;
 }
-int bk_flash_read_bytes(uint32_t address, uint8_t *out, uint32_t size) {
+int bk_flash_read_bytes(uint32_t address, uint8_t* out, uint32_t size) {
   memcpy(out, sector_at(address, size), size);
   return BK_OK;
 }
-int bk_flash_write_bytes(uint32_t address, const uint8_t *in, uint32_t size) {
-  uint8_t *cell = sector_at(address, size);
+int bk_flash_write_bytes(uint32_t address, const uint8_t* in, uint32_t size) {
+  uint8_t* cell = sector_at(address, size);
   for (uint32_t i = 0; i < size; ++i) cell[i] &= in[i];
   return BK_OK;
 }
 int bk_flash_erase_sector(uint32_t address) {
   memset(sector_at(address, SECTOR), 0xff, SECTOR);
-  if (address == NATIVE_CONTROL) ++native_erases;
-  else if (address == control.partition_start_addr) ++request_erases;
+  if (address == NATIVE_CONTROL)
+    ++native_erases;
+  else if (address == control.partition_start_addr)
+    ++request_erases;
   return BK_OK;
 }
-int bk_flash_set_protect_type(flash_protect_type_t type) { (void)type; return BK_OK; }
-flash_protect_type_t bk_flash_get_protect_type(void) { return FLASH_PROTECT_ALL; }
+int bk_flash_set_protect_type(flash_protect_type_t type) {
+  (void)type;
+  return BK_OK;
+}
+flash_protect_type_t bk_flash_get_protect_type(void) {
+  return FLASH_PROTECT_ALL;
+}
 uint8_t bk_ota_get_current_partition(void) { return native_slot; }
 
 /* Mirrors h2loader_cp_try_fixed_app: returns whether CP enters App. */
 static int cp_boot(void) {
   h2_fixed_boot_request_t r;
   uint32_t zero = 0u;
-  bk_flash_read_bytes(CONTROL, (uint8_t *)&r, sizeof(r));
+  bk_flash_read_bytes(CONTROL, (uint8_t*)&r, sizeof(r));
   if (!h2_fixed_request_boots_app(&r, h2_bk_fixed_layout())) return 0;
-  bk_flash_write_bytes(CONTROL, (const uint8_t *)&zero, sizeof(zero));
+  bk_flash_write_bytes(CONTROL, (const uint8_t*)&zero, sizeof(zero));
   return 1;
 }
 
@@ -143,22 +152,24 @@ static void test_torn_request_is_not_bootable(void) {
   assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
   memcpy(&r, request_sector, sizeof(r));
   /* Reset before magic was published: body present, magic still erased. */
-  request_sector[0] = request_sector[1] = request_sector[2] = request_sector[3] = 0xff;
+  request_sector[0] = request_sector[1] = request_sector[2] =
+      request_sector[3] = 0xff;
   assert(!h2_bk_fixed_next_app() && !h2_bk_fixed_app_failed());
   memcpy(request_sector, &r, sizeof(r));
   request_sector[offsetof(h2_fixed_boot_request_t, confirmed)] = 0u;
   assert(!h2_bk_fixed_next_app());
 }
 
-static const uint8_t relay_pending[12] = {1, 0xff, 0xff, 0xff, 1, 0xff,
-                                          0xff, 0xff, 1, 0xff, 0xff, 0xff};
-static const uint8_t relay_confirmed[12] = {1, 0xff, 0xff, 0xff, 1, 0xff,
-                                            0xff, 0xff, 4, 0xff, 0xff, 0xff};
+static const uint8_t relay_pending[12] = {1,    0xff, 0xff, 0xff, 1,    0xff,
+                                          0xff, 0xff, 1,    0xff, 0xff, 0xff};
+static const uint8_t relay_confirmed[12] = {1,    0xff, 0xff, 0xff, 1,    0xff,
+                                            0xff, 0xff, 4,    0xff, 0xff, 0xff};
 
 /* Stage a CP vector table in the App window whose reset handler was linked
  * for the window starting at offset. */
 static void put_app_window_image(uint32_t offset) {
-  const uint32_t words[2] = {0x28080000u, H2_FIXED_XIP_ADDRESS(offset) + 0x201u};
+  const uint32_t words[2] = {0x28080000u,
+                             H2_FIXED_XIP_ADDRESS(offset) + 0x201u};
   memset(app_sector, 0xff, sizeof(app_sector));
   memcpy(app_sector, words, sizeof(words));
 }
@@ -173,7 +184,8 @@ static void test_loader_relay_through_native_b(void) {
   put_app_window_image(APP_OFFSET);
   assert(!h2_bk_fixed_app_window_holds_loader());
   assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
-  assert(h2_bk_fixed_next_app() && memcmp(native_sector, loader_flags, 12) == 0);
+  assert(h2_bk_fixed_next_app() &&
+         memcmp(native_sector, loader_flags, 12) == 0);
 
   /* A Loader image there is booted through native B with a pending confirm,
    * and the CP handoff record is cleared. */
@@ -195,8 +207,8 @@ static void test_loader_relay_through_native_b(void) {
   /* A pending B the bootloader rolled back (final=A, temp=B, confirm=1) is a
    * failed candidate seen from the Loader window; it no longer selects B. */
   {
-    static const uint8_t rolled_back[12] = {0, 0xff, 0xff, 0xff, 1, 0xff,
-                                            0xff, 0xff, 1, 0xff, 0xff, 0xff};
+    static const uint8_t rolled_back[12] = {0,    0xff, 0xff, 0xff, 1,    0xff,
+                                            0xff, 0xff, 1,    0xff, 0xff, 0xff};
     uint8_t saved[12];
     memcpy(saved, native_sector, sizeof(saved));
     memcpy(native_sector, rolled_back, sizeof(rolled_back));
@@ -235,11 +247,13 @@ static void test_relay_head_shares_image_sector(void) {
   uint8_t expected[APP_MODEL];
   memcpy(expected, app_sector, sizeof(expected));
   memcpy(&expected[window - head], &app_sector[image - head], head);
-  assert(h2_bk_fixed_publish_relay_head(base, window, image, head) == H2_PAL_OK);
+  assert(h2_bk_fixed_publish_relay_head(base, window, image, head) ==
+         H2_PAL_OK);
   assert(memcmp(app_sector, expected, sizeof(expected)) == 0);
   /* Equal window and image: the head already ends the window. */
   memcpy(expected, app_sector, sizeof(expected));
-  assert(h2_bk_fixed_publish_relay_head(base, window, window, head) == H2_PAL_OK);
+  assert(h2_bk_fixed_publish_relay_head(base, window, window, head) ==
+         H2_PAL_OK);
   assert(memcmp(app_sector, expected, sizeof(expected)) == 0);
   /* A gap smaller than the head would overwrite the image. */
   assert(h2_bk_fixed_publish_relay_head(base, window, window - 1u, head) ==
@@ -278,9 +292,11 @@ static void test_app_layout_slot(void) {
 
 static void test_board_owned_loader_size(void) {
   /* A board with a 1904 KiB Loader window: the same code follows its table. */
-  const uint32_t loader_size = 1904u * 1024u, app_offset = LOADER_OFFSET + loader_size;
+  const uint32_t loader_size = 1904u * 1024u,
+                 app_offset = LOADER_OFFSET + loader_size;
   cp = (bk_logic_partition_t){LOADER_OFFSET, 952u * 1024u};
-  ap = (bk_logic_partition_t){LOADER_OFFSET + 952u * 1024u, loader_size - 952u * 1024u};
+  ap = (bk_logic_partition_t){LOADER_OFFSET + 952u * 1024u,
+                              loader_size - 952u * 1024u};
   s_app = (bk_logic_partition_t){app_offset, 0x75f000u - app_offset};
   native_slot = 0u;
   assert(h2_bk_fixed_current_slot() == 0u);
@@ -292,7 +308,8 @@ static void test_board_owned_loader_size(void) {
   h2_fixed_boot_request_t r;
   memcpy(&r, request_sector, sizeof(r));
   assert(r.app_offset == app_offset && r.app_size == 0x75f000u - app_offset);
-  assert(cp_boot() && h2_bk_fixed_confirm_app() == H2_PAL_OK && h2_bk_fixed_next_app());
+  assert(cp_boot() && h2_bk_fixed_confirm_app() == H2_PAL_OK &&
+         h2_bk_fixed_next_app());
 }
 
 int main(void) {

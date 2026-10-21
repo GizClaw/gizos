@@ -9,7 +9,7 @@
 
 namespace {
 using namespace std::chrono_literals;
-const h2_pal_system_event_api_t *api;
+const h2_pal_system_event_api_t* api;
 constexpr auto type = H2_PAL_SYSTEM_EVENT_TYPE_GPIO_IRQ;
 constexpr auto nested_type = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED;
 
@@ -19,11 +19,11 @@ void post(uint32_t source = 0u, h2_pal_system_event_type_t event_type = type) {
 }
 
 struct Self {
-  h2_pal_system_event_subscription_t *subscription = nullptr;
+  h2_pal_system_event_subscription_t* subscription = nullptr;
   int calls = 0;
 };
-int self_unsubscribe(void *user, const h2_pal_system_event_t *) {
-  auto *state = static_cast<Self *>(user);
+int self_unsubscribe(void* user, const h2_pal_system_event_t*) {
+  auto* state = static_cast<Self*>(user);
   ++state->calls;
   h2_pal_system_event_unsubscribe(api, state->subscription);
   return H2_PAL_OK;
@@ -42,15 +42,15 @@ void test_self_and_reuse() {
 struct Gate {
   std::mutex mutex;
   std::condition_variable changed;
-  h2_pal_system_event_subscription_t *subscription = nullptr;
+  h2_pal_system_event_subscription_t* subscription = nullptr;
   size_t entered = 0u;
   bool release = false;
   bool self_returned = false;
   bool unsubscribe_started = false;
   bool unsubscribe_finished = false;
 };
-int gated_handler(void *user, const h2_pal_system_event_t *event) {
-  auto *gate = static_cast<Gate *>(user);
+int gated_handler(void* user, const h2_pal_system_event_t* event) {
+  auto* gate = static_cast<Gate*>(user);
   std::unique_lock<std::mutex> lock(gate->mutex);
   if (event->source_id == 2u) {
     lock.unlock();
@@ -74,15 +74,15 @@ void test_self_does_not_wait_for_other_inflight_call() {
     std::unique_lock<std::mutex> lock(gate.mutex);
     assert(gate.changed.wait_for(lock, 2s, [&] { return gate.entered == 1u; }));
   }
-  post(2u); // Must return while the first invocation still borrows gate.
-  post(3u); // Admission has stopped; this cannot enter gated_handler.
+  post(2u);  // Must return while the first invocation still borrows gate.
+  post(3u);  // Admission has stopped; this cannot enter gated_handler.
   {
     std::lock_guard<std::mutex> lock(gate.mutex);
     assert(gate.self_returned && gate.entered == 1u);
     gate.release = true;
     gate.changed.notify_all();
   }
-  first.join(); // User storage stays live through the already-running call.
+  first.join();  // User storage stays live through the already-running call.
 }
 
 void test_external_waits_for_all_calls() {
@@ -171,23 +171,23 @@ void test_deinit_drains_unsubscribe_waiters() {
 }
 
 struct Replace {
-  h2_pal_system_event_subscription_t *first = nullptr;
-  h2_pal_system_event_subscription_t *second = nullptr;
-  h2_pal_system_event_subscription_t *replacement = nullptr;
+  h2_pal_system_event_subscription_t* first = nullptr;
+  h2_pal_system_event_subscription_t* second = nullptr;
+  h2_pal_system_event_subscription_t* replacement = nullptr;
   int first_calls = 0;
   int second_calls = 0;
   int replacement_calls = 0;
 };
-int replacement_handler(void *user, const h2_pal_system_event_t *) {
-  ++static_cast<Replace *>(user)->replacement_calls;
+int replacement_handler(void* user, const h2_pal_system_event_t*) {
+  ++static_cast<Replace*>(user)->replacement_calls;
   return H2_PAL_OK;
 }
-int second_handler(void *user, const h2_pal_system_event_t *) {
-  ++static_cast<Replace *>(user)->second_calls;
+int second_handler(void* user, const h2_pal_system_event_t*) {
+  ++static_cast<Replace*>(user)->second_calls;
   return H2_PAL_OK;
 }
-int replace_later_listener(void *user, const h2_pal_system_event_t *) {
-  auto *state = static_cast<Replace *>(user);
+int replace_later_listener(void* user, const h2_pal_system_event_t*) {
+  auto* state = static_cast<Replace*>(user);
   if (++state->first_calls == 1) {
     h2_pal_system_event_unsubscribe(api, state->second);
     assert(h2_pal_system_event_subscribe(api, type, replacement_handler, state,
@@ -212,17 +212,17 @@ void test_callback_can_cancel_later_snapshot_member() {
 }
 
 struct Nested {
-  h2_pal_system_event_subscription_t *outer = nullptr;
-  h2_pal_system_event_subscription_t *inner = nullptr;
+  h2_pal_system_event_subscription_t* outer = nullptr;
+  h2_pal_system_event_subscription_t* inner = nullptr;
   int calls = 0;
 };
-int outer_handler(void *user, const h2_pal_system_event_t *) {
-  ++static_cast<Nested *>(user)->calls;
+int outer_handler(void* user, const h2_pal_system_event_t*) {
+  ++static_cast<Nested*>(user)->calls;
   post(0u, nested_type);
   return H2_PAL_OK;
 }
-int inner_handler(void *user, const h2_pal_system_event_t *) {
-  h2_pal_system_event_unsubscribe(api, static_cast<Nested *>(user)->outer);
+int inner_handler(void* user, const h2_pal_system_event_t*) {
+  h2_pal_system_event_unsubscribe(api, static_cast<Nested*>(user)->outer);
   return H2_PAL_OK;
 }
 void test_nested_callback_can_cancel_ancestor() {
@@ -236,7 +236,7 @@ void test_nested_callback_can_cancel_ancestor() {
   assert(state.calls == 1);
   h2_pal_system_event_unsubscribe(api, state.inner);
 }
-} // namespace
+}  // namespace
 
 int main() {
   alarm(30u);

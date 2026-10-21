@@ -13,24 +13,25 @@
 #define H2_E2E_COMMAND_OUTPUT_CAPACITY 4096u
 #define H2_E2E_WIFI_SCAN_ATTEMPTS 3u
 #define H2_E2E_WIFI_SCAN_RETRY_DELAY_MS 500u
-#define H2_E2E_REMOVED_COMMAND_AVAILABILITY_MASK                            \
-  ((UINT32_C(1) << 6) | (UINT32_C(1) << 7) | (UINT32_C(1) << 14) |         \
+#define H2_E2E_REMOVED_COMMAND_AVAILABILITY_MASK                   \
+  ((UINT32_C(1) << 6) | (UINT32_C(1) << 7) | (UINT32_C(1) << 14) | \
    (UINT32_C(1) << 15))
 
 typedef struct h2_e2e_transport_context {
-  const h2_h2loader_e2e_config_t *config;
+  const h2_h2loader_e2e_config_t* config;
   h2_h2loader_e2e_transport_t transport;
-  h2_h2loader_host_serial_connection_t *serial_connection;
-  h2_h2loader_host_ble_connection_t *ble_connection;
+  h2_h2loader_host_serial_connection_t* serial_connection;
+  h2_h2loader_host_ble_connection_t* ble_connection;
   h2_h2loader_host_candidate_t ble_candidate;
   char authoritative_device_uid[H2_H2LOADER_HOST_DEVICE_UID_MAX_LEN];
   uint8_t authoritative_device_uid_valid;
   h2_h2loader_host_catalog_entry_t app_asset;
   h2_h2loader_host_catalog_entry_t loader_asset;
   h2_h2loader_host_catalog_entry_t crash_asset;
-  h2_h2loader_host_catalog_entry_t checksum_assets[2][H2_H2LOADER_E2E_CHECKSUM_PACKAGES];
+  h2_h2loader_host_catalog_entry_t
+      checksum_assets[2][H2_H2LOADER_E2E_CHECKSUM_PACKAGES];
   uint8_t checksum_failed[2];
-  h2_h2loader_e2e_case_result_t *case_result;
+  h2_h2loader_e2e_case_result_t* case_result;
   char command_output[H2_E2E_COMMAND_OUTPUT_CAPACITY];
   size_t command_output_size;
   uint32_t last_reported_percent;
@@ -48,115 +49,131 @@ typedef struct h2_e2e_transport_context {
 } h2_e2e_transport_context_t;
 
 typedef struct h2_e2e_memory_source {
-  const uint8_t *data;
+  const uint8_t* data;
   size_t size;
 } h2_e2e_memory_source_t;
 
-const char *
-h2_h2loader_e2e_transport_name(h2_h2loader_e2e_transport_t transport) {
-  if (transport == H2_H2LOADER_E2E_TRANSPORT_UART)
-    return "uart";
-  if (transport == H2_H2LOADER_E2E_TRANSPORT_BLE)
-    return "ble";
+const char* h2_h2loader_e2e_transport_name(
+    h2_h2loader_e2e_transport_t transport) {
+  if (transport == H2_H2LOADER_E2E_TRANSPORT_UART) return "uart";
+  if (transport == H2_H2LOADER_E2E_TRANSPORT_BLE) return "ble";
   return "unknown";
 }
 
-const char *h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
+const char* h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
   switch (test_case) {
-  case H2_H2LOADER_E2E_CASE_HELP:
-    return "help";
-  case H2_H2LOADER_E2E_CASE_STATUS:
-    return "status";
-  case H2_H2LOADER_E2E_CASE_STATS:
-    return "stats";
-  case H2_H2LOADER_E2E_CASE_MEMORY:
-    return "memory";
-  case H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT:
-    return "legacy-commands-absent";
-  case H2_H2LOADER_E2E_CASE_WIFI_SCAN:
-    return "wifi-scan";
-  case H2_H2LOADER_E2E_CASE_WIFI_CONNECT:
-    return "wifi-connect";
-  case H2_H2LOADER_E2E_CASE_WIFI_DISCONNECT:
-    return "wifi-disconnect";
-  case H2_H2LOADER_E2E_CASE_SEND:
-    return "send";
-  case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND:
-    return "stage-abort-after-send";
-  case H2_H2LOADER_E2E_CASE_SEND_URL:
-    return "send-url";
-  case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL:
-    return "stage-abort-after-send-url";
-  case H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE:
-    return "reboot-app-preserves-stage";
-  case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_PRESERVES_STAGE:
-    return "reboot-loader-preserves-stage";
-  case H2_H2LOADER_E2E_CASE_INSTALL_APP:
-    return "install-app";
-  case H2_H2LOADER_E2E_CASE_APP_HELP:
-    return "app-help";
-  case H2_H2LOADER_E2E_CASE_APP_STATUS:
-    return "app-status";
-  case H2_H2LOADER_E2E_CASE_APP_STATS:
-    return "app-stats";
-  case H2_H2LOADER_E2E_CASE_APP_MEMORY:
-    return "app-memory";
-  case H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT:
-    return "app-legacy-commands-absent";
-  case H2_H2LOADER_E2E_CASE_APP_WIFI_SCAN:
-    return "app-wifi-scan";
-  case H2_H2LOADER_E2E_CASE_APP_WIFI_CONNECT:
-    return "app-wifi-connect";
-  case H2_H2LOADER_E2E_CASE_APP_WIFI_DISCONNECT:
-    return "app-wifi-disconnect";
-  case H2_H2LOADER_E2E_CASE_APP_SEND:
-    return "app-send";
-  case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND:
-    return "app-stage-abort-after-send";
-  case H2_H2LOADER_E2E_CASE_APP_SEND_URL:
-    return "app-send-url";
-  case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL:
-    return "app-stage-abort-after-send-url";
-  case H2_H2LOADER_E2E_CASE_INSTALL_LOADER:
-    return "install-loader";
-  case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS:
-    return "coredump-status";
-  case H2_H2LOADER_E2E_CASE_COREDUMP_DUMP:
-    return "coredump-dump";
-  case H2_H2LOADER_E2E_CASE_COREDUMP_ERASE:
-    return "coredump-erase";
-  case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE:
-    return "coredump-status-after-erase";
-  case H2_H2LOADER_E2E_CASE_MONITOR:
-    return "monitor";
-  case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR:
-    return "reboot-loader-monitor";
-  case H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR:
-    return "reboot-app-monitor";
-  case H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR:
-    return "reboot-upgrade-monitor";
-  case H2_H2LOADER_E2E_CASE_INSTALL_CRASH_APP:
-    return "install-crash-app";
-  case H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE: return "tar-zlib-baseline";
-  case H2_H2LOADER_E2E_CASE_TAR_ZLIB_UNCHANGED: return "tar-zlib-unchanged";
-  case H2_H2LOADER_E2E_CASE_TAR_ZLIB_APP_ONLY: return "tar-zlib-app-only";
-  case H2_H2LOADER_E2E_CASE_TAR_ZLIB_DATA_ONLY: return "tar-zlib-data-only";
-  case H2_H2LOADER_E2E_CASE_TAR_ZLIB_BOTH_CHANGED: return "tar-zlib-both-changed";
-  case H2_H2LOADER_E2E_CASE_ZLIB_TAR_BASELINE: return "zlib-tar-baseline";
-  case H2_H2LOADER_E2E_CASE_ZLIB_TAR_UNCHANGED: return "zlib-tar-unchanged";
-  case H2_H2LOADER_E2E_CASE_ZLIB_TAR_APP_ONLY: return "zlib-tar-app-only";
-  case H2_H2LOADER_E2E_CASE_ZLIB_TAR_DATA_ONLY: return "zlib-tar-data-only";
-  case H2_H2LOADER_E2E_CASE_ZLIB_TAR_BOTH_CHANGED: return "zlib-tar-both-changed";
-  case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED: return "old-to-new-unchanged";
-  case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_APP_ONLY: return "old-to-new-app-only";
-  case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_DATA_ONLY: return "old-to-new-data-only";
-  case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_BOTH_CHANGED: return "old-to-new-both-changed";
-  case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_UNCHANGED: return "new-to-old-unchanged";
-  case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_APP_ONLY: return "new-to-old-app-only";
-  case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_DATA_ONLY: return "new-to-old-data-only";
-  case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_BOTH_CHANGED: return "new-to-old-both-changed";
-  default:
-    return "unknown";
+    case H2_H2LOADER_E2E_CASE_HELP:
+      return "help";
+    case H2_H2LOADER_E2E_CASE_STATUS:
+      return "status";
+    case H2_H2LOADER_E2E_CASE_STATS:
+      return "stats";
+    case H2_H2LOADER_E2E_CASE_MEMORY:
+      return "memory";
+    case H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT:
+      return "legacy-commands-absent";
+    case H2_H2LOADER_E2E_CASE_WIFI_SCAN:
+      return "wifi-scan";
+    case H2_H2LOADER_E2E_CASE_WIFI_CONNECT:
+      return "wifi-connect";
+    case H2_H2LOADER_E2E_CASE_WIFI_DISCONNECT:
+      return "wifi-disconnect";
+    case H2_H2LOADER_E2E_CASE_SEND:
+      return "send";
+    case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND:
+      return "stage-abort-after-send";
+    case H2_H2LOADER_E2E_CASE_SEND_URL:
+      return "send-url";
+    case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL:
+      return "stage-abort-after-send-url";
+    case H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE:
+      return "reboot-app-preserves-stage";
+    case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_PRESERVES_STAGE:
+      return "reboot-loader-preserves-stage";
+    case H2_H2LOADER_E2E_CASE_INSTALL_APP:
+      return "install-app";
+    case H2_H2LOADER_E2E_CASE_APP_HELP:
+      return "app-help";
+    case H2_H2LOADER_E2E_CASE_APP_STATUS:
+      return "app-status";
+    case H2_H2LOADER_E2E_CASE_APP_STATS:
+      return "app-stats";
+    case H2_H2LOADER_E2E_CASE_APP_MEMORY:
+      return "app-memory";
+    case H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT:
+      return "app-legacy-commands-absent";
+    case H2_H2LOADER_E2E_CASE_APP_WIFI_SCAN:
+      return "app-wifi-scan";
+    case H2_H2LOADER_E2E_CASE_APP_WIFI_CONNECT:
+      return "app-wifi-connect";
+    case H2_H2LOADER_E2E_CASE_APP_WIFI_DISCONNECT:
+      return "app-wifi-disconnect";
+    case H2_H2LOADER_E2E_CASE_APP_SEND:
+      return "app-send";
+    case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND:
+      return "app-stage-abort-after-send";
+    case H2_H2LOADER_E2E_CASE_APP_SEND_URL:
+      return "app-send-url";
+    case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL:
+      return "app-stage-abort-after-send-url";
+    case H2_H2LOADER_E2E_CASE_INSTALL_LOADER:
+      return "install-loader";
+    case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS:
+      return "coredump-status";
+    case H2_H2LOADER_E2E_CASE_COREDUMP_DUMP:
+      return "coredump-dump";
+    case H2_H2LOADER_E2E_CASE_COREDUMP_ERASE:
+      return "coredump-erase";
+    case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE:
+      return "coredump-status-after-erase";
+    case H2_H2LOADER_E2E_CASE_MONITOR:
+      return "monitor";
+    case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR:
+      return "reboot-loader-monitor";
+    case H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR:
+      return "reboot-app-monitor";
+    case H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR:
+      return "reboot-upgrade-monitor";
+    case H2_H2LOADER_E2E_CASE_INSTALL_CRASH_APP:
+      return "install-crash-app";
+    case H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE:
+      return "tar-zlib-baseline";
+    case H2_H2LOADER_E2E_CASE_TAR_ZLIB_UNCHANGED:
+      return "tar-zlib-unchanged";
+    case H2_H2LOADER_E2E_CASE_TAR_ZLIB_APP_ONLY:
+      return "tar-zlib-app-only";
+    case H2_H2LOADER_E2E_CASE_TAR_ZLIB_DATA_ONLY:
+      return "tar-zlib-data-only";
+    case H2_H2LOADER_E2E_CASE_TAR_ZLIB_BOTH_CHANGED:
+      return "tar-zlib-both-changed";
+    case H2_H2LOADER_E2E_CASE_ZLIB_TAR_BASELINE:
+      return "zlib-tar-baseline";
+    case H2_H2LOADER_E2E_CASE_ZLIB_TAR_UNCHANGED:
+      return "zlib-tar-unchanged";
+    case H2_H2LOADER_E2E_CASE_ZLIB_TAR_APP_ONLY:
+      return "zlib-tar-app-only";
+    case H2_H2LOADER_E2E_CASE_ZLIB_TAR_DATA_ONLY:
+      return "zlib-tar-data-only";
+    case H2_H2LOADER_E2E_CASE_ZLIB_TAR_BOTH_CHANGED:
+      return "zlib-tar-both-changed";
+    case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED:
+      return "old-to-new-unchanged";
+    case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_APP_ONLY:
+      return "old-to-new-app-only";
+    case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_DATA_ONLY:
+      return "old-to-new-data-only";
+    case H2_H2LOADER_E2E_CASE_OLD_TO_NEW_BOTH_CHANGED:
+      return "old-to-new-both-changed";
+    case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_UNCHANGED:
+      return "new-to-old-unchanged";
+    case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_APP_ONLY:
+      return "new-to-old-app-only";
+    case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_DATA_ONLY:
+      return "new-to-old-data-only";
+    case H2_H2LOADER_E2E_CASE_NEW_TO_OLD_BOTH_CHANGED:
+      return "new-to-old-both-changed";
+    default:
+      return "unknown";
   }
 }
 
@@ -164,12 +181,12 @@ static uint32_t timeout_or(uint32_t value, uint32_t fallback) {
   return value == 0u ? fallback : value;
 }
 
-static int text_matches(const char *expected, const char *actual) {
+static int text_matches(const char* expected, const char* actual) {
   return expected == NULL || expected[0] == '\0' ||
          (actual != NULL && strcmp(expected, actual) == 0);
 }
 
-static int sha256_valid(const char *value) {
+static int sha256_valid(const char* value) {
   if (value == NULL || strlen(value) != H2_H2LOADER_HOST_SHA256_HEX_LEN) {
     return 0;
   }
@@ -182,13 +199,13 @@ static int sha256_valid(const char *value) {
   return 1;
 }
 
-static int cancelled(const h2_h2loader_e2e_config_t *config) {
+static int cancelled(const h2_h2loader_e2e_config_t* config) {
   return config->is_cancelled != NULL &&
          config->is_cancelled(config->cancel_user);
 }
 
-static h2_pal_result_t now_ms(const h2_h2loader_e2e_config_t *config,
-                              uint64_t *out) {
+static h2_pal_result_t now_ms(const h2_h2loader_e2e_config_t* config,
+                              uint64_t* out) {
   if (config->runtime == NULL || config->runtime->time == NULL) {
     *out = 0u;
     return H2_PAL_ERR_UNSUPPORTED;
@@ -196,24 +213,23 @@ static h2_pal_result_t now_ms(const h2_h2loader_e2e_config_t *config,
   return h2_pal_time_get_monotonic_ms(config->runtime->time, out);
 }
 
-static h2_pal_result_t memory_read(void *user, uint64_t offset, uint8_t *out,
-                                   size_t out_size, size_t *out_read) {
-  const h2_e2e_memory_source_t *source = user;
+static h2_pal_result_t memory_read(void* user, uint64_t offset, uint8_t* out,
+                                   size_t out_size, size_t* out_read) {
+  const h2_e2e_memory_source_t* source = user;
   if (source == NULL || out_read == NULL || (out == NULL && out_size != 0u) ||
       offset > source->size) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   size_t available = source->size - (size_t)offset;
   size_t count = out_size < available ? out_size : available;
-  if (count != 0u)
-    memcpy(out, source->data + (size_t)offset, count);
+  if (count != 0u) memcpy(out, source->data + (size_t)offset, count);
   *out_read = count;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t count_output(void *user, const uint8_t *data,
+static h2_pal_result_t count_output(void* user, const uint8_t* data,
                                     size_t len) {
-  h2_e2e_transport_context_t *context = user;
+  h2_e2e_transport_context_t* context = user;
   context->case_result->output_bytes += len;
   size_t available =
       sizeof(context->command_output) - 1u - context->command_output_size;
@@ -226,9 +242,9 @@ static h2_pal_result_t count_output(void *user, const uint8_t *data,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t monitor_output(void *user, const uint8_t *data,
+static h2_pal_result_t monitor_output(void* user, const uint8_t* data,
                                       size_t len) {
-  h2_e2e_transport_context_t *context = user;
+  h2_e2e_transport_context_t* context = user;
   if (context == NULL || context->case_result == NULL ||
       (data == NULL && len != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -243,27 +259,25 @@ static h2_pal_result_t monitor_output(void *user, const uint8_t *data,
              : context->config->on_log(context->config->log_user, data, len);
 }
 
-static int monitor_cancelled(void *user) {
-  h2_e2e_transport_context_t *context = user;
+static int monitor_cancelled(void* user) {
+  h2_e2e_transport_context_t* context = user;
   uint64_t now = 0u;
-  if (context == NULL || cancelled(context->config))
-    return 1;
+  if (context == NULL || cancelled(context->config)) return 1;
   return now_ms(context->config, &now) == H2_PAL_OK &&
          now >= context->monitor_deadline_ms;
 }
 
-static int parse_u64_decimal(const char *text, const char **out_end,
-                             uint64_t *out_value) {
+static int parse_u64_decimal(const char* text, const char** out_end,
+                             uint64_t* out_value) {
   uint64_t value = 0u;
-  const char *cursor = text;
+  const char* cursor = text;
   if (text == NULL || out_end == NULL || out_value == NULL || *cursor < '0' ||
       *cursor > '9') {
     return 0;
   }
   while (*cursor >= '0' && *cursor <= '9') {
     const uint8_t digit = (uint8_t)(*cursor - '0');
-    if (value > (UINT64_MAX - digit) / 10u)
-      return 0;
+    if (value > (UINT64_MAX - digit) / 10u) return 0;
     value = value * 10u + digit;
     ++cursor;
   }
@@ -273,24 +287,21 @@ static int parse_u64_decimal(const char *text, const char **out_end,
 }
 
 static int hex_nibble(uint8_t value) {
-  if (value >= '0' && value <= '9')
-    return value - '0';
-  if (value >= 'a' && value <= 'f')
-    return value - 'a' + 10;
-  if (value >= 'A' && value <= 'F')
-    return value - 'A' + 10;
+  if (value >= '0' && value <= '9') return value - '0';
+  if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+  if (value >= 'A' && value <= 'F') return value - 'A' + 10;
   return -1;
 }
 
-static h2_pal_result_t coredump_output_line(h2_e2e_transport_context_t *context,
-                                            const char *line, size_t len) {
+static h2_pal_result_t coredump_output_line(h2_e2e_transport_context_t* context,
+                                            const char* line, size_t len) {
   static const char data_prefix[] = "H2_LOADER_COREDUMP_DATA offset=";
   static const char terminal_prefix[] =
       "H2_LOADER_COREDUMP_DUMP result=OK bytes=";
   if (len >= sizeof(data_prefix) - 1u &&
       memcmp(line, data_prefix, sizeof(data_prefix) - 1u) == 0) {
-    const char *cursor = line + sizeof(data_prefix) - 1u;
-    const char *end = NULL;
+    const char* cursor = line + sizeof(data_prefix) - 1u;
+    const char* end = NULL;
     uint64_t offset = 0u;
     if (!parse_u64_decimal(cursor, &end, &offset) ||
         offset != context->coredump_decoded_bytes ||
@@ -299,18 +310,16 @@ static h2_pal_result_t coredump_output_line(h2_e2e_transport_context_t *context,
     }
     cursor = end + 5u;
     const size_t hex_size = (size_t)(line + len - cursor);
-    if ((hex_size & 1u) != 0u || hex_size / 2u > 128u)
-      return H2_PAL_ERR_FORMAT;
+    if ((hex_size & 1u) != 0u || hex_size / 2u > 128u) return H2_PAL_ERR_FORMAT;
     for (size_t i = 0u; i < hex_size; ++i) {
-      if (hex_nibble((uint8_t)cursor[i]) < 0)
-        return H2_PAL_ERR_FORMAT;
+      if (hex_nibble((uint8_t)cursor[i]) < 0) return H2_PAL_ERR_FORMAT;
     }
     context->coredump_decoded_bytes += hex_size / 2u;
     return H2_PAL_OK;
   }
   if (len >= sizeof(terminal_prefix) - 1u &&
       memcmp(line, terminal_prefix, sizeof(terminal_prefix) - 1u) == 0) {
-    const char *end = NULL;
+    const char* end = NULL;
     if (!parse_u64_decimal(line + sizeof(terminal_prefix) - 1u, &end,
                            &context->coredump_terminal_bytes) ||
         context->coredump_terminal_bytes != context->coredump_decoded_bytes) {
@@ -321,9 +330,9 @@ static h2_pal_result_t coredump_output_line(h2_e2e_transport_context_t *context,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t coredump_output(void *user, const uint8_t *data,
+static h2_pal_result_t coredump_output(void* user, const uint8_t* data,
                                        size_t len) {
-  h2_e2e_transport_context_t *context = user;
+  h2_e2e_transport_context_t* context = user;
   if (context == NULL || (data == NULL && len != 0u))
     return H2_PAL_ERR_INVALID_ARG;
   context->case_result->output_bytes += len;
@@ -335,8 +344,7 @@ static h2_pal_result_t coredump_output(void *user, const uint8_t *data,
       h2_pal_result_t rc =
           coredump_output_line(context, context->coredump_line, line_len);
       context->coredump_line_size = 0u;
-      if (rc != H2_PAL_OK)
-        return rc;
+      if (rc != H2_PAL_OK) return rc;
       continue;
     }
     if (context->coredump_line_size == sizeof(context->coredump_line))
@@ -346,13 +354,13 @@ static h2_pal_result_t coredump_output(void *user, const uint8_t *data,
   return H2_PAL_OK;
 }
 
-static int parse_coredump_status(const char *output, uint64_t *out_bytes,
-                                 int *out_blank) {
+static int parse_coredump_status(const char* output, uint64_t* out_bytes,
+                                 int* out_blank) {
   static const char stored_marker[] = " stored_bytes=";
   static const char blank_marker[] = " blank=";
-  const char *stored = strstr(output, stored_marker);
-  const char *blank = strstr(output, blank_marker);
-  const char *end = NULL;
+  const char* stored = strstr(output, stored_marker);
+  const char* blank = strstr(output, blank_marker);
+  const char* end = NULL;
   uint64_t blank_value = 0u;
   return stored != NULL && blank != NULL &&
          parse_u64_decimal(stored + sizeof(stored_marker) - 1u, &end,
@@ -362,13 +370,12 @@ static int parse_coredump_status(const char *output, uint64_t *out_bytes,
          blank_value <= 1u && ((*out_blank = (int)blank_value), 1);
 }
 
-static int scan_contains_ssid(const h2_e2e_transport_context_t *context) {
+static int scan_contains_ssid(const h2_e2e_transport_context_t* context) {
   static const char hex[] = "0123456789abcdef";
-  const unsigned char *ssid = (const unsigned char *)context->config->wifi_ssid;
+  const unsigned char* ssid = (const unsigned char*)context->config->wifi_ssid;
   char marker[2u * H2_H2LOADER_HOST_IDENTITY_MAX_LEN + 16u];
   size_t ssid_size = strlen(context->config->wifi_ssid);
-  if (ssid_size > (sizeof(marker) - sizeof("ssid_hex=")) / 2u)
-    return 0;
+  if (ssid_size > (sizeof(marker) - sizeof("ssid_hex=")) / 2u) return 0;
   memcpy(marker, "ssid_hex=", sizeof("ssid_hex=") - 1u);
   size_t offset = sizeof("ssid_hex=") - 1u;
   for (size_t i = 0u; i < ssid_size; ++i) {
@@ -379,8 +386,8 @@ static int scan_contains_ssid(const h2_e2e_transport_context_t *context) {
   return strstr(context->command_output, marker) != NULL;
 }
 
-static void record_progress(void *user, uint64_t acknowledged, uint64_t total) {
-  h2_e2e_transport_context_t *context = user;
+static void record_progress(void* user, uint64_t acknowledged, uint64_t total) {
+  h2_e2e_transport_context_t* context = user;
   context->case_result->acknowledged_bytes = acknowledged;
   context->case_result->total_bytes = total;
   uint32_t percent =
@@ -394,8 +401,8 @@ static void record_progress(void *user, uint64_t acknowledged, uint64_t total) {
   }
 }
 
-static h2_pal_result_t
-disconnect_transport(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t disconnect_transport(
+    h2_e2e_transport_context_t* context) {
   h2_pal_result_t serial_result =
       h2_h2loader_host_serial_disconnect(&context->serial_connection);
   h2_pal_result_t ble_result =
@@ -403,8 +410,8 @@ disconnect_transport(h2_e2e_transport_context_t *context) {
   return serial_result == H2_PAL_OK ? ble_result : serial_result;
 }
 
-static h2_pal_result_t
-resolve_ble_candidate(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t resolve_ble_candidate(
+    h2_e2e_transport_context_t* context) {
   h2_h2loader_host_candidate_t candidates[H2_E2E_BLE_CANDIDATE_CAPACITY];
   h2_h2loader_host_scan_result_t result;
   size_t matches = 0u;
@@ -421,8 +428,7 @@ resolve_ble_candidate(h2_e2e_transport_context_t *context) {
       .candidate_capacity = H2_E2E_BLE_CANDIDATE_CAPACITY,
   };
   h2_pal_result_t rc = h2_h2loader_host_scan(&scan, &result);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   memset(&context->ble_candidate, 0, sizeof(context->ble_candidate));
   for (size_t i = 0u; i < result.count; ++i) {
     if (candidates[i].transport == H2_H2LOADER_HOST_TRANSPORT_BLE &&
@@ -431,20 +437,17 @@ resolve_ble_candidate(h2_e2e_transport_context_t *context) {
       ++matches;
     }
   }
-  if (matches == 0u)
-    return H2_PAL_ERR_NOT_FOUND;
-  if (matches != 1u)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (matches == 0u) return H2_PAL_ERR_NOT_FOUND;
+  if (matches != 1u) return H2_PAL_ERR_INVALID_STATE;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-connect_transport(h2_e2e_transport_context_t *context,
-                  h2_h2loader_host_status_t *out_status) {
-  const h2_h2loader_e2e_config_t *config = context->config;
+static h2_pal_result_t connect_transport(
+    h2_e2e_transport_context_t* context,
+    h2_h2loader_host_status_t* out_status) {
+  const h2_h2loader_e2e_config_t* config = context->config;
   h2_pal_result_t rc = disconnect_transport(context);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   memset(out_status, 0, sizeof(*out_status));
   if (context->transport == H2_H2LOADER_E2E_TRANSPORT_UART) {
     const h2_h2loader_host_serial_connection_config_t connect = {
@@ -468,7 +471,7 @@ connect_transport(h2_e2e_transport_context_t *context,
   } else {
     rc = resolve_ble_candidate(context);
     if (rc == H2_PAL_OK) {
-      const char *advertised_board =
+      const char* advertised_board =
           strncmp(context->ble_candidate.advertised_board, "fnv1a64:", 8u) == 0
               ? NULL
               : context->ble_candidate.advertised_board;
@@ -515,13 +518,12 @@ connect_transport(h2_e2e_transport_context_t *context,
     context->case_result->status = *out_status;
     context->case_result->status_valid = 1u;
   }
-  if (rc != H2_PAL_OK)
-    (void)disconnect_transport(context);
+  if (rc != H2_PAL_OK) (void)disconnect_transport(context);
   return rc;
 }
 
-static h2_pal_result_t read_status(h2_e2e_transport_context_t *context,
-                                   h2_h2loader_host_status_t *out_status) {
+static h2_pal_result_t read_status(h2_e2e_transport_context_t* context,
+                                   h2_h2loader_host_status_t* out_status) {
   return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
              ? h2_h2loader_host_serial_read_status(context->serial_connection,
                                                    out_status)
@@ -529,10 +531,10 @@ static h2_pal_result_t read_status(h2_e2e_transport_context_t *context,
                                                 out_status);
 }
 
-static h2_pal_result_t
-execute_command(h2_e2e_transport_context_t *context,
-                const h2_h2loader_host_command_request_t *request,
-                h2_h2loader_host_command_result_t *out_result) {
+static h2_pal_result_t execute_command(
+    h2_e2e_transport_context_t* context,
+    const h2_h2loader_host_command_request_t* request,
+    h2_h2loader_host_command_result_t* out_result) {
   return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
              ? h2_h2loader_host_serial_execute_command(
                    context->serial_connection, request, out_result)
@@ -540,12 +542,12 @@ execute_command(h2_e2e_transport_context_t *context,
                                                     request, out_result);
 }
 
-static h2_pal_result_t
-stage_payload(h2_e2e_transport_context_t *context,
-              const h2_h2loader_host_catalog_entry_t *asset,
-              h2_h2loader_host_payload_read_fn read_payload, void *payload_user,
-              h2_h2loader_host_cancelled_fn is_cancelled, void *cancel_user,
-              h2_h2loader_host_progress_fn on_progress, void *progress_user) {
+static h2_pal_result_t stage_payload(
+    h2_e2e_transport_context_t* context,
+    const h2_h2loader_host_catalog_entry_t* asset,
+    h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
+    h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
+    h2_h2loader_host_progress_fn on_progress, void* progress_user) {
   return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
              ? h2_h2loader_host_serial_stage(context->serial_connection, asset,
                                              read_payload, payload_user,
@@ -556,31 +558,31 @@ stage_payload(h2_e2e_transport_context_t *context,
                    is_cancelled, cancel_user, on_progress, progress_user);
 }
 
-static h2_pal_result_t managed_connect(void *user,
-                                       h2_h2loader_host_status_t *out_status) {
+static h2_pal_result_t managed_connect(void* user,
+                                       h2_h2loader_host_status_t* out_status) {
   return connect_transport(user, out_status);
 }
 
-static h2_pal_result_t
-managed_stage(void *user, const h2_h2loader_host_catalog_entry_t *asset,
-              h2_h2loader_host_payload_read_fn read_payload, void *payload_user,
-              h2_h2loader_host_cancelled_fn is_cancelled, void *cancel_user,
-              h2_h2loader_host_progress_fn on_progress, void *progress_user) {
+static h2_pal_result_t managed_stage(
+    void* user, const h2_h2loader_host_catalog_entry_t* asset,
+    h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
+    h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
+    h2_h2loader_host_progress_fn on_progress, void* progress_user) {
   return stage_payload(user, asset, read_payload, payload_user, is_cancelled,
                        cancel_user, on_progress, progress_user);
 }
 
-static h2_pal_result_t
-managed_read_status(void *user, h2_h2loader_host_status_t *out_status) {
+static h2_pal_result_t managed_read_status(
+    void* user, h2_h2loader_host_status_t* out_status) {
   return read_status(user, out_status);
 }
 
-static h2_pal_result_t managed_disconnect(void *user) {
+static h2_pal_result_t managed_disconnect(void* user) {
   return disconnect_transport(user);
 }
 
-static h2_pal_result_t managed_rediscover(void *user) {
-  h2_e2e_transport_context_t *context = user;
+static h2_pal_result_t managed_rediscover(void* user) {
+  h2_e2e_transport_context_t* context = user;
   if (context->case_result != NULL) {
     ++context->case_result->reconnect_attempts;
   }
@@ -593,46 +595,43 @@ static h2_pal_result_t managed_rediscover(void *user) {
              : H2_PAL_OK;
 }
 
-static h2_pal_result_t
-managed_activate(void *user, const h2_h2loader_host_catalog_entry_t *asset) {
-  h2_e2e_transport_context_t *context = user;
+static h2_pal_result_t managed_activate(
+    void* user, const h2_h2loader_host_catalog_entry_t* asset) {
+  h2_e2e_transport_context_t* context = user;
   return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
              ? h2_h2loader_host_serial_activate(context->serial_connection,
                                                 asset)
              : h2_h2loader_host_ble_activate(context->ble_connection, asset);
 }
 
-static h2_pal_result_t run_status(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t run_status(h2_e2e_transport_context_t* context) {
   h2_h2loader_host_status_t status;
   h2_pal_result_t rc = connect_transport(context, &status);
   h2_pal_result_t close_rc = disconnect_transport(context);
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static h2_pal_result_t
-begin_monitor_window(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t begin_monitor_window(
+    h2_e2e_transport_context_t* context) {
   uint64_t now = 0u;
   h2_pal_result_t rc = now_ms(context->config, &now);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   context->monitor_deadline_ms = now + context->config->monitor_duration_ms;
   return context->monitor_deadline_ms >= now ? H2_PAL_OK
                                              : H2_PAL_ERR_INVALID_ARG;
 }
 
-static h2_pal_result_t
-finish_bounded_monitor(h2_e2e_transport_context_t *context,
-                       int require_output) {
+static h2_pal_result_t finish_bounded_monitor(
+    h2_e2e_transport_context_t* context, int require_output) {
   h2_pal_result_t rc = h2_h2loader_host_serial_monitor_logs(
       context->serial_connection, monitor_cancelled, context);
-  if (rc == H2_PAL_EXIT && !cancelled(context->config))
-    rc = H2_PAL_OK;
+  if (rc == H2_PAL_EXIT && !cancelled(context->config)) rc = H2_PAL_OK;
   if (rc == H2_PAL_OK && require_output && context->monitor_output_bytes == 0u)
     rc = H2_PAL_ERR_NOT_FOUND;
   return rc;
 }
 
-static h2_pal_result_t run_monitor(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t run_monitor(h2_e2e_transport_context_t* context) {
   h2_h2loader_host_status_t status;
   context->monitor_logs = 1u;
   h2_pal_result_t rc = connect_transport(context, &status);
@@ -640,16 +639,14 @@ static h2_pal_result_t run_monitor(h2_e2e_transport_context_t *context) {
     context->case_result->status = status;
     context->case_result->status_valid = 1u;
   }
-  if (rc == H2_PAL_OK)
-    rc = begin_monitor_window(context);
-  if (rc == H2_PAL_OK)
-    rc = finish_bounded_monitor(context, 0);
+  if (rc == H2_PAL_OK) rc = begin_monitor_window(context);
+  if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context, 0);
   h2_pal_result_t close_rc = disconnect_transport(context);
   context->monitor_logs = 0u;
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static h2_pal_result_t run_simple_command(h2_e2e_transport_context_t *context,
+static h2_pal_result_t run_simple_command(h2_e2e_transport_context_t* context,
                                           h2_h2loader_host_command_t command) {
   h2_h2loader_host_status_t status;
   h2_h2loader_host_command_result_t result = {0};
@@ -670,8 +667,7 @@ static h2_pal_result_t run_simple_command(h2_e2e_transport_context_t *context,
       rc = H2_PAL_ERR_IO;
     }
   }
-  if (rc == H2_PAL_OK)
-    rc = read_status(context, &status);
+  if (rc == H2_PAL_OK) rc = read_status(context, &status);
   if (rc == H2_PAL_OK) {
     context->case_result->status = status;
     context->case_result->status_valid = 1u;
@@ -680,8 +676,8 @@ static h2_pal_result_t run_simple_command(h2_e2e_transport_context_t *context,
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static h2_pal_result_t
-run_legacy_commands_absent(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t run_legacy_commands_absent(
+    h2_e2e_transport_context_t* context) {
   static const char expected_help[] =
       "h2loader <help|status|stats|memory|wifi|stage|reboot "
       "app|loader|upgrade|coredump>\n";
@@ -697,7 +693,7 @@ run_legacy_commands_absent(h2_e2e_transport_context_t *context) {
   return rc;
 }
 
-static h2_pal_result_t run_coredump_status(h2_e2e_transport_context_t *context,
+static h2_pal_result_t run_coredump_status(h2_e2e_transport_context_t* context,
                                            uint64_t expected_bytes,
                                            int expected_blank) {
   h2_pal_result_t rc =
@@ -715,7 +711,7 @@ static h2_pal_result_t run_coredump_status(h2_e2e_transport_context_t *context,
   return rc;
 }
 
-static h2_pal_result_t run_coredump_dump(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t run_coredump_dump(h2_e2e_transport_context_t* context) {
   h2_h2loader_host_status_t status;
   h2_h2loader_host_command_result_t result = {0};
   h2_pal_result_t rc = connect_transport(context, &status);
@@ -739,8 +735,7 @@ static h2_pal_result_t run_coredump_dump(h2_e2e_transport_context_t *context) {
       rc = H2_PAL_ERR_INVALID_STATE;
     }
   }
-  if (rc == H2_PAL_OK)
-    rc = read_status(context, &status);
+  if (rc == H2_PAL_OK) rc = read_status(context, &status);
   if (rc == H2_PAL_OK) {
     context->case_result->status = status;
     context->case_result->status_valid = 1u;
@@ -751,7 +746,7 @@ static h2_pal_result_t run_coredump_dump(h2_e2e_transport_context_t *context) {
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static h2_pal_result_t run_wifi_command(h2_e2e_transport_context_t *context,
+static h2_pal_result_t run_wifi_command(h2_e2e_transport_context_t* context,
                                         h2_h2loader_host_command_t command) {
   uint32_t attempts = command == H2_H2LOADER_HOST_COMMAND_WIFI_SCAN
                           ? H2_E2E_WIFI_SCAN_ATTEMPTS
@@ -763,8 +758,7 @@ static h2_pal_result_t run_wifi_command(h2_e2e_transport_context_t *context,
     context->command_output_size = 0u;
     context->command_output[0] = '\0';
     rc = connect_transport(context, &status);
-    if (rc != H2_PAL_OK)
-      break;
+    if (rc != H2_PAL_OK) break;
     const h2_h2loader_host_command_request_t request = {
         .command = command,
         .status = &status,
@@ -787,15 +781,13 @@ static h2_pal_result_t run_wifi_command(h2_e2e_transport_context_t *context,
         result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
       rc = H2_PAL_ERR_IO;
     }
-    if (rc == H2_PAL_OK)
-      rc = read_status(context, &status);
+    if (rc == H2_PAL_OK) rc = read_status(context, &status);
     if (rc == H2_PAL_OK) {
       context->case_result->status = status;
       context->case_result->status_valid = 1u;
     }
     h2_pal_result_t close_rc = disconnect_transport(context);
-    if (rc == H2_PAL_OK)
-      rc = close_rc;
+    if (rc == H2_PAL_OK) rc = close_rc;
     if (rc != H2_PAL_OK || command != H2_H2LOADER_HOST_COMMAND_WIFI_SCAN ||
         scan_contains_ssid(context)) {
       break;
@@ -813,10 +805,10 @@ static h2_pal_result_t run_wifi_command(h2_e2e_transport_context_t *context,
   return rc;
 }
 
-static h2_pal_result_t
-run_stage_payload(h2_e2e_transport_context_t *context,
-                  const h2_h2loader_host_catalog_entry_t *asset,
-                  const uint8_t *firmware, size_t firmware_size) {
+static h2_pal_result_t run_stage_payload(
+    h2_e2e_transport_context_t* context,
+    const h2_h2loader_host_catalog_entry_t* asset, const uint8_t* firmware,
+    size_t firmware_size) {
   const h2_e2e_memory_source_t source = {
       .data = firmware,
       .size = firmware_size,
@@ -834,7 +826,7 @@ run_stage_payload(h2_e2e_transport_context_t *context,
       .transport = {.user = context, .vtable = &vtable},
       .asset = asset,
       .read_payload = memory_read,
-      .payload_user = (void *)&source,
+      .payload_user = (void*)&source,
       .is_cancelled = context->config->is_cancelled,
       .cancel_user = context->config->cancel_user,
       .on_progress = record_progress,
@@ -852,13 +844,13 @@ run_stage_payload(h2_e2e_transport_context_t *context,
   return rc;
 }
 
-static h2_pal_result_t run_send(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t run_send(h2_e2e_transport_context_t* context) {
   return run_stage_payload(context, &context->app_asset,
                            context->config->app_firmware,
                            context->config->app_firmware_size);
 }
 
-static h2_pal_result_t run_send_url(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t run_send_url(h2_e2e_transport_context_t* context) {
   h2_h2loader_host_status_t initial_status;
   h2_h2loader_host_status_t final_status = {0};
   h2_h2loader_host_command_result_t result = {0};
@@ -923,10 +915,9 @@ static h2_pal_result_t run_send_url(h2_e2e_transport_context_t *context) {
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static h2_pal_result_t
-reconnect_after_reboot(h2_e2e_transport_context_t *context,
-                       uint32_t expected_partition,
-                       h2_h2loader_host_status_t *out_status) {
+static h2_pal_result_t reconnect_after_reboot(
+    h2_e2e_transport_context_t* context, uint32_t expected_partition,
+    h2_h2loader_host_status_t* out_status) {
   if (context->transport == H2_H2LOADER_E2E_TRANSPORT_BLE &&
       !context->authoritative_device_uid_valid) {
     return H2_PAL_ERR_UNSUPPORTED;
@@ -936,11 +927,9 @@ reconnect_after_reboot(h2_e2e_transport_context_t *context,
        ++attempt) {
     ++context->case_result->reconnect_attempts;
     rc = h2_pal_time_sleep_ms(context->config->runtime->time, 500u);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     rc = connect_transport(context, out_status);
-    if (rc == H2_PAL_ERR_INVALID_STATE)
-      return rc;
+    if (rc == H2_PAL_ERR_INVALID_STATE) return rc;
     if (rc == H2_PAL_OK &&
         out_status->running_partition == expected_partition) {
       return H2_PAL_OK;
@@ -950,7 +939,7 @@ reconnect_after_reboot(h2_e2e_transport_context_t *context,
   return cancelled(context->config) ? H2_PAL_EXIT : rc;
 }
 
-static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t *context,
+static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
                                           h2_h2loader_host_command_t command,
                                           uint32_t expected_partition) {
   h2_h2loader_host_status_t status;
@@ -985,15 +974,15 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t *context,
        ++transition) {
     rc = reconnect_after_reboot(context, expected_partition, &status);
     if (rc == H2_PAL_OK) {
-      /* Handshake logs do not satisfy the monitor window's output requirement. */
+      /* Handshake logs do not satisfy the monitor window's output requirement.
+       */
       context->monitor_output_bytes = 0u;
       rc = begin_monitor_window(context);
     }
     if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context, 1);
     if (rc == H2_PAL_OK) rc = read_status(context, &status);
     if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
-        transition == 0u &&
-        !cancelled(context->config)) {
+        transition == 0u && !cancelled(context->config)) {
       (void)disconnect_transport(context);
       rc = H2_PAL_OK;
       continue;
@@ -1012,16 +1001,15 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t *context,
 }
 
 static h2_pal_result_t run_reboot_preserves_stage(
-    h2_e2e_transport_context_t *context,
+    h2_e2e_transport_context_t* context,
     h2_h2loader_host_command_t reboot_command, uint32_t expected_partition,
-    const h2_h2loader_host_catalog_entry_t *stage_asset,
-    const uint8_t *stage_firmware, size_t stage_firmware_size) {
+    const h2_h2loader_host_catalog_entry_t* stage_asset,
+    const uint8_t* stage_firmware, size_t stage_firmware_size) {
   h2_h2loader_host_status_t status;
   h2_h2loader_host_command_result_t result = {0};
   h2_pal_result_t rc = run_stage_payload(context, stage_asset, stage_firmware,
                                          stage_firmware_size);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = connect_transport(context, &status);
   if (rc == H2_PAL_OK &&
       (!status.stage.valid ||
@@ -1084,8 +1072,8 @@ static h2_pal_result_t run_reboot_preserves_stage(
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static int metadata_same_image(const h2_h2loader_host_metadata_t *a,
-                               const h2_h2loader_host_metadata_t *b) {
+static int metadata_same_image(const h2_h2loader_host_metadata_t* a,
+                               const h2_h2loader_host_metadata_t* b) {
   return a->valid && b->valid && a->role == b->role &&
          a->image_size == b->image_size &&
          strcmp(a->image_checksum, b->image_checksum) == 0 &&
@@ -1093,8 +1081,8 @@ static int metadata_same_image(const h2_h2loader_host_metadata_t *a,
          strcmp(a->board, b->board) == 0 && strcmp(a->target, b->target) == 0;
 }
 
-static int metadata_equal(const h2_h2loader_host_metadata_t *a,
-                          const h2_h2loader_host_metadata_t *b) {
+static int metadata_equal(const h2_h2loader_host_metadata_t* a,
+                          const h2_h2loader_host_metadata_t* b) {
   return a->valid == b->valid && a->package_size == b->package_size &&
          a->image_size == b->image_size && a->role == b->role &&
          strcmp(a->package_checksum, b->package_checksum) == 0 &&
@@ -1103,9 +1091,9 @@ static int metadata_equal(const h2_h2loader_host_metadata_t *a,
          strcmp(a->board, b->board) == 0 && strcmp(a->target, b->target) == 0;
 }
 
-static int
-metadata_matches_asset(const h2_h2loader_host_metadata_t *metadata,
-                       const h2_h2loader_host_catalog_entry_t *asset) {
+static int metadata_matches_asset(
+    const h2_h2loader_host_metadata_t* metadata,
+    const h2_h2loader_host_catalog_entry_t* asset) {
   h2_h2loader_host_active_role_t role =
       asset->role == H2_H2LOADER_HOST_ASSET_ROLE_APP
           ? H2_H2LOADER_HOST_ACTIVE_ROLE_APP
@@ -1119,10 +1107,10 @@ metadata_matches_asset(const h2_h2loader_host_metadata_t *metadata,
          strcmp(metadata->target, asset->target) == 0;
 }
 
-static h2_pal_result_t
-run_install(h2_e2e_transport_context_t *context,
-            const h2_h2loader_host_catalog_entry_t *asset,
-            const uint8_t *firmware, size_t firmware_size) {
+static h2_pal_result_t run_install(
+    h2_e2e_transport_context_t* context,
+    const h2_h2loader_host_catalog_entry_t* asset, const uint8_t* firmware,
+    size_t firmware_size) {
   const h2_e2e_memory_source_t source = {.data = firmware,
                                          .size = firmware_size};
   static const h2_h2loader_host_managed_transport_vtable_t vtable = {
@@ -1139,7 +1127,7 @@ run_install(h2_e2e_transport_context_t *context,
       .transport = {.user = context, .vtable = &vtable},
       .asset = asset,
       .read_payload = memory_read,
-      .payload_user = (void *)&source,
+      .payload_user = (void*)&source,
       .is_cancelled = context->config->is_cancelled,
       .cancel_user = context->config->cancel_user,
       .on_progress = record_progress,
@@ -1170,8 +1158,8 @@ run_install(h2_e2e_transport_context_t *context,
   return rc;
 }
 
-static h2_pal_result_t
-run_install_crash_app(h2_e2e_transport_context_t *context) {
+static h2_pal_result_t run_install_crash_app(
+    h2_e2e_transport_context_t* context) {
   h2_h2loader_host_status_t status;
   h2_h2loader_host_metadata_t staged_candidate = {0};
   int32_t staged_last = 0;
@@ -1179,8 +1167,7 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
   h2_pal_result_t rc = run_stage_payload(context, &context->crash_asset,
                                          context->config->crash_firmware,
                                          context->config->crash_firmware_size);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = connect_transport(context, &status);
   if (rc == H2_PAL_OK &&
       !metadata_matches_asset(&status.stage, &context->crash_asset)) {
@@ -1207,19 +1194,16 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
     }
   }
   (void)disconnect_transport(context);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
 
   rc = H2_PAL_ERR_TIMEOUT;
   for (uint32_t attempt = 0u; attempt < 240u && !cancelled(context->config);
        ++attempt) {
     ++context->case_result->reconnect_attempts;
     rc = h2_pal_time_sleep_ms(context->config->runtime->time, 500u);
-    if (rc != H2_PAL_OK)
-      return rc;
+    if (rc != H2_PAL_OK) return rc;
     rc = connect_transport(context, &status);
-    if (rc == H2_PAL_ERR_INVALID_STATE)
-      return rc;
+    if (rc == H2_PAL_ERR_INVALID_STATE) return rc;
     if (rc == H2_PAL_OK && status.running_partition == 1u &&
         metadata_equal(&status.stage, &staged_candidate) &&
         metadata_equal(&status.partition_2, &staged_candidate) &&
@@ -1233,8 +1217,7 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
     (void)disconnect_transport(context);
     rc = H2_PAL_ERR_TIMEOUT;
   }
-  if (rc != H2_PAL_OK)
-    return cancelled(context->config) ? H2_PAL_EXIT : rc;
+  if (rc != H2_PAL_OK) return cancelled(context->config) ? H2_PAL_EXIT : rc;
 
   context->command_output_size = 0u;
   context->command_output[0] = '\0';
@@ -1254,10 +1237,10 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
   return rc;
 }
 
-static h2_pal_result_t
-run_install_monitor(h2_e2e_transport_context_t *context,
-                    const h2_h2loader_host_catalog_entry_t *asset,
-                    const uint8_t *firmware, size_t firmware_size) {
+static h2_pal_result_t run_install_monitor(
+    h2_e2e_transport_context_t* context,
+    const h2_h2loader_host_catalog_entry_t* asset, const uint8_t* firmware,
+    size_t firmware_size) {
   context->monitor_logs = 1u;
   h2_pal_result_t rc = run_install(context, asset, firmware, firmware_size);
   context->monitor_logs = 0u;
@@ -1267,54 +1250,62 @@ run_install_monitor(h2_e2e_transport_context_t *context,
   return rc;
 }
 
-static int cross_case_index(h2_h2loader_e2e_case_t test_case,
-                            size_t *source, size_t *target, size_t *index) {
+static int cross_case_index(h2_h2loader_e2e_case_t test_case, size_t* source,
+                            size_t* target, size_t* index) {
   if (test_case < H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED ||
-      test_case > H2_H2LOADER_E2E_CASE_NEW_TO_OLD_BOTH_CHANGED) return 0;
-  size_t offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED);
+      test_case > H2_H2LOADER_E2E_CASE_NEW_TO_OLD_BOTH_CHANGED)
+    return 0;
+  size_t offset =
+      (size_t)(test_case - H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED);
   *source = offset / 4u;
   *target = 1u - *source;
   *index = offset % 4u + 1u;
   return 1;
 }
 
-static int checksum_case_index(h2_h2loader_e2e_case_t test_case,
-                               size_t *format, size_t *index) {
+static int checksum_case_index(h2_h2loader_e2e_case_t test_case, size_t* format,
+                               size_t* index) {
   size_t source;
   if (cross_case_index(test_case, &source, format, index)) return 1;
   if (test_case < H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE ||
-      test_case > H2_H2LOADER_E2E_CASE_ZLIB_TAR_BOTH_CHANGED) return 0;
+      test_case > H2_H2LOADER_E2E_CASE_ZLIB_TAR_BOTH_CHANGED)
+    return 0;
   size_t offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE);
   *format = offset / H2_H2LOADER_E2E_CHECKSUM_PACKAGES;
   *index = offset % H2_H2LOADER_E2E_CHECKSUM_PACKAGES;
   return 1;
 }
 
-static h2_pal_result_t read_data_checksum(h2_e2e_transport_context_t *context,
-                                         char out[65]) {
+static h2_pal_result_t read_data_checksum(h2_e2e_transport_context_t* context,
+                                          char out[65]) {
   static const char marker[] = "H2_LOADER_DATA_CHECKSUM checksum=";
   out[0] = '\0';
   context->command_output_size = 0u;
   context->command_output[0] = '\0';
-  h2_pal_result_t rc = run_simple_command(context, H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM);
+  h2_pal_result_t rc =
+      run_simple_command(context, H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM);
   if (rc != H2_PAL_OK) return rc;
-  const char *line = strstr(context->command_output, marker);
+  const char* line = strstr(context->command_output, marker);
   if (line == NULL) return H2_PAL_ERR_UNSUPPORTED;
-  if (line != context->command_output && line[-1] != '\n') return H2_PAL_ERR_FORMAT;
+  if (line != context->command_output && line[-1] != '\n')
+    return H2_PAL_ERR_FORMAT;
   line += sizeof(marker) - 1u;
   if (strstr(line, marker) != NULL) return H2_PAL_ERR_FORMAT;
   size_t len = strcspn(line, "\r\n");
   if (len == 4u && memcmp(line, "none", 4u) == 0) return H2_PAL_OK;
-  if (len == 11u && memcmp(line, "unavailable", 11u) == 0) return H2_PAL_ERR_UNSUPPORTED;
+  if (len == 11u && memcmp(line, "unavailable", 11u) == 0)
+    return H2_PAL_ERR_UNSUPPORTED;
   if (len != 64u) return H2_PAL_ERR_FORMAT;
-  memcpy(out, line, len); out[len] = '\0';
+  memcpy(out, line, len);
+  out[len] = '\0';
   return sha256_valid(out) ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
 }
 
 static h2_pal_result_t verify_checksum_result(
-    const h2_e2e_transport_context_t *context, size_t format, size_t index,
-    const h2_h2loader_e2e_case_result_t *result) {
-  const h2_h2loader_host_catalog_entry_t *asset = &context->checksum_assets[format][index];
+    const h2_e2e_transport_context_t* context, size_t format, size_t index,
+    const h2_h2loader_e2e_case_result_t* result) {
+  const h2_h2loader_host_catalog_entry_t* asset =
+      &context->checksum_assets[format][index];
   if (!result->data_checksum_valid || !result->status_valid ||
       result->status.running_partition != 2u || result->status.stage.valid ||
       strcmp(result->data_sha256, asset->data_sha256) != 0 ||
@@ -1327,7 +1318,8 @@ static h2_pal_result_t verify_checksum_result(
       return H2_PAL_ERR_INVALID_STATE;
   }
   if (index != 0u) {
-    const h2_h2loader_host_catalog_entry_t *before = &context->checksum_assets[format][index - 1u];
+    const h2_h2loader_host_catalog_entry_t* before =
+        &context->checksum_assets[format][index - 1u];
     if (!result->checksum_expectations_valid ||
         strcmp(result->before_image_sha256, before->image_sha256) != 0 ||
         strcmp(result->before_data_sha256, before->data_sha256) != 0 ||
@@ -1338,28 +1330,35 @@ static h2_pal_result_t verify_checksum_result(
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t run_checksum_case(h2_e2e_transport_context_t *context,
-                                        size_t format, size_t index) {
+static h2_pal_result_t run_checksum_case(h2_e2e_transport_context_t* context,
+                                         size_t format, size_t index) {
   if (context->checksum_failed[format]) return H2_PAL_ERR_INVALID_STATE;
-  const h2_h2loader_host_catalog_entry_t *asset = &context->checksum_assets[format][index];
-  const h2_h2loader_e2e_package_t *package = &context->config->checksum_packages[format][index];
-  h2_h2loader_e2e_case_result_t *result = context->case_result;
+  const h2_h2loader_host_catalog_entry_t* asset =
+      &context->checksum_assets[format][index];
+  const h2_h2loader_e2e_package_t* package =
+      &context->config->checksum_packages[format][index];
+  h2_h2loader_e2e_case_result_t* result = context->case_result;
   result->package_format = (uint32_t)format + 1u;
   result->checksum_expectations_valid = index != 0u;
   h2_pal_result_t rc = read_data_checksum(context, result->before_data_sha256);
   if (rc != H2_PAL_OK) return rc;
-  memcpy(result->before_package_sha256, result->status.partition_2.package_checksum,
+  memcpy(result->before_package_sha256,
+         result->status.partition_2.package_checksum,
          sizeof(result->before_package_sha256));
   if (result->source_package_format != 0u &&
-      h2_h2loader_host_status_verify_asset(&result->status,
+      h2_h2loader_host_status_verify_asset(
+          &result->status,
           &context->checksum_assets[1u - format][index - 1u]) != H2_PAL_OK)
     return H2_PAL_ERR_INVALID_STATE;
   memcpy(result->before_image_sha256, result->status.active_checksum,
          sizeof(result->before_image_sha256));
-  result->expected_update_app = strcmp(result->before_image_sha256, asset->image_sha256) != 0;
-  result->expected_update_data = strcmp(result->before_data_sha256, asset->data_sha256) != 0;
+  result->expected_update_app =
+      strcmp(result->before_image_sha256, asset->image_sha256) != 0;
+  result->expected_update_data =
+      strcmp(result->before_data_sha256, asset->data_sha256) != 0;
   if (index != 0u) {
-    const h2_h2loader_host_catalog_entry_t *before = &context->checksum_assets[format][index - 1u];
+    const h2_h2loader_host_catalog_entry_t* before =
+        &context->checksum_assets[format][index - 1u];
     if (result->status.active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_APP ||
         result->status.running_partition != 2u ||
         strcmp(result->before_image_sha256, before->image_sha256) != 0 ||
@@ -1370,41 +1369,45 @@ static h2_pal_result_t run_checksum_case(h2_e2e_transport_context_t *context,
   }
   rc = run_install(context, asset, package->data, package->size);
   if (rc == H2_PAL_OK) rc = read_data_checksum(context, result->data_sha256);
-  if (rc == H2_PAL_OK && (strcmp(result->data_sha256, asset->data_sha256) != 0 ||
-      result->status.running_partition != 2u || result->status.stage.valid ||
-      h2_h2loader_host_status_verify_asset(&result->status, asset) != H2_PAL_OK))
+  if (rc == H2_PAL_OK &&
+      (strcmp(result->data_sha256, asset->data_sha256) != 0 ||
+       result->status.running_partition != 2u || result->status.stage.valid ||
+       h2_h2loader_host_status_verify_asset(&result->status, asset) !=
+           H2_PAL_OK))
     rc = H2_PAL_ERR_INVALID_STATE;
   result->data_checksum_valid = rc == H2_PAL_OK;
   return rc;
 }
 
-static h2_pal_result_t run_cross_checksum_case(h2_e2e_transport_context_t *context,
-                                              size_t source, size_t target, size_t index) {
+static h2_pal_result_t run_cross_checksum_case(
+    h2_e2e_transport_context_t* context, size_t source, size_t target,
+    size_t index) {
   if (context->checksum_failed[source] || context->checksum_failed[target])
     return H2_PAL_ERR_INVALID_STATE;
-  const h2_h2loader_e2e_package_t *before = &context->config->checksum_packages[source][index - 1u];
-  h2_pal_result_t rc = run_install(context, &context->checksum_assets[source][index - 1u],
-                                    before->data, before->size);
+  const h2_h2loader_e2e_package_t* before =
+      &context->config->checksum_packages[source][index - 1u];
+  h2_pal_result_t rc =
+      run_install(context, &context->checksum_assets[source][index - 1u],
+                  before->data, before->size);
   if (rc != H2_PAL_OK) return rc;
   context->case_result->source_package_format = (uint32_t)source + 1u;
   return run_checksum_case(context, target, index);
 }
 
 static h2_pal_result_t require_case_active_role(
-    h2_e2e_transport_context_t *context, h2_pal_result_t rc,
+    h2_e2e_transport_context_t* context, h2_pal_result_t rc,
     h2_h2loader_host_active_role_t expected_role) {
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
 
   /* Command helpers normally save their authoritative post-status. Keep the
    * role assertion self-contained if a future helper returns success without
-   * doing so. connect_transport reads and records status for both transports. */
+   * doing so. connect_transport reads and records status for both transports.
+   */
   if (!context->case_result->status_valid) {
     h2_h2loader_host_status_t status;
     rc = connect_transport(context, &status);
     h2_pal_result_t close_rc = disconnect_transport(context);
-    if (rc == H2_PAL_OK)
-      rc = close_rc;
+    if (rc == H2_PAL_OK) rc = close_rc;
   }
   if (rc == H2_PAL_OK &&
       context->case_result->status.active_role != expected_role) {
@@ -1413,7 +1416,7 @@ static h2_pal_result_t require_case_active_role(
   return rc;
 }
 
-static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
+static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t* context,
                                          h2_h2loader_e2e_case_t test_case) {
   size_t source, format, index;
   if (cross_case_index(test_case, &source, &format, &index))
@@ -1421,135 +1424,138 @@ static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
   if (checksum_case_index(test_case, &format, &index))
     return run_checksum_case(context, format, index);
   switch (test_case) {
-  case H2_H2LOADER_E2E_CASE_HELP:
-    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_HELP);
-  case H2_H2LOADER_E2E_CASE_STATUS:
-    return run_status(context);
-  case H2_H2LOADER_E2E_CASE_STATS:
-    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS);
-  case H2_H2LOADER_E2E_CASE_MEMORY:
-    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_MEMORY);
-  case H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT:
-    return run_legacy_commands_absent(context);
-  case H2_H2LOADER_E2E_CASE_WIFI_SCAN:
-    return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN);
-  case H2_H2LOADER_E2E_CASE_WIFI_CONNECT:
-    return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT);
-  case H2_H2LOADER_E2E_CASE_WIFI_DISCONNECT:
-    return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT);
-  case H2_H2LOADER_E2E_CASE_APP_HELP:
-    return require_case_active_role(
-        context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_HELP),
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_APP_STATUS:
-    return require_case_active_role(context, run_status(context),
-                                    H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_APP_STATS:
-    return require_case_active_role(
-        context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS),
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_APP_MEMORY:
-    return require_case_active_role(
-        context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_MEMORY),
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT:
-    return require_case_active_role(context, run_legacy_commands_absent(context),
-                                    H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_APP_WIFI_SCAN:
-    return require_case_active_role(
-        context, run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN),
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_APP_WIFI_CONNECT:
-    return require_case_active_role(
-        context,
-        run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT),
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_APP_WIFI_DISCONNECT:
-    return require_case_active_role(
-        context,
-        run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT),
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_SEND:
-    return require_case_active_role(
-        context, run_send(context), H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
-  case H2_H2LOADER_E2E_CASE_APP_SEND:
-    return require_case_active_role(
-        context, run_send(context), H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND:
-  case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL:
-    return require_case_active_role(
-        context,
-        run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT),
-        H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
-  case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND:
-  case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL:
-    return require_case_active_role(
-        context,
-        run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT),
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_SEND_URL:
-    return require_case_active_role(
-        context, run_send_url(context), H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
-  case H2_H2LOADER_E2E_CASE_APP_SEND_URL:
-    return require_case_active_role(
-        context, run_send_url(context), H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-  case H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE:
-    return run_reboot_preserves_stage(
-        context, H2_H2LOADER_HOST_COMMAND_REBOOT_APP, 2u,
-        &context->loader_asset, context->config->loader_firmware,
-        context->config->loader_firmware_size);
-  case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_PRESERVES_STAGE:
-    return run_reboot_preserves_stage(
-        context, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER, 1u,
-        &context->app_asset, context->config->app_firmware,
-        context->config->app_firmware_size);
-  case H2_H2LOADER_E2E_CASE_INSTALL_APP:
-    return run_install(context, &context->app_asset,
-                       context->config->app_firmware,
-                       context->config->app_firmware_size);
-  case H2_H2LOADER_E2E_CASE_INSTALL_LOADER:
-    return run_install(context, &context->loader_asset,
-                       context->config->loader_firmware,
-                       context->config->loader_firmware_size);
-  case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS:
-    return run_coredump_status(context, context->expected_coredump_bytes, 0);
-  case H2_H2LOADER_E2E_CASE_COREDUMP_DUMP:
-    return run_coredump_dump(context);
-  case H2_H2LOADER_E2E_CASE_COREDUMP_ERASE:
-    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE);
-  case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE:
-    return run_coredump_status(context, 0u, 1);
-  case H2_H2LOADER_E2E_CASE_MONITOR:
-    return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
-               ? run_monitor(context)
-               : H2_PAL_ERR_UNSUPPORTED;
-  case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR:
-    return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
-               ? run_reboot_monitor(context,
-                                    H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER, 1u)
-               : H2_PAL_ERR_UNSUPPORTED;
-  case H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR:
-    return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
-               ? run_reboot_monitor(context,
-                                    H2_H2LOADER_HOST_COMMAND_REBOOT_APP, 2u)
-               : H2_PAL_ERR_UNSUPPORTED;
-  case H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR:
-    return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
-               ? run_install_monitor(context, &context->app_asset,
-                                     context->config->app_firmware,
-                                     context->config->app_firmware_size)
-               : H2_PAL_ERR_UNSUPPORTED;
-  case H2_H2LOADER_E2E_CASE_INSTALL_CRASH_APP:
-    return run_install_crash_app(context);
-  default:
-    return H2_PAL_ERR_INVALID_ARG;
+    case H2_H2LOADER_E2E_CASE_HELP:
+      return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_HELP);
+    case H2_H2LOADER_E2E_CASE_STATUS:
+      return run_status(context);
+    case H2_H2LOADER_E2E_CASE_STATS:
+      return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS);
+    case H2_H2LOADER_E2E_CASE_MEMORY:
+      return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_MEMORY);
+    case H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT:
+      return run_legacy_commands_absent(context);
+    case H2_H2LOADER_E2E_CASE_WIFI_SCAN:
+      return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN);
+    case H2_H2LOADER_E2E_CASE_WIFI_CONNECT:
+      return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT);
+    case H2_H2LOADER_E2E_CASE_WIFI_DISCONNECT:
+      return run_wifi_command(context,
+                              H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT);
+    case H2_H2LOADER_E2E_CASE_APP_HELP:
+      return require_case_active_role(
+          context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_HELP),
+          H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_APP_STATUS:
+      return require_case_active_role(context, run_status(context),
+                                      H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_APP_STATS:
+      return require_case_active_role(
+          context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS),
+          H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_APP_MEMORY:
+      return require_case_active_role(
+          context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_MEMORY),
+          H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT:
+      return require_case_active_role(context,
+                                      run_legacy_commands_absent(context),
+                                      H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_APP_WIFI_SCAN:
+      return require_case_active_role(
+          context,
+          run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN),
+          H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_APP_WIFI_CONNECT:
+      return require_case_active_role(
+          context,
+          run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT),
+          H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_APP_WIFI_DISCONNECT:
+      return require_case_active_role(
+          context,
+          run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT),
+          H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_SEND:
+      return require_case_active_role(context, run_send(context),
+                                      H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
+    case H2_H2LOADER_E2E_CASE_APP_SEND:
+      return require_case_active_role(context, run_send(context),
+                                      H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND:
+    case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL:
+      return require_case_active_role(
+          context,
+          run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT),
+          H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
+    case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND:
+    case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL:
+      return require_case_active_role(
+          context,
+          run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT),
+          H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_SEND_URL:
+      return require_case_active_role(context, run_send_url(context),
+                                      H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
+    case H2_H2LOADER_E2E_CASE_APP_SEND_URL:
+      return require_case_active_role(context, run_send_url(context),
+                                      H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    case H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE:
+      return run_reboot_preserves_stage(
+          context, H2_H2LOADER_HOST_COMMAND_REBOOT_APP, 2u,
+          &context->loader_asset, context->config->loader_firmware,
+          context->config->loader_firmware_size);
+    case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_PRESERVES_STAGE:
+      return run_reboot_preserves_stage(
+          context, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER, 1u,
+          &context->app_asset, context->config->app_firmware,
+          context->config->app_firmware_size);
+    case H2_H2LOADER_E2E_CASE_INSTALL_APP:
+      return run_install(context, &context->app_asset,
+                         context->config->app_firmware,
+                         context->config->app_firmware_size);
+    case H2_H2LOADER_E2E_CASE_INSTALL_LOADER:
+      return run_install(context, &context->loader_asset,
+                         context->config->loader_firmware,
+                         context->config->loader_firmware_size);
+    case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS:
+      return run_coredump_status(context, context->expected_coredump_bytes, 0);
+    case H2_H2LOADER_E2E_CASE_COREDUMP_DUMP:
+      return run_coredump_dump(context);
+    case H2_H2LOADER_E2E_CASE_COREDUMP_ERASE:
+      return run_simple_command(context,
+                                H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE);
+    case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE:
+      return run_coredump_status(context, 0u, 1);
+    case H2_H2LOADER_E2E_CASE_MONITOR:
+      return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
+                 ? run_monitor(context)
+                 : H2_PAL_ERR_UNSUPPORTED;
+    case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR:
+      return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
+                 ? run_reboot_monitor(
+                       context, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER, 1u)
+                 : H2_PAL_ERR_UNSUPPORTED;
+    case H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR:
+      return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
+                 ? run_reboot_monitor(context,
+                                      H2_H2LOADER_HOST_COMMAND_REBOOT_APP, 2u)
+                 : H2_PAL_ERR_UNSUPPORTED;
+    case H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR:
+      return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
+                 ? run_install_monitor(context, &context->app_asset,
+                                       context->config->app_firmware,
+                                       context->config->app_firmware_size)
+                 : H2_PAL_ERR_UNSUPPORTED;
+    case H2_H2LOADER_E2E_CASE_INSTALL_CRASH_APP:
+      return run_install_crash_app(context);
+    default:
+      return H2_PAL_ERR_INVALID_ARG;
   }
 }
 
-static h2_pal_result_t
-inspect_firmware(const h2_h2loader_e2e_config_t *config,
-                 const uint8_t *firmware, size_t firmware_size,
-                 h2_h2loader_host_catalog_entry_t *out_asset) {
+static h2_pal_result_t inspect_firmware(
+    const h2_h2loader_e2e_config_t* config, const uint8_t* firmware,
+    size_t firmware_size, h2_h2loader_host_catalog_entry_t* out_asset) {
   const h2_e2e_memory_source_t source = {
       .data = firmware,
       .size = firmware_size,
@@ -1557,21 +1563,22 @@ inspect_firmware(const h2_h2loader_e2e_config_t *config,
   const h2_h2loader_host_package_inspect_config_t inspect = {
       .allocator = config->runtime->mem,
       .read_payload = memory_read,
-      .payload_user = (void *)&source,
+      .payload_user = (void*)&source,
       .payload_bytes = firmware_size,
   };
   return h2_h2loader_host_package_inspect(&inspect, out_asset);
 }
 
-static int skipped_stream_guards(const h2_h2loader_e2e_package_t *package,
-                                  size_t index) {
+static int skipped_stream_guards(const h2_h2loader_e2e_package_t* package,
+                                 size_t index) {
   if (index == 0u || index == 4u) return 1;
   size_t offset = 0u;
   unsigned guards = 0u;
   while (offset <= package->size && package->size - offset >= 512u) {
     h2_bundle_entry_t entry;
     int header = 0;
-    if (h2_bundle_tar_parse_header(package->data + offset, &entry, &header) != H2_PAL_OK)
+    if (h2_bundle_tar_parse_header(package->data + offset, &entry, &header) !=
+        H2_PAL_OK)
       return 0;
     if (header == H2_BUNDLE_TAR_HEADER_ZERO) break;
     offset += 512u;
@@ -1592,72 +1599,80 @@ static int skipped_stream_guards(const h2_h2loader_e2e_package_t *package,
 }
 
 static h2_pal_result_t prepare_checksum_packages(
-    const h2_h2loader_e2e_config_t *config, h2_e2e_transport_context_t *context) {
+    const h2_h2loader_e2e_config_t* config,
+    h2_e2e_transport_context_t* context) {
   for (size_t format = 0u; format < 2u; ++format) {
     if ((config->checksum_formats & (1u << format)) == 0u) continue;
-    for (size_t index = 0u; index < H2_H2LOADER_E2E_CHECKSUM_PACKAGES; ++index) {
-      const h2_h2loader_e2e_package_t *package = &config->checksum_packages[format][index];
-      h2_h2loader_host_catalog_entry_t *asset = &context->checksum_assets[format][index];
-      h2_pal_result_t rc = inspect_firmware(config, package->data, package->size, asset);
+    for (size_t index = 0u; index < H2_H2LOADER_E2E_CHECKSUM_PACKAGES;
+         ++index) {
+      const h2_h2loader_e2e_package_t* package =
+          &config->checksum_packages[format][index];
+      h2_h2loader_host_catalog_entry_t* asset =
+          &context->checksum_assets[format][index];
+      h2_pal_result_t rc =
+          inspect_firmware(config, package->data, package->size, asset);
       if (rc != H2_PAL_OK) return rc;
       if (asset->role != H2_H2LOADER_HOST_ASSET_ROLE_APP ||
-          asset->package_format != format + 1u || !sha256_valid(asset->data_sha256) ||
-          (config->expected_board && strcmp(config->expected_board, asset->board) != 0) ||
-          (config->expected_target && strcmp(config->expected_target, asset->target) != 0))
+          asset->package_format != format + 1u ||
+          !sha256_valid(asset->data_sha256) ||
+          (config->expected_board &&
+           strcmp(config->expected_board, asset->board) != 0) ||
+          (config->expected_target &&
+           strcmp(config->expected_target, asset->target) != 0))
         return H2_PAL_ERR_FORMAT;
-      if (format == 1u && !skipped_stream_guards(package, index)) return H2_PAL_ERR_FORMAT;
+      if (format == 1u && !skipped_stream_guards(package, index))
+        return H2_PAL_ERR_FORMAT;
       if (index == 0u) continue;
-      const h2_h2loader_host_catalog_entry_t *before = &context->checksum_assets[format][index - 1u];
+      const h2_h2loader_host_catalog_entry_t* before =
+          &context->checksum_assets[format][index - 1u];
       int app_changed = strcmp(before->image_sha256, asset->image_sha256) != 0;
       int data_changed = strcmp(before->data_sha256, asset->data_sha256) != 0;
-      if (strcmp(before->board, asset->board) != 0 || strcmp(before->target, asset->target) != 0 ||
+      if (strcmp(before->board, asset->board) != 0 ||
+          strcmp(before->target, asset->target) != 0 ||
           app_changed != (index == 2u || index == 4u) ||
-          data_changed != (index == 3u || index == 4u)) return H2_PAL_ERR_FORMAT;
+          data_changed != (index == 3u || index == 4u))
+        return H2_PAL_ERR_FORMAT;
       if (!app_changed && strcmp(before->version, asset->version) != 0)
         return H2_PAL_ERR_FORMAT;
     }
   }
   if (config->checksum_formats == 3u) {
-    for (size_t index = 0u; index < H2_H2LOADER_E2E_CHECKSUM_PACKAGES; ++index) {
-      const h2_h2loader_host_catalog_entry_t *a = &context->checksum_assets[0][index];
-      const h2_h2loader_host_catalog_entry_t *b = &context->checksum_assets[1][index];
-      if (strcmp(a->board, b->board) != 0 || strcmp(a->target, b->target) != 0 ||
+    for (size_t index = 0u; index < H2_H2LOADER_E2E_CHECKSUM_PACKAGES;
+         ++index) {
+      const h2_h2loader_host_catalog_entry_t* a =
+          &context->checksum_assets[0][index];
+      const h2_h2loader_host_catalog_entry_t* b =
+          &context->checksum_assets[1][index];
+      if (strcmp(a->board, b->board) != 0 ||
+          strcmp(a->target, b->target) != 0 ||
           strcmp(a->image_sha256, b->image_sha256) != 0 ||
-          strcmp(a->data_sha256, b->data_sha256) != 0 || strcmp(a->version, b->version) != 0)
+          strcmp(a->data_sha256, b->data_sha256) != 0 ||
+          strcmp(a->version, b->version) != 0)
         return H2_PAL_ERR_FORMAT;
     }
   }
   return H2_PAL_OK;
 }
 
-static size_t cases_per_transport(const h2_h2loader_e2e_config_t *config) {
+static size_t cases_per_transport(const h2_h2loader_e2e_config_t* config) {
   size_t count = 5u;
   if (config->checksum_formats == 3u) count += 8u;
   if (config->checksum_formats & 1u) count += H2_H2LOADER_E2E_CHECKSUM_PACKAGES;
   if (config->checksum_formats & 2u) count += H2_H2LOADER_E2E_CHECKSUM_PACKAGES;
-  if (config->include_wifi)
-    count += 3u;
-  if (config->include_send)
-    count += 2u;
-  if (config->include_send_url)
-    count += 2u;
-  if (config->include_lifecycle)
-    count += 4u;
-  if (config->include_lifecycle)
-    count += 5u;
-  if (config->include_lifecycle && config->include_wifi)
-    count += 3u;
-  if (config->include_lifecycle && config->include_send)
-    count += 2u;
-  if (config->include_lifecycle && config->include_send_url)
-    count += 2u;
-  if (config->include_coredump)
-    count += 4u;
+  if (config->include_wifi) count += 3u;
+  if (config->include_send) count += 2u;
+  if (config->include_send_url) count += 2u;
+  if (config->include_lifecycle) count += 4u;
+  if (config->include_lifecycle) count += 5u;
+  if (config->include_lifecycle && config->include_wifi) count += 3u;
+  if (config->include_lifecycle && config->include_send) count += 2u;
+  if (config->include_lifecycle && config->include_send_url) count += 2u;
+  if (config->include_coredump) count += 4u;
   return count;
 }
 
-static size_t
-total_cases_per_iteration(const h2_h2loader_e2e_config_t *config) {
+static size_t total_cases_per_iteration(
+    const h2_h2loader_e2e_config_t* config) {
   const size_t transports = (config->uart_endpoint != NULL ? 1u : 0u) +
                             (config->ble_endpoint != NULL ? 1u : 0u);
   return cases_per_transport(config) * transports +
@@ -1665,7 +1680,7 @@ total_cases_per_iteration(const h2_h2loader_e2e_config_t *config) {
          (config->include_crash ? 1u : 0u);
 }
 
-static int config_valid(const h2_h2loader_e2e_config_t *config) {
+static int config_valid(const h2_h2loader_e2e_config_t* config) {
   if (config == NULL || config->repeat_count == 0u ||
       (config->uart_endpoint == NULL && config->ble_endpoint == NULL)) {
     return 0;
@@ -1687,7 +1702,8 @@ static int config_valid(const h2_h2loader_e2e_config_t *config) {
       if ((config->checksum_formats & (1u << f)) == 0u) continue;
       for (size_t i = 0u; i < H2_H2LOADER_E2E_CHECKSUM_PACKAGES; ++i)
         if (config->checksum_packages[f][i].data == NULL ||
-            config->checksum_packages[f][i].size == 0u) return 0;
+            config->checksum_packages[f][i].size == 0u)
+          return 0;
     }
   }
   if (config->include_wifi &&
@@ -1729,12 +1745,12 @@ static int config_valid(const h2_h2loader_e2e_config_t *config) {
          H2_H2LOADER_E2E_MAX_CASES;
 }
 
-static void append_case(const h2_h2loader_e2e_config_t *config,
-                        h2_h2loader_e2e_result_t *result,
-                        h2_e2e_transport_context_t *context,
+static void append_case(const h2_h2loader_e2e_config_t* config,
+                        h2_h2loader_e2e_result_t* result,
+                        h2_e2e_transport_context_t* context,
                         h2_h2loader_e2e_transport_t transport,
                         h2_h2loader_e2e_case_t test_case, uint32_t iteration) {
-  h2_h2loader_e2e_case_result_t *entry = &result->cases[result->case_count++];
+  h2_h2loader_e2e_case_result_t* entry = &result->cases[result->case_count++];
   memset(entry, 0, sizeof(*entry));
   entry->transport = transport;
   entry->test_case = test_case;
@@ -1748,8 +1764,7 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
   context->coredump_terminal_bytes = 0u;
   context->coredump_terminal_seen = 0u;
   context->monitor_output_bytes = 0u;
-  if (config->on_case != NULL)
-    config->on_case(config->case_user, entry, 1);
+  if (config->on_case != NULL) config->on_case(config->case_user, entry, 1);
   uint64_t started = 0u;
   uint64_t finished = 0u;
   (void)now_ms(config, &started);
@@ -1757,12 +1772,15 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
   int matrix_case = checksum_case_index(test_case, &format, &index);
   size_t source_format = 0u;
   int cross_case = cross_case_index(test_case, &source_format, &format, &index);
-  entry->result = cancelled(config) ? H2_PAL_EXIT :
-      matrix_case && (context->checksum_failed[format] ||
-          (cross_case && context->checksum_failed[source_format])) ? H2_PAL_ERR_INVALID_STATE : config->execute_case != NULL
-                      ? config->execute_case(config->execute_user, transport,
-                                             test_case, entry)
-                      : execute_real_case(context, test_case);
+  entry->result =
+      cancelled(config) ? H2_PAL_EXIT
+      : matrix_case && (context->checksum_failed[format] ||
+                        (cross_case && context->checksum_failed[source_format]))
+          ? H2_PAL_ERR_INVALID_STATE
+      : config->execute_case != NULL
+          ? config->execute_case(config->execute_user, transport, test_case,
+                                 entry)
+          : execute_real_case(context, test_case);
   if (entry->result == H2_PAL_OK &&
       test_case == H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT &&
       (!context->authoritative_command_availability_valid ||
@@ -1774,12 +1792,14 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
   entry->elapsed_ms = finished >= started ? finished - started : 0u;
   size_t checksum_format, checksum_index;
   if (checksum_case_index(test_case, &checksum_format, &checksum_index)) {
-    const h2_h2loader_host_catalog_entry_t *asset = &context->checksum_assets[checksum_format][checksum_index];
+    const h2_h2loader_host_catalog_entry_t* asset =
+        &context->checksum_assets[checksum_format][checksum_index];
     entry->package_format = (uint32_t)checksum_format + 1u;
     if (cross_case) entry->source_package_format = (uint32_t)source_format + 1u;
     memcpy(entry->package_sha256, asset->sha256, sizeof(entry->package_sha256));
     if (entry->result == H2_PAL_OK)
-      entry->result = verify_checksum_result(context, checksum_format, checksum_index, entry);
+      entry->result = verify_checksum_result(context, checksum_format,
+                                             checksum_index, entry);
     if (entry->result != H2_PAL_OK) {
       entry->data_checksum_valid = 0u;
       context->checksum_failed[checksum_format] = 1u;
@@ -1789,16 +1809,14 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
     ++result->passed;
   } else {
     ++result->failed;
-    if (result->result == H2_PAL_OK)
-      result->result = entry->result;
+    if (result->result == H2_PAL_OK) result->result = entry->result;
   }
-  if (config->on_case != NULL)
-    config->on_case(config->case_user, entry, 0);
+  if (config->on_case != NULL) config->on_case(config->case_user, entry, 0);
 }
 
-static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
-                                    h2_h2loader_e2e_result_t *result,
-                                    h2_e2e_transport_context_t *context,
+static void run_transport_iteration(const h2_h2loader_e2e_config_t* config,
+                                    h2_h2loader_e2e_result_t* result,
+                                    h2_e2e_transport_context_t* context,
                                     h2_h2loader_e2e_transport_t transport,
                                     uint32_t iteration) {
   context->transport = transport;
@@ -1812,7 +1830,7 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
               iteration);
   append_case(config, result, context, transport, H2_H2LOADER_E2E_CASE_STATS,
               iteration);
-  const h2_h2loader_e2e_case_result_t *status_case =
+  const h2_h2loader_e2e_case_result_t* status_case =
       &result->cases[status_case_index];
   if (status_case->result == H2_PAL_OK && status_case->status_valid) {
     context->authoritative_command_availability =
@@ -1858,12 +1876,12 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
     }
   }
   if (config->include_lifecycle) {
-    append_case(config, result, context, transport,
-                config->include_monitor &&
-                        transport == H2_H2LOADER_E2E_TRANSPORT_UART
-                    ? H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR
-                    : H2_H2LOADER_E2E_CASE_INSTALL_APP,
-                iteration);
+    append_case(
+        config, result, context, transport,
+        config->include_monitor && transport == H2_H2LOADER_E2E_TRANSPORT_UART
+            ? H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR
+            : H2_H2LOADER_E2E_CASE_INSTALL_APP,
+        iteration);
     if (config->include_monitor &&
         transport == H2_H2LOADER_E2E_TRANSPORT_UART) {
       append_case(config, result, context, transport,
@@ -1876,16 +1894,14 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
                 H2_H2LOADER_E2E_CASE_APP_STATUS, iteration);
     append_case(config, result, context, transport,
                 H2_H2LOADER_E2E_CASE_APP_STATS, iteration);
-    const h2_h2loader_e2e_case_result_t *app_status_case =
+    const h2_h2loader_e2e_case_result_t* app_status_case =
         &result->cases[app_status_case_index];
-    if (app_status_case->result == H2_PAL_OK &&
-        app_status_case->status_valid) {
+    if (app_status_case->result == H2_PAL_OK && app_status_case->status_valid) {
       context->authoritative_command_availability =
           app_status_case->status.command_availability;
       context->authoritative_command_availability_valid = 1u;
     }
-    if (app_status_case->result == H2_PAL_OK &&
-        app_status_case->status_valid &&
+    if (app_status_case->result == H2_PAL_OK && app_status_case->status_valid &&
         (app_status_case->status.command_availability &
          H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY) != 0u) {
       append_case(config, result, context, transport,
@@ -1924,22 +1940,27 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
   for (size_t format = 0u; format < 2u; ++format) {
     if ((config->checksum_formats & (1u << format)) == 0u) continue;
     for (size_t index = 0u; index < H2_H2LOADER_E2E_CHECKSUM_PACKAGES; ++index)
-      append_case(config, result, context, transport,
+      append_case(
+          config, result, context, transport,
           (h2_h2loader_e2e_case_t)(H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE +
-            format * H2_H2LOADER_E2E_CHECKSUM_PACKAGES + index), iteration);
+                                   format * H2_H2LOADER_E2E_CHECKSUM_PACKAGES +
+                                   index),
+          iteration);
   }
   if (config->checksum_formats == 3u) {
     for (size_t direction = 0u; direction < 2u; ++direction)
       for (size_t index = 0u; index < 4u; ++index)
-        append_case(config, result, context, transport,
+        append_case(
+            config, result, context, transport,
             (h2_h2loader_e2e_case_t)(H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED +
-                                      direction * 4u + index), iteration);
+                                     direction * 4u + index),
+            iteration);
   }
 }
 
-static void run_coredump_read_cases(const h2_h2loader_e2e_config_t *config,
-                                    h2_h2loader_e2e_result_t *result,
-                                    h2_e2e_transport_context_t *context,
+static void run_coredump_read_cases(const h2_h2loader_e2e_config_t* config,
+                                    h2_h2loader_e2e_result_t* result,
+                                    h2_e2e_transport_context_t* context,
                                     h2_h2loader_e2e_transport_t transport,
                                     uint32_t iteration) {
   context->transport = transport;
@@ -1949,9 +1970,9 @@ static void run_coredump_read_cases(const h2_h2loader_e2e_config_t *config,
               H2_H2LOADER_E2E_CASE_COREDUMP_DUMP, iteration);
 }
 
-static void run_coredump_cleanup_cases(const h2_h2loader_e2e_config_t *config,
-                                       h2_h2loader_e2e_result_t *result,
-                                       h2_e2e_transport_context_t *context,
+static void run_coredump_cleanup_cases(const h2_h2loader_e2e_config_t* config,
+                                       h2_h2loader_e2e_result_t* result,
+                                       h2_e2e_transport_context_t* context,
                                        h2_h2loader_e2e_transport_t transport,
                                        uint32_t iteration) {
   context->transport = transport;
@@ -1961,10 +1982,9 @@ static void run_coredump_cleanup_cases(const h2_h2loader_e2e_config_t *config,
               H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE, iteration);
 }
 
-h2_pal_result_t h2_h2loader_e2e_run(const h2_h2loader_e2e_config_t *config,
-                                    h2_h2loader_e2e_result_t *out_result) {
-  if (out_result != NULL)
-    memset(out_result, 0, sizeof(*out_result));
+h2_pal_result_t h2_h2loader_e2e_run(const h2_h2loader_e2e_config_t* config,
+                                    h2_h2loader_e2e_result_t* out_result) {
+  if (out_result != NULL) memset(out_result, 0, sizeof(*out_result));
   if (out_result == NULL || !config_valid(config)) {
     if (out_result != NULL) {
       out_result->result = H2_PAL_ERR_INVALID_ARG;

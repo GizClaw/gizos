@@ -33,19 +33,19 @@ typedef struct h2_bloomspeaker_encoded_frame {
 } h2_bloomspeaker_encoded_frame_t;
 
 struct h2_bloomspeaker_audio {
-  h2_runtime_t *runtime;
-  h2_bloomspeaker_controller_t *controller;
+  h2_runtime_t* runtime;
+  h2_bloomspeaker_controller_t* controller;
   h2_audio_info_t info;
-  h2_pal_mutex_t *stream_mutex;
-  h2_pal_task_t *capture_task;
+  h2_pal_mutex_t* stream_mutex;
+  h2_pal_task_t* capture_task;
   h2_atomic_int_t stop;
   h2_atomic_bool_t stream_active;
   h2_atomic_bool_t reset_accumulator;
-  h2_bleikcp_t *stream;
-  OpusEncoder *encoder;
-  int16_t *mic_buffer;
+  h2_bleikcp_t* stream;
+  OpusEncoder* encoder;
+  int16_t* mic_buffer;
   size_t mic_buffer_bytes;
-  int16_t *accumulator;
+  int16_t* accumulator;
   size_t accumulator_capacity;
   size_t accumulator_count;
   uint16_t tx_sequence;
@@ -53,40 +53,39 @@ struct h2_bloomspeaker_audio {
   h2_atomic_u32_t tx_dropped;
 };
 
-static void log_audio_stats(h2_bloomspeaker_audio_t *audio,
-                            uint32_t rx_frames, uint32_t missing_frames,
-                            uint32_t fec_frames, uint32_t plc_frames) {
+static void log_audio_stats(h2_bloomspeaker_audio_t* audio, uint32_t rx_frames,
+                            uint32_t missing_frames, uint32_t fec_frames,
+                            uint32_t plc_frames) {
   if (audio->runtime->log == NULL) {
     return;
   }
   uint32_t speaker_percent = 0u;
   (void)h2_pal_audio_get_speaker_volume_percent(audio->runtime->audio,
-                                                 &speaker_percent);
+                                                &speaker_percent);
   char message[192];
   (void)snprintf(
       message, sizeof(message),
       "tx=%u tx_drop=%u rx=%u missing=%u fec=%u plc=%u "
       "speaker=%u%% track=1000",
       (unsigned)h2_atomic_load_explicit(&audio->tx_sent, H2_ATOMIC_RELAXED),
-      (unsigned)h2_atomic_load_explicit(&audio->tx_dropped,
-                                     H2_ATOMIC_RELAXED),
+      (unsigned)h2_atomic_load_explicit(&audio->tx_dropped, H2_ATOMIC_RELAXED),
       (unsigned)rx_frames, (unsigned)missing_frames, (unsigned)fec_frames,
       (unsigned)plc_frames, (unsigned)speaker_percent);
   (void)h2_pal_log_write(audio->runtime->log, H2_PAL_LOG_INFO,
                          "lua-bloomspeaker/audio", message);
 }
 
-static void write_u16(uint8_t *out, uint16_t value) {
+static void write_u16(uint8_t* out, uint16_t value) {
   out[0] = (uint8_t)value;
   out[1] = (uint8_t)(value >> 8u);
 }
 
-static uint16_t read_u16(const uint8_t *data) {
+static uint16_t read_u16(const uint8_t* data) {
   return (uint16_t)((uint16_t)data[0] | (uint16_t)data[1] << 8u);
 }
 
-static void pcm_level(const int16_t *pcm, size_t samples, float *out_level,
-                      float *out_peak) {
+static void pcm_level(const int16_t* pcm, size_t samples, float* out_level,
+                      float* out_peak) {
   double squares = 0.0;
   int32_t peak = 0;
   for (size_t index = 0u; index < samples; ++index) {
@@ -97,19 +96,18 @@ static void pcm_level(const int16_t *pcm, size_t samples, float *out_level,
     }
     squares += (double)value * (double)value;
   }
-  *out_level = samples == 0u
-                   ? 0.0f
-                   : (float)(sqrt(squares / (double)samples) / 32768.0);
+  *out_level =
+      samples == 0u ? 0.0f : (float)(sqrt(squares / (double)samples) / 32768.0);
   *out_peak = (float)peak / 32768.0f;
 }
 
-static int send_pcm(h2_bloomspeaker_audio_t *audio, const int16_t *pcm) {
+static int send_pcm(h2_bloomspeaker_audio_t* audio, const int16_t* pcm) {
   uint8_t packet[H2_BLOOMSPEAKER_AUDIO_HEADER_SIZE +
                  H2_BLOOMSPEAKER_AUDIO_PACKET_MAX];
-  int encoded = opus_encode(audio->encoder, pcm,
-                            H2_BLOOMSPEAKER_AUDIO_FRAME_SAMPLES,
-                            packet + H2_BLOOMSPEAKER_AUDIO_HEADER_SIZE,
-                            H2_BLOOMSPEAKER_AUDIO_PACKET_MAX);
+  int encoded =
+      opus_encode(audio->encoder, pcm, H2_BLOOMSPEAKER_AUDIO_FRAME_SAMPLES,
+                  packet + H2_BLOOMSPEAKER_AUDIO_HEADER_SIZE,
+                  H2_BLOOMSPEAKER_AUDIO_PACKET_MAX);
   if (encoded < 0) {
     return H2_PAL_ERR_IO;
   }
@@ -122,33 +120,33 @@ static int send_pcm(h2_bloomspeaker_audio_t *audio, const int16_t *pcm) {
   int result = H2_PAL_OK;
   if (audio->stream != NULL) {
     write_u16(packet + 1u, audio->tx_sequence++);
-    result = h2_bleikcp_write(
-        audio->stream, packet,
-        H2_BLOOMSPEAKER_AUDIO_HEADER_SIZE + (size_t)encoded,
-        H2_BLOOMSPEAKER_AUDIO_TX_TIMEOUT_MS);
+    result =
+        h2_bleikcp_write(audio->stream, packet,
+                         H2_BLOOMSPEAKER_AUDIO_HEADER_SIZE + (size_t)encoded,
+                         H2_BLOOMSPEAKER_AUDIO_TX_TIMEOUT_MS);
     if (result == H2_PAL_ERR_TIMEOUT || result == H2_PAL_ERR_WOULD_BLOCK) {
       /* Real-time audio drops a late capture frame instead of growing delay. */
       (void)h2_atomic_fetch_add_explicit(&audio->tx_dropped, 1u,
-                                      H2_ATOMIC_RELAXED);
+                                         H2_ATOMIC_RELAXED);
       result = H2_PAL_OK;
     } else if (result == H2_PAL_OK) {
       (void)h2_atomic_fetch_add_explicit(&audio->tx_sent, 1u,
-                                      H2_ATOMIC_RELAXED);
+                                         H2_ATOMIC_RELAXED);
     }
   }
   (void)h2_pal_mutex_unlock(audio->runtime->sync, audio->stream_mutex);
   return result;
 }
 
-static int process_capture(h2_bloomspeaker_audio_t *audio,
-                           const h2_audio_frame_t *frame) {
+static int process_capture(h2_bloomspeaker_audio_t* audio,
+                           const h2_audio_frame_t* frame) {
   size_t samples = frame->bytes / sizeof(int16_t);
   float level = 0.0f;
   float peak = 0.0f;
   pcm_level(frame->data, samples, &level, &peak);
   h2_bloomspeaker_controller_set_local_levels(audio->controller, level, peak);
   if (h2_atomic_exchange_explicit(&audio->reset_accumulator, false,
-                               H2_ATOMIC_ACQ_REL)) {
+                                  H2_ATOMIC_ACQ_REL)) {
     audio->accumulator_count = 0u;
   }
   if (!h2_atomic_load_explicit(&audio->stream_active, H2_ATOMIC_ACQUIRE)) {
@@ -179,8 +177,8 @@ static int process_capture(h2_bloomspeaker_audio_t *audio,
   return H2_PAL_OK;
 }
 
-static void capture_task(void *context) {
-  h2_bloomspeaker_audio_t *audio = context;
+static void capture_task(void* context) {
+  h2_bloomspeaker_audio_t* audio = context;
   while (!h2_atomic_load_explicit(&audio->stop, H2_ATOMIC_ACQUIRE)) {
     h2_audio_frame_t frame = h2_audio_frame_for_buffer(
         audio->mic_buffer, audio->mic_buffer_bytes, audio->info.mic_format);
@@ -194,8 +192,7 @@ static void capture_task(void *context) {
   }
 }
 
-static int set_stream(h2_bloomspeaker_audio_t *audio,
-                      h2_bleikcp_t *stream) {
+static int set_stream(h2_bloomspeaker_audio_t* audio, h2_bleikcp_t* stream) {
   int result = h2_pal_mutex_lock(audio->runtime->sync, audio->stream_mutex);
   if (result == H2_PAL_OK) {
     audio->stream = stream;
@@ -204,30 +201,28 @@ static int set_stream(h2_bloomspeaker_audio_t *audio,
       h2_atomic_store_explicit(&audio->tx_sent, 0u, H2_ATOMIC_RELAXED);
       h2_atomic_store_explicit(&audio->tx_dropped, 0u, H2_ATOMIC_RELAXED);
       h2_atomic_store_explicit(&audio->reset_accumulator, true,
-                            H2_ATOMIC_RELEASE);
+                               H2_ATOMIC_RELEASE);
     }
     h2_atomic_store_explicit(&audio->stream_active, stream != NULL,
-                          H2_ATOMIC_RELEASE);
+                             H2_ATOMIC_RELEASE);
     result = h2_pal_mutex_unlock(audio->runtime->sync, audio->stream_mutex);
   }
   return result;
 }
 
-static int read_exact(h2_bloomspeaker_audio_t *audio, h2_bleikcp_t *stream,
-                      uint8_t *out, size_t size, uint64_t *last_rx_ms,
+static int read_exact(h2_bloomspeaker_audio_t* audio, h2_bleikcp_t* stream,
+                      uint8_t* out, size_t size, uint64_t* last_rx_ms,
                       h2_bloomspeaker_audio_session_active_fn active,
-                      void *active_user) {
+                      void* active_user) {
   size_t offset = 0u;
   while (offset < size && active(active_user)) {
     size_t received = 0u;
-    int result = h2_bleikcp_read(stream, out + offset, size - offset,
-                                 &received,
+    int result = h2_bleikcp_read(stream, out + offset, size - offset, &received,
                                  H2_BLOOMSPEAKER_AUDIO_RX_TIMEOUT_MS);
     if (result == H2_PAL_OK) {
       offset += received;
-      if (received > 0u &&
-          h2_pal_time_get_monotonic_ms(audio->runtime->time, last_rx_ms) !=
-              H2_PAL_OK) {
+      if (received > 0u && h2_pal_time_get_monotonic_ms(
+                               audio->runtime->time, last_rx_ms) != H2_PAL_OK) {
         return H2_PAL_ERR_IO;
       }
     } else if (result != H2_PAL_ERR_TIMEOUT &&
@@ -240,8 +235,7 @@ static int read_exact(h2_bloomspeaker_audio_t *audio, h2_bleikcp_t *stream,
         return H2_PAL_ERR_IO;
       }
       if (now_ms >= *last_rx_ms &&
-          now_ms - *last_rx_ms >=
-              H2_BLOOMSPEAKER_AUDIO_RX_STALL_TIMEOUT_MS) {
+          now_ms - *last_rx_ms >= H2_BLOOMSPEAKER_AUDIO_RX_STALL_TIMEOUT_MS) {
         return H2_PAL_ERR_TIMEOUT;
       }
     }
@@ -249,10 +243,12 @@ static int read_exact(h2_bloomspeaker_audio_t *audio, h2_bleikcp_t *stream,
   return offset == size ? H2_PAL_OK : H2_PAL_ERR_CLOSED;
 }
 
-static int read_encoded_frame(
-    h2_bloomspeaker_audio_t *audio, h2_bleikcp_t *stream,
-    h2_bloomspeaker_encoded_frame_t *out, uint64_t *last_rx_ms,
-    h2_bloomspeaker_audio_session_active_fn active, void *active_user) {
+static int read_encoded_frame(h2_bloomspeaker_audio_t* audio,
+                              h2_bleikcp_t* stream,
+                              h2_bloomspeaker_encoded_frame_t* out,
+                              uint64_t* last_rx_ms,
+                              h2_bloomspeaker_audio_session_active_fn active,
+                              void* active_user) {
   uint8_t header[H2_BLOOMSPEAKER_AUDIO_HEADER_SIZE];
   int result = read_exact(audio, stream, header, sizeof(header), last_rx_ms,
                           active, active_user);
@@ -270,17 +266,16 @@ static int read_encoded_frame(
                     active_user);
 }
 
-static int write_decoded(h2_bloomspeaker_audio_t *audio,
-                         h2_pal_audio_track_t *track, OpusDecoder *decoder,
-                         const uint8_t *packet, size_t packet_size,
-                         int decode_fec,
-                         int16_t *playback_buffer,
-                         size_t playback_capacity,
-                         size_t *playback_count) {
+static int write_decoded(h2_bloomspeaker_audio_t* audio,
+                         h2_pal_audio_track_t* track, OpusDecoder* decoder,
+                         const uint8_t* packet, size_t packet_size,
+                         int decode_fec, int16_t* playback_buffer,
+                         size_t playback_capacity, size_t* playback_count) {
   int16_t pcm[H2_BLOOMSPEAKER_AUDIO_DECODE_MAX_SAMPLES];
-  const int frame_capacity = decode_fec || packet == NULL
-                                 ? (int)H2_BLOOMSPEAKER_AUDIO_FRAME_SAMPLES
-                                 : (int)H2_BLOOMSPEAKER_AUDIO_DECODE_MAX_SAMPLES;
+  const int frame_capacity =
+      decode_fec || packet == NULL
+          ? (int)H2_BLOOMSPEAKER_AUDIO_FRAME_SAMPLES
+          : (int)H2_BLOOMSPEAKER_AUDIO_DECODE_MAX_SAMPLES;
   int decoded = opus_decode(decoder, packet, (opus_int32)packet_size, pcm,
                             frame_capacity, decode_fec);
   if (decoded <= 0) {
@@ -317,33 +312,33 @@ static int write_decoded(h2_bloomspeaker_audio_t *audio,
 }
 
 int h2_bloomspeaker_audio_run_session(
-    h2_bloomspeaker_audio_t *audio, h2_bleikcp_t *stream,
-    h2_bloomspeaker_audio_session_active_fn active, void *active_user) {
+    h2_bloomspeaker_audio_t* audio, h2_bleikcp_t* stream,
+    h2_bloomspeaker_audio_session_active_fn active, void* active_user) {
   if (audio == NULL || stream == NULL || active == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   int decoder_size = opus_decoder_get_size(1);
-  OpusDecoder *decoder = decoder_size > 0
-                             ? h2_pal_mem_alloc(audio->runtime->mem,
-                                                (size_t)decoder_size)
-                             : NULL;
+  OpusDecoder* decoder =
+      decoder_size > 0
+          ? h2_pal_mem_alloc(audio->runtime->mem, (size_t)decoder_size)
+          : NULL;
   size_t playback_capacity =
       audio->info.playback_format.frame_samples_per_channel;
-  int16_t *playback_buffer = playback_capacity > 0u
-                                 ? h2_pal_mem_alloc(
-                                       audio->runtime->mem,
-                                       playback_capacity * sizeof(int16_t))
-                                 : NULL;
+  int16_t* playback_buffer =
+      playback_capacity > 0u
+          ? h2_pal_mem_alloc(audio->runtime->mem,
+                             playback_capacity * sizeof(int16_t))
+          : NULL;
   if (decoder == NULL || playback_buffer == NULL) {
     h2_pal_mem_free(audio->runtime->mem, playback_buffer);
     h2_pal_mem_free(audio->runtime->mem, decoder);
     return H2_PAL_ERR_NO_MEMORY;
   }
-  int result = opus_decoder_init(decoder, H2_BLOOMSPEAKER_AUDIO_RATE, 1) ==
-                       OPUS_OK
-                   ? H2_PAL_OK
-                   : H2_PAL_ERR_IO;
-  h2_pal_audio_track_t *track = NULL;
+  int result =
+      opus_decoder_init(decoder, H2_BLOOMSPEAKER_AUDIO_RATE, 1) == OPUS_OK
+          ? H2_PAL_OK
+          : H2_PAL_ERR_IO;
+  h2_pal_audio_track_t* track = NULL;
   bool speaker_started = false;
   if (result == H2_PAL_OK) {
     result = h2_pal_audio_start_speaker(audio->runtime->audio);
@@ -356,14 +351,13 @@ int h2_bloomspeaker_audio_run_session(
       .buffer_frames = 6u,
   };
   if (result == H2_PAL_OK) {
-    result = h2_pal_audio_create_track(audio->runtime->audio, &track_config,
-                                       &track);
+    result =
+        h2_pal_audio_create_track(audio->runtime->audio, &track_config, &track);
   }
   if (result == H2_PAL_OK) {
     result = set_stream(audio, stream);
   }
-  h2_bloomspeaker_encoded_frame_t
-      jitter[H2_BLOOMSPEAKER_AUDIO_JITTER_FRAMES];
+  h2_bloomspeaker_encoded_frame_t jitter[H2_BLOOMSPEAKER_AUDIO_JITTER_FRAMES];
   size_t buffered = 0u;
   uint16_t expected_sequence = 0u;
   bool sequence_started = false;
@@ -374,15 +368,14 @@ int h2_bloomspeaker_audio_run_session(
   uint32_t plc_frames = 0u;
   uint64_t last_stats_ms = 0u;
   if (result == H2_PAL_OK) {
-    result = h2_pal_time_get_monotonic_ms(audio->runtime->time,
-                                          &last_stats_ms);
+    result = h2_pal_time_get_monotonic_ms(audio->runtime->time, &last_stats_ms);
   }
   uint64_t last_rx_ms = last_stats_ms;
   while (result == H2_PAL_OK && active(active_user)) {
     while (buffered < H2_BLOOMSPEAKER_AUDIO_JITTER_FRAMES &&
            active(active_user)) {
-      result = read_encoded_frame(audio, stream, &jitter[buffered],
-                                  &last_rx_ms, active, active_user);
+      result = read_encoded_frame(audio, stream, &jitter[buffered], &last_rx_ms,
+                                  active, active_user);
       if (result != H2_PAL_OK) {
         break;
       }
@@ -402,9 +395,9 @@ int h2_bloomspeaker_audio_run_session(
         missing = 2u;
       }
       while (missing > 1u && result == H2_PAL_OK) {
-        result = write_decoded(audio, track, decoder, NULL, 0u, 0,
-                               playback_buffer, playback_capacity,
-                               &playback_count);
+        result =
+            write_decoded(audio, track, decoder, NULL, 0u, 0, playback_buffer,
+                          playback_capacity, &playback_count);
         missing--;
         plc_frames++;
       }
@@ -426,23 +419,20 @@ int h2_bloomspeaker_audio_run_session(
     }
     expected_sequence = (uint16_t)(jitter[0].sequence + 1u);
     if (buffered > 1u) {
-      memmove(jitter, jitter + 1u,
-              (buffered - 1u) * sizeof(jitter[0]));
+      memmove(jitter, jitter + 1u, (buffered - 1u) * sizeof(jitter[0]));
     }
     buffered--;
     uint64_t now_ms = 0u;
     if (h2_pal_time_get_monotonic_ms(audio->runtime->time, &now_ms) ==
             H2_PAL_OK &&
         now_ms - last_stats_ms >= H2_BLOOMSPEAKER_AUDIO_STATS_INTERVAL_MS) {
-      log_audio_stats(audio, rx_frames, missing_frames, fec_frames,
-                      plc_frames);
+      log_audio_stats(audio, rx_frames, missing_frames, fec_frames, plc_frames);
       last_stats_ms = now_ms;
     }
   }
   log_audio_stats(audio, rx_frames, missing_frames, fec_frames, plc_frames);
   (void)set_stream(audio, NULL);
-  h2_bloomspeaker_controller_set_remote_levels(audio->controller, 0.0f,
-                                                0.0f);
+  h2_bloomspeaker_controller_set_remote_levels(audio->controller, 0.0f, 0.0f);
   if (track != NULL) {
     (void)h2_pal_audio_track_close(track);
   }
@@ -452,12 +442,12 @@ int h2_bloomspeaker_audio_run_session(
   h2_pal_mem_free(audio->runtime->mem, playback_buffer);
   h2_pal_mem_free(audio->runtime->mem, decoder);
   return result == H2_PAL_ERR_CLOSED && !active(active_user) ? H2_PAL_OK
-                                                              : result;
+                                                             : result;
 }
 
-int h2_bloomspeaker_audio_start(h2_runtime_t *runtime,
-                                h2_bloomspeaker_controller_t *controller,
-                                h2_bloomspeaker_audio_t **out_audio) {
+int h2_bloomspeaker_audio_start(h2_runtime_t* runtime,
+                                h2_bloomspeaker_controller_t* controller,
+                                h2_bloomspeaker_audio_t** out_audio) {
   if (runtime == NULL || controller == NULL || out_audio == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -476,7 +466,7 @@ int h2_bloomspeaker_audio_start(h2_runtime_t *runtime,
       info.playback_format.sample_format != H2_AUDIO_SAMPLE_S16LE) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
-  h2_bloomspeaker_audio_t *audio =
+  h2_bloomspeaker_audio_t* audio =
       h2_pal_mem_alloc(runtime->mem, sizeof(*audio));
   if (audio == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
@@ -568,8 +558,8 @@ int h2_bloomspeaker_audio_start(h2_runtime_t *runtime,
         .allocator = runtime->mem,
         .flags = H2_PAL_MUTEX_FLAG_NONE,
     };
-    result = h2_pal_mutex_create(runtime->sync, &mutex_config,
-                                 &audio->stream_mutex);
+    result =
+        h2_pal_mutex_create(runtime->sync, &mutex_config, &audio->stream_mutex);
   }
   if (result == H2_PAL_OK) {
     result = h2_pal_audio_start_mic(runtime->audio);
@@ -606,7 +596,7 @@ int h2_bloomspeaker_audio_start(h2_runtime_t *runtime,
   return H2_PAL_OK;
 }
 
-int h2_bloomspeaker_audio_stop(h2_bloomspeaker_audio_t *audio) {
+int h2_bloomspeaker_audio_stop(h2_bloomspeaker_audio_t* audio) {
   if (audio == NULL) {
     return H2_PAL_OK;
   }
@@ -621,11 +611,11 @@ int h2_bloomspeaker_audio_stop(h2_bloomspeaker_audio_t *audio) {
   h2_pal_mem_free(audio->runtime->mem, audio->encoder);
   h2_pal_mem_free(audio->runtime->mem, audio->accumulator);
   h2_pal_mem_free(audio->runtime->mem, audio->mic_buffer);
-    h2_atomic_destroy(&audio->stop);
-    h2_atomic_destroy(&audio->stream_active);
-    h2_atomic_destroy(&audio->reset_accumulator);
-    h2_atomic_destroy(&audio->tx_sent);
-    h2_atomic_destroy(&audio->tx_dropped);
+  h2_atomic_destroy(&audio->stop);
+  h2_atomic_destroy(&audio->stream_active);
+  h2_atomic_destroy(&audio->reset_accumulator);
+  h2_atomic_destroy(&audio->tx_sent);
+  h2_atomic_destroy(&audio->tx_dropped);
   h2_pal_mem_free(audio->runtime->mem, audio);
   return H2_PAL_OK;
 }

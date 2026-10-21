@@ -15,14 +15,14 @@ enum {
 };
 
 struct h2_sdl3 {
-  SDL_Window *window = nullptr;
-  SDL_Renderer *renderer = nullptr;
-  SDL_Texture *texture = nullptr;
-  uint16_t *framebuffer = nullptr;
+  SDL_Window* window = nullptr;
+  SDL_Renderer* renderer = nullptr;
+  SDL_Texture* texture = nullptr;
+  uint16_t* framebuffer = nullptr;
   h2_sdl3_frame_capture_fn capture = nullptr;
-  void *capture_user = nullptr;
+  void* capture_user = nullptr;
   h2_sdl3_render_capture_fn render_capture = nullptr;
-  void *render_capture_user = nullptr;
+  void* render_capture_user = nullptr;
   bool active = false;
   bool init_attempted = false;
   int init_result = H2_DISPLAY_ERR_UNAVAILABLE;
@@ -48,13 +48,12 @@ struct h2_sdl3 {
   h2_pal_touch_api_t touch = {};
 };
 
-void h2_sdl3_enqueue_event(h2_sdl3_t *provider,
-                           const h2_sdl3_event_t &event);
-void h2_sdl3_enqueue_touch(h2_sdl3_t *provider,
-                           const h2_pal_touch_event_t &event);
-void h2_sdl3_init_touch(h2_sdl3_t *provider);
-void h2_sdl3_pump(h2_sdl3_t *provider);
-void h2_sdl3_cleanup_display(h2_sdl3_t *provider);
-int h2_sdl3_present(h2_sdl3_t *provider);
+void h2_sdl3_enqueue_event(h2_sdl3_t* provider, const h2_sdl3_event_t& event);
+void h2_sdl3_enqueue_touch(h2_sdl3_t* provider,
+                           const h2_pal_touch_event_t& event);
+void h2_sdl3_init_touch(h2_sdl3_t* provider);
+void h2_sdl3_pump(h2_sdl3_t* provider);
+void h2_sdl3_cleanup_display(h2_sdl3_t* provider);
+int h2_sdl3_present(h2_sdl3_t* provider);
 
 #endif

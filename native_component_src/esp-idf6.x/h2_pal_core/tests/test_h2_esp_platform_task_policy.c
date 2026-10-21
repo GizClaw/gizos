@@ -35,16 +35,16 @@ typedef struct test_state {
   int tcb_frees;
   int stack_frees;
   int fail_tcb;
-  void *stack;
+  void* stack;
   TaskFunction_t trampoline;
-  void *trampoline_ctx;
-  h2_pal_task_t *pal_task;
+  void* trampoline_ctx;
+  h2_pal_task_t* pal_task;
   uint32_t stack_size;
   uint32_t caps;
   UBaseType_t priority;
   BaseType_t core;
-  const char *name;
-  const char *resolver_name;
+  const char* name;
+  const char* resolver_name;
 } test_state_t;
 
 static test_state_t s;
@@ -72,7 +72,8 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t semaphore) {
   if (s.join_on_give) {
     /* Model a joiner scheduled after the semaphore is published but before
      * give returns. Internal workers must also survive handle release here. */
-    assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) == H2_PAL_OK);
+    assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) ==
+           H2_PAL_OK);
     s.pal_task = NULL;
     if (s.caps != 0u || s.static_create) {
       longjmp(s_worker_exit, 1);
@@ -103,8 +104,8 @@ void vSemaphoreDelete(SemaphoreHandle_t semaphore) {
   }
   s.deletes++;
 }
-static BaseType_t capture_create(const char *name, uint32_t stack_size,
-                                 UBaseType_t priority, TaskHandle_t *out_task,
+static BaseType_t capture_create(const char* name, uint32_t stack_size,
+                                 UBaseType_t priority, TaskHandle_t* out_task,
                                  BaseType_t core, uint32_t caps) {
   s.creates++;
   s.name = name;
@@ -115,9 +116,9 @@ static BaseType_t capture_create(const char *name, uint32_t stack_size,
   *out_task = &s_native_task;
   return s.fail_create ? 0 : pdPASS;
 }
-BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry, const char *name,
-                                   uint32_t stack_size, void *ctx,
-                                   UBaseType_t priority, TaskHandle_t *out_task,
+BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry, const char* name,
+                                   uint32_t stack_size, void* ctx,
+                                   UBaseType_t priority, TaskHandle_t* out_task,
                                    BaseType_t core) {
   assert(entry != NULL && ctx != NULL);
   s.trampoline = entry;
@@ -125,10 +126,10 @@ BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry, const char *name,
   return capture_create(name, stack_size, priority, out_task, core, 0u);
 }
 BaseType_t xTaskCreatePinnedToCoreWithCaps(TaskFunction_t entry,
-                                           const char *name,
-                                           uint32_t stack_size, void *ctx,
+                                           const char* name,
+                                           uint32_t stack_size, void* ctx,
                                            UBaseType_t priority,
-                                           TaskHandle_t *out_task,
+                                           TaskHandle_t* out_task,
                                            BaseType_t core, uint32_t caps) {
   assert(entry != NULL && ctx != NULL);
   s.trampoline = entry;
@@ -137,7 +138,8 @@ BaseType_t xTaskCreatePinnedToCoreWithCaps(TaskFunction_t entry,
 }
 void vTaskDelete(TaskHandle_t task) {
   if (task != NULL) {
-    assert(task == &s_native_task && s.static_create && s.external_suspends == 1);
+    assert(task == &s_native_task && s.static_create &&
+           s.external_suspends == 1);
     assert(s.running_queries == 0 && s.tcb_live == 1);
     s.static_deletes++;
     return;
@@ -163,7 +165,7 @@ void vTaskSuspend(TaskHandle_t task) {
   longjmp(s_worker_exit, 1);
 }
 
-void *heap_caps_malloc(size_t size, unsigned int caps) {
+void* heap_caps_malloc(size_t size, unsigned int caps) {
   assert(size == sizeof(StaticTask_t));
   assert(caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   if (s.fail_tcb) return NULL;
@@ -171,7 +173,7 @@ void *heap_caps_malloc(size_t size, unsigned int caps) {
   ++s.tcb_allocations;
   return malloc(size);
 }
-void heap_caps_free(void *ptr) {
+void heap_caps_free(void* ptr) {
   if (ptr != NULL) {
     assert(s.tcb_live == 1);
     --s.tcb_live;
@@ -179,9 +181,10 @@ void heap_caps_free(void *ptr) {
     free(ptr);
   }
 }
-TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t entry, const char *name,
-    uint32_t stack_size, void *ctx, UBaseType_t priority, StackType_t *stack,
-    StaticTask_t *storage, BaseType_t core) {
+TaskHandle_t xTaskCreateStaticPinnedToCore(
+    TaskFunction_t entry, const char* name, uint32_t stack_size, void* ctx,
+    UBaseType_t priority, StackType_t* stack, StaticTask_t* storage,
+    BaseType_t core) {
   assert(stack != NULL && storage != NULL && s.tcb_live == 1);
   s.static_create = 1;
   s.stack = stack;
@@ -189,7 +192,8 @@ TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t entry, const char *nam
   s.trampoline_ctx = ctx;
   TaskHandle_t task;
   return capture_create(name, stack_size, priority, &task, core, 0u) == pdPASS
-             ? task : NULL;
+             ? task
+             : NULL;
 }
 TaskHandle_t xTaskGetCurrentTaskHandleForCore(BaseType_t core) {
   if (core == 1 && s.running_queries > 0) {
@@ -203,8 +207,8 @@ void vTaskDelay(TickType_t ticks) {
   ++s.yields;
 }
 
-static h2_pal_result_t resolve(void *user, const char *name,
-                               h2_esp_task_policy_t *out) {
+static h2_pal_result_t resolve(void* user, const char* name,
+                               h2_esp_task_policy_t* out) {
   assert(user == &s);
   s.resolver_name = name;
   if (name != NULL && strcmp(name, "known") == 0) {
@@ -247,11 +251,11 @@ static h2_esp_task_policy_config_t config(void) {
   };
 }
 
-static void entry(void *user) {
+static void entry(void* user) {
   assert(s.gives == 0 && s.deletes == 0);
   s.entry_calls++;
   if (user != NULL) {
-    *(int *)user = 42;
+    *(int*)user = 42;
   }
 }
 static void reset(void) {
@@ -260,14 +264,15 @@ static void reset(void) {
   s_semaphore = 0;
 }
 
-static void test_completion(const char *name, int join_on_give) {
+static void test_completion(const char* name, int join_on_give) {
   reset();
   h2_esp_task_policy_config_t cfg = config();
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
-  const h2_pal_task_api_t *api = h2_esp_platform_task_api();
+  const h2_pal_task_api_t* api = h2_esp_platform_task_api();
   h2_pal_task_options_t options = {.name = name};
   int result = 0;
-  assert(h2_pal_task_start(api, &options, entry, &result, &s.pal_task) == H2_PAL_OK);
+  assert(h2_pal_task_start(api, &options, entry, &result, &s.pal_task) ==
+         H2_PAL_OK);
   s.join_on_give = join_on_give;
   run_worker();
   assert(result == 42 && s.gives == 1);
@@ -291,7 +296,7 @@ static void test_completion(const char *name, int join_on_give) {
   }
 }
 
-static void stack_free(void *user, void *ptr) {
+static void stack_free(void* user, void* ptr) {
   if (ptr != NULL) {
     assert(s.fail_create || s.fail_tcb || s.static_deletes == 1);
     assert(s.stack_frees == 0);
@@ -308,7 +313,9 @@ static void test_psram_stack_allocator(void) {
     h2_test_allocator_t arena;
     h2_test_allocator_init(&arena);
     const h2_pal_mem_vtable_t vtable = {
-        .alloc = h2_test_alloc, .realloc = h2_test_realloc, .free = stack_free,
+        .alloc = h2_test_alloc,
+        .realloc = h2_test_realloc,
+        .free = stack_free,
     };
     arena.api.vtable = &vtable;
     h2_esp_task_policy_config_t cfg = config();
@@ -321,7 +328,7 @@ static void test_psram_stack_allocator(void) {
     s.fail_tcb = mode == 4;
     if (mode == 5) h2_atomic_store(&arena.fail_on_call, 1u);
     int rc = h2_pal_task_start(h2_esp_platform_task_api(), &options, entry,
-                              NULL, &s.pal_task);
+                               NULL, &s.pal_task);
     if (mode >= 3 && mode <= 5) {
       assert(rc == (mode == 3 ? H2_PAL_ERR_TASK : H2_PAL_ERR_NO_MEMORY));
       assert(s.pal_task == NULL && s.tcb_live == 0);
@@ -333,7 +340,8 @@ static void test_psram_stack_allocator(void) {
       if (mode != 2) assert(s.stack_size == 12288u);
       if (mode == 6) {
         s.fail_join = 1;
-        assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) == H2_PAL_ERR_TASK);
+        assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) ==
+               H2_PAL_ERR_TASK);
         assert(h2_atomic_load(&arena.live) == 1u && s.tcb_live == 1);
         s.fail_join = 0;
       }
@@ -341,7 +349,8 @@ static void test_psram_stack_allocator(void) {
       s.running_queries = mode == 2 || mode == 7 ? 0 : 2;
       run_worker();
       if (!s.join_on_give)
-        assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) == H2_PAL_OK);
+        assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) ==
+               H2_PAL_OK);
       assert(s.tcb_live == 0);
       if (mode != 2 && mode != 7) {
         assert(s.static_create == 1 && s.static_deletes == 1 && s.yields == 2);
@@ -349,7 +358,8 @@ static void test_psram_stack_allocator(void) {
       } else {
         assert(s.static_create == 0 && s.static_deletes == 0);
         assert(s.caps_deletes == (mode == 7 ? 1 : 0));
-        assert(s.caps == (mode == 7 ? MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT : 0u));
+        assert(s.caps ==
+               (mode == 7 ? MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT : 0u));
       }
     }
     assert(h2_atomic_load(&arena.live) == 0u);
@@ -362,8 +372,8 @@ static void test_psram_stack_allocator(void) {
 
 int main(void) {
   test_psram_stack_allocator();
-  const h2_pal_task_api_t *api = h2_esp_platform_task_api();
-  h2_pal_task_t *task = (h2_pal_task_t *)(uintptr_t)7u;
+  const h2_pal_task_api_t* api = h2_esp_platform_task_api();
+  h2_pal_task_t* task = (h2_pal_task_t*)(uintptr_t)7u;
   h2_pal_task_options_t options = {.name = "known", .min_stack_size = 1024u};
 
   reset();

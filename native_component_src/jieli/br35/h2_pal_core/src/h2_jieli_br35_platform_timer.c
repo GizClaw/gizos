@@ -17,7 +17,7 @@ struct h2_pal_timer {
   /* Task that registered the SDK timer, i.e. the task its callbacks are
    * dispatched to; destroy() must run there so the reclaim timeout lands
    * behind any fire already queued to it. */
-  const void *owner_task;
+  const void* owner_task;
   /* Set once the timer has been registered with the SDK, i.e. once a fire
    * can be queued to `owner_task` (the handle itself may be NULL before the
    * scheduler runs, so it cannot double as this flag). */
@@ -32,12 +32,12 @@ struct h2_pal_timer {
  * queued callback still reads. */
 #define TIMER_RECLAIM_DELAY_MS 1u
 
-static void timer_release(h2_pal_timer_t *timer) { h2_jieli_sdk_free(timer); }
+static void timer_release(h2_pal_timer_t* timer) { h2_jieli_sdk_free(timer); }
 
-static void timer_reclaim(void *ctx) { timer_release((h2_pal_timer_t *)ctx); }
+static void timer_reclaim(void* ctx) { timer_release((h2_pal_timer_t*)ctx); }
 
-static void timer_fire(void *ctx) {
-  h2_pal_timer_t *timer = (h2_pal_timer_t *)ctx;
+static void timer_fire(void* ctx) {
+  h2_pal_timer_t* timer = (h2_pal_timer_t*)ctx;
   if (h2_jieli_atomic_load_u32(&timer->destroyed)) {
     /* Dispatched before destroy() ran; the reclaim timeout frees us. */
     return;
@@ -52,7 +52,7 @@ static void timer_fire(void *ctx) {
   timer->config.cb(timer->config.cb_user, timer);
 }
 
-static h2_pal_result_t timer_start(void *user, h2_pal_timer_t *timer) {
+static h2_pal_result_t timer_start(void* user, h2_pal_timer_t* timer) {
   (void)user;
   if (timer == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -80,7 +80,7 @@ static h2_pal_result_t timer_start(void *user, h2_pal_timer_t *timer) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t timer_stop(void *user, h2_pal_timer_t *timer) {
+static h2_pal_result_t timer_stop(void* user, h2_pal_timer_t* timer) {
   (void)user;
   if (timer == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -94,16 +94,16 @@ static h2_pal_result_t timer_stop(void *user, h2_pal_timer_t *timer) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t timer_create(void *user,
-                                    const h2_pal_timer_config_t *config,
-                                    h2_pal_timer_t **out_timer) {
-  h2_pal_timer_t *timer;
+static h2_pal_result_t timer_create(void* user,
+                                    const h2_pal_timer_config_t* config,
+                                    h2_pal_timer_t** out_timer) {
+  h2_pal_timer_t* timer;
   if (config == NULL || out_timer == NULL || config->cb == NULL ||
       config->period_ms == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_timer = NULL;
-  timer = (h2_pal_timer_t *)h2_jieli_sdk_malloc(sizeof(*timer));
+  timer = (h2_pal_timer_t*)h2_jieli_sdk_malloc(sizeof(*timer));
   if (timer == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -120,8 +120,8 @@ static h2_pal_result_t timer_create(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t timer_destroy(void *user, h2_pal_timer_t *timer) {
-  const void *owner;
+static h2_pal_result_t timer_destroy(void* user, h2_pal_timer_t* timer) {
+  const void* owner;
   if (timer == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -149,7 +149,7 @@ static h2_pal_result_t timer_destroy(void *user, h2_pal_timer_t *timer) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t timer_reset(void *user, h2_pal_timer_t *timer) {
+static h2_pal_result_t timer_reset(void* user, h2_pal_timer_t* timer) {
   h2_pal_result_t rc;
   if (timer == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -161,7 +161,7 @@ static h2_pal_result_t timer_reset(void *user, h2_pal_timer_t *timer) {
   return timer_start(user, timer);
 }
 
-static h2_pal_result_t timer_set_period_ms(void *user, h2_pal_timer_t *timer,
+static h2_pal_result_t timer_set_period_ms(void* user, h2_pal_timer_t* timer,
                                            uint32_t period_ms) {
   if (timer == NULL || period_ms == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -173,8 +173,8 @@ static h2_pal_result_t timer_set_period_ms(void *user, h2_pal_timer_t *timer,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t timer_is_running(void *user, h2_pal_timer_t *timer,
-                                        int *out_running) {
+static h2_pal_result_t timer_is_running(void* user, h2_pal_timer_t* timer,
+                                        int* out_running) {
   (void)user;
   if (timer == NULL || out_running == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -198,6 +198,6 @@ static const h2_pal_timer_api_t s_timer_api = {
     .vtable = &s_timer_vtable,
 };
 
-const h2_pal_timer_api_t *h2_jieli_br35_platform_timer_api(void) {
+const h2_pal_timer_api_t* h2_jieli_br35_platform_timer_api(void) {
   return &s_timer_api;
 }

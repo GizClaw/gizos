@@ -90,11 +90,11 @@ typedef struct h2_gizclaw_ble_binding h2_gizclaw_ble_binding_t;
 
 /** Dependencies remain borrowed through successful close. Text is copied. */
 typedef struct h2_gizclaw_ble_binding_config {
-  h2_gizclaw_api_key_state_t *api_key_state; /**< Same source as the QR path. */
-  const h2_pal_ble_host_api_t *ble; /**< Caller starts/stops the shared Host. */
-  const h2_pal_system_event_api_t *system_event;
-  const h2_pal_mem_api_t *mem;
-  const h2_pal_sync_api_t *sync;
+  h2_gizclaw_api_key_state_t* api_key_state; /**< Same source as the QR path. */
+  const h2_pal_ble_host_api_t* ble; /**< Caller starts/stops the shared Host. */
+  const h2_pal_system_event_api_t* system_event;
+  const h2_pal_mem_api_t* mem;
+  const h2_pal_sync_api_t* sync;
   /** HTTPS origin (DNS/IPv4 host, optional port), at most 192 bytes.
    * Pass the HTTPS origin explicitly, never the GizClaw RPC endpoint/port.
    * No userinfo, path, query, fragment, whitespace or trailing slash.
@@ -143,44 +143,43 @@ typedef struct h2_gizclaw_ble_binding_snapshot {
  * terminated; out_len excludes NUL. Failure erases the output buffer and sets
  * out_len=0; insufficient capacity returns TRUNCATED. Never log the output.
  */
-h2_pal_result_t
-h2_gizclaw_ble_binding_format_url(h2_gizclaw_str_t server_origin,
-                                  h2_gizclaw_str_t icon, h2_gizclaw_str_t name,
-                                  h2_gizclaw_str_t secret, char *out,
-                                  size_t capacity, size_t *out_len);
+h2_pal_result_t h2_gizclaw_ble_binding_format_url(
+    h2_gizclaw_str_t server_origin, h2_gizclaw_str_t icon,
+    h2_gizclaw_str_t name, h2_gizclaw_str_t secret, char* out, size_t capacity,
+    size_t* out_len);
 
 /** Allocate an idle window. Does not start Host, register GATT or send RPC.
  * Requires Mem, mutex-capable Sync, and System Event subscribe/unsubscribe.
  * On failure *out_binding is NULL; all text is validated and copied.
  */
-h2_pal_result_t
-h2_gizclaw_ble_binding_open(const h2_gizclaw_ble_binding_config_t *config,
-                            h2_gizclaw_ble_binding_t **out_binding);
+h2_pal_result_t h2_gizclaw_ble_binding_open(
+    const h2_gizclaw_ble_binding_config_t* config,
+    h2_gizclaw_ble_binding_t** out_binding);
 
 /** Open the authorized window: subscribe, register only this GATT service and
  * create/start a dedicated legacy connectable advertising set (100..200 ms),
  * containing its service UUID and optional local name. The legacy provider
- * places the name in its scan response. Repeated successful start is an OK no-op.
- * A partial failure seals admission and attempts stop; failed cleanup retains
- * the instance/resources for stop retry. A new start is BUSY until cleanup
- * succeeds. Providers must support handle sets and per-service unregistration;
- * no global/default-set/unregister-all fallback is performed.
+ * places the name in its scan response. Repeated successful start is an OK
+ * no-op. A partial failure seals admission and attempts stop; failed cleanup
+ * retains the instance/resources for stop retry. A new start is BUSY until
+ * cleanup succeeds. Providers must support handle sets and per-service
+ * unregistration; no global/default-set/unregister-all fallback is performed.
  */
-h2_pal_result_t h2_gizclaw_ble_binding_start(h2_gizclaw_ble_binding_t *binding);
+h2_pal_result_t h2_gizclaw_ble_binding_start(h2_gizclaw_ble_binding_t* binding);
 
 /** Restart this set after a normal disconnect or set stop when no adopted peer
  * remains. Read live readiness using snapshot. No RPC, task, network wait or
  * key mutation. BLE PAL operations may have their provider's bounded latency.
  * Errors are retained in snapshot; keep polling/retry after transient errors.
  */
-h2_pal_result_t h2_gizclaw_ble_binding_poll(h2_gizclaw_ble_binding_t *binding);
+h2_pal_result_t h2_gizclaw_ble_binding_poll(h2_gizclaw_ble_binding_t* binding);
 
 /** Thread-safe live read while instance is alive; failure empties output.
  * No RPC or BLE operation. closed/invalid/stale/busy keys are never ready.
  */
 h2_pal_result_t h2_gizclaw_ble_binding_snapshot(
-    h2_gizclaw_ble_binding_t *binding,
-    h2_gizclaw_ble_binding_snapshot_t *out_snapshot);
+    h2_gizclaw_ble_binding_t* binding,
+    h2_gizclaw_ble_binding_snapshot_t* out_snapshot);
 
 /** Pop an exposure, including after stop. WOULD_BLOCK means empty.
  * A first nonempty credential response per key name/revision enqueues before
@@ -192,8 +191,8 @@ h2_pal_result_t h2_gizclaw_ble_binding_snapshot(
  * Drain after stop to include a read racing with page exit. No secret returned.
  */
 h2_pal_result_t h2_gizclaw_ble_binding_next_exposure(
-    h2_gizclaw_ble_binding_t *binding,
-    h2_gizclaw_ble_binding_exposure_t *out_exposure);
+    h2_gizclaw_ble_binding_t* binding,
+    h2_gizclaw_ble_binding_exposure_t* out_exposure);
 
 /** Seal admission, erase request state, stop/destroy only this advertising set,
  * unbind only this service, then unsubscribe. Never stop the shared Host,
@@ -201,7 +200,7 @@ h2_pal_result_t h2_gizclaw_ble_binding_next_exposure(
  * Idempotent. Cleanup errors retain every still-borrowed object for retry;
  * exposure records survive. Call outside GATT/system-event callbacks.
  */
-h2_pal_result_t h2_gizclaw_ble_binding_stop(h2_gizclaw_ble_binding_t *binding);
+h2_pal_result_t h2_gizclaw_ble_binding_stop(h2_gizclaw_ble_binding_t* binding);
 
 /** Stop and free, setting *binding=NULL; NULL *binding is an OK no-op.
  * BUSY retains the sealed instance while exposure records are undrained;
@@ -211,8 +210,8 @@ h2_pal_result_t h2_gizclaw_ble_binding_stop(h2_gizclaw_ble_binding_t *binding);
  * poll and next_exposure are serialized by one owner task; GATT/events and
  * snapshot may run concurrently, but not with successful close.
  */
-h2_pal_result_t
-h2_gizclaw_ble_binding_close(h2_gizclaw_ble_binding_t **binding);
+h2_pal_result_t h2_gizclaw_ble_binding_close(
+    h2_gizclaw_ble_binding_t** binding);
 
 #ifdef __cplusplus
 }

@@ -1,1 +1,1 @@
-void *net_get_sta_handle(void);
+void* net_get_sta_handle(void);

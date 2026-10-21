@@ -38,25 +38,25 @@ struct h2_jieli_sdk_sem {
 
 #define H2_JIELI_BR35_MEM_HEADER 16u
 
-static size_t *mem_header(void *ptr) {
-  return (size_t *)((uint8_t *)ptr - H2_JIELI_BR35_MEM_HEADER);
+static size_t* mem_header(void* ptr) {
+  return (size_t*)((uint8_t*)ptr - H2_JIELI_BR35_MEM_HEADER);
 }
 
-void *h2_jieli_sdk_malloc(size_t size) {
-  uint8_t *block;
+void* h2_jieli_sdk_malloc(size_t size) {
+  uint8_t* block;
   if (size == 0u || size > SIZE_MAX - H2_JIELI_BR35_MEM_HEADER) {
     return NULL;
   }
-  block = (uint8_t *)malloc(size + H2_JIELI_BR35_MEM_HEADER);
+  block = (uint8_t*)malloc(size + H2_JIELI_BR35_MEM_HEADER);
   if (block == NULL) {
     return NULL;
   }
-  *(size_t *)block = size;
+  *(size_t*)block = size;
   return block + H2_JIELI_BR35_MEM_HEADER;
 }
 
-void *h2_jieli_sdk_realloc(void *ptr, size_t size) {
-  void *replacement;
+void* h2_jieli_sdk_realloc(void* ptr, size_t size) {
+  void* replacement;
   size_t previous;
   if (ptr == NULL) {
     return h2_jieli_sdk_malloc(size);
@@ -78,7 +78,7 @@ void *h2_jieli_sdk_realloc(void *ptr, size_t size) {
   return replacement;
 }
 
-void h2_jieli_sdk_free(void *ptr) {
+void h2_jieli_sdk_free(void* ptr) {
   if (ptr != NULL) {
     free(mem_header(ptr));
   }
@@ -86,11 +86,11 @@ void h2_jieli_sdk_free(void *ptr) {
 
 /* ---- Debug UART ---------------------------------------------------------- */
 
-void h2_jieli_sdk_debug_write(const char *data, size_t length) {
+void h2_jieli_sdk_debug_write(const char* data, size_t length) {
   if (data == NULL || length == 0u) {
     return;
   }
-  put_buf((const u8 *)data, (int)length);
+  put_buf((const u8*)data, (int)length);
 }
 
 /* ---- Time ---------------------------------------------------------------- */
@@ -125,8 +125,7 @@ void h2_jieli_sdk_sleep_ms(uint32_t ms) {
   int msg[16];
   do {
     u32 elapsed = jiffies_msec() - start;
-    if (elapsed >= duration)
-      break;
+    if (elapsed >= duration) break;
     os_taskq_pend_timeout(NULL, msg, 16, ms_to_ticks(duration - elapsed));
   } while (1);
 }
@@ -134,13 +133,12 @@ void h2_jieli_sdk_sleep_ms(uint32_t ms) {
 /* BR35 uses UCOS os_api storage. Zero timeouts use an interrupt-protected query
  * and consume; pend(0) is reserved for infinite waits. */
 
-static int try_take(void *storage) {
+static int try_take(void* storage) {
   /* Only CPU0 is started by this board. Excluding its scheduler makes the
    * query-and-consume atomic; pend(0) is used only when a token exists. */
   local_irq_disable();
-  int rc = os_sem_query((OS_SEM *)storage) > 0
-               ? os_sem_pend((OS_SEM *)storage, 0)
-               : OS_TIMEOUT;
+  int rc = os_sem_query((OS_SEM*)storage) > 0 ? os_sem_pend((OS_SEM*)storage, 0)
+                                              : OS_TIMEOUT;
   local_irq_enable();
   return rc == OS_NO_ERR ? 0 : (rc == OS_TIMEOUT ? 1 : -1);
 }
@@ -152,8 +150,8 @@ static int map_os_wait(int rc) {
   return rc == OS_TIMEOUT ? 1 : -1;
 }
 
-h2_jieli_sdk_mutex_t *h2_jieli_sdk_mutex_create(void) {
-  h2_jieli_sdk_mutex_t *mutex = (h2_jieli_sdk_mutex_t *)malloc(sizeof(*mutex));
+h2_jieli_sdk_mutex_t* h2_jieli_sdk_mutex_create(void) {
+  h2_jieli_sdk_mutex_t* mutex = (h2_jieli_sdk_mutex_t*)malloc(sizeof(*mutex));
   if (mutex == NULL) {
     return NULL;
   }
@@ -164,7 +162,7 @@ h2_jieli_sdk_mutex_t *h2_jieli_sdk_mutex_create(void) {
   return mutex;
 }
 
-void h2_jieli_sdk_mutex_destroy(h2_jieli_sdk_mutex_t *mutex) {
+void h2_jieli_sdk_mutex_destroy(h2_jieli_sdk_mutex_t* mutex) {
   if (mutex == NULL) {
     return;
   }
@@ -172,7 +170,7 @@ void h2_jieli_sdk_mutex_destroy(h2_jieli_sdk_mutex_t *mutex) {
   free(mutex);
 }
 
-int h2_jieli_sdk_mutex_lock(h2_jieli_sdk_mutex_t *mutex, uint32_t timeout_ms) {
+int h2_jieli_sdk_mutex_lock(h2_jieli_sdk_mutex_t* mutex, uint32_t timeout_ms) {
   if (mutex == NULL) {
     return -1;
   }
@@ -185,15 +183,15 @@ int h2_jieli_sdk_mutex_lock(h2_jieli_sdk_mutex_t *mutex, uint32_t timeout_ms) {
   return map_os_wait(os_sem_pend(&mutex->native, ms_to_ticks(timeout_ms)));
 }
 
-int h2_jieli_sdk_mutex_unlock(h2_jieli_sdk_mutex_t *mutex) {
+int h2_jieli_sdk_mutex_unlock(h2_jieli_sdk_mutex_t* mutex) {
   if (mutex == NULL) {
     return -1;
   }
   return os_sem_post(&mutex->native) == OS_NO_ERR ? 0 : -1;
 }
 
-h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create(uint32_t initial_count) {
-  h2_jieli_sdk_sem_t *sem = (h2_jieli_sdk_sem_t *)malloc(sizeof(*sem));
+h2_jieli_sdk_sem_t* h2_jieli_sdk_sem_create(uint32_t initial_count) {
+  h2_jieli_sdk_sem_t* sem = (h2_jieli_sdk_sem_t*)malloc(sizeof(*sem));
   if (sem == NULL) {
     return NULL;
   }
@@ -204,7 +202,7 @@ h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create(uint32_t initial_count) {
   return sem;
 }
 
-void h2_jieli_sdk_sem_destroy(h2_jieli_sdk_sem_t *sem) {
+void h2_jieli_sdk_sem_destroy(h2_jieli_sdk_sem_t* sem) {
   if (sem == NULL) {
     return;
   }
@@ -212,7 +210,7 @@ void h2_jieli_sdk_sem_destroy(h2_jieli_sdk_sem_t *sem) {
   free(sem);
 }
 
-int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *sem, uint32_t timeout_ms) {
+int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t* sem, uint32_t timeout_ms) {
   if (sem == NULL) {
     return -1;
   }
@@ -225,7 +223,7 @@ int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *sem, uint32_t timeout_ms) {
   return map_os_wait(os_sem_pend(&sem->native, ms_to_ticks(timeout_ms)));
 }
 
-int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem) {
+int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t* sem) {
   if (sem == NULL) {
     return -1;
   }
@@ -234,8 +232,8 @@ int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem) {
 
 /* ---- Tasks --------------------------------------------------------------- */
 
-int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx,
-                             const char *name, size_t stack_bytes) {
+int h2_jieli_sdk_task_create(void (*entry)(void* ctx), void* ctx,
+                             const char* name, size_t stack_bytes) {
   u32 stack_words;
   if (entry == NULL || name == NULL) {
     return -1;
@@ -248,7 +246,7 @@ int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx,
              : -1;
 }
 
-int h2_jieli_sdk_task_delete(const char *name) {
+int h2_jieli_sdk_task_delete(const char* name) {
   return os_task_del(name) == OS_NO_ERR ? 0 : -1;
 }
 
@@ -258,13 +256,13 @@ void h2_jieli_sdk_task_park(void) {
   }
 }
 
-const void *h2_jieli_sdk_task_current(void) {
+const void* h2_jieli_sdk_task_current(void) {
   return os_task_get_handle(os_current_task());
 }
 
 /* ---- Timers -------------------------------------------------------------- */
 
-uint16_t h2_jieli_sdk_timer_add(void *ctx, void (*callback)(void *ctx),
+uint16_t h2_jieli_sdk_timer_add(void* ctx, void (*callback)(void* ctx),
                                 uint32_t period_ms, int repeat) {
   if (callback == NULL || period_ms == 0u) {
     return 0u;

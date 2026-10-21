@@ -34,10 +34,10 @@ typedef struct RtpMap {
 
 typedef struct RtpEncoder RtpEncoder;
 typedef struct RtpDecoder RtpDecoder;
-typedef int (*RtpOnEncodedPacket)(
-    uint8_t *packet, size_t bytes, void *user_data);
-typedef void (*RtpOnDecodedPacket)(
-    uint8_t *packet, size_t bytes, void *user_data);
+typedef int (*RtpOnEncodedPacket)(uint8_t* packet, size_t bytes,
+                                  void* user_data);
+typedef void (*RtpOnDecodedPacket)(uint8_t* packet, size_t bytes,
+                                   void* user_data);
 
 typedef enum RtpDecodeEvent {
   RTP_DECODE_EVENT_NONE = 0,
@@ -65,12 +65,12 @@ typedef struct RtpReorderBuffer {
 struct RtpDecoder {
   RtpPayloadType type;
   RtpOnDecodedPacket on_packet;
-  void *user_data;
+  void* user_data;
   uint32_t ssrc;
   uint32_t last_timestamp;
   uint16_t next_sequence;
   uint16_t last_loss_count;
-  RtpReorderBuffer *reorder;
+  RtpReorderBuffer* reorder;
   uint64_t reorder_deadline_ms;
   RtpDecodeEvent last_event;
   uint8_t reorder_deadline_active;
@@ -80,7 +80,7 @@ struct RtpDecoder {
 struct RtpEncoder {
   RtpPayloadType type;
   RtpOnEncodedPacket on_packet;
-  void *user_data;
+  void* user_data;
   uint16_t seq_number;
   uint32_t ssrc;
   uint32_t timestamp;
@@ -88,25 +88,21 @@ struct RtpEncoder {
   uint8_t buf[CONFIG_MTU + 128];
 };
 
-int rtp_packet_validate(uint8_t *packet, size_t size);
-void rtp_encoder_init(RtpEncoder *encoder, MediaCodec codec, RtpOnEncodedPacket on_packet, void *user_data);
-int rtp_encoder_encode(RtpEncoder *encoder, const uint8_t *data, size_t size);
-void rtp_decoder_init(RtpDecoder *decoder, MediaCodec codec,
-                      RtpOnDecodedPacket on_packet, void *user_data,
-                      RtpReorderBuffer *reorder);
-int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size);
-int rtp_decoder_decode_at(RtpDecoder *decoder, const uint8_t *data, size_t size,
+int rtp_packet_validate(uint8_t* packet, size_t size);
+void rtp_encoder_init(RtpEncoder* encoder, MediaCodec codec,
+                      RtpOnEncodedPacket on_packet, void* user_data);
+int rtp_encoder_encode(RtpEncoder* encoder, const uint8_t* data, size_t size);
+void rtp_decoder_init(RtpDecoder* decoder, MediaCodec codec,
+                      RtpOnDecodedPacket on_packet, void* user_data,
+                      RtpReorderBuffer* reorder);
+int rtp_decoder_decode(RtpDecoder* decoder, const uint8_t* data, size_t size);
+int rtp_decoder_decode_at(RtpDecoder* decoder, const uint8_t* data, size_t size,
                           uint64_t now_ms);
-int rtp_decoder_service(RtpDecoder *decoder, uint64_t now_ms);
-int rtp_decoders_decode(RtpDecoder *audio_decoder,
-                        RtpDecoder *video_decoder,
-                        const uint8_t *data,
-                        size_t size);
-int rtp_decoders_decode_at(RtpDecoder *audio_decoder,
-                           RtpDecoder *video_decoder,
-                           const uint8_t *data,
-                           size_t size,
-                           uint64_t now_ms);
-uint32_t rtp_get_ssrc(uint8_t *packet);
+int rtp_decoder_service(RtpDecoder* decoder, uint64_t now_ms);
+int rtp_decoders_decode(RtpDecoder* audio_decoder, RtpDecoder* video_decoder,
+                        const uint8_t* data, size_t size);
+int rtp_decoders_decode_at(RtpDecoder* audio_decoder, RtpDecoder* video_decoder,
+                           const uint8_t* data, size_t size, uint64_t now_ms);
+uint32_t rtp_get_ssrc(uint8_t* packet);
 
 #endif

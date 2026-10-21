@@ -6,6 +6,15 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":webrtc_performance_launcher"],
@@ -32,13 +41,13 @@ firmware_lib_component(
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
         "//libs/pal/providers/libco",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
         "//projects/e2e/apps/webrtc-performance/app:webrtc_performance",
     ],
 )
@@ -75,11 +84,11 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
-    console = "usb",
     cmake_variables = [
         "H2_WEBRTC_PERF_ENDPOINT",
         "H2_WEBRTC_PERF_STUN_URL",
     ],
+    console = "usb",
     graph = [":webrtc_performance_launcher"],
     h2loader_wifi_environment = True,
     project = "CMakeLists.txt",

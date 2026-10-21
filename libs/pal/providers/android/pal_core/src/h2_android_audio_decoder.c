@@ -8,13 +8,13 @@
 #include <string.h>
 
 struct h2_pal_audio_decoder_frame {
-  h2_pal_audio_decoder_session_t *owner;
+  h2_pal_audio_decoder_session_t* owner;
   h2_android_audio_pcm_copy_t pcm;
 };
 
 struct h2_pal_audio_decoder_session {
-  const h2_pal_mem_api_t *allocator;
-  AMediaCodec *codec;
+  const h2_pal_mem_api_t* allocator;
+  AMediaCodec* codec;
   uint32_t sample_rate_hz;
   uint8_t channels;
   int configured;
@@ -24,7 +24,7 @@ struct h2_pal_audio_decoder_session {
 };
 
 static void android_audio_decoder_drop_codec(
-    h2_pal_audio_decoder_session_t *session) {
+    h2_pal_audio_decoder_session_t* session) {
   if (session->codec != NULL) {
     if (session->configured) {
       (void)AMediaCodec_stop(session->codec);
@@ -38,14 +38,14 @@ static void android_audio_decoder_drop_codec(
 }
 
 static h2_pal_result_t android_audio_decoder_open(
-    void *user, const h2_audio_decoder_config_t *config,
-    h2_pal_audio_decoder_session_t **out_session) {
+    void* user, const h2_audio_decoder_config_t* config,
+    h2_pal_audio_decoder_session_t** out_session) {
   (void)user;
   if (config == NULL || out_session == NULL ||
       config->preferred_format != H2_AUDIO_SAMPLE_S16LE) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_pal_audio_decoder_session_t *session = calloc(1u, sizeof(*session));
+  h2_pal_audio_decoder_session_t* session = calloc(1u, sizeof(*session));
   if (session == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -55,8 +55,8 @@ static h2_pal_result_t android_audio_decoder_open(
 }
 
 static h2_pal_result_t android_audio_decoder_configure(
-    void *user, h2_pal_audio_decoder_session_t *session,
-    const h2_audio_decoder_stream_config_t *config) {
+    void* user, h2_pal_audio_decoder_session_t* session,
+    const h2_audio_decoder_stream_config_t* config) {
   (void)user;
   if (session == NULL || session->configured || session->acquired) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -66,8 +66,8 @@ static h2_pal_result_t android_audio_decoder_configure(
   if (validation != H2_PAL_OK) {
     return validation;
   }
-  AMediaCodec *codec = AMediaCodec_createDecoderByType("audio/mp4a-latm");
-  AMediaFormat *format = AMediaFormat_new();
+  AMediaCodec* codec = AMediaCodec_createDecoderByType("audio/mp4a-latm");
+  AMediaFormat* format = AMediaFormat_new();
   if (codec == NULL || format == NULL) {
     if (codec != NULL) {
       (void)AMediaCodec_delete(codec);
@@ -79,17 +79,16 @@ static h2_pal_result_t android_audio_decoder_configure(
   }
   AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "audio/mp4a-latm");
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE,
-                       (int32_t)config->sample_rate_hz);
+                        (int32_t)config->sample_rate_hz);
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT,
-                       (int32_t)config->channels);
+                        (int32_t)config->channels);
   AMediaFormat_setBuffer(format, "csd-0", config->codec_config,
                          config->codec_config_size);
   h2_pal_result_t result = h2_android_audio_map_media_config_status(
       AMediaCodec_configure(codec, format, NULL, NULL, 0u));
   (void)AMediaFormat_delete(format);
   if (result == H2_PAL_OK) {
-    result = h2_android_audio_map_media_config_status(
-        AMediaCodec_start(codec));
+    result = h2_android_audio_map_media_config_status(AMediaCodec_start(codec));
   }
   if (result != H2_PAL_OK) {
     (void)AMediaCodec_delete(codec);
@@ -103,8 +102,8 @@ static h2_pal_result_t android_audio_decoder_configure(
 }
 
 static h2_pal_result_t android_audio_decoder_submit_packet(
-    void *user, h2_pal_audio_decoder_session_t *session,
-    const h2_audio_decoder_packet_t *packet) {
+    void* user, h2_pal_audio_decoder_session_t* session,
+    const h2_audio_decoder_packet_t* packet) {
   (void)user;
   if (session == NULL || packet == NULL || !session->configured ||
       session->eos_reached) {
@@ -120,7 +119,7 @@ static h2_pal_result_t android_audio_decoder_submit_packet(
     return H2_PAL_ERR_IO;
   }
   size_t capacity = 0u;
-  uint8_t *buffer =
+  uint8_t* buffer =
       AMediaCodec_getInputBuffer(session->codec, (size_t)index, &capacity);
   if (buffer == NULL || packet->size > capacity) {
     return H2_PAL_ERR_FORMAT;
@@ -133,13 +132,13 @@ static h2_pal_result_t android_audio_decoder_submit_packet(
           ? AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM
           : 0u;
   return h2_android_audio_map_media_io_status(AMediaCodec_queueInputBuffer(
-      session->codec, (size_t)index, 0u, packet->size,
-      (uint64_t)packet->pts_us, flags));
+      session->codec, (size_t)index, 0u, packet->size, (uint64_t)packet->pts_us,
+      flags));
 }
 
 static void android_audio_decoder_update_format(
-    h2_pal_audio_decoder_session_t *session) {
-  AMediaFormat *format = AMediaCodec_getOutputFormat(session->codec);
+    h2_pal_audio_decoder_session_t* session) {
+  AMediaFormat* format = AMediaCodec_getOutputFormat(session->codec);
   if (format == NULL) {
     return;
   }
@@ -156,8 +155,8 @@ static void android_audio_decoder_update_format(
 }
 
 static h2_pal_result_t android_audio_decoder_acquire_frame(
-    void *user, h2_pal_audio_decoder_session_t *session, uint32_t timeout_ms,
-    h2_pal_audio_decoder_frame_t **out_frame) {
+    void* user, h2_pal_audio_decoder_session_t* session, uint32_t timeout_ms,
+    h2_pal_audio_decoder_frame_t** out_frame) {
   (void)user;
   if (session == NULL || out_frame == NULL || !session->configured) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -197,9 +196,9 @@ static h2_pal_result_t android_audio_decoder_acquire_frame(
       continue;
     }
     size_t capacity = 0u;
-    uint8_t *buffer =
+    uint8_t* buffer =
         AMediaCodec_getOutputBuffer(session->codec, (size_t)index, &capacity);
-    h2_pal_audio_decoder_frame_t *frame = calloc(1u, sizeof(*frame));
+    h2_pal_audio_decoder_frame_t* frame = calloc(1u, sizeof(*frame));
     if (frame == NULL) {
       (void)AMediaCodec_releaseOutputBuffer(session->codec, (size_t)index,
                                             false);
@@ -209,8 +208,7 @@ static h2_pal_result_t android_audio_decoder_acquire_frame(
         session->allocator, buffer, capacity, buffer_info.offset,
         buffer_info.size, session->sample_rate_hz, session->channels,
         buffer_info.presentationTimeUs, &frame->pcm);
-    (void)AMediaCodec_releaseOutputBuffer(session->codec, (size_t)index,
-                                          false);
+    (void)AMediaCodec_releaseOutputBuffer(session->codec, (size_t)index, false);
     if (copy_result != H2_PAL_OK) {
       free(frame);
       return copy_result;
@@ -224,9 +222,9 @@ static h2_pal_result_t android_audio_decoder_acquire_frame(
 }
 
 static h2_pal_result_t android_audio_decoder_frame_get_info(
-    void *user, h2_pal_audio_decoder_session_t *session,
-    h2_pal_audio_decoder_frame_t *frame,
-    h2_audio_decoder_frame_info_t *out_info) {
+    void* user, h2_pal_audio_decoder_session_t* session,
+    h2_pal_audio_decoder_frame_t* frame,
+    h2_audio_decoder_frame_info_t* out_info) {
   (void)user;
   if (session == NULL || frame == NULL || out_info == NULL ||
       !session->acquired || frame->owner != session) {
@@ -237,8 +235,8 @@ static h2_pal_result_t android_audio_decoder_frame_get_info(
 }
 
 static h2_pal_result_t android_audio_decoder_release_frame(
-    void *user, h2_pal_audio_decoder_session_t *session,
-    h2_pal_audio_decoder_frame_t *frame) {
+    void* user, h2_pal_audio_decoder_session_t* session,
+    h2_pal_audio_decoder_frame_t* frame) {
   (void)user;
   if (session == NULL || frame == NULL || !session->acquired ||
       frame->owner != session) {
@@ -255,7 +253,7 @@ static h2_pal_result_t android_audio_decoder_release_frame(
 }
 
 static h2_pal_result_t android_audio_decoder_reset(
-    void *user, h2_pal_audio_decoder_session_t *session) {
+    void* user, h2_pal_audio_decoder_session_t* session) {
   (void)user;
   if (session == NULL || session->acquired) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -265,7 +263,7 @@ static h2_pal_result_t android_audio_decoder_reset(
 }
 
 static h2_pal_result_t android_audio_decoder_close(
-    void *user, h2_pal_audio_decoder_session_t *session) {
+    void* user, h2_pal_audio_decoder_session_t* session) {
   (void)user;
   if (session == NULL || session->acquired) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -291,6 +289,6 @@ static const h2_pal_audio_decoder_api_t s_android_audio_decoder = {
     .vtable = &s_android_audio_decoder_vtable,
 };
 
-const h2_pal_audio_decoder_api_t *h2_android_platform_audio_decoder_api(void) {
+const h2_pal_audio_decoder_api_t* h2_android_platform_audio_decoder_api(void) {
   return &s_android_audio_decoder;
 }

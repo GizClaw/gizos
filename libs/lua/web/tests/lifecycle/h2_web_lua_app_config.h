@@ -1,7 +1,7 @@
 #ifndef H2_WEB_LUA_APP_CONFIG_H
 #define H2_WEB_LUA_APP_CONFIG_H
 #include "h2_lua_job.h"
-extern const uint8_t *test_source;
+extern const uint8_t* test_source;
 extern size_t test_source_size;
 #define H2_WEB_LUA_APP_NAME "lifecycle"
 #define H2_WEB_LUA_APP_SOURCE test_source

@@ -16,55 +16,48 @@
 /* Controlled faults test the App/report/ownership logic; these are never
  * provider qualification evidence. Runtime itself is initialized normally. */
 typedef struct allocation {
-  void *ptr;
+  void* ptr;
   size_t len;
 } allocation_t;
 static allocation_t allocations[512];
 static size_t live_allocations;
 
-static void *tracked_alloc(void *user, size_t len) {
+static void* tracked_alloc(void* user, size_t len) {
   (void)user;
-  void *p = malloc(len);
+  void* p = malloc(len);
   if (p != NULL) {
     size_t i = 0;
-    while (i < 512u && allocations[i].ptr != NULL)
-      ++i;
+    while (i < 512u && allocations[i].ptr != NULL) ++i;
     assert(i < 512u);
     allocations[i] = (allocation_t){p, len};
     ++live_allocations;
   }
   return p;
 }
-static void tracked_free(void *user, void *ptr) {
+static void tracked_free(void* user, void* ptr) {
   (void)user;
-  if (ptr == NULL)
-    return;
+  if (ptr == NULL) return;
   size_t i = 0;
-  while (i < 512u && allocations[i].ptr != ptr)
-    ++i;
+  while (i < 512u && allocations[i].ptr != ptr) ++i;
   assert(i < 512u);
   allocations[i] = (allocation_t){0};
   --live_allocations;
   free(ptr);
 }
-static void *tracked_realloc(void *user, void *ptr, size_t len) {
-  if (ptr == NULL)
-    return tracked_alloc(user, len);
+static void* tracked_realloc(void* user, void* ptr, size_t len) {
+  if (ptr == NULL) return tracked_alloc(user, len);
   size_t i = 0;
-  while (i < 512u && allocations[i].ptr != ptr)
-    ++i;
+  while (i < 512u && allocations[i].ptr != ptr) ++i;
   assert(i < 512u);
-  void *p = realloc(ptr, len);
-  if (p != NULL)
-    allocations[i] = (allocation_t){p, len};
+  void* p = realloc(ptr, len);
+  if (p != NULL) allocations[i] = (allocation_t){p, len};
   return p;
 }
-static int is_live(const void *ptr) {
+static int is_live(const void* ptr) {
   uintptr_t p = (uintptr_t)ptr;
   for (size_t i = 0; i < 512u; ++i) {
     uintptr_t base = (uintptr_t)allocations[i].ptr;
-    if (base != 0u && p >= base && p - base < allocations[i].len)
-      return 1;
+    if (base != 0u && p >= base && p - base < allocations[i].len) return 1;
   }
   return 0;
 }
@@ -72,7 +65,7 @@ static const h2_pal_mem_vtable_t memory_vtable = {
     tracked_alloc, tracked_realloc, tracked_free};
 static const h2_pal_mem_api_t memory_api = {NULL, &memory_vtable};
 
-static h2_pal_result_t clock_now(void *user, uint64_t *us) {
+static h2_pal_result_t clock_now(void* user, uint64_t* us) {
   (void)user;
   struct timespec ts;
   assert(clock_gettime(CLOCK_MONOTONIC, &ts) == 0);
@@ -86,22 +79,85 @@ static h2_pal_core_e2e_config_t app_config(void) {
   config.queue_latest = H2_PAL_CORE_QUEUE_LATEST_REPLACE;
   return config;
 }
-static h2_runtime_t *make_runtime(h2_runtime_config_t *config) {
+static h2_runtime_t* make_runtime(h2_runtime_config_t* config) {
   config->mem = &memory_api;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(config, &runtime) == H2_PAL_OK);
   return runtime;
 }
-static const h2_pal_core_e2e_case_result_t *
-find_case(const h2_pal_core_e2e_result_t *result, const char *id) {
+static const h2_pal_core_e2e_case_result_t* find_case(
+    const h2_pal_core_e2e_result_t* result, const char* id) {
   for (size_t i = 0; i < H2_PAL_CORE_E2E_CASE_COUNT; ++i)
-    if (strcmp(result->cases[i].id, id) == 0)
-      return &result->cases[i];
+    if (strcmp(result->cases[i].id, id) == 0) return &result->cases[i];
   abort();
 }
 
-static const h2_pal_queue_api_t *fallback_backend;
-static int proxy_latest(void *user, h2_pal_queue_t *queue, const void *item) {
+typedef struct log_fixture {
+  unsigned written;
+  unsigned observed;
+  unsigned available;
+} log_fixture_t;
+static int log_write(void* user, h2_pal_log_level_t level, const char* scope,
+                     const char* message) {
+  log_fixture_t* fixture = user;
+  if (scope != NULL && strcmp(scope, "pal-core") == 0) {
+    assert(level >= H2_PAL_LOG_DEBUG && level <= H2_PAL_LOG_ERROR);
+    assert(strlen(message) == H2_PAL_LOG_MESSAGE_MAX - 1u);
+    fixture->written |= 1u << level;
+  }
+  return H2_PAL_OK;
+}
+static h2_pal_result_t log_observe(void* user, h2_pal_log_level_t level,
+                                   const char* scope, const char* message) {
+  log_fixture_t* fixture = user;
+  assert(strcmp(scope, "pal-core") == 0);
+  assert(strlen(message) == H2_PAL_LOG_MESSAGE_MAX - 1u);
+  fixture->observed |= 1u << level;
+  return (fixture->available & fixture->written & (1u << level)) != 0u
+             ? H2_PAL_OK
+             : H2_PAL_ERR_INVALID_STATE;
+}
+static void test_log_output_profiles(void) {
+  log_fixture_t fixture = {0};
+  const h2_pal_log_vtable_t vtable = {log_write};
+  const h2_pal_log_api_t log = {&fixture, &vtable};
+  h2_runtime_config_t config = h2_pal_core_host_config();
+  config.log = &log;
+  h2_runtime_t* runtime = make_runtime(&config);
+  const size_t baseline = live_allocations;
+  h2_pal_core_e2e_config_t app = app_config();
+  app.observe_log = log_observe;
+  app.observer_user = &fixture;
+  h2_pal_core_e2e_result_t result;
+  for (int minimum = H2_PAL_LOG_DEBUG; minimum <= H2_PAL_LOG_ERROR; ++minimum) {
+    app.log_min_level = (h2_pal_log_level_t)minimum;
+    fixture = (log_fixture_t){.available = 0xfu << minimum};
+    assert(h2_pal_core_e2e_run(runtime, &app, &result) != H2_PAL_OK);
+    assert(find_case(&result, "pal.core.log.output")->status ==
+           H2_PAL_CORE_E2E_PASS);
+    assert(fixture.written == 0xfu);
+    assert(fixture.observed == (0xfu & (0xfu << minimum)));
+    assert(live_allocations == baseline);
+  }
+  /* Every declared output level remains mandatory, including the default
+   * DEBUG profile and both enabled levels in a WARN-only SDK profile. */
+  const h2_pal_log_level_t missing[] = {H2_PAL_LOG_DEBUG, H2_PAL_LOG_WARN,
+                                        H2_PAL_LOG_ERROR};
+  for (size_t i = 0; i < sizeof(missing) / sizeof(missing[0]); ++i) {
+    app.log_min_level = i == 0u ? H2_PAL_LOG_DEBUG : H2_PAL_LOG_WARN;
+    fixture = (log_fixture_t){.available = 0xfu & ~(1u << missing[i])};
+    assert(h2_pal_core_e2e_run(runtime, &app, &result) != H2_PAL_OK);
+    assert(find_case(&result, "pal.core.log.output")->status ==
+           H2_PAL_CORE_E2E_FAIL);
+    assert((fixture.observed & (1u << missing[i])) != 0u);
+    assert(live_allocations == baseline);
+  }
+  h2_runtime_deinit(runtime);
+  assert(live_allocations == 0u);
+}
+
+static const h2_pal_queue_api_t* fallback_backend;
+static int proxy_latest(void* user, h2_pal_queue_t* queue, const void* item) {
   (void)user;
   return h2_pal_queue_send_latest(fallback_backend, queue, item);
 }
@@ -116,7 +172,7 @@ static void test_missing_observation_and_queue_fallback(void) {
   proxy_vtable.send_latest = proxy_latest;
   const h2_pal_queue_api_t queue = {config.queue->user, &proxy_vtable};
   config.queue = &queue;
-  h2_runtime_t *runtime = make_runtime(&config);
+  h2_runtime_t* runtime = make_runtime(&config);
   assert(runtime->queue->vtable->send_latest != NULL); /* actual proxy */
   const size_t baseline = live_allocations;
   h2_pal_core_e2e_config_t app = app_config();
@@ -156,7 +212,7 @@ static void test_missing_observation_and_queue_fallback(void) {
 
 static void test_invalid_config_and_missing_clock(void) {
   h2_runtime_config_t config = h2_pal_core_host_config();
-  h2_runtime_t *runtime = make_runtime(&config);
+  h2_runtime_t* runtime = make_runtime(&config);
   const size_t baseline = live_allocations;
   h2_pal_core_e2e_config_t app = app_config();
   h2_pal_core_e2e_result_t result;
@@ -164,6 +220,17 @@ static void test_invalid_config_and_missing_clock(void) {
   assert(h2_pal_core_e2e_run(runtime, &app, &result) == H2_PAL_ERR_INVALID_ARG);
   assert(result.not_run == H2_PAL_CORE_E2E_CASE_COUNT && !result.qualified);
   assert(live_allocations == baseline);
+  const h2_pal_log_level_t invalid_levels[] = {(h2_pal_log_level_t)-1,
+                                               (h2_pal_log_level_t)99};
+  for (size_t i = 0; i < sizeof(invalid_levels) / sizeof(invalid_levels[0]);
+       ++i) {
+    app = app_config();
+    app.log_min_level = invalid_levels[i];
+    assert(h2_pal_core_e2e_run(runtime, &app, &result) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(result.not_run == H2_PAL_CORE_E2E_CASE_COUNT && !result.qualified);
+    assert(live_allocations == baseline);
+  }
   app = app_config();
   app.observe_monotonic_us = NULL;
   assert(h2_pal_core_e2e_run(runtime, &app, &result) != H2_PAL_OK);
@@ -180,25 +247,24 @@ static void test_invalid_config_and_missing_clock(void) {
 }
 
 static h2_pal_task_entry_t deferred_entry;
-static void *deferred_context;
+static void* deferred_context;
 static int permit_join;
 static int fake_task;
-static int deferred_start(void *user, const h2_pal_task_options_t *options,
-                          h2_pal_task_entry_t entry, void *context,
-                          h2_pal_task_t **out) {
+static int deferred_start(void* user, const h2_pal_task_options_t* options,
+                          h2_pal_task_entry_t entry, void* context,
+                          h2_pal_task_t** out) {
   (void)user;
   (void)options;
   assert(deferred_entry == NULL);
   deferred_entry = entry;
   deferred_context = context;
-  *out = (h2_pal_task_t *)&fake_task;
+  *out = (h2_pal_task_t*)&fake_task;
   return H2_PAL_OK;
 }
-static int deferred_join(void *user, h2_pal_task_t *task) {
+static int deferred_join(void* user, h2_pal_task_t* task) {
   (void)user;
-  assert(task == (h2_pal_task_t *)&fake_task);
-  if (!permit_join)
-    return H2_PAL_ERR_IO;
+  assert(task == (h2_pal_task_t*)&fake_task);
+  if (!permit_join) return H2_PAL_ERR_IO;
   assert(is_live(deferred_context));
   deferred_entry(deferred_context);
   deferred_entry = NULL;
@@ -210,7 +276,7 @@ static void test_join_retains_context(void) {
   const h2_pal_task_vtable_t vtable = {deferred_start, deferred_join};
   const h2_pal_task_api_t task = {NULL, &vtable};
   config.task = &task;
-  h2_runtime_t *runtime = make_runtime(&config);
+  h2_runtime_t* runtime = make_runtime(&config);
   const size_t baseline = live_allocations;
   h2_pal_core_e2e_config_t app = app_config();
   h2_pal_core_e2e_result_t result;
@@ -235,40 +301,38 @@ static void test_join_retains_context(void) {
 static h2_pal_timer_config_t timer_config;
 static int fake_timer;
 static int permit_destroy;
-static h2_pal_result_t timer_create(void *u, const h2_pal_timer_config_t *cfg,
-                                    h2_pal_timer_t **out) {
+static h2_pal_result_t timer_create(void* u, const h2_pal_timer_config_t* cfg,
+                                    h2_pal_timer_t** out) {
   (void)u;
   timer_config = *cfg;
-  *out = (h2_pal_timer_t *)&fake_timer;
-  if (cfg->flags & H2_PAL_TIMER_FLAG_AUTO_START)
-    cfg->cb(cfg->cb_user, *out);
+  *out = (h2_pal_timer_t*)&fake_timer;
+  if (cfg->flags & H2_PAL_TIMER_FLAG_AUTO_START) cfg->cb(cfg->cb_user, *out);
   return H2_PAL_OK;
 }
-static h2_pal_result_t timer_destroy(void *u, h2_pal_timer_t *t) {
+static h2_pal_result_t timer_destroy(void* u, h2_pal_timer_t* t) {
   (void)u;
   (void)t;
-  if (!permit_destroy)
-    return H2_PAL_ERR_BUSY;
+  if (!permit_destroy) return H2_PAL_ERR_BUSY;
   timer_config.cb = NULL;
   return H2_PAL_OK;
 }
-static h2_pal_result_t timer_start(void *u, h2_pal_timer_t *t) {
+static h2_pal_result_t timer_start(void* u, h2_pal_timer_t* t) {
   (void)u;
   timer_config.cb(timer_config.cb_user, t);
   return H2_PAL_OK;
 }
-static h2_pal_result_t timer_stop(void *u, h2_pal_timer_t *t) {
+static h2_pal_result_t timer_stop(void* u, h2_pal_timer_t* t) {
   (void)u;
   (void)t;
   return H2_PAL_OK;
 }
-static h2_pal_result_t timer_period(void *u, h2_pal_timer_t *t, uint32_t ms) {
+static h2_pal_result_t timer_period(void* u, h2_pal_timer_t* t, uint32_t ms) {
   (void)u;
   (void)t;
   (void)ms;
   return H2_PAL_OK;
 }
-static h2_pal_result_t timer_running(void *u, h2_pal_timer_t *t, int *running) {
+static h2_pal_result_t timer_running(void* u, h2_pal_timer_t* t, int* running) {
   (void)u;
   (void)t;
   *running = 0;
@@ -281,7 +345,7 @@ static void test_timer_destroy_retains_callback(void) {
   const h2_pal_timer_api_t timer = {NULL, &vtable};
   h2_runtime_config_t config = h2_pal_core_host_config();
   config.timer = &timer;
-  h2_runtime_t *runtime = make_runtime(&config);
+  h2_runtime_t* runtime = make_runtime(&config);
   const size_t baseline = live_allocations;
   h2_pal_core_e2e_config_t app = app_config();
   h2_pal_core_e2e_result_t result;
@@ -290,7 +354,7 @@ static void test_timer_destroy_retains_callback(void) {
          H2_PAL_CORE_E2E_FAIL);
   assert(result.retained_cleanup != NULL && result.not_run != 0u);
   assert(is_live(timer_config.cb_user));
-  timer_config.cb(timer_config.cb_user, (h2_pal_timer_t *)&fake_timer);
+  timer_config.cb(timer_config.cb_user, (h2_pal_timer_t*)&fake_timer);
   assert(h2_pal_core_e2e_cleanup(runtime, &result) == H2_PAL_ERR_BUSY);
   permit_destroy = 1;
   assert(h2_pal_core_e2e_cleanup(runtime, &result) == H2_PAL_OK);
@@ -302,11 +366,10 @@ static void test_timer_destroy_retains_callback(void) {
 
 static int wall_sets;
 static int allow_restore;
-static h2_pal_result_t wall_set(void *u, uint64_t wall) {
+static h2_pal_result_t wall_set(void* u, uint64_t wall) {
   (void)u;
   ++wall_sets;
-  if (wall_sets > 1 && !allow_restore)
-    return H2_PAL_ERR_IO;
+  if (wall_sets > 1 && !allow_restore) return H2_PAL_ERR_IO;
   return h2_pal_time_set_wall_ms(h2_desktop_platform_time_api(), wall);
 }
 static void test_wall_restore_retained(void) {
@@ -315,7 +378,7 @@ static void test_wall_restore_retained(void) {
   vtable.set_wall_ms = wall_set;
   const h2_pal_time_api_t time = {config.time->user, &vtable};
   config.time = &time;
-  h2_runtime_t *runtime = make_runtime(&config);
+  h2_runtime_t* runtime = make_runtime(&config);
   const size_t baseline = live_allocations;
   h2_pal_core_e2e_config_t app = app_config();
   app.allow_wall_set = 1;
@@ -336,7 +399,7 @@ static void test_wall_restore_retained(void) {
 
 /* Returning success without closing never wakes the reader. The worker times
  * out rather than observing CLOSED; the report must reject this provider. */
-static int ignored_close(void *u, h2_pal_queue_t *q) {
+static int ignored_close(void* u, h2_pal_queue_t* q) {
   (void)u;
   (void)q;
   return H2_PAL_OK;
@@ -347,7 +410,7 @@ static void test_broken_close_detected(void) {
   vtable.close = ignored_close;
   const h2_pal_queue_api_t queue = {config.queue->user, &vtable};
   config.queue = &queue;
-  h2_runtime_t *runtime = make_runtime(&config);
+  h2_runtime_t* runtime = make_runtime(&config);
   h2_pal_core_e2e_config_t app = app_config();
   h2_pal_core_e2e_result_t result;
   assert(h2_pal_core_e2e_run(runtime, &app, &result) != H2_PAL_OK);
@@ -360,6 +423,7 @@ static void test_broken_close_detected(void) {
 
 int main(void) {
   alarm(30u);
+  test_log_output_profiles();
   test_missing_observation_and_queue_fallback();
   test_invalid_config_and_missing_clock();
   test_join_retains_context();

@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <string.h>
 
-static void check_result(h2_sha256_t *sha, const char *expected) {
+static void check_result(h2_sha256_t* sha, const char* expected) {
   uint8_t digest[32];
   char hex[65];
   const uint8_t cleared[sizeof(*sha)] = {0};
@@ -16,15 +16,15 @@ static void check_result(h2_sha256_t *sha, const char *expected) {
   assert(memcmp(sha, cleared, sizeof(*sha)) == 0);
 }
 
-static void check_vector(const char *message, const char *expected) {
+static void check_vector(const char* message, const char* expected) {
   const size_t length = strlen(message);
   /* Every split crosses a different input and padding boundary. */
   for (size_t split = 0; split <= length; ++split) {
     h2_sha256_t sha;
     h2_sha256_init(&sha);
     h2_sha256_update(&sha, NULL, 0);
-    h2_sha256_update(&sha, (const uint8_t *)message, split);
-    h2_sha256_update(&sha, (const uint8_t *)message + split, length - split);
+    h2_sha256_update(&sha, (const uint8_t*)message, split);
+    h2_sha256_update(&sha, (const uint8_t*)message + split, length - split);
     check_result(&sha, expected);
   }
 }
@@ -43,7 +43,7 @@ int main(void) {
    * compression block boundaries. */
   const struct {
     size_t length;
-    const char *digest;
+    const char* digest;
   } boundaries[] = {
       {55, "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318"},
       {63, "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34"},

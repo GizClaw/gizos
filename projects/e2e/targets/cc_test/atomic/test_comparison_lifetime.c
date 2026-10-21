@@ -6,27 +6,30 @@
 
 typedef struct deferred_worker {
   h2_pal_task_entry_t entry;
-  void *user;
+  void* user;
   unsigned joined;
 } deferred_worker_t;
 typedef struct fixture {
-  void *allocations[2];
+  void* allocations[2];
   unsigned allocation_count, destroys, started, failed_index, busy, join_calls;
   deferred_worker_t workers[2];
-  unsigned *backend_state;
+  unsigned* backend_state;
 } fixture_t;
-#define CHECK(condition) do { if (!(condition)) { \
-  fprintf(stderr, "comparison lifetime check failed: %s\n", #condition); \
-  return 1; } } while (0)
-static void *allocate(void *user, size_t size) {
-  fixture_t *f = user;
-  void *p = malloc(size);
-  if (p && f->allocation_count < 2)
-    f->allocations[f->allocation_count++] = p;
+#define CHECK(condition)                                                     \
+  do {                                                                       \
+    if (!(condition)) {                                                      \
+      fprintf(stderr, "comparison lifetime check failed: %s\n", #condition); \
+      return 1;                                                              \
+    }                                                                        \
+  } while (0)
+static void* allocate(void* user, size_t size) {
+  fixture_t* f = user;
+  void* p = malloc(size);
+  if (p && f->allocation_count < 2) f->allocations[f->allocation_count++] = p;
   return p;
 }
-static void release(void *user, void *p) {
-  fixture_t *f = user;
+static void release(void* user, void* p) {
+  fixture_t* f = user;
   for (unsigned i = 0; i < 2; ++i)
     if (f->allocations[i] == p) {
       f->allocations[i] = NULL;
@@ -34,39 +37,41 @@ static void release(void *user, void *p) {
     }
   free(p);
 }
-static int create(const h2_pal_mem_api_t *mem, bool psram, void **out) {
+static int create(const h2_pal_mem_api_t* mem, bool psram, void** out) {
   (void)psram;
   *out = h2_pal_mem_alloc(mem, sizeof(unsigned));
   if (!*out) return H2_PAL_ERR_NO_MEMORY;
-  *(unsigned *)*out = 0;
-  ((fixture_t *)mem->user)->backend_state = *out;
+  *(unsigned*)*out = 0;
+  ((fixture_t*)mem->user)->backend_state = *out;
   return 0;
 }
-static void destroy(const h2_pal_mem_api_t *mem, bool psram, void *state) {
+static void destroy(const h2_pal_mem_api_t* mem, bool psram, void* state) {
   (void)psram;
-  ++((fixture_t *)mem->user)->destroys;
+  ++((fixture_t*)mem->user)->destroys;
   h2_pal_mem_free(mem, state);
 }
-static unsigned work(void *state, unsigned iterations) {
-  *(unsigned *)state += iterations;
+static unsigned work(void* state, unsigned iterations) {
+  *(unsigned*)state += iterations;
   return 0;
 }
-static unsigned count(const void *state) { return *(const unsigned *)state; }
-static void addresses(const void *state, uintptr_t *wrapper, uintptr_t *storage) {
+static unsigned count(const void* state) { return *(const unsigned*)state; }
+static void addresses(const void* state, uintptr_t* wrapper,
+                      uintptr_t* storage) {
   *wrapper = *storage = (uintptr_t)state;
 }
-static int start(void *user, const h2_pal_task_options_t *options,
-                 h2_pal_task_entry_t entry, void *argument, h2_pal_task_t **out) {
+static int start(void* user, const h2_pal_task_options_t* options,
+                 h2_pal_task_entry_t entry, void* argument,
+                 h2_pal_task_t** out) {
   (void)options;
-  fixture_t *f = user;
-  deferred_worker_t *worker = &f->workers[f->started++];
+  fixture_t* f = user;
+  deferred_worker_t* worker = &f->workers[f->started++];
   *worker = (deferred_worker_t){.entry = entry, .user = argument};
-  *out = (h2_pal_task_t *)worker;
+  *out = (h2_pal_task_t*)worker;
   return 0;
 }
-static int join(void *user, h2_pal_task_t *handle) {
-  fixture_t *f = user;
-  deferred_worker_t *worker = (deferred_worker_t *)handle;
+static int join(void* user, h2_pal_task_t* handle) {
+  fixture_t* f = user;
+  deferred_worker_t* worker = (deferred_worker_t*)handle;
   if (worker == &f->workers[f->failed_index]) {
     ++f->join_calls;
     return f->busy ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
@@ -75,12 +80,12 @@ static int join(void *user, h2_pal_task_t *handle) {
   worker->joined = 1;
   return 0;
 }
-static h2_pal_result_t monotonic(void *user, uint64_t *out) {
+static h2_pal_result_t monotonic(void* user, uint64_t* out) {
   (void)user;
   *out = 1;
   return H2_PAL_OK;
 }
-static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
+static h2_pal_result_t sleep_ms(void* user, uint32_t ms) {
   (void)user;
   (void)ms;
   return H2_PAL_OK;
@@ -92,7 +97,7 @@ static int run_case(unsigned failed_index, unsigned busy) {
   const h2_pal_task_vtable_t tasks = {.start = start, .join = join};
   const h2_pal_task_api_t task = {.user = &f, .vtable = &tasks};
   const h2_pal_time_vtable_t clock = {.get_monotonic_us = monotonic,
-                                     .sleep_ms = sleep_ms};
+                                      .sleep_ms = sleep_ms};
   const h2_pal_time_api_t time = {.user = &f, .vtable = &clock};
   static const h2_atomic_e2e_backend_t backend = {
       "deferred-fixture", create, destroy, work, count, count, addresses};

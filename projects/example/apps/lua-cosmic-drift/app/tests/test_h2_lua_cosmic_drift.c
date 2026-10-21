@@ -7,11 +7,9 @@
 
 static _Thread_local int s_settle_unlocks;
 
-static h2_pal_result_t sync_unlock_mutex(void *user,
-    h2_pal_mutex_t *mutex) {
-  const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
-  const h2_pal_result_t result =
-      sync->vtable->unlock_mutex(user, mutex);
+static h2_pal_result_t sync_unlock_mutex(void* user, h2_pal_mutex_t* mutex) {
+  const h2_pal_sync_api_t* sync = h2_desktop_platform_sync_api();
+  const h2_pal_result_t result = sync->vtable->unlock_mutex(user, mutex);
   if (s_settle_unlocks > 0) {
     --s_settle_unlocks;
     (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 10u);
@@ -30,21 +28,21 @@ typedef struct fixture {
   size_t ready;
 } fixture_t;
 
-static int display_open(void *user) {
-  ((fixture_t *)user)->display_open++;
+static int display_open(void* user) {
+  ((fixture_t*)user)->display_open++;
   return H2_PAL_OK;
 }
 
-static int display_info(void *user, h2_display_info_t *out_info) {
+static int display_info(void* user, h2_display_info_t* out_info) {
   (void)user;
   *out_info = (h2_display_info_t){368, 448, H2_DISPLAY_PIXEL_RGB565};
   return H2_PAL_OK;
 }
 
-static int draw_bitmap(void *user, const h2_display_rect_t *rect,
-                       const void *pixels, size_t stride,
+static int draw_bitmap(void* user, const h2_display_rect_t* rect,
+                       const void* pixels, size_t stride,
                        h2_display_pixel_format_t format) {
-  fixture_t *fixture = user;
+  fixture_t* fixture = user;
   assert(rect->x == 0 && rect->y == 0 && rect->width == 368 &&
          rect->height == 448);
   assert(pixels != NULL && stride == 368u * sizeof(uint16_t));
@@ -53,29 +51,29 @@ static int draw_bitmap(void *user, const h2_display_rect_t *rect,
   return H2_PAL_OK;
 }
 
-static int display_present(void *user) {
-  ((fixture_t *)user)->present++;
+static int display_present(void* user) {
+  ((fixture_t*)user)->present++;
   return H2_PAL_OK;
 }
 
-static int display_close(void *user) {
-  ((fixture_t *)user)->display_close++;
+static int display_close(void* user) {
+  ((fixture_t*)user)->display_close++;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_open(void *user) {
-  ((fixture_t *)user)->touch_open++;
+static h2_pal_result_t touch_open(void* user) {
+  ((fixture_t*)user)->touch_open++;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_info(void *user, h2_pal_touch_info_t *out_info) {
+static h2_pal_result_t touch_info(void* user, h2_pal_touch_info_t* out_info) {
   (void)user;
   *out_info = (h2_pal_touch_info_t){368u, 448u};
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out_event) {
-  fixture_t *fixture = user;
+static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out_event) {
+  fixture_t* fixture = user;
   if (fixture->touch_event_sent != 0u) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
@@ -84,28 +82,28 @@ static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out_event) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_close(void *user) {
-  ((fixture_t *)user)->touch_close++;
+static h2_pal_result_t touch_close(void* user) {
+  ((fixture_t*)user)->touch_close++;
   return H2_PAL_OK;
 }
 
-static int should_stop(void *user) {
-  fixture_t *fixture = user;
+static int should_stop(void* user) {
+  fixture_t* fixture = user;
   return fixture->ready != 0u && fixture->present >= 6u;
 }
 
-static int never_stop(void *user) {
+static int never_stop(void* user) {
   (void)user;
   return 0;
 }
 
-static h2_pal_result_t ready(void *user) {
-  ((fixture_t *)user)->ready++;
+static h2_pal_result_t ready(void* user) {
+  ((fixture_t*)user)->ready++;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fail_ready(void *user) {
-  ((fixture_t *)user)->ready++;
+static h2_pal_result_t fail_ready(void* user) {
+  ((fixture_t*)user)->ready++;
   /* Let the worker finish cancellation before the App reads final status,
    * without depending on which App-thread unlock releases the cancel lock. */
   s_settle_unlocks = 16;
@@ -138,11 +136,11 @@ int main(void) {
   static h2_pal_sync_vtable_t sync_vtable;
   sync_vtable = *h2_desktop_platform_sync_api()->vtable;
   sync_vtable.unlock_mutex = sync_unlock_mutex;
-  const h2_pal_sync_api_t sync = {
-      h2_desktop_platform_sync_api()->user, &sync_vtable};
+  const h2_pal_sync_api_t sync = {h2_desktop_platform_sync_api()->user,
+                                  &sync_vtable};
   runtime_config.sync = &sync;
   runtime_config.touch = &touch;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&runtime_config, &runtime) == H2_PAL_OK);
   assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
   const h2_lua_cosmic_drift_config_t valid_config = {

@@ -11,13 +11,13 @@
  * plan/tile storage remain worker-owned until DONE.
  * Task/atomic/semaphore implementation storage belongs to the PAL provider. */
 typedef struct h2_lua_display_worker {
-  const h2_runtime_t *runtime;
-  const h2_pal_mem_api_t *allocator;
+  const h2_runtime_t* runtime;
+  const h2_pal_mem_api_t* allocator;
   h2_lua_display_present_fn on_present;
-  void *present_user;
+  void* present_user;
   h2_lua_job_id_t job_id;
-  h2_pal_task_t *task;
-  h2_pal_semaphore_t *wake;
+  h2_pal_task_t* task;
+  h2_pal_semaphore_t* wake;
   h2_atomic_int_t phase;
   int initialized;
   int borrowed;
@@ -27,9 +27,9 @@ typedef struct h2_lua_display_worker {
   h2_pal_result_t result;
   h2_display_info_t info;
   h2_lua_display_plan_t plan;
-  const uint16_t *source;
-  uint16_t *pixels;
-  uint8_t *tiles;
+  const uint16_t* source;
+  uint16_t* pixels;
+  uint8_t* tiles;
   int tiled;
   int gap;
   size_t sent_pixels, sent_rects;
@@ -51,14 +51,15 @@ enum {
   H2_LUA_DISPLAY_EXIT,
 };
 
-h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t *worker,
-    const h2_runtime_t *runtime, const h2_pal_mem_api_t *allocator,
-    int borrowed, size_t stack_size);
-h2_pal_result_t h2_lua_display_worker_post(h2_lua_display_worker_t *worker,
-                                         int operation);
-int h2_lua_display_worker_phase(h2_lua_display_worker_t *worker);
-void h2_lua_display_worker_ack(h2_lua_display_worker_t *worker);
+h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t* worker,
+                                           const h2_runtime_t* runtime,
+                                           const h2_pal_mem_api_t* allocator,
+                                           int borrowed, size_t stack_size);
+h2_pal_result_t h2_lua_display_worker_post(h2_lua_display_worker_t* worker,
+                                           int operation);
+int h2_lua_display_worker_phase(h2_lua_display_worker_t* worker);
+void h2_lua_display_worker_ack(h2_lua_display_worker_t* worker);
 /* Joins only after exit is requested or observed. A failed join retains all
  * handles; the PAL join may block or return BUSY according to its contract. */
-h2_pal_result_t h2_lua_display_worker_join(h2_lua_display_worker_t *worker);
+h2_pal_result_t h2_lua_display_worker_join(h2_lua_display_worker_t* worker);
 #endif

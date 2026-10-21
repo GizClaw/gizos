@@ -6,6 +6,15 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 esp_target_task_policy(
     name = "task_policy",
     default_policy = "4 any 4096 psram",
@@ -51,7 +60,10 @@ firmware_native_component(
     srcs = ["main/main.c"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main",
     component_name = "main",
-    data = ["main/CMakeLists.txt", "main/idf_component.yml"],
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
     tags = ["manual"],
     deps = [
         ":firmware_lib",
@@ -67,8 +79,13 @@ firmware_native_component(
 
 h2loader_esp_idf_firmware(
     name = "firmware",
-    srcs = ["CMakeLists.txt", "main/CMakeLists.txt", "main/idf_component.yml",
-            "main/main.c", "sdkconfig.pal-audio.defaults"],
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+        "sdkconfig.pal-audio.defaults",
+    ],
     board = "amoled",
     graph = [":launcher"],
     project = "CMakeLists.txt",

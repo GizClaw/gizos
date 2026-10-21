@@ -11,8 +11,8 @@ typedef struct test_allocator_state {
   size_t frees;
 } test_allocator_state_t;
 
-static void *test_alloc(void *user, size_t len) {
-  test_allocator_state_t *state = user;
+static void* test_alloc(void* user, size_t len) {
+  test_allocator_state_t* state = user;
   if (state->fail) {
     return NULL;
   }
@@ -20,8 +20,8 @@ static void *test_alloc(void *user, size_t len) {
   return malloc(len);
 }
 
-static void test_free(void *user, void *pointer) {
-  test_allocator_state_t *state = user;
+static void test_free(void* user, void* pointer) {
+  test_allocator_state_t* state = user;
   ++state->frees;
   free(pointer);
 }
@@ -54,10 +54,12 @@ static void test_decoder_stream_validation(void) {
   assert(h2_android_audio_validate_decoder_stream(&config) ==
          H2_PAL_ERR_INVALID_ARG);
   config.codec_config_size = 1u;
-  assert(h2_android_audio_validate_decoder_stream(&config) == H2_PAL_ERR_FORMAT);
+  assert(h2_android_audio_validate_decoder_stream(&config) ==
+         H2_PAL_ERR_FORMAT);
   config.codec_config_size = sizeof(codec_config);
   config.sample_rate_hz = 48000u;
-  assert(h2_android_audio_validate_decoder_stream(&config) == H2_PAL_ERR_FORMAT);
+  assert(h2_android_audio_validate_decoder_stream(&config) ==
+         H2_PAL_ERR_FORMAT);
   config.sample_rate_hz = 16000u;
   assert(h2_android_audio_validate_decoder_stream(&config) == H2_PAL_OK);
 }
@@ -70,22 +72,18 @@ static void test_pcm_copy_validation_and_allocation(void) {
       .vtable = &s_test_mem_vtable,
   };
   h2_android_audio_pcm_copy_t copy = {0};
-  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 1, 4,
-                                   16000u, 1u, 0, &copy) ==
-         H2_PAL_ERR_FORMAT);
-  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 0, 3,
-                                   16000u, 1u, 0, &copy) ==
-         H2_PAL_ERR_FORMAT);
-  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 0, 4,
-                                   16000u, 3u, 0, &copy) ==
-         H2_PAL_ERR_FORMAT);
+  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 1, 4, 16000u,
+                                   1u, 0, &copy) == H2_PAL_ERR_FORMAT);
+  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 0, 3, 16000u,
+                                   1u, 0, &copy) == H2_PAL_ERR_FORMAT);
+  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 0, 4, 16000u,
+                                   3u, 0, &copy) == H2_PAL_ERR_FORMAT);
   state.fail = 1;
-  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 0, 4,
-                                   16000u, 1u, 1000, &copy) ==
-         H2_PAL_ERR_NO_MEMORY);
+  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 0, 4, 16000u,
+                                   1u, 1000, &copy) == H2_PAL_ERR_NO_MEMORY);
   state.fail = 0;
-  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 0, 4,
-                                   16000u, 1u, 1000, &copy) == H2_PAL_OK);
+  assert(h2_android_audio_copy_pcm(&allocator, pcm, sizeof(pcm), 0, 4, 16000u,
+                                   1u, 1000, &copy) == H2_PAL_OK);
   assert(copy.info.data == copy.data);
   assert(copy.info.bytes == sizeof(pcm));
   assert(copy.info.samples_per_channel == 2u);
@@ -154,8 +152,7 @@ static void test_platform_error_mapping(void) {
   assert(h2_android_audio_map_aaudio_io_result(-1) == H2_AUDIO_ERR_IO);
   assert(h2_android_audio_map_aaudio_write_result(-2, -2) ==
          H2_AUDIO_ERR_WOULD_BLOCK);
-  assert(h2_android_audio_map_aaudio_write_result(-3, -2) ==
-         H2_AUDIO_ERR_IO);
+  assert(h2_android_audio_map_aaudio_write_result(-3, -2) == H2_AUDIO_ERR_IO);
   assert(!h2_android_audio_should_retain_partial_write(0u, 512u, 0));
   assert(h2_android_audio_should_retain_partial_write(128u, 512u, 0));
   assert(h2_android_audio_should_retain_partial_write(128u, 512u, -2));

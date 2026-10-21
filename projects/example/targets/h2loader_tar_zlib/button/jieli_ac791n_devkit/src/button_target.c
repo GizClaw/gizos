@@ -19,8 +19,8 @@ enum {
 };
 
 typedef struct button_target_state {
-  h2_runtime_t *runtime;
-  h2_pal_task_t *task;
+  h2_runtime_t* runtime;
+  h2_pal_task_t* task;
   h2_atomic_bool_t started;
   h2_atomic_bool_t entry_released;
   h2_atomic_bool_t stop_requested;
@@ -40,15 +40,15 @@ static bool button_atomic_init(void) {
   if (h2_atomic_init(&button_target.started, false) != H2_ATOMIC_OK ||
       h2_atomic_init(&button_target.entry_released, false) != H2_ATOMIC_OK ||
       h2_atomic_init(&button_target.stop_requested, false) != H2_ATOMIC_OK ||
-      h2_atomic_init(&button_target.startup_result, H2_PAL_ERR_INVALID_STATE) != H2_ATOMIC_OK) {
+      h2_atomic_init(&button_target.startup_result, H2_PAL_ERR_INVALID_STATE) !=
+          H2_ATOMIC_OK) {
     button_atomic_destroy();
     return false;
   }
   return true;
 }
 
-
-static void emit(const char *format, ...) {
+static void emit(const char* format, ...) {
   char line[320];
   va_list arguments;
   va_start(arguments, format);
@@ -63,11 +63,13 @@ static const h2_pal_periph_single_button_payload_t poll_button = {
     .delivery = H2_PAL_BUTTON_DELIVERY_POLL_STATE,
 };
 
-#define BUTTON_INFO(periph, label)                                         \
-  {                                                                        \
-      .id = (periph), .type = H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,           \
-      .name = label, .payload = &poll_button,                              \
-      .payload_size = sizeof(poll_button),                                 \
+#define BUTTON_INFO(periph, label)              \
+  {                                             \
+      .id = (periph),                           \
+      .type = H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, \
+      .name = label,                            \
+      .payload = &poll_button,                  \
+      .payload_size = sizeof(poll_button),      \
   }
 
 static const h2_pal_periph_info_t button_periphs[] = {
@@ -87,8 +89,7 @@ static const h2_runtime_component_mapping_entry_t button_mappings[] = {
     {H2_BUTTON_COMPONENT_PHOTO, H2_JIELI_AC791N_ADKEY_PHOTO_ID},
     {H2_BUTTON_COMPONENT_OK, H2_JIELI_AC791N_ADKEY_OK_ID},
     {H2_BUTTON_COMPONENT_VOLUME_UP, H2_JIELI_AC791N_ADKEY_VOLUME_UP_ID},
-    {H2_BUTTON_COMPONENT_VOLUME_DOWN,
-     H2_JIELI_AC791N_ADKEY_VOLUME_DOWN_ID},
+    {H2_BUTTON_COMPONENT_VOLUME_DOWN, H2_JIELI_AC791N_ADKEY_VOLUME_DOWN_ID},
     {H2_BUTTON_COMPONENT_MODE, H2_JIELI_AC791N_ADKEY_MODE_ID},
     {H2_BUTTON_COMPONENT_CANCEL, H2_JIELI_AC791N_ADKEY_CANCEL_ID},
 };
@@ -104,9 +105,9 @@ static const h2_button_smoke_button_t app_buttons[] = {
     {H2_BUTTON_COMPONENT_CANCEL, "CANCEL"},
 };
 
-static h2_pal_result_t periph_list(void *user, h2_pal_periph_type_t filter,
+static h2_pal_result_t periph_list(void* user, h2_pal_periph_type_t filter,
                                    h2_pal_periph_cb_t callback,
-                                   void *callback_user) {
+                                   void* callback_user) {
   (void)user;
   if (callback == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (filter != H2_PAL_PERIPH_TYPE_ANY &&
@@ -121,8 +122,8 @@ static h2_pal_result_t periph_list(void *user, h2_pal_periph_type_t filter,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t periph_get(void *user, h2_pal_periph_id_t id,
-                                  h2_pal_periph_info_t *out_info) {
+static h2_pal_result_t periph_get(void* user, h2_pal_periph_id_t id,
+                                  h2_pal_periph_info_t* out_info) {
   (void)user;
   if (out_info == NULL) return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0u; i < sizeof(button_periphs) / sizeof(button_periphs[0]);
@@ -145,9 +146,9 @@ static const h2_pal_periph_api_t periph_api = {
     .vtable = &periph_vtable,
 };
 
-static h2_pal_result_t mapper_list(
-    void *user, h2_runtime_component_t filter,
-    h2_runtime_component_mapping_cb_t callback, void *callback_user) {
+static h2_pal_result_t mapper_list(void* user, h2_runtime_component_t filter,
+                                   h2_runtime_component_mapping_cb_t callback,
+                                   void* callback_user) {
   (void)user;
   if (callback == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (filter != H2_RUNTIME_COMPONENT_NONE &&
@@ -162,9 +163,9 @@ static h2_pal_result_t mapper_list(
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t mapper_get(
-    void *user, h2_runtime_component_id_t component_id,
-    h2_pal_periph_id_t *out_periph_id) {
+static h2_pal_result_t mapper_get(void* user,
+                                  h2_runtime_component_id_t component_id,
+                                  h2_pal_periph_id_t* out_periph_id) {
   (void)user;
   if (out_periph_id == NULL) return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0u; i < sizeof(button_mappings) / sizeof(button_mappings[0]);
@@ -187,19 +188,20 @@ static const h2_runtime_component_mapper_t component_mapper = {
     .vtable = &mapper_vtable,
 };
 
-static int should_stop(void *user) {
+static int should_stop(void* user) {
   (void)user;
-  return h2_atomic_load_explicit(&button_target.stop_requested, H2_ATOMIC_ACQUIRE);
+  return h2_atomic_load_explicit(&button_target.stop_requested,
+                                 H2_ATOMIC_ACQUIRE);
 }
 
-static void on_started(void *user, h2_pal_result_t result) {
-  button_target_state_t *state = user;
+static void on_started(void* user, h2_pal_result_t result) {
+  button_target_state_t* state = user;
   h2_atomic_store_explicit(&state->startup_result, result, H2_ATOMIC_RELEASE);
   h2_atomic_store_explicit(&state->started, true, H2_ATOMIC_RELEASE);
 }
 
-static void button_task(void *user) {
-  button_target_state_t *state = user;
+static void button_task(void* user) {
+  button_target_state_t* state = user;
   static const h2_button_smoke_config_t config = {
       .width = 480u,
       .height = 320u,
@@ -221,10 +223,11 @@ static void button_task(void *user) {
   button_atomic_destroy();
 }
 
-/* The image-owned smoke worker retains Runtime across successful entry return. */
+/* The image-owned smoke worker retains Runtime across successful entry return.
+ */
 int h2_jieli_target_application_run(void) {
   h2_runtime_config_t config;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   emit("H2_JIELI_BUTTON_SMOKE stage=target-enter\r\n");
   memset(&button_target, 0, sizeof(button_target));
   if (!button_atomic_init()) return H2_PAL_ERR_NO_MEMORY;
@@ -245,8 +248,8 @@ int h2_jieli_target_application_run(void) {
   }
 
   button_target.runtime = runtime;
-  const h2_pal_task_options_t options = {
-      .name = "button-smoke", .min_stack_size = 16384u};
+  const h2_pal_task_options_t options = {.name = "button-smoke",
+                                         .min_stack_size = 16384u};
   result = h2_pal_task_start(runtime->task, &options, button_task,
                              &button_target, &button_target.task);
   if (result != H2_PAL_OK) {
@@ -258,15 +261,19 @@ int h2_jieli_target_application_run(void) {
   for (unsigned attempt = 0u; attempt < 300u; ++attempt) {
     if (h2_atomic_load_explicit(&button_target.started, H2_ATOMIC_ACQUIRE)) {
       result = h2_atomic_load_explicit(&button_target.startup_result,
-                                    H2_ATOMIC_ACQUIRE);
-      emit("H2_JIELI_BUTTON_SMOKE_READY buttons=8 display=480x320 result=%d\r\n",
-           result);
-      h2_atomic_store_explicit(&button_target.entry_released, true, H2_ATOMIC_RELEASE);
+                                       H2_ATOMIC_ACQUIRE);
+      emit(
+          "H2_JIELI_BUTTON_SMOKE_READY buttons=8 display=480x320 result=%d\r\n",
+          result);
+      h2_atomic_store_explicit(&button_target.entry_released, true,
+                               H2_ATOMIC_RELEASE);
       return result;
     }
     (void)h2_pal_time_sleep_ms(runtime->time, 10u);
   }
-  h2_atomic_store_explicit(&button_target.stop_requested, true, H2_ATOMIC_RELEASE);
-  h2_atomic_store_explicit(&button_target.entry_released, true, H2_ATOMIC_RELEASE);
+  h2_atomic_store_explicit(&button_target.stop_requested, true,
+                           H2_ATOMIC_RELEASE);
+  h2_atomic_store_explicit(&button_target.entry_released, true,
+                           H2_ATOMIC_RELEASE);
   return H2_PAL_ERR_TIMEOUT;
 }

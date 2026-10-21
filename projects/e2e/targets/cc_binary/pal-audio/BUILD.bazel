@@ -20,4 +20,7 @@ package(default_visibility = ["//visibility:public"])
         "//libs/pal/providers/portaudio",
         "//projects/e2e/apps/pal-audio/app:pal_audio_e2e",
     ],
-) for rule, name in [(cc_binary, "pal_audio_e2e"), (cc_test, "desktop_test")]]
+) for rule, name in [
+    (cc_binary, "pal_audio_e2e"),
+    (cc_test, "desktop_test"),
+]]

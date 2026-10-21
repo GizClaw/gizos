@@ -28,23 +28,22 @@ typedef struct h2_gizclaw_e2e_devkit_wifi_result {
 } h2_gizclaw_e2e_devkit_wifi_result_t;
 
 int h2_gizclaw_e2e_devkit_wifi_step(
-    const h2_pal_wifi_sta_api_t *wifi_sta,
-    const h2_pal_wifi_settings_api_t *wifi_settings,
+    const h2_pal_wifi_sta_api_t* wifi_sta,
+    const h2_pal_wifi_settings_api_t* wifi_settings,
     uint32_t connect_timeout_ms,
-    h2_gizclaw_e2e_devkit_wifi_result_t *out_result);
+    h2_gizclaw_e2e_devkit_wifi_result_t* out_result);
 
-void h2_gizclaw_e2e_devkit_state_init(
-    h2_gizclaw_e2e_devkit_state_t *state);
+void h2_gizclaw_e2e_devkit_state_init(h2_gizclaw_e2e_devkit_state_t* state);
 
 bool h2_gizclaw_e2e_devkit_state_set_prerequisites(
-    h2_gizclaw_e2e_devkit_state_t *state, bool has_ip, bool clock_ready);
+    h2_gizclaw_e2e_devkit_state_t* state, bool has_ip, bool clock_ready);
 
-void h2_gizclaw_e2e_devkit_state_complete(
-    h2_gizclaw_e2e_devkit_state_t *state, uint64_t now_ms,
-    uint32_t replay_interval_ms);
+void h2_gizclaw_e2e_devkit_state_complete(h2_gizclaw_e2e_devkit_state_t* state,
+                                          uint64_t now_ms,
+                                          uint32_t replay_interval_ms);
 
 bool h2_gizclaw_e2e_devkit_state_take_summary_replay(
-    h2_gizclaw_e2e_devkit_state_t *state, uint64_t now_ms,
+    h2_gizclaw_e2e_devkit_state_t* state, uint64_t now_ms,
     uint32_t replay_interval_ms);
 
 #endif

@@ -35,12 +35,12 @@ typedef struct h2_linux_evdev_touch_state {
 
 static h2_linux_evdev_touch_state_t s_touch = {.fd = -1};
 
-static int touch_is_event_node_name(const char *name) {
+static int touch_is_event_node_name(const char* name) {
   static const char prefix[] = "event";
   if (name == NULL || strncmp(name, prefix, sizeof(prefix) - 1u) != 0) {
     return 0;
   }
-  const char *suffix = name + sizeof(prefix) - 1u;
+  const char* suffix = name + sizeof(prefix) - 1u;
   if (*suffix == '\0') {
     return 0;
   }
@@ -76,7 +76,7 @@ static h2_pal_result_t touch_close_fd(void) {
   return result;
 }
 
-static h2_pal_result_t touch_open_path(const char *path) {
+static h2_pal_result_t touch_open_path(const char* path) {
   const int fd = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
   if (fd < 0) {
     return errno == ENOENT || errno == ENODEV ? H2_PAL_ERR_NOT_FOUND
@@ -108,7 +108,7 @@ static h2_pal_result_t touch_open_path(const char *path) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_open(void *user) {
+static h2_pal_result_t touch_open(void* user) {
   (void)user;
   if (!s_touch.configured) {
     return H2_PAL_ERR_UNAVAILABLE;
@@ -123,12 +123,12 @@ static h2_pal_result_t touch_open(void *user) {
     }
     s_touch.device_path[0] = '\0';
   }
-  DIR *directory = opendir("/dev/input");
+  DIR* directory = opendir("/dev/input");
   if (directory == NULL) {
     return errno == ENOENT ? H2_PAL_ERR_NOT_FOUND : H2_PAL_ERR_IO;
   }
   h2_pal_result_t first_error = H2_PAL_ERR_NOT_FOUND;
-  struct dirent *node = NULL;
+  struct dirent* node = NULL;
   for (;;) {
     errno = 0;
     node = readdir(directory);
@@ -167,7 +167,7 @@ static h2_pal_result_t touch_open(void *user) {
   return first_error;
 }
 
-static int32_t touch_scale_axis(int value, const struct input_absinfo *axis,
+static int32_t touch_scale_axis(int value, const struct input_absinfo* axis,
                                 uint32_t logical_size) {
   int clamped = value;
   if (clamped < axis->minimum) {
@@ -175,30 +175,27 @@ static int32_t touch_scale_axis(int value, const struct input_absinfo *axis,
   } else if (clamped > axis->maximum) {
     clamped = axis->maximum;
   }
-  const uint64_t offset =
-      (uint64_t)((int64_t)clamped - (int64_t)axis->minimum);
+  const uint64_t offset = (uint64_t)((int64_t)clamped - (int64_t)axis->minimum);
   const uint64_t range =
       (uint64_t)((int64_t)axis->maximum - (int64_t)axis->minimum);
   const uint64_t numerator = offset * (uint64_t)(logical_size - 1u);
   return (int32_t)(numerator / range);
 }
 
-static void touch_map_coordinates(int *out_x, int *out_y) {
-  int x = touch_scale_axis(s_touch.raw_x, &s_touch.x_axis,
-                           s_touch.config.width);
-  int y = touch_scale_axis(s_touch.raw_y, &s_touch.y_axis,
-                           s_touch.config.height);
+static void touch_map_coordinates(int* out_x, int* out_y) {
+  int x =
+      touch_scale_axis(s_touch.raw_x, &s_touch.x_axis, s_touch.config.width);
+  int y =
+      touch_scale_axis(s_touch.raw_y, &s_touch.y_axis, s_touch.config.height);
   if (s_touch.config.swap_xy) {
     const int swapped = x;
     x = y;
     y = swapped;
   }
-  const uint32_t output_width = s_touch.config.swap_xy
-                                    ? s_touch.config.height
-                                    : s_touch.config.width;
-  const uint32_t output_height = s_touch.config.swap_xy
-                                     ? s_touch.config.width
-                                     : s_touch.config.height;
+  const uint32_t output_width =
+      s_touch.config.swap_xy ? s_touch.config.height : s_touch.config.width;
+  const uint32_t output_height =
+      s_touch.config.swap_xy ? s_touch.config.width : s_touch.config.height;
   if (s_touch.config.invert_x) {
     x = (int)output_width - 1 - x;
   }
@@ -209,7 +206,7 @@ static void touch_map_coordinates(int *out_x, int *out_y) {
   *out_y = y;
 }
 
-static h2_pal_result_t touch_finish_report(h2_pal_touch_event_t *out_event) {
+static h2_pal_result_t touch_finish_report(h2_pal_touch_event_t* out_event) {
   const int initial_coordinates_valid = s_touch.x_valid && s_touch.y_valid;
   const int coordinate_update_valid =
       s_touch.reported && (s_touch.x_valid || s_touch.y_valid);
@@ -256,7 +253,7 @@ static h2_pal_result_t touch_finish_report(h2_pal_touch_event_t *out_event) {
 
 static h2_pal_result_t touch_process_event(uint16_t type, uint16_t code,
                                            int32_t value,
-                                           h2_pal_touch_event_t *out_event) {
+                                           h2_pal_touch_event_t* out_event) {
   if (type == EV_KEY && code == BTN_TOUCH) {
     s_touch.pressed = value != 0;
     s_touch.contact_valid = 1;
@@ -279,23 +276,23 @@ static h2_pal_result_t touch_process_event(uint16_t type, uint16_t code,
   return H2_PAL_ERR_WOULD_BLOCK;
 }
 
-static h2_pal_result_t touch_get_info(void *user,
-                                      h2_pal_touch_info_t *out_info) {
+static h2_pal_result_t touch_get_info(void* user,
+                                      h2_pal_touch_info_t* out_info) {
   (void)user;
   if (!s_touch.configured) {
     return H2_PAL_ERR_UNAVAILABLE;
   }
   *out_info = (h2_pal_touch_info_t){
-      .width = s_touch.config.swap_xy ? s_touch.config.height
-                                      : s_touch.config.width,
-      .height = s_touch.config.swap_xy ? s_touch.config.width
-                                       : s_touch.config.height,
+      .width =
+          s_touch.config.swap_xy ? s_touch.config.height : s_touch.config.width,
+      .height =
+          s_touch.config.swap_xy ? s_touch.config.width : s_touch.config.height,
   };
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_poll_event(void *user,
-                                        h2_pal_touch_event_t *out_event) {
+static h2_pal_result_t touch_poll_event(void* user,
+                                        h2_pal_touch_event_t* out_event) {
   (void)user;
   if (!s_touch.opened || s_touch.fd < 0) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -320,15 +317,15 @@ static h2_pal_result_t touch_poll_event(void *user,
     if ((size_t)bytes_read != sizeof(event)) {
       return H2_PAL_ERR_IO;
     }
-    h2_pal_result_t result = touch_process_event(
-        event.type, event.code, event.value, out_event);
+    h2_pal_result_t result =
+        touch_process_event(event.type, event.code, event.value, out_event);
     if (result != H2_PAL_ERR_WOULD_BLOCK) {
       return result;
     }
   }
 }
 
-static h2_pal_result_t touch_close(void *user) {
+static h2_pal_result_t touch_close(void* user) {
   (void)user;
   return touch_close_fd();
 }
@@ -346,7 +343,7 @@ static const h2_pal_touch_api_t s_touch_api = {
 };
 
 h2_pal_result_t h2_linux_configure_evdev_touch(
-    const h2_linux_evdev_touch_config_t *config) {
+    const h2_linux_evdev_touch_config_t* config) {
   if (config == NULL || config->device_name == NULL ||
       config->device_name[0] == '\0' || config->width == 0u ||
       config->height == 0u || config->width > (uint32_t)INT32_MAX ||
@@ -370,20 +367,19 @@ h2_pal_result_t h2_linux_configure_evdev_touch(
   return H2_PAL_OK;
 }
 
-const h2_pal_touch_api_t *h2_linux_evdev_touch_api(void) {
+const h2_pal_touch_api_t* h2_linux_evdev_touch_api(void) {
   return &s_touch_api;
 }
 
 #if defined(H2_LINUX_TESTING)
-int h2_linux_evdev_touch_test_is_event_node_name(const char *name) {
+int h2_linux_evdev_touch_test_is_event_node_name(const char* name) {
   return touch_is_event_node_name(name);
 }
 
-h2_pal_result_t h2_linux_evdev_touch_test_set_axes(
-    int32_t x_minimum,
-    int32_t x_maximum,
-    int32_t y_minimum,
-    int32_t y_maximum) {
+h2_pal_result_t h2_linux_evdev_touch_test_set_axes(int32_t x_minimum,
+                                                   int32_t x_maximum,
+                                                   int32_t y_minimum,
+                                                   int32_t y_maximum) {
   if (!s_touch.configured) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -399,7 +395,7 @@ h2_pal_result_t h2_linux_evdev_touch_test_set_axes(
 
 h2_pal_result_t h2_linux_evdev_touch_test_feed(
     uint16_t type, uint16_t code, int32_t value,
-    h2_pal_touch_event_t *out_event) {
+    h2_pal_touch_event_t* out_event) {
   if (out_event == NULL || !s_touch.configured) {
     return H2_PAL_ERR_INVALID_ARG;
   }

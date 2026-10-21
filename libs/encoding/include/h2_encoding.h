@@ -18,20 +18,23 @@ extern "C" {
  * symbols. Hex uses 16 symbols, base32 32, base64 64, and base85 85.
  */
 typedef enum h2_encoding_kind {
-    H2_ENCODING_KIND_HEX = 1,    /**< 4 bits per symbol, 2 symbols per byte. */
-    H2_ENCODING_KIND_BASE32 = 2, /**< 5 bits per symbol, 8-symbol blocks. */
-    H2_ENCODING_KIND_BASE64 = 3, /**< 6 bits per symbol, 4-symbol blocks. */
-    H2_ENCODING_KIND_BASE85 = 4, /**< 4-byte groups as 5 big-endian base-85 digits. */
+  H2_ENCODING_KIND_HEX = 1,    /**< 4 bits per symbol, 2 symbols per byte. */
+  H2_ENCODING_KIND_BASE32 = 2, /**< 5 bits per symbol, 8-symbol blocks. */
+  H2_ENCODING_KIND_BASE64 = 3, /**< 6 bits per symbol, 4-symbol blocks. */
+  H2_ENCODING_KIND_BASE85 =
+      4, /**< 4-byte groups as 5 big-endian base-85 digits. */
 } h2_encoding_kind_t;
 
 /**
  * @brief Result of an encoding operation.
  */
 typedef enum h2_encoding_err {
-    H2_ENCODING_OK = 0,                /**< Operation completed. */
-    H2_ENCODING_ERR_INVALID_ARG = -1,  /**< Bad descriptor, NULL pointer, or size overflow. */
-    H2_ENCODING_ERR_NO_SPACE = -2,     /**< Output capacity is smaller than the result. */
-    H2_ENCODING_ERR_CORRUPT = -3,      /**< Input is not a canonical encoding. */
+  H2_ENCODING_OK = 0, /**< Operation completed. */
+  H2_ENCODING_ERR_INVALID_ARG =
+      -1, /**< Bad descriptor, NULL pointer, or size overflow. */
+  H2_ENCODING_ERR_NO_SPACE =
+      -2, /**< Output capacity is smaller than the result. */
+  H2_ENCODING_ERR_CORRUPT = -3, /**< Input is not a canonical encoding. */
 } h2_encoding_err_t;
 
 /**
@@ -44,14 +47,16 @@ typedef enum h2_encoding_err {
  * plain data: copying it by value copies the encoding.
  */
 typedef struct h2_encoding {
-    h2_encoding_kind_t kind;                  /**< Algorithm family. */
-    char padding;                             /**< Block padding byte, or '\0' for none. */
-    char zero_group;                          /**< Base85 all-zero group byte, or '\0'. */
-    char alphabet[H2_ENCODING_MAX_RADIX + 1]; /**< Digit symbols, NUL-terminated. */
-    uint8_t decode_map[256];                  /**< Digit value per byte, 0xff if invalid. */
+  h2_encoding_kind_t kind; /**< Algorithm family. */
+  char padding;            /**< Block padding byte, or '\0' for none. */
+  char zero_group;         /**< Base85 all-zero group byte, or '\0'. */
+  char alphabet[H2_ENCODING_MAX_RADIX +
+                1];        /**< Digit symbols, NUL-terminated. */
+  uint8_t decode_map[256]; /**< Digit value per byte, 0xff if invalid. */
 } h2_encoding_t;
 
-/** @brief Lowercase hex, RFC 4648 section 8; decoding also accepts uppercase. */
+/** @brief Lowercase hex, RFC 4648 section 8; decoding also accepts uppercase.
+ */
 extern const h2_encoding_t h2_encoding_hex;
 /** @brief RFC 4648 section 6 base32 with '=' padding. */
 extern const h2_encoding_t h2_encoding_base32_std;
@@ -65,9 +70,11 @@ extern const h2_encoding_t h2_encoding_base64_url;
 extern const h2_encoding_t h2_encoding_base64_raw_std;
 /** @brief RFC 4648 section 5 base64 without padding. */
 extern const h2_encoding_t h2_encoding_base64_raw_url;
-/** @brief Adobe Ascii85 digits '!'..'u' with the 'z' zero group, no <~ ~> frame. */
+/** @brief Adobe Ascii85 digits '!'..'u' with the 'z' zero group, no <~ ~>
+ * frame. */
 extern const h2_encoding_t h2_encoding_base85_ascii85;
-/** @brief RFC 1924 base85 alphabet, byte-compatible with Python base64.b85encode. */
+/** @brief RFC 1924 base85 alphabet, byte-compatible with Python
+ * base64.b85encode. */
 extern const h2_encoding_t h2_encoding_base85_rfc1924;
 
 /**
@@ -91,8 +98,9 @@ extern const h2_encoding_t h2_encoding_base85_rfc1924;
  * @return H2_ENCODING_OK, or H2_ENCODING_ERR_INVALID_ARG for NULL pointers or
  *         any rule violation.
  */
-h2_encoding_err_t h2_encoding_init(h2_encoding_t *enc, h2_encoding_kind_t kind,
-                                   const char *alphabet, char padding, char zero_group);
+h2_encoding_err_t h2_encoding_init(h2_encoding_t* enc, h2_encoding_kind_t kind,
+                                   const char* alphabet, char padding,
+                                   char zero_group);
 
 /**
  * @brief Report the output size needed to encode src_len bytes.
@@ -106,8 +114,8 @@ h2_encoding_err_t h2_encoding_init(h2_encoding_t *enc, h2_encoding_kind_t kind,
  *         unknown-kind descriptor, NULL out_len, or a size that does not fit
  *         in size_t.
  */
-h2_encoding_err_t h2_encoding_max_encoded_len(const h2_encoding_t *enc,
-                                              size_t src_len, size_t *out_len);
+h2_encoding_err_t h2_encoding_max_encoded_len(const h2_encoding_t* enc,
+                                              size_t src_len, size_t* out_len);
 
 /**
  * @brief Report an upper bound on the bytes decoded from src_len symbols.
@@ -118,8 +126,8 @@ h2_encoding_err_t h2_encoding_max_encoded_len(const h2_encoding_t *enc,
  *         unknown-kind descriptor, NULL out_len, or a size that does not fit
  *         in size_t.
  */
-h2_encoding_err_t h2_encoding_max_decoded_len(const h2_encoding_t *enc,
-                                              size_t src_len, size_t *out_len);
+h2_encoding_err_t h2_encoding_max_decoded_len(const h2_encoding_t* enc,
+                                              size_t src_len, size_t* out_len);
 
 /**
  * @brief Encode bytes into caller-provided text storage in one pass.
@@ -139,10 +147,10 @@ h2_encoding_err_t h2_encoding_max_decoded_len(const h2_encoding_t *enc,
  * @return H2_ENCODING_OK, H2_ENCODING_ERR_NO_SPACE, or
  *         H2_ENCODING_ERR_INVALID_ARG (out_len and dst are then unchanged).
  */
-h2_encoding_err_t h2_encoding_encode(const h2_encoding_t *enc,
-                                     const uint8_t *src, size_t src_len,
-                                     char *dst, size_t dst_cap,
-                                     size_t *out_len);
+h2_encoding_err_t h2_encoding_encode(const h2_encoding_t* enc,
+                                     const uint8_t* src, size_t src_len,
+                                     char* dst, size_t dst_cap,
+                                     size_t* out_len);
 
 /**
  * @brief Decode canonical text into caller-provided byte storage in one pass.
@@ -166,10 +174,9 @@ h2_encoding_err_t h2_encoding_encode(const h2_encoding_t *enc,
  * @return H2_ENCODING_OK, H2_ENCODING_ERR_NO_SPACE, H2_ENCODING_ERR_CORRUPT,
  *         or H2_ENCODING_ERR_INVALID_ARG (out_len and dst are then unchanged).
  */
-h2_encoding_err_t h2_encoding_decode(const h2_encoding_t *enc,
-                                     const char *src, size_t src_len,
-                                     uint8_t *dst, size_t dst_cap,
-                                     size_t *out_len);
+h2_encoding_err_t h2_encoding_decode(const h2_encoding_t* enc, const char* src,
+                                     size_t src_len, uint8_t* dst,
+                                     size_t dst_cap, size_t* out_len);
 
 /**
  * @brief Decode exactly five base85 digits into one 32-bit big-endian group.
@@ -184,39 +191,40 @@ h2_encoding_err_t h2_encoding_decode(const h2_encoding_t *enc,
  * @param[out] out_word Caller-owned storage, written only on success.
  * @return true when the group is valid, false otherwise.
  */
-static inline bool h2_encoding_decode_base85_group(const h2_encoding_t *enc, const char *src,
-                                                   uint32_t *out_word) {
-    /* One branch per digit exits early on a bad symbol and measured fastest
-     * in the per-group reader benchmark. UINT32_MAX == 85 * 50529027: the
-     * first four digits may not exceed 50529027, and may equal it only when
-     * the fifth digit is 0. */
-    const uint8_t *map = enc->decode_map;
-    uint32_t d0 = map[(unsigned char)src[0]];
-    if (d0 == 0xffu) {
-        return false;
-    }
-    uint32_t d1 = map[(unsigned char)src[1]];
-    if (d1 == 0xffu) {
-        return false;
-    }
-    uint32_t d2 = map[(unsigned char)src[2]];
-    if (d2 == 0xffu) {
-        return false;
-    }
-    uint32_t d3 = map[(unsigned char)src[3]];
-    if (d3 == 0xffu) {
-        return false;
-    }
-    uint32_t d4 = map[(unsigned char)src[4]];
-    if (d4 == 0xffu) {
-        return false;
-    }
-    uint32_t head = ((d0 * 85u + d1) * 85u + d2) * 85u + d3;
-    if (head > 50529027u || (head == 50529027u && d4 != 0)) {
-        return false;
-    }
-    *out_word = head * 85u + d4;
-    return true;
+static inline bool h2_encoding_decode_base85_group(const h2_encoding_t* enc,
+                                                   const char* src,
+                                                   uint32_t* out_word) {
+  /* One branch per digit exits early on a bad symbol and measured fastest
+   * in the per-group reader benchmark. UINT32_MAX == 85 * 50529027: the
+   * first four digits may not exceed 50529027, and may equal it only when
+   * the fifth digit is 0. */
+  const uint8_t* map = enc->decode_map;
+  uint32_t d0 = map[(unsigned char)src[0]];
+  if (d0 == 0xffu) {
+    return false;
+  }
+  uint32_t d1 = map[(unsigned char)src[1]];
+  if (d1 == 0xffu) {
+    return false;
+  }
+  uint32_t d2 = map[(unsigned char)src[2]];
+  if (d2 == 0xffu) {
+    return false;
+  }
+  uint32_t d3 = map[(unsigned char)src[3]];
+  if (d3 == 0xffu) {
+    return false;
+  }
+  uint32_t d4 = map[(unsigned char)src[4]];
+  if (d4 == 0xffu) {
+    return false;
+  }
+  uint32_t head = ((d0 * 85u + d1) * 85u + d2) * 85u + d3;
+  if (head > 50529027u || (head == 50529027u && d4 != 0)) {
+    return false;
+  }
+  *out_word = head * 85u + d4;
+  return true;
 }
 
 #ifdef __cplusplus

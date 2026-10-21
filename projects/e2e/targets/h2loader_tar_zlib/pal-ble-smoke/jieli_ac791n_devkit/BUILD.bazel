@@ -1,7 +1,7 @@
-load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -18,8 +18,8 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
-        "//libs/atomic",
         "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/atomic",
         "//libs/pal:pal_header_files",
         "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_transport",
     ],

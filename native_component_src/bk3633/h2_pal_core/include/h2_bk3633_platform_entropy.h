@@ -22,7 +22,7 @@ extern "C" {
  * @param len Number of bytes to fill.
  * @return H2_PAL_OK after filling all bytes, or a stable PAL error.
  */
-int h2_bk3633_platform_entropy_fill(void *user, uint8_t *out, size_t len);
+int h2_bk3633_platform_entropy_fill(void* user, uint8_t* out, size_t len);
 
 #ifdef __cplusplus
 }

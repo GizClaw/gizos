@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t* fixture);
 
 int h2_gizclaw_e2e_concurrency_classify(
     int requests_result, int recovery_result, int observation_result,

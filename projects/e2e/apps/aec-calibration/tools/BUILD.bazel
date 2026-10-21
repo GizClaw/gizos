@@ -20,8 +20,11 @@ py_binary(
 py_test(
     name = "report_test",
     srcs = ["test_report.py"],
-    main = "test_report.py",
     data = ["//projects/e2e/apps/aec-calibration/app:calibration_test"],
+    main = "test_report.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = [":report_lib", "@rules_python//python/runfiles"],
+    deps = [
+        ":report_lib",
+        "@rules_python//python/runfiles",
+    ],
 )

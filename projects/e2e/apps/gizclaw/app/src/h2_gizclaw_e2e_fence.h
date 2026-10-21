@@ -3,6 +3,6 @@
 
 #include "h2_gizclaw_e2e_internal.h"
 
-int h2_gizclaw_e2e_run_fence(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_run_fence(h2_gizclaw_e2e_fixture_t* fixture);
 
 #endif

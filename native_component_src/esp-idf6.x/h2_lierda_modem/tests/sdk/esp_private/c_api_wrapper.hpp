@@ -7,11 +7,12 @@
 
 namespace esp_modem {
 enum class command_result { OK, FAIL, TIMEOUT };
-using got_line_cb = std::function<command_result(uint8_t *, size_t)>;
+using got_line_cb = std::function<command_result(uint8_t*, size_t)>;
 class DCE {
-public:
-    command_result command(const std::string &wire, got_line_cb callback, uint32_t timeout);
+ public:
+  command_result command(const std::string& wire, got_line_cb callback,
+                         uint32_t timeout);
 };
-}
+}  // namespace esp_modem
 inline int convert_modem_enum(int module) { return module; }
 #endif

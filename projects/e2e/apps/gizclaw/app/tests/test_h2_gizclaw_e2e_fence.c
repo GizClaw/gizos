@@ -23,33 +23,35 @@ static h2_app_test_mem_t memory;
 static unsigned service_token;
 static struct h2_gizclaw_req request;
 
-static void check_service(h2_gizclaw_service_t *service) {
-  assert(service == (h2_gizclaw_service_t *)&service_token);
+static void check_service(h2_gizclaw_service_t* service) {
+  assert(service == (h2_gizclaw_service_t*)&service_token);
 }
-static void check_name(h2_gizclaw_str_t name, const char *expected) {
+static void check_name(h2_gizclaw_str_t name, const char* expected) {
   assert(name.data != NULL && name.len == strlen(expected) &&
          memcmp(name.data, expected, name.len) == 0);
 }
-void h2_gizclaw_e2e_evidence(const char *case_id, const char *stage,
-                              h2_pal_result_t rc) {
+void h2_gizclaw_e2e_evidence(const char* case_id, const char* stage,
+                             h2_pal_result_t rc) {
   assert(!strcmp(case_id, "workspace-fence") && stage != NULL);
   (void)rc;
 }
-bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
-                                      uint32_t timeout_ms) {
+bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t* fixture,
+                                     uint32_t timeout_ms) {
   assert(fixture != NULL && timeout_ms == 30000u);
   return ++state.budget != state.fail_budget;
 }
-h2_pal_result_t h2_gizclaw_rpc_workflow_list(
-    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
-    size_t tag_count, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workflow_page_t *out) {
+h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t* service,
+                                             const h2_gizclaw_str_t* tags,
+                                             size_t tag_count,
+                                             h2_gizclaw_str_t cursor,
+                                             size_t limit, uint32_t timeout_ms,
+                                             h2_gizclaw_resp_storage_t* storage,
+                                             h2_gizclaw_workflow_page_t* out) {
   check_service(service);
   assert(tags == NULL && !tag_count && !cursor.len && limit == 1u &&
          timeout_ms == 30000u && storage != NULL && out != NULL);
-  static h2_gizclaw_safety_fence_option_t options[2] = {
-      {.name = "safe"}, {.name = "guardian"}};
+  static h2_gizclaw_safety_fence_option_t options[2] = {{.name = "safe"},
+                                                        {.name = "guardian"}};
   ++state.list;
   out->runtime_profile_name = "e2e-profile";
   out->runtime_profile_revision = "rev-1";
@@ -58,9 +60,8 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_rpc_workflow_get(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workflow_get_result_t *out) {
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workflow_get_result_t* out) {
   check_service(service);
   check_name(name, "fence-flow");
   assert(timeout_ms == 30000u && storage != NULL && out != NULL);
@@ -70,9 +71,9 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_get(
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_rpc_workspace_create(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t workflow,
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t workflow,
     h2_gizclaw_str_t name, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workspace_t* out) {
   check_service(service);
   check_name(workflow, "fence-flow");
   check_name(name, "test-workspace");
@@ -82,13 +83,13 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    const h2_gizclaw_workspace_parameters_patch_t *patch,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_t *out) {
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t* patch, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workspace_t* out) {
   check_service(service);
   check_name(name, "test-workspace");
-  assert(patch != NULL && timeout_ms == 30000u && storage != NULL && out != NULL);
+  assert(patch != NULL && timeout_ms == 30000u && storage != NULL &&
+         out != NULL);
   ++state.set;
   if (patch->has_safety_fence_level)
     strcpy(state.stored, patch->safety_fence_level);
@@ -96,9 +97,9 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    const h2_gizclaw_workspace_parameters_patch_t *patch,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out) {
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t* patch, uint32_t timeout_ms,
+    h2_gizclaw_req_t** out) {
   check_service(service);
   check_name(name, "test-workspace");
   assert((identity == 1u || identity == 2u) && patch != NULL &&
@@ -113,40 +114,39 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
   *out = &request;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *req, void *user,
-                                   h2_gizclaw_req_input_read_fn input_read,
-                                   h2_gizclaw_req_output_write_fn output_write,
-                                   h2_gizclaw_req_complete_fn on_complete) {
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t* req, void* user,
+                                  h2_gizclaw_req_input_read_fn input_read,
+                                  h2_gizclaw_req_output_write_fn output_write,
+                                  h2_gizclaw_req_complete_fn on_complete) {
   assert(req == &request && user == NULL && input_read == NULL &&
          output_write == NULL && on_complete == NULL);
   strcpy(state.stored, request.level);
   ++state.set;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *req, uint32_t timeout) {
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t* req, uint32_t timeout) {
   assert(req == &request && timeout == H2_PAL_SYNC_WAIT_FOREVER);
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *req) {
+h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t* req) {
   assert(req == &request);
   return H2_PAL_OK;
 }
-void h2_gizclaw_req_release(h2_gizclaw_req_t *req) {
+void h2_gizclaw_req_release(h2_gizclaw_req_t* req) {
   assert(req == &request || req == NULL);
-  if (req != NULL)
-    ++state.releases;
+  if (req != NULL) ++state.releases;
 }
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_set_parameters(
-    const h2_gizclaw_req_t *req, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_t *out) {
+    const h2_gizclaw_req_t* req, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_t* out) {
   assert(req == &request && storage != NULL && out != NULL);
   out->name = "test-workspace";
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_rpc_workspace_get(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_get_result_t *out) {
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_get_result_t* out) {
   check_service(service);
   check_name(name, "test-workspace");
   assert(timeout_ms == 30000u && storage != NULL && out != NULL);
@@ -159,10 +159,10 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_get(
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    const h2_gizclaw_workspace_parameters_patch_t *patch,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workspace_activation_t *out) {
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t* patch, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workspace_activation_t* out) {
   check_service(service);
   check_name(name, "test-workspace");
   assert(timeout_ms == 30000u && storage != NULL && out != NULL);
@@ -174,21 +174,20 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
   out->runtime_state = H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING;
   out->active_workspace_name =
       state.wrong_active || (patch == NULL && state.wrong_active_omitted)
-          ? "other" : "test-workspace";
+          ? "other"
+          : "test-workspace";
   return H2_PAL_OK;
 }
 static int run(void) {
-  h2_gizclaw_e2e_config_t config = {
-      .fence_workflow_name = "fence-flow",
-      .fence_first_id = "safe",
-      .fence_second_id = "guardian"};
-  h2_gizclaw_e2e_fixture_t fixture = {
-      .config = &config,
-      .allocator = &memory.api,
-      .runtime_profile_name = "e2e-profile",
-      .workspace_name = "test-workspace"};
+  h2_gizclaw_e2e_config_t config = {.fence_workflow_name = "fence-flow",
+                                    .fence_first_id = "safe",
+                                    .fence_second_id = "guardian"};
+  h2_gizclaw_e2e_fixture_t fixture = {.config = &config,
+                                      .allocator = &memory.api,
+                                      .runtime_profile_name = "e2e-profile",
+                                      .workspace_name = "test-workspace"};
   fixture.actors[H2_GIZCLAW_E2E_OWNER].service =
-      (h2_gizclaw_service_t *)&service_token;
+      (h2_gizclaw_service_t*)&service_token;
   int rc = h2_gizclaw_e2e_run_fence(&fixture);
   assert(fixture.workspace_created == (state.create != 0u));
   assert(memory.live_blocks == 0u);

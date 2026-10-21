@@ -17,14 +17,14 @@ typedef struct {
   uint32_t partition_start_addr;
   uint32_t partition_length;
 } bk_logic_partition_t;
-const bk_logic_partition_t *bk_flash_partition_get_info(bk_partition_t);
-int bk_flash_read_bytes(uint32_t, uint8_t *, uint32_t);
-int bk_flash_write_bytes(uint32_t, const uint8_t *, uint32_t);
+const bk_logic_partition_t* bk_flash_partition_get_info(bk_partition_t);
+int bk_flash_read_bytes(uint32_t, uint8_t*, uint32_t);
+int bk_flash_write_bytes(uint32_t, const uint8_t*, uint32_t);
 int bk_flash_erase_sector(uint32_t);
 int bk_flash_set_protect_type(flash_protect_type_t);
 flash_protect_type_t bk_flash_get_protect_type(void);
 uint8_t bk_ota_get_current_partition(void);
-const h2_fixed_layout_t *h2_bk_fixed_layout(void);
+const h2_fixed_layout_t* h2_bk_fixed_layout(void);
 int h2_bk_fixed_layout_active(void);
 uint8_t h2_bk_fixed_current_slot(void);
 int h2_bk_fixed_select(uint32_t partition_id);

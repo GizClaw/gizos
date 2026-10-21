@@ -5,55 +5,54 @@
 
 #include "h2_atomic_static.h"
 
-static h2_peer_t *h2_bk_platform_peer;
-static h2_sctp_t *h2_bk_platform_sctp;
+static h2_peer_t* h2_bk_platform_peer;
+static h2_sctp_t* h2_bk_platform_sctp;
 H2_ATOMIC_DEFINE_STATIC(flag, h2_bk_platform_peer_lock, 0u);
 static int h2_bk_platform_peer_initialized;
 
 static void h2_bk_platform_peer_lock_acquire(void) {
-    while (h2_atomic_flag_test_and_set(
-        &h2_bk_platform_peer_lock, H2_ATOMIC_ACQUIRE)) {
-    }
+  while (h2_atomic_flag_test_and_set(&h2_bk_platform_peer_lock,
+                                     H2_ATOMIC_ACQUIRE)) {
+  }
 }
 
 static void h2_bk_platform_peer_lock_release(void) {
-    h2_atomic_flag_clear(
-        &h2_bk_platform_peer_lock, H2_ATOMIC_RELEASE);
+  h2_atomic_flag_clear(&h2_bk_platform_peer_lock, H2_ATOMIC_RELEASE);
 }
 
-const h2_pal_webrtc_api_t *h2_bk_platform_webrtc_api(void) {
-    h2_bk_platform_peer_lock_acquire();
-    if (!h2_bk_platform_peer_initialized) {
-        const h2_sctp_config_t sctp_config = {
-            .mem = h2_bk_platform_psram_allocator(),
-            .crypto = h2_bk_platform_crypto_api(),
-        };
-        const h2_peer_config_t config = {
-            .mem = h2_bk_platform_psram_allocator(),
-            .log = h2_bk_platform_log_api(),
-            .net = h2_bk_platform_net_api(),
-            .queue = h2_bk_platform_queue_api(),
-            .sync = h2_bk_platform_sync_api(),
-            .task = h2_bk_platform_task_api(),
-            .time = h2_bk_platform_time_api(),
-            .crypto = h2_bk_platform_crypto_api(),
-            .dtls = h2_bk_platform_dtls_api(),
-            .sctp = NULL,
-        };
-        h2_bk_platform_peer_initialized = 1;
-        h2_peer_config_t wired_config = config;
-        if (h2_sctp_create(&sctp_config, &h2_bk_platform_sctp) == H2_PAL_OK) {
-            wired_config.sctp = h2_sctp_api(h2_bk_platform_sctp);
-        }
-        if (wired_config.sctp == NULL ||
-            h2_peer_create(&wired_config, &h2_bk_platform_peer) != H2_PAL_OK) {
-            h2_bk_platform_peer = NULL;
-            h2_sctp_destroy(&h2_bk_platform_sctp);
-        }
+const h2_pal_webrtc_api_t* h2_bk_platform_webrtc_api(void) {
+  h2_bk_platform_peer_lock_acquire();
+  if (!h2_bk_platform_peer_initialized) {
+    const h2_sctp_config_t sctp_config = {
+        .mem = h2_bk_platform_psram_allocator(),
+        .crypto = h2_bk_platform_crypto_api(),
+    };
+    const h2_peer_config_t config = {
+        .mem = h2_bk_platform_psram_allocator(),
+        .log = h2_bk_platform_log_api(),
+        .net = h2_bk_platform_net_api(),
+        .queue = h2_bk_platform_queue_api(),
+        .sync = h2_bk_platform_sync_api(),
+        .task = h2_bk_platform_task_api(),
+        .time = h2_bk_platform_time_api(),
+        .crypto = h2_bk_platform_crypto_api(),
+        .dtls = h2_bk_platform_dtls_api(),
+        .sctp = NULL,
+    };
+    h2_bk_platform_peer_initialized = 1;
+    h2_peer_config_t wired_config = config;
+    if (h2_sctp_create(&sctp_config, &h2_bk_platform_sctp) == H2_PAL_OK) {
+      wired_config.sctp = h2_sctp_api(h2_bk_platform_sctp);
     }
-    const h2_pal_webrtc_api_t *api = h2_bk_platform_peer == NULL
-        ? h2_pal_unsupported_webrtc_api()
-        : h2_peer_webrtc_api(h2_bk_platform_peer);
-    h2_bk_platform_peer_lock_release();
-    return api;
+    if (wired_config.sctp == NULL ||
+        h2_peer_create(&wired_config, &h2_bk_platform_peer) != H2_PAL_OK) {
+      h2_bk_platform_peer = NULL;
+      h2_sctp_destroy(&h2_bk_platform_sctp);
+    }
+  }
+  const h2_pal_webrtc_api_t* api =
+      h2_bk_platform_peer == NULL ? h2_pal_unsupported_webrtc_api()
+                                  : h2_peer_webrtc_api(h2_bk_platform_peer);
+  h2_bk_platform_peer_lock_release();
+  return api;
 }

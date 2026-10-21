@@ -31,19 +31,19 @@ typedef enum h2_h2loader_serial_e2e_case_id {
 
 typedef struct h2_h2loader_serial_e2e_config {
   uint32_t suite_mask;
-  const h2_pal_serial_host_api_t *serial;
+  const h2_pal_serial_host_api_t* serial;
   /** Optional for preflight-only runs; required by every live suite. */
-  const char *port_id;
-  const char *expected_board;
-  const char *expected_target;
+  const char* port_id;
+  const char* expected_board;
+  const char* expected_target;
   h2_h2loader_host_command_t command;
-  const uint8_t *catalog_json;
+  const uint8_t* catalog_json;
   size_t catalog_json_len;
-  const char *asset_sha256;
+  const char* asset_sha256;
   h2_h2loader_host_resource_read_fn read_resource;
-  void *resource_user;
+  void* resource_user;
   h2_h2loader_host_cancelled_fn is_cancelled;
-  void *cancel_user;
+  void* cancel_user;
   uint32_t handshake_timeout_ms;
   uint32_t command_timeout_ms;
   uint32_t reconnect_delay_ms;
@@ -87,8 +87,8 @@ typedef struct h2_h2loader_serial_e2e_result {
  * device must relay through Partition 2 instead of taking the same-image path.
  */
 h2_pal_result_t h2_h2loader_serial_e2e_loader_update_ready(
-    const h2_h2loader_host_status_t *before,
-    const h2_h2loader_host_catalog_entry_t *asset);
+    const h2_h2loader_host_status_t* before,
+    const h2_h2loader_host_catalog_entry_t* asset);
 
 /**
  * Loader-update completion: the device boots the new Loader from Partition 1
@@ -96,14 +96,13 @@ h2_pal_result_t h2_h2loader_serial_e2e_loader_update_ready(
  * asset package) and no Stage is left. Partition 2 is not checked.
  */
 h2_pal_result_t h2_h2loader_serial_e2e_loader_update_complete(
-    const h2_h2loader_host_status_t *after,
-    const h2_h2loader_host_catalog_entry_t *asset);
+    const h2_h2loader_host_status_t* after,
+    const h2_h2loader_host_catalog_entry_t* asset);
 
 /** Run selected blocking cases and close every App-owned Host Core handle. */
 h2_pal_result_t h2_h2loader_serial_e2e_run(
-    h2_runtime_t *runtime,
-    const h2_h2loader_serial_e2e_config_t *config,
-    h2_h2loader_serial_e2e_result_t *out_result);
+    h2_runtime_t* runtime, const h2_h2loader_serial_e2e_config_t* config,
+    h2_h2loader_serial_e2e_result_t* out_result);
 
 #ifdef __cplusplus
 }

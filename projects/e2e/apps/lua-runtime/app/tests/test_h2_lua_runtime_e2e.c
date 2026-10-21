@@ -8,7 +8,7 @@
 #include <string.h>
 
 int main(void) {
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   h2_lua_runtime_e2e_report_t report;
   h2_runtime_config_t runtime_config = h2_smoke_host_runtime_config(
       "test", "desktop", "host", h2_desktop_platform_default_allocator(),

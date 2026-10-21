@@ -5,8 +5,8 @@
 
 namespace h2::desktop {
 
-int run_bleikcp_speed(const Layout &layout, bool client);
+int run_bleikcp_speed(const Layout& layout, bool client);
 
-} // namespace h2::desktop
+}  // namespace h2::desktop
 
-#endif // H2_DESKTOP_BLEIKCP_SPEED_NATIVE_H
+#endif  // H2_DESKTOP_BLEIKCP_SPEED_NATIVE_H

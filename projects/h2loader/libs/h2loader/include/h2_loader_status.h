@@ -11,27 +11,20 @@ extern "C" {
 
 #define H2_LOADER_STATUS_LINE_MAX 4352u
 
-int h2_loader_status_set_active(
-    h2_loader_status_t *status,
-    h2_loader_active_role_t role,
-    const char *name,
-    const char *version,
-    const char *checksum);
-int h2_loader_status_set_device(
-    h2_loader_status_t *status,
-    const char *board,
-    const char *target,
-    const char *chip);
-const char *h2_loader_mfg_state_name(const h2_loader_mfg_summary_t *summary);
+int h2_loader_status_set_active(h2_loader_status_t* status,
+                                h2_loader_active_role_t role, const char* name,
+                                const char* version, const char* checksum);
+int h2_loader_status_set_device(h2_loader_status_t* status, const char* board,
+                                const char* target, const char* chip);
+const char* h2_loader_mfg_state_name(const h2_loader_mfg_summary_t* summary);
 /**
  * Validates total (0 or 1..H2_LOADER_MFG_STEP_MAX), that every slot is one of
  * the four step states, and that slots at index >= total are UNTESTED.
  */
-int h2_loader_mfg_summary_validate(const h2_loader_mfg_summary_t *summary);
+int h2_loader_mfg_summary_validate(const h2_loader_mfg_summary_t* summary);
 /** Returns non-zero only when every required MFG slot is PASSED. */
-int h2_loader_mfg_summary_is_passed(
-    const h2_loader_mfg_summary_t *summary,
-    uint32_t required_total);
+int h2_loader_mfg_summary_is_passed(const h2_loader_mfg_summary_t* summary,
+                                    uint32_t required_total);
 /**
  * Decides whether completed MFG should hand off to normal Loader work.
  *
@@ -40,18 +33,13 @@ int h2_loader_mfg_summary_is_passed(
  * H2_PAL_ERR_INVALID_ARG when status or out_pending is null, or when
  * staged_loader is outside 0..1.
  */
-int h2_loader_status_mfg_handoff_pending(
-    const h2_loader_status_t *status,
-    int staged_loader,
-    int *out_pending);
+int h2_loader_status_mfg_handoff_pending(const h2_loader_status_t* status,
+                                         int staged_loader, int* out_pending);
 /** Copies a validated MFG snapshot into caller-owned Loader status. */
-int h2_loader_status_set_mfg(
-    h2_loader_status_t *status,
-    const h2_loader_mfg_summary_t *summary);
-int h2_loader_status_format(
-    const h2_loader_status_t *status,
-    char *out,
-    size_t out_len);
+int h2_loader_status_set_mfg(h2_loader_status_t* status,
+                             const h2_loader_mfg_summary_t* summary);
+int h2_loader_status_format(const h2_loader_status_t* status, char* out,
+                            size_t out_len);
 
 #ifdef __cplusplus
 }

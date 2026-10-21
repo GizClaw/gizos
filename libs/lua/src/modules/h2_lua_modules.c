@@ -12,14 +12,14 @@
 
 static char s_json_null;
 
-static int lua_runtime_print(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_runtime_print(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   char message[H2_PAL_LOG_MESSAGE_MAX];
   size_t offset = 0u;
   int index;
   for (index = 1; index <= lua_gettop(state); ++index) {
     size_t length = 0u;
-    const char *text = luaL_tolstring(state, index, &length);
+    const char* text = luaL_tolstring(state, index, &length);
     size_t separator = index == 1 ? 0u : 1u;
     if (offset + separator >= sizeof(message) ||
         length > sizeof(message) - 1u - offset - separator) {
@@ -42,8 +42,8 @@ static int lua_runtime_print(lua_State *state) {
   return 0;
 }
 
-static void set_function(lua_State *state, const char *name,
-                         lua_CFunction function, h2_lua_job_t *job) {
+static void set_function(lua_State* state, const char* name,
+                         lua_CFunction function, h2_lua_job_t* job) {
   lua_pushlightuserdata(state, job);
   lua_pushcclosure(state, function, 1);
   lua_setfield(state, -2, name);
@@ -51,19 +51,19 @@ static void set_function(lua_State *state, const char *name,
 
 #define H2_LUA_COMPONENT_CACHE_KEY "h2.lua.runtime.components"
 
-static int push_touch_proxy(lua_State *state, h2_lua_job_t *job);
-static int push_button_proxy(lua_State *state, h2_lua_job_t *job,
+static int push_touch_proxy(lua_State* state, h2_lua_job_t* job);
+static int push_button_proxy(lua_State* state, h2_lua_job_t* job,
                              h2_runtime_component_id_t component_id);
-static int push_audio_proxy(lua_State *state, h2_lua_job_t *job);
-static int lua_async_yield(lua_State *state);
-static int lua_async_spawn(lua_State *state);
-static int lua_async_status(lua_State *state);
-static int lua_async_join(lua_State *state);
-static int lua_async_cancel(lua_State *state);
-static int lua_delay_ms(lua_State *state);
+static int push_audio_proxy(lua_State* state, h2_lua_job_t* job);
+static int lua_async_yield(lua_State* state);
+static int lua_async_spawn(lua_State* state);
+static int lua_async_status(lua_State* state);
+static int lua_async_join(lua_State* state);
+static int lua_async_cancel(lua_State* state);
+static int lua_delay_ms(lua_State* state);
 
-static int lua_runtime_component_get(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_runtime_component_get(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_Integer requested_id = luaL_checkinteger(state, 1);
   h2_runtime_component_info_t info;
   int cache_index;
@@ -99,15 +99,15 @@ static int lua_runtime_component_get(lua_State *state) {
   lua_pop(state, 1);
 
   switch (info.kind) {
-  case H2_RUNTIME_COMPONENT_BUTTON:
-    result = push_button_proxy(state, job, component_id);
-    break;
-  default:
-    lua_pushnil(state);
-    lua_pushfstring(state, "Runtime component kind %d is unavailable in Lua",
-                    (int)info.kind);
-    result = 2;
-    break;
+    case H2_RUNTIME_COMPONENT_BUTTON:
+      result = push_button_proxy(state, job, component_id);
+      break;
+    default:
+      lua_pushnil(state);
+      lua_pushfstring(state, "Runtime component kind %d is unavailable in Lua",
+                      (int)info.kind);
+      result = 2;
+      break;
   }
   if (result == 1) {
     lua_pushvalue(state, -1);
@@ -117,7 +117,7 @@ static int lua_runtime_component_get(lua_State *state) {
   return result;
 }
 
-static uint32_t allocate_callback_token(h2_lua_job_t *job) {
+static uint32_t allocate_callback_token(h2_lua_job_t* job) {
   for (size_t attempt = 0u; attempt <= job->callback_count; ++attempt) {
     uint32_t token = job->next_callback_token++;
     int collision = 0;
@@ -140,8 +140,8 @@ static uint32_t allocate_callback_token(h2_lua_job_t *job) {
   return 0u;
 }
 
-static int lua_runtime_on(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_runtime_on(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   h2_runtime_component_id_t component_id =
       (h2_runtime_component_id_t)luaL_checkinteger(state, 1);
   h2_runtime_event_kind_t kind =
@@ -175,10 +175,10 @@ static int lua_runtime_on(lua_State *state) {
                                        3);
 }
 
-int h2_lua_push_callback_register(lua_State *state, h2_lua_job_t *job,
+int h2_lua_push_callback_register(lua_State* state, h2_lua_job_t* job,
                                   h2_runtime_component_id_t component_id,
                                   uint32_t kind, int function_index) {
-  h2_lua_callback_t *callback;
+  h2_lua_callback_t* callback;
   size_t callback_index;
   function_index = lua_absindex(state, function_index);
   for (callback_index = 0u; callback_index < job->callback_count;
@@ -207,10 +207,10 @@ int h2_lua_push_callback_register(lua_State *state, h2_lua_job_t *job,
   return 1;
 }
 
-static int lua_runtime_off(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_runtime_off(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_Integer handle = luaL_checkinteger(state, 1);
-  h2_lua_callback_t *callback = NULL;
+  h2_lua_callback_t* callback = NULL;
   if (handle <= 0 || (lua_Unsigned)handle > UINT32_MAX) {
     lua_pushboolean(state, 0);
     return 1;
@@ -232,8 +232,8 @@ static int lua_runtime_off(lua_State *state) {
   return 1;
 }
 
-static int open_runtime(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int open_runtime(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_createtable(state, 0, 9);
   set_function(state, "spawn", lua_async_spawn, job);
   set_function(state, "yield", lua_async_yield, job);
@@ -251,8 +251,8 @@ static int open_runtime(lua_State *state) {
   lua_setfield(state, -2, "components");
 
   lua_createtable(state, 0, 10);
-#define H2_SET_EVENT(name, kind)                                               \
-  lua_pushinteger(state, H2_RUNTIME_COMPONENT_EVENT_##kind);                   \
+#define H2_SET_EVENT(name, kind)                             \
+  lua_pushinteger(state, H2_RUNTIME_COMPONENT_EVENT_##kind); \
   lua_setfield(state, -2, name)
   H2_SET_EVENT("BUTTON_ACTION", BUTTON_ACTION);
   H2_SET_EVENT("BUTTON_DOWN", BUTTON_DOWN);
@@ -261,8 +261,8 @@ static int open_runtime(lua_State *state) {
   H2_SET_EVENT("IMU_GESTURE", IMU_GESTURE);
   H2_SET_EVENT("ERROR", ERROR);
 #undef H2_SET_EVENT
-#define H2_SET_LINK_EVENT(name, kind)                                          \
-  lua_pushinteger(state, H2_LUA_LINK_EVENT_##kind);                            \
+#define H2_SET_LINK_EVENT(name, kind)               \
+  lua_pushinteger(state, H2_LUA_LINK_EVENT_##kind); \
   lua_setfield(state, -2, name)
   H2_SET_LINK_EVENT("LINK_CONNECTED", CONNECTED);
   H2_SET_LINK_EVENT("LINK_MESSAGE", MESSAGE);
@@ -273,8 +273,8 @@ static int open_runtime(lua_State *state) {
   return 1;
 }
 
-static int lua_delay_ms(lua_State *state) {
-  h2_lua_task_t *task = h2_lua_current_task(state);
+static int lua_delay_ms(lua_State* state) {
+  h2_lua_task_t* task = h2_lua_current_task(state);
   lua_Integer delay_ms = luaL_checkinteger(state, 1);
   if (task == NULL) {
     return luaL_error(state, "delay must run in a scheduler task");
@@ -289,8 +289,8 @@ static int lua_delay_ms(lua_State *state) {
   return lua_yield(state, 0);
 }
 
-static int lua_delay_us(lua_State *state) {
-  h2_lua_task_t *task = h2_lua_current_task(state);
+static int lua_delay_us(lua_State* state) {
+  h2_lua_task_t* task = h2_lua_current_task(state);
   lua_Integer delay_us = luaL_checkinteger(state, 1);
   uint64_t started_us;
   uint64_t now_us;
@@ -317,8 +317,8 @@ static int lua_delay_us(lua_State *state) {
   return 0;
 }
 
-static int lua_async_yield(lua_State *state) {
-  h2_lua_task_t *task = h2_lua_current_task(state);
+static int lua_async_yield(lua_State* state) {
+  h2_lua_task_t* task = h2_lua_current_task(state);
   if (task == NULL) {
     return luaL_error(state, "yield must run in a scheduler task");
   }
@@ -326,30 +326,30 @@ static int lua_async_yield(lua_State *state) {
   return lua_yield(state, 0);
 }
 
-static const char *task_state_name(h2_lua_task_state_t state) {
+static const char* task_state_name(h2_lua_task_state_t state) {
   switch (state) {
-  case H2_LUA_TASK_READY:
-    return "ready";
-  case H2_LUA_TASK_SLEEPING:
-    return "waiting";
-  case H2_LUA_TASK_JOINING:
-    return "waiting";
-  case H2_LUA_TASK_CAPABILITY:
-    return "waiting";
-  case H2_LUA_TASK_DONE:
-    return "done";
-  case H2_LUA_TASK_FAILED:
-    return "failed";
-  case H2_LUA_TASK_CANCELLED:
-    return "cancelled";
-  case H2_LUA_TASK_UNUSED:
-    return "unknown";
+    case H2_LUA_TASK_READY:
+      return "ready";
+    case H2_LUA_TASK_SLEEPING:
+      return "waiting";
+    case H2_LUA_TASK_JOINING:
+      return "waiting";
+    case H2_LUA_TASK_CAPABILITY:
+      return "waiting";
+    case H2_LUA_TASK_DONE:
+      return "done";
+    case H2_LUA_TASK_FAILED:
+      return "failed";
+    case H2_LUA_TASK_CANCELLED:
+      return "cancelled";
+    case H2_LUA_TASK_UNUSED:
+      return "unknown";
   }
   return "unknown";
 }
 
-static int lua_async_spawn(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_async_spawn(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   uint32_t task_id = 0u;
   int argument_count = lua_gettop(state) - 1;
   luaL_checktype(state, 1, LUA_TFUNCTION);
@@ -362,10 +362,10 @@ static int lua_async_spawn(lua_State *state) {
   return 1;
 }
 
-static int lua_async_status(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_async_status(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   uint32_t task_id = (uint32_t)luaL_checkinteger(state, 1);
-  h2_lua_task_t *task = h2_lua_find_task(job, task_id);
+  h2_lua_task_t* task = h2_lua_find_task(job, task_id);
   if (task == NULL) {
     lua_pushnil(state);
     lua_pushliteral(state, "unknown task");
@@ -375,9 +375,9 @@ static int lua_async_status(lua_State *state) {
   return 1;
 }
 
-static int push_join_result(lua_State *state, h2_lua_job_t *job,
+static int push_join_result(lua_State* state, h2_lua_job_t* job,
                             uint32_t task_id) {
-  h2_lua_task_t *target = h2_lua_find_task(job, task_id);
+  h2_lua_task_t* target = h2_lua_find_task(job, task_id);
   if (target == NULL) {
     lua_pushboolean(state, 0);
     lua_pushliteral(state, "unknown task");
@@ -395,9 +395,9 @@ static int push_join_result(lua_State *state, h2_lua_job_t *job,
   return 2;
 }
 
-static int lua_async_join_continue(lua_State *state, int status,
+static int lua_async_join_continue(lua_State* state, int status,
                                    lua_KContext context) {
-  h2_lua_task_t *current = h2_lua_current_task(state);
+  h2_lua_task_t* current = h2_lua_current_task(state);
   (void)status;
   if (current == NULL) {
     return luaL_error(state, "join lost scheduler task");
@@ -405,11 +405,11 @@ static int lua_async_join_continue(lua_State *state, int status,
   return push_join_result(state, current->job, (uint32_t)context);
 }
 
-static int lua_async_join(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  h2_lua_task_t *current = h2_lua_current_task(state);
+static int lua_async_join(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
+  h2_lua_task_t* current = h2_lua_current_task(state);
   uint32_t task_id = (uint32_t)luaL_checkinteger(state, 1);
-  h2_lua_task_t *target = h2_lua_find_task(job, task_id);
+  h2_lua_task_t* target = h2_lua_find_task(job, task_id);
   if (current == NULL || target == NULL || target == current) {
     return luaL_error(state, "invalid join target");
   }
@@ -423,10 +423,10 @@ static int lua_async_join(lua_State *state) {
   return lua_yieldk(state, 0, (lua_KContext)task_id, lua_async_join_continue);
 }
 
-static int lua_async_cancel(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_async_cancel(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   uint32_t task_id = (uint32_t)luaL_checkinteger(state, 1);
-  h2_lua_task_t *target = h2_lua_find_task(job, task_id);
+  h2_lua_task_t* target = h2_lua_find_task(job, task_id);
   if (target == NULL || target->state == H2_LUA_TASK_DONE ||
       target->state == H2_LUA_TASK_FAILED ||
       target->state == H2_LUA_TASK_CANCELLED) {
@@ -439,22 +439,22 @@ static int lua_async_cancel(lua_State *state) {
   return 1;
 }
 
-static int open_delay(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int open_delay(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_createtable(state, 0, 2);
   set_function(state, "delay_ms", lua_delay_ms, job);
   set_function(state, "delay_us", lua_delay_us, job);
   return 1;
 }
 
-static int lua_system_millis(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_system_millis(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_pushinteger(state, (lua_Integer)h2_lua_now_ms(job->host));
   return 1;
 }
 
-static int lua_system_time(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_system_time(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   uint64_t wall_ms = 0u;
   h2_pal_result_t result =
       h2_pal_time_get_wall_ms(job->host->config.runtime->time, &wall_ms);
@@ -510,8 +510,8 @@ static h2_lua_calendar_time_t calendar_from_epoch(int64_t epoch_seconds) {
   return value;
 }
 
-static int append_date_part(char *buffer, size_t capacity, size_t *offset,
-                            const char *format, int value) {
+static int append_date_part(char* buffer, size_t capacity, size_t* offset,
+                            const char* format, int value) {
   int written;
   if (*offset >= capacity) {
     return 0;
@@ -524,9 +524,9 @@ static int append_date_part(char *buffer, size_t capacity, size_t *offset,
   return 1;
 }
 
-static int lua_system_date(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  const char *format = luaL_optstring(state, 1, "%Y-%m-%d %H:%M:%S");
+static int lua_system_date(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
+  const char* format = luaL_optstring(state, 1, "%Y-%m-%d %H:%M:%S");
   uint64_t wall_ms = 0u;
   int64_t epoch_seconds;
   h2_lua_calendar_time_t value;
@@ -551,73 +551,73 @@ static int lua_system_date(lua_State *state) {
     }
     i++;
     switch (format[i]) {
-    case '%':
-      output[offset++] = '%';
-      break;
-    case 'Y':
-      if (!append_date_part(output, sizeof(output), &offset, "%04d",
-                            value.year))
-        return luaL_error(state, "system.date output limit reached");
-      break;
-    case 'm':
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.month))
-        return luaL_error(state, "system.date output limit reached");
-      break;
-    case 'd':
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.day))
-        return luaL_error(state, "system.date output limit reached");
-      break;
-    case 'H':
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.hour))
-        return luaL_error(state, "system.date output limit reached");
-      break;
-    case 'M':
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.minute))
-        return luaL_error(state, "system.date output limit reached");
-      break;
-    case 'S':
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.second))
-        return luaL_error(state, "system.date output limit reached");
-      break;
-    case 'F':
-      if (!append_date_part(output, sizeof(output), &offset, "%04d",
-                            value.year) ||
-          offset + 1u >= sizeof(output))
-        return luaL_error(state, "system.date output limit reached");
-      output[offset++] = '-';
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.month) ||
-          offset + 1u >= sizeof(output))
-        return luaL_error(state, "system.date output limit reached");
-      output[offset++] = '-';
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.day))
-        return luaL_error(state, "system.date output limit reached");
-      break;
-    case 'T':
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.hour) ||
-          offset + 1u >= sizeof(output))
-        return luaL_error(state, "system.date output limit reached");
-      output[offset++] = ':';
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.minute) ||
-          offset + 1u >= sizeof(output))
-        return luaL_error(state, "system.date output limit reached");
-      output[offset++] = ':';
-      if (!append_date_part(output, sizeof(output), &offset, "%02d",
-                            (int)value.second))
-        return luaL_error(state, "system.date output limit reached");
-      break;
-    case '\0':
-      return luaL_error(state, "system.date incomplete format");
-    default:
-      return luaL_error(state, "system.date unsupported format");
+      case '%':
+        output[offset++] = '%';
+        break;
+      case 'Y':
+        if (!append_date_part(output, sizeof(output), &offset, "%04d",
+                              value.year))
+          return luaL_error(state, "system.date output limit reached");
+        break;
+      case 'm':
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.month))
+          return luaL_error(state, "system.date output limit reached");
+        break;
+      case 'd':
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.day))
+          return luaL_error(state, "system.date output limit reached");
+        break;
+      case 'H':
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.hour))
+          return luaL_error(state, "system.date output limit reached");
+        break;
+      case 'M':
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.minute))
+          return luaL_error(state, "system.date output limit reached");
+        break;
+      case 'S':
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.second))
+          return luaL_error(state, "system.date output limit reached");
+        break;
+      case 'F':
+        if (!append_date_part(output, sizeof(output), &offset, "%04d",
+                              value.year) ||
+            offset + 1u >= sizeof(output))
+          return luaL_error(state, "system.date output limit reached");
+        output[offset++] = '-';
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.month) ||
+            offset + 1u >= sizeof(output))
+          return luaL_error(state, "system.date output limit reached");
+        output[offset++] = '-';
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.day))
+          return luaL_error(state, "system.date output limit reached");
+        break;
+      case 'T':
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.hour) ||
+            offset + 1u >= sizeof(output))
+          return luaL_error(state, "system.date output limit reached");
+        output[offset++] = ':';
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.minute) ||
+            offset + 1u >= sizeof(output))
+          return luaL_error(state, "system.date output limit reached");
+        output[offset++] = ':';
+        if (!append_date_part(output, sizeof(output), &offset, "%02d",
+                              (int)value.second))
+          return luaL_error(state, "system.date output limit reached");
+        break;
+      case '\0':
+        return luaL_error(state, "system.date incomplete format");
+      default:
+        return luaL_error(state, "system.date unsupported format");
     }
   }
   output[offset] = '\0';
@@ -625,19 +625,19 @@ static int lua_system_date(lua_State *state) {
   return 1;
 }
 
-static int lua_system_uptime(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_system_uptime(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_pushinteger(state, (lua_Integer)(h2_lua_now_ms(job->host) / 1000u));
   return 1;
 }
 
-static int lua_system_ip(lua_State *state) {
+static int lua_system_ip(lua_State* state) {
   lua_pushnil(state);
   return 1;
 }
 
-static int lua_system_info(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_system_info(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   uint64_t wall_ms = 0u;
   uint64_t uptime_s = h2_lua_now_ms(job->host) / 1000u;
   h2_pal_result_t result =
@@ -661,13 +661,13 @@ static int lua_system_info(lua_State *state) {
   return 1;
 }
 
-static int lua_system_heap_unsupported(lua_State *state) {
+static int lua_system_heap_unsupported(lua_State* state) {
   return luaL_error(state,
                     "system.heap ESP heap/task introspection is unsupported");
 }
 
-static int open_system(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int open_system(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_createtable(state, 0, 7);
   set_function(state, "millis", lua_system_millis, job);
   set_function(state, "uptime", lua_system_uptime, job);
@@ -685,48 +685,48 @@ static int open_system(lua_State *state) {
   return 1;
 }
 
-static void json_escape(luaL_Buffer *buffer, const char *value, size_t length) {
+static void json_escape(luaL_Buffer* buffer, const char* value, size_t length) {
   size_t i;
   luaL_addchar(buffer, '"');
   for (i = 0u; i < length; ++i) {
     unsigned char c = (unsigned char)value[i];
     switch (c) {
-    case '"':
-      luaL_addstring(buffer, "\\\"");
-      break;
-    case '\\':
-      luaL_addstring(buffer, "\\\\");
-      break;
-    case '\n':
-      luaL_addstring(buffer, "\\n");
-      break;
-    case '\r':
-      luaL_addstring(buffer, "\\r");
-      break;
-    case '\t':
-      luaL_addstring(buffer, "\\t");
-      break;
-    default:
-      if (c < 0x20u) {
-        char escaped[7];
-        (void)snprintf(escaped, sizeof(escaped), "\\u%04x", c);
-        luaL_addstring(buffer, escaped);
-      } else {
-        luaL_addchar(buffer, (char)c);
-      }
-      break;
+      case '"':
+        luaL_addstring(buffer, "\\\"");
+        break;
+      case '\\':
+        luaL_addstring(buffer, "\\\\");
+        break;
+      case '\n':
+        luaL_addstring(buffer, "\\n");
+        break;
+      case '\r':
+        luaL_addstring(buffer, "\\r");
+        break;
+      case '\t':
+        luaL_addstring(buffer, "\\t");
+        break;
+      default:
+        if (c < 0x20u) {
+          char escaped[7];
+          (void)snprintf(escaped, sizeof(escaped), "\\u%04x", c);
+          luaL_addstring(buffer, escaped);
+        } else {
+          luaL_addchar(buffer, (char)c);
+        }
+        break;
     }
   }
   luaL_addchar(buffer, '"');
 }
 
-static int compare_keys(const void *left, const void *right) {
-  const char *const *left_key = left;
-  const char *const *right_key = right;
+static int compare_keys(const void* left, const void* right) {
+  const char* const* left_key = left;
+  const char* const* right_key = right;
   return strcmp(*left_key, *right_key);
 }
 
-static void json_encode_value(lua_State *state, int index, luaL_Buffer *buffer,
+static void json_encode_value(lua_State* state, int index, luaL_Buffer* buffer,
                               int depth) {
   int type = lua_type(state, index);
   int absolute_index = lua_absindex(state, index);
@@ -734,142 +734,143 @@ static void json_encode_value(lua_State *state, int index, luaL_Buffer *buffer,
     luaL_error(state, "json nesting limit reached");
   }
   switch (type) {
-  case LUA_TNIL:
-    luaL_addstring(buffer, "null");
-    break;
-  case LUA_TBOOLEAN:
-    luaL_addstring(buffer, lua_toboolean(state, index) ? "true" : "false");
-    break;
-  case LUA_TNUMBER: {
-    size_t length;
-    const char *number;
-    if (!isfinite((double)lua_tonumber(state, absolute_index))) {
-      luaL_error(state, "json number must be finite");
-    }
-    lua_pushvalue(state, index);
-    number = lua_tolstring(state, -1, &length);
-    luaL_addlstring(buffer, number, length);
-    lua_pop(state, 1);
-    break;
-  }
-  case LUA_TSTRING: {
-    size_t length;
-    const char *value = lua_tolstring(state, index, &length);
-    json_escape(buffer, value, length);
-    break;
-  }
-  case LUA_TTABLE: {
-    lua_Integer length = (lua_Integer)lua_rawlen(state, absolute_index);
-    lua_Integer i;
-    size_t key_count = 0u;
-    int is_array = 1;
-    lua_pushnil(state);
-    while (lua_next(state, absolute_index) != 0) {
-      if (!lua_isinteger(state, -2) || lua_tointeger(state, -2) < 1 ||
-          lua_tointeger(state, -2) > length) {
-        is_array = 0;
+    case LUA_TNIL:
+      luaL_addstring(buffer, "null");
+      break;
+    case LUA_TBOOLEAN:
+      luaL_addstring(buffer, lua_toboolean(state, index) ? "true" : "false");
+      break;
+    case LUA_TNUMBER: {
+      size_t length;
+      const char* number;
+      if (!isfinite((double)lua_tonumber(state, absolute_index))) {
+        luaL_error(state, "json number must be finite");
       }
+      lua_pushvalue(state, index);
+      number = lua_tolstring(state, -1, &length);
+      luaL_addlstring(buffer, number, length);
       lua_pop(state, 1);
-      key_count++;
+      break;
     }
-    if (is_array && key_count == (size_t)length) {
-      luaL_addchar(buffer, '[');
-      for (i = 1; i <= length; ++i) {
-        if (i != 1) {
-          luaL_addchar(buffer, ',');
-        }
-        lua_geti(state, absolute_index, i);
-        json_encode_value(state, -1, buffer, depth + 1);
-        lua_pop(state, 1);
-      }
-      luaL_addchar(buffer, ']');
-    } else {
-      const char **keys =
-          lua_newuserdatauv(state, key_count * sizeof(*keys), 0);
-      size_t key_index = 0u;
+    case LUA_TSTRING: {
+      size_t length;
+      const char* value = lua_tolstring(state, index, &length);
+      json_escape(buffer, value, length);
+      break;
+    }
+    case LUA_TTABLE: {
+      lua_Integer length = (lua_Integer)lua_rawlen(state, absolute_index);
+      lua_Integer i;
+      size_t key_count = 0u;
+      int is_array = 1;
       lua_pushnil(state);
       while (lua_next(state, absolute_index) != 0) {
-        if (lua_type(state, -2) != LUA_TSTRING) {
-          (void)luaL_error(state, "json object keys must be strings");
-          return;
+        if (!lua_isinteger(state, -2) || lua_tointeger(state, -2) < 1 ||
+            lua_tointeger(state, -2) > length) {
+          is_array = 0;
         }
-        keys[key_index++] = lua_tostring(state, -2);
+        lua_pop(state, 1);
+        key_count++;
+      }
+      if (is_array && key_count == (size_t)length) {
+        luaL_addchar(buffer, '[');
+        for (i = 1; i <= length; ++i) {
+          if (i != 1) {
+            luaL_addchar(buffer, ',');
+          }
+          lua_geti(state, absolute_index, i);
+          json_encode_value(state, -1, buffer, depth + 1);
+          lua_pop(state, 1);
+        }
+        luaL_addchar(buffer, ']');
+      } else {
+        const char** keys =
+            lua_newuserdatauv(state, key_count * sizeof(*keys), 0);
+        size_t key_index = 0u;
+        lua_pushnil(state);
+        while (lua_next(state, absolute_index) != 0) {
+          if (lua_type(state, -2) != LUA_TSTRING) {
+            (void)luaL_error(state, "json object keys must be strings");
+            return;
+          }
+          keys[key_index++] = lua_tostring(state, -2);
+          lua_pop(state, 1);
+        }
+        qsort(keys, key_count, sizeof(*keys), compare_keys);
+        luaL_addchar(buffer, '{');
+        for (key_index = 0u; key_index < key_count; ++key_index) {
+          size_t key_length = strlen(keys[key_index]);
+          if (key_index != 0u) {
+            luaL_addchar(buffer, ',');
+          }
+          json_escape(buffer, keys[key_index], key_length);
+          luaL_addchar(buffer, ':');
+          lua_getfield(state, absolute_index, keys[key_index]);
+          json_encode_value(state, -1, buffer, depth + 1);
+          lua_pop(state, 1);
+        }
+        luaL_addchar(buffer, '}');
         lua_pop(state, 1);
       }
-      qsort(keys, key_count, sizeof(*keys), compare_keys);
-      luaL_addchar(buffer, '{');
-      for (key_index = 0u; key_index < key_count; ++key_index) {
-        size_t key_length = strlen(keys[key_index]);
-        if (key_index != 0u) {
-          luaL_addchar(buffer, ',');
-        }
-        json_escape(buffer, keys[key_index], key_length);
-        luaL_addchar(buffer, ':');
-        lua_getfield(state, absolute_index, keys[key_index]);
-        json_encode_value(state, -1, buffer, depth + 1);
-        lua_pop(state, 1);
+      break;
+    }
+    case LUA_TLIGHTUSERDATA:
+      if (lua_touserdata(state, absolute_index) != &s_json_null) {
+        luaL_error(state, "unsupported json lightuserdata");
       }
-      luaL_addchar(buffer, '}');
-      lua_pop(state, 1);
-    }
-    break;
-  }
-  case LUA_TLIGHTUSERDATA:
-    if (lua_touserdata(state, absolute_index) != &s_json_null) {
-      luaL_error(state, "unsupported json lightuserdata");
-    }
-    luaL_addstring(buffer, "null");
-    break;
-  default:
-    luaL_error(state, "unsupported json value: %s", lua_typename(state, type));
+      luaL_addstring(buffer, "null");
+      break;
+    default:
+      luaL_error(state, "unsupported json value: %s",
+                 lua_typename(state, type));
   }
 }
 
-static const char *encode_json_at(lua_State *state, int index,
-                                  h2_lua_job_t *job, size_t *out_size) {
+static const char* encode_json_at(lua_State* state, int index,
+                                  h2_lua_job_t* job, size_t* out_size) {
   luaL_Buffer buffer;
   luaL_buffinit(state, &buffer);
   json_encode_value(state, index, &buffer, 0);
   luaL_pushresult(&buffer);
-  const char *result = lua_tolstring(state, -1, out_size);
+  const char* result = lua_tolstring(state, -1, out_size);
   if (*out_size > job->host->config.output_limit_bytes) {
     luaL_error(state, "json output limit reached");
   }
   return result;
 }
 
-static int lua_json_encode(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_json_encode(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   size_t result_size = 0u;
   (void)encode_json_at(state, 1, job, &result_size);
   return 1;
 }
 
-static void *json_malloc(void *context, size_t size) {
-  const h2_pal_mem_api_t *mem = context;
+static void* json_malloc(void* context, size_t size) {
+  const h2_pal_mem_api_t* mem = context;
   return h2_pal_mem_alloc(mem, size);
 }
 
-static void *json_realloc(void *context, void *pointer, size_t old_size,
+static void* json_realloc(void* context, void* pointer, size_t old_size,
                           size_t size) {
-  const h2_pal_mem_api_t *mem = context;
+  const h2_pal_mem_api_t* mem = context;
   (void)old_size;
   return h2_pal_mem_realloc(mem, pointer, size);
 }
 
-static void json_free(void *context, void *pointer) {
-  const h2_pal_mem_api_t *mem = context;
+static void json_free(void* context, void* pointer) {
+  const h2_pal_mem_api_t* mem = context;
   h2_pal_mem_free(mem, pointer);
 }
 
-static int json_depth_is_valid(yyjson_val *value, int depth) {
+static int json_depth_is_valid(yyjson_val* value, int depth) {
   if (depth > 16) {
     return 0;
   }
   if (yyjson_is_arr(value)) {
     size_t index;
     size_t count;
-    yyjson_val *item;
+    yyjson_val* item;
     yyjson_arr_foreach(value, index, count, item) {
       if (!json_depth_is_valid(item, depth + 1)) {
         return 0;
@@ -878,8 +879,8 @@ static int json_depth_is_valid(yyjson_val *value, int depth) {
   } else if (yyjson_is_obj(value)) {
     size_t index;
     size_t count;
-    yyjson_val *key;
-    yyjson_val *item;
+    yyjson_val* key;
+    yyjson_val* item;
     yyjson_obj_foreach(value, index, count, key, item) {
       (void)key;
       if (!json_depth_is_valid(item, depth + 1)) {
@@ -890,7 +891,7 @@ static int json_depth_is_valid(yyjson_val *value, int depth) {
   return 1;
 }
 
-static void push_json_value(lua_State *state, yyjson_val *value, int depth) {
+static void push_json_value(lua_State* state, yyjson_val* value, int depth) {
   if (depth > 16) {
     luaL_error(state, "json nesting limit reached");
   }
@@ -914,7 +915,7 @@ static void push_json_value(lua_State *state, yyjson_val *value, int depth) {
   } else if (yyjson_is_arr(value)) {
     size_t index;
     size_t count;
-    yyjson_val *item;
+    yyjson_val* item;
     lua_createtable(state, (int)yyjson_get_len(value), 0);
     yyjson_arr_foreach(value, index, count, item) {
       push_json_value(state, item, depth + 1);
@@ -923,8 +924,8 @@ static void push_json_value(lua_State *state, yyjson_val *value, int depth) {
   } else if (yyjson_is_obj(value)) {
     size_t index;
     size_t count;
-    yyjson_val *key;
-    yyjson_val *item;
+    yyjson_val* key;
+    yyjson_val* item;
     lua_createtable(state, 0, (int)yyjson_get_len(value));
     yyjson_obj_foreach(value, index, count, key, item) {
       push_json_value(state, item, depth + 1);
@@ -935,23 +936,23 @@ static void push_json_value(lua_State *state, yyjson_val *value, int depth) {
   }
 }
 
-static int lua_json_decode(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_json_decode(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   size_t length;
-  const char *value = luaL_checklstring(state, 1, &length);
+  const char* value = luaL_checklstring(state, 1, &length);
   yyjson_alc allocator = {
       .malloc = json_malloc,
       .realloc = json_realloc,
       .free = json_free,
-      .ctx = (void *)job->host->config.allocator,
+      .ctx = (void*)job->host->config.allocator,
   };
   yyjson_read_err error;
-  yyjson_doc *document;
+  yyjson_doc* document;
   if (length > job->host->config.source_limit_bytes) {
     return luaL_error(state, "json input limit reached");
   }
-  document = yyjson_read_opts((char *)(uintptr_t)value, length, 0u, &allocator,
-                              &error);
+  document =
+      yyjson_read_opts((char*)(uintptr_t)value, length, 0u, &allocator, &error);
   if (document == NULL) {
     return luaL_error(state, "malformed json at byte %d", (int)error.pos);
   }
@@ -964,8 +965,8 @@ static int lua_json_decode(lua_State *state) {
   return 1;
 }
 
-static int open_json(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int open_json(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_createtable(state, 0, 3);
   set_function(state, "encode", lua_json_encode, job);
   set_function(state, "decode", lua_json_decode, job);
@@ -974,8 +975,8 @@ static int open_json(lua_State *state) {
   return 1;
 }
 
-static int push_capability_tuple(lua_State *state, h2_pal_result_t result,
-                                 const char *output, const char *error) {
+static int push_capability_tuple(lua_State* state, h2_pal_result_t result,
+                                 const char* output, const char* error) {
   lua_pushboolean(state, result == H2_PAL_OK);
   if (result == H2_PAL_OK) {
     lua_pushstring(state, output == NULL ? "" : output);
@@ -987,11 +988,11 @@ static int push_capability_tuple(lua_State *state, h2_pal_result_t result,
   return 3;
 }
 
-static int lua_capability_continue(lua_State *state, int status,
+static int lua_capability_continue(lua_State* state, int status,
                                    lua_KContext context) {
-  h2_lua_task_t *task = h2_lua_current_task(state);
-  h2_lua_host_t *host;
-  h2_lua_capability_request_t *request;
+  h2_lua_task_t* task = h2_lua_current_task(state);
+  h2_lua_host_t* host;
+  h2_lua_capability_request_t* request;
   h2_pal_result_t result;
   char output[H2_LUA_CAPABILITY_OUTPUT_MAX];
   char error[H2_LUA_MESSAGE_MAX];
@@ -1030,8 +1031,8 @@ static int lua_capability_continue(lua_State *state, int status,
   return push_capability_tuple(state, result, output, error);
 }
 
-static h2_lua_capability_request_t *
-allocate_capability_request(h2_lua_host_t *host) {
+static h2_lua_capability_request_t* allocate_capability_request(
+    h2_lua_host_t* host) {
   size_t i;
   for (i = 0u; i < host->config.pending_capability_capacity; ++i) {
     if (host->capability_requests[i].state ==
@@ -1042,17 +1043,17 @@ allocate_capability_request(h2_lua_host_t *host) {
   return NULL;
 }
 
-static int lua_capability_call(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  h2_lua_task_t *task = h2_lua_current_task(state);
-  const char *name = luaL_checkstring(state, 1);
-  const char *input;
-  const char *options;
+static int lua_capability_call(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
+  h2_lua_task_t* task = h2_lua_current_task(state);
+  const char* name = luaL_checkstring(state, 1);
+  const char* input;
+  const char* options;
   size_t input_size = 0u;
   size_t options_size = 0u;
   char output[H2_LUA_CAPABILITY_OUTPUT_MAX];
-  const char *error = NULL;
-  const h2_lua_capability_entry_t *entry = NULL;
+  const char* error = NULL;
+  const h2_lua_capability_entry_t* entry = NULL;
   if (lua_isnoneornil(state, 2)) {
     input = "{}";
   } else if (lua_type(state, 2) == LUA_TSTRING) {
@@ -1072,7 +1073,7 @@ static int lua_capability_call(lua_State *state) {
   (void)input_size;
   (void)options_size;
   if (h2_trie_handle(&job->host->capability_trie, name, &entry) == H2_PAL_OK) {
-    h2_lua_capability_request_t *request;
+    h2_lua_capability_request_t* request;
     h2_pal_result_t result;
     int locked = 0;
     if (job->host->capability_mutex != NULL) {
@@ -1143,14 +1144,14 @@ static int lua_capability_call(lua_State *state) {
   return 3;
 }
 
-static int open_capability(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int open_capability(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_createtable(state, 0, 1);
   set_function(state, "call", lua_capability_call, job);
   return 1;
 }
 
-static void touch_push_result(lua_State *state, h2_lua_job_t *job,
+static void touch_push_result(lua_State* state, h2_lua_job_t* job,
                               int just_pressed, int just_released, int dx,
                               int dy) {
   uint64_t held_ms = 0u;
@@ -1178,8 +1179,8 @@ static void touch_push_result(lua_State *state, h2_lua_job_t *job,
   lua_setfield(state, -2, "held_ms");
 }
 
-static int touch_poll(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int touch_poll(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   h2_pal_touch_event_t event;
   h2_pal_result_t result;
   int old_x = job->touch_x;
@@ -1221,19 +1222,19 @@ static int touch_poll(lua_State *state) {
   return 1;
 }
 
-static int touch_read(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int touch_read(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   touch_push_result(state, job, 0, 0, 0, 0);
   return 1;
 }
 
-static int touch_sync(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int touch_sync(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   job->touch_initialized = 0;
   return touch_poll(state);
 }
 
-static int push_touch_proxy(lua_State *state, h2_lua_job_t *job) {
+static int push_touch_proxy(lua_State* state, h2_lua_job_t* job) {
   h2_pal_result_t result;
   if (!job->touch_open) {
     result = h2_pal_touch_open(job->host->config.runtime->touch);
@@ -1251,8 +1252,8 @@ static int push_touch_proxy(lua_State *state, h2_lua_job_t *job) {
   return 1;
 }
 
-static int button_get_key_level(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int button_get_key_level(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   h2_runtime_button_state_t button_state;
   h2_pal_result_t result = h2_runtime_component_state_button(
       job->host->config.runtime, job->button_component_id, &button_state);
@@ -1265,7 +1266,7 @@ static int button_get_key_level(lua_State *state) {
   return 1;
 }
 
-static int push_button_proxy(lua_State *state, h2_lua_job_t *job,
+static int push_button_proxy(lua_State* state, h2_lua_job_t* job,
                              h2_runtime_component_id_t component_id) {
   if (job->button_component_id != H2_RUNTIME_COMPONENT_ID_NONE &&
       job->button_component_id != component_id) {
@@ -1279,7 +1280,7 @@ static int push_button_proxy(lua_State *state, h2_lua_job_t *job,
   return 1;
 }
 
-static int audio_write_result(lua_State *state, int result, size_t written) {
+static int audio_write_result(lua_State* state, int result, size_t written) {
   if (result == H2_PAL_OK) {
     lua_pushboolean(state, 1);
     return 1;
@@ -1293,22 +1294,22 @@ static int audio_write_result(lua_State *state, int result, size_t written) {
   return 3;
 }
 
-static size_t audio_slot_chunk_bytes(const h2_lua_audio_track_slot_t *slot) {
+static size_t audio_slot_chunk_bytes(const h2_lua_audio_track_slot_t* slot) {
   return (size_t)slot->format.frame_samples_per_channel *
          h2_audio_pcm_frame_bytes(&slot->format);
 }
 
-static int audio_slot_write_frame(h2_lua_audio_track_slot_t *slot,
-                                  const void *data, size_t chunk_bytes) {
+static int audio_slot_write_frame(h2_lua_audio_track_slot_t* slot,
+                                  const void* data, size_t chunk_bytes) {
   h2_audio_frame_t frame =
-      h2_audio_frame_for_buffer((void *)data, chunk_bytes, slot->format);
+      h2_audio_frame_for_buffer((void*)data, chunk_bytes, slot->format);
   frame.bytes = chunk_bytes;
   frame.samples_per_channel = slot->format.frame_samples_per_channel;
   return h2_pal_audio_track_write(slot->track, &frame, 0u);
 }
 
-void h2_lua_audio_track_slot_release_carry(h2_lua_audio_track_slot_t *slot,
-                                           const h2_pal_mem_api_t *mem) {
+void h2_lua_audio_track_slot_release_carry(h2_lua_audio_track_slot_t* slot,
+                                           const h2_pal_mem_api_t* mem) {
   if (slot == NULL || slot->carry == NULL) {
     return;
   }
@@ -1321,7 +1322,7 @@ void h2_lua_audio_track_slot_release_carry(h2_lua_audio_track_slot_t *slot,
  * Used only when the Track is closing: the stream ends there, so the tail must
  * be emitted rather than carried further. Best effort by design — a busy Track
  * must not block or fail close. */
-void h2_lua_audio_track_slot_flush_carry(h2_lua_audio_track_slot_t *slot) {
+void h2_lua_audio_track_slot_flush_carry(h2_lua_audio_track_slot_t* slot) {
   size_t chunk_bytes;
   if (slot == NULL || slot->track == NULL || slot->carry == NULL ||
       slot->carry_bytes == 0u) {
@@ -1344,11 +1345,11 @@ void h2_lua_audio_track_slot_flush_carry(h2_lua_audio_track_slot_t *slot) {
  * flushes whatever is left. On busy/failure the third return value is how many
  * bytes of this call the Track accepted, so callers resume from that offset.
  * Bytes moved into the carry buffer count as accepted. */
-static int audio_output_write(lua_State *state) {
-  h2_lua_audio_track_slot_t *slot = lua_touserdata(state, lua_upvalueindex(1));
+static int audio_output_write(lua_State* state) {
+  h2_lua_audio_track_slot_t* slot = lua_touserdata(state, lua_upvalueindex(1));
   uint32_t generation = (uint32_t)lua_tointeger(state, lua_upvalueindex(2));
   size_t size = 0u;
-  const char *bytes = luaL_checklstring(state, 2, &size);
+  const char* bytes = luaL_checklstring(state, 2, &size);
   size_t frame_bytes =
       slot == NULL ? 0u : h2_audio_pcm_frame_bytes(&slot->format);
   size_t chunk_bytes;
@@ -1367,7 +1368,7 @@ static int audio_output_write(lua_State *state) {
       lua_pushliteral(state, "audio output: invalid frame");
       return 2;
     }
-    frame = h2_audio_frame_for_buffer((void *)bytes, size, slot->format);
+    frame = h2_audio_frame_for_buffer((void*)bytes, size, slot->format);
     frame.bytes = size;
     frame.samples_per_channel = (uint16_t)(size / frame_bytes);
     result = h2_pal_audio_track_write(slot->track, &frame, 0u);
@@ -1416,8 +1417,8 @@ static int audio_output_write(lua_State *state) {
   return audio_write_result(state, H2_PAL_OK, size);
 }
 
-static int audio_output_info(lua_State *state) {
-  h2_lua_audio_track_slot_t *slot = lua_touserdata(state, lua_upvalueindex(1));
+static int audio_output_info(lua_State* state) {
+  h2_lua_audio_track_slot_t* slot = lua_touserdata(state, lua_upvalueindex(1));
   uint32_t generation = (uint32_t)lua_tointeger(state, lua_upvalueindex(2));
   int opened =
       slot != NULL && slot->generation == generation && slot->track != NULL;
@@ -1441,11 +1442,11 @@ static int audio_output_info(lua_State *state) {
   return 1;
 }
 
-static int audio_output_close(lua_State *state) {
-  h2_lua_audio_track_slot_t *slot = lua_touserdata(state, lua_upvalueindex(1));
+static int audio_output_close(lua_State* state) {
+  h2_lua_audio_track_slot_t* slot = lua_touserdata(state, lua_upvalueindex(1));
   uint32_t generation = (uint32_t)lua_tointeger(state, lua_upvalueindex(2));
   if (slot != NULL && slot->generation == generation && slot->track != NULL) {
-    h2_lua_job_t *job = slot->job;
+    h2_lua_job_t* job = slot->job;
     int result;
     h2_lua_audio_track_slot_flush_carry(slot);
     h2_lua_audio_track_slot_release_carry(slot, job->host->config.allocator);
@@ -1467,17 +1468,17 @@ static int audio_output_close(lua_State *state) {
   return 1;
 }
 
-static void set_audio_track_function(lua_State *state, const char *name,
+static void set_audio_track_function(lua_State* state, const char* name,
                                      lua_CFunction function,
-                                     h2_lua_audio_track_slot_t *slot) {
+                                     h2_lua_audio_track_slot_t* slot) {
   lua_pushlightuserdata(state, slot);
   lua_pushinteger(state, (lua_Integer)slot->generation);
   lua_pushcclosure(state, function, 2);
   lua_setfield(state, -2, name);
 }
 
-static lua_Integer table_integer_field(lua_State *state, int table_index,
-                                       const char *name,
+static lua_Integer table_integer_field(lua_State* state, int table_index,
+                                       const char* name,
                                        lua_Integer default_value) {
   lua_Integer value;
   lua_getfield(state, table_index, name);
@@ -1486,8 +1487,8 @@ static lua_Integer table_integer_field(lua_State *state, int table_index,
   return value;
 }
 
-static h2_lua_job_t *audio_input_job(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static h2_lua_job_t* audio_input_job(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   uint32_t generation = (uint32_t)lua_tointeger(state, lua_upvalueindex(2));
   if (job == NULL || !job->audio_mic_acquired ||
       job->audio_mic_generation != generation ||
@@ -1503,16 +1504,16 @@ static h2_lua_job_t *audio_input_job(lua_State *state) {
  * of blocking the worker thread until a frame arrives. */
 #define H2_LUA_AUDIO_INPUT_POLL_MS 50u
 
-static int audio_input_read_frame(lua_State *state, h2_lua_job_t *job,
+static int audio_input_read_frame(lua_State* state, h2_lua_job_t* job,
                                   uint32_t timeout_ms,
-                                  h2_audio_frame_t *out_frame) {
+                                  h2_audio_frame_t* out_frame) {
   int result;
   uint64_t deadline_ms = h2_lua_now_ms(job->host) + (uint64_t)timeout_ms;
   uint32_t remaining_ms = timeout_ms;
   for (;;) {
     uint32_t slice_ms = remaining_ms < H2_LUA_AUDIO_INPUT_POLL_MS
-                             ? remaining_ms
-                             : H2_LUA_AUDIO_INPUT_POLL_MS;
+                            ? remaining_ms
+                            : H2_LUA_AUDIO_INPUT_POLL_MS;
     *out_frame = h2_audio_frame_for_buffer(job->audio_mic_buffer,
                                            job->audio_mic_buffer_capacity,
                                            job->audio_mic_format);
@@ -1551,7 +1552,7 @@ static int audio_input_read_frame(lua_State *state, h2_lua_job_t *job,
   return 0;
 }
 
-static uint32_t audio_input_timeout(lua_State *state) {
+static uint32_t audio_input_timeout(lua_State* state) {
   lua_Integer timeout = luaL_optinteger(state, 2, 0);
   if (timeout < 0 || (lua_Unsigned)timeout > UINT32_MAX) {
     luaL_argerror(state, 2, "timeout must be between 0 and UINT32_MAX");
@@ -1559,8 +1560,8 @@ static uint32_t audio_input_timeout(lua_State *state) {
   return (uint32_t)timeout;
 }
 
-static int audio_input_read(lua_State *state) {
-  h2_lua_job_t *job = audio_input_job(state);
+static int audio_input_read(lua_State* state) {
+  h2_lua_job_t* job = audio_input_job(state);
   h2_audio_frame_t frame;
   int pushed;
   if (job == NULL) {
@@ -1573,14 +1574,14 @@ static int audio_input_read(lua_State *state) {
   if (pushed != 0) {
     return pushed;
   }
-  lua_pushlstring(state, (const char *)frame.data, frame.bytes);
+  lua_pushlstring(state, (const char*)frame.data, frame.bytes);
   return 1;
 }
 
-static int audio_input_level(lua_State *state) {
-  h2_lua_job_t *job = audio_input_job(state);
+static int audio_input_level(lua_State* state) {
+  h2_lua_job_t* job = audio_input_job(state);
   h2_audio_frame_t frame;
-  const uint8_t *bytes;
+  const uint8_t* bytes;
   size_t sample_count;
   size_t i;
   double square_sum = 0.0;
@@ -1627,8 +1628,8 @@ static int audio_input_level(lua_State *state) {
   return 3;
 }
 
-static int audio_input_info(lua_State *state) {
-  h2_lua_job_t *job = audio_input_job(state);
+static int audio_input_info(lua_State* state) {
+  h2_lua_job_t* job = audio_input_job(state);
   int opened = job != NULL;
   lua_createtable(state, 0, 7);
   lua_pushliteral(state, "input");
@@ -1653,8 +1654,8 @@ static int audio_input_info(lua_State *state) {
   return 1;
 }
 
-static int audio_input_close(lua_State *state) {
-  h2_lua_job_t *job = audio_input_job(state);
+static int audio_input_close(lua_State* state) {
+  h2_lua_job_t* job = audio_input_job(state);
   if (job != NULL) {
     h2_lua_job_release_audio_mic(job);
     h2_pal_mem_free(job->host->config.allocator, job->audio_mic_buffer);
@@ -1666,23 +1667,23 @@ static int audio_input_close(lua_State *state) {
   return 1;
 }
 
-static void set_audio_input_function(lua_State *state, const char *name,
+static void set_audio_input_function(lua_State* state, const char* name,
                                      lua_CFunction function,
-                                     h2_lua_job_t *job) {
+                                     h2_lua_job_t* job) {
   lua_pushlightuserdata(state, job);
   lua_pushinteger(state, (lua_Integer)job->audio_mic_generation);
   lua_pushcclosure(state, function, 2);
   lua_setfield(state, -2, name);
 }
 
-static int audio_new_input(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int audio_new_input(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   h2_audio_info_t info = {0};
   size_t frame_bytes;
   int result;
   luaL_argcheck(state, lua_isnoneornil(state, 1), 1,
-               "new_input takes no arguments; input format is fixed by the "
-               "Runtime microphone");
+                "new_input takes no arguments; input format is fixed by the "
+                "Runtime microphone");
   if (job->audio_mic_acquired || job->audio_mic_buffer != NULL) {
     lua_pushnil(state);
     lua_pushliteral(state, "audio input: already open");
@@ -1731,15 +1732,15 @@ static int audio_new_input(lua_State *state) {
   return 1;
 }
 
-static int audio_new_output(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int audio_new_output(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_Integer sample_rate;
   lua_Integer channels;
   lua_Integer bits;
   lua_Integer volume;
   h2_audio_track_config_t config;
   h2_audio_info_t info = {0};
-  h2_lua_audio_track_slot_t *slot = NULL;
+  h2_lua_audio_track_slot_t* slot = NULL;
   size_t i;
   int result;
   luaL_checktype(state, 1, LUA_TTABLE);
@@ -1816,32 +1817,32 @@ static int audio_new_output(lua_State *state) {
   return 1;
 }
 
-static int push_audio_proxy(lua_State *state, h2_lua_job_t *job) {
+static int push_audio_proxy(lua_State* state, h2_lua_job_t* job) {
   lua_createtable(state, 0, 2);
   set_function(state, "new_input", audio_new_input, job);
   set_function(state, "new_output", audio_new_output, job);
   return 1;
 }
 
-static int require_proxy_result(lua_State *state, int result) {
-  const char *message;
+static int require_proxy_result(lua_State* state, int result) {
+  const char* message;
   if (result == 1) {
     return 1;
   }
   message = lua_tostring(state, -1);
-  return luaL_error(state, "%s",
-                    message == NULL ? "Runtime capability unavailable"
-                                    : message);
+  return luaL_error(
+      state, "%s",
+      message == NULL ? "Runtime capability unavailable" : message);
 }
 
-static int open_display(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int open_display(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   return require_proxy_result(state, h2_lua_push_display_proxy(state, job));
 }
 
-static int open_lcd_touch(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  const h2_pal_touch_api_t *touch = job->host->config.runtime->touch;
+static int open_lcd_touch(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
+  const h2_pal_touch_api_t* touch = job->host->config.runtime->touch;
   if (touch == NULL || touch->vtable == NULL || touch->vtable->open == NULL ||
       touch->vtable->get_info == NULL || touch->vtable->poll_event == NULL ||
       touch->vtable->close == NULL) {
@@ -1850,9 +1851,9 @@ static int open_lcd_touch(lua_State *state) {
   return require_proxy_result(state, push_touch_proxy(state, job));
 }
 
-static int open_audio(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  const h2_pal_audio_api_t *audio = job->host->config.runtime->audio;
+static int open_audio(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
+  const h2_pal_audio_api_t* audio = job->host->config.runtime->audio;
   if (audio == NULL || audio->vtable == NULL ||
       audio->vtable->start_speaker == NULL ||
       audio->vtable->stop_speaker == NULL ||
@@ -1862,13 +1863,13 @@ static int open_audio(lua_State *state) {
   return require_proxy_result(state, push_audio_proxy(state, job));
 }
 
-static int open_custom(lua_State *state) {
-  h2_lua_module_entry_t *entry = lua_touserdata(state, lua_upvalueindex(1));
+static int open_custom(lua_State* state) {
+  h2_lua_module_entry_t* entry = lua_touserdata(state, lua_upvalueindex(1));
   return entry->open_fn(state, entry->user);
 }
 
-static int local_module_path(const h2_lua_job_t *job, const char *module_name,
-                             char *out_path, size_t path_capacity) {
+static int local_module_path(const h2_lua_job_t* job, const char* module_name,
+                             char* out_path, size_t path_capacity) {
   size_t prefix_length = strlen(job->require_root);
   size_t module_length = strlen(module_name);
   size_t i;
@@ -1895,14 +1896,14 @@ static int local_module_path(const h2_lua_job_t *job, const char *module_name,
   return 1;
 }
 
-static int load_local_module(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  const char *module_name = luaL_checkstring(state, 1);
+static int load_local_module(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
+  const char* module_name = luaL_checkstring(state, 1);
   char path[H2_LUA_PATH_MAX];
   char chunk_name[H2_LUA_PATH_MAX + 2u];
-  const uint8_t *source = NULL;
+  const uint8_t* source = NULL;
   size_t source_size = 0u;
-  uint8_t *owned_source = NULL;
+  uint8_t* owned_source = NULL;
   size_t i;
   int load_result;
   if (!local_module_path(job, module_name, path, sizeof(path))) {
@@ -1910,8 +1911,8 @@ static int load_local_module(lua_State *state) {
     return 1;
   }
   for (i = 0u; i < job->host->config.resource_count; ++i) {
-    const h2_lua_resource_t *resource = &job->host->config.resources[i];
-    const char *name = resource->name == NULL     ? ""
+    const h2_lua_resource_t* resource = &job->host->config.resources[i];
+    const char* name = resource->name == NULL     ? ""
                        : resource->name[0] == '@' ? resource->name + 1
                                                   : resource->name;
     if (strcmp(name, path) == 0) {
@@ -1925,7 +1926,7 @@ static int load_local_module(lua_State *state) {
   }
   if (source == NULL && job->host->config.runtime->fs != NULL) {
     h2_pal_fs_stat_t stat;
-    h2_pal_fs_file_t *file = NULL;
+    h2_pal_fs_file_t* file = NULL;
     h2_pal_result_t result = (h2_pal_result_t)h2_pal_fs_stat(
         job->host->config.runtime->fs, path, &stat);
     size_t offset = 0u;
@@ -1938,8 +1939,8 @@ static int load_local_module(lua_State *state) {
       return luaL_error(state, "local module source limit reached");
     }
     if (result == H2_PAL_OK && !stat.is_dir) {
-      owned_source = h2_pal_mem_alloc(job->host->config.allocator,
-                                      (size_t)stat.size + 1u);
+      owned_source =
+          h2_pal_mem_alloc(job->host->config.allocator, (size_t)stat.size + 1u);
       if (owned_source == NULL) {
         return luaL_error(state, "local module allocation failed");
       }
@@ -1978,7 +1979,7 @@ static int load_local_module(lua_State *state) {
     return luaL_error(state, "local module contains embedded NUL");
   }
   (void)snprintf(chunk_name, sizeof(chunk_name), "@%s", path);
-  load_result = luaL_loadbufferx(state, (const char *)source, source_size,
+  load_result = luaL_loadbufferx(state, (const char*)source, source_size,
                                  chunk_name, "t");
   h2_pal_mem_free(job->host->config.allocator, owned_source);
   if (load_result != LUA_OK) {
@@ -1988,8 +1989,8 @@ static int load_local_module(lua_State *state) {
   return 2;
 }
 
-static void add_preload(lua_State *state, const char *name, lua_CFunction open,
-                        void *context) {
+static void add_preload(lua_State* state, const char* name, lua_CFunction open,
+                        void* context) {
   lua_getglobal(state, "package");
   lua_getfield(state, -1, "preload");
   lua_pushlightuserdata(state, context);
@@ -1998,30 +1999,30 @@ static void add_preload(lua_State *state, const char *name, lua_CFunction open,
   lua_pop(state, 2);
 }
 
-static int lua_link_available(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_link_available(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_pushboolean(state, job->host->link_hooks != NULL);
   return 1;
 }
 
-static int lua_link_unavailable(lua_State *state) {
+static int lua_link_unavailable(lua_State* state) {
   lua_pushnil(state);
   lua_pushliteral(state, "link: unavailable");
   return 2;
 }
 
-static int lua_link_close_unavailable(lua_State *state) {
+static int lua_link_close_unavailable(lua_State* state) {
   lua_pushboolean(state, 1);
   return 1;
 }
 
-static int lua_link_state_unavailable(lua_State *state) {
+static int lua_link_state_unavailable(lua_State* state) {
   lua_pushliteral(state, "unavailable");
   return 1;
 }
 
-static int lua_link_on(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int lua_link_on(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_Integer kind = luaL_checkinteger(state, 1);
   luaL_checktype(state, 2, LUA_TFUNCTION);
   if (kind != H2_LUA_LINK_EVENT_CONNECTED &&
@@ -2030,15 +2031,15 @@ static int lua_link_on(lua_State *state) {
       kind != H2_LUA_LINK_EVENT_ERROR) {
     return luaL_argerror(state, 1, "expected a runtime.event.LINK_* kind");
   }
-  return h2_lua_push_callback_register(
-      state, job, H2_RUNTIME_COMPONENT_ID_NONE, (uint32_t)kind, 2);
+  return h2_lua_push_callback_register(state, job, H2_RUNTIME_COMPONENT_ID_NONE,
+                                       (uint32_t)kind, 2);
 }
 
 /* Builtin `link` surface. Without an installed provider every operation fails
  * cleanly; h2_lua_link_enable() replaces host, join, send, send_unreliable,
  * write, read, close and state. */
-static int open_link(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int open_link(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_createtable(state, 0, 11);
   set_function(state, "available", lua_link_available, job);
   set_function(state, "on", lua_link_on, job);
@@ -2057,9 +2058,9 @@ static int open_link(lua_State *state) {
   return 1;
 }
 
-h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
+h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t* job) {
   size_t i;
-  lua_State *state;
+  lua_State* state;
   if (job == NULL || job->vm == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }

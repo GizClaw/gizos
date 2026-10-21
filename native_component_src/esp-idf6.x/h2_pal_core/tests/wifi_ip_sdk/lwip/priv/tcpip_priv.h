@@ -4,6 +4,6 @@
 struct tcpip_api_call_data {
   int unused;
 };
-err_t tcpip_api_call(err_t (*fn)(struct tcpip_api_call_data *),
-                     struct tcpip_api_call_data *);
+err_t tcpip_api_call(err_t (*fn)(struct tcpip_api_call_data*),
+                     struct tcpip_api_call_data*);
 #endif

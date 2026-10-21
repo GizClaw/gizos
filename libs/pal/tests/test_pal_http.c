@@ -4,16 +4,16 @@
 #include <string.h>
 
 typedef struct header_capture {
-  const h2_pal_http_request_t *request;
+  const h2_pal_http_request_t* request;
   h2_pal_http_str_t name;
   h2_pal_http_str_t value;
   int result;
   size_t calls;
 } header_capture_t;
 
-static int capture_header(void *user, const h2_pal_http_request_t *request,
+static int capture_header(void* user, const h2_pal_http_request_t* request,
                           h2_pal_http_str_t name, h2_pal_http_str_t value) {
-  header_capture_t *capture = user;
+  header_capture_t* capture = user;
   capture->request = request;
   capture->name = name;
   capture->value = value;

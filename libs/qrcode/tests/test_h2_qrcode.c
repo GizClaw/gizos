@@ -12,7 +12,7 @@
 static uint8_t s_modules[TEST_BUFFER_LEN];
 static uint8_t s_scratch[TEST_BUFFER_LEN];
 
-static void encode_hello(h2_qrcode_t *out_qrcode) {
+static void encode_hello(h2_qrcode_t* out_qrcode) {
   assert(h2_qrcode_encode_text("HELLO GIZOS", H2_QRCODE_ECC_MEDIUM,
                                TEST_MAX_VERSION, s_modules, sizeof(s_modules),
                                s_scratch, sizeof(s_scratch),
@@ -28,8 +28,8 @@ static void test_encode_rejects_invalid_arguments(void) {
 
   assert(h2_qrcode_encode_text("x", H2_QRCODE_ECC_LOW, TEST_MAX_VERSION,
                                s_modules, sizeof(s_modules), s_scratch,
-                               sizeof(s_scratch), NULL) ==
-         H2_PAL_ERR_INVALID_ARG);
+                               sizeof(s_scratch),
+                               NULL) == H2_PAL_ERR_INVALID_ARG);
 
   memset(&qrcode, 0xAA, sizeof(qrcode));
   assert(h2_qrcode_encode_text(NULL, H2_QRCODE_ECC_LOW, TEST_MAX_VERSION,
@@ -103,8 +103,7 @@ static void test_layout_centers_symbol(void) {
   encode_hello(&qrcode);
   span_modules = qrcode.size + 2 * H2_QRCODE_QUIET_MODULES_MIN;
 
-  assert(h2_qrcode_layout_center(&qrcode, 368, 448,
-                                 H2_QRCODE_QUIET_MODULES_MIN,
+  assert(h2_qrcode_layout_center(&qrcode, 368, 448, H2_QRCODE_QUIET_MODULES_MIN,
                                  &layout) == H2_PAL_OK);
   assert(layout.scale == 368 / span_modules);
   assert(layout.quiet_modules == H2_QRCODE_QUIET_MODULES_MIN);
@@ -112,8 +111,7 @@ static void test_layout_centers_symbol(void) {
   assert(layout.origin_y == (448 - span_modules * layout.scale) / 2);
 
   /* The short side selects the scale. */
-  assert(h2_qrcode_layout_center(&qrcode, 448, 368,
-                                 H2_QRCODE_QUIET_MODULES_MIN,
+  assert(h2_qrcode_layout_center(&qrcode, 448, 368, H2_QRCODE_QUIET_MODULES_MIN,
                                  &layout) == H2_PAL_OK);
   assert(layout.scale == 368 / span_modules);
 
@@ -148,11 +146,10 @@ static void test_render_band_matches_modules(void) {
   span_pixels = (qrcode.size + 2 * layout.quiet_modules) * layout.scale;
 
   for (int band_y = 0; band_y < kHeight; band_y += kBandRows) {
-    assert(h2_qrcode_render_rgb565_band(&qrcode, &layout, dark, light,
-                                        background, band_y, kWidth, kBandRows,
-                                        pixels,
-                                        sizeof(pixels) / sizeof(pixels[0])) ==
-           H2_PAL_OK);
+    assert(h2_qrcode_render_rgb565_band(
+               &qrcode, &layout, dark, light, background, band_y, kWidth,
+               kBandRows, pixels,
+               sizeof(pixels) / sizeof(pixels[0])) == H2_PAL_OK);
     for (int row = 0; row < kBandRows; ++row) {
       for (int column = 0; column < kWidth; ++column) {
         const uint16_t actual = pixels[row * kWidth + column];
@@ -162,10 +159,8 @@ static void test_render_band_matches_modules(void) {
 
         if (local_x >= 0 && local_x < span_pixels && local_y >= 0 &&
             local_y < span_pixels) {
-          const int module_x =
-              (local_x / layout.scale) - layout.quiet_modules;
-          const int module_y =
-              (local_y / layout.scale) - layout.quiet_modules;
+          const int module_x = (local_x / layout.scale) - layout.quiet_modules;
+          const int module_y = (local_y / layout.scale) - layout.quiet_modules;
           expected = h2_qrcode_module_is_dark(&qrcode, module_x, module_y)
                          ? dark
                          : light;
@@ -182,23 +177,21 @@ static void test_layout_rejects_unrepresentable_quiet_zone(void) {
 
   encode_hello(&qrcode);
   /* The widest accepted quiet zone is a valid request when it fits. */
-  assert(h2_qrcode_layout_center(&qrcode, 368, 448,
-                                 H2_QRCODE_QUIET_MODULES_MAX,
+  assert(h2_qrcode_layout_center(&qrcode, 368, 448, H2_QRCODE_QUIET_MODULES_MAX,
                                  &layout) == H2_PAL_OK);
   assert(layout.quiet_modules == H2_QRCODE_QUIET_MODULES_MAX);
-  assert(layout.scale ==
-         368 / (qrcode.size + 2 * H2_QRCODE_QUIET_MODULES_MAX));
-  assert(h2_qrcode_layout_center(&qrcode, 96, 96,
-                                 H2_QRCODE_QUIET_MODULES_MAX,
+  assert(layout.scale == 368 / (qrcode.size + 2 * H2_QRCODE_QUIET_MODULES_MAX));
+  assert(h2_qrcode_layout_center(&qrcode, 96, 96, H2_QRCODE_QUIET_MODULES_MAX,
                                  &layout) == H2_PAL_ERR_NO_SPACE);
   memset(&layout, 0xAA, sizeof(layout));
   assert(h2_qrcode_layout_center(&qrcode, INT_MAX, INT_MAX,
                                  H2_QRCODE_QUIET_MODULES_MAX + 1,
                                  &layout) == H2_PAL_ERR_INVALID_ARG);
   assert(layout.quiet_modules == 0);
-  /* A quiet zone that would overflow the module span is rejected, not wrapped. */
-  assert(h2_qrcode_layout_center(&qrcode, INT_MAX, INT_MAX, INT_MAX,
-                                 &layout) == H2_PAL_ERR_INVALID_ARG);
+  /* A quiet zone that would overflow the module span is rejected, not wrapped.
+   */
+  assert(h2_qrcode_layout_center(&qrcode, INT_MAX, INT_MAX, INT_MAX, &layout) ==
+         H2_PAL_ERR_INVALID_ARG);
   assert(layout.quiet_modules == 0);
 }
 
@@ -237,7 +230,11 @@ static void test_rejects_hostile_symbol_size(void) {
   h2_qrcode_layout_t layout;
   h2_qrcode_layout_t valid_layout;
   static const int kHostileSizes[] = {
-      0, -1, INT_MAX, H2_QRCODE_SIZE_MIN - 1, H2_QRCODE_SIZE_MAX + 1,
+      0,
+      -1,
+      INT_MAX,
+      H2_QRCODE_SIZE_MIN - 1,
+      H2_QRCODE_SIZE_MAX + 1,
       /* In range, but not a 4 * version + 17 module count. */
       H2_QRCODE_SIZE_MIN + 1,
   };

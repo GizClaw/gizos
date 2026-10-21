@@ -2,8 +2,8 @@ load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -37,7 +37,11 @@ wasm_cc_binary(
     name = "atomic_wasm",
     cc_target = ":_wasm/index",
     exit_runtime = True,
-    outputs = ["index.html", "index.js", "index.wasm"],
+    outputs = [
+        "index.html",
+        "index.js",
+        "index.wasm",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -81,13 +85,20 @@ pkg_tar(
 web_archive_browser_test(
     name = "atomic_browser_test",
     archive = ":atomic",
+    fails = [
+        "status=FAIL",
+        "verdict=FAIL",
+        "concurrent=FAIL",
+    ],
     passes = [
         "ATOMIC_QUALIFICATION platform=wasm placement=shared-memory passed=28 failed=0 not_run=0 workers=10/10 .* complete=1 qualified=1 teardown=0",
         "ATOMIC_WEB_WORKERS shared_memory=1 identities=.* verdict=PASS",
         "ATOMIC_E2E backend=h2_atomic concurrent=PASS expected=20000 incremented=20000 compared=20000",
         "ATOMIC_E2E backend=c11 concurrent=PASS expected=20000 incremented=20000 compared=20000",
     ],
-    fails = ["status=FAIL", "verdict=FAIL", "concurrent=FAIL"],
     start = False,
-    tags = ["manual", "external"],
+    tags = [
+        "external",
+        "manual",
+    ],
 )

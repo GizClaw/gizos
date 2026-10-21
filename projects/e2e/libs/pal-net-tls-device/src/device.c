@@ -9,14 +9,12 @@ static int hex_digit(char c) {
          : c >= 'a' && c <= 'f' ? c - 'a' + 10
                                 : -1;
 }
-static uint8_t *decode(const h2_pal_mem_api_t *mem, const char *hex,
-                       size_t *length) {
+static uint8_t* decode(const h2_pal_mem_api_t* mem, const char* hex,
+                       size_t* length) {
   size_t size = strlen(hex);
-  if (!size || size % 2u || size > 16384u)
-    return NULL;
-  uint8_t *pem = h2_pal_mem_alloc(mem, size / 2u);
-  if (!pem)
-    return NULL;
+  if (!size || size % 2u || size > 16384u) return NULL;
+  uint8_t* pem = h2_pal_mem_alloc(mem, size / 2u);
+  if (!pem) return NULL;
   for (size_t i = 0u; i < size; i += 2u) {
     int high = hex_digit(hex[i]), low = hex_digit(hex[i + 1u]);
     if (high < 0 || low < 0) {
@@ -28,34 +26,37 @@ static uint8_t *decode(const h2_pal_mem_api_t *mem, const char *hex,
   *length = size / 2u;
   return pem;
 }
-static void report(void *user, const h2_net_tls_case_result_t *item) {
-  const h2_runtime_t *runtime = user;
+static void report(void* user, const h2_net_tls_case_result_t* item) {
+  const h2_runtime_t* runtime = user;
   char line[512];
-  const char *status = item->passed ? "PASS" : item->blocked ? "BLOCKED" :
-      item->unsupported ? "UNSUPPORTED" : item->not_assessed ? "NOT_ASSESSED" : "FAIL";
+  const char* status = item->passed         ? "PASS"
+                       : item->blocked      ? "BLOCKED"
+                       : item->unsupported  ? "UNSUPPORTED"
+                       : item->not_assessed ? "NOT_ASSESSED"
+                                            : "FAIL";
   if (item->id != NULL && strcmp(item->id, "dns-hostname") == 0) {
-    (void)snprintf(line, sizeof(line),
+    (void)snprintf(
+        line, sizeof(line),
         "H2_PAL_NET_TLS_CASE {\"id\":\"%s\",\"status\":\"%s\","
         "\"detail\":%d,\"rc\":%d,\"tx\":%zu,\"rx\":%zu,"
         "\"ms\":%llu,\"ip\":[%u,%u,%u,%u]}",
-        item->id, status, item->detail, item->provider_result,
-        item->bytes_sent, item->bytes_received,
-        (unsigned long long)item->elapsed_ms,
+        item->id, status, item->detail, item->provider_result, item->bytes_sent,
+        item->bytes_received, (unsigned long long)item->elapsed_ms,
         (unsigned)item->observed_ipv4[0], (unsigned)item->observed_ipv4[1],
         (unsigned)item->observed_ipv4[2], (unsigned)item->observed_ipv4[3]);
   } else {
     (void)snprintf(line, sizeof(line),
-        "H2_PAL_NET_TLS_CASE {\"id\":\"%s\",\"status\":\"%s\","
-        "\"detail\":%d,\"rc\":%d,\"tx\":%zu,\"rx\":%zu,\"ms\":%llu}",
-        item->id, status, item->detail, item->provider_result,
-        item->bytes_sent, item->bytes_received,
-        (unsigned long long)item->elapsed_ms);
+                   "H2_PAL_NET_TLS_CASE {\"id\":\"%s\",\"status\":\"%s\","
+                   "\"detail\":%d,\"rc\":%d,\"tx\":%zu,\"rx\":%zu,\"ms\":%llu}",
+                   item->id, status, item->detail, item->provider_result,
+                   item->bytes_sent, item->bytes_received,
+                   (unsigned long long)item->elapsed_ms);
   }
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls", line);
+  (void)printf("%s\n", line);
   (void)h2_pal_time_sleep_ms(runtime->time, 40u);
 }
-void h2_pal_net_tls_device_report(const h2_runtime_t *runtime,
-                                  const h2_net_tls_result_t *result) {
+void h2_pal_net_tls_device_report(const h2_runtime_t* runtime,
+                                  const h2_net_tls_result_t* result) {
   h2_pal_firmware_info_t image = {0};
   int version =
       h2_pal_firmware_info_get_current(runtime->firmware_info, &image);
@@ -66,38 +67,40 @@ void h2_pal_net_tls_device_report(const h2_runtime_t *runtime,
            H2_PAL_NET_TLS_SESSION, boot_id,
            version == H2_PAL_OK ? image.version : "unavailable", version,
            H2_PAL_NET_TLS_DNS_HOST, H2_PAL_NET_TLS_DNS_IPV4);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls", line);
+  (void)printf("%s\n", line);
   for (unsigned i = 0u; i < H2_NET_TLS_CASE_COUNT; ++i)
-    if (result->cases[i].id)
-      report((void *)runtime, &result->cases[i]);
+    if (result->cases[i].id) report((void*)runtime, &result->cases[i]);
   (void)snprintf(line, sizeof(line),
-      "H2_PAL_NET_TLS_SUMMARY {\"pass\":%u,\"mandatory\":%u,"
-      "\"fail\":%u,\"blocked\":%u,\"unsupported\":%u,"
-      "\"not_assessed\":%u,\"rs\":%zu,\"rr\":%zu,\"ra\":%zu}",
-      result->passed, result->mandatory_passed, result->failed,
-      result->blocked, result->unsupported, result->not_assessed,
-      result->retained_sockets, result->retained_resolvers,
-      result->retained_allocations);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls", line);
+                 "H2_PAL_NET_TLS_SUMMARY {\"pass\":%u,\"mandatory\":%u,"
+                 "\"fail\":%u,\"blocked\":%u,\"unsupported\":%u,"
+                 "\"not_assessed\":%u,\"rs\":%zu,\"rr\":%zu,\"ra\":%zu}",
+                 result->passed, result->mandatory_passed, result->failed,
+                 result->blocked, result->unsupported, result->not_assessed,
+                 result->retained_sockets, result->retained_resolvers,
+                 result->retained_allocations);
+  (void)printf("%s\n", line);
 }
-int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
-                              h2_net_tls_result_t *result) {
-  if (!runtime || !result)
-    return H2_PAL_ERR_INVALID_ARG;
+int h2_pal_net_tls_device_run(h2_runtime_t* runtime,
+                              h2_net_tls_result_t* result) {
+  return h2_pal_net_tls_device_run_with_wifi(runtime, NULL, result);
+}
+
+int h2_pal_net_tls_device_run_with_wifi(h2_runtime_t* runtime,
+                                        const h2_pal_wifi_sta_config_t* wifi,
+                                        h2_net_tls_result_t* result) {
+  if (!runtime || !result) return H2_PAL_ERR_INVALID_ARG;
   memset(result, 0, sizeof(*result));
   if (!H2_PAL_NET_TLS_HOST[0] || strlen(H2_PAL_NET_TLS_SESSION) != 32u ||
       !H2_PAL_NET_TLS_PORT || H2_PAL_NET_TLS_PORT > 65535u ||
       !H2_PAL_NET_TLS_EPOCH_MS)
     return H2_PAL_ERR_INVALID_ARG;
-  int rc = h2_net_tls_device_prepare_network(runtime);
-  if (rc != H2_PAL_OK)
-    return rc;
+  int rc = h2_net_tls_device_prepare_network_with_wifi(runtime, wifi);
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_pal_time_set_wall_ms(runtime->time, H2_PAL_NET_TLS_EPOCH_MS);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   size_t ca_len = 0u, wrong_len = 0u;
-  uint8_t *ca = decode(runtime->mem, H2_PAL_NET_TLS_CA_HEX, &ca_len);
-  uint8_t *wrong =
+  uint8_t* ca = decode(runtime->mem, H2_PAL_NET_TLS_CA_HEX, &ca_len);
+  uint8_t* wrong =
       decode(runtime->mem, H2_PAL_NET_TLS_WRONG_CA_HEX, &wrong_len);
   if (!ca || !wrong) {
     h2_pal_mem_free(runtime->mem, ca);
@@ -125,8 +128,7 @@ int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
   snprintf(execution, sizeof(execution),
            "H2_PAL_NET_TLS_EXECUTION session=%s boot_id=%s",
            H2_PAL_NET_TLS_SESSION, boot_id);
-  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls",
-                         execution);
+  (void)printf("%s\n", execution);
   h2_net_tls_config_t config = {
       .runtime = runtime,
       .host = H2_PAL_NET_TLS_HOST,
@@ -149,8 +151,7 @@ int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
       .multicast_supported = runtime->net && runtime->net->vtable &&
                              runtime->net->vtable->udp_join_multicast != NULL};
   rc = h2_net_tls_parse_ipv4(H2_PAL_NET_TLS_DNS_IPV4, &config.dns_expected);
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_net_tls_e2e_run(&config, result);
+  if (rc == H2_PAL_OK) rc = h2_pal_net_tls_e2e_run(&config, result);
   h2_pal_mem_free(runtime->mem, wrong);
   h2_pal_mem_free(runtime->mem, ca);
   return rc;

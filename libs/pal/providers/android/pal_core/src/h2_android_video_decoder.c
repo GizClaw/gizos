@@ -8,8 +8,8 @@
 #include <string.h>
 
 struct h2_pal_video_decoder_frame {
-  h2_pal_video_decoder_session_t *owner;
-  uint8_t *pixels;
+  h2_pal_video_decoder_session_t* owner;
+  uint8_t* pixels;
   size_t bytes;
   uint32_t width;
   uint32_t height;
@@ -19,7 +19,7 @@ struct h2_pal_video_decoder_frame {
 
 struct h2_pal_video_decoder_session {
   h2_pal_mem_api_t allocator;
-  AMediaCodec *codec;
+  AMediaCodec* codec;
   uint32_t width;
   uint32_t height;
   int32_t stride;
@@ -30,12 +30,12 @@ struct h2_pal_video_decoder_session {
   int acquired;
   int eos_reached;
   int eos_after_frame;
-  uint8_t *output;
+  uint8_t* output;
   size_t output_capacity;
   h2_pal_video_decoder_frame_t frame;
 };
 
-static void drop_codec(h2_pal_video_decoder_session_t *session) {
+static void drop_codec(h2_pal_video_decoder_session_t* session) {
   if (session->codec != NULL) {
     if (session->configured) {
       (void)AMediaCodec_stop(session->codec);
@@ -51,9 +51,9 @@ static void drop_codec(h2_pal_video_decoder_session_t *session) {
   session->output_capacity = 0u;
 }
 
-static h2_pal_result_t
-android_video_open(void *user, const h2_video_decoder_config_t *config,
-                   h2_pal_video_decoder_session_t **out_session) {
+static h2_pal_result_t android_video_open(
+    void* user, const h2_video_decoder_config_t* config,
+    h2_pal_video_decoder_session_t** out_session) {
   (void)user;
   const h2_pal_result_t validation =
       h2_android_video_validate_decoder_open(config, out_session);
@@ -64,7 +64,7 @@ android_video_open(void *user, const h2_video_decoder_config_t *config,
       config->preferred_format != H2_VIDEO_PIXEL_FORMAT_RGB565) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
-  h2_pal_video_decoder_session_t *session =
+  h2_pal_video_decoder_session_t* session =
       h2_pal_mem_alloc(config->frame_allocator, sizeof(*session));
   if (session == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
@@ -75,9 +75,9 @@ android_video_open(void *user, const h2_video_decoder_config_t *config,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-android_video_configure(void *user, h2_pal_video_decoder_session_t *session,
-                        const h2_video_decoder_stream_config_t *config) {
+static h2_pal_result_t android_video_configure(
+    void* user, h2_pal_video_decoder_session_t* session,
+    const h2_video_decoder_stream_config_t* config) {
   (void)user;
   if (session->configured || session->acquired) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -87,8 +87,8 @@ android_video_configure(void *user, h2_pal_video_decoder_session_t *session,
   if (validation != H2_PAL_OK) {
     return validation;
   }
-  AMediaCodec *codec = AMediaCodec_createDecoderByType("video/avc");
-  AMediaFormat *format = AMediaFormat_new();
+  AMediaCodec* codec = AMediaCodec_createDecoderByType("video/avc");
+  AMediaFormat* format = AMediaFormat_new();
   if (codec == NULL || format == NULL) {
     if (codec != NULL) {
       (void)AMediaCodec_delete(codec);
@@ -118,7 +118,7 @@ android_video_configure(void *user, h2_pal_video_decoder_session_t *session,
                                               : H2_PAL_ERR_IO;
   }
   const size_t pixels = (size_t)config->visible_width * config->visible_height;
-  uint8_t *output =
+  uint8_t* output =
       h2_pal_mem_alloc(&session->allocator, pixels * sizeof(uint16_t));
   if (output == NULL) {
     (void)AMediaCodec_stop(codec);
@@ -137,9 +137,9 @@ android_video_configure(void *user, h2_pal_video_decoder_session_t *session,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-android_video_submit(void *user, h2_pal_video_decoder_session_t *session,
-                     const h2_video_decoder_packet_t *packet) {
+static h2_pal_result_t android_video_submit(
+    void* user, h2_pal_video_decoder_session_t* session,
+    const h2_video_decoder_packet_t* packet) {
   (void)user;
   if (!session->configured || session->eos_reached) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -152,7 +152,7 @@ android_video_submit(void *user, h2_pal_video_decoder_session_t *session,
     return H2_PAL_ERR_IO;
   }
   size_t capacity = 0u;
-  uint8_t *buffer =
+  uint8_t* buffer =
       AMediaCodec_getInputBuffer(session->codec, (size_t)index, &capacity);
   if (buffer == NULL || packet->size > capacity) {
     return H2_PAL_ERR_FORMAT;
@@ -176,8 +176,8 @@ android_video_submit(void *user, h2_pal_video_decoder_session_t *session,
   return H2_PAL_OK;
 }
 
-static void update_output_format(h2_pal_video_decoder_session_t *session) {
-  AMediaFormat *format = AMediaCodec_getOutputFormat(session->codec);
+static void update_output_format(h2_pal_video_decoder_session_t* session) {
+  AMediaFormat* format = AMediaCodec_getOutputFormat(session->codec);
   if (format == NULL) {
     return;
   }
@@ -196,10 +196,9 @@ static void update_output_format(h2_pal_video_decoder_session_t *session) {
   (void)AMediaFormat_delete(format);
 }
 
-static h2_pal_result_t
-android_video_acquire(void *user, h2_pal_video_decoder_session_t *session,
-                      uint32_t timeout_ms,
-                      h2_pal_video_decoder_frame_t **out_frame) {
+static h2_pal_result_t android_video_acquire(
+    void* user, h2_pal_video_decoder_session_t* session, uint32_t timeout_ms,
+    h2_pal_video_decoder_frame_t** out_frame) {
   (void)user;
   if (!session->configured || session->acquired) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -244,7 +243,7 @@ android_video_acquire(void *user, h2_pal_video_decoder_session_t *session,
       return H2_PAL_ERR_UNSUPPORTED;
     }
     size_t capacity = 0u;
-    uint8_t *buffer =
+    uint8_t* buffer =
         AMediaCodec_getOutputBuffer(session->codec, (size_t)index, &capacity);
     const size_t stride = (size_t)session->stride;
     const size_t slice_height = (size_t)session->slice_height;
@@ -287,8 +286,8 @@ android_video_acquire(void *user, h2_pal_video_decoder_session_t *session,
 }
 
 static h2_pal_result_t android_video_frame_get_info(
-    void *user, h2_pal_video_decoder_session_t *session,
-    h2_pal_video_decoder_frame_t *frame, h2_video_frame_info_t *out_info) {
+    void* user, h2_pal_video_decoder_session_t* session,
+    h2_pal_video_decoder_frame_t* frame, h2_video_frame_info_t* out_info) {
   (void)user;
   if (!session->acquired || frame->owner != session) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -309,9 +308,9 @@ static h2_pal_result_t android_video_frame_get_info(
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-android_video_release(void *user, h2_pal_video_decoder_session_t *session,
-                      h2_pal_video_decoder_frame_t *frame) {
+static h2_pal_result_t android_video_release(
+    void* user, h2_pal_video_decoder_session_t* session,
+    h2_pal_video_decoder_frame_t* frame) {
   (void)user;
   if (!session->acquired || frame->owner != session) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -324,8 +323,8 @@ android_video_release(void *user, h2_pal_video_decoder_session_t *session,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-android_video_reset(void *user, h2_pal_video_decoder_session_t *session) {
+static h2_pal_result_t android_video_reset(
+    void* user, h2_pal_video_decoder_session_t* session) {
   (void)user;
   if (session->acquired) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -334,8 +333,8 @@ android_video_reset(void *user, h2_pal_video_decoder_session_t *session) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-android_video_close(void *user, h2_pal_video_decoder_session_t *session) {
+static h2_pal_result_t android_video_close(
+    void* user, h2_pal_video_decoder_session_t* session) {
   (void)user;
   if (session->acquired) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -361,6 +360,6 @@ static const h2_pal_video_decoder_api_t s_android_video_api = {
     .vtable = &s_android_video_vtable,
 };
 
-const h2_pal_video_decoder_api_t *h2_android_platform_video_decoder_api(void) {
+const h2_pal_video_decoder_api_t* h2_android_platform_video_decoder_api(void) {
   return &s_android_video_api;
 }

@@ -14,7 +14,7 @@
 
 #include <string.h>
 
-extern int snprintf(char *buffer, size_t size, const char *format, ...);
+extern int snprintf(char* buffer, size_t size, const char* format, ...);
 
 typedef struct h2_jieli_app_digest {
   h2_loader_sha256_t sha;
@@ -22,16 +22,16 @@ typedef struct h2_jieli_app_digest {
 } h2_jieli_app_digest_t;
 
 static h2_jieli_app_digest_t digest;
-static h2_pal_mutex_t *operation_mutex;
+static h2_pal_mutex_t* operation_mutex;
 
 int h2_jieli_app_loader_prepare_reboot(
-    const h2_loader_app_client_config_t *config, uint32_t partition_id) {
+    const h2_loader_app_client_config_t* config, uint32_t partition_id) {
   if (partition_id == H2_JIELI_PARTITION_LOADER) return H2_PAL_OK;
   if (partition_id != H2_JIELI_PARTITION_APP || config == NULL ||
       config->pref == NULL || config->active_identity.image_sha256[0] == '\0') {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_pal_pref_namespace_t *ns = NULL;
+  h2_pal_pref_namespace_t* ns = NULL;
   int rc = h2_pal_pref_open(config->pref, H2_LOADER_PREF_NAMESPACE,
                             H2_PAL_PREF_OPEN_READ_WRITE, &ns);
   if (rc != H2_PAL_OK) return rc;
@@ -46,15 +46,15 @@ int h2_jieli_app_loader_prepare_reboot(
   return H2_PAL_OK;
 }
 
-static int digest_start(void *user) {
-  h2_jieli_app_digest_t *self = user;
+static int digest_start(void* user) {
+  h2_jieli_app_digest_t* self = user;
   h2_loader_sha256_init(&self->sha);
   self->active = 1;
   return H2_PAL_OK;
 }
 
-static int digest_update(void *user, const uint8_t *data, size_t len) {
-  h2_jieli_app_digest_t *self = user;
+static int digest_update(void* user, const uint8_t* data, size_t len) {
+  h2_jieli_app_digest_t* self = user;
   if (!self->active || (data == NULL && len != 0u)) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -62,36 +62,35 @@ static int digest_update(void *user, const uint8_t *data, size_t len) {
   return H2_PAL_OK;
 }
 
-static int digest_finish(void *user, uint8_t out[32]) {
-  h2_jieli_app_digest_t *self = user;
+static int digest_finish(void* user, uint8_t out[32]) {
+  h2_jieli_app_digest_t* self = user;
   if (!self->active || out == NULL) return H2_PAL_ERR_INVALID_STATE;
   h2_loader_sha256_finish(&self->sha, out);
   self->active = 0;
   return H2_PAL_OK;
 }
 
-static void digest_abort(void *user) {
+static void digest_abort(void* user) {
   memset(user, 0, sizeof(h2_jieli_app_digest_t));
 }
 
-static uint64_t now_ms(void *user) {
+static uint64_t now_ms(void* user) {
   (void)user;
   return timer_get_ms();
 }
 
-static void sleep_ms(void *user, uint32_t delay_ms) {
+static void sleep_ms(void* user, uint32_t delay_ms) {
   (void)user;
   os_time_dly((delay_ms + 9u) / 10u);
 }
 
-static int active_identity(h2_loader_image_identity_t *out_identity) {
+static int active_identity(h2_loader_image_identity_t* out_identity) {
   h2_loader_status_t status;
   int rc;
   if (out_identity == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_identity, 0, sizeof(*out_identity));
-  rc = h2_loader_read_pref_status(
-      h2_jieli_ac791n_devkit_pref_api(),
-      h2_jieli_wl82_platform_mem_api(), &status);
+  rc = h2_loader_read_pref_status(h2_jieli_ac791n_devkit_pref_api(),
+                                  h2_jieli_wl82_platform_mem_api(), &status);
   if (rc != H2_PAL_OK) return rc;
   if (!status.partition_2.valid ||
       status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP) {
@@ -106,18 +105,16 @@ static int active_identity(h2_loader_image_identity_t *out_identity) {
                  status.partition_2.target);
   (void)snprintf(out_identity->version, sizeof(out_identity->version), "%s",
                  status.partition_2.version);
-  (void)snprintf(out_identity->image_sha256,
-                 sizeof(out_identity->image_sha256), "%s",
-                 status.partition_2.image_checksum);
+  (void)snprintf(out_identity->image_sha256, sizeof(out_identity->image_sha256),
+                 "%s", status.partition_2.image_checksum);
   return H2_PAL_OK;
 }
 
-int h2_jieli_app_loader_config_init(
-    h2_loader_app_client_config_t *out_config,
-    h2_pal_fs_api_t *fs,
-    const h2_pal_power_api_t *power,
-    h2_loader_memory_stats_api_t memory_stats,
-    uint32_t hardware_capabilities) {
+int h2_jieli_app_loader_config_init(h2_loader_app_client_config_t* out_config,
+                                    h2_pal_fs_api_t* fs,
+                                    const h2_pal_power_api_t* power,
+                                    h2_loader_memory_stats_api_t memory_stats,
+                                    uint32_t hardware_capabilities) {
   if (out_config == NULL || fs == NULL || power == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -130,8 +127,8 @@ int h2_jieli_app_loader_config_init(
         .allocator = h2_jieli_wl82_platform_mem_api(),
         .flags = H2_PAL_MUTEX_FLAG_RECURSIVE,
     };
-    rc = h2_pal_mutex_create(h2_jieli_wl82_platform_sync_api(),
-                             &mutex_config, &operation_mutex);
+    rc = h2_pal_mutex_create(h2_jieli_wl82_platform_sync_api(), &mutex_config,
+                             &operation_mutex);
     if (rc != H2_PAL_OK) return rc;
   }
   memset(&digest, 0, sizeof(digest));
@@ -146,13 +143,14 @@ int h2_jieli_app_loader_config_init(
       .http = h2_pal_unsupported_http_api(),
       .wifi = h2_jieli_ac791n_devkit_wifi_sta_api(),
       .wifi_settings = h2_jieli_ac791n_devkit_wifi_settings_api(),
-      .digest = {
-          .user = &digest,
-          .start = digest_start,
-          .update = digest_update,
-          .finish = digest_finish,
-          .abort = digest_abort,
-      },
+      .digest =
+          {
+              .user = &digest,
+              .start = digest_start,
+              .update = digest_update,
+              .finish = digest_finish,
+              .abort = digest_abort,
+          },
       .board = "jieli_ac791n_devkit",
       .target = "wl82",
       .chip = "ac791n",
@@ -172,20 +170,18 @@ int h2_jieli_app_loader_config_init(
 
 /* Confirmation ends the trial: without the attempt evidence a later Loader
  * boot with Stage equal to Partition 2 is a restage, not a rollback. */
-static int clear_trial_evidence(void *user) {
-  const h2_pal_pref_api_t *pref = user;
-  static const char *const keys[] = {
+static int clear_trial_evidence(void* user) {
+  const h2_pal_pref_api_t* pref = user;
+  static const char* const keys[] = {
       H2_JIELI_TRIAL_ATTEMPT_KEY,
       H2_JIELI_TRIAL_CHECKSUM_KEY,
       H2_JIELI_TRIAL_RESET_REASON_KEY,
   };
-  h2_pal_pref_namespace_t *name_space = NULL;
-  int result = h2_pal_pref_open(
-      pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE,
-      &name_space);
+  h2_pal_pref_namespace_t* name_space = NULL;
+  int result = h2_pal_pref_open(pref, H2_LOADER_PREF_NAMESPACE,
+                                H2_PAL_PREF_OPEN_READ_WRITE, &name_space);
   for (size_t index = 0u;
-       result == H2_PAL_OK && index < sizeof(keys) / sizeof(keys[0]);
-       ++index) {
+       result == H2_PAL_OK && index < sizeof(keys) / sizeof(keys[0]); ++index) {
     result = name_space->remove(name_space, keys[index]);
     if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
   }
@@ -199,12 +195,11 @@ static int clear_trial_evidence(void *user) {
   return result;
 }
 
-int h2_jieli_app_loader_confirm(
-    const h2_loader_app_client_config_t *config) {
+int h2_jieli_app_loader_confirm(const h2_loader_app_client_config_t* config) {
   if (config == NULL) return H2_PAL_ERR_INVALID_ARG;
   return h2_loader_finalize_active_app_with_confirmation(
       config->pref, config->allocator, config->fs,
       H2_LOADER_DEFAULT_PACKAGE_PATH, &config->active_identity,
       H2_JIELI_PARTITION_APP, H2_JIELI_PARTITION_APP, clear_trial_evidence,
-      (void *)config->pref);
+      (void*)config->pref);
 }

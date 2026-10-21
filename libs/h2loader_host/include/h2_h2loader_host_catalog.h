@@ -16,24 +16,24 @@ extern "C" {
 #define H2_H2LOADER_HOST_SHA256_HEX_LEN 64u
 
 typedef enum h2_h2loader_host_asset_role {
-    H2_H2LOADER_HOST_ASSET_ROLE_APP = 1,
-    H2_H2LOADER_HOST_ASSET_ROLE_LOADER = 2,
+  H2_H2LOADER_HOST_ASSET_ROLE_APP = 1,
+  H2_H2LOADER_HOST_ASSET_ROLE_LOADER = 2,
 } h2_h2loader_host_asset_role_t;
 
 typedef enum h2_h2loader_host_asset_operation {
-    H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL = 1,
-    H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY = 2,
-    H2_H2LOADER_HOST_ASSET_OPERATION_DIAGNOSTIC = 3,
-    /** Raw factory image flashed from its offset by external tooling; like
-     * diagnostic, Host Core never installs or schedules it. */
-    H2_H2LOADER_HOST_ASSET_OPERATION_FACTORY_FLASH = 4,
+  H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL = 1,
+  H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY = 2,
+  H2_H2LOADER_HOST_ASSET_OPERATION_DIAGNOSTIC = 3,
+  /** Raw factory image flashed from its offset by external tooling; like
+   * diagnostic, Host Core never installs or schedules it. */
+  H2_H2LOADER_HOST_ASSET_OPERATION_FACTORY_FLASH = 4,
 } h2_h2loader_host_asset_operation_t;
 
 typedef enum h2_h2loader_host_asset_identity_source {
-    /** Asset identity includes the release-catalog image name. */
-    H2_H2LOADER_HOST_ASSET_IDENTITY_RELEASE_CATALOG = 0,
-    /** Standalone format-1/2 manifest; the package carries no image name. */
-    H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST = 1,
+  /** Asset identity includes the release-catalog image name. */
+  H2_H2LOADER_HOST_ASSET_IDENTITY_RELEASE_CATALOG = 0,
+  /** Standalone format-1/2 manifest; the package carries no image name. */
+  H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST = 1,
 } h2_h2loader_host_asset_identity_source_t;
 
 /**
@@ -44,24 +44,24 @@ typedef enum h2_h2loader_host_asset_identity_source {
  * schema, identity, byte length, path and SHA-256 have been validated.
  */
 typedef struct h2_h2loader_host_catalog_entry {
-    char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char image[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char resource_name[H2_H2LOADER_HOST_RESOURCE_NAME_MAX_LEN];
-    /** SHA-256 of the packaged resource bytes. */
-    char sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    /** Device-reported image checksum from the package manifest. */
-    char image_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    /** Canonical data identity verified by package inspection. Empty when a
-     * catalog does not carry this optional identity. */
-    char data_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    uint64_t bytes;
-    h2_h2loader_host_asset_role_t role;
-    h2_h2loader_host_asset_operation_t operation;
-    h2_h2loader_host_asset_identity_source_t identity_source;
-    /** Managed package format; zero in legacy catalogs means format 1. */
-    uint32_t package_format;
+  char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char image[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char resource_name[H2_H2LOADER_HOST_RESOURCE_NAME_MAX_LEN];
+  /** SHA-256 of the packaged resource bytes. */
+  char sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  /** Device-reported image checksum from the package manifest. */
+  char image_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  /** Canonical data identity verified by package inspection. Empty when a
+   * catalog does not carry this optional identity. */
+  char data_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint64_t bytes;
+  h2_h2loader_host_asset_role_t role;
+  h2_h2loader_host_asset_operation_t operation;
+  h2_h2loader_host_asset_identity_source_t identity_source;
+  /** Managed package format; zero in legacy catalogs means format 1. */
+  uint32_t package_format;
 } h2_h2loader_host_catalog_entry_t;
 
 typedef struct h2_h2loader_host_catalog h2_h2loader_host_catalog_t;
@@ -74,19 +74,15 @@ typedef struct h2_h2loader_host_catalog h2_h2loader_host_catalog_t;
  * return more than out_size bytes.
  */
 typedef h2_pal_result_t (*h2_h2loader_host_resource_read_fn)(
-    void *user,
-    const char *resource_name,
-    uint64_t offset,
-    uint8_t *out,
-    size_t out_size,
-    size_t *out_read);
+    void* user, const char* resource_name, uint64_t offset, uint8_t* out,
+    size_t out_size, size_t* out_read);
 
 typedef struct h2_h2loader_host_catalog_config {
-    const h2_pal_mem_api_t *allocator;
-    const uint8_t *index_json;
-    size_t index_json_len;
-    h2_h2loader_host_resource_read_fn read_resource;
-    void *resource_user;
+  const h2_pal_mem_api_t* allocator;
+  const uint8_t* index_json;
+  size_t index_json_len;
+  h2_h2loader_host_resource_read_fn read_resource;
+  void* resource_user;
 } h2_h2loader_host_catalog_config_t;
 
 /**
@@ -98,21 +94,19 @@ typedef struct h2_h2loader_host_catalog_config {
  * the caller and remains immutable until close().
  */
 h2_pal_result_t h2_h2loader_host_catalog_open(
-    const h2_h2loader_host_catalog_config_t *config,
-    h2_h2loader_host_catalog_t **out_catalog);
+    const h2_h2loader_host_catalog_config_t* config,
+    h2_h2loader_host_catalog_t** out_catalog);
 
 /** Close a catalog. Repeating the call with a NULL handle is a no-op. */
 h2_pal_result_t h2_h2loader_host_catalog_close(
-    h2_h2loader_host_catalog_t **inout_catalog);
+    h2_h2loader_host_catalog_t** inout_catalog);
 
 h2_pal_result_t h2_h2loader_host_catalog_count(
-    const h2_h2loader_host_catalog_t *catalog,
-    size_t *out_count);
+    const h2_h2loader_host_catalog_t* catalog, size_t* out_count);
 
 h2_pal_result_t h2_h2loader_host_catalog_get(
-    const h2_h2loader_host_catalog_t *catalog,
-    size_t index,
-    h2_h2loader_host_catalog_entry_t *out_entry);
+    const h2_h2loader_host_catalog_t* catalog, size_t index,
+    h2_h2loader_host_catalog_entry_t* out_entry);
 
 /**
  * @brief Find managed assets compatible with an authoritative live identity.
@@ -122,14 +116,10 @@ h2_pal_result_t h2_h2loader_host_catalog_get(
  * truncation. role and operation must be valid enum values.
  */
 h2_pal_result_t h2_h2loader_host_catalog_find(
-    const h2_h2loader_host_catalog_t *catalog,
-    const char *board,
-    const char *target,
-    h2_h2loader_host_asset_role_t role,
-    h2_h2loader_host_asset_operation_t operation,
-    size_t *out_indices,
-    size_t out_capacity,
-    size_t *out_count);
+    const h2_h2loader_host_catalog_t* catalog, const char* board,
+    const char* target, h2_h2loader_host_asset_role_t role,
+    h2_h2loader_host_asset_operation_t operation, size_t* out_indices,
+    size_t out_capacity, size_t* out_count);
 
 #ifdef __cplusplus
 }

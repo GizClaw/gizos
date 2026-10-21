@@ -1,5 +1,6 @@
 """Compile the board's actual preference commit path against injected I/O failures."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -273,7 +274,7 @@ int main(void) {
         source = SOURCE.read_text()
         types = source[source.index("enum {"):source.index("struct h2_pal_pref_cursor")]
         paths = source[source.index("static size_t bounded_length("):
-                       source.index("static jieli_pref_namespace_t *to_namespace(")]
+                       re.search(r"\bstatic\s+jieli_pref_namespace_t\s*\*\s*to_namespace\s*\(", source).start()]
         write = source[source.index("__attribute__((weak)) void h2_jieli_pref_rename_observer("):
                        source.index("static int pref_close(")]
         stub = r'''

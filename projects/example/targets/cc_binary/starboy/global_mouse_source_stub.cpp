@@ -2,9 +2,9 @@
 
 namespace h2::starboy {
 
-void *find_global_mouse_window(const char *) { return nullptr; }
+void* find_global_mouse_window(const char*) { return nullptr; }
 
-bool sample_global_mouse_relative(void *, std::int32_t *, std::int32_t *) {
+bool sample_global_mouse_relative(void*, std::int32_t*, std::int32_t*) {
   return false;
 }
 

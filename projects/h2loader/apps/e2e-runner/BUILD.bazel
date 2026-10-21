@@ -11,8 +11,8 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
-        "//libs/h2loader_host",
         "//libs/bundle",
+        "//libs/h2loader_host",
         "//libs/pal",
         "//libs/runtime",
     ],
@@ -24,19 +24,22 @@ cc_test(
     srcs = ["tests/test_h2_h2loader_e2e_runner.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
+    data = [":checksum_fixtures"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    data = [":checksum_fixtures"],
     deps = [":h2loader_e2e_runner"],
 )
 
 genrule(
     name = "checksum_fixtures",
-    srcs = ["tests/fixtures/app-a.txt", "tests/fixtures/app-b.txt"],
+    srcs = [
+        "tests/fixtures/app-a.txt",
+        "tests/fixtures/app-b.txt",
+    ],
     outs = [
         "tests/checksum-fixtures/tar_zlib/baseline.update.tar.zlib",
         "tests/checksum-fixtures/tar_zlib/unchanged.update.tar.zlib",
@@ -50,9 +53,9 @@ genrule(
         "tests/checksum-fixtures/zlib_tar/both-changed.update.tar",
         "tests/checksum-fixtures/fixtures.json",
     ],
-    tools = ["//projects/h2loader/tools/bazel:checksum_fixture_writer"],
     cmd = "$(location //projects/h2loader/tools/bazel:checksum_fixture_writer) " +
           "--app-a $(location tests/fixtures/app-a.txt) --app-b $(location tests/fixtures/app-b.txt) " +
           "--app-path app/esp/app.bin --board fixture --target esp32s3 " +
           "--version-a 1.0.0-a --version-b 1.0.0-b --output $(@D)/tests/checksum-fixtures",
+    tools = ["//projects/h2loader/tools/bazel:checksum_fixture_writer"],
 )

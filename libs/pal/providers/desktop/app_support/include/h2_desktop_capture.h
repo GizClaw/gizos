@@ -18,7 +18,7 @@ extern "C" {
  * specify speaker latency and mic timing/processing semantics.
  */
 typedef struct h2_desktop_capture_hooks {
-  void *user;
+  void* user;
   h2_sdl3_frame_capture_fn on_display;
   h2_portaudio_capture_fn on_mic;
   h2_portaudio_capture_fn on_speaker;
@@ -26,9 +26,9 @@ typedef struct h2_desktop_capture_hooks {
 
 typedef struct h2_desktop_capture_config {
   /** Borrowed; required only when on_display is configured. */
-  h2_sdl3_t *display;
+  h2_sdl3_t* display;
   /** Borrowed; required only when an audio callback is configured. */
-  h2_portaudio_t *audio;
+  h2_portaudio_t* audio;
   /** Copied at create; user remains borrowed until destroy returns. */
   h2_desktop_capture_hooks_t hooks;
 } h2_desktop_capture_config_t;
@@ -42,16 +42,16 @@ typedef struct h2_desktop_capture h2_desktop_capture_t;
  * sources return BUSY without replacing another consumer. Call from a control
  * task. Providers and user must outlive the returned registration.
  */
-h2_pal_result_t
-h2_desktop_capture_create(const h2_desktop_capture_config_t *config,
-                          h2_desktop_capture_t **out_capture);
+h2_pal_result_t h2_desktop_capture_create(
+    const h2_desktop_capture_config_t* config,
+    h2_desktop_capture_t** out_capture);
 
 /** Synchronously unregister owned hooks, waiting for in-flight callbacks before
  * releasing the registration. NULL allowed. Call before freeing user or source
  * providers, never from a callback. Do not independently reconfigure a source
  * while this registration owns it. Destroy is serialized by the caller.
  */
-void h2_desktop_capture_destroy(h2_desktop_capture_t *capture);
+void h2_desktop_capture_destroy(h2_desktop_capture_t* capture);
 
 #ifdef __cplusplus
 }

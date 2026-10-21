@@ -10,10 +10,9 @@ typedef struct c11_state {
 } c11_state_t;
 static atomic_flag s_in_use = ATOMIC_FLAG_INIT;
 
-static int create(const h2_pal_mem_api_t *mem, bool psram, void **out) {
-  if (atomic_flag_test_and_set(&s_in_use))
-    return H2_PAL_ERR_BUSY;
-  c11_state_t *state = h2_pal_mem_alloc(mem, sizeof(*state));
+static int create(const h2_pal_mem_api_t* mem, bool psram, void** out) {
+  if (atomic_flag_test_and_set(&s_in_use)) return H2_PAL_ERR_BUSY;
+  c11_state_t* state = h2_pal_mem_alloc(mem, sizeof(*state));
   if (state == NULL) {
     atomic_flag_clear(&s_in_use);
     return H2_PAL_ERR_NO_MEMORY;
@@ -24,13 +23,13 @@ static int create(const h2_pal_mem_api_t *mem, bool psram, void **out) {
   *out = state;
   return H2_PAL_OK;
 }
-static void destroy(const h2_pal_mem_api_t *mem, bool psram, void *state) {
+static void destroy(const h2_pal_mem_api_t* mem, bool psram, void* state) {
   (void)psram;
   h2_pal_mem_free(mem, state);
   atomic_flag_clear(&s_in_use);
 }
-static unsigned work(void *opaque, unsigned iterations) {
-  c11_state_t *state = opaque;
+static unsigned work(void* opaque, unsigned iterations) {
+  c11_state_t* state = opaque;
   unsigned failures = 0u;
   for (unsigned i = 0u; i < iterations; ++i)
     (void)atomic_fetch_add_explicit(&state->added, 1u, memory_order_seq_cst);
@@ -40,8 +39,8 @@ static unsigned work(void *opaque, unsigned iterations) {
     const unsigned max_attempts = state->psram ? 32u : 1000000u;
     for (unsigned attempt = 0u; attempt < max_attempts; ++attempt) {
       if (atomic_compare_exchange_strong_explicit(
-              &state->cas, &expected, expected + 1u,
-              memory_order_seq_cst, memory_order_seq_cst)) {
+              &state->cas, &expected, expected + 1u, memory_order_seq_cst,
+              memory_order_seq_cst)) {
         done = true;
         break;
       }
@@ -50,21 +49,21 @@ static unsigned work(void *opaque, unsigned iterations) {
   }
   return failures;
 }
-static unsigned incremented(const void *opaque) {
-  c11_state_t *state = (c11_state_t *)opaque;
+static unsigned incremented(const void* opaque) {
+  c11_state_t* state = (c11_state_t*)opaque;
   return atomic_load_explicit(&state->added, memory_order_seq_cst);
 }
-static unsigned compared(const void *opaque) {
-  c11_state_t *state = (c11_state_t *)opaque;
+static unsigned compared(const void* opaque) {
+  c11_state_t* state = (c11_state_t*)opaque;
   return atomic_load_explicit(&state->cas, memory_order_seq_cst);
 }
-static void addresses(const void *opaque, uintptr_t *wrapper,
-                      uintptr_t *storage) {
-  const c11_state_t *state = opaque;
+static void addresses(const void* opaque, uintptr_t* wrapper,
+                      uintptr_t* storage) {
+  const c11_state_t* state = opaque;
   *wrapper = (uintptr_t)state;
   *storage = (uintptr_t)&state->added;
 }
-const h2_atomic_e2e_backend_t *h2_atomic_e2e_c11_backend(void) {
+const h2_atomic_e2e_backend_t* h2_atomic_e2e_c11_backend(void) {
   static const h2_atomic_e2e_backend_t backend = {
       "c11", create, destroy, work, incremented, compared, addresses};
   return &backend;

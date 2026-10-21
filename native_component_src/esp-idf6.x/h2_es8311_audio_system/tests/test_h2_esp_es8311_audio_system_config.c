@@ -2,16 +2,16 @@
 
 #include <assert.h>
 
-int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t *state,
-                          const h2_esp_es8311_audio_system_config_t *config) {
+int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* state,
+                          const h2_esp_es8311_audio_system_config_t* config) {
   (void)state;
   (void)config;
   return H2_AUDIO_OK;
 }
 
-int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t *state,
-                             const h2_audio_frame_t *raw_frame,
-                             h2_audio_frame_t *out_frame, uint32_t timeout_ms) {
+int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* state,
+                             const h2_audio_frame_t* raw_frame,
+                             h2_audio_frame_t* out_frame, uint32_t timeout_ms) {
   (void)state;
   (void)raw_frame;
   (void)out_frame;
@@ -56,14 +56,17 @@ int main(void) {
   config.mic_gain_max_db = 30u;
   config.codec_volume_default = 0xb0u;
   config.speaker_volume = (h2_es8311_volume_config_t){
-      .point_count = 3u, .points = {{1u, 120u}, {50u, 12u}, {100u, 0u}},
+      .point_count = 3u,
+      .points = {{1u, 120u}, {50u, 12u}, {100u, 0u}},
   };
   assert(h2_esp_es8311_audio_system_init(&system, &config) == H2_AUDIO_OK);
   config.speaker_volume.points[1].attenuation_half_db = 20u;
   assert(h2_es8311_volume_from_percent(&system.config.speaker_volume,
-                                      system.config.codec_volume_default, 50u) == 164u);
+                                       system.config.codec_volume_default,
+                                       50u) == 164u);
   config.speaker_volume.point_count = 9u;
-  assert(h2_esp_es8311_audio_system_init(&system, &config) == H2_AUDIO_ERR_INVALID_ARG);
+  assert(h2_esp_es8311_audio_system_init(&system, &config) ==
+         H2_AUDIO_ERR_INVALID_ARG);
   config.speaker_volume = (h2_es8311_volume_config_t){0};
 
   config.aec_nlp_level = (h2_esp_es8311_aec_nlp_level_t)2;

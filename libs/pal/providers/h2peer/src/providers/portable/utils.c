@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-void h2_peer_log_write(const h2_pal_log_api_t *log, h2_pal_log_level_t level,
-                       const char *file_name, int line_number, const char *fmt,
+void h2_peer_log_write(const h2_pal_log_api_t* log, h2_pal_log_level_t level,
+                       const char* file_name, int line_number, const char* fmt,
                        ...) {
   if (log == NULL || log->vtable == NULL || log->vtable->write == NULL ||
       file_name == NULL || fmt == NULL) {
@@ -32,7 +32,7 @@ void h2_peer_log_write(const h2_pal_log_api_t *log, h2_pal_log_level_t level,
   (void)h2_pal_log_write(log, level, "h2peer", message);
 }
 
-void utils_random_string(const h2_pal_crypto_api_t *crypto, char *s,
+void utils_random_string(const h2_pal_crypto_api_t* crypto, char* s,
                          const int len) {
   int i;
 
@@ -56,18 +56,14 @@ void utils_random_string(const h2_pal_crypto_api_t *crypto, char *s,
   s[len] = '\0';
 }
 
-int utils_get_hmac_sha1(const h2_pal_crypto_api_t* crypto,
-                        const char* input, size_t input_len,
-                        const char* key, size_t key_len,
+int utils_get_hmac_sha1(const h2_pal_crypto_api_t* crypto, const char* input,
+                        size_t input_len, const char* key, size_t key_len,
                         unsigned char* output) {
-  return h2_pal_crypto_hmac_sha1(
-      crypto, (const uint8_t*)key, key_len, (const uint8_t*)input,
-      input_len, output);
+  return h2_pal_crypto_hmac_sha1(crypto, (const uint8_t*)key, key_len,
+                                 (const uint8_t*)input, input_len, output);
 }
 
-int utils_get_md5(const h2_pal_crypto_api_t* crypto,
-                  const char* input, size_t input_len,
-                  unsigned char* output) {
-  return h2_pal_crypto_md5(
-      crypto, (const uint8_t*)input, input_len, output);
+int utils_get_md5(const h2_pal_crypto_api_t* crypto, const char* input,
+                  size_t input_len, unsigned char* output) {
+  return h2_pal_crypto_md5(crypto, (const uint8_t*)input, input_len, output);
 }

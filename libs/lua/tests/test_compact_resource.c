@@ -6,9 +6,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static void execute(const uint8_t *source, size_t size, char *error,
+static void execute(const uint8_t* source, size_t size, char* error,
                     size_t error_capacity) {
-  h2_lua_vm_t *vm = NULL;
+  h2_lua_vm_t* vm = NULL;
   const h2_lua_vm_config_t config = {
       .memory_limit_bytes = 1024u * 1024u,
       .source_limit_bytes = 4096u,
@@ -22,8 +22,8 @@ static void execute(const uint8_t *source, size_t size, char *error,
       .error = error,
       .error_capacity = error_capacity,
   };
-  assert(h2_lua_vm_execute_text(vm, "@fixture.lua", source, size,
-                               &execution) == H2_LUA_VM_RUNTIME_ERROR);
+  assert(h2_lua_vm_execute_text(vm, "@fixture.lua", source, size, &execution) ==
+         H2_LUA_VM_RUNTIME_ERROR);
   assert(strstr(error, "compact fixture complete") != NULL);
   h2_lua_vm_close(vm);
 }

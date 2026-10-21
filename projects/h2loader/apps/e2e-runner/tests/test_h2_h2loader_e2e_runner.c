@@ -12,11 +12,11 @@ typedef struct fake_executor {
   h2_h2loader_e2e_transport_t transports[H2_H2LOADER_E2E_MAX_CASES];
 } fake_executor_t;
 
-static h2_pal_result_t execute_case(void *user,
+static h2_pal_result_t execute_case(void* user,
                                     h2_h2loader_e2e_transport_t transport,
                                     h2_h2loader_e2e_case_t test_case,
-                                    h2_h2loader_e2e_case_result_t *out_result) {
-  fake_executor_t *fake = user;
+                                    h2_h2loader_e2e_case_result_t* out_result) {
+  fake_executor_t* fake = user;
   fake->cases[fake->count] = test_case;
   fake->transports[fake->count] = transport;
   ++fake->count;
@@ -46,9 +46,9 @@ static void test_full_sequence_for_both_transports(void) {
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .ble_endpoint = "4:001122334455",
-      .app_firmware = (const uint8_t *)"x",
+      .app_firmware = (const uint8_t*)"x",
       .app_firmware_size = 1u,
-      .loader_firmware = (const uint8_t *)"y",
+      .loader_firmware = (const uint8_t*)"y",
       .loader_firmware_size = 1u,
       .firmware_url = "http://example.test/update.tar.zlib",
       .firmware_url_bytes = 1u,
@@ -86,14 +86,12 @@ static void test_full_sequence_for_both_transports(void) {
   assert(fake.cases[14] == H2_H2LOADER_E2E_CASE_APP_STATUS);
   assert(fake.cases[15] == H2_H2LOADER_E2E_CASE_APP_STATS);
   assert(fake.cases[16] == H2_H2LOADER_E2E_CASE_APP_MEMORY);
-  assert(fake.cases[17] ==
-         H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT);
+  assert(fake.cases[17] == H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT);
   assert(fake.cases[18] == H2_H2LOADER_E2E_CASE_APP_WIFI_SCAN);
   assert(fake.cases[21] == H2_H2LOADER_E2E_CASE_APP_SEND);
   assert(fake.cases[22] == H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND);
   assert(fake.cases[23] == H2_H2LOADER_E2E_CASE_APP_SEND_URL);
-  assert(fake.cases[24] ==
-         H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL);
+  assert(fake.cases[24] == H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL);
   assert(fake.cases[56] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
   assert(fake.cases[57] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
   assert(fake.cases[58] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
@@ -104,10 +102,10 @@ static void test_full_sequence_for_both_transports(void) {
   assert(fake.cases[63] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
 }
 
-static h2_pal_result_t fail_send(void *user,
+static h2_pal_result_t fail_send(void* user,
                                  h2_h2loader_e2e_transport_t transport,
                                  h2_h2loader_e2e_case_t test_case,
-                                 h2_h2loader_e2e_case_result_t *out_result) {
+                                 h2_h2loader_e2e_case_result_t* out_result) {
   (void)user;
   (void)transport;
   if (test_case == H2_H2LOADER_E2E_CASE_STATUS) {
@@ -119,9 +117,9 @@ static h2_pal_result_t fail_send(void *user,
 }
 
 static h2_pal_result_t execute_without_memory(
-    void *user, h2_h2loader_e2e_transport_t transport,
+    void* user, h2_h2loader_e2e_transport_t transport,
     h2_h2loader_e2e_case_t test_case,
-    h2_h2loader_e2e_case_result_t *out_result) {
+    h2_h2loader_e2e_case_result_t* out_result) {
   h2_pal_result_t rc = execute_case(user, transport, test_case, out_result);
   if (test_case == H2_H2LOADER_E2E_CASE_STATUS) {
     out_result->status.command_availability &=
@@ -131,9 +129,9 @@ static h2_pal_result_t execute_without_memory(
 }
 
 static h2_pal_result_t execute_with_removed_availability(
-    void *user, h2_h2loader_e2e_transport_t transport,
+    void* user, h2_h2loader_e2e_transport_t transport,
     h2_h2loader_e2e_case_t test_case,
-    h2_h2loader_e2e_case_result_t *out_result) {
+    h2_h2loader_e2e_case_result_t* out_result) {
   h2_pal_result_t rc = execute_case(user, transport, test_case, out_result);
   if (test_case == H2_H2LOADER_E2E_CASE_STATUS) {
     out_result->status.command_availability |= UINT32_C(1) << 6;
@@ -178,7 +176,7 @@ static void test_failure_is_reported_without_hiding_cleanup(void) {
   static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
-      .app_firmware = (const uint8_t *)"x",
+      .app_firmware = (const uint8_t*)"x",
       .app_firmware_size = 1u,
       .repeat_count = 1u,
       .include_send = 1u,
@@ -209,7 +207,7 @@ static void test_invalid_configs(void) {
   assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
   config.include_monitor = 0u;
   config.include_crash = 1u;
-  config.crash_firmware = (const uint8_t *)"z";
+  config.crash_firmware = (const uint8_t*)"z";
   config.crash_firmware_size = 1u;
   assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
 }
@@ -254,9 +252,9 @@ static void test_monitor_runs_each_reboot_with_a_bootable_target(void) {
   static h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
-      .app_firmware = (const uint8_t *)"x",
+      .app_firmware = (const uint8_t*)"x",
       .app_firmware_size = 1u,
-      .loader_firmware = (const uint8_t *)"y",
+      .loader_firmware = (const uint8_t*)"y",
       .loader_firmware_size = 1u,
       .repeat_count = 1u,
       .monitor_duration_ms = 500u,
@@ -280,8 +278,7 @@ static void test_monitor_runs_each_reboot_with_a_bootable_target(void) {
   assert(fake.cases[10] == H2_H2LOADER_E2E_CASE_APP_STATUS);
   assert(fake.cases[11] == H2_H2LOADER_E2E_CASE_APP_STATS);
   assert(fake.cases[12] == H2_H2LOADER_E2E_CASE_APP_MEMORY);
-  assert(fake.cases[13] ==
-         H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT);
+  assert(fake.cases[13] == H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT);
   assert(fake.cases[16] == H2_H2LOADER_E2E_CASE_INSTALL_LOADER);
 }
 
@@ -291,7 +288,7 @@ static void test_crash_app_runs_once_before_cross_transport_coredump(void) {
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .ble_endpoint = "4:001122334455",
-      .crash_firmware = (const uint8_t *)"z",
+      .crash_firmware = (const uint8_t*)"z",
       .crash_firmware_size = 1u,
       .repeat_count = 1u,
       .include_coredump = 1u,
@@ -311,8 +308,8 @@ static void test_crash_app_runs_once_before_cross_transport_coredump(void) {
   assert(fake.cases[18] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
 }
 
-static int cancel_after_first_case(void *user) {
-  return ((fake_executor_t *)user)->count != 0u;
+static int cancel_after_first_case(void* user) {
+  return ((fake_executor_t*)user)->count != 0u;
 }
 
 static void test_cancel_does_not_execute_later_cases(void) {
@@ -344,8 +341,8 @@ static void test_names(void) {
                 "app-send-url") == 0);
   assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_APP_STATUS),
                 "app-status") == 0);
-  assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_HELP),
-                "help") == 0);
+  assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_HELP), "help") ==
+         0);
   assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_MEMORY),
                 "memory") == 0);
   assert(strcmp(h2_h2loader_e2e_case_name(
@@ -365,9 +362,18 @@ static void test_names(void) {
              "install-crash-app") == 0);
 }
 
-static void *matrix_alloc(void *user, size_t len) { (void)user; return malloc(len); }
-static void *matrix_realloc(void *user, void *data, size_t len) { (void)user; return realloc(data, len); }
-static void matrix_free(void *user, void *data) { (void)user; free(data); }
+static void* matrix_alloc(void* user, size_t len) {
+  (void)user;
+  return malloc(len);
+}
+static void* matrix_realloc(void* user, void* data, size_t len) {
+  (void)user;
+  return realloc(data, len);
+}
+static void matrix_free(void* user, void* data) {
+  (void)user;
+  free(data);
+}
 static const h2_pal_mem_vtable_t matrix_mem_vtable = {
     .alloc = matrix_alloc, .realloc = matrix_realloc, .free = matrix_free};
 static const h2_pal_mem_api_t matrix_mem = {.vtable = &matrix_mem_vtable};
@@ -381,19 +387,22 @@ typedef struct matrix_fixture {
   int bad_source;
 } matrix_fixture_t;
 
-static h2_pal_result_t matrix_read(void *user, uint64_t offset, uint8_t *out,
-                                    size_t len, size_t *got) {
-  const h2_h2loader_e2e_package_t *package = user;
+static h2_pal_result_t matrix_read(void* user, uint64_t offset, uint8_t* out,
+                                   size_t len, size_t* got) {
+  const h2_h2loader_e2e_package_t* package = user;
   if (offset > package->size) return H2_PAL_ERR_INVALID_ARG;
-  if (len > package->size - (size_t)offset) len = package->size - (size_t)offset;
-  memcpy(out, package->data + offset, len); *got = len;
+  if (len > package->size - (size_t)offset)
+    len = package->size - (size_t)offset;
+  memcpy(out, package->data + offset, len);
+  *got = len;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t matrix_execute(void *user,
-    h2_h2loader_e2e_transport_t transport, h2_h2loader_e2e_case_t test_case,
-    h2_h2loader_e2e_case_result_t *out) {
-  matrix_fixture_t *fixture = user;
+static h2_pal_result_t matrix_execute(void* user,
+                                      h2_h2loader_e2e_transport_t transport,
+                                      h2_h2loader_e2e_case_t test_case,
+                                      h2_h2loader_e2e_case_result_t* out) {
+  matrix_fixture_t* fixture = user;
   h2_pal_result_t rc = execute_case(&fixture->fake, transport, test_case, out);
   if (test_case < H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE) return rc;
   size_t offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_TAR_ZLIB_BASELINE);
@@ -402,13 +411,18 @@ static h2_pal_result_t matrix_execute(void *user,
   size_t source = 0u;
   if (cross) {
     offset = (size_t)(test_case - H2_H2LOADER_E2E_CASE_OLD_TO_NEW_UNCHANGED);
-    source = offset / 4u; format = 1u - source; index = offset % 4u + 1u;
+    source = offset / 4u;
+    format = 1u - source;
+    index = offset % 4u + 1u;
     out->source_package_format = (uint32_t)source + 1u;
-    strcpy(out->before_package_sha256, fixture->assets[source][index - 1u].sha256);
+    strcpy(out->before_package_sha256,
+           fixture->assets[source][index - 1u].sha256);
     if (fixture->bad_source && source == 0u && index == 1u)
-      strcpy(out->before_package_sha256, fixture->assets[format][index - 1u].sha256);
+      strcpy(out->before_package_sha256,
+             fixture->assets[format][index - 1u].sha256);
   }
-  const h2_h2loader_host_catalog_entry_t *asset = &fixture->assets[format][index];
+  const h2_h2loader_host_catalog_entry_t* asset =
+      &fixture->assets[format][index];
   out->status_valid = out->data_checksum_valid = 1u;
   out->checksum_expectations_valid = index != 0u;
   out->expected_update_app = index == 2u || index == 4u;
@@ -417,8 +431,10 @@ static h2_pal_result_t matrix_execute(void *user,
   if (fixture->bad_data && format == 0u && index == 3u)
     strcpy(out->data_sha256, fixture->assets[0][2].data_sha256);
   if (index != 0u) {
-    strcpy(out->before_image_sha256, fixture->assets[format][index - 1u].image_sha256);
-    strcpy(out->before_data_sha256, fixture->assets[format][index - 1u].data_sha256);
+    strcpy(out->before_image_sha256,
+           fixture->assets[format][index - 1u].image_sha256);
+    strcpy(out->before_data_sha256,
+           fixture->assets[format][index - 1u].data_sha256);
   }
   strcpy(out->status.board, asset->board);
   strcpy(out->status.target, asset->target);
@@ -426,18 +442,20 @@ static h2_pal_result_t matrix_execute(void *user,
   out->status.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
   strcpy(out->status.active_version, asset->version);
   strcpy(out->status.active_checksum, asset->image_sha256);
-  h2_h2loader_host_metadata_t *metadata = &out->status.partition_2;
+  h2_h2loader_host_metadata_t* metadata = &out->status.partition_2;
   metadata->valid = 1u;
   metadata->role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
-  strcpy(metadata->board, asset->board); strcpy(metadata->target, asset->target);
+  strcpy(metadata->board, asset->board);
+  strcpy(metadata->target, asset->target);
   strcpy(metadata->version, asset->version);
   strcpy(metadata->image_checksum, asset->image_sha256);
   strcpy(metadata->package_checksum, asset->sha256);
   return rc;
 }
 
-static void matrix_init(matrix_fixture_t *fixture) {
-  static const char *names[] = {"baseline", "unchanged", "app-only", "data-only", "both-changed"};
+static void matrix_init(matrix_fixture_t* fixture) {
+  static const char* names[] = {"baseline", "unchanged", "app-only",
+                                "data-only", "both-changed"};
   memset(fixture, 0, sizeof(*fixture));
   fixture->runtime.mem = &matrix_mem;
   fixture->config.runtime = &fixture->runtime;
@@ -450,29 +468,39 @@ static void matrix_init(matrix_fixture_t *fixture) {
   for (size_t format = 0u; format < 2u; ++format)
     for (size_t index = 0u; index < 5u; ++index) {
       char path[2048];
-      int n = snprintf(path, sizeof(path), "%s/%s/projects/h2loader/apps/e2e-runner/tests/checksum-fixtures/%s/%s%s",
-          getenv("TEST_SRCDIR"), getenv("TEST_WORKSPACE"), format ? "zlib_tar" : "tar_zlib",
-          names[index], format ? ".update.tar" : ".update.tar.zlib");
+      int n = snprintf(
+          path, sizeof(path),
+          "%s/%s/projects/h2loader/apps/e2e-runner/tests/checksum-fixtures/%s/%s%s",
+          getenv("TEST_SRCDIR"), getenv("TEST_WORKSPACE"),
+          format ? "zlib_tar" : "tar_zlib", names[index],
+          format ? ".update.tar" : ".update.tar.zlib");
       assert(n > 0 && (size_t)n < sizeof(path));
-      FILE *file = fopen(path, "rb"); assert(file != NULL);
+      FILE* file = fopen(path, "rb");
+      assert(file != NULL);
       assert(fseek(file, 0, SEEK_END) == 0);
-      long length = ftell(file); assert(length > 0);
+      long length = ftell(file);
+      assert(length > 0);
       assert(fseek(file, 0, SEEK_SET) == 0);
-      uint8_t *data = malloc((size_t)length); assert(data != NULL);
+      uint8_t* data = malloc((size_t)length);
+      assert(data != NULL);
       assert(fread(data, 1u, (size_t)length, file) == (size_t)length);
       assert(fclose(file) == 0);
-      fixture->config.checksum_packages[format][index] = (h2_h2loader_e2e_package_t){data, (size_t)length};
+      fixture->config.checksum_packages[format][index] =
+          (h2_h2loader_e2e_package_t){data, (size_t)length};
       h2_h2loader_host_package_inspect_config_t inspect = {
-          .allocator = &matrix_mem, .payload_bytes = (uint64_t)length,
-          .read_payload = matrix_read, .payload_user = &fixture->config.checksum_packages[format][index]};
-      assert(h2_h2loader_host_package_inspect(&inspect, &fixture->assets[format][index]) == H2_PAL_OK);
+          .allocator = &matrix_mem,
+          .payload_bytes = (uint64_t)length,
+          .read_payload = matrix_read,
+          .payload_user = &fixture->config.checksum_packages[format][index]};
+      assert(h2_h2loader_host_package_inspect(
+                 &inspect, &fixture->assets[format][index]) == H2_PAL_OK);
     }
 }
 
-static void matrix_close(matrix_fixture_t *fixture) {
+static void matrix_close(matrix_fixture_t* fixture) {
   for (size_t format = 0u; format < 2u; ++format)
     for (size_t index = 0u; index < 5u; ++index)
-      free((void *)fixture->config.checksum_packages[format][index].data);
+      free((void*)fixture->config.checksum_packages[format][index].data);
 }
 
 static void test_checksum_matrix_and_false_success(void) {
@@ -483,26 +511,34 @@ static void test_checksum_matrix_and_false_success(void) {
   assert(result.case_count == 46u && result.passed == 46u);
   for (size_t direction = 0u; direction < 2u; ++direction)
     for (size_t i = 0u; i < 4u; ++i) {
-      const h2_h2loader_e2e_case_result_t *entry = &result.cases[15u + direction * 4u + i];
+      const h2_h2loader_e2e_case_result_t* entry =
+          &result.cases[15u + direction * 4u + i];
       assert(entry->source_package_format == direction + 1u);
-      assert(entry->package_format == 2u - direction && entry->data_checksum_valid);
+      assert(entry->package_format == 2u - direction &&
+             entry->data_checksum_valid);
     }
-  fixture.fake.count = 0u; fixture.bad_source = 1;
-  assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_ERR_INVALID_STATE);
+  fixture.fake.count = 0u;
+  fixture.bad_source = 1;
+  assert(h2_h2loader_e2e_run(&fixture.config, &result) ==
+         H2_PAL_ERR_INVALID_STATE);
   assert(result.cases[15].result == H2_PAL_ERR_INVALID_STATE);
   assert(!result.cases[15].data_checksum_valid);
   fixture.bad_source = 0;
-  assert(strcmp(h2_h2loader_e2e_case_name(result.cases[6].test_case), "tar-zlib-unchanged") == 0);
-  assert(result.cases[14].package_format == 2u && result.cases[14].data_checksum_valid);
+  assert(strcmp(h2_h2loader_e2e_case_name(result.cases[6].test_case),
+                "tar-zlib-unchanged") == 0);
+  assert(result.cases[14].package_format == 2u &&
+         result.cases[14].data_checksum_valid);
   fixture.fake.count = 0u;
   fixture.bad_data = 1;
-  assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_h2loader_e2e_run(&fixture.config, &result) ==
+         H2_PAL_ERR_INVALID_STATE);
   assert(result.cases[8].result == H2_PAL_ERR_INVALID_STATE);
   assert(!result.cases[8].data_checksum_valid);
   assert(result.cases[9].result == H2_PAL_ERR_INVALID_STATE);
   /* A valid but unguarded new packet must not claim skip proof. */
   h2_h2loader_e2e_package_t saved = fixture.config.checksum_packages[1][1];
-  fixture.config.checksum_packages[1][1] = fixture.config.checksum_packages[1][0];
+  fixture.config.checksum_packages[1][1] =
+      fixture.config.checksum_packages[1][0];
   fixture.fake.count = 0u;
   assert(h2_h2loader_e2e_run(&fixture.config, &result) == H2_PAL_ERR_FORMAT);
   assert(result.case_count == 0u && fixture.fake.count == 0u);

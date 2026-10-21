@@ -5,22 +5,22 @@
 
 // Borrowed views, valid only while argv and environment inputs remain alive.
 struct H2GizclawDesktopOptions {
-  const char *pcm_path = nullptr;
-  const char *endpoint = nullptr;
-  const char *token = nullptr;
-  const char *suite_name = nullptr;
-  const char *fence_workflow_name = nullptr;
-  const char *fence_first_id = nullptr;
-  const char *fence_second_id = nullptr;
+  const char* pcm_path = nullptr;
+  const char* endpoint = nullptr;
+  const char* token = nullptr;
+  const char* suite_name = nullptr;
+  const char* fence_workflow_name = nullptr;
+  const char* fence_first_id = nullptr;
+  const char* fence_second_id = nullptr;
   uint32_t suites = 0;
 };
 
 // Returns a fixed, non-sensitive reason on error, nullptr on success.
 // Does not open files, resolve DNS, create providers, or contact a server.
-const char *h2_gizclaw_e2e_desktop_parse_options(int argc, char **argv,
-                                                 const char *token,
-                                                 const char *suite_override,
+const char* h2_gizclaw_e2e_desktop_parse_options(int argc, char** argv,
+                                                 const char* token,
+                                                 const char* suite_override,
                                                  bool pion,
-                                                 H2GizclawDesktopOptions *out);
+                                                 H2GizclawDesktopOptions* out);
 
 #endif

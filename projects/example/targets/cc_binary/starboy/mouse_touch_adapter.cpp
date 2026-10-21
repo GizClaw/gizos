@@ -17,7 +17,7 @@ MouseTouchAdapter::MouseTouchAdapter(std::uint32_t width, std::uint32_t height)
   api_.vtable = &vtable;
 }
 
-const h2_pal_touch_api_t *MouseTouchAdapter::api() const { return &api_; }
+const h2_pal_touch_api_t* MouseTouchAdapter::api() const { return &api_; }
 
 std::int32_t MouseTouchAdapter::clamp_x(std::int32_t x) const {
   if (width_ == 0u) {
@@ -36,8 +36,7 @@ std::int32_t MouseTouchAdapter::clamp_y(std::int32_t y) const {
 void MouseTouchAdapter::push_locked(h2_pal_touch_event_kind_t kind,
                                     std::int32_t x, std::int32_t y) {
   if (event_count_ > 0u && kind == H2_PAL_TOUCH_EVENT_MOVE) {
-    const std::size_t last =
-        (event_head_ + event_count_ - 1u) % events_.size();
+    const std::size_t last = (event_head_ + event_count_ - 1u) % events_.size();
     if (events_[last].kind == H2_PAL_TOUCH_EVENT_MOVE) {
       events_[last] = {kind, x, y};
       return;
@@ -52,8 +51,7 @@ void MouseTouchAdapter::push_locked(h2_pal_touch_event_kind_t kind,
   ++event_count_;
 }
 
-void MouseTouchAdapter::update(bool available, std::int32_t x,
-                               std::int32_t y) {
+void MouseTouchAdapter::update(bool available, std::int32_t x, std::int32_t y) {
   std::lock_guard<std::mutex> lock(mutex_);
   x = clamp_x(x);
   y = clamp_y(y);
@@ -79,13 +77,14 @@ void MouseTouchAdapter::update(bool available, std::int32_t x,
   }
 }
 
-void MouseTouchAdapter::update_global_coordinates(
-    std::int32_t global_x, std::int32_t global_y,
-    std::int32_t window_x, std::int32_t window_y) {
+void MouseTouchAdapter::update_global_coordinates(std::int32_t global_x,
+                                                  std::int32_t global_y,
+                                                  std::int32_t window_x,
+                                                  std::int32_t window_y) {
   update(true, global_x - window_x, global_y - window_y);
 }
 
-bool MouseTouchAdapter::bind_global_window(const char *window_title) {
+bool MouseTouchAdapter::bind_global_window(const char* window_title) {
   native_window_ = find_global_mouse_window(window_title);
   return native_window_ != nullptr;
 }
@@ -96,16 +95,15 @@ bool MouseTouchAdapter::sample_global_mouse() {
   }
   std::int32_t relative_x = 0;
   std::int32_t relative_y = 0;
-  if (!sample_global_mouse_relative(
-          native_window_, &relative_x, &relative_y)) {
+  if (!sample_global_mouse_relative(native_window_, &relative_x, &relative_y)) {
     return false;
   }
   update(true, relative_x, relative_y);
   return true;
 }
 
-h2_pal_result_t MouseTouchAdapter::open(void *user) {
-  auto *adapter = static_cast<MouseTouchAdapter *>(user);
+h2_pal_result_t MouseTouchAdapter::open(void* user) {
+  auto* adapter = static_cast<MouseTouchAdapter*>(user);
   if (adapter == nullptr || adapter->width_ == 0u || adapter->height_ == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -115,16 +113,16 @@ h2_pal_result_t MouseTouchAdapter::open(void *user) {
   adapter->opened_ = true;
   adapter->contact_active_ = false;
   if (adapter->available_) {
-    adapter->push_locked(H2_PAL_TOUCH_EVENT_DOWN,
-                         adapter->latest_x_, adapter->latest_y_);
+    adapter->push_locked(H2_PAL_TOUCH_EVENT_DOWN, adapter->latest_x_,
+                         adapter->latest_y_);
     adapter->contact_active_ = true;
   }
   return H2_PAL_OK;
 }
 
-h2_pal_result_t MouseTouchAdapter::get_info(
-    void *user, h2_pal_touch_info_t *out_info) {
-  auto *adapter = static_cast<MouseTouchAdapter *>(user);
+h2_pal_result_t MouseTouchAdapter::get_info(void* user,
+                                            h2_pal_touch_info_t* out_info) {
+  auto* adapter = static_cast<MouseTouchAdapter*>(user);
   if (adapter == nullptr || out_info == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -136,9 +134,9 @@ h2_pal_result_t MouseTouchAdapter::get_info(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t MouseTouchAdapter::poll_event(
-    void *user, h2_pal_touch_event_t *out_event) {
-  auto *adapter = static_cast<MouseTouchAdapter *>(user);
+h2_pal_result_t MouseTouchAdapter::poll_event(void* user,
+                                              h2_pal_touch_event_t* out_event) {
+  auto* adapter = static_cast<MouseTouchAdapter*>(user);
   if (adapter == nullptr || out_event == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -155,8 +153,8 @@ h2_pal_result_t MouseTouchAdapter::poll_event(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t MouseTouchAdapter::close(void *user) {
-  auto *adapter = static_cast<MouseTouchAdapter *>(user);
+h2_pal_result_t MouseTouchAdapter::close(void* user) {
+  auto* adapter = static_cast<MouseTouchAdapter*>(user);
   if (adapter == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }

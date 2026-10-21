@@ -23,7 +23,7 @@
 #include "lauxlib.h"
 
 typedef struct test_fs_file {
-  const uint8_t *source;
+  const uint8_t* source;
   size_t source_size;
   size_t offset;
   size_t close_count;
@@ -31,8 +31,8 @@ typedef struct test_fs_file {
 } test_fs_file_t;
 
 typedef struct test_fs_entry {
-  const char *path;
-  const uint8_t *source;
+  const char* path;
+  const uint8_t* source;
   size_t source_size;
   uint64_t reported_size;
 } test_fs_entry_t;
@@ -49,7 +49,7 @@ static uint8_t s_file_streamed[8192u];
 static uint8_t s_file_early_malformed[8192u];
 static int s_fs_fail_read_after = -1;
 static h2_pal_result_t s_fs_close_result = H2_PAL_OK;
-static const h2_lua_job_id_t *s_fs_close_job_id;
+static const h2_lua_job_id_t* s_fs_close_job_id;
 static h2_atomic_int_t s_source_effect_count;
 static const test_fs_entry_t s_fs_entries[] = {
     {"/data/lua/app.lua", s_file_absolute, sizeof(s_file_absolute) - 1u, 0u},
@@ -62,12 +62,12 @@ static const test_fs_entry_t s_fs_entries[] = {
     {"scripts/streamed.lua", s_file_streamed, sizeof(s_file_streamed), 0u},
     {"scripts/early_malformed.lua", s_file_early_malformed,
      sizeof(s_file_early_malformed), 0u},
-    {"scripts/empty.lua", (const uint8_t *)"", 0u, 0u},
+    {"scripts/empty.lua", (const uint8_t*)"", 0u, 0u},
     {"scripts/oversize.lua", NULL, 4097u, 0u},
     {"scripts/invalid_size.lua", NULL, 0u, UINT64_MAX},
 };
 
-static const test_fs_entry_t *test_fs_find(const char *path) {
+static const test_fs_entry_t* test_fs_find(const char* path) {
   for (size_t i = 0u; i < sizeof(s_fs_entries) / sizeof(s_fs_entries[0]); ++i) {
     if (strcmp(s_fs_entries[i].path, path) == 0) {
       return &s_fs_entries[i];
@@ -76,11 +76,11 @@ static const test_fs_entry_t *test_fs_find(const char *path) {
   return NULL;
 }
 
-static int test_fs_open(void *user, const char *path,
+static int test_fs_open(void* user, const char* path,
                         h2_pal_fs_open_mode_t mode,
-                        h2_pal_fs_file_t **out_file) {
-  test_fs_file_t *file = user;
-  const test_fs_entry_t *entry = test_fs_find(path);
+                        h2_pal_fs_file_t** out_file) {
+  test_fs_file_t* file = user;
+  const test_fs_entry_t* entry = test_fs_find(path);
   if (file == NULL || out_file == NULL || mode != H2_PAL_FS_OPEN_READ) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -92,13 +92,13 @@ static int test_fs_open(void *user, const char *path,
   file->source = entry->source;
   file->source_size = entry->source_size;
   file->offset = 0u;
-  *out_file = (h2_pal_fs_file_t *)file;
+  *out_file = (h2_pal_fs_file_t*)file;
   return H2_PAL_OK;
 }
 
-static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
-                        size_t length, size_t *out_read) {
-  test_fs_file_t *file = (test_fs_file_t *)file_handle;
+static int test_fs_read(void* user, h2_pal_fs_file_t* file_handle, void* data,
+                        size_t length, size_t* out_read) {
+  test_fs_file_t* file = (test_fs_file_t*)file_handle;
   size_t remaining;
   size_t copied;
   (void)user;
@@ -125,8 +125,8 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
   return H2_PAL_OK;
 }
 
-static int test_fs_close(void *user, h2_pal_fs_file_t *file) {
-  test_fs_file_t *source = (test_fs_file_t *)file;
+static int test_fs_close(void* user, h2_pal_fs_file_t* file) {
+  test_fs_file_t* source = (test_fs_file_t*)file;
   (void)user;
   if (source == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -142,9 +142,9 @@ static int test_fs_close(void *user, h2_pal_fs_file_t *file) {
   return s_fs_close_result;
 }
 
-static int test_fs_stat(void *user, const char *path,
-                        h2_pal_fs_stat_t *out_stat) {
-  const test_fs_entry_t *entry = test_fs_find(path);
+static int test_fs_stat(void* user, const char* path,
+                        h2_pal_fs_stat_t* out_stat) {
+  const test_fs_entry_t* entry = test_fs_find(path);
   (void)user;
   if (out_stat == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -196,10 +196,10 @@ typedef struct test_display_gate {
   int has_owner, block, entered, enforce_owner;
   h2_atomic_int_t stage;
 } test_display_gate_t;
-static test_display_gate_t *s_display_gate;
+static test_display_gate_t* s_display_gate;
 
 static void test_display_owner(int draw) {
-  test_display_gate_t *gate = s_display_gate;
+  test_display_gate_t* gate = s_display_gate;
   if (gate == NULL) return;
   assert(pthread_mutex_lock(&gate->mutex) == 0);
   if (!gate->has_owner) {
@@ -209,7 +209,8 @@ static void test_display_owner(int draw) {
   if (gate->enforce_owner) assert(pthread_equal(gate->owner, pthread_self()));
   if (draw) {
     gate->entered = 1;
-    while (gate->block) assert(pthread_cond_wait(&gate->cond, &gate->mutex) == 0);
+    while (gate->block)
+      assert(pthread_cond_wait(&gate->cond, &gate->mutex) == 0);
   }
   assert(pthread_mutex_unlock(&gate->mutex) == 0);
 }
@@ -219,20 +220,18 @@ static void test_display_reset(void) {
   s_test_display_fixture.width = s_test_display_fixture.height = 8;
 }
 
-static int test_display_open(void *user) {
+static int test_display_open(void* user) {
   test_display_owner(0);
   ++s_test_display_fixture.open_count;
   assert(user == &s_test_display_fixture);
   return H2_DISPLAY_OK;
 }
 
-static int test_display_get_info(void *user, h2_display_info_t *info) {
+static int test_display_get_info(void* user, h2_display_info_t* info) {
   test_display_owner(0);
   assert(user == &s_test_display_fixture);
-  if (s_test_display_fixture.fail_info)
-    return H2_DISPLAY_ERR_INVALID_ARG;
-  if (info == NULL)
-    return H2_DISPLAY_ERR_INVALID_ARG;
+  if (s_test_display_fixture.fail_info) return H2_DISPLAY_ERR_INVALID_ARG;
+  if (info == NULL) return H2_DISPLAY_ERR_INVALID_ARG;
   *info = (h2_display_info_t){
       .width = s_test_display_fixture.width,
       .height = s_test_display_fixture.height,
@@ -241,12 +240,12 @@ static int test_display_get_info(void *user, h2_display_info_t *info) {
   return H2_DISPLAY_OK;
 }
 
-static int test_display_draw_bitmap(void *user, const h2_display_rect_t *rect,
-                                    const void *pixels, size_t stride_bytes,
+static int test_display_draw_bitmap(void* user, const h2_display_rect_t* rect,
+                                    const void* pixels, size_t stride_bytes,
                                     h2_display_pixel_format_t format) {
   test_display_owner(1);
-  test_display_fixture_t *fixture = user;
-  const uint8_t *source = pixels;
+  test_display_fixture_t* fixture = user;
+  const uint8_t* source = pixels;
   int row;
   assert(fixture != NULL && rect != NULL && pixels != NULL);
   assert(format == H2_DISPLAY_PIXEL_RGB565);
@@ -259,16 +258,17 @@ static int test_display_draw_bitmap(void *user, const h2_display_rect_t *rect,
   fixture->draw_rects[fixture->draw_count++] = *rect;
   if (fixture->fail_draw == fixture->draw_count) return H2_PAL_ERR_IO;
   for (row = 0; row < rect->height; ++row) {
-    memcpy(fixture->pixels + (size_t)(rect->y + row) * fixture->width + (size_t)rect->x,
+    memcpy(fixture->pixels + (size_t)(rect->y + row) * fixture->width +
+               (size_t)rect->x,
            source + (size_t)row * stride_bytes,
            (size_t)rect->width * sizeof(uint16_t));
   }
   return H2_DISPLAY_OK;
 }
 
-static int test_display_present(void *user) {
+static int test_display_present(void* user) {
   test_display_owner(0);
-  test_display_fixture_t *fixture = user;
+  test_display_fixture_t* fixture = user;
   assert(fixture != NULL);
   fixture->present_count++;
   if (fixture->fail_present) {
@@ -278,7 +278,7 @@ static int test_display_present(void *user) {
   return H2_DISPLAY_OK;
 }
 
-static int test_display_close(void *user) {
+static int test_display_close(void* user) {
   test_display_owner(0);
   ++s_test_display_fixture.close_count;
   assert(user == &s_test_display_fixture);
@@ -305,34 +305,31 @@ static const h2_pal_display_api_t s_test_display = {
 
 static int s_test_touch_event_sent;
 
-static h2_pal_result_t test_touch_open(void *user) {
+static h2_pal_result_t test_touch_open(void* user) {
   (void)user;
   s_test_touch_event_sent = 0;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_touch_get_info(void *user,
-                                           h2_pal_touch_info_t *info) {
+static h2_pal_result_t test_touch_get_info(void* user,
+                                           h2_pal_touch_info_t* info) {
   (void)user;
-  if (info == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (info == NULL) return H2_PAL_ERR_INVALID_ARG;
   *info = (h2_pal_touch_info_t){368u, 448u};
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_touch_poll(void *user,
-                                       h2_pal_touch_event_t *event) {
+static h2_pal_result_t test_touch_poll(void* user,
+                                       h2_pal_touch_event_t* event) {
   (void)user;
-  if (event == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (s_test_touch_event_sent)
-    return H2_PAL_ERR_WOULD_BLOCK;
+  if (event == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (s_test_touch_event_sent) return H2_PAL_ERR_WOULD_BLOCK;
   s_test_touch_event_sent = 1;
   *event = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 12, 34};
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_touch_close(void *user) {
+static h2_pal_result_t test_touch_close(void* user) {
   (void)user;
   return H2_PAL_OK;
 }
@@ -354,8 +351,8 @@ static uint8_t s_test_audio_written[64];
 static size_t s_test_audio_written_bytes;
 static size_t s_test_audio_frame_count;
 
-static int test_audio_track_write(h2_pal_audio_track_t *track,
-                                  const h2_audio_frame_t *frame,
+static int test_audio_track_write(h2_pal_audio_track_t* track,
+                                  const h2_audio_frame_t* frame,
                                   uint32_t timeout_ms) {
   (void)track;
   (void)timeout_ms;
@@ -379,7 +376,7 @@ static h2_atomic_int_t s_test_audio_mic_start_count;
 static h2_atomic_int_t s_test_audio_mic_stop_count;
 static h2_atomic_int_t s_test_audio_mic_block;
 
-static int test_audio_track_close(h2_pal_audio_track_t *track) {
+static int test_audio_track_close(h2_pal_audio_track_t* track) {
   (void)track;
   (void)h2_atomic_fetch_add(&s_test_audio_close_count, 1);
   return H2_PAL_OK;
@@ -390,31 +387,31 @@ static h2_pal_audio_track_t s_test_audio_track = {
     .close = test_audio_track_close,
 };
 
-static int test_audio_start_speaker(void *user) {
+static int test_audio_start_speaker(void* user) {
   (void)user;
   (void)h2_atomic_fetch_add(&s_test_audio_start_count, 1);
   return H2_PAL_OK;
 }
 
-static int test_audio_stop_speaker(void *user) {
+static int test_audio_stop_speaker(void* user) {
   (void)user;
   (void)h2_atomic_fetch_add(&s_test_audio_stop_count, 1);
   return H2_PAL_OK;
 }
 
-static int test_audio_start_mic(void *user) {
+static int test_audio_start_mic(void* user) {
   (void)user;
   (void)h2_atomic_fetch_add(&s_test_audio_mic_start_count, 1);
   return H2_PAL_OK;
 }
 
-static int test_audio_stop_mic(void *user) {
+static int test_audio_stop_mic(void* user) {
   (void)user;
   (void)h2_atomic_fetch_add(&s_test_audio_mic_stop_count, 1);
   return H2_PAL_OK;
 }
 
-static int test_audio_mic_read(void *user, h2_audio_frame_t *frame,
+static int test_audio_mic_read(void* user, h2_audio_frame_t* frame,
                                uint32_t timeout_ms) {
   static const uint8_t samples[] = {0u, 64u, 0u, 192u};
   (void)user;
@@ -433,9 +430,9 @@ static int test_audio_mic_read(void *user, h2_audio_frame_t *frame,
   return H2_PAL_OK;
 }
 
-static int test_audio_create_track(void *user,
-                                   const h2_audio_track_config_t *config,
-                                   h2_pal_audio_track_t **out_track) {
+static int test_audio_create_track(void* user,
+                                   const h2_audio_track_config_t* config,
+                                   h2_pal_audio_track_t** out_track) {
   (void)user;
   if (config == NULL || out_track == NULL ||
       config->format.sample_format != H2_AUDIO_SAMPLE_S16LE)
@@ -449,7 +446,7 @@ static int test_audio_create_track(void *user,
   return H2_PAL_OK;
 }
 
-static int test_audio_get_info(void *user, h2_audio_info_t *info) {
+static int test_audio_get_info(void* user, h2_audio_info_t* info) {
   (void)user;
   *info = (h2_audio_info_t){
       .available = 1,
@@ -494,30 +491,27 @@ typedef struct test_clock {
   uint64_t now_ms;
 } test_clock_t;
 
-static h2_pal_result_t test_clock_monotonic_ms(void *user, uint64_t *out_ms) {
-  test_clock_t *clock = user;
-  if (clock == NULL || out_ms == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t test_clock_monotonic_ms(void* user, uint64_t* out_ms) {
+  test_clock_t* clock = user;
+  if (clock == NULL || out_ms == NULL) return H2_PAL_ERR_INVALID_ARG;
   assert(pthread_mutex_lock(&clock->mutex) == 0);
   *out_ms = clock->now_ms++;
   assert(pthread_mutex_unlock(&clock->mutex) == 0);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_clock_monotonic_us(void *user, uint64_t *out_us) {
-  test_clock_t *clock = user;
-  if (clock == NULL || out_us == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t test_clock_monotonic_us(void* user, uint64_t* out_us) {
+  test_clock_t* clock = user;
+  if (clock == NULL || out_us == NULL) return H2_PAL_ERR_INVALID_ARG;
   assert(pthread_mutex_lock(&clock->mutex) == 0);
   *out_us = clock->now_ms * 1000u;
   assert(pthread_mutex_unlock(&clock->mutex) == 0);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_clock_sleep_ms(void *user, uint32_t duration_ms) {
-  test_clock_t *clock = user;
-  if (clock == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t test_clock_sleep_ms(void* user, uint32_t duration_ms) {
+  test_clock_t* clock = user;
+  if (clock == NULL) return H2_PAL_ERR_INVALID_ARG;
   assert(pthread_mutex_lock(&clock->mutex) == 0);
   clock->now_ms += duration_ms;
   assert(pthread_mutex_unlock(&clock->mutex) == 0);
@@ -530,9 +524,9 @@ static const h2_pal_time_vtable_t s_test_clock_vtable = {
     .sleep_ms = test_clock_sleep_ms,
 };
 
-static h2_pal_result_t map_list(void *user, h2_runtime_component_t filter,
+static h2_pal_result_t map_list(void* user, h2_runtime_component_t filter,
                                 h2_runtime_component_mapping_cb_t callback,
-                                void *callback_user) {
+                                void* callback_user) {
   static const struct {
     h2_runtime_component_t component;
     h2_runtime_component_mapping_entry_t entry;
@@ -543,8 +537,7 @@ static h2_pal_result_t map_list(void *user, h2_runtime_component_t filter,
       {H2_RUNTIME_COMPONENT_BUZZER, {10u, 10u}},
   };
   (void)user;
-  if (callback == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (callback == NULL) return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0u; i < sizeof(mappings) / sizeof(mappings[0]); ++i) {
     if (filter == mappings[i].component) {
       return callback(callback_user, &mappings[i].entry);
@@ -553,21 +546,19 @@ static h2_pal_result_t map_list(void *user, h2_runtime_component_t filter,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t map_get(void *user,
+static h2_pal_result_t map_get(void* user,
                                h2_runtime_component_id_t component_id,
-                               h2_pal_periph_id_t *out_periph_id) {
+                               h2_pal_periph_id_t* out_periph_id) {
   (void)user;
-  if (out_periph_id == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (component_id < 7u || component_id > 10u)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (out_periph_id == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (component_id < 7u || component_id > 10u) return H2_PAL_ERR_NOT_FOUND;
   *out_periph_id = component_id;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t periph_list(void *user, h2_pal_periph_type_t filter,
+static h2_pal_result_t periph_list(void* user, h2_pal_periph_type_t filter,
                                    h2_pal_periph_cb_t callback,
-                                   void *callback_user) {
+                                   void* callback_user) {
   static const h2_pal_periph_info_t peripherals[] = {
       {.id = 7u, .type = H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, .name = "button"},
       {.id = 8u, .type = H2_PAL_PERIPH_TYPE_NFC_READER, .name = "nfc"},
@@ -575,20 +566,18 @@ static h2_pal_result_t periph_list(void *user, h2_pal_periph_type_t filter,
       {.id = 10u, .type = H2_PAL_PERIPH_TYPE_BUZZER, .name = "buzzer"},
   };
   (void)user;
-  if (callback == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (callback == NULL) return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0u; i < sizeof(peripherals) / sizeof(peripherals[0]); ++i) {
     if (filter == H2_PAL_PERIPH_TYPE_ANY || filter == peripherals[i].type) {
       h2_pal_result_t result = callback(callback_user, &peripherals[i]);
-      if (result != H2_PAL_OK)
-        return result;
+      if (result != H2_PAL_OK) return result;
     }
   }
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t periph_get(void *user, h2_pal_periph_id_t id,
-                                  h2_pal_periph_info_t *out_info) {
+static h2_pal_result_t periph_get(void* user, h2_pal_periph_id_t id,
+                                  h2_pal_periph_info_t* out_info) {
   static const h2_pal_periph_type_t types[] = {
       H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
       H2_PAL_PERIPH_TYPE_NFC_READER,
@@ -596,10 +585,8 @@ static h2_pal_result_t periph_get(void *user, h2_pal_periph_id_t id,
       H2_PAL_PERIPH_TYPE_BUZZER,
   };
   (void)user;
-  if (out_info == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (id < 7u || id > 10u)
-    return H2_PAL_ERR_NOT_FOUND;
+  if (out_info == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (id < 7u || id > 10u) return H2_PAL_ERR_NOT_FOUND;
   *out_info = (h2_pal_periph_info_t){
       .id = id,
       .type = types[id - 7u],
@@ -608,7 +595,7 @@ static h2_pal_result_t periph_get(void *user, h2_pal_periph_id_t id,
   return H2_PAL_OK;
 }
 
-static h2_runtime_t *create_runtime_with_time(const h2_pal_time_api_t *time) {
+static h2_runtime_t* create_runtime_with_time(const h2_pal_time_api_t* time) {
   static const h2_runtime_component_mapper_vtable_t mapper_vtable = {
       .list = map_list,
       .get_periph_id = map_get,
@@ -670,13 +657,13 @@ static h2_runtime_t *create_runtime_with_time(const h2_pal_time_api_t *time) {
       .video_decoder = h2_pal_unsupported_video_decoder_api(),
       .component_mapper = &mapper,
   };
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
   return runtime;
 }
 
-static h2_runtime_t *create_runtime(void) {
+static h2_runtime_t* create_runtime(void) {
   return create_runtime_with_time(h2_desktop_platform_time_api());
 }
 
@@ -684,11 +671,11 @@ static h2_runtime_t *create_runtime(void) {
  * tolerates host scheduling latency without altering timeout contract tests. */
 #define TEST_DISPLAY_ORACLE_TIMEOUT_MS 30000u
 
-static h2_lua_host_t *create_unstarted_host_with_scheduler(
-    h2_runtime_t *runtime, uint32_t instruction_quantum,
+static h2_lua_host_t* create_unstarted_host_with_scheduler(
+    h2_runtime_t* runtime, uint32_t instruction_quantum,
     uint32_t resume_time_budget_ms, uint32_t execution_timeout_ms,
     size_t source_limit_bytes) {
-  h2_lua_host_t *host = NULL;
+  h2_lua_host_t* host = NULL;
   h2_lua_host_config_t config;
   config = (h2_lua_host_config_t){
       .runtime = runtime,
@@ -708,28 +695,28 @@ static h2_lua_host_t *create_unstarted_host_with_scheduler(
   return host;
 }
 
-static h2_lua_host_t *create_unstarted_host(h2_runtime_t *runtime) {
+static h2_lua_host_t* create_unstarted_host(h2_runtime_t* runtime) {
   return create_unstarted_host_with_scheduler(runtime, 1000u, 0u, 1000u, 4096u);
 }
 
-static h2_lua_host_t *create_host(h2_runtime_t *runtime) {
-  h2_lua_host_t *host = create_unstarted_host(runtime);
+static h2_lua_host_t* create_host(h2_runtime_t* runtime) {
+  h2_lua_host_t* host = create_unstarted_host(runtime);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   return host;
 }
 
 typedef struct test_join_failure {
-  const h2_pal_task_api_t *next;
+  const h2_pal_task_api_t* next;
   int fail;
   unsigned attempts, display_starts;
   int display_only, fail_result;
-  h2_pal_task_t *selected;
+  h2_pal_task_t* selected;
 } test_join_failure_t;
 
-static int test_join_start(void *user, const h2_pal_task_options_t *options,
-                           h2_pal_task_entry_t entry, void *context,
-                           h2_pal_task_t **out_task) {
-  test_join_failure_t *test = user;
+static int test_join_start(void* user, const h2_pal_task_options_t* options,
+                           h2_pal_task_entry_t entry, void* context,
+                           h2_pal_task_t** out_task) {
+  test_join_failure_t* test = user;
   int result = h2_pal_task_start(test->next, options, entry, context, out_task);
   if (result == H2_PAL_OK && strcmp(options->name, "$lua/display") == 0) {
     test->selected = *out_task;
@@ -738,8 +725,8 @@ static int test_join_start(void *user, const h2_pal_task_options_t *options,
   return result;
 }
 
-static int test_join_fail(void *user, h2_pal_task_t *task) {
-  test_join_failure_t *test = user;
+static int test_join_fail(void* user, h2_pal_task_t* task) {
+  test_join_failure_t* test = user;
   ++test->attempts;
   if (test->fail && (!test->display_only || task == test->selected))
     return test->fail_result ? test->fail_result : H2_PAL_ERR_BUSY;
@@ -747,14 +734,14 @@ static int test_join_fail(void *user, h2_pal_task_t *task) {
 }
 
 static void test_checked_destroy(void) {
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   h2_runtime_t borrowed = *runtime;
   test_join_failure_t test = {.next = runtime->task, .fail = 1};
-  const h2_pal_task_vtable_t vtable = {
-      .start = test_join_start, .join = test_join_fail};
+  const h2_pal_task_vtable_t vtable = {.start = test_join_start,
+                                       .join = test_join_fail};
   const h2_pal_task_api_t task = {.user = &test, .vtable = &vtable};
   borrowed.task = &task;
-  h2_lua_host_t *host = create_host(&borrowed);
+  h2_lua_host_t* host = create_host(&borrowed);
   assert(h2_lua_host_destroy_checked(host) == H2_PAL_ERR_BUSY);
   assert(test.attempts == 1u);
   /* The compatibility entry must also retain the live Host on failed join. */
@@ -767,8 +754,8 @@ static void test_checked_destroy(void) {
   h2_runtime_deinit(runtime);
 }
 
-static void
-assert_missing_worker_apis_are_rejected(const h2_runtime_t *runtime) {
+static void assert_missing_worker_apis_are_rejected(
+    const h2_runtime_t* runtime) {
   /* Probe a copy: the shared runtime's input task reads queue concurrently. */
   h2_runtime_t probe = *runtime;
   h2_pal_queue_vtable_t fallback_vtable = *runtime->queue->vtable;
@@ -776,7 +763,7 @@ assert_missing_worker_apis_are_rejected(const h2_runtime_t *runtime) {
       .user = runtime->queue->user,
       .vtable = &fallback_vtable,
   };
-  h2_lua_host_t *host = NULL;
+  h2_lua_host_t* host = NULL;
   h2_lua_host_config_t config = {.runtime = &probe};
   probe.queue = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_UNSUPPORTED);
@@ -796,17 +783,17 @@ assert_missing_worker_apis_are_rejected(const h2_runtime_t *runtime) {
 }
 
 typedef struct capability_fixture {
-  h2_lua_host_t *host;
+  h2_lua_host_t* host;
   h2_lua_job_id_t job_id;
   h2_lua_capability_request_id_t pending_id;
   size_t cancel_count;
   h2_pal_result_t cancel_status_result;
 } capability_fixture_t;
 
-static h2_pal_result_t
-immediate_capability(void *user, h2_lua_capability_request_id_t request_id,
-                     const char *input, const char *options, char *output,
-                     size_t output_capacity, const char **out_error) {
+static h2_pal_result_t immediate_capability(
+    void* user, h2_lua_capability_request_id_t request_id, const char* input,
+    const char* options, char* output, size_t output_capacity,
+    const char** out_error) {
   (void)user;
   (void)request_id;
   (void)out_error;
@@ -817,11 +804,11 @@ immediate_capability(void *user, h2_lua_capability_request_id_t request_id,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-pending_capability(void *user, h2_lua_capability_request_id_t request_id,
-                   const char *input, const char *options, char *output,
-                   size_t output_capacity, const char **out_error) {
-  capability_fixture_t *fixture = user;
+static h2_pal_result_t pending_capability(
+    void* user, h2_lua_capability_request_id_t request_id, const char* input,
+    const char* options, char* output, size_t output_capacity,
+    const char** out_error) {
+  capability_fixture_t* fixture = user;
   (void)input;
   (void)options;
   (void)output;
@@ -832,10 +819,10 @@ pending_capability(void *user, h2_lua_capability_request_id_t request_id,
 }
 
 static h2_pal_result_t completed_before_return_capability(
-    void *user, h2_lua_capability_request_id_t request_id, const char *input,
-    const char *options, char *output, size_t output_capacity,
-    const char **out_error) {
-  capability_fixture_t *fixture = user;
+    void* user, h2_lua_capability_request_id_t request_id, const char* input,
+    const char* options, char* output, size_t output_capacity,
+    const char** out_error) {
+  capability_fixture_t* fixture = user;
   (void)input;
   (void)options;
   (void)output;
@@ -847,17 +834,17 @@ static h2_pal_result_t completed_before_return_capability(
 }
 
 static h2_pal_result_t completed_before_return_prefix(
-    void *user, h2_lua_capability_request_id_t request_id, const char *name,
-    const char *input, const char *options, char *output,
-    size_t output_capacity, const char **out_error) {
+    void* user, h2_lua_capability_request_id_t request_id, const char* name,
+    const char* input, const char* options, char* output,
+    size_t output_capacity, const char** out_error) {
   assert(strcmp(name, "early") == 0);
   return completed_before_return_capability(user, request_id, input, options,
                                             output, output_capacity, out_error);
 }
 
-static void cancel_capability(void *user,
+static void cancel_capability(void* user,
                               h2_lua_capability_request_id_t request_id) {
-  capability_fixture_t *fixture = user;
+  capability_fixture_t* fixture = user;
   h2_lua_job_status_t job_status;
   assert(request_id == fixture->pending_id);
   fixture->cancel_status_result =
@@ -865,13 +852,13 @@ static void cancel_capability(void *user,
   fixture->cancel_count++;
 }
 
-static h2_lua_job_status_t status(h2_lua_host_t *host, h2_lua_job_id_t id) {
+static h2_lua_job_status_t status(h2_lua_host_t* host, h2_lua_job_id_t id) {
   h2_lua_job_status_t value;
   assert(h2_lua_job_get_status(host, id, &value) == H2_PAL_OK);
   return value;
 }
 
-static void run_until_terminal(h2_lua_host_t *host, h2_lua_job_id_t id,
+static void run_until_terminal(h2_lua_host_t* host, h2_lua_job_id_t id,
                                size_t step_limit) {
   size_t step;
   for (step = 0u; step < step_limit; ++step) {
@@ -892,16 +879,18 @@ typedef struct expected_pixel {
   int y;
 } expected_pixel_t;
 
-static h2_lua_job_status_t run_display_script_size(h2_lua_host_t *host,
-                                              const char *name,
-                                              const uint8_t *script,
-                                              size_t script_size,
-                                              int width, int height) {
+static h2_lua_job_status_t run_display_script_size(h2_lua_host_t* host,
+                                                   const char* name,
+                                                   const uint8_t* script,
+                                                   size_t script_size,
+                                                   int width, int height) {
   h2_lua_job_id_t job_id;
   h2_lua_job_status_t job_status;
   test_display_reset();
-  assert(width > 0 && height > 0 && (size_t)width * height <=
-         sizeof(s_test_display_fixture.pixels) / sizeof(s_test_display_fixture.pixels[0]));
+  assert(width > 0 && height > 0 &&
+         (size_t)width * height <=
+             sizeof(s_test_display_fixture.pixels) /
+                 sizeof(s_test_display_fixture.pixels[0]));
   s_test_display_fixture.width = width;
   s_test_display_fixture.height = height;
   assert(h2_lua_job_submit_text(host, NULL, name, script, script_size, NULL, 0u,
@@ -918,23 +907,23 @@ static h2_lua_job_status_t run_display_script_size(h2_lua_host_t *host,
   return job_status;
 }
 
-static h2_lua_job_status_t run_display_script(h2_lua_host_t *host,
-                                              const char *name,
-                                              const uint8_t *script,
+static h2_lua_job_status_t run_display_script(h2_lua_host_t* host,
+                                              const char* name,
+                                              const uint8_t* script,
                                               size_t script_size) {
   return run_display_script_size(host, name, script, script_size, 8, 8);
 }
 
 static void assert_draw_rect(size_t index, int x, int y, int width,
                              int height) {
-  const h2_display_rect_t *rect;
+  const h2_display_rect_t* rect;
   assert(index < s_test_display_fixture.draw_count);
   rect = &s_test_display_fixture.draw_rects[index];
   assert(rect->x == x && rect->y == y && rect->width == width &&
          rect->height == height);
 }
 
-static void assert_only_pixels(uint16_t color, const expected_pixel_t *expected,
+static void assert_only_pixels(uint16_t color, const expected_pixel_t* expected,
                                size_t expected_count) {
   int x;
   int y;
@@ -954,40 +943,44 @@ static void assert_only_pixels(uint16_t color, const expected_pixel_t *expected,
   }
 }
 
-static int test_submission_stage(lua_State *state) {
+static int test_submission_stage(lua_State* state) {
   h2_atomic_store(&s_display_gate->stage, (int)luaL_checkinteger(state, 1));
   return 0;
 }
 
-static int test_submission_pixel(lua_State *state) {
+static int test_submission_pixel(lua_State* state) {
   lua_pushinteger(state, s_test_display_fixture.pixels[0]);
   return 1;
 }
 
-static int test_submission_pixels(lua_State *state) {
+static int test_submission_pixels(lua_State* state) {
   luaL_checktype(state, 1, LUA_TFUNCTION);
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   assert(job != NULL && job->display_open);
   assert(memcmp(job->framebuffer, s_test_display_fixture.pixels,
-      (size_t)job->display_info.width * job->display_info.height * 2) == 0);
+                (size_t)job->display_info.width * job->display_info.height *
+                    2) == 0);
   return 0;
 }
 
-static int test_submission_pattern(lua_State *state) {
+static int test_submission_pattern(lua_State* state) {
   int mode = (int)luaL_checkinteger(state, 1);
-  assert(s_test_display_fixture.width == 4096 && s_test_display_fixture.height == 33);
-  for (int y=0; y<33; ++y) for (int x=0; x<4096; ++x) {
-    uint16_t expected = mode == 2 ? 31 : ((y%32 == 0 && x%32 == 0) ? 65535 : 0);
-    assert(s_test_display_fixture.pixels[y*4096+x] == expected);
-  }
+  assert(s_test_display_fixture.width == 4096 &&
+         s_test_display_fixture.height == 33);
+  for (int y = 0; y < 33; ++y)
+    for (int x = 0; x < 4096; ++x) {
+      uint16_t expected =
+          mode == 2 ? 31 : ((y % 32 == 0 && x % 32 == 0) ? 65535 : 0);
+      assert(s_test_display_fixture.pixels[y * 4096 + x] == expected);
+    }
   return 0;
 }
 
-static int test_in_call(lua_State *s);
+static int test_in_call(lua_State* s);
 
-static int test_submission_module(void *raw, void *user) {
-  lua_State *state = raw;
+static int test_submission_module(void* raw, void* user) {
+  lua_State* state = raw;
   (void)user;
   lua_createtable(state, 0, 2);
   lua_pushcfunction(state, test_submission_stage);
@@ -1011,13 +1004,16 @@ static void test_display_submission(int blocked) {
   s_display_gate = &gate;
   test_display_reset();
   s_test_display_fixture.width = s_test_display_fixture.height = 240;
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = NULL;
-  h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
-      .vm_memory_limit_bytes = 2u * 1024u * 1024u,
-      .vm_heap_bytes = 1792u * 1024u, .execution_timeout_ms = 10000};
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = NULL;
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .max_jobs = 1,
+                                 .vm_memory_limit_bytes = 2u * 1024u * 1024u,
+                                 .vm_heap_bytes = 1792u * 1024u,
+                                 .execution_timeout_ms = 10000};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
-  assert(h2_lua_register_module(host, "submit_test", test_submission_module, NULL) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "submit_test", test_submission_module,
+                                NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const char script[] =
       "local d,p,r=require('display'),require('submit_test'),require('runtime')\n"
@@ -1041,8 +1037,9 @@ static void test_display_submission(int blocked) {
       "flush();p.pixels(d.submit) end end\n";
   h2_lua_arg_t args[] = {{"blocked", blocked ? "yes" : "no"}};
   h2_lua_job_id_t job;
-  assert(h2_lua_job_submit_text(host, NULL, "@submit.lua", (const uint8_t *)script,
-      sizeof(script) - 1, args, 1, &job) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, NULL, "@submit.lua",
+                                (const uint8_t*)script, sizeof(script) - 1,
+                                args, 1, &job) == H2_PAL_OK);
   if (blocked) {
     for (unsigned wait = 0; wait < 3000 && !h2_atomic_load(&gate.stage); ++wait)
       assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
@@ -1054,42 +1051,48 @@ static void test_display_submission(int blocked) {
   }
   run_until_terminal(host, job, 6000);
   h2_lua_job_status_t final = status(host, job);
-  if (final.state != H2_LUA_JOB_SUCCEEDED) fprintf(stderr, "submit: %s\n", final.message);
+  if (final.state != H2_LUA_JOB_SUCCEEDED)
+    fprintf(stderr, "submit: %s\n", final.message);
   assert(final.state == H2_LUA_JOB_SUCCEEDED);
   assert(final.memory_used < 2u * 1024u * 1024u);
   printf("display_submit mode=%s size=240x240 vm_bytes=%zu limit=2097152\n",
-      blocked ? "blocked-worker" : "worker", final.memory_used);
+         blocked ? "blocked-worker" : "worker", final.memory_used);
   h2_pal_result_t result = H2_PAL_ERR_BUSY;
   for (unsigned wait = 0; wait < 3000 && result == H2_PAL_ERR_BUSY; ++wait) {
     result = h2_lua_job_release(host, job);
-    if (result == H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+    if (result == H2_PAL_ERR_BUSY)
+      assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
   }
   assert(result == H2_PAL_OK);
-  assert(s_test_display_fixture.open_count == 1 && s_test_display_fixture.close_count == 1);
+  assert(s_test_display_fixture.open_count == 1 &&
+         s_test_display_fixture.close_count == 1);
   /* Reuse the Host/job slot with the exact committed Web consumer source. */
-  const char *scripts[] = {"libs/lua/tests/display_submit.lua",
-                            "libs/lua/tests/display_submit_reentry.lua"};
+  const char* scripts[] = {"libs/lua/tests/display_submit.lua",
+                           "libs/lua/tests/display_submit_reentry.lua"};
   for (size_t script_index = 0; script_index < 2; ++script_index) {
-  gate.has_owner = 0;
-  FILE *file = fopen(scripts[script_index], "rb");
-  assert(file != NULL);
-  uint8_t common[4096];
-  size_t length = fread(common, 1, sizeof(common), file);
-  assert(!ferror(file) && feof(file));
-  assert(fclose(file) == 0);
-  assert(h2_lua_job_submit_text(host, NULL, "@common-submit.lua", common,
-      length, args, 1, &job) == H2_PAL_OK);
-  run_until_terminal(host, job, 6000);
-  final = status(host, job);
-  if (final.state != H2_LUA_JOB_SUCCEEDED) fprintf(stderr, "common: %s\n", final.message);
-  assert(final.state == H2_LUA_JOB_SUCCEEDED);
-  result = H2_PAL_ERR_BUSY;
-  for (unsigned wait=0;wait<3000 && result==H2_PAL_ERR_BUSY;++wait) {
-    result=h2_lua_job_release(host,job);
-    if(result==H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time,1)==H2_PAL_OK);
-  }
-  assert(result==H2_PAL_OK);
-  assert(s_test_display_fixture.pixels[0]==31 && s_test_display_fixture.pixels[40]==63488);
+    gate.has_owner = 0;
+    FILE* file = fopen(scripts[script_index], "rb");
+    assert(file != NULL);
+    uint8_t common[4096];
+    size_t length = fread(common, 1, sizeof(common), file);
+    assert(!ferror(file) && feof(file));
+    assert(fclose(file) == 0);
+    assert(h2_lua_job_submit_text(host, NULL, "@common-submit.lua", common,
+                                  length, args, 1, &job) == H2_PAL_OK);
+    run_until_terminal(host, job, 6000);
+    final = status(host, job);
+    if (final.state != H2_LUA_JOB_SUCCEEDED)
+      fprintf(stderr, "common: %s\n", final.message);
+    assert(final.state == H2_LUA_JOB_SUCCEEDED);
+    result = H2_PAL_ERR_BUSY;
+    for (unsigned wait = 0; wait < 3000 && result == H2_PAL_ERR_BUSY; ++wait) {
+      result = h2_lua_job_release(host, job);
+      if (result == H2_PAL_ERR_BUSY)
+        assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+    }
+    assert(result == H2_PAL_OK);
+    assert(s_test_display_fixture.pixels[0] == 31 &&
+           s_test_display_fixture.pixels[40] == 63488);
   }
   assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
   h2_runtime_deinit(runtime);
@@ -1106,17 +1109,20 @@ static void test_display_submission_stop(int borrowed_display) {
   assert(h2_atomic_int_init(&gate.stage, 0) == H2_ATOMIC_OK);
   s_display_gate = &gate;
   test_display_reset();
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   if (borrowed_display) {
     assert(h2_pal_display_open(runtime->display) == H2_PAL_OK);
     gate.has_owner = 0;
     gate.enforce_owner = 1;
   }
-  h2_lua_host_t *host = NULL;
-  h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
-      .borrow_display = borrowed_display, .vm_memory_limit_bytes = 2u * 1024u * 1024u};
+  h2_lua_host_t* host = NULL;
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .max_jobs = 1,
+                                 .borrow_display = borrowed_display,
+                                 .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
-  assert(h2_lua_register_module(host, "submit_test", test_submission_module, NULL) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "submit_test", test_submission_module,
+                                NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const char script[] =
       "local d,p=require('display'),require('submit_test')\n"
@@ -1125,8 +1131,9 @@ static void test_display_submission_stop(int borrowed_display) {
       "local x=setmetatable({},{__gc=function() local a,e=d.deinit();assert(a==nil and e<0) end})\n"
       "x=nil;collectgarbage('collect');assert(d.status().completed==0);p.stage(1)\n";
   h2_lua_job_id_t job;
-  assert(h2_lua_job_submit_text(host, NULL, "@stop-submit.lua", (const uint8_t *)script,
-      sizeof(script)-1, NULL, 0, &job) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, NULL, "@stop-submit.lua",
+                                (const uint8_t*)script, sizeof(script) - 1,
+                                NULL, 0, &job) == H2_PAL_OK);
   run_until_terminal(host, job, 6000);
   assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
   size_t held = status(host, job).memory_used;
@@ -1141,35 +1148,38 @@ static void test_display_submission_stop(int borrowed_display) {
   assert(pthread_cond_signal(&gate.cond) == 0);
   assert(pthread_mutex_unlock(&gate.mutex) == 0);
   h2_pal_result_t result = H2_PAL_ERR_BUSY;
-  for (unsigned wait=0; wait<3000 && result==H2_PAL_ERR_BUSY; ++wait) {
-    result=h2_lua_host_join(host);
-    if(result==H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time,1)==H2_PAL_OK);
+  for (unsigned wait = 0; wait < 3000 && result == H2_PAL_ERR_BUSY; ++wait) {
+    result = h2_lua_host_join(host);
+    if (result == H2_PAL_ERR_BUSY)
+      assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
   }
-  assert(result==H2_PAL_OK);
-  assert(s_test_display_fixture.pixels[0]==63488);
-  assert(s_test_display_fixture.close_count==(borrowed_display ? 0u : 1u));
-  assert(h2_lua_host_destroy_checked(host)==H2_PAL_OK);
+  assert(result == H2_PAL_OK);
+  assert(s_test_display_fixture.pixels[0] == 63488);
+  assert(s_test_display_fixture.close_count == (borrowed_display ? 0u : 1u));
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
   if (borrowed_display) {
-    gate.enforce_owner=0;
-    assert(h2_pal_display_close(runtime->display)==H2_PAL_OK);
+    gate.enforce_owner = 0;
+    assert(h2_pal_display_close(runtime->display) == H2_PAL_OK);
   }
   h2_runtime_deinit(runtime);
-  s_display_gate=NULL;
+  s_display_gate = NULL;
   h2_atomic_int_destroy(&gate.stage);
-  assert(pthread_cond_destroy(&gate.cond)==0);
-  assert(pthread_mutex_destroy(&gate.mutex)==0);
+  assert(pthread_cond_destroy(&gate.cond) == 0);
+  assert(pthread_mutex_destroy(&gate.mutex) == 0);
 }
 
 static void test_display_submission_oom(void) {
   test_display_reset();
-  s_test_display_fixture.width=s_test_display_fixture.height=240;
-  h2_runtime_t *runtime=create_runtime();
-  h2_lua_host_t *host=NULL;
-  h2_lua_host_config_t config={.runtime=runtime,.max_jobs=1,
-      .vm_memory_limit_bytes=2u*1024u*1024u};
-  assert(h2_lua_host_create(&config,&host)==H2_PAL_OK);
-  assert(h2_lua_host_start(host)==H2_PAL_OK);
-  const char script[]="local d=require('display');local keep={};"
+  s_test_display_fixture.width = s_test_display_fixture.height = 240;
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = NULL;
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .max_jobs = 1,
+                                 .vm_memory_limit_bytes = 2u * 1024u * 1024u};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  const char script[] =
+      "local d=require('display');local keep={};"
       "for i=1,31 do keep[i]=string.rep(string.char(i),65536);collectgarbage('collect') end;"
       "d.clear('red');local ok,e=pcall(d.submit);assert(not ok and tostring(e):find('memory'));"
       "assert(#keep==31);keep=nil;collectgarbage('collect');"
@@ -1178,39 +1188,44 @@ static void test_display_submission_oom(void) {
       "while not done do assert(e==d.BUSY);r.sleep(1);done,e=d.flush() end;"
       "assert(done.successful==1);d.deinit()";
   h2_lua_job_id_t job;
-  assert(h2_lua_job_submit_text(host,NULL,"@submit-oom.lua",(const uint8_t*)script,
-      sizeof(script)-1,NULL,0,&job)==H2_PAL_OK);
-  run_until_terminal(host,job,6000);
-  if(status(host,job).state!=H2_LUA_JOB_SUCCEEDED) fprintf(stderr,"OOM: %s\n",status(host,job).message);
-  assert(status(host,job).state==H2_LUA_JOB_SUCCEEDED);
-  assert(s_test_display_fixture.draw_count==1);
-  assert(s_test_display_fixture.pixels[0]==0xf800u);
-  assert(status(host,job).memory_used<=2u*1024u*1024u);
-  printf("display_submit quota_pressure vm_bytes=%zu limit=2097152 send_buffer_oom=PASS\n",status(host,job).memory_used);
-  assert(h2_lua_host_stop(host)==H2_PAL_OK);
-  h2_pal_result_t result=H2_PAL_ERR_BUSY;
-  for(unsigned wait=0;wait<3000 && result==H2_PAL_ERR_BUSY;++wait) {
-    result=h2_lua_host_join(host);
-    if(result==H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time,1)==H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, NULL, "@submit-oom.lua",
+                                (const uint8_t*)script, sizeof(script) - 1,
+                                NULL, 0, &job) == H2_PAL_OK);
+  run_until_terminal(host, job, 6000);
+  if (status(host, job).state != H2_LUA_JOB_SUCCEEDED)
+    fprintf(stderr, "OOM: %s\n", status(host, job).message);
+  assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
+  assert(s_test_display_fixture.draw_count == 1);
+  assert(s_test_display_fixture.pixels[0] == 0xf800u);
+  assert(status(host, job).memory_used <= 2u * 1024u * 1024u);
+  printf(
+      "display_submit quota_pressure vm_bytes=%zu limit=2097152 send_buffer_oom=PASS\n",
+      status(host, job).memory_used);
+  assert(h2_lua_host_stop(host) == H2_PAL_OK);
+  h2_pal_result_t result = H2_PAL_ERR_BUSY;
+  for (unsigned wait = 0; wait < 3000 && result == H2_PAL_ERR_BUSY; ++wait) {
+    result = h2_lua_host_join(host);
+    if (result == H2_PAL_ERR_BUSY)
+      assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
   }
-  assert(result==H2_PAL_OK);
-  assert(s_test_display_fixture.close_count==1);
-  assert(h2_lua_host_destroy_checked(host)==H2_PAL_OK);
+  assert(result == H2_PAL_OK);
+  assert(s_test_display_fixture.close_count == 1);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
   h2_runtime_deinit(runtime);
 }
 
 /* Persistent wrappers deliberately outlive the child test stack. Other Sync
  * methods keep the original user/vtable entries. Only Display wake #2 fails. */
-static const h2_pal_sync_api_t *s_wake_base;
+static const h2_pal_sync_api_t* s_wake_base;
 static h2_pal_sync_api_t s_wake_api;
 static h2_pal_sync_vtable_t s_wake_vtable;
-static h2_pal_semaphore_t *s_display_wake;
+static h2_pal_semaphore_t* s_display_wake;
 static unsigned s_display_wakes;
 static int s_wake_init_fault;
-static const h2_pal_task_api_t *s_wake_tasks_base;
+static const h2_pal_task_api_t* s_wake_tasks_base;
 static h2_pal_task_api_t s_wake_tasks;
 static h2_pal_task_vtable_t s_wake_tasks_vtable;
-static const h2_pal_time_api_t *s_copy_time_base;
+static const h2_pal_time_api_t* s_copy_time_base;
 static h2_pal_time_api_t s_copy_time_api;
 static h2_pal_time_vtable_t s_copy_time_vtable;
 static test_display_gate_t s_copy_gate;
@@ -1218,7 +1233,7 @@ static pthread_t s_copy_controller;
 
 /* Hold the worker before it copies A. Fail the Lua thread's handoff wait,
  * and release only after Lua observes COPYING as busy and drawing is frozen. */
-static h2_pal_result_t test_copy_clock(void *user, uint64_t *out_us) {
+static h2_pal_result_t test_copy_clock(void* user, uint64_t* out_us) {
   assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
   if (s_copy_gate.has_owner &&
       pthread_equal(s_copy_gate.owner, pthread_self()) &&
@@ -1231,7 +1246,7 @@ static h2_pal_result_t test_copy_clock(void *user, uint64_t *out_us) {
   return s_copy_time_base->vtable->get_monotonic_us(user, out_us);
 }
 
-static h2_pal_result_t test_copy_sleep(void *user, uint32_t ms) {
+static h2_pal_result_t test_copy_sleep(void* user, uint32_t ms) {
   if (!pthread_equal(s_copy_controller, pthread_self()) &&
       h2_atomic_load(&s_copy_gate.stage) == 1) {
     assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
@@ -1242,7 +1257,7 @@ static h2_pal_result_t test_copy_sleep(void *user, uint32_t ms) {
   return s_copy_time_base->vtable->sleep_ms(user, ms);
 }
 
-static int test_copy_release(lua_State *state) {
+static int test_copy_release(lua_State* state) {
   (void)state;
   assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
   assert(s_copy_gate.block && h2_atomic_load(&s_copy_gate.stage) == 2);
@@ -1253,34 +1268,41 @@ static int test_copy_release(lua_State *state) {
   return 0;
 }
 
-static int test_copy_module(void *raw, void *user) {
-  lua_State *state = raw;
+static int test_copy_module(void* raw, void* user) {
+  lua_State* state = raw;
   (void)user;
   lua_pushcfunction(state, test_copy_release);
   return 1;
 }
 
-static int test_wake_task_start(void *user, const h2_pal_task_options_t *options,
-    h2_pal_task_entry_t entry, void *context, h2_pal_task_t **out) {
+static int test_wake_task_start(void* user,
+                                const h2_pal_task_options_t* options,
+                                h2_pal_task_entry_t entry, void* context,
+                                h2_pal_task_t** out) {
   if (strcmp(options->name, "$lua/display") == 0) {
     *out = NULL;
     return H2_PAL_ERR_TASK;
   }
   return s_wake_tasks_base->vtable->start(user, options, entry, context, out);
 }
-static h2_pal_result_t test_wake_destroy(void *user, h2_pal_semaphore_t *semaphore) {
+static h2_pal_result_t test_wake_destroy(void* user,
+                                         h2_pal_semaphore_t* semaphore) {
   if (semaphore == s_display_wake) return H2_PAL_ERR_IO;
   return s_wake_base->vtable->destroy_semaphore(user, semaphore);
 }
-static h2_pal_result_t test_wake_create(void *user,
-    const h2_pal_semaphore_config_t *config, h2_pal_semaphore_t **out) {
+static h2_pal_result_t test_wake_create(void* user,
+                                        const h2_pal_semaphore_config_t* config,
+                                        h2_pal_semaphore_t** out) {
   h2_pal_result_t rc = s_wake_base->vtable->create_semaphore(user, config, out);
   if (rc == H2_PAL_OK && config->name != NULL &&
-      strcmp(config->name, "$lua/display/wake") == 0) s_display_wake = *out;
+      strcmp(config->name, "$lua/display/wake") == 0)
+    s_display_wake = *out;
   return rc;
 }
-static h2_pal_result_t test_wake_give(void *user, h2_pal_semaphore_t *semaphore) {
-  if (!s_wake_init_fault && semaphore == s_display_wake && ++s_display_wakes == 2u)
+static h2_pal_result_t test_wake_give(void* user,
+                                      h2_pal_semaphore_t* semaphore) {
+  if (!s_wake_init_fault && semaphore == s_display_wake &&
+      ++s_display_wakes == 2u)
     return H2_PAL_ERR_IO;
   return s_wake_base->vtable->give_semaphore(user, semaphore);
 }
@@ -1288,7 +1310,7 @@ static h2_pal_result_t test_wake_give(void *user, h2_pal_semaphore_t *semaphore)
 /* Each fault case runs in a child process: the contract intentionally retains
  * the entire failed Host/VM/Runtime until process teardown, without a test-only
  * recovery API or freeing an object that still owns the Display lease. */
-static int test_region_open(void *lua_state, void *user);
+static int test_region_open(void* lua_state, void* user);
 
 static void test_display_submission_fault(int mode) {
   test_display_reset();
@@ -1301,7 +1323,7 @@ static void test_display_submission_fault(int mode) {
     s_test_display_fixture.width = mode == 9 ? 4096 : 48;
     s_test_display_fixture.height = mode == 9 ? 33 : 48;
   }
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   if (mode == 11) {
     s_copy_gate.block = s_copy_gate.enforce_owner = 1;
     s_copy_controller = pthread_self();
@@ -1337,13 +1359,17 @@ static void test_display_submission_fault(int mode) {
       runtime->task = &s_wake_tasks;
     }
   }
-  h2_lua_host_t *host = NULL;
-  h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1, .borrow_display = mode == 7,
-      .vm_memory_limit_bytes = 2u * 1024u * 1024u};
+  h2_lua_host_t* host = NULL;
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .max_jobs = 1,
+                                 .borrow_display = mode == 7,
+                                 .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
-  assert(h2_lua_register_module(host, "region_test", test_region_open, NULL) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "region_test", test_region_open, NULL) ==
+         H2_PAL_OK);
   if (mode == 11)
-    assert(h2_lua_register_module(host, "copy_test", test_copy_module, NULL) == H2_PAL_OK);
+    assert(h2_lua_register_module(host, "copy_test", test_copy_module, NULL) ==
+           H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   const char script[] =
       "local d,r=require('display'),require('runtime');d.clear('red');"
@@ -1369,24 +1395,33 @@ static void test_display_submission_fault(int mode) {
       "local record=d.status();assert(record.error==e);"
       "assert(not pcall(d.present));";
   h2_lua_arg_t args[] = {{"close", mode == 3 ? "yes" : "no"},
-                        {"wake", mode == 5 || mode == 11 ? "yes" : "no"},
-                        {"copy", mode == 11 ? "yes" : "no"},
-                        {"partial", mode == 8 ? "2" : mode == 9 ? "130" : mode == 10 ? "0" : "no"}};
+                         {"wake", mode == 5 || mode == 11 ? "yes" : "no"},
+                         {"copy", mode == 11 ? "yes" : "no"},
+                         {"partial", mode == 8    ? "2"
+                                     : mode == 9  ? "130"
+                                     : mode == 10 ? "0"
+                                                  : "no"}};
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@submission-fault.lua",
-      (const uint8_t *)script, sizeof(script)-1, args, 4, &job) == H2_PAL_OK);
+                                (const uint8_t*)script, sizeof(script) - 1,
+                                args, 4, &job) == H2_PAL_OK);
   run_until_terminal(host, job, 6000);
   h2_lua_job_status_t state = status(host, job);
-  if (mode != 4 && mode != 7 && mode != 6 && state.state != H2_LUA_JOB_SUCCEEDED)
+  if (mode != 4 && mode != 7 && mode != 6 &&
+      state.state != H2_LUA_JOB_SUCCEEDED)
     fprintf(stderr, "fault mode=%d: %s\n", mode, state.message);
-  assert(state.state == (mode == 4 || mode == 7 || mode == 6 ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
+  assert(state.state == (mode == 4 || mode == 7 || mode == 6
+                             ? H2_LUA_JOB_FAILED
+                             : H2_LUA_JOB_SUCCEEDED));
   if (mode == 11) assert(h2_atomic_load(&s_copy_gate.stage) == 3);
   h2_pal_result_t expected = mode == 4 || mode == 7 ? H2_DISPLAY_ERR_INVALID_ARG
-      : mode == 6 ? H2_PAL_ERR_TASK : H2_PAL_ERR_IO;
+                             : mode == 6            ? H2_PAL_ERR_TASK
+                                                    : H2_PAL_ERR_IO;
   h2_pal_result_t result = H2_PAL_ERR_BUSY;
   for (unsigned i = 0; i < 3000 && result == H2_PAL_ERR_BUSY; ++i) {
     result = h2_lua_host_destroy_checked(host);
-    if (result == H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+    if (result == H2_PAL_ERR_BUSY)
+      assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
   }
   assert(result == expected);
   assert(status(host, job).memory_used == state.memory_used);
@@ -1397,21 +1432,24 @@ static void test_display_submission_fault(int mode) {
   assert(close_count == (mode == 3 ? 1u : 0u));
   h2_lua_job_id_t rejected;
   assert(h2_lua_job_submit_text(host, NULL, "@rejected.lua",
-      (const uint8_t *)"return 1", 8, NULL, 0, &rejected) != H2_PAL_OK);
-  printf("display_fault mode=%d retained_vm=%zu error=%d PASS\n",
-      mode, state.memory_used, result);
+                                (const uint8_t*)"return 1", 8, NULL, 0,
+                                &rejected) != H2_PAL_OK);
+  printf("display_fault mode=%d retained_vm=%zu error=%d PASS\n", mode,
+         state.memory_used, result);
 }
 
 static void test_display_submission_large(void) {
   test_display_reset();
   s_test_display_fixture.width = 4096;
   s_test_display_fixture.height = 33;
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = NULL;
-  h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
-      .vm_memory_limit_bytes = 2u * 1024u * 1024u};
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = NULL;
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .max_jobs = 1,
+                                 .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
-  assert(h2_lua_register_module(host, "submit_test", test_submission_module, NULL) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "submit_test", test_submission_module,
+                                NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   const char script[] =
       "local d,r,p=require('display'),require('runtime'),require('submit_test');"
@@ -1426,15 +1464,18 @@ static void test_display_submission_large(void) {
       "d.clear('blue');assert(d.submit({tiles=true})==4);flush();p.pattern(2)";
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@large-submit.lua",
-      (const uint8_t *)script, sizeof(script)-1, NULL, 0, &job) == H2_PAL_OK);
+                                (const uint8_t*)script, sizeof(script) - 1,
+                                NULL, 0, &job) == H2_PAL_OK);
   run_until_terminal(host, job, 6000);
   h2_lua_job_status_t state = status(host, job);
-  if (state.state != H2_LUA_JOB_SUCCEEDED) fprintf(stderr, "large submit: %s\n", state.message);
+  if (state.state != H2_LUA_JOB_SUCCEEDED)
+    fprintf(stderr, "large submit: %s\n", state.message);
   assert(state.state == H2_LUA_JOB_SUCCEEDED);
   h2_pal_result_t result = H2_PAL_ERR_BUSY;
-  for (unsigned i=0; i<3000 && result==H2_PAL_ERR_BUSY; ++i) {
+  for (unsigned i = 0; i < 3000 && result == H2_PAL_ERR_BUSY; ++i) {
     result = h2_lua_host_destroy_checked(host);
-    if (result == H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+    if (result == H2_PAL_ERR_BUSY)
+      assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
   }
   assert(result == H2_PAL_OK);
   h2_runtime_deinit(runtime);
@@ -1442,29 +1483,35 @@ static void test_display_submission_large(void) {
 
 static void test_display_worker_join_failure(void) {
   test_display_reset();
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   h2_runtime_t borrowed = *runtime;
-  test_join_failure_t test = {.next = runtime->task, .fail = 1,
-      .display_only = 1, .fail_result = H2_PAL_ERR_TASK};
-  const h2_pal_task_vtable_t vtable = {.start = test_join_start, .join = test_join_fail};
+  test_join_failure_t test = {.next = runtime->task,
+                              .fail = 1,
+                              .display_only = 1,
+                              .fail_result = H2_PAL_ERR_TASK};
+  const h2_pal_task_vtable_t vtable = {.start = test_join_start,
+                                       .join = test_join_fail};
   const h2_pal_task_api_t task = {.user = &test, .vtable = &vtable};
   borrowed.task = &task;
-  h2_lua_host_t *host = NULL;
-  h2_lua_host_config_t config = {.runtime = &borrowed, .max_jobs = 1,
-      .vm_memory_limit_bytes = 2u * 1024u * 1024u};
+  h2_lua_host_t* host = NULL;
+  h2_lua_host_config_t config = {.runtime = &borrowed,
+                                 .max_jobs = 1,
+                                 .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   const char script[] = "local d=require('display');d.clear('red');d.submit()";
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@display-join.lua",
-      (const uint8_t *)script, sizeof(script)-1, NULL, 0, &job) == H2_PAL_OK);
+                                (const uint8_t*)script, sizeof(script) - 1,
+                                NULL, 0, &job) == H2_PAL_OK);
   run_until_terminal(host, job, 6000);
   assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
   size_t held = status(host, job).memory_used;
   h2_pal_result_t result = H2_PAL_ERR_BUSY;
-  for (unsigned i=0; i<3000 && result==H2_PAL_ERR_BUSY; ++i) {
+  for (unsigned i = 0; i < 3000 && result == H2_PAL_ERR_BUSY; ++i) {
     result = h2_lua_host_destroy_checked(host);
-    if (result == H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+    if (result == H2_PAL_ERR_BUSY)
+      assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
   }
   assert(result == H2_PAL_ERR_TASK && test.selected != NULL);
   assert(status(host, job).memory_used == held);
@@ -1473,7 +1520,8 @@ static void test_display_worker_join_failure(void) {
   result = H2_PAL_ERR_BUSY;
   for (unsigned i = 0; i < 3000 && result == H2_PAL_ERR_BUSY; ++i) {
     result = h2_lua_host_destroy_checked(host);
-    if (result == H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+    if (result == H2_PAL_ERR_BUSY)
+      assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
   }
   assert(result == H2_PAL_OK);
   assert(s_test_display_fixture.close_count == 1);
@@ -1484,17 +1532,19 @@ static void test_display_worker_join_failure(void) {
  * and release transfers it without disturbing another terminal job. */
 static void test_display_multiple_jobs(void) {
   test_display_reset();
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   h2_runtime_t borrowed = *runtime;
   test_join_failure_t tasks = {.next = runtime->task};
-  const h2_pal_task_vtable_t vtable = {.start = test_join_start, .join = test_join_fail};
+  const h2_pal_task_vtable_t vtable = {.start = test_join_start,
+                                       .join = test_join_fail};
   const h2_pal_task_api_t task = {.user = &tasks, .vtable = &vtable};
   borrowed.task = &task;
-  h2_lua_host_t *host = NULL;
-  h2_lua_host_config_t config = {.runtime = &borrowed, .max_jobs = 3, .worker_count = 2};
+  h2_lua_host_t* host = NULL;
+  h2_lua_host_config_t config = {
+      .runtime = &borrowed, .max_jobs = 3, .worker_count = 2};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  const char *scripts[] = {
+  const char* scripts[] = {
       "return 1",
       "local d=require('display');d.clear('red');d.present();assert(d.status().completion_kind=='transport')",
       "local ok,e=pcall(require,'display');assert(not ok and e:find(args.busy,1,true))",
@@ -1504,11 +1554,13 @@ static void test_display_multiple_jobs(void) {
   h2_lua_arg_t args[] = {{"busy", busy}};
   h2_lua_job_id_t jobs[3];
   for (size_t i = 0; i < 3; ++i) {
-    assert(h2_lua_job_submit_text(host, NULL, "@display-lease.lua",
-        (const uint8_t *)scripts[i], strlen(scripts[i]), args, 1, &jobs[i]) == H2_PAL_OK);
+    assert(h2_lua_job_submit_text(
+               host, NULL, "@display-lease.lua", (const uint8_t*)scripts[i],
+               strlen(scripts[i]), args, 1, &jobs[i]) == H2_PAL_OK);
     run_until_terminal(host, jobs[i], 6000);
     h2_lua_job_status_t state = status(host, jobs[i]);
-    if (state.state != H2_LUA_JOB_SUCCEEDED) fprintf(stderr, "lease: %s\n", state.message);
+    if (state.state != H2_LUA_JOB_SUCCEEDED)
+      fprintf(stderr, "lease: %s\n", state.message);
     assert(state.state == H2_LUA_JOB_SUCCEEDED);
     assert(tasks.display_starts == (i == 0 ? 0u : 1u));
   }
@@ -1517,7 +1569,8 @@ static void test_display_multiple_jobs(void) {
   assert(h2_lua_job_release(host, jobs[1]) == H2_PAL_OK);
   assert(s_test_display_fixture.close_count == 1);
   assert(h2_lua_job_submit_text(host, NULL, "@display-reacquire.lua",
-      (const uint8_t *)scripts[1], strlen(scripts[1]), NULL, 0, &jobs[1]) == H2_PAL_OK);
+                                (const uint8_t*)scripts[1], strlen(scripts[1]),
+                                NULL, 0, &jobs[1]) == H2_PAL_OK);
   run_until_terminal(host, jobs[1], 6000);
   assert(status(host, jobs[1]).state == H2_LUA_JOB_SUCCEEDED);
   assert(tasks.display_starts == 2 && s_test_display_fixture.open_count == 2);
@@ -1527,18 +1580,21 @@ static void test_display_multiple_jobs(void) {
 }
 
 static void test_borrowed_display(void) {
-  h2_runtime_t *runtime = create_runtime();
-  const char *scripts[] = {
+  h2_runtime_t* runtime = create_runtime();
+  const char* scripts[] = {
       "local d=require('display');d.present()",
       "local d=require('display');d.present();d.deinit()",
       "local d=require('display');error('after-open')",
       "local d=require('display');require('runtime').sleep(100000)",
   };
   for (size_t i = 0; i < sizeof(scripts) / sizeof(scripts[0]); ++i) {
-    h2_lua_host_t *host = NULL;
+    h2_lua_host_t* host = NULL;
     const h2_lua_host_config_t config = {
-        .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
-        .borrow_display = 1, .execution_timeout_ms = 200000u,
+        .runtime = runtime,
+        .worker_count = 1u,
+        .max_jobs = 1u,
+        .borrow_display = 1,
+        .execution_timeout_ms = 200000u,
     };
     test_display_reset();
     assert(h2_pal_display_open(runtime->display) == H2_PAL_OK);
@@ -1546,11 +1602,12 @@ static void test_borrowed_display(void) {
     assert(h2_lua_host_start(host) == H2_PAL_OK);
     h2_lua_job_id_t job;
     assert(h2_lua_job_submit_text(
-               host, NULL, "@borrowed-display.lua", (const uint8_t *)scripts[i],
+               host, NULL, "@borrowed-display.lua", (const uint8_t*)scripts[i],
                strlen(scripts[i]), NULL, 0u, &job) == H2_PAL_OK);
     if (i == 3u) {
-      for (unsigned wait = 0u; wait < 1000u &&
-           status(host, job).state != H2_LUA_JOB_WAITING; ++wait)
+      for (unsigned wait = 0u;
+           wait < 1000u && status(host, job).state != H2_LUA_JOB_WAITING;
+           ++wait)
         assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
       assert(status(host, job).state == H2_LUA_JOB_WAITING);
       assert(h2_lua_host_stop(host) == H2_PAL_OK);
@@ -1558,7 +1615,7 @@ static void test_borrowed_display(void) {
     } else {
       run_until_terminal(host, job, 64u);
       assert(status(host, job).state ==
-          (i >= 2u ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
+             (i >= 2u ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
       assert(h2_lua_job_release(host, job) == H2_PAL_OK);
     }
     h2_lua_host_destroy(host);
@@ -1572,33 +1629,33 @@ static void test_borrowed_display(void) {
 
 typedef struct mesh_allocator_probe {
   lua_Alloc allocate;
-  void *user;
+  void* user;
   size_t calls;
 } mesh_allocator_probe_t;
 
-static void *mesh_probe_allocate(void *user, void *ptr, size_t old_size,
+static void* mesh_probe_allocate(void* user, void* ptr, size_t old_size,
                                  size_t new_size) {
-  mesh_allocator_probe_t *probe = user;
+  mesh_allocator_probe_t* probe = user;
   ++probe->calls;
   return probe->allocate(probe->user, ptr, old_size, new_size);
 }
 
-static int test_mesh_new(lua_State *state) {
-  h2_lua_display_vertex_t vertices[] = {{1,1},{4,1},{4,4},{1,4}};
-  h2_lua_display_primitive_t primitive = {H2_LUA_DISPLAY_POLYGON,0,4,0xf800};
-  h2_lua_display_mesh_config_t config = {6,2,{vertices,4,&primitive,1}};
+static int test_mesh_new(lua_State* state) {
+  h2_lua_display_vertex_t vertices[] = {{1, 1}, {4, 1}, {4, 4}, {1, 4}};
+  h2_lua_display_primitive_t primitive = {H2_LUA_DISPLAY_POLYGON, 0, 4, 0xf800};
+  h2_lua_display_mesh_config_t config = {6, 2, {vertices, 4, &primitive, 1}};
   int top = lua_gettop(state);
   assert(h2_lua_display_mesh_push(NULL, &config) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_display_mesh_push(state, NULL) == H2_PAL_ERR_INVALID_ARG);
   config.vertex_capacity = H2_LUA_DISPLAY_VERTEX_LIMIT + 1u;
   assert(h2_lua_display_mesh_push(state, &config) == H2_PAL_ERR_INVALID_ARG);
-  config = (h2_lua_display_mesh_config_t){H2_LUA_DISPLAY_VERTEX_LIMIT,0,{0}};
+  config = (h2_lua_display_mesh_config_t){H2_LUA_DISPLAY_VERTEX_LIMIT, 0, {0}};
   assert(h2_lua_display_mesh_push(state, &config) == H2_PAL_ERR_NO_MEMORY);
   assert(lua_gettop(state) == top);
   config = (h2_lua_display_mesh_config_t){0};
   assert(h2_lua_display_mesh_push(state, &config) == H2_PAL_OK);
   lua_pop(state, 1);
-  config = (h2_lua_display_mesh_config_t){6,2,{vertices,4,&primitive,1}};
+  config = (h2_lua_display_mesh_config_t){6, 2, {vertices, 4, &primitive, 1}};
   assert(h2_lua_display_mesh_push(state, &config) == H2_PAL_OK);
   assert(lua_gettop(state) == top + 1);
   vertices[0].x = 1000; /* Public push copied stack-owned data. */
@@ -1606,37 +1663,50 @@ static int test_mesh_new(lua_State *state) {
   return 1;
 }
 
-static int test_mesh_update(lua_State *state) {
+static int test_mesh_update(lua_State* state) {
   int mode = (int)luaL_checkinteger(state, 2);
   assert(lua_checkstack(state, 4));
   if (mode == 0) (void)lua_newuserdatauv(state, 8u, 0);
   int top = lua_gettop(state);
-  h2_lua_display_vertex_t vertices[] = {{1,6},{6,6}};
-  h2_lua_display_primitive_t primitive = {H2_LUA_DISPLAY_LINE,0,2,0x001f};
-  h2_lua_display_mesh_data_t data = {vertices,2,&primitive,1};
+  h2_lua_display_vertex_t vertices[] = {{1, 6}, {6, 6}};
+  h2_lua_display_primitive_t primitive = {H2_LUA_DISPLAY_LINE, 0, 2, 0x001f};
+  h2_lua_display_mesh_data_t data = {vertices, 2, &primitive, 1};
   mesh_allocator_probe_t probe = {0};
   probe.allocate = lua_getallocf(state, &probe.user);
   lua_setallocf(state, mesh_probe_allocate, &probe);
   if (mode == 0) {
-    assert(h2_lua_display_mesh_update(state, -1, &data) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_lua_display_mesh_update(NULL, 1, &data) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_lua_display_mesh_update(state, 1, NULL) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_lua_display_mesh_update(state, 0, &data) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_lua_display_mesh_update(state, 2, &data) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_lua_display_mesh_update(state, 99, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, -1, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(NULL, 1, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 1, NULL) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 0, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 2, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 99, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
     assert(h2_lua_display_mesh_update(state, LUA_REGISTRYINDEX, &data) ==
            H2_PAL_ERR_INVALID_ARG);
     vertices[1].x = NAN;
-    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 1, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
     vertices[1].x = 6;
     primitive.first = SIZE_MAX;
-    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
-    primitive.first = 0; primitive.count = SIZE_MAX;
-    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
-    primitive.count = 2; primitive.kind = (h2_lua_display_primitive_kind_t)9;
-    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 1, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    primitive.first = 0;
+    primitive.count = SIZE_MAX;
+    assert(h2_lua_display_mesh_update(state, 1, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    primitive.count = 2;
+    primitive.kind = (h2_lua_display_primitive_kind_t)9;
+    assert(h2_lua_display_mesh_update(state, 1, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
     data.vertex_count = 7;
-    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 1, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
   } else if (mode == 1) {
     assert(h2_lua_display_mesh_update(state, -2, &data) == H2_PAL_OK);
   } else {
@@ -1649,16 +1719,18 @@ static int test_mesh_update(lua_State *state) {
   return 0;
 }
 
-static int test_mesh_open(void *lua_state, void *user) {
-  lua_State *state = lua_state;
+static int test_mesh_open(void* lua_state, void* user) {
+  lua_State* state = lua_state;
   (void)user;
   lua_newtable(state);
-  lua_pushcfunction(state, test_mesh_new); lua_setfield(state, -2, "new");
-  lua_pushcfunction(state, test_mesh_update); lua_setfield(state, -2, "update");
+  lua_pushcfunction(state, test_mesh_new);
+  lua_setfield(state, -2, "new");
+  lua_pushcfunction(state, test_mesh_update);
+  lua_setfield(state, -2, "update");
   return 1;
 }
 
-static int test_raster_noalloc(lua_State *state) {
+static int test_raster_noalloc(lua_State* state) {
   luaL_checktype(state, 1, LUA_TFUNCTION);
   assert(lua_checkstack(state, 128));
   lua_pushvalue(state, 1);
@@ -1680,10 +1752,10 @@ typedef struct raster_fail_probe {
   size_t remaining;
 } raster_fail_probe_t;
 
-static void *test_raster_fail_allocate(void *user, void *ptr, size_t old_size,
+static void* test_raster_fail_allocate(void* user, void* ptr, size_t old_size,
                                        size_t new_size) {
-  raster_fail_probe_t *failure = user;
-  mesh_allocator_probe_t *probe = &failure->allocator;
+  raster_fail_probe_t* failure = user;
+  mesh_allocator_probe_t* probe = &failure->allocator;
   if (new_size != 0u && (ptr == NULL || new_size > old_size)) {
     if (failure->remaining == 0) return NULL;
     --failure->remaining;
@@ -1691,7 +1763,7 @@ static void *test_raster_fail_allocate(void *user, void *ptr, size_t old_size,
   return probe->allocate(probe->user, ptr, old_size, new_size);
 }
 
-static int test_raster_oom(lua_State *state) {
+static int test_raster_oom(lua_State* state) {
   luaL_checktype(state, 1, LUA_TFUNCTION);
   assert(lua_checkstack(state, 128));
   lua_Integer allowed = luaL_optinteger(state, 2, 0);
@@ -1709,29 +1781,27 @@ static int test_raster_oom(lua_State *state) {
 
 typedef struct raster_measure_probe {
   lua_Alloc allocate;
-  void *user;
+  void* user;
   size_t calls, current, peak;
 } raster_measure_probe_t;
 
-static void *raster_measure_allocate(void *user, void *ptr, size_t old_size,
+static void* raster_measure_allocate(void* user, void* ptr, size_t old_size,
                                      size_t new_size) {
-  raster_measure_probe_t *probe = user;
+  raster_measure_probe_t* probe = user;
   size_t old = ptr == NULL ? 0 : old_size;
-  void *result = probe->allocate(probe->user, ptr, old_size, new_size);
+  void* result = probe->allocate(probe->user, ptr, old_size, new_size);
   if (new_size == 0 || result != NULL) {
     probe->current = probe->current - old + new_size;
-    if (probe->current > probe->peak)
-      probe->peak = probe->current;
+    if (probe->current > probe->peak) probe->peak = probe->current;
   }
-  if (new_size != 0)
-    ++probe->calls;
+  if (new_size != 0) ++probe->calls;
   return result;
 }
 
 static int s_raster_benchmark;
 
-static int test_raster_measure(lua_State *state) {
-  const char *name = luaL_checkstring(state, 1);
+static int test_raster_measure(lua_State* state) {
+  const char* name = luaL_checkstring(state, 1);
   luaL_checktype(state, 2, LUA_TFUNCTION);
   lua_Integer boundaries = luaL_checkinteger(state, 3);
   if (!s_raster_benchmark) {
@@ -1759,7 +1829,7 @@ static int test_raster_measure(lua_State *state) {
                     (size_t)lua_gc(state, LUA_GCCOUNTB);
     probe.peak = probe.current;
     uint64_t start = 0, end = 0;
-    const h2_pal_time_api_t *time = h2_desktop_platform_time_api();
+    const h2_pal_time_api_t* time = h2_desktop_platform_time_api();
     assert(h2_pal_time_get_monotonic_us(time, &start) == H2_PAL_OK);
     lua_setallocf(state, raster_measure_allocate, &probe);
     lua_pushvalue(state, 2);
@@ -1774,8 +1844,7 @@ static int test_raster_measure(lua_State *state) {
     if (once || i >= 4u) {
       samples[once ? 0 : i - 4u] = end - start;
       calls += probe.calls;
-      if (probe.peak > peak)
-        peak = probe.peak;
+      if (probe.peak > peak) peak = probe.peak;
     }
   }
   lua_gc(state, LUA_GCRESTART);
@@ -1797,10 +1866,10 @@ static int test_raster_measure(lua_State *state) {
   return 0;
 }
 
-static int test_region_failure(lua_State *state);
+static int test_region_failure(lua_State* state);
 
 /* Independent extraction-source oracle; no production transform helper. */
-static int test_mesh_source(lua_State *s) {
+static int test_mesh_source(lua_State* s) {
   double x = luaL_checknumber(s, 2), y = luaL_checknumber(s, 3);
   double scale = luaL_checknumber(s, 4), angle = luaL_checknumber(s, 5);
   double grid = luaL_checknumber(s, 6), ca = cos(angle), sa = sin(angle);
@@ -1809,38 +1878,54 @@ static int test_mesh_source(lua_State *s) {
   lua_createtable(s, (int)n, 0);
   for (size_t i = 0; i < n; ++i) {
     lua_rawgeti(s, 1, (lua_Integer)i + 1);
-    lua_rawgeti(s, -1, 1); double vx = lua_tonumber(s, -1); lua_pop(s, 1);
-    lua_rawgeti(s, -1, 2); double vy = lua_tonumber(s, -1); lua_pop(s, 2);
-    float fx=((float)x+((float)vx*(float)ca-(float)vy*(float)sa)*(float)scale)/(float)grid;
-    float fy=((float)y+((float)vx*(float)sa+(float)vy*(float)ca)*(float)scale)/(float)grid;
-    float error=64*FLT_EPSILON*(fabsf((float)x)+fabsf((float)y)+(fabsf((float)vx)+fabsf((float)vy))*(float)scale+1);
-    double px,py;
-    if(fabs(vx)<=100000 && fabs(vy)<=100000 && error<.25f && fabsf(fx-floorf(fx)-.5f)>error)
-      px=floorf(fx+.5f)*(float)grid;
-    else px=floor((x+(vx*ca-vy*sa)*scale)/grid+.5)*grid;
-    if(fabs(vx)<=100000 && fabs(vy)<=100000 && error<.25f && fabsf(fy-floorf(fy)-.5f)>error)
-      py=floorf(fy+.5f)*(float)grid;
-    else py=floor((y+(vx*sa+vy*ca)*scale)/grid+.5)*grid;
+    lua_rawgeti(s, -1, 1);
+    double vx = lua_tonumber(s, -1);
+    lua_pop(s, 1);
+    lua_rawgeti(s, -1, 2);
+    double vy = lua_tonumber(s, -1);
+    lua_pop(s, 2);
+    float fx = ((float)x + ((float)vx * (float)ca - (float)vy * (float)sa) *
+                               (float)scale) /
+               (float)grid;
+    float fy = ((float)y + ((float)vx * (float)sa + (float)vy * (float)ca) *
+                               (float)scale) /
+               (float)grid;
+    float error = 64 * FLT_EPSILON *
+                  (fabsf((float)x) + fabsf((float)y) +
+                   (fabsf((float)vx) + fabsf((float)vy)) * (float)scale + 1);
+    double px, py;
+    if (fabs(vx) <= 100000 && fabs(vy) <= 100000 && error < .25f &&
+        fabsf(fx - floorf(fx) - .5f) > error)
+      px = floorf(fx + .5f) * (float)grid;
+    else
+      px = floor((x + (vx * ca - vy * sa) * scale) / grid + .5) * grid;
+    if (fabs(vx) <= 100000 && fabs(vy) <= 100000 && error < .25f &&
+        fabsf(fy - floorf(fy) - .5f) > error)
+      py = floorf(fy + .5f) * (float)grid;
+    else
+      py = floor((y + (vx * sa + vy * ca) * scale) / grid + .5) * grid;
     if (!lua_isnoneornil(s, 7)) {
-      h2_lua_display_mesh_t *mesh = lua_touserdata(s, 7);
+      h2_lua_display_mesh_t* mesh = lua_touserdata(s, 7);
       assert(mesh->positions_valid && mesh->source_transform);
-      h2_lua_display_vertex_t *positions =
-          (h2_lua_display_vertex_t *)(mesh + 1) + mesh->vertex_capacity;
+      h2_lua_display_vertex_t* positions =
+          (h2_lua_display_vertex_t*)(mesh + 1) + mesh->vertex_capacity;
       assert(positions[i].x == px && positions[i].y == py);
     }
-    lua_createtable(s,2,0);
-    lua_pushnumber(s,px);lua_rawseti(s,-2,1);
-    lua_pushnumber(s,py);lua_rawseti(s,-2,2);
-    lua_rawseti(s,-2,(lua_Integer)i+1);
+    lua_createtable(s, 2, 0);
+    lua_pushnumber(s, px);
+    lua_rawseti(s, -2, 1);
+    lua_pushnumber(s, py);
+    lua_rawseti(s, -2, 2);
+    lua_rawseti(s, -2, (lua_Integer)i + 1);
   }
   return 1;
 }
 
 /* Poison one private replay record. A reraster overwrites the marker even
  * when pixels/present would otherwise be identical. No production counter. */
-static int test_mesh_marker(lua_State *s) {
+static int test_mesh_marker(lua_State* s) {
   assert(lua_getiuservalue(s, 1, 1) == LUA_TUSERDATA);
-  display_span_cache_t *cache = lua_touserdata(s, -1);
+  display_span_cache_t* cache = lua_touserdata(s, -1);
   assert(cache->valid && cache->count > 0);
   if (lua_toboolean(s, 2)) cache->spans[0].color = 0xabcd;
   lua_pushboolean(s, cache->spans[0].color == 0xabcd);
@@ -1848,11 +1933,11 @@ static int test_mesh_marker(lua_State *s) {
 }
 
 /* Construct the full public vertex range without a large Lua-table fixture. */
-static int test_mesh_capacity(lua_State *s) {
+static int test_mesh_capacity(lua_State* s) {
   lua_Integer count = luaL_checkinteger(s, 1);
   assert(count > 0 && count <= H2_LUA_DISPLAY_VERTEX_LIMIT);
   size_t n = (size_t)count;
-  h2_lua_display_vertex_t *vertices = malloc(n * sizeof(*vertices));
+  h2_lua_display_vertex_t* vertices = malloc(n * sizeof(*vertices));
   assert(vertices != NULL);
   for (size_t i = 0; i < n; ++i)
     vertices[i] = (h2_lua_display_vertex_t){(double)(i % 7), (double)(i % 5)};
@@ -1863,12 +1948,12 @@ static int test_mesh_capacity(lua_State *s) {
   return 1;
 }
 
-static int test_mesh_shifted(lua_State *s) {
-  h2_lua_display_mesh_t *mesh = lua_touserdata(s, 1);
+static int test_mesh_shifted(lua_State* s) {
+  h2_lua_display_mesh_t* mesh = lua_touserdata(s, 1);
   double shift = luaL_checknumber(s, 2);
   assert(mesh && mesh->positions_valid);
-  const h2_lua_display_vertex_t *source = (const void *)(mesh + 1);
-  const h2_lua_display_vertex_t *positions = source + mesh->vertex_capacity;
+  const h2_lua_display_vertex_t* source = (const void*)(mesh + 1);
+  const h2_lua_display_vertex_t* positions = source + mesh->vertex_capacity;
   for (size_t i = 0; i < mesh->vertex_count; ++i) {
     assert(positions[i].x == source[i].x + shift);
     assert(positions[i].y == source[i].y);
@@ -1876,20 +1961,23 @@ static int test_mesh_shifted(lua_State *s) {
   return 0;
 }
 
-static int test_mesh_snapshot(lua_State *s) {
+static int test_mesh_snapshot(lua_State* s) {
   assert(lua_isuserdata(s, 1));
   lua_pushlstring(s, lua_touserdata(s, 1), lua_rawlen(s, 1));
   return 1;
 }
 
 /* Ensure allocation-driven finalizers really run inside the draw binding. */
-static int test_in_call(lua_State *s) {
+static int test_in_call(lua_State* s) {
   lua_Debug frame;
   for (int i = 1; lua_getstack(s, i, &frame); ++i) {
     assert(lua_getinfo(s, "f", &frame));
     int same = lua_rawequal(s, 1, -1);
     lua_pop(s, 1);
-    if (same) { lua_pushboolean(s, 1); return 1; }
+    if (same) {
+      lua_pushboolean(s, 1);
+      return 1;
+    }
   }
   lua_pushboolean(s, 0);
   return 1;
@@ -1897,33 +1985,37 @@ static int test_in_call(lua_State *s) {
 
 /* Inspect the production output without invoking its raster/damage helpers.
  * Display closure and captured full-screen region are test-owned roots. */
-static int test_display_snapshot(lua_State *state) {
+static int test_display_snapshot(lua_State* state) {
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   assert(job != NULL && job->display_open);
   lua_pop(state, 1);
   size_t bytes = (size_t)job->display_info.width * job->display_info.height * 2;
   size_t tiles = (size_t)((job->display_info.width + 15) / 16) *
-                ((job->display_info.height + 15) / 16);
+                 ((job->display_info.height + 15) / 16);
   assert(lua_isuserdata(state, 2) && lua_rawlen(state, 2) >= tiles);
-  const char *region = lua_touserdata(state, 2);
+  const char* region = lua_touserdata(state, 2);
   int dirty[5] = {0};
   if (job->dirty_valid) {
-    dirty[0] = 1; dirty[1] = job->dirty_min_x; dirty[2] = job->dirty_min_y;
-    dirty[3] = job->dirty_max_x; dirty[4] = job->dirty_max_y;
+    dirty[0] = 1;
+    dirty[1] = job->dirty_min_x;
+    dirty[2] = job->dirty_min_y;
+    dirty[3] = job->dirty_max_x;
+    dirty[4] = job->dirty_max_y;
   }
-  lua_pushlstring(state, (const char *)job->framebuffer, bytes);
+  lua_pushlstring(state, (const char*)job->framebuffer, bytes);
   lua_pushlstring(state, region + lua_rawlen(state, 2) - tiles, tiles);
-  lua_pushlstring(state, (const char *)dirty, sizeof(dirty));
+  lua_pushlstring(state, (const char*)dirty, sizeof(dirty));
   return 3;
 }
 
 /* Change only the test Display provider while no acquisition is live. */
-static int test_display_fixture_size(lua_State *state) {
+static int test_display_fixture_size(lua_State* state) {
   int width = (int)luaL_checkinteger(state, 1);
   int height = (int)luaL_checkinteger(state, 2);
   assert(width > 0 && width <= 240 && height > 0 && height <= 240);
-  assert(s_test_display_fixture.open_count == s_test_display_fixture.close_count);
+  assert(s_test_display_fixture.open_count ==
+         s_test_display_fixture.close_count);
   s_test_display_fixture.width = width;
   s_test_display_fixture.height = height;
   return 0;
@@ -1931,18 +2023,19 @@ static int test_display_fixture_size(lua_State *state) {
 
 #include "material_reference.h"
 
-static int test_material_reference(lua_State *state) {
+static int test_material_reference(lua_State* state) {
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   lua_pop(state, 1);
-  const reference_material_t *m = lua_touserdata(state, 2);
+  const reference_material_t* m = lua_touserdata(state, 2);
   /* Compiled palette layout is a size_t followed by RGB565 entries. */
-  const size_t *palette = lua_touserdata(state, 3);
+  const size_t* palette = lua_touserdata(state, 3);
   assert(job && m && palette && *palette >= m->color_count);
   double c[8];
   for (int i = 0; i < 8; ++i) c[i] = luaL_checknumber(state, i + 4);
   reference_quad_mapping_t map = {luaL_checknumber(state, 12),
-      luaL_checknumber(state, 13), luaL_checknumber(state, 14)};
+                                  luaL_checknumber(state, 13),
+                                  luaL_checknumber(state, 14)};
   int top = (int)luaL_optinteger(state, 15, 0);
   int bottom = (int)luaL_optinteger(state, 16, job->display_info.height);
   double low = c[1], high = c[1];
@@ -1952,16 +2045,17 @@ static int test_material_reference(lua_State *state) {
   }
   if (low > top) top = low < bottom ? (int)ceil(low) : bottom;
   if (high < bottom) bottom = high >= top ? (int)floor(high) + 1 : top;
-  lua_pushboolean(state, reference_raster_material(job, m,
-      (const uint16_t *)(palette + 1), c, top, bottom, &map));
+  lua_pushboolean(
+      state, reference_raster_material(job, m, (const uint16_t*)(palette + 1),
+                                       c, top, bottom, &map));
   return 1;
 }
 
 #include "polygon_reference.h"
 
-static int test_polygon_reference(lua_State *state) {
+static int test_polygon_reference(lua_State* state) {
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   lua_pop(state, 1);
   size_t count = lua_rawlen(state, 2);
   assert(count >= 3 && count <= 128);
@@ -1972,8 +2066,12 @@ static int test_polygon_reference(lua_State *state) {
   double scale = luaL_optnumber(state, 6, 1);
   for (size_t i = 0; i < count; ++i) {
     lua_rawgeti(state, 2, (lua_Integer)i + 1);
-    lua_rawgeti(state, -1, 1); x[i] = lua_tonumber(state, -1) * scale; lua_pop(state, 1);
-    lua_rawgeti(state, -1, 2); y[i] = lua_tonumber(state, -1) * scale; lua_pop(state, 2);
+    lua_rawgeti(state, -1, 1);
+    x[i] = lua_tonumber(state, -1) * scale;
+    lua_pop(state, 1);
+    lua_rawgeti(state, -1, 2);
+    y[i] = lua_tonumber(state, -1) * scale;
+    lua_pop(state, 2);
   }
   int left = (int)luaL_optinteger(state, 7, 0);
   int right = (int)luaL_optinteger(state, 8, job->display_info.width);
@@ -1992,8 +2090,8 @@ static void test_display_q24_round(void) {
   for (int exponent = -1074; exponent <= 29; ++exponent)
     for (unsigned sample = 0; sample < 128; ++sample) {
       seed = seed * UINT64_C(6364136223846793005) + 1;
-      double value = ldexp(1.0 + (double)(seed >> 12) / 4503599627370496.0,
-                           exponent);
+      double value =
+          ldexp(1.0 + (double)(seed >> 12) / 4503599627370496.0, exponent);
       if (value > limit) continue;
       assert(h2_lua_display_q24(value) == llround(value * 16777216.0));
       assert(h2_lua_display_q24(-value) == llround(-value * 16777216.0));
@@ -2008,8 +2106,8 @@ static void test_display_q24_round(void) {
   }
   for (unsigned sample = 0; sample < 100000; ++sample) {
     seed = seed * UINT64_C(6364136223846793005) + 1;
-    double tie = ((double)(seed % UINT64_C(16777216000000000)) + 0.5) /
-                 16777216.0;
+    double tie =
+        ((double)(seed % UINT64_C(16777216000000000)) + 0.5) / 16777216.0;
     for (int side = -1; side <= 1; ++side) {
       double value = side == 0 ? tie : nextafter(tie, side < 0 ? 0.0 : limit);
       assert(h2_lua_display_q24(value) == llround(value * 16777216.0));
@@ -2018,9 +2116,10 @@ static void test_display_q24_round(void) {
   }
 }
 
-/* Original draw_line recurrence, independent of production write/clip helpers. */
-static void reference_line(uint16_t *pixels, int width, int height,
-    int x0, int y0, int x1, int y1) {
+/* Original draw_line recurrence, independent of production write/clip helpers.
+ */
+static void reference_line(uint16_t* pixels, int width, int height, int x0,
+                           int y0, int x1, int y1) {
   int64_t dx = llabs((int64_t)x1 - x0), dy = -llabs((int64_t)y1 - y0);
   int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   int64_t error = dx + dy;
@@ -2029,24 +2128,31 @@ static void reference_line(uint16_t *pixels, int width, int height,
       pixels[(size_t)y0 * width + x0] = 0xf800;
     if (x0 == x1 && y0 == y1) break;
     int64_t twice = 2 * error;
-    if (twice >= dy) { error += dy; x0 += sx; }
-    if (twice <= dx) { error += dx; y0 += sy; }
+    if (twice >= dy) {
+      error += dy;
+      x0 += sx;
+    }
+    if (twice <= dx) {
+      error += dx;
+      y0 += sy;
+    }
   }
 }
 
-static int test_line_reference(lua_State *state) {
+static int test_line_reference(lua_State* state) {
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   lua_pop(state, 1);
-  reference_line(job->framebuffer, job->display_info.width, job->display_info.height,
+  reference_line(
+      job->framebuffer, job->display_info.width, job->display_info.height,
       (int)luaL_checknumber(state, 2), (int)luaL_checknumber(state, 3),
       (int)luaL_checknumber(state, 4), (int)luaL_checknumber(state, 5));
   return 0;
 }
 
-static int test_line_exhaustive(lua_State *state) {
+static int test_line_exhaustive(lua_State* state) {
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   lua_pop(state, 1);
   int width = job->display_info.width, height = job->display_info.height;
   assert(width > 0 && width <= 8 && height > 0 && height <= 8);
@@ -2058,13 +2164,17 @@ static int test_line_exhaustive(lua_State *state) {
     for (int x0 = -width; x0 <= width * 2; ++x0)
       for (int y1 = -height; y1 <= height * 2; ++y1)
         for (int x1 = -width; x1 <= width * 2; ++x1) {
-          memset(expected, 0, bytes); memset(job->framebuffer, 0, bytes);
+          memset(expected, 0, bytes);
+          memset(job->framebuffer, 0, bytes);
           reference_line(expected, width, height, x0, y0, x1, y1);
           job->dirty_valid = 0;
           lua_pushvalue(state, 1);
-          lua_pushinteger(state, x0); lua_pushinteger(state, y0);
-          lua_pushinteger(state, x1); lua_pushinteger(state, y1);
-          lua_pushvalue(state, 2); lua_call(state, 5, 0);
+          lua_pushinteger(state, x0);
+          lua_pushinteger(state, y0);
+          lua_pushinteger(state, x1);
+          lua_pushinteger(state, y1);
+          lua_pushvalue(state, 2);
+          lua_call(state, 5, 0);
           assert(memcmp(expected, job->framebuffer, bytes) == 0);
           int left = x0 < x1 ? x0 : x1, right = x0 > x1 ? x0 : x1;
           int top = y0 < y1 ? y0 : y1, bottom = y0 > y1 ? y0 : y1;
@@ -2074,8 +2184,9 @@ static int test_line_exhaustive(lua_State *state) {
           if (bottom >= height) bottom = height - 1;
           int dirty = left <= right && top <= bottom;
           assert(job->dirty_valid == dirty);
-          if (dirty) assert(job->dirty_min_x == left && job->dirty_max_x == right &&
-                            job->dirty_min_y == top && job->dirty_max_y == bottom);
+          if (dirty)
+            assert(job->dirty_min_x == left && job->dirty_max_x == right &&
+                   job->dirty_min_y == top && job->dirty_max_y == bottom);
           ++checked;
         }
   lua_pushinteger(state, checked);
@@ -2084,13 +2195,13 @@ static int test_line_exhaustive(lua_State *state) {
 
 /* Exercise the uint32 seed cutoff without allocating a large square display.
  * This private native closure borrows only the synthetic job for this call. */
-static int test_line_ranges(lua_State *state) {
+static int test_line_ranges(lua_State* state) {
   h2_lua_job_t fixture = {0};
   fixture.display_open = 1;
   const int lengths[] = {65534, 65535, 65536, 72000};
   const int minors[] = {-3, -1, 0, 1, 2, 3, 6};
   size_t bytes = 24000u * 3u * sizeof(uint16_t);
-  uint16_t *expected = malloc(bytes);
+  uint16_t* expected = malloc(bytes);
   fixture.framebuffer = malloc(bytes);
   assert(expected != NULL && fixture.framebuffer != NULL);
   assert(lua_checkstack(state, 8));
@@ -2111,36 +2222,45 @@ static int test_line_ranges(lua_State *state) {
             int x1 = transpose ? minors[b] : end;
             int y1 = transpose ? end : minors[b];
             if (reverse) {
-              int x = x0, y = y0; x0 = x1; y0 = y1; x1 = x; y1 = y;
+              int x = x0, y = y0;
+              x0 = x1;
+              y0 = y1;
+              x1 = x;
+              y1 = y;
             }
-            memset(expected, 0, bytes); memset(fixture.framebuffer, 0, bytes);
+            memset(expected, 0, bytes);
+            memset(fixture.framebuffer, 0, bytes);
             reference_line(expected, fixture.display_info.width,
-                fixture.display_info.height, x0, y0, x1, y1);
+                           fixture.display_info.height, x0, y0, x1, y1);
             lua_pushvalue(state, closure);
-            lua_pushinteger(state, x0); lua_pushinteger(state, y0);
-            lua_pushinteger(state, x1); lua_pushinteger(state, y1);
-            lua_pushvalue(state, 2); lua_call(state, 5, 0);
+            lua_pushinteger(state, x0);
+            lua_pushinteger(state, y0);
+            lua_pushinteger(state, x1);
+            lua_pushinteger(state, y1);
+            lua_pushvalue(state, 2);
+            lua_call(state, 5, 0);
             assert(memcmp(expected, fixture.framebuffer, bytes) == 0);
             ++checked;
           }
   }
   lua_pop(state, 1);
-  free(fixture.framebuffer); free(expected);
+  free(fixture.framebuffer);
+  free(expected);
   lua_pushinteger(state, checked);
   return 1;
 }
 
 /* Reserve charged userdata without string-builder temporary storage. */
-static int test_raster_reserve(lua_State *state) {
+static int test_raster_reserve(lua_State* state) {
   lua_Integer bytes = luaL_checkinteger(state, 1);
   assert(bytes > 0 && bytes <= 2 * 1024 * 1024);
   (void)lua_newuserdatauv(state, (size_t)bytes, 0);
   return 1;
 }
 
-static int test_raster_vm_used(lua_State *state) {
+static int test_raster_vm_used(lua_State* state) {
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   assert(job != NULL);
   lua_pop(state, 1);
   lua_pushinteger(state, (lua_Integer)h2_lua_vm_memory_used(job->vm));
@@ -2150,7 +2270,7 @@ static int test_raster_vm_used(lua_State *state) {
 /* Identity draw has only its mesh userdata before cache allocation. Detect
  * the additional, still-private userdata through public debug stack access;
  * never inspect its not-yet-initialized cache fields. */
-static int test_mesh_cache_allocating(lua_State *state) {
+static int test_mesh_cache_allocating(lua_State* state) {
   lua_Debug frame;
   for (int level = 1; lua_getstack(state, level, &frame); ++level) {
     assert(lua_getinfo(state, "f", &frame));
@@ -2169,9 +2289,9 @@ static int test_mesh_cache_allocating(lua_State *state) {
   return 1;
 }
 
-static int test_mesh_cache_stats(lua_State *state) {
+static int test_mesh_cache_stats(lua_State* state) {
   assert(lua_getiuservalue(state, 1, 1) == LUA_TUSERDATA);
-  const display_span_cache_t *cache = lua_touserdata(state, -1);
+  const display_span_cache_t* cache = lua_touserdata(state, -1);
   lua_pushinteger(state, (lua_Integer)cache->capacity);
   lua_pushinteger(state, (lua_Integer)cache->count);
   lua_pushinteger(state, cache->valid);
@@ -2183,8 +2303,8 @@ static int test_mesh_cache_stats(lua_State *state) {
   return 8;
 }
 
-static int test_raster_open(void *lua_state, void *user) {
-  lua_State *state = lua_state;
+static int test_raster_open(void* lua_state, void* user) {
+  lua_State* state = lua_state;
   (void)user;
   lua_newtable(state);
   lua_pushcfunction(state, test_raster_reserve);
@@ -2232,25 +2352,26 @@ static int test_raster_open(void *lua_state, void *user) {
   return 1;
 }
 
-static void test_display_raster2d(int benchmark, const char *path) {
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = NULL;
+static void test_display_raster2d(int benchmark, const char* path) {
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = NULL;
   h2_lua_host_config_t config = {
       .runtime = runtime,
       .worker_count = 1,
       .max_jobs = 1,
       .instruction_quantum = 1000000000,
       .execution_timeout_ms = 20000,
-      .source_limit_bytes = 16384,
-      .vm_memory_limit_bytes = benchmark == 2 ? 2u * 1024u * 1024u :
-          benchmark ? 8u * 1024u * 1024u : 256u * 1024u};
+      .source_limit_bytes = 65536,
+      .vm_memory_limit_bytes = benchmark == 2 ? 2u * 1024u * 1024u
+                               : benchmark    ? 8u * 1024u * 1024u
+                                              : 256u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_register_module(host, "raster_test", test_raster_open, NULL) ==
          H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  FILE *file = fopen(path, "rb");
+  FILE* file = fopen(path, "rb");
   assert(file != NULL);
-  uint8_t script[16384];
+  uint8_t script[65536];
   size_t size = fread(script, 1, sizeof(script), file);
   assert(!ferror(file) && size < sizeof(script));
   assert(fclose(file) == 0);
@@ -2261,70 +2382,156 @@ static void test_display_raster2d(int benchmark, const char *path) {
 }
 
 static void test_display_meshes(void) {
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_unstarted_host(runtime);
-  assert(h2_lua_register_module(host, "kv", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
-  assert(h2_lua_register_module(host, "vmath", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
-  assert(h2_lua_register_module(host, "geometry", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
-  assert(h2_lua_register_module(host, "mesh_test", test_mesh_open, NULL) == H2_PAL_OK);
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = create_unstarted_host(runtime);
+  assert(h2_lua_register_module(host, "kv", test_mesh_open, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_module(host, "vmath", test_mesh_open, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_module(host, "geometry", test_mesh_open, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_module(host, "mesh_test", test_mesh_open, NULL) ==
+         H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  static const struct { const char *draw; const char *pixels; } cases[] = {
+  static const struct {
+    const char* draw;
+    const char* pixels;
+  } cases[] = {
       {"local m=n.new();n.update(m,0);collectgarbage('collect');d.draw_mesh(m)",
-       "........" ".####..." ".####..." ".####..."
-       "........" "........" "........" "........"},
+       "........"
+       ".####..."
+       ".####..."
+       ".####..."
+       "........"
+       "........"
+       "........"
+       "........"},
       {"local m=n.new();d.draw_mesh(m);d.clear('black');"
        "n.update(m,0);d.draw_mesh(m)",
-       "........" ".####..." ".####..." ".####..."
-       "........" "........" "........" "........"},
+       "........"
+       ".####..."
+       ".####..."
+       ".####..."
+       "........"
+       "........"
+       "........"
+       "........"},
       {"local m=n.new();n.update(m,1);d.draw_mesh(m,{color='red'})",
-       "........" "........" "........" "........"
-       "........" "........" ".######." "........"},
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       ".######."
+       "........"},
       {"local m=n.new();d.draw_mesh(m);d.clear('black');"
        "n.update(m,2);d.draw_mesh(m)",
-       "........" "........" "........" "........"
-       "........" "........" "........" "........"},
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"},
       {"local m=n.new();d.draw_mesh(m);d.clear('black');"
        "n.update(m,1);d.draw_mesh(m,{color='red',left=2,right=5})",
-       "........" "........" "........" "........"
-       "........" "........" "..###..." "........"},
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "..###..."
+       "........"},
       {"local m=n.new();d.draw_mesh(m);d.clear('black');"
        "d.draw_mesh(m,{matrix={1,0,0,1,.5,0},offset_x=.5,left=3,right=5,top=2,bottom=4})",
-       "........" "........" "...##..." "...##..."
-       "........" "........" "........" "........"},
+       "........"
+       "........"
+       "...##..."
+       "...##..."
+       "........"
+       "........"
+       "........"
+       "........"},
       {"local m=n.new();d.draw_mesh(m,{grid=2})",
-       "........" "........" "..###..." "..###..."
-       "........" "........" "........" "........"},
+       "........"
+       "........"
+       "..###..."
+       "..###..."
+       "........"
+       "........"
+       "........"
+       "........"},
       {"local m=n.new();d.draw_mesh(m,{grid=2});d.clear('black');d.draw_mesh(m)",
-       "........" ".####..." ".####..." ".####..."
-       "........" "........" "........" "........"},
+       "........"
+       ".####..."
+       ".####..."
+       ".####..."
+       "........"
+       "........"
+       "........"
+       "........"},
       {"local m=n.new();d.draw_mesh(m,{matrix={-1,0,0,1,6,0}})",
-       "........" "..####.." "..####.." "..####.."
-       "........" "........" "........" "........"},
+       "........"
+       "..####.."
+       "..####.."
+       "..####.."
+       "........"
+       "........"
+       "........"
+       "........"},
       {"local v={{1,1},{4,1},{4,4},{1,4}};"
        "local p={{0,1,4,'red'}};local m=d.compile_mesh(v,p,6,2);"
        "v[1][1]=1000;p[1][4]='blue';d.draw_mesh(m)",
-       "........" ".####..." ".####..." ".####..."
-       "........" "........" "........" "........"},
+       "........"
+       ".####..."
+       ".####..."
+       ".####..."
+       "........"
+       "........"
+       "........"
+       "........"},
       {"local m=n.new();d.draw_mesh(m);d.clear('black');"
        "d.update_mesh(m,{{1,6},{6,6}},{{1,1,2,'red'}});d.draw_mesh(m)",
-       "........" "........" "........" "........"
-       "........" "........" ".######." "........"},
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       ".######."
+       "........"},
       {"local m=d.compile_mesh({}, {},6,2);n.update(m,1);"
        "d.draw_mesh(m,{color='red'})",
-       "........" "........" "........" "........"
-       "........" "........" ".######." "........"},
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       ".######."
+       "........"},
       {"local m=n.new();assert(not pcall(d.update_mesh,m,{{1,6},{6,6}},"
        "{{1,1,2,'blue'},{0,1,3,'blue'}}));d.draw_mesh(m)",
-       "........" ".####..." ".####..." ".####..."
-       "........" "........" "........" "........"},
+       "........"
+       ".####..."
+       ".####..."
+       ".####..."
+       "........"
+       "........"
+       "........"
+       "........"},
   };
-  for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     char script[2048];
-    int size = snprintf(script, sizeof(script),
+    int size = snprintf(
+        script, sizeof(script),
         "local d=require('display');local n=require('mesh_test');%s;d.present()",
         cases[i].draw);
     assert(size > 0 && (size_t)size < sizeof(script));
-    (void)run_display_script(host, "@mesh-pixels.lua", (const uint8_t *)script,
+    (void)run_display_script(host, "@mesh-pixels.lua", (const uint8_t*)script,
                              (size_t)size);
     assert(strlen(cases[i].pixels) == 64u);
     for (size_t pixel = 0; pixel < 64u; ++pixel) {
@@ -2353,8 +2560,9 @@ static void test_display_meshes(void) {
       "assert(weak[1]==nil);m=n.new();"
       "local color=setmetatable({},{__index=function()d.deinit();return 255 end});"
       "bad(d.draw_mesh,m,{color=color});bad(d.draw_mesh,m)";
-  (void)run_display_script(host, "@mesh-invalid.lua", invalid, sizeof(invalid)-1u);
-  assert_only_pixels(0u,NULL,0u);
+  (void)run_display_script(host, "@mesh-invalid.lua", invalid,
+                           sizeof(invalid) - 1u);
+  assert_only_pixels(0u, NULL, 0u);
   assert(s_test_display_fixture.draw_count == 1u);
   assert(s_test_display_fixture.close_count == 1u);
   h2_lua_host_destroy(host);
@@ -2362,58 +2570,131 @@ static void test_display_meshes(void) {
 }
 
 static void test_display_vectors(void) {
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_host(runtime);
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = create_host(runtime);
   static const struct {
-    const char *draw;
-    const char *pixels;
+    const char* draw;
+    const char* pixels;
   } cases[] = {
       {"d.fill_polygon({{1,1},{4,1},{4,4},{1,4}},'red')",
-       "........" ".####..." ".####..." ".####..."
-       "........" "........" "........" "........"},
+       "........"
+       ".####..."
+       ".####..."
+       ".####..."
+       "........"
+       "........"
+       "........"
+       "........"},
       {"d.fill_polygon({{1,1},{5,1},{5,3},{3,3},{3,5},{1,5}},'red')",
-       "........" ".#####.." ".#####.." ".###...."
-       ".###...." "........" "........" "........"},
+       "........"
+       ".#####.."
+       ".#####.."
+       ".###...."
+       ".###...."
+       "........"
+       "........"
+       "........"},
       {"d.fill_polygon({{1,1},{5,5},{1,5},{5,1}},'red')",
-       "........" ".#####.." "..###..." "...#...."
-       "..###..." "........" "........" "........"},
+       "........"
+       ".#####.."
+       "..###..."
+       "...#...."
+       "..###..."
+       "........"
+       "........"
+       "........"},
       {"d.fill_polygon({{0,0},{4,0},{4,4},{0,4}},'red',.5,1,3,.5)",
-       "........" ".###...." "........" "........"
-       "........" "........" "........" "........"},
+       "........"
+       ".###...."
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"},
       {"d.fill_polygon({{-100000,-100000},{100000,-100000},"
        "{100000,100000},{-100000,100000}},'red',0,2,5,16)",
-       "........" "........" "########" "########"
-       "########" "........" "........" "........"},
+       "........"
+       "........"
+       "########"
+       "########"
+       "########"
+       "........"
+       "........"
+       "........"},
       {"d.fill_polygon({{1,1},{1,1},{1,1}},'red');"
        "d.fill_polygon({{1,1},{5,1},{3,1}},'red')",
-       "........" "........" "........" "........"
-       "........" "........" "........" "........"},
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"},
       {"d.fill_ellipse(3,3,2,2,'red')",
-       "........" "...#...." ".####..." ".#####.."
-       ".####..." "...#...." "........" "........"},
+       "........"
+       "...#...."
+       ".####..."
+       ".#####.."
+       ".####..."
+       "...#...."
+       "........"
+       "........"},
       {"d.fill_ellipse(3.25,3.25,1.5,1.5,'red')",
-       "........" "........" "...#...." "..####.."
-       "..####.." "...#...." "........" "........"},
+       "........"
+       "........"
+       "...#...."
+       "..####.."
+       "..####.."
+       "...#...."
+       "........"
+       "........"},
       {"d.fill_ellipse(3,3,0,1,'red',0,3,5)",
-       "........" "........" "........" "...#...."
-       "...#...." "........" "........" "........"},
+       "........"
+       "........"
+       "........"
+       "...#...."
+       "...#...."
+       "........"
+       "........"
+       "........"},
       {"d.draw_commands(d.compile_commands({{1,1,1,5,5,'red'}}))",
-       "........" ".#......" "..#....." "...#...."
-       "....#..." ".....#.." "........" "........"},
+       "........"
+       ".#......"
+       "..#....."
+       "...#...."
+       "....#..."
+       ".....#.."
+       "........"
+       "........"},
       {"d.draw_commands(d.compile_commands({{1,5,5,1,1,'red'}}))",
-       "........" ".#......" "..#....." "...#...."
-       "....#..." ".....#.." "........" "........"},
+       "........"
+       ".#......"
+       "..#....."
+       "...#...."
+       "....#..."
+       ".....#.."
+       "........"
+       "........"},
       {"d.draw_commands(d.compile_commands({{0,1,1,2,2,'blue'}}),"
        "0,8,0,0,1,1,'red')",
-       "........" ".##....." ".##....." "........"
-       "........" "........" "........" "........"},
+       "........"
+       ".##....."
+       ".##....."
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"},
   };
   for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     char script[1024];
-    int size = snprintf(script, sizeof(script),
-                        "local d=require('display');%s;d.present()", cases[i].draw);
+    int size =
+        snprintf(script, sizeof(script),
+                 "local d=require('display');%s;d.present()", cases[i].draw);
     assert(size > 0 && (size_t)size < sizeof(script));
-    (void)run_display_script(host, "@vector-pixels.lua", (const uint8_t *)script,
+    (void)run_display_script(host, "@vector-pixels.lua", (const uint8_t*)script,
                              (size_t)size);
     assert(strlen(cases[i].pixels) == 64u);
     for (size_t pixel = 0u; pixel < 64u; ++pixel) {
@@ -2431,11 +2712,14 @@ static void test_display_vectors(void) {
       "{1,-100000,4,100000,4,'blue'}};"
       "local c=d.compile_commands(src);src[1][2]=7;src[1][6]='white';"
       "src=nil;collectgarbage('collect');d.draw_commands(c);d.present()";
-  (void)run_display_script(host, "@commands-copy.lua", commands, sizeof(commands)-1u);
+  (void)run_display_script(host, "@commands-copy.lua", commands,
+                           sizeof(commands) - 1u);
   for (size_t y = 0u; y < 8u; ++y) {
     for (size_t x = 0u; x < 8u; ++x) {
-      uint16_t expected = y == 4u ? 0x001fu :
-          ((x == 1u || x == 2u) && (y == 1u || y == 2u) ? 0xf800u : 0u);
+      uint16_t expected =
+          y == 4u
+              ? 0x001fu
+              : ((x == 1u || x == 2u) && (y == 1u || y == 2u) ? 0xf800u : 0u);
       assert(s_test_display_fixture.pixels[y * 8u + x] == expected);
     }
   }
@@ -2447,11 +2731,11 @@ static void test_display_vectors(void) {
       "assert(not pcall(d.fill_ellipse,3,3,2,2,'red'));"
       "assert(not pcall(d.fill_polygon,{{0,0},{1,0},{1,1}},'red'))";
   (void)run_display_script(host, "@commands-transform.lua", transformed,
-                           sizeof(transformed)-1u);
+                           sizeof(transformed) - 1u);
   for (size_t y = 0u; y < 8u; ++y) {
     for (size_t x = 0u; x < 8u; ++x) {
-      uint16_t expected = y == 5u || ((y == 2u || y == 3u) && x >= 3u && x < 7u)
-                              ? 0x0400u : 0u;
+      uint16_t expected =
+          y == 5u || ((y == 2u || y == 3u) && x >= 3u && x < 7u) ? 0x0400u : 0u;
       if (s_test_display_fixture.pixels[y * 8u + x] != expected)
         fprintf(stderr, "transform pixel=%zu,%zu actual=%04x expected=%04x\n",
                 x, y, s_test_display_fixture.pixels[y * 8u + x], expected);
@@ -2483,7 +2767,8 @@ static void test_display_vectors(void) {
       "d.draw_commands(d.compile_commands({{0,0,0,0,8,'red'}}));"
       "d.fill_polygon(p,'red',0,2,2);d.fill_ellipse(3,3,2,2,'red',0,2,2);"
       "d.present()";
-  (void)run_display_script(host, "@vector-invalid.lua", invalid, sizeof(invalid)-1u);
+  (void)run_display_script(host, "@vector-invalid.lua", invalid,
+                           sizeof(invalid) - 1u);
   assert_only_pixels(0u, NULL, 0u);
   assert(s_test_display_fixture.draw_count == 1u);
   assert(s_test_display_fixture.present_count == 2u);
@@ -2503,22 +2788,25 @@ static void test_display_vectors(void) {
       "collectgarbage('collect');assert(collectgarbage('count')<baseline+4);"
       "t=nil;collectgarbage('collect');"
       "d.draw_commands(d.compile_commands({cmd}));d.present()";
-  (void)run_display_script(host, "@commands-memory.lua", memory, sizeof(memory)-1u);
-  static const expected_pixel_t square[] = {{1,1},{2,1},{1,2},{2,2}};
-  assert_only_pixels(0xf800u, square, sizeof(square)/sizeof(square[0]));
+  (void)run_display_script(host, "@commands-memory.lua", memory,
+                           sizeof(memory) - 1u);
+  static const expected_pixel_t square[] = {{1, 1}, {2, 1}, {1, 2}, {2, 2}};
+  assert_only_pixels(0xf800u, square, sizeof(square) / sizeof(square[0]));
   static const uint8_t reentrant_color[] =
       "local d=require('display');local c=d.compile_commands({{0,0,0,8,8,'red'}});"
       "d.present();local color=setmetatable({}, {__index=function() "
       "d.deinit();return 255 end});"
       "assert(not pcall(d.draw_commands,c,0,8,0,0,1,1,color))";
   (void)run_display_script(host, "@commands-color-close.lua", reentrant_color,
-                           sizeof(reentrant_color)-1u);
+                           sizeof(reentrant_color) - 1u);
   assert_only_pixels(0u, NULL, 0u);
   assert(s_test_display_fixture.close_count == 1u);
   h2_lua_host_destroy(host);
 
   const h2_lua_host_config_t config = {
-      .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
+      .runtime = runtime,
+      .worker_count = 1u,
+      .max_jobs = 1u,
       .vm_memory_limit_bytes = 2u * 1024u * 1024u,
       .execution_timeout_ms = 1000u,
   };
@@ -2533,37 +2821,40 @@ static void test_display_vectors(void) {
       "t={};for i=1,128 do t[i]={1,1} end;d.fill_polygon(t,'red');"
       "t[129]={1,1};assert(not pcall(d.fill_polygon,t,'red'))";
   (void)run_display_script(host, "@commands-capacity.lua", capacity,
-                           sizeof(capacity)-1u);
-  static const expected_pixel_t pixel[] = {{1,1}};
+                           sizeof(capacity) - 1u);
+  static const expected_pixel_t pixel[] = {{1, 1}};
   assert_only_pixels(0xf800u, pixel, 1u);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }
 
-static int test_region_failure(lua_State *state) {
+static int test_region_failure(lua_State* state) {
   int draw = (int)luaL_checkinteger(state, 1);
-  s_test_display_fixture.fail_draw = draw > 0 ?
-      s_test_display_fixture.draw_count + (size_t)draw : 0;
+  s_test_display_fixture.fail_draw =
+      draw > 0 ? s_test_display_fixture.draw_count + (size_t)draw : 0;
   s_test_display_fixture.fail_present = lua_toboolean(state, 2);
   return 0;
 }
 
-static int test_present_pixels(lua_State *state) {
+static int test_present_pixels(lua_State* state) {
   luaL_checktype(state, 1, LUA_TFUNCTION);
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   lua_pop(state, 1);
   assert(job != NULL && job->display_open);
   lua_pushvalue(state, 1);
-  if (lua_gettop(state) > 2) lua_pushvalue(state, 2);
-  else lua_pushnil(state);
+  if (lua_gettop(state) > 2)
+    lua_pushvalue(state, 2);
+  else
+    lua_pushnil(state);
   lua_call(state, 1, 2);
   assert(memcmp(job->framebuffer, s_test_display_fixture.pixels,
-      (size_t)job->display_info.width * job->display_info.height * 2) == 0);
+                (size_t)job->display_info.width * job->display_info.height *
+                    2) == 0);
   return 2;
 }
 
-static int test_region_finalizer(lua_State *state) {
+static int test_region_finalizer(lua_State* state) {
   assert(lua_toboolean(state, 1));
   assert(s_test_display_fixture.close_count == 1u);
   ++s_test_display_fixture.finalizer_count;
@@ -2572,11 +2863,11 @@ static int test_region_finalizer(lua_State *state) {
 
 /* Independent per-pixel damage oracle, observing the private framebuffer and
  * region's trailing tile bytes before present can hide extra dirty coverage. */
-static int test_background_restore(lua_State *state) {
+static int test_background_restore(lua_State* state) {
   luaL_checktype(state, 1, LUA_TFUNCTION);
-  void *region = luaL_checkudata(state, 2, "h2.display.region");
+  void* region = luaL_checkudata(state, 2, "h2.display.region");
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   lua_pop(state, 1);
   assert(job != NULL && job->display_open);
   int width = job->display_info.width, height = job->display_info.height;
@@ -2586,20 +2877,25 @@ static int test_background_restore(lua_State *state) {
    * no duplicated production header layout or public test API is required. */
   size_t bytes = lua_rawlen(state, 2);
   assert(bytes >= tiles + count * sizeof(uint16_t));
-  const uint8_t *damage = (const uint8_t *)region + bytes - tiles;
-  const uint16_t *source = (const uint16_t *)(damage - count * sizeof(uint16_t));
-  uint16_t *expected = malloc(count * sizeof(*expected));
+  const uint8_t* damage = (const uint8_t*)region + bytes - tiles;
+  const uint16_t* source = (const uint16_t*)(damage - count * sizeof(uint16_t));
+  uint16_t* expected = malloc(count * sizeof(*expected));
   assert(expected != NULL);
   int valid = job->dirty_valid, left = job->dirty_min_x, top = job->dirty_min_y;
   int right = job->dirty_max_x, bottom = job->dirty_max_y;
-  int full = job->display_background != region || !job->display_background_valid;
+  int full =
+      job->display_background != region || !job->display_background_valid;
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
       size_t at = (size_t)y * width + x;
       int restore = full || damage[(size_t)(y / 16) * columns + (size_t)x / 16];
       expected[at] = restore ? source[at] : job->framebuffer[at];
       if (!restore) continue;
-      if (!valid) { left = right = x; top = bottom = y; valid = 1; }
+      if (!valid) {
+        left = right = x;
+        top = bottom = y;
+        valid = 1;
+      }
       if (x < left) left = x;
       if (x > right) right = x;
       if (y < top) top = y;
@@ -2623,34 +2919,36 @@ static int test_background_restore(lua_State *state) {
 
 /* Source colors are supplied independently of the packed region layout.
  * Observe dirty bounds and background bytes before present can hide excess. */
-static int test_region_draw(lua_State *state) {
+static int test_region_draw(lua_State* state) {
   luaL_checktype(state, 1, LUA_TFUNCTION);
   luaL_checktype(state, 4, LUA_TTABLE);
   assert(lua_getupvalue(state, 1, 1) != NULL);
-  h2_lua_job_t *job = lua_touserdata(state, -1);
+  h2_lua_job_t* job = lua_touserdata(state, -1);
   lua_pop(state, 1);
   assert(job && job->display_open);
   int width = job->display_info.width, height = job->display_info.height;
   size_t count = (size_t)width * height, columns = (size_t)(width + 15) / 16;
   size_t tiles = columns * (size_t)((height + 15) / 16);
-  void *background = luaL_checkudata(state, 2, "h2.display.region");
+  void* background = luaL_checkudata(state, 2, "h2.display.region");
   assert(background == job->display_background);
   size_t bytes = lua_rawlen(state, 2);
   assert(bytes >= tiles + count * sizeof(uint16_t));
-  const uint8_t *damage = (const uint8_t *)background + bytes - tiles;
-  uint8_t *expected_damage = malloc(tiles);
-  uint16_t *expected = malloc(count * sizeof(*expected));
+  const uint8_t* damage = (const uint8_t*)background + bytes - tiles;
+  uint8_t* expected_damage = malloc(tiles);
+  uint16_t* expected = malloc(count * sizeof(*expected));
   assert(expected && expected_damage);
   memcpy(expected_damage, damage, tiles);
   memcpy(expected, job->framebuffer, count * sizeof(*expected));
-  int sw = (int)luaL_checkinteger(state, 5), sh = (int)luaL_checkinteger(state, 6);
-  int x = (int)luaL_checkinteger(state, 7), y = (int)luaL_checkinteger(state, 8);
+  int sw = (int)luaL_checkinteger(state, 5),
+      sh = (int)luaL_checkinteger(state, 6);
+  int x = (int)luaL_checkinteger(state, 7),
+      y = (int)luaL_checkinteger(state, 8);
   int clip_top = (int)luaL_checkinteger(state, 9);
   int clip_bottom = (int)luaL_checkinteger(state, 10);
   int keyed = !lua_isnil(state, 11);
   uint16_t key = 0;
   if (keyed) {
-    const char *name = luaL_checkstring(state, 11);
+    const char* name = luaL_checkstring(state, 11);
     assert(strcmp(name, "black") == 0 || strcmp(name, "blue") == 0);
     key = strcmp(name, "blue") == 0 ? 31 : 0;
   }
@@ -2670,7 +2968,11 @@ static int test_region_draw(lua_State *state) {
       if (keyed && color == key) continue;
       expected[(size_t)py * width + px] = color;
       expected_damage[(size_t)(py / 16) * columns + (size_t)px / 16] = 1;
-      if (!valid) { left = right = px; top = bottom = py; valid = 1; }
+      if (!valid) {
+        left = right = px;
+        top = bottom = py;
+        valid = 1;
+      }
       if (px < left) left = px;
       if (px > right) right = px;
       if (py < top) top = py;
@@ -2689,13 +2991,14 @@ static int test_region_draw(lua_State *state) {
   }
   free(expected);
   free(expected_damage);
-  lua_pushinteger(state, valid ? (lua_Integer)(right - left + 1) * (bottom - top + 1) : 0);
+  lua_pushinteger(
+      state, valid ? (lua_Integer)(right - left + 1) * (bottom - top + 1) : 0);
   return 1;
 }
 
-static int test_region_open(void *lua_state, void *user) {
+static int test_region_open(void* lua_state, void* user) {
   (void)user;
-  lua_State *state = lua_state;
+  lua_State* state = lua_state;
   lua_newtable(state);
   lua_pushcfunction(state, test_region_failure);
   lua_setfield(state, -2, "fail");
@@ -2714,13 +3017,13 @@ static int test_region_open(void *lua_state, void *user) {
   return 1;
 }
 
-
 static void test_display_string_regions(void) {
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_unstarted_host(runtime);
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = create_unstarted_host(runtime);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   /* Base85 fixtures encode small, independently specified LZ4 byte sequences:
-   * primary colors; malformed lengths/offsets; offset-1 overlap and extensions. */
+   * primary colors; malformed lengths/offsets; offset-1 overlap and extensions.
+   */
   static const uint8_t script[] =
       "local d=require('display');"
       "local f=d.region_from_string;"
@@ -2794,15 +3097,18 @@ static void test_display_string_regions(void) {
       "assert(not pcall(d.draw_region,closed_lz4,0,0));"
       "assert(not pcall(d.capture_region,0,0,2,2));"
       "assert(not pcall(d.present));d.deinit();";
-  (void)run_display_script(host, "@string-regions.lua", script, sizeof(script)-1);
+  (void)run_display_script(host, "@string-regions.lua", script,
+                           sizeof(script) - 1);
   assert(s_test_display_fixture.open_count == 1);
   assert(s_test_display_fixture.close_count == 1);
-  const uint16_t expected[] = {0xf800,0x07e0,0xf800,0x07e0,0,0,0,0,0x001f,0xffff,0x001f,0xffff};
-  for (size_t i=0;i<sizeof(expected)/sizeof(expected[0]);++i)
+  const uint16_t expected[] = {0xf800, 0x07e0, 0xf800, 0x07e0, 0,      0,
+                               0,      0,      0x001f, 0xffff, 0x001f, 0xffff};
+  for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i)
     assert(s_test_display_fixture.pixels[i] == expected[i]);
   for (int i = 0; i < 8; ++i) {
-    assert(s_test_display_fixture.pixels[16+i] == 0x1212);
-    assert(s_test_display_fixture.pixels[24+i] == (uint16_t)((2*i << 8) | (2*i+1)));
+    assert(s_test_display_fixture.pixels[16 + i] == 0x1212);
+    assert(s_test_display_fixture.pixels[24 + i] ==
+           (uint16_t)((2 * i << 8) | (2 * i + 1)));
   }
   /* A full 240x240 fixture, independent of any application asset. */
   static const uint8_t full[] =
@@ -2818,12 +3124,13 @@ static void test_display_string_regions(void) {
       "ct');assert(collectgarbage('count')<before+1);local ok,e=pcall(d.region_from_string,4096,4096,data,e"
       "nc);assert(not ok and e=='not enough memory');collectgarbage('collect');assert(d.region_from_string("
       "240,240,data,enc));";
-  h2_lua_host_t *full_host = NULL;
-  const h2_lua_host_config_t full_config = {.runtime = runtime,
-      .vm_memory_limit_bytes = 512u * 1024u};
+  h2_lua_host_t* full_host = NULL;
+  const h2_lua_host_config_t full_config = {
+      .runtime = runtime, .vm_memory_limit_bytes = 512u * 1024u};
   assert(h2_lua_host_create(&full_config, &full_host) == H2_PAL_OK);
   assert(h2_lua_host_start(full_host) == H2_PAL_OK);
-  (void)run_display_script_size(full_host, "@string-region-full.lua", full, sizeof(full)-1, 240, 240);
+  (void)run_display_script_size(full_host, "@string-region-full.lua", full,
+                                sizeof(full) - 1, 240, 240);
   assert(h2_lua_host_destroy_checked(full_host) == H2_PAL_OK);
   for (size_t i = 0; i < 240u * 240u; ++i)
     assert(s_test_display_fixture.pixels[i] == 0x1212);
@@ -2840,10 +3147,10 @@ static void test_display_string_regions(void) {
       "local r=d.region_from_string(16,16,data,enc);d.draw_region(r,0,0);d.present();"
       "local alphabet='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~';for c=0,255 do local ch=string.char(c);if not alphabet:find(ch,1,true) then local bad=data:sub(1,8)..ch..data:sub(10);assert(not pcall(d.region_from_string,16,16,bad,enc)) end end;";
   (void)run_display_script_size(host, "@base85-alphabet.lua", alphabet_script,
-                                sizeof(alphabet_script)-1, 16, 16);
+                                sizeof(alphabet_script) - 1, 16, 16);
   for (size_t i = 0; i < 256; ++i) {
-    unsigned high = ((2*i)*73+((2*i)/7)*19)%256;
-    unsigned low = ((2*i+1)*73+((2*i+1)/7)*19)%256;
+    unsigned high = ((2 * i) * 73 + ((2 * i) / 7) * 19) % 256;
+    unsigned low = ((2 * i + 1) * 73 + ((2 * i + 1) / 7) * 19) % 256;
     assert(s_test_display_fixture.pixels[i] == (uint16_t)(high << 8 | low));
   }
   h2_lua_host_destroy(host);
@@ -2851,44 +3158,81 @@ static void test_display_string_regions(void) {
 }
 
 static void test_display_regions(void) {
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_unstarted_host(runtime);
-  assert(h2_lua_register_module(host, "region_test", test_region_open, NULL) == H2_PAL_OK);
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = create_unstarted_host(runtime);
+  assert(h2_lua_register_module(host, "region_test", test_region_open, NULL) ==
+         H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  static const struct { const char *draw; const char *pixels; } cases[] = {
+  static const struct {
+    const char* draw;
+    const char* pixels;
+  } cases[] = {
       {"d.draw_region(r,0,0)",
-       "........" ".##....." "....#..." "........"
-       "........" "........" "........" "........"},
+       "........"
+       ".##....."
+       "....#..."
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"},
       {"d.draw_region(r,1,2,0,8,'black')",
-       "BBBBBBBB" "BBBBBBBB" "BBBBBBBB" "BB##BBBB"
-       "BBBBB#BB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"},
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BB##BBBB"
+       "BBBBB#BB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"},
       {"d.draw_region(r,0,0,0,8,'red')",
-       "........" ".BB....." "....B..." "........"
-       "........" "........" "........" "........"},
+       "........"
+       ".BB....."
+       "....B..."
+       "........"
+       "........"
+       "........"
+       "........"
+       "........"},
       {"d.draw_region(r,-1,-1,0,2,'black',1,3)",
-       "B#BBBBBB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"
-       "BBBBBBBB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"},
+       "B#BBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"},
       {"d.draw_region(r,100000,-100000);d.draw_region(r,0,0,4,4)",
-       "BBBBBBBB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"
-       "BBBBBBBB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"},
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"
+       "BBBBBBBB"},
   };
   for (int masked = 0; masked <= 1; ++masked) {
-    for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
       char script[2048];
-      int length = snprintf(script, sizeof(script),
-          "local d=require('display');d.clear('black');"
-          "d.fill_rect(1,1,2,1,'red');d.fill_rect(4,2,1,1,'red');"
-          "local r=d.capture_region(0,0,8,8,%s);"
-          "collectgarbage('collect');d.clear('blue');%s;d.present()",
-          masked ? "'black'" : "nil", cases[i].draw);
+      int length =
+          snprintf(script, sizeof(script),
+                   "local d=require('display');d.clear('black');"
+                   "d.fill_rect(1,1,2,1,'red');d.fill_rect(4,2,1,1,'red');"
+                   "local r=d.capture_region(0,0,8,8,%s);"
+                   "collectgarbage('collect');d.clear('blue');%s;d.present()",
+                   masked ? "'black'" : "nil", cases[i].draw);
       assert(length > 0 && (size_t)length < sizeof(script));
-      (void)run_display_script(host, "@region-pixels.lua", (const uint8_t *)script,
-                               (size_t)length);
+      (void)run_display_script(host, "@region-pixels.lua",
+                               (const uint8_t*)script, (size_t)length);
       for (size_t p = 0; p < 64; ++p) {
-        uint16_t expected = cases[i].pixels[p] == '#' ? 0xf800u :
-                            cases[i].pixels[p] == 'B' ? 0x001fu : 0;
+        uint16_t expected = cases[i].pixels[p] == '#'   ? 0xf800u
+                            : cases[i].pixels[p] == 'B' ? 0x001fu
+                                                        : 0;
         if (s_test_display_fixture.pixels[p] != expected)
-          fprintf(stderr, "region masked=%d case=%zu pixel=%zu got=%x expected=%x\n",
+          fprintf(stderr,
+                  "region masked=%d case=%zu pixel=%zu got=%x expected=%x\n",
                   masked, i, p, s_test_display_fixture.pixels[p], expected);
         assert(s_test_display_fixture.pixels[p] == expected);
       }
@@ -2909,7 +3253,8 @@ static void test_display_regions(void) {
       "bad(d.present,{retained=1});bad(d.present,{bounds=0});"
       "bad(d.present,{merge_gap=9});bad(d.present,{merge_gap=4294967296});"
       "d.release_background();d.release_background();assert(d.present()==0)";
-  (void)run_display_script(host, "@region-invalid.lua", invalid, sizeof(invalid)-1);
+  (void)run_display_script(host, "@region-invalid.lua", invalid,
+                           sizeof(invalid) - 1);
   assert(s_test_display_fixture.draw_count == 1);
   static const uint8_t retained[] =
       "local d=require('display');local n=require('region_test');"
@@ -2934,8 +3279,8 @@ static void test_display_regions(void) {
       "d.deinit();d.deinit();assert(not pcall(d.present));"
       "assert(not pcall(d.draw_region,weak[1],0,0))";
   (void)run_display_script_size(host, "@retained-regions.lua", retained,
-                                sizeof(retained)-1, 31, 35);
-  for (size_t i = 0; i < 31u*35u; ++i)
+                                sizeof(retained) - 1, 31, 35);
+  for (size_t i = 0; i < 31u * 35u; ++i)
     assert(s_test_display_fixture.pixels[i] == 0xf800u);
   assert(s_test_display_fixture.close_count == 1);
   static const uint8_t merge[] =
@@ -2948,7 +3293,8 @@ static void test_display_regions(void) {
       "p,n=d.present();assert(p==2 and n==2);"
       "d.clear('black');p,n=d.present({merge_gap=1});assert(p==33 and n==1);"
       "d.clear('black');assert(d.present()==0)";
-  (void)run_display_script_size(host, "@retained-merge.lua", merge, sizeof(merge)-1, 48, 48);
+  (void)run_display_script_size(host, "@retained-merge.lua", merge,
+                                sizeof(merge) - 1, 48, 48);
   static const uint8_t direct_tiles[] =
       "local d=require('display');local n=require('region_test');"
       "local options={tiles=true};local function present() return n.present(d.present,options) end;"
@@ -2963,7 +3309,7 @@ static void test_display_regions(void) {
       "p,r=d.present({retained=false,tiles=true});assert(p==48*48 and r==1);"
       "d.fill_rect(17,18,1,1,'white');p,r=present();assert(p==1 and r==1);";
   (void)run_display_script_size(host, "@retained-tiles.lua", direct_tiles,
-                                sizeof(direct_tiles)-1, 48, 48);
+                                sizeof(direct_tiles) - 1, 48, 48);
   static const uint8_t guarded[] =
       "local d=require('display');local n=require('region_test');"
       "d.clear('black');d.present({retained=true});"
@@ -2971,7 +3317,8 @@ static void test_display_regions(void) {
       "dots('red');local p,r=d.present();assert(p==49 and r==1);"
       "dots('black');p,r=d.present();assert(p==49 and r==1);"
       "dots('red');p,r=d.present();assert(p==49 and r==1);assert(d.present()==0)";
-  (void)run_display_script_size(host, "@retained-guard.lua", guarded, sizeof(guarded)-1, 65, 33);
+  (void)run_display_script_size(host, "@retained-guard.lua", guarded,
+                                sizeof(guarded) - 1, 65, 33);
   static const uint8_t present_spans[] =
       "local d=require('display');local n=require('region_test');"
       "local w,h=d.width,d.height;d.clear('black');collectgarbage('collect');"
@@ -2998,7 +3345,7 @@ static void test_display_regions(void) {
       "d.deinit();collectgarbage('collect');"
       "assert(collectgarbage('count')<before+4,'worker storage released')";
   (void)run_display_script_size(host, "@present-spans.lua", present_spans,
-                                sizeof(present_spans)-1, 120, 120);
+                                sizeof(present_spans) - 1, 120, 120);
   static const uint8_t memory[] =
       "local d=require('display');local w,h=d.width,d.height;"
       "local r=d.capture_region(0,0,w,h);local weak=setmetatable({r},{__mode='v'});"
@@ -3016,7 +3363,8 @@ static void test_display_regions(void) {
       "local color=setmetatable({}, {__index=function() d.deinit();return 255 end});"
       "assert(not pcall(d.draw_region,r,0,0,0,h,color));"
       "assert(not pcall(d.begin_frame,{clear=true,color='red'}))";
-  (void)run_display_script_size(host, "@region-memory.lua", memory, sizeof(memory)-1, 64, 64);
+  (void)run_display_script_size(host, "@region-memory.lua", memory,
+                                sizeof(memory) - 1, 64, 64);
   static const uint8_t drawing_paths[] =
       "local d=require('display');d.clear('blue');local bg=d.capture_region(0,0,d.width,d.height);"
       "d.restore_background(bg);d.present({retained=true});"
@@ -3041,9 +3389,10 @@ static void test_display_regions(void) {
       "d.clear('red');local other=d.capture_region(0,0,d.width,d.height);"
       "d.restore_background(other);d.present();d.restore_background(bg);"
       "assert(d.present()==d.width*d.height);assert(d.present()==0)";
-  (void)run_display_script_size(host, "@background-drawing-paths.lua", drawing_paths,
-                                sizeof(drawing_paths)-1, 31, 35);
-  for (size_t i = 0; i < 31u*35u; ++i)
+  (void)run_display_script_size(host, "@background-drawing-paths.lua",
+                                drawing_paths, sizeof(drawing_paths) - 1, 31,
+                                35);
+  for (size_t i = 0; i < 31u * 35u; ++i)
     assert(s_test_display_fixture.pixels[i] == 0x001fu);
   static const uint8_t restore_width[] =
       "local d=require('display');local n=require('region_test');"
@@ -3062,13 +3411,16 @@ static void test_display_regions(void) {
       "for _,draw in ipairs(draws) do draw();d.present();"
       "n.restore(d.restore_background,bg);d.present();"
       "n.restore(d.restore_background,bg);assert(d.present()==0) end;"
-      /* Preserve an existing dirty rectangle while adding restored tile bounds. */
+      /* Preserve an existing dirty rectangle while adding restored tile bounds.
+       */
       "d.fill_rect(w-1,h-1,1,1,'red');n.restore(d.restore_background,bg);"
       "assert(d.present()==0);"
-      /* Every measured restore has a full-width damaged tile, not a warm no-op. */
+      /* Every measured restore has a full-width damaged tile, not a warm no-op.
+       */
       "local function warm() d.fill_rect(0,0,w,1,'red');d.restore_background(bg) end;"
       "n.noalloc(warm);assert(d.present()==0);"
-      /* Full binding, reused capture invalidation and release retain their paths. */
+      /* Full binding, reused capture invalidation and release retain their
+         paths. */
       "d.clear('red');local other=d.capture_region(0,0,w,h);"
       "n.restore(d.restore_background,other);d.present();"
       "n.restore(d.restore_background,bg);d.present();"
@@ -3105,27 +3457,35 @@ static void test_display_regions(void) {
       "n.noalloc(function() d.fill_rect(w-1,h-1,1,1,'red');d.restore_background(bg) end);"
       "d.present();d.release_background() end;"
       "d.deinit()";
-  static const int restore_sizes[][2] = {{1,1}, {17,17}, {31,35}, {48,48}, {240,240}};
+  static const int restore_sizes[][2] = {
+      {1, 1}, {17, 17}, {31, 35}, {48, 48}, {240, 240}};
   /* A retained 240x240 frame plus two full captures exceeds the small region
-   * fixture's 256 KiB VM. Use the device-sized budget for this distinct suite. */
-  h2_lua_host_t *restore_host = NULL;
+   * fixture's 256 KiB VM. Use the device-sized budget for this distinct suite.
+   */
+  h2_lua_host_t* restore_host = NULL;
   const h2_lua_host_config_t restore_config = {
-      .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
+      .runtime = runtime,
+      .worker_count = 1u,
+      .max_jobs = 1u,
       .vm_memory_limit_bytes = 4u * 1024u * 1024u,
       .execution_timeout_ms = TEST_DISPLAY_ORACLE_TIMEOUT_MS,
   };
   assert(h2_lua_host_create(&restore_config, &restore_host) == H2_PAL_OK);
-  assert(h2_lua_register_module(restore_host, "region_test", test_region_open, NULL) == H2_PAL_OK);
+  assert(h2_lua_register_module(restore_host, "region_test", test_region_open,
+                                NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(restore_host) == H2_PAL_OK);
-  for (size_t i = 0; i < sizeof(restore_sizes)/sizeof(restore_sizes[0]); ++i) {
+  for (size_t i = 0; i < sizeof(restore_sizes) / sizeof(restore_sizes[0]);
+       ++i) {
     int width = restore_sizes[i][0], height = restore_sizes[i][1];
-    (void)run_display_script_size(restore_host, "@background-full-width.lua", restore_width,
-                                  sizeof(restore_width)-1, width, height);
+    (void)run_display_script_size(restore_host, "@background-full-width.lua",
+                                  restore_width, sizeof(restore_width) - 1,
+                                  width, height);
     for (int p = 0; p < width * height; ++p)
       assert(s_test_display_fixture.pixels[p] == 0x0400u);
     assert(s_test_display_fixture.close_count == 1);
-    (void)run_display_script_size(restore_host, "@region-damage.lua", region_damage,
-                                  sizeof(region_damage)-1, width, height);
+    (void)run_display_script_size(restore_host, "@region-damage.lua",
+                                  region_damage, sizeof(region_damage) - 1,
+                                  width, height);
     for (int p = 0; p < width * height; ++p)
       assert(s_test_display_fixture.pixels[p] == 0x001fu);
     assert(s_test_display_fixture.close_count == 1);
@@ -3139,12 +3499,12 @@ static void test_display_regions(void) {
       "local p,r=d.present();assert(p==34816 and r==256) end);"
       "dots('blue');d.present();dots('red');"
       "local p,r=d.present();assert(p==34816 and r==256);assert(d.present()==0)";
-  (void)run_display_script_size(restore_host, "@retained-streamed.lua", streamed,
-                                sizeof(streamed)-1, 4096, 33);
+  (void)run_display_script_size(restore_host, "@retained-streamed.lua",
+                                streamed, sizeof(streamed) - 1, 4096, 33);
   for (int y = 0; y < 33; ++y)
     for (int x = 0; x < 4096; ++x)
-      assert(s_test_display_fixture.pixels[y*4096+x] ==
-             ((y == 0 || y == 32) && x%32 == 0 ? 0xf800u : 0));
+      assert(s_test_display_fixture.pixels[y * 4096 + x] ==
+             ((y == 0 || y == 32) && x % 32 == 0 ? 0xf800u : 0));
   h2_lua_host_destroy(restore_host);
   static const uint8_t close[] =
       "local d=require('display');local n=require('region_test');"
@@ -3152,13 +3512,15 @@ static void test_display_regions(void) {
       "local r=d.capture_region(0,0,1,1);"
       "keep_finalizer=setmetatable({}, {__gc=function() "
       "n.finalizer(not pcall(d.draw_region,r,0,0) and not pcall(d.clear,'red')) end})";
-  (void)run_display_script(host, "@regions-release-finalizer.lua", close, sizeof(close)-1);
+  (void)run_display_script(host, "@regions-release-finalizer.lua", close,
+                           sizeof(close) - 1);
   assert(s_test_display_fixture.finalizer_count == 1);
   /* Host destruction has a distinct release entry point. */
   test_display_reset();
   h2_lua_job_id_t job;
-  assert(h2_lua_job_submit_text(host, NULL, "@regions-host-finalizer.lua", close,
-                               sizeof(close)-1, NULL, 0, &job) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, NULL, "@regions-host-finalizer.lua",
+                                close, sizeof(close) - 1, NULL, 0,
+                                &job) == H2_PAL_OK);
   run_until_terminal(host, job, 64);
   assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
   h2_lua_host_destroy(host);
@@ -3167,9 +3529,9 @@ static void test_display_regions(void) {
 }
 
 static void test_display_strokes(void) {
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime, 1000, 0,
-      TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = create_unstarted_host_with_scheduler(
+      runtime, 1000, 0, TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const uint8_t reference[] =
       "local d=require('display');math.randomseed(354);"
@@ -3203,7 +3565,8 @@ static void test_display_strokes(void) {
       "assert(not hit);fast_total=fast_total+fast;assert(d.present()==0,'fast '..k);"
       "d.clear('black');hit=d.stroke_path(p,widths,colors,0,0,8,true,true);"
       "assert(hit);assert(d.present()==0,'hot '..k) end;assert(fast_total>0)";
-  (void)run_display_script(host, "@stroke-reference.lua", reference, sizeof(reference)-1);
+  (void)run_display_script(host, "@stroke-reference.lua", reference,
+                           sizeof(reference) - 1);
   static const uint8_t keys[] =
       "local d=require('display');local p,w={{1,1},{6,6}},{2};"
       "local function draw(color,off,top,bot,fast,scale) "
@@ -3224,7 +3587,7 @@ static void test_display_strokes(void) {
       "bad(p,w,'red',0,0,8,1);bad(p,w,'red',0,0,8,false,false,false,0);"
       "bad(p,w,'red',0,0,8,false,false,true,1,.26);"
       "local color=setmetatable({}, {__index=function() d.deinit();return 255 end});bad(p,w,color)";
-  (void)run_display_script(host, "@stroke-keys.lua", keys, sizeof(keys)-1);
+  (void)run_display_script(host, "@stroke-keys.lua", keys, sizeof(keys) - 1);
   static const uint8_t smooth[] =
       "local d=require('display');local p={{1.5,3.5},{5.5,3.5}};"
       "d.clear('black');d.stroke_path(p,{1},'red',0,0,8,false,false,true);"
@@ -3238,7 +3601,8 @@ static void test_display_strokes(void) {
       "assert(not hit);assert(d.present()==0);"
       "d.clear('black');d.stroke_path(p,{0},'red',0,0,8,false,false,true);d.present();"
       "d.clear('black');assert(d.present()==0)";
-  (void)run_display_script(host, "@stroke-smooth.lua", smooth, sizeof(smooth)-1);
+  (void)run_display_script(host, "@stroke-smooth.lua", smooth,
+                           sizeof(smooth) - 1);
   static const uint8_t overflow[] =
       "local d=require('display');local p,w={},{};"
       "for i=1,256 do p[i]={i%2==0 and 2 or 5,i%2==0 and 62 or 1};if i<256 then w[i]=2 end end;"
@@ -3253,7 +3617,8 @@ static void test_display_strokes(void) {
       "d.stroke_path(points,{1},'red',0,0,64,false,false,true);d.present();"
       "d.clear('black');d.stroke_path({{-1000,4},{1000,4}},{1},'red',0,0,64,false,false,true);"
       "assert(d.present()==0)";
-  (void)run_display_script_size(host, "@stroke-overflow.lua", overflow, sizeof(overflow)-1, 64, 64);
+  (void)run_display_script_size(host, "@stroke-overflow.lua", overflow,
+                                sizeof(overflow) - 1, 64, 64);
   static const uint8_t smooth_memory[] =
       "local d=require('display');d.clear('blue');d.present({retained=true});"
       "local p,w={{0,0},{63,63}},{100};"
@@ -3266,20 +3631,22 @@ static void test_display_strokes(void) {
       "held=nil;collectgarbage('collect');d.stroke_path(p,w,'red',0,0,64,false,false,true);"
       "assert(d.present()>0);collectgarbage('collect');local before=collectgarbage('count');"
       "d.deinit();collectgarbage('collect');assert(collectgarbage('count')<before-18)";
-  (void)run_display_script_size(host, "@stroke-smooth-memory.lua", smooth_memory,
-                                sizeof(smooth_memory)-1, 64, 64);
+  (void)run_display_script_size(host, "@stroke-smooth-memory.lua",
+                                smooth_memory, sizeof(smooth_memory) - 1, 64,
+                                64);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }
 
 static void test_display_mesh_identity(void) {
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   /* The 16 frames x 12 transforms x 6 presents require 1152 worker round
    * trips. This is a pixel oracle, so allow scheduler latency on loaded CI
    * hosts while retaining a finite job deadline and every comparison. */
-  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime, 1000, 0,
-      TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
-  assert(h2_lua_register_module(host,"mesh_test",test_mesh_open,NULL) == H2_PAL_OK);
+  h2_lua_host_t* host = create_unstarted_host_with_scheduler(
+      runtime, 1000, 0, TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
+  assert(h2_lua_register_module(host, "mesh_test", test_mesh_open, NULL) ==
+         H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   /* Reference positions evaluate the original binary64 expression in Lua.
    * Compare the complete framebuffer, not a few selected sample pixels. */
@@ -3306,12 +3673,14 @@ static void test_display_mesh_identity(void) {
       "top=frame%3,bottom=8-frame%2,color=frame%2==0 and 'white' or nil};"
       "d.clear('black');d.draw_mesh(ref,opts);d.present({retained=true});"
       "opts.matrix=a;opts.grid=grid;"
-      /* Rebuild, capture, replay, uncached coordinate hit, then replay again. */
+      /* Rebuild, capture, replay, uncached coordinate hit, then replay again.
+       */
       "for pass=1,5 do opts.cache=pass~=1 and pass~=4;"
       "d.clear('black');d.draw_mesh(m,opts);"
       "assert(d.present()==0,'identity pixels '..frame..'/'..k..'/'..pass);end;"
       "end;collectgarbage('collect');end";
-  (void)run_display_script(host,"@mesh-identity-pixels.lua",pixels,sizeof(pixels)-1);
+  (void)run_display_script(host, "@mesh-identity-pixels.lua", pixels,
+                           sizeof(pixels) - 1);
   static const uint8_t recovery[] =
       "local d=require('display');local n=require('mesh_test');local m=n.new();"
       "local v={{1,1},{4,1},{4,4},{1,4},{1000000,-1000000},{-0.,0.}};"
@@ -3331,16 +3700,18 @@ static void test_display_mesh_identity(void) {
       "assert(d.present()==0);d.draw_mesh(d.compile_mesh({},{}));"
       "assert(d.present()==0);collectgarbage('collect');d.deinit();"
       "assert(not pcall(d.draw_mesh,m,{matrix={1,0,0,1,0,0},cache=true}))";
-  (void)run_display_script(host,"@mesh-identity-recovery.lua",recovery,sizeof(recovery)-1);
+  (void)run_display_script(host, "@mesh-identity-recovery.lua", recovery,
+                           sizeof(recovery) - 1);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }
 
 static void test_display_mesh_cache(void) {
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime, 1000, 0,
-      TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
-  assert(h2_lua_register_module(host,"mesh_test",test_mesh_open,NULL) == H2_PAL_OK);
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = create_unstarted_host_with_scheduler(
+      runtime, 1000, 0, TEST_DISPLAY_ORACLE_TIMEOUT_MS, 8192);
+  assert(h2_lua_register_module(host, "mesh_test", test_mesh_open, NULL) ==
+         H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const uint8_t cache[] =
       "local d=require('display');local n=require('mesh_test');local m=n.new();"
@@ -3362,13 +3733,16 @@ static void test_display_mesh_cache(void) {
       "n.update(m,2);d.clear('black');d.draw_mesh(m,{cache=true});d.present();"
       "assert(d.present()==0);assert(not pcall(d.draw_mesh,m,{cache=1}));"
       "local weak=setmetatable({m},{__mode='v'});m=nil;collectgarbage('collect');assert(not weak[1])";
-  (void)run_display_script(host,"@mesh-cache.lua",cache,sizeof(cache)-1);
-  assert_only_pixels(0,NULL,0);
+  (void)run_display_script(host, "@mesh-cache.lua", cache, sizeof(cache) - 1);
+  assert_only_pixels(0, NULL, 0);
   h2_lua_host_destroy(host);
-  const h2_lua_host_config_t config = {.runtime=runtime,.worker_count=1,.max_jobs=1,
-      .vm_memory_limit_bytes=4u*1024u*1024u,
-      .execution_timeout_ms=TEST_DISPLAY_ORACLE_TIMEOUT_MS};
-  assert(h2_lua_host_create(&config,&host) == H2_PAL_OK);
+  const h2_lua_host_config_t config = {
+      .runtime = runtime,
+      .worker_count = 1,
+      .max_jobs = 1,
+      .vm_memory_limit_bytes = 4u * 1024u * 1024u,
+      .execution_timeout_ms = TEST_DISPLAY_ORACLE_TIMEOUT_MS};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const uint8_t capacity[] =
       "local d=require('display');local m=d.compile_mesh({},{},65536,4096);"
@@ -3382,37 +3756,46 @@ static void test_display_mesh_cache(void) {
       "d.update_mesh(m,{{2,2},{5,2},{5,4},{2,4}},{{0,1,4,'blue'}});"
       "d.clear('black');d.draw_mesh(m);d.present();"
       "d.clear('black');d.draw_mesh(m,{cache=true});assert(d.present()==0)";
-  (void)run_display_script(host,"@mesh-span-capacity.lua",capacity,sizeof(capacity)-1);
+  (void)run_display_script(host, "@mesh-span-capacity.lua", capacity,
+                           sizeof(capacity) - 1);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }
 
-static void test_job_results(h2_lua_host_t *host) {
+static void test_job_results(h2_lua_host_t* host) {
   size_t invalid_size = 99;
   int invalid_present = 1;
-  assert(h2_lua_job_get_result(host, H2_LUA_JOB_ID_NONE, NULL, 0,
-      &invalid_size, &invalid_present) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_job_get_result(host, H2_LUA_JOB_ID_NONE, NULL, 0, &invalid_size,
+                               &invalid_present) == H2_PAL_ERR_INVALID_ARG);
   assert(invalid_size == 0 && invalid_present == 0);
-  assert(h2_lua_job_get_result(host, UINT32_MAX, NULL, 0,
-      &invalid_size, &invalid_present) == H2_PAL_ERR_NOT_FOUND);
-  assert(h2_lua_job_get_result(NULL, 1, NULL, 0,
-      &invalid_size, &invalid_present) == H2_PAL_ERR_INVALID_ARG);
-  const char *scripts[] = {"return 'first', 'last'", "return 42", "return nil",
-      "return", "return ''", "return {}", "return true",
+  assert(h2_lua_job_get_result(host, UINT32_MAX, NULL, 0, &invalid_size,
+                               &invalid_present) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_lua_job_get_result(NULL, 1, NULL, 0, &invalid_size,
+                               &invalid_present) == H2_PAL_ERR_INVALID_ARG);
+  const char* scripts[] = {
+      "return 'first', 'last'",
+      "return 42",
+      "return nil",
+      "return",
+      "return ''",
+      "return {}",
+      "return true",
       "return setmetatable({}, {__tostring=function() return 'custom' end})",
       "return 'a'..string.char(0)..'b'"};
-  const char *expected[] = {"first", "42", "nil", "", "", "table: ", "true",
-                            "custom", "a\0b"};
+  const char* expected[] = {"first",   "42",   "nil",    "",    "",
+                            "table: ", "true", "custom", "a\0b"};
   for (size_t i = 0; i < sizeof(scripts) / sizeof(scripts[0]); ++i) {
     h2_lua_job_id_t id;
-    assert(h2_lua_job_submit_text(host, NULL, "@result.lua",
-        (const uint8_t *)scripts[i], strlen(scripts[i]), NULL, 0, &id) == H2_PAL_OK);
+    assert(h2_lua_job_submit_text(
+               host, NULL, "@result.lua", (const uint8_t*)scripts[i],
+               strlen(scripts[i]), NULL, 0, &id) == H2_PAL_OK);
     run_until_terminal(host, id, 1000u);
     assert(status(host, id).state == H2_LUA_JOB_SUCCEEDED);
     char buffer[128] = "untouched";
     size_t size = 999;
     int present = -1;
-    assert(h2_lua_job_get_result(host, id, NULL, 0, &size, &present) == H2_PAL_OK);
+    assert(h2_lua_job_get_result(host, id, NULL, 0, &size, &present) ==
+           H2_PAL_OK);
     assert(present == (i != 3));
     if (present) {
       assert(h2_lua_job_get_result(host, id, buffer, size, &size, &present) ==
@@ -3420,7 +3803,7 @@ static void test_job_results(h2_lua_host_t *host) {
       assert(strcmp(buffer, "untouched") == 0);
     }
     assert(h2_lua_job_get_result(host, id, buffer, sizeof(buffer), &size,
-                               &present) == H2_PAL_OK);
+                                 &present) == H2_PAL_OK);
     if (i == 5) {
       assert(size > 7 && strncmp(buffer, expected[i], 7) == 0);
     } else {
@@ -3431,7 +3814,7 @@ static void test_job_results(h2_lua_host_t *host) {
     assert(status(host, id).memory_used > size);
     assert(h2_lua_job_release(host, id) == H2_PAL_OK);
     assert(h2_lua_job_get_result(host, id, buffer, sizeof(buffer), &size,
-                               &present) == H2_PAL_ERR_NOT_FOUND);
+                                 &present) == H2_PAL_ERR_NOT_FOUND);
     assert(size == 0 && present == 0);
   }
 }
@@ -3453,7 +3836,7 @@ typedef struct heap_test_mem {
   size_t max_allocation;
 } heap_test_mem_t;
 
-static void heap_test_mem_init(heap_test_mem_t *mem) {
+static void heap_test_mem_init(heap_test_mem_t* mem) {
   assert(h2_atomic_size_init(&mem->bytes, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_size_init(&mem->allocs, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_size_init(&mem->frees, 0u) == H2_ATOMIC_OK);
@@ -3461,7 +3844,7 @@ static void heap_test_mem_init(heap_test_mem_t *mem) {
   assert(h2_atomic_size_init(&mem->pool_allocs, 0u) == H2_ATOMIC_OK);
 }
 
-static void heap_test_mem_destroy(heap_test_mem_t *mem) {
+static void heap_test_mem_destroy(heap_test_mem_t* mem) {
   h2_atomic_size_destroy(&mem->bytes);
   h2_atomic_size_destroy(&mem->allocs);
   h2_atomic_size_destroy(&mem->frees);
@@ -3469,9 +3852,9 @@ static void heap_test_mem_destroy(heap_test_mem_t *mem) {
   h2_atomic_size_destroy(&mem->pool_allocs);
 }
 
-static void *heap_test_alloc(void *user, size_t size) {
-  heap_test_mem_t *mem = user;
-  heap_test_header_t *header;
+static void* heap_test_alloc(void* user, size_t size) {
+  heap_test_mem_t* mem = user;
+  heap_test_header_t* header;
   if (mem->max_allocation != 0u && size > mem->max_allocation) {
     h2_atomic_fetch_add(&mem->rejected, 1u);
     return NULL;
@@ -3488,24 +3871,24 @@ static void *heap_test_alloc(void *user, size_t size) {
   return header + 1;
 }
 
-static void heap_test_free(void *user, void *ptr) {
-  heap_test_mem_t *mem = user;
+static void heap_test_free(void* user, void* ptr) {
+  heap_test_mem_t* mem = user;
   if (ptr != NULL) {
-    heap_test_header_t *header = (heap_test_header_t *)ptr - 1;
+    heap_test_header_t* header = (heap_test_header_t*)ptr - 1;
     h2_atomic_fetch_sub(&mem->bytes, header->bytes);
     h2_atomic_fetch_add(&mem->frees, 1u);
     free(header);
   }
 }
 
-static void *heap_test_realloc(void *user, void *ptr, size_t size) {
+static void* heap_test_realloc(void* user, void* ptr, size_t size) {
   if (size == 0u) {
     heap_test_free(user, ptr);
     return NULL;
   }
-  void *next = heap_test_alloc(user, size);
+  void* next = heap_test_alloc(user, size);
   if (next != NULL && ptr != NULL) {
-    size_t old_size = ((heap_test_header_t *)ptr - 1)->bytes;
+    size_t old_size = ((heap_test_header_t*)ptr - 1)->bytes;
     memcpy(next, ptr, old_size < size ? old_size : size);
     heap_test_free(user, ptr);
   }
@@ -3518,17 +3901,16 @@ static const h2_pal_mem_vtable_t heap_test_mem_vtable = {
     .free = heap_test_free,
 };
 
-static void heap_test_balanced(const heap_test_mem_t *mem) {
+static void heap_test_balanced(const heap_test_mem_t* mem) {
   assert(h2_atomic_load(&mem->bytes) == 0u);
   assert(h2_atomic_load(&mem->allocs) == h2_atomic_load(&mem->frees));
 }
 
-static void heap_test_run(h2_lua_host_t *host, const char *source,
+static void heap_test_run(h2_lua_host_t* host, const char* source,
                           h2_lua_job_state_t expected) {
   h2_lua_job_id_t id;
-  assert(h2_lua_job_submit_text(host, NULL, "@heap.lua",
-                                (const uint8_t *)source, strlen(source), NULL,
-                                0u, &id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, NULL, "@heap.lua", (const uint8_t*)source,
+                                strlen(source), NULL, 0u, &id) == H2_PAL_OK);
   run_until_terminal(host, id, 6000u);
   h2_lua_job_status_t value = status(host, id);
   assert(value.state == expected);
@@ -3541,7 +3923,7 @@ static void heap_test_run(h2_lua_host_t *host, const char *source,
 /* Everything the Host allocates goes through config.allocator, so a caller
  * can place the Host in its own arena; Runtime mem stays untouched. */
 static void test_host_allocator(void) {
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   h2_runtime_t probe = *runtime;
   heap_test_mem_t runtime_mem = {0};
   heap_test_mem_t host_mem = {0};
@@ -3561,7 +3943,7 @@ static void test_host_allocator(void) {
       .execution_timeout_ms = 5000u,
   };
   for (size_t reserved = 0u; reserved < 2u; ++reserved) {
-    h2_lua_host_t *host = NULL;
+    h2_lua_host_t* host = NULL;
     config.vm_heap_bytes = reserved ? 1024u * 1024u : 0u;
     host_mem.pool_bytes = config.vm_heap_bytes;
     const size_t host_allocs = h2_atomic_load(&host_mem.allocs);
@@ -3579,11 +3961,10 @@ static void test_host_allocator(void) {
   h2_runtime_deinit(runtime);
   heap_test_mem_destroy(&runtime_mem);
   heap_test_mem_destroy(&host_mem);
-
 }
 
 static void test_reserved_vm_heap(void) {
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   h2_runtime_t probe = *runtime;
   heap_test_mem_t mem = {0};
   heap_test_mem_init(&mem);
@@ -3596,7 +3977,7 @@ static void test_reserved_vm_heap(void) {
       .vm_memory_limit_bytes = 2u * 1024u * 1024u,
       .execution_timeout_ms = 5000u,
   };
-  h2_lua_host_t *host = NULL;
+  h2_lua_host_t* host = NULL;
   /* Identical quotas and a fragmented system heap: only the reserved case
    * can allocate a 120 KiB string. Cap applies to alloc AND realloc. */
   for (size_t reserved = 0u; reserved < 2u; ++reserved) {
@@ -3638,7 +4019,7 @@ static void test_reserved_vm_heap(void) {
     assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
     assert(h2_atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
     /* A failed grow must preserve the original allocation and its contents. */
-    unsigned char *block = h2_lua_heap_realloc(host, NULL, 99u, 128u);
+    unsigned char* block = h2_lua_heap_realloc(host, NULL, 99u, 128u);
     assert(block != NULL);
     memset(block, 0x5a, 128u);
     assert(h2_lua_heap_realloc(host, block, 128u, config.vm_heap_bytes) ==
@@ -3651,7 +4032,7 @@ static void test_reserved_vm_heap(void) {
     assert(h2_lua_heap_realloc(host, block, 64u, 0u) == NULL);
     assert(h2_lua_heap_realloc(host, NULL, 0u, 0u) == NULL);
     assert(h2_lua_host_start(host) == H2_PAL_OK);
-    const char *source =
+    const char* source =
         "local runtime=require('runtime');"
         "for round=1,20 do local t={} for i=1,300 do "
         "t[i]={i,string.rep(tostring(i),40)} end "
@@ -3660,7 +4041,7 @@ static void test_reserved_vm_heap(void) {
     /* Keep four VMs live across both workers to exercise the shared mutex. */
     for (size_t i = 0u; i < 4u; ++i) {
       assert(h2_lua_job_submit_text(host, NULL, "@heap-churn.lua",
-                                    (const uint8_t *)source, strlen(source),
+                                    (const uint8_t*)source, strlen(source),
                                     NULL, 0u, &ids[i]) == H2_PAL_OK);
     }
     for (size_t i = 0u; i < 4u; ++i) {
@@ -3732,26 +4113,25 @@ static void test_reserved_vm_heap(void) {
   mem.max_allocation = 0u;
   h2_runtime_deinit(runtime);
   heap_test_mem_destroy(&mem);
-
 }
 
-static int test_source_effect_open(void *lua_state, void *user) {
+static int test_source_effect_open(void* lua_state, void* user) {
   (void)user;
   h2_atomic_fetch_add(&s_source_effect_count, 1);
-  lua_pushboolean((lua_State *)lua_state, 1);
+  lua_pushboolean((lua_State*)lua_state, 1);
   return 1;
 }
 
 static void test_streamed_close_failure(void) {
-  h2_runtime_t *runtime = create_runtime();
-  h2_lua_host_t *host = NULL;
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_t* host = NULL;
   const h2_lua_host_config_t config = {
       .runtime = runtime,
       .worker_count = 1u,
       .max_jobs = 1u,
       .execution_timeout_ms = 30000u,
   };
-  const char *paths[] = {"scripts/waiting.lua", "scripts/streamed.lua",
+  const char* paths[] = {"scripts/waiting.lua", "scripts/streamed.lua",
                          "scripts/empty.lua", "scripts/malformed.lua",
                          "scripts/early_malformed.lua"};
   const char effect_source[] = "require('source_effect');return 'done'";
@@ -3761,14 +4141,14 @@ static void test_streamed_close_failure(void) {
   s_file_early_malformed[0] = ')';
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_register_module(host, "source_effect", test_source_effect_open,
-                                 NULL) == H2_PAL_OK);
+                                NULL) == H2_PAL_OK);
   {
     h2_lua_job_id_t job_id = 12345u;
     size_t close_count = s_test_fs_file.close_count;
     s_fs_close_result = H2_PAL_ERR_IO;
     assert(h2_lua_job_submit_path(host, NULL, "unstarted",
-                                 "scripts/streamed.lua", NULL, 0u,
-                                 &job_id) == H2_PAL_ERR_INVALID_STATE);
+                                  "scripts/streamed.lua", NULL, 0u,
+                                  &job_id) == H2_PAL_ERR_INVALID_STATE);
     assert(job_id == H2_LUA_JOB_ID_NONE);
     assert(!s_test_fs_file.is_open);
     assert(s_test_fs_file.close_count == close_count + 1u);
@@ -3787,10 +4167,10 @@ static void test_streamed_close_failure(void) {
        * errors that stop the compiler before it has drained the source. */
       if (use_file) {
         assert(h2_lua_job_submit_file(host, NULL, paths[i], NULL, 0u,
-                                     &job_id) == H2_PAL_ERR_IO);
+                                      &job_id) == H2_PAL_ERR_IO);
       } else {
         assert(h2_lua_job_submit_path(host, NULL, "close-failure", paths[i],
-                                     NULL, 0u, &job_id) == H2_PAL_ERR_IO);
+                                      NULL, 0u, &job_id) == H2_PAL_ERR_IO);
       }
       s_fs_close_job_id = NULL;
       assert(job_id == H2_LUA_JOB_ID_NONE);
@@ -3799,8 +4179,8 @@ static void test_streamed_close_failure(void) {
       assert(s_test_fs_file.close_count == close_count + 1u);
       s_fs_close_result = H2_PAL_OK;
       assert(h2_lua_job_submit_path(host, NULL, "after-close-failure",
-                                   "/data/lua/app.lua", NULL, 0u,
-                                   &job_id) == H2_PAL_OK);
+                                    "/data/lua/app.lua", NULL, 0u,
+                                    &job_id) == H2_PAL_OK);
       run_until_terminal(host, job_id, 1000u);
       assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
       assert(strcmp(status(host, job_id).message, "path:ok") == 0);
@@ -3812,7 +4192,7 @@ static void test_streamed_close_failure(void) {
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   s_fs_close_job_id = &job_id;
   assert(h2_lua_job_submit_path(host, NULL, "effect", "scripts/streamed.lua",
-                               NULL, 0u, &job_id) == H2_PAL_OK);
+                                NULL, 0u, &job_id) == H2_PAL_OK);
   s_fs_close_job_id = NULL;
   run_until_terminal(host, job_id, 1000u);
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
@@ -3821,7 +4201,7 @@ static void test_streamed_close_failure(void) {
     h2_lua_job_id_t refused_id = 12345u;
     size_t close_count = s_test_fs_file.close_count;
     assert(h2_lua_job_submit_path(host, NULL, "full", "scripts/streamed.lua",
-                                 NULL, 0u, &refused_id) == H2_PAL_ERR_FULL);
+                                  NULL, 0u, &refused_id) == H2_PAL_ERR_FULL);
     assert(refused_id == H2_LUA_JOB_ID_NONE);
     assert(!s_test_fs_file.is_open);
     assert(s_test_fs_file.close_count == close_count + 1u);
@@ -3829,8 +4209,8 @@ static void test_streamed_close_failure(void) {
   }
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   assert(h2_lua_job_submit_path(host, NULL, "early-syntax-error",
-                               "scripts/early_malformed.lua", NULL, 0u,
-                               &job_id) == H2_PAL_OK);
+                                "scripts/early_malformed.lua", NULL, 0u,
+                                &job_id) == H2_PAL_OK);
   assert(status(host, job_id).state == H2_LUA_JOB_FAILED);
   assert(!s_test_fs_file.is_open);
   assert(s_test_fs_file.offset < s_test_fs_file.source_size);
@@ -3839,7 +4219,7 @@ static void test_streamed_close_failure(void) {
   h2_runtime_deinit(runtime);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   test_display_q24_round();
   assert(h2_atomic_int_init(&s_source_effect_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_close_count, 0) == H2_ATOMIC_OK);
@@ -3855,13 +4235,13 @@ int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
     s_raster_benchmark = 1;
     test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
-  h2_atomic_int_destroy(&s_source_effect_count);
-  h2_atomic_int_destroy(&s_test_audio_close_count);
-  h2_atomic_int_destroy(&s_test_audio_start_count);
-  h2_atomic_int_destroy(&s_test_audio_stop_count);
-  h2_atomic_int_destroy(&s_test_audio_mic_start_count);
-  h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
-  h2_atomic_int_destroy(&s_test_audio_mic_block);
+    h2_atomic_int_destroy(&s_source_effect_count);
+    h2_atomic_int_destroy(&s_test_audio_close_count);
+    h2_atomic_int_destroy(&s_test_audio_start_count);
+    h2_atomic_int_destroy(&s_test_audio_stop_count);
+    h2_atomic_int_destroy(&s_test_audio_mic_start_count);
+    h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
+    h2_atomic_int_destroy(&s_test_audio_mic_block);
     return 0;
   }
   if (argc == 2 && (strcmp(argv[1], "--raster-benchmark") == 0 ||
@@ -3881,23 +4261,28 @@ int main(int argc, char **argv) {
     int mesh_cache = strcmp(argv[1], "--mesh-cache-benchmark") == 0;
     int capture = strcmp(argv[1], "--capture-benchmark") == 0;
     int projective = strcmp(argv[1], "--projective-benchmark") == 0;
-    test_display_raster2d(strip || material || smooth || projective || capture || mesh_cache || primitive ? 2 : 1,
-        primitive ? "libs/lua/tests/raster_workload.lua" :
-        strip ? "libs/lua/tests/material_strip.lua" :
-        mesh_cache ? "libs/lua/tests/mesh_cache_sizing.lua" :
-        capture ? "libs/lua/tests/masked_capture.lua" :
-        projective ? "libs/lua/tests/quad_material_projective.lua" :
-        material ? "libs/lua/tests/quad_material.lua" :
-        smooth ? "libs/lua/tests/smooth_cache.lua" :
-        strcmp(argv[1], "--quad-benchmark") == 0
-        ? "libs/lua/tests/quad_batch.lua" : "libs/lua/tests/raster2d.lua");
-  h2_atomic_int_destroy(&s_source_effect_count);
-  h2_atomic_int_destroy(&s_test_audio_close_count);
-  h2_atomic_int_destroy(&s_test_audio_start_count);
-  h2_atomic_int_destroy(&s_test_audio_stop_count);
-  h2_atomic_int_destroy(&s_test_audio_mic_start_count);
-  h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
-  h2_atomic_int_destroy(&s_test_audio_mic_block);
+    test_display_raster2d(strip || material || smooth || projective ||
+                                  capture || mesh_cache || primitive
+                              ? 2
+                              : 1,
+                          primitive    ? "libs/lua/tests/raster_workload.lua"
+                          : strip      ? "libs/lua/tests/material_strip.lua"
+                          : mesh_cache ? "libs/lua/tests/mesh_cache_sizing.lua"
+                          : capture    ? "libs/lua/tests/masked_capture.lua"
+                          : projective
+                              ? "libs/lua/tests/quad_material_projective.lua"
+                          : material ? "libs/lua/tests/quad_material.lua"
+                          : smooth   ? "libs/lua/tests/smooth_cache.lua"
+                          : strcmp(argv[1], "--quad-benchmark") == 0
+                              ? "libs/lua/tests/quad_batch.lua"
+                              : "libs/lua/tests/raster2d.lua");
+    h2_atomic_int_destroy(&s_source_effect_count);
+    h2_atomic_int_destroy(&s_test_audio_close_count);
+    h2_atomic_int_destroy(&s_test_audio_start_count);
+    h2_atomic_int_destroy(&s_test_audio_stop_count);
+    h2_atomic_int_destroy(&s_test_audio_mic_start_count);
+    h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
+    h2_atomic_int_destroy(&s_test_audio_mic_block);
     return 0;
   }
   test_streamed_close_failure();
@@ -3934,7 +4319,7 @@ int main(int argc, char **argv) {
   test_display_worker_join_failure();
   test_borrowed_display();
   test_display_multiple_jobs();
-  static const char *const esp_claw_ids[] = {
+  static const char* const esp_claw_ids[] = {
       "adc",
       "gpio",
       "i2c",
@@ -3972,7 +4357,7 @@ int main(int argc, char **argv) {
       "system",
       "vision",
   };
-  static const char *const extension_ids[] = {"runtime"};
+  static const char* const extension_ids[] = {"runtime"};
   static const uint8_t embedded_nul_source[] = {'r', 'e', 't', 'u',  'r',
                                                 'n', ' ', '1', '\0', '2'};
   static const uint8_t system_profile_script[] =
@@ -4071,9 +4456,9 @@ int main(int argc, char **argv) {
       "delay.delay_ms(20)\n"
       "return args.value .. ':' .. tostring(n)\n";
   static const h2_lua_arg_t args[] = {{"value", "ready"}};
-  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t* runtime = create_runtime();
   assert_missing_worker_apis_are_rejected(runtime);
-  h2_lua_host_t *invalid_size_host =
+  h2_lua_host_t* invalid_size_host =
       create_unstarted_host_with_scheduler(runtime, 1000u, 0u, 1000u, SIZE_MAX);
   assert(h2_lua_host_start(invalid_size_host) == H2_PAL_OK);
   h2_lua_job_id_t invalid_size_job_id = H2_LUA_JOB_ID_NONE;
@@ -4094,7 +4479,7 @@ int main(int argc, char **argv) {
   assert(h2_lua_job_release(invalid_size_host, invalid_size_job_id) ==
          H2_PAL_OK);
   h2_lua_host_destroy(invalid_size_host);
-  h2_lua_host_t *host = create_host(runtime);
+  h2_lua_host_t* host = create_host(runtime);
   test_job_results(host);
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   static const h2_lua_arg_t file_args[] = {{"value", "ok"}};
@@ -4190,7 +4575,7 @@ int main(int argc, char **argv) {
                                 &job_id) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_job_submit_file(host, NULL, "/absolute.lua", NULL, 0u,
                                 &job_id) == H2_PAL_ERR_INVALID_ARG);
-  const h2_pal_fs_api_t *fs = runtime->fs;
+  const h2_pal_fs_api_t* fs = runtime->fs;
   runtime->fs = NULL;
   assert(h2_lua_job_submit_file(host, NULL, "scripts/main.lua", NULL, 0u,
                                 &job_id) == H2_PAL_ERR_UNSUPPORTED);
@@ -4279,10 +4664,10 @@ int main(int argc, char **argv) {
    * remainder. */
   {
     static const uint8_t expected[] = {
-        1, 2,   3,   4,           /* o1 write 1: first whole frame */
-        5, 6,   7,   8,           /* o1 write 2: carried 5,6 + new 7,8 */
-        100, 101, 102, 103,       /* o2 write: independent Track */
-        9, 10,  0,   0,           /* o1 close: flush 9,10 zero padded */
+        1,   2,   3,   4,   /* o1 write 1: first whole frame */
+        5,   6,   7,   8,   /* o1 write 2: carried 5,6 + new 7,8 */
+        100, 101, 102, 103, /* o2 write: independent Track */
+        9,   10,  0,   0,   /* o1 close: flush 9,10 zero padded */
     };
     assert(s_test_audio_frame_count == 4u);
     assert(s_test_audio_written_bytes == sizeof(expected));
@@ -4293,8 +4678,8 @@ int main(int argc, char **argv) {
       "local touch_ok=pcall(require,'lcd_touch');"
       "local audio_ok=pcall(require,'audio');"
       "return (not touch_ok and not audio_ok) and 'optional-ok' or 'bad'";
-  const h2_pal_touch_api_t *touch = runtime->touch;
-  const h2_pal_audio_api_t *audio = runtime->audio;
+  const h2_pal_touch_api_t* touch = runtime->touch;
+  const h2_pal_audio_api_t* audio = runtime->audio;
   runtime->touch = NULL;
   runtime->audio = NULL;
   assert(h2_lua_job_submit_text(host, NULL, "@optional-singletons.lua",
@@ -4380,9 +4765,9 @@ int main(int argc, char **argv) {
     static const uint8_t audio_input_block_script[] =
         "local a=require('audio');local input=assert(a.new_input());"
         "local ok,err=input:read(60000);return tostring(ok)..'|'..tostring(err)";
-    h2_lua_host_t *block_host = create_host(runtime);
+    h2_lua_host_t* block_host = create_host(runtime);
     h2_lua_job_id_t block_job_id;
-    const h2_pal_time_api_t *real_time = h2_desktop_platform_time_api();
+    const h2_pal_time_api_t* real_time = h2_desktop_platform_time_api();
     uint64_t stop_started_ms;
     uint64_t stop_elapsed_ms;
     uint64_t join_elapsed_ms;
@@ -4717,7 +5102,7 @@ int main(int argc, char **argv) {
 
   assert(h2_lua_esp_claw_module_count() == 36u);
   for (size_t i = 0u; i < 36u; ++i) {
-    const h2_lua_esp_claw_module_info_t *module = h2_lua_esp_claw_module_at(i);
+    const h2_lua_esp_claw_module_info_t* module = h2_lua_esp_claw_module_at(i);
     assert(module != NULL);
     assert(strcmp(module->id, esp_claw_ids[i]) == 0);
     if (strcmp(module->id, "json") == 0 ||

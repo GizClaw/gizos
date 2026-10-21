@@ -13,33 +13,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static size_t read_ca(const char *path, uint8_t *bytes, size_t capacity) {
-  FILE *file = fopen(path, "rb");
-  if (!file)
-    return 0u;
+static size_t read_ca(const char* path, uint8_t* bytes, size_t capacity) {
+  FILE* file = fopen(path, "rb");
+  if (!file) return 0u;
   size_t length = fread(bytes, 1u, capacity, file);
   int valid = feof(file) && !ferror(file);
   fclose(file);
   return valid ? length : 0u;
 }
-int main(int argc, char **argv) {
-  if (argc != 8)
-    return 2;
+int main(int argc, char** argv) {
+  if (argc != 8) return 2;
   uint8_t ca[8192], wrong[8192];
   size_t ca_len = read_ca(argv[4], ca, sizeof(ca));
   size_t wrong_len = read_ca(argv[5], wrong, sizeof(wrong));
-  if (!ca_len || !wrong_len)
-    return 2;
-  char *end = NULL;
+  if (!ca_len || !wrong_len) return 2;
+  char* end = NULL;
   unsigned long port = strtoul(argv[2], &end, 10);
-  if (!end || *end || !port || port > 65535u)
-    return 2;
+  if (!end || *end || !port || port > 65535u) return 2;
   h2_runtime_t runtime = {.mem = h2_desktop_platform_default_allocator(),
                           .net = host_net(),
                           .time = h2_desktop_platform_time_api()};
   h2_wolfssl_config_t tls = {.mem = *runtime.mem, .entropy = host_entropy};
-  if (h2_wolfssl_init(&tls) != H2_PAL_OK)
-    return 2;
+  if (h2_wolfssl_init(&tls) != H2_PAL_OK) return 2;
   h2_net_tls_fixture_client_t client = {.runtime = &runtime,
                                         .host = argv[1],
                                         .session = argv[3],

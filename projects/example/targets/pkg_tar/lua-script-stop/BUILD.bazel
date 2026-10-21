@@ -9,7 +9,6 @@ h2_lua_web_app(
     name = "lua-script-stop",
     board = "//projects/example/libs/web/demo_board",
     canvas_min = 300,
-    deps = ["//libs/runtime"],
     exit_button = "back",
     passes = [
         "H2_WEB_APP name=lua-script-stop stage=ready",
@@ -18,4 +17,5 @@ h2_lua_web_app(
     ],
     run_ms = 1500,
     script = "//projects/example/targets/pkg_tar/lua-script:smoke.lua",
+    deps = ["//libs/runtime"],
 )

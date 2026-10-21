@@ -17,14 +17,13 @@ typedef struct fixture {
 } fixture_t;
 static fixture_t fixture = {.brightness = 50u, .enabled = true};
 static unsigned live_allocations;
-static void *allocate(void *user, size_t size) {
+static void* allocate(void* user, size_t size) {
   (void)user;
-  void *result = malloc(size);
-  if (result != NULL)
-    ++live_allocations;
+  void* result = malloc(size);
+  if (result != NULL) ++live_allocations;
   return result;
 }
-static void release(void *user, void *pointer) {
+static void release(void* user, void* pointer) {
   (void)user;
   if (pointer != NULL) {
     assert(live_allocations != 0u);
@@ -32,17 +31,17 @@ static void release(void *user, void *pointer) {
     free(pointer);
   }
 }
-static const h2_pal_mem_vtable_t memory_vtable = {
-    .alloc = allocate, .free = release};
+static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
+                                                  .free = release};
 static const h2_pal_mem_api_t memory = {.vtable = &memory_vtable};
 
 static uint32_t pal_volume = 60u;
-static int pal_get_volume(void *user, uint32_t *out) {
+static int pal_get_volume(void* user, uint32_t* out) {
   (void)user;
   *out = pal_volume;
   return H2_PAL_OK;
 }
-static int pal_set_volume(void *user, uint32_t percent) {
+static int pal_set_volume(void* user, uint32_t percent) {
   (void)user;
   pal_volume = percent;
   return H2_PAL_OK;
@@ -58,7 +57,7 @@ static void test_pal_only_speaker_mute(void) {
   h2_gizclaw_mhs_builtin_t builtin = {.audio = &audio};
   h2_gizclaw_mhs_device_t builtins[2];
   assert(h2_gizclaw_mhs_builtins_internal(&builtin, builtins) == 1u);
-  const h2_gizclaw_mhs_device_t *speaker = &builtins[0];
+  const h2_gizclaw_mhs_device_t* speaker = &builtins[0];
   assert(strcmp(speaker->id, "speaker.main") == 0 && speaker->write != NULL);
   h2_gizclaw_mhs_write_t request;
   h2_gizclaw_mhs_read_t out;
@@ -89,25 +88,23 @@ static void test_pal_only_speaker_mute(void) {
   assert(pal_volume == 0u);
 }
 
-static int read_display(void *user, h2_gizclaw_mhs_read_t *out) {
-  fixture_t *f = user;
+static int read_display(void* user, h2_gizclaw_mhs_read_t* out) {
+  fixture_t* f = user;
   ++f->reads;
-  if (f->failure != H2_PAL_OK)
-    return f->failure;
+  if (f->failure != H2_PAL_OK) return f->failure;
   out->display.has_brightness_percent = true;
   out->display.brightness_percent = f->brightness;
   out->display.has_enabled = true;
   out->display.enabled = f->enabled;
   return H2_PAL_OK;
 }
-static int write_display(void *user, const h2_gizclaw_mhs_write_t *request,
-                         h2_gizclaw_mhs_read_t *out) {
-  fixture_t *f = user;
+static int write_display(void* user, const h2_gizclaw_mhs_write_t* request,
+                         h2_gizclaw_mhs_read_t* out) {
+  fixture_t* f = user;
   ++f->writes;
   if (request->display.has_brightness_percent)
     f->brightness = request->display.brightness_percent;
-  if (request->display.has_enabled)
-    f->enabled = request->display.enabled;
+  if (request->display.has_enabled) f->enabled = request->display.enabled;
   return read_display(user, out);
 }
 static h2_gizclaw_mhs_device_t device = {
@@ -117,31 +114,30 @@ static h2_gizclaw_mhs_device_t device = {
     .write = write_display,
     .user = &fixture};
 
-static size_t request_bytes(uint8_t *bytes, bool write, const char *id,
-                            gizclaw_rpc_v1_ClientHwd hwd,
-                            const void *payload) {
+static size_t request_bytes(uint8_t* bytes, bool write, const char* id,
+                            gizclaw_rpc_v1_ClientHwd hwd, const void* payload) {
   pb_ostream_t out = pb_ostream_from_buffer(bytes, 256u);
   assert(pb_encode_tag(&out, PB_WT_STRING, 1u));
-  assert(pb_encode_string(&out, (const pb_byte_t *)id, strlen(id)));
+  assert(pb_encode_string(&out, (const pb_byte_t*)id, strlen(id)));
   assert(pb_encode_tag(&out, PB_WT_VARINT, 2u));
   assert(pb_encode_varint(&out, (uint64_t)hwd));
   if (write) {
     uint8_t inner[64];
     pb_ostream_t payload_out = pb_ostream_from_buffer(inner, sizeof(inner));
-    assert(pb_encode(&payload_out,
-                     gizclaw_rpc_v1_DisplayHwdWriteRequest_fields, payload));
+    assert(pb_encode(&payload_out, gizclaw_rpc_v1_DisplayHwdWriteRequest_fields,
+                     payload));
     assert(pb_encode_tag(&out, PB_WT_STRING, 3u));
     assert(pb_encode_string(&out, inner, payload_out.bytes_written));
   }
   return out.bytes_written;
 }
-static int invoke(bool write, const uint8_t *bytes, size_t len,
-                  const pb_msgdesc_t *reply_fields, void *out) {
+static int invoke(bool write, const uint8_t* bytes, size_t len,
+                  const pb_msgdesc_t* reply_fields, void* out) {
   h2_gizclaw_rpc_provider_response_t response = {0};
-  uint8_t *storage = NULL;
-  int rc = h2_gizclaw_mhs_request_internal(
-      &device, 1u, write, &memory,
-      (h2_gizclaw_rpc_bytes_t){bytes, len}, &response, &storage);
+  uint8_t* storage = NULL;
+  int rc = h2_gizclaw_mhs_request_internal(&device, 1u, write, &memory,
+                                           (h2_gizclaw_rpc_bytes_t){bytes, len},
+                                           &response, &storage);
   if (rc == H2_PAL_OK) {
     pb_istream_t input =
         pb_istream_from_buffer(response.payload.data, response.payload.len);
@@ -181,28 +177,25 @@ int main(void) {
 
   uint8_t bytes[256];
   size_t len = request_bytes(bytes, false, "display.main",
-                             gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY,
-                             NULL);
+                             gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, NULL);
   gizclaw_rpc_v1_DisplayHwdReadResponse read = {0};
-  assert(invoke(false, bytes, len,
-                gizclaw_rpc_v1_DisplayHwdReadResponse_fields,
+  assert(invoke(false, bytes, len, gizclaw_rpc_v1_DisplayHwdReadResponse_fields,
                 &read) == H2_PAL_OK);
   assert(read.has_brightness_percent && read.brightness_percent == 50u &&
          read.has_enabled && read.enabled && fixture.reads == 1u);
 
-  gizclaw_rpc_v1_DisplayHwdWriteRequest patch = {
-      .has_brightness_percent = true, .brightness_percent = 42u,
-      .has_enabled = true, .enabled = false};
+  gizclaw_rpc_v1_DisplayHwdWriteRequest patch = {.has_brightness_percent = true,
+                                                 .brightness_percent = 42u,
+                                                 .has_enabled = true,
+                                                 .enabled = false};
   len = request_bytes(bytes, true, "display.main",
                       gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, &patch);
   gizclaw_rpc_v1_DisplayHwdWriteResponse write = {0};
-  assert(invoke(true, bytes, len,
-                gizclaw_rpc_v1_DisplayHwdWriteResponse_fields,
+  assert(invoke(true, bytes, len, gizclaw_rpc_v1_DisplayHwdWriteResponse_fields,
                 &write) == H2_PAL_OK);
   assert(write.has_applied && write.applied.has_brightness_percent &&
-         write.applied.brightness_percent == 42u &&
-         write.applied.has_enabled && !write.applied.enabled &&
-         fixture.writes == 1u);
+         write.applied.brightness_percent == 42u && write.applied.has_enabled &&
+         !write.applied.enabled && fixture.writes == 1u);
 
   patch = (gizclaw_rpc_v1_DisplayHwdWriteRequest){0};
   len = request_bytes(bytes, true, "display.main",
@@ -231,11 +224,10 @@ int main(void) {
     uint8_t forged[256];
     pb_ostream_t out = pb_ostream_from_buffer(forged, sizeof(forged));
     assert(pb_encode_tag(&out, PB_WT_STRING, 1u));
-    assert(pb_encode_string(&out, (const pb_byte_t *)with_nul,
+    assert(pb_encode_string(&out, (const pb_byte_t*)with_nul,
                             sizeof(with_nul) - 1u));
     assert(pb_encode_tag(&out, PB_WT_VARINT, 2u));
-    assert(pb_encode_varint(&out,
-                            gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY));
+    assert(pb_encode_varint(&out, gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY));
     gizclaw_rpc_v1_DisplayHwdWriteRequest forged_patch = {
         .has_brightness_percent = true, .brightness_percent = 10u};
     uint8_t inner[64];

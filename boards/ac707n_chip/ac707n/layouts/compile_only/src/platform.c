@@ -14,11 +14,10 @@ const struct task_info task_info_table[] = {
      .qsize = 1024},
     {.name = "systimer", .prio = 6, .core = 0, .stack_size = 512, .qsize = 128},
     {0, 0}};
-static void app_task(void *arg) {
+static void app_task(void* arg) {
   (void)arg;
   app_main();
-  for (;;)
-    os_time_dly(100);
+  for (;;) os_time_dly(100);
 }
 
 // The SDK startup performs data relocation and BSS initialization before this

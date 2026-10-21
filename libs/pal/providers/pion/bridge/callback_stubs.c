@@ -24,11 +24,10 @@ H2_PION_WEAK int h2_pion_bridge_emit_writable(uintptr_t peer_key,
   return 0;
 }
 
-H2_PION_WEAK int
-h2_pion_bridge_emit_channel_open(uintptr_t peer_key, uint64_t channel_key,
-                                 const char *label, size_t label_len,
-                                 int has_stream_id, uint16_t stream_id,
-                                 int ordered, int reliable, int remote) {
+H2_PION_WEAK int h2_pion_bridge_emit_channel_open(
+    uintptr_t peer_key, uint64_t channel_key, const char* label,
+    size_t label_len, int has_stream_id, uint16_t stream_id, int ordered,
+    int reliable, int remote) {
   (void)peer_key;
   (void)channel_key;
   (void)label;
@@ -52,7 +51,7 @@ H2_PION_WEAK int h2_pion_bridge_emit_channel_state(uintptr_t peer_key,
 
 H2_PION_WEAK int h2_pion_bridge_emit_channel_message(uintptr_t peer_key,
                                                      uint64_t channel_key,
-                                                     const uint8_t *data,
+                                                     const uint8_t* data,
                                                      size_t len, int is_text) {
   (void)peer_key;
   (void)channel_key;
@@ -63,7 +62,7 @@ H2_PION_WEAK int h2_pion_bridge_emit_channel_message(uintptr_t peer_key,
 }
 
 H2_PION_WEAK int h2_pion_bridge_emit_opus_frame(uintptr_t peer_key,
-                                                const uint8_t *data,
+                                                const uint8_t* data,
                                                 size_t len) {
   (void)peer_key;
   (void)data;

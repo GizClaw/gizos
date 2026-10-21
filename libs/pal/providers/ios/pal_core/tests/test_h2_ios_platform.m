@@ -36,9 +36,8 @@ extern void h2_ios_test_system_event(void);
       .item_count = 1u,
   };
   h2_pal_queue_t *queue = NULL;
-  XCTAssertEqual(
-      h2_pal_queue_create(h2_ios_platform_queue_api(), &config, &queue),
-      H2_PAL_QUEUE_ERR_INVALID_ARG);
+  XCTAssertEqual(h2_pal_queue_create(h2_ios_platform_queue_api(), &config, &queue),
+                 H2_PAL_QUEUE_ERR_INVALID_ARG);
   XCTAssertEqual(queue, NULL);
 }
 

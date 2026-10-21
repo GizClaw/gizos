@@ -19,36 +19,38 @@ extern "C" {
 typedef signed int h2_pal_result_t;
 #ifdef __cplusplus
 static_assert(sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
-              INT_MIN == INT32_MIN && INT_MAX == INT32_MAX,
+                  INT_MIN == INT32_MIN && INT_MAX == INT32_MAX,
               "PAL results require a signed 32-bit C int ABI");
 #else
 /* Default MSVC C mode does not support C11 _Static_assert. */
-typedef char h2_pal_result_requires_signed_32_bit_int[
-    sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
-    INT_MIN == INT32_MIN && INT_MAX == INT32_MAX ? 1 : -1];
+typedef char h2_pal_result_requires_signed_32_bit_int
+    [sizeof(h2_pal_result_t) * CHAR_BIT == 32 && INT_MIN == INT32_MIN &&
+             INT_MAX == INT32_MAX
+         ? 1
+         : -1];
 #endif
 
 enum h2_pal_result {
-    H2_PAL_OK = 0,
-    H2_PAL_EXIT = 1,
-    H2_PAL_ERR_INVALID_ARG = -1,
-    H2_PAL_ERR_UNAVAILABLE = -2,
-    H2_PAL_ERR_UNSUPPORTED = -3,
-    H2_PAL_ERR_IO = -4,
-    H2_PAL_ERR_NO_MEMORY = -5,
-    H2_PAL_ERR_TIMEOUT = -6,
-    H2_PAL_ERR_INVALID_STATE = -7,
-    H2_PAL_ERR_NOT_FOUND = -8,
-    H2_PAL_ERR_WOULD_BLOCK = -9,
-    H2_PAL_ERR_CLOSED = -10,
-    H2_PAL_ERR_FULL = -11,
-    H2_PAL_ERR_TASK = -12,
-    H2_PAL_ERR_NO_SPACE = -13,
-    H2_PAL_ERR_WRITE = -14,
-    H2_PAL_ERR_FORMAT = -15,
-    H2_PAL_ERR_TRUNCATED = -16,
-    H2_PAL_ERR_TLS_VERIFY = -17,
-    H2_PAL_ERR_BUSY = -18,
+  H2_PAL_OK = 0,
+  H2_PAL_EXIT = 1,
+  H2_PAL_ERR_INVALID_ARG = -1,
+  H2_PAL_ERR_UNAVAILABLE = -2,
+  H2_PAL_ERR_UNSUPPORTED = -3,
+  H2_PAL_ERR_IO = -4,
+  H2_PAL_ERR_NO_MEMORY = -5,
+  H2_PAL_ERR_TIMEOUT = -6,
+  H2_PAL_ERR_INVALID_STATE = -7,
+  H2_PAL_ERR_NOT_FOUND = -8,
+  H2_PAL_ERR_WOULD_BLOCK = -9,
+  H2_PAL_ERR_CLOSED = -10,
+  H2_PAL_ERR_FULL = -11,
+  H2_PAL_ERR_TASK = -12,
+  H2_PAL_ERR_NO_SPACE = -13,
+  H2_PAL_ERR_WRITE = -14,
+  H2_PAL_ERR_FORMAT = -15,
+  H2_PAL_ERR_TRUNCATED = -16,
+  H2_PAL_ERR_TLS_VERIFY = -17,
+  H2_PAL_ERR_BUSY = -18,
 };
 
 #define H2_AUDIO_OK H2_PAL_OK

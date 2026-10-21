@@ -8,10 +8,9 @@ static int area(h2_lua_display_plan_rect_t r) {
 }
 
 static h2_lua_display_plan_rect_t join(h2_lua_display_plan_rect_t a,
-                                      h2_lua_display_plan_rect_t b) {
+                                       h2_lua_display_plan_rect_t b) {
   return (h2_lua_display_plan_rect_t){
-      a.left < b.left ? a.left : b.left,
-      a.top < b.top ? a.top : b.top,
+      a.left < b.left ? a.left : b.left, a.top < b.top ? a.top : b.top,
       a.right > b.right ? a.right : b.right,
       a.bottom > b.bottom ? a.bottom : b.bottom};
 }
@@ -22,7 +21,7 @@ static int cost(h2_lua_display_plan_rect_t r) {
   return area(r) + 256 + 32 * ((r.bottom - r.top + 15) / 16);
 }
 
-static int append_span(h2_lua_display_plan_t *plan,
+static int append_span(h2_lua_display_plan_t* plan,
                        h2_lua_display_plan_rect_t span) {
   int best = -1, waste = 17;
   h2_lua_display_plan_rect_t merged = span;
@@ -49,7 +48,7 @@ static int append_span(h2_lua_display_plan_t *plan,
   return 1;
 }
 
-static int coalesce(h2_lua_display_plan_t *plan, int gap, int *work) {
+static int coalesce(h2_lua_display_plan_t* plan, int gap, int* work) {
   /* One bounded pair pass, after vertical runs exist. Merge only when the
    * complete rectangle costs no more than the two separate submissions. */
   for (int i = 0; i < plan->count; ++i) {
@@ -59,7 +58,8 @@ static int coalesce(h2_lua_display_plan_t *plan, int gap, int *work) {
       if (b.left / 16 - (a.right - 1) / 16 - 1 > gap ||
           a.left / 16 - (b.right - 1) / 16 - 1 > gap ||
           b.top / 16 - (a.bottom - 1) / 16 - 1 > gap ||
-          a.top / 16 - (b.bottom - 1) / 16 - 1 > gap) continue;
+          a.top / 16 - (b.bottom - 1) / 16 - 1 > gap)
+        continue;
       h2_lua_display_plan_rect_t merged = join(a, b);
       if (cost(merged) > cost(a) + cost(b)) continue;
       plan->rects[i] = merged;
@@ -69,13 +69,15 @@ static int coalesce(h2_lua_display_plan_t *plan, int gap, int *work) {
   return 1;
 }
 
-int h2_lua_display_plan_build(h2_lua_display_plan_t *plan,
-    const uint16_t *current, const uint16_t *previous, int width,
-    h2_lua_display_plan_rect_t dirty, int gap) {
+int h2_lua_display_plan_build(h2_lua_display_plan_t* plan,
+                              const uint16_t* current, const uint16_t* previous,
+                              int width, h2_lua_display_plan_rect_t dirty,
+                              int gap) {
   plan->count = 0;
   int spans = 0, work = 0;
   /* A density hint only selects the already-correct coarse fallback. Sampling
-   * cannot omit damage. Avoid a full exact scan for solid fills / dense video. */
+   * cannot omit damage. Avoid a full exact scan for solid fills / dense video.
+   */
   if (dirty.right - dirty.left >= 16 && dirty.bottom - dirty.top >= 16 &&
       area(dirty) >= 4096) {
     int changed = 0;
@@ -94,10 +96,11 @@ int h2_lua_display_plan_build(h2_lua_display_plan_t *plan,
       plan->count = 0;
       return 0;
     }
-    const uint16_t *a = current + (size_t)y * width;
-    const uint16_t *b = previous + (size_t)y * width;
+    const uint16_t* a = current + (size_t)y * width;
+    const uint16_t* b = previous + (size_t)y * width;
     if (memcmp(a + dirty.left, b + dirty.left,
-               (size_t)(dirty.right - dirty.left) * sizeof(*a)) == 0) continue;
+               (size_t)(dirty.right - dirty.left) * sizeof(*a)) == 0)
+      continue;
     int x = dirty.left;
     while (x < dirty.right) {
       while (x < dirty.right && a[x] == b[x]) ++x;
@@ -105,15 +108,19 @@ int h2_lua_display_plan_build(h2_lua_display_plan_t *plan,
       int left = x++;
       while (x < dirty.right && a[x] != b[x]) ++x;
       /* The caller's clipped display bounds keep every endpoint in 0..4096. */
-      if (++spans > 4096 || !append_span(plan,
-          (h2_lua_display_plan_rect_t){(uint16_t)left, (uint16_t)y,
-              (uint16_t)x, (uint16_t)(y + 1)})) {
+      if (++spans > 4096 ||
+          !append_span(plan, (h2_lua_display_plan_rect_t){
+                                 (uint16_t)left, (uint16_t)y, (uint16_t)x,
+                                 (uint16_t)(y + 1)})) {
         plan->count = 0;
         return 0;
       }
     }
   }
-  if (!coalesce(plan, gap, &work)) { plan->count = 0; return 0; }
+  if (!coalesce(plan, gap, &work)) {
+    plan->count = 0;
+    return 0;
+  }
   return 1;
 }
 
@@ -123,18 +130,18 @@ typedef struct plan_summary {
   int count;
 } plan_summary_t;
 
-static void summarize(plan_summary_t *summary, h2_lua_display_plan_rect_t r) {
+static void summarize(plan_summary_t* summary, h2_lua_display_plan_rect_t r) {
   summary->box = summary->count ? join(summary->box, r) : r;
   summary->pixels += area(r);
   summary->blocks += (r.bottom - r.top + 15) / 16;
   ++summary->count;
 }
 
-static int guard(const plan_summary_t *summary) {
+static int guard(const plan_summary_t* summary) {
   if (summary->count < 2) return 0;
   int64_t pixels = area(summary->box) - summary->pixels;
-  int64_t blocks = (summary->box.bottom - summary->box.top + 15) / 16 -
-                   summary->blocks;
+  int64_t blocks =
+      (summary->box.bottom - summary->box.top + 15) / 16 - summary->blocks;
   /* Conservative empirical band, in pixel equivalents per estimated block.
    * 160..200 us/block divided by .70...72 us/pixel, rounded outward. Require
    * savings at the worst endpoint and give no credit for fewer PAL calls.
@@ -143,7 +150,7 @@ static int guard(const plan_summary_t *summary) {
   return pixels + (blocks > 0 ? 286 : 222) * blocks < 0;
 }
 
-int h2_lua_display_plan_guard(h2_lua_display_plan_t *plan) {
+int h2_lua_display_plan_guard(h2_lua_display_plan_t* plan) {
   plan_summary_t summary = {0};
   for (int i = 0; i < plan->count; ++i) summarize(&summary, plan->rects[i]);
   if (!guard(&summary)) return 0;
@@ -154,20 +161,22 @@ int h2_lua_display_plan_guard(h2_lua_display_plan_t *plan) {
 
 static h2_lua_display_plan_rect_t tile_rect(int left, int top, int right,
                                             int bottom, int width, int height) {
-  return (h2_lua_display_plan_rect_t){(uint16_t)(left * 16), (uint16_t)(top * 16),
+  return (h2_lua_display_plan_rect_t){
+      (uint16_t)(left * 16), (uint16_t)(top * 16),
       (uint16_t)(right * 16 < width ? right * 16 : width),
       (uint16_t)(bottom * 16 < height ? bottom * 16 : height)};
 }
 
-static void reset_tiles(uint8_t *tiles, int width, int height) {
+static void reset_tiles(uint8_t* tiles, int width, int height) {
   int count = ((width + 15) / 16) * ((height + 15) / 16);
   for (int i = 0; i < count; ++i) tiles[i] &= 1;
 }
 
 /* Bit 0 is immutable damage; bit 1 marks consumed tiles. Enumerating the
  * complete legacy fallback has no rectangle capacity limit. */
-int h2_lua_display_plan_next_tile(uint8_t *tiles, int width, int height,
-    int gap, int *cursor, h2_lua_display_plan_rect_t *rect) {
+int h2_lua_display_plan_next_tile(uint8_t* tiles, int width, int height,
+                                  int gap, int* cursor,
+                                  h2_lua_display_plan_rect_t* rect) {
   int columns = (width + 15) / 16, rows = (height + 15) / 16;
   while (*cursor < columns * rows && tiles[*cursor] != 1) ++*cursor;
   if (*cursor == columns * rows) return 0;
@@ -188,14 +197,17 @@ int h2_lua_display_plan_next_tile(uint8_t *tiles, int width, int height,
   return 1;
 }
 
-int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
-    const uint16_t *current, const uint16_t *previous, int width, int height,
-    h2_lua_display_plan_rect_t dirty, int gap, uint8_t *tiles, int bounds, int tiles_only) {
+int h2_lua_display_plan_select(h2_lua_display_plan_t* plan,
+                               const uint16_t* current,
+                               const uint16_t* previous, int width, int height,
+                               h2_lua_display_plan_rect_t dirty, int gap,
+                               uint8_t* tiles, int bounds, int tiles_only) {
   plan->count = 0;
   if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return 1;
   /* Preserve the default span plan and its work limits. Explicit tiles_only
    * skips straight to the same exact tile comparison and complete fallback. */
-  if (!bounds && !tiles_only && h2_lua_display_plan_build(plan, current, previous, width, dirty, gap)) {
+  if (!bounds && !tiles_only &&
+      h2_lua_display_plan_build(plan, current, previous, width, dirty, gap)) {
     h2_lua_display_plan_guard(plan);
     return 1;
   }
@@ -204,7 +216,8 @@ int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
   memset(tiles, 0, (size_t)columns * rows);
   for (int ty = dirty.top / 16; ty <= (dirty.bottom - 1) / 16; ++ty) {
     for (int tx = dirty.left / 16; tx <= (dirty.right - 1) / 16; ++tx) {
-      h2_lua_display_plan_rect_t r = tile_rect(tx, ty, tx + 1, ty + 1, width, height);
+      h2_lua_display_plan_rect_t r =
+          tile_rect(tx, ty, tx + 1, ty + 1, width, height);
       int different = 0;
       for (int y = r.top; y < r.bottom; ++y) {
         size_t at = (size_t)y * width + r.left;
@@ -231,8 +244,10 @@ int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
   plan_summary_t summary = {0};
   int cursor = 0;
   h2_lua_display_plan_rect_t r;
-  while (h2_lua_display_plan_next_tile(tiles, width, height, gap, &cursor, &r)) {
-    if (plan->count < H2_LUA_DISPLAY_PLAN_CAPACITY) plan->rects[plan->count++] = r;
+  while (
+      h2_lua_display_plan_next_tile(tiles, width, height, gap, &cursor, &r)) {
+    if (plan->count < H2_LUA_DISPLAY_PLAN_CAPACITY)
+      plan->rects[plan->count++] = r;
     summarize(&summary, r);
   }
   if (guard(&summary)) {

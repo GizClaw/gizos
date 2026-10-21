@@ -21,7 +21,7 @@ struct h2_pal_system_event_subscription {
   int active;
   h2_pal_system_event_type_t type;
   h2_pal_system_event_handler_t handler;
-  void *handler_user;
+  void* handler_user;
   esp_event_handler_instance_t instance;
 };
 
@@ -31,27 +31,27 @@ static int s_h2_esp_system_event_initialized;
 
 static h2_pal_result_t h2_esp_system_event_map_error(esp_err_t err) {
   switch (err) {
-  case ESP_OK:
-    return H2_PAL_OK;
-  case ESP_ERR_INVALID_ARG:
-    return H2_PAL_ERR_INVALID_ARG;
-  case ESP_ERR_NO_MEM:
-    return H2_PAL_ERR_NO_MEMORY;
-  case ESP_ERR_TIMEOUT:
-    return H2_PAL_ERR_TIMEOUT;
-  default:
-    return H2_PAL_ERR_IO;
+    case ESP_OK:
+      return H2_PAL_OK;
+    case ESP_ERR_INVALID_ARG:
+      return H2_PAL_ERR_INVALID_ARG;
+    case ESP_ERR_NO_MEM:
+      return H2_PAL_ERR_NO_MEMORY;
+    case ESP_ERR_TIMEOUT:
+      return H2_PAL_ERR_TIMEOUT;
+    default:
+      return H2_PAL_ERR_IO;
   }
 }
 
-static void h2_esp_system_event_dispatch(void *arg, esp_event_base_t event_base,
-                                         int32_t event_id, void *event_data) {
+static void h2_esp_system_event_dispatch(void* arg, esp_event_base_t event_base,
+                                         int32_t event_id, void* event_data) {
   (void)event_base;
 
-  h2_pal_system_event_subscription_t *sub =
-      (h2_pal_system_event_subscription_t *)arg;
-  const h2_esp_system_event_envelope_t *envelope =
-      (const h2_esp_system_event_envelope_t *)event_data;
+  h2_pal_system_event_subscription_t* sub =
+      (h2_pal_system_event_subscription_t*)arg;
+  const h2_esp_system_event_envelope_t* envelope =
+      (const h2_esp_system_event_envelope_t*)event_data;
   if (sub == NULL || sub->active == 0 || sub->handler == NULL ||
       envelope == NULL) {
     return;
@@ -67,15 +67,14 @@ static void h2_esp_system_event_dispatch(void *arg, esp_event_base_t event_base,
   (void)sub->handler(sub->handler_user, &event);
 }
 
-static int h2_esp_system_event_init(void *user) {
+static int h2_esp_system_event_init(void* user) {
   (void)user;
   if (s_h2_esp_system_event_initialized != 0) {
     return H2_PAL_OK;
   }
 
   int rc = h2_esp_platform_netif_init_once();
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   s_h2_esp_system_event_initialized = 1;
   rc = h2_esp_platform_netif_monitor_init();
   if (rc != H2_PAL_OK) {
@@ -84,12 +83,12 @@ static int h2_esp_system_event_init(void *user) {
   return rc;
 }
 
-static void h2_esp_system_event_deinit(void *user) {
+static void h2_esp_system_event_deinit(void* user) {
   (void)user;
 
   h2_esp_platform_netif_monitor_deinit();
   for (size_t i = 0u; i < H2_ESP_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-    h2_pal_system_event_subscription_t *sub =
+    h2_pal_system_event_subscription_t* sub =
         &s_h2_esp_system_event_subscriptions[i];
     if (sub->active != 0) {
       (void)esp_event_handler_instance_unregister(
@@ -106,8 +105,8 @@ static void h2_esp_system_event_deinit(void *user) {
   s_h2_esp_system_event_initialized = 0;
 }
 
-static int h2_esp_system_event_post(void *user,
-                                    const h2_pal_system_event_t *event,
+static int h2_esp_system_event_post(void* user,
+                                    const h2_pal_system_event_t* event,
                                     uint32_t timeout_ms) {
   (void)user;
 
@@ -121,8 +120,8 @@ static int h2_esp_system_event_post(void *user,
 
   size_t envelope_size =
       sizeof(h2_esp_system_event_envelope_t) + event->payload_size;
-  h2_esp_system_event_envelope_t *envelope =
-      (h2_esp_system_event_envelope_t *)malloc(envelope_size);
+  h2_esp_system_event_envelope_t* envelope =
+      (h2_esp_system_event_envelope_t*)malloc(envelope_size);
   if (envelope == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -143,9 +142,9 @@ static int h2_esp_system_event_post(void *user,
 }
 
 static int h2_esp_system_event_subscribe(
-    void *user, h2_pal_system_event_type_t type,
-    h2_pal_system_event_handler_t handler, void *handler_user,
-    h2_pal_system_event_subscription_t **out_subscription) {
+    void* user, h2_pal_system_event_type_t type,
+    h2_pal_system_event_handler_t handler, void* handler_user,
+    h2_pal_system_event_subscription_t** out_subscription) {
   (void)user;
   if (type <= H2_PAL_SYSTEM_EVENT_TYPE_NONE ||
       type >= H2_PAL_SYSTEM_EVENT_TYPE_COUNT || handler == NULL ||
@@ -158,7 +157,7 @@ static int h2_esp_system_event_subscribe(
 
   *out_subscription = NULL;
   for (size_t i = 0u; i < H2_ESP_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-    h2_pal_system_event_subscription_t *sub =
+    h2_pal_system_event_subscription_t* sub =
         &s_h2_esp_system_event_subscriptions[i];
     if (sub->active == 0) {
       memset(sub, 0, sizeof(*sub));
@@ -182,7 +181,7 @@ static int h2_esp_system_event_subscribe(
 }
 
 static void h2_esp_system_event_unsubscribe(
-    void *user, h2_pal_system_event_subscription_t *subscription) {
+    void* user, h2_pal_system_event_subscription_t* subscription) {
   (void)user;
   if (subscription == NULL || subscription->active == 0) {
     return;
@@ -205,6 +204,6 @@ static const h2_pal_system_event_api_t s_h2_esp_system_event_api = {
     .vtable = &s_h2_esp_system_event_api_vtable,
 };
 
-const h2_pal_system_event_api_t *h2_esp_platform_system_event_api(void) {
+const h2_pal_system_event_api_t* h2_esp_platform_system_event_api(void) {
   return &s_h2_esp_system_event_api;
 }

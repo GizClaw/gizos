@@ -11,21 +11,21 @@ extern "C" {
 #endif
 
 typedef int (*h2_webrtc_performance_exchange_offer_fn)(
-    void *user, h2_pal_webrtc_str_t offer, char *answer, size_t answer_capacity,
-    size_t *answer_len);
+    void* user, h2_pal_webrtc_str_t offer, char* answer, size_t answer_capacity,
+    size_t* answer_len);
 
-typedef void (*h2_webrtc_performance_checkpoint_fn)(void *user,
-                                                    const char *name);
+typedef void (*h2_webrtc_performance_checkpoint_fn)(void* user,
+                                                    const char* name);
 
 typedef struct h2_webrtc_performance_config {
-  const char *profile;
-  const char *target;
-  const char *provider;
+  const char* profile;
+  const char* target;
+  const char* provider;
   h2_pal_webrtc_str_t stun_url;
   h2_webrtc_performance_exchange_offer_fn exchange_offer;
-  void *exchange_offer_user;
+  void* exchange_offer_user;
   h2_webrtc_performance_checkpoint_fn checkpoint;
-  void *checkpoint_user;
+  void* checkpoint_user;
 } h2_webrtc_performance_config_t;
 
 typedef struct h2_webrtc_performance_result {
@@ -38,9 +38,9 @@ typedef struct h2_webrtc_performance_result {
   uint64_t median_audio_max_gap_ns;
 } h2_webrtc_performance_result_t;
 
-int h2_webrtc_performance_run(
-    h2_runtime_t *runtime, const h2_webrtc_performance_config_t *config,
-    h2_webrtc_performance_result_t *out_result);
+int h2_webrtc_performance_run(h2_runtime_t* runtime,
+                              const h2_webrtc_performance_config_t* config,
+                              h2_webrtc_performance_result_t* out_result);
 
 #ifdef __cplusplus
 }

@@ -19,25 +19,22 @@ _Static_assert(offsetof(h2_loader_sha256_t, block_len) ==
 
 /* Copy rather than alias unrelated struct types, preserving the public Loader
  * struct tag without violating strict aliasing on firmware toolchains. */
-void h2_loader_sha256_init(h2_loader_sha256_t *sha) {
-  if (!sha)
-    return;
+void h2_loader_sha256_init(h2_loader_sha256_t* sha) {
+  if (!sha) return;
   h2_sha256_t shared;
   h2_sha256_init(&shared);
   memcpy(sha, &shared, sizeof(shared));
 }
-void h2_loader_sha256_update(h2_loader_sha256_t *sha, const uint8_t *data,
+void h2_loader_sha256_update(h2_loader_sha256_t* sha, const uint8_t* data,
                              size_t len) {
-  if (!sha)
-    return;
+  if (!sha) return;
   h2_sha256_t shared;
   memcpy(&shared, sha, sizeof(shared));
   h2_sha256_update(&shared, data, len);
   memcpy(sha, &shared, sizeof(shared));
 }
-void h2_loader_sha256_finish(h2_loader_sha256_t *sha, uint8_t out[32]) {
-  if (!sha || !out)
-    return;
+void h2_loader_sha256_finish(h2_loader_sha256_t* sha, uint8_t out[32]) {
+  if (!sha || !out) return;
   h2_sha256_t shared;
   memcpy(&shared, sha, sizeof(shared));
   h2_sha256_finish(&shared, out);

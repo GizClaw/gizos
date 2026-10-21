@@ -1,6 +1,7 @@
 """Real display/touch/button source with native lifetime and first-use faults."""
 from pathlib import Path
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -15,7 +16,8 @@ class InputLifecycleTest(unittest.TestCase):
         # The native ioctl ABI is 32-bit. Preserve pointer width in the host fake.
         source = source.replace('(uint32_t)value', '(uintptr_t)value')
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_input_lifecycle.c').read_text()
-        completion = 'display_emi_send_complete(NULL)' if 'display_emi_send_complete(void *device)' in source else 'display_emi_send_complete()'
+        takes_device = re.search(r'\bdisplay_emi_send_complete\s*\(\s*void\s*\*\s*device\s*\)', source)
+        completion = 'display_emi_send_complete(NULL)' if takes_device else 'display_emi_send_complete()'
         fixture = fixture.replace('/* COMPLETE */', completion)
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / 'test.c'

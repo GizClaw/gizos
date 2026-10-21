@@ -8,18 +8,17 @@
 #include <os/os.h>
 #include <stdio.h>
 
-static h2_runtime_t *runtime;
+static h2_runtime_t* runtime;
 static h2_pal_webrtc_e2e_result_t result;
 static void hold(void) {
-  for (;;)
-    rtos_delay_milliseconds(1000u);
+  for (;;) rtos_delay_milliseconds(1000u);
 }
-static void fail(const char *stage, int rc) {
+static void fail(const char* stage, int rc) {
   printf("H2_PAL_WEBRTC_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   hold();
 }
-static void run(void *user) {
+static void run(void* user) {
   (void)user;
   rtos_delay_milliseconds(5000u);
   /* H2Peer's normal peer arena is PSRAM. The conformance allocator must wrap
@@ -40,38 +39,32 @@ static void run(void *user) {
     rtos_delay_milliseconds(5000u);
   }
 }
-static void entry(void *user) {
+static void entry(void* user) {
   (void)user;
   h2_runtime_config_t config = {0};
   int rc = h2_bk7258_board_runtime_config(&config);
-  if (rc != H2_PAL_OK)
-    fail("board", rc);
+  if (rc != H2_PAL_OK) fail("board", rc);
   rc = h2_runtime_init(&config, &runtime);
-  if (rc != H2_PAL_OK)
-    fail("runtime", rc);
+  if (rc != H2_PAL_OK) fail("runtime", rc);
   rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
       runtime, "pal-webrtc",
       H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI);
-  if (rc != H2_PAL_OK)
-    fail("commands", rc);
+  if (rc != H2_PAL_OK) fail("commands", rc);
   printf("H2_PAL_WEBRTC_BOOT board=bk7258 reset_reason=%u\n",
          (unsigned)bk_misc_get_reset_reason());
   fflush(stdout);
   const h2_pal_task_options_t options = {
       .name = h2_pal_webrtc_device_runner_task_name};
-  h2_pal_task_t *runner = NULL;
+  h2_pal_task_t* runner = NULL;
   rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);
-  if (rc != H2_PAL_OK)
-    fail("runner", rc);
+  if (rc != H2_PAL_OK) fail("runner", rc);
   hold();
 }
 int main(void) {
   int rc = h2_bk_target_task_policy_install();
-  if (rc != H2_PAL_OK)
-    return -1;
+  if (rc != H2_PAL_OK) return -1;
   bk_init();
   rc = h2_bk7258_board_start_entry_task("bk/pal-webrtc", entry, NULL);
-  if (rc != H2_PAL_OK)
-    fail("entry", rc);
+  if (rc != H2_PAL_OK) fail("entry", rc);
   return 0;
 }

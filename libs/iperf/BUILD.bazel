@@ -107,9 +107,13 @@ cc_test(
 cc_test(
     name = "loopback_test",
     timeout = "moderate",
-    srcs = ["tests/test_loopback.c"],
+    srcs = [
+        "src/h2_iperf_internal.h",
+        "tests/test_loopback.c",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
+    includes = ["src"],
     linkopts = ["-lpthread"],
     tags = ["exclusive"],
     target_compatible_with = _HOST_TEST_COMPATIBILITY,

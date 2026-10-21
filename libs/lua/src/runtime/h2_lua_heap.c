@@ -18,7 +18,7 @@ int h2_lua_heap_size_valid(size_t bytes) {
  * it. A single VM allocation still has to fit inside one block. */
 #define H2_LUA_HEAP_CHUNK_MIN_BYTES (64u * 1024u)
 
-static void heap_release_chunks(h2_lua_host_t *host) {
+static void heap_release_chunks(h2_lua_host_t* host) {
   for (size_t i = 0u; i < host->vm_heap_chunk_count; ++i) {
     h2_pal_mem_free(host->config.allocator, host->vm_heap_chunks[i]);
     host->vm_heap_chunks[i] = NULL;
@@ -28,10 +28,10 @@ static void heap_release_chunks(h2_lua_host_t *host) {
   host->vm_heap = NULL;
 }
 
-h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host) {
-  const h2_pal_mem_api_t *mem = host->config.allocator;
-  const size_t pool_min = tlsf_pool_overhead() + tlsf_block_size_min() +
-                          tlsf_alloc_overhead();
+h2_pal_result_t h2_lua_heap_init(h2_lua_host_t* host) {
+  const h2_pal_mem_api_t* mem = host->config.allocator;
+  const size_t pool_min =
+      tlsf_pool_overhead() + tlsf_block_size_min() + tlsf_alloc_overhead();
   size_t remaining = host->config.vm_heap_bytes;
   size_t request = remaining;
   h2_pal_result_t result;
@@ -46,7 +46,7 @@ h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host) {
     return result;
   }
   while (remaining != 0u) {
-    void *chunk;
+    void* chunk;
     size_t pool_offset = 0u;
     if (request > remaining) {
       request = remaining;
@@ -78,7 +78,7 @@ h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host) {
     }
     /* add_pool rejects a block TLSF cannot index; treat it as invalid size. */
     if (host->vm_heap == NULL ||
-        tlsf_add_pool(host->vm_heap, (char *)chunk + pool_offset,
+        tlsf_add_pool(host->vm_heap, (char*)chunk + pool_offset,
                       request - pool_offset) == NULL) {
       heap_release_chunks(host);
       return H2_PAL_ERR_INVALID_ARG;
@@ -89,7 +89,7 @@ h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host) {
   return H2_PAL_OK;
 }
 
-void h2_lua_heap_deinit(h2_lua_host_t *host) {
+void h2_lua_heap_deinit(h2_lua_host_t* host) {
   /* All workers are joined and all VMs closed before this point. */
   if (host->vm_heap != NULL) {
     tlsf_destroy(host->vm_heap);
@@ -101,10 +101,10 @@ void h2_lua_heap_deinit(h2_lua_host_t *host) {
   }
 }
 
-void *h2_lua_heap_realloc(void *user, void *ptr, size_t old_size,
+void* h2_lua_heap_realloc(void* user, void* ptr, size_t old_size,
                           size_t new_size) {
-  h2_lua_host_t *host = user;
-  void *next;
+  h2_lua_host_t* host = user;
+  void* next;
   (void)old_size;
   if (h2_pal_mutex_lock(host->config.runtime->sync, host->vm_heap_mutex) !=
       H2_PAL_OK) {

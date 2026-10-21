@@ -14,7 +14,7 @@
  * response storage are exercised against the SDK's generated descriptors. */
 struct fake_request {
   h2_gizclaw_req_t base;
-  const void *tag;
+  const void* tag;
   uint8_t input[256];
   size_t input_len;
   h2_gizclaw_rpc_response_t response;
@@ -24,11 +24,10 @@ static unsigned creates, dos, releases;
 static h2_pal_result_t terminal;
 static uint8_t wire[8192];
 static h2_gizclaw_rpc_method_t method;
-h2_pal_result_t
-h2_gizclaw_req_create_rpc_internal(h2_gizclaw_service_t *s, uint64_t identity,
-                                   h2_gizclaw_rpc_method_t m, const void *tag,
-                                   h2_gizclaw_rpc_bytes_t payload,
-                                   uint32_t timeout, h2_gizclaw_req_t **out) {
+h2_pal_result_t h2_gizclaw_req_create_rpc_internal(
+    h2_gizclaw_service_t* s, uint64_t identity, h2_gizclaw_rpc_method_t m,
+    const void* tag, h2_gizclaw_rpc_bytes_t payload, uint32_t timeout,
+    h2_gizclaw_req_t** out) {
   assert(s && timeout && identity == 0);
   assert(payload.len <= sizeof(req.input));
   method = m;
@@ -39,24 +38,24 @@ h2_gizclaw_req_create_rpc_internal(h2_gizclaw_service_t *s, uint64_t identity,
   ++creates;
   return H2_PAL_OK;
 }
-h2_pal_result_t
-h2_gizclaw_req_response_internal(const h2_gizclaw_req_t *r, const void *tag,
-                                 const h2_gizclaw_rpc_response_t **out) {
-  if (!r || ((const struct fake_request *)r)->tag != tag)
+h2_pal_result_t h2_gizclaw_req_response_internal(
+    const h2_gizclaw_req_t* r, const void* tag,
+    const h2_gizclaw_rpc_response_t** out) {
+  if (!r || ((const struct fake_request*)r)->tag != tag)
     return H2_PAL_ERR_INVALID_ARG;
-  if (terminal != H2_PAL_OK)
-    return terminal;
-  *out = &((const struct fake_request *)r)->response;
+  if (terminal != H2_PAL_OK) return terminal;
+  *out = &((const struct fake_request*)r)->response;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_req_input_internal(const h2_gizclaw_req_t *r,
-                                              const void *tag,
-                                              h2_gizclaw_rpc_bytes_t *out) {
-  assert(r && ((const struct fake_request *)r)->tag == tag);
-  *out = (h2_gizclaw_rpc_bytes_t){((const struct fake_request *)r)->input, ((const struct fake_request *)r)->input_len};
+h2_pal_result_t h2_gizclaw_req_input_internal(const h2_gizclaw_req_t* r,
+                                              const void* tag,
+                                              h2_gizclaw_rpc_bytes_t* out) {
+  assert(r && ((const struct fake_request*)r)->tag == tag);
+  *out = (h2_gizclaw_rpc_bytes_t){((const struct fake_request*)r)->input,
+                                  ((const struct fake_request*)r)->input_len};
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *r, void *user,
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t* r, void* user,
                                   h2_gizclaw_req_input_read_fn in,
                                   h2_gizclaw_req_output_write_fn out,
                                   h2_gizclaw_req_complete_fn complete) {
@@ -64,32 +63,31 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *r, void *user,
   ++dos;
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *r, uint32_t timeout) {
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t* r, uint32_t timeout) {
   assert(r && timeout == H2_PAL_SYNC_WAIT_FOREVER);
   return terminal;
 }
-void h2_gizclaw_req_release(h2_gizclaw_req_t *r) {
-  if (r)
-    ++releases;
+void h2_gizclaw_req_release(h2_gizclaw_req_t* r) {
+  if (r) ++releases;
 }
-static bool encode_name(pb_ostream_t *s, const pb_field_t *f,
-                        void *const *arg) {
-  const char *name = *arg;
+static bool encode_name(pb_ostream_t* s, const pb_field_t* f,
+                        void* const* arg) {
+  const char* name = *arg;
   return pb_encode_tag_for_field(s, f) &&
-         pb_encode_string(s, (const pb_byte_t *)name, strlen(name));
+         pb_encode_string(s, (const pb_byte_t*)name, strlen(name));
 }
-static void response(const pb_msgdesc_t *fields, const void *msg) {
+static void response(const pb_msgdesc_t* fields, const void* msg) {
   pb_ostream_t s = pb_ostream_from_buffer(wire, sizeof(wire));
   assert(pb_encode(&s, fields, msg));
   req.response = (h2_gizclaw_rpc_response_t){
       .result_payload = wire, .result_payload_len = s.bytes_written};
 }
-static h2_gizclaw_str_t str(const char *s) {
+static h2_gizclaw_str_t str(const char* s) {
   return (h2_gizclaw_str_t){s, strlen(s)};
 }
 int main(void) {
-  h2_gizclaw_service_t *service = (h2_gizclaw_service_t *)&creates;
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_service_t* service = (h2_gizclaw_service_t*)&creates;
+  h2_gizclaw_req_t* request = NULL;
   assert(h2_gizclaw_req_create_app_config_get(service, 0, str("audio.volume"),
                                               100, &request) == H2_PAL_OK);
   assert(method == gizclaw_rpc_v1_RpcMethod_RPC_METHOD_SERVER_APP_CONFIG_GET &&
@@ -99,7 +97,7 @@ int main(void) {
   pb_istream_t stream = pb_istream_from_buffer(req.input, req.input_len);
   assert(pb_decode(&stream, gizclaw_rpc_v1_AppConfigGetRequest_fields, &input));
   assert(strcmp(input.key, "audio.volume") == 0);
-  const char *invalid[] = {"", "A", "a_b", ".a", "a.", "a..b", "a--b", "a-.b"};
+  const char* invalid[] = {"", "A", "a_b", ".a", "a.", "a..b", "a--b", "a-.b"};
   for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
     assert(h2_gizclaw_req_create_app_config_get(service, 0, str(invalid[i]),
                                                 100, &request) ==

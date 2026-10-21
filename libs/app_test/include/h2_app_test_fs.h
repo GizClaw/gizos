@@ -18,18 +18,18 @@ extern "C" {
  * while quiescent; follow fault.h serialization rules. */
 typedef struct h2_app_test_fs {
   h2_pal_fs_api_t api;
-  const h2_pal_mem_api_t *mem;
-  void *implementation;
+  const h2_pal_mem_api_t* mem;
+  void* implementation;
   size_t max_file_bytes, max_read_bytes;
   uint32_t active_handles;
   h2_app_test_fault_t open, read, write, sync, close, stat, remove, rename;
 } h2_app_test_fs_t;
 /** Initialize fresh storage, borrowing allocator; INVALID_ARG/NO_MEMORY on
  * failure. */
-h2_pal_result_t h2_app_test_fs_init(h2_app_test_fs_t *fs,
-                                    const h2_pal_mem_api_t *mem);
+h2_pal_result_t h2_app_test_fs_init(h2_app_test_fs_t* fs,
+                                    const h2_pal_mem_api_t* mem);
 /** Open handles return INVALID_STATE; NULL/repeated deinit succeeds. */
-h2_pal_result_t h2_app_test_fs_deinit(h2_app_test_fs_t *fs);
+h2_pal_result_t h2_app_test_fs_deinit(h2_app_test_fs_t* fs);
 
 #ifdef __cplusplus
 }

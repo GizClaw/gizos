@@ -31,26 +31,24 @@ typedef enum kv_type {
 } kv_type_t;
 
 typedef struct kv_record {
-  const uint8_t *key;
-  const uint8_t *value;
+  const uint8_t* key;
+  const uint8_t* value;
   size_t key_size;
   size_t value_size;
   unsigned type;
 } kv_record_t;
 
-static uint64_t kv_load(const uint8_t *p, size_t n) {
+static uint64_t kv_load(const uint8_t* p, size_t n) {
   uint64_t value = 0u;
-  for (size_t i = 0u; i < n; ++i)
-    value |= (uint64_t)p[i] << (8u * i);
+  for (size_t i = 0u; i < n; ++i) value |= (uint64_t)p[i] << (8u * i);
   return value;
 }
 
-static void kv_store(uint8_t *p, uint64_t value, size_t n) {
-  for (size_t i = 0u; i < n; ++i)
-    p[i] = (uint8_t)(value >> (8u * i));
+static void kv_store(uint8_t* p, uint64_t value, size_t n) {
+  for (size_t i = 0u; i < n; ++i) p[i] = (uint8_t)(value >> (8u * i));
 }
 
-static uint32_t kv_crc(const uint8_t *p, size_t n) {
+static uint32_t kv_crc(const uint8_t* p, size_t n) {
   uint32_t crc = UINT32_MAX;
   for (size_t i = 0u; i < n; ++i) {
     crc ^= p[i];
@@ -60,9 +58,8 @@ static uint32_t kv_crc(const uint8_t *p, size_t n) {
   return crc ^ UINT32_MAX;
 }
 
-static int kv_key_valid(const uint8_t *key, size_t n) {
-  if (n == 0u || n > H2_LUA_STORAGE_NAME_MAX || key[0] == '.')
-    return 0;
+static int kv_key_valid(const uint8_t* key, size_t n) {
+  if (n == 0u || n > H2_LUA_STORAGE_NAME_MAX || key[0] == '.') return 0;
   for (size_t i = 0u; i < n; ++i) {
     uint8_t c = key[i];
     if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' ||
@@ -72,7 +69,7 @@ static int kv_key_valid(const uint8_t *key, size_t n) {
   return 1;
 }
 
-static int kv_compare(const kv_record_t *a, const kv_record_t *b) {
+static int kv_compare(const kv_record_t* a, const kv_record_t* b) {
   size_t n = a->key_size < b->key_size ? a->key_size : b->key_size;
   int cmp = memcmp(a->key, b->key, n);
   return cmp != 0 ? cmp
@@ -81,7 +78,7 @@ static int kv_compare(const kv_record_t *a, const kv_record_t *b) {
 
 /* Only used after validation (or after checking the record's available bytes).
  */
-static size_t kv_record(const uint8_t *p, kv_record_t *r) {
+static size_t kv_record(const uint8_t* p, kv_record_t* r) {
   r->key_size = p[0];
   r->type = p[1];
   r->value_size = (size_t)kv_load(p + 2u, 4u);
@@ -90,30 +87,25 @@ static size_t kv_record(const uint8_t *p, kv_record_t *r) {
   return KV_RECORD_HEADER + r->key_size + r->value_size;
 }
 
-static const char *kv_validate(const uint8_t *data, size_t size,
-                               uint32_t *count) {
+static const char* kv_validate(const uint8_t* data, size_t size,
+                               uint32_t* count) {
   kv_record_t previous = {0};
   size_t offset = KV_HEADER_SIZE;
   *count = 0u;
-  if (size == 0u)
-    return NULL;
-  if (size < 6u || memcmp(data, "GZKV", 4u) != 0)
-    return "corrupt data";
-  if (kv_load(data + 4u, 2u) != 1u)
-    return "unsupported version";
+  if (size == 0u) return NULL;
+  if (size < 6u || memcmp(data, "GZKV", 4u) != 0) return "corrupt data";
+  if (kv_load(data + 4u, 2u) != 1u) return "unsupported version";
   if (size < KV_OVERHEAD || kv_load(data + 6u, 2u) != 0u ||
       kv_load(data + 12u, 4u) != size - KV_OVERHEAD ||
       kv_load(data + size - 4u, 4u) != kv_crc(data, size - 4u))
     return "corrupt data";
   *count = (uint32_t)kv_load(data + 8u, 4u);
-  if (*count > H2_LUA_KV_MAX_KEYS)
-    return "corrupt data";
+  if (*count > H2_LUA_KV_MAX_KEYS) return "corrupt data";
   for (uint32_t i = 0u; i < *count; ++i) {
     kv_record_t r;
     size_t remaining = size - 4u - offset;
     size_t key_size, value_size;
-    if (remaining < KV_RECORD_HEADER)
-      return "corrupt data";
+    if (remaining < KV_RECORD_HEADER) return "corrupt data";
     key_size = data[offset];
     value_size = (size_t)kv_load(data + offset + 2u, 4u);
     remaining -= KV_RECORD_HEADER;
@@ -124,64 +116,60 @@ static const char *kv_validate(const uint8_t *data, size_t size,
         (i != 0u && kv_compare(&previous, &r) >= 0))
       return "corrupt data";
     switch (r.type) {
-    case KV_STRING:
-      break;
-    case KV_BOOLEAN:
-      if (r.value_size != 1u || r.value[0] > 1u)
+      case KV_STRING:
+        break;
+      case KV_BOOLEAN:
+        if (r.value_size != 1u || r.value[0] > 1u) return "corrupt data";
+        break;
+      case KV_INTEGER:
+        if (r.value_size != 8u) return "corrupt data";
+        break;
+      case KV_FLOAT: {
+        uint64_t bits;
+        lua_Number number;
+        if (r.value_size != 8u) return "corrupt data";
+        bits = kv_load(r.value, 8u);
+        memcpy(&number, &bits, sizeof(number));
+        if (!isfinite(number)) return "corrupt data";
+        break;
+      }
+      default:
         return "corrupt data";
-      break;
-    case KV_INTEGER:
-      if (r.value_size != 8u)
-        return "corrupt data";
-      break;
-    case KV_FLOAT: {
-      uint64_t bits;
-      lua_Number number;
-      if (r.value_size != 8u)
-        return "corrupt data";
-      bits = kv_load(r.value, 8u);
-      memcpy(&number, &bits, sizeof(number));
-      if (!isfinite(number))
-        return "corrupt data";
-      break;
-    }
-    default:
-      return "corrupt data";
     }
     previous = r;
   }
   return offset == size - 4u ? NULL : "corrupt data";
 }
 
-static const char *kv_storage_error(storage_status_t status) {
+static const char* kv_storage_error(storage_status_t status) {
   switch (status) {
-  case STORAGE_OK:
-    return NULL;
-  case STORAGE_UNAVAILABLE:
-    return "unavailable";
-  case STORAGE_QUOTA_EXCEEDED:
-    return "quota exceeded";
-  case STORAGE_TOO_MANY_FILES:
-    return "too many files";
-  case STORAGE_NO_SPACE:
-    return "no space";
-  case STORAGE_BUSY:
-  case STORAGE_CHANGED:
-    return "busy";
-  case STORAGE_CORRUPT:
-    return "corrupt data";
-  default:
-    return "io error";
+    case STORAGE_OK:
+      return NULL;
+    case STORAGE_UNAVAILABLE:
+      return "unavailable";
+    case STORAGE_QUOTA_EXCEEDED:
+      return "quota exceeded";
+    case STORAGE_TOO_MANY_FILES:
+      return "too many files";
+    case STORAGE_NO_SPACE:
+      return "no space";
+    case STORAGE_BUSY:
+    case STORAGE_CHANGED:
+      return "busy";
+    case STORAGE_CORRUPT:
+      return "corrupt data";
+    default:
+      return "io error";
   }
 }
 
-static int kv_failure(lua_State *state, const char *reason) {
+static int kv_failure(lua_State* state, const char* reason) {
   lua_pushnil(state);
   lua_pushfstring(state, "kv: %s", reason);
   return 2;
 }
 
-static size_t kv_encode_record(uint8_t *p, const kv_record_t *r) {
+static size_t kv_encode_record(uint8_t* p, const kv_record_t* r) {
   p[0] = (uint8_t)r->key_size;
   p[1] = (uint8_t)r->type;
   kv_store(p + 2u, r->value_size, 4u);
@@ -192,10 +180,10 @@ static size_t kv_encode_record(uint8_t *p, const kv_record_t *r) {
 
 /* The old snapshot is validated. Scan it twice, first calculating the exact
  * size; no partially produced output can be committed on an error. */
-static const char *kv_mutate(h2_lua_job_t *job, kv_operation_t op,
-                             const kv_record_t *input, const uint8_t *old,
-                             size_t old_size, uint32_t count, uint8_t *out,
-                             size_t capacity, int *changed, int *retry) {
+static const char* kv_mutate(h2_lua_job_t* job, kv_operation_t op,
+                             const kv_record_t* input, const uint8_t* old,
+                             size_t old_size, uint32_t count, uint8_t* out,
+                             size_t capacity, int* changed, int* retry) {
   size_t offset = KV_HEADER_SIZE, removed = 0u;
   size_t total = old_size == 0u ? KV_OVERHEAD : old_size;
   int found = 0, inserted = 0;
@@ -210,18 +198,15 @@ static const char *kv_mutate(h2_lua_job_t *job, kv_operation_t op,
     offset += n;
   }
   *changed = found;
-  if (op == KV_REMOVE && !found)
-    return NULL;
+  if (op == KV_REMOVE && !found) return NULL;
   if (op == KV_SET && !found && count == H2_LUA_KV_MAX_KEYS)
     return "too many keys";
   total -= removed;
   if (op == KV_SET) {
     size_t added = KV_RECORD_HEADER + input->key_size + input->value_size;
-    if (SIZE_MAX - total < added)
-      return "quota exceeded";
+    if (SIZE_MAX - total < added) return "quota exceeded";
     total += added;
-    if (!found)
-      ++count;
+    if (!found) ++count;
   } else {
     --count;
   }
@@ -262,22 +247,21 @@ static const char *kv_mutate(h2_lua_job_t *job, kv_operation_t op,
       h2_lua_storage_kv_commit_locked(job, out, written + 4u));
 }
 
-static int kv_result(lua_State *state, kv_operation_t op, const uint8_t *data,
-                     uint32_t count, const kv_record_t *input) {
+static int kv_result(lua_State* state, kv_operation_t op, const uint8_t* data,
+                     uint32_t count, const kv_record_t* input) {
   size_t offset = KV_HEADER_SIZE;
-  if (op == KV_KEYS)
-    lua_createtable(state, (int)count, 0);
+  if (op == KV_KEYS) lua_createtable(state, (int)count, 0);
   for (uint32_t i = 0u; i < count; ++i) {
     kv_record_t r;
     offset += kv_record(data + offset, &r);
     if (op == KV_KEYS) {
-      lua_pushlstring(state, (const char *)r.key, r.key_size);
+      lua_pushlstring(state, (const char*)r.key, r.key_size);
       lua_rawseti(state, -2, i + 1u);
     } else if (kv_compare(&r, input) == 0) {
       if (op == KV_EXISTS)
         lua_pushboolean(state, 1);
       else if (r.type == KV_STRING)
-        lua_pushlstring(state, (const char *)r.value, r.value_size);
+        lua_pushlstring(state, (const char*)r.value, r.value_size);
       else if (r.type == KV_BOOLEAN)
         lua_pushboolean(state, r.value[0]);
       else if (r.type == KV_INTEGER) {
@@ -302,55 +286,51 @@ static int kv_result(lua_State *state, kv_operation_t op, const uint8_t *data,
   return 1;
 }
 
-static int kv_call(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+static int kv_call(lua_State* state) {
+  h2_lua_job_t* job = lua_touserdata(state, lua_upvalueindex(1));
   kv_operation_t op = (kv_operation_t)lua_tointeger(state, lua_upvalueindex(2));
   kv_record_t input = {0};
   uint8_t scalar[8] = {0};
-  const char *error = NULL;
+  const char* error = NULL;
   int base = lua_gettop(state);
   if (op != KV_KEYS) {
     luaL_checktype(state, 1, LUA_TSTRING);
-    input.key = (const uint8_t *)lua_tolstring(state, 1, &input.key_size);
-    if (!kv_key_valid(input.key, input.key_size))
-      error = "invalid key";
+    input.key = (const uint8_t*)lua_tolstring(state, 1, &input.key_size);
+    if (!kv_key_valid(input.key, input.key_size)) error = "invalid key";
   }
   if (op == KV_SET) {
     switch (lua_type(state, 2)) {
-    case LUA_TSTRING:
-      input.type = KV_STRING;
-      input.value = (const uint8_t *)lua_tolstring(state, 2, &input.value_size);
-      break;
-    case LUA_TBOOLEAN:
-      input.type = KV_BOOLEAN;
-      scalar[0] = (uint8_t)lua_toboolean(state, 2);
-      input.value_size = 1u;
-      break;
-    case LUA_TNUMBER:
-      input.value_size = 8u;
-      if (lua_isinteger(state, 2)) {
-        input.type = KV_INTEGER;
-        kv_store(scalar, (uint64_t)lua_tointeger(state, 2), 8u);
-      } else {
-        lua_Number value = lua_tonumber(state, 2);
-        uint64_t bits;
-        input.type = KV_FLOAT;
-        if (!isfinite(value))
-          error = "invalid value";
-        memcpy(&bits, &value, sizeof(bits));
-        kv_store(scalar, bits, 8u);
-      }
-      break;
-    default:
-      return luaL_argerror(state, 2, "expected string, boolean or number");
+      case LUA_TSTRING:
+        input.type = KV_STRING;
+        input.value =
+            (const uint8_t*)lua_tolstring(state, 2, &input.value_size);
+        break;
+      case LUA_TBOOLEAN:
+        input.type = KV_BOOLEAN;
+        scalar[0] = (uint8_t)lua_toboolean(state, 2);
+        input.value_size = 1u;
+        break;
+      case LUA_TNUMBER:
+        input.value_size = 8u;
+        if (lua_isinteger(state, 2)) {
+          input.type = KV_INTEGER;
+          kv_store(scalar, (uint64_t)lua_tointeger(state, 2), 8u);
+        } else {
+          lua_Number value = lua_tonumber(state, 2);
+          uint64_t bits;
+          input.type = KV_FLOAT;
+          if (!isfinite(value)) error = "invalid value";
+          memcpy(&bits, &value, sizeof(bits));
+          kv_store(scalar, bits, 8u);
+        }
+        break;
+      default:
+        return luaL_argerror(state, 2, "expected string, boolean or number");
     }
-    if (input.type != KV_STRING)
-      input.value = scalar;
+    if (input.type != KV_STRING) input.value = scalar;
   }
-  if (error != NULL)
-    return kv_failure(state, error);
-  if (!h2_lua_storage_available(job))
-    return kv_failure(state, "unavailable");
+  if (error != NULL) return kv_failure(state, error);
+  if (!h2_lua_storage_available(job)) return kv_failure(state, "unavailable");
   if (input.value_size > UINT32_MAX ||
       input.value_size > SIZE_MAX - KV_RECORD_HEADER - input.key_size)
     return kv_failure(state, "quota exceeded");
@@ -391,8 +371,7 @@ static int kv_call(lua_State *state) {
     status = h2_lua_storage_lock(job);
     if (status == STORAGE_OK) {
       status = h2_lua_storage_kv_size_locked(job, &current64);
-      if (status == STORAGE_OK && current64 > size64)
-        status = STORAGE_CHANGED;
+      if (status == STORAGE_OK && current64 > size64) status = STORAGE_CHANGED;
       if (status == STORAGE_OK)
         status = h2_lua_storage_kv_read_locked(job, old, (size_t)current64);
       if (status == STORAGE_OK) {
@@ -409,8 +388,7 @@ static int kv_call(lua_State *state) {
     }
     if (status != STORAGE_OK)
       return kv_failure(state, kv_storage_error(status));
-    if (error != NULL)
-      return kv_failure(state, error);
+    if (error != NULL) return kv_failure(state, error);
     if (op == KV_SET || op == KV_REMOVE) {
       lua_pushboolean(state, op == KV_SET || changed);
       return 1;
@@ -420,9 +398,9 @@ static int kv_call(lua_State *state) {
   return kv_failure(state, "busy");
 }
 
-int h2_lua_open_kv(lua_State *state) {
-  static const char *const names[] = {"get", "set", "remove", "exists", "keys"};
-  void *job = lua_touserdata(state, lua_upvalueindex(1));
+int h2_lua_open_kv(lua_State* state) {
+  static const char* const names[] = {"get", "set", "remove", "exists", "keys"};
+  void* job = lua_touserdata(state, lua_upvalueindex(1));
   lua_createtable(state, 0, 5);
   for (int i = 0; i < 5; ++i) {
     lua_pushlightuserdata(state, job);

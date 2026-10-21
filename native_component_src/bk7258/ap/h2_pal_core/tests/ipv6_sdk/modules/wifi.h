@@ -9,4 +9,4 @@ typedef struct {
   unsigned channel;
   int rssi;
 } wifi_link_status_t;
-int bk_wifi_sta_get_link_status(wifi_link_status_t *);
+int bk_wifi_sta_get_link_status(wifi_link_status_t*);

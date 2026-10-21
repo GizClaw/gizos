@@ -13,7 +13,7 @@ typedef struct wifi_fixture {
   uint32_t connect_timeout_ms;
 } wifi_fixture_t;
 
-static int wifi_get_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
+static int wifi_get_status(void* user, h2_pal_wifi_sta_status_t* out_status) {
   (void)user;
   *out_status = (h2_pal_wifi_sta_status_t){
       .state = H2_PAL_WIFI_STA_STATE_DISCONNECTED,
@@ -21,17 +21,17 @@ static int wifi_get_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
   return H2_PAL_OK;
 }
 
-static int wifi_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+static int wifi_connect(void* user, const h2_pal_wifi_sta_config_t* config,
                         uint32_t timeout_ms) {
-  wifi_fixture_t *fixture = user;
+  wifi_fixture_t* fixture = user;
   ++fixture->connect_count;
   fixture->connected = *config;
   fixture->connect_timeout_ms = timeout_ms;
   return fixture->connect_rc;
 }
 
-static int settings_get(void *user, h2_pal_wifi_sta_config_t *out_config) {
-  wifi_fixture_t *fixture = user;
+static int settings_get(void* user, h2_pal_wifi_sta_config_t* out_config) {
+  wifi_fixture_t* fixture = user;
   if (fixture->settings_rc == H2_PAL_OK) {
     *out_config = fixture->saved;
   }
@@ -63,8 +63,8 @@ static void test_wifi_step_uses_only_valid_saved_configuration(void) {
   };
   h2_gizclaw_e2e_amoled_wifi_result_t result;
 
-  assert(h2_gizclaw_e2e_amoled_wifi_step(
-             &wifi, &settings, 4321u, &result) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_amoled_wifi_step(&wifi, &settings, 4321u, &result) ==
+         H2_PAL_OK);
   assert(result.outcome == H2_GIZCLAW_E2E_AMOLED_WIFI_CONNECTED);
   assert(result.rc == H2_PAL_OK);
   assert(fixture.connect_count == 1u);
@@ -78,8 +78,8 @@ static void test_wifi_step_uses_only_valid_saved_configuration(void) {
 
   fixture.connect_rc = H2_PAL_ERR_TIMEOUT;
   fixture.connect_count = 0u;
-  assert(h2_gizclaw_e2e_amoled_wifi_step(
-             &wifi, &settings, 4321u, &result) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_amoled_wifi_step(&wifi, &settings, 4321u, &result) ==
+         H2_PAL_OK);
   assert(result.outcome == H2_GIZCLAW_E2E_AMOLED_WIFI_RETRY);
   assert(result.rc == H2_PAL_ERR_TIMEOUT);
   assert(fixture.connect_count == 1u);
@@ -93,8 +93,8 @@ static void test_wifi_step_uses_only_valid_saved_configuration(void) {
   for (size_t i = 0u; i < sizeof(unavailable) / sizeof(unavailable[0]); ++i) {
     fixture.settings_rc = unavailable[i];
     fixture.connect_count = 0u;
-    assert(h2_gizclaw_e2e_amoled_wifi_step(
-               &wifi, &settings, 4321u, &result) == H2_PAL_OK);
+    assert(h2_gizclaw_e2e_amoled_wifi_step(&wifi, &settings, 4321u, &result) ==
+           H2_PAL_OK);
     assert(result.outcome == H2_GIZCLAW_E2E_AMOLED_WIFI_NO_SAVED_CONFIG);
     assert(result.rc == unavailable[i]);
     assert(fixture.connect_count == 0u);
@@ -102,8 +102,8 @@ static void test_wifi_step_uses_only_valid_saved_configuration(void) {
 
   fixture.settings_rc = H2_PAL_OK;
   fixture.saved = (h2_pal_wifi_sta_config_t){0};
-  assert(h2_gizclaw_e2e_amoled_wifi_step(
-             &wifi, &settings, 4321u, &result) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_amoled_wifi_step(&wifi, &settings, 4321u, &result) ==
+         H2_PAL_OK);
   assert(result.outcome == H2_GIZCLAW_E2E_AMOLED_WIFI_NO_SAVED_CONFIG);
   assert(result.rc == H2_PAL_ERR_INVALID_ARG);
   assert(fixture.connect_count == 0u);
@@ -113,8 +113,7 @@ static void test_runner_starts_only_after_network_and_clock(void) {
   h2_gizclaw_e2e_amoled_state_t state;
   h2_gizclaw_e2e_amoled_state_init(&state);
 
-  assert(!h2_gizclaw_e2e_amoled_state_set_prerequisites(&state, false,
-                                                         false));
+  assert(!h2_gizclaw_e2e_amoled_state_set_prerequisites(&state, false, false));
   assert(!h2_gizclaw_e2e_amoled_state_set_prerequisites(&state, true, false));
   assert(h2_gizclaw_e2e_amoled_state_set_prerequisites(&state, true, true));
   assert(!h2_gizclaw_e2e_amoled_state_set_prerequisites(&state, false, true));
@@ -130,14 +129,14 @@ static void test_summary_replay_is_not_early(void) {
   assert(h2_gizclaw_e2e_amoled_state_set_prerequisites(&state, true, true));
   h2_gizclaw_e2e_amoled_state_complete(&state, 100u, 10000u);
 
-  assert(!h2_gizclaw_e2e_amoled_state_take_summary_replay(&state, 10099u,
-                                                          10000u));
-  assert(h2_gizclaw_e2e_amoled_state_take_summary_replay(&state, 10100u,
-                                                         10000u));
-  assert(!h2_gizclaw_e2e_amoled_state_take_summary_replay(&state, 20099u,
-                                                          10000u));
-  assert(h2_gizclaw_e2e_amoled_state_take_summary_replay(&state, 20100u,
-                                                         10000u));
+  assert(
+      !h2_gizclaw_e2e_amoled_state_take_summary_replay(&state, 10099u, 10000u));
+  assert(
+      h2_gizclaw_e2e_amoled_state_take_summary_replay(&state, 10100u, 10000u));
+  assert(
+      !h2_gizclaw_e2e_amoled_state_take_summary_replay(&state, 20099u, 10000u));
+  assert(
+      h2_gizclaw_e2e_amoled_state_take_summary_replay(&state, 20100u, 10000u));
 }
 
 static void test_summary_replay_handles_monotonic_wrap(void) {

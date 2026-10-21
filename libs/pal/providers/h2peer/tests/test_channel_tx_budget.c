@@ -27,27 +27,25 @@ typedef struct fixture {
   uint64_t now_us;
 } fixture_t;
 
-static h2_pal_result_t monotonic_us(void *user, uint64_t *out_us) {
-  *out_us = ((fixture_t *)user)->now_us;
+static h2_pal_result_t monotonic_us(void* user, uint64_t* out_us) {
+  *out_us = ((fixture_t*)user)->now_us;
   return H2_PAL_OK;
 }
 
-static void *allocate(void *user, size_t size) {
-  fixture_t *f = user;
-  void *p = malloc(size);
-  if (p != NULL)
-    ++f->allocations;
+static void* allocate(void* user, size_t size) {
+  fixture_t* f = user;
+  void* p = malloc(size);
+  if (p != NULL) ++f->allocations;
   return p;
 }
 
-static void deallocate(void *user, void *p) {
-  fixture_t *f = user;
-  if (p != NULL)
-    ++f->frees;
+static void deallocate(void* user, void* p) {
+  fixture_t* f = user;
+  if (p != NULL) ++f->frees;
   free(p);
 }
 
-static void initialize(fixture_t *f, size_t channel_count) {
+static void initialize(fixture_t* f, size_t channel_count) {
   static const h2_pal_mem_vtable_t memory = {.alloc = allocate,
                                              .free = deallocate};
   static const h2_pal_time_vtable_t time = {.get_monotonic_us = monotonic_us};
@@ -58,22 +56,26 @@ static void initialize(fixture_t *f, size_t channel_count) {
   f->owner.config.time = &f->time;
   f->peer.owner = &f->owner;
   assert(h2_atomic_uint_init(&f->owner.refs, 1u) == H2_ATOMIC_OK);
-  assert(h2_atomic_int_init(&f->peer.state, H2_PAL_WEBRTC_PEER_CONNECTED) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.state, H2_PAL_WEBRTC_PEER_CONNECTED) ==
+         H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&f->peer.closed, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&f->peer.refs, 1u) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&f->peer.network_event_count, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_size_init(&f->peer.network_event_bytes, 0u) == H2_ATOMIC_OK);
-  assert(h2_atomic_int_init(&f->peer.network_send_wakeup_queued, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_send_wakeup_queued, 0) ==
+         H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&f->peer.network_stop, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&f->peer.network_stopped, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&f->peer.network_poll_active, 0) == H2_ATOMIC_OK);
-  assert(h2_atomic_int_init(&f->peer.network_transport_result, H2_PAL_OK) == H2_ATOMIC_OK);
-  assert(h2_atomic_int_init(&f->peer.network_error_reported, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_transport_result, H2_PAL_OK) ==
+         H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_error_reported, 0) ==
+         H2_ATOMIC_OK);
   assert(h2_atomic_ptr_init(&f->peer.rtp_pending, NULL) == H2_ATOMIC_OK);
   assert(h2_atomic_u32_init(&f->peer.channel_ready, 0u) == H2_ATOMIC_OK);
   assert(channel_count <= CHANNEL_MAX);
   for (size_t i = 0u; i < channel_count; ++i) {
-    h2_pal_webrtc_channel_t *channel = &f->channels[i];
+    h2_pal_webrtc_channel_t* channel = &f->channels[i];
     channel->owner = &f->peer;
     assert(h2_atomic_int_init(&channel->open, 1) == H2_ATOMIC_OK);
     assert(h2_atomic_int_init(&channel->terminal, 0) == H2_ATOMIC_OK);
@@ -88,10 +90,10 @@ static void initialize(fixture_t *f, size_t channel_count) {
   f->peer.channels = channel_count != 0u ? &f->channels[0] : NULL;
 }
 
-static void cleanup(fixture_t *f) {
+static void cleanup(fixture_t* f) {
   for (size_t i = 0u; i < CHANNEL_MAX; ++i) {
     for (size_t slot = 0u; slot < H2_PEER_INPUT_SLOT_COUNT; ++slot) {
-      h2_peer_tx_item_t *item = f->channels[i].tx_storage[slot];
+      h2_peer_tx_item_t* item = f->channels[i].tx_storage[slot];
       if (item != NULL) {
         h2_pal_mem_free(h2_peer_mem(&f->peer), item->data);
         h2_pal_mem_free(h2_peer_mem(&f->peer), item);
@@ -113,7 +115,7 @@ static void cleanup(fixture_t *f) {
   h2_atomic_u32_destroy(&f->peer.channel_ready);
   h2_atomic_uint_destroy(&f->owner.refs);
   for (size_t i = 0; i < CHANNEL_MAX; ++i) {
-    h2_pal_webrtc_channel_t *channel = &f->channels[i];
+    h2_pal_webrtc_channel_t* channel = &f->channels[i];
     h2_atomic_int_destroy(&channel->open);
     h2_atomic_int_destroy(&channel->terminal);
     h2_atomic_uint_destroy(&channel->event_refs);
@@ -126,22 +128,21 @@ static void cleanup(fixture_t *f) {
   assert(f->allocations == f->frees);
 }
 
-static h2_pal_result_t push(fixture_t *f, size_t channel, size_t len) {
+static h2_pal_result_t push(fixture_t* f, size_t channel, size_t len) {
   static uint8_t payload[16384];
   assert(len <= sizeof(payload));
   memset(payload, (int)('a' + channel), len);
   return h2_peer_channel_tx_push(&f->channels[channel], payload, len, 0);
 }
 
-static size_t queued(const fixture_t *f, size_t channel) {
+static size_t queued(const fixture_t* f, size_t channel) {
   size_t count = 0u;
   for (size_t slot = 0u; slot < H2_PEER_INPUT_SLOT_COUNT; ++slot)
-    if (h2_atomic_load(&f->channels[channel].tx_state[slot]) == 2u)
-      ++count;
+    if (h2_atomic_load(&f->channels[channel].tx_state[slot]) == 2u) ++count;
   return count;
 }
 
-static uint32_t take_snapshot(fixture_t *f) {
+static uint32_t take_snapshot(fixture_t* f) {
   return h2_atomic_exchange(&f->peer.channel_ready, 0u);
 }
 

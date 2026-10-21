@@ -50,130 +50,129 @@ extern "C" {
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT (UINT32_C(1) << 18)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE (UINT32_C(1) << 19)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS (UINT32_C(1) << 20)
-#define H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL \
-    (H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_HELP | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATS | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_STATUS | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_ERASE | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_PAYLOAD | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL       \
+  (H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP |      \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER |   \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE |  \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_HELP |            \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS |          \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATS |           \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY |          \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_STATUS | \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP |   \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_ERASE |  \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_PAYLOAD |   \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |     \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL |       \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN |       \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT |    \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT | \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS)
 
 typedef enum h2_h2loader_host_transport {
-    H2_H2LOADER_HOST_TRANSPORT_SERIAL = 1,
-    H2_H2LOADER_HOST_TRANSPORT_BLE = 2,
+  H2_H2LOADER_HOST_TRANSPORT_SERIAL = 1,
+  H2_H2LOADER_HOST_TRANSPORT_BLE = 2,
 } h2_h2loader_host_transport_t;
 
 typedef enum h2_h2loader_host_active_role {
-    H2_H2LOADER_HOST_ACTIVE_ROLE_UNKNOWN = 0,
-    H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER = 1,
-    H2_H2LOADER_HOST_ACTIVE_ROLE_APP = 2,
+  H2_H2LOADER_HOST_ACTIVE_ROLE_UNKNOWN = 0,
+  H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER = 1,
+  H2_H2LOADER_HOST_ACTIVE_ROLE_APP = 2,
 } h2_h2loader_host_active_role_t;
 
 typedef enum h2_h2loader_host_boot_intent {
-    H2_H2LOADER_HOST_BOOT_INTENT_UNKNOWN = 0,
-    H2_H2LOADER_HOST_BOOT_INTENT_LOADER = 1,
-    H2_H2LOADER_HOST_BOOT_INTENT_AUTO = 2,
+  H2_H2LOADER_HOST_BOOT_INTENT_UNKNOWN = 0,
+  H2_H2LOADER_HOST_BOOT_INTENT_LOADER = 1,
+  H2_H2LOADER_HOST_BOOT_INTENT_AUTO = 2,
 } h2_h2loader_host_boot_intent_t;
 
 typedef struct h2_h2loader_host_metadata {
-    char package_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    char image_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    char version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    uint64_t package_size;
-    uint64_t image_size;
-    h2_h2loader_host_active_role_t role;
-    uint8_t valid;
+  char package_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  char image_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  char version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  uint64_t package_size;
+  uint64_t image_size;
+  h2_h2loader_host_active_role_t role;
+  uint8_t valid;
 } h2_h2loader_host_metadata_t;
 
 typedef struct h2_h2loader_host_status {
-    char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char chip[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    /** Stable physical-device UID used to verify post-reboot BLE identity. */
-    char device_uid[H2_H2LOADER_HOST_DEVICE_UID_MAX_LEN];
-    char active_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char active_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    uint64_t active_image_size;
-    h2_h2loader_host_metadata_t stage;
-    h2_h2loader_host_metadata_t partition_1;
-    h2_h2loader_host_metadata_t partition_2;
-    h2_h2loader_host_active_role_t active_role;
-    h2_h2loader_host_boot_intent_t boot_intent;
-    uint32_t mfg_mode;
-    /** Parsed `mfg_steps` digit count, 1..H2_H2LOADER_HOST_MFG_STEP_MAX. */
-    uint32_t mfg_step_total;
-    /** Per-step status 0..3; entries at index >= mfg_step_total are zero. */
-    uint8_t mfg_steps[H2_H2LOADER_HOST_MFG_STEP_MAX];
-    uint32_t capabilities;
-    uint32_t command_availability;
-    uint32_t running_partition;
-    uint32_t next_partition;
-    int32_t last;
+  char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char chip[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  /** Stable physical-device UID used to verify post-reboot BLE identity. */
+  char device_uid[H2_H2LOADER_HOST_DEVICE_UID_MAX_LEN];
+  char active_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char active_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint64_t active_image_size;
+  h2_h2loader_host_metadata_t stage;
+  h2_h2loader_host_metadata_t partition_1;
+  h2_h2loader_host_metadata_t partition_2;
+  h2_h2loader_host_active_role_t active_role;
+  h2_h2loader_host_boot_intent_t boot_intent;
+  uint32_t mfg_mode;
+  /** Parsed `mfg_steps` digit count, 1..H2_H2LOADER_HOST_MFG_STEP_MAX. */
+  uint32_t mfg_step_total;
+  /** Per-step status 0..3; entries at index >= mfg_step_total are zero. */
+  uint8_t mfg_steps[H2_H2LOADER_HOST_MFG_STEP_MAX];
+  uint32_t capabilities;
+  uint32_t command_availability;
+  uint32_t running_partition;
+  uint32_t next_partition;
+  int32_t last;
 } h2_h2loader_host_status_t;
 
 h2_h2loader_host_active_role_t h2_h2loader_host_status_active_role(
-    const h2_h2loader_host_status_t *status);
+    const h2_h2loader_host_status_t* status);
 uint32_t h2_h2loader_host_status_boot_intent(
-    const h2_h2loader_host_status_t *status);
+    const h2_h2loader_host_status_t* status);
 uint32_t h2_h2loader_host_status_mfg_mode(
-    const h2_h2loader_host_status_t *status);
+    const h2_h2loader_host_status_t* status);
 /** Returns the parsed MFG step count, or 0 when status is null. */
 uint32_t h2_h2loader_host_status_mfg_step_total(
-    const h2_h2loader_host_status_t *status);
+    const h2_h2loader_host_status_t* status);
 /** Returns step index status, or UINT32_MAX when index >= step total. */
 uint32_t h2_h2loader_host_status_mfg_step(
-    const h2_h2loader_host_status_t *status,
-    uint32_t index);
+    const h2_h2loader_host_status_t* status, uint32_t index);
 
 typedef struct h2_h2loader_host_candidate {
-    h2_h2loader_host_transport_t transport;
-    char candidate_id[H2_H2LOADER_HOST_CANDIDATE_ID_MAX_LEN];
-    /** Opaque Host Serial open identifier; empty for BLE candidates. */
-    char port_id[H2_PAL_SERIAL_HOST_PORT_ID_MAX_LEN];
-    char endpoint[H2_H2LOADER_HOST_ENDPOINT_MAX_LEN];
-    char display_name[H2_H2LOADER_HOST_DISPLAY_NAME_MAX_LEN];
-    char advertised_board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    h2_pal_ble_addr_t ble_address;
-    int rssi;
-    uint32_t advertised_capabilities;
-    uint32_t serial_valid_fields;
-    uint32_t serial_capabilities;
-    uint16_t usb_vid;
-    uint16_t usb_pid;
-    uint8_t usb_identity_valid;
-    char usb_serial[H2_PAL_SERIAL_HOST_USB_SERIAL_MAX_LEN];
+  h2_h2loader_host_transport_t transport;
+  char candidate_id[H2_H2LOADER_HOST_CANDIDATE_ID_MAX_LEN];
+  /** Opaque Host Serial open identifier; empty for BLE candidates. */
+  char port_id[H2_PAL_SERIAL_HOST_PORT_ID_MAX_LEN];
+  char endpoint[H2_H2LOADER_HOST_ENDPOINT_MAX_LEN];
+  char display_name[H2_H2LOADER_HOST_DISPLAY_NAME_MAX_LEN];
+  char advertised_board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  h2_pal_ble_addr_t ble_address;
+  int rssi;
+  uint32_t advertised_capabilities;
+  uint32_t serial_valid_fields;
+  uint32_t serial_capabilities;
+  uint16_t usb_vid;
+  uint16_t usb_pid;
+  uint8_t usb_identity_valid;
+  char usb_serial[H2_PAL_SERIAL_HOST_USB_SERIAL_MAX_LEN];
 } h2_h2loader_host_candidate_t;
 
 typedef struct h2_h2loader_host_scan_result {
-    size_t count;
-    size_t required_capacity;
-    h2_pal_result_t serial_result;
-    h2_pal_result_t ble_result;
+  size_t count;
+  size_t required_capacity;
+  h2_pal_result_t serial_result;
+  h2_pal_result_t ble_result;
 } h2_h2loader_host_scan_result_t;
 
 typedef struct h2_h2loader_host_scan_config {
-    const h2_pal_serial_host_api_t *serial;
-    const h2_pal_ble_host_api_t *ble;
-    const h2_pal_sync_api_t *sync;
-    const h2_pal_time_api_t *time;
-    uint32_t ble_timeout_ms;
-    /** Optional exact BLE endpoint that ends scanning as soon as it is seen. */
-    const char *ble_endpoint;
-    h2_h2loader_host_candidate_t *candidates;
-    size_t candidate_capacity;
+  const h2_pal_serial_host_api_t* serial;
+  const h2_pal_ble_host_api_t* ble;
+  const h2_pal_sync_api_t* sync;
+  const h2_pal_time_api_t* time;
+  uint32_t ble_timeout_ms;
+  /** Optional exact BLE endpoint that ends scanning as soon as it is seen. */
+  const char* ble_endpoint;
+  h2_h2loader_host_candidate_t* candidates;
+  size_t candidate_capacity;
 } h2_h2loader_host_scan_config_t;
 
 /**
@@ -184,13 +183,12 @@ typedef struct h2_h2loader_host_scan_config {
  * by display name, advertised board, USB metadata or endpoint.
  */
 h2_pal_result_t h2_h2loader_host_scan(
-    const h2_h2loader_host_scan_config_t *config,
-    h2_h2loader_host_scan_result_t *out_result);
+    const h2_h2loader_host_scan_config_t* config,
+    h2_h2loader_host_scan_result_t* out_result);
 
 /** Parse one complete, canonical H2_LOADER_STATUS line. */
 h2_pal_result_t h2_h2loader_host_status_parse(
-    const char *line,
-    h2_h2loader_host_status_t *out_status);
+    const char* line, h2_h2loader_host_status_t* out_status);
 
 /**
  * @brief Verify the final live state for one managed asset.
@@ -200,39 +198,37 @@ h2_pal_result_t h2_h2loader_host_status_parse(
  * checksum. Stage must already be finalized and cleared.
  */
 h2_pal_result_t h2_h2loader_host_status_verify_asset(
-    const h2_h2loader_host_status_t *status,
-    const h2_h2loader_host_catalog_entry_t *asset);
+    const h2_h2loader_host_status_t* status,
+    const h2_h2loader_host_catalog_entry_t* asset);
 
 typedef struct h2_h2loader_host_serial_connection
     h2_h2loader_host_serial_connection_t;
 
 /** Return nonzero to request cooperative cancellation. */
-typedef int (*h2_h2loader_host_cancelled_fn)(void *user);
+typedef int (*h2_h2loader_host_cancelled_fn)(void* user);
 
 typedef h2_pal_result_t (*h2_h2loader_host_transport_log_fn)(
-    void *user,
-    const uint8_t *data,
-    size_t len);
+    void* user, const uint8_t* data, size_t len);
 
 typedef struct h2_h2loader_host_serial_connection_config {
-    const h2_pal_serial_host_api_t *serial;
-    const h2_pal_time_api_t *time;
-    const h2_pal_mem_api_t *allocator;
-    const char *port_id;
-    /** Reliable serial baud; zero selects the 460800 default. */
-    uint32_t baud_rate;
-    uint32_t handshake_timeout_ms;
-    uint32_t command_timeout_ms;
-    uint32_t conversation_id;
-    /** Optional raw boot marker consumed before opening the reliable session. */
-    const char *ready_marker;
-    /** Optional bounded delay after command delivery and before response read. */
-    uint32_t post_command_delay_ms;
-    /** Optional borrowed sink for bytes proven not to belong to a frame. */
-    h2_h2loader_host_transport_log_fn on_log;
-    void *log_user;
-    /** Leave DTR and RTS untouched for the complete connection lifecycle. */
-    int preserve_control_lines;
+  const h2_pal_serial_host_api_t* serial;
+  const h2_pal_time_api_t* time;
+  const h2_pal_mem_api_t* allocator;
+  const char* port_id;
+  /** Reliable serial baud; zero selects the 460800 default. */
+  uint32_t baud_rate;
+  uint32_t handshake_timeout_ms;
+  uint32_t command_timeout_ms;
+  uint32_t conversation_id;
+  /** Optional raw boot marker consumed before opening the reliable session. */
+  const char* ready_marker;
+  /** Optional bounded delay after command delivery and before response read. */
+  uint32_t post_command_delay_ms;
+  /** Optional borrowed sink for bytes proven not to belong to a frame. */
+  h2_h2loader_host_transport_log_fn on_log;
+  void* log_user;
+  /** Leave DTR and RTS untouched for the complete connection lifecycle. */
+  int preserve_control_lines;
 } h2_h2loader_host_serial_connection_config_t;
 
 /**
@@ -247,43 +243,42 @@ typedef struct h2_h2loader_host_serial_connection_config {
  * transport.
  */
 h2_pal_result_t h2_h2loader_host_serial_connect(
-    const h2_h2loader_host_serial_connection_config_t *config,
-    h2_h2loader_host_serial_connection_t **out_connection);
+    const h2_h2loader_host_serial_connection_config_t* config,
+    h2_h2loader_host_serial_connection_t** out_connection);
 
 /** Close a serial connection. Repeating the call with NULL is a no-op. */
 h2_pal_result_t h2_h2loader_host_serial_disconnect(
-    h2_h2loader_host_serial_connection_t **inout_connection);
+    h2_h2loader_host_serial_connection_t** inout_connection);
 
 /** Run authoritative status over the established reliable session. */
 h2_pal_result_t h2_h2loader_host_serial_read_status(
-    h2_h2loader_host_serial_connection_t *connection,
-    h2_h2loader_host_status_t *out_status);
+    h2_h2loader_host_serial_connection_t* connection,
+    h2_h2loader_host_status_t* out_status);
 
 /** Poll transport logs until cancellation or a physical transport failure. */
 h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
-    h2_h2loader_host_serial_connection_t *connection,
-    h2_h2loader_host_cancelled_fn is_cancelled,
-    void *cancel_user);
+    h2_h2loader_host_serial_connection_t* connection,
+    h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user);
 
 typedef enum h2_h2loader_host_command {
-    H2_H2LOADER_HOST_COMMAND_HELP = 1,
-    H2_H2LOADER_HOST_COMMAND_STATUS = 2,
-    H2_H2LOADER_HOST_COMMAND_STATS = 3,
-    H2_H2LOADER_HOST_COMMAND_MEMORY = 4,
-    H2_H2LOADER_HOST_COMMAND_REBOOT_APP = 5,
-    H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER = 6,
-    H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE = 7,
-    H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS = 9,
-    H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP = 10,
-    H2_H2LOADER_HOST_COMMAND_STAGE_ABORT = 11,
-    H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT = 14,
-    H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT = 15,
-    H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE = 17,
-    H2_H2LOADER_HOST_COMMAND_STAGE_URL = 18,
-    H2_H2LOADER_HOST_COMMAND_WIFI_SCAN = 19,
-    H2_H2LOADER_HOST_COMMAND_WIFI_STATUS = 20,
-    /** `stats`, waiting for its installed-data checksum line after status. */
-    H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM = 21,
+  H2_H2LOADER_HOST_COMMAND_HELP = 1,
+  H2_H2LOADER_HOST_COMMAND_STATUS = 2,
+  H2_H2LOADER_HOST_COMMAND_STATS = 3,
+  H2_H2LOADER_HOST_COMMAND_MEMORY = 4,
+  H2_H2LOADER_HOST_COMMAND_REBOOT_APP = 5,
+  H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER = 6,
+  H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE = 7,
+  H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS = 9,
+  H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP = 10,
+  H2_H2LOADER_HOST_COMMAND_STAGE_ABORT = 11,
+  H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT = 14,
+  H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT = 15,
+  H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE = 17,
+  H2_H2LOADER_HOST_COMMAND_STAGE_URL = 18,
+  H2_H2LOADER_HOST_COMMAND_WIFI_SCAN = 19,
+  H2_H2LOADER_HOST_COMMAND_WIFI_STATUS = 20,
+  /** `stats`, waiting for its installed-data checksum line after status. */
+  H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM = 21,
 } h2_h2loader_host_command_t;
 
 /**
@@ -296,53 +291,51 @@ typedef enum h2_h2loader_host_command {
  * execute call's result. The callback runs on the caller's worker thread.
  */
 typedef h2_pal_result_t (*h2_h2loader_host_command_output_fn)(
-    void *user,
-    const uint8_t *data,
-    size_t len);
+    void* user, const uint8_t* data, size_t len);
 
 typedef enum h2_h2loader_host_command_terminal {
-    H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE = 0,
-    H2_H2LOADER_HOST_COMMAND_TERMINAL_OK = 1,
-    H2_H2LOADER_HOST_COMMAND_TERMINAL_UNSUPPORTED = 2,
-    H2_H2LOADER_HOST_COMMAND_TERMINAL_USAGE = 3,
-    H2_H2LOADER_HOST_COMMAND_TERMINAL_ERROR = 4,
+  H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE = 0,
+  H2_H2LOADER_HOST_COMMAND_TERMINAL_OK = 1,
+  H2_H2LOADER_HOST_COMMAND_TERMINAL_UNSUPPORTED = 2,
+  H2_H2LOADER_HOST_COMMAND_TERMINAL_USAGE = 3,
+  H2_H2LOADER_HOST_COMMAND_TERMINAL_ERROR = 4,
 } h2_h2loader_host_command_terminal_t;
 
 typedef struct h2_h2loader_host_command_request {
-    /** Closed typed command; arbitrary command strings are not accepted. */
-    h2_h2loader_host_command_t command;
-    /** Borrowed authoritative state, valid for the complete blocking call. */
-    const h2_h2loader_host_status_t *status;
-    /** Nonzero while another managed operation owns this identity. */
-    uint8_t operation_active;
-    /** Borrowed bounded parameters used only by the matching typed command. */
-    const char *ssid;
-    const char *password;
-    uint32_t wifi_scan_limit;
-    uint32_t wifi_scan_timeout_ms;
-    const char *url;
-    uint64_t expected_bytes;
-    const char *expected_sha256;
-    /** Optional cooperative cancellation callback and borrowed context. */
-    h2_h2loader_host_cancelled_fn is_cancelled;
-    void *cancel_user;
-    /** Optional synchronous bounded-output callback and borrowed context. */
-    h2_h2loader_host_command_output_fn on_output;
-    void *output_user;
+  /** Closed typed command; arbitrary command strings are not accepted. */
+  h2_h2loader_host_command_t command;
+  /** Borrowed authoritative state, valid for the complete blocking call. */
+  const h2_h2loader_host_status_t* status;
+  /** Nonzero while another managed operation owns this identity. */
+  uint8_t operation_active;
+  /** Borrowed bounded parameters used only by the matching typed command. */
+  const char* ssid;
+  const char* password;
+  uint32_t wifi_scan_limit;
+  uint32_t wifi_scan_timeout_ms;
+  const char* url;
+  uint64_t expected_bytes;
+  const char* expected_sha256;
+  /** Optional cooperative cancellation callback and borrowed context. */
+  h2_h2loader_host_cancelled_fn is_cancelled;
+  void* cancel_user;
+  /** Optional synchronous bounded-output callback and borrowed context. */
+  h2_h2loader_host_command_output_fn on_output;
+  void* output_user;
 } h2_h2loader_host_command_request_t;
 
 typedef struct h2_h2loader_host_command_result {
-    /** Transport/callback result before terminal-response interpretation. */
-    h2_pal_result_t transport_result;
-    /** Parsed marker outcome; NONE means no accepted terminal marker. */
-    h2_h2loader_host_command_terminal_t terminal;
-    /** Bytes captured by Host Core and offered to on_output. */
-    size_t output_bytes;
-    /** Nonzero when the fixed terminal-response capture buffer filled.
-     * Streaming on_output callbacks still receive every accepted byte. */
-    uint8_t output_truncated;
-    /** Nonzero when success requires reconnect and live-state verification. */
-    uint8_t lifecycle_transition;
+  /** Transport/callback result before terminal-response interpretation. */
+  h2_pal_result_t transport_result;
+  /** Parsed marker outcome; NONE means no accepted terminal marker. */
+  h2_h2loader_host_command_terminal_t terminal;
+  /** Bytes captured by Host Core and offered to on_output. */
+  size_t output_bytes;
+  /** Nonzero when the fixed terminal-response capture buffer filled.
+   * Streaming on_output callbacks still receive every accepted byte. */
+  uint8_t output_truncated;
+  /** Nonzero when success requires reconnect and live-state verification. */
+  uint8_t lifecycle_transition;
 } h2_h2loader_host_command_result_t;
 
 /**
@@ -356,8 +349,7 @@ typedef struct h2_h2loader_host_command_result {
  * hardware capabilities, or packed state.
  */
 h2_pal_result_t h2_h2loader_host_command_validate(
-    const h2_h2loader_host_status_t *status,
-    uint8_t operation_active,
+    const h2_h2loader_host_status_t* status, uint8_t operation_active,
     h2_h2loader_host_command_t command);
 
 /**
@@ -373,21 +365,19 @@ h2_pal_result_t h2_h2loader_host_command_validate(
  * identity and verify final live role/state before presenting success.
  */
 h2_pal_result_t h2_h2loader_host_serial_execute_command(
-    h2_h2loader_host_serial_connection_t *connection,
-    const h2_h2loader_host_command_request_t *request,
-    h2_h2loader_host_command_result_t *out_result);
+    h2_h2loader_host_serial_connection_t* connection,
+    const h2_h2loader_host_command_request_t* request,
+    h2_h2loader_host_command_result_t* out_result);
 
-typedef h2_pal_result_t (*h2_h2loader_host_payload_read_fn)(
-    void *user,
-    uint64_t offset,
-    uint8_t *out,
-    size_t out_size,
-    size_t *out_read);
+typedef h2_pal_result_t (*h2_h2loader_host_payload_read_fn)(void* user,
+                                                            uint64_t offset,
+                                                            uint8_t* out,
+                                                            size_t out_size,
+                                                            size_t* out_read);
 
-typedef void (*h2_h2loader_host_progress_fn)(
-    void *user,
-    uint64_t acknowledged_bytes,
-    uint64_t total_bytes);
+typedef void (*h2_h2loader_host_progress_fn)(void* user,
+                                             uint64_t acknowledged_bytes,
+                                             uint64_t total_bytes);
 
 /**
  * @brief Stage one pre-validated package through the reliable session.
@@ -398,14 +388,11 @@ typedef void (*h2_h2loader_host_progress_fn)(
  * interrupted transfers are never replayed automatically.
  */
 h2_pal_result_t h2_h2loader_host_serial_stage(
-    h2_h2loader_host_serial_connection_t *connection,
-    const h2_h2loader_host_catalog_entry_t *asset,
-    h2_h2loader_host_payload_read_fn read_payload,
-    void *payload_user,
-    h2_h2loader_host_cancelled_fn is_cancelled,
-    void *cancel_user,
-    h2_h2loader_host_progress_fn on_progress,
-    void *progress_user);
+    h2_h2loader_host_serial_connection_t* connection,
+    const h2_h2loader_host_catalog_entry_t* asset,
+    h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
+    h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
+    h2_h2loader_host_progress_fn on_progress, void* progress_user);
 
 /**
  * @brief Request AUTO installation of the staged asset.
@@ -415,36 +402,36 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
  * status_verify_asset before presenting operation success.
  */
 h2_pal_result_t h2_h2loader_host_serial_activate(
-    h2_h2loader_host_serial_connection_t *connection,
-    const h2_h2loader_host_catalog_entry_t *asset);
+    h2_h2loader_host_serial_connection_t* connection,
+    const h2_h2loader_host_catalog_entry_t* asset);
 
 typedef struct h2_h2loader_host_ble_connection
     h2_h2loader_host_ble_connection_t;
 
 typedef struct h2_h2loader_host_ble_connection_config {
-    const h2_pal_ble_host_api_t *ble;
-    const h2_pal_task_api_t *task;
-    const h2_pal_time_api_t *time;
-    const h2_pal_sync_api_t *sync;
-    const h2_pal_system_event_api_t *system_event;
-    const h2_pal_mem_api_t *allocator;
-    h2_pal_ble_addr_t address;
-    /**
-     * Optional identity copied from H2Loader Service Data.
-     *
-     * A non-empty value is cross-checked against authoritative status before
-     * connect succeeds. Advertising identity is never returned as live state.
-     */
-    const char *advertised_board;
-    uint32_t connect_timeout_ms;
-    uint32_t command_timeout_ms;
-    /** Optional connection-failure diagnostic sink. Called synchronously on
-     * the connect caller's thread with a borrowed complete text line (no NUL
-     * included); copy bytes before returning if needed. Not retained after
-     * connect returns. A sink error never replaces the original connect error.
-     * NULL disables these diagnostics; the library does not write stderr. */
-    h2_h2loader_host_transport_log_fn on_log;
-    void *log_user;
+  const h2_pal_ble_host_api_t* ble;
+  const h2_pal_task_api_t* task;
+  const h2_pal_time_api_t* time;
+  const h2_pal_sync_api_t* sync;
+  const h2_pal_system_event_api_t* system_event;
+  const h2_pal_mem_api_t* allocator;
+  h2_pal_ble_addr_t address;
+  /**
+   * Optional identity copied from H2Loader Service Data.
+   *
+   * A non-empty value is cross-checked against authoritative status before
+   * connect succeeds. Advertising identity is never returned as live state.
+   */
+  const char* advertised_board;
+  uint32_t connect_timeout_ms;
+  uint32_t command_timeout_ms;
+  /** Optional connection-failure diagnostic sink. Called synchronously on
+   * the connect caller's thread with a borrowed complete text line (no NUL
+   * included); copy bytes before returning if needed. Not retained after
+   * connect returns. A sink error never replaces the original connect error.
+   * NULL disables these diagnostics; the library does not write stderr. */
+  h2_h2loader_host_transport_log_fn on_log;
+  void* log_user;
 } h2_h2loader_host_ble_connection_config_t;
 
 /**
@@ -455,16 +442,16 @@ typedef struct h2_h2loader_host_ble_connection_config {
  * advertised board fails closed.
  */
 h2_pal_result_t h2_h2loader_host_ble_connect(
-    const h2_h2loader_host_ble_connection_config_t *config,
-    h2_h2loader_host_ble_connection_t **out_connection,
-    h2_h2loader_host_status_t *out_status);
+    const h2_h2loader_host_ble_connection_config_t* config,
+    h2_h2loader_host_ble_connection_t** out_connection,
+    h2_h2loader_host_status_t* out_status);
 
 h2_pal_result_t h2_h2loader_host_ble_disconnect(
-    h2_h2loader_host_ble_connection_t **inout_connection);
+    h2_h2loader_host_ble_connection_t** inout_connection);
 
 h2_pal_result_t h2_h2loader_host_ble_read_status(
-    h2_h2loader_host_ble_connection_t *connection,
-    h2_h2loader_host_status_t *out_status);
+    h2_h2loader_host_ble_connection_t* connection,
+    h2_h2loader_host_status_t* out_status);
 
 /**
  * @brief Execute one allowed command through the BLE-iKCP stream.
@@ -473,90 +460,78 @@ h2_pal_result_t h2_h2loader_host_ble_read_status(
  * semantics are identical to h2_h2loader_host_serial_execute_command().
  */
 h2_pal_result_t h2_h2loader_host_ble_execute_command(
-    h2_h2loader_host_ble_connection_t *connection,
-    const h2_h2loader_host_command_request_t *request,
-    h2_h2loader_host_command_result_t *out_result);
+    h2_h2loader_host_ble_connection_t* connection,
+    const h2_h2loader_host_command_request_t* request,
+    h2_h2loader_host_command_result_t* out_result);
 
 h2_pal_result_t h2_h2loader_host_ble_stage(
-    h2_h2loader_host_ble_connection_t *connection,
-    const h2_h2loader_host_catalog_entry_t *asset,
-    h2_h2loader_host_payload_read_fn read_payload,
-    void *payload_user,
-    h2_h2loader_host_cancelled_fn is_cancelled,
-    void *cancel_user,
-    h2_h2loader_host_progress_fn on_progress,
-    void *progress_user);
+    h2_h2loader_host_ble_connection_t* connection,
+    const h2_h2loader_host_catalog_entry_t* asset,
+    h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
+    h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
+    h2_h2loader_host_progress_fn on_progress, void* progress_user);
 
 h2_pal_result_t h2_h2loader_host_ble_activate(
-    h2_h2loader_host_ble_connection_t *connection,
-    const h2_h2loader_host_catalog_entry_t *asset);
+    h2_h2loader_host_ble_connection_t* connection,
+    const h2_h2loader_host_catalog_entry_t* asset);
 
 typedef enum h2_h2loader_host_operation_phase {
-    H2_H2LOADER_HOST_OPERATION_CONNECT = 1,
-    H2_H2LOADER_HOST_OPERATION_PRECHECK = 2,
-    H2_H2LOADER_HOST_OPERATION_STAGE = 3,
-    H2_H2LOADER_HOST_OPERATION_ACTIVATE = 4,
-    H2_H2LOADER_HOST_OPERATION_REDISCOVER = 5,
-    H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY = 6,
-    H2_H2LOADER_HOST_OPERATION_COMPLETE = 7,
+  H2_H2LOADER_HOST_OPERATION_CONNECT = 1,
+  H2_H2LOADER_HOST_OPERATION_PRECHECK = 2,
+  H2_H2LOADER_HOST_OPERATION_STAGE = 3,
+  H2_H2LOADER_HOST_OPERATION_ACTIVATE = 4,
+  H2_H2LOADER_HOST_OPERATION_REDISCOVER = 5,
+  H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY = 6,
+  H2_H2LOADER_HOST_OPERATION_COMPLETE = 7,
 } h2_h2loader_host_operation_phase_t;
 
 typedef struct h2_h2loader_host_managed_transport_vtable {
-    h2_pal_result_t (*connect)(
-        void *user,
-        h2_h2loader_host_status_t *out_status);
-    h2_pal_result_t (*stage)(
-        void *user,
-        const h2_h2loader_host_catalog_entry_t *asset,
-        h2_h2loader_host_payload_read_fn read_payload,
-        void *payload_user,
-        h2_h2loader_host_cancelled_fn is_cancelled,
-        void *cancel_user,
-        h2_h2loader_host_progress_fn on_progress,
-        void *progress_user);
-    h2_pal_result_t (*activate)(
-        void *user,
-        const h2_h2loader_host_catalog_entry_t *asset);
-    /** Read authoritative status without leaving the current connection. */
-    h2_pal_result_t (*read_status)(
-        void *user,
-        h2_h2loader_host_status_t *out_status);
-    h2_pal_result_t (*disconnect)(void *user);
-    /**
-     * Re-enumerate the original discovery candidate.
-     *
-     * An endpoint or PAL address may select a candidate, but it is not the
-     * authoritative physical identity. The following connect/status probe
-     * must match the device_uid locked from the device BLE identity MAC.
-     * Implementations must never switch to a name-matched candidate.
-     */
-    h2_pal_result_t (*rediscover)(void *user);
+  h2_pal_result_t (*connect)(void* user, h2_h2loader_host_status_t* out_status);
+  h2_pal_result_t (*stage)(
+      void* user, const h2_h2loader_host_catalog_entry_t* asset,
+      h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
+      h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
+      h2_h2loader_host_progress_fn on_progress, void* progress_user);
+  h2_pal_result_t (*activate)(void* user,
+                              const h2_h2loader_host_catalog_entry_t* asset);
+  /** Read authoritative status without leaving the current connection. */
+  h2_pal_result_t (*read_status)(void* user,
+                                 h2_h2loader_host_status_t* out_status);
+  h2_pal_result_t (*disconnect)(void* user);
+  /**
+   * Re-enumerate the original discovery candidate.
+   *
+   * An endpoint or PAL address may select a candidate, but it is not the
+   * authoritative physical identity. The following connect/status probe
+   * must match the device_uid locked from the device BLE identity MAC.
+   * Implementations must never switch to a name-matched candidate.
+   */
+  h2_pal_result_t (*rediscover)(void* user);
 } h2_h2loader_host_managed_transport_vtable_t;
 
 typedef struct h2_h2loader_host_managed_transport {
-    void *user;
-    const h2_h2loader_host_managed_transport_vtable_t *vtable;
+  void* user;
+  const h2_h2loader_host_managed_transport_vtable_t* vtable;
 } h2_h2loader_host_managed_transport_t;
 
 typedef void (*h2_h2loader_host_operation_event_fn)(
-    void *user,
-    h2_h2loader_host_operation_phase_t phase,
+    void* user, h2_h2loader_host_operation_phase_t phase,
     h2_pal_result_t result);
 
 typedef struct h2_h2loader_host_managed_operation_config {
-    const h2_pal_time_api_t *time;
-    h2_h2loader_host_managed_transport_t transport;
-    const h2_h2loader_host_catalog_entry_t *asset;
-    h2_h2loader_host_payload_read_fn read_payload;
-    void *payload_user;
-    h2_h2loader_host_cancelled_fn is_cancelled;
-    void *cancel_user;
-    h2_h2loader_host_progress_fn on_progress;
-    void *progress_user;
-    h2_h2loader_host_operation_event_fn on_event;
-    void *event_user;
-    uint32_t reconnect_delay_ms;
-    uint32_t reconnect_attempts;
+  const h2_pal_time_api_t* time;
+  h2_h2loader_host_managed_transport_t transport;
+  const h2_h2loader_host_catalog_entry_t* asset;
+  h2_h2loader_host_payload_read_fn read_payload;
+  void* payload_user;
+  h2_h2loader_host_cancelled_fn is_cancelled;
+  void* cancel_user;
+  h2_h2loader_host_progress_fn on_progress;
+  void* progress_user;
+  h2_h2loader_host_operation_event_fn on_event;
+  void* event_user;
+  uint32_t reconnect_delay_ms;
+  uint32_t reconnect_attempts;
 } h2_h2loader_host_managed_operation_config_t;
 
 /**
@@ -569,8 +544,8 @@ typedef struct h2_h2loader_host_managed_operation_config {
  * matching Stage is accepted, otherwise an empty Stage is retransmitted once.
  */
 h2_pal_result_t h2_h2loader_host_managed_operation_run(
-    const h2_h2loader_host_managed_operation_config_t *config,
-    h2_h2loader_host_status_t *out_final_status);
+    const h2_h2loader_host_managed_operation_config_t* config,
+    h2_h2loader_host_status_t* out_final_status);
 
 /**
  * @brief Stage an asset and verify the published candidate after reconnect.
@@ -583,8 +558,8 @@ h2_pal_result_t h2_h2loader_host_managed_operation_run(
  * matching Stage is accepted, otherwise an empty Stage is retransmitted once.
  */
 h2_pal_result_t h2_h2loader_host_stage_operation_run(
-    const h2_h2loader_host_managed_operation_config_t *config,
-    h2_h2loader_host_status_t *out_final_status);
+    const h2_h2loader_host_managed_operation_config_t* config,
+    h2_h2loader_host_status_t* out_final_status);
 
 #ifdef __cplusplus
 }

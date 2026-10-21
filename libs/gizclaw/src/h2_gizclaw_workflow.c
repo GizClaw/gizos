@@ -15,30 +15,30 @@
 #include <string.h>
 
 typedef struct text_decode {
-  const h2_pal_mem_api_t *allocator;
-  char **out;
+  const h2_pal_mem_api_t* allocator;
+  char** out;
   size_t max_len;
   size_t decoded_len;
 } text_decode_t;
 
 typedef struct text_encode {
-  const char *data;
+  const char* data;
   size_t len;
 } text_encode_t;
 
 typedef struct workflow_decode {
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_workflow_t *out;
+  const h2_pal_mem_api_t* allocator;
+  h2_gizclaw_workflow_t* out;
 } workflow_decode_t;
 
 typedef struct workflow_page_decode {
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_workflow_page_t *page;
+  const h2_pal_mem_api_t* allocator;
+  h2_gizclaw_workflow_page_t* page;
   size_t max_count;
   size_t capacity;
 } workflow_page_decode_t;
 
-static bool safety_fence_name_valid(const char *name) {
+static bool safety_fence_name_valid(const char* name) {
   size_t length = strlen(name);
   if (length == 0u || length > H2_GIZCLAW_SAFETY_FENCE_NAME_MAX_BYTES ||
       name[0] < 'a' || name[0] > 'z')
@@ -57,19 +57,18 @@ static bool valid_optional_text(h2_gizclaw_str_t value, size_t max_len) {
           (value.data != NULL && memchr(value.data, '\0', value.len) == NULL));
 }
 
-static bool decode_text(pb_istream_t *stream, const pb_field_t *field,
-                        void **arg) {
+static bool decode_text(pb_istream_t* stream, const pb_field_t* field,
+                        void** arg) {
   (void)field;
-  text_decode_t *context = *arg;
+  text_decode_t* context = *arg;
   if (context == NULL || context->allocator == NULL || context->out == NULL ||
       *context->out != NULL || stream->bytes_left > context->max_len) {
     return false;
   }
-  char *text = h2_pal_mem_alloc(context->allocator, stream->bytes_left + 1u);
-  if (text == NULL)
-    return false;
+  char* text = h2_pal_mem_alloc(context->allocator, stream->bytes_left + 1u);
+  if (text == NULL) return false;
   const size_t len = stream->bytes_left;
-  if (!pb_read(stream, (pb_byte_t *)text, len) ||
+  if (!pb_read(stream, (pb_byte_t*)text, len) ||
       memchr(text, '\0', len) != NULL) {
     h2_pal_mem_free(context->allocator, text);
     return false;
@@ -80,8 +79,8 @@ static bool decode_text(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
-static void set_text_decoder(pb_callback_t *callback, text_decode_t *context,
-                             const h2_pal_mem_api_t *allocator, char **out,
+static void set_text_decoder(pb_callback_t* callback, text_decode_t* context,
+                             const h2_pal_mem_api_t* allocator, char** out,
                              size_t max_len) {
   *context = (text_decode_t){
       .allocator = allocator,
@@ -92,26 +91,24 @@ static void set_text_decoder(pb_callback_t *callback, text_decode_t *context,
   callback->arg = context;
 }
 
-static bool encode_text(pb_ostream_t *stream, const pb_field_t *field,
-                        void *const *arg) {
-  const text_encode_t *text = *arg;
+static bool encode_text(pb_ostream_t* stream, const pb_field_t* field,
+                        void* const* arg) {
+  const text_encode_t* text = *arg;
   return text != NULL && text->data != NULL &&
          pb_encode_tag_for_field(stream, field) &&
-         pb_encode_string(stream, (const pb_byte_t *)text->data, text->len);
+         pb_encode_string(stream, (const pb_byte_t*)text->data, text->len);
 }
 
-static int encode_message(const h2_pal_mem_api_t *allocator,
-                          const pb_msgdesc_t *fields, const void *message,
-                          uint8_t **out, size_t *out_len) {
+static int encode_message(const h2_pal_mem_api_t* allocator,
+                          const pb_msgdesc_t* fields, const void* message,
+                          uint8_t** out, size_t* out_len) {
   *out = NULL;
   *out_len = 0u;
   pb_ostream_t sizing = PB_OSTREAM_SIZING;
-  if (!pb_encode(&sizing, fields, message))
-    return H2_PAL_ERR_FORMAT;
-  uint8_t *data = h2_pal_mem_alloc(
+  if (!pb_encode(&sizing, fields, message)) return H2_PAL_ERR_FORMAT;
+  uint8_t* data = h2_pal_mem_alloc(
       allocator, sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
-  if (data == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (data == NULL) return H2_PAL_ERR_NO_MEMORY;
   pb_ostream_t stream = pb_ostream_from_buffer(data, sizing.bytes_written);
   if (!pb_encode(&stream, fields, message)) {
     h2_pal_mem_free(allocator, data);
@@ -122,10 +119,9 @@ static int encode_message(const h2_pal_mem_api_t *allocator,
   return H2_PAL_OK;
 }
 
-static void workflow_clear(const h2_pal_mem_api_t *allocator,
-                           h2_gizclaw_workflow_t *workflow) {
-  if (workflow == NULL)
-    return;
+static void workflow_clear(const h2_pal_mem_api_t* allocator,
+                           h2_gizclaw_workflow_t* workflow) {
+  if (workflow == NULL) return;
   for (size_t i = 0; i < workflow->tag_count; ++i)
     h2_pal_mem_free(allocator, workflow->tags[i]);
   h2_pal_mem_free(allocator, workflow->tags);
@@ -140,21 +136,20 @@ static void workflow_clear(const h2_pal_mem_api_t *allocator,
   memset(workflow, 0, sizeof(*workflow));
 }
 
-static bool decode_i18n(pb_istream_t *stream, const pb_field_t *field,
-                        void **arg) {
+static bool decode_i18n(pb_istream_t* stream, const pb_field_t* field,
+                        void** arg) {
   (void)field;
-  workflow_decode_t *context = *arg;
-  h2_gizclaw_workflow_t *workflow = context == NULL ? NULL : context->out;
+  workflow_decode_t* context = *arg;
+  h2_gizclaw_workflow_t* workflow = context == NULL ? NULL : context->out;
   if (context == NULL || context->allocator == NULL || workflow == NULL ||
       workflow->i18n_count >= H2_GIZCLAW_WORKFLOW_I18N_MAX_ITEMS) {
     return false;
   }
   const size_t index = workflow->i18n_count;
-  h2_gizclaw_workflow_i18n_t *items =
+  h2_gizclaw_workflow_i18n_t* items =
       h2_pal_mem_realloc(context->allocator, workflow->i18n,
                          (index + 1u) * sizeof(workflow->i18n[0]));
-  if (items == NULL)
-    return false;
+  if (items == NULL) return false;
   workflow->i18n = items;
   memset(&items[index], 0, sizeof(items[index]));
 
@@ -186,19 +181,18 @@ static bool decode_i18n(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
-static bool decode_tag(pb_istream_t *stream, const pb_field_t *field,
-                       void **arg) {
+static bool decode_tag(pb_istream_t* stream, const pb_field_t* field,
+                       void** arg) {
   (void)field;
-  workflow_decode_t *context = *arg;
-  h2_gizclaw_workflow_t *workflow = context->out;
+  workflow_decode_t* context = *arg;
+  h2_gizclaw_workflow_t* workflow = context->out;
   size_t count = workflow->tag_count, length = stream->bytes_left;
   if (count >= H2_GIZCLAW_WORKFLOW_TAG_MAX_ITEMS || !length ||
       length > H2_GIZCLAW_WORKFLOW_TAG_MAX_BYTES)
     return false;
-  char *tag = h2_pal_mem_alloc(context->allocator, length + 1u);
-  if (!tag)
-    return false;
-  if (!pb_read(stream, (pb_byte_t *)tag, length) ||
+  char* tag = h2_pal_mem_alloc(context->allocator, length + 1u);
+  if (!tag) return false;
+  if (!pb_read(stream, (pb_byte_t*)tag, length) ||
       !h2_gizclaw_workflow_tag_valid_internal(
           (h2_gizclaw_str_t){tag, length})) {
     h2_pal_mem_free(context->allocator, tag);
@@ -210,7 +204,7 @@ static bool decode_tag(pb_istream_t *stream, const pb_field_t *field,
       h2_pal_mem_free(context->allocator, tag);
       return false;
     }
-  char **tags = h2_pal_mem_realloc(context->allocator, workflow->tags,
+  char** tags = h2_pal_mem_realloc(context->allocator, workflow->tags,
                                    (count + 1u) * sizeof(*tags));
   if (!tags) {
     h2_pal_mem_free(context->allocator, tag);
@@ -222,9 +216,9 @@ static bool decode_tag(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
-static bool decode_workflow_object(pb_istream_t *stream,
-                                   h2_gizclaw_workflow_t *out,
-                                   const h2_pal_mem_api_t *allocator) {
+static bool decode_workflow_object(pb_istream_t* stream,
+                                   h2_gizclaw_workflow_t* out,
+                                   const h2_pal_mem_api_t* allocator) {
   gizclaw_rpc_v1_Workflow decoded = gizclaw_rpc_v1_Workflow_init_zero;
   workflow_decode_t workflow_context = {
       .allocator = allocator,
@@ -252,26 +246,23 @@ static bool decode_workflow_object(pb_istream_t *stream,
   return true;
 }
 
-static bool decode_workflow(pb_istream_t *stream, const pb_field_t *field,
-                            void **arg) {
+static bool decode_workflow(pb_istream_t* stream, const pb_field_t* field,
+                            void** arg) {
   (void)field;
-  workflow_page_decode_t *context = *arg;
+  workflow_page_decode_t* context = *arg;
   if (context == NULL || context->allocator == NULL || context->page == NULL ||
       context->page->count >= context->max_count) {
     return false;
   }
   const size_t count = context->page->count;
-  h2_gizclaw_workflow_t *items = context->page->items;
+  h2_gizclaw_workflow_t* items = context->page->items;
   if (count >= context->capacity) {
     size_t capacity = context->capacity == 0u ? 1u : context->capacity * 2u;
-    if (capacity <= count)
-      capacity = count + 1u;
-    if (capacity > context->max_count)
-      capacity = context->max_count;
+    if (capacity <= count) capacity = count + 1u;
+    if (capacity > context->max_count) capacity = context->max_count;
     items = h2_pal_mem_realloc(context->allocator, items,
                                capacity * sizeof(*items));
-    if (items == NULL)
-      return false;
+    if (items == NULL) return false;
     context->page->items = items;
     context->capacity = capacity;
   }
@@ -282,10 +273,10 @@ static bool decode_workflow(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
-static bool decode_safety_fence(pb_istream_t *stream, const pb_field_t *field,
-                                void **arg) {
+static bool decode_safety_fence(pb_istream_t* stream, const pb_field_t* field,
+                                void** arg) {
   (void)field;
-  workflow_page_decode_t *context = *arg;
+  workflow_page_decode_t* context = *arg;
   if (context == NULL || context->allocator == NULL || context->page == NULL)
     return false;
   gizclaw_rpc_v1_SafetyFenceOption decoded =
@@ -294,19 +285,16 @@ static bool decode_safety_fence(pb_istream_t *stream, const pb_field_t *field,
       !safety_fence_name_valid(decoded.name) ||
       (decoded.has_display_name && decoded.display_name[0] == '\0'))
     return false;
-  h2_gizclaw_workflow_page_t *page = context->page;
+  h2_gizclaw_workflow_page_t* page = context->page;
   const size_t count = page->safety_fence_count;
-  if (count >= SIZE_MAX / sizeof(*page->safety_fences))
-    return false;
+  if (count >= SIZE_MAX / sizeof(*page->safety_fences)) return false;
   for (size_t i = 0u; i < count; ++i)
-    if (strcmp(page->safety_fences[i].name, decoded.name) == 0)
-      return false;
-  h2_gizclaw_safety_fence_option_t *options = h2_pal_mem_realloc(
+    if (strcmp(page->safety_fences[i].name, decoded.name) == 0) return false;
+  h2_gizclaw_safety_fence_option_t* options = h2_pal_mem_realloc(
       context->allocator, page->safety_fences, (count + 1u) * sizeof(*options));
-  if (options == NULL)
-    return false;
+  if (options == NULL) return false;
   page->safety_fences = options;
-  h2_gizclaw_safety_fence_option_t *option = &options[count];
+  h2_gizclaw_safety_fence_option_t* option = &options[count];
   memset(option, 0, sizeof(*option));
   strcpy(option->name, decoded.name);
   option->has_display_name = decoded.has_display_name;
@@ -315,9 +303,9 @@ static bool decode_safety_fence(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
-static int decode_list(const h2_pal_mem_api_t *allocator, const uint8_t *data,
+static int decode_list(const h2_pal_mem_api_t* allocator, const uint8_t* data,
                        size_t len, size_t max_count,
-                       h2_gizclaw_workflow_page_t *out_page) {
+                       h2_gizclaw_workflow_page_t* out_page) {
   gizclaw_rpc_v1_WorkflowListResponse decoded =
       gizclaw_rpc_v1_WorkflowListResponse_init_zero;
   workflow_page_decode_t items = {
@@ -347,10 +335,10 @@ static int decode_list(const h2_pal_mem_api_t *allocator, const uint8_t *data,
   return H2_PAL_OK;
 }
 
-static int decode_get(const h2_pal_mem_api_t *allocator, const uint8_t *data,
-                      size_t len, h2_gizclaw_workflow_t *out_workflow,
-                      char **out_runtime_profile_name,
-                      char **out_runtime_profile_revision) {
+static int decode_get(const h2_pal_mem_api_t* allocator, const uint8_t* data,
+                      size_t len, h2_gizclaw_workflow_t* out_workflow,
+                      char** out_runtime_profile_name,
+                      char** out_runtime_profile_revision) {
   int rc = H2_PAL_OK;
   pb_istream_t stream = pb_istream_from_buffer(data, len);
   bool found_value = false;
@@ -362,8 +350,7 @@ static int decode_get(const h2_pal_mem_api_t *allocator, const uint8_t *data,
       rc = H2_PAL_ERR_FORMAT;
       break;
     }
-    if (eof)
-      break;
+    if (eof) break;
     if (tag == gizclaw_rpc_v1_WorkflowGetResponse_value_tag &&
         wire_type == PB_WT_STRING) {
       pb_istream_t substream;
@@ -378,8 +365,7 @@ static int decode_get(const h2_pal_mem_api_t *allocator, const uint8_t *data,
       rc = H2_PAL_ERR_FORMAT;
     }
   }
-  if (rc == H2_PAL_OK && !found_value)
-    rc = H2_PAL_ERR_FORMAT;
+  if (rc == H2_PAL_OK && !found_value) rc = H2_PAL_ERR_FORMAT;
   if (rc == H2_PAL_OK) {
     gizclaw_rpc_v1_WorkflowGetResponse metadata =
         gizclaw_rpc_v1_WorkflowGetResponse_init_zero;
@@ -400,15 +386,15 @@ static int decode_get(const h2_pal_mem_api_t *allocator, const uint8_t *data,
 }
 
 typedef struct tags_encode {
-  const h2_gizclaw_str_t *tags;
+  const h2_gizclaw_str_t* tags;
   size_t count;
 } tags_encode_t;
-static bool encode_tags(pb_ostream_t *stream, const pb_field_t *field,
-                        void *const *arg) {
-  const tags_encode_t *context = *arg;
+static bool encode_tags(pb_ostream_t* stream, const pb_field_t* field,
+                        void* const* arg) {
+  const tags_encode_t* context = *arg;
   for (size_t i = 0; i < context->count; ++i)
     if (!pb_encode_tag_for_field(stream, field) ||
-        !pb_encode_string(stream, (const pb_byte_t *)context->tags[i].data,
+        !pb_encode_string(stream, (const pb_byte_t*)context->tags[i].data,
                           context->tags[i].len))
       return false;
   return true;
@@ -418,17 +404,16 @@ static const char workflow_list_tag;
 static const char workflow_get_tag;
 
 h2_pal_result_t h2_gizclaw_req_create_workflow_list(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_str_t *tags, size_t tag_count, h2_gizclaw_str_t cursor,
-    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_str_t* tags, size_t tag_count, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (service == NULL || out_request == NULL ||
       !h2_gizclaw_workflow_tags_valid_internal(tags, tag_count) ||
       !valid_optional_text(cursor, 255u) || limit == 0u ||
       limit > H2_GIZCLAW_WORKFLOW_PAGE_MAX_ITEMS)
     return H2_PAL_ERR_INVALID_ARG;
-  const h2_pal_mem_api_t *allocator = service->client_config.allocator;
+  const h2_pal_mem_api_t* allocator = service->client_config.allocator;
   gizclaw_rpc_v1_WorkflowListRequest message =
       gizclaw_rpc_v1_WorkflowListRequest_init_zero;
   tags_encode_t tags_text = {tags, tag_count};
@@ -441,7 +426,7 @@ h2_pal_result_t h2_gizclaw_req_create_workflow_list(
   }
   message.has_limit = true;
   message.limit = (int64_t)limit;
-  uint8_t *payload = NULL;
+  uint8_t* payload = NULL;
   size_t payload_len = 0u;
   h2_pal_result_t rc = (h2_pal_result_t)encode_message(
       allocator, gizclaw_rpc_v1_WorkflowListRequest_fields, &message, &payload,
@@ -456,20 +441,19 @@ h2_pal_result_t h2_gizclaw_req_create_workflow_list(
 }
 
 h2_pal_result_t h2_gizclaw_req_create_workflow_get(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (service == NULL || out_request == NULL ||
       !h2_gizclaw_runtime_alias_valid_internal(name))
     return H2_PAL_ERR_INVALID_ARG;
-  const h2_pal_mem_api_t *allocator = service->client_config.allocator;
+  const h2_pal_mem_api_t* allocator = service->client_config.allocator;
   gizclaw_rpc_v1_WorkflowGetRequest message =
       gizclaw_rpc_v1_WorkflowGetRequest_init_zero;
   text_encode_t text = {name.data, name.len};
   message.name.funcs.encode = encode_text;
   message.name.arg = &text;
-  uint8_t *payload = NULL;
+  uint8_t* payload = NULL;
   size_t payload_len = 0u;
   h2_pal_result_t rc = (h2_pal_result_t)encode_message(
       allocator, gizclaw_rpc_v1_WorkflowGetRequest_fields, &message, &payload,
@@ -483,39 +467,32 @@ h2_pal_result_t h2_gizclaw_req_create_workflow_get(
   return rc;
 }
 
-static h2_pal_result_t
-parse_workflow_list(h2_gizclaw_resp_storage_t *storage, const uint8_t *data,
-                    size_t len, size_t limit,
-                    h2_gizclaw_workflow_page_t *out_page) {
+static h2_pal_result_t parse_workflow_list(
+    h2_gizclaw_resp_storage_t* storage, const uint8_t* data, size_t len,
+    size_t limit, h2_gizclaw_workflow_page_t* out_page) {
   h2_gizclaw_resp_arena_t arena;
   h2_pal_result_t rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_workflow_page_t page = {0};
   rc = h2_gizclaw_resp_arena_end(
       &arena,
       (h2_pal_result_t)decode_list(&arena.allocator, data, len, limit, &page));
-  if (rc == H2_PAL_OK)
-    *out_page = page;
+  if (rc == H2_PAL_OK) *out_page = page;
   return rc;
 }
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_workflow_list(const h2_gizclaw_req_t *request,
-                                    h2_gizclaw_resp_storage_t *storage,
-                                    h2_gizclaw_workflow_page_t *out_page) {
-  if (out_page == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_resp_parse_workflow_list(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_page_t* out_page) {
+  if (out_page == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_page, 0, sizeof(*out_page));
-  const h2_gizclaw_rpc_response_t *response = NULL;
+  const h2_gizclaw_rpc_response_t* response = NULL;
   h2_pal_result_t rc =
       h2_gizclaw_req_response_internal(request, &workflow_list_tag, &response);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_rpc_bytes_t params;
   rc = h2_gizclaw_req_input_internal(request, &workflow_list_tag, &params);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   gizclaw_rpc_v1_WorkflowListRequest input =
       gizclaw_rpc_v1_WorkflowListRequest_init_zero;
   pb_istream_t stream = pb_istream_from_buffer(params.data, params.len);
@@ -529,20 +506,17 @@ h2_gizclaw_resp_parse_workflow_list(const h2_gizclaw_req_t *request,
 }
 
 h2_pal_result_t h2_gizclaw_resp_parse_workflow_get(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workflow_get_result_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_get_result_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
-  const h2_gizclaw_rpc_response_t *response = NULL;
+  const h2_gizclaw_rpc_response_t* response = NULL;
   h2_pal_result_t rc =
       h2_gizclaw_req_response_internal(request, &workflow_get_tag, &response);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_resp_arena_t arena;
   rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_workflow_get_result_t result = {0};
   rc = h2_gizclaw_resp_arena_end(
       &arena,
@@ -550,24 +524,21 @@ h2_pal_result_t h2_gizclaw_resp_parse_workflow_get(
           &arena.allocator, response->result_payload,
           response->result_payload_len, &result.workflow,
           &result.runtime_profile_name, &result.runtime_profile_revision));
-  if (rc == H2_PAL_OK)
-    *out_result = result;
+  if (rc == H2_PAL_OK) *out_result = result;
   return rc;
 }
 
 h2_pal_result_t h2_gizclaw_rpc_workflow_list(
-    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
+    h2_gizclaw_service_t* service, const h2_gizclaw_str_t* tags,
     size_t tag_count, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_workflow_page_t *out_page) {
-  if (out_page == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_page_t* out_page) {
+  if (out_page == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_page, 0, sizeof(*out_page));
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_workflow_list(
       service, 0u, tags, tag_count, cursor, limit, timeout_ms, &request);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
@@ -576,19 +547,16 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(
   return rc;
 }
 
-h2_pal_result_t
-h2_gizclaw_rpc_workflow_get(h2_gizclaw_service_t *service,
-                            h2_gizclaw_str_t name, uint32_t timeout_ms,
-                            h2_gizclaw_resp_storage_t *storage,
-                            h2_gizclaw_workflow_get_result_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_rpc_workflow_get(
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_workflow_get_result_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_workflow_get(service, 0u, name,
                                                           timeout_ms, &request);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
@@ -599,8 +567,8 @@ h2_gizclaw_rpc_workflow_get(h2_gizclaw_service_t *service,
 
 #ifdef H2_GIZCLAW_TESTING
 int h2_gizclaw_workflow_decode_list_for_test(
-    h2_gizclaw_resp_storage_t *storage, const uint8_t *data, size_t len,
-    size_t max_count, h2_gizclaw_workflow_page_t *out_page) {
+    h2_gizclaw_resp_storage_t* storage, const uint8_t* data, size_t len,
+    size_t max_count, h2_gizclaw_workflow_page_t* out_page) {
   if (out_page == NULL || data == NULL || max_count == 0u ||
       max_count > H2_GIZCLAW_WORKFLOW_PAGE_MAX_ITEMS)
     return H2_PAL_ERR_INVALID_ARG;

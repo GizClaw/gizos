@@ -4,14 +4,13 @@
 #include "h2_bloomspeaker_controller.h"
 #include "h2_runtime.h"
 
-
 typedef struct h2_bloomspeaker_lua_context {
-  h2_runtime_t *runtime;
-  h2_bloomspeaker_controller_t *controller;
-  h2_atomic_bool_t *shutdown_requested;
+  h2_runtime_t* runtime;
+  h2_bloomspeaker_controller_t* controller;
+  h2_atomic_bool_t* shutdown_requested;
   int touch_pairing_enabled;
 } h2_bloomspeaker_lua_context_t;
 
-int h2_bloomspeaker_lua_open(void *lua_state, void *user);
+int h2_bloomspeaker_lua_open(void* lua_state, void* user);
 
 #endif

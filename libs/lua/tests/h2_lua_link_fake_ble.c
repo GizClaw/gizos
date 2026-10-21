@@ -7,12 +7,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-static _Thread_local fake_terminal_gate_t *s_terminal_gate;
+static _Thread_local fake_terminal_gate_t* s_terminal_gate;
 
-static h2_pal_result_t fake_sync_unlock(void *user, h2_pal_mutex_t *mutex) {
-  const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
+static h2_pal_result_t fake_sync_unlock(void* user, h2_pal_mutex_t* mutex) {
+  const h2_pal_sync_api_t* sync = h2_desktop_platform_sync_api();
   h2_pal_result_t rc = sync->vtable->unlock_mutex(user, mutex);
-  fake_terminal_gate_t *gate = s_terminal_gate;
+  fake_terminal_gate_t* gate = s_terminal_gate;
   if (gate != NULL) {
     s_terminal_gate = NULL;
     pthread_mutex_lock(&gate->mutex);
@@ -32,15 +32,15 @@ static h2_pal_result_t fake_sync_unlock(void *user, h2_pal_mutex_t *mutex) {
  * device's bus or GATT callbacks, like a radio that never loses a packet.
  */
 
-static fake_device_t *fake_other(fake_device_t *device) {
+static fake_device_t* fake_other(fake_device_t* device) {
   return &device->air->devices[1 - device->index];
 }
 
-static int fake_subscribe(void *user, h2_pal_system_event_type_t type,
+static int fake_subscribe(void* user, h2_pal_system_event_type_t type,
                           h2_pal_system_event_handler_t handler,
-                          void *handler_user,
-                          h2_pal_system_event_subscription_t **out) {
-  fake_device_t *device = user;
+                          void* handler_user,
+                          h2_pal_system_event_subscription_t** out) {
+  fake_device_t* device = user;
   pthread_mutex_lock(&device->bus_mutex);
   for (size_t i = 0u; i < FAKE_SUBSCRIPTION_MAX; ++i) {
     if (!device->subscriptions[i].used) {
@@ -55,9 +55,9 @@ static int fake_subscribe(void *user, h2_pal_system_event_type_t type,
   return H2_PAL_ERR_FULL;
 }
 
-static void fake_unsubscribe(void *user,
-                             h2_pal_system_event_subscription_t *subscription) {
-  fake_device_t *device = user;
+static void fake_unsubscribe(void* user,
+                             h2_pal_system_event_subscription_t* subscription) {
+  fake_device_t* device = user;
   if (subscription == NULL) {
     return;
   }
@@ -71,8 +71,8 @@ static const h2_pal_system_event_vtable_t s_fake_event_vtable = {
     .unsubscribe = fake_unsubscribe,
 };
 
-static void fake_post(fake_device_t *device, h2_pal_system_event_type_t type,
-                      const void *payload, size_t payload_size) {
+static void fake_post(fake_device_t* device, h2_pal_system_event_type_t type,
+                      const void* payload, size_t payload_size) {
   struct h2_pal_system_event_subscription snapshot[FAKE_SUBSCRIPTION_MAX];
   size_t count = 0u;
   const h2_pal_system_event_t event = {
@@ -93,8 +93,8 @@ static void fake_post(fake_device_t *device, h2_pal_system_event_type_t type,
 /* Called with air->mutex held so a report never races stop_scan. The first
  * advertisement seen from the peer address in a scan is the only one
  * reported until the scan restarts. */
-static void fake_report_locked(fake_device_t *scanner,
-                               fake_device_t *advertiser) {
+static void fake_report_locked(fake_device_t* scanner,
+                               fake_device_t* advertiser) {
   static const uint8_t foreign_uuid[16] = {0x5au, 0x5au};
   const h2_pal_ble_uuid_t uuid =
       advertiser->adv_running
@@ -120,10 +120,10 @@ static void fake_report_locked(fake_device_t *scanner,
   }
 }
 
-static h2_pal_result_t fake_adv_set_create(void *user,
-                                           const h2_pal_ble_adv_params_t *params,
-                                           h2_pal_ble_adv_set_t **out_set) {
-  fake_device_t *device = user;
+static h2_pal_result_t fake_adv_set_create(
+    void* user, const h2_pal_ble_adv_params_t* params,
+    h2_pal_ble_adv_set_t** out_set) {
+  fake_device_t* device = user;
   assert(params->mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE);
   *out_set = malloc(sizeof(**out_set));
   assert(*out_set != NULL);
@@ -134,10 +134,9 @@ static h2_pal_result_t fake_adv_set_create(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_adv_set_set_data(void *user,
-                                             h2_pal_ble_adv_set_t *set,
-                                             const h2_pal_ble_adv_data_t *data) {
-  fake_device_t *device = user;
+static h2_pal_result_t fake_adv_set_set_data(
+    void* user, h2_pal_ble_adv_set_t* set, const h2_pal_ble_adv_data_t* data) {
+  fake_device_t* device = user;
   assert(set->device == device && data->service_uuid_count == 1u);
   pthread_mutex_lock(&device->air->mutex);
   device->adv_uuid_len = data->service_uuids[0].len;
@@ -146,9 +145,9 @@ static h2_pal_result_t fake_adv_set_set_data(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_adv_set_start(void *user,
-                                          h2_pal_ble_adv_set_t *set) {
-  fake_device_t *device = user;
+static h2_pal_result_t fake_adv_set_start(void* user,
+                                          h2_pal_ble_adv_set_t* set) {
+  fake_device_t* device = user;
   (void)set;
   pthread_mutex_lock(&device->air->mutex);
   device->adv_running = 1;
@@ -157,9 +156,9 @@ static h2_pal_result_t fake_adv_set_start(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_adv_set_stop(void *user,
-                                         h2_pal_ble_adv_set_t *set) {
-  fake_device_t *device = user;
+static h2_pal_result_t fake_adv_set_stop(void* user,
+                                         h2_pal_ble_adv_set_t* set) {
+  fake_device_t* device = user;
   (void)set;
   pthread_mutex_lock(&device->air->mutex);
   device->adv_running = 0;
@@ -167,9 +166,9 @@ static h2_pal_result_t fake_adv_set_stop(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_adv_set_destroy(void *user,
-                                            h2_pal_ble_adv_set_t *set) {
-  fake_device_t *device = user;
+static h2_pal_result_t fake_adv_set_destroy(void* user,
+                                            h2_pal_ble_adv_set_t* set) {
+  fake_device_t* device = user;
   pthread_mutex_lock(&device->air->mutex);
   device->adv_running = 0;
   device->adv_sets--;
@@ -178,11 +177,11 @@ static h2_pal_result_t fake_adv_set_destroy(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_start_scan(void *user,
-                                       const h2_pal_ble_scan_params_t *params,
+static h2_pal_result_t fake_start_scan(void* user,
+                                       const h2_pal_ble_scan_params_t* params,
                                        h2_pal_ble_scan_result_fn on_result,
-                                       void *scan_user) {
-  fake_device_t *device = user;
+                                       void* scan_user) {
+  fake_device_t* device = user;
   (void)params;
   pthread_mutex_lock(&device->air->mutex);
   device->scanning = 1;
@@ -195,18 +194,18 @@ static h2_pal_result_t fake_start_scan(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_stop_scan(void *user) {
-  fake_device_t *device = user;
+static h2_pal_result_t fake_stop_scan(void* user) {
+  fake_device_t* device = user;
   pthread_mutex_lock(&device->air->mutex);
   device->scanning = 0;
   pthread_mutex_unlock(&device->air->mutex);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_register(void *user,
-                                     const h2_pal_ble_gatt_service_t *services,
+static h2_pal_result_t fake_register(void* user,
+                                     const h2_pal_ble_gatt_service_t* services,
                                      size_t count) {
-  fake_device_t *device = user;
+  fake_device_t* device = user;
   size_t slot;
   /* KCP TX, KCP RX and the datagram characteristic in one service. */
   assert(count == 1u && services[0].characteristic_count == 3u);
@@ -215,8 +214,7 @@ static h2_pal_result_t fake_register(void *user,
    * a slot for good, as the GATT table only grows. */
   pthread_mutex_lock(&device->air->mutex);
   for (slot = 0u; slot < device->retained_count; ++slot) {
-    if (memcmp(device->retained_uuid[slot], services[0].uuid.data, 16u) ==
-        0) {
+    if (memcmp(device->retained_uuid[slot], services[0].uuid.data, 16u) == 0) {
       break;
     }
   }
@@ -234,7 +232,7 @@ static h2_pal_result_t fake_register(void *user,
     *services[0].out_service_handle = 1u;
   }
   for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
-    const h2_pal_ble_gatt_characteristic_t *ch =
+    const h2_pal_ble_gatt_characteristic_t* ch =
         &services[0].characteristics[i];
     if (ch->out_value_handle != NULL) {
       *ch->out_value_handle = (uint16_t)(2u + 2u * i);
@@ -249,8 +247,8 @@ static h2_pal_result_t fake_register(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_unregister(void *user) {
-  fake_device_t *device = user;
+static h2_pal_result_t fake_unregister(void* user) {
+  fake_device_t* device = user;
   pthread_mutex_lock(&device->air->mutex);
   device->service = NULL;
   pthread_mutex_unlock(&device->air->mutex);
@@ -258,15 +256,15 @@ static h2_pal_result_t fake_unregister(void *user) {
   return H2_PAL_OK;
 }
 
-static uint16_t fake_handle(const fake_device_t *device) {
+static uint16_t fake_handle(const fake_device_t* device) {
   return device->conn_handle;
 }
 
-static h2_pal_result_t fake_connect(void *user, const h2_pal_ble_addr_t *addr,
-                                    const h2_pal_ble_connect_params_t *params,
-                                    uint16_t *out_conn_handle) {
-  fake_device_t *central = user;
-  fake_device_t *peripheral = fake_other(central);
+static h2_pal_result_t fake_connect(void* user, const h2_pal_ble_addr_t* addr,
+                                    const h2_pal_ble_connect_params_t* params,
+                                    uint16_t* out_conn_handle) {
+  fake_device_t* central = user;
+  fake_device_t* peripheral = fake_other(central);
   assert(params->supervision_timeout_ms != 0u);
   pthread_mutex_lock(&central->air->mutex);
   if (addr->value[0] != (uint8_t)peripheral->index ||
@@ -300,7 +298,7 @@ static h2_pal_result_t fake_connect(void *user, const h2_pal_ble_addr_t *addr,
   return H2_PAL_OK;
 }
 
-void fake_drop_link(fake_air_t *air) {
+void fake_drop_link(fake_air_t* air) {
   pthread_mutex_lock(&air->mutex);
   const int was_connected = air->devices[0].connected;
   air->devices[0].connected = 0;
@@ -319,8 +317,8 @@ void fake_drop_link(fake_air_t *air) {
   }
 }
 
-static h2_pal_result_t fake_disconnect(void *user, uint16_t conn_handle) {
-  fake_device_t *device = user;
+static h2_pal_result_t fake_disconnect(void* user, uint16_t conn_handle) {
+  fake_device_t* device = user;
   if (conn_handle != fake_handle(device)) {
     return H2_PAL_ERR_NOT_FOUND;
   }
@@ -328,10 +326,10 @@ static h2_pal_result_t fake_disconnect(void *user, uint16_t conn_handle) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_exchange_mtu(void *user, uint16_t conn_handle,
-                                         uint16_t *out_mtu,
+static h2_pal_result_t fake_exchange_mtu(void* user, uint16_t conn_handle,
+                                         uint16_t* out_mtu,
                                          uint32_t timeout_ms) {
-  fake_device_t *central = user;
+  fake_device_t* central = user;
   const h2_pal_ble_mtu_info_t info = {.conn_handle = FAKE_PERIPHERAL_HANDLE,
                                       .mtu = FAKE_MTU};
   (void)timeout_ms;
@@ -344,13 +342,13 @@ static h2_pal_result_t fake_exchange_mtu(void *user, uint16_t conn_handle,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-fake_discover(void *user, uint16_t conn_handle,
-              const h2_pal_ble_gatt_discovery_request_t *request,
-              h2_pal_ble_gatt_discovery_entry_t *entries, size_t max_entries,
-              size_t *out_count, uint32_t timeout_ms) {
-  fake_device_t *central = user;
-  const h2_pal_ble_gatt_service_t *service;
+static h2_pal_result_t fake_discover(
+    void* user, uint16_t conn_handle,
+    const h2_pal_ble_gatt_discovery_request_t* request,
+    h2_pal_ble_gatt_discovery_entry_t* entries, size_t max_entries,
+    size_t* out_count, uint32_t timeout_ms) {
+  fake_device_t* central = user;
+  const h2_pal_ble_gatt_service_t* service;
   static const uint8_t cccd_uuid[] = {0x02u, 0x29u};
   (void)conn_handle;
   (void)timeout_ms;
@@ -378,10 +376,9 @@ fake_discover(void *user, uint16_t conn_handle,
   }
   if (request->kind == H2_PAL_BLE_GATT_DISCOVERY_CHARACTERISTIC) {
     for (size_t i = 0u; i < service->characteristic_count; ++i) {
-      const h2_pal_ble_gatt_characteristic_t *ch = &service->characteristics[i];
+      const h2_pal_ble_gatt_characteristic_t* ch = &service->characteristics[i];
       if (ch->uuid.len == request->uuid_filter.len &&
-          memcmp(ch->uuid.data, request->uuid_filter.data, ch->uuid.len) ==
-              0) {
+          memcmp(ch->uuid.data, request->uuid_filter.data, ch->uuid.len) == 0) {
         entries[0] = (h2_pal_ble_gatt_discovery_entry_t){
             .kind = request->kind,
             .uuid = ch->uuid,
@@ -405,9 +402,9 @@ fake_discover(void *user, uint16_t conn_handle,
 }
 
 static h2_pal_result_t fake_subscribe_gatt(
-    void *user, uint16_t conn_handle,
-    const h2_pal_ble_gatt_subscribe_t *subscribe, uint32_t timeout_ms) {
-  fake_device_t *central = user;
+    void* user, uint16_t conn_handle,
+    const h2_pal_ble_gatt_subscribe_t* subscribe, uint32_t timeout_ms) {
+  fake_device_t* central = user;
   const h2_pal_ble_subscription_state_t state = {
       .conn_handle = FAKE_PERIPHERAL_HANDLE,
       .value_handle = subscribe->value_handle,
@@ -429,13 +426,13 @@ static h2_pal_result_t fake_subscribe_gatt(
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_gatt_write(void *user, uint16_t conn_handle,
+static h2_pal_result_t fake_gatt_write(void* user, uint16_t conn_handle,
                                        uint16_t attr_handle,
-                                       const uint8_t *data, size_t len,
+                                       const uint8_t* data, size_t len,
                                        bool with_response,
                                        uint32_t timeout_ms) {
-  fake_device_t *central = user;
-  const h2_pal_ble_gatt_service_t *service;
+  fake_device_t* central = user;
+  const h2_pal_ble_gatt_service_t* service;
   (void)conn_handle;
   (void)with_response;
   (void)timeout_ms;
@@ -446,7 +443,7 @@ static h2_pal_result_t fake_gatt_write(void *user, uint16_t conn_handle,
     return H2_PAL_ERR_CLOSED;
   }
   for (size_t i = 0u; i < service->characteristic_count; ++i) {
-    const h2_pal_ble_gatt_characteristic_t *ch = &service->characteristics[i];
+    const h2_pal_ble_gatt_characteristic_t* ch = &service->characteristics[i];
     if ((uint16_t)(2u + 2u * i) == attr_handle && ch->write != NULL) {
       const h2_pal_ble_gatt_access_t access = {
           .conn_handle = FAKE_PERIPHERAL_HANDLE,
@@ -460,10 +457,10 @@ static h2_pal_result_t fake_gatt_write(void *user, uint16_t conn_handle,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-static h2_pal_result_t fake_notify(void *user, uint16_t conn_handle,
-                                   uint16_t attr_handle, const uint8_t *data,
+static h2_pal_result_t fake_notify(void* user, uint16_t conn_handle,
+                                   uint16_t attr_handle, const uint8_t* data,
                                    size_t len) {
-  fake_device_t *peripheral = user;
+  fake_device_t* peripheral = user;
   h2_pal_ble_gatt_client_value_t value = {
       .conn_handle = FAKE_CENTRAL_HANDLE,
       .attr_handle = attr_handle,
@@ -504,11 +501,11 @@ static const h2_pal_ble_vtable_t s_fake_ble_vtable = {
     .gatt_subscribe = fake_subscribe_gatt,
 };
 
-void fake_air_init(fake_air_t *air) {
+void fake_air_init(fake_air_t* air) {
   memset(air, 0, sizeof(*air));
   pthread_mutex_init(&air->mutex, NULL);
   for (int i = 0; i < 2; ++i) {
-    fake_device_t *device = &air->devices[i];
+    fake_device_t* device = &air->devices[i];
     device->air = air;
     device->index = i;
     device->sync = *h2_desktop_platform_sync_api();
@@ -533,8 +530,7 @@ void fake_air_init(fake_air_t *air) {
   }
 }
 
-
-fake_snapshot_t fake_snapshot(fake_device_t *device) {
+fake_snapshot_t fake_snapshot(fake_device_t* device) {
   fake_snapshot_t value;
   pthread_mutex_lock(&device->air->mutex);
   value.adv_sets = device->adv_sets;
@@ -552,7 +548,7 @@ fake_snapshot_t fake_snapshot(fake_device_t *device) {
   return value;
 }
 
-int fake_is_released(fake_device_t *device) {
+int fake_is_released(fake_device_t* device) {
   const fake_snapshot_t value = fake_snapshot(device);
   return value.adv_sets == 0 && !value.adv_running && !value.scanning &&
          !value.registered && !value.connected &&
@@ -561,13 +557,13 @@ int fake_is_released(fake_device_t *device) {
 
 /* ---- Runtime and Lua Host assembly ---- */
 
-void fake_set_baseline(fake_device_t *device) {
+void fake_set_baseline(fake_device_t* device) {
   device->baseline_subscriptions = fake_snapshot(device).subscriptions;
 }
 
-h2_runtime_t *fake_create_runtime(const h2_pal_ble_host_api_t *ble,
-                                    const h2_pal_system_event_api_t *events) {
-  fake_device_t *device = ble->user;
+h2_runtime_t* fake_create_runtime(const h2_pal_ble_host_api_t* ble,
+                                  const h2_pal_system_event_api_t* events) {
+  fake_device_t* device = ble->user;
   h2_runtime_config_t config = {
       .board = "test",
       .target = "desktop",
@@ -617,8 +613,7 @@ h2_runtime_t *fake_create_runtime(const h2_pal_ble_host_api_t *ble,
       .system_event = events,
       .video_decoder = h2_pal_unsupported_video_decoder_api(),
   };
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   return runtime;
 }
-

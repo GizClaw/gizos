@@ -11,18 +11,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-extern int printf(const char *format, ...);
+extern int printf(const char* format, ...);
 extern uint32_t get_malloc_remain_heap_size(void);
 
 typedef struct file_source {
-  const h2_pal_fs_api_t *fs;
-  h2_pal_fs_file_t *file;
+  const h2_pal_fs_api_t* fs;
+  h2_pal_fs_file_t* file;
   uint64_t position;
 } file_source_t;
 
 static OS_MUTEX log_mutex;
 static int log_mutex_ready;
-static const char *volatile current_stage = "boot";
+static const char* volatile current_stage = "boot";
 static volatile int current_result = H2_PAL_OK;
 static volatile unsigned decoded_frames;
 
@@ -34,40 +34,31 @@ void h2_jieli_usb_debug_unlock(void) {
   if (log_mutex_ready) (void)os_mutex_post(&log_mutex);
 }
 
-static void trace(const char *stage, int result) {
+static void trace(const char* stage, int result) {
   current_stage = stage;
   current_result = result;
   if (log_mutex_ready) (void)os_mutex_pend(&log_mutex, 0u);
-  (void)printf(
-      "H2_MP4_FIRST_FRAME stage=%s rc=%d heap_free=%u\r\n",
-      stage, result, (unsigned)get_malloc_remain_heap_size());
+  (void)printf("H2_MP4_FIRST_FRAME stage=%s rc=%d heap_free=%u\r\n", stage,
+               result, (unsigned)get_malloc_remain_heap_size());
   if (log_mutex_ready) (void)os_mutex_post(&log_mutex);
   os_time_dly(20u);
 }
 
-void h2_mp4_decoder_trace_stage(const char *stage) {
-  trace(stage, H2_PAL_OK);
-}
+void h2_mp4_decoder_trace_stage(const char* stage) { trace(stage, H2_PAL_OK); }
 
-void h2_tinyh264_trace_stage(const char *stage) {
-  trace(stage, H2_PAL_OK);
-}
+void h2_tinyh264_trace_stage(const char* stage) { trace(stage, H2_PAL_OK); }
 
 int h2_jieli_ac791n_devkit_early_app_boot(void) {
   wdt_close();
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t file_read_at(
-    void *user,
-    uint64_t offset,
-    void *buffer,
-    size_t capacity,
-    size_t *out_read) {
-  file_source_t *source = user;
+static h2_pal_result_t file_read_at(void* user, uint64_t offset, void* buffer,
+                                    size_t capacity, size_t* out_read) {
+  file_source_t* source = user;
   if (offset != source->position) {
-    h2_pal_result_t result = (h2_pal_result_t)h2_pal_fs_seek(
-        source->fs, source->file, offset);
+    h2_pal_result_t result =
+        (h2_pal_result_t)h2_pal_fs_seek(source->fs, source->file, offset);
     if (result != H2_PAL_OK) return result;
   }
   h2_pal_result_t result = (h2_pal_result_t)h2_pal_fs_read(
@@ -76,7 +67,7 @@ static h2_pal_result_t file_read_at(
   return result;
 }
 
-static void heartbeat(void *user) {
+static void heartbeat(void* user) {
   (void)user;
   unsigned sequence = 0u;
   for (;;) {
@@ -84,14 +75,13 @@ static void heartbeat(void *user) {
     if (log_mutex_ready) (void)os_mutex_pend(&log_mutex, 0u);
     (void)printf(
         "H2_MP4_HEARTBEAT seq=%u stage=%s rc=%d frames=%u heap_free=%u\r\n",
-        ++sequence, current_stage, current_result,
-        decoded_frames,
+        ++sequence, current_stage, current_result, decoded_frames,
         (unsigned)get_malloc_remain_heap_size());
     if (log_mutex_ready) (void)os_mutex_post(&log_mutex);
   }
 }
 
-static void decode_first_frame(void *user) {
+static void decode_first_frame(void* user) {
   (void)user;
   trace("startup-delay", H2_PAL_OK);
   os_time_dly(500u);
@@ -107,26 +97,27 @@ static void decode_first_frame(void *user) {
   trace("file-stat-return", result);
   if (result != H2_PAL_OK || stat.is_dir || stat.size == 0u) goto stopped;
 
-  h2_pal_fs_file_t *file = NULL;
-  result = (h2_pal_result_t)h2_pal_fs_open(
-      &fs, path, H2_PAL_FS_OPEN_READ, &file);
+  h2_pal_fs_file_t* file = NULL;
+  result =
+      (h2_pal_result_t)h2_pal_fs_open(&fs, path, H2_PAL_FS_OPEN_READ, &file);
   trace("file-open-return", result);
   if (result != H2_PAL_OK) goto stopped;
 
   file_source_t source = {.fs = &fs, .file = file};
   const h2_mp4_decoder_config_t config = {
       .allocator = h2_jieli_wl82_platform_mem_api(),
-      .source = {
-          .user = &source,
-          .size = stat.size,
-          .read_at = file_read_at,
-      },
+      .source =
+          {
+              .user = &source,
+              .size = stat.size,
+              .read_at = file_read_at,
+          },
       .video_decoder = *h2_tinyh264_video_decoder_api(),
       .video_format = H2_VIDEO_PIXEL_FORMAT_RGB565,
       .require_video = 1,
       .require_audio = 0,
   };
-  h2_mp4_decoder_t *decoder = NULL;
+  h2_mp4_decoder_t* decoder = NULL;
   trace("mp4-open-enter", H2_PAL_OK);
   result = h2_mp4_decoder_open(&config, &decoder);
   trace("mp4-open-return", result);
@@ -139,7 +130,7 @@ static void decode_first_frame(void *user) {
 
   trace("video-loop-enter", H2_PAL_OK);
   for (;;) {
-    h2_mp4_decoder_frame_t *frame = NULL;
+    h2_mp4_decoder_frame_t* frame = NULL;
     result = h2_mp4_decoder_acquire_frame(decoder, 2000u, &frame);
     if (result == H2_PAL_EXIT) {
       result = H2_PAL_OK;
@@ -165,10 +156,8 @@ static void decode_first_frame(void *user) {
       if (log_mutex_ready) (void)os_mutex_pend(&log_mutex, 0u);
       (void)printf(
           "H2_MP4_VIDEO_PROGRESS frames=%u width=%u height=%u pts_us=%lld\r\n",
-          decoded_frames,
-          (unsigned)frame_info.width,
-          (unsigned)frame_info.height,
-          (long long)frame_info.pts_us);
+          decoded_frames, (unsigned)frame_info.width,
+          (unsigned)frame_info.height, (long long)frame_info.pts_us);
       if (log_mutex_ready) (void)os_mutex_post(&log_mutex);
     }
   }

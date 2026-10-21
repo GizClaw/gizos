@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern int snprintf(char *buffer, size_t size, const char *format, ...);
+extern int snprintf(char* buffer, size_t size, const char* format, ...);
 
 enum {
   H2_PREF_NAMESPACE_MAX = 64,
@@ -48,24 +48,22 @@ static OS_MUTEX pref_mutex;
 /* Atomic publication states: 0 uninitialized, 1 creating, 2 ready. */
 static int pref_mutex_ready;
 static int pref_ready;
-static void (*pref_diagnostic)(const char *line);
+static void (*pref_diagnostic)(const char* line);
 
-static void pref_trace(const char *line) {
+static void pref_trace(const char* line) {
   if (pref_diagnostic != NULL) pref_diagnostic(line);
 }
 
-static void pref_trace_key(const char *event, const char *key, int result) {
+static void pref_trace_key(const char* event, const char* key, int result) {
   if (pref_diagnostic == NULL) return;
   char line[192];
-  (void)snprintf(
-      line, sizeof(line), "H2_JIELI_PREF_%s key=%s code=%d\r\n",
-      event, key == NULL ? "(null)" : key, result);
+  (void)snprintf(line, sizeof(line), "H2_JIELI_PREF_%s key=%s code=%d\r\n",
+                 event, key == NULL ? "(null)" : key, result);
   pref_diagnostic(line);
 }
 
-static int pref_flash_read(
-    const struct lfs_config *config, lfs_block_t block, lfs_off_t offset,
-    void *buffer, lfs_size_t size) {
+static int pref_flash_read(const struct lfs_config* config, lfs_block_t block,
+                           lfs_off_t offset, void* buffer, lfs_size_t size) {
   if (config->block_size == 0u ||
       block >= H2_JIELI_PREF_SIZE / config->block_size ||
       offset > config->block_size || size > config->block_size - offset) {
@@ -75,25 +73,25 @@ static int pref_flash_read(
   if (address > H2_JIELI_PREF_SIZE || size > H2_JIELI_PREF_SIZE - address) {
     return LFS_ERR_IO;
   }
-  return norflash_read(
-             NULL, buffer, size, H2_JIELI_PREF_ADDRESS + address) ==
-          (int)size
-      ? LFS_ERR_OK
-      : LFS_ERR_IO;
+  return norflash_read(NULL, buffer, size, H2_JIELI_PREF_ADDRESS + address) ==
+                 (int)size
+             ? LFS_ERR_OK
+             : LFS_ERR_IO;
 }
 
 /* Diagnostic images may pause inside a real program operation. Production
  * uses this no-op. Called after range validation, before flash mutation. */
-__attribute__((weak)) void h2_jieli_pref_program_observer(
-    uint32_t address, const void *buffer, uint32_t size) {
+__attribute__((weak)) void h2_jieli_pref_program_observer(uint32_t address,
+                                                          const void* buffer,
+                                                          uint32_t size) {
   (void)address;
   (void)buffer;
   (void)size;
 }
 
-static int pref_flash_program(
-    const struct lfs_config *config, lfs_block_t block, lfs_off_t offset,
-    const void *buffer, lfs_size_t size) {
+static int pref_flash_program(const struct lfs_config* config,
+                              lfs_block_t block, lfs_off_t offset,
+                              const void* buffer, lfs_size_t size) {
   /* Validate before multiplication: wrapped addresses must never reach either
    * the diagnostic observer or the physical flash driver. */
   if (config->block_size == 0u ||
@@ -105,18 +103,17 @@ static int pref_flash_program(
   if (address > H2_JIELI_PREF_SIZE || size > H2_JIELI_PREF_SIZE - address) {
     return LFS_ERR_IO;
   }
-  h2_jieli_pref_program_observer(
-      H2_JIELI_PREF_ADDRESS + address, buffer, size);
+  h2_jieli_pref_program_observer(H2_JIELI_PREF_ADDRESS + address, buffer, size);
   h2_jieli_flash_window_t window = {0};
   if (h2_jieli_flash_window_open(&window) != 0) return LFS_ERR_IO;
-  int result = norflash_write(
-      NULL, (void *)buffer, size, H2_JIELI_PREF_ADDRESS + address);
+  int result = norflash_write(NULL, (void*)buffer, size,
+                              H2_JIELI_PREF_ADDRESS + address);
   if (h2_jieli_flash_window_close(&window) != 0) return LFS_ERR_IO;
   return result == (int)size ? LFS_ERR_OK : LFS_ERR_IO;
 }
 
-static int pref_flash_erase(
-    const struct lfs_config *config, lfs_block_t block) {
+static int pref_flash_erase(const struct lfs_config* config,
+                            lfs_block_t block) {
   if (config->block_size == 0u ||
       block >= H2_JIELI_PREF_SIZE / config->block_size) {
     return LFS_ERR_IO;
@@ -128,13 +125,13 @@ static int pref_flash_erase(
   }
   h2_jieli_flash_window_t window = {0};
   if (h2_jieli_flash_window_open(&window) != 0) return LFS_ERR_IO;
-  int result = norflash_ioctl(
-      NULL, IOCTL_ERASE_SECTOR, H2_JIELI_PREF_ADDRESS + address);
+  int result =
+      norflash_ioctl(NULL, IOCTL_ERASE_SECTOR, H2_JIELI_PREF_ADDRESS + address);
   if (h2_jieli_flash_window_close(&window) != 0) return LFS_ERR_IO;
   return result == 0 ? LFS_ERR_OK : LFS_ERR_IO;
 }
 
-static int pref_flash_sync(const struct lfs_config *config) {
+static int pref_flash_sync(const struct lfs_config* config) {
   (void)config;
   return LFS_ERR_OK;
 }
@@ -181,20 +178,17 @@ static int pref_lock(void) {
   }
   pref_trace("H2_JIELI_PREF_ENTER step=mutex_pend\r\n");
   return os_mutex_pend(&pref_mutex, 0u) == OS_NO_ERR ? H2_PAL_OK
-                                                      : H2_PAL_ERR_IO;
+                                                     : H2_PAL_ERR_IO;
 }
 
-static void pref_unlock(void) {
-  (void)os_mutex_post(&pref_mutex);
-}
+static void pref_unlock(void) { (void)os_mutex_post(&pref_mutex); }
 
 static int pref_region_erased(void) {
   uint8_t buffer[256];
   for (uint32_t offset = 0u; offset < H2_JIELI_PREF_SIZE;
        offset += sizeof(buffer)) {
-    if (norflash_read(
-            NULL, buffer, sizeof(buffer), H2_JIELI_PREF_ADDRESS + offset) !=
-        (int)sizeof(buffer)) {
+    if (norflash_read(NULL, buffer, sizeof(buffer),
+                      H2_JIELI_PREF_ADDRESS + offset) != (int)sizeof(buffer)) {
       return 0;
     }
     for (size_t index = 0u; index < sizeof(buffer); ++index) {
@@ -224,19 +218,19 @@ static int pref_prepare_locked(void) {
   return H2_PAL_OK;
 }
 
-static size_t bounded_length(const char *text, size_t maximum) {
+static size_t bounded_length(const char* text, size_t maximum) {
   size_t length = 0u;
   if (text == NULL) return 0u;
   while (length <= maximum && text[length] != '\0') ++length;
   return length;
 }
 
-static int valid_name(const char *text, size_t maximum) {
+static int valid_name(const char* text, size_t maximum) {
   size_t length = bounded_length(text, maximum);
   return length != 0u && length <= maximum;
 }
 
-static void hex_encode(const char *input, size_t length, char *output) {
+static void hex_encode(const char* input, size_t length, char* output) {
   static const char digits[] = "0123456789abcdef";
   for (size_t index = 0u; index < length; ++index) {
     uint8_t byte = (uint8_t)input[index];
@@ -246,9 +240,8 @@ static void hex_encode(const char *input, size_t length, char *output) {
   output[length * 2u] = '\0';
 }
 
-static int record_path(
-    const jieli_pref_namespace_t *name_space, const char *key,
-    char path[H2_PREF_PATH_MAX]) {
+static int record_path(const jieli_pref_namespace_t* name_space,
+                       const char* key, char path[H2_PREF_PATH_MAX]) {
   size_t key_length = bounded_length(key, H2_PREF_KEY_MAX);
   if (name_space == NULL || key_length == 0u || key_length > H2_PREF_KEY_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -263,21 +256,20 @@ static int record_path(
   return H2_PAL_OK;
 }
 
-static int require_writable(const jieli_pref_namespace_t *name_space) {
+static int require_writable(const jieli_pref_namespace_t* name_space) {
   if (name_space == NULL) return H2_PAL_ERR_INVALID_ARG;
   return name_space->mode == H2_PAL_PREF_OPEN_READ_WRITE
              ? H2_PAL_OK
              : H2_PAL_ERR_INVALID_STATE;
 }
 
-static jieli_pref_namespace_t *to_namespace(h2_pal_pref_namespace_t *raw) {
-  return raw == NULL ? NULL : (jieli_pref_namespace_t *)raw->user;
+static jieli_pref_namespace_t* to_namespace(h2_pal_pref_namespace_t* raw) {
+  return raw == NULL ? NULL : (jieli_pref_namespace_t*)raw->user;
 }
 
-static int read_record(
-    jieli_pref_namespace_t *name_space, const char *key,
-    h2_pal_pref_entry_type_t expected_type, uint8_t **out_value,
-    size_t *out_size) {
+static int read_record(jieli_pref_namespace_t* name_space, const char* key,
+                       h2_pal_pref_entry_type_t expected_type,
+                       uint8_t** out_value, size_t* out_size) {
   if (out_value == NULL || out_size == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_value = NULL;
   *out_size = 0u;
@@ -302,7 +294,8 @@ static int read_record(
   }
   if (result == H2_PAL_OK &&
       (header.magic != H2_PREF_MAGIC || header.type != expected_type ||
-       header.key_size != strlen(key) || header.value_size > H2_PREF_VALUE_MAX)) {
+       header.key_size != strlen(key) ||
+       header.value_size > H2_PREF_VALUE_MAX)) {
     result = H2_PAL_ERR_IO;
   }
   char stored_key[H2_PREF_KEY_MAX + 1u];
@@ -315,7 +308,7 @@ static int read_record(
     stored_key[header.key_size] = '\0';
     if (strcmp(stored_key, key) != 0) result = H2_PAL_ERR_IO;
   }
-  uint8_t *value = NULL;
+  uint8_t* value = NULL;
   if (result == H2_PAL_OK) {
     value = malloc(header.value_size == 0u ? 1u : header.value_size);
     if (value == NULL) result = H2_PAL_ERR_NO_MEMORY;
@@ -342,9 +335,9 @@ __attribute__((weak)) void h2_jieli_pref_rename_observer(int entering) {
   (void)entering;
 }
 
-static int write_record(
-    jieli_pref_namespace_t *name_space, const char *key,
-    h2_pal_pref_entry_type_t type, const void *value, size_t value_size) {
+static int write_record(jieli_pref_namespace_t* name_space, const char* key,
+                        h2_pal_pref_entry_type_t type, const void* value,
+                        size_t value_size) {
   int result = require_writable(name_space);
   if (result != H2_PAL_OK) return result;
   if (!valid_name(key, H2_PREF_KEY_MAX) ||
@@ -365,9 +358,8 @@ static int write_record(
   lfs_file_t file;
   int file_open = 0;
   if (result == H2_PAL_OK) {
-    int open_result = lfs_file_open(
-        &pref_lfs, &file, temporary,
-        LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+    int open_result = lfs_file_open(&pref_lfs, &file, temporary,
+                                    LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
     result = map_lfs_error(open_result);
     if (result == H2_PAL_OK) file_open = 1;
   }
@@ -380,21 +372,25 @@ static int write_record(
   };
   if (result == H2_PAL_OK &&
       lfs_file_write(&pref_lfs, &file, &header, sizeof(header)) !=
-          (lfs_ssize_t)sizeof(header)) result = H2_PAL_ERR_IO;
+          (lfs_ssize_t)sizeof(header))
+    result = H2_PAL_ERR_IO;
   if (result == H2_PAL_OK &&
-      lfs_file_write(&pref_lfs, &file, key, header.key_size) !=
-          header.key_size) result = H2_PAL_ERR_IO;
+      lfs_file_write(&pref_lfs, &file, key, header.key_size) != header.key_size)
+    result = H2_PAL_ERR_IO;
   if (result == H2_PAL_OK && value_size != 0u &&
       lfs_file_write(&pref_lfs, &file, value, value_size) !=
-          (lfs_ssize_t)value_size) result = H2_PAL_ERR_IO;
-  if (result == H2_PAL_OK) result = map_lfs_error(lfs_file_sync(&pref_lfs, &file));
+          (lfs_ssize_t)value_size)
+    result = H2_PAL_ERR_IO;
+  if (result == H2_PAL_OK)
+    result = map_lfs_error(lfs_file_sync(&pref_lfs, &file));
   if (file_open) {
     int close_result = map_lfs_error(lfs_file_close(&pref_lfs, &file));
     if (result == H2_PAL_OK) result = close_result;
   }
   if (result == H2_PAL_OK) {
     /* littlefs replaces an existing destination in the rename transaction.
-     * Removing it first loses the old record if rename fails or power is lost. */
+     * Removing it first loses the old record if rename fails or power is lost.
+     */
     h2_jieli_pref_rename_observer(1);
     result = map_lfs_error(lfs_rename(&pref_lfs, temporary, path));
     h2_jieli_pref_rename_observer(0);
@@ -405,27 +401,27 @@ static int write_record(
   return result;
 }
 
-static int pref_close(h2_pal_pref_namespace_t *raw) {
-  jieli_pref_namespace_t *name_space = to_namespace(raw);
+static int pref_close(h2_pal_pref_namespace_t* raw) {
+  jieli_pref_namespace_t* name_space = to_namespace(raw);
   if (name_space == NULL) return H2_PAL_ERR_INVALID_ARG;
   free(name_space);
   return H2_PAL_OK;
 }
 
-static int pref_get_blob(
-    h2_pal_pref_namespace_t *raw, const h2_pal_mem_api_t *allocator,
-    const char *key, void **out_data, size_t *out_length) {
-  uint8_t *value = NULL;
+static int pref_get_blob(h2_pal_pref_namespace_t* raw,
+                         const h2_pal_mem_api_t* allocator, const char* key,
+                         void** out_data, size_t* out_length) {
+  uint8_t* value = NULL;
   size_t size = 0u;
   if (allocator == NULL || out_data == NULL || out_length == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_data = NULL;
   *out_length = 0u;
-  int result = read_record(
-      to_namespace(raw), key, H2_PAL_PREF_ENTRY_BLOB, &value, &size);
+  int result = read_record(to_namespace(raw), key, H2_PAL_PREF_ENTRY_BLOB,
+                           &value, &size);
   if (result != H2_PAL_OK) return result;
-  void *copy = h2_pal_mem_alloc(allocator, size == 0u ? 1u : size);
+  void* copy = h2_pal_mem_alloc(allocator, size == 0u ? 1u : size);
   if (copy == NULL) {
     free(value);
     return H2_PAL_ERR_NO_MEMORY;
@@ -437,24 +433,23 @@ static int pref_get_blob(
   return H2_PAL_OK;
 }
 
-static int pref_set_blob(
-    h2_pal_pref_namespace_t *raw, const char *key, const void *data,
-    size_t length) {
-  return write_record(
-      to_namespace(raw), key, H2_PAL_PREF_ENTRY_BLOB, data, length);
+static int pref_set_blob(h2_pal_pref_namespace_t* raw, const char* key,
+                         const void* data, size_t length) {
+  return write_record(to_namespace(raw), key, H2_PAL_PREF_ENTRY_BLOB, data,
+                      length);
 }
 
-static int pref_get_string(
-    h2_pal_pref_namespace_t *raw, const h2_pal_mem_api_t *allocator,
-    const char *key, char **out_value) {
-  uint8_t *value = NULL;
+static int pref_get_string(h2_pal_pref_namespace_t* raw,
+                           const h2_pal_mem_api_t* allocator, const char* key,
+                           char** out_value) {
+  uint8_t* value = NULL;
   size_t size = 0u;
   if (allocator == NULL || out_value == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_value = NULL;
-  int result = read_record(
-      to_namespace(raw), key, H2_PAL_PREF_ENTRY_STRING, &value, &size);
+  int result = read_record(to_namespace(raw), key, H2_PAL_PREF_ENTRY_STRING,
+                           &value, &size);
   if (result != H2_PAL_OK) return result;
-  char *copy = h2_pal_mem_alloc(allocator, size + 1u);
+  char* copy = h2_pal_mem_alloc(allocator, size + 1u);
   if (copy == NULL) {
     free(value);
     return H2_PAL_ERR_NO_MEMORY;
@@ -466,20 +461,20 @@ static int pref_get_string(
   return H2_PAL_OK;
 }
 
-static int pref_set_string(
-    h2_pal_pref_namespace_t *raw, const char *key, const char *value) {
+static int pref_set_string(h2_pal_pref_namespace_t* raw, const char* key,
+                           const char* value) {
   size_t length = bounded_length(value, H2_PREF_VALUE_MAX);
   if (value == NULL || length > H2_PREF_VALUE_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return write_record(
-      to_namespace(raw), key, H2_PAL_PREF_ENTRY_STRING, value, length);
+  return write_record(to_namespace(raw), key, H2_PAL_PREF_ENTRY_STRING, value,
+                      length);
 }
 
-static int pref_get_integer(
-    h2_pal_pref_namespace_t *raw, const char *key,
-    h2_pal_pref_entry_type_t type, uint32_t *out_value) {
-  uint8_t *value = NULL;
+static int pref_get_integer(h2_pal_pref_namespace_t* raw, const char* key,
+                            h2_pal_pref_entry_type_t type,
+                            uint32_t* out_value) {
+  uint8_t* value = NULL;
   size_t size = 0u;
   if (out_value == NULL) return H2_PAL_ERR_INVALID_ARG;
   int result = read_record(to_namespace(raw), key, type, &value, &size);
@@ -494,27 +489,25 @@ static int pref_get_integer(
   return H2_PAL_OK;
 }
 
-static int pref_set_integer(
-    h2_pal_pref_namespace_t *raw, const char *key,
-    h2_pal_pref_entry_type_t type, uint32_t value) {
-  uint8_t bytes[4] = {
-      (uint8_t)value, (uint8_t)(value >> 8u),
-      (uint8_t)(value >> 16u), (uint8_t)(value >> 24u)};
+static int pref_set_integer(h2_pal_pref_namespace_t* raw, const char* key,
+                            h2_pal_pref_entry_type_t type, uint32_t value) {
+  uint8_t bytes[4] = {(uint8_t)value, (uint8_t)(value >> 8u),
+                      (uint8_t)(value >> 16u), (uint8_t)(value >> 24u)};
   return write_record(to_namespace(raw), key, type, bytes, sizeof(bytes));
 }
 
-static int pref_get_u32(
-    h2_pal_pref_namespace_t *raw, const char *key, uint32_t *out_value) {
+static int pref_get_u32(h2_pal_pref_namespace_t* raw, const char* key,
+                        uint32_t* out_value) {
   return pref_get_integer(raw, key, H2_PAL_PREF_ENTRY_U32, out_value);
 }
 
-static int pref_set_u32(
-    h2_pal_pref_namespace_t *raw, const char *key, uint32_t value) {
+static int pref_set_u32(h2_pal_pref_namespace_t* raw, const char* key,
+                        uint32_t value) {
   return pref_set_integer(raw, key, H2_PAL_PREF_ENTRY_U32, value);
 }
 
-static int pref_get_i32(
-    h2_pal_pref_namespace_t *raw, const char *key, int32_t *out_value) {
+static int pref_get_i32(h2_pal_pref_namespace_t* raw, const char* key,
+                        int32_t* out_value) {
   if (out_value == NULL) return H2_PAL_ERR_INVALID_ARG;
   uint32_t value = 0u;
   int result = pref_get_integer(raw, key, H2_PAL_PREF_ENTRY_I32, &value);
@@ -522,18 +515,18 @@ static int pref_get_i32(
   return result;
 }
 
-static int pref_set_i32(
-    h2_pal_pref_namespace_t *raw, const char *key, int32_t value) {
+static int pref_set_i32(h2_pal_pref_namespace_t* raw, const char* key,
+                        int32_t value) {
   return pref_set_integer(raw, key, H2_PAL_PREF_ENTRY_I32, (uint32_t)value);
 }
 
-static int pref_get_bool(
-    h2_pal_pref_namespace_t *raw, const char *key, int *out_value) {
-  uint8_t *value = NULL;
+static int pref_get_bool(h2_pal_pref_namespace_t* raw, const char* key,
+                         int* out_value) {
+  uint8_t* value = NULL;
   size_t size = 0u;
   if (out_value == NULL) return H2_PAL_ERR_INVALID_ARG;
-  int result = read_record(
-      to_namespace(raw), key, H2_PAL_PREF_ENTRY_BOOL, &value, &size);
+  int result = read_record(to_namespace(raw), key, H2_PAL_PREF_ENTRY_BOOL,
+                           &value, &size);
   if (result != H2_PAL_OK) return result;
   if (size != 1u || value[0] > 1u) {
     free(value);
@@ -544,16 +537,15 @@ static int pref_get_bool(
   return H2_PAL_OK;
 }
 
-static int pref_set_bool(
-    h2_pal_pref_namespace_t *raw, const char *key, int value) {
+static int pref_set_bool(h2_pal_pref_namespace_t* raw, const char* key,
+                         int value) {
   uint8_t stored = value != 0 ? 1u : 0u;
-  return write_record(
-      to_namespace(raw), key, H2_PAL_PREF_ENTRY_BOOL, &stored,
-      sizeof(stored));
+  return write_record(to_namespace(raw), key, H2_PAL_PREF_ENTRY_BOOL, &stored,
+                      sizeof(stored));
 }
 
-static int pref_remove(h2_pal_pref_namespace_t *raw, const char *key) {
-  jieli_pref_namespace_t *name_space = to_namespace(raw);
+static int pref_remove(h2_pal_pref_namespace_t* raw, const char* key) {
+  jieli_pref_namespace_t* name_space = to_namespace(raw);
   int result = require_writable(name_space);
   char path[H2_PREF_PATH_MAX];
   if (result == H2_PAL_OK) result = record_path(name_space, key, path);
@@ -566,8 +558,8 @@ static int pref_remove(h2_pal_pref_namespace_t *raw, const char *key) {
   return result;
 }
 
-static int pref_clear(h2_pal_pref_namespace_t *raw) {
-  jieli_pref_namespace_t *name_space = to_namespace(raw);
+static int pref_clear(h2_pal_pref_namespace_t* raw) {
+  jieli_pref_namespace_t* name_space = to_namespace(raw);
   int result = require_writable(name_space);
   if (result != H2_PAL_OK) return result;
   result = pref_lock();
@@ -576,7 +568,8 @@ static int pref_clear(h2_pal_pref_namespace_t *raw) {
   lfs_dir_t directory;
   int directory_open = 0;
   if (result == H2_PAL_OK) {
-    result = map_lfs_error(lfs_dir_open(&pref_lfs, &directory, name_space->path));
+    result =
+        map_lfs_error(lfs_dir_open(&pref_lfs, &directory, name_space->path));
     if (result == H2_PAL_OK) directory_open = 1;
   }
   struct lfs_info info;
@@ -605,14 +598,14 @@ static int pref_clear(h2_pal_pref_namespace_t *raw) {
   return result;
 }
 
-static int pref_commit(h2_pal_pref_namespace_t *raw) {
+static int pref_commit(h2_pal_pref_namespace_t* raw) {
   return to_namespace(raw) == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_OK;
 }
 
-static int pref_iterate(
-    h2_pal_pref_namespace_t *raw, h2_pal_pref_cursor_t **cursor,
-    h2_pal_pref_entry_t *out_entry) {
-  jieli_pref_namespace_t *name_space = to_namespace(raw);
+static int pref_iterate(h2_pal_pref_namespace_t* raw,
+                        h2_pal_pref_cursor_t** cursor,
+                        h2_pal_pref_entry_t* out_entry) {
+  jieli_pref_namespace_t* name_space = to_namespace(raw);
   if (name_space == NULL || cursor == NULL || out_entry == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -658,14 +651,16 @@ static int pref_iterate(
     jieli_pref_header_t header;
     if (result == H2_PAL_OK &&
         lfs_file_read(&pref_lfs, &file, &header, sizeof(header)) !=
-            (lfs_ssize_t)sizeof(header)) result = H2_PAL_ERR_IO;
+            (lfs_ssize_t)sizeof(header))
+      result = H2_PAL_ERR_IO;
     if (result == H2_PAL_OK &&
         (header.magic != H2_PREF_MAGIC || header.key_size > H2_PREF_KEY_MAX)) {
       result = H2_PAL_ERR_IO;
     }
     if (result == H2_PAL_OK &&
         lfs_file_read(&pref_lfs, &file, (*cursor)->key, header.key_size) !=
-            header.key_size) result = H2_PAL_ERR_IO;
+            header.key_size)
+      result = H2_PAL_ERR_IO;
     if (file_open) {
       int close_result = map_lfs_error(lfs_file_close(&pref_lfs, &file));
       if (result == H2_PAL_OK) result = close_result;
@@ -684,8 +679,8 @@ done:
   return result;
 }
 
-static int pref_iterate_close(
-    h2_pal_pref_namespace_t *raw, h2_pal_pref_cursor_t **cursor) {
+static int pref_iterate_close(h2_pal_pref_namespace_t* raw,
+                              h2_pal_pref_cursor_t** cursor) {
   (void)raw;
   if (cursor == NULL || *cursor == NULL) return H2_PAL_OK;
   int result = pref_lock();
@@ -699,7 +694,7 @@ static int pref_iterate_close(
   return result;
 }
 
-static void initialize_namespace(jieli_pref_namespace_t *name_space) {
+static void initialize_namespace(jieli_pref_namespace_t* name_space) {
   name_space->pal = (h2_pal_pref_namespace_t){
       .user = name_space,
       .close = pref_close,
@@ -721,9 +716,9 @@ static void initialize_namespace(jieli_pref_namespace_t *name_space) {
   };
 }
 
-static int pref_open(
-    void *user, const char *name_space, h2_pal_pref_open_mode_t mode,
-    h2_pal_pref_namespace_t **out_namespace) {
+static int pref_open(void* user, const char* name_space,
+                     h2_pal_pref_open_mode_t mode,
+                     h2_pal_pref_namespace_t** out_namespace) {
   (void)user;
   pref_trace_key("OPEN_ENTER", name_space, (int)mode);
   if (out_namespace == NULL) return H2_PAL_ERR_INVALID_ARG;
@@ -737,7 +732,7 @@ static int pref_open(
   if (result != H2_PAL_OK) return result;
   pref_trace("H2_JIELI_PREF_OK step=lock\r\n");
   result = pref_prepare_locked();
-  jieli_pref_namespace_t *instance = NULL;
+  jieli_pref_namespace_t* instance = NULL;
   if (result == H2_PAL_OK) {
     pref_trace("H2_JIELI_PREF_ENTER step=namespace_alloc\r\n");
     instance = calloc(1u, sizeof(*instance));
@@ -780,11 +775,11 @@ static int pref_open(
 }
 
 void h2_jieli_ac791n_devkit_pref_set_diagnostic(
-    void (*write_line)(const char *line)) {
+    void (*write_line)(const char* line)) {
   pref_diagnostic = write_line;
 }
 
-const h2_pal_pref_api_t *h2_jieli_ac791n_devkit_pref_api(void) {
+const h2_pal_pref_api_t* h2_jieli_ac791n_devkit_pref_api(void) {
   static const h2_pal_pref_vtable_t vtable = {.open = pref_open};
   static const h2_pal_pref_api_t api = {.user = NULL, .vtable = &vtable};
   return &api;

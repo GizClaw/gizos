@@ -10,8 +10,8 @@ typedef struct h2_ios_audio_wait_budget {
 } h2_ios_audio_wait_budget_t;
 
 int h2_ios_audio_wait_begin(uint32_t timeout_ms,
-                           h2_ios_audio_wait_budget_t *out_budget);
-int h2_ios_audio_wait_changed(pthread_cond_t *changed, pthread_mutex_t *mutex,
-                             const h2_ios_audio_wait_budget_t *budget);
+                            h2_ios_audio_wait_budget_t* out_budget);
+int h2_ios_audio_wait_changed(pthread_cond_t* changed, pthread_mutex_t* mutex,
+                              const h2_ios_audio_wait_budget_t* budget);
 
 #endif

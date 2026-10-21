@@ -14,22 +14,22 @@ extern "C" {
 
 /** Shared logical speaker state. Volume is retained while muted. */
 typedef struct h2_runtime_system_audio_state {
-    uint32_t volume_percent;
-    uint8_t muted;
+  uint32_t volume_percent;
+  uint8_t muted;
 } h2_runtime_system_audio_state_t;
 
 /** Read the Runtime-owned speaker state into caller storage. Thread-safe;
  * BUSY means another volume operation is in progress. Unsupported Audio or
  * provider read errors propagate. Never returns a borrowed state pointer. */
 h2_pal_result_t h2_runtime_system_state_audio(
-    const h2_runtime_t *runtime, h2_runtime_system_audio_state_t *out_state);
+    const h2_runtime_t* runtime, h2_runtime_system_audio_state_t* out_state);
 
 /** Apply and publish volume/mute together on the calling task. Only successful
  * PAL writes change Runtime state. Percent must be 0..100; muted is 0 or 1.
  * Thread-safe (BUSY on overlap); do not call from an ISR. Finish before deinit.
  * Local percent-only Audio proxy writes clear mute and publish their value. */
-h2_pal_result_t h2_runtime_audio_set_volume(
-    h2_runtime_t *runtime, uint32_t percent, uint8_t muted);
+h2_pal_result_t h2_runtime_audio_set_volume(h2_runtime_t* runtime,
+                                            uint32_t percent, uint8_t muted);
 
 /**
  * Live audio amplitude, as seen by the Runtime audio proxy.
@@ -49,10 +49,10 @@ h2_pal_result_t h2_runtime_audio_set_volume(
  * direction has been measured.
  */
 typedef struct h2_runtime_audio_levels {
-    uint8_t capture_percent;    /* 0..100, peak of the most recent mic frame */
-    uint8_t playback_percent;   /* 0..100, peak of the most recent played frame */
-    uint64_t capture_updated_ms;   /* monotonic ms of that frame, 0 if never */
-    uint64_t playback_updated_ms;
+  uint8_t capture_percent;  /* 0..100, peak of the most recent mic frame */
+  uint8_t playback_percent; /* 0..100, peak of the most recent played frame */
+  uint64_t capture_updated_ms; /* monotonic ms of that frame, 0 if never */
+  uint64_t playback_updated_ms;
 } h2_runtime_audio_levels_t;
 
 /**
@@ -68,10 +68,10 @@ typedef struct h2_runtime_audio_levels {
  * entry point and returns UNSUPPORTED.
  */
 h2_pal_result_t h2_runtime_audio_get_levels(
-    const h2_runtime_t *runtime, h2_runtime_audio_levels_t *out_levels);
+    const h2_runtime_t* runtime, h2_runtime_audio_levels_t* out_levels);
 
 typedef struct h2_runtime_system_gpio_irq_state {
-    int reserved;
+  int reserved;
 } h2_runtime_system_gpio_irq_state_t;
 
 /**
@@ -86,25 +86,25 @@ typedef struct h2_runtime_system_gpio_irq_state {
  * has happened yet" from "idle".
  */
 typedef struct h2_runtime_system_wifi_sta_state {
-    uint8_t valid;
-    h2_runtime_system_wifi_sta_status_t status;
-    char ssid[H2_RUNTIME_SYSTEM_WIFI_SSID_MAX + 1u];
-    size_t ssid_len;
-    uint8_t bssid[H2_RUNTIME_SYSTEM_WIFI_BSSID_LEN];
-    uint8_t bssid_set;
-    uint8_t channel;
-    int32_t rssi;
-    h2_runtime_system_wifi_ip_info_t ip;
-    uint8_t ip_valid;
-    int32_t disconnect_reason;
+  uint8_t valid;
+  h2_runtime_system_wifi_sta_status_t status;
+  char ssid[H2_RUNTIME_SYSTEM_WIFI_SSID_MAX + 1u];
+  size_t ssid_len;
+  uint8_t bssid[H2_RUNTIME_SYSTEM_WIFI_BSSID_LEN];
+  uint8_t bssid_set;
+  uint8_t channel;
+  int32_t rssi;
+  h2_runtime_system_wifi_ip_info_t ip;
+  uint8_t ip_valid;
+  int32_t disconnect_reason;
 } h2_runtime_system_wifi_sta_state_t;
 
 typedef struct h2_runtime_system_wifi_ap_state {
-    int reserved;
+  int reserved;
 } h2_runtime_system_wifi_ap_state_t;
 
 typedef struct h2_runtime_system_ble_state {
-    int reserved;
+  int reserved;
 } h2_runtime_system_ble_state_t;
 
 /**
@@ -118,24 +118,24 @@ typedef struct h2_runtime_system_ble_state {
  * any task that must not block on AT traffic.
  */
 typedef struct h2_runtime_system_modem_state {
-    h2_runtime_system_modem_sim_state_t sim;
-    h2_runtime_system_modem_registration_state_t registration;
-    h2_runtime_system_modem_packet_state_t packet;
-    h2_runtime_system_modem_rat_t rat;
-    /** 1 once a signal event arrived; the measurements below follow it. */
-    uint8_t signal_valid;
-    int32_t rssi_dbm;
-    uint8_t rssi_valid; /**< 1 for measured RSSI; otherwise ignore rssi_dbm. */
-    int32_t rsrp_dbm;
-    uint8_t rsrp_valid; /**< 1 only for a real serving LTE cell RSRP. */
+  h2_runtime_system_modem_sim_state_t sim;
+  h2_runtime_system_modem_registration_state_t registration;
+  h2_runtime_system_modem_packet_state_t packet;
+  h2_runtime_system_modem_rat_t rat;
+  /** 1 once a signal event arrived; the measurements below follow it. */
+  uint8_t signal_valid;
+  int32_t rssi_dbm;
+  uint8_t rssi_valid; /**< 1 for measured RSSI; otherwise ignore rssi_dbm. */
+  int32_t rsrp_dbm;
+  uint8_t rsrp_valid; /**< 1 only for a real serving LTE cell RSRP. */
 } h2_runtime_system_modem_state_t;
 
 typedef struct h2_runtime_system_mqtt_state {
-    int reserved;
+  int reserved;
 } h2_runtime_system_mqtt_state_t;
 
 typedef struct h2_runtime_system_webrtc_state {
-    int reserved;
+  int reserved;
 } h2_runtime_system_webrtc_state_t;
 
 /**
@@ -150,13 +150,20 @@ typedef struct h2_runtime_system_webrtc_state {
  * @return H2_PAL_OK, or H2_PAL_ERR_INVALID_ARG for a NULL argument or a
  * Runtime that is not ready.
  */
-h2_pal_result_t h2_runtime_system_state_wifi_sta(const h2_runtime_t *runtime, h2_runtime_system_wifi_sta_state_t *out_state);
-h2_pal_result_t h2_runtime_system_state_wifi_ap(const h2_runtime_t *runtime, h2_runtime_system_wifi_ap_state_t *out_state);
-h2_pal_result_t h2_runtime_system_state_gpio_irq(const h2_runtime_t *runtime, h2_runtime_system_gpio_irq_state_t *out_state);
-h2_pal_result_t h2_runtime_system_state_ble(const h2_runtime_t *runtime, h2_runtime_system_ble_state_t *out_state);
-h2_pal_result_t h2_runtime_system_state_modem(const h2_runtime_t *runtime, h2_runtime_system_modem_state_t *out_state);
-h2_pal_result_t h2_runtime_system_state_mqtt(const h2_runtime_t *runtime, h2_runtime_system_mqtt_state_t *out_state);
-h2_pal_result_t h2_runtime_system_state_webrtc(const h2_runtime_t *runtime, h2_runtime_system_webrtc_state_t *out_state);
+h2_pal_result_t h2_runtime_system_state_wifi_sta(
+    const h2_runtime_t* runtime, h2_runtime_system_wifi_sta_state_t* out_state);
+h2_pal_result_t h2_runtime_system_state_wifi_ap(
+    const h2_runtime_t* runtime, h2_runtime_system_wifi_ap_state_t* out_state);
+h2_pal_result_t h2_runtime_system_state_gpio_irq(
+    const h2_runtime_t* runtime, h2_runtime_system_gpio_irq_state_t* out_state);
+h2_pal_result_t h2_runtime_system_state_ble(
+    const h2_runtime_t* runtime, h2_runtime_system_ble_state_t* out_state);
+h2_pal_result_t h2_runtime_system_state_modem(
+    const h2_runtime_t* runtime, h2_runtime_system_modem_state_t* out_state);
+h2_pal_result_t h2_runtime_system_state_mqtt(
+    const h2_runtime_t* runtime, h2_runtime_system_mqtt_state_t* out_state);
+h2_pal_result_t h2_runtime_system_state_webrtc(
+    const h2_runtime_t* runtime, h2_runtime_system_webrtc_state_t* out_state);
 
 #ifdef __cplusplus
 }

@@ -30,3 +30,13 @@ idf_component_register(
     h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+
+# Optional final-entry diagnostic fixture; the actual Board/PAL stays borrowed.
+if(DEFINED H2_DISPLAY_CAPTURE_HEADER)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_DISPLAY_CAPTURE_HEADER="${H2_DISPLAY_CAPTURE_HEADER}")
+endif()
+if(DEFINED H2_DISPLAY_CAPTURE_CONFIGURE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_DISPLAY_CAPTURE_CONFIGURE=${H2_DISPLAY_CAPTURE_CONFIGURE})
+endif()

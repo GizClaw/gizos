@@ -104,30 +104,29 @@ int stun_msg_get_transaction_id(
 
 int stun_msg_get_xor_mask(const StunMessage* msg, uint8_t out_mask[16]);
 
-int stun_set_mapped_address(
-    uint8_t* value, size_t value_capacity, const uint8_t mask[16],
-    const h2_pal_net_addr_t* addr);
+int stun_set_mapped_address(uint8_t* value, size_t value_capacity,
+                            const uint8_t mask[16],
+                            const h2_pal_net_addr_t* addr);
 
-int stun_get_mapped_address(
-    const uint8_t* value, size_t value_len, const uint8_t mask[16],
-    h2_pal_net_addr_t* out_addr);
+int stun_get_mapped_address(const uint8_t* value, size_t value_len,
+                            const uint8_t mask[16],
+                            h2_pal_net_addr_t* out_addr);
 
 int stun_parse_msg_buf(StunMessage* msg);
 
-void stun_calculate_fingerprint(
-    const uint8_t* buf, size_t len, uint32_t* fingerprint);
+void stun_calculate_fingerprint(const uint8_t* buf, size_t len,
+                                uint32_t* fingerprint);
 
-int stun_msg_write_attr(
-    StunMessage* msg, StunAttrType type, uint16_t length,
-    const void* value);
+int stun_msg_write_attr(StunMessage* msg, StunAttrType type, uint16_t length,
+                        const void* value);
 
 int stun_probe(const uint8_t* buf, size_t size);
 
-int stun_msg_is_valid(const h2_pal_crypto_api_t* crypto,
-                      const uint8_t* buf, size_t len, const char* password);
+int stun_msg_is_valid(const h2_pal_crypto_api_t* crypto, const uint8_t* buf,
+                      size_t len, const char* password);
 
-int stun_msg_finish(const h2_pal_crypto_api_t* crypto,
-                    StunMessage* msg, StunCredential credential,
-                    const char* password, size_t password_len);
+int stun_msg_finish(const h2_pal_crypto_api_t* crypto, StunMessage* msg,
+                    StunCredential credential, const char* password,
+                    size_t password_len);
 
 #endif  // STUN_H_

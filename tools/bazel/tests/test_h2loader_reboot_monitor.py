@@ -1,5 +1,6 @@
 """Exercise the actual reboot-monitor state machine with scripted transport I/O."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -168,7 +169,7 @@ class RebootMonitorTests(unittest.TestCase):
             test = Path(directory) / "test.c"
             log_start = source.index("static h2_pal_result_t monitor_output(")
             log_end = source.index("static int monitor_cancelled(", log_start)
-            finish_start = source.index("static h2_pal_result_t\nfinish_bounded_monitor(")
+            finish_start = re.search(r"\bstatic\s+h2_pal_result_t\s+finish_bounded_monitor\s*\(", source).start()
             finish_end = source.index("static h2_pal_result_t run_monitor(", finish_start)
             test.write_text(STUBS + source[log_start:log_end] + LOG_MAIN +
                             source[finish_start:finish_end] + source[start:end] + MAIN)

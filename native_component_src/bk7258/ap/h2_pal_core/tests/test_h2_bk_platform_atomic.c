@@ -22,12 +22,11 @@
 
 /* GCC libcall ABI signatures; assigning the helpers to these pointers fails
  * to compile if a signature drifts. */
-typedef unsigned long long (*rmw_fn_t)(volatile void *, unsigned long long,
-                                       int);
-typedef _Bool (*cas_fn_t)(volatile void *, void *, unsigned long long, _Bool,
-                          int, int);
-typedef unsigned long long (*load_fn_t)(const volatile void *, int);
-typedef void (*store_fn_t)(volatile void *, unsigned long long, int);
+typedef unsigned long long (*rmw_fn_t)(volatile void*, unsigned long long, int);
+typedef _Bool (*cas_fn_t)(volatile void*, void*, unsigned long long, _Bool, int,
+                          int);
+typedef unsigned long long (*load_fn_t)(const volatile void*, int);
+typedef void (*store_fn_t)(volatile void*, unsigned long long, int);
 
 #define TEST_IRQ_LEVEL 0x5au
 
@@ -132,11 +131,9 @@ static void test_fetch_op(rmw_fn_t op, unsigned long long initial,
 
 static void test_fetch_ops(void) {
   /* add/sub carry across the 32-bit boundary. */
-  test_fetch_op(h2_test_atomic_fetch_add_8, 0xffffffffull, 1u,
-                0x100000000ull);
+  test_fetch_op(h2_test_atomic_fetch_add_8, 0xffffffffull, 1u, 0x100000000ull);
   test_fetch_op(h2_test_atomic_fetch_add_8, V_A, V_B, V_A + V_B);
-  test_fetch_op(h2_test_atomic_fetch_sub_8, 0x100000000ull, 1u,
-                0xffffffffull);
+  test_fetch_op(h2_test_atomic_fetch_sub_8, 0x100000000ull, 1u, 0xffffffffull);
   test_fetch_op(h2_test_atomic_fetch_sub_8, 0u, 1u, ~0ull);
   test_fetch_op(h2_test_atomic_fetch_and_8, V_A, 0xffffffff00000000ull,
                 0x0123456700000000ull);

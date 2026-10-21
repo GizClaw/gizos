@@ -8,7 +8,9 @@
 extern "C" {
 #endif
 
-int h2_bundle_archive_install_zlib_tar(h2_bundle_installer_t *installer, const h2_bundle_install_options_t *options);
+int h2_bundle_archive_install_zlib_tar(
+    h2_bundle_installer_t* installer,
+    const h2_bundle_install_options_t* options);
 
 /**
  * Install a format-2 independent data tar stream. Only data/ entries are
@@ -17,10 +19,10 @@ int h2_bundle_archive_install_zlib_tar(h2_bundle_installer_t *installer, const h
  * checksum is invalidated before replacement. Dependencies are borrowed.
  */
 int h2_bundle_archive_install_data_zlib(
-    h2_bundle_installer_t *installer, const h2_bundle_ota_options_t *options,
-    h2_bundle_segmented_read_fn read, void *read_user,
-    const h2_bundle_segmented_manifest_t *manifest,
-    const h2_bundle_digest_api_t *digest);
+    h2_bundle_installer_t* installer, const h2_bundle_ota_options_t* options,
+    h2_bundle_segmented_read_fn read, void* read_user,
+    const h2_bundle_segmented_manifest_t* manifest,
+    const h2_bundle_digest_api_t* digest);
 
 #ifdef __cplusplus
 }

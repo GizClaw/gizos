@@ -26,117 +26,118 @@ extern "C" {
 #endif
 
 typedef struct h2_gizclaw_str {
-    const char *data;
-    size_t len;
+  const char* data;
+  size_t len;
 } h2_gizclaw_str_t;
 
 typedef enum h2_gizclaw_cipher_mode {
-    H2_GIZCLAW_CIPHER_CHACHA20_POLY1305 = 1,
-    H2_GIZCLAW_CIPHER_AES_256_GCM = 2,
-    H2_GIZCLAW_CIPHER_PLAINTEXT = 3,
+  H2_GIZCLAW_CIPHER_CHACHA20_POLY1305 = 1,
+  H2_GIZCLAW_CIPHER_AES_256_GCM = 2,
+  H2_GIZCLAW_CIPHER_PLAINTEXT = 3,
 } h2_gizclaw_cipher_mode_t;
 
 /** Return true to interrupt the current GizClaw operation. */
-typedef bool (*h2_gizclaw_cancel_fn)(void *user);
+typedef bool (*h2_gizclaw_cancel_fn)(void* user);
 
 typedef struct h2_gizclaw_config {
-    h2_gizclaw_str_t server_endpoint;
-    h2_gizclaw_str_t private_key;
-    h2_gizclaw_cipher_mode_t cipher_mode;
-    /** @brief Connection timeout in milliseconds; must be positive. */
-    int connect_timeout_ms;
-    /**
-     * @brief Maximum blocking time, in milliseconds, for a WebRTC channel
-     * write.
-     *
-     * Transient PAL backpressure is drained synchronously by waiting for peer
-     * progress and retrying the same payload. Providers may wake the wait when
-     * their send queue becomes writable. The write stops on success, timeout,
-     * cancellation, or a terminal transport error. Cancellation returns
-     * `H2_PAL_ERR_CLOSED`. Zero reuses `connect_timeout_ms`; negative values
-     * are invalid. A provider that unexpectedly returns
-     * `H2_PAL_ERR_WOULD_BLOCK` from a positive-timeout peer poll is rate
-     * limited with a logged PAL Time backoff of the lesser of 10 ms and the
-     * remaining write timeout. `sleep_ms` remains optional: if this exceptional
-     * fallback needs it and the operation is unsupported or fails, the write
-     * stops with `H2_PAL_ERR_IO`.
-     */
-    int write_timeout_ms;
-    const h2_pal_mem_api_t *allocator;
-    const h2_pal_http_api_t *http;
-    const h2_pal_webrtc_api_t *webrtc;
-    /**
-     * Optional provider-owned bidirectional media track.
-     *
-     * When set, GizClaw binds it before starting the offer and never accesses
-     * codec packets through the PAL. Capture, playback, codec, and RTP
-     * progression belong to the WebRTC provider.
-     */
-    h2_pal_webrtc_track_t *webrtc_media_track;
-    const h2_pal_crypto_api_t *crypto;
-    const h2_pal_time_api_t *time;
-    const h2_pal_log_api_t *log;
-    /** Optional built-in device RPC capabilities, owned by the Service.
-     * PAL APIs, vtable and strings are borrowed through service_deinit.
-     * Set any device field to enable the standard provider. Inject the same
-     * Runtime Audio/Wi-Fi proxies used by local controls: volume is read from
-     * Audio. With that same Service Runtime, Wi-Fi connect/list/forget share
-     * its durable set and admission; standalone providers keep PAL single-entry
-     * semantics. Provisioning calls connect_and_save after response success. */
-    const h2_pal_audio_api_t *audio;
-    const h2_pal_wifi_sta_api_t *wifi;
-    /** Modem behind the Service Runtime's modem snapshot. Setting it adds the
-     * read-only modem.main HWD, answered from h2_runtime_system_state_modem;
-     * the RPC owner never queries the modem itself. Needs the Runtime. */
-    const h2_pal_modem_api_t *modem;
-    /** Runtime battery component. Nonzero adds the read-only battery.main
-     * HWD, answered from that component's h2_runtime_component_state_battery
-     * snapshot. Needs the Runtime. */
-    h2_runtime_component_id_t battery_component;
-    const h2_pal_wifi_settings_api_t *wifi_settings;
-    const h2_pal_power_api_t *power;
-    const h2_gizclaw_vtable_t *vtable;
-    void *user;
-    const char *manufacturer;
-    const char *model;
-    const char *hardware_revision;
-    const char *serial;
-    /** Compressed audio ring capacity; zero selects 64 KiB. Passing audio PAL
-     * enables the Ogg/Opus, MP3 and WAV player. Track length is not limited
-     * by this buffer, but its playing time is: 64 KiB is seconds of Opus or
-     * MP3 and under half a second of 44.1 kHz stereo WAV. The fixed ring is
-     * reused between joined probe/range/fallback requests and an already
-     * accepted immediate music-item continuation. Idle, final EOS, error and
-     * stop release it after the producer joins; failed joins retain ownership
-     * for retry and never reset an active producer. */
-    size_t audio_buffer_bytes;
-    /** Start/refill threshold <= ring capacity; zero selects min(16 KiB, ring).
-     * A completed short response starts with the bytes available. */
-    size_t audio_prebuffer_bytes;
-    /** Default firmware channel when the caller omits one. */
-    int32_t firmware_channel;
-    /** Immutable product tool registrations, borrowed until deinit. The SDK
-     * advertises exactly the installed handlers. Unknown IDs, duplicates or
-     * NULL callbacks are invalid. A Service with any device capability adds
-     * its built-in tools and accepts only DEVICE_FIND and SOCIAL_PING from
-     * the product. A Service without device capabilities installs no
-     * built-in tool and, like a standalone Client, may install any valid
-     * ClientTool. */
-    const h2_gizclaw_tool_handler_t *tool_handlers;
-    size_t tool_handler_count;
-    /** Immutable typed HWD instance table borrowed until deinit. IDs must
-     * be unique. The Service adds speaker.main, wifi.main, modem.main and
-     * battery.main when the corresponding capabilities are configured. A separate RuntimeProfile
-     * manifest controls which instances the Server exposes remotely. */
-    const h2_gizclaw_mhs_device_t *mhs_devices;
-    size_t mhs_device_count;
-    h2_gizclaw_cancel_fn cancel_requested;
-    void *cancel_user;
-    /** Optional shared Lua application directory/installer. Borrowed through
-     * service_deinit; its caller-owned lifetime can span reconnects. LIST is
-     * enabled with this handle, INSTALL needs writable storage (HTTP(S) also
-     * needs HTTP), RUN additionally needs vtable.prepare_lua_app_run. */
-    h2_lua_apps_t *lua_apps;
+  h2_gizclaw_str_t server_endpoint;
+  h2_gizclaw_str_t private_key;
+  h2_gizclaw_cipher_mode_t cipher_mode;
+  /** @brief Connection timeout in milliseconds; must be positive. */
+  int connect_timeout_ms;
+  /**
+   * @brief Maximum blocking time, in milliseconds, for a WebRTC channel
+   * write.
+   *
+   * Transient PAL backpressure is drained synchronously by waiting for peer
+   * progress and retrying the same payload. Providers may wake the wait when
+   * their send queue becomes writable. The write stops on success, timeout,
+   * cancellation, or a terminal transport error. Cancellation returns
+   * `H2_PAL_ERR_CLOSED`. Zero reuses `connect_timeout_ms`; negative values
+   * are invalid. A provider that unexpectedly returns
+   * `H2_PAL_ERR_WOULD_BLOCK` from a positive-timeout peer poll is rate
+   * limited with a logged PAL Time backoff of the lesser of 10 ms and the
+   * remaining write timeout. `sleep_ms` remains optional: if this exceptional
+   * fallback needs it and the operation is unsupported or fails, the write
+   * stops with `H2_PAL_ERR_IO`.
+   */
+  int write_timeout_ms;
+  const h2_pal_mem_api_t* allocator;
+  const h2_pal_http_api_t* http;
+  const h2_pal_webrtc_api_t* webrtc;
+  /**
+   * Optional provider-owned bidirectional media track.
+   *
+   * When set, GizClaw binds it before starting the offer and never accesses
+   * codec packets through the PAL. Capture, playback, codec, and RTP
+   * progression belong to the WebRTC provider.
+   */
+  h2_pal_webrtc_track_t* webrtc_media_track;
+  const h2_pal_crypto_api_t* crypto;
+  const h2_pal_time_api_t* time;
+  const h2_pal_log_api_t* log;
+  /** Optional built-in device RPC capabilities, owned by the Service.
+   * PAL APIs, vtable and strings are borrowed through service_deinit.
+   * Set any device field to enable the standard provider. Inject the same
+   * Runtime Audio/Wi-Fi proxies used by local controls: volume is read from
+   * Audio. With that same Service Runtime, Wi-Fi connect/list/forget share
+   * its durable set and admission; standalone providers keep PAL single-entry
+   * semantics. Provisioning calls connect_and_save after response success. */
+  const h2_pal_audio_api_t* audio;
+  const h2_pal_wifi_sta_api_t* wifi;
+  /** Modem behind the Service Runtime's modem snapshot. Setting it adds the
+   * read-only modem.main HWD, answered from h2_runtime_system_state_modem;
+   * the RPC owner never queries the modem itself. Needs the Runtime. */
+  const h2_pal_modem_api_t* modem;
+  /** Runtime battery component. Nonzero adds the read-only battery.main
+   * HWD, answered from that component's h2_runtime_component_state_battery
+   * snapshot. Needs the Runtime. */
+  h2_runtime_component_id_t battery_component;
+  const h2_pal_wifi_settings_api_t* wifi_settings;
+  const h2_pal_power_api_t* power;
+  const h2_gizclaw_vtable_t* vtable;
+  void* user;
+  const char* manufacturer;
+  const char* model;
+  const char* hardware_revision;
+  const char* serial;
+  /** Compressed audio ring capacity; zero selects 64 KiB. Passing audio PAL
+   * enables the Ogg/Opus, MP3 and WAV player. Track length is not limited
+   * by this buffer, but its playing time is: 64 KiB is seconds of Opus or
+   * MP3 and under half a second of 44.1 kHz stereo WAV. The fixed ring is
+   * reused between joined probe/range/fallback requests and an already
+   * accepted immediate music-item continuation. Idle, final EOS, error and
+   * stop release it after the producer joins; failed joins retain ownership
+   * for retry and never reset an active producer. */
+  size_t audio_buffer_bytes;
+  /** Start/refill threshold <= ring capacity; zero selects min(16 KiB, ring).
+   * A completed short response starts with the bytes available. */
+  size_t audio_prebuffer_bytes;
+  /** Default firmware channel when the caller omits one. */
+  int32_t firmware_channel;
+  /** Immutable product tool registrations, borrowed until deinit. The SDK
+   * advertises exactly the installed handlers. Unknown IDs, duplicates or
+   * NULL callbacks are invalid. A Service with any device capability adds
+   * its built-in tools and accepts only DEVICE_FIND and SOCIAL_PING from
+   * the product. A Service without device capabilities installs no
+   * built-in tool and, like a standalone Client, may install any valid
+   * ClientTool. */
+  const h2_gizclaw_tool_handler_t* tool_handlers;
+  size_t tool_handler_count;
+  /** Immutable typed HWD instance table borrowed until deinit. IDs must
+   * be unique. The Service adds speaker.main, wifi.main, modem.main and
+   * battery.main when the corresponding capabilities are configured. A separate
+   * RuntimeProfile manifest controls which instances the Server exposes
+   * remotely. */
+  const h2_gizclaw_mhs_device_t* mhs_devices;
+  size_t mhs_device_count;
+  h2_gizclaw_cancel_fn cancel_requested;
+  void* cancel_user;
+  /** Optional shared Lua application directory/installer. Borrowed through
+   * service_deinit; its caller-owned lifetime can span reconnects. LIST is
+   * enabled with this handle, INSTALL needs writable storage (HTTP(S) also
+   * needs HTTP), RUN additionally needs vtable.prepare_lua_app_run. */
+  h2_lua_apps_t* lua_apps;
 } h2_gizclaw_config_t;
 
 #ifdef __cplusplus

@@ -3,7 +3,9 @@
 #include <stdint.h>
 typedef int BaseType_t;
 typedef uint32_t StackType_t;
-typedef struct { unsigned char storage[256]; } StaticTask_t;
+typedef struct {
+  unsigned char storage[256];
+} StaticTask_t;
 #define configMAX_PRIORITIES 16u
 typedef unsigned int UBaseType_t;
 /* Large enough for the host sync test to embed a pthread-backed semaphore. */

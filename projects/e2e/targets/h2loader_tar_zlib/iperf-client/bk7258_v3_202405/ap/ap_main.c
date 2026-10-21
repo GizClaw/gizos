@@ -11,22 +11,20 @@
 #include <stdio.h>
 #include <string.h>
 
-static h2_runtime_t *runtime;
-static const h2_pal_log_api_t *board_log;
-static const h2_pal_uart_io_stream_api_t *console;
+static h2_runtime_t* runtime;
+static const h2_pal_log_api_t* board_log;
+static const h2_pal_uart_io_stream_api_t* console;
 H2_ATOMIC_DEFINE_STATIC(bool, console_writable, false);
 static int console_error;
 
 static int console_result(int rc) {
-  if (rc != H2_PAL_OK && console_error == H2_PAL_OK)
-    console_error = rc;
+  if (rc != H2_PAL_OK && console_error == H2_PAL_OK) console_error = rc;
   return rc;
 }
-static int record(const char *message) {
+static int record(const char* message) {
   if (!h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE))
     return console_result(H2_PAL_ERR_INVALID_STATE);
-  if (!message)
-    return console_result(H2_PAL_ERR_INVALID_ARG);
+  if (!message) return console_result(H2_PAL_ERR_INVALID_ARG);
   char line[1024];
   size_t length = strlen(message);
   if (length == 0 || length > sizeof(line) - 2 || strchr(message, '\r') ||
@@ -37,12 +35,11 @@ static int record(const char *message) {
   line[length++] = '\n';
   size_t written = 0;
   int rc = h2_pal_uart_io_stream_write(console, line, length, &written, 5000u);
-  if (rc == H2_PAL_OK && written != length)
-    rc = H2_PAL_ERR_IO;
+  if (rc == H2_PAL_OK && written != length) rc = H2_PAL_ERR_IO;
   return console_result(rc);
 }
-static int ledger_log(void *user, h2_pal_log_level_t level, const char *scope,
-                      const char *message) {
+static int ledger_log(void* user, h2_pal_log_level_t level, const char* scope,
+                      const char* message) {
   (void)user;
   if (h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE) && scope &&
       strncmp(scope, "iperf", 5u) == 0)
@@ -52,10 +49,9 @@ static int ledger_log(void *user, h2_pal_log_level_t level, const char *scope,
 static const h2_pal_log_vtable_t ledger_vtable = {.write = ledger_log};
 static const h2_pal_log_api_t ledger_api = {.vtable = &ledger_vtable};
 static void hold(void) {
-  for (;;)
-    rtos_delay_milliseconds(1000u);
+  for (;;) rtos_delay_milliseconds(1000u);
 }
-static void fail(const char *stage, int rc) {
+static void fail(const char* stage, int rc) {
   char line[160];
   snprintf(line, sizeof(line),
            "H2_IPERF_CLIENT_FAIL board=bk7258 stage=%s rc=%d", stage, rc);
@@ -67,7 +63,7 @@ static void fail(const char *stage, int rc) {
   }
   hold();
 }
-static void memory(void *user, const char *checkpoint) {
+static void memory(void* user, const char* checkpoint) {
   (void)user;
   h2_bk_platform_resource_stats_t resources = {0};
   int rc = h2_bk_platform_get_resource_stats(&resources);
@@ -87,12 +83,11 @@ static int start_commands(void) {
       runtime, "iperf-client",
       H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI);
 }
-static void run(void *user) {
+static void run(void* user) {
   (void)user;
   rtos_delay_milliseconds(5000u);
   int rc = h2_bk_h2loader_stop_app_iostreamikcp();
-  if (rc != H2_PAL_OK)
-    fail("command-stop", rc);
+  if (rc != H2_PAL_OK) fail("command-stop", rc);
   console = h2_bk_platform_uart_io_stream_api();
   const h2_pal_uart_io_stream_config_t config = {
       .baud_rate = CONFIG_UART_PRINT_BAUD_RATE,
@@ -113,8 +108,7 @@ static void run(void *user) {
     uint32_t started = rtos_get_time();
     while (!bk_uart_is_tx_over(CONFIG_UART_PRINT_PORT)) {
       if ((uint32_t)(rtos_get_time() - started) >= 5000u) {
-        if (rc == H2_PAL_OK)
-          rc = H2_PAL_ERR_TIMEOUT;
+        if (rc == H2_PAL_OK) rc = H2_PAL_ERR_TIMEOUT;
         break;
       }
       rtos_delay_milliseconds(1u);
@@ -125,33 +119,27 @@ static void run(void *user) {
   int restored = start_commands();
   if (restored == H2_PAL_OK)
     h2_atomic_bool_store(&console_writable, true, H2_ATOMIC_RELEASE);
-  if (rc == H2_PAL_OK && console_error != H2_PAL_OK)
-    rc = console_error;
-  if (rc == H2_PAL_OK && restored != H2_PAL_OK)
-    rc = restored;
-  if (rc != H2_PAL_OK)
-    fail("bench-or-console", rc);
-  rc = record("H2_IPERF_CLIENT_PHASE board=bk7258 phase=confirm-begin "
-              "control_restored=1");
-  if (rc != H2_PAL_OK)
-    fail("confirm-log", rc);
+  if (rc == H2_PAL_OK && console_error != H2_PAL_OK) rc = console_error;
+  if (rc == H2_PAL_OK && restored != H2_PAL_OK) rc = restored;
+  if (rc != H2_PAL_OK) fail("bench-or-console", rc);
+  rc = record(
+      "H2_IPERF_CLIENT_PHASE board=bk7258 phase=confirm-begin "
+      "control_restored=1");
+  if (rc != H2_PAL_OK) fail("confirm-log", rc);
   rc = h2_bk_h2loader_confirm_current_app(runtime);
   char line[160];
   snprintf(line, sizeof(line), "H2_IPERF_CLIENT_CONFIRMED board=bk7258 rc=%d",
            rc);
   int logged = record(line);
-  if (rc == H2_PAL_OK)
-    rc = logged;
-  if (rc != H2_PAL_OK)
-    fail("confirm", rc);
+  if (rc == H2_PAL_OK) rc = logged;
+  if (rc != H2_PAL_OK) fail("confirm", rc);
   hold();
 }
-static void entry(void *user) {
+static void entry(void* user) {
   (void)user;
   h2_runtime_config_t config = {0};
   int rc = h2_bk7258_board_runtime_config(&config);
-  if (rc != H2_PAL_OK)
-    fail("board", rc);
+  if (rc != H2_PAL_OK) fail("board", rc);
   /* Bulk iperf receive buffers must leave internal SRAM to Wi-Fi/control RX. */
   config.mem = h2_bk_platform_psram_allocator();
   board_log = config.log;
@@ -162,29 +150,24 @@ static void entry(void *user) {
     fail("runtime", rc);
   }
   rc = start_commands();
-  if (rc != H2_PAL_OK)
-    fail("commands", rc);
+  if (rc != H2_PAL_OK) fail("commands", rc);
   h2_pal_firmware_info_t image = {0};
   rc = h2_pal_firmware_info_get_current(runtime->firmware_info, &image);
-  if (rc != H2_PAL_OK)
-    fail("version", rc);
+  if (rc != H2_PAL_OK) fail("version", rc);
   printf("H2_IPERF_CLIENT_BOOT board=bk7258 version=%s\n", image.version);
   fflush(stdout);
   const h2_pal_task_options_t options = {.name = h2_iperf_client_app_task_name,
                                          .min_stack_size = 32768u};
-  h2_pal_task_t *task = NULL;
+  h2_pal_task_t* task = NULL;
   rc = h2_pal_task_start(runtime->task, &options, run, NULL, &task);
-  if (rc != H2_PAL_OK)
-    fail("runner", rc);
+  if (rc != H2_PAL_OK) fail("runner", rc);
   hold();
 }
 int main(void) {
   int rc = h2_bk_target_task_policy_install();
-  if (rc != H2_PAL_OK)
-    return -1;
+  if (rc != H2_PAL_OK) return -1;
   bk_init();
   rc = h2_bk7258_board_start_entry_task("bk/iperf-client", entry, NULL);
-  if (rc != H2_PAL_OK)
-    fail("entry", rc);
+  if (rc != H2_PAL_OK) fail("entry", rc);
   return 0;
 }

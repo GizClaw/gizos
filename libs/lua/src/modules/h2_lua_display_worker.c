@@ -3,7 +3,7 @@
 
 #include <string.h>
 
-static void copy_rect(h2_lua_display_worker_t *worker,
+static void copy_rect(h2_lua_display_worker_t* worker,
                       h2_lua_display_plan_rect_t rect) {
   size_t width = worker->info.width;
   size_t at = (size_t)rect.top * width + rect.left;
@@ -21,15 +21,16 @@ static void copy_rect(h2_lua_display_worker_t *worker,
 /* The producer cannot change source until this phase publishes PENDING.
  * Thereafter transport reads only pixels, which also becomes the successful
  * retained baseline. Neither copy nor transport accesses Lua or dirty state. */
-static void copy_frame(h2_lua_display_worker_t *worker) {
+static void copy_frame(h2_lua_display_worker_t* worker) {
   if (worker->tiled) {
     int cursor = 0;
     h2_lua_display_plan_rect_t rect;
     while (h2_lua_display_plan_next_tile(worker->tiles, worker->info.width,
-        worker->info.height, worker->gap, &cursor, &rect))
+                                         worker->info.height, worker->gap,
+                                         &cursor, &rect))
       copy_rect(worker, rect);
     size_t tiles = (size_t)((worker->info.width + 15) / 16) *
-                            ((worker->info.height + 15) / 16);
+                   ((worker->info.height + 15) / 16);
     /* Replay the same complete map for transport, including overflow plans. */
     for (size_t i = 0; i < tiles; ++i) worker->tiles[i] &= 1;
   } else {
@@ -40,10 +41,10 @@ static void copy_frame(h2_lua_display_worker_t *worker) {
   h2_atomic_store(&worker->phase, H2_LUA_DISPLAY_PENDING);
 }
 
-static h2_pal_result_t submit_rect(h2_lua_display_worker_t *worker,
+static h2_pal_result_t submit_rect(h2_lua_display_worker_t* worker,
                                    h2_lua_display_plan_rect_t rect) {
-  h2_display_rect_t area = {rect.left, rect.top,
-                            rect.right - rect.left, rect.bottom - rect.top};
+  h2_display_rect_t area = {rect.left, rect.top, rect.right - rect.left,
+                            rect.bottom - rect.top};
   h2_pal_result_t result = (h2_pal_result_t)h2_pal_display_draw_bitmap(
       worker->runtime->display, &area,
       worker->pixels + (size_t)rect.top * worker->info.width + rect.left,
@@ -55,11 +56,12 @@ static h2_pal_result_t submit_rect(h2_lua_display_worker_t *worker,
   return result;
 }
 
-static void execute(h2_lua_display_worker_t *worker) {
-  const h2_pal_display_api_t *display = worker->runtime->display;
+static void execute(h2_lua_display_worker_t* worker) {
+  const h2_pal_display_api_t* display = worker->runtime->display;
   h2_pal_result_t result = H2_PAL_OK;
   if (worker->operation == H2_LUA_DISPLAY_OPEN) {
-    if (!worker->borrowed) result = (h2_pal_result_t)h2_pal_display_open(display);
+    if (!worker->borrowed)
+      result = (h2_pal_result_t)h2_pal_display_open(display);
     if (result == H2_PAL_OK) {
       worker->opened = 1;
       result = (h2_pal_result_t)h2_pal_display_get_info(display, &worker->info);
@@ -71,14 +73,16 @@ static void execute(h2_lua_display_worker_t *worker) {
   } else if (worker->operation == H2_LUA_DISPLAY_FRAME) {
     worker->sent_pixels = worker->sent_rects = 0;
     worker->started_us = worker->completed_us = 0;
-    worker->clock_valid = h2_pal_time_get_monotonic_us(
-        worker->runtime->time, &worker->started_us) == H2_PAL_OK;
+    worker->clock_valid =
+        h2_pal_time_get_monotonic_us(worker->runtime->time,
+                                     &worker->started_us) == H2_PAL_OK;
     copy_frame(worker);
     if (worker->tiled) {
       int cursor = 0;
       h2_lua_display_plan_rect_t rect;
       while (h2_lua_display_plan_next_tile(worker->tiles, worker->info.width,
-          worker->info.height, worker->gap, &cursor, &rect)) {
+                                           worker->info.height, worker->gap,
+                                           &cursor, &rect)) {
         result = submit_rect(worker, rect);
         if (result != H2_PAL_OK) break;
       }
@@ -94,18 +98,19 @@ static void execute(h2_lua_display_worker_t *worker) {
       worker->on_present(worker->present_user, worker->job_id, worker->pixels,
                          worker->info.width, worker->info.height);
     if (h2_pal_time_get_monotonic_us(worker->runtime->time,
-          &worker->completed_us) != H2_PAL_OK ||
-        worker->completed_us < worker->started_us) worker->clock_valid = 0;
+                                     &worker->completed_us) != H2_PAL_OK ||
+        worker->completed_us < worker->started_us)
+      worker->clock_valid = 0;
   }
   worker->result = result;
   if (result != H2_PAL_OK) worker->fault = result;
 }
 
-static void worker_entry(void *context) {
-  h2_lua_display_worker_t *worker = context;
+static void worker_entry(void* context) {
+  h2_lua_display_worker_t* worker = context;
   for (;;) {
-    h2_pal_result_t result = h2_pal_semaphore_take(worker->runtime->sync,
-        worker->wake, H2_PAL_SYNC_WAIT_FOREVER);
+    h2_pal_result_t result = h2_pal_semaphore_take(
+        worker->runtime->sync, worker->wake, H2_PAL_SYNC_WAIT_FOREVER);
     if (result != H2_PAL_OK) {
       /* Do not race the producer reading the previous completion payload. */
       h2_atomic_store(&worker->phase, (int)result);
@@ -127,9 +132,10 @@ static void worker_entry(void *context) {
   }
 }
 
-h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t *worker,
-    const h2_runtime_t *runtime, const h2_pal_mem_api_t *allocator,
-    int borrowed, size_t stack_size) {
+h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t* worker,
+                                           const h2_runtime_t* runtime,
+                                           const h2_pal_mem_api_t* allocator,
+                                           int borrowed, size_t stack_size) {
   memset(worker, 0, sizeof(*worker));
   worker->runtime = runtime;
   worker->allocator = allocator;
@@ -137,17 +143,21 @@ h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t *worker,
   if (h2_atomic_int_init(&worker->phase, H2_LUA_DISPLAY_IDLE) != H2_ATOMIC_OK)
     return H2_PAL_ERR_NO_MEMORY;
   worker->initialized = 1;
-  h2_pal_result_t result = h2_pal_semaphore_create(runtime->sync,
-      &(h2_pal_semaphore_config_t){.name = "$lua/display/wake",
-          .allocator = allocator, .max_count = 1}, &worker->wake);
+  h2_pal_result_t result = h2_pal_semaphore_create(
+      runtime->sync,
+      &(h2_pal_semaphore_config_t){
+          .name = "$lua/display/wake", .allocator = allocator, .max_count = 1},
+      &worker->wake);
   if (result == H2_PAL_OK)
-    result = h2_pal_task_start(runtime->task,
+    result = h2_pal_task_start(
+        runtime->task,
         &(h2_pal_task_options_t){.name = h2_lua_display_task_name,
                                  .min_stack_size = stack_size},
         worker_entry, worker, &worker->task);
   if (result != H2_PAL_OK) {
     if (worker->wake != NULL) {
-      h2_pal_result_t cleanup = h2_pal_semaphore_destroy(runtime->sync, worker->wake);
+      h2_pal_result_t cleanup =
+          h2_pal_semaphore_destroy(runtime->sync, worker->wake);
       if (cleanup != H2_PAL_OK) {
         /* No task started, but the semaphore still owns allocator/context
          * dependencies. Keep initialized storage rooted for checked cleanup. */
@@ -162,32 +172,34 @@ h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t *worker,
   return result;
 }
 
-int h2_lua_display_worker_phase(h2_lua_display_worker_t *worker) {
+int h2_lua_display_worker_phase(h2_lua_display_worker_t* worker) {
   return h2_atomic_load(&worker->phase);
 }
 
-void h2_lua_display_worker_ack(h2_lua_display_worker_t *worker) {
+void h2_lua_display_worker_ack(h2_lua_display_worker_t* worker) {
   int expected = H2_LUA_DISPLAY_DONE;
   (void)h2_atomic_int_compare_exchange(&worker->phase, &expected,
-      H2_LUA_DISPLAY_IDLE, H2_ATOMIC_SEQ_CST, H2_ATOMIC_SEQ_CST);
+                                       H2_LUA_DISPLAY_IDLE, H2_ATOMIC_SEQ_CST,
+                                       H2_ATOMIC_SEQ_CST);
 }
 
-h2_pal_result_t h2_lua_display_worker_post(h2_lua_display_worker_t *worker,
-                                         int operation) {
+h2_pal_result_t h2_lua_display_worker_post(h2_lua_display_worker_t* worker,
+                                           int operation) {
   if (h2_lua_display_worker_phase(worker) != H2_LUA_DISPLAY_IDLE)
     return H2_PAL_ERR_BUSY;
   worker->operation = operation;
   int expected = H2_LUA_DISPLAY_IDLE;
   if (!h2_atomic_int_compare_exchange(&worker->phase, &expected,
-          operation == H2_LUA_DISPLAY_FRAME ? H2_LUA_DISPLAY_COPYING :
-                                              H2_LUA_DISPLAY_PENDING,
-          H2_ATOMIC_SEQ_CST, H2_ATOMIC_SEQ_CST))
+                                      operation == H2_LUA_DISPLAY_FRAME
+                                          ? H2_LUA_DISPLAY_COPYING
+                                          : H2_LUA_DISPLAY_PENDING,
+                                      H2_ATOMIC_SEQ_CST, H2_ATOMIC_SEQ_CST))
     return expected < 0 ? (h2_pal_result_t)expected : H2_PAL_ERR_BUSY;
   /* A failed wake does not prove the task stopped. Keep the mailbox/root. */
   return h2_pal_semaphore_give(worker->runtime->sync, worker->wake);
 }
 
-h2_pal_result_t h2_lua_display_worker_join(h2_lua_display_worker_t *worker) {
+h2_pal_result_t h2_lua_display_worker_join(h2_lua_display_worker_t* worker) {
   if (!worker->initialized) return H2_PAL_OK;
   int phase = h2_lua_display_worker_phase(worker);
   if (phase != H2_LUA_DISPLAY_EXITED && phase >= 0 &&
@@ -196,13 +208,14 @@ h2_pal_result_t h2_lua_display_worker_join(h2_lua_display_worker_t *worker) {
          worker->operation == H2_LUA_DISPLAY_EXIT)))
     return H2_PAL_ERR_BUSY;
   if (worker->task != NULL) {
-    h2_pal_result_t result = h2_pal_task_join(worker->runtime->task, worker->task);
+    h2_pal_result_t result =
+        h2_pal_task_join(worker->runtime->task, worker->task);
     if (result != H2_PAL_OK) return result;
     worker->task = NULL;
   }
   if (worker->wake != NULL) {
-    h2_pal_result_t result = h2_pal_semaphore_destroy(worker->runtime->sync,
-                                                     worker->wake);
+    h2_pal_result_t result =
+        h2_pal_semaphore_destroy(worker->runtime->sync, worker->wake);
     if (result != H2_PAL_OK) return result;
     worker->wake = NULL;
   }

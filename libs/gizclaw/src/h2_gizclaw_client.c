@@ -15,11 +15,11 @@
 
 #define H2_GIZCLAW_RETIRED_STREAM_COUNT 32u
 
-#define H2_GIZCLAW_ASSERT_RPC_METHOD(h2_name, gzc_name)                        \
-  _Static_assert((int)(h2_name) == (int)(gzc_name),                            \
+#define H2_GIZCLAW_ASSERT_RPC_METHOD(h2_name, gzc_name) \
+  _Static_assert((int)(h2_name) == (int)(gzc_name),     \
                  "GizClaw RPC method registry drift: " #h2_name)
-#define H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(name)                                \
-  H2_GIZCLAW_ASSERT_RPC_METHOD(H2_GIZCLAW_RPC_##name,                          \
+#define H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(name)       \
+  H2_GIZCLAW_ASSERT_RPC_METHOD(H2_GIZCLAW_RPC_##name, \
                                gizclaw_rpc_v1_RpcMethod_RPC_METHOD_##name)
 
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(ALL_PING);
@@ -88,9 +88,9 @@ H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_TOOL_V0_INVOKE);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_TOOL_V0_LIST);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_RPC_METHODS_LIST);
 
-#define H2_GIZCLAW_ASSERT_TOOL(name)                                           \
-  _Static_assert((int)H2_GIZCLAW_TOOL_##name ==                                \
-                     (int)gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_##name,        \
+#define H2_GIZCLAW_ASSERT_TOOL(name)                                    \
+  _Static_assert((int)H2_GIZCLAW_TOOL_##name ==                         \
+                     (int)gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_##name, \
                  "ClientTool registry drift")
 H2_GIZCLAW_ASSERT_TOOL(INFO_GET);
 H2_GIZCLAW_ASSERT_TOOL(IDENTIFIERS_GET);
@@ -119,9 +119,9 @@ H2_GIZCLAW_ASSERT_TOOL(LUA_APP_RUN);
 H2_GIZCLAW_ASSERT_TOOL(LUA_APP_UNINSTALL);
 #undef H2_GIZCLAW_ASSERT_TOOL
 
-#define H2_GIZCLAW_ASSERT_RPC_STATUS_SAME(name)                                \
-  _Static_assert((int)(H2_GIZCLAW_RPC_ERROR_##name) ==                         \
-                     (int)(gizclaw_rpc_v1_StatusCode_STATUS_CODE_##name),      \
+#define H2_GIZCLAW_ASSERT_RPC_STATUS_SAME(name)                           \
+  _Static_assert((int)(H2_GIZCLAW_RPC_ERROR_##name) ==                    \
+                     (int)(gizclaw_rpc_v1_StatusCode_STATUS_CODE_##name), \
                  "GizClaw RPC status code drift: " #name)
 H2_GIZCLAW_ASSERT_RPC_STATUS_SAME(OK);
 H2_GIZCLAW_ASSERT_RPC_STATUS_SAME(CANCELLED);
@@ -151,8 +151,8 @@ typedef struct h2_gizclaw_local_channel_state {
   bool create_ordered;
   bool create_reliable;
   bool ready;
-  h2_pal_webrtc_peer_t *peer;
-  h2_pal_webrtc_channel_t *channel;
+  h2_pal_webrtc_peer_t* peer;
+  h2_pal_webrtc_channel_t* channel;
   h2_pal_webrtc_channel_info_t info;
   h2_pal_webrtc_channel_state_t state;
   char label[H2_GIZCLAW_LOCAL_CHANNEL_LABEL_CAPACITY];
@@ -160,9 +160,9 @@ typedef struct h2_gizclaw_local_channel_state {
 } h2_gizclaw_local_channel_state_t;
 
 typedef struct h2_gizclaw_provider_completion {
-  gzc_rtc_channel_t *channel;
+  gzc_rtc_channel_t* channel;
   h2_gizclaw_rpc_response_complete_fn callback;
-  void *user;
+  void* user;
   bool local_closed;
   bool peer_closed;
   bool failed;
@@ -174,23 +174,23 @@ typedef struct h2_gizclaw_provider_completion {
 } h2_gizclaw_provider_completion_t;
 
 typedef struct h2_gizclaw_local_channel {
-  struct h2_gizclaw_local_channel *next;
+  struct h2_gizclaw_local_channel* next;
   h2_atomic_ptr_t live_channel;
-  gzc_rtc_channel_t *channel;
+  gzc_rtc_channel_t* channel;
   bool write_blocked;
   bool close_requested;
 } h2_gizclaw_local_channel_t;
 
 typedef struct h2_gizclaw_tool_binding {
-  h2_gizclaw_client_t *client;
-  const h2_gizclaw_tool_handler_t *handler;
+  h2_gizclaw_client_t* client;
+  const h2_gizclaw_tool_handler_t* handler;
 } h2_gizclaw_tool_binding_t;
 
 struct h2_gizclaw_client {
-  struct h2_gizclaw_client *next_client;
+  struct h2_gizclaw_client* next_client;
   h2_gizclaw_config_t config;
   gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
-  h2_gizclaw_service_t *local_service;
+  h2_gizclaw_service_t* local_service;
   h2_gizclaw_tool_binding_t tool_bindings[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
   gzc_platform_t platform;
   gzc_platform_crypto_t crypto;
@@ -199,30 +199,32 @@ struct h2_gizclaw_client {
   gzc_webrtc_media_vtable_t media;
   gzc_webrtc_callbacks_t gzc_callbacks;
   gzc_rtc_opus_frame_cb opus_frame_callback;
-  void *opus_frame_callback_user;
-  gzc_rtc_peer_t *opus_frame_peer;
+  void* opus_frame_callback_user;
+  gzc_rtc_peer_t* opus_frame_peer;
   h2_atomic_ptr_t local_channels;
-  gzc_rtc_channel_t *remote_service_channels[GZC_RPC_MAX_INBOUND_CHANNELS];
+  gzc_rtc_channel_t* remote_service_channels[GZC_RPC_MAX_INBOUND_CHANNELS];
   bool remote_channel_write_blocked[GZC_RPC_MAX_INBOUND_CHANNELS];
-  h2_pal_webrtc_peer_t *webrtc_peer;
+  h2_pal_webrtc_peer_t* webrtc_peer;
   h2_gizclaw_local_channel_state_t local_channel_state;
-  gzc_rtc_channel_t *provider_channel;
-  h2_gizclaw_provider_completion_t provider_completions[GZC_RPC_MAX_INBOUND_CHANNELS];
-  gzc_client_t *gzc;
-  gzc_event_stream_t *events;
-  h2_gizclaw_conversation_t *active_conversation;
+  gzc_rtc_channel_t* provider_channel;
+  h2_gizclaw_provider_completion_t
+      provider_completions[GZC_RPC_MAX_INBOUND_CHANNELS];
+  gzc_client_t* gzc;
+  gzc_event_stream_t* events;
+  h2_gizclaw_conversation_t* active_conversation;
   h2_gizclaw_client_event_sink_fn event_handler;
-  void *event_handler_user;
+  void* event_handler_user;
   h2_gizclaw_client_downlink_stream_fn downlink_stream;
-  void *downlink_stream_user;
+  void* downlink_stream_user;
   bool pending_client_event;
   h2_gizclaw_client_event_t client_event;
   char event_workspace_name[sizeof(
-      ((gzc_peer_event_t *)0)
+      ((gzc_peer_event_t*)0)
           ->payload.workspace_history_updated.workspace_name)];
   uint64_t next_conversation_stream_sequence;
   /* Bound memory while retaining several rounds of delayed reply boundaries. */
-  char retired_streams[H2_GIZCLAW_RETIRED_STREAM_COUNT][H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES + 1u];
+  char retired_streams[H2_GIZCLAW_RETIRED_STREAM_COUNT]
+                      [H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES + 1u];
   size_t retired_stream_next;
   bool terminal_closed;
   /* Channel messages and media frames received on the Peer. A request that
@@ -232,11 +234,11 @@ struct h2_gizclaw_client {
 };
 
 struct h2_gizclaw_rpc_request {
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_client_t *client;
-  gzc_rpc_request_t *gzc;
+  const h2_pal_mem_api_t* allocator;
+  h2_gizclaw_client_t* client;
+  gzc_rpc_request_t* gzc;
   h2_gizclaw_rpc_stream_fn on_stream_event;
-  void *stream_user;
+  void* stream_user;
   bool saw_stream_response;
   h2_pal_result_t stream_error;
   bool completion_notified;
@@ -244,24 +246,23 @@ struct h2_gizclaw_rpc_request {
   bool sdk_error_seen;
   int sdk_error;
   h2_gizclaw_rpc_complete_fn on_complete;
-  void *complete_user;
+  void* complete_user;
   uint32_t inbound_at_start;
 };
 
-static h2_gizclaw_client_t *s_clients;
+static h2_gizclaw_client_t* s_clients;
 
 #if defined(H2_GIZCLAW_TESTING)
-static h2_gizclaw_client_t *s_test_webrtc_client;
+static h2_gizclaw_client_t* s_test_webrtc_client;
 #endif
 
 h2_pal_result_t h2_gizclaw_result_from_gzc(int result);
-static int rpc_record_sdk_result(h2_gizclaw_rpc_request_t *request, int rc);
+static int rpc_record_sdk_result(h2_gizclaw_rpc_request_t* request, int rc);
 
-static void h2_gizclaw_rpc_complete(void *user, gzc_rpc_request_t *gzc,
+static void h2_gizclaw_rpc_complete(void* user, gzc_rpc_request_t* gzc,
                                     int status) {
-  h2_gizclaw_rpc_request_t *request = user;
-  if (request == NULL || request->gzc != gzc)
-    return;
+  h2_gizclaw_rpc_request_t* request = user;
+  if (request == NULL || request->gzc != gzc) return;
   request->completion_status = status;
   request->completion_notified = true;
   /* ICE keepalives can keep answering after DTLS/SCTP and media stop, so the
@@ -275,13 +276,13 @@ static void h2_gizclaw_rpc_complete(void *user, gzc_rpc_request_t *gzc,
                          h2_gizclaw_result_from_gzc(status));
 }
 
-static h2_gizclaw_client_t *h2_gizclaw_client_for_peer(gzc_rtc_peer_t *peer) {
+static h2_gizclaw_client_t* h2_gizclaw_client_for_peer(gzc_rtc_peer_t* peer) {
   if (peer == NULL) {
     return NULL;
   }
-  for (h2_gizclaw_client_t *client = s_clients; client != NULL;
+  for (h2_gizclaw_client_t* client = s_clients; client != NULL;
        client = client->next_client) {
-    if (client->webrtc_peer == (h2_pal_webrtc_peer_t *)peer) {
+    if (client->webrtc_peer == (h2_pal_webrtc_peer_t*)peer) {
       return client;
     }
   }
@@ -296,31 +297,30 @@ static h2_gizclaw_client_t *h2_gizclaw_client_for_peer(gzc_rtc_peer_t *peer) {
 static h2_gizclaw_test_event_send_fn s_test_event_send;
 static h2_gizclaw_test_event_read_fn s_test_event_read;
 static h2_gizclaw_test_event_close_fn s_test_event_close;
-static void *s_test_event_user;
+static void* s_test_event_user;
 static h2_gizclaw_test_packet_read_fn s_test_packet_read;
-static void *s_test_packet_read_user;
+static void* s_test_packet_read_user;
 static h2_gizclaw_test_client_poll_fn s_test_client_poll;
-static void *s_test_client_poll_user;
+static void* s_test_client_poll_user;
 #endif
 
-const h2_pal_mem_api_t *
-h2_gizclaw_client_allocator_internal(h2_gizclaw_client_t *client) {
+const h2_pal_mem_api_t* h2_gizclaw_client_allocator_internal(
+    h2_gizclaw_client_t* client) {
   return client != NULL ? client->config.allocator : NULL;
 }
 
-int h2_gizclaw_client_monotonic_ms_internal(h2_gizclaw_client_t *client,
-                                            uint64_t *out_ms) {
-  if (client == NULL || out_ms == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+int h2_gizclaw_client_monotonic_ms_internal(h2_gizclaw_client_t* client,
+                                            uint64_t* out_ms) {
+  if (client == NULL || out_ms == NULL) return H2_PAL_ERR_INVALID_ARG;
   return h2_pal_time_get_monotonic_ms(client->config.time, out_ms);
 }
 
-gzc_client_t *h2_gizclaw_client_gzc_internal(h2_gizclaw_client_t *client) {
+gzc_client_t* h2_gizclaw_client_gzc_internal(h2_gizclaw_client_t* client) {
   return client != NULL ? client->gzc : NULL;
 }
 
-int h2_gizclaw_event_stream_send_internal(gzc_event_stream_t *stream,
-                                          const gzc_peer_event_t *event) {
+int h2_gizclaw_event_stream_send_internal(gzc_event_stream_t* stream,
+                                          const gzc_peer_event_t* event) {
 #if defined(H2_GIZCLAW_TESTING)
   if (s_test_event_send != NULL) {
     return s_test_event_send(s_test_event_user, stream, event);
@@ -329,9 +329,9 @@ int h2_gizclaw_event_stream_send_internal(gzc_event_stream_t *stream,
   return gzc_event_stream_send(stream, event);
 }
 
-int h2_gizclaw_event_stream_read_internal(gzc_event_stream_t *stream,
+int h2_gizclaw_event_stream_read_internal(gzc_event_stream_t* stream,
                                           int timeout_ms,
-                                          gzc_peer_event_t *out_event) {
+                                          gzc_peer_event_t* out_event) {
 #if defined(H2_GIZCLAW_TESTING)
   if (s_test_event_read != NULL) {
     return s_test_event_read(s_test_event_user, stream, timeout_ms, out_event);
@@ -340,9 +340,9 @@ int h2_gizclaw_event_stream_read_internal(gzc_event_stream_t *stream,
   return gzc_event_stream_read(stream, timeout_ms, out_event);
 }
 
-int h2_gizclaw_client_read_packet_internal(gzc_client_t *client, int timeout_ms,
-                                           uint8_t *out_protocol,
-                                           gzc_buf_t *out_payload) {
+int h2_gizclaw_client_read_packet_internal(gzc_client_t* client, int timeout_ms,
+                                           uint8_t* out_protocol,
+                                           gzc_buf_t* out_payload) {
 #if defined(H2_GIZCLAW_TESTING)
   if (s_test_packet_read != NULL) {
     return s_test_packet_read(s_test_packet_read_user, client, timeout_ms,
@@ -352,7 +352,7 @@ int h2_gizclaw_client_read_packet_internal(gzc_client_t *client, int timeout_ms,
   return gzc_client_read_packet(client, timeout_ms, out_protocol, out_payload);
 }
 
-static void h2_gizclaw_event_stream_close_internal(gzc_event_stream_t *stream) {
+static void h2_gizclaw_event_stream_close_internal(gzc_event_stream_t* stream) {
   if (stream == NULL) {
     return;
   }
@@ -366,9 +366,8 @@ static void h2_gizclaw_event_stream_close_internal(gzc_event_stream_t *stream) {
 }
 
 bool h2_gizclaw_client_stream_retired_internal(
-    const h2_gizclaw_client_t *client, const char *stream_id) {
-  if (client == NULL || stream_id == NULL || stream_id[0] == '\0')
-    return false;
+    const h2_gizclaw_client_t* client, const char* stream_id) {
+  if (client == NULL || stream_id == NULL || stream_id[0] == '\0') return false;
   for (size_t i = 0u; i < H2_GIZCLAW_RETIRED_STREAM_COUNT; ++i) {
     const size_t len = strlen(client->retired_streams[i]);
     if (len != 0u && strncmp(stream_id, client->retired_streams[i], len) == 0 &&
@@ -378,23 +377,23 @@ bool h2_gizclaw_client_stream_retired_internal(
   return false;
 }
 
-void h2_gizclaw_client_retire_stream_internal(
-    h2_gizclaw_client_t *client, const char *stream_id) {
+void h2_gizclaw_client_retire_stream_internal(h2_gizclaw_client_t* client,
+                                              const char* stream_id) {
   if (client == NULL || stream_id == NULL || stream_id[0] == '\0' ||
       h2_gizclaw_client_stream_retired_internal(client, stream_id))
     return;
   const size_t capacity = sizeof(client->retired_streams[0]);
   const size_t len = strlen(stream_id);
-  if (len >= capacity)
-    return;
+  if (len >= capacity) return;
   memcpy(client->retired_streams[client->retired_stream_next], stream_id,
          len + 1u);
-  client->retired_stream_next = (client->retired_stream_next + 1u) % H2_GIZCLAW_RETIRED_STREAM_COUNT;
+  client->retired_stream_next =
+      (client->retired_stream_next + 1u) % H2_GIZCLAW_RETIRED_STREAM_COUNT;
 }
 
 int h2_gizclaw_client_conversation_acquire_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_conversation_t *conversation,
-    gzc_event_stream_t **out_events, uint64_t *out_stream_sequence) {
+    h2_gizclaw_client_t* client, h2_gizclaw_conversation_t* conversation,
+    gzc_event_stream_t** out_events, uint64_t* out_stream_sequence) {
   if (client == NULL || conversation == NULL || out_events == NULL ||
       out_stream_sequence == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -415,20 +414,20 @@ int h2_gizclaw_client_conversation_acquire_internal(
 }
 
 bool h2_gizclaw_client_conversation_active_internal(
-    const h2_gizclaw_client_t *client,
-    const h2_gizclaw_conversation_t *conversation) {
+    const h2_gizclaw_client_t* client,
+    const h2_gizclaw_conversation_t* conversation) {
   return client != NULL && conversation != NULL && client->events != NULL &&
          client->active_conversation == conversation;
 }
 
 void h2_gizclaw_client_conversation_release_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_conversation_t *conversation) {
+    h2_gizclaw_client_t* client, h2_gizclaw_conversation_t* conversation) {
   if (client != NULL && client->active_conversation == conversation) {
     client->active_conversation = NULL;
   }
 }
 
-static void h2_gizclaw_release_event_handle(h2_gizclaw_client_t *client) {
+static void h2_gizclaw_release_event_handle(h2_gizclaw_client_t* client) {
   if (client == NULL) {
     return;
   }
@@ -446,7 +445,7 @@ static void h2_gizclaw_release_event_handle(h2_gizclaw_client_t *client) {
 }
 
 void h2_gizclaw_client_event_failure_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_conversation_t *conversation) {
+    h2_gizclaw_client_t* client, h2_gizclaw_conversation_t* conversation) {
   if (client == NULL || client->active_conversation != conversation) {
     return;
   }
@@ -455,16 +454,15 @@ void h2_gizclaw_client_event_failure_internal(
 }
 
 void h2_gizclaw_client_event_stream_failure_internal(
-    h2_gizclaw_client_t *client) {
-  if (client == NULL)
-    return;
+    h2_gizclaw_client_t* client) {
+  if (client == NULL) return;
   client->terminal_closed = true;
   h2_gizclaw_release_event_handle(client);
 }
 
-static int dispatch_pending_client_event(h2_gizclaw_client_t *client,
+static int dispatch_pending_client_event(h2_gizclaw_client_t* client,
                                          h2_gizclaw_client_event_fn on_event,
-                                         void *event_user) {
+                                         void* event_user) {
   h2_pal_result_t rc = H2_PAL_OK;
   if (on_event != NULL)
     on_event(event_user, &client->client_event);
@@ -474,17 +472,15 @@ static int dispatch_pending_client_event(h2_gizclaw_client_t *client,
   if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
     return H2_PAL_ERR_WOULD_BLOCK;
   client->pending_client_event = false;
-  if (rc != H2_PAL_OK)
-    h2_gizclaw_client_event_stream_failure_internal(client);
+  if (rc != H2_PAL_OK) h2_gizclaw_client_event_stream_failure_internal(client);
   return rc;
 }
 
-int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
+int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t* client,
                                      int timeout_ms,
                                      h2_gizclaw_client_event_fn on_event,
-                                     void *event_user) {
-  if (client == NULL || timeout_ms < 0)
-    return H2_PAL_ERR_INVALID_ARG;
+                                     void* event_user) {
+  if (client == NULL || timeout_ms < 0) return H2_PAL_ERR_INVALID_ARG;
   if (client->terminal_closed || client->events == NULL)
     return H2_PAL_ERR_CLOSED;
   if (client->pending_client_event)
@@ -527,10 +523,9 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
     client->pending_client_event = true;
     return dispatch_pending_client_event(client, on_event, event_user);
   }
-  const bool accepted =
-      client->active_conversation != NULL &&
-      h2_gizclaw_conversation_accepts_peer_event_internal(
-          client->active_conversation, &peer_event);
+  const bool accepted = client->active_conversation != NULL &&
+                        h2_gizclaw_conversation_accepts_peer_event_internal(
+                            client->active_conversation, &peer_event);
   if (accepted) {
     h2_gizclaw_conversation_enqueue_peer_event_internal(
         client->active_conversation, &peer_event);
@@ -549,8 +544,9 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
     char message[H2_PAL_LOG_MESSAGE_MAX];
     const int prefix_len = snprintf(
-        message, sizeof(message), "event=peer_read type=%d active=%d accepted=%d ",
-        (int)peer_event.type, client->active_conversation != NULL, accepted);
+        message, sizeof(message),
+        "event=peer_read type=%d active=%d accepted=%d ", (int)peer_event.type,
+        client->active_conversation != NULL, accepted);
     if (prefix_len > 0 && (size_t)prefix_len < sizeof(message) &&
         client->active_conversation != NULL)
       h2_gizclaw_conversation_describe_peer_event_internal(
@@ -565,31 +561,29 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
 }
 
 int h2_gizclaw_client_set_event_handler(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_event_sink_fn on_event,
-    void *event_user) {
-  if (client == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    h2_gizclaw_client_t* client, h2_gizclaw_client_event_sink_fn on_event,
+    void* event_user) {
+  if (client == NULL) return H2_PAL_ERR_INVALID_ARG;
   client->event_handler = on_event;
   client->event_handler_user = event_user;
   return H2_PAL_OK;
 }
 
 void h2_gizclaw_client_set_downlink_stream_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_downlink_stream_fn on_stream,
-    void *user) {
-  if (client == NULL)
-    return;
+    h2_gizclaw_client_t* client, h2_gizclaw_client_downlink_stream_fn on_stream,
+    void* user) {
+  if (client == NULL) return;
   client->downlink_stream = on_stream;
   client->downlink_stream_user = user;
 }
 
-static bool h2_gizclaw_is_canceled(const h2_gizclaw_client_t *client) {
+static bool h2_gizclaw_is_canceled(const h2_gizclaw_client_t* client) {
   return client != NULL && client->config.cancel_requested != NULL &&
          client->config.cancel_requested(client->config.cancel_user);
 }
 
-static int h2_gzc_http_canceled(void *user) {
-  return h2_gizclaw_is_canceled((const h2_gizclaw_client_t *)user) ? 1 : 0;
+static int h2_gzc_http_canceled(void* user) {
+  return h2_gizclaw_is_canceled((const h2_gizclaw_client_t*)user) ? 1 : 0;
 }
 
 static gzc_str_t gzc_str_from_h2(h2_gizclaw_str_t str) {
@@ -598,24 +592,24 @@ static gzc_str_t gzc_str_from_h2(h2_gizclaw_str_t str) {
 
 h2_pal_result_t h2_gizclaw_result_from_gzc(int result) {
   switch (result) {
-  case GZC_OK:
-    return H2_PAL_OK;
-  case GZC_ERR_INVALID_ARGUMENT:
-    return H2_PAL_ERR_INVALID_ARG;
-  case GZC_ERR_NO_MEMORY:
-    return H2_PAL_ERR_NO_MEMORY;
-  case GZC_ERR_TIMEOUT:
-    return H2_PAL_ERR_TIMEOUT;
-  case GZC_ERR_CLOSED:
-    return H2_PAL_ERR_CLOSED;
-  case GZC_ERR_UNSUPPORTED:
-    return H2_PAL_ERR_UNSUPPORTED;
-  case GZC_ERR_WOULD_BLOCK:
-    return H2_PAL_ERR_WOULD_BLOCK;
-  case GZC_ERR_CHANNEL_LIMIT:
-    return H2_PAL_ERR_BUSY;
-  default:
-    return H2_PAL_ERR_IO;
+    case GZC_OK:
+      return H2_PAL_OK;
+    case GZC_ERR_INVALID_ARGUMENT:
+      return H2_PAL_ERR_INVALID_ARG;
+    case GZC_ERR_NO_MEMORY:
+      return H2_PAL_ERR_NO_MEMORY;
+    case GZC_ERR_TIMEOUT:
+      return H2_PAL_ERR_TIMEOUT;
+    case GZC_ERR_CLOSED:
+      return H2_PAL_ERR_CLOSED;
+    case GZC_ERR_UNSUPPORTED:
+      return H2_PAL_ERR_UNSUPPORTED;
+    case GZC_ERR_WOULD_BLOCK:
+      return H2_PAL_ERR_WOULD_BLOCK;
+    case GZC_ERR_CHANNEL_LIMIT:
+      return H2_PAL_ERR_BUSY;
+    default:
+      return H2_PAL_ERR_IO;
   }
 }
 
@@ -625,23 +619,24 @@ int h2_gizclaw_provider_result_to_gzc(int result) {
              : GZC_ERR_RPC;
 }
 
-static h2_gizclaw_provider_completion_t *provider_completion_for_channel(
-    h2_gizclaw_client_t *client, gzc_rtc_channel_t *channel) {
+static h2_gizclaw_provider_completion_t* provider_completion_for_channel(
+    h2_gizclaw_client_t* client, gzc_rtc_channel_t* channel) {
   for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
-    h2_gizclaw_provider_completion_t *entry = &client->provider_completions[i];
-    if (entry->callback != NULL && entry->channel == channel)
-      return entry;
+    h2_gizclaw_provider_completion_t* entry = &client->provider_completions[i];
+    if (entry->callback != NULL && entry->channel == channel) return entry;
   }
   return NULL;
 }
 
 /* Observe only bytes accepted by PAL. SDK writes may split frame headers or
- * payloads anywhere; an accepted EOS proves this channel's response finished. */
-static void provider_completion_sent(h2_gizclaw_provider_completion_t *entry,
-                                     const uint8_t *data, size_t len) {
+ * payloads anywhere; an accepted EOS proves this channel's response finished.
+ */
+static void provider_completion_sent(h2_gizclaw_provider_completion_t* entry,
+                                     const uint8_t* data, size_t len) {
   while (len != 0u) {
     if (entry->payload_remaining != 0u) {
-      size_t count = len < entry->payload_remaining ? len : entry->payload_remaining;
+      size_t count =
+          len < entry->payload_remaining ? len : entry->payload_remaining;
       entry->payload_remaining -= count;
       data += count;
       len -= count;
@@ -654,20 +649,23 @@ static void provider_completion_sent(h2_gizclaw_provider_completion_t *entry,
                                  ((size_t)entry->frame_header[1] << 8);
       gzc_rpc_frame_t frame;
       if (gzc_rpc_frame_decode(entry->frame_header, sizeof(entry->frame_header),
-                               &frame) == GZC_OK && frame.type == GZC_RPC_FRAME_EOS)
+                               &frame) == GZC_OK &&
+          frame.type == GZC_RPC_FRAME_EOS)
         entry->response_sent = true;
       entry->header_used = 0u;
     }
   }
 }
 
-static void dispatch_provider_completions(h2_gizclaw_client_t *client, int result) {
+static void dispatch_provider_completions(h2_gizclaw_client_t* client,
+                                          int result) {
   uint64_t now = 0u;
-  const int clock_result = h2_pal_time_get_monotonic_ms(client->config.time, &now);
+  const int clock_result =
+      h2_pal_time_get_monotonic_ms(client->config.time, &now);
   for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
-    h2_gizclaw_provider_completion_t *entry = &client->provider_completions[i];
+    h2_gizclaw_provider_completion_t* entry = &client->provider_completions[i];
     const bool expired = clock_result == H2_PAL_OK &&
-        entry->deadline_ms != 0u && now >= entry->deadline_ms;
+                         entry->deadline_ms != 0u && now >= entry->deadline_ms;
     if (entry->callback == NULL ||
         (result != H2_PAL_ERR_CLOSED && clock_result == H2_PAL_OK &&
          !entry->failed && !expired &&
@@ -675,46 +673,45 @@ static void dispatch_provider_completions(h2_gizclaw_client_t *client, int resul
       continue;
     const h2_gizclaw_provider_completion_t done = *entry;
     memset(entry, 0, sizeof(*entry));
-    const int completion_result = result != H2_PAL_ERR_CLOSED &&
-        clock_result == H2_PAL_OK &&
-        !done.failed && !expired && done.local_closed && done.peer_closed &&
-        done.response_sent
-        ? H2_PAL_OK
+    const int completion_result =
+        result != H2_PAL_ERR_CLOSED && clock_result == H2_PAL_OK &&
+                !done.failed && !expired && done.local_closed &&
+                done.peer_closed && done.response_sent
+            ? H2_PAL_OK
         : result == H2_PAL_ERR_CLOSED ? result
-        : clock_result != H2_PAL_OK ? clock_result
-        : expired ? H2_PAL_ERR_TIMEOUT
-        : result != H2_PAL_OK ? result : H2_PAL_ERR_CLOSED;
+        : clock_result != H2_PAL_OK   ? clock_result
+        : expired                     ? H2_PAL_ERR_TIMEOUT
+        : result != H2_PAL_OK         ? result
+                                      : H2_PAL_ERR_CLOSED;
     done.callback(done.user, completion_result);
   }
 }
 
-static int h2_gizclaw_tool_bridge(void *userdata, gzc_str_t request_payload,
+static int h2_gizclaw_tool_bridge(void* userdata, gzc_str_t request_payload,
                                   gzc_rpc_provider_respond_fn respond,
-                                  void *respond_userdata) {
-  h2_gizclaw_tool_binding_t *binding = userdata;
-  h2_gizclaw_client_t *client = binding->client;
-  const h2_gizclaw_tool_handler_t *handler = binding->handler;
-  if (!respond)
-    return GZC_ERR_INVALID_ARGUMENT;
+                                  void* respond_userdata) {
+  h2_gizclaw_tool_binding_t* binding = userdata;
+  h2_gizclaw_client_t* client = binding->client;
+  const h2_gizclaw_tool_handler_t* handler = binding->handler;
+  if (!respond) return GZC_ERR_INVALID_ARGUMENT;
   h2_gizclaw_rpc_provider_response_t response = {0};
   int rc = handler->invoke(
       handler->user, handler->tool,
-      (h2_gizclaw_rpc_bytes_t){(const uint8_t *)request_payload.data,
+      (h2_gizclaw_rpc_bytes_t){(const uint8_t*)request_payload.data,
                                request_payload.len},
       &response);
-  if (rc != H2_PAL_OK)
-    return h2_gizclaw_provider_result_to_gzc(rc);
+  if (rc != H2_PAL_OK) return h2_gizclaw_provider_result_to_gzc(rc);
   const gzc_rpc_provider_response_t gzc_response = {
       .payload = response.payload.data,
       .payload_len = response.payload.len,
       .has_error = response.has_error,
       .error_code = response.error_code,
-      .error_message =
-          gzc_str_from_parts((const char *)response.error_message.data,
-                             response.error_message.len),
+      .error_message = gzc_str_from_parts(
+          (const char*)response.error_message.data, response.error_message.len),
   };
-  h2_gizclaw_provider_completion_t *completion = NULL;
-  const bool drain = h2_gizclaw_local_network_response_needs_drain_internal(&response);
+  h2_gizclaw_provider_completion_t* completion = NULL;
+  const bool drain =
+      h2_gizclaw_local_network_response_needs_drain_internal(&response);
   if (response.on_complete != NULL && drain) {
     for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
       if (client->provider_completions[i].callback == NULL) {
@@ -722,58 +719,67 @@ static int h2_gizclaw_tool_bridge(void *userdata, gzc_str_t request_payload,
         break;
       }
     }
-    if (completion == NULL || client->provider_channel == NULL || response.has_error) {
+    if (completion == NULL || client->provider_channel == NULL ||
+        response.has_error) {
       response.on_complete(response.complete_user, H2_PAL_ERR_INVALID_STATE);
       return GZC_ERR_RPC;
     }
-    *completion = (h2_gizclaw_provider_completion_t){
-        .channel = client->provider_channel,
-        .callback = response.on_complete, .user = response.complete_user};
+    *completion =
+        (h2_gizclaw_provider_completion_t){.channel = client->provider_channel,
+                                           .callback = response.on_complete,
+                                           .user = response.complete_user};
     uint64_t now = 0u;
-    const int clock_result = h2_pal_time_get_monotonic_ms(client->config.time, &now);
+    const int clock_result =
+        h2_pal_time_get_monotonic_ms(client->config.time, &now);
     if (clock_result != H2_PAL_OK) {
       memset(completion, 0, sizeof(*completion));
       response.on_complete(response.complete_user, clock_result);
       return h2_gizclaw_provider_result_to_gzc(clock_result);
     }
     const uint64_t budget = (uint64_t)(client->config.write_timeout_ms > 0
-        ? client->config.write_timeout_ms : client->config.connect_timeout_ms);
-    completion->deadline_ms = now > UINT64_MAX - budget ? UINT64_MAX : now + budget;
+                                           ? client->config.write_timeout_ms
+                                           : client->config.connect_timeout_ms);
+    completion->deadline_ms =
+        now > UINT64_MAX - budget ? UINT64_MAX : now + budget;
   }
   rc = respond(respond_userdata, &gzc_response);
   h2_gizclaw_local_network_response_copied_internal(&response);
   if (!drain && response.on_complete)
-    response.on_complete(response.complete_user, response.has_error
-        ? H2_PAL_ERR_INVALID_STATE : h2_gizclaw_result_from_gzc(rc));
-  if (completion != NULL && rc != GZC_OK)
-    completion->failed = true;
+    response.on_complete(response.complete_user,
+                         response.has_error ? H2_PAL_ERR_INVALID_STATE
+                                            : h2_gizclaw_result_from_gzc(rc));
+  if (completion != NULL && rc != GZC_OK) completion->failed = true;
   return rc;
 }
 
-static int h2_gizclaw_mhs_bridge(void *userdata, int method, gzc_str_t payload,
+static int h2_gizclaw_mhs_bridge(void* userdata, int method, gzc_str_t payload,
                                  gzc_rpc_provider_respond_fn respond,
-                                 void *respond_userdata) {
-  h2_gizclaw_client_t *client = userdata;
+                                 void* respond_userdata) {
+  h2_gizclaw_client_t* client = userdata;
   h2_gizclaw_rpc_provider_response_t response = {0};
-  uint8_t *storage = NULL;
-  int rc = h2_gizclaw_is_canceled(client)
-               ? H2_PAL_ERR_CLOSED
-               : client->local_service
-               ? h2_gizclaw_local_network_mhs_internal(client->local_service, method,
-                     (h2_gizclaw_rpc_bytes_t){(const uint8_t *)payload.data, payload.len}, &response)
-               : h2_gizclaw_mhs_request_internal(
-                     client->config.mhs_devices, client->config.mhs_device_count,
-                     method == H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE,
-                     client->config.allocator,
-                     (h2_gizclaw_rpc_bytes_t){(const uint8_t *)payload.data,
-                                              payload.len},
-                     &response, &storage);
-  gzc_rpc_provider_response_t result = {.payload = response.payload.data,
-                                        .payload_len = response.payload.len,
-                                        .has_error = response.has_error,
-                                        .error_code = response.error_code,
-                                        .error_message = {(const char *)response.error_message.data,
-                                                          response.error_message.len}};
+  uint8_t* storage = NULL;
+  int rc =
+      h2_gizclaw_is_canceled(client) ? H2_PAL_ERR_CLOSED
+      : client->local_service
+          ? h2_gizclaw_local_network_mhs_internal(
+                client->local_service, method,
+                (h2_gizclaw_rpc_bytes_t){(const uint8_t*)payload.data,
+                                         payload.len},
+                &response)
+          : h2_gizclaw_mhs_request_internal(
+                client->config.mhs_devices, client->config.mhs_device_count,
+                method == H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE,
+                client->config.allocator,
+                (h2_gizclaw_rpc_bytes_t){(const uint8_t*)payload.data,
+                                         payload.len},
+                &response, &storage);
+  gzc_rpc_provider_response_t result = {
+      .payload = response.payload.data,
+      .payload_len = response.payload.len,
+      .has_error = response.has_error,
+      .error_code = response.error_code,
+      .error_message = {(const char*)response.error_message.data,
+                        response.error_message.len}};
   if (rc != H2_PAL_OK) {
     result.has_error = true;
     result.error_code = h2_gizclaw_mhs_error_internal(rc);
@@ -781,20 +787,21 @@ static int h2_gizclaw_mhs_bridge(void *userdata, int method, gzc_str_t payload,
   int result_rc = respond(respond_userdata, &result);
   h2_gizclaw_local_network_response_copied_internal(&response);
   if (response.on_complete)
-    response.on_complete(response.complete_user, h2_gizclaw_result_from_gzc(result_rc));
+    response.on_complete(response.complete_user,
+                         h2_gizclaw_result_from_gzc(result_rc));
   h2_pal_mem_free(client->config.allocator, storage);
   return result_rc;
 }
 
 static bool h2_gizclaw_gzc_str_has_prefix_cstr(gzc_str_t value,
-                                               const char *prefix) {
+                                               const char* prefix) {
   size_t prefix_len = strlen(prefix);
   return value.data != NULL && value.len >= prefix_len &&
          memcmp(value.data, prefix, prefix_len) == 0;
 }
 
-static int h2_gizclaw_remote_service_index(h2_gizclaw_client_t *client,
-                                           gzc_rtc_channel_t *channel) {
+static int h2_gizclaw_remote_service_index(h2_gizclaw_client_t* client,
+                                           gzc_rtc_channel_t* channel) {
   if (client == NULL || channel == NULL) {
     return -1;
   }
@@ -806,12 +813,12 @@ static int h2_gizclaw_remote_service_index(h2_gizclaw_client_t *client,
   return -1;
 }
 
-static h2_gizclaw_local_channel_t *h2_gizclaw_local_channel_find(
-    h2_gizclaw_client_t *client, gzc_rtc_channel_t *channel) {
-  for (h2_gizclaw_local_channel_t *entry = h2_atomic_load(&client->local_channels);
+static h2_gizclaw_local_channel_t* h2_gizclaw_local_channel_find(
+    h2_gizclaw_client_t* client, gzc_rtc_channel_t* channel) {
+  for (h2_gizclaw_local_channel_t* entry =
+           h2_atomic_load(&client->local_channels);
        entry != NULL; entry = entry->next) {
-    if (entry->channel == channel)
-      return entry;
+    if (entry->channel == channel) return entry;
   }
   return NULL;
 }
@@ -819,12 +826,12 @@ static h2_gizclaw_local_channel_t *h2_gizclaw_local_channel_find(
 /* Other clients can inspect this registry while resolving an SDK handle.
  * Publish stable nodes; reuse their slots and retain storage until deinit. */
 static int h2_gizclaw_reserve_local_channel(
-    h2_gizclaw_client_t *client, h2_gizclaw_local_channel_t **out_entry) {
-  h2_gizclaw_local_channel_t *entry = h2_gizclaw_local_channel_find(client, NULL);
+    h2_gizclaw_client_t* client, h2_gizclaw_local_channel_t** out_entry) {
+  h2_gizclaw_local_channel_t* entry =
+      h2_gizclaw_local_channel_find(client, NULL);
   if (entry == NULL) {
     entry = h2_pal_mem_alloc(client->config.allocator, sizeof(*entry));
-    if (entry == NULL)
-      return GZC_ERR_NO_MEMORY;
+    if (entry == NULL) return GZC_ERR_NO_MEMORY;
     *entry = (h2_gizclaw_local_channel_t){0};
     if (h2_atomic_ptr_init(&entry->live_channel, NULL) != H2_ATOMIC_OK) {
       h2_pal_mem_free(client->config.allocator, entry);
@@ -837,11 +844,11 @@ static int h2_gizclaw_reserve_local_channel(
   return GZC_OK;
 }
 
-static void h2_gizclaw_unmark_local_channel(h2_gizclaw_client_t *client,
-                                            gzc_rtc_channel_t *channel) {
-  if (client == NULL || channel == NULL)
-    return;
-  h2_gizclaw_local_channel_t *entry = h2_gizclaw_local_channel_find(client, channel);
+static void h2_gizclaw_unmark_local_channel(h2_gizclaw_client_t* client,
+                                            gzc_rtc_channel_t* channel) {
+  if (client == NULL || channel == NULL) return;
+  h2_gizclaw_local_channel_t* entry =
+      h2_gizclaw_local_channel_find(client, channel);
   if (entry != NULL) {
     h2_atomic_store(&entry->live_channel, NULL);
     entry->channel = NULL;
@@ -850,8 +857,8 @@ static void h2_gizclaw_unmark_local_channel(h2_gizclaw_client_t *client,
   }
 }
 
-static bool h2_gizclaw_mark_remote_service(h2_gizclaw_client_t *client,
-                                           gzc_rtc_channel_t *channel) {
+static bool h2_gizclaw_mark_remote_service(h2_gizclaw_client_t* client,
+                                           gzc_rtc_channel_t* channel) {
   if (client == NULL || channel == NULL) {
     return false;
   }
@@ -867,8 +874,8 @@ static bool h2_gizclaw_mark_remote_service(h2_gizclaw_client_t *client,
   return false;
 }
 
-static void h2_gizclaw_unmark_remote_service(h2_gizclaw_client_t *client,
-                                             gzc_rtc_channel_t *channel) {
+static void h2_gizclaw_unmark_remote_service(h2_gizclaw_client_t* client,
+                                             gzc_rtc_channel_t* channel) {
   int index = h2_gizclaw_remote_service_index(client, channel);
   if (index >= 0) {
     client->remote_service_channels[index] = NULL;
@@ -876,55 +883,53 @@ static void h2_gizclaw_unmark_remote_service(h2_gizclaw_client_t *client,
   }
 }
 
-static bool *h2_gizclaw_channel_write_blocked(h2_gizclaw_client_t *client,
-                                              gzc_rtc_channel_t *channel) {
-  h2_gizclaw_local_channel_t *entry = h2_gizclaw_local_channel_find(client, channel);
-  if (entry != NULL)
-    return &entry->write_blocked;
+static bool* h2_gizclaw_channel_write_blocked(h2_gizclaw_client_t* client,
+                                              gzc_rtc_channel_t* channel) {
+  h2_gizclaw_local_channel_t* entry =
+      h2_gizclaw_local_channel_find(client, channel);
+  if (entry != NULL) return &entry->write_blocked;
   int index = h2_gizclaw_remote_service_index(client, channel);
   return index >= 0 ? &client->remote_channel_write_blocked[index] : NULL;
 }
 
-static void h2_gzc_writable(h2_gizclaw_client_t *client,
-                            h2_pal_webrtc_peer_t *peer) {
-  if (client == NULL)
-    return;
-  for (h2_gizclaw_local_channel_t *entry = h2_atomic_load(&client->local_channels);
+static void h2_gzc_writable(h2_gizclaw_client_t* client,
+                            h2_pal_webrtc_peer_t* peer) {
+  if (client == NULL) return;
+  for (h2_gizclaw_local_channel_t* entry =
+           h2_atomic_load(&client->local_channels);
        entry != NULL; entry = entry->next) {
-    gzc_rtc_channel_t *channel = entry->channel;
+    gzc_rtc_channel_t* channel = entry->channel;
     if (channel == NULL || entry->close_requested || !entry->write_blocked)
       continue;
     entry->write_blocked = false;
     if (client->gzc_callbacks.on_channel_buffered_amount_low != NULL)
       client->gzc_callbacks.on_channel_buffered_amount_low(
-          client->gzc_callbacks.userdata, (gzc_rtc_peer_t *)peer, channel);
+          client->gzc_callbacks.userdata, (gzc_rtc_peer_t*)peer, channel);
   }
   for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
-    gzc_rtc_channel_t *channel = client->remote_service_channels[i];
-    if (channel == NULL || !client->remote_channel_write_blocked[i])
-      continue;
+    gzc_rtc_channel_t* channel = client->remote_service_channels[i];
+    if (channel == NULL || !client->remote_channel_write_blocked[i]) continue;
     client->remote_channel_write_blocked[i] = false;
     if (client->gzc_callbacks.on_channel_buffered_amount_low != NULL)
       client->gzc_callbacks.on_channel_buffered_amount_low(
-          client->gzc_callbacks.userdata, (gzc_rtc_peer_t *)peer, channel);
+          client->gzc_callbacks.userdata, (gzc_rtc_peer_t*)peer, channel);
   }
 }
 
-static bool h2_gizclaw_channel_is_live(h2_gizclaw_client_t *client,
-                                       gzc_rtc_channel_t *channel) {
-  if (client == NULL || channel == NULL)
-    return false;
-  for (h2_gizclaw_local_channel_t *entry = h2_atomic_load(&client->local_channels);
+static bool h2_gizclaw_channel_is_live(h2_gizclaw_client_t* client,
+                                       gzc_rtc_channel_t* channel) {
+  if (client == NULL || channel == NULL) return false;
+  for (h2_gizclaw_local_channel_t* entry =
+           h2_atomic_load(&client->local_channels);
        entry != NULL; entry = entry->next) {
-    if (h2_atomic_load(&entry->live_channel) == channel)
-      return true;
+    if (h2_atomic_load(&entry->live_channel) == channel) return true;
   }
   return h2_gizclaw_remote_service_index(client, channel) >= 0;
 }
 
-static h2_gizclaw_client_t *
-h2_gizclaw_client_for_channel(gzc_rtc_channel_t *channel) {
-  for (h2_gizclaw_client_t *client = s_clients; client != NULL;
+static h2_gizclaw_client_t* h2_gizclaw_client_for_channel(
+    gzc_rtc_channel_t* channel) {
+  for (h2_gizclaw_client_t* client = s_clients; client != NULL;
        client = client->next_client) {
     if (h2_gizclaw_channel_is_live(client, channel)) {
       return client;
@@ -937,7 +942,7 @@ h2_gizclaw_client_for_channel(gzc_rtc_channel_t *channel) {
 #endif
 }
 
-static void h2_gizclaw_reset_local_channel_state(h2_gizclaw_client_t *client) {
+static void h2_gizclaw_reset_local_channel_state(h2_gizclaw_client_t* client) {
   if (client != NULL) {
     memset(&client->local_channel_state, 0,
            sizeof(client->local_channel_state));
@@ -945,8 +950,8 @@ static void h2_gizclaw_reset_local_channel_state(h2_gizclaw_client_t *client) {
 }
 
 static bool h2_gizclaw_local_channel_create_matches(
-    const h2_gizclaw_local_channel_state_t *pending,
-    const h2_pal_webrtc_channel_info_t *info) {
+    const h2_gizclaw_local_channel_state_t* pending,
+    const h2_pal_webrtc_channel_info_t* info) {
   return pending != NULL && pending->create_in_progress && info != NULL &&
          pending->create_label.data != NULL && info->label.data != NULL &&
          info->label.len == pending->create_label.len &&
@@ -957,8 +962,8 @@ static bool h2_gizclaw_local_channel_create_matches(
 }
 
 static bool h2_gizclaw_retain_local_channel_state(
-    h2_gizclaw_local_channel_state_t *pending, h2_pal_webrtc_peer_t *peer,
-    h2_pal_webrtc_channel_t *channel, const h2_pal_webrtc_channel_info_t *info,
+    h2_gizclaw_local_channel_state_t* pending, h2_pal_webrtc_peer_t* peer,
+    h2_pal_webrtc_channel_t* channel, const h2_pal_webrtc_channel_info_t* info,
     h2_pal_webrtc_channel_state_t state) {
   if (pending == NULL || peer == NULL || channel == NULL ||
       (pending->ready && pending->channel != channel) ||
@@ -987,7 +992,7 @@ static bool h2_gizclaw_retain_local_channel_state(
   return true;
 }
 
-static void h2_gizclaw_log_error(h2_gizclaw_client_t *client, const char *stage,
+static void h2_gizclaw_log_error(h2_gizclaw_client_t* client, const char* stage,
                                  int rc) {
   if (client == NULL || client->config.log == NULL) {
     return;
@@ -998,8 +1003,8 @@ static void h2_gizclaw_log_error(h2_gizclaw_client_t *client, const char *stage,
                          message);
 }
 
-static void h2_gizclaw_log_webrtc_rc(h2_gizclaw_client_t *client,
-                                     const char *stage, int rc) {
+static void h2_gizclaw_log_webrtc_rc(h2_gizclaw_client_t* client,
+                                     const char* stage, int rc) {
   if (client == NULL || client->config.log == NULL) {
     return;
   }
@@ -1010,7 +1015,7 @@ static void h2_gizclaw_log_webrtc_rc(h2_gizclaw_client_t *client,
                          "gizclaw", message);
 }
 
-static void h2_gizclaw_log_infof(h2_gizclaw_client_t *client, const char *fmt,
+static void h2_gizclaw_log_infof(h2_gizclaw_client_t* client, const char* fmt,
                                  int a, int b, size_t c) {
   if (client == NULL || client->config.log == NULL) {
     return;
@@ -1023,17 +1028,16 @@ static void h2_gizclaw_log_infof(h2_gizclaw_client_t *client, const char *fmt,
 
 /* Only a validated authority and the fixed server-info path are retained.
  * Arbitrary paths, userinfo, query and fragments may contain credentials. */
-static void h2_gizclaw_log_http_result(h2_gizclaw_client_t *client,
-                                       const gzc_http_request_t *request,
-                                       const h2_pal_http_response_t *response,
+static void h2_gizclaw_log_http_result(h2_gizclaw_client_t* client,
+                                       const gzc_http_request_t* request,
+                                       const h2_pal_http_response_t* response,
                                        int rc, uint64_t start_ms,
                                        bool clock_valid) {
-  if (client->config.log == NULL)
-    return;
+  if (client->config.log == NULL) return;
   char endpoint[96] = "redacted";
-  const char *scheme = "unknown";
-  const char *path = "redacted";
-  const char *url = request->url.data;
+  const char* scheme = "unknown";
+  const char* path = "redacted";
+  const char* url = request->url.data;
   size_t len = request->url.len;
   size_t begin = 0u;
   if (url != NULL) {
@@ -1055,8 +1059,7 @@ static void h2_gizclaw_log_http_result(h2_gizclaw_client_t *client,
       path = "/server-info";
     }
     for (size_t i = begin; i < end; ++i) {
-      if (url[i] == '@')
-        begin = i + 1u;
+      if (url[i] == '@') begin = i + 1u;
     }
     bool safe = end > begin && end - begin < sizeof(endpoint);
     for (size_t i = begin; i < end; ++i) {
@@ -1076,31 +1079,31 @@ static void h2_gizclaw_log_http_result(h2_gizclaw_client_t *client,
       clock_valid &&
       h2_pal_time_get_monotonic_ms(client->config.time, &end_ms) == H2_PAL_OK &&
       end_ms >= start_ms;
-  const char *method = "UNKNOWN";
+  const char* method = "UNKNOWN";
   switch ((h2_pal_http_method_t)request->method) {
-  case H2_PAL_HTTP_GET:
-    method = "GET";
-    break;
-  case H2_PAL_HTTP_POST:
-    method = "POST";
-    break;
-  case H2_PAL_HTTP_PUT:
-    method = "PUT";
-    break;
-  case H2_PAL_HTTP_PATCH:
-    method = "PATCH";
-    break;
-  case H2_PAL_HTTP_DELETE:
-    method = "DELETE";
-    break;
-  case H2_PAL_HTTP_HEAD:
-    method = "HEAD";
-    break;
-  case H2_PAL_HTTP_OPTIONS:
-    method = "OPTIONS";
-    break;
-  default:
-    break;
+    case H2_PAL_HTTP_GET:
+      method = "GET";
+      break;
+    case H2_PAL_HTTP_POST:
+      method = "POST";
+      break;
+    case H2_PAL_HTTP_PUT:
+      method = "PUT";
+      break;
+    case H2_PAL_HTTP_PATCH:
+      method = "PATCH";
+      break;
+    case H2_PAL_HTTP_DELETE:
+      method = "DELETE";
+      break;
+    case H2_PAL_HTTP_HEAD:
+      method = "HEAD";
+      break;
+    case H2_PAL_HTTP_OPTIONS:
+      method = "OPTIONS";
+      break;
+    default:
+      break;
   }
   char message[320];
   (void)snprintf(
@@ -1118,9 +1121,9 @@ static void h2_gizclaw_log_http_result(h2_gizclaw_client_t *client,
                          message);
 }
 
-static void h2_gizclaw_log_rpc_error(h2_gizclaw_client_t *client,
+static void h2_gizclaw_log_rpc_error(h2_gizclaw_client_t* client,
                                      h2_gizclaw_rpc_method_t method,
-                                     int error_code, const char *error_message,
+                                     int error_code, const char* error_message,
                                      size_t error_message_len) {
   if (client == NULL || client->config.log == NULL) {
     return;
@@ -1135,33 +1138,33 @@ static void h2_gizclaw_log_rpc_error(h2_gizclaw_client_t *client,
                          message);
 }
 
-void h2_gizclaw_client_log_rpc_error_internal(h2_gizclaw_client_t *client,
+void h2_gizclaw_client_log_rpc_error_internal(h2_gizclaw_client_t* client,
                                               h2_gizclaw_rpc_method_t method,
                                               int error_code,
-                                              const char *error_message,
+                                              const char* error_message,
                                               size_t error_message_len) {
   h2_gizclaw_log_rpc_error(client, method, error_code, error_message,
                            error_message_len);
 }
 
-static void *h2_gzc_malloc(void *user, size_t size) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static void* h2_gzc_malloc(void* user, size_t size) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   return h2_pal_mem_alloc(client->config.allocator, size);
 }
 
-static void *h2_gzc_realloc(void *user, void *ptr, size_t size) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static void* h2_gzc_realloc(void* user, void* ptr, size_t size) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   return h2_pal_mem_realloc(client->config.allocator, ptr, size);
 }
 
-static void h2_gzc_free(void *user, void *ptr) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static void h2_gzc_free(void* user, void* ptr) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   h2_pal_mem_free(client->config.allocator, ptr);
 }
 
-static int64_t h2_gzc_time_instant_ms(void *user) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
-  const h2_pal_time_api_t *api = client->config.time;
+static int64_t h2_gzc_time_instant_ms(void* user) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
+  const h2_pal_time_api_t* api = client->config.time;
   uint64_t monotonic_ms = 0;
   if (api == NULL ||
       h2_pal_time_get_monotonic_ms(api, &monotonic_ms) != H2_PAL_OK) {
@@ -1170,9 +1173,9 @@ static int64_t h2_gzc_time_instant_ms(void *user) {
   return (int64_t)monotonic_ms;
 }
 
-static int64_t h2_gzc_time_unix_ms(void *user) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
-  const h2_pal_time_api_t *api = client->config.time;
+static int64_t h2_gzc_time_unix_ms(void* user) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
+  const h2_pal_time_api_t* api = client->config.time;
   uint64_t wall_ms = 0;
   if (api == NULL || h2_pal_time_get_wall_ms(api, &wall_ms) != H2_PAL_OK) {
     return 0;
@@ -1180,8 +1183,8 @@ static int64_t h2_gzc_time_unix_ms(void *user) {
   return (int64_t)wall_ms;
 }
 
-static int h2_gzc_random(void *user, uint8_t *out, size_t len) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static int h2_gzc_random(void* user, uint8_t* out, size_t len) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client->config.crypto == NULL) {
     return GZC_ERR_UNSUPPORTED;
   }
@@ -1194,8 +1197,8 @@ static int h2_gzc_random(void *user, uint8_t *out, size_t len) {
                                                          : GZC_ERR_SIGNALING);
 }
 
-static void h2_gzc_log(void *user, gzc_log_level_t level, gzc_str_t message) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static void h2_gzc_log(void* user, gzc_log_level_t level, gzc_str_t message) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client->config.log == NULL || message.data == NULL) {
     return;
   }
@@ -1208,7 +1211,7 @@ static void h2_gzc_log(void *user, gzc_log_level_t level, gzc_str_t message) {
     h2_level = H2_PAL_LOG_ERROR;
   }
   char stack_buf[160];
-  const char *text = message.data;
+  const char* text = message.data;
   if (message.len >= sizeof(stack_buf)) {
     memcpy(stack_buf, message.data, sizeof(stack_buf) - 1u);
     stack_buf[sizeof(stack_buf) - 1u] = '\0';
@@ -1217,9 +1220,9 @@ static void h2_gzc_log(void *user, gzc_log_level_t level, gzc_str_t message) {
   (void)h2_pal_log_write(client->config.log, h2_level, "gizclaw", text);
 }
 
-static int h2_gzc_keypair_from_private(void *user, const gzc_key_t *private_key,
-                                       gzc_keypair_t *out_keypair) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static int h2_gzc_keypair_from_private(void* user, const gzc_key_t* private_key,
+                                       gzc_keypair_t* out_keypair) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client->config.crypto == NULL || private_key == NULL ||
       out_keypair == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
@@ -1241,9 +1244,9 @@ static int h2_gzc_keypair_from_private(void *user, const gzc_key_t *private_key,
   return GZC_OK;
 }
 
-static int h2_gzc_dh(void *user, const gzc_keypair_t *local,
-                     const gzc_public_key_t *remote, gzc_key_t *out_shared) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static int h2_gzc_dh(void* user, const gzc_keypair_t* local,
+                     const gzc_public_key_t* remote, gzc_key_t* out_shared) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client->config.crypto == NULL || local == NULL || remote == NULL ||
       out_shared == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
@@ -1264,16 +1267,16 @@ static int h2_gzc_dh(void *user, const gzc_keypair_t *local,
   return GZC_OK;
 }
 
-static int h2_gzc_hkdf_sha256(void *user, const uint8_t *secret,
-                              size_t secret_len, const uint8_t *salt,
-                              size_t salt_len, gzc_str_t info, uint8_t *out,
+static int h2_gzc_hkdf_sha256(void* user, const uint8_t* secret,
+                              size_t secret_len, const uint8_t* salt,
+                              size_t salt_len, gzc_str_t info, uint8_t* out,
                               size_t out_len) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client->config.crypto == NULL) {
     return GZC_ERR_UNSUPPORTED;
   }
   int rc = h2_pal_crypto_hkdf_sha256(client->config.crypto, secret, secret_len,
-                                     salt, salt_len, (const uint8_t *)info.data,
+                                     salt, salt_len, (const uint8_t*)info.data,
                                      info.len, out, out_len);
   if (rc != H2_PAL_OK) {
     h2_gizclaw_log_error(client, "hkdf_sha256", rc);
@@ -1283,11 +1286,11 @@ static int h2_gzc_hkdf_sha256(void *user, const uint8_t *secret,
                                                          : GZC_ERR_SIGNALING);
 }
 
-static int h2_gzc_aead(h2_gizclaw_client_t *client, bool seal,
-                       gzc_cipher_mode_t mode, const uint8_t *key,
-                       size_t key_len, const uint8_t *nonce, size_t nonce_len,
-                       const uint8_t *input, size_t input_len,
-                       const uint8_t *aad, size_t aad_len, gzc_buf_t *out) {
+static int h2_gzc_aead(h2_gizclaw_client_t* client, bool seal,
+                       gzc_cipher_mode_t mode, const uint8_t* key,
+                       size_t key_len, const uint8_t* nonce, size_t nonce_len,
+                       const uint8_t* input, size_t input_len,
+                       const uint8_t* aad, size_t aad_len, gzc_buf_t* out) {
   if (client == NULL || client->config.crypto == NULL || out == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
@@ -1351,40 +1354,40 @@ static int h2_gzc_aead(h2_gizclaw_client_t *client, bool seal,
   return GZC_OK;
 }
 
-static int h2_gzc_aead_seal(void *user, gzc_cipher_mode_t mode,
-                            const uint8_t *key, size_t key_len,
-                            const uint8_t *nonce, size_t nonce_len,
-                            const uint8_t *plaintext, size_t plaintext_len,
-                            const uint8_t *aad, size_t aad_len,
-                            gzc_buf_t *out_ciphertext) {
-  return h2_gzc_aead((h2_gizclaw_client_t *)user, true, mode, key, key_len,
+static int h2_gzc_aead_seal(void* user, gzc_cipher_mode_t mode,
+                            const uint8_t* key, size_t key_len,
+                            const uint8_t* nonce, size_t nonce_len,
+                            const uint8_t* plaintext, size_t plaintext_len,
+                            const uint8_t* aad, size_t aad_len,
+                            gzc_buf_t* out_ciphertext) {
+  return h2_gzc_aead((h2_gizclaw_client_t*)user, true, mode, key, key_len,
                      nonce, nonce_len, plaintext, plaintext_len, aad, aad_len,
                      out_ciphertext);
 }
 
-static int h2_gzc_aead_open(void *user, gzc_cipher_mode_t mode,
-                            const uint8_t *key, size_t key_len,
-                            const uint8_t *nonce, size_t nonce_len,
-                            const uint8_t *ciphertext, size_t ciphertext_len,
-                            const uint8_t *aad, size_t aad_len,
-                            gzc_buf_t *out_plaintext) {
-  return h2_gzc_aead((h2_gizclaw_client_t *)user, false, mode, key, key_len,
+static int h2_gzc_aead_open(void* user, gzc_cipher_mode_t mode,
+                            const uint8_t* key, size_t key_len,
+                            const uint8_t* nonce, size_t nonce_len,
+                            const uint8_t* ciphertext, size_t ciphertext_len,
+                            const uint8_t* aad, size_t aad_len,
+                            gzc_buf_t* out_plaintext) {
+  return h2_gzc_aead((h2_gizclaw_client_t*)user, false, mode, key, key_len,
                      nonce, nonce_len, ciphertext, ciphertext_len, aad, aad_len,
                      out_plaintext);
 }
 
-static int h2_gzc_http_request(void *user, const gzc_http_request_t *request,
-                               gzc_http_response_t *out_response) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static int h2_gzc_http_request(void* user, const gzc_http_request_t* request,
+                               gzc_http_response_t* out_response) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client == NULL || client->config.http == NULL || request == NULL ||
       out_response == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
   h2_pal_http_header_t stack_headers[8];
-  h2_pal_http_header_t *headers = stack_headers;
+  h2_pal_http_header_t* headers = stack_headers;
   if (request->header_count >
       (sizeof(stack_headers) / sizeof(stack_headers[0]))) {
-    headers = (h2_pal_http_header_t *)h2_pal_mem_alloc(
+    headers = (h2_pal_http_header_t*)h2_pal_mem_alloc(
         client->config.allocator, request->header_count * sizeof(headers[0]));
     if (headers == NULL) {
       return GZC_ERR_NO_MEMORY;
@@ -1422,7 +1425,7 @@ static int h2_gzc_http_request(void *user, const gzc_http_request_t *request,
     h2_pal_mem_free(client->config.allocator, headers);
   }
   h2_gizclaw_log_http_result(client, request, &h2_response, rc, start_ms,
-                              clock_valid);
+                             clock_valid);
   if (rc != H2_PAL_OK) {
     h2_pal_http_response_free(client->config.http, &h2_response);
     return GZC_ERR_HTTP;
@@ -1436,15 +1439,16 @@ static int h2_gzc_http_request(void *user, const gzc_http_request_t *request,
 }
 
 #if defined(H2_GIZCLAW_TESTING)
-int h2_gizclaw_test_http_request(h2_gizclaw_client_t *client,
-    const gzc_http_request_t *request, gzc_http_response_t *response) {
+int h2_gizclaw_test_http_request(h2_gizclaw_client_t* client,
+                                 const gzc_http_request_t* request,
+                                 gzc_http_response_t* response) {
   return h2_gzc_http_request(client, request, response);
 }
 #endif
 
-static void h2_gzc_http_response_free(void *user,
-                                      gzc_http_response_t *response) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static void h2_gzc_http_response_free(void* user,
+                                      gzc_http_response_t* response) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client == NULL || response == NULL) {
     return;
   }
@@ -1461,36 +1465,36 @@ static void h2_gzc_http_response_free(void *user,
   response->body.cap = 0;
 }
 
-static void h2_gzc_peer_state(void *user, h2_pal_webrtc_peer_t *peer,
+static void h2_gzc_peer_state(void* user, h2_pal_webrtc_peer_t* peer,
                               h2_pal_webrtc_peer_state_t state) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   h2_gizclaw_log_infof(client, "webrtc_peer_state=%d", (int)state, 0, 0u);
   if (client != NULL && client->gzc_callbacks.on_peer_state != NULL) {
     client->gzc_callbacks.on_peer_state(client->gzc_callbacks.userdata,
-                                        (gzc_rtc_peer_t *)peer,
+                                        (gzc_rtc_peer_t*)peer,
                                         (gzc_rtc_peer_state_t)state);
   }
 }
 
-static void h2_gzc_local_sdp(void *user, h2_pal_webrtc_peer_t *peer,
+static void h2_gzc_local_sdp(void* user, h2_pal_webrtc_peer_t* peer,
                              h2_pal_webrtc_sdp_type_t type,
                              h2_pal_webrtc_str_t sdp) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client != NULL && client->gzc_callbacks.on_local_sdp != NULL) {
     client->gzc_callbacks.on_local_sdp(
-        client->gzc_callbacks.userdata, (gzc_rtc_peer_t *)peer,
+        client->gzc_callbacks.userdata, (gzc_rtc_peer_t*)peer,
         (gzc_rtc_sdp_type_t)type, gzc_str_from_parts(sdp.data, sdp.len));
   }
 }
 
 static void h2_gizclaw_dispatch_channel_state(
-    h2_gizclaw_client_t *client, h2_pal_webrtc_peer_t *peer,
-    h2_pal_webrtc_channel_t *channel, const h2_pal_webrtc_channel_info_t *info,
+    h2_gizclaw_client_t* client, h2_pal_webrtc_peer_t* peer,
+    h2_pal_webrtc_channel_t* channel, const h2_pal_webrtc_channel_info_t* info,
     h2_pal_webrtc_channel_state_t state) {
   if (client != NULL && (state == H2_PAL_WEBRTC_CHANNEL_CLOSED ||
                          state == H2_PAL_WEBRTC_CHANNEL_ERROR)) {
-    h2_gizclaw_provider_completion_t *completion =
-        provider_completion_for_channel(client, (gzc_rtc_channel_t *)channel);
+    h2_gizclaw_provider_completion_t* completion =
+        provider_completion_for_channel(client, (gzc_rtc_channel_t*)channel);
     if (completion != NULL) {
       completion->peer_closed = state == H2_PAL_WEBRTC_CHANNEL_CLOSED;
       /* A terminal PAL event retires the handle; its pointer is now identity
@@ -1512,34 +1516,35 @@ static void h2_gizclaw_dispatch_channel_state(
         h2_gizclaw_gzc_str_has_prefix_cstr(gzc_info.label,
                                            "giznet/v1/service/") &&
         gzc_info.ordered && gzc_info.reliable &&
-        h2_gizclaw_local_channel_find(client, (gzc_rtc_channel_t *)channel) == NULL &&
-        h2_gizclaw_mark_remote_service(client, (gzc_rtc_channel_t *)channel) &&
+        h2_gizclaw_local_channel_find(client, (gzc_rtc_channel_t*)channel) ==
+            NULL &&
+        h2_gizclaw_mark_remote_service(client, (gzc_rtc_channel_t*)channel) &&
         client->gzc_callbacks.on_remote_channel != NULL) {
       client->gzc_callbacks.on_remote_channel(
-          client->gzc_callbacks.userdata, (gzc_rtc_peer_t *)peer,
-          (gzc_rtc_channel_t *)channel, &gzc_info);
+          client->gzc_callbacks.userdata, (gzc_rtc_peer_t*)peer,
+          (gzc_rtc_channel_t*)channel, &gzc_info);
     } else if (state == H2_PAL_WEBRTC_CHANNEL_CLOSED ||
                state == H2_PAL_WEBRTC_CHANNEL_ERROR) {
-      h2_gizclaw_unmark_remote_service(client, (gzc_rtc_channel_t *)channel);
-      h2_gizclaw_unmark_local_channel(client, (gzc_rtc_channel_t *)channel);
+      h2_gizclaw_unmark_remote_service(client, (gzc_rtc_channel_t*)channel);
+      h2_gizclaw_unmark_local_channel(client, (gzc_rtc_channel_t*)channel);
     }
     client->gzc_callbacks.on_channel_state(
-        client->gzc_callbacks.userdata, (gzc_rtc_peer_t *)peer,
-        (gzc_rtc_channel_t *)channel, info == NULL ? NULL : &gzc_info,
+        client->gzc_callbacks.userdata, (gzc_rtc_peer_t*)peer,
+        (gzc_rtc_channel_t*)channel, info == NULL ? NULL : &gzc_info,
         (gzc_rtc_channel_state_t)state);
   }
 }
 
-static void h2_gzc_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
-                                 h2_pal_webrtc_channel_t *channel,
-                                 const h2_pal_webrtc_channel_info_t *info,
+static void h2_gzc_channel_state(void* user, h2_pal_webrtc_peer_t* peer,
+                                 h2_pal_webrtc_channel_t* channel,
+                                 const h2_pal_webrtc_channel_info_t* info,
                                  h2_pal_webrtc_channel_state_t state) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client == NULL) {
     return;
   }
-  h2_gizclaw_local_channel_t *local = h2_gizclaw_local_channel_find(
-      client, (gzc_rtc_channel_t *)channel);
+  h2_gizclaw_local_channel_t* local =
+      h2_gizclaw_local_channel_find(client, (gzc_rtc_channel_t*)channel);
   if (state == H2_PAL_WEBRTC_CHANNEL_OPEN && local != NULL &&
       local->close_requested) {
     /* An owned OPEN may already be queued when close consumes the alias. */
@@ -1550,10 +1555,10 @@ static void h2_gzc_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
     /* PAL terminal callbacks revoke the opaque channel alias immediately.
      * GZC can issue a final close/send while dispatching a retained terminal
      * state; those adapter calls must not re-enter PAL with the stale alias. */
-    h2_gizclaw_unmark_remote_service(client, (gzc_rtc_channel_t *)channel);
-    h2_gizclaw_unmark_local_channel(client, (gzc_rtc_channel_t *)channel);
+    h2_gizclaw_unmark_remote_service(client, (gzc_rtc_channel_t*)channel);
+    h2_gizclaw_unmark_local_channel(client, (gzc_rtc_channel_t*)channel);
   }
-  h2_gizclaw_local_channel_state_t *pending = &client->local_channel_state;
+  h2_gizclaw_local_channel_state_t* pending = &client->local_channel_state;
   if ((h2_gizclaw_local_channel_create_matches(pending, info) ||
        (pending->ready && pending->channel == channel)) &&
       h2_gizclaw_retain_local_channel_state(pending, peer, channel, info,
@@ -1563,9 +1568,8 @@ static void h2_gzc_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
   h2_gizclaw_dispatch_channel_state(client, peer, channel, info, state);
 }
 
-static void
-h2_gizclaw_dispatch_retained_local_channel_state(h2_gizclaw_client_t *client,
-                                                 h2_pal_webrtc_peer_t *peer) {
+static void h2_gizclaw_dispatch_retained_local_channel_state(
+    h2_gizclaw_client_t* client, h2_pal_webrtc_peer_t* peer) {
   if (client == NULL || !client->local_channel_state.ready ||
       client->local_channel_state.create_in_progress ||
       client->local_channel_state.peer != peer) {
@@ -1581,49 +1585,49 @@ h2_gizclaw_dispatch_retained_local_channel_state(h2_gizclaw_client_t *client,
                                     pending.state);
 }
 
-static void h2_gzc_channel_message(void *user, h2_pal_webrtc_peer_t *peer,
-                                   h2_pal_webrtc_channel_t *channel,
-                                   const h2_pal_webrtc_channel_info_t *info,
-                                   const uint8_t *data, size_t len,
+static void h2_gzc_channel_message(void* user, h2_pal_webrtc_peer_t* peer,
+                                   h2_pal_webrtc_channel_t* channel,
+                                   const h2_pal_webrtc_channel_info_t* info,
+                                   const uint8_t* data, size_t len,
                                    int is_text) {
   (void)info;
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client != NULL && client->gzc_callbacks.on_channel_message != NULL) {
-    gzc_rtc_channel_t *previous = client->provider_channel;
-    client->provider_channel = (gzc_rtc_channel_t *)channel;
+    gzc_rtc_channel_t* previous = client->provider_channel;
+    client->provider_channel = (gzc_rtc_channel_t*)channel;
     client->gzc_callbacks.on_channel_message(
-        client->gzc_callbacks.userdata, (gzc_rtc_peer_t *)peer,
-        (gzc_rtc_channel_t *)channel, NULL, data, len, is_text != 0);
+        client->gzc_callbacks.userdata, (gzc_rtc_peer_t*)peer,
+        (gzc_rtc_channel_t*)channel, NULL, data, len, is_text != 0);
     client->provider_channel = previous;
   }
 }
 
-static void h2_gzc_opus_frame(void *user, h2_pal_webrtc_peer_t *peer,
-                              const uint8_t *opus, size_t opus_len) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static void h2_gzc_opus_frame(void* user, h2_pal_webrtc_peer_t* peer,
+                              const uint8_t* opus, size_t opus_len) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client == NULL || client->opus_frame_callback == NULL ||
-      client->opus_frame_peer != (gzc_rtc_peer_t *)peer) {
+      client->opus_frame_peer != (gzc_rtc_peer_t*)peer) {
     return;
   }
   client->opus_frame_callback(client->opus_frame_callback_user,
-                              (gzc_rtc_peer_t *)peer, opus, opus_len);
+                              (gzc_rtc_peer_t*)peer, opus, opus_len);
 }
 
-static int h2_gzc_peer_create(void *user,
-                              const gzc_webrtc_callbacks_t *callbacks,
-                              gzc_rtc_peer_t **out_peer) {
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
+static int h2_gzc_peer_create(void* user,
+                              const gzc_webrtc_callbacks_t* callbacks,
+                              gzc_rtc_peer_t** out_peer) {
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)user;
   if (client == NULL || client->config.webrtc == NULL || callbacks == NULL ||
       out_peer == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
   client->gzc_callbacks = *callbacks;
-  h2_pal_webrtc_peer_t *peer = NULL;
+  h2_pal_webrtc_peer_t* peer = NULL;
   const h2_pal_webrtc_peer_config_t config = {
       .allocator = client->config.allocator,
   };
-  int rc = h2_pal_webrtc_peer_create_with_config(
-      client->config.webrtc, &config, &peer);
+  int rc = h2_pal_webrtc_peer_create_with_config(client->config.webrtc, &config,
+                                                 &peer);
   if (rc == H2_PAL_ERR_UNSUPPORTED && config.allocator != NULL) {
     /* The provider cannot place peer state in the client allocator; keep
      * the connection working on its default allocator and say so. */
@@ -1644,7 +1648,7 @@ static int h2_gzc_peer_create(void *user,
     }
   }
   client->webrtc_peer = peer;
-  *out_peer = (gzc_rtc_peer_t *)peer;
+  *out_peer = (gzc_rtc_peer_t*)peer;
   return GZC_OK;
 }
 
@@ -1652,7 +1656,7 @@ static int h2_gzc_peer_create(void *user,
 void h2_gizclaw_test_set_event_ops(h2_gizclaw_test_event_send_fn send,
                                    h2_gizclaw_test_event_read_fn read,
                                    h2_gizclaw_test_event_close_fn close,
-                                   void *user) {
+                                   void* user) {
   s_test_event_send = send;
   s_test_event_read = read;
   s_test_event_close = close;
@@ -1660,73 +1664,72 @@ void h2_gizclaw_test_set_event_ops(h2_gizclaw_test_event_send_fn send,
 }
 
 void h2_gizclaw_test_set_packet_read(h2_gizclaw_test_packet_read_fn read,
-                                     void *user) {
+                                     void* user) {
   s_test_packet_read = read;
   s_test_packet_read_user = user;
 }
 
 void h2_gizclaw_test_set_client_poll(h2_gizclaw_test_client_poll_fn poll,
-                                     void *user) {
+                                     void* user) {
   s_test_client_poll = poll;
   s_test_client_poll_user = user;
 }
 
-gzc_event_stream_t *
-h2_gizclaw_test_replace_event_stream(h2_gizclaw_client_t *client,
-                                     gzc_event_stream_t *events) {
+gzc_event_stream_t* h2_gizclaw_test_replace_event_stream(
+    h2_gizclaw_client_t* client, gzc_event_stream_t* events) {
   if (client == NULL) {
     return NULL;
   }
-  gzc_event_stream_t *previous = client->events;
+  gzc_event_stream_t* previous = client->events;
   client->events = events;
   return previous;
 }
 
-bool h2_gizclaw_test_client_terminal_closed(const h2_gizclaw_client_t *client) {
+bool h2_gizclaw_test_client_terminal_closed(const h2_gizclaw_client_t* client) {
   return client != NULL && client->terminal_closed;
 }
 
-int gzc_client_try_write_bytes_internal(gzc_client_t *client,
-                                        gzc_rtc_channel_t *channel,
-                                        const uint8_t *data, size_t len,
-                                        size_t *offset, bool *blocked,
+int gzc_client_try_write_bytes_internal(gzc_client_t* client,
+                                        gzc_rtc_channel_t* channel,
+                                        const uint8_t* data, size_t len,
+                                        size_t* offset, bool* blocked,
                                         size_t max_chunks);
 #endif
 
-static int h2_gzc_peer_start_offer_active(gzc_rtc_peer_t *peer) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
+static int h2_gzc_peer_start_offer_active(gzc_rtc_peer_t* peer) {
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
   int rc = h2_pal_webrtc_peer_start_offer(client->config.webrtc,
-                                          (h2_pal_webrtc_peer_t *)peer);
+                                          (h2_pal_webrtc_peer_t*)peer);
   h2_gizclaw_log_webrtc_rc(client, "peer_start_offer", rc);
   return rc == H2_PAL_OK ? GZC_OK : GZC_ERR_WEBRTC;
 }
 
 static int h2_gzc_media_result(int rc) {
   switch (rc) {
-  case H2_PAL_OK:
-    return GZC_OK;
-  case H2_PAL_ERR_INVALID_ARG:
-    return GZC_ERR_INVALID_ARGUMENT;
-  case H2_PAL_ERR_UNSUPPORTED:
-    return GZC_ERR_UNSUPPORTED;
-  case H2_PAL_ERR_CLOSED:
-    return GZC_ERR_CLOSED;
-  case H2_PAL_ERR_TIMEOUT:
-    return GZC_ERR_TIMEOUT;
-  case H2_PAL_ERR_WOULD_BLOCK:
-    return GZC_ERR_WOULD_BLOCK;
-  default:
-    return GZC_ERR_WEBRTC;
+    case H2_PAL_OK:
+      return GZC_OK;
+    case H2_PAL_ERR_INVALID_ARG:
+      return GZC_ERR_INVALID_ARGUMENT;
+    case H2_PAL_ERR_UNSUPPORTED:
+      return GZC_ERR_UNSUPPORTED;
+    case H2_PAL_ERR_CLOSED:
+      return GZC_ERR_CLOSED;
+    case H2_PAL_ERR_TIMEOUT:
+      return GZC_ERR_TIMEOUT;
+    case H2_PAL_ERR_WOULD_BLOCK:
+      return GZC_ERR_WOULD_BLOCK;
+    default:
+      return GZC_ERR_WEBRTC;
   }
 }
 
-static int h2_gzc_peer_set_opus_frame_callback(gzc_rtc_peer_t *peer,
+static int h2_gzc_peer_set_opus_frame_callback(gzc_rtc_peer_t* peer,
                                                gzc_rtc_opus_frame_cb callback,
-                                               void *callback_user) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
+                                               void* callback_user) {
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client == NULL || client->config.webrtc == NULL || peer == NULL ||
       (callback == NULL && callback_user != NULL)) {
     return GZC_ERR_INVALID_ARGUMENT;
@@ -1737,26 +1740,25 @@ static int h2_gzc_peer_set_opus_frame_callback(gzc_rtc_peer_t *peer,
   return GZC_OK;
 }
 
-static int h2_gzc_peer_send_opus(gzc_rtc_peer_t *peer, const uint8_t *opus,
+static int h2_gzc_peer_send_opus(gzc_rtc_peer_t* peer, const uint8_t* opus,
                                  size_t opus_len) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
-  if (client->config.webrtc_media_track != NULL)
-    return GZC_ERR_UNSUPPORTED;
+  if (client->config.webrtc_media_track != NULL) return GZC_ERR_UNSUPPORTED;
   const int rc = h2_pal_webrtc_peer_send_opus(
-      client->config.webrtc, (h2_pal_webrtc_peer_t *)peer, opus, opus_len);
+      client->config.webrtc, (h2_pal_webrtc_peer_t*)peer, opus, opus_len);
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK) {
     h2_gizclaw_log_webrtc_rc(client, "peer_send_opus", rc);
   }
   return h2_gzc_media_result(rc);
 }
 
-static int h2_gzc_peer_add_ice_server(gzc_rtc_peer_t *peer, gzc_str_t url,
+static int h2_gzc_peer_add_ice_server(gzc_rtc_peer_t* peer, gzc_str_t url,
                                       gzc_str_t username,
                                       gzc_str_t credential) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
@@ -1766,16 +1768,16 @@ static int h2_gzc_peer_add_ice_server(gzc_rtc_peer_t *peer, gzc_str_t url,
       .credential = {.data = credential.data, .len = credential.len},
   };
   int rc = h2_pal_webrtc_peer_add_ice_server(
-      client->config.webrtc, (h2_pal_webrtc_peer_t *)peer, &server);
+      client->config.webrtc, (h2_pal_webrtc_peer_t*)peer, &server);
   h2_gizclaw_log_webrtc_rc(client, "peer_add_ice_server", rc);
   return rc == H2_PAL_OK ? GZC_OK
                          : (rc == H2_PAL_ERR_UNSUPPORTED ? GZC_ERR_UNSUPPORTED
                                                          : GZC_ERR_WEBRTC);
 }
 
-static int h2_gzc_peer_set_remote_sdp(gzc_rtc_peer_t *peer,
+static int h2_gzc_peer_set_remote_sdp(gzc_rtc_peer_t* peer,
                                       gzc_rtc_sdp_type_t type, gzc_str_t sdp) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
@@ -1784,30 +1786,28 @@ static int h2_gzc_peer_set_remote_sdp(gzc_rtc_peer_t *peer,
       .len = sdp.len,
   };
   int rc = h2_pal_webrtc_peer_set_remote_sdp(
-      client->config.webrtc, (h2_pal_webrtc_peer_t *)peer,
+      client->config.webrtc, (h2_pal_webrtc_peer_t*)peer,
       (h2_pal_webrtc_sdp_type_t)type, h2_sdp);
   h2_gizclaw_log_webrtc_rc(client, "peer_set_remote_sdp", rc);
   return rc == H2_PAL_OK ? GZC_OK : GZC_ERR_WEBRTC;
 }
 
-static int
-h2_gzc_peer_create_data_channel(gzc_rtc_peer_t *peer,
-                                const gzc_rtc_channel_config_t *config,
-                                gzc_rtc_channel_t **out_channel) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
+static int h2_gzc_peer_create_data_channel(
+    gzc_rtc_peer_t* peer, const gzc_rtc_channel_config_t* config,
+    gzc_rtc_channel_t** out_channel) {
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client == NULL || client->config.webrtc == NULL || config == NULL ||
       out_channel == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
   *out_channel = NULL;
-  h2_gizclaw_local_channel_state_t *pending = &client->local_channel_state;
+  h2_gizclaw_local_channel_state_t* pending = &client->local_channel_state;
   if (pending->create_in_progress || pending->ready) {
     return GZC_ERR_WEBRTC;
   }
-  h2_gizclaw_local_channel_t *local = NULL;
+  h2_gizclaw_local_channel_t* local = NULL;
   int reserve_result = h2_gizclaw_reserve_local_channel(client, &local);
-  if (reserve_result != GZC_OK)
-    return reserve_result;
+  if (reserve_result != GZC_OK) return reserve_result;
   h2_pal_webrtc_channel_config_t h2_config = {
       .label = {.data = config->label.data, .len = config->label.len},
       .ordered = config->ordered ? 1 : 0,
@@ -1817,10 +1817,9 @@ h2_gzc_peer_create_data_channel(gzc_rtc_peer_t *peer,
   pending->create_label = config->label;
   pending->create_ordered = config->ordered;
   pending->create_reliable = config->reliable;
-  h2_pal_webrtc_channel_t *channel = NULL;
-  int rc = h2_pal_webrtc_peer_create_data_channel(client->config.webrtc,
-                                                  (h2_pal_webrtc_peer_t *)peer,
-                                                  &h2_config, &channel);
+  h2_pal_webrtc_channel_t* channel = NULL;
+  int rc = h2_pal_webrtc_peer_create_data_channel(
+      client->config.webrtc, (h2_pal_webrtc_peer_t*)peer, &h2_config, &channel);
   pending->create_in_progress = false;
   pending->create_label = (gzc_str_t){0};
   pending->create_ordered = false;
@@ -1833,14 +1832,14 @@ h2_gzc_peer_create_data_channel(gzc_rtc_peer_t *peer,
   if (pending->ready && pending->channel != channel) {
     h2_gizclaw_dispatch_retained_local_channel_state(client, pending->peer);
   }
-  local->channel = (gzc_rtc_channel_t *)channel;
+  local->channel = (gzc_rtc_channel_t*)channel;
   h2_atomic_store(&local->live_channel, channel);
-  *out_channel = (gzc_rtc_channel_t *)channel;
+  *out_channel = (gzc_rtc_channel_t*)channel;
   return GZC_OK;
 }
 
-static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
+static int h2_gzc_peer_poll(gzc_rtc_peer_t* peer, int timeout_ms) {
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
@@ -1848,11 +1847,11 @@ static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
     h2_gizclaw_reset_local_channel_state(client);
     return GZC_ERR_CLOSED;
   }
-  h2_gizclaw_dispatch_retained_local_channel_state(
-      client, (h2_pal_webrtc_peer_t *)peer);
+  h2_gizclaw_dispatch_retained_local_channel_state(client,
+                                                   (h2_pal_webrtc_peer_t*)peer);
   h2_pal_webrtc_event_t event = {0};
   int rc = h2_pal_webrtc_peer_poll(
-      client->config.webrtc, (h2_pal_webrtc_peer_t *)peer, timeout_ms, &event);
+      client->config.webrtc, (h2_pal_webrtc_peer_t*)peer, timeout_ms, &event);
   /* GZC owns the overall operation deadline. An idle PAL wait is not a
    * transport failure; errors carried by a successfully dequeued event still
    * propagate below. */
@@ -1861,35 +1860,35 @@ static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
   }
   if (rc == H2_PAL_OK) {
     switch (event.kind) {
-    case H2_PAL_WEBRTC_EVENT_PEER_STATE:
-      h2_gzc_peer_state(client, event.peer, event.peer_state);
-      break;
-    case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
-      h2_gzc_local_sdp(client, event.peer, event.sdp_type, event.sdp);
-      break;
-    case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
-      h2_gzc_channel_state(client, event.peer, event.channel,
-                           &event.channel_info, event.channel_state);
-      break;
-    case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
-      ++client->inbound_count;
-      h2_gzc_channel_message(client, event.peer, event.channel,
-                             &event.channel_info, event.data, event.data_len,
-                             event.is_text);
-      break;
-    case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
-      ++client->inbound_count;
-      h2_gzc_opus_frame(client, event.peer, event.data, event.data_len);
-      break;
-    case H2_PAL_WEBRTC_EVENT_WRITABLE:
-      h2_gzc_writable(client, event.peer);
-      break;
-    case H2_PAL_WEBRTC_EVENT_ERROR:
-      rc = event.error;
-      break;
-    default:
-      rc = H2_PAL_ERR_FORMAT;
-      break;
+      case H2_PAL_WEBRTC_EVENT_PEER_STATE:
+        h2_gzc_peer_state(client, event.peer, event.peer_state);
+        break;
+      case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
+        h2_gzc_local_sdp(client, event.peer, event.sdp_type, event.sdp);
+        break;
+      case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
+        h2_gzc_channel_state(client, event.peer, event.channel,
+                             &event.channel_info, event.channel_state);
+        break;
+      case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+        ++client->inbound_count;
+        h2_gzc_channel_message(client, event.peer, event.channel,
+                               &event.channel_info, event.data, event.data_len,
+                               event.is_text);
+        break;
+      case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
+        ++client->inbound_count;
+        h2_gzc_opus_frame(client, event.peer, event.data, event.data_len);
+        break;
+      case H2_PAL_WEBRTC_EVENT_WRITABLE:
+        h2_gzc_writable(client, event.peer);
+        break;
+      case H2_PAL_WEBRTC_EVENT_ERROR:
+        rc = event.error;
+        break;
+      default:
+        rc = H2_PAL_ERR_FORMAT;
+        break;
     }
     h2_pal_webrtc_event_release(&event);
   }
@@ -1900,16 +1899,16 @@ static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
   return h2_gzc_media_result(rc);
 }
 
-static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
+static int h2_gzc_channel_send(gzc_rtc_channel_t* channel, const uint8_t* data,
                                size_t len, bool is_text) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_channel(channel);
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_channel(channel);
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
   const int rc = h2_pal_webrtc_channel_send(client->config.webrtc,
-                                            (h2_pal_webrtc_channel_t *)channel,
+                                            (h2_pal_webrtc_channel_t*)channel,
                                             data, len, is_text ? 1 : 0);
-  h2_gizclaw_provider_completion_t *completion =
+  h2_gizclaw_provider_completion_t* completion =
       provider_completion_for_channel(client, channel);
   if (completion != NULL) {
     if (rc == H2_PAL_OK && !is_text)
@@ -1917,17 +1916,16 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
     else if (rc != H2_PAL_ERR_WOULD_BLOCK)
       completion->failed = true;
   }
-  bool *blocked = h2_gizclaw_channel_write_blocked(client, channel);
-  if (blocked != NULL)
-    *blocked = rc == H2_PAL_ERR_WOULD_BLOCK;
+  bool* blocked = h2_gizclaw_channel_write_blocked(client, channel);
+  if (blocked != NULL) *blocked = rc == H2_PAL_ERR_WOULD_BLOCK;
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK)
     h2_gizclaw_log_webrtc_rc(client, "channel_send", rc);
   return h2_gzc_media_result(rc);
 }
 
-static int h2_gzc_channel_buffered_amount(gzc_rtc_channel_t *channel,
-                                          uint64_t *out_bytes) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_channel(channel);
+static int h2_gzc_channel_buffered_amount(gzc_rtc_channel_t* channel,
+                                          uint64_t* out_bytes) {
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_channel(channel);
   if (client == NULL || client->config.webrtc == NULL || out_bytes == NULL ||
       !h2_gizclaw_channel_is_live(client, channel)) {
     return GZC_ERR_INVALID_ARGUMENT;
@@ -1937,36 +1935,36 @@ static int h2_gzc_channel_buffered_amount(gzc_rtc_channel_t *channel,
    * The adapter owns no queued bytes; callers retry after peer_poll reports a
    * writable event.
    */
-  const bool *blocked = h2_gizclaw_channel_write_blocked(client, channel);
+  const bool* blocked = h2_gizclaw_channel_write_blocked(client, channel);
   *out_bytes = blocked != NULL && *blocked ? UINT64_MAX : 0u;
   return GZC_OK;
 }
 
-static int
-h2_gzc_channel_set_buffered_amount_low_threshold(gzc_rtc_channel_t *channel,
-                                                 uint64_t bytes) {
+static int h2_gzc_channel_set_buffered_amount_low_threshold(
+    gzc_rtc_channel_t* channel, uint64_t bytes) {
   (void)bytes;
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_channel(channel);
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_channel(channel);
   return client != NULL && client->config.webrtc != NULL &&
                  h2_gizclaw_channel_is_live(client, channel)
              ? GZC_OK
              : GZC_ERR_INVALID_ARGUMENT;
 }
 
-static void h2_gzc_channel_close(gzc_rtc_channel_t *channel) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_channel(channel);
+static void h2_gzc_channel_close(gzc_rtc_channel_t* channel) {
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_channel(channel);
   if (client != NULL && client->config.webrtc != NULL) {
-    h2_gizclaw_provider_completion_t *completion =
+    h2_gizclaw_provider_completion_t* completion =
         provider_completion_for_channel(client, channel);
     if (completion != NULL) {
       completion->local_closed = true;
       if (!completion->response_sent) completion->failed = true;
     }
     if (client->local_channel_state.channel ==
-        (h2_pal_webrtc_channel_t *)channel) {
+        (h2_pal_webrtc_channel_t*)channel) {
       h2_gizclaw_reset_local_channel_state(client);
     }
-    h2_gizclaw_local_channel_t *local = h2_gizclaw_local_channel_find(client, channel);
+    h2_gizclaw_local_channel_t* local =
+        h2_gizclaw_local_channel_find(client, channel);
     if (local != NULL) {
       /* Keep origin identity until the terminal event retires queued OPENs;
        * close/send lookup must no longer expose the consumed PAL handle. */
@@ -1975,26 +1973,27 @@ static void h2_gzc_channel_close(gzc_rtc_channel_t *channel) {
       local->write_blocked = false;
     }
     h2_pal_webrtc_channel_close(client->config.webrtc,
-                                (h2_pal_webrtc_channel_t *)channel);
+                                (h2_pal_webrtc_channel_t*)channel);
   }
 }
 
 #if defined(H2_GIZCLAW_TESTING)
-int h2_gizclaw_test_provider_send(h2_pal_webrtc_channel_t *channel,
-    const uint8_t *data, size_t len) {
-  return h2_gzc_channel_send((gzc_rtc_channel_t *)channel, data, len, false);
+int h2_gizclaw_test_provider_send(h2_pal_webrtc_channel_t* channel,
+                                  const uint8_t* data, size_t len) {
+  return h2_gzc_channel_send((gzc_rtc_channel_t*)channel, data, len, false);
 }
 
-static int test_provider_respond(void *user,
-                                  const gzc_rpc_provider_response_t *response) {
+static int test_provider_respond(void* user,
+                                 const gzc_rpc_provider_response_t* response) {
   (void)response;
-  return *(const int *)user;
+  return *(const int*)user;
 }
 
-int h2_gizclaw_test_provider_response(h2_gizclaw_client_t *client,
-    h2_pal_webrtc_channel_t *channel, int respond_result) {
-  h2_gizclaw_mark_remote_service(client, (gzc_rtc_channel_t *)channel);
-  client->provider_channel = (gzc_rtc_channel_t *)channel;
+int h2_gizclaw_test_provider_response(h2_gizclaw_client_t* client,
+                                      h2_pal_webrtc_channel_t* channel,
+                                      int respond_result) {
+  h2_gizclaw_mark_remote_service(client, (gzc_rtc_channel_t*)channel);
+  client->provider_channel = (gzc_rtc_channel_t*)channel;
   size_t index = 0;
   while (index < client->config.tool_handler_count &&
          client->tools[index].tool !=
@@ -2009,18 +2008,19 @@ int h2_gizclaw_test_provider_response(h2_gizclaw_client_t *client,
   return rc;
 }
 
-void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t *client,
-    h2_pal_webrtc_channel_t *channel, bool remote) {
+void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t* client,
+                                            h2_pal_webrtc_channel_t* channel,
+                                            bool remote) {
   if (remote)
     h2_gizclaw_dispatch_channel_state(client, NULL, channel, NULL,
-                                     H2_PAL_WEBRTC_CHANNEL_CLOSED);
+                                      H2_PAL_WEBRTC_CHANNEL_CLOSED);
   else
-    h2_gzc_channel_close((gzc_rtc_channel_t *)channel);
+    h2_gzc_channel_close((gzc_rtc_channel_t*)channel);
 }
 #endif
 
-static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
-  h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
+static void h2_gzc_peer_close(gzc_rtc_peer_t* peer) {
+  h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client != NULL && client->config.webrtc != NULL) {
     dispatch_provider_completions(client, H2_PAL_ERR_CLOSED);
     h2_gizclaw_reset_local_channel_state(client);
@@ -2029,15 +2029,16 @@ static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
     client->opus_frame_peer = NULL;
     if (client->config.webrtc_media_track != NULL) {
       (void)h2_pal_webrtc_peer_unset_track(client->config.webrtc,
-                                           (h2_pal_webrtc_peer_t *)peer,
+                                           (h2_pal_webrtc_peer_t*)peer,
                                            client->config.webrtc_media_track);
     }
     h2_pal_webrtc_peer_close(client->config.webrtc,
-                             (h2_pal_webrtc_peer_t *)peer);
-    if (client->webrtc_peer == (h2_pal_webrtc_peer_t *)peer) {
+                             (h2_pal_webrtc_peer_t*)peer);
+    if (client->webrtc_peer == (h2_pal_webrtc_peer_t*)peer) {
       client->webrtc_peer = NULL;
     }
-    for (h2_gizclaw_local_channel_t *entry = h2_atomic_load(&client->local_channels);
+    for (h2_gizclaw_local_channel_t* entry =
+             h2_atomic_load(&client->local_channels);
          entry != NULL; entry = entry->next) {
       h2_gizclaw_unmark_local_channel(client, entry->channel);
     }
@@ -2049,7 +2050,7 @@ static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
 }
 
 int h2_gizclaw_tools_validate_internal(
-    const h2_gizclaw_tool_handler_t *handlers, size_t count) {
+    const h2_gizclaw_tool_handler_t* handlers, size_t count) {
   if ((count && !handlers) || count > H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL)
     return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0; i < count; ++i) {
@@ -2059,13 +2060,12 @@ int h2_gizclaw_tools_validate_internal(
         !handlers[i].invoke)
       return H2_PAL_ERR_INVALID_ARG;
     for (size_t j = 0; j < i; ++j)
-      if (handlers[i].tool == handlers[j].tool)
-        return H2_PAL_ERR_INVALID_ARG;
+      if (handlers[i].tool == handlers[j].tool) return H2_PAL_ERR_INVALID_ARG;
   }
   return H2_PAL_OK;
 }
 
-static int h2_gizclaw_config_valid(const h2_gizclaw_config_t *config) {
+static int h2_gizclaw_config_valid(const h2_gizclaw_config_t* config) {
   return config != NULL && config->connect_timeout_ms > 0 &&
          config->write_timeout_ms >= 0 && config->allocator != NULL &&
          config->http != NULL && config->webrtc != NULL &&
@@ -2076,16 +2076,16 @@ static int h2_gizclaw_config_valid(const h2_gizclaw_config_t *config) {
          config->private_key.data != NULL;
 }
 
-int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
-                           h2_gizclaw_client_t **out_client) {
+int h2_gizclaw_client_init(const h2_gizclaw_config_t* config,
+                           h2_gizclaw_client_t** out_client) {
   return h2_gizclaw_client_init_with_lua_stream_internal(config, NULL,
                                                          out_client);
 }
 
 int h2_gizclaw_client_init_with_lua_stream_internal(
-    const h2_gizclaw_config_t *config,
-    const gzc_rpc_stream_provider_t *provider,
-    h2_gizclaw_client_t **out_client) {
+    const h2_gizclaw_config_t* config,
+    const gzc_rpc_stream_provider_t* provider,
+    h2_gizclaw_client_t** out_client) {
   if (!h2_gizclaw_config_valid(config) || out_client == NULL ||
       h2_gizclaw_tools_validate_internal(
           config->tool_handlers, config->tool_handler_count) != H2_PAL_OK ||
@@ -2099,7 +2099,7 @@ int h2_gizclaw_client_init_with_lua_stream_internal(
   if (time_rc != H2_PAL_OK) {
     return time_rc;
   }
-  h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)h2_pal_mem_alloc(
+  h2_gizclaw_client_t* client = (h2_gizclaw_client_t*)h2_pal_mem_alloc(
       config->allocator, sizeof(*client));
   if (client == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
@@ -2184,12 +2184,13 @@ int h2_gizclaw_client_init_with_lua_stream_internal(
     h2_pal_mem_free(config->allocator, client);
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_atomic_result_t atomic_result = h2_atomic_ptr_init(&client->local_channels, NULL);
+  h2_atomic_result_t atomic_result =
+      h2_atomic_ptr_init(&client->local_channels, NULL);
   if (atomic_result != H2_ATOMIC_OK) {
     gzc_client_destroy(client->gzc);
     h2_pal_mem_free(config->allocator, client);
     return atomic_result == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
-                                                 : H2_PAL_ERR_NO_MEMORY;
+                                                  : H2_PAL_ERR_NO_MEMORY;
   }
   client->next_conversation_stream_sequence = 1u;
   client->next_client = s_clients;
@@ -2198,14 +2199,14 @@ int h2_gizclaw_client_init_with_lua_stream_internal(
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_client_connect(h2_gizclaw_client_t *client) {
+int h2_gizclaw_client_connect(h2_gizclaw_client_t* client) {
   if (client == NULL || client->gzc == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (client->terminal_closed) {
     return H2_PAL_ERR_CLOSED;
   }
-  const char *stage = "client_connect";
+  const char* stage = "client_connect";
   int rc = gzc_client_connect(client->gzc);
   if (rc == GZC_OK) {
     stage = "event_stream_open";
@@ -2222,7 +2223,7 @@ int h2_gizclaw_client_connect(h2_gizclaw_client_t *client) {
   return h2_gizclaw_result_from_gzc(rc);
 }
 
-int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms) {
+int h2_gizclaw_client_poll(h2_gizclaw_client_t* client, int timeout_ms) {
   if (client == NULL || client->gzc == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -2267,9 +2268,9 @@ int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms) {
 }
 
 int h2_gizclaw_client_rpc_request_start(
-    h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
+    h2_gizclaw_client_t* client, h2_gizclaw_rpc_method_t method,
     h2_gizclaw_rpc_bytes_t params_payload, uint32_t timeout_ms,
-    h2_gizclaw_rpc_request_t **out_request) {
+    h2_gizclaw_rpc_request_t** out_request) {
   if (out_request != NULL) {
     *out_request = NULL;
   }
@@ -2278,7 +2279,7 @@ int h2_gizclaw_client_rpc_request_start(
       (params_payload.len > 0u && params_payload.data == NULL)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_gizclaw_rpc_request_t *request =
+  h2_gizclaw_rpc_request_t* request =
       h2_pal_mem_alloc(client->config.allocator, sizeof(*request));
   if (request == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
@@ -2293,7 +2294,7 @@ int h2_gizclaw_client_rpc_request_start(
   };
   const int rc = gzc_rpc_request_start(
       client->gzc, 0u, (gizclaw_rpc_v1_RpcMethod)method,
-      gzc_str_from_parts((const char *)params_payload.data, params_payload.len),
+      gzc_str_from_parts((const char*)params_payload.data, params_payload.len),
       (int)timeout_ms, &options, &request->gzc);
   if (rc != GZC_OK) {
     h2_pal_mem_free(request->allocator, request);
@@ -2303,16 +2304,14 @@ int h2_gizclaw_client_rpc_request_start(
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_rpc_request_result(h2_gizclaw_rpc_request_t *request,
-                                  h2_gizclaw_rpc_response_t *out_response) {
+int h2_gizclaw_rpc_request_result(h2_gizclaw_rpc_request_t* request,
+                                  h2_gizclaw_rpc_response_t* out_response) {
   if (request == NULL || request->gzc == NULL || out_response == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(out_response, 0, sizeof(*out_response));
-  if (request->stream_error != H2_PAL_OK)
-    return request->stream_error;
-  if (!request->completion_notified)
-    return H2_PAL_ERR_WOULD_BLOCK;
+  if (request->stream_error != H2_PAL_OK) return request->stream_error;
+  if (!request->completion_notified) return H2_PAL_ERR_WOULD_BLOCK;
   if (request->completion_status != GZC_OK)
     return h2_gizclaw_result_from_gzc(request->completion_status);
   gzc_rpc_response_t response;
@@ -2362,12 +2361,10 @@ int h2_gizclaw_rpc_request_result(h2_gizclaw_rpc_request_t *request,
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_rpc_diagnostic_internal(
-    const h2_gizclaw_rpc_request_t *request,
-    h2_gizclaw_rpc_diagnostic_t *out) {
+void h2_gizclaw_rpc_diagnostic_internal(const h2_gizclaw_rpc_request_t* request,
+                                        h2_gizclaw_rpc_diagnostic_t* out) {
   *out = (h2_gizclaw_rpc_diagnostic_t){0};
-  if (request == NULL)
-    return;
+  if (request == NULL) return;
   *out = (h2_gizclaw_rpc_diagnostic_t){
       .available = true,
       .completion_seen = request->completion_notified,
@@ -2377,7 +2374,7 @@ void h2_gizclaw_rpc_diagnostic_internal(
   };
 }
 
-static int rpc_record_sdk_result(h2_gizclaw_rpc_request_t *request, int rc) {
+static int rpc_record_sdk_result(h2_gizclaw_rpc_request_t* request, int rc) {
   if (rc != GZC_OK && rc != GZC_ERR_WOULD_BLOCK) {
     request->sdk_error_seen = true;
     request->sdk_error = rc;
@@ -2386,23 +2383,22 @@ static int rpc_record_sdk_result(h2_gizclaw_rpc_request_t *request, int rc) {
 }
 
 void h2_gizclaw_rpc_request_set_complete_handler(
-    h2_gizclaw_rpc_request_t *request, h2_gizclaw_rpc_complete_fn on_complete,
-    void *user) {
-  if (request == NULL)
-    return;
+    h2_gizclaw_rpc_request_t* request, h2_gizclaw_rpc_complete_fn on_complete,
+    void* user) {
+  if (request == NULL) return;
   request->on_complete = on_complete;
   request->complete_user = user;
   if (on_complete != NULL && request->completion_notified)
     on_complete(user, h2_gizclaw_result_from_gzc(request->completion_status));
 }
 
-void h2_gizclaw_rpc_request_cancel(h2_gizclaw_rpc_request_t *request) {
+void h2_gizclaw_rpc_request_cancel(h2_gizclaw_rpc_request_t* request) {
   if (request != NULL) {
     gzc_rpc_request_cancel(request->gzc);
   }
 }
 
-void h2_gizclaw_rpc_request_destroy(h2_gizclaw_rpc_request_t *request) {
+void h2_gizclaw_rpc_request_destroy(h2_gizclaw_rpc_request_t* request) {
   if (request == NULL) {
     return;
   }
@@ -2410,14 +2406,12 @@ void h2_gizclaw_rpc_request_destroy(h2_gizclaw_rpc_request_t *request) {
   h2_pal_mem_free(request->allocator, request);
 }
 
-static int
-h2_gizclaw_deliver_stream_event(h2_gizclaw_rpc_request_t *request,
-                                const h2_gizclaw_rpc_stream_event_t *event) {
-  if (request->stream_error != H2_PAL_OK)
-    return GZC_ERR_RPC;
+static int h2_gizclaw_deliver_stream_event(
+    h2_gizclaw_rpc_request_t* request,
+    const h2_gizclaw_rpc_stream_event_t* event) {
+  if (request->stream_error != H2_PAL_OK) return GZC_ERR_RPC;
   const int rc = request->on_stream_event(request->stream_user, event);
-  if (rc == H2_PAL_OK)
-    return GZC_OK;
+  if (rc == H2_PAL_OK) return GZC_OK;
   /* SDK and PAL errors overlap numerically but have different meanings.
    * The pinned SDK cannot replay a callback that returns WOULD_BLOCK: reject
    * it as an I/O failure instead of leaving an already-terminal RPC pending. */
@@ -2427,8 +2421,8 @@ h2_gizclaw_deliver_stream_event(h2_gizclaw_rpc_request_t *request,
   return GZC_ERR_RPC;
 }
 
-static int h2_gizclaw_stream_frame(void *user, const gzc_rpc_frame_t *frame) {
-  h2_gizclaw_rpc_request_t *request = user;
+static int h2_gizclaw_stream_frame(void* user, const gzc_rpc_frame_t* frame) {
+  h2_gizclaw_rpc_request_t* request = user;
   if (request == NULL || frame == NULL || request->on_stream_event == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
@@ -2444,20 +2438,20 @@ static int h2_gizclaw_stream_frame(void *user, const gzc_rpc_frame_t *frame) {
     gzc_rpc_response_t response;
     memset(&response, 0, sizeof(response));
     int rc = gzc_rpc_decode_response_envelope(
-        gzc_str_from_parts((const char *)frame->data, frame->len), &response);
+        gzc_str_from_parts((const char*)frame->data, frame->len), &response);
     if (rc != GZC_OK) {
       (void)rpc_record_sdk_result(request, rc);
       return rc;
     }
     event.kind = H2_GIZCLAW_RPC_STREAM_RESPONSE;
     event.result_payload = (h2_gizclaw_rpc_bytes_t){
-        .data = (const uint8_t *)response.result_payload.data,
+        .data = (const uint8_t*)response.result_payload.data,
         .len = response.result_payload.len,
     };
     event.has_error = response.has_error;
     event.error_code = response.error.code;
     event.error_message = (h2_gizclaw_rpc_bytes_t){
-        .data = (const uint8_t *)response.error.message.data,
+        .data = (const uint8_t*)response.error.message.data,
         .len = response.error.message.len,
     };
     request->saw_stream_response = true;
@@ -2472,47 +2466,46 @@ static int h2_gizclaw_stream_frame(void *user, const gzc_rpc_frame_t *frame) {
 }
 
 #if defined(H2_GIZCLAW_TESTING)
-void h2_gizclaw_test_rpc_complete_on_client(h2_gizclaw_client_t *client,
+void h2_gizclaw_test_rpc_complete_on_client(h2_gizclaw_client_t* client,
                                             int status, bool inbound) {
   h2_gizclaw_rpc_request_t request = {0};
-  request.gzc = (gzc_rpc_request_t *)&request;
+  request.gzc = (gzc_rpc_request_t*)&request;
   request.client = client;
   request.inbound_at_start = client->inbound_count;
-  if (inbound)
-    ++client->inbound_count;
+  if (inbound) ++client->inbound_count;
   h2_gizclaw_rpc_complete(&request, request.gzc, status);
 }
 
 bool h2_gizclaw_test_rpc_diagnostic(void) {
   h2_gizclaw_rpc_request_t request = {0};
-  request.gzc = (gzc_rpc_request_t *)&request;
+  request.gzc = (gzc_rpc_request_t*)&request;
   h2_gizclaw_rpc_diagnostic_t before, after;
   h2_gizclaw_rpc_diagnostic_internal(&request, &before);
   if (!before.available || before.completion_seen || before.error_seen)
     return false;
   (void)rpc_record_sdk_result(&request, GZC_ERR_WOULD_BLOCK);
   h2_gizclaw_rpc_diagnostic_internal(&request, &before);
-  if (before.error_seen)
-    return false;
+  if (before.error_seen) return false;
   (void)rpc_record_sdk_result(&request, GZC_ERR_TIMEOUT);
   h2_gizclaw_rpc_complete(&request, request.gzc, GZC_ERR_TIMEOUT);
   h2_gizclaw_rpc_diagnostic_internal(&request, &before);
   /* A later cleanup notification cannot mutate a copied diagnostic. */
   h2_gizclaw_rpc_complete(&request, request.gzc, GZC_ERR_CLOSED);
   h2_gizclaw_rpc_diagnostic_internal(&request, &after);
-  return before.completion_seen && before.completion_gzc_rc == GZC_ERR_TIMEOUT &&
-         before.error_seen && before.error_gzc_rc == GZC_ERR_TIMEOUT &&
+  return before.completion_seen &&
+         before.completion_gzc_rc == GZC_ERR_TIMEOUT && before.error_seen &&
+         before.error_gzc_rc == GZC_ERR_TIMEOUT &&
          after.completion_gzc_rc == GZC_ERR_CLOSED;
 }
 
-static int test_stream_failure(void *user,
-                               const h2_gizclaw_rpc_stream_event_t *event) {
+static int test_stream_failure(void* user,
+                               const h2_gizclaw_rpc_stream_event_t* event) {
   (void)event;
-  return *(const int *)user;
+  return *(const int*)user;
 }
 
 int h2_gizclaw_test_stream_failure_result(int pal_error, bool eos,
-                                          int *out_sdk_result) {
+                                          int* out_sdk_result) {
   h2_gizclaw_rpc_request_t request = {
       .on_stream_event = test_stream_failure,
       .stream_user = &pal_error,
@@ -2521,7 +2514,7 @@ int h2_gizclaw_test_stream_failure_result(int pal_error, bool eos,
   if (pal_error == H2_PAL_OK || out_sdk_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   /* Error result must be returned without touching the SDK handle. */
-  request.gzc = (gzc_rpc_request_t *)&request;
+  request.gzc = (gzc_rpc_request_t*)&request;
   const gzc_rpc_frame_t frame = {
       .type = eos ? GZC_RPC_FRAME_EOS : GZC_RPC_FRAME_BINARY,
   };
@@ -2532,22 +2525,20 @@ int h2_gizclaw_test_stream_failure_result(int pal_error, bool eos,
 #endif
 
 int h2_gizclaw_client_rpc_request_start_stream(
-    h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
+    h2_gizclaw_client_t* client, h2_gizclaw_rpc_method_t method,
     h2_gizclaw_rpc_bytes_t params_payload, uint32_t timeout_ms,
-    h2_gizclaw_rpc_stream_fn on_event, void *user,
-    h2_gizclaw_rpc_request_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    h2_gizclaw_rpc_stream_fn on_event, void* user,
+    h2_gizclaw_rpc_request_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (client == NULL || client->gzc == NULL || method <= 0 ||
       timeout_ms == 0u || timeout_ms > INT32_MAX || on_event == NULL ||
       out_request == NULL ||
       (params_payload.len > 0u && params_payload.data == NULL)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_gizclaw_rpc_request_t *request =
+  h2_gizclaw_rpc_request_t* request =
       h2_pal_mem_alloc(client->config.allocator, sizeof(*request));
-  if (request == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (request == NULL) return H2_PAL_ERR_NO_MEMORY;
   memset(request, 0, sizeof(*request));
   request->allocator = client->config.allocator;
   request->client = client;
@@ -2560,7 +2551,7 @@ int h2_gizclaw_client_rpc_request_start_stream(
   };
   const int rc = gzc_rpc_request_start_stream(
       client->gzc, 0u, (gizclaw_rpc_v1_RpcMethod)method,
-      gzc_str_from_parts((const char *)params_payload.data, params_payload.len),
+      gzc_str_from_parts((const char*)params_payload.data, params_payload.len),
       (int)timeout_ms, h2_gizclaw_stream_frame, request, &options,
       &request->gzc);
   if (rc != GZC_OK) {
@@ -2571,22 +2562,20 @@ int h2_gizclaw_client_rpc_request_start_stream(
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_rpc_request_write(h2_gizclaw_rpc_request_t *request,
-                                 const uint8_t *data, size_t len) {
-  if (request == NULL || request->gzc == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  return rpc_record_sdk_result(
-      request, gzc_rpc_request_write(request->gzc, data, len));
+int h2_gizclaw_rpc_request_write(h2_gizclaw_rpc_request_t* request,
+                                 const uint8_t* data, size_t len) {
+  if (request == NULL || request->gzc == NULL) return H2_PAL_ERR_INVALID_ARG;
+  return rpc_record_sdk_result(request,
+                               gzc_rpc_request_write(request->gzc, data, len));
 }
 
-int h2_gizclaw_rpc_request_finish_write(h2_gizclaw_rpc_request_t *request) {
-  if (request == NULL || request->gzc == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+int h2_gizclaw_rpc_request_finish_write(h2_gizclaw_rpc_request_t* request) {
+  if (request == NULL || request->gzc == NULL) return H2_PAL_ERR_INVALID_ARG;
   return rpc_record_sdk_result(request,
                                gzc_rpc_request_finish_write(request->gzc));
 }
 
-int h2_gizclaw_client_close(h2_gizclaw_client_t *client) {
+int h2_gizclaw_client_close(h2_gizclaw_client_t* client) {
   if (client == NULL || client->gzc == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -2598,19 +2587,19 @@ int h2_gizclaw_client_close(h2_gizclaw_client_t *client) {
   return rc == GZC_OK ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
-void h2_gizclaw_client_deinit(h2_gizclaw_client_t *client) {
+void h2_gizclaw_client_deinit(h2_gizclaw_client_t* client) {
   if (client == NULL) {
     return;
   }
   dispatch_provider_completions(client, H2_PAL_ERR_CLOSED);
-  const h2_pal_mem_api_t *allocator = client->config.allocator;
+  const h2_pal_mem_api_t* allocator = client->config.allocator;
   if (client->gzc != NULL) {
     h2_gizclaw_reset_local_channel_state(client);
     h2_gizclaw_release_event_handle(client);
     gzc_client_destroy(client->gzc);
     client->gzc = NULL;
   }
-  h2_gizclaw_client_t **cursor = &s_clients;
+  h2_gizclaw_client_t** cursor = &s_clients;
   while (*cursor != NULL && *cursor != client) {
     cursor = &(*cursor)->next_client;
   }
@@ -2622,9 +2611,9 @@ void h2_gizclaw_client_deinit(h2_gizclaw_client_t *client) {
     s_test_webrtc_client = NULL;
   }
 #endif
-  h2_gizclaw_local_channel_t *entry = h2_atomic_load(&client->local_channels);
+  h2_gizclaw_local_channel_t* entry = h2_atomic_load(&client->local_channels);
   while (entry != NULL) {
-    h2_gizclaw_local_channel_t *next = entry->next;
+    h2_gizclaw_local_channel_t* next = entry->next;
     h2_atomic_ptr_destroy(&entry->live_channel);
     h2_pal_mem_free(allocator, entry);
     entry = next;
@@ -2634,27 +2623,26 @@ void h2_gizclaw_client_deinit(h2_gizclaw_client_t *client) {
 }
 
 #if defined(H2_GIZCLAW_TESTING)
-const gzc_webrtc_vtable_t *
-h2_gizclaw_test_webrtc_api(h2_gizclaw_client_t *client) {
+const gzc_webrtc_vtable_t* h2_gizclaw_test_webrtc_api(
+    h2_gizclaw_client_t* client) {
   return &client->webrtc;
 }
 
-bool h2_gizclaw_test_media_registered(h2_gizclaw_client_t *client) {
+bool h2_gizclaw_test_media_registered(h2_gizclaw_client_t* client) {
   return client != NULL && client->media.struct_size == sizeof(client->media) &&
          client->media.peer_set_opus_frame_callback != NULL &&
          client->media.peer_send_opus != NULL;
 }
 
-int h2_gizclaw_test_peer_create(h2_gizclaw_client_t *client,
-                                h2_pal_webrtc_peer_t **out_peer) {
-  if (client == NULL || out_peer == NULL)
-    return GZC_ERR_INVALID_ARGUMENT;
+int h2_gizclaw_test_peer_create(h2_gizclaw_client_t* client,
+                                h2_pal_webrtc_peer_t** out_peer) {
+  if (client == NULL || out_peer == NULL) return GZC_ERR_INVALID_ARGUMENT;
   const gzc_webrtc_callbacks_t callbacks = {0};
-  return h2_gzc_peer_create(client, &callbacks, (gzc_rtc_peer_t **)out_peer);
+  return h2_gzc_peer_create(client, &callbacks, (gzc_rtc_peer_t**)out_peer);
 }
 
-int h2_gizclaw_test_media_send_opus(h2_gizclaw_client_t *client,
-                                    gzc_rtc_peer_t *peer, const uint8_t *opus,
+int h2_gizclaw_test_media_send_opus(h2_gizclaw_client_t* client,
+                                    gzc_rtc_peer_t* peer, const uint8_t* opus,
                                     size_t opus_len) {
   if (client == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
@@ -2663,18 +2651,18 @@ int h2_gizclaw_test_media_send_opus(h2_gizclaw_client_t *client,
   return h2_gzc_peer_send_opus(peer, opus, opus_len);
 }
 
-int h2_gizclaw_test_peer_poll(h2_gizclaw_client_t *client,
-                              h2_pal_webrtc_peer_t *peer, int timeout_ms) {
-  h2_gizclaw_client_t *previous = s_test_webrtc_client;
+int h2_gizclaw_test_peer_poll(h2_gizclaw_client_t* client,
+                              h2_pal_webrtc_peer_t* peer, int timeout_ms) {
+  h2_gizclaw_client_t* previous = s_test_webrtc_client;
   s_test_webrtc_client = client;
-  const int rc = h2_gzc_peer_poll((gzc_rtc_peer_t *)peer, timeout_ms);
+  const int rc = h2_gzc_peer_poll((gzc_rtc_peer_t*)peer, timeout_ms);
   s_test_webrtc_client = previous;
   return rc;
 }
 
 int h2_gizclaw_test_media_set_opus_frame_callback(
-    h2_gizclaw_client_t *client, gzc_rtc_peer_t *peer,
-    gzc_rtc_opus_frame_cb callback, void *callback_user) {
+    h2_gizclaw_client_t* client, gzc_rtc_peer_t* peer,
+    gzc_rtc_opus_frame_cb callback, void* callback_user) {
   if (client == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
@@ -2682,14 +2670,14 @@ int h2_gizclaw_test_media_set_opus_frame_callback(
   return h2_gzc_peer_set_opus_frame_callback(peer, callback, callback_user);
 }
 
-void h2_gizclaw_test_media_emit_opus(h2_gizclaw_client_t *client,
-                                     gzc_rtc_peer_t *peer, const uint8_t *opus,
+void h2_gizclaw_test_media_emit_opus(h2_gizclaw_client_t* client,
+                                     gzc_rtc_peer_t* peer, const uint8_t* opus,
                                      size_t opus_len) {
-  h2_gzc_opus_frame(client, (h2_pal_webrtc_peer_t *)peer, opus, opus_len);
+  h2_gzc_opus_frame(client, (h2_pal_webrtc_peer_t*)peer, opus, opus_len);
 }
 
-void h2_gizclaw_test_media_close_peer(h2_gizclaw_client_t *client,
-                                      gzc_rtc_peer_t *peer) {
+void h2_gizclaw_test_media_close_peer(h2_gizclaw_client_t* client,
+                                      gzc_rtc_peer_t* peer) {
   if (client == NULL) {
     return;
   }
@@ -2697,30 +2685,28 @@ void h2_gizclaw_test_media_close_peer(h2_gizclaw_client_t *client,
   h2_gzc_peer_close(peer);
 }
 
-int h2_gizclaw_test_try_write_bytes(h2_gizclaw_client_t *client,
-                                    h2_pal_webrtc_channel_t *channel,
-                                    const uint8_t *data, size_t len,
-                                    size_t *offset, bool *blocked) {
+int h2_gizclaw_test_try_write_bytes(h2_gizclaw_client_t* client,
+                                    h2_pal_webrtc_channel_t* channel,
+                                    const uint8_t* data, size_t len,
+                                    size_t* offset, bool* blocked) {
   if (client == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
   s_test_webrtc_client = client;
-  client->webrtc_peer = (h2_pal_webrtc_peer_t *)(uintptr_t)1u;
-  h2_gizclaw_local_channel_t *local = NULL;
+  client->webrtc_peer = (h2_pal_webrtc_peer_t*)(uintptr_t)1u;
+  h2_gizclaw_local_channel_t* local = NULL;
   int rc = h2_gizclaw_reserve_local_channel(client, &local);
-  if (rc != GZC_OK)
-    return rc;
-  local->channel = (gzc_rtc_channel_t *)channel;
+  if (rc != GZC_OK) return rc;
+  local->channel = (gzc_rtc_channel_t*)channel;
   h2_atomic_store(&local->live_channel, channel);
-  rc = gzc_client_try_write_bytes_internal(client->gzc,
-                                               (gzc_rtc_channel_t *)channel,
-                                               data, len, offset, blocked, 1u);
-  h2_gizclaw_unmark_local_channel(client, (gzc_rtc_channel_t *)channel);
+  rc = gzc_client_try_write_bytes_internal(
+      client->gzc, (gzc_rtc_channel_t*)channel, data, len, offset, blocked, 1u);
+  h2_gizclaw_unmark_local_channel(client, (gzc_rtc_channel_t*)channel);
   return rc;
 }
 #endif
 
-void h2_gizclaw_client_set_local_internal(h2_gizclaw_client_t *client,
-    h2_gizclaw_service_t *service) {
+void h2_gizclaw_client_set_local_internal(h2_gizclaw_client_t* client,
+                                          h2_gizclaw_service_t* service) {
   if (client) client->local_service = service;
 }

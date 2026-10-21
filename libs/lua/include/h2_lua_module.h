@@ -10,11 +10,11 @@ extern "C" {
 #endif
 
 /** Module open callback receives the current lua_State as an opaque pointer. */
-typedef int (*h2_lua_module_open_fn)(void *lua_state, void *user);
+typedef int (*h2_lua_module_open_fn)(void* lua_state, void* user);
 
-h2_pal_result_t h2_lua_register_module(h2_lua_host_t *host, const char *name,
+h2_pal_result_t h2_lua_register_module(h2_lua_host_t* host, const char* name,
                                        h2_lua_module_open_fn open_fn,
-                                       void *user);
+                                       void* user);
 
 #ifdef __cplusplus
 }

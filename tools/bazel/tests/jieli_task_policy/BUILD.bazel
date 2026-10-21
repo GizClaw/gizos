@@ -68,22 +68,22 @@ policy_failure_test(
     name = "missing_policy_test",
     expected_message = "1 task name(s) reachable from this target have no policy.",
     expected_task = "fixture/worker",
-    target_under_test = ":missing_policy",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    target_under_test = ":missing_policy",
 )
 
 policy_failure_test(
     name = "undeclared_policy_test",
     expected_message = "the policy table has a row for fixture/undeclared, which nothing in the image declares",
     expected_task = "fixture/undeclared",
-    target_under_test = ":undeclared_policy",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    target_under_test = ":undeclared_policy",
 )

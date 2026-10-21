@@ -58,7 +58,7 @@ typedef struct h2_pal_wifi_csi_frame {
   uint8_t bandwidth_mhz;
   uint8_t mcs;
   int8_t rssi_dbm;
-  const h2_pal_wifi_csi_sample_t *samples;
+  const h2_pal_wifi_csi_sample_t* samples;
   size_t sample_count;
 } h2_pal_wifi_csi_frame_t;
 
@@ -70,18 +70,18 @@ typedef struct h2_pal_wifi_csi_frame {
  *
  * Callbacks must not block or retain frame or frame->samples.
  */
-typedef void (*h2_pal_wifi_csi_frame_fn)(void *user,
-                                         const h2_pal_wifi_csi_frame_t *frame);
+typedef void (*h2_pal_wifi_csi_frame_fn)(void* user,
+                                         const h2_pal_wifi_csi_frame_t* frame);
 
 typedef struct h2_pal_wifi_csi_api h2_pal_wifi_csi_api_t;
 typedef h2_pal_wifi_csi_api_t h2_pal_wifi_csi_t;
 
 typedef h2_pal_result_t (*h2_pal_wifi_csi_get_capabilities_fn)(
-    void *user, h2_pal_wifi_csi_capabilities_t *out_capabilities);
+    void* user, h2_pal_wifi_csi_capabilities_t* out_capabilities);
 typedef h2_pal_result_t (*h2_pal_wifi_csi_start_fn)(
-    void *user, const h2_pal_wifi_csi_config_t *config,
-    h2_pal_wifi_csi_frame_fn frame_cb, void *frame_user);
-typedef h2_pal_result_t (*h2_pal_wifi_csi_stop_fn)(void *user);
+    void* user, const h2_pal_wifi_csi_config_t* config,
+    h2_pal_wifi_csi_frame_fn frame_cb, void* frame_user);
+typedef h2_pal_result_t (*h2_pal_wifi_csi_stop_fn)(void* user);
 
 typedef struct h2_pal_wifi_csi_vtable {
   h2_pal_wifi_csi_get_capabilities_fn get_capabilities;
@@ -90,8 +90,8 @@ typedef struct h2_pal_wifi_csi_vtable {
 } h2_pal_wifi_csi_vtable_t;
 
 struct h2_pal_wifi_csi_api {
-  void *user;
-  const h2_pal_wifi_csi_vtable_t *vtable;
+  void* user;
+  const h2_pal_wifi_csi_vtable_t* vtable;
 };
 
 /**
@@ -102,8 +102,8 @@ struct h2_pal_wifi_csi_api {
  * @return H2_PAL_OK on success; otherwise an h2_pal_result_t error.
  */
 static inline h2_pal_result_t h2_pal_wifi_csi_get_capabilities(
-    const h2_pal_wifi_csi_api_t *api,
-    h2_pal_wifi_csi_capabilities_t *out_capabilities) {
+    const h2_pal_wifi_csi_api_t* api,
+    h2_pal_wifi_csi_capabilities_t* out_capabilities) {
   if (api == NULL || api->vtable == NULL ||
       api->vtable->get_capabilities == NULL || out_capabilities == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -122,10 +122,9 @@ static inline h2_pal_result_t h2_pal_wifi_csi_get_capabilities(
  * @param frame_user Caller-owned callback context.
  * @return H2_PAL_OK when capture starts; otherwise an h2_pal_result_t error.
  */
-static inline h2_pal_result_t
-h2_pal_wifi_csi_start(const h2_pal_wifi_csi_api_t *api,
-                      const h2_pal_wifi_csi_config_t *config,
-                      h2_pal_wifi_csi_frame_fn frame_cb, void *frame_user) {
+static inline h2_pal_result_t h2_pal_wifi_csi_start(
+    const h2_pal_wifi_csi_api_t* api, const h2_pal_wifi_csi_config_t* config,
+    h2_pal_wifi_csi_frame_fn frame_cb, void* frame_user) {
   if (api == NULL || api->vtable == NULL || api->vtable->start == NULL ||
       config == NULL || frame_cb == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -139,8 +138,8 @@ h2_pal_wifi_csi_start(const h2_pal_wifi_csi_api_t *api,
  * @param api CSI capability API.
  * @return H2_PAL_OK on success; otherwise an h2_pal_result_t error.
  */
-static inline h2_pal_result_t
-h2_pal_wifi_csi_stop(const h2_pal_wifi_csi_api_t *api) {
+static inline h2_pal_result_t h2_pal_wifi_csi_stop(
+    const h2_pal_wifi_csi_api_t* api) {
   if (api == NULL || api->vtable == NULL || api->vtable->stop == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }

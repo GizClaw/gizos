@@ -12,7 +12,7 @@ extern "C" {
  * exhaustion returns NO_SPACE without consuming partial data. */
 typedef struct h2_app_test_crypto {
   h2_pal_crypto_api_t api;
-  const uint8_t *random_bytes;
+  const uint8_t* random_bytes;
   size_t random_size, random_offset;
   bool keypair_ready;
   h2_pal_x25519_keypair_t keypair;
@@ -20,7 +20,7 @@ typedef struct h2_app_test_crypto {
 } h2_app_test_crypto_t;
 /** Initialize empty caller storage; key operations remain UNSUPPORTED until
  * keypair_ready is set. No allocation or deinit needed. */
-void h2_app_test_crypto_init(h2_app_test_crypto_t *crypto);
+void h2_app_test_crypto_init(h2_app_test_crypto_t* crypto);
 
 #ifdef __cplusplus
 }

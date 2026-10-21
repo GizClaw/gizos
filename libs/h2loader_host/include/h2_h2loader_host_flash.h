@@ -8,68 +8,61 @@ extern "C" {
 #endif
 
 typedef enum h2_h2loader_host_recovery_reason {
-    H2_H2LOADER_HOST_RECOVERY_NONE = 0,
-    H2_H2LOADER_HOST_RECOVERY_PROBE_FAILED = 1,
-    H2_H2LOADER_HOST_RECOVERY_BLANK_FIXTURE = 2,
+  H2_H2LOADER_HOST_RECOVERY_NONE = 0,
+  H2_H2LOADER_HOST_RECOVERY_PROBE_FAILED = 1,
+  H2_H2LOADER_HOST_RECOVERY_BLANK_FIXTURE = 2,
 } h2_h2loader_host_recovery_reason_t;
 
 typedef struct h2_h2loader_host_recovery_authorization {
-    h2_h2loader_host_transport_t transport;
-    h2_h2loader_host_recovery_reason_t reason;
-    h2_pal_result_t probe_result;
-    uint64_t probe_completed_ms;
-    uint64_t expires_ms;
-    uint8_t probe_attempts;
-    uint8_t identity_confirmed;
-    uint8_t destructive_confirmed;
+  h2_h2loader_host_transport_t transport;
+  h2_h2loader_host_recovery_reason_t reason;
+  h2_pal_result_t probe_result;
+  uint64_t probe_completed_ms;
+  uint64_t expires_ms;
+  uint8_t probe_attempts;
+  uint8_t identity_confirmed;
+  uint8_t destructive_confirmed;
 } h2_h2loader_host_recovery_authorization_t;
 
 typedef struct h2_h2loader_host_flash_driver_vtable {
-    h2_pal_result_t (*prepare)(
-        void *user,
-        const h2_h2loader_host_catalog_entry_t *asset,
-        h2_h2loader_host_payload_read_fn read_payload,
-        void *payload_user);
-    h2_pal_result_t (*erase)(
-        void *user,
-        h2_h2loader_host_cancelled_fn is_cancelled,
-        void *cancel_user);
-    h2_pal_result_t (*write)(
-        void *user,
-        const h2_h2loader_host_catalog_entry_t *asset,
-        h2_h2loader_host_payload_read_fn read_payload,
-        void *payload_user,
-        h2_h2loader_host_cancelled_fn is_cancelled,
-        void *cancel_user,
-        h2_h2loader_host_progress_fn on_progress,
-        void *progress_user);
-    h2_pal_result_t (*verify)(
-        void *user,
-        h2_h2loader_host_cancelled_fn is_cancelled,
-        void *cancel_user);
-    h2_pal_result_t (*reset_to_loader)(void *user);
-    h2_pal_result_t (*close)(void *user);
+  h2_pal_result_t (*prepare)(void* user,
+                             const h2_h2loader_host_catalog_entry_t* asset,
+                             h2_h2loader_host_payload_read_fn read_payload,
+                             void* payload_user);
+  h2_pal_result_t (*erase)(void* user,
+                           h2_h2loader_host_cancelled_fn is_cancelled,
+                           void* cancel_user);
+  h2_pal_result_t (*write)(
+      void* user, const h2_h2loader_host_catalog_entry_t* asset,
+      h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
+      h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
+      h2_h2loader_host_progress_fn on_progress, void* progress_user);
+  h2_pal_result_t (*verify)(void* user,
+                            h2_h2loader_host_cancelled_fn is_cancelled,
+                            void* cancel_user);
+  h2_pal_result_t (*reset_to_loader)(void* user);
+  h2_pal_result_t (*close)(void* user);
 } h2_h2loader_host_flash_driver_vtable_t;
 
 typedef struct h2_h2loader_host_flash_driver {
-    void *user;
-    const h2_h2loader_host_flash_driver_vtable_t *vtable;
+  void* user;
+  const h2_h2loader_host_flash_driver_vtable_t* vtable;
 } h2_h2loader_host_flash_driver_t;
 
 typedef enum h2_h2loader_host_esp_boot_policy {
-    /** Operator/fixture has already placed the target in ROM download mode. */
-    H2_H2LOADER_HOST_ESP_BOOT_MANUAL = 1,
-    /** Explicitly use supported DTR/RTS lines for ESP download/reset. */
-    H2_H2LOADER_HOST_ESP_BOOT_DTR_RTS = 2,
+  /** Operator/fixture has already placed the target in ROM download mode. */
+  H2_H2LOADER_HOST_ESP_BOOT_MANUAL = 1,
+  /** Explicitly use supported DTR/RTS lines for ESP download/reset. */
+  H2_H2LOADER_HOST_ESP_BOOT_DTR_RTS = 2,
 } h2_h2loader_host_esp_boot_policy_t;
 
 typedef struct h2_h2loader_host_esp_flash_config {
-    const h2_pal_serial_host_api_t *serial;
-    const h2_pal_time_api_t *time;
-    const h2_pal_mem_api_t *allocator;
-    const char *port_id;
-    const char *expected_target;
-    h2_h2loader_host_esp_boot_policy_t boot_policy;
+  const h2_pal_serial_host_api_t* serial;
+  const h2_pal_time_api_t* time;
+  const h2_pal_mem_api_t* allocator;
+  const char* port_id;
+  const char* expected_target;
+  h2_h2loader_host_esp_boot_policy_t boot_policy;
 } h2_h2loader_host_esp_flash_config_t;
 
 /**
@@ -80,16 +73,16 @@ typedef struct h2_h2loader_host_esp_flash_config {
  * H2_PAL_ERR_UNAVAILABLE. Normal managed serial sessions are unaffected.
  */
 h2_pal_result_t h2_h2loader_host_esp_flash_open(
-    const h2_h2loader_host_esp_flash_config_t *config,
-    h2_h2loader_host_flash_driver_t *out_driver);
+    const h2_h2loader_host_esp_flash_config_t* config,
+    h2_h2loader_host_flash_driver_t* out_driver);
 
 typedef struct h2_h2loader_host_bk7258_flash_config {
-    const h2_pal_serial_host_api_t *serial;
-    const h2_pal_time_api_t *time;
-    const h2_pal_mem_api_t *allocator;
-    const char *port_id;
-    const char *expected_target;
-    uint8_t connect_attempts;
+  const h2_pal_serial_host_api_t* serial;
+  const h2_pal_time_api_t* time;
+  const h2_pal_mem_api_t* allocator;
+  const char* port_id;
+  const char* expected_target;
+  uint8_t connect_attempts;
 } h2_h2loader_host_bk7258_flash_config_t;
 
 /**
@@ -102,8 +95,8 @@ typedef struct h2_h2loader_host_bk7258_flash_config {
  * sectors, and verifies member SHA-256 through ROM readback.
  */
 h2_pal_result_t h2_h2loader_host_bk7258_flash_open(
-    const h2_h2loader_host_bk7258_flash_config_t *config,
-    h2_h2loader_host_flash_driver_t *out_driver);
+    const h2_h2loader_host_bk7258_flash_config_t* config,
+    h2_h2loader_host_flash_driver_t* out_driver);
 
 /**
  * @brief Validate the fail-closed authorization for destructive recovery.
@@ -116,9 +109,8 @@ h2_pal_result_t h2_h2loader_host_bk7258_flash_open(
  * that H2Loader is absent and therefore cannot authorize recovery.
  */
 h2_pal_result_t h2_h2loader_host_recovery_validate(
-    const h2_h2loader_host_recovery_authorization_t *authorization,
-    const h2_h2loader_host_catalog_entry_t *asset,
-    uint64_t now_ms);
+    const h2_h2loader_host_recovery_authorization_t* authorization,
+    const h2_h2loader_host_catalog_entry_t* asset, uint64_t now_ms);
 
 /**
  * @brief Execute prepare, erase, write, verify and reset through a driver.
@@ -132,16 +124,12 @@ h2_pal_result_t h2_h2loader_host_recovery_validate(
  * path, including authorization failure and cancellation.
  */
 h2_pal_result_t h2_h2loader_host_recovery_run(
-    const h2_h2loader_host_recovery_authorization_t *authorization,
-    const h2_h2loader_host_catalog_entry_t *asset,
-    uint64_t now_ms,
-    const h2_h2loader_host_flash_driver_t *driver,
-    h2_h2loader_host_payload_read_fn read_payload,
-    void *payload_user,
-    h2_h2loader_host_cancelled_fn is_cancelled,
-    void *cancel_user,
-    h2_h2loader_host_progress_fn on_progress,
-    void *progress_user);
+    const h2_h2loader_host_recovery_authorization_t* authorization,
+    const h2_h2loader_host_catalog_entry_t* asset, uint64_t now_ms,
+    const h2_h2loader_host_flash_driver_t* driver,
+    h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
+    h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
+    h2_h2loader_host_progress_fn on_progress, void* progress_user);
 
 #ifdef __cplusplus
 }

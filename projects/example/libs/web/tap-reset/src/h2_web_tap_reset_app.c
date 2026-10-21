@@ -3,13 +3,12 @@
 #include "h2_tap_reset.h"
 
 typedef struct h2_web_tap_reset_context {
-  const h2_web_tap_reset_app_config_t *web;
+  const h2_web_tap_reset_app_config_t* web;
 } h2_web_tap_reset_context_t;
 
-static h2_pal_result_t
-web_tap_reset_read_pointer(void *user,
-                           h2_tap_reset_pointer_state_t *out_state) {
-  h2_web_tap_reset_context_t *context = user;
+static h2_pal_result_t web_tap_reset_read_pointer(
+    void* user, h2_tap_reset_pointer_state_t* out_state) {
+  h2_web_tap_reset_context_t* context = user;
   if (context == NULL || context->web == NULL || out_state == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -17,9 +16,8 @@ web_tap_reset_read_pointer(void *user,
                                     &out_state->y, &out_state->pressed);
 }
 
-h2_pal_result_t
-h2_web_tap_reset_app_run(h2_runtime_t *runtime,
-                         const h2_web_tap_reset_app_config_t *config) {
+h2_pal_result_t h2_web_tap_reset_app_run(
+    h2_runtime_t* runtime, const h2_web_tap_reset_app_config_t* config) {
   if (runtime == NULL || config == NULL || config->read_pointer == NULL ||
       config->should_stop == NULL) {
     return H2_PAL_ERR_INVALID_ARG;

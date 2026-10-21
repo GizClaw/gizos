@@ -14,13 +14,12 @@ extern "C" {
 #define H2_PIXA_GAMES_DINOBOUNCE_COMPONENT_RECORD 3u
 
 typedef struct h2_pixa_games_dinobounce_config {
-    const char *player_pixa_path;
-    uint32_t random_seed;
+  const char* player_pixa_path;
+  uint32_t random_seed;
 } h2_pixa_games_dinobounce_config_t;
 
 int h2_pixa_games_dinobounce_run(
-    h2_runtime_t *runtime,
-    const h2_pixa_games_dinobounce_config_t *config);
+    h2_runtime_t* runtime, const h2_pixa_games_dinobounce_config_t* config);
 
 #ifdef __cplusplus
 }

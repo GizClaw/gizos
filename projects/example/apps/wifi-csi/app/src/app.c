@@ -42,8 +42,8 @@ typedef enum h2_smoke_wifi_csi_error_stage {
 } h2_smoke_wifi_csi_error_stage_t;
 
 typedef struct h2_smoke_wifi_csi_state {
-  h2_runtime_t *runtime;
-  h2_pal_mutex_t *mutex;
+  h2_runtime_t* runtime;
+  h2_pal_mutex_t* mutex;
   h2_smoke_wifi_csi_status_t status;
   h2_smoke_wifi_csi_error_stage_t error_stage;
   int last_error;
@@ -99,8 +99,8 @@ static const uint8_t s_glyphs[38][5] = {
     {0x00u, 0x00u, 0x00u, 0x00u, 0x00u}, {0x00u, 0x0au, 0x00u, 0x00u, 0x00u},
 };
 
-static uint16_t
-h2_smoke_wifi_csi_status_color(h2_smoke_wifi_csi_status_t status) {
+static uint16_t h2_smoke_wifi_csi_status_color(
+    h2_smoke_wifi_csi_status_t status) {
   if (status == H2_SMOKE_WIFI_CSI_STATUS_CAPTURING) {
     return 0x07e0u;
   }
@@ -111,31 +111,31 @@ h2_smoke_wifi_csi_status_color(h2_smoke_wifi_csi_status_t status) {
   return 0xf800u;
 }
 
-static const char *
-h2_smoke_wifi_csi_status_text(h2_smoke_wifi_csi_status_t status) {
+static const char* h2_smoke_wifi_csi_status_text(
+    h2_smoke_wifi_csi_status_t status) {
   switch (status) {
-  case H2_SMOKE_WIFI_CSI_STATUS_CAPTURING:
-    return "CAPTURING";
-  case H2_SMOKE_WIFI_CSI_STATUS_BACKOFF:
-    return "RETRYING";
-  case H2_SMOKE_WIFI_CSI_STATUS_NO_SAVED_WIFI:
-    return "NO SAVED WIFI";
-  case H2_SMOKE_WIFI_CSI_STATUS_UNSUPPORTED:
-    return "CSI UNSUPPORTED";
-  case H2_SMOKE_WIFI_CSI_STATUS_NO_FRAMES:
-    return "NO FRAMES";
-  case H2_SMOKE_WIFI_CSI_STATUS_INVALID_FRAME:
-    return "INVALID FRAME";
-  case H2_SMOKE_WIFI_CSI_STATUS_PROVIDER_ERROR:
-    return "PROVIDER ERROR";
-  case H2_SMOKE_WIFI_CSI_STATUS_CONNECTING:
-  default:
-    return "CONNECTING";
+    case H2_SMOKE_WIFI_CSI_STATUS_CAPTURING:
+      return "CAPTURING";
+    case H2_SMOKE_WIFI_CSI_STATUS_BACKOFF:
+      return "RETRYING";
+    case H2_SMOKE_WIFI_CSI_STATUS_NO_SAVED_WIFI:
+      return "NO SAVED WIFI";
+    case H2_SMOKE_WIFI_CSI_STATUS_UNSUPPORTED:
+      return "CSI UNSUPPORTED";
+    case H2_SMOKE_WIFI_CSI_STATUS_NO_FRAMES:
+      return "NO FRAMES";
+    case H2_SMOKE_WIFI_CSI_STATUS_INVALID_FRAME:
+      return "INVALID FRAME";
+    case H2_SMOKE_WIFI_CSI_STATUS_PROVIDER_ERROR:
+      return "PROVIDER ERROR";
+    case H2_SMOKE_WIFI_CSI_STATUS_CONNECTING:
+    default:
+      return "CONNECTING";
   }
 }
 
-static void h2_smoke_wifi_csi_log(h2_smoke_wifi_csi_state_t *state,
-                                  const char *stage, int rc, int detail) {
+static void h2_smoke_wifi_csi_log(h2_smoke_wifi_csi_state_t* state,
+                                  const char* stage, int rc, int detail) {
   char message[96];
 
   if (state == NULL || state->runtime == NULL || state->runtime->log == NULL)
@@ -147,29 +147,23 @@ static void h2_smoke_wifi_csi_log(h2_smoke_wifi_csi_state_t *state,
 }
 
 static int h2_smoke_wifi_csi_glyph_index(char value) {
-  if (value >= 'A' && value <= 'Z')
-    return value - 'A';
-  if (value >= '0' && value <= '9')
-    return 26 + value - '0';
-  if (value == '-')
-    return 37;
+  if (value >= 'A' && value <= 'Z') return value - 'A';
+  if (value >= '0' && value <= '9') return 26 + value - '0';
+  if (value == '-') return 37;
   return 36;
 }
 
-static int h2_smoke_wifi_csi_text_pixel(const char *text, int x, int y,
+static int h2_smoke_wifi_csi_text_pixel(const char* text, int x, int y,
                                         int scale, int px, int py) {
-  if (px < x || py < y || scale <= 0)
-    return 0;
+  if (px < x || py < y || scale <= 0) return 0;
   int char_index = (px - x) / (6 * scale);
   if (char_index < 0 || char_index >= (int)H2_SMOKE_WIFI_CSI_TEXT_LIMIT)
     return 0;
   char value = text[char_index];
-  if (value == '\0')
-    return 0;
+  if (value == '\0') return 0;
   int gx = ((px - x) / scale) % 6;
   int gy = (py - y) / scale;
-  if (gx >= 5 || gy >= 7)
-    return 0;
+  if (gx >= 5 || gy >= 7) return 0;
   return (s_glyphs[h2_smoke_wifi_csi_glyph_index(value)][gx] & (1u << gy)) !=
          0u;
 }
@@ -187,7 +181,7 @@ static size_t h2_smoke_wifi_csi_u32_text(uint32_t value, char out[12]) {
   return count;
 }
 
-static void h2_smoke_wifi_csi_metric_text(const char *label, int value,
+static void h2_smoke_wifi_csi_metric_text(const char* label, int value,
                                           char out[24]) {
   size_t at = 0u;
   uint32_t magnitude =
@@ -207,17 +201,16 @@ static void h2_smoke_wifi_csi_metric_text(const char *label, int value,
   out[at] = '\0';
 }
 
-static int h2_smoke_wifi_csi_amplitude(const h2_pal_wifi_csi_sample_t *sample) {
+static int h2_smoke_wifi_csi_amplitude(const h2_pal_wifi_csi_sample_t* sample) {
   int real = sample->real;
   int imag = sample->imag;
   int amplitude = (real < 0 ? -real : real) + (imag < 0 ? -imag : imag);
   return amplitude > 255 ? 255 : amplitude;
 }
 
-static int
-h2_smoke_wifi_csi_wave_y(const h2_smoke_wifi_csi_dashboard_t *dashboard,
-                         int graph_y, int graph_height, int graph_width,
-                         int x) {
+static int h2_smoke_wifi_csi_wave_y(
+    const h2_smoke_wifi_csi_dashboard_t* dashboard, int graph_y,
+    int graph_height, int graph_width, int x) {
   if (dashboard->sample_count == 0u || graph_width <= 1)
     return graph_y + graph_height / 2;
   if (dashboard->sample_count == 1u)
@@ -238,9 +231,9 @@ h2_smoke_wifi_csi_wave_y(const h2_smoke_wifi_csi_dashboard_t *dashboard,
   return graph_y + graph_height - 1 - amplitude * (graph_height - 1) / 255;
 }
 
-static uint16_t
-h2_smoke_wifi_csi_pixel(const h2_smoke_wifi_csi_dashboard_t *dashboard,
-                        int width, int height, int x, int y) {
+static uint16_t h2_smoke_wifi_csi_pixel(
+    const h2_smoke_wifi_csi_dashboard_t* dashboard, int width, int height,
+    int x, int y) {
   const uint16_t background = 0x1082u;
   const uint16_t panel = 0x18e3u;
   const uint16_t grid = 0x2945u;
@@ -258,8 +251,7 @@ h2_smoke_wifi_csi_pixel(const h2_smoke_wifi_csi_dashboard_t *dashboard,
   char invalid[24];
 
   uint16_t color = background;
-  if (y < height / 7)
-    color = 0x001fu;
+  if (y < height / 7) color = 0x001fu;
   if (x >= graph_x && x < graph_x + graph_width && y >= graph_y &&
       y < graph_y + graph_height) {
     color = panel;
@@ -275,8 +267,7 @@ h2_smoke_wifi_csi_pixel(const h2_smoke_wifi_csi_dashboard_t *dashboard,
             dashboard, graph_y, graph_height, graph_width, x - graph_x - 1);
       int wave_top = wave_y < previous_wave_y ? wave_y : previous_wave_y;
       int wave_bottom = wave_y > previous_wave_y ? wave_y : previous_wave_y;
-      if (y >= wave_top - 1 && y <= wave_bottom + 1)
-        color = 0x07ffu;
+      if (y >= wave_top - 1 && y <= wave_bottom + 1) color = 0x07ffu;
     }
   }
 
@@ -291,8 +282,8 @@ h2_smoke_wifi_csi_pixel(const h2_smoke_wifi_csi_dashboard_t *dashboard,
   h2_smoke_wifi_csi_metric_text("FRAMES", (int)dashboard->frame_count, frames);
   h2_smoke_wifi_csi_metric_text("SAMPLES", (int)dashboard->sample_count,
                                 samples);
-  h2_smoke_wifi_csi_metric_text(
-      "INVALID", (int)dashboard->invalid_frame_count, invalid);
+  h2_smoke_wifi_csi_metric_text("INVALID", (int)dashboard->invalid_frame_count,
+                                invalid);
   if (h2_smoke_wifi_csi_text_pixel("CSI SMOKE", margin, height / 28, scale, x,
                                    y) ||
       h2_smoke_wifi_csi_text_pixel(
@@ -313,16 +304,16 @@ h2_smoke_wifi_csi_pixel(const h2_smoke_wifi_csi_dashboard_t *dashboard,
           samples, width / 2, graph_y + graph_height + height / 16 + 9 * scale,
           scale, x, y) ||
       h2_smoke_wifi_csi_text_pixel(
-          invalid, width / 2,
-          graph_y + graph_height + height / 16 + 18 * scale, scale, x, y)) {
+          invalid, width / 2, graph_y + graph_height + height / 16 + 18 * scale,
+          scale, x, y)) {
     return white;
   }
   return color;
 }
 
-static int
-h2_smoke_wifi_csi_snapshot(h2_smoke_wifi_csi_state_t *state,
-                           h2_smoke_wifi_csi_dashboard_t *out_dashboard) {
+static int h2_smoke_wifi_csi_snapshot(
+    h2_smoke_wifi_csi_state_t* state,
+    h2_smoke_wifi_csi_dashboard_t* out_dashboard) {
   if (h2_pal_mutex_lock(state->runtime->sync, state->mutex) != H2_PAL_OK)
     return H2_PAL_ERR_IO;
   out_dashboard->status = state->status;
@@ -342,9 +333,9 @@ h2_smoke_wifi_csi_snapshot(h2_smoke_wifi_csi_state_t *state,
   return H2_PAL_OK;
 }
 
-static int
-h2_smoke_wifi_csi_dashboard_equal(const h2_smoke_wifi_csi_dashboard_t *left,
-                                  const h2_smoke_wifi_csi_dashboard_t *right) {
+static int h2_smoke_wifi_csi_dashboard_equal(
+    const h2_smoke_wifi_csi_dashboard_t* left,
+    const h2_smoke_wifi_csi_dashboard_t* right) {
   if (left->status != right->status ||
       left->error_stage != right->error_stage ||
       left->last_error != right->last_error ||
@@ -360,10 +351,10 @@ h2_smoke_wifi_csi_dashboard_equal(const h2_smoke_wifi_csi_dashboard_t *left,
                 left->sample_count * sizeof(left->samples[0])) == 0;
 }
 
-static int h2_smoke_wifi_csi_get_progress(h2_smoke_wifi_csi_state_t *state,
-                                          int *out_csi_started,
-                                          uint64_t *out_last_frame_ms,
-                                          uint64_t *out_next_attempt_ms) {
+static int h2_smoke_wifi_csi_get_progress(h2_smoke_wifi_csi_state_t* state,
+                                          int* out_csi_started,
+                                          uint64_t* out_last_frame_ms,
+                                          uint64_t* out_next_attempt_ms) {
   if (h2_pal_mutex_lock(state->runtime->sync, state->mutex) != H2_PAL_OK)
     return H2_PAL_ERR_IO;
   *out_csi_started = state->csi_started;
@@ -373,10 +364,10 @@ static int h2_smoke_wifi_csi_get_progress(h2_smoke_wifi_csi_state_t *state,
   return H2_PAL_OK;
 }
 
-static int
-h2_smoke_wifi_csi_render(const h2_pal_display_api_t *display,
-                         const h2_smoke_wifi_csi_dashboard_t *dashboard,
-                         const h2_display_info_t *info, uint16_t *rows) {
+static int h2_smoke_wifi_csi_render(
+    const h2_pal_display_api_t* display,
+    const h2_smoke_wifi_csi_dashboard_t* dashboard,
+    const h2_display_info_t* info, uint16_t* rows) {
   int rc;
   for (int y = 0; y < info->height; y += (int)H2_SMOKE_WIFI_CSI_RENDER_ROWS) {
     int row_count = info->height - y;
@@ -394,16 +385,14 @@ h2_smoke_wifi_csi_render(const h2_pal_display_api_t *display,
     rc = h2_pal_display_draw_bitmap(display, &rect, rows,
                                     (size_t)info->width * sizeof(uint16_t),
                                     H2_DISPLAY_PIXEL_RGB565);
-    if (rc != H2_DISPLAY_OK)
-      return rc;
+    if (rc != H2_DISPLAY_OK) return rc;
   }
   return h2_pal_display_present(display);
 }
 
-static void
-h2_smoke_wifi_csi_frame_received(void *user,
-                                 const h2_pal_wifi_csi_frame_t *frame) {
-  h2_smoke_wifi_csi_state_t *state = user;
+static void h2_smoke_wifi_csi_frame_received(
+    void* user, const h2_pal_wifi_csi_frame_t* frame) {
+  h2_smoke_wifi_csi_state_t* state = user;
   if (state == NULL || frame == NULL ||
       h2_pal_mutex_try_lock(state->runtime->sync, state->mutex) != H2_PAL_OK)
     return;
@@ -433,7 +422,7 @@ h2_smoke_wifi_csi_frame_received(void *user,
   (void)h2_pal_mutex_unlock(state->runtime->sync, state->mutex);
 }
 
-static void h2_smoke_wifi_csi_set_status(h2_smoke_wifi_csi_state_t *state,
+static void h2_smoke_wifi_csi_set_status(h2_smoke_wifi_csi_state_t* state,
                                          h2_smoke_wifi_csi_status_t status,
                                          uint64_t next_attempt_ms) {
   if (h2_pal_mutex_lock(state->runtime->sync, state->mutex) != H2_PAL_OK)
@@ -445,7 +434,7 @@ static void h2_smoke_wifi_csi_set_status(h2_smoke_wifi_csi_state_t *state,
   (void)h2_pal_mutex_unlock(state->runtime->sync, state->mutex);
 }
 
-static void h2_smoke_wifi_csi_set_error(h2_smoke_wifi_csi_state_t *state,
+static void h2_smoke_wifi_csi_set_error(h2_smoke_wifi_csi_state_t* state,
                                         h2_smoke_wifi_csi_status_t status,
                                         h2_smoke_wifi_csi_error_stage_t stage,
                                         int error, uint64_t next_attempt_ms) {
@@ -458,7 +447,7 @@ static void h2_smoke_wifi_csi_set_error(h2_smoke_wifi_csi_state_t *state,
   (void)h2_pal_mutex_unlock(state->runtime->sync, state->mutex);
 }
 
-static void h2_smoke_wifi_csi_stop_for_retry(h2_smoke_wifi_csi_state_t *state,
+static void h2_smoke_wifi_csi_stop_for_retry(h2_smoke_wifi_csi_state_t* state,
                                              uint64_t next_attempt_ms) {
   (void)h2_pal_wifi_csi_stop(state->runtime->wifi_csi);
   if (h2_pal_mutex_lock(state->runtime->sync, state->mutex) != H2_PAL_OK)
@@ -471,7 +460,7 @@ static void h2_smoke_wifi_csi_stop_for_retry(h2_smoke_wifi_csi_state_t *state,
   (void)h2_pal_mutex_unlock(state->runtime->sync, state->mutex);
 }
 
-static void h2_smoke_wifi_csi_try_start(h2_smoke_wifi_csi_state_t *state,
+static void h2_smoke_wifi_csi_try_start(h2_smoke_wifi_csi_state_t* state,
                                         uint64_t now_ms,
                                         uint32_t wifi_timeout_ms,
                                         uint32_t retry_ms) {
@@ -521,8 +510,7 @@ static void h2_smoke_wifi_csi_try_start(h2_smoke_wifi_csi_state_t *state,
   memset(&capabilities, 0, sizeof(capabilities));
   rc =
       h2_pal_wifi_csi_get_capabilities(state->runtime->wifi_csi, &capabilities);
-  h2_smoke_wifi_csi_log(state, "capabilities", rc,
-                        (int)capabilities.provider);
+  h2_smoke_wifi_csi_log(state, "capabilities", rc, (int)capabilities.provider);
   if (rc != H2_PAL_OK) {
     h2_smoke_wifi_csi_set_error(
         state,
@@ -538,8 +526,7 @@ static void h2_smoke_wifi_csi_try_start(h2_smoke_wifi_csi_state_t *state,
   frame_count_before_start = state->frame_count;
   rc = h2_pal_wifi_csi_start(state->runtime->wifi_csi, &csi_config,
                              h2_smoke_wifi_csi_frame_received, state);
-  h2_smoke_wifi_csi_log(state, "start", rc,
-                        (int)capabilities.max_sample_count);
+  h2_smoke_wifi_csi_log(state, "start", rc, (int)capabilities.max_sample_count);
   if (rc != H2_PAL_OK) {
     h2_smoke_wifi_csi_set_error(
         state,
@@ -561,13 +548,13 @@ static void h2_smoke_wifi_csi_try_start(h2_smoke_wifi_csi_state_t *state,
   }
 }
 
-int h2_smoke_wifi_csi_run(h2_runtime_t *runtime,
-                          const h2_smoke_wifi_csi_config_t *config) {
+int h2_smoke_wifi_csi_run(h2_runtime_t* runtime,
+                          const h2_smoke_wifi_csi_config_t* config) {
   h2_smoke_wifi_csi_state_t state;
   h2_smoke_wifi_csi_dashboard_t dashboard;
   h2_smoke_wifi_csi_dashboard_t rendered_dashboard;
   h2_display_info_t info;
-  uint16_t *rows;
+  uint16_t* rows;
   h2_pal_mutex_config_t mutex_config;
   uint32_t wifi_timeout_ms;
   uint32_t retry_ms;
@@ -587,19 +574,17 @@ int h2_smoke_wifi_csi_run(h2_runtime_t *runtime,
   mutex_config.name = "wifi-csi-smoke";
   mutex_config.allocator = runtime->mem;
   rc = h2_pal_mutex_create(runtime->sync, &mutex_config, &state.mutex);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_pal_display_open(runtime->display);
-  if (rc != H2_DISPLAY_OK)
-    goto cleanup_mutex;
+  if (rc != H2_DISPLAY_OK) goto cleanup_mutex;
   rc = h2_pal_display_get_info(runtime->display, &info);
   if (rc != H2_DISPLAY_OK || info.width <= 0 || info.height <= 0) {
     rc = rc == H2_DISPLAY_OK ? H2_DISPLAY_ERR_INVALID_ARG : rc;
     goto cleanup_display;
   }
-  rows = h2_pal_mem_alloc(runtime->mem, (size_t)info.width *
-                                            H2_SMOKE_WIFI_CSI_RENDER_ROWS *
-                                            sizeof(*rows));
+  rows = h2_pal_mem_alloc(
+      runtime->mem,
+      (size_t)info.width * H2_SMOKE_WIFI_CSI_RENDER_ROWS * sizeof(*rows));
   if (rows == NULL) {
     rc = H2_PAL_ERR_NO_MEMORY;
     goto cleanup_display;
@@ -617,10 +602,8 @@ int h2_smoke_wifi_csi_run(h2_runtime_t *runtime,
   rc = h2_smoke_wifi_csi_snapshot(&state, &dashboard);
   if (rc == H2_PAL_OK)
     rc = h2_smoke_wifi_csi_render(runtime->display, &dashboard, &info, rows);
-  if (config->ready != NULL)
-    config->ready(config->user, rc);
-  if (rc != H2_DISPLAY_OK)
-    goto cleanup_rows;
+  if (config->ready != NULL) config->ready(config->user, rc);
+  if (rc != H2_DISPLAY_OK) goto cleanup_rows;
   rendered_dashboard = dashboard;
   rendered_dashboard_valid = 1;
 
@@ -632,8 +615,7 @@ int h2_smoke_wifi_csi_run(h2_runtime_t *runtime,
     (void)h2_pal_time_get_monotonic_ms(runtime->time, &now_ms);
     rc = h2_smoke_wifi_csi_get_progress(&state, &csi_started, &last_frame_ms,
                                         &next_attempt_ms);
-    if (rc != H2_PAL_OK)
-      break;
+    if (rc != H2_PAL_OK) break;
     if (csi_started) {
       h2_pal_wifi_sta_status_t wifi_status;
       memset(&wifi_status, 0, sizeof(wifi_status));
@@ -664,8 +646,7 @@ int h2_smoke_wifi_csi_run(h2_runtime_t *runtime,
                                    next_attempt_ms);
     }
     rc = h2_smoke_wifi_csi_snapshot(&state, &dashboard);
-    if (rc != H2_PAL_OK)
-      break;
+    if (rc != H2_PAL_OK) break;
     if (rendered_dashboard_valid &&
         h2_smoke_wifi_csi_dashboard_equal(&dashboard, &rendered_dashboard)) {
       rc = H2_DISPLAY_OK;
@@ -676,8 +657,7 @@ int h2_smoke_wifi_csi_run(h2_runtime_t *runtime,
         rendered_dashboard_valid = 1;
       }
     }
-    if (rc != H2_DISPLAY_OK)
-      break;
+    if (rc != H2_DISPLAY_OK) break;
     if (config->should_stop != NULL && config->should_stop(config->user) != 0) {
       rc = H2_PAL_OK;
       break;
@@ -685,8 +665,7 @@ int h2_smoke_wifi_csi_run(h2_runtime_t *runtime,
     (void)h2_pal_time_sleep_ms(runtime->time, refresh_ms);
   }
 cleanup_rows:
-  if (state.csi_started)
-    (void)h2_pal_wifi_csi_stop(runtime->wifi_csi);
+  if (state.csi_started) (void)h2_pal_wifi_csi_stop(runtime->wifi_csi);
   h2_pal_mem_free(runtime->mem, rows);
 cleanup_display:
   (void)h2_pal_display_close(runtime->display);

@@ -14,7 +14,7 @@ cc_library(
     ] + select({
         "@platforms//os:ios": ["//libs/pal/providers/ios/pal_core:packaged"],
         "@platforms//os:android": ["//libs/pal/providers/android/pal_core:packaged"],
-        "//conditions:default": ["//libs/pal/providers/yyjson:yyjson"],
+        "//conditions:default": ["//libs/pal/providers/yyjson"],
     }) + [
         "//projects/e2e/apps/pal-json/app:pal_json_e2e",
     ],

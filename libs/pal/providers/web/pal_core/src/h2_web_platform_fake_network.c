@@ -53,46 +53,43 @@ EM_JS(void, fake_environment_js,
 });
 /* clang-format on */
 
-static int environment_read(environment_t *env) {
+static int environment_read(environment_t* env) {
   memset(env, 0, sizeof(*env));
-  int32_t *flags = env->flags;
-  char *ssid = env->ssid;
+  int32_t* flags = env->flags;
+  char* ssid = env->ssid;
   return (int)h2_web_main_call(fake_environment_js,
-                               (const void *[]){&flags, &ssid})
+                               (const void*[]){&flags, &ssid})
       .i32;
 }
 
-static h2_pal_result_t snapshot(h2_web_platform_t *p, environment_t *env) {
-  if (p == NULL || p->fake_network == NULL)
-    return H2_PAL_ERR_UNSUPPORTED;
+static h2_pal_result_t snapshot(h2_web_platform_t* p, environment_t* env) {
+  if (p == NULL || p->fake_network == NULL) return H2_PAL_ERR_UNSUPPORTED;
   return environment_read(env) == 1 ? H2_PAL_OK : H2_PAL_ERR_INVALID_ARG;
 }
 
-static bool wifi_online(const h2_web_fake_network_t *s,
-                        const environment_t *e) {
+static bool wifi_online(const h2_web_fake_network_t* s,
+                        const environment_t* e) {
   return e->flags[H2_WEB_FAKE_HOST_ONLINE] &&
          e->flags[H2_WEB_FAKE_WIFI_ENABLED] &&
          e->flags[H2_WEB_FAKE_WIFI_CONNECTED] && s->wifi_connected;
 }
-static bool modem_registered(const h2_web_fake_network_t *s,
-                             const environment_t *e) {
+static bool modem_registered(const h2_web_fake_network_t* s,
+                             const environment_t* e) {
   return e->flags[H2_WEB_FAKE_HOST_ONLINE] &&
          e->flags[H2_WEB_FAKE_MODEM_ENABLED] &&
          e->flags[H2_WEB_FAKE_SIM_PRESENT] &&
          e->flags[H2_WEB_FAKE_MODEM_REGISTERED] && s->modem_open;
 }
-static void changed(h2_web_platform_t *p) {
+static void changed(h2_web_platform_t* p) {
   atomic_store(&p->netif_dirty, true);
   h2_web_platform_schedule(p);
 }
 
-bool h2_web_platform_fake_network_available(h2_web_platform_t *p) {
-  if (p->fake_network == NULL)
-    return true;
+bool h2_web_platform_fake_network_available(h2_web_platform_t* p) {
+  if (p->fake_network == NULL) return true;
   environment_t e;
-  if (snapshot(p, &e) != H2_PAL_OK)
-    return false;
-  h2_web_fake_network_t *s = p->fake_network;
+  if (snapshot(p, &e) != H2_PAL_OK) return false;
+  h2_web_fake_network_t* s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
   const bool available =
       wifi_online(s, &e) || (modem_registered(s, &e) && s->data_open);
@@ -100,16 +97,14 @@ bool h2_web_platform_fake_network_available(h2_web_platform_t *p) {
   return available;
 }
 
-static int wifi_status(void *user, h2_pal_wifi_sta_status_t *out) {
-  if (out == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+static int wifi_status(void* user, h2_pal_wifi_sta_status_t* out) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
-  h2_web_platform_t *p = user;
+  h2_web_platform_t* p = user;
   environment_t e;
   int rc = snapshot(p, &e);
-  if (rc != H2_PAL_OK)
-    return rc;
-  h2_web_fake_network_t *s = p->fake_network;
+  if (rc != H2_PAL_OK) return rc;
+  h2_web_fake_network_t* s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
   const bool connected = wifi_online(s, &e);
   pthread_mutex_unlock(&s->mutex);
@@ -129,18 +124,16 @@ static int wifi_status(void *user, h2_pal_wifi_sta_status_t *out) {
   }
   return H2_PAL_OK;
 }
-static int wifi_scan(void *user, const h2_pal_wifi_scan_request_t *request,
-                     h2_pal_wifi_scan_result_fn callback, void *callback_user,
+static int wifi_scan(void* user, const h2_pal_wifi_scan_request_t* request,
+                     h2_pal_wifi_scan_result_fn callback, void* callback_user,
                      uint32_t timeout_ms) {
   (void)timeout_ms;
   if (callback == NULL || (request && request->ssid_len > H2_PAL_WIFI_SSID_MAX))
     return H2_PAL_ERR_INVALID_ARG;
   environment_t e;
   int rc = snapshot(user, &e);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (!e.flags[H2_WEB_FAKE_WIFI_ENABLED])
-    return H2_PAL_ERR_UNAVAILABLE;
+  if (rc != H2_PAL_OK) return rc;
+  if (!e.flags[H2_WEB_FAKE_WIFI_ENABLED]) return H2_PAL_ERR_UNAVAILABLE;
   const size_t len = strlen(e.ssid);
   if (request && ((request->channel && request->channel != 1) ||
                   (request->ssid_len && (request->ssid_len != len ||
@@ -155,15 +148,13 @@ static int wifi_scan(void *user, const h2_pal_wifi_scan_request_t *request,
   (void)callback(callback_user, &entry);
   return H2_PAL_OK;
 }
-static int wifi_connect_impl(void *user, const h2_pal_wifi_sta_config_t *config,
+static int wifi_connect_impl(void* user, const h2_pal_wifi_sta_config_t* config,
                              bool save) {
   int rc = h2_pal_wifi_settings_validate_sta_config(config);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   environment_t e;
   rc = snapshot(user, &e);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   const uint8_t bssid[6] = {2, 0, 0, 0, 0, 1};
   if (!e.flags[H2_WEB_FAKE_HOST_ONLINE] || !e.flags[H2_WEB_FAKE_WIFI_ENABLED] ||
       !e.flags[H2_WEB_FAKE_WIFI_CONNECTED] ||
@@ -172,8 +163,8 @@ static int wifi_connect_impl(void *user, const h2_pal_wifi_sta_config_t *config,
       (config->channel && config->channel != 1) ||
       (config->bssid_set && memcmp(config->bssid, bssid, sizeof(bssid))))
     return H2_PAL_ERR_UNAVAILABLE;
-  h2_web_platform_t *p = user;
-  h2_web_fake_network_t *s = p->fake_network;
+  h2_web_platform_t* p = user;
+  h2_web_fake_network_t* s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
   s->wifi_connected = true;
   if (save) {
@@ -185,57 +176,53 @@ static int wifi_connect_impl(void *user, const h2_pal_wifi_sta_config_t *config,
   changed(p);
   return H2_PAL_OK;
 }
-static int wifi_connect(void *u, const h2_pal_wifi_sta_config_t *c,
+static int wifi_connect(void* u, const h2_pal_wifi_sta_config_t* c,
                         uint32_t timeout) {
   (void)timeout;
   return wifi_connect_impl(u, c, false);
 }
-static int wifi_connect_save(void *u, const h2_pal_wifi_sta_config_t *c,
+static int wifi_connect_save(void* u, const h2_pal_wifi_sta_config_t* c,
                              uint32_t timeout) {
   (void)timeout;
   return wifi_connect_impl(u, c, true);
 }
-static int wifi_disconnect(void *user) {
-  h2_web_platform_t *p = user;
-  h2_web_fake_network_t *s = p->fake_network;
+static int wifi_disconnect(void* user) {
+  h2_web_platform_t* p = user;
+  h2_web_fake_network_t* s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
   s->wifi_connected = false;
   pthread_mutex_unlock(&s->mutex);
   changed(p);
   return H2_PAL_OK;
 }
-static int wifi_mac(void *user, uint8_t out[6]) {
+static int wifi_mac(void* user, uint8_t out[6]) {
   (void)user;
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   const uint8_t mac[6] = {2, 0, 0, 0, 0, 2};
   memcpy(out, mac, 6);
   return H2_PAL_OK;
 }
-static int wifi_power_save(void *user, h2_pal_wifi_power_save_t mode) {
+static int wifi_power_save(void* user, h2_pal_wifi_power_save_t mode) {
   (void)user;
   return mode >= H2_PAL_WIFI_POWER_SAVE_NONE &&
                  mode <= H2_PAL_WIFI_POWER_SAVE_MAX_MODEM
              ? H2_PAL_OK
              : H2_PAL_ERR_INVALID_ARG;
 }
-static int saved_get(void *user, h2_pal_wifi_sta_config_t *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+static int saved_get(void* user, h2_pal_wifi_sta_config_t* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
-  h2_web_fake_network_t *s = ((h2_web_platform_t *)user)->fake_network;
+  h2_web_fake_network_t* s = ((h2_web_platform_t*)user)->fake_network;
   pthread_mutex_lock(&s->mutex);
   const bool valid = s->saved_valid;
-  if (valid)
-    *out = s->saved;
+  if (valid) *out = s->saved;
   pthread_mutex_unlock(&s->mutex);
   return valid ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
 }
-static int saved_set(void *user, const h2_pal_wifi_sta_config_t *config) {
+static int saved_set(void* user, const h2_pal_wifi_sta_config_t* config) {
   int rc = h2_pal_wifi_settings_validate_sta_config(config);
-  if (rc != H2_PAL_OK)
-    return rc;
-  h2_web_fake_network_t *s = ((h2_web_platform_t *)user)->fake_network;
+  if (rc != H2_PAL_OK) return rc;
+  h2_web_fake_network_t* s = ((h2_web_platform_t*)user)->fake_network;
   pthread_mutex_lock(&s->mutex);
   s->saved = *config;
   s->saved.ssid[config->ssid_len] = '\0';
@@ -244,44 +231,42 @@ static int saved_set(void *user, const h2_pal_wifi_sta_config_t *config) {
   pthread_mutex_unlock(&s->mutex);
   return H2_PAL_OK;
 }
-static int saved_clear(void *user) {
-  h2_web_fake_network_t *s = ((h2_web_platform_t *)user)->fake_network;
+static int saved_clear(void* user) {
+  h2_web_fake_network_t* s = ((h2_web_platform_t*)user)->fake_network;
   pthread_mutex_lock(&s->mutex);
   memset(&s->saved, 0, sizeof(s->saved));
   s->saved_valid = false;
   pthread_mutex_unlock(&s->mutex);
   return H2_PAL_OK;
 }
-static int saved_has(void *user, int *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
-  h2_web_fake_network_t *s = ((h2_web_platform_t *)user)->fake_network;
+static int saved_has(void* user, int* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
+  h2_web_fake_network_t* s = ((h2_web_platform_t*)user)->fake_network;
   pthread_mutex_lock(&s->mutex);
   *out = s->saved_valid;
   pthread_mutex_unlock(&s->mutex);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t modem_open(void *user, uint32_t timeout) {
+static h2_pal_result_t modem_open(void* user, uint32_t timeout) {
   (void)timeout;
   environment_t e;
   int rc = snapshot(user, &e);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   /* Opening the driver does not require coverage or an enabled radio. Keep
    * it usable when the host later changes an offline boot to cellular. */
-  h2_web_platform_t *p = user;
-  h2_web_fake_network_t *s = p->fake_network;
+  h2_web_platform_t* p = user;
+  h2_web_fake_network_t* s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
   s->modem_open = true;
   pthread_mutex_unlock(&s->mutex);
   changed(p);
   return H2_PAL_OK;
 }
-static h2_pal_result_t modem_close(void *user, uint32_t timeout) {
+static h2_pal_result_t modem_close(void* user, uint32_t timeout) {
   (void)timeout;
-  h2_web_platform_t *p = user;
-  h2_web_fake_network_t *s = p->fake_network;
+  h2_web_platform_t* p = user;
+  h2_web_fake_network_t* s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
   s->modem_open = s->data_open = false;
   s->policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
@@ -289,28 +274,24 @@ static h2_pal_result_t modem_close(void *user, uint32_t timeout) {
   changed(p);
   return H2_PAL_OK;
 }
-static h2_pal_result_t modem_capabilities(void *user, uint32_t *out) {
+static h2_pal_result_t modem_capabilities(void* user, uint32_t* out) {
   (void)user;
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   *out = H2_PAL_MODEM_CAPABILITY_DATA | H2_PAL_MODEM_CAPABILITY_LOW_POWER;
   return H2_PAL_OK;
 }
-static h2_pal_result_t modem_status(void *user, h2_pal_modem_status_t *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t modem_status(void* user, h2_pal_modem_status_t* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   environment_t e;
   int rc = snapshot(user, &e);
-  if (rc != H2_PAL_OK)
-    return rc;
-  h2_web_fake_network_t *s = ((h2_web_platform_t *)user)->fake_network;
+  if (rc != H2_PAL_OK) return rc;
+  h2_web_fake_network_t* s = ((h2_web_platform_t*)user)->fake_network;
   pthread_mutex_lock(&s->mutex);
   const bool open = s->modem_open, registered = modem_registered(s, &e),
              data = registered && s->data_open;
   pthread_mutex_unlock(&s->mutex);
-  if (!open)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (!open) return H2_PAL_ERR_INVALID_STATE;
   (void)modem_capabilities(user, &out->capabilities);
   out->sim = e.flags[H2_WEB_FAKE_SIM_PRESENT] ? H2_PAL_MODEM_SIM_STATE_READY
                                               : H2_PAL_MODEM_SIM_STATE_ABSENT;
@@ -322,36 +303,32 @@ static h2_pal_result_t modem_status(void *user, h2_pal_modem_status_t *out) {
   out->rat = H2_PAL_MODEM_RAT_LTE;
   return H2_PAL_OK;
 }
-static h2_pal_result_t modem_identity(void *user,
-                                      h2_pal_modem_identity_t *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t modem_identity(void* user,
+                                      h2_pal_modem_identity_t* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   h2_pal_modem_status_t status;
   int rc = modem_status(user, &status);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   memcpy(out->manufacturer, "GizOS simulation", 17);
   memcpy(out->model, "Web fake modem", 15);
   memcpy(out->revision, "1", 2);
   /* No fabricated subscriber or manufacturing identifiers. */
   return H2_PAL_OK;
 }
-static h2_pal_result_t modem_operator(void *user,
-                                      h2_pal_modem_operator_t *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t modem_operator(void* user,
+                                      h2_pal_modem_operator_t* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   h2_pal_modem_status_t status;
   int rc = modem_status(user, &status);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   memcpy(out->name, "Browser (simulated)", 20);
   out->rat = H2_PAL_MODEM_RAT_LTE;
   return H2_PAL_OK;
 }
-static h2_pal_result_t modem_apn(void *user,
-                                 const h2_pal_modem_apn_config_t *config) {
+static h2_pal_result_t modem_apn(void* user,
+                                 const h2_pal_modem_apn_config_t* config) {
   if (!config || !memchr(config->apn, 0, sizeof(config->apn)) ||
       !memchr(config->username, 0, sizeof(config->username)) ||
       !memchr(config->password, 0, sizeof(config->password)))
@@ -359,50 +336,45 @@ static h2_pal_result_t modem_apn(void *user,
   h2_pal_modem_status_t status;
   return modem_status(user, &status);
 }
-static h2_pal_result_t data_open(void *user, uint32_t timeout) {
+static h2_pal_result_t data_open(void* user, uint32_t timeout) {
   (void)timeout;
   environment_t e;
   int rc = snapshot(user, &e);
-  if (rc != H2_PAL_OK)
-    return rc;
-  h2_web_platform_t *p = user;
-  h2_web_fake_network_t *s = p->fake_network;
+  if (rc != H2_PAL_OK) return rc;
+  h2_web_platform_t* p = user;
+  h2_web_fake_network_t* s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
   rc = !s->modem_open             ? H2_PAL_ERR_INVALID_STATE
        : !modem_registered(s, &e) ? H2_PAL_ERR_UNAVAILABLE
                                   : H2_PAL_OK;
-  if (rc == H2_PAL_OK)
-    s->data_open = true;
+  if (rc == H2_PAL_OK) s->data_open = true;
   pthread_mutex_unlock(&s->mutex);
   changed(p);
   return rc;
 }
-static h2_pal_result_t data_close(void *user, uint32_t timeout) {
+static h2_pal_result_t data_close(void* user, uint32_t timeout) {
   (void)timeout;
-  h2_web_platform_t *p = user;
-  h2_web_fake_network_t *s = p->fake_network;
+  h2_web_platform_t* p = user;
+  h2_web_fake_network_t* s = p->fake_network;
   pthread_mutex_lock(&s->mutex);
   s->data_open = false;
   pthread_mutex_unlock(&s->mutex);
   changed(p);
   return H2_PAL_OK;
 }
-static h2_pal_result_t data_status(void *user,
-                                   h2_pal_modem_data_status_t *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t data_status(void* user,
+                                   h2_pal_modem_data_status_t* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   environment_t e;
   int rc = snapshot(user, &e);
-  if (rc != H2_PAL_OK)
-    return rc;
-  h2_web_fake_network_t *s = ((h2_web_platform_t *)user)->fake_network;
+  if (rc != H2_PAL_OK) return rc;
+  h2_web_fake_network_t* s = ((h2_web_platform_t*)user)->fake_network;
   pthread_mutex_lock(&s->mutex);
   const bool open = s->modem_open,
              connected = modem_registered(s, &e) && s->data_open;
   pthread_mutex_unlock(&s->mutex);
-  if (!open)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (!open) return H2_PAL_ERR_INVALID_STATE;
   out->state = connected ? H2_PAL_MODEM_DATA_OPEN : H2_PAL_MODEM_DATA_CLOSED;
   out->last_error = connected ? H2_PAL_OK : H2_PAL_ERR_UNAVAILABLE;
   if (connected) {
@@ -411,18 +383,15 @@ static h2_pal_result_t data_status(void *user,
   }
   return H2_PAL_OK;
 }
-static h2_pal_result_t modem_signal(void *user, h2_pal_modem_signal_t *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t modem_signal(void* user, h2_pal_modem_signal_t* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
   environment_t e;
   int rc = snapshot(user, &e);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_pal_modem_status_t status;
   rc = modem_status(user, &status);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   out->rat = H2_PAL_MODEM_RAT_LTE;
   if (status.registration == H2_PAL_MODEM_REGISTRATION_HOME) {
     out->rssi_valid = 1;
@@ -430,25 +399,23 @@ static h2_pal_result_t modem_signal(void *user, h2_pal_modem_signal_t *out) {
   }
   return H2_PAL_OK;
 }
-static h2_pal_result_t modem_policy(void *user,
+static h2_pal_result_t modem_policy(void* user,
                                     h2_pal_modem_power_policy_t policy) {
   if (policy != H2_PAL_MODEM_POWER_POLICY_ACTIVE &&
       policy != H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_web_fake_network_t *s = ((h2_web_platform_t *)user)->fake_network;
+  h2_web_fake_network_t* s = ((h2_web_platform_t*)user)->fake_network;
   pthread_mutex_lock(&s->mutex);
   int rc = s->modem_open ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
-  if (rc == H2_PAL_OK)
-    s->policy = policy;
+  if (rc == H2_PAL_OK) s->policy = policy;
   pthread_mutex_unlock(&s->mutex);
   return rc;
 }
-static h2_pal_result_t modem_power(void *user,
-                                   h2_pal_modem_power_status_t *out) {
-  if (!out)
-    return H2_PAL_ERR_INVALID_ARG;
+static h2_pal_result_t modem_power(void* user,
+                                   h2_pal_modem_power_status_t* out) {
+  if (!out) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
-  h2_web_fake_network_t *s = ((h2_web_platform_t *)user)->fake_network;
+  h2_web_fake_network_t* s = ((h2_web_platform_t*)user)->fake_network;
   pthread_mutex_lock(&s->mutex);
   int rc = s->modem_open ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
   if (rc == H2_PAL_OK) {
@@ -493,16 +460,13 @@ static const h2_pal_modem_vtable_t modem_vtable = {
     .get_power_status = modem_power,
 };
 
-h2_pal_result_t h2_web_platform_fake_network_init(h2_web_platform_t *p) {
+h2_pal_result_t h2_web_platform_fake_network_init(h2_web_platform_t* p) {
   environment_t e;
   int enabled = environment_read(&e);
-  if (enabled == 0)
-    return H2_PAL_OK;
-  if (enabled != 1)
-    return H2_PAL_ERR_INVALID_ARG;
-  h2_web_fake_network_t *s = calloc(1, sizeof(*s));
-  if (!s)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (enabled == 0) return H2_PAL_OK;
+  if (enabled != 1) return H2_PAL_ERR_INVALID_ARG;
+  h2_web_fake_network_t* s = calloc(1, sizeof(*s));
+  if (!s) return H2_PAL_ERR_NO_MEMORY;
   if (pthread_mutex_init(&s->mutex, NULL) != 0) {
     free(s);
     return H2_PAL_ERR_NO_MEMORY;
@@ -517,26 +481,25 @@ h2_pal_result_t h2_web_platform_fake_network_init(h2_web_platform_t *p) {
   p->fake_network = s;
   return H2_PAL_OK;
 }
-void h2_web_platform_fake_network_deinit(h2_web_platform_t *p) {
-  h2_web_fake_network_t *s = p->fake_network;
-  if (!s)
-    return;
+void h2_web_platform_fake_network_deinit(h2_web_platform_t* p) {
+  h2_web_fake_network_t* s = p->fake_network;
+  if (!s) return;
   pthread_mutex_destroy(&s->mutex);
   memset(s, 0, sizeof(*s));
   free(s);
   p->fake_network = NULL;
 }
-const h2_pal_wifi_sta_api_t *
-h2_web_platform_fake_wifi_sta_api(h2_web_platform_t *p) {
-  h2_web_fake_network_t *s = p ? p->fake_network : NULL;
+const h2_pal_wifi_sta_api_t* h2_web_platform_fake_wifi_sta_api(
+    h2_web_platform_t* p) {
+  h2_web_fake_network_t* s = p ? p->fake_network : NULL;
   return s ? &s->wifi : NULL;
 }
-const h2_pal_wifi_settings_api_t *
-h2_web_platform_fake_wifi_settings_api(h2_web_platform_t *p) {
-  h2_web_fake_network_t *s = p ? p->fake_network : NULL;
+const h2_pal_wifi_settings_api_t* h2_web_platform_fake_wifi_settings_api(
+    h2_web_platform_t* p) {
+  h2_web_fake_network_t* s = p ? p->fake_network : NULL;
   return s ? &s->settings : NULL;
 }
-const h2_pal_modem_api_t *h2_web_platform_fake_modem_api(h2_web_platform_t *p) {
-  h2_web_fake_network_t *s = p ? p->fake_network : NULL;
+const h2_pal_modem_api_t* h2_web_platform_fake_modem_api(h2_web_platform_t* p) {
+  h2_web_fake_network_t* s = p ? p->fake_network : NULL;
   return s ? &s->modem : NULL;
 }

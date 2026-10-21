@@ -8,22 +8,22 @@
 #include <stdio.h>
 #include <string.h>
 
-#define CHECK(expression)                                                      \
-  do {                                                                         \
-    if (!(expression)) {                                                       \
-      fprintf(stderr, "Web system event failure line=%d: %s\n", __LINE__,      \
-              #expression);                                                    \
-      emscripten_force_exit(1);                                                \
-    }                                                                          \
+#define CHECK(expression)                                                 \
+  do {                                                                    \
+    if (!(expression)) {                                                  \
+      fprintf(stderr, "Web system event failure line=%d: %s\n", __LINE__, \
+              #expression);                                               \
+      emscripten_force_exit(1);                                           \
+    }                                                                     \
   } while (0)
 
 #define EVENT_TYPE H2_PAL_SYSTEM_EVENT_TYPE_GPIO_IRQ
 #define SECOND_TYPE H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED
 
-static h2_web_platform_t *platform;
-static const h2_pal_task_api_t *tasks;
-static const h2_pal_sync_api_t *sync_api;
-static const h2_pal_system_event_api_t *events;
+static h2_web_platform_t* platform;
+static const h2_pal_task_api_t* tasks;
+static const h2_pal_sync_api_t* sync_api;
+static const h2_pal_system_event_api_t* events;
 
 /* clang-format off */
 EM_JS(void, set_online,
@@ -33,28 +33,28 @@ EM_JS(void, set_online,
 });
 /* clang-format on */
 
-static void watchdog(void *unused) {
+static void watchdog(void* unused) {
   (void)unused;
   fprintf(stderr, "Web system event regression exceeded its deadline\n");
   emscripten_force_exit(2);
 }
 
-static void wait_for(_Atomic int *value) {
+static void wait_for(_Atomic int* value) {
   const double deadline = emscripten_get_now() + 3000.0;
   while (!atomic_load(value) && emscripten_get_now() < deadline)
     h2_web_worker_sleep(1u);
   CHECK(atomic_load(value));
 }
 
-static h2_pal_task_t *start(h2_pal_task_entry_t entry, void *user) {
-  h2_pal_task_t *task = NULL;
+static h2_pal_task_t* start(h2_pal_task_entry_t entry, void* user) {
+  h2_pal_task_t* task = NULL;
   const h2_pal_task_options_t options = {.name = "web-event-regression",
                                          .min_stack_size = 65536u};
   CHECK(h2_pal_task_start(tasks, &options, entry, user, &task) == H2_PAL_OK);
   return task;
 }
 
-static void join(h2_pal_task_t *task) {
+static void join(h2_pal_task_t* task) {
   CHECK(h2_pal_task_join(tasks, task) == H2_PAL_OK);
 }
 
@@ -63,33 +63,33 @@ static void post(h2_pal_system_event_type_t type, uint32_t source) {
   CHECK(h2_pal_system_event_post(events, &event, 100u) == H2_PAL_OK);
 }
 
-static h2_pal_semaphore_t *semaphore(void) {
-  h2_pal_semaphore_t *sem = NULL;
-  const h2_pal_semaphore_config_t config = {.name = "web-event-gate",
-                                            .allocator =
-                                                h2_web_platform_mem_api(),
-                                            .initial_count = 0u,
-                                            .max_count = 1u};
+static h2_pal_semaphore_t* semaphore(void) {
+  h2_pal_semaphore_t* sem = NULL;
+  const h2_pal_semaphore_config_t config = {
+      .name = "web-event-gate",
+      .allocator = h2_web_platform_mem_api(),
+      .initial_count = 0u,
+      .max_count = 1u};
   CHECK(h2_pal_semaphore_create(sync_api, &config, &sem) == H2_PAL_OK);
   return sem;
 }
 
-static void give(h2_pal_semaphore_t *sem) {
+static void give(h2_pal_semaphore_t* sem) {
   CHECK(h2_pal_semaphore_give(sync_api, sem) == H2_PAL_OK);
 }
 
-static void take(h2_pal_semaphore_t *sem) {
+static void take(h2_pal_semaphore_t* sem) {
   CHECK(h2_pal_semaphore_take(sync_api, sem, H2_PAL_SYNC_WAIT_FOREVER) ==
         H2_PAL_OK);
 }
 
-static void destroy_sem(h2_pal_semaphore_t *sem) {
+static void destroy_sem(h2_pal_semaphore_t* sem) {
   CHECK(h2_pal_semaphore_destroy(sync_api, sem) == H2_PAL_OK);
 }
 
 typedef struct gate_state {
-  h2_pal_system_event_subscription_t *subscription;
-  h2_pal_semaphore_t *gate;
+  h2_pal_system_event_subscription_t* subscription;
+  h2_pal_semaphore_t* gate;
   h2_pal_system_event_type_t type;
   _Atomic int entered;
   _Atomic int returned;
@@ -97,8 +97,8 @@ typedef struct gate_state {
   _Atomic int poster_done;
 } gate_state_t;
 
-static int gated_handler(void *user, const h2_pal_system_event_t *event) {
-  gate_state_t *state = user;
+static int gated_handler(void* user, const h2_pal_system_event_t* event) {
+  gate_state_t* state = user;
   CHECK(event->type == state->type);
   ++state->entered;
   /* The posting Worker is held until the owner opens this gate. */
@@ -115,30 +115,29 @@ static gate_state_t make_gate(h2_pal_system_event_type_t type) {
   return (gate_state_t){.gate = semaphore(), .type = type};
 }
 
-static void subscribe_gate(gate_state_t *state) {
+static void subscribe_gate(gate_state_t* state) {
   CHECK(h2_pal_system_event_subscribe(events, state->type, gated_handler, state,
                                       &state->subscription) == H2_PAL_OK);
 }
 
-static void posting_task(void *user) {
-  gate_state_t *state = user;
+static void posting_task(void* user) {
+  gate_state_t* state = user;
   post(state->type, 0u);
   state->poster_done = 1;
 }
 
 typedef struct unsubscribe_state {
-  gate_state_t *target;
-  _Atomic(h2_pal_task_t *) self;
+  gate_state_t* target;
+  _Atomic(h2_pal_task_t*) self;
   int cancel_before;
   int expect_cancel;
   _Atomic int entered;
   _Atomic int done;
 } unsubscribe_state_t;
 
-static void unsubscribe_task(void *user) {
-  unsubscribe_state_t *state = user;
-  while (state->self == NULL)
-    h2_web_worker_sleep(1u);
+static void unsubscribe_task(void* user) {
+  unsubscribe_state_t* state = user;
+  while (state->self == NULL) h2_web_worker_sleep(1u);
   if (state->cancel_before) {
     /* Cancel an already-running task immediately before its cleanup wait. */
     CHECK(h2_web_platform_task_cancel(platform, state->self) == H2_PAL_OK);
@@ -157,7 +156,7 @@ static void unsubscribe_task(void *user) {
 static void test_external_and_cancel(int cancel_mode) {
   gate_state_t gate = make_gate(EVENT_TYPE);
   subscribe_gate(&gate);
-  h2_pal_task_t *poster = start(posting_task, &gate);
+  h2_pal_task_t* poster = start(posting_task, &gate);
   wait_for(&gate.entered);
   CHECK(gate.entered == 1 && gate.returned == 0);
   unsubscribe_state_t unsub = {.target = &gate,
@@ -172,10 +171,10 @@ static void test_external_and_cancel(int cancel_mode) {
   if (cancel_mode == 2) {
     CHECK(h2_web_platform_task_cancel(platform, unsub.self) == H2_PAL_OK);
     h2_web_worker_sleep(10u);
-    CHECK(!unsub.done); // cancellation must not abandon callback ownership
+    CHECK(!unsub.done);  // cancellation must not abandon callback ownership
   }
   CHECK(!unsub.done && !gate.returned);
-  post(EVENT_TYPE, 7u); // admission has stopped, so no new gated callback
+  post(EVENT_TYPE, 7u);  // admission has stopped, so no new gated callback
   CHECK(gate.entered == 1);
   give(gate.gate);
   wait_for(&gate.poster_done);
@@ -187,26 +186,26 @@ static void test_external_and_cancel(int cancel_mode) {
 }
 
 typedef struct self_state {
-  h2_pal_system_event_subscription_t *outer;
-  h2_pal_system_event_subscription_t *inner;
+  h2_pal_system_event_subscription_t* outer;
+  h2_pal_system_event_subscription_t* inner;
   int outer_calls;
   int inner_calls;
   int nested;
   _Atomic int done;
 } self_state_t;
 
-static int inner_self_handler(void *user, const h2_pal_system_event_t *event) {
+static int inner_self_handler(void* user, const h2_pal_system_event_t* event) {
   (void)event;
-  self_state_t *state = user;
+  self_state_t* state = user;
   ++state->inner_calls;
   h2_pal_system_event_unsubscribe(events, state->outer);
   state->outer = NULL;
   return H2_PAL_OK;
 }
 
-static int outer_self_handler(void *user, const h2_pal_system_event_t *event) {
+static int outer_self_handler(void* user, const h2_pal_system_event_t* event) {
   (void)event;
-  self_state_t *state = user;
+  self_state_t* state = user;
   ++state->outer_calls;
   CHECK(h2_web_platform_destroy(platform) == H2_PAL_ERR_BUSY);
   if (state->nested)
@@ -218,8 +217,8 @@ static int outer_self_handler(void *user, const h2_pal_system_event_t *event) {
   return H2_PAL_OK;
 }
 
-static void self_post_task(void *user) {
-  self_state_t *state = user;
+static void self_post_task(void* user) {
+  self_state_t* state = user;
   post(EVENT_TYPE, 0u);
   state->done = 1;
 }
@@ -232,17 +231,16 @@ static void test_self_and_nested(int nested, int worker) {
     CHECK(h2_pal_system_event_subscribe(events, SECOND_TYPE, inner_self_handler,
                                         &state, &state.inner) == H2_PAL_OK);
   if (worker) {
-    h2_pal_task_t *task = start(self_post_task, &state);
-    wait_for(&state.done); // self must not park waiting for itself
+    h2_pal_task_t* task = start(self_post_task, &state);
+    wait_for(&state.done);  // self must not park waiting for itself
     join(task);
   } else {
     post(EVENT_TYPE,
-         0u); // no tasks: BUSY above is specifically dispatch ownership
+         0u);  // no tasks: BUSY above is specifically dispatch ownership
   }
   post(EVENT_TYPE, 0u);
   CHECK(state.outer_calls == 1 && state.inner_calls == nested);
-  if (state.inner != NULL)
-    h2_pal_system_event_unsubscribe(events, state.inner);
+  if (state.inner != NULL) h2_pal_system_event_unsubscribe(events, state.inner);
 }
 
 static void test_non_lifo_workers(void) {
@@ -251,15 +249,15 @@ static void test_non_lifo_workers(void) {
   second.self_on_release = 1;
   subscribe_gate(&first);
   subscribe_gate(&second);
-  h2_pal_task_t *first_task = start(posting_task, &first);
+  h2_pal_task_t* first_task = start(posting_task, &first);
   wait_for(&first.entered);
-  h2_pal_task_t *second_task = start(posting_task, &second);
+  h2_pal_task_t* second_task = start(posting_task, &second);
   wait_for(&second.entered);
   /* Frame chain is second -> first. End first while second's frame survives. */
   give(first.gate);
   wait_for(&first.poster_done);
   CHECK(!second.poster_done);
-  join(first_task); // frees the first worker stack; no frame may point into it
+  join(first_task);  // frees the first worker stack; no frame may point into it
   h2_pal_system_event_unsubscribe(events, first.subscription);
   first.subscription = NULL;
   CHECK(h2_web_platform_destroy(platform) == H2_PAL_ERR_BUSY);
@@ -272,30 +270,30 @@ static void test_non_lifo_workers(void) {
 }
 
 typedef struct replace_state {
-  h2_pal_system_event_subscription_t *killer;
-  h2_pal_system_event_subscription_t *retired;
-  h2_pal_system_event_subscription_t *replacement;
+  h2_pal_system_event_subscription_t* killer;
+  h2_pal_system_event_subscription_t* retired;
+  h2_pal_system_event_subscription_t* replacement;
   int killer_calls;
   int retired_calls;
   int replacement_calls;
   int reused;
 } replace_state_t;
 
-static int replacement_handler(void *user, const h2_pal_system_event_t *event) {
+static int replacement_handler(void* user, const h2_pal_system_event_t* event) {
   (void)event;
-  ++((replace_state_t *)user)->replacement_calls;
+  ++((replace_state_t*)user)->replacement_calls;
   return H2_PAL_OK;
 }
 
-static int retired_handler(void *user, const h2_pal_system_event_t *event) {
+static int retired_handler(void* user, const h2_pal_system_event_t* event) {
   (void)event;
-  ++((replace_state_t *)user)->retired_calls;
+  ++((replace_state_t*)user)->retired_calls;
   return H2_PAL_OK;
 }
 
-static int killer_handler(void *user, const h2_pal_system_event_t *event) {
+static int killer_handler(void* user, const h2_pal_system_event_t* event) {
   (void)event;
-  replace_state_t *state = user;
+  replace_state_t* state = user;
   if (++state->killer_calls == 1) {
     const uintptr_t retired_address = (uintptr_t)state->retired;
     h2_pal_system_event_unsubscribe(events, state->retired);
@@ -327,25 +325,25 @@ static void test_snapshot_address_reuse(void) {
     h2_pal_system_event_unsubscribe(events, state.killer);
     h2_pal_system_event_unsubscribe(events, state.replacement);
   }
-  CHECK(observed_reuse); // Require actual ABA address reuse, not a hypothetical
-                         // claim.
+  CHECK(observed_reuse);  // Require actual ABA address reuse, not a
+                          // hypothetical claim.
 }
 
 typedef struct release_state {
-  gate_state_t *target;
+  gate_state_t* target;
   _Atomic int done;
 } release_state_t;
 
-static void release_task(void *user) {
-  release_state_t *state = user;
+static void release_task(void* user) {
+  release_state_t* state = user;
   give(state->target->gate);
   state->done = 1;
 }
 
-static int root_unsubscribe_handler(void *user,
-                                    const h2_pal_system_event_t *event) {
+static int root_unsubscribe_handler(void* user,
+                                    const h2_pal_system_event_t* event) {
   (void)event;
-  gate_state_t *gate = user;
+  gate_state_t* gate = user;
   CHECK(h2_web_platform_destroy(platform) == H2_PAL_ERR_BUSY);
   h2_pal_system_event_unsubscribe(events, gate->subscription);
   gate->subscription = NULL;
@@ -356,22 +354,22 @@ static int root_unsubscribe_handler(void *user,
 static void test_root_can_drive_progress(int inside_pump) {
   gate_state_t gate = make_gate(EVENT_TYPE);
   subscribe_gate(&gate);
-  h2_pal_task_t *poster = start(posting_task, &gate);
+  h2_pal_task_t* poster = start(posting_task, &gate);
   wait_for(&gate.entered);
   CHECK(!gate.returned);
   release_state_t release = {.target = &gate};
-  h2_pal_task_t *releaser = start(release_task, &release);
+  h2_pal_task_t* releaser = start(release_task, &release);
   if (inside_pump) {
-    h2_pal_system_event_subscription_t *root_subscription = NULL;
+    h2_pal_system_event_subscription_t* root_subscription = NULL;
     CHECK(h2_pal_system_event_subscribe(
               events, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
               root_unsubscribe_handler, &gate,
               &root_subscription) == H2_PAL_OK);
-    (void)h2_web_main_call(set_online, (const void *[]){&(int){0}, &(int){1}});
+    (void)h2_web_main_call(set_online, (const void*[]){&(int){0}, &(int){1}});
     CHECK(h2_web_platform_pump(platform, 64u, NULL) == H2_PAL_OK);
     CHECK(gate.subscription == NULL);
     h2_pal_system_event_unsubscribe(events, root_subscription);
-    (void)h2_web_main_call(set_online, (const void *[]){&(int){1}, &(int){0}});
+    (void)h2_web_main_call(set_online, (const void*[]){&(int){1}, &(int){0}});
   } else {
     h2_pal_system_event_unsubscribe(events, gate.subscription);
     gate.subscription = NULL;

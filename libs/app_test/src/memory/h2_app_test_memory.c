@@ -15,12 +15,12 @@ typedef struct h2_app_test_memory {
   h2_app_test_app_t app;
   bool active;
   bool lvgl_started;
-  h2_runtime_test_control_t *control;
+  h2_runtime_test_control_t* control;
 } h2_app_test_memory_t;
 
-static h2_app_test_memory_t *s_active_memory;
+static h2_app_test_memory_t* s_active_memory;
 
-static size_t bounded_length(const char *value, size_t limit) {
+static size_t bounded_length(const char* value, size_t limit) {
   if (value == NULL) {
     return limit;
   }
@@ -32,27 +32,27 @@ static size_t bounded_length(const char *value, size_t limit) {
 }
 
 _Static_assert(sizeof(h2_app_test_memory_t) <=
-                   sizeof(((h2_app_test_driver_t *)0)->implementation_storage),
+                   sizeof(((h2_app_test_driver_t*)0)->implementation_storage),
                "memory driver storage too small");
 
-static void *memory_alloc(void *user, size_t len) {
+static void* memory_alloc(void* user, size_t len) {
   (void)user;
   return malloc(len);
 }
 
-static void *memory_realloc(void *user, void *ptr, size_t len) {
+static void* memory_realloc(void* user, void* ptr, size_t len) {
   (void)user;
   return realloc(ptr, len);
 }
 
-static void memory_free(void *user, void *ptr) {
+static void memory_free(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
 
-static h2_pal_result_t mutex_create(void *user,
-                                    const h2_pal_mutex_config_t *config,
-                                    h2_pal_mutex_t **mutex) {
+static h2_pal_result_t mutex_create(void* user,
+                                    const h2_pal_mutex_config_t* config,
+                                    h2_pal_mutex_t** mutex) {
   (void)user;
   if (config == NULL || mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -65,7 +65,7 @@ static h2_pal_result_t mutex_create(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t mutex_destroy(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   if (mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -77,7 +77,7 @@ static h2_pal_result_t mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t mutex_lock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t mutex_lock(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   if (mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -89,7 +89,7 @@ static h2_pal_result_t mutex_lock(void *user, h2_pal_mutex_t *mutex) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t mutex_try_lock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t mutex_try_lock(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   if (mutex == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -101,7 +101,7 @@ static h2_pal_result_t mutex_try_lock(void *user, h2_pal_mutex_t *mutex) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t mutex_unlock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t mutex_unlock(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   if (mutex == NULL || mutex->lock_depth == 0u) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -137,7 +137,7 @@ static const h2_pal_sync_api_t s_sync_api = {
 static const h2_pal_queue_api_t s_queue_api = {0};
 static const h2_pal_time_api_t s_time_api = {0};
 
-static h2_pal_result_t headless_lvgl_start(h2_app_test_memory_t *memory) {
+static h2_pal_result_t headless_lvgl_start(h2_app_test_memory_t* memory) {
   if (s_active_memory != NULL) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -158,7 +158,7 @@ static h2_pal_result_t headless_lvgl_start(h2_app_test_memory_t *memory) {
   return H2_PAL_OK;
 }
 
-static void headless_lvgl_stop(h2_app_test_memory_t *memory) {
+static void headless_lvgl_stop(h2_app_test_memory_t* memory) {
   if (!memory->lvgl_started) {
     return;
   }
@@ -170,9 +170,9 @@ static void headless_lvgl_stop(h2_app_test_memory_t *memory) {
   memory->lvgl_started = false;
 }
 
-static h2_pal_result_t memory_open(void *user, const char *app_id,
-                                   const h2_app_test_fixture_t *fixture) {
-  h2_app_test_memory_t *memory = user;
+static h2_pal_result_t memory_open(void* user, const char* app_id,
+                                   const h2_app_test_fixture_t* fixture) {
+  h2_app_test_memory_t* memory = user;
   if (memory == NULL || memory->active || app_id == NULL ||
       memory->app.app_id == NULL || strcmp(memory->app.app_id, app_id) != 0) {
     return memory != NULL && memory->active ? H2_PAL_ERR_INVALID_STATE
@@ -184,7 +184,7 @@ static h2_pal_result_t memory_open(void *user, const char *app_id,
   }
   rc = memory->app.vtable->reset(memory->app.user, fixture);
   if (rc == H2_PAL_OK) {
-    h2_runtime_t *runtime = memory->app.vtable->runtime(memory->app.user);
+    h2_runtime_t* runtime = memory->app.vtable->runtime(memory->app.user);
     if (runtime == NULL) {
       rc = H2_PAL_ERR_INVALID_STATE;
     } else {
@@ -202,65 +202,54 @@ static h2_pal_result_t memory_open(void *user, const char *app_id,
   return rc;
 }
 
-static h2_pal_result_t memory_inject(
-    h2_app_test_memory_t *memory,
-    const h2_app_test_operation_t *operation) {
+static h2_pal_result_t memory_inject(h2_app_test_memory_t* memory,
+                                     const h2_app_test_operation_t* operation) {
   switch (operation->kind) {
-  case H2_APP_TEST_OPERATION_RUN:
-    return H2_PAL_OK;
-  case H2_APP_TEST_OPERATION_EVENT:
-    return h2_runtime_test_emit_event(
-        memory->control,
-        operation->data.event.kind,
-        operation->data.event.component,
-        operation->data.event.component_id,
-        operation->data.event.timestamp_ms,
-        operation->data.event.payload,
-        operation->data.event.payload_size);
-  case H2_APP_TEST_OPERATION_COMPONENT_STATE:
-    return h2_runtime_test_set_component_state(
-        memory->control,
-        operation->data.component_state.component_id,
-        operation->data.component_state.data,
-        operation->data.component_state.size);
-  case H2_APP_TEST_OPERATION_BUTTON_DOWN:
-    return h2_runtime_test_button_action(
-        memory->control,
-        operation->data.button.component_id,
-        operation->data.button.pressed_at_ms,
-        0u,
-        operation->data.button.pressed_at_ms);
-  case H2_APP_TEST_OPERATION_BUTTON_HOLD:
-    return h2_runtime_test_button_action(
-        memory->control,
-        operation->data.button.component_id,
-        operation->data.button.pressed_at_ms,
-        0u,
-        operation->data.button.released_at_ms);
-  case H2_APP_TEST_OPERATION_BUTTON_UP:
-    return h2_runtime_test_button_action(
-        memory->control,
-        operation->data.button.component_id,
-        operation->data.button.pressed_at_ms,
-        operation->data.button.released_at_ms,
-        operation->data.button.released_at_ms);
-  case H2_APP_TEST_OPERATION_BUTTON_ACTION:
-    return h2_runtime_test_button_action(
-        memory->control,
-        operation->data.button.component_id,
-        operation->data.button.pressed_at_ms,
-        operation->data.button.released_at_ms,
-        operation->data.button.released_at_ms);
-  default:
-    return H2_PAL_ERR_INVALID_ARG;
+    case H2_APP_TEST_OPERATION_RUN:
+      return H2_PAL_OK;
+    case H2_APP_TEST_OPERATION_EVENT:
+      return h2_runtime_test_emit_event(
+          memory->control, operation->data.event.kind,
+          operation->data.event.component, operation->data.event.component_id,
+          operation->data.event.timestamp_ms, operation->data.event.payload,
+          operation->data.event.payload_size);
+    case H2_APP_TEST_OPERATION_COMPONENT_STATE:
+      return h2_runtime_test_set_component_state(
+          memory->control, operation->data.component_state.component_id,
+          operation->data.component_state.data,
+          operation->data.component_state.size);
+    case H2_APP_TEST_OPERATION_BUTTON_DOWN:
+      return h2_runtime_test_button_action(
+          memory->control, operation->data.button.component_id,
+          operation->data.button.pressed_at_ms, 0u,
+          operation->data.button.pressed_at_ms);
+    case H2_APP_TEST_OPERATION_BUTTON_HOLD:
+      return h2_runtime_test_button_action(
+          memory->control, operation->data.button.component_id,
+          operation->data.button.pressed_at_ms, 0u,
+          operation->data.button.released_at_ms);
+    case H2_APP_TEST_OPERATION_BUTTON_UP:
+      return h2_runtime_test_button_action(
+          memory->control, operation->data.button.component_id,
+          operation->data.button.pressed_at_ms,
+          operation->data.button.released_at_ms,
+          operation->data.button.released_at_ms);
+    case H2_APP_TEST_OPERATION_BUTTON_ACTION:
+      return h2_runtime_test_button_action(
+          memory->control, operation->data.button.component_id,
+          operation->data.button.pressed_at_ms,
+          operation->data.button.released_at_ms,
+          operation->data.button.released_at_ms);
+    default:
+      return H2_PAL_ERR_INVALID_ARG;
   }
 }
 
-static h2_pal_result_t memory_execute(
-    void *user, const h2_app_test_operation_t *operation,
-    uint32_t generation, uint32_t timeout_ms,
-    h2_app_test_snapshot_t *snapshot) {
-  h2_app_test_memory_t *memory = user;
+static h2_pal_result_t memory_execute(void* user,
+                                      const h2_app_test_operation_t* operation,
+                                      uint32_t generation, uint32_t timeout_ms,
+                                      h2_app_test_snapshot_t* snapshot) {
+  h2_app_test_memory_t* memory = user;
   if (memory == NULL || !memory->active || operation == NULL ||
       generation == 0u || snapshot == NULL) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -276,8 +265,8 @@ static h2_pal_result_t memory_execute(
   return memory->app.vtable->snapshot(memory->app.user, &writer);
 }
 
-static void memory_close(void *user) {
-  h2_app_test_memory_t *memory = user;
+static void memory_close(void* user) {
+  h2_app_test_memory_t* memory = user;
   if (memory == NULL || !memory->active) {
     return;
   }
@@ -294,7 +283,7 @@ static const h2_app_test_driver_vtable_t s_memory_vtable = {
     .close = memory_close,
 };
 
-h2_pal_result_t h2_app_test_memory_driver_init(h2_app_test_driver_t *driver,
+h2_pal_result_t h2_app_test_memory_driver_init(h2_app_test_driver_t* driver,
                                                h2_app_test_app_t app) {
   if (driver == NULL || app.app_id == NULL || app.app_id[0] == '\0' ||
       bounded_length(app.app_id, H2_APP_TEST_APP_ID_MAX + 1u) >
@@ -305,15 +294,15 @@ h2_pal_result_t h2_app_test_memory_driver_init(h2_app_test_driver_t *driver,
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(driver, 0, sizeof(*driver));
-  h2_app_test_memory_t *memory =
-      (h2_app_test_memory_t *)driver->implementation_storage;
+  h2_app_test_memory_t* memory =
+      (h2_app_test_memory_t*)driver->implementation_storage;
   memory->app = app;
   driver->user = memory;
   driver->vtable = &s_memory_vtable;
   return H2_PAL_OK;
 }
 
-void h2_app_test_memory_driver_deinit(h2_app_test_driver_t *driver) {
+void h2_app_test_memory_driver_deinit(h2_app_test_driver_t* driver) {
   if (driver == NULL) {
     return;
   }

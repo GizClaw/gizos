@@ -68,6 +68,7 @@ def jieli_target_task_policy(name, graph, policies, sdk_policies, default_policy
     declared = {}
     for row in policies:
         task, _ = _row(row)
+
         # SDK affinity prefixes are not part of the PAL task's logical name.
         if task.startswith("#C0") or task.startswith("#C1"):
             task = task[3:]

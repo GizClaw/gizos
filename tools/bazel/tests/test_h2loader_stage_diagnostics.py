@@ -22,6 +22,7 @@ typedef int h2_pal_result_t;
 typedef struct {
  int (*on_log)(void *, const uint8_t *, size_t);
  void *log_user;
+ int log_line_open;
 } h2_h2loader_host_serial_connection_t;
 static size_t logged;
 static int log_result;
@@ -62,7 +63,8 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory(prefix="h2-stage-diagnostics-") as directory:
             path = Path(directory)
-            (path / "test.c").write_text(stub + source[start:end] + main)
+            sink = source[source.index("static h2_pal_result_t serial_log_output("):source.index("static h2_pal_result_t serial_status_emit(")]
+            (path / "test.c").write_text(stub + sink + source[start:end] + main)
             subprocess.run(["cc", "-std=c11", str(path / "test.c"), "-o", str(path / "test")], check=True)
             subprocess.run([str(path / "test")], check=True)
 

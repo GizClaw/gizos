@@ -19,3 +19,7 @@ one board and read how fast the other reports `lost`.
 The App only uses the Runtime and the Lua `link` module; board launchers own the
 BLE Host (started by the H2Loader command service), the role and the
 advertising/scan type. No Wi-Fi is used.
+
+The ESP entries send the original `LINK` records and final result through checked stdout; other Runtime logs keep the board's log provider. They leave a five-second serial reconnection window before starting the BLE Host and the first round. The original five rounds, round spacing, session deadlines and script assertions remain unchanged.
+
+AMOLED defaults to `join`; `--define=H2_LUA_LINK_E2E_ROLE=host` selects the opposite fixture role. Round and summary records identify the actual Runtime board. The image still confirms before the first round when the command service becomes available; that confirmation does not report test results.

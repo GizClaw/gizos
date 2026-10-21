@@ -13,9 +13,9 @@
 namespace {
 
 std::mutex g_provider_mutex;
-h2_sdl3_t *g_provider = nullptr;
+h2_sdl3_t* g_provider = nullptr;
 
-int init_failure(h2_sdl3_t *state, int result, const char *stage) {
+int init_failure(h2_sdl3_t* state, int result, const char* stage) {
   std::fprintf(stderr,
                "SDL3 display initialization failed: stage=%s result=%d "
                "sdl_error=%s\n",
@@ -25,7 +25,7 @@ int init_failure(h2_sdl3_t *state, int result, const char *stage) {
   return result;
 }
 
-int init_display(h2_sdl3_t *state) {
+int init_display(h2_sdl3_t* state) {
   if (state->initialized) {
     return H2_DISPLAY_OK;
   }
@@ -61,7 +61,7 @@ int init_display(h2_sdl3_t *state) {
     return init_failure(state, H2_DISPLAY_ERR_NO_MEMORY, "framebuffer size");
   }
   state->framebuffer =
-      static_cast<uint16_t *>(std::calloc(width * height, sizeof(uint16_t)));
+      static_cast<uint16_t*>(std::calloc(width * height, sizeof(uint16_t)));
   if (state->framebuffer == nullptr) {
     return init_failure(state, H2_DISPLAY_ERR_NO_MEMORY,
                         "framebuffer allocation");
@@ -71,8 +71,8 @@ int init_display(h2_sdl3_t *state) {
   return H2_DISPLAY_OK;
 }
 
-int display_open(void *user) {
-  auto *state = static_cast<h2_sdl3_t *>(user);
+int display_open(void* user) {
+  auto* state = static_cast<h2_sdl3_t*>(user);
   if (state == nullptr || !state->active) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -89,8 +89,8 @@ int display_open(void *user) {
   return result;
 }
 
-int display_get_info(void *user, h2_display_info_t *info) {
-  auto *state = static_cast<h2_sdl3_t *>(user);
+int display_get_info(void* user, h2_display_info_t* info) {
+  auto* state = static_cast<h2_sdl3_t*>(user);
   if (state == nullptr || info == nullptr) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -102,8 +102,8 @@ int display_get_info(void *user, h2_display_info_t *info) {
   return H2_DISPLAY_OK;
 }
 
-int clip_rect(const h2_sdl3_t *state, const h2_display_rect_t *rect,
-              h2_display_rect_t *clipped) {
+int clip_rect(const h2_sdl3_t* state, const h2_display_rect_t* rect,
+              h2_display_rect_t* clipped) {
   if (rect->width <= 0 || rect->height <= 0) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -123,7 +123,7 @@ int clip_rect(const h2_sdl3_t *state, const h2_display_rect_t *rect,
   return H2_DISPLAY_OK;
 }
 
-uint16_t rgb888_to_rgb565(const uint8_t *pixel) {
+uint16_t rgb888_to_rgb565(const uint8_t* pixel) {
   return static_cast<uint16_t>(
       ((static_cast<uint16_t>(pixel[0]) & 0xf8u) << 8u) |
       ((static_cast<uint16_t>(pixel[1]) & 0xfcu) << 3u) |
@@ -135,13 +135,14 @@ uint16_t rgb444_to_rgb565(uint16_t pixel) {
   const uint16_t green = (pixel >> 4u) & 0x0fu;
   const uint16_t blue = pixel & 0x0fu;
   return static_cast<uint16_t>((((red << 1u) | (red >> 3u)) << 11u) |
-      (((green << 2u) | (green >> 2u)) << 5u) | (blue << 1u) | (blue >> 3u));
+                               (((green << 2u) | (green >> 2u)) << 5u) |
+                               (blue << 1u) | (blue >> 3u));
 }
 
-int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
-                        const void *pixels, size_t stride_bytes,
+int display_draw_bitmap(void* user, const h2_display_rect_t* rect,
+                        const void* pixels, size_t stride_bytes,
                         h2_display_pixel_format_t format) {
-  auto *state = static_cast<h2_sdl3_t *>(user);
+  auto* state = static_cast<h2_sdl3_t*>(user);
   if (state == nullptr || rect == nullptr || pixels == nullptr) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -155,15 +156,15 @@ int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
   std::memcpy(&format_code, &format, sizeof(format_code));
   size_t pixel_size = 0u;
   switch (format_code) {
-  case H2_DISPLAY_PIXEL_RGB565:
-  case H2_DISPLAY_PIXEL_RGB444:
-    pixel_size = 2u;
-    break;
-  case H2_DISPLAY_PIXEL_RGB888:
-    pixel_size = 3u;
-    break;
-  default:
-    return H2_DISPLAY_ERR_UNSUPPORTED;
+    case H2_DISPLAY_PIXEL_RGB565:
+    case H2_DISPLAY_PIXEL_RGB444:
+      pixel_size = 2u;
+      break;
+    case H2_DISPLAY_PIXEL_RGB888:
+      pixel_size = 3u;
+      break;
+    default:
+      return H2_DISPLAY_ERR_UNSUPPORTED;
   }
   if (rect->width <= 0 || rect->height <= 0 ||
       static_cast<size_t>(rect->width) >
@@ -181,16 +182,17 @@ int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
   if (clip_result != H2_DISPLAY_OK) {
     return clip_result;
   }
-  const auto *source = static_cast<const uint8_t *>(pixels);
-  source += static_cast<size_t>(static_cast<int64_t>(clipped.y) - rect->y) * stride_bytes;
-  source += static_cast<size_t>(static_cast<int64_t>(clipped.x) - rect->x) * pixel_size;
+  const auto* source = static_cast<const uint8_t*>(pixels);
+  source += static_cast<size_t>(static_cast<int64_t>(clipped.y) - rect->y) *
+            stride_bytes;
+  source += static_cast<size_t>(static_cast<int64_t>(clipped.x) - rect->x) *
+            pixel_size;
   for (int row = 0; row < clipped.height; ++row) {
-    uint16_t *destination =
-        state->framebuffer +
-        static_cast<size_t>(clipped.y + row) *
-            static_cast<size_t>(state->width) +
-        static_cast<size_t>(clipped.x);
-    const uint8_t *source_row =
+    uint16_t* destination = state->framebuffer +
+                            static_cast<size_t>(clipped.y + row) *
+                                static_cast<size_t>(state->width) +
+                            static_cast<size_t>(clipped.x);
+    const uint8_t* source_row =
         source + static_cast<size_t>(row) * stride_bytes;
     if (format_code == H2_DISPLAY_PIXEL_RGB565) {
       std::memcpy(destination, source_row,
@@ -213,8 +215,8 @@ int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
   return H2_DISPLAY_OK;
 }
 
-int display_present(void *user) {
-  auto *state = static_cast<h2_sdl3_t *>(user);
+int display_present(void* user) {
+  auto* state = static_cast<h2_sdl3_t*>(user);
   if (state == nullptr) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -226,8 +228,8 @@ int display_present(void *user) {
   return H2_DISPLAY_OK;
 }
 
-int display_set_brightness(void *user, uint32_t percent) {
-  auto *state = static_cast<h2_sdl3_t *>(user);
+int display_set_brightness(void* user, uint32_t percent) {
+  auto* state = static_cast<h2_sdl3_t*>(user);
   if (state == nullptr) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -241,8 +243,8 @@ int display_set_brightness(void *user, uint32_t percent) {
   return H2_DISPLAY_OK;
 }
 
-int display_close(void *user) {
-  auto *state = static_cast<h2_sdl3_t *>(user);
+int display_close(void* user) {
+  auto* state = static_cast<h2_sdl3_t*>(user);
   if (state == nullptr) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -257,9 +259,9 @@ const h2_pal_display_vtable_t kDisplayVtable = {
     display_present, display_set_brightness, display_close,
 };
 
-} // namespace
+}  // namespace
 
-void h2_sdl3_cleanup_display(h2_sdl3_t *state) {
+void h2_sdl3_cleanup_display(h2_sdl3_t* state) {
   std::free(state->framebuffer);
   state->framebuffer = nullptr;
   SDL_DestroyTexture(state->texture);
@@ -277,7 +279,7 @@ void h2_sdl3_cleanup_display(h2_sdl3_t *state) {
   state->open_count = 0u;
 }
 
-int h2_sdl3_present(h2_sdl3_t *state) {
+int h2_sdl3_present(h2_sdl3_t* state) {
   if (!state->initialized || state->open_count == 0u || state->close_pending) {
     return H2_DISPLAY_ERR_INVALID_STATE;
   }
@@ -290,13 +292,13 @@ int h2_sdl3_present(h2_sdl3_t *state) {
     return H2_DISPLAY_ERR_IO;
   }
   if (state->render_capture != nullptr) {
-    SDL_Surface *raw = SDL_RenderReadPixels(state->renderer, nullptr);
+    SDL_Surface* raw = SDL_RenderReadPixels(state->renderer, nullptr);
     if (raw == nullptr) return H2_DISPLAY_ERR_IO;
-    SDL_Surface *rgba = SDL_ConvertSurface(raw, SDL_PIXELFORMAT_RGBA32);
+    SDL_Surface* rgba = SDL_ConvertSurface(raw, SDL_PIXELFORMAT_RGBA32);
     SDL_DestroySurface(raw);
     if (rgba == nullptr) return H2_DISPLAY_ERR_IO;
     const h2_sdl3_render_frame_t frame = {
-        static_cast<const uint8_t *>(rgba->pixels),
+        static_cast<const uint8_t*>(rgba->pixels),
         static_cast<uint32_t>(rgba->w), static_cast<uint32_t>(rgba->h),
         static_cast<size_t>(rgba->pitch)};
     state->render_capture(state->render_capture_user, &frame);
@@ -306,12 +308,15 @@ int h2_sdl3_present(h2_sdl3_t *state) {
   if (state->capture != nullptr) {
     const uint64_t timestamp = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
     const h2_sdl3_capture_frame_t frame = {
-        state->framebuffer, static_cast<uint32_t>(state->width),
+        state->framebuffer,
+        static_cast<uint32_t>(state->width),
         static_cast<uint32_t>(state->height),
         static_cast<size_t>(state->width) * sizeof(uint16_t),
-        state->brightness_mod, timestamp};
+        state->brightness_mod,
+        timestamp};
     state->capture(state->capture_user, &frame);
   }
   return H2_DISPLAY_OK;
@@ -319,8 +324,9 @@ int h2_sdl3_present(h2_sdl3_t *state) {
 
 extern "C" {
 
-h2_pal_result_t h2_sdl3_set_render_capture(h2_sdl3_t *provider,
-    h2_sdl3_render_capture_fn callback, void *user) {
+h2_pal_result_t h2_sdl3_set_render_capture(h2_sdl3_t* provider,
+                                           h2_sdl3_render_capture_fn callback,
+                                           void* user) {
   if (provider == nullptr) return H2_PAL_ERR_INVALID_ARG;
   std::lock_guard<std::mutex> lock(provider->display_mutex);
   if (callback != nullptr && provider->render_capture != nullptr)
@@ -330,9 +336,9 @@ h2_pal_result_t h2_sdl3_set_render_capture(h2_sdl3_t *provider,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t *provider,
-                                        h2_sdl3_frame_capture_fn callback,
-                                        void *user) {
+h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t* provider,
+                                          h2_sdl3_frame_capture_fn callback,
+                                          void* user) {
   if (provider == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -345,9 +351,7 @@ h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t *provider,
   return H2_PAL_OK;
 }
 
-
-int h2_sdl3_create(const h2_sdl3_config_t *config,
-                   h2_sdl3_t **out_provider) {
+int h2_sdl3_create(const h2_sdl3_config_t* config, h2_sdl3_t** out_provider) {
   if (out_provider == nullptr) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -362,7 +366,7 @@ int h2_sdl3_create(const h2_sdl3_config_t *config,
   if (g_provider != nullptr) {
     return H2_PAL_ERR_BUSY;
   }
-  auto *provider = new (std::nothrow) h2_sdl3_t();
+  auto* provider = new (std::nothrow) h2_sdl3_t();
   if (provider == nullptr) {
     return H2_DISPLAY_ERR_NO_MEMORY;
   }
@@ -382,7 +386,7 @@ int h2_sdl3_create(const h2_sdl3_config_t *config,
   return H2_DISPLAY_OK;
 }
 
-void h2_sdl3_destroy(h2_sdl3_t *provider) {
+void h2_sdl3_destroy(h2_sdl3_t* provider) {
   if (provider == nullptr) {
     return;
   }
@@ -400,11 +404,11 @@ void h2_sdl3_destroy(h2_sdl3_t *provider) {
   delete provider;
 }
 
-h2_pal_display_t *h2_sdl3_display(h2_sdl3_t *provider) {
+h2_pal_display_t* h2_sdl3_display(h2_sdl3_t* provider) {
   return provider == nullptr ? nullptr : &provider->display;
 }
 
-void h2_sdl3_set_window_title(h2_sdl3_t *provider, const char *title) {
+void h2_sdl3_set_window_title(h2_sdl3_t* provider, const char* title) {
   if (provider == nullptr || title == nullptr) {
     return;
   }
@@ -419,4 +423,4 @@ void h2_sdl3_set_window_title(h2_sdl3_t *provider, const char *title) {
   }
 }
 
-} // extern "C"
+}  // extern "C"

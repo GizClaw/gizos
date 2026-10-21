@@ -52,223 +52,213 @@
 #define H2_SCTP_MAX_INBOUND_PACKET_SIZE 65535u
 
 typedef enum h2_sctp_control_kind {
-    H2_SCTP_CONTROL_NONE = 0,
-    H2_SCTP_CONTROL_INIT,
-    H2_SCTP_CONTROL_COOKIE_ECHO,
-    H2_SCTP_CONTROL_SHUTDOWN,
-    H2_SCTP_CONTROL_RESET,
+  H2_SCTP_CONTROL_NONE = 0,
+  H2_SCTP_CONTROL_INIT,
+  H2_SCTP_CONTROL_COOKIE_ECHO,
+  H2_SCTP_CONTROL_SHUTDOWN,
+  H2_SCTP_CONTROL_RESET,
 } h2_sctp_control_kind_t;
 
 typedef struct h2_sctp_stream {
-    uint16_t id;
-    uint16_t next_out_ssn;
-    uint16_t next_in_ssn;
-    uint32_t next_out_mid_ordered;
-    uint32_t next_out_mid_unordered;
-    uint32_t next_in_mid_ordered;
-    uint32_t next_in_mid_unordered;
-    bool reset_pending;
-    uint32_t reset_request_sequence;
-    struct h2_sctp_tx_fragment *tx_unsent;
-    struct h2_sctp_tx_fragment *tx_tail;
-    struct h2_sctp_stream *next;
+  uint16_t id;
+  uint16_t next_out_ssn;
+  uint16_t next_in_ssn;
+  uint32_t next_out_mid_ordered;
+  uint32_t next_out_mid_unordered;
+  uint32_t next_in_mid_ordered;
+  uint32_t next_in_mid_unordered;
+  bool reset_pending;
+  uint32_t reset_request_sequence;
+  struct h2_sctp_tx_fragment* tx_unsent;
+  struct h2_sctp_tx_fragment* tx_tail;
+  struct h2_sctp_stream* next;
 } h2_sctp_stream_t;
 
 typedef struct h2_sctp_tx_fragment {
-    uint64_t message_id;
-    uint32_t tsn;
-    uint32_t message_identifier;
-    uint32_t fragment_sequence;
-    uint32_t ppid;
-    uint16_t stream_id;
-    uint8_t flags;
-    h2_pal_sctp_reliability_t reliability;
-    uint32_t reliability_value;
-    uint64_t submitted_ms;
-    uint64_t sent_ms;
-    unsigned retransmits;
-    unsigned miss_reports;
-    bool fast_retransmit;
-    bool tsn_assigned;
-    bool sent;
-    bool acknowledged;
-    bool abandoned;
-    size_t data_len;
-    uint8_t *data;
-    struct h2_sctp_tx_fragment *stream_next;
-    struct h2_sctp_tx_fragment *next;
+  uint64_t message_id;
+  uint32_t tsn;
+  uint32_t message_identifier;
+  uint32_t fragment_sequence;
+  uint32_t ppid;
+  uint16_t stream_id;
+  uint8_t flags;
+  h2_pal_sctp_reliability_t reliability;
+  uint32_t reliability_value;
+  uint64_t submitted_ms;
+  uint64_t sent_ms;
+  unsigned retransmits;
+  unsigned miss_reports;
+  bool fast_retransmit;
+  bool tsn_assigned;
+  bool sent;
+  bool acknowledged;
+  bool abandoned;
+  size_t data_len;
+  uint8_t* data;
+  struct h2_sctp_tx_fragment* stream_next;
+  struct h2_sctp_tx_fragment* next;
 } h2_sctp_tx_fragment_t;
 
 typedef struct h2_sctp_rx_fragment {
-    uint32_t tsn;
-    uint32_t message_identifier;
-    uint32_t fragment_sequence;
-    uint32_t ppid;
-    uint16_t stream_id;
-    uint8_t flags;
-    bool interleaved;
-    bool delivered;
-    /* Payload lives in the association's assembly buffer, not in the node. */
-    bool assembled;
-    size_t data_len;
-    uint8_t *data;
-    struct h2_sctp_rx_fragment *next;
+  uint32_t tsn;
+  uint32_t message_identifier;
+  uint32_t fragment_sequence;
+  uint32_t ppid;
+  uint16_t stream_id;
+  uint8_t flags;
+  bool interleaved;
+  bool delivered;
+  /* Payload lives in the association's assembly buffer, not in the node. */
+  bool assembled;
+  size_t data_len;
+  uint8_t* data;
+  struct h2_sctp_rx_fragment* next;
 } h2_sctp_rx_fragment_t;
 
 struct h2_sctp {
-    const h2_pal_mem_api_t *mem;
-    const h2_pal_mem_api_t *packet_mem;
-    size_t packet_pool_size;
-    const h2_pal_crypto_api_t *crypto;
-    h2_pal_sctp_api_t api;
-    struct h2_pal_sctp_association *associations;
-    size_t association_count;
+  const h2_pal_mem_api_t* mem;
+  const h2_pal_mem_api_t* packet_mem;
+  size_t packet_pool_size;
+  const h2_pal_crypto_api_t* crypto;
+  h2_pal_sctp_api_t api;
+  struct h2_pal_sctp_association* associations;
+  size_t association_count;
 };
 
 struct h2_pal_sctp_association {
-    h2_sctp_t *owner;
-    const h2_pal_mem_api_t *mem;
-    h2_pal_sctp_association_config_t config;
-    h2_pal_sctp_state_t state;
-    h2_pal_result_t terminal_reason;
-    bool time_initialized;
-    bool in_callback;
-    bool delivery_pending;
-    uint64_t last_now_ms;
+  h2_sctp_t* owner;
+  const h2_pal_mem_api_t* mem;
+  h2_pal_sctp_association_config_t config;
+  h2_pal_sctp_state_t state;
+  h2_pal_result_t terminal_reason;
+  bool time_initialized;
+  bool in_callback;
+  bool delivery_pending;
+  uint64_t last_now_ms;
 
-    uint32_t local_verification_tag;
-    uint32_t peer_verification_tag;
-    uint32_t next_tsn;
-    uint32_t initial_tsn;
-    uint32_t peer_initial_tsn;
-    uint32_t cumulative_received_tsn;
-    uint32_t peer_cumulative_tsn;
-    uint32_t advanced_peer_ack;
-    uint32_t next_reset_sequence;
-    uint32_t expected_reset_sequence;
-    /* RFC 6525 5.2.2 deferred reset: an incoming reset request whose last
-     * assigned TSN is still beyond the cumulative point. The stream list is a
-     * copy of the request's stream identifiers, two wire bytes each. */
-    uint8_t *deferred_reset_streams;
-    size_t deferred_reset_streams_len;
-    uint32_t deferred_reset_sequence;
-    uint32_t deferred_reset_last_tsn;
-    uint16_t negotiated_inbound_streams;
-    uint16_t negotiated_outbound_streams;
-    bool peer_forward_tsn;
-    bool peer_interleaving;
-    bool peer_stream_reset;
+  uint32_t local_verification_tag;
+  uint32_t peer_verification_tag;
+  uint32_t next_tsn;
+  uint32_t initial_tsn;
+  uint32_t peer_initial_tsn;
+  uint32_t cumulative_received_tsn;
+  uint32_t peer_cumulative_tsn;
+  uint32_t advanced_peer_ack;
+  uint32_t next_reset_sequence;
+  uint32_t expected_reset_sequence;
+  /* RFC 6525 5.2.2 deferred reset: an incoming reset request whose last
+   * assigned TSN is still beyond the cumulative point. The stream list is a
+   * copy of the request's stream identifiers, two wire bytes each. */
+  uint8_t* deferred_reset_streams;
+  size_t deferred_reset_streams_len;
+  uint32_t deferred_reset_sequence;
+  uint32_t deferred_reset_last_tsn;
+  uint16_t negotiated_inbound_streams;
+  uint16_t negotiated_outbound_streams;
+  bool peer_forward_tsn;
+  bool peer_interleaving;
+  bool peer_stream_reset;
 
-    uint8_t cookie[32];
-    bool cookie_valid;
-    uint64_t cookie_expires_ms;
-    uint8_t *peer_cookie;
-    size_t peer_cookie_len;
-    bool shutdown_pending;
-    bool peer_shutdown_pending;
+  uint8_t cookie[32];
+  bool cookie_valid;
+  uint64_t cookie_expires_ms;
+  uint8_t* peer_cookie;
+  size_t peer_cookie_len;
+  bool shutdown_pending;
+  bool peer_shutdown_pending;
 
-    /* Outbound packets are built in place in this bounded pool (pool_size
-     * buffers of max_packet_size bytes, allocated from the provider's
-     * packet_mem). pending_emit, when set, is one of these buffers. */
-    uint8_t *packet_pool;
-    size_t packet_pool_size;
-    uint32_t packet_pool_used;
-    uint8_t *pending_emit;
-    size_t pending_emit_len;
-    uint8_t *control_packet;
-    size_t control_packet_len;
-    h2_sctp_control_kind_t control_kind;
-    unsigned control_retries;
-    bool control_reset_in_progress;
-    unsigned control_reset_retries;
-    uint64_t control_deadline_ms;
+  /* Outbound packets are built in place in this bounded pool (pool_size
+   * buffers of max_packet_size bytes, allocated from the provider's
+   * packet_mem). pending_emit, when set, is one of these buffers. */
+  uint8_t* packet_pool;
+  size_t packet_pool_size;
+  uint32_t packet_pool_used;
+  uint8_t* pending_emit;
+  size_t pending_emit_len;
+  uint8_t* control_packet;
+  size_t control_packet_len;
+  h2_sctp_control_kind_t control_kind;
+  unsigned control_retries;
+  bool control_reset_in_progress;
+  unsigned control_reset_retries;
+  uint64_t control_deadline_ms;
 
-    uint64_t rto_ms;
-    uint64_t srtt_ms;
-    uint64_t rttvar_ms;
-    uint64_t rtt_sample_sent_ms;
-    uint32_t rtt_sample_tsn;
-    bool rtt_initialized;
-    bool rtt_sample_pending;
-    uint64_t heartbeat_deadline_ms;
-    uint32_t cwnd;
-    uint32_t ssthresh;
-    uint32_t fast_recovery_exit_tsn;
-    bool fast_recovery_active;
-    uint32_t peer_receive_window;
-    size_t flight_size;
-    size_t send_used;
-    size_t receive_used;
-    uint64_t next_message_id;
-    uint16_t last_scheduled_stream;
-    uint8_t sack_pending_packets;
+  uint64_t rto_ms;
+  uint64_t srtt_ms;
+  uint64_t rttvar_ms;
+  uint64_t rtt_sample_sent_ms;
+  uint32_t rtt_sample_tsn;
+  bool rtt_initialized;
+  bool rtt_sample_pending;
+  uint64_t heartbeat_deadline_ms;
+  uint32_t cwnd;
+  uint32_t ssthresh;
+  uint32_t fast_recovery_exit_tsn;
+  bool fast_recovery_active;
+  uint32_t peer_receive_window;
+  size_t flight_size;
+  size_t send_used;
+  size_t receive_used;
+  uint64_t next_message_id;
+  uint16_t last_scheduled_stream;
+  uint8_t sack_pending_packets;
 
-    h2_sctp_stream_t *streams;
-    /* In-order fragments of the message expected next are copied straight
-     * into this max_message_size buffer and the complete message is handed
-     * to the callback from it, so the common path costs one copy and no
-     * per-message allocation. Out-of-order fragments keep their own copy. */
-    uint8_t *rx_assembly;
-    size_t rx_assembly_len;
-    uint32_t rx_assembly_count;
-    h2_sctp_rx_fragment_t *rx_assembly_begin;
-    h2_sctp_tx_fragment_t *tx_fragments;
-    h2_sctp_tx_fragment_t *tx_fragments_tail;
-    h2_sctp_rx_fragment_t *rx_fragments;
-    h2_sctp_rx_fragment_t *rx_fragments_tail;
-    struct h2_pal_sctp_association *next;
-    uint64_t sack_deadline_ms;
+  h2_sctp_stream_t* streams;
+  /* In-order fragments of the message expected next are copied straight
+   * into this max_message_size buffer and the complete message is handed
+   * to the callback from it, so the common path costs one copy and no
+   * per-message allocation. Out-of-order fragments keep their own copy. */
+  uint8_t* rx_assembly;
+  size_t rx_assembly_len;
+  uint32_t rx_assembly_count;
+  h2_sctp_rx_fragment_t* rx_assembly_begin;
+  h2_sctp_tx_fragment_t* tx_fragments;
+  h2_sctp_tx_fragment_t* tx_fragments_tail;
+  h2_sctp_rx_fragment_t* rx_fragments;
+  h2_sctp_rx_fragment_t* rx_fragments_tail;
+  struct h2_pal_sctp_association* next;
+  uint64_t sack_deadline_ms;
 };
 
-void *h2_sctp_alloc(const h2_pal_mem_api_t *mem, size_t size);
-void h2_sctp_free(const h2_pal_mem_api_t *mem, void *pointer);
+void* h2_sctp_alloc(const h2_pal_mem_api_t* mem, size_t size);
+void h2_sctp_free(const h2_pal_mem_api_t* mem, void* pointer);
 uint64_t h2_sctp_deadline_add(uint64_t now_ms, uint64_t delta_ms);
 bool h2_sctp_tsn_before(uint32_t left, uint32_t right);
 bool h2_sctp_tsn_after(uint32_t left, uint32_t right);
 
 h2_pal_result_t h2_sctp_validate_operation(
-    h2_pal_sctp_association_t *association,
-    uint64_t now_ms);
-void h2_sctp_notify_state(
-    h2_pal_sctp_association_t *association,
-    h2_pal_sctp_state_t state,
-    h2_pal_result_t reason);
+    h2_pal_sctp_association_t* association, uint64_t now_ms);
+void h2_sctp_notify_state(h2_pal_sctp_association_t* association,
+                          h2_pal_sctp_state_t state, h2_pal_result_t reason);
 h2_pal_result_t h2_sctp_notify_message(
-    h2_pal_sctp_association_t *association,
-    const h2_pal_sctp_received_message_t *message);
-void h2_sctp_notify_stream_reset(
-    h2_pal_sctp_association_t *association,
-    uint16_t stream_id,
-    h2_pal_sctp_stream_reset_direction_t direction,
-    h2_pal_result_t result);
-void h2_sctp_fail(
-    h2_pal_sctp_association_t *association,
-    h2_pal_result_t reason);
+    h2_pal_sctp_association_t* association,
+    const h2_pal_sctp_received_message_t* message);
+void h2_sctp_notify_stream_reset(h2_pal_sctp_association_t* association,
+                                 uint16_t stream_id,
+                                 h2_pal_sctp_stream_reset_direction_t direction,
+                                 h2_pal_result_t result);
+void h2_sctp_fail(h2_pal_sctp_association_t* association,
+                  h2_pal_result_t reason);
 
 /* Takes a free buffer of max_packet_size bytes from the association's pool,
  * or returns NULL when every buffer is in use. Contents are unspecified. */
-uint8_t *h2_sctp_packet_acquire(h2_pal_sctp_association_t *association);
-void h2_sctp_packet_release(
-    h2_pal_sctp_association_t *association,
-    uint8_t *packet);
+uint8_t* h2_sctp_packet_acquire(h2_pal_sctp_association_t* association);
+void h2_sctp_packet_release(h2_pal_sctp_association_t* association,
+                            uint8_t* packet);
 /* Emits a complete packet (common header, chunks, checksum) that lives in a
  * pooled buffer. Ownership passes to the association: the buffer is retained
  * as pending_emit on WOULD_BLOCK and released otherwise. */
-h2_pal_result_t h2_sctp_emit_packet(
-    h2_pal_sctp_association_t *association,
-    uint8_t *packet,
-    size_t packet_len,
-    h2_sctp_control_kind_t control_kind,
-    uint64_t now_ms);
-h2_pal_result_t h2_sctp_emit_chunks(
-    h2_pal_sctp_association_t *association,
-    uint32_t verification_tag,
-    const uint8_t *chunks,
-    size_t chunks_len,
-    h2_sctp_control_kind_t control_kind,
-    uint64_t now_ms);
+h2_pal_result_t h2_sctp_emit_packet(h2_pal_sctp_association_t* association,
+                                    uint8_t* packet, size_t packet_len,
+                                    h2_sctp_control_kind_t control_kind,
+                                    uint64_t now_ms);
+h2_pal_result_t h2_sctp_emit_chunks(h2_pal_sctp_association_t* association,
+                                    uint32_t verification_tag,
+                                    const uint8_t* chunks, size_t chunks_len,
+                                    h2_sctp_control_kind_t control_kind,
+                                    uint64_t now_ms);
 h2_pal_result_t h2_sctp_retry_pending_emit(
-    h2_pal_sctp_association_t *association);
-void h2_sctp_clear_control(h2_pal_sctp_association_t *association);
+    h2_pal_sctp_association_t* association);
+void h2_sctp_clear_control(h2_pal_sctp_association_t* association);
 
 #endif

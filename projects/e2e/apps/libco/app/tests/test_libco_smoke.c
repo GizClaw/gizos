@@ -20,35 +20,35 @@ typedef struct test_runtime_state {
   size_t log_len;
 } test_runtime_state_t;
 
-static void *test_alloc(void *user, size_t size) {
-  test_runtime_state_t *state = user;
+static void* test_alloc(void* user, size_t size) {
+  test_runtime_state_t* state = user;
   ++state->alloc_calls;
   if (state->fail_alloc_call != 0u &&
       state->alloc_calls == state->fail_alloc_call) {
     return NULL;
   }
-  void *memory = malloc(size);
+  void* memory = malloc(size);
   if (memory != NULL) {
     ++state->live_allocations;
   }
   return memory;
 }
 
-static void *test_realloc(void *user, void *memory, size_t size) {
+static void* test_realloc(void* user, void* memory, size_t size) {
   (void)user;
   return realloc(memory, size);
 }
 
-static void test_free(void *user, void *memory) {
-  test_runtime_state_t *state = user;
+static void test_free(void* user, void* memory) {
+  test_runtime_state_t* state = user;
   assert(memory != NULL && state->live_allocations > 0u);
   --state->live_allocations;
   free(memory);
 }
 
-static int test_log(void *user, h2_pal_log_level_t level, const char *scope,
-                    const char *message) {
-  test_runtime_state_t *state = user;
+static int test_log(void* user, h2_pal_log_level_t level, const char* scope,
+                    const char* message) {
+  test_runtime_state_t* state = user;
   (void)level;
   (void)scope;
   ++state->log_calls;
@@ -64,8 +64,8 @@ static int test_log(void *user, h2_pal_log_level_t level, const char *scope,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_now(void *user, uint64_t *out_ms) {
-  test_runtime_state_t *state = user;
+static h2_pal_result_t test_now(void* user, uint64_t* out_ms) {
+  test_runtime_state_t* state = user;
   ++state->time_calls;
   if (state->fail_time_call != 0u &&
       state->time_calls == state->fail_time_call) {
@@ -80,13 +80,13 @@ static h2_pal_result_t test_now(void *user, uint64_t *out_ms) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_sleep(void *user, uint32_t ms) {
-  test_runtime_state_t *state = user;
+static h2_pal_result_t test_sleep(void* user, uint32_t ms) {
+  test_runtime_state_t* state = user;
   state->now_ms += ms;
   return H2_PAL_OK;
 }
 
-static h2_runtime_t test_runtime(test_runtime_state_t *state) {
+static h2_runtime_t test_runtime(test_runtime_state_t* state) {
   static const h2_pal_mem_vtable_t mem_vtable = {
       .alloc = test_alloc,
       .realloc = test_realloc,
@@ -110,10 +110,10 @@ static h2_runtime_t test_runtime(test_runtime_state_t *state) {
   return runtime;
 }
 
-static size_t test_occurrences(const char *text, const char *needle) {
+static size_t test_occurrences(const char* text, const char* needle) {
   size_t count = 0u;
   size_t needle_len = strlen(needle);
-  for (const char *cursor = text; (cursor = strstr(cursor, needle)) != NULL;
+  for (const char* cursor = text; (cursor = strstr(cursor, needle)) != NULL;
        cursor += needle_len) {
     ++count;
   }

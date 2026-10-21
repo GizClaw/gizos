@@ -6,11 +6,13 @@
 #include <stdint.h>
 #include <string.h>
 
-#if FLT_RADIX != 2 || FLT_MANT_DIG != 24 || FLT_MAX_EXP != 128 || FLT_EVAL_METHOD != 0
+#if FLT_RADIX != 2 || FLT_MANT_DIG != 24 || FLT_MAX_EXP != 128 || \
+    FLT_EVAL_METHOD != 0
 #error "h2_f32_div requires binary32 evaluation without excess precision"
 #endif
-#if defined(__FAST_MATH__) || defined(__ASSOCIATIVE_MATH__) || \
-    (defined(__FINITE_MATH_ONLY__) && __FINITE_MATH_ONLY__ > 0) || defined(_M_FP_FAST)
+#if defined(__FAST_MATH__) || defined(__ASSOCIATIVE_MATH__) ||     \
+    (defined(__FINITE_MATH_ONLY__) && __FINITE_MATH_ONLY__ > 0) || \
+    defined(_M_FP_FAST)
 #error "h2_f32_div does not support fast-math or reassociation"
 #endif
 
@@ -28,15 +30,16 @@ _Static_assert(sizeof(float) == sizeof(uint32_t), "binary32 storage required");
  * nearest, and no fast-math, reassociation or flush-to-zero mode. Explicit fmaf
  * calls must retain fused semantics. Has no state, allocation or blocking.
  *
- * A negative denominator is normalized first. Denominators outside the inclusive
- * [1e-20f,1e20f] range, numerator magnitudes above 1e20f, and nonfinite initial
- * quotients fall back to C division of those normalized operands. Otherwise four
- * fused reciprocal corrections and one quotient residual correction are used.
- * This preserves the original renderer/native helper algorithm; it is not a
- * correctly-rounded replacement for every IEEE division. In particular the
- * refined path can return positive zero for a negative-zero numerator. NaN
- * payload/sign and floating-point exception flags are not part of this contract.
- * Numerical sample tests do not establish a whole-domain ULP bound.
+ * A negative denominator is normalized first. Denominators outside the
+ * inclusive [1e-20f,1e20f] range, numerator magnitudes above 1e20f, and
+ * nonfinite initial quotients fall back to C division of those normalized
+ * operands. Otherwise four fused reciprocal corrections and one quotient
+ * residual correction are used. This preserves the original renderer/native
+ * helper algorithm; it is not a correctly-rounded replacement for every IEEE
+ * division. In particular the refined path can return positive zero for a
+ * negative-zero numerator. NaN payload/sign and floating-point exception flags
+ * are not part of this contract. Numerical sample tests do not establish a
+ * whole-domain ULP bound.
  *
  * @param numerator Dividend, including exceptional IEEE values.
  * @param denominator Divisor, including exceptional IEEE values.

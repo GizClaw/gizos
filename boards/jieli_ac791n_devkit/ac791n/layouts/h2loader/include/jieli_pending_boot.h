@@ -21,7 +21,7 @@ typedef struct {
 #define H2_JIELI_PENDING_BOOT_WIRE_SIZE 112u
 
 static inline void h2_jieli_pending_boot_encode(
-    const h2_jieli_pending_boot_t *record,
+    const h2_jieli_pending_boot_t* record,
     uint8_t out[H2_JIELI_PENDING_BOOT_WIRE_SIZE]) {
   memset(out, 0, H2_JIELI_PENDING_BOOT_WIRE_SIZE);
   for (unsigned i = 0; i < 4u; ++i) {
@@ -36,11 +36,11 @@ static inline void h2_jieli_pending_boot_encode(
   memcpy(out + 77u, record->header, H2_JIELI_UPGRADE_HEADER_SIZE);
 }
 
-static inline int h2_jieli_pending_boot_decode(
-    h2_jieli_pending_boot_t *record, const void *blob, size_t size) {
-  if (record == NULL || blob == NULL ||
-      size != H2_JIELI_PENDING_BOOT_WIRE_SIZE) return 0;
-  const uint8_t *bytes = blob;
+static inline int h2_jieli_pending_boot_decode(h2_jieli_pending_boot_t* record,
+                                               const void* blob, size_t size) {
+  if (record == NULL || blob == NULL || size != H2_JIELI_PENDING_BOOT_WIRE_SIZE)
+    return 0;
+  const uint8_t* bytes = blob;
   if (bytes[109] != 0u || bytes[110] != 0u || bytes[111] != 0u) return 0;
   memset(record, 0, sizeof(*record));
   record->magic = h2_jieli_native_u32(bytes);
@@ -53,11 +53,13 @@ static inline int h2_jieli_pending_boot_decode(
 }
 
 static inline int h2_jieli_pending_boot_matches(
-    const h2_jieli_pending_boot_t *record, size_t size, const char *checksum) {
+    const h2_jieli_pending_boot_t* record, size_t size, const char* checksum) {
   if (record == NULL || checksum == NULL || size != sizeof(*record) ||
       record->magic != H2_JIELI_PENDING_BOOT_MAGIC || record->reserved != 0u ||
-      record->code_length == 0u || record->code_length > H2_JIELI_IMAGE_MAX_SIZE ||
-      record->image_checksum[64] != '\0' || strlen(checksum) != 64u) return 0;
+      record->code_length == 0u ||
+      record->code_length > H2_JIELI_IMAGE_MAX_SIZE ||
+      record->image_checksum[64] != '\0' || strlen(checksum) != 64u)
+    return 0;
   for (unsigned i = 0; i < 64u; ++i) {
     char c = record->image_checksum[i];
     if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return 0;
@@ -67,11 +69,11 @@ static inline int h2_jieli_pending_boot_matches(
 
 /* Plaintext produced by the SDK's key-FFFF 32-byte header decoder. */
 static inline int h2_jieli_pending_boot_header_valid(
-    const h2_jieli_pending_boot_t *record, const uint8_t plain[32]) {
+    const h2_jieli_pending_boot_t* record, const uint8_t plain[32]) {
   return plain != NULL && record != NULL &&
-      h2_jieli_native_u16(plain) == h2_jieli_native_header_crc(plain) &&
-      h2_jieli_native_u16(plain + 4u) == record->code_crc &&
-      h2_jieli_native_u32(plain + 8u) == record->code_length;
+         h2_jieli_native_u16(plain) == h2_jieli_native_header_crc(plain) &&
+         h2_jieli_native_u16(plain + 4u) == record->code_crc &&
+         h2_jieli_native_u32(plain + 8u) == record->code_length;
 }
 
 #endif

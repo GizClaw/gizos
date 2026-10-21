@@ -13,7 +13,7 @@
 #define H2_LINUX_EVDEV_SCAN_MAX 64u
 #define H2_LINUX_EVDEV_PATH_MAX_LEN 64u
 #define H2_LINUX_BITS_PER_WORD (sizeof(unsigned long) * 8u)
-#define H2_LINUX_KEY_WORD_COUNT                                                \
+#define H2_LINUX_KEY_WORD_COUNT \
   (((size_t)KEY_MAX + H2_LINUX_BITS_PER_WORD) / H2_LINUX_BITS_PER_WORD)
 
 typedef struct linux_evdev_button_entry {
@@ -29,11 +29,11 @@ static size_t s_linux_evdev_button_count;
 
 #if defined(H2_LINUX_TESTING)
 static h2_linux_evdev_test_read_fn s_linux_evdev_test_reader;
-static void *s_linux_evdev_test_reader_user;
+static void* s_linux_evdev_test_reader_user;
 #endif
 
-static linux_evdev_button_entry_t *
-linux_evdev_find_button(h2_pal_periph_id_t periph_id) {
+static linux_evdev_button_entry_t* linux_evdev_find_button(
+    h2_pal_periph_id_t periph_id) {
   for (size_t index = 0u; index < s_linux_evdev_button_count; ++index) {
     if (s_linux_evdev_buttons[index].periph_id == periph_id) {
       return &s_linux_evdev_buttons[index];
@@ -42,10 +42,10 @@ linux_evdev_find_button(h2_pal_periph_id_t periph_id) {
   return NULL;
 }
 
-static h2_pal_result_t linux_evdev_read_path(const char *path,
-                                             const char *expected_name,
+static h2_pal_result_t linux_evdev_read_path(const char* path,
+                                             const char* expected_name,
                                              uint16_t key_code,
-                                             h2_pal_button_state_t *out_state) {
+                                             h2_pal_button_state_t* out_state) {
   const int fd = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
   if (fd < 0) {
     return errno == ENOENT || errno == ENODEV ? H2_PAL_ERR_NOT_FOUND
@@ -88,9 +88,8 @@ static h2_pal_result_t linux_evdev_read_path(const char *path,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-linux_evdev_discover_and_read(linux_evdev_button_entry_t *entry,
-                              h2_pal_button_state_t *out_state) {
+static h2_pal_result_t linux_evdev_discover_and_read(
+    linux_evdev_button_entry_t* entry, h2_pal_button_state_t* out_state) {
 #if defined(H2_LINUX_TESTING)
   if (s_linux_evdev_test_reader != NULL) {
     return s_linux_evdev_test_reader(s_linux_evdev_test_reader_user,
@@ -128,14 +127,14 @@ linux_evdev_discover_and_read(linux_evdev_button_entry_t *entry,
   return first_error;
 }
 
-static h2_pal_result_t
-linux_evdev_read_single_button(void *user, h2_pal_periph_id_t periph_id,
-                               h2_pal_single_button_reading_t *out_reading) {
+static h2_pal_result_t linux_evdev_read_single_button(
+    void* user, h2_pal_periph_id_t periph_id,
+    h2_pal_single_button_reading_t* out_reading) {
   (void)user;
   if (out_reading == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  linux_evdev_button_entry_t *entry = linux_evdev_find_button(periph_id);
+  linux_evdev_button_entry_t* entry = linux_evdev_find_button(periph_id);
   if (entry == NULL) {
     return H2_PAL_ERR_NOT_FOUND;
   }
@@ -152,8 +151,8 @@ linux_evdev_read_single_button(void *user, h2_pal_periph_id_t periph_id,
 }
 
 static h2_pal_result_t linux_evdev_read_radio_button_group(
-    void *user, h2_pal_periph_id_t periph_id,
-    h2_pal_radio_button_group_reading_t *out_reading) {
+    void* user, h2_pal_periph_id_t periph_id,
+    h2_pal_radio_button_group_reading_t* out_reading) {
   (void)user;
   (void)periph_id;
   (void)out_reading;
@@ -170,16 +169,15 @@ static const h2_pal_button_api_t s_linux_evdev_button_api = {
     .vtable = &s_linux_evdev_button_vtable,
 };
 
-h2_pal_result_t
-h2_linux_configure_evdev_buttons(const h2_linux_evdev_button_config_t *entries,
-                                 size_t count) {
+h2_pal_result_t h2_linux_configure_evdev_buttons(
+    const h2_linux_evdev_button_config_t* entries, size_t count) {
   if (count > H2_LINUX_EVDEV_BUTTON_MAX || (count != 0u && entries == NULL)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   linux_evdev_button_entry_t configured[H2_LINUX_EVDEV_BUTTON_MAX];
   memset(configured, 0, sizeof(configured));
   for (size_t index = 0u; index < count; ++index) {
-    const h2_linux_evdev_button_config_t *source = &entries[index];
+    const h2_linux_evdev_button_config_t* source = &entries[index];
     if (source->periph_id == 0u || source->device_name == NULL ||
         source->device_name[0] == '\0' || source->key_code > KEY_MAX) {
       return H2_PAL_ERR_INVALID_ARG;
@@ -202,13 +200,13 @@ h2_linux_configure_evdev_buttons(const h2_linux_evdev_button_config_t *entries,
   return H2_PAL_OK;
 }
 
-const h2_pal_button_api_t *h2_linux_evdev_button_api(void) {
+const h2_pal_button_api_t* h2_linux_evdev_button_api(void) {
   return &s_linux_evdev_button_api;
 }
 
 #if defined(H2_LINUX_TESTING)
 void h2_linux_evdev_test_set_reader(h2_linux_evdev_test_read_fn read_fn,
-                                    void *user) {
+                                    void* user) {
   s_linux_evdev_test_reader = read_fn;
   s_linux_evdev_test_reader_user = user;
 }

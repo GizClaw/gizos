@@ -11,16 +11,15 @@ extern "C" {
 #include <stdexcept>
 #include <string>
 
-static void require(bool condition, const char *message) {
-  if (!condition)
-    throw std::runtime_error(message);
+static void require(bool condition, const char* message) {
+  if (!condition) throw std::runtime_error(message);
 }
 
 // All interception runs on H2Peer's real protocol owner. Only one transport
 // emission is refused; SCTP packets, callbacks and resets remain production
 // code.
 struct ResetLink {
-  const h2_pal_sctp_api_t *real;
+  const h2_pal_sctp_api_t* real;
   h2_pal_sctp_callbacks_t callbacks{};
   h2_pal_sctp_vtable_t vtable{};
   h2_pal_sctp_api_t api{this, &vtable};
@@ -31,46 +30,46 @@ struct ResetLink {
   std::atomic<unsigned> completed{0};
   std::atomic<unsigned> incoming{0};
 
-  explicit ResetLink(const h2_pal_sctp_api_t *provider) : real(provider) {
-    vtable.association_create = [](void *u,
-                                   const h2_pal_sctp_association_config_t *c,
-                                   h2_pal_sctp_association_t **a) {
-      auto &link = *static_cast<ResetLink *>(u);
+  explicit ResetLink(const h2_pal_sctp_api_t* provider) : real(provider) {
+    vtable.association_create = [](void* u,
+                                   const h2_pal_sctp_association_config_t* c,
+                                   h2_pal_sctp_association_t** a) {
+      auto& link = *static_cast<ResetLink*>(u);
       link.callbacks = c->callbacks;
       auto config = *c;
       config.callbacks = {&link, emit, state, message, reset_event};
       return h2_pal_sctp_association_create(link.real, &config, a);
     };
-    vtable.association_start = [](void *u, h2_pal_sctp_association_t *a,
+    vtable.association_start = [](void* u, h2_pal_sctp_association_t* a,
                                   uint64_t t) {
-      return h2_pal_sctp_association_start(static_cast<ResetLink *>(u)->real, a,
+      return h2_pal_sctp_association_start(static_cast<ResetLink*>(u)->real, a,
                                            t);
     };
-    vtable.association_input_packet = [](void *u, h2_pal_sctp_association_t *a,
-                                         const uint8_t *p, size_t n,
+    vtable.association_input_packet = [](void* u, h2_pal_sctp_association_t* a,
+                                         const uint8_t* p, size_t n,
                                          uint64_t t) {
       return h2_pal_sctp_association_input_packet(
-          static_cast<ResetLink *>(u)->real, a, p, n, t);
+          static_cast<ResetLink*>(u)->real, a, p, n, t);
     };
-    vtable.association_service = [](void *u, h2_pal_sctp_association_t *a,
-                                    uint64_t t, uint64_t *d) {
-      return h2_pal_sctp_association_service(static_cast<ResetLink *>(u)->real,
+    vtable.association_service = [](void* u, h2_pal_sctp_association_t* a,
+                                    uint64_t t, uint64_t* d) {
+      return h2_pal_sctp_association_service(static_cast<ResetLink*>(u)->real,
                                              a, t, d);
     };
-    vtable.association_send_message = [](void *u, h2_pal_sctp_association_t *a,
-                                         const h2_pal_sctp_message_t *m,
+    vtable.association_send_message = [](void* u, h2_pal_sctp_association_t* a,
+                                         const h2_pal_sctp_message_t* m,
                                          uint64_t t) {
       return h2_pal_sctp_association_send_message(
-          static_cast<ResetLink *>(u)->real, a, m, t);
+          static_cast<ResetLink*>(u)->real, a, m, t);
     };
-    vtable.association_is_writable = [](void *u, h2_pal_sctp_association_t *a,
-                                        bool *w) {
+    vtable.association_is_writable = [](void* u, h2_pal_sctp_association_t* a,
+                                        bool* w) {
       return h2_pal_sctp_association_is_writable(
-          static_cast<ResetLink *>(u)->real, a, w);
+          static_cast<ResetLink*>(u)->real, a, w);
     };
-    vtable.association_reset_stream = [](void *u, h2_pal_sctp_association_t *a,
+    vtable.association_reset_stream = [](void* u, h2_pal_sctp_association_t* a,
                                          uint16_t sid, uint64_t t) {
-      auto &link = *static_cast<ResetLink *>(u);
+      auto& link = *static_cast<ResetLink*>(u);
       if (link.pressure && !link.injected) {
         link.injected = true;
         link.block_emit = true;
@@ -85,29 +84,27 @@ struct ResetLink {
         telemetry.reliability = H2_PAL_SCTP_RELIABILITY_RELIABLE;
         auto result =
             h2_pal_sctp_association_send_message(link.real, a, &telemetry, t);
-        if (result != H2_PAL_OK)
-          return result;
+        if (result != H2_PAL_OK) return result;
       }
       return h2_pal_sctp_association_reset_stream(link.real, a, sid, t);
     };
-    vtable.association_shutdown = [](void *u, h2_pal_sctp_association_t *a,
+    vtable.association_shutdown = [](void* u, h2_pal_sctp_association_t* a,
                                      uint64_t t) {
-      return h2_pal_sctp_association_shutdown(static_cast<ResetLink *>(u)->real,
+      return h2_pal_sctp_association_shutdown(static_cast<ResetLink*>(u)->real,
                                               a, t);
     };
-    vtable.association_abort = [](void *u, h2_pal_sctp_association_t *a,
+    vtable.association_abort = [](void* u, h2_pal_sctp_association_t* a,
                                   h2_pal_result_t r, uint64_t t) {
-      return h2_pal_sctp_association_abort(static_cast<ResetLink *>(u)->real, a,
+      return h2_pal_sctp_association_abort(static_cast<ResetLink*>(u)->real, a,
                                            r, t);
     };
-    vtable.association_close = [](void *u, h2_pal_sctp_association_t **a) {
-      return h2_pal_sctp_association_close(static_cast<ResetLink *>(u)->real,
-                                           a);
+    vtable.association_close = [](void* u, h2_pal_sctp_association_t** a) {
+      return h2_pal_sctp_association_close(static_cast<ResetLink*>(u)->real, a);
     };
   }
-  static h2_pal_result_t emit(void *u, h2_pal_sctp_association_t *a,
-                              const uint8_t *p, size_t n) {
-    auto &link = *static_cast<ResetLink *>(u);
+  static h2_pal_result_t emit(void* u, h2_pal_sctp_association_t* a,
+                              const uint8_t* p, size_t n) {
+    auto& link = *static_cast<ResetLink*>(u);
     if (link.block_emit) {
       link.block_emit = false;
       ++link.blocked;
@@ -115,19 +112,19 @@ struct ResetLink {
     }
     return link.callbacks.emit_packet(link.callbacks.user, a, p, n);
   }
-  static void state(void *u, h2_pal_sctp_association_t *a,
+  static void state(void* u, h2_pal_sctp_association_t* a,
                     h2_pal_sctp_state_t s, h2_pal_result_t r) {
-    auto &link = *static_cast<ResetLink *>(u);
+    auto& link = *static_cast<ResetLink*>(u);
     link.callbacks.on_state(link.callbacks.user, a, s, r);
   }
-  static h2_pal_result_t message(void *u, h2_pal_sctp_association_t *a,
-                                 const h2_pal_sctp_received_message_t *m) {
-    auto &link = *static_cast<ResetLink *>(u);
+  static h2_pal_result_t message(void* u, h2_pal_sctp_association_t* a,
+                                 const h2_pal_sctp_received_message_t* m) {
+    auto& link = *static_cast<ResetLink*>(u);
     return link.callbacks.on_message(link.callbacks.user, a, m);
   }
-  static void reset_event(void *u, h2_pal_sctp_association_t *a,
-                          const h2_pal_sctp_stream_reset_event_t *e) {
-    auto &link = *static_cast<ResetLink *>(u);
+  static void reset_event(void* u, h2_pal_sctp_association_t* a,
+                          const h2_pal_sctp_stream_reset_event_t* e) {
+    auto& link = *static_cast<ResetLink*>(u);
     if (e->result == H2_PAL_OK) {
       if (e->direction == H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED)
         ++link.completed;
@@ -144,8 +141,8 @@ struct Fixture {
 };
 
 struct Events {
-  const h2_pal_webrtc_api_t *api;
-  h2_pal_webrtc_peer_t *peer;
+  const h2_pal_webrtc_api_t* api;
+  h2_pal_webrtc_peer_t* peer;
   std::string offer;
   unsigned opened = 0;
   unsigned closed = 0;
@@ -172,12 +169,11 @@ struct Events {
           seen[sid] = true;
         }
       }
-      if (event.channel_state == H2_PAL_WEBRTC_CHANNEL_CLOSED)
-        ++closed;
+      if (event.channel_state == H2_PAL_WEBRTC_CHANNEL_CLOSED) ++closed;
       failed = event.channel_state == H2_PAL_WEBRTC_CHANNEL_ERROR;
     }
     if (event.kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE) {
-      const std::string payload(reinterpret_cast<const char *>(event.data),
+      const std::string payload(reinterpret_cast<const char*>(event.data),
                                 event.data_len);
       if (payload == "server-echo-text:telemetry-before-reset")
         ++telemetry;
@@ -190,9 +186,10 @@ struct Events {
     h2_pal_webrtc_event_release(&event);
     require(!failed, "unexpected peer event or payload");
   }
-  template <typename Predicate> void wait(Predicate done) {
+  template <typename Predicate>
+  void wait(Predicate done) {
     uint64_t now = 0;
-    const auto *time = h2_desktop_platform_time_api();
+    const auto* time = h2_desktop_platform_time_api();
     require(h2_pal_time_get_monotonic_ms(time, &now) == H2_PAL_OK,
             "clock failed");
     const auto end = now + 10000u;
@@ -205,18 +202,18 @@ struct Events {
   }
 };
 
-static void run(const char *server, bool pressure) {
+static void run(const char* server, bool pressure) {
   Fixture fixture;
   require(h2_webrtc_pion_fixture_start(&fixture.value, server, "udp") == 0,
           "fixture start failed");
   h2::desktop::OwnedNetworkServices services;
-  require(h2::desktop::open_network_services(false, true, &services) ==
-              H2_PAL_OK,
-          "providers failed");
-  auto *original = static_cast<h2_peer_t *>(services.peer_handle);
+  require(
+      h2::desktop::open_network_services(false, true, &services) == H2_PAL_OK,
+      "providers failed");
+  auto* original = static_cast<h2_peer_t*>(services.peer_handle);
   h2_peer_destroy(&original);
   services.peer_handle = nullptr;
-  ResetLink link(h2_sctp_api(static_cast<h2_sctp_t *>(services.sctp_handle)));
+  ResetLink link(h2_sctp_api(static_cast<h2_sctp_t*>(services.sctp_handle)));
   link.pressure = pressure;
   const h2_peer_config_t config = {h2_desktop_platform_default_allocator(),
                                    h2_desktop_platform_log_api(),
@@ -228,26 +225,26 @@ static void run(const char *server, bool pressure) {
                                    services.crypto(),
                                    services.dtls(),
                                    &link.api};
-  h2_peer_t *owner = nullptr;
+  h2_peer_t* owner = nullptr;
   require(h2_peer_create(&config, &owner) == H2_PAL_OK, "H2Peer create failed");
   services.peer_handle = owner;
   // Keep the decorator alive until the owner task and all callbacks stop, even
   // on an assertion failure that unwinds the scenario.
   struct CloseOwner {
-    h2::desktop::OwnedNetworkServices &services;
+    h2::desktop::OwnedNetworkServices& services;
     ~CloseOwner() { services.reset(); }
   } close_owner{services};
-  const auto *api = services.webrtc();
-  h2_pal_webrtc_peer_t *peer = nullptr;
+  const auto* api = services.webrtc();
+  h2_pal_webrtc_peer_t* peer = nullptr;
   require(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK,
           "peer create failed");
   Events events{api, peer, {}};
-  auto create_channel = [&](const char *label) {
+  auto create_channel = [&](const char* label) {
     h2_pal_webrtc_channel_config_t channel_config{};
     channel_config.label = {label, strlen(label)};
     channel_config.ordered = 1;
     channel_config.reliable = 1;
-    h2_pal_webrtc_channel_t *channel = nullptr;
+    h2_pal_webrtc_channel_t* channel = nullptr;
     auto result = h2_pal_webrtc_peer_create_data_channel(
         api, peer, &channel_config, &channel);
     if (result != H2_PAL_OK)
@@ -276,7 +273,7 @@ static void run(const char *server, bool pressure) {
   events.wait([&] { return events.opened == 2; });
   constexpr unsigned cycles = 512;
   for (unsigned cycle = 0; cycle < cycles; ++cycle) {
-    auto *channel = create_channel("giznet/v1/service/0");
+    auto* channel = create_channel("giznet/v1/service/0");
     events.wait([&] { return events.opened == cycle + 3; });
     const uint8_t payload[] = "request";
     require(h2_pal_webrtc_channel_send(api, channel, payload,
@@ -306,13 +303,13 @@ static void run(const char *server, bool pressure) {
           link.blocked.load(), stats.current);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   if (argc != 2 && !(argc == 3 && strcmp(argv[2], "--no-backpressure") == 0))
     return 2;
   try {
     run(argv[1], argc == 2);
     return 0;
-  } catch (const std::exception &error) {
+  } catch (const std::exception& error) {
     fprintf(stderr, "reset pressure: %s\n", error.what());
     return 1;
   }

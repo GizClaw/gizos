@@ -1,4 +1,5 @@
 """Explicit public endpoints for the isolated device WebRTC fixture."""
+
 def _fixture_config_impl(ctx):
     values = []
     for name in ["OFFER_URL", "STUN_URL"]:
@@ -7,4 +8,5 @@ def _fixture_config_impl(ctx):
     output = ctx.actions.declare_file("include/h2_pal_webrtc_fixture_config.h")
     ctx.actions.write(output, "\n".join(values) + "\n")
     return [DefaultInfo(files = depset([output]))]
+
 webrtc_fixture_config = rule(implementation = _fixture_config_impl)

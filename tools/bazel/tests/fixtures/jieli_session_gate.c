@@ -24,16 +24,17 @@ static uint32_t clock_ms;
 static uint32_t acks_sent;
 static uint32_t last_ack_conv;
 
-struct h2_iostreamikcp { int unused; };
+struct h2_iostreamikcp {
+  int unused;
+};
 
 /* STRUCTURE */
 
 static uint32_t timer_get_ms(void) { return clock_ms; }
 
 /* Records every SESSION_ACK the transport tries to emit. */
-static h2_pal_result_t fake_write(
-    void *user, const void *buffer, size_t len, size_t *count,
-    uint32_t timeout) {
+static h2_pal_result_t fake_write(void* user, const void* buffer, size_t len,
+                                  size_t* count, uint32_t timeout) {
   (void)user;
   (void)buffer;
   (void)timeout;
@@ -43,8 +44,8 @@ static h2_pal_result_t fake_write(
 }
 
 h2_pal_result_t h2_iostreamikcp_frame_encode(
-    const h2_iostreamikcp_frame_t *frame, uint8_t *out, size_t size,
-    size_t *len) {
+    const h2_iostreamikcp_frame_t* frame, uint8_t* out, size_t size,
+    size_t* len) {
   assert(size > 0u);
   last_ack_conv = frame->conv;
   out[0] = frame->flags;
@@ -53,7 +54,7 @@ h2_pal_result_t h2_iostreamikcp_frame_encode(
 }
 
 h2_pal_result_t h2_iostreamikcp_input_frame(
-    h2_iostreamikcp_t *stream, const h2_iostreamikcp_frame_t *frame) {
+    h2_iostreamikcp_t* stream, const h2_iostreamikcp_frame_t* frame) {
   (void)stream;
   (void)frame;
   return H2_PAL_OK;
@@ -63,7 +64,7 @@ static void write_le32(uint8_t out[4], uint32_t value);
 
 /* FUNCTIONS */
 
-static void reset_transport(TRANSPORT *self) {
+static void reset_transport(TRANSPORT* self) {
   memset(self, 0, sizeof(*self));
   self->physical_io.write = fake_write;
 }
@@ -76,7 +77,7 @@ static h2_iostreamikcp_frame_t session_open(uint32_t conv) {
   return frame;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   assert(argc == 2);
   TRANSPORT transport;
   reset_transport(&transport);

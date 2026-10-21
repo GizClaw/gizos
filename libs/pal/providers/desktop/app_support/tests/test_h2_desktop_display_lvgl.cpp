@@ -11,18 +11,27 @@ namespace {
 
 void run_lifecycle() {
   const h2_lvgl_platform_config_t platform = {
-      h2_desktop_platform_default_allocator(), h2_desktop_platform_task_api(),
-      h2_desktop_platform_sync_api(),          h2_desktop_platform_queue_api(),
+      h2_desktop_platform_default_allocator(),
+      h2_desktop_platform_task_api(),
+      h2_desktop_platform_sync_api(),
+      h2_desktop_platform_queue_api(),
       h2_desktop_platform_time_api(),
-      0u, 0u,
+      0u,
+      0u,
   };
   assert(h2_lvgl_platform_init(&platform) == H2_PAL_OK);
   lv_init();
   {
     const h2::desktop::Layout layout = {
-        "display-lvgl-test", "Display/LVGL Test", 64, 48,
-        nullptr,             0u,                  nullptr,
-        0u,                  "{}",
+        "display-lvgl-test",
+        "Display/LVGL Test",
+        64,
+        48,
+        nullptr,
+        0u,
+        nullptr,
+        0u,
+        "{}",
     };
     h2::desktop::OwnedDisplay display;
     assert(h2::desktop::open_display(layout, &display) == H2_DISPLAY_OK);
@@ -36,7 +45,7 @@ void run_lifecycle() {
            H2_DISPLAY_ERR_INVALID_STATE);
 
     int window_count = 0;
-    SDL_Window **windows = SDL_GetWindows(&window_count);
+    SDL_Window** windows = SDL_GetWindows(&window_count);
     assert(windows != nullptr && window_count == 1);
     SDL_free(windows);
 
@@ -78,7 +87,7 @@ void run_lifecycle() {
     event.wheel.y = 1.0f;
     assert(SDL_PushEvent(&event));
     assert(h2::desktop::poll_events(&display, &lvgl) == 0);
-    assert(lv_indev_get_key(static_cast<lv_indev_t *>(lvgl.keyboard())) ==
+    assert(lv_indev_get_key(static_cast<lv_indev_t*>(lvgl.keyboard())) ==
            0x4e2du);
 
     event = {};
@@ -92,8 +101,7 @@ void run_lifecycle() {
 
 void run_status_lifecycle() {
   const h2::desktop::Layout layout = {
-      "status-test", "Status Test", 320, 160, nullptr,
-      0u,            nullptr,       0u,  "{}",
+      "status-test", "Status Test", 320, 160, nullptr, 0u, nullptr, 0u, "{}",
   };
   h2::desktop::OwnedDisplay display;
   h2::desktop::OwnedFilesystem filesystem;
@@ -107,7 +115,7 @@ void run_status_lifecycle() {
     assert(h2::desktop::open_status_surface(&display, "Status Test", &status) ==
            H2_DISPLAY_OK);
     int window_count = 0;
-    SDL_Window **windows = SDL_GetWindows(&window_count);
+    SDL_Window** windows = SDL_GetWindows(&window_count);
     assert(windows != nullptr && window_count == 1);
     SDL_free(windows);
     assert(h2::desktop::set_process_state(
@@ -121,7 +129,7 @@ void run_status_lifecycle() {
   assert(!lv_is_initialized());
 }
 
-} // namespace
+}  // namespace
 
 int main() {
   assert(setenv("SDL_VIDEODRIVER", "dummy", 1) == 0);

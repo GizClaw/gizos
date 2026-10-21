@@ -12,10 +12,8 @@ extern "C" {
 
 /** Serialize one Host status into the Browser SDK's bounded JSON projection. */
 h2_pal_result_t h2_h2loader_web_status_json_write(
-    const h2_h2loader_host_status_t *status,
-    char *out,
-    size_t capacity,
-    size_t *out_size);
+    const h2_h2loader_host_status_t* status, char* out, size_t capacity,
+    size_t* out_size);
 
 #ifdef __cplusplus
 }

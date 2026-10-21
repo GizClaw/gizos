@@ -14,8 +14,7 @@ int main(void) {
   assert(h2_esp_power_deep_sleep_wake_us(UINT32_MAX) ==
          (uint64_t)UINT32_MAX * 1000ULL);
 
-  assert(h2_esp_power_wake_boot_source(1, 1) ==
-         H2_PAL_POWER_BOOT_SOURCE_TIMER);
+  assert(h2_esp_power_wake_boot_source(1, 1) == H2_PAL_POWER_BOOT_SOURCE_TIMER);
   assert(h2_esp_power_wake_boot_source(1, 0) ==
          H2_PAL_POWER_BOOT_SOURCE_UNKNOWN);
   assert(h2_esp_power_wake_boot_source(0, 1) ==

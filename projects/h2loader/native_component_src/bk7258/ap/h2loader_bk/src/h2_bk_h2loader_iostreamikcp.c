@@ -27,14 +27,14 @@
 typedef struct h2_bk_serial_transport {
   h2_iostreamikcp_io_t physical_io;
   h2_iostreamikcp_filter_t filter;
-  h2_iostreamikcp_t *stream;
-  const h2_pal_mem_api_t *allocator;
+  h2_iostreamikcp_t* stream;
+  const h2_pal_mem_api_t* allocator;
   uint32_t conv;
   uint32_t pending_conv;
   uint32_t write_timeout_ms;
   int replacement_pending;
   int close_pending;
-  const h2_atomic_bool_t *stop_requested;
+  const h2_atomic_bool_t* stop_requested;
 } h2_bk_serial_transport_t;
 
 typedef struct h2_bk_app_serial {
@@ -46,11 +46,11 @@ typedef struct h2_bk_app_serial {
 
 typedef struct h2_bk_loader_serial {
   h2_bk_serial_transport_t transport;
-  h2_loader_command_t *command;
+  h2_loader_command_t* command;
   h2_loader_command_config_t command_config;
-  const h2_pal_mem_api_t *allocator;
-  const h2_pal_task_api_t *task_api;
-  h2_pal_task_t *task;
+  const h2_pal_mem_api_t* allocator;
+  const h2_pal_task_api_t* task_api;
+  h2_pal_task_t* task;
   h2_atomic_bool_t stop_requested;
 } h2_bk_loader_serial_t;
 
@@ -59,12 +59,12 @@ static h2_bk_loader_serial_t s_loader_serial;
 static int s_app_serial_started;
 static int s_loader_serial_started;
 
-static int transport_stop_requested(const h2_bk_serial_transport_t *transport) {
+static int transport_stop_requested(const h2_bk_serial_transport_t* transport) {
   return transport != NULL && transport->stop_requested != NULL &&
          h2_atomic_bool_load(transport->stop_requested, H2_ATOMIC_ACQUIRE);
 }
 
-static uint32_t transport_now_ms(void *user) {
+static uint32_t transport_now_ms(void* user) {
   (void)user;
   return (uint32_t)rtos_get_time();
 }
@@ -76,7 +76,7 @@ static void write_le32(uint8_t out[4], uint32_t value) {
   out[3] = (uint8_t)((value >> 24u) & 0xffu);
 }
 
-static h2_pal_result_t send_control(h2_bk_serial_transport_t *transport,
+static h2_pal_result_t send_control(h2_bk_serial_transport_t* transport,
                                     uint8_t flags, uint32_t conv) {
   uint8_t payload[H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN];
   uint8_t encoded[H2_IOSTREAMIKCP_FRAME_HEADER_LEN +
@@ -105,9 +105,9 @@ static h2_pal_result_t send_control(h2_bk_serial_transport_t *transport,
              : H2_PAL_OK;
 }
 
-static h2_pal_result_t on_frame(void *user,
-                                const h2_iostreamikcp_frame_t *frame) {
-  h2_bk_serial_transport_t *transport = user;
+static h2_pal_result_t on_frame(void* user,
+                                const h2_iostreamikcp_frame_t* frame) {
+  h2_bk_serial_transport_t* transport = user;
   if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN) {
     if (frame->conv == 0u) {
       return H2_PAL_ERR_INVALID_ARG;
@@ -137,7 +137,7 @@ static h2_pal_result_t on_frame(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t poll_physical(h2_bk_serial_transport_t *transport,
+static h2_pal_result_t poll_physical(h2_bk_serial_transport_t* transport,
                                      uint32_t timeout_ms) {
   uint8_t buffer[H2_BK_SERIAL_PHYSICAL_READ_SIZE];
   size_t count = 0u;
@@ -158,17 +158,17 @@ static h2_pal_result_t poll_physical(h2_bk_serial_transport_t *transport,
   }
   /* Resume complete buffered frames after a callback deadline, even when
    * the physical link supplies no new bytes. */
-  h2_pal_result_t rc = h2_iostreamikcp_filter_input(
-      &transport->filter, buffer, count, on_frame, transport);
+  h2_pal_result_t rc = h2_iostreamikcp_filter_input(&transport->filter, buffer,
+                                                    count, on_frame, transport);
   if (rc == H2_PAL_OK && transport->stream != NULL) {
     rc = h2_iostreamikcp_update(transport->stream, transport_now_ms(NULL));
   }
   return rc != H2_PAL_OK ? rc : read_rc;
 }
 
-static h2_pal_result_t command_read(void *user, void *buffer, size_t len,
-                                    size_t *out_read, uint32_t timeout_ms) {
-  h2_bk_serial_transport_t *transport = user;
+static h2_pal_result_t command_read(void* user, void* buffer, size_t len,
+                                    size_t* out_read, uint32_t timeout_ms) {
+  h2_bk_serial_transport_t* transport = user;
   if (transport == NULL || buffer == NULL || out_read == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -209,9 +209,9 @@ static h2_pal_result_t command_read(void *user, void *buffer, size_t len,
   }
 }
 
-static h2_pal_result_t command_write(void *user, const void *buffer, size_t len,
-                                     size_t *out_written, uint32_t timeout_ms) {
-  h2_bk_serial_transport_t *transport = user;
+static h2_pal_result_t command_write(void* user, const void* buffer, size_t len,
+                                     size_t* out_written, uint32_t timeout_ms) {
+  h2_bk_serial_transport_t* transport = user;
   if (transport == NULL || buffer == NULL || out_written == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -270,8 +270,8 @@ static h2_pal_result_t command_write(void *user, const void *buffer, size_t len,
   return rc;
 }
 
-static h2_pal_result_t command_flush(void *user) {
-  h2_bk_serial_transport_t *transport = user;
+static h2_pal_result_t command_flush(void* user) {
+  h2_bk_serial_transport_t* transport = user;
   if (transport == NULL || transport->stream == NULL) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -327,14 +327,14 @@ static const h2_command_io_vtable_t s_command_io_vtable = {
     .flush = command_flush,
 };
 
-static h2_pal_result_t transport_init(h2_bk_serial_transport_t *transport,
-                                      const h2_pal_mem_api_t *allocator,
-                                      const h2_atomic_bool_t *stop_requested) {
+static h2_pal_result_t transport_init(h2_bk_serial_transport_t* transport,
+                                      const h2_pal_mem_api_t* allocator,
+                                      const h2_atomic_bool_t* stop_requested) {
   if (transport == NULL || allocator == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(transport, 0, sizeof(*transport));
-  const h2_pal_uart_io_stream_api_t *uart = h2_bk_platform_uart_io_stream_api();
+  const h2_pal_uart_io_stream_api_t* uart = h2_bk_platform_uart_io_stream_api();
   const h2_pal_uart_io_stream_config_t uart_config = {
       .baud_rate = H2_BK_SERIAL_BAUD_RATE,
       .data_bits = 8u,
@@ -356,7 +356,7 @@ static h2_pal_result_t transport_init(h2_bk_serial_transport_t *transport,
   return H2_PAL_OK;
 }
 
-static void transport_deinit(h2_bk_serial_transport_t *transport) {
+static void transport_deinit(h2_bk_serial_transport_t* transport) {
   if (transport != NULL) {
     h2_iostreamikcp_close(transport->stream);
     memset(transport, 0, sizeof(*transport));
@@ -364,7 +364,7 @@ static void transport_deinit(h2_bk_serial_transport_t *transport) {
   h2_bk_platform_uart_io_stream_deinit();
 }
 
-static h2_command_io_api_t transport_io(h2_bk_serial_transport_t *transport) {
+static h2_command_io_api_t transport_io(h2_bk_serial_transport_t* transport) {
   const h2_command_io_api_t io = {
       .user = transport,
       .vtable = &s_command_io_vtable,
@@ -372,7 +372,7 @@ static h2_command_io_api_t transport_io(h2_bk_serial_transport_t *transport) {
   return io;
 }
 
-static void deactivate_current(h2_bk_serial_transport_t *transport) {
+static void deactivate_current(h2_bk_serial_transport_t* transport) {
   if (transport == NULL) {
     return;
   }
@@ -383,7 +383,7 @@ static void deactivate_current(h2_bk_serial_transport_t *transport) {
   transport->close_pending = 0;
 }
 
-static h2_pal_result_t activate_pending(h2_bk_serial_transport_t *transport) {
+static h2_pal_result_t activate_pending(h2_bk_serial_transport_t* transport) {
   if (transport == NULL || transport->pending_conv == 0u) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -418,10 +418,9 @@ static h2_pal_result_t activate_pending(h2_bk_serial_transport_t *transport) {
   return rc;
 }
 
-static int
-serve_loader_iostreamikcp(h2_bk_serial_transport_t *transport,
-                          h2_loader_command_t *command,
-                          const h2_loader_command_config_t *command_config) {
+static int serve_loader_iostreamikcp(
+    h2_bk_serial_transport_t* transport, h2_loader_command_t* command,
+    const h2_loader_command_config_t* command_config) {
   if (transport == NULL || command == NULL || command_config == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -460,8 +459,8 @@ serve_loader_iostreamikcp(h2_bk_serial_transport_t *transport,
   return stopped ? H2_PAL_OK : rc;
 }
 
-static void loader_serial_task(void *user) {
-  h2_bk_loader_serial_t *state = user;
+static void loader_serial_task(void* user) {
+  h2_bk_loader_serial_t* state = user;
   int rc = serve_loader_iostreamikcp(&state->transport, state->command,
                                      &state->command_config);
   if (rc != H2_PAL_OK) {
@@ -470,8 +469,8 @@ static void loader_serial_task(void *user) {
 }
 
 int h2_bk_h2loader_start_loader_iostreamikcp(
-    h2_runtime_t *runtime, h2_loader_command_t *command,
-    const h2_loader_command_config_t *command_config) {
+    h2_runtime_t* runtime, h2_loader_command_t* command,
+    const h2_loader_command_config_t* command_config) {
   if (runtime == NULL || runtime->task == NULL || runtime->mem == NULL ||
       command == NULL || command_config == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -479,7 +478,7 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
   if (s_loader_serial_started) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_bk_loader_serial_t *state = &s_loader_serial;
+  h2_bk_loader_serial_t* state = &s_loader_serial;
   memset(state, 0, sizeof(*state));
   state->command = command;
   state->command_config = *command_config;
@@ -489,7 +488,7 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
       h2_atomic_bool_init(&state->stop_requested, false);
   if (atomic_rc != H2_ATOMIC_OK) {
     return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
-                                               : H2_PAL_ERR_NO_MEMORY;
+                                              : H2_PAL_ERR_NO_MEMORY;
   }
   int rc = transport_init(&state->transport, state->allocator,
                           &state->stop_requested);
@@ -503,7 +502,7 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
       .min_stack_size = H2_BK_H2LOADER_LOADER_COMMAND_STACK_SIZE,
   };
   rc = h2_pal_task_start(runtime->task, &options, loader_serial_task, state,
-                        &state->task);
+                         &state->task);
   if (rc != H2_PAL_OK) {
     transport_deinit(&state->transport);
     h2_atomic_bool_destroy(&state->stop_requested);
@@ -519,7 +518,7 @@ int h2_bk_h2loader_stop_loader_iostreamikcp(void) {
     return H2_PAL_OK;
   }
   h2_atomic_bool_store(&s_loader_serial.stop_requested, true,
-                        H2_ATOMIC_RELEASE);
+                       H2_ATOMIC_RELEASE);
   int rc = h2_pal_task_join(s_loader_serial.task_api, s_loader_serial.task);
   if (rc != H2_PAL_OK) {
     return rc;
@@ -530,8 +529,8 @@ int h2_bk_h2loader_stop_loader_iostreamikcp(void) {
   return H2_PAL_OK;
 }
 
-static int app_read_byte(void *user, uint32_t timeout_ms) {
-  h2_bk_app_serial_t *state = user;
+static int app_read_byte(void* user, uint32_t timeout_ms) {
+  h2_bk_app_serial_t* state = user;
   uint8_t value = 0u;
   size_t count = 0u;
   if (state == NULL) {
@@ -541,8 +540,7 @@ static int app_read_byte(void *user, uint32_t timeout_ms) {
     if (h2_atomic_bool_load(&state->stop_requested, H2_ATOMIC_ACQUIRE)) {
       return H2_LOADER_APP_CLIENT_SESSION_CLOSED;
     }
-    if (state->transport.close_pending &&
-        state->transport.pending_conv == 0u) {
+    if (state->transport.close_pending && state->transport.pending_conv == 0u) {
       deactivate_current(&state->transport);
       return EOF;
     }
@@ -573,8 +571,8 @@ static int app_read_byte(void *user, uint32_t timeout_ms) {
   }
 }
 
-static int app_write(void *user, const char *data, size_t len) {
-  h2_bk_app_serial_t *state = user;
+static int app_write(void* user, const char* data, size_t len) {
+  h2_bk_app_serial_t* state = user;
   size_t offset = 0u;
   if (state == NULL || (data == NULL && len != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -597,25 +595,24 @@ static int app_write(void *user, const char *data, size_t len) {
    * the line terminator before its terminal flush, so both peers can wait
    * forever. Queue both writes and flush only at the line boundary. */
   return len != 0u && (data[len - 1u] == '\n' || data[len - 1u] == '\r')
-      ? state->io.vtable->flush(state->io.user)
-      : H2_PAL_OK;
+             ? state->io.vtable->flush(state->io.user)
+             : H2_PAL_OK;
 }
 
-static int arm_pending_app_rollback(const h2_pal_pref_api_t *pref) {
+static int arm_pending_app_rollback(const h2_pal_pref_api_t* pref) {
   if (pref == NULL) return H2_PAL_ERR_INVALID_ARG;
   return h2_bk_h2loader_prepare_pending_app_rollback();
 }
 
-int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
-                                          const char *active_name) {
+int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t* runtime,
+                                          const char* active_name) {
   return h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
       runtime, active_name,
       H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE);
 }
 
 int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
-    h2_runtime_t *runtime,
-    const char *active_name,
+    h2_runtime_t* runtime, const char* active_name,
     uint32_t hardware_capabilities) {
   if (runtime == NULL || runtime->task == NULL || runtime->mem == NULL ||
       runtime->pref == NULL || active_name == NULL || active_name[0] == '\0') {
@@ -624,18 +621,18 @@ int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
   if (s_app_serial_started) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_bk_app_serial_t *state = &s_app_serial;
+  h2_bk_app_serial_t* state = &s_app_serial;
   memset(state, 0, sizeof(*state));
   h2_atomic_result_t atomic_rc =
       h2_atomic_bool_init(&state->stop_requested, false);
   if (atomic_rc != H2_ATOMIC_OK) {
     return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
-                                               : H2_PAL_ERR_NO_MEMORY;
+                                              : H2_PAL_ERR_NO_MEMORY;
   }
   int rc = arm_pending_app_rollback(runtime->pref);
   if (rc == H2_PAL_OK) {
-    rc = h2_bk_h2loader_init_app_client(
-        runtime, active_name, hardware_capabilities, &state->client);
+    rc = h2_bk_h2loader_init_app_client(runtime, active_name,
+                                        hardware_capabilities, &state->client);
   }
   if (rc == H2_PAL_OK) {
     rc =
@@ -672,8 +669,7 @@ int h2_bk_h2loader_stop_app_iostreamikcp(void) {
   if (!s_app_serial_started) {
     return H2_PAL_OK;
   }
-  h2_atomic_bool_store(&s_app_serial.stop_requested, true,
-                        H2_ATOMIC_RELEASE);
+  h2_atomic_bool_store(&s_app_serial.stop_requested, true, H2_ATOMIC_RELEASE);
   int rc = h2_loader_app_client_stop_return_console(&s_app_serial.client);
   if (rc != H2_PAL_OK) {
     return rc;

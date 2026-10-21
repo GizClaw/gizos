@@ -24,7 +24,7 @@ typedef struct h2_lua_app_install h2_lua_app_install_t;
 /** Borrowed HTTP(S) URL bytes; no NUL termination is required. Addresses are
  * at most H2_LUA_APP_URL_MAX bytes. Other schemes are rejected. */
 typedef struct h2_lua_app_source {
-  const char *data;
+  const char* data;
   size_t size;
 } h2_lua_app_source_t;
 
@@ -49,11 +49,11 @@ typedef struct h2_lua_app_info {
  * Missing installation directories are created beneath the nearest existing
  * visible parent; non-directory and filesystem errors still abort creation. */
 typedef struct h2_lua_apps_config {
-  const h2_pal_mem_api_t *allocator;
-  const h2_pal_fs_api_t *fs;
-  const h2_pal_sync_api_t *sync;
-  const char *preinstalled_index;
-  const char *install_root;
+  const h2_pal_mem_api_t* allocator;
+  const h2_pal_fs_api_t* fs;
+  const h2_pal_sync_api_t* sync;
+  const char* preinstalled_index;
+  const char* install_root;
   /** Zero selects 256 KiB Lua text, 2 MiB per package, 8 MiB installed total,
    * 32 apps and 64 payload files. Limits include preinstalled identities;
    * installed byte accounting excludes the immutable preinstalled files. */
@@ -69,23 +69,23 @@ typedef struct h2_lua_apps_config {
  * normally leaves out_apps NULL. An ambiguous filesystem close failure leaves
  * a non-NULL retained handle: keep it and all dependencies alive for backend
  * or process recovery, and do not use it except to inspect destroy's error. */
-h2_pal_result_t h2_lua_apps_create(const h2_lua_apps_config_t *config,
-                                   h2_lua_apps_t **out_apps);
+h2_pal_result_t h2_lua_apps_create(const h2_lua_apps_config_t* config,
+                                   h2_lua_apps_t** out_apps);
 /** No operation may be in progress. BUSY leaves the instance alive. A prior
  * filesystem close error also retains the instance and returns that error:
  * PAL cannot prove whether retrying close would access a consumed handle.
  * This terminal storage failure requires backend/process recovery. */
-h2_pal_result_t h2_lua_apps_destroy(h2_lua_apps_t *apps);
+h2_pal_result_t h2_lua_apps_destroy(h2_lua_apps_t* apps);
 /** Non-blocking serialized snapshots; concurrent operations return BUSY.
  * A NULL output with capacity zero reports the required count. */
-h2_pal_result_t h2_lua_apps_list(h2_lua_apps_t *apps, h2_lua_app_info_t *out,
-                                 size_t capacity, size_t *out_count);
-h2_pal_result_t h2_lua_apps_get(h2_lua_apps_t *apps, const char *app_id,
-                                h2_lua_app_info_t *out);
+h2_pal_result_t h2_lua_apps_list(h2_lua_apps_t* apps, h2_lua_app_info_t* out,
+                                 size_t capacity, size_t* out_count);
+h2_pal_result_t h2_lua_apps_get(h2_lua_apps_t* apps, const char* app_id,
+                                h2_lua_app_info_t* out);
 /** True when an installation root and the required filesystem operations are
  * configured. Does not probe volume permissions, health or available room. */
-bool h2_lua_apps_can_install(const h2_lua_apps_t *apps);
-bool h2_lua_app_id_valid(const char *app_id);
+bool h2_lua_apps_can_install(const h2_lua_apps_t* apps);
+bool h2_lua_app_id_valid(const char* app_id);
 
 /** Idempotently uninstall an identity, preserving independent user storage.
  * Atomically remove it from discovery before reclaiming both writable slots.
@@ -96,7 +96,7 @@ bool h2_lua_app_id_valid(const char *app_id);
  * the app remains unavailable; repeat uninstall to retry cleanup. Never retry
  * an ambiguous close failure; keep dependencies alive as documented above.
  * Product owners must coordinate running users of entry/data_dir snapshots. */
-h2_pal_result_t h2_lua_apps_uninstall(h2_lua_apps_t *apps, const char *app_id);
+h2_pal_result_t h2_lua_apps_uninstall(h2_lua_apps_t* apps, const char* app_id);
 
 /** Open an incremental zlib/USTAR installation. compressed_size is the exact
  * expected byte count, or zero when the transport does not declare it. SHA-256
@@ -105,20 +105,23 @@ h2_pal_result_t h2_lua_apps_uninstall(h2_lua_apps_t *apps, const char *app_id);
  * operation on it must run on the same task. Buffers are borrowed only during
  * write. These synchronous filesystem operations belong on a worker when the
  * transport requires prompt callbacks. No compressed archive is retained. */
-h2_pal_result_t
-h2_lua_app_install_begin(h2_lua_apps_t *apps, uint64_t compressed_size,
-                         const char *sha256, h2_pal_http_cancel_fn cancel,
-                         void *cancel_user, h2_lua_app_install_t **out_install);
-h2_pal_result_t h2_lua_app_install_write(h2_lua_app_install_t *install,
-                                         const uint8_t *bytes, size_t size);
+h2_pal_result_t h2_lua_app_install_begin(h2_lua_apps_t* apps,
+                                         uint64_t compressed_size,
+                                         const char* sha256,
+                                         h2_pal_http_cancel_fn cancel,
+                                         void* cancel_user,
+                                         h2_lua_app_install_t** out_install);
+h2_pal_result_t h2_lua_app_install_write(h2_lua_app_install_t* install,
+                                         const uint8_t* bytes, size_t size);
 /** Consume the handle on success or failure. Success follows exact length,
  * digest, TAR/zlib EOS, manifest/file checks, and atomic index publication. */
-h2_pal_result_t h2_lua_app_install_finish(h2_lua_app_install_t **install,
-                                          h2_lua_app_info_t *out);
+h2_pal_result_t h2_lua_app_install_finish(h2_lua_app_install_t** install,
+                                          h2_lua_app_info_t* out);
 /** Idempotently consume an unfinished handle, attempt staging cleanup and
  * release its reservation. Never removes the previously published app. An
- * ambiguous close error retains the manager/dependencies as documented above. */
-void h2_lua_app_install_abort(h2_lua_app_install_t **install);
+ * ambiguous close error retains the manager/dependencies as documented above.
+ */
+void h2_lua_app_install_abort(h2_lua_app_install_t** install);
 
 /** Synchronously downloads, inflates and verifies a complete format-1 USTAR
  * package through bounded buffers. No compressed archive is retained. The
@@ -129,12 +132,12 @@ void h2_lua_app_install_abort(h2_lua_app_install_t **install);
  * Success means the new index was atomically published. Errors preserve the
  * previous app and all user data. Requires replacing atomic fs.rename.
  * No callbacks or HTTP views are retained after return. */
-h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t *apps,
-                                    const h2_pal_http_api_t *http,
+h2_pal_result_t h2_lua_apps_install(h2_lua_apps_t* apps,
+                                    const h2_pal_http_api_t* http,
                                     h2_lua_app_source_t source,
-                                    const char *sha256, uint32_t timeout_ms,
+                                    const char* sha256, uint32_t timeout_ms,
                                     h2_pal_http_cancel_fn cancel,
-                                    void *cancel_user, h2_lua_app_info_t *out);
+                                    void* cancel_user, h2_lua_app_info_t* out);
 
 #ifdef __cplusplus
 }

@@ -130,16 +130,17 @@ int sctp_unregister_data_channel(Sctp* sctp, uint16_t sid) {
   return -1;
 }
 
-int sctp_register_negotiated_channel(Sctp* sctp, const char* label, uint16_t sid,
-                                     uint8_t channel_type,
+int sctp_register_negotiated_channel(Sctp* sctp, const char* label,
+                                     uint16_t sid, uint8_t channel_type,
                                      uint32_t reliability_parameter) {
   if (sctp == NULL || label == NULL) return -1;
   SctpStreamEntry* stream = sctp_find_stream(sctp, sid);
   if (stream != NULL)
-    return stream->externally_negotiated && !strcmp(stream->label, label)
-               ? 0 : -1;
+    return stream->externally_negotiated && !strcmp(stream->label, label) ? 0
+                                                                          : -1;
   if (sctp_register_data_channel(sctp, label, sid, channel_type,
-                                  reliability_parameter) != 0) return -1;
+                                 reliability_parameter) != 0)
+    return -1;
   stream = sctp_find_stream(sctp, sid);
   stream->externally_negotiated = true;
   stream->negotiated = true;
@@ -228,9 +229,9 @@ static h2_pal_result_t sctp_on_message(
   if (message == NULL || message->len > INT_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return (h2_pal_result_t)sctp_handle_incoming_data(
-      sctp, (char*)message->data, message->len, message->ppid,
-      message->stream_id, 0);
+  return (h2_pal_result_t)sctp_handle_incoming_data(sctp, (char*)message->data,
+                                                    message->len, message->ppid,
+                                                    message->stream_id, 0);
 }
 
 static void sctp_on_stream_reset(
@@ -424,7 +425,7 @@ void sctp_incoming_data(Sctp* sctp, char* buf, size_t len) {
   }
   sctp->association_call_active = 1;
   h2_pal_result_t result = h2_pal_sctp_association_input_packet(
-      sctp->api, sctp->association, (const uint8_t *)buf, len, now_ms);
+      sctp->api, sctp->association, (const uint8_t*)buf, len, now_ms);
   sctp->association_call_active = 0;
   if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
     H2_PEER_LOGE(sctp->log, "SCTP input failed %d len %u", (int)result,
@@ -544,7 +545,7 @@ h2_pal_result_t sctp_is_writable(Sctp* sctp, bool* out_writable) {
     return H2_PAL_OK;
   }
   return h2_pal_sctp_association_is_writable(sctp->api, sctp->association,
-                                              out_writable);
+                                             out_writable);
 }
 
 void sctp_onmessage(Sctp* sctp,
@@ -569,8 +570,9 @@ void sctp_onstreamreset(
   sctp->onstreamreset = onstreamreset;
 }
 
-void sctp_onlocalchannelopen(
-    Sctp* sctp, void (*onlocalchannelopen)(uint16_t sid, void* userdata)) {
+void sctp_onlocalchannelopen(Sctp* sctp,
+                             void (*onlocalchannelopen)(uint16_t sid,
+                                                        void* userdata)) {
   sctp->onlocalchannelopen = onlocalchannelopen;
 }
 

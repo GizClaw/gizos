@@ -7,8 +7,12 @@
 /* Frozen test-only oracle from the original 29-line renderer/native helper.
  * No production consumer links this second expression. */
 static float original_div(float numerator, float denominator) {
-  if (denominator < 0) { numerator = -numerator; denominator = -denominator; }
-  if (!(denominator >= 1e-20f && denominator <= 1e20f) || fabsf(numerator) > 1e20f)
+  if (denominator < 0) {
+    numerator = -numerator;
+    denominator = -denominator;
+  }
+  if (!(denominator >= 1e-20f && denominator <= 1e20f) ||
+      fabsf(numerator) > 1e20f)
     return numerator / denominator;
   uint32_t bits;
   memcpy(&bits, &denominator, sizeof(bits));
@@ -31,16 +35,18 @@ static uint32_t float_bits(float value) {
 static void check_original(float numerator, float denominator) {
   float actual = h2_f32_div(numerator, denominator);
   float expected = original_div(numerator, denominator);
-  assert((isnan(actual) && isnan(expected)) || float_bits(actual) == float_bits(expected));
+  assert((isnan(actual) && isnan(expected)) ||
+         float_bits(actual) == float_bits(expected));
 }
 
 int main(void) {
   assert(fegetround() == FE_TONEAREST);
-  const float edges[] = {0.0f, -0.0f, 1.0f, -1.0f, 1e-20f, -1e-20f,
-      1e20f, -1e20f, FLT_MIN, -FLT_MIN, FLT_TRUE_MIN, -FLT_TRUE_MIN,
+  const float edges[] = {
+      0.0f,    -0.0f,    1.0f,     -1.0f,     1e-20f,       -1e-20f,
+      1e20f,   -1e20f,   FLT_MIN,  -FLT_MIN,  FLT_TRUE_MIN, -FLT_TRUE_MIN,
       FLT_MAX, -FLT_MAX, INFINITY, -INFINITY, NAN};
-  for (size_t i = 0; i < sizeof(edges)/sizeof(edges[0]); ++i)
-    for (size_t j = 0; j < sizeof(edges)/sizeof(edges[0]); ++j)
+  for (size_t i = 0; i < sizeof(edges) / sizeof(edges[0]); ++i)
+    for (size_t j = 0; j < sizeof(edges) / sizeof(edges[0]); ++j)
       check_original(edges[i], edges[j]);
   assert(!signbit(h2_f32_div(-0.0f, 1.0f)));
   assert(signbit(h2_f32_div(-0.0f, 1e-21f)));
@@ -59,9 +65,8 @@ int main(void) {
     check_original(numerator, denominator);
     float expected = numerator / denominator;
     float actual = h2_f32_div(numerator, denominator);
-    if (isnormal(expected) && isnormal(actual) &&
-        fabsf(numerator) <= 1e20f && fabsf(denominator) >= 1e-20f &&
-        fabsf(denominator) <= 1e20f) {
+    if (isnormal(expected) && isnormal(actual) && fabsf(numerator) <= 1e20f &&
+        fabsf(denominator) >= 1e-20f && fabsf(denominator) <= 1e20f) {
       uint32_t a = float_bits(actual), b = float_bits(expected);
       uint32_t ulp = a > b ? a - b : b - a;
       if (ulp > max_ulp) max_ulp = ulp;

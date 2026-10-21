@@ -16,30 +16,30 @@ _Static_assert(H2_QRCODE_VERSION_MIN == qrcodegen_VERSION_MIN &&
                    H2_QRCODE_VERSION_MAX == qrcodegen_VERSION_MAX,
                "h2_qrcode version range diverged from qrcodegen");
 
-static bool ecc_to_upstream(h2_qrcode_ecc_t ecc, enum qrcodegen_Ecc *out_ecc) {
+static bool ecc_to_upstream(h2_qrcode_ecc_t ecc, enum qrcodegen_Ecc* out_ecc) {
   switch (ecc) {
-  case H2_QRCODE_ECC_LOW:
-    *out_ecc = qrcodegen_Ecc_LOW;
-    return true;
-  case H2_QRCODE_ECC_MEDIUM:
-    *out_ecc = qrcodegen_Ecc_MEDIUM;
-    return true;
-  case H2_QRCODE_ECC_QUARTILE:
-    *out_ecc = qrcodegen_Ecc_QUARTILE;
-    return true;
-  case H2_QRCODE_ECC_HIGH:
-    *out_ecc = qrcodegen_Ecc_HIGH;
-    return true;
-  default:
-    return false;
+    case H2_QRCODE_ECC_LOW:
+      *out_ecc = qrcodegen_Ecc_LOW;
+      return true;
+    case H2_QRCODE_ECC_MEDIUM:
+      *out_ecc = qrcodegen_Ecc_MEDIUM;
+      return true;
+    case H2_QRCODE_ECC_QUARTILE:
+      *out_ecc = qrcodegen_Ecc_QUARTILE;
+      return true;
+    case H2_QRCODE_ECC_HIGH:
+      *out_ecc = qrcodegen_Ecc_HIGH;
+      return true;
+    default:
+      return false;
   }
 }
 
-h2_pal_result_t h2_qrcode_encode_text(const char *text, h2_qrcode_ecc_t ecc,
-                                      int max_version, uint8_t *modules,
-                                      size_t modules_len, uint8_t *scratch,
+h2_pal_result_t h2_qrcode_encode_text(const char* text, h2_qrcode_ecc_t ecc,
+                                      int max_version, uint8_t* modules,
+                                      size_t modules_len, uint8_t* scratch,
                                       size_t scratch_len,
-                                      h2_qrcode_t *out_qrcode) {
+                                      h2_qrcode_t* out_qrcode) {
   enum qrcodegen_Ecc upstream_ecc = qrcodegen_Ecc_LOW;
   size_t required_len = 0u;
 
@@ -72,7 +72,7 @@ h2_pal_result_t h2_qrcode_encode_text(const char *text, h2_qrcode_ecc_t ecc,
   return H2_PAL_OK;
 }
 
-bool h2_qrcode_module_is_dark(const h2_qrcode_t *qrcode, int x, int y) {
+bool h2_qrcode_module_is_dark(const h2_qrcode_t* qrcode, int x, int y) {
   if (qrcode == NULL || qrcode->modules == NULL) {
     return false;
   }
@@ -84,16 +84,16 @@ bool h2_qrcode_module_is_dark(const h2_qrcode_t *qrcode, int x, int y) {
  * encoder would produce. Every span is derived from it, so validate the
  * specified module counts before any arithmetic.
  */
-static bool qrcode_size_is_valid(const h2_qrcode_t *qrcode) {
+static bool qrcode_size_is_valid(const h2_qrcode_t* qrcode) {
   return qrcode != NULL && qrcode->modules != NULL &&
          qrcode->size >= H2_QRCODE_SIZE_MIN &&
          qrcode->size <= H2_QRCODE_SIZE_MAX && (qrcode->size - 17) % 4 == 0;
 }
 
-h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t *qrcode,
+h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t* qrcode,
                                         int surface_width, int surface_height,
                                         int quiet_modules,
-                                        h2_qrcode_layout_t *out_layout) {
+                                        h2_qrcode_layout_t* out_layout) {
   int span_modules = 0;
   int scale = 0;
   int span_pixels = 0;
@@ -129,15 +129,14 @@ h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t *qrcode,
 }
 
 h2_pal_result_t h2_qrcode_render_rgb565_band(
-    const h2_qrcode_t *qrcode, const h2_qrcode_layout_t *layout,
+    const h2_qrcode_t* qrcode, const h2_qrcode_layout_t* layout,
     uint16_t dark_color, uint16_t light_color, uint16_t background_color,
-    int band_y, int band_width, int band_height, uint16_t *out_pixels,
+    int band_y, int band_width, int band_height, uint16_t* out_pixels,
     size_t out_pixels_len) {
   int span_modules = 0;
   int span_pixels = 0;
 
-  if (!qrcode_size_is_valid(qrcode) || layout == NULL ||
-      out_pixels == NULL) {
+  if (!qrcode_size_is_valid(qrcode) || layout == NULL || out_pixels == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (layout->scale < 1 ||
@@ -160,7 +159,7 @@ h2_pal_result_t h2_qrcode_render_rgb565_band(
 
   span_pixels = span_modules * layout->scale;
   for (int row = 0; row < band_height; ++row) {
-    uint16_t *pixels = &out_pixels[(size_t)row * (size_t)band_width];
+    uint16_t* pixels = &out_pixels[(size_t)row * (size_t)band_width];
     const int surface_y = band_y + row;
     const int local_y = surface_y - layout->origin_y;
     const bool row_outside = local_y < 0 || local_y >= span_pixels;

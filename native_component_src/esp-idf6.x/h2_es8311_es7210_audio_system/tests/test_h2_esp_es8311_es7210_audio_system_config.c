@@ -3,16 +3,16 @@
 #include <assert.h>
 
 int h2_esp_es8311_es7210_sr_init(
-    h2_esp_es8311_es7210_sr_state_t *state,
-    const h2_esp_es8311_es7210_audio_system_config_t *config) {
+    h2_esp_es8311_es7210_sr_state_t* state,
+    const h2_esp_es8311_es7210_audio_system_config_t* config) {
   (void)state;
   (void)config;
   return H2_AUDIO_OK;
 }
 
-int h2_esp_es8311_es7210_sr_process(h2_esp_es8311_es7210_sr_state_t *state,
-                                    const h2_audio_frame_t *raw_frame,
-                                    h2_audio_frame_t *out_frame,
+int h2_esp_es8311_es7210_sr_process(h2_esp_es8311_es7210_sr_state_t* state,
+                                    const h2_audio_frame_t* raw_frame,
+                                    h2_audio_frame_t* out_frame,
                                     uint32_t timeout_ms) {
   (void)state;
   (void)raw_frame;
@@ -21,7 +21,7 @@ int h2_esp_es8311_es7210_sr_process(h2_esp_es8311_es7210_sr_state_t *state,
   return H2_AUDIO_ERR_UNSUPPORTED;
 }
 
-void h2_esp_es8311_es7210_sr_deinit(h2_esp_es8311_es7210_sr_state_t *state) {
+void h2_esp_es8311_es7210_sr_deinit(h2_esp_es8311_es7210_sr_state_t* state) {
   (void)state;
 }
 
@@ -54,11 +54,13 @@ int main(void) {
          H2_AUDIO_ERR_INVALID_ARG);
   const h2_pal_sync_api_t sync_api = {0};
   config.sync_api = &sync_api;
-  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
+         H2_AUDIO_OK);
   config.mic_gain_db = 24u;
   config.mic_gain_min_db = 0u;
   config.mic_gain_max_db = 38u;
-  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
+         H2_AUDIO_OK);
   assert(system.mic_gain_percent == 63u);
   config.mic_gain_max_db = 23u;
   assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
@@ -66,13 +68,17 @@ int main(void) {
   config.mic_gain_max_db = 38u;
   config.codec_volume_default = 0xb0u;
   config.speaker_volume = (h2_es8311_volume_config_t){
-      .point_count = 3u, .points = {{1u, 120u}, {50u, 12u}, {100u, 0u}},
+      .point_count = 3u,
+      .points = {{1u, 120u}, {50u, 12u}, {100u, 0u}},
   };
-  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
+         H2_AUDIO_OK);
   config.speaker_volume.points[1].attenuation_half_db = 20u;
   assert(h2_es8311_volume_from_percent(&system.config.speaker_volume,
-                                      system.config.codec_volume_default, 50u) == 164u);
+                                       system.config.codec_volume_default,
+                                       50u) == 164u);
   config.speaker_volume.point_count = 9u;
-  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_ERR_INVALID_ARG);
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
+         H2_AUDIO_ERR_INVALID_ARG);
   return 0;
 }

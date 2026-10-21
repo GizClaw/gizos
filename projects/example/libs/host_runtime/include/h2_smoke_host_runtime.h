@@ -5,9 +5,9 @@
 #include "h2_runtime.h"
 
 static inline h2_runtime_config_t h2_smoke_host_runtime_config(
-    const char *board, const char *target, const char *chip,
-    const h2_pal_mem_api_t *mem, const h2_pal_time_api_t *time,
-    const h2_pal_queue_api_t *queue, const h2_pal_display_api_t *display) {
+    const char* board, const char* target, const char* chip,
+    const h2_pal_mem_api_t* mem, const h2_pal_time_api_t* time,
+    const h2_pal_queue_api_t* queue, const h2_pal_display_api_t* display) {
   /* Host smoke launchers intentionally assemble only their implemented PAL
    * subset. Every other capability is bound to the canonical unsupported API
    * and must not be interpreted as complete platform support. */

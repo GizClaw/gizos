@@ -6,9 +6,9 @@
 
 #include <stdint.h>
 
-extern int printf(const char *format, ...);
+extern int printf(const char* format, ...);
 
-static void usb_log_smoke_task(void *argument) {
+static void usb_log_smoke_task(void* argument) {
   (void)argument;
   uint32_t heartbeat = 0u;
   for (;;) {
@@ -23,7 +23,6 @@ void app_main(void) {
   printf("H2_JIELI_USB_LOG_SMOKE boot usb0_cdc_rc=%d\r\n", rc);
   if (rc != 0) return;
 
-  rc = os_task_create(
-      usb_log_smoke_task, NULL, 10, 1024, 0, "usb_log_smoke");
+  rc = os_task_create(usb_log_smoke_task, NULL, 10, 1024, 0, "usb_log_smoke");
   printf("H2_JIELI_USB_LOG_SMOKE task_create_rc=%d\r\n", rc);
 }

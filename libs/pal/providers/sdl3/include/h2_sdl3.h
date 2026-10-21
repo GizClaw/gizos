@@ -14,7 +14,7 @@ extern "C" {
 typedef struct h2_sdl3 h2_sdl3_t;
 
 typedef struct h2_sdl3_config {
-  const char *title;
+  const char* title;
   int width;
   int height;
 } h2_sdl3_config_t;
@@ -98,56 +98,57 @@ typedef struct h2_sdl3_pointer_state {
   int pressed;
 } h2_sdl3_pointer_state_t;
 
-int h2_sdl3_create(const h2_sdl3_config_t *config,
-                   h2_sdl3_t **out_provider);
-void h2_sdl3_destroy(h2_sdl3_t *provider);
-h2_pal_display_t *h2_sdl3_display(h2_sdl3_t *provider);
-const h2_pal_touch_api_t *h2_sdl3_touch(h2_sdl3_t *provider);
-h2_pal_result_t h2_sdl3_poll_event(h2_sdl3_t *provider,
-                                   h2_sdl3_event_t *out_event);
-h2_pal_result_t h2_sdl3_read_pointer(h2_sdl3_t *provider,
-                                     h2_sdl3_pointer_state_t *out_state);
-void h2_sdl3_set_window_title(h2_sdl3_t *provider, const char *title);
+int h2_sdl3_create(const h2_sdl3_config_t* config, h2_sdl3_t** out_provider);
+void h2_sdl3_destroy(h2_sdl3_t* provider);
+h2_pal_display_t* h2_sdl3_display(h2_sdl3_t* provider);
+const h2_pal_touch_api_t* h2_sdl3_touch(h2_sdl3_t* provider);
+h2_pal_result_t h2_sdl3_poll_event(h2_sdl3_t* provider,
+                                   h2_sdl3_event_t* out_event);
+h2_pal_result_t h2_sdl3_read_pointer(h2_sdl3_t* provider,
+                                     h2_sdl3_pointer_state_t* out_state);
+void h2_sdl3_set_window_title(h2_sdl3_t* provider, const char* title);
 
 /** Borrowed actual presentation after LVGL composition; RGB565 is host-endian.
  * Timestamp is steady-clock microseconds, shared with Desktop speaker capture.
  * Pixel storage is valid only during the callback; brightness is 0..255.
  */
 typedef struct h2_sdl3_capture_frame {
-  const uint16_t *pixels;
+  const uint16_t* pixels;
   uint32_t width;
   uint32_t height;
   size_t stride_bytes;
   uint8_t brightness;
   uint64_t timestamp_us;
 } h2_sdl3_capture_frame_t;
-typedef void (*h2_sdl3_frame_capture_fn)(void *user,
-                                       const h2_sdl3_capture_frame_t *frame);
+typedef void (*h2_sdl3_frame_capture_fn)(void* user,
+                                         const h2_sdl3_capture_frame_t* frame);
 
 /** Actual renderer pixels after texture conversion/brightness and before
  * SDL_RenderPresent. RGBA8888 rows are borrowed only for the callback. This
  * optional diagnostic callback performs GPU readback, independent of the
  * composition callback above; no readback occurs while unregistered. */
 typedef struct h2_sdl3_render_frame {
-  const uint8_t *rgba;
+  const uint8_t* rgba;
   uint32_t width, height;
   size_t stride_bytes;
 } h2_sdl3_render_frame_t;
-typedef void (*h2_sdl3_render_capture_fn)(void *user,
-    const h2_sdl3_render_frame_t *frame);
+typedef void (*h2_sdl3_render_capture_fn)(void* user,
+                                          const h2_sdl3_render_frame_t* frame);
 /* Same registration/owner/reentrancy rules as frame_capture below. */
-h2_pal_result_t h2_sdl3_set_render_capture(h2_sdl3_t *provider,
-    h2_sdl3_render_capture_fn callback, void *user);
+h2_pal_result_t h2_sdl3_set_render_capture(h2_sdl3_t* provider,
+                                           h2_sdl3_render_capture_fn callback,
+                                           void* user);
 
 /** Register one direct Desktop presentation callback; NULL unregisters.
  * Callback must return promptly and must not reenter SDL3; copy borrowed data
- * when retaining it and delegate expensive work to the consumer. Registration while occupied returns BUSY.
- * Provider and user storage must outlive registration. Unregister waits for
- * in-flight callbacks. Call from a control task, never from the callback.
+ * when retaining it and delegate expensive work to the consumer. Registration
+ * while occupied returns BUSY. Provider and user storage must outlive
+ * registration. Unregister waits for in-flight callbacks. Call from a control
+ * task, never from the callback.
  */
-h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t *provider,
-                                        h2_sdl3_frame_capture_fn callback,
-                                        void *user);
+h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t* provider,
+                                          h2_sdl3_frame_capture_fn callback,
+                                          void* user);
 
 #ifdef __cplusplus
 }

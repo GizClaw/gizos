@@ -7,41 +7,40 @@
 const ip6_addr_t test_ip6_zero;
 static unsigned initialized, cleared;
 static int in_tcpip, callback_error;
-void *esp_netif_get_netif_impl(esp_netif_t *n) { return &n->n; }
-int esp_netif_is_netif_up(esp_netif_t *n) { return n->n.up; }
-int esp_netif_get_ip_info(esp_netif_t *n, esp_netif_ip_info_t *out) {
+void* esp_netif_get_netif_impl(esp_netif_t* n) { return &n->n; }
+int esp_netif_is_netif_up(esp_netif_t* n) { return n->n.up; }
+int esp_netif_get_ip_info(esp_netif_t* n, esp_netif_ip_info_t* out) {
   *out = n->info;
   return 0;
 }
-int esp_netif_get_all_preferred_ip6(esp_netif_t *n, esp_ip6_addr_t *out) {
+int esp_netif_get_all_preferred_ip6(esp_netif_t* n, esp_ip6_addr_t* out) {
   int count = 0;
   for (unsigned i = 0; i < 3; i++)
     if (n->n.state[i] == IP6_ADDR_PREFERRED)
       memcpy(out[count++].addr, n->n.ip6[i].addr, 16);
   return count;
 }
-err_t tcpip_callback_wait(void (*fn)(void *), void *arg) {
-  if (callback_error)
-    return ERR_IF;
+err_t tcpip_callback_wait(void (*fn)(void*), void* arg) {
+  if (callback_error) return ERR_IF;
   in_tcpip = 1;
   fn(arg);
   in_tcpip = 0;
   return ERR_OK;
 }
-void netif_ip6_addr_set_state(struct netif *n, int i, unsigned s) {
+void netif_ip6_addr_set_state(struct netif* n, int i, unsigned s) {
   assert(in_tcpip);
   n->state[i] = s;
 }
-void netif_ip6_addr_set(struct netif *n, int i, const ip6_addr_t *a) {
+void netif_ip6_addr_set(struct netif* n, int i, const ip6_addr_t* a) {
   assert(in_tcpip);
   n->ip6[i] = *a;
 }
-void nd6_cleanup_netif(struct netif *n) {
+void nd6_cleanup_netif(struct netif* n) {
   (void)n;
   assert(in_tcpip);
   ++cleared;
 }
-void netif_create_ip6_linklocal_address(struct netif *n, int from_mac) {
+void netif_create_ip6_linklocal_address(struct netif* n, int from_mac) {
   assert(in_tcpip && from_mac);
   const uint8_t ll[] = {0xfe, 0x80};
   memcpy(n->ip6[0].addr, ll, sizeof(ll));

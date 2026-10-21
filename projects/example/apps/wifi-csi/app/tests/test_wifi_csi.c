@@ -4,10 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TEST_ASSERT(condition)                                                 \
-  do {                                                                         \
-    if (!(condition))                                                          \
-      abort();                                                                 \
+#define TEST_ASSERT(condition) \
+  do {                         \
+    if (!(condition)) abort(); \
   } while (0)
 
 typedef struct test_mutex {
@@ -40,50 +39,50 @@ typedef struct test_state {
   int waveform_max_y[160];
 } test_state_t;
 
-static void *test_alloc(void *user, size_t size) {
+static void* test_alloc(void* user, size_t size) {
   (void)user;
   return malloc(size);
 }
 
-static void test_free(void *user, void *ptr) {
+static void test_free(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
 
-static h2_pal_result_t test_mutex_create(void *user,
-                                         const h2_pal_mutex_config_t *config,
-                                         h2_pal_mutex_t **out_mutex) {
+static h2_pal_result_t test_mutex_create(void* user,
+                                         const h2_pal_mutex_config_t* config,
+                                         h2_pal_mutex_t** out_mutex) {
   static test_mutex_t mutex;
   (void)user;
   TEST_ASSERT(config != NULL && out_mutex != NULL);
-  *out_mutex = (h2_pal_mutex_t *)&mutex;
+  *out_mutex = (h2_pal_mutex_t*)&mutex;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t test_mutex_destroy(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   TEST_ASSERT(mutex != NULL);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_mutex_lock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t test_mutex_lock(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   TEST_ASSERT(mutex != NULL);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_mutex_unlock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t test_mutex_unlock(void* user, h2_pal_mutex_t* mutex) {
   (void)user;
   TEST_ASSERT(mutex != NULL);
   return H2_PAL_OK;
 }
 
-static int test_display_open(void *user) {
-  ((test_state_t *)user)->display_open_calls++;
+static int test_display_open(void* user) {
+  ((test_state_t*)user)->display_open_calls++;
   return H2_DISPLAY_OK;
 }
 
-static int test_display_get_info(void *user, h2_display_info_t *out_info) {
+static int test_display_get_info(void* user, h2_display_info_t* out_info) {
   (void)user;
   *out_info = (h2_display_info_t){
       .width = 160,
@@ -93,11 +92,11 @@ static int test_display_get_info(void *user, h2_display_info_t *out_info) {
   return H2_DISPLAY_OK;
 }
 
-static int test_display_draw(void *user, const h2_display_rect_t *rect,
-                             const void *pixels, size_t stride_bytes,
+static int test_display_draw(void* user, const h2_display_rect_t* rect,
+                             const void* pixels, size_t stride_bytes,
                              h2_display_pixel_format_t format) {
-  test_state_t *state = user;
-  const uint16_t *rows = pixels;
+  test_state_t* state = user;
+  const uint16_t* rows = pixels;
   (void)stride_bytes;
   TEST_ASSERT(rect != NULL && format == H2_DISPLAY_PIXEL_RGB565);
   for (int y = 0; y < rect->height; ++y) {
@@ -133,30 +132,30 @@ static int test_display_draw(void *user, const h2_display_rect_t *rect,
   return H2_DISPLAY_OK;
 }
 
-static int test_display_present(void *user) {
-  ((test_state_t *)user)->display_present_calls++;
+static int test_display_present(void* user) {
+  ((test_state_t*)user)->display_present_calls++;
   return H2_DISPLAY_OK;
 }
 
-static int test_display_close(void *user) {
-  ((test_state_t *)user)->display_close_calls++;
+static int test_display_close(void* user) {
+  ((test_state_t*)user)->display_close_calls++;
   return H2_DISPLAY_OK;
 }
 
-static h2_pal_result_t test_time_monotonic(void *user, uint64_t *out_ms) {
-  test_state_t *state = user;
+static h2_pal_result_t test_time_monotonic(void* user, uint64_t* out_ms) {
+  test_state_t* state = user;
   *out_ms = 100u + (uint64_t)state->stop_calls * 250u;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_time_sleep(void *user, uint32_t ms) {
+static h2_pal_result_t test_time_sleep(void* user, uint32_t ms) {
   (void)user;
   (void)ms;
   return H2_PAL_OK;
 }
 
-static int test_wifi_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
-  test_state_t *state = user;
+static int test_wifi_status(void* user, h2_pal_wifi_sta_status_t* out_status) {
+  test_state_t* state = user;
   memset(out_status, 0, sizeof(*out_status));
   if (state->drop_link_after_start && state->csi_start_calls > 0 &&
       !state->link_drop_reported) {
@@ -171,11 +170,10 @@ static int test_wifi_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-test_icmp_echo(void *user, const h2_pal_net_addr_t *addr,
-               const h2_pal_net_bind_t *bind, uint32_t timeout_ms,
-               h2_pal_net_icmp_echo_result_t *out_result) {
-  test_state_t *state = user;
+static h2_pal_result_t test_icmp_echo(
+    void* user, const h2_pal_net_addr_t* addr, const h2_pal_net_bind_t* bind,
+    uint32_t timeout_ms, h2_pal_net_icmp_echo_result_t* out_result) {
+  test_state_t* state = user;
   TEST_ASSERT(addr != NULL && addr->family == H2_PAL_NET_FAMILY_IPV4);
   TEST_ASSERT(addr->ip[0] == 192u && addr->ip[1] == 168u);
   TEST_ASSERT(addr->ip[2] == 1u && addr->ip[3] == 1u);
@@ -189,10 +187,9 @@ test_icmp_echo(void *user, const h2_pal_net_addr_t *addr,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t
-test_csi_capabilities(void *user,
-                      h2_pal_wifi_csi_capabilities_t *out_capabilities) {
-  test_state_t *state = user;
+static h2_pal_result_t test_csi_capabilities(
+    void* user, h2_pal_wifi_csi_capabilities_t* out_capabilities) {
+  test_state_t* state = user;
   out_capabilities->provider = state->csi_supported
                                    ? H2_PAL_WIFI_CSI_PROVIDER_ESP_IDF
                                    : H2_PAL_WIFI_CSI_PROVIDER_BK7258;
@@ -200,11 +197,11 @@ test_csi_capabilities(void *user,
   return state->csi_supported ? H2_PAL_OK : H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t test_csi_start(void *user,
-                                      const h2_pal_wifi_csi_config_t *config,
+static h2_pal_result_t test_csi_start(void* user,
+                                      const h2_pal_wifi_csi_config_t* config,
                                       h2_pal_wifi_csi_frame_fn frame_cb,
-                                      void *frame_user) {
-  test_state_t *state = user;
+                                      void* frame_user) {
+  test_state_t* state = user;
   const h2_pal_wifi_csi_sample_t samples[] = {
       {.real = 0, .imag = 0},
       {.real = 127, .imag = 127},
@@ -222,8 +219,7 @@ static h2_pal_result_t test_csi_start(void *user,
 
   TEST_ASSERT(config != NULL && config->bssid_set == 1u && frame_cb != NULL);
   state->csi_start_calls++;
-  if (state->csi_start_result != H2_PAL_OK)
-    return state->csi_start_result;
+  if (state->csi_start_result != H2_PAL_OK) return state->csi_start_result;
   if (!state->drop_link_after_start || state->csi_start_calls == 1)
     frame_cb(frame_user, &frame);
   if (state->emit_invalid_frame) {
@@ -235,21 +231,21 @@ static h2_pal_result_t test_csi_start(void *user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_csi_stop(void *user) {
-  test_state_t *state = user;
+static h2_pal_result_t test_csi_stop(void* user) {
+  test_state_t* state = user;
   state->csi_stop_calls++;
   state->csi_stop_after_stop_calls = state->stop_calls;
   return H2_PAL_OK;
 }
 
-static void test_ready(void *user, int result) {
-  test_state_t *state = user;
+static void test_ready(void* user, int result) {
+  test_state_t* state = user;
   TEST_ASSERT(result == H2_DISPLAY_OK);
   state->ready_calls++;
 }
 
-static int test_should_stop(void *user) {
-  test_state_t *state = user;
+static int test_should_stop(void* user) {
+  test_state_t* state = user;
   state->stop_calls++;
   return state->stop_calls >= state->loop_limit;
 }

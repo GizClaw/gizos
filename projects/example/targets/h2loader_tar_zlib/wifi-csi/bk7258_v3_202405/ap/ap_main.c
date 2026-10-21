@@ -9,14 +9,14 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-static void h2_bk_serial_log_string(int port, const char *string) {
-    (void)port;
-    os_printf("%s", string);
+static void h2_bk_serial_log_string(int port, const char* string) {
+  (void)port;
+  os_printf("%s", string);
 }
 
 #define emergency_uart_write_string h2_bk_serial_log_string
 
-static void emit_marker(const char *fmt, ...) {
+static void emit_marker(const char* fmt, ...) {
   char line[128];
   va_list ap;
 
@@ -28,8 +28,8 @@ static void emit_marker(const char *fmt, ...) {
   os_printf("%s\r\n", line);
 }
 
-static void smoke_ready(void *user, int rc) {
-  h2_runtime_t *runtime = user;
+static void smoke_ready(void* user, int rc) {
+  h2_runtime_t* runtime = user;
   if (rc != H2_DISPLAY_OK) {
     emit_marker("H2_BK_SMOKE_WIFI_CSI_FAIL stage=initial_render rc=%d", rc);
     return;
@@ -43,9 +43,9 @@ static void smoke_ready(void *user, int rc) {
   }
 }
 
-static void app_entry(void *user) {
+static void app_entry(void* user) {
   h2_runtime_config_t runtime_config;
-  h2_runtime_t *runtime = NULL;
+  h2_runtime_t* runtime = NULL;
   int rc;
 
   (void)user;
@@ -95,9 +95,9 @@ static void app_entry(void *user) {
 }
 
 int main(void) {
-    if (h2_bk_target_task_policy_install() != H2_PAL_OK) {
-        return -1;
-    }
+  if (h2_bk_target_task_policy_install() != H2_PAL_OK) {
+    return -1;
+  }
   emergency_uart_write_string(
       0, "H2_BK_AP_MAIN image=wifi-csi stage=before_bk_init\r\n");
   bk_init();

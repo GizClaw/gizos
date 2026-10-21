@@ -87,30 +87,29 @@ extern "C" {
 #define H2_BLE_WIFI_CONFIG_SCAN_FRAME_MAX_LEN (4u + H2_BLE_WIFI_CONFIG_SSID_MAX)
 /** Longest credential frame, in bytes. */
 #define H2_BLE_WIFI_CONFIG_CREDENTIALS_FRAME_MAX_LEN \
-    (2u + H2_BLE_WIFI_CONFIG_SSID_MAX + H2_BLE_WIFI_CONFIG_PASSWORD_MAX)
+  (2u + H2_BLE_WIFI_CONFIG_SSID_MAX + H2_BLE_WIFI_CONFIG_PASSWORD_MAX)
 /** Length of a provisioning progress frame, in bytes. */
 #define H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN 2u
 /** Length of a provisioning result frame, in bytes. */
 #define H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN 3u
 
-_Static_assert(
-    H2_BLE_WIFI_CONFIG_SSID_MAX <= (unsigned)H2_PAL_WIFI_SSID_MAX,
-    "protocol SSID limit must fit the Wi-Fi PAL SSID limit");
+_Static_assert(H2_BLE_WIFI_CONFIG_SSID_MAX <= (unsigned)H2_PAL_WIFI_SSID_MAX,
+               "protocol SSID limit must fit the Wi-Fi PAL SSID limit");
 _Static_assert(
     H2_BLE_WIFI_CONFIG_PASSWORD_MAX <= (unsigned)H2_PAL_WIFI_PASSWORD_MAX,
     "protocol passphrase limit must fit the Wi-Fi PAL passphrase limit");
 
 /** Command opcodes carried by the command characteristic. */
 typedef enum h2_ble_wifi_config_opcode {
-    H2_BLE_WIFI_CONFIG_OPCODE_SCAN_START = 0x01,
-    H2_BLE_WIFI_CONFIG_OPCODE_SCAN_STOP = 0x02,
+  H2_BLE_WIFI_CONFIG_OPCODE_SCAN_START = 0x01,
+  H2_BLE_WIFI_CONFIG_OPCODE_SCAN_STOP = 0x02,
 } h2_ble_wifi_config_opcode_t;
 
 /** First byte of a scan notification. */
 typedef enum h2_ble_wifi_config_scan_frame {
-    H2_BLE_WIFI_CONFIG_SCAN_FRAME_AP = 0x01,
-    H2_BLE_WIFI_CONFIG_SCAN_FRAME_FINISHED = 0x02,
-    H2_BLE_WIFI_CONFIG_SCAN_FRAME_ERROR = 0x03,
+  H2_BLE_WIFI_CONFIG_SCAN_FRAME_AP = 0x01,
+  H2_BLE_WIFI_CONFIG_SCAN_FRAME_FINISHED = 0x02,
+  H2_BLE_WIFI_CONFIG_SCAN_FRAME_ERROR = 0x03,
 } h2_ble_wifi_config_scan_frame_t;
 
 /** Access point is not open. */
@@ -118,8 +117,8 @@ typedef enum h2_ble_wifi_config_scan_frame {
 
 /** First byte of a provisioning notification. */
 typedef enum h2_ble_wifi_config_provision_frame {
-    H2_BLE_WIFI_CONFIG_PROVISION_FRAME_PROGRESS = 0x01,
-    H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL = 0x02,
+  H2_BLE_WIFI_CONFIG_PROVISION_FRAME_PROGRESS = 0x01,
+  H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL = 0x02,
 } h2_ble_wifi_config_provision_frame_t;
 
 /**
@@ -130,44 +129,44 @@ typedef enum h2_ble_wifi_config_provision_frame {
  * from one blocking call.
  */
 typedef enum h2_ble_wifi_config_progress {
-    H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING = 0x01,
-    H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED = 0x02,
-    H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED = 0x03,
+  H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING = 0x01,
+  H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED = 0x02,
+  H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED = 0x03,
 } h2_ble_wifi_config_progress_t;
 
 /** Status byte of a provisioning result frame. */
 typedef enum h2_ble_wifi_config_status {
-    H2_BLE_WIFI_CONFIG_STATUS_SUCCESS = 0x00,
-    H2_BLE_WIFI_CONFIG_STATUS_FAILURE = 0x01,
+  H2_BLE_WIFI_CONFIG_STATUS_SUCCESS = 0x00,
+  H2_BLE_WIFI_CONFIG_STATUS_FAILURE = 0x01,
 } h2_ble_wifi_config_status_t;
 
 /** Reason byte of a provisioning result frame. */
 typedef enum h2_ble_wifi_config_reason {
-    H2_BLE_WIFI_CONFIG_REASON_NONE = 0x00,
-    H2_BLE_WIFI_CONFIG_REASON_BAD_PASSWORD = 0x01,
-    H2_BLE_WIFI_CONFIG_REASON_AP_NOT_FOUND = 0x02,
-    H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED = 0x03,
-    H2_BLE_WIFI_CONFIG_REASON_CONNECT_TIMEOUT = 0x04,
-    H2_BLE_WIFI_CONFIG_REASON_UNKNOWN = 0xff,
+  H2_BLE_WIFI_CONFIG_REASON_NONE = 0x00,
+  H2_BLE_WIFI_CONFIG_REASON_BAD_PASSWORD = 0x01,
+  H2_BLE_WIFI_CONFIG_REASON_AP_NOT_FOUND = 0x02,
+  H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED = 0x03,
+  H2_BLE_WIFI_CONFIG_REASON_CONNECT_TIMEOUT = 0x04,
+  H2_BLE_WIFI_CONFIG_REASON_UNKNOWN = 0xff,
 } h2_ble_wifi_config_reason_t;
 
 /** One reported access point, already reduced to protocol fields. */
 typedef struct h2_ble_wifi_config_ap {
-    /** NUL-terminated for convenience; ssid_len is authoritative. */
-    char ssid[H2_BLE_WIFI_CONFIG_SSID_MAX + 1u];
-    size_t ssid_len;
-    int8_t rssi;
-    uint8_t flags;
+  /** NUL-terminated for convenience; ssid_len is authoritative. */
+  char ssid[H2_BLE_WIFI_CONFIG_SSID_MAX + 1u];
+  size_t ssid_len;
+  int8_t rssi;
+  uint8_t flags;
 } h2_ble_wifi_config_ap_t;
 
 /** One decoded credential frame. */
 typedef struct h2_ble_wifi_config_credentials {
-    /** NUL-terminated for convenience; ssid_len is authoritative. */
-    char ssid[H2_BLE_WIFI_CONFIG_SSID_MAX + 1u];
-    size_t ssid_len;
-    /** NUL-terminated for convenience; password_len is authoritative. */
-    char password[H2_BLE_WIFI_CONFIG_PASSWORD_MAX + 1u];
-    size_t password_len;
+  /** NUL-terminated for convenience; ssid_len is authoritative. */
+  char ssid[H2_BLE_WIFI_CONFIG_SSID_MAX + 1u];
+  size_t ssid_len;
+  /** NUL-terminated for convenience; password_len is authoritative. */
+  char password[H2_BLE_WIFI_CONFIG_PASSWORD_MAX + 1u];
+  size_t password_len;
 } h2_ble_wifi_config_credentials_t;
 
 /**
@@ -180,10 +179,8 @@ typedef struct h2_ble_wifi_config_credentials {
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG for a NULL argument, or
  * H2_PAL_ERR_FORMAT for a wrong length or an unknown opcode.
  */
-int h2_ble_wifi_config_decode_command(
-    const uint8_t *data,
-    size_t len,
-    h2_ble_wifi_config_opcode_t *out_opcode);
+int h2_ble_wifi_config_decode_command(const uint8_t* data, size_t len,
+                                      h2_ble_wifi_config_opcode_t* out_opcode);
 
 /**
  * @brief Encode an access-point scan frame.
@@ -196,11 +193,9 @@ int h2_ble_wifi_config_decode_command(
  * out-of-range SSID length, or H2_PAL_ERR_NO_SPACE when @p out_size is too
  * small.
  */
-int h2_ble_wifi_config_encode_ap(
-    const h2_ble_wifi_config_ap_t *ap,
-    uint8_t *out,
-    size_t out_size,
-    size_t *out_len);
+int h2_ble_wifi_config_encode_ap(const h2_ble_wifi_config_ap_t* ap,
+                                 uint8_t* out, size_t out_size,
+                                 size_t* out_len);
 
 /**
  * @brief Encode a scan-finished or scan-error frame.
@@ -212,11 +207,9 @@ int h2_ble_wifi_config_encode_ap(
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG for a NULL pointer or a frame
  * type that carries fields, or H2_PAL_ERR_NO_SPACE when @p out_size is zero.
  */
-int h2_ble_wifi_config_encode_scan_status(
-    h2_ble_wifi_config_scan_frame_t frame,
-    uint8_t *out,
-    size_t out_size,
-    size_t *out_len);
+int h2_ble_wifi_config_encode_scan_status(h2_ble_wifi_config_scan_frame_t frame,
+                                          uint8_t* out, size_t out_size,
+                                          size_t* out_len);
 
 /**
  * @brief Decode a credential frame.
@@ -231,9 +224,8 @@ int h2_ble_wifi_config_encode_scan_status(
  * H2_PAL_ERR_FORMAT for a truncated, over-long or out-of-range frame.
  */
 int h2_ble_wifi_config_decode_credentials(
-    const uint8_t *data,
-    size_t len,
-    h2_ble_wifi_config_credentials_t *out_credentials);
+    const uint8_t* data, size_t len,
+    h2_ble_wifi_config_credentials_t* out_credentials);
 
 /**
  * @brief Encode a provisioning result frame.
@@ -247,12 +239,10 @@ int h2_ble_wifi_config_decode_credentials(
  * H2_PAL_ERR_NO_SPACE when @p out_size is smaller than
  * H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN.
  */
-int h2_ble_wifi_config_encode_result(
-    h2_ble_wifi_config_status_t status,
-    h2_ble_wifi_config_reason_t reason,
-    uint8_t *out,
-    size_t out_size,
-    size_t *out_len);
+int h2_ble_wifi_config_encode_result(h2_ble_wifi_config_status_t status,
+                                     h2_ble_wifi_config_reason_t reason,
+                                     uint8_t* out, size_t out_size,
+                                     size_t* out_len);
 
 /**
  * @brief Encode one provisioning progress frame.
@@ -263,11 +253,9 @@ int h2_ble_wifi_config_encode_result(
  * @param out_len Receives the encoded length; set to zero on failure.
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG or H2_PAL_ERR_NO_SPACE.
  */
-int h2_ble_wifi_config_encode_progress(
-    h2_ble_wifi_config_progress_t state,
-    uint8_t *out,
-    size_t out_size,
-    size_t *out_len);
+int h2_ble_wifi_config_encode_progress(h2_ble_wifi_config_progress_t state,
+                                       uint8_t* out, size_t out_size,
+                                       size_t* out_len);
 
 /**
  * @brief Reduce a Wi-Fi PAL scan entry to protocol access-point fields.
@@ -280,9 +268,8 @@ int h2_ble_wifi_config_encode_progress(
  * strictly and drop the whole frame when that fails, so sending one would
  * make the access point vanish from the list without explanation.
  */
-int h2_ble_wifi_config_ap_from_scan_entry(
-    const h2_pal_wifi_scan_entry_t *entry,
-    h2_ble_wifi_config_ap_t *out_ap);
+int h2_ble_wifi_config_ap_from_scan_entry(const h2_pal_wifi_scan_entry_t* entry,
+                                          h2_ble_wifi_config_ap_t* out_ap);
 
 /**
  * @brief Map a station status to a provisioning failure reason.
@@ -299,8 +286,7 @@ int h2_ble_wifi_config_ap_from_scan_entry(
  * H2_BLE_WIFI_CONFIG_REASON_NONE.
  */
 h2_ble_wifi_config_reason_t h2_ble_wifi_config_default_reason(
-    int connect_result,
-    const h2_pal_wifi_sta_status_t *status);
+    int connect_result, const h2_pal_wifi_sta_status_t* status);
 
 #ifdef __cplusplus
 }

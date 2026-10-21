@@ -13,34 +13,33 @@
 #include <string.h>
 
 typedef struct h2_gizclaw_social_text_decode {
-  const h2_pal_mem_api_t *allocator;
-  char **out_text;
+  const h2_pal_mem_api_t* allocator;
+  char** out_text;
   size_t max_len;
 } h2_gizclaw_social_text_decode_t;
 
 typedef struct h2_gizclaw_social_page_decode {
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_friend_group_page_t *page;
+  const h2_pal_mem_api_t* allocator;
+  h2_gizclaw_friend_group_page_t* page;
   size_t max_count;
   size_t capacity;
 } h2_gizclaw_social_page_decode_t;
 
 typedef struct h2_gizclaw_social_text_encode {
-  const char *data;
+  const char* data;
   size_t len;
 } h2_gizclaw_social_text_encode_t;
 
 typedef struct h2_gizclaw_contact_page_decode {
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_contact_page_t *page;
+  const h2_pal_mem_api_t* allocator;
+  h2_gizclaw_contact_page_t* page;
   size_t max_count;
   size_t capacity;
 } h2_gizclaw_contact_page_decode_t;
 
-static bool valid_utf8_span(const char *text, size_t len) {
-  if (text == NULL)
-    return len == 0u;
-  const unsigned char *cursor = (const unsigned char *)text;
+static bool valid_utf8_span(const char* text, size_t len) {
+  if (text == NULL) return len == 0u;
+  const unsigned char* cursor = (const unsigned char*)text;
   size_t remaining = len;
   while (remaining > 0u) {
     size_t width = 0u;
@@ -81,14 +80,13 @@ static bool valid_utf8_span(const char *text, size_t len) {
   return true;
 }
 
-static bool valid_utf8(const char *text) {
+static bool valid_utf8(const char* text) {
   return text == NULL || valid_utf8_span(text, strlen(text));
 }
 
-static void contact_deinit(const h2_pal_mem_api_t *allocator,
-                           h2_gizclaw_contact_t *contact) {
-  if (contact == NULL)
-    return;
+static void contact_deinit(const h2_pal_mem_api_t* allocator,
+                           h2_gizclaw_contact_t* contact) {
+  if (contact == NULL) return;
   h2_pal_mem_free(allocator, contact->name);
   h2_pal_mem_free(allocator, contact->display_name);
   h2_pal_mem_free(allocator, contact->phone_number);
@@ -97,10 +95,9 @@ static void contact_deinit(const h2_pal_mem_api_t *allocator,
   memset(contact, 0, sizeof(*contact));
 }
 
-static void friend_group_deinit(const h2_pal_mem_api_t *allocator,
-                                h2_gizclaw_friend_group_t *group) {
-  if (group == NULL)
-    return;
+static void friend_group_deinit(const h2_pal_mem_api_t* allocator,
+                                h2_gizclaw_friend_group_t* group) {
+  if (group == NULL) return;
   h2_pal_mem_free(allocator, group->name);
   h2_pal_mem_free(allocator, group->display_name);
   h2_pal_mem_free(allocator, group->description);
@@ -108,20 +105,19 @@ static void friend_group_deinit(const h2_pal_mem_api_t *allocator,
   memset(group, 0, sizeof(*group));
 }
 
-static bool decode_text(pb_istream_t *stream, const pb_field_t *field,
-                        void **arg) {
+static bool decode_text(pb_istream_t* stream, const pb_field_t* field,
+                        void** arg) {
   (void)field;
-  h2_gizclaw_social_text_decode_t *context = *arg;
+  h2_gizclaw_social_text_decode_t* context = *arg;
   if (context == NULL || context->allocator == NULL ||
       context->out_text == NULL || *context->out_text != NULL ||
       stream->bytes_left == SIZE_MAX || stream->bytes_left > context->max_len) {
     return false;
   }
-  char *text = h2_pal_mem_alloc(context->allocator, stream->bytes_left + 1u);
-  if (text == NULL)
-    return false;
+  char* text = h2_pal_mem_alloc(context->allocator, stream->bytes_left + 1u);
+  if (text == NULL) return false;
   const size_t len = stream->bytes_left;
-  if (!pb_read(stream, (pb_byte_t *)text, len)) {
+  if (!pb_read(stream, (pb_byte_t*)text, len)) {
     h2_pal_mem_free(context->allocator, text);
     return false;
   }
@@ -134,10 +130,10 @@ static bool decode_text(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
-static void set_text_decoder(pb_callback_t *callback,
-                             h2_gizclaw_social_text_decode_t *context,
-                             const h2_pal_mem_api_t *allocator,
-                             char **out_text) {
+static void set_text_decoder(pb_callback_t* callback,
+                             h2_gizclaw_social_text_decode_t* context,
+                             const h2_pal_mem_api_t* allocator,
+                             char** out_text) {
   *context = (h2_gizclaw_social_text_decode_t){
       .allocator = allocator,
       .out_text = out_text,
@@ -147,18 +143,18 @@ static void set_text_decoder(pb_callback_t *callback,
   callback->arg = context;
 }
 
-static void set_bounded_text_decoder(pb_callback_t *callback,
-                                     h2_gizclaw_social_text_decode_t *context,
-                                     const h2_pal_mem_api_t *allocator,
-                                     char **out_text, size_t max_len) {
+static void set_bounded_text_decoder(pb_callback_t* callback,
+                                     h2_gizclaw_social_text_decode_t* context,
+                                     const h2_pal_mem_api_t* allocator,
+                                     char** out_text, size_t max_len) {
   set_text_decoder(callback, context, allocator, out_text);
   context->max_len = max_len;
 }
 
-static bool decode_group(pb_istream_t *stream, const pb_field_t *field,
-                         void **arg) {
+static bool decode_group(pb_istream_t* stream, const pb_field_t* field,
+                         void** arg) {
   (void)field;
-  h2_gizclaw_social_page_decode_t *context = *arg;
+  h2_gizclaw_social_page_decode_t* context = *arg;
   if (context == NULL || context->allocator == NULL || context->page == NULL ||
       context->page->count >= context->max_count ||
       context->page->count == SIZE_MAX ||
@@ -166,21 +162,18 @@ static bool decode_group(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  h2_gizclaw_friend_group_t *items = context->page->items;
+  h2_gizclaw_friend_group_t* items = context->page->items;
   if (count >= context->capacity) {
     size_t capacity = context->capacity == 0u ? 1u : context->capacity * 2u;
-    if (capacity <= count)
-      capacity = count + 1u;
-    if (capacity > context->max_count)
-      capacity = context->max_count;
+    if (capacity <= count) capacity = count + 1u;
+    if (capacity > context->max_count) capacity = context->max_count;
     items = h2_pal_mem_realloc(context->allocator, items,
                                capacity * sizeof(*items));
-    if (items == NULL)
-      return false;
+    if (items == NULL) return false;
     context->page->items = items;
     context->capacity = capacity;
   }
-  h2_gizclaw_friend_group_t *out = &items[count];
+  h2_gizclaw_friend_group_t* out = &items[count];
   memset(out, 0, sizeof(*out));
 
   gizclaw_rpc_v1_FriendGroupObject decoded =
@@ -211,9 +204,9 @@ static bool decode_group(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
-static bool decode_contact_object(pb_istream_t *stream,
-                                  h2_gizclaw_contact_t *out,
-                                  const h2_pal_mem_api_t *allocator) {
+static bool decode_contact_object(pb_istream_t* stream,
+                                  h2_gizclaw_contact_t* out,
+                                  const h2_pal_mem_api_t* allocator) {
   gizclaw_rpc_v1_ContactObject decoded = gizclaw_rpc_v1_ContactObject_init_zero;
   h2_gizclaw_social_text_decode_t text[5];
   set_bounded_text_decoder(&decoded.name, &text[0], allocator, &out->name,
@@ -240,10 +233,10 @@ static bool decode_contact_object(pb_istream_t *stream,
   return true;
 }
 
-static bool decode_contact(pb_istream_t *stream, const pb_field_t *field,
-                           void **arg) {
+static bool decode_contact(pb_istream_t* stream, const pb_field_t* field,
+                           void** arg) {
   (void)field;
-  h2_gizclaw_contact_page_decode_t *context = *arg;
+  h2_gizclaw_contact_page_decode_t* context = *arg;
   if (context == NULL || context->allocator == NULL || context->page == NULL ||
       context->page->count >= context->max_count ||
       context->page->count == SIZE_MAX ||
@@ -251,42 +244,38 @@ static bool decode_contact(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  h2_gizclaw_contact_t *items = context->page->items;
+  h2_gizclaw_contact_t* items = context->page->items;
   if (count >= context->capacity) {
     size_t capacity = context->capacity == 0u ? 1u : context->capacity * 2u;
-    if (capacity <= count)
-      capacity = count + 1u;
-    if (capacity > context->max_count)
-      capacity = context->max_count;
+    if (capacity <= count) capacity = count + 1u;
+    if (capacity > context->max_count) capacity = context->max_count;
     items = h2_pal_mem_realloc(context->allocator, items,
                                capacity * sizeof(*items));
-    if (items == NULL)
-      return false;
+    if (items == NULL) return false;
     context->page->items = items;
     context->capacity = capacity;
   }
-  h2_gizclaw_contact_t *out = &items[count];
+  h2_gizclaw_contact_t* out = &items[count];
   memset(out, 0, sizeof(*out));
-  if (!decode_contact_object(stream, out, context->allocator))
-    return false;
+  if (!decode_contact_object(stream, out, context->allocator)) return false;
   context->page->count = count + 1u;
   return true;
 }
 
-static bool encode_text(pb_ostream_t *stream, const pb_field_t *field,
-                        void *const *arg) {
-  const h2_gizclaw_social_text_encode_t *text = *arg;
+static bool encode_text(pb_ostream_t* stream, const pb_field_t* field,
+                        void* const* arg) {
+  const h2_gizclaw_social_text_encode_t* text = *arg;
   return text != NULL && (text->len == 0u || text->data != NULL) &&
          pb_encode_tag_for_field(stream, field) &&
-         pb_encode_string(stream, (const pb_byte_t *)text->data, text->len);
+         pb_encode_string(stream, (const pb_byte_t*)text->data, text->len);
 }
 
-static int decode_contact_mutation_response(const h2_pal_mem_api_t *allocator,
-                                            const pb_msgdesc_t *fields,
-                                            void *response, bool *has_value,
-                                            gizclaw_rpc_v1_ContactObject *value,
-                                            h2_gizclaw_contact_t *out_contact,
-                                            const uint8_t *payload,
+static int decode_contact_mutation_response(const h2_pal_mem_api_t* allocator,
+                                            const pb_msgdesc_t* fields,
+                                            void* response, bool* has_value,
+                                            gizclaw_rpc_v1_ContactObject* value,
+                                            h2_gizclaw_contact_t* out_contact,
+                                            const uint8_t* payload,
                                             size_t payload_len) {
   if (allocator == NULL || fields == NULL || response == NULL ||
       has_value == NULL || value == NULL || out_contact == NULL) {
@@ -323,22 +312,19 @@ static int decode_contact_mutation_response(const h2_pal_mem_api_t *allocator,
 }
 
 h2_pal_result_t h2_gizclaw_social_create_message_internal(
-    h2_gizclaw_service_t *service, uint64_t identity, const void *tag,
-    h2_gizclaw_rpc_method_t method, const pb_msgdesc_t *fields,
-    const void *message, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    h2_gizclaw_service_t* service, uint64_t identity, const void* tag,
+    h2_gizclaw_rpc_method_t method, const pb_msgdesc_t* fields,
+    const void* message, uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (service == NULL || out_request == NULL || timeout_ms == 0u ||
       timeout_ms > INT32_MAX)
     return H2_PAL_ERR_INVALID_ARG;
   pb_ostream_t sizing = PB_OSTREAM_SIZING;
-  if (!pb_encode(&sizing, fields, message))
-    return H2_PAL_ERR_FORMAT;
-  const h2_pal_mem_api_t *allocator = service->client_config.allocator;
-  uint8_t *data = h2_pal_mem_alloc(
+  if (!pb_encode(&sizing, fields, message)) return H2_PAL_ERR_FORMAT;
+  const h2_pal_mem_api_t* allocator = service->client_config.allocator;
+  uint8_t* data = h2_pal_mem_alloc(
       allocator, sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
-  if (data == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
+  if (data == NULL) return H2_PAL_ERR_NO_MEMORY;
   pb_ostream_t output = pb_ostream_from_buffer(data, sizing.bytes_written);
   h2_pal_result_t rc = H2_PAL_ERR_FORMAT;
   if (pb_encode(&output, fields, message))
@@ -352,10 +338,9 @@ h2_pal_result_t h2_gizclaw_social_create_message_internal(
 
 static const char contact_list_tag;
 h2_pal_result_t h2_gizclaw_req_create_contact_list(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
-    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (limit == 0u || limit > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS ||
       cursor.len > H2_GIZCLAW_CONTACT_CURSOR_MAX_BYTES ||
       !valid_utf8_span(cursor.data, cursor.len))
@@ -375,22 +360,18 @@ h2_pal_result_t h2_gizclaw_req_create_contact_list(
       out_request);
 }
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_contact_list(const h2_gizclaw_req_t *request,
-                                   h2_gizclaw_resp_storage_t *storage,
-                                   h2_gizclaw_contact_page_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_resp_parse_contact_list(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_contact_page_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
-  const h2_gizclaw_rpc_response_t *response = NULL;
+  const h2_gizclaw_rpc_response_t* response = NULL;
   h2_pal_result_t rc =
       h2_gizclaw_req_response_internal(request, &contact_list_tag, &response);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_rpc_bytes_t input;
   rc = h2_gizclaw_req_input_internal(request, &contact_list_tag, &input);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   gizclaw_rpc_v1_ContactListRequest params =
       gizclaw_rpc_v1_ContactListRequest_init_zero;
   pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
@@ -401,8 +382,7 @@ h2_gizclaw_resp_parse_contact_list(const h2_gizclaw_req_t *request,
     return H2_PAL_ERR_FORMAT;
   h2_gizclaw_resp_arena_t arena;
   rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_contact_page_t result = {0};
   gizclaw_rpc_v1_ContactListResponse decoded =
       gizclaw_rpc_v1_ContactListResponse_init_zero;
@@ -426,26 +406,23 @@ h2_gizclaw_resp_parse_contact_list(const h2_gizclaw_req_t *request,
   else
     result.has_next = decoded.has_next;
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
-  if (rc == H2_PAL_OK)
-    *out_result = result;
+  if (rc == H2_PAL_OK) *out_result = result;
   return rc;
 }
 
 h2_pal_result_t h2_gizclaw_rpc_contact_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_contact_page_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_contact_page_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
   if (storage == NULL || storage->used > storage->capacity ||
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_contact_list(
       service, 0u, cursor, limit, timeout_ms, &request);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
@@ -456,10 +433,9 @@ h2_pal_result_t h2_gizclaw_rpc_contact_list(
 
 static const char contact_get_tag;
 h2_pal_result_t h2_gizclaw_req_create_contact_get(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
       !valid_utf8_span(name.data, name.len))
     return H2_PAL_ERR_INVALID_ARG;
@@ -474,23 +450,19 @@ h2_pal_result_t h2_gizclaw_req_create_contact_get(
       out_request);
 }
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_contact_get(const h2_gizclaw_req_t *request,
-                                  h2_gizclaw_resp_storage_t *storage,
-                                  h2_gizclaw_contact_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_resp_parse_contact_get(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_contact_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
-  const h2_gizclaw_rpc_response_t *response = NULL;
+  const h2_gizclaw_rpc_response_t* response = NULL;
   h2_pal_result_t rc =
       h2_gizclaw_req_response_internal(request, &contact_get_tag, &response);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
 
   h2_gizclaw_resp_arena_t arena;
   rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_contact_t result = {0};
   gizclaw_rpc_v1_ContactGetResponse decoded =
       gizclaw_rpc_v1_ContactGetResponse_init_zero;
@@ -499,27 +471,24 @@ h2_gizclaw_resp_parse_contact_get(const h2_gizclaw_req_t *request,
       &decoded.has_value, &decoded.value, &result, response->result_payload,
       response->result_payload_len);
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
-  if (rc == H2_PAL_OK)
-    *out_result = result;
+  if (rc == H2_PAL_OK) *out_result = result;
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_rpc_contact_get(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_contact_get(h2_gizclaw_service_t* service,
                                            h2_gizclaw_str_t name,
                                            uint32_t timeout_ms,
-                                           h2_gizclaw_resp_storage_t *storage,
-                                           h2_gizclaw_contact_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+                                           h2_gizclaw_resp_storage_t* storage,
+                                           h2_gizclaw_contact_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
   if (storage == NULL || storage->used > storage->capacity ||
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_contact_get(service, 0u, name,
                                                          timeout_ms, &request);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
@@ -530,11 +499,10 @@ h2_pal_result_t h2_gizclaw_rpc_contact_get(h2_gizclaw_service_t *service,
 
 static const char contact_create_tag;
 h2_pal_result_t h2_gizclaw_req_create_contact_create(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
     h2_gizclaw_str_t display_name, h2_gizclaw_str_t phone_number,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
       !valid_utf8_span(name.data, name.len) ||
       display_name.len > H2_GIZCLAW_CONTACT_DISPLAY_NAME_MAX_BYTES ||
@@ -565,23 +533,19 @@ h2_pal_result_t h2_gizclaw_req_create_contact_create(
       out_request);
 }
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_contact_create(const h2_gizclaw_req_t *request,
-                                     h2_gizclaw_resp_storage_t *storage,
-                                     h2_gizclaw_contact_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_resp_parse_contact_create(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_contact_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
-  const h2_gizclaw_rpc_response_t *response = NULL;
+  const h2_gizclaw_rpc_response_t* response = NULL;
   h2_pal_result_t rc =
       h2_gizclaw_req_response_internal(request, &contact_create_tag, &response);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
 
   h2_gizclaw_resp_arena_t arena;
   rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_contact_t result = {0};
   gizclaw_rpc_v1_ContactCreateResponse decoded =
       gizclaw_rpc_v1_ContactCreateResponse_init_zero;
@@ -590,27 +554,24 @@ h2_gizclaw_resp_parse_contact_create(const h2_gizclaw_req_t *request,
       &decoded.has_value, &decoded.value, &result, response->result_payload,
       response->result_payload_len);
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
-  if (rc == H2_PAL_OK)
-    *out_result = result;
+  if (rc == H2_PAL_OK) *out_result = result;
   return rc;
 }
 
 h2_pal_result_t h2_gizclaw_rpc_contact_create(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name,
     h2_gizclaw_str_t display_name, h2_gizclaw_str_t phone_number,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_contact_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_contact_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
   if (storage == NULL || storage->used > storage->capacity ||
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_contact_create(
       service, 0u, name, display_name, phone_number, timeout_ms, &request);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
@@ -621,11 +582,10 @@ h2_pal_result_t h2_gizclaw_rpc_contact_create(
 
 static const char contact_put_tag;
 h2_pal_result_t h2_gizclaw_req_create_contact_put(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
     h2_gizclaw_str_t display_name, h2_gizclaw_str_t phone_number,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
       !valid_utf8_span(name.data, name.len) ||
       display_name.len > H2_GIZCLAW_CONTACT_DISPLAY_NAME_MAX_BYTES ||
@@ -655,23 +615,19 @@ h2_pal_result_t h2_gizclaw_req_create_contact_put(
       out_request);
 }
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_contact_put(const h2_gizclaw_req_t *request,
-                                  h2_gizclaw_resp_storage_t *storage,
-                                  h2_gizclaw_contact_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_resp_parse_contact_put(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_contact_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
-  const h2_gizclaw_rpc_response_t *response = NULL;
+  const h2_gizclaw_rpc_response_t* response = NULL;
   h2_pal_result_t rc =
       h2_gizclaw_req_response_internal(request, &contact_put_tag, &response);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
 
   h2_gizclaw_resp_arena_t arena;
   rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_contact_t result = {0};
   gizclaw_rpc_v1_ContactPutResponse decoded =
       gizclaw_rpc_v1_ContactPutResponse_init_zero;
@@ -680,29 +636,26 @@ h2_gizclaw_resp_parse_contact_put(const h2_gizclaw_req_t *request,
       &decoded.has_value, &decoded.value, &result, response->result_payload,
       response->result_payload_len);
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
-  if (rc == H2_PAL_OK)
-    *out_result = result;
+  if (rc == H2_PAL_OK) *out_result = result;
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_rpc_contact_put(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_rpc_contact_put(h2_gizclaw_service_t* service,
                                            h2_gizclaw_str_t name,
                                            h2_gizclaw_str_t display_name,
                                            h2_gizclaw_str_t phone_number,
                                            uint32_t timeout_ms,
-                                           h2_gizclaw_resp_storage_t *storage,
-                                           h2_gizclaw_contact_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+                                           h2_gizclaw_resp_storage_t* storage,
+                                           h2_gizclaw_contact_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
   if (storage == NULL || storage->used > storage->capacity ||
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_contact_put(
       service, 0u, name, display_name, phone_number, timeout_ms, &request);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
@@ -713,10 +666,9 @@ h2_pal_result_t h2_gizclaw_rpc_contact_put(h2_gizclaw_service_t *service,
 
 static const char contact_delete_tag;
 h2_pal_result_t h2_gizclaw_req_create_contact_delete(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
       !valid_utf8_span(name.data, name.len))
     return H2_PAL_ERR_INVALID_ARG;
@@ -732,23 +684,19 @@ h2_pal_result_t h2_gizclaw_req_create_contact_delete(
       out_request);
 }
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_contact_delete(const h2_gizclaw_req_t *request,
-                                     h2_gizclaw_resp_storage_t *storage,
-                                     h2_gizclaw_contact_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+h2_pal_result_t h2_gizclaw_resp_parse_contact_delete(
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_contact_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
-  const h2_gizclaw_rpc_response_t *response = NULL;
+  const h2_gizclaw_rpc_response_t* response = NULL;
   h2_pal_result_t rc =
       h2_gizclaw_req_response_internal(request, &contact_delete_tag, &response);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
 
   h2_gizclaw_resp_arena_t arena;
   rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_contact_t result = {0};
   gizclaw_rpc_v1_ContactDeleteResponse decoded =
       gizclaw_rpc_v1_ContactDeleteResponse_init_zero;
@@ -757,25 +705,22 @@ h2_gizclaw_resp_parse_contact_delete(const h2_gizclaw_req_t *request,
       &decoded.has_value, &decoded.value, &result, response->result_payload,
       response->result_payload_len);
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
-  if (rc == H2_PAL_OK)
-    *out_result = result;
+  if (rc == H2_PAL_OK) *out_result = result;
   return rc;
 }
 
 h2_pal_result_t h2_gizclaw_rpc_contact_delete(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_contact_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t* storage, h2_gizclaw_contact_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
   if (storage == NULL || storage->used > storage->capacity ||
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_contact_delete(
       service, 0u, name, timeout_ms, &request);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
@@ -786,10 +731,9 @@ h2_pal_result_t h2_gizclaw_rpc_contact_delete(
 
 static const char friend_group_list_tag;
 h2_pal_result_t h2_gizclaw_req_create_friend_group_list(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
-    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
+    h2_gizclaw_service_t* service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
   if (limit == 0u || limit > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS ||
       cursor.len > H2_GIZCLAW_CONTACT_CURSOR_MAX_BYTES ||
       !valid_utf8_span(cursor.data, cursor.len))
@@ -811,20 +755,17 @@ h2_pal_result_t h2_gizclaw_req_create_friend_group_list(
 }
 
 h2_pal_result_t h2_gizclaw_resp_parse_friend_group_list(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_page_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    const h2_gizclaw_req_t* request, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_friend_group_page_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
-  const h2_gizclaw_rpc_response_t *response = NULL;
+  const h2_gizclaw_rpc_response_t* response = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_response_internal(
       request, &friend_group_list_tag, &response);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_rpc_bytes_t input;
   rc = h2_gizclaw_req_input_internal(request, &friend_group_list_tag, &input);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   gizclaw_rpc_v1_FriendGroupListRequest params =
       gizclaw_rpc_v1_FriendGroupListRequest_init_zero;
   pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
@@ -835,8 +776,7 @@ h2_pal_result_t h2_gizclaw_resp_parse_friend_group_list(
     return H2_PAL_ERR_FORMAT;
   h2_gizclaw_resp_arena_t arena;
   rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
+  if (rc != H2_PAL_OK) return rc;
   h2_gizclaw_friend_group_page_t result = {0};
   gizclaw_rpc_v1_FriendGroupListResponse decoded =
       gizclaw_rpc_v1_FriendGroupListResponse_init_zero;
@@ -860,26 +800,23 @@ h2_pal_result_t h2_gizclaw_resp_parse_friend_group_list(
   else
     result.has_next = decoded.has_next;
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
-  if (rc == H2_PAL_OK)
-    *out_result = result;
+  if (rc == H2_PAL_OK) *out_result = result;
   return rc;
 }
 
 h2_pal_result_t h2_gizclaw_rpc_friend_group_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_page_t *out_result) {
-  if (out_result == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t* storage,
+    h2_gizclaw_friend_group_page_t* out_result) {
+  if (out_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
   if (storage == NULL || storage->used > storage->capacity ||
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_req_t* request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_list(
       service, 0u, cursor, limit, timeout_ms, &request);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)

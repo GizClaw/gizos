@@ -9,17 +9,17 @@
 #include <stdint.h>
 #include <stdio.h>
 
-static h2_web_platform_t *platform;
-static const h2_pal_audio_api_t *audio;
+static h2_web_platform_t* platform;
+static const h2_pal_audio_api_t* audio;
 static int read_result;
 static int ticks;
 
 EMSCRIPTEN_KEEPALIVE void stop_pending_start(void) {
-  h2_web_platform_destroy(platform); // suspended start pins the platform
+  h2_web_platform_destroy(platform);  // suspended start pins the platform
   assert(h2_pal_audio_stop_mic(audio) == H2_PAL_OK);
 }
 
-static void read_until_stopped(void *user) {
+static void read_until_stopped(void* user) {
   (void)user;
   int16_t samples[320];
   h2_audio_frame_t frame = {.data = samples, .capacity = sizeof(samples)};
@@ -27,13 +27,14 @@ static void read_until_stopped(void *user) {
   assert(frame.bytes == 0u);
 }
 
-static void stop_reader(void *user) {
+static void stop_reader(void* user) {
   (void)user;
-  assert(h2_pal_time_sleep_ms(h2_web_platform_time_api(platform), 10u) == H2_PAL_OK);
+  assert(h2_pal_time_sleep_ms(h2_web_platform_time_api(platform), 10u) ==
+         H2_PAL_OK);
   int16_t samples[320];
   h2_audio_frame_t frame = {.data = samples, .capacity = sizeof(samples)};
   assert(h2_pal_audio_mic_read(audio, &frame, 0u) == H2_PAL_ERR_BUSY);
-  h2_web_platform_destroy(platform); // pending read must pin its platform
+  h2_web_platform_destroy(platform);  // pending read must pin its platform
   ++ticks;
   assert(h2_pal_audio_stop_mic(audio) == H2_PAL_OK);
 }
@@ -55,7 +56,7 @@ static void read_pcm(void) {
 }
 
 static int restarted;
-static void restart_from_task(void *user) {
+static void restart_from_task(void* user) {
   (void)user;
   assert(h2_pal_audio_start_mic(audio) == H2_PAL_OK);
   read_pcm();

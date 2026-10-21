@@ -4,7 +4,7 @@
 
 int main() {
   h2::starboy::MouseTouchAdapter adapter(368u, 448u);
-  const h2_pal_touch_api_t *api = adapter.api();
+  const h2_pal_touch_api_t* api = adapter.api();
   assert(h2_pal_touch_open(api) == H2_PAL_OK);
 
   h2_pal_touch_info_t info = {};
