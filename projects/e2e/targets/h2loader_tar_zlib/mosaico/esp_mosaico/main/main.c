@@ -28,6 +28,23 @@
 #include "h2_libco_smoke.h"
 #endif
 static h2_runtime_t* runtime;
+#if H2_MOSAICO_SUITE_LIBCO
+static const h2_pal_log_api_t* libco_board_log;
+/* Keep the maintained libco launcher's result channel visible under the
+ * board's normal log filtering policy. */
+static int libco_result_write(void* user, h2_pal_log_level_t level,
+                              const char* scope, const char* message) {
+  (void)user;
+  if (scope && message && strcmp(scope, "libco-smoke") == 0)
+    return printf("%s\n", message) < 0 || fflush(stdout) != 0 ? H2_PAL_ERR_IO
+                                                              : H2_PAL_OK;
+  return h2_pal_log_write(libco_board_log, level, scope, message);
+}
+static const h2_pal_log_vtable_t libco_result_vtable = {.write =
+                                                            libco_result_write};
+static const h2_pal_log_api_t libco_result_log = {.vtable =
+                                                      &libco_result_vtable};
+#endif
 #ifndef H2_MOSAICO_LAUNCHER_HOST_TEST
 static esp_timer_handle_t watchdog;
 static void hold(void) {
@@ -264,7 +281,15 @@ static void run(void* unused) {
   rc = h2_storage_device_run(runtime, "/data/mosaico-e2e",
                              esp_app_get_description()->version);
 #elif H2_MOSAICO_SUITE_LIBCO
+  BaseType_t root_core = xTaskGetCoreID(NULL);
+  printf("H2_MOSAICO_LIBCO_ROOT task=%s task_core=%d current_core=%d\n",
+         pcTaskGetName(NULL), (int)root_core, (int)xPortGetCoreID());
+  if (root_core == tskNO_AFFINITY || root_core != xPortGetCoreID())
+    fail("libco-root-core", H2_PAL_ERR_INVALID_STATE);
   rc = h2_libco_smoke_run(runtime, NULL);
+  if (!rc &&
+      (root_core != xTaskGetCoreID(NULL) || root_core != xPortGetCoreID()))
+    rc = H2_PAL_ERR_INVALID_STATE;
 #elif H2_MOSAICO_SUITE_CAMERA
   rc = camera_run();
 #elif H2_MOSAICO_SUITE_PERIPHERALS
@@ -344,6 +369,10 @@ void app_main(void) {
   h2_runtime_config_t config = {0};
   rc = h2_esp_board_runtime_config(&config);
   if (rc) fail("board", rc);
+#if H2_MOSAICO_SUITE_LIBCO
+  libco_board_log = config.log;
+  config.log = &libco_result_log;
+#endif
   config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {
       .active_name = "mosaico-e2e",
