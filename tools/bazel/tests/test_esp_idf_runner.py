@@ -293,6 +293,8 @@ class EspIdfRunnerTest(unittest.TestCase):
                 "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
                 "esp-16.1.0_20260609) 16.1.0\n"
+                "esp32s31=riscv32-esp-elf-gcc (crosstool-NG "
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3=xtensa-esp-elf-gcc (crosstool-NG "
                 "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3_archive_compiler=xtensa-esp-elf-gcc\n"
@@ -437,6 +439,11 @@ class EspIdfRunnerTest(unittest.TestCase):
             subprocess.run(command, env=environment, text=True, capture_output=True),
             output,
         )
+
+    def test_s31_compiler_identity_uses_existing_riscv_tool(self):
+        self.assertEqual(runner.TARGET_COMPILERS["esp32s31"], "riscv32-esp-elf-gcc")
+        identities = runner.read_expected_tool_versions(ROOT / "tools/bazel/native_versions/esp_idf_tool_versions.txt")
+        self.assertEqual(identities["esp32s31"], identities["esp32p4"])
 
     def test_success_publishes_only_validated_native_outputs(self):
         result, output = self._run()
@@ -715,6 +722,8 @@ class EspIdfRunnerTest(unittest.TestCase):
                 "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
                 "esp-16.1.0_20260609) 16.1.0\n"
+                "esp32s31=riscv32-esp-elf-gcc (crosstool-NG "
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3=unexpected\n"
                 "ninja=1.13.2\n"
                 "python=esp-idf-v6.2-constraints\n"
@@ -733,6 +742,7 @@ class EspIdfRunnerTest(unittest.TestCase):
         result, _ = self._run(tool_versions=(
             "esp32c5=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "esp32p4=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
+            "esp32s31=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "esp32s3=xtensa-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "ninja=definitely-not-the-system-version\n"
             "python=esp-idf-v6.2-constraints\n"

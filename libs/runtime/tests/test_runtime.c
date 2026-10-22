@@ -5325,7 +5325,35 @@ static void test_time_adjusted_event(void) {
   h2_runtime_deinit(runtime);
 }
 
+static int camera_test_start(void* user) {
+  ++*(int*)user;
+  return H2_PAL_OK;
+}
+static void test_camera_provider_binding(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->camera != NULL);
+  assert(h2_pal_camera_start(runtime->camera) == H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_deinit(runtime);
+  int calls = 0;
+  const h2_pal_camera_vtable_t vtable = {.start = camera_test_start,
+                                         .stop = camera_test_start};
+  h2_pal_camera_api_t provider = {.user = &calls, .vtable = &vtable};
+  config.camera = &provider;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK && calls == 0);
+  assert(runtime->camera != &provider && runtime->camera->user == &calls);
+  provider.user = NULL;
+  assert(h2_pal_camera_start(runtime->camera) == H2_PAL_OK && calls == 1);
+  h2_runtime_deinit(runtime);
+  assert(calls ==
+         1); /* Runtime destruction must not stop a borrowed provider. */
+}
+
 int main(void) {
+  test_camera_provider_binding();
   test_audio_shared_state();
   test_audio_track_allocator();
   test_audio_levels_follow_measured_frames();
