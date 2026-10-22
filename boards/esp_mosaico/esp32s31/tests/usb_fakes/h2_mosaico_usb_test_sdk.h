@@ -6,7 +6,9 @@
 #include <stdio.h>
 #include <sys/types.h>
 #ifdef _MSC_VER
+#include <fcntl.h>
 typedef intptr_t ssize_t;
+#define O_ACCMODE (_O_RDONLY | _O_WRONLY | _O_RDWR)
 #endif
 typedef int esp_err_t;
 enum { ESP_OK, ESP_FAIL, ESP_ERR_NOT_FINISHED, ESP_ERR_TIMEOUT };
