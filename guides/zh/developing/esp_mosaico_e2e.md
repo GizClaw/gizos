@@ -49,6 +49,13 @@ Runtime/并发、复用 App 和 device runner 回归；运行格式与 diff 检�
 与 Loader 回归构建，验证 Mosaico 条件接入没有改变原路径。记录本机工具环境失败，
 不得将历史构建记录表述为本轮结果。
 
+冷启动且未校时的设备会让 Core 的 `wall-set` 前置读取返回 `UNCALIBRATED`。
+测试侧可显式注入 `--define=H2_MOSAICO_CORE_WALL_UTC_MS=<UTC Unix 毫秒>`，
+仅在墙钟无效时通过真实 PAL 设置测试基线，并输出 `H2_PAL_CORE_TIME_FIXTURE`。
+默认不注入、不伪造有效时钟，原 workload 断言保持不变；保留未校时首轮失败。
+注入值及构建/启动时间应记录在产物证据中，这不是 NTP 精度验收。
+时间用例会改变 RTC；原始 Flash 读回一致不代表 RTC 校准状态恢复。
+
 ## 设备前置条件与证据
 
 1. 独占端口并检查是否有其他进程占用；不启动历史 controller。ROM 只读读取 chip/MAC、

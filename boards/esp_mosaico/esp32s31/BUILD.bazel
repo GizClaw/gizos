@@ -278,6 +278,7 @@ cc_test(
         "tests/test_usb.c",
         "tests/usb_fakes/h2_mosaico_usb_test_sdk.h",
     ],
+    conlyopts = H2_C11_OPTS,
     includes = [
         "include",
         "src",

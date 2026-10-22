@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
+#ifdef _MSC_VER
+typedef intptr_t ssize_t;
+#endif
 typedef int esp_err_t;
 enum { ESP_OK, ESP_FAIL, ESP_ERR_NOT_FINISHED, ESP_ERR_TIMEOUT };
 typedef int TickType_t;

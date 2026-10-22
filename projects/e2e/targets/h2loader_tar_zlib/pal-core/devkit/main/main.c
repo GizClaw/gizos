@@ -475,6 +475,20 @@ void app_main(void) {
   if (rc != H2_PAL_OK) fail("command_prepare", rc);
   rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc != H2_PAL_OK) fail("runtime_init", rc);
+#if defined(H2_E2E_MOSAICO) && defined(H2_MOSAICO_CORE_WALL_UTC_MS)
+  /* A cold board has no calibrated wall clock. The operator supplies this
+   * test prerequisite explicitly; the workload keeps its original assertions.
+   */
+  h2_pal_time_wall_status_t wall_status;
+  rc = h2_pal_time_get_wall_status(runtime->time, &wall_status);
+  if (rc != H2_PAL_OK) fail("wall-status", rc);
+  if (!wall_status.valid) {
+    rc = h2_pal_time_set_wall_ms(runtime->time, H2_MOSAICO_CORE_WALL_UTC_MS);
+    if (rc != H2_PAL_OK) fail("wall-fixture", rc);
+    printf("H2_PAL_CORE_TIME_FIXTURE source=operator utc_ms=%" PRIu64 "\n",
+           (uint64_t)H2_MOSAICO_CORE_WALL_UTC_MS);
+  }
+#endif
   const esp_timer_create_args_t timer = {.callback = deadline,
                                          .name = "pal-core-watchdog"};
   if (esp_timer_create(&timer, &watchdog) != ESP_OK ||

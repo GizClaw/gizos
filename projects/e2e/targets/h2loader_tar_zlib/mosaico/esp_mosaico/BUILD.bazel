@@ -228,6 +228,7 @@ h2loader_esp_idf_firmware(
         "sdkconfig.e2e.defaults",
     ],
     board = "esp_mosaico",
+    cmake_variables = ["H2_MOSAICO_CORE_WALL_UTC_MS"],
     graph = [
         ":launcher",
     ],
