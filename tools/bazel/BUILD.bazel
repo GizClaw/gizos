@@ -1519,19 +1519,6 @@ py_test(
 )
 
 py_test(
-    name = "jieli_evidence_test",
-    srcs = ["tests/test_jieli_evidence.py"],
-    data = ["//guides:jieli_evidence_sources"],
-    legacy_create_init = 0,
-    main = "tests/test_jieli_evidence.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-)
-
-py_test(
     name = "jieli_allocator_test",
     srcs = ["tests/test_jieli_allocator.py"],
     data = [

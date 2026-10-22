@@ -7,7 +7,7 @@
 开始前确认：
 
 - Review scope：working tree diff、staged diff、指定目录或当前 branch。
-- Requirements：用户要求、issue、设计结论、开发指引和代码风格。
+- Requirements：用户要求、设计结论、开发指引和代码风格；存在相关 Issue 时一并读取。
 - Validation：与改动风险对应的 build、test、flash、serial、manual inspection 或 coredump evidence。
 
 Scope 没有明确指定时，先检查 staged changes；没有 staged changes 时检查当前 working tree。不要把用户尚未准备提交的无关改动纳入修复范围。

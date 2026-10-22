@@ -42,14 +42,16 @@
 
 ## 目标和范围
 
+Issue 的 title、类型、正文结构和 Code Changes Tree 要求只用于审查 Issue 本身。PR 可以不关联 Issue，不因缺少 Issue、关闭关键字或 Issue 模板内容产生 finding；PR 描述按 [PR 要求](./pr_agent_review.md#pr-要求)检查。
+
 - Issue title 符合 `prefix: Subject`，GitHub Issue Type 与 Tracking 或 Implementation 工作形态一致。
 - Tracking issue 使用 `Task` 且有原生 sub-issue；Implementation issue 使用 `Bug` 或 `Feature`，没有把直接实现范围放进 `Task`。
 - Issue body 使用对应类型的规定结构，relationship 文本格式正确，原生 parent/sub-issue 关系真实存在。
 - Implementation issue 的 Code Changes Tree 为每个 file leaf 提供具体、可执行的 inline comment，没有裸 filename、占位描述或代替多个文件职责的 group-level 注释。
-- 目标与用户要求、linked issue、PR description 和 acceptance criteria 一致。
+- 目标与用户要求、PR description 和适用的 acceptance criteria 一致；有关联 Issue 时再核对其需求。
 - Non-goal 和明确排除的平台、目录、兼容工作或 cleanup 没有被带入范围。
 - 审查对象完整：Issue 审查包含目标 issue 及其关系；实现审查包含完整 diff、关联 config、build wiring、tests、文档和 committed consumer。
-- Parent、sub-issue、dependency 和相关 PR 的关系真实存在且方向正确。
+- 已声明的 parent、sub-issue、dependency 和相关 PR 关系真实存在且方向正确。
 - 没有用临时 workaround 替代已经确定的最终 contract。
 
 ## Ownership 和依赖

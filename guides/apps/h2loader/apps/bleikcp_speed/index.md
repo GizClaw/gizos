@@ -194,57 +194,6 @@ H2Loader command transport 使用自己的 128-bit UUID。Server 将 H2Loader se
 
 如果 controller 不能在测速 connection 存续时继续 connectable advertising，可以暂停 command advertising，但不能注销 command GATT service；session 结束后必须自动恢复 advertising，并重新接受 H2Loader actor 连接。
 
-## 首轮短时基线
-
-2026-07-22 的首轮实机测试用于确认实现可工作并确定后续长时基线的量级。所有组合都使用 ATT MTU `517`、connection interval `15 ms`，每个方向累计 deterministic payload 均超过 1 MiB：
-
-| 组合 | TX 5 秒窗口 | RX 5 秒窗口 | 双向合计 | Queue high-water |
-| --- | ---: | ---: | ---: | --- |
-| AMOLED Client ↔ SZP Server | `50.2 KiB/s` | `48.2 KiB/s` | `98.4 KiB/s` | input `10`，TX `32768 B`，RX `2928 B` |
-| BK Client ↔ SZP Server | `50.6 KiB/s` | `49.0 KiB/s` | `99.6 KiB/s` | input `6`，TX `32768 B`，RX `1952 B` |
-| BK Server ↔ SZP Client | `50.3 KiB/s` | `55.6 KiB/s` | `105.9 KiB/s` | input `20`，TX `32768 B`，RX `4392 B` |
-| AMOLED Client ↔ BK Server | `51.0 KiB/s` | `56.5 KiB/s` | `107.5 KiB/s` | input `5`，TX `32768 B`，RX `1464 B` |
-
-ESP peer 报告 PHY 2M。BK PAL 当前不能确认 negotiated PHY，因此 BK 屏幕和日志保留 `unknown`，不能用 preferred PHY 冒充实际结果。所有组合均未出现 payload mismatch、queue overflow 或 internal-RAM task fallback。
-
-AMOLED Client ↔ SZP Server 还执行了强制断流恢复。恢复后 Client 报告 `connections=2 reconnects=1 disconnects=1`，重新协商 MTU `517`、PHY 2M 和 `15 ms` interval，并继续传输。
-
-macOS BLE Loader `load` 是 Host 到设备的单向口径，不能与上表的设备间双向合计混用：
-
-| Board | Payload | Elapsed | Payload throughput | MTU | Retransmits |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| AMOLED | `1,104,087 B` | `31.143 s` | `34.6 KiB/s` | `512` | `0` |
-| SZP | `1,705,031 B` | `36.564 s` | `45.5 KiB/s` | `512` | `0` |
-| BK7258 | `1,487,465 B` | `34.388 s` | `42.2 KiB/s` | `512` | `0` |
-
-#374 据此使用 `>= 30 KiB/s` 作为三块 board 的 macOS BLE Loader `load` 持续 payload 门槛。该门槛不属于 Baseline App 的 regression threshold。
-
-## 30 分钟长时基线
-
-2026-07-22 使用 PR #379 当前实现完成三块目标 board 两两组合的长时测试。每组稳定会话均超过 30 分钟；下表速度为去掉握手后前 10 个样本的 5 秒 payload 窗口，`total` 是该 App 本次启动累计值。
-
-| 组合 | 端点 | 稳定时长 | TX min / median / P95 / max | RX min / median / P95 / max | 最终 TX / RX total |
-| --- | --- | ---: | ---: | ---: | ---: |
-| SZP Server ↔ BK Client | SZP Server | `1860 s` | `25.2 / 50.5 / 51.1 / 63.8 KiB/s` | `33.1 / 44.2 / 48.4 / 52.8 KiB/s` | `88,932,352 / 83,693,376 B` |
-| SZP Server ↔ BK Client | BK Client | `1859 s` | `25.4 / 38.3 / 51.0 / 63.1 KiB/s` | `33.6 / 47.0 / 54.0 / 65.5 KiB/s` | `90,767,360 / 96,771,952 B` |
-| SZP Server ↔ AMOLED Client | SZP Server | `1860 s` | `37.2 / 50.7 / 63.0 / 74.0 KiB/s` | `40.2 / 49.6 / 55.3 / 72.4 KiB/s` | `94,109,696 / 94,618,904 B` |
-| SZP Server ↔ AMOLED Client | AMOLED Client | `1852 s` | `37.0 / 50.7 / 62.9 / 76.1 KiB/s` | `34.5 / 49.5 / 55.4 / 65.6 KiB/s` | `94,568,448 / 94,088,656 B` |
-| BK Server ↔ AMOLED Client | BK Server | `1852 s` | `48.6 / 62.2 / 63.3 / 75.7 KiB/s` | `35.6 / 43.2 / 48.2 / 55.2 KiB/s` | `114,491,392 / 84,071,160 B` |
-| BK Server ↔ AMOLED Client | AMOLED Client | `1859 s` | `25.4 / 38.3 / 51.0 / 63.2 KiB/s` | `48.9 / 59.2 / 64.3 / 68.5 KiB/s` | `82,051,072 / 111,992,480 B` |
-
-| 端点 | connections / reconnects / disconnects | Retransmits | Waitsnd | input / TX / RX high-water | Last error |
-| --- | ---: | ---: | ---: | ---: | --- |
-| SZP Server，BK Client 组合 | `1 / 0 / 0` | `21,160` | `32` | `23 / 32768 / 7808 B` | `none` |
-| BK Client，SZP Server 组合 | `4 / 3 / 3` | `22,085` | `26` | `8 / 32768 / 6888 B` | `io / -10`，稳定窗口前的监控启动断流 |
-| SZP Server，AMOLED Client 组合 | `1 / 0 / 0` | `21,919` | `32` | `22 / 32768 / 6832 B` | `none` |
-| AMOLED Client，SZP Server 组合 | `1 / 0 / 0` | `21,380` | `32` | `20 / 32768 / 5856 B` | `none` |
-| BK Server，AMOLED Client 组合 | `3 / 2 / 2` | `19,661` | `32` | `26 / 32768 / 7808 B` | `io / -10`，稳定窗口前的监控启动断流 |
-| AMOLED Client，BK Server 组合 | `1 / 0 / 0` | `15,341` | `32` | `14 / 32768 / 4392 B` | `none` |
-
-BK 两个端点的 connection 与 last-error 是 App 启动累计值，包含开始稳定计时前为打开日志监控产生的连接；稳定窗口内这些计数没有继续增加。三组稳定窗口均未出现 payload mismatch、queue overflow、task allocation fallback 或新的断连。TX/RX total 差异来自发送端 flush 与接收端读取时点以及稳定窗口前的累计数据，不作为 payload 正确性判断；deterministic offset 校验始终通过。
-
-Review 修复后的 `309f9bebf64c` 另以 BK Client ↔ SZP Server 做定向复测。BK package 通过 `send-url` 下载并校验 `1,487,678 B`，启动后 active identity 与 package manifest 一致、Partition 2 metadata valid 且 Stage invalid，首个会话双向 payload 均超过 `2 MiB`。随后让 SZP 返回 Loader 主动断开，BK 恢复扫描且 UART 管理命令仍可用；SZP 重新启动原 Server App 后，BK 自动重连，第二个会话双向 payload 均超过 `3 MiB`，MTU、PHY 与 interval 仍为 `517`、`2M`、`15 ms`，未出现 payload mismatch 或 queue overflow。
-
 ## 验收页面原型
 
 屏幕固定显示 role、connection state、实际链路参数、TX/RX 最近 5 秒速度、累计 bytes、连接计数、KCP 状态和保留的 last error。

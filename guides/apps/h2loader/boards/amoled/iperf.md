@@ -4,7 +4,7 @@
 
 矩阵由 portable App `projects/e2e/apps/iperf/app` 拥有：`tcp_tx`/`tcp_rx` 参考值；UDP 上下行各 10/20/40 Mbit/s 与一组 1200 B datagram；SCTP 上下行各 1200 B 与 1400 B packet budget，8 KiB message。每个 case 默认 5 秒，case 之间间隔 500 ms；全部 case 顺序执行、不 fail-fast。
 
-当前H2Loader layout的TCP收发窗口均为11520、接收邮箱为12，TCP/IP任务优先级为22且固定CPU0，与Tiga/Zero ESP一致；Wi-Fi/lwIP仍优先使用PSRAM。此前65535窗口的吞吐数字保留为历史测量；各版本的GizClaw功能验证见[Session E2E](./gizclaw_e2e)，不把它作为新的iperf吞吐结果。
+当前H2Loader layout的TCP收发窗口均为11520、接收邮箱为12，TCP/IP任务优先级为22且固定CPU0，与Tiga/Zero ESP一致；Wi-Fi/lwIP仍优先使用PSRAM。
 
 ## Wi-Fi 与 lwIP 配置
 
@@ -50,13 +50,4 @@ I (12345) iperf_e2e: H2_IPERF_E2E_CASE {"v":1,"target":"amoled","id":"udp_tx_20m
 
 `rx_bps` 是接收端统计的吞吐，UDP 的 `lost` 与 `jitter_us` 来自接收端；portable App 的所有输出都经由 Log PAL，在 ESP 上以 `iperf_e2e` 作为 ESP-IDF log tag 输出。
 
-2026-09-02 在信道 11、host 位于路由器另一子网、`H2_IPERF_POWER_SAVE=0` 下的实测（每 case 5 秒，射频波动大，单次结果不能当作门限）：
-
-| 条件 | UDP 上行（板→host） | UDP 下行（host→板，20 Mbit/s 目标） | TCP 上/下 | SCTP 上/下（1200 B） |
-| --- | --- | --- | --- | --- |
-| BLE 广播开启（默认） | 2.3–2.4 Mbit/s，零丢包 | 2.0 Mbit/s，丢包 87% | 0.7 / 0.9 Mbit/s | 0.9 / 1.1 Mbit/s |
-| `H2_IPERF_BLE_ADV=0` | 7.6–8.4 Mbit/s，零丢包 | 12.4 Mbit/s，丢包 33% | 5.3 / 4.8 Mbit/s | 5.8 / 5.1 Mbit/s |
-
-广播开启时的差距来自 ESP-IDF 的 Wi-Fi/BLE 共存调度，而不是广播本身占用的空口：把广播间隔从 100 ms 放到 1000 ms、`esp_coex_preference_set(ESP_COEX_PREFER_WIFI)` 都没有改善，只有暂停广播实例或停止控制器才恢复；`CONFIG_BT_CTRL_MODEM_SLEEP` 让上行回到约 5.4 Mbit/s 但仍远低于暂停广播，且需要单独验证稳定性。
-
-当次历史试验中，TCP窗口11520时受窗口限制；把 `TCP_WND`/`TCP_SND_BUF` 提到65535（缓冲在 PSRAM，internal free 不变），TCP 上/下升到 7.1 / 5.3 Mbit/s，剩余差距来自丢包引起的拥塞窗口收缩。UDP 下行的丢包发生在设备接收侧。同一块 devkit 上纯 ESP-IDF iperf 示例（无 BLE、无 H2Loader）为 TCP 22/35 Mbit/s、UDP 下行 20 Mbit/s；把 GizOS 的 iperf server 镜像用同一 layout 配置烧到 devkit（广播暂停）得到 TCP 16–20/21–22、UDP 19.5/20 Mbit/s，与 IDF 示例持平，说明 PAL 与 `libs/iperf` 没有额外开销，AMOLED 的差距来自板级射频。IDF 示例上 `SPIRAM_XIP_FROM_PSRAM` 约损失 30% TCP、`SPIRAM_TRY_ALLOCATE_WIFI_LWIP`（Wi-Fi/lwIP 堆内存优先分配到 PSRAM，代码位置不变）约 25%，AMOLED 上 PSRAM 降到 80 MHz 无变化。矩阵结束后输出 `H2_IPERF_E2E_SUMMARY ... udp_tx_bps=... udp_rx_bps=... sctp_tx_bps=... sctp_rx_bps=...` 与 `H2_IPERF_E2E_AMOLED stage=summary status=PASS|FAIL ...`，并在 `matrix_start`/`matrix_end` 和每个 case 前后给出三类 heap 的 KiB checkpoint。有效结果必须包含 exact package checksum、`amoled/esp32s3` identity、LAN server 地址、完整矩阵 JSON 与 heap checkpoint；只有 firmware build 或 package Stage 不能算真实设备通过。
+矩阵结束后输出 `H2_IPERF_E2E_SUMMARY ... udp_tx_bps=... udp_rx_bps=... sctp_tx_bps=... sctp_rx_bps=...` 与 `H2_IPERF_E2E_AMOLED stage=summary status=PASS|FAIL ...`，并在 `matrix_start`/`matrix_end` 和每个 case 前后给出三类 heap 的 KiB checkpoint。有效结果必须包含 package checksum、`amoled/esp32s3` identity、LAN server 地址、完整矩阵 JSON 与 heap checkpoint。

@@ -27,4 +27,4 @@ Board defaults 启用 16 MiB/80 MHz flash、8 MiB octal PSRAM、PSRAM XIP、Wi-F
 用 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 只选择结构化 identity 为 `board=waveshare_esp32s3_a7670e_4g`、`target=esp32s3`、`active_role=loader` 的设备。完成证据必须来自设备重启后重新连接，而不是 package 传输成功：
 
 - App 安装：运行 Partition 2，active identity 的 role/version/board/target/image checksum/size 与目标 package manifest 一致，Partition 2 metadata valid，Stage invalid。
-- Loader self-update：运行 Partition 1，active identity 与目标 package manifest 一致，`boot_intent=AUTO`，Partition 1/2 metadata valid 且 image checksum 相同，Stage invalid。
+- Loader self-update：按 [Loader 更新](../../update/loader) 核对运行身份、Partition 1 和 Stage 终态。

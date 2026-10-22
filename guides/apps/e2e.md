@@ -73,7 +73,7 @@ Atomic 是独立 library，不属于 PAL。`projects/e2e/apps/atomic/app` 的固
 
 DevKit 与 BK7258 分别在内部 RAM 和 PSRAM wrapper placement 运行整套资格，每次 boot 要求 56/56 与 20/20 joins。两平台的实际 atomic backing 都必须在内部 RAM，必须观察 CPU0/CPU1 与 live object/allocation 清理；不能从 task policy 名推断实际 core。DevKit 另检查两枚地址独立的 file-static flag、PSRAM 动态 wrapper/internal backing，以及 CPU0 上优先级 4/9 的两名 worker 在 ready/go barrier 后各执行 20,000 次操作。直接 C11 只在受支持的内部 RAM 做独立对照；Xtensa PSRAM backing 不受支持，不执行该实验，也不把它混入 H2Atomic 必测资格。
 
-旧 DevKit UID `9888e0115c52` 的记录中，六轮 H2Atomic counter 达到目标，但三轮 direct-C11 PSRAM 对照丢 count，App 仍无条件 confirm。这是历史实验，不能当完整接口验收。当前 launcher 只有全部必测与 cleanup 成功才确认 App；direct device test 必须核对显式 port/UID、原 P1 与空 Stage（只允许继续完全相同的既有 package）；suite 与严格 PAL resource comparison 后才启动串口 command service。实际 cleanup 和 confirm 成功后，才重放包含每次真正 boot 独立 crypto execution identity 的不可变 ledger；managed version 必须不同于当前 App；排除 CLI 接受 reboot 前的所有 replay，升级与独立 App reboot 必须观察不同 identity 下完整的 56-case ledger。最终回读 package/version/image、原 P1 与空 Stage；已有 coredump 实际读取并逐字节比较，空 dump 只校验原 blank status，不伪造内容或 digest。Live target 声明 `manual`/`external`，artifact build cache 保持启用。完整运行命令和 source/artifact 证据身份见 `projects/e2e/apps/atomic/README.md` 与生成的资格收据。
+Launcher 只有全部必测与 cleanup 成功才确认 App；direct device test 必须核对显式 port/UID、原 P1 与空 Stage（只允许继续完全相同的既有 package）；suite 与严格 PAL resource comparison 后才启动串口 command service。实际 cleanup 和 confirm 成功后，才重放包含每次真正 boot 独立 crypto execution identity 的不可变 ledger；managed version 必须不同于当前 App；排除 CLI 接受 reboot 前的所有 replay，升级与独立 App reboot 必须观察不同 identity 下完整的 56-case ledger。最终回读 package/version/image、原 P1 与空 Stage；已有 coredump 实际读取并逐字节比较，空 dump 只校验原 blank status，不伪造内容或 digest。Live target 声明 `manual`/`external`，artifact build cache 保持启用。完整运行命令和 source/artifact 证据身份见 `projects/e2e/apps/atomic/README.md` 与生成的资格收据。
 
 ## H106
 
@@ -83,7 +83,7 @@ DevKit 与 BK7258 分别在内部 RAM 和 PSRAM wrapper placement 运行整套�
 
 ## PAL
 
-旧混合 PAL App 与各平台 launcher 已下线。Core、Storage、Net/TLS、HTTP、MQTT 和 Wi-Fi/Netif 由上表各独立 App 负责；各自的 README 定义 case registry、真实 provider、资格与清理合同。PAL E2E v2 当前已有入口的矩阵为 Desktop、WASM、ESP、BK、iOS、Android 六平台；待补平台覆盖为 Linux、Windows、JieLi 三类。JieLi 之前未进行 v2 验收，现纳入后续接入范围。迁移与缺口清单统一记录在 `projects/e2e/apps/README.md`；IPv6 接入由独立任务负责，raw Net/TLS 按手动测试运行，不在 CI 执行。
+Core、Storage、Net/TLS、HTTP、MQTT 和 Wi-Fi/Netif 由上表各独立 App 负责；各自的 README 定义 case registry、provider、资格与清理合同。PAL E2E v2 提供 Desktop、WASM、ESP、BK、iOS、Android 入口，平台覆盖见 `projects/e2e/apps/README.md`。raw Net/TLS 按手动测试运行，不在 CI 执行。
 
 Desktop public MQTT smoke 使用独立 MQTT App，保留 `H2_MQTT_SMOKE_*` endpoint policy，直接指定 manual target：
 
@@ -93,8 +93,6 @@ bazel test --config=macos_arm64 --cache_test_results=no \
 ```
 
 `Live E2E` 的 `pal` / `all` scope 使用该入口，public smoke 不能代替 36-case MQTT 资格。默认自动测试继续运行独立 HTTP/MQTT loopback fixture 和 Storage 生命周期测试。`scripts/test/test-web.sh` 显式运行独立 Core、Storage、HTTP 和 Wi-Fi/Netif；raw Net/TLS 及 Browser unsupported boundary 通过各自的 manual label 按需执行，Browser raw socket 不可用不计作功能 PASS。
-
-旧 App 的历史 qualification/evidence 保留其原 source/artifact 身份；已移除的 launcher 不再作为当前平台能力或可运行入口。JieLi 的旧体系退役记录与后续 v2 接入分别登记。
 
 ## H2Loader Serial
 
@@ -127,7 +125,7 @@ bazel test --config=macos_arm64 //projects/e2e/targets/cc_test/gizclaw:gizclaw_h
 bazel test --config=macos_arm64 //projects/e2e/targets/cc_test/gizclaw:gizclaw_pion_live_test --test_arg=--endpoint=<e2e-host:port>
 ```
 
-DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，使用 H2Peer 与明确注入的受控 E2E endpoint、RuntimeProfile、key/value、token 和 HTTPS fixtures；旧 default/deploy-default 运行记录保留原身份。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；构建时设置 `--define=H2_GIZCLAW_E2E_VOICE_ONLY=1` 可只运行 `voice`，用于隔离跨 case 的资源状态。断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行选中的独立 case，launcher 在完成后每 10 秒重放 bounded summary。普通 GizClaw E2E 仅在本轮选定用例全部通过、结果完整且没有清理失败/保留资源时确认 App。失败镜像保持未确认；AMOLED 显式 OTA-only 的源镜像准备仍遵循独立硬件升级流程。
+DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，使用 H2Peer 与明确注入的受控 E2E endpoint、RuntimeProfile、key/value、token 和 HTTPS fixtures。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；构建时设置 `--define=H2_GIZCLAW_E2E_VOICE_ONLY=1` 可只运行 `voice`，用于隔离跨 case 的资源状态。断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行选中的独立 case，launcher 在完成后每 10 秒重放 bounded summary。普通 GizClaw E2E 仅在本轮选定用例全部通过、结果完整且没有清理失败/保留资源时确认 App。失败镜像保持未确认；AMOLED 显式 OTA-only 的源镜像准备仍遵循独立硬件升级流程。
 
 DevKit 的完整证据账本按需分块增长，保留 384 KiB 上限；冻结后逐块重播相同原始字节、record 计数和 CRC32，不创建另一份连续副本。Fixture 的响应 arena 仅在清理业务资源时申请，peer-only 清理不依赖额外的 64 KiB 分配；WebRTC 观察包装器保留调用方指定的 peer allocator。内存分配失败、未收到删除 ACK、清理残留或证据不完整仍按原标准失败，不调整产品 SDK 配置或测试容量、断言与超时。
 
@@ -135,9 +133,9 @@ GizClaw E2E 可用 `fixture_allocator` 显式借用 consumer 提供的内存池�
 
 GizClaw 的可选 `app_config_fixture_workflow_tag` 通过既有 fixture 输入通道选择精确标签，默认 `assistants`；Session、两套 Workflow list 与原标签成员检查保持一致。结构化目录须显式提供相应标签，不能忽略空目录或放宽原断言。Device fixture 沿用原 64 KiB 音频 ring 和客户端默认预缓冲，保留完整音频流、原业务用例、236 接口审计及时间预算。
 
-DevKit 的 E2E runner、launcher 和 job task 显式使用 PSRAM stack；runner 入口以实际栈局部地址检查 PSRAM，失败时报告 harness error。`$gizclaw/net` 也使用 PSRAM，DevKit E2E policy 为它保留 64 KiB：在同一块 DevKit（UID `9888e0115c52`）上，原 32 KiB 实际栈曾在 Voice 的 `session_audio_start` 后溢出并重启。64 KiB 复测越过了该溢出点，`all` 的两轮实机测试分别为 8 项中 4 项通过、4 项失败：第一轮 `cleanup_rc=0`、`retained_resources=0`，第二轮出现 `peer_create_data_channel rc=-13`，`cleanup_rc=-4`、`retained_resources=8`。独立的 `voice` 实机测试中，PTT、文本、实时 VAD、service 重连和清理均通过，`selected=1`、`pass=1`、`cleanup_rc=0`、`retained_resources=0`。DevKit 无音频后端，其测试不作为真实麦克风和扬声器验收。测试没有取得 `$gizclaw/net` 的 stack high-water 数据，因此 64 KiB 不能作为其他固件 target 的容量结论。
+DevKit 的 E2E runner、launcher 和 job task 使用 PSRAM stack，runner 以实际栈局部地址检查，失败报告 harness error。`$gizclaw/net` 的测试预算为 64 KiB PSRAM；该配置不代表其他固件 target 的容量要求。DevKit 无音频后端，其测试不作为真实麦克风和扬声器验收。
 
-AMOLED GizClaw E2E 使用板载 ES8311 的真实音频 delegate，并以局部栈地址检查 runner 确实在 PSRAM；该目标的 `$gizclaw/net` 测试 policy 同样为 64 KiB PSRAM。初次实机测试在 voice-replace 的 `peer_create_data_channel` 返回 `-13`，随后清理也失败；定位发现 `libs/app_test` 的 WebRTC 观察包装器每个 peer 固定保留 16 个 channel 句柄直到 peer 关闭，第 17 个句柄被包装器拒绝，底层 H2Peer 并未返回该错误。包装器改为按需分配稳定句柄后，UID `30eda0ae0f86` 上的完整 `voice` 测试通过：PTT、文本、history-play、实时 VAD、voice-replace、重连及清理均通过，真实音频 delegate 报告 `mic_starts=1`、`capture_frames=446`、`capture_first_error=0`、`capture_last_error=0`；最终 `selected=1`、`pass=1`、`cleanup_rc=0`、`retained_resources=0`。这只说明本轮创建的资源已清理；先前失败轮次的远端残留没有可用于安全定点删除的 ID。64 KiB 仅为此 E2E 目标的测试预算，尚无 stack high-water 证据支持推广到产品目标。
+AMOLED 的 runner 使用 PSRAM stack，`$gizclaw/net` 的测试预算为 64 KiB PSRAM。音频 delegate 选择、完整 suite 的确认条件和设备运行流程见 [AMOLED GizClaw E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 
 真实 RegistrationToken 由 repository-approved test launcher 固定，或由 CI environment 注入。Token、private key、authorization metadata、Firmware URL、原始音频与 unrestricted response body 不得进入日志或 artifact。
 
@@ -193,7 +191,11 @@ ESP Display 入口可通过 `H2_DISPLAY_CAPTURE_HEADER` 与 `H2_DISPLAY_CAPTURE_
 
 Desktop 从 SDL renderer 读回，Browser 比对真实 Chromium composited screenshot，移动端捕获已显示的 UIKit/Android View。移动端分别消费实际 Swift Package/XCFramework 和 AAR，manual 入口为 `make bazel-test-ios_pal_display_simulator_test` 与 `make bazel-test-android_pal_display_simulator_test`。
 
-AMOLED 比对已完成 SPI DMA 的传输数据；BK 比对 LCD controller 当前 DMA source 并检查 refresh counter。两者均不代表光学像素或实际亮度测量。物理图案及稳定性需要相机/readback fixture 或用户明确观察确认；亮度控制使用真实控制器命令/PWM 更新和 mandatory ledger 验证，人工逐档观察及光度测量单独记录。设备必须在 managed 安装启动和独立正常 reboot 后各自完成测试，保留原 Loader/P1 与 coredump，最终 Stage 空且 App confirmed。具体能力 profile 和证据边界见 [PAL Display App](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-display)。
+AMOLED 比对已完成 SPI DMA 的传输数据；BK 比对 LCD controller 当前 DMA source 并检查 refresh counter。两者均不代表光学像素或实际亮度测量。物理图案及稳定性需要相机/readback fixture 或用户明确观察确认；亮度控制使用真实控制器命令/PWM 更新和 mandatory ledger 验证，人工逐档观察及光度测量单独记录。
+
+测试图为带白色边框的红、绿、蓝、白四象限及 RGB primary patch；越界亮度必须失败并保留实际亮度。
+
+安装前核对 UID、端口占用、P1/P2、Stage 和 coredump 基线，通过 `send --file` 校验 Stage 后执行 `reboot upgrade --monitor`；必须看到新 BOOT、run ledger 和 `H2_DISPLAY_READY rc=0 confirm=0`。managed 安装启动和独立 `reboot app --monitor` 后均须完成测试，失败不 confirm，replay 不计作新执行。最终 App confirmed、Stage 空、running/next=App，原 P1 和 coredump 不变；源码、package 和 report hash 写入结果，原始 serial log/dump 保存在本地。具体能力 profile 和证据边界见 [PAL Display App](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-display)。
 
 ## WebRTC Performance
 
@@ -221,33 +223,7 @@ App-local `iperf_e2e_test` 用 `//libs/iperf:test_support` 在 loopback 上对�
 
 ## Validation Boundary
 
-`projects/e2e/apps/pal-wifi` independently maps all 21 STA/AP/Settings/Netif
-operations to 38 portable cases and one separate-boot persistence case.
-DevKit/BK7258 qualification needs real WLAN scan/authentication/DHCP and an
-AMOLED AP/STA fixture that joins and leaves each DUT AP. The launcher makes a
-private crash-recovery credential backup before mutations; restores original
-Settings and network; removes the backup; and only confirms a complete qualified
-boot. Without saved STA credentials, the portable suite rejects an active or
-indeterminate initial connection before mutation, and verifies disconnected
-status again during restoration. A first seed boot is pending persistence and is not confirmed; ESP's
-unconfirmed-image rollback means that seed can precede a different managed
-image under the fixed v1 record contract. Receipts keep each actual version;
-the final confirmed artifact also passes an ordinary App reboot. macOS uses
-native Netif read-only; WASM tests HOST Netif offline/online Runtime delivery;
-iOS/Android default SDK assembly explicitly reports unsupported. A host capability
-contract PASS is not physical WLAN qualification. Wi-Fi CSI is separate.
-The AP+STA route case uses an independently saved infrastructure AP when present,
-retaining real addressing and explicit AP→STA route/event assertions. Standalone
-open/hidden AP modes disconnect that upstream STA before using their requested
-channel. BK uses paired AP/CP actual association/disassociation commands and SDK
-MIN/MAX listen-interval readback; these do not claim measured radio power.
-The source/package/status/coredump audit is separate from portable historical
-receipt consistency. Entrypoints and evidence live with the independent App README.
-The final DevKit R35 and BK7258 R34 images each passed 39/39 on both managed install
-and a separate ordinary App boot, with six fresh fixture clients per qualified
-boot, complete Settings/network restoration, empty Stage and unchanged P1 and
-coredump baselines. macOS, WASM, iOS Simulator and Android Emulator each passed
-21/21 applicable capability checks; they do not qualify physical WLAN.
+`projects/e2e/apps/pal-wifi` independently maps all 21 STA/AP/Settings/Netif operations to 38 portable cases and one separate-boot persistence case. DevKit/BK7258 qualification needs real WLAN scan/authentication/DHCP and an AMOLED AP/STA fixture that joins and leaves each DUT AP. The launcher makes a private crash-recovery credential backup before mutations; restores original Settings and network; removes the backup; and only confirms a complete qualified boot. Without saved STA credentials, the portable suite rejects an active or indeterminate initial connection before mutation, and verifies disconnected status again during restoration. A first seed boot is pending persistence and is not confirmed; ESP's unconfirmed-image rollback means that seed can precede a different managed image under the fixed v1 record contract. Receipts keep each actual version; the final confirmed artifact also passes an ordinary App reboot. macOS uses native Netif read-only; WASM tests HOST Netif offline/online Runtime delivery; iOS/Android default SDK assembly explicitly reports unsupported. A host capability contract PASS is not physical WLAN qualification. Wi-Fi CSI is separate. The AP+STA route case uses an independently saved infrastructure AP when present, retaining real addressing and explicit AP→STA route/event assertions. Standalone open/hidden AP modes disconnect that upstream STA before using their requested channel. BK uses paired AP/CP actual association/disassociation commands and SDK MIN/MAX listen-interval readback; these do not claim measured radio power. Entrypoints, receipts and the source/package/status/coredump audit are defined in the independent App README.
 
 Portable/desktop tests 证明 case contract、provider assembly、parser、failure aggregation 与 cleanup。Live GizClaw 证明真实 E2E service flow。Firmware build 只证明对应 SDK graph 可以产生 image；DevKit/BK7258 必须继续通过 H2Loader-first install、confirm 与 cold-boot 验收，BK3633 必须按 Board guide 验证完整 `merge-crc.bin` 与两次 cold boot。任何一层不能代替另一层。
 
@@ -267,7 +243,7 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 
 Storage 必须分三个独立进程或 boot 执行：seed 阶段执行 31 项并提交与 nonce 绑定的数据，verify 阶段执行 3 项，读回文件、16 KiB Blob、全部 Preferences 类型和覆盖写结果，再对 namespace A 逐键 remove+commit、namespace B clear+commit 并删除专用文件路径；clean-verify 阶段执行 2 项，使用全新 provider 确认测试键和文件路径均已持久删除。宿主最后再次启动检查完成状态仍为空；该重复结果单列，不增加唯一 case 通过数。只有全部阶段 case 清单、nonce、contract、版本、返回值和 cleanup 匹配才授予资格。Desktop/macOS 使用真实 OS FS 和 SQLite，Web 使用 IDBFS/localStorage 并重新启动整个浏览器，移动端使用实际 SDK 包中的原生 storage owner，并在四次独立 App 进程间保留 sandbox、核对 provider 导出与 SDK 字节。DevKit 使用板载 Flash LittleFS，BK7258 使用 SD FATFS 和 FlashDB；板级测试数据限定在 `/data/pal-storage` 和 `h2storea`/`h2storeb`，`h2storectl` 保存实际镜像版本、契约版本、nonce 和下一阶段。
 
-命令与平台证据见 `projects/e2e/apps/pal-storage/README.md` 和 `qualification-v2.json`。iOS/Android 模拟器直接使用 `//projects/e2e/targets/ios_application/pal-storage:ios_pal_storage_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-storage:android_pal_storage_simulator_test`，显式指定测试设备。外部设备与已启动模拟器的测试是 `manual`，每轮执行关闭测试结果缓存，构建缓存保持启用。历史契约 1 的 30-case 证据保留原始身份，不能代替契约 2 的新增强度；正常重启验证不表示断电原子性或物理介质寿命已验证。
+命令与平台证据见 `projects/e2e/apps/pal-storage/README.md` 和 `qualification-v2.json`。iOS/Android 模拟器直接使用 `//projects/e2e/targets/ios_application/pal-storage:ios_pal_storage_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-storage:android_pal_storage_simulator_test`，显式指定测试设备。外部设备与已启动模拟器的测试是 `manual`，每轮执行关闭测试结果缓存，构建缓存保持启用。正常重启验证不表示断电原子性或物理介质寿命已验证。
 
 BK 的物理 FlashDB 分区为 128 KiB，其中原 `h2_pref` 保留 24 KiB/4 KiB sector 和已有编码，尾部 `h2_pref_large` 使用剩余 104 KiB。大值以真实 FlashDB 的不可变分片和最后发布的 manifest 保存，读取验证完整 generation，迭代只返回逻辑键和值大小；旧 Loader 的小值和管理数据继续走原区。未知非空尾部拒绝自动格式化。固定 SDK 的 GC/恢复错误由带原文件 SHA 校验的构建 overlay 修复，SDK checkout 不变；真实 NOR 回归和私有实板备份兼容检查分别验证故障恢复和旧值不变。实现及边界见 `native_component_src/bk7258/ap/h2_pal_core/tests/README.pref-large.md`。硬件诊断等待预算不减少 16 KiB、1000 次写入或五次 boot 的要求。
 
@@ -285,7 +261,7 @@ iOS/Android 消费实际 SDK 包导出的显式 MQTT owner；owner 持有本平�
 
 Desktop 直接运行 `//projects/e2e/targets/cc_binary/pal-mqtt:desktop_test`；移动端分别使用 `//projects/e2e/targets/ios_application/pal-mqtt:ios_pal_mqtt_simulator_test` 和 `//projects/e2e/targets/android_binary/pal-mqtt:android_pal_mqtt_simulator_test`。公网 `:public_broker_test` 为 `manual`/`external`，同一 App 的单个 QoS0 round trip 只授予该子集通过，不能代替完整 registry。连接成功但没有 CONNACK 的负例预算由 launcher 注入，仍须 broker 实际观察到 CONNECT，并验证有限 deadline 的上下界；未到达 broker 的 TCP timeout 不满足该负例。入口、命令与平台能力边界见 `projects/e2e/apps/pal-mqtt/README.md`；缺少 raw TCP/TLS MQTT provider 的 Browser 保持明确 unsupported，不能把 host 结果当作六平台资格。
 
-新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，当前 verifier 拒绝缺少终态或以 confirm=0 绕过该时序的记录。ESP 入口按既有 SDK console 选择 UART 或 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。历史 BK 导入只运行并校验 capture 内的 `host-verifier.py`，其旧 confirm=0 schema 保留原含义；旧资格保留原 host/verifier/fixture schema，不能改称当前修订版 hardware PASS。
+新硬件 capture 的 BK/DevKit 均须 fixed-source package binding；首份 boot/RUN 不完整时后续 replay 或新 startup 不能替代。两者先完整交付首轮 ledger 与 READY(confirm=pending)，再确认 App 并交付实际 CONFIRMED，当前 verifier 拒绝缺少终态或以 confirm=0 绕过该时序的记录。ESP 入口按既有 SDK console 选择 UART 或 USB JTAG PAL，逐条检查有界 write 的完整字节数和真实 TX flush；BK 保留原有 UART owner 与管理恢复流程。TLS 拒绝分别绑定实际 CA/hostname alert 与观察到的正常/错误 server-name，null 或缺失 SNI、两个同类失败均不能通过。LAN fixture 要求显式 `--evidence` 保存实际 CA/config/inputs。
 
 ## PAL Crypto E2E
 

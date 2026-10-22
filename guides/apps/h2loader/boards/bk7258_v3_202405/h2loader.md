@@ -36,7 +36,7 @@ Loader 与 App 使用各自的分区表，分别链接到最终地址。上表�
 
 ## 平台配置
 
-公共 BK Preference provider 为每个 namespace handle 分配独立状态，在关闭后释放；并发数量由实际 allocator 余量决定。不要继续使用关闭后的 handle 或 cursor。并发读写仍使用公共 FlashDB 的数据库与事务锁，格式和持久化语义不变。2026-10-02 的 H106 E2E 诊断发现，旧四槽池在多个启动任务同时打开设置、使用限额和身份 namespace 时返回 `H2_PAL_ERR_NO_MEMORY`，当时内部堆空闲 136344 bytes、PSRAM 空闲 4814344 bytes；因此不能将该失败归因于堆耗尽。
+公共 BK Preference provider 为每个 namespace handle 分配独立状态，在关闭后释放；并发数量由实际 allocator 余量决定。不要继续使用关闭后的 handle 或 cursor。并发读写仍使用公共 FlashDB 的数据库与事务锁，格式和持久化语义不变。
 
 Loader 和 H2Loader APP layout 使用 AP 直驱的 UART1 承载 managed UART 与 AP 日志，固定为 460800 8N1。板级 AP defaults 选择 UART1，GPIO 表同时声明 P0=`UART1_TXD`、P1=`UART1_RXD`；SDK 会拒绝映射未出现在该表中的引脚，因此只修改串口号不足以启用 UART1。USB 转串口的 RXD 接 P0/TX，TXD 接 P1/RX，并与开发板共地。UART0 保留 ROM 下载与 CP 日志，UART0 转串口的 RTS 可以接 CEN 控制复位；两路串口可同时连接，均不启用硬件流控。
 
@@ -87,75 +87,4 @@ BK 条件变量等待使用栈上的静态信号量，但 SDK 仍为每个信号
 
 运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 后，只选择结构化 identity 为 `board=bk7258_v3_202405`、`target=bk7258`、`active_role=loader`、`transport=iostreamikcp` 的设备。APP 或 Loader 状态都可以通过 `send --file <build-dir>/update.tar.zlib` 直接发布 Stage；安装使用 `reboot upgrade`。
 
-固定布局验收需要确认：Loader 镜像为 2437120 字节，App 为 5222400 字节；UART1 安装后 App 的实际 PC 落在独立 XIP 地址，SDK native slot 仍为 A；已确认 App 在复位（包括 App 启动过程中连续复位）后由 CP 直接进入；`reboot loader`/`reboot app` 往返；确认前崩溃的 App 回到 Loader 且不再自动启动，重新安装正常 App 后恢复；正常 App 安装不覆盖 Loader。此前等大窗口的自升级验收不能代替此项验证。
-
-2026-09-11 Loader 自升级验收（`0.1.62-lu-a`/`0.1.62-lu-b`，`e2e-h2loader-serial --suite loader-update`）：从 App 出发 A→B PASS（266 s），从 Loader 出发 B→A PASS（268 s），同镜像在修改设备前拒绝（`rc=-7`）。UART1 日志依次出现 `native_slot=0`、`role=loader-relay native_slot=1`、拷回事件、`native_slot=0`。拷回开始 3 秒后 RTS 复位 CEN，设备回到 `native_slot=1` 重新拷回并完成升级。随后重装 App，复位直接进入 App。未做断电测试。
-
-2026-09-10 以 Loader、ble-broadcaster 和 crash-before-confirm `0.1.60-fixed-xip` 完成上述矩阵（RTS 接 CEN 复位，未做断电测试）：Loader `pc=0x02143d76`、App `pc=0x0237ad12`，`native_slot=0`；复位后 UART0 只出现 App CP；启动第 0/8/11 秒连续三次复位后 App 正常完成 BLE 自检；crash-before-confirm 在 App 地址 MemFault 后停在 Loader，P2 为该包、Stage 保留；随后重新安装 ble-broadcaster 恢复为已确认 App。
-
-## 旧等大布局的历史验证
-
-以下记录针对迁移前的 A/B 布局，不代表当前固定地址启动和 Loader 更新路径已通过这些矩阵。
-
-2026-09-10 的 UART1 实板验证在 460800 下完整上传并校验 1,691,172 字节的
-`0.1.17-bk-e2e` Loader 包，Host 最后一次累计进度报告为 27,804 bytes/s。
-自升级完成后确认运行 Partition 1、Partition 1/2 package 与 image checksum 一致、
-Stage invalid。该速度包含 Host 上传流程的准备与校验开销，不包含板内解包和写 Flash。
-这条结果只覆盖本次 UART 上传和 Loader self-update，不能替代全部 UART/BLE、APP、
-coredump 与真实断电重启矩阵；完整报告继续使用同一个 runtime-flag e2e-runner。
-
-同日 `0.1.32-bk-e2e` 的 UART 实板生命周期回归达到 24/24 PASS，覆盖 Loader/App
-命令、收包与 abort、带日志的重启、跨重启 Stage 保留、Loader 自升级、未确认 APP
-自动回滚，以及 coredump 查询、读取、擦除和空白复查。测试前先确认 coredump 为空，
-崩溃 fixture 随后生成并读回 32 字节证据；这不是完整 CPU 栈转储。
-该轮未配置 Wi-Fi/URL 下载，也不包含真实断电测试，不能代表这些项目或 BLE 已通过。
-
-BLE App 上传在 `0.1.37-bk-e2e` 复现收包完成后 `step=validate code=-6`。
-Host 必须把完整的 `H2_LOADER_STAGE_RECEIVE result=fail` 行视为终态：设备不会再
-发送 Stage commit 结果，不能继续等待第二个标记或按传输超时重试整包。该退出行为
-已经过实板复现和 `h2loader_host_test` 的分段响应、行边界测试。该次校验错误随后定位为下述 PSRAM 分配问题并修复。
-
-BK App 的 command/package allocator 使用 PSRAM：BLE 活跃时，默认 SRAM heap
-无法满足 zlib 的连续 32 KiB window 分配，实测 `inflate` 返回 `Z_MEM_ERROR`。
-`0.1.40-bk-e2e` 改用 PSRAM 后，App BLE 上传 1,717,524 字节、校验、Stage 提交
-及 status checksum 核对均通过；最终双传输回归结果见下文。
-
-`0.1.41-bk-e2e` 的 BLE 离线生命周期报告为 20/21 PASS：上传、App/Loader
-更新、Stage 重启保留、崩溃回退、coredump 读取及擦除后为空均通过。唯一失败为
-coredump erase 的成功响应丢失（连接关闭，SDK disconnect reason `0x08`）。
-BK Loader/App 的 coredump 扇区擦除循环现于每个成功擦除后休眠 10 ms，
-为 BLE 通信任务保留运行机会。`0.1.42-bk-e2e` 的 BLE 定向短测已收到
-`H2_LOADER_COREDUMP_ERASE result=OK`，随后 status 确认 368,640 字节区域
-`stored_bytes=0 blank=1`。该短测起始区域为空；后续完整回归也验证了崩溃 fixture 数据的擦除。
-
-同版 BLE 完整回归曾因崩溃包上传中的 `WOULD_BLOCK` 提前结束（18/21 PASS）。
-BLE 输出重试耗尽会关闭流并保留该状态；Host Stage 恢复现将它纳入已有的有限
-重连流程，重新核对 Stage 身份，仅在未提交且状态兼容时重传。
-`h2loader_host_test` 已验证未提交 Stage 的背压恢复及完整包重传；后续实板完整回归通过。
-完整回归通过不代表该轮必然触发了背压，故障注入覆盖来自上述测试。
-
-`0.1.42-bk-e2e` 配合背压恢复修复后的 Host，BLE 离线完整生命周期回归
-达到 21/21 PASS（约 22.8 分钟）。包括 Loader/App 上传、取消、安装、两种
-Stage 重启保留、Loader 更新、崩溃回退及 32 字节测试 coredump 的读取、
-擦除成功响应、擦除后为空检查。该轮不含 Wi-Fi/URL 或真实断电验收；
-同版本 UART 结果见下文。
-
-同一组 `0.1.42-bk-e2e` 包与同一 Host 修复版本的 UART 离线完整回归
-亦达到 24/24 PASS（约 22.2 分钟），包含串口 monitor、升级/重启 monitor、
-App/Loader 生命周期、崩溃回退以及 coredump 读/擦/空验证。两份报告的
-App、Loader、crash 包 SHA256 均与归档产物一致。Wi-Fi/URL 和真实断电
-不在这两份离线报告范围内。
-
-
-最终报告归档于 [UART 报告](./evidence/2026-09-10/uart42-lifecycle.json) 和
-[BLE 报告](./evidence/2026-09-10/ble42-recovery-lifecycle.json)，对应
-[固件包身份](./evidence/2026-09-10/artifacts.json)。
-
-失败 App 的 Stage 清空后又完成一次 RTS 复位补验：`boot_intent=auto`、
-`stage_valid=0`、`active_role=loader`、`running_partition=1`、`next_partition=1`，
-未重新启动失败 App。见 [复位后状态](./evidence/2026-09-10/empty-stage-after-reset-status.txt)。
-此项为 RTS 复位测试。随后用户确认已断电，重新连接同一 UID 后读取
-[断电后状态](./evidence/2026-09-10/power-cycle-status.txt)：Loader 0.1.42、
-运行和下次启动均为 P1、AUTO 启动、Stage 为空、last_result=0。
-这是故障回退与清理后的掉电恢复验证，P2 仍保留 crash fixture 元数据；
-不将其作为 Loader 自升级后 P1/P2 相同镜像的掉电验证。
+固定布局验收需要确认：Loader 镜像为 2437120 字节，App 为 5222400 字节；UART1 安装后 App 的实际 PC 落在独立 XIP 地址，SDK native slot 仍为 A；已确认 App 在复位（包括 App 启动过程中连续复位）后由 CP 直接进入；`reboot loader`/`reboot app` 往返；确认前崩溃的 App 回到 Loader 且不再自动启动，重新安装正常 App 后恢复；正常 App 安装不覆盖 Loader。

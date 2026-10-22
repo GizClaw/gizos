@@ -24,4 +24,4 @@ P4 启用 octal PSRAM、ESP-Hosted SDIO、remote Wi-Fi、NimBLE host、extended 
 
 C6 ready 后，Loader 通过 UART 与 BLE iKCP 接受 command session。`bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 的结构化 identity 必须为 `board=waveshare_esp32p4_wifi6_touch_lcd_4_3`、`target=esp32p4`、`active_role=loader`，服务 ready 时输出 `H2_LOADER_READY target=esp status=ready`。
 
-Hosted 初始化失败不得伪装成 Wi-Fi/BLE ready；保留 UART session 用于查询状态和恢复。正常 Loader 更新使用 `send` 和 `reboot upgrade`，验收覆盖 Partition 2 候选 Loader 启动和 Partition 1 回写；最终 `status` 必须显示目标 version、运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，并在 power-cycle 后复查。
+Hosted 初始化失败不得伪装成 Wi-Fi/BLE ready；保留 UART session 用于查询状态和恢复。正常 Loader 更新使用 `send` 和 `reboot upgrade`；完成条件和断电复查见 [Loader 更新](../../update/loader)。

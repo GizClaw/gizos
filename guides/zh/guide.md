@@ -16,13 +16,7 @@ GizOS 还提供通用的固件管理和切换系统 H2Loader。H2Loader 使用�
 
 ## 核心概念
 
-GizOS 项目由几个核心概念组成：`app` 表达跨平台业务逻辑；`targets` 保存 app 在具体 artifact 或 board 上的最终编译和组装入口；BSP 提供物理 board 的差异配置和 wiring；`native_component_src` 保存由原生 SDK build system 编译的 component source；`libs` 提供 Bazel library、PAL contract、runtime、平台实现和 third-party 跨平台集成；`third_party` 保存外部引入的上游代码。
-
-可由 Bazel 直接编译的平台实现归 `libs/pal/providers`；必须读取最终 SDK config 或由原生 SDK build system 编译的源码归 `native_component_src`。Third-party 路线先由 `libs` 完成跨平台集成，再由这两类 owner 按实际编译边界接入目标平台。BSP 提供当前物理 board 的 GPIO、bus、address、channel、外设实例和 `periph_id` 等 wiring，最终 artifact 的 `targets` entry 同时知道具体 App 和具体 board，负责完整 Runtime 组装与生命周期。
-
-App 基于跨平台 C 代码、`libs` 和 Runtime 实现业务逻辑。它通过 Runtime 操作显示、按键、音频、存储等硬件能力，并消费统一的 event 和 state，不直接依赖芯片 SDK、board wiring 或具体外设实现。这样，同一套 App 代码只需要由不同 `targets` entry 选择对应 BSP、平台实现和映射，就可以运行在不同平台和硬件上。
-
-一组共同维护的 app 可以组成 project group。Project group 使用 `apps/` 保存各个 portable app，使用具名 `libs/<library>/` 保存组内 Bazel library，使用 `native_component_src/<platform-or-target>/` 保存组内专用且由原生 SDK 编译的 component source，并使用 `targets/<artifact-rule>/<app>[/<variant>]` 保存最终产物入口。Project root 不再使用 `components/` 作为 ownership root。H2Loader 就是一个 project group：Loader 固件、被 H2Loader 管理的 app、共用 library、H2Loader 专用 native component source 和具体 image entry 都组织在 `projects/h2loader/` 下。每个 H2Loader image 在 `targets/h2loader_tar_zlib/<image>/<board>/` 提供最终 `:package` target。
+`app` 表达跨平台业务，`targets` 负责最终产物组装，BSP 提供物理 board wiring，`libs` 提供可复用库和 PAL，`native_component_src` 保存原生 SDK 编译的源码，`third_party` 保存上游依赖。详细职责见下方定义，目录规则见 [目录结构](developing/repo_layout.md)。
 
 ## 依赖关系
 
@@ -40,13 +34,6 @@ flowchart TB
     Libs -->|部分跨平台集成| ThirdParty["third_party"]
 ```
 
-依赖关系是：
-
-- `targets` entry 依赖 App、BSP、`libs/pal/providers` 与所需 `native_component_src` graph。
-- `native_component_src` 可以依赖 `libs` 产生的 archive 或 public contract。
-- App 只依赖跨平台 `libs` 和 Runtime contract。
-- 部分 `libs` 依赖 `third_party` 完成跨平台集成。
-
 ## Runtime 组合关系
 
 最终 `targets` entry 与运行 App Runtime 的 BSP 共同提供 Runtime init config。BSP 向 entry 提供 board runtime config，entry 补充 periph-component mapping、调用 `h2_runtime_init()`，再调用 `h2_runtime_input_start()` 启动 input acquisition，最后把获得的 Runtime instance 传给阻塞式 App entry。App 只消费 Runtime，不接触 init config，也不负责 Runtime init/deinit 或 input lifecycle。
@@ -61,13 +48,6 @@ flowchart TB
     Target -->|调用阻塞式 entry| App["app"]
     Runtime -->|传入并使用| App
 ```
-
-组合关系是：
-
-- BSP 向最终 artifact entry 提供 board runtime config。
-- `targets` entry 补充 periph-component mapping，调用 `h2_runtime_init()`，再调用 `h2_runtime_input_start()`。
-- `targets` entry 把 Runtime instance 传给阻塞式 App entry。
-- App 只消费 runtime，并通过 runtime 实现业务逻辑。
 
 ## 定义
 

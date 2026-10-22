@@ -198,7 +198,7 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 
 terminal 后，测试通过 public Workspace history API 查找本轮发送 Gear 对应的新增 Gear entry，要求 transcript 非空且可回放；再 stream 下载 `audio/ogg`，核对 metadata 与接收长度并独立解析、解码 Ogg/Opus。这个 transport gate 不替代 provider 语义质量或真实设备声学验收。
 
-Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-sfu` Workflow）的 Conversation 写入。GizClaw 0.15 起该 Workspace 是 LiveKit SFU 的单工对讲：Server 侧 connector 代表 Peer 入房，Device 保持原有 WebRTC 连接、不感知 LiveKit；下行是锁定一路发言者的 Opus 原样透传，发言者收不到自己的下行。SFU Workspace 没有 History、消息或音频资产，`server.friend_group.messages.*` 已删除，libs/gizclaw 不再提供 friend group message list/get/audio download。发送期间被拒绝的输入以同一 `stream_id` 的 typed EOS error 返回（`SFU_RUNTIME_NOT_ATTACHED`、`SFU_ACCESS_REVOKED`、`SFU_ACCESS_CHECK_FAILED`），App 按 code 结束本轮录音状态，不自动切换 Workspace。Speech transcribe/extract/synthesize 的 RuntimeProfile 投影同样按 Model name 选择，不使用 catalog ID 或 alias。
+Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-sfu` Workflow）的 Conversation 写入。该 Workspace 使用 LiveKit SFU 单工对讲：Server 侧 connector 代表 Peer 入房，Device 保持原有 WebRTC 连接、不感知 LiveKit；下行是锁定一路发言者的 Opus 原样透传，发言者收不到自己的下行。SFU Workspace 没有 History、消息或音频资产，`server.friend_group.messages.*` 已删除，libs/gizclaw 不再提供 friend group message list/get/audio download。发送期间被拒绝的输入以同一 `stream_id` 的 typed EOS error 返回（`SFU_RUNTIME_NOT_ATTACHED`、`SFU_ACCESS_REVOKED`、`SFU_ACCESS_CHECK_FAILED`），App 按 code 结束本轮录音状态，不自动切换 Workspace。Speech transcribe/extract/synthesize 的 RuntimeProfile 投影同样按 Model name 选择，不使用 catalog ID 或 alias。
 
 ### 下行边界与取消
 
