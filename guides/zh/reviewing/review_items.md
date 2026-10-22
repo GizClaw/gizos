@@ -110,8 +110,8 @@ Issue 的 title、类型、正文结构和 Code Changes Tree 要求只用于审�
 
 ## 文档和构建接线
 
-- 开发文档描述合并后的最终结构和行为，不记录临时迁移状态。
-- Issue 计划或实际代码修改 public contract、architecture、ownership、product flow、lifecycle、validation flow 或其他文档约束行为时，所有受影响的 source-of-truth guide 都已逐文件纳入 scope 并说明同步内容；没有文档影响时有 live evidence 支持的明确理由。
+- 代码、Public Header 与可执行配置是事实来源；开发文档只说明用途、结构、流程和使用方式，不维护字段、常量或清单副本。
+- 实现变化影响使用方法、模块关系或验证流程时，同步受影响的说明文档；具体接口、数值和清单只在生产定义中维护，不因代码常量变化而要求更新文档副本。
 - API Reference 来自生产 Public Header，没有维护第二份 declaration。
 - 新文件已加入正确 build source list、manifest、package 或 generator input。
 - 删除和移动同步更新 include、link、navigation、AGENTS 索引和旧路径引用。

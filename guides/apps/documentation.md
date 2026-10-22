@@ -1,11 +1,11 @@
 # 产品文档规范
 
-产品逻辑、页面关系、视觉验收和 Product IA 优先在 Figma 中表达。产品 Guide 负责记录实现需要长期维护的工程合同，并链接到对应 Figma file、page 或 frame；不要求在 Markdown 中重复绘制 Figma 已经清楚表达的流程、原型或 IA。
+产品逻辑、页面关系、视觉验收和 Product IA 优先在 Figma 中表达。产品 Guide 负责解释用途、模块关系、操作与验证方式，生产代码和可执行配置是 SSoT，并链接到对应 Figma file、page 或 frame；不要求在 Markdown 中重复绘制 Figma 已经清楚表达的流程、原型或 IA。
 
 页面型文档按职责组合以下内容：
 
 - **Figma 产品设计**：作为产品逻辑、页面流转、关键状态、视觉验收和 Product IA 的首选载体。
-- **工程合同**：说明 ownership、Runtime 输入、App state、effect、平台边界、资源、持久化、失败行为和生命周期。
+- **工程合同**：解释模块如何协作、用户如何操作以及如何验证；具体接口、状态定义、常量、映射和资源清单链接生产源码，不在文档复制。
 - **工程验收**：记录无法仅从 Figma 原型判断的 Desktop、目标硬件、线程、资源清理、恢复和集成条件。
 
 推荐使用以下完整章节顺序：
@@ -16,13 +16,13 @@
 | 2 | Figma 产品设计 | 对应 file、page 或 frame 的稳定链接，以及本 Guide 覆盖的产品逻辑和视觉范围 |
 | 3 | Runtime 输入与数据来源 | 使用的 component id、Runtime event/state、provider、catalog、transport 或持久化数据，以及每种输入的行为 |
 | 4 | 数据投影 | App state 到 subject、snapshot 或其它 UI state，再到页面的单向投影，以及 effect result 返回路径；关系复杂时可以补图 |
-| 5 | State、Projection、Effect 与生命周期 | 稳定字段、页面草稿、pending、generation、error、异步 effect、初始化、取消、恢复和清理合同 |
+| 5 | State、Projection、Effect 与生命周期 | 解释草稿、异步处理、初始化、取消与恢复的使用含义，字段和状态机直接链接实现 |
 | 6 | 视觉验收 | 默认链接 Figma 中的对应页面和关键状态；需要离线预览时可以补充本地 SVG 或截图 |
 | 7 | 集成与平台边界 | Portable App、Runtime、H2Loader、PAL、board backend 和 launcher 的职责；不适用时可以省略 |
 | 8 | 资源与持久化 | PIXA、Opus、字体、Bundle 路径、preference 或恢复状态；没有额外资源和持久化时明确说明 |
 | 9 | 工程验收 | Figma 无法表达的 Desktop、目标硬件、失败路径、线程边界、生命周期和资源清理条件；没有额外条件时可以省略 |
 
-文档只记录已经确认的最终合同。仍需产品或硬件决定的问题放在对应 Issue，不以“待确认”列表留在最终开发文档中。Board 配置、资源清单、wire protocol 和纯后台集成等非页面型配套文档可以使用与其职责匹配的表格、packet diagram 或清单，不强行添加空的页面流程和 SVG。
+文档只解释已经存在的实现，不作为配置、代码生成或产品数据的输入源。仍需产品或硬件决定的问题放在对应 Issue，不以“待确认”列表留在最终开发文档中。Board 配置、资源清单、wire protocol 和纯后台集成等非页面型配套文档可以使用与其职责匹配的表格、packet diagram 或清单，不强行添加空的页面流程和 SVG。
 
 除统一章节外，以下内容在对应场景中必须单独成节，不能压缩成验收列表中的一句话：
 
