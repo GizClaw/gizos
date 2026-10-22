@@ -16,9 +16,9 @@ Service 校时请求沿用配置 endpoint 的 `http://` 或 `https://` scheme �
 
 GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、WebRTC 或 crypto backend。Credential 来源、连接策略和 app workflow 由调用方负责。
 
-Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
+Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 `server.workspace.parameters.set`（110）。
 
-依赖的 GizClaw C SDK 固定为 0.33.7。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+`h2_gizclaw_*workspace_activate` 只设置当前 Workspace，`h2_gizclaw_*workspace_reload` 重载当前选择。`h2_gizclaw_*workspace_reload_with_options`（RPC 120）在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）、TTS 语速和安全围栏档位（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
@@ -189,9 +189,7 @@ activity 留下的 detail；空 span 与 `has_detail` 为 false 等价，不写�
 有字段名和长度——`detail` 由产品决定内容，库不替它判断可以打印，因此 id 和 detail 都
 不进日志与 trace。两个字符串只在创建请求期间借用，创建时复制进请求自有存储。
 
-`h2_gizclaw_telemetry_system_t` 的 `firmware_version` 现在会被服务端采用并投影到
-`PeerStatus.firmware_version`（此前被校验后丢弃），产品据此上报固件版本号；字段本身
-没有变化，仍受 `H2_GIZCLAW_TELEMETRY_VERSION_MAX` 约束。
+`h2_gizclaw_telemetry_system_t.firmware_version` 由服务端投影到 `PeerStatus.firmware_version`，用于上报固件版本号，长度受 `H2_GIZCLAW_TELEMETRY_VERSION_MAX` 约束。
 
 `h2_gizclaw_telemetry_network_t` 的 network observation 还可携带蜂窝身份
 `has_imei` / `imei` 与 `has_imsi` / `imsi`，编码为 `NetworkObservation` 的
@@ -214,8 +212,6 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 ### Lua App
 
 产品创建共享 `h2_lua_apps_t`，配置预装 index、安装目录和存储预算，再放入 `h2_gizclaw_config_t.lua_apps`。该 handle 由产品持有，必须覆盖 Service 的完整生命周期，可供本地菜单和后续 Service 重连复用。LIST 在配置目录时启用，INSTALL 和 UNINSTALL 需要可写 Filesystem，RUN 还需要 `vtable.prepare_lua_app_run`；没有相应能力时按 SDK 的 unsupported 路径回答。
-
-C SDK 依赖使用 registry 的 `gizclaw_c_sdk` 0.33.7 发布归档，已包含 Lua App uninstall 的生成消息、Tool 27 和 C provider 输入校验，无需本地补丁。
 
 `H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL` 对齐 GizClaw ClientTool 27，解码有界 `app_id` 后使用共享 `h2_lua_apps_uninstall`。空身份、路径、重复 ID 字段、嵌入 NUL 和非 ASCII 字节在设备入口拒绝；成功返回空 tool payload。安装中的目录 reservation 或待完成的启动 handoff 返回 BUSY。卸载与预装持久隐藏、清理重试和用户数据保留的语义见 [Lua 应用目录](./lua.md#lua-app-目录与流式安装)。
 

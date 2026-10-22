@@ -72,9 +72,9 @@ Host 的正常生命周期是：
 `h2_lua_host_step()` 只用于提示 worker 有新工作，不会让调用线程进入 VM。
 异步 capability completion 只记录完成并唤醒 worker；真正的 Lua resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。每次 resume 记录独立开始时间；instruction hook 按 `instruction_quantum` 检查取消和 job 总超时， 并在达到 `resume_time_budget_ms` 后 yield，使 CPU-bound Lua 归还 owning worker。 每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行， 因此可以 yield，并受相同的 quantum、取消和超时约束。
 
-Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_at_ms`。Lua Runtime 在投影到 VM 时自行计算 `duration_ms`，并保持 PR #82 的 Button `gesture_kind` 接口：普通按压为 1、短按为 2、长按为 3，兼容阈值为 500 ms。这个分类只属于 Lua adapter，不进入共享的 `libs/runtime` Button payload；Lua App 无需因底层 Runtime 删除 gesture policy 而更改接口。
+Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_at_ms`。Lua Runtime 在投影到 VM 时自行计算 `duration_ms`，并提供 Button `gesture_kind`：普通按压为 1、短按为 2、长按为 3，兼容阈值为 500 ms。这个分类只属于 Lua adapter，不进入共享的 `libs/runtime` Button payload。
 
-`runtime.sleep(ms)` 与 `delay.delay_ms(ms)` 在当前 coroutine 记录 Runtime monotonic wake deadline 后 yield。固定 worker 扫描等待者并把 wake queue 等待上限缩短到最近 deadline，不为每次 sleep 创建、stop 或 destroy PAL Timer，也不为 coroutine 创建原生线程。Cancel/Stop 通过已有 worker 唤醒和 join 完成，不必等长 sleep 到期；其他平台 PAL Timer 能力保持独立。`//libs/lua/web/tests/sleep_progress:browser_test` 在真实 pthread WASM 上使用拒绝 Timer create 的注入 API，验证 240 次 sleep 持续推进、返回值和长 sleep 中 Stop/teardown；这不把所有历史私有 Fishing 停滞归为同一个根因。
+`runtime.sleep(ms)` 与 `delay.delay_ms(ms)` 在当前 coroutine 记录 Runtime monotonic wake deadline 后 yield。固定 worker 扫描等待者并把 wake queue 等待上限缩短到最近 deadline，不为每次 sleep 创建、stop 或 destroy PAL Timer，也不为 coroutine 创建原生线程。Cancel/Stop 通过已有 worker 唤醒和 join 完成，不必等长 sleep 到期；其他平台 PAL Timer 能力保持独立。`//libs/lua/web/tests/sleep_progress:browser_test` 在真实 pthread WASM 上使用拒绝 Timer create 的注入 API，验证 240 次 sleep 持续推进、返回值和长 sleep 中 Stop/teardown。
 
 ## Lua surface
 
@@ -193,7 +193,7 @@ smooth 的 `cache=true` 对单色且 `tolerance=0` 的笔画启用覆盖率缓�
 
 #### 提交规划的验证
 
-从仓库根目录运行 `bazel test --config=macos_arm64 //libs/lua:all`（Linux 使用对应 config）。`display_plan_test` 对照 PR627 的原始 tile 合并规则，生成空心菱形移动、平移矩形、稀疏噪点、稠密帧、无变化和交替棋盘格，并从旧 framebuffer 按提交矩形回放，逐像素检查最终结果；另覆盖随机 dirty box、奇数尺寸、4096 轴边界、容量耗尽、256 矩形完整 fallback、显式 bounds、guard 拒绝/同成本原样保留及 64 位面积累计，并检查经验成本范围的两个端点均不劣于同帧完整原计划。`lua_test` 通过真实 Lua present/PAL fake 检查首帧、清除旧位置、guard 成功、完整 fallback、热路径无分配和单份发送缓冲的 VM 计费/释放；独立 fault suite 检查部分 draw、present、静止帧及超过容量的 fallback 中途失败后的资源隔离。源包测试验证该规划器随 portable runtime 导出。
+从仓库根目录运行 `bazel test --config=macos_arm64 //libs/lua:all`（Linux 使用对应 config）。`display_plan_test` 对照原始 tile 合并规则，生成空心菱形移动、平移矩形、稀疏噪点、稠密帧、无变化和交替棋盘格，并从旧 framebuffer 按提交矩形回放，逐像素检查最终结果；另覆盖随机 dirty box、奇数尺寸、4096 轴边界、容量耗尽、256 矩形完整 fallback、显式 bounds、guard 拒绝/同成本原样保留及 64 位面积累计，并检查经验成本范围的两个端点均不劣于同帧完整原计划。`lua_test` 通过真实 Lua present/PAL fake 检查首帧、清除旧位置、guard 成功、完整 fallback、热路径无分配和单份发送缓冲的 VM 计费/释放；独立 fault suite 检查部分 draw、present、静止帧及超过容量的 fallback 中途失败后的资源隔离。源包测试验证该规划器随 portable runtime 导出。
 
 可直接运行 `bazel-bin/libs/lua/display_plan_test` 输出通用合成对比；可选 `--frames <path> [first last]` 读取本地 240×240、无 header、RGB565 big-endian 连续全帧，帧号从 1 开始，前序帧仍用于建立 baseline。该入口只用于离线验证，不是 Lua/PAL API；私有轨迹不得提交到公共仓库。时间以同一帧规划 10 次的均值采样，再统计 p50/p95/max，仅包括差分和规划（含回退），不包括绘制、baseline copy、PAL 提交或真实总线等待。对比统一采用全屏 dirty 候选和 `merge_gap=1`，与消费端每次实际传入的 dirty/options 可能不同。静止合成场景仍比较全屏；实际没有 dirty 的 present 会直接跳过规划。
 

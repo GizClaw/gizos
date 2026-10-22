@@ -149,8 +149,6 @@ const appItems = [
               { text: "H2Loader", link: "/apps/h2loader/boards/amoled/h2loader" },
               { text: "Display", link: "/apps/h2loader/boards/amoled/display" },
               { text: "QR Code", link: "/apps/h2loader/boards/amoled/qrcode" },
-              { text: "Audio System", link: "/apps/h2loader/boards/amoled/audio_system" },
-              { text: "GizClaw Ping Speed", link: "/apps/h2loader/boards/amoled/gizclaw_ping_speed" },
               { text: "Crash Before Confirm", link: "/apps/h2loader/boards/amoled/crash_before_confirm" },
               { text: "iperf", link: "/apps/h2loader/boards/amoled/iperf" },
               { text: "iperf Server", link: "/apps/h2loader/boards/amoled/iperf_server" },
@@ -164,8 +162,6 @@ const appItems = [
               { text: "总览", link: "/apps/h2loader/boards/bk7258_v3_202405/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/bk7258_v3_202405/h2loader" },
               { text: "Display", link: "/apps/h2loader/boards/bk7258_v3_202405/display" },
-              { text: "Audio System", link: "/apps/h2loader/boards/bk7258_v3_202405/audio_system" },
-              { text: "Crash Before Confirm", link: "/apps/h2loader/boards/bk7258_v3_202405/crash_before_confirm" },
             ],
           },
           {
@@ -192,9 +188,6 @@ const appItems = [
             items: [
               { text: "总览", link: "/apps/h2loader/boards/szp/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/szp/h2loader" },
-              { text: "Display", link: "/apps/h2loader/boards/szp/display" },
-              { text: "Audio System", link: "/apps/h2loader/boards/szp/audio_system" },
-              { text: "Crash Before Confirm", link: "/apps/h2loader/boards/szp/crash_before_confirm" },
               { text: "Partial Update Smoke", link: "/apps/h2loader/boards/szp/partial_update_smoke" },
             ],
           },

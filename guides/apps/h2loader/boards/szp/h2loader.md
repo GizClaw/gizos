@@ -10,16 +10,8 @@ bazel build --config=esp32s3 \
 
 内部 `bazel-bin/.../firmware/` 保存 raw image 与 recovery bundle，最终 `bazel-bin/.../package/` 保存 managed package 和 release metadata；ESP-IDF app descriptor 和 package manifest 都使用同一个 Bazel firmware version。Board defaults 固定启用 PSRAM XIP。
 
-## Partition layout
-
-待补充 H2Loader image 使用的 partition table 和各分区用途。
-
-## sdkconfig
-
-待补充 H2Loader image 使用的 `sdkconfig` defaults 和关键配置。
-
 ## 预期表现
 
 运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 后，只选择结构化 identity 为 `board=szp`、`target=esp32s3`、`active_role=loader`、`transport=iostreamikcp` 的设备。使用 scan 返回的 port 执行 `status`，确认没有有效 Stage 后通过 `send` 发布 `update.tar.zlib` 并执行 `reboot upgrade`。
 
-验收必须覆盖 Partition 2 候选 Loader 启动和 Partition 1 回写；最终 `status` 必须显示 `active_version=<version>`、运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，并在 power-cycle 后复查。已经安装 H2Loader 的正常路径不直接烧录；只有 H2Loader 无法通信、重新确认 board/target identity 且已获得 destructive recovery 授权时，才按恢复流程消费匹配的 `.recovery.h2fb`。
+更新流程、完成条件和断电复查见 [Loader 更新](../../update/loader)。已经安装 H2Loader 的正常路径不直接烧录；只有 H2Loader 无法通信、重新确认 board/target identity 且已获得 destructive recovery 授权时，才按恢复流程使用匹配的 `.recovery.h2fb`。

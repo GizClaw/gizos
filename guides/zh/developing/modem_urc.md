@@ -85,13 +85,7 @@ SIM、注册、packet 沿用系统事件和语义去重；LOCKED 停止轮询，
 拔卡、reset、close 取消待办；重复插入通知不重置预算，真正拔出后再插入得到新预算。
 缺卡后的 CPIN READY 是独立插入证据，可恢复 READY；缺卡期间另以约 5 秒空闲间隔持续执行单次有界 CPIN 探测。没有 worker 的同步使用者继续通过 get_status 查询。
 
-移远[官方热插拔 FAQ](https://www.quectel.com/faqs/10-1-how-to-enable-hot-swap-function-of-sim-card/)
-列出 `+CPIN: NOT READY`、`+QSIMSTAT: 1,0/1,1` 及 Call Ready，
-但不是 H106 Zero EC800M 特定固件的实测序列。本次只有台架现象描述，没有原始 UART1
-捕获，不能证明该固件会发 READY 或某个 QIND，也不能证明其必须执行 CFUN。
-因此恢复不自动执行 CFUN；仅保留 QSIMDET 配置改变时既有的一次 restart_module 流程。
-若 30 次 CPIN 后仍未就绪，应采集 SIM_DET 电平、QSIMDET/QSIMSTAT 读回、
-CPIN 应答及完整通知顺序，再依据该固件的移远说明决定是否需要 SIM 重新初始化。
+移远[官方热插拔 FAQ](https://www.quectel.com/faqs/10-1-how-to-enable-hot-swap-function-of-sim-card/)列出 `+CPIN: NOT READY`、`+QSIMSTAT: 1,0/1,1` 及 Call Ready；具体通知序列须按模组固件确认。恢复不自动执行 CFUN，仅在 QSIMDET 配置改变时执行既有 restart_module 流程。30 次 CPIN 后仍未就绪时，采集 SIM_DET 电平、QSIMDET/QSIMSTAT 读回、CPIN 应答和完整通知顺序，再依据该固件的移远说明决定是否需要 SIM 重新初始化。
 
 ## 语音呼叫状态通知
 

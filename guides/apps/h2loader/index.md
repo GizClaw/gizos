@@ -64,7 +64,7 @@ H2Loader Loader 与 App 管理 adapter 消费 Runtime 的可选 `ble_local_name`
 | H106 | — | — | — | — | — | — | — | ✓ | — | — | — |
 | Safe Call | — | — | — | — | — | — | — | ✓ | — | — | — |
 
-H106 MFG 是 Tiga 与 Zero ESP Loader image 启动前的内置产测流程，不是独立 App image，也不占矩阵行。各 image 的构建、设备表现与实机验收记录放在对应 board 使用页；矩阵只表达产品入口覆盖面。
+H106 MFG 是 Tiga 与 Zero ESP Loader image 启动前的内置产测流程，不是独立 App image，也不占矩阵行。各 image 的构建、预期表现与验收要求放在对应 board 使用页；矩阵只表达产品入口覆盖面。
 
 ## 产品组成
 

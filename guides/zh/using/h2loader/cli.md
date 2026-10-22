@@ -281,7 +281,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `reboot upgrade` 设置 `boot_intent=AUTO` 并从 Partition 1 重新进入基于真实 metadata/checksum 的流程。APP package 完成后必须证明 active role 为 APP、运行在 Partition 2、Stage 已收尾且 Partition 2 identity 与 package 一致。Loader package 先在 Partition 2 启动候选 Loader，再安全回写 Partition 1；完成后必须运行在 Partition 1，Partition 1/2 identity 和 checksum 一致，Stage 已收尾。流程不持久化 install phase。
 
-如果仍能通过 `status` 通信，就根据 `boot_intent`、running/next partition 和三份 metadata 诊断；不要用 Reset、DTR/RTS、断电或重新烧录掩盖 lifecycle 错误。只有 H2Loader reliable command transport 无法通信，并且对应 board 文档明确进入 recovery 时，才允许使用底层 erase/flash 或 BootROM recovery。BK APP 与 Loader 也都使用同一 Stage contract；当前 BK 实板验收因硬件不可用而保持 deferred，不能由 build 结果代替。
+如果仍能通过 `status` 通信，就根据 `boot_intent`、running/next partition 和三份 metadata 诊断；不要用 Reset、DTR/RTS、断电或重新烧录掩盖 lifecycle 错误。只有 H2Loader reliable command transport 无法通信，并且对应 board 文档明确进入 recovery 时，才允许使用底层 erase/flash 或 BootROM recovery。BK APP 与 Loader 使用同一 Stage contract。
 
 可共享的 Serial port、USB/BLE identity、板型映射，以及带日期的最后一次 Loader、App 或 MFG 验证基线可以记录在 `.env/users/<os-user>.md` 并提交到 Git；历史验证基线不代表设备当前实时状态。本地 package URL、Wi-Fi credential、private endpoint 和其他 secret 不能写进仓库文档或提交到 Git。H2Loader 不从 Markdown operator context 或仓库默认值取得凭据。
 

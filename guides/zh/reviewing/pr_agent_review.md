@@ -2,11 +2,17 @@
 
 PR Agent 审查由 Codex、Gemini、GitHub Copilot 或其他独立代码审查 Agent 执行。目标是基于 Pull Request 最新 head 找出会阻塞正确合并的问题，并在 PR 上留下有证据、可执行的 feedback；审查本身不直接修改代码。
 
+## PR 要求
+
+PR title 遵循[命名规范](/zh/coding-styles/naming#issue、pr-和-commit)。Description 简要说明改动原因、最终行为和验证结果，按改动复杂度组织，不要求固定章节、Implementation Issue 的五段结构或 Code Changes Tree。
+
+关联 Issue 是可选的，不要求为 PR 新建 Issue，也不强制使用 `Closes`、`Fixes` 等关闭关键字。有关联 Issue 时读取并核对相关需求；没有 Issue 时，以用户要求、PR description、开发指引和实际 diff 为审查依据，不因缺少 Issue 阻塞开发、审查或合并。
+
 ## 审查边界
 
 Agent 必须读取：
 
-- PR title、description、linked issue 和 acceptance criteria。
+- PR title、description、用户要求和 acceptance criteria；存在关联 Issue 时一并读取。
 - Base branch 与 PR 最新 head 之间的完整 diff。
 - 改动涉及的 public contract、实现、build wiring、tests 和 committed consumer。
 - `AGENTS.md`、对应开发指引和代码风格。
@@ -20,7 +26,7 @@ Agent 必须先阅读[审查项目](./review_items.md)，根据 PR changed direc
 
 ## 审查方法
 
-1. 确认 PR 目标与 linked issue 一致，Non-goal 没有被意外带入。
+1. 确认 PR 目标符合用户要求和 PR description；有关联 Issue 时再核对其需求，Non-goal 没有被意外带入。
 2. 按 changed directory 和 ownership 分组 diff。
 3. 对每组改动读取对应开发指引和代码风格。
 4. 检查跨模块 contract 的 provider、adapter 和 consumer。
@@ -89,7 +95,7 @@ PR Agent 阶段完成前，必须逐条确认：
 
 `main governance` 只把两个独立 commit status 作为 PR 审查与 ownership 的 merge gate：
 
-- `OpenAI review eligibility` 聚合 PR format、linked Issue design 和 code/plan conformance。三个 stage 必须全部为 `pass`，aggregate verdict 必须为 `pass`，且不能存在 blocker。
+- `OpenAI review eligibility` 聚合当前 PR 适用的格式、需求和代码审查结果。没有关联 Issue 时，Issue design 审查不适用，不构成 blocker；适用审查必须通过，aggregate verdict 必须为 `pass`，且不能存在 blocker。
 - `Ownership eligibility` 校验 PR 作者和审批者是否覆盖实际改动路径。它从受保护的 base SHA 读取 `.github/CODEOWNERS`，并绑定 PR 当前 head。
 
 两个 status 使用互不相同且不与 Check Run 重名的 context。每个 trusted publisher 只能写自己的 context，不能 enumerate、rerequest、patch、clone 或 complete 另一个 policy 的 status 或 Check Run。Reusable review 产生的 native comment 和 OpenAI stage Check Run 只保留详细 evidence，不具备 merge eligibility，也不能替代 aggregate status。

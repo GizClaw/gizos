@@ -39,26 +39,8 @@ Partition 1/2 checksum 相同是 Loader 内部判断回写已结束、可以清�
 
 完成条件是：设备从 Partition 1 启动新 Loader，即运行在 Partition 1、active role 为 Loader、active version 与 image 为新包，Partition 1 metadata valid 并记录新包的 image 与 package，Stage invalid。完成条件不检查 Partition 2。公共状态不存在 `loader_upgrade`、phase 或 recovery step 字段。
 
-## AC791N 固定 WL82 layout 的启动适配
+## 平台适配与验证
 
-AC791N 遵循上述公共确认、P2→P1 完整复制、失败恢复和 P1 收尾合同；以下是其板级启动适配，不是要求其它平台采用的公共存储格式。实现和地址约束见 [AC791N H2Loader](../boards/jieli_ac791n_devkit/h2loader.md)。
+AC791N 的 BootInfo 延迟发布、候选记录、RAM handoff 与 NOR 恢复由 [AC791N H2Loader](../boards/jieli_ac791n_devkit/h2loader) 定义；BK7258 的 B 槽重映射由 [BK7258 H2Loader](../boards/bk7258_v3_202405/h2loader#loader-自升级) 定义。
 
-- 写入候选 Loader 时，NOR adapter 暂存 P2 的 32-byte native BootInfo，不提前改变 ROM 的启动选择；候选 SHA、代码长度、CRC 和启动头组成固定 112-byte pending-boot 记录，保存在 Preference。对于尚无有效 native P2 启动头的热启动候选，记录缺失、损坏或与候选不匹配时拒绝发布及回写，保留 P1 恢复路径。
-- 候选先通过单次 RAM handoff 从 P1 早期启动进入 P2。RAM 请求仅跨软件复位，不是断电后的持久启动依据；持久 trial attempt 用于识别未确认候选。确认前复位仍回到完整旧 P1，保留 Stage/候选及故障证据，进入命令恢复。
-- P2 的公共确认回调核对运行身份及 pending-boot 记录。随后公共回写的 `set_next_boot_partition(2)` 才发布已确认 P2 BootInfo，并要求回读验证成功后才允许失效、擦除 P1。启动头发布成功后清除 attempt；确认成功本身不等于已完成升级。已通过有效 native P2 BootInfo 启动的恢复/旧版本升级路径可直接确认并沿用该启动头，不要求重新创建热启动记录；它仍须经过公共回写和 P1 收尾。
-- 原始 image 的 SD shadow 保存在 `/dl/.h2loader-image-1`、`/dl/.h2loader-image-2`，为 PAL 镜像读取和 P2→P1 copy-back 提供字节；不能放在安装 App 会清空的 `/data`。确认后复制中断依靠有效 P2 native BootInfo 重新启动并完整回写，而不是依靠已消费的 RAM handoff 或 Stage 驱动另一套复制状态机。
-- P1 重新运行后的公共 metadata/Stage 收敛及外部完成条件与上文相同。pending-boot 是板级安全记录，不能作为额外的公共完成条件。
-
-### 验收证据与边界
-
-以下是已有板级验收，不代表本次文档更新重新执行过断电测试：
-
-| 路径 | 证据及范围 |
-| --- | --- |
-| 不同镜像 Loader 更新 | [v5 self-update](../boards/jieli_ac791n_devkit/evidence/2026-09-13/loader-v5-self-update.md)：确认→发布 P2 头→回写→P1 独立 status，Stage 空 |
-| 确认前故障 | [v5 pre-confirm recovery](../boards/jieli_ac791n_devkit/evidence/2026-09-13/loader-v5-preconfirm-recovery.md)：stage 105 定点断言复位，旧 P1 可查询且保留候选和 coredump |
-| P1 擦除后实际断电 | [copy power cut](../boards/jieli_ac791n_devkit/evidence/2026-09-13/loader-copy-powercut.md)：从已确认 P2 恢复回写，最终 P1/Stage 收敛 |
-| 原生头部分写入 | [P2 部分头](../boards/jieli_ac791n_devkit/evidence/2026-09-13/loader-partial-p2-header.md)、[P1 部分头](../boards/jieli_ac791n_devkit/evidence/2026-09-13/partial-p1-header-powercut.md)：仅覆盖各自 16/32-byte 前缀中断 |
-| 后续正式包回归 | [PAL final acceptance](../boards/jieli_ac791n_devkit/evidence/2026-09-15/pal-final-acceptance.md)：不同 Loader 更新、UART 25/25 与 BLE 22/22 两轮；具体源码及镜像身份以记录为准 |
-
-主机测试应覆盖公共确认失败不得复制、P2 回写各失败边界及重新进入，板级测试覆盖 pending-boot 解码、发布 gate 和读回失败。实机最终验收必须停止监控后独立查询 UART status，核对运行 P1、新 Loader image/package metadata、Stage invalid 和 `last_result=0`。上述定点证据不推广为任意 NOR/Preference 写入损坏或所有硬件异常保证；SDK pin、布局或启动映射变化后需重新验收。
+主机测试覆盖确认失败不得复制、P2 回写的失败边界及重新进入；板级测试覆盖候选记录解码、启动头发布 gate 和读回失败。实机验证正常更新、确认前故障、复制中断与断电恢复，最后独立查询 status，核对新 Loader 的运行分区、版本、image/package metadata、Stage invalid 和 `last_result=0`。

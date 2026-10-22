@@ -4,7 +4,7 @@
 
 ## 文档边界
 
-- 开发指引描述合并后的最终 ownership、目录结构、contract 和行为。
+- 开发指引描述合并后的最终 ownership、目录结构、contract 和行为，不保存变更历史、操作日志或按日期归档的验收结果。
 - 代码与最终设计之间的差异、迁移步骤和未解决问题只记录在问题清单中，不写进开发指引。
 - API declaration 和字段说明以生产 Public Header 中的 Doxygen 为 source of truth；Markdown 只解释定位、组合、流程和使用边界。
 - 不复制另一份会随代码漂移的函数清单、struct declaration 或 enum 定义。

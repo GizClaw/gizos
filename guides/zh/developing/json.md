@@ -21,9 +21,7 @@ Desktop target owner 的 registry、Serial Loader cache 和 H106 normalized layo
 上限大于 PAL document 上限。Direct vendor header 不能从这些 target package 泄漏到 portable
 library、PAL contract 或 App public API。
 
-Provider 选择属于 composition owner，不属于 PAL、Runtime 或 portable App。本次集成只
-为 ESP-IDF 6.x 和 BK7258 AP 提供 yyjson SDK build adapter，并让指定的
-crash-before-confirm image 编译链接它；这不等于把 JSON capability 加入 Runtime。
+Provider 由 composition owner 选择。ESP-IDF 6.x 和 BK7258 AP 提供 yyjson SDK build adapter，由指定的 crash-before-confirm image 编译链接；Runtime 不暴露 JSON capability。
 
 ## 数据与 ownership
 

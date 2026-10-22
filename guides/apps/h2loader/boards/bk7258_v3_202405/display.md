@@ -10,7 +10,7 @@ RGB Display 在 open 时保留一个 canonical shadow 和两个完整 scanout bu
 
 H050IWV 800×480 RGB；LCD 活跃 DMA source/refresh 观测证明 controller scanout source，不能替代物理屏幕和亮度观察。共享 App 的 24 个 mandatory case 验证 open/info/draw/present/brightness/close，native RGB565、RGB888/RGB444、padding、局部更新、无效输入、borrowed source 释放、重复 present 和两次 reopen。
 
-测试图为带白色边框的红、绿、蓝、白四象限，带一个小的 RGB primary patch。亮度序列为 0%、50%、100%；越界值必须失败并保留实际亮度。BK 背光 PWM1 的 board GPIO map 使用 GPIO7，不得使用占用 LCD_R7 的 SDK 默认 GPIO19。
+BK 背光 PWM1 的 board GPIO map 使用 GPIO7，不得使用占用 LCD_R7 的 SDK 默认 GPIO19。
 
 PWM 只有成功 start 后才记为 running。通道初始化或启动失败时释放已取得资源；释放失败保留待清理状态，后续重试必须先完成清理再重新初始化和启动，不能仅修改 duty 后报成功。close 同样传播背光释放错误并保留 Display 供重试。故障注入验证与实际板上图案/启动记录分别保留。
 
@@ -18,6 +18,4 @@ PWM 只有成功 start 后才记为 running。通道初始化或启动失败时�
 
 ## managed 安装与验收
 
-先检查 UID、当前 port occupancy、P1/P2、Stage 和 coredump 基线。构建 managed package 后 `send --file`，核对 staged identity，再 `reboot upgrade --monitor`。必须看到新 BOOT、run ledger 和 `H2_DISPLAY_READY rc=0 confirm=0`；失败不 confirm。随后独立 `reboot app --monitor` 重跑，不能把 replay ledger 当成新执行。最终 P1 不变、Stage empty、running/next=App、coredump 保持基线。
-
-源文件和实际 package/report hash 写入 compact evidence，raw serial log/dump 保存在本地。物理屏幕图案及稳定性需相机/readback fixture 或人工明确确认；没有该证据时只能记录 driver qualification。真实 PWM 更新和 mandatory case ledger 是亮度控制证据，不能宣称测得了物理亮度，也不能把图案确认扩大为每个亮度档都已人工观察。
+按 [PAL Display 公共验收](/apps/e2e#pal-display) 执行 managed 安装、独立 App reboot、测试图与亮度检查，并核对最终分区、Stage 和 coredump。

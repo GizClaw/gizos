@@ -51,8 +51,3 @@ Partition 2 时停留在 Loader；不得修改 Partition 2 metadata、匹配 Sta
 随后 UART 和 BLE 都必须通过 `coredump status`、完整 `dump`、`erase` 与清空后的
 status。dump 按流式 chunk 写入 Host，不受单个响应缓冲区大小限制；报告中的实际
 字节数、终态、重连次数和最终 P1/P2/Stage metadata 都必须来自设备响应。
-
-2026-08-31 的 AMOLED 实板运行在完整 erase 和重新刷入当时 Loader 后通过 19/19；
-该历史证据采用旧的失败 Stage 清理行为。当前行为改为 rollback 后不修改 Partition 2、
-Stage、package、`boot_intent` 和 `last_result`，必须重新取得对应实板证据。UART 和 BLE
-coredump 流式读取证据仍为 23,264 bytes，随后 erase 和空状态复查通过。
