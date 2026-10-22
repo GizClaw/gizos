@@ -65,10 +65,37 @@ _COMMON_TASK_POLICIES = [
     "$h2loader/uartcmd default",
 ]
 
+# Fixed audit graphs remain independent of the selected package configuration.
+_POLICY_GRAPH = [
+    ":tasks",
+    "//boards/esp_mosaico/esp32s31",
+    "//boards/esp_mosaico/esp32s31:loader_usb",
+    "//libs/audio_mixer",
+    "//libs/bleikcp",
+    "//libs/bundle",
+    "//libs/command",
+    "//libs/drivers/audio/es8311",
+    "//libs/iostreamikcp",
+    "//libs/pal:unsupported",
+    "//libs/pal/providers/corehttp",
+    "//libs/pal/providers/h2peer",
+    "//libs/pal/providers/h2sctp",
+    "//libs/pal/providers/libco",
+    "//libs/pixa",
+    "//libs/runtime",
+    "//libs/wifi_sta",
+    "//native_component_src/esp-idf6.x/h2_pal_core",
+    "//native_component_src/esp-idf6.x/zlib",
+    "//projects/h2loader/libs/h2loader",
+    "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+    "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+]
+
 esp_target_task_policy(
     name = "task_policy_core",
     default_policy = "4 any 4096 psram",
-    graph = [":launcher"],
+    directory = "task_policy_core",
+    graph = _POLICY_GRAPH + ["//projects/e2e/apps/pal-core/app:pal_core_e2e"],
     policies = _COMMON_TASK_POLICIES + [
         "pal-core/e2e/core default",
         "pal-core/e2e/runner 4 0 65536 psram",
@@ -82,42 +109,48 @@ esp_target_task_policy(
 esp_target_task_policy(
     name = "task_policy_storage",
     default_policy = "4 any 4096 psram",
-    graph = [":launcher"],
+    directory = "task_policy_storage",
+    graph = _POLICY_GRAPH + ["//projects/e2e/libs/pal-storage-device:runner"],
     policies = _COMMON_TASK_POLICIES + ["pal-storage/e2e/runner default"],
 )
 
 esp_target_task_policy(
     name = "task_policy_display",
     default_policy = "4 any 4096 psram",
-    graph = [":launcher"],
+    directory = "task_policy_display",
+    graph = _POLICY_GRAPH + ["//projects/e2e/libs/pal-display-device:runner"],
     policies = _COMMON_TASK_POLICIES + ["pal-display/e2e/runner default"],
 )
 
 esp_target_task_policy(
     name = "task_policy_audio",
     default_policy = "4 any 4096 psram",
-    graph = [":launcher"],
+    directory = "task_policy_audio",
+    graph = _POLICY_GRAPH + ["//projects/e2e/apps/pal-audio/app:pal_audio_e2e"],
     policies = _COMMON_TASK_POLICIES + ["pal-audio/e2e/runner default"],
 )
 
 esp_target_task_policy(
     name = "task_policy_libco",
     default_policy = "4 any 4096 psram",
-    graph = [":launcher"],
+    directory = "task_policy_libco",
+    graph = _POLICY_GRAPH + ["//projects/e2e/apps/libco/app:libco_smoke"],
     policies = _COMMON_TASK_POLICIES + [],
 )
 
 esp_target_task_policy(
     name = "task_policy_camera",
     default_policy = "4 any 4096 psram",
-    graph = [":launcher"],
+    directory = "task_policy_camera",
+    graph = _POLICY_GRAPH + ["//libs/pal"],
     policies = _COMMON_TASK_POLICIES + [],
 )
 
 esp_target_task_policy(
     name = "task_policy_peripherals",
     default_policy = "4 any 4096 psram",
-    graph = [":launcher"],
+    directory = "task_policy_peripherals",
+    graph = _POLICY_GRAPH + ["//libs/pal"],
     policies = _COMMON_TASK_POLICIES + [],
 )
 
