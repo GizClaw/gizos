@@ -74,13 +74,20 @@ context 由板级持有，生命周期覆盖整个启动周期。注入不可重
 | `pal-wifi/app:pal_wifi_e2e` 等网络 App | Wi-Fi 及对应网络 PAL 的补充回归 | 需网络 fixture/凭据和明确需求；不批量扩展本次包清单 |
 
 现有 DevKit/AMOLED 固件包可以做共享行为回归，不能作为 Mosaico PASS。
-当前没有独立 Camera E2E 套件，也没有为 Mosaico 组装上述所有 App 的固件入口；
-不新增 `mosaico-screen`、`e2e-app/esp_mosaico` 或批量套件包。
-Camera、触摸、传感器、振动、电池读数和单 CDC 混合流恢复的真机覆盖仍需后续明确
-验证入口。当前 Mosaico Runtime 的 MQTT 保持 unsupported，不能直接以 `pal-mqtt`
+2026-10-22 后续增加一个配置化 Mosaico E2E App 入口，复用上述工作负载，并补充
+Camera 与 peripherals 消费者；七个 suite 的选择方式见 [E2E 计划](esp_mosaico_e2e.md)。
+不新增 `mosaico-screen`、`e2e-app/esp_mosaico` 或批量套件项目。
+Camera、触摸、传感器、振动、电池读数和单 CDC 混合流恢复仍需实际运行并绑定新证据，
+有入口不代表真机通过。当前 Mosaico Runtime 的 MQTT 保持 unsupported，不能直接以 `pal-mqtt`
 宣称 MQTT 覆盖。Format 2 包装按需增加，不复制固件源码。
 
-## 真机验收（暂停）
+## 真机验收与后续入口
+
+2026-10-22 用户已恢复指定 Mosaico 的硬件操作授权，并要求补齐最小 E2E launcher。
+后续范围、构建入口、固定负载和恢复条件以 [Mosaico E2E 计划](esp_mosaico_e2e.md) 为准。
+下文暂停说明描述此前交付状态，不再作为该指定设备的执行限制。
+
+### 原交付边界（历史）
 
 OTG CDC Loader 必须实际验证枚举和设备身份、无破坏性管理命令、持续日志混合
 协议传输完整性、背压/超时、拔插及重启重连。执行前固定负载、数据量、重复次数和
