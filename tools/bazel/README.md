@@ -49,6 +49,26 @@ make bazel-build BAZEL_CONFIG=linux_x86_64
 make bazel-test BAZEL_CONFIG=linux_x86_64
 ```
 
+## Test scope
+
+Source changes are checked in code review. Do not add tests whose verdict is
+based only on scanning repository source text or directories for particular
+strings, private function names, file inventories, or implementation order.
+
+Preserve executable unit tests, including C fixtures driven by Python build/run
+harnesses: their verdict comes from compiled behavior, not source-string
+assertions. Removing or changing a harness must not silently remove its unit
+coverage or fixtures. Prefer compiling and linking the real source directly
+when adding or migrating such tests.
+
+Python may also test Python tools through their callable or command-line
+interfaces and validate actual build outputs. Output validation includes golden
+files, generated code and metadata, package contents, ELF headers and section
+layout, and device or browser E2E results.
+
+Historical evidence may name retired source-scanning test targets; those records
+describe past runs and are not the current test inventory.
+
 ## Windows compatible graph
 
 The native Windows x86_64 baseline uses the `rules_cc`
