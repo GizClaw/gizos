@@ -4,6 +4,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+typedef void (*h2_esp_board_entry_task_fn)(void* user);
+/** Run a blocking image entry on a dedicated 64 KiB PSRAM task. Call from
+ * task context after installing the target policy. The callback owns Runtime
+ * teardown; board resources are released after it returns. */
+h2_pal_result_t h2_esp_board_start_entry_task(const char* name,
+                                              h2_esp_board_entry_task_fn entry,
+                                              void* user);
 /** Configure the board's borrowed Runtime providers from task context.
  * Serialize startup and teardown. Shared BSP power/I2C resources live for the
  * boot lifetime. Returns a PAL error and clears output on failure.

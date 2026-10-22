@@ -39,6 +39,21 @@
 #include <string.h>
 #include <sys/time.h>
 
+/* Mosaico reuses the maintained launcher, lifecycle and strict ledger gate. */
+#if defined(H2_GIZCLAW_E2E_MOSAICO)
+#include "h2_mosaico_usb_console.h"
+#include "h2_mosaico_loader_usb.h"
+#define H2_GIZCLAW_E2E_PLATFORM "esp_mosaico"
+#define H2_GIZCLAW_E2E_PLATFORM_MARKER "MOSAICO"
+#define H2_GIZCLAW_E2E_REQUIRED_SUITES                     \
+  (H2_GIZCLAW_E2E_SUITE_ALL | H2_GIZCLAW_E2E_SUITE_FENCE | \
+   H2_GIZCLAW_E2E_SUITE_LUA_APPS)
+#else
+#define H2_GIZCLAW_E2E_PLATFORM "amoled"
+#define H2_GIZCLAW_E2E_PLATFORM_MARKER "AMOLED"
+#define H2_GIZCLAW_E2E_REQUIRED_SUITES H2_GIZCLAW_E2E_SUITE_ALL
+#endif
+
 #define H2_GIZCLAW_E2E_AMOLED_RUNNER_STACK_SIZE 65536u
 #define H2_GIZCLAW_E2E_AMOLED_WIFI_STACK_SIZE 8192u
 #define H2_GIZCLAW_E2E_AMOLED_EVENT_WAIT_MS 1000u
@@ -101,7 +116,9 @@ static void hold_for_recovery(void) {
 
 static void fail_launcher(const char* stage, int rc,
                           bool command_transport_started) {
-  printf("H2_GIZCLAW_E2E_AMOLED stage=%s status=ERROR rc=%d\n", stage, rc);
+  printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+         " stage=%s status=ERROR rc=%d\n",
+         stage, rc);
   fflush(stdout);
   if (!command_transport_started) {
     esp_restart();
@@ -129,7 +146,10 @@ static void emit_progress(void* user,
   fflush(stdout);
 }
 
-#if defined(H2_GIZCLAW_E2E_LUA_ONLY)
+#if defined(H2_GIZCLAW_E2E_FENCE_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_FENCE
+#define AMOLED_E2E_SUITE_NAME "workspace-fence"
+#elif defined(H2_GIZCLAW_E2E_LUA_ONLY)
 #define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_LUA_APPS
 #define AMOLED_E2E_SUITE_NAME "lua-apps"
 #elif defined(H2_GIZCLAW_E2E_FIRMWARE_ONLY)
@@ -148,7 +168,7 @@ static void emit_progress(void* user,
 #define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_DEVICE
 #define AMOLED_E2E_SUITE_NAME "device"
 #else
-#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_ALL
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_REQUIRED_SUITES
 #define AMOLED_E2E_SUITE_NAME "all"
 #endif
 
@@ -211,7 +231,8 @@ static int format_summary(const h2_gizclaw_e2e_amoled_runner_t* runner,
       h2_gizclaw_e2e_amoled_config();
   return snprintf(
       buffer, capacity,
-      "H2_GIZCLAW_E2E stage=%s platform=amoled endpoint=%.*s backend=h2peer suite=" AMOLED_E2E_SUITE_NAME
+      "H2_GIZCLAW_E2E stage=%s platform=" H2_GIZCLAW_E2E_PLATFORM
+      " endpoint=%.*s backend=h2peer suite=" AMOLED_E2E_SUITE_NAME
       " "
       "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
       "blocked=%zu cancelled=%zu first_failure_case=%s "
@@ -256,10 +277,10 @@ static void run_e2e(void* raw) {
   h2_gizclaw_e2e_amoled_runner_t* runner = raw;
   volatile uint8_t stack_probe = 0u;
   const bool stack_in_psram = esp_ptr_external_ram((const void*)&stack_probe);
-  printf(
-      "H2_GIZCLAW_E2E_AMOLED stage=runner_stack region=%s "
-      "status=%s\n",
-      stack_in_psram ? "psram" : "other", stack_in_psram ? "PASS" : "ERROR");
+  printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+         " stage=runner_stack region=%s "
+         "status=%s\n",
+         stack_in_psram ? "psram" : "other", stack_in_psram ? "PASS" : "ERROR");
   fflush(stdout);
   if (!stack_in_psram) {
     runner->exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
@@ -322,25 +343,26 @@ static void supervise_wifi(void* raw) {
         supervisor->runtime->wifi_sta, supervisor->runtime->wifi_settings,
         supervisor->config->wifi_connect_timeout_ms, &result);
     if (rc != H2_PAL_OK) {
-      printf(
-          "H2_GIZCLAW_E2E_AMOLED stage=wifi status=RETRY rc=%d "
-          "retry_ms=%u\n",
-          rc, (unsigned)supervisor->config->wifi_retry_interval_ms);
+      printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+             " stage=wifi status=RETRY rc=%d "
+             "retry_ms=%u\n",
+             rc, (unsigned)supervisor->config->wifi_retry_interval_ms);
       fflush(stdout);
     } else if (result.outcome == H2_GIZCLAW_E2E_AMOLED_WIFI_NO_SAVED_CONFIG) {
-      printf(
-          "H2_GIZCLAW_E2E_AMOLED stage=wifi status=NO_SAVED_WIFI rc=%d "
-          "retry_ms=%u\n",
-          result.rc, (unsigned)supervisor->config->wifi_retry_interval_ms);
+      printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+             " stage=wifi status=NO_SAVED_WIFI rc=%d "
+             "retry_ms=%u\n",
+             result.rc, (unsigned)supervisor->config->wifi_retry_interval_ms);
       fflush(stdout);
     } else if (result.outcome == H2_GIZCLAW_E2E_AMOLED_WIFI_CONNECTED) {
-      printf("H2_GIZCLAW_E2E_AMOLED stage=wifi status=CONNECTING\n");
+      printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+             " stage=wifi status=CONNECTING\n");
       fflush(stdout);
     } else if (result.outcome == H2_GIZCLAW_E2E_AMOLED_WIFI_RETRY) {
-      printf(
-          "H2_GIZCLAW_E2E_AMOLED stage=wifi status=RETRY rc=%d "
-          "retry_ms=%u\n",
-          result.rc, (unsigned)supervisor->config->wifi_retry_interval_ms);
+      printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+             " stage=wifi status=RETRY rc=%d "
+             "retry_ms=%u\n",
+             result.rc, (unsigned)supervisor->config->wifi_retry_interval_ms);
       fflush(stdout);
     }
     (void)h2_pal_time_sleep_ms(supervisor->runtime->time,
@@ -415,7 +437,8 @@ static void image_entry(void* user) {
 
   rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
                                       H2_PAL_WIFI_POWER_SAVE_NONE);
-  printf("H2_GIZCLAW_E2E_AMOLED stage=power_save mode=%d rc=%d\n",
+  printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+         " stage=power_save mode=%d rc=%d\n",
          (int)H2_PAL_WIFI_POWER_SAVE_NONE, rc);
   fflush(stdout);
   if (rc != H2_PAL_OK) {
@@ -442,7 +465,8 @@ static void image_entry(void* user) {
     fail_launcher("confirm", rc, s_commands_started);
   }
 #endif
-  printf("H2_GIZCLAW_E2E_AMOLED stage=launcher status=READY\n");
+  printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+         " stage=launcher status=READY\n");
   fflush(stdout);
 
   h2_gizclaw_e2e_amoled_event_payload_t payload;
@@ -475,7 +499,9 @@ static void image_entry(void* user) {
     }
     rc = h2_runtime_wait_notify(runtime, H2_GIZCLAW_E2E_AMOLED_EVENT_WAIT_MS);
     if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
-      printf("H2_GIZCLAW_E2E_AMOLED stage=event status=ERROR rc=%d\n", rc);
+      printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+             " stage=event status=ERROR rc=%d\n",
+             rc);
       fflush(stdout);
     }
 
@@ -483,7 +509,9 @@ static void image_entry(void* user) {
       rc = h2_esp_h2loader_app_commands_pause_ble_advertising();
       if (rc == H2_PAL_OK) {
         ble_advertising_paused = true;
-        printf("H2_GIZCLAW_E2E_AMOLED stage=ble_adv status=PAUSED rc=%d\n", rc);
+        printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+               " stage=ble_adv status=PAUSED rc=%d\n",
+               rc);
         fflush(stdout);
       } else {
         ++ble_pause_retry_count;
@@ -491,10 +519,10 @@ static void image_entry(void* user) {
             ble_pause_retry_count %
                     H2_GIZCLAW_E2E_AMOLED_TIME_RETRY_LOG_INTERVAL ==
                 0u) {
-          printf(
-              "H2_GIZCLAW_E2E_AMOLED stage=ble_adv status=RETRY rc=%d "
-              "retry_ms=%u\n",
-              rc, H2_GIZCLAW_E2E_AMOLED_EVENT_WAIT_MS);
+          printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+                 " stage=ble_adv status=RETRY rc=%d "
+                 "retry_ms=%u\n",
+                 rc, H2_GIZCLAW_E2E_AMOLED_EVENT_WAIT_MS);
           fflush(stdout);
         }
       }
@@ -526,17 +554,18 @@ static void image_entry(void* user) {
           fail_launcher("time_publish", rc, s_commands_started);
         }
         state.clock_ready = true;
-        printf("H2_GIZCLAW_E2E_AMOLED stage=time status=READY\n");
+        printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+               " stage=time status=READY\n");
         fflush(stdout);
       } else {
         ++time_retry_count;
         if (time_retry_count == 1u ||
             time_retry_count % H2_GIZCLAW_E2E_AMOLED_TIME_RETRY_LOG_INTERVAL ==
                 0u) {
-          printf(
-              "H2_GIZCLAW_E2E_AMOLED stage=time status=RETRY rc=%d "
-              "retry_ms=%u\n",
-              (int)time_rc, H2_GIZCLAW_E2E_AMOLED_EVENT_WAIT_MS);
+          printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+                 " stage=time status=RETRY rc=%d "
+                 "retry_ms=%u\n",
+                 (int)time_rc, H2_GIZCLAW_E2E_AMOLED_EVENT_WAIT_MS);
           fflush(stdout);
         }
       }
@@ -590,7 +619,8 @@ static void image_entry(void* user) {
       if (rc != H2_PAL_OK) {
         fail_launcher("runner_start", rc, s_commands_started);
       }
-      printf("H2_GIZCLAW_E2E_AMOLED stage=runner status=STARTED\n");
+      printf("H2_GIZCLAW_E2E_" H2_GIZCLAW_E2E_PLATFORM_MARKER
+             " stage=runner status=STARTED\n");
       fflush(stdout);
     }
 
@@ -620,7 +650,7 @@ static void image_entry(void* user) {
         if (!h2_atomic_load_explicit(&s_runner.capture_failed,
                                      H2_ATOMIC_ACQUIRE) &&
             h2_gizclaw_e2e_ledger_freeze(&s_runner.ledger) == H2_PAL_OK &&
-            s_runner.app_config.suites == H2_GIZCLAW_E2E_SUITE_ALL &&
+            s_runner.app_config.suites == H2_GIZCLAW_E2E_REQUIRED_SUITES &&
             s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS &&
             h2_gizclaw_e2e_result_all_passed(&s_runner.result)) {
           int confirm = h2_esp_h2loader_app_confirm(runtime);
@@ -631,7 +661,7 @@ static void image_entry(void* user) {
             s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
         }
       }
-      if (s_runner.app_config.suites == H2_GIZCLAW_E2E_SUITE_ALL &&
+      if (s_runner.app_config.suites == H2_GIZCLAW_E2E_REQUIRED_SUITES &&
           !s_runner.admitted && s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS)
         s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
       if (h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) != H2_PAL_OK) {
@@ -662,7 +692,13 @@ static void log_shutdown(void) {
 }
 
 void app_main(void) {
-  printf("H2_GIZCLAW_BOOT platform=amoled reset_reason=%d\n",
+#if defined(H2_GIZCLAW_E2E_MOSAICO)
+  if (h2_mosaico_usb_console_init() != H2_PAL_OK ||
+      h2_mosaico_loader_usb_init() != H2_PAL_OK)
+    return;
+#endif
+  printf("H2_GIZCLAW_BOOT platform=" H2_GIZCLAW_E2E_PLATFORM
+         " reset_reason=%d\n",
          (int)esp_reset_reason());
   fflush(stdout);
   if (esp_register_shutdown_handler(log_shutdown) != ESP_OK) {
@@ -672,9 +708,11 @@ void app_main(void) {
   if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
     return;
   }
-  h2_pal_result_t rc =
-      h2_esp_board_start_entry_task("amoled/gizclaw-e2e", image_entry, NULL);
+  h2_pal_result_t rc = h2_esp_board_start_entry_task(
+      H2_GIZCLAW_E2E_PLATFORM "/gizclaw-e2e", image_entry, NULL);
   if (rc != H2_PAL_OK) {
-    printf("H2_BOARD_ENTRY_FAIL board=amoled image=gizclaw-e2e code=%d\n", rc);
+    printf("H2_BOARD_ENTRY_FAIL board=" H2_GIZCLAW_E2E_PLATFORM
+           " image=gizclaw-e2e code=%d\n",
+           rc);
   }
 }

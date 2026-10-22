@@ -72,7 +72,7 @@ Runtime/并发、复用 App 和 device runner 回归；运行格式与 diff 检�
 | 4 | 主机暂停读取 5 s，3 次；传输 25%/50%/75% 处断开，各 3 次 | 保留首个错误；半帧关闭会话，禁止旧队列污染；关闭/重开后 15 s 内重握手；区分自动/人工恢复 |
 | 5 | 物理拔插 5 次、设备重启 5 次 | 每次 15 s 内重新枚举/握手，同 UID；需人工执行的动作保持待执行 |
 | 6 | core / libco | 每个 3 次独立启动；Core 120 s、libco 180 s 的主机观察期限；无崩溃/看门狗/缺失结果 |
-| 7 | storage | 3 阶段各一次独立启动，随后重跑完整三阶段；每次 180 s 内，原有 registry 全通过 |
+| 7 | storage | 3 阶段各一次独立启动，第二轮以新的 `--//tools/bazel:firmware_version=...` 镜像重新开始；phase 4 的只读重放不计新循环；每次 180 s 内，原有 registry 全通过 |
 | 8 | display / audio | 各 3 次启动，每次 180 s；保留字节/PCM 软件结果，另记录屏幕/亮度、扬声器/麦克风人工结果 |
 | 9 | peripherals | 每次 10 s 采样窗口内按放 AI/BOOT 各一次；随后 30 s 触摸 down/move/up；三轮，缺交互 BLOCKED；电池读数与外部仪表比较独立记录 |
 | 10 | camera | 10×30 帧，3 次独立启动；180 s 主机观察期限，超时保留失败现场；断电拆卸后单独验证无相机 Loader 启动不受影响 |
@@ -83,3 +83,29 @@ Runtime/并发、复用 App 和 device runner 回归；运行格式与 diff 检�
 设备 watchdog 只输出失败通知；主机观察期限是外部截止时间，不假装能取消上游阻塞调用。
 先失败即保留该轮日志与镜像，后续重试不覆盖首个失败。问题按 launcher、GizOS provider、
 BSP/SDK 或物理夹具归属记录，不能靠削弱公共 workload 的断言使测试通过。
+
+## GizClaw 完整业务 E2E
+
+Mosaico 另提供 `//projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/esp_mosaico:package`。
+它复用现有 AMOLED launcher 的生命周期、配置、状态机、业务 workload 和 ledger，不复制业务实现；
+Mosaico 负责单 CDC 初始化、板卡身份、S31 firmware SDK 选择及独立入口任务。
+这层不能代替前述七个芯片/外设 suite，也不能用 H106 产品用例或其他板卡的历史记录代替。
+
+默认选择完整十项：`lua-apps`、`resource`、`device-api`、`workspace-fence`、
+`connectivity`、`rpc`、`firmware`、`voice`、`concurrency`、`service`，mask 为 `0x3ff`。
+公共的旧 `H2_GIZCLAW_E2E_SUITE_ALL` 仅代表前八位；Mosaico 显式增加 Fence 和 Lua Apps，
+不修改其他平台的默认集合。只有完整集合、所有 mandatory case、API 审计、ledger freeze 和零残留清理全部通过，
+才允许 App confirm；诊断子集不授予完整资格。
+
+构建使用 `--config=esp32s31`。服务配置继续通过已有
+`//projects/e2e/apps/gizclaw:app_config_fixture_*` 显式输入；空配置可以编译，运行时在注册或资源 mutation 前失败。
+GizOS 的构建、测试和运行不依赖 `firmwares` 仓库，也不读取 H106 产品 header、资源或 token。
+H106 仅供对照环境分层和 profile 校验约定；GizOS 使用自己受控、由测试侧显式注入的 E2E 配置。
+不把生产 endpoint 作为默认值，不复制 token 到源码、日志或公开证据。
+本地验证可在上游私有目录保存一次性复制的测试配置，再显式注入；该副本不得成为 GizOS 的源码、默认配置或对 `firmwares` 的构建依赖。须记录实际 profile、endpoint、非敏感 AppConfig key/value、
+HTTPS Device API/audio 对象身份，以及 Lua data/HTTP/HTTPS 包和 archive/entry/frame golden SHA。
+缺少输入标记 BLOCKED，不能跳过断言或将缺少 fixture 的启动算作业务 PASS。
+
+每份实际执行保留 source/artifact、nonce、逐 case 终态、API 审计及 cleanup/retained ledger。
+完整 managed boot 和独立 normal boot 分别验收；真实麦克风/扬声器观察、Lua 持久化和显示 golden 继续按其原合同验证。
+`libs/gizclaw` 与 portable App 的 host 测试属于软件验证，不能替代上述服务和真机执行。

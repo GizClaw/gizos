@@ -167,7 +167,7 @@ def _repository_impl(repository_ctx):
             expected_version,
             actual_version,
         ))
-    probe_flags = list(repository_ctx.attr.compile_flags)
+    probe_flags = list(repository_ctx.attr.compile_flags) + repository_ctx.attr.include_probe_flags
     for relative in repository_ctx.attr.system_include_dirs:
         directory = bin_dir.get_child(relative)
         if not directory.exists:
@@ -234,6 +234,9 @@ local_embedded_cc_repository = repository_rule(
         "build_file": attr.label(default = "//tools/bazel/toolchains/local_embedded_cc:toolchain.BUILD.bazel"),
         "compile_flags": attr.string_list(),
         "compiler_kind": attr.string(default = "gcc", values = ["gcc", "clang"]),
+        "include_probe_flags": attr.string_list(
+            doc = "Compiler search options used only to discover headers for hermetic mirroring.",
+        ),
         "config_file": attr.label(default = "//tools/bazel/toolchains/local_embedded_cc:cc_toolchain_config.bzl"),
         "exec_hosts": attr.string_list(
             doc = "Execution hosts that can run the selected compiler; empty means every supported host.",
@@ -374,6 +377,12 @@ def _extension_impl(_module_ctx):
         name = "gizos_esp32s31_cc_toolchain",
         compile_flags = [
             "-Os",
+            # Match pinned IDF 6.2 esp_libc/project_include.cmake and specs.
+            # Probe libc include roots separately to preserve hermetic paths.
+            "-D__PICOLIBC_ERRNO_FUNCTION=__errno",
+            "-D__STDC_WANT_LIB_EXT1__=0",
+            "-ftls-model=local-exec",
+            "-mstack-protector-guard=global",
             "-march=rv32imafc_zicsr_zifencei_zaamo_zalrsc",
             "-mabi=ilp32f",
             "-ffunction-sections",
@@ -385,6 +394,7 @@ def _extension_impl(_module_ctx):
         locator = "@gizos_esp_idf_tools//:locator.json",
         locator_path = "tools_root",
         prefix = "riscv32-esp-elf-",
+        include_probe_flags = ["-specs=picolibc.specs"],
         target_constraints = [
             "@gizos//tools/bazel/platforms:cpu_riscv32",
             "@gizos//tools/bazel/platforms:target_esp32s31",

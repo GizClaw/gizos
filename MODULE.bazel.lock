@@ -829,7 +829,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "ZUQRDNrcr25jspKyryOfb172C/KoJX6P1kCxhm3Iv6g=",
+        "bzlTransitiveDigest": "7hDYVh6BVsMXwfqxUnEV9fXZkyYReOSoCPfEimD6AGI=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -950,6 +950,10 @@
             "attributes": {
               "compile_flags": [
                 "-Os",
+                "-D__PICOLIBC_ERRNO_FUNCTION=__errno",
+                "-D__STDC_WANT_LIB_EXT1__=0",
+                "-ftls-model=local-exec",
+                "-mstack-protector-guard=global",
                 "-march=rv32imafc_zicsr_zifencei_zaamo_zalrsc",
                 "-mabi=ilp32f",
                 "-ffunction-sections",
@@ -961,6 +965,9 @@
               "locator": "@@+esp_repositories+gizos_esp_idf_tools//:locator.json",
               "locator_path": "tools_root",
               "prefix": "riscv32-esp-elf-",
+              "include_probe_flags": [
+                "-specs=picolibc.specs"
+              ],
               "target_constraints": [
                 "@gizos//tools/bazel/platforms:cpu_riscv32",
                 "@gizos//tools/bazel/platforms:target_esp32s31",
