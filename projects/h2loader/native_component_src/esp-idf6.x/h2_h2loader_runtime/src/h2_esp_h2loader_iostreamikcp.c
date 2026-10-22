@@ -371,11 +371,11 @@ h2_pal_result_t h2_esp_h2loader_command_transport_init(
     transport->physical_io = s_physical_io;
   } else {
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-  transport->physical_io = h2_iostreamikcp_io_from_usb_jtag(
-      h2_esp_platform_usb_jtag_io_stream_api());
+    transport->physical_io = h2_iostreamikcp_io_from_usb_jtag(
+        h2_esp_platform_usb_jtag_io_stream_api());
 #else
-  transport->physical_io =
-      h2_iostreamikcp_io_from_uart(h2_esp_platform_uart_io_stream_api());
+    transport->physical_io =
+        h2_iostreamikcp_io_from_uart(h2_esp_platform_uart_io_stream_api());
 #endif
   }
   transport->receive_window = H2_LOADER_TRANSPORT_RECEIVE_WINDOW;
