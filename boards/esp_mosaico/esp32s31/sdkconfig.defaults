@@ -18,6 +18,8 @@ CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y
 CONFIG_BSP_DISPLAY_LVGL_ENABLE=n
 CONFIG_BSP_CO5300_ENABLE_TE=n
+# Retain the validated QSPI drive strength across the upstream BSP update.
+CONFIG_BSP_LCD_QSPI_DRIVE_CAP=0
 # Shared PAL permits PSRAM stacks only when flash/cache operations are safe.
 CONFIG_SPIRAM_XIP_FROM_PSRAM=y
 

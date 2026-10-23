@@ -10,19 +10,11 @@ package(default_visibility = ["//visibility:public"])
 exports_files(["sdkconfig.defaults"])
 
 firmware_native_component(
-    name = "boot_splash",
-    hdrs = ["@h2_vendor_esp_mosaico_bsp//:boot_splash_headers"],
-    component_name = "mosaico_boot_splash",
-    data = ["@h2_vendor_esp_mosaico_bsp//:boot_splash_metadata"],
-)
-
-firmware_native_component(
     name = "bsp",
     srcs = ["@h2_vendor_esp_mosaico_bsp//:bsp_sources"],
     hdrs = ["@h2_vendor_esp_mosaico_bsp//:bsp_headers"],
     component_name = "esp_mosaico_bsp",
     data = ["@h2_vendor_esp_mosaico_bsp//:bsp_metadata"],
-    deps = [":boot_splash"],
 )
 
 firmware_native_component(

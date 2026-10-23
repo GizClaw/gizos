@@ -24,6 +24,7 @@ filegroup(
         "components/esp-mosaico-bsp/include/bsp/imu.h",
         "components/esp-mosaico-bsp/include/bsp/led.h",
         "components/esp-mosaico-bsp/include/bsp/magnetometer.h",
+        "components/esp-mosaico-bsp/include/bsp/mosaico_boot_handoff.h",
         "components/esp-mosaico-bsp/include/bsp/motor.h",
         "components/esp-mosaico-bsp/include/bsp/nand_flash.h",
         "components/esp-mosaico-bsp/include/bsp/power.h",
@@ -37,27 +38,6 @@ filegroup(
         "components/esp-mosaico-bsp/CMakeLists.txt",
         "components/esp-mosaico-bsp/Kconfig",
         "components/esp-mosaico-bsp/idf_component.yml",
-    ],
-)
-
-filegroup(
-    name = "boot_splash_sources",
-    srcs = [
-    ],
-)
-
-filegroup(
-    name = "boot_splash_headers",
-    srcs = [
-        "components/mosaico_boot_splash/include/mosaico_boot_handoff.h",
-    ],
-)
-
-filegroup(
-    name = "boot_splash_metadata",
-    srcs = [
-        "components/mosaico_boot_splash/CMakeLists.txt",
-        "components/mosaico_boot_splash/idf_component.yml",
     ],
 )
 

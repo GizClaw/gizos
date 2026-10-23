@@ -634,8 +634,8 @@ register_toolchains(
 http_archive(
     name = "h2_vendor_esp_mosaico_bsp",
     build_file = "//third_party:esp_mosaico_bsp.BUILD.bazel",
-    sha256 = "8da32b3134ad9564042c0f193c0f8a6d49916519c2661a5031f79f25e3fb73b6",
-    strip_prefix = "esp-mosaico-bsp-a4bfb426afcf2911c01fdd9b6d6f024019f00f8f",
+    sha256 = "70d41f1bdbaf6a0fb447a35bb84372c6f115d0e84f4552c8b48513331ec5c36e",
+    strip_prefix = "esp-mosaico-bsp-b60f5d8381939c5cf5c08ddabc44b8013be79064",
     type = "tar.gz",
-    urls = ["https://codeload.github.com/esp-mosaico/esp-mosaico-bsp/tar.gz/a4bfb426afcf2911c01fdd9b6d6f024019f00f8f"],
+    urls = ["https://codeload.github.com/esp-mosaico/esp-mosaico-bsp/tar.gz/b60f5d8381939c5cf5c08ddabc44b8013be79064"],
 )
