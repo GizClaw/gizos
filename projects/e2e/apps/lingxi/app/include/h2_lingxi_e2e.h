@@ -28,7 +28,7 @@ typedef struct h2_lingxi_e2e_case_result {
   const char* id;
   h2_lingxi_e2e_status_t status;
   h2_pal_result_t result;
-  /** HTTP/business observation for request cases; zero for non-request cases. */
+  /** HTTP/business state for request cases; zero for other cases. */
   h2_lingxi_result_t platform;
   uint64_t elapsed_ms;
 } h2_lingxi_e2e_case_result_t;
