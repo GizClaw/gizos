@@ -8,7 +8,7 @@
 /** Longest UUID the BLE PAL accepts, in bytes. */
 #define H2_BLE_WIFI_CONFIG_UUID_MAX_LEN 16u
 /** BLE system events the service subscribes to. */
-#define H2_BLE_WIFI_CONFIG_SUBSCRIPTION_COUNT 4u
+#define H2_BLE_WIFI_CONFIG_SUBSCRIPTION_COUNT 6u
 /**
  * Pending notifications waiting for the worker task. Overflow drops the
  * oldest entry and is counted, because a lost notification must never stall
@@ -66,6 +66,8 @@ struct h2_ble_wifi_config {
   uint8_t provision_uuid[H2_BLE_WIFI_CONFIG_UUID_MAX_LEN];
 
   h2_pal_mutex_t* mutex;
+  /* Serializes Host advertising calls; callbacks take only mutex. */
+  h2_pal_mutex_t* adv_mutex;
   h2_pal_cond_t* cond;
   h2_pal_task_t* worker;
   h2_pal_system_event_subscription_t*
@@ -91,7 +93,11 @@ struct h2_ble_wifi_config {
   /* Advertising window, owned by the mutex. */
   h2_pal_ble_adv_params_t adv_params;
   bool adv_started;
+  bool adv_active;
+  bool adv_needs_reset;
   bool adv_paused;
+  bool adv_restart_pending;
+  int adv_result;
 
   /* Worker requests, owned by the mutex. */
   bool scan_requested;

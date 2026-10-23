@@ -153,3 +153,9 @@ bazel test //libs/ble_wifi_config:all
 ```
 
 `ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_contract_test` 用写在测试源码里的十六进制用例逐字节校验线格式与默认 UUID 的 ATT byte order，用例来源是 LiteLink 的 `_Meta/contracts/wifi/{scan,provision}_cases.json`（App 侧由 `test/contracts/wifi_contract_test.dart` 与 `wxmp/tests/contract-wifi.test.js` 校验同一组值）；LiteLink 不在本仓库的 build graph 内，因此两处副本在线格式变更时必须同步更新。`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执、广播暂停、unregister 失败后的可重试 `close()`，扫描期间断连并复用同一 handle 重连时不串台，以及重连事件在发送期间被延后、不改变发送已校验的连接身份并在事后计入 `sends_during_peer_change`。
+
+## 配网窗口与广播状态
+
+调用方打开配网窗口后，服务在 worker 上恢复断线后的广播；连接仍在使用时不重启可连接广播。窗口关闭或服务开始清理后，排队中的恢复请求不再生效。广播暂停与恢复的错误通过服务通知及线程安全快照反馈，失败不会在后台无限重试；调用方可以关闭窗口、展示失败，再由用户重新进入配网。
+
+页面应区分等待手机连接、蓝牙已连接和配网完成，使用服务快照更新广播动画与提示，不能把一次启动成功当成整个窗口期间始终可被扫描。快照接口和字段语义以 Public Header 为准。
