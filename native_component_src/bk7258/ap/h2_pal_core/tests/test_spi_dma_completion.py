@@ -49,8 +49,8 @@ def main():
 project(spi_completion C)
 add_library(driver STATIC "${BK_ARMINO_PATH}/middleware/driver/spi/spi_driver.c" keep.c)
 function(armino_component_get_property output component property)
-  if(NOT CONFIG_SPI OR NOT CONFIG_SPI_DMA OR NOT component STREQUAL "driver")
-    message(FATAL_ERROR "Disabled SPI DMA requested the driver")
+  if(NOT CONFIG_SPI OR NOT component STREQUAL "driver")
+    message(FATAL_ERROR "Disabled SPI requested the driver")
   endif()
   set(${output} driver PARENT_SCOPE)
 endfunction()
@@ -69,7 +69,7 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
             selected = (build / "selected.txt").read_text().splitlines()
             assert len(selected) == 2 and "keep.c" in selected, selected
             selected.remove("keep.c")
-            if spi == dma == "ON":
+            if spi == "ON":
                 generated = Path(selected[0])
                 assert generated.parent == build and generated.is_file()
             else:
@@ -88,7 +88,9 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
         for name, source in (("original", original), ("corrected", generated)):
             unit, binary = work / (name + ".c"), work / name
             functions = "\n".join(function(source.read_text(), symbol) for symbol in (
+                "bk_spi_clr_tx", "bk_spi_clr_rx", "spi_isr_common",
                 "spi_dma_tx_finish_handler", "spi_dma_rx_finish_handler",
+                "bk_spi_write_bytes", "bk_spi_read_bytes",
                 "bk_spi_dma_write_bytes", "bk_spi_dma_read_bytes"))
             unit.write_text(probe.replace("/* SDK_FUNCTIONS */", functions))
             command = [cc, "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
@@ -97,18 +99,23 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
                 command[1:1] = ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
             subprocess.run(command, check=True, timeout=60)
             for direction in ("tx", "rx"):
-                run = subprocess.run([str(binary), direction], capture_output=True,
-                                     text=True, timeout=15)
-                if name == "original":
-                    assert run.returncode != 0, "uncorrected SDK unexpectedly passed"
-                    assert "second DMA completion lost" in run.stderr, run.stderr
-                else:
-                    assert run.returncode == 0, run.stdout + run.stderr
-                    print(run.stdout, end="")
+                for first in ("dma", "cpu"):
+                    for next_mode in ("dma", "cpu"):
+                        for role in ("master", "slave"):
+                            run = subprocess.run(
+                                [str(binary), direction, first, next_mode, role],
+                                capture_output=True, text=True, timeout=15)
+                            if name == "original":
+                                assert run.returncode != 0, "uncorrected SDK unexpectedly passed"
+                                assert "second SPI completion lost" in run.stderr, run.stderr
+                            else:
+                                assert run.returncode == 0, run.stdout + run.stderr
+                                print(run.stdout, end="")
     assert hashlib.sha256(original.read_bytes()).hexdigest() == before, "sealed SDK was modified"
     print(json.dumps(dict(result="PASS", sdk_commit=actual, sdk_source_sha256=before,
                           original_negative_controls="TX/RX FAIL as expected",
-                          corrected="TX/RX same/other port PASS", sanitized=args.sanitize),
+                          corrected="TX/RX CPU/DMA master/slave port pairs PASS",
+                          sanitized=args.sanitize),
                      sort_keys=True))
 
 

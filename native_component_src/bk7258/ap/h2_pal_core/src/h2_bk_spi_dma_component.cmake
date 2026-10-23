@@ -1,4 +1,4 @@
-if(CONFIG_SPI AND CONFIG_SPI_DMA)
+if(CONFIG_SPI)
   armino_component_get_property(H2_BK_SPI_LIB driver COMPONENT_LIB)
   set(H2_BK_SPI_INPUT "${BK_ARMINO_PATH}/middleware/driver/spi/spi_driver.c")
   set(H2_BK_SPI_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_spi_driver.c")

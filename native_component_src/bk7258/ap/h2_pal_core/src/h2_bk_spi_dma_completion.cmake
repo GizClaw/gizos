@@ -9,12 +9,13 @@ if(NOT h2_spi_sha256 STREQUAL "2772e38ac5c7838219c9e4cbc9115114ed74860e85be1b14a
   message(FATAL_ERROR "Pinned BK SPI source changed; revalidate the SDK correction")
 endif()
 
-function(h2_bk_spi_replace_once signature replacement)
+function(h2_bk_spi_replace_count signature replacement count)
   string(REPLACE "${signature}" "" without "${h2_spi_source}")
   string(LENGTH "${h2_spi_source}" before)
   string(LENGTH "${without}" after)
-  string(LENGTH "${signature}" expected)
+  string(LENGTH "${signature}" width)
   math(EXPR removed "${before} - ${after}")
+  math(EXPR expected "${width} * ${count}")
   if(NOT removed EQUAL expected)
     message(FATAL_ERROR "Pinned BK SPI completion changed; revalidate the SDK correction")
   endif()
@@ -37,17 +38,18 @@ set(h2_spi_signature [=[static void spi_dma_tx_finish_handler(dma_id_t id)
 set(h2_spi_replacement [=[static void spi_dma_tx_finish_handler(dma_id_t id)
 {
 	const spi_id_t spi_id = s_current_spi_dma_wr_id;
+	const bool was_blocked = s_spi[spi_id].is_tx_blocked;
+	s_spi[spi_id].is_tx_blocked = false;
 	SPI_LOGV("[%s] spi_id:%d\r\n", __func__, spi_id);
 
 	if (s_spi_tx_finish_isr[spi_id].callback){
 		s_spi_tx_finish_isr[spi_id].callback(spi_id,s_spi_tx_finish_isr[spi_id].param);
 	}
-	if (s_spi[spi_id].is_tx_blocked) {
-		s_spi[spi_id].is_tx_blocked = false;
+	if (was_blocked) {
 		rtos_set_semaphore(&s_spi[spi_id].tx_sema);
 	}
 }]=])
-h2_bk_spi_replace_once("${h2_spi_signature}" "${h2_spi_replacement}")
+h2_bk_spi_replace_count("${h2_spi_signature}" "${h2_spi_replacement}" 1)
 
 set(h2_spi_signature [=[static void spi_dma_rx_finish_handler(dma_id_t id)
 {
@@ -63,15 +65,55 @@ set(h2_spi_signature [=[static void spi_dma_rx_finish_handler(dma_id_t id)
 set(h2_spi_replacement [=[static void spi_dma_rx_finish_handler(dma_id_t id)
 {
 	const spi_id_t spi_id = s_current_spi_dma_rd_id;
+	const bool was_blocked = s_spi[spi_id].is_rx_blocked;
+	s_spi[spi_id].is_rx_blocked = false;
 	SPI_LOGV("[%s] spi_id:%d\r\n", __func__, spi_id);
 	if (s_spi_rx_finish_isr[spi_id].callback){
 		s_spi_rx_finish_isr[spi_id].callback(spi_id,s_spi_rx_finish_isr[spi_id].param);
 	}
-	if (s_spi[spi_id].is_rx_blocked) {
-		s_spi[spi_id].is_rx_blocked = false;
+	if (was_blocked) {
 		rtos_set_semaphore(&s_spi[spi_id].rx_sema);
 	}
 }]=])
-h2_bk_spi_replace_once("${h2_spi_signature}" "${h2_spi_replacement}")
+h2_bk_spi_replace_count("${h2_spi_signature}" "${h2_spi_replacement}" 1)
+
+set(h2_spi_signature [=[static void spi_isr_common(spi_id_t id)
+{]=])
+set(h2_spi_replacement [=[static void spi_isr_common(spi_id_t id)
+{
+	bool h2_wake_tx = false;
+	bool h2_wake_rx = false;]=])
+h2_bk_spi_replace_count("${h2_spi_signature}" "${h2_spi_replacement}" 1)
+
+set(h2_spi_signature [=[				rtos_set_semaphore(&s_spi[id].tx_sema);
+				s_spi[id].is_tx_blocked = false;]=])
+set(h2_spi_replacement [=[				s_spi[id].is_tx_blocked = false;
+				h2_wake_tx = true;]=])
+h2_bk_spi_replace_count("${h2_spi_signature}" "${h2_spi_replacement}" 2)
+
+set(h2_spi_signature [=[			rtos_set_semaphore(&s_spi[id].rx_sema);
+			s_spi[id].is_rx_blocked = false;]=])
+set(h2_spi_replacement [=[			s_spi[id].is_rx_blocked = false;
+			h2_wake_rx = true;]=])
+h2_bk_spi_replace_count("${h2_spi_signature}" "${h2_spi_replacement}" 2)
+
+set(h2_spi_signature [=[s_spi_rx_finish_isr[id].callback(s_current_spi_dma_rd_id,s_spi_rx_finish_isr[id].param);]=])
+set(h2_spi_replacement [=[s_spi_rx_finish_isr[id].callback(id,s_spi_rx_finish_isr[id].param);]=])
+h2_bk_spi_replace_count("${h2_spi_signature}" "${h2_spi_replacement}" 1)
+
+set(h2_spi_signature [=[}
+
+static void spi_isr(void)]=])
+set(h2_spi_replacement [=[	/* Finish FIFO/register cleanup before a woken core can reuse SPI. */
+	if (h2_wake_tx) {
+		rtos_set_semaphore(&s_spi[id].tx_sema);
+	}
+	if (h2_wake_rx) {
+		rtos_set_semaphore(&s_spi[id].rx_sema);
+	}
+}
+
+static void spi_isr(void)]=])
+h2_bk_spi_replace_count("${h2_spi_signature}" "${h2_spi_replacement}" 1)
 
 file(WRITE "${H2_BK_SPI_OUTPUT}" "${h2_spi_source}")
