@@ -45,10 +45,30 @@ def main():
     assert cc and cmake, "a native C compiler and CMake are required"
     with tempfile.TemporaryDirectory(prefix="h2-wdrv-confirm-") as temporary:
         work = Path(temporary)
-        generated = work / "wdrv_tx.c"
-        subprocess.run([cmake, "-DH2_BK_WDRV_INPUT=" + str(original),
-                        "-DH2_BK_WDRV_OUTPUT=" + str(generated), "-P",
-                        str(component / "src/h2_bk_wdrv_confirm.cmake")], check=True)
+        # Exercise the real native selection with the AP's radio-disabled
+        # profile. Compiling the generator directly would miss a wrong guard.
+        (work / "CMakeLists.txt").write_text('''cmake_minimum_required(VERSION 3.16)
+project(wdrv_confirm C)
+set(CONFIG_WIFI_ENABLE OFF)
+add_library(driver STATIC "${BK_ARMINO_PATH}/components/bk_wifi_driver/wdrv_tx.c")
+function(armino_component_get_property output component property)
+  if(NOT CONFIG_WIFI_VNET_CONTROLLER)
+    message(FATAL_ERROR "WiFi-disabled image requested WDRV")
+  endif()
+  set(${output} driver PARENT_SCOPE)
+endfunction()
+include("${H2_WDRV_COMPONENT}")
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
+  CONTENT "$<JOIN:$<TARGET_PROPERTY:driver,SOURCES>,\\n>")
+''')
+        for enabled in ("OFF", "ON"):
+            build = work / enabled.lower()
+            subprocess.run([cmake, "-S", str(work), "-B", str(build),
+                            "-DBK_ARMINO_PATH=" + str(sdk / "ap"),
+                            "-DCONFIG_WIFI_VNET_CONTROLLER=" + enabled,
+                            "-DH2_WDRV_COMPONENT=" + str(component / "src/h2_bk_wdrv_component.cmake")],
+                           check=True, capture_output=True, text=True)
+        generated = Path((work / "on/selected.txt").read_text().strip())
         repeated = subprocess.run(
             [cmake, "-DH2_BK_WDRV_INPUT=" + str(generated),
              "-DH2_BK_WDRV_OUTPUT=" + str(work / "repeated.c"), "-P",
