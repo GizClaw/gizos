@@ -260,6 +260,7 @@ static void h2_ble_wifi_config_restore_advertising(
     if (rc != H2_PAL_OK) {
       h2_ble_wifi_config_advertising_failed_locked(service, rc);
     } else {
+      service->adv_needs_reset = true;
       service->adv_active =
           generation == service->conn_generation &&
           (params.mode != H2_PAL_BLE_ADV_MODE_CONNECTABLE ||
@@ -281,15 +282,18 @@ static void h2_ble_wifi_config_pause_advertising(
   h2_ble_wifi_config_lock(service);
   service->adv_paused =
       !service->config.keep_advertising_during_wifi && service->adv_started;
-  bool stop = service->adv_paused && service->adv_active;
+  bool stop =
+      service->adv_paused && (service->adv_active || service->adv_needs_reset);
   h2_ble_wifi_config_unlock(service);
   if (stop) {
     int rc = h2_pal_ble_stop_advertising(service->api.ble);
     h2_ble_wifi_config_lock(service);
-    if (rc == H2_PAL_OK)
+    if (rc == H2_PAL_OK) {
       service->adv_active = false;
-    else
+      service->adv_needs_reset = false;
+    } else {
       h2_ble_wifi_config_advertising_failed_locked(service, rc);
+    }
     h2_ble_wifi_config_unlock(service);
   }
   (void)h2_pal_mutex_unlock(service->api.sync, service->adv_mutex);
@@ -761,7 +765,6 @@ static void h2_ble_wifi_config_apply_transition_locked(
           service->conn_generation++;
           if (service->adv_params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE) {
             service->adv_active = false;
-            service->adv_needs_reset = service->adv_started;
           }
           service->adv_restart_pending = false;
           service->att_mtu = connection->mtu;
@@ -913,7 +916,6 @@ static int h2_ble_wifi_config_system_event(void* user,
       h2_ble_wifi_config_lock(service);
       if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED) {
         service->adv_active = false;
-        service->adv_needs_reset = false;
       } else if (service->adv_started && !service->adv_paused &&
                  !service->closing && service->adv_result == H2_PAL_OK &&
                  (service->adv_params.mode != H2_PAL_BLE_ADV_MODE_CONNECTABLE ||
@@ -1205,6 +1207,7 @@ int h2_ble_wifi_config_start_advertising(
     if (rc == H2_PAL_OK) {
       service->adv_params = *params;
       service->adv_started = true;
+      service->adv_needs_reset = true;
       service->adv_active =
           generation == service->conn_generation &&
           (params->mode != H2_PAL_BLE_ADV_MODE_CONNECTABLE ||

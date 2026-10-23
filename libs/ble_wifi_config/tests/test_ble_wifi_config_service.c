@@ -1704,6 +1704,30 @@ static void test_snapshot_ignores_other_advertising_sets(void) {
   fake_runtime_deinit(&runtime);
 }
 
+static void test_cleanup_after_delayed_advertising_stop(void) {
+  for (unsigned direct_close = 0u; direct_close < 2u; ++direct_close) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    h2_ble_wifi_config_t* service = open_service(&runtime, NULL);
+    CHECK(h2_ble_wifi_config_start_advertising(service, NULL,
+                                               &recovery_params) == H2_PAL_OK);
+    CHECK(h2_ble_wifi_config_stop_advertising(service) == H2_PAL_OK);
+    CHECK(h2_ble_wifi_config_start_advertising(service, NULL,
+                                               &recovery_params) == H2_PAL_OK);
+    /* The previous stop's queued event is delivered after the new Host start.
+     * It updates the observed snapshot, but cannot release cleanup ownership.
+     */
+    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED, NULL,
+              0u);
+    CHECK(wait_snapshot(service, false, false, H2_PAL_OK).window_open);
+    if (!direct_close)
+      CHECK(h2_ble_wifi_config_stop_advertising(service) == H2_PAL_OK);
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    CHECK(!runtime.adv_active);
+    fake_runtime_deinit(&runtime);
+  }
+}
+
 static void test_small_mtu_reports_event(void) {
   fake_runtime_t runtime;
   fake_runtime_init(&runtime);
@@ -2034,6 +2058,7 @@ int main(void) {
   test_stop_prevents_disconnect_restart();
   test_stop_waits_for_inflight_restore();
   test_snapshot_ignores_other_advertising_sets();
+  test_cleanup_after_delayed_advertising_stop();
   test_small_mtu_reports_event();
   test_disconnect_clears_connection();
   test_open_rejects_bad_arguments();

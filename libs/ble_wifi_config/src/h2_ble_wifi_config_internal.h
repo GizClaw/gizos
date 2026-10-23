@@ -94,6 +94,8 @@ struct h2_ble_wifi_config {
   h2_pal_ble_adv_params_t adv_params;
   bool adv_started;
   bool adv_active;
+  /* A successful Host start retains cleanup ownership until a successful
+   * Host stop. Queued lifecycle events can describe an earlier operation. */
   bool adv_needs_reset;
   bool adv_paused;
   bool adv_restart_pending;
