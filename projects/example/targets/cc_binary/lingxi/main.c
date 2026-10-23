@@ -118,7 +118,7 @@ int main(int argc, char** argv) {
         "Set LINGXI_PRODUCT_ID and LINGXI_PRODUCT_KEY. DEVICE_NO_TYPE: SN/IMEI/CMEI.\n"
         "Optional: LINGXI_SOURCE_IP, LINGXI_INTERFACE, LINGXI_CA_FILE.\n"
         "LINGXI_LOOPBACK_HTTP=1 permits only a local HTTP fixture.\n"
-        "An optional JSON file supplies the original heartbeat params object.\n",
+        "An optional JSON file supplies the caller's heartbeat params object.\n",
         stderr);
     return 2;
   }
