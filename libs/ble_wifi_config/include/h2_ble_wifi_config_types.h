@@ -66,6 +66,9 @@ typedef enum h2_ble_wifi_config_event {
    * will not come.
    */
   H2_BLE_WIFI_CONFIG_EVENT_PROTOCOL_ERROR,
+  /** Advertising could not be paused or restored; status is the PAL error.
+   * The error remains in the snapshot until the caller reopens the window. */
+  H2_BLE_WIFI_CONFIG_EVENT_ADVERTISING_FAILED,
 } h2_ble_wifi_config_event_t;
 
 /**
@@ -163,6 +166,19 @@ typedef struct h2_ble_wifi_config_config {
   h2_ble_wifi_config_event_fn on_event;
   void* user;
 } h2_ble_wifi_config_config_t;
+
+/** Last confirmed state of this service's advertising window and connection. */
+typedef struct h2_ble_wifi_config_snapshot {
+  /** The caller has opened a window and has not stopped or closed it. */
+  bool window_open;
+  /** Advertising is running according to PAL calls and lifecycle events. */
+  bool advertising;
+  /** A peripheral connection is currently adopted by this service. */
+  bool connected;
+  /** Most recent advertising failure, or H2_PAL_OK. A failed automatic
+   * restore is reported once, without an unbounded retry loop. */
+  int advertising_result;
+} h2_ble_wifi_config_snapshot_t;
 
 /** Counters for diagnostics and tests. */
 typedef struct h2_ble_wifi_config_stats {

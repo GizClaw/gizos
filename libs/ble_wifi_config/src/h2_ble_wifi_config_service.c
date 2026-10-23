@@ -220,34 +220,113 @@ static int h2_ble_wifi_config_notify(h2_ble_wifi_config_t* service,
   return rc;
 }
 
+/* The caller holds the state mutex. A failed recovery waits for an explicit
+ * stop/start; repeatedly retrying a broken radio would spin the worker. */
+static void h2_ble_wifi_config_advertising_failed_locked(
+    h2_ble_wifi_config_t* service, int rc) {
+  service->adv_result = rc;
+  service->adv_restart_pending = false;
+  h2_ble_wifi_config_post_event_locked(
+      service, H2_BLE_WIFI_CONFIG_EVENT_ADVERTISING_FAILED,
+      H2_PAL_BLE_INVALID_CONN_HANDLE, rc);
+}
+
+/* The caller holds the state mutex. */
+static bool h2_ble_wifi_config_can_start_locked(
+    const h2_ble_wifi_config_t* service) {
+  return service->adv_started && !service->adv_paused && !service->closing &&
+         service->adv_result == H2_PAL_OK &&
+         !(service->conn_handle != H2_PAL_BLE_INVALID_CONN_HANDLE &&
+           service->adv_params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE);
+}
+
+/* The caller holds the state mutex. A Host may synchronously report a finite
+ * advertisement's completion before returning success. Preserve that event,
+ * while retaining cleanup ownership until an explicit successful Host stop. */
+static void h2_ble_wifi_config_publish_start_locked(
+    h2_ble_wifi_config_t* service, uint32_t connection_generation,
+    uint32_t event_generation) {
+  service->adv_needs_reset = true;
+  if (service->adv_event_generation == event_generation) {
+    service->adv_active =
+        service->adv_params.mode != H2_PAL_BLE_ADV_MODE_CONNECTABLE ||
+        (connection_generation == service->conn_generation &&
+         service->conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE);
+  }
+  /* A disconnect received during start already queued its own recovery.
+   * A finite advertisement's stop alone must not create a restart loop. */
+}
+
+static void h2_ble_wifi_config_restore_advertising(
+    h2_ble_wifi_config_t* service) {
+  (void)h2_pal_mutex_lock(service->api.sync, service->adv_mutex);
+  h2_ble_wifi_config_lock(service);
+  service->adv_restart_pending = false;
+  bool restore =
+      !service->adv_active && h2_ble_wifi_config_can_start_locked(service);
+  h2_pal_ble_adv_params_t params = service->adv_params;
+  bool reset = service->adv_needs_reset;
+  h2_ble_wifi_config_unlock(service);
+  if (restore) {
+    /* Normalize the Host's default advertisement after a short-lived link;
+     * some controllers omit the corresponding advertising-stopped callback. */
+    int rc = reset ? h2_pal_ble_stop_advertising(service->api.ble) : H2_PAL_OK;
+    bool start = false;
+    uint32_t generation = 0u;
+    uint32_t event_generation = 0u;
+    if (rc == H2_PAL_OK) {
+      h2_ble_wifi_config_lock(service);
+      service->adv_active = false;
+      service->adv_needs_reset = false;
+      /* Stop may deliver a new connection or the caller may close the window.
+       * Recheck before starting and observe only events from the start call. */
+      start = h2_ble_wifi_config_can_start_locked(service);
+      generation = service->conn_generation;
+      event_generation = service->adv_event_generation;
+      h2_ble_wifi_config_unlock(service);
+      if (start) rc = h2_pal_ble_start_advertising(service->api.ble, &params);
+    }
+    h2_ble_wifi_config_lock(service);
+    if (rc != H2_PAL_OK) {
+      h2_ble_wifi_config_advertising_failed_locked(service, rc);
+    } else if (start) {
+      h2_ble_wifi_config_publish_start_locked(service, generation,
+                                              event_generation);
+    }
+    h2_ble_wifi_config_unlock(service);
+  }
+  (void)h2_pal_mutex_unlock(service->api.sync, service->adv_mutex);
+}
+
 static void h2_ble_wifi_config_pause_advertising(
     h2_ble_wifi_config_t* service) {
+  (void)h2_pal_mutex_lock(service->api.sync, service->adv_mutex);
   h2_ble_wifi_config_lock(service);
-  bool pause = !service->config.keep_advertising_during_wifi &&
-               service->adv_started && !service->adv_paused;
-  if (pause) {
-    service->adv_paused = true;
-  }
+  service->adv_paused =
+      !service->config.keep_advertising_during_wifi && service->adv_started;
+  bool stop =
+      service->adv_paused && (service->adv_active || service->adv_needs_reset);
   h2_ble_wifi_config_unlock(service);
-  if (pause) {
-    (void)h2_pal_ble_stop_advertising(service->api.ble);
+  if (stop) {
+    int rc = h2_pal_ble_stop_advertising(service->api.ble);
+    h2_ble_wifi_config_lock(service);
+    if (rc == H2_PAL_OK) {
+      service->adv_active = false;
+      service->adv_needs_reset = false;
+    } else {
+      h2_ble_wifi_config_advertising_failed_locked(service, rc);
+    }
+    h2_ble_wifi_config_unlock(service);
   }
+  (void)h2_pal_mutex_unlock(service->api.sync, service->adv_mutex);
 }
 
 static void h2_ble_wifi_config_resume_advertising(
     h2_ble_wifi_config_t* service) {
-  h2_pal_ble_adv_params_t params;
   h2_ble_wifi_config_lock(service);
-  bool resume =
-      service->adv_started && service->adv_paused && !service->closing;
-  params = service->adv_params;
-  if (resume) {
-    service->adv_paused = false;
-  }
+  service->adv_paused = false;
   h2_ble_wifi_config_unlock(service);
-  if (resume) {
-    (void)h2_pal_ble_start_advertising(service->api.ble, &params);
-  }
+  h2_ble_wifi_config_restore_advertising(service);
 }
 
 typedef struct h2_ble_wifi_config_scan_context {
@@ -474,8 +553,6 @@ static void h2_ble_wifi_config_run_provision(
   h2_ble_wifi_config_reason_t reason = H2_BLE_WIFI_CONFIG_REASON_NONE;
   h2_ble_wifi_config_pause_advertising(service);
   int rc = h2_ble_wifi_config_connect(service, credentials, peer, &reason);
-  h2_ble_wifi_config_resume_advertising(service);
-
   h2_ble_wifi_config_lock(service);
   service->stats.provision_attempts++;
   if (rc != H2_PAL_OK) {
@@ -497,6 +574,9 @@ static void h2_ble_wifi_config_run_provision(
       .status = rc == H2_PAL_OK ? H2_PAL_OK : (int)reason,
   };
   h2_ble_wifi_config_emit(service, &done);
+  /* Publish a real provisioning success before any unrelated advertising
+   * failure, so the caller can close the completed window successfully. */
+  h2_ble_wifi_config_resume_advertising(service);
 }
 
 static void h2_ble_wifi_config_worker(void* ctx) {
@@ -505,7 +585,7 @@ static void h2_ble_wifi_config_worker(void* ctx) {
     h2_ble_wifi_config_lock(service);
     while (!service->closing && service->event_count == 0u &&
            !service->reject_pending && !service->credentials_pending &&
-           !service->scan_requested) {
+           !service->scan_requested && !service->adv_restart_pending) {
       (void)h2_pal_cond_wait(service->api.sync, service->cond, service->mutex,
                              H2_PAL_SYNC_WAIT_FOREVER);
     }
@@ -521,6 +601,11 @@ static void h2_ble_wifi_config_worker(void* ctx) {
       service->event_count--;
       h2_ble_wifi_config_unlock(service);
       h2_ble_wifi_config_emit(service, &event);
+      continue;
+    }
+    if (service->adv_restart_pending) {
+      h2_ble_wifi_config_unlock(service);
+      h2_ble_wifi_config_restore_advertising(service);
       continue;
     }
     if (service->reject_pending) {
@@ -700,6 +785,10 @@ static void h2_ble_wifi_config_apply_transition_locked(
             service->conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE) {
           service->conn_handle = connection->conn_handle;
           service->conn_generation++;
+          if (service->adv_params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE) {
+            service->adv_active = false;
+          }
+          service->adv_restart_pending = false;
           service->att_mtu = connection->mtu;
           service->scan_subscribed = false;
           service->provision_subscribed = false;
@@ -755,6 +844,9 @@ static void h2_ble_wifi_config_apply_transition_locked(
           service->scan_stop_requested = true;
           service->credentials_pending = false;
           service->reject_pending = false;
+          service->adv_restart_pending = service->adv_started &&
+                                         !service->closing &&
+                                         service->adv_result == H2_PAL_OK;
           h2_ble_wifi_config_post_event_locked(
               service, H2_BLE_WIFI_CONFIG_EVENT_DISCONNECTED, info->conn_handle,
               info->reason);
@@ -838,6 +930,23 @@ static int h2_ble_wifi_config_system_event(void* user,
   memset(&transition, 0, sizeof(transition));
   transition.type = event->type;
   switch (event->type) {
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED:
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED:
+      /* Default-advertisement events have no payload. Other services may
+       * own independent sets on the same Host; their events are unrelated. */
+      if (event->payload_size != 0u) return H2_PAL_OK;
+      h2_ble_wifi_config_lock(service);
+      service->adv_event_generation++;
+      if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED) {
+        service->adv_active = false;
+      } else if (service->adv_started && !service->adv_paused &&
+                 !service->closing && service->adv_result == H2_PAL_OK &&
+                 (service->adv_params.mode != H2_PAL_BLE_ADV_MODE_CONNECTABLE ||
+                  service->conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE)) {
+        service->adv_active = true;
+      }
+      h2_ble_wifi_config_unlock(service);
+      return H2_PAL_OK;
     case H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED:
       if (event->payload_size != sizeof(h2_pal_ble_connection_t)) {
         return H2_PAL_OK;
@@ -886,6 +995,8 @@ static int h2_ble_wifi_config_subscribe_events(h2_ble_wifi_config_t* service) {
       H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED,
       H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED,
       H2_PAL_SYSTEM_EVENT_TYPE_BLE_SUBSCRIPTION_CHANGED,
+      H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+      H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
   };
   for (size_t i = 0u; i < H2_BLE_WIFI_CONFIG_SUBSCRIPTION_COUNT; ++i) {
     int rc = h2_pal_system_event_subscribe(
@@ -981,6 +1092,10 @@ int h2_ble_wifi_config_open(const h2_ble_wifi_config_api_t* api,
   if (rc != H2_PAL_OK) {
     goto fail;
   }
+  rc = h2_pal_mutex_create(api->sync, &mutex_config, &service->adv_mutex);
+  if (rc != H2_PAL_OK) {
+    goto fail;
+  }
   h2_pal_cond_config_t cond_config = {
       .name = h2_ble_wifi_config_worker_task_name,
       .allocator = api->allocator,
@@ -1028,6 +1143,9 @@ fail:
   if (service->cond != NULL) {
     (void)h2_pal_cond_destroy(api->sync, service->cond);
   }
+  if (service->adv_mutex != NULL) {
+    (void)h2_pal_mutex_destroy(api->sync, service->adv_mutex);
+  }
   if (service->mutex != NULL) {
     (void)h2_pal_mutex_destroy(api->sync, service->mutex);
   }
@@ -1045,9 +1163,8 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t* service) {
   service->scan_requested = false;
   service->credentials_pending = false;
   service->reject_pending = false;
-  bool stop_advertising = service->adv_started && !service->adv_paused;
   service->adv_started = false;
-  service->adv_paused = false;
+  service->adv_restart_pending = false;
   (void)h2_pal_cond_broadcast(service->api.sync, service->cond);
   h2_ble_wifi_config_unlock(service);
 
@@ -1058,13 +1175,8 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t* service) {
     }
     service->worker = NULL;
   }
-  int result = H2_PAL_OK;
-  if (stop_advertising) {
-    int rc = h2_pal_ble_stop_advertising(service->api.ble);
-    if (rc != H2_PAL_OK) {
-      result = rc;
-    }
-  }
+  int result = h2_ble_wifi_config_stop_advertising(service);
+  if (result != H2_PAL_OK) return result;
   if (service->gatt_registered) {
     /*
      * The Host borrows the schema, its callback contexts and its handle
@@ -1089,6 +1201,7 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t* service) {
     service->subscriptions[i] = NULL;
   }
   (void)h2_pal_cond_destroy(service->api.sync, service->cond);
+  (void)h2_pal_mutex_destroy(service->api.sync, service->adv_mutex);
   (void)h2_pal_mutex_destroy(service->api.sync, service->mutex);
   h2_pal_mem_free(service->api.allocator, service);
   return result;
@@ -1097,46 +1210,99 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t* service) {
 int h2_ble_wifi_config_start_advertising(
     h2_ble_wifi_config_t* service, const h2_pal_ble_adv_data_t* data,
     const h2_pal_ble_adv_params_t* params) {
-  if (service == NULL || params == NULL) {
+  if (service == NULL || !h2_pal_ble_adv_params_valid(params))
     return H2_PAL_ERR_INVALID_ARG;
-  }
+  (void)h2_pal_mutex_lock(service->api.sync, service->adv_mutex);
   h2_ble_wifi_config_lock(service);
   bool closing = service->closing;
+  bool opened = service->adv_started;
+  bool cleanup_pending = service->adv_needs_reset;
   h2_ble_wifi_config_unlock(service);
-  if (closing) {
-    return H2_PAL_ERR_CLOSED;
+  /* A failed stop retains the last confirmed radio state and its ownership.
+   * Finish that cleanup before admitting a replacement window. */
+  if (closing || opened || cleanup_pending) {
+    (void)h2_pal_mutex_unlock(service->api.sync, service->adv_mutex);
+    return closing ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_INVALID_STATE;
   }
-  if (data != NULL) {
-    int rc = h2_pal_ble_set_adv_data(service->api.ble, data);
-    if (rc != H2_PAL_OK) {
-      return rc;
-    }
-  }
-  int rc = h2_pal_ble_start_advertising(service->api.ble, params);
-  if (rc != H2_PAL_OK) {
-    return rc;
-  }
+  int rc = data != NULL ? h2_pal_ble_set_adv_data(service->api.ble, data)
+                        : H2_PAL_OK;
+  bool start = false;
+  uint32_t generation = 0u;
+  uint32_t event_generation = 0u;
   h2_ble_wifi_config_lock(service);
-  service->adv_params = *params;
-  service->adv_started = true;
-  service->adv_paused = false;
+  if (rc == H2_PAL_OK && service->closing) rc = H2_PAL_ERR_CLOSED;
+  service->adv_result = rc;
+  if (rc == H2_PAL_OK) {
+    /* Publish the window and its parameters before entering the Host: its
+     * synchronous events must observe this operation, including a disconnect
+     * that needs recovery. An existing peer defers the Host start entirely. */
+    service->adv_params = *params;
+    service->adv_started = true;
+    service->adv_paused = false;
+    start = h2_ble_wifi_config_can_start_locked(service);
+    generation = service->conn_generation;
+    event_generation = service->adv_event_generation;
+  }
   h2_ble_wifi_config_unlock(service);
-  return H2_PAL_OK;
+  if (rc == H2_PAL_OK && start) {
+    rc = h2_pal_ble_start_advertising(service->api.ble, params);
+    h2_ble_wifi_config_lock(service);
+    if (rc == H2_PAL_OK) {
+      h2_ble_wifi_config_publish_start_locked(service, generation,
+                                              event_generation);
+    } else {
+      service->adv_result = rc;
+      service->adv_started = false;
+      service->adv_restart_pending = false;
+    }
+    h2_ble_wifi_config_unlock(service);
+  }
+  (void)h2_pal_mutex_unlock(service->api.sync, service->adv_mutex);
+  return rc;
 }
 
 int h2_ble_wifi_config_stop_advertising(h2_ble_wifi_config_t* service) {
-  if (service == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
+  if (service == NULL) return H2_PAL_ERR_INVALID_ARG;
+  /* Revoke intent before waiting for an in-flight automatic restore. */
   h2_ble_wifi_config_lock(service);
-  bool stop = service->adv_started && !service->adv_paused;
   service->adv_started = false;
+  service->adv_restart_pending = false;
+  h2_ble_wifi_config_unlock(service);
+  (void)h2_pal_mutex_lock(service->api.sync, service->adv_mutex);
+  h2_ble_wifi_config_lock(service);
+  bool stop = service->adv_active || service->adv_needs_reset;
+  service->adv_started = false;
+  service->adv_restart_pending = false;
   service->adv_paused = false;
   h2_ble_wifi_config_unlock(service);
-  if (!stop) {
-    return H2_PAL_OK;
+  int rc = stop ? h2_pal_ble_stop_advertising(service->api.ble) : H2_PAL_OK;
+  h2_ble_wifi_config_lock(service);
+  if (rc == H2_PAL_OK) {
+    service->adv_active = false;
+    service->adv_needs_reset = false;
+  } else {
+    service->adv_result = rc;
   }
-  return h2_pal_ble_stop_advertising(service->api.ble);
+  h2_ble_wifi_config_unlock(service);
+  (void)h2_pal_mutex_unlock(service->api.sync, service->adv_mutex);
+  return rc;
+}
+
+int h2_ble_wifi_config_get_snapshot(
+    h2_ble_wifi_config_t* service,
+    h2_ble_wifi_config_snapshot_t* out_snapshot) {
+  if (out_snapshot == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_snapshot, 0, sizeof(*out_snapshot));
+  if (service == NULL) return H2_PAL_ERR_INVALID_ARG;
+  h2_ble_wifi_config_lock(service);
+  *out_snapshot = (h2_ble_wifi_config_snapshot_t){
+      .window_open = service->adv_started && !service->closing,
+      .advertising = service->adv_active,
+      .connected = service->conn_handle != H2_PAL_BLE_INVALID_CONN_HANDLE,
+      .advertising_result = service->adv_result,
+  };
+  h2_ble_wifi_config_unlock(service);
+  return H2_PAL_OK;
 }
 
 const h2_pal_ble_gatt_service_t* h2_ble_wifi_config_gatt_service(

@@ -98,24 +98,33 @@ int h2_ble_wifi_config_open(const h2_ble_wifi_config_api_t* api,
  *
  * @param service Service to close.
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, or the first PAL failure. The
- * service is freed unless joining the worker task or releasing the GATT
- * schema failed; the Host borrows that schema until it is released, so the
- * instance stays alive and the caller may retry.
+ * service remains alive when joining the worker, stopping its advertisement
+ * or releasing the GATT schema fails; the caller may retry close(). The Host
+ * borrows the schema until unregister succeeds.
  */
 int h2_ble_wifi_config_close(h2_ble_wifi_config_t* service);
 
 /**
  * @brief Publish the advertising data and start the provisioning window.
  *
- * The service remembers @p params so it can restart advertising after a scan
- * or connect attempt when
- * h2_ble_wifi_config_config_t::pause_advertising_during_wifi is set.
+ * The service remembers @p params and restores advertising on its worker
+ * after a peripheral disconnect while the window remains open. A scan or
+ * connect attempt pauses advertising unless keep_advertising_during_wifi is
+ * set. If a peripheral is already connected when a connectable window opens,
+ * the Host start is deferred until that peer disconnects; H2_PAL_OK accepts
+ * the window, and the snapshot distinguishes connection from advertising.
+ * Automatic pause/restore errors are latched in the snapshot and delivered as
+ * H2_BLE_WIFI_CONFIG_EVENT_ADVERTISING_FAILED. Stop and reopen the window to
+ * retry. Advertising operations are serialized without holding the state lock
+ * across Host calls, including against a concurrent stop.
  *
  * @param service Service that owns the advertising window.
  * @param data Borrowed advertising data applied before advertising starts, or
  * NULL to keep whatever the Host already holds.
  * @param params Borrowed advertising parameters, copied before returning.
- * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, or the underlying PAL failure.
+ * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, H2_PAL_ERR_INVALID_STATE if a
+ * window is already open or a previous stop still needs cleanup, or the
+ * underlying PAL failure. A failed stop must be retried before reopening.
  */
 int h2_ble_wifi_config_start_advertising(h2_ble_wifi_config_t* service,
                                          const h2_pal_ble_adv_data_t* data,
@@ -146,6 +155,23 @@ int h2_ble_wifi_config_stop_advertising(h2_ble_wifi_config_t* service);
  */
 const h2_pal_ble_gatt_service_t* h2_ble_wifi_config_gatt_service(
     const h2_ble_wifi_config_t* service);
+
+/**
+ * @brief Copy the current window, advertising, connection and failure state.
+ *
+ * May be called concurrently with service work, but must not race close().
+ * The snapshot reflects completed PAL operations and received BLE events;
+ * it does not prove reception by another radio. The caller must keep the
+ * Host's default advertisement exclusive to this service while the window
+ * is open. Handle-scoped advertising events from other services are ignored.
+ *
+ * @param service Live service to inspect.
+ * @param out_snapshot Cleared first, then filled under the service mutex.
+ * @return H2_PAL_OK or H2_PAL_ERR_INVALID_ARG. Advertising errors are in
+ * out_snapshot->advertising_result, not the accessor's return value.
+ */
+int h2_ble_wifi_config_get_snapshot(
+    h2_ble_wifi_config_t* service, h2_ble_wifi_config_snapshot_t* out_snapshot);
 
 /**
  * @brief Copy the current counters.
