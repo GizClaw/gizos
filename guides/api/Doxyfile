@@ -25,6 +25,8 @@ INPUT                  = libs/app_test/include \
                          libs/mem_arena/include \
                          libs/mp4_decoder/include \
                          libs/ntp/include \
+                         libs/china_mobile/lingxi/include \
+                         libs/china_mobile/onenet/include \
                          libs/pal/include \
                          libs/pixa/include \
                          libs/pal/providers/portaudio/include \

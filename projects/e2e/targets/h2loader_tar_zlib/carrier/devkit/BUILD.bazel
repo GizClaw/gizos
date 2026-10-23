@@ -1,0 +1,153 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "runner_tasks",
+    tasks = ["carrier/e2e/runner"],
+)
+
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+        "main/h2_carrier_setup_failure.c",
+        "main/h2_carrier_setup_failure.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+esp_target_task_policy(
+    name = "task_policy",
+    default_policy = "4 any 4096 psram",
+    graph = [":launcher"],
+    policies = [
+        "carrier/e2e/runner 4 0 65536 psram",
+        "h2loader/appcmd 8 0 4096 psram",
+        "h2loader/blecmd 8 0 4096 psram",
+        "$h2loader/return 8 0 4096 psram",
+        "$h2loader/blelink 6 0 4096 psram",
+        "$h2loader/uartcmd default",
+        "$bleikcp/kcp 7 0 4096 psram",
+        "$bleikcp/server 5 0 4096 psram",
+        "$h2peer/net 7 0 4096 psram",
+        "$h2peer/udp 7 0 4096 psram",
+        "$runtime/input default",
+        "$runtime/nfc default",
+    ],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/atomic",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/coremqtt",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pal/providers/yyjson",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/e2e/apps/lingxi/app:lingxi_e2e",
+        "//projects/e2e/apps/onenet/app:onenet_e2e",
+        "//projects/e2e/libs/carrier-device:carrier_device",
+    ],
+)
+
+firmware_native_component(
+    name = "launcher",
+    srcs = [
+        "main/h2_carrier_setup_failure.c",
+        "main/main.c",
+    ],
+    hdrs = [
+        "main/h2_carrier_setup_failure.h",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:h2_e2e_fixture_wifi.h",
+    ],
+    component_directory = "projects/e2e/targets/h2loader_tar_zlib/carrier/devkit/main",
+    component_name = "main",
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:fixture_wifi.cmake",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":firmware_lib",
+        ":runner_tasks",
+        "//boards/devkit/esp32s3",
+        "//libs/atomic",
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/h2_carrier_setup_failure.c",
+        "main/h2_carrier_setup_failure.h",
+        "main/idf_component.yml",
+        "main/main.c",
+        "sdkconfig.carrier.defaults",
+    ],
+    board = "devkit",
+    console = "usb",
+    graph = [":launcher"],
+    project = "CMakeLists.txt",
+    project_name = "h2_carrier_e2e",
+    target = "esp32s3",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "devkit",
+    firmware = ":firmware",
+    image = "carrier",
+    role = "app",
+    target = "esp32s3",
+)
+
+cc_test(
+    name = "setup_failure_test",
+    srcs = [
+        "main/h2_carrier_setup_failure.c",
+        "main/h2_carrier_setup_failure.h",
+        "tests/sdk/freertos/FreeRTOS.h",
+        "tests/sdk/freertos/task.h",
+        "tests/test_setup_failure.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "main",
+        "tests/sdk",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/pal/providers/yyjson",
+        "//projects/e2e/libs/carrier-device:carrier_device",
+    ],
+)

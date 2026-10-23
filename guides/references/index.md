@@ -22,6 +22,8 @@
 - [LVGL](./lvgl.md)
 - [iperf](./iperf.md)
 - [NTP](./ntp.md)
+- [OneNET](./onenet.md)
+- [灵犀设备接入](./lingxi.md)
 - [PAL](./pal.md)
 - [PIXA](./pixa.md)
 - [QR Code](./qrcode.md)

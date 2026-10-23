@@ -1,0 +1,3 @@
+H2_LINGXI_CASE(GET_DEVICE_INFO, "get-device-info")
+H2_LINGXI_CASE(HEARTBEAT, "heartbeat")
+H2_LINGXI_CASE(CREDENTIAL_CLEANUP, "credential-cleanup")
