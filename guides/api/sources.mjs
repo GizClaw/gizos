@@ -32,6 +32,7 @@ export const apiSources = [
   { id: "mem_arena", roots: ["libs/mem_arena/include"] },
   { id: "mp4_decoder", roots: ["libs/mp4_decoder/include"] },
   { id: "ntp", roots: ["libs/ntp/include"] },
+  { id: "onenet", roots: ["libs/onenet/include"] },
   { id: "ogg_opus", roots: ["libs/audio/ogg_opus/include"] },
   { id: "pal", roots: ["libs/pal/include"] },
   { id: "pixa", roots: ["libs/pixa/include"] },

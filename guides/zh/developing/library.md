@@ -147,6 +147,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`mem_arena`](./mem_arena.md)：把调用方的一块内存分成独立 small/large TLSF pool，借出 Memory PAL，支持 fallback、按 owner 释放、逐池统计和按需碎片诊断。调用方提供成对 lock/unlock；core 不依赖 SDK，也不分配外部控制对象。ESP reservation 与 mutex adapter 由 [ESP-IDF 6.x](./components/esp_idf6_x.md#psram-arena) 拥有，桌面占位栈统计见 [Desktop](./components/desktop.md)。
 - [`mp4_decoder`](./mp4_decoder.md)：从 random-access MP4 source 产生同步、可写的音视频 presentation frame。
 - [`ntp`](./ntp.md)：跨平台 NTP client。
+- [`onenet`](./onenet.md)：通过 MQTT PAL 接入 OneNET 的可复用 OneJSON client。
 - [`pal`](./platform_abstract_layer.md)：Platform Abstraction Layer contract。
 - [`pixa`](./pixa.md)：PIXA image、pack、decode、reader 和 blit。
 - [`raster2d`](./raster2d.md)：无 VM、无分配的 RGB565 矩形重放和 palette 插值。

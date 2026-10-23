@@ -1,8 +1,9 @@
 load("@gizos//libs/lua:lua_app.bzl", "lua_app")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("@gizos//tools/bazel:bk7258.bzl", "bk7258_firmware")
 load("@gizos//tools/bazel:app_version.bzl", "app_version")
+load("@gizos//tools/bazel:bk7258.bzl", "bk7258_firmware")
+load("@gizos//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("@gizos//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
 load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -14,6 +15,14 @@ load("@gizos//tools/lvgl/ttf_subset:ttf_subset.bzl", "ttf_subset_c")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load(":consumer.bzl", "fake_firmware", "native_component_paths")
+
+cc_test(
+    name = "onenet_consumer_test",
+    srcs = ["onenet_consumer.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = ["@gizos//libs/onenet"],
+)
 
 app_version(
     name = "abc_lua_version",
@@ -92,8 +101,8 @@ py_test(
     ],
     data = [
         "lua_app_catalog.jsonl",
-        "lua_app_release_files.jsonl",
         "lua_app_default_files.txt",
+        "lua_app_release_files.jsonl",
         ":abc_lua_archive",
         ":abc_lua_manifest",
         ":abc_lua_metadata",

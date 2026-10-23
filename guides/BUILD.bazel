@@ -65,6 +65,7 @@ api_reference(
         "//libs/mem_arena:census",
         "//libs/mp4_decoder",
         "//libs/ntp",
+        "//libs/onenet",
         "//libs/pal",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/coremqtt",
