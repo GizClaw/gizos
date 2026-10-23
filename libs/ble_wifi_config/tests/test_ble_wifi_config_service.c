@@ -71,6 +71,7 @@ typedef struct fake_runtime {
   bool adv_active;
   bool hold_adv_start;
   bool adv_start_in_progress;
+  bool finish_adv_during_start;
   h2_pal_ble_adv_params_t adv_params;
 
   fake_notification_t notifications[TEST_MAX_NOTIFICATIONS];
@@ -121,6 +122,9 @@ typedef struct fake_runtime {
 #define TEST_COMMAND_HANDLE ((uint16_t)2u)
 #define TEST_SCAN_HANDLE ((uint16_t)4u)
 #define TEST_PROVISION_HANDLE ((uint16_t)6u)
+
+static void fake_post(fake_runtime_t* runtime, h2_pal_system_event_type_t type,
+                      const void* payload, size_t payload_size);
 
 static void* fake_alloc(void* user, size_t len) {
   (void)user;
@@ -497,8 +501,18 @@ static h2_pal_result_t fake_start_advertising(
   int rc = runtime->adv_start_result;
   if (rc == H2_PAL_OK) runtime->adv_active = true;
   runtime->adv_start_in_progress = false;
+  bool finish = runtime->finish_adv_during_start && rc == H2_PAL_OK;
   pthread_cond_broadcast(&runtime->cond);
   pthread_mutex_unlock(&runtime->mutex);
+  if (finish) {
+    fake_post(runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED, NULL,
+              0u);
+    pthread_mutex_lock(&runtime->mutex);
+    runtime->adv_active = false;
+    pthread_mutex_unlock(&runtime->mutex);
+    fake_post(runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED, NULL,
+              0u);
+  }
   return rc;
 }
 
@@ -1728,6 +1742,71 @@ static void test_cleanup_after_delayed_advertising_stop(void) {
   }
 }
 
+static void test_reopen_defers_advertising_until_disconnect(void) {
+  fake_runtime_t runtime;
+  fake_runtime_init(&runtime);
+  h2_ble_wifi_config_t* service = open_service(&runtime, NULL);
+  CHECK(h2_ble_wifi_config_start_advertising(service, NULL, &recovery_params) ==
+        H2_PAL_OK);
+  connect_and_subscribe(&runtime);
+  CHECK(h2_ble_wifi_config_stop_advertising(service) == H2_PAL_OK);
+  h2_pal_ble_adv_params_t invalid = recovery_params;
+  invalid.interval_max_ms = invalid.interval_min_ms - 1u;
+  CHECK(h2_ble_wifi_config_start_advertising(service, NULL, &invalid) ==
+        H2_PAL_ERR_INVALID_ARG);
+  CHECK(h2_ble_wifi_config_start_advertising(service, NULL, &recovery_params) ==
+        H2_PAL_OK);
+  CHECK(wait_snapshot(service, false, true, H2_PAL_OK).window_open);
+  pthread_mutex_lock(&runtime.mutex);
+  CHECK(!runtime.adv_active && runtime.adv_start_count == 1);
+  pthread_mutex_unlock(&runtime.mutex);
+  disconnect_peer(&runtime);
+  CHECK(wait_snapshot(service, true, false, H2_PAL_OK).window_open);
+  CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+  CHECK(runtime.adv_start_count == 2 && !runtime.adv_active);
+  fake_runtime_deinit(&runtime);
+}
+
+static void test_start_preserves_synchronous_stop_events(void) {
+  for (unsigned restore = 0u; restore < 2u; ++restore) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    runtime.finish_adv_during_start = restore == 0u;
+    h2_ble_wifi_config_t* service = open_service(&runtime, NULL);
+    h2_pal_ble_adv_params_t params = recovery_params;
+    params.type = H2_PAL_BLE_ADV_TYPE_EXTENDED;
+    params.duration_ms = 10u;
+    params.max_adv_events = 1u;
+    CHECK(h2_ble_wifi_config_start_advertising(service, NULL, &params) ==
+          H2_PAL_OK);
+    if (restore) {
+      connect_and_subscribe(&runtime);
+      pthread_mutex_lock(&runtime.mutex);
+      runtime.finish_adv_during_start = true;
+      pthread_mutex_unlock(&runtime.mutex);
+      disconnect_peer(&runtime);
+      struct timespec deadline;
+      fake_deadline(&deadline, TEST_WAIT_MS);
+      pthread_mutex_lock(&runtime.mutex);
+      while (runtime.adv_start_count < 2)
+        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex,
+                                     &deadline) == 0);
+      pthread_mutex_unlock(&runtime.mutex);
+      /* Admission shares the advertising-operation mutex, so this returns only
+       * after the automatic Host start has completed its state publication. */
+      CHECK(h2_ble_wifi_config_start_advertising(service, NULL, &params) ==
+            H2_PAL_ERR_INVALID_STATE);
+    }
+    h2_ble_wifi_config_snapshot_t snapshot;
+    CHECK(h2_ble_wifi_config_get_snapshot(service, &snapshot) == H2_PAL_OK);
+    CHECK(snapshot.window_open && !snapshot.advertising && !snapshot.connected);
+    CHECK(snapshot.advertising_result == H2_PAL_OK);
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    CHECK(!runtime.adv_active && runtime.adv_start_count == (restore ? 2 : 1));
+    fake_runtime_deinit(&runtime);
+  }
+}
+
 static void test_small_mtu_reports_event(void) {
   fake_runtime_t runtime;
   fake_runtime_init(&runtime);
@@ -2059,6 +2138,8 @@ int main(void) {
   test_stop_waits_for_inflight_restore();
   test_snapshot_ignores_other_advertising_sets();
   test_cleanup_after_delayed_advertising_stop();
+  test_reopen_defers_advertising_until_disconnect();
+  test_start_preserves_synchronous_stop_events();
   test_small_mtu_reports_event();
   test_disconnect_clears_connection();
   test_open_rejects_bad_arguments();

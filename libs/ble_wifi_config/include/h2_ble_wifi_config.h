@@ -110,7 +110,9 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t* service);
  * The service remembers @p params and restores advertising on its worker
  * after a peripheral disconnect while the window remains open. A scan or
  * connect attempt pauses advertising unless keep_advertising_during_wifi is
- * set; a connectable advertisement is not restarted while a peer is connected.
+ * set. If a peripheral is already connected when a connectable window opens,
+ * the Host start is deferred until that peer disconnects; H2_PAL_OK accepts
+ * the window, and the snapshot distinguishes connection from advertising.
  * Automatic pause/restore errors are latched in the snapshot and delivered as
  * H2_BLE_WIFI_CONFIG_EVENT_ADVERTISING_FAILED. Stop and reopen the window to
  * retry. Advertising operations are serialized without holding the state lock

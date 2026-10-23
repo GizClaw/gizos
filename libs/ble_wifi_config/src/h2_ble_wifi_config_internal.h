@@ -92,6 +92,7 @@ struct h2_ble_wifi_config {
 
   /* Advertising window, owned by the mutex. */
   h2_pal_ble_adv_params_t adv_params;
+  uint32_t adv_event_generation;
   bool adv_started;
   bool adv_active;
   /* A successful Host start retains cleanup ownership until a successful
