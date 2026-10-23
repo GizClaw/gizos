@@ -202,9 +202,19 @@ static void on_mqtt_event(void* user, h2_pal_mqtt_client_t* mqtt_client,
       client->transport_error =
           ack->result != H2_PAL_OK ? ack->result : H2_PAL_ERR_UNAVAILABLE;
     } else {
-      client->ready = true;
-      client->connected_event = true;
-      client->subscribing = false;
+      uint64_t received_ms = 0u;
+      const h2_pal_result_t rc =
+          h2_pal_time_get_monotonic_ms(client->config.time, &received_ms);
+      if (rc != H2_PAL_OK)
+        client->transport_error = rc;
+      else if (deadline_expired(client->subscribe_started_ms, received_ms,
+                                client->config.operation_timeout_ms))
+        client->transport_error = H2_PAL_ERR_TIMEOUT;
+      else {
+        client->ready = true;
+        client->connected_event = true;
+        client->subscribing = false;
+      }
     }
   } else if (event->type == H2_PAL_MQTT_EVENT_DISCONNECTED) {
     client->ready = false;
@@ -275,9 +285,11 @@ static bool config_valid(const h2_onenet_config_t* config) {
       config->operation_timeout_ms == 0u || config->response_timeout_ms == 0u ||
       config->mqtt_buffer_bytes == 0u ||
       config->limits.payload_bytes < H2_ONENET_MIN_PAYLOAD_BYTES ||
-      config->limits.payload_bytes == SIZE_MAX ||
+      config->limits.payload_bytes > H2_PAL_JSON_DEFAULT_MAX_DOCUMENT_BYTES ||
       config->limits.json_depth < H2_ONENET_MIN_JSON_DEPTH ||
+      config->limits.json_depth > H2_PAL_JSON_DEFAULT_MAX_DEPTH ||
       config->limits.json_values < H2_ONENET_MIN_JSON_VALUES ||
+      config->limits.json_values > H2_PAL_JSON_DEFAULT_MAX_VALUES ||
       config->limits.pending_requests == 0u ||
       config->limits.pending_requests > SIZE_MAX / sizeof(pending_request_t) ||
       config->limits.queued_messages == 0u ||
@@ -496,9 +508,7 @@ static bool value_type(h2_onenet_t* client, const h2_pal_json_value_t* value,
 static h2_pal_result_t validate_params(h2_onenet_t* client,
                                        h2_onenet_operation_t operation,
                                        h2_pal_json_value_t* root) {
-  if (operation != H2_ONENET_DESIRED_GET &&
-      operation != H2_ONENET_DESIRED_DELETE &&
-      operation != H2_ONENET_PROPERTY_GET)
+  if (operation != H2_ONENET_DESIRED_GET && operation != H2_ONENET_PROPERTY_GET)
     return value_type(client, root, H2_PAL_JSON_TYPE_OBJECT)
                ? H2_PAL_OK
                : H2_PAL_ERR_FORMAT;
@@ -882,9 +892,13 @@ h2_pal_result_t h2_onenet_process(h2_onenet_t* client, uint32_t timeout_ms) {
   }
   const h2_pal_result_t time_rc =
       h2_pal_time_get_monotonic_ms(client->config.time, &now);
-  if (time_rc == H2_PAL_OK)
-    expire_requests(client, now);
-  else {
+  if (time_rc == H2_PAL_OK) {
+    /* A synchronous reply publish can queue an earlier response while the
+     * clock crosses its deadline. Preserve that arrival until the next pump. */
+    const uint64_t through =
+        client->received_count != 0u ? client->messages[0].received_ms : now;
+    expire_requests(client, through);
+  } else {
     emit_result(client, H2_ONENET_ERROR, NULL, time_rc);
     close_transport(client, time_rc, true);
     if (rc == H2_PAL_OK) rc = time_rc;

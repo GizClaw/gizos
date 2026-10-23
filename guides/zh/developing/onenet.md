@@ -33,6 +33,7 @@ bazel run --config=macos_arm64 //projects/example/targets/cc_binary/onenet:onene
 - [MQTT 设备连接](https://iot.10086.cn/doc/aiot/fuse/detail/919)
 - [通信主题](https://iot.10086.cn/doc/aiot/fuse/detail/920)
 - [属性与事件](https://iot.10086.cn/doc/aiot/fuse/detail/902)
+- [设备期望属性值](https://iot.10086.cn/doc/iot_platform/book/device-connect%26manager/thing-model/protocol/OneJSON/desired.html)
 - [设备安全认证](https://iot.10086.cn/doc/iot_platform/book/device-connect%26manager/device-auth.html)
 
 本库实现直接设备的 OneJSON 交互；网关、旧数据流协议、平台管理 API 和 OTA 通知不在当前入口中声明支持。产品控制、凭据持久化与安装策略继续由各自 owner 实现。

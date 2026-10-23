@@ -37,6 +37,9 @@ typedef struct fixture {
   bool in_mqtt_callback;
   bool reply_in_callback;
   bool inject_during_reply;
+  const char* response_during_reply;
+  uint64_t response_received_ms;
+  uint64_t reply_completed_ms;
   bool disconnect_during_reply;
   bool inspect_types;
   unsigned opened;
@@ -184,6 +187,13 @@ static h2_pal_result_t mqtt_publish(void* user, h2_pal_mqtt_client_t* client,
     f->inject_during_reply = false;
     deliver(f, PREFIX "thing/property/set",
             "{\"id\":\"902\",\"params\":{\"enabled\":true}}");
+  }
+  if (f->response_during_reply != NULL) {
+    const char* response = f->response_during_reply;
+    f->response_during_reply = NULL;
+    f->now = f->response_received_ms;
+    deliver(f, PREFIX "thing/property/post/reply", response);
+    f->now = f->reply_completed_ms;
   }
   if (f->disconnect_during_reply) {
     f->disconnect_during_reply = false;
@@ -425,6 +435,123 @@ static void test_input_during_reply(void) {
   cleanup(&f);
 }
 
+static void test_response_during_reply_deadline(void) {
+  for (uint64_t arrival = 499u; arrival <= 501u; ++arrival) {
+    fixture_t f;
+    h2_onenet_config_t config = initialize(&f);
+    connect_ready(&f, &config);
+    assert(post(&f) == 1u);
+    f.reply_in_callback = true;
+    f.response_during_reply = "{\"id\":\"1\",\"code\":200}";
+    f.response_received_ms = arrival;
+    f.reply_completed_ms = 600u;
+    f.now = 100u;
+    input(&f, PREFIX "thing/property/set", "{\"id\":\"901\",\"params\":{}}");
+    assert(h2_onenet_process(f.client, 0u) == H2_PAL_OK);
+    assert(f.events[H2_ONENET_RESPONSE] == (arrival < 500u ? 0u : 1u));
+    assert(h2_onenet_process(f.client, 0u) == H2_PAL_OK);
+    assert(f.events[H2_ONENET_RESPONSE] == 1u);
+    assert(f.last_result == (arrival < 500u ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT));
+    if (arrival < 500u) assert(f.last_code == 200);
+    cleanup(&f);
+  }
+}
+
+static void test_desired_delete_object(void) {
+  fixture_t f;
+  h2_onenet_config_t config = initialize(&f);
+  connect_ready(&f, &config);
+  uint64_t id = 0u;
+  const char params[] = "{\"power\":{\"version\":1},\"temperature\":{}}";
+  assert(h2_onenet_publish(f.client, H2_ONENET_DESIRED_DELETE,
+                           (const uint8_t*)params, strlen(params),
+                           &id) == H2_PAL_OK);
+  assert(id == 1u);
+  assert(strcmp(f.published_topic, PREFIX "thing/property/desired/delete") ==
+         0);
+  const h2_pal_json_api_t* json = h2_yyjson_json_api(f.json);
+  h2_pal_json_document_t* doc = NULL;
+  h2_pal_json_value_t *root = NULL, *body = NULL, *power = NULL,
+                      *version = NULL;
+  assert(h2_pal_json_document_parse(json, (const uint8_t*)f.published_payload,
+                                    strlen(f.published_payload), NULL,
+                                    &doc) == H2_PAL_OK);
+  assert(h2_pal_json_document_root(json, doc, &root) == H2_PAL_OK);
+  assert(h2_pal_json_object_get(json, root, "params", 6u, &body) == H2_PAL_OK);
+  assert(h2_pal_json_object_get(json, body, "power", 5u, &power) == H2_PAL_OK);
+  assert(h2_pal_json_object_get(json, power, "version", 7u, &version) ==
+         H2_PAL_OK);
+  double value = 0.0;
+  assert(h2_pal_json_value_get_number(json, version, &value) == H2_PAL_OK &&
+         value == 1.0);
+  assert(h2_pal_json_document_destroy(json, &doc) == H2_PAL_OK);
+  const unsigned published = f.publish_count;
+  const char array[] = "[\"power\"]";
+  assert(h2_onenet_publish(f.client, H2_ONENET_DESIRED_DELETE,
+                           (const uint8_t*)array, strlen(array),
+                           &id) == H2_PAL_ERR_FORMAT);
+  assert(id == 0u && f.publish_count == published);
+  assert(h2_onenet_publish(f.client, H2_ONENET_DESIRED_GET,
+                           (const uint8_t*)array, strlen(array),
+                           &id) == H2_PAL_OK);
+  cleanup(&f);
+}
+
+static void test_suback_deadline(void) {
+  for (uint64_t arrival = 99u; arrival <= 101u; ++arrival) {
+    fixture_t f;
+    h2_onenet_config_t config = initialize(&f);
+    assert(h2_onenet_create(&config, &f.client) == H2_PAL_OK);
+    assert(h2_onenet_connect(f.client, "test-token") == H2_PAL_OK);
+    f.now = arrival;
+    const h2_pal_result_t expected =
+        arrival < 100u ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT;
+    assert(h2_onenet_process(f.client, 0u) == expected);
+    assert(h2_onenet_is_connected(f.client) == (arrival < 100u));
+    assert(f.events[H2_ONENET_CONNECTED] == (arrival < 100u ? 1u : 0u));
+    assert(f.events[H2_ONENET_ERROR] == (arrival < 100u ? 0u : 1u));
+    cleanup(&f);
+  }
+  fixture_t f;
+  h2_onenet_config_t config = initialize(&f);
+  assert(h2_onenet_create(&config, &f.client) == H2_PAL_OK);
+  assert(h2_onenet_connect(f.client, "test-token") == H2_PAL_OK);
+  f.time_error = -1000;
+  assert(h2_onenet_process(f.client, 0u) == -1000);
+  assert(!h2_onenet_is_connected(f.client));
+  assert(f.events[H2_ONENET_CONNECTED] == 0u);
+  cleanup(&f);
+}
+
+static void test_json_budget_maxima(void) {
+  const size_t maxima[] = {H2_PAL_JSON_DEFAULT_MAX_DOCUMENT_BYTES,
+                           H2_PAL_JSON_DEFAULT_MAX_DEPTH,
+                           H2_PAL_JSON_DEFAULT_MAX_VALUES};
+  for (size_t field = 0u; field < 3u; ++field) {
+    for (size_t excess = 0u; excess <= 1u; ++excess) {
+      fixture_t f;
+      h2_onenet_config_t config = initialize(&f);
+      if (field == 0u) config.limits.payload_bytes = maxima[field] + excess;
+      if (field == 1u) config.limits.json_depth = maxima[field] + excess;
+      if (field == 2u) config.limits.json_values = maxima[field] + excess;
+      const size_t allocations = f.live_allocations;
+      h2_onenet_t* client = (h2_onenet_t*)(uintptr_t)1u;
+      const h2_pal_result_t rc = h2_onenet_create(&config, &client);
+      if (excess != 0u) {
+        assert(rc == H2_PAL_ERR_INVALID_ARG && client == NULL);
+        assert(f.live_allocations == allocations);
+      } else {
+        assert(rc == H2_PAL_OK);
+        f.client = client;
+        assert(h2_onenet_connect(f.client, "test-token") == H2_PAL_OK);
+        assert(h2_onenet_process(f.client, 0u) == H2_PAL_OK);
+        assert(post(&f) == 1u);
+      }
+      cleanup(&f);
+    }
+  }
+}
+
 static void test_terminal_error_during_reply(void) {
   for (unsigned failure = 0u; failure < 2u; ++failure) {
     fixture_t f;
@@ -648,6 +775,10 @@ static void test_observed_disconnect(void) {
 }
 
 int main(void) {
+  test_desired_delete_object();
+  test_response_during_reply_deadline();
+  test_suback_deadline();
+  test_json_budget_maxima();
   test_response_correlation();
   test_commands_and_reconnect();
   test_input_during_reply();

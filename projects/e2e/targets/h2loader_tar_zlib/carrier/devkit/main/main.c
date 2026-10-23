@@ -3,6 +3,7 @@
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_carrier_device_inputs.h"
+#include "h2_carrier_setup_failure.h"
 #include "h2_lingxi_e2e.h"
 #include "h2_onenet_e2e.h"
 #include "h2_coremqtt.h"
@@ -89,14 +90,8 @@ static void wipe(void* p, size_t n) {
   while (n-- != 0u) *b++ = 0u;
 }
 
-static void hold(void) {
-  for (;;) vTaskDelay(pdMS_TO_TICKS(1000u));
-}
-
 static void fail(const char* stage, int rc) {
-  printf("H2_CARRIER_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
-  fflush(stdout);
-  hold();
+  h2_carrier_setup_fail(&inputs, stage, rc);
 }
 
 static int load_inputs(void) {

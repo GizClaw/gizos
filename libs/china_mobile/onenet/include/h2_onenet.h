@@ -138,6 +138,7 @@ typedef void (*h2_onenet_event_fn)(void* user, h2_onenet_t* client,
  * payload_bytes bounds every received and transmitted OneJSON document.
  * It must meet MIN_PAYLOAD_BYTES; json_depth and json_values must meet
  * MIN_JSON_DEPTH and MIN_JSON_VALUES. All remaining budgets are nonzero.
+ * JSON byte, depth and value budgets cannot exceed the JSON PAL maxima.
  * JSON parser allocations additionally obey json_depth and json_values.
  * pending_requests bounds each of the outbound and inbound request tables.
  * queued_messages bounds receive buffering per process call; overflow returns
@@ -211,7 +212,8 @@ h2_pal_result_t h2_onenet_connect(h2_onenet_t* client, const char* token);
  * @brief Pump MQTT, dispatch copied incoming messages, and expire requests.
  * @param client Sole-owner client.
  * @param timeout_ms MQTT receive/poll budget; zero is a poll. Pending response
- *     deadlines are independent and checked after the call.
+ *     deadlines are independent and checked after the call. Copied responses
+ *     retain their receive time when dispatched by the following pump.
  * @return PAL result. A normal MQTT receive timeout/would-block is successful
  *     polling. Malformed OneJSON returns FORMAT and emits ERROR. Transport
  *     failure or receive overflow cancels requests and closes the connection.
@@ -223,7 +225,8 @@ h2_pal_result_t h2_onenet_process(h2_onenet_t* client, uint32_t timeout_ms);
  * @param client Ready client, outside an event callback.
  * @param operation PROPERTY_POST, EVENT_POST, DESIRED_GET or DESIRED_DELETE.
  * @param params Borrowed complete JSON params bytes for this call. Post uses
- *     an object; desired operations use an array of property identifiers.
+ *     an object; desired-get uses an array of property identifiers, while
+ *     desired-delete uses an object mapping properties to optional versions.
  * @param params_len Byte length; parsing obeys the instance JSON limits.
  * @param out_request_id Required output, cleared on failure.
  * @return PAL result. FULL means no request slot is available. MQTT acceptance

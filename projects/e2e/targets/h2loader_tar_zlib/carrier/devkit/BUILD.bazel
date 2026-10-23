@@ -1,9 +1,12 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,6 +20,8 @@ exports_files(
         "main/CMakeLists.txt",
         "main/idf_component.yml",
         "main/main.c",
+        "main/h2_carrier_setup_failure.c",
+        "main/h2_carrier_setup_failure.h",
     ],
     visibility = ["//visibility:public"],
 )
@@ -67,8 +72,14 @@ firmware_lib_component(
 
 firmware_native_component(
     name = "launcher",
-    srcs = ["main/main.c"],
-    hdrs = ["//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:h2_e2e_fixture_wifi.h"],
+    srcs = [
+        "main/h2_carrier_setup_failure.c",
+        "main/main.c",
+    ],
+    hdrs = [
+        "main/h2_carrier_setup_failure.h",
+        "//projects/e2e/targets/h2loader_tar_zlib/fixture-wifi:h2_e2e_fixture_wifi.h",
+    ],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/carrier/devkit/main",
     component_name = "main",
     data = [
@@ -95,6 +106,8 @@ h2loader_esp_idf_firmware(
     srcs = [
         "CMakeLists.txt",
         "main/CMakeLists.txt",
+        "main/h2_carrier_setup_failure.c",
+        "main/h2_carrier_setup_failure.h",
         "main/idf_component.yml",
         "main/main.c",
         "sdkconfig.carrier.defaults",
@@ -115,4 +128,26 @@ h2loader_tar_zlib(
     image = "carrier",
     role = "app",
     target = "esp32s3",
+)
+
+cc_test(
+    name = "setup_failure_test",
+    srcs = [
+        "main/h2_carrier_setup_failure.c",
+        "main/h2_carrier_setup_failure.h",
+        "tests/sdk/freertos/FreeRTOS.h",
+        "tests/sdk/freertos/task.h",
+        "tests/test_setup_failure.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "main",
+        "tests/sdk",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/pal/providers/yyjson",
+        "//projects/e2e/libs/carrier-device:carrier_device",
+    ],
 )
