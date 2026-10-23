@@ -498,6 +498,7 @@ py_test(
     ],
     env_inherit = ["PATH"],
     legacy_create_init = False,
+    local = True,
     main = "tests/test_wdrv_confirm.py",
     tags = ["manual"],
     target_compatible_with = select({
