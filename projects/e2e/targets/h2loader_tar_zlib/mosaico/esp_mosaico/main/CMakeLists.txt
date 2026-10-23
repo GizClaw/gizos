@@ -17,3 +17,7 @@ if(DEFINED H2_MOSAICO_CORE_WALL_UTC_MS)
     H2_MOSAICO_CORE_WALL_UTC_MS=${H2_MOSAICO_CORE_WALL_UTC_MS}ULL)
 endif()
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+
+# The libco-only failure diagnostic reads bounds from the pinned SDK private API.
+target_include_directories(${COMPONENT_LIB} PRIVATE
+  "$ENV{IDF_PATH}/components/esp_system/port/include/private")

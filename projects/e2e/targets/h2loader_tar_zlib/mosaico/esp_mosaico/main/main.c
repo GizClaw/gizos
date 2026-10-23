@@ -26,6 +26,9 @@
 #include "esp_system.h"
 #elif H2_MOSAICO_SUITE_LIBCO
 #include "h2_libco_smoke.h"
+#if CONFIG_ESP_SYSTEM_HW_STACK_GUARD
+#include "esp_private/hw_stack_guard.h"
+#endif
 #endif
 static h2_runtime_t* runtime;
 #if H2_MOSAICO_SUITE_LIBCO
@@ -286,6 +289,17 @@ static void run(void* unused) {
          pcTaskGetName(NULL), (int)root_core, (int)xPortGetCoreID());
   if (root_core == tskNO_AFFINITY || root_core != xPortGetCoreID())
     fail("libco-root-core", H2_PAL_ERR_INVALID_STATE);
+#if CONFIG_ESP_SYSTEM_HW_STACK_GUARD
+  uint32_t stack_low = 0, stack_high = 0;
+  portMUX_TYPE guard_lock = portMUX_INITIALIZER_UNLOCKED;
+  portENTER_CRITICAL(&guard_lock);
+  esp_hw_stack_guard_get_bounds((uint32_t)root_core, &stack_low, &stack_high);
+  portEXIT_CRITICAL(&guard_lock);
+  printf("H2_MOSAICO_LIBCO_GUARD low=0x%08" PRIx32 " high=0x%08" PRIx32
+         " root_local=%p enabled=1\n",
+         stack_low, stack_high, (void*)&root_core);
+  fflush(stdout);
+#endif
   rc = h2_libco_smoke_run(runtime, NULL);
   if (!rc &&
       (root_core != xTaskGetCoreID(NULL) || root_core != xPortGetCoreID()))
