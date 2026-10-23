@@ -131,7 +131,7 @@ jobs:
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        timeout-minutes: 5
+        timeout-minutes: 15
         shell: bash
         run: |
           apt_network_options=(
@@ -336,7 +336,7 @@ jobs:
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        timeout-minutes: 5
+        timeout-minutes: 15
         shell: bash
         run: |
           apt_network_options=(
