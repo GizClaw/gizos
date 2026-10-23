@@ -120,7 +120,7 @@ static int imu_read(void* user, h2_pal_periph_id_t id,
       if (rc == H2_PAL_OK) rc = result(bsp_imu_start(NULL));
       if (rc == H2_PAL_OK) imu_started = true;
     }
-    float ax, ay, az, gx, gy, gz;
+    float ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
     if (rc == H2_PAL_OK) rc = result(bsp_imu_get_accel(&ax, &ay, &az));
     if (rc == H2_PAL_OK) rc = result(bsp_imu_get_gyro(&gx, &gy, &gz));
     if (rc == H2_PAL_OK) {
