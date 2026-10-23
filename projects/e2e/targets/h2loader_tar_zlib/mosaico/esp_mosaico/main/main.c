@@ -24,6 +24,8 @@
 #elif H2_MOSAICO_SUITE_AUDIO
 #include "h2_pal_audio_e2e.h"
 #include "esp_system.h"
+#elif H2_MOSAICO_SUITE_PERIPHERALS
+#include "bsp/esp_mosaico.h"
 #elif H2_MOSAICO_SUITE_LIBCO
 #include "h2_libco_smoke.h"
 #if CONFIG_ESP_SYSTEM_HW_STACK_GUARD
@@ -174,9 +176,33 @@ static void audio_report(void* user, const h2_pal_audio_e2e_case_result_t* r) {
   fflush(stdout);
 }
 #elif H2_MOSAICO_SUITE_PERIPHERALS
+/* Diagnostic only: this launcher is the sole IMU consumer. Read the existing
+ * BSP handle once after a PAL failure, without changing mode or calibration.
+ * Neither this extra sample nor its result changes the PAL test verdict. */
+static void magnetic_diagnostic(unsigned id) {
+  const bsp_magnetometer_t sensor =
+      id == 202 ? BSP_MAGNETOMETER_0 : BSP_MAGNETOMETER_1;
+  struct bmm150_dev* device = bsp_magnetometer_get_handle(sensor);
+  if (!device) {
+    printf("H2_MOSAICO_MAG_DIAGNOSTIC id=%u initialized=0\n", id);
+    return;
+  }
+  struct bmm150_mag_data value = {0};
+  uint8_t raw[8] = {0};
+  int compensated = bsp_magnetometer_read(sensor, &value);
+  int raw_rc = bmm150_get_regs(BMM150_REG_DATA_X_LSB, raw, sizeof(raw), device);
+  printf(
+      "H2_MOSAICO_MAG_DIAGNOSTIC id=%u initialized=1 compensated_rc=%d xyz=%ld,%ld,%ld raw_rc=%d raw=",
+      id, compensated, (long)value.x, (long)value.y, (long)value.z, raw_rc);
+  for (unsigned i = 0; i < sizeof(raw); ++i) printf("%02x", raw[i]);
+  printf(" trim_z1=%u trim_z2=%d trim_xyz1=%u\n",
+         (unsigned)device->trim_data.dig_z1, (int)device->trim_data.dig_z2,
+         (unsigned)device->trim_data.dig_xyz1);
+}
 static int peripherals_run(void) {
   int first = 0;
   unsigned buttons[2] = {0};
+  unsigned diagnosed = 0;
   for (unsigned n = 0; n < 100; ++n) {
     for (unsigned i = 0; i < 2; ++i) {
       h2_pal_single_button_reading_t b;
@@ -199,6 +225,10 @@ static int peripherals_run(void) {
       if (!rc && (v.id != 201 + i || (v.flags & required) != required))
         rc = H2_PAL_ERR_IO;
       if (rc && !first) first = rc;
+      if (rc && i && !(diagnosed & (1u << i))) {
+        diagnosed |= 1u << i;
+        magnetic_diagnostic(201 + i);
+      }
       printf(
           "H2_MOSAICO_SENSOR id=%u sample=%u rc=%d flags=%u accel=%ld,%ld,%ld gyro=%ld,%ld,%ld mag=%ld,%ld,%ld\n",
           201 + i, n, rc, rc ? 0 : (unsigned)v.flags,

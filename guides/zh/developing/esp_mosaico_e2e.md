@@ -31,6 +31,11 @@ Camera 在专用工作任务内串行执行；1000 ms 仅为驱动 dequeue 超�
 安装/拆卸仅在断电后进行。实际图像预览、场景变化与光学质量仍需单独观察，hash 不能替代。
 所有新入口报告 `physical_qualified=0`；软件成功不能自动授予整板验收。
 
+外设入口在每颗磁力计第一次 PAL 读取失败后，使用已有 BSP handle 做一次只读诊断，
+记录补偿结果、8 字节数据寄存器及补偿参数；它不改变传感器模式、校准、PAL 返回值
+或本轮失败结论。该入口独占 IMU 消费，诊断值仅用于区分传输失败与补偿溢出。
+没有按键/触摸人工操作确认时，缺少事件保持交互验收待验证，不凭空认定硬件损坏。
+
 libco 开始前在临界区读取并记录当前任务的硬件栈保护边界；诊断不改变保护配置或
 RV32 后端。固定 SDK 的 coredump 配置明确提示 PSRAM 任务栈的 Flash dump 限制，
 因此不预设启用 Flash coredump 就能取得现场。保留 ELF/map 与真实失败镜像身份；
@@ -86,7 +91,7 @@ Runtime/并发、复用 App 和 device runner 回归；运行格式与 diff 检�
 | 6 | core / libco | 每个 3 次独立启动；Core 120 s、libco 180 s 的主机观察期限；无崩溃/看门狗/缺失结果 |
 | 7 | storage | 3 阶段各一次独立启动，第二轮以新的 `--//tools/bazel:firmware_version=...` 镜像重新开始；phase 4 的只读重放不计新循环；每次 180 s 内，原有 registry 全通过 |
 | 8 | display / audio | 各 3 次启动，每次 180 s；保留字节/PCM 软件结果，另记录屏幕/亮度、扬声器/麦克风人工结果 |
-| 9 | peripherals | 每次 10 s 采样窗口内按放 AI/BOOT 各一次；随后 30 s 触摸 down/move/up；三轮，缺交互 BLOCKED；电池读数与外部仪表比较独立记录 |
+| 9 | peripherals | 每次 100 轮采样中按放 AI/BOOT 各一次（轮间至少 100 ms，另含 I/O 和日志耗时）；振动后进入 30 s 触摸 down/move/up；三轮，缺交互 BLOCKED；电池读数与外部仪表比较独立记录 |
 | 10 | camera | 10×30 帧，3 次独立启动；180 s 主机观察期限，超时保留失败现场；断电拆卸后单独验证无相机 Loader 启动不受影响 |
 | 11 | Loader/App 链路 | 选择通过的软件 App：安装→启动→确认→返回 Loader，3 次；每步 120 s；核对 active checksum、分区、stage_valid、last_result |
 | 12 | 恢复 | 原 Flash 写回、全量 readback/hash 比较、原固件状态观察；未完成不关闭硬件验收 |
