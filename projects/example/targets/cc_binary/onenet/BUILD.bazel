@@ -22,6 +22,7 @@ cc_binary(
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/wolfssl",
         "//libs/pal/providers/yyjson",
+        "//projects/e2e/apps/onenet/app:onenet_e2e",
     ] + select({
         "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core:host_os"],
         "//conditions:default": ["//libs/pal/providers/linux/pal_core"],

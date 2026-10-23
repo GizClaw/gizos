@@ -41,7 +41,8 @@ GizClaw DevKit 入口在原保存配置缺失时，也可使用同一 Native 输
 | GizClaw | `//projects/e2e/apps/gizclaw/app:gizclaw_e2e` | Desktop H2Peer/Pion；Chromium Worker；iOS XCFramework / Android AAR 消费 App；DevKit、AMOLED、BK7258 入口，实际资格见 App README |
 | H106 | `//projects/e2e/apps/h106/app:h106_e2e` | Desktop Tiga/Zero、Tiga V4.2 与 Zero BK 1.0；完整 production Main App、Runtime Test Control 与公开 observation |
 | Libco | `//projects/e2e/apps/libco/app:libco_smoke` | Desktop、Browser、DevKit ESP32-S3、BK7258、TapDoki BK3633 |
-| 灵犀设备接入 | `//projects/e2e/apps/lingxi/app:lingxi_e2e` | macOS／Linux host；固定接入流程与环境注入说明见 [App README](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/lingxi) |
+| 灵犀设备接入 | `//projects/e2e/apps/lingxi/app:lingxi_e2e` | macOS／Linux host 与 DevKit ESP32-S3；接入流程与环境注入见 [App README](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/lingxi) |
+| OneNET 设备接入 | `//projects/e2e/apps/onenet/app:onenet_e2e` | Host example 与 DevKit ESP32-S3；接入边界见 [App README](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/onenet) |
 | Lua Runtime | `//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e` | Desktop、Browser、AMOLED；九个固定 VM/coroutine/component/event/worker/shutdown case |
 | Lua Link | `//projects/e2e/apps/lua-link/app:lua_link_e2e` | DevKit ESP32-S3 host + AMOLED ESP32-S3 join over BLE Extended Advertising；reliable/datagram/stream/peer-exit per session，final hold session for link loss |
 | PAL Core | `//projects/e2e/apps/pal-core/app:pal_core_e2e` | 独立 Core v2：46 个接口、41 个必过用例；macOS、Browser/WASM、DevKit ESP32-S3 USB 串口、BK7258 AP UART1 H2Loader |

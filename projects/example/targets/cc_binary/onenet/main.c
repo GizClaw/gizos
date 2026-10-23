@@ -1,4 +1,4 @@
-#include "h2_onenet.h"
+#include "h2_onenet_e2e.h"
 #include "h2_coremqtt.h"
 #include "h2_desktop_platform.h"
 #include "h2_wolfssl.h"
@@ -20,33 +20,6 @@
 #include <string.h>
 #include <time.h>
 
-typedef struct example_state {
-  bool response;
-  bool failed;
-} example_state_t;
-
-static void on_event(void* user, h2_onenet_t* client,
-                     const h2_onenet_event_t* event) {
-  example_state_t* state = user;
-  if (event->type == H2_ONENET_CONNECTED) {
-    puts("ONENET connected");
-  } else if (event->type == H2_ONENET_RESPONSE) {
-    printf("ONENET response result=%d code=%d\n", event->result, event->code);
-    state->response = true;
-    state->failed = event->result != H2_PAL_OK || event->code != 200;
-  } else if (event->type == H2_ONENET_COMMAND) {
-    /* This transport example has no product actuator. An explicit error is
-     * preferable to pretending that a device command was applied. */
-    const h2_pal_result_t rc =
-        h2_onenet_reply(client, event->command_handle, 501, NULL, 0u);
-    printf("ONENET command operation=%d reply=%d\n", (int)event->operation, rc);
-    if (rc != H2_PAL_OK) state->failed = true;
-  } else if (event->type == H2_ONENET_ERROR) {
-    fprintf(stderr, "ONENET error=%d\n", event->result);
-    state->failed = true;
-  }
-}
-
 static bool number(const char* text, unsigned long maximum,
                    unsigned long* out) {
   if (text == NULL || text[0] < '0' || text[0] > '9') return false;
@@ -65,7 +38,8 @@ int main(int argc, char** argv) {
     fputs(
         "Usage: onenet HOST PORT PRODUCT_ID DEVICE_NAME\n"
         "Set ONENET_PARAMS_JSON and ONENET_ACCESS_TOKEN or ONENET_DEVICE_KEY.\n"
-        "TLS is enabled unless ONENET_PLAINTEXT=1; ONENET_CA_FILE is optional.\n",
+        "TLS is enabled unless ONENET_PLAINTEXT=1; ONENET_CA_FILE is optional.\n"
+        "ONENET_TLS_SERVER_NAME sets an explicit peer identity and requires ONENET_CA_FILE.\n",
         stderr);
     return 2;
   }
@@ -74,6 +48,13 @@ int main(int argc, char** argv) {
   const char* params = getenv("ONENET_PARAMS_JSON");
   const char* supplied_token = getenv("ONENET_ACCESS_TOKEN");
   const char* key = getenv("ONENET_DEVICE_KEY");
+  const char* ca_path = getenv("ONENET_CA_FILE");
+  const char* server_name = getenv("ONENET_TLS_SERVER_NAME");
+  if (server_name != NULL && server_name[0] != '\0' &&
+      (ca_path == NULL || ca_path[0] == '\0')) {
+    fputs("ONENET_TLS_SERVER_NAME requires ONENET_CA_FILE\n", stderr);
+    return 2;
+  }
   if (params == NULL || params[0] == '\0' ||
       ((supplied_token == NULL || supplied_token[0] == '\0') &&
        (key == NULL || key[0] == '\0'))) {
@@ -87,12 +68,10 @@ int main(int argc, char** argv) {
   if (rc != H2_PAL_OK) return 2;
   h2_coremqtt_t* mqtt_provider = NULL;
   h2_yyjson_json_t* json_provider = NULL;
-  h2_onenet_t* client = NULL;
   h2_pal_mqtt_api_t mqtt = {0};
   char token[H2_ONENET_TOKEN_CAPACITY] = {0};
   uint8_t* ca = NULL;
   size_t ca_len = 0u;
-  example_state_t state = {0};
   const h2_coremqtt_config_t mqtt_config = {.allocator = mem,
                                             .net = host_net(),
                                             .time = clock,
@@ -117,7 +96,6 @@ int main(int argc, char** argv) {
     if (rc != H2_PAL_OK) goto cleanup;
     supplied_token = token;
   }
-  const char* ca_path = getenv("ONENET_CA_FILE");
   if (ca_path != NULL && ca_path[0] != '\0') {
     ca = h2_pal_mem_alloc(mem, 16384u);
     if (ca == NULL) {
@@ -138,7 +116,8 @@ int main(int argc, char** argv) {
     }
   }
   const h2_pal_net_tls_config_t tls = {
-      .server_name = argv[1],
+      .server_name =
+          server_name != NULL && server_name[0] != '\0' ? server_name : argv[1],
       .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
       .root_ca_pem = ca,
       .root_ca_pem_len = ca_len,
@@ -162,43 +141,22 @@ int main(int argc, char** argv) {
       .operation_timeout_ms = 5000u,
       .response_timeout_ms = 5000u,
       .initial_request_id = request_nonce % H2_ONENET_MAX_REQUEST_ID + 1u,
-      .on_event = on_event,
-      .event_user = &state,
   };
-  rc = h2_onenet_create(&config, &client);
-  if (rc != H2_PAL_OK) goto cleanup;
-  rc = h2_onenet_connect(client, supplied_token);
-  if (rc != H2_PAL_OK) goto cleanup;
-  uint64_t start = 0u;
-  rc = h2_pal_time_get_monotonic_ms(clock, &start);
-  if (rc != H2_PAL_OK) goto cleanup;
-  bool published = false;
-  while (!state.response && !state.failed) {
-    rc = h2_onenet_process(client, 50u);
-    if (rc != H2_PAL_OK) break;
-    if (!published && h2_onenet_is_connected(client)) {
-      uint64_t id = 0u;
-      rc = h2_onenet_publish(client, H2_ONENET_PROPERTY_POST,
-                             (const uint8_t*)params, strlen(params), &id);
-      if (rc != H2_PAL_OK) break;
-      published = true;
-    }
-    uint64_t now = 0u;
-    rc = h2_pal_time_get_monotonic_ms(clock, &now);
-    if (rc != H2_PAL_OK) break;
-    if (h2_pal_time_elapsed_ms(start, now) >= 12000u) {
-      rc = H2_PAL_ERR_TIMEOUT;
-      break;
-    }
-  }
-  if (rc == H2_PAL_OK && (!state.response || state.failed))
-    rc = H2_PAL_ERR_UNAVAILABLE;
+  const h2_onenet_e2e_config_t app = {
+      .client = config,
+      .access_token = supplied_token,
+      .params_json = params,
+      .timeout_ms = 12000u,
+  };
+  h2_onenet_e2e_result_t result;
+  rc = h2_onenet_e2e_run(&app, &result);
+  if (result.responses != 0u)
+    printf("ONENET response result=%d code=%d\n", result.post_result,
+           result.platform_code);
+  if (result.commands != 0u)
+    printf("ONENET command operation=%d reply=%d\n",
+           (int)result.last_command_operation, result.command_reply_result);
 cleanup:
-  if (client != NULL) {
-    const h2_pal_result_t disconnect = h2_onenet_disconnect(client);
-    if (rc == H2_PAL_OK) rc = disconnect;
-    (void)h2_onenet_destroy(&client);
-  }
   if (json_provider != NULL) {
     const h2_pal_result_t destroyed = h2_yyjson_json_destroy(&json_provider);
     if (rc == H2_PAL_OK) rc = destroyed;

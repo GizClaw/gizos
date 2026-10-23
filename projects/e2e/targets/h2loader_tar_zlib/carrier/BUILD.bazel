@@ -1,0 +1,28 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+_PROVISION_COMPATIBILITY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+py_binary(
+    name = "provision",
+    srcs = ["provision.py"],
+    main = "provision.py",
+    target_compatible_with = _PROVISION_COMPATIBILITY,
+    deps = ["//projects/h2loader/tools/bazel:firmware_artifacts"],
+)
+
+py_test(
+    name = "provision_test",
+    srcs = [
+        "provision.py",
+        "test_provision.py",
+    ],
+    main = "test_provision.py",
+    target_compatible_with = _PROVISION_COMPATIBILITY,
+    deps = ["//projects/h2loader/tools/bazel:firmware_artifacts"],
+)

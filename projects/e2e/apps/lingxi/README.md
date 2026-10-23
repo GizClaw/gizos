@@ -37,4 +37,4 @@ bazel test --config=macos_arm64 //projects/e2e/apps/lingxi/app:all
 bazel test --config=macos_arm64 //projects/e2e/targets/cc_binary/lingxi:wire_test
 ```
 
-App-local tests 验证依赖失败、时钟错误、deadline、账本与资源清理。Wire test 经真实 CoreHTTP 和 host Net 验证环境注入、完整查询后心跳、业务拒绝、身份不匹配、输入与响应预算、重定向拒绝以及实网入口的 TLS 门禁；只连接隔离的本机 fixture，不读取外部凭据。当前已提供 macOS／Linux host launcher；portable App 可被设备 Runtime 注入同一组 PAL 与配置复用，尚无本 App 专用的设备 firmware entry 或实板资格。
+App-local tests 验证依赖失败、时钟错误、deadline、账本与资源清理。Wire test 经真实 CoreHTTP 和 host Net 验证环境注入、完整查询后心跳、业务拒绝、身份不匹配、输入与响应预算、重定向拒绝以及实网入口的 TLS 门禁；只连接隔离的本机 fixture，不读取外部凭据。macOS／Linux host 与 [DevKit carrier entry](../../targets/h2loader_tar_zlib/carrier/devkit/README.md) 复用同一 App；设备入口从 Runtime 组装心跳并消费一次性运行时配置。每个平台的实测结果绑定实际镜像和运行记录，不能互相替代。
