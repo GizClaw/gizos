@@ -303,6 +303,8 @@ endif()
 
 target_include_directories(${COMPONENT_LIB} PRIVATE "${BK_ARMINO_PATH}/components/bk_cli")
 
+include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_wdrv_component.cmake")
+
 # The pinned AP SDK erroneously forwards STA address synchronization through
 # AP_NETIF_IP4_CONFIG, overwriting the CP AP/DHCP address in AP+STA mode.
 # Build a guarded corrected copy inside the build tree; leave the sealed SDK
@@ -364,5 +366,3 @@ get_target_property(H2_BK_WIFI_SOURCES ${H2_BK_WIFI_LIB} SOURCES)
 list(FILTER H2_BK_WIFI_SOURCES EXCLUDE REGEX "(^|/)wifi_api\\.c$")
 list(APPEND H2_BK_WIFI_SOURCES "${H2_BK_WIFI_CORRECTED_SOURCE}")
 set_property(TARGET ${H2_BK_WIFI_LIB} PROPERTY SOURCES ${H2_BK_WIFI_SOURCES})
-
-include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_wdrv_component.cmake")
