@@ -21,7 +21,7 @@ cc_test(
     srcs = ["onenet_consumer.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    deps = ["@gizos//libs/onenet"],
+    deps = ["@gizos//libs/china_mobile/onenet"],
 )
 
 app_version(

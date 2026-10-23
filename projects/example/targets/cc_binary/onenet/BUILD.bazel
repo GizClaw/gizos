@@ -17,7 +17,7 @@ cc_binary(
     copts = H2_WARNING_COPTS,
     target_compatible_with = _HOST_NETWORK,
     deps = [
-        "//libs/onenet",
+        "//libs/china_mobile/onenet",
         "//libs/pal/providers/coremqtt",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/wolfssl",

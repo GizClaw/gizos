@@ -130,6 +130,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - `libco`：封装固定版本 higan-emu/libco 的单线程 stackful cooperative task executor，并实现既有 PAL Task、Time、Queue 和 Sync contract。调用方直接注入 allocator、monotonic clock，以及可选 external-poll/idle hook，并为每个 task 选择独立的固定 stack size；task 只共享 heap、global 与地址空间，不共享 local variable、call frame 或 stack。CPU context backend 在 build time 由目标 toolchain 选择，不是 PAL capability 或 vtable，也不进入 Runtime。Upstream 已支持的 host、AArch64 和 ARMv5 backend 来自 `@h2_vendor_libco` 的 verified archive；GizOS 补充的 Cortex-M、ESP32-S3 Xtensa、ESP32-P4 RV32 backend，以及对 upstream ARM warning 的最小修正位于 `third_party/libco_patch/`，由 vendor repository 通过显式完整文件 overlay 装配。`//libs/pal/providers/libco:libco` 始终把 portable wrapper 与所选 backend 编译成一个完整 `.a`，consumer 不得再并行编译第二份 libco source。每个 instance 只允许在创建它的 executor root 上调度，Native `schedule()` 使用 start-of-turn snapshot 和显式 budget，`wait()`/`wake()` 是 library/target private control；Runtime 和 portable App 只消费借出的 PAL API object。Queue/Sync/Time 的 predicate、timeout、close/reset generation、cancellation 和 live-object teardown 都由 library 拥有，不向 PAL 增加 scheduler contract。Emscripten backend 在调用方请求的 stack 之外为每个 task 额外预留 48 KiB C stack：wasm 把取地址的局部变量和 spill 放在 linear memory，未优化构建更是把全部局部变量放在那里，按 native 目标确定的 stack budget 在浏览器中会溢出。Guard 只能在检查点发现部分边界破坏，不提供 memory protection、动态增长或 stack-overflow immunity；`wake()` 是不保存历史的 edge-triggered runnable transition，不会直接切换 context。
 - [`json`](./json.md)：PAL JSON contract，以及 yyjson portable provider 的严格解析、ownership 和 lifecycle。
 - [`bundle`](./bundle.md)：bundle manifest、archive、path、tar 和 installer。
+- [`china_mobile/onenet`](./onenet.md)：通过 MQTT PAL 接入中国移动 OneNET 的可复用 OneJSON client。
 - [`coremqtt`](./coremqtt.md)：CoreMQTT 的 GizOS integration。
 - [`corehttp`](./corehttp.md)：通过 Net PAL 提供 HTTP/1.1 的 portable coreHTTP provider。
 - [`dns`](./dns.md)：跨平台 DNS client。
@@ -147,7 +148,6 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`mem_arena`](./mem_arena.md)：把调用方的一块内存分成独立 small/large TLSF pool，借出 Memory PAL，支持 fallback、按 owner 释放、逐池统计和按需碎片诊断。调用方提供成对 lock/unlock；core 不依赖 SDK，也不分配外部控制对象。ESP reservation 与 mutex adapter 由 [ESP-IDF 6.x](./components/esp_idf6_x.md#psram-arena) 拥有，桌面占位栈统计见 [Desktop](./components/desktop.md)。
 - [`mp4_decoder`](./mp4_decoder.md)：从 random-access MP4 source 产生同步、可写的音视频 presentation frame。
 - [`ntp`](./ntp.md)：跨平台 NTP client。
-- [`onenet`](./onenet.md)：通过 MQTT PAL 接入 OneNET 的可复用 OneJSON client。
 - [`pal`](./platform_abstract_layer.md)：Platform Abstraction Layer contract。
 - [`pixa`](./pixa.md)：PIXA image、pack、decode、reader 和 blit。
 - [`raster2d`](./raster2d.md)：无 VM、无分配的 RGB565 矩形重放和 palette 插值。

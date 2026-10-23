@@ -1,6 +1,6 @@
 # OneNET
 
-`libs/onenet` 是直接设备的 OneNET MQTT / OneJSON client，消费调用方注入的 MQTT、JSON、Memory 和 Time PAL。它处理协议，不拥有产品物模型、设备凭据分发、网络选择、后台任务或固件安装。接口、容量、时间单位和 callback 生命周期以 [Public Header](https://github.com/GizClaw/gizos/blob/main/libs/onenet/include/h2_onenet.h) 和生成的 [API Reference](/references/onenet) 为准。
+`libs/china_mobile/onenet` 是直接设备的中国移动 OneNET MQTT / OneJSON client，消费调用方注入的 MQTT、JSON、Memory 和 Time PAL。`china_mobile` 是按服务归属组织 library 的分类目录，不持有共享实现。OneNET client 处理该平台协议，不拥有产品物模型、设备凭据分发、网络选择、后台任务或固件安装。接口、容量、时间单位和 callback 生命周期以 [Public Header](https://github.com/GizClaw/gizos/blob/main/libs/china_mobile/onenet/include/h2_onenet.h) 和生成的 [API Reference](/references/onenet) 为准。
 
 ## 组合与生命周期
 
@@ -19,7 +19,7 @@ client 使用创建时分配的缓冲区与请求表；输入 JSON 另外受解�
 Host 示例在最终 entry 中组装真实 CoreMQTT 和平台网络。它提交调用方提供的属性数据，等待平台应答；没有产品执行器的控制请求返回明确的未实现结果。接入参数、CA 和凭据由进程环境或参数提供，不写入代码。示例的输入格式见可执行入口的 usage 和 [源码](https://github.com/GizClaw/gizos/blob/main/projects/example/targets/cc_binary/onenet/main.c)。
 
 ```sh
-bazel test --config=macos_arm64 //libs/onenet:all
+bazel test --config=macos_arm64 //libs/china_mobile/onenet:all
 bazel test --config=macos_arm64 //projects/example/targets/cc_binary/onenet:wire_test
 bazel run --config=macos_arm64 //projects/example/targets/cc_binary/onenet:onenet -- HOST PORT PRODUCT_ID DEVICE_NAME
 ```
