@@ -7,12 +7,12 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import threading
 import unittest
 
 
 BINARY = str(Path(sys.argv.pop(1)).resolve())
+LIVE_BINARY = str(Path(sys.argv.pop(1)).resolve())
 PRODUCT_KEY = 'fixture-"key\\with\nnew-line'
 DEVICE_SECRET = "fixture-device-secret"
 PARAMS = {
@@ -30,7 +30,7 @@ PARAMS = {
 
 @contextlib.contextmanager
 def server(*, code="200", success=True, status=200, mismatch=False, redirect=None,
-           oversized=False):
+           oversized=False, reject_heartbeat=False):
     requests = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -44,6 +44,8 @@ def server(*, code="200", success=True, status=200, mismatch=False, redirect=Non
                 self.end_headers()
                 return
             response = {"code": code, "success": success}
+            if reject_heartbeat and self.path.endswith("/report"):
+                response = {"code": "403", "success": False}
             if self.path.endswith("/secret/info"):
                 response["data"] = {
                     "productId": "fixture-product",
@@ -76,21 +78,22 @@ def server(*, code="200", success=True, status=200, mismatch=False, redirect=Non
 
 
 class WireTest(unittest.TestCase):
-    def invoke(self, origin, *, heartbeat=True, allow_http=True, params=PARAMS):
+    def invoke(self, origin, *, allow_http=True, params=PARAMS, overrides=None, binary=BINARY):
         env = {key: value for key, value in os.environ.items()
                if not key.startswith("LINGXI_")}
         env.update(LINGXI_PRODUCT_ID="fixture-product", LINGXI_PRODUCT_KEY=PRODUCT_KEY,
-                   LINGXI_SOURCE_IP="192.0.2.5")
+                   LINGXI_SOURCE_IP="192.0.2.5", LINGXI_BASE_URL=origin,
+                   LINGXI_DEVICE_NO_TYPE="SN", LINGXI_DEVICE_NO="registered-fixture",
+                   LINGXI_HEARTBEAT_JSON=json.dumps(params))
         if allow_http:
             env["LINGXI_LOOPBACK_HTTP"] = "1"
-        with tempfile.TemporaryDirectory() as directory:
-            command = [BINARY, origin, "SN", "registered-fixture"]
-            if heartbeat:
-                path = Path(directory) / "params.json"
-                path.write_text(json.dumps(params))
-                command.append(str(path))
-            result = subprocess.run(command, env=env, text=True, capture_output=True,
-                                    timeout=15, check=False)
+        for name, value in (overrides or {}).items():
+            if value is None:
+                env.pop(name, None)
+            else:
+                env[name] = value
+        result = subprocess.run([binary], env=env, text=True, capture_output=True,
+                                timeout=15, check=False)
         self.assertNotIn(PRODUCT_KEY, result.stdout + result.stderr)
         self.assertNotIn(DEVICE_SECRET, result.stdout + result.stderr)
         return result
@@ -99,8 +102,16 @@ class WireTest(unittest.TestCase):
         with server() as (origin, requests):
             result = self.invoke(origin)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("LINGXI get-device-info result=0 http=200 code=200 success=1", result.stdout)
-        self.assertIn("LINGXI heartbeat result=0 http=200 code=200 success=1", result.stdout)
+        rows = [json.loads(line.split(" ", 1)[1]) for line in result.stdout.splitlines()
+                if line.startswith("H2_LINGXI_E2E_CASE ")]
+        self.assertEqual([row["id"] for row in rows],
+                         ["get-device-info", "heartbeat", "credential-cleanup"])
+        self.assertEqual([row["status"] for row in rows], ["PASS"] * 3)
+        for row in rows[:2]:
+            self.assertEqual((row["http"], row["code"], row["success"]), (200, 200, True))
+        summary = json.loads(next(line.split(" ", 1)[1] for line in result.stdout.splitlines()
+                                 if line.startswith("H2_LINGXI_E2E_SUMMARY ")))
+        self.assertEqual(summary, {"passed": 3, "failed": 0, "blocked": 0, "result": 0, "cleanup": 0})
         self.assertEqual(len(requests), 2)
         self.assertEqual(requests[0][0], "/v2/customer/device/secret/info")
         self.assertEqual(requests[0][2], {
@@ -117,12 +128,11 @@ class WireTest(unittest.TestCase):
             self.assertEqual(headers["Content-Type"], "application/json")
             self.assertEqual(headers["X-AI-IP"], "192.0.2.5")
 
-    def test_query_only_and_numeric_code(self):
+    def test_numeric_code(self):
         with server(code=200) as (origin, requests):
-            result = self.invoke(origin, heartbeat=False)
+            result = self.invoke(origin)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(len(requests), 1)
-        self.assertNotIn("LINGXI heartbeat", result.stdout)
+        self.assertEqual(len(requests), 2)
 
     def test_rejections_stop_without_heartbeat_or_retry(self):
         cases = ({"status": 401}, {"code": "403", "success": False},
@@ -132,7 +142,9 @@ class WireTest(unittest.TestCase):
                 result = self.invoke(origin)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(len(requests), 1)
-                self.assertNotIn("LINGXI heartbeat", result.stdout)
+                rows = [json.loads(line.split(" ", 1)[1]) for line in result.stdout.splitlines()
+                        if line.startswith("H2_LINGXI_E2E_CASE ")]
+                self.assertEqual([row["status"] for row in rows], ["FAIL", "BLOCKED", "PASS"])
 
     def test_redirect_does_not_forward_credentials(self):
         with server() as (trap, trapped), server(redirect=trap) as (origin, requests):
@@ -147,11 +159,36 @@ class WireTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(requests, [])
 
-    def test_invalid_params_file_stops_before_network(self):
+    def test_invalid_params_environment_stops_before_network(self):
         with server() as (origin, requests):
             result = self.invoke(origin, params={"innerIp": "incorrect-type"})
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(requests, [])
+
+    def test_heartbeat_rejection_preserves_cleanup_and_failure(self):
+        with server(reject_heartbeat=True) as (origin, requests):
+            result = self.invoke(origin)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(requests), 2)
+        rows = [json.loads(line.split(" ", 1)[1]) for line in result.stdout.splitlines()
+                if line.startswith("H2_LINGXI_E2E_CASE ")]
+        self.assertEqual([row["status"] for row in rows], ["PASS", "FAIL", "PASS"])
+
+    def test_live_entry_rejects_plaintext_fixture(self):
+        for allow_http in (False, True):
+            with self.subTest(allow_http=allow_http), server() as (origin, requests):
+                result = self.invoke(origin, binary=LIVE_BINARY, allow_http=allow_http)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(requests, [])
+
+    def test_missing_or_malformed_environment_stops_before_network(self):
+        for overrides in ({"LINGXI_PRODUCT_KEY": None}, {"LINGXI_HEARTBEAT_JSON": None},
+                          {"LINGXI_DEVICE_NO_TYPE": "unknown"}, {"LINGXI_TIMEOUT_MS": "0"},
+                          {"LINGXI_HEARTBEAT_JSON": "{"}):
+            with self.subTest(overrides=overrides), server() as (origin, requests):
+                result = self.invoke(origin, overrides=overrides)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(requests, [])
 
 
 if __name__ == "__main__":

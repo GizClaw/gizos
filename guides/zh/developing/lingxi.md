@@ -16,14 +16,15 @@
 
 凭据只经调用方的受控配置进入请求，不进入日志、Git、普通 Telemetry KV 或模型请求。接口失败分别保留 HTTP 和业务状态，调用方不能仅凭 HTTP 成功判断设备接入成功。先完成所有同步调用，再销毁 JSON、HTTP 与网络 provider。
 
-## Host 验证
+## E2E App 与 Host 验证
 
-Host 示例组装同一份公共库、CoreHTTP、yyjson 和平台 Net PAL。无心跳文件时只查询设备信息；提供文件时，查询成功后发送一次调用方参数，随后退出。参数文件是平台心跳的 params 对象，字段结构从 Public Header 与 [可执行入口](https://github.com/GizClaw/gizos/blob/main/projects/example/targets/cc_binary/lingxi/main.c) 读取。入口的 usage 说明环境变量和参数；凭据从进程环境提供，不能作为 Bazel build 参数保存。
+独立 [E2E App](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/lingxi) 运行公共库的完整设备信息查询、单次心跳与凭据清理，持有固定账本和通过判断。Portable App 只接收 PAL 与 typed config；Host launcher 组装真实 CoreHTTP、yyjson 和平台 Net PAL，并读取进程环境注入产品身份、凭据、endpoint 及心跳 JSON。入口不依赖位置参数或必需的参数文件，凭据也不作为 Bazel build 参数保存。用法与实网 test 的环境继承命令见 App README。
 
 ```sh
 bazel test --config=macos_arm64 //libs/china_mobile/lingxi:all
-bazel test --config=macos_arm64 //projects/example/targets/cc_binary/lingxi:wire_test
-bazel run --config=macos_arm64 //projects/example/targets/cc_binary/lingxi:lingxi -- BASE_URL DEVICE_NO_TYPE DEVICE_NO
+bazel test --config=macos_arm64 //projects/e2e/apps/lingxi/app:all
+bazel test --config=macos_arm64 //projects/e2e/targets/cc_binary/lingxi:wire_test
+bazel run --config=macos_arm64 //projects/e2e/targets/cc_binary/lingxi:lingxi -- --help
 ```
 
 本地 wire test 只对 loopback HTTP 显式开放明文，验证真实 HTTP 编码、查询后单次心跳、业务拒绝、身份不匹配、响应预算与重定向拒绝。单元测试还验证 JSON 预算、取消和分配失败的资源回收。它们不使用公网凭据，也不代表真实平台或物理设备验收通过。

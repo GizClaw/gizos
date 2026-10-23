@@ -1,4 +1,4 @@
-#include "h2_lingxi.h"
+#include "h2_lingxi_e2e.h"
 #include "h2_corehttp.h"
 #include "h2_desktop_platform.h"
 #include "h2_wolfssl.h"
@@ -17,6 +17,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <limits.h>
 
 #define FILE_CAPACITY 16384u
 
@@ -44,7 +46,8 @@ static h2_pal_result_t copy_string(const h2_pal_json_api_t* json,
   h2_pal_json_string_view_t text = {0};
   const h2_pal_result_t rc = h2_pal_json_value_get_string(json, value, &text);
   if (rc != H2_PAL_OK) return rc;
-  if (text.len >= capacity || memchr(text.data, '\0', text.len) != NULL)
+  if (text.len >= capacity ||
+      (text.len != 0u && memchr(text.data, '\0', text.len) != NULL))
     return H2_PAL_ERR_FORMAT;
   memcpy(out, text.data, text.len);
   out[text.len] = '\0';
@@ -52,16 +55,18 @@ static h2_pal_result_t copy_string(const h2_pal_json_api_t* json,
 }
 
 static h2_pal_result_t read_heartbeat(const h2_pal_json_api_t* json,
-                                      const char* path,
+                                      const char* text,
                                       heartbeat_input_t* input) {
-  uint8_t bytes[FILE_CAPACITY];
   size_t length = 0u;
-  h2_pal_result_t rc = read_file(path, bytes, sizeof(bytes), &length);
+  while (length < FILE_CAPACITY && text[length] != '\0') ++length;
+  if (length == 0u || length == FILE_CAPACITY) return H2_PAL_ERR_FORMAT;
+  h2_pal_result_t rc = H2_PAL_OK;
   h2_pal_json_document_t* doc = NULL;
   h2_pal_json_value_t* root = NULL;
   h2_pal_json_value_t* ips = NULL;
   if (rc == H2_PAL_OK)
-    rc = h2_pal_json_document_parse(json, bytes, length, NULL, &doc);
+    rc = h2_pal_json_document_parse(json, (const uint8_t*)text, length, NULL,
+                                    &doc);
   if (rc == H2_PAL_OK) rc = h2_pal_json_document_root(json, doc, &root);
   if (rc == H2_PAL_OK)
     rc = h2_pal_json_object_get(json, root, "innerIp", 7u, &ips);
@@ -104,30 +109,49 @@ static h2_pal_result_t read_heartbeat(const h2_pal_json_api_t* json,
   return rc;
 }
 
-static void print_result(const char* stage, h2_pal_result_t rc,
-                         const h2_lingxi_result_t* result) {
-  printf("LINGXI %s result=%d http=%d code=%d success=%d\n", stage, rc,
-         result->http_status, result->platform_code,
-         result->platform_success ? 1 : 0);
+static void report(void* user, const h2_lingxi_e2e_case_result_t* row) {
+  (void)user;
+  const char* status = row->status == H2_LINGXI_E2E_PASS   ? "PASS"
+                       : row->status == H2_LINGXI_E2E_FAIL ? "FAIL"
+                                                           : "BLOCKED";
+  printf(
+      "H2_LINGXI_E2E_CASE {\"id\":\"%s\",\"status\":\"%s\",\"result\":%d,\"http\":%d,\"code\":%d,\"success\":%s,\"elapsed_ms\":%llu}\n",
+      row->id, status, row->result, row->platform.http_status,
+      row->platform.platform_code,
+      row->platform.platform_success ? "true" : "false",
+      (unsigned long long)row->elapsed_ms);
+  fflush(stdout);
 }
 
 int main(int argc, char** argv) {
-  if (argc != 4 && argc != 5) {
+  if (argc != 1) {
     fputs(
-        "Usage: lingxi BASE_URL DEVICE_NO_TYPE DEVICE_NO [HEARTBEAT_JSON_FILE]\n"
-        "Set LINGXI_PRODUCT_ID and LINGXI_PRODUCT_KEY. DEVICE_NO_TYPE: SN/IMEI/CMEI.\n"
-        "Optional: LINGXI_SOURCE_IP, LINGXI_INTERFACE, LINGXI_CA_FILE.\n"
-        "LINGXI_LOOPBACK_HTTP=1 permits only a local HTTP fixture.\n"
-        "An optional JSON file supplies the caller's heartbeat params object.\n",
+        "Usage: lingxi (environment configuration only)\n"
+        "Required: LINGXI_BASE_URL, LINGXI_PRODUCT_ID, LINGXI_PRODUCT_KEY,\n"
+        "LINGXI_DEVICE_NO_TYPE (SN/IMEI/CMEI), LINGXI_DEVICE_NO,\n"
+        "LINGXI_SOURCE_IP and LINGXI_HEARTBEAT_JSON (params object).\n"
+        "Optional: LINGXI_INTERFACE, LINGXI_CA_FILE.\n"
+        "Optional: LINGXI_TIMEOUT_MS; LINGXI_LOOPBACK_HTTP=1 for local fixtures.\n",
         stderr);
+    return argc == 2 && strcmp(argv[1], "--help") == 0 ? 0 : 2;
+  }
+  const char* base = getenv("LINGXI_BASE_URL");
+  const char* device_type = getenv("LINGXI_DEVICE_NO_TYPE");
+  const char* device_no = getenv("LINGXI_DEVICE_NO");
+  const char* metadata = getenv("LINGXI_HEARTBEAT_JSON");
+  const char* source_ip = getenv("LINGXI_SOURCE_IP");
+  if (base == NULL || device_type == NULL || device_no == NULL ||
+      metadata == NULL || source_ip == NULL) {
+    fputs("H2_LINGXI_E2E_SETUP missing required environment configuration\n",
+          stderr);
     return 2;
   }
   h2_lingxi_device_no_type_t type = 0;
-  if (strcmp(argv[2], "SN") == 0)
+  if (strcmp(device_type, "SN") == 0)
     type = H2_LINGXI_DEVICE_NO_SN;
-  else if (strcmp(argv[2], "IMEI") == 0)
+  else if (strcmp(device_type, "IMEI") == 0)
     type = H2_LINGXI_DEVICE_NO_IMEI;
-  else if (strcmp(argv[2], "CMEI") == 0)
+  else if (strcmp(device_type, "CMEI") == 0)
     type = H2_LINGXI_DEVICE_NO_CMEI;
   else
     return 2;
@@ -138,6 +162,17 @@ int main(int argc, char** argv) {
     fputs("Missing Lingxi product credentials\n", stderr);
     return 2;
   }
+  uint32_t timeout_ms = 10000u;
+  const char* supplied_timeout = getenv("LINGXI_TIMEOUT_MS");
+  if (supplied_timeout != NULL) {
+    char* end = NULL;
+    errno = 0;
+    const unsigned long value = strtoul(supplied_timeout, &end, 10);
+    if (supplied_timeout[0] < '0' || supplied_timeout[0] > '9' || errno ||
+        end == NULL || *end != '\0' || value == 0u || value > INT_MAX)
+      return 2;
+    timeout_ms = (uint32_t)value;
+  }
   const h2_pal_mem_api_t* mem = h2_desktop_platform_default_allocator();
   const h2_wolfssl_config_t tls_config = {.mem = *mem, .entropy = host_entropy};
   h2_pal_result_t rc = h2_wolfssl_init(&tls_config);
@@ -145,8 +180,9 @@ int main(int argc, char** argv) {
   h2_corehttp_t* http_provider = NULL;
   h2_pal_http_api_t http = {0};
   h2_yyjson_json_t* json_provider = NULL;
-  h2_lingxi_device_info_t info = {0};
-  h2_lingxi_result_t result = {0};
+  h2_lingxi_e2e_result_t result = {0};
+  bool ran = false;
+  h2_pal_result_t teardown = H2_PAL_OK;
   heartbeat_input_t heartbeat = {0};
   uint8_t ca[FILE_CAPACITY];
   size_t ca_len = 0u;
@@ -172,40 +208,51 @@ int main(int argc, char** argv) {
   rc = h2_yyjson_json_create(mem, &json_provider);
   if (rc != H2_PAL_OK) goto cleanup;
   /* Parse all caller metadata before the first network operation. */
-  if (argc == 5) {
-    rc = read_heartbeat(h2_yyjson_json_api(json_provider), argv[4], &heartbeat);
-    if (rc != H2_PAL_OK) goto cleanup;
-  }
+  rc = read_heartbeat(h2_yyjson_json_api(json_provider), metadata, &heartbeat);
+  if (rc != H2_PAL_OK) goto cleanup;
   const char* loopback = getenv("LINGXI_LOOPBACK_HTTP");
+#if defined(H2_LINGXI_E2E_LIVE)
+  if (loopback != NULL && strcmp(loopback, "1") == 0) {
+    rc = H2_PAL_ERR_INVALID_ARG;
+    goto cleanup;
+  }
+#endif
   const h2_lingxi_config_t config = {
       .allocator = mem,
       .http = &http,
       .json = h2_yyjson_json_api(json_provider),
-      .base_url = argv[1],
-      .source_ip = getenv("LINGXI_SOURCE_IP"),
+      .base_url = base,
+      .source_ip = source_ip,
       .interface_name = getenv("LINGXI_INTERFACE"),
       .json_limits = {FILE_CAPACITY, 24u, 512u},
-      .timeout_ms = 10000u,
+      .timeout_ms = timeout_ms,
       .allow_plaintext_loopback =
           loopback != NULL && strcmp(loopback, "1") == 0,
   };
-  const h2_lingxi_identity_t identity = {type, argv[3]};
-  rc = h2_lingxi_get_device_info(&config, &product, &identity, &info, &result);
-  print_result("get-device-info", rc, &result);
-  if (rc == H2_PAL_OK && argc == 5) {
-    rc = h2_lingxi_report_heartbeat(&config, &product, &info, &heartbeat.value,
-                                    &result);
-    print_result("heartbeat", rc, &result);
-  }
+  const h2_lingxi_e2e_config_t app = {
+      .client = config,
+      .time = h2_desktop_platform_time_api(),
+      .product = product,
+      .identity = {type, device_no},
+      .heartbeat = heartbeat.value,
+      .report = report,
+  };
+  ran = true;
+  rc = h2_lingxi_e2e_run(&app, &result);
 cleanup:
-  h2_lingxi_device_info_clear(&info);
   if (json_provider != NULL) {
     const h2_pal_result_t destroyed = h2_yyjson_json_destroy(&json_provider);
-    if (rc == H2_PAL_OK) rc = destroyed;
+    if (destroyed != H2_PAL_OK) teardown = destroyed;
   }
   h2_corehttp_destroy(http_provider);
   const h2_pal_result_t destroyed = h2_wolfssl_deinit();
-  if (rc == H2_PAL_OK) rc = destroyed;
-  printf("LINGXI finished result=%d\n", rc);
+  if (teardown == H2_PAL_OK) teardown = destroyed;
+  if (rc == H2_PAL_OK) rc = teardown;
+  if (ran)
+    printf(
+        "H2_LINGXI_E2E_SUMMARY {\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"result\":%d,\"cleanup\":%d}\n",
+        result.passed, result.failed, result.blocked, rc, teardown);
+  else
+    printf("H2_LINGXI_E2E_SETUP result=%d cleanup=%d\n", rc, teardown);
   return rc == H2_PAL_OK ? 0 : 1;
 }

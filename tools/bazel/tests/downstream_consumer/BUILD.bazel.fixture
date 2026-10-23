@@ -21,7 +21,10 @@ cc_test(
     srcs = ["lingxi_consumer.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    deps = ["@gizos//libs/china_mobile/lingxi"],
+    deps = [
+        "@gizos//libs/china_mobile/lingxi",
+        "@gizos//projects/e2e/apps/lingxi/app:lingxi_e2e",
+    ],
 )
 
 cc_test(
