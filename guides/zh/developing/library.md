@@ -131,6 +131,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`json`](./json.md)：PAL JSON contract，以及 yyjson portable provider 的严格解析、ownership 和 lifecycle。
 - [`bundle`](./bundle.md)：bundle manifest、archive、path、tar 和 installer。
 - [`china_mobile/onenet`](./onenet.md)：通过 MQTT PAL 接入中国移动 OneNET 的可复用 OneJSON client。
+- [`china_mobile/lingxi`](./lingxi.md)：通过 HTTP PAL 查询中国移动灵犀设备凭据并发送单次心跳。
 - [`coremqtt`](./coremqtt.md)：CoreMQTT 的 GizOS integration。
 - [`corehttp`](./corehttp.md)：通过 Net PAL 提供 HTTP/1.1 的 portable coreHTTP provider。
 - [`dns`](./dns.md)：跨平台 DNS client。

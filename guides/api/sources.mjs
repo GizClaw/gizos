@@ -26,6 +26,7 @@ export const apiSources = [
   { id: "iostreamikcp", roots: ["libs/iostreamikcp/include"] },
   { id: "iperf", roots: ["libs/iperf/include"] },
   { id: "libco", roots: ["libs/pal/providers/libco/include"] },
+  { id: "lingxi", roots: ["libs/china_mobile/lingxi/include"] },
   { id: "lua", headers: ["libs/lua/include/h2_lua_display.h", "libs/lua/include/h2_lua_numeric.h"] },
   { id: "lua_apps", roots: ["libs/lua/apps/include"] },
   { id: "lvgl", roots: ["libs/lvgl/include"] },

@@ -50,6 +50,7 @@ cp "$fixture_root/MODULE.bazel.fixture" "$consumer_root/MODULE.bazel"
 cp "$fixture_root/BUILD.bazel.fixture" "$consumer_root/BUILD.bazel"
 cp "$fixture_root/consumer.bzl.fixture" "$consumer_root/consumer.bzl"
 cp "$fixture_root/consumer.c" "$consumer_root/consumer.c"
+cp "$fixture_root/lingxi_consumer.c" "$consumer_root/lingxi_consumer.c"
 cp "$fixture_root/onenet_consumer.c" "$consumer_root/onenet_consumer.c"
 cp "$fixture_root/CMakeLists.txt.fixture" "$consumer_root/CMakeLists.txt"
 cp "$fixture_root/ap.defaults" "$consumer_root/ap.defaults"
@@ -346,6 +347,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     //:embedded_menu_font_test \
     //:font_consumer_test \
     //:lua_app_release_test \
+    //:lingxi_consumer_test \
     //:onenet_consumer_test \
     @gizos//libs/gizclaw:h2_gizclaw_local_test \
     @gizos//libs/lua/apps/web/tests/scoped_http:browser_test \

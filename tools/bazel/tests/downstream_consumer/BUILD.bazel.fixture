@@ -17,6 +17,14 @@ load("@rules_python//python:defs.bzl", "py_test")
 load(":consumer.bzl", "fake_firmware", "native_component_paths")
 
 cc_test(
+    name = "lingxi_consumer_test",
+    srcs = ["lingxi_consumer.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = ["@gizos//libs/china_mobile/lingxi"],
+)
+
+cc_test(
     name = "onenet_consumer_test",
     srcs = ["onenet_consumer.c"],
     conlyopts = H2_C11_OPTS,
