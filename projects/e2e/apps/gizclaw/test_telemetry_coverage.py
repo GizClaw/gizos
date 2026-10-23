@@ -9,7 +9,7 @@ import api_coverage
 
 
 class TelemetryCoverageTest(unittest.TestCase):
-    def test_case_emits_three_api_records_without_claiming_live_acceptance(self):
+    def test_case_emits_six_api_records_without_claiming_live_acceptance(self):
         root = api_coverage.repository_root()
         executable = root / "projects/e2e/apps/gizclaw/app/gizclaw_e2e_telemetry_test"
         if os.name == "nt":
@@ -23,10 +23,10 @@ class TelemetryCoverageTest(unittest.TestCase):
                                     profile="default", platform="macos", process_exit_code=run.returncode)
         observed = {row["symbol"] for row in result["functions"] if row["status"] == "covered"}
         expected = {rule.symbol for rule in rules if rule.case == "rpc/telemetry"}
-        self.assertEqual(len(expected), 3)
+        self.assertEqual(len(expected), 6)
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 238 - 3)
+        self.assertEqual(result["missing"], 241 - 6)
 
 
 if __name__ == "__main__":

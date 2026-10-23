@@ -4,6 +4,7 @@
 #include "h2_gizclaw_service_internal.h"
 #include "h2_gizclaw_local.h"
 #include "payload/workspace.pb.h"
+#include "payload/management.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 
@@ -24,7 +25,8 @@ typedef struct wire_fixture {
   h2_pal_webrtc_event_t event;
   uint8_t sent[8192];
   size_t sent_len;
-  unsigned closes, find_calls;
+  unsigned closes, find_calls, management_calls;
+  uint8_t management_response[64];
   int remote;
   int64_t value;
   bool exercised;
@@ -252,6 +254,48 @@ static h2_pal_result_t read_state(void* user, h2_gizclaw_mhs_read_t* out) {
   out->speaker.muted = false;
   return H2_PAL_OK;
 }
+
+static int management_tool(void* user, h2_gizclaw_tool_t tool,
+                           h2_gizclaw_rpc_bytes_t payload,
+                           h2_gizclaw_rpc_provider_response_t* response) {
+  wire_fixture_t* f = user;
+  pb_istream_t input = pb_istream_from_buffer(payload.data, payload.len);
+  pb_ostream_t output = pb_ostream_from_buffer(f->management_response,
+                                               sizeof(f->management_response));
+  if (tool == H2_GIZCLAW_TOOL_USAGE_TIME_SET) {
+    gizclaw_rpc_v1_ClientUsageTimeSetRequest request = {0};
+    if (!pb_decode(&input, gizclaw_rpc_v1_ClientUsageTimeSetRequest_fields,
+                   &request) ||
+        !request.has_limit_seconds) {
+      response->has_error = true;
+      response->error_code = H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT;
+      return H2_PAL_OK;
+    }
+    assert(request.limit_seconds == 0u);
+    gizclaw_rpc_v1_ClientUsageTimeSetResponse reply = {
+        .has_applied = true,
+        .applied = {.has_limit_seconds = true,
+                    .has_used_seconds = true,
+                    .has_exhausted = true}};
+    assert(pb_encode(&output, gizclaw_rpc_v1_ClientUsageTimeSetResponse_fields,
+                     &reply));
+  } else {
+    assert(tool == H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET);
+    gizclaw_rpc_v1_ClientManagementPasswordResetRequest request = {0};
+    assert(pb_decode(&input,
+                     gizclaw_rpc_v1_ClientManagementPasswordResetRequest_fields,
+                     &request));
+    gizclaw_rpc_v1_ClientManagementPasswordResetResponse reply = {.has_is_set =
+                                                                      true};
+    assert(pb_encode(
+        &output, gizclaw_rpc_v1_ClientManagementPasswordResetResponse_fields,
+        &reply));
+  }
+  ++f->management_calls;
+  response->payload =
+      (h2_gizclaw_rpc_bytes_t){f->management_response, output.bytes_written};
+  return H2_PAL_OK;
+}
 static h2_pal_result_t write_state(void* user,
                                    const h2_gizclaw_mhs_write_t* request,
                                    h2_gizclaw_mhs_read_t* out) {
@@ -271,9 +315,12 @@ static void exercise(wire_fixture_t* f) {
   assert(
       pb_decode(&in, gizclaw_rpc_v1_ClientToolV0ListResponse_fields, &tools));
   const int expected_tools[] = {1, 2, 3, 6};
-  assert(tools.tools_count == 4);
+  assert(tools.tools_count == 15);
   for (size_t i = 0; i < 4; ++i)
     assert((int)tools.tools[i] == expected_tools[i]);
+  for (size_t i = 4; i < 15u; ++i)
+    assert((int)tools.tools[i] ==
+           (int)H2_GIZCLAW_TOOL_CONTENT_AGE_GET + (int)i - 4);
   response =
       call(f, H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_LIST, (const uint8_t*)"", 0);
   assert(!response.has_error);
@@ -306,6 +353,41 @@ static void exercise(wire_fixture_t* f) {
       f, H2_GIZCLAW_TOOL_DEVICE_FIND,
       gzc_str_from_parts((const char*)find_payload, sizeof(find_payload)));
   assert(!response.has_error && f->find_calls == 1);
+  const uint8_t unlimited[] = {0x08, 0x00};
+  response =
+      invoke(f, H2_GIZCLAW_TOOL_USAGE_TIME_SET,
+             gzc_str_from_parts((const char*)unlimited, sizeof(unlimited)));
+  assert(!response.has_error && f->management_calls == 1u);
+  inner = (gzc_str_t){0};
+  in = pb_istream_from_buffer((const pb_byte_t*)response.result_payload.data,
+                              response.result_payload.len);
+  assert(pb_decode(&in, gizclaw_rpc_v1_ClientToolV0InvokeResponse_fields,
+                   &wrapper));
+  gizclaw_rpc_v1_ClientUsageTimeSetResponse usage = {0};
+  in = pb_istream_from_buffer((const pb_byte_t*)inner.data, inner.len);
+  assert(
+      pb_decode(&in, gizclaw_rpc_v1_ClientUsageTimeSetResponse_fields, &usage));
+  assert(usage.has_applied && usage.applied.has_limit_seconds &&
+         usage.applied.limit_seconds == 0u && usage.applied.has_used_seconds &&
+         usage.applied.used_seconds == 0u && usage.applied.has_exhausted &&
+         !usage.applied.exhausted);
+  response = invoke(f, H2_GIZCLAW_TOOL_USAGE_TIME_SET, gzc_str_from_cstr(""));
+  assert(response.has_error &&
+         response.error.code == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  response = invoke(f, H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET,
+                    gzc_str_from_cstr(""));
+  assert(!response.has_error && f->management_calls == 2u);
+  inner = (gzc_str_t){0};
+  in = pb_istream_from_buffer((const pb_byte_t*)response.result_payload.data,
+                              response.result_payload.len);
+  assert(pb_decode(&in, gizclaw_rpc_v1_ClientToolV0InvokeResponse_fields,
+                   &wrapper));
+  gizclaw_rpc_v1_ClientManagementPasswordResetResponse password = {0};
+  in = pb_istream_from_buffer((const pb_byte_t*)inner.data, inner.len);
+  assert(pb_decode(&in,
+                   gizclaw_rpc_v1_ClientManagementPasswordResetResponse_fields,
+                   &password));
+  assert(password.has_is_set && !password.is_set);
   response = invoke(f, H2_GIZCLAW_TOOL_DEVICE_REBOOT, gzc_str_from_cstr(""));
   assert(response.has_error &&
          response.error.code == H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED);
@@ -391,8 +473,12 @@ static void exercise_protocol(bool local) {
                                       .vtable = &webrtc_vtable};
   const h2_pal_http_api_t http = {0};
   const h2_pal_crypto_api_t crypto = {0};
-  const h2_gizclaw_tool_handler_t tool = {H2_GIZCLAW_TOOL_DEVICE_FIND,
-                                          find_tool, &fixture};
+  h2_gizclaw_tool_handler_t tools[12] = {
+      {H2_GIZCLAW_TOOL_DEVICE_FIND, find_tool, &fixture}};
+  for (unsigned i = 1u; i < 12u; ++i)
+    tools[i] = (h2_gizclaw_tool_handler_t){
+        (h2_gizclaw_tool_t)(H2_GIZCLAW_TOOL_CONTENT_AGE_GET + i - 1u),
+        management_tool, &fixture};
   const h2_gizclaw_mhs_device_t device = {
       .id = "speaker.fixture",
       .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER,
@@ -410,8 +496,8 @@ static void exercise_protocol(bool local) {
       .cipher_mode = H2_GIZCLAW_CIPHER_PLAINTEXT,
       .connect_timeout_ms = 1000,
       .model = "fixture",
-      .tool_handlers = &tool,
-      .tool_handler_count = 1,
+      .tool_handlers = tools,
+      .tool_handler_count = 12,
       .mhs_devices = &device,
       .mhs_device_count = 1};
   const h2_gizclaw_service_config_t service_config = {

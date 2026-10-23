@@ -32,7 +32,7 @@
 typedef struct audio_download audio_download_t;
 struct h2_gizclaw_device {
   h2_gizclaw_config_t config;
-  h2_gizclaw_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
+  h2_gizclaw_tool_handler_t tools[H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET];
   h2_gizclaw_lua_apps_t* lua_apps;
   h2_gizclaw_lua_stream_t* lua_stream;
   h2_gizclaw_mhs_device_t* mhs_devices;
@@ -1927,7 +1927,8 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t* service) {
   /* A device-capable Service owns every other built-in procedure. */
   for (size_t i = 0; i < config->tool_handler_count; ++i)
     if (config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_DEVICE_FIND &&
-        config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_SOCIAL_PING)
+        config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_SOCIAL_PING &&
+        config->tool_handlers[i].tool < H2_GIZCLAW_TOOL_CONTENT_AGE_GET)
       return H2_PAL_ERR_INVALID_ARG;
   if (config->mhs_device_count >
       SIZE_MAX / sizeof(h2_gizclaw_mhs_device_t) - 7u)

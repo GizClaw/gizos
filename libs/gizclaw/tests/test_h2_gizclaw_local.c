@@ -362,5 +362,38 @@ int main(void) {
   assert(h2_gizclaw_local_release(&borrow) == H2_PAL_OK && !borrow);
   assert(h2_gizclaw_service_deinit(d) == H2_PAL_OK);
   assert(atomic_load(&live_allocations) == 0);
+
+  /* A headless product may register every supported tool. Discovery traverses
+   * all entries, including management IDs beyond the old 27-slot storage. */
+  h2_gizclaw_tool_handler_t all_tools[36];
+  size_t installed = 0u;
+  for (int tool_id = H2_GIZCLAW_TOOL_INFO_GET;
+       tool_id <= H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET; ++tool_id) {
+    if (tool_id == 25 || tool_id == 26) continue; /* Unsupported GNSS tools. */
+    all_tools[installed++] = (h2_gizclaw_tool_handler_t){
+        (h2_gizclaw_tool_t)tool_id, product_find, &f};
+  }
+  h2_gizclaw_config_t headless = config;
+  headless.model = NULL;
+  headless.tool_handlers = all_tools;
+  headless.tool_handler_count = installed;
+  h2_gizclaw_service_config_t full_setup = setup;
+  full_setup.client_config = &headless;
+  assert(h2_gizclaw_service_init(&full_setup, &d) == H2_PAL_OK);
+  assert(h2_gizclaw_local_start(d) == H2_PAL_OK);
+  c = submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_LIST, NULL, 0u);
+  view = wait_call(c);
+  assert(view.result == H2_PAL_OK && !view.has_error);
+  input = pb_istream_from_buffer(view.payload.data, view.payload.len);
+  memset(&list, 0, sizeof(list));
+  assert(
+      pb_decode(&input, gizclaw_rpc_v1_ClientToolV0ListResponse_fields, &list));
+  assert(list.tools_count == installed && list.tools_count == 36u);
+  for (size_t i = 0u; i < installed; ++i)
+    assert((int)list.tools[i] == (int)all_tools[i].tool);
+  done(&c);
+  assert(h2_gizclaw_service_stop(d) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(d) == H2_PAL_OK);
+  assert(atomic_load(&live_allocations) == 0);
   return 0;
 }

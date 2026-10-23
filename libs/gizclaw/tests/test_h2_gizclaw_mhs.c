@@ -124,18 +124,24 @@ static size_t request_bytes(uint8_t* bytes, bool write, const char* id,
   if (write) {
     uint8_t inner[64];
     pb_ostream_t payload_out = pb_ostream_from_buffer(inner, sizeof(inner));
-    assert(pb_encode(&payload_out, gizclaw_rpc_v1_DisplayHwdWriteRequest_fields,
-                     payload));
+    const pb_msgdesc_t* fields =
+        hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM
+            ? gizclaw_rpc_v1_ModemHwdWriteRequest_fields
+        : hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC
+            ? gizclaw_rpc_v1_NfcHwdWriteRequest_fields
+            : gizclaw_rpc_v1_DisplayHwdWriteRequest_fields;
+    assert(pb_encode(&payload_out, fields, payload));
     assert(pb_encode_tag(&out, PB_WT_STRING, 3u));
     assert(pb_encode_string(&out, inner, payload_out.bytes_written));
   }
   return out.bytes_written;
 }
-static int invoke(bool write, const uint8_t* bytes, size_t len,
-                  const pb_msgdesc_t* reply_fields, void* out) {
+static int invoke_devices(const h2_gizclaw_mhs_device_t* devices, size_t count,
+                          bool write, const uint8_t* bytes, size_t len,
+                          const pb_msgdesc_t* reply_fields, void* out) {
   h2_gizclaw_rpc_provider_response_t response = {0};
   uint8_t* storage = NULL;
-  int rc = h2_gizclaw_mhs_request_internal(&device, 1u, write, &memory,
+  int rc = h2_gizclaw_mhs_request_internal(devices, count, write, &memory,
                                            (h2_gizclaw_rpc_bytes_t){bytes, len},
                                            &response, &storage);
   if (rc == H2_PAL_OK) {
@@ -159,7 +165,161 @@ static int invoke(bool write, const uint8_t* bytes, size_t len,
   return rc;
 }
 
+static int invoke(bool write, const uint8_t* bytes, size_t len,
+                  const pb_msgdesc_t* fields, void* out) {
+  return invoke_devices(&device, 1u, write, bytes, len, fields, out);
+}
+
+typedef struct radio_fixture {
+  bool nfc, omit_enabled;
+  unsigned writes;
+  h2_gizclaw_mhs_read_t snapshot;
+} radio_fixture_t;
+
+static int radio_read(void* user, h2_gizclaw_mhs_read_t* out) {
+  *out = ((radio_fixture_t*)user)->snapshot;
+  return H2_PAL_OK;
+}
+
+static int radio_write(void* user, const h2_gizclaw_mhs_write_t* request,
+                       h2_gizclaw_mhs_read_t* out) {
+  radio_fixture_t* f = user;
+  ++f->writes;
+  if (f->nfc) {
+    assert(request->nfc.has_enabled);
+    f->snapshot.nfc.has_enabled = !f->omit_enabled;
+    f->snapshot.nfc.enabled = request->nfc.enabled;
+  } else {
+    assert(request->modem.has_enabled);
+    f->snapshot.modem.has_enabled = !f->omit_enabled;
+    f->snapshot.modem.enabled = request->modem.enabled;
+  }
+  return radio_read(user, out);
+}
+
+static void test_modem_and_nfc(void) {
+  radio_fixture_t modem = {.snapshot.modem = {.has_enabled = true}};
+  radio_fixture_t nfc = {.nfc = true,
+                         .snapshot.nfc = {.has_enabled = true,
+                                          .has_card_present = true,
+                                          .has_last_read = true}};
+  radio_fixture_t second = {
+      .nfc = true, .snapshot.nfc = {.has_enabled = true, .enabled = true}};
+  gizclaw_rpc_v1_NfcReadSnapshot* last = &nfc.snapshot.nfc.last_read;
+  last->read_at_unix_ms = INT64_C(1800000000000);
+  strcpy(last->result, "failed");
+  last->has_error_code = true;
+  strcpy(last->error_code, "read-failed");
+  last->has_uid = true;
+  last->uid.size = sizeof(last->uid.bytes);
+  last->has_raw_data = true;
+  last->raw_data.size = sizeof(last->raw_data.bytes);
+  for (size_t i = 0; i < sizeof(last->raw_data.bytes); ++i)
+    last->raw_data.bytes[i] = (uint8_t)i;
+  h2_gizclaw_mhs_device_t devices[] = {
+      {"modem.main", gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM, radio_read,
+       radio_write, &modem},
+      {"nfc.main", gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC, radio_read,
+       radio_write, &nfc},
+      {"nfc.second", gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC, radio_read, NULL,
+       &second}};
+  assert(h2_gizclaw_mhs_validate_internal(devices, 3u) == H2_PAL_OK);
+  uint8_t bytes[256];
+  size_t len = request_bytes(bytes, false, "modem.main", devices[0].hwd, NULL);
+  gizclaw_rpc_v1_ModemHwdReadResponse read_modem = {0};
+  assert(invoke_devices(devices, 3u, false, bytes, len,
+                        gizclaw_rpc_v1_ModemHwdReadResponse_fields,
+                        &read_modem) == H2_PAL_OK);
+  assert(read_modem.has_enabled && !read_modem.enabled &&
+         !read_modem.has_powered);
+  modem.snapshot.modem.has_powered = true;
+  assert(invoke_devices(devices, 3u, false, bytes, len,
+                        gizclaw_rpc_v1_ModemHwdReadResponse_fields,
+                        &read_modem) == H2_PAL_OK);
+  assert(read_modem.has_powered && !read_modem.powered);
+  gizclaw_rpc_v1_ModemHwdWriteRequest patch = {.has_enabled = true};
+  gizclaw_rpc_v1_ModemHwdWriteResponse applied = {0};
+  len = request_bytes(bytes, true, "modem.main", devices[0].hwd, &patch);
+  assert(invoke_devices(devices, 3u, true, bytes, len,
+                        gizclaw_rpc_v1_ModemHwdWriteResponse_fields,
+                        &applied) == H2_PAL_OK);
+  assert(applied.has_applied && applied.applied.has_enabled &&
+         !applied.applied.enabled && modem.writes == 1u);
+  modem.omit_enabled = true;
+  assert(invoke_devices(devices, 3u, true, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_IO);
+  patch.has_enabled = false;
+  len = request_bytes(bytes, true, "modem.main", devices[0].hwd, &patch);
+  const unsigned writes = modem.writes;
+  assert(invoke_devices(devices, 3u, true, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(modem.writes == writes);
+
+  /* A full binary snapshot exceeds the previous 512-byte response buffer.
+   * Card absence retains the last failed attempt and binary zero bytes. */
+  gizclaw_rpc_v1_NfcHwdReadResponse read_nfc = {0};
+  len = request_bytes(bytes, false, "nfc.main", devices[1].hwd, NULL);
+  assert(invoke_devices(devices, 3u, false, bytes, len,
+                        gizclaw_rpc_v1_NfcHwdReadResponse_fields,
+                        &read_nfc) == H2_PAL_OK);
+  assert(read_nfc.has_card_present && !read_nfc.card_present &&
+         read_nfc.has_last_read &&
+         !strcmp(read_nfc.last_read.result, "failed"));
+  assert(
+      read_nfc.last_read.raw_data.size == 1024u &&
+      !memcmp(read_nfc.last_read.raw_data.bytes, last->raw_data.bytes, 1024u));
+  assert(read_nfc.last_read.uid.size == 32u &&
+         read_nfc.last_read.has_error_code);
+  last->has_error_code = false;
+  assert(invoke_devices(devices, 3u, false, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_IO);
+  strcpy(last->result, "success");
+  assert(invoke_devices(devices, 3u, false, bytes, len,
+                        gizclaw_rpc_v1_NfcHwdReadResponse_fields,
+                        &read_nfc) == H2_PAL_OK);
+
+  last->has_error_code = true;
+  assert(invoke_devices(devices, 3u, false, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_IO);
+  last->has_error_code = false;
+  last->has_technology = true;
+  strcpy(last->technology, "\xc0\x80");
+  assert(invoke_devices(devices, 3u, false, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_IO);
+  strcpy(last->technology, "\xe8\xaf\xbb\xe5\x8d\xa1");
+  assert(invoke_devices(devices, 3u, false, bytes, len,
+                        gizclaw_rpc_v1_NfcHwdReadResponse_fields,
+                        &read_nfc) == H2_PAL_OK);
+  last->raw_data.size = 1025u;
+  assert(invoke_devices(devices, 3u, false, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_IO);
+  last->raw_data.size = 1024u;
+  gizclaw_rpc_v1_NfcHwdWriteRequest nfc_patch = {.has_enabled = true};
+  gizclaw_rpc_v1_NfcHwdWriteResponse nfc_applied = {0};
+  len = request_bytes(bytes, true, "nfc.main", devices[1].hwd, &nfc_patch);
+  assert(invoke_devices(devices, 3u, true, bytes, len,
+                        gizclaw_rpc_v1_NfcHwdWriteResponse_fields,
+                        &nfc_applied) == H2_PAL_OK);
+  assert(nfc_applied.has_applied && nfc_applied.applied.has_enabled &&
+         !nfc_applied.applied.enabled && nfc_applied.applied.has_last_read);
+  nfc.omit_enabled = true;
+  assert(invoke_devices(devices, 3u, true, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_IO);
+  len = request_bytes(bytes, true, "nfc.second", devices[2].hwd, &nfc_patch);
+  assert(invoke_devices(devices, 3u, true, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  len = request_bytes(bytes, false, "nfc.second", devices[2].hwd, NULL);
+  assert(invoke_devices(devices, 3u, false, bytes, len,
+                        gizclaw_rpc_v1_NfcHwdReadResponse_fields,
+                        &read_nfc) == H2_PAL_OK);
+  assert(read_nfc.enabled && !read_nfc.has_last_read && second.writes == 0u);
+  len = request_bytes(bytes, false, "nfc.main", devices[0].hwd, NULL);
+  assert(invoke_devices(devices, 3u, false, bytes, len, NULL, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+}
+
 int main(void) {
+  test_modem_and_nfc();
   test_pal_only_speaker_mute();
   assert(h2_gizclaw_mhs_validate_internal(&device, 1u) == H2_PAL_OK);
   assert(h2_gizclaw_mhs_validate_internal(NULL, 0u) == H2_PAL_OK);

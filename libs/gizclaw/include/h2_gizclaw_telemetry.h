@@ -197,6 +197,51 @@ h2_pal_result_t h2_gizclaw_rpc_telemetry_send(
     h2_gizclaw_service_t* service, const h2_gizclaw_telemetry_frame_t* frame,
     uint32_t timeout_ms);
 
+#define H2_GIZCLAW_TELEMETRY_KV_KEY_MAX_BYTES 64u
+#define H2_GIZCLAW_TELEMETRY_KV_VALUE_MAX_BYTES 1024u
+#define H2_GIZCLAW_TELEMETRY_KV_FRAME_MAX_ENTRIES 16u
+#define H2_GIZCLAW_TELEMETRY_KV_FRAME_MAX_BYTES 4096u
+#define H2_GIZCLAW_TELEMETRY_KV_STORED_MAX_KEYS 64u
+#define H2_GIZCLAW_TELEMETRY_KV_STORED_MAX_BYTES 16384u
+
+/** Opaque device-owned JSON on the existing telemetry transport.
+ * key is 1..64 UTF-8 bytes; json_value is one complete JSON encoding of at
+ * most 1024 bytes, including scalar values and null. delete_key requires an
+ * empty json_value and is distinct from storing JSON null. */
+typedef struct h2_gizclaw_telemetry_kv {
+  int32_t observed_at_delta_ms;
+  h2_gizclaw_str_t key;
+  h2_gizclaw_str_t json_value;
+  bool delete_key;
+} h2_gizclaw_telemetry_kv_t;
+
+/** At most 16 entries and 4096 encoded wire bytes. sequence must be nonzero;
+ * observed_at_unix_ms is positive, or zero to use the SDK's send-time clock.
+ * Creation copies all borrowed entries/strings and validates with the pinned
+ * SDK encoder. An automatic timestamp reserves its maximum encoded size.
+ * Runtime enforces 64 stored keys and 16384 bytes per Peer; it owns
+ * persistence, replay protection and offline snapshots exposed through
+ * Monitor/API. Transport acceptance does not acknowledge persistence or storage
+ * quota. */
+typedef struct h2_gizclaw_telemetry_kv_frame {
+  uint32_t sequence;
+  int64_t observed_at_unix_ms;
+  const h2_gizclaw_telemetry_kv_t* entries;
+  size_t entry_count;
+} h2_gizclaw_telemetry_kv_frame_t;
+
+/** Create a one-way send request with the same lifecycle and terminal
+ * WOULD_BLOCK behavior as ordinary telemetry. No key/value is logged. */
+h2_pal_result_t h2_gizclaw_req_create_telemetry_kv_send(
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_telemetry_kv_frame_t* frame, uint32_t timeout_ms,
+    h2_gizclaw_req_t** out_request);
+h2_pal_result_t h2_gizclaw_resp_parse_telemetry_kv_send(
+    const h2_gizclaw_req_t* request);
+h2_pal_result_t h2_gizclaw_rpc_telemetry_kv_send(
+    h2_gizclaw_service_t* service, const h2_gizclaw_telemetry_kv_frame_t* frame,
+    uint32_t timeout_ms);
+
 #ifdef __cplusplus
 }
 #endif

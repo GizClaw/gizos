@@ -300,6 +300,10 @@ typedef int (*h2_gizclaw_test_ota_send_fn)(
 void h2_gizclaw_test_set_ota_send(h2_gizclaw_test_ota_send_fn send, void* user);
 typedef int (*h2_gizclaw_test_telemetry_send_fn)(
     void* user, const gzc_telemetry_frame_t* frame);
+typedef int (*h2_gizclaw_test_telemetry_kv_send_fn)(
+    void* user, const gzc_telemetry_kv_frame_t* frame);
+void h2_gizclaw_test_set_telemetry_kv_send(
+    h2_gizclaw_test_telemetry_kv_send_fn send, void* user);
 struct h2_gizclaw_telemetry_frame;
 struct h2_gizclaw_workflow_page;
 struct h2_gizclaw_workspace_activation;

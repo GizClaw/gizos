@@ -117,6 +117,17 @@ H2_GIZCLAW_ASSERT_TOOL(LUA_APP_LIST);
 H2_GIZCLAW_ASSERT_TOOL(LUA_APP_INSTALL);
 H2_GIZCLAW_ASSERT_TOOL(LUA_APP_RUN);
 H2_GIZCLAW_ASSERT_TOOL(LUA_APP_UNINSTALL);
+H2_GIZCLAW_ASSERT_TOOL(CONTENT_AGE_GET);
+H2_GIZCLAW_ASSERT_TOOL(CONTENT_AGE_SET);
+H2_GIZCLAW_ASSERT_TOOL(DEVICE_FEATURES_GET);
+H2_GIZCLAW_ASSERT_TOOL(DEVICE_FEATURE_SET);
+H2_GIZCLAW_ASSERT_TOOL(USAGE_TIME_GET);
+H2_GIZCLAW_ASSERT_TOOL(USAGE_TIME_SET);
+H2_GIZCLAW_ASSERT_TOOL(AI_SAFETY_GET);
+H2_GIZCLAW_ASSERT_TOOL(AI_SAFETY_SET);
+H2_GIZCLAW_ASSERT_TOOL(MANAGEMENT_PASSWORD_GET);
+H2_GIZCLAW_ASSERT_TOOL(MANAGEMENT_PASSWORD_SET);
+H2_GIZCLAW_ASSERT_TOOL(MANAGEMENT_PASSWORD_RESET);
 #undef H2_GIZCLAW_ASSERT_TOOL
 
 #define H2_GIZCLAW_ASSERT_RPC_STATUS_SAME(name)                           \
@@ -189,9 +200,10 @@ typedef struct h2_gizclaw_tool_binding {
 struct h2_gizclaw_client {
   struct h2_gizclaw_client* next_client;
   h2_gizclaw_config_t config;
-  gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
+  gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET];
   h2_gizclaw_service_t* local_service;
-  h2_gizclaw_tool_binding_t tool_bindings[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
+  h2_gizclaw_tool_binding_t
+      tool_bindings[H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET];
   gzc_platform_t platform;
   gzc_platform_crypto_t crypto;
   gzc_http_vtable_t http;
@@ -2051,12 +2063,13 @@ static void h2_gzc_peer_close(gzc_rtc_peer_t* peer) {
 
 int h2_gizclaw_tools_validate_internal(
     const h2_gizclaw_tool_handler_t* handlers, size_t count) {
-  if ((count && !handlers) || count > H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL)
+  if ((count && !handlers) || count > H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET)
     return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0; i < count; ++i) {
     if (handlers[i].tool < H2_GIZCLAW_TOOL_INFO_GET ||
         (handlers[i].tool > H2_GIZCLAW_TOOL_LUA_APP_RUN &&
-         handlers[i].tool != H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL) ||
+         handlers[i].tool < H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL) ||
+        handlers[i].tool > H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET ||
         !handlers[i].invoke)
       return H2_PAL_ERR_INVALID_ARG;
     for (size_t j = 0; j < i; ++j)

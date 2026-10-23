@@ -48,9 +48,10 @@ struct h2_gizclaw_local {
   h2_atomic_int_t failure;
   gzc_client_t* dispatcher;
   gzc_platform_t sdk_platform;
-  gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
-  h2_gizclaw_tool_handler_t network_tools[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
-  tool_binding_t bindings[H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL];
+  gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET];
+  h2_gizclaw_tool_handler_t
+      network_tools[H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET];
+  tool_binding_t bindings[H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET];
 };
 static int rpc_lock(h2_gizclaw_local_t* rpc) {
   return h2_pal_mutex_lock(rpc->platform.sync, rpc->mutex);
