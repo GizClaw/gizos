@@ -1807,6 +1807,37 @@ static void test_start_preserves_synchronous_stop_events(void) {
   }
 }
 
+static void test_failed_stop_preserves_active_state_on_reopen(void) {
+  fake_runtime_t runtime;
+  fake_runtime_init(&runtime);
+  h2_ble_wifi_config_t* service = open_service(&runtime, NULL);
+  CHECK(h2_ble_wifi_config_start_advertising(service, NULL, &recovery_params) ==
+        H2_PAL_OK);
+  pthread_mutex_lock(&runtime.mutex);
+  runtime.adv_stop_result = H2_PAL_ERR_IO;
+  runtime.adv_start_result = H2_PAL_ERR_INVALID_STATE;
+  pthread_mutex_unlock(&runtime.mutex);
+  CHECK(h2_ble_wifi_config_stop_advertising(service) == H2_PAL_ERR_IO);
+  CHECK(h2_ble_wifi_config_start_advertising(service, NULL, &recovery_params) ==
+        H2_PAL_ERR_INVALID_STATE);
+  h2_ble_wifi_config_snapshot_t snapshot;
+  CHECK(h2_ble_wifi_config_get_snapshot(service, &snapshot) == H2_PAL_OK);
+  CHECK(!snapshot.window_open && snapshot.advertising && !snapshot.connected);
+  CHECK(snapshot.advertising_result == H2_PAL_ERR_IO);
+  pthread_mutex_lock(&runtime.mutex);
+  CHECK(runtime.adv_active && runtime.adv_start_count == 1);
+  runtime.adv_stop_result = H2_PAL_OK;
+  runtime.adv_start_result = H2_PAL_OK;
+  pthread_mutex_unlock(&runtime.mutex);
+  CHECK(h2_ble_wifi_config_stop_advertising(service) == H2_PAL_OK);
+  CHECK(h2_ble_wifi_config_start_advertising(service, NULL, &recovery_params) ==
+        H2_PAL_OK);
+  CHECK(wait_snapshot(service, true, false, H2_PAL_OK).window_open);
+  CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+  CHECK(!runtime.adv_active);
+  fake_runtime_deinit(&runtime);
+}
+
 static void test_small_mtu_reports_event(void) {
   fake_runtime_t runtime;
   fake_runtime_init(&runtime);
@@ -2140,6 +2171,7 @@ int main(void) {
   test_cleanup_after_delayed_advertising_stop();
   test_reopen_defers_advertising_until_disconnect();
   test_start_preserves_synchronous_stop_events();
+  test_failed_stop_preserves_active_state_on_reopen();
   test_small_mtu_reports_event();
   test_disconnect_clears_connection();
   test_open_rejects_bad_arguments();

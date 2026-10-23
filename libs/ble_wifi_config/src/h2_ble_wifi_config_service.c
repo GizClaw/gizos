@@ -1216,8 +1216,11 @@ int h2_ble_wifi_config_start_advertising(
   h2_ble_wifi_config_lock(service);
   bool closing = service->closing;
   bool opened = service->adv_started;
+  bool cleanup_pending = service->adv_needs_reset;
   h2_ble_wifi_config_unlock(service);
-  if (closing || opened) {
+  /* A failed stop retains the last confirmed radio state and its ownership.
+   * Finish that cleanup before admitting a replacement window. */
+  if (closing || opened || cleanup_pending) {
     (void)h2_pal_mutex_unlock(service->api.sync, service->adv_mutex);
     return closing ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_INVALID_STATE;
   }
@@ -1235,7 +1238,6 @@ int h2_ble_wifi_config_start_advertising(
      * that needs recovery. An existing peer defers the Host start entirely. */
     service->adv_params = *params;
     service->adv_started = true;
-    service->adv_active = false;
     service->adv_paused = false;
     start = h2_ble_wifi_config_can_start_locked(service);
     generation = service->conn_generation;

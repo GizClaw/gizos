@@ -122,7 +122,9 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t* service);
  * @param data Borrowed advertising data applied before advertising starts, or
  * NULL to keep whatever the Host already holds.
  * @param params Borrowed advertising parameters, copied before returning.
- * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, or the underlying PAL failure.
+ * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, H2_PAL_ERR_INVALID_STATE if a
+ * window is already open or a previous stop still needs cleanup, or the
+ * underlying PAL failure. A failed stop must be retried before reopening.
  */
 int h2_ble_wifi_config_start_advertising(h2_ble_wifi_config_t* service,
                                          const h2_pal_ble_adv_data_t* data,
