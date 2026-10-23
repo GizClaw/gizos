@@ -663,6 +663,9 @@ static int bk_net_udp_open(void* user, h2_pal_net_family_t family,
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_socket = -1;
+  if (family != H2_PAL_NET_FAMILY_IPV4 && family != H2_PAL_NET_FAMILY_IPV6) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
   int lwip_family = h2_bk_net_family(family);
   if (lwip_family < 0) {
     return H2_PAL_ERR_UNSUPPORTED;
@@ -706,6 +709,9 @@ static int bk_net_udp_open_bound(void* user, h2_pal_net_family_t family,
   }
   *out_socket = -1;
   memset(out_bind_addr, 0, sizeof(*out_bind_addr));
+  if (family != H2_PAL_NET_FAMILY_IPV4 && family != H2_PAL_NET_FAMILY_IPV6) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
   if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
     return bk_net_udp_open(user, family, port, out_socket, out_bind_addr);
   }
@@ -851,6 +857,10 @@ static int bk_net_tcp_open(void* user, h2_pal_net_family_t family,
   if (out_socket == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  *out_socket = -1;
+  if (family != H2_PAL_NET_FAMILY_IPV4 && family != H2_PAL_NET_FAMILY_IPV6) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
   int lwip_family = h2_bk_net_family(family);
   if (lwip_family < 0) {
     return H2_PAL_ERR_UNSUPPORTED;
@@ -866,6 +876,13 @@ static int bk_net_tcp_open(void* user, h2_pal_net_family_t family,
 static int bk_net_tcp_open_bound(void* user, h2_pal_net_family_t family,
                                  const h2_pal_net_bind_t* bind_config,
                                  h2_pal_net_socket_t* out_socket) {
+  if (out_socket == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_socket = -1;
+  if (family != H2_PAL_NET_FAMILY_IPV4 && family != H2_PAL_NET_FAMILY_IPV6) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
   if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
     return bk_net_tcp_open(user, family, out_socket);
   }
