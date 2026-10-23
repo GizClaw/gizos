@@ -105,8 +105,8 @@ int i2c_master_transmit_receive(i2c_master_dev_handle_t d, const uint8_t* c,
       assert(0);
       v = 0;
   }
-  out[0] = v;
-  out[1] = v >> 8;
+  out[0] = (uint8_t)(v & 0xffu);
+  out[1] = (uint8_t)(v >> 8);
   return battery_error;
 }
 int main(void) {
