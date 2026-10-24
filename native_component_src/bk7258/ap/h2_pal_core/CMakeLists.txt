@@ -19,6 +19,9 @@ set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   h2_firmware_lib
   lwip_intf_v2_1
   psa_mbedtls)
+if(CONFIG_AUDIO_RECORD)
+  list(APPEND H2_BK_PLATFORM_CORE_PRIV_REQUIRES audio_record)
+endif()
 if(CONFIG_H2_BK_PLATFORM_FAULT_TRACE)
   list(APPEND H2_BK_PLATFORM_CORE_PRIV_REQUIRES cm33)
 endif()
@@ -312,6 +315,7 @@ target_include_directories(${COMPONENT_LIB} PRIVATE "${BK_ARMINO_PATH}/component
 include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_wdrv_component.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_spi_dma_component.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_fault_context_component.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_audio_record_component.cmake")
 
 # The pinned AP SDK erroneously forwards STA address synchronization through
 # AP_NETIF_IP4_CONFIG, overwriting the CP AP/DHCP address in AP+STA mode.
