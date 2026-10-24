@@ -1,0 +1,32 @@
+# Append a private capture bridge to the pinned kernel's build copy. The SDK
+# remains read-only, and existing source properties (including TLS cleanup)
+# continue to apply to this replacement translation unit.
+if(CONFIG_FREERTOS_SMP)
+  armino_component_get_property(H2_BK_TRACE_KERNEL os_source COMPONENT_LIB)
+  set(H2_BK_TRACE_INPUT "${BK_ARMINO_PATH}/components/os_source/freertos_smp_v2p0/FreeRTOS-Kernel/tasks.c")
+  file(READ "${H2_BK_TRACE_INPUT}" H2_BK_TRACE_SOURCE)
+  string(SHA256 H2_BK_TRACE_SHA256 "${H2_BK_TRACE_SOURCE}")
+  if(NOT H2_BK_TRACE_SHA256 STREQUAL "d053af5e4be8a553bd796ec13e7ddd601ec03ac999c5164799bf2bf37a3f0c53")
+    message(FATAL_ERROR "Pinned BK kernel changed; revalidate the task snapshot bridge")
+  endif()
+  set(H2_BK_TRACE_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_tasks.c")
+  file(WRITE "${H2_BK_TRACE_OUTPUT}" "${H2_BK_TRACE_SOURCE}\n#include \"${CMAKE_CURRENT_LIST_DIR}/h2_bk_task_trace_kernel.h\"\n")
+  get_target_property(H2_BK_TRACE_SOURCES ${H2_BK_TRACE_KERNEL} SOURCES)
+  set(H2_BK_TRACE_ORIGINALS ${H2_BK_TRACE_SOURCES})
+  list(FILTER H2_BK_TRACE_ORIGINALS INCLUDE REGEX "(^|/)tasks\\.c$")
+  list(LENGTH H2_BK_TRACE_ORIGINALS H2_BK_TRACE_COUNT)
+  if(NOT H2_BK_TRACE_COUNT EQUAL 1)
+    message(FATAL_ERROR "Expected one BK SMP kernel tasks source")
+  endif()
+  get_source_file_property(H2_BK_TRACE_OPTIONS "${H2_BK_TRACE_INPUT}"
+    TARGET_DIRECTORY ${H2_BK_TRACE_KERNEL} COMPILE_OPTIONS)
+  if(NOT H2_BK_TRACE_OPTIONS)
+    set(H2_BK_TRACE_OPTIONS "")
+  endif()
+  set_source_files_properties("${H2_BK_TRACE_OUTPUT}"
+    TARGET_DIRECTORY ${H2_BK_TRACE_KERNEL}
+    PROPERTIES COMPILE_OPTIONS "${H2_BK_TRACE_OPTIONS}")
+  list(FILTER H2_BK_TRACE_SOURCES EXCLUDE REGEX "(^|/)tasks\\.c$")
+  list(APPEND H2_BK_TRACE_SOURCES "${H2_BK_TRACE_OUTPUT}")
+  set_property(TARGET ${H2_BK_TRACE_KERNEL} PROPERTY SOURCES ${H2_BK_TRACE_SOURCES})
+endif()

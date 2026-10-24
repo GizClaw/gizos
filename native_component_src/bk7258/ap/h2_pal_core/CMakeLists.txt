@@ -102,6 +102,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_timer.c"
   "src/h2_bk_platform_log.c"
   "src/h2_bk_fault_context.c"
+  "src/h2_bk_task_trace.c"
   "src/h2_bk_platform_firmware_info.c"
   "src/h2_bk_platform_sync.c"
   "src/h2_bk_platform_net.c"
@@ -187,6 +188,7 @@ set_property(SOURCE "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src
 set_property(SOURCE "${BK_ARMINO_PATH}/components/os_source/freertos_smp_v2p0/FreeRTOS-Kernel/tasks.c"
   TARGET_DIRECTORY __armino_os_source APPEND PROPERTY COMPILE_OPTIONS
   "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_task_tls_hooks.h")
+include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_task_trace_component.cmake")
 # lwIP's vendor fork writes its own global int errno, bypassing newlib.
 # Bind socket error writes and PAL reads to the same task-local value.
 target_compile_options(__armino_lwip_intf_v2_1 PRIVATE
