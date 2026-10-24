@@ -85,6 +85,7 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
                  str(component / "src/h2_bk_spi_dma_completion.cmake")],
                 capture_output=True, text=True, check=False)
             assert run.returncode != 0 and not output.exists(), name
+        corrected_profiles, negative_controls = 0, 0
         for name, source in (("original", original), ("corrected", generated)):
             unit, binary = work / (name + ".c"), work / name
             functions = "\n".join(function(source.read_text(), symbol) for symbol in (
@@ -93,6 +94,7 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
                 "bk_spi_write_bytes", "bk_spi_read_bytes",
                 "bk_spi_dma_write_bytes", "bk_spi_dma_read_bytes", "bk_spi_dma_duplex_xfer"))
             unit.write_text(probe.replace("/* SDK_FUNCTIONS */", functions))
+            # The SDK uses 32-bit DMA addresses; the host HAL never dereferences them.
             command = [cc, "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
                        "-Wno-unused-parameter", "-Wno-pointer-to-int-cast", "-pthread", str(unit), "-o", str(binary)]
             if args.sanitize and name == "corrected":
@@ -109,12 +111,14 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
                                 run = subprocess.run(command, capture_output=True, text=True, timeout=15)
                                 if name == "original":
                                     assert run.returncode != 0, "uncorrected SDK unexpectedly passed"
+                                    negative_controls += 1
                                     expected_errors = ["second SPI completion lost"]
                                     if irq:
                                         expected_errors.append("ordinary SPI IRQ consumed DMA completion")
                                     assert any(error in run.stderr for error in expected_errors), run.stderr
                                 else:
                                     assert run.returncode == 0, run.stdout + run.stderr
+                                    corrected_profiles += sum(line.startswith("PASS ") for line in run.stdout.splitlines())
                                     print(run.stdout, end="")
             for role in ("master", "slave"):
                 for retry in ("normal", "retry"):
@@ -122,14 +126,17 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
                                          capture_output=True, text=True, timeout=15)
                     if name == "original":
                         assert run.returncode != 0, "uncorrected duplex SDK unexpectedly passed"
+                        negative_controls += 1
                         assert "ordinary SPI IRQ consumed duplex DMA completion" in run.stderr, run.stderr
                     else:
                         assert run.returncode == 0, run.stdout + run.stderr
+                        corrected_profiles += sum(line.startswith("PASS ") for line in run.stdout.splitlines())
                         print(run.stdout, end="")
     assert hashlib.sha256(original.read_bytes()).hexdigest() == before, "sealed SDK was modified"
     print(json.dumps(dict(result="PASS", sdk_commit=actual, sdk_source_sha256=before,
                           original_negative_controls="TX/RX FAIL as expected",
                           corrected="TX/RX CPU/DMA SMP handoff, ordinary IRQ isolation and duplex retry PASS",
+                          corrected_profiles=corrected_profiles, negative_controls=negative_controls,
                           sanitized=args.sanitize),
                      sort_keys=True))
 

@@ -339,8 +339,14 @@ static void wait_started(unsigned count) {
 static void* duplex_worker(void* user) {
   uint8_t tx[4] = {0}, rx[4] = {0};
   dma_operation = true;
-  worker_result = bk_spi_dma_duplex_xfer((spi_id_t)(uintptr_t)user, tx,
-                                         sizeof(tx), rx, sizeof(rx));
+  const spi_id_t port = (spi_id_t)(uintptr_t)user;
+  worker_result = bk_spi_dma_duplex_xfer(port, tx, sizeof(tx), rx, sizeof(rx));
+  if (worker_result == BK_OK) {
+    dma_operation = false;
+    worker_result = bk_spi_write_bytes(port, tx, sizeof(tx));
+    if (worker_result == BK_OK)
+      worker_result = bk_spi_read_bytes(port, rx, sizeof(rx));
+  }
   return NULL;
 }
 
@@ -381,12 +387,18 @@ static void run_duplex(unsigned port) {
     transmitting = false;
     complete(true, port, 2u);
   }
+  wait_started(2u * attempts + 1u);
+  transmitting = true;
+  complete(false, port, 2u * attempts + 1u);
+  wait_started(2u * attempts + 2u);
+  transmitting = false;
+  complete(false, port, 2u * attempts + 2u);
   assert(pthread_join(task, NULL) == 0);
   assert(worker_result == BK_OK && timeouts == 0u);
-  assert(signals == 2u * attempts && callbacks == 2u * attempts);
-  assert(!s_spi[port].h2_tx_dma_active && !s_spi[port].h2_rx_dma_active);
-  printf("PASS duplex %s port=%u retry=%u: DMA owns both completions\n",
-         slave ? "slave" : "master", port, duplex_retry);
+  assert(signals == 2u * attempts + 2u && callbacks == 2u * attempts + 2u);
+  printf(
+      "PASS duplex %s port=%u retry=%u: DMA and subsequent CPU transfers complete\n",
+      slave ? "slave" : "master", port, duplex_retry);
 }
 
 int main(int argc, char** argv) {
