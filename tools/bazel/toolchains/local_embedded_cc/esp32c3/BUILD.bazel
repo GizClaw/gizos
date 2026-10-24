@@ -1,0 +1,20 @@
+load(
+    "@gizos_esp32c3_cc_toolchain//:registration.bzl",
+    _C3_AVAILABLE = "AVAILABLE",
+    _C3_EXEC_CONSTRAINTS = "EXEC_CONSTRAINTS",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+# Compiler repositories own tools; GizOS owns target identity and selection.
+toolchain(
+    name = "toolchain",
+    exec_compatible_with = _C3_EXEC_CONSTRAINTS,
+    target_compatible_with = [
+        "//tools/bazel/platforms:cpu_riscv32",
+        "//tools/bazel/platforms:target_esp32c3",
+        "@platforms//os:none",
+    ] if _C3_AVAILABLE else ["@platforms//:incompatible"],
+    toolchain = "@gizos_esp32c3_cc_toolchain//:cc_toolchain" if _C3_AVAILABLE else "@gizos_esp32c3_cc_toolchain//:unavailable",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)

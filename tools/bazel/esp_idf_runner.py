@@ -33,6 +33,7 @@ NATIVE_BUILD_JOBS = "H2_NATIVE_BUILD_JOBS"
 GIZOS_ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_IDF_VERSION = "6.2"
 TARGET_COMPILERS = {
+    "esp32c3": "riscv32-esp-elf-gcc",
     "esp32c5": "riscv32-esp-elf-gcc",
     "esp32p4": "riscv32-esp-elf-gcc",
     "esp32s3": "xtensa-esp-elf-gcc",

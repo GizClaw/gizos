@@ -129,7 +129,30 @@ exec "${selected}" "$@"
         executable,
     )
 
+def _registration_metadata(repository_ctx, available):
+    if repository_ctx.attr.first_party_registration:
+        repository_ctx.file(
+            "registration.bzl",
+            "AVAILABLE = %s\nEXEC_CONSTRAINTS = %s\n" % (
+                repr(available),
+                repr(_exec_constraints(repository_ctx)) if available else "[]",
+            ),
+        )
+
+def _toolchain_registration(repository_ctx):
+    if repository_ctx.attr.first_party_registration:
+        return ""
+    return """toolchain(
+    name = "toolchain",
+    exec_compatible_with = %s,
+    target_compatible_with = %s,
+    toolchain = ":cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+""" % (repr(_exec_constraints(repository_ctx)), repr(repository_ctx.attr.target_constraints))
+
 def _unavailable(repository_ctx):
+    _registration_metadata(repository_ctx, False)
     repository_ctx.file(
         "BUILD.bazel",
         """package(default_visibility = [\"//visibility:public\"])
@@ -208,6 +231,13 @@ def _repository_impl(repository_ctx):
             _mirror_file(repository_ctx, bin_dir.get_child(executable), "inputs/toolchain/bin/" + executable)
             mirrored[executable] = True
         repository_ctx.file("bin/" + name, _wrapper(repository_ctx, executable), executable = True)
+    version_label = str(repository_ctx.attr.versions_file)
+    if repository_ctx.attr.first_party_registration:
+        if repository_ctx.attr.target_constraints:
+            fail("first-party registration owns target constraints, not the compiler repository")
+        version_label = "inputs/version.txt"
+        repository_ctx.file(version_label, repository_ctx.read(repository_ctx.attr.versions_file))
+    _registration_metadata(repository_ctx, True)
     repository_ctx.template(
         "BUILD.bazel",
         repository_ctx.attr.build_file,
@@ -217,13 +247,12 @@ def _repository_impl(repository_ctx):
             "{COMPILER}": tool_names["gcc"],
             "{CXX_INCLUDE_DIRECTORIES}": repr(cxx_include_directories),
             "{C_INCLUDE_DIRECTORIES}": repr(c_include_directories),
-            "{EXEC_CONSTRAINTS}": repr(_exec_constraints(repository_ctx)),
-            "{TARGET_CONSTRAINTS}": repr(repository_ctx.attr.target_constraints),
+            "{TOOLCHAIN_REGISTRATION}": _toolchain_registration(repository_ctx),
             "{TARGET_CPU}": repository_ctx.attr.target_cpu,
             "{TARGET_SYSTEM_NAME}": repository_ctx.attr.target_system_name,
             "{TOOLCHAIN_IDENTIFIER}": repository_ctx.attr.toolchain_identifier,
             "{UNFILTERED_COMPILE_FLAGS}": repr(repository_ctx.attr.unfiltered_compile_flags),
-            "{VERSION_LABEL}": str(repository_ctx.attr.versions_file),
+            "{VERSION_LABEL}": version_label,
         },
     )
     repository_ctx.file("cc_toolchain_config.bzl", repository_ctx.read(repository_ctx.attr.config_file))
@@ -239,6 +268,10 @@ local_embedded_cc_repository = repository_rule(
             doc = "Execution hosts that can run the selected compiler; empty means every supported host.",
         ),
         "family": attr.string(),
+        "first_party_registration": attr.bool(
+            default = False,
+            doc = "Expose compiler metadata for first-party registration and keep all generated target inputs repository-local.",
+        ),
         "layout": attr.string(mandatory = True, values = ["bin_dir", "idf_tools"]),
         "locator": attr.label(allow_single_file = True, mandatory = True),
         "locator_path": attr.string(mandatory = True),
@@ -314,6 +347,30 @@ def _extension_impl(_module_ctx):
         toolchain_identifier = "bk7258-local-arm-10.3.1",
         version_key = "arm_gcc",
         versions_file = "//tools/bazel:native_versions/bk_tool_versions.txt",
+    )
+
+    local_embedded_cc_repository(
+        name = "gizos_esp32c3_cc_toolchain",
+        compile_flags = [
+            "-Os",
+            "-march=rv32imc_zicsr_zifencei",
+            "-mabi=ilp32",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-fno-common",
+        ],
+        family = "riscv32-esp-elf",
+        first_party_registration = True,
+        layout = "idf_tools",
+        locator = "@gizos_esp_idf_tools//:locator.json",
+        locator_path = "tools_root",
+        prefix = "riscv32-esp-elf-",
+        target_constraints = [],
+        target_cpu = "riscv32",
+        target_system_name = "esp32c3-elf",
+        toolchain_identifier = "esp32c3-local-esp-16.1.0",
+        version_key = "esp32c3",
+        versions_file = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
     )
 
     local_embedded_cc_repository(

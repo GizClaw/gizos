@@ -4801,7 +4801,8 @@ static h2_pal_result_t display_submission_prepare(lua_State* state,
   uint64_t sequence = submission->submitted;
   if (submission->submitted == (uint64_t)LUA_MAXINTEGER)
     return H2_PAL_ERR_NO_SPACE;
-  if (job->display_presented == NULL) {
+  int single_buffer = job->host->config.display_single_buffer;
+  if (!single_buffer && job->display_presented == NULL) {
     /* A finalizer must not allocate a second B or replace the active root.
      * Protect allocation so OOM also clears the guard before propagating. */
     submission->preparing = 1;
@@ -4818,20 +4819,32 @@ static h2_pal_result_t display_submission_prepare(lua_State* state,
   if (result != H2_PAL_OK) return result;
   if (submission->submitted != sequence) return H2_PAL_ERR_BUSY;
   display_presented_t* frame = job->display_presented;
-  lua_rawgeti(state, LUA_REGISTRYINDEX, job->display_presented_ref);
-  size_t size = frame->pixel_count * sizeof(uint16_t);
+  if (!single_buffer)
+    lua_rawgeti(state, LUA_REGISTRYINDEX, job->display_presented_ref);
+  size_t size = single_buffer ? 0 : frame->pixel_count * sizeof(uint16_t);
   h2_lua_display_worker_t* worker = &submission->worker;
   worker->plan.count = 0;
   worker->tiled = 0;
   worker->gap = gap;
   worker->source = job->framebuffer;
-  worker->pixels = frame->pixels;
-  worker->tiles = (uint8_t*)(frame->pixels + frame->pixel_count);
+  worker->pixels = single_buffer ? job->framebuffer : frame->pixels;
+  worker->tiles =
+      single_buffer ? NULL : (uint8_t*)(frame->pixels + frame->pixel_count);
   uint8_t* planning_tiles = worker->tiles;
-  submission->changed = !job->display_presented_valid ||
-                        memcmp(job->framebuffer, frame->pixels, size) != 0;
+  submission->changed =
+      single_buffer ? job->dirty_valid
+                    : !job->display_presented_valid ||
+                          memcmp(job->framebuffer, frame->pixels, size) != 0;
   /* Switching retained policy refreshes the full baseline, as present did. */
-  if (!job->display_presented_valid || retained != submission->retained) {
+  if (single_buffer) {
+    if (job->dirty_valid) {
+      worker->plan.count = 1;
+      worker->plan.rects[0] = (h2_lua_display_plan_rect_t){
+          (uint16_t)job->dirty_min_x, (uint16_t)job->dirty_min_y,
+          (uint16_t)(job->dirty_max_x + 1), (uint16_t)(job->dirty_max_y + 1)};
+    }
+  } else if (!job->display_presented_valid ||
+             retained != submission->retained) {
     worker->plan.count = 1;
     worker->plan.rects[0] =
         (h2_lua_display_plan_rect_t){0, 0, (uint16_t)job->display_info.width,
@@ -4881,8 +4894,12 @@ static h2_pal_result_t display_submission_prepare(lua_State* state,
       result = h2_pal_time_sleep_ms(worker->runtime->time, 1);
       if (result != H2_PAL_OK) break;
     }
+    if (result == H2_PAL_OK && single_buffer)
+      result = display_submission_wait(submission);
     int phase = h2_lua_display_worker_phase(worker);
     if (result == H2_PAL_OK && phase < 0) result = (h2_pal_result_t)phase;
+    if (result == H2_PAL_OK && single_buffer && phase == H2_LUA_DISPLAY_DONE)
+      result = worker->result;
   }
   if (result != H2_PAL_OK) {
     (void)display_submission_fault(job, result);

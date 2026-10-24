@@ -132,3 +132,8 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 if(H2_ESP_IO_PHASE_DIAGNOSTICS)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_ESP_IO_PHASE_DIAGNOSTICS=1)
 endif()
+
+# Portable archives are appended after IDF's component archives. Keep the
+# atomic provider object available even when only a portable archive uses it;
+# section GC still discards individual unused operations.
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-u h2_atomic_int_init")

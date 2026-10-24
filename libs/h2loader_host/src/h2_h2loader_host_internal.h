@@ -50,4 +50,7 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
     const h2_h2loader_host_command_request_t* request,
     h2_h2loader_host_command_result_t* out_result);
 
+/* Private serial-flasher chip identity; unknown inputs fail closed. */
+int h2_h2loader_host_esp_expected_chip(const char* target);
+
 #endif

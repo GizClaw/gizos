@@ -229,7 +229,7 @@ def _esp_tools_repository_impl(repository_ctx):
         repository_ctx.attr.tool_versions_file,
         "ESP-IDF tool version",
     )
-    required = ["esp32p4", "esp32s3", "ninja", "python"]
+    required = ["esp32c3", "esp32p4", "esp32s3", "ninja", "python"]
     missing = [key for key in required if not contract.get(key)]
     if missing:
         fail("ESP-IDF tool versions are incomplete: %s" % ", ".join(missing))
@@ -254,6 +254,7 @@ def _esp_tools_repository_impl(repository_ctx):
     python_root = python_environment_root.get_child(python_environment_names[0])
     python = python_root.get_child("bin").get_child("python")
     compiler_contracts = [
+        ("esp32c3", "riscv32-esp-elf", "riscv32-esp-elf-gcc"),
         ("esp32p4", "riscv32-esp-elf", "riscv32-esp-elf-gcc"),
         ("esp32s3", "xtensa-esp-elf", "xtensa-esp-elf-gcc"),
     ]

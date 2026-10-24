@@ -1,2 +1,7 @@
 dependencies:
-  espressif/esp-sr: "2.4.6"
+  espressif/esp-sr:
+    matches:
+      - if: "target == esp32c3"
+        version: "==2.6.0"
+      - if: "target != esp32c3"
+        version: "2.4.6"

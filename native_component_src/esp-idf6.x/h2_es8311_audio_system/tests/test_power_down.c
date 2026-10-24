@@ -187,7 +187,11 @@ BaseType_t xTaskCreatePinnedToCoreWithCaps(void (*fn)(void*), const char* name,
                                            UBaseType_t priority,
                                            TaskHandle_t* out, BaseType_t core,
                                            uint32_t caps) {
-  (void)caps;
+#if defined(CONFIG_SPIRAM) && CONFIG_SPIRAM
+  assert(caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+#else
+  assert(caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+#endif
   return xTaskCreatePinnedToCore(fn, name, stack, ctx, priority, out, core);
 }
 int h2_audio_mixer_init(h2_audio_mixer_t* m, const h2_audio_mixer_config_t* c) {
@@ -416,6 +420,7 @@ int main(void) {
     assert(removed == 0 && disabled == 0);
     assert(s.codec && s.codec_shutdown_pending);
     assert(es8311_audio_open(&s) == H2_AUDIO_ERR_INVALID_STATE);
+    assert(es8311_audio_start_mic(&s) == H2_AUDIO_ERR_INVALID_STATE);
     fail_write = -1;
     write_count = 0;
     assert(h2_esp_es8311_audio_system_power_down(&s) == H2_AUDIO_OK);

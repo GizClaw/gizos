@@ -3920,6 +3920,126 @@ static void heap_test_run(h2_lua_host_t* host, const char* source,
   assert(h2_lua_job_release(host, id) == H2_PAL_OK);
 }
 
+/* Full physical resolution with a 64 KiB VM quota: the 150 KiB framebuffer
+ * is separately owned by the Host, and there must be no second frame. */
+static void test_display_single_buffer(void) {
+  test_display_reset();
+  s_test_display_fixture.width = 240;
+  s_test_display_fixture.height = 320;
+  h2_runtime_t* runtime = create_runtime();
+  heap_test_mem_t mem = {.pool_bytes = 240u * 320u * 2u};
+  heap_test_mem_init(&mem);
+  h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &heap_test_mem_vtable};
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .allocator = &allocator,
+                                 .max_jobs = 1,
+                                 .vm_memory_limit_bytes = 64u * 1024u,
+                                 .display_single_buffer = 1};
+  h2_lua_host_t* host = NULL;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  heap_test_run(
+      host,
+      "local d=require('display');d.clear('red');"
+      "local n,p,r=d.submit({retained=true,tiles=true});"
+      "assert(n==1 and p==240*320 and r==1);"
+      "local s=d.status();assert(not s.busy and s.completed==1);"
+      "d.fill_rect(239,319,1,1,'blue');"
+      "n,p,r=d.submit({retained=false});assert(n==2 and p==1 and r==1);"
+      "s=d.flush();assert(s.completed==2 and s.changed_frames==2);"
+      "n,p,r=d.submit();assert(n==3 and p==0 and r==0);"
+      "assert(d.present()==0)",
+      H2_LUA_JOB_SUCCEEDED);
+  assert(s_test_display_fixture.pixels[0] == 0xf800u);
+  assert(s_test_display_fixture.pixels[240u * 320u - 1u] == 0x001fu);
+  assert(h2_atomic_load(&mem.pool_allocs) == 1u);
+  assert(h2_atomic_load(&mem.rejected) == 0u);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
+  heap_test_balanced(&mem);
+  heap_test_mem_destroy(&mem);
+  h2_runtime_deinit(runtime);
+}
+
+/* A blocked PAL read must retain exclusive access to the working frame.
+ * The script cannot return from submit or draw its next frame until release. */
+static void test_display_single_buffer_blocked(void) {
+  test_display_gate_t gate = {.block = 1, .enforce_owner = 1};
+  assert(pthread_mutex_init(&gate.mutex, NULL) == 0);
+  assert(pthread_cond_init(&gate.cond, NULL) == 0);
+  assert(h2_atomic_int_init(&gate.stage, 0) == H2_ATOMIC_OK);
+  s_display_gate = &gate;
+  test_display_reset();
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .max_jobs = 1,
+                                 .vm_memory_limit_bytes = 64u * 1024u,
+                                 .display_single_buffer = 1};
+  h2_lua_host_t* host = NULL;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "submit_test", test_submission_module,
+                                NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const char script[] =
+      "local d,p=require('display'),require('submit_test');"
+      "d.clear('red');p.stage(1);assert(d.submit()==1);p.stage(2);"
+      "d.clear('blue');assert(p.pixel()==63488)";
+  h2_lua_job_id_t job;
+  assert(h2_lua_job_submit_text(host, NULL, "@single-blocked.lua",
+                                (const uint8_t*)script, sizeof(script) - 1,
+                                NULL, 0, &job) == H2_PAL_OK);
+  int entered = 0;
+  for (unsigned wait = 0; wait < 3000 && !entered; ++wait) {
+    assert(pthread_mutex_lock(&gate.mutex) == 0);
+    entered = gate.entered;
+    assert(pthread_mutex_unlock(&gate.mutex) == 0);
+    if (!entered) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+  }
+  assert(entered);
+  assert(h2_pal_time_sleep_ms(runtime->time, 30) == H2_PAL_OK);
+  assert(h2_atomic_load(&gate.stage) == 1);
+  assert(pthread_mutex_lock(&gate.mutex) == 0);
+  gate.block = 0;
+  assert(pthread_cond_signal(&gate.cond) == 0);
+  assert(pthread_mutex_unlock(&gate.mutex) == 0);
+  run_until_terminal(host, job, 6000);
+  assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_atomic_load(&gate.stage) == 2);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
+  h2_runtime_deinit(runtime);
+  s_display_gate = NULL;
+  h2_atomic_int_destroy(&gate.stage);
+  assert(pthread_cond_destroy(&gate.cond) == 0);
+  assert(pthread_mutex_destroy(&gate.mutex) == 0);
+}
+
+/* Failed transport must freeze the sole working buffer until checked teardown.
+ * Run in an isolated process because the provider is deliberately faulted. */
+static void test_display_single_fault(void) {
+  test_display_reset();
+  h2_runtime_t* runtime = create_runtime();
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .max_jobs = 1,
+                                 .vm_memory_limit_bytes = 64u * 1024u,
+                                 .display_single_buffer = 1};
+  h2_lua_host_t* host = NULL;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  s_test_display_fixture.fail_draw = 1;
+  const char script[] =
+      "local d=require('display');d.clear('red');"
+      "local n,e=d.submit();assert(n==nil and e<0);"
+      "assert(not pcall(d.clear,'blue'))";
+  h2_lua_job_id_t job;
+  assert(h2_lua_job_submit_text(host, NULL, "@single-fault.lua",
+                                (const uint8_t*)script, sizeof(script) - 1,
+                                NULL, 0, &job) == H2_PAL_OK);
+  run_until_terminal(host, job, 6000);
+  assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_ERR_IO);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_ERR_IO);
+  assert(s_test_display_fixture.close_count == 0);
+}
+
 /* Everything the Host allocates goes through config.allocator, so a caller
  * can place the Host in its own arena; Runtime mem stays untouched. */
 static void test_host_allocator(void) {
@@ -4228,6 +4348,10 @@ int main(int argc, char** argv) {
   assert(h2_atomic_int_init(&s_test_audio_mic_start_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_mic_stop_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_mic_block, 0) == H2_ATOMIC_OK);
+  if (argc == 2 && strcmp(argv[1], "--display-single-fault") == 0) {
+    test_display_single_fault();
+    return 0;
+  }
   if (argc == 3 && strcmp(argv[1], "--display-fault") == 0) {
     test_display_submission_fault(atoi(argv[2]));
     return 0;
@@ -4316,6 +4440,8 @@ int main(int argc, char** argv) {
   test_display_submission_stop(1);
   test_display_submission_oom();
   test_display_submission_large();
+  test_display_single_buffer();
+  test_display_single_buffer_blocked();
   test_display_worker_join_failure();
   test_borrowed_display();
   test_display_multiple_jobs();

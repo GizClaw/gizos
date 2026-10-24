@@ -17,6 +17,13 @@
 #define H2_ESP_HAS_PSRAM 0
 #endif
 
+#if defined(CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM) && \
+    CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+#define H2_ESP_ALLOW_PSRAM_STACK 1
+#else
+#define H2_ESP_ALLOW_PSRAM_STACK 0
+#endif
+
 #if H2_ESP_HAS_PSRAM && \
     (!defined(CONFIG_SPIRAM_XIP_FROM_PSRAM) || !CONFIG_SPIRAM_XIP_FROM_PSRAM)
 #error "ESP targets with PSRAM must enable CONFIG_SPIRAM_XIP_FROM_PSRAM"
@@ -96,7 +103,7 @@ static h2_pal_result_t esp_policy_validate(const char* name,
     return H2_PAL_ERR_TASK;
   }
   if (policy->stack_region == H2_ESP_TASK_STACK_PSRAM &&
-      (!H2_ESP_HAS_PSRAM || !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM)) {
+      (!H2_ESP_HAS_PSRAM || !H2_ESP_ALLOW_PSRAM_STACK)) {
     esp_task_fail(name, "validate", "psram-unavailable");
     return H2_PAL_ERR_TASK;
   }
