@@ -91,10 +91,10 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
                 "bk_spi_clr_tx", "bk_spi_clr_rx", "spi_isr_common",
                 "spi_dma_tx_finish_handler", "spi_dma_rx_finish_handler",
                 "bk_spi_write_bytes", "bk_spi_read_bytes",
-                "bk_spi_dma_write_bytes", "bk_spi_dma_read_bytes"))
+                "bk_spi_dma_write_bytes", "bk_spi_dma_read_bytes", "bk_spi_dma_duplex_xfer"))
             unit.write_text(probe.replace("/* SDK_FUNCTIONS */", functions))
             command = [cc, "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
-                       "-Wno-unused-parameter", "-pthread", str(unit), "-o", str(binary)]
+                       "-Wno-unused-parameter", "-Wno-pointer-to-int-cast", "-pthread", str(unit), "-o", str(binary)]
             if args.sanitize and name == "corrected":
                 command[1:1] = ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
             subprocess.run(command, check=True, timeout=60)
@@ -102,19 +102,34 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
                 for first in ("dma", "cpu"):
                     for next_mode in ("dma", "cpu"):
                         for role in ("master", "slave"):
-                            run = subprocess.run(
-                                [str(binary), direction, first, next_mode, role],
-                                capture_output=True, text=True, timeout=15)
-                            if name == "original":
-                                assert run.returncode != 0, "uncorrected SDK unexpectedly passed"
-                                assert "second SPI completion lost" in run.stderr, run.stderr
-                            else:
-                                assert run.returncode == 0, run.stdout + run.stderr
-                                print(run.stdout, end="")
+                            for irq in ([None, "ordinary"] if next_mode == "dma" else [None]):
+                                command = [str(binary), direction, first, next_mode, role]
+                                if irq:
+                                    command.append(irq)
+                                run = subprocess.run(command, capture_output=True, text=True, timeout=15)
+                                if name == "original":
+                                    assert run.returncode != 0, "uncorrected SDK unexpectedly passed"
+                                    expected_errors = ["second SPI completion lost"]
+                                    if irq:
+                                        expected_errors.append("ordinary SPI IRQ consumed DMA completion")
+                                    assert any(error in run.stderr for error in expected_errors), run.stderr
+                                else:
+                                    assert run.returncode == 0, run.stdout + run.stderr
+                                    print(run.stdout, end="")
+            for role in ("master", "slave"):
+                for retry in ("normal", "retry"):
+                    run = subprocess.run([str(binary), "duplex", role, retry],
+                                         capture_output=True, text=True, timeout=15)
+                    if name == "original":
+                        assert run.returncode != 0, "uncorrected duplex SDK unexpectedly passed"
+                        assert "ordinary SPI IRQ consumed duplex DMA completion" in run.stderr, run.stderr
+                    else:
+                        assert run.returncode == 0, run.stdout + run.stderr
+                        print(run.stdout, end="")
     assert hashlib.sha256(original.read_bytes()).hexdigest() == before, "sealed SDK was modified"
     print(json.dumps(dict(result="PASS", sdk_commit=actual, sdk_source_sha256=before,
                           original_negative_controls="TX/RX FAIL as expected",
-                          corrected="TX/RX CPU/DMA master/slave port pairs PASS",
+                          corrected="TX/RX CPU/DMA SMP handoff, ordinary IRQ isolation and duplex retry PASS",
                           sanitized=args.sanitize),
                      sort_keys=True))
 

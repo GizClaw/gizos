@@ -24,6 +24,8 @@ typedef struct {
   uint32_t rx_offset;
   bool is_sw_tx_finished;
   bool is_tx_blocked;
+  bool h2_tx_dma_active;
+  bool h2_rx_dma_active;
   bool is_rx_blocked;
   dma_id_t spi_tx_dma_chan;
   dma_id_t spi_rx_dma_chan;
@@ -34,6 +36,7 @@ typedef struct {
   void (*callback)(spi_id_t, void*);
   void* param;
 } callback_t;
+typedef callback_t spi_callback_t;
 
 static spi_state_t s_spi[2];
 static callback_t s_spi_tx_finish_isr[2], s_spi_rx_finish_isr[2];
@@ -45,6 +48,11 @@ static unsigned started, signals, timeouts, callbacks, expected_callback;
 static unsigned first_port, next_port;
 static bool transmitting;
 static bool first_dma, next_dma, slave;
+static bool inject_ordinary_irq;
+static bool handoff_cut = true;
+static bool duplex_retry;
+static pthread_mutex_t spi_lock = PTHREAD_MUTEX_INITIALIZER;
+static _Thread_local unsigned spi_lock_depth;
 static bool is_xfer_overflow;
 static unsigned interrupt_status, late_teardowns, generation[2];
 static _Thread_local bool dma_operation;
@@ -57,6 +65,9 @@ static int worker_result;
 #define SPI_LOGV(...) ((void)0)
 #define SPI_LOGE(...) ((void)0)
 #define SPI_LOGW(...) ((void)0)
+#define SPI_LOGI(...) ((void)0)
+#define BK_ERR_SPI_DUPLEX_SIZE_NOT_EQUAL (-2)
+#define BK_ERR_SPI_RX_TIMEOUT (-3)
 #define SPI_STATIS_DEC() ((void)0)
 #define SPI_STATIS_GET(...) ((void)0)
 #define SPI_STATIS_INC(...) ((void)0)
@@ -67,8 +78,16 @@ static int worker_result;
 #define SPI_RETURN_ON_ID_NOT_INIT(id) ((void)(id))
 #define BK_RETURN_ON_NULL(data) assert((data) != NULL)
 
-static uint32_t spi_enter_critical(void) { return 0u; }
-static void spi_exit_critical(uint32_t level) { (void)level; }
+static uint32_t spi_enter_critical(void) {
+  assert(pthread_mutex_lock(&spi_lock) == 0);
+  assert(spi_lock_depth++ == 0u);
+  return 0u;
+}
+static void spi_exit_critical(uint32_t level) {
+  (void)level;
+  assert(spi_lock_depth-- == 1u);
+  assert(pthread_mutex_unlock(&spi_lock) == 0);
+}
 static void bk_delay_us(unsigned delay) { (void)delay; }
 static void bk_dma_stop(dma_id_t id) { (void)id; }
 static void transfer_started(dma_id_t id, void* data, uint32_t size) {
@@ -88,14 +107,33 @@ static void bk_dma_read(dma_id_t id, void* data, uint32_t size) {
   transfer_started(id, data, size);
 }
 
+static void bk_dma_start(dma_id_t id) { transfer_started(id, NULL, 4u); }
+static void bk_dma_set_dest_start_addr(dma_id_t id, uint32_t address) {
+  (void)id;
+  (void)address;
+}
+static void bk_dma_set_src_start_addr(dma_id_t id, uint32_t address) {
+  (void)id;
+  (void)address;
+}
+static void bk_dma_set_transfer_len(dma_id_t id, uint32_t size) {
+  (void)id;
+  assert(size == 4u);
+}
+static uint32_t dma_wait_to_idle(dma_id_t id) {
+  (void)id;
+  return 0u;
+}
+
 static int rtos_set_semaphore(semaphore_t* semaphore) {
+  assert(spi_lock_depth == 0u);
   assert(pthread_mutex_lock(&lock) == 0);
   ++semaphore->count;
   ++signals;
   assert(pthread_cond_broadcast(&changed) == 0);
   /* CPU1 can consume completion and enter its next real SDK transfer while
    * CPU0 is still in this ISR. Hold the interrupt tail at exactly that cut. */
-  while (signals == 1u && started < 2u)
+  while (handoff_cut && signals == 1u && started < 2u)
     assert(pthread_cond_wait(&changed, &lock) == 0);
   assert(pthread_mutex_unlock(&lock) == 0);
   return BK_OK;
@@ -123,6 +161,7 @@ static int rtos_get_semaphore(semaphore_t* semaphore, uint32_t timeout) {
 
 #define HAL_NOOP(name) \
   static void name(int* hal) { (void)hal; }
+HAL_NOOP(spi_hal_enable_tx_rx)
 HAL_NOOP(spi_hal_clear_tx_fifo)
 HAL_NOOP(spi_hal_enable_tx)
 HAL_NOOP(spi_hal_enable_tx_fifo_int)
@@ -174,10 +213,10 @@ static void spi_hal_clear_interrupt_status(int* hal, uint32_t status) {
     (void)hal;                                  \
     return (status & (mask)) != 0u;             \
   }
-IRQ_QUERY(spi_hal_is_rx_fifo_int_triggered_with_status, 0u)
+IRQ_QUERY(spi_hal_is_rx_fifo_int_triggered_with_status, 8u)
 IRQ_QUERY(spi_hal_is_rx_finish_int_triggered, 1u)
 IRQ_QUERY(spi_hal_is_rx_overflow_int_triggered, 0u)
-IRQ_QUERY(spi_hal_is_tx_fifo_int_triggered_with_status, 0u)
+IRQ_QUERY(spi_hal_is_tx_fifo_int_triggered_with_status, 16u)
 IRQ_QUERY(spi_hal_is_tx_finish_int_triggered, 2u)
 IRQ_QUERY(spi_hal_is_tx_underflow_int_triggered, 0u)
 IRQ_QUERY(spi_hal_is_slave_release_int_triggered, 4u)
@@ -197,6 +236,7 @@ static bool spi_hal_is_tx_fifo_int_triggered(int* hal) {
 /* SDK_FUNCTIONS */
 
 static void on_complete(spi_id_t port, void* user) {
+  assert(spi_lock_depth == 0u);
   assert(port == expected_callback);
   assert((uintptr_t)user == port);
   ++callbacks;
@@ -256,6 +296,19 @@ static void run_pair(unsigned first, unsigned next) {
   while (started < 1u) assert(pthread_cond_wait(&changed, &lock) == 0);
   assert(pthread_mutex_unlock(&lock) == 0);
   complete(first_dma, first, 1u);
+  if (inject_ordinary_irq && next_dma) {
+    const unsigned before_signals = signals, before_callbacks = callbacks;
+    interrupt_generation = 2u;
+    interrupt_status = (transmitting ? 2u | 16u : 1u | 8u) | (slave ? 4u : 0u);
+    spi_isr_common(next);
+    if (signals != before_signals || callbacks != before_callbacks) {
+      fprintf(
+          stderr,
+          "ordinary SPI IRQ consumed DMA completion: signals=%u callbacks=%u\n",
+          signals, callbacks);
+      exit(2);
+    }
+  }
   complete(next_dma, next, 2u);
   assert(pthread_join(task, NULL) == 0);
   /* Slave RX CS-release wakes the reader without an RX_FINISH callback.
@@ -277,13 +330,79 @@ static void run_pair(unsigned first, unsigned next) {
          first_dma ? "DMA" : "CPU", next_dma ? "DMA" : "CPU", first, next);
 }
 
+static void wait_started(unsigned count) {
+  assert(pthread_mutex_lock(&lock) == 0);
+  while (started < count) assert(pthread_cond_wait(&changed, &lock) == 0);
+  assert(pthread_mutex_unlock(&lock) == 0);
+}
+
+static void* duplex_worker(void* user) {
+  uint8_t tx[4] = {0}, rx[4] = {0};
+  dma_operation = true;
+  worker_result = bk_spi_dma_duplex_xfer((spi_id_t)(uintptr_t)user, tx,
+                                         sizeof(tx), rx, sizeof(rx));
+  return NULL;
+}
+
+static void run_duplex(unsigned port) {
+  memset(s_spi, 0, sizeof(s_spi));
+  memset(generation, 0, sizeof(generation));
+  started = signals = timeouts = callbacks = late_teardowns = 0u;
+  is_xfer_overflow = false;
+  handoff_cut = false;
+  expected_callback = port;
+  for (unsigned i = 0u; i < 2u; ++i) {
+    s_spi[i].hal = (int)i;
+    s_spi[i].spi_tx_dma_chan = 2u * i;
+    s_spi[i].spi_rx_dma_chan = 2u * i + 1u;
+    s_spi[i].is_sw_tx_finished = true;
+    s_spi_tx_finish_isr[i] = (callback_t){on_complete, (void*)(uintptr_t)i};
+    s_spi_rx_finish_isr[i] = (callback_t){on_complete, (void*)(uintptr_t)i};
+  }
+  pthread_t task;
+  assert(pthread_create(&task, NULL, duplex_worker, (void*)(uintptr_t)port) ==
+         0);
+  const unsigned attempts = duplex_retry ? 2u : 1u;
+  for (unsigned attempt = 0u; attempt < attempts; ++attempt) {
+    wait_started(2u * (attempt + 1u));
+    if (duplex_retry && attempt == 0u) {
+      const uint32_t flags = spi_enter_critical();
+      is_xfer_overflow = true;
+      spi_exit_critical(flags);
+    }
+    interrupt_status = 1u | 2u | 8u | 16u | (slave ? 4u : 0u);
+    spi_isr_common(port);
+    if (signals != 2u * attempt || callbacks != 2u * attempt) {
+      fprintf(stderr, "ordinary SPI IRQ consumed duplex DMA completion\n");
+      exit(2);
+    }
+    transmitting = true;
+    complete(true, port, 1u);
+    transmitting = false;
+    complete(true, port, 2u);
+  }
+  assert(pthread_join(task, NULL) == 0);
+  assert(worker_result == BK_OK && timeouts == 0u);
+  assert(signals == 2u * attempts && callbacks == 2u * attempts);
+  assert(!s_spi[port].h2_tx_dma_active && !s_spi[port].h2_rx_dma_active);
+  printf("PASS duplex %s port=%u retry=%u: DMA owns both completions\n",
+         slave ? "slave" : "master", port, duplex_retry);
+}
+
 int main(int argc, char** argv) {
-  assert(argc == 5);
+  if (argc == 4 && strcmp(argv[1], "duplex") == 0) {
+    slave = strcmp(argv[2], "slave") == 0;
+    duplex_retry = strcmp(argv[3], "retry") == 0;
+    for (unsigned port = 0u; port < 2u; ++port) run_duplex(port);
+    return 0;
+  }
+  assert(argc == 5 || argc == 6);
   assert(strcmp(argv[1], "tx") == 0 || strcmp(argv[1], "rx") == 0);
   transmitting = strcmp(argv[1], "tx") == 0;
   first_dma = strcmp(argv[2], "dma") == 0;
   next_dma = strcmp(argv[3], "dma") == 0;
   slave = strcmp(argv[4], "slave") == 0;
+  inject_ordinary_irq = argc > 5 && strcmp(argv[5], "ordinary") == 0;
   for (unsigned first = 0u; first < 2u; ++first)
     for (unsigned next = 0u; next < 2u; ++next) run_pair(first, next);
   return 0;
