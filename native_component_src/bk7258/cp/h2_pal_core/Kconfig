@@ -1,0 +1,12 @@
+menu "H2 BK CP platform core"
+
+config H2_BK_PLATFORM_CP_FAULT_TRACE
+    bool "Emit CP fault context before exception coordination"
+    depends on ARCH_CM33 && !SOC_SMP
+    default n
+    help
+        Diagnostic images only. Emit bounded integer context on the configured
+        CP dump UART before SDK peer-dump and reboot-tag checks. Use a CP UART
+        independent of AP diagnostics. Normal SDK exception handling continues.
+
+endmenu
