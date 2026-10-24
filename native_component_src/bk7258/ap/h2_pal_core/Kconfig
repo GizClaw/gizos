@@ -1,0 +1,11 @@
+menu "GizOS BK AP diagnostics"
+    config H2_BK_PLATFORM_FAULT_TRACE
+        bool "Record native fault context before peer-core coordination"
+        depends on SOC_SMP && SHELL_ASYNCLOG
+        default n
+        help
+            Emit raw AP UART diagnostics before the SDK fatal path coordinates
+            with peer cores. Also record log flush callers with interrupts
+            masked. Enable only for a diagnostic image; normal power-management
+            flushes can produce these records too.
+endmenu
