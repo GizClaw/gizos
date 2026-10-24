@@ -53,6 +53,8 @@ void h2_bk_cp_test_uart_putc(char value) {
   assert(output_size + 1u < sizeof(output));
   output[output_size++] = value;
   output[output_size] = '\0';
+  if (strcmp(mode, "reset-budget") == 0 && output_size == 80u)
+    longjmp(escape, 6);
   if (!nested && strcmp(mode, "nested") == 0 && value == '\n' &&
       strstr(output, " mmfar=") != NULL) {
     nested = true;
@@ -68,10 +70,10 @@ void h2_bk_cp_test_uart_putc(char value) {
 static void early_output_required(void) {
   assert(fpscr_reads == 0u);
   if (strcmp(mode, "uart-full") == 0) {
-    assert(output_size == 0u && raw_polls > 0u && raw_polls < 3000000u);
+    assert(output_size == 0u && raw_polls > 0u && raw_polls < 10000000u);
   } else {
-    assert(strstr(output, "H2_BK_CP_FAULT_ENTER reason=") != NULL);
-    assert(strstr(output, "H2_BK_CP_FAULT reason=") != NULL);
+    assert(strstr(output, "H2CP_ENTER=") != NULL);
+    assert(strstr(output, "H2_BK_CP_FAULT pc=") != NULL);
     assert(strstr(output, " pc=0x02212346") != NULL);
     assert(strstr(output, " lr=0x02223457") != NULL);
     assert(strstr(output, " r0=0x00012300") != NULL);
@@ -166,9 +168,14 @@ int main(int argc, char** argv) {
     abort();
   }
   if (strcmp(mode, "invalid-frame") == 0) {
-    assert(result == 4 && strstr(output, "H2_BK_CP_FAULT_ENTER") != NULL);
-    assert(strstr(output, "H2_BK_CP_FAULT reason=") == NULL);
+    assert(result == 4 && strstr(output, "H2CP_ENTER=") != NULL);
+    assert(strstr(output, "H2_BK_CP_FAULT pc=") == NULL);
     assert(fpscr_reads == 0u);
+  } else if (strcmp(mode, "reset-budget") == 0) {
+    assert(result == 6 && fpscr_reads == 0u && normal_dumps == 0u);
+    assert(strstr(output, "H2CP_ENTER=00000010\r\n") != NULL);
+    assert(strstr(output, "H2_BK_CP_FAULT pc=0x02212346 lr=0x02223457\r\n") !=
+           NULL);
   } else {
     assert(result == 2 || result == 3 || result == 5 || result == 9);
     if (strcmp(mode, "uart-full") != 0) {

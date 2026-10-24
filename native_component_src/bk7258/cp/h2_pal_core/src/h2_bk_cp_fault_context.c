@@ -22,9 +22,10 @@
  * Scratch and labels stay in SRAM so the early path needs no XIP literals.
  */
 static volatile bool s_entered;
+static uint32_t s_entry_stack;
 static char s_line[512];
 static volatile char s_labels[][32] = {
-    "\r\nH2_BK_CP_FAULT_ENTER",
+    "\r\nH2CP_ENTER=",
     "\r\nH2_BK_CP_FAULT",
     " reason=",
     " exc_return=",
@@ -43,6 +44,7 @@ static volatile char s_labels[][32] = {
     " r3=",
     " r12=",
     " primask=",
+    "\r\nH2_BK_CP_FAULT_REGS",
 };
 
 static H2_CP_IRAM size_t text(size_t offset, const volatile char* value) {
@@ -50,16 +52,21 @@ static H2_CP_IRAM size_t text(size_t offset, const volatile char* value) {
   return offset;
 }
 
-static H2_CP_IRAM size_t field(size_t offset, unsigned label, uint32_t value) {
-  offset = text(offset, s_labels[label]);
-  if (offset + 10u > sizeof(s_line)) return sizeof(s_line);
-  s_line[offset++] = '0';
-  s_line[offset++] = 'x';
+static H2_CP_IRAM size_t hexword(size_t offset, uint32_t value) {
+  if (offset + 8u > sizeof(s_line)) return sizeof(s_line);
   for (unsigned shift = 32u; shift != 0u; shift -= 4u) {
     const unsigned digit = (value >> (shift - 4u)) & 15u;
     s_line[offset++] = (char)(digit < 10u ? '0' + digit : 'a' + digit - 10u);
   }
   return offset;
+}
+
+static H2_CP_IRAM size_t field(size_t offset, unsigned label, uint32_t value) {
+  offset = text(offset, s_labels[label]);
+  if (offset + 2u > sizeof(s_line)) return sizeof(s_line);
+  s_line[offset++] = '0';
+  s_line[offset++] = 'x';
+  return hexword(offset, value);
 }
 
 #ifndef H2_BK_CP_FAULT_HOST_TEST
@@ -108,14 +115,14 @@ H2_CP_IRAM int h2_bk_cp_fault_context_enter(uint32_t reason,
                                             uint32_t stack) {
   if (s_entered) return 0;
   s_entered = true;
+  s_entry_stack = stack;
+  (void)exc_return;
+  /* A hardware reset can follow NMI before a full UART line drains.
+   * Preserve an entry marker before inspecting the interrupted stack,
+   * then spend the first short context record on PC/LR.
+   */
   size_t size = text(0u, s_labels[0]);
-  size = field(size, 2u, reason);
-  size = field(size, 3u, exc_return);
-  size = field(size, 4u, stack);
-  size = field(size, 5u, SCB->CFSR);
-  size = field(size, 6u, SCB->HFSR);
-  size = field(size, 7u, SCB->BFAR);
-  size = field(size, 8u, SCB->MMFAR);
+  size = hexword(size, reason);
   emit(size);
   return 1;
 }
@@ -124,12 +131,19 @@ H2_CP_IRAM void h2_bk_cp_fault_context_observe(uint32_t reason,
                                                const SAVED_CONTEXT* context) {
   if (context == NULL) return;
   size_t size = text(0u, s_labels[1]);
-  size = field(size, 2u, reason);
   size = field(size, 9u, (uint32_t)context->pc);
   size = field(size, 10u, (uint32_t)context->lr);
+  emit(size);
+  size = text(0u, s_labels[19]);
+  size = field(size, 2u, reason);
   size = field(size, 11u, (uint32_t)context->sp);
   size = field(size, 12u, (uint32_t)context->xpsr);
   size = field(size, 3u, (uint32_t)context->control);
+  size = field(size, 4u, s_entry_stack);
+  size = field(size, 5u, SCB->CFSR);
+  size = field(size, 6u, SCB->HFSR);
+  size = field(size, 7u, SCB->BFAR);
+  size = field(size, 8u, SCB->MMFAR);
   size = field(size, 13u, (uint32_t)context->r0);
   size = field(size, 14u, (uint32_t)context->r1);
   size = field(size, 15u, (uint32_t)context->r2);

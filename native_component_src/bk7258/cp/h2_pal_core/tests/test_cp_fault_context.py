@@ -132,7 +132,7 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/link.txt"
         probe = (component / 'tests/cp_fault_context_probe.c').read_text()
         profiles = list(itertools.product(
             ('nmi-guard', 'nmi-ap', 'nmi-reboot', 'nmi-normal', 'trap-guard',
-             'trap-normal', 'invalid-frame', 'uart-full', 'nested'),
+             'trap-normal', 'invalid-frame', 'uart-full', 'nested', 'reset-budget'),
             (0xfffffff9, 0xfffffffd, 0xffffffe9, 0xffffffed), (0, 1)))
         positives, negatives = 0, 0
         for name, inputs in [('original', [trap, startup]), ('corrected', generated)]:
