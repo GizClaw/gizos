@@ -9,6 +9,8 @@ typedef struct transport {
   h2_iostreamikcp_io_t physical_io;
   h2_iostreamikcp_filter_t filter;
   h2_iostreamikcp_t* stream;
+  uint32_t pending_conv;
+  int replacement_pending, close_pending;
 } transport_t;
 typedef transport_t h2_jieli_transport_t;
 typedef transport_t h2_jieli_app_transport_t;
@@ -74,6 +76,13 @@ h2_pal_result_t h2_iostreamikcp_update(h2_iostreamikcp_t* stream,
   assert(stream != NULL);
   ++updates;
   return H2_PAL_OK;
+}
+
+/* ESP injected IO adds CLOSED handling; other fixture adapters do not use it.
+ */
+int s_physical_io_configured;
+void h2_esp_h2loader_command_transport_deactivate(transport_t* transport) {
+  transport->stream = NULL;
 }
 
 /* POLL */

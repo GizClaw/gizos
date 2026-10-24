@@ -1,0 +1,301 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "core",
+    define_values = {"mosaico_e2e": "core"},
+)
+
+config_setting(
+    name = "storage",
+    define_values = {"mosaico_e2e": "storage"},
+)
+
+config_setting(
+    name = "display",
+    define_values = {"mosaico_e2e": "display"},
+)
+
+config_setting(
+    name = "audio",
+    define_values = {"mosaico_e2e": "audio"},
+)
+
+config_setting(
+    name = "libco",
+    define_values = {"mosaico_e2e": "libco"},
+)
+
+config_setting(
+    name = "camera",
+    define_values = {"mosaico_e2e": "camera"},
+)
+
+config_setting(
+    name = "peripherals",
+    define_values = {"mosaico_e2e": "peripherals"},
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["mosaico/e2e/runner"],
+)
+
+_COMMON_TASK_POLICIES = [
+    "mosaico/e2e/runner 4 0 65536 psram",
+    "h2loader/appcmd 8 0 4096 psram",
+    "h2loader/blecmd 8 0 4096 psram",
+    "$h2loader/return 8 0 4096 psram",
+    "$h2loader/blelink 6 0 4096 psram",
+    "$bleikcp/kcp 7 0 4096 psram",
+    "$bleikcp/server 5 0 4096 psram",
+    "$h2peer/net 7 0 4096 psram",
+    "$h2peer/udp 7 0 4096 psram",
+    "$runtime/input default",
+    "$runtime/nfc default",
+    "$h2loader/uartcmd default",
+]
+
+# Fixed audit graphs remain independent of the selected package configuration.
+_POLICY_GRAPH = [
+    ":tasks",
+    "//boards/esp_mosaico/esp32s31",
+    "//boards/esp_mosaico/esp32s31:loader_usb",
+    "//libs/audio_mixer",
+    "//libs/bleikcp",
+    "//libs/bundle",
+    "//libs/command",
+    "//libs/drivers/audio/es8311",
+    "//libs/iostreamikcp",
+    "//libs/pal:unsupported",
+    "//libs/pal/providers/corehttp",
+    "//libs/pal/providers/h2peer",
+    "//libs/pal/providers/h2sctp",
+    "//libs/pal/providers/libco",
+    "//libs/pixa",
+    "//libs/runtime",
+    "//libs/wifi_sta",
+    "//native_component_src/esp-idf6.x/h2_pal_core",
+    "//native_component_src/esp-idf6.x/zlib",
+    "//projects/h2loader/libs/h2loader",
+    "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+    "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+]
+
+esp_target_task_policy(
+    name = "task_policy_core",
+    default_policy = "4 any 4096 psram",
+    directory = "task_policy_core",
+    graph = _POLICY_GRAPH + ["//projects/e2e/apps/pal-core/app:pal_core_e2e"],
+    policies = _COMMON_TASK_POLICIES + [
+        "pal-core/e2e/core default",
+        "pal-core/e2e/runner 4 0 65536 psram",
+        "pal-core/e2e/queue default",
+        "pal-core/e2e/condition default",
+        "pal-core/e2e/consumer default",
+        "pal-core/e2e/producer default",
+    ],
+)
+
+esp_target_task_policy(
+    name = "task_policy_storage",
+    default_policy = "4 any 4096 psram",
+    directory = "task_policy_storage",
+    graph = _POLICY_GRAPH + ["//projects/e2e/libs/pal-storage-device:runner"],
+    policies = _COMMON_TASK_POLICIES + ["pal-storage/e2e/runner default"],
+)
+
+esp_target_task_policy(
+    name = "task_policy_display",
+    default_policy = "4 any 4096 psram",
+    directory = "task_policy_display",
+    graph = _POLICY_GRAPH + ["//projects/e2e/libs/pal-display-device:runner"],
+    policies = _COMMON_TASK_POLICIES + ["pal-display/e2e/runner default"],
+)
+
+esp_target_task_policy(
+    name = "task_policy_audio",
+    default_policy = "4 any 4096 psram",
+    directory = "task_policy_audio",
+    graph = _POLICY_GRAPH + ["//projects/e2e/apps/pal-audio/app:pal_audio_e2e"],
+    policies = _COMMON_TASK_POLICIES + ["pal-audio/e2e/runner default"],
+)
+
+esp_target_task_policy(
+    name = "task_policy_libco",
+    default_policy = "4 any 4096 psram",
+    directory = "task_policy_libco",
+    graph = _POLICY_GRAPH + ["//projects/e2e/apps/libco/app:libco_smoke"],
+    policies = _COMMON_TASK_POLICIES + [],
+)
+
+esp_target_task_policy(
+    name = "task_policy_camera",
+    default_policy = "4 any 4096 psram",
+    directory = "task_policy_camera",
+    graph = _POLICY_GRAPH + ["//libs/pal"],
+    policies = _COMMON_TASK_POLICIES + [],
+)
+
+esp_target_task_policy(
+    name = "task_policy_peripherals",
+    default_policy = "4 any 4096 psram",
+    directory = "task_policy_peripherals",
+    graph = _POLICY_GRAPH + ["//libs/pal"],
+    policies = _COMMON_TASK_POLICIES + [],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        ":tasks",
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/drivers/audio/es8311",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+    ] + select({
+        ":core": ["//projects/e2e/apps/pal-core/app:pal_core_e2e"],
+        ":storage": ["//projects/e2e/libs/pal-storage-device:runner"],
+        ":display": ["//projects/e2e/libs/pal-display-device:runner"],
+        ":audio": ["//projects/e2e/apps/pal-audio/app:pal_audio_e2e"],
+        ":libco": ["//projects/e2e/apps/libco/app:libco_smoke"],
+        ":camera": ["//libs/pal"],
+        ":peripherals": ["//libs/pal"],
+        "//conditions:default": ["//projects/e2e/apps/pal-core/app:pal_core_e2e"],
+    }),
+)
+
+firmware_native_component(
+    name = "launcher",
+    srcs = select({
+        ":core": ["//projects/e2e/targets/h2loader_tar_zlib/pal-core/devkit:main/main.c"],
+        "//conditions:default": ["//projects/e2e/targets/h2loader_tar_zlib/pal-core/devkit:main/main.c"],
+        ":storage": [":suite_source"],
+        ":display": [":suite_source"],
+        ":audio": [":suite_source"],
+        ":libco": [":suite_source"],
+        ":camera": [":suite_source"],
+        ":peripherals": [":suite_source"],
+    }),
+    hdrs = [],
+    component_directory = "projects/e2e/targets/h2loader_tar_zlib/mosaico/esp_mosaico/main",
+    component_name = "main",
+    data = [
+        "main/CMakeLists.txt",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        ":firmware_lib",
+        "//boards/esp_mosaico/esp32s31",
+        "//boards/esp_mosaico/esp32s31:loader_usb",
+        "//libs/bundle",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/main.c",
+        "sdkconfig.e2e.defaults",
+    ],
+    board = "esp_mosaico",
+    cmake_variables = ["H2_MOSAICO_CORE_WALL_UTC_MS"],
+    graph = [
+        ":launcher",
+    ],
+    layout_files = {
+        "partition": "//boards/esp_mosaico/esp32s31/layouts/h2loader:partition.csv",
+        "project_support_files": ["//boards/esp_mosaico/esp32s31/layouts/h2loader:sdkconfig.h2loader.defaults"],
+    },
+    project = "CMakeLists.txt",
+    project_name = "h2_mosaico_e2e",
+    target = "esp32s31",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "esp_mosaico",
+    firmware = ":firmware",
+    image = "mosaico-e2e",
+    role = "app",
+    target = "esp32s31",
+)
+
+genrule(
+    name = "suite_source",
+    srcs = ["main/main.c"],
+    outs = ["selected_main.c"],
+    cmd = select({
+        ":core": "echo '#define H2_MOSAICO_SUITE_CORE 1' > $@; cat $(location main/main.c) >> $@",
+        ":storage": "echo '#define H2_MOSAICO_SUITE_STORAGE 1' > $@; cat $(location main/main.c) >> $@",
+        ":display": "echo '#define H2_MOSAICO_SUITE_DISPLAY 1' > $@; cat $(location main/main.c) >> $@",
+        ":audio": "echo '#define H2_MOSAICO_SUITE_AUDIO 1' > $@; cat $(location main/main.c) >> $@",
+        ":libco": "echo '#define H2_MOSAICO_SUITE_LIBCO 1' > $@; cat $(location main/main.c) >> $@",
+        ":camera": "echo '#define H2_MOSAICO_SUITE_CAMERA 1' > $@; cat $(location main/main.c) >> $@",
+        ":peripherals": "echo '#define H2_MOSAICO_SUITE_PERIPHERALS 1' > $@; cat $(location main/main.c) >> $@",
+        "//conditions:default": "echo '#define H2_MOSAICO_SUITE_CORE 1' > $@; cat $(location main/main.c) >> $@",
+    }),
+)
+
+alias(
+    name = "task_policy",
+    actual = select({
+        ":core": ":task_policy_core",
+        ":storage": ":task_policy_storage",
+        ":display": ":task_policy_display",
+        ":audio": ":task_policy_audio",
+        ":libco": ":task_policy_libco",
+        ":camera": ":task_policy_camera",
+        ":peripherals": ":task_policy_peripherals",
+        "//conditions:default": ":task_policy_core",
+    }),
+)
+
+genrule(
+    name = "camera_consumer_source",
+    srcs = ["main/main.c"],
+    outs = ["tests/launcher_under_test.h"],
+    cmd = "cp $(location main/main.c) $@",
+)
+
+cc_test(
+    name = "camera_consumer_test",
+    srcs = [
+        "tests/test_camera_consumer.c",
+        ":camera_consumer_source",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-UNDEBUG"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/runtime"],
+)

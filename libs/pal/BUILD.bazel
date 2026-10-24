@@ -25,6 +25,7 @@ cc_library(
         "include/h2/pal/hal/h2_pal_ble.h",
         "include/h2/pal/hal/h2_pal_button.h",
         "include/h2/pal/hal/h2_pal_buzzer.h",
+        "include/h2/pal/hal/h2_pal_camera.h",
         "include/h2/pal/hal/h2_pal_display.h",
         "include/h2/pal/hal/h2_pal_gpio_irq.h",
         "include/h2/pal/hal/h2_pal_imu.h",
@@ -80,6 +81,7 @@ cc_library(
         "src/unsupported/ble_host.c",
         "src/unsupported/button.c",
         "src/unsupported/buzzer.c",
+        "src/unsupported/camera.c",
         "src/unsupported/crypto.c",
         "src/unsupported/disk.c",
         "src/unsupported/display.c",
@@ -459,4 +461,21 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "test_pal_camera",
+    srcs = ["tests/test_pal_camera.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":pal",
+        ":unsupported",
+    ],
 )

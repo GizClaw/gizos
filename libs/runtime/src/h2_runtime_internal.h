@@ -350,6 +350,7 @@ struct h2_runtime_private {
   h2_pal_ble_host_api_t ble_host_proxy;
   h2_pal_modem_api_t modem_proxy;
   h2_pal_power_api_t power_proxy;
+  h2_pal_camera_api_t camera_proxy;
   h2_pal_display_api_t display_proxy;
   /* All Audio proxy volume operations share this Runtime-owned state. */
   h2_pal_audio_api_t audio_backend;

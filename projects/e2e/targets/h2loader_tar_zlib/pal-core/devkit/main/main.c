@@ -1,4 +1,13 @@
 #include "h2_esp_board.h"
+#ifdef H2_E2E_MOSAICO
+#include "h2_mosaico_usb_console.h"
+#include "h2_mosaico_loader_usb.h"
+#define H2_CORE_BOARD "esp_mosaico"
+#define H2_CORE_IMAGE "mosaico-e2e"
+#else
+#define H2_CORE_BOARD "devkit"
+#define H2_CORE_IMAGE "pal-core"
+#endif
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
@@ -398,7 +407,13 @@ static void run(void* user) {
   portEXIT_CRITICAL(&observation_lock);
   (void)esp_timer_stop(watchdog);
   (void)esp_timer_delete(watchdog);
+#ifdef H2_E2E_MOSAICO
+  int confirm = result.qualified && probe == H2_PAL_OK
+                    ? h2_esp_h2loader_app_confirm(runtime)
+                    : H2_PAL_ERR_INVALID_STATE;
+#else
   int confirm = h2_esp_h2loader_app_confirm(runtime);
+#endif
   printf("H2_PAL_CORE_E2E_READY qualified=%d task_probe=%d confirm=%d\n",
          result.qualified, probe, confirm);
   fflush(stdout);
@@ -435,6 +450,12 @@ static void run(void* user) {
 void app_main(void) {
   int rc = h2_esp_target_task_policy_install_with_configure(configure_tasks);
   if (rc != H2_PAL_OK) fail("task_policy", rc);
+#ifdef H2_E2E_MOSAICO
+  rc = h2_mosaico_usb_console_init();
+  if (rc) fail("usb-console", rc);
+  rc = h2_mosaico_loader_usb_init();
+  if (rc) fail("usb-transport", rc);
+#endif
   h2_runtime_config_t runtime_config = {0};
   rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc != H2_PAL_OK) fail("runtime_config", rc);
@@ -442,7 +463,7 @@ void app_main(void) {
    * service uses board APIs directly and does not require a BLE event loop. */
   runtime_config.system_event = h2_pal_unsupported_system_event_api();
   const h2_esp_h2loader_app_commands_config_t commands = {
-      .active_name = "pal-core",
+      .active_name = H2_CORE_IMAGE,
       .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
       .h2loader_partition_id = 1u,
       .coredump_partition_id = 3u,
@@ -454,6 +475,20 @@ void app_main(void) {
   if (rc != H2_PAL_OK) fail("command_prepare", rc);
   rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc != H2_PAL_OK) fail("runtime_init", rc);
+#if defined(H2_E2E_MOSAICO) && defined(H2_MOSAICO_CORE_WALL_UTC_MS)
+  /* A cold board has no calibrated wall clock. The operator supplies this
+   * test prerequisite explicitly; the workload keeps its original assertions.
+   */
+  h2_pal_time_wall_status_t wall_status;
+  rc = h2_pal_time_get_wall_status(runtime->time, &wall_status);
+  if (rc != H2_PAL_OK) fail("wall-status", rc);
+  if (!wall_status.valid) {
+    rc = h2_pal_time_set_wall_ms(runtime->time, H2_MOSAICO_CORE_WALL_UTC_MS);
+    if (rc != H2_PAL_OK) fail("wall-fixture", rc);
+    printf("H2_PAL_CORE_TIME_FIXTURE source=operator utc_ms=%" PRIu64 "\n",
+           (uint64_t)H2_MOSAICO_CORE_WALL_UTC_MS);
+  }
+#endif
   const esp_timer_create_args_t timer = {.callback = deadline,
                                          .name = "pal-core-watchdog"};
   if (esp_timer_create(&timer, &watchdog) != ESP_OK ||
@@ -461,9 +496,10 @@ void app_main(void) {
     fail("watchdog", H2_PAL_ERR_IO);
   const esp_log_level_t log_maximum = configured_log_maximum();
   printf(
-      "H2_PAL_CORE_E2E_BOOT board=devkit version=%s cases=%u resources=native "
+      "H2_PAL_CORE_E2E_BOOT board=%s version=%s cases=%u resources=native "
       "log_min_level=%d sdk_log_maximum=%d effective_log_maximum=%d\n",
-      esp_app_get_description()->version, (unsigned)H2_PAL_CORE_E2E_CASE_COUNT,
+      H2_CORE_BOARD, esp_app_get_description()->version,
+      (unsigned)H2_PAL_CORE_E2E_CASE_COUNT,
       (int)configured_log_min_level(log_maximum), CONFIG_LOG_MAXIMUM_LEVEL,
       (int)log_maximum);
   const h2_pal_task_options_t options = {.name =

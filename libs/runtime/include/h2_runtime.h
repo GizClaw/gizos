@@ -75,6 +75,8 @@ typedef struct h2_runtime_config {
   const h2_pal_modem_api_t* modem;
 
   const h2_pal_power_api_t* power;
+  /** Optional Camera provider; its context must outlive Runtime use. */
+  const h2_pal_camera_api_t* camera;
   const h2_pal_display_api_t* display;
   const h2_pal_audio_api_t* audio;
   const h2_pal_audio_decoder_api_t* audio_decoder;
@@ -157,6 +159,8 @@ struct h2_runtime {
   const h2_pal_modem_api_t* modem;
 
   const h2_pal_power_api_t* power;
+  /** Optional Camera provider; its context must outlive Runtime use. */
+  const h2_pal_camera_api_t* camera;
   const h2_pal_display_api_t* display;
   const h2_pal_audio_api_t* audio;
   const h2_pal_audio_decoder_api_t* audio_decoder;

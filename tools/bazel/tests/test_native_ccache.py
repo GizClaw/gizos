@@ -127,6 +127,7 @@ class NativeCcacheTest(unittest.TestCase):
             ("esp32s3", "esp"),
             ("esp32p4", "esp"),
             ("esp32c5", "esp"),
+            ("esp32s31", "esp"),
             ("bk7258", "bk"),
             ("bk3633", "bk"),
         ):

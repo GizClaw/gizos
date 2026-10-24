@@ -182,6 +182,7 @@ cc_library(
         "//tools/bazel/platforms:is_bk7258": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32p4": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32s3": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
+        "//tools/bazel/platforms:is_esp32s31": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//conditions:default": ["//tools/bazel:vendor_third_party_gizclaw"],
     }),
 )
@@ -609,6 +610,7 @@ cc_test(
     }),
     deps = [
         ":gizclaw_test_support",
+        "//libs/app_test:testing_pal",
         "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",

@@ -2,10 +2,19 @@
 #define H2_ESP_H2LOADER_IOSTREAMIKCP_H
 
 #include "h2_loader_app_client.h"
+#include "h2_iostreamikcp_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Configure board-owned physical IO once, before Loader console/transport
+ * startup. Copies the descriptor; user context is borrowed for boot lifetime.
+ * A failed SDK initialization can retry without replacing this descriptor.
+ * read/write are required, flush may be NULL. Existing defaults are unchanged
+ * when this function is not called. Call serially from startup, not an ISR. */
+h2_pal_result_t h2_esp_h2loader_configure_physical_io(
+    const h2_iostreamikcp_io_t* io);
 
 /**
  * @brief Starts an app-side synchronous H2Loader command server task.
