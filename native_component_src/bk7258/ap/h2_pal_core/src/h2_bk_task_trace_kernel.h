@@ -23,10 +23,26 @@ static void h2_bk_task_trace_copy(h2_bk_task_trace_snapshot_t* snapshot,
     ++snapshot->invalid;
     return;
   }
-  const size_t name_size = sizeof(task->pcTaskName) < sizeof(row->name) - 1u
-                               ? sizeof(task->pcTaskName)
+#if configBK_FREERTOS && CONFIG_USE_STATIC_TASK_NAME
+  const char* name = task->pcTaskName != NULL ? task->pcTaskName : "<unnamed>";
+  const size_t name_capacity = SIZE_MAX;
+#else
+  const char* name = task->pcTaskName;
+  const size_t name_capacity = sizeof(task->pcTaskName);
+#endif
+  const size_t name_size = name_capacity < sizeof(row->name) - 1u
+                               ? name_capacity
                                : sizeof(row->name) - 1u;
-  memcpy(row->name, task->pcTaskName, name_size);
+  size_t copied = 0u;
+  while (copied < name_size && name[copied] != '\0') {
+    row->name[copied] = name[copied];
+    ++copied;
+  }
+  if (copied == name_size &&
+      (copied == name_capacity || name[copied] != '\0')) {
+    row->truncated = 1u;
+    ++snapshot->truncated;
+  }
   row->base = (uintptr_t)task->pxStack;
   row->top = (uintptr_t)task->pxTopOfStack;
   row->size = task->ulStackSize;
@@ -53,7 +69,7 @@ static void h2_bk_task_trace_copy(h2_bk_task_trace_snapshot_t* snapshot,
     address += sizeof(uint32_t);
     ++words;
   }
-  if (address < row->bottom) {
+  if (address < row->bottom && row->truncated == 0u) {
     row->truncated = 1u;
     ++snapshot->truncated;
   }

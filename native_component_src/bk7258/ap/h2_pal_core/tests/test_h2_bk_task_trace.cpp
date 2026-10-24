@@ -36,6 +36,11 @@ class TEST_CAPABILITY KernelMutex {
   std::mutex mutex_;
 };
 
+#define configBK_FREERTOS 1
+#ifndef CONFIG_USE_STATIC_TASK_NAME
+#define CONFIG_USE_STATIC_TASK_NAME 0
+#endif
+
 typedef unsigned UBaseType_t;
 struct ListItem_t {
   ListItem_t* pxNext;
@@ -48,7 +53,12 @@ struct List_t {
 struct TCB_t {
   uint32_t *pxStack, *pxTopOfStack;
   uint32_t ulStackSize;
+#if CONFIG_USE_STATIC_TASK_NAME
+  char* pcTaskName;
+  ~TCB_t() { delete[] pcTaskName; }
+#else
   char pcTaskName[32];
+#endif
   uint32_t stack[8];
   ListItem_t state, event;
 };
@@ -135,7 +145,13 @@ static void reset(void) {
 }
 static TCB_t* task(const char* name) {
   auto* value = new TCB_t{};
-  std::snprintf(value->pcTaskName, sizeof(value->pcTaskName), "%s", name);
+#if CONFIG_USE_STATIC_TASK_NAME
+  const size_t name_size = std::strlen(name) + 1u;
+  value->pcTaskName = new char[name_size];
+#else
+  const size_t name_size = sizeof(value->pcTaskName);
+#endif
+  std::snprintf(value->pcTaskName, name_size, "%s", name);
   value->stack[1] = 0x02345679u;
   value->stack[3] = 0x02456789u;
   value->pxStack = value->stack;
@@ -228,7 +244,40 @@ static void bounds_and_context(void) {
   reset_lists();
   for (auto* value : tasks) delete value;
 }
+
+static void name_bounds(void) {
+  reset();
+  const std::string long_name(100u, 'n');
+  auto* named = task(long_name.c_str());
+  append(&pxReadyTasksLists[0], &named->state, named);
+#if CONFIG_USE_STATIC_TASK_NAME
+  assert(h2_bk_task_trace_dump() == H2_PAL_ERR_NO_SPACE);
+  assert(output.find("truncated=1") != std::string::npos);
+  assert(output.find(std::string(H2_BK_TASK_TRACE_NAME - 1u, 'n')) !=
+         std::string::npos);
+  assert(output.find(std::string(H2_BK_TASK_TRACE_NAME, 'n')) ==
+         std::string::npos);
+#else
+  assert(h2_bk_task_trace_dump() == H2_PAL_OK);
+  assert(output.find(std::string(sizeof(named->pcTaskName) - 1u, 'n')) !=
+         std::string::npos);
+#endif
+  reset_lists();
+  delete named;
+#if CONFIG_USE_STATIC_TASK_NAME
+  reset();
+  auto* unnamed = task("temporary");
+  delete[] unnamed->pcTaskName;
+  unnamed->pcTaskName = nullptr;
+  append(&pxReadyTasksLists[0], &unnamed->state, unnamed);
+  assert(h2_bk_task_trace_dump() == H2_PAL_OK);
+  assert(output.find("<unnamed>") != std::string::npos);
+  reset_lists();
+  delete unnamed;
+#endif
+}
 int main(void) {
   for (unsigned i = 0; i < 100; ++i) concurrent_delete();
   bounds_and_context();
+  name_bounds();
 }
