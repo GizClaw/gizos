@@ -15,6 +15,13 @@ static h2_gizclaw_test_telemetry_send_fn test_send;
 static void* test_send_user;
 static h2_gizclaw_test_ota_send_fn test_ota_send;
 static void* test_ota_user;
+static h2_gizclaw_test_telemetry_kv_send_fn test_kv_send;
+static void* test_kv_user;
+void h2_gizclaw_test_set_telemetry_kv_send(
+    h2_gizclaw_test_telemetry_kv_send_fn send, void* user) {
+  test_kv_send = send;
+  test_kv_user = user;
+}
 void h2_gizclaw_test_set_ota_send(h2_gizclaw_test_ota_send_fn send,
                                   void* user) {
   test_ota_send = send;
@@ -668,6 +675,150 @@ h2_pal_result_t h2_gizclaw_rpc_telemetry_send(
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK) rc = h2_gizclaw_resp_parse_telemetry_send(request);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+#define ASSERT_KV_LIMIT(name)                                     \
+  _Static_assert(H2_GIZCLAW_TELEMETRY_KV_##name == GZC_KV_##name, \
+                 "GizClaw KV telemetry limit drift")
+ASSERT_KV_LIMIT(KEY_MAX_BYTES);
+ASSERT_KV_LIMIT(VALUE_MAX_BYTES);
+ASSERT_KV_LIMIT(FRAME_MAX_ENTRIES);
+ASSERT_KV_LIMIT(FRAME_MAX_BYTES);
+ASSERT_KV_LIMIT(STORED_MAX_KEYS);
+ASSERT_KV_LIMIT(STORED_MAX_BYTES);
+#undef ASSERT_KV_LIMIT
+
+typedef struct telemetry_kv_request {
+  const h2_pal_mem_api_t* allocator;
+  gzc_telemetry_kv_frame_t frame;
+  gzc_telemetry_kv_t entries[H2_GIZCLAW_TELEMETRY_KV_FRAME_MAX_ENTRIES];
+  char strings[];
+} telemetry_kv_request_t;
+
+static const char telemetry_kv_tag;
+
+static void* kv_malloc(void* user, size_t size) {
+  h2_gizclaw_service_t* service = user;
+  return h2_pal_mem_alloc(service->client_config.allocator, size);
+}
+
+static void* kv_realloc(void* user, void* pointer, size_t size) {
+  h2_gizclaw_service_t* service = user;
+  return h2_pal_mem_realloc(service->client_config.allocator, pointer, size);
+}
+
+static void kv_free(void* user, void* pointer) {
+  h2_gizclaw_service_t* service = user;
+  h2_pal_mem_free(service->client_config.allocator, pointer);
+}
+
+static void telemetry_kv_destroy(void* context) {
+  telemetry_kv_request_t* request = context;
+  h2_pal_mem_free(request->allocator, request);
+}
+
+static h2_pal_result_t telemetry_kv_run(
+    void* user, h2_gizclaw_client_t* client,
+    const h2_gizclaw_cancel_token_t* cancel_token) {
+  if (h2_gizclaw_cancel_requested(cancel_token)) return H2_PAL_ERR_CLOSED;
+  telemetry_kv_request_t* request = user;
+#if defined(H2_GIZCLAW_TESTING)
+  if (test_kv_send != NULL)
+    return result_from_gzc(test_kv_send(test_kv_user, &request->frame));
+#endif
+  gzc_client_t* gzc = h2_gizclaw_client_gzc_internal(client);
+  if (gzc == NULL) return H2_PAL_ERR_INVALID_STATE;
+  return result_from_gzc(gzc_client_send_kv_telemetry(gzc, &request->frame));
+}
+
+h2_pal_result_t h2_gizclaw_req_create_telemetry_kv_send(
+    h2_gizclaw_service_t* service, uint64_t identity,
+    const h2_gizclaw_telemetry_kv_frame_t* frame, uint32_t timeout_ms,
+    h2_gizclaw_req_t** out_request) {
+  if (out_request != NULL) *out_request = NULL;
+  if (service == NULL || out_request == NULL || timeout_ms == 0u ||
+      timeout_ms > INT32_MAX || frame == NULL || frame->sequence == 0u ||
+      frame->observed_at_unix_ms < 0 || frame->entries == NULL ||
+      frame->entry_count == 0u ||
+      frame->entry_count > H2_GIZCLAW_TELEMETRY_KV_FRAME_MAX_ENTRIES)
+    return H2_PAL_ERR_INVALID_ARG;
+  gzc_telemetry_kv_t entries[H2_GIZCLAW_TELEMETRY_KV_FRAME_MAX_ENTRIES];
+  size_t strings_size = 0u;
+  for (size_t i = 0u; i < frame->entry_count; ++i) {
+    const h2_gizclaw_telemetry_kv_t* entry = &frame->entries[i];
+    if (entry->key.len > H2_GIZCLAW_TELEMETRY_KV_KEY_MAX_BYTES ||
+        entry->json_value.len > H2_GIZCLAW_TELEMETRY_KV_VALUE_MAX_BYTES)
+      return H2_PAL_ERR_INVALID_ARG;
+    entries[i] = (gzc_telemetry_kv_t){
+        .observed_at_delta_ms = entry->observed_at_delta_ms,
+        .key = to_gzc_str(entry->key),
+        .json_value = to_gzc_str(entry->json_value),
+        .delete_key = entry->delete_key};
+    strings_size += entry->key.len + entry->json_value.len;
+  }
+  gzc_telemetry_kv_frame_t mapped = {
+      .sequence = frame->sequence,
+      .observed_at_unix_ms = frame->observed_at_unix_ms == 0
+                                 ? INT64_MAX
+                                 : frame->observed_at_unix_ms,
+      .entries = entries,
+      .entry_count = frame->entry_count};
+  const gzc_platform_t platform = {.userdata = service,
+                                   .malloc = kv_malloc,
+                                   .realloc = kv_realloc,
+                                   .free = kv_free};
+  gzc_buf_t payload;
+  gzc_buf_init(&payload);
+  h2_pal_result_t rc = result_from_gzc(
+      gzc_telemetry_encode_kv_frame(&mapped, &platform, &payload));
+  gzc_buf_free(&payload, &platform);
+  if (rc != H2_PAL_OK) return rc;
+  telemetry_kv_request_t* request =
+      kv_malloc(service, sizeof(*request) + strings_size);
+  if (request == NULL) return H2_PAL_ERR_NO_MEMORY;
+  request->allocator = service->client_config.allocator;
+  request->frame = mapped;
+  request->frame.observed_at_unix_ms = frame->observed_at_unix_ms;
+  request->frame.entries = request->entries;
+  char* cursor = request->strings;
+  for (size_t i = 0u; i < frame->entry_count; ++i) {
+    request->entries[i] = entries[i];
+    memcpy(cursor, entries[i].key.data, entries[i].key.len);
+    request->entries[i].key.data = cursor;
+    cursor += entries[i].key.len;
+    if (!entries[i].delete_key) {
+      memcpy(cursor, entries[i].json_value.data, entries[i].json_value.len);
+      request->entries[i].json_value.data = cursor;
+      cursor += entries[i].json_value.len;
+    } else {
+      request->entries[i].json_value = (gzc_str_t){0};
+    }
+  }
+  rc = h2_gizclaw_req_create_send_internal(
+      service, identity, timeout_ms, &telemetry_kv_tag, telemetry_kv_run,
+      telemetry_kv_destroy, request, out_request);
+  if (rc != H2_PAL_OK) telemetry_kv_destroy(request);
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_telemetry_kv_send(
+    const h2_gizclaw_req_t* request) {
+  const void* context = NULL;
+  return h2_gizclaw_req_context_internal(request, &telemetry_kv_tag, &context);
+}
+
+h2_pal_result_t h2_gizclaw_rpc_telemetry_kv_send(
+    h2_gizclaw_service_t* service, const h2_gizclaw_telemetry_kv_frame_t* frame,
+    uint32_t timeout_ms) {
+  h2_gizclaw_req_t* request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_telemetry_kv_send(
+      service, 0u, frame, timeout_ms, &request);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_resp_parse_telemetry_kv_send(request);
   h2_gizclaw_req_release(request);
   return rc;
 }

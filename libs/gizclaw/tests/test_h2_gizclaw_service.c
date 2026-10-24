@@ -6733,6 +6733,201 @@ static void test_req_telemetry_network_identity(void) {
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
 }
 
+typedef struct kv_capture {
+  unsigned calls;
+  int result;
+} kv_capture_t;
+
+static int capture_kv(void* user, const gzc_telemetry_kv_frame_t* frame) {
+  kv_capture_t* capture = user;
+  ++capture->calls;
+  assert(frame->sequence == 17u &&
+         frame->observed_at_unix_ms == INT64_C(1800000000000));
+  assert(frame->entry_count == 6u);
+  static const char* values[] = {"null", "false", "0", "{\"a\":[1,true]}",
+                                 "[]"};
+  for (size_t i = 0u; i < frame->entry_count; ++i) {
+    assert(frame->entries[i].key.len == 5u);
+    assert(!memcmp(frame->entries[i].key.data, "state", 5u));
+    if (i < 5u) {
+      assert(!frame->entries[i].delete_key &&
+             frame->entries[i].json_value.len == strlen(values[i]));
+      assert(!memcmp(frame->entries[i].json_value.data, values[i],
+                     strlen(values[i])));
+    } else {
+      assert(frame->entries[i].delete_key &&
+             frame->entries[i].json_value.len == 0u);
+      assert(frame->entries[i].observed_at_delta_ms == -7);
+    }
+  }
+  gzc_buf_t payload;
+  gzc_buf_init(&payload);
+  assert(gzc_telemetry_encode_kv_frame(frame, &telemetry_platform, &payload) ==
+         GZC_OK);
+  pb_istream_t input = pb_istream_from_buffer(payload.data, payload.len);
+  unsigned observations = 0u;
+  while (input.bytes_left) {
+    pb_wire_type_t wire;
+    uint32_t tag;
+    bool eof;
+    assert(pb_decode_tag(&input, &wire, &tag, &eof));
+    if (tag != 3u) {
+      assert(pb_skip_field(&input, wire));
+      continue;
+    }
+    pb_istream_t observation;
+    assert(wire == PB_WT_STRING &&
+           pb_make_string_substream(&input, &observation));
+    bool kv_seen = false;
+    while (observation.bytes_left) {
+      assert(pb_decode_tag(&observation, &wire, &tag, &eof));
+      if (tag == 17u) kv_seen = true;
+      assert(pb_skip_field(&observation, wire));
+    }
+    assert(kv_seen && pb_close_string_substream(&input, &observation));
+    ++observations;
+  }
+  assert(observations == 6u);
+  gzc_buf_free(&payload, &telemetry_platform);
+  return capture->result;
+}
+
+static void test_req_telemetry_kv(void) {
+  for (unsigned mode = 0u; mode < 4u; ++mode) {
+    test_env_t env;
+    h2_gizclaw_service_t* service = create_profile_service(&env);
+    kv_capture_t capture = {.result =
+                                mode == 1u ? GZC_ERR_WOULD_BLOCK : GZC_OK};
+    h2_gizclaw_test_set_telemetry_kv_send(capture_kv, &capture);
+    char key[] = "state";
+    char values[][20] = {"null", "false", "0", "{\"a\":[1,true]}", "[]"};
+    h2_gizclaw_telemetry_kv_t entries[6] = {0};
+    for (size_t i = 0; i < 6u; ++i) {
+      entries[i].key = (h2_gizclaw_str_t){key, 5u};
+      if (i < 5u)
+        entries[i].json_value =
+            (h2_gizclaw_str_t){values[i], strlen(values[i])};
+      else
+        entries[i].delete_key = true;
+    }
+    entries[5].observed_at_delta_ms = -7;
+    const h2_gizclaw_telemetry_kv_frame_t frame = {
+        .sequence = 17u,
+        .observed_at_unix_ms = INT64_C(1800000000000),
+        .entries = entries,
+        .entry_count = 6u};
+    h2_gizclaw_req_t* request = NULL;
+    assert(h2_gizclaw_req_create_telemetry_kv_send(service, 23u, &frame, 1000u,
+                                                   &request) == H2_PAL_OK);
+    memset(values, 'x', sizeof(values));
+    key[0] = 'x';
+    memset(entries, 0, sizeof(entries));
+    assert(capture.calls == 0u);
+    if (mode == 3u) {
+      h2_gizclaw_req_release(request);
+    } else {
+      assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+      if (mode == 2u) assert(h2_gizclaw_req_cancel(request) == H2_PAL_OK);
+      const int expected = mode == 1u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_OK;
+      if (mode != 2u) {
+        assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+        assert(h2_gizclaw_req_wait(request, 2000u) == expected);
+        assert(h2_gizclaw_req_wait(request, 0u) == expected);
+        assert(h2_gizclaw_resp_parse_telemetry_kv_send(request) == expected);
+        assert(h2_gizclaw_resp_parse_telemetry_send(request) != H2_PAL_OK);
+      }
+      h2_gizclaw_req_release(request);
+    }
+    assert(capture.calls == (mode < 2u ? 1u : 0u));
+    if (mode == 0u) {
+      const h2_gizclaw_telemetry_kv_t synchronous[] = {
+          {.key = {"state", 5u}, .json_value = {"null", 4u}},
+          {.key = {"state", 5u}, .json_value = {"false", 5u}},
+          {.key = {"state", 5u}, .json_value = {"0", 1u}},
+          {.key = {"state", 5u}, .json_value = {"{\"a\":[1,true]}", 14u}},
+          {.key = {"state", 5u}, .json_value = {"[]", 2u}},
+          {.observed_at_delta_ms = -7,
+           .key = {"state", 5u},
+           .delete_key = true}};
+      h2_gizclaw_telemetry_kv_frame_t sync_frame = frame;
+      sync_frame.entries = synchronous;
+      assert(h2_gizclaw_rpc_telemetry_kv_send(service, &sync_frame, 1000u) ==
+             H2_PAL_OK);
+      assert(capture.calls == 2u);
+    }
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    h2_gizclaw_test_set_telemetry_kv_send(NULL, NULL);
+  }
+
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_profile_service(&env);
+  h2_gizclaw_telemetry_kv_t entries[17] = {0};
+  for (size_t i = 0; i < 17u; ++i) {
+    entries[i].key = (h2_gizclaw_str_t){"key", 3u};
+    entries[i].json_value = (h2_gizclaw_str_t){"null", 4u};
+  }
+  h2_gizclaw_telemetry_kv_frame_t frame = {
+      .sequence = 1u, .entries = entries, .entry_count = 16u};
+  h2_gizclaw_req_t* request = NULL;
+  assert(h2_gizclaw_req_create_telemetry_kv_send(service, 0u, &frame, 1000u,
+                                                 &request) == H2_PAL_OK);
+  h2_gizclaw_req_release(request);
+  frame.entry_count = 17u;
+  assert(h2_gizclaw_req_create_telemetry_kv_send(
+             service, 0u, &frame, 1000u, &request) == H2_PAL_ERR_INVALID_ARG &&
+         request == NULL);
+  frame.entry_count = 1u;
+  static const char* bad_json[] = {"", "nul", "{", "false true", "NaN", "[1,]"};
+  for (size_t i = 0; i < sizeof(bad_json) / sizeof(bad_json[0]); ++i) {
+    entries[0].json_value =
+        (h2_gizclaw_str_t){bad_json[i], strlen(bad_json[i])};
+    assert(h2_gizclaw_req_create_telemetry_kv_send(service, 0u, &frame, 1000u,
+                                                   &request) ==
+               H2_PAL_ERR_INVALID_ARG &&
+           request == NULL);
+  }
+  entries[0].json_value = (h2_gizclaw_str_t){"null", 4u};
+  entries[0].delete_key = true;
+  assert(h2_gizclaw_req_create_telemetry_kv_send(
+             service, 0u, &frame, 1000u, &request) == H2_PAL_ERR_INVALID_ARG);
+  entries[0].delete_key = false;
+  char key[65];
+  memset(key, 'a', sizeof(key));
+  entries[0].key = (h2_gizclaw_str_t){key, 64u};
+  assert(h2_gizclaw_req_create_telemetry_kv_send(service, 0u, &frame, 1000u,
+                                                 &request) == H2_PAL_OK);
+  h2_gizclaw_req_release(request);
+  entries[0].key.len = 65u;
+  assert(h2_gizclaw_req_create_telemetry_kv_send(
+             service, 0u, &frame, 1000u, &request) == H2_PAL_ERR_INVALID_ARG);
+  entries[0].key = (h2_gizclaw_str_t){"\xc0\x80", 2u};
+  assert(h2_gizclaw_req_create_telemetry_kv_send(
+             service, 0u, &frame, 1000u, &request) == H2_PAL_ERR_INVALID_ARG);
+  char large[1025];
+  memset(large, 'a', sizeof(large));
+  large[0] = '"';
+  large[1023] = '"';
+  for (size_t i = 0; i < 4u; ++i) {
+    entries[i].key = (h2_gizclaw_str_t){"k", 1u};
+    entries[i].json_value = (h2_gizclaw_str_t){large, 1024u};
+  }
+  frame.entry_count = 3u;
+  assert(h2_gizclaw_req_create_telemetry_kv_send(service, 0u, &frame, 1000u,
+                                                 &request) == H2_PAL_OK);
+  h2_gizclaw_req_release(request);
+  frame.entry_count = 4u;
+  assert(h2_gizclaw_req_create_telemetry_kv_send(
+             service, 0u, &frame, 1000u, &request) == H2_PAL_ERR_INVALID_ARG);
+  frame.entry_count = 1u;
+  entries[0].json_value.len = 1025u;
+  assert(h2_gizclaw_req_create_telemetry_kv_send(
+             service, 0u, &frame, 1000u, &request) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_atomic_load(&env.rpc_start_count) == 0u);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_req_workflow_public_paths(void) {
   static const uint8_t get_params[] = {0x0a, 11,  's', 't', 'o', 'r', 'y',
                                        '.',  'a', 'e', 's', 'o', 'p'};
@@ -15840,6 +16035,7 @@ int main(int argc, char** argv) {
   test_req_telemetry_copy_and_backpressure();
   test_req_telemetry_network_identity();
   test_req_telemetry_activity();
+  test_req_telemetry_kv();
   test_deinit_refusal_names_holders_once();
   test_req_workflow_public_paths();
   test_workflow_tag_selectors();

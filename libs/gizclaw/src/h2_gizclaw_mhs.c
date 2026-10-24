@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define HWD_PAYLOAD_MAX 512u
+#define HWD_PAYLOAD_MAX gizclaw_rpc_v1_NfcHwdWriteResponse_size
 
 static bool id_valid(const char* id) {
   if (id == NULL || id[0] < 'a' || id[0] > 'z') return false;
@@ -27,7 +27,9 @@ static bool id_valid(const char* id) {
 }
 
 static bool writable(gizclaw_rpc_v1_ClientHwd hwd) {
-  return hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY ||
+  return hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM ||
+         hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC ||
+         hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY ||
          hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED ||
          hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER;
 }
@@ -40,7 +42,7 @@ int h2_gizclaw_mhs_validate_internal(const h2_gizclaw_mhs_device_t* devices,
     const h2_gizclaw_mhs_device_t* device = &devices[i];
     if (!id_valid(device->id) || device->read == NULL ||
         device->hwd < gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI ||
-        device->hwd > gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER ||
+        device->hwd > gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC ||
         (device->write != NULL && !writable(device->hwd)))
       return H2_PAL_ERR_INVALID_ARG;
     for (size_t j = 0u; j < i; ++j)
@@ -283,7 +285,7 @@ size_t h2_gizclaw_mhs_builtins_internal(h2_gizclaw_mhs_builtin_t* context,
 typedef struct mhs_request {
   char id[H2_GIZCLAW_MHS_ID_MAX_BYTES + 1u];
   gizclaw_rpc_v1_ClientHwd hwd;
-  uint8_t payload[HWD_PAYLOAD_MAX];
+  uint8_t payload[512u];
   size_t payload_len;
   bool id_seen, hwd_seen, payload_seen;
 } mhs_request_t;
@@ -335,7 +337,7 @@ static bool decode_request(h2_gizclaw_rpc_bytes_t data, bool write,
   }
   return out->id_seen && out->hwd_seen && id_valid(out->id) &&
          out->hwd >= gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI &&
-         out->hwd <= gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER &&
+         out->hwd <= gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC &&
          (!write || out->payload_seen);
 }
 
@@ -357,6 +359,8 @@ static const pb_msgdesc_t* read_fields(gizclaw_rpc_v1_ClientHwd hwd) {
       return gizclaw_rpc_v1_LedHwdReadResponse_fields;
     case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER:
       return gizclaw_rpc_v1_SpeakerHwdReadResponse_fields;
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC:
+      return gizclaw_rpc_v1_NfcHwdReadResponse_fields;
     default:
       return NULL;
   }
@@ -364,6 +368,10 @@ static const pb_msgdesc_t* read_fields(gizclaw_rpc_v1_ClientHwd hwd) {
 
 static const pb_msgdesc_t* write_fields(gizclaw_rpc_v1_ClientHwd hwd) {
   switch (hwd) {
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM:
+      return gizclaw_rpc_v1_ModemHwdWriteRequest_fields;
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC:
+      return gizclaw_rpc_v1_NfcHwdWriteRequest_fields;
     case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY:
       return gizclaw_rpc_v1_DisplayHwdWriteRequest_fields;
     case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED:
@@ -378,6 +386,10 @@ static const pb_msgdesc_t* write_fields(gizclaw_rpc_v1_ClientHwd hwd) {
 static bool write_valid(gizclaw_rpc_v1_ClientHwd hwd,
                         const h2_gizclaw_mhs_write_t* request) {
   switch (hwd) {
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM:
+      return request->modem.has_enabled;
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC:
+      return request->nfc.has_enabled;
     case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY:
       return (request->display.has_brightness_percent ||
               request->display.has_enabled ||
@@ -397,6 +409,48 @@ static bool write_valid(gizclaw_rpc_v1_ClientHwd hwd,
     default:
       return false;
   }
+}
+
+static bool nfc_text_valid(const char* text, size_t capacity) {
+  const char* end = memchr(text, '\0', capacity);
+  if (end == NULL || end == text) return false;
+  const unsigned char* cursor = (const unsigned char*)text;
+  const unsigned char* limit = (const unsigned char*)end;
+  while (cursor < limit) {
+    const unsigned char first = *cursor++;
+    if (first < 0x80u) continue;
+    const unsigned following = first >= 0xf0u ? 3u : first >= 0xe0u ? 2u : 1u;
+    if (first < 0xc2u || first > 0xf4u || (size_t)(limit - cursor) < following)
+      return false;
+    uint32_t code = first & (0x3fu >> following);
+    for (unsigned i = 0u; i < following; ++i) {
+      if ((*cursor & 0xc0u) != 0x80u) return false;
+      code = (code << 6u) | (*cursor++ & 0x3fu);
+    }
+    if ((following == 1u && code < 0x80u) ||
+        (following == 2u && code < 0x800u) ||
+        (following == 3u && code < 0x10000u) || code > 0x10ffffu ||
+        (code >= 0xd800u && code <= 0xdfffu))
+      return false;
+  }
+  return true;
+}
+
+static bool nfc_snapshot_valid(const gizclaw_rpc_v1_NfcReadSnapshot* value) {
+  const bool success = memcmp(value->result, "success", sizeof("success")) == 0;
+  const bool failed = memcmp(value->result, "failed", sizeof("failed")) == 0;
+  return value->read_at_unix_ms > 0 && (success || failed) &&
+         (!success || !value->has_error_code) &&
+         (!value->has_uid || value->uid.size <= sizeof(value->uid.bytes)) &&
+         (!value->has_raw_data ||
+          value->raw_data.size <= sizeof(value->raw_data.bytes)) &&
+         (!value->has_technology ||
+          nfc_text_valid(value->technology, sizeof(value->technology))) &&
+         (!value->has_data_format ||
+          nfc_text_valid(value->data_format, sizeof(value->data_format))) &&
+         (!failed || value->has_error_code) &&
+         (!value->has_error_code ||
+          nfc_text_valid(value->error_code, sizeof(value->error_code)));
 }
 
 static bool read_valid(gizclaw_rpc_v1_ClientHwd hwd,
@@ -420,9 +474,17 @@ static bool read_valid(gizclaw_rpc_v1_ClientHwd hwd,
     case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM:
       return (value->modem.has_sim_present || value->modem.has_registered ||
               value->modem.has_rat || value->modem.has_rssi_dbm ||
-              value->modem.has_signal_level) &&
+              value->modem.has_signal_level || value->modem.has_enabled ||
+              value->modem.has_powered) &&
+             (!value->modem.has_signal_level ||
+              value->modem.signal_level <= 4u) &&
              (!value->modem.has_rat ||
               memchr(value->modem.rat, '\0', sizeof(value->modem.rat)) != NULL);
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC:
+      return (value->nfc.has_enabled || value->nfc.has_card_present ||
+              value->nfc.has_last_read) &&
+             (!value->nfc.has_last_read ||
+              nfc_snapshot_valid(&value->nfc.last_read));
     case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BATTERY:
       return (value->battery.has_percent || value->battery.has_charging ||
               value->battery.has_voltage_mv) &&
@@ -489,6 +551,11 @@ int h2_gizclaw_mhs_request_internal(
     if (rc != H2_PAL_OK) return rc;
   }
   if (!read_valid(decoded.hwd, &applied)) return H2_PAL_ERR_IO;
+  if (write && ((decoded.hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM &&
+                 !applied.modem.has_enabled) ||
+                (decoded.hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC &&
+                 !applied.nfc.has_enabled)))
+    return H2_PAL_ERR_IO;
   const pb_msgdesc_t* fields = read_fields(decoded.hwd);
   size_t inner_size = 0u;
   uint8_t inner[HWD_PAYLOAD_MAX];
@@ -502,6 +569,28 @@ int h2_gizclaw_mhs_request_internal(
     uint8_t nested[HWD_PAYLOAD_MAX];
     size_t nested_size = 0u;
     switch (decoded.hwd) {
+      case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM: {
+        gizclaw_rpc_v1_ModemHwdWriteResponse reply = {.has_applied = true,
+                                                      .applied = applied.modem};
+        reply_fields = gizclaw_rpc_v1_ModemHwdWriteResponse_fields;
+        if (!pb_get_encoded_size(&nested_size, reply_fields, &reply) ||
+            nested_size > sizeof(nested))
+          return H2_PAL_ERR_IO;
+        pb_ostream_t stream = pb_ostream_from_buffer(nested, nested_size);
+        if (!pb_encode(&stream, reply_fields, &reply)) return H2_PAL_ERR_IO;
+        break;
+      }
+      case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_NFC: {
+        gizclaw_rpc_v1_NfcHwdWriteResponse reply = {.has_applied = true,
+                                                    .applied = applied.nfc};
+        reply_fields = gizclaw_rpc_v1_NfcHwdWriteResponse_fields;
+        if (!pb_get_encoded_size(&nested_size, reply_fields, &reply) ||
+            nested_size > sizeof(nested))
+          return H2_PAL_ERR_IO;
+        pb_ostream_t stream = pb_ostream_from_buffer(nested, nested_size);
+        if (!pb_encode(&stream, reply_fields, &reply)) return H2_PAL_ERR_IO;
+        break;
+      }
       case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY: {
         gizclaw_rpc_v1_DisplayHwdWriteResponse reply = {
             .has_applied = true, .applied = applied.display};

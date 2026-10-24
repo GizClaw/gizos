@@ -23,9 +23,12 @@ typedef union h2_gizclaw_mhs_read {
   gizclaw_rpc_v1_DisplayHwdReadResponse display;
   gizclaw_rpc_v1_LedHwdReadResponse led;
   gizclaw_rpc_v1_SpeakerHwdReadResponse speaker;
+  gizclaw_rpc_v1_NfcHwdReadResponse nfc;
 } h2_gizclaw_mhs_read_t;
 
 typedef union h2_gizclaw_mhs_write {
+  gizclaw_rpc_v1_ModemHwdWriteRequest modem;
+  gizclaw_rpc_v1_NfcHwdWriteRequest nfc;
   gizclaw_rpc_v1_DisplayHwdWriteRequest display;
   gizclaw_rpc_v1_LedHwdWriteRequest led;
   gizclaw_rpc_v1_SpeakerHwdWriteRequest speaker;
@@ -37,7 +40,12 @@ typedef union h2_gizclaw_mhs_write {
  * fields, then returns a fresh snapshot of what actually took effect.
  * Callbacks run on the RPC owner and must return promptly. A failed or timed
  * out write may already have changed hardware; callers must re-read.
- * RuntimeProfile manifest ownership is separate from device registration. */
+ * RuntimeProfile manifest ownership is separate from device registration.
+ * Modem enabled is configuration; powered must be a separate actual
+ * observation. Leave unknown fields absent. Modem/NFC writes require enabled
+ * presence and an applied snapshot containing the actual enabled value.
+ * NFC reads return the cached last attempt, including failures and after card
+ * removal; they must not initiate hardware I/O on the RPC owner. */
 typedef struct h2_gizclaw_mhs_device {
   const char* id;
   gizclaw_rpc_v1_ClientHwd hwd;

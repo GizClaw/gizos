@@ -66,9 +66,9 @@ http_archive = use_repo_rule(
 # the same canonical protocol, without copying root-only overrides.
 http_archive(
     name = "gizclaw_c_sdk",
-    integrity = "sha256-4Ss94uUNJNlHatfx7LkWKF+2sUXaVTkTTXcnpA39P+8=",
-    strip_prefix = "gizclaw-c-sdk-0.33.7",
-    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.33.7.tar.gz"],
+    sha256 = "c9aaf31ddde5317bffad98749d39016b27632b2c93b7697300cb42e2f55436a0",
+    strip_prefix = "gizclaw-c-sdk-0.34.0",
+    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.34.0.tar.gz"],
 )
 
 # Canonical object codecs and numeric/name registries from the C SDK release's
@@ -76,10 +76,10 @@ http_archive(
 http_archive(
     name = "h2_gizclaw_protocol",
     build_file = "//third_party:gizclaw_protocol.BUILD.bazel",
-    sha256 = "40cf622fc577d20a607a8977c792e5ec8703050ae4ad9cdfc9373002bcf9e38f",
-    strip_prefix = "gizclaw-666ce64d8b1bb3e127de85e331c6a2c298ba1b65",
+    sha256 = "f61641fe34a15a06ff8bb37139a75b2a0b3dff484cb1ac780baddc5a29d86c19",
+    strip_prefix = "gizclaw-54938382b9877a55204c3bf4bec56baddae125d6",
     type = "tar.gz",
-    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/666ce64d8b1bb3e127de85e331c6a2c298ba1b65"],
+    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/54938382b9877a55204c3bf4bec56baddae125d6"],
 )
 
 # The declaration emitter is a pinned host tool, independent of runtime code.

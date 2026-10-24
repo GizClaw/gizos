@@ -119,7 +119,7 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 
 
 SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的封装与内层回复包装、`client.tool.v0.list`（136）的工具发现，以及 `client.rpc.methods.list`（137）的数字协议列表。GizOS 向 SDK 注册有实际 handler 的 `ClientTool`，不维护另一份方法名称表。MHS read/write（133/134）始终安装；未知设备 ID 返回 `NOT_FOUND`。旧的独立设备方法不再是 RPC registry 的成员，不提供别名或版本探测。
 
-`h2_gizclaw_config_t` 借用 `tool_handlers` 到 Client/Service deinit。每项声明 numeric `h2_gizclaw_tool_t`、同步 invoke callback 与 user。Handler 接收该工具的内层 Protobuf，返回同一工具的内层结果；SDK 负责外层 tool/v0 envelope。空 callback、重复或未知 tool、超过 registry 容量的表使初始化失败。有任一设备能力（PAL、产品 vtable 或设备信息）的 Service 按配置安装内置工具，产品只能再注册 `DEVICE_FIND` 和 `SOCIAL_PING`，不能覆盖 Service 拥有的工具。没有任何设备能力的 headless Service 不安装内置工具，调用方与直接使用 standalone Client 一样可以注册任一有效 ClientTool，例如 E2E fixture actor 自己回答 `INFO_GET` 和 `IDENTIFIERS_GET`。表和 user 必须在整个借用期保持有效，运行中不增删。
+`h2_gizclaw_config_t` 借用 `tool_handlers` 到 Client/Service deinit。每项声明 numeric `h2_gizclaw_tool_t`、同步 invoke callback 与 user。Handler 接收该工具的内层 Protobuf，返回同一工具的内层结果；SDK 负责外层 tool/v0 envelope。空 callback、重复或未知 tool、超过 registry 容量的表使初始化失败。有任一设备能力（PAL、产品 vtable 或设备信息）的 Service 按配置安装内置工具，产品可以再注册 `DEVICE_FIND`、`SOCIAL_PING` 及 `CONTENT_AGE_GET` 到 `MANAGEMENT_PASSWORD_RESET` 的管理工具，不能覆盖 Service 拥有的工具。没有任何设备能力的 headless Service 不安装内置工具，调用方与直接使用 standalone Client 一样可以注册任一有效 ClientTool，例如 E2E fixture actor 自己回答 `INFO_GET` 和 `IDENTIFIERS_GET`。表和 user 必须在整个借用期保持有效，运行中不增删。
 
 | 操作 | Library owner | 配置来源 |
 | --- | --- | --- |
@@ -129,6 +129,7 @@ SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的
 | `firmware.update` | 元数据、下载与 OTA Stage | HTTP 与 ota vtable |
 | `device.reboot/factory_reset`、`run.workspace.set` | 参数校验、回复完成后的交接 | Power 或对应 request hook |
 | `device.find`、`social.ping` | 产品 handler | tool_handlers |
+| `content.age.*`、`device.features.get`、`device.feature.set`、`usage.time.*`、`ai.safety.*`、`management.password.*` | 产品 handler，使用 `payload/management.pb.h` | tool_handlers |
 
 Service 配置的 Wi-Fi 与 Settings 来自同一 Runtime 时，远程 `wifi.connect` 调用 Runtime 配网入口，`saved.list` 读取同一最多 8 条的集合，`saved.forget` 删除指定 SSID 并清理匹配的 PAL 凭据；不会断开当前连接。Runtime admission 忙时返回 BUSY，不与 App/BLE 的集合读写相互覆盖。没有匹配 Runtime 的独立 Client/Service 保留 PAL 单条语义。成功连接/保存仍由 PAL 验证目标 IP；远程连接回复仅表示受理，动作在回复发送完成后执行，PAL 或集合失败证据沿原有日志合同保留。
 
@@ -141,11 +142,15 @@ Workspace RPC 保留 SDK 的 `ErrorInfo.reason` 到 request-owned storage。Work
 
 Wi-Fi provisioning 明确调用 PAL `connect_and_save`；Library 不维护第二份网络配置。音频与本地控制使用同一 Runtime proxy。`speaker_acquire`/`speaker_release` 必须成对提供；播放前 acquire，Track 关闭后在每条退出路径 release，失败、取消和停止也遵守此配对。没有 hook 时播放前 start_speaker，结束不主动 stop_speaker。`sound.play` 以 16 kHz mono PCM16 按 duration_ms 截断，短声音只完整播放一次。
 
+管理工具沿用上述 invoke/list 和本地入口。产品负责年龄选项、稳定 feature ID、当前使用窗口的计时与限额、AI 安全等级和管理密码的持久化与实际执行；只注册已实现的工具。成功回复返回实际 applied 状态；非法参数在修改前拒绝，通过 `out_response.has_error/error_code` 返回规范 RPC 错误。密码不进入日志、trace 或 telemetry。管理密码 reset 只清除密码，不触发恢复出厂。
+
 ### MHS v0 HWD 设备表
 
 GizClaw 0.23.2 的 `client.mhs.v0.read/write`（133/134）以一个设备实例的 `id` 和 `hwd` 为请求入口；write 的 payload 是该 HWD 专属的 protobuf WriteRequest，read 和 write 的 payload 分别是对应的 ReadResponse 与 WriteResponse。字段是否存在由 protobuf `optional` 表达，0 和 false 是有效读数。SDK 发布的 `payload/mhs_v0.pb.h` 是字段形状的唯一来源。
 
 `h2_gizclaw_config_t.mhs_devices` 是借用到 deinit 的 `const h2_gizclaw_mhs_device_t[]`。每项包含唯一实例 ID、官方 ClientHwd、必需的 read、可选的 write 与 user。实例 ID 最多 64 字节，匹配 `^[a-z][a-z0-9]*([.-][a-z0-9]+)*$`；初始化拒绝重复或非法 ID、未知 HWD、只读 HWD 的 write。每次 RPC 只操作一个实例；不存在的实例返回 NOT_FOUND，HWD 不匹配或无效 protobuf 字段返回 INVALID_ARGUMENT，不支持写入的设备返回 UNIMPLEMENTED。产品 callback 运行于 RPC owner，不应在其中停止或销毁 Service。写入不保证事务回滚，超时后需重新读取硬件。
+
+Modem 和 NFC 可以提供 write callback，写入只接受显式 `enabled`（包括 false），回复必须包含实际 `applied.enabled`。Modem 的 enabled 配置和 powered 实测值分开；现有 Runtime modem 快照没有这些事实时，内置只读 `modem.main` 保持字段缺失，产品可通过自定义实例提供配置与硬件状态，不能根据注册、信号或休眠推断 powered。NFC 使用官方 `CLIENT_HWD_NFC` 和 `read.nfc` / `write.nfc`，支持多个独立 ID；read 只取最近一次成功或失败的缓存，拔卡不清除 last_read。UID 最多 32 字节，raw_data 最多 1024 字节，保持原始二进制；失败快照保留 read_at_unix_ms、result 和 error_code。
 
 Library 在 PAL 能力存在时自动安装 `speaker.main`（speaker HWD）和 `wifi.main`（只读 wifi HWD）；配置了 `modem` 时安装只读的 `modem.main`，配置了非零 `battery_component` 时安装只读的 `battery.main`，两者都需要 Service 的 Runtime。modem 从 `h2_runtime_system_state_modem()` 快照投影 sim_present、registered、rat（小写，如 `lte`）、rssi_dbm 与 0–4 档 signal_level（有 LTE RSRP 时按 RSRP 分档，否则按 RSSI），RPC owner 不查询 modem、不等 AT；一个字段都还没上报时回 `UNAVAILABLE`。battery 从该组件的 `h2_runtime_component_state_battery()` 快照投影 percent、charging 与 voltage_mv；电池不在或读数失败时同样不报数值。speaker 的 `volume_percent` 与 `muted` 在同一次 HWD write 中应用，回复包含真正回读的 applied 快照；wifi 按 PAL 状态投影 connected、SSID、BSSID、RSSI 和 IP，其中 RSSI 只在已关联时出现，未连接时省略该字段而不是报 0 dBm。回调尚未发布状态（`H2_PAL_ERR_UNAVAILABLE`）或 client 正在关闭时回 `UNAVAILABLE`，调用方可以稍后重试。产品可以注册其它物理实例，例如 display/led。RuntimeProfile 的 `spec.mhs.v0.devices` **只**声明 `id` 和 `hwd`；字段功能和读写 schema 已在 protobuf 定义，Profile 不再复制 states、range、access 或枚举。设备表与 Profile 的实例清单分别管理，Profile 声明不证明物理设备在线。没有 Runtime、只注入 Audio PAL 时静音就是写入 0，库不保存静音前的音量；这时只要求 `muted=false` 而结果音量仍为 0 的写入返回 `FAILED_PRECONDITION`，调用方需同时给出非零 `volume_percent`，需要逻辑静音恢复的产品必须提供 Runtime。
 
@@ -188,6 +193,10 @@ activity 留下的 detail；空 span 与 `has_detail` 为 false 等价，不写�
 `H2_PAL_ERR_INVALID_ARG` 并且不产生网络请求，同时向 `h2_pal_log` 写一条 WARN，内容只
 有字段名和长度——`detail` 由产品决定内容，库不替它判断可以打印，因此 id 和 detail 都
 不进日志与 trace。两个字符串只在创建请求期间借用，创建时复制进请求自有存储。
+
+KV telemetry 使用 `h2_gizclaw_telemetry_kv_frame_t` 和独立的 `req_create_telemetry_kv_send` / `resp_parse_telemetry_kv_send` / `rpc_telemetry_kv_send`，复用现有 telemetry 通道和请求生命周期。key 为 1–64 UTF-8 字节，值为 1–1024 字节的完整 JSON 编码；每批最多 16 项、4096 个编码后的 wire 字节。`delete_key=true` 要求空值，与上报 JSON `null` 不同；false、0、数组和对象均原样编码。创建请求时通过 pinned SDK 校验并复制条目和字符串，调用方可立即复用输入；超限不截断。sequence 非零，时间为正 Unix 毫秒或 0（发送时校时，创建时为自动时间戳预留最大 wire 长度）。成功只代表 transport acceptance，WOULD_BLOCK 为本次发送终态。
+
+GizClaw Runtime 按 Peer 保存最近 KV 值与观测时间，负责乱序/重放保护、显式删除与持久化，最多 64 key、16384 字节；这些设备上报值经授权 Monitor/API 的 reported_kv 读取，离线时读取最近快照。GizOS 不推断远端存储配额和持久化成功，也不把该通道用于修改服务端在线、归属或授权状态。
 
 `h2_gizclaw_telemetry_system_t.firmware_version` 由服务端投影到 `PeerStatus.firmware_version`，用于上报固件版本号，长度受 `H2_GIZCLAW_TELEMETRY_VERSION_MAX` 约束。
 
@@ -297,7 +306,7 @@ EOS 不产生该错误通知。因此 SDK 升级本身不会增加 quota 的产�
 
 `@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 C SDK 归档版本、完整性校验及对应上游 delta 同步到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
 
-C SDK 自带 Bazel targets、生成代码和精确的 nanopb runtime，GizOS 不注入另一份 BUILD overlay 或 nanopb。`MODULE.bazel` 声明完整性锁定的 0.33.7 发布归档，使独立 Bzlmod consumer 继承与 GizOS 相同的依赖；dependency MODULE 中的 root-only override 不会传播。JS codec/map 锁定到对应上游 commit，类型声明由锁定的官方 TypeScript compiler 生成。具体版本与校验以 `MODULE.bazel` 为准。
+C SDK 自带 Bazel targets、生成代码和精确的 nanopb runtime，GizOS 不注入另一份 BUILD overlay 或 nanopb。`MODULE.bazel` 声明完整性锁定的 0.34.0 发布归档，使独立 Bzlmod consumer 继承与 GizOS 相同的依赖；dependency MODULE 中的 root-only override 不会传播。JS codec/map 锁定到对应上游 commit，类型声明由锁定的官方 TypeScript compiler 生成。具体版本与校验以 `MODULE.bazel` 为准。
 
 Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resource 继续公开为 name；将 occurrence、relationship、history 和 ledger 的 wire name 逐字节映射到既有 public `id` / `*_id`，不做 trim、派生、翻译或 storage-ID 替换。技术性 transport request ID、idempotency key 和 `gear_id` 不属于这层业务 identity 映射：
 

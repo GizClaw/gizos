@@ -34,6 +34,17 @@ typedef enum h2_gizclaw_tool {
   H2_GIZCLAW_TOOL_LUA_APP_INSTALL = 23,
   H2_GIZCLAW_TOOL_LUA_APP_RUN = 24,
   H2_GIZCLAW_TOOL_LUA_APP_UNINSTALL = 27,
+  H2_GIZCLAW_TOOL_CONTENT_AGE_GET = 28,
+  H2_GIZCLAW_TOOL_CONTENT_AGE_SET = 29,
+  H2_GIZCLAW_TOOL_DEVICE_FEATURES_GET = 30,
+  H2_GIZCLAW_TOOL_DEVICE_FEATURE_SET = 31,
+  H2_GIZCLAW_TOOL_USAGE_TIME_GET = 32,
+  H2_GIZCLAW_TOOL_USAGE_TIME_SET = 33,
+  H2_GIZCLAW_TOOL_AI_SAFETY_GET = 34,
+  H2_GIZCLAW_TOOL_AI_SAFETY_SET = 35,
+  H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_GET = 36,
+  H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_SET = 37,
+  H2_GIZCLAW_TOOL_MANAGEMENT_PASSWORD_RESET = 38,
 } h2_gizclaw_tool_t;
 
 /** Invoke one tool on the RPC owner. Payloads are the tool's inner protobuf
@@ -42,7 +53,10 @@ typedef enum h2_gizclaw_tool {
  * changing hardware. Views are borrowed until the response is consumed; never
  * return stack storage. Callbacks must return promptly and cannot stop or
  * destroy the Service. on_complete retains the response-completion contract
- * in h2_gizclaw_rpc.h. */
+ * in h2_gizclaw_rpc.h. Management tools use payload/management.pb.h. The
+ * product owns their choices, persistence and enforcement and must return
+ * applied state only after a successful change. Register only implemented
+ * tools. Passwords must never be logged, traced or copied into telemetry. */
 typedef int (*h2_gizclaw_tool_invoke_fn)(
     void* user, h2_gizclaw_tool_t tool, h2_gizclaw_rpc_bytes_t request_payload,
     h2_gizclaw_rpc_provider_response_t* out_response);

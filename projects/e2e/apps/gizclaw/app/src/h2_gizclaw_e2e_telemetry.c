@@ -26,7 +26,14 @@ int h2_gizclaw_e2e_run_telemetry(h2_gizclaw_e2e_fixture_t* fixture,
                         .software_version = {.data = "e2e-fixture",
                                              .len = 11u}}},
   };
-  for (unsigned api = 0u; api < 2u; ++api) {
+  const h2_gizclaw_telemetry_kv_t kv[] = {
+      {.key = {"e2e.null", 8u}, .json_value = {"null", 4u}},
+      {.key = {"e2e.disabled", 12u}, .json_value = {"false", 5u}},
+      {.key = {"e2e.counter", 11u}, .json_value = {"0", 1u}},
+      {.key = {"e2e.snapshot", 12u}, .json_value = {"{\"items\":[]}", 12u}},
+      {.key = {"e2e.removed", 11u}, .delete_key = true},
+  };
+  for (unsigned api = 0u; api < 4u; ++api) {
     if (!h2_gizclaw_e2e_fixture_has_time(fixture, TELEMETRY_TIMEOUT_MS))
       return H2_PAL_ERR_TIMEOUT;
     uint64_t wall_ms = 0u;
@@ -39,13 +46,26 @@ int h2_gizclaw_e2e_run_telemetry(h2_gizclaw_e2e_fixture_t* fixture,
         .observations = observations,
         .observation_count = sizeof(observations) / sizeof(observations[0]),
     };
-    const char* symbol = api == 0u ? "h2_gizclaw_resp_parse_telemetry_send"
-                                   : "h2_gizclaw_rpc_telemetry_send";
-    if (api == 0u) {
+    const h2_gizclaw_telemetry_kv_frame_t kv_frame = {
+        .sequence = api + 1u,
+        .observed_at_unix_ms = (int64_t)wall_ms,
+        .entries = kv,
+        .entry_count = sizeof(kv) / sizeof(kv[0])};
+    const bool is_kv = api >= 2u;
+    const char* symbol = api == 0u   ? "h2_gizclaw_resp_parse_telemetry_send"
+                         : api == 1u ? "h2_gizclaw_rpc_telemetry_send"
+                         : api == 2u ? "h2_gizclaw_resp_parse_telemetry_kv_send"
+                                     : "h2_gizclaw_rpc_telemetry_kv_send";
+    if (api % 2u == 0u) {
       h2_gizclaw_req_t* request = NULL;
-      rc = checked("h2_gizclaw_req_create_telemetry_send", "telemetry-req",
-                   h2_gizclaw_req_create_telemetry_send(
-                       service, 10u, &frame, TELEMETRY_TIMEOUT_MS, &request));
+      rc = checked(
+          is_kv ? "h2_gizclaw_req_create_telemetry_kv_send"
+                : "h2_gizclaw_req_create_telemetry_send",
+          "telemetry-req",
+          is_kv ? h2_gizclaw_req_create_telemetry_kv_send(
+                      service, 10u, &kv_frame, TELEMETRY_TIMEOUT_MS, &request)
+                : h2_gizclaw_req_create_telemetry_send(
+                      service, 10u, &frame, TELEMETRY_TIMEOUT_MS, &request));
       if (rc == H2_PAL_OK)
         rc = checked("h2_gizclaw_req_do", "telemetry-req",
                      h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL));
@@ -54,7 +74,8 @@ int h2_gizclaw_e2e_run_telemetry(h2_gizclaw_e2e_fixture_t* fixture,
                      h2_gizclaw_req_wait(request, TELEMETRY_TIMEOUT_MS));
       if (rc == H2_PAL_OK)
         rc = checked(symbol, "telemetry-req",
-                     h2_gizclaw_resp_parse_telemetry_send(request));
+                     is_kv ? h2_gizclaw_resp_parse_telemetry_kv_send(request)
+                           : h2_gizclaw_resp_parse_telemetry_send(request));
       if (request != NULL) {
         if (rc != H2_PAL_OK)
           (void)checked("h2_gizclaw_req_cancel", "telemetry-cleanup",
@@ -69,8 +90,10 @@ int h2_gizclaw_e2e_run_telemetry(h2_gizclaw_e2e_fixture_t* fixture,
        * result depend on transient DataChannel occupancy. */
       do {
         rc = checked(symbol, "telemetry-rpc",
-                     h2_gizclaw_rpc_telemetry_send(service, &frame,
-                                                   TELEMETRY_TIMEOUT_MS));
+                     is_kv ? h2_gizclaw_rpc_telemetry_kv_send(
+                                 service, &kv_frame, TELEMETRY_TIMEOUT_MS)
+                           : h2_gizclaw_rpc_telemetry_send(
+                                 service, &frame, TELEMETRY_TIMEOUT_MS));
         if (rc != H2_PAL_ERR_WOULD_BLOCK) break;
         if (!h2_gizclaw_e2e_fixture_has_time(fixture, TELEMETRY_TIMEOUT_MS)) {
           rc = H2_PAL_ERR_TIMEOUT;
@@ -82,7 +105,8 @@ int h2_gizclaw_e2e_run_telemetry(h2_gizclaw_e2e_fixture_t* fixture,
     // The API's entire success contract is transport acceptance. There is no
     // remote reply to inspect; this must NOT be read as a persistence
     // assertion.
-    checked(symbol, "telemetry_send-assert", rc);
+    checked(symbol,
+            is_kv ? "telemetry_kv_send-assert" : "telemetry_send-assert", rc);
     if (rc != H2_PAL_OK) return rc;
   }
   return H2_PAL_OK;

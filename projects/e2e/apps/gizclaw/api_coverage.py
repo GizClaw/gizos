@@ -59,7 +59,7 @@ def requirements():
             "friend_group_invite_token_create friend_group_invite_token_clear "
             "friend_group_member_list friend_group_member_add friend_group_member_put "
             "friend_group_member_delete friend_group_ping"),
-        "rpc/telemetry": "telemetry_send",
+        "rpc/telemetry": "telemetry_send telemetry_kv_send",
         "rpc/api-key": "api_key_create api_key_revoke",
         "rpc/speech": "speech_transcribe speech_extract",
     }
