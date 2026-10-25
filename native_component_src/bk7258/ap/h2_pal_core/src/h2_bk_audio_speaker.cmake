@@ -44,6 +44,10 @@ set(original [=[    /* fill two frame silence data */
     ret = bk_dma_start(onboard_spk->dac_dma_id);]=])
 set(replacement [=[    /* The initial worker is parked; resume follows the pause ACK.
      * Rebuild a complete DMA bootstrap while no producer owns the ring. */
+    ret = bk_dma_stop(onboard_spk->dac_dma_id);
+    if (ret != BK_OK) return ret;
+    ret = bk_aud_dac_stop();
+    if (ret != BK_OK) return ret;
     ret = bk_dma_set_src_start_addr(onboard_spk->dac_dma_id, (uint32_t)onboard_spk->dma_rb.address);
     if (ret != BK_OK) return ret;
     ret = bk_dma_set_transfer_len(onboard_spk->dac_dma_id, onboard_spk->frame_size);
@@ -54,8 +58,6 @@ set(replacement [=[    /* The initial worker is parked; resume follows the pause
         ring_buffer_write(&onboard_spk->dma_rb, onboard_spk->read_buff, onboard_spk->frame_size) != onboard_spk->frame_size)
         return BK_FAIL;
 
-    ret = spk_data_read_send_msg(onboard_spk->spk_data_read_msg_que, SPK_DATA_READ_START, NULL);
-    if (ret != BK_OK) return ret;
     ret = bk_dma_start(onboard_spk->dac_dma_id);]=])
 h2_bk_speaker_replace("${original}" "${replacement}")
 
@@ -68,6 +70,32 @@ set(replacement [=[        LOGE("%s, %d, dac dma stop fail\n", __func__, __LINE_
     }
 
     ret = bk_aud_dac_start();]=])
+h2_bk_speaker_replace("${original}" "${replacement}")
+
+set(original [=[    ret = bk_aud_dac_start();
+    if (ret != BK_OK)
+    {
+        LOGE("%s, %d, dac stop fail\n", __func__, __LINE__);
+    }
+
+    return ret;]=])
+set(replacement [=[    ret = bk_aud_dac_start();
+    if (ret != BK_OK)
+    {
+        const bk_err_t stopped = bk_dma_stop(onboard_spk->dac_dma_id);
+        if (stopped != BK_OK) LOGE("speaker DMA start rollback failed: %d\n", stopped);
+        return ret;
+    }
+    /* START is the final commit; failures cannot unpark the ring writer. */
+    ret = spk_data_read_send_msg(onboard_spk->spk_data_read_msg_que, SPK_DATA_READ_START, NULL);
+    if (ret != BK_OK)
+    {
+        const bk_err_t stopped = bk_dma_stop(onboard_spk->dac_dma_id);
+        const bk_err_t dac_stopped = bk_aud_dac_stop();
+        if (stopped != BK_OK || dac_stopped != BK_OK)
+            LOGE("speaker START rollback failed: %d/%d\n", stopped, dac_stopped);
+    }
+    return ret;]=])
 h2_bk_speaker_replace("${original}" "${replacement}")
 
 set(original [=[    bk_err_t ret = bk_dma_stop(onboard_spk->dac_dma_id);

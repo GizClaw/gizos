@@ -23,7 +23,9 @@ static onboard_speaker_play_priv_t* active;
 static uint32_t cursor, pause_address;
 static bool dma_enabled, dac_enabled, writer_active, idle_pending;
 static unsigned sem_count, unsafe_writes, primed;
-static int fail_idle, fail_start, fail_ack, fail_dma, fail_source;
+static int fail_idle, fail_start, fail_ack, fail_dma, fail_source, fail_dac,
+    fail_length;
+static unsigned dma_stops, dac_stops, fail_dma_stop, fail_dac_stop;
 static void deliver_idle(void);
 
 static uint32_t address(const void* p) { return (uint32_t)(uintptr_t)p; }
@@ -57,7 +59,7 @@ bk_err_t bk_dma_set_src_start_addr(dma_id_t id, uint32_t value) {
 bk_err_t bk_dma_set_transfer_len(dma_id_t id, uint32_t bytes) {
   (void)id;
   assert(bytes == active->frame_size);
-  return BK_OK;
+  return fail_length ? BK_FAIL : BK_OK;
 }
 static bk_err_t bk_dma_start(dma_id_t id) {
   (void)id;
@@ -67,14 +69,17 @@ static bk_err_t bk_dma_start(dma_id_t id) {
 }
 static bk_err_t bk_dma_stop(dma_id_t id) {
   (void)id;
+  if (++dma_stops == fail_dma_stop) return BK_FAIL;
   dma_enabled = false; /* Disable retains a paused cursor until reprogrammed. */
   return BK_OK;
 }
 static bk_err_t bk_aud_dac_start(void) {
+  if (fail_dac) return BK_FAIL;
   dac_enabled = true;
   return BK_OK;
 }
 static bk_err_t bk_aud_dac_stop(void) {
+  if (++dac_stops == fail_dac_stop) return BK_FAIL;
   dac_enabled = false;
   return BK_OK;
 }
@@ -157,7 +162,9 @@ static void reset(onboard_speaker_play_priv_t* p, uint8_t* buffer,
   dma_enabled = dac_enabled = writer_active = true;
   idle_pending = false;
   sem_count = unsafe_writes = primed = 0;
-  fail_idle = fail_start = fail_ack = fail_dma = fail_source = 0;
+  fail_idle = fail_start = fail_ack = fail_dma = fail_source = fail_dac =
+      fail_length = 0;
+  dma_stops = dac_stops = fail_dma_stop = fail_dac_stop = 0;
 }
 int main(int argc, char** argv) {
   assert(argc == 2);
@@ -195,16 +202,40 @@ int main(int argc, char** argv) {
     fail_ack = 1;
     assert(onboard_speaker_play_control(&api, AUDIO_PLAY_PAUSE) == BK_FAIL);
     assert(player.state == AUDIO_PLAY_STA_RUNNING && dma_enabled);
-    for (unsigned failure = 0; failure < 4; ++failure) {
+    for (unsigned failure = 0; failure < 8; ++failure) {
       reset(&player, buffer, scratch, 0);
       assert(onboard_speaker_play_control(&api, AUDIO_PLAY_PAUSE) == BK_OK);
       if (failure == 0) fail_source = 1;
       if (failure == 1) fail_start = 1;
       if (failure == 2) fail_dma = 1;
       if (failure == 3) player.dma_rb.capacity = 40u;
+      if (failure == 4) fail_dac = 1;
+      if (failure == 5) fail_length = 1;
+      if (failure == 6) fail_dma_stop = dma_stops + 1u;
+      if (failure == 7) fail_dac_stop = dac_stops + 1u;
       assert(onboard_speaker_play_control(&api, AUDIO_PLAY_RESUME) == BK_FAIL);
       assert(player.state == AUDIO_PLAY_STA_PAUSED && !dma_enabled &&
-             !dac_enabled);
+             !dac_enabled && !writer_active);
+      fail_source = fail_start = fail_dma = fail_dac = fail_length = 0;
+      fail_dma_stop = fail_dac_stop = 0;
+      player.dma_rb.capacity = 72u;
+      assert(onboard_speaker_play_control(&api, AUDIO_PLAY_RESUME) == BK_OK);
+      assert(player.state == AUDIO_PLAY_STA_RUNNING && !unsafe_writes &&
+             writer_active);
+    }
+    for (unsigned failure = 0; failure < 2; ++failure) {
+      reset(&player, buffer, scratch, 0);
+      assert(onboard_speaker_play_control(&api, AUDIO_PLAY_PAUSE) == BK_OK);
+      fail_start = 1;
+      if (failure == 0) fail_dma_stop = dma_stops + 2u;
+      if (failure == 1) fail_dac_stop = dac_stops + 2u;
+      assert(onboard_speaker_play_control(&api, AUDIO_PLAY_RESUME) == BK_FAIL);
+      assert(player.state == AUDIO_PLAY_STA_PAUSED && !writer_active);
+      assert(failure == 0 ? dma_enabled : dac_enabled);
+      fail_start = fail_dma_stop = fail_dac_stop = 0;
+      assert(onboard_speaker_play_control(&api, AUDIO_PLAY_RESUME) == BK_OK);
+      assert(player.state == AUDIO_PLAY_STA_RUNNING && writer_active &&
+             !unsafe_writes && dma_enabled && dac_enabled);
     }
   }
   puts("PASS paused offsets, in-flight writer handoff and error propagation");
