@@ -126,6 +126,34 @@ extern "C" int h2_bk_trace_test_output(const char* format, ...) {
   return fail_output ? -1 : length;
 }
 
+struct Writer {
+  std::vector<std::string> records;
+  unsigned calls = 0u;
+  unsigned fail_at = 0u;
+  bool short_write = false;
+};
+
+static h2_pal_result_t write_record(void* user, const char* record,
+                                    size_t length, size_t* written) {
+  assert(lock_depth == 0u && ipsr == 0u && primask == 0u && basepri == 0u);
+  if (force_mutation)
+    while (!mutation_done.load()) std::this_thread::yield();
+  auto* writer = static_cast<Writer*>(user);
+  ++writer->calls;
+  *written = 0u;
+  assert(length >= 2u && record[length - 2u] == '\r' &&
+         record[length - 1u] == '\n');
+  assert(std::memchr(record, '\0', length) == nullptr);
+  if (writer->calls == writer->fail_at) {
+    if (!writer->short_write) return H2_PAL_ERR_TIMEOUT;
+    *written = length - 1u;
+    return H2_PAL_OK;
+  }
+  writer->records.emplace_back(record, length);
+  *written = length;
+  return H2_PAL_OK;
+}
+
 static void reset_lists(void) {
   List_t* lists[] = {&pxReadyTasksLists[0], &pxReadyTasksLists[1],
                      &xDelayedTaskList1,    &xDelayedTaskList2,
@@ -166,7 +194,7 @@ static void append(List_t* list, ListItem_t* item, TCB_t* owner) {
   tail->pxNext = item;
   ++list->uxNumberOfItems;
 }
-static void concurrent_delete(void) {
+static void concurrent_delete(bool owned_writer = false) {
   reset();
   auto* first = task("trace/first");
   auto* second = task("trace/second");
@@ -183,7 +211,15 @@ static void concurrent_delete(void) {
     delete second;
     mutation_done = true;
   });
-  assert(h2_bk_task_trace_dump() == H2_PAL_OK);
+  if (owned_writer) {
+    Writer writer;
+    assert(h2_bk_task_trace_dump_with_writer(write_record, &writer) ==
+           H2_PAL_OK);
+    assert(output.empty());
+    for (const auto& record : writer.records) output += record;
+  } else {
+    assert(h2_bk_task_trace_dump() == H2_PAL_OK);
+  }
   mutator.join();
   assert(output.find("rows=2 omitted=0 truncated=0 invalid=0") !=
          std::string::npos);
@@ -191,6 +227,49 @@ static void concurrent_delete(void) {
   assert(output.find("trace/second") != std::string::npos);
   assert(output.find("2345678 2456788") != std::string::npos);
   assert(allocations == 1 && frees == 1);
+}
+
+static void writer_errors_and_complete_rows(void) {
+  reset();
+  assert(h2_bk_task_trace_dump_with_writer(nullptr, nullptr) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(allocations == 0u);
+  for (unsigned* flag : {&ipsr, &primask, &basepri}) {
+    *flag = 1u;
+    Writer writer;
+    assert(h2_bk_task_trace_dump_with_writer(write_record, &writer) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(writer.calls == 0u && allocations == 0u);
+    *flag = 0u;
+  }
+  for (bool short_write : {false, true}) {
+    reset();
+    Writer writer;
+    writer.fail_at = 2u;
+    writer.short_write = short_write;
+    assert(h2_bk_task_trace_dump_with_writer(write_record, &writer) ==
+           (short_write ? H2_PAL_ERR_IO : H2_PAL_ERR_TIMEOUT));
+    assert(writer.calls == 2u && writer.records.size() == 1u);
+    assert(allocations == 1u && frees == 1u && output.empty());
+  }
+  reset();
+  auto* value = task("complete-row");
+  std::vector<uint32_t> words(H2_BK_TASK_TRACE_FRAMES);
+  for (size_t i = 0u; i < words.size(); ++i)
+    words[i] = 0x02340001u + static_cast<uint32_t>(i) * 4u;
+  value->pxStack = value->pxTopOfStack = words.data();
+  value->ulStackSize = static_cast<uint32_t>(words.size() * sizeof(uint32_t));
+  append(&pxReadyTasksLists[0], &value->state, value);
+  Writer writer;
+  assert(h2_bk_task_trace_dump_with_writer(write_record, &writer) == H2_PAL_OK);
+  assert(writer.records.size() == 3u && output.empty());
+  const auto& row = writer.records.back();
+  assert(row.size() > 140u && row.find("complete-row") != std::string::npos);
+  assert(row.find("234007c ") != std::string::npos);
+  assert(row.find('\n') == row.size() - 1u);
+  assert(allocations == 1u && frees == 1u);
+  reset_lists();
+  delete value;
 }
 static void bounds_and_context(void) {
   reset();
@@ -277,7 +356,11 @@ static void name_bounds(void) {
 #endif
 }
 int main(void) {
-  for (unsigned i = 0; i < 100; ++i) concurrent_delete();
+  for (unsigned i = 0; i < 100; ++i) {
+    concurrent_delete();
+    concurrent_delete(true);
+  }
+  writer_errors_and_complete_rows();
   bounds_and_context();
   name_bounds();
 }
