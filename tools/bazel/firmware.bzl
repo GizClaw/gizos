@@ -79,7 +79,11 @@ def _firmware_version_impl(ctx):
         for character in ctx.attr.variant.elems():
             if character not in _SEMVER_IDENTIFIER_CHARACTERS:
                 fail("firmware version variant must contain only ASCII letters, digits, and hyphens")
-        value = "%s-%s%d" % (app_version, ctx.attr.variant, ctx.attr.board_version[BoardVersionInfo].build)
+
+        # Separate the variant from the numeric build so standard SemVer
+        # compares build counters numerically across digit boundaries.
+        suffix = "%s.%d" % (ctx.attr.variant, ctx.attr.board_version[BoardVersionInfo].build) if ctx.attr.variant else str(ctx.attr.board_version[BoardVersionInfo].build)
+        value = "%s-%s" % (app_version, suffix)
     else:
         if ctx.attr.variant:
             fail("firmware version variant requires app_version and board_version")
@@ -107,13 +111,13 @@ firmware_version = rule(
         ),
         "variant": attr.string(
             default = "",
-            doc = "Optional suffix prefix such as dev, e2e, or prod; defaults to empty before the board build.",
+            doc = "Optional prerelease variant such as dev, e2e, or prod; followed by a dot and the numeric board build when non-empty.",
         ),
         "value": attr.string(
             doc = "Legacy complete version; cannot be combined with the composition attributes.",
         ),
     },
-    doc = "Composes {app-version}-{variant}{board-build} for one firmware target.",
+    doc = "Composes {app-version}-{variant}.{board-build}, omitting the variant and dot when empty.",
 )
 
 firmware_version_flag = rule(

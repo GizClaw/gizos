@@ -101,7 +101,7 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_zlib_tar` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
 
-发布集合由 `projects/h2loader/targets/h2loader_zlib_tar/loader/<board>/BUILD.bazel` 的 `firmware-release` 声明决定；catalog 必须覆盖这些声明，不能悄悄漏掉不兼容配置。Loader 的基础版本在 App 目录通过 `app_version` 人工维护；各 board 目录通过独立的 `board_version` 人工维护整数 `build`。版本声明不聚合源码，BSP 和文件集合继续使用原有构建入口。各 canonical Loader 固件 target 用 `firmware_version` 引用 App 与 board 的版本 label，并按需配置可选的 `variant`，组合 `{app-version}-{variant}{board-build}`。修改版本时只改对应 owner 的声明。
+发布集合由 `projects/h2loader/targets/h2loader_zlib_tar/loader/<board>/BUILD.bazel` 的 `firmware-release` 声明决定；catalog 必须覆盖这些声明，不能悄悄漏掉不兼容配置。Loader 的基础版本在 App 目录通过 `app_version` 人工维护；各 board 目录通过独立的 `board_version` 人工维护整数 `build`。版本声明不聚合源码，BSP 和文件集合继续使用原有构建入口。各 canonical Loader 固件 target 用 `firmware_version` 引用 App 与 board 的版本 label，并按需配置可选的 `variant`。调用方只填写 variant 名称；规则用点分隔非空 variant 与数字 board build，供标准 SemVer 按数值比较 build。空 variant 继续只使用数字 build。修改版本时只改对应 owner 的声明。
 
 Native firmware 通过 `version = ":version"` 消费组合后的版本，package 自动继承，catalog、native metadata 和 package manifest 必须一致。最终版本组合规则以 `tools/bazel/firmware.bzl` 为准。Release 不注入全局 `//tools/bazel:firmware_version`；该 compatibility flag 仍供没有独立版本的诊断 target 使用。E2E 备用镜像的显式版本属于测试 fixture，单独维护以构造不同镜像 identity，允许同一发布批次包含不同固件版本。
 

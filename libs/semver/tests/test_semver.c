@@ -105,6 +105,10 @@ int main(void) {
   check_order("1.9.0", "1.10.0", -1);
   check_order("9.99.99", "10.0.0", -1);
   check_order("1.0.9", "1.0.10", -1);
+  check_order("1.0.0-dev.9", "1.0.0-dev.10", -1);
+  check_order("1.0.0-e2e.9", "1.0.0-e2e.10", -1);
+  check_order("1.0.0-prod.9", "1.0.0-prod.10", -1);
+  check_order("1.0.0-prod-10", "1.0.0-prod-9", -1);
   check_order("1.0.0-A", "1.0.0-a", -1);
   check_order("1.0.0-a", "1.0.0-aa", -1);
   check_order("1.0.0-9", "1.0.0--", -1);

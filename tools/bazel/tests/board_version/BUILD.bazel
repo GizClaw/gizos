@@ -78,12 +78,12 @@ BASE = {
         (
             "atomic",
             {"variant": "atomic-"},
-            "1.2.3-atomic-541",
+            "1.2.3-atomic-.541",
         ),
         (
             "e2e",
             {"variant": "e2e"},
-            "1.2.3-e2e541",
+            "1.2.3-e2e.541",
         ),
         (
             "aliased_app",
@@ -91,7 +91,7 @@ BASE = {
                 "app_version": ":app_alias",
                 "variant": "e2e",
             },
-            "1.2.3-e2e541",
+            "1.2.3-e2e.541",
         ),
         (
             "next_app_same_board",
@@ -99,7 +99,7 @@ BASE = {
                 "app_version": ":next_app",
                 "variant": "e2e",
             },
-            "1.2.4-e2e541",
+            "1.2.4-e2e.541",
         ),
         (
             "next_build_same_app",
@@ -107,12 +107,17 @@ BASE = {
                 "board_version": ":next_board",
                 "variant": "e2e",
             },
-            "1.2.3-e2e542",
+            "1.2.3-e2e.542",
+        ),
+        (
+            "dev",
+            {"variant": "dev"},
+            "1.2.3-dev.541",
         ),
         (
             "prod",
             {"variant": "prod"},
-            "1.2.3-prod541",
+            "1.2.3-prod.541",
         ),
         (
             "empty_variant",
@@ -122,12 +127,12 @@ BASE = {
         (
             "zero_board_build",
             {"board_version": ":zero_board"},
-            "1.2.3-e2e0",
+            "1.2.3-e2e.0",
         ),
         (
             "maximum_length",
-            {"variant": "abcdefghijklmnopqrstuv"},
-            "1.2.3-abcdefghijklmnopqrstuv541",
+            {"variant": "abcdefghijklmnopqrstu"},
+            "1.2.3-abcdefghijklmnopqrstu.541",
         ),
     ]
 ]
@@ -194,6 +199,11 @@ board_failure_case(
             "variant must contain only ASCII letters, digits, and hyphens",
         ),
         (
+            "dotted_variant",
+            BASE | {"variant": "prod."},
+            "variant must contain only ASCII letters, digits, and hyphens",
+        ),
+        (
             "metadata_variant",
             BASE | {"variant": "dev+"},
             "variant must contain only ASCII letters, digits, and hyphens",
@@ -205,7 +215,7 @@ board_failure_case(
         ),
         (
             "too_long",
-            BASE | {"variant": "abcdefghijklmnopqrstuvw"},
+            BASE | {"variant": "abcdefghijklmnopqrstuv"},
             "must contain 1..31 ASCII characters",
         ),
         (
