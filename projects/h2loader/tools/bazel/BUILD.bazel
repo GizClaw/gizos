@@ -1,4 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/bazel:app_version.bzl", "app_version")
+load("//tools/bazel:firmware.bzl", "firmware_version")
 load(":h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load(":h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 load(":tests/package_rules.bzl", "package_rules_firmware")
@@ -104,9 +106,22 @@ _HOST_PACKAGE_TEST = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
+app_version(
+    name = "package_rules_app_version",
+    value = "1.0.0",
+)
+
+firmware_version(
+    name = "package_rules_version",
+    app_version = ":package_rules_app_version",
+    board_version = "//projects/h2loader/tools/bazel/tests/fixtures/boards/fixture:version",
+    variant = "e2e",
+)
+
 package_rules_firmware(
     name = "package_rules_native",
     target_compatible_with = _HOST_PACKAGE_TEST,
+    version = ":package_rules_version",
 )
 
 h2loader_tar_zlib(

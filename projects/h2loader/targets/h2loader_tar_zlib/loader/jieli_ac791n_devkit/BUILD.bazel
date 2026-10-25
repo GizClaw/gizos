@@ -1,10 +1,17 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware.bzl", "firmware_version")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
+
+firmware_version(
+    name = "version",
+    app_version = "//projects/h2loader/apps/loader:version",
+    board_version = "//boards/jieli_ac791n_devkit:version",
+)
 
 AC791N_COMPATIBILITY = select({
     "//tools/bazel/platforms:ci_graph": [],
@@ -207,6 +214,7 @@ h2loader_jieli_firmware(
     image = "loader",
     target = "wl82",
     task_policy = ":loader_task_policy",
+    version = ":version",
 )
 
 h2loader_jieli_firmware(

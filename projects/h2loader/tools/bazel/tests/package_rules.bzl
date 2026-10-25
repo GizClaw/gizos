@@ -1,6 +1,7 @@
 """Host-only native input fixture for real package-rule action tests."""
 
 load("//tools/bazel:esp_idf.bzl", "FirmwareInfo")
+load("//tools/bazel:firmware.bzl", "FirmwareVersionInfo")
 
 def _impl(ctx):
     image = ctx.actions.declare_file(ctx.label.name + "/app.bin")
@@ -15,7 +16,10 @@ def _impl(ctx):
         flash_files = image,
         flash_metadata = image,
         target = "esp32s3",
-        version = "1.0.0",
+        version = ctx.attr.version[FirmwareVersionInfo].value,
     )]
 
-package_rules_firmware = rule(implementation = _impl)
+package_rules_firmware = rule(
+    implementation = _impl,
+    attrs = {"version": attr.label(mandatory = True, providers = [FirmwareVersionInfo])},
+)

@@ -65,6 +65,7 @@
 │
 ├── boards/                               # 物理 board BSP
 │   └── <board>/
+│       ├── BUILD.bazel                    # 独立 board_version 声明和既有 board 入口
 │       └── <chip-or-target>/
 │           ├── include/                  # BSP public API
 │           ├── src/                      # BSP private implementation
@@ -219,6 +220,8 @@ Linux userspace 通用 PAL backend 归 `libs/pal/providers/linux/`；Darwin host
 iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/pal/providers/ios/`、`libs/pal/providers/android/` 和 `libs/pal/providers/web/`。它们提供 reusable platform capability，不选择 App、不组装完整 Runtime，也不能依赖具体 project 的 App、adapter 或 artifact entry 类型。
 
 ## `boards`
+
+`boards/<board>/BUILD.bazel` 通过独立的 `board_version(name, build)` 人工维护这块板的整数构建号。版本声明不依赖 App、源码或 BSP，也不拥有固件 variant；原有 filegroup 和 `<chip-or-target>/` 下的 BSP/component target 继续管理文件与构建。App 基础版本归 App 目录；最终固件 target 引用 App 与 board 的版本声明，并配置自己的 `variant`。版本组合用法见 [Bazel 构建与 CI 依赖图](/zh/developing/bazel)。
 
 `boards/<board>/<chip-or-target>/` 保存物理 board BSP：
 

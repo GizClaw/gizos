@@ -84,6 +84,7 @@ exports_files([
 
 exports_files([
     "app_version.bzl",
+    "board_version.bzl",
     "bk7258.bzl",
     "bk3633.bzl",
     "bk7258_requirements.txt",

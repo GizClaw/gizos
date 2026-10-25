@@ -1,3 +1,5 @@
+load("//tools/bazel:board_version.bzl", "board_version")
+
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
@@ -14,4 +16,9 @@ filegroup(
         "//tools/bazel/platforms:is_esp32s3": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+)
+
+board_version(
+    name = "version",
+    build = 1,
 )

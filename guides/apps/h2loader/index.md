@@ -101,15 +101,9 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_zlib_tar` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
 
-发布集合已确定为以下三块板，每个现有平台 slice 各一块；表中列出当前声明的版本。只有这些 target 标记 `firmware-release`；catalog 必须覆盖全部三项，不能悄悄漏掉不兼容配置。
+发布集合由 `projects/h2loader/targets/h2loader_zlib_tar/loader/<board>/BUILD.bazel` 的 `firmware-release` 声明决定；catalog 必须覆盖这些声明，不能悄悄漏掉不兼容配置。Loader 的基础版本在 App 目录通过 `app_version` 人工维护；各 board 目录通过独立的 `board_version` 人工维护整数 `build`。版本声明不聚合源码，BSP 和文件集合继续使用原有构建入口。各 canonical Loader 固件 target 用 `firmware_version` 引用 App 与 board 的版本 label，并按需配置可选的 `variant`，组合 `{app-version}-{variant}{board-build}`。修改版本时只改对应 owner 的声明。
 
-| `//projects/h2loader/targets/h2loader_zlib_tar/loader/<board>:package` 的 board | Slice | 固件版本 |
-| --- | --- | --- |
-| `bk7258_v3_202405` | `bk7258` | `0.1.0` |
-| `devkit` | `esp32s3` | `0.2.3-atomic-541` |
-| `waveshare_esp32p4_wifi6_touch_lcd_4_3` | `esp32p4` | `0.1.0` |
-
-版本字符串集中由 `projects/h2loader/apps/loader/BUILD.bazel` 使用通用 `app_version` 声明：`:version` 为 `0.1.0`，由 BK7258 与 ESP32-P4 共用；`:version_devkit_atomic` 保留已有的 `0.2.3-atomic-541`。三个 board BUILD 的 `:version` 均为指向 App 声明的 `alias`；native firmware 仍通过 `version = ":version"` 取得兼容的 `AppVersionInfo`，package 自动继承。后续版本升级在 App package 修改，不再在各 board BUILD 重复维护。Release 不注入全局 `//tools/bazel:firmware_version`；该 compatibility flag 仍供没有独立版本的诊断 target 使用。E2E 备用镜像的显式版本属于测试 fixture，单独维护以构造不同镜像 identity。每项固件版本必须是 31 字节以内的 ASCII SemVer，catalog、native metadata 和 package manifest 必须一致，允许同一批次包含不同固件版本。
+Native firmware 通过 `version = ":version"` 消费组合后的版本，package 自动继承，catalog、native metadata 和 package manifest 必须一致。最终版本组合规则以 `tools/bazel/firmware.bzl` 为准。Release 不注入全局 `//tools/bazel:firmware_version`；该 compatibility flag 仍供没有独立版本的诊断 target 使用。E2E 备用镜像的显式版本属于测试 fixture，单独维护以构造不同镜像 identity，允许同一发布批次包含不同固件版本。
 
 GitHub Release 包含以下资产：
 

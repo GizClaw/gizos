@@ -1,4 +1,13 @@
-"""Shared declarative and compatibility firmware version targets."""
+"""Firmware versions composed from an App, a target variant, and a board."""
+
+load(":board_version.bzl", "BoardVersionInfo")
+
+# Keep the public AppVersionInfo/FirmwareVersionInfo provider alias compatible,
+# while requiring a real App declaration for the composed app_version input.
+AppVersionDeclarationInfo = provider(
+    doc = "Marks a version declared through app_version; aliases may forward it.",
+    fields = [],
+)
 
 FirmwareVersionInfo = provider(
     doc = "Validated firmware version selected by one final firmware target.",
@@ -58,7 +67,25 @@ def validate_declared_version(value):
         _validate_numeric_identifier(identifier, field)
 
 def _firmware_version_impl(ctx):
-    value = ctx.attr.value
+    if ctx.attr.app_version or ctx.attr.board_version:
+        if ctx.attr.value:
+            fail("firmware_version must use either app_version/board_version or a legacy value, not both")
+        if not ctx.attr.app_version or not ctx.attr.board_version:
+            fail("firmware_version requires both app_version and board_version")
+        app_version = ctx.attr.app_version[FirmwareVersionInfo].value
+        validate_declared_version(app_version)
+        if "-" in app_version or "+" in app_version:
+            fail("app_version must be MAJOR.MINOR.PATCH without a suffix when composing a firmware version")
+        for character in ctx.attr.variant.elems():
+            if character not in _SEMVER_IDENTIFIER_CHARACTERS:
+                fail("firmware version variant must contain only ASCII letters, digits, and hyphens")
+        value = "%s-%s%d" % (app_version, ctx.attr.variant, ctx.attr.board_version[BoardVersionInfo].build)
+    else:
+        if ctx.attr.variant:
+            fail("firmware version variant requires app_version and board_version")
+        if not ctx.attr.value:
+            fail("firmware_version requires app_version and board_version, or a legacy value")
+        value = ctx.attr.value
     validate_declared_version(value)
     return [FirmwareVersionInfo(value = value)]
 
@@ -70,8 +97,23 @@ def _firmware_version_flag_impl(ctx):
 firmware_version = rule(
     implementation = _firmware_version_impl,
     attrs = {
-        "value": attr.string(mandatory = True),
+        "app_version": attr.label(
+            providers = [FirmwareVersionInfo, AppVersionDeclarationInfo],
+            doc = "Shared base version declared by app_version, optionally forwarded through an alias.",
+        ),
+        "board_version": attr.label(
+            providers = [BoardVersionInfo],
+            doc = "Manual build number declared by board_version in the board's package.",
+        ),
+        "variant": attr.string(
+            default = "",
+            doc = "Optional suffix prefix such as dev, e2e, or prod; defaults to empty before the board build.",
+        ),
+        "value": attr.string(
+            doc = "Legacy complete version; cannot be combined with the composition attributes.",
+        ),
     },
+    doc = "Composes {app-version}-{variant}{board-build} for one firmware target.",
 )
 
 firmware_version_flag = rule(
