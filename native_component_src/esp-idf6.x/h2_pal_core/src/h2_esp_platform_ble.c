@@ -2251,6 +2251,9 @@ static h2_pal_result_t h2_esp_ble_start_scan(
 
 static h2_pal_result_t h2_esp_ble_stop_scan(h2_pal_ble_t* ble) {
   (void)ble;
+  /* Cleanup may run before start or after stop. NimBLE's dynamically
+   * allocated host context does not exist then, even for an idle cancel. */
+  if (!s_h2_esp_ble_started) return H2_PAL_OK;
   int rc = ble_gap_disc_cancel();
   if (rc == 0 && !ble_gap_disc_active()) {
     h2_esp_ble_complete_scan();
