@@ -39,3 +39,56 @@ if(NOT h2_record_removed EQUAL h2_record_width)
 endif()
 string(REPLACE "${h2_record_original}" "${h2_record_replacement}" h2_record_source "${h2_record_source}")
 file(WRITE "${H2_BK_AUDIO_RECORD_OUTPUT}" "${h2_record_source}")
+
+# Wake an admitted blocking read while all of its buffers remain owned. The
+# BSP can acknowledge that reader before close releases those buffers.
+set(h2_mic_original [=[        ret = onboard_mic_stop(priv);
+        if (ret != BK_OK)
+        {
+            LOGE("%s, onboard mic record pause fail, ret: %d, %d \n", __func__, ret, __LINE__);
+        }
+        onboard_mic_state_set(priv, AUDIO_RECORD_STA_PAUSED);]=])
+set(h2_mic_replacement [=[        ret = onboard_mic_stop(priv);
+        if (ret != BK_OK)
+        {
+            LOGE("%s, onboard mic record pause fail, ret: %d, %d \n", __func__, ret, __LINE__);
+            return ret;
+        }
+        ret = rb_abort(priv->rb);
+        if (ret != BK_OK) return ret;
+        onboard_mic_state_set(priv, AUDIO_RECORD_STA_PAUSED);]=])
+string(REPLACE "${h2_mic_original}" "" h2_mic_without "${h2_mic_source}")
+string(LENGTH "${h2_mic_source}" h2_mic_before)
+string(LENGTH "${h2_mic_without}" h2_mic_after)
+string(LENGTH "${h2_mic_original}" h2_mic_width)
+math(EXPR h2_mic_removed "${h2_mic_before} - ${h2_mic_after}")
+if(NOT h2_mic_removed EQUAL h2_mic_width)
+  message(FATAL_ERROR "Expected one pinned BK microphone pause")
+endif()
+string(REPLACE "${h2_mic_original}" "${h2_mic_replacement}" h2_mic_source "${h2_mic_source}")
+
+set(h2_mic_original [=[        ret = onboard_mic_start(priv);
+        if (ret != BK_OK)
+        {
+            LOGE("%s, onboard mic record start fail, ret: %d, %d \n", __func__, ret, __LINE__);
+        }
+        onboard_mic_state_set(priv, AUDIO_RECORD_STA_RUNNING);]=])
+set(h2_mic_replacement [=[        ret = rb_reset(priv->rb);
+        if (ret != BK_OK) return ret;
+        ret = onboard_mic_start(priv);
+        if (ret != BK_OK)
+        {
+            LOGE("%s, onboard mic record start fail, ret: %d, %d \n", __func__, ret, __LINE__);
+            return ret;
+        }
+        onboard_mic_state_set(priv, AUDIO_RECORD_STA_RUNNING);]=])
+string(REPLACE "${h2_mic_original}" "" h2_mic_without "${h2_mic_source}")
+string(LENGTH "${h2_mic_source}" h2_mic_before)
+string(LENGTH "${h2_mic_without}" h2_mic_after)
+string(LENGTH "${h2_mic_original}" h2_mic_width)
+math(EXPR h2_mic_removed "${h2_mic_before} - ${h2_mic_after}")
+if(NOT h2_mic_removed EQUAL h2_mic_width)
+  message(FATAL_ERROR "Expected one pinned BK microphone resume")
+endif()
+string(REPLACE "${h2_mic_original}" "${h2_mic_replacement}" h2_mic_source "${h2_mic_source}")
+file(WRITE "${H2_BK_AUDIO_MIC_OUTPUT}" "${h2_mic_source}")

@@ -46,7 +46,8 @@ def main():
         (work / "CMakeLists.txt").write_text('''cmake_minimum_required(VERSION 3.18)
 project(audio_record C)
 set(original "${BK_ARMINO_PATH}/components/audio_record/src/audio_record.c")
-add_library(record STATIC "${original}" keep.c)
+set(mic "${BK_ARMINO_PATH}/components/audio_record/src/onboard_mic_record.c")
+add_library(record STATIC "${original}" "${mic}" keep.c)
 set_source_files_properties("${original}" TARGET_DIRECTORY record PROPERTIES COMPILE_OPTIONS "-DH2_PRESERVED=1")
 if(DUPLICATE)
   target_sources(record PRIVATE duplicate/audio_record.c)
@@ -74,9 +75,9 @@ endif()
                 continue
             assert result.returncode == 0, result.stdout + result.stderr
             selected = (build / "selected.txt").read_text().splitlines()
-            assert len(selected) == 2 and "keep.c" in selected
+            assert len(selected) == 3 and "keep.c" in selected
             selected.remove("keep.c")
-            assert selected == [str(build / "h2_bk_sdk_audio_record.c") if enabled == "ON" else str(source)]
+            assert set(selected) == ({str(build / "h2_bk_sdk_audio_record.c"), str(build / "h2_bk_sdk_mic_record.c")} if enabled == "ON" else {str(source), str(mic)})
             if enabled == "ON":
                 assert (build / "options.txt").read_text() == "-DH2_PRESERVED=1"
         includes = work / "include"
@@ -103,8 +104,10 @@ void os_free(void *);
             path = includes / header
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('#include "sdk.h"\n')
-        (includes / "sdk_mic_close.inc").write_text(function(mic.read_text(), "static int onboard_mic_record_close(audio_record_t *record)"))
         for name, path, code in [("original", source, 19), ("corrected", work / "enabled/h2_bk_sdk_audio_record.c", 0)]:
+            backend = mic if name == "original" else work / "enabled/h2_bk_sdk_mic_record.c"
+            (includes / "sdk_mic_close.inc").write_text(function(backend.read_text(), "static int onboard_mic_record_close(audio_record_t *record)"))
+            (includes / "sdk_mic_control.inc").write_text(function(backend.read_text(), "static int onboard_mic_record_control(audio_record_t *record, audio_record_ctl_t ctl)"))
             binary = work / name
             subprocess.run([compiler, "-std=c11", "-Wall", "-Wextra", "-Werror", "-fsanitize=address,undefined",
                 "-I" + str(includes), "-I" + str(source.parent.parent / "include"), "-include", str(includes / "sdk.h"),

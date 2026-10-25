@@ -9,6 +9,7 @@
 static void* allocations[8];
 static size_t live;
 static int fail_allocation, fail_close;
+static int aborts, resets, fail_pause;
 
 void* os_malloc(size_t bytes) {
   if (fail_allocation) {
@@ -39,6 +40,7 @@ void os_free(void* pointer) {
 /* Hardware teardown is stubbed; the close body itself is extracted from SDK. */
 typedef struct {
   audio_record_sta_t state;
+  void* rb;
 } onboard_mic_record_priv_t;
 static audio_record_sta_t onboard_mic_state_get(onboard_mic_record_priv_t* p) {
   return p->state;
@@ -49,6 +51,24 @@ static void onboard_mic_state_set(onboard_mic_record_priv_t* p,
 }
 static int onboard_mic_stop(onboard_mic_record_priv_t* p) {
   (void)p;
+  return fail_pause ? BK_FAIL : BK_OK;
+}
+static int onboard_mic_start(onboard_mic_record_priv_t* p) {
+  (void)p;
+  return BK_OK;
+}
+static int onboard_mic_set_adc_gain(int gain) {
+  (void)gain;
+  return BK_OK;
+}
+int rb_abort(void* rb) {
+  assert(rb);
+  ++aborts;
+  return BK_OK;
+}
+int rb_reset(void* rb) {
+  assert(rb);
+  ++resets;
   return BK_OK;
 }
 static int onboard_mic_close(onboard_mic_record_priv_t* p) {
@@ -67,12 +87,14 @@ static int onboard_mic_close(onboard_mic_record_priv_t* p) {
 #define PM_CPU_FRQ_DEFAULT 0
 #define bk_pm_module_vote_cpu_freq(device, frequency) ((void)0)
 #include "sdk_mic_close.inc"
+#include "sdk_mic_control.inc"
 
 static int backend_open(audio_record_t* record, audio_record_cfg_t* config) {
   (void)config;
   onboard_mic_record_priv_t* p = os_malloc(sizeof(*p));
   if (!p) return BK_FAIL;
   p->state = AUDIO_RECORD_STA_RUNNING;
+  p->rb = p;
   record->record_ctx = p;
   return BK_OK;
 }
@@ -80,7 +102,9 @@ static int backend_close(audio_record_t* record) {
   if (fail_close) return BK_FAIL;
   return onboard_mic_record_close(record);
 }
-static audio_record_ops_t ops = {.open = backend_open, .close = backend_close};
+static audio_record_ops_t ops = {.open = backend_open,
+                                 .close = backend_close,
+                                 .control = onboard_mic_record_control};
 audio_record_ops_t* get_onboard_mic_record_ops(void) { return &ops; }
 
 int main(void) {
@@ -114,6 +138,17 @@ int main(void) {
   fail_close = 1;
   assert(audio_record_destroy(record) == BK_FAIL && live == 2u);
   fail_close = 0;
+  assert(audio_record_destroy(record) == BK_OK && live == 0u);
+  record = audio_record_create(AUDIO_RECORD_ONBOARD_MIC, &config);
+  assert(record && audio_record_open(record) == BK_OK);
+  assert(audio_record_control(record, AUDIO_RECORD_PAUSE) == BK_OK &&
+         aborts == 1);
+  assert(audio_record_control(record, AUDIO_RECORD_RESUME) == BK_OK &&
+         resets == 1);
+  fail_pause = 1;
+  assert(audio_record_control(record, AUDIO_RECORD_PAUSE) == BK_FAIL);
+  assert(onboard_mic_state_get(record->record_ctx) == AUDIO_RECORD_STA_RUNNING);
+  fail_pause = 0;
   assert(audio_record_destroy(record) == BK_OK && live == 0u);
   puts(
       "PASS 128 cycles, closed/unopened/NULL, allocation failure, retained failed close and retry");
