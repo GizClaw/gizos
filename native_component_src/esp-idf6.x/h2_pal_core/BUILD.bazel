@@ -6,6 +6,53 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 package(default_visibility = ["//visibility:public"])
 
 py_binary(
+    name = "ble_scan_stop_test_source_generator",
+    testonly = True,
+    srcs = ["tests/extract_ble_stop_scan.py"],
+    legacy_create_init = False,
+    main = "tests/extract_ble_stop_scan.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+genrule(
+    name = "ble_scan_stop_test_source",
+    testonly = True,
+    srcs = ["src/h2_esp_platform_ble.c"],
+    outs = ["tests/h2_esp_ble_stop_scan_for_test.inc"],
+    cmd = "$(execpath :ble_scan_stop_test_source_generator) $(location src/h2_esp_platform_ble.c) $@",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tools = [":ble_scan_stop_test_source_generator"],
+)
+
+cc_test(
+    name = "ble_scan_stop_test",
+    srcs = [
+        "tests/test_h2_esp_ble_scan_stop.c",
+        ":ble_scan_stop_test_source",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+py_binary(
     name = "wifi_ap_stop_test_source_generator",
     testonly = True,
     srcs = ["tests/extract_wifi_ap_stop.py"],
