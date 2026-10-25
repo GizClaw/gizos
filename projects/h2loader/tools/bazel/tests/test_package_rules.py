@@ -18,6 +18,8 @@ class PackageRulesTest(unittest.TestCase):
         metadata.sort(key=lambda entry: entry["package_format"])
         raw_images = []
         for expected_format, info in enumerate(metadata, 1):
+            self.assertEqual(info["version"], "1.0.0-e2e42")
+            self.assertEqual(info["package_manifest"]["version"], "1.0.0-e2e42")
             self.assertEqual(info["package_format"], expected_format)
             self.assertEqual(info["package_manifest"]["format"], expected_format)
             asset = info["assets"][0]
@@ -25,9 +27,11 @@ class PackageRulesTest(unittest.TestCase):
             self.assertEqual(hashlib.sha256(package.read_bytes()).hexdigest(), asset["sha256"])
             if expected_format == 1:
                 with tarfile.open(fileobj=io.BytesIO(zlib.decompress(package.read_bytes())), mode="r:") as tar:
+                    self.assertIn(b"version=1.0.0-e2e42", tar.extractfile("manifest").read().splitlines())
                     raw = tar.extractfile("app/esp/app.bin").read()
             else:
                 with tarfile.open(package, mode="r:") as tar:
+                    self.assertIn(b"version=1.0.0-e2e42", tar.extractfile("manifest").read().splitlines())
                     self.assertEqual(tar.getnames(), ["manifest", "data.tar.zlib", "app.bin.zlib"])
                     raw = zlib.decompress(tar.extractfile("app.bin.zlib").read())
             self.assertEqual(hashlib.sha256(raw).hexdigest(), info["package_manifest"]["image_sha256"])

@@ -1,16 +1,25 @@
 """Shared App versions consumed by firmware, Lua packages, and other artifacts.
 
-The generic names reuse the existing validated string rule and provider, so
-artifact consumers and the legacy firmware_version entry point stay compatible.
+Apps declare their shared base version independently of boards. Firmware
+targets combine it with a target variant and the board's integer build counter.
 """
 
 load(
     ":firmware.bzl",
+    _AppVersionDeclarationInfo = "AppVersionDeclarationInfo",
     _AppVersionInfo = "FirmwareVersionInfo",
-    _app_version = "firmware_version",
     _validate_app_version = "validate_declared_version",
 )
 
 AppVersionInfo = _AppVersionInfo
-app_version = _app_version
 validate_app_version = _validate_app_version
+
+def _app_version_impl(ctx):
+    validate_app_version(ctx.attr.value)
+    return [AppVersionInfo(value = ctx.attr.value), _AppVersionDeclarationInfo()]
+
+app_version = rule(
+    implementation = _app_version_impl,
+    attrs = {"value": attr.string(mandatory = True)},
+    doc = "Declares the shared version of one App, without firmware-specific configuration.",
+)

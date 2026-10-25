@@ -1,0 +1,232 @@
+load("//tools/bazel:app_version.bzl", "app_version")
+load("//tools/bazel:board_version.bzl", "board_version")
+load(":analysis_tests.bzl", "board_failure_case", "board_success_test", "firmware_failure_case", "firmware_success_case", "version_success_test")
+
+HOST_ONLY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+[
+    app_version(
+        name = name,
+        testonly = True,
+        value = value,
+    )
+    for name, value in [
+        ("app", "1.2.3"),
+        ("next_app", "1.2.4"),
+        ("prerelease_app", "1.2.3-rc.1"),
+        ("metadata_app", "1.2.3+source"),
+    ]
+]
+
+alias(
+    name = "app_alias",
+    testonly = True,
+    actual = ":app",
+)
+
+[
+    board_version(
+        name = name,
+        testonly = True,
+        build = build,
+    )
+    for name, build in [
+        ("board", 541),
+        ("next_board", 542),
+        ("zero_board", 0),
+    ]
+]
+
+[
+    board_success_test(
+        name = name + "_test",
+        expected_build = build,
+        target_compatible_with = HOST_ONLY,
+        target_under_test = ":" + name,
+    )
+    for name, build in [
+        ("board", 541),
+        ("zero_board", 0),
+    ]
+]
+
+version_success_test(
+    name = "app_test",
+    expected_version = "1.2.3",
+    target_compatible_with = HOST_ONLY,
+    target_under_test = ":app",
+)
+
+BASE = {
+    "app_version": ":app",
+    "board_version": ":board",
+    "variant": "e2e",
+}
+
+[
+    firmware_success_case(
+        name = name,
+        attributes = BASE | overrides,
+        compatibility = HOST_ONLY,
+        expected_version = expected,
+    )
+    for name, overrides, expected in [
+        (
+            "atomic",
+            {"variant": "atomic-"},
+            "1.2.3-atomic-541",
+        ),
+        (
+            "e2e",
+            {"variant": "e2e"},
+            "1.2.3-e2e541",
+        ),
+        (
+            "aliased_app",
+            {
+                "app_version": ":app_alias",
+                "variant": "e2e",
+            },
+            "1.2.3-e2e541",
+        ),
+        (
+            "next_app_same_board",
+            {
+                "app_version": ":next_app",
+                "variant": "e2e",
+            },
+            "1.2.4-e2e541",
+        ),
+        (
+            "next_build_same_app",
+            {
+                "board_version": ":next_board",
+                "variant": "e2e",
+            },
+            "1.2.3-e2e542",
+        ),
+        (
+            "prod",
+            {"variant": "prod"},
+            "1.2.3-prod541",
+        ),
+        (
+            "empty_variant",
+            {"variant": ""},
+            "1.2.3-541",
+        ),
+        (
+            "zero_board_build",
+            {"board_version": ":zero_board"},
+            "1.2.3-e2e0",
+        ),
+        (
+            "maximum_length",
+            {"variant": "abcdefghijklmnopqrstuv"},
+            "1.2.3-abcdefghijklmnopqrstuv541",
+        ),
+    ]
+]
+
+firmware_success_case(
+    name = "omitted_variant",
+    attributes = {
+        "app_version": ":app",
+        "board_version": ":board",
+    },
+    compatibility = HOST_ONLY,
+    expected_version = "1.2.3-541",
+)
+
+firmware_success_case(
+    name = "legacy",
+    attributes = {"value": "2.0.0-rc.1+manual"},
+    compatibility = HOST_ONLY,
+    expected_version = "2.0.0-rc.1+manual",
+)
+
+board_failure_case(
+    name = "negative_build",
+    build = -1,
+    compatibility = HOST_ONLY,
+    expected_message = "board build must be non-negative",
+)
+
+[
+    firmware_failure_case(
+        name = name,
+        attributes = attributes,
+        compatibility = HOST_ONLY,
+        expected_message = message,
+    )
+    for name, attributes, message in [
+        ("missing_sources", {}, "requires app_version and board_version, or a legacy value"),
+        (
+            "missing_board",
+            {"app_version": ":app"},
+            "requires both app_version and board_version",
+        ),
+        (
+            "missing_app",
+            {"board_version": ":board"},
+            "requires both app_version and board_version",
+        ),
+        (
+            "ambiguous_sources",
+            BASE | {"value": "1.2.3"},
+            "must use either app_version/board_version or a legacy value, not both",
+        ),
+        (
+            "legacy_variant",
+            {
+                "value": "1.2.3",
+                "variant": "dev",
+            },
+            "variant requires app_version and board_version",
+        ),
+        (
+            "unsafe_variant",
+            BASE | {"variant": "dev/"},
+            "variant must contain only ASCII letters, digits, and hyphens",
+        ),
+        (
+            "metadata_variant",
+            BASE | {"variant": "dev+"},
+            "variant must contain only ASCII letters, digits, and hyphens",
+        ),
+        (
+            "non_ascii_variant",
+            BASE | {"variant": "测试"},
+            "variant must contain only ASCII letters, digits, and hyphens",
+        ),
+        (
+            "too_long",
+            BASE | {"variant": "abcdefghijklmnopqrstuvw"},
+            "must contain 1..31 ASCII characters",
+        ),
+        (
+            "prerelease_base",
+            BASE | {"app_version": ":prerelease_app"},
+            "app_version must be MAJOR.MINOR.PATCH without a suffix",
+        ),
+        (
+            "metadata_base",
+            BASE | {"app_version": ":metadata_app"},
+            "app_version must be MAJOR.MINOR.PATCH without a suffix",
+        ),
+        (
+            "firmware_is_not_app",
+            BASE | {"app_version": ":legacy"},
+            "AppVersionDeclarationInfo",
+        ),
+        (
+            "app_is_not_board",
+            BASE | {"board_version": ":app"},
+            "BoardVersionInfo",
+        ),
+    ]
+]

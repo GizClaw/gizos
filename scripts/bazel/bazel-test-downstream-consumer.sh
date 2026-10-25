@@ -48,6 +48,10 @@ fi
 
 cp "$fixture_root/MODULE.bazel.fixture" "$consumer_root/MODULE.bazel"
 cp "$fixture_root/BUILD.bazel.fixture" "$consumer_root/BUILD.bazel"
+for board in private_esp_board private_bk_board; do
+    mkdir -p "$consumer_root/boards/$board"
+    cp "$fixture_root/boards/$board/BUILD.bazel.fixture" "$consumer_root/boards/$board/BUILD.bazel"
+done
 cp "$fixture_root/consumer.bzl.fixture" "$consumer_root/consumer.bzl"
 cp "$fixture_root/consumer.c" "$consumer_root/consumer.c"
 cp "$fixture_root/lingxi_consumer.c" "$consumer_root/lingxi_consumer.c"
@@ -172,6 +176,7 @@ grep -F 'embedded_menu_font=.' font-native-staging.log >/dev/null
 grep -F -- '--native-component-source' font-native-staging.log >/dev/null
 grep -F 'embedded_menu_font.c' font-native-staging.log >/dev/null
 grep -F 'embedded_menu_font.h' font-native-staging.log >/dev/null
+grep -F '1.2.3-dev7' font-native-staging.log >/dev/null
 # The descriptor must point at generated metadata, not a nonexistent source directory.
 grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-native-staging.log >/dev/null
 
@@ -191,6 +196,7 @@ grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-na
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     'mnemonic(Bk7258Firmware, //:generic_private_bk_firmware)' \
     >bk-policy-staging.log
+grep -F '1.2.3-e2e42' bk-policy-staging.log >/dev/null
 for unit in ap cp; do
     for file in CMakeLists.txt h2_bk_target_task_policy.h h2_bk_target_task_policy.c; do
         grep -E "${unit}:h2_bk_target_task_policy=bazel-out/.*/private_bk_task_policy/${unit}/${file}" bk-policy-staging.log >/dev/null

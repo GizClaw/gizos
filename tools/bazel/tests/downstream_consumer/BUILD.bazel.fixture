@@ -192,14 +192,23 @@ native_component_paths(
     local = ":font_native_component",
 )
 
-firmware_version(
-    name = "private_esp_version",
+app_version(
+    name = "shared_firmware_app_version",
     value = "1.2.3",
 )
 
 firmware_version(
+    name = "private_esp_version",
+    app_version = ":shared_firmware_app_version",
+    board_version = "//boards/private_esp_board:version",
+    variant = "dev",
+)
+
+firmware_version(
     name = "private_bk_version",
-    value = "4.5.6-rc.1+consumer",
+    app_version = ":shared_firmware_app_version",
+    board_version = "//boards/private_bk_board:version",
+    variant = "e2e",
 )
 
 alias(
