@@ -115,6 +115,25 @@ void os_free(void *);
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=30)
             assert result.returncode == code, result.stdout + result.stderr
             assert ("retained-context" if code else "PASS 128 cycles") in result.stdout
+        dma_profiles = {}
+        for name, backend in [("original", mic), ("corrected", work / "enabled/h2_bk_sdk_mic_record.c")]:
+            (includes / "sdk_mic_dma_config.inc").write_text(function(
+                backend.read_text(), "static bk_err_t aud_adc_dma_config(onboard_mic_record_priv_t *onboard_mic)"))
+            binary = work / (name + "-dma")
+            subprocess.run([compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-Wno-pointer-to-int-cast", "-fsanitize=address,undefined", "-I" + str(includes),
+                str(probe.with_name("audio_record_dma_probe.c")), "-o", str(binary)],
+                check=True, capture_output=True, text=True)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=30)
+            assert result.returncode == 0, result.stdout + result.stderr
+            dma_profiles[name] = [json.loads(line) for line in result.stdout.splitlines()]
+        assert len(dma_profiles["original"]) == len(dma_profiles["corrected"]) == 6
+        for original, corrected in zip(dma_profiles["original"], dma_profiles["corrected"]):
+            assert original["destination_width"] == 2
+            expected_profile = dict(original, destination_width=original["source_width"])
+            assert corrected == expected_profile
+            if corrected["channels"] == 2:
+                assert corrected == original
         for name, changed in [("record", source), ("backend", mic)]:
             altered = work / ("changed-" + name)
             altered.write_bytes(changed.read_bytes() + b"\n/* changed */\n")
@@ -124,7 +143,7 @@ void os_free(void *);
             assert result.returncode != 0 and "revalidate context ownership" in result.stderr
     assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
     print(json.dumps(dict(result="PASS", sdk=expected, cycles=128, original_rejected=True,
-        profiles=["NULL", "unopened", "closed", "allocation failure", "failed close retained", "retry", "disabled", "duplicate source", "changed SDK rejected", "source options preserved"])))
+        profiles=["NULL", "unopened", "closed", "allocation failure", "failed close retained", "retry", "disabled", "duplicate source", "changed SDK rejected", "source options preserved", "mono ADC beat width", "stereo descriptor unchanged", "DMA frame/ring bounds", "DMA setup failure cleanup"])))
 
 
 if __name__ == "__main__":
