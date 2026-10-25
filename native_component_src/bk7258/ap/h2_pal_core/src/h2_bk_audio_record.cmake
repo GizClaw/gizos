@@ -91,18 +91,4 @@ if(NOT h2_mic_removed EQUAL h2_mic_width)
   message(FATAL_ERROR "Expected one pinned BK microphone resume")
 endif()
 string(REPLACE "${h2_mic_original}" "${h2_mic_replacement}" h2_mic_source "${h2_mic_source}")
-
-# Keep each ADC beat independent across repeat/pause boundaries instead of
-# assembling multiple mono FIFO requests into one SRAM word.
-set(h2_mic_original "\tdma_config.dst.width = DMA_DATA_WIDTH_32BITS;")
-set(h2_mic_replacement "\tdma_config.dst.width = dma_config.src.width;")
-string(REPLACE "${h2_mic_original}" "" h2_mic_without "${h2_mic_source}")
-string(LENGTH "${h2_mic_source}" h2_mic_before)
-string(LENGTH "${h2_mic_without}" h2_mic_after)
-string(LENGTH "${h2_mic_original}" h2_mic_width)
-math(EXPR h2_mic_removed "${h2_mic_before} - ${h2_mic_after}")
-if(NOT h2_mic_removed EQUAL h2_mic_width)
-  message(FATAL_ERROR "Expected one pinned BK ADC DMA destination width")
-endif()
-string(REPLACE "${h2_mic_original}" "${h2_mic_replacement}" h2_mic_source "${h2_mic_source}")
 file(WRITE "${H2_BK_AUDIO_MIC_OUTPUT}" "${h2_mic_source}")
