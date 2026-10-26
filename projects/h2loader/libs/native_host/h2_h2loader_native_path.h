@@ -3,6 +3,10 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Rewrites a host path typed by the user into the PAL filesystem namespace.
  *
  * - Relative paths are joined to base_dir (the invoking shell's directory;
@@ -20,5 +24,9 @@ int h2_h2loader_native_path_resolve(const char* base_dir,
                                     const char* const* targets,
                                     size_t mount_count, const char* path,
                                     char* out, size_t out_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

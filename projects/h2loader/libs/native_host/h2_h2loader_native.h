@@ -6,6 +6,10 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 h2_pal_result_t h2_h2loader_native_start(void);
 void h2_h2loader_native_stop(void);
 const h2_pal_serial_host_api_t* h2_h2loader_native_serial(void);
@@ -24,5 +28,9 @@ const h2_pal_net_api_t* h2_h2loader_native_net(void);
  * fills out when rewritten, 0 to pass the original through unchanged. */
 int h2_h2loader_native_resolve_path(const char* path, char* out,
                                     size_t out_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
