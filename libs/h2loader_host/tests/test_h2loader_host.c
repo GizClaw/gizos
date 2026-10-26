@@ -747,7 +747,7 @@ static void test_catalog(void) {
       "\"target\":\"esp32s3\","
       "\"image\":\"display\","
       "\"role\":\"app\","
-      "\"version\":\"v1\","
+      "\"version\":\"0.10.6-prod.1+devkit\","
       "\"package_manifest\":{"
       "\"image_sha256\":"
       "\"0000000000000000000000000000000000000000000000000000000000000000\""
@@ -780,6 +780,7 @@ static void test_catalog(void) {
   assert(h2_h2loader_host_catalog_get(catalog, 0u, &entry) == H2_PAL_OK);
   assert(strcmp(entry.board, "devkit") == 0);
   assert(strcmp(entry.image, "display") == 0);
+  assert(strcmp(entry.version, "0.10.6-prod.1+devkit") == 0);
   assert(entry.bytes == 3u);
   size_t index_value = SIZE_MAX;
   count = 0u;
@@ -1008,6 +1009,12 @@ static void test_status(void) {
 
   char invalid_uid[sizeof(v2_line)];
   strcpy(invalid_uid, v2_line);
+  char* board = strstr(invalid_uid, "board=devkit");
+  assert(board != NULL);
+  board[strlen("board=dev")] = '+';
+  assert(h2_h2loader_host_status_parse(invalid_uid, &status) ==
+         H2_PAL_ERR_FORMAT);
+  strcpy(invalid_uid, v2_line);
   char* uid = strstr(invalid_uid, "device_uid=102030405060");
   assert(uid != NULL);
   uid[strlen("device_uid=")] = 'A';
@@ -1062,6 +1069,42 @@ static void test_status(void) {
              "capabilities=0x00000005 command_availability=0x00000008 "
              "states=0x000000000001586a\n",
              &status) == H2_PAL_ERR_FORMAT);
+}
+
+static void test_status_version_metadata(void) {
+  static const char checksum[] =
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+  static const char version[] = "0.10.6-prod.1+devkit";
+  char line[H2_H2LOADER_HOST_STATUS_LINE_MAX];
+  int length = snprintf(
+      line, sizeof(line),
+      "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
+      "device_uid=102030405060 capabilities=0x00000005 "
+      "command_availability=0x00000008 active_role=app active_version=%s "
+      "active_checksum=%s active_image_size=4096 running_partition=2 "
+      "next_partition=2 boot_intent=auto stage_valid=1 "
+      "stage_package_checksum=%s stage_package_size=8192 "
+      "stage_image_checksum=%s stage_image_size=4096 stage_role=app "
+      "stage_version=%s stage_board=devkit stage_target=esp32s3 "
+      "partition_1_valid=1 partition_1_package_checksum=%s "
+      "partition_1_package_size=8192 partition_1_image_checksum=%s "
+      "partition_1_image_size=4096 partition_1_role=loader "
+      "partition_1_version=%s partition_1_board=devkit "
+      "partition_1_target=esp32s3 partition_2_valid=1 "
+      "partition_2_package_checksum=%s partition_2_package_size=8192 "
+      "partition_2_image_checksum=%s partition_2_image_size=4096 "
+      "partition_2_role=app partition_2_version=%s partition_2_board=devkit "
+      "partition_2_target=esp32s3 last_result=0 mfg_mode=1 "
+      "mfg_steps=0000000000000000000000\n",
+      version, checksum, checksum, checksum, version, checksum, checksum,
+      version, checksum, checksum, version);
+  assert(length > 0 && (size_t)length < sizeof(line));
+  h2_h2loader_host_status_t status;
+  assert(h2_h2loader_host_status_parse(line, &status) == H2_PAL_OK);
+  assert(strcmp(status.active_version, version) == 0);
+  assert(strcmp(status.stage.version, version) == 0);
+  assert(strcmp(status.partition_1.version, version) == 0);
+  assert(strcmp(status.partition_2.version, version) == 0);
 }
 
 static void write_le16(uint8_t* out, uint16_t value) {
@@ -1928,6 +1971,15 @@ static void test_scheduler(void) {
          H2_PAL_ERR_INVALID_ARG);
   assert(scheduler == NULL);
   strcpy(inputs[1].candidate.candidate_id, saved_candidate_id);
+  strcpy(inputs[0].asset.version, "0.10.6-prod.1+devkit");
+  assert(h2_h2loader_host_scheduler_open(&config, &scheduler) == H2_PAL_OK);
+  assert(h2_h2loader_host_scheduler_close(&scheduler) == H2_PAL_OK);
+  strcpy(inputs[0].fixture_slot, "slot+0");
+  assert(h2_h2loader_host_scheduler_open(&config, &scheduler) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(scheduler == NULL);
+  strcpy(inputs[0].fixture_slot, "slot-0");
+  strcpy(inputs[0].asset.version, "v1");
   inputs[0].asset.identity_source =
       H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST;
   inputs[0].asset.image[0] = '\0';
@@ -2229,6 +2281,7 @@ int main(void) {
   test_catalog();
   test_catalog_esp_loader_assets();
   test_status();
+  test_status_version_metadata();
   test_factory_bundle();
   test_recovery();
   test_managed_operation();

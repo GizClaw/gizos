@@ -54,7 +54,7 @@ static int valid_input(const h2_h2loader_host_job_input_t* input) {
          h2_h2loader_host_is_safe_identity(input->asset.board) &&
          h2_h2loader_host_is_safe_identity(input->asset.target) &&
          image_valid &&
-         h2_h2loader_host_is_safe_identity(input->asset.version) &&
+         h2_h2loader_host_is_safe_version(input->asset.version) &&
          h2_h2loader_host_is_sha256(input->asset.sha256) &&
          h2_h2loader_host_is_sha256(input->asset.image_sha256) &&
          input->asset.role >= H2_H2LOADER_HOST_ASSET_ROLE_APP &&
