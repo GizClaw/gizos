@@ -12,6 +12,7 @@ int h2_h2loader_host_ble_stage_receive_failed(const uint8_t* response,
 int h2_h2loader_host_copy_text(char* out, size_t out_size, const char* value,
                                size_t value_len);
 int h2_h2loader_host_is_safe_identity(const char* value);
+int h2_h2loader_host_is_safe_version(const char* value);
 int h2_h2loader_host_is_sha256(const char* value);
 int h2_h2loader_host_is_safe_resource_name(const char* value);
 

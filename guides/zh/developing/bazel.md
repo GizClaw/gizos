@@ -18,6 +18,8 @@ H2Loader 保留两条固定格式的构建轨道：`h2loader_tar_zlib` 和既有
 
 ## 边界
 
+ESP-IDF 构建沿用项目的组件依赖锁，不在构建过程中查询组件新版本提示。锁定依赖的解析、下载与校验仍正常执行。
+
 - 每个 C/C++ library、portable app、Desktop component、board host test 和 host tool 在所属目录的 `BUILD.bazel` 中声明真实可构建的 `cc_library`、`cc_binary` 或 `cc_test`。
 - `srcs`、`hdrs`、`data` 和跨 package `deps` 必须显式；不得用 recursive glob、coarse wrapper 或第二套 shadow graph代替语义边界。
 - `native_component_src/**` 的每个 SDK component，以及参与相同原生 build graph 的 embedded board、project component 与 firmware launcher，使用 `firmware_native_component` 显式声明原生源码、头文件、构建 metadata 与依赖。该 rule 不产生 host archive；firmware source aspect 到达这个 Provider 后立即停止继续猜测任意 `cc_library` 依赖闭包，并把已声明输入加入对应 native firmware action key。普通 `CcInfo` dependency 只提供 public repository headers；需要由原生 build 编译的 first-party source必须由自己的 `firmware_native_component` 拥有。

@@ -676,8 +676,14 @@ static h2_pal_result_t parse_identity(
   H2_PARSE_IDENTITY_FIELD("board", board)
   H2_PARSE_IDENTITY_FIELD("target", target)
   H2_PARSE_IDENTITY_FIELD("image", image)
-  H2_PARSE_IDENTITY_FIELD("version", version)
 #undef H2_PARSE_IDENTITY_FIELD
+  token =
+      json_object_value(json, tokens, token_count, item_index, "version", NULL);
+  if (!json_string_copy(json, token, out_identity->version,
+                        sizeof(out_identity->version)) ||
+      !h2_h2loader_host_is_safe_version(out_identity->version)) {
+    return H2_PAL_ERR_FORMAT;
+  }
   token =
       json_object_value(json, tokens, token_count, item_index, "role", NULL);
   h2_pal_result_t rc = parse_role(json, token, &out_identity->role);

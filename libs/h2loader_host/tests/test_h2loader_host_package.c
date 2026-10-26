@@ -234,6 +234,31 @@ static void test_valid_loader_package(void) {
   assert(h2_h2loader_host_is_sha256(asset.image_sha256));
 }
 
+static void test_package_version_metadata(void) {
+  static const char* const versions[] = {
+      "0.10.6-prod.1+tiga-esp-v4-2",
+      "0.10.0-1+zero-esp-v3-0",
+      "legacy_20260928",
+  };
+  for (size_t i = 0u; i < sizeof(versions) / sizeof(versions[0]); ++i) {
+    package_options_t options = {.version_override = versions[i]};
+    test_buffer_t package = build_package(&options);
+    h2_h2loader_host_catalog_entry_t asset;
+    assert(inspect(&package, package.len, &asset) == H2_PAL_OK);
+    assert(strcmp(asset.version, versions[i]) == 0);
+  }
+  static const char* const unsafe_versions[] = {
+      "bad/version", "bad version", "bad=version", "bad\tversion", "bad\x80",
+  };
+  for (size_t i = 0u; i < sizeof(unsafe_versions) / sizeof(unsafe_versions[0]);
+       ++i) {
+    package_options_t options = {.version_override = unsafe_versions[i]};
+    test_buffer_t package = build_package(&options);
+    h2_h2loader_host_catalog_entry_t asset;
+    assert(inspect(&package, package.len, &asset) == H2_PAL_ERR_FORMAT);
+  }
+}
+
 static void test_loader_rejects_data(void) {
   package_options_t options = {
       .role = "h2loader",
@@ -322,6 +347,7 @@ static void test_rejects_truncation_and_trailing_bytes(void) {
 int main(void) {
   test_valid_app_package();
   test_valid_loader_package();
+  test_package_version_metadata();
   test_loader_rejects_data();
   test_rejects_bad_checksums();
   test_rejects_malformed_manifest_and_size();

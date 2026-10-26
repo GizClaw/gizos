@@ -827,6 +827,9 @@ def run(arguments: argparse.Namespace) -> None:
         subprocess_environment["IDF_COMPONENT_CACHE_PATH"] = str(
             temporary_root / "component-cache"
         )
+        # Resolving the declared lock still verifies and downloads its inputs.
+        # An advisory search for newer releases must not block this build.
+        subprocess_environment["IDF_COMPONENT_CHECK_NEW_VERSION"] = "0"
         project_copy = temporary_root / "source" / relative_project
         project_copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_project, project_copy)

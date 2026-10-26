@@ -187,7 +187,7 @@ static h2_pal_result_t parse_manifest(package_tar_state_t* state) {
   if (rc != H2_PAL_OK) {
     return rc;
   }
-  if (!h2_h2loader_host_is_safe_identity(state->asset.version)) {
+  if (!h2_h2loader_host_is_safe_version(state->asset.version)) {
     return H2_PAL_ERR_FORMAT;
   }
   READ_MANIFEST_LINE("image_size");

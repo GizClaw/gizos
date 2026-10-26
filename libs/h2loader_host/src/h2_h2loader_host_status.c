@@ -18,7 +18,7 @@ int h2_h2loader_host_copy_text(char* out, size_t out_size, const char* value,
   return 1;
 }
 
-int h2_h2loader_host_is_safe_identity(const char* value) {
+static int safe_identity_text(const char* value, int allow_build_metadata) {
   size_t len;
 
   if (value == NULL || value[0] == '\0') {
@@ -32,11 +32,19 @@ int h2_h2loader_host_is_safe_identity(const char* value) {
     unsigned char byte = (unsigned char)value[i];
     if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
           (byte >= '0' && byte <= '9') || byte == '.' || byte == '_' ||
-          byte == '-')) {
+          byte == '-' || (allow_build_metadata && byte == '+'))) {
       return 0;
     }
   }
   return 1;
+}
+
+int h2_h2loader_host_is_safe_identity(const char* value) {
+  return safe_identity_text(value, 0);
+}
+
+int h2_h2loader_host_is_safe_version(const char* value) {
+  return safe_identity_text(value, 1);
 }
 
 int h2_h2loader_host_is_sha256(const char* value) {
@@ -326,7 +334,7 @@ static int metadata_valid(const h2_h2loader_host_metadata_t* metadata,
       (metadata->image_checksum[0] != '\0' &&
        !h2_h2loader_host_is_sha256(metadata->image_checksum)) ||
       (metadata->version[0] != '\0' &&
-       !h2_h2loader_host_is_safe_identity(metadata->version)) ||
+       !h2_h2loader_host_is_safe_version(metadata->version)) ||
       (metadata->board[0] != '\0' &&
        !h2_h2loader_host_is_safe_identity(metadata->board)) ||
       (metadata->target[0] != '\0' &&
@@ -402,7 +410,7 @@ static h2_pal_result_t parse_status_v2(const char* cursor,
       !h2_h2loader_host_is_safe_identity(out_status->target) ||
       !h2_h2loader_host_is_safe_identity(out_status->chip) ||
       !device_uid_valid(out_status->device_uid) ||
-      !h2_h2loader_host_is_safe_identity(out_status->active_version) ||
+      !h2_h2loader_host_is_safe_version(out_status->active_version) ||
       !h2_h2loader_host_is_sha256(out_status->active_checksum) ||
       out_status->active_image_size == 0u ||
       !metadata_valid(&out_status->stage, 1) ||

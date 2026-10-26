@@ -145,6 +145,14 @@ int main(void) {
   segmented.data[segmented.len - 1u] = 1u;
   assert(h2_h2loader_host_package_inspect(&inspect, &asset) != H2_PAL_OK);
   segmented.data[segmented.len - 1u] = 0u;
+  output_t composed = {0};
+  config.version = "0.10.6-prod.1+devkit";
+  config.write_user = &composed;
+  assert(h2_h2loader_host_package_write(&config, &result) == H2_PAL_OK);
+  package = (bytes_t){.data = composed.data, .len = composed.len};
+  inspect.payload_bytes = composed.len;
+  assert(h2_h2loader_host_package_inspect(&inspect, &asset) == H2_PAL_OK);
+  assert(strcmp(asset.version, config.version) == 0);
   config.write_user = &output;
 
   data[1].name = "data/z.bin";
