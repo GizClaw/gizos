@@ -9,8 +9,8 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_version(
     name = "version",
-    app_version = "//projects/h2loader/apps/loader:version",
-    board_version = "//boards/waveshare_esp32s3_a7670e_4g:version",
+    build = "//boards/waveshare_esp32s3_a7670e_4g:version",
+    main_version = "//projects/h2loader/apps/loader:version",
 )
 
 esp_target_task_policy(

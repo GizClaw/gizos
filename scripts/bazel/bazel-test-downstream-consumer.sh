@@ -176,7 +176,7 @@ grep -F 'embedded_menu_font=.' font-native-staging.log >/dev/null
 grep -F -- '--native-component-source' font-native-staging.log >/dev/null
 grep -F 'embedded_menu_font.c' font-native-staging.log >/dev/null
 grep -F 'embedded_menu_font.h' font-native-staging.log >/dev/null
-grep -F '1.2.3-dev.7' font-native-staging.log >/dev/null
+grep -F '1.2.3-dev.7+private-esp-board' font-native-staging.log >/dev/null
 # The descriptor must point at generated metadata, not a nonexistent source directory.
 grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-native-staging.log >/dev/null
 
@@ -196,7 +196,7 @@ grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-na
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     'mnemonic(Bk7258Firmware, //:generic_private_bk_firmware)' \
     >bk-policy-staging.log
-grep -F '1.2.3-e2e.42' bk-policy-staging.log >/dev/null
+grep -F '1.2.3-e2e.42+private-bk-board' bk-policy-staging.log >/dev/null
 for unit in ap cp; do
     for file in CMakeLists.txt h2_bk_target_task_policy.h h2_bk_target_task_policy.c; do
         grep -E "${unit}:h2_bk_target_task_policy=bazel-out/.*/private_bk_task_policy/${unit}/${file}" bk-policy-staging.log >/dev/null

@@ -113,8 +113,9 @@ app_version(
 
 firmware_version(
     name = "package_rules_version",
-    app_version = ":package_rules_app_version",
-    board_version = "//projects/h2loader/tools/bazel/tests/fixtures/boards/fixture:version",
+    build = "//projects/h2loader/tools/bazel/tests/fixtures/boards/fixture:version",
+    build_metadata = "fixture",
+    main_version = ":package_rules_app_version",
     variant = "e2e",
 )
 

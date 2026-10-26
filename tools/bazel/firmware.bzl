@@ -67,28 +67,32 @@ def validate_declared_version(value):
         _validate_numeric_identifier(identifier, field)
 
 def _firmware_version_impl(ctx):
-    if ctx.attr.app_version or ctx.attr.board_version:
+    if ctx.attr.main_version or ctx.attr.build:
         if ctx.attr.value:
-            fail("firmware_version must use either app_version/board_version or a legacy value, not both")
-        if not ctx.attr.app_version or not ctx.attr.board_version:
-            fail("firmware_version requires both app_version and board_version")
-        app_version = ctx.attr.app_version[FirmwareVersionInfo].value
-        validate_declared_version(app_version)
-        if "-" in app_version or "+" in app_version:
-            fail("app_version must be MAJOR.MINOR.PATCH without a suffix when composing a firmware version")
+            fail("firmware_version must use either main_version/build or a legacy value, not both")
+        if not ctx.attr.main_version or not ctx.attr.build:
+            fail("firmware_version requires both main_version and build")
+        main_version = ctx.attr.main_version[FirmwareVersionInfo].value
+        validate_declared_version(main_version)
+        if "-" in main_version or "+" in main_version:
+            fail("main_version must be MAJOR.MINOR.PATCH without a suffix when composing a firmware version")
         for character in ctx.attr.variant.elems():
             if character not in _SEMVER_IDENTIFIER_CHARACTERS:
                 fail("firmware version variant must contain only ASCII letters, digits, and hyphens")
 
         # Separate the variant from the numeric build so standard SemVer
         # compares build counters numerically across digit boundaries.
-        suffix = "%s.%d" % (ctx.attr.variant, ctx.attr.board_version[BoardVersionInfo].build) if ctx.attr.variant else str(ctx.attr.board_version[BoardVersionInfo].build)
-        value = "%s-%s" % (app_version, suffix)
+        suffix = "%s.%d" % (ctx.attr.variant, ctx.attr.build[BoardVersionInfo].build) if ctx.attr.variant else str(ctx.attr.build[BoardVersionInfo].build)
+        value = "%s-%s" % (main_version, suffix)
+        if ctx.attr.build_metadata:
+            value += "+" + ctx.attr.build_metadata
     else:
         if ctx.attr.variant:
-            fail("firmware version variant requires app_version and board_version")
+            fail("firmware version variant requires main_version and build")
+        if ctx.attr.build_metadata:
+            fail("firmware version build_metadata requires main_version and build")
         if not ctx.attr.value:
-            fail("firmware_version requires app_version and board_version, or a legacy value")
+            fail("firmware_version requires main_version and build, or a legacy value")
         value = ctx.attr.value
     validate_declared_version(value)
     return [FirmwareVersionInfo(value = value)]
@@ -101,23 +105,27 @@ def _firmware_version_flag_impl(ctx):
 firmware_version = rule(
     implementation = _firmware_version_impl,
     attrs = {
-        "app_version": attr.label(
+        "main_version": attr.label(
             providers = [FirmwareVersionInfo, AppVersionDeclarationInfo],
-            doc = "Shared base version declared by app_version, optionally forwarded through an alias.",
+            doc = "Base MAJOR.MINOR.PATCH version declared by app_version, optionally forwarded through an alias.",
         ),
-        "board_version": attr.label(
+        "build": attr.label(
             providers = [BoardVersionInfo],
-            doc = "Manual build number declared by board_version in the board's package.",
+            doc = "Numeric build counter declared by board_version.",
         ),
         "variant": attr.string(
             default = "",
-            doc = "Optional prerelease variant such as dev, e2e, or prod; followed by a dot and the numeric board build when non-empty.",
+            doc = "Optional prerelease identifier; its business meaning belongs to the caller. The rule adds a dot before the numeric build.",
+        ),
+        "build_metadata": attr.string(
+            default = "",
+            doc = "Optional dot-separated SemVer build metadata, without the leading plus. It does not affect precedence.",
         ),
         "value": attr.string(
             doc = "Legacy complete version; cannot be combined with the composition attributes.",
         ),
     },
-    doc = "Composes {app-version}-{variant}.{board-build}, omitting the variant and dot when empty.",
+    doc = "Composes {main_version}-{variant}.{build}+{build_metadata}; empty optional fields omit their separators.",
 )
 
 firmware_version_flag = rule(
