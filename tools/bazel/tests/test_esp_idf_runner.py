@@ -36,6 +36,8 @@ if os.environ.get("H2_FIRMWARE_VERSION") != "test-version":
     raise SystemExit("runner did not provide the internal firmware version")
 if os.environ.get("H2_BAZEL_NATIVE_ARTIFACTS_ONLY") != "1":
     raise SystemExit("runner did not disable native package side effects")
+if os.environ.get("IDF_COMPONENT_CHECK_NEW_VERSION") != "0":
+    raise SystemExit("locked build performed an advisory component update check")
 if not Path(os.environ.get("ESP_ROM_ELF_DIR", "")).name == "fixture-version":
     raise SystemExit("runner did not provide the ESP-IDF ROM ELF directory")
 gizos_root = Path(os.environ["H2_GIZOS_ROOT"])
