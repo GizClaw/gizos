@@ -52,7 +52,9 @@ typedef enum h2_gizclaw_tool {
  * out_response, including a wire error for rejected arguments. Validate before
  * changing hardware. Views are borrowed until the response is consumed; never
  * return stack storage. Callbacks must return promptly and cannot stop or
- * destroy the Service. on_complete retains the response-completion contract
+ * destroy the Service. Work that needs another RPC or a settings worker
+ * returns a request-owned deferred reply (h2_gizclaw_rpc.h).
+ * on_complete retains the response-completion contract
  * in h2_gizclaw_rpc.h. Management tools use payload/management.pb.h. The
  * product owns their choices, persistence and enforcement and must return
  * applied state only after a successful change. Register only implemented

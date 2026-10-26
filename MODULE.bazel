@@ -66,6 +66,8 @@ http_archive = use_repo_rule(
 # the same canonical protocol, without copying root-only overrides.
 http_archive(
     name = "gizclaw_c_sdk",
+    patch_args = ["-p1"],
+    patches = ["//third_party:gizclaw_sdk_deferred.patch"],
     sha256 = "c9aaf31ddde5317bffad98749d39016b27632b2c93b7697300cb42e2f55436a0",
     strip_prefix = "gizclaw-c-sdk-0.34.0",
     urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.34.0.tar.gz"],

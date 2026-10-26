@@ -13,6 +13,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Supplied by the pinned SDK patch; identity is scoped to one inbound call. */
+gzc_rtc_channel_t* gzc_client_provider_channel_internal(gzc_client_t* client);
+
+typedef struct h2_gizclaw_pending_provider {
+  gzc_rtc_channel_t* channel;
+  h2_gizclaw_rpc_deferred_response_t deferred;
+  uint64_t deadline_ms;
+} h2_gizclaw_pending_provider_t;
+
 #define H2_GIZCLAW_RETIRED_STREAM_COUNT 32u
 
 #define H2_GIZCLAW_ASSERT_RPC_METHOD(h2_name, gzc_name) \
@@ -222,6 +231,7 @@ struct h2_gizclaw_client {
   h2_gizclaw_provider_completion_t
       provider_completions[GZC_RPC_MAX_INBOUND_CHANNELS];
   gzc_client_t* gzc;
+  h2_gizclaw_pending_provider_t pending_providers[GZC_RPC_MAX_INBOUND_CHANNELS];
   gzc_event_stream_t* events;
   h2_gizclaw_conversation_t* active_conversation;
   h2_gizclaw_client_event_sink_fn event_handler;
@@ -669,6 +679,19 @@ static void provider_completion_sent(h2_gizclaw_provider_completion_t* entry,
   }
 }
 
+static void close_pending_providers(h2_gizclaw_client_t* client,
+                                    gzc_rtc_channel_t* channel, int result) {
+  for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
+    h2_gizclaw_pending_provider_t* pending = &client->pending_providers[i];
+    if (pending->deferred.close == NULL ||
+        (channel != NULL && pending->channel != channel))
+      continue;
+    h2_gizclaw_rpc_deferred_response_t done = pending->deferred;
+    memset(pending, 0, sizeof(*pending));
+    done.close(done.user, result);
+  }
+}
+
 static void dispatch_provider_completions(h2_gizclaw_client_t* client,
                                           int result) {
   uint64_t now = 0u;
@@ -707,12 +730,72 @@ static int h2_gizclaw_tool_bridge(void* userdata, gzc_str_t request_payload,
   const h2_gizclaw_tool_handler_t* handler = binding->handler;
   if (!respond) return GZC_ERR_INVALID_ARGUMENT;
   h2_gizclaw_rpc_provider_response_t response = {0};
-  int rc = handler->invoke(
-      handler->user, handler->tool,
-      (h2_gizclaw_rpc_bytes_t){(const uint8_t*)request_payload.data,
-                               request_payload.len},
-      &response);
-  if (rc != H2_PAL_OK) return h2_gizclaw_provider_result_to_gzc(rc);
+  gzc_rtc_channel_t* channel =
+      gzc_client_provider_channel_internal(client->gzc);
+  if (channel == NULL) channel = client->provider_channel;
+  h2_gizclaw_pending_provider_t* pending = NULL;
+  for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i)
+    if (client->pending_providers[i].deferred.poll != NULL &&
+        client->pending_providers[i].channel == channel) {
+      pending = &client->pending_providers[i];
+      break;
+    }
+  h2_gizclaw_rpc_deferred_response_t finished = {0};
+  int rc;
+  if (pending != NULL) {
+    uint64_t now = 0u;
+    rc = h2_pal_time_get_monotonic_ms(client->config.time, &now);
+    if (rc == H2_PAL_OK)
+      rc = now >= pending->deadline_ms
+               ? H2_PAL_ERR_TIMEOUT
+               : pending->deferred.poll(pending->deferred.user, &response);
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) return GZC_ERR_WOULD_BLOCK;
+    finished = pending->deferred;
+    memset(pending, 0, sizeof(*pending));
+  } else {
+    rc = handler->invoke(
+        handler->user, handler->tool,
+        (h2_gizclaw_rpc_bytes_t){(const uint8_t*)request_payload.data,
+                                 request_payload.len},
+        &response);
+  }
+  if (rc == H2_PAL_OK && response.deferred.poll != NULL) {
+    h2_gizclaw_rpc_deferred_response_t deferred = response.deferred;
+    bool valid = finished.poll == NULL && channel != NULL &&
+                 deferred.close != NULL && deferred.timeout_ms > 0u &&
+                 deferred.timeout_ms <= 120000u && !response.has_error &&
+                 response.payload.len == 0u && response.on_complete == NULL;
+    uint64_t now = 0u;
+    rc = valid ? h2_pal_time_get_monotonic_ms(client->config.time, &now)
+               : H2_PAL_ERR_INVALID_ARG;
+    pending = NULL;
+    for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i)
+      if (client->pending_providers[i].deferred.poll == NULL) {
+        pending = &client->pending_providers[i];
+        break;
+      }
+    if (rc == H2_PAL_OK && pending == NULL) rc = H2_PAL_ERR_BUSY;
+    if (rc == H2_PAL_OK) {
+      *pending = (h2_gizclaw_pending_provider_t){
+          .channel = channel,
+          .deferred = deferred,
+          .deadline_ms = now > UINT64_MAX - deferred.timeout_ms
+                             ? UINT64_MAX
+                             : now + deferred.timeout_ms};
+      return GZC_ERR_WOULD_BLOCK;
+    }
+    if (deferred.close != NULL) deferred.close(deferred.user, rc);
+  }
+  const int finished_result = rc;
+  if (rc != H2_PAL_OK && finished.close != NULL) {
+    response = (h2_gizclaw_rpc_provider_response_t){
+        .has_error = true, .error_code = h2_gizclaw_mhs_error_internal(rc)};
+    rc = H2_PAL_OK;
+  }
+  /* Only an admitted deferred reply may ask the SDK to retry this channel. */
+  if (rc != H2_PAL_OK)
+    return rc == H2_PAL_ERR_WOULD_BLOCK ? GZC_ERR_RPC
+                                        : h2_gizclaw_provider_result_to_gzc(rc);
   const gzc_rpc_provider_response_t gzc_response = {
       .payload = response.payload.data,
       .payload_len = response.payload.len,
@@ -731,13 +814,14 @@ static int h2_gizclaw_tool_bridge(void* userdata, gzc_str_t request_payload,
         break;
       }
     }
-    if (completion == NULL || client->provider_channel == NULL ||
-        response.has_error) {
+    if (completion == NULL || channel == NULL || response.has_error) {
+      if (finished.close != NULL)
+        finished.close(finished.user, H2_PAL_ERR_INVALID_STATE);
       response.on_complete(response.complete_user, H2_PAL_ERR_INVALID_STATE);
       return GZC_ERR_RPC;
     }
     *completion =
-        (h2_gizclaw_provider_completion_t){.channel = client->provider_channel,
+        (h2_gizclaw_provider_completion_t){.channel = channel,
                                            .callback = response.on_complete,
                                            .user = response.complete_user};
     uint64_t now = 0u;
@@ -745,6 +829,7 @@ static int h2_gizclaw_tool_bridge(void* userdata, gzc_str_t request_payload,
         h2_pal_time_get_monotonic_ms(client->config.time, &now);
     if (clock_result != H2_PAL_OK) {
       memset(completion, 0, sizeof(*completion));
+      if (finished.close != NULL) finished.close(finished.user, clock_result);
       response.on_complete(response.complete_user, clock_result);
       return h2_gizclaw_provider_result_to_gzc(clock_result);
     }
@@ -755,6 +840,10 @@ static int h2_gizclaw_tool_bridge(void* userdata, gzc_str_t request_payload,
         now > UINT64_MAX - budget ? UINT64_MAX : now + budget;
   }
   rc = respond(respond_userdata, &gzc_response);
+  if (finished.close != NULL)
+    finished.close(finished.user, finished_result != H2_PAL_OK
+                                      ? finished_result
+                                      : h2_gizclaw_result_from_gzc(rc));
   h2_gizclaw_local_network_response_copied_internal(&response);
   if (!drain && response.on_complete)
     response.on_complete(response.complete_user,
@@ -1505,6 +1594,8 @@ static void h2_gizclaw_dispatch_channel_state(
     h2_pal_webrtc_channel_state_t state) {
   if (client != NULL && (state == H2_PAL_WEBRTC_CHANNEL_CLOSED ||
                          state == H2_PAL_WEBRTC_CHANNEL_ERROR)) {
+    close_pending_providers(client, (gzc_rtc_channel_t*)channel,
+                            H2_PAL_ERR_CLOSED);
     h2_gizclaw_provider_completion_t* completion =
         provider_completion_for_channel(client, (gzc_rtc_channel_t*)channel);
     if (completion != NULL) {
@@ -1965,6 +2056,7 @@ static int h2_gzc_channel_set_buffered_amount_low_threshold(
 static void h2_gzc_channel_close(gzc_rtc_channel_t* channel) {
   h2_gizclaw_client_t* client = h2_gizclaw_client_for_channel(channel);
   if (client != NULL && client->config.webrtc != NULL) {
+    close_pending_providers(client, channel, H2_PAL_ERR_CLOSED);
     h2_gizclaw_provider_completion_t* completion =
         provider_completion_for_channel(client, channel);
     if (completion != NULL) {
@@ -2034,6 +2126,7 @@ void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t* client,
 static void h2_gzc_peer_close(gzc_rtc_peer_t* peer) {
   h2_gizclaw_client_t* client = h2_gizclaw_client_for_peer(peer);
   if (client != NULL && client->config.webrtc != NULL) {
+    close_pending_providers(client, NULL, H2_PAL_ERR_CLOSED);
     dispatch_provider_completions(client, H2_PAL_ERR_CLOSED);
     h2_gizclaw_reset_local_channel_state(client);
     client->opus_frame_callback = NULL;
@@ -2592,6 +2685,7 @@ int h2_gizclaw_client_close(h2_gizclaw_client_t* client) {
   if (client == NULL || client->gzc == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  close_pending_providers(client, NULL, H2_PAL_ERR_CLOSED);
   dispatch_provider_completions(client, H2_PAL_ERR_CLOSED);
   client->terminal_closed = true;
   h2_gizclaw_reset_local_channel_state(client);
@@ -2604,6 +2698,7 @@ void h2_gizclaw_client_deinit(h2_gizclaw_client_t* client) {
   if (client == NULL) {
     return;
   }
+  close_pending_providers(client, NULL, H2_PAL_ERR_CLOSED);
   dispatch_provider_completions(client, H2_PAL_ERR_CLOSED);
   const h2_pal_mem_api_t* allocator = client->config.allocator;
   if (client->gzc != NULL) {

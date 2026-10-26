@@ -1,0 +1,109 @@
+diff --git a/src/gzc_client.c b/src/gzc_client.c
+--- a/src/gzc_client.c
++++ b/src/gzc_client.c
+@@ -55,6 +55,8 @@
+     "Opus receive slot length must fit in uint16_t");
+-
++
+ struct gzc_client {
++  gzc_rtc_channel_t *provider_channel;
++  bool provider_retry;
+   gzc_client_config_t config;
+   const gzc_webrtc_media_vtable_t *media;
+   gzc_peer_add_ice_server_fn peer_add_ice_server;
+@@ -2164,7 +2166,7 @@
+                             gizclaw_rpc_v1_StatusCode_STATUS_CODE_INVALID_ARGUMENT,
+                             "invalid tool request");
+     }
+-    if (client->config.rpc_observer != NULL) {
++    if (client->config.rpc_observer != NULL && !client->provider_retry) {
+       client->config.rpc_observer(client->config.rpc_observer_userdata, method, request.tool);
+     }
+     for (size_t i = 0; i < client->config.tool_handler_count; i++) {
+@@ -2194,6 +2196,24 @@
+     break;
+   }
+   return GZC_ERR_UNSUPPORTED;
++}
++
++/* Serialized inbound dispatch keeps request identity across deferred polls. */
++gzc_rtc_channel_t *gzc_client_provider_channel_internal(gzc_client_t *client) {
++  return client->provider_channel;
++}
++int gzc_client_dispatch_rpc_channel_internal(
++    gzc_client_t *client, int method, gzc_str_t payload,
++    gzc_rtc_channel_t *channel, bool retry,
++    gzc_rpc_provider_respond_fn respond, void *user) {
++  gzc_rtc_channel_t *previous = client->provider_channel;
++  bool previous_retry = client->provider_retry;
++  client->provider_channel = channel;
++  client->provider_retry = retry;
++  int rc = gzc_client_dispatch_rpc_internal(client, method, payload, respond, user);
++  client->provider_channel = previous;
++  client->provider_retry = previous_retry;
++  return rc;
+ }
+-
++
+ void gzc_client_destroy(gzc_client_t *client) {
+diff --git a/src/gzc_rpc.c b/src/gzc_rpc.c
+--- a/src/gzc_rpc.c
++++ b/src/gzc_rpc.c
+@@ -17,10 +17,12 @@
+ const gzc_rpc_stream_provider_t *gzc_client_lua_app_provider_internal(gzc_client_t *client);
+ int64_t gzc_client_instant_ms_internal(gzc_client_t *client);
+ int gzc_client_write_timeout_ms_internal(gzc_client_t *client);
+-int gzc_client_dispatch_rpc_internal(
++int gzc_client_dispatch_rpc_channel_internal(
+     gzc_client_t *client,
+     int method,
+     gzc_str_t request_payload,
++    gzc_rtc_channel_t *channel,
++    bool retry,
+     gzc_rpc_provider_respond_fn respond,
+     void *respond_userdata);
+ int gzc_client_try_write_bytes_internal(
+@@ -1251,21 +1253,26 @@
+   if (inbound->provider != NULL) {
+     rc = inbound->provider->finish(inbound->provider_session,
+                                    inbound_provider_respond, &provider_response);
+-    if (rc == GZC_ERR_WOULD_BLOCK && !provider_response.responded) {
+-      gzc_buf_free(&provider_response.encoded_response, inbound->platform);
+-      inbound->provider_blocked = true;
+-      return rc;
+-    }
+   } else {
+-    rc = gzc_client_dispatch_rpc_internal(
++    rc = gzc_client_dispatch_rpc_channel_internal(
+         inbound->client,
+         (int)inbound->method,
+         gzc_str_from_parts(
+             (const char *)inbound->payload.data,
+             inbound->payload.len),
++        inbound->channel,
++        inbound->provider_blocked,
+         inbound_provider_respond,
+         &provider_response);
+   }
++  if (rc == GZC_ERR_WOULD_BLOCK && !provider_response.responded) {
++    gzc_buf_free(&provider_response.encoded_response, inbound->platform);
++    /* Keep the terminating frame for retry, but keep backend polling live. */
++    inbound->request_done = true;
++    inbound->provider_blocked = true;
++    return rc;
++  }
++  inbound->provider_blocked = false;
+   if (rc == GZC_ERR_UNSUPPORTED) {
+     gzc_buf_free(&provider_response.encoded_response, inbound->platform);
+     return inbound_error(
+@@ -1514,6 +1521,10 @@
+ int gzc_rpc_inbound_poll(struct gzc_rpc_inbound *inbound) {
+   if (inbound == NULL) {
+     return GZC_ERR_INVALID_ARGUMENT;
++  }
++  if (inbound->provider_blocked && inbound->phase != GZC_INBOUND_INSTALL_BODY) {
++    int rc = gzc_rpc_inbound_feed(inbound, NULL, 0, false);
++    if (rc != GZC_OK || inbound->provider_blocked) return rc;
+   }
+   if (inbound->phase == GZC_INBOUND_INSTALL_BODY) {
+     if (gzc_client_instant_ms_internal(inbound->client) >= inbound->install_deadline_ms) {

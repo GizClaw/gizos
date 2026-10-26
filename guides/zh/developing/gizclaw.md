@@ -142,7 +142,7 @@ Workspace RPC 保留 SDK 的 `ErrorInfo.reason` 到 request-owned storage。Work
 
 Wi-Fi provisioning 明确调用 PAL `connect_and_save`；Library 不维护第二份网络配置。音频与本地控制使用同一 Runtime proxy。`speaker_acquire`/`speaker_release` 必须成对提供；播放前 acquire，Track 关闭后在每条退出路径 release，失败、取消和停止也遵守此配对。没有 hook 时播放前 start_speaker，结束不主动 stop_speaker。`sound.play` 以 16 kHz mono PCM16 按 duration_ms 截断，短声音只完整播放一次。
 
-管理工具沿用上述 invoke/list 和本地入口。产品负责年龄选项、稳定 feature ID、当前使用窗口的计时与限额、AI 安全等级和管理密码的持久化与实际执行；只注册已实现的工具。成功回复返回实际 applied 状态；非法参数在修改前拒绝，通过 `out_response.has_error/error_code` 返回规范 RPC 错误。密码不进入日志、trace 或 telemetry。管理密码 reset 只清除密码，不触发恢复出厂。
+管理工具沿用上述 invoke/list 和本地入口。需要等待产品主循环、持久化或再次请求服务端的 handler 使用 [`h2_gizclaw_rpc.h`](https://github.com/GizClaw/gizos/blob/main/libs/gizclaw/include/h2_gizclaw_rpc.h) 的延迟回复：先复制并排队，在 RPC owner 上非阻塞查询完成结果；取消、超时、断线和关闭均释放请求的借用，产品 owner 仍须收尾已经开始的操作。同步与延迟回复使用同一工具发现、SDK 编码和错误合同。产品负责年龄选项、稳定 feature ID、当前使用窗口的计时与限额、AI 安全等级和管理密码的持久化与实际执行；只注册已实现的工具。成功回复返回实际 applied 状态；非法参数在修改前拒绝，通过 `out_response.has_error/error_code` 返回规范 RPC 错误。密码不进入日志、trace 或 telemetry。管理密码 reset 只清除密码，不触发恢复出厂。
 
 ### MHS v0 HWD 设备表
 

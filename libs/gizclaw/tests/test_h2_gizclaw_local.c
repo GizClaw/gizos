@@ -61,7 +61,7 @@ typedef struct fixture {
   uint32_t volume;
   bool muted;
   _Atomic int reads, writes, completions, completion_result, entered, gate,
-      error;
+      error, deferred, deferred_closes, deferred_close_result;
   pthread_t invoke_thread, completion_thread;
 } fixture_t;
 static int speaker_read(void* u, h2_gizclaw_mhs_read_t* out) {
@@ -94,6 +94,18 @@ static void completed(void* u, int rc) {
   atomic_store(&f->completion_result, rc);
   ++f->completions;
 }
+static int deferred_poll(void* user, h2_gizclaw_rpc_provider_response_t* out) {
+  fixture_t* f = user;
+  if (atomic_load(&f->gate)) return H2_PAL_ERR_WOULD_BLOCK;
+  out->on_complete = completed;
+  out->complete_user = f;
+  return H2_PAL_OK;
+}
+static void deferred_close(void* user, int result) {
+  fixture_t* f = user;
+  atomic_store(&f->deferred_close_result, result);
+  ++f->deferred_closes;
+}
 static int product_find(void* u, h2_gizclaw_tool_t tool,
                         h2_gizclaw_rpc_bytes_t in,
                         h2_gizclaw_rpc_provider_response_t* out) {
@@ -102,6 +114,14 @@ static int product_find(void* u, h2_gizclaw_tool_t tool,
   fixture_t* f = u;
   f->invoke_thread = pthread_self();
   atomic_store(&f->entered, 1);
+  if (atomic_load(&f->deferred)) {
+    out->deferred = (h2_gizclaw_rpc_deferred_response_t){
+        .user = f,
+        .poll = deferred_poll,
+        .close = deferred_close,
+        .timeout_ms = (uint32_t)atomic_load(&f->deferred)};
+    return H2_PAL_OK;
+  }
   while (atomic_load(&f->gate))
     assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
            H2_PAL_OK);
@@ -320,6 +340,41 @@ int main(void) {
   assert(view.result == -1234 && view.has_error);
   done(&c);
   atomic_store(&f.error, 0);
+  /* A pending product response leaves discovery usable on the same owner. */
+  atomic_store(&f.deferred, 1000);
+  atomic_store(&f.gate, 1);
+  atomic_store(&f.entered, 0);
+  c = submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_INVOKE, request, length);
+  wait_counter(&f.entered, 1);
+  second = submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_LIST, NULL, 0);
+  assert(wait_call(second).result == H2_PAL_OK);
+  done(&second);
+  assert(h2_gizclaw_local_call_wait(c, 1u, &view) == H2_PAL_ERR_TIMEOUT);
+  atomic_store(&f.gate, 0);
+  assert(wait_call(c).result == H2_PAL_OK);
+  wait_counter(&f.deferred_closes, 1);
+  done(&c);
+  wait_counter(&f.completions, 2);
+  atomic_store(&f.gate, 1);
+  atomic_store(&f.entered, 0);
+  c = submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_INVOKE, request, length);
+  wait_counter(&f.entered, 1);
+  assert(h2_gizclaw_local_call_cancel(c) == H2_PAL_OK);
+  int canceled_wait = h2_gizclaw_local_call_wait(c, 5000u, &view);
+  assert(canceled_wait == H2_PAL_ERR_CLOSED ||
+         (canceled_wait == H2_PAL_OK && view.result == H2_PAL_ERR_CLOSED));
+  assert(h2_gizclaw_local_call_release(&c) == H2_PAL_OK);
+  wait_counter(&f.deferred_closes, 2);
+  assert(atomic_load(&f.deferred_close_result) == H2_PAL_ERR_CLOSED);
+  atomic_store(&f.deferred, 20);
+  c = submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_INVOKE, request, length);
+  assert(wait_call(c).result == H2_PAL_ERR_TIMEOUT);
+  assert(h2_gizclaw_local_call_complete(c, H2_PAL_OK) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_local_call_release(&c) == H2_PAL_OK);
+  wait_counter(&f.deferred_closes, 3);
+  assert(atomic_load(&f.deferred_close_result) == H2_PAL_ERR_TIMEOUT);
+  atomic_store(&f.deferred, 0);
+  atomic_store(&f.gate, 0);
   h2_gizclaw_local_call_t* held[4];
   for (size_t i = 0; i < 4; ++i) {
     held[i] = submit(d, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_LIST, NULL, 0);
