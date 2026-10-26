@@ -1,4 +1,4 @@
-#include "h2_h2loader_cli_target.h"
+#include "h2_h2loader_native.h"
 
 #include <assert.h>
 
@@ -9,15 +9,15 @@ static int handle_event(void* user, const h2_pal_system_event_t* event) {
 }
 
 int main(void) {
-  assert(h2_h2loader_cli_target_start() == H2_PAL_OK);
+  assert(h2_h2loader_native_start() == H2_PAL_OK);
   h2_pal_system_event_subscription_t* subscription = NULL;
   const h2_pal_system_event_api_t* system_event =
-      h2_h2loader_cli_target_system_event();
+      h2_h2loader_native_system_event();
   assert(h2_pal_system_event_subscribe(
              system_event, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
              handle_event, NULL, &subscription) == H2_PAL_OK);
   assert(subscription != NULL);
   h2_pal_system_event_unsubscribe(system_event, subscription);
-  h2_h2loader_cli_target_stop();
+  h2_h2loader_native_stop();
   return 0;
 }

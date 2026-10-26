@@ -5,7 +5,7 @@
 #define _XOPEN_SOURCE 700
 #endif
 
-#include "h2_h2loader_cli_host_path.h"
+#include "h2_h2loader_native_path.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -41,11 +41,11 @@ static int resolve_host(const char* absolute, char* out, size_t out_size) {
   return join(buffer, slash + 1, out, out_size);
 }
 
-int h2_h2loader_cli_host_path_resolve(const char* base_dir,
-                                      const char* const* sources,
-                                      const char* const* targets,
-                                      size_t mount_count, const char* path,
-                                      char* out, size_t out_size) {
+int h2_h2loader_native_path_resolve(const char* base_dir,
+                                    const char* const* sources,
+                                    const char* const* targets,
+                                    size_t mount_count, const char* path,
+                                    char* out, size_t out_size) {
   char absolute[PATH_MAX];
   char resolved[PATH_MAX];
   if (path == NULL || path[0] == '\0' || out == NULL || out_size == 0u)

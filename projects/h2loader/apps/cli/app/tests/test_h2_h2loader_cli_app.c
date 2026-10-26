@@ -785,11 +785,11 @@ static void test_reboot_final_status_is_authoritative(void) {
   after.next_partition = 2u;
   after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
   after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_APP, &before, &after) ==
          H2_PAL_OK);
   strcpy(after.stage.image_checksum, "bb");
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_APP, &before, &after) ==
          H2_PAL_ERR_INVALID_STATE);
   after.stage = before.stage;
@@ -797,7 +797,7 @@ static void test_reboot_final_status_is_authoritative(void) {
   after.next_partition = 1u;
   after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
   after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_LOADER;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER, &before, &after) ==
          H2_PAL_OK);
 
@@ -808,11 +808,11 @@ static void test_reboot_final_status_is_authoritative(void) {
   after.next_partition = 2u;
   after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
   after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_OK);
   after.stage = before.stage;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_ERR_INVALID_STATE);
 
@@ -824,11 +824,11 @@ static void test_reboot_final_status_is_authoritative(void) {
   after.next_partition = 1u;
   after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
   after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_OK);
   after.partition_2.image_size++;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_ERR_INVALID_STATE);
 
@@ -841,7 +841,7 @@ static void test_reboot_final_status_is_authoritative(void) {
   after.next_partition = 1u;
   after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
   after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_OK);
 
@@ -851,7 +851,7 @@ static void test_reboot_final_status_is_authoritative(void) {
   after.running_partition = 2u;
   after.next_partition = 2u;
   after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_OK);
 
@@ -864,15 +864,15 @@ static void test_reboot_final_status_is_authoritative(void) {
   after.running_partition = 1u;
   after.next_partition = 1u;
   after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_ERR_INVALID_STATE);
   after.partition_1 = before.partition_2;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_OK);
   after.partition_1.image_size++;
-  assert(h2_h2loader_cli_verify_reboot_status(
+  assert(h2_h2loader_host_verify_reboot_status(
              H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
          H2_PAL_ERR_INVALID_STATE);
 }

@@ -1,0 +1,109 @@
+name: H2Loader Desktop builds
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h2loader-desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Desktop / ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+            bazelisk: bazelisk-darwin-arm64
+            bazelisk_sha256: cee851f726789227d5561004e9904a52be45c3efb56f8b38b6993d6adbaa0409
+          - platform: windows
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            bazelisk: bazelisk-windows-amd64.exe
+            bazelisk_sha256: 092a8738d5b41aae7a85c42cc961b1034e3389aba43ffc20c0fabda7b43e095b
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      H2LOADER_DESKTOP_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: projects/h2loader/apps/desktop/frontend/package-lock.json
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: projects/h2loader/apps/desktop/src-tauri -> target
+          shared-key: desktop-${{ matrix.target }}
+          cache-on-failure: true
+      - name: Install verified Bazelisk
+        shell: bash
+        env:
+          BAZELISK_ASSET: ${{ matrix.bazelisk }}
+          BAZELISK_SHA256: ${{ matrix.bazelisk_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/h2loader-tools"
+          tool="$RUNNER_TEMP/h2loader-tools/bazel"
+          [[ "$RUNNER_OS" != Windows ]] || tool="$tool.exe"
+          curl --fail --location --retry 3 "https://github.com/bazelbuild/bazelisk/releases/download/v1.29.0/$BAZELISK_ASSET" --output "$tool"
+          TOOL_PATH="$tool" node --input-type=module -e 'import {readFileSync} from "node:fs"; import {createHash} from "node:crypto"; if(createHash("sha256").update(readFileSync(process.env.TOOL_PATH)).digest("hex")!==process.env.BAZELISK_SHA256) throw new Error("Bazelisk checksum mismatch")'
+          chmod +x "$tool"
+          echo "$RUNNER_TEMP/h2loader-tools" >> "$GITHUB_PATH"
+          git config --global core.symlinks true
+      - name: Test desktop interface and source provenance
+        working-directory: projects/h2loader/apps/desktop/frontend
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npx playwright install chromium
+          npm run test:e2e
+      - name: Install frontend and compile native Host Core
+        shell: bash
+        run: |
+          npm ci --prefix projects/h2loader/apps/desktop/frontend
+          node projects/h2loader/apps/desktop/scripts/prepare-native.mjs
+      - name: Exercise compiled native CLI startup and package I/O
+        run: node projects/h2loader/apps/desktop/scripts/test-native.mjs
+      - name: Validate desktop Rust and UI build
+        shell: bash
+        run: |
+          npm run build --prefix projects/h2loader/apps/desktop/frontend
+          cargo fmt --check --manifest-path projects/h2loader/apps/desktop/src-tauri/Cargo.toml
+          cargo test --release --features custom-protocol --target "$H2LOADER_DESKTOP_TARGET" --locked --manifest-path projects/h2loader/apps/desktop/src-tauri/Cargo.toml
+          cargo clippy --release --features custom-protocol --target "$H2LOADER_DESKTOP_TARGET" --locked --manifest-path projects/h2loader/apps/desktop/src-tauri/Cargo.toml -- -D warnings
+      - name: Build optimized installer
+        shell: bash
+        env:
+          BUNDLES: ${{ matrix.bundles }}
+        run: npm run desktop:build --prefix projects/h2loader/apps/desktop/frontend -- --ci --bundles "$BUNDLES" --target "$H2LOADER_DESKTOP_TARGET" -- --locked
+      - name: Verify macOS application signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: codesign --verify --deep --strict 'projects/h2loader/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/H2Loader Desktop.app'
+      - name: Collect installer and provenance
+        shell: bash
+        run: node projects/h2loader/apps/desktop/scripts/packages.mjs collect dist/h2loader-desktop "$H2LOADER_DESKTOP_TARGET"
+      - name: Save installer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-${{ matrix.platform }}
+          path: dist/h2loader-desktop/*
+          if-no-files-found: error
+          retention-days: 30

@@ -23,6 +23,7 @@ cc_library(
         "src/h2_h2loader_host_flash_bk7258.c",
         "src/h2_h2loader_host_flash_esp.c",
         "src/h2_h2loader_host_internal.h",
+        "src/h2_h2loader_host_lifecycle.c",
         "src/h2_h2loader_host_operation.c",
         "src/h2_h2loader_host_package.c",
         "src/h2_h2loader_host_package_writer.c",
@@ -36,6 +37,7 @@ cc_library(
         "include/h2_h2loader_host_catalog.h",
         "include/h2_h2loader_host_factory.h",
         "include/h2_h2loader_host_flash.h",
+        "include/h2_h2loader_host_lifecycle.h",
         "include/h2_h2loader_host_package.h",
         "include/h2_h2loader_host_scheduler.h",
         "include/h2_h2loader_host_task_names.h",
@@ -180,6 +182,20 @@ cc_test(
 cc_test(
     name = "h2loader_host_discovery_test",
     srcs = ["tests/test_h2loader_host_discovery.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2loader_host"],
+)
+
+cc_test(
+    name = "lifecycle_test",
+    srcs = ["tests/test_h2loader_host_lifecycle.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({

@@ -2,6 +2,7 @@
 #define H2_H2LOADER_CLI_INTERNAL_H
 
 #include "h2_h2loader_cli_app.h"
+#include "h2_h2loader_host_lifecycle.h"
 #include "h2_h2loader_host_package.h"
 
 #define H2_H2LOADER_CLI_MAX_DATA_ENTRIES 128u
@@ -114,10 +115,6 @@ int h2_h2loader_cli_scan_candidates(
     h2_h2loader_cli_context_t* context,
     const h2_h2loader_host_candidate_t* candidates, size_t count,
     uint32_t timeout_ms, h2_h2loader_cli_scan_probe_fn probe, void* probe_user);
-
-h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
-    h2_h2loader_host_command_t kind, const h2_h2loader_host_status_t* before,
-    const h2_h2loader_host_status_t* after);
 
 int h2_h2loader_cli_package_command(h2_h2loader_cli_context_t* context,
                                     int argc, const char* const* argv,

@@ -77,6 +77,8 @@ Raw recovery 只能使用 serial。成功的任何 reliable serial 或 BLE-iKCP 
 
 BK7258 driver 在 Host Core 内用 C 实现 Beken HCI ROM download protocol，只消费 Host Serial、Time 与 Memory PAL。操作员或 fixture 必须先让设备进入 download mode；driver 不改变 DTR/RTS。当前维护中的两块 BK7258 board 都使用 8 MiB 内部 Flash，driver 先用 64 KiB block erase 覆盖整颗 Flash，再以 4 KiB sector 写入 exact reviewed `.h2fb`，最后通过 ROM readback 重新计算每个 member 的 SHA-256。任一响应、地址、status 或 checksum 不匹配都禁止 reboot-to-success。产品不能退回 BK7231 工具、SDK subprocess 或内置 Python runtime。
 
+Native CLI 与桌面会话通过 `projects/h2loader/libs/native_host` 共用主机 PAL 组合。重启后的角色、分区和元数据验证由 Host Core 的 `h2_h2loader_host_lifecycle.h` 提供；桌面不依赖 CLI App 的私有实现。
+
 ## Threading 与 shutdown
 
 Darwin CoreBluetooth 的 provider 构造入口显式借用 Memory 和 Log；首次成功绑定后只接受同一对 API 指针，NULL、不完整或不同的服务会返回 NULL。CLI 和 Desktop 由组装入口传入日志服务，保持 API object 及其 `user` 在 provider 生命周期内有效。连接失败和异常断开在 backend queue 上通过 PAL Log 输出有长度上限的错误详情，不直接写标准流；日志失败不改变 BLE 错误返回值或事件。

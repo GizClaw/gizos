@@ -1,0 +1,43 @@
+{
+  "name": "@gizclaw/h2loader-desktop",
+  "private": true,
+  "version": "0.2.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "tsx --test tests/*.test.mjs",
+    "test:e2e": "playwright test",
+    "native:prepare": "node ../scripts/prepare-native.mjs",
+    "desktop:dev": "node ../scripts/desktop.mjs dev",
+    "desktop:build": "node ../scripts/desktop.mjs build",
+    "lint": "oxlint src tests e2e vite.config.ts playwright.config.ts"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@gizclaw/forge-picker": "0.1.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/api": "2.12.1",
+    "@tauri-apps/plugin-dialog": "2.8.1",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.4.0",
+    "lucide-react": "^1.48.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "shadcn": "^4.21.0",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@tauri-apps/cli": "2.12.1",
+    "@types/node": "^24.13.6",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}

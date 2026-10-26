@@ -1,0 +1,72 @@
+name: H2Loader Desktop release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: h2loader-desktop-publish
+  cancel-in-progress: false
+jobs:
+  build:
+    uses: ./.github/workflows/h2loader-desktop.yml
+  publish:
+    name: Publish desktop Release
+    needs: [build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Require main and a fresh desktop version
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo '::error::Desktop publication requires main'; exit 1; }
+          version=$(node -p "require('./projects/h2loader/apps/desktop/src-tauri/tauri.conf.json').version")
+          tag="h2loader-desktop-v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo '::error::Desktop Release exists; bump its version before publishing'; exit 1
+          fi
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: desktop-*
+          path: dist/h2loader-desktop
+          merge-multiple: true
+      - name: Assemble and verify producer index
+        run: |
+          node projects/h2loader/apps/desktop/scripts/packages.mjs assemble dist/h2loader-desktop
+          node projects/h2loader/apps/desktop/scripts/packages.mjs verify dist/h2loader-desktop
+      - name: Publish complete desktop installer set
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./projects/h2loader/apps/desktop/src-tauri/tauri.conf.json').version")
+          tag="h2loader-desktop-v$version"
+          cat > "$RUNNER_TEMP/desktop-notes.md" <<EOF
+          H2Loader Desktop $version
+
+          macOS Apple Silicon: open the DMG and drag H2Loader Desktop.app into Applications.
+          Windows x64: run the setup EXE; the installer provisions WebView2 if needed.
+          Native serial scanning, persistent connections, local/URL/Forge selection and batch transfer progress are included. Package inspection uses the same Host Core as the CLI, including firmware versions with build metadata and both update package formats.
+          An independent serial log window aggregates device and task output, with multi-port and keyword filters, pause/follow, clear and filtered export.
+          Scan adds every available port without connecting; the toolbar toggles between connecting and disconnecting all retained ports; logs and device operations share one persistent Loader connection per connected device. The separate log window has compact source filters, and bulk commands use the retained connected list without checkboxes.
+
+          macOS is ad-hoc signed without notarization. Windows is unsigned.
+          SHA256SUMS and desktop-index.json describe the exact installers and pinned SDK provenance.
+          The desktop and native SDK are built from this exact GizOS commit. This release replaces the former H6-branded desktop program with the generic H2Loader Desktop application.
+          EOF
+          gh release create "$tag" dist/h2loader-desktop/*.dmg dist/h2loader-desktop/*.exe dist/h2loader-desktop/desktop-index.json dist/h2loader-desktop/SHA256SUMS \
+            --target "$GITHUB_SHA" --title "H2Loader Desktop $version" --notes-file "$RUNNER_TEMP/desktop-notes.md" --draft
+          gh release download "$tag" --dir "$RUNNER_TEMP/released-desktop"
+          for file in dist/h2loader-desktop/*.dmg dist/h2loader-desktop/*.exe dist/h2loader-desktop/desktop-index.json dist/h2loader-desktop/SHA256SUMS; do
+            cmp "$file" "$RUNNER_TEMP/released-desktop/$(basename "$file")"
+          done
+          gh release edit "$tag" --draft=false
+          cat dist/h2loader-desktop/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"

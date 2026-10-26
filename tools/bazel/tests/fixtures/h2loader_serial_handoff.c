@@ -337,7 +337,7 @@ int main(int argc, char** argv) {
     disconnect_serial();
   } else if (!strcmp(argv[1], "upgrade_failure")) {
     h2_h2loader_host_status_t before = {0}, after = {.last = H2_PAL_ERR_IO};
-    assert(h2_h2loader_cli_verify_reboot_status(
+    assert(h2_h2loader_host_verify_reboot_status(
                H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
            H2_PAL_ERR_INVALID_STATE);
   } else {

@@ -1,0 +1,8 @@
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+src-tauri/binaries/
+src-tauri/target/
+src-tauri/licenses/
+src-tauri/gen/

@@ -1,0 +1,22 @@
+{
+  "repository": "GizClaw/gizos",
+  "product": "h2loader-desktop",
+  "targets": [
+    {
+      "platform": "macos",
+      "arch": "aarch64",
+      "triple": "aarch64-apple-darwin",
+      "format": "dmg",
+      "suffix": "macos_aarch64.dmg",
+      "signing": "ad-hoc"
+    },
+    {
+      "platform": "windows",
+      "arch": "x86_64",
+      "triple": "x86_64-pc-windows-msvc",
+      "format": "exe",
+      "suffix": "windows_x86_64_setup.exe",
+      "signing": "unsigned"
+    }
+  ]
+}

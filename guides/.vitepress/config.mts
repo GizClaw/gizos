@@ -226,6 +226,7 @@ const appItems = [
             text: "Batch Loader",
             link: "/apps/h2loader/apps/batch_loader/",
           },
+          { text: "H2Loader Desktop", link: "/apps/h2loader/apps/desktop/" },
           { text: "BLE iKCP Baseline", link: "/apps/h2loader/apps/bleikcp_speed/" },
           { text: "Wi-Fi CSI Smoke", link: "/apps/h2loader/apps/wifi_csi/" },
         ],

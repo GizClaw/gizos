@@ -1,0 +1,4 @@
+projects/h2loader/apps/desktop/frontend/node_modules
+projects/h2loader/apps/desktop/frontend/dist
+projects/h2loader/apps/desktop/src-tauri/target
+projects/h2loader/apps/desktop/src-tauri/gen

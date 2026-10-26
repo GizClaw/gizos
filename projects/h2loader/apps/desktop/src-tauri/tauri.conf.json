@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "H2Loader Desktop",
+  "version": "0.2.1",
+  "identifier": "com.gizclaw.h2loader",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:4177/desktop/loader.html",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "H2Loader Desktop",
+        "url": "desktop/loader.html",
+        "width": 1320,
+        "height": 880,
+        "maximized": true,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:4177 ws://127.0.0.1:4177"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "externalBin": [
+      "binaries/h2loader",
+      "binaries/h2loader-desktop-session"
+    ],
+    "resources": [
+      "licenses/h2loader.txt"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
+    }
+  }
+}

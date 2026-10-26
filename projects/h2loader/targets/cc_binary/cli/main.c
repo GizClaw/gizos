@@ -1,4 +1,5 @@
-#include "h2_h2loader_cli_target.h"
+#include "h2_h2loader_cli_app.h"
+#include "h2_h2loader_native.h"
 #include "h2_bleikcp.h"
 
 #include <signal.h>
@@ -76,8 +77,7 @@ static const char* const* resolve_path_arguments(int argc, char** argv) {
   for (int i = 0; i < argc; ++i) args[i] = argv[i];
   for (int i = 1; i + 1 < argc; ++i) {
     if (!is_path_option(argv[i])) continue;
-    if (h2_h2loader_cli_target_resolve_path(argv[i + 1], buffer,
-                                            sizeof(buffer))) {
+    if (h2_h2loader_native_resolve_path(argv[i + 1], buffer, sizeof(buffer))) {
       char* copy = malloc(strlen(buffer) + 1u);
       if (copy != NULL) args[i + 1] = strcpy(copy, buffer);
     }
@@ -101,7 +101,7 @@ static int cli_main(int argc, char** argv) {
   };
   h2_command_io_api_t stdout_io = {.user = stdout, .vtable = &stdio_vtable};
   h2_command_io_api_t stderr_io = {.user = stderr, .vtable = &stdio_vtable};
-  h2_pal_result_t startup = h2_h2loader_cli_target_start();
+  h2_pal_result_t startup = h2_h2loader_native_start();
   if (startup != H2_PAL_OK) {
     fprintf(stderr, "h2loader: native platform initialization failed code=%d\n",
             startup);
@@ -111,37 +111,37 @@ static int cli_main(int argc, char** argv) {
   if (kcp_result != H2_PAL_OK) {
     fprintf(stderr, "h2loader: KCP initialization failed code=%d\n",
             kcp_result);
-    h2_h2loader_cli_target_stop();
+    h2_h2loader_native_stop();
     return H2_H2LOADER_CLI_EXIT_RUNTIME;
   }
   const char* const* args = resolve_path_arguments(argc, argv);
   if (args == NULL) {
     fprintf(stderr, "h2loader: cannot allocate command arguments\n");
     (void)h2_bleikcp_global_shutdown();
-    h2_h2loader_cli_target_stop();
+    h2_h2loader_native_stop();
     return H2_H2LOADER_CLI_EXIT_RUNTIME;
   }
-  const h2_pal_mem_api_t* mem = h2_h2loader_cli_target_mem();
-  const h2_pal_ble_host_api_t* ble = h2_h2loader_cli_target_ble(mem);
+  const h2_pal_mem_api_t* mem = h2_h2loader_native_mem();
+  const h2_pal_ble_host_api_t* ble = h2_h2loader_native_ble(mem);
   h2_runtime_t runtime = {
       .board = "host",
       .target = "cli",
       .chip = "native",
       .mem = mem,
       .ble_host = NULL,
-      .log = h2_h2loader_cli_target_log(),
-      .time = h2_h2loader_cli_target_time(),
-      .task = h2_h2loader_cli_target_task(),
-      .queue = h2_h2loader_cli_target_queue(),
-      .sync = h2_h2loader_cli_target_sync(),
-      .fs = h2_h2loader_cli_target_fs(),
-      .net = h2_h2loader_cli_target_net(),
-      .system_event = h2_h2loader_cli_target_system_event(),
+      .log = h2_h2loader_native_log(),
+      .time = h2_h2loader_native_time(),
+      .task = h2_h2loader_native_task(),
+      .queue = h2_h2loader_native_queue(),
+      .sync = h2_h2loader_native_sync(),
+      .fs = h2_h2loader_native_fs(),
+      .net = h2_h2loader_native_net(),
+      .system_event = h2_h2loader_native_system_event(),
   };
   h2_h2loader_cli_config_t config = {
       .argc = argc,
       .argv = args,
-      .serial = h2_h2loader_cli_target_serial(),
+      .serial = h2_h2loader_native_serial(),
       .stdout_io = &stdout_io,
       .stderr_io = &stderr_io,
       .is_cancelled = is_cancelled,
@@ -154,7 +154,7 @@ static int cli_main(int argc, char** argv) {
   result = h2_h2loader_cli_main(&runtime, &config);
   if (started_ble != NULL) (void)h2_pal_ble_stop(started_ble);
   (void)h2_bleikcp_global_shutdown();
-  h2_h2loader_cli_target_stop();
+  h2_h2loader_native_stop();
   release_path_arguments(argc, argv, args);
   return cancelled ? 130 : result;
 }

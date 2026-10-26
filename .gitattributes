@@ -8,3 +8,7 @@
 
 # Unified-diff blank context lines intentionally contain one space.
 third_party/gizclaw_c_sdk_lua_app_uninstall.patch whitespace=-trailing-space
+
+projects/h2loader/targets/cc_binary/desktop_session/BUILD.bazel text eol=lf
+projects/h2loader/targets/cc_binary/desktop_session/session.c text eol=lf
+projects/h2loader/targets/cc_binary/desktop_session/session_test.c text eol=lf

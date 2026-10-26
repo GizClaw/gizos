@@ -1,4 +1,4 @@
-#include "h2_h2loader_cli_host_path.h"
+#include "h2_h2loader_native_path.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -93,11 +93,11 @@ static wchar_t* resolve_input(const char* base_dir, const char* path) {
   return full;
 }
 
-int h2_h2loader_cli_host_path_resolve(const char* base_dir,
-                                      const char* const* sources,
-                                      const char* const* targets,
-                                      size_t mount_count, const char* path,
-                                      char* out, size_t out_size) {
+int h2_h2loader_native_path_resolve(const char* base_dir,
+                                    const char* const* sources,
+                                    const char* const* targets,
+                                    size_t mount_count, const char* path,
+                                    char* out, size_t out_size) {
   if (out == NULL || out_size == 0u) return 0;
   out[0] = '\0';
   if (sources == NULL || targets == NULL || mount_count == 0u) return 0;

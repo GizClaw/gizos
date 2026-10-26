@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "h2_h2loader_cli_host_path.h"
+#include "h2_h2loader_native_path.h"
 
 #include <assert.h>
 #include <limits.h>
@@ -39,43 +39,43 @@ int main(void) {
 
   /* Absolute path through a symlinked directory resolves into the mount. */
   snprintf(out, sizeof(out), "%s/pkg.bin", link_dir);
-  assert(h2_h2loader_cli_host_path_resolve(work_dir, sources, targets, 2u, out,
-                                           out, sizeof(out)) == 1);
+  assert(h2_h2loader_native_path_resolve(work_dir, sources, targets, 2u, out,
+                                         out, sizeof(out)) == 1);
   assert(strcmp(out, "/pkg/pkg.bin") == 0);
 
   /* Relative path is joined to base_dir, then symlink-resolved. */
-  assert(h2_h2loader_cli_host_path_resolve(work_dir, sources, targets, 2u,
-                                           "../link/pkg.bin", out,
-                                           sizeof(out)) == 1);
+  assert(h2_h2loader_native_path_resolve(work_dir, sources, targets, 2u,
+                                         "../link/pkg.bin", out,
+                                         sizeof(out)) == 1);
   assert(strcmp(out, "/pkg/pkg.bin") == 0);
 
   /* Relative path inside the base dir maps to its own mount. */
-  assert(h2_h2loader_cli_host_path_resolve(work_dir, sources, targets, 2u,
-                                           "x.bin", out, sizeof(out)) == 1);
+  assert(h2_h2loader_native_path_resolve(work_dir, sources, targets, 2u,
+                                         "x.bin", out, sizeof(out)) == 1);
   assert(strcmp(out, "/work/x.bin") == 0);
 
   /* Output file that does not exist yet: parent resolved, name appended. */
-  assert(h2_h2loader_cli_host_path_resolve(work_dir, sources, targets, 2u,
-                                           "../link/new.tar.zlib", out,
-                                           sizeof(out)) == 1);
+  assert(h2_h2loader_native_path_resolve(work_dir, sources, targets, 2u,
+                                         "../link/new.tar.zlib", out,
+                                         sizeof(out)) == 1);
   assert(strcmp(out, "/pkg/new.tar.zlib") == 0);
 
   /* Mount root itself. */
-  assert(h2_h2loader_cli_host_path_resolve(work_dir, sources, targets, 2u,
-                                           link_dir, out, sizeof(out)) == 1);
+  assert(h2_h2loader_native_path_resolve(work_dir, sources, targets, 2u,
+                                         link_dir, out, sizeof(out)) == 1);
   assert(strcmp(out, "/pkg") == 0);
 
   /* Outside every mount, or unresolvable: left to the caller. */
-  assert(h2_h2loader_cli_host_path_resolve(work_dir, sources, targets, 2u, "/",
-                                           out, sizeof(out)) == 0);
-  assert(h2_h2loader_cli_host_path_resolve(work_dir, sources, targets, 2u,
-                                           "missing-dir/x.bin", out,
-                                           sizeof(out)) == 0);
-  assert(h2_h2loader_cli_host_path_resolve(NULL, sources, targets, 2u,
-                                           "relative.bin", out,
-                                           sizeof(out)) == 0);
-  assert(h2_h2loader_cli_host_path_resolve(work_dir, sources, targets, 2u, "",
-                                           out, sizeof(out)) == 0);
+  assert(h2_h2loader_native_path_resolve(work_dir, sources, targets, 2u, "/",
+                                         out, sizeof(out)) == 0);
+  assert(h2_h2loader_native_path_resolve(work_dir, sources, targets, 2u,
+                                         "missing-dir/x.bin", out,
+                                         sizeof(out)) == 0);
+  assert(h2_h2loader_native_path_resolve(NULL, sources, targets, 2u,
+                                         "relative.bin", out,
+                                         sizeof(out)) == 0);
+  assert(h2_h2loader_native_path_resolve(work_dir, sources, targets, 2u, "",
+                                         out, sizeof(out)) == 0);
 
   puts("h2loader cli host path tests passed");
   return 0;

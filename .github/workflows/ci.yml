@@ -1432,6 +1432,10 @@ jobs:
           path: ~/.cache/bazel/repository
           key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
+  desktop:
+    name: H2Loader Desktop
+    uses: ./.github/workflows/h2loader-desktop.yml
+
   ci-required:
     if: always()
     name: CI required
@@ -1445,6 +1449,7 @@ jobs:
       - host
       - esp-compatible-graph
       - windows-compatible-graph
+      - desktop
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     steps:
       - name: Require every applicable execution class
@@ -1460,12 +1465,14 @@ jobs:
             ${{ github.event_name != 'pull_request' ||
             github.event.pull_request.head.repo.full_name == github.repository }}
           WINDOWS_RESULT: ${{ needs.windows-compatible-graph.result }}
+          DESKTOP_RESULT: ${{ needs.desktop.result }}
         shell: bash
         run: |
           test "$FORMAT_RESULT" = success
           test "$HOST_RESULT" = success
           test "$EXTENDED_RESULT" = success
           test "$WINDOWS_RESULT" = success
+          test "$DESKTOP_RESULT" = success
           if [ "$PRIVATE_DEPENDENCIES_REQUIRED" = true ]; then
             test "$PRIVATE_DEPENDENCIES_RESULT" = success
             test "$BK7258_RESULT" = success

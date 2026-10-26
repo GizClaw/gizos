@@ -1,0 +1,5 @@
+@import "tailwindcss";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "../../theme.css";
+@import "../../public/styles/batch.css";

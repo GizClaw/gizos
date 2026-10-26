@@ -726,6 +726,7 @@ py_test(
         "tests/fixtures/h2loader_serial_handoff.c",
         "//libs/h2loader_host:include/h2_h2loader_host.h",
         "//libs/h2loader_host:include/h2_h2loader_host_catalog.h",
+        "//libs/h2loader_host:src/h2_h2loader_host_lifecycle.c",
         "//libs/h2loader_host:src/h2_h2loader_host_serial.c",
         "//libs/iostreamikcp:include/h2_iostreamikcp.h",
         "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
