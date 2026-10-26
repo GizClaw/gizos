@@ -73,7 +73,7 @@ export async function createDesktopH2Loader() {
     disconnect: (port: Port) => invoke('disconnect_port', { portId: port.id }),
     forgetPort: (port: Port) => invoke('forget_port', { portId: port.id }),
     choosePackage: async (): Promise<Firmware | null> => {
-      const path = await open({ multiple: false, directory: false, filters: [{ name: 'H2Loader 固件包', extensions: ['zlib'] }] })
+      const path = await open({ multiple: false, directory: false, filters: [{ name: 'H2Loader 固件包', extensions: ['tar', 'zlib'] }] })
       return typeof path === 'string' ? { path } : null
     },
     inspectPackage: async (file: Firmware) => {

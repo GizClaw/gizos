@@ -9,7 +9,7 @@ test('desktop uses native scanning, actual port paths and only the inner workben
     const callbacks = new Map<number, (value: unknown) => void>()
     const jobs = new Map<string, { operation: string; port?: string; cancelled?: boolean; resolve?: () => void; reject?: (error: Error) => void }>()
     const connected = new Set<string>()
-    const fixture = { now: 0, portCount: 1, calls: [] as string[], releases: [] as string[], staged: [] as string[], finish: () => { for (const job of [...jobs.values()]) job.resolve?.() }, report: (_bytes: number, _at: number) => {} }
+    const fixture = { now: 0, portCount: 1, dialogExtensions: [] as string[], calls: [] as string[], releases: [] as string[], staged: [] as string[], finish: () => { for (const job of [...jobs.values()]) job.resolve?.() }, report: (_bytes: number, _at: number) => {} }
     const status = { board: 'test_board', target: 'esp32s3', active: { role: 'app', version: '1.2.3' }, commandAvailability: (1 << 0) | (1 << 1) | (1 << 3) | (1 << 11) | (1 << 19) }
     Object.assign(globalThis, {
       isTauri: true,
@@ -25,7 +25,7 @@ test('desktop uses native scanning, actual port paths and only the inner workben
           if (command === 'disconnect_port') { connected.delete(String(args.portId)); return null }
           if (command === 'open_log_window') return null
           if (command === 'scan_ports') return Array.from({ length: fixture.portCount }, (_, i) => ({ id: `/dev/cu.usbmodem-test${i ? `-${i}` : ''}`, name: 'USB Serial', usbVendorId: 0x303a, usbProductId: 0x1001, selectedByDefault: true }))
-          if (command === 'plugin:dialog|open') return '/fixtures/app.tar.zlib'
+          if (command === 'plugin:dialog|open') { fixture.dialogExtensions = (args.options as {filters: {extensions: string[]}[]}).filters[0].extensions; return '/fixtures/app.tar.zlib' }
           if (command === 'inspect_package') return { id: 'package-1', name: 'app.tar.zlib', size: 2097152, metadata: { role: 'app', board: 'test_board', target: 'esp32s3', version: '1.2.4' } }
           if (command === 'prepare_forge_picker') return 'forge-1'
           if (command === 'forge_package') return { id: 'package-forge', name: 'forge-loader.tar.zlib', size: 2097152, metadata: { role: 'h2loader', board: 'test_board', target: 'esp32s3', version: '1.2.5' } }
@@ -158,6 +158,7 @@ test('desktop uses native scanning, actual port paths and only the inner workben
   expect(calls).toContain('open_log_window')
   expect(calls).toContain('cancel_job')
   expect(calls).toContain('plugin:dialog|open')
+  expect(await page.evaluate(() => (globalThis as typeof globalThis & {__desktopTest: {dialogExtensions: string[]}}).__desktopTest.dialogExtensions)).toEqual(['tar', 'zlib'])
   expect(calls).toContain('forge_package')
   expect(calls).toContain('download_package')
   expect(requested.filter(url => /h2loader_runtime.*\.wasm/.test(url))).toEqual([])

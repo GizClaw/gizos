@@ -50,6 +50,10 @@ try {
       assert.match(stdout, /H2_LOADER_PACKAGE result=OK/)
       const archive = readFileSync(output)
       assert.equal(archive.subarray(257, 262).toString('ascii'), 'ustar')
+      const inspected = spawnSync(session, ['--inspect', output], {encoding: 'utf8', timeout: 30000, windowsHide: true})
+      assert.equal(inspected.status, 0, inspected.stderr)
+      assert.equal(JSON.parse(inspected.stdout).version, version)
+
     }
   }
 } finally {

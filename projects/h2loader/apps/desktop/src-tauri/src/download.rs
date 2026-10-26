@@ -81,7 +81,7 @@ pub async fn package(
                     .ok()
             })
             .filter(|name| {
-                name.ends_with(".zlib")
+                (name.ends_with(".tar") || name.ends_with(".tar.zlib"))
                     && !name.contains(['/', '\\'])
                     && !name.chars().any(char::is_control)
             })
