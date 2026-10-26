@@ -199,15 +199,17 @@ app_version(
 
 firmware_version(
     name = "private_esp_version",
-    app_version = ":shared_firmware_app_version",
-    board_version = "//boards/private_esp_board:version",
+    build_metadata = "private-esp-board",
+    main_version = ":shared_firmware_app_version",
+    build = "//boards/private_esp_board:version",
     variant = "dev",
 )
 
 firmware_version(
     name = "private_bk_version",
-    app_version = ":shared_firmware_app_version",
-    board_version = "//boards/private_bk_board:version",
+    build_metadata = "private-bk-board",
+    main_version = ":shared_firmware_app_version",
+    build = "//boards/private_bk_board:version",
     variant = "e2e",
 )
 
