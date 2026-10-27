@@ -204,6 +204,8 @@ static void entry(void* unused) {
   hold();
 }
 void app_main(void) {
+  if (H2_AEC_SOURCE_TOKEN[0] == '\0')
+    fail("source-token", H2_PAL_ERR_INVALID_ARG);
   int rc = h2_esp_target_task_policy_install();
   if (rc) fail("policy", rc);
   rc = h2_esp_board_start_entry_task("amoled/aec-source", entry, NULL);

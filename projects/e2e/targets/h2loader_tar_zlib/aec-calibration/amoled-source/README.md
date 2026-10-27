@@ -15,8 +15,14 @@ report. This percentage is not an absolute sound-pressure measurement.
 
 Build with the existing `esp32s3` configuration and explicit CMake inputs
 `H2_E2E_WIFI_SSID`, `H2_E2E_WIFI_PASSWORD`, and `H2_AEC_SOURCE_TOKEN`. Supply them
-through a private operator bazelrc; do not commit credentials. The Mosaico
-launcher uses `--define=mosaico_e2e=aec-calibration`, the same token and an
+through a private operator bazelrc; do not commit credentials.
+
+CI may compile without a token: that image fails at startup with
+`AEC_SOURCE_FAIL stage=source-token` before networking or playback. It cannot
+serve as an operational probe source and supplies no calibration evidence.
+No default credential is provided. Nonempty tokens must use lowercase hex.
+
+The Mosaico launcher uses `--define=mosaico_e2e=aec-calibration`, the same token and an
 `H2_AEC_SOURCE_URL` pointing to this helper. Only that calibration image opts
 into the board's AEC path. Other Mosaico workloads retain their existing AEC
 setting.

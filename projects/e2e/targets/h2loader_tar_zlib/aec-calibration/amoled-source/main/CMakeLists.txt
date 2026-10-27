@@ -30,7 +30,11 @@ idf_component_register(
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
 
 include("${H2_REPO_ROOT}/projects/e2e/targets/h2loader_tar_zlib/fixture-wifi/fixture_wifi.cmake")
-if(NOT H2_AEC_SOURCE_TOKEN MATCHES "^[a-f0-9]+$")
-message(FATAL_ERROR "Explicit source token required")
+if(NOT DEFINED H2_AEC_SOURCE_TOKEN OR H2_AEC_SOURCE_TOKEN STREQUAL "")
+  # Allow credential-free CI compilation; app_main rejects this image before
+  # starting networking or playback. No shared/default credential is supplied.
+  set(H2_AEC_SOURCE_TOKEN "")
+elseif(NOT H2_AEC_SOURCE_TOKEN MATCHES "^[a-f0-9]+$")
+  message(FATAL_ERROR "Source token must contain only lowercase hex digits")
 endif()
 target_compile_definitions(${COMPONENT_LIB} PRIVATE "H2_AEC_SOURCE_TOKEN=\"${H2_AEC_SOURCE_TOKEN}\"")
