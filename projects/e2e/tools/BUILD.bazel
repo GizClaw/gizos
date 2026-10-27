@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -6,6 +7,7 @@ py_library(
     name = "inventory",
     srcs = ["list_apps.py"],
     imports = ["."],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_binary(
@@ -13,6 +15,7 @@ py_binary(
     srcs = ["list_apps.py"],
     legacy_create_init = 0,
     main = "list_apps.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_test(
@@ -20,5 +23,6 @@ py_test(
     srcs = ["test_inventory.py"],
     legacy_create_init = 0,
     main = "test_inventory.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":inventory"],
 )
