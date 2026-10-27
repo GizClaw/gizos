@@ -56,6 +56,7 @@ typedef struct h2_pal_core_e2e_config {
   /** Optional progress observation before a case; cannot alter its verdict. */
   void (*case_begin)(void* user, const char* case_id);
   /** Explicitly permit changing this provider's wall clock and restoring UTC.
+   * An initially uncalibrated clock is seeded and remains calibrated.
    */
   int allow_wall_set;
   /** Expected current embedded image version, supplied from build metadata. */

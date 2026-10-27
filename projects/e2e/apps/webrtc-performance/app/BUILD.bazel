@@ -29,3 +29,24 @@ cc_test(
         "//libs/runtime",
     ],
 )
+
+cc_library(
+    name = "audio_test_source",
+    testonly = True,
+    includes = ["include"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    textual_hdrs = [
+        "src/h2_webrtc_performance.c",
+        "include/h2_webrtc_performance.h",
+    ],
+    deps = ["//libs/runtime"],
+)
+
+cc_test(
+    name = "loss_marker_test",
+    srcs = ["tests/test_loss_marker.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":audio_test_source"],
+)

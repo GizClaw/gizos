@@ -1,3 +1,4 @@
+#include "h2/pal/hal/h2_pal_camera.h"
 #include "h2_pal.h"
 
 #include <cassert>

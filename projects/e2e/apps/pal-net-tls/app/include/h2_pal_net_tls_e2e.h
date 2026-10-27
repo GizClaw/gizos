@@ -38,6 +38,7 @@ typedef enum h2_net_tls_fixture_mode {
   H2_NET_TLS_FIXTURE_SILENT,
   H2_NET_TLS_FIXTURE_CLOSE,
   H2_NET_TLS_FIXTURE_CALLBACK,
+  H2_NET_TLS_FIXTURE_MULTICAST,
 } h2_net_tls_fixture_mode_t;
 
 typedef enum h2_net_tls_fixture_proof {
@@ -47,6 +48,7 @@ typedef enum h2_net_tls_fixture_proof {
   H2_NET_TLS_PROOF_SILENT,
   H2_NET_TLS_PROOF_CLOSED,
   H2_NET_TLS_PROOF_CONNECTED,
+  H2_NET_TLS_PROOF_MULTICAST,
 } h2_net_tls_fixture_proof_t;
 
 typedef struct h2_net_tls_config {
@@ -78,7 +80,7 @@ typedef struct h2_net_tls_config {
   int multicast_supported, icmp_supported;
 } h2_net_tls_config_t;
 
-/* All 37 mandatory core-profile cases must pass. The two optional capabilities
+/* All 37 mandatory core-profile cases must pass. The optional capabilities
  * remain explicitly assessed/unsupported, never promoted to full-Net support.
  * App borrows dependencies and fixture, owns only sockets/resolvers/scratch. */
 int h2_pal_net_tls_e2e_run(const h2_net_tls_config_t* config,

@@ -41,6 +41,12 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_platform_littlefs.c"
   "src/h2_esp_platform_spiffs.c")
 
+# ESP32-S31's hardware stack monitor and RISC-V coprocessor accounting must
+# follow libco's alternate stack when the owning FreeRTOS task switches it.
+if(IDF_TARGET STREQUAL "esp32s31")
+  list(APPEND H2_ESP_PLATFORM_CORE_SRCS "src/h2_esp_libco_stack_guard.c")
+endif()
+
 # ESP-IDF disables inline S32C1I atomics when PSRAM is enabled. This provider
 # allocates every C11 atomic value, including flags, in internal RAM, so this
 # one source can use the hardware instructions.
@@ -83,6 +89,10 @@ set(H2_ESP_PLATFORM_CORE_REQUIRES
   mbedtls
   nvs_flash
   spiffs)
+
+if(IDF_TARGET STREQUAL "esp32s31")
+  list(APPEND H2_ESP_PLATFORM_CORE_REQUIRES esp_hw_support esp_system riscv)
+endif()
 
 if(CONFIG_ESP_CONSOLE_UART)
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS

@@ -33,6 +33,7 @@
 #include "h2/pal/hal/h2_pal_power.h"
 #include "h2/pal/os/h2_pal_firmware_info.h"
 #include "h2/pal/hal/h2_pal_display.h"
+#include "h2/pal/hal/h2_pal_camera.h"
 #include "h2/pal/hal/h2_pal_audio.h"
 #include "h2/pal/hal/h2_pal_audio_decoder.h"
 #include "h2/pal/hal/h2_pal_audio_task_names.h"

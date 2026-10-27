@@ -36,6 +36,11 @@ constraint_value(
 )
 
 constraint_value(
+    name = "target_esp32s31",
+    constraint_setting = ":firmware_target",
+)
+
+constraint_value(
     name = "target_esp32c5",
     constraint_setting = ":firmware_target",
 )
@@ -169,6 +174,11 @@ config_setting(
 config_setting(
     name = "is_esp32p4",
     define_values = {"h2_firmware_target": "esp32p4"},
+)
+
+config_setting(
+    name = "is_esp32s31",
+    define_values = {"h2_firmware_target": "esp32s31"},
 )
 
 config_setting(
@@ -356,6 +366,15 @@ platform(
     constraint_values = [
         ":cpu_riscv32",
         ":target_esp32p4",
+        "@platforms//os:none",
+    ],
+)
+
+platform(
+    name = "esp32s31",
+    constraint_values = [
+        ":cpu_riscv32",
+        ":target_esp32s31",
         "@platforms//os:none",
     ],
 )

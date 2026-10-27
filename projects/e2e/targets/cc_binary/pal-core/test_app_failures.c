@@ -364,6 +364,60 @@ static void test_timer_destroy_retains_callback(void) {
   assert(live_allocations == 0u);
 }
 
+/* Exercise the public App case with either boot state without changing the
+ * host clock. Other time operations retain the real host monotonic clock. */
+static uint64_t fixture_wall;
+static unsigned fixture_sets;
+static h2_pal_result_t fixture_wall_status(void* u,
+                                           h2_pal_time_wall_status_t* status) {
+  (void)u;
+  status->valid = fixture_wall != 0u;
+  status->source = status->valid ? H2_PAL_TIME_WALL_SOURCE_USER
+                                 : H2_PAL_TIME_WALL_SOURCE_BOOT_DEFAULT;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t fixture_wall_get(void* u, uint64_t* wall) {
+  (void)u;
+  *wall = fixture_wall;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t fixture_wall_set(void* u, uint64_t wall) {
+  (void)u;
+  assert(wall != 0u);
+  fixture_wall = wall;
+  ++fixture_sets;
+  return H2_PAL_OK;
+}
+static void test_wall_initial_state(int calibrated) {
+  const uint64_t initial = calibrated ? UINT64_C(1800000000000) : 0u;
+  fixture_wall = initial;
+  fixture_sets = 0u;
+  h2_runtime_config_t config = h2_pal_core_host_config();
+  h2_pal_time_vtable_t vtable = *config.time->vtable;
+  vtable.get_wall_status = fixture_wall_status;
+  vtable.get_wall_ms = fixture_wall_get;
+  vtable.set_wall_ms = fixture_wall_set;
+  const h2_pal_time_api_t time = {config.time->user, &vtable};
+  config.time = &time;
+  h2_runtime_t* runtime = make_runtime(&config);
+  const size_t baseline = live_allocations;
+  h2_pal_core_e2e_config_t app = app_config();
+  app.allow_wall_set = 1;
+  h2_pal_core_e2e_result_t result;
+  (void)h2_pal_core_e2e_run(runtime, &app, &result);
+  assert(find_case(&result, "pal.core.time.wall-read")->status ==
+         H2_PAL_CORE_E2E_PASS);
+  assert(find_case(&result, "pal.core.time.wall-set")->status ==
+         H2_PAL_CORE_E2E_PASS);
+  assert(fixture_sets == (calibrated ? 2u : 3u));
+  const uint64_t restored = calibrated ? initial : UINT64_C(1700000000000);
+  assert(fixture_wall >= restored && fixture_wall - restored <= app.timeout_ms);
+  assert(result.retained_cleanup == NULL);
+  assert(live_allocations == baseline);
+  h2_runtime_deinit(runtime);
+  assert(live_allocations == 0u);
+}
+
 static int wall_sets;
 static int allow_restore;
 static h2_pal_result_t wall_set(void* u, uint64_t wall) {
@@ -428,6 +482,8 @@ int main(void) {
   test_invalid_config_and_missing_clock();
   test_join_retains_context();
   test_timer_destroy_retains_callback();
+  test_wall_initial_state(1);
+  test_wall_initial_state(0);
   test_wall_restore_retained();
   test_broken_close_detected();
   return 0;

@@ -1255,6 +1255,12 @@ static int esp_net_tcp_open_bound(void* user, h2_pal_net_family_t family,
   return H2_PAL_OK;
 }
 
+static int esp_net_udp_join_multicast(void* user, h2_pal_net_socket_t socket_fd,
+                                      const h2_pal_net_addr_t* addr) {
+  (void)user;
+  return h2_esp_net_join_multicast(socket_fd, addr);
+}
+
 static h2_pal_result_t esp_net_tcp_connect(void* user,
                                            h2_pal_net_socket_t socket_fd,
                                            const h2_pal_net_addr_t* addr,
@@ -1851,6 +1857,7 @@ const h2_pal_net_api_t* h2_esp_platform_net_api(void) {
       .udp_open_bound = esp_net_udp_open_bound,
       .udp_sendto = esp_net_udp_sendto,
       .udp_recvfrom = esp_net_udp_recvfrom,
+      .udp_join_multicast = esp_net_udp_join_multicast,
       .tcp_open = esp_net_tcp_open,
       .tcp_open_bound = esp_net_tcp_open_bound,
       .tcp_connect = esp_net_tcp_connect,

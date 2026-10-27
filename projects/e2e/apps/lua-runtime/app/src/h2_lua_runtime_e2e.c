@@ -511,9 +511,31 @@ static h2_pal_result_t case_shutdown(h2_runtime_t* runtime,
         h2_lua_job_submit_text(host, NULL, "@wait.lua", (const uint8_t*)script,
                                strlen(script), NULL, 0u, &id);
   }
-  if (result == H2_PAL_OK) result = h2_lua_host_step(host);
+  /* The case must stop an actual waiter. Worker scheduling can lag one
+   * host_step on a device, so observe WAITING before requesting shutdown. */
+  for (unsigned i = 0u; result == H2_PAL_OK && i < 500u; ++i) {
+    result = h2_lua_host_step(host);
+    if (result == H2_PAL_OK) result = h2_lua_job_get_status(host, id, &status);
+    if (result != H2_PAL_OK ||
+        (status.state == H2_LUA_JOB_WAITING && status.resume_count != 0u))
+      break;
+    result = h2_pal_time_sleep_ms(runtime->time, 1u);
+  }
+  if (result == H2_PAL_OK &&
+      (status.state != H2_LUA_JOB_WAITING || status.resume_count == 0u))
+    result = H2_PAL_ERR_TIMEOUT;
   if (result == H2_PAL_OK) result = h2_lua_host_stop(host);
-  if (result == H2_PAL_OK) result = h2_lua_host_join(host);
+  /* On a real task provider, join may report BUSY until the stopped worker
+   * has finished unwinding. A bounded retry preserves the shutdown check. */
+  if (result == H2_PAL_OK) {
+    for (unsigned i = 0u; i < 5000u; ++i) {
+      result = h2_lua_host_join(host);
+      if (result != H2_PAL_ERR_BUSY) break;
+      result = h2_pal_time_sleep_ms(runtime->time, 1u);
+      if (result != H2_PAL_OK) break;
+    }
+    if (result == H2_PAL_OK) result = h2_lua_host_join(host);
+  }
   if (result == H2_PAL_OK) result = h2_lua_job_get_status(host, id, &status);
   *evidence = status.resume_count;
   h2_lua_host_destroy(host);

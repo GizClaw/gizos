@@ -156,6 +156,10 @@ typedef struct h2_gizclaw_e2e_config {
 const char* h2_gizclaw_e2e_fixture_key(void);
 const char* h2_gizclaw_e2e_fixture_profile(void);
 const char* h2_gizclaw_e2e_fixture_workflow_tag(void);
+/** Explicit Workflow and two distinct profile fence IDs for board launchers. */
+const char* h2_gizclaw_e2e_fixture_fence_workflow_name(void);
+const char* h2_gizclaw_e2e_fixture_fence_first_id(void);
+const char* h2_gizclaw_e2e_fixture_fence_second_id(void);
 const char* h2_gizclaw_e2e_fixture_value(void);
 /** Board-only build inputs; host launchers continue to use runtime credentials.
  */

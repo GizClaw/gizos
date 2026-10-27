@@ -4,8 +4,26 @@ import tempfile
 from pathlib import Path
 import re
 import unittest
+import contextlib
+import io
+from unittest.mock import patch
 from verify_device import boot_ledger,status_preserved,coredump_preserved,loader_status,command_receipt,after_accepted_reboot,package_binding,uart_text,monitor_receipt,load_package_binding,verify_witness
 class Verifier(unittest.TestCase):
+    def test_cli_accepts_mosaico_target(self):
+        from verify_device import main
+        output = io.StringIO()
+        with patch('sys.argv', ['verify_device.py', '--expected-target', 'esp32s31', '--help']):
+            with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as exit_result:
+                main()
+        self.assertEqual(exit_result.exception.code, 0)
+        self.assertIn('esp32s31', output.getvalue())
+
+    def test_package_and_ledger_board_identity(self):
+        from verify_device import board_identity
+        for board,target,identity in [('devkit','esp32s3','devkit'),('bk7258_v3_202405','bk7258','bk7258'),('esp_mosaico','esp32s31','esp_mosaico')]:
+            self.assertEqual(board_identity(dict(board=board,target=target)),identity)
+        for board,target in [('esp_mosaico','esp32s3'),('devkit','esp32s31'),('unknown','esp32s31')]:
+            with self.assertRaises(AssertionError):board_identity(dict(board=board,target=target))
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
         registry=root/'projects/e2e/apps/pal-mqtt/app/include/h2_pal_mqtt_cases.inc'
@@ -45,11 +63,18 @@ class Verifier(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError,'missing post-READY'):boot_ledger(devkit,self.ids,'v1')
         self.assertEqual(boot_ledger(devkit+final.replace('board=bk7258','board=devkit'),self.ids,'v1')['confirmation']['rc'],'0')
         with self.assertRaises(AssertionError):boot_ledger(devkit+final,self.ids,'v1')
-        for board in ['bk7258','devkit']:
+        for board in ['bk7258','devkit','esp_mosaico']:
             legacy=pending.replace('board=bk7258','board='+board).replace('confirm=pending','confirm=0 provider_cleanup=0')
             with self.assertRaisesRegex(AssertionError,'current admission'):boot_ledger(legacy,self.ids,'v1')
+    def test_mosaico_requires_provider_cleanup_and_matching_confirmation(self):
+        text=self.good.replace('board=bk7258','board=esp_mosaico')
+        with self.assertRaises(AssertionError):boot_ledger(text,self.ids,'v1')
+        text=text.replace('confirm=pending','confirm=pending provider_cleanup=0')
+        self.assertEqual(boot_ledger(text,self.ids,'v1')['confirmation']['board'],'esp_mosaico')
+        with self.assertRaises(AssertionError):boot_ledger(text.replace('provider_cleanup=0','provider_cleanup=-4'),self.ids,'v1')
+        with self.assertRaises(AssertionError):boot_ledger(text.replace('H2_PAL_MQTT_CONFIRMED board=esp_mosaico','H2_PAL_MQTT_CONFIRMED board=devkit'),self.ids,'v1')
     def test_both_device_targets_require_fixed_source_binding_file(self):
-        for board,target in [('bk7258_v3_202405','bk7258'),('devkit','esp32s3')]:
+        for board,target in [('bk7258_v3_202405','bk7258'),('devkit','esp32s3'),('esp_mosaico','esp32s31')]:
             manifest=dict(role='app',board=board,target=target,version='v1',image_size='42',image_sha256='c'*64)
             inputs=dict(ca_sha256='d'*64,epoch_ms=123,session_prefix='a'*32)
             binding=dict(package_sha256='b'*64,manifest=manifest,fixture_inputs=inputs,source_commit='e'*40,source_dirty=False)

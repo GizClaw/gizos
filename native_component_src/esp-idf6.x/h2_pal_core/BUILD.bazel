@@ -190,6 +190,60 @@ firmware_native_component(
     ],
 )
 
+[
+    cc_test(
+        name = "libco_stack_guard" + suffix + "_test",
+        srcs = [
+            "include/h2_esp_libco_stack_guard.h",
+            "src/h2_esp_libco_stack_guard.c",
+            "tests/libco_stack_sdk/h2_esp_libco_stack_guard_test_sdk.h",
+            "tests/test_libco_stack_guard.c",
+        ],
+        conlyopts = H2_C11_OPTS + [
+            "-DH2_ESP_LIBCO_STACK_GUARD_HOST_TEST=1",
+            "-DCONFIG_ESP_SYSTEM_HW_STACK_GUARD=" + enabled,
+        ],
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/libco_stack_sdk",
+        ],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    )
+    for suffix, enabled in [
+        ("", "1"),
+        ("_no_hardware", "0"),
+    ]
+]
+
+cc_test(
+    name = "libco_no_coprocessor_test",
+    srcs = [
+        "include/h2_esp_libco_stack_guard.h",
+        "src/h2_esp_libco_stack_guard.c",
+        "tests/libco_stack_sdk/h2_esp_libco_stack_guard_test_sdk.h",
+        "tests/test_libco_no_coprocessor.c",
+    ],
+    conlyopts = H2_C11_OPTS + [
+        "-DH2_ESP_LIBCO_STACK_GUARD_HOST_TEST=1",
+        "-DSOC_CPU_COPROC_NUM=0",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/libco_stack_sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_test(
     name = "atomic_flag_storage_test",
     srcs = [
@@ -1011,4 +1065,29 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "net_multicast_test",
+    srcs = [
+        "src/h2_esp_platform_net_socket.c",
+        "src/h2_esp_platform_net_socket.h",
+        "tests/test_h2_esp_multicast.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["setsockopt=h2_test_setsockopt"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "libco_stack_guard_header",
+    hdrs = ["include/h2_esp_libco_stack_guard.h"],
+    includes = ["include"],
 )

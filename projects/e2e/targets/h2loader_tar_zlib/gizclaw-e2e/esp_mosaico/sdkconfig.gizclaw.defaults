@@ -1,0 +1,3 @@
+# Keep the complete GizClaw consumer within the board's managed download slot.
+# Assertions and all case implementations remain enabled.
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y

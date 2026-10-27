@@ -20,6 +20,8 @@ static int cold_writes_remaining;
 static esp_err_t cold_write_error = ESP_ERR_INVALID_RESPONSE;
 static unsigned cold_write_delay_ms;
 static unsigned i2s_creations;
+static int rx_enable_error, rx_disable_error;
+static unsigned rx_enables, rx_disables;
 static h2_esp_es8311_audio_system_t* running;
 static int join_workers = 1;
 static unsigned device_index(i2c_master_dev_handle_t dev) {
@@ -99,11 +101,17 @@ int i2s_channel_init_std_mode(i2s_chan_handle_t ch,
   return ESP_OK;
 }
 int i2s_channel_enable(i2s_chan_handle_t ch) {
-  (void)ch;
+  if (ch == (void*)5) {
+    ++rx_enables;
+    if (rx_enable_error) return rx_enable_error;
+  }
   return ESP_OK;
 }
 int i2s_channel_disable(i2s_chan_handle_t ch) {
-  (void)ch;
+  if (ch == (void*)5) {
+    ++rx_disables;
+    if (rx_disable_error) return rx_disable_error;
+  }
   assert(!pa_enabled);
   ++disabled;
   return ESP_OK;
@@ -346,7 +354,107 @@ static void test_cold_control_startup(void) {
   fail_write = -1;
   write_count = 0;
 }
+static unsigned captures;
+static void capture_observer(void* user, const h2_audio_aec_frame_t* f) {
+  h2_esp_es8311_audio_system_t* s = user;
+  assert(f->sequence == ++captures);
+  assert(f->raw->data == s->mic_raw_scratch);
+  assert(f->processed->data == s->mic_processed_scratch);
+  assert(f->reference_input->data == s->sr.ref_frame);
+  assert(f->microphone_lane == 1 && f->reference_lane == 0);
+  assert(f->microphone_mask == 2);
+}
+static void playback_observer(void* user, const h2_audio_frame_t* f) {
+  (void)user;
+  (void)f;
+}
+static void error_observer(void* user, int capture, int rc) {
+  (void)user;
+  (void)capture;
+  (void)rc;
+}
+static void test_diagnostic_capture_epoch(void) {
+  h2_esp_es8311_audio_system_t s = {.rx_chan = (void*)5};
+  rx_enables = rx_disables = 0;
+  assert(es8311_audio_begin_diagnostic_capture(&s) == H2_AUDIO_OK);
+  assert(rx_enables == 0 && rx_disables == 0);
+  s.aec_observer.on_capture = capture_observer;
+  s.mic_task = (void*)7;
+  s.opened = 1;
+  /* Reject before touching a queue or allocating/resetting SR state. The
+   * deliberately absent queue API makes an accidental fall-through fail. */
+  assert(es8311_audio_start_mic(&s) == H2_AUDIO_ERR_INVALID_STATE);
+  assert(es8311_audio_begin_diagnostic_capture(&s) ==
+         H2_AUDIO_ERR_INVALID_STATE);
+  assert(rx_enables == 0 && rx_disables == 0);
+  s.mic_task = NULL;
+  rx_disable_error = ESP_FAIL;
+  assert(es8311_audio_begin_diagnostic_capture(&s) == H2_AUDIO_ERR_IO);
+  assert(!s.rx_paused && rx_disables == 1 && rx_enables == 0);
+  rx_disable_error = 0;
+  rx_enable_error = ESP_FAIL;
+  assert(es8311_audio_begin_diagnostic_capture(&s) == H2_AUDIO_ERR_IO);
+  assert(s.rx_paused && rx_disables == 2 && rx_enables == 1);
+  /* A failed restart remains retryable, even after observer removal. */
+  rx_enable_error = 0;
+  s.aec_observer.on_capture = NULL;
+  assert(es8311_audio_begin_diagnostic_capture(&s) == H2_AUDIO_OK);
+  assert(!s.rx_paused && rx_disables == 2 && rx_enables == 2);
+  s.aec_observer.on_capture = capture_observer;
+  assert(es8311_audio_begin_diagnostic_capture(&s) == H2_AUDIO_OK);
+  assert(!s.rx_paused && rx_disables == 3 && rx_enables == 3);
+  disabled = 0;
+}
+
+static void test_aec_observer(void) {
+  h2_esp_es8311_audio_system_t s = {0};
+  h2_pal_audio_t* audio = h2_esp_es8311_audio_system_audio(&s);
+  const h2_audio_aec_observer_t o = {.user = &s,
+                                     .on_capture = capture_observer,
+                                     .on_playback = playback_observer,
+                                     .on_error = error_observer};
+  assert(h2_pal_audio_set_aec_observer(audio, &o) == H2_AUDIO_ERR_UNSUPPORTED);
+  s.config.enable_aec = 1;
+  s.sr.available = 1;
+  s.config.mic_channel_index = 1;
+  s.config.ref_channel_index = 0;
+  assert(h2_pal_audio_set_aec_observer(audio, &o) == H2_AUDIO_OK);
+  s.mic_task = (void*)7;
+  assert(h2_pal_audio_set_aec_observer(audio, NULL) ==
+         H2_AUDIO_ERR_INVALID_STATE);
+  assert(s.aec_observer.user == &s &&
+         s.aec_observer.on_capture == capture_observer);
+  s.mic_task = NULL;
+  s.playback_task_started = 1;
+  assert(h2_pal_audio_set_aec_observer(audio, NULL) ==
+         H2_AUDIO_ERR_INVALID_STATE);
+  s.playback_task_started = 0;
+  int16_t ref[512] = {0};
+  s.sr.ref_frame = ref;
+  h2_audio_frame_t raw = {.data = s.mic_raw_scratch};
+  h2_audio_frame_t processed = {.data = s.mic_processed_scratch};
+  observe_aec_capture(&s, &raw, &processed);
+  observe_aec_capture(&s, &raw, &processed);
+  assert(captures == 2);
+  s.mic_started = 1;
+  s.mic_task_started = 1;
+  s.mic_task = (void*)7;
+  running = &s;
+  join_workers = 0;
+  assert(es8311_audio_stop_mic(&s) == H2_AUDIO_ERR_WOULD_BLOCK);
+  assert(s.aec_observer.user == &s && s.mic_task != NULL);
+  join_workers = 1;
+  assert(es8311_audio_stop_mic(&s) == H2_AUDIO_OK);
+  assert(s.mic_task == NULL && !s.mic_task_started);
+  running = NULL;
+  assert(h2_pal_audio_set_aec_observer(audio, NULL) == H2_AUDIO_OK);
+  observe_aec_capture(&s, &raw, &processed);
+  assert(captures == 2);
+}
+
 int main(void) {
+  test_diagnostic_capture_epoch();
+  test_aec_observer();
   test_cold_control_startup();
   h2_esp_es8311_audio_system_t s = {0};
   assert(h2_esp_es8311_audio_system_power_down(NULL) ==

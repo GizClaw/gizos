@@ -218,21 +218,6 @@ static void run(void* user) {
   (void)user;
   rtos_delay_milliseconds(5000);
   int rc;
-  h2_pal_time_wall_status_t wall_status;
-  rc = h2_pal_time_get_wall_status(runtime->time, &wall_status);
-  if (rc != H2_PAL_OK) fail("clock_status", rc);
-  if (!wall_status.valid) {
-    uint64_t wall = 1;
-    rc = h2_pal_time_get_wall_ms(runtime->time, &wall);
-    if (rc != H2_PAL_TIME_ERR_UNCALIBRATED || wall != 0)
-      fail("clock_uncalibrated", rc);
-    /* Seed an uncalibrated real RTC from image build UTC so the set/restore
-     * case has a valid baseline. This is not a replacement clock. */
-    rc = h2_pal_time_set_wall_ms(runtime->time, H2_BK_CORE_EPOCH_MS);
-    if (rc != H2_PAL_OK) fail("clock_calibration", rc);
-    printf(
-        "H2_BK_CORE_CLOCK boot_valid=0 uncalibrated_read=PASS calibrated_from=build_utc\n");
-  }
   printf("H2_BK_CORE_BOOT version=%s cases=%u\n", H2_BK_CORE_VERSION,
          (unsigned)H2_PAL_CORE_E2E_CASE_COUNT);
   const h2_pal_core_e2e_config_t config = {

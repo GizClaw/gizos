@@ -14,6 +14,9 @@ typedef struct fake {
       bad_dns;
   int sockets[128], next_socket, wrapped;
   h2_net_tls_fixture_mode_t mode;
+  uint8_t multicast_request[224];
+  int multicast_fault;
+  unsigned multicast_sent;
 } fake_t;
 static uint8_t pattern(size_t index) {
   return (uint8_t)((index * 37u + 11u) % 251u);
@@ -123,6 +126,14 @@ static int udp_send(void* user, int socket, const h2_pal_net_addr_t* addr,
   (void)socket;
   (void)addr;
   (void)bytes;
+  fake_t* f = user;
+  if (f->current == H2_NET_TLS_MULTICAST_DATA) {
+    if (len != sizeof(f->multicast_request) || addr->ip[0] != 239u ||
+        addr->ip[3] != 77u || bytes[96] != f->multicast_sent)
+      abort();
+    memcpy(f->multicast_request, bytes, len);
+    ++f->multicast_sent;
+  }
   return (int)len;
 }
 static int udp_recv(void* user, int socket, h2_pal_net_addr_t* addr,
@@ -136,6 +147,24 @@ static int udp_recv(void* user, int socket, h2_pal_net_addr_t* addr,
   }
   resolve(user, "127.0.0.1", addr);
   addr->port = 123u;
+  if (f->current == H2_NET_TLS_MULTICAST_DATA) {
+    if (len <= sizeof(f->multicast_request)) abort();
+    if (f->multicast_fault == 3) {
+      f->clock_us += (uint64_t)ms * 1000u;
+      return H2_PAL_ERR_TIMEOUT;
+    }
+    const size_t expected = sizeof(f->multicast_request);
+    for (size_t i = 0; i < expected; ++i)
+      bytes[i] = f->multicast_request[i] ^ 0xa5u;
+    if (f->multicast_fault == 1) bytes[expected - 1] ^= 1u;
+    if (f->multicast_fault == 2) addr->ip[3] = 2u;
+    if (f->multicast_fault == 5) {
+      bytes[expected] = 0;
+      return (int)expected + 1;
+    }
+    if (f->multicast_fault == 6) return (int)expected - 1;
+    return (int)expected;
+  }
   for (size_t i = 0; i < len; ++i) bytes[i] = (uint8_t)(pattern(i) ^ 0xa5u);
   return (int)len;
 }
@@ -256,6 +285,8 @@ static int verify(void* user, const char* id,
                   h2_net_tls_fixture_proof_t proof) {
   fake_t* f = user;
   (void)id;
+  if (f->multicast_fault == 4 && proof == H2_NET_TLS_PROOF_MULTICAST)
+    return H2_PAL_ERR_FORMAT;
   if (f->bad_proof && proof == H2_NET_TLS_PROOF_CERT_REJECTION)
     return H2_PAL_ERR_FORMAT;
   return H2_PAL_OK;
@@ -327,7 +358,7 @@ int main(void) {
     int rc = h2_pal_net_tls_e2e_run(&config, &result);
     if (f.allocations || f.active_sockets || f.active_resolvers) return 1;
     if (!fault && (rc != H2_PAL_OK || result.mandatory_passed != 37u ||
-                   result.unsupported != 1u || result.not_assessed != 1u))
+                   result.unsupported != 1u || result.not_assessed != 2u))
       return 2;
     if (fault && (rc == H2_PAL_OK || (!result.failed && !result.blocked)))
       return 3;
@@ -336,6 +367,22 @@ int main(void) {
     if (fault == 3u && result.cases[H2_NET_TLS_TLS_REQUIRED].passed) return 6;
     if (fault == 6u && result.cases[H2_NET_TLS_DNS_HOSTNAME].passed) return 8;
   }
+  config.multicast_supported = 1;
+  for (unsigned fault = 0; fault < 7u; ++fault) {
+    memset(&f, 0, sizeof(f));
+    f.multicast_fault = (int)fault;
+    h2_net_tls_result_t result;
+    (void)h2_pal_net_tls_e2e_run(&config, &result);
+    const h2_net_tls_case_result_t* m =
+        &result.cases[H2_NET_TLS_MULTICAST_DATA];
+    if (m->passed != (fault == 0u) || f.active_sockets || f.active_resolvers ||
+        f.allocations)
+      return 9;
+    if (!fault && (m->bytes_sent != 672u || m->bytes_received != 672u ||
+                   f.multicast_sent != 3u))
+      return 10;
+  }
+  config.multicast_supported = 0;
   /* Every mandatory vtable hole must block all cases before opening a socket.
    * Function pointers are removed by name to avoid representation assumptions.
    */

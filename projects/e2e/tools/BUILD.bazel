@@ -1,0 +1,24 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "inventory",
+    srcs = ["list_apps.py"],
+    imports = ["."],
+)
+
+py_binary(
+    name = "list_apps",
+    srcs = ["list_apps.py"],
+    legacy_create_init = 0,
+    main = "list_apps.py",
+)
+
+py_test(
+    name = "inventory_test",
+    srcs = ["test_inventory.py"],
+    legacy_create_init = 0,
+    main = "test_inventory.py",
+    deps = [":inventory"],
+)

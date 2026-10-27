@@ -497,6 +497,10 @@ h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
   H2_RUNTIME_BIND_PROXY(ble_host);
   H2_RUNTIME_BIND_PROXY(modem);
   H2_RUNTIME_BIND_PROXY(power);
+  private_state->camera_proxy =
+      *(config->camera != NULL ? config->camera
+                               : h2_pal_unsupported_camera_api());
+  runtime->camera = &private_state->camera_proxy;
   H2_RUNTIME_BIND_PROXY(display);
   H2_RUNTIME_BIND_PROXY(audio);
   h2_runtime_audio_bind(runtime);

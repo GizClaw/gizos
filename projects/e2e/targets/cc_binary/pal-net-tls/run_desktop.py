@@ -43,7 +43,7 @@ with Fixture() as fixture:
         assert run.returncode != 0 and wrong.get('status') == 'FAIL', wrong
     else:
         assert run.returncode == 0, run.returncode
-        assert len(cases) == 39 and len({item['id'] for item in cases}) == 39
+        assert len(cases) == 40 and len({item['id'] for item in cases}) == 40
         assert len(summaries) == 1 and summaries[0]['core_qualified'] is True
         assert summaries[0]['mandatory_passed'] == 37
         assert not summaries[0]['full_net_qualified']

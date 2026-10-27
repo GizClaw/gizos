@@ -35,6 +35,7 @@ EXPECTED_IDF_VERSION = "6.2"
 TARGET_COMPILERS = {
     "esp32c5": "riscv32-esp-elf-gcc",
     "esp32p4": "riscv32-esp-elf-gcc",
+    "esp32s31": "riscv32-esp-elf-gcc",
     "esp32s3": "xtensa-esp-elf-gcc",
 }
 SAFE_PROJECT_NAME = re.compile(r"^[A-Za-z0-9_]+$")
