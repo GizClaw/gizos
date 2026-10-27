@@ -123,6 +123,26 @@ typedef struct h2_gizclaw_rpc_bytes {
  */
 typedef void (*h2_gizclaw_rpc_response_complete_fn)(void* user, int result);
 
+struct h2_gizclaw_rpc_provider_response;
+
+/** Optional request-owned deferred reply. An invoke callback may return OK
+ * with only this member populated after copying/enqueuing its work. poll and
+ * close are required; timeout_ms is 1..120000. The RPC owner calls poll
+ * without blocking transport progress. Return WOULD_BLOCK until ready, then
+ * OK with the actual response (which cannot defer again), or a PAL error.
+ * All callbacks return promptly and must not reenter this client. Worker
+ * tasks may use the Service's ordinary request APIs independently.
+ * close runs exactly once after response bytes are copied, or on rejection,
+ * timeout, disconnect or stop. It runs before any response on_complete and
+ * must only cancel/release its own borrow; it cannot wait for the App owner.
+ * A canceled write may already have changed state; callers must re-read. */
+typedef struct h2_gizclaw_rpc_deferred_response {
+  void* user;
+  int (*poll)(void* user, struct h2_gizclaw_rpc_provider_response* out);
+  void (*close)(void* user, int result);
+  uint32_t timeout_ms;
+} h2_gizclaw_rpc_deferred_response_t;
+
 typedef struct h2_gizclaw_rpc_provider_response {
   h2_gizclaw_rpc_bytes_t payload;
   bool has_error;
@@ -130,6 +150,7 @@ typedef struct h2_gizclaw_rpc_provider_response {
   h2_gizclaw_rpc_bytes_t error_message;
   h2_gizclaw_rpc_response_complete_fn on_complete;
   void* complete_user;
+  h2_gizclaw_rpc_deferred_response_t deferred;
 } h2_gizclaw_rpc_provider_response_t;
 
 #ifdef __cplusplus

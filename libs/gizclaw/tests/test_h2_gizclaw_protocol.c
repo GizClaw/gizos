@@ -25,11 +25,12 @@ typedef struct wire_fixture {
   h2_pal_webrtc_event_t event;
   uint8_t sent[8192];
   size_t sent_len;
-  unsigned closes, find_calls, management_calls;
+  unsigned closes, find_calls, management_calls, deferred_polls,
+      deferred_closes;
   uint8_t management_response[64];
   int remote;
   int64_t value;
-  bool exercised;
+  bool exercised, abort_pending, force_timeout, local;
 } wire_fixture_t;
 static wire_fixture_t fixture;
 static void* allocate(void* user, size_t size) {
@@ -125,6 +126,27 @@ static gzc_rpc_response_t call(wire_fixture_t* f, int method,
                                .channel_info = info,
                                .data = frames.data,
                                .data_len = frames.len});
+  if (f->abort_pending) {
+    assert(f->sent_len == 0u);
+    unsigned closed = f->deferred_closes;
+    emit(f, (h2_pal_webrtc_event_t){
+                .kind = H2_PAL_WEBRTC_EVENT_CHANNEL_STATE,
+                .peer = (h2_pal_webrtc_peer_t*)f,
+                .channel = (h2_pal_webrtc_channel_t*)&f->remote,
+                .channel_info = info,
+                .channel_state = H2_PAL_WEBRTC_CHANNEL_CLOSED});
+    assert(f->deferred_closes == closed + 1u);
+    gzc_buf_free(&envelope, platform);
+    gzc_buf_free(&frames, platform);
+    return (gzc_rpc_response_t){0};
+  }
+  /* A provider may defer without stopping the poll owner or local dispatcher.
+   */
+  for (unsigned retry = 0u; retry < 1000u && f->closes == closes; ++retry) {
+    assert(h2_gizclaw_client_poll(f->client, 0) == H2_PAL_OK);
+    assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
+           H2_PAL_OK);
+  }
   if (f->closes != closes + 1 || f->sent_len < 8)
     fprintf(stderr, "method=%d closes=%u->%u sent=%zu\n", method, closes,
             f->closes, f->sent_len);
@@ -233,6 +255,21 @@ static gzc_rpc_response_t invoke(wire_fixture_t* f, int tool,
   return call(f, H2_GIZCLAW_RPC_CLIENT_TOOL_V0_INVOKE, bytes,
               out.bytes_written);
 }
+static int deferred_find_poll(void* user,
+                              h2_gizclaw_rpc_provider_response_t* out) {
+  wire_fixture_t* f = user;
+  if (++f->deferred_polls < 4u || f->abort_pending || f->force_timeout)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  *out = (h2_gizclaw_rpc_provider_response_t){0};
+  return H2_PAL_OK;
+}
+static void deferred_find_close(void* user, int rc) {
+  wire_fixture_t* f = user;
+  assert(rc == (f->abort_pending   ? H2_PAL_ERR_CLOSED
+                : f->force_timeout ? H2_PAL_ERR_TIMEOUT
+                                   : H2_PAL_OK));
+  ++f->deferred_closes;
+}
 static int find_tool(void* user, h2_gizclaw_tool_t tool,
                      h2_gizclaw_rpc_bytes_t payload,
                      h2_gizclaw_rpc_provider_response_t* out) {
@@ -244,7 +281,11 @@ static int find_tool(void* user, h2_gizclaw_tool_t tool,
       pb_decode(&in, gizclaw_rpc_v1_ClientDeviceFindRequest_fields, &request));
   assert(request.has_duration_ms && request.duration_ms == 1000);
   ++f->find_calls;
-  *out = (h2_gizclaw_rpc_provider_response_t){0};
+  *out = (h2_gizclaw_rpc_provider_response_t){
+      .deferred = {.user = f,
+                   .poll = deferred_find_poll,
+                   .close = deferred_find_close,
+                   .timeout_ms = f->force_timeout ? 1u : 1000u}};
   return H2_PAL_OK;
 }
 static h2_pal_result_t read_state(void* user, h2_gizclaw_mhs_read_t* out) {
@@ -352,7 +393,8 @@ static void exercise(wire_fixture_t* f) {
   response = invoke(
       f, H2_GIZCLAW_TOOL_DEVICE_FIND,
       gzc_str_from_parts((const char*)find_payload, sizeof(find_payload)));
-  assert(!response.has_error && f->find_calls == 1);
+  assert(!response.has_error && f->find_calls == 1 && f->deferred_polls == 4u &&
+         f->deferred_closes == 1u);
   const uint8_t unlimited[] = {0x08, 0x00};
   response =
       invoke(f, H2_GIZCLAW_TOOL_USAGE_TIME_SET,
@@ -447,6 +489,20 @@ static void exercise(wire_fixture_t* f) {
       call(f, H2_GIZCLAW_RPC_CLIENT_MHS_V0_READ, bytes, out.bytes_written);
   assert(response.has_error &&
          response.error.code == H2_GIZCLAW_RPC_ERROR_NOT_FOUND);
+  if (!f->local) {
+    f->force_timeout = true;
+    response = invoke(
+        f, H2_GIZCLAW_TOOL_DEVICE_FIND,
+        gzc_str_from_parts((const char*)find_payload, sizeof(find_payload)));
+    assert(response.has_error &&
+           response.error.code == H2_GIZCLAW_RPC_ERROR_DEADLINE_EXCEEDED);
+    f->force_timeout = false;
+    f->abort_pending = true;
+    (void)invoke(
+        f, H2_GIZCLAW_TOOL_DEVICE_FIND,
+        gzc_str_from_parts((const char*)find_payload, sizeof(find_payload)));
+    f->abort_pending = false;
+  }
   f->exercised = true;
 }
 static h2_pal_result_t create_channel(
@@ -460,6 +516,7 @@ static h2_pal_result_t create_channel(
 static void exercise_protocol(bool local) {
   memset(&fixture, 0, sizeof(fixture));
   fixture.value = 7;
+  fixture.local = local;
   const h2_pal_webrtc_vtable_t webrtc_vtable = {
       .peer_create_with_config = create_peer,
       .peer_create_data_channel = create_channel,

@@ -68,6 +68,12 @@ Factory reset 与 run.workspace.set 作为 tool/v0 过程保留 typed 产品 hoo
 
 本地 `h2_gizclaw_protocol_test` 在 fake PAL 上向真实 SDK 输入 RPC frame，验证 SDK 工具列表、数字方法列表、已注册内置/产品工具调用、未安装工具与退休方法的 UNIMPLEMENTED，以及 MHS read/write 和 wire 错误映射。它保留 SDK 的完整 decode/dispatch/response encode 路径，不用本地数组查询代替发现。`h2_gizclaw_mhs_test` 验证实例表和 HWD wire 校验、非法值零写入、实际生效值及分配清理。Service 测试继续覆盖播放器、OTA 和回复后的产品交接。协议测试不等于真实网络、manifest 配置、设备音质或恢复出厂验收；live suite 未配置的产品 hooks 需随产品另行验收。
 
+## Deferred 管理工具
+
+RPC suite 的 `deferred-management` domain 使用独立测试 Peer 的 `ai.safety.get` 产品 handler，经过真实 Edge 的 tool/v0 HTTP 入口调用。App owner 在反向请求已经返回 WOULD_BLOCK 后，通过同一 Service 查询 Workflow 的安全等级选项并读回当前 Workspace，再编码实际结果。用例检查每次只调用一次 handler、至少一次 pending poll、close 恰好一次，以及有效的 typed HTTP 结果；随后故意让 deferred deadline 到期，验证 HTTP timeout 和 close result，并在不重连的情况下再次成功调用。
+
+Provider 状态保留到所有 Service 停止并 join 后，不能用 HTTP 返回替代生命周期清理。该 domain 随 RPC-only 和 all 入口运行；验收器拒绝缺少此 domain 的旧日志。它验证公共异步接线，H106 的持久化、UI 和产品权限仍由 Firmwares 的产品测试负责。
+
 ## Activity telemetry
 
 `h2_gizclaw_telemetry_observation_t` 的 `ACTIVITY` observation 上报设备当前在用的

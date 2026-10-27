@@ -46,7 +46,7 @@ typedef struct h2_gizclaw_e2e_actor {
   /* Session borrows the view; its text has the config's full-run lifetime. */
   h2_gizclaw_str_t workflow_tag;
   h2_gizclaw_config_t config;
-  h2_gizclaw_tool_handler_t tool_handlers[3];
+  h2_gizclaw_tool_handler_t tool_handlers[4];
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
   char public_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
   bool registered;
@@ -116,6 +116,11 @@ typedef struct h2_gizclaw_e2e_fixture {
   /* A case may retain borrowed Track/hook state through failed teardown. */
   void* case_state;
   int (*case_cleanup)(struct h2_gizclaw_e2e_fixture* fixture);
+  /* Optional App-owned product provider, retained until all Services join. */
+  h2_gizclaw_tool_handler_t product_tool;
+  void* product_state;
+  void (*product_dispose)(struct h2_gizclaw_e2e_fixture* fixture);
+  void (*app_tick)(struct h2_gizclaw_e2e_fixture* fixture);
   bool use_session;
   bool workspace_created;
   h2_gizclaw_e2e_actor_role_t workspace_actor_role;

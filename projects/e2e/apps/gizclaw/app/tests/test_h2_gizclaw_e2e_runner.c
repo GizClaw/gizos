@@ -91,6 +91,11 @@ CASE(run_concurrency)
 CASE(run_service)
 #undef CASE
 
+int h2_gizclaw_e2e_prepare_rpc(h2_gizclaw_e2e_fixture_t* fixture) {
+  assert(fixture != NULL);
+  return H2_PAL_OK;
+}
+
 static unsigned s_voice_runs, s_voice_reconnects;
 static bool s_voice_failure, s_reconnect_failure;
 int h2_gizclaw_e2e_run_voice(h2_gizclaw_e2e_fixture_t* fixture) {

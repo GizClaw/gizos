@@ -27,7 +27,9 @@ struct h2_gizclaw_local_call {
   h2_gizclaw_tool_t inner_tool;
   uint8_t *request, *storage;
   size_t request_size;
-  uint64_t deadline_ms;
+  uint64_t deadline_ms, next_poll_ms;
+  h2_gizclaw_rpc_deferred_response_t deferred;
+  bool network_response_selected;
   h2_gizclaw_local_result_t view;
   h2_gizclaw_rpc_response_complete_fn on_complete;
   void* complete_user;
@@ -205,14 +207,46 @@ static int invoke_tool(void* user, gzc_str_t bytes,
   tool_binding_t* binding = user;
   h2_gizclaw_local_call_t* call = binding->rpc->executing;
   h2_gizclaw_rpc_provider_response_t response = {0};
-  int rc = binding->handler->invoke(
-      binding->handler->user, binding->handler->tool,
-      (h2_gizclaw_rpc_bytes_t){(const uint8_t*)bytes.data, bytes.len},
-      &response);
+  h2_gizclaw_rpc_deferred_response_t finished = {0};
+  int rc;
+  if (call->deferred.poll != NULL) {
+    rc = call->deferred.poll(call->deferred.user, &response);
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) return GZC_ERR_WOULD_BLOCK;
+    finished = call->deferred;
+    call->deferred = (h2_gizclaw_rpc_deferred_response_t){0};
+  } else {
+    rc = binding->handler->invoke(
+        binding->handler->user, binding->handler->tool,
+        (h2_gizclaw_rpc_bytes_t){(const uint8_t*)bytes.data, bytes.len},
+        &response);
+  }
+  if (rc == H2_PAL_OK && response.deferred.poll != NULL) {
+    h2_gizclaw_rpc_deferred_response_t deferred = response.deferred;
+    bool valid = finished.poll == NULL && deferred.close != NULL &&
+                 deferred.timeout_ms > 0u && deferred.timeout_ms <= 120000u &&
+                 response.payload.len == 0u && !response.has_error &&
+                 response.on_complete == NULL;
+    uint64_t now = 0u;
+    rc = valid ? h2_pal_time_get_monotonic_ms(call->rpc->config.time, &now)
+               : H2_PAL_ERR_INVALID_ARG;
+    if (rc == H2_PAL_OK) {
+      call->deferred = deferred;
+      uint64_t deadline = now > UINT64_MAX - deferred.timeout_ms
+                              ? UINT64_MAX
+                              : now + deferred.timeout_ms;
+      /* Do not extend the caller's admitted deadline. */
+      if (deadline < call->deadline_ms) call->deadline_ms = deadline;
+      return GZC_ERR_WOULD_BLOCK;
+    }
+    if (deferred.close != NULL) deferred.close(deferred.user, rc);
+  }
   call->view.result = rc;
   call->on_complete = response.on_complete;
   call->complete_user = response.complete_user;
-  if (rc != H2_PAL_OK) return h2_gizclaw_provider_result_to_gzc(rc);
+  if (rc != H2_PAL_OK) {
+    if (finished.close != NULL) finished.close(finished.user, rc);
+    return h2_gizclaw_provider_result_to_gzc(rc);
+  }
   gzc_rpc_provider_response_t result = {
       .payload = response.payload.data,
       .payload_len = response.payload.len,
@@ -220,7 +254,10 @@ static int invoke_tool(void* user, gzc_str_t bytes,
       .error_code = response.error_code,
       .error_message = {(const char*)response.error_message.data,
                         response.error_message.len}};
-  return respond(respond_user, &result);
+  rc = respond(respond_user, &result);
+  if (finished.close != NULL)
+    finished.close(finished.user, h2_gizclaw_result_from_gzc(rc));
+  return rc;
 }
 static int invoke_mhs(void* user, int method, gzc_str_t bytes,
                       gzc_rpc_provider_respond_fn respond, void* respond_user) {
@@ -260,7 +297,7 @@ static void unlink_call(h2_gizclaw_local_t* rpc,
   if (rpc->tail == call) rpc->tail = previous;
   --rpc->count;
 }
-static void execute(h2_gizclaw_local_call_t* call) {
+static bool execute(h2_gizclaw_local_call_t* call) {
   h2_gizclaw_local_t* rpc = call->rpc;
   rpc->executing = call;
   gzc_str_t request = {(const char*)call->request, call->request_size};
@@ -275,6 +312,10 @@ static void execute(h2_gizclaw_local_call_t* call) {
     rc = gzc_client_dispatch_rpc_internal(rpc->dispatcher, call->method,
                                           request, copy_response, call);
   }
+  if (rc == GZC_ERR_WOULD_BLOCK && call->deferred.poll != NULL) {
+    rpc->executing = NULL;
+    return false;
+  }
   if (rc != GZC_OK || !call->responded) {
     if (call->view.result == H2_PAL_OK)
       call->view.result =
@@ -285,6 +326,7 @@ static void execute(h2_gizclaw_local_call_t* call) {
                                 : H2_GIZCLAW_RPC_ERROR_INTERNAL;
   }
   rpc->executing = NULL;
+  return true;
 }
 static void owner(void* user) {
   h2_gizclaw_local_t* rpc = user;
@@ -319,6 +361,7 @@ static void owner(void* user) {
           completion->completion_running = true;
           break;
         }
+        if (call->next_poll_ms > now) continue;
         work = call;
         call->executing = true;
         break;
@@ -353,6 +396,10 @@ static void owner(void* user) {
         result = completion->view.result;
       else if (completion->view.has_error)
         result = H2_PAL_ERR_INVALID_STATE;
+      if (completion->deferred.close != NULL) {
+        completion->deferred.close(completion->deferred.user, result);
+        completion->deferred = (h2_gizclaw_rpc_deferred_response_t){0};
+      }
       if (completion->on_complete)
         completion->on_complete(completion->complete_user, result);
       if (!owner_lock(rpc)) return;
@@ -362,9 +409,9 @@ static void owner(void* user) {
       rpc_unlock(rpc);
       continue;
     }
-    execute(work);
+    const bool done = execute(work);
     if (!owner_lock(rpc)) return;
-    work->terminal = true;
+    work->terminal = done;
     work->executing = false;
     int finished_clock = h2_pal_time_get_monotonic_ms(rpc->config.time, &now);
     if (finished_clock != H2_PAL_OK || now >= work->deadline_ms) {
@@ -373,9 +420,11 @@ static void owner(void* user) {
           finished_clock != H2_PAL_OK ? finished_clock : H2_PAL_ERR_TIMEOUT;
     }
     if (work->canceled || rpc->stopping) {
+      work->terminal = true;
       work->completion_requested = true;
       work->delivery_result = H2_PAL_ERR_CLOSED;
     }
+    work->next_poll_ms = now > UINT64_MAX - 2u ? UINT64_MAX : now + 2u;
     rpc_wake(rpc);
     rpc_unlock(rpc);
   }
@@ -679,27 +728,44 @@ static void network_complete(void* user, int result) {
   (void)h2_gizclaw_local_call_complete(call, result);
   (void)h2_gizclaw_local_call_release(&call);
 }
+static int network_poll(void* user, h2_gizclaw_rpc_provider_response_t* out) {
+  h2_gizclaw_local_call_t* call = user;
+  h2_gizclaw_local_result_t result = {0};
+  int rc = h2_gizclaw_local_call_wait(call, 0u, &result);
+  if (rc == H2_PAL_ERR_TIMEOUT) return H2_PAL_ERR_WOULD_BLOCK;
+  if (rc != H2_PAL_OK) return rc;
+  call->network_response_selected = true;
+  *out = (h2_gizclaw_rpc_provider_response_t){
+      .payload = result.payload,
+      .has_error = result.has_error || result.result != H2_PAL_OK,
+      .error_code = result.result != H2_PAL_OK
+                        ? h2_gizclaw_mhs_error_internal(result.result)
+                        : result.error_code,
+      .error_message = result.error_message,
+      .on_complete = network_complete,
+      .complete_user = call};
+  return H2_PAL_OK;
+}
+static void network_close(void* user, int result) {
+  (void)result;
+  h2_gizclaw_local_call_t* call = user;
+  if (call->network_response_selected)
+    (void)h2_gizclaw_local_call_consume(call);
+  else
+    (void)h2_gizclaw_local_call_release(&call);
+}
 static int network_call(h2_gizclaw_service_t* device, int method,
                         h2_gizclaw_tool_t inner, h2_gizclaw_rpc_bytes_t request,
                         h2_gizclaw_rpc_provider_response_t* out) {
   h2_gizclaw_local_t* rpc = h2_gizclaw_local_internal(device);
   h2_gizclaw_local_call_t* call = NULL;
   int rc = submit(rpc, method, inner, request, 110000u, &call);
-  h2_gizclaw_local_result_t result = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_local_call_wait(call, 110000u, &result);
-  }
-  if (rc != H2_PAL_OK) {
-    (void)h2_gizclaw_local_call_release(&call);
-    return rc;
-  }
-  *out = (h2_gizclaw_rpc_provider_response_t){
-      .payload = result.payload,
-      .has_error = result.has_error,
-      .error_code = result.error_code,
-      .error_message = result.error_message,
-      .on_complete = network_complete,
-      .complete_user = call};
+  if (rc != H2_PAL_OK) return rc;
+  *out =
+      (h2_gizclaw_rpc_provider_response_t){.deferred = {.user = call,
+                                                        .poll = network_poll,
+                                                        .close = network_close,
+                                                        .timeout_ms = 110000u}};
   return H2_PAL_OK;
 }
 int h2_gizclaw_local_network_tool_internal(
@@ -711,7 +777,25 @@ int h2_gizclaw_local_network_tool_internal(
 int h2_gizclaw_local_network_mhs_internal(
     h2_gizclaw_service_t* device, h2_gizclaw_rpc_method_t method,
     h2_gizclaw_rpc_bytes_t request, h2_gizclaw_rpc_provider_response_t* out) {
-  return network_call(device, method, 0, request, out);
+  h2_gizclaw_local_call_t* call = NULL;
+  int rc = submit(h2_gizclaw_local_internal(device), method, 0, request,
+                  110000u, &call);
+  h2_gizclaw_local_result_t result = {0};
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_local_call_wait(call, 110000u, &result);
+  if (rc != H2_PAL_OK) {
+    (void)h2_gizclaw_local_call_release(&call);
+    return rc;
+  }
+  *out = (h2_gizclaw_rpc_provider_response_t){
+      .payload = result.payload,
+      .has_error = result.has_error || result.result != H2_PAL_OK,
+      .error_code = result.result != H2_PAL_OK
+                        ? h2_gizclaw_mhs_error_internal(result.result)
+                        : result.error_code,
+      .error_message = result.error_message,
+      .on_complete = network_complete,
+      .complete_user = call};
+  return H2_PAL_OK;
 }
 
 const h2_gizclaw_tool_handler_t* h2_gizclaw_local_network_tools_internal(
