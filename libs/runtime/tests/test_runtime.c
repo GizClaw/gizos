@@ -5335,8 +5335,15 @@ static void test_camera_provider_binding(void) {
   h2_runtime_config_t config = test_runtime_config(&env);
   h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-  assert(runtime->camera != NULL);
   assert(h2_pal_camera_start(runtime->camera) == H2_PAL_ERR_UNSUPPORTED);
+  h2_pal_camera_frame_t frame;
+  memset(&frame, 0xff, sizeof(frame));
+  assert(h2_pal_camera_acquire(runtime->camera, &frame) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(frame.data == NULL && frame.size == 0 && frame.token == 0);
+  assert(h2_pal_camera_release(runtime->camera, &frame) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_camera_stop(runtime->camera) == H2_PAL_ERR_UNSUPPORTED);
   h2_runtime_deinit(runtime);
   int calls = 0;
   const h2_pal_camera_vtable_t vtable = {.start = camera_test_start,

@@ -56,8 +56,6 @@ RUNTIME_DEPS = [
     ":tasks",
     "//libs/atomic",
     "//libs/pal",
-    # Runtime supplies the Camera fallback when callers omit its provider.
-    "//libs/pal:unsupported",
 ]
 
 # Host platforms, where the Runtime unit tests can actually run.
