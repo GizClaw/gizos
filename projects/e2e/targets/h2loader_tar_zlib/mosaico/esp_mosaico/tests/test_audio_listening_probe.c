@@ -10,12 +10,11 @@ static struct {
   unsigned channels, rate, volume, writes, closes, stops;
   int active, borrowed, start_error, write_error, drain_error, close_errors;
 } fake;
-static const h2_pal_audio_api_t api;
 static h2_pal_audio_track_t fake_track;
 static int info(void* user, h2_audio_info_t* out) {
   (void)user;
   *out = (h2_audio_info_t){.playback_supported = 1,
-                           .playback_format = {fake.rate, 512, fake.channels,
+                           .playback_format = {fake.rate, 512, (uint8_t)fake.channels,
                                                H2_AUDIO_SAMPLE_S16LE}};
   return 0;
 }
@@ -78,6 +77,16 @@ static int close_track(h2_pal_audio_track_t* track) {
   return 0;
 }
 static int create(void* user, const h2_audio_track_config_t* config,
+                  h2_pal_audio_track_t** out);
+static const h2_pal_audio_vtable_t ops = {
+    .get_info = info,
+    .get_speaker_volume_percent = get_volume,
+    .set_speaker_volume_percent = set_volume,
+    .start_speaker = start,
+    .stop_speaker = stop,
+    .create_track = create};
+static const h2_pal_audio_api_t api = {.vtable = &ops};
+static int create(void* user, const h2_audio_track_config_t* config,
                   h2_pal_audio_track_t** out) {
   (void)user;
   assert(fake.active && !fake.borrowed && config->volume_factor_milli == 1000);
@@ -90,14 +99,6 @@ static int create(void* user, const h2_audio_track_config_t* config,
   *out = &fake_track;
   return 0;
 }
-static const h2_pal_audio_vtable_t ops = {
-    .get_info = info,
-    .get_speaker_volume_percent = get_volume,
-    .set_speaker_volume_percent = set_volume,
-    .start_speaker = start,
-    .stop_speaker = stop,
-    .create_track = create};
-static const h2_pal_audio_api_t api = {.vtable = &ops};
 static h2_runtime_t fixture;
 static void prepare(void) {
   assert(!fake.borrowed && !fake.active);
