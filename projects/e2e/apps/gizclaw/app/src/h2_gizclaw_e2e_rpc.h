@@ -8,6 +8,9 @@ extern "C" {
 #endif
 
 int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t* fixture);
+int h2_gizclaw_e2e_prepare_rpc(h2_gizclaw_e2e_fixture_t* fixture);
+int h2_gizclaw_e2e_run_deferred(h2_gizclaw_e2e_fixture_t* fixture,
+                                h2_gizclaw_resp_storage_t* storage);
 int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t* fixture);
 int h2_gizclaw_e2e_prepare_voice(h2_gizclaw_e2e_fixture_t* fixture);
 int h2_gizclaw_e2e_select_workflow_name(

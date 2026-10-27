@@ -408,6 +408,7 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t* fixture) {
     RPC_DOMAIN_TELEMETRY,
     RPC_DOMAIN_API_KEY,
     RPC_DOMAIN_APP_CONFIG,
+    RPC_DOMAIN_DEFERRED,
     RPC_DOMAIN_COUNT,
   };
   struct rpc_domain {
@@ -436,6 +437,9 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t* fixture) {
       [RPC_DOMAIN_API_KEY] = {"api-key", run_api_key, 0u},
       [RPC_DOMAIN_APP_CONFIG] = {"app-config", h2_gizclaw_e2e_run_app_config,
                                  0u},
+      [RPC_DOMAIN_DEFERRED] = {"deferred-management",
+                               h2_gizclaw_e2e_run_deferred,
+                               1u << RPC_DOMAIN_CATALOG_WORKSPACE},
   };
   _Static_assert(sizeof(domains) / sizeof(domains[0]) == RPC_DOMAIN_COUNT,
                  "RPC domain table and index must remain synchronized");

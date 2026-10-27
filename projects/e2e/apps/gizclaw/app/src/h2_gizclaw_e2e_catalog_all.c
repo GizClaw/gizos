@@ -39,7 +39,7 @@ const e2e_case_t h2_gizclaw_e2e_cases[] = {
     {"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY, 2u, false,
      h2_gizclaw_e2e_run_connectivity, NULL},
     {"rpc", H2_GIZCLAW_E2E_SUITE_RPC, H2_GIZCLAW_E2E_ACTOR_COUNT, true,
-     h2_gizclaw_e2e_run_rpc, NULL},
+     h2_gizclaw_e2e_run_rpc, h2_gizclaw_e2e_prepare_rpc},
     {"firmware", H2_GIZCLAW_E2E_SUITE_FIRMWARE, 1u, false,
      h2_gizclaw_e2e_run_firmware, NULL},
     {"voice", H2_GIZCLAW_E2E_SUITE_VOICE, 1u, true, run_voice, prepare_session},

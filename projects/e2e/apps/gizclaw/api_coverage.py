@@ -21,7 +21,7 @@ PREFIX = "h2_gizclaw_"
 TOP_CASES = {"resource", "connectivity", "rpc", "firmware", "voice", "concurrency", "service", "device-api"}
 RPC_CASES = {"profile", "catalog-workspace", "speech", "workspace-reconnect",
              "contact", "friend", "group", "peer-name-isolation",
-             "telemetry", "api-key", "app-config"}
+             "telemetry", "api-key", "app-config", "deferred-management"}
 CASES = TOP_CASES | {"rpc/" + name for name in RPC_CASES}
 
 

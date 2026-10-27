@@ -506,6 +506,9 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t* fixture,
       H2_GIZCLAW_TOOL_SOCIAL_PING, provider_call, actor};
   const bool device = fixture->device_audio || fixture->device_vtable ||
                       fixture->device_lua_apps;
+  const bool product = actor == &fixture->actors[H2_GIZCLAW_E2E_OWNER] &&
+                       fixture->product_tool.invoke != NULL;
+  if (product) actor->tool_handlers[3] = fixture->product_tool;
   /* Service borrows this configuration until deinit, never a stack local. */
   actor->config = (h2_gizclaw_config_t){
       .server_endpoint = h2_gizclaw_e2e_str(fixture->endpoint),
@@ -526,7 +529,7 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t* fixture,
       .audio_buffer_bytes = fixture->device_audio ? 65536u : 0u,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .tool_handlers = device ? &actor->tool_handlers[2] : actor->tool_handlers,
-      .tool_handler_count = device ? 1u : 3u,
+      .tool_handler_count = (device ? 1u : 3u) + (product ? 1u : 0u),
       .cancel_requested = cancel_requested,
       .cancel_user = fixture,
   };
@@ -884,6 +887,7 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t* fixture,
       first_error = poll_rc;
       h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "sync-job", poll_rc);
     }
+    if (fixture->app_tick != NULL) fixture->app_tick(fixture);
     if (!stopped && !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)) {
       stopped = true;
       const int stop_rc = h2_gizclaw_service_stop(service);
@@ -1447,6 +1451,7 @@ int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t* fixture) {
   }
   /* Keep borrowed configuration, providers and credentials alive on failure. */
   if (result != H2_PAL_OK) return result;
+  if (fixture->product_dispose != NULL) fixture->product_dispose(fixture);
   if (fixture->device_cleanup != NULL) {
     result = fixture->device_cleanup(fixture);
     if (result != H2_PAL_OK) return result;

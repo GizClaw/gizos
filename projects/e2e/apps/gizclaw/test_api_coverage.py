@@ -58,6 +58,13 @@ class CoverageTest(unittest.TestCase):
             self.assertEqual(len(row["call_lines"]), len(row["calls"]))
             self.assertGreater(row["assertion_line"], row["call_lines"][-1])
 
+    def test_older_rpc_run_without_deferred_management_is_rejected(self):
+        lines = [line for line in self.lines
+                 if "case=rpc/deferred-management " not in line]
+        result = self.audit(lines)
+        self.assertFalse(result["valid"])
+        self.assertIn("missing required case boundaries", result["issues"])
+
     def test_legacy_inventory_evidence_cannot_cover_ble_binding(self):
         binding = [rule for rule in self.rules
                    if rule.symbol.startswith("h2_gizclaw_ble_binding_")]
