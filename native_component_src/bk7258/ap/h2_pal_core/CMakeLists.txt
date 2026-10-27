@@ -326,19 +326,8 @@ set(H2_BK_STA_SYNC_REPLACEMENT "${H2_BK_STA_SYNC_SIGNATURE}
     }")
 string(REPLACE "${H2_BK_STA_SYNC_SIGNATURE}" "${H2_BK_STA_SYNC_REPLACEMENT}"
   H2_BK_SDK_NETIF_CORRECTED "${H2_BK_SDK_NETIF_CONTENT}")
-# PAL queries the current CP snapshot and applies it on AP TCP/IP. Remove
-# the pinned unversioned, event-thread address write before it can race PAL.
-set(H2_BK_IP6_START "\tcase EVENT_WIFI_STA_GOT_IPV6:")
-set(H2_BK_IP6_END "\tcase EVENT_WIFI_STA_DISCONNECTED:")
-string(FIND "${H2_BK_SDK_NETIF_CORRECTED}" "${H2_BK_IP6_START}" ip6_start)
-string(FIND "${H2_BK_SDK_NETIF_CORRECTED}" "${H2_BK_IP6_END}" ip6_end)
-if(ip6_start EQUAL -1 OR ip6_end LESS_EQUAL ip6_start)
-  message(FATAL_ERROR "Pinned BK AP IPv6 callback changed")
-endif()
-math(EXPR ip6_length "${ip6_end} - ${ip6_start}")
-string(SUBSTRING "${H2_BK_SDK_NETIF_CORRECTED}" ${ip6_start} ${ip6_length} ip6_case)
-string(REPLACE "${ip6_case}" "\tcase EVENT_WIFI_STA_GOT_IPV6: break;\n"
-  H2_BK_SDK_NETIF_CORRECTED "${H2_BK_SDK_NETIF_CORRECTED}")
+# The pinned SDK no longer writes IPv6 addresses from its Wi-Fi event callback.
+# PAL remains the owner of CP snapshot reconciliation on AP TCP/IP.
 set(H2_BK_NETIF_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_netif.c")
 file(WRITE "${H2_BK_NETIF_CORRECTED_SOURCE}" "${H2_BK_SDK_NETIF_CORRECTED}")
 get_target_property(H2_BK_NETIF_SOURCES ${H2_BK_NETIF_LIB} SOURCES)
