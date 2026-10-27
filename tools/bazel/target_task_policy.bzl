@@ -182,7 +182,8 @@ def bk7258_target_task_policy(
       ap_policies: One row per AP task. See ``esp_target_task_policy``.
       ap_default_policy: ``"<priority>  <core>  <stack>  <region>"`` served to
         AP task names without a row of their own.
-      ap_allocator: Memory the AP allocates task stacks from.
+      ap_allocator: Memory for AP task control objects. Stack regions remain
+        selected per policy; PSRAM stacks use the native PSRAM allocator.
       cp_default_policy: ``"<priority>  <stack>  <region>"`` served to every
         CP task name.
     """
