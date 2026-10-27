@@ -13,9 +13,10 @@ static struct {
 static h2_pal_audio_track_t fake_track;
 static int info(void* user, h2_audio_info_t* out) {
   (void)user;
-  *out = (h2_audio_info_t){.playback_supported = 1,
-                           .playback_format = {fake.rate, 512, (uint8_t)fake.channels,
-                                               H2_AUDIO_SAMPLE_S16LE}};
+  *out = (h2_audio_info_t){
+      .playback_supported = 1,
+      .playback_format = {fake.rate, 512, (uint8_t)fake.channels,
+                          H2_AUDIO_SAMPLE_S16LE}};
   return 0;
 }
 static int get_volume(void* user, uint32_t* out) {
