@@ -57,14 +57,14 @@ class Rejection(unittest.TestCase):
         with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
         for field,value in [('provider_result',-1),('status','BLOCKED'),('detail',-1)]:
             bad=copy.deepcopy(valid)
-            bad['cases'][24][field]=value
+            next(row for row in bad['cases'] if row['id']=='tls-wrong-ca')[field]=value
             with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
         for mutate in [lambda rows:rows.pop(),lambda rows:rows.reverse(),lambda rows:rows.append(rows[0]),lambda rows:rows[0].update(id='missing')]:
             bad=copy.deepcopy(valid);mutate(bad['cases'])
             with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
         bad=copy.deepcopy(valid);bad['summary']['retained_sockets']=1
         with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
-        bad=copy.deepcopy(valid);bad['cases'][21]['bytes_received']=4096
+        bad=copy.deepcopy(valid);next(row for row in bad['cases'] if row['id']=='tls-required')['bytes_received']=4096
         with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
 
     def test_browser_unsupported_boundary_is_not_core_qualification(self):
