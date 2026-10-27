@@ -14,7 +14,7 @@ concurrency:
 env:
   BAZEL_VERSION: "9.2.0"
   BAZEL_LINUX_X86_64_SHA256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
-  BK7258_SDK_COMMIT: aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca
+  BK7258_SDK_COMMIT: 9020466789460701a62a823deb4a98edd6ea0e5d
   BK7258_PYTHON_VERSION: "3.11"
   BAZEL_REMOTE_CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
   BAZEL_REMOTE_CACHE_MODE: write
@@ -64,7 +64,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: h2vivi/firmware-devenv
-          ref: e1f952f19f35d31ffce5ae65aee3d6f11a7105dc # Pinned IDF 6.2 provider
+          ref: 42e5a45f7dcf2e31bed59dff9dd6005ad183917c # Pinned GizClaw SDK fork provider
           path: firmware-devenv
           fetch-depth: 1
           persist-credentials: false
@@ -268,7 +268,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: h2vivi/firmware-devenv
-          ref: e1f952f19f35d31ffce5ae65aee3d6f11a7105dc # Pinned IDF 6.2 provider
+          ref: 42e5a45f7dcf2e31bed59dff9dd6005ad183917c # Pinned GizClaw SDK fork provider
           path: firmware-devenv
           fetch-depth: 1
           persist-credentials: false
@@ -412,14 +412,6 @@ jobs:
           submodules: false
           persist-credentials: false
 
-      - id: app-token
-        name: Create read-only h2vivi token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        with:
-          app-id: ${{ secrets.H2VIVI_GITHUB_APP_ID }}
-          private-key: ${{ secrets.H2VIVI_GITHUB_APP_PRIVATE_KEY }}
-          owner: h2vivi
-
       - name: Authenticate read-write Bazel remote cache
         if: vars.BAZEL_REMOTE_CACHE_URL != ''
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -448,16 +440,15 @@ jobs:
           "$RUNNER_TEMP/bk-python/bin/python" -m pip install cbor2 click click-option-group cryptography future intelhex jinja2 pycryptodome pyserial PyYAML
           printf '%s\n' "$RUNNER_TEMP/bk-python/bin" >> "$GITHUB_PATH"
 
-      - name: Check out BK7258 SDK mirror
+      - name: Check out BK7258 SDK fork
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          repository: h2vivi/bk-avdk-smp
+          repository: GizClaw/bk_avdk_smp
           ref: ${{ env.BK7258_SDK_COMMIT }}
           path: .bk-sdk
           fetch-depth: 1
           persist-credentials: false
           submodules: recursive
-          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure BK7258 SDK, native cache, and Bazel
         run: |
