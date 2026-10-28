@@ -73,13 +73,13 @@ static h2_pal_result_t memory_execute(
 
 ### 对象、容量与状态
 
-普通 fake 由调用方持有，init 后地址稳定，配置、调用与 evidence 读取串行；它们可以在同一 libco executor 中使用，不提供 native 多线程同步。Preference、FS 和 Audio fake 借用 Memory PAL 分配内部资源，活动句柄阻止 deinit。Product component mapper、preference key、业务 provider 和 fixture 属于 adapter/scenario；Testing PAL 不复制 Runtime queue 或 component state，也不把请求成功解释为异步完成。
+普通 fake 由调用方持有，init 后地址稳定，配置、调用与 evidence 读取串行；不提供 native 多线程同步，多线程测试必须显式串行访问。Preference、FS 和 Audio fake 借用 Memory PAL 分配内部资源，活动句柄阻止 deinit。Product component mapper、preference key、业务 provider 和 fixture 属于 adapter/scenario；Testing PAL 不复制 Runtime queue 或 component state，也不把请求成功解释为异步完成。
 
 Preference 限制为 8 个 namespace、每个 64 个 key、16 个同时打开的 handle；名称/key 最多 63 字节、值最多 1024 字节。每个 namespace 只允许一个 writer，修改在 commit 前只对 writer 可见；commit 失败保留 staged 值，close 放弃未提交修改。FS 支持 16 个 exact path regular file、每条路径最多 127 字节、默认每文件 1 MiB；每文件只允许一个活动 handle，支持短读，目录操作 unsupported。Periph registry 最多 32 项。Audio fake 和 decorator 各最多 4 条 track，decorator capture scratch 最多 8192 字节。具体容量常量和借用约束由 public headers 定义。
 
 ### 时间、barrier 与 evidence
 
-Testing Time 的 sleep 仅推进虚拟时钟，不调度其他 task。生产 Runtime 的 resident worker 使用 libco Time，Testing Time 接入 executor 的 `now_ms`/`time_source`；根循环显式 advance 并 schedule。需要锁的 Runtime 操作、test control 和 cleanup 必须在 executor task 中执行。时钟推进不能替代 production-aware completion barrier；worker result 被 production loop 消费之后，才读取 App snapshot 和 PAL evidence。
+Testing Time 的 sleep 仅推进虚拟时钟，不调度其他 task。生产 Runtime 的 resident worker 使用真实 target Time PAL。Runtime 集成测试使用 Desktop Task／Queue／Sync 与显式 semaphore barrier，worker 阻塞后根线程推进 Testing Time，再释放并 join worker。时钟推进不能替代 production-aware completion barrier；worker result 被 production loop 消费之后，才读取 App snapshot 和 PAL evidence。
 
 Audio decorator 借用 delegate、Time、Memory 和 PCM，mic lifecycle 委托给底层，采集 scratch 读取后清零，再按 monotonic time 返回 fixture PCM；EOF 后输出静音。物理采集错误单独观测，不覆盖 fixture 的业务输入。Evidence 支持并发读取，但多字段不是原子快照。Mic lifecycle/read 串行，speaker lifecycle 串行，每条 track 独立串行，销毁前所有调用者 quiescent。
 
@@ -105,7 +105,7 @@ Fault 在有效调用到达对应操作时计数，零初始化默认成功；�
 
 Cleanup 先停止 App workers、关闭 Runtime test control 和 mic/speaker/track、销毁 Runtime，再销毁 decorator 和底层 fake。Audio track close、mic/speaker stop 和 FS close 失败时保留 ownership 供重试；不能因为某次失败就丢弃句柄。未成功 init 的动态 fake 可 deinit，重复 deinit 和 NULL deinit 成功；init 不允许覆盖活动对象。普通 fake 无动态资源，不能提前结束其调用方存储生命周期。
 
-Provider 测试覆盖事务可见性、失败重试、短读、容量、错误参数和资源计数；Audio decorator 测试覆盖 pacing、EOF、真实采集故障及输出代理。Runtime/libco 集成测试覆盖 semantic event、component mapping、worker 持久化失败重试、时钟推进与 task 内 cleanup。这些 Host evidence 不替代 H106 产品迁移或真机验收。
+Provider 测试覆盖事务可见性、失败重试、短读、容量、错误参数和资源计数；Audio decorator 测试覆盖 pacing、EOF、真实采集故障及输出代理。Runtime/Desktop PAL 集成测试覆盖 semantic event、component mapping、worker 持久化失败重试、时钟推进与 task 内 cleanup。这些 Host evidence 不替代 H106 产品迁移或真机验收。
 
 ## Runtime Test Control
 
@@ -303,7 +303,7 @@ Adopter至少覆盖：
 - 不把 Host 证据描述成 device/render/audio/network acceptance。
 
 
-GizClaw E2E 的公共支撑新增 `h2_app_test_mem`、`h2_app_test_task`、`h2_app_test_sync`、`h2_app_test_webrtc`，对应同名 public header 与 `src/pal/` 实现，归属 `testing_pal`。Memory 对每个分配维护对齐头和存活链表；失败的 realloc 保留旧块。Task/Sync 只验证串行生命周期，生产并发继续用真实或 libco PAL。Testing Time 可在单调读之后显式步进，成功 sleep 后可通知借用的场景观察函数；故障 helper 支持跳过指定次数后再注入。
+GizClaw E2E 的公共支撑新增 `h2_app_test_mem`、`h2_app_test_task`、`h2_app_test_sync`、`h2_app_test_webrtc`，对应同名 public header 与 `src/pal/` 实现，归属 `testing_pal`。Memory 对每个分配维护对齐头和存活链表；失败的 realloc 保留旧块。Task/Sync 只验证串行生命周期，生产并发继续用真实 target PAL。Testing Time 可在单调读之后显式步进，成功 sleep 后可通知借用的场景观察函数；故障 helper 支持跳过指定次数后再注入。
 
 WebRTC decorator 每个实例拥有自己的 peer/channel wrapper，无全局实例。每次成功 poll 返回可释放的包装事件，释放时把原始事件完整交还 delegate；callback 只同步借用事件。每个 peer 按需分配不同 channel 的稳定包装句柄，直到 peer close 才释放；包装句柄分配失败时关闭刚创建的 delegate channel 并返回 `NO_MEMORY`，不额外限制底层 provider 的 channel 数量。活动 peer 或未释放 event 阻止 decorator destroy。调用方串行访问同一 peer 及其 channel，释放事件后再关闭 peer；不同 peer 的观察 callback 可并发，需要 consumer 自行同步。
 

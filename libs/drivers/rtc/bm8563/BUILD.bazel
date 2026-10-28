@@ -26,7 +26,6 @@ cc_library(
     includes = ["tests/include"],
     visibility = [
         ":__pkg__",
-        "//native_component_src/bk3633/h2_pal_core:__pkg__",
     ],
     deps = [":bm8563"],
 )

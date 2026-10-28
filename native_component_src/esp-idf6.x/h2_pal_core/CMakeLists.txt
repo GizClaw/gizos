@@ -118,7 +118,6 @@ idf_component_register(
     "${REPO_ROOT}/libs/pal/providers/corehttp/include"
     "${REPO_ROOT}/libs/pal/providers/h2peer/include"
     "${REPO_ROOT}/libs/pal/providers/h2sctp/include"
-    "${REPO_ROOT}/libs/pal/providers/libco/include"
   PRIV_REQUIRES
     ${H2_ESP_PLATFORM_CORE_REQUIRES}
     h2_firmware_lib

@@ -49,12 +49,12 @@ args = sys.argv[1:]
 definitions = [args[index + 1] for index, value in enumerate(args[:-1]) if value == "-D"]
 if "PROJECT_VER=test-version" not in definitions:
     raise SystemExit("runner did not provide the ESP-IDF project version")
-prebuilt = [value for value in definitions if value.startswith("H2_BAZEL_PREBUILT_H2_LIBCO=")]
+prebuilt = [value for value in definitions if value.startswith("H2_BAZEL_PREBUILT_H2_FIXTURE=")]
 if len(prebuilt) != 1:
-    raise SystemExit("runner did not provide the Bazel-built h2_libco archive")
+    raise SystemExit("runner did not provide the Bazel-built h2_fixture archive")
 prebuilt_path = Path(prebuilt[0].split("=", 1)[1])
 if not prebuilt_path.is_absolute() or prebuilt_path.read_bytes() != b"archive":
-    raise SystemExit("runner provided an invalid h2_libco archive")
+    raise SystemExit("runner provided an invalid h2_fixture archive")
 cmake_probe = [value for value in definitions if value.startswith("H2_TEST_CMAKE=")]
 if cmake_probe and cmake_probe != ["H2_TEST_CMAKE=http://192.0.2.1:18080"]:
     raise SystemExit("runner provided an invalid allowlisted CMake value")
@@ -275,7 +275,7 @@ class EspIdfRunnerTest(unittest.TestCase):
         environment_updates: dict[str, str | None] | None = None,
         h2loader_wifi_environment: bool = False,
         precreate_flash_output: bool = False,
-        prebuilt_component: str = "h2_libco=bazel-out/libfixture.a",
+        prebuilt_component: str = "h2_fixture=bazel-out/libfixture.a",
         tool_versions: str | None = None,
         cmake_variable: str | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], Path]:
@@ -614,7 +614,7 @@ class EspIdfRunnerTest(unittest.TestCase):
     def test_prebuilt_component_path_fails_closed(self):
         result, _ = self._run(
             name="invalid-prebuilt",
-            prebuilt_component="h2_libco=../libfixture.a",
+            prebuilt_component="h2_fixture=../libfixture.a",
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("invalid ESP-IDF prebuilt archive path", result.stderr)

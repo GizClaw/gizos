@@ -86,7 +86,6 @@ exports_files([
     "app_version.bzl",
     "board_version.bzl",
     "bk7258.bzl",
-    "bk3633.bzl",
     "bk7258_requirements.txt",
     "esp_idf.bzl",
     "firmware.bzl",
@@ -100,7 +99,6 @@ exports_files([
     "native_component.bzl",
     "native_component.cmake",
     "npm_release.bzl",
-    "native_versions/bk3633_sdk_commit.txt",
     "native_versions/bk7258_sdk_commit.txt",
     "native_versions/bk_tool_versions.txt",
     "native_versions/bk_toolchain_archives.txt",
@@ -354,40 +352,6 @@ py_test(
         requirement("cryptography"),
         requirement("pycparser"),
         requirement("pycryptodome"),
-    ],
-)
-
-py_binary(
-    name = "bk3633_runner",
-    srcs = ["bk3633_runner.py"],
-    legacy_create_init = 0,
-    main = "bk3633_runner.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        ":native_ccache",
-        ":native_runtime",
-    ],
-)
-
-py_test(
-    name = "bk3633_runner_test",
-    srcs = ["tests/test_bk3633_runner.py"],
-    data = ["bk3633_runner.py"],
-    legacy_create_init = 0,
-    main = "tests/test_bk3633_runner.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        ":native_ccache",
-        ":native_runtime",
     ],
 )
 

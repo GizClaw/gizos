@@ -157,7 +157,7 @@ boards/<board>/<chip-or-target>/
 
 ### native_component_src {#definition-native-component-src}
 
-`native_component_src` 保存必须由 ESP-IDF、BK7258、BK3633 等原生 SDK build system 编译的源码，以及把 Bazel archive 注册到原生 SDK graph 的薄 adapter。它不是 Bazel library root；能由 Bazel toolchain 直接编译的平台实现属于 `libs/pal/providers`。
+`native_component_src` 保存必须由 ESP-IDF、BK7258 等原生 SDK build system 编译的源码，以及把 Bazel archive 注册到原生 SDK graph 的薄 adapter。它不是 Bazel library root；能由 Bazel toolchain 直接编译的平台实现属于 `libs/pal/providers`。
 
 代码目录：
 

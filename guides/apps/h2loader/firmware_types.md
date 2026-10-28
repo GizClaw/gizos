@@ -15,7 +15,7 @@ H2Loader 使用以下存储。它们不一定都是 Flash 上的 partition：
 | `preference` | `boot_intent` 与 Stage、Partition 1、Partition 2 metadata | 跨重启保存实际镜像 identity；不保存安装流程 phase |
 | `coredump` | 固件崩溃数据 | 供 Loader/App command 查询、导出和擦除 |
 
-ESP target 的 `preference` 是独立的 256 KiB internal LittleFS partition；24 KiB `nvs` 仍保留给 ESP-IDF system state，H2 PAL 不再把新 Preference 值写入其中。BK7258、BK3633 和 Desktop 继续使用各自已声明的 backend。
+ESP target 的 `preference` 是独立的 256 KiB internal LittleFS partition；24 KiB `nvs` 仍保留给 ESP-IDF system state，H2 PAL 不再把新 Preference 值写入其中。BK7258 和 Desktop 继续使用各自已声明的 backend。
 
 ### 新 Board 接入要求
 

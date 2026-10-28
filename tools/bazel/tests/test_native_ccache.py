@@ -128,7 +128,6 @@ class NativeCcacheTest(unittest.TestCase):
             ("esp32p4", "esp"),
             ("esp32c5", "esp"),
             ("bk7258", "bk"),
-            ("bk3633", "bk"),
         ):
             with (
                 self.subTest(namespace=namespace),

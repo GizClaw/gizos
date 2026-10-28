@@ -44,7 +44,6 @@ _GAME_AUDIO_COPTS = H2_WARNING_COPTS + h2_gnu_only_copts([
 
 _PIXELROOT32_COPTS = H2_WARNING_COPTS + select({
     ":linux_armv7": ["-Wno-error=type-limits"],
-    "//tools/bazel/platforms:is_bk3633": ["-Wno-error=type-limits"],
     "//tools/bazel/platforms:is_bk7258": ["-Wno-error=type-limits"],
     "//tools/bazel/platforms:is_esp32c5": ["-Wno-error=type-limits"],
     "//tools/bazel/platforms:is_esp32p4": ["-Wno-error=type-limits"],
@@ -80,10 +79,6 @@ cc_library(
     ],
     defines = _GAME_PLATFORM_DEFINES,
     includes = ["compat"],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:is_bk3633": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = ["@h2_vendor_pixelroot32//:display_config_header"],
 )
 

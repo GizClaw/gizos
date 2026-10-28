@@ -35,7 +35,6 @@ firmware_lib_component(
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
-        "//libs/pal/providers/libco",
         "//libs/pal/providers/yyjson",
         "//libs/pixa",
         "//libs/runtime",

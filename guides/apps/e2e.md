@@ -40,7 +40,6 @@ GizClaw DevKit 入口在原保存配置缺失时，也可使用同一 Native 输
 | Atomic | `//projects/e2e/apps/atomic/app:atomic_e2e` | macOS、真实 Browser/WASM pthread Workers、iOS/Android 模拟器、DevKit ESP32-S3 与 BK7258 的完整 typed 接口资格 |
 | GizClaw | `//projects/e2e/apps/gizclaw/app:gizclaw_e2e` | Desktop H2Peer/Pion；Chromium Worker；iOS XCFramework / Android AAR 消费 App；DevKit、AMOLED、BK7258 入口，实际资格见 App README |
 | H106 | `//projects/e2e/apps/h106/app:h106_e2e` | Desktop Tiga/Zero、Tiga V4.2 与 Zero BK 1.0；完整 production Main App、Runtime Test Control 与公开 observation |
-| Libco | `//projects/e2e/apps/libco/app:libco_smoke` | Desktop、Browser、DevKit ESP32-S3、BK7258、TapDoki BK3633 |
 | 灵犀设备接入 | `//projects/e2e/apps/lingxi/app:lingxi_e2e` | macOS／Linux host 与 DevKit ESP32-S3；接入流程与环境注入见 [App README](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/lingxi) |
 | OneNET 设备接入 | `//projects/e2e/apps/onenet/app:onenet_e2e` | Host example 与 DevKit ESP32-S3；接入边界见 [App README](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/onenet) |
 | Lua Runtime | `//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e` | Desktop、Browser、AMOLED；九个固定 VM/coroutine/component/event/worker/shutdown case |
@@ -141,12 +140,6 @@ AMOLED 的 runner 使用 PSRAM stack，`$gizclaw/net` 的测试预算为 64 KiB 
 
 真实 RegistrationToken 由 repository-approved test launcher 固定，或由 CI environment 注入。Token、private key、authorization metadata、Firmware URL、原始音频与 unrestricted response body 不得进入日志或 artifact。
 
-## Libco
-
-`h2_libco_smoke_run()` 在一个 `h2_libco_t` executor 中验证 FIFO、wait/wake、timeout、cancel、join、bounded cleanup 与 repeated switching。Public `h2_libco_smoke_*` symbol、`H2_LIBCO_SMOKE_*` marker、默认 8 KiB stack 和 10,000 次 switch 是跨 launcher 的稳定合同；BK3633 因 16 KiB Board Memory arena 显式使用 2 KiB stack。
-
-同一份 portable source 由五类 launcher 执行：Desktop 在 process main thread 使用 upstream host backend；Browser 的 C main Worker 使用 Emscripten Fiber/Asyncify backend；DevKit 在 pinned ESP-IDF main task 中使用 S3-only Xtensa backend；BK7258 在 Board entry AP task 中使用 repository-owned Cortex-M Thumb backend；BK3633 在 SDK boot/main context 中使用 upstream ARMv5 backend，以 target executor 的 BLE Stack task 推进 RWIP，但不进入 TapDoki production App。Cortex-M backend 除 AAPCS callee-saved registers 外，还在 Armv8-M 上保存 coroutine 对应的 `PSPLIM` 和 `PRIMASK`，避免 FreeRTOS task 的 hardware stack limit 被错误沿用到 heap-backed coroutine stack。Libco backend 不是 PAL capability 或 Runtime vtable；独立 libco App 验证它自身的协程行为，Browser PAL Task 则使用 pthread Workers，不再依赖 libco。
-
 ## Lua Runtime
 
 `lua-runtime` 固定执行 `vm-source-load`、`coroutine-api`、
@@ -156,8 +149,6 @@ AMOLED 的 runner 使用 PSRAM stack，`$gizclaw/net` 的测试预算为 64 KiB 
 结果；每个 launcher 输出 `H2_LUA_E2E_CASE` 和最终 `H2_LUA_E2E` marker。
 
 Desktop 和 AMOLED 配置两个 worker 并报告 `scheduler=multi-worker`；报告只说明 四个隔离 VM 分配到 Runtime worker，不用耗时推断 CPU parallelism。Browser 配置 两个 pthread Worker 并报告 `scheduler=multi-worker`。Runtime Event queue 仍只由 App 消费；event case 使用一个 target-independent synthetic component，由 App 把复制 事件定向投递给显式 job。
-
-Desktop catalog identity 是 `e2e/libco`，Bazel binary 是 `//projects/e2e/targets/cc_binary/libco:e2e-libco`。DevKit 与 BK7258 保留 H2Loader image/package identity `libco-smoke`。TapDoki BK3633 的 standalone full-image target 是 `//projects/e2e/targets/bk3633_firmware/libco-smoke/tapdoki_v2_0:firmware`；它保留 `tapdoki_libco_smoke` native target、merge identity 与 READY/FAIL evidence。
 
 ## PAL WebRTC
 
@@ -227,7 +218,7 @@ App-local `iperf_e2e_test` 用 `//libs/iperf:test_support` 在 loopback 上对�
 
 `projects/e2e/apps/pal-wifi` independently maps all 21 STA/AP/Settings/Netif operations to 38 portable cases and one separate-boot persistence case. DevKit/BK7258 qualification needs real WLAN scan/authentication/DHCP and an AMOLED AP/STA fixture that joins and leaves each DUT AP. The launcher makes a private crash-recovery credential backup before mutations; restores original Settings and network; removes the backup; and only confirms a complete qualified boot. Without saved STA credentials, the portable suite rejects an active or indeterminate initial connection before mutation, and verifies disconnected status again during restoration. A first seed boot is pending persistence and is not confirmed; ESP's unconfirmed-image rollback means that seed can precede a different managed image under the fixed v1 record contract. Receipts keep each actual version; the final confirmed artifact also passes an ordinary App reboot. macOS uses native Netif read-only; WASM tests HOST Netif offline/online Runtime delivery; iOS/Android default SDK assembly explicitly reports unsupported. A host capability contract PASS is not physical WLAN qualification. Wi-Fi CSI is separate. The AP+STA route case uses an independently saved infrastructure AP when present, retaining real addressing and explicit AP→STA route/event assertions. Standalone open/hidden AP modes disconnect that upstream STA before using their requested channel. BK uses paired AP/CP actual association/disassociation commands and SDK MIN/MAX listen-interval readback; these do not claim measured radio power. Entrypoints, receipts and the source/package/status/coredump audit are defined in the independent App README.
 
-Portable/desktop tests 证明 case contract、provider assembly、parser、failure aggregation 与 cleanup。Live GizClaw 证明真实 E2E service flow。Firmware build 只证明对应 SDK graph 可以产生 image；DevKit/BK7258 必须继续通过 H2Loader-first install、confirm 与 cold-boot 验收，BK3633 必须按 Board guide 验证完整 `merge-crc.bin` 与两次 cold boot。任何一层不能代替另一层。
+Portable/desktop tests 证明 case contract、provider assembly、parser、failure aggregation 与 cleanup。Live GizClaw 证明真实 E2E service flow。Firmware build 只证明对应 SDK graph 可以产生 image；DevKit/BK7258 必须继续通过 H2Loader-first install、confirm 与 cold-boot 验收。任何一层不能代替另一层。
 
 ## iOS / Android PAL Core
 

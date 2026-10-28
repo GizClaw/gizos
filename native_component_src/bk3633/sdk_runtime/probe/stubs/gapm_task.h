@@ -1,4 +1,0 @@
-#ifndef H2_BK3633_PROBE_GAPM_TASK_H
-#define H2_BK3633_PROBE_GAPM_TASK_H
-
-#endif

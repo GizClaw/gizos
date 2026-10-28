@@ -381,25 +381,6 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/cisco/libsrtp/tar.gz/24b3bf8f19b6f5ab4cd2bcceb4f4064efca86fd5"],
 )
 vendor_repositories.repository(
-    name = "h2_vendor_libco",
-    build_file = "//third_party:libco.BUILD.bazel",
-    overlay_files = {
-        "//third_party/libco_patch:libco.c": "src/libco.c",
-        "//third_party/libco_patch:backends/arm.c": "src/arm.c",
-        "//third_party/libco_patch:backends/cortex_m.c": "src/backends/cortex_m.c",
-        "//third_party/libco_patch:backends/emscripten/h2_libco_emscripten.c": "src/backends/emscripten/h2_libco_emscripten.c",
-        "//third_party/libco_patch:backends/esp32s3/h2_esp_libco_xtensa.S": "src/backends/esp32s3/h2_esp_libco_xtensa.S",
-        "//third_party/libco_patch:backends/esp32s3/h2_esp_libco_xtensa.c": "src/backends/esp32s3/h2_esp_libco_xtensa.c",
-        "//third_party/libco_patch:backends/esp32s3/h2_esp_libco_xtensa_internal.h": "src/backends/esp32s3/h2_esp_libco_xtensa_internal.h",
-        "//third_party/libco_patch:backends/riscv32/h2_libco_riscv32.S": "src/backends/riscv32/h2_libco_riscv32.S",
-        "//third_party/libco_patch:backends/riscv32/h2_libco_riscv32.c": "src/backends/riscv32/h2_libco_riscv32.c",
-        "//third_party/libco_patch:backends/riscv32/h2_libco_riscv32_internal.h": "src/backends/riscv32/h2_libco_riscv32_internal.h",
-    },
-    sha256 = "6e9f9a1e760e67c0708e5f4cbc3200f7783479e8d8d3ae0de64aac27b525f47c",
-    strip_prefix = "libco-e18e09d634d612a01781168ad4d76be10a7e3bad",
-    urls = ["https://codeload.github.com/higan-emu/libco/tar.gz/e18e09d634d612a01781168ad4d76be10a7e3bad"],
-)
-vendor_repositories.repository(
     name = "h2_vendor_tlsf",
     build_file = "//third_party:tlsf.BUILD.bazel",
     overlay_files = {
@@ -539,7 +520,6 @@ use_repo(
     "h2_vendor_ffmpeg",
     "h2_vendor_ikcp",
     "h2_vendor_iperf",
-    "h2_vendor_libco",
     "h2_vendor_libsrtp",
     "h2_vendor_lua",
     "h2_vendor_lvgl",
@@ -586,7 +566,6 @@ native_repositories = use_extension(
 )
 use_repo(
     native_repositories,
-    "h2_bk3633_sdk",
     "h2_jieli_ac695n_sdk",
     "h2_jieli_ac707n_sdk",
     "h2_jieli_ac791n_sdk",
@@ -614,7 +593,6 @@ local_embedded_cc = use_extension(
 )
 use_repo(
     local_embedded_cc,
-    "gizos_bk3633_cc_toolchain",
     "gizos_bk7258_cc_toolchain",
     "gizos_esp32c5_cc_toolchain",
     "gizos_esp32p4_cc_toolchain",
@@ -623,7 +601,6 @@ use_repo(
 )
 
 register_toolchains(
-    "@gizos_bk3633_cc_toolchain//:toolchain",
     "@gizos_bk7258_cc_toolchain//:toolchain",
     "@gizos_esp32c5_cc_toolchain//:toolchain",
     "@gizos_esp32p4_cc_toolchain//:toolchain",

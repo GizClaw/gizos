@@ -103,7 +103,7 @@ Runtime 只发布原始的“最近一帧峰值”，**不做衰减**。Runtime 
 
 存储的 timestamp 只保留 monotonic 毫秒的低 32 位，读取时用当前时钟补回高位，因此跨 `UINT32_MAX` 毫秒（约 49.7 天）回绕的帧仍然落在正确的 epoch 上，回绕边界上低位为 0 的帧也不会被当成“从未测量”。这个补位对任何比约 24 天更新的帧都成立。
 
-编译期开关 `H2_RUNTIME_AUDIO_LEVELS` 默认打开；置 0 的目标不测量、不包装 track，`h2_runtime_audio_get_levels()` 返回 `H2_PAL_ERR_UNSUPPORTED`，`create_track` 恢复为透明转发。bk3633 只有 BLE、没有音频通路，OAD 镜像也没有余量，因此在该平台构建时关闭。
+编译期开关 `H2_RUNTIME_AUDIO_LEVELS` 默认打开；置 0 的目标不测量、不包装 track，`h2_runtime_audio_get_levels()` 返回 `H2_PAL_ERR_UNSUPPORTED`，`create_track` 恢复为透明转发。
 
 帧数据按字节读取：`h2_audio_frame_t::data` 是不受约束的 `void *`，PAL 不承诺 `int16_t` 对齐，按 `int16_t` 解引用在 ARM target 上可能取到未定义行为甚至触发异常。时钟读失败时不发布该帧，保留上一次测量，避免出现一个 timestamp 为 0 却标记有效的样本。
 
@@ -488,7 +488,7 @@ Lifecycle 的合法调用如下，其余情况一律 fail closed：
 source table 与 publication。`start` 则必须拒绝，否则 poller 会和 test source table
 竞争。两者刻意不对称。
 
-单步采集失败不会停掉 input worker：读 PAL 出错、事件放不进 pending 缓冲、时间读取失败等都只记入健康状态，按 stage 打日志（`H2_RUNTIME_INPUT_ERROR stage=... rc=...`，同一错误连续出现时每 100 次再打一行，恢复时打 `H2_RUNTIME_INPUT_RECOVERED`），退避后继续下一轮（最长 500 ms 一次）。其余 source 在同一轮照常采集，已产生的事件照常发布。`h2_runtime_input_status()` 返回 phase、latch 的 worker result、最近一次错误及其 stage 和时间、累计与连续错误数、成功轮数与最近成功时间，以及 snapshot 延迟发布计数，任何 phase 都可以调用。健康字段由独立的 health mutex 保护（不是 input writer mutex），因此拿不到 writer mutex 本身也会以 stage `lock` 记录；`h2_runtime_input_status()` 拿不到 health mutex 时返回该 Sync 结果、不读字段。bk3633 以 `H2_RUNTIME_INPUT_LOG_ENABLED=0` 构建（OAD 镜像预算），不输出以上 input 日志，健康字段、status 与 `h2_runtime_input_stage_name()` 不受影响（没有日志引用时，不调用该函数的镜像不链接这些字符串）。
+单步采集失败不会停掉 input worker：读 PAL 出错、事件放不进 pending 缓冲、时间读取失败等都只记入健康状态，按 stage 打日志（`H2_RUNTIME_INPUT_ERROR stage=... rc=...`，同一错误连续出现时每 100 次再打一行，恢复时打 `H2_RUNTIME_INPUT_RECOVERED`），退避后继续下一轮（最长 500 ms 一次）。其余 source 在同一轮照常采集，已产生的事件照常发布。`h2_runtime_input_status()` 返回 phase、latch 的 worker result、最近一次错误及其 stage 和时间、累计与连续错误数、成功轮数与最近成功时间，以及 snapshot 延迟发布计数，任何 phase 都可以调用。健康字段由独立的 health mutex 保护（不是 input writer mutex），因此拿不到 writer mutex 本身也会以 stage `lock` 记录；`h2_runtime_input_status()` 拿不到 health mutex 时返回该 Sync 结果、不读字段。以 `H2_RUNTIME_INPUT_LOG_ENABLED=0` 构建的目标不输出以上 input 日志，健康字段、status 与 `h2_runtime_input_stage_name()` 不受影响（没有日志引用时，不调用该函数的镜像不链接这些字符串）。
 
 只有 worker 无法再自我节拍（sleep 失败）或 Runtime 已不可用才是致命的。致命时 worker 在 writer mutex 下把每个仍按住的 Button 走正常松开路径（state 读作松开），发布 snapshot，并按普通 producer 规则把 `BUTTON_UP` 与 released `BUTTON_ACTION` 排在关闭之前（fault 是终态，已有保留边沿与此次释放先尝试投递一次，队列满时未投递事件全部丢弃并计数；事件不会先于其 snapshot 可取，读者持续占住所有退役槽位、三次短重试仍发布不了时同样丢弃并计数），日志为 `H2_RUNTIME_INPUT_FAULT ... released=<n>`。拿不到 writer mutex 时不改 source table，日志写 `release=skipped lock_rc=<rc>`。随后保存 worker result、把 input phase 置为 faulted 并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒；consumer 先拉到已入队的释放事件，再看到 `H2_PAL_ERR_CLOSED`。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。NFC task 投递扫描结果失败只丢这一轮结果，不 fault。
 

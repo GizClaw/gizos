@@ -8,7 +8,7 @@
 
 - iOS component 管理 UIKit view、RGBA frame 和 touch snapshot。
 - Android component 管理 JNI view reference、RGBA frame、Bitmap copy、pointer snapshot、16 kHz mono S16LE playback track、raw AAC-LC 到 allocator-backed PCM 的转换，以及 H.264 到 allocator-backed RGB565 frame 的转换。
-- Web component 管理 libco cooperative executor、Canvas frame presentation、Emscripten pointer handler、origin-scoped `localStorage` Pref、Web Serial Promise bridge 和 browser lifecycle cleanup。
+- Web component 管理 pthread Core、Canvas frame presentation、Emscripten pointer handler、origin-scoped `localStorage` Pref、Web Serial Promise bridge 和 browser lifecycle cleanup。
 
 Component 的 display size 必须通过 public config 传入，不能依赖具体 project 的固定尺寸、App config 或 adapter 类型。Component 只能依赖 PAL contract 和对应平台 SDK；不能选择 App、组装完整 Runtime、拥有 package identity 或决定进程生命周期。
 
@@ -28,7 +28,7 @@ Android Audio 与 AAC Decoder provider 共用的参数校验、PCM layout/copy�
 
 Android H.264 Video Decoder 的 stream validation、planar YUV layout bounds 和 RGB565 conversion 必须保持 platform-independent，并由 `//libs/pal/providers/android/pal_core:video_contract_test` 在 host 覆盖。真实 codec selection、output format/stride、High Profile decode、loop reset 和画面显示继续由 Android Emulator acceptance 覆盖；provider 只能读取当前 output buffer 声明的有效字节，不能用底层 buffer capacity 替代 frame size。
 
-Web Task/Queue/Sync 由 libco 的 Emscripten Fiber/Asyncify backend 在单个浏览器线程上协作调度。同步 PAL 调用只能等待会由后续 bounded platform pump 产生的事件；platform 必须为最早 task/Timer deadline 和外部完成自动安排 pump，不能依赖无关的 UI event 或 launcher polling 才能推进。实现不提供抢占、CPU 并行或跨 Worker 同步，也不要求 `SharedArrayBuffer`。Promise callback 只提交 generation-tagged completion 并请求后续 turn；pump 必须避开活动 Asyncify export，callback 不能直接恢复 task 或访问已经销毁、复用的 WASM state。
+Web Task/Queue/Sync 和 Timer 由 pthread Core 实现，C main 与 PAL Task 在 Worker 上运行。浏览器 DOM 与 JS API 入口通过 `h2_web_main_thread.h` 代理到 UI，异步完成通过条件变量唤醒 Worker。Web artifact 全图使用 `-pthread`，C main 使用 `PROXY_TO_PTHREAD`；托管环境必须提供 COOP/COEP 响应头以启用 SharedArrayBuffer。Task join 在原生线程退出后回收真实栈和线程对象。
 
 ## Artifact Entry Boundary
 
@@ -50,7 +50,7 @@ iOS component 由真实 `objc_library` 编译，并作为 `rules_apple` `ios_app
 
 Android component 由 NDK configuration 下的真实 `cc_library` 编译，通过 `android_library` native dependency 进入 `rules_android` `android_binary`；Android launcher 不保留第二套 CMake 或手工 APK script。`android_arm64` build config 把顶层 target platform 固定为 `arm64-v8a`，使完整 `//...` build 通过 compatibility 跳过普通 Linux target；`rules_android` 继续把 native dependency transition 到相同 Android platform。Package validator 单独把顶层 platform 覆盖为 Linux x86_64，从 host execution platform 检查生成的 APK，但仍保留 `android_arm64` config identity 和 `--android_platforms=arm64-v8a`。`rules_android_ndk` 从 `ANDROID_NDK_HOME` 发现并注册 C/C++ toolchain，`rules_android` 从 `ANDROID_HOME` 发现 SDK、编译 Java、合并 native shared object 并 debug-sign APK。普通 Linux config 通过 platform compatibility 跳过 Android target，独立 Android CI job 使用 `android_arm64` config 负责完整 APK build。
 
-Platform artifact acceptance 直接走 Bazel：iOS 使用 `bazel test --config=ios_sim_arm64 //projects/example/targets/ios_application/tap-reset:package_validation_test`；Android 使用 `bazel test --config=android_arm64 //projects/example/targets/android_binary/tap-reset:package_validation_test //projects/example/targets/android_binary/mp4-player:package_validation_test`；Web 使用 `make test-web`。这些 validation targets 校验最终 IPA/APK/Web archive 的 identity、architecture、签名或归档入口；Web validation 还通过 Emscripten/Node 执行 PAL、libco、portable E2E registry 与 fake Web Serial tests，不以 graph-only query 代替产物验证。
+Platform artifact acceptance 直接走 Bazel：iOS 使用 `bazel test --config=ios_sim_arm64 //projects/example/targets/ios_application/tap-reset:package_validation_test`；Android 使用 `bazel test --config=android_arm64 //projects/example/targets/android_binary/tap-reset:package_validation_test //projects/example/targets/android_binary/mp4-player:package_validation_test`；Web 使用 `make test-web`。这些 validation targets 校验最终 IPA/APK/Web archive 的 identity、architecture、签名或归档入口；Web validation 还通过 Emscripten/Node 执行 PAL、portable E2E registry 与 fake Web Serial tests，不以 graph-only query 代替产物验证。
 普通 host `cc_test` 继续由 Linux/macOS config 执行，不能编成移动平台二进制后直接交给 runner OS 执行。
 
 Web artifact 由 `@emsdk` 的 `wasm_cc_binary` 使用真实 Emscripten toolchain 编译，再由 `@rules_pkg` 的 `pkg_tar` 打包。不得用 `genrule` 套壳来冒充 toolchain 或 packaging rule。

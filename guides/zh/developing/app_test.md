@@ -481,9 +481,9 @@ Testing PAL 目前有两个独立 target，均不依赖 LVGL 或 Memory driver�
 
 ### 执行与状态边界
 
-Fake PAL 是单线程测试对象。调用、fixture 配置和 evidence 读取必须串行；在同一个 libco executor 中运行 worker 时可以复用它们，native 多线程消费者需要外部同步。 Audio decorator 自身的并发约束见对应 public header。
+Fake PAL 是单线程测试对象。调用、fixture 配置和 evidence 读取必须串行；native 多线程消费者必须通过同步屏障或外部锁串行访问它们。 Audio decorator 自身的并发约束见对应 public header。
 
-验证生产并发时，Task／Queue／Sync 复用 `//libs/pal/providers/libco`。把 Testing Time 作为 executor 的 `now_ms`／`time_source`，给 production Runtime 注入 **libco 的 Time PAL**，由测试根循环执行 `h2_app_test_time_advance()` 和 `h2_libco_schedule()`。Runtime 操作和 cleanup 中需要锁的部分必须在 executor task 内执行。Testing Time 自身的 sleep 只推进时钟，不调度任务，不能直接给 resident worker 用来代替可让出的 sleep。
+验证生产并发时，Task／Queue／Sync 使用真实 target PAL，resident worker 使用真实 Time PAL。Testing Time 的 sleep 只推进虚拟时钟，不调度其他线程，不能替代 resident worker 的阻塞等待。`testing_pal_runtime_test` 使用 Desktop PAL 和显式 semaphore barrier，在 worker 阻塞时推进 Testing Time，再释放 worker 并 join；配置、观察和清理均在串行边界执行。
 
 H106 Host 对 Timer、HTTP、WebRTC、NFC 等未实现能力继续选择 canonical unsupported，完整 E2E 对应路径保留真实 provider。H106 的 pairing/update/peer provider、业务 fixture、App observation 和 component mapper 仍属于产品，不进入公共 PAL。 Crypto fixture 不实现密码算法，不应作为真实连接的加密 provider。
 
@@ -567,7 +567,7 @@ rendered pixel、perceived audio、真实网络或产品验收。
 - RPC Speech 的转写／提取使用 Audio fake 与 Testing Audio 注入素材；Track 背压时保留尚未接受的完整帧，只在写入成功后推进上传计数。
 - Device API 使用 Testing Audio 的仅播放模式（创建时 fixture 为 NULL）。真机委托真实扬声器；虚拟设备委托 Audio fake 并配置 `playback_time`，以真实／可让出的时间等待播放时长。输出字节、S16LE 峰值和 Track 生命周期由 decorator 记录。先停止 Service 和播放 worker，再释放 PAL；关闭失败保留对象供重试。
 - WebRTC 使用公共 decorator 委托真实连接，GizClaw callback 只判断自己的 service label、stream ID 和 channel 数量。Callback 借用事件，既不能释放也不能保留；消费方仍按 PAL 契约释放 owned event。包装后的 peer/channel 只能配合 decorator API 使用，media track 原样委托。带配置的 peer 创建透传调用方指定的 allocator 和底层错误；只有原 PAL 允许的默认配置才沿其兼容规则回退。
-- 主机边界测试复用 Memory、Time、Task、Sync 和 Crypto fixture。Request/Session/Resource 替身、远端响应脚本和资源清理断言仍在 GizClaw 测试中。串行 Task/Sync fake 不能用于真实 Service worker；并发测试继续使用真实／libco provider。
+- 主机边界测试复用 Memory、Time、Task、Sync 和 Crypto fixture。Request/Session/Resource 替身、远端响应脚本和资源清理断言仍在 GizClaw 测试中。串行 Task/Sync fake 不能用于真实 Service worker；并发测试继续使用真实 target provider。
 
 这些接入不需要第二个 Runtime。真实 E2E 保留真实网络、加密、存储和调度；Testing PAL 证据补充业务断言，不替代服务器结果和真机验收。
 

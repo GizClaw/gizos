@@ -198,7 +198,6 @@ _local_sdk_repository = repository_rule(
     environ = [
         "IDF_PATH",
         "BK7258_PATH",
-        "BK3633_PATH",
         "JIELI_AC695N_SDK_PATH",
         "JIELI_AC791N_SDK_PATH",
     ],

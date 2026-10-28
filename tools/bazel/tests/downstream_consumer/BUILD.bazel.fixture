@@ -218,22 +218,6 @@ alias(
     actual = "@gizos//tools/lvgl/conv_i18n_yaml:runtime",
 )
 
-alias(
-    name = "bk3633_wolfcrypt_consumer",
-    actual = "@gizos//libs/pal/providers/wolfssl:wolfcrypt_bk3633",
-)
-
-cc_library(
-    name = "bk3633_test_support_consumer",
-    testonly = True,
-    srcs = ["consumer.c"],
-    deps = [
-        "@gizos//libs/runtime",
-        "@gizos//native_component_src/bk3633/h2_pal_core:fake_trng",
-        "@gizos//native_component_src/bk3633/h2_pal_core:mem_test_support",
-    ],
-)
-
 firmware_native_component(
     name = "native_component",
     srcs = ["consumer.c"],
