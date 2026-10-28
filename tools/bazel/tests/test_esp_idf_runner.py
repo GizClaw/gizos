@@ -10,10 +10,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from python.runfiles import runfiles
 
 
-ROOT = Path(__file__).resolve().parents[3]
-RUNNER = ROOT / "tools" / "bazel" / "esp_idf_runner.py"
+RUNFILES = runfiles.Create()
+assert RUNFILES is not None
+RUNNER = Path(RUNFILES.Rlocation("_main/tools/bazel/esp_idf_runner.py"))
+TOOL_VERSIONS = Path(RUNFILES.Rlocation("_main/tools/bazel/native_versions/esp_idf_tool_versions.txt"))
 SPEC = importlib.util.spec_from_file_location("esp_idf_runner", RUNNER)
 assert SPEC and SPEC.loader
 runner = importlib.util.module_from_spec(SPEC)
@@ -444,7 +447,7 @@ class EspIdfRunnerTest(unittest.TestCase):
 
     def test_s31_compiler_identity_uses_existing_riscv_tool(self):
         self.assertEqual(runner.TARGET_COMPILERS["esp32s31"], "riscv32-esp-elf-gcc")
-        identities = runner.read_expected_tool_versions(ROOT / "tools/bazel/native_versions/esp_idf_tool_versions.txt")
+        identities = runner.read_expected_tool_versions(TOOL_VERSIONS)
         self.assertEqual(identities["esp32s31"], identities["esp32p4"])
 
     def test_success_publishes_only_validated_native_outputs(self):
