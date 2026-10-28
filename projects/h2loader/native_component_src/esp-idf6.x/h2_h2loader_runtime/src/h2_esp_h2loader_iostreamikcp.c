@@ -377,8 +377,10 @@ h2_pal_result_t h2_esp_h2loader_command_transport_activate_pending(
     return H2_PAL_ERR_INVALID_STATE;
   }
   uint32_t conv = transport->pending_conv;
-  h2_iostreamikcp_close(transport->stream);
-  transport->stream = NULL;
+  h2_esp_h2loader_command_transport_deactivate(transport);
+  /* Consume this OPEN even on failure. A later peer OPEN may retry after
+   * memory recovers; keeping it pending would bypass physical I/O forever. */
+  transport->pending_conv = 0u;
   h2_iostreamikcp_config_t config = {
       .io = transport->physical_io,
       .allocator = transport->allocator,
@@ -390,19 +392,17 @@ h2_pal_result_t h2_esp_h2loader_command_transport_activate_pending(
       .write_timeout_ms = 1000u,
   };
   h2_pal_result_t rc = h2_iostreamikcp_open(&config, &transport->stream);
-  if (rc != H2_PAL_OK) {
-    return rc;
+  if (rc == H2_PAL_OK) {
+    transport->conv = conv;
+    rc = transport_send_control(transport,
+                                H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, conv);
   }
-  transport->conv = conv;
-  transport->pending_conv = 0u;
-  transport->replacement_pending = 0;
-  transport->close_pending = 0;
-  rc = transport_send_control(transport, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK,
-                              conv);
   if (rc != H2_PAL_OK) {
-    h2_iostreamikcp_close(transport->stream);
-    transport->stream = NULL;
-    transport->conv = 0u;
+    h2_esp_h2loader_command_transport_deactivate(transport);
+    /* Block, rather than taskYIELD: lower-priority tasks may own the
+     * scratch memory needed for admission. Also bound repeated OPENs. */
+    TickType_t ticks = pdMS_TO_TICKS(H2_LOADER_TRANSPORT_POLL_INTERVAL_MS);
+    vTaskDelay(ticks != 0u ? ticks : 1u);
   }
   return rc;
 }

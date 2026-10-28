@@ -146,10 +146,12 @@ static h2_pal_result_t h2loader_write_line(h2_loader_command_t* self,
   return h2_command_write(&self->command, output, len);
 }
 
-static void h2loader_flush(FILE* stream) { (void)stream; }
+static void h2loader_flush(void) {}
 
 #define printf(...) h2loader_printf(self, __VA_ARGS__)
-#define fflush h2loader_flush
+/* The command writer is synchronous; do not evaluate newlib stdout merely
+ * to perform a no-op flush. */
+#define fflush(stream) h2loader_flush()
 
 static int h2loader_read_exact(h2_loader_command_t* self, uint8_t* data,
                                size_t len, uint32_t timeout_ms) {

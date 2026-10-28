@@ -42,12 +42,16 @@ static esp_loader_error_t esp_error(h2_pal_result_t rc) {
   return ESP_LOADER_ERROR_FAIL;
 }
 
-static target_chip_t expected_chip(const char* target) {
+int h2_h2loader_host_esp_expected_chip(const char* target) {
+  if (target == NULL) return ESP_UNKNOWN_CHIP;
   if (strcmp(target, "esp32s3") == 0) {
     return ESP32S3_CHIP;
   }
   if (strcmp(target, "esp32p4") == 0) {
     return ESP32P4_CHIP;
+  }
+  if (strcmp(target, "esp32c3") == 0) {
+    return ESP32C3_CHIP;
   }
   if (strcmp(target, "esp32c5") == 0) {
     return ESP32C5_CHIP;
@@ -376,7 +380,8 @@ h2_pal_result_t h2_h2loader_host_esp_flash_open(
        config->boot_policy != H2_H2LOADER_HOST_ESP_BOOT_DTR_RTS)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  target_chip_t chip = expected_chip(config->expected_target);
+  target_chip_t chip =
+      h2_h2loader_host_esp_expected_chip(config->expected_target);
   if (chip == ESP_UNKNOWN_CHIP) {
     return H2_PAL_ERR_UNSUPPORTED;
   }

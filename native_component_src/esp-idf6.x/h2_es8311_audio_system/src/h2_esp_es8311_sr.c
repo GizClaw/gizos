@@ -23,9 +23,18 @@
 
 static const char* TAG = "h2_es8311_aec";
 
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#define H2_ESP_ES8311_AEC_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#define H2_ESP_ES8311_AEC_MODE AEC_MODE_VOIP_LOW_COST
+#define H2_ESP_ES8311_AEC_MODE_NAME "voip_low_cost"
+#else
+#define H2_ESP_ES8311_AEC_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+#define H2_ESP_ES8311_AEC_MODE AEC_MODE_FD_LOW_COST
+#define H2_ESP_ES8311_AEC_MODE_NAME "fd_low_cost"
+#endif
+
 static void* aec_calloc(size_t count, size_t size) {
-  return heap_caps_aligned_calloc(16u, count, size,
-                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  return heap_caps_aligned_calloc(16u, count, size, H2_ESP_ES8311_AEC_CAPS);
 }
 
 static void sr_free_buffers(h2_esp_es8311_sr_state_t* state) {
@@ -52,7 +61,14 @@ static int validate_config(const h2_esp_es8311_audio_system_config_t* config) {
   if (config == NULL ||
       config->sample_rate_hz != H2_ESP_ES8311_AEC_SAMPLE_RATE ||
       config->frame_samples_per_channel == 0u ||
+      config->frame_samples_per_channel >
+          H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES ||
+      (config->aec_nlp_level != H2_ESP_ES8311_AEC_NLP_NORMAL &&
+       config->aec_nlp_level != H2_ESP_ES8311_AEC_NLP_AGGRESSIVE) ||
       config->processed_channels != 1u || config->raw_channels == 0u ||
+      config->raw_channels > H2_ESP_ES8311_AUDIO_SYSTEM_MAX_RAW_CHANNELS ||
+      (config->enable_aec &&
+       config->mic_channel_index == config->ref_channel_index) ||
       config->mic_channel_index >= config->raw_channels ||
       config->ref_channel_index >= config->raw_channels) {
     return H2_AUDIO_ERR_UNSUPPORTED;
@@ -83,8 +99,8 @@ int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* state,
       .out_num = 1,
       .filter_length = H2_ESP_ES8311_AEC_FILTER_LENGTH,
       .sample_rate = (int)config->sample_rate_hz,
-      .caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
-      .mode = AEC_MODE_FD_LOW_COST,
+      .caps = H2_ESP_ES8311_AEC_CAPS,
+      .mode = H2_ESP_ES8311_AEC_MODE,
       .nlp_level = config->aec_nlp_level == H2_ESP_ES8311_AEC_NLP_AGGRESSIVE
                        ? AEC_NLP_LEVEL_AGGR
                        : AEC_NLP_LEVEL_NORMAL,
@@ -98,9 +114,11 @@ int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* state,
 
   int chunk_samples = aec_get_chunksize(aec_handle);
   if (chunk_samples <= 0 ||
-      (uint16_t)chunk_samples != config->frame_samples_per_channel) {
-    ESP_LOGE(TAG, "aec frame mismatch chunk=%d expected=%u", chunk_samples,
-             (unsigned)config->frame_samples_per_channel);
+      (unsigned)chunk_samples > H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES ||
+      (unsigned)chunk_samples != config->frame_samples_per_channel) {
+    ESP_LOGE(TAG, "aec frame mismatch chunk=%d configured=%u maximum=%u",
+             chunk_samples, (unsigned)config->frame_samples_per_channel,
+             H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES);
     sr_free_buffers(state);
     return H2_AUDIO_ERR_UNSUPPORTED;
   }
@@ -123,12 +141,12 @@ int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* state,
   }
 
   state->available = 1;
-  ESP_LOGI(
-      TAG,
-      "direct aec ready frame_samples=%u mode=fd_low_cost filter=%d nlp=%s",
-      (unsigned)state->frame_samples, H2_ESP_ES8311_AEC_FILTER_LENGTH,
-      config->aec_nlp_level == H2_ESP_ES8311_AEC_NLP_AGGRESSIVE ? "aggressive"
-                                                                : "normal");
+  ESP_LOGI(TAG, "direct aec ready frame_samples=%u mode=%s filter=%d nlp=%s",
+           (unsigned)state->frame_samples, H2_ESP_ES8311_AEC_MODE_NAME,
+           H2_ESP_ES8311_AEC_FILTER_LENGTH,
+           config->aec_nlp_level == H2_ESP_ES8311_AEC_NLP_AGGRESSIVE
+               ? "aggressive"
+               : "normal");
   return H2_AUDIO_OK;
 #else
   ESP_LOGE(TAG, "esp_aec.h unavailable; direct AEC is required");
@@ -140,6 +158,10 @@ int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* state,
                              const h2_audio_frame_t* raw_frame,
                              h2_audio_frame_t* out_frame, uint32_t timeout_ms) {
   (void)timeout_ms;
+  if (out_frame != NULL) {
+    out_frame->bytes = 0u;
+    out_frame->samples_per_channel = 0u;
+  }
   if (state == NULL || raw_frame == NULL || out_frame == NULL ||
       raw_frame->data == NULL || out_frame->data == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
@@ -153,7 +175,7 @@ int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* state,
       out_frame->sample_format != H2_AUDIO_SAMPLE_S16LE ||
       raw_frame->sample_rate_hz != H2_ESP_ES8311_AEC_SAMPLE_RATE ||
       out_frame->sample_rate_hz != H2_ESP_ES8311_AEC_SAMPLE_RATE ||
-      out_frame->channels != 1u ||
+      out_frame->channels != 1u || raw_frame->channels != state->raw_channels ||
       raw_frame->samples_per_channel != state->frame_samples ||
       out_frame->capacity < state->frame_samples * sizeof(int16_t)) {
     return H2_AUDIO_ERR_UNSUPPORTED;
@@ -162,27 +184,27 @@ int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* state,
 #if H2_ESP_ES8311_HAVE_DIRECT_AEC
   const size_t raw_frame_bytes = h2_audio_frame_frame_bytes(raw_frame);
   if (raw_frame_bytes == 0u ||
-      raw_frame->bytes < state->frame_samples * raw_frame_bytes) {
+      raw_frame->bytes < state->frame_samples * raw_frame_bytes ||
+      raw_frame->capacity < raw_frame->bytes) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
 
   const int16_t* raw = (const int16_t*)raw_frame->data;
+  int16_t* out = (int16_t*)out_frame->data;
   for (size_t i = 0u; i < state->frame_samples; ++i) {
     state->mic_frame[i] =
-        raw[(i * state->raw_channels) + state->mic_channel_index];
+        raw[i * state->raw_channels + state->mic_channel_index];
     state->ref_frame[i] =
-        raw[(i * state->raw_channels) + state->ref_channel_index];
+        raw[i * state->raw_channels + state->ref_channel_index];
   }
-
   if (state->linear_only) {
-    aec_linear_process((aec_handle_t*)state->aec_handle, state->mic_frame,
-                       state->ref_frame, state->out_frame);
+    aec_linear_process(state->aec_handle, state->mic_frame, state->ref_frame,
+                       state->out_frame);
   } else {
-    aec_process((aec_handle_t*)state->aec_handle, state->mic_frame,
-                state->ref_frame, state->out_frame);
+    aec_process(state->aec_handle, state->mic_frame, state->ref_frame,
+                state->out_frame);
   }
-  memcpy(out_frame->data, state->out_frame,
-         state->frame_samples * sizeof(int16_t));
+  memcpy(out, state->out_frame, state->frame_samples * sizeof(int16_t));
   out_frame->bytes = state->frame_samples * sizeof(int16_t);
   out_frame->samples_per_channel = (uint16_t)state->frame_samples;
   return H2_AUDIO_OK;

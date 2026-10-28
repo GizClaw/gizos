@@ -149,6 +149,13 @@ typedef struct h2_lua_host_config {
   /** Optional successful-present observer; see h2_lua_display_present_fn. */
   h2_lua_display_present_fn on_display_present;
   void* display_present_user;
+  /** Nonzero uses one RGB565 framebuffer and waits for transport completion in
+   * both submit and present. Retained options remain accepted, but damage uses
+   * dirty bounds rather than a second pixel baseline. No send-frame userdata
+   * is allocated. The framebuffer uses the Host allocator outside VM quota;
+   * budget width * height * 2 bytes separately. Zero preserves asynchronous
+   * double buffering. Checked stop/join is required in both modes. */
+  int display_single_buffer;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,

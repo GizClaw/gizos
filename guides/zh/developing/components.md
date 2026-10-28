@@ -34,7 +34,7 @@ native_component_src/
     └── wl82/              # JieLi AC791N PAL core provider
 ```
 
-ESP32-S3、ESP32-P4 和 ESP32-C5 共用 ESP-IDF 6.x component root。Chip 差异通过 `IDF_TARGET`、target-specific source selection 或 component config 表达，不按 chip 复制一整套 component tree。
+ESP32-C3、ESP32-S3、ESP32-P4 和 ESP32-C5 共用 ESP-IDF 6.x component root。Chip 差异通过 `IDF_TARGET`、target-specific source selection 或 component config 表达，不按 chip 复制一整套 component tree。
 
 Multi-chip 或 multi-core target 必须明确区分代码运行在哪一个执行单元上。BK7258 的 AP 和 CP 因为拥有不同的 SDK 能力、启动流程和依赖，所以分别放在 `native_component_src/bk7258/ap/` 与 `native_component_src/bk7258/cp/`。
 

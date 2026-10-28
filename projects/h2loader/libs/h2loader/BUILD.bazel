@@ -54,6 +54,7 @@ cc_library(
     ],
     local_defines = select({
         "//tools/bazel/platforms:is_ac707n": ["H2_LOADER_REQUIRE_OUTPUT_CALLBACK=1"],
+        "//tools/bazel/platforms:is_esp32c3": ["H2_LOADER_REQUIRE_OUTPUT_CALLBACK=1"],
         "//conditions:default": [],
     }),
     deps = [

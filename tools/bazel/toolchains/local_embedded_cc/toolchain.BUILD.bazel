@@ -82,10 +82,4 @@ cc_toolchain(
     toolchain_identifier = "{TOOLCHAIN_IDENTIFIER}",
 )
 
-toolchain(
-    name = "toolchain",
-    exec_compatible_with = {EXEC_CONSTRAINTS},
-    target_compatible_with = {TARGET_CONSTRAINTS},
-    toolchain = ":cc_toolchain",
-    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
-)
+{TOOLCHAIN_REGISTRATION}

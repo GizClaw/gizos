@@ -82,6 +82,7 @@ def _native_build_jobs(ctx):
     return jobs
 
 _TARGET_CONFIGS = {
+    "esp32c3": Label("//tools/bazel/platforms:is_esp32c3"),
     "esp32c5": Label("//tools/bazel/platforms:is_esp32c5"),
     "esp32p4": Label("//tools/bazel/platforms:is_esp32p4"),
     "esp32s3": Label("//tools/bazel/platforms:is_esp32s3"),

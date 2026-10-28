@@ -373,3 +373,25 @@ h2loader_tar_zlib(
     role = "app",
     target = "esp32s3",
 )
+
+esp_target_task_policy(
+    name = "private_c3_task_policy",
+    default_policy = "4 0 4096 internal",
+    graph = [":private_tasks"],
+    policies = ["private/consumer default"],
+)
+
+h2loader_esp_idf_firmware(
+    name = "private_c3_firmware",
+    board = "private_c3_board",
+    graph = [":font_native_component"],
+    layout_files = {
+        "partition": ":partition.csv",
+        "project_support_files": [":sdkconfig.h2loader.defaults"],
+    },
+    project = "CMakeLists.txt",
+    project_name = "private_esp_consumer",
+    target = "esp32c3",
+    task_policy = ":private_c3_task_policy",
+    version = ":private_esp_version",
+)

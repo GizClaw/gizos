@@ -18,6 +18,14 @@
 
 #include <string.h>
 
+#if defined(CONFIG_SPIRAM) && CONFIG_SPIRAM
+#define H2_ES8311_STACK_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+#define H2_ES8311_STACK_REGION "psram"
+#else
+#define H2_ES8311_STACK_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#define H2_ES8311_STACK_REGION "internal"
+#endif
+
 #define ES8311_REG_RESET 0x00
 #define ES8311_REG_CLK_MANAGER_01 0x01
 #define ES8311_REG_CLK_MANAGER_02 0x02
@@ -698,15 +706,14 @@ static int es8311_audio_start_mic_task(h2_esp_es8311_audio_system_t* state) {
   BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(
       es8311_audio_mic_task, H2_PAL_AUDIO_MIC_TASK_NAME_VALUE,
       state->config.mic_task_stack_size, state, state->config.mic_task_priority,
-      &state->mic_task, state->config.mic_task_core_id,
-      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      &state->mic_task, state->config.mic_task_core_id, H2_ES8311_STACK_CAPS);
   if (ok != pdPASS) {
     state->mic_task_started = 0;
     state->mic_task = NULL;
     return H2_AUDIO_ERR_NO_MEMORY;
   }
-  ESP_LOGI(TAG, "mic task ready stack=psram size=%u priority=%u core=%d",
-           (unsigned)state->config.mic_task_stack_size,
+  ESP_LOGI(TAG, "mic task ready stack=%s size=%u priority=%u core=%d",
+           H2_ES8311_STACK_REGION, (unsigned)state->config.mic_task_stack_size,
            (unsigned)state->config.mic_task_priority,
            (int)state->config.mic_task_core_id);
   return H2_AUDIO_OK;
@@ -781,13 +788,14 @@ static int es8311_audio_start_playback_task_locked(
       es8311_audio_playback_task, H2_PAL_AUDIO_MIX_TASK_NAME_VALUE,
       state->config.speaker_task_stack_size, state,
       state->config.speaker_task_priority, &state->playback_task,
-      state->config.speaker_task_core_id, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      state->config.speaker_task_core_id, H2_ES8311_STACK_CAPS);
   if (ok != pdPASS) {
     state->playback_task_started = 0;
     state->playback_task = NULL;
     return H2_AUDIO_ERR_NO_MEMORY;
   }
-  ESP_LOGI(TAG, "playback task ready stack=psram size=%u priority=%u core=%d",
+  ESP_LOGI(TAG, "playback task ready stack=%s size=%u priority=%u core=%d",
+           H2_ES8311_STACK_REGION,
            (unsigned)state->config.speaker_task_stack_size,
            (unsigned)state->config.speaker_task_priority,
            (int)state->config.speaker_task_core_id);
@@ -917,6 +925,9 @@ static int es8311_audio_start_mic(void* user) {
   if (rc != H2_AUDIO_OK) {
     return rc;
   }
+  if (state->mic_started) {
+    return H2_AUDIO_OK;
+  }
   if (state->rx_chan == NULL) {
     return H2_AUDIO_ERR_INVALID_STATE;
   }
@@ -933,8 +944,8 @@ static int es8311_audio_start_mic(void* user) {
     return rc;
   }
   (void)h2_pal_queue_reset(state->config.queue_api, state->mic_queue);
-  state->mic_started = 1;
   h2_esp_es8311_sr_reset(&state->sr);
+  state->mic_started = 1;
   rc = es8311_audio_start_mic_task(state);
   if (rc != H2_AUDIO_OK) {
     es8311_audio_abort_mic_start(state);

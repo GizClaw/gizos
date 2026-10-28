@@ -6,3 +6,6 @@ from pathlib import Path
 for mode in range(1, 12):
     subprocess.run([str(Path(sys.argv[1]).resolve()), "--display-fault", str(mode)],
                    check=True, timeout=20)
+
+subprocess.run([str(Path(sys.argv[1]).resolve()), "--display-single-fault"],
+               check=True, timeout=20)

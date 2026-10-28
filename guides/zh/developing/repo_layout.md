@@ -209,7 +209,7 @@ native_component_src/<chip>/ap/
 native_component_src/<chip>/cp/
 ```
 
-ESP-IDF 6.x components 统一放在 `native_component_src/esp-idf6.x/`。ESP32-S3、ESP32-P4 和 ESP32-C5 的差异通过 `IDF_TARGET`、target-specific source selection 或 component config 表达，不按 chip 复制 component root。Library 已经由 Bazel 编译为目标平台 archive 时，由具体 firmware entry 的唯一 `firmware_lib_component` 直接选择；只有还需要独立 SDK dependency、Kconfig、registration lifecycle 或 native source 时才建立 `firmware_native_component`。没有该 native contract 的 archive 不能创建仅转发 include 和 `.a` 的目录。`libs/pal/providers/` 只拥有由 Bazel C/C++ toolchain 直接编译的平台实现，不拥有原生 SDK registration adapter。
+ESP-IDF 6.x components 统一放在 `native_component_src/esp-idf6.x/`。ESP32-C3、ESP32-S3、ESP32-P4 和 ESP32-C5 的差异通过 `IDF_TARGET`、target-specific source selection 或 component config 表达，不按 chip 复制 component root。Library 已经由 Bazel 编译为目标平台 archive 时，由具体 firmware entry 的唯一 `firmware_lib_component` 直接选择；只有还需要独立 SDK dependency、Kconfig、registration lifecycle 或 native source 时才建立 `firmware_native_component`。没有该 native contract 的 archive 不能创建仅转发 include 和 `.a` 的目录。`libs/pal/providers/` 只拥有由 Bazel C/C++ toolchain 直接编译的平台实现，不拥有原生 SDK registration adapter。
 
 Linux userspace 通用 PAL backend 归 `libs/pal/providers/linux/`；Darwin host backend 归 `libs/pal/providers/darwin/`；Allwinner CedarX 等 vendor SDK family integration 归 `libs/pal/providers/allwinner-linux/`。通用 OS component 不能依赖具体 board、App、Desktop target family 或 project launcher。Linux 和 Darwin 需要共用 POSIX 实现时，可以依赖 `libs/pal/providers/posix/` 的 private source-sharing target；该 root 不提供公共 provider API，也不能被 App 或 Desktop component 直接依赖。
 

@@ -22,6 +22,11 @@ static void copy_rect(h2_lua_display_worker_t* worker,
  * Thereafter transport reads only pixels, which also becomes the successful
  * retained baseline. Neither copy nor transport accesses Lua or dirty state. */
 static void copy_frame(h2_lua_display_worker_t* worker) {
+  if (worker->source == worker->pixels) {
+    worker->source = NULL;
+    h2_atomic_store(&worker->phase, H2_LUA_DISPLAY_PENDING);
+    return;
+  }
   if (worker->tiled) {
     int cursor = 0;
     h2_lua_display_plan_rect_t rect;

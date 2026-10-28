@@ -1,6 +1,6 @@
 # ESP-IDF 6.x Components
 
-`native_component_src/esp-idf6.x/` 是 ESP-IDF 6.x compatibility line 的统一 SDK-coupled component source root。ESP32-S3、ESP32-P4 和 ESP32-C5 共享这里的 PAL backend、器件组件和 SDK-owned port，不再为每个 chip 复制一套顶层 component tree。Bazel archive 只有在拥有独立 SDK dependency 或 registration identity 时才建立薄导入 adapter。
+`native_component_src/esp-idf6.x/` 是 ESP-IDF 6.x compatibility line 的统一 SDK-coupled component source root。ESP32-C3、ESP32-S3、ESP32-P4 和 ESP32-C5 共享这里的 PAL backend、器件组件和 SDK-owned port，不再为每个 chip 复制一套顶层 component tree。Bazel archive 只有在拥有独立 SDK dependency 或 registration identity 时才建立薄导入 adapter。
 
 ## 目录结构
 
@@ -56,7 +56,7 @@ ESP chip 差异通过以下方式表达：
 - Component config 中由 BSP 提供的 chip/board 参数。
 - 仅在某个 chip 可用的 ESP-IDF dependency。
 
-不能因为 ESP32-S3、ESP32-P4 或 ESP32-C5 的 capability 不同，就复制整个 component root。差异应该限制在拥有该差异的 source、config 或 dependency 上。
+不能因为 ESP32-C3、ESP32-S3、ESP32-P4 或 ESP32-C5 的 capability 不同，就复制整个 component root。差异应该限制在拥有该差异的 source、config 或 dependency 上。
 
 例如 ESP32-P4 没有片上 Wi-Fi 时，`h2_pal_core` 可以选择 unsupported Wi-Fi backend；它不需要复制一套独立 PAL component。
 
@@ -426,3 +426,15 @@ STA id-specific observer 位于 ESP-NETIF 默认 connected handler 之后，在 
 ### AP 停止与重试
 
 AP stop 先请求 SDK 切回 STA mode；转换失败时保留 active、netif、client 列表与公开状态，并返回原有映射错误，后续 Stop 重新执行 SDK 请求。只有 SDK 接受停止（包括已经未初始化或未启动）后才提交 stopped 状态、销毁 AP netif 并发布 stopped 事件。AMOLED iperf adapter 在此之前先撤销 RA timeout/raw PCB；provider 与 adapter 的组合回归编译生产 stop 函数，并注入真实 SDK 调用边界的失败后重试。
+
+## ESP32-C3 无 PSRAM 音频
+
+C3 使用现有 `h2_es8311_audio_system`；只有 C3 固定依赖 ESP-SR 2.6.0，以使用 `aec_create_from_config` ABI，其他芯片保留原版本。`enable_aec = false` 使用普通采集/播放；启用 AEC 时使用 16 kHz、单 mic 加独立 reference、VOIP_LOW_COST、filter length 4，算法和 16-byte 对齐工作缓冲均使用 Internal RAM。实际 chunk 由 SDK 查询，最大 512 samples；产品必须将采集、处理与播放帧长统一配置为该 chunk，初始化时帧长不匹配返回 `H2_AUDIO_ERR_UNSUPPORTED` 并释放已创建的算法。当前 C3 ESP-SR 2.6.0 VOIP_LOW_COST 使用 512 samples（16 kHz 下为 32 ms）；现有 AMOLED/S3 也使用 512 samples。每次直接处理一整块，不跨帧拼接、不引入适配层缓存延迟，处理路径不分配内存、不回退原始 PCM。Reset 清空 PCM 工作缓冲，滤波历史只在 deinit 时释放。当前 codec clock 配置为 16 kHz、`mclk_multiple = 384`。未启用 PSRAM 的构建为 mic/playback worker 使用 Internal RAM，任务 core 必须由 BSP 配为 0 或 any。Codec 在产品请求时才初始化；平台接入不启动常驻语音服务。显示、音频与网络同时启用的 heap 峰值、I2S DMA 和真实采集/播放仍需产品设备验证。
+
+C3 的 SDK 不提供外部任务栈配置时，PAL 将其视为不可用；内部栈任务仍可创建，PSRAM 栈请求返回任务错误。C3 复用现有 RV32 协程 backend，不引入其他芯片的 coprocessor 栈保护组件。
+
+C3 chip fixture 在 `sdkconfig.defaults` 显式选择 `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y`。产品 launcher 使用自己的 SDK defaults 时也应明确选择主频；启用动态调频的产品需要另行管理运行期频率。组件不会修改全局时钟策略。
+
+`//native_component_src/esp-idf6.x/h2_es8311_audio_system:sr_test` 验证不等帧拼接、lane mapping、输入边界和部分分配失败回滚；`tests/e2e:probe` 为调用方提供原生算法和真实 codec/PAL 生命周期诊断，产品引脚与 H2Loader 安装布局由 consumer 提供。算法诊断使用确定性合成 mic/reference，实时链路诊断只证明处理和启停，不能替代腔体声学资格。运行任务至少使用 16 KiB 内部栈；CPU 统计需开启 FreeRTOS trace/runtime stats，且选择 ESP timer 微秒计数源。
+
+C3 明确选择 VOIP_LOW_COST；其他 target 保留 FD_LOW_COST。FD 模式在 C3 上需要更大的内部工作集和更长处理时间，不作为此 provider 的 C3 实时配置。模式诊断应在其他服务启动前运行，实际产品预算则以管理服务和音频 worker 同时运行的测量为准。

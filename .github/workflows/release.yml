@@ -87,13 +87,13 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: firmware-devenv/.tools/esp-idf-6.2
-          key: esp-idf-v4-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5
+          key: esp-idf-v4-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c3-esp32c5
 
       - name: Install ESP-IDF 6.2 tools
         shell: bash
         run: |
           tools_root="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf-6.2"
-          IDF_TOOLS_PATH="$tools_root" "$H2_ESP_IDF_SDK_ROOT/install.sh" esp32s3,esp32p4,esp32c5
+          IDF_TOOLS_PATH="$tools_root" "$H2_ESP_IDF_SDK_ROOT/install.sh" esp32s3,esp32p4,esp32c3,esp32c5
           printf 'H2_ESP_IDF_TOOLS_ROOT=%s\n' "$tools_root" >> "$GITHUB_ENV"
 
       - name: Validate Bazel remote cache variables
@@ -306,13 +306,13 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: firmware-devenv/.tools/esp-idf-6.2
-          key: esp-idf-v4-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5
+          key: esp-idf-v4-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c3-esp32c5
 
       - name: Install ESP-IDF 6.2 tools
         shell: bash
         run: |
           tools_root="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf-6.2"
-          IDF_TOOLS_PATH="$tools_root" "$H2_ESP_IDF_SDK_ROOT/install.sh" esp32s3,esp32p4,esp32c5
+          IDF_TOOLS_PATH="$tools_root" "$H2_ESP_IDF_SDK_ROOT/install.sh" esp32s3,esp32p4,esp32c3,esp32c5
           printf 'H2_ESP_IDF_TOOLS_ROOT=%s\n' "$tools_root" >> "$GITHUB_ENV"
 
       - name: Install native compiler cache and Bazel
