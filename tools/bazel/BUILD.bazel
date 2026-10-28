@@ -2128,5 +2128,8 @@ py_test(
     legacy_create_init = False,
     main = "tests/test_bk7258_flash_aes.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = [":bk7258_flash_aes"],
+    deps = [
+        ":bk7258_flash_aes",
+        "@rules_python//python/runfiles",
+    ],
 )

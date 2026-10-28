@@ -36,8 +36,11 @@ def synthetic_image(root):
 
 class FlashAesTests(unittest.TestCase):
     def test_vendor_known_answers(self):
-        root = Path(os.environ.get("TEST_SRCDIR", Path.cwd())) / os.environ.get("TEST_WORKSPACE", "")
-        data = json.loads((root / "tools/bazel/tests/fixtures/bk7258_flash_aes_vectors.json").read_text())
+        fixture = Path(__file__).parent / "fixtures/bk7258_flash_aes_vectors.json"
+        if "TEST_SRCDIR" in os.environ:
+            from python.runfiles import Runfiles
+            fixture = Path(Runfiles.Create().Rlocation("gizos/tools/bazel/tests/fixtures/bk7258_flash_aes_vectors.json"))
+        data = json.loads(fixture.read_text())
         cipher = BekenXTS(bytes.fromhex(data["key_hex"]))
         for row in data["vectors"]:
             with self.subTest(address=row["address"]):
