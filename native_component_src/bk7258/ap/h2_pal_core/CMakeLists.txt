@@ -25,6 +25,9 @@ endif()
 if(CONFIG_AUDIO_PLAY)
   list(APPEND H2_BK_PLATFORM_CORE_PRIV_REQUIRES audio_play)
 endif()
+if(CONFIG_H2_BK_PLATFORM_FAULT_TRACE)
+  list(APPEND H2_BK_PLATFORM_CORE_PRIV_REQUIRES cm33)
+endif()
 set(H2_BK_PLATFORM_CORE_PRIV_INCLUDE_DIRS
   "${CMAKE_CURRENT_LIST_DIR}/src/flashdb"
   "${BK_FLASHDB_DIR}/inc"
@@ -104,6 +107,9 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_resource_stats.c"
   "src/h2_bk_platform_timer.c"
   "src/h2_bk_platform_log.c"
+  "src/h2_bk_fault_context.c"
+  "src/h2_bk_coredump.c"
+  "src/h2_bk_task_trace.c"
   "src/h2_bk_platform_firmware_info.c"
   "src/h2_bk_platform_sync.c"
   "src/h2_bk_platform_net.c"
@@ -150,6 +156,7 @@ armino_component_register(
     "${BK_FLASHDB_DIR}/port/fal/src/fal_partition.c"
   INCLUDE_DIRS
     "include"
+    "${REPO_ROOT}/native_component_src/bk7258/shared"
     "${REPO_ROOT}/libs/pal/include"
     "${REPO_ROOT}/libs/atomic/include"
     "${REPO_ROOT}/libs/atomic/providers/locked"
@@ -310,6 +317,7 @@ endif()
 target_include_directories(${COMPONENT_LIB} PRIVATE "${BK_ARMINO_PATH}/components/bk_cli")
 
 include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_wdrv_component.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_fault_context_component.cmake")
 
 # The pinned AP SDK erroneously forwards STA address synchronization through
 # AP_NETIF_IP4_CONFIG, overwriting the CP AP/DHCP address in AP+STA mode.

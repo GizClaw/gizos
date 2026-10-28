@@ -6,6 +6,12 @@ set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   bk_cli
   lwip_intf_v2_1
   wpa_supplicant-2.10)
+if(CONFIG_H2_BK_PLATFORM_CP_FAULT_TRACE)
+  list(APPEND H2_BK_PLATFORM_CORE_PRIV_REQUIRES cm33)
+endif()
+if(CONFIG_H2_BK_PLATFORM_CP_COREDUMP)
+  list(APPEND H2_BK_PLATFORM_CORE_PRIV_REQUIRES driver)
+endif()
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_pal_core cp)
 
@@ -87,3 +93,6 @@ include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_cp_psram.cmake")
 include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_cp_lease.cmake")
 
 include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_wifi_ipv6.cmake")
+if(CONFIG_H2_BK_PLATFORM_CP_FAULT_TRACE)
+  include("${REPO_ROOT}/native_component_src/bk7258/cp/h2_pal_core/src/h2_bk_cp_fault_context_component.cmake")
+endif()

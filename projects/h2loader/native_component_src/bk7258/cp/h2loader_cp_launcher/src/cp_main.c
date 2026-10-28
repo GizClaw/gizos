@@ -13,6 +13,8 @@ extern void rtos_set_user_app_entry(beken_thread_function_t entry);
 
 extern void h2loader_cp_try_fixed_app(void);
 
+extern void h2loader_cp_app_init(void) __attribute__((weak));
+
 static int main_entered;
 
 /* SDK calls this once before main, then after driver_init inside bk_init.
@@ -25,6 +27,7 @@ static void h2loader_cp_entry(void) {
   if (h2_bk_target_task_policy_install() != H2_PAL_OK) {
     return;
   }
+  if (h2loader_cp_app_init != NULL) h2loader_cp_app_init();
   /* Preserve the SDK boot vote and system services. Managed UART and logs
    * belong to AP/UART1; CP owns no H2Loader UART transport. */
   bk_pm_module_vote_boot_cp1_ctrl(PM_BOOT_CP1_MODULE_NAME_APP,

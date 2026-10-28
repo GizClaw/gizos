@@ -1,6 +1,8 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "h2_bk_coredump.inc",
+    "h2_bk_coredump_shared.h",
     "h2_bk_wifi_rpc.h",
     "h2_bk_wifi_ipv6.h",
     "h2_bk_wifi_ipv6.cmake",
