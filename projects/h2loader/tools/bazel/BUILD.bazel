@@ -45,6 +45,7 @@ py_test(
     deps = [
         ":firmware_artifacts",
         ":firmware_output",
+        "@rules_python//python/runfiles",
     ],
 )
 
