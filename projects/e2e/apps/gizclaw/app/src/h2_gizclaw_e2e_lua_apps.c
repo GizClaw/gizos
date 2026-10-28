@@ -583,12 +583,13 @@ int h2_gizclaw_e2e_run_lua_apps(h2_gizclaw_e2e_fixture_t* fixture) {
         "H2_GIZCLAW_E2E stage=lua-uninstall repeated=1 "
         "catalog_absent=%d entry_reclaimed=%d rc=%d\n",
         first == H2_PAL_OK, first == H2_PAL_OK, first);
-    size_t capacity = strlen(c->lua_app_url) + 128u;
+    /* The data: carrier belongs to Binary upload, not URL installation. */
+    size_t capacity = strlen(c->lua_app_https_url) + 128u;
     char* install = h2_pal_mem_alloc(fixture->allocator, capacity);
     if (first == H2_PAL_OK && !install) first = H2_PAL_ERR_NO_MEMORY;
     if (first == H2_PAL_OK) {
       n = snprintf(install, capacity, "{\"url\":\"%s\",\"sha256\":\"%s\"}",
-                   c->lua_app_url, c->lua_archive_sha256);
+                   c->lua_app_https_url, c->lua_archive_sha256);
       if (n < 0 || (size_t)n >= capacity) first = H2_PAL_ERR_NO_SPACE;
     }
     if (first == H2_PAL_OK)

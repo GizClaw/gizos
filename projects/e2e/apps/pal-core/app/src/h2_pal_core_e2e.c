@@ -152,10 +152,19 @@ static h2_pal_result_t wall_set_case(owner_t* o) {
   h2_pal_result_t rc;
   uint64_t original = 0, before = 0, after = 0, wall = 0, ext_before = 0,
            ext_after = 0;
-  TRY(h2_pal_time_get_wall_ms(o->runtime->time, &original));
+  const uint64_t target = UINT64_C(1700000000000);
+  rc = h2_pal_time_get_wall_ms(o->runtime->time, &original);
+  if (rc == H2_PAL_TIME_ERR_UNCALIBRATED) {
+    REQUIRE(original == 0u);
+    /* An uncalibrated clock has no UTC value to restore. Establish a real
+     * provider baseline and leave it calibrated when this case completes. */
+    TRY(h2_pal_time_set_wall_ms(o->runtime->time, target));
+    TRY(h2_pal_time_get_wall_ms(o->runtime->time, &original));
+  } else if (rc != H2_PAL_OK) {
+    return rc;
+  }
   TRY(observe(o, &ext_before));
   TRY(h2_pal_time_get_monotonic_us(o->runtime->time, &before));
-  const uint64_t target = UINT64_C(1700000000000);
   TRY(h2_pal_time_set_wall_ms(o->runtime->time, target));
   o->wall_restore_pending = 1;
   o->restore_wall = original;
