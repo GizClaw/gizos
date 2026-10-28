@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/rtp"
 	"github.com/pion/stun/v3"
 	"github.com/pion/webrtc/v4"
 )
@@ -539,5 +540,22 @@ func TestCleanupClosesOnlyExpiredSessions(t *testing.T) {
 	}
 	if _, ok := s.sessions["current"]; !ok {
 		t.Fatal("current session was removed")
+	}
+}
+
+func TestOpusEchoPreservesSourceTimeline(t *testing.T) {
+	// A reordered packet, a missing sequence, and a wrap must remain observable.
+	for _, seq := range []uint16{65533, 65535, 65534, 1, 2} {
+		input := &rtp.Packet{Header: rtp.Header{Version: 2, SequenceNumber: seq,
+			Timestamp: uint32(seq) * 960, Marker: true, SSRC: 123}, Payload: []byte{1, 2, 3}}
+		echo := opusEchoPacket(input)
+		if echo.SequenceNumber != seq || echo.Timestamp != input.Timestamp || !echo.Marker ||
+			echo.Version != 2 || echo.PayloadType != 111 || !bytes.Equal(echo.Payload, input.Payload) {
+			t.Fatalf("source timeline changed: input=%+v echo=%+v", input, echo)
+		}
+		input.Payload[0] = 9
+		if echo.Payload[0] != 1 {
+			t.Fatal("echo payload aliases input buffer")
+		}
 	}
 }

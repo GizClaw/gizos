@@ -64,6 +64,8 @@ typedef struct h2_webrtc_performance_state {
   unsigned event_echoes;
   unsigned packet_echoes;
   unsigned audio_received;
+  unsigned audio_sent;
+  unsigned audio_loss_markers;
   uint16_t audio_next_sequence;
   uint8_t audio_seen[(H2_WEBRTC_PERF_AUDIO_FRAMES + 7) / 8];
   unsigned audio_duplicates;
@@ -79,6 +81,7 @@ typedef struct h2_webrtc_performance_state {
   uint64_t poll_calls;
   int callback_error;
   int callback_error_reason;
+  const char* diagnostic_phase;
   char offer[16384];
   size_t offer_len;
 } h2_webrtc_performance_state_t;
@@ -240,6 +243,7 @@ static void h2_webrtc_perf_on_channel_state(
     for (int other = 0; other < H2_WEBRTC_PERF_REQUEST_COUNT; ++other) {
       if (other != index && state->request_sids[other] == info->stream_id) {
         state->callback_error = 1;
+        state->callback_error_reason = 8;
         return;
       }
     }
@@ -250,6 +254,7 @@ static void h2_webrtc_perf_on_channel_state(
     state->requests[index] = NULL;
   } else if (channel_state == H2_PAL_WEBRTC_CHANNEL_ERROR) {
     state->callback_error = 1;
+    state->callback_error_reason = 9;
   }
 }
 
@@ -263,6 +268,7 @@ static void h2_webrtc_perf_on_channel_message(
   if (is_text || data == NULL || len < H2_WEBRTC_PERF_HEADER_SIZE ||
       memcmp(data, h2_webrtc_perf_magic, sizeof(h2_webrtc_perf_magic)) != 0) {
     state->callback_error = 1;
+    state->callback_error_reason = 10;
     return;
   }
   const uint8_t op = data[4];
@@ -300,6 +306,7 @@ static void h2_webrtc_perf_on_channel_message(
       if (data[index] !=
           (uint8_t)(offset + index - H2_WEBRTC_PERF_HEADER_SIZE)) {
         state->callback_error = 1;
+        state->callback_error_reason = 11;
         return;
       }
     }
@@ -338,19 +345,32 @@ static void h2_webrtc_perf_on_channel_message(
     return;
   }
   state->callback_error = 1;
+  state->callback_error_reason = 12;
 }
 
 static void h2_webrtc_perf_on_opus(void* user, h2_pal_webrtc_peer_t* peer,
                                    const uint8_t* opus, size_t opus_len) {
   (void)peer;
   h2_webrtc_performance_state_t* state = user;
-  if (opus == NULL || opus_len != 10u) {
-    state->callback_error = 1;
+  /* PAL reports one lost packet as a zero-length OPUS_FRAME. This is not
+   * a received frame; final missing/latency gates still decide acceptance. */
+  if (opus_len == 0u) {
+    state->audio_loss_markers++;
     return;
   }
+  if (opus == NULL || opus_len != 10u) {
+    state->callback_error = 1;
+    state->callback_error_reason = 13;
+    return;
+  }
+  /* Timestamp delivery before accounting. A synchronous console write here
+   * both inflates this gap and stalls consumption of the following frames.
+   * Missing/duplicate/reordered frames remain visible in the phase report. */
+  const uint64_t now_ns = h2_webrtc_perf_now_ns(state);
   const uint16_t sequence = h2_webrtc_perf_read_u16(opus);
   if (sequence >= H2_WEBRTC_PERF_AUDIO_FRAMES) {
     state->callback_error = 1;
+    state->callback_error_reason = 14;
     return;
   }
   const uint8_t sequence_mask = (uint8_t)(1u << (sequence & 7u));
@@ -363,16 +383,10 @@ static void h2_webrtc_perf_on_opus(void* user, h2_pal_webrtc_peer_t* peer,
   if (sequence < state->audio_next_sequence) {
     state->audio_reordered++;
   }
-  if (sequence > state->audio_next_sequence) {
-    printf(
-        "H2_WEBRTC_PERF audio_sequence_gap expected=%u actual=%u "
-        "received=%u\n",
-        state->audio_next_sequence, sequence, state->audio_received);
-  }
-  const uint64_t now_ns = h2_webrtc_perf_now_ns(state);
   const uint64_t sent_ns = h2_webrtc_perf_read_u64(opus + 2u);
   if (sent_ns > now_ns) {
     state->callback_error = 1;
+    state->callback_error_reason = 15;
     return;
   }
   const uint64_t rtt_ns = now_ns - sent_ns;
@@ -411,6 +425,7 @@ static int h2_webrtc_perf_poll(h2_webrtc_performance_state_t* state) {
     return -1;
   }
   if (result == H2_PAL_OK) {
+    const int previous_callback_error = state->callback_error;
     switch (event.kind) {
       case H2_PAL_WEBRTC_EVENT_PEER_STATE:
         h2_webrtc_perf_on_peer_state(state, event.peer, event.peer_state);
@@ -434,6 +449,21 @@ static int h2_webrtc_perf_poll(h2_webrtc_performance_state_t* state) {
         break;
       default:
         break;
+    }
+    if (!previous_callback_error && state->callback_error) {
+      /* Only the first failure; no payload, SDP or credential contents. */
+      printf(
+          "H2_WEBRTC_PERF stage=callback_error phase=%s reason=%d "
+          "event_kind=%d data_len=%zu data_null=%d loss_marker=%d "
+          "channel_state=%d has_sid=%d sid=%u audio_received=%u "
+          "download_bytes=%zu monotonic_ns=%" PRIu64 "\n",
+          state->diagnostic_phase ? state->diagnostic_phase : "setup",
+          state->callback_error_reason, (int)event.kind, event.data_len,
+          event.data == NULL,
+          event.kind == H2_PAL_WEBRTC_EVENT_OPUS_FRAME && event.data_len == 0u,
+          (int)event.channel_state, event.channel_info.has_stream_id,
+          (unsigned)event.channel_info.stream_id, state->audio_received,
+          state->download_bytes, h2_webrtc_perf_now_ns(state));
     }
     h2_pal_webrtc_event_release(&event);
   }
@@ -616,9 +646,31 @@ static uint64_t h2_webrtc_perf_audio_gap_p99(
   return values[(count * 99u + 99u) / 100u - 1u];
 }
 
+static void h2_webrtc_perf_report_audio(
+    const h2_webrtc_performance_state_t* state, const char* phase,
+    unsigned iteration, int complete) {
+  const unsigned missing = state->audio_sent > state->audio_received
+                               ? state->audio_sent - state->audio_received
+                               : 0u;
+  const uint64_t missing_ppm =
+      state->audio_sent == 0u
+          ? 0u
+          : (uint64_t)missing * 1000000u / state->audio_sent;
+  printf(
+      "H2_WEBRTC_PERF_AUDIO phase=%s iteration=%u complete=%d sent=%u "
+      "unique_received=%u missing=%u missing_ppm=%" PRIu64
+      " loss_markers=%u duplicates=%u reordered=%u p99_gap_ns=%" PRIu64
+      " max_gap_ns=%" PRIu64 "\n",
+      phase, iteration, complete, state->audio_sent, state->audio_received,
+      missing, missing_ppm, state->audio_loss_markers, state->audio_duplicates,
+      state->audio_reordered, h2_webrtc_perf_audio_gap_p99(state),
+      state->audio_max_gap_ns);
+}
+
 static int h2_webrtc_perf_run_transfer(
     h2_webrtc_performance_state_t* state, int loaded, int download_only,
     h2_webrtc_performance_transfer_t* out_transfer) {
+  state->diagnostic_phase = loaded ? "loaded" : "data-only";
   state->download_bytes = 0u;
   state->upload_bytes = 0u;
   state->upload_started_ns = 0u;
@@ -629,6 +681,8 @@ static int h2_webrtc_perf_run_transfer(
   state->event_echoes = 0u;
   state->packet_echoes = 0u;
   state->audio_received = 0u;
+  state->audio_sent = 0u;
+  state->audio_loss_markers = 0u;
   state->audio_next_sequence = 0u;
   memset(state->audio_seen, 0, sizeof(state->audio_seen));
   state->audio_duplicates = 0u;
@@ -689,6 +743,7 @@ static int h2_webrtc_perf_run_transfer(
           state->api, state->peer, opus, sizeof(opus));
       if (result == H2_PAL_OK) {
         audio_sent++;
+        state->audio_sent = audio_sent;
         next_audio_ns += (uint64_t)H2_WEBRTC_PERF_AUDIO_INTERVAL_MS * 1000000u;
         if (audio_sent == H2_WEBRTC_PERF_AUDIO_FRAMES) {
           audio_completed_ns = now_ns;
@@ -764,7 +819,10 @@ static int h2_webrtc_perf_run_transfer(
 }
 
 static int h2_webrtc_perf_run_audio_only(h2_webrtc_performance_state_t* state) {
+  state->diagnostic_phase = "audio-only";
   state->audio_received = 0u;
+  state->audio_sent = 0u;
+  state->audio_loss_markers = 0u;
   state->audio_next_sequence = 0u;
   memset(state->audio_seen, 0, sizeof(state->audio_seen));
   state->audio_duplicates = 0u;
@@ -796,6 +854,7 @@ static int h2_webrtc_perf_run_audio_only(h2_webrtc_performance_state_t* state) {
           state->api, state->peer, opus, sizeof(opus));
       if (result == H2_PAL_OK) {
         audio_sent++;
+        state->audio_sent = audio_sent;
         next_audio_ns += (uint64_t)H2_WEBRTC_PERF_AUDIO_INTERVAL_MS * 1000000u;
         if (audio_sent == H2_WEBRTC_PERF_AUDIO_FRAMES) {
           audio_completed_ns = now_ns;
@@ -1020,7 +1079,10 @@ int h2_webrtc_performance_run(h2_runtime_t* runtime,
             ? 0u
             : (uint64_t)state.download_bytes * UINT64_C(1000000000) /
                   data_only.download_elapsed_ns);
-    if (h2_webrtc_perf_run_audio_only(&state) != 0) {
+    const int audio_only_rc = h2_webrtc_perf_run_audio_only(&state);
+    h2_webrtc_perf_report_audio(&state, "audio-only", iteration,
+                                audio_only_rc == 0);
+    if (audio_only_rc != 0) {
       printf(
           "H2_WEBRTC_PERF audio-only failed received=%u late=%u "
           "deadline=%u callback=%d\n",
@@ -1041,7 +1103,9 @@ int h2_webrtc_performance_run(h2_runtime_t* runtime,
       goto cleanup;
     }
     h2_webrtc_performance_transfer_t loaded = {0};
-    if (h2_webrtc_perf_run_transfer(&state, 1, 0, &loaded) != 0) {
+    const int loaded_rc = h2_webrtc_perf_run_transfer(&state, 1, 0, &loaded);
+    h2_webrtc_perf_report_audio(&state, "loaded", iteration, loaded_rc == 0);
+    if (loaded_rc != 0) {
       printf(
           "H2_WEBRTC_PERF loaded failed upload=%d download=%d/%zu "
           "requests=0x%x audio=%u late=%u deadline=%u events=%u "

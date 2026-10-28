@@ -957,9 +957,24 @@ func (s *server) createAnswer(
 	return local.SDP, item, nil
 }
 
+// Preserve the source timeline, including reordering, gaps, and wraparound.
+// Renumbering by arrival order hides upstream gaps and prevents the receiver
+// from restoring the original media order. Pion binds SSRC/payload type.
+func opusEchoPacket(packet *rtp.Packet) *rtp.Packet {
+	return &rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			Marker:         packet.Marker,
+			PayloadType:    111,
+			SequenceNumber: packet.SequenceNumber,
+			Timestamp:      packet.Timestamp,
+		},
+		Payload: append([]byte(nil), packet.Payload...),
+	}
+}
+
 func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, witness *mediaWitness) {
 	defer witness.log("stopped")
-	var sequence uint16
 	for {
 		packet, _, err := remote.ReadRTP()
 		if err != nil {
@@ -968,23 +983,11 @@ func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, wit
 		}
 		ordinal := witness.noteInput(packet.SequenceNumber)
 		if witness.shouldDrop(ordinal) {
-			// Consume the egress sequence as a packet dropped on the wire would.
-			sequence++
+			// Keep the original gap visible to the receiving RTP decoder.
 			witness.log("injected-drop")
 			continue
 		}
-		payload := append([]byte(nil), packet.Payload...)
-		echo := &rtp.Packet{
-			Header: rtp.Header{
-				Version:        2,
-				Marker:         packet.Marker,
-				PayloadType:    111,
-				SequenceNumber: sequence,
-				Timestamp:      packet.Timestamp,
-			},
-			Payload: payload,
-		}
-		sequence++
+		echo := opusEchoPacket(packet)
 		if err := local.WriteRTP(echo); err != nil {
 			witness.writeErrors.Add(1)
 			return
