@@ -359,6 +359,6 @@ private-secret-provider | bazel run --config=bk7258 //path/to/entry:encrypted_re
   --key-fd 0 --output-dir /absolute/local/new-recovery
 ```
 
-也可先 build 再直接运行生成的 executable，让调用方通过继承的 descriptor 注入；不要为了传递 descriptor 而把 key 改成 argv/environment。加密发生在运行阶段，不是可缓存的 Bazel action；output-dir 必须是尚不存在的绝对目录，位于 Bazel execroot/runfiles/output tree 外。成功后原子发布目录，包含 `encrypted.bin`、`recovery.h2fb` 和不含密钥的 `validation.json` 摘要收据；失败不发布半成品，不降级为明文；若操作系统拒绝清理私有 staging 目录，工具返回失败并输出不含异常详情的清理提示，可能需要调用方清理输出父目录下的 `.bk-recovery-*`。输出目录和文件限制为当前用户访问，运行进程禁用 core dump。Python 对象和密码库内存不承诺可靠擦除，secret provider 也必须遵循本机 secret 生命周期约束。
+也可先 build 再直接运行生成的 executable，让调用方通过继承的 descriptor 注入；不要为了传递 descriptor 而把 key 改成 argv/environment。加密发生在运行阶段，不是可缓存的 Bazel action；output-dir 必须是尚不存在的绝对目录，位于 Bazel execroot/runfiles/output tree 外。成功后原子发布目录，包含 `encrypted.bin`、`recovery.h2fb` 和不含密钥的 `validation.json` 摘要收据；失败不发布半成品，不降级为明文；若操作系统拒绝清理私有 staging 目录，工具返回失败并输出不含异常详情的清理提示，可能需要调用方清理输出父目录下的 `.bk-recovery-*`。输出目录和文件限制为当前用户访问，运行进程在读取密钥前禁用 core dump；Linux 另外设置并核实 `PR_SET_DUMPABLE=0`，防止管道式 core collector 绕过 `RLIMIT_CORE`，无法建立保护则拒绝读取密钥。诊断输出立即 flush；关闭的输出管道不会改变已发布产物的成功状态。Python 对象和密码库内存不承诺可靠擦除，secret provider 也必须遵循本机 secret 生命周期约束。
 
 该入口不生成 managed update、不自动发布 release、不连接设备、不读取 OTP，也不执行烧录。非秘密向量与离线解密校验不能识别任意错误的芯片 key；新工具输出仍需另行授权的实际 recovery/启动资格验证。

@@ -260,10 +260,44 @@ def publish_metadata(
 
 def _recovery_message(message: str, *, error: bool = False) -> None:
     """Diagnostics cannot change publication state or expose an I/O exception."""
+    import os
+
+    stream = sys.stderr if error else sys.stdout
+    if stream is None:
+        return
     try:
-        print(message, file=sys.stderr if error else sys.stdout)
+        print(message, file=stream, flush=True)
     except (OSError, ValueError):
-        pass
+        # CPython retries buffered standard streams at shutdown and can replace
+        # the operation's exit status with 120. Retire the failed descriptor.
+        try:
+            with open(os.devnull, "w") as sink:
+                os.dup2(sink.fileno(), stream.fileno())
+        except (OSError, ValueError, AttributeError):
+            if error:
+                sys.stderr = None
+            else:
+                sys.stdout = None
+
+
+def _protect_recovery_process() -> None:
+    """Establish crash-dump protection before accepting any secret bytes."""
+    import resource
+
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    if sys.platform == "linux":
+        import ctypes
+
+        # Linux pipe-based core collectors ignore RLIMIT_CORE. Disable and
+        # verify dumpability as well; retain it until process exit.
+        try:
+            prctl = ctypes.CDLL(None, use_errno=True).prctl
+        except AttributeError:
+            raise ValueError("DUMP_PROTECTION_UNAVAILABLE") from None
+        prctl.argtypes = [ctypes.c_int] + [ctypes.c_ulong] * 4
+        prctl.restype = ctypes.c_int
+        if prctl(4, 0, 0, 0, 0) != 0 or prctl(3, 0, 0, 0, 0) != 0:
+            raise ValueError("DUMP_PROTECTION_FAILED")
 
 
 def _read_recovery_key(fd: int, timeout: float = 30.0) -> bytearray:
@@ -301,7 +335,6 @@ def encrypted_bk_recovery_main(argv: list[str] | None = None) -> int:
     """Explicit local operation; stdin/descriptor carries exactly 32 raw key bytes."""
     import argparse
     import os
-    import resource
     import shutil
     import tempfile
 
@@ -323,7 +356,7 @@ def encrypted_bk_recovery_main(argv: list[str] | None = None) -> int:
     temporary = None
     key = bytearray()
     try:
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        _protect_recovery_process()
         output = Path(args.output_dir)
         if not output.is_absolute() or output.exists() or output.is_symlink():
             raise ValueError("OUTPUT_DIRECTORY")
