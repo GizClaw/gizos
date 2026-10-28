@@ -1,9 +1,15 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//native_component_src/bk7258/ap/h2_pal_core:tests/audio_reader_test.bzl", "bk_audio_reader_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["usr_gpio_cfg.h"])
+
+bk_audio_reader_test(
+    name = "audio_reader_lifetime_test",
+    source = "src/h2_bk7258_board_audio.c",
+)
 
 filegroup(
     name = "firmware_sources",

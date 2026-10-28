@@ -303,7 +303,7 @@ def render_policy_source(
       tasks: Routed task records carrying a complete policy.
       unrouted: Task names that intentionally fall through to the default.
       default_policy: Policy served to every unrouted task name.
-      allocator: Memory the unit allocates task stacks from, if it takes one.
+      allocator: Memory for AP task control objects, if the unit takes one.
 
     Returns:
       The rendered C source text.
@@ -440,6 +440,7 @@ def render_policy_source(
         # The allocator comes from a call, so this config cannot be static.
         config[0] = "  const %s_task_policy_config_t config = {" % flavor.prefix
         config.append("      .task_allocator = %s," % _ALLOCATORS[allocator])
+        config.append("      .psram_stack_allocator = h2_bk_platform_psram_allocator(),")
     lines.extend(config)
     lines.append("  };")
     configure = "configure" if flavor.unit == "esp" else flavor.prefix + "_platform_task_configure"
@@ -474,7 +475,7 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
       unit: Execution unit: "esp", "ap" or "cp".
       tasks: Routed task records carrying a complete policy.
       default_policy: Policy served to every unrouted task name.
-      allocator: Memory the unit allocates task stacks from, if it takes one.
+      allocator: Memory for AP task control objects, if the unit takes one.
 
     Returns:
       The rendered C test source text.
@@ -495,6 +496,21 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
         values.append(flavor.regions[policy["stack_region"]])
         return "  assert_policy(%s, %s);" % (name, ", ".join(values))
 
+    allocator_stubs = []
+    if flavor.allocator:
+        allocator_stubs = [
+            "static h2_pal_mem_api_t s_allocator;",
+            "",
+            "h2_pal_mem_api_t *%s(void) { return &s_allocator; }" % _ALLOCATORS[allocator][:-2],
+            "",
+        ]
+        if allocator != "psram":
+            allocator_stubs.extend([
+                "static h2_pal_mem_api_t s_psram_stack_allocator;",
+                "h2_pal_mem_api_t *h2_bk_platform_psram_allocator(void) { return &s_psram_stack_allocator; }",
+                "",
+            ])
+
     lines = [
         "/* Generated from %s. Do not edit. */" % label,
         "",
@@ -509,12 +525,7 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
         "static %s_task_policy_config_t s_config;" % flavor.prefix,
         "static h2_pal_result_t s_configure_result = H2_PAL_OK;",
         "",
-    ] + ([
-        "static h2_pal_mem_api_t s_allocator;",
-        "",
-        "h2_pal_mem_api_t *%s(void) { return &s_allocator; }" % _ALLOCATORS[allocator][:-2],
-        "",
-    ] if flavor.allocator else []) + [
+    ] + allocator_stubs + [
         "h2_pal_result_t",
         "%s_platform_task_configure(const %s_task_policy_config_t *config) {" % (
             flavor.prefix,
@@ -565,6 +576,9 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
         ])
     if flavor.allocator:
         lines.append("  assert(s_config.task_allocator == &s_allocator);")
+        lines.append("  assert(s_config.psram_stack_allocator == &%s);" % (
+            "s_allocator" if allocator == "psram" else "s_psram_stack_allocator"
+        ))
     for task in tasks:
         name = task.name[:-1] + "any-task" if task.name.endswith("*") else task.name
         lines.append(assertion(_literal(name), task.policy))

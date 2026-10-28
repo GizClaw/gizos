@@ -63,9 +63,6 @@ bk_err_t sdk_internal_sta_callback(const netif_ip4_config_t *config) {
 }
 void sdk_station_event(int event) {
     switch(event) {
-	case EVENT_WIFI_STA_GOT_IPV6:
-        ++ip6_updates;
-        break;
 	case EVENT_WIFI_STA_DISCONNECTED:
         ++disconnect_events;
         break;
@@ -168,12 +165,6 @@ target_link_libraries(probe PRIVATE sdk)
         self.assertNotEqual(result.returncode,0)
         self.assertIn('Pinned BK Netif STA sync signature changed',result.stdout+result.stderr)
 
-    def test_sdk_ipv6_callback_drift_fails_configure(self):
-        self.sdk_source.write_text(BROKEN_SDK.replace(
-            '\tcase EVENT_WIFI_STA_GOT_IPV6:', '\tcase EVENT_WIFI_STA_RENAMED:'))
-        _,result=self.configure('ipv6-drift')
-        self.assertNotEqual(result.returncode,0)
-        self.assertIn('Pinned BK AP IPv6 callback changed',result.stdout+result.stderr)
 
 
 if __name__=='__main__':

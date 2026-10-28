@@ -51,7 +51,9 @@ typedef struct h2_bk_task_policy_config {
   h2_bk_task_policy_resolver_t resolver;
   void* resolver_user;
   const h2_pal_mem_api_t* task_allocator;
-  /** Optional actual PSRAM stack allocator. Borrowed until every task joins. */
+  /** Optional actual PSRAM stack allocator. Borrowed until every task joins.
+   * Generated AP policies supply this so the native TCB follows task_allocator
+   * while the stack follows the per-task PSRAM policy. */
   const h2_pal_mem_api_t* psram_stack_allocator;
 } h2_bk_task_policy_config_t;
 
