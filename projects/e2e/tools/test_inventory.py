@@ -9,11 +9,11 @@ class InventoryTest(unittest.TestCase):
     def test_includes_all_project_apps_without_a_pal_prefix_filter(self):
         with tempfile.TemporaryDirectory() as directory:
             apps = Path(directory) / "projects/e2e/apps"
-            for name in ("pal-json", "gizclaw", "libco", "atomic", "lua-link"):
+            for name in ("pal-json", "gizclaw", "atomic", "lua-link"):
                 (apps / name).mkdir(parents=True)
             self.assertEqual(
                 discover_apps(directory),
-                ["atomic", "gizclaw", "libco", "lua-link", "pal-json"],
+                ["atomic", "gizclaw", "lua-link", "pal-json"],
             )
 
     def test_excludes_invalid_aliases_and_board_or_product_target_directories(self):

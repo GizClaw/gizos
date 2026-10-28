@@ -30,8 +30,8 @@ if (h2_pal_camera_start(camera) == H2_PAL_OK) {
 provider 创建驱动时设置 `frame_timeout_ms=1000`。这是有限的驱动取帧等待上限，
 不是每次固定延迟，也不保证整个函数的硬实时期限。上游私有 mutex 使用
 `portMAX_DELAY`，start/stop、锁等待及调度延迟不由该超时约束。应用在合适的工作任务
-中串行执行生命周期和借帧操作，禁止 ISR 调用；共享 libco 任务上的阻塞会影响其他
-协程。provider 拒绝重叠调用，但不提供多消费者调度服务。
+中串行执行生命周期和借帧操作，禁止 ISR 调用。provider 拒绝重叠调用，
+但不提供多消费者调度服务。
 
 Runtime 创建/销毁不启动、取帧、归还或停止 Camera。应用必须在 Runtime/provider
 销毁前归还全部帧并停止采集。未安装摄像头不阻止普通板级或 Loader 启动。

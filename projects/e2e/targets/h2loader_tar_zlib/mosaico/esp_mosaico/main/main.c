@@ -74,8 +74,6 @@ static h2_pal_ipv6_result_t generic_result;
 #ifndef H2_MOSAICO_LAUNCHER_HOST_TEST
 #include "esp_system.h"
 #endif
-#elif H2_MOSAICO_SUITE_LIBCO
-#include "h2_libco_smoke.h"
 #endif
 static h2_runtime_t* runtime;
 #if H2_MOSAICO_SUITE_WEBRTC_PERFORMANCE
@@ -269,23 +267,6 @@ static int ipv6_network(void) {
     if (rc) return rc;
   }
 }
-#endif
-#if H2_MOSAICO_SUITE_LIBCO
-static const h2_pal_log_api_t* libco_board_log;
-/* Keep the maintained libco launcher's result channel visible under the
- * board's normal log filtering policy. */
-static int libco_result_write(void* user, h2_pal_log_level_t level,
-                              const char* scope, const char* message) {
-  (void)user;
-  if (scope && message && strcmp(scope, "libco-smoke") == 0)
-    return printf("%s\n", message) < 0 || fflush(stdout) != 0 ? H2_PAL_ERR_IO
-                                                              : H2_PAL_OK;
-  return h2_pal_log_write(libco_board_log, level, scope, message);
-}
-static const h2_pal_log_vtable_t libco_result_vtable = {.write =
-                                                            libco_result_write};
-static const h2_pal_log_api_t libco_result_log = {.vtable =
-                                                      &libco_result_vtable};
 #endif
 #ifndef H2_MOSAICO_LAUNCHER_HOST_TEST
 /* Network suites exercise bounded failure paths and multi-minute AP/client
@@ -616,14 +597,6 @@ static void run(void* unused) {
 #elif H2_MOSAICO_SUITE_STORAGE
   rc = h2_storage_device_run(runtime, "/data/mosaico-e2e",
                              esp_app_get_description()->version);
-#elif H2_MOSAICO_SUITE_LIBCO
-  BaseType_t root_core = xTaskGetCoreID(NULL);
-  if (root_core == tskNO_AFFINITY || root_core != xPortGetCoreID())
-    fail("libco-root-core", H2_PAL_ERR_INVALID_STATE);
-  rc = h2_libco_smoke_run(runtime, NULL);
-  if (!rc &&
-      (root_core != xTaskGetCoreID(NULL) || root_core != xPortGetCoreID()))
-    rc = H2_PAL_ERR_INVALID_STATE;
 #elif H2_MOSAICO_SUITE_CAMERA
   rc = camera_run();
 #elif H2_MOSAICO_SUITE_AUDIO
@@ -723,10 +696,6 @@ void app_main(void) {
 #endif
 #if H2_MOSAICO_SUITE_WEBRTC_PERFORMANCE
   config.mem = h2_esp_platform_psram_allocator();
-#endif
-#if H2_MOSAICO_SUITE_LIBCO
-  libco_board_log = config.log;
-  config.log = &libco_result_log;
 #endif
 #if H2_MOSAICO_SUITE_WIFI
   config.event_queue_capacity = 64;

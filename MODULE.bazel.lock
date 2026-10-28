@@ -816,7 +816,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "7hDYVh6BVsMXwfqxUnEV9fXZkyYReOSoCPfEimD6AGI=",
+        "bzlTransitiveDigest": "ifhQGOfcnmMgHCPPDnomafW/CXU/gDB0ei9Pyh9FHSQ=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

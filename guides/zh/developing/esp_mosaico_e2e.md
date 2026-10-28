@@ -10,7 +10,7 @@ Lingxi、OneNET 暂不接入、不计入本次验收。它不承诺整板外设�
 | --- | --- | --- |
 | `libs/pal` | 稳定能力 contract、Camera borrowed-frame contract 和 unsupported 实现 | 共享 PAL contract 回归 |
 | `libs/runtime` | 注入真实 provider；Camera 未配置时使用 unsupported；无隐式采集生命周期 | Runtime 注入/生命周期回归 |
-| `native_component_src/esp-idf6.x` | ESP 网络、音频和 S31 libco 栈保护适配 | 各平台组件回归 |
+| `native_component_src/esp-idf6.x` | ESP 网络和音频适配 | 各平台组件回归 |
 | `boards/esp_mosaico/esp32s31` | GPIO/总线/器件 wiring、驱动组合、通用单 CDC 传输 | 板级驱动回归，不增加 E2E 包 |
 | `projects/h2loader` | 产品 Loader、Mosaico 协议与 CDC 绑定 | 现有 `h2loader-serial` App |
 | `projects/e2e/apps`、`libs` | 可复用用例、runner、受控 fixture；保留公共断言 | 全量清单，不按 `pal-` 前缀过滤 |
@@ -34,7 +34,7 @@ bazel build --config=esp32s31 \
   //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/esp_mosaico:package
 ```
 
-通用入口允许 `core`、`storage`、`display`、`audio`、`libco`、`camera`、
+通用入口允许 `core`、`storage`、`display`、`audio`、`camera`、
 `json`、`crypto`、`audio-decoder`、`net-tls`、`http`、`mqtt`、`webrtc`、
 `wifi`、`ipv6`、`atomic`、`iperf`、`iperf-client`、`iperf-server`、
 `lua-runtime`、`lua-link`、`webrtc-performance`、`aec-calibration`。
@@ -45,8 +45,6 @@ SDK 与工具版本遵循仓库现有固定策略，不修改外部 SDK 或 BSP 
 
 - Core `wall-set` 接受 provider 初始 `UNCALIBRATED`，经真实 PAL 设置测试基线后继续
   原时钟断言；不再需要 Mosaico 启动器注入人工 UTC。该用例会改变 RTC 校准状态。
-- S31 libco 在切换栈时同步硬件 guard、RTOS 栈及协处理器元数据；平台操作在 native
-  component，RV32 backend 仅提供平台 hook，其他平台默认空实现。
 - Storage 保留跨三次独立启动的 seed / verify-remove / clean-verify。
   Camera 保留十次 start/stop、每次三十帧、借帧 BUSY 和 release/cleanup。
 - Display 比较已完成 SPI DMA 的字节；Audio 保留原 24 项和录放稳定性。
@@ -81,7 +79,8 @@ WebRTC 性能使用现有性能协议服务器。可选
 
 ## 结果与验收
 
-2026-10-27 收敛依据为 25 个 suite 的已通过真机记录；Lingxi、OneNET 保留待测。
+当前范围保留 24 个 suite 的历史真机记录，共 810 个通过用例；Lingxi、OneNET 保留待测。
+这些记录绑定原开发镜像，不代表在 rebase 后的源码上重新运行过。
 准确 case 数和各次镜像身份见 [issue #708](https://github.com/GizClaw/gizos/issues/708)。
 既有结果绑定实际源码/配置/镜像，不能自动改称后续清理镜像已完成全量真机复测。
 

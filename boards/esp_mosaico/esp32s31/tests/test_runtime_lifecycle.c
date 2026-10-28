@@ -10,7 +10,6 @@
 #include "h2_mosaico_display.h"
 #include "h2_mosaico_peripherals.h"
 #include "h2_esp_platform_core.h"
-#include "h2_esp_libco_stack_guard.h"
 #include "h2_corehttp.h"
 #include <assert.h>
 #include <string.h>
@@ -18,7 +17,6 @@ static int audio_error, fs_error, fs_init_error, fs_retained, create_error;
 static unsigned creates, destroys, fs_stops;
 static int provider;
 /* Native stack switching is covered by the platform adapter tests. */
-void h2_esp_libco_stack_guard_link(void) {}
 int bsp_board_variant_get(bsp_board_variant_t* out) {
   *out = BSP_BOARD_VARIANT_V1_2;
   return 0;

@@ -40,11 +40,6 @@ config_setting(
 )
 
 config_setting(
-    name = "libco",
-    define_values = {"mosaico_e2e": "libco"},
-)
-
-config_setting(
     name = "camera",
     define_values = {"mosaico_e2e": "camera"},
 )
@@ -164,7 +159,6 @@ _POLICY_GRAPH = [
     "//libs/pal/providers/corehttp",
     "//libs/pal/providers/h2peer",
     "//libs/pal/providers/h2sctp",
-    "//libs/pal/providers/libco",
     "//libs/pixa",
     "//libs/runtime",
     "//libs/wifi_sta",
@@ -212,14 +206,6 @@ esp_target_task_policy(
     directory = "task_policy_audio",
     graph = _POLICY_GRAPH + ["//projects/e2e/apps/pal-audio/app:pal_audio_e2e"],
     policies = _COMMON_TASK_POLICIES + ["pal-audio/e2e/runner default"],
-)
-
-esp_target_task_policy(
-    name = "task_policy_libco",
-    default_policy = "4 any 4096 psram",
-    directory = "task_policy_libco",
-    graph = _POLICY_GRAPH + ["//projects/e2e/apps/libco/app:libco_smoke"],
-    policies = _COMMON_TASK_POLICIES + [],
 )
 
 esp_target_task_policy(
@@ -426,7 +412,6 @@ firmware_lib_component(
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
-        "//libs/pal/providers/libco",
         "//libs/pixa",
         "//libs/runtime",
         "//libs/wifi_sta",
@@ -455,7 +440,6 @@ firmware_lib_component(
         ":storage": ["//projects/e2e/libs/pal-storage-device:runner"],
         ":display": ["//projects/e2e/libs/pal-display-device:runner"],
         ":audio": ["//projects/e2e/apps/pal-audio/app:pal_audio_e2e"],
-        ":libco": ["//projects/e2e/apps/libco/app:libco_smoke"],
         ":camera": ["//libs/pal"],
         "//conditions:default": ["//projects/e2e/apps/pal-core/app:pal_core_e2e"],
     }),
@@ -489,7 +473,6 @@ firmware_native_component(
         ":aec_calibration": ["main/aec_main.c"],
         ":display": [":suite_source"],
         ":audio": [":suite_source"],
-        ":libco": [":suite_source"],
         ":camera": [":suite_source"],
     }),
     hdrs = [
@@ -609,7 +592,6 @@ genrule(
         ":storage": "echo '#define H2_MOSAICO_SUITE_STORAGE 1' > $@; cat $(location main/main.c) >> $@",
         ":display": "echo '#define H2_MOSAICO_SUITE_DISPLAY 1' > $@; cat $(location main/main.c) >> $@",
         ":audio": "echo '#define H2_MOSAICO_SUITE_AUDIO 1' > $@; cat $(location main/main.c) >> $@",
-        ":libco": "echo '#define H2_MOSAICO_SUITE_LIBCO 1' > $@; cat $(location main/main.c) >> $@",
         ":camera": "echo '#define H2_MOSAICO_SUITE_CAMERA 1' > $@; cat $(location main/main.c) >> $@",
         "//conditions:default": "echo '#define H2_MOSAICO_SUITE_CORE 1' > $@; cat $(location main/main.c) >> $@",
     }),
@@ -639,7 +621,6 @@ alias(
         ":aec_calibration": ":task_policy_aec",
         ":display": ":task_policy_display",
         ":audio": ":task_policy_audio",
-        ":libco": ":task_policy_libco",
         ":camera": ":task_policy_camera",
         "//conditions:default": ":task_policy_core",
     }),

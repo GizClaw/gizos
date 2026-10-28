@@ -36,7 +36,7 @@ calibration is applied. SPI NAND, OV3640 and other product features are excluded
 - H2Loader protocol injection is owned by
   `projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_mosaico_usb`;
   the board does not depend on the product Runtime.
-- `projects/e2e/apps` owns the reusable E2E Apps, including GizClaw, libco,
+- `projects/e2e/apps` owns the reusable E2E Apps, including GizClaw,
   atomic, Lua, performance and business Apps. Enumerate all of them with
   `//projects/e2e/tools:list_apps`; do not filter only `pal-*` names.
 - The S31 `reference-smoke` target is tagged `compile-only`. The product Loader

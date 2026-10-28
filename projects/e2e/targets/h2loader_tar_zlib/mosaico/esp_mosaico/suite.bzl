@@ -5,7 +5,6 @@ _SUITES = [
     "storage",
     "display",
     "audio",
-    "libco",
     "camera",
     "json",
     "crypto",

@@ -247,7 +247,6 @@ cc_test(
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",
         "//libs/runtime",
-        "//native_component_src/esp-idf6.x/h2_pal_core:libco_stack_guard_header",
     ],
 )
 

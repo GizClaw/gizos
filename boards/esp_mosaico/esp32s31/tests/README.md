@@ -22,7 +22,7 @@ Touch hardware is adapted by `src/h2_mosaico_display.c` using the existing
 PAL touch API; sensor and battery adapters remain in the board driver owner.
 
 E2E Apps remain under `projects/e2e/apps`. Their inventory includes GizClaw,
-libco, atomic, Lua and performance Apps, not only names beginning with `pal-`.
+atomic, Lua and performance Apps, not only names beginning with `pal-`.
 Use `//projects/e2e/tools:list_apps` to enumerate them.
 
 H2Loader is a product firmware entry under `projects/h2loader/targets`.

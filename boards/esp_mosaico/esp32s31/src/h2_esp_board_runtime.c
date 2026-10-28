@@ -10,7 +10,6 @@
 #include "h2_mosaico_audio.h"
 
 #include "h2_esp_platform_core.h"
-#include "h2_esp_libco_stack_guard.h"
 #include "h2_mosaico_camera.h"
 
 #include <string.h>
@@ -30,8 +29,6 @@ static int runtime_fs_clear(void* user, const char* path) {
 }
 
 h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
-  /* Pull the S31 libco stack adapter from h2_pal_core's static archive. */
-  h2_esp_libco_stack_guard_link();
   if (out_config == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
