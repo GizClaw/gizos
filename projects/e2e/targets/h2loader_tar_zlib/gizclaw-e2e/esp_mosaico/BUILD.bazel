@@ -78,6 +78,7 @@ firmware_native_component(
     data = [
         "main/CMakeLists.txt",
         "main/idf_component.yml",
+        "//projects/e2e/apps/gizclaw:voice_prompt",
     ],
     tags = ["manual"],
     deps = [

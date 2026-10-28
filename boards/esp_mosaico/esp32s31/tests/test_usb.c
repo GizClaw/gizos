@@ -131,7 +131,23 @@ int main(void) {
   assert(h2_mosaico_usb_read(NULL, &initial_data, 1, &initial_out, 0) ==
          H2_PAL_OK);
   assert(initial_out == 1 && clears == 1 && rx_clears == 1);
-  clears = rx_clears = 0;
+  /* A TX-only observer must retain closure until the reader resets framing,
+   * even when endpoints recover and the host keeps DTR low. */
+  for (int flush = 0; flush < 2; ++flush) {
+    endpoint_ready = false;
+    if (flush)
+      assert(h2_mosaico_usb_flush(NULL) == H2_PAL_ERR_CLOSED);
+    else
+      assert(console.write(0, "log", 3) == -1);
+    endpoint_ready = true;
+    line_callback(0, &initial_low);
+    assert(h2_mosaico_usb_read(NULL, &initial_data, 1, &initial_out, 0) ==
+           H2_PAL_ERR_CLOSED);
+    assert(h2_mosaico_usb_read(NULL, &initial_data, 1, &initial_out, 0) ==
+           H2_PAL_OK);
+    assert(console.write(0, "log", 3) == 3);
+  }
+  queued = clears = rx_clears = 0;
   cdcacm_event_t connected_event = {.line_state_changed_data = {.dtr = true}};
   line_callback(0, &connected_event);
   size_t out = 99;

@@ -110,6 +110,10 @@ h2_pal_result_t h2_mosaico_usb_write(void* user, const void* data, size_t len,
   if (atomic_load(&failed) || atomic_load(&disconnected) ||
       !tud_cdc_n_ready(0)) {
     rc = H2_PAL_ERR_CLOSED;
+    if (!atomic_load(&failed) && !atomic_load(&disconnected)) {
+      atomic_store(&disconnected, true);
+      rc = fail_link();
+    }
     goto done;
   }
   while (*out < len) {
@@ -152,9 +156,13 @@ h2_pal_result_t h2_mosaico_usb_flush(void* user) {
   int64_t start = esp_timer_get_time();
   if (!xSemaphoreTake(tx_lock, ticks(1000))) return H2_PAL_ERR_TIMEOUT;
   int rc = H2_PAL_OK;
-  if (atomic_load(&failed) || atomic_load(&disconnected) || !tud_cdc_n_ready(0))
+  if (link_closed()) {
     rc = H2_PAL_ERR_CLOSED;
-  else if (drain_tx(start, 1000) != H2_PAL_OK)
+    if (!atomic_load(&failed) && !atomic_load(&disconnected)) {
+      atomic_store(&disconnected, true);
+      rc = fail_link();
+    }
+  } else if (drain_tx(start, 1000) != H2_PAL_OK)
     rc = fail_link();
   xSemaphoreGive(tx_lock);
   return rc;

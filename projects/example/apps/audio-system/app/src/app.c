@@ -59,6 +59,7 @@ typedef struct audio_scene {
   int16_t music_frame[H2_SMOKE_AUDIO_FRAME_SAMPLE_CAP];
   int16_t mic_frame[H2_SMOKE_AUDIO_FRAME_SAMPLE_CAP];
   uint32_t mic_frame_count;
+  int32_t mic_peak;
 } audio_scene_t;
 
 static audio_scene_t s_scene;
@@ -367,17 +368,19 @@ static int mic_loop_once(audio_scene_t* scene) {
   if (mic.bytes > sizeof(scene->mic_frame)) {
     return H2_AUDIO_ERR_NO_MEMORY;
   }
-  if (++scene->mic_frame_count % 64u == 0u) {
-    int32_t peak = 0;
-    size_t samples = mic.bytes / sizeof(scene->mic_frame[0]);
-    for (size_t i = 0u; i < samples; ++i) {
-      int32_t value = scene->mic_frame[i];
-      int32_t magnitude = value < 0 ? -value : value;
-      if (magnitude > peak) {
-        peak = magnitude;
-      }
+  /* Measure the whole reporting interval. Sampling only every 64th frame
+   * can miss Chromium's intermittent fake microphone tone entirely. */
+  size_t samples = mic.bytes / sizeof(scene->mic_frame[0]);
+  for (size_t i = 0u; i < samples; ++i) {
+    int32_t value = scene->mic_frame[i];
+    int32_t magnitude = value < 0 ? -value : value;
+    if (magnitude > scene->mic_peak) {
+      scene->mic_peak = magnitude;
     }
-    printf("H2_SMOKE_AUDIO_MIC peak=%ld\n", (long)peak);
+  }
+  if (++scene->mic_frame_count % 64u == 0u) {
+    printf("H2_SMOKE_AUDIO_MIC peak=%ld\n", (long)scene->mic_peak);
+    scene->mic_peak = 0;
   }
 
   h2_audio_frame_t playback = h2_audio_frame_for_buffer(
