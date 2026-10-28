@@ -109,7 +109,6 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_log.c"
   "src/h2_bk_fault_context.c"
   "src/h2_bk_coredump.c"
-  "src/h2_bk_task_trace.c"
   "src/h2_bk_platform_firmware_info.c"
   "src/h2_bk_platform_sync.c"
   "src/h2_bk_platform_net.c"
