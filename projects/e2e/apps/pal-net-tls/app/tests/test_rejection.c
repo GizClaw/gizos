@@ -17,6 +17,7 @@ typedef struct fake {
   uint8_t multicast_request[224];
   int multicast_fault;
   unsigned multicast_sent;
+  int multicast_alternate;
 } fake_t;
 static uint8_t pattern(size_t index) {
   return (uint8_t)((index * 37u + 11u) % 251u);
@@ -47,12 +48,19 @@ static h2_pal_result_t sleep_ms(void* user, uint32_t ms) {
 }
 static int resolve(void* user, const char* host, h2_pal_net_addr_t* out) {
   fake_t* f = user;
-  if (strcmp(host, "127.0.0.1") && strcmp(host, "ap.e2e.gizclaw.com"))
+  if (strcmp(host, "127.0.0.1") && strcmp(host, "192.0.2.7") &&
+      strcmp(host, "ap.e2e.gizclaw.com"))
     return H2_PAL_ERR_NOT_FOUND;
   memset(out, 0, sizeof(*out));
   out->family = H2_PAL_NET_FAMILY_IPV4;
   out->ip[0] = 127u;
   out->ip[3] = 1u;
+  if (strcmp(host, "192.0.2.7") == 0) {
+    out->ip[0] = 192u;
+    out->ip[1] = 0u;
+    out->ip[2] = 2u;
+    out->ip[3] = 7u;
+  }
   if (strcmp(host, "ap.e2e.gizclaw.com") == 0) {
     out->ip[0] = 150u;
     out->ip[1] = 5u;
@@ -148,6 +156,10 @@ static int udp_recv(void* user, int socket, h2_pal_net_addr_t* addr,
   resolve(user, "127.0.0.1", addr);
   addr->port = 123u;
   if (f->current == H2_NET_TLS_MULTICAST_DATA) {
+    if (f->multicast_alternate) {
+      resolve(user, "192.0.2.7", addr);
+      addr->port = 123u;
+    }
     if (len <= sizeof(f->multicast_request)) abort();
     if (f->multicast_fault == 3) {
       f->clock_us += (uint64_t)ms * 1000u;
@@ -382,6 +394,18 @@ int main(void) {
                    f.multicast_sent != 3u))
       return 10;
   }
+  /* A separate data peer must still match source identity, not just payload. */
+  config.multicast_host = "192.0.2.7";
+  for (int match = 0; match < 2; ++match) {
+    memset(&f, 0, sizeof(f));
+    f.multicast_alternate = match;
+    h2_net_tls_result_t result;
+    (void)h2_pal_net_tls_e2e_run(&config, &result);
+    if (result.cases[H2_NET_TLS_MULTICAST_DATA].passed != match ||
+        f.allocations || f.active_sockets || f.active_resolvers)
+      return 11;
+  }
+  config.multicast_host = NULL;
   config.multicast_supported = 0;
   /* Every mandatory vtable hole must block all cases before opening a socket.
    * Function pointers are removed by name to avoid representation assumptions.

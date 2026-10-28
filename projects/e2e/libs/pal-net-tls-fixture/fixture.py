@@ -25,6 +25,17 @@ MULTICAST_DST_OPTION = (getattr(socket, "IP_RECVDSTADDR", 7) if sys.platform == 
                         else getattr(socket, "IP_PKTINFO", 8))
 
 
+def local_multicast_address():
+    """Select the same IPv4 route as an unbound PAL multicast sender.
+
+    UDP connect selects a route without transmitting a datagram. Callers must
+    explicitly opt into binding a local fixture to the resulting interface.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.connect((MULTICAST_GROUP, 9))
+        return probe.getsockname()[0]
+
+
 def multicast_packet(session, case, sequence):
     data = bytearray(packet(session, case, MULTICAST_PAYLOAD))
     data[HEADER_BYTES] = sequence
@@ -89,8 +100,13 @@ def mint(directory):
 
 class Fixture:
     """Only explicit binding may expose the peer to physical device Wi-Fi."""
-    def __init__(self, bind="127.0.0.1", advertise=None, callback_bridge=None, callback_cleanup=None):
+    def __init__(self, bind="127.0.0.1", advertise=None, callback_bridge=None, callback_cleanup=None, local_multicast=False):
         self.bind = bind
+        self.local_multicast = local_multicast
+        # Keep control/TCP/TLS on loopback. Multicast uses the PAL default route,
+        # which can be a different interface (including a host VPN interface).
+        self.multicast_bind = (local_multicast_address()
+                               if local_multicast and bind == "127.0.0.1" else bind)
         self.family = socket.AF_INET6 if ":" in bind else socket.AF_INET
         self.callback_bridge = callback_bridge
         self.callback_cleanup = callback_cleanup
@@ -197,15 +213,21 @@ class Fixture:
                 sock.bind(("0.0.0.0", 0))
                 sock.setsockopt(socket.IPPROTO_IP, MULTICAST_DST_OPTION, 1)
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
-                               socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton(self.bind))
-                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self.bind))
-                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
-                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 0)
+                               socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton(self.multicast_bind))
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self.multicast_bind))
+                # Device peers use the wire; explicitly local peers require kernel
+                # loopback and must not forward the fixture's response off-host.
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL,
+                                0 if self.local_multicast else 1)
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP,
+                                int(self.local_multicast))
             except OSError:
                 sock.close()
                 raise
             with self.lock:
                 self.sockets.add(sock)
+            if self.local_multicast:
+                record['peer'] = self.multicast_bind
             record.update(port=sock.getsockname()[1], callback_port=callback,
                           multicast_group=MULTICAST_GROUP, multicast_destinations=[],
                           multicast_sent_destinations=[], packets_received=0, packets_sent=0)

@@ -15,7 +15,8 @@ args = parser.parse_args()
 dns_host = os.environ.get('H2_PAL_NET_TLS_DNS_HOST', 'ap.e2e.gizclaw.com')
 dns_ip = socket.getaddrinfo(dns_host, None, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
 dns_observed_at = datetime.now(timezone.utc).isoformat()
-with Fixture() as fixture:
+# Preserve loopback for control/TCP/TLS; identify the separate multicast peer.
+with Fixture(local_multicast=True) as fixture:
     if args.negative_endpoints:
         original = fixture.arm
         def damaged(case, mode, callback, peer, run_id=None):
@@ -30,7 +31,8 @@ with Fixture() as fixture:
             return port
         fixture.arm = damaged
     run = subprocess.run([str(Path(args.binary).resolve()), fixture.advertise,
-        str(fixture.port), fixture.session, str(fixture.ca), str(fixture.wrong_ca), dns_host, dns_ip],
+        str(fixture.port), fixture.session, str(fixture.ca), str(fixture.wrong_ca), dns_host, dns_ip,
+        fixture.multicast_bind],
         capture_output=True, text=True, timeout=180)
     print(run.stdout, end='')
     print(run.stderr, end='')

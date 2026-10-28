@@ -359,6 +359,12 @@ static void run_case(state_t* s, h2_net_tls_case_t kind) {
         OK(h2_pal_net_udp_join_multicast(net, socket, &group));
         if (kind == H2_NET_TLS_MULTICAST) break;
         OK(start_peer(s, H2_NET_TLS_FIXTURE_MULTICAST, bound_addr.port, &addr));
+        if (s->config->multicast_host != NULL) {
+          OK(h2_pal_net_resolve_addr(net, s->config->multicast_host, &peer));
+          CHECK(peer.family == H2_PAL_NET_FAMILY_IPV4, H2_PAL_ERR_INVALID_ARG);
+          peer.port = addr.port;
+          addr = peer;
+        }
         group.port = addr.port;
         const size_t length = HEADER_BYTES + 128u;
         for (unsigned sequence = 0u; sequence < 3u; ++sequence) {

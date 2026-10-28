@@ -78,6 +78,10 @@ typedef struct h2_net_tls_config {
   uint32_t case_timeout_ms;
   uint32_t tls_handshake_timeout_ms;
   int multicast_supported, icmp_supported;
+  /* Optional numeric multicast peer address when its data interface differs
+   * from the control host. NULL uses host; the same source checks still apply.
+   */
+  const char* multicast_host;
 } h2_net_tls_config_t;
 
 /* All 37 mandatory core-profile cases must pass. The optional capabilities

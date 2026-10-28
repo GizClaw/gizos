@@ -3,7 +3,7 @@ import sys
 import threading
 import unittest
 from fixture import (Fixture, MULTICAST_GROUP, MULTICAST_DST_OPTION,
-                     multicast_packet)
+                     multicast_packet, multicast_destination)
 
 
 class DatagramPeer:
@@ -41,6 +41,36 @@ class DatagramPeer:
 
 
 class MulticastEvidence(unittest.TestCase):
+    @unittest.skipUnless(sys.platform in ("darwin", "linux"),
+                         "requires POSIX receive-destination ancillary data")
+    def test_local_multicast_socket_exchange(self):
+        with Fixture(local_multicast=True) as fixture:
+            self.assertEqual(fixture.bind, "127.0.0.1")
+            interface = fixture.multicast_bind
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
+                peer.bind(("0.0.0.0", 0))
+                peer.settimeout(3)
+                peer.setsockopt(socket.IPPROTO_IP, MULTICAST_DST_OPTION, 1)
+                peer.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                                socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton(interface))
+                peer.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+                                socket.inet_aton(interface))
+                peer.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+                peer.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 0)
+                callback_port = peer.getsockname()[1]
+                port = fixture.arm('multicast-data', 7, callback_port, '127.0.0.1')
+                for sequence in range(3):
+                    request = multicast_packet(fixture.session, 'multicast-data', sequence)
+                    self.assertEqual(peer.sendto(request, (MULTICAST_GROUP, port)), 224)
+                    response, ancillary, flags, source = peer.recvmsg(4096, 128)
+                    self.assertEqual(flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC), 0)
+                    self.assertEqual(multicast_destination(ancillary), MULTICAST_GROUP)
+                    self.assertEqual(source, (interface, port))
+                    self.assertEqual(response, bytes(value ^ 0xa5 for value in request))
+                proof = fixture.proof('multicast-data', 6, timeout=2)
+                self.assertEqual(proof['packets_received'], 3)
+                self.assertEqual(proof['packets_sent'], 3)
+
     def test_multicast_proof_requires_destination_identity_and_all_packets(self):
         for fault in (None, 'unicast', 'missing-destination', 'wrong-peer',
                       'corrupt', 'stale-sequence', 'timeout'):
