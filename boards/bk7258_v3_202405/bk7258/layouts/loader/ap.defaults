@@ -10,6 +10,8 @@ CONFIG_UART_PRINT_BAUD_RATE=460800
 CONFIG_DUMP_UART_PRINT_PORT=1
 
 # Loader keeps update/recovery and BLE; business services belong to App.
+# CONFIG_BT is not set
+CONFIG_BLE=y
 # CONFIG_MEDIA_DISPLAY_SERVICE is not set
 # CONFIG_AUDIO_PLAY is not set
 # CONFIG_AUDIO_RECORD is not set

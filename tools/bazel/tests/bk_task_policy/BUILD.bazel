@@ -1,0 +1,18 @@
+load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
+
+# Compile the generated production config with distinct control/stack allocators.
+[
+    bk7258_target_task_policy(
+        ap_allocator = allocator,
+        ap_default_policy = "5 0 4096 psram",
+        ap_name = allocator + "_ap_policy",
+        cp_default_policy = "6 4096 default",
+        cp_name = allocator + "_cp_policy",
+        directory = allocator,
+    )
+    for allocator in [
+        "sram",
+        "psram",
+        "default",
+    ]
+]

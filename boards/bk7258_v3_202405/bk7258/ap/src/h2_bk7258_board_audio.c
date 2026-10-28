@@ -1,6 +1,9 @@
 #include "h2_bk7258_board_private.h"
 
+#include <stdatomic.h>
+
 #include "h2_audio_mixer.h"
+#include "h2_bk_audio_reader.h"
 #include "h2/pal/hal/h2_pal_audio_task_names.h"
 
 #include <common/bk_include.h>
@@ -47,8 +50,9 @@ typedef struct h2_bk_audio_state {
   bool speaker_open;
   bool mic_initialized;
   bool mic_record_opened;
-  bool mic_open;
-  volatile bool mic_reading;
+  bool mic_retiring;
+  atomic_bool mic_open;
+  atomic_bool mic_reading;
   bool mic_queue_initialized;
   bool mic_thread_started;
   bool ref_mutex_initialized;
@@ -371,24 +375,30 @@ static void bk_audio_mic_task(void* arg) {
       (size_t)raw_format.frame_samples_per_channel * raw_frame_bytes;
 
   for (;;) {
-    if (!state->mic_open || state->record == NULL || state->mic_queue == NULL) {
+    if (!h2_bk_audio_reader_enter(&state->mic_open, &state->mic_reading)) {
       rtos_delay_milliseconds(20);
       continue;
     }
-    state->mic_reading = true;
+    if (state->record == NULL || state->mic_queue == NULL) {
+      h2_bk_audio_reader_leave(&state->mic_reading);
+      rtos_delay_milliseconds(20);
+      continue;
+    }
     int read = audio_record_read_data(
         state->record, (char*)state->mic_raw_scratch, (uint32_t)wanted);
-    state->mic_reading = false;
     if (!state->mic_open) {
+      h2_bk_audio_reader_leave(&state->mic_reading);
       continue;
     }
     if (read <= 0 || (size_t)read != wanted) {
+      h2_bk_audio_reader_leave(&state->mic_reading);
       rtos_delay_milliseconds(20);
       continue;
     }
     int rc = bk_audio_process_mic(state, state->mic_raw_scratch,
                                   raw_format.frame_samples_per_channel);
     if (rc != H2_AUDIO_OK) {
+      h2_bk_audio_reader_leave(&state->mic_reading);
       BK_LOGE(TAG, "mic process failed rc=%d\r\n", rc);
       rtos_delay_milliseconds(20);
       continue;
@@ -399,6 +409,7 @@ static void bk_audio_mic_task(void* arg) {
     os_memcpy(item.samples, state->mic_processed_scratch, item.bytes);
     (void)h2_pal_queue_send_latest(h2_bk7258_board_queue_api(),
                                    state->mic_queue, &item);
+    h2_bk_audio_reader_leave(&state->mic_reading);
   }
 }
 
@@ -516,8 +527,14 @@ static int bk_audio_open(void* user) {
   return H2_AUDIO_OK;
 }
 
+static int bk_audio_stop_mic(void* user);
+
 static int bk_audio_start_mic(void* user) {
   h2_bk_audio_state_t* state = (h2_bk_audio_state_t*)user;
+  if (state->mic_retiring || (state->mic_record_opened && !state->mic_open)) {
+    const int pending = bk_audio_stop_mic(user);
+    if (pending != H2_AUDIO_OK) return pending;
+  }
   (void)bk_audio_open(user);
   int rc = bk_audio_ensure_mic(state);
   if (rc != H2_AUDIO_OK) {
@@ -582,24 +599,37 @@ static int bk_audio_read_mic(void* user, h2_audio_frame_t* out_frame,
 
 static int bk_audio_stop_mic(void* user) {
   h2_bk_audio_state_t* state = (h2_bk_audio_state_t*)user;
-  if (state->record == NULL || !state->mic_record_opened) {
+  if (state->record == NULL ||
+      (!state->mic_record_opened && !state->mic_retiring)) {
     return H2_AUDIO_OK;
   }
+  state->mic_retiring = true;
   state->mic_open = false;
   if (state->mic_queue != NULL) {
     (void)h2_pal_queue_reset(h2_bk7258_board_queue_api(), state->mic_queue);
   }
-  int rc = map_bk_rc(audio_record_close(state->record));
-  if (rc == H2_AUDIO_OK) {
-    for (uint32_t i = 0u; state->mic_reading && i < 25u; ++i) {
-      rtos_delay_milliseconds(2);
-    }
-    audio_record_destroy(state->record);
-    state->record = NULL;
-    state->mic_initialized = false;
+  /* Pause wakes a blocking SDK read without releasing its buffers. */
+  if (state->mic_record_opened) {
+    const int paused =
+        map_bk_rc(audio_record_control(state->record, AUDIO_RECORD_PAUSE));
+    if (paused != H2_AUDIO_OK) return paused;
     state->mic_record_opened = false;
   }
-  return rc;
+  for (uint32_t i = 0u;
+       !h2_bk_audio_reader_idle(&state->mic_reading) && i < 25u; ++i) {
+    rtos_delay_milliseconds(2);
+  }
+  if (!h2_bk_audio_reader_idle(&state->mic_reading)) {
+    /* Retain the paused record and buffers for the delayed reader and retry. */
+    BK_LOGE(TAG, "stop mic failed step=read_exit\r\n");
+    return H2_AUDIO_ERR_IO;
+  }
+  const int rc = map_bk_rc(audio_record_destroy(state->record));
+  if (rc != H2_AUDIO_OK) return rc;
+  state->record = NULL;
+  state->mic_initialized = false;
+  state->mic_retiring = false;
+  return H2_AUDIO_OK;
 }
 
 static int bk_audio_start_speaker(void* user) {

@@ -2,6 +2,8 @@
 
 BK7258 board profile for the C firmware tree.
 
+Loader uses UART and BLE for management. Its [AP](layouts/loader/ap.defaults) and [CP](layouts/loader/cp.defaults) overrides disable classic Bluetooth, selecting the SDK's BLE-only host and controller libraries within the fixed Loader window.
+
 - fixed Loader window: CP `1156 KiB` + AP `1224 KiB` = `2380 KiB`
 - independently linked App window: `5100 KiB` at physical `0x264000`
 - App boot record: `0x77f000`, `4 KiB`; native startup always selects Loader, whose CP enters a pending trial or a confirmed App

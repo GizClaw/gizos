@@ -86,7 +86,6 @@ jobs:
           test -f firmware-devenv/export.sh
           for repository in \
             firmware-devenv \
-            bk-avdk-smp \
             AC695N_Soundbox_SDK \
             e_badge_707_sdk_200 \
             fw-AC791N_SDK; do
@@ -579,7 +578,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: h2vivi/firmware-devenv
-          ref: e1f952f19f35d31ffce5ae65aee3d6f11a7105dc # Pinned IDF 6.2 provider
+          ref: 42e5a45f7dcf2e31bed59dff9dd6005ad183917c # Pinned GizClaw SDK fork provider
           path: firmware-devenv
           fetch-depth: 1
           persist-credentials: false
@@ -818,24 +817,15 @@ jobs:
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
           submodules: false
 
-      - id: app-token
-        name: Create read-only h2vivi token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        with:
-          app-id: ${{ secrets.H2VIVI_GITHUB_APP_ID }}
-          private-key: ${{ secrets.H2VIVI_GITHUB_APP_PRIVATE_KEY }}
-          owner: h2vivi
-
       - name: Check out BK7258 SDK
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          repository: h2vivi/bk-avdk-smp
-          ref: aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca
+          repository: GizClaw/bk_avdk_smp
+          ref: d789d71d89d11584c3350ca67600ff9455a7f57a
           path: .bk-sdk
           fetch-depth: 1
           persist-credentials: false
           submodules: recursive
-          token: ${{ steps.app-token.outputs.token }}
 
       - name: Install native compiler cache
         shell: bash
