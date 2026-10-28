@@ -10,7 +10,7 @@ static int gpio_error, motor_error, battery_error, remove_error, held;
 static unsigned motor_stops, battery_adds, battery_removes;
 static int16_t magnetic_x = 12;
 static int ai_level = 1, boot_level = 1;
-static uint16_t battery_percent = 50;
+static uint16_t battery_percent = 50, battery_status = 1u << 3;
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* p) {
   return p;
 }
@@ -94,6 +94,9 @@ int i2c_master_transmit_receive(i2c_master_dev_handle_t d, const uint8_t* c,
   assert(d && n == 1 && size == 2);
   uint16_t v;
   switch (*c) {
+    case 0x0a:
+      v = battery_status;
+      break;
     case 8:
       v = 3800;
       break;
@@ -163,7 +166,12 @@ int main(void) {
   h2_pal_battery_reading_t battery;
   assert(h2_pal_input_read_battery(h2_mosaico_input(), 301, &battery) == 0 &&
          battery.voltage_mv == 3800 && battery.current_ma == -10 &&
-         battery.percent_x100 == 5000);
+         battery.percent_x100 == 5000 &&
+         (battery.flags & H2_PAL_BATTERY_PRESENT));
+  battery_status = 0;
+  assert(h2_pal_input_read_battery(h2_mosaico_input(), 301, &battery) == 0 &&
+         !(battery.flags & H2_PAL_BATTERY_PRESENT));
+  battery_status = 1u << 3;
   assert(h2_pal_input_read_battery(h2_mosaico_input(), 301, &battery) == 0 &&
          battery_adds == 1);
   battery_percent = 101;

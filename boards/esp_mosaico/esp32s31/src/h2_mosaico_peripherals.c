@@ -180,7 +180,10 @@ static int battery_read(void* user, h2_pal_periph_id_t id,
     rc = result(i2c_master_bus_add_device(bsp_i2c_get_handle(), &config,
                                           &battery_device));
   }
-  uint16_t voltage = 0, current = 0, percent = 0;
+  uint16_t voltage = 0, current = 0, percent = 0, status = 0;
+  /* BQ27220 TRM 2.7: BatteryStatus (0x0a), BATTPRES is bit 3.
+   * Presence comes from the gauge, not inferred from a successful I2C read. */
+  if (rc == H2_PAL_OK) rc = battery_word(0x0a, &status);
   if (rc == H2_PAL_OK) rc = battery_word(0x08, &voltage);
   if (rc == H2_PAL_OK) rc = battery_word(0x0c, &current);
   if (rc == H2_PAL_OK) rc = battery_word(0x2c, &percent);
@@ -195,6 +198,7 @@ static int battery_read(void* user, h2_pal_periph_id_t id,
             current < 0x8000u ? (int32_t)current : (int32_t)current - 65536,
         .percent_x100 = (uint16_t)(percent * 100u),
     };
+    if (status & (1u << 3)) out->flags |= H2_PAL_BATTERY_PRESENT;
   }
   xSemaphoreGive(mutex);
   return rc;
