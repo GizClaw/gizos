@@ -1248,7 +1248,12 @@ static h2_pal_result_t h2loader_invoke_locked(h2_loader_command_t* self,
     }
     operation_locked = 1;
   }
-  result = h2loader_require_command(self, argc, argv, NULL);
+  /* Status/stats checks availability while obtaining the snapshot it formats.
+   * Let that handler perform the single fresh read under this operation lock.
+   */
+  result = handler == h2loader_status_handler_unlocked
+               ? H2_PAL_OK
+               : h2loader_require_command(self, argc, argv, NULL);
   if (result == H2_PAL_OK) {
     result = handler(self, command, argc, argv);
   } else if (h2loader_command_bit(argc, argv) ==

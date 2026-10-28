@@ -1,4 +1,5 @@
 #include "h2_loader_command.h"
+#include "h2_loader_status.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -8,7 +9,7 @@ typedef struct command_io_fixture {
   const char* input;
   size_t input_size;
   size_t input_offset;
-  char output[512];
+  char output[H2_LOADER_STATUS_LINE_MAX + 128u];
   size_t output_size;
   size_t flushes;
 } command_io_fixture_t;
@@ -402,7 +403,116 @@ static void test_wifi_status_snapshot(void) {
          H2_PAL_ERR_INVALID_STATE);
 }
 
+typedef struct snapshot_fixture {
+  unsigned locks, unlocks, pref_reads, partition_reads;
+  int locked;
+  int lock_result, pref_result, unlock_result;
+  uint32_t partition;
+} snapshot_fixture_t;
+
+static h2_pal_result_t snapshot_lock(void* user, h2_pal_mutex_t* mutex) {
+  snapshot_fixture_t* f = user;
+  assert((void*)mutex == user && !f->locked);
+  ++f->locks;
+  if (f->lock_result != H2_PAL_OK) return f->lock_result;
+  f->locked = 1;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t snapshot_unlock(void* user, h2_pal_mutex_t* mutex) {
+  snapshot_fixture_t* f = user;
+  assert((void*)mutex == user && f->locked);
+  ++f->unlocks;
+  f->locked = 0;
+  return f->unlock_result;
+}
+
+static int snapshot_pref_open(void* user, const char* name,
+                              h2_pal_pref_open_mode_t mode,
+                              h2_pal_pref_namespace_t** out) {
+  snapshot_fixture_t* f = user;
+  assert(f->locked && mode == H2_PAL_PREF_OPEN_READ_ONLY);
+  assert(strcmp(name, H2_LOADER_PREF_NAMESPACE) == 0);
+  ++f->pref_reads;
+  *out = NULL;
+  return f->pref_result;
+}
+
+static h2_pal_result_t snapshot_partition(void* user,
+                                          h2_pal_power_boot_partition_t* out) {
+  snapshot_fixture_t* f = user;
+  assert(f->locked);
+  ++f->partition_reads;
+  memset(out, 0, sizeof(*out));
+  out->id = f->partition;
+  return H2_PAL_OK;
+}
+
+static void test_status_single_snapshot(void) {
+  const char* commands[] = {"status", "stats"};
+  for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i) {
+    snapshot_fixture_t f = {.pref_result = H2_PAL_ERR_NOT_FOUND,
+                            .partition = 1};
+    command_io_fixture_t io = {0};
+    h2_loader_t loader = {0};
+    h2_loader_command_t command;
+    const h2_pal_pref_vtable_t pref_vtable = {.open = snapshot_pref_open};
+    const h2_pal_pref_api_t pref = {.user = &f, .vtable = &pref_vtable};
+    const h2_pal_mem_api_t mem = {0};
+    const h2_pal_power_vtable_t power_vtable = {
+        .get_running_boot_partition = snapshot_partition,
+        .get_next_boot_partition = snapshot_partition};
+    const h2_pal_power_api_t power = {.user = &f, .vtable = &power_vtable};
+    const h2_pal_sync_vtable_t sync_vtable = {.lock_mutex = snapshot_lock,
+                                              .unlock_mutex = snapshot_unlock};
+    const h2_pal_sync_api_t sync = {.user = &f, .vtable = &sync_vtable};
+    assert(command_init(&command, &loader, &io) == H2_PAL_OK);
+    loader.config.pref = &pref;
+    loader.config.package.allocator = &mem;
+    loader.config.power = &power;
+    command.config.operation_sync = &sync;
+    command.config.operation_mutex = (h2_pal_mutex_t*)&f;
+    const char* args[] = {"h2loader", commands[i]};
+    for (unsigned attempt = 0; attempt < 2; ++attempt) {
+      memset(&io, 0, sizeof(io));
+      f.partition = attempt + 1;
+      assert(h2_loader_command_execute(&command, 2, args) == H2_PAL_OK);
+      /* One control record, three image slots and one MFG record per query;
+       * running and next partition are each read once, under the same lock. */
+      assert(f.pref_reads == 5u * (attempt + 1));
+      assert(f.partition_reads == 2u * (attempt + 1));
+      assert(f.locks == attempt + 1 && f.unlocks == f.locks && !f.locked);
+      assert(strstr(io.output, "H2_LOADER_STATUS ") != NULL);
+      assert(strstr(io.output, attempt
+                                   ? "running_partition=2 next_partition=2"
+                                   : "running_partition=1 next_partition=1"));
+      assert((strstr(io.output, "H2_LOADER_DATA_CHECKSUM ") != NULL) ==
+             (i == 1));
+    }
+    /* Availability still gates the response, even after a successful query. */
+    assert(h2_loader_set_implemented_commands(&loader, 0) == H2_PAL_OK);
+    memset(&io, 0, sizeof(io));
+    assert(h2_loader_command_execute(&command, 2, args) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(strstr(io.output, "H2_LOADER_STATUS ") == NULL);
+    assert(f.pref_reads == 15 && f.partition_reads == 6);
+    assert(f.locks == 3 && f.unlocks == 3 && !f.locked);
+
+    f.pref_result = H2_PAL_ERR_IO;
+    f.unlock_result = H2_PAL_ERR_TIMEOUT;
+    assert(h2_loader_command_execute(&command, 2, args) == H2_PAL_ERR_IO);
+    assert(f.pref_reads == 16 && f.partition_reads == 6);
+    assert(f.locks == 4 && f.unlocks == 4 && !f.locked);
+
+    f.lock_result = H2_PAL_ERR_TIMEOUT;
+    assert(h2_loader_command_execute(&command, 2, args) == H2_PAL_ERR_TIMEOUT);
+    assert(f.pref_reads == 16 && f.partition_reads == 6);
+    assert(f.locks == 5 && f.unlocks == 4 && !f.locked);
+  }
+}
+
 int main(void) {
+  test_status_single_snapshot();
   test_wifi_status_snapshot();
   test_wifi_saves_only_after_connection();
   test_exact_v2_routes_and_help();
