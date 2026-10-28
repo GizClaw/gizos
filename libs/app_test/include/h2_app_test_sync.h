@@ -8,7 +8,7 @@ extern "C" {
 #endif
 #define H2_APP_TEST_SYNC_MUTEXES_MAX 16u
 /** Serialized, nonblocking mutex lifecycle fake. Contended lock returns BUSY;
- * no OS synchronization or task scheduling is provided. Use real/libco Sync PAL
+ * no OS synchronization or task scheduling is provided. Use real Sync PAL
  * for concurrent subjects. Controls and observations require quiescent callers.
  */
 typedef struct h2_app_test_sync {

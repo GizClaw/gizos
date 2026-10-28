@@ -36,12 +36,12 @@ class NativeRuntimeTest(unittest.TestCase):
             locator = Path(temporary) / "locator.json"
             locator.write_text(json.dumps({
                 "schema": native_runtime.LOCATOR_SCHEMA,
-                "kind": "bk3633-sdk",
+                "kind": "jieli-ac695n-sdk",
                 "enabled": False,
                 "paths": {},
             }), encoding="utf-8")
             with self.assertRaisesRegex(native_runtime.NativeRuntimeError, "not configured"):
-                native_runtime.read_locator(str(locator), "bk3633-sdk")
+                native_runtime.read_locator(str(locator), "jieli-ac695n-sdk")
 
     def test_fixed_environment_does_not_inherit_caller_path(self):
         environment = native_runtime.fixed_environment()

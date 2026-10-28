@@ -38,7 +38,6 @@ firmware_lib_component(
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/coremqtt",
-        "//libs/pal/providers/libco",
         "//libs/pal/providers/yyjson",
         "//libs/pixa",
         "//libs/runtime",

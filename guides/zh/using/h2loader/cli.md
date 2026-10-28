@@ -68,10 +68,9 @@ make cfg-doctor
 | --- | --- | --- | --- |
 | ESP-IDF 6.2 | `H2LOADER_IDF_PATH`/`IDF_PATH` 是同一个 checkout root；`IDF_PYTHON_ENV_PATH` 是其已安装 tools Python root；`IDF_TOOLS_PATH` 是 provider tools root | H2Loader CLI build/flash operation 和 ESP launcher | 构建使用版本清单固定的 IDF 6.2 commit 与 GCC 16.1 工具，PATH 中 `idf.py` 正是该 checkout 的 `tools/idf.py`，tools Python executable 可用；未安装为 unprovisioned，配置错误为 invalid |
 | BK7258 | `BK7258_PATH` 是 pinned AVDK checkout root；`BK_LOADER_BIN` 是单个 host executable | `bk7258_firmware` Bazel rule、BK launcher、H2Loader flash/erase | SDK commit 固定；Arm GNU 10.3.1 由 Bazel repository 下载并校验，不是 operator environment capability；loader 未配置且不是 macOS arm64 时为 `SKIP` |
-| BK3633 | `BK3633_PATH` 是锁定的 BK3633 Git checkout 根目录；SDK 位于其 `SDK/` 子目录 | 三个 canonical `bk3633_firmware` label | checkout 为固定 commit，包含 required SDK source、allroles BIM project 和 Stack BIN/ELF；Arm GNU 10.3.1 由 Bazel repository 管理；BinConvert 由 Bazel 作为 exec tool 注入 |
 | K4B | `K4B_CEDARX_INCLUDE_DIR` 是直接含 `vdecoder.h`/`memoryAdapter.h` 的 flat include root；`K4B_CEDARX_LIB_DIR` 是直接含 `libvdecoder.so`/`libMemAdapter.so` 的 ARM hard-float library root | K4B Bazel CedarX repository 与 MP4 Player launcher | include/library layout 完整；compiler/sysroot 由 Bazel 固定下载，不消费 provider toolchain path |
 
-BK7258、BK3633 和 K4B consumer 不从 `$HOME`、ambient `PATH` 或 GizOS
+BK7258 和 K4B consumer 不从 `$HOME`、ambient `PATH` 或 GizOS
 仓库内旧 vendor path 猜测替代输入。Doctor 的 `[WARNING]` 表示未 provision
 或当前 host `SKIP`，配置了但结构/版本不可用则报告 `[ERROR]`。
 

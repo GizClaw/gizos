@@ -47,7 +47,6 @@ projects/example/
 
 projects/e2e/targets/pkg_tar/
 ├── pal/                           # portable PAL E2E；?suite=browser 跑浏览器套件
-├── libco/                         # libco Emscripten Fiber E2E
 └── lua-runtime/                   # Lua Runtime 九 case Browser archive
 
 projects/h2loader/
@@ -71,7 +70,7 @@ Web wrapper C source 由 `//projects/example/libs/web/tap-reset:tap_reset_web` �
 make test-web
 ```
 
-`make test-web` 构建 `projects/example/targets/pkg_tar/` 与 `projects/e2e/targets/pkg_tar/` 下的 Web archive，验证归档根目录、入口引用和 WASM magic，通过 Emscripten/Node 执行 Web PAL、libco、portable PAL registry 与 fake Web Serial E2E，并在真实 Chromium 中运行各 archive 的 `:browser_test`（见下文 [Example 与 E2E 的 Web target](#example-与-e2e-的-web-target)）。每个 target 的 `:serve` 可在本机托管 archive。浏览器运行需要 HTTPS 或 localhost，以及 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp`。Archive 内的 `_headers` 声明这两项响应头，仓库服务器会实际发送；其他静态服务器也必须配置，只有文件而未发送响应头不会启用 SharedArrayBuffer。直接调试使用：
+`make test-web` 构建 `projects/example/targets/pkg_tar/` 与 `projects/e2e/targets/pkg_tar/` 下的 Web archive，验证归档根目录、入口引用和 WASM magic，通过 Emscripten/Node 执行 Web PAL、portable PAL registry 与 fake Web Serial E2E，并在真实 Chromium 中运行各 archive 的 `:browser_test`（见下文 [Example 与 E2E 的 Web target](#example-与-e2e-的-web-target)）。每个 target 的 `:serve` 可在本机托管 archive。浏览器运行需要 HTTPS 或 localhost，以及 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp`。Archive 内的 `_headers` 声明这两项响应头，仓库服务器会实际发送；其他静态服务器也必须配置，只有文件而未发送响应头不会启用 SharedArrayBuffer。直接调试使用：
 
 ```sh
 bazel run //projects/example/targets/pkg_tar/tap-reset:serve
@@ -98,7 +97,7 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 
 `//libs/pal/providers/web/pal_core:mic_test` 验证授权失败、延迟授权取消、device ended、超时、停止唤醒与重新启动；`:mic_browser_test` 在真实 Chromium 中用 48 kHz 合成麦克风设备验证 getUserMedia、AudioWorklet 与 16 kHz PAL PCM。自动测试不代表用户物理麦克风的收音质量验收。
 
-`h2_pal_webrtc_peer_send_opus()` 仍返回 `H2_PAL_ERR_UNSUPPORTED`。`native_handle == NULL` 且带 read/write vtable 的 Opus Track（GizClaw 使用的 native provider 模型）通过 encoded transform 运行：provider 发送一条静音浏览器 track，把每个外发 encoded payload 替换为 `read()` 取得的 Opus packet，并把收到的 payload 交给 `write()`，不经浏览器解码播放；优先使用 `RTCRtpScriptTransform`（worker，CSP 需允许 `blob:` worker），缺失时使用 Chromium `createEncodedStreams`，两者都没有时返回 `UNSUPPORTED`。每个外发浏览器帧（20 ms packet time）替换为一个 Track packet，RTP timestamp 由浏览器生成，因此 Track 必须产生 20 ms Opus packet；read/write 只在 platform 拥有的 media task 中调用；收到的丢包不产生 zero-length marker。静音源依赖已解锁的 `Module.h2WebAudioContext`，页面须在用户手势中创建或恢复它；AudioContext 未运行时 set_track 在 Console 警告，上行在其恢复前没有帧。Task、Queue、Sync 和 Timer 由 pthread 实现；Task 使用 allocator 分配的真实原生栈，join 等待线程退出后回收栈和 Task 记录。线程取消是协作取消，在阻塞等待边界观察，不强制终止持有对象的 Worker。Web Serial、Fetch、WebRTC、WebCodecs、IndexedDB 与 Web Locks 的 JS 入口通过 `h2_web_main_thread.h` 同步代理到 UI，Promise 完成通过条件变量唤醒等待的 Worker；JS 对象和 DOM 留在主线程。Web PAL 不依赖 libco 或 Asyncify。`h2_web_platform_pump()` 保留为事件导入兼容入口，不负责 Task 调度，后台 Worker 自动处理网络事件。端口授权必须直接来自用户手势。不具备浏览器 API 对应能力的控制线读取、raw socket Net、BLE 和其余 PAL 使用 canonical unsupported provider 返回 `H2_PAL_ERR_UNSUPPORTED`，不能伪造成功或平台身份。
+`h2_pal_webrtc_peer_send_opus()` 仍返回 `H2_PAL_ERR_UNSUPPORTED`。`native_handle == NULL` 且带 read/write vtable 的 Opus Track（GizClaw 使用的 native provider 模型）通过 encoded transform 运行：provider 发送一条静音浏览器 track，把每个外发 encoded payload 替换为 `read()` 取得的 Opus packet，并把收到的 payload 交给 `write()`，不经浏览器解码播放；优先使用 `RTCRtpScriptTransform`（worker，CSP 需允许 `blob:` worker），缺失时使用 Chromium `createEncodedStreams`，两者都没有时返回 `UNSUPPORTED`。每个外发浏览器帧（20 ms packet time）替换为一个 Track packet，RTP timestamp 由浏览器生成，因此 Track 必须产生 20 ms Opus packet；read/write 只在 platform 拥有的 media task 中调用；收到的丢包不产生 zero-length marker。静音源依赖已解锁的 `Module.h2WebAudioContext`，页面须在用户手势中创建或恢复它；AudioContext 未运行时 set_track 在 Console 警告，上行在其恢复前没有帧。Task、Queue、Sync 和 Timer 由 pthread 实现；Task 使用 allocator 分配的真实原生栈，join 等待线程退出后回收栈和 Task 记录。线程取消是协作取消，在阻塞等待边界观察，不强制终止持有对象的 Worker。Web Serial、Fetch、WebRTC、WebCodecs、IndexedDB 与 Web Locks 的 JS 入口通过 `h2_web_main_thread.h` 同步代理到 UI，Promise 完成通过条件变量唤醒等待的 Worker；JS 对象和 DOM 留在主线程。`h2_web_platform_pump()` 保留为事件导入兼容入口，不负责 Task 调度，后台 Worker 自动处理网络事件。端口授权必须直接来自用户手势。不具备浏览器 API 对应能力的控制线读取、raw socket Net、BLE 和其余 PAL 使用 canonical unsupported provider 返回 `H2_PAL_ERR_UNSUPPORTED`，不能伪造成功或平台身份。
 
 生产 Web App 必须定义 hosting headers、browser lifecycle、permissions、release packaging 和 supported-browser acceptance，不能把 smoke page 成功运行当作 Web 平台完成证据。持有 Runtime 的 Web entry 在 `pagehide`/freeze shutdown handler 返回前必须同步拒绝新操作、请求 task cancellation、使 pending Serial I/O 以 `CLOSED` 退出，由 Worker 等待活动 PAL 调用退出，再依次 join task、deinit Runtime 和销毁 platform；UI 生命周期回调不能阻塞等待 Worker。Web Serial 仅提供 Promise 形式的 reader/writer cancellation 和 port close；活动 session 的页面生命周期 shutdown 必须返回 `UNSUPPORTED`，只能同步失效回调并发起 best-effort 浏览器清理，不能声称这些 Promise 在 handler 返回前完成。需要确定性关闭证据的产品必须在页面仍可推进 event loop 时提供显式、可等待的 close 流程。
 
@@ -258,7 +257,6 @@ Lua Display 在获取时启动公共 `$lua/display` worker，`present/end_frame`
 | Target | 浏览器测试验证 |
 |---|---|
 | e2e `pal`（`?suite=browser`） | Memory/Time/Timer/Task/Queue/Mutex/Condition、IndexedDB Filesystem、Fetch HTTP、Netif、System Event 分发给 Runtime、raw Net 返回 `UNSUPPORTED`；teardown `fs=0 destroy=0` |
-| e2e `libco` | 独立 libco Emscripten Fiber 库测试 |
 | e2e `lua-runtime` | pthread 多 Worker；Lua 九 case |
 | e2e `pal-core` | 41 个 Core 契约用例、真实栈和资源回收、无 yield 并行验证 |
 | `display`、`qrcode`、`log` | Display 输出（非黑像素）、App 正常返回 |

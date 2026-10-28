@@ -4,7 +4,6 @@ set -eu
 exec bazel test \
   //tools/bazel:web_archive_server_test \
   //projects/example/targets/pkg_tar/... \
-  //projects/e2e/targets/pkg_tar/libco/... \
   //projects/e2e/targets/pkg_tar/lua-runtime/... \
   //projects/e2e/targets/pkg_tar/pal-core:browser_test \
   //projects/e2e/targets/pkg_tar/pal-storage/... \

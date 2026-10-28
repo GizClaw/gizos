@@ -110,7 +110,6 @@ firmware_native_component(
         "//libs/pal/providers/coremqtt",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
-        "//libs/pal/providers/libco",
         "//libs/wifi_sta",
     ],
 )

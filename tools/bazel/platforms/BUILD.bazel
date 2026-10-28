@@ -26,11 +26,6 @@ constraint_value(
 )
 
 constraint_value(
-    name = "cpu_armv5te",
-    constraint_setting = ":firmware_cpu",
-)
-
-constraint_value(
     name = "target_esp32s3",
     constraint_setting = ":firmware_target",
 )
@@ -47,11 +42,6 @@ constraint_value(
 
 constraint_value(
     name = "target_bk7258",
-    constraint_setting = ":firmware_target",
-)
-
-constraint_value(
-    name = "target_bk3633",
     constraint_setting = ":firmware_target",
 )
 
@@ -127,11 +117,6 @@ config_setting(
 config_setting(
     name = "is_bk7258",
     define_values = {"h2_firmware_target": "bk7258"},
-)
-
-config_setting(
-    name = "is_bk3633",
-    define_values = {"h2_firmware_target": "bk3633"},
 )
 
 config_setting(
@@ -389,15 +374,6 @@ platform(
     constraint_values = [
         ":cpu_arm_m",
         ":target_bk7258",
-        "@platforms//os:none",
-    ],
-)
-
-platform(
-    name = "bk3633",
-    constraint_values = [
-        ":cpu_armv5te",
-        ":target_bk3633",
         "@platforms//os:none",
     ],
 )

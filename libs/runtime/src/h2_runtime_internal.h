@@ -360,10 +360,8 @@ struct h2_runtime_private {
    * Latest measured frame level per direction, published from the audio hot
    * path by the mic_read and track write thunks.
    *
-   * Two 32-bit atomics per direction rather than one 64-bit word packing
-   * level and timestamp: a 64-bit atomic lowers to a libatomic call on the
-   * ARMv5 target (bk3633), whose SDK does not provide one, while a 32-bit
-   * atomic load/store is a plain instruction everywhere the Runtime builds.
+   * Separate 32-bit atomics keep level and timestamp stores portable across
+   * the supported targets without requiring 64-bit atomic operations.
    * Level and timestamp are therefore two independent stores, so a reader
    * racing a frame can pair a new level with the previous frame's timestamp.
    * The two frames are one frame period apart (10-20 ms), which no level
@@ -508,19 +506,6 @@ static inline h2_runtime_timestamp_ms_t h2_runtime_now_ms(
 
 h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t* runtime);
 
-/*
- * 1 when a 32-bit atomic add is a single lock-free instruction (Xtensa,
- * RISC-V, Cortex-M, hosts). ARMv5 (bk3633) reports "sometimes" and lowers
- * fetch_add to a library call the SDK does not provide, so those targets keep
- * a short test-and-set critical section instead.
- *
- * A bare spin on an h2_atomic_flag_t is only safe without preemption: on a
- * preemptive RTOS a waiter that outranks the holder on the holder's core pins
- * that core forever (ESP-IDF sys_evt vs. $runtime/input on core 0, which is
- * why the lock-free path exists). The remaining ARMv5 target schedules its
- * tasks cooperatively on libco coroutines, so a holder is never switched out
- * inside the critical section and the flag is never contended.
- */
 /* The linked platform implementation provides fetch_add semantics. */
 #define H2_RUNTIME_ATOMIC_FETCH_ADD 1
 

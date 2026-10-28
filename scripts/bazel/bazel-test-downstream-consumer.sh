@@ -315,7 +315,6 @@ cp BUILD.bazel.complete BUILD.bazel
     @gizos//tools/openapi_codegen:openapi_codegen \
     @gizos//libs/gizclaw/web/tests/local:local \
     @gizos//projects/gizclaw/targets/npm_package/firmware:release_tarball \
-    //:bk3633_test_support_consumer \
     //:firmware_lib \
     //:embedded_menu_font_test \
     //:font_consumer \
@@ -362,19 +361,3 @@ test ! -e "$consumer_root/private_bk_task_policy"
     //:private_bk_ap_task_policy_test \
     //:private_bk_cp_task_policy_test \
     ${host_test_targets[@]+"${host_test_targets[@]}"}
-
-"${BAZEL_BIN:-bazel}" \
-    --ignore_all_rc_files \
-    --output_user_root="$output_user_root" \
-    --output_base="$consumer_root/output-base" \
-    build \
-    --enable_bzlmod \
-    --noenable_workspace \
-    "${consumer_options[@]}" \
-    --repository_cache="$repository_cache" \
-    --override_module="gizos=$repository_root" \
-    --define="h2_firmware_target=bk3633" \
-    --define="h2_host_os=$host_os" \
-    --platforms="@gizos//tools/bazel/platforms:bk3633" \
-    //:bk3633_wolfcrypt_consumer \
-    @gizos//tools/bazel/tests/embedded_include_paths:local_embedded_cc

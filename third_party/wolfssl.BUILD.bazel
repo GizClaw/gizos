@@ -22,22 +22,6 @@ WOLFCRYPT_UPSTREAM_SOURCES = [
     "wolfcrypt/src/wolfmath.c",
 ]
 
-WOLFCRYPT_BK3633_THUMB_NON_LTO_SOURCES = [
-    "wolfcrypt/src/hmac.c",
-]
-
-WOLFCRYPT_BK3633_THUMB_LTO_SOURCES = [
-    "wolfcrypt/src/ecc.c",
-    "wolfcrypt/src/sp_int.c",
-]
-
-WOLFCRYPT_BK3633_ARM_LTO_SOURCES = [
-    source
-    for source in WOLFCRYPT_UPSTREAM_SOURCES
-    if source not in WOLFCRYPT_BK3633_THUMB_NON_LTO_SOURCES
-    if source not in WOLFCRYPT_BK3633_THUMB_LTO_SOURCES
-]
-
 WOLFCRYPT_UPSTREAM_HEADERS = [
     "wolfssl/wolfcrypt/aes.h",
     "wolfssl/wolfcrypt/asn.h",
@@ -117,21 +101,6 @@ DESKTOP_WOLFSSL_UPSTREAM_SOURCES = [
 filegroup(
     name = "sources",
     srcs = ["src/" + path for path in WOLFCRYPT_UPSTREAM_SOURCES],
-)
-
-filegroup(
-    name = "bk3633_arm_lto_sources",
-    srcs = ["src/" + path for path in WOLFCRYPT_BK3633_ARM_LTO_SOURCES],
-)
-
-filegroup(
-    name = "bk3633_thumb_lto_sources",
-    srcs = ["src/" + path for path in WOLFCRYPT_BK3633_THUMB_LTO_SOURCES],
-)
-
-filegroup(
-    name = "bk3633_thumb_non_lto_sources",
-    srcs = ["src/" + path for path in WOLFCRYPT_BK3633_THUMB_NON_LTO_SOURCES],
 )
 
 filegroup(

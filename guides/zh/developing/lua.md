@@ -26,7 +26,7 @@ Runtime Task。Lua coroutine 是同一 VM 内的协作任务，不分配 PAL Tas
 不跨 CPU 并行。Web Task provider 在一个浏览器线程中协作推进，Desktop 和设备
 provider 可以让不同 VM 在多个 worker 上并行。
 
-当前 build surface 包含 Desktop、Web、ESP32-S3/P4、BK7258 和 BK3633。Embedded
+当前 build surface 包含 Desktop、Web、ESP32-S3/P4、BK7258。Embedded
 构建不给 upstream Lua 提供 libc 文件或标准流：vendor overlay 强制包含
 `h2_lua_embedded_stdio.h`，在 `<stdio.h>` 之后把 `stdin`、`stdout`、`stderr`
 以及 Lua 使用的 `fopen`、`getc` 等 stdio 函数重定向到

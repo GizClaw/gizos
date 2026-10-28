@@ -58,7 +58,6 @@
 │
 ├── native_component_src/                 # 原生 SDK build system 编译的 component source
 │   ├── esp-idf6.x/                       # ESP-IDF 6.x family components
-│   ├── bk3633/                           # BK3633 SDK components
 │   └── bk7258/
 │       ├── ap/                           # BK AP reusable components
 │       └── cp/                           # BK CP reusable components
@@ -145,9 +144,9 @@
 - 全量格式化使用 `scripts/config/format.sh --all`；CI 在 PR、main push 和手动执行时使用 `scripts/config/format-check.sh --all` 检查整个源码树，并由 `CI required` 汇总为必需项。`EM_JS` / `EM_ASM` 的内嵌 JavaScript 必须放在 `clang-format off/on` 注释之间，避免 C/C++ formatter 改写 JavaScript token；`.clang-format-ignore` 继续保护第三方、生成和二进制数组源码。
 - `.bazelversion`、`MODULE.bazel`、`REPO.bazel` 和根 `BUILD.bazel` 定义
   [Bazel 构建与 CI 依赖图](/zh/developing/bazel)。Bazel 是 stable host
-  C/C++ package 以及 ESP-IDF/BK7258/BK3633 firmware 的入口、产物和 CI graph
+  C/C++ package 以及 ESP-IDF/BK7258 firmware 的入口、产物和 CI graph
   source of truth；平台 SDK 仍拥有底层原生编译语义。全部 maintained ESP 与
-  BK7258 firmware entry 与三个 maintained BK3633 entry 通过受控 Bazel external rule 调用原生构建，不保留
+  BK7258 firmware entry 通过受控 Bazel external rule 调用原生构建，不保留
   graph-only firmware leaf。
 - VitePress 的 `package.json` 和 `package-lock.json` 属于 `guides/`，不放在仓库根目录，也不承载设备固件依赖。
 
@@ -252,7 +251,7 @@ projects/<project>/targets/<artifact-rule>/<app>[/<variant>]/
 ```
 
 当前稳定 rule roots 包括 `cc_binary`、`macos_application`、`ios_application`、
-`android_binary`、`h2loader_tar_zlib`、`native_firmware`、`bk3633_firmware` 和
+`android_binary`、`h2loader_tar_zlib`、`native_firmware` 和
 `jieli_firmware`。`native_firmware` 保存 portable App 的 standalone vendor firmware
 entry，终态 `:firmware` 直接交付 vendor image、ELF、symbol 和 manifest；它只拥有
 App/board graph selection 与固件 metadata。`jieli_firmware` root 保留现有杰理
@@ -332,7 +331,7 @@ Portable E2E App 只依赖 Runtime/PAL 和被测 target-independent library，�
 
 `iperf-server` 是交互式吞吐测试台：portable App 持有触屏页面、异步控制器、测量结果和 server 生命周期，launcher 注入 AP 网络生命周期并持有 SDK-specific IPv4 DHCP/IPv6 SLAAC 配置。它与 headless case registry 共用相同的 Runtime/PAL 与 artifact ownership 边界。
 
-H2Loader-managed E2E image 位于 `projects/e2e/targets/h2loader_tar_zlib/<image>/<board>/`。`h2loader_tar_zlib` 表示安装产物类型，不改变 E2E App ownership。没有 H2Loader 的 standalone diagnostic image 位于 `projects/e2e/targets/<firmware-rule>/<image>/<board>/`。比如 BK3633 Libco Smoke 位于 `projects/e2e/targets/bk3633_firmware/libco-smoke/tapdoki_v2_0/`；它使用 TapDoki v2.0 Board 与 BK3633 component，但不属于 TapDoki production project。
+H2Loader-managed E2E image 位于 `projects/e2e/targets/h2loader_tar_zlib/<image>/<board>/`。`h2loader_tar_zlib` 表示安装产物类型，不改变 E2E App ownership。没有 H2Loader 的 standalone diagnostic image 位于 `projects/e2e/targets/<firmware-rule>/<image>/<board>/`。
 
 ### 独立 App
 

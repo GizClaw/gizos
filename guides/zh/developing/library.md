@@ -82,8 +82,6 @@ entropy，安装全局 allocator/RNG bridge，并提供 Crypto PAL 与 DTLS PAL�
 WolfSSL header、source inventory、private configuration 和 global symbol
 全部由这个 package 独占，两个 variant 不能链接进同一 binary。
 
-Target 不重新实现或转发 wolfCrypt provider。BK3633 的 `h2_pal_core` 只提供 hardware TRNG callback，TapDoki BSP 对 TRNG 做启动健康检查后把 callback 注入 `h2_wolfcrypt_crypto_init()`，并直接把 `h2_wolfcrypt_crypto_api()` 组装进 Runtime。Singleton lifecycle、重复初始化、deinit 和 ready/unsupported 状态仍由 `libs/pal/providers/wolfssl` 独占；TRNG timeout、continuous repetition health failure 或 provider 初始化失败会阻止 capability 进入 Runtime。
-
 ### App 初始化
 
 `boards/main` 负责初始化 Runtime，并把 Runtime instance 传给 App entry。App 收到 Runtime 后，根据自身实际使用的 library，从 Runtime 取得所需的 mem API 和其他 PAL API，组装对应 library 的 platform config，再调用该 library 的 OSAL 或 platform init。未被 App 使用的 library 不应由 `boards/main` 或 Runtime 统一初始化。
@@ -127,7 +125,6 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`bleikcp`](./bleikcp.md)：在已建立的 BLE connection 上提供可靠有序 byte stream。
 - [`command`](./command.md)：同步、可注册、由调用方注入 byte stream I/O 的命令执行器。
 - [`iostreamikcp`](./iostreamikcp.md)：在可能混入日志的 UART 或 USB Serial-JTAG byte stream 上提供可靠有序传输。
-- `libco`：封装固定版本 higan-emu/libco 的单线程 stackful cooperative task executor，并实现既有 PAL Task、Time、Queue 和 Sync contract。调用方直接注入 allocator、monotonic clock，以及可选 external-poll/idle hook，并为每个 task 选择独立的固定 stack size；task 只共享 heap、global 与地址空间，不共享 local variable、call frame 或 stack。CPU context backend 在 build time 由目标 toolchain 选择，不是 PAL capability 或 vtable，也不进入 Runtime。Upstream 已支持的 host、AArch64 和 ARMv5 backend 来自 `@h2_vendor_libco` 的 verified archive；GizOS 补充的 Cortex-M、ESP32-S3 Xtensa、ESP32-P4 RV32 backend，以及对 upstream ARM warning 的最小修正位于 `third_party/libco_patch/`，由 vendor repository 通过显式完整文件 overlay 装配。`//libs/pal/providers/libco:libco` 始终把 portable wrapper 与所选 backend 编译成一个完整 `.a`，consumer 不得再并行编译第二份 libco source。每个 instance 只允许在创建它的 executor root 上调度，Native `schedule()` 使用 start-of-turn snapshot 和显式 budget，`wait()`/`wake()` 是 library/target private control；Runtime 和 portable App 只消费借出的 PAL API object。Queue/Sync/Time 的 predicate、timeout、close/reset generation、cancellation 和 live-object teardown 都由 library 拥有，不向 PAL 增加 scheduler contract。Emscripten backend 在调用方请求的 stack 之外为每个 task 额外预留 48 KiB C stack：wasm 把取地址的局部变量和 spill 放在 linear memory，未优化构建更是把全部局部变量放在那里，按 native 目标确定的 stack budget 在浏览器中会溢出。Guard 只能在检查点发现部分边界破坏，不提供 memory protection、动态增长或 stack-overflow immunity；`wake()` 是不保存历史的 edge-triggered runnable transition，不会直接切换 context。
 - [`json`](./json.md)：PAL JSON contract，以及 yyjson portable provider 的严格解析、ownership 和 lifecycle。
 - [`bundle`](./bundle.md)：bundle manifest、archive、path、tar 和 installer。
 - [`china_mobile/onenet`](./onenet.md)：通过 MQTT PAL 接入中国移动 OneNET 的可复用 OneJSON client。
@@ -169,7 +166,7 @@ Library 的跨平台代码统一通过 Bazel C/C++ toolchain 编译，并由 `te
 bazel test //<libs/library-or-project-library-path>:all
 ```
 
-该入口会构建整个 package，并只运行 package 实际声明的测试。macOS 与 Linux CI 使用同一组 semantic label。ESP-IDF 与 BK7258 firmware graph 中的 `utils`、`audio_mixer`、`bleikcp`、`command`、`corehttp`、`coremqtt`、`iostreamikcp`、`lua`、`lvgl`、`mp4_decoder`、`pixa`、`tinyh264` 和 `yyjson`，以及 BK3633 production graph 的 `wolfcrypt_bk3633`，都必须由 semantic target 使用所选 embedded toolchain 生成 `.a`；最终 firmware entry 的唯一 `firmware_lib_component` 直接选择这些 library，并将完整 archive closure 交给单个 `h2_firmware_lib` 原生组件。Firmware archive 不能通过 `stdout`、`stderr` 或 `FILE *` 隐式取得 diagnostics backend；需要日志的 portable library 必须显式借用 Log PAL。`firmware_lib_component` 会拒绝 archive 对 `_impure_ptr` 或 `__getreent` 的 undefined dependency。最终 linker 必须按真实未解析符号从 rescan group 中的静态 archive 抽取 object，不能用 whole-archive 或人为 retained symbol 代替真实依赖。任何依赖最终 SDK-generated config、SDK lifecycle 或 SDK-owned source selection 的源码都不是 portable library archive，必须由 `firmware_native_component` 描述并由最终原生 SDK action 编译。两种方式都不能在 library 中引入 board、project launcher 或 SDK 实现。SpeexDSP 只作为 Desktop PortAudio 的完整 vendor dependency，不属于 GizOS library 或 embedded archive graph。
+该入口会构建整个 package，并只运行 package 实际声明的测试。macOS 与 Linux CI 使用同一组 semantic label。ESP-IDF 与 BK7258 firmware graph 中的 `utils`、`audio_mixer`、`bleikcp`、`command`、`corehttp`、`coremqtt`、`iostreamikcp`、`lua`、`lvgl`、`mp4_decoder`、`pixa`、`tinyh264` 和 `yyjson`，都必须由 semantic target 使用所选 embedded toolchain 生成 `.a`；最终 firmware entry 的唯一 `firmware_lib_component` 直接选择这些 library，并将完整 archive closure 交给单个 `h2_firmware_lib` 原生组件。Firmware archive 不能通过 `stdout`、`stderr` 或 `FILE *` 隐式取得 diagnostics backend；需要日志的 portable library 必须显式借用 Log PAL。`firmware_lib_component` 会拒绝 archive 对 `_impure_ptr` 或 `__getreent` 的 undefined dependency。最终 linker 必须按真实未解析符号从 rescan group 中的静态 archive 抽取 object，不能用 whole-archive 或人为 retained symbol 代替真实依赖。任何依赖最终 SDK-generated config、SDK lifecycle 或 SDK-owned source selection 的源码都不是 portable library archive，必须由 `firmware_native_component` 描述并由最终原生 SDK action 编译。两种方式都不能在 library 中引入 board、project launcher 或 SDK 实现。SpeexDSP 只作为 Desktop PortAudio 的完整 vendor dependency，不属于 GizOS library 或 embedded archive graph。
 
 Library 的 BUILD target 只引用自身显式列出的源码、明确依赖的其他 library 和受控 third-party vendor overlay，不能从 board、component、project launcher 或 SDK tree 拉取实现文件，也不能使用 recursive source glob。
 

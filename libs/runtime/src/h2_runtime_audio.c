@@ -1,9 +1,8 @@
 #include "h2_runtime_internal.h"
 
-/* Level measurement is observational and costs code the smallest targets
- * cannot spare: bk3633 is a BLE-only part with no audio path at all, and its
- * OAD image budget is nearly full. Products that build it out keep the API
- * and get H2_PAL_ERR_UNSUPPORTED from the getter. */
+/* Products may compile out observational audio level measurement to reduce
+ * code size. The getter remains available and returns H2_PAL_ERR_UNSUPPORTED.
+ */
 #ifndef H2_RUNTIME_AUDIO_LEVELS
 #define H2_RUNTIME_AUDIO_LEVELS 1
 #endif

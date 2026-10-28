@@ -8,7 +8,7 @@
 #include "h2_app_test_pref.h"
 #include "h2_app_test_time.h"
 #include "h2_app_test_wifi.h"
-#include "h2_libco.h"
+#include "h2_desktop_platform.h"
 #include "h2_runtime.h"
 #include "h2_runtime_test.h"
 #include "testing_pal_support.h"
@@ -28,17 +28,29 @@ typedef struct environment {
   h2_app_test_fs_t fs;
   h2_app_test_crypto_t crypto;
   h2_app_test_audio_fake_t audio;
-  h2_libco_t* executor;
+  h2_pal_time_api_t time;
+  h2_pal_semaphore_t* sleeping;
+  h2_pal_semaphore_t* resume;
   h2_runtime_t* runtime;
   bool complete;
 } environment_t;
-static void* alloc(void* u, size_t size) {
-  return test_alloc(&((environment_t*)u)->memory, size);
+/* Only one worker accesses the serialized fakes. Its retry sleep hands control
+ * to the test through native semaphores, so clock advances and observations
+ * happen while that worker is blocked, without depending on host timing. */
+static h2_pal_result_t now(void* user, uint64_t* out_ms) {
+  environment_t* e = user;
+  return h2_pal_time_get_monotonic_ms(&e->clock.api, out_ms);
 }
-static void release(void* u, void* p) {
-  test_free(&((environment_t*)u)->memory, p);
+static h2_pal_result_t sleep_ms(void* user, uint32_t ms) {
+  environment_t* e = user;
+  assert(ms == 10u);
+  uint64_t deadline = e->clock.monotonic_ms + ms;
+  const h2_pal_sync_api_t* sync = h2_desktop_platform_sync_api();
+  OK(h2_pal_semaphore_give(sync, e->sleeping));
+  OK(h2_pal_semaphore_take(sync, e->resume, 5000u));
+  assert(e->clock.monotonic_ms >= deadline);
+  return H2_PAL_OK;
 }
-static uint64_t now(void* u) { return ((environment_t*)u)->clock.monotonic_ms; }
 static int mappings(void* u, h2_runtime_component_t filter,
                     h2_runtime_component_mapping_cb_t cb, void* ctx) {
   (void)u;
@@ -64,11 +76,11 @@ static h2_runtime_config_t runtime_config(environment_t* e) {
       .firmware_info = h2_pal_unsupported_firmware_info_api(),
       .mem = &e->mem,
       .log = h2_pal_unsupported_log_api(),
-      .time = h2_libco_time_api(e->executor),
+      .time = &e->time,
       .timer = h2_pal_unsupported_timer_api(),
-      .task = h2_libco_task_api(e->executor),
-      .queue = h2_libco_queue_api(e->executor),
-      .sync = h2_libco_sync_api(e->executor),
+      .task = h2_desktop_platform_task_api(),
+      .queue = h2_desktop_platform_queue_api(),
+      .sync = h2_desktop_platform_sync_api(),
       .fs = &e->fs.api,
       .disk = h2_pal_unsupported_disk_api(),
       .pref = &e->pref.api,
@@ -106,8 +118,7 @@ static h2_runtime_config_t runtime_config(environment_t* e) {
       .event_queue_capacity = 4u,
   };
 }
-/* A real cooperative worker must suspend on retry; no inline task-name bypass.
- */
+/* A native worker must suspend on retry; no inline task-name bypass. */
 static void settings_worker(void* u) {
   environment_t* e = u;
   h2_runtime_test_control_t* control = NULL;
@@ -172,12 +183,14 @@ int main(void) {
   }
   e.periph.entries[1].battery = (h2_pal_battery_reading_t){
       .flags = H2_PAL_BATTERY_HAS_PERCENT_X100, .percent_x100 = 7600u};
-  const h2_libco_config_t executor_config = {.user = &e,
-                                             .alloc = alloc,
-                                             .free = release,
-                                             .now_ms = now,
-                                             .time_source = &e.clock.api};
-  assert(h2_libco_create(&executor_config, &e.executor) == H2_LIBCO_OK);
+  static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms = now,
+                                                   .sleep_ms = sleep_ms};
+  e.time = (h2_pal_time_api_t){&e, &time_vtable};
+  const h2_pal_sync_api_t* sync = h2_desktop_platform_sync_api();
+  const h2_pal_semaphore_config_t semaphore_config = {.allocator = &e.mem,
+                                                      .max_count = 1u};
+  OK(h2_pal_semaphore_create(sync, &semaphore_config, &e.sleeping));
+  OK(h2_pal_semaphore_create(sync, &semaphore_config, &e.resume));
   h2_runtime_config_t config = runtime_config(&e);
   OK(h2_runtime_init(&config, &e.runtime));
   e.pref.commit = (h2_app_test_fault_t){
@@ -186,16 +199,14 @@ int main(void) {
   h2_pal_task_options_t options = {.name = "test/settings",
                                    .min_stack_size = 65536u};
   OK(h2_pal_task_start(e.runtime->task, &options, settings_worker, &e, &task));
-  size_t resumed = 0;
-  assert(h2_libco_schedule(e.executor, 8u, &resumed) == H2_LIBCO_OK);
+  OK(h2_pal_semaphore_take(sync, e.sleeping, 5000u));
   assert(!e.complete);
   OK(h2_app_test_time_advance(&e.clock, 9u));
-  assert(h2_libco_schedule(e.executor, 8u, &resumed) == H2_LIBCO_OK);
   assert(!e.complete);
   OK(h2_app_test_time_advance(&e.clock, 1u));
-  assert(h2_libco_schedule(e.executor, 8u, &resumed) == H2_LIBCO_OK);
-  assert(e.complete);
+  OK(h2_pal_semaphore_give(sync, e.resume));
   OK(h2_pal_task_join(e.runtime->task, task));
+  assert(e.complete);
   task = NULL;
   assert(e.audio.volume_percent == 37u && e.display.brightness_percent == 60u &&
          e.periph.entries[2].duty_x100 == 4000u);
@@ -207,12 +218,12 @@ int main(void) {
   assert(value == 37u);
   OK(reader->close(reader));
   OK(h2_pal_display_close(e.runtime->display));
-  OK(h2_pal_task_start(h2_libco_task_api(e.executor), &options, cleanup_runtime,
-                       &e, &task));
-  assert(h2_libco_schedule(e.executor, 8u, &resumed) == H2_LIBCO_OK);
+  OK(h2_pal_task_start(h2_desktop_platform_task_api(), &options,
+                       cleanup_runtime, &e, &task));
+  OK(h2_pal_task_join(h2_desktop_platform_task_api(), task));
   assert(e.runtime == NULL);
-  OK(h2_pal_task_join(h2_libco_task_api(e.executor), task));
-  assert(h2_libco_destroy(&e.executor) == H2_LIBCO_OK);
+  OK(h2_pal_semaphore_destroy(sync, e.sleeping));
+  OK(h2_pal_semaphore_destroy(sync, e.resume));
   OK(h2_app_test_audio_fake_deinit(&e.audio));
   OK(h2_app_test_pref_deinit(&e.pref));
   OK(h2_app_test_fs_deinit(&e.fs));

@@ -94,11 +94,6 @@ BK7258_ARTIFACT_COMPATIBILITY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
-BK3633_ARTIFACT_COMPATIBILITY = select({
-    Label("//tools/bazel/platforms:is_bk3633"): [],
-    "//conditions:default": ["@platforms//:incompatible"],
-})
-
 AC695N_ARTIFACT_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:is_ac695n"): [],
     "//conditions:default": ["@platforms//:incompatible"],

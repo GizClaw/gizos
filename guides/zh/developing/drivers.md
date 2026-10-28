@@ -125,7 +125,7 @@ SIM 查询按 TS27.007 V17.6.0 §8.3、§9.1 和 §9.2.1 区分标准终态。�
 
 ### FM17660K
 
-`nfc/fm17660k` 实现 reader、card emulation、FIFO 与 RF protocol state。它只依赖 exact `write_reg/write_regs/read_reg/read_regs`、reset、monotonic time 和 fallible sleep。连续读写是否固定在 FIFO data register、UART command byte/read flag/echo validation 都是芯片协议，归 portable driver；I2C/SPI/UART controller、exact-byte readiness、IRQ ring、pin 和 SDK handle 归调用方。Public transport 不暴露 `fifo_read/fifo_write`、partial offset、UART type 或 libco。
+`nfc/fm17660k` 实现 reader、card emulation、FIFO 与 RF protocol state。它只依赖 exact `write_reg/write_regs/read_reg/read_regs`、reset、monotonic time 和 fallible sleep。连续读写是否固定在 FIFO data register、UART command byte/read flag/echo validation 都是芯片协议，归 portable driver；I2C/SPI/UART controller、exact-byte readiness、IRQ ring、pin 和 SDK handle 归调用方。Public transport 不暴露 `fifo_read/fifo_write`、partial offset 或 UART type。
 
 ## 依赖和边界
 

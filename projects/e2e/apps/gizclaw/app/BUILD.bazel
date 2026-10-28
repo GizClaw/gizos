@@ -88,10 +88,6 @@ cc_library(
         "//libs/pal",
         "//libs/runtime",
     ] + select({
-        "//tools/bazel/platforms:is_bk3633": [
-            "//tools/bazel:vendor_third_party_gizclaw_firmware",
-            "@h2_vendor_opus//:headers",
-        ],
         "//tools/bazel/platforms:is_bk7258": [
             "//tools/bazel:vendor_third_party_gizclaw_firmware",
             "@h2_vendor_opus//:headers",
@@ -238,7 +234,6 @@ cc_library(
         "//libs/pal",
         "//libs/pal/providers/yyjson",
     ] + select({
-        "//tools/bazel/platforms:is_bk3633": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_bk7258": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32p4": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32s3": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],

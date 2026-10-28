@@ -27,7 +27,6 @@ native_component_src/
 ├── bk7258/
     ├── ap/                # BK7258 AP components
     └── cp/                # BK7258 CP components
-├── bk3633/                # BK3633 SDK runtime 与 PAL backend
 └── jieli/
     ├── br23/              # JieLi AC695N PAL core provider
     ├── br35/              # JieLi AC707N PAL core provider
@@ -58,7 +57,6 @@ Bazel 直接编译的平台实现位于 `libs/pal/providers/{linux,darwin,posix,
 - [Allwinner Linux Components](./components/allwinner_linux)
 - [ESP-IDF 6.x Components](./components/esp_idf6_x)
 - [BK7258 Components](./components/bk7258)
-- [BK3633 Components](./components/bk3633)
 - [JieLi Components](./components/jieli)
 
 ## 组件类型

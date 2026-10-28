@@ -28,8 +28,6 @@ Crypto PAL；DTLS consumer 直接使用 `h2_wolfssl_dtls_api()`，Desktop compon
 
 Windows composition 同样只拥有一份完整 provider reference，使用 Windows Memory 与 BCrypt entropy callback。完整 upstream target 在 Windows 链接 `Crypt32.lib` 以读取系统 CA，并链接 `Ws2_32.lib` 满足 upstream DTLS/socket import；显式 PEM root 仍由调用方配置。Net、CoreHTTP 和 CoreMQTT consumer 必须先销毁，然后 deinit wolfSSL，最后销毁 Windows platform。
 
-受限 target 直接组装裁剪 provider。BK3633 的 target component 只暴露 hardware TRNG callback；TapDoki BSP 先验证 TRNG 可用，再把该 callback 注入 `h2_wolfcrypt_crypto_init()`，并直接消费 `h2_wolfcrypt_crypto_api()`。Target 不能再创建一套转发 init/deinit/api 的 wrapper、ready 状态或第二个 Crypto PAL accessor。
-
 ## DTLS
 
 每个 session 生成 self-signed ECDSA certificate，以完整 DER 的 SHA-256 raw bytes

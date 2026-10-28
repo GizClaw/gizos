@@ -134,7 +134,7 @@ typedef enum h2_runtime_input_stage {
  * keep every retired state slot pinned through three short retries, the
  * release events are dropped and counted too. If the input writer mutex itself
  * cannot be taken, the release is skipped and the log line says so. Images
- * built with H2_RUNTIME_INPUT_LOG_ENABLED=0 (bk3633) write no input log lines;
+ * built with H2_RUNTIME_INPUT_LOG_ENABLED=0 write no input log lines;
  * the status below and h2_runtime_input_stage_name() are unaffected (with no
  * log referencing the names, an image that does not call it links none of
  * them). The stop then latches `worker_result`, closes the Runtime event queue

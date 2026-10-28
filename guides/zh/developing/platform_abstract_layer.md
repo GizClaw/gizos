@@ -62,7 +62,7 @@ provider 的 target 只依赖它。直接调用 `src/unsupported/` 中 accessor 
 的 target 显式依赖 `//libs/pal:unsupported`。后者按 capability 拆成独立 translation unit，使静态
 链接器只抽取真正引用的 unsupported API object，不使用 `alwayslink` 或 whole-archive。
 
-ESP-IDF、BK7258 和 BK3633 由 Bazel 使用对应 firmware toolchain 将
+ESP-IDF、BK7258 由 Bazel 使用对应 firmware toolchain 将
 `//libs/pal:unsupported` 编译成独立 `.a`，再交给 native SDK 完成最终链接；PAL
 public include 通过它对 `//libs/pal:pal` 的依赖传播。Native CMake/Make 只能注册或
 链接该 archive，不能再次枚举 `src/unsupported/*.c`，也不能把 source 复制进平台
@@ -91,7 +91,7 @@ flowchart TB
 
 PAL 不负责 app component 与 board periph 的映射。BSP 定义 board 的 `periph_id`，app 定义 `component_id`，两者的映射由 `boards/main` 提供。
 
-Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 默认读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 保存当前 platform 的本地偏移并标记 USER，不修改宿主系统时间。Firmware Info 由 launcher 在 Runtime 初始化前注入不可变构建版本。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有 pthread Core。C main 和 PAL Task 在 Worker 上运行，Task join 回收原生栈与线程对象，Queue/Sync/Timer 支持线程间并行。浏览器 DOM、JS 对象和 API 入口由 `h2_web_main_thread.h` 代理到 UI，异步完成唤醒 Worker 条件变量。Web artifact 全图编译、链接都使用 `-pthread`，C main 使用 `PROXY_TO_PTHREAD`，托管服务发送 COOP/COEP 响应头；Web provider 不再依赖 libco 或 Asyncify。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
+Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 默认读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 保存当前 platform 的本地偏移并标记 USER，不修改宿主系统时间。Firmware Info 由 launcher 在 Runtime 初始化前注入不可变构建版本。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有 pthread Core。C main 和 PAL Task 在 Worker 上运行，Task join 回收原生栈与线程对象，Queue/Sync/Timer 支持线程间并行。浏览器 DOM、JS 对象和 API 入口由 `h2_web_main_thread.h` 代理到 UI，异步完成唤醒 Worker 条件变量。Web artifact 全图编译、链接都使用 `-pthread`，C main 使用 `PROXY_TO_PTHREAD`，托管服务发送 COOP/COEP 响应头。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
 
 ## Display lifecycle 和诊断
 
@@ -156,7 +156,7 @@ borrowed key/value；它用于在不依赖 provider 类型的情况下保留动�
 
 `h2_pal_sync.h` 的 condition 必须与同一 API 创建的 non-recursive mutex 配合。调用 `h2_pal_cond_wait()` 前，调用方必须已经持有 mutex；backend 在进入等待时原子释放 mutex，并在正常唤醒、timeout 或其他普通 error return 前重新取得同一个 mutex。调用方因此总是按“wait 返回时仍持锁”更新 waiter counter、predicate 和 failure state。无法保证该语义的 backend 必须在 condition create 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能提供会在 error path 丢失 mutex ownership 的 partial implementation。
 
-唤醒必须绑定到具体 waiter：`h2_pal_cond_signal()` 至少唤醒一个调用时已注册的 waiter，`h2_pal_cond_broadcast()` 唤醒调用时已注册的全部 waiter，其他 waiter 同时 timeout 或重新进入 wait 不能吞掉属于别人的唤醒；与 timed wait 到期同时到达的唤醒可以返回 `H2_PAL_OK` 或 `H2_PAL_ERR_TIMEOUT`，调用方每次返回后都重新检查 predicate，不依赖返回码；没有 waiter 时的 signal/broadcast 不留下 pending token。Backend 因此不能用共享 counting semaphore 当 token pool（pthread、Windows condition variable 和 libco 的 generation 计数天然满足；ESP 与 BK7258 provider 让每个 waiter 停在自己的 semaphore 上）。
+唤醒必须绑定到具体 waiter：`h2_pal_cond_signal()` 至少唤醒一个调用时已注册的 waiter，`h2_pal_cond_broadcast()` 唤醒调用时已注册的全部 waiter，其他 waiter 同时 timeout 或重新进入 wait 不能吞掉属于别人的唤醒；与 timed wait 到期同时到达的唤醒可以返回 `H2_PAL_OK` 或 `H2_PAL_ERR_TIMEOUT`，调用方每次返回后都重新检查 predicate，不依赖返回码；没有 waiter 时的 signal/broadcast 不留下 pending token。Backend 因此不能用共享 counting semaphore 当 token pool（pthread、Windows condition variable 天然满足；ESP 与 BK7258 provider 让每个 waiter 停在自己的 semaphore 上）。
 
 `h2_pal_crypto.h` 固定了跨 backend 的密码能力和 wire format。X25519 的
 private/public/shared value 都是 RFC 7748 的 32-byte little-endian bytes；
@@ -189,11 +189,7 @@ Provider 必须先把每个 outbound datagram 复制进有界队列
 retransmission 由 caller 根据 absolute `next_deadline_ms` 驱动，provider 不创建
 task、timer 或 thread。
 
-BK3633 的 Preference provider 使用 BSP 提供的 declarative mapping，把 portable namespace/key 映射到 application-owned NVDS tag。Provider 初始化会拒绝重复 namespace/key、重复 tag、空名称、未知类型、非法最大长度以及 application range 外的 tag；未知 key 不会动态取得 tag。`BLOB` 保存原始 bytes，`STRING` 保存不含 NUL terminator 的 UTF-8 bytes，读取时使用调用方的 Memory PAL 分配并追加 terminator；`U32` 和 `I32` 使用四字节 little-endian，`BOOL` 使用单字节 `0` 或 `1`。NVDS 写入立即持久化，因此 `commit` 是成功 no-op，不承诺 multi-key transaction atomicity。
-
 ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；总量在缓存无效时由下一次需要写入的 set 遍历计算，之后由成功的 set 和 remove 增量维护；prepare、clear、原子写入失败或 unlink 失败会使缓存失效。safe-call 适配器将总量及其有效位传入 worker，并在返回时写回持久 store，使缓存有效时的 set 不再逐个打开全部已存 record；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
-
-BK3633 的 Disk provider 只暴露 BSP 声明的 raw Flash partition，portable caller 使用 partition-relative offset，不能传入 absolute address。Provider 对 partition ID、权限、整数 overflow、边界、erase alignment、write alignment、zero-length operation 和 buffer 做完整校验；firmware、Stack、factory identity、calibration、NVDS 和未声明区域不进入可见 partition inventory。
 
 ### Net 网络与传输能力
 
@@ -420,23 +416,23 @@ Peripheral、central、GATT server 和 GATT client 是 BLE connection 或 operat
 
 `h2_pal_ble_indicate()` 是唯一的 GATT server indication operation。调用方提供明确 timeout；`H2_PAL_OK` 只表示 peer 已确认，提交失败、协议拒绝、断连、Host stop 或 timeout 直接作为该调用的最终结果返回。`timeout_ms == 0` 只有在无需等待即可完成时才能成功，否则必须在发送前返回 `H2_PAL_ERR_WOULD_BLOCK`。Provider 可以只允许一个未完成 indication，并以 `H2_PAL_ERR_BUSY` 拒绝冲突调用；SDK sequence、generation 和迟到 completion 都是 provider private state，不能通过 indication ID 或 System Event 泄漏。Notification 仍只报告提交结果。
 
-当前 BK3633、ESP-IDF 6.x NimBLE 和 BK7258 AP EtherMind backend 等待各自 stack 的 peer confirmation。无法可靠观察 confirmation 的 BK7258 legacy BLE stack、Desktop simulator 和 CoreBluetooth backend 在发送前返回 `H2_PAL_ERR_UNSUPPORTED`，不得把普通“已发出”回调伪装为确认。
+当前 ESP-IDF 6.x NimBLE 和 BK7258 AP EtherMind backend 等待各自 stack 的 peer confirmation。无法可靠观察 confirmation 的 BK7258 legacy BLE stack、Desktop simulator 和 CoreBluetooth backend 在发送前返回 `H2_PAL_ERR_UNSUPPORTED`，不得把普通“已发出”回调伪装为确认。
 
 Advertising contract 同时覆盖 legacy 和 Bluetooth 5 Extended Advertising。`H2_PAL_BLE_ADV_TYPE_LEGACY` 保持为零值，使旧的零初始化调用继续选择 legacy；Extended Advertising 的 primary/secondary PHY、SID、duration 和 maximum advertising-event count 都使用平台无关字段。Advertising data 在 `set_adv_data` 时由 backend 复制并暂存，调用方随后可以释放或修改输入 buffer；`start_advertising` 再把暂存数据提交给当前 advertising set。PAL 不暴露 ESP、BK 或其他 SDK 的 advertising enum，也不根据 target 分支。某个 backend 无法提供 Extended Advertising 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默降级为 legacy。Periodic Advertising 不属于这组 contract。
 
 需要并行发布多个逻辑广播时，调用方通过 `h2_pal_ble_adv_set_create()` 获得 opaque set handle，再对该 handle 独立执行 `set_data`、`start`、`stop` 和 `destroy`。每个 set 复制自己的 params 和 advertising data；运行中更新只改变目标 set，不停止其它 set。Handle-scoped advertising lifecycle event 的 payload 必须携带 originating set。Host stop 会清理所有 live set；controller 不支持第二个 set、Extended Advertising 或 connectable Extended Advertising 时返回明确错误，不能覆盖 default set 或静默降级。旧的无 handle API 继续操作 backend-owned default set。
 
-`h2_pal_ble_adv_set_set_encoded_data()` 用完整 Bluetooth AD-structure byte sequence 替换一个 set 的 primary advertising data。公共 wrapper 拒绝零 length octet、截断或尾部不完整的 structure；空 sequence 表示清除。成功返回前 provider 必须复制输入，并逐字节保留 structure 顺序、重复 AD type 和 value，不能插入 Flags、合并 field、追加 name、解释 manufacturer value 或拆入 scan response。Structured 与 encoded setter 都替换 primary staged value；BK3633 的 scan response 始终由独立 operation 修改。ESP-IDF 与 BK7258 既有 legacy structured name/manufacturer placement 只属于 provider compatibility behavior，不适用于 encoded setter，也不是跨平台 guarantee。BK7258 EtherMind backend 支持 advertising-set handle 和 exact encoded setter；legacy backend 不支持 handle-scoped advertising set，因此从 `adv_set_create` 起明确返回 `H2_PAL_ERR_UNSUPPORTED`。无法精确保留 byte sequence 的 provider 在改变状态前返回 `H2_PAL_ERR_UNSUPPORTED`。
+`h2_pal_ble_adv_set_set_encoded_data()` 用完整 Bluetooth AD-structure byte sequence 替换一个 set 的 primary advertising data。公共 wrapper 拒绝零 length octet、截断或尾部不完整的 structure；空 sequence 表示清除。成功返回前 provider 必须复制输入，并逐字节保留 structure 顺序、重复 AD type 和 value，不能插入 Flags、合并 field、追加 name、解释 manufacturer value 或拆入 scan response。Structured 与 encoded setter 都替换 primary staged value；ESP-IDF 与 BK7258 既有 legacy structured name/manufacturer placement 只属于 provider compatibility behavior，不适用于 encoded setter，也不是跨平台 guarantee。BK7258 EtherMind backend 支持 advertising-set handle 和 exact encoded setter；legacy backend 不支持 handle-scoped advertising set，因此从 `adv_set_create` 起明确返回 `H2_PAL_ERR_UNSUPPORTED`。无法精确保留 byte sequence 的 provider 在改变状态前返回 `H2_PAL_ERR_UNSUPPORTED`。
 
-运行中的 primary 更新允许 bounded latest-state coalescing：provider 可以省略尚未到达 controller 的中间 generation，但成功 completion 后必须使最新 accepted generation 成为最终状态，不能仅因 set 已启动或已有 data command in flight 返回 `H2_PAL_ERR_BUSY`。未启动的 BK3633 set 只 stage 最新 value，直到显式 `start` 才提交。运行更新失败时只停止受影响 set，以 handle-scoped stopped event 报告失败并保留最新 staged value 供显式 restart；停止本身失败时进入只能 destroy 或 Host stop 清理的 terminal state，不能宣称 controller 已停止发射。
+运行中的 primary 更新允许 bounded latest-state coalescing：provider 可以省略尚未到达 controller 的中间 generation，但成功 completion 后必须使最新 accepted generation 成为最终状态，不能仅因 set 已启动或已有 data command in flight 返回 `H2_PAL_ERR_BUSY`。运行更新失败时只停止受影响 set，以 handle-scoped stopped event 报告失败并保留最新 staged value 供显式 restart；停止本身失败时进入只能 destroy 或 Host stop 清理的 terminal state，不能宣称 controller 已停止发射。
 
-Legacy connectable set 可以通过 `h2_pal_ble_adv_set_set_scan_response_data()` 独立配置 scan response。Backend 在同步返回前复制输入，scan response 不自动包含 primary advertising 才需要的 Flags AD structure，且 legacy 编码结果必须满足 31-byte 上限。不实现该可选 operation 的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`；当前 contract 不把它解释为 scannable Extended Advertising，也不能把 scan-response 内容静默合并进 primary advertising data。当前只有 BK3633 provider 实现该 operation；ESP-IDF 6.x、BK7258 AP、Desktop、Darwin CoreBluetooth 和 iOS CoreBluetooth provider 显式返回 unsupported。
+Legacy connectable set 可以通过 `h2_pal_ble_adv_set_set_scan_response_data()` 独立配置 scan response。Backend 在同步返回前复制输入，scan response 不自动包含 primary advertising 才需要的 Flags AD structure，且 legacy 编码结果必须满足 31-byte 上限。不实现该可选 operation 的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`；当前 contract 不把它解释为 scannable Extended Advertising，也不能把 scan-response 内容静默合并进 primary advertising data。当前 ESP-IDF 6.x、BK7258 AP、Desktop、Darwin CoreBluetooth 和 iOS CoreBluetooth provider 显式返回 unsupported。
 
 `service_data_uuid` 显式选择标准 16-bit、32-bit 或 128-bit Service Data AD type，payload 本身不重复包含 UUID。省略它时保留旧的 raw 16-bit Service Data 输入格式。
 
 Scanning contract 同时覆盖 legacy 和 Bluetooth 5 Extended Scanning。`H2_PAL_BLE_SCAN_TYPE_LEGACY` 保持为零值；`phy_mask` 的零值继续选择 LE 1M。Legacy Scanning 只允许 LE 1M，Extended Scanning 可以选择 LE 1M、LE Coded 或同时选择两者。Scan result 使用平台无关字段报告 legacy/extended 类型、primary/secondary PHY、SID、data status、TX power 和当前 report 的原始 advertising data；backend 不能把 incomplete 或 truncated report 描述成 complete。`raw_data` 和解析后的 name、UUID、manufacturer data、service data 都是 callback 期间有效的 borrowed buffer，调用方需要跨 report 保留或重组 fragment 时必须复制。某个 backend 无法执行 Extended Scanning 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默发起 legacy scan。Periodic Advertising synchronization 不属于这组 contract。
 
-Scan timing 有两个互斥形式。`interval_units_625us/window_units_625us` 都为零时继续使用 whole-millisecond 字段及既有转换；两者都非零且 millisecond 字段都为零时，provider 把 Bluetooth controller 的 0.625 ms units 原样传入。Partial exact pair、两种形式混用或 window 大于 interval 都是 invalid。Legacy exact range 是 `0x0004..0x4000`，Extended Scanning 是 `0x0004..0xffff`，同一 pair 应用于选中的每个 PHY。BK3633、ESP-IDF NimBLE 以及 BK7258 EtherMind/legacy scanning path 支持 exact units；Desktop 与 CoreBluetooth 在保存 callback 或改变 scan state 前返回 `H2_PAL_ERR_UNSUPPORTED`，不能 round 或 downgrade。
+Scan timing 有两个互斥形式。`interval_units_625us/window_units_625us` 都为零时继续使用 whole-millisecond 字段及既有转换；两者都非零且 millisecond 字段都为零时，provider 把 Bluetooth controller 的 0.625 ms units 原样传入。Partial exact pair、两种形式混用或 window 大于 interval 都是 invalid。Legacy exact range 是 `0x0004..0x4000`，Extended Scanning 是 `0x0004..0xffff`，同一 pair 应用于选中的每个 PHY。ESP-IDF NimBLE 以及 BK7258 EtherMind/legacy scanning path 支持 exact units；Desktop 与 CoreBluetooth 在保存 callback 或改变 scan state 前返回 `H2_PAL_ERR_UNSUPPORTED`，不能 round 或 downgrade。
 
 ### Host Serial
 
@@ -575,7 +571,7 @@ boards/<board>/<chip-or-target>/             # 注入 target 能力并组装 pro
 
 - `@h2_vendor_coremqtt` 提供上游 MQTT 实现，`libs/pal/providers/coremqtt` 实现 `h2_pal_mqtt_api_t`，`native_component_src/bk7258/ap/h2_coremqtt` 只负责把 Bazel archive 导入 Armino。
 - `libs/pal/providers/h2peer` 提供 portable WebRTC 实现并消费注入的 PAL/provider capability；target composition owner 负责创建 capability、H2Peer owner 和最终 `h2_pal_webrtc_api_t` view。
-- `@h2_vendor_wolfssl` 提供上游密码实现，`libs/pal/providers/wolfssl` 已经拥有完整 Crypto PAL lifecycle 和 accessor；BK3633 component 只提供 hardware entropy callback，TapDoki BSP 直接注入并组装 provider，不增加 wolfCrypt forwarding component。
+- `@h2_vendor_wolfssl` 提供上游密码实现，`libs/pal/providers/wolfssl` 已经拥有完整 Crypto PAL lifecycle 和 accessor。
 
 Third-party 跨平台集成不能直接依赖具体 board header 或芯片 SDK。需要平台能力时，通过已有 PAL contract、config 或 callback 显式注入。BSP 不直接包含 third-party source 或 private header，只消费 component 与 library 的 public capability 并提供 board-specific 配置。
 

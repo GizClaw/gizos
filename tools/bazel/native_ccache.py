@@ -17,7 +17,6 @@ REMOTE_FAMILY_BY_NAMESPACE = {
     "esp32c5": "esp",
     "esp32p4": "esp",
     "esp32s3": "esp",
-    "bk3633": "bk",
     "bk7258": "bk",
 }
 

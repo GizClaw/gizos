@@ -198,7 +198,6 @@ _local_sdk_repository = repository_rule(
     environ = [
         "IDF_PATH",
         "BK7258_PATH",
-        "BK3633_PATH",
         "JIELI_AC695N_SDK_PATH",
         "JIELI_AC791N_SDK_PATH",
     ],
@@ -563,17 +562,6 @@ def _extension_impl(_module_ctx):
         environment_variable = "BK7258_PATH",
         kind = "bk7258-sdk",
         required_files = ["Makefile"],
-    )
-    _local_sdk_repository(
-        name = "h2_bk3633_sdk",
-        commit_file = "//tools/bazel:native_versions/bk3633_sdk_commit.txt",
-        environment_variable = "BK3633_PATH",
-        kind = "bk3633-sdk",
-        required_files = [
-            "SDK/src/system/BK3633_STACK_ALLROLES.elf",
-            "SDK/projects/app_gatt_all_roles/output/stack/BK3633_STACK_ALLROLES.bin",
-            "SDK/projects/boot_for_all_roles/Makefile",
-        ],
     )
     _arm_toolchain_repository(
         name = "h2_bk_arm_toolchain",

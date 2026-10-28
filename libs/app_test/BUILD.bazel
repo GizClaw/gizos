@@ -109,7 +109,7 @@ cc_test(
         ":testing_pal",
         "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
-        "//libs/pal/providers/libco",
+        "//libs/pal/providers/desktop/pal_core:core",
         "//libs/runtime",
     ],
 )

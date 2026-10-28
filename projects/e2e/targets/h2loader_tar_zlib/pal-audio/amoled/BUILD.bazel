@@ -47,7 +47,6 @@ firmware_lib_component(
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",
-        "//libs/pal/providers/libco",
         "//libs/pixa",
         "//libs/runtime",
         "//libs/wifi_sta",

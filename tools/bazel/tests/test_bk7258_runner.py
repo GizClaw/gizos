@@ -35,8 +35,8 @@ if not gizos_root.joinpath(
     "native_component_src/bk7258/ap/cmake/h2_bazel_archive.cmake"
 ).is_file():
     raise SystemExit("runner did not provide the GizOS source root")
-if Path(os.environ["H2_BAZEL_PREBUILT_H2_LIBCO"]).read_bytes() != b"libco":
-    raise SystemExit("runner did not provide the Bazel-built libco archive")
+if Path(os.environ["H2_BAZEL_PREBUILT_H2_FIXTURE"]).read_bytes() != b"fixture":
+    raise SystemExit("runner did not provide the Bazel-built fixture archive")
 if not source_root.joinpath("partition.csv").is_file():
     raise SystemExit("runner did not provide the read-only source root")
 assignments = dict(value.split("=", 1) for value in sys.argv if "=" in value)
@@ -247,8 +247,8 @@ class Bk7258RunnerTest(unittest.TestCase):
             component.joinpath(f"{name}.c").write_text(
                 f"void {name}(void) {{}}\n", encoding="utf-8"
             )
-        self.prebuilt_archive = self.source / "libh2_libco.a"
-        self.prebuilt_archive.write_bytes(b"libco")
+        self.prebuilt_archive = self.source / "libh2_fixture.a"
+        self.prebuilt_archive.write_bytes(b"fixture")
         subprocess.run(["git", "init", "-q"], cwd=self.source, check=True)
         subprocess.run(["git", "add", "."], cwd=self.source, check=True)
         subprocess.run(
@@ -338,7 +338,7 @@ class Bk7258RunnerTest(unittest.TestCase):
         commit: str | None = None,
         target: str = "bk7258",
         environment_updates: dict[str, str | None] | None = None,
-        prebuilt_component: str = "h2_libco=libh2_libco.a",
+        prebuilt_component: str = "h2_fixture=libh2_fixture.a",
         precreate_metadata_output: bool = False,
         source_root: Path | None = None,
         native_graph: bool = False,
@@ -610,7 +610,7 @@ class Bk7258RunnerTest(unittest.TestCase):
     def test_prebuilt_archive_must_stay_inside_source_root(self):
         result, _ = self._run(
             name="escaping-prebuilt",
-            prebuilt_component="h2_libco=../libh2_libco.a",
+            prebuilt_component="h2_fixture=../libh2_fixture.a",
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("invalid BK7258 prebuilt archive path", result.stderr)
@@ -635,7 +635,7 @@ class Bk7258RunnerTest(unittest.TestCase):
             target_is_directory=True,
         )
         (execroot / "partition.csv").symlink_to(self.source / "partition.csv")
-        (execroot / "libh2_libco.a").write_bytes(self.prebuilt_archive.read_bytes())
+        (execroot / "libh2_fixture.a").write_bytes(self.prebuilt_archive.read_bytes())
         result, output = self._run(name="symlink-source", source_root=execroot)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(output.joinpath("all-app.bin").is_file())
@@ -790,13 +790,13 @@ class Bk7258RunnerTest(unittest.TestCase):
 
     def test_launcher_target_mismatch_fails_closed(self):
         cmake = self.project / "CMakeLists.txt"
-        cmake.write_text('set(H2_BK_TARGET "bk3633")\n', encoding="utf-8")
+        cmake.write_text('set(H2_BK_TARGET "unsupported")\n', encoding="utf-8")
         result, _ = self._run()
         self.assertIn("launcher target mismatch", result.stderr)
 
     def test_unsupported_target_fails_closed(self):
-        result, _ = self._run(target="bk3633")
-        self.assertIn("unsupported BK target: bk3633", result.stderr)
+        result, _ = self._run(target="unsupported")
+        self.assertIn("unsupported BK target: unsupported", result.stderr)
 
     def test_missing_support_file_fails_closed(self):
         (self.source / "partition.csv").unlink()

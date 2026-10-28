@@ -9,7 +9,7 @@ extern "C" {
 /** Single-slot deterministic Task PAL for serialized lifecycle tests. This does
  * not simulate concurrency: run explicitly executes the entry on the caller.
  * run_on_start optionally runs it before start returns. Join refuses a pending
- * entry with BUSY and preserves ownership on injected failure. Use libco/real
+ * entry with BUSY and preserves ownership on injected failure. Use real
  * task PALs when validating concurrent production loops. */
 typedef struct h2_app_test_task {
   h2_pal_task_api_t api;

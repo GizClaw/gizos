@@ -8,7 +8,8 @@ extern "C" {
 /** Explicit virtual clock; sleep advances time without executing other tasks.
  * Wall time is unavailable until set, and then advances with monotonic time.
  * Do not use this sleep implementation to drive resident production task loops;
- * use the libco Time PAL for cooperative yielding. All units are milliseconds.
+ * use the target's real Time PAL and explicit completion barriers. All units
+ * are milliseconds.
  */
 typedef struct h2_app_test_time {
   h2_pal_time_api_t api;

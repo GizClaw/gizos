@@ -98,11 +98,6 @@ build:bk7258 --platforms=//tools/bazel/platforms:bk7258
 build:bk7258 --repo_env=BK7258_PATH
 build:bk7258 --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT
 
-build:bk3633 --define=h2_firmware_target=bk3633
-build:bk3633 --platforms=//tools/bazel/platforms:bk3633
-build:bk3633 --repo_env=BK3633_PATH
-build:bk3633 --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT
-
 build:jieli --repo_env=JIELI_TOOLCHAIN_ROOT
 build:jieli --repo_env=JIELI_POSTBUILD_ROOT
 build:ac695n --config=jieli

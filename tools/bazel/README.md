@@ -5,8 +5,8 @@ stable host C/C++ and Go packages and every supported firmware platform.
 Native packages use real `cc_library`, `cc_binary`, `cc_test`, `go_library`,
 `go_binary`, `go_test`, and Apple application targets. All maintained ESP-IDF
 launchers use the local-only `esp_idf_firmware` external rule and all maintained
-BK7258 launchers use `bk7258_firmware`, and the three maintained BK3633 entries
-use `bk3633_firmware`; fixed non-build endpoints may still use `filegroup`.
+BK7258 launchers use `bk7258_firmware`; fixed non-build endpoints may still
+use `filegroup`.
 H2Loader ESP/BK7258 delivery targets use the project-owned wrappers and
 platform-neutral package rule in `projects/h2loader/tools/bazel/` on top of
 those native firmware providers.
@@ -28,15 +28,13 @@ sources, headers, include roots, metadata, dependencies, and an optional AP/CP
 execution unit through `firmware_native_component`; that rule describes ownership but
 does not precompile those sources.
 
-The three runners turn this same graph into invocation-local native manifests.
+The runners turn this same graph into invocation-local native manifests.
 ESP-IDF receives ordered component directories/names and direct source lists,
-BK7258 receives isolated AP and CP component directories/source lists, and BK3633
-receives ordered first-party sources, include roots, and archives. Native CMake or
+BK7258 receives isolated AP and CP component directories/source lists. Native CMake or
 Make retains generated SDK configuration, SDK/vendor source selection, compiler
 and linker policy, bootloader/partition/Stack/BIM/merge mechanics. It must not
 scan the repository or fall back to a handwritten first-party inventory. Graph
-validation fixes the maintained endpoint inventory at 53 ESP, 17 BK7258, and 3
-BK3633 entries.
+validation covers every maintained firmware endpoint.
 
 ## Local usage
 
@@ -44,7 +42,7 @@ Use the exact Bazel version from `.bazelversion`:
 
 ```sh
 bazel test //tools/bazel/...
-bazel test //tools/bazel:bk7258_runner_test //tools/bazel:bk3633_runner_test //tools/bazel:esp_idf_runner_test //projects/h2loader/tools/bazel:h2loader_tar_zlib_runner_test
+bazel test //tools/bazel:bk7258_runner_test //tools/bazel:esp_idf_runner_test //projects/h2loader/tools/bazel:h2loader_tar_zlib_runner_test
 make bazel-build BAZEL_CONFIG=linux_x86_64
 make bazel-test BAZEL_CONFIG=linux_x86_64
 ```
@@ -200,36 +198,6 @@ the target-specific image path, installs optional `package_data` relative to
 deliverable. CI and release tags bind to `:package`, so release builds always
 traverse the native `:firmware` dependency before packaging.
 
-## BK3633 external builds
-
-Source the sibling `firmwares-devenv/export.sh` before requesting a BK3633
-build. The provider exports only `BK3633_PATH`; Bazel validates it and supplies
-the same downloaded, content-verified Arm toolchain locator used by BK7258. The
-runner verifies SDK commit
-`c963da8e73440400ee6839b4bfd20ca6e6ec7908`, ARM GCC `10.3.1`, required
-allroles Stack/BIM inputs, and unchanged SDK state. The native Makefile keeps
-compile, link, stack, layout, BIM, and merge semantics, while Bazel injects the
-exec-configured `//tools/bk3633_binconverter:binconverter` executable.
-The rule's logical graph contributes declared direct sources, public include
-roots, metadata, and graph-reachable Bazel archives to the native action key.
-The runner writes those values to an action-local Make include; shared Make keeps
-only SDK source selection and final build mechanics, not a second first-party
-source or archive list.
-
-```sh
-. ../firmwares-devenv/export.sh
-bazel build --config=bk3633 //...
-```
-
-`Bk3633FirmwareInfo`, `DefaultInfo.files`, and the `release` output group expose
-the same five files under each target's `firmware/` output directory:
-`firmware.elf`, `app.bin`, `firmware.map`, `merge-crc.bin`, and normalized
-`manifest.json`. Only `merge-crc.bin` is a complete direct-flash recovery image;
-the rule does not return `FirmwareReleaseInfo` or create an H2Loader package.
-The action is unsandboxed, ineligible for remote execution, locally or remotely
-cacheable, invocation-isolated, and does not perform flash, reset, serial,
-network, or device operations.
-
 Every build/ownership unit declares its sources and dependency edges in its own
 `BUILD.bazel`. Add or update that local package when a source boundary or
 dependency changes. The validator checks directory coverage, rule kinds, and
@@ -287,12 +255,12 @@ Host Tool and Artifact compatibility are the platform source of truth. `generate
 
 Same-repository pull requests, `main` pushes, and manual runs use the same complete static platform matrix and GCS Writer cache. Pull-request `opened` and `synchronize` events trigger CI directly, so each distinct pull-request head receives one matrix as normal checks; reopening an unchanged head does not rerun it. Ownership approval remains an independent merge gate and never delays or dispatches the build. Linux, macOS, Android, and Windows each run Build followed by Test on one runner so Test reuses the same Bazel server and output base. Android package validation switches the top-level target platform to Linux x86_64, so it creates a second configured graph, but compatible dependency actions still reuse content-addressed results from the preceding Android Build. iOS retains independent parallel Build and Test tasks. All complete Build tasks use minimal remote output downloads; focused validation explicitly materializes any artifact it reads. Target compatibility skips other platforms, Bazel's special `manual` tag keeps hand-run tests out of wildcard target patterns, and content-addressed action keys decide which completed outputs can be reused.
 
-ESP32-S3, ESP32-P4, BK7258, and BK3633 configs automatically select all firmware endpoints for that platform. Each native firmware action declares 4 CPU and 4096 MiB to Bazel and passes a four-job limit to the underlying ESP-IDF or BK build. Bazel therefore schedules one action on a four-core runner and more independent launcher actions as a runner gains CPU and memory. Increasing a single runner size improves firmware throughput without creating one GitHub matrix entry per launcher.
+ESP32-S3, ESP32-P4, and BK7258 configs automatically select all firmware endpoints for that platform. Each native firmware action declares 4 CPU and 4096 MiB to Bazel and passes a four-job limit to the underlying ESP-IDF or BK build. Bazel therefore schedules one action on a four-core runner and more independent launcher actions as a runner gains CPU and memory. Increasing a single runner size improves firmware throughput without creating one GitHub matrix entry per launcher.
 
 Repository variables select the provisioned organization Larger Runner for each
 execution class:
 
-- `FIRMWARE_LINUX_RUNNER`: 2-core Linux for ESP32-P4, BK3633, and the CI required aggregator;
+- `FIRMWARE_LINUX_RUNNER`: 2-core Linux for ESP32-P4 and the CI required aggregator;
 - `FIRMWARE_LINUX_4CORE_RUNNER`: 4-core Linux for Android Build/Test, Test coverage, and KickPi K4B;
 - `FIRMWARE_LINUX_8CORE_RUNNER`: 8-core Linux for Linux Build/Test, ESP32-S3, and BK7258;
 - `FIRMWARE_MACOS_RUNNER`: 5-core macOS 15 arm64 for macOS Build/Test;
@@ -316,7 +284,7 @@ configuration, archives, and outputs retain normal Bazel cache semantics.
 
 ## Native compiler cache
 
-ESP32-S3, ESP32-P4, BK7258, and BK3633 native actions can use a second cache
+ESP32-S3, ESP32-P4, and BK7258 native actions can use a second cache
 inside the SDK build. `H2_NATIVE_CCACHE_RUNTIME_ROOT` points a repository rule
 at one runtime directory containing `runtime.json`, the ccache/helper binaries,
 the cache directory, and an optional token file. CI and Release pin the
@@ -328,7 +296,7 @@ GCS access is optional locally and complete-or-absent in `runtime.json`; none of
 its individual paths or token fields is an action environment variable. The
 base URL has the exact form
 `https://storage.googleapis.com/<bucket>/ccache`. The runner derives
-`ccache/esp` for S3/P4 and `ccache/bk` for BK7258/BK3633, while
+`ccache/esp` for S3/P4 and `ccache/bk` for BK7258, while
 `CCACHE_NAMESPACE` keeps each target's compile keys logically separate. Bazel
 continues to use the same bucket's independent `firmwares` prefix. Native
 ccache never uses the Bazel layout or Bazel action metadata.

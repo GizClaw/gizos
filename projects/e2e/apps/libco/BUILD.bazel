@@ -1,8 +1,0 @@
-package(default_visibility = ["//visibility:public"])
-
-filegroup(
-    name = "libco_smoke",
-    srcs = [
-        "//projects/e2e/apps/libco/app:libco_smoke",
-    ],
-)

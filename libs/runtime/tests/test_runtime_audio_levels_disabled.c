@@ -1,6 +1,6 @@
 /*
  * The contract a target gets when it builds audio level measurement out
- * (H2_RUNTIME_AUDIO_LEVELS=0, as bk3633 does): the getter answers
+ * (H2_RUNTIME_AUDIO_LEVELS=0): the getter answers
  * UNSUPPORTED without losing its argument checking, the audio proxy stops
  * wrapping the backend playback track, and capture still works untouched.
  *

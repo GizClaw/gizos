@@ -180,7 +180,6 @@ Project-owned Desktop entry 的 build、test 和 run 入口是：
 bazel build --config=macos_arm64 //projects/.../cc_binary/...
 bazel run --config=macos_arm64 //projects/example/targets/cc_binary/display:example-display
 bazel run --config=macos_arm64 //projects/example/targets/cc_binary/audio-system:example-audio-system
-bazel run --config=macos_arm64 //projects/e2e/targets/cc_binary/libco:e2e-libco
 bazel build --config=macos_arm64 //projects/example/targets/macos_application/tap-reset:tap_reset_app
 ```
 

@@ -22,7 +22,6 @@ cc_library(
         "-Wno-sign-conversion",
         "-Wno-unused-parameter",
     ]) + select({
-        "//tools/bazel/platforms:is_bk3633": ["-Wno-type-limits"],
         "//tools/bazel/platforms:is_bk7258": ["-Wno-type-limits"],
         "//tools/bazel/platforms:is_windows_x86_64": [
             "/wd4100",
@@ -54,7 +53,6 @@ cc_library(
         "-Wno-sign-conversion",
         "-Wno-unused-parameter",
     ]) + select({
-        "//tools/bazel/platforms:is_bk3633": ["-Wno-type-limits"],
         "//tools/bazel/platforms:is_bk7258": ["-Wno-type-limits"],
         "//tools/bazel/platforms:is_windows_x86_64": [
             "/wd4100",

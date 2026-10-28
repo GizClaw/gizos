@@ -103,7 +103,7 @@ class ReleaseTest(unittest.TestCase):
 
     def test_catalog_rejects_bad_version_release_name_and_platform(self):
         for key, value in (("release_name", "wrong"), ("version", "1.02.3"),
-                           ("version", "20260920-120000"), ("platform", "bk3633")):
+                           ("version", "20260920-120000"), ("platform", "unsupported")):
             with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "firmware-catalog.json"
                 path.write_text(json.dumps([{**catalog_entry(), key: value}]))
