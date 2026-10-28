@@ -117,3 +117,9 @@ BK7258 UART1 provider 的写入 deadline 同时覆盖互斥锁竞争、console F
 
 
 Package inspector 的 `data_sha256` 是验证后的 canonical data identity：format 1 来自已验证的 checksum entry，format 2 来自 compressed envelope manifest。仅从旧 catalog 读取时此 optional field 可以为空；不能把空值当成已安装 data identity。Loader checksum E2E 将 inspector 的 identity 与设备 `stats` 单独返回的 installed checksum 比较，现有 Host status parser 的严格 wire line 不变。Host typed command `DATA_CHECKSUM` 使用同一条 `h2loader stats` wire command 和 STATS availability，但等待完整 `H2_LOADER_DATA_CHECKSUM checksum=` 行才结束；App 分开返回 status 和 checksum 时，第一行不能提前结束此请求。CLI 的 `stats --data-checksum` 选择这个 typed request。普通 `STATS` 保留原 status terminal，旧设备仍可使用。
+
+## BK7258 加密恢复产物
+
+BK7258 legacy AB Loader 可使用 `h2loader_bk_recovery` 的显式本机入口，从已有 native image 生成 Flash AES 加密镜像，再复用标准 driver=2 的 `.h2fb` recovery bundle。构建声明、运行时匿名密钥通道和输出边界见 [Bazel 离线加密恢复镜像](./bazel.md#bk7258-离线加密恢复镜像)。`firmware_output.py` 只编排校验后的加密及恢复包发布；Beken cipher 和 image 验证由公共 BK7258 工具负责。普通 native compilation、明文 package 和已有恢复包路径保持原语义。
+
+`encrypted.bin` 是用于该 recovery 流程的完整物理 Flash 字节，包含重建的 CRC 和保留的原始 BootROM marker/version；`validation.json` 记录源镜像、密文和 bundle 摘要，不证明 key 与设备匹配。不能把它当作 `app_ab_crc.rbl` managed update，也不能由离线 recovery 生成成功推断 Loader 自升级支持 AES。此工具不发起恢复安装或其他设备操作；实际芯片、key、SDK/layout 匹配及启动验收需独立授权和证据。

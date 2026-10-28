@@ -334,3 +334,31 @@ make bazel-release RELEASE_SLICE=lua-runtime RELEASE_BATCH=20260925-120000 RELEA
 ## 测试执行与源码检查
 
 行为测试必须执行被测实现，或检查构建工具实际生成的产物。Python 运行器可以保留用于真实编译、C/C++ 断言、浏览器、网络 fixture、设备和工具输入输出；不使用源码子串、正则匹配函数体、固定源码哈希或精确文档字节作为验收。编译器、类型检查和有语义的数据校验继续承担各自的静态检查职责。
+
+## BK7258 离线加密恢复镜像
+
+`//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl` 的 `h2loader_bk_recovery` 是显式运行的本机工具入口，消费现有 `Bk7258FirmwareInfo`，不修改 native 编译流程。仅支持从物理地址零开始、连续 Bootloader/CP/AP code 分区的 legacy AB recovery 布局；分区 geometry 来自 native `partitions.json`。它核对各 code 分区的对齐启动栈指针及分区内 Thumb reset handler（CP/AP reset 目标还必须位于 RBL 摘要覆盖的 payload 内），校验 Flash CRC、原始 BootROM marker、未压缩未加密的 RBL payload/header 摘要及覆盖到 AP 的有效载荷范围，要求 RBL 摘要范围外至尾部 header 的间隙和 header 页剩余空间为擦除态，然后按已验证的 Beken XTS 字节序处理整个逻辑镜像，保留原始 marker/version，重建 CRC，复核解密结果。TF-M/Direct-XIP 和其他布局明确拒绝，不依赖 Docker 或原厂 `.so`。
+
+私有 firmware entry 声明下面的目标；`firmware` 必须提供选定 board layout 的 `recovery_config`，不接受在 recovery rule 覆盖 offset/baud：
+
+```python
+load("@gizos//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl", "h2loader_bk_recovery")
+
+h2loader_bk_recovery(
+    name = "encrypted_recovery",
+    board = "my_private_board",
+    firmware = ":firmware",
+)
+```
+
+`bazel build --config=bk7258 //path/to/entry:encrypted_recovery` 只编译普通无密钥固件、准备运行入口，不执行加密。运行时通过 `--key-fd 0` 从匿名 pipe/socket 接收 stdin 的 **32 个原始 key bytes 加 EOF**（拒绝普通文件和终端 descriptor，读取及 EOF 等待共用 30 秒期限）；私有 firmware 层的 secret provider 应通过匿名管道提供数据，不能打印到终端、写入 BUILD/flag/environment、磁盘 keyfile、日志或共享 cache。这里的 key 是 canonical 组合 key：前 16 字节是 data AES key，后 16 字节是 tweak AES key；工具不自动读取、转换或识别设备 OTP 内容。不要将 hex 文本直接送入该描述符。
+
+```sh
+# private-secret-provider 表示调用方已有的受控本机 secret provider，不是本仓库命令。
+private-secret-provider | bazel run --config=bk7258 //path/to/entry:encrypted_recovery -- \
+  --key-fd 0 --output-dir /absolute/local/new-recovery
+```
+
+也可先 build 再直接运行生成的 executable，让调用方通过继承的 descriptor 注入；不要为了传递 descriptor 而把 key 改成 argv/environment。加密发生在运行阶段，不是可缓存的 Bazel action；output-dir 必须是尚不存在的绝对目录，位于 Bazel execroot/runfiles/output tree 外。成功后原子发布目录，包含 `encrypted.bin`、`recovery.h2fb` 和不含密钥的 `validation.json` 摘要收据；失败不发布半成品，不降级为明文；若操作系统拒绝清理私有 staging 目录，工具返回失败并输出不含异常详情的清理提示，可能需要调用方清理输出父目录下的 `.bk-recovery-*`。输出目录和文件限制为当前用户访问，运行进程禁用 core dump。Python 对象和密码库内存不承诺可靠擦除，secret provider 也必须遵循本机 secret 生命周期约束。
+
+该入口不生成 managed update、不自动发布 release、不连接设备、不读取 OTP，也不执行烧录。非秘密向量与离线解密校验不能识别任意错误的芯片 key；新工具输出仍需另行授权的实际 recovery/启动资格验证。

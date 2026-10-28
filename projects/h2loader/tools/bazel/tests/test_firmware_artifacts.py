@@ -7,6 +7,7 @@ import struct
 import tempfile
 import unittest
 import io
+import json
 import tarfile
 import zlib
 
@@ -114,6 +115,145 @@ class FirmwareArtifactsTest(unittest.TestCase):
                     baud=115200,
                     files=[(0, first.name, first), (0, second.name, second)],
                 )
+
+
+
+@unittest.skipIf(os.name == "nt", "local recovery entrypoint requires POSIX secret descriptors")
+class EncryptedRecoveryTests(unittest.TestCase):
+    def test_secret_stream_has_a_total_deadline(self):
+        from projects.h2loader.tools.bazel.firmware_output import _read_recovery_key
+        import socket
+
+        for data in (b"", bytes(16), bytes(32)):
+            with self.subTest(length=len(data)):
+                reader, writer = os.pipe()
+                try:
+                    os.write(writer, data)
+                    with self.assertRaisesRegex(ValueError,"KEY_INPUT_TIMEOUT"):
+                        _read_recovery_key(reader, timeout=0.02)
+                finally:
+                    os.close(reader)
+                    os.close(writer)
+        # select.select rejects valid descriptors >= FD_SETSIZE on POSIX.
+        # Exercise the public descriptor contract when the host limit allows it.
+        import fcntl
+        import resource
+        if resource.getrlimit(resource.RLIMIT_NOFILE)[0] > 1024:
+            reader, writer = os.pipe()
+            high_fd = None
+            try:
+                high_fd = fcntl.fcntl(reader, fcntl.F_DUPFD, 1024)
+                os.write(writer,bytes(range(32)))
+                os.close(writer)
+                writer = None
+                self.assertEqual(_read_recovery_key(high_fd),bytearray(range(32)))
+            finally:
+                os.close(reader)
+                if high_fd is not None:
+                    os.close(high_fd)
+                if writer is not None:
+                    os.close(writer)
+        left, right = socket.socketpair()
+        try:
+            right.sendall(bytes(range(32)))
+            right.shutdown(socket.SHUT_WR)
+            self.assertEqual(_read_recovery_key(left.fileno()),bytearray(range(32)))
+        finally:
+            left.close()
+            right.close()
+
+    def test_runtime_pipe_and_atomic_publication(self):
+        from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_recovery_main
+        from tools.bazel.bk7258_flash_aes import flash_crc
+        from unittest.mock import patch
+        import contextlib
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sections = [
+                dict(Name="primary_bootloader", Offset=0, Size=4352, Execute=True),
+                dict(Name="primary_cp_app", Offset=4352, Size=4352, Execute=True),
+                dict(Name="primary_ap_app", Offset=8704, Size=8704, Execute=True),
+            ]
+            (root / "partitions.json").write_text(json.dumps(dict(crc_enable=True, section=sections)))
+            plain = bytearray(b"\xff" * 16384)
+            for start in (0, 4096, 8192):
+                struct.pack_into("<II", plain, start, 0x28030000, 0x02000000 + start + 0x81)
+            plain[256:272] = b"BK7236-test-only"
+            payload = plain[4096:12288]
+            fnv = 0x811C9DC5
+            for b in payload:
+                fnv = ((fnv ^ b) * 0x1000193) & 0xFFFFFFFF
+            header = bytearray(96)
+            header[:4] = b"RBL\0"
+            struct.pack_into("<4I", header, 76, zlib.crc32(payload), fnv, len(payload), len(payload))
+            struct.pack_into("<I", header, 92, zlib.crc32(header[:92]))
+            plain[12288:12384] = header
+            source = b"".join(plain[i:i+32]+flash_crc(plain[i:i+32]) for i in range(0,len(plain),32))
+            (root / "source.bin").write_bytes(source)
+            (root / "config.json").write_text(json.dumps(dict(offset="0x00000000", baud=115200)))
+            def invoke(secret, destination, failure=False):
+                read_fd, write_fd = os.pipe()
+                os.write(write_fd, secret)
+                os.close(write_fd)
+                capture = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(capture), contextlib.redirect_stderr(capture):
+                        with patch("resource.setrlimit"):
+                            if failure:
+                                with patch("projects.h2loader.tools.bazel.firmware_output.publish_bk_recovery", side_effect=ValueError("SECRET_MARKER")):
+                                    rc = encrypted_bk_recovery_main(args(read_fd,destination))
+                            else:
+                                rc = encrypted_bk_recovery_main(args(read_fd,destination))
+                    self.assertNotIn("SECRET_MARKER", capture.getvalue())
+                    if secret:
+                        self.assertNotIn(secret.hex(), capture.getvalue())
+                    return rc
+                finally:
+                    os.close(read_fd)
+            def args(fd,dest):
+                return ["--source",str(root/"source.bin"),"--metadata",str(root),"--config",str(root/"config.json"),"--board","fixture","--target","bk7258","--key-fd",str(fd),"--output-dir",str(dest)]
+            output = root / "published"
+            self.assertEqual(invoke(bytes(range(32)),output),0)
+            self.assertEqual(set(p.name for p in output.iterdir()),{"encrypted.bin","recovery.h2fb","validation.json"})
+            bundle = (output/"recovery.h2fb").read_bytes()
+            self.assertEqual(bundle[:4], b"H2FB")
+            self.assertEqual(struct.unpack_from("<HHIII",bundle,4),(1,2,1,115200,1))
+            from projects.h2loader.tools.bazel.firmware_artifacts import FACTORY_IDENTITY_SIZE
+            flash_offset, data_offset, length = struct.unpack_from("<IQQ",bundle,20+2*FACTORY_IDENTITY_SIZE)
+            self.assertEqual(flash_offset,0)
+            self.assertEqual(bundle[data_offset:data_offset+length],(output/"encrypted.bin").read_bytes())
+            self.assertNotEqual((output/"encrypted.bin").read_bytes(),source)
+            receipt=json.loads((output/"validation.json").read_text())
+            self.assertEqual(receipt["encrypted_sha256"],hashlib.sha256((output/"encrypted.bin").read_bytes()).hexdigest())
+            self.assertEqual(output.stat().st_mode & 0o777,0o700)
+            self.assertEqual(invoke(bytes(range(32)),output),1)
+            with patch("builtins.print", side_effect=BrokenPipeError("SECRET_MARKER")):
+                self.assertEqual(invoke(bytes(range(32)),root/"closed-stdout"),0)
+            self.assertEqual(set(p.name for p in (root/"closed-stdout").iterdir()),{"encrypted.bin","recovery.h2fb","validation.json"})
+            with patch("builtins.print", side_effect=BrokenPipeError("SECRET_MARKER")):
+                self.assertEqual(invoke(bytes(31),root/"closed-stderr"),1)
+            self.assertFalse((root/"closed-stderr").exists())
+            with patch("builtins.print", side_effect=ValueError("closed stream")):
+                self.assertEqual(invoke(bytes(range(32)),root/"closed-stream"),0)
+            self.assertTrue((root/"closed-stream"/"validation.json").is_file())
+
+
+
+            for secret in [b"",bytes(31),bytes(33)]:
+                self.assertEqual(invoke(secret,root/"bad"),1)
+                self.assertFalse((root/"bad").exists())
+            self.assertEqual(invoke(bytes(range(32)),root/"partial",True),1)
+            self.assertFalse((root/"partial").exists())
+            self.assertFalse(list(root.glob(".bk-recovery-*")))
+            with (root/"source.bin").open("rb") as regular, patch("resource.setrlimit"), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(encrypted_bk_recovery_main(args(regular.fileno(),root/"file-key")),1)
+            self.assertFalse((root/"file-key").exists())
+            with patch("shutil.rmtree", side_effect=OSError("SECRET_MARKER")):
+                self.assertEqual(invoke(bytes(range(32)),root/"cleanup-failure",True),1)
+            self.assertFalse((root/"cleanup-failure").exists())
+            self.assertTrue(list(root.glob(".bk-recovery-*")))
+
 
 
 if __name__ == "__main__":

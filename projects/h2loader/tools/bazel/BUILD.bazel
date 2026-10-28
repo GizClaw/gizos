@@ -9,6 +9,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "h2loader_firmware.bzl",
+    "h2loader_bk_recovery.bzl",
     "h2loader_tar_zlib.bzl",
     "h2loader_zlib_tar.bzl",
     "checksum_matrix.bzl",
@@ -41,7 +42,10 @@ py_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":firmware_artifacts"],
+    deps = [
+        ":firmware_artifacts",
+        ":firmware_output",
+    ],
 )
 
 py_library(
@@ -53,7 +57,10 @@ py_library(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":firmware_artifacts"],
+    deps = [
+        ":firmware_artifacts",
+        "//tools/bazel:bk7258_flash_aes",
+    ],
 )
 
 py_binary(
@@ -153,4 +160,20 @@ py_test(
     legacy_create_init = 0,
     main = "tests/test_package_rules.py",
     target_compatible_with = _HOST_PACKAGE_TEST,
+)
+
+py_binary(
+    name = "encrypted_bk_recovery",
+    srcs = ["firmware_output.py"],
+    legacy_create_init = False,
+    main = "firmware_output.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":firmware_artifacts",
+        "//tools/bazel:bk7258_flash_aes",
+    ],
 )
