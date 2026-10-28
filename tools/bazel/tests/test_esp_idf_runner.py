@@ -10,10 +10,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from python.runfiles import runfiles
 
 
-ROOT = Path(__file__).resolve().parents[3]
-RUNNER = ROOT / "tools" / "bazel" / "esp_idf_runner.py"
+RUNFILES = runfiles.Create()
+assert RUNFILES is not None
+RUNNER = Path(RUNFILES.Rlocation("_main/tools/bazel/esp_idf_runner.py"))
+TOOL_VERSIONS = Path(RUNFILES.Rlocation("_main/tools/bazel/native_versions/esp_idf_tool_versions.txt"))
 SPEC = importlib.util.spec_from_file_location("esp_idf_runner", RUNNER)
 assert SPEC and SPEC.loader
 runner = importlib.util.module_from_spec(SPEC)
@@ -295,6 +298,8 @@ class EspIdfRunnerTest(unittest.TestCase):
                 "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
                 "esp-16.1.0_20260609) 16.1.0\n"
+                "esp32s31=riscv32-esp-elf-gcc (crosstool-NG "
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3=xtensa-esp-elf-gcc (crosstool-NG "
                 "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3_archive_compiler=xtensa-esp-elf-gcc\n"
@@ -439,6 +444,11 @@ class EspIdfRunnerTest(unittest.TestCase):
             subprocess.run(command, env=environment, text=True, capture_output=True),
             output,
         )
+
+    def test_s31_compiler_identity_uses_existing_riscv_tool(self):
+        self.assertEqual(runner.TARGET_COMPILERS["esp32s31"], "riscv32-esp-elf-gcc")
+        identities = runner.read_expected_tool_versions(TOOL_VERSIONS)
+        self.assertEqual(identities["esp32s31"], identities["esp32p4"])
 
     def test_success_publishes_only_validated_native_outputs(self):
         result, output = self._run()
@@ -717,6 +727,8 @@ class EspIdfRunnerTest(unittest.TestCase):
                 "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
                 "esp-16.1.0_20260609) 16.1.0\n"
+                "esp32s31=riscv32-esp-elf-gcc (crosstool-NG "
+                "esp-16.1.0_20260609) 16.1.0\n"
                 "esp32s3=unexpected\n"
                 "ninja=1.13.2\n"
                 "python=esp-idf-v6.2-constraints\n"
@@ -735,6 +747,7 @@ class EspIdfRunnerTest(unittest.TestCase):
         result, _ = self._run(tool_versions=(
             "esp32c5=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "esp32p4=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
+            "esp32s31=riscv32-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "esp32s3=xtensa-esp-elf-gcc (crosstool-NG esp-16.1.0_20260609) 16.1.0\n"
             "ninja=definitely-not-the-system-version\n"
             "python=esp-idf-v6.2-constraints\n"

@@ -618,6 +618,7 @@ use_repo(
     "gizos_bk7258_cc_toolchain",
     "gizos_esp32c5_cc_toolchain",
     "gizos_esp32p4_cc_toolchain",
+    "gizos_esp32s31_cc_toolchain",
     "gizos_jieli_ac707n_cc_toolchain",
     "gizos_jieli_pi32v2_cc_toolchain",
 )
@@ -627,6 +628,7 @@ register_toolchains(
     "@gizos_bk7258_cc_toolchain//:toolchain",
     "@gizos_esp32c5_cc_toolchain//:toolchain",
     "@gizos_esp32p4_cc_toolchain//:toolchain",
+    "@gizos_esp32s31_cc_toolchain//:toolchain",
     "@gizos_jieli_ac707n_cc_toolchain//:toolchain",
     "@gizos_jieli_pi32v2_cc_toolchain//:toolchain",
 )
