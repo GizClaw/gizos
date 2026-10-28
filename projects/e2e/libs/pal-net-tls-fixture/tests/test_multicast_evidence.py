@@ -44,9 +44,12 @@ class MulticastEvidence(unittest.TestCase):
     @unittest.skipUnless(sys.platform in ("darwin", "linux"),
                          "requires POSIX receive-destination ancillary data")
     def test_local_multicast_socket_exchange(self):
-        with Fixture(local_multicast=True) as fixture:
+        # This peer controls its membership and outgoing interface. Keep the
+        # automatic regression independent of the CI host's external route.
+        with Fixture(local_multicast=True, multicast_interface="127.0.0.1") as fixture:
             self.assertEqual(fixture.bind, "127.0.0.1")
             interface = fixture.multicast_bind
+            self.assertEqual(interface, "127.0.0.1")
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
                 peer.bind(("0.0.0.0", 0))
                 peer.settimeout(3)

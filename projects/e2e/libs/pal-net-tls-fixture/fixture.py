@@ -100,12 +100,14 @@ def mint(directory):
 
 class Fixture:
     """Only explicit binding may expose the peer to physical device Wi-Fi."""
-    def __init__(self, bind="127.0.0.1", advertise=None, callback_bridge=None, callback_cleanup=None, local_multicast=False):
+    def __init__(self, bind="127.0.0.1", advertise=None, callback_bridge=None, callback_cleanup=None, local_multicast=False, *, multicast_interface=None):
+        if multicast_interface is not None and not local_multicast:
+            raise ValueError("explicit multicast interface requires local mode")
         self.bind = bind
         self.local_multicast = local_multicast
         # Keep control/TCP/TLS on loopback. Multicast uses the PAL default route,
-        # which can be a different interface (including a host VPN interface).
-        self.multicast_bind = (local_multicast_address()
+        # unless a local socket test explicitly selects its own interface.
+        self.multicast_bind = multicast_interface or (local_multicast_address()
                                if local_multicast and bind == "127.0.0.1" else bind)
         self.family = socket.AF_INET6 if ":" in bind else socket.AF_INET
         self.callback_bridge = callback_bridge
