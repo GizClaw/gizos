@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib
 import os
 import struct
+import sys
 import tempfile
 import unittest
 import io
@@ -120,6 +121,31 @@ class FirmwareArtifactsTest(unittest.TestCase):
 
 @unittest.skipIf(os.name == "nt", "local recovery entrypoint requires POSIX secret descriptors")
 class EncryptedRecoveryTests(unittest.TestCase):
+    def test_linux_dump_protection_fails_closed(self):
+        from projects.h2loader.tools.bazel.firmware_output import _protect_recovery_process
+        from unittest.mock import patch
+
+        with patch("sys.platform", "linux"), patch("resource.setrlimit"), patch("ctypes.CDLL") as library:
+            for results in ((-1,), (0, 1)):
+                library.return_value.prctl.side_effect = results
+                with self.subTest(results=results), self.assertRaisesRegex(ValueError, "DUMP_PROTECTION_FAILED"):
+                    _protect_recovery_process()
+            library.return_value.prctl.side_effect = (0, 0)
+            _protect_recovery_process()
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux process dumpability")
+    def test_linux_process_is_not_dumpable(self):
+        import subprocess
+        import sys
+
+        script = (
+            "import sys; sys.path[:] = " + repr(sys.path) + "; "
+            "from projects.h2loader.tools.bazel.firmware_output import _protect_recovery_process; "
+            "_protect_recovery_process(); import ctypes; "
+            "assert ctypes.CDLL(None).prctl(3, 0, 0, 0, 0) == 0"
+        )
+        subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, timeout=10)
+
     def test_secret_stream_has_a_total_deadline(self):
         from projects.h2loader.tools.bazel.firmware_output import _read_recovery_key
         import socket
@@ -199,7 +225,7 @@ class EncryptedRecoveryTests(unittest.TestCase):
                 capture = io.StringIO()
                 try:
                     with contextlib.redirect_stdout(capture), contextlib.redirect_stderr(capture):
-                        with patch("resource.setrlimit"):
+                        with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"):
                             if failure:
                                 with patch("projects.h2loader.tools.bazel.firmware_output.publish_bk_recovery", side_effect=ValueError("SECRET_MARKER")):
                                     rc = encrypted_bk_recovery_main(args(read_fd,destination))
@@ -228,6 +254,10 @@ class EncryptedRecoveryTests(unittest.TestCase):
             self.assertEqual(receipt["encrypted_sha256"],hashlib.sha256((output/"encrypted.bin").read_bytes()).hexdigest())
             self.assertEqual(output.stat().st_mode & 0o777,0o700)
             self.assertEqual(invoke(bytes(range(32)),output),1)
+            with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process", side_effect=ValueError("DUMP_PROTECTION_FAILED")), patch("projects.h2loader.tools.bazel.firmware_output._read_recovery_key") as read_key, contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(encrypted_bk_recovery_main(args(0,root/"unprotected")),1)
+                read_key.assert_not_called()
+            self.assertFalse((root/"unprotected").exists())
             with patch("builtins.print", side_effect=BrokenPipeError("SECRET_MARKER")):
                 self.assertEqual(invoke(bytes(range(32)),root/"closed-stdout"),0)
             self.assertEqual(set(p.name for p in (root/"closed-stdout").iterdir()),{"encrypted.bin","recovery.h2fb","validation.json"})
@@ -237,16 +267,41 @@ class EncryptedRecoveryTests(unittest.TestCase):
             with patch("builtins.print", side_effect=ValueError("closed stream")):
                 self.assertEqual(invoke(bytes(range(32)),root/"closed-stream"),0)
             self.assertTrue((root/"closed-stream"/"validation.json").is_file())
-
-
-
+            # Exercise CPython's actual buffered-stream shutdown, rather than
+            # replacing print: a late flush used to change success to exit 120.
+            import subprocess
+            import sys
+            for error_stream in (False, True):
+                destination = root / ("pipe-error" if error_stream else "pipe-success")
+                script = (
+                    "import sys; sys.path[:] = " + repr(sys.path) + "; "
+                    "from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_recovery_main; "
+                    "sys.exit(encrypted_bk_recovery_main(" + repr(args(0,destination)) + "))"
+                )
+                reader, writer = os.pipe()
+                os.close(reader)
+                try:
+                    with subprocess.Popen(
+                        [sys.executable,"-c",script], stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE if error_stream else writer,
+                        stderr=writer if error_stream else subprocess.PIPE,
+                    ) as child:
+                        os.close(writer)
+                        writer = None
+                        stdout, stderr = child.communicate(bytes(31) if error_stream else bytes(range(32)),timeout=30)
+                        self.assertEqual(child.returncode,1 if error_stream else 0,(stdout,stderr))
+                        self.assertEqual(stdout if error_stream else stderr,b"")
+                finally:
+                    if writer is not None:
+                        os.close(writer)
+                self.assertEqual(destination.exists(),not error_stream)
             for secret in [b"",bytes(31),bytes(33)]:
                 self.assertEqual(invoke(secret,root/"bad"),1)
                 self.assertFalse((root/"bad").exists())
             self.assertEqual(invoke(bytes(range(32)),root/"partial",True),1)
             self.assertFalse((root/"partial").exists())
             self.assertFalse(list(root.glob(".bk-recovery-*")))
-            with (root/"source.bin").open("rb") as regular, patch("resource.setrlimit"), contextlib.redirect_stderr(io.StringIO()):
+            with (root/"source.bin").open("rb") as regular, patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(encrypted_bk_recovery_main(args(regular.fileno(),root/"file-key")),1)
             self.assertFalse((root/"file-key").exists())
             with patch("shutil.rmtree", side_effect=OSError("SECRET_MARKER")):
