@@ -17,7 +17,7 @@ def receipt():
     rows=[dict(id=name,mandatory=bool(int(required)),status='PASS' if int(required) else 'UNSUPPORTED',
         detail=0 if int(required) else validation.UNSUPPORTED,provider_result=validation.TLS_VERIFY if name in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired') else 0,
         observed_ipv4=[150,5,151,236] if name=='dns-hostname' else [0,0,0,0],bytes_sent=4193 if name.startswith('tls-') else 0,bytes_received=4097 if name.startswith('tls-') else 0) for name,required in REGISTRY]
-    return dict(dns=dict(host='dns.test',operator_ipv4='150.5.151.236',observation=dict(hostname='dns.test',ipv4='150.5.151.236',resolver='independent test oracle',method='fixture observation',observed_at_utc='2026-10-01T00:00:00+00:00')),cases=rows,summary=dict(core_qualified=True,full_net_qualified=False,mandatory_passed=37,passed=37,unsupported=2,not_assessed=0,
+    return dict(dns=dict(host='dns.test',operator_ipv4='150.5.151.236',observation=dict(hostname='dns.test',ipv4='150.5.151.236',resolver='independent test oracle',method='fixture observation',observed_at_utc='2026-10-01T00:00:00+00:00')),cases=rows,summary=dict(core_qualified=True,full_net_qualified=False,mandatory_passed=37,passed=37,unsupported=sum(row['status']=='UNSUPPORTED' for row in rows),not_assessed=0,
         failed=0,blocked=0,retained_sockets=0,retained_resolvers=0,retained_allocations=0,rc=0,teardown=0))
 
 
@@ -53,16 +53,18 @@ class Rejection(unittest.TestCase):
     def test_typed_evidence_required(self):
         valid=receipt()
         validation.check_cases(valid,REGISTRY)
+        bad=copy.deepcopy(valid);bad['summary']['unsupported']-=1
+        with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
         for field,value in [('provider_result',-1),('status','BLOCKED'),('detail',-1)]:
             bad=copy.deepcopy(valid)
-            bad['cases'][24][field]=value
+            next(row for row in bad['cases'] if row['id']=='tls-wrong-ca')[field]=value
             with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
         for mutate in [lambda rows:rows.pop(),lambda rows:rows.reverse(),lambda rows:rows.append(rows[0]),lambda rows:rows[0].update(id='missing')]:
             bad=copy.deepcopy(valid);mutate(bad['cases'])
             with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
         bad=copy.deepcopy(valid);bad['summary']['retained_sockets']=1
         with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
-        bad=copy.deepcopy(valid);bad['cases'][21]['bytes_received']=4096
+        bad=copy.deepcopy(valid);next(row for row in bad['cases'] if row['id']=='tls-required')['bytes_received']=4096
         with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
 
     def test_browser_unsupported_boundary_is_not_core_qualification(self):

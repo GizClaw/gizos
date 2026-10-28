@@ -4,6 +4,7 @@ import copy
 import json
 from pathlib import Path
 import socket
+import sys
 import socketserver
 import ssl
 import subprocess
@@ -16,6 +17,38 @@ HEADER_BYTES = 96
 PAYLOAD_BYTES = 4097
 SERVER_NAME = "pal-net-tls.test"
 ALPN = "h2-pal-e2e"
+MULTICAST_GROUP = "239.0.0.77"
+MULTICAST_COUNT = 3
+MULTICAST_PAYLOAD = 128
+# Darwin IP_RECVDSTADDR and Linux IP_PKTINFO are ancillary destination proofs.
+MULTICAST_DST_OPTION = (getattr(socket, "IP_RECVDSTADDR", 7) if sys.platform == "darwin"
+                        else getattr(socket, "IP_PKTINFO", 8))
+
+
+def local_multicast_address():
+    """Select the same IPv4 route as an unbound PAL multicast sender.
+
+    UDP connect selects a route without transmitting a datagram. Callers must
+    explicitly opt into binding a local fixture to the resulting interface.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.connect((MULTICAST_GROUP, 9))
+        return probe.getsockname()[0]
+
+
+def multicast_packet(session, case, sequence):
+    data = bytearray(packet(session, case, MULTICAST_PAYLOAD))
+    data[HEADER_BYTES] = sequence
+    return bytes(data)
+
+
+def multicast_destination(ancillary):
+    for level, kind, data in ancillary:
+        if level == socket.IPPROTO_IP and kind == MULTICAST_DST_OPTION:
+            offset = 0 if sys.platform == "darwin" else 8
+            if len(data) >= offset + 4:
+                return socket.inet_ntoa(data[offset:offset + 4])
+    return None
 
 
 def payload(length=PAYLOAD_BYTES):
@@ -67,8 +100,15 @@ def mint(directory):
 
 class Fixture:
     """Only explicit binding may expose the peer to physical device Wi-Fi."""
-    def __init__(self, bind="127.0.0.1", advertise=None, callback_bridge=None, callback_cleanup=None):
+    def __init__(self, bind="127.0.0.1", advertise=None, callback_bridge=None, callback_cleanup=None, local_multicast=False, *, multicast_interface=None):
+        if multicast_interface is not None and not local_multicast:
+            raise ValueError("explicit multicast interface requires local mode")
         self.bind = bind
+        self.local_multicast = local_multicast
+        # Keep control/TCP/TLS on loopback. Multicast uses the PAL default route,
+        # unless a local socket test explicitly selects its own interface.
+        self.multicast_bind = multicast_interface or (local_multicast_address()
+                               if local_multicast and bind == "127.0.0.1" else bind)
         self.family = socket.AF_INET6 if ":" in bind else socket.AF_INET
         self.callback_bridge = callback_bridge
         self.callback_cleanup = callback_cleanup
@@ -146,7 +186,7 @@ class Fixture:
     def arm(self, case, mode, callback, peer, run_id=None):
         run_id = run_id or self.session[:16]
         key = case if run_id == self.session[:16] else run_id + ":" + case
-        if mode not in range(7) or (mode == 6) != bool(callback):
+        if mode not in range(8) or (mode in (6, 7)) != bool(callback):
             raise ValueError("fixture mode")
         record = dict(session=self.session, run_id=run_id, case=case, mode=mode, peer=peer,
             port=0, accepted=False, client_hello=False, certificate_presented=False,
@@ -166,6 +206,35 @@ class Fixture:
             record['bridge_port'] = target
             self.spawn(self.callback, record, target)
             return callback
+        if mode == 7:
+            if self.family != socket.AF_INET or sys.platform not in ("darwin", "linux"):
+                raise RuntimeError("multicast destination evidence unavailable")
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                sock.settimeout(5)
+                sock.bind(("0.0.0.0", 0))
+                sock.setsockopt(socket.IPPROTO_IP, MULTICAST_DST_OPTION, 1)
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                               socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton(self.multicast_bind))
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self.multicast_bind))
+                # Device peers use the wire; explicitly local peers require kernel
+                # loopback and must not forward the fixture's response off-host.
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL,
+                                0 if self.local_multicast else 1)
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP,
+                                int(self.local_multicast))
+            except OSError:
+                sock.close()
+                raise
+            with self.lock:
+                self.sockets.add(sock)
+            if self.local_multicast:
+                record['peer'] = self.multicast_bind
+            record.update(port=sock.getsockname()[1], callback_port=callback,
+                          multicast_group=MULTICAST_GROUP, multicast_destinations=[],
+                          multicast_sent_destinations=[], packets_received=0, packets_sent=0)
+            self.spawn(self.multicast, sock, record)
+            return record['port']
         sock = self.owned(udp=mode == 1)
         port = sock.getsockname()[1]
         record['port'] = port
@@ -291,6 +360,37 @@ class Fixture:
             sock.close()
             record['finished'] = True
 
+    def multicast(self, sock, record):
+        try:
+            for sequence in range(MULTICAST_COUNT):
+                request, ancillary, flags, peer = sock.recvmsg(4096, 128)
+                destination = multicast_destination(ancillary)
+                if flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC):
+                    raise RuntimeError("truncated multicast evidence")
+                if peer != (record['peer'], record['callback_port']):
+                    raise RuntimeError("different multicast peer")
+                if destination != MULTICAST_GROUP:
+                    raise RuntimeError("request was not multicast")
+                if request != multicast_packet(self.session, record['case'], sequence):
+                    raise RuntimeError("multicast request mismatch")
+                record['accepted'] = True
+                record['multicast_destinations'].append(destination)
+                record['payload_received'] += len(request)
+                record['packets_received'] += 1
+                response = bytes(value ^ 0xa5 for value in request)
+                sent = sock.sendto(response, (MULTICAST_GROUP, record['callback_port']))
+                if sent != len(response):
+                    raise RuntimeError("short multicast send")
+                record['payload_sent'] += sent
+                record['packets_sent'] += 1
+                record['multicast_sent_destinations'].append(MULTICAST_GROUP)
+            record['payload_valid'] = True
+        except (OSError, RuntimeError) as error:
+            record['error'] = str(error)
+        finally:
+            sock.close()
+            record['finished'] = True
+
     def proof(self, case, proof, timeout=0, run_id=None):
         run_id = run_id or self.session[:16]
         key = case if run_id == self.session[:16] else run_id + ":" + case
@@ -318,6 +418,14 @@ class Fixture:
                 valid = valid and record['closed'] and record['finished']
             elif proof == 5:
                 valid = valid and record['accepted']
+            elif proof == 6:
+                expected = MULTICAST_COUNT * (HEADER_BYTES + MULTICAST_PAYLOAD)
+                valid = (valid and record['mode'] == 7 and record['finished'] and
+                         record['payload_valid'] and record['payload_received'] == expected and
+                         record['payload_sent'] == expected and
+                         record['packets_received'] == record['packets_sent'] == MULTICAST_COUNT and
+                         record['multicast_destinations'] == [MULTICAST_GROUP] * MULTICAST_COUNT and
+                         record['multicast_sent_destinations'] == [MULTICAST_GROUP] * MULTICAST_COUNT)
             else:
                 raise ValueError("proof")
             if valid:

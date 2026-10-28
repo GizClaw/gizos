@@ -34,7 +34,7 @@ mobile_e2e_suite(
             "h2_android_net_destroy",
         ],
     },
-    case_count = 39,
+    case_count = 40,
     case_result = "detail",
     expected = {
         "profile": "net-tls-core",
@@ -64,6 +64,7 @@ mobile_e2e_suite(
     },
     optional_cases = [
         "multicast-membership",
+        "multicast-data",
         "icmp-echo",
     ],
     options = {

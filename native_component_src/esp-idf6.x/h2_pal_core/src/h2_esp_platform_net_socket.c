@@ -8,6 +8,8 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <netinet/in.h>
+#include <string.h>
 #include <stddef.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -116,4 +118,40 @@ int h2_esp_net_datagram_recv(int fd, uint8_t* data, size_t len,
     return mapped == H2_PAL_ERR_CLOSED ? H2_PAL_ERR_IO : mapped;
   }
   return (int)got;
+}
+
+int h2_esp_net_join_multicast(int fd, const h2_pal_net_addr_t* addr) {
+  if (fd < 0 || addr == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (addr->family == H2_PAL_NET_FAMILY_IPV4) {
+    if (addr->ip[0] < 224u || addr->ip[0] > 239u) return H2_PAL_ERR_INVALID_ARG;
+#if defined(IP_ADD_MEMBERSHIP)
+    struct ip_mreq membership = {0};
+    memcpy(&membership.imr_multiaddr, addr->ip, 4u);
+    membership.imr_interface.s_addr = INADDR_ANY;
+    return setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &membership,
+                      sizeof(membership)) == 0
+               ? H2_PAL_OK
+               : H2_PAL_ERR_IO;
+#else
+    return H2_PAL_ERR_UNSUPPORTED;
+#endif
+  }
+  if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
+    /* lwIP interface indices are 8-bit, matching the BK7258 adapter. */
+    if (addr->ip[0] != 0xffu || addr->scope_id == 0u ||
+        addr->scope_id > UINT8_MAX)
+      return H2_PAL_ERR_INVALID_ARG;
+#if defined(IPV6_JOIN_GROUP)
+    struct ipv6_mreq membership = {0};
+    memcpy(&membership.ipv6mr_multiaddr, addr->ip, 16u);
+    membership.ipv6mr_interface = addr->scope_id;
+    return setsockopt(fd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &membership,
+                      sizeof(membership)) == 0
+               ? H2_PAL_OK
+               : H2_PAL_ERR_IO;
+#else
+    return H2_PAL_ERR_UNSUPPORTED;
+#endif
+  }
+  return H2_PAL_ERR_UNSUPPORTED;
 }
