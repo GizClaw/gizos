@@ -28,21 +28,25 @@
     "udp_open": [
       "udp-echo",
       "udp-timeout",
-      "udp-nonblocking"
+      "udp-nonblocking",
+      "multicast-data"
     ],
     "udp_sendto": [
       "udp-echo",
-      "udp-truncation"
+      "udp-truncation",
+      "multicast-data"
     ],
     "udp_recvfrom": [
       "udp-echo",
-      "udp-truncation"
+      "udp-truncation",
+      "multicast-data"
     ],
     "udp_open_bound": [
       "udp-source-bind"
     ],
     "udp_join_multicast": [
-      "multicast-membership"
+      "multicast-membership",
+      "multicast-data"
     ],
     "tcp_open": [
       "tcp-echo"

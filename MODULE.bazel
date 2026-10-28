@@ -596,6 +596,7 @@ use_repo(
     "gizos_bk7258_cc_toolchain",
     "gizos_esp32c5_cc_toolchain",
     "gizos_esp32p4_cc_toolchain",
+    "gizos_esp32s31_cc_toolchain",
     "gizos_jieli_ac707n_cc_toolchain",
     "gizos_jieli_pi32v2_cc_toolchain",
 )
@@ -604,6 +605,16 @@ register_toolchains(
     "@gizos_bk7258_cc_toolchain//:toolchain",
     "@gizos_esp32c5_cc_toolchain//:toolchain",
     "@gizos_esp32p4_cc_toolchain//:toolchain",
+    "@gizos_esp32s31_cc_toolchain//:toolchain",
     "@gizos_jieli_ac707n_cc_toolchain//:toolchain",
     "@gizos_jieli_pi32v2_cc_toolchain//:toolchain",
+)
+
+http_archive(
+    name = "h2_vendor_esp_mosaico_bsp",
+    build_file = "//third_party:esp_mosaico_bsp.BUILD.bazel",
+    sha256 = "70d41f1bdbaf6a0fb447a35bb84372c6f115d0e84f4552c8b48513331ec5c36e",
+    strip_prefix = "esp-mosaico-bsp-b60f5d8381939c5cf5c08ddabc44b8013be79064",
+    type = "tar.gz",
+    urls = ["https://codeload.github.com/esp-mosaico/esp-mosaico-bsp/tar.gz/b60f5d8381939c5cf5c08ddabc44b8013be79064"],
 )

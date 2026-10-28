@@ -5,6 +5,8 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 _LUA_FIELDS = ["lua_app_url", "lua_app_http_url", "lua_app_https_url", "lua_app_id", "lua_archive_sha256", "lua_entry_sha256", "lua_frame_sha256"]
 
+_FENCE_FIELDS = ["fence_workflow_name", "fence_first_id", "fence_second_id"]
+
 def _fixture_impl(ctx):
     key = ctx.attr.key[BuildSettingInfo].value
     profile = ctx.attr.profile[BuildSettingInfo].value
@@ -41,6 +43,14 @@ def _fixture_impl(ctx):
             fail("Lua golden digests must be 64 lowercase hex bytes")
     if len(lua["lua_app_url"]) > 262144 or len(lua["lua_app_http_url"]) > 1024 or len(lua["lua_app_https_url"]) > 1024:
         fail("Lua package URI exceeds its transport limit")
+    fence = {key: getattr(ctx.attr, key)[BuildSettingInfo].value for key in _FENCE_FIELDS}
+    for field, fence_value in fence.items():
+        alphabet = allowed if field == "fence_workflow_name" else "abcdefghijklmnopqrstuvwxyz0123456789_-"
+        limit = 63 if field == "fence_workflow_name" else 64
+        if fence_value and (len(fence_value) > limit or fence_value[0] not in "abcdefghijklmnopqrstuvwxyz" or any([c not in alphabet for c in fence_value.elems()])):
+            fail("Invalid workspace fence fixture identifier: " + field)
+    if any(fence.values()) and (not all(fence.values()) or fence["fence_first_id"] == fence["fence_second_id"]):
+        fail("Workspace fence fixture requires a Workflow and two distinct fence identifiers")
     source = ctx.actions.declare_file(ctx.label.name + ".c")
     contract = ctx.actions.declare_file(ctx.label.name + ".json")
     ctx.actions.write(source, "\n".join([
@@ -55,7 +65,7 @@ def _fixture_impl(ctx):
         "const char *h2_gizclaw_e2e_fixture_device_api_url(void) { return %s; }" % json.encode(device_api_url),
         "const char *h2_gizclaw_e2e_fixture_audio_url(void) { return %s; }" % json.encode(audio_url),
         "const char *h2_gizclaw_e2e_fixture_root_ca_hex(void) { return %s; }" % json.encode(root_ca_hex),
-    ] + ["const char *h2_gizclaw_e2e_fixture_%s(void) { return %s; }" % (key, json.encode(lua[key])) for key in _LUA_FIELDS]) + "\n")
+    ] + ["const char *h2_gizclaw_e2e_fixture_%s(void) { return %s; }" % (key, json.encode(lua[key])) for key in _LUA_FIELDS] + ["const char *h2_gizclaw_e2e_fixture_%s(void) { return %s; }" % (key, json.encode(fence[key])) for key in _FENCE_FIELDS]) + "\n")
     ctx.actions.write(contract, json.encode({"app_config_key": key, "runtime_profile": profile, "workflow_tag": workflow_tag, "app_config_value": value, "time_server": time_server, "physical_audio": physical_audio}) + "\n")
     return [
         DefaultInfo(files = depset([source, contract])),
@@ -78,11 +88,11 @@ _fixture = rule(
         "root_ca_hex": attr.label(mandatory = True, providers = [BuildSettingInfo]),
     } | {
         key: attr.label(mandatory = True, providers = [BuildSettingInfo])
-        for key in _LUA_FIELDS
+        for key in _LUA_FIELDS + _FENCE_FIELDS
     },
 )
 
-def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False, device_api_url = "", audio_url = "", root_ca_hex = "", lua_app_url = "", lua_app_http_url = "", lua_app_https_url = "", lua_app_id = "", lua_archive_sha256 = "", lua_entry_sha256 = "", lua_frame_sha256 = "", workflow_tag = "assistants"):
+def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False, device_api_url = "", audio_url = "", root_ca_hex = "", lua_app_url = "", lua_app_http_url = "", lua_app_https_url = "", lua_app_id = "", lua_archive_sha256 = "", lua_entry_sha256 = "", lua_frame_sha256 = "", workflow_tag = "assistants", fence_workflow_name = "", fence_first_id = "", fence_second_id = ""):
     """Empty is buildable but RPC/all launchers reject it before networking.
 
     Supply the public profile key via the macro argument or the generated
@@ -103,9 +113,12 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
     string_flag(name = name + "_audio_url", build_setting_default = audio_url)
     string_flag(name = name + "_root_ca_hex", build_setting_default = root_ca_hex)
     lua = {"lua_app_url": lua_app_url, "lua_app_http_url": lua_app_http_url, "lua_app_https_url": lua_app_https_url, "lua_app_id": lua_app_id, "lua_archive_sha256": lua_archive_sha256, "lua_entry_sha256": lua_entry_sha256, "lua_frame_sha256": lua_frame_sha256}
+    fence = {"fence_workflow_name": fence_workflow_name, "fence_first_id": fence_first_id, "fence_second_id": fence_second_id}
+    for key in _FENCE_FIELDS:
+        string_flag(name = name + "_" + key, build_setting_default = fence[key])
     for key in _LUA_FIELDS:
         string_flag(name = name + "_" + key, build_setting_default = lua[key])
-    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", workflow_tag = ":" + name + "_workflow_tag", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio", device_api_url = ":" + name + "_device_api_url", audio_url = ":" + name + "_audio_url", root_ca_hex = ":" + name + "_root_ca_hex", **{key: ":" + name + "_" + key for key in _LUA_FIELDS})
+    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", workflow_tag = ":" + name + "_workflow_tag", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio", device_api_url = ":" + name + "_device_api_url", audio_url = ":" + name + "_audio_url", root_ca_hex = ":" + name + "_root_ca_hex", **{key: ":" + name + "_" + key for key in _LUA_FIELDS + _FENCE_FIELDS})
     native.filegroup(name = name + "_contract", srcs = [":" + name + "_generated"], output_group = "contract")
     native.filegroup(name = name + "_source", srcs = [":" + name + "_generated"], output_group = "source")
     cc_library(

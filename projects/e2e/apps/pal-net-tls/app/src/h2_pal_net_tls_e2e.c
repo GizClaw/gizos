@@ -307,13 +307,16 @@ static void run_case(state_t* s, h2_net_tls_case_t kind) {
     case H2_NET_TLS_UDP_TIMEOUT:
     case H2_NET_TLS_UDP_NONBLOCKING:
     case H2_NET_TLS_UDP_TRUNCATION:
-    case H2_NET_TLS_MULTICAST: {
-      if (kind == H2_NET_TLS_MULTICAST && family(s) == H2_PAL_NET_FAMILY_IPV6) {
+    case H2_NET_TLS_MULTICAST:
+    case H2_NET_TLS_MULTICAST_DATA: {
+      const int multicast_case =
+          kind == H2_NET_TLS_MULTICAST || kind == H2_NET_TLS_MULTICAST_DATA;
+      if (multicast_case && family(s) == H2_PAL_NET_FAMILY_IPV6) {
         s->item->unsupported = 1;
         s->item->detail = H2_PAL_ERR_UNSUPPORTED;
         goto done;
       }
-      if (kind == H2_NET_TLS_MULTICAST && !s->config->multicast_supported) {
+      if (multicast_case && !s->config->multicast_supported) {
         if (net->vtable->udp_join_multicast)
           s->item->not_assessed = 1;
         else
@@ -350,11 +353,43 @@ static void run_case(state_t* s, h2_net_tls_case_t kind) {
         CHECK(rc == H2_PAL_ERR_UNSUPPORTED || rc == H2_PAL_ERR_INVALID_ARG,
               H2_PAL_ERR_FORMAT);
       }
-      if (kind == H2_NET_TLS_MULTICAST) {
-        addr.family = H2_PAL_NET_FAMILY_IPV4;
-        addr.ip[0] = 239u;
-        addr.ip[3] = 77u;
-        OK(h2_pal_net_udp_join_multicast(net, socket, &addr));
+      if (multicast_case) {
+        h2_pal_net_addr_t group = {.family = H2_PAL_NET_FAMILY_IPV4,
+                                   .ip = {239u, 0u, 0u, 77u}};
+        OK(h2_pal_net_udp_join_multicast(net, socket, &group));
+        if (kind == H2_NET_TLS_MULTICAST) break;
+        OK(start_peer(s, H2_NET_TLS_FIXTURE_MULTICAST, bound_addr.port, &addr));
+        if (s->config->multicast_host != NULL) {
+          OK(h2_pal_net_resolve_addr(net, s->config->multicast_host, &peer));
+          CHECK(peer.family == H2_PAL_NET_FAMILY_IPV4, H2_PAL_ERR_INVALID_ARG);
+          peer.port = addr.port;
+          addr = peer;
+        }
+        group.port = addr.port;
+        const size_t length = HEADER_BYTES + 128u;
+        for (unsigned sequence = 0u; sequence < 3u; ++sequence) {
+          packet(s);
+          s->scratch[HEADER_BYTES] = (uint8_t)sequence;
+          rc = h2_pal_net_udp_sendto(net, socket, &group, s->scratch, length);
+          CHECK(rc == (int)length, rc);
+          s->item->bytes_sent += length;
+          const uint64_t receive_deadline = now(s) + 5000u;
+          do {
+            uint32_t slice = remaining(s);
+            CHECK(slice && now(s) < receive_deadline, H2_PAL_ERR_TIMEOUT);
+            rc = h2_pal_net_udp_recvfrom(net, socket, &peer, s->receive,
+                                         sizeof(s->receive), slice);
+          } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
+          CHECK(rc == (int)length, rc);
+          CHECK(peer.family == addr.family && peer.port == addr.port &&
+                    memcmp(peer.ip, addr.ip, 16u) == 0,
+                H2_PAL_ERR_FORMAT);
+          for (size_t i = 0u; i < length; ++i)
+            CHECK(s->receive[i] == (uint8_t)(s->scratch[i] ^ 0xa5u),
+                  H2_PAL_ERR_FORMAT);
+          s->item->bytes_received += length;
+        }
+        OK(proof(s, H2_NET_TLS_PROOF_MULTICAST));
         break;
       }
       if (kind == H2_NET_TLS_UDP_TIMEOUT ||

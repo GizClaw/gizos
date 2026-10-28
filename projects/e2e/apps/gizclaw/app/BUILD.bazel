@@ -100,6 +100,10 @@ cc_library(
             "//tools/bazel:vendor_third_party_gizclaw_firmware",
             "@h2_vendor_opus//:headers",
         ],
+        "//tools/bazel/platforms:is_esp32s31": [
+            "//tools/bazel:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
         "//conditions:default": [
             "//tools/bazel:vendor_third_party_gizclaw",
             "//tools/bazel:vendor_third_party_opus",

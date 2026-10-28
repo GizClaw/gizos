@@ -124,6 +124,7 @@ typedef struct h2_esp_es8311_audio_system {
   int owns_i2c_bus;
   i2s_chan_handle_t tx_chan;
   i2s_chan_handle_t rx_chan;
+  int rx_paused;
   SemaphoreHandle_t write_mutex;
   TaskHandle_t mic_task;
   TaskHandle_t playback_task;
@@ -133,6 +134,8 @@ typedef struct h2_esp_es8311_audio_system {
   int16_t mic_processed_scratch[H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES];
   int16_t playback_scratch[H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES];
   int16_t stereo_scratch[H2_ESP_ES8311_AUDIO_SYSTEM_MAX_RAW_SAMPLES];
+  h2_audio_aec_observer_t aec_observer;
+  uint64_t aec_sequence;
   h2_pal_audio_t audio;
 } h2_esp_es8311_audio_system_t;
 

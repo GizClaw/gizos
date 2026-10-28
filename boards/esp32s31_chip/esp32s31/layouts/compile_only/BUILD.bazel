@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["partition.csv"])
+
+filegroup(
+    name = "sdkconfig",
+    srcs = ["//boards/esp32s31_chip/esp32s31:sdkconfig.defaults"],
+)

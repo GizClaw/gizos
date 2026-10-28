@@ -69,5 +69,6 @@ go_test(
     }),
     deps = [
         "@com_github_pion_dtls_v3//pkg/protocol/alert",
+        "@com_github_pion_rtp//:rtp",
     ],
 )

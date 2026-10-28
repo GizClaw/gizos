@@ -21,6 +21,7 @@ H2_PAL_DECLARE_UNSUPPORTED_API(buzzer, h2_pal_buzzer_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(crypto, h2_pal_crypto_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(disk, h2_pal_disk_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(dtls, h2_pal_dtls_api_t);
+H2_PAL_DECLARE_UNSUPPORTED_API(camera, h2_pal_camera_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(display, h2_pal_display_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(fs, h2_pal_fs_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(firmware_info, h2_pal_firmware_info_api_t);
