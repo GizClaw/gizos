@@ -143,14 +143,7 @@ A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDEN
 
 ## BK7258 external builds
 
-Source `.env/devenv` before requesting a BK7258 build. The canonical provider
-exports only `BK7258_PATH`. A repository
-rule validates SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` and a
-clean tracked checkout. Another repository rule downloads Arm GNU
-10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values,
-and exposes compiler version `10.3.1` through a locator. The action receives
-those locators and a Bazel Python runtime; it does not inherit SDK, toolchain,
-archive, Python, or `PATH` variables from the caller.
+Source `.env/devenv` before requesting a BK7258 build. The canonical provider exports only `BK7258_PATH`. A repository rule validates the SDK commit in [`native_versions/bk7258_sdk_commit.txt`](native_versions/bk7258_sdk_commit.txt) and a clean tracked checkout. Another repository rule downloads Arm GNU 10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values, and exposes compiler version `10.3.1` through a locator. The action receives those locators and a Bazel Python runtime; it does not inherit SDK, toolchain, archive, Python, or `PATH` variables from the caller.
 
 ```sh
 REPO_ROOT=$PWD
