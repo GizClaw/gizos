@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import struct
+import sys
 from pathlib import Path
 
 from projects.h2loader.tools.bazel.firmware_artifacts import (
@@ -254,3 +256,136 @@ def publish_metadata(
         raise ValueError("native artifact metadata contains duplicate names")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _recovery_message(message: str, *, error: bool = False) -> None:
+    """Diagnostics cannot change publication state or expose an I/O exception."""
+    try:
+        print(message, file=sys.stderr if error else sys.stdout)
+    except (OSError, ValueError):
+        pass
+
+
+def _read_recovery_key(fd: int, timeout: float = 30.0) -> bytearray:
+    """Read one bounded EOF-terminated secret from an owned pipe/socket stream."""
+    import os
+    import selectors
+    import stat
+    import time
+
+    mode = os.fstat(fd).st_mode
+    if not (stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode)):
+        raise ValueError("KEY_REQUIRES_PIPE_OR_SOCKET")
+    key = bytearray()
+    try:
+        deadline = time.monotonic() + timeout
+        with os.fdopen(os.dup(fd), "rb", buffering=0) as secret, selectors.DefaultSelector() as readiness:
+            readiness.register(secret, selectors.EVENT_READ)
+            while len(key) < 33:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not readiness.select(remaining):
+                    raise ValueError("KEY_INPUT_TIMEOUT")
+                chunk = os.read(secret.fileno(), 33 - len(key))
+                if not chunk:
+                    break
+                key.extend(chunk)
+        if len(key) != 32:
+            raise ValueError("KEY_LENGTH")
+        return key
+    except BaseException:
+        key[:] = b"\0" * len(key)
+        raise
+
+
+def encrypted_bk_recovery_main(argv: list[str] | None = None) -> int:
+    """Explicit local operation; stdin/descriptor carries exactly 32 raw key bytes."""
+    import argparse
+    import os
+    import resource
+    import shutil
+    import tempfile
+
+    from tools.bazel.bk7258_flash_aes import encrypt_recovery
+
+    parser = argparse.ArgumentParser(description="Create offline encrypted BK7258 AB recovery; no device access", allow_abbrev=False)
+    parser.add_argument("--source", required=True)
+    parser.add_argument("--metadata", required=True)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--board", required=True)
+    parser.add_argument("--target", choices=["bk7258"], required=True)
+    parser.add_argument("--key-fd", type=int, required=True, help="Runtime descriptor containing exactly 32 raw bytes, then EOF; 0 uses stdin")
+    parser.add_argument("--output-dir", required=True, help="New absolute local output directory, outside Bazel outputs")
+    tokens = sys.argv[1:] if argv is None else argv
+    for flag in ("--source", "--metadata", "--config", "--board", "--target", "--key-fd", "--output-dir"):
+        if sum(token == flag or token.startswith(flag + "=") for token in tokens) > 1:
+            parser.error("duplicate option")
+    args = parser.parse_args(tokens)
+    temporary = None
+    key = bytearray()
+    try:
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        output = Path(args.output_dir)
+        if not output.is_absolute() or output.exists() or output.is_symlink():
+            raise ValueError("OUTPUT_DIRECTORY")
+        parent = output.parent.resolve(strict=True)
+        # Refuse declared Bazel output trees; keyed results are runtime-only.
+        if any(part in ("bazel-out", "execroot") or part.endswith(".runfiles") for part in parent.parts):
+            raise ValueError("BAZEL_OUTPUT_DIRECTORY")
+        config = Path(args.config)
+        settings = json.loads(config.read_text(encoding="utf-8"))
+        if not isinstance(settings, dict) or not isinstance(settings.get("offset"), str) or int(settings["offset"], 0) != 0:
+            raise ValueError("RECOVERY_REQUIRES_ZERO_OFFSET")
+        if type(settings.get("baud")) is not int or settings["baud"] <= 0:
+            raise ValueError("RECOVERY_BAUD")
+        key = _read_recovery_key(args.key_fd)
+        if not 0 < Path(args.source).stat().st_size <= 16 * 1024 * 1024:
+            raise ValueError("SOURCE_LENGTH")
+        source_bytes = Path(args.source).read_bytes()
+        encrypted = encrypt_recovery(source_bytes, Path(args.metadata), bytes(key))
+        temporary = Path(tempfile.mkdtemp(prefix=".bk-recovery-", dir=parent))
+        image = temporary / "encrypted.bin"
+        with image.open("xb") as stream:
+            os.chmod(image, 0o600)
+            stream.write(encrypted)
+        frozen_config = temporary / ".recovery-config.json"
+        frozen_config.write_text(json.dumps(settings), encoding="utf-8")
+        publish_bk_recovery(
+            recovery_image=image, recovery_config=frozen_config,
+            output=temporary / "recovery.h2fb", board=args.board, target=args.target,
+        )
+        frozen_config.unlink()
+        os.chmod(temporary / "recovery.h2fb", 0o600)
+        receipt = {
+            "format": "bk7258-encrypted-recovery-v1",
+            "board": args.board,
+            "target": args.target,
+            "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+            "encrypted_sha256": sha256(image),
+            "bundle_sha256": sha256(temporary / "recovery.h2fb"),
+        }
+        receipt_path = temporary / "validation.json"
+        receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+        os.chmod(receipt_path, 0o600)
+        if output.exists() or output.is_symlink():
+            raise ValueError("OUTPUT_DIRECTORY")
+        temporary.rename(output)
+        temporary = None
+        # Publication already committed. A closed logging consumer must not
+        # turn a complete output into a reported validation failure.
+        _recovery_message("Encrypted recovery created; hardware/key matching is not verified.")
+        return 0
+    except (OSError, ValueError, KeyError, TypeError, struct.error):
+        # Never expose exception details, input values or a secret-bearing traceback.
+        _recovery_message("Encrypted recovery refused: invalid input, secret descriptor or output.", error=True)
+        return 1
+    finally:
+        key[:] = b"\0" * len(key)
+        if temporary is not None:
+            try:
+                shutil.rmtree(temporary)
+            except OSError:
+                _recovery_message("Private recovery staging cleanup failed; no output was published.", error=True)
+
+
+if __name__ == "__main__":
+    raise SystemExit(encrypted_bk_recovery_main())
