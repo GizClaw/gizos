@@ -13,7 +13,8 @@ static int drivers, cdcs, clears, rx_clears, queued, delay_calls;
 static esp_vfs_t console;
 static void (*line_callback)(int, cdcacm_event_t*);
 static int block_after;
-static bool disconnect_during_clear, flush_blocked;
+static bool disconnect_during_clear, disconnect_during_queue,
+    disconnect_during_flush, flush_blocked;
 static SemaphoreHandle_t mutex;
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* s) {
   mutex = s;
@@ -75,11 +76,21 @@ size_t tinyusb_cdcacm_write_queue(int n, const void* p, size_t size) {
   if (blocked || (block_after && queued >= block_after)) return 0;
   size_t count = size > 2 ? 2 : size;
   queued += (int)count;
+  if (disconnect_during_queue) {
+    disconnect_during_queue = false;
+    cdcacm_event_t event = {.line_state_changed_data = {.dtr = false}};
+    line_callback(0, &event);
+  }
   return count;
 }
 int tinyusb_cdcacm_write_flush(int n, TickType_t t) {
   assert(t == 0); /* Blocking SDK flush may log recursively on timeout. */
   assert(n == 0 && mutex->held);
+  if (disconnect_during_flush) {
+    disconnect_during_flush = false;
+    cdcacm_event_t event = {.line_state_changed_data = {.dtr = false}};
+    line_callback(0, &event);
+  }
   return flush_blocked ? ESP_ERR_NOT_FINISHED : ESP_OK;
 }
 int tinyusb_cdcacm_read(int n, void* p, size_t size, size_t* out) {
@@ -180,9 +191,46 @@ int main(void) {
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
   assert(console.write(0, "log", 3) == 3);
 
+  /* Closing during queueing must prevent the remainder of the old frame. */
+  line_callback(0, &connected_event);
+  disconnect_during_queue = true;
+  int before = queued;
+  assert(h2_mosaico_usb_write(NULL, "frame", 5, &out, 20) == H2_PAL_ERR_CLOSED);
+  assert(out == 2 && queued == before + 2 && !mutex->held);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
+         H2_PAL_ERR_CLOSED);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
+  /* An ESP_OK flush is not success if its callback ended the session. */
+  line_callback(0, &connected_event);
+  disconnect_during_flush = true;
+  assert(h2_mosaico_usb_write(NULL, "ab", 2, &out, 20) == H2_PAL_ERR_CLOSED &&
+         out == 2);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
+         H2_PAL_ERR_CLOSED);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
+  line_callback(0, &connected_event);
+  disconnect_during_flush = true;
+  assert(h2_mosaico_usb_flush(NULL) == H2_PAL_ERR_CLOSED);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
+         H2_PAL_ERR_CLOSED);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
+
   flush_blocked = true;
   assert(h2_mosaico_usb_write(NULL, "frame", 5, &out, 2) == H2_PAL_ERR_CLOSED &&
          out == 5);
   assert(!mutex->held && console.write(0, "log", 3) == -1);
+  /* DTR is already low. A failed stream remains gated until another host
+   * request, but a repeated low request now permits a fresh handshake. */
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
+         H2_PAL_ERR_CLOSED);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
+         H2_PAL_ERR_CLOSED);
+  int old_rx_clears = rx_clears;
+  line_callback(0, &event);
+  flush_blocked = false;
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
+         H2_PAL_ERR_CLOSED);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
+  assert(rx_clears == old_rx_clears + 1 && console.write(0, "log", 3) == 3);
   return 0;
 }

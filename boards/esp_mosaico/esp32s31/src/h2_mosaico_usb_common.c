@@ -33,7 +33,10 @@ static void line_state_changed(int interface, cdcacm_event_t* event) {
    * RTS-only changes must not terminate the new session. */
   const bool dtr = event->line_state_changed_data.dtr;
   const int previous = atomic_exchange(&dtr_state, dtr ? 1 : 0);
-  if (!dtr && previous != 0) {
+  /* A repeated low request is also a reopen boundary after a failed frame.
+   * Healthy low-DTR clients may still change RTS without losing their stream.
+   */
+  if (!dtr && (previous != 0 || atomic_load(&failed))) {
     atomic_store(&disconnected, true);
     atomic_store(&failed, true);
     atomic_store(&report_closed, true);
@@ -74,11 +77,17 @@ static int fail_link(void) {
   atomic_store(&report_closed, true);
   return H2_PAL_ERR_CLOSED;
 }
+static bool link_closed(void) {
+  return atomic_load(&failed) || atomic_load(&disconnected) ||
+         !tud_cdc_n_ready(0);
+}
 /* The pinned blocking SDK flush logs on timeout. Poll its nonblocking path
  * instead: logging while holding TX would reenter this same console/lock. */
 static int drain_tx(int64_t start, uint32_t timeout) {
   for (;;) {
+    if (link_closed()) return H2_PAL_ERR_CLOSED;
     esp_err_t rc = tinyusb_cdcacm_write_flush(0, 0);
+    if (link_closed()) return H2_PAL_ERR_CLOSED;
     if (rc == ESP_OK) return H2_PAL_OK;
     if (rc != ESP_ERR_NOT_FINISHED && rc != ESP_ERR_TIMEOUT)
       return H2_PAL_ERR_IO;
@@ -104,9 +113,21 @@ h2_pal_result_t h2_mosaico_usb_write(void* user, const void* data, size_t len,
     goto done;
   }
   while (*out < len) {
+    if (link_closed()) {
+      rc = fail_link();
+      goto done;
+    }
     *out +=
         tinyusb_cdcacm_write_queue(0, (const uint8_t*)data + *out, len - *out);
+    if (link_closed()) {
+      rc = fail_link();
+      goto done;
+    }
     esp_err_t err = tinyusb_cdcacm_write_flush(0, 0);
+    if (link_closed()) {
+      rc = fail_link();
+      goto done;
+    }
     if (err != ESP_OK && err != ESP_ERR_NOT_FINISHED &&
         err != ESP_ERR_TIMEOUT) {
       rc = fail_link();
