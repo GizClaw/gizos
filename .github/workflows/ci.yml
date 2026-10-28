@@ -774,6 +774,9 @@ jobs:
           test "$H2LOADER_IDF_PATH" = "$IDF_PATH"
           test "$IDF_TOOLS_PATH" = "$H2_ESP_IDF_TOOLS_ROOT"
           make bazel-build BAZEL_CONFIG=${{ matrix.config }}
+          if [[ "${{ matrix.config }}" == "esp32s31" ]]; then
+            bazel build --config=esp32s31 //tools/bazel/smoke/esp32s31:firmware
+          fi
 
       - name: Show native compiler cache statistics
         if: always()
