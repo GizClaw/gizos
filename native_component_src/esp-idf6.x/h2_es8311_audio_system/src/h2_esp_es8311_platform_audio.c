@@ -669,11 +669,11 @@ static void es8311_audio_mic_task(void* arg) {
     if (!state->mic_started) {
       continue;
     }
-    if (err == ESP_ERR_TIMEOUT || bytes_read == 0u) {
+    if (err == ESP_ERR_TIMEOUT) {
       continue;
     }
-    if (err != ESP_OK ||
-        (state->aec_observer.on_capture != NULL && bytes_read != requested)) {
+    if (err != ESP_OK || (state->aec_observer.on_capture != NULL &&
+                          bytes_read != 0u && bytes_read != requested)) {
       if (state->aec_observer.on_error != NULL)
         state->aec_observer.on_error(state->aec_observer.user, 1,
                                      H2_AUDIO_ERR_IO);
@@ -681,6 +681,8 @@ static void es8311_audio_mic_task(void* arg) {
       vTaskDelay(pdMS_TO_TICKS(20));
       continue;
     }
+
+    if (bytes_read == 0u) continue;
 
     h2_audio_frame_t raw_frame = h2_audio_frame_for_buffer(
         state->mic_raw_scratch, sizeof(state->mic_raw_scratch), raw_format);

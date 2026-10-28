@@ -24,6 +24,10 @@ static int rx_enable_error, rx_disable_error;
 static unsigned rx_enables, rx_disables;
 static h2_esp_es8311_audio_system_t* running;
 static int join_workers = 1;
+static h2_esp_es8311_audio_system_t* read_worker;
+static esp_err_t read_result;
+static size_t read_bytes;
+static unsigned read_errors;
 static unsigned device_index(i2c_master_dev_handle_t dev) {
   assert(dev == (void*)1 || dev == (void*)2);
   return (unsigned)(uintptr_t)dev - 1u;
@@ -126,6 +130,12 @@ int i2s_channel_read(i2s_chan_handle_t ch, void* buf, size_t len, size_t* out,
   (void)buf;
   (void)len;
   (void)timeout;
+  if (read_worker) {
+    read_worker->mic_task_started =
+        0; /* Run exactly one real worker iteration. */
+    *out = read_bytes;
+    return read_result;
+  }
   *out = 0;
   return ESP_ERR_TIMEOUT;
 }
@@ -373,6 +383,35 @@ static void error_observer(void* user, int capture, int rc) {
   (void)capture;
   (void)rc;
 }
+static void worker_error_observer(void* user, int capture, int rc) {
+  assert(user == read_worker && capture == 1 && rc == H2_AUDIO_ERR_IO);
+  ++read_errors;
+}
+static void test_mic_read_errors(void) {
+  const esp_err_t errors[] = {ESP_FAIL, ESP_ERR_TIMEOUT, ESP_OK, ESP_OK};
+  const size_t lengths[] = {0u, 0u, 0u, 2u};
+  for (unsigned i = 0; i < 4; ++i) {
+    h2_esp_es8311_audio_system_t s = {0};
+    s.config.raw_channels = 2;
+    s.config.frame_samples_per_channel = 512;
+    s.mic_started = s.mic_task_started = 1;
+    s.mic_task = (void*)7;
+    s.rx_chan = (void*)5;
+    s.mic_queue = (void*)8;
+    s.aec_observer.user = &s;
+    s.aec_observer.on_capture = capture_observer;
+    s.aec_observer.on_error = worker_error_observer;
+    read_worker = &s;
+    read_result = errors[i];
+    read_bytes = lengths[i];
+    read_errors = 0;
+    unsigned before = captures;
+    es8311_audio_mic_task(&s);
+    assert(read_errors == (i == 0 || i == 3 ? 1u : 0u));
+    assert(!s.mic_task && captures == before);
+  }
+  read_worker = NULL;
+}
 static void test_diagnostic_capture_epoch(void) {
   h2_esp_es8311_audio_system_t s = {.rx_chan = (void*)5};
   rx_enables = rx_disables = 0;
@@ -453,6 +492,7 @@ static void test_aec_observer(void) {
 }
 
 int main(void) {
+  test_mic_read_errors();
   test_diagnostic_capture_epoch();
   test_aec_observer();
   test_cold_control_startup();
