@@ -21,7 +21,7 @@ static h2_runtime_config_t s_runtime_config;
 static h2_corehttp_t* s_runtime_http;
 static h2_pal_http_api_t s_runtime_http_api;
 static int s_runtime_config_ready;
-static int s_runtime_fs_ready;
+static int s_runtime_fs_owned;
 static int s_runtime_cleanup_pending;
 
 static int runtime_fs_clear(void* user, const char* path) {
@@ -51,9 +51,11 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
   if (rc != H2_PAL_OK) goto fail;
   rc = h2_mosaico_audio_init();
   if (rc != H2_PAL_OK) goto fail;
+  /* Init may retain /dl if /data and the rollback both fail. Own cleanup
+   * from the first attempt until deinit confirms that all mounts are gone. */
+  s_runtime_fs_owned = 1;
   rc = h2_esp_board_fs_init(&s_runtime_fs);
   if (rc != H2_PAL_OK) goto fail;
-  s_runtime_fs_ready = 1;
   if (s_runtime_fs.vtable != NULL) {
     s_runtime_fs_vtable = *s_runtime_fs.vtable;
     s_runtime_fs_vtable.clear = runtime_fs_clear;
@@ -132,10 +134,10 @@ h2_pal_result_t h2_esp_board_runtime_deinit(void) {
   if (display_rc != H2_PAL_OK) return display_rc;
   const int peripheral_rc = h2_mosaico_peripherals_deinit();
   if (peripheral_rc != H2_PAL_OK) return peripheral_rc;
-  if (s_runtime_fs_ready) {
+  if (s_runtime_fs_owned) {
     const int fs_rc = h2_esp_board_fs_deinit();
     if (fs_rc != H2_PAL_OK) return fs_rc;
-    s_runtime_fs_ready = 0;
+    s_runtime_fs_owned = 0;
   }
   if (s_runtime_http != NULL) h2_corehttp_destroy(s_runtime_http);
   s_runtime_http = NULL;

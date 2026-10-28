@@ -14,7 +14,7 @@
 #include "h2_corehttp.h"
 #include <assert.h>
 #include <string.h>
-static int audio_error, fs_error, create_error;
+static int audio_error, fs_error, fs_init_error, fs_retained, create_error;
 static unsigned creates, destroys, fs_stops;
 static int provider;
 /* Native stack switching is covered by the platform adapter tests. */
@@ -33,10 +33,12 @@ int h2_mosaico_audio_init(void) { return 0; }
 int h2_mosaico_audio_deinit(void) { return audio_error; }
 int h2_esp_board_fs_init(h2_pal_fs_api_t* fs) {
   memset(fs, 0, sizeof(*fs));
-  return 0;
+  fs_retained = 1; /* /dl acquired, even if /data and rollback fail. */
+  return fs_init_error;
 }
 int h2_esp_board_fs_deinit(void) {
   ++fs_stops;
+  if (!fs_error) fs_retained = 0;
   return fs_error;
 }
 int h2_esp_board_fs_clear(const char* path) {
@@ -59,6 +61,15 @@ void h2_corehttp_destroy(h2_corehttp_t* http) {
 }
 int main(void) {
   h2_runtime_config_t config;
+  fs_init_error = fs_error = H2_PAL_ERR_IO;
+  assert(h2_esp_board_runtime_config(&config) == H2_PAL_ERR_IO);
+  assert(fs_retained && fs_stops == 1 && creates == 0 && config.board == NULL);
+  assert(h2_esp_board_runtime_config(&config) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_esp_board_runtime_deinit() == H2_PAL_ERR_IO && fs_retained);
+  fs_error = 0;
+  assert(h2_esp_board_runtime_deinit() == H2_PAL_OK && !fs_retained);
+  fs_init_error = 0;
+  fs_stops = 0;
   assert(h2_esp_board_runtime_config(&config) == 0 && creates == 1);
   assert(config.camera == h2_mosaico_camera());
   assert(h2_esp_board_runtime_config(&config) == 0 && creates == 1);

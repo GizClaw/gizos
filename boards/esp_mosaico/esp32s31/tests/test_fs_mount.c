@@ -54,6 +54,14 @@ int h2_esp_board_fs_deinit(void) {
   return h2_esp_board_h2loader_fs_deinit();
 }
 int main(void) {
+  /* Runtime uses this init path. A failed rollback must remain retryable. */
+  h2_pal_fs_api_t fs = {0};
+  fail_data = fail_unmount = 1;
+  assert(h2_esp_board_h2loader_fs_init(&fs) == H2_PAL_FS_ERR_IO);
+  assert(dl_live && !data_live);
+  fail_unmount = 0;
+  assert(h2_esp_board_h2loader_fs_deinit() == H2_PAL_FS_OK);
+  assert(!dl_live && !data_live);
   fail_data = 1;
   assert(h2_esp_board_fs_mount_all() == H2_PAL_FS_ERR_IO);
   assert(!dl_live && !data_live && deinit_calls == 1);
