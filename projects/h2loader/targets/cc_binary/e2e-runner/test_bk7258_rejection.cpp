@@ -12,10 +12,18 @@ int main() {
   assert(check(proof) == H2_PAL_OK);
   assert(check("stats header\n" + proof + "stats tail\r\n") == H2_PAL_OK);
   assert(check(proof.substr(0, proof.size() - 1) + "\r\n") == H2_PAL_OK);
+  assert(check(proof + "H2_LOADER_STATUS ok\nchecksum=123") == H2_PAL_OK);
+  assert(check(proof + "unrelated partial log") == H2_PAL_OK);
   assert(check("") != H2_PAL_OK);
   assert(check(proof + proof) != H2_PAL_OK);
+  assert(check(proof + "H2_BK_FLASH_REJECTION\n") != H2_PAL_OK);
   assert(check("prefix " + proof) != H2_PAL_OK);
   assert(check(proof.substr(0, proof.size() - 1)) != H2_PAL_OK);
+  assert(check("checksum=123") != H2_PAL_OK);
+  for (std::size_t length = 1; length < proof.size(); ++length) {
+    assert(check(proof.substr(0, length)) != H2_PAL_OK);
+    assert(check(proof + proof.substr(0, length)) != H2_PAL_OK);
+  }
   for (const std::string field :
        {"valid=1", "aes=1", "rc=-3", "erase_calls=0", "write_calls=0"}) {
     auto bad = proof;
