@@ -25,7 +25,7 @@ static void make_packets(void) {
 }
 int bk_flash_read_bytes(uint32_t p, uint8_t* out, uint32_t n) {
   assert(!critical && p >= BASE && p + n <= BASE + sizeof(packets));
-  memcpy(out, packets + p - BASE, n);
+  memcpy(out, packets + (p - BASE), n);
   raw_reads++;
   return 0;
 }
@@ -52,7 +52,7 @@ void __DSB(void) {
 void h2_bk_test_mapped_copy(uintptr_t a, uint32_t within, void* out, size_t n) {
   assert(critical && invalidated && barrier && a >= 0x2240000 &&
          a + within + n <= 0x2240000 + sizeof(plain));
-  memcpy(out, plain + a - 0x2240000 + within, n);
+  memcpy(out, plain + (a - 0x2240000 + within), n);
   mapped++;
   invalidated = barrier = 0;
 }

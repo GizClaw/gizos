@@ -22,7 +22,7 @@ const bk_logic_partition_t* bk_flash_partition_get_info(unsigned i) {
 }
 int bk_flash_read_bytes(uint32_t a, uint8_t* p, uint32_t n) {
   assert(a >= BASE && a + n <= BASE + sizeof(storage));
-  memcpy(p, storage + a - BASE, n);
+  memcpy(p, storage + (a - BASE), n);
   return 0;
 }
 int bk_flash_write_bytes(uint32_t a, const uint8_t* p, uint32_t n) {
@@ -33,7 +33,7 @@ int bk_flash_write_bytes(uint32_t a, const uint8_t* p, uint32_t n) {
 }
 int bk_flash_erase_sector(uint32_t a) {
   assert(a >= BASE && a + 4096 <= BASE + sizeof(storage));
-  memset(storage + a - BASE, 255, 4096);
+  memset(storage + (a - BASE), 255, 4096);
   erased++;
   return 0;
 }
