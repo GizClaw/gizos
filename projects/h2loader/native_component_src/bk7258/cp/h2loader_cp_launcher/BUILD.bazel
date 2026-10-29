@@ -7,6 +7,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "src/cp_main.c",
     "src/fixed_boot.c",
+    "src/flash_access.c",
 ])
 
 firmware_native_component(

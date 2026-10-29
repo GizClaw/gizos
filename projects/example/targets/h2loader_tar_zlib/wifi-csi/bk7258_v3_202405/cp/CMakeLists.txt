@@ -5,8 +5,10 @@ armino_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "."
+    "$ENV{ARMINO_PATH}/middleware/soc/bk7258/hal"
   PRIV_REQUIRES
     h2_bk_target_task_policy
+    h2_pal_core
     bk_cli
     bk_rtos
     driver
