@@ -613,7 +613,7 @@ static void test_checksum_matrix_and_false_success(void) {
 static void test_bk7258_historical_matrix(void) {
   for (unsigned mode = 0; mode < 4; ++mode) {
     const unsigned ble = mode & 1u;
-    const unsigned encrypted = mode >> 1u;
+    const uint8_t encrypted = (uint8_t)(mode >> 1u);
     fake_executor_t fake = {0};
     static h2_h2loader_e2e_result_t result;
     h2_h2loader_e2e_config_t config = {
