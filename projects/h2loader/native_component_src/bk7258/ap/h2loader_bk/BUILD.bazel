@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
@@ -157,6 +158,7 @@ cc_test(
         "tests/h2_bk_h2loader_ota_writer_test_sdk.h",
         "tests/test_h2_bk_h2loader_ota_writer.c",
     ],
+    conlyopts = H2_C11_OPTS,
     includes = [
         "include",
         "src",
