@@ -259,11 +259,6 @@ static int h2_bleikcp_kcp_output(const char* buffer, int len, ikcpcb* kcp,
   }
   int rc = H2_PAL_ERR_UNSUPPORTED;
   bool emitted = false;
-  uint64_t started_ms = 0u;
-  if (stream->role == H2_BLEIKCP_ROLE_CLIENT) {
-    rc = h2_pal_time_get_monotonic_ms(stream->api.time, &started_ms);
-    if (rc != H2_PAL_OK) goto failed;
-  }
   for (uint32_t attempt = 0u; attempt < stream->config.value.output_retry_count;
        ++attempt) {
     if (stream->role == H2_BLEIKCP_ROLE_SERVER) {
@@ -271,20 +266,10 @@ static int h2_bleikcp_kcp_output(const char* buffer, int len, ikcpcb* kcp,
                              stream->tx_value_handle, (const uint8_t*)buffer,
                              (size_t)len);
     } else {
-      /* A blocking PAL write and its retries share one timeout budget. */
-      uint64_t now_ms = 0u;
-      rc = h2_pal_time_get_monotonic_ms(stream->api.time, &now_ms);
-      if (rc != H2_PAL_OK) break;
-      const uint64_t elapsed_ms = now_ms - started_ms;
-      if (elapsed_ms >= stream->config.value.setup_timeout_ms) {
-        rc = H2_PAL_ERR_TIMEOUT;
-        break;
-      }
-      const uint32_t remaining_ms =
-          stream->config.value.setup_timeout_ms - (uint32_t)elapsed_ms;
-      rc = h2_pal_ble_gatt_write(
-          stream->api.ble, stream->conn_handle, stream->rx_value_handle,
-          (const uint8_t*)buffer, (size_t)len, false, remaining_ms);
+      rc = h2_pal_ble_gatt_write(stream->api.ble, stream->conn_handle,
+                                 stream->rx_value_handle,
+                                 (const uint8_t*)buffer, (size_t)len, false,
+                                 stream->config.value.setup_timeout_ms);
     }
     if (rc == H2_PAL_OK) {
       (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
@@ -301,30 +286,13 @@ static int h2_bleikcp_kcp_output(const char* buffer, int len, ikcpcb* kcp,
       h2_bleikcp_emit(stream, H2_BLEIKCP_EVENT_BACKPRESSURE, rc);
     }
     if (attempt + 1u < stream->config.value.output_retry_count) {
-      uint32_t delay_ms = stream->config.value.output_retry_delay_ms;
-      if (stream->role == H2_BLEIKCP_ROLE_CLIENT) {
-        uint64_t now_ms = 0u;
-        int time_rc = h2_pal_time_get_monotonic_ms(stream->api.time, &now_ms);
-        if (time_rc != H2_PAL_OK) {
-          rc = time_rc;
-          break;
-        }
-        const uint64_t elapsed_ms = now_ms - started_ms;
-        if (elapsed_ms >= stream->config.value.setup_timeout_ms) {
-          rc = H2_PAL_ERR_TIMEOUT;
-          break;
-        }
-        const uint32_t remaining_ms =
-            stream->config.value.setup_timeout_ms - (uint32_t)elapsed_ms;
-        if (delay_ms > remaining_ms) delay_ms = remaining_ms;
-      }
       (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
       stream->stats.output_retries++;
       (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
-      (void)h2_pal_time_sleep_ms(stream->api.time, delay_ms);
+      (void)h2_pal_time_sleep_ms(stream->api.time,
+                                 stream->config.value.output_retry_delay_ms);
     }
   }
-failed:
   (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
   stream->fatal_status = rc;
   (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
@@ -352,9 +320,7 @@ static void h2_bleikcp_drain_input(h2_bleikcp_t* stream) {
     s_kcp_allocator = previous;
     if (result < 0) {
       stream->stats.input_errors++;
-      /* The pinned KCP allocation-failure patch reserves -4 for input OOM. */
-      stream->fatal_status =
-          result == -4 ? H2_PAL_ERR_NO_MEMORY : H2_PAL_ERR_IO;
+      stream->fatal_status = H2_PAL_ERR_IO;
       break;
     }
     stream->stats.rx_frames++;
@@ -365,7 +331,7 @@ static void h2_bleikcp_drain_input(h2_bleikcp_t* stream) {
 
 static void h2_bleikcp_drain_tx(h2_bleikcp_t* stream) {
   size_t mss = stream->kcp_mtu - H2_BLEIKCP_KCP_OVERHEAD;
-  while (stream->fatal_status == H2_PAL_OK && stream->tx.len > 0u &&
+  while (stream->tx.len > 0u &&
          ikcp_waitsnd(stream->kcp) < (int)stream->config.value.send_window) {
     size_t len = stream->tx.len < mss ? stream->tx.len : mss;
     h2_bleikcp_ring_read(&stream->tx, stream->scratch, len);
@@ -374,9 +340,7 @@ static void h2_bleikcp_drain_tx(h2_bleikcp_t* stream) {
     int result = ikcp_send(stream->kcp, (const char*)stream->scratch, (int)len);
     s_kcp_allocator = previous;
     if (result < 0) {
-      /* Each send is at most one MSS, so -2 cannot mean too many fragments. */
-      stream->fatal_status =
-          result == -2 ? H2_PAL_ERR_NO_MEMORY : H2_PAL_ERR_IO;
+      stream->fatal_status = H2_PAL_ERR_IO;
       break;
     }
   }
@@ -587,10 +551,6 @@ int h2_bleikcp_stream_create(const h2_bleikcp_api_t* api,
     rc = H2_PAL_ERR_INVALID_ARG;
     goto fail;
   }
-  /* Upstream clamps receive windows to 128 for fragmented messages. This
-   * byte-stream adapter sends one MSS per message and rejects larger input
-   * messages; retain the caller's bounded receive-memory budget instead. */
-  stream->kcp->rcv_wnd = config->value.recv_window;
   *out_stream = stream;
   return H2_PAL_OK;
 

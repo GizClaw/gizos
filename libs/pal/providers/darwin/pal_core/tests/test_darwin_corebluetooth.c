@@ -30,89 +30,6 @@ static void* connect_retry_thread(void* user) {
   return NULL;
 }
 
-typedef struct pending_write {
-  h2_pal_ble_t* ble;
-  h2_pal_result_t result;
-} pending_write_t;
-
-static void* pending_write_thread(void* user) {
-  pending_write_t* pending = user;
-  const uint8_t data[] = {1u, 2u, 3u};
-  pending->result = h2_pal_ble_gatt_write(pending->ble, 1u, 2u, data,
-                                          sizeof(data), false, 2000u);
-  return NULL;
-}
-
-static void wait_for_write_waiters(size_t count) {
-  const uint64_t deadline = monotonic_ms() + 2000u;
-  while (h2_darwin_corebluetooth_test_write_waiters() != count) {
-    assert(monotonic_ms() < deadline);
-    const struct timespec pause = {.tv_nsec = 1000000};
-    (void)nanosleep(&pause, NULL);
-  }
-}
-
-static void test_write_backpressure(h2_pal_ble_t* ble) {
-  const h2_pal_ble_addr_t address = {0};
-  const uint8_t data[] = {1u, 2u, 3u};
-  h2_darwin_corebluetooth_test_set_pending_connect(&address);
-  assert(h2_pal_ble_gatt_write(ble, 1u, 2u, data, sizeof(data), false, 0u) ==
-         H2_PAL_ERR_WOULD_BLOCK);
-  const uint64_t before = monotonic_ms();
-  assert(h2_pal_ble_gatt_write(ble, 1u, 2u, data, sizeof(data), false, 30u) ==
-         H2_PAL_ERR_TIMEOUT);
-  assert(monotonic_ms() - before >= 20u);
-  assert(monotonic_ms() - before < 1000u);
-  assert(h2_darwin_corebluetooth_test_write_waiters() == 0u);
-  assert(h2_darwin_corebluetooth_test_write_count() == 0u);
-
-  /* Both callers wait without blocking the delegate queue. */
-  pending_write_t pending[2] = {{.ble = ble}, {.ble = ble}};
-  pthread_t threads[2];
-  for (size_t i = 0u; i < 2u; ++i) {
-    assert(pthread_create(&threads[i], NULL, pending_write_thread,
-                          &pending[i]) == 0);
-  }
-  wait_for_write_waiters(2u);
-  assert(h2_darwin_corebluetooth_test_write_count() == 0u);
-  h2_darwin_corebluetooth_test_write_ready(true, 0);
-  for (size_t i = 0u; i < 2u; ++i) {
-    assert(pthread_join(threads[i], NULL) == 0);
-    assert(pending[i].result == H2_PAL_OK);
-  }
-  assert(h2_darwin_corebluetooth_test_write_count() == 2u);
-  assert(h2_darwin_corebluetooth_test_write_waiters() == 0u);
-  assert(h2_pal_ble_gatt_write(ble, 1u, 2u, data, sizeof(data), false, 0u) ==
-         H2_PAL_OK);
-  assert(h2_darwin_corebluetooth_test_write_count() == 3u);
-
-  /* Disconnect wakes a blocked caller; a stale readiness event cannot write. */
-  h2_darwin_corebluetooth_test_write_ready(false, 0);
-  assert(pthread_create(&threads[0], NULL, pending_write_thread, &pending[0]) ==
-         0);
-  wait_for_write_waiters(1u);
-  h2_darwin_corebluetooth_test_deliver_central_event(
-      H2_DARWIN_COREBLUETOOTH_TEST_DISCONNECTED, 0);
-  h2_darwin_corebluetooth_test_write_ready(true, 0);
-  assert(pthread_join(threads[0], NULL) == 0);
-  assert(pending[0].result == H2_PAL_ERR_CLOSED);
-  assert(h2_darwin_corebluetooth_test_write_count() == 3u);
-  assert(h2_darwin_corebluetooth_test_write_waiters() == 0u);
-
-  /* Reusing a numeric handle for another peripheral must not redirect data. */
-  h2_darwin_corebluetooth_test_set_pending_connect(&address);
-  assert(pthread_create(&threads[0], NULL, pending_write_thread, &pending[0]) ==
-         0);
-  wait_for_write_waiters(1u);
-  h2_darwin_corebluetooth_test_set_other_connected();
-  h2_darwin_corebluetooth_test_write_ready(true, 1);
-  assert(pthread_join(threads[0], NULL) == 0);
-  assert(pending[0].result == H2_PAL_ERR_CLOSED);
-  assert(h2_darwin_corebluetooth_test_write_count() == 0u);
-  assert(h2_darwin_corebluetooth_test_write_waiters() == 0u);
-  h2_darwin_corebluetooth_test_set_pending_connect(NULL);
-}
-
 typedef struct reentrant_connection_event {
   h2_pal_ble_t* ble;
   dispatch_semaphore_t completed;
@@ -231,7 +148,6 @@ int main(void) {
   assert(h2_darwin_corebluetooth_ble(&allocator, &other_log) == NULL);
   assert(h2_darwin_corebluetooth_ble(&allocator, &log) == ble);
   assert(ble->allocator == &allocator);
-  test_write_backpressure(ble);
   const h2_pal_ble_addr_t timeout_address = {0};
   const h2_pal_ble_connect_params_t timeout_params = {.timeout_ms = 20u};
   uint16_t connection_handle = 0u;

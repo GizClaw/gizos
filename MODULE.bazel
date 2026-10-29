@@ -325,7 +325,6 @@ vendor_repositories.repository(
 vendor_repositories.repository(
     name = "h2_vendor_ikcp",
     build_file = "//third_party:ikcp.BUILD.bazel",
-    patches = ["//third_party/ikcp_patch:ikcp_allocation_failures.patch"],
     sha256 = "291d08cd1fba918645a12078cbb6dfffa0825c57e33c0d0ec093604621bf3292",
     strip_prefix = "kcp-b1a7a2101dcbb96017681a500d6b82bbe5a88766",
     urls = ["https://codeload.github.com/skywind3000/kcp/tar.gz/b1a7a2101dcbb96017681a500d6b82bbe5a88766"],

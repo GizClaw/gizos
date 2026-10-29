@@ -392,8 +392,7 @@ static int h2_bk_h2loader_start_app_ble_with_mode(
               .time = runtime->time,
               .sync = runtime->sync,
               .system_event = runtime->system_event,
-              /* Keep transport queues/segments in the package PSRAM arena. */
-              .allocator = client.config.allocator,
+              .allocator = runtime->mem,
           },
       .board = runtime->board,
       .capabilities = s_ble.client_config.hardware_capabilities,

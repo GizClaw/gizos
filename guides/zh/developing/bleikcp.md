@@ -2,7 +2,7 @@
 
 `libs/bleikcp` 在调用方已经建立的 BLE connection 上提供可靠、有序的 byte stream。它使用 iKCP 处理重传、顺序和流量窗口，但不负责发现设备、选择 peer、建立连接或制定重连策略。
 
-KCP 的控制块、MTU buffer、segment 和 ACK list 也使用 `h2_bleikcp_api_t.allocator`。ikcp allocator hooks 与块归属 registry 确实是进程级资源，因此最终 binary 的串行启动路径调用 `h2_bleikcp_global_init()` 安装 hooks，之后才并发打开 client/server；未安装时 open 返回 `INVALID_STATE`。Registry 的业务 flag 由 `H2_ATOMIC_DEFINE_STATIC` 定义自己的文件级 static backing，不因该 hooks 生命周期额外分配。Bridge 以调用线程的实例上下文选分配器并逐块记录归属，支持不同 arena 的并发连接及跨线程释放。多个 owner 可在串行启动/销毁路径各持一份引用，最后一份 `h2_bleikcp_global_shutdown()` 在全部 stream 和 callback 停止、registry 无 live block 后恢复 libc hooks；仍有 live block 返回 `BUSY` 并保留 hooks 供重试。生命周期调用本身不得与 stream 操作并发。其他未指定分配上下文的 KCP 调用仍使用 libc。固定 upstream 的分配失败修正通过 `third_party/ikcp_patch/` 的显式 source overlay 装配：接收 segment 或 ACK list 分配失败时返回错误而不是解引用空指针或 abort，且不会确认未保留的新数据。BLE worker 将这类失败传播为 `NO_MEMORY`，结束当前 stream 并唤醒阻塞 I/O；重试由调用方在新 connection 上处理。
+KCP 的控制块、MTU buffer、segment 和 ACK list 也使用 `h2_bleikcp_api_t.allocator`。ikcp allocator hooks 与块归属 registry 确实是进程级资源，因此最终 binary 的串行启动路径调用 `h2_bleikcp_global_init()` 安装 hooks，之后才并发打开 client/server；未安装时 open 返回 `INVALID_STATE`。Registry 的业务 flag 由 `H2_ATOMIC_DEFINE_STATIC` 定义自己的文件级 static backing，不因该 hooks 生命周期额外分配。Bridge 以调用线程的实例上下文选分配器并逐块记录归属，支持不同 arena 的并发连接及跨线程释放。多个 owner 可在串行启动/销毁路径各持一份引用，最后一份 `h2_bleikcp_global_shutdown()` 在全部 stream 和 callback 停止、registry 无 live block 后恢复 libc hooks；仍有 live block 返回 `BUSY` 并保留 hooks 供重试。生命周期调用本身不得与 stream 操作并发。Bridge 不改 vendored ikcp，其他未指定分配上下文的 KCP 调用仍使用 libc。
 
 ## API Reference
 
@@ -40,7 +40,7 @@ BLE 使用单一 Host PAL API，不按 peripheral/central 拆成两个 capabilit
 
 本地 BLE backend 应把 preferred ATT MTU 配置为 `517`，BLE iKCP 的业务 datagram 上限为 `512` bytes。实际 KCP MTU 取 `min(negotiated ATT MTU - 3, 512)`，因此 central 或系统 backend 只协商出更小 MTU 时必须自动降级；negotiated ATT MTU 低于 `53` 时拒绝建立 transport。每个 KCP datagram 必须完整放入一个 ATT value；BLE iKCP 不在 ATT 之上再增加一套自定义 fragmentation。
 
-H2Loader BLE transport 两端显式使用 32-segment send/receive window，并一致启用标准 KCP congestion window；Host 与 Device 不能使用不一致的 CWND 策略。Device 输入 frame queue 为 64，TX/RX byte buffer 各为 32 KiB；Host 输入/输出 queue 各为 128。Device buffer 必须使用调用方注入的内存能力分配。Loader 复用 package allocator，BK App 复用 App-client 的 package allocator，使 bulk queue 和 KCP segment 与升级包一起使用 PSRAM，避免耗尽原厂 BLE stack 的 SRAM。BLE adapter 发送单 MSS 消息，并显式保留配置的接收窗口，不接受 upstream 为多片消息设置的隐式最小窗口；接收队列和重排队列各自受这个窗口约束。修改 window 时必须同步审查 frame queue 与 byte buffer，不能通过 queue overflow 换取吞吐；Device 的 frame queue 与 byte buffer 分别可以容纳至少一个完整 window，Host queue 可以容纳四个完整 window。`libs/bleikcp` 的 target-independent default config 保持关闭 CWND，传入显式 config 的 consumer 使用 `no_congestion_control` 选择策略；H2Loader 必须显式开启 CWND。
+H2Loader BLE transport 两端显式使用 32-segment send/receive window，并一致启用标准 KCP congestion window；Host 与 Device 不能使用不一致的 CWND 策略。Device 输入 frame queue 为 64，TX/RX byte buffer 各为 32 KiB；Host 输入/输出 queue 各为 128。Device buffer 必须使用调用方注入的内存能力分配。修改 window 时必须同步审查 frame queue 与 byte buffer，不能通过 queue overflow 换取吞吐；Device 的 frame queue 与 byte buffer 分别可以容纳至少一个完整 window，Host queue 可以容纳四个完整 window。`libs/bleikcp` 的 target-independent default config 保持关闭 CWND，传入显式 config 的 consumer 使用 `no_congestion_control` 选择策略；H2Loader 必须显式开启 CWND。
 
 H2Loader 作为 Peripheral 接受连接后，由独立的 `h2loader/blelink` PSRAM task 主动发起 ATT MTU exchange，并请求 15 ms connection interval 和 2M PHY。MTU changed event 驱动 BLE iKCP readiness，使不会自动协商 MTU 的 central/backend 也能建立 session；系统事件回调只记录 connection handle 并唤醒 task，不能在回调中执行可能阻塞的 PAL link-control 操作。对端或 controller 不接受 interval/PHY 请求时只记录结果，连接和 GATT 服务继续可用。
 

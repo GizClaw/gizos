@@ -8,5 +8,3 @@
 
 # Unified-diff blank context lines intentionally contain one space.
 third_party/gizclaw_c_sdk_lua_app_uninstall.patch whitespace=-trailing-space
-# KCP diff context also prefixes upstream tab indentation with one space.
-third_party/ikcp_patch/ikcp_allocation_failures.patch whitespace=-trailing-space,-space-before-tab
