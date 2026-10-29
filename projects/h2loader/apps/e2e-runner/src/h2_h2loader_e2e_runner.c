@@ -1167,7 +1167,7 @@ static h2_pal_result_t run_install(
 
 static h2_pal_result_t run_reject_loader_update(
     h2_e2e_transport_context_t* context) {
-  h2_h2loader_host_status_t before, after;
+  h2_h2loader_host_status_t before = {0}, after = {0};
   h2_pal_result_t rc = run_stage_payload(context, &context->loader_asset,
                                          context->config->loader_firmware,
                                          context->config->loader_firmware_size);
@@ -1216,7 +1216,9 @@ static h2_pal_result_t run_reject_loader_update(
     return H2_PAL_ERR_INVALID_STATE;
   context->command_output_size = 0;
   context->command_output[0] = 0;
-  rc = run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS);
+  /* Wait for the final STATS line, not just STATUS: a read can end with
+   * a checksum prefix that is indistinguishable from a truncated audit. */
+  rc = run_simple_command(context, H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM);
   if (rc == H2_PAL_OK)
     rc = context->config->check_loader_rejection(
         context->config->rejection_user, context->command_output,

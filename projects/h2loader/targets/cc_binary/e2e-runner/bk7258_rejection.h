@@ -18,7 +18,8 @@ inline h2_pal_result_t h2_bk7258_e2e_check_rejection(void*, const char* output,
   while (!remaining.empty()) {
     const auto end = remaining.find('\n');
     if (end == std::string_view::npos) {
-      // STATS may finish before the following checksum/log line is complete.
+      // The caller collects through the final STATS checksum line; later
+      // unrelated log output can still be incomplete.
       // A partial audit record must still fail, including a duplicate prefix.
       const auto common =
           remaining.size() < prefix.size() ? remaining.size() : prefix.size();

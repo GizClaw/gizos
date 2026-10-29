@@ -433,6 +433,7 @@ static int command_transport_cancelled(void* user) {
 static void test_data_checksum_waits_for_second_line(void) {
   static const uint8_t status_only[] = "H2_LOADER_STATUS board=devkit\n";
   static const uint8_t response[] =
+      "H2_BK_FLASH_REJECTION valid=1 aes=1 rc=-3 erase_calls=0 write_calls=0\n"
       "H2_LOADER_STATUS board=devkit\n"
       "H2_LOADER_DATA_CHECKSUM checksum="
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
@@ -453,6 +454,18 @@ static void test_data_checksum_waits_for_second_line(void) {
   h2_h2loader_host_command_contract_t contract = {0};
   h2_h2loader_host_command_result_t result = {0};
   assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+  /* Every split within the actual checksum marker must keep collecting, even
+   * H/H2/H2_ which also prefix the target's rejection audit record. */
+  const uint8_t* checksum =
+      (const uint8_t*)strstr((const char*)response, "H2_LOADER_DATA_CHECKSUM");
+  assert(checksum != NULL);
+  for (size_t length = (size_t)(checksum - response);
+       length < (size_t)(checksum - response) + strlen(contract.marker);
+       ++length) {
+    assert(
+        h2_h2loader_host_command_parse_terminal(response, length, &contract) ==
+        H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
+  }
   assert(h2_h2loader_host_command_parse_terminal(
              status_only, sizeof(status_only) - 1u, &contract) ==
          H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
