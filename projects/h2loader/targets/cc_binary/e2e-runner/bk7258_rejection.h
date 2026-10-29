@@ -20,8 +20,8 @@ inline h2_pal_result_t h2_bk7258_e2e_check_rejection(void*, const char* output,
     if (end == std::string_view::npos) {
       // STATS may finish before the following checksum/log line is complete.
       // A partial audit record must still fail, including a duplicate prefix.
-      const auto common = remaining.size() < prefix.size() ? remaining.size()
-                                                           : prefix.size();
+      const auto common =
+          remaining.size() < prefix.size() ? remaining.size() : prefix.size();
       if (remaining.substr(0, common) == prefix.substr(0, common))
         return H2_PAL_ERR_FORMAT;
       break;
