@@ -352,7 +352,7 @@ static void h2_bleikcp_drain_input(h2_bleikcp_t* stream) {
     s_kcp_allocator = previous;
     if (result < 0) {
       stream->stats.input_errors++;
-      /* The pinned KCP allocation-failure overlay reserves -4 for input OOM. */
+      /* The pinned KCP allocation-failure patch reserves -4 for input OOM. */
       stream->fatal_status =
           result == -4 ? H2_PAL_ERR_NO_MEMORY : H2_PAL_ERR_IO;
       break;
