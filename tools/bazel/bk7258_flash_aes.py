@@ -1,4 +1,4 @@
-"""Offline BK7258 legacy AB recovery transform; never acquires device secrets."""
+"""Offline BK7258 recovery and App transforms; never acquires device secrets."""
 
 import json
 import struct
@@ -153,3 +153,68 @@ def encrypt_recovery(source: bytes, metadata: Path, key: bytes) -> bytes:
         raise ImageError("OUTPUT_DECRYPT")
     check_rbl(decoded, ranges[1][0], ranges[2][0])
     return output
+
+
+def validate_app(source: bytes, metadata: Path | dict) -> tuple[bytes, int, int]:
+    """Return plaintext, final logical base and AP offset for a managed App.
+
+    Unlike recovery, the App starts at its final CP partition, has no BootROM
+    marker exception, and may end before the partition window's capacity.
+    """
+    table = metadata if isinstance(metadata, dict) else json.loads((metadata / "partitions.json").read_text(encoding="utf-8"))
+    if not isinstance(table, dict) or table.get("crc_enable") is not True:
+        raise ImageError("APP_LAYOUT")
+    sections = table.get("section")
+    if not isinstance(sections, list) or any(not isinstance(p, dict) for p in sections):
+        raise ImageError("APP_LAYOUT")
+    ranges = []
+    for name in ("primary_cp_app", "primary_ap_app"):
+        found = [p for p in sections if p.get("Name") == name]
+        if len(found) != 1:
+            raise ImageError("APP_PARTITIONS")
+        part = found[0]
+        start, size = part.get("Offset"), part.get("Size")
+        if type(start) is not int or type(size) is not int or start < 0 or size <= 0 or part.get("Execute") is not True:
+            raise ImageError("APP_RANGE")
+        end = start + size
+        if end > 16 * 1024 * 1024 or _logical(start) % 4096 or _logical(end) % 4096:
+            raise ImageError("APP_RANGE")
+        ranges.append((start, end))
+    (start, cp_end), (ap_start, end) = ranges
+    if start == 0 or cp_end != ap_start or not source or len(source) % 34 or len(source) > end - start:
+        raise ImageError("APP_LENGTH")
+    for part in sections:
+        if part.get("Name") in ("primary_cp_app", "primary_ap_app"):
+            continue
+        other_start, size = part.get("Offset"), part.get("Size")
+        if type(other_start) is not int or type(size) is not int or other_start < 0 or size <= 0:
+            raise ImageError("APP_LAYOUT")
+        if other_start < end and other_start + size > start:
+            raise ImageError("APP_OVERLAP")
+    blocks = []
+    for offset in range(0, len(source), 34):
+        packet = source[offset:offset + 34]
+        if packet != b"\xff" * 34 and flash_crc(packet[:32]) != packet[32:]:
+            raise ImageError("SOURCE_CRC")
+        blocks.append(packet[:32])
+    plain = b"".join(blocks)
+    base, ap_offset = _logical(start), _logical(ap_start) - _logical(start)
+    payload_end = check_rbl(plain, 0, ap_offset)
+    for offset, limit in ((0, ap_offset), (ap_offset, payload_end)):
+        stack, reset = struct.unpack_from("<II", plain, offset)
+        pc = (reset & ~1) - 0x02000000 - base
+        if not 0x28000000 <= stack <= 0x280A0000 or stack % 8 or not reset & 1 or not offset <= pc < min(limit, payload_end):
+            raise ImageError("APP_VECTOR")
+    return plain, base, ap_offset
+
+
+def encrypt_app(source: bytes, metadata: Path | dict, key: bytes) -> bytes:
+    """Encrypt a validated paired CP/AP image for its final address."""
+    plain, base, ap_offset = validate_app(source, metadata)
+    cipher = BekenXTS(key)
+    blocks = [cipher.block(plain[i:i + 32], base + i) for i in range(0, len(plain), 32)]
+    decoded = b"".join(cipher.block(block, base + i * 32, True) for i, block in enumerate(blocks))
+    if decoded != plain:
+        raise ImageError("OUTPUT_DECRYPT")
+    check_rbl(decoded, 0, ap_offset)
+    return b"".join(block + flash_crc(block) for block in blocks)

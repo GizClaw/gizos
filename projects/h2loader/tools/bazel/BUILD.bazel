@@ -33,7 +33,10 @@ py_test(
         "tests/fixtures/h2loader_format1.sha256",
         "tests/fixtures/h2loader_format1.tar.zlib",
         "tests/fixtures/h2loader_format2.sha256",
-    ],
+    ] + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [":encrypted_bk_app"],
+    }),
     legacy_create_init = 0,
     main = "tests/test_firmware_artifacts.py",
     target_compatible_with = select({
@@ -161,6 +164,21 @@ py_test(
     legacy_create_init = 0,
     main = "tests/test_package_rules.py",
     target_compatible_with = _HOST_PACKAGE_TEST,
+)
+
+py_binary(
+    name = "encrypted_bk_app",
+    srcs = ["encrypted_bk_app.py"],
+    legacy_create_init = False,
+    main = "encrypted_bk_app.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":firmware_output",
+    ],
 )
 
 py_binary(

@@ -1,5 +1,6 @@
 #include "h2_bk_fixed_boot_test_sdk.h"
 #include "layout.h"
+#include "flash_access.h"
 #include <assert.h>
 #include <stddef.h>
 #include <string.h>
@@ -72,6 +73,20 @@ flash_protect_type_t bk_flash_get_protect_type(void) {
   return FLASH_PROTECT_ALL;
 }
 uint8_t bk_ota_get_current_partition(void) { return native_slot; }
+
+unsigned h2_bk_flash_aes_state(void) { return H2_BK_FLASH_AES_OFF; }
+int h2_bk_flash_read_plain(uint32_t base, uint32_t capacity, uint32_t offset,
+                           void* out, size_t size) {
+  (void)capacity;
+  uint8_t* dst = out;
+  while (size--) {
+    uint8_t* packet = sector_at(base + offset / 32u * 34u, 34);
+    if (!h2_bk_flash_erased(packet) && !h2_bk_flash_crc_valid(packet))
+      return H2_PAL_ERR_IO;
+    *dst++ = packet[offset++ % 32u];
+  }
+  return H2_PAL_OK;
+}
 
 /* Mirrors h2loader_cp_try_fixed_app: returns whether CP enters App. */
 static int cp_boot(void) {
@@ -172,6 +187,14 @@ static void put_app_window_image(uint32_t offset) {
                              H2_FIXED_XIP_ADDRESS(offset) + 0x201u};
   memset(app_sector, 0xff, sizeof(app_sector));
   memcpy(app_sector, words, sizeof(words));
+  uint16_t crc = 0xffff;
+  for (unsigned i = 0; i < 32; ++i) {
+    crc ^= (uint16_t)app_sector[i] << 8;
+    for (unsigned b = 0; b < 8; ++b)
+      crc = (uint16_t)((crc << 1) ^ ((crc & 0x8000) ? 0x8005 : 0));
+  }
+  app_sector[32] = (uint8_t)(crc >> 8);
+  app_sector[33] = (uint8_t)crc;
 }
 
 static void test_loader_relay_through_native_b(void) {
@@ -313,6 +336,7 @@ static void test_board_owned_loader_size(void) {
 }
 
 int main(void) {
+  put_app_window_image(APP_OFFSET);
   test_confirmed_app_boots_without_writes();
   test_unconfirmed_attempt_and_loader_selection();
   test_invalidate_before_app_write();

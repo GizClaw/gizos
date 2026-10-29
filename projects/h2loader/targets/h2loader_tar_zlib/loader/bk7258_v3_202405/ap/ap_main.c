@@ -489,24 +489,26 @@ static void h2loader_startup_worker(void* user) {
         0, "H2_BK_H2LOADER_STEP stage=startup_begin rc=0\r\n");
     rc = h2_loader_startup(&s_h2loader, &action);
     if (rc == H2_PAL_OK) {
+      /* Command-mode recovery may intentionally retain a previous failure.
+       * Core owns durable last_result; successful startup is not confirmation.
+       */
       clear_startup_error();
-      rc = persist_startup_result(H2_PAL_OK);
-      if (rc != H2_PAL_OK) {
-        record_startup_error("startup_result", rc);
-      }
     } else {
       record_startup_error("startup", rc);
       (void)persist_startup_result(rc);
     }
     int unlock_rc =
         h2_pal_mutex_unlock(s_runtime->sync, s_h2loader_operation_mutex);
-    if (rc == H2_PAL_OK && unlock_rc != H2_PAL_OK) {
-      rc = unlock_rc;
+    if (unlock_rc != H2_PAL_OK) {
+      record_startup_error("startup_unlock", unlock_rc);
+      wait_forever();
     }
     snprintf(line, sizeof(line), "H2_BK_H2LOADER_READY rc=%d action=%s\r\n", rc,
              startup_action_name(action));
     emergency_uart_write_string(0, line);
-    if (rc == H2_PAL_OK) {
+    /* Recovery failures retain their diagnostic and Stage. Serve commands
+     * instead of retrying a rejected update before BLE can start. */
+    if (rc == H2_PAL_OK || action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
       if (action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
         const h2loader_app_command_service_api_t* command_service =
             h2loader_bleikcp_command_service();

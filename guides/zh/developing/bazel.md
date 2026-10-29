@@ -337,6 +337,14 @@ make bazel-release RELEASE_SLICE=lua-runtime RELEASE_BATCH=20260925-120000 RELEA
 
 ## BK7258 离线加密恢复镜像
 
+### 调用方选择普通或加密产物
+
+Firmwares 可以用一个发布入口封装普通构建和可选的加密后处理：未提供 key 时发布现有普通产物；显式提供 key 时先完成同一套无密钥编译，再调用下述 GizOS 加密入口，通过匿名 pipe/socket 的 descriptor 注入 key，发布加密产物。提供了 key 但读取、编码或加密校验失败时必须终止，不能退回普通产物。`bazel run` 启动的本机加密进程可以接收 descriptor，但 key 不是 Bazel rule attribute、`--define` 或构建 action 的输入，加密输出也不进入 Bazel 缓存。
+
+这个选择不替换 `bk7258_v3_202405` BSP，也不新增按 MP_C/MP_J 命名的 BSP。实际 GPIO、存储和布局仍由调用方的物理 board 提供，两种产物共用 H2Loader 源码。MP_C/MP_J 是本次资格测试使用的芯片；是否提供 key 只选择产物，运行时仍以芯片真实 Flash AES 状态决定能力。GizOS 接收下面定义的 canonical key bytes，不读取 OTP，也不把任意 OTP 分区原始字节直接当成 key。
+
+### 加密恢复入口
+
 `//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl` 的 `h2loader_bk_recovery` 是显式运行的本机工具入口，消费现有 `Bk7258FirmwareInfo`，不修改 native 编译流程。仅支持从物理地址零开始、连续 Bootloader/CP/AP code 分区的 legacy AB recovery 布局；分区 geometry 来自 native `partitions.json`。它核对各 code 分区的对齐启动栈指针及分区内 Thumb reset handler（CP/AP reset 目标还必须位于 RBL 摘要覆盖的 payload 内），校验 Flash CRC、原始 BootROM marker、未压缩未加密的 RBL payload/header 摘要及覆盖到 AP 的有效载荷范围，要求 RBL 摘要范围外至尾部 header 的间隙和 header 页剩余空间为擦除态，然后按已验证的 Beken XTS 字节序处理整个逻辑镜像，保留原始 marker/version，重建 CRC，复核解密结果。TF-M/Direct-XIP 和其他布局明确拒绝，不依赖 Docker 或原厂 `.so`。
 
 私有 firmware entry 声明下面的目标；`firmware` 必须提供选定 board layout 的 `recovery_config`，不接受在 recovery rule 覆盖 offset/baud：
@@ -362,3 +370,17 @@ private-secret-provider | bazel run --config=bk7258 //path/to/entry:encrypted_re
 也可先 build 再直接运行生成的 executable，让调用方通过继承的 descriptor 注入；不要为了传递 descriptor 而把 key 改成 argv/environment。加密发生在运行阶段，不是可缓存的 Bazel action；output-dir 必须是尚不存在的绝对目录，位于 Bazel execroot/runfiles/output tree 外。成功后原子发布目录，包含 `encrypted.bin`、`recovery.h2fb` 和不含密钥的 `validation.json` 摘要收据；失败不发布半成品，不降级为明文；若操作系统拒绝清理私有 staging 目录，工具返回失败并输出不含异常详情的清理提示，可能需要调用方清理输出父目录下的 `.bk-recovery-*`。输出目录和文件限制为当前用户访问，运行进程在读取密钥前禁用 core dump；Linux 另外设置并核实 `PR_SET_DUMPABLE=0`，防止管道式 core collector 绕过 `RLIMIT_CORE`，无法建立保护则拒绝读取密钥。诊断输出立即 flush；关闭的输出管道不会改变已发布产物的成功状态。Python 对象和密码库内存不承诺可靠擦除，secret provider 也必须遵循本机 secret 生命周期约束。
 
 该入口不生成 managed update、不自动发布 release、不连接设备、不读取 OTP，也不执行烧录。非秘密向量与离线解密校验不能识别任意错误的芯片 key；新工具输出仍需另行授权的实际 recovery/启动资格验证。
+
+### BK7258 预加密 App 包
+
+普通构建仍产出无密钥的 CP/AP 固件和 managed package。显式主机工具可以将已有的 BK7258 App package 转成预加密包；输入的 partition metadata 必须来自同一次 App 原生构建，不能使用 Loader 自身的分区表。工具从 App 最终地址计算 tweak，保留数据文件，重新计算密文镜像、压缩流和包的摘要。加密包绑定密钥与布局，不是可跨任意设备安装的通用包。
+
+```sh
+bazel run //projects/h2loader/tools/bazel:encrypted_bk_app -- \
+  --source /absolute/path/app.update.tar \
+  --metadata /absolute/path/app/partition_metadata \
+  --key-fd 0 \
+  --output-dir /absolute/path/new-encrypted-app
+```
+
+密钥由调用方通过匿名 pipe/socket 提供，使用与 recovery 相同的受保护 descriptor 合同；不要使用普通 key 文件、命令参数或环境变量保存密钥。输出目录必须尚不存在且位于 Bazel outputs 之外。工具只接受经过完整校验的标准格式包，不处理刻意损坏的 checksum-matrix 跳过测试流，也不执行设备操作。输出收据不证明密钥与设备匹配，实际安装还必须通过 native RBL 和启动确认。

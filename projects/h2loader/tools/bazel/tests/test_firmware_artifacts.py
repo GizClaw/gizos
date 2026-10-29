@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib
 import os
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ import json
 import tarfile
 import zlib
 
-from projects.h2loader.tools.bazel.firmware_artifacts import BundleEntry, write_factory_bundle, write_package
+from projects.h2loader.tools.bazel.firmware_artifacts import BundleEntry, read_managed_package, write_factory_bundle, write_package
 
 
 def fixture_path(name: str) -> Path:
@@ -23,6 +24,102 @@ def fixture_path(name: str) -> Path:
 
 
 class FirmwareArtifactsTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "runtime key descriptors require POSIX")
+    def test_encrypted_app_runtime_publication(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout, redirect_stderr
+        from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_app_main
+        from tools.bazel.bk7258_flash_aes import flash_crc
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plain = bytearray(b"\xff" * 12288)
+            for offset in (0,4096):
+                struct.pack_into("<II",plain,offset,0x28030000,0x2240000+offset+0x101)
+            header=bytearray(96);header[:4]=b"RBL\0"
+            fnv=0x811c9dc5
+            for b in plain[:8192]: fnv=((fnv^b)*0x1000193)&0xffffffff
+            struct.pack_into("<4I",header,76,zlib.crc32(plain[:8192]),fnv,8192,8192)
+            struct.pack_into("<I",header,92,zlib.crc32(header[:92]))
+            plain[8192:8288]=header
+            raw=b"".join(plain[i:i+32]+flash_crc(plain[i:i+32]) for i in range(0,len(plain),32))
+            (root/"partitions.json").write_text(json.dumps({"crc_enable":True,"section":[
+                {"Name":"primary_cp_app","Offset":0x264000,"Size":4352,"Execute":True},
+                {"Name":"primary_ap_app","Offset":0x264000+4352,"Size":8704,"Execute":True}]}))
+            for fmt in (1,2):
+                source=root/f"source-{fmt}"
+                entries=[BundleEntry("data/test.txt",b"unchanged")]
+                write_package(source,"app/bk/app_ab_crc.rbl",raw,entries,role="app",board="fixture",target="bk7258",version="1",package_format=fmt)
+                dest=root/f"encrypted-{fmt}"
+                rd,wr=os.pipe();os.write(wr,bytes(range(32)));os.close(wr)
+                try:
+                    with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"),redirect_stdout(io.StringIO()):
+                        rc=encrypted_bk_app_main(["--source",str(source),"--metadata",str(root),"--key-fd",str(rd),"--output-dir",str(dest)])
+                finally: os.close(rd)
+                self.assertEqual(rc,0)
+                receipt=json.loads((dest/"validation.json").read_text())
+                archive=next(dest.glob("*.update.*"))
+                parsed=read_managed_package(archive.read_bytes())
+                self.assertEqual(parsed.data,entries)
+                self.assertNotEqual(parsed.app,raw)
+                self.assertEqual(receipt["image_sha256"],hashlib.sha256(parsed.app).hexdigest())
+                self.assertEqual(receipt["logical_base"],0x240000)
+                for path in dest.iterdir(): self.assertEqual(path.stat().st_mode & 0o777,0o600)
+            # Run the built public executable, not only the Python function.
+            if "TEST_SRCDIR" in os.environ:
+                from python.runfiles import Runfiles
+                command = [Runfiles.Create().Rlocation("gizos/projects/h2loader/tools/bazel/encrypted_bk_app")]
+            else:
+                command = [sys.executable, "-m", "projects.h2loader.tools.bazel.encrypted_bk_app"]
+            result = subprocess.run(command + ["--source", str(source), "--metadata", str(root),
+                                              "--key-fd", "0", "--output-dir", str(root / "cli-output")],
+                                    input=bytes(range(32)), capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            self.assertTrue((root / "cli-output" / "validation.json").is_file())
+            # The ordinary build output stays plaintext. Selecting encryption
+            # with a missing/invalid key must never publish a plaintext fallback.
+            self.assertEqual(read_managed_package(source.read_bytes()).app, raw)
+            for label, key_args, key_input in (
+                ("missing-key", [], b""),
+                ("short-key", ["--key-fd", "0"], bytes(range(16))),
+            ):
+                destination = root / label
+                refused = subprocess.run(
+                    command + ["--source", str(source), "--metadata", str(root),
+                               "--output-dir", str(destination)] + key_args,
+                    input=key_input, capture_output=True, timeout=30)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertFalse(destination.exists())
+            self.assertFalse(list(root.glob(".bk-app-*")))
+            source.write_bytes(b"invalid")
+            with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"),patch("projects.h2loader.tools.bazel.firmware_output._read_recovery_key") as read_key,redirect_stderr(io.StringIO()):
+                self.assertEqual(encrypted_bk_app_main(["--source",str(source),"--metadata",str(root),"--key-fd","0","--output-dir",str(root/"bad")]),1)
+                read_key.assert_not_called()
+
+    def test_conversion_reader_roundtrip_and_corruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)/"update"
+            entries=[BundleEntry("data/a.txt",b"a"),BundleEntry("data/b.pixa",b"picture")]
+            for fmt in (1,2):
+                write_package(out,"app/bk/app_ab_crc.rbl",b"image",entries,role="app",board="fixture",target="bk7258",version="1",package_format=fmt)
+                data=out.read_bytes()
+                parsed=read_managed_package(data)
+                self.assertEqual(parsed.app,b"image")
+                self.assertEqual(parsed.data,entries)
+                for bad in (data[:100], data+b"trailing" if fmt==1 else data+b"\x01", data[:2048] if fmt==2 else data[:-1]):
+                    with self.subTest(fmt=fmt,size=len(bad)),self.assertRaises(ValueError):
+                        read_managed_package(bad)
+                unpacked=zlib.decompress(data) if fmt==1 else data
+                tf=tarfile.open(fileobj=io.BytesIO(unpacked))
+                changed=io.BytesIO()
+                with tarfile.open(fileobj=changed,mode="w",format=tarfile.USTAR_FORMAT) as dst:
+                    for m in tf:
+                        content=tf.extractfile(m).read()
+                        if m.name=="manifest": content=content.replace(b"version=1",b"version=2\nversion=1")
+                        m.size=len(content);dst.addfile(m,io.BytesIO(content))
+                with self.assertRaises(ValueError):
+                    read_managed_package(zlib.compress(changed.getvalue()) if fmt==1 else changed.getvalue())
+
     def test_independent_format2_members(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "update.tar"

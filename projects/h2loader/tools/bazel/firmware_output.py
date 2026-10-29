@@ -420,5 +420,91 @@ def encrypted_bk_recovery_main(argv: list[str] | None = None) -> int:
                 _recovery_message("Private recovery staging cleanup failed; no output was published.", error=True)
 
 
+def encrypted_bk_app_main(argv: list[str] | None = None) -> int:
+    """Convert an existing App package locally, before any device operation."""
+    import argparse
+    import os
+    import shutil
+    import tempfile
+
+    from projects.h2loader.tools.bazel.firmware_artifacts import read_managed_package
+    from tools.bazel.bk7258_flash_aes import encrypt_app, validate_app
+
+    parser = argparse.ArgumentParser(description="Pre-encrypt a BK7258 App package; no device access", allow_abbrev=False)
+    for flag in ("source", "metadata", "output-dir"):
+        parser.add_argument("--" + flag, required=True)
+    parser.add_argument("--key-fd", type=int, required=True)
+    tokens = sys.argv[1:] if argv is None else argv
+    for flag in ("--source", "--metadata", "--output-dir", "--key-fd"):
+        if sum(t == flag or t.startswith(flag + "=") for t in tokens) > 1:
+            parser.error("duplicate option")
+    args = parser.parse_args(tokens)
+    temporary = None
+    key = bytearray()
+    try:
+        _protect_recovery_process()
+        output = Path(args.output_dir)
+        if not output.is_absolute() or output.exists() or output.is_symlink():
+            raise ValueError("OUTPUT_DIRECTORY")
+        parent = output.parent.resolve(strict=True)
+        if any(p in ("bazel-out", "execroot") or p.endswith(".runfiles") for p in parent.parts):
+            raise ValueError("BAZEL_OUTPUT_DIRECTORY")
+        with Path(args.source).open("rb") as stream:
+            source = stream.read(128 * 1024 * 1024 + 1)
+        package = read_managed_package(source)
+        manifest = package.manifest
+        if manifest["target"] != "bk7258" or manifest["role"] != "app":
+            raise ValueError("APP_IDENTITY")
+        # Snapshot and validate unkeyed inputs before receiving a secret. Do
+        # not reopen metadata or package files after accepting the descriptor.
+        with (Path(args.metadata) / "partitions.json").open("rb") as stream:
+            metadata_bytes = stream.read(1024 * 1024 + 1)
+        if len(metadata_bytes) > 1024 * 1024:
+            raise ValueError("METADATA_SIZE")
+        metadata = json.loads(metadata_bytes)
+        _, base, _ = validate_app(package.app, metadata)
+        key = _read_recovery_key(args.key_fd)
+        encrypted = encrypt_app(package.app, metadata, bytes(key))
+        temporary = Path(tempfile.mkdtemp(prefix=".bk-app-", dir=parent))
+        image = temporary / "app.flash-aes.rbl"
+        image.write_bytes(encrypted)
+        fmt = int(manifest["format"])
+        archive = temporary / ("app.flash-aes.update.tar.zlib" if fmt == 1 else "app.flash-aes.update.tar")
+        write_package(archive, "app/bk/app_ab_crc.rbl", encrypted, package.data,
+                      board=manifest["board"], target="bk7258", role="app", version=manifest["version"], package_format=fmt)
+        publish_metadata(output=temporary / "firmware.json", entry="offline/bk7258", platform="bk7258",
+                         board=manifest["board"], image="app", role="app", target="bk7258", version=manifest["version"],
+                         app_image=image, package=archive, factory=None, recovery=None, native=[], package_format=fmt)
+        receipt = {
+            "format": "bk7258-encrypted-app-v1", "board": manifest["board"], "target": "bk7258",
+            "version": manifest["version"], "logical_base": base, "physical_base": base // 32 * 34,
+            "source_package_sha256": hashlib.sha256(source).hexdigest(),
+            "source_image_sha256": hashlib.sha256(package.app).hexdigest(),
+            "image_sha256": sha256(image), "package_sha256": sha256(archive),
+            "partition_metadata_sha256": hashlib.sha256(metadata_bytes).hexdigest(),
+        }
+        (temporary / "validation.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+        for path in temporary.iterdir():
+            os.chmod(path, 0o600)
+        if output.exists() or output.is_symlink():
+            raise ValueError("OUTPUT_DIRECTORY")
+        temporary.rename(output)
+        temporary = None
+        _recovery_message("Encrypted App package created; device/key matching requires native verification.")
+        return 0
+    except (OSError, ValueError, KeyError, TypeError, struct.error, UnicodeError):
+        _recovery_message("Encrypted App refused: invalid input, secret descriptor or output.", error=True)
+        return 1
+    finally:
+        key[:] = b"\0" * len(key)
+        if temporary is not None:
+            try:
+                shutil.rmtree(temporary)
+            except OSError:
+                _recovery_message("Private App staging cleanup failed; no output was published.", error=True)
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["app"]:
+        raise SystemExit(encrypted_bk_app_main(sys.argv[2:]))
     raise SystemExit(encrypted_bk_recovery_main())

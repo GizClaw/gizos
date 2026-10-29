@@ -7,6 +7,7 @@ import hashlib
 import io
 from pathlib import Path
 import posixpath
+import re
 import struct
 import tarfile
 import zlib
@@ -25,6 +26,138 @@ FACTORY_HEADER_SIZE = (
 class BundleEntry:
     name: str
     data: bytes
+
+
+@dataclass(frozen=True)
+class ManagedPackage:
+    """Validated standard producer output, retained in memory for conversion."""
+
+    manifest: dict[str, str]
+    app: bytes
+    data: list[BundleEntry]
+
+
+def _inflate_bounded(data: bytes, limit: int) -> bytes:
+    stream = zlib.decompressobj()
+    try:
+        decoded = stream.decompress(data, limit + 1)
+    except zlib.error as error:
+        raise ValueError("PACKAGE_COMPRESSION") from error
+    if len(decoded) > limit or not stream.eof or stream.unused_data or stream.unconsumed_tail:
+        raise ValueError("PACKAGE_COMPRESSION")
+    return decoded
+
+
+def _package_members_unchecked(data: bytes, limit: int) -> dict[str, bytes]:
+    """Read regular USTAR members only; never extract to the filesystem."""
+    members: dict[str, bytes] = {}
+    end = total = 0
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
+        for member in archive:
+            name = member.name
+            if (
+                len(members) >= 1027 or not member.isfile()
+                or member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE)
+                or member.pax_headers or member.offset != end
+                or member.offset_data != end + 512
+                or not name or name.startswith("/") or "\\" in name
+                or posixpath.normpath(name) != name or name == ".."
+                or name.startswith("../") or name in members
+                or member.size < 0 or member.size > limit - total
+            ):
+                raise ValueError("PACKAGE_MEMBER")
+            validate_tar_header_path(member)
+            stream = archive.extractfile(member)
+            if stream is None:
+                raise ValueError("PACKAGE_MEMBER")
+            value = stream.read(member.size + 1)
+            if len(value) != member.size:
+                raise ValueError("PACKAGE_TRUNCATED")
+            members[name] = value
+            total += member.size
+            end = member.offset_data + (member.size + 511) // 512 * 512
+    if len(data) - end < 1024 or any(data[end:]):
+        raise ValueError("PACKAGE_TRAILING_DATA")
+    return members
+
+
+def _package_members(data: bytes, limit: int) -> dict[str, bytes]:
+    try:
+        return _package_members_unchecked(data, limit)
+    except tarfile.TarError as error:
+        raise ValueError("PACKAGE_TAR") from error
+
+
+def read_managed_package(data: bytes) -> ManagedPackage:
+    """Validate bounded format-1/2 producer output for offline conversion.
+
+    This intentionally accepts regular-file USTAR packages, not arbitrary tar
+    extensions or filesystem archives. Keys are never needed to inspect it.
+    """
+    if not data or len(data) > 128 * 1024 * 1024:
+        raise ValueError("PACKAGE_SIZE")
+    # A standard format-2 package is USTAR; format 1 is one complete zlib stream.
+    outer = data if len(data) > 262 and data[257:262] == b"ustar" else _inflate_bounded(data, 96 * 1024 * 1024)
+    members = _package_members(outer, 96 * 1024 * 1024)
+    text = members.get("manifest", b"")
+    if not text or len(text) > 4096 or not text.endswith(b"\n"):
+        raise ValueError("PACKAGE_MANIFEST")
+    manifest: dict[str, str] = {}
+    for line in text.decode("ascii").splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or not key or key in manifest or not value:
+            raise ValueError("PACKAGE_MANIFEST")
+        manifest[key] = value
+    common = {"format", "role", "board", "target", "version", "image_size", "image_sha256"}
+    extra = {"data_sha256", "data_tar_size", "data_bytes", "pixa_bytes", "app_zlib_size", "app_zlib_sha256", "data_zlib_size", "data_zlib_sha256"}
+    fmt = manifest.get("format")
+    if fmt not in ("1", "2") or set(manifest) != common | (extra if fmt == "2" else set()):
+        raise ValueError("PACKAGE_MANIFEST_FIELDS")
+    validate_package_identity(manifest["role"], manifest["board"], manifest["target"], manifest["version"])
+    for key, value in manifest.items():
+        if key.endswith("sha256") and not re.fullmatch("[0-9a-f]{64}", value):
+            raise ValueError("PACKAGE_DIGEST")
+        if key.endswith(("size", "bytes")) and not re.fullmatch("0|[1-9][0-9]{0,8}", value):
+            raise ValueError("PACKAGE_LENGTH")
+    if fmt == "2":
+        if set(members) != {"manifest", "app.bin.zlib", "data.tar.zlib"}:
+            raise ValueError("PACKAGE_MEMBERS")
+        for field, name in (("app", "app.bin.zlib"), ("data", "data.tar.zlib")):
+            compressed = members[name]
+            if len(compressed) != int(manifest[field + "_zlib_size"]) or hashlib.sha256(compressed).hexdigest() != manifest[field + "_zlib_sha256"]:
+                raise ValueError("PACKAGE_COMPRESSED_DIGEST")
+        app = _inflate_bounded(members["app.bin.zlib"], 16 * 1024 * 1024)
+        data_tar = _inflate_bounded(members["data.tar.zlib"], 65 * 1024 * 1024)
+        if len(data_tar) != int(manifest["data_tar_size"]):
+            raise ValueError("PACKAGE_DATA_LENGTH")
+        data_members = _package_members(data_tar, 64 * 1024 * 1024)
+        checksum = manifest["data_sha256"]
+    else:
+        if "app/bk/app_ab_crc.rbl" not in members or "checksum" not in members:
+            raise ValueError("PACKAGE_MEMBERS")
+        app = members.pop("app/bk/app_ab_crc.rbl")
+        checksum_bytes = members.pop("checksum")
+        if not re.fullmatch(b"[0-9a-f]{64}\n", checksum_bytes):
+            raise ValueError("PACKAGE_DATA_DIGEST")
+        checksum = checksum_bytes.decode("ascii").strip()
+        members.pop("manifest")
+        data_members = members
+    if not app or len(app) > 16 * 1024 * 1024 or len(app) != int(manifest["image_size"]) or hashlib.sha256(app).hexdigest() != manifest["image_sha256"]:
+        raise ValueError("PACKAGE_IMAGE_DIGEST")
+    if len(data_members) > 1024 or sum(map(len, data_members.values())) > 64 * 1024 * 1024:
+        raise ValueError("PACKAGE_DATA_LIMIT")
+    entries = []
+    for name, value in data_members.items():
+        if not name.startswith("data/") or data_entry_name(name[5:]) != name:
+            raise ValueError("PACKAGE_DATA_PATH")
+        entries.append(BundleEntry(name, value))
+    if [entry.name for entry in entries] != sorted(data_members) or bundle_checksum(entries) != checksum:
+        raise ValueError("PACKAGE_DATA_DIGEST")
+    if fmt == "2":
+        for field, is_pixa in (("data_bytes", False), ("pixa_bytes", True)):
+            if int(manifest[field]) != sum(len(e.data) for e in entries if e.name.endswith(".pixa") == is_pixa):
+                raise ValueError("PACKAGE_DATA_LENGTH")
+    return ManagedPackage(manifest, app, entries)
 
 
 def write_package(

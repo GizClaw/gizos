@@ -82,6 +82,7 @@ typedef struct h2_bleikcp_config {
   uint32_t conv;
   uint16_t max_datagram_len;
   uint16_t send_window;
+  /** Actual KCP receive window in segments, including values below 128. */
   uint16_t recv_window;
   uint16_t input_frame_capacity;
   size_t tx_buffer_size;
@@ -91,6 +92,8 @@ typedef struct h2_bleikcp_config {
   int resend;
   /** Zero enables the standard KCP congestion window; nonzero disables it. */
   int no_congestion_control;
+  /** Setup timeout and total client GATT output retry budget, in milliseconds.
+   */
   uint32_t setup_timeout_ms;
   uint32_t output_retry_count;
   uint32_t output_retry_delay_ms;

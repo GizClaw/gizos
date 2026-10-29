@@ -1047,7 +1047,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "GN36J8ZXGtronxAfN2q+0sqa5qSORQLPGXJJoOa1qYw=",
-        "usagesDigest": "YsIatGqca+vu5kZDyt9CjXi0RE439xXGTLnwfTFezuI=",
+        "usagesDigest": "D2+zt9aSwSV9pF+7LjlwtGau+7hAaF79CeGF9/JmDSE=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1132,7 +1132,9 @@
               "nested_archive_sha256": {},
               "nested_archive_strip_prefix": {},
               "nested_archive_urls": {},
-              "overlay_files": {},
+              "overlay_files": {
+                "@@//third_party/ikcp_patch:src/ikcp.c": "src/ikcp.c"
+              },
               "patches": [],
               "sha256": "291d08cd1fba918645a12078cbb6dfffa0825c57e33c0d0ec093604621bf3292",
               "strip_prefix": "kcp-b1a7a2101dcbb96017681a500d6b82bbe5a88766",

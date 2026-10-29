@@ -63,8 +63,10 @@ static int open_command_service(
     const h2_loader_command_config_t* command_config, const char* board,
     uint32_t capabilities, void** out_service) {
   (void)user;
-  if (runtime == NULL || command_config == NULL || board == NULL ||
-      out_service == NULL) {
+  if (runtime == NULL || command_config == NULL ||
+      command_config->loader == NULL ||
+      command_config->loader->config.package.allocator == NULL ||
+      board == NULL || out_service == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_service = NULL;
@@ -84,7 +86,8 @@ static int open_command_service(
               .time = runtime->time,
               .sync = runtime->sync,
               .system_event = runtime->system_event,
-              .allocator = runtime->mem,
+              /* Share the package arena selected for bulk update traffic. */
+              .allocator = command_config->loader->config.package.allocator,
           },
       .board = board,
       .local_name = runtime->ble_local_name,

@@ -23,6 +23,9 @@ int h2_darwin_corebluetooth_uuid_from_platform(const uint8_t* bytes, size_t len,
 void h2_darwin_corebluetooth_test_set_pending_connect(
     const h2_pal_ble_addr_t* address);
 bool h2_darwin_corebluetooth_test_connect_pending(void);
+void h2_darwin_corebluetooth_test_write_ready(bool ready, int peripheral_index);
+size_t h2_darwin_corebluetooth_test_write_count(void);
+size_t h2_darwin_corebluetooth_test_write_waiters(void);
 bool h2_darwin_corebluetooth_test_connect_cleanup(unsigned cancel_count);
 
 enum {

@@ -75,6 +75,7 @@ typedef enum h2_h2loader_e2e_case {
   H2_H2LOADER_E2E_CASE_NEW_TO_OLD_APP_ONLY,
   H2_H2LOADER_E2E_CASE_NEW_TO_OLD_DATA_ONLY,
   H2_H2LOADER_E2E_CASE_NEW_TO_OLD_BOTH_CHANGED,
+  H2_H2LOADER_E2E_CASE_REJECT_LOADER_UPDATE,
 } h2_h2loader_e2e_case_t;
 
 typedef struct h2_h2loader_e2e_case_result {
@@ -119,6 +120,14 @@ typedef void (*h2_h2loader_e2e_case_event_fn)(
 typedef void (*h2_h2loader_e2e_progress_event_fn)(
     void* user, const h2_h2loader_e2e_case_result_t* result);
 
+/** Validate target-owned rejection evidence collected from STATS.
+ * Called synchronously on the runner thread. The byte span is borrowed only
+ * for this call and need not be NUL terminated. Return OK only when the test
+ * image proves refusal before image erase/write; propagate missing or invalid
+ * evidence as an error. The target owns the evidence format. */
+typedef h2_pal_result_t (*h2_h2loader_e2e_rejection_check_fn)(
+    void* user, const char* output, size_t size);
+
 /** Immutable package bytes borrowed for the complete synchronous run. */
 typedef struct h2_h2loader_e2e_package {
   const uint8_t* data;
@@ -137,6 +146,9 @@ typedef struct h2_h2loader_e2e_config {
 
   const uint8_t* app_firmware;
   size_t app_firmware_size;
+  /* A distinct App package to stage across an App reboot without installing. */
+  const uint8_t* app_stage_firmware;
+  size_t app_stage_firmware_size;
   const uint8_t* loader_firmware;
   size_t loader_firmware_size;
   const uint8_t* crash_firmware;
@@ -156,6 +168,10 @@ typedef struct h2_h2loader_e2e_config {
   uint8_t include_send;
   uint8_t include_send_url;
   uint8_t include_lifecycle;
+  /** Run App lifecycle without any Loader update. */
+  uint8_t include_app_lifecycle;
+  /** Requires a target-supplied rejection validator for real device runs. */
+  uint8_t expect_loader_rejection;
   uint8_t include_coredump;
   uint8_t include_monitor;
   uint8_t include_crash;
@@ -181,6 +197,12 @@ typedef struct h2_h2loader_e2e_config {
   h2_h2loader_host_transport_log_fn on_log;
   void* log_user;
 
+  /** Optional unless expect_loader_rejection is set. Callback and user are
+   * borrowed for the complete run; portable orchestration never interprets
+   * target-specific diagnostic records. */
+  h2_h2loader_e2e_rejection_check_fn check_loader_rejection;
+  void* rejection_user;
+
   /** Optional deterministic executor used by unit tests and custom targets. */
   h2_h2loader_e2e_case_executor_fn execute_case;
   void* execute_user;
@@ -195,6 +217,8 @@ typedef struct h2_h2loader_e2e_result {
   uint64_t elapsed_ms;
   uint64_t app_firmware_bytes;
   char app_firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint64_t app_stage_firmware_bytes;
+  char app_stage_firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
   uint64_t loader_firmware_bytes;
   char loader_firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
   uint64_t crash_firmware_bytes;

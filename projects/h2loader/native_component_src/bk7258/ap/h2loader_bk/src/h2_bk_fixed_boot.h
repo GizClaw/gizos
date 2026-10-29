@@ -12,6 +12,7 @@ int h2_bk_fixed_next_app(void);
 int h2_bk_fixed_app_failed(void);
 int h2_bk_fixed_confirm_app(void);
 int h2_bk_fixed_invalidate_app(void);
+/* 1 = Loader, 0 = App/erased, negative = read/format failure. */
 int h2_bk_fixed_app_window_holds_loader(void);
 int h2_bk_fixed_confirm_loader(void);
 int h2_bk_fixed_relay_failed(void);

@@ -26,6 +26,7 @@ typedef struct h2_e2e_transport_context {
   char authoritative_device_uid[H2_H2LOADER_HOST_DEVICE_UID_MAX_LEN];
   uint8_t authoritative_device_uid_valid;
   h2_h2loader_host_catalog_entry_t app_asset;
+  h2_h2loader_host_catalog_entry_t app_stage_asset;
   h2_h2loader_host_catalog_entry_t loader_asset;
   h2_h2loader_host_catalog_entry_t crash_asset;
   h2_h2loader_host_catalog_entry_t
@@ -118,6 +119,8 @@ const char* h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
       return "app-stage-abort-after-send-url";
     case H2_H2LOADER_E2E_CASE_INSTALL_LOADER:
       return "install-loader";
+    case H2_H2LOADER_E2E_CASE_REJECT_LOADER_UPDATE:
+      return "reject-loader-update";
     case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS:
       return "coredump-status";
     case H2_H2LOADER_E2E_CASE_COREDUMP_DUMP:
@@ -388,13 +391,15 @@ static int scan_contains_ssid(const h2_e2e_transport_context_t* context) {
 
 static void record_progress(void* user, uint64_t acknowledged, uint64_t total) {
   h2_e2e_transport_context_t* context = user;
+  const int restarted = acknowledged < context->case_result->acknowledged_bytes;
   context->case_result->acknowledged_bytes = acknowledged;
   context->case_result->total_bytes = total;
   uint32_t percent =
       total == 0u ? 0u : (uint32_t)((100u * acknowledged) / total);
   if (context->config->on_progress != NULL &&
-      percent > context->last_reported_percent &&
-      (percent == 100u || percent >= context->last_reported_percent + 5u)) {
+      (acknowledged == 0u || restarted ||
+       (percent > context->last_reported_percent &&
+        (percent == 100u || percent >= context->last_reported_percent + 5u)))) {
     context->last_reported_percent = percent;
     context->config->on_progress(context->config->progress_user,
                                  context->case_result);
@@ -548,6 +553,8 @@ static h2_pal_result_t stage_payload(
     h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
     h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
     h2_h2loader_host_progress_fn on_progress, void* progress_user) {
+  /* A recovered connection retries the package from the beginning. */
+  if (on_progress != NULL) on_progress(progress_user, 0u, asset->bytes);
   return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
              ? h2_h2loader_host_serial_stage(context->serial_connection, asset,
                                              read_payload, payload_user,
@@ -1158,6 +1165,66 @@ static h2_pal_result_t run_install(
   return rc;
 }
 
+static h2_pal_result_t run_reject_loader_update(
+    h2_e2e_transport_context_t* context) {
+  h2_h2loader_host_status_t before, after;
+  h2_pal_result_t rc = run_stage_payload(context, &context->loader_asset,
+                                         context->config->loader_firmware,
+                                         context->config->loader_firmware_size);
+  if (rc != H2_PAL_OK) return rc;
+  rc = connect_transport(context, &before);
+  if (rc == H2_PAL_OK &&
+      (before.active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+       before.running_partition != 1u ||
+       !metadata_matches_asset(&before.stage, &context->loader_asset)))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_h2loader_host_command_result_t result = {0};
+  if (rc == H2_PAL_OK) {
+    const h2_h2loader_host_command_request_t request = {
+        .command = H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE,
+        .status = &before,
+        .is_cancelled = context->config->is_cancelled,
+        .cancel_user = context->config->cancel_user,
+        .on_output = count_output,
+        .output_user = context};
+    rc = execute_command(context, &request, &result);
+    if (rc == H2_PAL_OK &&
+        result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK)
+      rc = H2_PAL_ERR_IO;
+  }
+  (void)disconnect_transport(context);
+  if (rc != H2_PAL_OK) return rc;
+  rc = H2_PAL_ERR_TIMEOUT;
+  for (unsigned attempt = 0; attempt < 60 && !cancelled(context->config);
+       ++attempt) {
+    ++context->case_result->reconnect_attempts;
+    rc = h2_pal_time_sleep_ms(context->config->runtime->time, 500u);
+    if (rc != H2_PAL_OK) return rc;
+    rc = connect_transport(context, &after);
+    if (rc == H2_PAL_ERR_INVALID_STATE) return rc;
+    if (rc == H2_PAL_OK && after.last == H2_PAL_ERR_UNSUPPORTED) break;
+    (void)disconnect_transport(context);
+    rc = H2_PAL_ERR_TIMEOUT;
+  }
+  if (cancelled(context->config)) return H2_PAL_EXIT;
+  if (rc != H2_PAL_OK) return rc;
+  if (after.active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+      after.running_partition != 1u ||
+      !metadata_equal(&before.partition_1, &after.partition_1) ||
+      !metadata_equal(&before.stage, &after.stage) ||
+      strcmp(before.active_checksum, after.active_checksum) != 0)
+    return H2_PAL_ERR_INVALID_STATE;
+  context->command_output_size = 0;
+  context->command_output[0] = 0;
+  rc = run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS);
+  if (rc == H2_PAL_OK)
+    rc = context->config->check_loader_rejection(
+        context->config->rejection_user, context->command_output,
+        context->command_output_size);
+  if (rc != H2_PAL_OK) return rc;
+  return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT);
+}
+
 static h2_pal_result_t run_install_crash_app(
     h2_e2e_transport_context_t* context) {
   h2_h2loader_host_status_t status;
@@ -1502,8 +1569,14 @@ static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t* context,
     case H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE:
       return run_reboot_preserves_stage(
           context, H2_H2LOADER_HOST_COMMAND_REBOOT_APP, 2u,
-          &context->loader_asset, context->config->loader_firmware,
-          context->config->loader_firmware_size);
+          context->config->include_app_lifecycle ? &context->app_stage_asset
+                                                 : &context->loader_asset,
+          context->config->include_app_lifecycle
+              ? context->config->app_stage_firmware
+              : context->config->loader_firmware,
+          context->config->include_app_lifecycle
+              ? context->config->app_stage_firmware_size
+              : context->config->loader_firmware_size);
     case H2_H2LOADER_E2E_CASE_REBOOT_LOADER_PRESERVES_STAGE:
       return run_reboot_preserves_stage(
           context, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER, 1u,
@@ -1513,6 +1586,8 @@ static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t* context,
       return run_install(context, &context->app_asset,
                          context->config->app_firmware,
                          context->config->app_firmware_size);
+    case H2_H2LOADER_E2E_CASE_REJECT_LOADER_UPDATE:
+      return run_reject_loader_update(context);
     case H2_H2LOADER_E2E_CASE_INSTALL_LOADER:
       return run_install(context, &context->loader_asset,
                          context->config->loader_firmware,
@@ -1654,6 +1729,10 @@ static h2_pal_result_t prepare_checksum_packages(
   return H2_PAL_OK;
 }
 
+static int app_lifecycle(const h2_h2loader_e2e_config_t* config) {
+  return config->include_lifecycle || config->include_app_lifecycle;
+}
+
 static size_t cases_per_transport(const h2_h2loader_e2e_config_t* config) {
   size_t count = 5u;
   if (config->checksum_formats == 3u) count += 8u;
@@ -1662,11 +1741,11 @@ static size_t cases_per_transport(const h2_h2loader_e2e_config_t* config) {
   if (config->include_wifi) count += 3u;
   if (config->include_send) count += 2u;
   if (config->include_send_url) count += 2u;
-  if (config->include_lifecycle) count += 4u;
-  if (config->include_lifecycle) count += 5u;
-  if (config->include_lifecycle && config->include_wifi) count += 3u;
-  if (config->include_lifecycle && config->include_send) count += 2u;
-  if (config->include_lifecycle && config->include_send_url) count += 2u;
+  if (app_lifecycle(config)) count += 8u;
+  if (config->include_lifecycle || config->expect_loader_rejection) count += 1u;
+  if (app_lifecycle(config) && config->include_wifi) count += 3u;
+  if (app_lifecycle(config) && config->include_send) count += 2u;
+  if (app_lifecycle(config) && config->include_send_url) count += 2u;
   if (config->include_coredump) count += 4u;
   return count;
 }
@@ -1715,11 +1794,22 @@ static int config_valid(const h2_h2loader_e2e_config_t* config) {
       (config->app_firmware == NULL || config->app_firmware_size == 0u)) {
     return 0;
   }
-  if (config->include_lifecycle &&
-      (config->app_firmware == NULL || config->app_firmware_size == 0u ||
-       config->loader_firmware == NULL || config->loader_firmware_size == 0u)) {
+  if ((app_lifecycle(config) &&
+       (!config->app_firmware || !config->app_firmware_size)) ||
+      (config->include_lifecycle &&
+       (!config->loader_firmware || !config->loader_firmware_size)) ||
+      (config->include_lifecycle && config->include_app_lifecycle)) {
     return 0;
   }
+  if (config->include_app_lifecycle &&
+      (!config->app_stage_firmware || !config->app_stage_firmware_size))
+    return 0;
+  if (config->expect_loader_rejection &&
+      (!config->include_app_lifecycle || config->include_lifecycle ||
+       !config->loader_firmware || !config->loader_firmware_size ||
+       (config->execute_case == NULL &&
+        config->check_loader_rejection == NULL)))
+    return 0;
   if (config->include_send_url &&
       (config->firmware_url == NULL || config->firmware_url[0] == '\0' ||
        config->firmware_url_bytes == 0u ||
@@ -1870,12 +1960,12 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t* config,
                 H2_H2LOADER_E2E_CASE_MONITOR, iteration);
     append_case(config, result, context, transport,
                 H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR, iteration);
-    if (!config->include_lifecycle) {
+    if (!app_lifecycle(config)) {
       append_case(config, result, context, transport,
                   H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR, iteration);
     }
   }
-  if (config->include_lifecycle) {
+  if (app_lifecycle(config)) {
     append_case(
         config, result, context, transport,
         config->include_monitor && transport == H2_H2LOADER_E2E_TRANSPORT_UART
@@ -1934,8 +2024,12 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t* config,
                 H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE, iteration);
     append_case(config, result, context, transport,
                 H2_H2LOADER_E2E_CASE_REBOOT_LOADER_PRESERVES_STAGE, iteration);
-    append_case(config, result, context, transport,
-                H2_H2LOADER_E2E_CASE_INSTALL_LOADER, iteration);
+    if (config->expect_loader_rejection)
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_REJECT_LOADER_UPDATE, iteration);
+    if (config->include_lifecycle)
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_INSTALL_LOADER, iteration);
   }
   for (size_t format = 0u; format < 2u; ++format) {
     if ((config->checksum_formats & (1u << format)) == 0u) continue;
@@ -2000,7 +2094,7 @@ h2_pal_result_t h2_h2loader_e2e_run(const h2_h2loader_e2e_config_t* config,
     out_result->complete = 1;
     return checksum_rc;
   }
-  if ((config->include_send || config->include_lifecycle) &&
+  if ((config->include_send || app_lifecycle(config)) &&
       config->execute_case == NULL) {
     h2_pal_result_t rc =
         inspect_firmware(config, config->app_firmware,
@@ -2019,7 +2113,29 @@ h2_pal_result_t h2_h2loader_e2e_run(const h2_h2loader_e2e_config_t* config,
     memcpy(out_result->app_firmware_sha256, context.app_asset.sha256,
            sizeof(out_result->app_firmware_sha256));
   }
-  if (config->include_lifecycle && config->execute_case == NULL) {
+  if (config->include_app_lifecycle && config->execute_case == NULL) {
+    h2_pal_result_t rc = inspect_firmware(config, config->app_stage_firmware,
+                                          config->app_stage_firmware_size,
+                                          &context.app_stage_asset);
+    if (rc != H2_PAL_OK ||
+        context.app_stage_asset.role != H2_H2LOADER_HOST_ASSET_ROLE_APP ||
+        strcmp(context.app_stage_asset.board, context.app_asset.board) != 0 ||
+        strcmp(context.app_stage_asset.target, context.app_asset.target) != 0 ||
+        strcmp(context.app_stage_asset.version, context.app_asset.version) ==
+            0 ||
+        strcmp(context.app_stage_asset.image_sha256,
+               context.app_asset.image_sha256) == 0) {
+      out_result->result = rc == H2_PAL_OK ? H2_PAL_ERR_FORMAT : rc;
+      out_result->complete = 1;
+      return out_result->result;
+    }
+    out_result->app_stage_firmware_bytes = context.app_stage_asset.bytes;
+    memcpy(out_result->app_stage_firmware_sha256,
+           context.app_stage_asset.sha256,
+           sizeof(out_result->app_stage_firmware_sha256));
+  }
+  if ((config->include_lifecycle || config->expect_loader_rejection) &&
+      config->execute_case == NULL) {
     h2_pal_result_t rc =
         inspect_firmware(config, config->loader_firmware,
                          config->loader_firmware_size, &context.loader_asset);

@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
@@ -6,7 +6,10 @@ package(default_visibility = ["//visibility:public"])
 
 cc_binary(
     name = "e2e-runner",
-    srcs = ["main.cpp"],
+    srcs = [
+        "bk7258_rejection.h",
+        "main.cpp",
+    ],
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     tags = ["manual"],
@@ -17,11 +20,29 @@ cc_binary(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/bleikcp",
         "//libs/pal",
         "//libs/pal/providers/desktop/app_support",
         "//libs/runtime",
         "//projects/h2loader/apps/e2e-runner:h2loader_e2e_runner",
     ],
+)
+
+cc_test(
+    name = "bk7258_rejection_test",
+    srcs = [
+        "bk7258_rejection.h",
+        "test_bk7258_rejection.cpp",
+    ],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
 )
 
 py_test(
@@ -38,4 +59,5 @@ py_test(
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = ["//projects/h2loader/tools/bazel:firmware_artifacts"],
 )

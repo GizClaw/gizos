@@ -21,6 +21,8 @@ CoreBluetooth 也不提供逐字节 primary advertising sequence 或 scan interv
 
 `h2_pal_ble_connect()` 等待失败（timeout 等）时，provider 在 backend queue 上对该 peripheral 调用 `cancelPeripheralConnection:`，取消仍在进行的 connect request；若它已成为当前 connected peripheral，则一并清除 connected state 与 GATT client handle mapping，让下一次 connect 从干净状态开始。只有当前 connecting peripheral 的 connect 成功或失败回调可以推进连接；迟到的成功回调会再次取消该 peripheral，非当前 connected peripheral 的断开回调也会被忽略，不改变当前状态或完成其他操作。CoreBluetooth 回调不携带 attempt identity，因此同一 peripheral 重试期间收到旧 attempt 的迟到失败时，重试会返回 `H2_PAL_ERR_IO`，并由自身的 failed-wait cleanup 再次取消该 peripheral、清空状态与 pending operation，调用方仍可继续重试。Hardware-free test hook 覆盖等待失败与迟到回调路径，不等同于真实外设验收。
 
+`gatt_write(with_response=false)` 在 CoreBluetooth 写入缓冲区满时，按调用方的 `timeout_ms` 等待发送能力恢复；零超时立即返回 `WOULD_BLOCK`，等待到期返回 `TIMEOUT`。等待发生在调用线程，delegate queue 通过 readiness 回调唤醒调用方，并在断连或清除 client mapping 时取消旧连接的等待。每次实际写入前重新验证 peripheral、mapping generation 和 characteristic，防止重连复用 handle 后将旧数据写给新连接。硬件无关测试覆盖延迟恢复、多个等待方、超时、断连和连接替换。
+
 ## Lifecycle 与依赖
 
 SystemEvent init 创建 wake descriptor 与 joinable route-monitor thread；任何 partial failure 都回收本次已创建的资源。Init 与 route-monitor 通过 `PF_ROUTE` `RTM_GET` 查询当前 default route。内核把每个 `RTM_GET` reply 广播给所有 routing socket，socket buffer 满时直接丢弃消息，因此并发查询可能丢失本次 reply；查询在 1 s deadline 内每 100 ms 以新的 `rtm_seq` 重发请求，接受本次调用任一请求的 reply，deadline 到期才返回 `H2_PAL_ERR_TIMEOUT`。`netif_test` 用 test-only hook 丢弃前两个 reply 验证重发，并验证全部丢弃时仍在 deadline 附近返回 timeout。Deinit 唤醒并 join worker、等待 in-flight callback、清空 subscription，再关闭 descriptor。默认 route 消失、恢复或改变才发布 Netif event，重复状态不重复发布。

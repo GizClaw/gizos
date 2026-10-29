@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import zlib
 
-from tools.bazel.bk7258_flash_aes import BekenXTS, ImageError, encrypt_recovery, flash_crc
+from tools.bazel.bk7258_flash_aes import BekenXTS, ImageError, encrypt_recovery, encrypt_app, validate_app, flash_crc
 
 
 def synthetic_image(root):
@@ -35,6 +35,41 @@ def synthetic_image(root):
 
 
 class FlashAesTests(unittest.TestCase):
+    def test_managed_app_at_nonzero_address(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, full = synthetic_image(root)
+            plain = full[4096:]
+            base = 0x240000
+            for offset in (0, 4096):
+                struct.pack_into("<I", plain, offset + 4, 0x02000000 + base + offset + 0x81)
+            payload = plain[:8192]
+            fnv = 0x811C9DC5
+            for value in payload:
+                fnv = ((fnv ^ value) * 0x1000193) & 0xFFFFFFFF
+            struct.pack_into("<II", plain, 8192 + 76, zlib.crc32(payload), fnv)
+            struct.pack_into("<I", plain, 8192 + 92, zlib.crc32(plain[8192:8192 + 92]))
+            table = {"crc_enable": True, "section": [
+                dict(Name="primary_cp_app", Offset=0x264000, Size=4352, Execute=True),
+                dict(Name="primary_ap_app", Offset=0x264000+4352, Size=8704, Execute=True),
+            ]}
+            source = b"".join(plain[i:i+32]+flash_crc(plain[i:i+32]) for i in range(0,len(plain),32))
+            self.assertEqual(validate_app(source,table),(plain,base,4096))
+            result = encrypt_app(source,table,bytes(range(32)))
+            cipher = BekenXTS(bytes(range(32)))
+            restored = b"".join(cipher.block(result[i:i+32],base+i//34*32,True) for i in range(0,len(result),34))
+            self.assertEqual(restored,plain)
+            self.assertNotEqual(result,source)
+            with self.assertRaises(ImageError):
+                encrypt_app(result,table,bytes(range(32)))
+            for start in (0, 0x264000+34):
+                bad = json.loads(json.dumps(table))
+                bad["section"][0]["Offset"] = start
+                with self.assertRaises(ImageError):
+                    validate_app(source,bad)
+            with self.assertRaises(ImageError):
+                validate_app(source[:-1],table)
+
     def test_vendor_known_answers(self):
         fixture = Path(__file__).parent / "fixtures/bk7258_flash_aes_vectors.json"
         if "TEST_SRCDIR" in os.environ:

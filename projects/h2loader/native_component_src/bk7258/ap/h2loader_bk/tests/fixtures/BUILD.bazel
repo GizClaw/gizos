@@ -1,0 +1,4 @@
+package(default_visibility = ["//visibility:public"])
+
+# Explicit test-image input; excluded from the production native component.
+exports_files(["bk7258_flash_audit.c"])

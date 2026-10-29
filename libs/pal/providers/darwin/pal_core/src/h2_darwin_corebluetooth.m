@@ -66,10 +66,12 @@ typedef NS_ENUM(NSInteger, H2CoreBluetoothOperation) {
 @implementation H2CoreBluetoothGattBinding
 @end
 
-/* Installed only by the deterministic connect timeout test. */
+/* Installed only by deterministic backend tests. */
 @interface H2CoreBluetoothTestPeripheral : NSObject
 @property(nonatomic, weak) id<CBPeripheralDelegate> delegate;
 @property(nonatomic, strong) NSUUID *identifier;
+@property(nonatomic) BOOL canSendWriteWithoutResponse;
+@property(nonatomic) NSUInteger writeCount;
 @end
 
 @implementation H2CoreBluetoothTestPeripheral
@@ -79,6 +81,15 @@ typedef NS_ENUM(NSInteger, H2CoreBluetoothOperation) {
     _identifier = [[NSUUID alloc] initWithUUIDString:@"00000000-0000-0000-0000-000000000001"];
   }
   return self;
+}
+- (void)writeValue:(NSData *)value
+    forCharacteristic:(CBCharacteristic *)characteristic
+                 type:(CBCharacteristicWriteType)type {
+  (void)value;
+  (void)characteristic;
+  NSCAssert(type == CBCharacteristicWriteWithoutResponse && self.canSendWriteWithoutResponse,
+            @"write requires available credit");
+  ++self.writeCount;
 }
 @end
 
@@ -139,6 +150,8 @@ static void h2_corebluetooth_release_adv_set(h2_pal_ble_adv_set_t *set) {
 @property(nonatomic) BOOL centralStateKnown;
 @property(nonatomic) BOOL peripheralStateKnown;
 @property(nonatomic, strong) dispatch_semaphore_t stateSemaphore;
+@property(nonatomic, strong) NSMutableArray *writeWaiters;
+@property(nonatomic) uint64_t clientGeneration;
 @property(nonatomic, strong) dispatch_semaphore_t operationSemaphore;
 @property(nonatomic) H2CoreBluetoothOperation operation;
 @property(nonatomic) h2_pal_result_t operationResult;
@@ -317,6 +330,7 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     dispatch_queue_set_specific(_queue, &s_corebluetooth_queue_key, &s_corebluetooth_queue_key,
                                 NULL);
     _stateSemaphore = dispatch_semaphore_create(0);
+    _writeWaiters = [NSMutableArray array];
     _peripheralsByAddress = [NSMutableDictionary dictionary];
     _clientServices = [NSMutableDictionary dictionary];
     _clientCharacteristics = [NSMutableDictionary dictionary];
@@ -365,7 +379,17 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
   self.operationSemaphore = nil;
 }
 
+/* Called only on the backend queue; registration and notification cannot race. */
+- (void)wakeWriteWaiters {
+  for (dispatch_semaphore_t waiter in self.writeWaiters) {
+    dispatch_semaphore_signal(waiter);
+  }
+  [self.writeWaiters removeAllObjects];
+}
+
 - (void)clearClientMappings {
+  ++self.clientGeneration;
+  [self wakeWriteWaiters];
   [self.clientServices removeAllObjects];
   [self.clientCharacteristics removeAllObjects];
   [self.clientHandles removeAllObjects];
@@ -1020,22 +1044,47 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
   if (connectionHandle != H2_COREBLUETOOTH_CONN_HANDLE || (length > 0u && data == NULL)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  NSData *value = [NSData dataWithBytes:data length:length];
+  if (!withResponse) {
+    const dispatch_time_t deadline =
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)timeoutMs * NSEC_PER_MSEC);
+    dispatch_semaphore_t waiter = dispatch_semaphore_create(0);
+    __block CBPeripheral *peripheral = nil;
+    __block CBCharacteristic *characteristic = nil;
+    __block uint64_t generation = 0u;
+    dispatch_sync(self.queue, ^{
+      peripheral = self.connectedPeripheral;
+      characteristic = self.clientCharacteristics[@(attributeHandle)];
+      generation = self.clientGeneration;
+    });
+    if (peripheral == nil || characteristic == nil) return H2_PAL_ERR_NOT_FOUND;
+    for (;;) {
+      __block h2_pal_result_t result = H2_PAL_ERR_WOULD_BLOCK;
+      dispatch_sync(self.queue, ^{
+        if (peripheral != self.connectedPeripheral || generation != self.clientGeneration ||
+            characteristic != self.clientCharacteristics[@(attributeHandle)]) {
+          result = H2_PAL_ERR_CLOSED;
+        } else if (peripheral.canSendWriteWithoutResponse) {
+          [peripheral writeValue:value
+               forCharacteristic:characteristic
+                            type:CBCharacteristicWriteWithoutResponse];
+          result = H2_PAL_OK;
+        } else if (timeoutMs != 0u) {
+          [self.writeWaiters addObject:waiter];
+        }
+      });
+      if (result != H2_PAL_ERR_WOULD_BLOCK || timeoutMs == 0u) return result;
+      /* Never wait on the delegate queue: it delivers readiness and disconnects. */
+      long waitResult = dispatch_semaphore_wait(waiter, deadline);
+      dispatch_sync(self.queue, ^{
+        [self.writeWaiters removeObjectIdenticalTo:waiter];
+      });
+      if (waitResult != 0) return H2_PAL_ERR_TIMEOUT;
+    }
+  }
   CBCharacteristic *characteristic = [self clientCharacteristic:attributeHandle];
   if (characteristic == nil || self.connectedPeripheral == nil) {
     return H2_PAL_ERR_NOT_FOUND;
-  }
-  NSData *value = [NSData dataWithBytes:data length:length];
-  if (!withResponse) {
-    __block BOOL ready = NO;
-    dispatch_sync(self.queue, ^{
-      ready = self.connectedPeripheral.canSendWriteWithoutResponse;
-      if (ready) {
-        [self.connectedPeripheral writeValue:value
-                           forCharacteristic:characteristic
-                                        type:CBCharacteristicWriteWithoutResponse];
-      }
-    });
-    return ready ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
   }
   __block BOOL began = NO;
   dispatch_sync(self.queue, ^{
@@ -1231,6 +1280,10 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
   } else {
     [self completePendingOperation:H2_PAL_ERR_IO];
   }
+}
+
+- (void)peripheralIsReadyToSendWriteWithoutResponse:(CBPeripheral *)peripheral {
+  if (peripheral == self.connectedPeripheral) [self wakeWriteWaiters];
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
@@ -1474,6 +1527,38 @@ void h2_darwin_corebluetooth_test_set_pending_connect(const h2_pal_ble_addr_t *a
       backend.started = YES;
     }
   });
+}
+
+void h2_darwin_corebluetooth_test_write_ready(bool ready, int peripheral_index) {
+  H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+  dispatch_sync(backend.queue, ^{
+    H2CoreBluetoothTestCentral *central = (id)backend.centralManager;
+    H2CoreBluetoothTestPeripheral *peripheral =
+        (id)(peripheral_index == 0 ? central.peripheral : central.otherPeripheral);
+    peripheral.canSendWriteWithoutResponse = ready;
+    [backend peripheralIsReadyToSendWriteWithoutResponse:(id)peripheral];
+  });
+}
+
+size_t h2_darwin_corebluetooth_test_write_count(void) {
+  H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+  __block size_t count = 0u;
+  dispatch_sync(backend.queue, ^{
+    H2CoreBluetoothTestCentral *central = (id)backend.centralManager;
+    H2CoreBluetoothTestPeripheral *peripheral = (id)central.peripheral;
+    H2CoreBluetoothTestPeripheral *other = (id)central.otherPeripheral;
+    count = peripheral.writeCount + other.writeCount;
+  });
+  return count;
+}
+
+size_t h2_darwin_corebluetooth_test_write_waiters(void) {
+  H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+  __block size_t count = 0u;
+  dispatch_sync(backend.queue, ^{
+    count = backend.writeWaiters.count;
+  });
+  return count;
 }
 
 bool h2_darwin_corebluetooth_test_connect_pending(void) {
