@@ -47,6 +47,7 @@ def bk7258_flash_stress(board, board_component, layout_files, baseline_partition
             Label("//libs/runtime"),
             Label("//libs/utils"),
             Label("//libs/wifi_sta"),
+            Label("//projects/e2e/apps/flash-stress/app:flash_stress"),
         ],
     )
     firmware_native_component(
@@ -58,6 +59,7 @@ def bk7258_flash_stress(board, board_component, layout_files, baseline_partition
             Label("//native_component_src/bk7258/ap/h2_pal_core"),
             Label("//native_component_src/bk7258/ap/zlib"),
             Label("//native_component_src/bk7258/cp/h2_pal_core"),
+            Label("//projects/e2e/apps/flash-stress/app:tasks"),
             Label("//projects/h2loader/apps/loader/app:tasks"),
             Label("//projects/h2loader/libs/h2loader"),
             Label("//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk"),
@@ -68,6 +70,8 @@ def bk7258_flash_stress(board, board_component, layout_files, baseline_partition
         ap_allocator = "sram",
         ap_default_policy = "7 0 8192 psram",
         ap_policies = [
+            "flash-stress/writer 7 0 4096 default",
+            "flash-stress/reader 7 1 4096 default",
             "h2loader/appcmd 5 0 32768 psram",
             "$h2loader/uartcmd 5 0 8192 psram",
             "$h2loader/return default",

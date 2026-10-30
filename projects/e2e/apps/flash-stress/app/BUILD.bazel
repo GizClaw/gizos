@@ -1,0 +1,45 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "flash-stress/reader",
+        "flash-stress/writer",
+    ],
+)
+
+cc_library(
+    name = "flash_stress",
+    srcs = ["src/h2_flash_stress.c"],
+    hdrs = ["include/h2_flash_stress.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":tasks",
+        "//libs/atomic",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "flash_stress_test",
+    srcs = ["tests/test_flash_stress.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":flash_stress",
+        "//libs/atomic/providers/c11",
+        "//libs/pal",
+    ],
+)

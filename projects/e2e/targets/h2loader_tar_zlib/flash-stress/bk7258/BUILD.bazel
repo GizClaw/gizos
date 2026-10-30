@@ -6,8 +6,9 @@ exports_files([
     "CMakeLists.txt",
     "project.cmake",
     "ap/CMakeLists.txt",
-    "ap/flash_stress.c",
-    "ap/flash_stress.h",
+    "ap/disk.c",
+    "ap/launcher.h",
+    "ap/main.c",
     "ap/management.c",
     "tests/test_layout.py",
 ])
@@ -15,10 +16,11 @@ exports_files([
 firmware_native_component(
     name = "ap_component",
     srcs = [
-        "ap/flash_stress.c",
+        "ap/disk.c",
+        "ap/main.c",
         "ap/management.c",
     ],
-    hdrs = ["ap/flash_stress.h"],
+    hdrs = ["ap/launcher.h"],
     component_directory = "projects/e2e/targets/h2loader_tar_zlib/flash-stress/bk7258/ap",
     component_name = "ap",
     data = ["ap/CMakeLists.txt"],

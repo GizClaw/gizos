@@ -1,4 +1,4 @@
-#include "flash_stress.h"
+#include "launcher.h"
 
 #include "h2_bk7258_board.h"
 #include "h2_bk7258_board_private.h"
