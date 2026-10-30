@@ -2,6 +2,7 @@ set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 
 set(H2_BK_H2LOADER_SRCS
   "src/h2_bk_fixed_boot.c"
+  "src/h2_bk_flash_access.c"
   "src/h2_bk_h2loader_app_control.c"
   "src/h2_bk_h2loader_app_bleikcp.c"
   "src/h2_bk_h2loader_iostreamikcp.c"
@@ -49,6 +50,7 @@ armino_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "include"
+    "${REPO_ROOT}/projects/h2loader/native_component_src/bk7258/fixed_flash"
     "${REPO_ROOT}/projects/h2loader/apps/loader/app/include"
     "${REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${REPO_ROOT}/libs/bundle/include"

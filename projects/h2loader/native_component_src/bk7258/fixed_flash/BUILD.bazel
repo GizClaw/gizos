@@ -4,6 +4,7 @@ load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "flash_access.h",
     "layout.h",
     "layout_check.h",
 ])
@@ -22,4 +23,10 @@ cc_test(
     ],
     includes = ["."],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+cc_library(
+    name = "flash_access",
+    hdrs = ["flash_access.h"],
+    includes = ["."],
 )

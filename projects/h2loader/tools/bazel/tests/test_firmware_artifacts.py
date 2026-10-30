@@ -4,16 +4,122 @@ from pathlib import Path
 import hashlib
 import os
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 import io
+import json
 import tarfile
 import zlib
 
-from projects.h2loader.tools.bazel.firmware_artifacts import BundleEntry, write_factory_bundle, write_package
+from projects.h2loader.tools.bazel.firmware_artifacts import BundleEntry, read_managed_package, write_factory_bundle, write_package
+
+
+def fixture_path(name: str) -> Path:
+    if "TEST_SRCDIR" not in os.environ:
+        return Path(__file__).parent / "fixtures" / name
+    from python.runfiles import Runfiles
+    return Path(Runfiles.Create().Rlocation("gizos/projects/h2loader/tools/bazel/tests/fixtures/" + name))
 
 
 class FirmwareArtifactsTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "runtime key descriptors require POSIX")
+    def test_encrypted_app_runtime_publication(self):
+        from unittest.mock import patch
+        from contextlib import redirect_stdout, redirect_stderr
+        from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_app_main
+        from tools.bazel.bk7258_flash_aes import flash_crc
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plain = bytearray(b"\xff" * 12288)
+            for offset in (0,4096):
+                struct.pack_into("<II",plain,offset,0x28030000,0x2240000+offset+0x101)
+            header=bytearray(96);header[:4]=b"RBL\0"
+            fnv=0x811c9dc5
+            for b in plain[:8192]: fnv=((fnv^b)*0x1000193)&0xffffffff
+            struct.pack_into("<4I",header,76,zlib.crc32(plain[:8192]),fnv,8192,8192)
+            struct.pack_into("<I",header,92,zlib.crc32(header[:92]))
+            plain[8192:8288]=header
+            raw=b"".join(plain[i:i+32]+flash_crc(plain[i:i+32]) for i in range(0,len(plain),32))
+            (root/"partitions.json").write_text(json.dumps({"crc_enable":True,"section":[
+                {"Name":"primary_cp_app","Offset":0x264000,"Size":4352,"Execute":True},
+                {"Name":"primary_ap_app","Offset":0x264000+4352,"Size":8704,"Execute":True}]}))
+            for fmt in (1,2):
+                source=root/f"source-{fmt}"
+                entries=[BundleEntry("data/test.txt",b"unchanged")]
+                write_package(source,"app/bk/app_ab_crc.rbl",raw,entries,role="app",board="fixture",target="bk7258",version="1",package_format=fmt)
+                dest=root/f"encrypted-{fmt}"
+                rd,wr=os.pipe();os.write(wr,bytes(range(32)));os.close(wr)
+                try:
+                    with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"),redirect_stdout(io.StringIO()):
+                        rc=encrypted_bk_app_main(["--source",str(source),"--metadata",str(root),"--key-fd",str(rd),"--output-dir",str(dest)])
+                finally: os.close(rd)
+                self.assertEqual(rc,0)
+                receipt=json.loads((dest/"validation.json").read_text())
+                archive=next(dest.glob("*.update.*"))
+                parsed=read_managed_package(archive.read_bytes())
+                self.assertEqual(parsed.data,entries)
+                self.assertNotEqual(parsed.app,raw)
+                self.assertEqual(receipt["image_sha256"],hashlib.sha256(parsed.app).hexdigest())
+                self.assertEqual(receipt["logical_base"],0x240000)
+                for path in dest.iterdir(): self.assertEqual(path.stat().st_mode & 0o777,0o600)
+            # Run the built public executable, not only the Python function.
+            if "TEST_SRCDIR" in os.environ:
+                from python.runfiles import Runfiles
+                command = [Runfiles.Create().Rlocation("gizos/projects/h2loader/tools/bazel/encrypted_bk_app")]
+            else:
+                command = [sys.executable, "-m", "projects.h2loader.tools.bazel.encrypted_bk_app"]
+            result = subprocess.run(command + ["--source", str(source), "--metadata", str(root),
+                                              "--key-fd", "0", "--output-dir", str(root / "cli-output")],
+                                    input=bytes(range(32)), capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            self.assertTrue((root / "cli-output" / "validation.json").is_file())
+            # The ordinary build output stays plaintext. Selecting encryption
+            # with a missing/invalid key must never publish a plaintext fallback.
+            self.assertEqual(read_managed_package(source.read_bytes()).app, raw)
+            for label, key_args, key_input in (
+                ("missing-key", [], b""),
+                ("short-key", ["--key-fd", "0"], bytes(range(16))),
+            ):
+                destination = root / label
+                refused = subprocess.run(
+                    command + ["--source", str(source), "--metadata", str(root),
+                               "--output-dir", str(destination)] + key_args,
+                    input=key_input, capture_output=True, timeout=30)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertFalse(destination.exists())
+            self.assertFalse(list(root.glob(".bk-app-*")))
+            source.write_bytes(b"invalid")
+            with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"),patch("projects.h2loader.tools.bazel.firmware_output._read_recovery_key") as read_key,redirect_stderr(io.StringIO()):
+                self.assertEqual(encrypted_bk_app_main(["--source",str(source),"--metadata",str(root),"--key-fd","0","--output-dir",str(root/"bad")]),1)
+                read_key.assert_not_called()
+
+    def test_conversion_reader_roundtrip_and_corruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)/"update"
+            entries=[BundleEntry("data/a.txt",b"a"),BundleEntry("data/b.pixa",b"picture")]
+            for fmt in (1,2):
+                write_package(out,"app/bk/app_ab_crc.rbl",b"image",entries,role="app",board="fixture",target="bk7258",version="1",package_format=fmt)
+                data=out.read_bytes()
+                parsed=read_managed_package(data)
+                self.assertEqual(parsed.app,b"image")
+                self.assertEqual(parsed.data,entries)
+                for bad in (data[:100], data+b"trailing" if fmt==1 else data+b"\x01", data[:2048] if fmt==2 else data[:-1]):
+                    with self.subTest(fmt=fmt,size=len(bad)),self.assertRaises(ValueError):
+                        read_managed_package(bad)
+                unpacked=zlib.decompress(data) if fmt==1 else data
+                tf=tarfile.open(fileobj=io.BytesIO(unpacked))
+                changed=io.BytesIO()
+                with tarfile.open(fileobj=changed,mode="w",format=tarfile.USTAR_FORMAT) as dst:
+                    for m in tf:
+                        content=tf.extractfile(m).read()
+                        if m.name=="manifest": content=content.replace(b"version=1",b"version=2\nversion=1")
+                        m.size=len(content);dst.addfile(m,io.BytesIO(content))
+                with self.assertRaises(ValueError):
+                    read_managed_package(zlib.compress(changed.getvalue()) if fmt==1 else changed.getvalue())
+
     def test_independent_format2_members(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "update.tar"
@@ -44,8 +150,7 @@ class FirmwareArtifactsTest(unittest.TestCase):
             write_package(output, "app/esp/app.bin", bytes((0xE9, 1, 2, 3, 4, 5)),
                 [BundleEntry("data/a.txt", b"alpha"), BundleEntry("data/z.bin", bytes((0, 1, 2)))],
                 role="app", board="fixture", target="host", version="0", package_format=1)
-            root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"] / "projects/h2loader/tools/bazel/tests/fixtures"
-            self.assertEqual(output.read_bytes(), (root / "h2loader_format1.tar.zlib").read_bytes())
+            self.assertEqual(output.read_bytes(), fixture_path("h2loader_format1.tar.zlib").read_bytes())
 
     def test_invalid_package_formats_are_rejected(self) -> None:
         for value in (True, 1.0, 0, 3):
@@ -54,9 +159,8 @@ class FirmwareArtifactsTest(unittest.TestCase):
                     role="app", board="fixture", target="host", version="0", package_format=value)
 
     def test_frozen_legacy_archive_remains_readable(self) -> None:
-        root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"] / "projects/h2loader/tools/bazel/tests/fixtures"
-        data = (root / "h2loader_format1.tar.zlib").read_bytes()
-        self.assertEqual(hashlib.sha256(data).hexdigest(), (root / "h2loader_format1.sha256").read_text().strip())
+        data = fixture_path("h2loader_format1.tar.zlib").read_bytes()
+        self.assertEqual(hashlib.sha256(data).hexdigest(), fixture_path("h2loader_format1.sha256").read_text().strip())
         with tarfile.open(fileobj=io.BytesIO(zlib.decompress(data))) as old:
             self.assertEqual(old.extractfile("app/esp/app.bin").read(), bytes((0xE9, 1, 2, 3, 4, 5)))
 
@@ -73,11 +177,7 @@ class FirmwareArtifactsTest(unittest.TestCase):
                 target="host",
                 version="0",
             )
-            fixture = (
-                Path(os.environ["TEST_SRCDIR"])
-                / os.environ["TEST_WORKSPACE"]
-                / "projects/h2loader/tools/bazel/tests/fixtures/h2loader_format2.sha256"
-            ).read_text(encoding="ascii").strip()
+            fixture = fixture_path("h2loader_format2.sha256").read_text(encoding="ascii").strip()
             self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(), fixture)
 
     def test_writes_esp_factory_bundle(self) -> None:
@@ -114,6 +214,199 @@ class FirmwareArtifactsTest(unittest.TestCase):
                     baud=115200,
                     files=[(0, first.name, first), (0, second.name, second)],
                 )
+
+
+
+@unittest.skipIf(os.name == "nt", "local recovery entrypoint requires POSIX secret descriptors")
+class EncryptedRecoveryTests(unittest.TestCase):
+    def test_linux_dump_protection_fails_closed(self):
+        from projects.h2loader.tools.bazel.firmware_output import _protect_recovery_process
+        from unittest.mock import patch
+
+        with patch("sys.platform", "linux"), patch("resource.setrlimit"), patch("ctypes.CDLL") as library:
+            for results in ((-1,), (0, 1)):
+                library.return_value.prctl.side_effect = results
+                with self.subTest(results=results), self.assertRaisesRegex(ValueError, "DUMP_PROTECTION_FAILED"):
+                    _protect_recovery_process()
+            library.return_value.prctl.side_effect = (0, 0)
+            _protect_recovery_process()
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux process dumpability")
+    def test_linux_process_is_not_dumpable(self):
+        import subprocess
+        import sys
+
+        script = (
+            "import sys; sys.path[:] = " + repr(sys.path) + "; "
+            "from projects.h2loader.tools.bazel.firmware_output import _protect_recovery_process; "
+            "_protect_recovery_process(); import ctypes; "
+            "assert ctypes.CDLL(None).prctl(3, 0, 0, 0, 0) == 0"
+        )
+        subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, timeout=10)
+
+    def test_secret_stream_has_a_total_deadline(self):
+        from projects.h2loader.tools.bazel.firmware_output import _read_recovery_key
+        import socket
+
+        for data in (b"", bytes(16), bytes(32)):
+            with self.subTest(length=len(data)):
+                reader, writer = os.pipe()
+                try:
+                    os.write(writer, data)
+                    with self.assertRaisesRegex(ValueError,"KEY_INPUT_TIMEOUT"):
+                        _read_recovery_key(reader, timeout=0.02)
+                finally:
+                    os.close(reader)
+                    os.close(writer)
+        # select.select rejects valid descriptors >= FD_SETSIZE on POSIX.
+        # Exercise the public descriptor contract when the host limit allows it.
+        import fcntl
+        import resource
+        if resource.getrlimit(resource.RLIMIT_NOFILE)[0] > 1024:
+            reader, writer = os.pipe()
+            high_fd = None
+            try:
+                high_fd = fcntl.fcntl(reader, fcntl.F_DUPFD, 1024)
+                os.write(writer,bytes(range(32)))
+                os.close(writer)
+                writer = None
+                self.assertEqual(_read_recovery_key(high_fd),bytearray(range(32)))
+            finally:
+                os.close(reader)
+                if high_fd is not None:
+                    os.close(high_fd)
+                if writer is not None:
+                    os.close(writer)
+        left, right = socket.socketpair()
+        try:
+            right.sendall(bytes(range(32)))
+            right.shutdown(socket.SHUT_WR)
+            self.assertEqual(_read_recovery_key(left.fileno()),bytearray(range(32)))
+        finally:
+            left.close()
+            right.close()
+
+    def test_runtime_pipe_and_atomic_publication(self):
+        from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_recovery_main
+        from tools.bazel.bk7258_flash_aes import flash_crc
+        from unittest.mock import patch
+        import contextlib
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sections = [
+                dict(Name="primary_bootloader", Offset=0, Size=4352, Execute=True),
+                dict(Name="primary_cp_app", Offset=4352, Size=4352, Execute=True),
+                dict(Name="primary_ap_app", Offset=8704, Size=8704, Execute=True),
+            ]
+            (root / "partitions.json").write_text(json.dumps(dict(crc_enable=True, section=sections)))
+            plain = bytearray(b"\xff" * 16384)
+            for start in (0, 4096, 8192):
+                struct.pack_into("<II", plain, start, 0x28030000, 0x02000000 + start + 0x81)
+            plain[256:272] = b"BK7236-test-only"
+            payload = plain[4096:12288]
+            fnv = 0x811C9DC5
+            for b in payload:
+                fnv = ((fnv ^ b) * 0x1000193) & 0xFFFFFFFF
+            header = bytearray(96)
+            header[:4] = b"RBL\0"
+            struct.pack_into("<4I", header, 76, zlib.crc32(payload), fnv, len(payload), len(payload))
+            struct.pack_into("<I", header, 92, zlib.crc32(header[:92]))
+            plain[12288:12384] = header
+            source = b"".join(plain[i:i+32]+flash_crc(plain[i:i+32]) for i in range(0,len(plain),32))
+            (root / "source.bin").write_bytes(source)
+            (root / "config.json").write_text(json.dumps(dict(offset="0x00000000", baud=115200)))
+            def invoke(secret, destination, failure=False):
+                read_fd, write_fd = os.pipe()
+                os.write(write_fd, secret)
+                os.close(write_fd)
+                capture = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(capture), contextlib.redirect_stderr(capture):
+                        with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"):
+                            if failure:
+                                with patch("projects.h2loader.tools.bazel.firmware_output.publish_bk_recovery", side_effect=ValueError("SECRET_MARKER")):
+                                    rc = encrypted_bk_recovery_main(args(read_fd,destination))
+                            else:
+                                rc = encrypted_bk_recovery_main(args(read_fd,destination))
+                    self.assertNotIn("SECRET_MARKER", capture.getvalue())
+                    if secret:
+                        self.assertNotIn(secret.hex(), capture.getvalue())
+                    return rc
+                finally:
+                    os.close(read_fd)
+            def args(fd,dest):
+                return ["--source",str(root/"source.bin"),"--metadata",str(root),"--config",str(root/"config.json"),"--board","fixture","--target","bk7258","--key-fd",str(fd),"--output-dir",str(dest)]
+            output = root / "published"
+            self.assertEqual(invoke(bytes(range(32)),output),0)
+            self.assertEqual(set(p.name for p in output.iterdir()),{"encrypted.bin","recovery.h2fb","validation.json"})
+            bundle = (output/"recovery.h2fb").read_bytes()
+            self.assertEqual(bundle[:4], b"H2FB")
+            self.assertEqual(struct.unpack_from("<HHIII",bundle,4),(1,2,1,115200,1))
+            from projects.h2loader.tools.bazel.firmware_artifacts import FACTORY_IDENTITY_SIZE
+            flash_offset, data_offset, length = struct.unpack_from("<IQQ",bundle,20+2*FACTORY_IDENTITY_SIZE)
+            self.assertEqual(flash_offset,0)
+            self.assertEqual(bundle[data_offset:data_offset+length],(output/"encrypted.bin").read_bytes())
+            self.assertNotEqual((output/"encrypted.bin").read_bytes(),source)
+            receipt=json.loads((output/"validation.json").read_text())
+            self.assertEqual(receipt["encrypted_sha256"],hashlib.sha256((output/"encrypted.bin").read_bytes()).hexdigest())
+            self.assertEqual(output.stat().st_mode & 0o777,0o700)
+            self.assertEqual(invoke(bytes(range(32)),output),1)
+            with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process", side_effect=ValueError("DUMP_PROTECTION_FAILED")), patch("projects.h2loader.tools.bazel.firmware_output._read_recovery_key") as read_key, contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(encrypted_bk_recovery_main(args(0,root/"unprotected")),1)
+                read_key.assert_not_called()
+            self.assertFalse((root/"unprotected").exists())
+            with patch("builtins.print", side_effect=BrokenPipeError("SECRET_MARKER")):
+                self.assertEqual(invoke(bytes(range(32)),root/"closed-stdout"),0)
+            self.assertEqual(set(p.name for p in (root/"closed-stdout").iterdir()),{"encrypted.bin","recovery.h2fb","validation.json"})
+            with patch("builtins.print", side_effect=BrokenPipeError("SECRET_MARKER")):
+                self.assertEqual(invoke(bytes(31),root/"closed-stderr"),1)
+            self.assertFalse((root/"closed-stderr").exists())
+            with patch("builtins.print", side_effect=ValueError("closed stream")):
+                self.assertEqual(invoke(bytes(range(32)),root/"closed-stream"),0)
+            self.assertTrue((root/"closed-stream"/"validation.json").is_file())
+            # Exercise CPython's actual buffered-stream shutdown, rather than
+            # replacing print: a late flush used to change success to exit 120.
+            import subprocess
+            import sys
+            for error_stream in (False, True):
+                destination = root / ("pipe-error" if error_stream else "pipe-success")
+                script = (
+                    "import sys; sys.path[:] = " + repr(sys.path) + "; "
+                    "from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_recovery_main; "
+                    "sys.exit(encrypted_bk_recovery_main(" + repr(args(0,destination)) + "))"
+                )
+                reader, writer = os.pipe()
+                os.close(reader)
+                try:
+                    with subprocess.Popen(
+                        [sys.executable,"-c",script], stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE if error_stream else writer,
+                        stderr=writer if error_stream else subprocess.PIPE,
+                    ) as child:
+                        os.close(writer)
+                        writer = None
+                        stdout, stderr = child.communicate(bytes(31) if error_stream else bytes(range(32)),timeout=30)
+                        self.assertEqual(child.returncode,1 if error_stream else 0,(stdout,stderr))
+                        self.assertEqual(stdout if error_stream else stderr,b"")
+                finally:
+                    if writer is not None:
+                        os.close(writer)
+                self.assertEqual(destination.exists(),not error_stream)
+            for secret in [b"",bytes(31),bytes(33)]:
+                self.assertEqual(invoke(secret,root/"bad"),1)
+                self.assertFalse((root/"bad").exists())
+            self.assertEqual(invoke(bytes(range(32)),root/"partial",True),1)
+            self.assertFalse((root/"partial").exists())
+            self.assertFalse(list(root.glob(".bk-recovery-*")))
+            with (root/"source.bin").open("rb") as regular, patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(encrypted_bk_recovery_main(args(regular.fileno(),root/"file-key")),1)
+            self.assertFalse((root/"file-key").exists())
+            with patch("shutil.rmtree", side_effect=OSError("SECRET_MARKER")):
+                self.assertEqual(invoke(bytes(range(32)),root/"cleanup-failure",True),1)
+            self.assertFalse((root/"cleanup-failure").exists())
+            self.assertTrue(list(root.glob(".bk-recovery-*")))
+
 
 
 if __name__ == "__main__":

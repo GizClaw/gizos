@@ -9,6 +9,10 @@
 #include "layout_check.h"
 #endif
 #include "layout.h"
+#include "flash_access.h"
+#ifndef H2_BK_FIXED_BOOT_HOST_TEST
+#include "h2_bk_flash_access.h"
+#endif
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
@@ -177,21 +181,39 @@ int h2_bk_fixed_app_window_holds_loader(void) {
    * (32 data bytes + 2 CRC bytes). Its reset handler says which window the
    * image was linked for. */
   const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
-  uint8_t block[34];
-  uint32_t pc;
-  if (layout == NULL ||
-      bk_flash_read_bytes(layout->app.offset, block, sizeof(block)) != BK_OK)
-    return 0;
-  memcpy(&pc, &block[4], sizeof(pc));
-  return h2_fixed_xip_in_window(pc, &layout->loader);
+  uint32_t vector[2];
+  if (layout == NULL) return H2_PAL_ERR_INVALID_STATE;
+  if (native_relay_active()) {
+    uint8_t block[34];
+    if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
+      return H2_PAL_ERR_UNSUPPORTED;
+    if (bk_flash_read_bytes(layout->app.offset, block, sizeof(block)) !=
+            BK_OK ||
+        !h2_bk_flash_crc_valid(block))
+      return H2_PAL_ERR_IO;
+    memcpy(vector, block, sizeof(vector));
+  } else {
+    int rc = h2_bk_flash_read_plain(layout->app.offset, layout->app.size, 0,
+                                    vector, sizeof(vector));
+    if (rc != H2_PAL_OK) return rc;
+  }
+  if (vector[0] == UINT32_MAX && vector[1] == UINT32_MAX) return 0;
+  if (vector[0] < 0x28000000u || vector[0] > 0x280a0000u || (vector[0] & 7u) ||
+      !(vector[1] & 1u))
+    return H2_PAL_ERR_FORMAT;
+  if (h2_fixed_xip_in_window(vector[1], &layout->loader)) return 1;
+  return h2_fixed_xip_in_window(vector[1], &layout->app) ? 0
+                                                         : H2_PAL_ERR_FORMAT;
 }
 
 int h2_bk_fixed_confirm_loader(void) {
   /* A Loader running through the remap confirms B, so a reset while it
    * rewrites the Loader window returns to it instead of the half-written
    * Loader window. */
-  return native_relay_active() ? write_native_flags(s_native_relay_confirmed)
-                               : H2_PAL_OK;
+  if (!native_relay_active()) return H2_PAL_OK;
+  if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return write_native_flags(s_native_relay_confirmed);
 }
 
 static int request_is_blank(const h2_fixed_boot_request_t* r) {
@@ -209,8 +231,14 @@ int h2_bk_fixed_select(uint32_t partition_id) {
   if (partition_id != H2_BK_H2LOADER_PRIMARY_PARTITION_ID &&
       partition_id != H2_BK_H2LOADER_APP_PARTITION_ID)
     return H2_PAL_ERR_INVALID_ARG;
-  if (partition_id == H2_BK_H2LOADER_APP_PARTITION_ID &&
-      h2_bk_fixed_app_window_holds_loader()) {
+  int holds_loader = 0;
+  if (partition_id == H2_BK_H2LOADER_APP_PARTITION_ID) {
+    holds_loader = h2_bk_fixed_app_window_holds_loader();
+    if (holds_loader < 0) return holds_loader;
+  }
+  if (holds_loader) {
+    if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
+      return H2_PAL_ERR_UNSUPPORTED;
     /* A Loader in the App window runs through the native B remap, not
      * through the CP handoff; keep an existing B selection as it is. */
     if (native_selects_relay()) return H2_PAL_OK;

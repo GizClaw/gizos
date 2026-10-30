@@ -1,5 +1,7 @@
 #include "h2_desktop_app_support.h"
 #include "h2_h2loader_e2e_runner.h"
+#include "h2_bleikcp.h"
+#include "bk7258_rejection.h"
 
 #include <array>
 #include <memory>
@@ -30,6 +32,7 @@ struct Options {
   std::string expected_board;
   std::string expected_target;
   std::filesystem::path app_firmware;
+  std::filesystem::path app_stage_firmware;
   std::filesystem::path loader_firmware;
   std::filesystem::path crash_firmware;
   std::array<std::filesystem::path, 2> checksum_fixtures;
@@ -42,9 +45,13 @@ struct Options {
   std::uint64_t coredump_bytes = 0u;
   std::uint32_t repeat = 1u;
   std::uint32_t timeout_ms = 120000u;
+  std::uint32_t connect_timeout_ms = 10000u;
   std::uint32_t baud = H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD;
   std::uint32_t monitor_ms = 0u;
   bool help = false;
+  bool app_lifecycle = false;
+  bool expect_loader_rejection = false;
+  bool device_logs = false;
 };
 
 void signal_handler(int signal_number) {
@@ -65,6 +72,9 @@ void usage(const char* program, FILE* stream) {
       "options:\n"
       "  --expected-board ID          require exact board identity\n"
       "  --expected-target ID         require exact target identity\n"
+      "  --app-stage-firmware FILE    distinct App package for reboot/Stage preservation\n"
+      "  --expect-loader-rejection    test AES-on rejection with instrumented Loader\n"
+      "  --app-lifecycle              install/confirm App without Loader self-update\n"
       "  --app-firmware FILE          APP update package for Stage/install\n"
       "  --loader-firmware FILE       Loader update package for full "
       "lifecycle\n"
@@ -81,12 +91,14 @@ void usage(const char* program, FILE* stream) {
       "it\n"
       "  --repeat COUNT               repeat every selected transport (default "
       "1)\n"
-      "  --timeout-ms MS              connect and command timeout (default "
+      "  --timeout-ms MS              command timeout (default "
       "120000)\n"
       "  --baud RATE                  UART baud (default 460800)\n"
+      "  --connect-timeout-ms MS      per-connection discovery/handshake deadline (default 10000)\n"
       "  --monitor-ms MS              test monitor and reboot --monitor on "
       "UART\n"
       "  --report FILE                write a JSON report\n"
+      "  --device-logs                write non-frame device diagnostics to stderr\n"
       "  --help                       show this help\n",
       program);
 }
@@ -144,12 +156,32 @@ bool parse_options(int argc, char** argv, Options* out) {
     kCrashFirmware = 1ull << 17,
     kChecksumTarZlib = 1ull << 18,
     kChecksumZlibTar = 1ull << 19,
+    kAppLifecycle = 1ull << 20,
+    kAppStageFirmware = 1ull << 21,
+    kConnectTimeout = 1ull << 22,
+    kRejectLoader = 1ull << 23,
+    kDeviceLogs = 1ull << 24,
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
     const char* name = argv[index];
     if (std::strcmp(name, "--help") == 0 || std::strcmp(name, "-h") == 0) {
       out->help = true;
+      continue;
+    }
+    if (std::strcmp(name, "--app-lifecycle") == 0) {
+      if (!set_once(kAppLifecycle, &seen)) return false;
+      out->app_lifecycle = true;
+      continue;
+    }
+    if (std::strcmp(name, "--expect-loader-rejection") == 0) {
+      if (!set_once(kRejectLoader, &seen)) return false;
+      out->expect_loader_rejection = true;
+      continue;
+    }
+    if (std::strcmp(name, "--device-logs") == 0) {
+      if (!set_once(kDeviceLogs, &seen)) return false;
+      out->device_logs = true;
       continue;
     }
     if (index + 1 >= argc) return false;
@@ -170,6 +202,9 @@ bool parse_options(int argc, char** argv, Options* out) {
     } else if (std::strcmp(name, "--app-firmware") == 0) {
       bit = kAppFirmware;
       out->app_firmware = value;
+    } else if (std::strcmp(name, "--app-stage-firmware") == 0) {
+      bit = kAppStageFirmware;
+      out->app_stage_firmware = value;
     } else if (std::strcmp(name, "--loader-firmware") == 0) {
       bit = kLoaderFirmware;
       out->loader_firmware = value;
@@ -222,6 +257,11 @@ bool parse_options(int argc, char** argv, Options* out) {
       std::uint64_t parsed = 0u;
       if (!parse_u64(value, 1200u, 4000000u, &parsed)) return false;
       out->baud = static_cast<std::uint32_t>(parsed);
+    } else if (std::strcmp(name, "--connect-timeout-ms") == 0) {
+      bit = kConnectTimeout;
+      std::uint64_t parsed = 0u;
+      if (!parse_u64(value, 100u, 60000u, &parsed)) return false;
+      out->connect_timeout_ms = static_cast<std::uint32_t>(parsed);
     } else if (std::strcmp(name, "--monitor-ms") == 0) {
       bit = kMonitor;
       std::uint64_t parsed = 0u;
@@ -245,20 +285,32 @@ bool parse_options(int argc, char** argv, Options* out) {
   }
   if (out->wifi_ssid.empty() != out->wifi_password_env.empty()) return false;
   if (!out->loader_firmware.empty() && out->app_firmware.empty()) return false;
+  if (out->app_lifecycle &&
+      (out->app_firmware.empty() || out->app_stage_firmware.empty() ||
+       (!out->loader_firmware.empty() && !out->expect_loader_rejection)))
+    return false;
+  if (!out->app_lifecycle && !out->app_stage_firmware.empty()) return false;
+  if (out->expect_loader_rejection &&
+      (!out->app_lifecycle || out->loader_firmware.empty() ||
+       out->expected_target != "bk7258"))
+    return false;
   if (out->coredump_bytes != 0u && out->repeat != 1u) return false;
   if (!out->crash_firmware.empty() &&
       (out->repeat != 1u || out->coredump_bytes != 0u))
     return false;
   if (out->monitor_ms != 0u && out->uart.empty()) return false;
+  const bool lifecycle = out->app_lifecycle || !out->loader_firmware.empty();
+  const std::size_t app_commands = (!out->wifi_ssid.empty() ? 3u : 0u) +
+                                   (!out->app_firmware.empty() ? 2u : 0u) +
+                                   (has_url ? 2u : 0u);
   const std::size_t cases =
       5u + (!out->checksum_fixtures[0].empty() ? 5u : 0u) +
       (!out->checksum_fixtures[1].empty() ? 5u : 0u) +
       (!out->checksum_fixtures[0].empty() && !out->checksum_fixtures[1].empty()
            ? 8u
            : 0u) +
-      (!out->wifi_ssid.empty() ? 3u : 0u) +
-      (!out->app_firmware.empty() ? 2u : 0u) + (has_url ? 2u : 0u) +
-      (!out->loader_firmware.empty() ? 4u : 0u) +
+      app_commands + (lifecycle ? 8u + app_commands : 0u) +
+      (!out->loader_firmware.empty() ? 1u : 0u) +
       (out->coredump_bytes != 0u || !out->crash_firmware.empty() ? 4u : 0u);
   const std::size_t transports =
       (!out->uart.empty() ? 1u : 0u) + (!out->ble_id.empty() ? 1u : 0u);
@@ -414,6 +466,9 @@ bool write_report(const std::filesystem::path& path, const Options& options,
          << "  \"monitor_duration_ms\": " << options.monitor_ms << ",\n"
          << "  \"app_firmware\": {\"bytes\": " << result.app_firmware_bytes
          << ", \"sha256\": \"" << result.app_firmware_sha256 << "\"},\n"
+         << "  \"app_stage_firmware\": {\"bytes\": "
+         << result.app_stage_firmware_bytes << ", \"sha256\": \""
+         << result.app_stage_firmware_sha256 << "\"},\n"
          << "  \"loader_firmware\": {\"bytes\": "
          << result.loader_firmware_bytes << ", \"sha256\": \""
          << result.loader_firmware_sha256 << "\"},\n"
@@ -520,6 +575,7 @@ int main(int argc, char** argv) {
   }
 
   std::vector<std::uint8_t> app_firmware;
+  std::vector<std::uint8_t> app_stage_firmware;
   std::vector<std::uint8_t> loader_firmware;
   std::vector<std::uint8_t> crash_firmware;
   if (!options.app_firmware.empty()) {
@@ -527,6 +583,15 @@ int main(int argc, char** argv) {
     if (!load_file(options.app_firmware, &app_firmware)) {
       std::fprintf(stderr, "h2loader-e2e: cannot read APP firmware: %s\n",
                    options.app_firmware.string().c_str());
+      return 2;
+    }
+  }
+  if (!options.app_stage_firmware.empty()) {
+    options.app_stage_firmware = resolve_input_path(options.app_stage_firmware);
+    if (!load_file(options.app_stage_firmware, &app_stage_firmware)) {
+      std::fprintf(stderr,
+                   "h2loader-e2e: cannot read staged App firmware: %s\n",
+                   options.app_stage_firmware.string().c_str());
       return 2;
     }
   }
@@ -592,10 +657,15 @@ int main(int argc, char** argv) {
   const h2_pal_ble_host_api_t* ble = nullptr;
   bool system_event_started = false;
   bool ble_started = false;
+  bool kcp_started = false;
   h2_pal_result_t rc = H2_PAL_OK;
   if (needs_ble) {
-    rc = static_cast<h2_pal_result_t>(h2_pal_system_event_init(system_event));
-    system_event_started = rc == H2_PAL_OK;
+    rc = h2_bleikcp_global_init();
+    kcp_started = rc == H2_PAL_OK;
+    if (rc == H2_PAL_OK) {
+      rc = static_cast<h2_pal_result_t>(h2_pal_system_event_init(system_event));
+      system_event_started = rc == H2_PAL_OK;
+    }
     if (rc == H2_PAL_OK) {
       ble = h2::desktop::corebluetooth_api();
       rc = h2_pal_ble_start(ble);
@@ -603,12 +673,18 @@ int main(int argc, char** argv) {
     }
   }
 
-  h2_runtime_t* runtime = nullptr;
-  h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
-  if (rc == H2_PAL_OK) rc = h2_runtime_init(&runtime_config, &runtime);
+  // The synchronous runner borrows PAL interfaces, like the native CLI. It
+  // does not run an application event loop or consume a Runtime event queue.
+  const h2_runtime_config_t providers = h2::desktop::runtime_config(nullptr);
+  h2_runtime_t runtime = {};
+  runtime.mem = providers.mem;
+  runtime.time = providers.time;
+  runtime.task = providers.task;
+  runtime.sync = providers.sync;
+  runtime.system_event = providers.system_event;
   if (rc == H2_PAL_OK) {
     h2_h2loader_e2e_config_t config = {
-        .runtime = runtime,
+        .runtime = &runtime,
         .serial = h2::desktop::serial_host_api(),
         .ble = ble,
         .uart_endpoint = options.uart.empty() ? nullptr : options.uart.c_str(),
@@ -623,6 +699,9 @@ int main(int argc, char** argv) {
                                : options.expected_target.c_str(),
         .app_firmware = app_firmware.empty() ? nullptr : app_firmware.data(),
         .app_firmware_size = app_firmware.size(),
+        .app_stage_firmware =
+            app_stage_firmware.empty() ? nullptr : app_stage_firmware.data(),
+        .app_stage_firmware_size = app_stage_firmware.size(),
         .loader_firmware =
             loader_firmware.empty() ? nullptr : loader_firmware.data(),
         .loader_firmware_size = loader_firmware.size(),
@@ -640,7 +719,7 @@ int main(int argc, char** argv) {
             options.wifi_ssid.empty() ? nullptr : options.wifi_ssid.c_str(),
         .wifi_password = wifi_password,
         .repeat_count = options.repeat,
-        .wait_timeout_ms = options.timeout_ms,
+        .wait_timeout_ms = options.connect_timeout_ms,
         .command_timeout_ms = options.timeout_ms,
         .monitor_duration_ms = options.monitor_ms,
         .expected_coredump_bytes = options.coredump_bytes,
@@ -648,8 +727,12 @@ int main(int argc, char** argv) {
         .include_send = static_cast<std::uint8_t>(!app_firmware.empty()),
         .include_send_url =
             static_cast<std::uint8_t>(!options.firmware_url.empty()),
-        .include_lifecycle =
-            static_cast<std::uint8_t>(!loader_firmware.empty()),
+        .include_lifecycle = static_cast<std::uint8_t>(
+            !loader_firmware.empty() && !options.expect_loader_rejection),
+        .include_app_lifecycle =
+            static_cast<std::uint8_t>(options.app_lifecycle),
+        .expect_loader_rejection =
+            static_cast<std::uint8_t>(options.expect_loader_rejection),
         .include_coredump = static_cast<std::uint8_t>(
             options.coredump_bytes != 0u || !crash_firmware.empty()),
         .include_monitor = static_cast<std::uint8_t>(options.monitor_ms != 0u),
@@ -664,8 +747,19 @@ int main(int argc, char** argv) {
         .case_user = nullptr,
         .on_progress = progress_event,
         .progress_user = nullptr,
-        .on_log = nullptr,
+        .on_log = options.device_logs
+        ? +[](void*, const uint8_t* data, size_t size) -> h2_pal_result_t {
+          return std::fwrite(data, 1u, size, stderr) == size &&
+                         std::fflush(stderr) == 0
+                     ? H2_PAL_OK
+                     : H2_PAL_ERR_IO;
+        }
+        : nullptr,
         .log_user = nullptr,
+        .check_loader_rejection = options.expect_loader_rejection
+                                      ? h2_bk7258_e2e_check_rejection
+                                      : nullptr,
+        .rejection_user = nullptr,
         .execute_case = nullptr,
         .execute_user = nullptr,
     };
@@ -697,7 +791,7 @@ int main(int argc, char** argv) {
       result.failed, static_cast<unsigned long long>(result.elapsed_ms),
       options.report.empty() ? "" : options.report.string().c_str());
 
-  if (runtime != nullptr) h2_runtime_deinit(runtime);
+  if (kcp_started) (void)h2_bleikcp_global_shutdown();
   if (ble_started) (void)h2_pal_ble_stop(ble);
   if (system_event_started) h2_pal_system_event_deinit(system_event);
   if (g_cancelled != 0) return 130;

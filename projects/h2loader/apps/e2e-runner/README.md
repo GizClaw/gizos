@@ -80,11 +80,25 @@ connection and BLE connect-failure diagnostics. UART sink errors abort the curre
 serial operation; BLE sink errors never replace the connect error. Serial log
 bytes contribute to output/log byte counters only during monitor cases.
 
+The native CLI owns BLE KCP global initialization and shutdown when BLE is selected. Callers embedding the runner must initialize BLE KCP before a real BLE run and shut it down after all runner connections have closed. The synchronous CLI borrows the required PAL interfaces directly; it does not create an application Runtime event queue that it never drains.
+
 `reboot ... --monitor` allows one CLOSED/TIMEOUT reset transition after the ACK.
 Each attempt reconnects to the expected partition, observes a full monitor window
 with output, and reads live status to confirm the partition. A second transition,
 any other error, a wrong partition, or cancellation ends the case.
 
+
+## BK7258 encrypted-device baseline
+
+Run UART and BLE separately to reproduce the historical 24-case UART and 21-case BLE registries, including crash and coredump cases on each transport. For AES-on devices, use `--app-lifecycle --expect-loader-rejection` with `--app-firmware`, a distinct `--app-stage-firmware`, `--loader-firmware`, and `--crash-firmware`. Add `--monitor-ms 1000` only for UART. MEMORY remains capability-dependent and is outside those baseline totals.
+
+`reject-loader-update` replaces `install-loader`. It requires an instrumented test Loader linked with `//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk/tests/fixtures:bk7258_flash_audit.c` and the four linker wrappers documented there. The real image-writer begin operation must reject the Loader image with AES enabled and zero Flash erase/write calls. The portable runner receives a target-owned rejection-evidence callback; the desktop entrypoint interprets the BK7258 diagnostic. Missing or contradictory audit evidence fails the case. Never link this fixture into production images. Use a new version for every changed test Loader: reusing a version after a raw recovery write conflicts with the retained identity hash and prevents startup.
+
+The existing crash case verifies return to Loader before App confirmation, not restoration of an older App. Keep missing fault scenarios separate: mid-transfer disconnect, targeted reset during write/verification, wrong-key or wrong-address package recovery, and controlled power loss. Preparation and host checks are not hardware cases and do not contribute to the 24/21 totals.
+
+`--connect-timeout-ms` bounds each connection attempt independently of the `--timeout-ms` command deadline. Use `--device-logs` to retain non-frame device diagnostics on stderr while collecting the JSON report separately. Device diagnostics are disabled by default and are not serialized into JSON.
+
+AES-off qualification uses the same `bk7258` target and runner with plaintext App, Loader and crash packages. Select the existing full lifecycle by supplying `--loader-firmware` without `--app-lifecycle` or `--expect-loader-rejection`; the baseline then exercises `install-loader` instead of rejection. Run both transports again on AES-off hardware and keep their reports separate from AES-on results. The test selection does not change the device's eFuse mode.
 
 ## Old/new checksum matrix
 
@@ -150,3 +164,9 @@ the required source-package provenance cannot pass. These cases reuse the same
 ten fixtures and do not rely on a second transport or repeat to cover the reverse
 transition. A single transport with both directories now runs 23 cases (five
 command checks, ten within-format cases and eight cross-format cases).
+
+## App-only lifecycle
+
+`--app-lifecycle --app-firmware <package-a> --app-stage-firmware <package-b>` runs App installation, confirmation, App command checks and reboot/Stage checks without installing a Loader package. The second App must have a different version and image digest and the same board/target. It is staged across an App reboot so startup confirmation cannot consume the currently installed image as a matching Stage. It accepts `--loader-firmware` only with `--expect-loader-rejection`, which checks refusal instead of Loader installation. The existing full lifecycle remains selected by supplying App and Loader packages without `--app-lifecycle`.
+
+For BK7258 Flash AES qualification, run the same App-only scenarios separately on an explicitly selected unencrypted chip with a plaintext package and an encrypted chip with its matching pre-encrypted package. The E2E runner never receives a device key. Keep actual non-secret chip-mode evidence with the per-device report; choosing a filename containing "encrypted" does not prove the mode. Use the existing crash-before-confirm input for failure recovery. Controlled power interruption requires a separately authorized fixture/manual step and its own evidence; neither process cancellation nor disconnect is a power cut.

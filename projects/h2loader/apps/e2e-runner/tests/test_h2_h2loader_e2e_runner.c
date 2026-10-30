@@ -102,6 +102,34 @@ static void test_full_sequence_for_both_transports(void) {
   assert(fake.cases[63] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
 }
 
+static void test_app_only_lifecycle(void) {
+  fake_executor_t fake = {0};
+  static h2_h2loader_e2e_result_t result;
+  h2_h2loader_e2e_config_t config = {
+      .uart_endpoint = "fake",
+      .app_firmware = (const uint8_t*)"x",
+      .app_firmware_size = 1,
+      .app_stage_firmware = (const uint8_t*)"y",
+      .app_stage_firmware_size = 1,
+      .repeat_count = 1,
+      .include_app_lifecycle = 1,
+      .execute_case = execute_case,
+      .execute_user = &fake,
+  };
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_OK);
+  int installed = 0;
+  for (size_t i = 0; i < fake.count; i++) {
+    assert(fake.cases[i] != H2_H2LOADER_E2E_CASE_INSTALL_LOADER);
+    if (fake.cases[i] == H2_H2LOADER_E2E_CASE_INSTALL_APP) installed++;
+  }
+  assert(installed == 1);
+  config.app_stage_firmware = NULL;
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
+  config.app_stage_firmware = (const uint8_t*)"y";
+  config.app_firmware = NULL;
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
+}
+
 static h2_pal_result_t fail_send(void* user,
                                  h2_h2loader_e2e_transport_t transport,
                                  h2_h2loader_e2e_case_t test_case,
@@ -121,7 +149,8 @@ static h2_pal_result_t execute_without_memory(
     h2_h2loader_e2e_case_t test_case,
     h2_h2loader_e2e_case_result_t* out_result) {
   h2_pal_result_t rc = execute_case(user, transport, test_case, out_result);
-  if (test_case == H2_H2LOADER_E2E_CASE_STATUS) {
+  if (test_case == H2_H2LOADER_E2E_CASE_STATUS ||
+      test_case == H2_H2LOADER_E2E_CASE_APP_STATUS) {
     out_result->status.command_availability &=
         ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY;
   }
@@ -378,6 +407,41 @@ static const h2_pal_mem_vtable_t matrix_mem_vtable = {
     .alloc = matrix_alloc, .realloc = matrix_realloc, .free = matrix_free};
 static const h2_pal_mem_api_t matrix_mem = {.vtable = &matrix_mem_vtable};
 
+static h2_pal_result_t reject_missing_evidence(void* user, const char* output,
+                                               size_t size) {
+  (void)user;
+  (void)output;
+  (void)size;
+  return H2_PAL_ERR_INVALID_STATE;
+}
+
+static void test_rejection_requires_target_validator(void) {
+  static h2_h2loader_e2e_result_t result;
+  /* No transport can be opened: validation must precede package inspection. */
+  const h2_pal_time_api_t time = {0};
+  const h2_pal_serial_host_api_t serial = {0};
+  h2_runtime_t runtime = {.mem = &matrix_mem, .time = &time};
+  h2_h2loader_e2e_config_t config = {
+      .runtime = &runtime,
+      .serial = &serial,
+      .uart_endpoint = "unused",
+      .app_firmware = (const uint8_t*)"invalid-package",
+      .app_firmware_size = 15,
+      .app_stage_firmware = (const uint8_t*)"stage",
+      .app_stage_firmware_size = 5,
+      .loader_firmware = (const uint8_t*)"loader",
+      .loader_firmware_size = 6,
+      .repeat_count = 1,
+      .include_app_lifecycle = 1,
+      .expect_loader_rejection = 1,
+  };
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
+  assert(result.case_count == 0);
+  config.check_loader_rejection = reject_missing_evidence;
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_FORMAT);
+  assert(result.case_count == 0);
+}
+
 typedef struct matrix_fixture {
   fake_executor_t fake;
   h2_runtime_t runtime;
@@ -546,7 +610,54 @@ static void test_checksum_matrix_and_false_success(void) {
   matrix_close(&fixture);
 }
 
+static void test_bk7258_historical_matrix(void) {
+  for (unsigned mode = 0; mode < 4; ++mode) {
+    const unsigned ble = mode & 1u;
+    const uint8_t encrypted = (uint8_t)(mode >> 1u);
+    fake_executor_t fake = {0};
+    static h2_h2loader_e2e_result_t result;
+    h2_h2loader_e2e_config_t config = {
+        .uart_endpoint = ble ? NULL : "fake",
+        .ble_endpoint = ble ? "fake" : NULL,
+        .expected_target = "bk7258",
+        .app_firmware = (const uint8_t*)"a",
+        .app_firmware_size = 1,
+        .app_stage_firmware = (const uint8_t*)"b",
+        .app_stage_firmware_size = 1,
+        .loader_firmware = (const uint8_t*)"l",
+        .loader_firmware_size = 1,
+        .crash_firmware = (const uint8_t*)"c",
+        .crash_firmware_size = 1,
+        .repeat_count = 1,
+        .include_send = 1,
+        .include_lifecycle = !encrypted,
+        .include_app_lifecycle = encrypted,
+        .expect_loader_rejection = encrypted,
+        .include_crash = 1,
+        .include_coredump = 1,
+        .include_monitor = !ble,
+        .monitor_duration_ms = 1000,
+        .execute_case = execute_without_memory,
+        .execute_user = &fake,
+    };
+    assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_OK);
+    assert(result.case_count == (ble ? 21u : 24u));
+    unsigned rejection = 0, installation = 0;
+    for (size_t i = 0; i < result.case_count; ++i) {
+      installation +=
+          result.cases[i].test_case == H2_H2LOADER_E2E_CASE_INSTALL_LOADER;
+      rejection += result.cases[i].test_case ==
+                   H2_H2LOADER_E2E_CASE_REJECT_LOADER_UPDATE;
+    }
+    assert(rejection == encrypted);
+    assert(installation == !encrypted);
+  }
+}
+
 int main(void) {
+  test_rejection_requires_target_validator();
+  test_bk7258_historical_matrix();
+  test_app_only_lifecycle();
   test_checksum_matrix_and_false_success();
   test_full_sequence_for_both_transports();
   test_failure_is_reported_without_hiding_cleanup();

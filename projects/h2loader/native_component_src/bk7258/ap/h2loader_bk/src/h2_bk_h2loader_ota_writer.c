@@ -2,7 +2,12 @@
 #include "h2_bk_h2loader_internal.h"
 #include "h2_bk_fixed_boot.h"
 #include "layout.h"
+#include "flash_access.h"
+#include "h2_bk_flash_access.h"
 
+#ifdef H2_BK_OTA_WRITER_HOST_TEST
+#include "h2_bk_h2loader_ota_writer_test_sdk.h"
+#else
 #include "bk_private/bk_ota_private.h"
 #include "common/bk_err.h"
 #include "driver/flash.h"
@@ -12,6 +17,8 @@
 #include "h2/pal/core/h2_pal_errors.h"
 #include "modules/ota.h"
 #include "os/os.h"
+
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
@@ -46,6 +53,7 @@ static int s_flash_open;
 static int s_staged_app_ready;
 /* Writing a Loader image into the App window for the native B relay. */
 static int s_writing_loader_relay;
+static int s_writing_loader_image;
 static uint8_t s_verify_buffer[H2_BK_OTA_VERIFY_CHUNK_SIZE];
 static bk_logic_partition_t s_primary_window_partition;
 static bk_logic_partition_t s_fixed_partitions[2];
@@ -145,7 +153,7 @@ static int erase_for_range(uint32_t end_offset) {
   return BK_OK;
 }
 
-static int verify_staged_rbl(void) {
+static int verify_legacy_staged_rbl(void) {
   struct ota_rbl_head header;
   uint32_t hash = RT_OTA_HASH_FNV_SEED;
   uint32_t logical_capacity;
@@ -201,6 +209,50 @@ static int verify_staged_rbl(void) {
   return H2_PAL_OK;
 }
 
+static int verify_staged_rbl(void) {
+  if (s_writing_loader_image || !h2_bk_fixed_layout_active())
+    return verify_legacy_staged_rbl();
+  struct ota_rbl_head header;
+  _Static_assert(sizeof(header) == 96, "Pinned RBL ABI changed");
+  const uint32_t capacity = s_total / 34u * 32u;
+  if (!s_flash_open || !s_partition || s_total % 34u || capacity < RBL_HEAD_POS)
+    return H2_PAL_ERR_FORMAT;
+  int rc =
+      h2_bk_flash_read_plain(s_partition->partition_start_addr, s_total,
+                             capacity - RBL_HEAD_POS, &header, sizeof(header));
+  if (rc != H2_PAL_OK) return rc;
+  if (memcmp(header.magic, "RBL\0", 4) || header.algo != 0 ||
+      !header.size_raw || header.size_raw % 32u ||
+      header.size_package != header.size_raw ||
+      header.size_raw > capacity - RBL_HEAD_POS ||
+      h2_bk_flash_crc32(0, (const uint8_t*)&header, 92) != header.info_crc32)
+    return H2_PAL_ERR_FORMAT;
+  uint32_t vector[2];
+  rc = h2_bk_flash_read_plain(s_partition->partition_start_addr, s_total, 0,
+                              vector, sizeof(vector));
+  if (rc != H2_PAL_OK) return rc;
+  const uint32_t base =
+      0x02000000u + s_partition->partition_start_addr / 34u * 32u;
+  if (vector[0] < 0x28000000u || vector[0] > 0x280a0000u || (vector[0] & 7u) ||
+      !(vector[1] & 1u) || vector[1] < base ||
+      vector[1] - base >= header.size_raw)
+    return H2_PAL_ERR_FORMAT;
+  uint32_t hash = RT_OTA_HASH_FNV_SEED, crc = 0;
+  for (uint32_t offset = 0; offset < header.size_raw;) {
+    uint32_t take = header.size_raw - offset;
+    if (take > sizeof(s_verify_buffer)) take = sizeof(s_verify_buffer);
+    rc = h2_bk_flash_read_plain(s_partition->partition_start_addr, s_total,
+                                offset, s_verify_buffer, take);
+    if (rc != H2_PAL_OK) return rc;
+    hash = ota_calc_hash(hash, s_verify_buffer, take);
+    crc = h2_bk_flash_crc32(crc, s_verify_buffer, take);
+    offset += take;
+    feed_watchdogs();
+  }
+  return hash == header.hash && crc == header.crc32 ? H2_PAL_OK
+                                                    : H2_PAL_ERR_FORMAT;
+}
+
 static int publish_relay_rbl_head(void) {
   const int rc = h2_bk_fixed_publish_relay_head(
       s_partition->partition_start_addr, s_partition->partition_length, s_total,
@@ -221,6 +273,11 @@ static int ota_writer_begin_partition(uint32_t partition_id,
       (partition_id != H2_BK_H2LOADER_PRIMARY_PARTITION_ID &&
        partition_id != H2_BK_H2LOADER_APP_PARTITION_ID)) {
     return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (!s_writing_loader_image && h2_bk_fixed_layout_active()) {
+    int rc = h2_bk_flash_access_ready();
+    if (rc != H2_PAL_OK) return rc;
+    if (image_size % H2_BK_OTA_CRC_BLOCK_SIZE) return H2_PAL_ERR_FORMAT;
   }
   if ((partition_id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID &&
        h2_bk_fixed_current_slot() == EXEX_A_PART) ||
@@ -261,7 +318,9 @@ static int ota_writer_begin_partition(uint32_t partition_id,
 
 static int ota_writer_begin(void* user, const h2_bundle_entry_t* entry) {
   (void)user;
-  if (entry == NULL || entry->path == NULL ||
+  s_writing_loader_image = 0;
+  s_writing_loader_relay = 0;
+  if (entry == NULL ||
       strcmp(entry->path, H2_BK_H2LOADER_APP_ENTRY_PATH) != 0) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -493,6 +552,9 @@ static int image_writer_begin(void* user, uint32_t partition_id,
   if (identity == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  s_writing_loader_image = identity->role != H2_LOADER_IMAGE_ROLE_APP;
+  if (s_writing_loader_image && h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
+    return H2_PAL_ERR_UNSUPPORTED;
   s_writing_loader_relay = 0;
   if (h2_bk_fixed_layout_active() &&
       identity->role != H2_LOADER_IMAGE_ROLE_APP) {

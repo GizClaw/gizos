@@ -1,4 +1,5 @@
 #include "layout.h"
+#include "flash_access.h"
 #include "armstar.h"
 #include "driver/flash.h"
 #include "driver/flash_partition.h"
@@ -62,7 +63,9 @@ void h2loader_cp_try_fixed_app(void) {
   if (rc != BK_OK) return;
   const volatile uint32_t* vector =
       (const volatile uint32_t*)H2_FIXED_XIP_ADDRESS(layout.app.offset);
-  uint32_t msp = vector[0], pc = vector[1];
+  uint32_t checked_vector[2];
+  if (h2_bk_flash_cp_vector(layout.app.offset, checked_vector) != 0) return;
+  uint32_t msp = checked_vector[0], pc = checked_vector[1];
   if (msp < 0x28000000u || msp > 0x280a0000u || (msp & 7u) || !(pc & 1u) ||
       !h2_fixed_xip_in_window(pc, &layout.app))
     return;

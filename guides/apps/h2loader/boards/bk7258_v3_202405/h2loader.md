@@ -40,7 +40,7 @@ Loader 与 App 使用各自的分区表，分别链接到最终地址。上表�
 
 Loader 和 H2Loader APP layout 使用 AP 直驱的 UART1 承载 managed UART 与 AP 日志，固定为 460800 8N1。板级 AP defaults 选择 UART1，GPIO 表同时声明 P0=`UART1_TXD`、P1=`UART1_RXD`；SDK 会拒绝映射未出现在该表中的引脚，因此只修改串口号不足以启用 UART1。USB 转串口的 RXD 接 P0/TX，TXD 接 P1/RX，并与开发板共地。UART0 保留 ROM 下载与 CP 日志，UART0 转串口的 RTS 可以接 CEN 控制复位；两路串口可同时连接，均不启用硬件流控。
 
-AP 的 UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。
+AP 的 UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。 存储挂载及 publish recovery 成功后，startup 返回命令模式时也启动 BLE，即使安装被拒绝或恢复返回错误；保留原错误与 Stage 供管理命令处理，不在 BLE 启动前反复重试同一个失败包。 进入命令模式不代表 App 已确认，入口只清理本地启动诊断，不覆盖 Core 保留的 `last_result`。
 
 Host 打开 managed serial 后、借出 stream 前明确 deassert DTR/RTS；不支持控制线的 endpoint 只有返回 canonical `UNSUPPORTED` 才可继续，其它错误立即终止连接。APP 与 Loader status 都从设备端同一个 BLE public/identity MAC 返回 12 位小写十六进制 `device_uid`，BLE 重启后以该 UID 验证设备，而不是信任 endpoint/address。
 
@@ -88,3 +88,9 @@ BK 条件变量等待使用栈上的静态信号量，但 SDK 仍为每个信号
 运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 后，只选择结构化 identity 为 `board=bk7258_v3_202405`、`target=bk7258`、`active_role=loader`、`transport=iostreamikcp` 的设备。APP 或 Loader 状态都可以通过 `send --file <build-dir>/update.tar.zlib` 直接发布 Stage；安装使用 `reboot upgrade`。
 
 固定布局验收需要确认：Loader 镜像为 2437120 字节，App 为 5222400 字节；UART1 安装后 App 的实际 PC 落在独立 XIP 地址，SDK native slot 仍为 A；已确认 App 在复位（包括 App 启动过程中连续复位）后由 CP 直接进入；`reboot loader`/`reboot app` 往返；确认前崩溃的 App 回到 Loader 且不再自动启动，重新安装正常 App 后恢复；正常 App 安装不覆盖 Loader。
+
+## Flash AES App upgrades
+
+Use the host pre-encryption tool for an AES-enabled chip, with partition metadata from the App build. Ordinary App installation keeps native A as Loader and writes paired CP/AP directly into the final App window; ciphertext is not relocated through native B. The raw package checksum covers ciphertext and Flash CRC, while native RBL/vector checks use the decrypted mapped view. Recovery images and App upgrade packages are different artifacts.
+
+The same H2Loader sources support both chip modes. A small read-only CP query supplies AES status for the Loader self-update guard; enabled or unknown status rejects that operation. For App qualification, use `--app-lifecycle` with an explicit UART/BLE endpoint and the matching package. Record the actual chip mode separately from the report filename. Transport interruption is not power-loss testing; reset and controlled power-cut recovery need separate device evidence.

@@ -2,6 +2,7 @@
 #include "h2/pal/core/h2_pal_errors.h"
 #include "layout.h"
 #include <stdint.h>
+#include <stddef.h>
 #define H2_BK_H2LOADER_PRIMARY_PARTITION_ID 1u
 #define H2_BK_H2LOADER_APP_PARTITION_ID 2u
 #define BK_OK 0
@@ -38,3 +39,6 @@ int h2_bk_fixed_relay_failed(void);
 /* Copy a staged Loader image's RBL head area to the end of the App window. */
 int h2_bk_fixed_publish_relay_head(uint32_t window_offset, uint32_t window_size,
                                    uint32_t image_size, uint32_t head_size);
+
+int h2_bk_flash_read_plain(uint32_t, uint32_t, uint32_t, void*, size_t);
+unsigned h2_bk_flash_aes_state(void);
