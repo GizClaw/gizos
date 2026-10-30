@@ -1,0 +1,32 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ap.defaults",
+    "cp.defaults",
+    "partitions/bk7258/auto_partitions.csv",
+])
+
+filegroup(
+    name = "layout",
+    srcs = [
+        "partitions/bk7258/auto_partitions.csv",
+        "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:partitions/bk7258/ab_position_independent.csv",
+        "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:partitions/bk7258/ota_rbl.config",
+        "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:pj_config.mk",
+    ],
+)
+
+alias(
+    name = "ap_gpio",
+    actual = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:ap_gpio",
+)
+
+alias(
+    name = "cp_gpio",
+    actual = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:cp_gpio",
+)
+
+alias(
+    name = "ram_regions",
+    actual = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:ram_regions",
+)

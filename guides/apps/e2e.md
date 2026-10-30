@@ -295,3 +295,7 @@ BK launcher 在停止并 join 管理 worker 后借用 raw UART，写入和 drain
 ## 验证边界
 
 行为验收使用编译并执行的 C/C++ 测试、真实 SDK 构建和实际平台运行。Python 可以驱动编译、浏览器、fixture 或设备，也可以测试构建工具的实际输入输出；源码关键字、调用顺序文本、固定源码哈希和文档字节快照不作为行为验收。历史报告及其中的源码、产物摘要保留原始身份，只描述记录时的版本；当前版本通过当前构建和真实运行验证，不通过重写历史摘要继承资格。
+
+## BK 原生 Flash 并发诊断
+
+[Flash stress 入口](https://github.com/GizClaw/gizos/tree/main/projects/e2e/targets/h2loader_tar_zlib/flash-stress/bk7258)使用两个 AP 核执行真实 SDK Flash 读写与校验，用于复现底层并发停滞。测试仅使用板级布局明确预留的区域，先运行顺序对照，再运行并发；用例结果、异常复位、安装确认与设备恢复分别记录。它不运行 H106 Main，也不替代公共 PAL Storage 的完整接口资格。

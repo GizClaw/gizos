@@ -1,0 +1,26 @@
+load("//projects/e2e/targets/h2loader_tar_zlib/flash-stress/bk7258:entry.bzl", "bk7258_flash_stress")
+
+package(default_visibility = ["//visibility:public"])
+
+bk7258_flash_stress(
+    baseline_partitions = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:partitions/bk7258/auto_partitions.csv",
+    board = "bk7258_v3_202405",
+    board_component = "//boards/bk7258_v3_202405/bk7258",
+    diagnostic_partitions = "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:partitions/bk7258/auto_partitions.csv",
+    layout_files = {
+        "ap_config": [
+            "//boards/bk7258_v3_202405/bk7258:ap.defaults",
+            "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:ap.defaults",
+            "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:ap.defaults",
+        ],
+        "cp_config": [
+            "//boards/bk7258_v3_202405/bk7258:cp.defaults",
+            "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:cp.defaults",
+            "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:cp.defaults",
+        ],
+        "ap_gpio": "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:ap_gpio",
+        "cp_gpio": "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:cp_gpio",
+        "project_support_files": ["//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:layout"],
+        "ram_regions": "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:ram_regions",
+    },
+)
