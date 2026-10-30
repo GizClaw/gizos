@@ -143,9 +143,11 @@ export function sdkName(sdk: Sdk): string {
 
 export function sdkChoices(name?: string, entries: Sdk[] = catalog.sdks): Sdk[] {
   if (!name) return entries;
-  const named = entries.filter(sdk =>
-    [sdkName(sdk), ...sdk.aliases ?? []].some(alias => alias.toLowerCase() === name.toLowerCase()));
-  return named.length ? named : entries.filter(sdk => sdk.kind === kind(name));
+  const named = entries.filter(sdk => sdkName(sdk).toLowerCase() === name.toLowerCase());
+  if (named.length) return named;
+  const aliased = entries.filter(sdk =>
+    [...sdk.aliases ?? [], ...sdk.chips ?? []].some(alias => alias.toLowerCase() === name.toLowerCase()));
+  return aliased.length ? aliased : entries.filter(sdk => sdk.kind === kind(name));
 }
 
 export function selectSdk(name: string, version: string, entries: Sdk[] = catalog.sdks): Sdk {

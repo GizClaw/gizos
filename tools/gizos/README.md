@@ -47,6 +47,10 @@ JieLi repository basenames remain accepted for older scripts. An ambiguous
 family/version combination requires an explicit SDK name. The old
 `bk_avdk_smp <version>` selector remains available for versioned commands;
 repository configuration now uses `bk7258` or `bk7259` explicitly.
+Chips without a dedicated entry resolve to their shared SDK: `bk7236` is an
+alias for `bk_idk`. Dedicated names take priority, so `bk7258` continues to
+select its SMP entry. Chip aliases of the same shared SDK use one source
+selection, source checkout and installation record.
 
 | Resource | Preparation | Environment contract |
 | --- | --- | --- |

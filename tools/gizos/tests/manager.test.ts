@@ -79,6 +79,8 @@ describe("catalog and shared storage", () => {
     expect(() => selectSdk("bk7259", "3.1.1")).toThrow("Unsupported");
     expect(selectSdk("bk7259", "4.0.1").armVersion).toBe("14.3.rel1");
     expect(selectSdk("bk_idk", "2.0.1-r650e754").chips).toEqual(["bk7236", "bk7258"]);
+    expect(selectSdk("bk7236", "2.0.1-r650e754")).toBe(selectSdk("bk_idk", "2.0.1-r650e754"));
+    expect(() => selectSdk("bk7258", "2.0.1-r650e754")).toThrow("Unsupported");
     expect(sdkName(selectSdk("esp-idf", "6.2"))).toBe("esp-idf");
     expect(selectSdk("esp_idf", "6.2")).toBe(selectSdk("esp-idf", "6.2"));
     for (const [name, alias, version] of [
@@ -602,6 +604,9 @@ describe("CLI discovery", () => {
     expect(idk.repositoryAlias).toBe("GizClaw");
     expect(idk.repositoryId).toBe("GizClaw/bk_idk");
     expect(idk.chips).toEqual(["bk7236", "bk7258"]);
+    await run("config", "bk7236", "Beken");
+    expect(JSON.parse(await run("config", "bk_idk")).repositoryAlias).toBe("Beken");
+    await run("config", "bk_idk", "GizClaw");
     await run("config", "esp_idf", "Espressif");
     await run("config", "set", "root", shared);
     const all = JSON.parse(await run("config"));
