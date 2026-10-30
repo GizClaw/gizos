@@ -1,4 +1,7 @@
 #include "../include/h2_esp_h2loader_device_uid.h"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <string.h>
 

@@ -1,4 +1,7 @@
 #include "h2_mfg_aec_fixture.h"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 
 int main(void) {

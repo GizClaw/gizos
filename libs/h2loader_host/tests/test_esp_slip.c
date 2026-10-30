@@ -1,6 +1,9 @@
 #include "esp_loader_io.h"
 #include "slip.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <string.h>
 

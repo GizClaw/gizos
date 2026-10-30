@@ -237,14 +237,14 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
 }
 
 static int buttons(h2_mfg_t* m, const char** action) {
-  h2_pal_radio_button_group_reading_t group;
+  h2_pal_radio_button_group_reading_t group = {0};
   if (m->profile->button_group != 0) {
     int rc = h2_pal_button_read_radio_button_group(
         m->rt->button, m->profile->button_group, &group);
     if (rc != 0) return rc;
   }
   for (unsigned i = 0; i < m->profile->button_count; ++i) {
-    h2_pal_single_button_reading_t reading;
+    h2_pal_single_button_reading_t reading = {0};
     int rc = 0;
     if (m->profile->button_group != 0)
       reading.state = group.pressed_button_id == m->profile->buttons[i]

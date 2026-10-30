@@ -1,5 +1,8 @@
 #include "h2_mfg_model.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
