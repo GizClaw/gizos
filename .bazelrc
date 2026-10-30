@@ -40,12 +40,6 @@ coverage:test_coverage --experimental_use_llvm_covmap
 coverage:test_coverage --experimental_generate_llvm_lcov
 coverage:test_coverage --instrumentation_filter=^//
 
-build:kickpi_k4b --platforms=//tools/bazel/platforms:linux_armv7_gnueabihf
-build:kickpi_k4b --extra_toolchains=@k4b_arm_gnu_toolchain//:toolchain
-build:kickpi_k4b --extra_toolchains=//tools/bazel/platforms:linux_x86_64_test_toolchain
-build:kickpi_k4b -c opt
-build:kickpi_k4b --repo_env=K4B_CEDARX_INCLUDE_DIR
-build:kickpi_k4b --repo_env=K4B_CEDARX_LIB_DIR
 
 build:macos_arm64 --platforms=//tools/bazel/platforms:macos_arm64
 build:macos_arm64 --extra_toolchains=//tools/bazel/platforms:macos_arm64_test_toolchain

@@ -157,8 +157,11 @@ static int never_stop(void* user) {
   return 0;
 }
 
-static h2_pal_result_t stop_headless_app(void* user) {
+static h2_pal_result_t app_ready(void* user) {
   (void)user;
+  (void)h2_web_main_call(
+      web_set_status,
+      (const void*[]){&(const char*){"Running Lua Flappy Bird"}});
   return ((int)h2_web_main_call(web_is_headless, NULL).i32)
              ? h2_web_flappybird_back()
              : H2_PAL_OK;
@@ -209,13 +212,13 @@ static void run_app(void* user) {
   s_runtime = runtime;
   (void)h2_web_main_call(
       web_set_status,
-      (const void*[]){&(const char*){"Running Lua Flappy Bird"}});
+      (const void*[]){&(const char*){"Starting Lua Flappy Bird"}});
   const h2_lua_flappybird_config_t app_config = {
       .button_component_id = H2_RUNTIME_COMPONENT_ID_NONE,
       .back_component_id = H2_LUA_FLAPPYBIRD_COMPONENT_BACK,
       .should_stop = never_stop,
       .should_stop_user = NULL,
-      .on_ready = stop_headless_app,
+      .on_ready = app_ready,
       .on_ready_user = NULL,
   };
   context->result = h2_lua_flappybird_run(runtime, &app_config);

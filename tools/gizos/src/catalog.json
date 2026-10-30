@@ -8,7 +8,11 @@
       "commit": "76f5dedd9950a3012fee8fb7d5586df21fc67802",
       "requiredFile": "tools/idf.py",
       "pythonSeries": "6.0",
-      "targets": ["esp32s3", "esp32p4", "esp32c5"]
+      "targets": [
+        "esp32s3",
+        "esp32p4",
+        "esp32c5"
+      ]
     },
     {
       "kind": "idf",
@@ -18,7 +22,12 @@
       "commit": "ddb3852ab5c7f9e6dbc268203ef9d612de391bf8",
       "requiredFile": "tools/idf.py",
       "pythonSeries": "6.2",
-      "targets": ["esp32s3", "esp32p4", "esp32c5", "esp32s31"]
+      "targets": [
+        "esp32s3",
+        "esp32p4",
+        "esp32c5",
+        "esp32s31"
+      ]
     },
     {
       "kind": "bk",
@@ -27,6 +36,49 @@
       "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
       "commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
       "requiredFile": "Makefile"
+    },
+    {
+      "kind": "bk",
+      "version": "3.1.1-rd789d71",
+      "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
+      "commit": "d789d71d89d11584c3350ca67600ff9455a7f57a",
+      "requiredFile": "Makefile"
+    },
+    {
+      "kind": "bk",
+      "version": "4.0.1",
+      "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
+      "commit": "06cb0f2d9cdeab571ec5be2d54398c67e097a4cc",
+      "requiredFile": "Makefile"
+    },
+    {
+      "kind": "ac695n",
+      "version": "76b95777a083",
+      "default": true,
+      "repository": "git@github.com:h2vivi/AC695N_Soundbox_SDK.git",
+      "commit": "76b95777a083818dd9a3a492d9c70ad81baa6b8a",
+      "requiredFile": "SDK/Makefile",
+      "sdkSubdirectory": "SDK",
+      "lfs": true
+    },
+    {
+      "kind": "ac707n",
+      "version": "d0167685d032",
+      "default": true,
+      "repository": "git@github.com:h2vivi/e_badge_707_sdk_200.git",
+      "commit": "d0167685d032d745d88fe50233302edd46941622",
+      "requiredFile": "SDK/Makefile",
+      "sdkSubdirectory": "SDK",
+      "lfs": true
+    },
+    {
+      "kind": "ac791n",
+      "version": "eb04f1966cf2",
+      "default": true,
+      "repository": "git@github.com:h2vivi/fw-AC791N_SDK.git",
+      "commit": "eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a",
+      "requiredFile": "Makefile",
+      "lfs": true
     }
   ],
   "arm": {
@@ -42,5 +94,177 @@
         "sha256": "97dbb4f019ad1650b732faffcc881689cedc14e2b7ee863d390e0a41ef16c9a3"
       }
     }
-  }
+  },
+  "tools": [
+    {
+      "kind": "adb",
+      "version": "35.0.2",
+      "default": true,
+      "requiredFiles": [
+        "platform-tools/adb"
+      ],
+      "executable": "platform-tools/adb",
+      "check": [
+        "version"
+      ],
+      "expectedOutput": "Version 35.0.2-",
+      "exports": {
+        "ADB": "platform-tools/adb"
+      },
+      "path": [
+        "platform-tools"
+      ],
+      "hosts": {
+        "darwin": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r35.0.2-darwin.zip",
+          "sha256": "1820078db90bf21628d257ff052528af1c61bb48f754b3555648f5652fa35d78",
+          "format": "zip"
+        },
+        "linux-x64": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r35.0.2-linux.zip",
+          "sha256": "acfdcccb123a8718c46c46c059b2f621140194e5ec1ac9d81715be3d6ab6cd0a",
+          "format": "zip"
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "1.1.0.2.post1",
+      "default": true,
+      "requiredFiles": [
+        "bin/python",
+        "bin/bk_loader"
+      ],
+      "executable": "bin/bk_loader",
+      "check": [
+        "--version"
+      ],
+      "expectedOutput": "bk_loader.py,v1.1.0.2",
+      "exports": {
+        "BK_LOADER_BIN": "bin/bk_loader"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin": {
+          "source": {
+            "repository": "https://github.com/GizClaw/bk_loader.git",
+            "commit": "21ae22d0b7d46b3d36885881b6b4b75bcdbe9696",
+            "path": "."
+          },
+          "installer": "python"
+        },
+        "linux": {
+          "source": {
+            "repository": "https://github.com/GizClaw/bk_loader.git",
+            "commit": "21ae22d0b7d46b3d36885881b6b4b75bcdbe9696",
+            "path": "."
+          },
+          "installer": "python"
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "4.0.2+260129055",
+      "requiredFiles": [
+        "bk_loader",
+        "_internal/Python",
+        "_internal/base_library.zip"
+      ],
+      "executable": "bk_loader",
+      "check": [
+        "--version"
+      ],
+      "expectedOutput": "bk_loader.py,v1.1.0.2",
+      "exports": {
+        "BK_LOADER_BIN": "bk_loader"
+      },
+      "path": [
+        "."
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "source": {
+            "repository": "git@github.com:h2vivi/firmware-devenv.git",
+            "commit": "42e5a45f7dcf2e31bed59dff9dd6005ad183917c",
+            "path": "tools/bk_loader/macos-arm64",
+            "lfs": true
+          }
+        }
+      },
+      "executableSha256": "26d8918f84002a44eacf5331aa7ef15689e75083ada52a7e0722ed32d6cfdd09"
+    },
+    {
+      "kind": "jieli-toolchain",
+      "version": "20250805.1",
+      "default": true,
+      "requiredFiles": [
+        "pi32/bin/clang",
+        "pi32v2/bin/clang",
+        "q32s/bin/clang",
+        "common/bin/clang"
+      ],
+      "exports": {
+        "JIELI_TOOLCHAIN_ROOT": "."
+      },
+      "path": [],
+      "executableHosts": [
+        "linux-x64"
+      ],
+      "hosts": {
+        "any": {
+          "source": {
+            "repository": "git@github.com:h2vivi/firmware-devenv.git",
+            "commit": "42e5a45f7dcf2e31bed59dff9dd6005ad183917c",
+            "path": "tools/jieli_toolchain/archives/jieli-linux-toolchains-20250805.1.tar.xz",
+            "lfs": true
+          },
+          "sha256": "f686586bcfb45e0f0bb27fd2b39c7a7f313cb4f0e88a66a14da621ffa8225958",
+          "format": "tar",
+          "strip": 1
+        }
+      },
+      "marker": true
+    },
+    {
+      "kind": "jieli-postbuild",
+      "version": "20260728.1",
+      "default": true,
+      "requiredFiles": [
+        "isd_download",
+        "fw_add",
+        "ufw_maker",
+        "pack_res",
+        "json_to_res",
+        "fat_comm",
+        "remove_tailing_zeros"
+      ],
+      "exports": {
+        "JIELI_POSTBUILD_ROOT": "."
+      },
+      "path": [],
+      "executableHosts": [
+        "linux-x64"
+      ],
+      "hosts": {
+        "any": {
+          "source": {
+            "repository": "git@github.com:h2vivi/firmware-devenv.git",
+            "commit": "42e5a45f7dcf2e31bed59dff9dd6005ad183917c",
+            "path": "tools/jieli_toolchain/archives/jieli-linux-post-build-tools-20260728.1.tar.xz",
+            "lfs": true
+          },
+          "sha256": "f4a458738c5eec32e78377c76b346bcac1cd515b03eda2b7eb11ab183298a858",
+          "format": "tar",
+          "strip": 1
+        }
+      },
+      "rename": {
+        "packres": "pack_res"
+      },
+      "marker": true
+    }
+  ]
 }

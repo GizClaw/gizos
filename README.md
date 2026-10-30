@@ -31,7 +31,7 @@ GizOS provides a shared foundation for building portable firmware and applicatio
 
 | Family | Targets |
 | --- | --- |
-| Embedded | ESP32-S3, ESP32-P4, ESP32-C5, BK7258 AP/CP, AC695N, AC791N, T113-S3 |
+| Embedded | ESP32-S3, ESP32-P4, ESP32-C5, BK7258 AP/CP, AC695N, AC791N |
 | Desktop | Linux x86_64, macOS arm64, Windows x86_64 |
 | Mobile | iOS Simulator arm64, Android arm64 |
 | Web | WebAssembly via Emscripten |
@@ -98,12 +98,15 @@ After the package has been published through Deploy's registry import:
 
 ```sh
 bunx @gizclaw/gizos setup idf 6.2
+bunx @gizclaw/gizos setup bk-loader 1.1.0.2.post1
+bunx @gizclaw/gizos setup adb 35.0.2
 bunx @gizclaw/gizos env bk
 bun add --global @gizclaw/gizos
 gizos upgrade
 ```
 
-`env` displays SDK, toolchain and Python installation paths. `env --shell`
+`env` displays SDK, toolchain, Python, loader and ADB installation paths.
+BK Loader is installed from the public Python source in `GizClaw/bk_loader`. `env --shell`
 prints shell activation statements, and `run` executes a command with the
 selected environment.
 `upgrade` updates the toolbox while preserving installed SDKs.

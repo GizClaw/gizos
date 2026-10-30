@@ -280,7 +280,6 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
-    continue-on-error: ${{ matrix.config == 'kickpi_k4b' }}
     permissions:
       actions: read
       contents: read
@@ -314,13 +313,6 @@ jobs:
             runner: ${{ vars.FIRMWARE_LINUX_4CORE_RUNNER }}
             config: test_coverage
             task: coverage
-            asset: linux-x86_64
-            sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
-            timeout: 60
-          - name: KickPi K4B / Build (non-blocking)
-            runner: ${{ vars.FIRMWARE_LINUX_4CORE_RUNNER }}
-            config: kickpi_k4b
-            task: build
             asset: linux-x86_64
             sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
             timeout: 60

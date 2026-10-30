@@ -22,7 +22,6 @@ cc_library(
     target_compatible_with = select({
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
-        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
         "//tools/bazel/platforms:is_pi32v2": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

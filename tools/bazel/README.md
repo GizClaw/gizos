@@ -258,7 +258,7 @@ Repository variables select the provisioned organization Larger Runner for each
 execution class:
 
 - `FIRMWARE_LINUX_RUNNER`: 2-core Linux for ESP32-P4 and the CI required aggregator;
-- `FIRMWARE_LINUX_4CORE_RUNNER`: 4-core Linux for Android Build/Test, Test coverage, and KickPi K4B;
+- `FIRMWARE_LINUX_4CORE_RUNNER`: 4-core Linux for Android Build/Test, Test coverage;
 - `FIRMWARE_LINUX_8CORE_RUNNER`: 8-core Linux for Linux Build/Test, ESP32-S3, and BK7258;
 - `FIRMWARE_MACOS_RUNNER`: 5-core macOS 15 arm64 for macOS Build/Test;
 - `FIRMWARE_WINDOWS_RUNNER`: 8-core Windows Server 2025 for Windows Build/Test.

@@ -44,7 +44,7 @@ Multi-chip 或 multi-core target 必须明确区分代码运行在哪一个执�
 `native_component_src/jieli/wl82/h2_pal_core/` 分别保存 AC695N、AC707N 和
 AC791N 的 PAL core provider，接入方式见 [JieLi Components](./components/jieli)。
 
-Bazel 直接编译的平台实现位于 `libs/pal/providers/{linux,darwin,posix,allwinner-linux,desktop,ios,android,web}/`。这些目录仍使用下方平台专题文档，但不属于顶层 `native_component_src/` source tree。
+Bazel 直接编译的平台实现位于 `libs/pal/providers/{linux,darwin,posix,desktop,ios,android,web}/`。这些目录仍使用下方平台专题文档，但不属于顶层 `native_component_src/` source tree。
 
 平台文档：
 
@@ -54,7 +54,6 @@ Bazel 直接编译的平台实现位于 `libs/pal/providers/{linux,darwin,posix,
 - [POSIX Components](./components/posix)
 - [Windows Components](./components/windows)
 - [Mobile Platform Components](./components/mobile_platforms)
-- [Allwinner Linux Components](./components/allwinner_linux)
 - [ESP-IDF 6.x Components](./components/esp_idf6_x)
 - [BK7258 Components](./components/bk7258)
 - [JieLi Components](./components/jieli)
@@ -72,7 +71,6 @@ PAL backend roots 包括：
 - `libs/pal/providers/darwin/pal_core`
 - `libs/pal/providers/linux/alsa_audio`
 - `libs/pal/providers/linux/fdk_aac_decoder`
-- `libs/pal/providers/allwinner-linux/cedarx_video_decoder`
 - `libs/pal/providers/desktop/pal_core`（只提供跨平台 Desktop provider，不拥有 OS backend）
 - `libs/pal/providers/ios/pal_core`
 - `libs/pal/providers/android/pal_core`

@@ -14,7 +14,7 @@ H2Loader 保留两条固定格式的构建轨道：`h2loader_tar_zlib` 和既有
 
 ## Mobile E2E Python runtime
 
-移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`，所有移动 target 共用 `tools/bazel/mobile_e2e.py` main。Suite owner 在 BUILD 中用 `mobile_e2e_suite` 声明包名、报告路径、registry 格式/数量、期望字段、用例结果字段、超时、SDK/consumer 符号和可选 hook。Rule 只生成声明 JSON，转发 Python provider 与 registry、hook、fixture runfiles；实际启动、解析与严格断言都在公共 Python 工具内执行。标准 suite 无需独立 Python 文件，特殊流程和业务断言通过可选 hook 扩展，且不能绕过公共校验。IPA/APK 和 SDK 仍保持目标平台配置；`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime。声明与 Python 库使用 `HOST_OR_MOBILE_TOOL_COMPATIBILITY`，只允许匹配 host 和支持的 iOS/Android configuration，排除没有 Python runtime 的 embedded/K4B target。设备入口只声明 `manual` tag，并用 `local = True` 保证本机执行；批量验证使用 `--local_test_jobs=1` 并关闭测试结果缓存。接入合同见 `tools/bazel/mobile_e2e.md`。
+移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`，所有移动 target 共用 `tools/bazel/mobile_e2e.py` main。Suite owner 在 BUILD 中用 `mobile_e2e_suite` 声明包名、报告路径、registry 格式/数量、期望字段、用例结果字段、超时、SDK/consumer 符号和可选 hook。Rule 只生成声明 JSON，转发 Python provider 与 registry、hook、fixture runfiles；实际启动、解析与严格断言都在公共 Python 工具内执行。标准 suite 无需独立 Python 文件，特殊流程和业务断言通过可选 hook 扩展，且不能绕过公共校验。IPA/APK 和 SDK 仍保持目标平台配置；`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime。声明与 Python 库使用 `HOST_OR_MOBILE_TOOL_COMPATIBILITY`，只允许匹配 host 和支持的 iOS/Android configuration，排除没有 Python runtime 的 embedded target。设备入口只声明 `manual` tag，并用 `local = True` 保证本机执行；批量验证使用 `--local_test_jobs=1` 并关闭测试结果缓存。接入合同见 `tools/bazel/mobile_e2e.md`。
 
 ## 边界
 
@@ -128,7 +128,7 @@ Native firmware action 向 Bazel 声明每个 action 预留的 CPU 与 memory，
 CI 按 execution class 通过 repository variable 选择 runner。GizOS 保持与 Firmwares 相同的变量接口和 class assignment，但 runner label 必须属于 `GizClaw` 组织可用的 runner pool：
 
 - `FIRMWARE_LINUX_RUNNER` 服务 ESP32-P4 与 CI required aggregator；
-- `FIRMWARE_LINUX_4CORE_RUNNER` 服务 Android Build/Test、Test coverage 与 K4B；
+- `FIRMWARE_LINUX_4CORE_RUNNER` 服务 Android Build/Test、Test coverage；
 - `FIRMWARE_LINUX_8CORE_RUNNER` 服务 Linux Build/Test、ESP32-S3 与 BK7258；
 - `FIRMWARE_MACOS_RUNNER` 服务 macOS Build/Test；
 - `FIRMWARE_WINDOWS_RUNNER` 服务 Windows Build/Test。
@@ -143,7 +143,6 @@ Linux runner 的 system dependency 安装是后续 SDK、toolchain 与 Bazel cac
 bazel test --config=macos_arm64 //libs/... //libs/pal/providers/desktop/... //projects/.../cc_binary/...
 bazel test --config=linux_x86_64 //libs/... //libs/pal/providers/desktop/... //projects/.../cc_binary/...
 bazel build --config=linux_arm64 //tools/bazel/tests/toolchain_smoke:cross_artifact
-bazel build -c opt --config=kickpi_k4b  //projects/example/targets/cc_binary/display/kickpi_k4b:display  //projects/example/targets/cc_binary/mp4-player/kickpi_k4b:mp4_player
 bazel test --config=ios_sim_arm64 //projects/example/targets/ios_application/tap-reset:package_validation_test
 bazel test --config=android_arm64 --platforms=//tools/bazel/platforms:linux_x86_64 //projects/example/targets/android_binary/tap-reset:package_validation_test //projects/example/targets/android_binary/mp4-player:package_validation_test
 ```
@@ -221,7 +220,6 @@ CI checkout 使用当前 event exact head 且不初始化 submodule。`MODULE.ba
 
 Repository cache 只保存由 Bazel 按 digest 索引的下载内容，不保存 expanded external repository、Git config、credential、hook、worktree、LFS payload 或 build output。Cache miss、eviction、corruption 或 restore/save error 只会触发重新下载，不能跳过 integrity validation、Bazel analysis 或 consumer。`third_party/` 中碰巧存在同名目录不能改变 archive resolution。
 
-`kickpi_k4b` config 固定 Linux x86_64 execution platform 与 ARMv7 GNU EABI hard-float target，并固定使用 `-c opt`。Bazel repository rule 从 Arm 官方地址下载 `gcc-arm-8.2-2018.11-x86_64-arm-linux-gnueabihf`，校验 SHA-256 并把完整 compiler/sysroot distribution 注册为 C/C++ toolchain；C 与 C++ builtin include 都来自该 distribution，compile/link action 不读取 `K4B_TOOLCHAIN_ROOT`、ambient `CC` 或 `PATH`。MP4 Player 另外通过 `--repo_env=K4B_CEDARX_INCLUDE_DIR` 与 `--repo_env=K4B_CEDARX_LIB_DIR` 把 `firmwares-devenv` provision 的 CedarX headers 和目标 image shared library closure 映射为 `@h2_k4b_cedarx_sdk`，由 `cc_import` 参与同一 Bazel link graph；AAC-LC decoder 则由 Bazel 使用固定 URL/SHA-256 下载 FDK-AAC 2.0.1 source 并交叉编译 decoder-only source closure。K4B board、launcher 与 CedarX production target 必须声明 Linux/ARMv7 `target_compatible_with`。没有 CedarX env 时真正分析、编译或链接 private CedarX consumer 必须 fail closed。
 
 ## GizClaw Bzlmod registry
 
@@ -268,18 +266,18 @@ Graph test 对目录、label、rule kind、artifact identity 和依赖边做校�
 
 ## CI execution contract
 
-Pull request、main push 和 workflow dispatch 使用同一份静态 platform matrix。K4B 在 #794 关闭前仍自动执行完整 build，但作为 non-blocking execution class：失败在 CI 中保持可见，却不阻塞 `CI required`；显式本地 `kickpi_k4b` config 保持不变。Pull request checkout exact head，main push 与手动运行 checkout event revision。Linux、macOS 与 Android 各使用一个 matrix job 顺序执行 Build/Test，复用同一个 Bazel server 和 output base；Windows 使用对应的单一 native job。iOS 继续用两个独立 task 并行执行：
+Pull request、main push 和 workflow dispatch 使用同一份静态 platform matrix。Pull request checkout exact head，main push 与手动运行 checkout event revision。Linux、macOS 与 Android 各使用一个 matrix job 顺序执行 Build/Test，复用同一个 Bazel server 和 output base；Windows 使用对应的单一 native job。iOS 继续用两个独立 task 并行执行：
 
 ```sh
 make bazel-build BAZEL_CONFIG=<config>
 make bazel-test BAZEL_CONFIG=<config>
 ```
 
-Linux 与 macOS Test 执行完整 compatible host test graph；Android 在同一个 job 中先 Build，再执行对应 package validation；iOS 的独立 Test task 同样只执行 package validation，因为普通 host `cc_test` 不能作为移动平台二进制直接在 runner OS 上执行。Firmware 和 KickPi class 只有 Build task；Test coverage 使用独立的 `make bazel-coverage-report`。Release workflow 保持独立的 closed artifact slice，不通过普通 CI command 生成 release bundle。
+Linux 与 macOS Test 执行完整 compatible host test graph；Android 在同一个 job 中先 Build，再执行对应 package validation；iOS 的独立 Test task 同样只执行 package validation，因为普通 host `cc_test` 不能作为移动平台二进制直接在 runner OS 上执行。Firmware class 只有 Build task；Test coverage 使用独立的 `make bazel-coverage-report`。Release workflow 保持独立的 closed artifact slice，不通过普通 CI command 生成 release bundle。
 
 Bazel 必须分析当前 config 下的完整 `//...` graph。Platform compatibility 决定 target 是否属于该 execution class；Bazel 特殊 tag `manual` 只用于阻止通配 target pattern 自动选择手工测试，不需要 tag filter。Repository cache、disk cache、persistent action cache 和 Skyframe 可以减少实际下载与 action execution，但不能成为省略 graph、build、test 或 coverage 的理由。
 
-Host tool compatibility 必须同时匹配 runner OS 与 CPU：当前 Linux host class 是 x86_64，macOS host class 是 arm64。Cross config（例如 KickPi ARMv7 或 Linux arm64）必须通过准确的 `target_compatible_with` 跳过顶层 host Python/tool targets，包括只在 host 上生成 filesystem image 的 `//tools/mklittlefs:mklittlefs`；这些 target 作为其他 rule 的 tool dependency 时由 exec transition 在 runner platform 构建，不能要求 cross target Python/C++ toolchain。Web artifact wrapper 与 validation 只兼容 Linux x86_64 或 macOS arm64 host，Web C/C++ target 只兼容 Emscripten transition 使用的 `wasm32` target platform，不能在普通 host、mobile 或 firmware platform 上直接编译。
+Host tool compatibility 必须同时匹配 runner OS 与 CPU：当前 Linux host class 是 x86_64，macOS host class 是 arm64。Cross config（例如 Linux arm64）必须通过准确的 `target_compatible_with` 跳过顶层 host Python/tool targets，包括只在 host 上生成 filesystem image 的 `//tools/mklittlefs:mklittlefs`；这些 target 作为其他 rule 的 tool dependency 时由 exec transition 在 runner platform 构建，不能要求 cross target Python/C++ toolchain。Web artifact wrapper 与 validation 只兼容 Linux x86_64 或 macOS arm64 host，Web C/C++ target 只兼容 Emscripten transition 使用的 `wasm32` target platform，不能在普通 host、mobile 或 firmware platform 上直接编译。
 
 ESP32-S3、ESP32-P4、BK7258 config 直接自动选择各自的全部 firmware endpoint。每个 native firmware action 向底层 native build 传递 4-way parallelism；BK7258 声明 4 CPU、4 GiB memory，ESP 的预留由 `--define=h2_native_build_jobs` 决定并默认相同。Bazel 在单台 runner 上按真实可用资源并发调度不同 launcher。Runner 规格增大时并行 launcher 数自动增加，不需要维护 affected target list 或为每个 launcher 展开 GitHub matrix。CI 通过 `BAZEL_NATIVE_BUILD_JOBS` 环境变量把该 define 传给 `make bazel-build`，未设置时使用默认值；ESP32-S3 的 execution class 因 launcher 数量最多而调低预留，ESP32-P4、ESP32-C5 与 BK 保持默认。
 

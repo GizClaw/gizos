@@ -1,13 +1,16 @@
 import {
-  access, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile,
+  mkdir, readFile, readdir, realpath, rename, rm,
 } from "node:fs/promises";
-import { constants, readFileSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import bundledCatalog from "./catalog.json";
+import { Resources, resourceVariables, type Tool } from "./resources";
+import { atomicJson, execute, executable, exists, locked, quote, type Command, type Env } from "./common";
+export { execute, exists, locked, type Command } from "./common";
 
-export type Kind = "idf" | "bk";
+export type Kind = "idf" | "bk" | "ac695n" | "ac707n" | "ac791n";
 export type Sdk = {
   kind: Kind;
   version: string;
@@ -17,6 +20,9 @@ export type Sdk = {
   pythonSeries?: string;
   targets?: string[];
   default?: boolean;
+  requiredFiles?: string[];
+  sdkSubdirectory?: string;
+  lfs?: boolean;
 };
 export type Installation = {
   schema: 1;
@@ -35,11 +41,8 @@ export type Options = {
   sdk?: string;
   tools?: string;
   python?: string;
+  postbuild?: string;
 };
-type Env = Record<string, string | undefined>;
-export type Command = (
-  args: string[], options?: { cwd?: string; env?: Env; inherit?: boolean },
-) => Promise<string>;
 type Catalog = typeof bundledCatalog & { sdks: Sdk[] };
 export const catalog = bundledCatalog as Catalog;
 export const PACKAGE = "@gizclaw/gizos";
@@ -48,12 +51,32 @@ const controlled = [
   "IDF_PATH", "IDF_TOOLS_PATH", "IDF_PYTHON_ENV_PATH", "IDF_DEACTIVATE_FILE_PATH", "H2LOADER_IDF_PATH",
   "ESP_IDF_VERSION", "ESP_ROM_ELF_DIR", "OPENOCD_SCRIPTS",
   "BK7258_PATH", "BK_SDK_DIR", "COMPILER_TOOLCHAIN_PATH", "GIZOS_BK_TOOLCHAIN_ROOT",
+  ...resourceVariables, "VIRTUAL_ENV", "GIZOS_ENV_PATHS",
+  "H2LOADER_PYTHON", "H2LOADER_BOOTSTRAP_PYTHON", "BK3633_SDK_PATH", "BK3633_BINCONVERTER_BIN",
 ];
+const sdkVariables: Record<string, string[]> = {
+  idf: ["IDF_PATH", "IDF_TOOLS_PATH", "IDF_PYTHON_ENV_PATH", "H2LOADER_IDF_PATH", "ESP_IDF_VERSION", "ESP_ROM_ELF_DIR", "OPENOCD_SCRIPTS", "VIRTUAL_ENV"],
+  bk: ["BK7258_PATH", "BK_SDK_DIR", "COMPILER_TOOLCHAIN_PATH", "GIZOS_BK_TOOLCHAIN_ROOT"],
+  ac695n: ["JIELI_AC695N_SDK_PATH"],
+  ac707n: ["JIELI_AC707N_SDK_PATH"],
+  ac791n: ["JIELI_AC791N_SDK_PATH"],
+};
+
+function usesArm(sdk: Sdk): boolean { return sdk.kind === "bk"; }
+
+function markPaths(environment: Env, baseline: Env): Env {
+  const original = new Set((baseline.PATH ?? "").split(":"));
+  const paths = [...new Set((environment.PATH ?? "").split(":").filter(Boolean))];
+  environment.PATH = paths.join(":");
+  environment.GIZOS_ENV_PATHS = paths.filter(path => !original.has(path)).join(":");
+  return environment;
+}
 
 export function kind(value: string): Kind {
   if (value === "esp" || value === "idf") return "idf";
   if (value === "bk" || value === "bk7258") return "bk";
-  throw new Error(`Unknown SDK ${value}; use idf or bk`);
+  if (["ac695n", "ac707n", "ac791n"].includes(value)) return value as Kind;
+  throw new Error(`Unknown SDK ${value}; run gizos list`);
 }
 
 export function selectSdk(name: string, version: string, entries: Sdk[] = catalog.sdks): Sdk {
@@ -104,86 +127,16 @@ export async function configureRoot(value: string, env: Env = process.env): Prom
   return root;
 }
 
-export const execute: Command = async (args, options = {}) => {
-  const result = Bun.spawnSync(args, {
-    cwd: options.cwd, env: options.env ?? process.env,
-    stdin: options.inherit ? "inherit" : "ignore",
-    stdout: options.inherit ? "inherit" : "pipe",
-    stderr: options.inherit ? "inherit" : "pipe",
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(`${basename(args[0])} ${args[1] ?? ""} failed (${result.exitCode}): ${result.stderr?.toString().trim() ?? ""}`);
-  }
-  return result.stdout?.toString().trimEnd() ?? "";
-};
-
-export async function exists(path: string): Promise<boolean> {
-  try { await access(path); return true; }
-  catch (error: any) {
-    if (error.code === "ENOENT") return false;
-    throw error;
-  }
-}
-
-async function executable(path: string): Promise<void> {
-  try { await access(path, constants.X_OK); }
-  catch { throw new Error(`Executable is missing: ${path}`); }
-}
-
-async function atomicJson(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temporary, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
-    await rename(temporary, path);
-  } finally { await rm(temporary, { force: true }); }
-}
-
-export async function locked<T>(root: string, name: string, work: () => Promise<T>): Promise<T> {
-  const directory = join(root, "locks", name);
-  await mkdir(dirname(directory), { recursive: true });
-  for (;;) {
-    try { await mkdir(directory); break; }
-    catch (error: any) {
-      if (error.code !== "EEXIST") throw error;
-      try {
-        const owner = JSON.parse(await readFile(join(directory, "owner.json"), "utf8"));
-        if (owner.host === hostname() && Number.isInteger(owner.pid)) {
-          try { process.kill(owner.pid, 0); }
-          catch (failure: any) {
-            if (failure.code === "ESRCH") {
-              await rm(directory, { recursive: true, force: true });
-              continue;
-            }
-          }
-        }
-      } catch (failure: any) {
-        if (failure.code !== "ENOENT") throw failure;
-        // A process can exit between mkdir and publishing its owner record.
-        const age = Date.now() - (await stat(directory).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs;
-        if (age > 30_000) {
-          await rm(directory, { recursive: true, force: true });
-          continue;
-        }
-      }
-      await Bun.sleep(100);
-    }
-  }
-  const owner = join(directory, "owner.json");
-  try {
-    await atomicJson(owner, { pid: process.pid, host: hostname() });
-    return await work();
-  } finally { await rm(directory, { recursive: true, force: true }); }
-}
-
 export function cleanEnvironment(source: Env = process.env): Env {
   const environment = { ...source };
   const roots = [
     source.IDF_PATH, source.IDF_TOOLS_PATH, source.IDF_PYTHON_ENV_PATH,
     source.COMPILER_TOOLCHAIN_PATH, source.VIRTUAL_ENV,
+    source.ADB && basename(dirname(source.ADB)) === "platform-tools" ? dirname(source.ADB) : undefined,
   ].filter((value): value is string => Boolean(value));
+  const managedPaths = new Set((source.GIZOS_ENV_PATHS ?? "").split(":").filter(Boolean));
   environment.PATH = (source.PATH ?? "").split(process.platform === "win32" ? ";" : ":")
-    .filter(entry => entry && !roots.some(root => {
+    .filter(entry => entry && !managedPaths.has(entry) && !roots.some(root => {
       const parent = resolve(root);
       const candidate = resolve(entry);
       return candidate === parent || candidate.startsWith(parent + sep);
@@ -202,13 +155,15 @@ export class Manager {
     public entries: Sdk[] = catalog.sdks,
   ) {}
 
+  get resources(): Resources { return new Resources(this.root, this.command); }
   sdk(name: string, version: string): Sdk { return selectSdk(name, version, this.entries); }
   sourcePath(sdk: Sdk): string {
     return join(this.root, "sdks", sdk.kind, `${sdk.version}-${sdk.commit}`);
   }
   poolFile(sdk: Sdk): string {
-    const version = sdk.kind === "bk" ? `${catalog.arm.version}-` : "";
-    return join(this.root, "pools", `${sdk.kind}-${version}${process.platform}-${process.arch}.json`);
+    const version = usesArm(sdk) ? `${catalog.arm.version}-` : "";
+    const family = usesArm(sdk) ? "bk" : sdk.kind;
+    return join(this.root, "pools", `${family}-${version}${process.platform}-${process.arch}.json`);
   }
   toolsPath(sdk: Sdk): string {
     try {
@@ -219,6 +174,9 @@ export class Manager {
       return pool.tools;
     } catch (error: any) {
       if (error.code !== "ENOENT") throw error;
+    }
+    if (sdk.kind.startsWith("ac")) {
+      return join(this.root, "tools", "jieli-toolchain", `20250805.1-${process.platform}-${process.arch}`);
     }
     return sdk.kind === "idf"
       ? join(this.root, "tools", "idf", `${process.platform}-${process.arch}`)
@@ -248,6 +206,9 @@ export class Manager {
   }
   async verifySource(sdk: Sdk, path: string): Promise<void> {
     if (!await exists(join(path, sdk.requiredFile))) throw new Error(`SDK input is missing: ${path}`);
+    for (const file of sdk.requiredFiles ?? []) {
+      if (!await exists(join(path, file))) throw new Error(`SDK input is missing: ${join(path, file)}`);
+    }
     if ((await this.git(path, "rev-parse", "HEAD")).trim() !== sdk.commit) {
       throw new Error(`SDK commit mismatch: ${path}; existing files were preserved`);
     }
@@ -257,6 +218,9 @@ export class Manager {
     const submodules = await this.git(path, "submodule", "status", "--recursive");
     if (submodules.split("\n").some(line => /^[-+U]/.test(line))) {
       throw new Error(`SDK submodules are incomplete or changed: ${path}`);
+    }
+    if (sdk.lfs && (await this.git(path, "lfs", "ls-files")).split("\n").some(line => /^[a-f0-9]+ - /.test(line))) {
+      throw new Error(`SDK has unresolved Git LFS objects: ${path}`);
     }
   }
   async fetchSource(sdk: Sdk, path: string): Promise<void> {
@@ -270,6 +234,7 @@ export class Manager {
       await this.git(temporary, "fetch", "--depth=1", "origin", sdk.commit);
       await this.git(temporary, "checkout", "--quiet", "--detach", "FETCH_HEAD");
       await this.git(temporary, "submodule", "update", "--init", "--recursive", "--depth=1");
+      if (sdk.lfs) await this.git(temporary, "lfs", "pull");
       await this.verifySource(sdk, temporary);
       await rename(temporary, path);
     } finally { await rm(temporary, { recursive: true, force: true }); }
@@ -354,7 +319,7 @@ export class Manager {
       if (!options.sourcesOnly) {
         // IDF owns the family/version layout. All SDK versions use the same
         // tools root, so identical compiler archives and installations are shared.
-        await locked(this.root, `${sdk.kind}-tools`, async () => {
+        await locked(this.root, `${usesArm(sdk) ? "bk" : sdk.kind}-tools`, async () => {
           if (!options.tools && !previous?.ready) item.tools = this.toolsPath(sdk);
           if (sdk.kind === "idf") {
             if (!adopt) {
@@ -367,11 +332,23 @@ export class Manager {
             }
             item.python = item.python ?? await this.findPython(sdk, item.tools);
             await executable(item.python);
-          } else if (adopt) await this.verifyArm(item.tools);
-          else await this.installArm(item.tools);
+          } else if (usesArm(sdk)) {
+            if (adopt) await this.verifyArm(item.tools);
+            else await this.installArm(item.tools);
+          } else {
+            const toolchain = this.resources.select("jieli-toolchain");
+            const postbuild = this.resources.select("jieli-postbuild");
+            const existing = await this.resources.record(toolchain);
+            const existingPostbuild = await this.resources.record(postbuild);
+            if (adopt && (!options.tools && !existing || !options.postbuild && !existingPostbuild)) {
+              throw new Error("adopt requires registered JieLi tools or --tools and --postbuild paths");
+            }
+            item.tools = (await this.resources.setup(toolchain, options.tools)).root;
+            await this.resources.setup(postbuild, options.postbuild);
+          }
           item.ready = true;
           await this.environment(sdk, item);
-          if (!await exists(this.poolFile(sdk))) {
+          if (!sdk.kind.startsWith("ac") && !await exists(this.poolFile(sdk))) {
             await atomicJson(this.poolFile(sdk), { schema: 1, tools: item.tools });
           }
         });
@@ -384,17 +361,18 @@ export class Manager {
     const item = selected ?? await this.record(sdk);
     if (!item?.ready) throw new Error(`${sdk.kind} ${sdk.version} is not installed; run gizos setup ${sdk.kind} ${sdk.version}`);
     await this.verifySource(sdk, item.sdk);
-    const environment = cleanEnvironment(inherited);
+    const baseline = cleanEnvironment(inherited);
+    const environment = await this.resources.environment(baseline);
     environment.GIZOS_DEVENV_HOME = this.root;
-    if (sdk.kind === "bk") {
+    if (usesArm(sdk)) {
       await this.verifyArm(item.tools);
       Object.assign(environment, {
-        BK7258_PATH: item.sdk, BK_SDK_DIR: item.sdk,
         COMPILER_TOOLCHAIN_PATH: join(item.tools, "bin"),
         GIZOS_BK_TOOLCHAIN_ROOT: item.tools,
         PATH: `${join(item.tools, "bin")}:${environment.PATH ?? ""}`,
       });
-    } else {
+      Object.assign(environment, { BK7258_PATH: item.sdk, BK_SDK_DIR: item.sdk });
+    } else if (sdk.kind === "idf") {
       await executable(item.python!);
       Object.assign(environment, {
         IDF_PATH: item.sdk, IDF_TOOLS_PATH: item.tools,
@@ -412,6 +390,12 @@ export class Manager {
         } else environment[match[1]] = match[2];
       }
       environment.H2LOADER_IDF_PATH = item.sdk;
+      environment.PATH = `${dirname(item.python!)}:${join(item.sdk, "tools")}:${environment.PATH ?? ""}`;
+      environment.VIRTUAL_ENV = dirname(dirname(item.python!));
+    } else {
+      environment[sdkVariables[sdk.kind][0]] = resolve(item.sdk, sdk.sdkSubdirectory ?? ".");
+      environment.JIELI_TOOLCHAIN_ROOT = item.tools;
+      if (!environment.JIELI_POSTBUILD_ROOT) throw new Error("JieLi post-build tools are not installed");
     }
     const bk = this.entries.find(entry => entry.kind === "bk" && entry.default);
     if (!environment.GIZOS_BK_TOOLCHAIN_ROOT && bk) {
@@ -420,7 +404,13 @@ export class Manager {
         environment.GIZOS_BK_TOOLCHAIN_ROOT = arm;
       }
     }
-    return environment;
+    // An explicitly supplied loader remains usable before it is adopted.
+    if (!environment.BK_LOADER_BIN && inherited.BK_LOADER_BIN) {
+      await executable(inherited.BK_LOADER_BIN);
+      environment.BK_LOADER_BIN = inherited.BK_LOADER_BIN;
+      environment.PATH = `${dirname(inherited.BK_LOADER_BIN)}:${environment.PATH ?? ""}`;
+    }
+    return markPaths(environment, baseline);
   }
   async describe(sdk: Sdk) {
     const item = await this.record(sdk);
@@ -431,10 +421,15 @@ export class Manager {
       kind: sdk.kind, version: sdk.version, commit: sdk.commit,
       status: !item ? "not installed" : !sourceExists ? "SDK missing"
         : !item.ready ? "sources only" : !toolsExist ? "tools missing" : "installed",
-      sdk: item?.sdk ?? this.sourcePath(sdk),
+      sdk: resolve(item?.sdk ?? this.sourcePath(sdk), sdk.sdkSubdirectory ?? "."),
       tools: item?.tools ?? this.toolsPath(sdk),
       python: item?.python ?? null,
-      loader: sdk.kind === "bk" ? process.env.BK_LOADER_BIN ?? null : undefined,
+      path: sdk.kind === "idf"
+        ? [item?.python && dirname(item.python), item && join(item.sdk, "tools")].filter(Boolean)
+        : usesArm(sdk) && item ? [join(item.tools, "bin")] : [],
+      loader: sdk.kind === "bk"
+        ? (await this.resources.describe(this.resources.select("bk-loader"))).executable ?? process.env.BK_LOADER_BIN ?? null
+        : undefined,
     };
   }
   async defaultEnvironment(inherited: Env = process.env): Promise<Env> {
@@ -442,8 +437,10 @@ export class Manager {
     for (const sdk of this.entries.filter(item => item.default)) {
       if ((await this.record(sdk))?.ready) installed.push(sdk);
     }
-    if (!installed.length) return { ...inherited, GIZOS_DEVENV_HOME: this.root };
-    const environment = cleanEnvironment(inherited);
+    const hasResources = (await Promise.all(this.resources.entries.map(tool => this.resources.record(tool)))).some(Boolean);
+    if (!installed.length && !hasResources) return { ...inherited, GIZOS_DEVENV_HOME: this.root };
+    const baseline = cleanEnvironment(inherited);
+    const environment = await this.resources.environment(baseline);
     environment.GIZOS_DEVENV_HOME = this.root;
     const hostPaths = (environment.PATH ?? "").split(":");
     const paths: string[] = [];
@@ -452,20 +449,22 @@ export class Manager {
       if (selected.GIZOS_BK_TOOLCHAIN_ROOT) {
         environment.GIZOS_BK_TOOLCHAIN_ROOT = selected.GIZOS_BK_TOOLCHAIN_ROOT;
       }
-      for (const key of controlled) {
-        const belongs = sdk.kind === "bk"
-          ? ["BK7258_PATH", "BK_SDK_DIR", "COMPILER_TOOLCHAIN_PATH", "GIZOS_BK_TOOLCHAIN_ROOT"].includes(key)
-          : !["BK7258_PATH", "BK_SDK_DIR", "COMPILER_TOOLCHAIN_PATH", "GIZOS_BK_TOOLCHAIN_ROOT"].includes(key);
-        if (belongs && selected[key] !== undefined) environment[key] = selected[key];
+      if (selected.BK_LOADER_BIN) environment.BK_LOADER_BIN = selected.BK_LOADER_BIN;
+      for (const key of sdkVariables[sdk.kind]) {
+        if (selected[key] !== undefined) environment[key] = selected[key];
       }
       paths.push(...(selected.PATH ?? "").split(":").filter(path => !hostPaths.includes(path)));
     }
     environment.PATH = [...new Set([...paths, ...hostPaths].filter(Boolean))].join(":");
-    return environment;
+    return markPaths(environment, baseline);
+  }
+  async toolEnvironment(tool: Tool, inherited: Env = process.env): Promise<Env> {
+    const baseline = cleanEnvironment(inherited);
+    const environment = await this.resources.environment(await this.defaultEnvironment(baseline), tool);
+    return markPaths(environment, baseline);
   }
 }
 
-export function quote(value: string): string { return "'" + value.replaceAll("'", "'\\''") + "'"; }
 
 export function shellEnvironment(environment: Env, inherited: Env = process.env): string {
   const keys = new Set([...controlled, "H2LOADER_IDF_PATH", "PATH"]);

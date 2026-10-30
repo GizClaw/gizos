@@ -4,12 +4,12 @@
 
 ## 程序流程
 
-Linux service 启动目标 launcher。Launcher 组装 Runtime 与 K4B provider，验证 required capabilities 后调用阻塞式 Showcase entry；App 初始化 State、compositor、MP4 和后台 worker，最后进入 main loop。
+Linux service 启动目标 launcher。Launcher 组装 Runtime 与 目标平台 provider，验证 required capabilities 后调用阻塞式 Showcase entry；App 初始化 State、compositor、MP4 和后台 worker，最后进入 main loop。
 
 ```mermaid
 flowchart TD
     Service["Linux service manager"] --> Process["启动 Showcase process"]
-    Process --> Launcher["进入 K4B launcher"]
+    Process --> Launcher["进入目标 launcher"]
     Launcher --> Runtime["组装并初始化 Runtime"]
     Runtime --> Validate["验证 required capabilities"]
     Validate --> Entry["调用 h2_showcase_run()"]

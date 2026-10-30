@@ -177,12 +177,15 @@ describe("provisioning and environment activation", () => {
     }
     const sdk = manager.sdk("bk", "3.1.1");
     await manager.setup(sdk, { sdk: upstream, tools: arm }, true);
+    const loader = join(base, "loader", "bk_loader");
+    await script(loader, "exit 0\n");
     const environment = await manager.environment(sdk, undefined, {
-      PATH: "/usr/bin:/bin", BK_LOADER_BIN: "/operator/bk_loader", H2LOADER_IDF_PATH: "/old-idf",
+      PATH: "/usr/bin:/bin", BK_LOADER_BIN: loader, H2LOADER_IDF_PATH: "/old-idf",
     });
     expect(environment.BK7258_PATH).toBe(upstream);
     expect(environment.COMPILER_TOOLCHAIN_PATH).toBe(join(arm, "bin"));
-    expect(environment.BK_LOADER_BIN).toBe("/operator/bk_loader");
+    expect(environment.BK_LOADER_BIN).toBe(loader);
+    expect(environment.PATH!.split(":")).toContain(join(base, "loader"));
     expect(environment.H2LOADER_IDF_PATH).toBeUndefined();
   });
   test("cleans active SDK paths before installing another version", () => {
@@ -195,6 +198,23 @@ describe("provisioning and environment activation", () => {
     expect(environment.IDF_PATH).toBeUndefined();
     expect(environment.H2LOADER_IDF_PATH).toBeUndefined();
     expect(environment.KEEP).toBe("yes");
+  });
+  test("switching IDF versions removes the previous Python and compiler paths without accumulating duplicates", async () => {
+    const { manager } = await fixture();
+    const current = manager.sdk("idf", "6.2");
+    const older = manager.sdk("idf", "6.0.3");
+    await manager.setup(current);
+    await manager.setup(older);
+    const inherited = { PATH: "/operator/bin:/usr/bin:/bin" };
+    const first = await manager.environment(current, undefined, inherited);
+    const repeated = await manager.environment(current, undefined, first);
+    expect(repeated.PATH).toBe(first.PATH);
+    const changed = await manager.environment(older, undefined, first);
+    expect(changed.PATH).not.toContain(manager.sourcePath(current));
+    expect(changed.PATH).not.toContain("idf6.2_py");
+    expect(changed.PATH).toContain("idf6.0_py");
+    expect(changed.PATH).toContain("/operator/bin");
+    expect(changed.VIRTUAL_ENV).not.toBe(first.VIRTUAL_ENV);
   });
   test("default activation selects catalog defaults while preserving inherited environments when none are installed", async () => {
     const { manager } = await fixture();
