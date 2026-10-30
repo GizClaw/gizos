@@ -59,8 +59,8 @@ int h2_mfg_model_complete(const h2_mfg_model_t* m) {
 
 int h2_mfg_model_action(h2_mfg_model_t* m, const char* action, const char* step,
                         uint32_t ticket) {
-  h2_loader_mfg_summary_t next;
-  uint32_t selected;
+  h2_loader_mfg_summary_t next = {0};
+  uint32_t selected = 0;
   if (m == NULL || action == NULL || step == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   if (ticket != m->ticket) return H2_PAL_ERR_INVALID_STATE;

@@ -215,7 +215,7 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
     rc = h2_pal_touch_open(m->rt->touch);
     if (rc == 0) {
       m->touch_open = 1;
-      h2_pal_touch_info_t info;
+      h2_pal_touch_info_t info = {0};
       rc = h2_pal_touch_get_info(m->rt->touch, &info);
       if (rc == 0 && (info.width != (uint32_t)m->display.width ||
                       info.height != (uint32_t)m->display.height))
@@ -274,7 +274,7 @@ static int buttons(h2_mfg_t* m, const char** action) {
 
 static int touch(h2_mfg_t* m, h2_mfg_check_t check, const char** action) {
   if (!m->touch_open) return 0;
-  h2_pal_touch_event_t event;
+  h2_pal_touch_event_t event = {0};
   for (unsigned budget = 0; budget < 16; ++budget) {
     int rc = h2_pal_touch_poll_event(m->rt->touch, &event);
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT) return 0;
@@ -499,7 +499,7 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
       rc = h2_mfg_peripheral_tick(m, now);
       break;
     case H2_MFG_WIFI: {
-      h2_pal_wifi_sta_status_t wifi;
+      h2_pal_wifi_sta_status_t wifi = {0};
       rc = h2_pal_wifi_sta_get_status(m->rt->wifi_sta, &wifi);
       m->model.ready = rc == 0 && h2_pal_wifi_sta_status_has_ip(&wifi);
       (void)snprintf(m->detail, sizeof(m->detail),
@@ -525,7 +525,7 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
       break;
     }
     case H2_MFG_MODEM: {
-      h2_pal_modem_identity_t identity;
+      h2_pal_modem_identity_t identity = {0};
       rc = h2_pal_modem_get_identity(m->rt->modem, &identity);
       m->model.ready =
           rc == 0 && identity.model[0] != '\0' && identity.imei[0] != '\0';

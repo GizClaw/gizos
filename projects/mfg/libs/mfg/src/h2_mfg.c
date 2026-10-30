@@ -207,7 +207,7 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
       break;
     }
     if (!opened) {
-      h2_loader_status_t ls;
+      h2_loader_status_t ls = {0};
       rc = h2_loader_read_status(loader, &ls);
       /* Complete self-update/recovery before any UI, gate revision reset or
        * peripheral work. AUTO App startup remains subject to Loader's gate. */
@@ -227,7 +227,7 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
           rc = h2_loader_mfg_ensure_acceptance_revision(
               m->rt->pref, m->profile->total, m->profile->revision);
       }
-      h2_loader_mfg_summary_t summary;
+      h2_loader_mfg_summary_t summary = {0};
       int present = 0;
       uint32_t ticket = 0;
       if (rc == 0 && !recovery)

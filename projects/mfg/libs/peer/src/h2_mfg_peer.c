@@ -95,7 +95,7 @@ static int command(peer_t* p, const h2_h2loader_host_status_t* status,
       .mfg_ticket = ticket,
       .on_output = output,
       .output_user = p};
-  h2_h2loader_host_command_result_t result;
+  h2_h2loader_host_command_result_t result = {0};
   int rc =
       h2_h2loader_host_ble_execute_command(p->connection, &request, &result);
   if (rc == 0 && result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK)
@@ -116,7 +116,7 @@ static int exchange(peer_t* p, const char* uid) {
       .command_timeout_ms = 5000,
       .on_log = connect_log,
       .log_user = p};
-  h2_h2loader_host_status_t status;
+  h2_h2loader_host_status_t status = {0};
   int rc = h2_h2loader_host_ble_connect(&config, &p->connection, &status);
   if (rc != 0) return rc;
   drain_events(p);
