@@ -259,6 +259,19 @@ finished:
   return result;
 }
 static const struct audio_vfs_ops track_vfs_ops = {.fread = track_vfs_read};
+
+#if defined(CONFIG_AEC_ENC_ENABLE) && CONFIG_AEC_ENC_ENABLE
+static void audio_aec_config(struct aec_s_attr* config) {
+  memset(config, 0, sizeof(*config));
+  extern void get_cfg_file_aec_config(struct aec_s_attr * aec_param);
+  get_cfg_file_aec_config(config);
+  config->output_way = 0u;
+  config->wideband = 1u;
+  config->dac_ref_sr = H2_AUDIO_SAMPLE_RATE;
+  config->hw_delay_offset = 30u;
+}
+#endif
+
 static int audio_get_info(void* user, h2_audio_info_t* info) {
   (void)user;
   if (info == NULL) return H2_AUDIO_ERR_INVALID_ARG;
@@ -278,6 +291,12 @@ static int audio_get_info(void* user, h2_audio_info_t* info) {
       .track_queue_frames = H2_AUDIO_TRACK_QUEUE_FRAMES,
       .max_tracks = H2_AUDIO_MAX_TRACKS,
   };
+#if defined(CONFIG_AEC_ENC_ENABLE) && CONFIG_AEC_ENC_ENABLE
+  struct aec_s_attr config;
+  audio_aec_config(&config);
+  /* Bit 0 is echo cancellation; ANS/AGC alone is not AEC. */
+  info->aec_enabled = (config.EnableBit & 1u) != 0u;
+#endif
   return H2_AUDIO_OK;
 }
 
@@ -326,20 +345,14 @@ static int audio_start_mic(void* user) {
   request.enc.sample_source = "mic";
   request.enc.vfs_ops = &mic_vfs_ops;
   request.enc.file = (FILE*)generation;
-#if defined(CONFIG_AEC_ENC_ENABLE)
+#if defined(CONFIG_AEC_ENC_ENABLE) && CONFIG_AEC_ENC_ENABLE
   /* Use the PCM stream sent to the on-chip DAC as the far-end reference.
    * This board exposes one ADC microphone channel and has no separate analog
    * feedback channel, so JieLi's software-DAC reference path is the correct
    * topology.  audio_server owns the AEC/NLP/ANS processing and delivers the
    * processed near-end PCM to mic_vfs_write(). */
   struct aec_s_attr aec_param;
-  memset(&aec_param, 0, sizeof(aec_param));
-  extern void get_cfg_file_aec_config(struct aec_s_attr * aec_param);
-  get_cfg_file_aec_config(&aec_param);
-  aec_param.output_way = 0u;
-  aec_param.wideband = 1u;
-  aec_param.dac_ref_sr = H2_AUDIO_SAMPLE_RATE;
-  aec_param.hw_delay_offset = 30u;
+  audio_aec_config(&aec_param);
   request.enc.aec_enable = aec_param.EnableBit != 0u ? 1u : 0u;
   request.enc.aec_attr = request.enc.aec_enable ? &aec_param : NULL;
   if (request.enc.aec_enable) {

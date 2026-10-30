@@ -137,6 +137,7 @@ static void test_exact_v2_routes_and_help(void) {
       "h2loader",       "h2loader help",   "h2loader status",
       "h2loader stats", "h2loader memory", "h2loader wifi",
       "h2loader stage", "h2loader reboot", "h2loader coredump",
+      "h2loader mfg",
   };
   command_io_fixture_t fixture = {
       .input = input,
@@ -163,8 +164,41 @@ static void test_exact_v2_routes_and_help(void) {
               .role = H2_LOADER_IMAGE_ROLE_APP,
           },
   };
-  assert(h2_loader_get_command_availability(&loader, &status) ==
-         H2_LOADER_COMMAND_AVAILABILITY_ALL);
+  assert(
+      h2_loader_get_command_availability(&loader, &status) ==
+      (H2_LOADER_COMMAND_AVAILABILITY_ALL & ~H2_LOADER_COMMAND_AVAILABLE_MFG));
+}
+
+static int mfg_control(void* user, h2_loader_command_transport_t transport,
+                       size_t argc, const char* const* argv, char* output,
+                       size_t capacity) {
+  unsigned* calls = user;
+  ++*calls;
+  assert(transport == H2_LOADER_COMMAND_TRANSPORT_BLE);
+  assert(argc == 3 && strcmp(argv[0], "confirm") == 0 &&
+         strcmp(argv[1], "display") == 0 && strcmp(argv[2], "11223344") == 0);
+  (void)snprintf(output, capacity, "H2_MFG_STATUS complete=0 code=-6");
+  return H2_PAL_ERR_INVALID_STATE;
+}
+
+static void test_optional_mfg_control(void) {
+  command_io_fixture_t fixture = {0};
+  h2_loader_t loader = {0};
+  h2_loader_command_t command;
+  const char* argv[] = {"h2loader", "mfg", "confirm", "display", "11223344"};
+  unsigned calls = 0;
+  assert(command_init(&command, &loader, &fixture) == 0);
+  assert(h2_loader_command_execute(&command, 5, argv) != 0);
+  assert(calls == 0);
+  h2_loader_command_config_t config = command.config;
+  config.mfg_user = &calls;
+  config.mfg_command = mfg_control;
+  config.transport = H2_LOADER_COMMAND_TRANSPORT_BLE;
+  assert(h2_loader_command_init(&command, &config) == 0);
+  assert(h2_loader_command_execute(&command, 5, argv) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(calls == 1);
+  assert(strstr(fixture.output, "H2_MFG_STATUS complete=0 code=-6") != NULL);
 }
 
 static void test_removed_commands_are_unroutable(void) {
@@ -512,6 +546,7 @@ static void test_status_single_snapshot(void) {
 }
 
 int main(void) {
+  test_optional_mfg_control();
   test_status_single_snapshot();
   test_wifi_status_snapshot();
   test_wifi_saves_only_after_connection();

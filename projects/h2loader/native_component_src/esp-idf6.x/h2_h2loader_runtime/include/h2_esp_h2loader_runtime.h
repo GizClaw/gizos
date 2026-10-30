@@ -3,6 +3,7 @@
 
 #include "h2_loader_boot.h"
 #include "h2_loader_memory.h"
+#include "h2_loader_command.h"
 #include "h2_runtime.h"
 
 #ifdef __cplusplus
@@ -18,6 +19,7 @@ typedef struct h2_esp_h2loader_config {
   /** 0 disables the MFG gate, otherwise 1..H2_LOADER_MFG_STEP_MAX. */
   uint32_t mfg_required_total;
   void* user;
+  h2_loader_mfg_command_fn mfg_command;
   int (*run_mfg)(void* user, h2_loader_t* loader,
                  const h2_pal_sync_api_t* operation_sync,
                  h2_pal_mutex_t* operation_mutex,

@@ -818,6 +818,14 @@ static void h2_esp_ble_on_sync(void) {
     ESP_LOGE(TAG, "ble_hs_id_infer_auto failed rc=%d", rc);
     return;
   }
+#if CONFIG_IDF_TARGET_ESP32P4
+  uint8_t address[6];
+  if (ble_hs_id_copy_addr(s_h2_esp_ble_own_addr_type, address, NULL) == 0) {
+    ESP_LOGI(TAG, "H2_PAL_BLE_READY address=%02x%02x%02x%02x%02x%02x type=%u",
+             address[5], address[4], address[3], address[2], address[1],
+             address[0], (unsigned)s_h2_esp_ble_own_addr_type);
+  }
+#endif
   if (s_h2_esp_ble_events != NULL) {
     xEventGroupSetBits(s_h2_esp_ble_events, H2_ESP_BLE_SYNCED_BIT);
   }
@@ -2590,8 +2598,9 @@ static h2_pal_result_t h2_esp_ble_indicate(h2_pal_ble_t* ble,
 static h2_pal_result_t h2_esp_ble_disconnect(h2_pal_ble_t* ble,
                                              uint16_t conn_handle) {
   (void)ble;
-  return h2_esp_ble_map_rc(
-      ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM));
+  int rc = ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+  /* Remote reboot/disconnect still permits the caller's local teardown. */
+  return rc == BLE_HS_ENOTCONN ? H2_PAL_ERR_CLOSED : h2_esp_ble_map_rc(rc);
 }
 
 static h2_pal_result_t h2_esp_ble_configure_pairing(

@@ -59,6 +59,7 @@ static uint32_t h2loader_command_bit(size_t argc, const char* const* argv) {
   if (strcmp(argv[1], "status") == 0) return H2_LOADER_COMMAND_AVAILABLE_STATUS;
   if (strcmp(argv[1], "stats") == 0) return H2_LOADER_COMMAND_AVAILABLE_STATS;
   if (strcmp(argv[1], "memory") == 0) return H2_LOADER_COMMAND_AVAILABLE_MEMORY;
+  if (strcmp(argv[1], "mfg") == 0) return H2_LOADER_COMMAND_AVAILABLE_MFG;
   if (strcmp(argv[1], "reboot") == 0) {
     if (argc >= 3u && strcmp(argv[2], "loader") == 0)
       return H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER;
@@ -100,6 +101,7 @@ static h2_pal_result_t h2loader_require_command(
   int rc;
   if (bit == H2_LOADER_COMMAND_AVAILABLE_HELP ||
       bit == H2_LOADER_COMMAND_AVAILABLE_MEMORY ||
+      bit == H2_LOADER_COMMAND_AVAILABLE_MFG ||
       bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS ||
       bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN ||
       bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT ||
@@ -1326,6 +1328,33 @@ static h2_pal_result_t h2loader_coredump_handler(void* user,
                                 0, 1, h2loader_coredump_handler_unlocked);
 }
 
+static h2_pal_result_t h2loader_mfg_handler_unlocked(void* user,
+                                                     h2_command_t* command,
+                                                     size_t argc,
+                                                     const char* const* argv) {
+  h2_loader_command_t* self = (h2_loader_command_t*)user;
+  char output[768] = {0};
+  (void)command;
+  if (self->config.mfg_command == NULL || argc < 2u)
+    return H2_PAL_ERR_UNSUPPORTED;
+  int rc =
+      self->config.mfg_command(self->config.mfg_user, self->config.transport,
+                               argc - 2u, argv + 2u, output, sizeof(output));
+  if (output[0] != '\0') {
+    output[sizeof(output) - 1u] = '\0';
+    int write_rc = h2loader_write_line(self, output);
+    if (write_rc != H2_PAL_OK) return (h2_pal_result_t)write_rc;
+  }
+  return (h2_pal_result_t)rc;
+}
+
+static h2_pal_result_t h2loader_mfg_handler(void* user, h2_command_t* command,
+                                            size_t argc,
+                                            const char* const* argv) {
+  return h2loader_invoke_locked((h2_loader_command_t*)user, command, argc, argv,
+                                0, 1, h2loader_mfg_handler_unlocked);
+}
+
 int h2_loader_command_init(h2_loader_command_t* self,
                            const h2_loader_command_config_t* config) {
   static const struct {
@@ -1341,6 +1370,7 @@ int h2_loader_command_init(h2_loader_command_t* self,
       {"h2loader stage", h2loader_stage_handler},
       {"h2loader reboot", h2loader_reboot_handler},
       {"h2loader coredump", h2loader_coredump_handler},
+      {"h2loader mfg", h2loader_mfg_handler},
   };
   h2_command_config_t command_config;
   int rc;
@@ -1401,6 +1431,9 @@ int h2_loader_command_init(h2_loader_command_t* self,
                            H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE;
     if (config->memory_stats.read != NULL) {
       implemented |= H2_LOADER_COMMAND_AVAILABLE_MEMORY;
+    }
+    if (config->mfg_command != NULL) {
+      implemented |= H2_LOADER_COMMAND_AVAILABLE_MFG;
     }
     rc = h2_loader_set_implemented_commands(config->loader, implemented);
   }

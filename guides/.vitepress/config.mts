@@ -193,6 +193,14 @@ const appItems = [
             ],
           },
           {
+            text: "Waveshare ESP32-S3-Touch-AMOLED-1.75C",
+            collapsed: true,
+            items: [
+              { text: "总览", link: "/apps/h2loader/boards/waveshare_esp32s3_touch_amoled_1_75c/" },
+              { text: "H2Loader", link: "/apps/h2loader/boards/waveshare_esp32s3_touch_amoled_1_75c/h2loader" },
+            ],
+          },
+          {
             text: "Waveshare ESP32-S3-A7670E-4G",
             collapsed: true,
             items: [

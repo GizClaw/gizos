@@ -5,7 +5,7 @@
 
 #define H2_P4_BOOT_BUTTON_ID 101u
 #define H2_P4_SOC_TEMPERATURE_ID 501u
-#define H2_P4_BOOT_BUTTON_GPIO GPIO_NUM_0
+#define H2_P4_BOOT_BUTTON_GPIO GPIO_NUM_35
 
 static temperature_sensor_handle_t s_temperature;
 static int s_boot_button_configured;

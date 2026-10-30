@@ -272,6 +272,34 @@ SDK0.23.2/source123565bf 的真实 macOS 全量执行为5/8，cleanup=-8、retai
 
 ## BLE Binding 覆盖边界
 
+Waveshare 1.75C 的完整入口显式设置 `device_ble_binding=true`，由启动器先启动
+共享 BLE Host，再在 Device API case 内运行八个接口。无线对端使用独立开发板，
+Mac 只编译、安装和收串口日志，不参与 BLE 扫描或 GATT 通信。
+
+```sh
+bazel build --config=esp32s3 \
+  --define=H2_BLE_PEER_DUT_UID=<被测板的BLE_UID> \
+  --define=H2_BLE_PEER_ORIGIN=<本次HTTPS设备API根地址> \
+  //projects/e2e/targets/h2loader_tar_zlib/gizclaw-ble-peer/amoled-fixture:package
+```
+
+AMOLED peer 只扫描显式 UID，在真实广播/扫描响应中匹配 service UUID 与本次
+随机 `h2e2e-` 名称，随后实际连接、发现服务/特征并逐块执行 REQUEST/CREDENTIAL。
+它严格检查版本、revision、offset、总长度及 HTTPS origin/query，记录公有元数据
+和 HKDF-SHA256 payload fingerprint，擦除本地凭据并观察真实断开事件。
+它不访问 credential URL、不绑定账户、不打印或保存明文 key。
+同一 peer boot 要求两次不同随机名称的传输，用于覆盖 DUT managed/普通启动
+或两次独立普通启动；
+完成后停止扫描、连接和自己拥有的 Host，再确认 fixture App。缺少真实对端或
+完整协议/清理证据时不能确认。使用前保存原 package、P1/Stage/Wi-Fi/coredump
+身份，完成后恢复对端原固件。
+
+DUT 独立验证 exposure 的 key name/revision、断开后广告恢复、密封与清理，并撤销
+只属于本次 E2E 的临时 key。Host 完整资格必须把板间对端回执与同一 fresh boot 的
+CRC 账本、241 项 API audit 及 image/package 身份绑定；广告启动返回 OK 或单条
+exposure 不能代替完整无线传输。未开启此配置的平台保留原业务执行范围，缺少
+BLE 证据仍不能通过全接口审计，也不因此获得物理 BLE 或手机端资格。
+
 BLE Binding 的八个公开 API 归属 `device-api` 的独立审计要求，全部要求按序成功调用和显式 `ble_binding_<method>-assert` 业务断言。`open`、`start`、`poll` 和 `stop` 还必须在变更后实际调用 `ble_binding_snapshot`，观察 idle/open、广播重启或 sealed window 状态；URL formatter、snapshot、exposure drain 与最终 close 则各自断言实际值、精确 key name/revision 或已释放 instance。READY、函数名出现在源码、普通返回 OK 或 fake-PAL 单测都不能替代这些证据。
 
 `h2_gizclaw_ble_binding_test` 验证真实异步 key state 与 fake RPC/BLE PAL 上的 wire、生命周期和失败边界；它不输出或提供 live E2E qualification。真实 Server/BLE/手机绑定 lane 尚无这八项调用与业务断言证据时，完整审计继续将它们报告为 missing。历史 228 或 227 函数的完整日志不会资格化 236 项库存；审计器回归测试明确要求旧 228 项的合成日志仍缺少全部八项 BLE 要求。产品页面与手机 adapter 的接入和物理 ESP32-S3/BK7258 验收分别记录，不能把本地 host graph 绿灯写成账号绑定或设备通过。

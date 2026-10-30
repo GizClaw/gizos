@@ -103,6 +103,8 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t* fixture) {
     if (rc == H2_PAL_OK && !(condition)) rc = H2_PAL_ERR_INVALID_STATE; \
   } while (0)
   CHECK(h2_gizclaw_e2e_run_debug(fixture));
+  if (fixture->config->device_ble_binding)
+    CHECK(h2_gizclaw_e2e_run_ble_binding(fixture));
   uint64_t player_started_at = 0;
   const bool player_clock_valid =
       rc == H2_PAL_OK && h2_pal_time_get_monotonic_ms(

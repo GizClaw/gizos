@@ -1,0 +1,8 @@
+load("//tools/bazel:app_version.bzl", "app_version")
+
+package(default_visibility = ["//visibility:public"])
+
+app_version(
+    name = "version",
+    value = "0.1.27",
+)

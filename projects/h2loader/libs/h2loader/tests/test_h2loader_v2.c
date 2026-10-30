@@ -700,6 +700,34 @@ static void test_auto_boots_valid_different_partition_2(void) {
   assert(fixture.reboot_calls == 1u);
 }
 
+static void test_unfinished_mfg_allows_loader_recovery_but_blocks_app(void) {
+  const h2_loader_image_role_t roles[] = {H2_LOADER_IMAGE_ROLE_APP,
+                                          H2_LOADER_IMAGE_ROLE_H2LOADER};
+  for (size_t i = 0; i < sizeof(roles) / sizeof(roles[0]); ++i) {
+    test_fixture_t fixture;
+    h2_loader_startup_action_t action;
+    fixture_init(&fixture, 1u);
+    fixture.config.mfg_required_total = 1;
+    fixture.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
+    fixture.boot_intent_present = 1;
+    assert(h2_loader_mfg_reset(&fixture.pref, 1) == 0);
+    h2_loader_metadata_t candidate = metadata(roles[i], SHA_B);
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &candidate);
+    assert(h2_loader_init(&fixture.loader, &fixture.config) == 0);
+    assert(h2_loader_startup(&fixture.loader, &action) == 0);
+    int loader_candidate = roles[i] == H2_LOADER_IMAGE_ROLE_H2LOADER;
+    assert(action == (loader_candidate
+                          ? H2_LOADER_STARTUP_ACTION_REBOOTING_APP
+                          : H2_LOADER_STARTUP_ACTION_COMMAND_MODE));
+    assert(fixture.reboot_calls == (loader_candidate ? 1u : 0u));
+    int present;
+    h2_loader_mfg_summary_t summary;
+    assert(h2_loader_mfg_read(&fixture.pref, &fixture.mem, &summary,
+                              &present) == 0);
+    assert(present && summary.total == 1 && summary.step_status[0] == 0);
+  }
+}
+
 static void test_partition_2_loader_copies_back_without_stage(void) {
   test_fixture_t fixture;
   h2_loader_startup_action_t action;
@@ -1580,6 +1608,45 @@ static void test_mfg_acceptance_revision_tracks_total(void) {
   assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 24u, 8u) ==
          H2_PAL_OK);
   assert(read_mfg(&fixture, &present).total == 24u);
+}
+
+static void test_mfg_explicit_append_preserves_prefix(void) {
+  test_fixture_t fixture;
+  fixture_init(&fixture, 1u);
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 9u, 1u) == 0);
+  h2_loader_mfg_summary_t summary = {.total = 9u};
+  for (unsigned i = 0; i < 9; ++i) summary.step_status[i] = (uint8_t)(i % 4u);
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) == 0);
+  fixture.commit_result = H2_PAL_ERR_WRITE;
+  assert(h2_loader_mfg_ensure_appended_revision(&fixture.pref, 10, 2, 9, 1) ==
+         H2_PAL_ERR_WRITE);
+  fixture.commit_result = 0;
+  int present = 0;
+  h2_loader_mfg_summary_t saved = read_mfg(&fixture, &present);
+  assert(saved.total == 9 && fixture.acceptance_revision == 1);
+  assert(memcmp(saved.step_status, summary.step_status, 9) == 0);
+  assert(h2_loader_mfg_ensure_appended_revision(&fixture.pref, 10, 2, 9, 1) ==
+         0);
+  saved = read_mfg(&fixture, &present);
+  assert(saved.total == 10 && fixture.acceptance_revision == 2);
+  assert(memcmp(saved.step_status, summary.step_status, 9) == 0);
+  assert(saved.step_status[9] == H2_LOADER_MFG_STEP_UNTESTED);
+  assert(!h2_loader_mfg_summary_is_passed(&saved, 10));
+  saved.step_status[9] = H2_LOADER_MFG_STEP_FAILED;
+  assert(h2_loader_mfg_write(&fixture.pref, &saved) == 0);
+  assert(h2_loader_mfg_ensure_appended_revision(&fixture.pref, 10, 2, 9, 1) ==
+         0);
+  saved = read_mfg(&fixture, &present);
+  assert(saved.step_status[9] == H2_LOADER_MFG_STEP_FAILED);
+  assert(h2_loader_mfg_ensure_appended_revision(&fixture.pref, 10, 2, 10, 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  /* An unrelated schema cannot inherit this prefix. */
+  assert(h2_loader_mfg_ensure_appended_revision(&fixture.pref, 11, 4, 10, 3) ==
+         0);
+  saved = read_mfg(&fixture, &present);
+  assert(saved.total == 11 && fixture.acceptance_revision == 4);
+  for (unsigned i = 0; i < 11; ++i)
+    assert(saved.step_status[i] == H2_LOADER_MFG_STEP_UNTESTED);
 }
 
 static void test_mfg_status_prints_total_steps(void) {
@@ -2591,6 +2658,7 @@ static void test_app_console_survives_closed_response(void) {
 }
 
 int main(void) {
+  test_unfinished_mfg_allows_loader_recovery_but_blocks_app();
   test_app_console_survives_closed_response();
   test_current_loader_identity_ignores_corrupt_metadata();
   test_current_loader_identity_ignores_foreign_metadata();
@@ -2633,6 +2701,7 @@ int main(void) {
   test_mfg_variable_step_round_trip();
   test_mfg_legacy_records_decode_as_22_steps();
   test_mfg_acceptance_revision_tracks_total();
+  test_mfg_explicit_append_preserves_prefix();
   test_mfg_status_prints_total_steps();
   test_mfg_required_total_range_and_gate();
   puts("h2loader v2 boot tests passed");

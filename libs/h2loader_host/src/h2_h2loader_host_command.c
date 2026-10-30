@@ -18,6 +18,25 @@ static int is_wire_field(const char* value) {
   return 1;
 }
 
+static int is_fixture_ipv4(const char* value) {
+  if (value == NULL || strlen(value) > 15u) return 0;
+  unsigned parts = 0, digits = 0, part = 0, nonzero = 0;
+  for (const char* p = value;; ++p) {
+    if (*p >= '0' && *p <= '9') {
+      if (++digits > 3u) return 0;
+      part = part * 10u + (unsigned)(*p - '0');
+      if (part > 255u) return 0;
+    } else if (*p == '.' || *p == '\0') {
+      if (digits == 0 || ++parts > 4u) return 0;
+      nonzero |= part;
+      if (*p == '\0') return parts == 4u && nonzero != 0u;
+      digits = part = 0;
+    } else {
+      return 0;
+    }
+  }
+}
+
 h2_pal_result_t h2_h2loader_host_command_validate(
     const h2_h2loader_host_status_t* status, uint8_t operation_active,
     h2_h2loader_host_command_t command) {
@@ -40,6 +59,9 @@ h2_pal_result_t h2_h2loader_host_command_validate(
       break;
     case H2_H2LOADER_HOST_COMMAND_MEMORY:
       availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY;
+      break;
+    case H2_H2LOADER_HOST_COMMAND_MFG:
+      availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_MFG;
       break;
     case H2_H2LOADER_HOST_COMMAND_REBOOT_APP:
       availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP;
@@ -139,6 +161,58 @@ h2_pal_result_t h2_h2loader_host_command_contract(
       out_contract->marker = "H2_LOADER_MEMORY ";
       out_contract->success_token = "result=OK";
       break;
+    case H2_H2LOADER_HOST_COMMAND_MFG: {
+      const char* action = request->mfg_action;
+      if (action != NULL && (strcmp(action, "calibrate") == 0 ||
+                             strcmp(action, "source-shutdown") == 0)) {
+        if (strcmp(action, "calibrate") == 0) {
+          if (!is_fixture_ipv4(request->mfg_peer_ipv4) ||
+              request->mfg_peer_uid == NULL ||
+              strlen(request->mfg_peer_uid) != 12u ||
+              strspn(request->mfg_peer_uid, "0123456789abcdef") != 12u ||
+              request->mfg_calibration_run == NULL ||
+              strlen(request->mfg_calibration_run) != 16u ||
+              strspn(request->mfg_calibration_run, "0123456789abcdef") != 16u ||
+              request->mfg_speaker_percent == 0u ||
+              request->mfg_speaker_percent > 100u ||
+              request->mfg_mic_percent > 100u)
+            return H2_PAL_ERR_INVALID_ARG;
+          int n = snprintf(out_contract->line, sizeof(out_contract->line),
+                           "h2loader mfg calibrate %s %u %u %s %s\n",
+                           request->mfg_peer_ipv4,
+                           (unsigned)request->mfg_speaker_percent,
+                           (unsigned)request->mfg_mic_percent,
+                           request->mfg_calibration_run, request->mfg_peer_uid);
+          if (n < 0 || (size_t)n >= sizeof(out_contract->line))
+            return H2_PAL_ERR_INVALID_ARG;
+        } else {
+          SET_LINE("h2loader mfg source-shutdown\n");
+        }
+        out_contract->marker = "H2_MFG_CALIBRATION_STATUS ";
+        out_contract->success_token = "code=0";
+        break;
+      }
+      if (action == NULL || strcmp(action, "status") == 0) {
+        SET_LINE("h2loader mfg status\n");
+      } else {
+        if (strcmp(action, "confirm") != 0 && strcmp(action, "fail") != 0 &&
+            strcmp(action, "skip") != 0 && strcmp(action, "retry") != 0 &&
+            strcmp(action, "reset") != 0 && strcmp(action, "probe") != 0)
+          return H2_PAL_ERR_INVALID_ARG;
+        if (!is_wire_field(request->mfg_step) ||
+            strlen(request->mfg_step) > 32 || request->mfg_ticket == NULL ||
+            strlen(request->mfg_ticket) != 8 ||
+            strspn(request->mfg_ticket, "0123456789abcdefABCDEF") != 8)
+          return H2_PAL_ERR_INVALID_ARG;
+        if (snprintf(out_contract->line, sizeof(out_contract->line),
+                     "h2loader mfg %s %s %s\n", action, request->mfg_step,
+                     request->mfg_ticket) >= (int)sizeof(out_contract->line))
+          return H2_PAL_ERR_INVALID_ARG;
+      }
+      out_contract->marker = "H2_MFG_STATUS ";
+      out_contract->success_token = "result=OK";
+      break;
+    }
     case H2_H2LOADER_HOST_COMMAND_REBOOT_APP:
       SET_LINE("h2loader reboot app\n");
       out_contract->marker = "H2_LOADER_REBOOT ";

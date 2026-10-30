@@ -313,6 +313,7 @@ vendor_repositories.repository(
     patches = [
         "//tools/bazel/vendor:patches/esp_serial_flasher_msvc_packing.patch",
         "//tools/bazel/vendor:patches/esp_serial_flasher_msvc_weak.patch",
+        "//tools/bazel/vendor:patches/esp_serial_flasher_slip_first_byte.patch",
     ],
     sha256 = "d3497d4f63b49f5cc5c6e87e81ad9a280d7fc9ac8fa37b7a5d9a722fbd40393c",
     strip_prefix = "esp-serial-flasher-71bac88f810728e178782c58aa73523356dfb48f",

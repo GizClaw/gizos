@@ -11,7 +11,7 @@ END = re.compile(rb"^H2_GIZCLAW_LEDGER stage=end execution=([0-9a-f]{32}) crc32=
 
 
 BOOT = re.compile(rb"^H2_GIZCLAW_BOOT board=[A-Za-z0-9._-]+ version=([A-Za-z0-9._-]+) execution=([0-9a-f]{32})$")
-LAUNCHER = re.compile(rb"^H2_GIZCLAW_E2E_(?:DEVKIT|AMOLED) stage=launcher status=READY$")
+LAUNCHER = re.compile(rb"^H2_GIZCLAW_E2E_(?:DEVKIT|AMOLED|WS175C) stage=launcher status=READY$")
 
 
 def extract(data, *, version, previous_execution=None):
@@ -23,7 +23,18 @@ def extract(data, *, version, previous_execution=None):
     accepted = None
     frozen = {}
     changed_boots = set()
+    faulted = False
     for line in data.replace(b"\r\n", b"\n").split(b"\n"):
+        if line.startswith(b"H2_GIZCLAW_BOOT "):
+            faulted = False
+        health = re.sub(rb"\x1b\[[0-9;]*m", b"", line)
+        if (re.match(rb"^(?:[EW] \([0-9]+\) )?task_wdt: Task watchdog got triggered", health)
+                or health.startswith((b"Guru Meditation Error", b"CORRUPT HEAP", b"assert failed:"))):
+            faulted = True
+            candidate = None
+            records = []
+            accepted = None
+            continue
         boot = BOOT.fullmatch(line)
         if (line.startswith(b"H2_GIZCLAW_BOOT ") or LAUNCHER.fullmatch(line)
                 or line.startswith(b"H2_GIZCLAW_SETUP_FAIL ")):
@@ -68,7 +79,7 @@ def extract(data, *, version, previous_execution=None):
         frame_header = candidate
         candidate = None
         crc = int(checksum, 16)
-        if (frame_header[:2] in changed_boots or frame_header[:2] != latest_boot or actual_version.decode() != version
+        if (faulted or frame_header[:2] in changed_boots or frame_header[:2] != latest_boot or actual_version.decode() != version
                 or execution.decode() == previous_execution
                 or end.group(1) != execution or end.group(2) != checksum
                 or not 0 < len(body) <= 384 * 1024 or len(body) != int(size)
@@ -109,7 +120,7 @@ def main():
     parser.add_argument("--previous-execution")
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--platform", choices=("amoled", "devkit", "bk7258"), required=True)
+    parser.add_argument("--platform", choices=("amoled", "devkit", "bk7258", "waveshare_esp32s3_touch_amoled_1_75c"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     # The independent inventory/oracle remains shared with all other platforms.

@@ -1,0 +1,315 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware.bzl", "firmware_version")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_version(
+    name = "version",
+    build = "//boards/amoled:version",
+    main_version = "//projects/mfg:version",
+)
+
+esp_target_task_policy(
+    default_policy = "4 any 4096 psram",
+    graph = [":h2loader_launcher"],
+    policies = [
+        "h2loader/appcmd    8        0  4096  psram",
+        "h2loader/blecmd    8        0  4096  psram",
+        "$h2loader/return   8        0  4096  psram",
+        "$h2loader/blelink  6        0  4096  psram",
+        "$bleikcp/kcp       7        0  4096  psram",
+        "$bleikcp/server    5        0  4096  psram",
+        "$h2peer/net        7        0  4096  psram",
+        "$h2peer/udp        7        0  4096  psram",
+        "$runtime/input     default",
+        "$runtime/nfc       default",
+        "$h2loader/uartcmd  default",
+    ],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/drivers/audio/es8311",
+        "//libs/drivers/motion/qmi8658",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/mfg/libs/mfg",
+    ],
+)
+
+firmware_native_component(
+    name = "h2loader_launcher",
+    srcs = [
+        "main/main.c",
+        "main/profile.c",
+    ],
+    hdrs = [],
+    component_directory = "projects/mfg/apps/amoled/main",
+    component_name = "main",
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        ":firmware_lib",
+        "//boards/amoled/esp32s3",
+        "//libs/bundle",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+        "main/profile.c",
+    ],
+    board = "amoled",
+    graph = [
+        ":h2loader_launcher",
+    ],
+    project = "CMakeLists.txt",
+    project_name = "h2_mfg",
+    target = "esp32s3",
+    task_policy = ":task_policy",
+    version = ":version",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "amoled",
+    firmware = ":firmware",
+    image = "mfg",
+    role = "h2loader",
+    target = "esp32s3",
+)
+
+esp_target_task_policy(
+    name = "peer_task_policy",
+    default_policy = "4 any 4096 psram",
+    directory = "peer_task_policy",
+    graph = [":peer_launcher"],
+    policies = [
+        "mfg/peer 5 0 65536 psram",
+        "$h2loader-host/ble 6 0 8192 psram",
+        "h2loader/appcmd    8        0  4096  psram",
+        "h2loader/blecmd    8        0  4096  psram",
+        "$h2loader/return   8        0  4096  psram",
+        "$h2loader/blelink  6        0  4096  psram",
+        "$bleikcp/kcp       7        0  4096  psram",
+        "$bleikcp/server    5        0  4096  psram",
+        "$h2peer/net        7        0  4096  psram",
+        "$h2peer/udp        7        0  4096  psram",
+        "$runtime/input     default",
+        "$runtime/nfc       default",
+        "$h2loader/uartcmd  default",
+    ],
+)
+
+firmware_lib_component(
+    name = "peer_firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/drivers/audio/es8311",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/mfg/libs/peer",
+    ],
+)
+
+firmware_native_component(
+    name = "peer_launcher",
+    srcs = [
+        "peer/main/main.c",
+    ],
+    hdrs = [],
+    component_directory = "projects/mfg/apps/amoled/peer/main",
+    component_name = "main",
+    data = [
+        "peer/main/CMakeLists.txt",
+        "peer/main/idf_component.yml",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        ":peer_firmware_lib",
+        "//boards/amoled/esp32s3",
+        "//libs/bundle",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "peer_firmware",
+    srcs = [
+        "peer/CMakeLists.txt",
+        "peer/main/CMakeLists.txt",
+        "peer/main/idf_component.yml",
+        "peer/main/main.c",
+    ],
+    board = "amoled",
+    graph = [":peer_launcher"],
+    project = "peer/CMakeLists.txt",
+    project_name = "h2_mfg_peer",
+    target = "esp32s3",
+    task_policy = ":peer_task_policy",
+    version = ":version",
+)
+
+h2loader_tar_zlib(
+    name = "peer_package",
+    board = "amoled",
+    firmware = ":peer_firmware",
+    image = "mfg-peer",
+    role = "app",
+    tags = ["no-release"],
+    target = "esp32s3",
+)
+
+firmware_version(
+    name = "calibration_peer_version",
+    build = "//boards/amoled:version",
+    build_metadata = "ip",
+    main_version = "//projects/mfg:version",
+    variant = "calibration-peer",
+)
+
+# Controlled acoustic fixture; the peer restores its original App after use.
+esp_target_task_policy(
+    name = "calibration_peer_task_policy",
+    default_policy = "4 any 4096 psram",
+    directory = "calibration_peer_task_policy",
+    graph = [":calibration_peer_launcher"],
+    policies = [
+        "h2loader/appcmd 8 0 4096 psram",
+        "h2loader/blecmd 8 0 4096 psram",
+        "$h2loader/return 8 0 4096 psram",
+        "$h2loader/blelink 6 0 4096 psram",
+        "$bleikcp/kcp 7 0 4096 psram",
+        "$bleikcp/server 5 0 4096 psram",
+        "$h2peer/net 7 0 4096 psram",
+        "$h2peer/udp 7 0 4096 psram",
+        "$runtime/input default",
+        "$runtime/nfc default",
+        "$h2loader/uartcmd default",
+    ],
+)
+
+firmware_lib_component(
+    name = "calibration_peer_firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/drivers/audio/es8311",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/mfg/libs/aec-fixture",
+        "//projects/mfg/libs/peer:config",
+    ],
+)
+
+firmware_native_component(
+    name = "calibration_peer_launcher",
+    srcs = ["calibration-peer/main/main.c"],
+    hdrs = [],
+    component_directory = "projects/mfg/apps/amoled/calibration-peer/main",
+    component_name = "main",
+    data = [
+        "calibration-peer/main/CMakeLists.txt",
+        "calibration-peer/main/idf_component.yml",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":calibration_peer_firmware_lib",
+        "//boards/amoled/esp32s3",
+        "//libs/bundle",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "calibration_peer_firmware",
+    srcs = [
+        "calibration-peer/CMakeLists.txt",
+        "calibration-peer/main/CMakeLists.txt",
+        "calibration-peer/main/idf_component.yml",
+        "calibration-peer/main/main.c",
+    ],
+    board = "amoled",
+    graph = [":calibration_peer_launcher"],
+    project = "calibration-peer/CMakeLists.txt",
+    project_name = "h2_mfg_aec_calibration_peer",
+    target = "esp32s3",
+    task_policy = ":calibration_peer_task_policy",
+    version = ":calibration_peer_version",
+)
+
+h2loader_tar_zlib(
+    name = "calibration_peer_package",
+    board = "amoled",
+    firmware = ":calibration_peer_firmware",
+    image = "mfg-aec-calibration_peer",
+    role = "app",
+    tags = ["no-release"],
+    target = "esp32s3",
+)

@@ -130,6 +130,11 @@ typedef struct h2_gizclaw_e2e_config {
   const char* fence_second_id;
   /** Forward the device case PCM sink to runtime.audio for audible testing. */
   bool device_real_audio;
+  /** Open a bounded native BLE window for an independent GATT test client.
+   * Requires real runtime BLE/System Event providers. The peer must read the
+   * complete temporary credential and disconnect; cleanup revokes that key.
+   * This is separate from platforms without a physical BLE fixture. */
+  bool device_ble_binding;
   /** Borrowed Audio PAL for Voice capture health. NULL selects the public
    * Testing Audio fake. The App decorates it with the supplied PCM fixture;
    * physical samples are discarded. Must support 16 kHz mono S16LE capture. */

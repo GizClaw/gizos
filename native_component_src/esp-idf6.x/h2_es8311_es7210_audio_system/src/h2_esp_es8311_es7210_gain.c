@@ -4,6 +4,11 @@ static uint8_t gain_from_db(uint32_t db) {
   if (db >= 38u) {
     return 14u;
   }
+  /* ES7210 DS rev21, registers 0x43..0x46:
+   * 0xC=34.5, 0xD=36, 0xE=37.5 dB.
+   * Integer 38 selects the physical 37.5 dB maximum. */
+  if (db >= 36u) return 13u;
+  if (db >= 35u) return 12u;
   return (uint8_t)((db + 1u) / 3u);
 }
 

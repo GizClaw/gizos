@@ -42,6 +42,7 @@ typedef enum h2_loader_command_availability {
   H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT = UINT32_C(1) << 18,
   H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE = UINT32_C(1) << 19,
   H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS = UINT32_C(1) << 20,
+  H2_LOADER_COMMAND_AVAILABLE_MFG = UINT32_C(1) << 21,
 } h2_loader_command_availability_t;
 
 #define H2_LOADER_COMMAND_AVAILABILITY_ALL                                  \
@@ -59,7 +60,7 @@ typedef enum h2_loader_command_availability {
    H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |                                  \
    H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT |                               \
    H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |                            \
-   H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS)
+   H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS | H2_LOADER_COMMAND_AVAILABLE_MFG)
 
 typedef enum h2_loader_active_role {
   H2_LOADER_ACTIVE_ROLE_UNKNOWN = 0,
@@ -236,6 +237,14 @@ int h2_loader_mfg_reset(const h2_pal_pref_api_t* pref, uint32_t total);
 int h2_loader_mfg_ensure_acceptance_revision(const h2_pal_pref_api_t* pref,
                                              uint32_t total,
                                              uint32_t required_revision);
+/** Opt-in migration for an unchanged prefix followed by new required checks.
+ * Only the exact previous revision/total is inherited; new statuses are
+ * UNTESTED. Other records follow normal revision reset rules. The caller must
+ * verify prefix identity and semantics. Record/revision commit together. */
+int h2_loader_mfg_ensure_appended_revision(const h2_pal_pref_api_t* pref,
+                                           uint32_t total, uint32_t revision,
+                                           uint32_t previous_total,
+                                           uint32_t previous_revision);
 
 int h2_loader_init(h2_loader_t* loader, const h2_loader_config_t* config);
 /* Call after concurrent command users stop, before reinitializing or releasing

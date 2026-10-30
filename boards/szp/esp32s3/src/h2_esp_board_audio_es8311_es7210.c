@@ -14,7 +14,7 @@
 
 #define H2_SZP_AUDIO_SAMPLE_RATE 16000u
 #define H2_SZP_AUDIO_MCLK_MULTIPLE 384u
-#define H2_SZP_AUDIO_FRAME_SAMPLES 256u
+#define H2_SZP_AUDIO_FRAME_SAMPLES 512u
 #define H2_SZP_AUDIO_RAW_CHANNELS 4u
 #define H2_SZP_AUDIO_PROCESSED_CHANNELS 1u
 #define H2_SZP_AUDIO_I2C_PORT 0
@@ -29,7 +29,8 @@
 #define H2_SZP_AUDIO_WS_GPIO 13
 #define H2_SZP_AUDIO_DOUT_GPIO 45
 #define H2_SZP_AUDIO_DIN_GPIO 12
-#define H2_SZP_AUDIO_CODEC_VOLUME_DEFAULT 0xb0u
+/* ES8311 DAC register 0x32: unity gain, without positive digital gain. */
+#define H2_SZP_AUDIO_CODEC_VOLUME_DEFAULT 0xbfu
 #define H2_SZP_AUDIO_MIC_GAIN_DEFAULT_DB 24u
 #define H2_SZP_AUDIO_MAX_TRACKS 4u
 #define H2_SZP_AUDIO_TRACK_QUEUE_FRAMES 4u
@@ -45,7 +46,22 @@ static int s_lazy_audio_initialized;
 
 static int set_pa(void* user, int enabled) {
   (void)user;
-  return h2_esp_szp_board_set_pa(enabled);
+  int rc = h2_esp_szp_board_set_pa(enabled);
+  if (rc == 0 && enabled && s_audio_system.es8311 != NULL) {
+    const uint8_t registers[] = {0x31, 0x32, 0x34};
+    uint8_t values[3] = {0};
+    esp_err_t err = ESP_OK;
+    for (unsigned i = 0; i < sizeof(registers) && err == ESP_OK; ++i)
+      err = i2c_master_transmit_receive(s_audio_system.es8311, &registers[i], 1,
+                                        &values[i], 1, 20);
+    if (err == ESP_OK)
+      ESP_LOGI(TAG, "speaker readback dac=0x%02x mute=0x%02x drc=0x%02x",
+               values[1], values[0] & 0x60, values[2]);
+    else
+      ESP_LOGW(TAG, "speaker register readback failed: %s",
+               esp_err_to_name(err));
+  }
+  return rc;
 }
 
 static h2_pal_audio_t* resolve_audio(void* user) {
@@ -90,6 +106,12 @@ static h2_pal_audio_t* resolve_audio(void* user) {
         .pa_gpio = -1,
         .set_pa = set_pa,
         .codec_volume_default = H2_SZP_AUDIO_CODEC_VOLUME_DEFAULT,
+        /* Interpolate attenuation below the board's unity-gain maximum. */
+        .speaker_volume =
+            {
+                .point_count = 3u,
+                .points = {{1u, 80u}, {50u, 20u}, {100u, 0u}},
+            },
         .mic_gain_db = H2_SZP_AUDIO_MIC_GAIN_DEFAULT_DB,
         .mic_gain_min_db = 0u,
         .mic_gain_max_db = 38u,
@@ -105,7 +127,7 @@ static h2_pal_audio_t* resolve_audio(void* user) {
         .allocator = h2_esp_board_default_allocator(),
         .queue_api = h2_esp_board_queue_api(),
         .sync_api = h2_esp_board_sync_api(),
-        .enable_aec = 0,
+        .enable_aec = 1,
     };
     int rc = h2_esp_es8311_es7210_audio_system_init(&s_audio_system, &config);
     if (rc != H2_AUDIO_OK) {

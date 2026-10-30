@@ -133,6 +133,7 @@ firmware_native_component(
     hdrs = [
         "//projects/h2loader/apps/loader/app:h2loader_bleikcp_internal.h",
         "//projects/h2loader/apps/loader/app:include/h2loader_app.h",
+        "//projects/h2loader/apps/loader/app:include/h2loader_board_extension.h",
         "//projects/h2loader/libs/h2loader:h2loader_headers",
     ],
     component_name = "h2loader_ac791n_devkit_common",

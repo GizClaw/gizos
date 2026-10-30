@@ -2,4 +2,14 @@ dependencies:
   espressif/esp_hosted: "2.12.11"
   espressif/esp_wifi_remote: "1.6.5"
   espressif/esp_lcd_st7701: "2.0.2"
+  espressif/esp_lcd_touch_gt911: "1.2.0"
+  espressif/esp_video: "2.5.0"
   idf: ">=6.2.0,<6.3.0"
+overrides:
+  - espressif/esp_ipa:
+      with:
+        espressif/esp_ipa:
+          git: "https://github.com/espressif/esp-video-components.git"
+          path: "esp_ipa"
+          version: "1f7d39e37b69be18ce977dbab83d1717abcebbe4"
+      reason: "Select the upstream IPA binaries compatible with P4 rev <3 on IDF 6.x."

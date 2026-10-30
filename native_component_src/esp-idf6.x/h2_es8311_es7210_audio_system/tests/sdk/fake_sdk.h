@@ -50,12 +50,18 @@ typedef struct {
   int mode, pull_up_en, pull_down_en, intr_type;
 } gpio_config_t;
 #define GPIO_MODE_OUTPUT 1
+#define GPIO_MODE_INPUT 2
 #define GPIO_PULLUP_DISABLE 0
 #define GPIO_PULLDOWN_DISABLE 0
 #define GPIO_INTR_DISABLE 0
 int gpio_output_disable(gpio_num_t);
 int gpio_config(const gpio_config_t*);
 int gpio_set_level(gpio_num_t, unsigned);
+typedef struct {
+  unsigned ie, oe;
+} gpio_io_config_t;
+int gpio_set_direction(gpio_num_t, int);
+int gpio_get_io_config(gpio_num_t, gpio_io_config_t*);
 typedef void* i2c_master_bus_handle_t;
 typedef void* i2c_master_dev_handle_t;
 typedef struct {

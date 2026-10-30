@@ -1,0 +1,24 @@
+load("//tools/bazel:board_version.bzl", "board_version")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "waveshare_esp32s3_touch_amoled_1_75c",
+    srcs = glob(
+        ["**"],
+        allow_empty = True,
+        exclude = ["BUILD.bazel"],
+    ) + [
+        "//boards/waveshare_esp32s3_touch_amoled_1_75c/esp32s3",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_esp32s3": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+board_version(
+    name = "version",
+    build = 2,
+)

@@ -1,0 +1,56 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware.bzl", "firmware_version")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_version(
+    name = "version",
+    build = "//boards/jieli_ac791n_devkit:version",
+    main_version = "//projects/mfg:version",
+)
+
+firmware_lib_component(
+    name = "mfg_lib",
+    component_name = "h2_mfg_lib",
+    deps = ["//projects/mfg/libs/mfg"],
+)
+
+firmware_native_component(
+    name = "entry",
+    srcs = [
+        "main.c",
+        "profile.c",
+    ],
+    hdrs = ["//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:src/jieli_loader_platform.h"],
+    component_name = "h2_mfg_entry",
+    deps = [
+        ":mfg_lib",
+        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_common",
+        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_launcher",
+    ],
+)
+
+h2loader_jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":entry",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "mfg",
+    target = "wl82",
+    task_policy = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:loader_task_policy",
+    version = ":version",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":firmware",
+    image = "mfg",
+    role = "h2loader",
+    target = "wl82",
+)

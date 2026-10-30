@@ -1,17 +1,18 @@
-"""Compile the complete production scan-stop entry against host SDK stubs."""
+"""Compile a complete production BLE entry against host SDK stubs."""
 from pathlib import Path
 import re
 import sys
 
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
+entry = sys.argv[3] if len(sys.argv) > 3 else "h2_esp_ble_stop_scan"
 match = re.search(
-    r"^static h2_pal_result_t h2_esp_ble_stop_scan\([^;{]*\)\s*\{",
+    rf"^static h2_pal_result_t {re.escape(entry)}\([^;{{]*\)\s*\{{",
     source,
     re.M,
 )
 if match is None:
-    raise RuntimeError("production BLE scan-stop entry is missing")
+    raise RuntimeError(f"production BLE entry {entry} is missing")
 depth, end = 1, match.end()
 while depth:
     depth += (source[end] == "{") - (source[end] == "}")
