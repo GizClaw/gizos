@@ -568,6 +568,8 @@ query 和 `rg` 都应为空。E2E 的九个固定 case 见 [E2E 测试 App](/app
 调用方必须等待任务释放或 Host 停止、join 和销毁完成后才恢复 UI 写屏。
 默认配置保留独立运行时由 Lua 打开和关闭 Display 的行为。
 
+需要保证启动时的连续像素空间时，调用方可按实际 Display geometry 配置 `display_framebuffer_bytes`，让 Host 在 VM 堆之前预留绘图缓冲，并在各 Job 交接 Display 时复用。容量、失败行为和生命周期见 `h2_lua_host_config_t`；预留不会提前打开 Display 或启动显示任务，worker 的发送缓冲仍计入 VM。
+
 MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Display，阻塞播放
 返回后交还 UI；失败和协作取消同样只清理播放器自己的资源。
 借用选项不会自动暂停 LVGL，也不提供多个写屏者之间的调度。

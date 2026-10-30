@@ -517,6 +517,14 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t* config,
   }
   memset(host->capabilities, 0,
          normalized.capability_capacity * sizeof(*host->capabilities));
+  if (normalized.display_framebuffer_bytes != 0u) {
+    host->display_framebuffer = h2_pal_mem_alloc(
+        normalized.allocator, normalized.display_framebuffer_bytes);
+    if (host->display_framebuffer == NULL) {
+      h2_lua_host_destroy(host);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+  }
   {
     h2_pal_result_t heap_result = h2_lua_heap_init(host);
     if (heap_result != H2_PAL_OK) {
@@ -724,6 +732,7 @@ h2_pal_result_t h2_lua_host_destroy_checked(h2_lua_host_t* host) {
   h2_pal_mem_free(mem, host->capability_routes);
   h2_pal_mem_free(mem, host->capabilities);
   h2_pal_mem_free(mem, host->capability_requests);
+  h2_pal_mem_free(mem, host->display_framebuffer);
   destroy_host_atomics(host);
   h2_pal_mem_free(mem, host);
   return H2_PAL_OK;

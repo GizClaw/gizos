@@ -1119,6 +1119,7 @@ static void test_display_submission_stop(int borrowed_display) {
   h2_lua_host_config_t config = {.runtime = runtime,
                                  .max_jobs = 1,
                                  .borrow_display = borrowed_display,
+                                 .display_framebuffer_bytes = 8u * 8u * 2u,
                                  .vm_memory_limit_bytes = 2u * 1024u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_register_module(host, "submit_test", test_submission_module,
@@ -3834,6 +3835,7 @@ typedef struct heap_test_mem {
   h2_atomic_size_t pool_allocs;
   size_t pool_bytes;
   size_t max_allocation;
+  size_t post_pool_max_allocation;
 } heap_test_mem_t;
 
 static void heap_test_mem_init(heap_test_mem_t* mem) {
@@ -3867,6 +3869,8 @@ static void* heap_test_alloc(void* user, size_t size) {
   h2_atomic_fetch_add(&mem->allocs, 1u);
   if (size == mem->pool_bytes) {
     h2_atomic_fetch_add(&mem->pool_allocs, 1u);
+    if (mem->post_pool_max_allocation != 0u)
+      mem->max_allocation = mem->post_pool_max_allocation;
   }
   return header + 1;
 }
@@ -3961,6 +3965,100 @@ static void test_host_allocator(void) {
   h2_runtime_deinit(runtime);
   heap_test_mem_destroy(&runtime_mem);
   heap_test_mem_destroy(&host_mem);
+}
+
+static void test_reserved_display_framebuffer(void) {
+  test_display_reset();
+  s_test_display_fixture.width = s_test_display_fixture.height = 240;
+  h2_runtime_t* runtime = create_runtime();
+  heap_test_mem_t mem = {0};
+  heap_test_mem_init(&mem);
+  const h2_pal_mem_api_t api = {.user = &mem,
+                                .vtable = &heap_test_mem_vtable};
+  h2_lua_host_config_t config = {
+      .runtime = runtime,
+      .allocator = &api,
+      .max_jobs = 2u,
+      .vm_heap_bytes = 1024u * 1024u,
+      .vm_memory_limit_bytes = 512u * 1024u,
+      .execution_timeout_ms = 5000u,
+  };
+  /* Reserving the VM leaves only smaller outer blocks. The same Display
+   * fails lazily, but succeeds when its pixels were reserved first. */
+  for (unsigned reserved = 0u; reserved < 2u; ++reserved) {
+    mem.max_allocation = 0u;
+    mem.pool_bytes = config.vm_heap_bytes;
+    mem.post_pool_max_allocation = 64u * 1024u;
+    config.display_framebuffer_bytes = reserved ? 240u * 240u * 2u : 0u;
+    h2_lua_host_t* host = NULL;
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(s_test_display_fixture.open_count == 0u);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    for (unsigned round = 0u; round < 2u; ++round) {
+      const char* source =
+          round == 0u
+              ? "local d,e=require('display');assert(d,e);"
+                "d.clear('red');d.present()"
+              : "local d,e=require('display');assert(d,e);d.present()";
+      h2_lua_job_id_t id;
+      assert(h2_lua_job_submit_text(host, NULL, "@reserved-display",
+                                    (const uint8_t*)source, strlen(source),
+                                    NULL, 0u, &id) == H2_PAL_OK);
+      run_until_terminal(host, id, 6000u);
+      const h2_lua_job_status_t value = status(host, id);
+      assert(value.state ==
+             (reserved ? H2_LUA_JOB_SUCCEEDED : H2_LUA_JOB_FAILED));
+      if (reserved)
+        assert(s_test_display_fixture.pixels[0] ==
+               (round == 0u ? 0xf800u : 0u));
+      else
+        assert(strstr(value.message, "display open failed: -5") != NULL);
+      h2_pal_result_t result = H2_PAL_ERR_BUSY;
+      for (unsigned wait = 0u; wait < 5000u && result == H2_PAL_ERR_BUSY;
+           ++wait) {
+        result = h2_lua_job_release(host, id);
+        if (result == H2_PAL_ERR_BUSY)
+          assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
+      }
+      assert(result == H2_PAL_OK);
+    }
+    assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
+    heap_test_balanced(&mem);
+    test_display_reset();
+    s_test_display_fixture.width = s_test_display_fixture.height = 240;
+  }
+  mem.max_allocation = mem.post_pool_max_allocation = 0u;
+  config.display_framebuffer_bytes = 2u;
+  h2_lua_host_t* host = NULL;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const char source[] =
+      "local ok,e=pcall(require,'display');"
+      "assert(not ok and e:find('display open failed: -13',1,true))";
+  h2_lua_job_id_t id;
+  assert(h2_lua_job_submit_text(host, NULL, "@display-too-small",
+                                (const uint8_t*)source, sizeof(source) - 1u,
+                                NULL, 0u, &id) == H2_PAL_OK);
+  run_until_terminal(host, id, 6000u);
+  assert(status(host, id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
+  heap_test_balanced(&mem);
+
+  /* Both a refused pixel block and a later refused VM reservation unwind
+   * every allocation made by create. */
+  mem.max_allocation = 120u * 1024u;
+  config.display_framebuffer_bytes = 256u * 1024u;
+  host = (h2_lua_host_t*)&mem;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
+  assert(host == NULL);
+  heap_test_balanced(&mem);
+  config.display_framebuffer_bytes = 240u * 240u * 2u;
+  config.vm_heap_bytes = 4u * 1024u * 1024u;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
+  assert(host == NULL);
+  heap_test_balanced(&mem);
+  h2_runtime_deinit(runtime);
+  heap_test_mem_destroy(&mem);
 }
 
 static void test_reserved_vm_heap(void) {
@@ -4288,6 +4386,7 @@ int main(int argc, char** argv) {
   test_streamed_close_failure();
   test_checked_destroy();
   test_host_allocator();
+  test_reserved_display_framebuffer();
   test_reserved_vm_heap();
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
   test_display_raster2d(0, "libs/lua/tests/quad_batch.lua");

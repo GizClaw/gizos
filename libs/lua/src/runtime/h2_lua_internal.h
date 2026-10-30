@@ -226,6 +226,7 @@ struct h2_lua_host {
   h2_atomic_int_t stopping;
   h2_atomic_int_t joined;
   h2_atomic_int_t display_active;
+  uint16_t* display_framebuffer;
   h2_lua_worker_t* workers;
   h2_pal_mutex_t* jobs_mutex;
   void* vm_heap;
