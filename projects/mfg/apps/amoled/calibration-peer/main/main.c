@@ -99,6 +99,7 @@ static void run_source(void* unused) {
   int started = 0, shutdown = 0;
   uint64_t last_control = 0;
   h2_mfg_aec_packet_t request, response = {0}, last_request = {0};
+  h2_mfg_aec_control_guard_t controls = {0};
   int have_last = 0;
   int16_t probe[H2_MFG_AEC_PROBE_SAMPLES] = {0};
   printf(
@@ -134,6 +135,9 @@ static void run_source(void* unused) {
       int duplicate = have_last &&
                       bytes == (ssize_t)h2_mfg_aec_packet_size(&last_request) &&
                       memcmp(&request, &last_request, (size_t)bytes) == 0;
+      if (!duplicate && !h2_mfg_aec_control_accept(&controls, &request,
+                                                   started || track != NULL))
+        continue;
       if (!duplicate) {
         int control = 0;
         if (request.operation == H2_MFG_AEC_SOURCE_START) {
@@ -206,6 +210,8 @@ static void run_source(void* unused) {
       if (rc == 0) rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
       if (rc == 0 && now - last_control > 40000) {
         rc = stop_source(&track, &started, &meter);
+        /* An expired START must not replay its old successful ACK. */
+        have_last = 0;
         printf("H2_MFG_AEC_PEER_LEASE_EXPIRED cleanup=%d\n", rc);
         fflush(stdout);
       }

@@ -3,6 +3,9 @@
 #include "h2_desktop_platform.h"
 #include "h2_sqlite.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <inttypes.h>
 #include <pthread.h>

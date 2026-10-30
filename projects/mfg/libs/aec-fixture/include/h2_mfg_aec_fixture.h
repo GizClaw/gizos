@@ -16,7 +16,8 @@ enum {
   H2_MFG_AEC_SOURCE_START = 1,
   H2_MFG_AEC_SOURCE_SHUTDOWN = 2,
   H2_MFG_AEC_SOURCE_ACK = 0x80,
-  H2_MFG_AEC_PROBE_SAMPLES = 512
+  H2_MFG_AEC_PROBE_SAMPLES = 512,
+  H2_MFG_AEC_MAX_RUNS = 256
 };
 
 typedef struct h2_mfg_aec_packet {
@@ -62,6 +63,36 @@ static inline int h2_mfg_aec_packet_valid(const h2_mfg_aec_packet_t* p,
 static inline void h2_mfg_aec_packet_seal(h2_mfg_aec_packet_t* p) {
   p->magic = H2_MFG_AEC_FIXTURE_MAGIC;
   p->checksum = h2_mfg_aec_packet_checksum(p);
+}
+
+typedef struct h2_mfg_aec_control_guard {
+  uint64_t runs[H2_MFG_AEC_MAX_RUNS];
+  size_t run_count;
+  uint32_t sequence;
+} h2_mfg_aec_control_guard_t;
+
+/* Call only for a validated request which is not the exact cached duplicate.
+ * A run uses a unique nonce and increasing, nonzero sequences. Keep retired
+ * nonces for the peer's whole lifetime: switching runs must not make delayed
+ * START/STOP packets current again. Fail closed when history is full; never
+ * evict replay protection. A new run starts at sequence 1 with audio stopped.
+ */
+static inline int h2_mfg_aec_control_accept(h2_mfg_aec_control_guard_t* guard,
+                                            const h2_mfg_aec_packet_t* request,
+                                            int source_active) {
+  uint64_t run = ((uint64_t)request->run_hi << 32) | request->run_lo;
+  if (guard->run_count != 0 && guard->runs[guard->run_count - 1] == run) {
+    if (request->sequence <= guard->sequence) return 0;
+  } else {
+    if (source_active || request->sequence != 1 ||
+        guard->run_count == H2_MFG_AEC_MAX_RUNS)
+      return 0;
+    for (size_t i = 0; i < guard->run_count; ++i)
+      if (guard->runs[i] == run) return 0;
+    guard->runs[guard->run_count++] = run;
+  }
+  guard->sequence = request->sequence;
+  return 1;
 }
 
 #endif

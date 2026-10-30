@@ -2,6 +2,9 @@
 #include "h2_desktop_platform.h"
 
 /* Shared camera, magnetometer, battery and vibration acceptance checks. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <string.h>
 

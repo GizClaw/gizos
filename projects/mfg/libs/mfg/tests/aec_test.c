@@ -1,6 +1,9 @@
 #include "../src/h2_mfg_internal.h"
 #include "h2_desktop_platform.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <string.h>
 

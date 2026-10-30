@@ -32,6 +32,8 @@
 
 #include <stdalign.h>
 #include "h2_atomic.h"
+#include "h2_corehttp.h"
+#include "h2_encoding.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -167,7 +169,8 @@ static int fixture_body(void* user, const h2_pal_http_request_t* request,
 /* Read-only setup: warm real DNS/TLS before registering any test identity.
  * These are readiness observations; the suite still asserts actual business
  * operations and the full audio payload/Track lifecycle afterwards. */
-static int network_fixture_ready(h2_runtime_t* runtime) {
+static int network_fixture_probe(h2_runtime_t* runtime,
+                                 const h2_pal_http_api_t* http) {
   char info[160];
   int size = snprintf(info, sizeof(info), "http://%s/server-info",
                       h2_gizclaw_e2e_fixture_endpoint());
@@ -189,7 +192,7 @@ static int network_fixture_ready(h2_runtime_t* runtime) {
     };
     h2_pal_http_response_t response;
     h2_pal_http_response_reset(&response);
-    int rc = h2_pal_http_request(runtime->http, &request, &response);
+    int rc = h2_pal_http_request(http, &request, &response);
     /* The unauthenticated API root may return 401/404; we require its verified
      * HTTP response, not a successful privileged operation. */
     if (rc == H2_PAL_OK &&
@@ -198,10 +201,41 @@ static int network_fixture_ready(h2_runtime_t* runtime) {
       rc = H2_PAL_ERR_IO;
     printf("H2_GIZCLAW_SETUP network_fixture=%u http=%d rc=%d\n", i,
            response.status_code, rc);
-    h2_pal_http_response_free(runtime->http, &response);
+    h2_pal_http_response_free(http, &response);
     if (rc != H2_PAL_OK) return rc;
   }
   return H2_PAL_OK;
+}
+
+/* Match the case HTTP client trust roots during the pre-registration probe. */
+static int network_fixture_ready(h2_runtime_t* runtime) {
+  const char* hex = h2_gizclaw_e2e_fixture_root_ca_hex();
+  if (!hex || !*hex) return network_fixture_probe(runtime, runtime->http);
+  size_t length = strlen(hex), capacity = 0u, decoded = 0u;
+  if (length > 32768u || length % 2u ||
+      h2_encoding_max_decoded_len(&h2_encoding_hex, length, &capacity) !=
+          H2_ENCODING_OK)
+    return H2_PAL_ERR_INVALID_ARG;
+  uint8_t* pem = h2_pal_mem_alloc(runtime->mem, capacity);
+  if (!pem) return H2_PAL_ERR_NO_MEMORY;
+  int rc = h2_encoding_decode(&h2_encoding_hex, hex, length, pem, capacity,
+                              &decoded) == H2_ENCODING_OK
+               ? H2_PAL_OK
+               : H2_PAL_ERR_INVALID_ARG;
+  h2_corehttp_t* owned = NULL;
+  h2_pal_http_api_t http = {0};
+  h2_corehttp_config_t settings = {.allocator = runtime->mem,
+                                   .net = runtime->net,
+                                   .time = runtime->time,
+                                   .log = runtime->log,
+                                   .tls_verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
+                                   .root_ca_pem = pem,
+                                   .root_ca_pem_len = decoded};
+  if (rc == H2_PAL_OK) rc = h2_corehttp_create(&settings, &owned, &http);
+  h2_pal_mem_free(runtime->mem, pem);
+  if (rc == H2_PAL_OK) rc = network_fixture_probe(runtime, &http);
+  if (owned) h2_corehttp_destroy(owned);
+  return rc;
 }
 
 static int format_summary(const h2_gizclaw_e2e_ws175c_runner_t* runner,

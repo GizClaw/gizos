@@ -262,6 +262,14 @@ an emitted summary or a low total output level alone cannot grant a pass.
 Match every source request to the physical peer's nonce, sequence, UID,
 probe checksum and successful start/stop acknowledgement.
 
+The peer accepts increasing nonzero sequences within each run and replays an
+acknowledgement only for an exact copy of the latest request. Delayed controls
+from earlier sequences or retired run nonces cannot change playback or extend
+its lease. Each new job needs a fresh nonce, starts at sequence 1, and requires
+the previous source to be stopped. Shutdown continues the last job's sequence.
+The peer retains up to 256 run nonces per boot and rejects further new runs
+without evicting old entries; restart the stopped peer before another batch.
+
 Search speaker volume first, then microphone gain within that volume.
 Compare hardware gain steps, preserve failed candidates and repeat boundary
 and selected settings. Results apply to the recorded probe amplitudes and

@@ -254,7 +254,8 @@ static int run(void* user, h2_loader_t* loader,
       (void)h2_pal_time_sleep_ms(c->rt->time, 20);
       continue;
     }
-    c->sequence = 0;
+    /* Shutdown belongs to the last run and must follow its final STOP. */
+    if (pending == 1) c->sequence = 0;
     c->shutting_source = pending == 2;
     c->socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     struct sockaddr_in peer = {.sin_family = AF_INET,

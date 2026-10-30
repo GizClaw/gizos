@@ -1,6 +1,9 @@
 #include "h2_h2loader_host.h"
 #include "h2_bleikcp.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +21,7 @@ typedef struct fixture {
   unsigned disconnects;
   unsigned logs;
   h2_pal_result_t sink_result;
+  h2_pal_result_t disconnect_result;
   int close_result;
   int remote_closes_on_unsubscribe;
   int link_gone;
@@ -62,7 +66,8 @@ static h2_pal_result_t disconnect_ble(void* user, uint16_t handle) {
   fixture_t* f = user;
   assert(handle == 7u);
   ++f->disconnects;
-  if (f->link_gone) return H2_PAL_ERR_IO;
+  if (f->disconnect_result != H2_PAL_OK) return f->disconnect_result;
+  if (f->link_gone) return H2_PAL_ERR_CLOSED;
   f->link_gone = 1;
   return H2_PAL_OK;
 }
@@ -216,7 +221,8 @@ static void check_failure(int fail_mtu, int with_sink, int sink_fails,
   }
 }
 
-static void check_disconnect_retention(int failed_join) {
+static void check_disconnect_retention(int failed_join, int remote_gone,
+                                       int disconnect_fails) {
   fixture_t f = {.board_mismatch = 1, .remote_closes_on_unsubscribe = 1};
   const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
                                              .free = release};
@@ -242,19 +248,31 @@ static void check_disconnect_retention(int failed_join) {
   h2_h2loader_host_ble_connection_t* connection = NULL;
   h2_h2loader_host_status_t status;
   assert(h2_h2loader_host_ble_connect(&config, &connection, &status) == 0);
+  f.link_gone = remote_gone;
+  if (disconnect_fails) {
+    f.disconnect_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_host_ble_disconnect(&connection) == H2_PAL_ERR_IO);
+    assert(connection != NULL && f.frees == 0 && f.closes == 0);
+    f.disconnect_result = H2_PAL_OK;
+  }
   if (failed_join) {
     f.close_result = H2_PAL_ERR_BUSY;
     assert(h2_h2loader_host_ble_disconnect(&connection) == H2_PAL_ERR_BUSY);
-    assert(connection != NULL && f.frees == 0 && f.disconnects == 1);
+    assert(connection != NULL && f.frees == 0 &&
+           f.disconnects == 1u + (unsigned)disconnect_fails);
     f.close_result = 0;
   }
   assert(h2_h2loader_host_ble_disconnect(&connection) == 0);
-  assert(connection == NULL && f.allocations == f.frees && f.disconnects == 1);
+  assert(connection == NULL && f.allocations == f.frees &&
+         f.disconnects == 1u + (unsigned)disconnect_fails);
 }
 
 int main(void) {
-  check_disconnect_retention(0);
-  check_disconnect_retention(1);
+  for (int remote_gone = 0; remote_gone != 2; ++remote_gone) {
+    check_disconnect_retention(0, remote_gone, 0);
+    check_disconnect_retention(1, remote_gone, 0);
+    check_disconnect_retention(0, remote_gone, 1);
+  }
   for (int stage = 0; stage != 2; ++stage) {
     check_failure(stage, 0, 0, 0);
     check_failure(stage, 1, 0, 0);

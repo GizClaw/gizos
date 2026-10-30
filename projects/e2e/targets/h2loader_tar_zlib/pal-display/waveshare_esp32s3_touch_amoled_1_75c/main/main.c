@@ -7,7 +7,9 @@
 #define H2_DISPLAY_CAPTURE_HEADER "h2_ws175c_display_capture.h"
 #endif
 #include H2_DISPLAY_CAPTURE_HEADER
+#ifndef H2_DISPLAY_CAPTURE_CONFIGURE
 #define H2_DISPLAY_CAPTURE_CONFIGURE h2_ws175c_display_capture_configure
+#endif
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"

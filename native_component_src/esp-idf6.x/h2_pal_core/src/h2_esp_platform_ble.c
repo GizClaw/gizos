@@ -2598,8 +2598,9 @@ static h2_pal_result_t h2_esp_ble_indicate(h2_pal_ble_t* ble,
 static h2_pal_result_t h2_esp_ble_disconnect(h2_pal_ble_t* ble,
                                              uint16_t conn_handle) {
   (void)ble;
-  return h2_esp_ble_map_rc(
-      ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM));
+  int rc = ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+  /* Remote reboot/disconnect still permits the caller's local teardown. */
+  return rc == BLE_HS_ENOTCONN ? H2_PAL_ERR_CLOSED : h2_esp_ble_map_rc(rc);
 }
 
 static h2_pal_result_t h2_esp_ble_configure_pairing(
