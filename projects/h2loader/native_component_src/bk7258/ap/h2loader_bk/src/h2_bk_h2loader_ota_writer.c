@@ -510,8 +510,19 @@ int h2_bk_h2loader_managed_app_image_size(uint64_t* out_size) {
        primary->partition_length != trial->partition_length)) {
     return H2_PAL_ERR_NOT_FOUND;
   }
-  /* The managed App image is padded to its own physical Flash window. */
-  *out_size = trial->partition_length;
+  const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
+  if (layout != NULL && layout->app_table) {
+    /* Missing-metadata fallback describes this SDK image's bytes, not the
+     * complete slot capacity: App-owned data can follow the code image. */
+    const bk_logic_partition_t* cp =
+        bk_flash_partition_get_info(BK_PARTITION_APPLICATION);
+    const bk_logic_partition_t* ap =
+        bk_flash_partition_get_info(BK_PARTITION_APPLICATION1);
+    if (cp == NULL || ap == NULL) return H2_PAL_ERR_NOT_FOUND;
+    *out_size = (uint64_t)cp->partition_length + ap->partition_length;
+  } else {
+    *out_size = trial->partition_length;
+  }
   return H2_PAL_OK;
 }
 

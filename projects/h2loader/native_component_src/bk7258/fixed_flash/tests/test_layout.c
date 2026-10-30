@@ -119,10 +119,38 @@ static void test_relay_head_offset(void) {
   assert(h2_fixed_relay_head_offset(KIB(2380), KIB(2448), head, &offset) == -1);
 }
 
+static void test_app_owned_data_tail(void) {
+  h2_fixed_layout_t loader, app;
+  tables((board_t){2448u, 1156u, 1156u}, &loader, &app);
+  const h2_fixed_window_t flags = {0x75f000u, KIB(4)};
+  assert(h2_fixed_layout_complete_app_window(&loader, flags));
+  app.app.size -= KIB(68);
+  const uint32_t code_size = app.app.size;
+  assert(h2_fixed_layout_complete_app_window(&app, flags));
+  assert(app.app.size == loader.app.size &&
+         app.app.size == code_size + KIB(68));
+
+  h2_fixed_layout_t unchanged = app;
+  /* Reject flags inside code, a misaligned logical slot and flags overlapping
+   * the separate boot request. Each rejected input preserves the old layout. */
+  assert(!h2_fixed_layout_complete_app_window(
+      &app, (h2_fixed_window_t){flags.offset - KIB(68), KIB(4)}));
+  assert(!h2_fixed_layout_complete_app_window(
+      &app, (h2_fixed_window_t){flags.offset + KIB(4), KIB(4)}));
+  assert(!h2_fixed_layout_complete_app_window(
+      &app, (h2_fixed_window_t){flags.offset, KIB(132)}));
+  assert(!h2_fixed_layout_complete_app_window(
+      &app, (h2_fixed_window_t){flags.offset, 0u}));
+  assert(app.app.size == unchanged.app.size);
+  loader.app.size -= KIB(68);
+  assert(!h2_fixed_layout_complete_app_window(&loader, flags));
+}
+
 int main(void) {
   test_relay_head_offset();
   test_board_owned_sizes();
   test_rejects_non_fixed_tables();
   test_request_follows_layout();
+  test_app_owned_data_tail();
   return 0;
 }

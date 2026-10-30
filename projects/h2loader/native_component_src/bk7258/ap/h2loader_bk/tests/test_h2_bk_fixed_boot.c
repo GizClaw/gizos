@@ -410,6 +410,40 @@ static void test_board_owned_loader_size(void) {
          h2_bk_fixed_next_app());
 }
 
+static void test_app_data_tail_keeps_loader_boot_record(void) {
+  cp = (bk_logic_partition_t){LOADER_OFFSET, LOADER_CP};
+  ap = (bk_logic_partition_t){LOADER_OFFSET + LOADER_CP,
+                              LOADER_SIZE - LOADER_CP};
+  s_app = (bk_logic_partition_t){APP_OFFSET, APP_SIZE};
+  native_slot = 0u;
+  memset(request_sector, 0xff, sizeof(request_sector));
+  memset(native_sector, 0xff, sizeof(native_sector));
+  put_app_window_image(APP_OFFSET);
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
+  assert(cp_boot());
+
+  /* The App reserves a data tail before the native execution flags. Its code
+   * partitions shrink, but the installed Loader still owns the same slot. */
+  cp = (bk_logic_partition_t){APP_OFFSET, LOADER_CP};
+  ap = (bk_logic_partition_t){APP_OFFSET + LOADER_CP,
+                              APP_SIZE - LOADER_CP - 68u * 1024u};
+  s_app = (bk_logic_partition_t){LOADER_OFFSET, LOADER_SIZE};
+  assert(h2_bk_fixed_layout_active());
+  assert(h2_bk_fixed_layout()->app.size == APP_SIZE);
+  assert(h2_bk_fixed_app_failed());
+  assert(h2_bk_fixed_confirm_app() == H2_PAL_OK);
+  h2_fixed_boot_request_t record;
+  memcpy(&record, request_sector, sizeof(record));
+  assert(record.confirmed == 0u && record.app_size == APP_SIZE);
+  assert(h2_bk_fixed_next_app());
+
+  cp = (bk_logic_partition_t){LOADER_OFFSET, LOADER_CP};
+  ap = (bk_logic_partition_t){LOADER_OFFSET + LOADER_CP,
+                              LOADER_SIZE - LOADER_CP};
+  s_app = (bk_logic_partition_t){APP_OFFSET, APP_SIZE};
+  assert(h2_bk_fixed_next_app() && !h2_bk_fixed_app_failed());
+}
+
 int main(void) {
   put_app_window_image(APP_OFFSET);
   test_confirmed_app_boots_without_writes();
@@ -421,6 +455,7 @@ int main(void) {
   test_role_read_failure_does_not_select_boot();
   test_relay_head_shares_image_sector();
   test_board_owned_loader_size();
+  test_app_data_tail_keeps_loader_boot_record();
   test_app_layout_slot();
   return 0;
 }

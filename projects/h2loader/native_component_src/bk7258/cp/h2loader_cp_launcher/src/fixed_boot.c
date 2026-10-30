@@ -42,6 +42,8 @@ void h2loader_cp_try_fixed_app(void) {
           partition_window(BK_PARTITION_APPLICATION1),
           partition_window(BK_PARTITION_S_APP),
           partition_window(BK_PARTITION_H2_BOOT_REQUEST), &layout) ||
+      !h2_fixed_layout_complete_app_window(
+          &layout, partition_window(BK_PARTITION_OTA_FINA_EXECUTIVE)) ||
       layout.app_table)
     return;
   if (bk_flash_read_bytes(layout.control_offset, (uint8_t*)&request,

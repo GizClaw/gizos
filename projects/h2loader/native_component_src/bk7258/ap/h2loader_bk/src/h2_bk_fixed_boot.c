@@ -44,13 +44,18 @@ const h2_fixed_layout_t* h2_bk_fixed_layout(void) {
    * h2_boot_request partition is not a fixed layout. */
 #ifdef BK_PARTITION_H2_BOOT_REQUEST
   static h2_fixed_layout_t layout;
-  return h2_fixed_layout_from_partitions(
-             partition_window(BK_PARTITION_APPLICATION),
-             partition_window(BK_PARTITION_APPLICATION1),
-             partition_window(BK_PARTITION_S_APP),
-             partition_window(BK_PARTITION_H2_BOOT_REQUEST), &layout)
-             ? &layout
-             : NULL;
+  h2_fixed_layout_t candidate;
+  if (!h2_fixed_layout_from_partitions(
+          partition_window(BK_PARTITION_APPLICATION),
+          partition_window(BK_PARTITION_APPLICATION1),
+          partition_window(BK_PARTITION_S_APP),
+          partition_window(BK_PARTITION_H2_BOOT_REQUEST), &candidate) ||
+      !h2_fixed_layout_complete_app_window(
+          &candidate, partition_window(BK_PARTITION_OTA_FINA_EXECUTIVE)))
+    return NULL;
+  /* Do not publish the intermediate, code-only App extent. */
+  layout = candidate;
+  return &layout;
 #else
   return NULL;
 #endif
