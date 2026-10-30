@@ -54,13 +54,13 @@ export H2LOADER_WIFI_PASSWORD="private-password"
 SDK commit、编译器和安装流程由 `tools/gizos` 的版本清单维护，GizOS 的 native version 文件独立校验构建兼容性。所有 worktree 共用一个安装目录；不同 SDK 源码版本并存，相同的编译器版本复用。源码内使用：
 
 ```sh
-bun tools/gizos/src/cli.ts setup idf 6.2
-bun tools/gizos/src/cli.ts env idf 6.2
-eval "$(bun tools/gizos/src/cli.ts env idf 6.2 --shell sh)"
+bun tools/gizos/src/cli.ts setup esp-idf 6.2
+bun tools/gizos/src/cli.ts env esp-idf 6.2
+eval "$(bun tools/gizos/src/cli.ts env esp-idf 6.2 --shell sh)"
 make cfg-doctor
 ```
 
-发布 npm 包后可将 `bun tools/gizos/src/cli.ts` 替换为 `bunx @gizclaw/gizos`。`env` 默认显示位置，`env bk` 显示 BK SDK/编译器路径；`env --json` 便于脚本读取。`config set root /path/on/shared/disk` 配置共享存储；`upgrade` 只更新管理器。完整命令见 `tools/gizos/README.md`。
+发布 npm 包后可将 `bun tools/gizos/src/cli.ts` 替换为 `bunx @gizclaw/gizos`。`env` 默认显示位置，`env bk_avdk_smp` 显示 BK SDK/编译器路径；`env --json` 便于脚本读取。`config set root /path/on/shared/disk` 配置共享存储；`upgrade` 只更新管理器。完整命令见 `tools/gizos/README.md`。
 
 BK Loader 由工具箱安装，JieLi SDK/工具从授权来源获取；npm 包不包含厂商二进制。下表描述 consumer 所需的变量，缺失 optional target 不影响公开 ESP/BK 环境安装：
 

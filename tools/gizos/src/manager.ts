@@ -26,6 +26,8 @@ export type Sdk = {
 };
 export type Installation = {
   schema: 1;
+  name?: string;
+  repository?: string;
   kind: Kind;
   version: string;
   commit: string;
@@ -73,16 +75,32 @@ function markPaths(environment: Env, baseline: Env): Env {
 }
 
 export function kind(value: string): Kind {
+  value = value.toLowerCase();
   if (value === "esp" || value === "idf") return "idf";
   if (value === "bk" || value === "bk7258") return "bk";
   if (["ac695n", "ac707n", "ac791n"].includes(value)) return value as Kind;
   throw new Error(`Unknown SDK ${value}; run gizos list`);
 }
 
+export function sdkName(sdk: Sdk): string {
+  const name = basename(sdk.repository.replace(/\/$/, "").replace(/\.git$/, ""));
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) throw new Error("Invalid SDK repository name");
+  return name;
+}
+
+export function sdkChoices(name?: string, entries: Sdk[] = catalog.sdks): Sdk[] {
+  if (!name) return entries;
+  const named = entries.filter(sdk => sdkName(sdk).toLowerCase() === name.toLowerCase());
+  return named.length ? named : entries.filter(sdk => sdk.kind === kind(name));
+}
+
 export function selectSdk(name: string, version: string, entries: Sdk[] = catalog.sdks): Sdk {
-  const family = kind(name);
-  const sdk = entries.find(item => item.kind === family && item.version === version);
-  if (!sdk) throw new Error(`Unsupported ${family} version ${version}; run gizos list ${family}`);
+  const matches = sdkChoices(name, entries).filter(item => item.version === version);
+  if (matches.length > 1) {
+    throw new Error(`Ambiguous SDK ${name} ${version}; use a repository name: ${matches.map(sdkName).join(", ")}`);
+  }
+  const sdk = matches[0];
+  if (!sdk) throw new Error(`Unsupported ${name} version ${version}; run gizos list ${name}`);
   if (!/^[0-9a-f]{40}$/.test(sdk.commit)) throw new Error("Invalid SDK catalog commit");
   return sdk;
 }
@@ -157,8 +175,9 @@ export class Manager {
 
   get resources(): Resources { return new Resources(this.root, this.command); }
   sdk(name: string, version: string): Sdk { return selectSdk(name, version, this.entries); }
+  sdks(name?: string): Sdk[] { return sdkChoices(name, this.entries); }
   sourcePath(sdk: Sdk): string {
-    return join(this.root, "sdks", sdk.kind, `${sdk.version}-${sdk.commit}`);
+    return join(this.root, "sdks", sdkName(sdk), `${sdk.version}-${sdk.commit}`);
   }
   poolFile(sdk: Sdk): string {
     const version = usesArm(sdk) ? `${catalog.arm.version}-` : "";
@@ -183,20 +202,31 @@ export class Manager {
       : join(this.root, "tools", "arm", `${catalog.arm.version}-${process.platform}-${process.arch}`);
   }
   statePath(sdk: Sdk): string {
-    return join(this.root, "environments", sdk.kind, `${sdk.version}.json`);
+    return join(this.root, "environments", sdkName(sdk), `${sdk.version}.json`);
   }
   async record(sdk: Sdk): Promise<Installation | undefined> {
-    try {
-      const item = JSON.parse(await readFile(this.statePath(sdk), "utf8")) as Installation;
-      if (item.schema !== 1 || item.kind !== sdk.kind || item.version !== sdk.version ||
-          item.commit !== sdk.commit || !isAbsolute(item.sdk) || !isAbsolute(item.tools) ||
-          (item.python !== undefined && !isAbsolute(item.python))) {
-        throw new Error(`Invalid installation record: ${this.statePath(sdk)}`);
+    const paths = [...new Set([
+      this.statePath(sdk), join(this.root, "environments", sdk.kind, `${sdk.version}.json`),
+    ])];
+    for (const path of paths) {
+      try {
+        const item = JSON.parse(await readFile(path, "utf8")) as Installation;
+        // A family record can belong to another explicitly catalogued repository.
+        if (path !== this.statePath(sdk) && item.schema === 1 && item.kind === sdk.kind &&
+            item.version === sdk.version && item.commit !== sdk.commit &&
+            this.entries.some(other => other.kind === sdk.kind && other.version === sdk.version &&
+              other.commit === item.commit && sdkName(other) !== sdkName(sdk))) continue;
+        if (item.schema !== 1 || item.kind !== sdk.kind || item.version !== sdk.version ||
+            item.commit !== sdk.commit || !isAbsolute(item.sdk) || !isAbsolute(item.tools) ||
+            (item.name !== undefined && item.name !== sdkName(sdk)) ||
+            (item.repository !== undefined && typeof item.repository !== "string") ||
+            (item.python !== undefined && !isAbsolute(item.python))) {
+          throw new Error(`Invalid installation record: ${path}`);
+        }
+        return item;
+      } catch (error: any) {
+        if (error.code !== "ENOENT") throw error;
       }
-      return item;
-    } catch (error: any) {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
     }
   }
   async git(path: string, ...args: string[]): Promise<string> {
@@ -303,10 +333,11 @@ export class Manager {
   }
   async setup(sdk: Sdk, options: Options = {}, adopt = false): Promise<Installation> {
     if (!["darwin", "linux"].includes(process.platform)) throw new Error("SDK setup currently supports macOS and Linux");
-    return locked(this.root, `${sdk.kind}-${sdk.version}`, async () => {
+    return locked(this.root, `${sdkName(sdk)}-${sdk.version}`, async () => {
       const previous = await this.record(sdk);
       const item: Installation = {
-        schema: 1, kind: sdk.kind, version: sdk.version, commit: sdk.commit,
+        schema: 1, name: sdkName(sdk), repository: sdk.repository,
+        kind: sdk.kind, version: sdk.version, commit: sdk.commit,
         sdk: options.sdk ? await realpath(resolve(options.sdk)) : previous?.sdk ?? this.sourcePath(sdk),
         tools: options.tools ? await realpath(resolve(options.tools)) : previous?.tools ?? this.toolsPath(sdk),
         // A virtualenv's Python can be a symlink to the host interpreter.
@@ -360,7 +391,7 @@ export class Manager {
   }
   async environment(sdk: Sdk, selected?: Installation, inherited: Env = process.env): Promise<Env> {
     const item = selected ?? await this.record(sdk);
-    if (!item?.ready) throw new Error(`${sdk.kind} ${sdk.version} is not installed; run gizos setup ${sdk.kind} ${sdk.version}`);
+    if (!item?.ready) throw new Error(`${sdkName(sdk)} ${sdk.version} is not installed; run gizos setup ${sdkName(sdk)} ${sdk.version}`);
     await this.verifySource(sdk, item.sdk);
     const baseline = cleanEnvironment(inherited);
     const environment = await this.resources.environment(baseline);
@@ -419,6 +450,7 @@ export class Manager {
     const toolsExist = item && await exists(item.tools) &&
       (sdk.kind !== "idf" || item.python && await exists(item.python));
     return {
+      name: sdkName(sdk), repository: sdk.repository,
       kind: sdk.kind, version: sdk.version, commit: sdk.commit,
       status: !item ? "not installed" : !sourceExists ? "SDK missing"
         : !item.ready ? "sources only" : !toolsExist ? "tools missing" : "installed",

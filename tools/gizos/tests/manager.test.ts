@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, writeFile, rm, chmod, readdir, realpath, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, chmod, readdir, realpath, rename, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir, hostname } from "node:os";
 import {
   Manager, catalog, cleanEnvironment, configFile, configureRoot, dataRoot, defaultRoot,
-  execute, exists, locked, selectSdk, shellEnvironment, upgrade,
+  execute, exists, locked, sdkName, selectSdk, shellEnvironment, upgrade,
   type Sdk, type Command,
 } from "../src/manager";
 
@@ -72,6 +72,8 @@ describe("catalog and shared storage", () => {
     for (const entry of catalog.sdks) expect(entry.commit).toMatch(/^[0-9a-f]{40}$/);
     expect(selectSdk("esp", "6.2").kind).toBe("idf");
     expect(selectSdk("bk7258", "3.1.1").kind).toBe("bk");
+    expect(selectSdk("bk_avdk_smp", "3.1.1")).toBe(selectSdk("bk", "3.1.1"));
+    expect(sdkName(selectSdk("esp-idf", "6.2"))).toBe("esp-idf");
     expect(() => selectSdk("idf", "6.3")).toThrow("Unsupported");
     expect(() => selectSdk("idf", "../../outside")).toThrow("Unsupported");
   });
@@ -94,6 +96,44 @@ describe("catalog and shared storage", () => {
     expect(current.python).not.toBe(older.python);
     expect((await manager.environment(manager.sdk("idf", "6.2"))).ESP_IDF_VERSION).toBe("6.2");
     expect((await manager.environment(manager.sdk("idf", "6.0.3"))).ESP_IDF_VERSION).toBe("6.0");
+  });
+  test("repository identities separate equal family/version labels while preserving legacy records and shared tools", async () => {
+    const { manager, upstream, base, entries } = await fixture();
+    const firstSdk = manager.sdk("bk", "3.1.1");
+    const arm = join(base, "arm");
+    await script(join(arm, "bin/arm-none-eabi-gcc"), "printf '10.3.1\\n'\n");
+    for (const name of ["arm-none-eabi-gcc-ar", "arm-none-eabi-objcopy"]) {
+      await script(join(arm, "bin", name), "exit 0\n");
+    }
+    const first = await manager.setup(firstSdk, { sdk: upstream, tools: arm }, true);
+    const legacy = join(manager.root, "environments/bk/3.1.1.json");
+    await mkdir(join(legacy, ".."), { recursive: true });
+    await rename(manager.statePath(firstSdk), legacy);
+    const legacyItem = { ...first };
+    delete legacyItem.name;
+    delete legacyItem.repository;
+    await writeFile(legacy, JSON.stringify(legacyItem));
+    const original = await readFile(legacy, "utf8");
+    expect((await manager.record(firstSdk))?.sdk).toBe(upstream);
+    const second = join(base, "second-bk-sdk");
+    await mkdir(second);
+    await git(second, "init", "--quiet");
+    await writeFile(join(second, "Makefile"), "# second repository\n");
+    await git(second, "add", ".");
+    await git(second, "commit", "--quiet", "-m", "second SDK");
+    const secondSdk: Sdk = {
+      ...firstSdk, repository: second, default: false, commit: (await git(second, "rev-parse", "HEAD")).trim(),
+    };
+    entries.push(secondSdk);
+    expect(() => manager.sdk("bk", "3.1.1")).toThrow("Ambiguous");
+    expect(manager.sdk("second-bk-sdk", "3.1.1")).toBe(secondSdk);
+    expect(await manager.record(secondSdk)).toBeUndefined();
+    await manager.setup(firstSdk, { sdk: upstream, tools: arm }, true);
+    await manager.setup(secondSdk, { sdk: second, tools: arm }, true);
+    expect(manager.statePath(firstSdk)).not.toBe(manager.statePath(secondSdk));
+    expect((await manager.record(firstSdk))?.tools).toBe((await manager.record(secondSdk))?.tools!);
+    expect((await manager.environment(secondSdk)).BK_SDK_DIR).toBe(second);
+    expect(await readFile(legacy, "utf8")).toBe(original);
   });
 });
 
@@ -259,10 +299,13 @@ describe("CLI discovery", () => {
     const root = join(await directory(), "uninstalled shared root");
     const cli = join(import.meta.dir, "../src/cli.ts");
     const environment = { ...process.env, GIZOS_DEVENV_HOME: root };
-    const output = await execute([process.execPath, cli, "env", "bk", "--json"], { cwd: "/", env: environment });
+    const output = await execute([process.execPath, cli, "env", "bk_avdk_smp", "--json"], { cwd: "/", env: environment });
     const result = JSON.parse(output);
     expect(result.root).toBe(root);
     expect(result.environments[0].kind).toBe("bk");
+    expect(result.environments[0].name).toBe("bk_avdk_smp");
+    expect(result.environments[0].repository).toBe("https://github.com/GizClaw/bk_avdk_smp.git");
+    expect(JSON.parse(await execute([process.execPath, cli, "env", "bk", "--json"], { env: environment }))).toEqual(result);
     expect(result.environments[0].status).toBe("not installed");
     expect(await exists(root)).toBe(false);
     await expect(execute([process.execPath, cli, "setup", "idf", "6.3"], { env: environment })).rejects.toThrow("Unsupported");

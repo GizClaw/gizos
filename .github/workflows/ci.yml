@@ -668,8 +668,8 @@ jobs:
       - name: Fetch catalog-pinned ESP-IDF sources
         shell: bash
         run: |
-          "$GIZOS_BIN" setup idf 6.2 --sources-only
-          "$GIZOS_BIN" env idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
+          "$GIZOS_BIN" setup esp-idf 6.2 --sources-only
+          "$GIZOS_BIN" env esp-idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
           python3 - <<'PYENV'
           import json, os
           item = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "devenv-idf.json")))["environments"][0]
@@ -688,7 +688,7 @@ jobs:
 
       - name: Install catalog-pinned ESP-IDF tools
         shell: bash
-        run: '"$GIZOS_BIN" setup idf 6.2 --targets esp32s3,esp32p4,esp32c5,esp32s31'
+        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5,esp32s31'
 
       - name: Configure Bazel remote cache
         if: vars.BAZEL_REMOTE_CACHE_URL != ''
@@ -747,7 +747,7 @@ jobs:
         env:
           BAZEL_NATIVE_BUILD_JOBS: ${{ matrix.native_build_jobs }}
         run: |
-          eval "$("$GIZOS_BIN" env idf 6.2 --shell bash)"
+          eval "$("$GIZOS_BIN" env esp-idf 6.2 --shell bash)"
           test "$IDF_PATH" = "$H2_ESP_IDF_SDK_ROOT"
           test "$H2LOADER_IDF_PATH" = "$IDF_PATH"
           test "$IDF_TOOLS_PATH" = "$H2_ESP_IDF_TOOLS_ROOT"

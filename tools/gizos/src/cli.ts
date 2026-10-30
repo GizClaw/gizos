@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { dataRoot, configureRoot, configFile, Manager, PACKAGE, catalog, kind, shellEnvironment, upgrade } from "./manager";
+import { dataRoot, configureRoot, configFile, Manager, PACKAGE, catalog, sdkName, shellEnvironment, upgrade } from "./manager";
 import manifest from "../package.json";
 
 declare const GIZOS_VERSION: string;
@@ -19,11 +19,11 @@ Usage:
   gizos --version
 
 Global options: --root <shared-directory>
-SDKs: idf, bk, ac695n, ac707n, ac791n
+SDKs (GitHub repository names): ${[...new Set(catalog.sdks.map(sdkName))].join(", ")}
 Tools: adb, bk-loader, jieli-toolchain, jieli-postbuild
 GIZOS_DEVENV_HOME overrides the configured shared directory.
 setup installs explicit catalog versions; env never installs anything.
-BK setup also installs the catalog's platform executable of bk_loader.
+bk_avdk_smp setup also installs the catalog's platform executable of bk_loader.
 upgrade installs/updates the global gizos command from ${PACKAGE} and preserves SDKs.
 `;
 
@@ -69,8 +69,7 @@ async function main() {
   if (action === "list" || action === "env" && !flags.shell) {
     if (selected && !name) throw new Error("Select an SDK family first");
     const tool = name && resources.isTool(name);
-    const sdks = tool ? [] : selected ? [manager.sdk(name, selected)]
-      : manager.entries.filter(sdk => !name || sdk.kind === kind(name));
+    const sdks = tool ? [] : selected ? [manager.sdk(name, selected)] : manager.sdks(name);
     const tools = !name ? resources.entries : tool
       ? selected ? [resources.select(name, selected)] : resources.entries.filter(tool => tool.kind === name) : [];
     const environments = await Promise.all(sdks.map(sdk => manager.describe(sdk)));
@@ -79,8 +78,9 @@ async function main() {
     else {
       console.log(`Shared directory: ${root}`);
       for (const item of environments) {
-        console.log(`\n${item.kind} ${item.version}: ${item.status}`);
+        console.log(`\n${item.name} ${item.version}: ${item.status}`);
         if (action === "env") {
+          console.log(`  Repository: ${item.repository}`);
           console.log(`  SDK: ${item.sdk}\n  Tools: ${item.tools}`);
           if (item.kind === "idf") console.log(`  Python: ${item.python ?? "not installed"}`);
           if (item.kind === "bk") console.log(`  BK Loader: ${item.loader ?? "not installed"}`);
@@ -107,8 +107,7 @@ async function main() {
   }
   if (!name && !["run", "shell"].includes(action)) throw new Error(`${action} requires an SDK or tool; run gizos --help`);
   const tool = name && resources.isTool(name) ? resources.select(name, selected) : undefined;
-  const family = name && !tool ? kind(name) : undefined;
-  const sdkVersion = selected ?? manager.entries.find(sdk => sdk.kind === family && sdk.default)?.version;
+  const sdkVersion = selected ?? (name && !tool ? manager.sdks(name).find(sdk => sdk.default)?.version : undefined);
   const sdk = !name || tool ? undefined : manager.sdk(name, sdkVersion ?? "");
   if (action === "setup" || action === "adopt") {
     if (!selected) throw new Error(`${action} requires an explicit catalog version`);
@@ -130,7 +129,7 @@ async function main() {
       python: flags.python as string | undefined, sourcesOnly: Boolean(flags["sources-only"]), targets,
       postbuild: flags.postbuild as string | undefined,
     }, action === "adopt");
-    console.log(`${item.kind} ${item.version}: ${item.ready ? "ready" : "sources ready"}\nSDK: ${item.sdk}\nTools: ${item.tools}`);
+    console.log(`${sdkName(sdk!)} ${item.version}: ${item.ready ? "ready" : "sources ready"}\nSDK: ${item.sdk}\nTools: ${item.tools}`);
     if (item.kind === "bk" && item.ready) console.log(`BK Loader: ${(await manager.describe(sdk!)).loader ?? "not installed"}`);
     return;
   }

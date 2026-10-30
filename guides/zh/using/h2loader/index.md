@@ -39,7 +39,7 @@ make cfg-doctor
 GizOS 内的 `tools/gizos` 提供 TypeScript/Bun 管理器，版本清单与 npm 包随 GizOS 一起维护和发布。不同 worktree 共享 SDK/toolchain 安装，位置由管理器配置决定。源码内使用：
 
 ```sh
-bun tools/gizos/src/cli.ts setup idf 6.2
+bun tools/gizos/src/cli.ts setup esp-idf 6.2
 bun tools/gizos/src/cli.ts env
 ```
 

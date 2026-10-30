@@ -121,8 +121,8 @@ jobs:
       - name: Fetch catalog-pinned ESP-IDF sources
         shell: bash
         run: |
-          "$GIZOS_BIN" setup idf 6.2 --sources-only
-          "$GIZOS_BIN" env idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
+          "$GIZOS_BIN" setup esp-idf 6.2 --sources-only
+          "$GIZOS_BIN" env esp-idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
           python3 - <<'PYENV'
           import json, os
           item = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "devenv-idf.json")))["environments"][0]
@@ -141,11 +141,11 @@ jobs:
 
       - name: Install catalog-pinned ESP-IDF tools
         shell: bash
-        run: '"$GIZOS_BIN" setup idf 6.2 --targets esp32s3,esp32p4,esp32c5'
+        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
 
       - name: Build catalog slice
         run: |
-          eval "$("$GIZOS_BIN" env idf 6.2 --shell bash)"
+          eval "$("$GIZOS_BIN" env esp-idf 6.2 --shell bash)"
           test "$IDF_PATH" = "$H2_ESP_IDF_SDK_ROOT"
           test "$H2LOADER_IDF_PATH" = "$IDF_PATH"
           test "$IDF_TOOLS_PATH" = "$H2_ESP_IDF_TOOLS_ROOT"
@@ -274,8 +274,8 @@ jobs:
       - name: Fetch catalog-pinned ESP-IDF sources
         shell: bash
         run: |
-          "$GIZOS_BIN" setup idf 6.2 --sources-only
-          "$GIZOS_BIN" env idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
+          "$GIZOS_BIN" setup esp-idf 6.2 --sources-only
+          "$GIZOS_BIN" env esp-idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
           python3 - <<'PYENV'
           import json, os
           item = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "devenv-idf.json")))["environments"][0]
@@ -294,7 +294,7 @@ jobs:
 
       - name: Install catalog-pinned ESP-IDF tools
         shell: bash
-        run: '"$GIZOS_BIN" setup idf 6.2 --targets esp32s3,esp32p4,esp32c5'
+        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
 
       - name: Install native compiler cache
         run: |
@@ -343,7 +343,7 @@ jobs:
         env:
           WIFI_PASSWORD: ${{ secrets.H2LOADER_WIFI_PASSWORD }}
         run: |
-          eval "$("$GIZOS_BIN" env idf 6.2 --shell bash)"
+          eval "$("$GIZOS_BIN" env esp-idf 6.2 --shell bash)"
           test "$IDF_PATH" = "$H2_ESP_IDF_SDK_ROOT"
           test "$H2LOADER_IDF_PATH" = "$IDF_PATH"
           test "$IDF_TOOLS_PATH" = "$H2_ESP_IDF_TOOLS_ROOT"

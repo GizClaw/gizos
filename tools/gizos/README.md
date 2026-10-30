@@ -21,8 +21,8 @@ Public package downloads require no token.
 After a release has been imported into the registry by Deploy:
 
 ```sh
-bunx @gizclaw/gizos setup idf 6.2
-bunx @gizclaw/gizos setup bk 3.1.1
+bunx @gizclaw/gizos setup esp-idf 6.2
+bunx @gizclaw/gizos setup bk_avdk_smp 3.1.1
 bunx @gizclaw/gizos setup adb 35.0.2
 bunx @gizclaw/gizos env
 ```
@@ -36,18 +36,25 @@ bazel run //tools/gizos:gizos -- env
 
 ## Supported environments
 
+SDK arguments use their GitHub repository names: `bk_avdk_smp`, `esp-idf`,
+`AC695N_Soundbox_SDK`, `e_badge_707_sdk_200` and `fw-AC791N_SDK`. The catalog
+pins the repository URL and exact commit for each version. `env` displays the
+repository together with its installation paths. Existing family aliases
+(`bk`, `idf`, `ac695n`, `ac707n`, `ac791n`) remain accepted for older scripts;
+an ambiguous family/version combination requires an explicit repository name.
+
 | Resource | Preparation | Environment contract |
 | --- | --- | --- |
-| ESP-IDF | `setup idf 6.2` or `setup idf 6.0.3` | SDK-selected compilers, Python and tools; `IDF_PATH`, `IDF_TOOLS_PATH`, `IDF_PYTHON_ENV_PATH`, `H2LOADER_IDF_PATH` |
-| BK7258 | `setup bk 3.1.1` or another exact catalog version | SDK, shared GNU Arm 10.3.1 and BK Loader; `BK7258_PATH`, `BK_SDK_DIR`, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT`, `BK_LOADER_BIN` |
+| ESP-IDF | `setup esp-idf 6.2` or `setup esp-idf 6.0.3` | SDK-selected compilers, Python and tools; `IDF_PATH`, `IDF_TOOLS_PATH`, `IDF_PYTHON_ENV_PATH`, `H2LOADER_IDF_PATH` |
+| BK7258 | `setup bk_avdk_smp 3.1.1` or another exact catalog version | SDK, shared GNU Arm 10.3.1 and BK Loader; `BK7258_PATH`, `BK_SDK_DIR`, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT`, `BK_LOADER_BIN` |
 | BK Loader | Installed with BK setup, or `setup bk-loader 1.1.0.2.post2` | Checksummed host executable from the public `GizClaw/bk_loader` Release; `BK_LOADER_BIN` and `bk_loader` on PATH |
 | ADB | `setup adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
-| JieLi SDKs | `setup ac695n`, `ac707n` or `ac791n` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
+| JieLi SDKs | `setup AC695N_Soundbox_SDK`, `setup e_badge_707_sdk_200` or `setup fw-AC791N_SDK` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
 | JieLi tools | Installed with a JieLi SDK, or `setup jieli-toolchain 20250805.1` and `setup jieli-postbuild 20260728.1` | `JIELI_TOOLCHAIN_ROOT`, `JIELI_POSTBUILD_ROOT` |
 
 `list` shows all catalog versions and their installation status. `env` displays
 installation directories, executable paths and PATH entries; it never installs
-anything. `env bk` also shows the selected loader. `--json` provides the same
+anything. `env bk_avdk_smp` also shows the selected loader. `--json` provides the same
 information to scripts. Individual resources can be inspected with
 `gizos env bk-loader` or `gizos env adb`.
 
@@ -64,14 +71,14 @@ shared store. Vendor binaries are not embedded in the npm package.
 
 ## BK Loader installation
 
-`setup bk <sdk-version>` also installs the default BK Loader. The toolbox
+`setup bk_avdk_smp <sdk-version>` also installs the default BK Loader. The toolbox
 selects the macOS arm64/x86_64 or Linux arm64/x86_64 archive from the public
 `GizClaw/bk_loader` Release and verifies both archive and executable SHA-256
 against its bundled catalog. Repeated setup and different BK SDK versions reuse
 the same installed loader. `--sources-only` and `adopt` do not download it.
 
 ```sh
-bunx @gizclaw/gizos setup bk 3.1.1
+bunx @gizclaw/gizos setup bk_avdk_smp 3.1.1
 bunx @gizclaw/gizos env bk-loader
 bunx @gizclaw/gizos run -- bk_loader --version
 bunx @gizclaw/gizos run -- bk_loader tools selftest
@@ -112,12 +119,16 @@ State is independent of the invoking worktree and bunx's package cache.
 
 The toolbox owns `src/catalog.json`. Unknown versions are rejected; setup never
 falls back to master or latest. SDK labels are immutable: a changed commit gets
-a new version/revision. The existing GizOS `bk 3.1.1` pin is retained. The newer
+a new version/revision. The existing GizOS `bk_avdk_smp 3.1.1` pin is retained. The newer
 Firmwares commit `d789d71d89d11584c3350ca67600ff9455a7f57a` is available as
 `3.1.1-rd789d71`; select it explicitly when the consumer requires that revision.
 Consumers independently validate SDK/toolchain compatibility.
 
-Source revisions coexist under `sdks/`. IDF versions share compiler downloads
+Source revisions and installation records are keyed by repository name and
+version. Legacy family records are still read, and setup registers their
+existing paths under the repository name without moving or copying payloads.
+Different repositories can use the same version label independently.
+IDF versions share compiler downloads
 and family/version directories, with separate versioned Python environments.
 BK versions share the same GNU Arm installation. Cross-process locks serialize
 installations; modified SDKs and invalid existing tools are preserved and
@@ -127,9 +138,9 @@ rejected rather than overwritten.
 
 ```sh
 eval "$(bunx @gizclaw/gizos env --shell zsh)"
-eval "$(bunx @gizclaw/gizos env idf 6.2 --shell zsh)"
-bunx @gizclaw/gizos shell bk 3.1.1
-bunx @gizclaw/gizos run idf 6.2 -- bazel build --config=esp32s3 //path:target
+eval "$(bunx @gizclaw/gizos env esp-idf 6.2 --shell zsh)"
+bunx @gizclaw/gizos shell bk_avdk_smp 3.1.1
+bunx @gizclaw/gizos run esp-idf 6.2 -- bazel build --config=esp32s3 //path:target
 bunx @gizclaw/gizos run -- bk_loader --help
 ```
 
@@ -150,8 +161,8 @@ explicit locators instead of selecting an arbitrary compiler family on PATH.
 Adopt existing payloads without moving or downloading them:
 
 ```sh
-bunx @gizclaw/gizos adopt idf 6.2 --sdk /existing/idf --tools /existing/idf-tools
-bunx @gizclaw/gizos adopt bk 3.1.1 --sdk /existing/bk --tools /existing/gnu-arm
+bunx @gizclaw/gizos adopt esp-idf 6.2 --sdk /existing/idf --tools /existing/idf-tools
+bunx @gizclaw/gizos adopt bk_avdk_smp 3.1.1 --sdk /existing/bk --tools /existing/gnu-arm
 bunx @gizclaw/gizos adopt adb 35.0.2 --path /existing/android-platform-tools-35.0.2
 bunx @gizclaw/gizos adopt jieli-toolchain 20250805.1 --path /existing/jieli-toolchain
 bunx @gizclaw/gizos adopt jieli-postbuild 20260728.1 --path /existing/jieli-postbuild

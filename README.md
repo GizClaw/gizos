@@ -97,10 +97,10 @@ Configure the GizClaw registry in `~/.npmrc` (or `$XDG_CONFIG_HOME/.npmrc` when
 After the package has been published through Deploy's registry import:
 
 ```sh
-bunx @gizclaw/gizos setup idf 6.2
-bunx @gizclaw/gizos setup bk 3.1.1
+bunx @gizclaw/gizos setup esp-idf 6.2
+bunx @gizclaw/gizos setup bk_avdk_smp 3.1.1
 bunx @gizclaw/gizos setup adb 35.0.2
-bunx @gizclaw/gizos env bk
+bunx @gizclaw/gizos env bk_avdk_smp
 bun add --global @gizclaw/gizos
 gizos upgrade
 ```
