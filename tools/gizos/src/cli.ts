@@ -23,6 +23,7 @@ SDKs: idf, bk, ac695n, ac707n, ac791n
 Tools: adb, bk-loader, jieli-toolchain, jieli-postbuild
 GIZOS_DEVENV_HOME overrides the configured shared directory.
 setup installs explicit catalog versions; env never installs anything.
+BK setup also installs the catalog's platform executable of bk_loader.
 upgrade installs/updates the global gizos command from ${PACKAGE} and preserves SDKs.
 `;
 
@@ -82,7 +83,7 @@ async function main() {
         if (action === "env") {
           console.log(`  SDK: ${item.sdk}\n  Tools: ${item.tools}`);
           if (item.kind === "idf") console.log(`  Python: ${item.python ?? "not installed"}`);
-          if (item.kind === "bk") console.log(`  BK Loader: ${item.loader ?? "not configured (optional)"}`);
+          if (item.kind === "bk") console.log(`  BK Loader: ${item.loader ?? "not installed"}`);
           if (item.path.length) console.log(`  PATH: ${item.path.join(":")}`);
         }
       }
@@ -130,6 +131,7 @@ async function main() {
       postbuild: flags.postbuild as string | undefined,
     }, action === "adopt");
     console.log(`${item.kind} ${item.version}: ${item.ready ? "ready" : "sources ready"}\nSDK: ${item.sdk}\nTools: ${item.tools}`);
+    if (item.kind === "bk" && item.ready) console.log(`BK Loader: ${(await manager.describe(sdk!)).loader ?? "not installed"}`);
     return;
   }
   const environment = tool ? await manager.toolEnvironment(tool)

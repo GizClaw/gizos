@@ -23,7 +23,6 @@ After a release has been imported into the registry by Deploy:
 ```sh
 bunx @gizclaw/gizos setup idf 6.2
 bunx @gizclaw/gizos setup bk 3.1.1
-bunx @gizclaw/gizos setup bk-loader 1.1.0.2.post1
 bunx @gizclaw/gizos setup adb 35.0.2
 bunx @gizclaw/gizos env
 ```
@@ -40,8 +39,8 @@ bazel run //tools/gizos:gizos -- env
 | Resource | Preparation | Environment contract |
 | --- | --- | --- |
 | ESP-IDF | `setup idf 6.2` or `setup idf 6.0.3` | SDK-selected compilers, Python and tools; `IDF_PATH`, `IDF_TOOLS_PATH`, `IDF_PYTHON_ENV_PATH`, `H2LOADER_IDF_PATH` |
-| BK7258 | `setup bk 3.1.1` or another exact catalog version | `BK7258_PATH`, `BK_SDK_DIR`, shared GNU Arm 10.3.1, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT` |
-| BK Loader | `setup bk-loader 1.1.0.2.post1` | Public Python source from `GizClaw/bk_loader`; `BK_LOADER_BIN` and `bk_loader` on PATH |
+| BK7258 | `setup bk 3.1.1` or another exact catalog version | SDK, shared GNU Arm 10.3.1 and BK Loader; `BK7258_PATH`, `BK_SDK_DIR`, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT`, `BK_LOADER_BIN` |
+| BK Loader | Installed with BK setup, or `setup bk-loader 1.1.0.2.post2` | Checksummed host executable from the public `GizClaw/bk_loader` Release; `BK_LOADER_BIN` and `bk_loader` on PATH |
 | ADB | `setup adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
 | JieLi SDKs | `setup ac695n`, `ac707n` or `ac791n` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
 | JieLi tools | Installed with a JieLi SDK, or `setup jieli-toolchain 20250805.1` and `setup jieli-postbuild 20260728.1` | `JIELI_TOOLCHAIN_ROOT`, `JIELI_POSTBUILD_ROOT` |
@@ -63,24 +62,38 @@ LFS access to their pinned vendor asset repositories. The toolbox retrieves
 only the selected assets, checks their commits/checksums and keeps them in the
 shared store. Vendor binaries are not embedded in the npm package.
 
-## BK Loader source installation
+## BK Loader installation
 
-The default loader comes from the public `GizClaw/bk_loader` repository at an
-exact catalog commit. It is Python, installed with its pinned dependencies into
-a shared Python environment. Flutter is not required. The source package's
-flash database and configuration work from any calling directory.
+`setup bk <sdk-version>` also installs the default BK Loader. The toolbox
+selects the macOS arm64/x86_64 or Linux arm64/x86_64 archive from the public
+`GizClaw/bk_loader` Release and verifies both archive and executable SHA-256
+against its bundled catalog. Repeated setup and different BK SDK versions reuse
+the same installed loader. `--sources-only` and `adopt` do not download it.
 
 ```sh
-bunx @gizclaw/gizos setup bk-loader 1.1.0.2.post1
+bunx @gizclaw/gizos setup bk 3.1.1
 bunx @gizclaw/gizos env bk-loader
 bunx @gizclaw/gizos run -- bk_loader --version
+bunx @gizclaw/gizos run -- bk_loader tools selftest
 ```
 
-The source covers ordinary BK7258 CLI operations. The newer vendor reference
+The loader is written in Python. Its own Release freezes the interpreter,
+dependencies, flash database and runtime configuration into one executable;
+end users do not need pip or a separate loader Python environment. That Release
+builds macOS arm64/x86_64, Linux arm64/x86_64 and Windows x86_64 artifacts.
+GizOS SDK setup currently supports macOS and Linux. The loader's upstream
+version banner remains `bk_loader.py,v1.1.0.2`; the Release/package revision
+`1.1.0.2.post2` is reported by `tools selftest`.
+
+For source development the previous `bk-loader 1.1.0.2.post1` catalog entry
+remains available at its immutable source commit and installs into a private
+Python environment. It is not the default distributed loader.
+
+The maintained source covers ordinary BK7258 CLI operations. The newer vendor reference
 application has additional secure-debug and key-injection orchestration that
 has not been reconstructed. Its macOS arm64 installation can be explicitly
 adopted as `bk-loader 4.0.2+260129055`; the entire directory, including
-`_internal`, must remain present. Source-level tests and command discovery do
+`_internal`, must remain present. Binary self-tests and command discovery do
 not establish physical-device flashing acceptance.
 
 ## Shared storage and versions
@@ -146,7 +159,9 @@ bunx @gizclaw/gizos adopt jieli-postbuild 20260728.1 --path /existing/jieli-post
 
 `--sdk` is the Git checkout root; an SDK's internal `SDK/` directory is selected
 by the catalog. `--path` is a standalone tool's complete installation directory.
-For a source loader it is the Python environment directory. JieLi SDK adoption
+For the native loader it is the extracted archive root containing
+`bin/bk_loader`; for the legacy source loader it is the Python environment
+directory. JieLi SDK adoption
 uses the registered shared tools, or accepts `--tools` and `--postbuild` paths.
 `--python /path/to/python` selects an existing IDF Python environment explicitly.
 Adopted payloads remain external and must be retained while referenced.

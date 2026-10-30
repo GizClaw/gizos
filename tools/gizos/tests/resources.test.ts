@@ -77,13 +77,13 @@ test("adoption validates a complete loader and exports its executable and PATH w
 
 test("the source loader exports its runnable launcher without putting its private Python on PATH", async () => {
   const root = await directory();
-  const tool = tools.find(tool => tool.kind === "bk-loader" && tool.default)!;
+  const tool = tools.find(tool => tool.kind === "bk-loader" && tool.version === "1.1.0.2.post1")!;
   const external = join(root, "python environment");
   await script(join(external, "bin/python"), "exit 0\n");
   await script(join(external, "commands/bk_loader"), "printf 'bk_loader.py,v1.1.0.2\\n'\n");
   const resources = new Resources(join(root, "shared"), command, [tool]);
   await resources.setup(tool, external);
-  const environment = await resources.environment({ PATH: "/usr/bin:/bin" });
+  const environment = await resources.environment({ PATH: "/usr/bin:/bin" }, tool);
   expect(environment.PATH).not.toContain(join(external, "bin"));
   const output = await execute(["sh", "-c", '"$BK_LOADER_BIN" --version; command -v bk_loader'], { env: environment });
   expect(output).toBe(`bk_loader.py,v1.1.0.2\n${environment.BK_LOADER_BIN}`);
@@ -144,6 +144,62 @@ test("verified archives install atomically and repeated setup reuses the shared 
     expect((await resources.setup(tool)).root).toBe(first.root);
     expect(downloads).toBe(1);
     expect(await readFile(join(first.root, "_internal/runtime"), "utf8")).toBe("runtime");
+  } finally { server.stop(true); }
+});
+
+test("BK setup installs a checked native loader once while adoption and sources-only setup do not download", async () => {
+  const root = await directory();
+  const upstream = join(root, "sdk");
+  await mkdir(upstream);
+  await writeFile(join(upstream, "Makefile"), "# fixture\n");
+  const git = (...args: string[]) => command([
+    "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-C", upstream, ...args,
+  ]);
+  await git("init", "--quiet");
+  await git("add", ".");
+  await git("commit", "--quiet", "-m", "sdk fixture");
+  const sdk = {
+    kind: "bk" as const, version: "fixture", default: true, repository: upstream,
+    commit: (await git("rev-parse", "HEAD")).trim(), requiredFile: "Makefile",
+  };
+  const arm = join(root, "arm");
+  await script(join(arm, "bin/arm-none-eabi-gcc"), "printf '10.3.1\\n'\n");
+  for (const name of ["arm-none-eabi-gcc-ar", "arm-none-eabi-objcopy"]) {
+    await script(join(arm, "bin", name), "exit 0\n");
+  }
+  const entry = join(root, "payload/bin/bk_loader");
+  await script(entry, "printf 'fixture-loader\\n'\n");
+  const archive = join(root, "loader.tar.gz");
+  await execute(["tar", "-czf", archive, "-C", join(root, "payload"), "."]);
+  const bytes = await readFile(archive);
+  const digest = (data: Uint8Array) => createHash("sha256").update(data).digest("hex");
+  let downloads = 0;
+  const server = Bun.serve({ port: 0, fetch: () => { downloads++; return new Response(bytes); } });
+  try {
+    const tool: Tool = {
+      ...loader(), requiredFiles: ["bin/bk_loader"], executable: "bin/bk_loader",
+      exports: { BK_LOADER_BIN: "bin/bk_loader" }, path: ["bin"],
+      hosts: { any: {
+        url: `http://127.0.0.1:${server.port}/loader.tar.gz`, sha256: digest(bytes),
+        executableSha256: digest(await readFile(entry)), format: "tar",
+      } },
+    };
+    const resources = new Resources(join(root, "shared"), command, [tool]);
+    class BkManager extends Manager {
+      override get resources() { return resources; }
+    }
+    const manager = new BkManager(resources.root, command, [sdk]);
+    await manager.setup(sdk, { sdk: upstream, tools: arm }, true);
+    await manager.setup(sdk, { sourcesOnly: true });
+    expect(downloads).toBe(0);
+    await manager.setup(sdk);
+    await manager.setup(sdk);
+    expect(downloads).toBe(1);
+    const environment = await manager.environment(sdk, undefined, { PATH: "/usr/bin:/bin" });
+    expect(await execute(["sh", "-c", "command -v bk_loader; bk_loader --version"], { env: environment }))
+      .toBe(`${environment.BK_LOADER_BIN}\nfixture-loader`);
+    await writeFile(environment.BK_LOADER_BIN!, "#!/bin/sh\nprintf 'tampered\\n'\n");
+    await expect(manager.environment(sdk)).rejects.toThrow("executable checksum mismatch");
   } finally { server.stop(true); }
 });
 

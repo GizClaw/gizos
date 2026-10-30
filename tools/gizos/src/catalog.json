@@ -129,8 +129,58 @@
     },
     {
       "kind": "bk-loader",
-      "version": "1.1.0.2.post1",
+      "version": "1.1.0.2.post2",
       "default": true,
+      "release": {
+        "repository": "https://github.com/GizClaw/bk_loader",
+        "tag": "v1.1.0.2.post2",
+        "commit": "1151739e7394c9d60b65743ff1d6e77b2b1a027d"
+      },
+      "requiredFiles": [
+        "bin/bk_loader"
+      ],
+      "executable": "bin/bk_loader",
+      "check": [
+        "tools",
+        "selftest"
+      ],
+      "expectedOutput": "\"packageVersion\": \"1.1.0.2.post2\"",
+      "exports": {
+        "BK_LOADER_BIN": "bin/bk_loader"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v1.1.0.2.post2/bk-loader-1.1.0.2.post2-darwin-arm64.tar.gz",
+          "sha256": "ecfd3580c7786f4f247f9113bb1fce0b1a7ff578aa219d609b75607fa18d5f60",
+          "executableSha256": "095aba2b58a67fa35d0c4aa8069aa5cc28a92e850b63361105e5de2a53bdb7e1",
+          "format": "tar"
+        },
+        "darwin-x64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v1.1.0.2.post2/bk-loader-1.1.0.2.post2-darwin-x64.tar.gz",
+          "sha256": "3ab3ecc35d53d80d1f91c1fc0d4255cf85ce6e98f44830a7e305d33e594a198a",
+          "executableSha256": "d153e446ac831ca976ca09a8b25a28cd731328c173c49da1d79913ec6a2b812f",
+          "format": "tar"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v1.1.0.2.post2/bk-loader-1.1.0.2.post2-linux-arm64.tar.gz",
+          "sha256": "28dd4ef648fd4c617a70f6f9cb4fb440dd46f06173c7776716e953da04594158",
+          "executableSha256": "de7630ad600acc256e1d8b78dbcbabaea588e2681b55e58f2ab023d9d4902bfb",
+          "format": "tar"
+        },
+        "linux-x64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v1.1.0.2.post2/bk-loader-1.1.0.2.post2-linux-x64.tar.gz",
+          "sha256": "4918e800723dd86fd43f4e23624cb73c7063fb6d2cca21c52bce5d8f7926269e",
+          "executableSha256": "42ba33219d35fbbfec96eb65999e247dcccaff9698bf152dafd7de01426c4b04",
+          "format": "tar"
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "1.1.0.2.post1",
       "requiredFiles": [
         "bin/python",
         "commands/bk_loader"

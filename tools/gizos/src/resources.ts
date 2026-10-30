@@ -5,9 +5,13 @@ import bundledCatalog from "./catalog.json";
 import { atomicJson, execute, executable, exists, locked, type Command, type Env } from "./common";
 
 type Source = { repository: string; commit: string; path: string; lfs?: boolean };
-type Distribution = { url?: string; source?: Source; sha256?: string; format?: string; strip?: number; installer?: string };
+type Distribution = {
+  url?: string; source?: Source; sha256?: string; format?: string; strip?: number; installer?: string;
+  executableSha256?: string;
+};
 export type Tool = {
   kind: string; version: string; default?: boolean;
+  release?: { repository: string; tag: string; commit: string };
   hosts: Record<string, Distribution>; requiredFiles: string[];
   executable?: string; check?: string[]; expectedOutput?: string;
   exports: Record<string, string>; path: string[];
@@ -74,7 +78,8 @@ export class Resources {
     if (tool.executable) {
       const entry = join(root, tool.executable);
       await executable(entry);
-      if (tool.executableSha256 && await sha256(entry) !== tool.executableSha256) {
+      const expected = this.distribution(tool)?.executableSha256 ?? tool.executableSha256;
+      if (expected && await sha256(entry) !== expected) {
         throw new Error(`${tool.kind} executable checksum mismatch: ${entry}`);
       }
       if (run && this.canRun(tool) && tool.check) {
@@ -215,6 +220,7 @@ export class Resources {
       executable: item && tool.executable ? join(item.root, tool.executable) : null,
       path: item && this.canRun(tool) ? tool.path.map(path => resolve(item.root, path)) : [],
       host: this.host, canRun: this.canRun(tool), source: this.distribution(tool)?.source ?? null,
+      release: tool.release ?? null,
     };
   }
   async environment(inherited: Env, selected?: Tool): Promise<Env> {

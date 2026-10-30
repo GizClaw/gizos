@@ -98,7 +98,7 @@ After the package has been published through Deploy's registry import:
 
 ```sh
 bunx @gizclaw/gizos setup idf 6.2
-bunx @gizclaw/gizos setup bk-loader 1.1.0.2.post1
+bunx @gizclaw/gizos setup bk 3.1.1
 bunx @gizclaw/gizos setup adb 35.0.2
 bunx @gizclaw/gizos env bk
 bun add --global @gizclaw/gizos
@@ -106,7 +106,9 @@ gizos upgrade
 ```
 
 `env` displays SDK, toolchain, Python, loader and ADB installation paths.
-BK Loader is installed from the public Python source in `GizClaw/bk_loader`. `env --shell`
+BK setup automatically installs the matching platform executable from the
+public `GizClaw/bk_loader` Release, verifies its checksums and adds it to PATH
+when activated. `env --shell`
 prints shell activation statements, and `run` executes a command with the
 selected environment.
 `upgrade` updates the toolbox while preserving installed SDKs.

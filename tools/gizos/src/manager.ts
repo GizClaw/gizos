@@ -335,6 +335,7 @@ export class Manager {
           } else if (usesArm(sdk)) {
             if (adopt) await this.verifyArm(item.tools);
             else await this.installArm(item.tools);
+            if (!adopt) await this.resources.setup(this.resources.select("bk-loader"));
           } else {
             const toolchain = this.resources.select("jieli-toolchain");
             const postbuild = this.resources.select("jieli-postbuild");
