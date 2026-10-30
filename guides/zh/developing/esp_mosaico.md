@@ -38,11 +38,11 @@ Runtime 创建/销毁不启动、取帧、归还或停止 Camera。应用必须�
 
 ## 磁力计读取与补偿输出
 
-Mosaico 磁力计通过现有 [IMU PAL](../../../libs/pal/include/h2/pal/hal/h2_pal_imu.h) 读取。[板级适配器](../../../boards/esp_mosaico/esp32s31/src/h2_mosaico_peripherals.c) 根据 BSP 返回码决定读取成功或失败；成功时保留三轴补偿输出并统一换算为 PAL 单位，不因单轴补偿溢出而丢弃整份样本。初始化或读取失败仍返回既有错误并清空输出，不返回上次成功的样本。
+Mosaico 磁力计通过现有 [IMU PAL](https://github.com/GizClaw/gizos/blob/main/libs/pal/include/h2/pal/hal/h2_pal_imu.h) 读取。[板级适配器](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/src/h2_mosaico_peripherals.c) 根据 BSP 返回码决定读取成功或失败；成功时保留三轴补偿输出并统一换算为 PAL 单位，不因单轴补偿溢出而丢弃整份样本。初始化或读取失败仍返回既有错误并清空输出，不返回上次成功的样本。
 
-Bosch 补偿溢出哨兵也经过相同单位换算，具体映射见 [板级转换定义](../../../boards/esp_mosaico/esp32s31/src/h2_mosaico_mag.h)。该输出不是可信的磁场测量，也不能据其符号推断物理方向。读取成功与 `HAS_MAG` 表示交付了磁场通道输出，不保证每轴均为有效物理测量，更不代表磁铁已吸附。当前公共接口没有逐轴状态字段，消费此路径的产品必须处理这一板级语义；分类、滤波、基线和显示策略归产品层，不能把读取错误或溢出输出直接当作吸附。
+Bosch 补偿溢出哨兵也经过相同单位换算，具体映射见 [板级转换定义](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/src/h2_mosaico_mag.h)。该输出不是可信的磁场测量，也不能据其符号推断物理方向。读取成功与 `HAS_MAG` 表示交付了磁场通道输出，不保证每轴均为有效物理测量，更不代表磁铁已吸附。当前公共接口没有逐轴状态字段，消费此路径的产品必须处理这一板级语义；分类、滤波、基线和显示策略归产品层，不能把读取错误或溢出输出直接当作吸附。
 
-[板级回归说明](../../../boards/esp_mosaico/esp32s31/tests/README.md)中的磁力计测试覆盖补偿输出保留、换算和真实读取失败清空。真机验证需记录固件版本、两颗外设的返回码、flags 和三轴输出，并分别观察磁铁靠近和移开后的行为；未触发补偿溢出时，不能以正常读取替代该条件的硬件证据。没有轴输出的 IO 错误不能直接归因为饱和或硬件损坏。
+[板级回归说明](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/tests/README.md)中的磁力计测试覆盖补偿输出保留、换算和真实读取失败清空。真机验证需记录固件版本、两颗外设的返回码、flags 和三轴输出，并分别观察磁铁靠近和移开后的行为；未触发补偿溢出时，不能以正常读取替代该条件的硬件证据。没有轴输出的 IO 错误不能直接归因为饱和或硬件损坏。
 
 ## Type-C OTG CDC Loader
 
