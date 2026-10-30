@@ -20,9 +20,9 @@ class Verifier(unittest.TestCase):
 
     def test_package_and_ledger_board_identity(self):
         from verify_device import board_identity
-        for board,target,identity in [('devkit','esp32s3','devkit'),('bk7258_v3_202405','bk7258','bk7258'),('esp_mosaico','esp32s31','esp_mosaico')]:
+        for board,target,identity in [('devkit','esp32s3','devkit'),('bk7258_v3_202405','bk7258','bk7258'),('esp_mosaico','esp32s31','esp_mosaico'),('waveshare_esp32s3_touch_amoled_1_75c','esp32s3','waveshare_esp32s3_touch_amoled_1_75c')]:
             self.assertEqual(board_identity(dict(board=board,target=target)),identity)
-        for board,target in [('esp_mosaico','esp32s3'),('devkit','esp32s31'),('unknown','esp32s31')]:
+        for board,target in [('esp_mosaico','esp32s3'),('devkit','esp32s31'),('unknown','esp32s31'),('waveshare_esp32s3_touch_amoled_1_75c','esp32s31')]:
             with self.assertRaises(AssertionError):board_identity(dict(board=board,target=target))
     def setUp(self):
         root=Path(__file__).absolute().parents[5]
@@ -74,7 +74,7 @@ class Verifier(unittest.TestCase):
         with self.assertRaises(AssertionError):boot_ledger(text.replace('provider_cleanup=0','provider_cleanup=-4'),self.ids,'v1')
         with self.assertRaises(AssertionError):boot_ledger(text.replace('H2_PAL_MQTT_CONFIRMED board=esp_mosaico','H2_PAL_MQTT_CONFIRMED board=devkit'),self.ids,'v1')
     def test_both_device_targets_require_fixed_source_binding_file(self):
-        for board,target in [('bk7258_v3_202405','bk7258'),('devkit','esp32s3'),('esp_mosaico','esp32s31')]:
+        for board,target in [('bk7258_v3_202405','bk7258'),('devkit','esp32s3'),('esp_mosaico','esp32s31'),('waveshare_esp32s3_touch_amoled_1_75c','esp32s3')]:
             manifest=dict(role='app',board=board,target=target,version='v1',image_size='42',image_sha256='c'*64)
             inputs=dict(ca_sha256='d'*64,epoch_ms=123,session_prefix='a'*32)
             binding=dict(package_sha256='b'*64,manifest=manifest,fixture_inputs=inputs,source_commit='e'*40,source_dirty=False)
@@ -108,6 +108,26 @@ class Verifier(unittest.TestCase):
             events[1][key]=old
         del events[1]['server_name']
         with self.assertRaises(AssertionError):verify_witness(receipt,execution)
+    def test_waveshare_esp_confirmation_and_provider_cleanup(self):
+        board='waveshare_esp32s3_touch_amoled_1_75c'
+        complete=self.good.replace('board=bk7258','board='+board).replace('confirm=pending','confirm=pending provider_cleanup=0')
+        result=boot_ledger(complete,self.ids,'v1')
+        self.assertEqual(result['confirmation']['board'],board)
+        for bad in [complete.replace('provider_cleanup=0','provider_cleanup=-4'),
+                    complete.replace(' provider_cleanup=0',''),
+                    complete.replace('H2_PAL_MQTT_CONFIRMED board='+board,'H2_PAL_MQTT_CONFIRMED board=devkit')]:
+            with self.assertRaises(AssertionError):boot_ledger(bad,self.ids,'v1')
+    def test_proven_canonical_loader_install_precedes_first_app_boot(self):
+        loader='ESP-ROM:esp32s3-20210327\nrst:0xc\nLoaded app from partition at offset 0x20000\nProject name: h2loader\nApp version: loader-v1\nH2_LOADER_STARTUP_EVENT event=write_partition_2 code=0\nH2_LOADER_STARTUP_EVENT event=boot_partition_2 code=0\n'
+        app='ESP-ROM:esp32s3-20210327\nrst:0xc\nLoaded app from partition at offset 0x220000\nProject name: h2_pal_mqtt_e2e\nApp version: v1\n'+self.good
+        ack='H2_LOADER_REBOOT target=upgrade result=accepted\n'
+        actual=after_accepted_reboot(ack+loader+app,'upgrade','loader-v1','v1')
+        self.assertEqual(boot_ledger(actual,self.ids,'v1')['boot']['id'],self.execution)
+        for bad in [loader.replace('code=0','code=-4',1),loader.replace('0x20000','0x220000'),loader.replace('loader-v1','other'),loader+self.good]:
+            with self.assertRaises(AssertionError):after_accepted_reboot(ack+bad+app,'upgrade','loader-v1','v1')
+        for bad in [app.replace('App version: v1','App version: other'),app.replace('0x220000','0x20000'),'ESP-ROM:extra\n'+app]:
+            with self.assertRaises(AssertionError):after_accepted_reboot(ack+loader+bad,'upgrade','loader-v1','v1')
+        with self.assertRaises(AssertionError):boot_ledger(after_accepted_reboot(ack+loader+app,'upgrade'),self.ids,'v1')
     def test_complete(self):
         self.assertEqual(boot_ledger(self.good,self.ids,'v1')['boot']['id'],self.execution)
     def test_native_non_utf8_noise_keeps_raw_hash_and_complete_records(self):

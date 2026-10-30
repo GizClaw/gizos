@@ -15,6 +15,7 @@ _ESP_LAYOUTS = {
     ),
     ("esp32s3", "szp"): struct(root = "//boards/szp/esp32s3/layouts/h2loader"),
     ("esp32s3", "waveshare_esp32s3_a7670e_4g"): struct(root = "//boards/waveshare_esp32s3_a7670e_4g/esp32s3/layouts/h2loader"),
+    ("esp32s3", "waveshare_esp32s3_touch_amoled_1_75c"): struct(root = "//boards/waveshare_esp32s3_touch_amoled_1_75c/esp32s3/layouts/h2loader"),
     ("esp32p4", "waveshare_esp32p4_wifi6_touch_lcd_4_3"): struct(root = "//boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/esp32p4/layouts/h2loader"),
 }
 

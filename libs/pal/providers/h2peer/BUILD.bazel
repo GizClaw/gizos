@@ -385,6 +385,44 @@ cc_test(
 )
 
 cc_test(
+    name = "network_fairness_test",
+    srcs = ["tests/test_network_fairness.cc"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2peer",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "poll_wait_granularity_test",
+    srcs = ["tests/test_poll_wait_granularity.cc"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2peer",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
     name = "media_backpressure_test",
     srcs = [
         "src/h2_peer_internal.h",

@@ -496,6 +496,7 @@ int run_desktop(int argc, char** argv) {
       .fence_first_id = session->fence_first_id.c_str(),
       .fence_second_id = session->fence_second_id.c_str(),
       .device_real_audio = false,
+      .device_ble_binding = false,
       .voice_audio = nullptr,
       .voice_pcm_s16le_16khz_mono = pcm.empty() ? nullptr : pcm.data(),
       .voice_pcm_len = pcm.size(),

@@ -133,9 +133,37 @@ static void set_lines(uint32_t asserted) {
       asserted);
 }
 
+static void set_usb_line(uint32_t line, int asserted) {
+  if (active_context == NULL || active_context->boot_policy !=
+                                    H2_H2LOADER_HOST_ESP_BOOT_USB_SERIAL_JTAG) {
+    return;
+  }
+  (void)h2_pal_serial_host_set_control_lines(active_context->serial,
+                                             active_context->session, line,
+                                             asserted ? line : 0u);
+}
+
 void loader_port_enter_bootloader(void) {
   if (active_context == NULL ||
       active_context->boot_policy == H2_H2LOADER_HOST_ESP_BOOT_MANUAL) {
+    return;
+  }
+  if (active_context->boot_policy ==
+      H2_H2LOADER_HOST_ESP_BOOT_USB_SERIAL_JTAG) {
+    /* Internal USB Serial/JTAG uses the Espressif USB reset pulse train.
+     * Keep individual RTS writes: some hosts flush DTR changes on RTS only. */
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_RTS, 0);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_DTR, 0);
+    loader_port_delay_ms(100u);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_DTR, 1);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_RTS, 0);
+    loader_port_delay_ms(100u);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_RTS, 1);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_DTR, 0);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_RTS, 1);
+    loader_port_delay_ms(100u);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_DTR, 0);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_RTS, 0);
     return;
   }
   set_lines(H2_PAL_SERIAL_HOST_CONTROL_RTS);
@@ -149,6 +177,14 @@ void loader_port_enter_bootloader(void) {
 void loader_port_reset_target(void) {
   if (active_context == NULL ||
       active_context->boot_policy == H2_H2LOADER_HOST_ESP_BOOT_MANUAL) {
+    return;
+  }
+  if (active_context->boot_policy ==
+      H2_H2LOADER_HOST_ESP_BOOT_USB_SERIAL_JTAG) {
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_RTS, 1);
+    loader_port_delay_ms(200u);
+    set_usb_line(H2_PAL_SERIAL_HOST_CONTROL_RTS, 0);
+    loader_port_delay_ms(200u);
     return;
   }
   set_lines(H2_PAL_SERIAL_HOST_CONTROL_RTS);
@@ -373,7 +409,8 @@ h2_pal_result_t h2_h2loader_host_esp_flash_open(
       config->time == NULL || config->allocator == NULL ||
       config->port_id == NULL || config->expected_target == NULL ||
       (config->boot_policy != H2_H2LOADER_HOST_ESP_BOOT_MANUAL &&
-       config->boot_policy != H2_H2LOADER_HOST_ESP_BOOT_DTR_RTS)) {
+       config->boot_policy != H2_H2LOADER_HOST_ESP_BOOT_DTR_RTS &&
+       config->boot_policy != H2_H2LOADER_HOST_ESP_BOOT_USB_SERIAL_JTAG)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   target_chip_t chip = expected_chip(config->expected_target);

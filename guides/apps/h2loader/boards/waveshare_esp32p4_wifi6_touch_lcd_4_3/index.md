@@ -5,6 +5,7 @@
 该 board 由 ESP32-P4 host 与 ESP32-C6 wireless coprocessor 组成。P4 运行 Runtime、H2Loader、display 和 audio；板载 C6 运行固定的 ESP-Hosted slave firmware，通过 SDIO 向 P4 提供 Wi-Fi 与 Bluetooth controller。本仓库只构建和更新 P4 image，不提供或更新 C6 firmware。
 
 - [H2Loader](./h2loader)
+- [Board MFG](./mfg)
 - [Display](./display)
 - [Audio System](./audio_system)
 - [MP4 Player](./mp4_player)

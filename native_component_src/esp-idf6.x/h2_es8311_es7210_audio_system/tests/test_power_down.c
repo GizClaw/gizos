@@ -19,6 +19,11 @@ static int removed, disabled, pa_enabled, pa_fail;
 static TickType_t ticks;
 static h2_esp_es8311_es7210_audio_system_t* running;
 static int join_workers = 1;
+/* Reboot quiescence can leave DIN driven low. I2S RX routing enables input
+ * without clearing the retained output enable. */
+static unsigned din_output_enabled, din_input_enabled;
+static unsigned input_direction_calls, channels_created;
+static int direction_fails;
 static unsigned device_index(i2c_master_dev_handle_t dev) {
   assert(dev == (void*)1 || dev == (void*)2);
   return (unsigned)(uintptr_t)dev - 1u;
@@ -79,6 +84,8 @@ int i2c_del_master_bus(i2c_master_bus_handle_t bus) {
 int i2s_new_channel(const i2s_chan_config_t* cfg, i2s_chan_handle_t* tx,
                     i2s_chan_handle_t* rx) {
   (void)cfg;
+  assert(!din_output_enabled && din_input_enabled);
+  ++channels_created;
   *tx = (void*)4;
   *rx = (void*)5;
   return ESP_OK;
@@ -127,6 +134,20 @@ int gpio_config(const gpio_config_t* cfg) {
 int gpio_set_level(gpio_num_t pin, unsigned level) {
   (void)pin;
   pa_enabled = (int)level;
+  return ESP_OK;
+}
+int gpio_set_direction(gpio_num_t pin, int mode) {
+  (void)pin;
+  assert(mode == GPIO_MODE_INPUT);
+  ++input_direction_calls;
+  if (direction_fails) return ESP_FAIL;
+  din_output_enabled = 0;
+  din_input_enabled = 1;
+  return ESP_OK;
+}
+int gpio_get_io_config(gpio_num_t pin, gpio_io_config_t* out) {
+  (void)pin;
+  *out = (gpio_io_config_t){.oe = din_output_enabled, .ie = din_input_enabled};
   return ESP_OK;
 }
 static int fake_pa(void* user, int enabled) {
@@ -346,7 +367,45 @@ static void aec_contract_test(void) {
   running = NULL;
   write_count = removed = disabled = 0;
 }
+static void retained_din_output_test(void) {
+  h2_esp_es8311_es7210_audio_system_t s = {0};
+  h2_esp_es8311_es7210_audio_system_config_t cfg = config();
+  cfg.din_gpio = 12;
+  din_output_enabled = 1;
+  din_input_enabled = 0;
+  unsigned calls = input_direction_calls;
+  assert(h2_esp_es8311_es7210_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+  assert(audio_open(&s) == H2_AUDIO_OK);
+  assert(!din_output_enabled && din_input_enabled);
+  assert(input_direction_calls == calls + 1u);
+  assert(audio_open(&s) == H2_AUDIO_OK);
+  assert(input_direction_calls == calls + 1u); /* Do not disturb active I2S. */
+  assert(h2_esp_es8311_es7210_audio_system_deinit(&s) == H2_AUDIO_OK);
+  /* Reproduce the same pad state on a subsequent software boot. */
+  din_output_enabled = 1;
+  din_input_enabled = 0;
+  calls = input_direction_calls;
+  assert(h2_esp_es8311_es7210_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+  assert(audio_open(&s) == H2_AUDIO_OK);
+  assert(input_direction_calls == calls + 1u && !din_output_enabled);
+  assert(h2_esp_es8311_es7210_audio_system_deinit(&s) == H2_AUDIO_OK);
+  /* A failed input release must not start I2S or report a usable microphone. */
+  din_output_enabled = 1;
+  din_input_enabled = 0;
+  direction_fails = 1;
+  unsigned created = channels_created;
+  assert(h2_esp_es8311_es7210_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+  assert(audio_open(&s) == H2_AUDIO_ERR_IO);
+  assert(channels_created == created && !s.opened);
+  assert(s.tx_chan == NULL && s.rx_chan == NULL);
+  direction_fails = 0;
+  assert(audio_open(&s) == H2_AUDIO_OK);
+  assert(!din_output_enabled && din_input_enabled);
+  assert(h2_esp_es8311_es7210_audio_system_deinit(&s) == H2_AUDIO_OK);
+  write_count = removed = disabled = 0;
+}
 int main(void) {
+  retained_din_output_test();
   aec_contract_test();
   h2_esp_es8311_es7210_audio_system_t s = {0};
   assert(h2_esp_es8311_es7210_audio_system_power_down(NULL) ==

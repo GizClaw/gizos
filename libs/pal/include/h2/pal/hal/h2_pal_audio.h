@@ -41,6 +41,9 @@ typedef struct h2_audio_info {
   uint8_t mic_queue_frames;
   uint8_t track_queue_frames;
   uint8_t max_tracks;
+  /** The configured microphone path runs real AEC when started. This does
+   * not imply pre/post diagnostics or certify acoustic performance. */
+  int aec_enabled;
 } h2_audio_info_t;
 
 typedef struct h2_audio_track_config {

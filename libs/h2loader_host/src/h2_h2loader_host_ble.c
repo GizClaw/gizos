@@ -387,31 +387,28 @@ h2_pal_result_t h2_h2loader_host_ble_disconnect(
   if (connection == NULL) {
     return H2_PAL_OK;
   }
-  *inout_connection = NULL;
-  if (connection->stream != NULL) {
-    stream_rc = h2_bleikcp_close(connection->stream);
-    connection->stream = NULL;
-  }
+  /* Request link shutdown before disabling notifications: the server can
+   * otherwise terminate on CCCD unsubscribe and race a second terminate. */
   if (connection->conn_handle != H2_PAL_BLE_INVALID_CONN_HANDLE) {
     disconnect_rc =
         h2_pal_ble_disconnect(connection->ble, connection->conn_handle);
+    if (disconnect_rc == H2_PAL_ERR_CLOSED ||
+        disconnect_rc == H2_PAL_ERR_NOT_FOUND ||
+        disconnect_rc == H2_PAL_ERR_UNSUPPORTED) {
+      disconnect_rc = H2_PAL_OK;
+    }
+    if (disconnect_rc != H2_PAL_OK) return disconnect_rc;
+    connection->conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
+  }
+  if (connection->stream != NULL) {
+    stream_rc = h2_bleikcp_close(connection->stream);
+    if (stream_rc != H2_PAL_OK) return stream_rc;
+    connection->stream = NULL;
   }
   const h2_pal_mem_api_t* allocator = connection->allocator;
   h2_pal_mem_free(allocator, connection);
-  /* Teardown is idempotent. CoreBluetooth reports UNSUPPORTED when the
-     peripheral has already disappeared, while stream teardown can report
-     CLOSED for the same completed state. Neither means local resources are
-     still live or that the preceding device operation failed. */
-  if (stream_rc == H2_PAL_ERR_CLOSED || stream_rc == H2_PAL_ERR_NOT_FOUND ||
-      stream_rc == H2_PAL_ERR_UNSUPPORTED) {
-    stream_rc = H2_PAL_OK;
-  }
-  if (disconnect_rc == H2_PAL_ERR_CLOSED ||
-      disconnect_rc == H2_PAL_ERR_NOT_FOUND ||
-      disconnect_rc == H2_PAL_ERR_UNSUPPORTED) {
-    disconnect_rc = H2_PAL_OK;
-  }
-  return stream_rc != H2_PAL_OK ? stream_rc : disconnect_rc;
+  *inout_connection = NULL;
+  return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_h2loader_host_ble_read_status(

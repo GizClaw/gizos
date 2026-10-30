@@ -107,7 +107,28 @@ int h2_esp_szp_board_set_lcd_cs(int high) {
 }
 
 int h2_esp_szp_board_set_pa(int enabled) {
-  return set_pca_mask(H2_SZP_PCA_PA_MASK, enabled);
+  int rc = set_pca_mask(H2_SZP_PCA_PA_MASK, enabled);
+  if (rc != 0) return rc;
+  uint8_t output = 0, config = 0;
+  uint8_t reg = H2_SZP_PCA9557_REG_OUTPUT;
+  esp_err_t err =
+      i2c_master_transmit_receive(s_pca9557, &reg, 1, &output, 1, 20);
+  if (err == ESP_OK) {
+    reg = H2_SZP_PCA9557_REG_CONFIG;
+    err = i2c_master_transmit_receive(s_pca9557, &reg, 1, &config, 1, 20);
+  }
+  if (err != ESP_OK) return esp_rc(err);
+  ESP_LOGI(TAG, "PA readback enabled=%d output=0x%02x config=0x%02x",
+           enabled != 0, output, config);
+  if ((config & H2_SZP_PCA_PA_MASK) != 0 ||
+      ((output & H2_SZP_PCA_PA_MASK) != 0) != (enabled != 0))
+    return -1;
+  return 0;
+}
+
+int h2_esp_szp_board_set_camera_enabled(int enabled) {
+  /* PCA9557 IO2 drives the GC0308's active-high standby input. */
+  return set_pca_mask(H2_SZP_PCA_DVP_PWDN_MASK, !enabled);
 }
 
 int h2_esp_board_h2loader_fs_init(h2_pal_fs_api_t* fs);
@@ -145,7 +166,10 @@ int h2_esp_board_fs_deinit(void) {
 }
 
 h2_pal_mem_api_t* h2_esp_board_default_allocator(void) {
-  return h2_esp_platform_default_allocator();
+  /* General Runtime/UI/audio buffers must not consume the internal DMA heap.
+   * This board requires PSRAM; callers needing internal/DMA storage use the
+   * dedicated allocators below rather than falling back into SRAM. */
+  return h2_esp_platform_psram_allocator();
 }
 
 h2_pal_mem_api_t* h2_esp_board_psram_allocator(void) {

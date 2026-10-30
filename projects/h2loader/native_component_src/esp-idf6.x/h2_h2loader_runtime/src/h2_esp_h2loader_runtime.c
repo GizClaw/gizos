@@ -1,4 +1,5 @@
 #include "h2_esp_h2loader_runtime.h"
+#include "h2_esp_h2loader_device_uid.h"
 #include "h2_esp_h2loader_iostreamikcp_internal.h"
 #include "h2_atomic.h"
 
@@ -913,7 +914,7 @@ void h2_esp_h2loader_run_with_command_service_config(
     return;
   }
   board = runtime_loader_config->board;
-  rc = esp_read_mac(ble_mac, ESP_MAC_BT);
+  rc = h2_esp_h2loader_read_device_mac(ble_mac);
   if (rc != ESP_OK) {
     printf("H2_LOADER_READY target=esp status=device_uid_fail code=%d\n", rc);
     return;
@@ -984,6 +985,8 @@ void h2_esp_h2loader_run_with_command_service_config(
   config.command.io =
       h2_esp_h2loader_command_transport_io(&s_command_transport);
   config.command.coredump_partition_id = H2_LOADER_COREDUMP_PARTITION_ID;
+  config.command.mfg_user = runtime_loader_config->user;
+  config.command.mfg_command = runtime_loader_config->mfg_command;
   config.user = &context;
   config.prepare = prepare_loader;
   config.before_startup_user = runtime_loader_config->user;

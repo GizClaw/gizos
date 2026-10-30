@@ -126,3 +126,20 @@ ESP-IDF 和 BK 的 production firmware 必须通过各自 native build 入口验
 ## IPv6 ICE
 
 Portable Agent 尝试两个地址族，允许实际仅支持其中一个地址族的 Net provider。 每个候选使用自己的 UDP socket；无 socket 的地址族不产生候选。IPv6 host 候选与 IPv6 STUN Binding 均走真实 IPv6 socket；STUN URL 的 IPv6 字面量使用方括号。 Link-local 作用域属于本机，不能直接写入远端 SDP，因此不发布带本机 scope 的 host 候选。独立 `pal-ipv6` E2E 使用只提供 IPv6 ICE 候选的受控 Pion 夹具验证 DTLS/SCTP。
+
+
+### 网络任务在持续负载下的调度
+
+网络 worker 每轮仍最多处理 16 个 UDP packet；DataChannel 仍保留 8192 bytes /
+8 messages 的轮转预算。连续发送、接收或控制命令完成后，下一轮先通过 Time PAL
+阻塞 1 ms，让低优先级任务与 RTOS idle 有运行机会；只有空闲轮才使用原来的网络
+接收等待。持续有工作不能绕过调度等待，关闭标志在等待后再次检查。该策略不改变
+消息大小、FIFO/round-robin、请求超时、SCTP 完整性或 E2E payload 量。
+`network_fairness_test` 运行真实 worker 并持续供给 100 个已捕获的公开命令，验证
+backlog 清空前已发生非零阻塞；空闲后的 sleep 不计入通过依据。
+
+`peer_poll()` 对正 timeout 使用最多 20 ms 的队列等待片段，并在片段间检查
+关闭请求。剩余时间不足 1 ms 时仍向上取整成正等待，不能退化成 timeout 0
+的忙轮询。`poll_wait_granularity_test` 通过公开 `peer_poll()` 和提前唤醒的空
+队列验证 1 ms／41 ms deadline：首次非阻塞探测之后，每次剩余正时间的等待
+都保持正值，且不超过片段上限。

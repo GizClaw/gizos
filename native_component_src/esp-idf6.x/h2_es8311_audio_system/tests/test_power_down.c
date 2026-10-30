@@ -457,6 +457,19 @@ static void test_aec_observer(void) {
   s.sr.available = 1;
   s.config.mic_channel_index = 1;
   s.config.ref_channel_index = 0;
+  /* MFG first performs ordinary MIC capture, then installs an observer for
+   * AEC. Its stopped mic must not retain an idle worker which rejects that
+   * registration, even when no observer existed during ordinary capture. */
+  s.mic_started = s.mic_task_started = 1;
+  s.mic_task = (void*)7;
+  running = &s;
+  join_workers = 0;
+  assert(es8311_audio_stop_mic(&s) == H2_AUDIO_ERR_WOULD_BLOCK);
+  assert(s.mic_task != NULL && s.aec_observer.user == NULL);
+  join_workers = 1;
+  assert(es8311_audio_stop_mic(&s) == H2_AUDIO_OK);
+  assert(s.mic_task == NULL && !s.mic_task_started);
+  running = NULL;
   assert(h2_pal_audio_set_aec_observer(audio, &o) == H2_AUDIO_OK);
   s.mic_task = (void*)7;
   assert(h2_pal_audio_set_aec_observer(audio, NULL) ==

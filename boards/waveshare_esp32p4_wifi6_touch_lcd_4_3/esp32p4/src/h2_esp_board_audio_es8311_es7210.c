@@ -1,4 +1,5 @@
 #include "h2_esp_board_private.h"
+#include "h2_esp_p4_board_internal.h"
 
 #include "h2_esp_lazy_audio.h"
 
@@ -13,7 +14,7 @@
 
 #define H2_WAVESHARE_AUDIO_SAMPLE_RATE 16000u
 #define H2_WAVESHARE_AUDIO_MCLK_MULTIPLE 384u
-#define H2_WAVESHARE_AUDIO_FRAME_SAMPLES 256u
+#define H2_WAVESHARE_AUDIO_FRAME_SAMPLES 512u
 #define H2_WAVESHARE_AUDIO_RAW_CHANNELS 4u
 #define H2_WAVESHARE_AUDIO_PROCESSED_CHANNELS 1u
 #define H2_WAVESHARE_AUDIO_I2C_PORT 0
@@ -29,7 +30,7 @@
 #define H2_WAVESHARE_AUDIO_DOUT_GPIO 9
 #define H2_WAVESHARE_AUDIO_DIN_GPIO 11
 #define H2_WAVESHARE_AUDIO_PA_GPIO 53
-#define H2_WAVESHARE_AUDIO_CODEC_VOLUME_DEFAULT 0xb0u
+#define H2_WAVESHARE_AUDIO_CODEC_VOLUME_DEFAULT 0xbfu
 #define H2_WAVESHARE_AUDIO_MIC_GAIN_DEFAULT_DB 24u
 #define H2_WAVESHARE_AUDIO_MAX_TRACKS 4u
 #define H2_WAVESHARE_AUDIO_TRACK_QUEUE_FRAMES 4u
@@ -46,6 +47,8 @@ static int s_lazy_audio_initialized;
 static h2_pal_audio_t* resolve_audio(void* user) {
   (void)user;
   if (!s_audio_system_initialized) {
+    i2c_master_bus_handle_t bus = h2_esp_p4_board_i2c_bus();
+    if (bus == NULL) return NULL;
     const h2_esp_es8311_es7210_audio_system_config_t config = {
         .sample_rate_hz = H2_WAVESHARE_AUDIO_SAMPLE_RATE,
         .frame_samples_per_channel = H2_WAVESHARE_AUDIO_FRAME_SAMPLES,
@@ -61,7 +64,7 @@ static h2_pal_audio_t* resolve_audio(void* user) {
         .i2c_sda_gpio = H2_WAVESHARE_AUDIO_I2C_SDA_GPIO,
         .i2c_scl_gpio = H2_WAVESHARE_AUDIO_I2C_SCL_GPIO,
         .i2c_speed_hz = H2_WAVESHARE_AUDIO_I2C_SPEED_HZ,
-        .i2c_bus = NULL,
+        .i2c_bus = bus,
         .es8311_i2c_addr = H2_WAVESHARE_AUDIO_ES8311_ADDR,
         .es7210_i2c_addr = H2_WAVESHARE_AUDIO_ES7210_ADDR,
         .i2s_port = H2_WAVESHARE_AUDIO_I2S_PORT,

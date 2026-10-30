@@ -12,6 +12,7 @@ typedef struct h2loader_ble_session {
 static void command_task(void* ctx) {
   h2loader_ble_session_t* session = ctx;
   session->command_config.io = h2_loader_ble_command_io(session->stream);
+  session->command_config.transport = H2_LOADER_COMMAND_TRANSPORT_BLE;
   session->result =
       h2_loader_command_init(&session->command, &session->command_config);
   while (session->result == H2_PAL_OK) {

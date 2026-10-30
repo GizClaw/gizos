@@ -16,6 +16,7 @@ H2Loader 统一使用 `h2loader`、`app`、`dl`、`data`、`preference` 和 `cor
 - [JieLi AC791N DevKit](./jieli_ac791n_devkit/)
 - [SZP](./szp/)
 - [Waveshare ESP32-S3-A7670E-4G](./waveshare_esp32s3_a7670e_4g/)
+- [Waveshare ESP32-S3-Touch-AMOLED-1.75C](./waveshare_esp32s3_touch_amoled_1_75c/)
 - [Waveshare ESP32-P4-WIFI6-Touch-LCD-4.3](./waveshare_esp32p4_wifi6_touch_lcd_4_3/)
 
 新增公开 Board 时必须满足[固件结构分区与类型](../firmware_types#新-board-接入要求)中的容量和更新合同，并把构建与恢复步骤记录在对应 Board 文档中。

@@ -983,7 +983,11 @@ int h2_loader_startup(h2_loader_t* loader,
     rc = finish_loader_stage_if_converged(loader);
     return rc == H2_PAL_OK ? H2_PAL_OK : fail_recovery(loader, rc);
   }
-  if (!mfg_gate_satisfied(loader)) return H2_PAL_OK;
+  /* A Loader replacement is the recovery path for an unfinished factory
+   * session. Only App candidates are subject to manufacturing acceptance. */
+  if (loader->status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP &&
+      !mfg_gate_satisfied(loader))
+    return H2_PAL_OK;
   emit_event(loader, H2_LOADER_STARTUP_EVENT_BOOT_PARTITION_2, H2_PAL_OK);
   rc = set_next_and_reboot(loader, loader->config.app_partition_id,
                            H2_LOADER_BOOT_INTENT_AUTO,

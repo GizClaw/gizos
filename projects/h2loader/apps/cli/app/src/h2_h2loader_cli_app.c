@@ -214,13 +214,18 @@ static const char help_text[] =
     "                [--wait-timeout SECONDS] [--read-timeout SECONDS]\n"
     "                [--post-delay SECONDS] [--no-ble] COMMAND ...\n\n"
     "commands: package golden check scan status stats memory send send-url\n"
-    "          stage wifi reboot monitor coredump bleikcp-speed\n\n"
+    "          stage wifi reboot monitor coredump bleikcp-speed mfg\n\n"
     "stats:    stats [--data-checksum] (wait for installed-data checksum)\n"
     "reboot:   reboot app|loader|upgrade [--monitor]\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
     "          wifi connect <ssid> <password>\n"
     "          wifi disconnect\n"
     "          wifi status\n"
+    "mfg:      mfg status\n"
+    "          mfg confirm|fail|skip|retry|reset|probe <step|all> <ticket>\n"
+    "          mfg retry <step> <ticket> [--monitor]\n"
+    "          mfg calibrate <peer-ipv4> <speaker> <mic> <run-hex> <peer-uid> [--monitor]\n"
+    "          mfg source-shutdown [--monitor]\n"
     "coredump: coredump status|erase\n"
     "          coredump dump [--output <file>]\n";
 
@@ -516,6 +521,11 @@ static int scan_command(h2_h2loader_cli_context_t* context,
 
 static h2_h2loader_host_command_t command_kind(int argc,
                                                const char* const* argv) {
+  if (strcmp(argv[0], "mfg") == 0 &&
+      (argc == 1 || (argc == 2 && strcmp(argv[1], "status") == 0) ||
+       (argc == 2 && strcmp(argv[1], "source-shutdown") == 0) ||
+       (argc == 7 && strcmp(argv[1], "calibrate") == 0) || argc == 4))
+    return H2_H2LOADER_HOST_COMMAND_MFG;
   if (argc == 2 && strcmp(argv[0], "stats") == 0 &&
       strcmp(argv[1], "--data-checksum") == 0)
     return H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM;
@@ -975,6 +985,26 @@ static int device_command(h2_h2loader_cli_context_t* context,
   } else if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) {
     request.wifi_scan_limit = wifi_scan_limit;
     request.wifi_scan_timeout_ms = wifi_scan_timeout_ms;
+  } else if (kind == H2_H2LOADER_HOST_COMMAND_MFG) {
+    request.mfg_action = argc >= 2 ? argv[1] : "status";
+    if (argc == 4) {
+      request.mfg_step = argv[2];
+      request.mfg_ticket = argv[3];
+    }
+    if (argc == 7) {
+      if (strlen(argv[3]) == 0 || strlen(argv[3]) > 3 || strlen(argv[4]) == 0 ||
+          strlen(argv[4]) > 3 ||
+          strspn(argv[3], "0123456789") != strlen(argv[3]) ||
+          strspn(argv[4], "0123456789") != strlen(argv[4])) {
+        (void)h2_h2loader_cli_transport_disconnect(&transport);
+        return H2_H2LOADER_CLI_EXIT_USAGE;
+      }
+      request.mfg_peer_ipv4 = argv[2];
+      request.mfg_speaker_percent = (uint32_t)strtoul(argv[3], NULL, 10);
+      request.mfg_mic_percent = (uint32_t)strtoul(argv[4], NULL, 10);
+      request.mfg_calibration_run = argv[5];
+      request.mfg_peer_uid = argv[6];
+    }
   }
   if (rc == H2_PAL_OK) {
     context->command_output_started = 0u;
@@ -983,14 +1013,19 @@ static int device_command(h2_h2loader_cli_context_t* context,
   if (rc == H2_PAL_OK &&
       result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
       monitor_after) {
-    h2_h2loader_host_status_t final_status = {0};
-    (void)h2_h2loader_cli_transport_disconnect(&transport);
-    rc = reconnect_and_verify_reboot(context, &transport, kind, &status,
-                                     &final_status);
-    if (rc == H2_PAL_OK) {
-      rc = monitor_transport(context, &transport, 1, kind, &status);
+    if (kind == H2_H2LOADER_HOST_COMMAND_MFG) {
+      rc = monitor_transport(context, &transport, 1, 0, NULL);
+      if (rc == H2_PAL_EXIT) rc = H2_PAL_OK;
+    } else {
+      h2_h2loader_host_status_t final_status = {0};
+      (void)h2_h2loader_cli_transport_disconnect(&transport);
+      rc = reconnect_and_verify_reboot(context, &transport, kind, &status,
+                                       &final_status);
+      if (rc == H2_PAL_OK) {
+        rc = monitor_transport(context, &transport, 1, kind, &status);
+      }
+      if (rc == H2_PAL_EXIT) rc = H2_PAL_OK;
     }
-    if (rc == H2_PAL_EXIT) rc = H2_PAL_OK;
   } else if (rc == H2_PAL_OK &&
              result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
              reboot_command_kind(kind)) {
@@ -1265,11 +1300,17 @@ int h2_h2loader_cli_main(h2_runtime_t* runtime,
     const char* parts[H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY] = {command};
     int count = 1;
     int monitor_after = 0;
-    if (strcmp(command, "reboot") == 0 && argc > 0 &&
-        strcmp(argv[argc - 1], "--monitor") == 0) {
+    if ((strcmp(command, "reboot") == 0 || strcmp(command, "mfg") == 0) &&
+        argc > 0 && strcmp(argv[argc - 1], "--monitor") == 0) {
       monitor_after = 1;
       --argc;
-      if (argc != 1) return H2_H2LOADER_CLI_EXIT_USAGE;
+      if (strcmp(command, "reboot") == 0 && argc != 1)
+        return H2_H2LOADER_CLI_EXIT_USAGE;
+      if (strcmp(command, "mfg") == 0 &&
+          !((argc == 6 && strcmp(argv[0], "calibrate") == 0) ||
+            (argc == 1 && strcmp(argv[0], "source-shutdown") == 0) ||
+            (argc == 3 && strcmp(argv[0], "retry") == 0)))
+        return H2_H2LOADER_CLI_EXIT_USAGE;
     }
     while (count < (int)H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY &&
            count - 1 < argc) {

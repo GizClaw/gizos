@@ -877,6 +877,7 @@ static int es8311_audio_get_info(void* user, h2_audio_info_t* info) {
   info->mic_queue_frames = state->config.mic_queue_frames;
   info->track_queue_frames = state->config.track_queue_frames;
   info->max_tracks = state->config.max_tracks;
+  info->aec_enabled = state->config.enable_aec;
   return H2_AUDIO_OK;
 }
 
@@ -1012,13 +1013,11 @@ static int es8311_audio_start_mic(void* user) {
 static int es8311_audio_stop_mic(void* user) {
   h2_esp_es8311_audio_system_t* state = (h2_esp_es8311_audio_system_t*)user;
   state->mic_started = 0;
-  /* Diagnostics borrow frame views; join before the caller reads its counters
-   * or releases an observer. Ordinary capture retains its idle worker. */
-  if (state->aec_observer.on_capture != NULL) {
-    state->mic_task_started = 0;
-    int rc = es8311_audio_wait_mic_exit(state);
-    if (rc != H2_AUDIO_OK) return rc;
-  }
+  /* Retire ordinary capture too: the next stopped-state operation may
+   * register AEC diagnostics, as when MFG advances from MIC to AEC. */
+  state->mic_task_started = 0;
+  int rc = es8311_audio_wait_mic_exit(state);
+  if (rc != H2_AUDIO_OK) return rc;
   for (uint32_t waited_ms = 0u; state->mic_processing && waited_ms < 200u;
        waited_ms += 10u) {
     vTaskDelay(pdMS_TO_TICKS(10));

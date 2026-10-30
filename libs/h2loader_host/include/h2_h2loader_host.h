@@ -50,6 +50,7 @@ extern "C" {
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT (UINT32_C(1) << 18)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE (UINT32_C(1) << 19)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS (UINT32_C(1) << 20)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_MFG (UINT32_C(1) << 21)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL       \
   (H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP |      \
    H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER |   \
@@ -67,7 +68,8 @@ extern "C" {
    H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN |       \
    H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT |    \
    H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT | \
-   H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS)
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS |     \
+   H2_H2LOADER_HOST_COMMAND_AVAILABLE_MFG)
 
 typedef enum h2_h2loader_host_transport {
   H2_H2LOADER_HOST_TRANSPORT_SERIAL = 1,
@@ -279,6 +281,7 @@ typedef enum h2_h2loader_host_command {
   H2_H2LOADER_HOST_COMMAND_WIFI_STATUS = 20,
   /** `stats`, waiting for its installed-data checksum line after status. */
   H2_H2LOADER_HOST_COMMAND_DATA_CHECKSUM = 21,
+  H2_H2LOADER_HOST_COMMAND_MFG = 22,
 } h2_h2loader_host_command_t;
 
 /**
@@ -316,6 +319,18 @@ typedef struct h2_h2loader_host_command_request {
   const char* url;
   uint64_t expected_bytes;
   const char* expected_sha256;
+  /** MFG uses a closed action set and one whitespace-free step plus the
+   * eight-hex-digit ticket returned by the current factory session. */
+  const char* mfg_action;
+  const char* mfg_step;
+  const char* mfg_ticket;
+  /** Explicit controlled acoustic calibration, used with action="calibrate".
+   * No arbitrary factory command string is accepted. */
+  const char* mfg_peer_ipv4;
+  const char* mfg_peer_uid;
+  const char* mfg_calibration_run;
+  uint32_t mfg_speaker_percent;
+  uint32_t mfg_mic_percent;
   /** Optional cooperative cancellation callback and borrowed context. */
   h2_h2loader_host_cancelled_fn is_cancelled;
   void* cancel_user;
@@ -446,6 +461,8 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
     h2_h2loader_host_ble_connection_t** out_connection,
     h2_h2loader_host_status_t* out_status);
 
+/** Request link shutdown and join its stream. Failed cleanup retains the
+ * connection for retry; success clears *inout_connection. */
 h2_pal_result_t h2_h2loader_host_ble_disconnect(
     h2_h2loader_host_ble_connection_t** inout_connection);
 

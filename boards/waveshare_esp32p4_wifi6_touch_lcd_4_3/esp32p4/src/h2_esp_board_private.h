@@ -5,6 +5,8 @@
 
 #include "h2/pal/os/h2_pal_fs.h"
 #include "h2/pal/hal/h2_pal_audio.h"
+#include "h2/pal/hal/h2_pal_camera.h"
+#include "h2/pal/hal/h2_pal_touch.h"
 #include "h2/pal/hal/h2_pal_ble.h"
 #include "h2/pal/os/h2_pal_crypto.h"
 #include "h2/pal/os/h2_pal_disk.h"
@@ -62,6 +64,8 @@ h2_pal_display_t* h2_esp_board_display_if_initialized(void);
 h2_pal_audio_t* h2_esp_board_audio(void);
 h2_pal_audio_t* h2_esp_board_audio_if_initialized(void);
 h2_pal_result_t h2_esp_board_audio_deinit(void);
+const h2_pal_camera_api_t* h2_esp_board_camera_api(void);
+const h2_pal_touch_api_t* h2_esp_board_touch_api(void);
 
 #ifdef __cplusplus
 }

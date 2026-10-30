@@ -57,6 +57,8 @@ h2_pal_wifi_ap_t* h2_esp_board_wifi_ap(void);
 h2_pal_wifi_settings_t* h2_esp_board_wifi_settings(void);
 const h2_pal_periph_api_t* h2_esp_board_periph_api(void);
 const h2_pal_button_api_t* h2_esp_board_button_api(void);
+const h2_pal_touch_api_t* h2_esp_board_touch_api(void);
+const h2_pal_camera_api_t* h2_esp_board_camera_api(void);
 const h2_pal_imu_api_t* h2_esp_board_imu_api(void);
 h2_pal_input_api_t* h2_esp_board_input_api(void);
 h2_pal_modem_t* h2_esp_board_modem(void);

@@ -1,0 +1,4 @@
+#ifndef H2_P4_TEST_VIDEO_DEVICE_H
+#define H2_P4_TEST_VIDEO_DEVICE_H
+#define ESP_VIDEO_MIPI_CSI_DEVICE_NAME "/dev/video0"
+#endif

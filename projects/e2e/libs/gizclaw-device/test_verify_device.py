@@ -10,6 +10,24 @@ def frame(body, nonce="1" * 32, *, admitted=1, confirm=0):
 
 
 class LedgerAdmission(unittest.TestCase):
+    def test_watchdog_cannot_be_hidden_by_an_admitted_replay(self):
+        body = b"H2_GIZCLAW_E2E symbol=unit stage=unit result=PASS rc=0\n"
+        fault = b"E (155443) task_wdt: Task watchdog got triggered.\n"
+        for data in (fault + frame(body), frame(body) + fault,
+                     frame(body) + fault + frame(body)):
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                extract(data, version="unit-r1")
+
+    def test_only_a_fresh_boot_clears_the_health_fault(self):
+        body = b"H2_GIZCLAW_E2E symbol=unit stage=unit result=PASS rc=0\n"
+        fault = b"E (1) task_wdt: Task watchdog got triggered.\n"
+        ready = b"H2_GIZCLAW_E2E_WS175C stage=launcher status=READY\n"
+        with self.assertRaises(ValueError):
+            extract(fault + ready + frame(body), version="unit-r1")
+        boot = b"H2_GIZCLAW_BOOT platform=waveshare_esp32s3_touch_amoled_1_75c reset_reason=3\n"
+        _, receipt = extract(fault + boot + ready + frame(body), version="unit-r1")
+        self.assertEqual(receipt["execution"], "1" * 32)
+
     def test_complete_single_frame_and_fresh_execution(self):
         body = b"H2_GIZCLAW_E2E stage=coverage-begin case=resource\n"
         result, identity = extract(frame(body).replace(b"\n", b"\r\n"), version="unit-r1")

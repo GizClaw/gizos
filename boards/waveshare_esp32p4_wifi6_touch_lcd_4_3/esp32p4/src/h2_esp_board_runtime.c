@@ -1,6 +1,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_board_config.h"
 #include "h2_esp_board_private.h"
+#include "h2_esp_p4_board_internal.h"
 
 #include "h2_corehttp.h"
 
@@ -82,7 +83,8 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
       .audio_decoder = h2_pal_unsupported_audio_decoder_api(),
       .periph = h2_esp_board_periph_api(),
       .button = h2_esp_board_button_api(),
-      .touch = h2_pal_unsupported_touch_api(),
+      .touch = h2_esp_board_touch_api(),
+      .camera = h2_esp_board_camera_api(),
       .buzzer = h2_pal_unsupported_buzzer_api(),
       .nfc = h2_pal_unsupported_nfc_api(),
       .nfc_card_emulation = h2_pal_unsupported_nfc_card_emulation_api(),
@@ -105,7 +107,13 @@ h2_pal_result_t h2_esp_board_runtime_deinit(void) {
     return H2_PAL_OK;
   }
 
-  h2_pal_result_t rc = h2_esp_board_audio_deinit();
+  h2_pal_result_t rc = h2_pal_camera_stop(h2_esp_board_camera_api());
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_pal_touch_close(h2_esp_board_touch_api());
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_esp_board_audio_deinit();
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_esp_p4_board_i2c_deinit();
   if (rc != H2_PAL_OK) {
     return rc;
   }
