@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { Resources, type Tool } from "../src/resources";
+import { Resources, tools, type Tool } from "../src/resources";
 import { cleanEnvironment, Manager, shellEnvironment } from "../src/manager";
 import { execute, exists, type Command } from "../src/common";
 
@@ -73,6 +73,20 @@ test("adoption validates a complete loader and exports its executable and PATH w
   expect((await resources.describe(tool)).executable).toBe(environment.BK_LOADER_BIN!);
   await rm(join(external, "_internal/runtime"));
   await expect(resources.environment({ PATH: "/usr/bin:/bin" })).rejects.toThrow("input is missing");
+});
+
+test("the source loader exports its runnable launcher without putting its private Python on PATH", async () => {
+  const root = await directory();
+  const tool = tools.find(tool => tool.kind === "bk-loader" && tool.default)!;
+  const external = join(root, "python environment");
+  await script(join(external, "bin/python"), "exit 0\n");
+  await script(join(external, "commands/bk_loader"), "printf 'bk_loader.py,v1.1.0.2\\n'\n");
+  const resources = new Resources(join(root, "shared"), command, [tool]);
+  await resources.setup(tool, external);
+  const environment = await resources.environment({ PATH: "/usr/bin:/bin" });
+  expect(environment.PATH).not.toContain(join(external, "bin"));
+  const output = await execute(["sh", "-c", '"$BK_LOADER_BIN" --version; command -v bk_loader'], { env: environment });
+  expect(output).toBe(`bk_loader.py,v1.1.0.2\n${environment.BK_LOADER_BIN}`);
 });
 
 test("unsupported loader hosts fail before downloads while Linux-only container inputs stay locatable", async () => {

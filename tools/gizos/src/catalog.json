@@ -133,18 +133,18 @@
       "default": true,
       "requiredFiles": [
         "bin/python",
-        "bin/bk_loader"
+        "commands/bk_loader"
       ],
-      "executable": "bin/bk_loader",
+      "executable": "commands/bk_loader",
       "check": [
         "--version"
       ],
       "expectedOutput": "bk_loader.py,v1.1.0.2",
       "exports": {
-        "BK_LOADER_BIN": "bin/bk_loader"
+        "BK_LOADER_BIN": "commands/bk_loader"
       },
       "path": [
-        "bin"
+        "commands"
       ],
       "hosts": {
         "darwin": {

@@ -1,5 +1,5 @@
 import { chmod, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import bundledCatalog from "./catalog.json";
 import { atomicJson, execute, executable, exists, locked, type Command, type Env } from "./common";
@@ -183,7 +183,9 @@ export class Resources {
             // Console-script shebangs contain the staging path; this launcher
             // locates its Python environment after the atomic directory rename.
             const entry = join(temporary, tool.executable!);
-            await writeFile(entry, `#!/bin/sh\nexec "$(dirname -- "$0")/python" -c 'from bk_loader import cli; cli(prog_name="bk_loader")' "$@"\n`);
+            await mkdir(dirname(entry), { recursive: true });
+            const python = relative(dirname(entry), join(temporary, "bin/python"));
+            await writeFile(entry, `#!/bin/sh\nexec "$(dirname -- "$0")/${python}" -c 'from bk_loader import cli; cli(prog_name="bk_loader")' "$@"\n`);
             await chmod(entry, 0o755);
           } else if (distribution.format === "zip") {
             await this.command(["unzip", "-q", archive!, "-d", temporary]);
