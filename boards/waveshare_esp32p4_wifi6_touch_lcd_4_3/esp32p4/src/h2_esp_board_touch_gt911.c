@@ -46,10 +46,10 @@ static h2_pal_result_t touch_open(void* user) {
   if (err != ESP_OK) return touch_result(err);
   vTaskDelay(pdMS_TO_TICKS(50));
   esp_lcd_panel_io_i2c_config_t io = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
-  err = i2c_master_probe(bus, io.dev_addr, 20);
+  err = i2c_master_probe(bus, (uint16_t)io.dev_addr, 20);
   if (err == ESP_ERR_NOT_FOUND) {
     io.dev_addr = ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS_BACKUP;
-    err = i2c_master_probe(bus, io.dev_addr, 20);
+    err = i2c_master_probe(bus, (uint16_t)io.dev_addr, 20);
   }
   if (err != ESP_OK) return touch_result(err);
   io.scl_speed_hz = 100000;
