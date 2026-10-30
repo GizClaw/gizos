@@ -22,6 +22,10 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_python", version = "2.2.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 
+bun_repository = use_repo_rule("//tools/gizos:bun_repository.bzl", "bun_repository")
+
+bun_repository(name = "gizos_bun")
+
 node = use_extension(
     "@rules_nodejs//nodejs:extensions.bzl",
     "node",

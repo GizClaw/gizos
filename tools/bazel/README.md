@@ -102,28 +102,24 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-The public `GizClaw/gizos-devenv` provider is pinned by
-`tools/bazel/native_versions/gizos_devenv_commit.txt`. It reads the ESP SDK commit
-from this GizOS checkout, fetches its recursive submodules, and installs that
-SDK's GCC/Python tools. SDKs live in `.sources/esp/<commit>` and their tools in
-`.tools/esp-idf/<commit>` under the provider. Different versions coexist without
-resetting existing SDKs. ESP provisioning needs no private GitHub token.
-
-The tools repository derives the unique `python_env/idf6.2_py*_env` installation
-and validates it against the pinned ESP-IDF constraints. Native actions still
-receive validated SDK/tool locators; this provisioning change does not change
-their sandbox or remote-execution contract.
+The TypeScript/Bun manager in `tools/gizos` owns the SDK version catalog and
+installs SDKs into a configurable shared store. Different GizOS worktrees reuse
+that store. IDF versions share their host-specific tools root; each compiler is
+selected from the chosen SDK's `tools/tools.json` rather than requiring a single
+compiler version in the entire directory. The CLI also selects the IDF Python
+environment explicitly. Native actions receive those validated paths through
+locators, preserving their existing sandbox/remote-execution contract.
 
 ```sh
-make devenv
-export GIZOS_ROOT="$PWD"
-. ../gizos-devenv/export.sh
+bun tools/gizos/src/cli.ts setup idf 6.2
+eval "$(bun tools/gizos/src/cli.ts env idf 6.2 --shell sh)"
 bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
-bazel build --config=esp32p4 //projects/example/targets/h2loader_tar_zlib/display/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
 ```
 
-For another installation location, export `GIZOS_DEVENV_ROOT=/path/to/gizos-devenv`
-before `make devenv`, then source `"$GIZOS_DEVENV_ROOT/export.sh"`.
+Use `env` to inspect paths, `config set root /path/to/shared/store` to configure
+storage, and `adopt` to register an existing installation without moving or
+redownloading it. After npm publication the same commands work through
+`bunx gizos`. See `tools/gizos/README.md`.
 
 The rule keeps its project-local `srcs` and explicit out-of-package support
 files as action inputs and dependency edges. `FirmwareInfo`
@@ -144,19 +140,19 @@ A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDEN
 
 ## BK7258 external builds
 
-Install the public BK SDK with `make devenv DEVENV_TARGET=bk7258`, then
-source the public provider with `GIZOS_ROOT` set. It exports `BK7258_PATH`. A repository
+Install BK with `bun tools/gizos/src/cli.ts setup bk 3.1.1`, then activate it
+with `env bk 3.1.1 --shell sh`. This exports `BK7258_PATH`. A repository
 rule validates SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` and a
-clean tracked checkout. Another repository rule downloads Arm GNU
-10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values,
+clean tracked checkout. Another repository rule consumes the shared GNU Arm
+root from `GIZOS_BK_TOOLCHAIN_ROOT`, or downloads Arm GNU 10.3-2021.10 when unset.
+Both paths verify the committed expanded-tree SHA-256; downloads also verify the archive,
 and exposes compiler version `10.3.1` through a locator. The action receives
 those locators and a Bazel Python runtime; it does not inherit SDK, toolchain,
 archive, Python, or `PATH` variables from the caller.
 
 ```sh
-make devenv DEVENV_TARGET=bk7258
-export GIZOS_ROOT="$PWD"
-. ../gizos-devenv/export.sh
+bun tools/gizos/src/cli.ts setup bk 3.1.1
+eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1 --shell sh)"
 bazel build --config=bk7258  //projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405:package
 ```
 

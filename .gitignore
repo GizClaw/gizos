@@ -31,3 +31,7 @@ compile_commands.json
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# Devenv CLI development output (SDKs live in the configured shared store).
+/tools/gizos/dist/
+/tools/gizos/node_modules/

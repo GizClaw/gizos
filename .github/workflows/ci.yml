@@ -52,9 +52,6 @@ jobs:
       - name: Check formatting of the source tree
         run: scripts/config/format-check.sh --all
 
-      - name: Test public development environment integration
-        run: python3 scripts/config/test_devenv.py -v
-
   private-dependencies:
     if: >-
       github.event_name != 'pull_request' ||
@@ -573,42 +570,6 @@ jobs:
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
           submodules: false
 
-      - name: Read GizOS devenv pin
-        id: devenv-version
-        shell: bash
-        run: printf 'commit=%s\n' "$(cat tools/bazel/native_versions/gizos_devenv_commit.txt)" >> "$GITHUB_OUTPUT"
-
-      - name: Check out public GizOS devenv
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: GizClaw/gizos-devenv
-          ref: ${{ steps.devenv-version.outputs.commit }}
-          path: gizos-devenv
-          fetch-depth: 1
-          persist-credentials: false
-          submodules: false
-
-      - name: Fetch ESP-IDF at the GizOS SDK pin
-        shell: bash
-        run: |
-          sdk_root="$(python3 gizos-devenv/tools/sources/sdk.py --gizos-root "$GITHUB_WORKSPACE" fetch esp)"
-          printf 'H2_ESP_IDF_SDK_ROOT=%s\n' "$sdk_root" >> "$GITHUB_ENV"
-
-      - name: Restore ESP-IDF tool cache
-        id: esp-idf-cache
-        continue-on-error: true
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: gizos-devenv/.tools/esp-idf
-          key: gizos-esp-idf-v1-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5-esp32s31
-
-      - name: Install ESP-IDF 6.2 tools
-        shell: bash
-        run: |
-          tools_root="$(python3 gizos-devenv/tools/sources/sdk.py --gizos-root "$GITHUB_WORKSPACE" tools-path esp)"
-          python3 gizos-devenv/tools/sources/sdk.py --gizos-root "$GITHUB_WORKSPACE" install esp --targets esp32s3,esp32p4,esp32c5,esp32s31
-          printf 'H2_ESP_IDF_TOOLS_ROOT=%s\n' "$tools_root" >> "$GITHUB_ENV"
-
       - name: Install native compiler cache
         shell: bash
         run: |
@@ -705,6 +666,38 @@ jobs:
           chmod +x "$bazel_path"
           printf 'BAZEL_BIN=%s\n' "$bazel_path" >> "$GITHUB_ENV"
 
+      - name: Build in-repository gizos command
+        shell: bash
+        run: |
+          "$BAZEL_BIN" build --config=linux_x86_64 //tools/gizos:gizos
+          printf 'GIZOS_BIN=%s/tools/gizos/gizos.sh\n' "$(realpath bazel-bin)" >> "$GITHUB_ENV"
+          printf 'GIZOS_DEVENV_HOME=%s/gizos-devenv\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: Fetch catalog-pinned ESP-IDF sources
+        shell: bash
+        run: |
+          "$GIZOS_BIN" setup idf 6.2 --sources-only
+          "$GIZOS_BIN" env idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
+          python3 - <<'PYENV'
+          import json, os
+          item = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "devenv-idf.json")))["environments"][0]
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write("H2_ESP_IDF_SDK_ROOT=" + item["sdk"] + "\n")
+              output.write("H2_ESP_IDF_TOOLS_ROOT=" + item["tools"] + "\n")
+          PYENV
+
+      - name: Restore ESP-IDF tool cache
+        id: esp-idf-cache
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/gizos-devenv/tools/idf
+          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5-esp32s31
+
+      - name: Install catalog-pinned ESP-IDF tools
+        shell: bash
+        run: '"$GIZOS_BIN" setup idf 6.2 --targets esp32s3,esp32p4,esp32c5,esp32s31'
+
       - name: Configure Bazel remote cache
         if: vars.BAZEL_REMOTE_CACHE_URL != ''
         shell: bash
@@ -762,9 +755,7 @@ jobs:
         env:
           BAZEL_NATIVE_BUILD_JOBS: ${{ matrix.native_build_jobs }}
         run: |
-          export GIZOS_DEVENV_ROOT="$GITHUB_WORKSPACE/gizos-devenv"
-          export GIZOS_ROOT="$GITHUB_WORKSPACE"
-          . gizos-devenv/export.sh
+          eval "$("$GIZOS_BIN" env idf 6.2 --shell bash)"
           test "$IDF_PATH" = "$H2_ESP_IDF_SDK_ROOT"
           test "$H2LOADER_IDF_PATH" = "$IDF_PATH"
           test "$IDF_TOOLS_PATH" = "$H2_ESP_IDF_TOOLS_ROOT"
@@ -793,7 +784,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          path: gizos-devenv/.tools/esp-idf
+          path: ${{ runner.temp }}/gizos-devenv/tools/idf
           key: ${{ steps.esp-idf-cache.outputs.cache-primary-key }}
 
   bk7258-compatible-graph:
@@ -1119,21 +1110,6 @@ jobs:
           git -C .firmware-devenv-jieli config --unset-all http.https://github.com/.extraheader || true
           git -C .firmware-devenv-jieli config --unset-all core.sshCommand || true
 
-      - name: Read public JieLi bootstrap provider pin
-        id: jieli-devenv-version
-        if: matrix.config == 'ac695n' || matrix.config == 'ac707n' || matrix.config == 'ac791n'
-        shell: bash
-        run: printf 'commit=%s\n' "$(cat tools/bazel/native_versions/gizos_devenv_commit.txt)" >> "$GITHUB_OUTPUT"
-
-      - name: Check out public JieLi bootstrap scripts
-        if: matrix.config == 'ac695n' || matrix.config == 'ac707n' || matrix.config == 'ac791n'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: GizClaw/gizos-devenv
-          ref: ${{ steps.jieli-devenv-version.outputs.commit }}
-          path: .gizos-devenv-jieli
-          persist-credentials: false
-
       - name: Configure native SDK and toolchain locators
         shell: bash
         run: |
@@ -1143,7 +1119,7 @@ jobs:
               root="$RUNNER_TEMP/jieli"
               JIELI_TOOLS_DIR="$root" \
                 JIELI_ARCHIVE_DIR="$GITHUB_WORKSPACE/.firmware-devenv-jieli/tools/jieli_toolchain/archives" \
-                sh "$GITHUB_WORKSPACE/.gizos-devenv-jieli/tools/jieli_toolchain/bootstrap.sh"
+                sh "$GITHUB_WORKSPACE/tools/gizos/vendor/jieli/bootstrap.sh"
               manifest=tools/bazel/native_versions/jieli_toolchain_archives.txt
               while read -r kind _ _ _ directory; do
                 case "$kind" in ''|'#'*) continue ;; esac

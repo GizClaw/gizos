@@ -56,7 +56,7 @@ export K4B_ADB_SERIAL='<adb-serial>'
 
 ## 构建
 
-构建 host 必须是 Linux x86_64，因为当前 hermetic ARM GNU toolchain distribution 的 compiler executable 是 Linux x86_64。CedarX compact SDK 由操作者另行提供；公开 `gizos-devenv` 不分发厂商头文件或动态库。显式设置路径：
+构建 host 必须是 Linux x86_64，因为当前 hermetic ARM GNU toolchain distribution 的 compiler executable 是 Linux x86_64。CedarX compact SDK 由操作者另行提供；`gizos` npm 包不分发厂商头文件或动态库。显式设置路径：
 
 ```sh
 export K4B_CEDARX_INCLUDE_DIR=/path/to/cedarx/include

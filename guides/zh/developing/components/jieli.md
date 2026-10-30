@@ -6,7 +6,7 @@
 
 - 杰理工具链是私有 clang 4.0.1（`-target pi32v2 -mcpu=r3` 或 `-target q32s`），仅发布 Windows 与 Linux x86_64 预编译二进制；一个 tarball 同时包含 `common/`、`pi32/`、`pi32v2/`、`q32s/`。AC695N/AC696N/AC701N/AC707N/AC791N 都使用 `pi32v2/bin`，AC63/AW31N 使用 `q32s/bin`。
 - post-build 工具（`isd_download`、`fw_add`、`ufw_maker`、`packres`、`remove_tailing_zeros` 等）是 Linux x86_64 Qt 程序，必须以 `QT_QPA_PLATFORM=offscreen` 运行。
-- 上游下载短链每次重定向到最新版本且不保留历史，因此 tarball 由 firmwares-devenv 镜像（`tools/jieli_toolchain/archives`）并由 `make jieli-toolchain` 解包到 `.tools/jieli-linux-toolchains-20250805.1`、`.tools/jieli-linux-post-build-tools-20260728.1`（`--strip-components=1`，`packres` 改名 `pack_res`）；`tools/bazel/native_versions/jieli_toolchain_archives.txt` 固定 archive SHA-256 与 bootstrap 产出的 expanded-tree SHA-256，`@h2_jieli_toolchain` 与 `@h2_jieli_postbuild` repository 只消费 `JIELI_TOOLCHAIN_ROOT`、`JIELI_POSTBUILD_ROOT` 指向的解包树并用 `toolchain_identity.py` 校验，不从网络下载。CI 继续从私有资产库取得已授权归档，但 bootstrap 脚本来自固定版本的公开 `GizClaw/gizos-devenv`，通过 `JIELI_ARCHIVE_DIR` 指定归档目录；公开 provider 不携带厂商归档。
+- 上游下载短链每次重定向到最新版本且不保留历史，因此 tarball 由 firmwares-devenv 镜像（`tools/jieli_toolchain/archives`）并由 `make jieli-toolchain` 解包到 `.tools/jieli-linux-toolchains-20250805.1`、`.tools/jieli-linux-post-build-tools-20260728.1`（`--strip-components=1`，`packres` 改名 `pack_res`）；`tools/bazel/native_versions/jieli_toolchain_archives.txt` 固定 archive SHA-256 与 bootstrap 产出的 expanded-tree SHA-256，`@h2_jieli_toolchain` 与 `@h2_jieli_postbuild` repository 只消费 `JIELI_TOOLCHAIN_ROOT`、`JIELI_POSTBUILD_ROOT` 指向的解包树并用 `toolchain_identity.py` 校验，不从网络下载。CI 继续从私有资产库取得已授权归档，但 bootstrap 脚本来自同一 GizOS 提交中的 `tools/gizos/vendor/jieli`，通过 `JIELI_ARCHIVE_DIR` 指定归档目录；公开 provider 不携带厂商归档。
 - 链接需要 `ulimit -n >= 8192`；runner 在调用 Make 前提升该限制并 fail closed。
 
 ## pi32v2 compatible graph

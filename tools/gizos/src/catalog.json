@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "sdks": [
+    {
+      "kind": "idf",
+      "version": "6.0.3",
+      "repository": "https://github.com/GizClaw/esp-idf.git",
+      "commit": "76f5dedd9950a3012fee8fb7d5586df21fc67802",
+      "requiredFile": "tools/idf.py",
+      "pythonSeries": "6.0",
+      "targets": ["esp32s3", "esp32p4", "esp32c5"]
+    },
+    {
+      "kind": "idf",
+      "version": "6.2",
+      "default": true,
+      "repository": "https://github.com/GizClaw/esp-idf.git",
+      "commit": "ddb3852ab5c7f9e6dbc268203ef9d612de391bf8",
+      "requiredFile": "tools/idf.py",
+      "pythonSeries": "6.2",
+      "targets": ["esp32s3", "esp32p4", "esp32c5", "esp32s31"]
+    },
+    {
+      "kind": "bk",
+      "version": "3.1.1",
+      "default": true,
+      "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
+      "commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
+      "requiredFile": "Makefile"
+    }
+  ],
+  "arm": {
+    "version": "10.3-2021.10",
+    "compilerVersion": "10.3.1",
+    "hosts": {
+      "darwin": {
+        "url": "https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-mac.tar.bz2",
+        "sha256": "fb613dacb25149f140f73fe9ff6c380bb43328e6bf813473986e9127e2bc283b"
+      },
+      "linux": {
+        "url": "https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2",
+        "sha256": "97dbb4f019ad1650b732faffcc881689cedc14e2b7ee863d390e0a41ef16c9a3"
+      }
+    }
+  }
+}

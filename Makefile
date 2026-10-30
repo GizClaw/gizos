@@ -3,7 +3,8 @@
 .PHONY: help cfg-doctor format format-check bazel-build bazel-test bazel-test-downstream-consumer bazel-coverage-report bazel-release h2loader-bin test-web guides-build guides-watch guides-preview
 
 BAZEL_BIN ?= bazel
-DEVENV_TARGET ?= esp
+BUN_BIN ?= bun
+GIZOS_ARGS ?= env
 GUIDES_WATCH_HOST ?= 127.0.0.1
 GUIDES_WATCH_PORT ?= 5174
 GUIDES_PREVIEW_HOST ?= 127.0.0.1
@@ -22,9 +23,9 @@ help:
 cfg-doctor:
 	@scripts/config/cfg-doctor.sh
 
-.PHONY: devenv
-devenv:
-	@python3 scripts/config/setup-devenv.py "$(DEVENV_TARGET)"
+.PHONY: gizos
+gizos:
+	@"$(BUN_BIN)" tools/gizos/src/cli.ts $(GIZOS_ARGS)
 
 format:
 	@scripts/config/format.sh

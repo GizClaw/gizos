@@ -78,6 +78,9 @@ def _toolchain_root(repository_ctx):
     locator = json.decode(repository_ctx.read(repository_ctx.attr.tools_locator))
     if not locator.get("enabled", False):
         return None
+    selected_bin = locator.get("paths", {}).get("xtensa_bin", "")
+    if selected_bin:
+        return repository_ctx.path(selected_bin).dirname
     tools_path = locator.get("paths", {}).get("tools_root", "")
     if not tools_path:
         fail("ESP-IDF tools locator has no tools_root")

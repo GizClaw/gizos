@@ -25,6 +25,7 @@ build:macos --define=h2_host_os=macos
 build:windows --define=h2_host_os=windows
 
 build --strip=never
+build --repo_env=GIZOS_BK_TOOLCHAIN_ROOT
 build --experimental_remote_scrubbing_config=tools/bazel/remote_scrubbing_config.textproto
 
 build:linux_x86_64 --platforms=//tools/bazel/platforms:linux_x86_64
@@ -82,6 +83,7 @@ test --remote_download_outputs=minimal
 
 build:esp --repo_env=IDF_PATH
 build:esp --repo_env=IDF_TOOLS_PATH
+build:esp --repo_env=IDF_PYTHON_ENV_PATH
 build:esp --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT
 build:esp --action_env=H2LOADER_WIFI_CREDENTIALS
 build:esp32s3 --config=esp

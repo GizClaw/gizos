@@ -69,13 +69,13 @@ make bazel-test BAZEL_CONFIG=linux_x86_64
 
 On Apple Silicon, use `BAZEL_CONFIG=macos_arm64`. Other supported configurations and native SDK setup are documented in the [Bazel guide](tools/bazel/README.md).
 
-ESP development uses the public [gizos-devenv](https://github.com/GizClaw/gizos-devenv)
-provider. `make devenv` installs its pinned revision and the ESP SDK selected by
-this checkout. Set `GIZOS_DEVENV_ROOT` when storing it outside the default sibling
-`../gizos-devenv` directory, then source its `export.sh` with `GIZOS_ROOT` set to
-this checkout before a direct Bazel build. `DEVENV_TARGET=setup` also provisions
-the public BK SDK, GNU Arm and ADB. Optional vendor SDKs and binaries remain
-explicit external inputs; see the [environment guide](guides/zh/using/h2loader/cli.md).
+Shared SDKs and toolchains are managed by the TypeScript/Bun CLI in
+[`tools/gizos`](tools/gizos/README.md). The manager owns SDK version catalogs;
+all worktrees reuse a configurable machine-wide store. Use
+`bun tools/gizos/src/cli.ts setup idf 6.2` to prepare ESP tools and
+`bun tools/gizos/src/cli.ts env` to inspect installation paths. GizOS Release
+also builds and publishes the `gizos` npm package for bunx/global use.
+Optional vendor assets remain explicit external inputs.
 
 To verify that public targets also work when GizOS is consumed as a dependency:
 

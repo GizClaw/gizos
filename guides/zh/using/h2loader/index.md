@@ -36,13 +36,14 @@ make cfg-doctor
 1. 仓库 `scripts/config/gizos-devenv-env.sh`
 2. `~/.config/h2loader/env`
 
-公开 provider `GizClaw/gizos-devenv` 读取 GizOS 的 SDK 版本清单。Adapter 默认使用同级 `../gizos-devenv`，也支持显式 `GIZOS_DEVENV_ROOT`，并检查 provider commit 与当前 GizOS 的 pin 相同。首次安装 ESP 环境：
+GizOS 内的 `tools/gizos` 提供 TypeScript/Bun 管理器，版本清单与 npm 包随 GizOS 一起维护和发布。不同 worktree 共享 SDK/toolchain 安装，位置由管理器配置决定。源码内使用：
 
 ```sh
-make devenv
+bun tools/gizos/src/cli.ts setup idf 6.2
+bun tools/gizos/src/cli.ts env
 ```
 
-完整公开环境使用 `make devenv DEVENV_TARGET=setup`。未安装默认 provider 时 host-only 检查仍可运行；已有本地 `.env/devenv` 仅作为迁移兼容入口。私有 SDK 和厂商二进制通过显式路径接入，不随公开 provider 分发。
+npm 发布后可以通过 `bunx gizos` 运行同一组命令。未安装环境时 host-only 检查仍可运行；已有本地 `.env/devenv` 仅作为迁移兼容入口。私有 SDK 和厂商二进制通过显式路径接入。
 
 不再加载 `.env/<os-user>`；Wi-Fi credential 和其他 secret 只能放在 `~/.config/h2loader/env`。
 

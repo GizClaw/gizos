@@ -6,23 +6,22 @@ GizOS 使用标准 ADB 对已经运行 Linux userspace 和 `adbd` 的设备执�
 
 ## 准备 ADB
 
-公开 `gizos-devenv` 默认使用同级 checkout，也可通过 `GIZOS_DEVENV_ROOT` 指定位置。首次安装或验证固定版本 ADB：
+GizOS 与 `firmwares-devenv` 必须是同级 checkout。首次安装或验证固定版本 ADB：
 
 ```sh
-make devenv DEVENV_TARGET=adb
-make -C "${GIZOS_DEVENV_ROOT:-../gizos-devenv}" adb-check
+make -C ../firmwares-devenv adb
+make -C ../firmwares-devenv adb-check
 ```
 
 从 GizOS 仓库根目录加载 shared environment：
 
 ```sh
-export GIZOS_ROOT="$PWD"
-. "${GIZOS_DEVENV_ROOT:-../gizos-devenv}/export.sh"
+REPO_ROOT=$PWD . .env/devenv
 test -x "$ADB"
 "$ADB" version
 ```
 
-`gizos-devenv` 导出的 `ADB` 是经过版本和可执行性检查的绝对路径；同一 `platform-tools` 目录也会进入 `PATH`。自动化和文档命令使用 `"$ADB"`，避免误用机器上其它版本。
+`firmwares-devenv` 导出的 `ADB` 是经过版本和可执行性检查的绝对路径；同一 `platform-tools` 目录也会进入 `PATH`。自动化和文档命令使用 `"$ADB"`，避免误用机器上其它版本。
 
 ## Scan 与显式设备选择
 
