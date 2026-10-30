@@ -7,6 +7,7 @@
 #include "h2_loader_package.h"
 #include "h2_loader_ble.h"
 #include "h2loader_bleikcp_internal.h"
+#include "h2loader_board_extension.h"
 #include "h2/pal/core/h2_pal_errors.h"
 #include "h2_bk_target_task_policy.h"
 
@@ -47,6 +48,19 @@ static char s_h2loader_startup_error_stage[24] = "none";
 static int s_h2loader_initialized;
 static volatile int s_h2loader_file_points_ready;
 static volatile int s_h2loader_mount_in_progress;
+
+__attribute__((weak)) int h2loader_board_extend_runtime(
+    h2_runtime_config_t* config) {
+  (void)config;
+  return H2_PAL_OK;
+}
+
+__attribute__((weak)) int h2loader_board_extend_app(
+    h2_runtime_t* runtime, h2loader_app_config_t* config) {
+  (void)runtime;
+  (void)config;
+  return H2_PAL_OK;
+}
 
 static int h2loader_probe_pref(void) {
   h2_pal_pref_namespace_t* ns = NULL;
@@ -374,6 +388,18 @@ static void h2loader_startup_worker(void* user) {
     wait_forever();
   }
   config.device_uid = device_uid;
+  h2loader_app_config_t extension = {
+      .loader = config,
+      .command = command_config,
+  };
+  rc = h2loader_board_extend_app(s_runtime, &extension);
+  if (rc != H2_PAL_OK) {
+    record_startup_error("board_extension", rc);
+    wait_forever();
+  }
+  config = extension.loader;
+  command_config = extension.command;
+  command_config.defer_app_install = extension.before_startup != NULL;
   const h2_pal_mutex_config_t operation_mutex_config = {
       .name = "h2loader-operation",
       .allocator = s_runtime->mem,
@@ -445,6 +471,16 @@ static void h2loader_startup_worker(void* user) {
     record_startup_error("initialization_unlock", rc);
     wait_forever();
   }
+  if (extension.before_startup != NULL) {
+    const h2loader_app_command_service_api_t* service =
+        h2loader_bleikcp_command_service();
+    if (service != NULL && service->open != NULL) {
+      rc =
+          service->open(service->user, s_runtime, &command_config, config.board,
+                        config.hardware_capabilities, &s_h2loader_ble_service);
+      if (rc != H2_PAL_OK) record_startup_error("factory_ble", rc);
+    }
+  }
 
   for (;;) {
     h2_loader_startup_action_t action = H2_LOADER_STARTUP_ACTION_COMMAND_MODE;
@@ -487,6 +523,24 @@ static void h2loader_startup_worker(void* user) {
      * in-progress diagnostic local; persist only an actual failure. */
     emergency_uart_write_string(
         0, "H2_BK_H2LOADER_STEP stage=startup_begin rc=0\r\n");
+    int factory_rc = H2_PAL_OK;
+    if (extension.before_startup != NULL) {
+      (void)h2_pal_mutex_unlock(s_runtime->sync, s_h2loader_operation_mutex);
+      factory_rc = extension.before_startup(
+          extension.before_startup_user, &s_h2loader, s_runtime->sync,
+          s_h2loader_operation_mutex, NULL, NULL);
+      rc = h2_pal_mutex_lock(s_runtime->sync, s_h2loader_operation_mutex);
+      if (rc != H2_PAL_OK) {
+        record_startup_error("factory_relock", rc);
+        wait_forever();
+      }
+      if (factory_rc != H2_PAL_OK && factory_rc != H2_PAL_EXIT) {
+        record_startup_error("factory", factory_rc);
+        (void)persist_startup_result(factory_rc);
+        (void)h2_pal_mutex_unlock(s_runtime->sync, s_h2loader_operation_mutex);
+        break;
+      }
+    }
     rc = h2_loader_startup(&s_h2loader, &action);
     if (rc == H2_PAL_OK) {
       /* Command-mode recovery may intentionally retain a previous failure.
@@ -506,10 +560,17 @@ static void h2loader_startup_worker(void* user) {
     snprintf(line, sizeof(line), "H2_BK_H2LOADER_READY rc=%d action=%s\r\n", rc,
              startup_action_name(action));
     emergency_uart_write_string(0, line);
+    if (rc == H2_PAL_OK && factory_rc == H2_PAL_EXIT &&
+        action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE &&
+        extension.rearm_before_startup != NULL) {
+      extension.rearm_before_startup(extension.before_startup_user);
+      continue;
+    }
     /* Recovery failures retain their diagnostic and Stage. Serve commands
      * instead of retrying a rejected update before BLE can start. */
     if (rc == H2_PAL_OK || action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
-      if (action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
+      if (action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE &&
+          s_h2loader_ble_service == NULL) {
         const h2loader_app_command_service_api_t* command_service =
             h2loader_bleikcp_command_service();
         if (command_service == NULL) {
@@ -606,6 +667,7 @@ static void h2loader_ap_entry(void* user) {
   emergency_uart_write_string(
       0, "H2_BK_H2LOADER_STEP stage=runtime_config begin\r\n");
   int rc = loader_runtime_config(&runtime_config);
+  if (rc == H2_PAL_OK) rc = h2loader_board_extend_runtime(&runtime_config);
   emergency_uart_write_string(
       0, "H2_BK_H2LOADER_STEP stage=runtime_config end\r\n");
   if (rc == H2_PAL_OK) {

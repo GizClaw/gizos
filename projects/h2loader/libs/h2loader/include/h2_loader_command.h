@@ -17,6 +17,19 @@
 extern "C" {
 #endif
 
+typedef enum h2_loader_command_transport {
+  H2_LOADER_COMMAND_TRANSPORT_SERIAL = 0,
+  H2_LOADER_COMMAND_TRANSPORT_BLE = 1,
+} h2_loader_command_transport_t;
+
+/** Optional factory control. Called with operation_mutex held; output must
+ * fit the supplied buffer and contain no credentials. It must not wait for
+ * the lifecycle task. argc/argv contain only the words after "h2loader mfg". */
+typedef int (*h2_loader_mfg_command_fn)(void* user,
+                                        h2_loader_command_transport_t transport,
+                                        size_t argc, const char* const* argv,
+                                        char* output, size_t capacity);
+
 typedef struct h2_loader_command_config {
   h2_loader_t* loader;
   const h2_pal_fs_api_t* fs;
@@ -37,9 +50,12 @@ typedef struct h2_loader_command_config {
   h2_pal_mutex_t* wifi_operation_mutex;
   /** Leaves requested App installation to the Loader lifecycle task. */
   int defer_app_install;
+  h2_loader_command_transport_t transport;
+  void* mfg_user;
+  h2_loader_mfg_command_fn mfg_command;
 } h2_loader_command_config_t;
 
-#define H2_LOADER_COMMAND_DEFINITION_CAPACITY 9u
+#define H2_LOADER_COMMAND_DEFINITION_CAPACITY 10u
 #define H2_LOADER_COMMAND_ROUTE_NODE_CAPACITY 64u
 #define H2_LOADER_COMMAND_INPUT_BUFFER_SIZE 1024u
 #define H2_LOADER_COMMAND_ARGV_CAPACITY 8u

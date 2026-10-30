@@ -40,6 +40,7 @@ h2_pal_result_t h2_esp_platform_power_before_reboot(uint32_t reason) {
   (void)reason;
 
   (void)h2_esp_board_display_power_off();
+  (void)h2_pal_camera_stop(h2_esp_board_camera_api());
 
   h2_pal_audio_t* audio = h2_esp_board_audio_if_initialized();
   if (audio != NULL) {

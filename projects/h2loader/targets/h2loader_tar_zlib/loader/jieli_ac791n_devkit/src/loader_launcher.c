@@ -11,6 +11,7 @@
 #include "h2loader_bleikcp_internal.h"
 #include "h2_loader_sha256.h"
 #include "jieli_loader_platform.h"
+#include "h2loader_board_extension.h"
 #include "os/os_api.h"
 #include "system/task.h"
 #include "update/dual_bank_updata_api.h"
@@ -929,6 +930,8 @@ static void loader_task(void* private_data) {
   }
   usb_diag_write("H2_JIELI_LOADER_OK step=loader_platform\r\n");
   runtime_config.power = h2_jieli_loader_power_api();
+  rc = h2loader_board_extend_runtime(&runtime_config);
+  if (rc != H2_PAL_OK) usb_diag_error_forever("board_runtime", rc);
   usb_diag_write("H2_JIELI_LOADER_ENTER step=runtime_init\r\n");
   rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc != H2_PAL_OK) {
@@ -989,6 +992,8 @@ static void loader_task(void* private_data) {
   config.prepare = prepare_loader;
   config.stop_serve = stop_serve;
   config.serve = serve_loader;
+  rc = h2loader_board_extend_app(runtime, &config);
+  if (rc != H2_PAL_OK) usb_diag_error_forever("board_extension", rc);
 
   /* Preference tracing is useful during filesystem bring-up but it shares the
    * USB0 CDC channel with iKCP. Keep normal Loader builds limited to the
@@ -1043,4 +1048,16 @@ void app_main(void) {
     puts("H2_JIELI_LOADER_ERROR step=task_create");
     usb_diag_error_forever("task_create", H2_PAL_ERR_NO_MEMORY);
   }
+}
+__attribute__((weak)) int h2loader_board_extend_runtime(
+    h2_runtime_config_t* config) {
+  (void)config;
+  return H2_PAL_OK;
+}
+
+__attribute__((weak)) int h2loader_board_extend_app(
+    h2_runtime_t* runtime, h2loader_app_config_t* config) {
+  (void)runtime;
+  (void)config;
+  return H2_PAL_OK;
 }

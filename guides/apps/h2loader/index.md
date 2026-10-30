@@ -32,36 +32,36 @@ H2Loader Loader 与 App 管理 adapter 消费 Runtime 的可选 `ble_local_name`
 - `◇`：产品合同已定义，但入口尚未实现。
 - `—`：当前没有该 board 的入口。
 
-| Image / App | [AMOLED](./boards/amoled/) | [BK7258](./boards/bk7258_v3_202405/) | Zero BK 1.0 | [DevKit](./boards/devkit/) | H200 | H200 V2 | [SZP](./boards/szp/) | Tiga V4.2 | Zero ESP V3.0 | [Waveshare A7670E](./boards/waveshare_esp32s3_a7670e_4g/) | [Waveshare P4](./boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/) |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| H2Loader | ✓ | ✓ | ✓ | ✓ | △ | △ | ✓ | ✓ | △ | ✓ | ✓ |
-| Display | ✓ | ✓ | ✓ | — | — | — | ✓ | ✓ | — | — | ✓ |
-| LVGL Smoke | — | — | ✓ | — | — | — | — | — | — | — | — |
-| Audio System | ✓ | ✓ | ✓ | — | △ | △ | ✓ | ✓ | — | — | ✓ |
-| MP4 Player | — | ✓ | — | — | — | — | — | — | — | — | ✓ |
-| MP4 Player Small | ✓ | — | ✓ | — | — | — | — | ✓ | — | — | ✓ |
-| BLE Broadcaster | — | ✓ | — | ✓ | — | — | ✓ | — | — | ✓ | — |
-| BLE Observer | — | ✓ | — | ✓ | — | — | ✓ | — | — | ✓ | — |
-| BLE iKCP Baseline Server | ✓ | ✓ | — | — | — | — | ✓ | — | — | — | — |
-| BLE iKCP Baseline Client | ✓ | ✓ | — | — | — | — | ✓ | — | — | — | — |
-| Wi-Fi CSI Smoke | — | ✓ | — | — | — | — | ✓ | — | — | — | — |
-| Modem Smoke | — | — | — | — | — | — | — | — | — | ✓ | — |
-| Crash Before Confirm | ✓ | ✓ | — | ✓ | △ | △ | ✓ | ✓ | — | ✓ | ✓ |
-| Partial Update | — | — | — | — | — | — | ✓ | — | — | — | — |
-| GizClaw Ping Speed | ✓ | — | — | — | — | — | — | — | — | — | — |
-| iperf | ✓ | — | — | — | — | — | — | — | — | — | — |
-| iperf Server | [✓](./boards/amoled/iperf_server) | — | — | — | — | — | — | — | — | — | — |
-| WebRTC Performance | ✓ | — | — | ✓ | — | — | — | — | — | — | — |
-| GizClaw E2E | [✓](./boards/amoled/gizclaw_ota_e2e) | — | — | ✓ | — | — | — | — | — | — | — |
-| H106 E2E | — | — | △ | — | — | — | — | △ | — | — | — |
-| PAL Preference | — | — | — | ✓ | — | — | — | ✓ | — | — | — |
-| DinoBounce | — | — | — | — | — | — | — | ✓ | — | — | — |
-| DinoDive | — | — | — | — | — | — | — | ✓ | — | — | — |
-| DinoRun | — | — | — | — | — | — | — | ✓ | — | — | — |
-| DinoTetris | — | — | — | — | — | — | — | ✓ | — | — | — |
-| Tuxemon | — | — | — | — | — | — | — | ✓ | — | — | — |
-| H106 | — | — | — | — | — | — | — | ✓ | — | — | — |
-| Safe Call | — | — | — | — | — | — | — | ✓ | — | — | — |
+| Image / App | [AMOLED](./boards/amoled/) | [BK7258](./boards/bk7258_v3_202405/) | Zero BK 1.0 | [DevKit](./boards/devkit/) | H200 | H200 V2 | [SZP](./boards/szp/) | Tiga V4.2 | Zero ESP V3.0 | [Waveshare A7670E](./boards/waveshare_esp32s3_a7670e_4g/) | [Waveshare P4](./boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/) | [Waveshare 1.75C](./boards/waveshare_esp32s3_touch_amoled_1_75c/) |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| H2Loader | ✓ | ✓ | ✓ | ✓ | △ | △ | ✓ | ✓ | △ | ✓ | ✓ | △ |
+| Display | ✓ | ✓ | ✓ | — | — | — | ✓ | ✓ | — | — | ✓ | △ |
+| LVGL Smoke | — | — | ✓ | — | — | — | — | — | — | — | — | — |
+| Audio System | ✓ | ✓ | ✓ | — | △ | △ | ✓ | ✓ | — | — | ✓ | △ |
+| MP4 Player | — | ✓ | — | — | — | — | — | — | — | — | ✓ | — |
+| MP4 Player Small | ✓ | — | ✓ | — | — | — | — | ✓ | — | — | ✓ | — |
+| BLE Broadcaster | — | ✓ | — | ✓ | — | — | ✓ | — | — | ✓ | — | — |
+| BLE Observer | — | ✓ | — | ✓ | — | — | ✓ | — | — | ✓ | — | — |
+| BLE iKCP Baseline Server | ✓ | ✓ | — | — | — | — | ✓ | — | — | — | — | — |
+| BLE iKCP Baseline Client | ✓ | ✓ | — | — | — | — | ✓ | — | — | — | — | — |
+| Wi-Fi CSI Smoke | — | ✓ | — | — | — | — | ✓ | — | — | — | — | — |
+| Modem Smoke | — | — | — | — | — | — | — | — | — | ✓ | — | — |
+| Crash Before Confirm | ✓ | ✓ | — | ✓ | △ | △ | ✓ | ✓ | — | ✓ | ✓ | — |
+| Partial Update | — | — | — | — | — | — | ✓ | — | — | — | — | — |
+| GizClaw Ping Speed | ✓ | — | — | — | — | — | — | — | — | — | — | — |
+| iperf | ✓ | — | — | — | — | — | — | — | — | — | — | — |
+| iperf Server | [✓](./boards/amoled/iperf_server) | — | — | — | — | — | — | — | — | — | — | — |
+| WebRTC Performance | ✓ | — | — | ✓ | — | — | — | — | — | — | — | — |
+| GizClaw E2E | [✓](./boards/amoled/gizclaw_ota_e2e) | — | — | ✓ | — | — | — | — | — | — | — | — |
+| H106 E2E | — | — | △ | — | — | — | — | △ | — | — | — | — |
+| PAL Preference | — | — | — | ✓ | — | — | — | ✓ | — | — | — | — |
+| DinoBounce | — | — | — | — | — | — | — | ✓ | — | — | — | — |
+| DinoDive | — | — | — | — | — | — | — | ✓ | — | — | — | — |
+| DinoRun | — | — | — | — | — | — | — | ✓ | — | — | — | — |
+| DinoTetris | — | — | — | — | — | — | — | ✓ | — | — | — | — |
+| Tuxemon | — | — | — | — | — | — | — | ✓ | — | — | — | — |
+| H106 | — | — | — | — | — | — | — | ✓ | — | — | — | — |
+| Safe Call | — | — | — | — | — | — | — | ✓ | — | — | — | — |
 
 H106 MFG 是 Tiga 与 Zero ESP Loader image 启动前的内置产测流程，不是独立 App image，也不占矩阵行。各 image 的构建、预期表现与验收要求放在对应 board 使用页；矩阵只表达产品入口覆盖面。
 

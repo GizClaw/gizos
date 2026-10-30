@@ -18,6 +18,9 @@ typedef struct fixture {
   unsigned disconnects;
   unsigned logs;
   h2_pal_result_t sink_result;
+  int close_result;
+  int remote_closes_on_unsubscribe;
+  int link_gone;
   char line[96];
 } fixture_t;
 
@@ -59,6 +62,8 @@ static h2_pal_result_t disconnect_ble(void* user, uint16_t handle) {
   fixture_t* f = user;
   assert(handle == 7u);
   ++f->disconnects;
+  if (f->link_gone) return H2_PAL_ERR_IO;
+  f->link_gone = 1;
   return H2_PAL_OK;
 }
 
@@ -90,7 +95,8 @@ int h2_bleikcp_client_open(const h2_bleikcp_api_t* api,
 int h2_bleikcp_close(h2_bleikcp_t* stream) {
   fixture_t* f = (fixture_t*)stream;
   ++f->closes;
-  return H2_PAL_OK;
+  if (f->remote_closes_on_unsubscribe) f->link_gone = 1;
+  return f->close_result;
 }
 
 int h2_bleikcp_write(h2_bleikcp_t* stream, const uint8_t* data, size_t len,
@@ -210,7 +216,45 @@ static void check_failure(int fail_mtu, int with_sink, int sink_fails,
   }
 }
 
+static void check_disconnect_retention(int failed_join) {
+  fixture_t f = {.board_mismatch = 1, .remote_closes_on_unsubscribe = 1};
+  const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
+                                             .free = release};
+  const h2_pal_mem_api_t memory = {.user = &f, .vtable = &memory_vtable};
+  const h2_pal_ble_vtable_t ble_vtable = {.connect = connect_ble,
+                                          .exchange_mtu = exchange_mtu,
+                                          .disconnect = disconnect_ble};
+  const h2_pal_ble_api_t ble = {.user = &f, .vtable = &ble_vtable};
+  const h2_pal_task_api_t task = {0};
+  const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms = monotonic_ms};
+  const h2_pal_time_api_t time = {.vtable = &time_vtable};
+  const h2_pal_sync_api_t sync = {0};
+  const h2_pal_system_event_api_t event = {0};
+  const h2_h2loader_host_ble_connection_config_t config = {
+      .ble = &ble,
+      .task = &task,
+      .time = &time,
+      .sync = &sync,
+      .system_event = &event,
+      .allocator = &memory,
+      .advertised_board = "devkit",
+      .address = {.type = H2_PAL_BLE_ADDR_TYPE_PUBLIC}};
+  h2_h2loader_host_ble_connection_t* connection = NULL;
+  h2_h2loader_host_status_t status;
+  assert(h2_h2loader_host_ble_connect(&config, &connection, &status) == 0);
+  if (failed_join) {
+    f.close_result = H2_PAL_ERR_BUSY;
+    assert(h2_h2loader_host_ble_disconnect(&connection) == H2_PAL_ERR_BUSY);
+    assert(connection != NULL && f.frees == 0 && f.disconnects == 1);
+    f.close_result = 0;
+  }
+  assert(h2_h2loader_host_ble_disconnect(&connection) == 0);
+  assert(connection == NULL && f.allocations == f.frees && f.disconnects == 1);
+}
+
 int main(void) {
+  check_disconnect_retention(0);
+  check_disconnect_retention(1);
   for (int stage = 0; stage != 2; ++stage) {
     check_failure(stage, 0, 0, 0);
     check_failure(stage, 1, 0, 0);

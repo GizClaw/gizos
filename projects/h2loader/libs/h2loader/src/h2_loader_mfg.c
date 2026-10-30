@@ -214,8 +214,9 @@ int h2_loader_mfg_read(const h2_pal_pref_api_t* pref,
   return rc;
 }
 
-int h2_loader_mfg_write(const h2_pal_pref_api_t* pref,
-                        const h2_loader_mfg_summary_t* summary) {
+static int mfg_record_store(const h2_pal_pref_api_t* pref,
+                            const h2_loader_mfg_summary_t* summary,
+                            const uint32_t* revision) {
   uint8_t data[H2_LOADER_MFG_RECORD_MAX_SIZE];
   uint8_t* cursor = data;
   size_t len;
@@ -233,14 +234,22 @@ int h2_loader_mfg_write(const h2_pal_pref_api_t* pref,
   len = H2_LOADER_MFG_RECORD_HEADER_SIZE + summary->total;
   rc = pref_open(pref, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
   if (rc != H2_PAL_OK) return rc;
-  if (ns == NULL || ns->set_blob == NULL || ns->commit == NULL) {
+  if (ns == NULL || ns->set_blob == NULL || ns->commit == NULL ||
+      (revision != NULL && ns->set_u32 == NULL)) {
     rc = H2_PAL_ERR_UNSUPPORTED;
   } else {
     rc = ns->set_blob(ns, H2_LOADER_MFG_KEY, data, len);
+    if (rc == H2_PAL_OK && revision != NULL)
+      rc = ns->set_u32(ns, H2_LOADER_MFG_ACCEPTANCE_REVISION_KEY, *revision);
     if (rc == H2_PAL_OK) rc = ns->commit(ns);
   }
   close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
   return rc == H2_PAL_OK ? close_rc : rc;
+}
+
+int h2_loader_mfg_write(const h2_pal_pref_api_t* pref,
+                        const h2_loader_mfg_summary_t* summary) {
+  return mfg_record_store(pref, summary, NULL);
 }
 
 int h2_loader_mfg_reset(const h2_pal_pref_api_t* pref, uint32_t total) {
@@ -357,4 +366,36 @@ int h2_loader_mfg_ensure_acceptance_revision(const h2_pal_pref_api_t* pref,
              ? pref_set_u32(pref, H2_LOADER_MFG_ACCEPTANCE_REVISION_KEY,
                             required_revision)
              : rc;
+}
+
+int h2_loader_mfg_ensure_appended_revision(const h2_pal_pref_api_t* pref,
+                                           uint32_t total, uint32_t revision,
+                                           uint32_t previous_total,
+                                           uint32_t previous_revision) {
+  if (pref == NULL || previous_total == 0u || previous_total >= total ||
+      total > H2_LOADER_MFG_STEP_MAX || previous_revision == 0u ||
+      previous_revision >= revision)
+    return H2_PAL_ERR_INVALID_ARG;
+  uint32_t stored_revision = 0;
+  int rc = pref_get_u32(pref, H2_LOADER_MFG_ACCEPTANCE_REVISION_KEY,
+                        &stored_revision);
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND) return rc;
+  if (rc == H2_PAL_OK && stored_revision == previous_revision) {
+    mfg_record_buffer_t buffer = {0};
+    const h2_pal_mem_api_t allocator = {.user = &buffer,
+                                        .vtable = &mfg_record_buffer_vtable};
+    h2_loader_mfg_summary_t stored;
+    int present = 0, needs_migration = 0;
+    rc = mfg_record_load(pref, &allocator, &stored, &present, &needs_migration);
+    if (rc == H2_PAL_ERR_NO_MEMORY && buffer.oversize) rc = H2_PAL_ERR_FORMAT;
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_FORMAT) return rc;
+    if (rc == H2_PAL_OK && present && stored.total == previous_total) {
+      /* The caller attests that the prefix is unchanged. Preserve all four
+       * statuses, including failures; appended checks always start UNTESTED.
+       * Store the expanded record and its revision in one pref transaction. */
+      stored.total = total;
+      return mfg_record_store(pref, &stored, &revision);
+    }
+  }
+  return h2_loader_mfg_ensure_acceptance_revision(pref, total, revision);
 }

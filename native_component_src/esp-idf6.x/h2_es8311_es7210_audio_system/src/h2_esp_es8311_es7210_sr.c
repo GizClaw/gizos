@@ -99,6 +99,8 @@ int h2_esp_es8311_es7210_sr_init(
   const int chunk_samples = aec_get_chunksize((aec_handle_t*)state->aec_handle);
   if (chunk_samples <= 0 ||
       (uint16_t)chunk_samples != config->frame_samples_per_channel) {
+    ESP_LOGE(TAG, "AEC frame mismatch sdk=%d configured=%u", chunk_samples,
+             (unsigned)config->frame_samples_per_channel);
     release_aec(state);
     return H2_AUDIO_ERR_UNSUPPORTED;
   }

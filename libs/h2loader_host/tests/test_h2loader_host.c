@@ -2284,7 +2284,77 @@ static void test_ble_stage_receive_failure(void) {
                                                    sizeof(prefixed) - 1u));
 }
 
+static void test_mfg_command_contract(void) {
+  h2_h2loader_host_status_t status = {
+      .command_availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_MFG};
+  h2_h2loader_host_command_request_t request = {
+      .command = H2_H2LOADER_HOST_COMMAND_MFG, .status = &status};
+  h2_h2loader_host_command_contract_t contract;
+  assert(h2_h2loader_host_command_contract(&request, &contract) == 0);
+  assert(strcmp(contract.line, "h2loader mfg status\n") == 0);
+  request.mfg_action = "confirm";
+  request.mfg_step = "display";
+  request.mfg_ticket = "11223344";
+  assert(h2_h2loader_host_command_contract(&request, &contract) == 0);
+  assert(strcmp(contract.line, "h2loader mfg confirm display 11223344\n") == 0);
+  const char* replies[] = {"H2_MFG_STATUS ready=1 result=OK code=0\n",
+                           "H2_MFG_STATUS ready=0 result=fail code=-6\n"};
+  assert(h2_h2loader_host_command_parse_terminal(
+             (const uint8_t*)replies[0], strlen(replies[0]), &contract) ==
+         H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+  assert(h2_h2loader_host_command_parse_terminal(
+             (const uint8_t*)replies[1], strlen(replies[1]), &contract) ==
+         H2_H2LOADER_HOST_COMMAND_TERMINAL_ERROR);
+  request.mfg_ticket = "1122334\n";
+  assert(h2_h2loader_host_command_contract(&request, &contract) ==
+         H2_PAL_ERR_INVALID_ARG);
+  request.mfg_ticket = "11223344";
+  request.mfg_step = "display\nh2loader reboot app";
+  assert(h2_h2loader_host_command_contract(&request, &contract) ==
+         H2_PAL_ERR_INVALID_ARG);
+  request.mfg_step = "display";
+  request.mfg_action = "pass";
+  assert(h2_h2loader_host_command_contract(&request, &contract) ==
+         H2_PAL_ERR_INVALID_ARG);
+  request.mfg_action = "calibrate";
+  request.mfg_peer_ipv4 = "192.168.4.195";
+  request.mfg_peer_uid = "30eda0ae0f86";
+  request.mfg_calibration_run = "1234567890abcdef";
+  request.mfg_speaker_percent = 100;
+  request.mfg_mic_percent = 95;
+  assert(h2_h2loader_host_command_contract(&request, &contract) == 0);
+  assert(strcmp(contract.line,
+                "h2loader mfg calibrate 192.168.4.195 100 95"
+                " 1234567890abcdef 30eda0ae0f86\n") == 0);
+  const char* accepted =
+      "H2_MFG_CALIBRATION_STATUS active=0 pending=1 code=0\n";
+  assert(h2_h2loader_host_command_parse_terminal((const uint8_t*)accepted,
+                                                 strlen(accepted), &contract) ==
+         H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+  request.mfg_peer_ipv4 = "192.168.4.999";
+  assert(h2_h2loader_host_command_contract(&request, &contract) ==
+         H2_PAL_ERR_INVALID_ARG);
+  request.mfg_peer_ipv4 = "0.0.0.0";
+  assert(h2_h2loader_host_command_contract(&request, &contract) ==
+         H2_PAL_ERR_INVALID_ARG);
+  request.mfg_peer_ipv4 = "192.168.4.195\n";
+  assert(h2_h2loader_host_command_contract(&request, &contract) ==
+         H2_PAL_ERR_INVALID_ARG);
+  request.mfg_peer_ipv4 = "192.168.4.195";
+  request.mfg_mic_percent = 101;
+  assert(h2_h2loader_host_command_contract(&request, &contract) ==
+         H2_PAL_ERR_INVALID_ARG);
+  request.mfg_action = "source-shutdown";
+  assert(h2_h2loader_host_command_contract(&request, &contract) == 0);
+  assert(strcmp(contract.line, "h2loader mfg source-shutdown\n") == 0);
+  status.command_availability = 0;
+  request.mfg_action = "confirm";
+  assert(h2_h2loader_host_command_contract(&request, &contract) ==
+         H2_PAL_ERR_INVALID_STATE);
+}
+
 int main(void) {
+  test_mfg_command_contract();
   test_ble_stage_receive_failure();
   test_typed_command_role_parity();
   test_typed_command_wire_contract();

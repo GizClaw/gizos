@@ -11,6 +11,7 @@ int h2_esp_szp_board_init_io(void);
 i2c_master_bus_handle_t h2_esp_szp_board_i2c_bus(void);
 int h2_esp_szp_board_set_lcd_cs(int high);
 int h2_esp_szp_board_set_pa(int enabled);
+int h2_esp_szp_board_set_camera_enabled(int enabled);
 int h2_esp_board_display_power_off(void);
 
 #ifdef __cplusplus

@@ -55,7 +55,7 @@ int h2_esp_board_fs_deinit(void) {
 }
 
 h2_pal_mem_api_t* h2_esp_board_default_allocator(void) {
-  return h2_esp_platform_default_allocator();
+  return h2_esp_platform_psram_allocator();
 }
 
 h2_pal_mem_api_t* h2_esp_board_psram_allocator(void) {

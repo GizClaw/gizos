@@ -486,6 +486,21 @@ static int init_i2s(h2_esp_es8311_es7210_audio_system_t* state) {
   if (state->tx_chan != NULL && state->rx_chan != NULL) {
     return H2_AUDIO_OK;
   }
+  /* Board reboot quiescence can retain an output-low on the ADC data pin.
+   * I2S RX routing enables input without disabling that output driver. */
+  gpio_io_config_t before = {0}, after = {0};
+  esp_err_t err =
+      gpio_get_io_config((gpio_num_t)state->config.din_gpio, &before);
+  if (err == ESP_OK)
+    err =
+        gpio_set_direction((gpio_num_t)state->config.din_gpio, GPIO_MODE_INPUT);
+  if (err == ESP_OK)
+    err = gpio_get_io_config((gpio_num_t)state->config.din_gpio, &after);
+  if (err != ESP_OK) return map_esp_err(err);
+  ESP_LOGI(TAG, "I2S DIN gpio=%d before_oe=%u after_oe=%u input=%u",
+           state->config.din_gpio, (unsigned)before.oe, (unsigned)after.oe,
+           (unsigned)after.ie);
+  if (after.oe || !after.ie) return H2_AUDIO_ERR_IO;
   if (state->write_mutex == NULL) {
     state->write_mutex = xSemaphoreCreateMutex();
     if (state->write_mutex == NULL) {
@@ -495,7 +510,7 @@ static int init_i2s(h2_esp_es8311_es7210_audio_system_t* state) {
   i2s_chan_config_t chan_cfg =
       I2S_CHANNEL_DEFAULT_CONFIG(state->config.i2s_port, I2S_ROLE_MASTER);
   chan_cfg.auto_clear = true;
-  esp_err_t err = i2s_new_channel(&chan_cfg, &state->tx_chan, &state->rx_chan);
+  err = i2s_new_channel(&chan_cfg, &state->tx_chan, &state->rx_chan);
   if (err != ESP_OK) {
     return map_esp_err(err);
   }
@@ -978,6 +993,7 @@ static int audio_get_info(void* user, h2_audio_info_t* info) {
   info->mic_queue_frames = state->config.mic_queue_frames;
   info->track_queue_frames = state->config.track_queue_frames;
   info->max_tracks = state->config.max_tracks;
+  info->aec_enabled = state->config.enable_aec;
   return H2_AUDIO_OK;
 }
 

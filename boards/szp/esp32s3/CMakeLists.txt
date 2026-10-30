@@ -8,7 +8,9 @@ set(H2_ESP_BOARD_SRCS
   "src/h2_esp_board_fs_mount.c"
   "src/h2_esp_board.c"
   "src/h2_esp_board_audio_es8311_es7210.c"
+  "src/h2_esp_board_camera_gc0308.c"
   "src/h2_esp_board_display_st7789.c"
+  "src/h2_esp_board_touch_ft6336.c"
   "src/h2_esp_board_input.c"
   "src/h2_esp_board_power.c"
   "src/h2_esp_board_runtime.c")
@@ -26,6 +28,8 @@ set(H2_ESP_BOARD_REQUIRES
   esp_driver_spi
   esp_driver_tsens
   esp_lcd
+  esp_lcd_touch_ft5x06
+  esp32-camera
   h2_es8311_es7210_audio_system
   h2_firmware_lib
   h2_pal_core

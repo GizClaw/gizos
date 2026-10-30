@@ -1,0 +1,5 @@
+dependencies:
+  espressif/esp_lcd_co5300:
+    version: "~2.2.0"
+  waveshare/esp_lcd_touch_cst9217:
+    version: "~2.0.0"

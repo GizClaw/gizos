@@ -769,7 +769,29 @@ static void social_payload_boundaries(void) {
              &value) != 0);
 }
 
+static unsigned s_binding_cleanup_attempts;
+static int blocked_binding_cleanup(h2_gizclaw_e2e_fixture_t* fixture) {
+  assert(fixture->actors[0].service != NULL);
+  ++s_binding_cleanup_attempts;
+  return H2_PAL_ERR_BUSY;
+}
+static void binding_cleanup_preserves_borrowed_service(void) {
+  struct h2_gizclaw_service borrowed = {0};
+  h2_gizclaw_e2e_fixture_t fixture = {0};
+  fixture.actors[0].service = &borrowed;
+  fixture.device_ble_cleanup = blocked_binding_cleanup;
+  unsigned stops = s_stops;
+  for (unsigned attempt = 0u; attempt < 2u; ++attempt) {
+    assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_ERR_BUSY);
+    assert(fixture.actors[0].service == &borrowed);
+    assert(fixture.device_ble_cleanup == blocked_binding_cleanup);
+    assert(s_stops == stops && !borrowed.stopped);
+  }
+  assert(s_binding_cleanup_attempts == 2u);
+}
+
 int main(int argc, char** argv) {
+  binding_cleanup_preserves_borrowed_service();
   social_payload_boundaries();
   const h2_gizclaw_str_t empty = h2_gizclaw_e2e_str(NULL);
   assert(empty.data == NULL && empty.len == 0u);

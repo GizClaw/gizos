@@ -171,6 +171,10 @@ static void test_help_and_usage(void) {
       "h2loader",       "--transport", "bleikcp", "--port",
       "1:001122334455", "reboot",      "app",     "--monitor",
   };
+  const char* ble_mfg_retry_monitor[] = {
+      "h2loader", "--transport", "bleikcp", "--port",   "1:001122334455",
+      "mfg",      "retry",       "camera",  "12345678", "--monitor",
+  };
   fake_output_t output = {0};
   const char* wifi_status[] = {"h2loader", "--transport",    "bleikcp",
                                "--port",   "1:001122334455", "wifi",
@@ -208,6 +212,12 @@ static void test_help_and_usage(void) {
 
   memset(&output, 0, sizeof(output));
   assert(run_cli(&output, 8, ble_reboot_monitor) ==
+         H2_H2LOADER_CLI_EXIT_RUNTIME);
+  assert(strstr(output.bytes,
+                "--monitor requires iostreamikcp log transport") != NULL);
+
+  memset(&output, 0, sizeof(output));
+  assert(run_cli(&output, 10, ble_mfg_retry_monitor) ==
          H2_H2LOADER_CLI_EXIT_RUNTIME);
   assert(strstr(output.bytes,
                 "--monitor requires iostreamikcp log transport") != NULL);

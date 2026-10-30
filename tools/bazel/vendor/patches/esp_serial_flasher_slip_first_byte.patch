@@ -1,0 +1,16 @@
+--- src/src/slip.c
++++ src/src/slip.c
+@@ -46 +46,13 @@
++    // The first payload byte is escaped exactly like every subsequent byte.
++    // Flash data and binary MD5 packets may start with either special byte.
++    if (ch == 0xDB) {
++        RETURN_ON_ERROR( peripheral_read(&ch, 1) );
++        if (ch == 0xDC) {
++            ch = 0xC0;
++        } else if (ch == 0xDD) {
++            ch = 0xDB;
++        } else {
++            return ESP_LOADER_ERROR_INVALID_RESPONSE;
++        }
++    }
+     buff[0] = ch;

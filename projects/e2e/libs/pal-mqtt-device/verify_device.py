@@ -15,6 +15,8 @@ import signal
 import tarfile
 import zlib
 
+ESP_BOARDS = ('devkit', 'esp_mosaico', 'waveshare_esp32s3_touch_amoled_1_75c')
+
 STARTUP_MARKER = r'H2_\w*(?:BOOT|STARTUP)(?:\b|_[A-Z_]+\b)|\bBooting\b|^ESP-ROM:|^rst:0x[0-9a-f]+'
 
 def uart_text(path):
@@ -69,7 +71,28 @@ def monitor_receipt(log_path, target, port):
     assert actual in (base, base + ['--continuous-monitor']), 'unsupported monitor command argv'
     return command_receipt(path, actual, port, controlled_capture=True)
 
-def after_accepted_reboot(text, target):
+def verified_esp_install_app_boot(text, loader_version, app_version):
+    roms=list(re.finditer(r'^ESP-ROM:[^\r\n]*',text,re.MULTILINE))
+    if len(roms)<2:return text
+    loader=text[roms[0].start():roms[1].start()]
+    app=text[roms[1].start():]
+    assert re.findall(r'Loaded app from partition at offset 0x([0-9a-fA-F]+)',loader)==['20000'], 'unproven Loader install partition'
+    assert re.search(r'Project name:\s+h2loader\s*(?:\r?\n|$)',loader), 'install preamble is not Loader'
+    assert re.search(r'App version:\s+'+re.escape(loader_version)+r'\s*(?:\r?\n|$)',loader), 'Loader install version mismatch'
+    events=re.findall(r'H2_LOADER_STARTUP_EVENT event=(\w+) code=(-?\d+)',loader)
+    assert events==[('write_partition_2','0'),('boot_partition_2','0')], 'incomplete or failed Loader install transition'
+    assert 'H2_PAL_MQTT_' not in loader and not re.search(r'panic|brownout|assert failed|Guru Meditation',loader,re.I), 'failed App cannot become an installer preamble'
+    platform=re.search(r'H2_PAL_MQTT_PLATFORM_BOOT ',app)
+    assert platform is not None, 'no first MQTT App startup'
+    header=app[:platform.start()]
+    assert len(re.findall(r'^ESP-ROM:',header,re.MULTILINE))==1, 'later startup cannot replace the first boot'
+    assert re.findall(r'Loaded app from partition at offset 0x([0-9a-fA-F]+)',header)==['220000'], 'unproven installed App partition'
+    assert re.search(r'Project name:\s+h2_pal_mqtt_e2e\s*(?:\r?\n|$)',header), 'installed App project mismatch'
+    assert re.search(r'App version:\s+'+re.escape(app_version)+r'\s*(?:\r?\n|$)',header), 'installed App version mismatch'
+    assert not re.search(r'panic|brownout|assert failed|Guru Meditation',header,re.I), 'failed App startup'
+    return app
+
+def after_accepted_reboot(text, target, expected_loader_version=None, expected_app_version=None):
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     # UART command responses can interrupt an App's in-flight log fragment.
     # Keep the exact marker boundary, unique ACK and subsequent fresh boot gate.
@@ -83,7 +106,10 @@ def after_accepted_reboot(text, target):
     # Only the subsequent actual startup can begin the requested boot ledger.
     startup = re.search(STARTUP_MARKER, remainder, re.MULTILINE)
     assert startup is not None, 'no actual startup after accepted reboot'
-    return remainder[startup.start():]
+    selected=remainder[startup.start():]
+    if target=='upgrade' and expected_loader_version and expected_app_version:
+        selected=verified_esp_install_app_boot(selected,expected_loader_version,expected_app_version)
+    return selected
 
 def boot_ledger(text, ids, version, previous=None):
     boot = run = summary = accepted = None
@@ -129,7 +155,7 @@ def boot_ledger(text, ids, version, previous=None):
         elif 'H2_PAL_MQTT_READY ' in line:
             ready = fields(line.split('H2_PAL_MQTT_READY ', 1)[1])
             assert ready.get('rc') == '0' and ready.get('confirm') == 'pending', 'current admission requires post-delivery confirmation'
-            if ready.get('board') in ('devkit', 'esp_mosaico'):
+            if ready.get('board') in ESP_BOARDS:
                 assert ready.get('provider_cleanup') == '0', 'ESP portable provider not released'
             assert summary is not None, 'ready without latest complete ledger'
             assert accepted is None, 'duplicate terminal ledger'
@@ -138,7 +164,7 @@ def boot_ledger(text, ids, version, previous=None):
             assert accepted is not None and 'confirmation' not in accepted, 'duplicate or premature confirmation'
             confirmation = fields(line.split('H2_PAL_MQTT_CONFIRMED ', 1)[1])
             assert accepted is not None and accepted['ready'].get('confirm') == 'pending', 'confirmation without delivered READY'
-            assert accepted['ready'].get('board') in ('bk7258','devkit','esp_mosaico') and \
+            assert accepted['ready'].get('board') in ('bk7258',) + ESP_BOARDS and \
                 accepted['ready'].get('board') == confirmation.get('board') and confirmation.get('rc') == '0', 'app confirmation failed'
             accepted['confirmation'] = confirmation
         if re.search(r'panic|hard fault|assert failed|H2_PAL_MQTT_SETUP_FAIL', line, re.I):
@@ -150,7 +176,8 @@ def boot_ledger(text, ids, version, previous=None):
 def board_identity(manifest):
     boards = {('bk7258_v3_202405', 'bk7258'): 'bk7258',
               ('devkit', 'esp32s3'): 'devkit',
-              ('esp_mosaico', 'esp32s31'): 'esp_mosaico'}
+              ('esp_mosaico', 'esp32s31'): 'esp_mosaico',
+              ('waveshare_esp32s3_touch_amoled_1_75c', 'esp32s3'): 'waveshare_esp32s3_touch_amoled_1_75c'}
     identity = boards.get((manifest.get('board'), manifest.get('target')))
     assert identity is not None, 'unsupported device package'
     return identity
@@ -249,7 +276,12 @@ def main():
         'managed':monitor_receipt(directory/'managed.log','upgrade',port),
         'normal':monitor_receipt(directory/'normal.log','app',port),
     }
-    first=boot_ledger(after_accepted_reboot(uart_text(directory/'managed.log'),'upgrade'),ids,manifest['version'])
+    initial=loader_status(uart_text(directory/'before-status.log'))
+    if manifest['target'] == 'esp32s3':
+        managed=after_accepted_reboot(uart_text(directory/'managed.log'),'upgrade',initial['partition_1_version'],manifest['version'])
+    else:
+        managed=after_accepted_reboot(uart_text(directory/'managed.log'),'upgrade')
+    first=boot_ledger(managed,ids,manifest['version'])
     second=boot_ledger(after_accepted_reboot(uart_text(directory/'normal.log'),'app'),ids,manifest['version'],first['boot']['id'])
     expected_board = board_identity(manifest)
     assert first['ready'].get('board') == second['ready'].get('board') == expected_board, 'ledger belongs to another board'

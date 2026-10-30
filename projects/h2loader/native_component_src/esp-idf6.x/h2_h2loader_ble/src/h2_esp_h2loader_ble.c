@@ -1,4 +1,5 @@
 #include "h2_esp_h2loader_ble.h"
+#include "h2_esp_h2loader_device_uid.h"
 #include "h2loader_app_task_names.h"
 
 #include "h2_esp_h2loader_iostreamikcp.h"
@@ -126,7 +127,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
     return rc;
   }
   s_ble.operation_mutex = preflight.operation_mutex;
-  rc = esp_read_mac(ble_mac, ESP_MAC_BT);
+  rc = h2_esp_h2loader_read_device_mac(ble_mac);
   if (rc != ESP_OK) {
     rc = H2_PAL_ERR_IO;
     goto cleanup_mutex;

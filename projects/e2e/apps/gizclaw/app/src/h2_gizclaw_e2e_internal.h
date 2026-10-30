@@ -3,6 +3,7 @@
 
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2_gizclaw.h"
+#include "h2_gizclaw_ble_binding.h"
 #include "h2_app_test_audio.h"
 #include "h2_app_test_audio_fake.h"
 #include "h2_gizclaw_e2e.h"
@@ -72,6 +73,9 @@ typedef struct h2_gizclaw_e2e_fixture {
   const h2_pal_audio_api_t* device_audio;
   h2_app_test_audio_t* device_audio_wrapper;
   h2_app_test_audio_fake_t device_audio_fake;
+  h2_gizclaw_ble_binding_t* device_ble_binding;
+  h2_gizclaw_api_key_state_t* device_ble_key;
+  int (*device_ble_cleanup)(struct h2_gizclaw_e2e_fixture* fixture);
   int (*device_cleanup)(struct h2_gizclaw_e2e_fixture* fixture);
   const h2_gizclaw_vtable_t* device_vtable;
   h2_lua_apps_t* device_lua_apps;
@@ -191,6 +195,8 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
 /* On failure the caller must retain the fixture and its providers, then retry.
  */
 int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t* fixture);
+int h2_gizclaw_e2e_run_ble_binding(h2_gizclaw_e2e_fixture_t* fixture);
+int h2_gizclaw_e2e_ble_binding_cleanup(h2_gizclaw_e2e_fixture_t* fixture);
 
 h2_gizclaw_str_t h2_gizclaw_e2e_str(const char* value);
 void h2_gizclaw_e2e_evidence(const char* symbol, const char* stage, int result);

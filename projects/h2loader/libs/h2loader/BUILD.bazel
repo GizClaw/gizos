@@ -9,6 +9,20 @@ filegroup(
     srcs = glob(["include/*.h"]),
 )
 
+# Native SDK components provide the Loader implementation with their C
+# runtime ABI. Portable factory code only needs the public types/functions.
+cc_library(
+    name = "api",
+    hdrs = [":h2loader_headers"],
+    includes = ["include"],
+    deps = [
+        "//libs/atomic",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/pal",
+    ],
+)
+
 h2_tasks(
     name = "tasks",
     tasks = [

@@ -18,6 +18,7 @@ enum {
   H2_PEER_NETWORK_EVENT_BYTES_HIGH_WATER = 16 * 1024,
   H2_PEER_NETWORK_POLL_MS = 2,
   H2_PEER_NETWORK_IDLE_WAIT_MS = 1,
+  H2_PEER_NETWORK_YIELD_MS = 1,
   H2_PEER_NETWORK_UDP_BURST_MAX = 16,
   H2_PEER_NETWORK_STACK_SIZE = 32 * 1024,
 };
@@ -1703,7 +1704,19 @@ static void h2_peer_network_task(void* context) {
   h2_pal_webrtc_peer_t* peer = (h2_pal_webrtc_peer_t*)context;
   int transport_terminal = 0;
   uint32_t channel_snapshot = 0u;
+  int productive_round = 0;
   while (!h2_atomic_load_explicit(&peer->network_stop, H2_ATOMIC_ACQUIRE)) {
+    /* A continuously ready command/UDP/TX queue may never enter the idle
+     * receive wait. Block for one scheduling quantum between bounded work
+     * rounds so lower-priority tasks (including RTOS idle) can still run. */
+    if (productive_round) {
+      (void)h2_pal_time_sleep_ms(peer->owner->config.time,
+                                 H2_PEER_NETWORK_YIELD_MS);
+      productive_round = 0;
+      if (h2_atomic_load_explicit(&peer->network_stop, H2_ATOMIC_ACQUIRE))
+        break;
+    }
+
     h2_peer_network_command_t command;
     h2_pal_result_t command_result = (h2_pal_result_t)h2_pal_queue_recv(
         peer->owner->config.queue, peer->network_commands, &command,
@@ -1713,6 +1726,7 @@ static void h2_peer_network_task(void* context) {
       (void)h2_peer_network_process_command(peer, &command, &response);
       h2_peer_network_send_response(peer, &response);
 
+      productive_round = 1;
       continue;
     }
 
@@ -1763,20 +1777,22 @@ static void h2_peer_network_task(void* context) {
     const int channel_progress =
         writable ? h2_peer_network_service_channel(peer, &channel_snapshot) : 0;
     if (rtp_progress || channel_progress) {
+      productive_round = 1;
       continue;
     }
 
     if (transport_progress) {
+      productive_round = 1;
       continue;
     }
 
-    // Only wait after an idle round. A send frees a slot and wakes its
-    // producer; waiting here would delay that producer's next frame even when
-    // queued.
+    // Use the transport receive wait only after an idle round. Productive
+    // rounds take the bounded scheduler wait above instead of waiting for I/O.
     int transport_waited = 0;
     if (h2_peer_network_pump_transport(peer, H2_PEER_NETWORK_IDLE_WAIT_MS,
                                        &transport_terminal,
                                        &transport_waited)) {
+      productive_round = 1;
       continue;
     }
     if (!transport_waited) {
@@ -2050,7 +2066,10 @@ static h2_pal_result_t h2_peer_network_poll_locked(
       } else if (now_us >= deadline_us) {
         return H2_PAL_ERR_TIMEOUT;
       }
-      const uint64_t remaining_ms = (deadline_us - now_us) / 1000u;
+      /* A positive sub-millisecond remainder still needs a blocking wait.
+       * Rounding it down makes short high-priority polls spin until the
+       * deadline, starving the worker which must produce their events. */
+      const uint64_t remaining_ms = (deadline_us - now_us + 999u) / 1000u;
       wait_ms = remaining_ms < H2_PEER_POLL_WAIT_SLICE_MS
                     ? (uint32_t)remaining_ms
                     : H2_PEER_POLL_WAIT_SLICE_MS;

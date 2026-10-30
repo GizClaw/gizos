@@ -1396,6 +1396,10 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
     const h2_gizclaw_e2e_fixture_t* fixture) {
   if (fixture == NULL || fixture->log == NULL) return 0u;
   size_t retained = 0u;
+  retained += emit_retained_resource(fixture, "ble-binding",
+                                     fixture->device_ble_binding != NULL);
+  retained += emit_retained_resource(fixture, "ble-binding-key",
+                                     fixture->device_ble_key != NULL);
   retained += emit_retained_resource(fixture, "case-hooks-track",
                                      fixture->case_state != NULL);
   retained +=
@@ -1429,6 +1433,12 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
 
 int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t* fixture) {
   if (fixture == NULL) return H2_PAL_ERR_INVALID_ARG;
+  /* The binding borrows the owner Service and must revoke its temporary key
+   * before Service stop. Failed teardown keeps those dependencies alive. */
+  int binding_rc = fixture->device_ble_cleanup != NULL
+                       ? fixture->device_ble_cleanup(fixture)
+                       : H2_PAL_OK;
+  if (binding_rc != H2_PAL_OK) return binding_rc;
   if (fixture->case_cleanup != NULL) {
     /* Stop publishers before draining retained case callbacks. Service itself
      * must remain alive until the case releases Conversation/Track handles. */

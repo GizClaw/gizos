@@ -54,6 +54,8 @@ typedef enum h2_h2loader_host_esp_boot_policy {
   H2_H2LOADER_HOST_ESP_BOOT_MANUAL = 1,
   /** Explicitly use supported DTR/RTS lines for ESP download/reset. */
   H2_H2LOADER_HOST_ESP_BOOT_DTR_RTS = 2,
+  /** Espressif's internal USB Serial/JTAG peripheral (USB PID 0x1001). */
+  H2_H2LOADER_HOST_ESP_BOOT_USB_SERIAL_JTAG = 3,
 } h2_h2loader_host_esp_boot_policy_t;
 
 typedef struct h2_h2loader_host_esp_flash_config {

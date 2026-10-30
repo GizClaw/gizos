@@ -11,12 +11,15 @@ set(H2_ESP_BOARD_INCLUDE_DIRS
 
 set(H2_ESP_BOARD_REQUIRES
   esp_driver_gpio
+  esp_driver_i2c
   esp_driver_ledc
   esp_driver_tsens
   esp_hw_support
   esp_lcd
   esp_partition
   espressif__esp_lcd_st7701
+  espressif__esp_lcd_touch_gt911
+  espressif__esp_video
   h2_es8311_es7210_audio_system
   h2_pal_core
   h2_firmware_lib)

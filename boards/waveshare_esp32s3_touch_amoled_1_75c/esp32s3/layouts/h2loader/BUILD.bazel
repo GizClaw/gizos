@@ -1,0 +1,7 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "partition.csv",
+    "sdkconfig.h2loader.defaults",
+    "sdkconfig.ipv6-client.defaults",
+])

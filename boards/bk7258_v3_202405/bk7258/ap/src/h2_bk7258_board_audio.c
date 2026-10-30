@@ -507,6 +507,7 @@ static int bk_audio_get_info(void* user, h2_audio_info_t* info) {
   info->mic_queue_frames = H2_BK_AUDIO_MIC_QUEUE_FRAMES;
   info->track_queue_frames = H2_BK_AUDIO_TRACK_QUEUE_FRAMES;
   info->max_tracks = H2_BK_AUDIO_MAX_TRACKS;
+  info->aec_enabled = info->mic_supported && info->playback_supported;
   return H2_AUDIO_OK;
 }
 
