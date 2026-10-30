@@ -98,9 +98,9 @@ After the package has been published through Deploy's registry import:
 
 ```sh
 bunx @gizclaw/gizos setup esp-idf 6.2
-bunx @gizclaw/gizos setup bk_avdk_smp 3.1.1
+bunx @gizclaw/gizos setup bk7258 3.1.1
 bunx @gizclaw/gizos setup adb 35.0.2
-bunx @gizclaw/gizos env bk_avdk_smp
+bunx @gizclaw/gizos env bk7258
 bun add --global @gizclaw/gizos
 gizos upgrade
 ```
@@ -113,12 +113,16 @@ prints shell activation statements, and `run` executes a command with the
 selected environment.
 `upgrade` updates the toolbox while preserving installed SDKs.
 
-The project catalog owns stable SDK names and their allowed repository choices.
-Run `gizos list` or `gizos list jieli-ac707n` to see repository IDs, defaults,
-current selections and versions. BK and ESP-IDF default to GizClaw forks;
-`gizos config bk_avdk_smp bekencorp/bk_avdk_smp` or
-`gizos config esp_idf espressif/esp-idf` selects a listed upstream. Arbitrary
-URLs and unlisted repositories are rejected. Omit the repository ID to inspect
+The project catalog owns stable SDK/chip names and their allowed source aliases.
+Run `gizos list` or `gizos list bk_idk` to see supported chips, source aliases,
+repositories, defaults, current selections and versions. Use
+`gizos describe esp_idf` for an English explanation, usage examples and
+documentation links. BK and ESP-IDF default to GizClaw forks;
+`gizos config bk7258 GizClaw`, `gizos config bk7259 GizClaw` and
+`gizos config bk_idk GizClaw` select the source for each entry. `bk_idk`
+manages one SDK for multiple chips. `gizos config esp_idf Espressif` selects
+the listed ESP-IDF upstream. Arbitrary URLs and unlisted sources are rejected.
+Omit the source alias to inspect
 the setting, or use `--reset` to restore the default. Existing SDKs and
 toolchains remain shared, and the catalog commit pins still apply.
 

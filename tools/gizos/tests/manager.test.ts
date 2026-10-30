@@ -73,6 +73,12 @@ describe("catalog and shared storage", () => {
     expect(selectSdk("esp", "6.2").kind).toBe("idf");
     expect(selectSdk("bk7258", "3.1.1").kind).toBe("bk");
     expect(selectSdk("bk_avdk_smp", "3.1.1")).toBe(selectSdk("bk", "3.1.1"));
+    expect(sdkName(selectSdk("bk_avdk_smp", "3.1.1"))).toBe("bk7258");
+    expect(sdkName(selectSdk("bk_avdk_smp", "4.0.1"))).toBe("bk7259");
+    expect(() => selectSdk("bk7258", "4.0.1")).toThrow("Unsupported");
+    expect(() => selectSdk("bk7259", "3.1.1")).toThrow("Unsupported");
+    expect(selectSdk("bk7259", "4.0.1").armVersion).toBe("14.3.rel1");
+    expect(selectSdk("bk_idk", "2.0.1-r650e754").chips).toEqual(["bk7236", "bk7258"]);
     expect(sdkName(selectSdk("esp-idf", "6.2"))).toBe("esp-idf");
     expect(selectSdk("esp_idf", "6.2")).toBe(selectSdk("esp-idf", "6.2"));
     for (const [name, alias, version] of [
@@ -251,6 +257,96 @@ describe("provisioning and environment activation", () => {
     expect(environment.PATH!.split(":")).toContain(join(base, "loader"));
     expect(environment.H2LOADER_IDF_PATH).toBeUndefined();
   });
+  test("BK chip and multi-chip SDKs share tools but export distinct locators and clear stale selections", async () => {
+    const { manager, base, upstream, entries } = await fixture();
+    const template = entries.find(entry => entry.kind === "bk")!;
+    const specs = [
+      { name: "bk7258", version: "3.1.1", sdkVariable: "BK7258_PATH", chips: ["bk7258"] },
+      { name: "bk7259", version: "4.0.1", sdkVariable: "BK7259_PATH", armVersion: "14.3.rel1", chips: ["bk7259"] },
+      { name: "bk_idk", version: "2.0.1-r650e754", sdkVariable: "BK_IDK_PATH", chips: ["bk7236", "bk7258"] },
+    ];
+    manager.entries = specs.map(spec => ({ ...template, ...spec, default: true }));
+    const arm = join(base, "arm");
+    await script(join(arm, "bin/arm-none-eabi-gcc"), "printf '10.3.1\\n'\n");
+    for (const name of ["arm-none-eabi-gcc-ar", "arm-none-eabi-objcopy"]) {
+      await script(join(arm, "bin", name), "exit 0\n");
+    }
+    const newerArm = join(base, "arm-14.3");
+    await script(join(newerArm, "bin/arm-none-eabi-gcc"), "printf '14.3.1\\n'\n");
+    for (const name of ["arm-none-eabi-gcc-ar", "arm-none-eabi-objcopy"]) {
+      await script(join(newerArm, "bin", name), "exit 0\n");
+    }
+    const sources: string[] = [];
+    for (const sdk of manager.entries) {
+      const source = join(base, sdkName(sdk));
+      await git(base, "clone", "--quiet", upstream, source);
+      sources.push(source);
+      await manager.setup(sdk, { sdk: source, tools: sdk.armVersion ? newerArm : arm }, true);
+    }
+    const all = await manager.defaultEnvironment({ PATH: "/usr/bin:/bin" });
+    expect(all.BK7258_PATH).toBe(sources[0]);
+    expect(all.BK7259_PATH).toBe(sources[1]);
+    expect(all.BK_IDK_PATH).toBe(sources[2]);
+    expect(all.BK_SDK_DIR).toBe(sources[0]);
+    expect(all.COMPILER_TOOLCHAIN_PATH).toBe(join(arm, "bin"));
+    expect(all.GIZOS_BK_TOOLCHAIN_ROOT).toBe(arm);
+    const current = await manager.environment(manager.entries[1], undefined, all);
+    expect(current.BK7259_PATH).toBe(sources[1]);
+    expect(current.BK_SDK_DIR).toBe(sources[1]);
+    expect(current.COMPILER_TOOLCHAIN_PATH).toBe(join(newerArm, "bin"));
+    expect(current.GIZOS_BK_TOOLCHAIN_ROOT).toBe(newerArm);
+    expect(current.BK7258_PATH).toBeUndefined();
+    expect(current.BK_IDK_PATH).toBeUndefined();
+    const idk = await manager.environment(manager.entries[2], undefined, current);
+    expect(idk.BK_IDK_PATH).toBe(sources[2]);
+    expect(idk.BK7258_PATH).toBeUndefined();
+    expect(idk.BK7259_PATH).toBeUndefined();
+    expect(idk.COMPILER_TOOLCHAIN_PATH).toBe(join(arm, "bin"));
+    expect(manager.toolsPath(manager.entries[0])).toBe(manager.toolsPath(manager.entries[2]));
+    expect(manager.poolFile(manager.entries[0])).not.toBe(manager.poolFile(manager.entries[1]));
+    expect((await manager.record(manager.entries[1]))?.armVersion).toBe("14.3.rel1");
+  });
+  test("a legacy BK7259 record using GNU Arm 10.3 cannot be reused as a ready 14.3 environment", async () => {
+    const { manager, base, upstream, entries } = await fixture();
+    const sdk: Sdk = {
+      ...entries.find(entry => entry.kind === "bk")!, name: "bk7259", aliases: ["bk_avdk_smp"],
+      version: "4.0.1", sdkVariable: "BK7259_PATH", armVersion: "14.3.rel1",
+    };
+    manager.entries = [sdk];
+    const oldTools = join(base, "arm-10.3");
+    await script(join(oldTools, "bin/arm-none-eabi-gcc"), "printf '10.3.1\\n'\n");
+    const legacy = join(manager.root, "environments/bk_avdk_smp/4.0.1.json");
+    await mkdir(join(legacy, ".."), { recursive: true });
+    await writeFile(legacy, JSON.stringify({
+      schema: 1, name: "bk_avdk_smp", kind: "bk", version: sdk.version, commit: sdk.commit,
+      sdk: upstream, tools: oldTools, ready: true, targets: [],
+    }));
+    expect((await manager.describe(sdk)).status).toBe("tools missing");
+    await expect(manager.environment(sdk)).rejects.toThrow("compiler mismatch");
+    const prepared = await manager.setup(sdk, { sourcesOnly: true });
+    expect(prepared.sdk).toBe(upstream);
+    expect(prepared.ready).toBe(false);
+    expect(prepared.armVersion).toBe("14.3.rel1");
+    expect(prepared.tools).not.toBe(oldTools);
+    expect(await exists(join(oldTools, "bin/arm-none-eabi-gcc"))).toBe(true);
+    expect(JSON.parse(await readFile(legacy, "utf8")).tools).toBe(oldTools);
+  });
+  test("compiler archives downloaded by the host HTTPS client still require the pinned checksum", async () => {
+    const base = await directory();
+    let downloads = 0;
+    const manager = new Manager(base, async args => {
+      expect(args[0]).toBe("python3");
+      expect(args.at(-2)).toStartWith("https://armkeil.blob.core.windows.net/");
+      await writeFile(args.at(-1)!, "corrupt compiler archive");
+      downloads++;
+      return "";
+    });
+    const tools = join(base, "arm-14.3");
+    await expect(manager.installArm(tools, manager.sdk("bk7259", "4.0.1"))).rejects.toThrow("checksum mismatch");
+    expect(downloads).toBe(1);
+    expect(await exists(tools)).toBe(false);
+    expect(await readdir(join(base, "downloads"))).toEqual([]);
+  });
   test("cleans active SDK paths before installing another version", () => {
     const environment = cleanEnvironment({
       PATH: "/old/tools/gcc/bin:/usr/bin:/bin",
@@ -321,31 +417,32 @@ describe("SDK repository configuration", () => {
   test("catalog defaults, root and repository selections survive updates and concurrent writes", async () => {
     const base = await directory();
     const env = { XDG_CONFIG_HOME: join(base, "config"), XDG_DATA_HOME: join(base, "data") };
-    const initial = await sdkConfiguration("bk_avdk_smp", undefined, env);
+    const initial = await sdkConfiguration("bk7258", undefined, env);
     expect(initial.repository).toBe("https://github.com/GizClaw/bk_avdk_smp.git");
     expect(initial.repositoryId).toBe("GizClaw/bk_avdk_smp");
+    expect(initial.repositoryAlias).toBe("GizClaw");
     expect(initial.configured).toBe(false);
     expect(await exists(configFile(env))).toBe(false);
-    await sdkConfiguration("bk_avdk_smp", "bekencorp/bk_avdk_smp", env);
+    await sdkConfiguration("bk7258", "Beken", env);
     expect(await dataRoot(undefined, env)).toBe(defaultRoot(env));
     const root = join(base, "shared SDKs");
     await Promise.all([
       configureRoot(root, env),
-      sdkConfiguration("esp_idf", "espressif/esp-idf", env),
+      sdkConfiguration("esp_idf", "Espressif", env),
     ]);
     const settings = await configuration(env);
     expect(settings.root).toBe(root);
     expect(settings.repositories).toEqual({
-      bk_avdk_smp: "bekencorp/bk_avdk_smp",
-      "esp-idf": "espressif/esp-idf",
+      bk7258: "Beken",
+      "esp-idf": "Espressif",
     });
     const manager = await Manager.configured(root, execute, catalog.sdks, env);
-    const sdk = manager.sdk("bk_avdk_smp", "3.1.1");
-    expect(sdkName(sdk)).toBe("bk_avdk_smp");
-    expect(sdk.repositoryId).toBe(settings.repositories!.bk_avdk_smp);
+    const sdk = manager.sdk("bk7258", "3.1.1");
+    expect(sdkName(sdk)).toBe("bk7258");
+    expect(sdk.repositoryAlias).toBe(settings.repositories!.bk7258);
     expect(sdk.repository).toBe("https://github.com/bekencorp/bk_avdk_smp.git");
-    expect(manager.statePath(sdk)).toBe(new Manager(root).statePath(selectSdk("bk_avdk_smp", "3.1.1")));
-    const reset = await sdkConfiguration("bk_avdk_smp", null, env);
+    expect(manager.statePath(sdk)).toBe(new Manager(root).statePath(selectSdk("bk7258", "3.1.1")));
+    const reset = await sdkConfiguration("bk7258", null, env);
     expect(reset).toEqual(initial);
     expect((await configuration(env)).root).toBe(root);
     expect((await configuration(env)).repositories!["esp-idf"]).toBe(settings.repositories!["esp-idf"]);
@@ -396,10 +493,10 @@ describe("SDK repository configuration", () => {
       "ssh://git:private-password@example.invalid/sdk.git", "https://example.invalid/sdk.git?token=private-token",
     ]) {
       let message = "";
-      try { await sdkConfiguration("bk_avdk_smp", repository, env); }
+      try { await sdkConfiguration("bk7258", repository, env); }
       catch (error: any) { message = error.message; }
       expect(message).toContain("Repository is not in the catalog");
-      expect(message).toContain("gizos list bk_avdk_smp");
+      expect(message).toContain("gizos list bk7258");
       expect(message).not.toContain("private-token");
       expect(message).not.toContain("private-password");
       expect(await readFile(configFile(env), "utf8")).toBe(initial);
@@ -417,22 +514,71 @@ describe("SDK repository configuration", () => {
     expect(legacy.repositoryId).toBe("h2vivi/e_badge_707_sdk_200");
     const manager = await Manager.configured(root, execute, catalog.sdks, env);
     expect(manager.sdk("ac707n", "d0167685d032").repository).toBe(legacy.repository);
-    await sdkConfiguration("jieli-ac707n", "e_badge/e_badge_707_sdk_200", env);
+    await sdkConfiguration("jieli-ac707n", "Jieli", env);
     expect((await configuration(env)).repositories).toEqual({
-      "jieli-ac707n": "e_badge/e_badge_707_sdk_200",
+      "jieli-ac707n": "Jieli",
     });
     await writeFile(configFile(env), JSON.stringify({
-      root, repositories: { bk_avdk_smp: "https://private-token@example.invalid/sdk.git" },
+      root, repositories: { bk7258: "https://private-token@example.invalid/sdk.git" },
     }));
     await expect(Manager.configured(root, execute, catalog.sdks, env)).rejects.toThrow("Repository is not in the catalog");
-    await sdkConfiguration("bk_avdk_smp", null, env);
+    await sdkConfiguration("bk7258", null, env);
     expect((await configuration(env)).root).toBe(root);
     expect(await exists(root)).toBe(false);
+  });
+  test("chip selections migrate a shared legacy BK setting without resetting the other chip", async () => {
+    const base = await directory();
+    const env = { XDG_CONFIG_HOME: join(base, "config") };
+    const root = join(base, "shared");
+    await configureRoot(root, env);
+    await writeFile(configFile(env), JSON.stringify({
+      root, repositories: { bk_avdk_smp: "bekencorp/bk_avdk_smp", "esp-idf": "GizClaw/esp-idf" },
+    }));
+    expect((await sdkConfiguration("bk7258", undefined, env)).repositoryAlias).toBe("Beken");
+    expect((await sdkConfiguration("bk7259", undefined, env)).repositoryAlias).toBe("Beken");
+    const reset = await sdkConfiguration("bk7258", null, env);
+    expect(reset.repositoryAlias).toBe("GizClaw");
+    expect(reset.configured).toBe(false);
+    expect((await sdkConfiguration("bk7259", undefined, env)).repositoryAlias).toBe("Beken");
+    await sdkConfiguration("bk_idk", "GizClaw", env);
+    expect((await configuration(env)).repositories).toEqual({
+      bk7259: "Beken", bk_idk: "GizClaw", "esp-idf": "GizClaw/esp-idf",
+    });
+    expect((await configuration(env)).root).toBe(root);
+    expect(await exists(root)).toBe(false);
+    await expect(sdkConfiguration("bk_avdk_smp", "GizClaw", env)).rejects.toThrow("Select an SDK");
   });
 });
 
 describe("CLI discovery", () => {
-  test("list discovers repository choices and config selects only listed IDs without installing SDKs", async () => {
+  test("describe explains an SDK in English, accepts aliases and does not install or write configuration", async () => {
+    const base = await directory();
+    const root = join(base, "shared");
+    const cli = join(import.meta.dir, "../src/cli.ts");
+    const env = { ...process.env, GIZOS_DEVENV_HOME: root, XDG_CONFIG_HOME: join(base, "config") };
+    const run = (...args: string[]) => execute([process.execPath, cli, ...args], { cwd: "/", env });
+    const text = await run("describe", "esp_idf");
+    expect(text).toContain("Espressif IoT Development Framework");
+    expect(text).toContain("GizClaw -> GizClaw/esp-idf");
+    expect(text).toContain("Espressif -> espressif/esp-idf");
+    expect(text).toContain("Pinned versions:");
+    expect(text).toContain("gizos config esp-idf GizClaw");
+    expect(text).toContain("gizos setup esp-idf 6.2");
+    expect(text).toContain("https://docs.espressif.com/projects/esp-idf/");
+    expect(text).not.toMatch(/\p{Script=Han}/u);
+    const sdk = JSON.parse(await run("describe", "esp_idf", "--json"));
+    expect(sdk.name).toBe("esp-idf");
+    expect(sdk.chips).toContain("esp32s3");
+    expect(sdk.versions.find((entry: any) => entry.default).version).toBe("6.2");
+    const idk = JSON.parse(await run("describe", "bk_idk", "--json"));
+    expect(idk.chips).toEqual(["bk7236", "bk7258"]);
+    expect(idk.description).toContain("multiple chips");
+    await expect(run("describe")).rejects.toThrow("Usage: gizos describe");
+    expect(await exists(configFile(env))).toBe(false);
+    expect(await exists(root)).toBe(false);
+  });
+
+  test("list discovers chip and multi-chip SDK sources, and config selects source aliases without installing SDKs", async () => {
     const base = await directory();
     const config = join(base, "config");
     const shared = join(base, "shared");
@@ -445,33 +591,41 @@ describe("CLI discovery", () => {
     expect(JSON.parse(await run("config", "esp_idf")).repository).toBe("https://github.com/GizClaw/esp-idf.git");
     expect(await exists(configFile(env))).toBe(false);
     const repository = "bekencorp/bk_avdk_smp";
-    const choices = JSON.parse(await run("list", "bk_avdk_smp", "--json")).repositories[0];
-    expect(choices.name).toBe("bk_avdk_smp");
-    expect(choices.repositories.map((entry: any) => entry.id)).toEqual(["GizClaw/bk_avdk_smp", repository]);
+    const choices = JSON.parse(await run("list", "bk7258", "--json")).repositories[0];
+    expect(choices.name).toBe("bk7258");
+    expect(choices.chips).toEqual(["bk7258"]);
+    expect(choices.repositories.map((entry: any) => entry.alias)).toEqual(["GizClaw", "Beken"]);
     expect(choices.repositories[0]).toMatchObject({ default: true, selected: true });
-    expect(JSON.parse(await run("config", "bk_avdk_smp", repository)).repositoryId).toBe(repository);
-    await run("config", "esp_idf", "espressif/esp-idf");
+    expect(JSON.parse(await run("config", "bk7258", "Beken")).repositoryId).toBe(repository);
+    await run("config", "bk7259", "GizClaw");
+    const idk = JSON.parse(await run("config", "bk_idk", "gizclaw"));
+    expect(idk.repositoryAlias).toBe("GizClaw");
+    expect(idk.repositoryId).toBe("GizClaw/bk_idk");
+    expect(idk.chips).toEqual(["bk7236", "bk7258"]);
+    await run("config", "esp_idf", "Espressif");
     await run("config", "set", "root", shared);
     const all = JSON.parse(await run("config"));
-    expect(all.repositories.bk_avdk_smp).toBe(repository);
-    expect(all.repositories["esp-idf"]).toBe("espressif/esp-idf");
-    const info = JSON.parse(await run("env", "bk_avdk_smp", "3.1.1", "--json")).environments[0];
-    expect(info.name).toBe("bk_avdk_smp");
+    expect(all.repositories.bk7258).toBe("Beken");
+    expect(all.repositories.bk7259).toBe("GizClaw");
+    expect(all.repositories.bk_idk).toBe("GizClaw");
+    expect(all.repositories["esp-idf"]).toBe("Espressif");
+    const info = JSON.parse(await run("env", "bk7258", "3.1.1", "--json")).environments[0];
+    expect(info.name).toBe("bk7258");
     expect(info.repositoryId).toBe(repository);
     expect(info.repository).toBe("https://github.com/bekencorp/bk_avdk_smp.git");
     expect(info.defaultRepository).toBe("https://github.com/GizClaw/bk_avdk_smp.git");
     expect(info.status).toBe("not installed");
-    const listed = JSON.parse(await run("list", "bk_avdk_smp", "--json")).repositories[0];
+    const listed = JSON.parse(await run("list", "bk7258", "--json")).repositories[0];
     expect(listed.repositories[1]).toMatchObject({ default: false, selected: true });
-    const text = await run("list", "bk_avdk_smp");
-    expect(text).toContain("* bekencorp/bk_avdk_smp (selected)");
-    expect(text).toContain("GizClaw/bk_avdk_smp (default)");
+    const text = await run("list", "bk7258");
+    expect(text).toContain("* Beken -> bekencorp/bk_avdk_smp (selected)");
+    expect(text).toContain("GizClaw -> GizClaw/bk_avdk_smp (default)");
     expect(text).toContain("3.1.1: not installed");
     expect(await run("list", "jieli-ac707n")).toContain("e_badge/e_badge_707_sdk_200");
     const before = await readFile(configFile(env), "utf8");
-    await expect(run("config", "bk_avdk_smp", "other-org/bk_avdk_smp")).rejects.toThrow("Repository is not in the catalog");
+    await expect(run("config", "bk7258", "other-org/bk_avdk_smp")).rejects.toThrow("Repository is not in the catalog");
     expect(await readFile(configFile(env), "utf8")).toBe(before);
-    const reset = JSON.parse(await run("config", "bk_avdk_smp", "--reset"));
+    const reset = JSON.parse(await run("config", "bk7258", "--reset"));
     expect(reset.repository).toBe(reset.defaultRepository);
     expect(reset.configured).toBe(false);
     expect((await configuration(env)).root).toBe(shared);
@@ -482,13 +636,14 @@ describe("CLI discovery", () => {
     const root = join(await directory(), "uninstalled shared root");
     const cli = join(import.meta.dir, "../src/cli.ts");
     const environment = { ...process.env, GIZOS_DEVENV_HOME: root, XDG_CONFIG_HOME: join(root, "config") };
-    const output = await execute([process.execPath, cli, "env", "bk_avdk_smp", "--json"], { cwd: "/", env: environment });
+    const output = await execute([process.execPath, cli, "env", "bk7258", "--json"], { cwd: "/", env: environment });
     const result = JSON.parse(output);
     expect(result.root).toBe(root);
     expect(result.environments[0].kind).toBe("bk");
-    expect(result.environments[0].name).toBe("bk_avdk_smp");
+    expect(result.environments[0].name).toBe("bk7258");
     expect(result.environments[0].repository).toBe("https://github.com/GizClaw/bk_avdk_smp.git");
-    expect(JSON.parse(await execute([process.execPath, cli, "env", "bk", "--json"], { env: environment }))).toEqual(result);
+    const family = JSON.parse(await execute([process.execPath, cli, "env", "bk", "--json"], { env: environment }));
+    expect(family.environments.filter((item: any) => item.name === "bk7258")).toEqual(result.environments);
     expect(result.environments[0].status).toBe("not installed");
     expect(await exists(root)).toBe(false);
     await expect(execute([process.execPath, cli, "setup", "idf", "6.3"], { env: environment })).rejects.toThrow("Unsupported");

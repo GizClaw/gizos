@@ -11,11 +11,18 @@ import { atomicJson, execute, executable, exists, locked, quote, type Command, t
 export { execute, exists, locked, type Command } from "./common";
 
 export type Kind = "idf" | "bk" | "ac695n" | "ac707n" | "ac791n";
-export type Repository = { id: string; url: string };
+export type Repository = { alias?: string; id: string; url: string };
 export type Sdk = {
   name?: string;
   aliases?: string[];
+  chips?: string[];
+  sdkVariable?: string;
+  armVersion?: string;
+  description?: string;
+  documentation?: string;
+  notes?: string[];
   repositories?: Repository[];
+  repositoryAlias?: string;
   repositoryId?: string;
   defaultRepository?: string;
   kind: Kind;
@@ -39,6 +46,7 @@ export type Installation = {
   commit: string;
   sdk: string;
   tools: string;
+  armVersion?: string;
   python?: string;
   ready: boolean;
   targets: string[];
@@ -52,14 +60,18 @@ export type Options = {
   postbuild?: string;
 };
 type Catalog = Omit<typeof bundledCatalog, "sdks"> & { sdks: Sdk[] };
+const definitions: {
+  name: string; aliases: string[]; chips?: string[]; sdkVariable?: string; armVersion?: string;
+  description?: string; documentation?: string; notes?: string[]; repositories: Repository[];
+}[] = bundledCatalog.sdkRepositories;
 export const catalog = {
   ...bundledCatalog,
   sdks: bundledCatalog.sdks.map(sdk => {
-    const definition = bundledCatalog.sdkRepositories.find(entry => entry.name === sdk.name);
+    const definition = definitions.find(entry => entry.name === sdk.name);
     if (!definition || !definition.repositories.some(repository => repository.url === sdk.repository)) {
       throw new Error(`Missing SDK repository catalog for ${sdk.name}`);
     }
-    return { ...sdk, aliases: definition.aliases, repositories: definition.repositories };
+    return { ...definition, ...sdk };
   }),
 } as Catalog;
 export const PACKAGE = "@gizclaw/gizos";
@@ -68,18 +80,44 @@ const controlled = [
   "IDF_PATH", "IDF_TOOLS_PATH", "IDF_PYTHON_ENV_PATH", "IDF_DEACTIVATE_FILE_PATH", "H2LOADER_IDF_PATH",
   "ESP_IDF_VERSION", "ESP_ROM_ELF_DIR", "OPENOCD_SCRIPTS",
   "BK7258_PATH", "BK_SDK_DIR", "COMPILER_TOOLCHAIN_PATH", "GIZOS_BK_TOOLCHAIN_ROOT",
+  ...catalog.sdks.flatMap(sdk => sdk.sdkVariable ? [sdk.sdkVariable] : []),
   ...resourceVariables, "VIRTUAL_ENV", "GIZOS_ENV_PATHS",
   "H2LOADER_PYTHON", "H2LOADER_BOOTSTRAP_PYTHON", "BK3633_SDK_PATH", "BK3633_BINCONVERTER_BIN",
 ];
 const sdkVariables: Record<string, string[]> = {
   idf: ["IDF_PATH", "IDF_TOOLS_PATH", "IDF_PYTHON_ENV_PATH", "H2LOADER_IDF_PATH", "ESP_IDF_VERSION", "ESP_ROM_ELF_DIR", "OPENOCD_SCRIPTS", "VIRTUAL_ENV"],
-  bk: ["BK7258_PATH", "BK_SDK_DIR", "COMPILER_TOOLCHAIN_PATH", "GIZOS_BK_TOOLCHAIN_ROOT"],
+  bk: ["BK_SDK_DIR", "COMPILER_TOOLCHAIN_PATH", "GIZOS_BK_TOOLCHAIN_ROOT"],
   ac695n: ["JIELI_AC695N_SDK_PATH"],
   ac707n: ["JIELI_AC707N_SDK_PATH"],
   ac791n: ["JIELI_AC791N_SDK_PATH"],
 };
 
 function usesArm(sdk: Sdk): boolean { return sdk.kind === "bk"; }
+
+type ArmToolchain = {
+  version: string; compilerVersion: string; hosts: Record<string, { url: string; sha256: string }>;
+};
+function armToolchain(sdk?: Sdk): ArmToolchain {
+  const version = sdk?.armVersion ?? catalog.arm.version;
+  const toolchain = ([catalog.arm, ...catalog.armToolchains] as ArmToolchain[])
+    .find(entry => entry.version === version);
+  if (!toolchain) throw new Error(`Unsupported GNU Arm version ${version}`);
+  return toolchain;
+}
+function armDistribution(sdk?: Sdk) {
+  const toolchain = armToolchain(sdk);
+  const host = `${process.platform}-${process.arch}`;
+  const distribution = toolchain.hosts[host] ??
+    (process.platform === "darwin" || process.platform === "linux" && process.arch === "x64"
+      ? toolchain.hosts[process.platform] : undefined);
+  if (!distribution) throw new Error(`GNU Arm ${toolchain.version} is not available for ${host}`);
+  return distribution;
+}
+
+function environmentVariables(sdk: Sdk): string[] {
+  return sdk.kind === "bk"
+    ? [sdk.sdkVariable ?? "BK7258_PATH", ...sdkVariables.bk] : sdkVariables[sdk.kind];
+}
 
 function markPaths(environment: Env, baseline: Env): Env {
   const original = new Set((baseline.PATH ?? "").split(":"));
@@ -153,7 +191,8 @@ function selectRepository(sdk: Sdk, value?: string, stored = false): Repository 
   const choices = repositoryChoices(sdk);
   const repository = value === undefined
     ? choices.find(choice => choice.url === (sdk.defaultRepository ?? sdk.repository))
-    : choices.find(choice => choice.id.toLowerCase() === value.toLowerCase() || stored && choice.url === value);
+    : choices.find(choice => [choice.alias, choice.id].some(alias => alias?.toLowerCase() === value.toLowerCase()) ||
+      stored && choice.url === value);
   if (!repository) {
     throw new Error(`Repository is not in the catalog for ${sdkName(sdk)}; run gizos list ${sdkName(sdk)} to see available repositories`);
   }
@@ -222,22 +261,67 @@ export async function sdkConfiguration(
   const sdk = choices.find(entry => entry.default) ?? choices[0];
   const key = names[0];
   const defaultRepository = selectRepository(sdk);
-  const selected = repository === undefined || repository === null ? repository : selectRepository(sdk, repository).id;
+  const selected = repository === undefined || repository === null ? repository : selectRepository(sdk, repository);
   const settings = selected === undefined ? await configuration(env) : await updateConfiguration(value => {
     const repositories = { ...value.repositories };
+    // A legacy repository name can now cover more than one chip entry.
+    for (const other of entries) {
+      const otherKey = sdkName(other);
+      if (otherKey === key || repositories[otherKey] !== undefined ||
+          !other.aliases?.some(alias => sdk.aliases?.includes(alias))) continue;
+      const inherited = configuredRepository(other, value);
+      if (inherited === undefined) continue;
+      try {
+        const choice = selectRepository(other, inherited, true);
+        repositories[otherKey] = choice.alias ?? choice.id;
+      } catch {}
+    }
     for (const name of [key, ...sdk.aliases ?? []]) delete repositories[name];
-    if (selected !== null) repositories[key] = selected;
+    if (selected !== null) repositories[key] = selected.alias ?? selected.id;
     return { ...value, repositories };
   }, env);
   const configured = configuredRepository(sdk, settings);
   const effective = selectRepository(sdk, configured, true);
   return {
-    name: key, repositoryId: effective.id, repository: effective.url,
+    name: key, chips: sdk.chips ?? [], repositoryAlias: effective.alias ?? effective.id,
+    repositoryId: effective.id, repository: effective.url,
+    defaultRepositoryAlias: defaultRepository.alias ?? defaultRepository.id,
     defaultRepositoryId: defaultRepository.id, defaultRepository: defaultRepository.url,
     configured: configured !== undefined,
     repositories: repositoryChoices(sdk).map(choice => ({
-      ...choice, default: choice.id === defaultRepository.id, selected: choice.id === effective.id,
+      ...choice, alias: choice.alias ?? choice.id,
+      default: choice.id === defaultRepository.id, selected: choice.id === effective.id,
     })),
+  };
+}
+
+export async function describeSdk(name: string, env: Env = process.env, entries: Sdk[] = catalog.sdks) {
+  const selected = await sdkConfiguration(name, undefined, env, entries);
+  const choices = sdkChoices(selected.name, entries);
+  const sdk = choices.find(entry => entry.default) ?? choices[0];
+  return {
+    ...selected,
+    description: sdk.description ?? "A pinned SDK managed by the GizOS toolbox.",
+    documentation: sdk.documentation ?? null,
+    compiler: usesArm(sdk) ? {
+      version: armToolchain(sdk).compilerVersion, release: armToolchain(sdk).version,
+    } : null,
+    chips: [...new Set(choices.flatMap(entry => entry.chips ?? entry.targets ?? []))],
+    versions: choices.map(entry => ({
+      version: entry.version, default: Boolean(entry.default), commit: entry.commit,
+      chips: entry.chips ?? entry.targets ?? [],
+    })),
+    notes: [
+      ...sdk.notes ?? [],
+      "SDKs and host tools are shared across worktrees. Selecting a source preserves the catalog's exact commit pins.",
+      "describe, list and config do not download SDKs. Use setup with an explicit catalog version to install an environment.",
+    ],
+    commands: [
+      `gizos config ${selected.name} ${selected.repositoryAlias}`,
+      `gizos setup ${selected.name} ${sdk.version}`,
+      `gizos env ${selected.name}`,
+      `gizos run ${selected.name} ${sdk.version} -- <command>`,
+    ],
   };
 }
 
@@ -289,7 +373,7 @@ export class Manager {
       const repository = selectRepository(sdk, configuredRepository(sdk, settings), true);
       return {
         ...sdk, name: sdkName(sdk), defaultRepository,
-        repository: repository.url, repositoryId: repository.id,
+        repository: repository.url, repositoryId: repository.id, repositoryAlias: repository.alias ?? repository.id,
       };
     }));
   }
@@ -303,7 +387,7 @@ export class Manager {
     return paths.find(path => existsSync(path)) ?? paths[0];
   }
   poolFile(sdk: Sdk): string {
-    const version = usesArm(sdk) ? `${catalog.arm.version}-` : "";
+    const version = usesArm(sdk) ? `${armToolchain(sdk).version}-` : "";
     const family = usesArm(sdk) ? "bk" : sdk.kind;
     return join(this.root, "pools", `${family}-${version}${process.platform}-${process.arch}.json`);
   }
@@ -322,7 +406,7 @@ export class Manager {
     }
     return sdk.kind === "idf"
       ? join(this.root, "tools", "idf", `${process.platform}-${process.arch}`)
-      : join(this.root, "tools", "arm", `${catalog.arm.version}-${process.platform}-${process.arch}`);
+      : join(this.root, "tools", "arm", `${armToolchain(sdk).version}-${process.platform}-${process.arch}`);
   }
   statePath(sdk: Sdk): string {
     return join(this.root, "environments", sdkName(sdk), `${sdk.version}.json`);
@@ -345,6 +429,7 @@ export class Manager {
             item.commit !== sdk.commit || !isAbsolute(item.sdk) || !isAbsolute(item.tools) ||
             (item.name !== undefined && !names.includes(item.name)) ||
             (item.repository !== undefined && typeof item.repository !== "string") ||
+            (item.armVersion !== undefined && typeof item.armVersion !== "string") ||
             (item.python !== undefined && !isAbsolute(item.python))) {
           throw new Error(`Invalid installation record: ${path}`);
         }
@@ -413,23 +498,28 @@ export class Manager {
     }
     return matches[0];
   }
-  async verifyArm(tools: string): Promise<void> {
+  async verifyArm(tools: string, sdk?: Sdk): Promise<void> {
     const compiler = join(tools, "bin", "arm-none-eabi-gcc");
     await executable(compiler);
     const version = await this.command([compiler, "-dumpfullversion", "-dumpversion"]);
-    if (version.trim() !== catalog.arm.compilerVersion) {
+    if (version.trim() !== armToolchain(sdk).compilerVersion) {
       throw new Error(`GNU Arm compiler mismatch: ${compiler}`);
     }
     for (const tool of ["arm-none-eabi-gcc-ar", "arm-none-eabi-objcopy"]) {
       await executable(join(tools, "bin", tool));
     }
   }
-  async installArm(tools: string): Promise<void> {
-    if (await exists(tools)) return this.verifyArm(tools);
-    if (process.platform !== "darwin" && !(process.platform === "linux" && process.arch === "x64")) {
-      throw new Error("GNU Arm 10.3 supports macOS and Linux x86_64; Apple Silicon requires Rosetta 2");
-    }
-    const distribution = catalog.arm.hosts[process.platform as "darwin" | "linux"];
+  async downloadArm(url: string, partial: string): Promise<void> {
+    await this.command(["python3", "-c", `
+import shutil, ssl, sys, urllib.request
+with urllib.request.urlopen(sys.argv[1], timeout=60, context=ssl.create_default_context()) as response:
+    with open(sys.argv[2], "wb") as output:
+        shutil.copyfileobj(response, output)
+`, url, partial], { inherit: true });
+  }
+  async installArm(tools: string, sdk?: Sdk): Promise<void> {
+    if (await exists(tools)) return this.verifyArm(tools, sdk);
+    const distribution = armDistribution(sdk);
     const cache = join(this.root, "downloads");
     await mkdir(cache, { recursive: true });
     const archive = join(cache, `${distribution.sha256}-${basename(distribution.url)}`);
@@ -439,11 +529,10 @@ export class Manager {
       return hash.digest("hex");
     };
     if (!await exists(archive)) {
-      const response = await fetch(distribution.url);
-      if (!response.ok) throw new Error(`GNU Arm download failed: HTTP ${response.status}`);
+      console.error(`Downloading GNU Arm ${armToolchain(sdk).version}...`);
       const partial = `${archive}.${randomUUID()}.tmp`;
       try {
-        await Bun.write(partial, response);
+        await this.downloadArm(distribution.url, partial);
         if (await digest(partial) !== distribution.sha256) throw new Error("GNU Arm archive checksum mismatch");
         await rename(partial, archive);
       } finally { await rm(partial, { force: true }); }
@@ -452,8 +541,8 @@ export class Manager {
     const temporary = `${tools}.${randomUUID()}.tmp`;
     await mkdir(temporary, { recursive: true });
     try {
-      await this.command(["tar", "-xjf", archive, "--strip-components=1", "-C", temporary]);
-      await this.verifyArm(temporary);
+      await this.command(["tar", "-xf", archive, "--strip-components=1", "-C", temporary]);
+      await this.verifyArm(temporary, sdk);
       await rename(temporary, tools);
     } finally { await rm(temporary, { recursive: true, force: true }); }
   }
@@ -461,17 +550,22 @@ export class Manager {
     if (!["darwin", "linux"].includes(process.platform)) throw new Error("SDK setup currently supports macOS and Linux");
     return locked(this.root, `${sdkName(sdk)}-${sdk.version}`, async () => {
       const previous = await this.record(sdk);
+      const armVersion = usesArm(sdk) ? armToolchain(sdk).version : undefined;
+      const sameTools = !armVersion || !previous || (previous.armVersion ?? catalog.arm.version) === armVersion;
       const item: Installation = {
         schema: 1, name: sdkName(sdk),
         repository: !options.sdk && previous ? previous.repository : sdk.repository,
         kind: sdk.kind, version: sdk.version, commit: sdk.commit,
         sdk: options.sdk ? await realpath(resolve(options.sdk)) : previous?.sdk ?? this.sourcePath(sdk),
-        tools: options.tools ? await realpath(resolve(options.tools)) : previous?.tools ?? this.toolsPath(sdk),
+        tools: options.tools ? await realpath(resolve(options.tools))
+          : sameTools ? previous?.tools ?? this.toolsPath(sdk) : this.toolsPath(sdk),
+        armVersion,
         // A virtualenv's Python can be a symlink to the host interpreter.
         python: options.python ? resolve(options.python) : previous?.python,
-        ready: previous?.ready ?? false,
+        ready: (previous?.ready ?? false) && sameTools,
         targets: options.targets ?? previous?.targets ?? sdk.targets ?? [],
       };
+      if (usesArm(sdk) && !adopt && !options.sourcesOnly && !await exists(item.tools)) armDistribution(sdk);
       if (adopt) await this.verifySource(sdk, item.sdk);
       else await this.fetchSource(sdk, item.sdk);
       if (!options.sourcesOnly) {
@@ -491,8 +585,8 @@ export class Manager {
             item.python = item.python ?? await this.findPython(sdk, item.tools);
             await executable(item.python);
           } else if (usesArm(sdk)) {
-            if (adopt) await this.verifyArm(item.tools);
-            else await this.installArm(item.tools);
+            if (adopt) await this.verifyArm(item.tools, sdk);
+            else await this.installArm(item.tools, sdk);
             if (!adopt) await this.resources.setup(this.resources.select("bk-loader"));
           } else {
             const toolchain = this.resources.select("jieli-toolchain");
@@ -524,13 +618,14 @@ export class Manager {
     const environment = await this.resources.environment(baseline);
     environment.GIZOS_DEVENV_HOME = this.root;
     if (usesArm(sdk)) {
-      await this.verifyArm(item.tools);
+      await this.verifyArm(item.tools, sdk);
       Object.assign(environment, {
         COMPILER_TOOLCHAIN_PATH: join(item.tools, "bin"),
         GIZOS_BK_TOOLCHAIN_ROOT: item.tools,
         PATH: `${join(item.tools, "bin")}:${environment.PATH ?? ""}`,
       });
-      Object.assign(environment, { BK7258_PATH: item.sdk, BK_SDK_DIR: item.sdk });
+      environment[sdk.sdkVariable ?? "BK7258_PATH"] = item.sdk;
+      environment.BK_SDK_DIR = item.sdk;
     } else if (sdk.kind === "idf") {
       await executable(item.python!);
       Object.assign(environment, {
@@ -575,9 +670,12 @@ export class Manager {
     const item = await this.record(sdk);
     const sourceExists = item && await exists(join(item.sdk, sdk.requiredFile));
     const toolsExist = item && await exists(item.tools) &&
+      (!usesArm(sdk) || (item.armVersion ?? catalog.arm.version) === armToolchain(sdk).version) &&
       (sdk.kind !== "idf" || item.python && await exists(item.python));
     return {
-      name: sdkName(sdk), repositoryId: sdk.repositoryId ?? selectRepository(sdk).id, repository: sdk.repository,
+      name: sdkName(sdk), chips: sdk.chips ?? sdk.targets ?? [],
+      repositoryAlias: sdk.repositoryAlias ?? selectRepository(sdk).alias ?? selectRepository(sdk).id,
+      repositoryId: sdk.repositoryId ?? selectRepository(sdk).id, repository: sdk.repository,
       defaultRepository: sdk.defaultRepository ?? sdk.repository,
       installedRepository: item?.repository ?? null,
       kind: sdk.kind, version: sdk.version, commit: sdk.commit,
@@ -608,12 +706,16 @@ export class Manager {
     const paths: string[] = [];
     for (const sdk of installed) {
       const selected = await this.environment(sdk, undefined, inherited);
-      if (selected.GIZOS_BK_TOOLCHAIN_ROOT) {
+      if (selected.GIZOS_BK_TOOLCHAIN_ROOT &&
+          (!environment.GIZOS_BK_TOOLCHAIN_ROOT || sdk.kind === "bk" && !environment.BK_SDK_DIR)) {
         environment.GIZOS_BK_TOOLCHAIN_ROOT = selected.GIZOS_BK_TOOLCHAIN_ROOT;
       }
       if (selected.BK_LOADER_BIN) environment.BK_LOADER_BIN = selected.BK_LOADER_BIN;
-      for (const key of sdkVariables[sdk.kind]) {
-        if (selected[key] !== undefined) environment[key] = selected[key];
+      // Export each named BK locator while keeping the first installed BK SDK as the generic default.
+      for (const key of environmentVariables(sdk)) {
+        if (selected[key] !== undefined && (sdk.kind !== "bk" || environment[key] === undefined)) {
+          environment[key] = selected[key];
+        }
       }
       paths.push(...(selected.PATH ?? "").split(":").filter(path => !hostPaths.includes(path)));
     }

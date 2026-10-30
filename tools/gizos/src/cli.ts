@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { dataRoot, configureRoot, configFile, sdkConfiguration, Manager, PACKAGE, catalog, sdkName, shellEnvironment, upgrade } from "./manager";
+import { dataRoot, configureRoot, configFile, sdkConfiguration, describeSdk, Manager, PACKAGE, catalog, sdkName, shellEnvironment, upgrade } from "./manager";
 import manifest from "../package.json";
 
 declare const GIZOS_VERSION: string;
@@ -11,23 +11,25 @@ Usage:
   gizos adopt <sdk> <version> --sdk <checkout> --tools <path> [--python <executable>] [--postbuild <path>]
   gizos adopt <tool> <version> --path <installation-directory>
   gizos list [sdk|tool] [--json]
+  gizos describe <sdk> [--json]
   gizos env [sdk|tool] [version] [--json | --shell sh|bash|zsh]
   gizos shell [sdk|tool] [version]
   gizos run [sdk|tool] [version] -- <command> [arguments...]
   gizos config
-  gizos config <sdk> [<org/repo> | --reset]
+  gizos config <sdk> [<source-alias> | --reset]
   gizos config set root <path>
   gizos upgrade [package-version]
   gizos --version
 
 Global options: --root <shared-directory>
 SDKs: ${[...new Set(catalog.sdks.map(sdkName))].join(", ")}
-list shows the catalog's repository choices and versions for each SDK.
+list shows supported chips, source aliases, repositories and versions.
+describe explains an SDK and shows usage examples in English.
 Legacy SDK names and family aliases remain accepted.
 Tools: adb, bk-loader, jieli-toolchain, jieli-postbuild
 GIZOS_DEVENV_HOME overrides the configured shared directory.
 setup installs explicit catalog versions; env never installs anything.
-bk_avdk_smp setup also installs the catalog's platform executable of bk_loader.
+BK SDK setup also installs the catalog's platform executable of bk_loader.
 upgrade installs/updates the global gizos command from ${PACKAGE} and preserves SDKs.
 `;
 
@@ -67,15 +69,43 @@ async function main() {
   const root = await dataRoot(flags.root as string | undefined);
   if (action === "config") {
     if (extra.length || flags.reset && (!name || selected)) {
-      throw new Error("Usage: gizos config <sdk> [<org/repo> | --reset]");
+      throw new Error("Usage: gizos config <sdk> [<source-alias> | --reset]");
     }
     if (name) {
       console.log(JSON.stringify(await sdkConfiguration(name, flags.reset ? null : selected), null, 2));
     } else {
       const entries = await Promise.all([...new Set(catalog.sdks.map(sdkName))].map(name => sdkConfiguration(name)));
       console.log(JSON.stringify({
-        root, config: configFile(), repositories: Object.fromEntries(entries.map(entry => [entry.name, entry.repositoryId])),
+        root, config: configFile(), repositories: Object.fromEntries(entries.map(entry => [entry.name, entry.repositoryAlias])),
       }, null, 2));
+    }
+    return;
+  }
+  if (action === "describe") {
+    if (!name || selected || extra.length) throw new Error("Usage: gizos describe <sdk> [--json]");
+    const item = await describeSdk(name);
+    if (flags.json) console.log(JSON.stringify({ root, ...item }, null, 2));
+    else {
+      console.log(`${item.name}\n\n${item.description}`);
+      if (item.chips.length) console.log(`\nCatalog chips: ${item.chips.join(", ")}`);
+      if (item.compiler) console.log(`Compiler: GNU Arm ${item.compiler.version} (${item.compiler.release})`);
+      console.log(`\nSources (selected: ${item.repositoryAlias}):`);
+      for (const repository of item.repositories) {
+        const labels = [repository.default && "default", repository.selected && "selected"].filter(Boolean);
+        console.log(`  ${repository.alias} -> ${repository.id}${labels.length ? ` (${labels.join(", ")})` : ""}`);
+        console.log(`    ${repository.url}`);
+      }
+      console.log("\nPinned versions:");
+      for (const entry of item.versions) {
+        console.log(`  ${entry.version}${entry.default ? " (default)" : ""}: ${entry.commit}`);
+        if (entry.chips.length) console.log(`    Chips: ${entry.chips.join(", ")}`);
+      }
+      console.log("\nUsage:");
+      for (const command of item.commands) console.log(`  ${command}`);
+      console.log("\nNotes:");
+      for (const note of item.notes) console.log(`  - ${note}`);
+      if (item.documentation) console.log(`\nDocumentation: ${item.documentation}`);
+      console.log(`Shared directory: ${root}`);
     }
     return;
   }
@@ -97,9 +127,10 @@ async function main() {
       console.log(`Shared directory: ${root}`);
       for (const sdk of repositories ?? []) {
         console.log(`\n${sdk.name}`);
+        if (sdk.chips.length) console.log(`  Chips: ${sdk.chips.join(", ")}`);
         for (const repository of sdk.repositories) {
           const labels = [repository.default && "default", repository.selected && "selected"].filter(Boolean);
-          console.log(`  ${repository.selected ? "*" : "-"} ${repository.id}${labels.length ? ` (${labels.join(", ")})` : ""}`);
+          console.log(`  ${repository.selected ? "*" : "-"} ${repository.alias} -> ${repository.id}${labels.length ? ` (${labels.join(", ")})` : ""}`);
           console.log(`    ${repository.url}`);
         }
         console.log("  Versions:");

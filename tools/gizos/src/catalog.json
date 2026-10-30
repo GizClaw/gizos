@@ -4,39 +4,91 @@
     {
       "name": "esp-idf",
       "aliases": ["esp_idf"],
+      "description": "Espressif IoT Development Framework for ESP32 applications. GizOS manages the pinned SDK, its selected compiler tools and its Python environment in a shared store.",
+      "documentation": "https://docs.espressif.com/projects/esp-idf/en/stable/",
+      "notes": [
+        "GizClaw selects the maintained fork; Espressif selects the official upstream repository.",
+        "Use setup --targets to select chip families. env displays installation paths; env --shell prints shell activation statements."
+      ],
       "repositories": [
-        {"id": "GizClaw/esp-idf", "url": "https://github.com/GizClaw/esp-idf.git"},
-        {"id": "espressif/esp-idf", "url": "https://github.com/espressif/esp-idf.git"}
+        {"alias": "GizClaw", "id": "GizClaw/esp-idf", "url": "https://github.com/GizClaw/esp-idf.git"},
+        {"alias": "Espressif", "id": "espressif/esp-idf", "url": "https://github.com/espressif/esp-idf.git"}
       ]
     },
     {
-      "name": "bk_avdk_smp",
-      "aliases": [],
+      "name": "bk7258",
+      "aliases": ["bk_avdk_smp"],
+      "chips": ["bk7258"],
+      "sdkVariable": "BK7258_PATH",
+      "description": "BK7258 audio/video SDK using Beken's Armino SMP framework. This entry follows the BK7258 3.1.1 line of bk_avdk_smp and includes the shared GNU Arm compiler and BK Loader.",
+      "documentation": "https://docs.bekencorp.com/arminodoc/bk_avdk_smp/smp_doc/bk7258/en/v3.1.1/index.html",
+      "notes": [
+        "Exports BK7258_PATH and BK_SDK_DIR. The GizOS BK7258 build integration uses this SMP SDK.",
+        "The 4.0.1 catalog pin belongs to BK7259; it is not an upgrade of this BK7258 environment."
+      ],
       "repositories": [
-        {"id": "GizClaw/bk_avdk_smp", "url": "https://github.com/GizClaw/bk_avdk_smp.git"},
-        {"id": "bekencorp/bk_avdk_smp", "url": "https://github.com/bekencorp/bk_avdk_smp.git"}
+        {"alias": "GizClaw", "id": "GizClaw/bk_avdk_smp", "url": "https://github.com/GizClaw/bk_avdk_smp.git"},
+        {"alias": "Beken", "id": "bekencorp/bk_avdk_smp", "url": "https://github.com/bekencorp/bk_avdk_smp.git"}
+      ]
+    },
+    {
+      "name": "bk7259",
+      "aliases": ["bk_avdk_smp"],
+      "chips": ["bk7259"],
+      "sdkVariable": "BK7259_PATH",
+      "armVersion": "14.3.rel1",
+      "description": "BK7259 audio/video SDK from the 4.0.1 line of bk_avdk_smp. This chip entry uses its own shared GNU Arm 14.3 compiler pool and the common BK Loader installation.",
+      "notes": [
+        "Exports BK7259_PATH and BK_SDK_DIR. Selecting this environment clears a previously active BK7258_PATH.",
+        "SDK management does not add a BK7259 board or build target to the GizOS firmware graph."
+      ],
+      "repositories": [
+        {"alias": "GizClaw", "id": "GizClaw/bk_avdk_smp", "url": "https://github.com/GizClaw/bk_avdk_smp.git"},
+        {"alias": "Beken", "id": "bekencorp/bk_avdk_smp", "url": "https://github.com/bekencorp/bk_avdk_smp.git"}
+      ]
+    },
+    {
+      "name": "bk_idk",
+      "aliases": [],
+      "chips": ["bk7236", "bk7258"],
+      "sdkVariable": "BK_IDK_PATH",
+      "description": "Beken Armino IoT Development Kit covering multiple chips. The catalog pins one bk_idk snapshot for BK7236 and BK7258 and manages it as a single shared SDK installation.",
+      "notes": [
+        "Exports BK_IDK_PATH and BK_SDK_DIR, and reuses GNU Arm 10.3.1 and BK Loader.",
+        "For direct SDK builds, set CONFIG_TOOLCHAIN_PATH in the project SDK configuration to the exported COMPILER_TOOLCHAIN_PATH. This snapshot otherwise defaults to a compiler under /opt.",
+        "The GizOS BK7258 firmware integration requires the SMP SDK; use the bk7258 entry for that build workflow."
+      ],
+      "repositories": [
+        {"alias": "GizClaw", "id": "GizClaw/bk_idk", "url": "https://github.com/GizClaw/bk_idk.git"},
+        {"alias": "Beken", "id": "bekencorp/bk_idk", "url": "https://github.com/bekencorp/bk_idk.git"}
       ]
     },
     {
       "name": "jieli-ac695n",
       "aliases": ["AC695N_Soundbox_SDK"],
+      "description": "JieLi AC695N soundbox SDK using the maintained pinned snapshot. SDK preparation also locates the shared JieLi compiler and post-build tools.",
+      "notes": ["The selected source and tool archives require access to their maintained asset repositories. JieLi compiler binaries run on Linux x86_64."],
       "repositories": [
-        {"id": "h2vivi/AC695N_Soundbox_SDK", "url": "git@github.com:h2vivi/AC695N_Soundbox_SDK.git"}
+        {"alias": "h2vivi", "id": "h2vivi/AC695N_Soundbox_SDK", "url": "git@github.com:h2vivi/AC695N_Soundbox_SDK.git"}
       ]
     },
     {
       "name": "jieli-ac707n",
       "aliases": ["e_badge_707_sdk_200"],
+      "description": "JieLi AC707N e-badge SDK. The default Jieli source is the verified public GitLab repository; the h2vivi alias selects the maintained GitHub snapshot at the same pinned commit.",
+      "notes": ["The SDK source is public; compiler and post-build tool distribution is managed separately. JieLi compiler binaries run on Linux x86_64."],
       "repositories": [
-        {"id": "e_badge/e_badge_707_sdk_200", "url": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git"},
-        {"id": "h2vivi/e_badge_707_sdk_200", "url": "git@github.com:h2vivi/e_badge_707_sdk_200.git"}
+        {"alias": "Jieli", "id": "e_badge/e_badge_707_sdk_200", "url": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git"},
+        {"alias": "h2vivi", "id": "h2vivi/e_badge_707_sdk_200", "url": "git@github.com:h2vivi/e_badge_707_sdk_200.git"}
       ]
     },
     {
       "name": "jieli-ac791n",
       "aliases": ["fw-AC791N_SDK"],
+      "description": "JieLi AC791N SDK using the maintained pinned snapshot. SDK preparation also locates the shared JieLi compiler and post-build tools.",
+      "notes": ["The public AC79 upstream has not been matched to this catalog pin. The selected source and tool archives require access to their maintained asset repositories."],
       "repositories": [
-        {"id": "h2vivi/fw-AC791N_SDK", "url": "git@github.com:h2vivi/fw-AC791N_SDK.git"}
+        {"alias": "h2vivi", "id": "h2vivi/fw-AC791N_SDK", "url": "git@github.com:h2vivi/fw-AC791N_SDK.git"}
       ]
     }
   ],
@@ -72,7 +124,7 @@
       ]
     },
     {
-      "name": "bk_avdk_smp",
+      "name": "bk7258",
       "kind": "bk",
       "version": "3.1.1",
       "default": true,
@@ -81,7 +133,7 @@
       "requiredFile": "Makefile"
     },
     {
-      "name": "bk_avdk_smp",
+      "name": "bk7258",
       "kind": "bk",
       "version": "3.1.1-rd789d71",
       "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
@@ -89,12 +141,26 @@
       "requiredFile": "Makefile"
     },
     {
-      "name": "bk_avdk_smp",
+      "name": "bk7259",
       "kind": "bk",
       "version": "4.0.1",
+      "default": true,
       "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
       "commit": "06cb0f2d9cdeab571ec5be2d54398c67e097a4cc",
       "requiredFile": "Makefile"
+    },
+    {
+      "name": "bk_idk",
+      "kind": "bk",
+      "version": "2.0.1-r650e754",
+      "default": true,
+      "repository": "https://github.com/GizClaw/bk_idk.git",
+      "commit": "650e754e12fe1e43c37ce2316a973668b033fd48",
+      "requiredFile": "Makefile",
+      "requiredFiles": [
+        "middleware/soc/bk7236/toolchain-bk7236.cmake",
+        "middleware/soc/bk7258/toolchain-bk7258.cmake"
+      ]
     },
     {
       "name": "jieli-ac695n",
@@ -142,6 +208,26 @@
       }
     }
   },
+  "armToolchains": [
+    {
+      "version": "14.3.rel1",
+      "compilerVersion": "14.3.1",
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-darwin-arm64-arm-none-eabi.tar.xz",
+          "sha256": "30f4d08b219190a37cded6aa796f4549504902c53cfc3c7e044a8490b6eba1f7"
+        },
+        "linux-x64": {
+          "url": "https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz",
+          "sha256": "8f6903f8ceb084d9227b9ef991490413014d991874a1e34074443c2a72b14dbd"
+        },
+        "linux-arm64": {
+          "url": "https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-aarch64-arm-none-eabi.tar.xz",
+          "sha256": "2d465847eb1d05f876270494f51034de9ace9abe87a4222d079f3360240184d3"
+        }
+      }
+    }
+  ],
   "tools": [
     {
       "kind": "adb",

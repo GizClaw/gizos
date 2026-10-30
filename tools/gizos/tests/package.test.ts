@@ -25,8 +25,16 @@ test("built npm entry runs from a separate directory without source checkout dep
     expect((await stat(entry)).mode & 0o111).toBe(0o111);
     expect(await readFile(entry, "utf8")).toStartWith("#!/usr/bin/env bun");
     expect((await execute([process.execPath, entry, "--version"], { cwd: "/" })).trim()).toBe(manifest.version);
+    const environment = {
+      ...process.env, GIZOS_DEVENV_HOME: join(root, "shared"), XDG_CONFIG_HOME: join(root, "config"),
+    };
+    const description = await execute([process.execPath, entry, "describe", "esp_idf"], {
+      cwd: "/", env: environment,
+    });
+    expect(description).toContain("Espressif IoT Development Framework");
+    expect(description).toContain("gizos config esp-idf GizClaw");
     const info = JSON.parse(await execute([process.execPath, entry, "env", "bk", "--json"], {
-      cwd: "/", env: { ...process.env, GIZOS_DEVENV_HOME: join(root, "shared"), XDG_CONFIG_HOME: join(root, "config") },
+      cwd: "/", env: environment,
     }));
     expect(info.root).toBe(join(root, "shared"));
     expect(info.environments[0].status).toBe("not installed");
