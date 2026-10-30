@@ -1636,8 +1636,8 @@ static void test_mfg_explicit_append_preserves_prefix(void) {
   assert(h2_loader_mfg_write(&fixture.pref, &saved) == 0);
   assert(h2_loader_mfg_ensure_appended_revision(&fixture.pref, 10, 2, 9, 1) ==
          0);
-  assert(read_mfg(&fixture, &present).step_status[9] ==
-         H2_LOADER_MFG_STEP_FAILED);
+  saved = read_mfg(&fixture, &present);
+  assert(saved.step_status[9] == H2_LOADER_MFG_STEP_FAILED);
   assert(h2_loader_mfg_ensure_appended_revision(&fixture.pref, 10, 2, 10, 1) ==
          H2_PAL_ERR_INVALID_ARG);
   /* An unrelated schema cannot inherit this prefix. */
