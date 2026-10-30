@@ -1,7 +1,48 @@
 {
   "schema": 1,
+  "sdkRepositories": [
+    {
+      "name": "esp-idf",
+      "aliases": ["esp_idf"],
+      "repositories": [
+        {"id": "GizClaw/esp-idf", "url": "https://github.com/GizClaw/esp-idf.git"},
+        {"id": "espressif/esp-idf", "url": "https://github.com/espressif/esp-idf.git"}
+      ]
+    },
+    {
+      "name": "bk_avdk_smp",
+      "aliases": [],
+      "repositories": [
+        {"id": "GizClaw/bk_avdk_smp", "url": "https://github.com/GizClaw/bk_avdk_smp.git"},
+        {"id": "bekencorp/bk_avdk_smp", "url": "https://github.com/bekencorp/bk_avdk_smp.git"}
+      ]
+    },
+    {
+      "name": "jieli-ac695n",
+      "aliases": ["AC695N_Soundbox_SDK"],
+      "repositories": [
+        {"id": "h2vivi/AC695N_Soundbox_SDK", "url": "git@github.com:h2vivi/AC695N_Soundbox_SDK.git"}
+      ]
+    },
+    {
+      "name": "jieli-ac707n",
+      "aliases": ["e_badge_707_sdk_200"],
+      "repositories": [
+        {"id": "e_badge/e_badge_707_sdk_200", "url": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git"},
+        {"id": "h2vivi/e_badge_707_sdk_200", "url": "git@github.com:h2vivi/e_badge_707_sdk_200.git"}
+      ]
+    },
+    {
+      "name": "jieli-ac791n",
+      "aliases": ["fw-AC791N_SDK"],
+      "repositories": [
+        {"id": "h2vivi/fw-AC791N_SDK", "url": "git@github.com:h2vivi/fw-AC791N_SDK.git"}
+      ]
+    }
+  ],
   "sdks": [
     {
+      "name": "esp-idf",
       "kind": "idf",
       "version": "6.0.3",
       "repository": "https://github.com/GizClaw/esp-idf.git",
@@ -15,6 +56,7 @@
       ]
     },
     {
+      "name": "esp-idf",
       "kind": "idf",
       "version": "6.2",
       "default": true,
@@ -30,6 +72,7 @@
       ]
     },
     {
+      "name": "bk_avdk_smp",
       "kind": "bk",
       "version": "3.1.1",
       "default": true,
@@ -38,6 +81,7 @@
       "requiredFile": "Makefile"
     },
     {
+      "name": "bk_avdk_smp",
       "kind": "bk",
       "version": "3.1.1-rd789d71",
       "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
@@ -45,6 +89,7 @@
       "requiredFile": "Makefile"
     },
     {
+      "name": "bk_avdk_smp",
       "kind": "bk",
       "version": "4.0.1",
       "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
@@ -52,6 +97,7 @@
       "requiredFile": "Makefile"
     },
     {
+      "name": "jieli-ac695n",
       "kind": "ac695n",
       "version": "76b95777a083",
       "default": true,
@@ -62,16 +108,17 @@
       "lfs": true
     },
     {
+      "name": "jieli-ac707n",
       "kind": "ac707n",
       "version": "d0167685d032",
       "default": true,
-      "repository": "git@github.com:h2vivi/e_badge_707_sdk_200.git",
+      "repository": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git",
       "commit": "d0167685d032d745d88fe50233302edd46941622",
       "requiredFile": "SDK/Makefile",
-      "sdkSubdirectory": "SDK",
-      "lfs": true
+      "sdkSubdirectory": "SDK"
     },
     {
+      "name": "jieli-ac791n",
       "kind": "ac791n",
       "version": "eb04f1966cf2",
       "default": true,

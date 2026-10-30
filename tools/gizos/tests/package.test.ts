@@ -26,7 +26,7 @@ test("built npm entry runs from a separate directory without source checkout dep
     expect(await readFile(entry, "utf8")).toStartWith("#!/usr/bin/env bun");
     expect((await execute([process.execPath, entry, "--version"], { cwd: "/" })).trim()).toBe(manifest.version);
     const info = JSON.parse(await execute([process.execPath, entry, "env", "bk", "--json"], {
-      cwd: "/", env: { ...process.env, GIZOS_DEVENV_HOME: join(root, "shared") },
+      cwd: "/", env: { ...process.env, GIZOS_DEVENV_HOME: join(root, "shared"), XDG_CONFIG_HOME: join(root, "config") },
     }));
     expect(info.root).toBe(join(root, "shared"));
     expect(info.environments[0].status).toBe("not installed");

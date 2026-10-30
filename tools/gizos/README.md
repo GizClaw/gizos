@@ -36,12 +36,13 @@ bazel run //tools/gizos:gizos -- env
 
 ## Supported environments
 
-SDK arguments use their GitHub repository names: `bk_avdk_smp`, `esp-idf`,
-`AC695N_Soundbox_SDK`, `e_badge_707_sdk_200` and `fw-AC791N_SDK`. The catalog
-pins the repository URL and exact commit for each version. `env` displays the
-repository together with its installation paths. Existing family aliases
-(`bk`, `idf`, `ac695n`, `ac707n`, `ac791n`) remain accepted for older scripts;
-an ambiguous family/version combination requires an explicit repository name.
+The project catalog gives each SDK a stable name: `bk_avdk_smp`, `esp-idf`,
+`jieli-ac695n`, `jieli-ac707n` and `jieli-ac791n`. Each name has a maintained
+list of repository choices and exact version/commit pins. `env` displays the
+selected repository together with its installation paths. Existing family
+aliases (`bk`, `idf`, `ac695n`, `ac707n`, `ac791n`), `esp_idf` and the previous
+JieLi repository basenames remain accepted for older scripts. An ambiguous
+family/version combination requires an explicit SDK name.
 
 | Resource | Preparation | Environment contract |
 | --- | --- | --- |
@@ -49,10 +50,11 @@ an ambiguous family/version combination requires an explicit repository name.
 | BK7258 | `setup bk_avdk_smp 3.1.1` or another exact catalog version | SDK, shared GNU Arm 10.3.1 and BK Loader; `BK7258_PATH`, `BK_SDK_DIR`, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT`, `BK_LOADER_BIN` |
 | BK Loader | Installed with BK setup, or `setup bk-loader 1.1.0.2.post2` | Checksummed host executable from the public `GizClaw/bk_loader` Release; `BK_LOADER_BIN` and `bk_loader` on PATH |
 | ADB | `setup adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
-| JieLi SDKs | `setup AC695N_Soundbox_SDK`, `setup e_badge_707_sdk_200` or `setup fw-AC791N_SDK` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
+| JieLi SDKs | `setup jieli-ac695n`, `setup jieli-ac707n` or `setup jieli-ac791n` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
 | JieLi tools | Installed with a JieLi SDK, or `setup jieli-toolchain 20250805.1` and `setup jieli-postbuild 20260728.1` | `JIELI_TOOLCHAIN_ROOT`, `JIELI_POSTBUILD_ROOT` |
 
-`list` shows all catalog versions and their installation status. `env` displays
+`list` shows each SDK's repository choices, default/current selection, catalog
+versions and installation status. `list <sdk>` filters the catalog. `env` displays
 installation directories, executable paths and PATH entries; it never installs
 anything. `env bk_avdk_smp` also shows the selected loader. `--json` provides the same
 information to scripts. Individual resources can be inspected with
@@ -64,10 +66,79 @@ Silicon requires Rosetta 2. ADB supports macOS and Linux x86_64. JieLi compiler
 and post-build executables run on Linux x86_64; other hosts can prepare and
 export their paths for a Linux container without adding them to the host PATH.
 
-Private JieLi sources and archives require existing Git authentication and Git
-LFS access to their pinned vendor asset repositories. The toolbox retrieves
+The AC707N SDK defaults to Jieli's public GitLab repository at the same pinned
+commit as the existing installation. The selected AC695N/AC791N snapshots and
+JieLi tool archives still require access to their maintained asset repositories.
+Git LFS is required where the catalog marks it. The toolbox retrieves
 only the selected assets, checks their commits/checksums and keeps them in the
 shared store. Vendor binaries are not embedded in the npm package.
+
+## SDK catalog and repository selection
+
+The repository owns the list in `src/catalog.json`. Discover SDK names,
+repository IDs and versions before choosing a source:
+
+```sh
+gizos list
+gizos list esp-idf
+gizos list jieli-ac707n --json
+```
+
+| SDK name | Default repository ID | Other selectable repositories |
+| --- | --- | --- |
+| `esp-idf` | `GizClaw/esp-idf` | `espressif/esp-idf` |
+| `bk_avdk_smp` | `GizClaw/bk_avdk_smp` | `bekencorp/bk_avdk_smp` |
+| `jieli-ac695n` | `h2vivi/AC695N_Soundbox_SDK` | None at the current pinned version |
+| `jieli-ac707n` | `e_badge/e_badge_707_sdk_200` (JieLi GitLab) | `h2vivi/e_badge_707_sdk_200` (GitHub) |
+| `jieli-ac791n` | `h2vivi/fw-AC791N_SDK` | None at the current pinned version |
+
+`config` accepts the exact repository ID from this list, including its
+organization or GitLab group. It rejects unlisted repositories and arbitrary
+URLs; adding a supported source requires updating the project catalog.
+
+```sh
+gizos config esp_idf
+gizos config esp_idf espressif/esp-idf
+gizos config bk_avdk_smp bekencorp/bk_avdk_smp
+gizos config jieli-ac707n e_badge/e_badge_707_sdk_200
+```
+
+Without a repository ID, the command displays the current/default IDs, URLs
+and available choices. With an ID, it stores the selection for every catalog
+version of that SDK. `gizos config` shows the shared root, configuration file
+and selected repository IDs. `list --json` includes a `repositories` array
+containing the same choices alongside version and installation information.
+Settings are shared across worktrees in the existing `devenv.json` file;
+changing the shared root preserves repository selections and vice versa.
+
+Restore the catalog default with:
+
+```sh
+gizos config bk_avdk_smp --reset
+gizos config esp_idf --reset
+```
+
+Selecting another listed repository changes where future downloads come from.
+The SDK name, pinned commit and compiler requirements stay the same. Each
+listed source must provide the exact catalog commit; setup does not substitute
+a branch or latest tag.
+
+Already installed matching commits are reused without copying SDKs or changing
+their Git remotes. `env` shows the configured URL and, when different, the
+source URL recorded for the installation. Configuration and discovery commands
+do not clone or install SDKs.
+
+JieLi's public upstream projects are:
+
+| SDK | Public upstream | Current catalog |
+| --- | --- | --- |
+| AC695N | https://gitlab.zh-jieli.com/soundbox/novisualization/ac695n_soundbox_sdk | Keep the existing snapshot; add this source to the selectable catalog after verifying a compatible version |
+| AC707N | https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200 | Public default; exact commit `d0167685d032d745d88fe50233302edd46941622` and anonymous Git access verified |
+| AC791N | https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK | Keep the existing snapshot; add this source to the selectable catalog after verifying a compatible version |
+
+A public upstream URL does not make a different snapshot's commit available
+there. Only the verified AC707N source URL changes by default; compiler and
+post-build tool distribution is managed separately.
 
 ## BK Loader installation
 
@@ -124,10 +195,11 @@ Firmwares commit `d789d71d89d11584c3350ca67600ff9455a7f57a` is available as
 `3.1.1-rd789d71`; select it explicitly when the consumer requires that revision.
 Consumers independently validate SDK/toolchain compatibility.
 
-Source revisions and installation records are keyed by repository name and
-version. Legacy family records are still read, and setup registers their
-existing paths under the repository name without moving or copying payloads.
-Different repositories can use the same version label independently.
+Source revisions and installation records are keyed by stable SDK name and
+version. Legacy repository/family records and cached sources are still read;
+setup registers their existing paths under the SDK name without moving or
+copying payloads. Changing a selected source does not duplicate an installed
+matching revision. Different SDKs can use the same version label independently.
 IDF versions share compiler downloads
 and family/version directories, with separate versioned Python environments.
 BK versions share the same GNU Arm installation. Cross-process locks serialize

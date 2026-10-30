@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { dataRoot, configureRoot, configFile, Manager, PACKAGE, catalog, sdkName, shellEnvironment, upgrade } from "./manager";
+import { dataRoot, configureRoot, configFile, sdkConfiguration, Manager, PACKAGE, catalog, sdkName, shellEnvironment, upgrade } from "./manager";
 import manifest from "../package.json";
 
 declare const GIZOS_VERSION: string;
@@ -14,12 +14,16 @@ Usage:
   gizos env [sdk|tool] [version] [--json | --shell sh|bash|zsh]
   gizos shell [sdk|tool] [version]
   gizos run [sdk|tool] [version] -- <command> [arguments...]
-  gizos config [set root <path>]
+  gizos config
+  gizos config <sdk> [<org/repo> | --reset]
+  gizos config set root <path>
   gizos upgrade [package-version]
   gizos --version
 
 Global options: --root <shared-directory>
-SDKs (GitHub repository names): ${[...new Set(catalog.sdks.map(sdkName))].join(", ")}
+SDKs: ${[...new Set(catalog.sdks.map(sdkName))].join(", ")}
+list shows the catalog's repository choices and versions for each SDK.
+Legacy SDK names and family aliases remain accepted.
 Tools: adb, bk-loader, jieli-toolchain, jieli-postbuild
 GIZOS_DEVENV_HOME overrides the configured shared directory.
 setup installs explicit catalog versions; env never installs anything.
@@ -34,7 +38,7 @@ function parse(args: string[]) {
   const flags: Record<string, string | boolean> = {};
   const positional: string[] = [];
   const values = new Set(["root", "sdk", "tools", "python", "targets", "shell", "path", "postbuild"]);
-  const boolean = new Set(["json", "sources-only", "help", "version"]);
+  const boolean = new Set(["json", "sources-only", "help", "version", "reset"]);
   for (let i = 0; i < input.length; i++) {
     const argument = input[i];
     if (!argument.startsWith("--")) { positional.push(argument); continue; }
@@ -54,17 +58,29 @@ async function main() {
   const [action, name, selected, ...extra] = positional;
   if (flags.help || action === "help" || !action && !flags.version) { console.log(help); return; }
   if (flags.version || action === "version") { console.log(version); return; }
+  if (flags.reset && action !== "config") throw new Error("--reset is only supported by gizos config <sdk>");
   if (action === "upgrade") { await upgrade(name); console.log(`Updated global ${PACKAGE}; SDK installations were preserved.`); return; }
   if (action === "config" && name === "set" && selected === "root" && extra.length === 1) {
+    if (flags.reset) throw new Error("--reset requires an SDK name");
     console.log(await configureRoot(extra[0])); return;
   }
   const root = await dataRoot(flags.root as string | undefined);
-  const manager = new Manager(root);
-  const resources = manager.resources;
   if (action === "config") {
-    if (name) throw new Error("Usage: gizos config set root <path>");
-    console.log(JSON.stringify({ root, config: configFile() }, null, 2)); return;
+    if (extra.length || flags.reset && (!name || selected)) {
+      throw new Error("Usage: gizos config <sdk> [<org/repo> | --reset]");
+    }
+    if (name) {
+      console.log(JSON.stringify(await sdkConfiguration(name, flags.reset ? null : selected), null, 2));
+    } else {
+      const entries = await Promise.all([...new Set(catalog.sdks.map(sdkName))].map(name => sdkConfiguration(name)));
+      console.log(JSON.stringify({
+        root, config: configFile(), repositories: Object.fromEntries(entries.map(entry => [entry.name, entry.repositoryId])),
+      }, null, 2));
+    }
+    return;
   }
+  const manager = await Manager.configured(root);
+  const resources = manager.resources;
   if (extra.length) throw new Error("Unexpected arguments; run gizos --help");
   if (action === "list" || action === "env" && !flags.shell) {
     if (selected && !name) throw new Error("Select an SDK family first");
@@ -74,13 +90,30 @@ async function main() {
       ? selected ? [resources.select(name, selected)] : resources.entries.filter(tool => tool.kind === name) : [];
     const environments = await Promise.all(sdks.map(sdk => manager.describe(sdk)));
     const installations = await Promise.all(tools.map(tool => resources.describe(tool)));
-    if (flags.json) console.log(JSON.stringify({ root, environments, resources: installations }, null, 2));
+    const repositories = action === "list"
+      ? await Promise.all([...new Set(sdks.map(sdkName))].map(name => sdkConfiguration(name))) : undefined;
+    if (flags.json) console.log(JSON.stringify({ root, environments, resources: installations, repositories }, null, 2));
     else {
       console.log(`Shared directory: ${root}`);
-      for (const item of environments) {
+      for (const sdk of repositories ?? []) {
+        console.log(`\n${sdk.name}`);
+        for (const repository of sdk.repositories) {
+          const labels = [repository.default && "default", repository.selected && "selected"].filter(Boolean);
+          console.log(`  ${repository.selected ? "*" : "-"} ${repository.id}${labels.length ? ` (${labels.join(", ")})` : ""}`);
+          console.log(`    ${repository.url}`);
+        }
+        console.log("  Versions:");
+        for (const item of environments.filter(item => item.name === sdk.name)) {
+          console.log(`    ${item.version}: ${item.status}`);
+        }
+      }
+      for (const item of action === "env" ? environments : []) {
         console.log(`\n${item.name} ${item.version}: ${item.status}`);
         if (action === "env") {
           console.log(`  Repository: ${item.repository}`);
+          if (item.installedRepository && item.installedRepository !== item.repository) {
+            console.log(`  Installed repository: ${item.installedRepository}`);
+          }
           console.log(`  SDK: ${item.sdk}\n  Tools: ${item.tools}`);
           if (item.kind === "idf") console.log(`  Python: ${item.python ?? "not installed"}`);
           if (item.kind === "bk") console.log(`  BK Loader: ${item.loader ?? "not installed"}`);

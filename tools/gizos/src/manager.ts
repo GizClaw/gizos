@@ -1,7 +1,7 @@
 import {
   mkdir, readFile, readdir, realpath, rename, rm,
 } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -11,7 +11,13 @@ import { atomicJson, execute, executable, exists, locked, quote, type Command, t
 export { execute, exists, locked, type Command } from "./common";
 
 export type Kind = "idf" | "bk" | "ac695n" | "ac707n" | "ac791n";
+export type Repository = { id: string; url: string };
 export type Sdk = {
+  name?: string;
+  aliases?: string[];
+  repositories?: Repository[];
+  repositoryId?: string;
+  defaultRepository?: string;
   kind: Kind;
   version: string;
   repository: string;
@@ -45,8 +51,17 @@ export type Options = {
   python?: string;
   postbuild?: string;
 };
-type Catalog = typeof bundledCatalog & { sdks: Sdk[] };
-export const catalog = bundledCatalog as Catalog;
+type Catalog = Omit<typeof bundledCatalog, "sdks"> & { sdks: Sdk[] };
+export const catalog = {
+  ...bundledCatalog,
+  sdks: bundledCatalog.sdks.map(sdk => {
+    const definition = bundledCatalog.sdkRepositories.find(entry => entry.name === sdk.name);
+    if (!definition || !definition.repositories.some(repository => repository.url === sdk.repository)) {
+      throw new Error(`Missing SDK repository catalog for ${sdk.name}`);
+    }
+    return { ...sdk, aliases: definition.aliases, repositories: definition.repositories };
+  }),
+} as Catalog;
 export const PACKAGE = "@gizclaw/gizos";
 export const REGISTRY = "https://static-volc.gizclaw.com/npm/";
 const controlled = [
@@ -83,21 +98,22 @@ export function kind(value: string): Kind {
 }
 
 export function sdkName(sdk: Sdk): string {
-  const name = basename(sdk.repository.replace(/\/$/, "").replace(/\.git$/, ""));
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) throw new Error("Invalid SDK repository name");
+  const name = sdk.name ?? basename(sdk.repository.replace(/\/$/, "").replace(/\.git$/, ""));
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) throw new Error("Invalid SDK name");
   return name;
 }
 
 export function sdkChoices(name?: string, entries: Sdk[] = catalog.sdks): Sdk[] {
   if (!name) return entries;
-  const named = entries.filter(sdk => sdkName(sdk).toLowerCase() === name.toLowerCase());
+  const named = entries.filter(sdk =>
+    [sdkName(sdk), ...sdk.aliases ?? []].some(alias => alias.toLowerCase() === name.toLowerCase()));
   return named.length ? named : entries.filter(sdk => sdk.kind === kind(name));
 }
 
 export function selectSdk(name: string, version: string, entries: Sdk[] = catalog.sdks): Sdk {
   const matches = sdkChoices(name, entries).filter(item => item.version === version);
   if (matches.length > 1) {
-    throw new Error(`Ambiguous SDK ${name} ${version}; use a repository name: ${matches.map(sdkName).join(", ")}`);
+    throw new Error(`Ambiguous SDK ${name} ${version}; use an SDK name: ${matches.map(sdkName).join(", ")}`);
   }
   const sdk = matches[0];
   if (!sdk) throw new Error(`Unsupported ${name} version ${version}; run gizos list ${name}`);
@@ -123,25 +139,116 @@ export function defaultRoot(env: Env = process.env): string {
   return join(base, "gizos", "devenv");
 }
 
-export async function dataRoot(explicit?: string, env: Env = process.env): Promise<string> {
-  if (explicit || env.GIZOS_DEVENV_HOME) return resolve(explicit || env.GIZOS_DEVENV_HOME!);
+type Configuration = {
+  schema?: 1;
+  root?: string;
+  repositories?: Record<string, string>;
+};
+
+function repositoryChoices(sdk: Sdk): Repository[] {
+  return sdk.repositories ?? [{ id: sdkName(sdk), url: sdk.defaultRepository ?? sdk.repository }];
+}
+
+function selectRepository(sdk: Sdk, value?: string, stored = false): Repository {
+  const choices = repositoryChoices(sdk);
+  const repository = value === undefined
+    ? choices.find(choice => choice.url === (sdk.defaultRepository ?? sdk.repository))
+    : choices.find(choice => choice.id.toLowerCase() === value.toLowerCase() || stored && choice.url === value);
+  if (!repository) {
+    throw new Error(`Repository is not in the catalog for ${sdkName(sdk)}; run gizos list ${sdkName(sdk)} to see available repositories`);
+  }
+  repositoryAddress(repository.url);
+  return repository;
+}
+
+function configuredRepository(sdk: Sdk, settings: Configuration): string | undefined {
+  for (const name of [sdkName(sdk), ...sdk.aliases ?? []]) {
+    if (settings.repositories?.[name] !== undefined) return settings.repositories[name];
+  }
+}
+
+function repositoryAddress(value: string): string {
+  const invalid = () => new Error("Invalid SDK repository address; use an HTTPS/SSH URL or an absolute local path without embedded credentials");
+  if (!value || /[\0\r\n]/.test(value)) throw invalid();
+  if (isAbsolute(value)) return value;
+  if (/^[^\s@:/]+@[^\s:/]+:[^\s]+$/.test(value)) return value;
+  if (value !== value.trim() || !/^(https?|ssh|file):\/\//.test(value)) throw invalid();
   try {
-    const config = JSON.parse(await readFile(configFile(env), "utf8"));
-    if (typeof config.root !== "string" || !isAbsolute(config.root)) {
-      throw new Error("Invalid gizos root configuration");
+    const url = new URL(value);
+    if (!["https:", "http:", "ssh:", "file:"].includes(url.protocol) ||
+        url.password || url.search || url.hash || (url.protocol !== "ssh:" && url.username) ||
+        (url.protocol !== "file:" && !url.hostname) || url.pathname === "/") throw invalid();
+    return value;
+  } catch { throw invalid(); }
+}
+
+export async function configuration(env: Env = process.env): Promise<Configuration> {
+  try {
+    const value = JSON.parse(await readFile(configFile(env), "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value) ||
+        (value.schema !== undefined && value.schema !== 1) ||
+        (value.root !== undefined && (typeof value.root !== "string" || !isAbsolute(value.root))) ||
+        (value.repositories !== undefined && (!value.repositories || typeof value.repositories !== "object" ||
+          Array.isArray(value.repositories)))) throw new Error("Invalid gizos configuration");
+    for (const repository of Object.values(value.repositories ?? {})) {
+      if (typeof repository !== "string" || !repository || /[\0\r\n]/.test(repository)) {
+        throw new Error("Invalid SDK repository configuration");
+      }
     }
-    return resolve(config.root);
+    return value;
   } catch (error: any) {
     if (error.code !== "ENOENT") throw error;
+    return {};
   }
-  return defaultRoot(env);
+}
+
+async function updateConfiguration(
+  update: (value: Configuration) => Configuration, env: Env,
+): Promise<Configuration> {
+  const file = configFile(env);
+  return locked(dirname(file), "configuration", async () => {
+    const value = update(await configuration(env));
+    await atomicJson(file, { ...value, schema: 1 });
+    return value;
+  });
+}
+
+export async function sdkConfiguration(
+  name: string, repository?: string | null, env: Env = process.env, entries: Sdk[] = catalog.sdks,
+) {
+  const choices = sdkChoices(name, entries);
+  const names = [...new Set(choices.map(sdkName))];
+  if (names.length !== 1) throw new Error(`Select an SDK: ${names.join(", ")}`);
+  const sdk = choices.find(entry => entry.default) ?? choices[0];
+  const key = names[0];
+  const defaultRepository = selectRepository(sdk);
+  const selected = repository === undefined || repository === null ? repository : selectRepository(sdk, repository).id;
+  const settings = selected === undefined ? await configuration(env) : await updateConfiguration(value => {
+    const repositories = { ...value.repositories };
+    for (const name of [key, ...sdk.aliases ?? []]) delete repositories[name];
+    if (selected !== null) repositories[key] = selected;
+    return { ...value, repositories };
+  }, env);
+  const configured = configuredRepository(sdk, settings);
+  const effective = selectRepository(sdk, configured, true);
+  return {
+    name: key, repositoryId: effective.id, repository: effective.url,
+    defaultRepositoryId: defaultRepository.id, defaultRepository: defaultRepository.url,
+    configured: configured !== undefined,
+    repositories: repositoryChoices(sdk).map(choice => ({
+      ...choice, default: choice.id === defaultRepository.id, selected: choice.id === effective.id,
+    })),
+  };
+}
+
+export async function dataRoot(explicit?: string, env: Env = process.env): Promise<string> {
+  if (explicit || env.GIZOS_DEVENV_HOME) return resolve(explicit || env.GIZOS_DEVENV_HOME!);
+  return (await configuration(env)).root ?? defaultRoot(env);
 }
 
 export async function configureRoot(value: string, env: Env = process.env): Promise<string> {
   const root = resolve(value);
-  const file = configFile(env);
-  await mkdir(dirname(file), { recursive: true });
-  await atomicJson(file, { schema: 1, root });
+  await updateConfiguration(settings => ({ ...settings, root }), env);
   return root;
 }
 
@@ -173,11 +280,27 @@ export class Manager {
     public entries: Sdk[] = catalog.sdks,
   ) {}
 
+  static async configured(
+    root: string, command: Command = execute, entries: Sdk[] = catalog.sdks, env: Env = process.env,
+  ): Promise<Manager> {
+    const settings = await configuration(env);
+    return new Manager(root, command, entries.map(sdk => {
+      const defaultRepository = sdk.defaultRepository ?? sdk.repository;
+      const repository = selectRepository(sdk, configuredRepository(sdk, settings), true);
+      return {
+        ...sdk, name: sdkName(sdk), defaultRepository,
+        repository: repository.url, repositoryId: repository.id,
+      };
+    }));
+  }
+
   get resources(): Resources { return new Resources(this.root, this.command); }
   sdk(name: string, version: string): Sdk { return selectSdk(name, version, this.entries); }
   sdks(name?: string): Sdk[] { return sdkChoices(name, this.entries); }
   sourcePath(sdk: Sdk): string {
-    return join(this.root, "sdks", sdkName(sdk), `${sdk.version}-${sdk.commit}`);
+    const paths = [sdkName(sdk), ...sdk.aliases ?? []]
+      .map(name => join(this.root, "sdks", name, `${sdk.version}-${sdk.commit}`));
+    return paths.find(path => existsSync(path)) ?? paths[0];
   }
   poolFile(sdk: Sdk): string {
     const version = usesArm(sdk) ? `${catalog.arm.version}-` : "";
@@ -205,8 +328,10 @@ export class Manager {
     return join(this.root, "environments", sdkName(sdk), `${sdk.version}.json`);
   }
   async record(sdk: Sdk): Promise<Installation | undefined> {
+    const names = [sdkName(sdk), ...sdk.aliases ?? []];
     const paths = [...new Set([
-      this.statePath(sdk), join(this.root, "environments", sdk.kind, `${sdk.version}.json`),
+      ...names.map(name => join(this.root, "environments", name, `${sdk.version}.json`)),
+      join(this.root, "environments", sdk.kind, `${sdk.version}.json`),
     ])];
     for (const path of paths) {
       try {
@@ -218,11 +343,12 @@ export class Manager {
               other.commit === item.commit && sdkName(other) !== sdkName(sdk))) continue;
         if (item.schema !== 1 || item.kind !== sdk.kind || item.version !== sdk.version ||
             item.commit !== sdk.commit || !isAbsolute(item.sdk) || !isAbsolute(item.tools) ||
-            (item.name !== undefined && item.name !== sdkName(sdk)) ||
+            (item.name !== undefined && !names.includes(item.name)) ||
             (item.repository !== undefined && typeof item.repository !== "string") ||
             (item.python !== undefined && !isAbsolute(item.python))) {
           throw new Error(`Invalid installation record: ${path}`);
         }
+        if (item.repository !== undefined) repositoryAddress(item.repository);
         return item;
       } catch (error: any) {
         if (error.code !== "ENOENT") throw error;
@@ -336,7 +462,8 @@ export class Manager {
     return locked(this.root, `${sdkName(sdk)}-${sdk.version}`, async () => {
       const previous = await this.record(sdk);
       const item: Installation = {
-        schema: 1, name: sdkName(sdk), repository: sdk.repository,
+        schema: 1, name: sdkName(sdk),
+        repository: !options.sdk && previous ? previous.repository : sdk.repository,
         kind: sdk.kind, version: sdk.version, commit: sdk.commit,
         sdk: options.sdk ? await realpath(resolve(options.sdk)) : previous?.sdk ?? this.sourcePath(sdk),
         tools: options.tools ? await realpath(resolve(options.tools)) : previous?.tools ?? this.toolsPath(sdk),
@@ -450,7 +577,9 @@ export class Manager {
     const toolsExist = item && await exists(item.tools) &&
       (sdk.kind !== "idf" || item.python && await exists(item.python));
     return {
-      name: sdkName(sdk), repository: sdk.repository,
+      name: sdkName(sdk), repositoryId: sdk.repositoryId ?? selectRepository(sdk).id, repository: sdk.repository,
+      defaultRepository: sdk.defaultRepository ?? sdk.repository,
+      installedRepository: item?.repository ?? null,
       kind: sdk.kind, version: sdk.version, commit: sdk.commit,
       status: !item ? "not installed" : !sourceExists ? "SDK missing"
         : !item.ready ? "sources only" : !toolsExist ? "tools missing" : "installed",

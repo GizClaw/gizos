@@ -113,6 +113,15 @@ prints shell activation statements, and `run` executes a command with the
 selected environment.
 `upgrade` updates the toolbox while preserving installed SDKs.
 
+The project catalog owns stable SDK names and their allowed repository choices.
+Run `gizos list` or `gizos list jieli-ac707n` to see repository IDs, defaults,
+current selections and versions. BK and ESP-IDF default to GizClaw forks;
+`gizos config bk_avdk_smp bekencorp/bk_avdk_smp` or
+`gizos config esp_idf espressif/esp-idf` selects a listed upstream. Arbitrary
+URLs and unlisted repositories are rejected. Omit the repository ID to inspect
+the setting, or use `--reset` to restore the default. Existing SDKs and
+toolchains remain shared, and the catalog commit pins still apply.
+
 GizOS Release builds the npm archive, index and checksums; Deploy imports the
 validated release into `https://static-volc.gizclaw.com/npm/`. For development
 before registry publication, run `bun tools/gizos/src/cli.ts env` directly.
