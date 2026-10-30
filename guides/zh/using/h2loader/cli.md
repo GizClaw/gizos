@@ -60,7 +60,7 @@ eval "$(bun tools/gizos/src/cli.ts env idf 6.2 --shell sh)"
 make cfg-doctor
 ```
 
-发布 npm 包后可将 `bun tools/gizos/src/cli.ts` 替换为 `bunx gizos`。`env` 默认显示位置，`env bk` 显示 BK SDK/编译器路径；`env --json` 便于脚本读取。`config set root /path/on/shared/disk` 配置共享存储；`upgrade` 只更新管理器。完整命令见 `tools/gizos/README.md`。
+发布 npm 包后可将 `bun tools/gizos/src/cli.ts` 替换为 `bunx @gizclaw/gizos`。`env` 默认显示位置，`env bk` 显示 BK SDK/编译器路径；`env --json` 便于脚本读取。`config set root /path/on/shared/disk` 配置共享存储；`upgrade` 只更新管理器。完整命令见 `tools/gizos/README.md`。
 
 BK Loader、JieLi SDK/工具和 K4B CedarX 由操作者另行提供；npm 包不包含这些厂商资产。下表描述 consumer 所需的变量，缺失 optional target 不影响公开 ESP/BK 环境安装：
 

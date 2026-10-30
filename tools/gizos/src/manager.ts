@@ -42,7 +42,8 @@ export type Command = (
 ) => Promise<string>;
 type Catalog = typeof bundledCatalog & { sdks: Sdk[] };
 export const catalog = bundledCatalog as Catalog;
-export const PACKAGE = "gizos";
+export const PACKAGE = "@gizclaw/gizos";
+export const REGISTRY = "https://static-volc.gizclaw.com/npm/";
 const controlled = [
   "IDF_PATH", "IDF_TOOLS_PATH", "IDF_PYTHON_ENV_PATH", "IDF_DEACTIVATE_FILE_PATH", "H2LOADER_IDF_PATH",
   "ESP_IDF_VERSION", "ESP_ROM_ELF_DIR", "OPENOCD_SCRIPTS",
@@ -479,5 +480,7 @@ export async function upgrade(version = "latest", command: Command = execute): P
   if (version !== "latest" && !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version)) {
     throw new Error("Upgrade version must be latest or an exact package version");
   }
-  await command([process.execPath, "add", "--global", `${PACKAGE}@${version}`], { inherit: true });
+  await command([
+    process.execPath, "add", "--global", `${PACKAGE}@${version}`, "--registry", REGISTRY,
+  ], { inherit: true });
 }

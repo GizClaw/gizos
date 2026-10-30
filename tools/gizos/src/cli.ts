@@ -20,7 +20,7 @@ Usage:
 Global options: --root <shared-directory>
 GIZOS_DEVENV_HOME overrides the configured shared directory.
 setup installs explicit catalog versions; env never installs anything.
-upgrade installs/updates the global ${PACKAGE} command and preserves SDKs.
+upgrade installs/updates the global gizos command from ${PACKAGE} and preserves SDKs.
 `;
 
 function parse(args: string[]) {

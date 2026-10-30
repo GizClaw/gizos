@@ -64,15 +64,3 @@ py_test(
     main = "test_runner.py",
     target_compatible_with = POSIX_HOST,
 )
-
-py_test(
-    name = "publish_test",
-    srcs = [
-        "publish.py",
-        "tests/test_publish.py",
-        "//tools/bazel:npm_release.py",
-    ],
-    legacy_create_init = 0,
-    main = "tests/test_publish.py",
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-)

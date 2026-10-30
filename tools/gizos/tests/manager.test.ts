@@ -217,7 +217,10 @@ describe("provisioning and environment activation", () => {
   test("upgrade only invokes the package manager, never SDK setup", async () => {
     const calls: string[][] = [];
     await upgrade("2026.10.30-r120000", async args => { calls.push(args); return ""; });
-    expect(calls).toEqual([[process.execPath, "add", "--global", "gizos@2026.10.30-r120000"]]);
+    expect(calls).toEqual([[
+      process.execPath, "add", "--global", "@gizclaw/gizos@2026.10.30-r120000",
+      "--registry", "https://static-volc.gizclaw.com/npm/",
+    ]]);
     await expect(upgrade("--unsafe")).rejects.toThrow("exact package version");
   });
   test("recovers a lock left by an exited process", async () => {

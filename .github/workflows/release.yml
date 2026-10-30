@@ -761,38 +761,3 @@ jobs:
             test "$(release_state)" = false
           fi
           trap - EXIT
-
-  publish-gizos:
-    name: Publish gizos npm package
-    needs: [catalog, release-bundle]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Check out release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-
-      - name: Set up Node.js and public npm registry
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "24.11.1"
-          registry-url: https://registry.npmjs.org
-
-      - name: Download the verified release npm bundle
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: release-npm-bundle
-          path: build/release/npm-publish
-
-      - name: Publish and verify the release tarball
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          python3 tools/gizos/publish.py \
-            --directory build/release/npm-publish \
-            --batch "${{ needs.catalog.outputs.batch }}"

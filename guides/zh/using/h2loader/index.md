@@ -43,7 +43,7 @@ bun tools/gizos/src/cli.ts setup idf 6.2
 bun tools/gizos/src/cli.ts env
 ```
 
-npm 发布后可以通过 `bunx gizos` 运行同一组命令。未安装环境时 host-only 检查仍可运行；已有本地 `.env/devenv` 仅作为迁移兼容入口。私有 SDK 和厂商二进制通过显式路径接入。
+npm 发布后可以通过 `bunx @gizclaw/gizos` 运行同一组命令。未安装环境时 host-only 检查仍可运行；已有本地 `.env/devenv` 仅作为迁移兼容入口。私有 SDK 和厂商二进制通过显式路径接入。
 
 不再加载 `.env/<os-user>`；Wi-Fi credential 和其他 secret 只能放在 `~/.config/h2loader/env`。
 

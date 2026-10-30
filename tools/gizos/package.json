@@ -1,5 +1,5 @@
 {
-  "name": "gizos",
+  "name": "@gizclaw/gizos",
   "version": "0.1.0",
   "description": "Shared SDK and toolchain manager for GizOS",
   "license": "Apache-2.0",
@@ -22,7 +22,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org"
+    "registry": "https://static-volc.gizclaw.com/npm/"
   },
   "scripts": {
     "test": "bun test --timeout 120000 tests",

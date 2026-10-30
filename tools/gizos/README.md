@@ -1,22 +1,45 @@
-# gizos
+# @gizclaw/gizos
 
 A TypeScript + Bun command-line manager for shared SDK and toolchain installations.
 Source and version catalogs live in the GizOS repository. Users run the npm
 package; no separate devenv checkout is required.
 
+## Registry and installation
+
+The npm package is `@gizclaw/gizos`, using the lowercase spelling of the GizClaw
+scope. Its installed command is `gizos`. Packages are distributed through
+GizClaw's registry at `https://static-volc.gizclaw.com/npm/`.
+
+Add this scope mapping to `~/.npmrc` so Bun can resolve the package from any
+working directory. When `XDG_CONFIG_HOME` is set, use
+`$XDG_CONFIG_HOME/.npmrc`:
+
+```ini
+@gizclaw:registry=https://static-volc.gizclaw.com/npm/
+```
+
+Replace an existing `@gizclaw:registry` entry rather than adding a duplicate.
+Use the global mapping for `bunx`. Only the `@gizclaw` scope uses this registry;
+other dependencies keep their configured registry. Public package downloads
+require no token.
+
+The registry serves package metadata and tarballs. SDK sources, compilers and
+Python environments are installed separately by `setup` and shared across
+GizOS worktrees.
+
 ## Commands
 
 ```sh
-bunx gizos setup idf 6.2
-bunx gizos setup bk 3.1.1
-bunx gizos list
-bunx gizos env
-bunx gizos env idf 6.2
-bunx gizos env bk
+bunx @gizclaw/gizos setup idf 6.2
+bunx @gizclaw/gizos setup bk 3.1.1
+bunx @gizclaw/gizos list
+bunx @gizclaw/gizos env
+bunx @gizclaw/gizos env idf 6.2
+bunx @gizclaw/gizos env bk
 ```
 
-The package is published by GizOS Release. These registry commands become
-available after the initial npm publication. For development inside GizOS:
+These registry commands become available after the first GizOS Release has
+been imported into the registry by Deploy. For development inside GizOS:
 
 ```sh
 bun tools/gizos/src/cli.ts --help
@@ -33,7 +56,7 @@ Select a shared location once, including a location on an external development
 disk:
 
 ```sh
-bunx gizos config set root /path/to/shared/gizos
+bunx @gizclaw/gizos config set root /path/to/shared/gizos
 ```
 
 `GIZOS_DEVENV_HOME` or `--root` overrides that setting. Defaults use the platform
@@ -61,10 +84,10 @@ cross-process locks; existing modified SDKs are rejected and preserved.
 ## Activate or run
 
 ```sh
-eval "$(bunx gizos env idf 6.2 --shell zsh)"
-eval "$(bunx gizos env bk 3.1.1 --shell bash)"
-bunx gizos shell idf 6.2
-bunx gizos run idf 6.2 -- bazel build --config=esp32s3 //path:target
+eval "$(bunx @gizclaw/gizos env idf 6.2 --shell zsh)"
+eval "$(bunx @gizclaw/gizos env bk 3.1.1 --shell bash)"
+bunx @gizclaw/gizos shell idf 6.2
+bunx @gizclaw/gizos run idf 6.2 -- bazel build --config=esp32s3 //path:target
 ```
 
 `--shell` prints quoted activation statements. `shell` starts a child shell in
@@ -80,8 +103,8 @@ adapter uses this mode and retains the local legacy adapter as a fallback.
 Register existing SDKs and tools without moving, downloading or modifying them:
 
 ```sh
-bunx gizos adopt idf 6.2 --sdk /path/to/idf --tools /path/to/idf-tools
-bunx gizos adopt bk 3.1.1 --sdk /path/to/bk-sdk --tools /path/to/gnu-arm
+bunx @gizclaw/gizos adopt idf 6.2 --sdk /path/to/idf --tools /path/to/idf-tools
+bunx @gizclaw/gizos adopt bk 3.1.1 --sdk /path/to/bk-sdk --tools /path/to/gnu-arm
 ```
 
 `--python /path/to/python` resolves an ambiguous existing IDF Python environment.
@@ -102,25 +125,38 @@ publish or download that vendor package.
 ## Upgrade and releases
 
 ```sh
-bun add --global gizos
+bun add --global @gizclaw/gizos
 gizos upgrade
 gizos upgrade 2026.10.30-r012345
 ```
 
 `upgrade` installs/updates the global npm command using Bun. It does not change
-shared SDKs or tools. For ephemeral bunx use, request `gizos@latest`;
-pin the package version in CI.
+shared SDKs or tools, and explicitly selects the GizClaw registry. For ephemeral
+bunx use, request `bunx @gizclaw/gizos@latest env`; pin the package version in CI.
+
+## Release and registry publication
 
 Release packages use `YYYY.M.D-rHHMMSS`, derived from the corresponding
-`vYYYYMMDD-HHMMSS` GizOS release. Each release includes the npm tarball in its
-validated asset bundle, then publishes that exact tarball to npm.
-The publication job uses npm trusted publishing for this repository's
-`.github/workflows/release.yml`, or the `NPM_TOKEN` repository secret. The initial
-package publication needs ownership of the unscoped `gizos` package and a
-publishing credential; subsequent releases can use the package's configured
-trusted publisher.
-An already-published version is accepted only when its integrity matches the
-release tarball.
+`vYYYYMMDD-HHMMSS` GizOS release. Publication follows the existing GizOS npm
+release flow:
+
+1. GizOS builds `gizclaw-gizos-<version>.tgz` with its executable `gizos` entry.
+2. The complete GitHub Release includes that exact archive, `npm-index.json`
+   and `SHA256SUMS`, alongside the other GizOS npm packages.
+3. Deploy's `terraform/releases/npm/gizclaw-gizos` owner validates the selected
+   release and imports its immutable archives and cumulative package metadata
+   into `https://static-volc.gizclaw.com/npm/`.
+4. Bun resolves `@gizclaw/gizos` through the scope mapping and verifies the
+   archive integrity supplied by the registry.
+
+Deploy must select a complete Devtools snapshot with Deploy Provider/helpers
+0.2.28 or later. That importer registers `@gizclaw/gizos` as a GizOS-owned
+package alongside `@gizclaw/h2loader` and `@gizclaw/firmware`.
+A GitHub Release being available does not by itself make a package installable
+from the registry. The registry is a static read-only distribution endpoint;
+publication is performed through Deploy's existing Release flow.
+
+## Development
 
 ```sh
 cd tools/gizos

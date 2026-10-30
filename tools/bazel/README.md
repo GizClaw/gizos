@@ -119,7 +119,7 @@ bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/ble-br
 Use `env` to inspect paths, `config set root /path/to/shared/store` to configure
 storage, and `adopt` to register an existing installation without moving or
 redownloading it. After npm publication the same commands work through
-`bunx gizos`. See `tools/gizos/README.md`.
+`bunx @gizclaw/gizos`. See `tools/gizos/README.md`.
 
 The rule keeps its project-local `srcs` and explicit out-of-package support
 files as action inputs and dependency edges. `FirmwareInfo`

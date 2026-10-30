@@ -69,14 +69,6 @@ make bazel-test BAZEL_CONFIG=linux_x86_64
 
 On Apple Silicon, use `BAZEL_CONFIG=macos_arm64`. Other supported configurations and native SDK setup are documented in the [Bazel guide](tools/bazel/README.md).
 
-Shared SDKs and toolchains are managed by the TypeScript/Bun CLI in
-[`tools/gizos`](tools/gizos/README.md). The manager owns SDK version catalogs;
-all worktrees reuse a configurable machine-wide store. Use
-`bun tools/gizos/src/cli.ts setup idf 6.2` to prepare ESP tools and
-`bun tools/gizos/src/cli.ts env` to inspect installation paths. GizOS Release
-also builds and publishes the `gizos` npm package for bunx/global use.
-Optional vendor assets remain explicit external inputs.
-
 To verify that public targets also work when GizOS is consumed as a dependency:
 
 ```sh
@@ -88,6 +80,40 @@ Run `make format` before committing. It formats changes since `origin/main` with
 The command entries are `scripts/config/format.sh` and `scripts/config/format-check.sh`, with shared logic in `scripts/common/format.sh`. Both commands fail on tool errors while still checking the other languages. A successful C/C++ rewrite is accepted in fix mode; Lua fixes must stabilize within five passes. Run `python3 scripts/common/test_format.py` for the isolated failure-path regression tests; they need no formatter downloads.
 
 Keep embedded JavaScript in `EM_JS` / `EM_ASM` calls between `/* clang-format off */` and `/* clang-format on */` guards. A one-time full reformat uses `scripts/config/format.sh --all`, followed by `scripts/config/format-check.sh --all`. Long C/C++ string literals remain unbroken to avoid array string-concatenation warnings. Use `git blame --ignore-revs-file .git-blame-ignore-revs <path>` to look past the one-time formatting commit.
+
+## Shared SDK toolbox
+
+The TypeScript/Bun package `@gizclaw/gizos` requires Bun 1.3.9 or newer and
+manages SDK versions and shared toolchains. Its installed command is `gizos`;
+all GizOS worktrees reuse one configurable machine-wide SDK store.
+
+Configure the GizClaw registry in `~/.npmrc` (or `$XDG_CONFIG_HOME/.npmrc` when
+`XDG_CONFIG_HOME` is set) to use the toolbox from any directory:
+
+```ini
+@gizclaw:registry=https://static-volc.gizclaw.com/npm/
+```
+
+After the package has been published through Deploy's registry import:
+
+```sh
+bunx @gizclaw/gizos setup idf 6.2
+bunx @gizclaw/gizos env bk
+bun add --global @gizclaw/gizos
+gizos upgrade
+```
+
+`env` displays SDK, toolchain and Python installation paths. `env --shell`
+prints shell activation statements, and `run` executes a command with the
+selected environment.
+`upgrade` updates the toolbox while preserving installed SDKs.
+
+GizOS Release builds the npm archive, index and checksums; Deploy imports the
+validated release into `https://static-volc.gizclaw.com/npm/`. For development
+before registry publication, run `bun tools/gizos/src/cli.ts env` directly.
+See [the toolbox README](tools/gizos/README.md) for SDK setup, multi-version
+storage, environment activation and the release flow. Optional vendor assets
+remain explicit external inputs.
 
 ## Use GizOS from Bzlmod
 

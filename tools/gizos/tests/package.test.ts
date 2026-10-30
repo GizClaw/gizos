@@ -17,7 +17,9 @@ test("built npm entry runs from a separate directory without source checkout dep
   try {
     const output = join(root, "package");
     const manifest = await build({ output, batch: "20261030-012345" });
-    expect(manifest.name).toBe("gizos");
+    expect(manifest.name).toBe("@gizclaw/gizos");
+    expect(manifest.publishConfig.registry).toBe("https://static-volc.gizclaw.com/npm/");
+    expect(manifest.bin).toEqual({ gizos: "bin/gizos.js" });
     expect(manifest.version).toBe("2026.10.30-r012345");
     const entry = join(output, manifest.bin.gizos);
     expect((await stat(entry)).mode & 0o111).toBe(0o111);
