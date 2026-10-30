@@ -10,7 +10,7 @@ The board regression targets are:
 | Target | Owner and checks |
 | --- | --- |
 | `button_driver_test` | Board device registry and AI/BOOT level mapping |
-| `imu_driver_test`, `mag_test` | BMI270/BMM150 conversion, invalid readings and output cleanup |
+| `imu_driver_test`, `mag_test` | BMI270/BMM150 conversion, compensated overflow output preservation and acquisition failure cleanup |
 | `battery_driver_test` | BQ27220 read-only commands, signed current, percent range and I/O failures |
 | `lifecycle_driver_test` | Init retry, resource release retry, retained handles and idempotent shutdown |
 | `surface_test` | Display/touch coordinate surface boundaries |

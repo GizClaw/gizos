@@ -136,10 +136,6 @@ static int imu_read(void* user, h2_pal_periph_id_t id,
     struct bmm150_mag_data data = {0};
     rc = result(bsp_magnetometer_init(sensor));
     if (rc == H2_PAL_OK) rc = result(bsp_magnetometer_read(sensor, &data));
-    if (rc == H2_PAL_OK &&
-        (!h2_mosaico_mag_valid(data.x) || !h2_mosaico_mag_valid(data.y) ||
-         !h2_mosaico_mag_valid(data.z)))
-      rc = H2_PAL_ERR_IO;
     if (rc == H2_PAL_OK) {
       reading.flags = H2_PAL_IMU_HAS_MAG;
       /* Bosch compensated values are microtesla; PAL uses milligauss. */
