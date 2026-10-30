@@ -102,27 +102,28 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-The sibling `firmware-devenv` provides one pinned ESP-IDF 6.2 checkout and
-GCC 16.1 tools for all ESP targets. Install with `make idf-tools` and source
-its `export.sh`; both use the baseline fixed by that devenv revision.
-Consumers choose another SDK baseline by pinning another devenv commit.
-CI and Release pin the same compatible provider revision and verify its SDK
-gitlink against the GizOS version manifest. The tool root is
-`.tools/esp-idf-6.2`, keeping old compiler installations out of the current
-compiler namespace. The tools repository derives
-the unique `python_env/idf6.2_py*_env` installation and validates it
-against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
-locators. The native action receives those locator files instead of the
-machine paths or caller `PATH`.
+The public `GizClaw/gizos-devenv` provider is pinned by
+`tools/bazel/native_versions/gizos_devenv_commit.txt`. It reads the ESP SDK commit
+from this GizOS checkout, fetches its recursive submodules, and installs that
+SDK's GCC/Python tools. SDKs live in `.sources/esp/<commit>` and their tools in
+`.tools/esp-idf/<commit>` under the provider. Different versions coexist without
+resetting existing SDKs. ESP provisioning needs no private GitHub token.
+
+The tools repository derives the unique `python_env/idf6.2_py*_env` installation
+and validates it against the pinned ESP-IDF constraints. Native actions still
+receive validated SDK/tool locators; this provisioning change does not change
+their sandbox or remote-execution contract.
 
 ```sh
-REPO_ROOT=$PWD
-export REPO_ROOT
-make -C ../firmwares-devenv idf-tools IDF_TARGETS=esp32s3,esp32p4,esp32c5
-. ../firmwares-devenv/export.sh
-bazel build --config=esp32s3  //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
-bazel build --config=esp32p4  //projects/example/targets/h2loader_tar_zlib/display/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
+make devenv
+export GIZOS_ROOT="$PWD"
+. ../gizos-devenv/export.sh
+bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
+bazel build --config=esp32p4 //projects/example/targets/h2loader_tar_zlib/display/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
 ```
+
+For another installation location, export `GIZOS_DEVENV_ROOT=/path/to/gizos-devenv`
+before `make devenv`, then source `"$GIZOS_DEVENV_ROOT/export.sh"`.
 
 The rule keeps its project-local `srcs` and explicit out-of-package support
 files as action inputs and dependency edges. `FirmwareInfo`
@@ -143,8 +144,8 @@ A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDEN
 
 ## BK7258 external builds
 
-Source `.env/devenv` before requesting a BK7258 build. The canonical provider
-exports only `BK7258_PATH`. A repository
+Install the public BK SDK with `make devenv DEVENV_TARGET=bk7258`, then
+source the public provider with `GIZOS_ROOT` set. It exports `BK7258_PATH`. A repository
 rule validates SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` and a
 clean tracked checkout. Another repository rule downloads Arm GNU
 10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values,
@@ -153,9 +154,9 @@ those locators and a Bazel Python runtime; it does not inherit SDK, toolchain,
 archive, Python, or `PATH` variables from the caller.
 
 ```sh
-REPO_ROOT=$PWD
-export REPO_ROOT
-. .env/devenv
+make devenv DEVENV_TARGET=bk7258
+export GIZOS_ROOT="$PWD"
+. ../gizos-devenv/export.sh
 bazel build --config=bk7258  //projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405:package
 ```
 

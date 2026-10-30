@@ -33,15 +33,16 @@ make cfg-doctor
 
 `make cfg-doctor` 按以下顺序加载 shell environment，后加载的文件可以覆盖先加载的值：
 
-1. 仓库 `.env/devenv`
+1. 仓库 `scripts/config/gizos-devenv-env.sh`
 2. `~/.config/h2loader/env`
 
-`.env/devenv` 根据 GizOS 的仓库根目录解析 `../firmwares-devenv/export.sh`，不依赖启动命令的当前目录。所有开发者必须把 GizOS 与 `firmwares-devenv` 作为同级 checkout，并通过后者统一维护 ESP-IDF、BK SDK、toolchain 和 host tool。首次使用先初始化 devenv：
+公开 provider `GizClaw/gizos-devenv` 读取 GizOS 的 SDK 版本清单。Adapter 默认使用同级 `../gizos-devenv`，也支持显式 `GIZOS_DEVENV_ROOT`，并检查 provider commit 与当前 GizOS 的 pin 相同。首次安装 ESP 环境：
 
 ```sh
-git clone --recurse-submodules git@github.com:h2vivi/firmware-devenv.git ../firmwares-devenv
-make -C ../firmwares-devenv
+make devenv
 ```
+
+完整公开环境使用 `make devenv DEVENV_TARGET=setup`。未安装默认 provider 时 host-only 检查仍可运行；已有本地 `.env/devenv` 仅作为迁移兼容入口。私有 SDK 和厂商二进制通过显式路径接入，不随公开 provider 分发。
 
 不再加载 `.env/<os-user>`；Wi-Fi credential 和其他 secret 只能放在 `~/.config/h2loader/env`。
 

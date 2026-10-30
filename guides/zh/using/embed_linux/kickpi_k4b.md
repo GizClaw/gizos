@@ -56,10 +56,11 @@ export K4B_ADB_SERIAL='<adb-serial>'
 
 ## 构建
 
-构建 host 必须是 Linux x86_64，因为当前 hermetic ARM GNU toolchain distribution 的 compiler executable 是 Linux x86_64。先从 sibling `firmwares-devenv` 加载 CedarX compact SDK 路径：
+构建 host 必须是 Linux x86_64，因为当前 hermetic ARM GNU toolchain distribution 的 compiler executable 是 Linux x86_64。CedarX compact SDK 由操作者另行提供；公开 `gizos-devenv` 不分发厂商头文件或动态库。显式设置路径：
 
 ```sh
-REPO_ROOT=$PWD . .env/devenv
+export K4B_CEDARX_INCLUDE_DIR=/path/to/cedarx/include
+export K4B_CEDARX_LIB_DIR=/path/to/cedarx/lib/arm-linux-gnueabihf
 test -f "$K4B_CEDARX_INCLUDE_DIR/vdecoder.h"
 test -f "$K4B_CEDARX_LIB_DIR/libvdecoder.so"
 bazel build -c opt --config=kickpi_k4b  //boards/kickpi_k4b/t113-s3:button_runtime_smoke  //projects/example/targets/cc_binary/display/kickpi_k4b:display  //projects/example/targets/cc_binary/mp4-player/kickpi_k4b:mp4_player  //projects/example/targets/cc_binary/touch/kickpi_k4b:touch

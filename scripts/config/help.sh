@@ -7,6 +7,7 @@ printf '%s\n' \
   '' \
   'Configuration:' \
   '  help                             show every public Make target' \
+  '  devenv                           install pinned public ESP development tools (DEVENV_TARGET=setup for all public tools)' \
   '  cfg-doctor                       report the local build and H2Loader environment' \
   '  format                           format C/C++, Lua and Bazel changes since origin/main' \
   '  format-check                     check C/C++, Lua and Bazel changes since origin/main' \

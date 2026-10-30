@@ -1,4 +1,4 @@
-"""Complete ESP-IDF firmware builds backed by canonical devenv."""
+"""Complete ESP-IDF firmware builds backed by validated SDK/tool locators."""
 
 load(":firmware.bzl", "FirmwareVersionInfo")
 load(":firmware_components.bzl", "collect_firmware_components", "firmware_components_aspect")

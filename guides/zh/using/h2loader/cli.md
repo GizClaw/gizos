@@ -39,10 +39,10 @@ make cfg-doctor
 
 根目录 `make cfg-doctor` 按以下顺序加载 shell environment；其他 Make target 不隐式加载：
 
-1. 仓库 `.env/devenv`
+1. 仓库 `scripts/config/gizos-devenv-env.sh`
 2. `~/.config/h2loader/env`
 
-每个文件独立求值并报告 `[OK] env loaded`、`[WARNING] env missing` 或 `[ERROR] env invalid`，失败文件造成的 environment 变化会被丢弃。已提交的 `.env/devenv` 无效时 Make-owned command 立即失败，不能回退到 inherited SDK；复制出的测试仓库缺少 adapter 时仍只报告 warning。私有文件无效时丢弃其变化并继续使用共享环境。environment loader 不回显文件输出或变量值，随后执行的 Doctor 只报告上述非 secret 信息。Shell 文件已经触发的外部副作用无法回滚，不属于只读检查保证。`.env/devenv` 根据仓库根目录解析同级 `../firmwares-devenv/export.sh`，为所有开发者提供统一的 SDK 和 toolchain environment；它不依赖调用命令的当前目录，也不再加载 `.env/<os-user>`。`.env/users/<os-user>.md` 只供人和 Agent 阅读，永远不会 source。直接调用 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader --` 时只使用调用方继承的 environment。
+每个文件独立求值并报告 `[OK] env loaded`、`[WARNING] env missing` 或 `[ERROR] env invalid`，失败文件造成的 environment 变化会被丢弃。公开 provider adapter 根据 `GIZOS_DEVENV_ROOT`（默认同级 `../gizos-devenv`）定位环境，验证其提交与 `tools/bazel/native_versions/gizos_devenv_commit.txt` 相同且无 tracked 修改，再传入当前 `GIZOS_ROOT`。显式指定的 provider 无效时立即失败；默认 provider 尚未安装时仍可运行 host-only 检查，并兼容已有的本地 `.env/devenv`。私有文件无效时丢弃其变化并继续使用共享环境。Loader 不回显文件输出或变量值；shell 文件已经触发的外部副作用无法回滚。`.env/users/<os-user>.md` 只供人和 Agent 阅读，不会被 source。直接运行 Bazel target 时只使用调用方继承的 environment。
 
 仓库不提供默认 Wi-Fi SSID 或 password。只有仍需要构建期 Wi-Fi 配置的 target 才从显式 environment 读取凭据；不要把 credential 写入仓库 env，只在本机创建 `~/.config/h2loader/env`：
 
@@ -51,18 +51,18 @@ export H2LOADER_WIFI_SSID="private-network"
 export H2LOADER_WIFI_PASSWORD="private-password"
 ```
 
-基础工具与 SDK 由同级 `firmwares-devenv` checkout 提供。每个 devenv revision 只提供一套 ESP-IDF，当前 revision 的安装和 provider export 统一使用 GizOS 版本清单固定的 IDF 6.2 checkout、GCC 16.1 与 Python 环境；这些外部 SDK 都不是 GizOS 仓库的 submodule。调用方固定匹配的 devenv commit；需要旧 SDK 的项目固定旧版 devenv。首次使用：
+基础工具与公开 SDK 由 `GizClaw/gizos-devenv` 提供。GizOS 固定 provider revision；provider 读取当前 GizOS 的 SDK commit 清单，不维护第二份 SDK pin。SDK 和 ESP tools 分别存放在 provider 的 `.sources/<sdk>/<commit>` 与 `.tools/esp-idf/<commit>`，多个版本可以共存。首次安装 ESP 环境：
 
 ```sh
-git clone --recurse-submodules git@github.com:h2vivi/firmware-devenv.git ../firmwares-devenv
-make -C ../firmwares-devenv
-. ../firmwares-devenv/export.sh
+make devenv
+export GIZOS_ROOT="$PWD"
+. ../gizos-devenv/export.sh
 make cfg-doctor
 ```
 
-加载匹配 revision 的 `firmwares-devenv/export.sh` 后，环境须满足下列可执行 contract；本表是 provider variable、
-真实 consumer、路径含义和 host state 的 source of truth。某个 optional target
-缺失不会清除其它已经可用的 target：
+非同级布局先导出 `GIZOS_DEVENV_ROOT=/path/to/gizos-devenv`，安装后 source `"$GIZOS_DEVENV_ROOT/export.sh"`。`make devenv DEVENV_TARGET=setup` 还安装公开 BK SDK、GNU Arm 和 ADB。默认 ESP 安装不需要私有 GitHub token。
+
+BK Loader、JieLi SDK/工具和 K4B CedarX 由操作者另行提供；公开 provider 不包含这些厂商资产。下表描述 consumer 所需的变量，缺失 optional target 不影响公开 ESP/BK 环境安装：
 
 | Target | Provider variables and exact layout | GizOS consumers | Ready evidence and host state |
 | --- | --- | --- | --- |
