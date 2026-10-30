@@ -13,4 +13,4 @@ bazel test --config=macos_arm64 \
   //projects/e2e/apps/flash-stress/app:flash_stress_test
 ```
 
-The [BK7258 target](../../targets/h2loader_tar_zlib/flash-stress/bk7258/README.md) selects the real SDK Flash adapter and cross-core task policy. Native build success and host lifecycle tests do not establish hardware qualification or the cause of historical resets.
+The [BK7258 target](../../targets/h2loader_tar_zlib/flash-stress/bk7258_v3_202405/README.md) selects the real SDK Flash adapter and cross-core task policy. Native build success and host lifecycle tests do not establish hardware qualification or the cause of historical resets.
