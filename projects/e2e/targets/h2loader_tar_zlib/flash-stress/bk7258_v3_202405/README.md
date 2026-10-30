@@ -6,6 +6,8 @@ The adapter calls the current SDK's real Flash APIs without adding a lock around
 
 Only the named `flash_stress` partition is exposed. Its board layout reserves space from the end of the diagnostic App's AP code allocation; Loader, preference and coredump addresses remain unchanged. The adapter checks native partition boundaries and the App checks portable geometry before writing. The reader's seeded sector is immutable during concurrency, so normal writer updates cannot produce false mismatch results. Successful completion joins both workers, erases and verifies the used scratch sectors. A blocked worker retains its owned buffers and the controller never erases beneath it.
 
+The complete managed App slot still ends at the native execution-flags partition. Reserving a data tail reduces the code image, not that slot's boot-record identity or update capacity. The native H2Loader layout derives the full slot from the board table so an installed Loader's trial can be confirmed by this App; image identity uses the package's actual image length.
+
 The management entry mounts only the board's existing storage and composes a minimal Runtime for UART H2Loader. It does not invoke the board's product constructor or start display/audio/input/modem workers, associate Wi-Fi, or advertise BLE. SDK boot may still initialize its own system/radio services. Installation confirmation is emitted before the test and must not be treated as a test PASS. A successful result requires zero test, cleanup and output errors, joined workers, verified core placement and the matching `run_returned` receipt. The launcher retries destruction after BUSY while preserving the failed run's verdict.
 
 Build the public-board artifact:
