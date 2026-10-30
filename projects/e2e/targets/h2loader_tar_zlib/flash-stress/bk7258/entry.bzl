@@ -7,6 +7,7 @@ load("//tools/bazel:app_version.bzl", "app_version")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
 _ROOT = "projects/e2e/targets/h2loader_tar_zlib/flash-stress/bk7258"
 _SHARED = Label("//" + _ROOT + ":CMakeLists.txt")
@@ -25,6 +26,7 @@ def bk7258_flash_stress(board, board_component, layout_files, baseline_partition
             "$(location %s)" % diagnostic_partitions,
         ],
         data = [baseline_partitions, diagnostic_partitions],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
     )
     firmware_lib_component(
         name = "firmware_lib",
