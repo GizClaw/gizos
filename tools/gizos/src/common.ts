@@ -1,32 +1,56 @@
-import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 
 export type Env = Record<string, string | undefined>;
+export type InstallationPaths = { sdk?: string; tools?: string; python?: string; path?: string };
+export type PathConfiguration = Record<string, Record<string, InstallationPaths>>;
 export type Command = (
   args: string[], options?: { cwd?: string; env?: Env; inherit?: boolean },
 ) => Promise<string>;
 
 export const execute: Command = async (args, options = {}) => {
-  const result = Bun.spawnSync(args, {
+  const result = Bun.spawn(args, {
     cwd: options.cwd, env: options.env ?? process.env,
     stdin: options.inherit ? "inherit" : "ignore",
     stdout: options.inherit ? "inherit" : "pipe",
     stderr: options.inherit ? "inherit" : "pipe",
   });
-  if (result.exitCode !== 0) {
-    throw new Error(`${basename(args[0])} ${args[1] ?? ""} failed (${result.exitCode}): ${result.stderr?.toString().trim() ?? ""}`);
+  const [stdout, stderr, exitCode] = await Promise.all([
+    result.stdout ? new Response(result.stdout).text() : "",
+    result.stderr ? new Response(result.stderr).text() : "",
+    result.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(`${basename(args[0])} ${args[1] ?? ""} failed (${exitCode}): ${stderr.trim()}`);
   }
-  return result.stdout?.toString().trimEnd() ?? "";
+  return stdout.trimEnd();
 };
+
+export async function downloadArchive(url: string, path: string, command: Command = execute): Promise<void> {
+  await command(["python3", "-c", `
+import shutil, ssl, sys, urllib.request
+with urllib.request.urlopen(sys.argv[1], timeout=60, context=ssl.create_default_context()) as response:
+    with open(sys.argv[2], "wb") as output:
+        shutil.copyfileobj(response, output)
+`, url, path], { inherit: true });
+}
 
 export async function exists(path: string): Promise<boolean> {
   try { await access(path); return true; }
   catch (error: any) {
     if (error.code === "ENOENT") return false;
     throw error;
+  }
+}
+
+export async function installationPath(path: string): Promise<string> {
+  try { return await realpath(resolve(path)); }
+  catch (error: any) {
+    if (error.code !== "ENOENT") throw error;
+    return resolve(path);
   }
 }
 

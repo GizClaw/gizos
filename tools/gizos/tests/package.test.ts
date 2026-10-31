@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build, releaseVersion } from "../build";
 import { execute } from "../src/manager";
+import { selectVersion } from "../src/store";
 
 test("release version identifies the GizOS release batch", () => {
   expect(releaseVersion("20261030-012345", "0.1.0")).toBe("2026.10.30-r012345");
@@ -28,6 +29,20 @@ test("built npm entry runs from a separate directory without source checkout dep
     const environment = {
       ...process.env, GIZOS_DEVENV_HOME: join(root, "shared"), XDG_CONFIG_HOME: join(root, "config"),
     };
+    await expect(execute([process.execPath, entry, "env", "bk-loader", "--archive", "/unused"], {
+      cwd: "/", env: environment,
+    })).rejects.toThrow("--archive is only supported");
+    await expect(execute([process.execPath, entry, "setup", "esp_idf", "6.2", "--archive", "/unused"], {
+      cwd: "/", env: environment,
+    })).rejects.toThrow("--archive is only supported");
+    await expect(execute([process.execPath, entry, "install", "esp_idf", "6.2"], {
+      cwd: "/", env: environment,
+    })).rejects.toThrow("install requires a tool");
+    const wrongArchive = join(root, "wrong.pkg");
+    await writeFile(wrongArchive, "wrong vendor release");
+    await expect(execute([process.execPath, entry, "install", "bk_loader", "--archive", wrongArchive], {
+      cwd: "/", env: environment,
+    })).rejects.toThrow("checksum mismatch");
     const description = await execute([process.execPath, entry, "describe", "esp_idf"], {
       cwd: "/", env: environment,
     });
@@ -38,5 +53,24 @@ test("built npm entry runs from a separate directory without source checkout dep
     }));
     expect(info.root).toBe(join(root, "shared"));
     expect(info.environments[0].status).toBe("not installed");
+    const paths = { sdk: join(root, "external SDK"), tools: join(root, "external IDF tools") };
+    await execute([
+      process.execPath, entry, "config", "esp_idf", "6.2", "--sdk", paths.sdk, "--tools", paths.tools,
+    ], { cwd: "/", env: environment });
+    const configured = JSON.parse(await execute([process.execPath, entry, "env", "esp_idf", "6.2", "--json"], {
+      cwd: "/", env: environment,
+    }));
+    expect(configured.environments[0]).toMatchObject({
+      status: "not installed", sdk: paths.sdk, tools: paths.tools, configuredPaths: paths,
+    });
+    await selectVersion(environment.GIZOS_DEVENV_HOME, "esp-idf", "6.0.3");
+    const versions = JSON.parse(await execute([process.execPath, entry, "env", "esp_idf", "--json"], {
+      cwd: "/", env: environment,
+    }));
+    expect(versions.environments.find((item: any) => item.selected).version).toBe("6.0.3");
+    const preview = JSON.parse(await execute([process.execPath, entry, "prune", "--dry-run", "--json"], {
+      cwd: "/", env: environment,
+    }));
+    expect(preview).toEqual({ dryRun: true, remove: [], preserve: [] });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -85,7 +85,8 @@ Keep embedded JavaScript in `EM_JS` / `EM_ASM` calls between `/* clang-format of
 
 The TypeScript/Bun package `@gizclaw/gizos` requires Bun 1.3.9 or newer and
 manages SDK versions and shared toolchains. Its installed command is `gizos`;
-all GizOS worktrees reuse one configurable machine-wide SDK store.
+all GizOS worktrees share installation records. Each SDK and tool version can
+use its own configured installation paths.
 
 Configure the GizClaw registry in `~/.npmrc` (or `$XDG_CONFIG_HOME/.npmrc` when
 `XDG_CONFIG_HOME` is set) to use the toolbox from any directory:
@@ -99,19 +100,38 @@ After the package has been published through Deploy's registry import:
 ```sh
 bunx @gizclaw/gizos setup esp-idf 6.2
 bunx @gizclaw/gizos setup bk7258 3.1.1
-bunx @gizclaw/gizos setup adb 35.0.2
+bunx @gizclaw/gizos install adb 35.0.2
+bunx @gizclaw/gizos install h2loader
 bunx @gizclaw/gizos env bk7258
 bun add --global @gizclaw/gizos
 gizos upgrade
 ```
 
 `env` displays SDK, toolchain, Python, loader and ADB installation paths.
-BK setup automatically installs the matching platform executable from the
-public `GizClaw/bk_loader` Release, verifies its checksums and adds it to PATH
-when activated. `env --shell`
+BK setup automatically installs the official BK Loader 4.1.7 for the host,
+verifies its checksums and adds it to PATH when activated. Individual tools
+use `gizos install`; a separate BK Loader install is optional. If Beken's
+download site requires browser verification, import the downloaded package with
+`gizos install bk_loader 4.1.7 --archive <package>`. `env --shell`
 prints shell activation statements, and `run` executes a command with the
 selected environment.
 `upgrade` updates the toolbox while preserving installed SDKs.
+
+Use `gizos config esp_idf 6.2 --sdk /shared/sdks/esp-idf-6.2 --tools /shared/toolchains/esp-idf`
+to save independent paths for an SDK version, or
+`gizos config bk-loader --path /shared/tools/bk-loader` for a standalone tool.
+Omitting the version uses the selected version, falling back to the catalog default.
+`setup` applies saved paths and selects the prepared version;
+`env` shows actual installations. The shared root supplies default locations
+and keeps records and download caches. Compatible compilers remain shared by
+default.
+
+`gizos setup esp_idf 6.2` selects the cached 6.2 environment; setting up 6.0.3
+switches the selected paths while retaining 6.2. Explicit versions in `run`
+or `shell` leave that selection unchanged. `env` marks the selected version.
+Use `gizos remove esp_idf 6.0.3` to remove one version and `gizos prune --dry-run`
+to preview unused managed caches. Cleanup preserves adopted payloads and
+shared dependencies.
 
 The project catalog owns stable SDK/chip names and their allowed source aliases.
 Run `gizos list` or `gizos list bk_idk` to see supported chips, source aliases,

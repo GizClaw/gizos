@@ -97,6 +97,7 @@
       "name": "esp-idf",
       "kind": "idf",
       "version": "6.0.3",
+      "tags": ["v6.0.3"],
       "repository": "https://github.com/GizClaw/esp-idf.git",
       "commit": "76f5dedd9950a3012fee8fb7d5586df21fc67802",
       "requiredFile": "tools/idf.py",
@@ -261,9 +262,116 @@
       }
     },
     {
+      "kind": "h2loader",
+      "version": "20261026-112329",
+      "default": true,
+      "release": {
+        "repository": "https://github.com/GizClaw/gizos",
+        "tag": "v20261026-112329",
+        "commit": "33f6e6177a09c7a69878fa877e011414cc3e7d55"
+      },
+      "requiredFiles": [
+        "bin/h2loader"
+      ],
+      "executable": "bin/h2loader",
+      "check": [
+        "--help"
+      ],
+      "expectedOutput": "h2loader",
+      "exports": {
+        "H2LOADER_BIN": "bin/h2loader"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "source": {
+            "repository": "https://github.com/GizClaw/gizos.git",
+            "commit": "33f6e6177a09c7a69878fa877e011414cc3e7d55",
+            "path": "."
+          },
+          "installer": "bazel",
+          "build": {
+            "target": "//projects/h2loader/targets/cc_binary/cli:h2loader",
+            "output": "projects/h2loader/targets/cc_binary/cli/h2loader"
+          }
+        },
+        "linux": {
+          "source": {
+            "repository": "https://github.com/GizClaw/gizos.git",
+            "commit": "33f6e6177a09c7a69878fa877e011414cc3e7d55",
+            "path": "."
+          },
+          "installer": "bazel",
+          "build": {
+            "target": "//projects/h2loader/targets/cc_binary/cli:h2loader",
+            "output": "projects/h2loader/targets/cc_binary/cli/h2loader"
+          }
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "4.1.7",
+      "default": true,
+      "upstream": {
+        "version": "4.1.7.261014250",
+        "cliVersion": "4.1.7.250",
+        "releasedAt": "2026-10-14T10:30:00+08:00",
+        "documentation": "https://docs.bekencorp.com/arminodoc/bk_app/bkfil_v4/en/latest/download/download_guide/download_guide.html"
+      },
+      "requiredFiles": [
+        "bk_loader"
+      ],
+      "executable": "bk_loader",
+      "check": [
+        "--version"
+      ],
+      "expectedOutput": "bk_loader, version 4.1.7.250",
+      "exports": {
+        "BK_LOADER_BIN": "bk_loader"
+      },
+      "path": [
+        "."
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://dl.bekencorp.com/d/tools/bkfil/v4/cli/macos/bk_loader_macos_arm64_4.1.7.261014250.pkg",
+          "sha256": "43ce289ef27ecb572eb3ac60367cd55925117a45c9ba38e3ecf6fa7148d44383",
+          "executableSha256": "04d69c91aafaba5d02b5e71647cb2591c972e5942e91ae6769930731fe4c501e",
+          "format": "pkg",
+          "requiredFiles": [
+            "_internal/base_library.zip",
+            "_internal/Python.framework/Versions/3.9/Python",
+            "_internal/config/version.yaml",
+            "_internal/config/flash_info.yml"
+          ]
+        },
+        "darwin-x64": {
+          "url": "https://dl.bekencorp.com/d/tools/bkfil/v4/cli/macos/bk_loader_macos_x86_64_4.1.7.261014250.pkg",
+          "sha256": "60141b549c2ef2928a4eb51619f777fd448f7739c3b22ff907be378a48f58b7e",
+          "executableSha256": "545306d93a2ca33057f1ac04b65513f50b56b4cb5ac6694064f4a01cc39a1e58",
+          "format": "pkg",
+          "requiredFiles": [
+            "_internal/base_library.zip",
+            "_internal/Python.framework/Versions/3.9/Python",
+            "_internal/config/version.yaml",
+            "_internal/config/flash_info.yml"
+          ]
+        },
+        "linux-x64": {
+          "url": "https://dl.bekencorp.com/d/tools/bkfil/v4/cli/linux/bk_loader_linux_4.1.7.261014250.zip",
+          "sha256": "d42ef8af460eddd467f47197451f8896a61b0eaff7a0f1ef904042e6246479e2",
+          "executableSha256": "7b7ab1e86144f37cadfe96c4a5bbc8cbec267cea1791583e34d591c647345401",
+          "format": "zip",
+          "subdirectory": "bk_loader"
+        }
+      }
+    },
+    {
       "kind": "bk-loader",
       "version": "1.1.0.2.post2",
-      "default": true,
       "release": {
         "repository": "https://github.com/GizClaw/bk_loader",
         "tag": "v1.1.0.2.post2",

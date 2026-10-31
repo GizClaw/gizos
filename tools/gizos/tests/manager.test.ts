@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, writeFile, rm, chmod, readdir, realpath, rename, symlink } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir, hostname } from "node:os";
 import {
   Manager, catalog, cleanEnvironment, configFile, configuration, configureRoot, dataRoot, defaultRoot,
-  execute, exists, locked, sdkConfiguration, sdkName, selectSdk, shellEnvironment, upgrade,
+  execute, exists, locked, sdkConfiguration, pathConfiguration, sdkName, selectSdk, shellEnvironment, upgrade,
   type Sdk, type Command,
 } from "../src/manager";
+import { selections, withLease } from "../src/store";
 
 const temporary: string[] = [];
 afterEach(async () => {
@@ -83,6 +84,8 @@ describe("catalog and shared storage", () => {
     expect(() => selectSdk("bk7258", "2.0.1-r650e754")).toThrow("Unsupported");
     expect(sdkName(selectSdk("esp-idf", "6.2"))).toBe("esp-idf");
     expect(selectSdk("esp_idf", "6.2")).toBe(selectSdk("esp-idf", "6.2"));
+    expect(selectSdk("esp_idf", "v6.0.3")).toBe(selectSdk("esp-idf", "6.0.3"));
+    expect(selectSdk("esp_idf", "ddb3852")).toBe(selectSdk("esp-idf", "6.2"));
     for (const [name, alias, version] of [
       ["jieli-ac695n", "AC695N_Soundbox_SDK", "76b95777a083"],
       ["jieli-ac707n", "e_badge_707_sdk_200", "d0167685d032"],
@@ -168,6 +171,114 @@ describe("catalog and shared storage", () => {
   });
 });
 
+describe("independent installation paths", () => {
+  test("each SDK version can choose its source and tool paths without changing the shared compiler default", async () => {
+    const { manager: original, base, entries } = await fixture();
+    const env = { XDG_CONFIG_HOME: join(base, "config") };
+    const paths = { sdk: join(base, "external SDK"), tools: join(base, "external tools") };
+    await pathConfiguration("idf", "6.2", paths, env, entries);
+    expect(await exists(paths.sdk)).toBe(false);
+    expect(await exists(paths.tools)).toBe(false);
+    expect(await exists(original.root)).toBe(false);
+    const manager = await Manager.configured(original.root, original.command, entries, env);
+    const current = await manager.setup(manager.sdk("idf", "6.2"), { sdk: undefined, tools: undefined });
+    const older = await manager.setup(manager.sdk("idf", "6.0.3"));
+    expect(current.sdk).toBe(paths.sdk);
+    expect(current.tools).toBe(paths.tools);
+    expect(current.python).toStartWith(join(paths.tools, "python_env"));
+    expect(older.sdk).not.toBe(current.sdk);
+    expect(older.tools).not.toBe(current.tools);
+    const pool = JSON.parse(await readFile(manager.poolFile(manager.sdk("idf", "6.2")), "utf8"));
+    expect(pool.tools).toBe(older.tools);
+    const environment = await manager.environment(manager.sdk("idf", "6.2"));
+    expect(environment.IDF_PATH).toBe(paths.sdk);
+    expect(environment.IDF_TOOLS_PATH).toBe(paths.tools);
+    expect(environment.PATH).toContain(join(paths.sdk, "tools"));
+    expect((await manager.setup(manager.sdk("idf", "6.2"))).sdk).toBe(current.sdk);
+    const override = join(base, "command-line SDK");
+    expect((await manager.setup(manager.sdk("idf", "6.2"), { sdk: override })).sdk).toBe(override);
+    expect((await pathConfiguration("idf", "6.2", undefined, env, entries)).paths).toEqual(paths);
+  });
+
+  test("a source override leaves default tool sharing intact and reset preserves installed payloads", async () => {
+    const { manager: original, base, entries } = await fixture();
+    const env = { XDG_CONFIG_HOME: join(base, "config") };
+    const sdk = join(base, "independent SDK");
+    await pathConfiguration("idf", undefined, { sdk }, env, entries);
+    const manager = await Manager.configured(original.root, original.command, entries, env);
+    const current = await manager.setup(manager.sdk("idf", "6.2"));
+    const older = await manager.setup(manager.sdk("idf", "6.0.3"));
+    expect(current.sdk).toBe(sdk);
+    expect(current.tools).toBe(older.tools);
+    await pathConfiguration("idf", "6.2", null, env, entries);
+    const reset = await Manager.configured(original.root, original.command, entries, env);
+    expect((await reset.setup(reset.sdk("idf", "6.2"))).sdk).toBe(current.sdk);
+    expect(await exists(join(current.sdk, "tools/idf.py"))).toBe(true);
+  });
+
+  test("changed paths apply on setup, retain old files and rediscover Python under the new tools directory", async () => {
+    const { manager: original, base, entries } = await fixture();
+    const sdk = original.sdk("idf", "6.2");
+    const previous = await original.setup(sdk);
+    const env = { XDG_CONFIG_HOME: join(base, "config") };
+    const paths = { sdk: join(base, "replacement SDK"), tools: join(base, "replacement tools") };
+    await pathConfiguration("idf", "6.2", paths, env, entries);
+    const changed = await Manager.configured(original.root, original.command, entries, env);
+    const before = await changed.describe(sdk);
+    expect(before.sdk).toBe(previous.sdk);
+    expect(before.configuredPaths).toEqual(paths);
+    expect(before.pendingPaths).toEqual(paths);
+    expect((await changed.environment(sdk)).IDF_PATH).toBe(previous.sdk);
+    const current = await changed.setup(sdk);
+    expect(current.sdk).toBe(paths.sdk);
+    expect(current.tools).toBe(paths.tools);
+    expect(current.python).not.toBe(previous.python);
+    expect(current.python).toStartWith(paths.tools);
+    expect((await changed.describe(sdk)).pendingPaths).toEqual({});
+    expect(await exists(previous.python!)).toBe(true);
+    expect(await exists(join(previous.sdk, "tools/idf.py"))).toBe(true);
+    const invalid = join(base, "modified existing SDK");
+    await mkdir(join(invalid, "tools"), { recursive: true });
+    await writeFile(join(invalid, "tools/idf.py"), "unmanaged content");
+    await pathConfiguration("idf", "6.2", { sdk: invalid }, env, entries);
+    const rejected = await Manager.configured(original.root, original.command, entries, env);
+    await expect(rejected.setup(sdk)).rejects.toThrow();
+    expect((await rejected.record(sdk))?.sdk).toBe(current.sdk);
+    expect(await readFile(join(invalid, "tools/idf.py"), "utf8")).toBe("unmanaged content");
+  });
+
+  test("path settings preserve source selections and other SDK versions, and reject invalid configuration atomically", async () => {
+    const base = await directory();
+    const env = { XDG_CONFIG_HOME: join(base, "config") };
+    await Promise.all([
+      configureRoot(join(base, "shared"), env),
+      sdkConfiguration("esp_idf", "Espressif", env),
+      pathConfiguration("bk7258", "3.1.1", { sdk: join(base, "bk") }, env),
+      pathConfiguration("esp_idf", "6.2", { sdk: join(base, "idf") }, env),
+    ]);
+    await pathConfiguration("esp-idf", "6.2", { tools: join(base, "idf tools") }, env);
+    await pathConfiguration("esp_idf", "6.0.3", { sdk: join(base, "older idf") }, env);
+    const current = await pathConfiguration("esp_idf", "6.2", undefined, env);
+    expect(current.paths).toEqual({ sdk: join(base, "idf"), tools: join(base, "idf tools") });
+    const before = await readFile(configFile(env), "utf8");
+    for (const paths of [{ sdk: "" }, { tools: "/tmp/invalid\npath" }, { path: "/tmp/tool" }]) {
+      await expect(pathConfiguration("esp_idf", "6.2", paths, env)).rejects.toThrow("Invalid installation paths");
+    }
+    await expect(pathConfiguration("esp_idf", "6.3", { sdk: join(base, "unknown") }, env)).rejects.toThrow("Unsupported");
+    await expect(pathConfiguration("bk_avdk_smp", undefined, { sdk: join(base, "ambiguous") }, env)).rejects.toThrow("Select an SDK");
+    expect(await readFile(configFile(env), "utf8")).toBe(before);
+    await pathConfiguration("esp_idf", "6.2", null, env);
+    const settings = await configuration(env);
+    expect(settings.root).toBe(join(base, "shared"));
+    expect(settings.repositories!["esp-idf"]).toBe("Espressif");
+    expect(settings.paths!["esp-idf"]["6.0.3"].sdk).toBe(join(base, "older idf"));
+    expect(settings.paths!.bk7258["3.1.1"].sdk).toBe(join(base, "bk"));
+    expect(await exists(join(base, "shared"))).toBe(false);
+    await writeFile(configFile(env), JSON.stringify({ paths: { "esp-idf": { "6.2": { sdk: "relative" } } } }));
+    await expect(configuration(env)).rejects.toThrow("Invalid installation path configuration");
+  });
+});
+
 describe("provisioning and environment activation", () => {
   test("preserves modified SDKs and refuses to use them", async () => {
     const { manager } = await fixture();
@@ -194,10 +305,16 @@ describe("provisioning and environment activation", () => {
     await git(child, "add", ".");
     await git(child, "commit", "--quiet", "-m", "component");
     await git(upstream, "submodule", "add", child, "components/child");
+    await git(upstream, "config", "-f", ".gitmodules", "submodule.components/child.ignore", "all");
+    await git(upstream, "add", ".gitmodules");
     await git(upstream, "commit", "--quiet", "-m", "add submodule");
     entries[0].commit = (await git(upstream, "rev-parse", "HEAD")).trim();
     const item = await manager.setup(entries[0], { sourcesOnly: true });
     expect(await exists(join(item.sdk, "components/child/component.c"))).toBe(true);
+    await writeFile(join(item.sdk, "components/child/component.c"), "operator changes\n");
+    const preview = await manager.remove("idf", "6.2", true);
+    expect(preview.preserve.some(item => item.reason === "source has local changes")).toBe(true);
+    await writeFile(join(item.sdk, "components/child/component.c"), "int component;\n");
     await rm(join(item.sdk, "components/child"), { recursive: true });
     await expect(manager.setup(entries[0], { sourcesOnly: true })).rejects.toThrow();
   });
@@ -377,16 +494,27 @@ describe("provisioning and environment activation", () => {
     expect(changed.PATH).toContain("/operator/bin");
     expect(changed.VIRTUAL_ENV).not.toBe(first.VIRTUAL_ENV);
   });
-  test("default activation selects catalog defaults while preserving inherited environments when none are installed", async () => {
+  test("setup selects a version, cached setup switches back, and explicit activation leaves the selection intact", async () => {
     const { manager } = await fixture();
     const inherited = { PATH: "/usr/bin:/bin", IDF_PATH: "/operator/legacy-idf" };
     expect(await manager.defaultEnvironment(inherited)).toEqual({ ...inherited, GIZOS_DEVENV_HOME: manager.root });
     const current = await manager.setup(manager.sdk("idf", "6.2"));
-    await manager.setup(manager.sdk("idf", "6.0.3"));
+    const older = await manager.setup(manager.sdk("idf", "6.0.3"));
     const active = await manager.defaultEnvironment(inherited);
-    expect(active.IDF_PATH).toBe(current.sdk);
-    expect(active.H2LOADER_IDF_PATH).toBe(current.sdk);
-    expect(active.PATH!.indexOf(current.sdk)).toBeLessThan(active.PATH!.indexOf("/usr/bin"));
+    expect(active.IDF_PATH).toBe(older.sdk);
+    expect((await manager.currentSdk("idf")).version).toBe("6.0.3");
+    expect((await manager.environment(manager.sdk("idf", "6.2"))).IDF_PATH).toBe(current.sdk);
+    expect((await manager.currentSdk("idf")).version).toBe("6.0.3");
+    const installations = manager.command;
+    manager.command = (args, options) => {
+      if (args[0] === "bash" && args[1].endsWith("install.sh")) throw new Error("Cached setup must not reinstall");
+      return installations(args, options);
+    };
+    await manager.setup(manager.sdk("idf", "6.2"));
+    expect((await manager.defaultEnvironment(inherited)).IDF_PATH).toBe(current.sdk);
+    expect(await exists(older.sdk)).toBe(true);
+    expect(active.H2LOADER_IDF_PATH).toBe(older.sdk);
+    expect(active.PATH!.indexOf(older.sdk)).toBeLessThan(active.PATH!.indexOf("/usr/bin"));
   });
   test("shell output quotes special path characters and clears stale SDK variables", async () => {
     const text = shellEnvironment({ PATH: "/path with 'quotes'/$dollar", IDF_PATH: "/SDK" }, { SECRET: "not printed" });
@@ -412,6 +540,124 @@ describe("provisioning and environment activation", () => {
     await mkdir(lock, { recursive: true });
     await writeFile(join(lock, "owner.json"), JSON.stringify({ pid: child.pid, host: hostname() }));
     expect(await locked(root, "stale", async () => 42)).toBe(42);
+  });
+});
+
+describe("version removal and managed cache cleanup", () => {
+  test("remove previews without changes, removes only one version and falls back to another installed version", async () => {
+    const { manager } = await fixture();
+    const current = await manager.setup(manager.sdk("idf", "6.2"));
+    const older = await manager.setup(manager.sdk("idf", "6.0.3"));
+    const state = await readFile(manager.statePath(manager.sdk("idf", "6.0.3")), "utf8");
+    const preview = await manager.remove("idf", "6.0.3", true);
+    expect(preview.remove.map(item => item.path)).toContain(older.sdk);
+    expect(await readFile(manager.statePath(manager.sdk("idf", "6.0.3")), "utf8")).toBe(state);
+    expect(await exists(older.python!)).toBe(true);
+    const removed = await manager.remove("idf", "6.0.3");
+    expect(removed.remove.map(item => item.path)).toContain(older.sdk);
+    expect(await exists(older.sdk)).toBe(false);
+    expect(await exists(older.python!)).toBe(false);
+    expect(await exists(current.python!)).toBe(true);
+    expect(await exists(current.tools)).toBe(true);
+    expect((await manager.currentSdk("idf")).version).toBe("6.2");
+    expect((await manager.defaultEnvironment()).IDF_PATH).toBe(current.sdk);
+    expect((await manager.prune(true)).remove).toEqual([]);
+    await manager.remove("idf", "6.2");
+    expect((await manager.prune(true)).remove.map(item => item.path)).toContain(current.tools);
+    expect(await exists(current.tools)).toBe(true);
+    await manager.prune();
+    expect(await exists(current.tools)).toBe(false);
+  });
+
+  test("adopted payloads and unknown legacy directories are retained after unregistering", async () => {
+    const { manager, base, entries } = await fixture();
+    const original = await manager.setup(entries[0]);
+    const adopted = new Manager(join(base, "adopted store"), manager.command, entries);
+    await adopted.setup(entries[0], { sdk: original.sdk, tools: original.tools, python: original.python }, true);
+    const result = await adopted.remove("idf", "6.2");
+    expect(result.remove).toEqual([]);
+    expect(result.preserve.some(item => item.reason.includes("ownership is unknown"))).toBe(true);
+    expect(await adopted.record(entries[0])).toBeUndefined();
+    expect(await exists(original.sdk)).toBe(true);
+    expect(await exists(original.python!)).toBe(true);
+    const legacy = join(adopted.root, "tools/unknown/large-payload");
+    await mkdir(legacy, { recursive: true });
+    await adopted.prune();
+    expect(await exists(legacy)).toBe(true);
+  });
+
+  test("versions in the same IDF series retain their shared Python environment until the last reference is removed", async () => {
+    const { manager, entries } = await fixture();
+    const original = manager.sdk("idf", "6.0.3");
+    entries.push({ ...original, version: "6.0.3-rfixture" });
+    const first = await manager.setup(original);
+    const compatible = await manager.setup(manager.sdk("idf", "6.0.3-rfixture"));
+    expect(compatible.python).toBe(first.python);
+    const result = await manager.remove("idf", "6.0.3");
+    expect(result.preserve.some(item => item.path === dirname(dirname(first.python!)))).toBe(true);
+    expect(await exists(first.python!)).toBe(true);
+    await manager.remove("idf", "6.0.3-rfixture");
+    expect(await exists(first.python!)).toBe(false);
+  });
+
+  test("a shared checkout remains until every referring version has been removed", async () => {
+    const { manager } = await fixture();
+    const first = await manager.setup(manager.sdk("idf", "6.2"), { sourcesOnly: true });
+    await manager.setup(manager.sdk("idf", "6.0.3"), { sdk: first.sdk, sourcesOnly: true });
+    const result = await manager.remove("idf", "6.2");
+    expect(result.remove).toEqual([]);
+    expect(result.preserve[0].reason).toContain("referenced");
+    expect(await exists(first.sdk)).toBe(true);
+    await manager.remove("idf", "6.0.3");
+    expect(await exists(first.sdk)).toBe(false);
+  });
+
+  test("modified sources and directories replaced by the user are retained", async () => {
+    const { manager } = await fixture();
+    const first = await manager.setup(manager.sdk("idf", "6.2"), { sourcesOnly: true });
+    await writeFile(join(first.sdk, "tools/idf.py"), "operator changes\n");
+    const changed = await manager.remove("idf", "6.2");
+    expect(changed.preserve[0].reason).toBe("source has local changes");
+    expect(await exists(first.sdk)).toBe(true);
+    const second = await manager.setup(manager.sdk("idf", "6.0.3"), { sourcesOnly: true });
+    await rename(second.sdk, `${second.sdk}-preserved`);
+    await mkdir(second.sdk);
+    await writeFile(join(second.sdk, "user-file"), "keep");
+    const replaced = await manager.remove("idf", "6.0.3");
+    expect(replaced.preserve[0].reason).toBe("path was replaced");
+    await manager.prune();
+    expect(await readFile(join(first.sdk, "tools/idf.py"), "utf8")).toBe("operator changes\n");
+    expect(await readFile(join(second.sdk, "user-file"), "utf8")).toBe("keep");
+  });
+
+  test("running command leases retain payloads until the command exits, and empty-store preview is read-only", async () => {
+    const { manager, base } = await fixture();
+    const empty = new Manager(join(base, "empty"));
+    expect((await empty.prune(true)).remove).toEqual([]);
+    expect(await exists(empty.root)).toBe(false);
+    const installed = await manager.setup(manager.sdk("idf", "6.2"), { sourcesOnly: true });
+    await withLease(manager.root, [installed.sdk], async () => {
+      await manager.remove("idf", "6.2");
+      expect(await exists(installed.sdk)).toBe(true);
+      expect((await manager.prune(true)).remove).toEqual([]);
+    });
+    expect((await manager.prune(true)).remove.map(item => item.path)).toContain(installed.sdk);
+    await manager.prune();
+    expect(await exists(installed.sdk)).toBe(false);
+  });
+
+  test("registered tag and commit aliases resolve to one canonical installation and reject ambiguous commits", async () => {
+    const { manager, entries } = await fixture();
+    entries[0].tags = ["fixture-tag"];
+    const first = await manager.setup(manager.sdk("idf", "fixture-tag"), { sourcesOnly: true });
+    expect(first.version).toBe("6.2");
+    expect(manager.statePath(manager.sdk("idf", "fixture-tag"))).toBe(manager.statePath(entries[0]));
+    expect(() => manager.sdk("idf", entries[0].commit)).toThrow("Ambiguous");
+    entries.splice(1, 1);
+    expect(manager.sdk("idf", entries[0].commit.slice(0, 8))).toBe(entries[0]);
+    await manager.remove("idf", entries[0].commit);
+    expect(await exists(first.sdk)).toBe(false);
+    expect(await selections(manager.root)).toEqual({});
   });
 });
 
@@ -553,6 +799,45 @@ describe("SDK repository configuration", () => {
 });
 
 describe("CLI discovery", () => {
+  test("config saves independent SDK and tool version paths and env reports them without installing", async () => {
+    const base = await directory();
+    const root = join(base, "shared");
+    const cli = join(import.meta.dir, "../src/cli.ts");
+    const env = { ...process.env, GIZOS_DEVENV_HOME: root, XDG_CONFIG_HOME: join(base, "config") };
+    const run = (...args: string[]) => execute([process.execPath, cli, ...args], { cwd: "/", env });
+    const sdk = join(base, "SDKs/esp-idf-6.2");
+    const compiler = join(base, "tools/esp-idf");
+    const loader = join(base, "tools/bk-loader");
+    const saved = JSON.parse(await run("config", "esp_idf", "6.2", "--sdk", sdk, "--tools", compiler));
+    expect(saved).toEqual({ name: "esp-idf", version: "6.2", paths: { sdk, tools: compiler } });
+    await run("config", "bk7258", "--sdk", join(base, "SDKs/bk7258"));
+    await run("config", "bk-loader", "--path", loader);
+    const configured = JSON.parse(await run("config"));
+    expect(configured.paths.bk7258["3.1.1"].sdk).toBe(join(base, "SDKs/bk7258"));
+    expect(Object.values(configured.paths["bk-loader"])[0]).toEqual({ path: loader });
+    expect(JSON.parse(await run("config", "esp_idf")).paths["6.2"]).toEqual(saved.paths);
+    expect(JSON.parse(await run("config", "esp_idf", "6.2"))).toEqual(saved);
+    const info = JSON.parse(await run("env", "esp_idf", "6.2", "--json")).environments[0];
+    expect(info.sdk).toBe(sdk);
+    expect(info.tools).toBe(compiler);
+    expect(info.status).toBe("not installed");
+    const older = JSON.parse(await run("env", "esp_idf", "6.0.3", "--json")).environments[0];
+    expect(older.sdk).not.toBe(sdk);
+    expect(older.tools).not.toBe(compiler);
+    expect(await run("env", "bk-loader")).toContain(loader);
+    const before = await readFile(configFile(env), "utf8");
+    await expect(run("config", "esp_idf", "6.2", "--path", loader)).rejects.toThrow("Invalid installation paths");
+    await expect(run("config", "esp_idf", "6.2", "--reset-paths", "--sdk", sdk)).rejects.toThrow("Usage:");
+    expect(await readFile(configFile(env), "utf8")).toBe(before);
+    await run("config", "esp_idf", "6.2", "--reset-paths");
+    expect(JSON.parse(await run("config", "esp_idf", "6.2")).paths).toEqual({});
+    expect((await run("config", "bk-loader"))).toContain(loader);
+    expect(await exists(root)).toBe(false);
+    expect(await exists(sdk)).toBe(false);
+    expect(await exists(compiler)).toBe(false);
+    expect(await exists(loader)).toBe(false);
+  });
+
   test("describe explains an SDK in English, accepts aliases and does not install or write configuration", async () => {
     const base = await directory();
     const root = join(base, "shared");
@@ -625,7 +910,7 @@ describe("CLI discovery", () => {
     const text = await run("list", "bk7258");
     expect(text).toContain("* Beken -> bekencorp/bk_avdk_smp (selected)");
     expect(text).toContain("GizClaw -> GizClaw/bk_avdk_smp (default)");
-    expect(text).toContain("3.1.1: not installed");
+    expect(text).toContain("3.1.1 (selected): not installed");
     expect(await run("list", "jieli-ac707n")).toContain("e_badge/e_badge_707_sdk_200");
     const before = await readFile(configFile(env), "utf8");
     await expect(run("config", "bk7258", "other-org/bk_avdk_smp")).rejects.toThrow("Repository is not in the catalog");
@@ -650,6 +935,17 @@ describe("CLI discovery", () => {
     const family = JSON.parse(await execute([process.execPath, cli, "env", "bk", "--json"], { env: environment }));
     expect(family.environments.filter((item: any) => item.name === "bk7258")).toEqual(result.environments);
     expect(result.environments[0].status).toBe("not installed");
+    expect(await exists(root)).toBe(false);
+    const tag = JSON.parse(await execute([process.execPath, cli, "env", "esp_idf", "v6.0.3", "--json"], { env: environment }));
+    expect(tag.environments[0].version).toBe("6.0.3");
+    const commit = JSON.parse(await execute([process.execPath, cli, "env", "esp_idf", "ddb3852", "--json"], { env: environment }));
+    expect(commit.environments[0].version).toBe("6.2");
+    const cleanup = JSON.parse(await execute([process.execPath, cli, "prune", "--dry-run", "--json"], { env: environment }));
+    expect(cleanup).toEqual({ dryRun: true, remove: [], preserve: [] });
+    await expect(execute([process.execPath, cli, "prune", "--path", "/unrelated"], { env: environment }))
+      .rejects.toThrow("only accept");
+    await expect(execute([process.execPath, cli, "remove", "esp_idf", "6.2", "--", "extra"], { env: environment }))
+      .rejects.toThrow("only accept");
     expect(await exists(root)).toBe(false);
     await expect(execute([process.execPath, cli, "setup", "idf", "6.3"], { env: environment })).rejects.toThrow("Unsupported");
     expect(await exists(root)).toBe(false);

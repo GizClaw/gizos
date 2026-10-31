@@ -1,13 +1,17 @@
 import {
-  mkdir, readFile, readdir, realpath, rename, rm,
+  mkdir, readFile, readdir, rename, rm,
 } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import bundledCatalog from "./catalog.json";
-import { Resources, resourceVariables, type Tool } from "./resources";
-import { atomicJson, execute, executable, exists, locked, quote, type Command, type Env } from "./common";
+import { Resources, resourceVariables, tools, type Tool } from "./resources";
+import {
+  atomicJson, downloadArchive, execute, executable, exists, installationPath, locked, quote,
+  type Command, type Env, type InstallationPaths, type PathConfiguration,
+} from "./common";
+import { applyCleanup, cleanupPlan, own, records, selections, selectVersion, withStore } from "./store";
 export { execute, exists, locked, type Command } from "./common";
 
 export type Kind = "idf" | "bk" | "ac695n" | "ac707n" | "ac791n";
@@ -33,6 +37,7 @@ export type Sdk = {
   pythonSeries?: string;
   targets?: string[];
   default?: boolean;
+  tags?: string[];
   requiredFiles?: string[];
   sdkSubdirectory?: string;
   lfs?: boolean;
@@ -50,6 +55,7 @@ export type Installation = {
   python?: string;
   ready: boolean;
   targets: string[];
+  dependencies?: string[];
 };
 export type Options = {
   sourcesOnly?: boolean;
@@ -151,7 +157,10 @@ export function sdkChoices(name?: string, entries: Sdk[] = catalog.sdks): Sdk[] 
 }
 
 export function selectSdk(name: string, version: string, entries: Sdk[] = catalog.sdks): Sdk {
-  const matches = sdkChoices(name, entries).filter(item => item.version === version);
+  const choices = sdkChoices(name, entries);
+  const exact = choices.filter(item => item.version === version || item.tags?.includes(version));
+  const matches = exact.length ? exact : /^[0-9a-f]{7,40}$/i.test(version)
+    ? choices.filter(item => item.commit.startsWith(version.toLowerCase())) : [];
   if (matches.length > 1) {
     throw new Error(`Ambiguous SDK ${name} ${version}; use an SDK name: ${matches.map(sdkName).join(", ")}`);
   }
@@ -183,7 +192,15 @@ type Configuration = {
   schema?: 1;
   root?: string;
   repositories?: Record<string, string>;
+  paths?: PathConfiguration;
 };
+
+const pathKeys = ["sdk", "tools", "python", "path"];
+function validPaths(value: unknown): value is InstallationPaths {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) &&
+    Object.entries(value).every(([key, path]) =>
+      pathKeys.includes(key) && typeof path === "string" && isAbsolute(path) && !/[\0\r\n]/.test(path)));
+}
 
 function repositoryChoices(sdk: Sdk): Repository[] {
   return sdk.repositories ?? [{ id: sdkName(sdk), url: sdk.defaultRepository ?? sdk.repository }];
@@ -236,6 +253,12 @@ export async function configuration(env: Env = process.env): Promise<Configurati
         throw new Error("Invalid SDK repository configuration");
       }
     }
+    if (value.paths !== undefined) {
+      if (!value.paths || typeof value.paths !== "object" || Array.isArray(value.paths) ||
+          !Object.values(value.paths).every(versions =>
+            versions && typeof versions === "object" && !Array.isArray(versions) &&
+            Object.values(versions).every(validPaths))) throw new Error("Invalid installation path configuration");
+    }
     return value;
   } catch (error: any) {
     if (error.code !== "ENOENT") throw error;
@@ -252,6 +275,49 @@ async function updateConfiguration(
     await atomicJson(file, { ...value, schema: 1 });
     return value;
   });
+}
+
+export async function pathConfiguration(
+  name: string, version?: string, changes?: InstallationPaths | null, env: Env = process.env,
+  entries: Sdk[] = catalog.sdks, resources: Tool[] = tools,
+) {
+  if (!version) {
+    const key = resources.some(entry => entry.kind === name) ? name
+      : [...new Set(sdkChoices(name, entries).map(sdkName))];
+    if (typeof key === "string" || key.length === 1) {
+      version = (await selections(await dataRoot(undefined, env)))[typeof key === "string" ? key : key[0]];
+    }
+  }
+  const tool = resources.find(entry => entry.kind === name &&
+    (version ? entry.version === version || entry.release?.tag === version || entry.release?.commit === version : entry.default));
+  const sdk = resources.some(entry => entry.kind === name) ? undefined
+    : version ? selectSdk(name, version, entries) : (() => {
+      const choices = sdkChoices(name, entries);
+      if (new Set(choices.map(sdkName)).size !== 1) throw new Error("Select an SDK and catalog version");
+      return choices.find(entry => entry.default) ?? choices[0];
+    })();
+  if (!sdk && !tool) throw new Error(`Unsupported ${name} version ${version ?? "default"}; run gizos list ${name}`);
+  const key = sdk ? sdkName(sdk) : tool!.kind;
+  const selectedVersion = (sdk ?? tool)!.version;
+  let paths: InstallationPaths | null | undefined = changes;
+  if (changes) {
+    const allowed = sdk ? ["sdk", "tools", ...(sdk.kind === "idf" ? ["python"] : [])] : ["path"];
+    if (!Object.keys(changes).length || Object.keys(changes).some(key => !allowed.includes(key)) ||
+        Object.values(changes).some(path => typeof path !== "string" || !path || /[\0\r\n]/.test(path))) {
+      throw new Error(`Invalid installation paths for ${key}; use ${allowed.map(key => `--${key}`).join(", ")}`);
+    }
+    paths = Object.fromEntries(Object.entries(changes).map(([key, path]) => [key, resolve(path)]));
+  }
+  const settings = paths === undefined ? await configuration(env) : await updateConfiguration(value => {
+    const configured = { ...value.paths };
+    const versions = { ...configured[key] };
+    if (paths === null) delete versions[selectedVersion];
+    else versions[selectedVersion] = { ...versions[selectedVersion], ...paths };
+    if (Object.keys(versions).length) configured[key] = versions;
+    else delete configured[key];
+    return { ...value, paths: configured };
+  }, env);
+  return { name: key, version: selectedVersion, paths: settings.paths?.[key]?.[selectedVersion] ?? {} };
 }
 
 export async function sdkConfiguration(
@@ -311,11 +377,13 @@ export async function describeSdk(name: string, env: Env = process.env, entries:
     chips: [...new Set(choices.flatMap(entry => entry.chips ?? entry.targets ?? []))],
     versions: choices.map(entry => ({
       version: entry.version, default: Boolean(entry.default), commit: entry.commit,
+      tags: entry.tags ?? [],
       chips: entry.chips ?? entry.targets ?? [],
     })),
     notes: [
       ...sdk.notes ?? [],
       "SDKs and host tools are shared across worktrees. Selecting a source preserves the catalog's exact commit pins.",
+      "Configure independent paths per SDK version with config <sdk> <version> --sdk <checkout> --tools <directory>.",
       "describe, list and config do not download SDKs. Use setup with an explicit catalog version to install an environment.",
     ],
     commands: [
@@ -364,6 +432,7 @@ export class Manager {
     public root: string,
     public command: Command = execute,
     public entries: Sdk[] = catalog.sdks,
+    public locations: PathConfiguration = {},
   ) {}
 
   static async configured(
@@ -377,13 +446,25 @@ export class Manager {
         ...sdk, name: sdkName(sdk), defaultRepository,
         repository: repository.url, repositoryId: repository.id, repositoryAlias: repository.alias ?? repository.id,
       };
-    }));
+    }), settings.paths);
   }
 
-  get resources(): Resources { return new Resources(this.root, this.command); }
+  get resources(): Resources {
+    return new Resources(this.root, this.command, tools, undefined, this.locations);
+  }
   sdk(name: string, version: string): Sdk { return selectSdk(name, version, this.entries); }
   sdks(name?: string): Sdk[] { return sdkChoices(name, this.entries); }
+  async currentSdk(name: string): Promise<Sdk> {
+    const choices = this.sdks(name);
+    const names = [...new Set(choices.map(sdkName))];
+    if (names.length !== 1) throw new Error(`Select an SDK: ${names.join(", ")}`);
+    const version = (await selections(this.root))[names[0]];
+    return version ? this.sdk(names[0], version) : choices.find(sdk => sdk.default) ?? choices[0];
+  }
+  configuredPaths(sdk: Sdk): InstallationPaths { return this.locations[sdkName(sdk)]?.[sdk.version] ?? {}; }
   sourcePath(sdk: Sdk): string {
+    const configured = this.configuredPaths(sdk).sdk;
+    if (configured) return configured;
     const paths = [sdkName(sdk), ...sdk.aliases ?? []]
       .map(name => join(this.root, "sdks", name, `${sdk.version}-${sdk.commit}`));
     return paths.find(path => existsSync(path)) ?? paths[0];
@@ -394,6 +475,8 @@ export class Manager {
     return join(this.root, "pools", `${family}-${version}${process.platform}-${process.arch}.json`);
   }
   toolsPath(sdk: Sdk): string {
+    const configured = this.configuredPaths(sdk).tools;
+    if (configured) return configured;
     try {
       const pool = JSON.parse(readFileSync(this.poolFile(sdk), "utf8"));
       if (pool.schema !== 1 || typeof pool.tools !== "string" || !isAbsolute(pool.tools)) {
@@ -480,6 +563,7 @@ export class Manager {
       if (sdk.lfs) await this.git(temporary, "lfs", "pull");
       await this.verifySource(sdk, temporary);
       await rename(temporary, path);
+      await own(this.root, path, "sdk", sdk.commit);
     } finally { await rm(temporary, { recursive: true, force: true }); }
   }
   async findPython(sdk: Sdk, tools: string): Promise<string> {
@@ -512,12 +596,7 @@ export class Manager {
     }
   }
   async downloadArm(url: string, partial: string): Promise<void> {
-    await this.command(["python3", "-c", `
-import shutil, ssl, sys, urllib.request
-with urllib.request.urlopen(sys.argv[1], timeout=60, context=ssl.create_default_context()) as response:
-    with open(sys.argv[2], "wb") as output:
-        shutil.copyfileobj(response, output)
-`, url, partial], { inherit: true });
+    await downloadArchive(url, partial, this.command);
   }
   async installArm(tools: string, sdk?: Sdk): Promise<void> {
     if (await exists(tools)) return this.verifyArm(tools, sdk);
@@ -537,6 +616,7 @@ with urllib.request.urlopen(sys.argv[1], timeout=60, context=ssl.create_default_
         await this.downloadArm(distribution.url, partial);
         if (await digest(partial) !== distribution.sha256) throw new Error("GNU Arm archive checksum mismatch");
         await rename(partial, archive);
+        await own(this.root, archive, "download");
       } finally { await rm(partial, { force: true }); }
     }
     if (await digest(archive) !== distribution.sha256) throw new Error(`Corrupt cached archive: ${archive}`);
@@ -546,71 +626,165 @@ with urllib.request.urlopen(sys.argv[1], timeout=60, context=ssl.create_default_
       await this.command(["tar", "-xf", archive, "--strip-components=1", "-C", temporary]);
       await this.verifyArm(temporary, sdk);
       await rename(temporary, tools);
+      await own(this.root, tools, "tools");
     } finally { await rm(temporary, { recursive: true, force: true }); }
   }
   async setup(sdk: Sdk, options: Options = {}, adopt = false): Promise<Installation> {
     if (!["darwin", "linux"].includes(process.platform)) throw new Error("SDK setup currently supports macOS and Linux");
-    return locked(this.root, `${sdkName(sdk)}-${sdk.version}`, async () => {
+    return withStore(this.root, () => locked(this.root, `${sdkName(sdk)}-${sdk.version}`, async () => {
       const previous = await this.record(sdk);
+      const locations = this.configuredPaths(sdk);
+      const requested = {
+        sdk: options.sdk ?? locations.sdk, tools: options.tools ?? locations.tools,
+        python: options.python ?? locations.python,
+      };
       const armVersion = usesArm(sdk) ? armToolchain(sdk).version : undefined;
       const sameTools = !armVersion || !previous || (previous.armVersion ?? catalog.arm.version) === armVersion;
+      const sdkPath = requested.sdk ? await installationPath(requested.sdk) : previous?.sdk ?? this.sourcePath(sdk);
+      const toolsPath = requested.tools ? await installationPath(requested.tools)
+        : sameTools ? previous?.tools ?? this.toolsPath(sdk) : this.toolsPath(sdk);
       const item: Installation = {
         schema: 1, name: sdkName(sdk),
-        repository: !options.sdk && previous ? previous.repository : sdk.repository,
+        repository: previous?.sdk === sdkPath ? previous.repository : sdk.repository,
         kind: sdk.kind, version: sdk.version, commit: sdk.commit,
-        sdk: options.sdk ? await realpath(resolve(options.sdk)) : previous?.sdk ?? this.sourcePath(sdk),
-        tools: options.tools ? await realpath(resolve(options.tools))
-          : sameTools ? previous?.tools ?? this.toolsPath(sdk) : this.toolsPath(sdk),
+        sdk: sdkPath, tools: toolsPath,
         armVersion,
         // A virtualenv's Python can be a symlink to the host interpreter.
-        python: options.python ? resolve(options.python) : previous?.python,
-        ready: (previous?.ready ?? false) && sameTools,
+        python: requested.python ? resolve(requested.python) : previous?.tools === toolsPath ? previous.python : undefined,
+        ready: Boolean(previous?.ready && sameTools && previous.sdk === sdkPath && previous.tools === toolsPath),
         targets: options.targets ?? previous?.targets ?? sdk.targets ?? [],
+        dependencies: previous?.dependencies,
       };
       if (usesArm(sdk) && !adopt && !options.sourcesOnly && !await exists(item.tools)) armDistribution(sdk);
       if (adopt) await this.verifySource(sdk, item.sdk);
       else await this.fetchSource(sdk, item.sdk);
+      const dependenciesReady = !usesArm(sdk) ||
+        await this.resources.record(await this.resources.current("bk-loader"));
+      const reuse = item.ready && dependenciesReady && !options.sourcesOnly && !adopt &&
+        await exists(item.tools) && (sdk.kind !== "idf" || item.python && await exists(item.python)) &&
+        item.targets.every(target => previous?.targets.includes(target)) &&
+        (!requested.python || requested.python === previous?.python);
+      if (reuse) {
+        await this.environment(sdk, item);
+        await selectVersion(this.root, sdkName(sdk), sdk.version);
+        return item;
+      }
       if (!options.sourcesOnly) {
-        // IDF owns the family/version layout. All SDK versions use the same
-        // tools root, so identical compiler archives and installations are shared.
+        // IDF owns the family/version layout within its default shared tools root.
         await locked(this.root, `${usesArm(sdk) ? "bk" : sdk.kind}-tools`, async () => {
-          if (!options.tools && !previous?.ready) item.tools = this.toolsPath(sdk);
+          if (!requested.tools && !previous?.ready) item.tools = this.toolsPath(sdk);
           if (sdk.kind === "idf") {
             if (!adopt) {
+              const newTools = !await exists(item.tools);
+              const priorPython = new Set(await readdir(join(item.tools, "python_env")).catch((error: any) => {
+                if (error.code !== "ENOENT") throw error;
+                return [];
+              }));
               const environment = cleanEnvironment();
               environment.IDF_TOOLS_PATH = item.tools;
               if (item.python) environment.IDF_PYTHON_ENV_PATH = dirname(dirname(item.python));
               await this.command(["bash", join(item.sdk, "install.sh"), item.targets.join(",")], {
                 cwd: item.sdk, env: environment, inherit: true,
               });
+              if (newTools) await own(this.root, item.tools, "tools");
+              for (const name of await readdir(join(item.tools, "python_env")).catch((error: any) => {
+                if (error.code !== "ENOENT") throw error;
+                return [];
+              })) {
+                if (!priorPython.has(name)) await own(this.root, join(item.tools, "python_env", name), "python");
+              }
             }
             item.python = item.python ?? await this.findPython(sdk, item.tools);
             await executable(item.python);
           } else if (usesArm(sdk)) {
             if (adopt) await this.verifyArm(item.tools, sdk);
             else await this.installArm(item.tools, sdk);
-            if (!adopt) await this.resources.setup(this.resources.select("bk-loader"));
+            if (!adopt) {
+              const loader = await this.resources.current("bk-loader");
+              const installed = await this.resources.setup(loader, undefined, undefined, false);
+              item.dependencies = [installed.root];
+            }
           } else {
             const toolchain = this.resources.select("jieli-toolchain");
             const postbuild = this.resources.select("jieli-postbuild");
             const existing = await this.resources.record(toolchain);
             const existingPostbuild = await this.resources.record(postbuild);
-            if (adopt && (!options.tools && !existing || !options.postbuild && !existingPostbuild)) {
+            if (adopt && (!requested.tools && !existing || !options.postbuild && !existingPostbuild)) {
               throw new Error("adopt requires registered JieLi tools or --tools and --postbuild paths");
             }
-            item.tools = (await this.resources.setup(toolchain, options.tools)).root;
-            await this.resources.setup(postbuild, options.postbuild);
+            item.tools = (await this.resources.setup(
+              toolchain, adopt ? requested.tools ?? existing?.root : undefined, requested.tools, false,
+            )).root;
+            const installed = await this.resources.setup(
+              postbuild, options.postbuild ?? (adopt ? existingPostbuild?.root : undefined), undefined, false,
+            );
+            item.dependencies = [installed.root];
           }
           item.ready = true;
           await this.environment(sdk, item);
-          if (!sdk.kind.startsWith("ac") && !await exists(this.poolFile(sdk))) {
+          if (!locations.tools && !sdk.kind.startsWith("ac") && !await exists(this.poolFile(sdk))) {
             await atomicJson(this.poolFile(sdk), { schema: 1, tools: item.tools });
           }
         });
       } else if (item.ready) await this.environment(sdk, item);
       await atomicJson(this.statePath(sdk), item);
+      if (item.ready) await selectVersion(this.root, sdkName(sdk), sdk.version);
       return item;
-    });
+    }));
+  }
+  async remove(name: string, version: string, dryRun = false) {
+    const work = async () => {
+      const tool = this.resources.isTool(name) ? this.resources.select(name, version) : undefined;
+      const sdk = tool ? undefined : this.sdk(name, version);
+      const key = tool ? tool.kind : sdkName(sdk!);
+      const current = tool ? await this.resources.current(key) : await this.currentSdk(key);
+      const selected = tool ? await this.resources.record(tool) : await this.record(sdk!);
+      if (!selected) throw new Error(`${key} ${version} is not installed`);
+      const all = [...await records(this.root, "environments"), ...await records(this.root, "resources")];
+      const files = all.filter(({ path, value }) => tool
+        ? path === this.resources.statePath(tool)
+        : value.commit === sdk!.commit && value.kind === sdk!.kind && value.version === sdk!.version &&
+          (value.name === undefined || [key, ...sdk!.aliases ?? []].includes(value.name)) &&
+          value.sdk === (selected as Installation).sdk).map(item => item.path);
+      if (tool) {
+        const active = await this.resources.current(tool.kind);
+        const dependent = all.find(({ path, value }) => !files.includes(path) &&
+          (value.dependencies?.includes((selected as { root: string }).root) ||
+            !value.dependencies && tool.version === active.version && value.ready &&
+            (value.kind === "bk" && tool.kind === "bk-loader" ||
+              value.kind?.startsWith("ac") && ["jieli-toolchain", "jieli-postbuild"].includes(tool.kind))));
+        if (dependent) throw new Error(`${key} ${version} is required by ${dependent.value.name ?? dependent.value.kind} ${dependent.value.version}`);
+      }
+      const item = selected as Installation;
+      const candidates = tool ? [(selected as { root: string }).root] : [
+        item.sdk, ...(item.python ? [dirname(dirname(item.python))] : []),
+      ];
+      const plan = await cleanupPlan(this.root, files, await Promise.all(candidates.map(installationPath)), this.command);
+      if (!dryRun) {
+        for (const path of files) await rm(path, { force: true });
+        if (current.version === (sdk ?? tool)!.version) {
+          const alternatives = tool ? this.resources.entries.filter(entry => entry.kind === key && entry.version !== tool.version)
+            : this.sdks(key).filter(entry => entry.version !== sdk!.version);
+          const installed: (Sdk | Tool)[] = [];
+          for (const candidate of alternatives) {
+            const record = tool ? await this.resources.record(candidate as Tool) : await this.record(candidate as Sdk);
+            if (record && (tool || (record as Installation).ready)) installed.push(candidate);
+          }
+          await selectVersion(this.root, key, (installed.find(entry => entry.default) ?? installed[0])?.version);
+        }
+        await applyCleanup(this.root, plan);
+      }
+      return { name: key, version: (sdk ?? tool)!.version, dryRun, records: files, ...plan };
+    };
+    return dryRun ? work() : withStore(this.root, work);
+  }
+  async prune(dryRun = false) {
+    const work = async () => {
+      const plan = await cleanupPlan(this.root, [], undefined, this.command);
+      if (!dryRun && await exists(this.root)) await applyCleanup(this.root, plan);
+      return { dryRun, ...plan };
+    };
+    return dryRun || !await exists(this.root) ? work() : withStore(this.root, work);
   }
   async environment(sdk: Sdk, selected?: Installation, inherited: Env = process.env): Promise<Env> {
     const item = selected ?? await this.record(sdk);
@@ -670,6 +844,17 @@ with urllib.request.urlopen(sys.argv[1], timeout=60, context=ssl.create_default_
   }
   async describe(sdk: Sdk) {
     const item = await this.record(sdk);
+    const configuredPaths = this.configuredPaths(sdk);
+    const pendingPaths: InstallationPaths = {};
+    if (item) {
+      for (const key of ["sdk", "tools", "python"] as const) {
+        const configured = configuredPaths[key];
+        if (!configured) continue;
+        const matches = item[key] && (key === "python" ? configured === item[key]
+          : await installationPath(configured) === await installationPath(item[key]!));
+        if (!matches) pendingPaths[key] = configured;
+      }
+    }
     const sourceExists = item && await exists(join(item.sdk, sdk.requiredFile));
     const toolsExist = item && await exists(item.tools) &&
       (!usesArm(sdk) || (item.armVersion ?? catalog.arm.version) === armToolchain(sdk).version) &&
@@ -681,22 +866,25 @@ with urllib.request.urlopen(sys.argv[1], timeout=60, context=ssl.create_default_
       defaultRepository: sdk.defaultRepository ?? sdk.repository,
       installedRepository: item?.repository ?? null,
       kind: sdk.kind, version: sdk.version, commit: sdk.commit,
+      selected: (await this.currentSdk(sdkName(sdk))).version === sdk.version,
       status: !item ? "not installed" : !sourceExists ? "SDK missing"
         : !item.ready ? "sources only" : !toolsExist ? "tools missing" : "installed",
       sdk: resolve(item?.sdk ?? this.sourcePath(sdk), sdk.sdkSubdirectory ?? "."),
       tools: item?.tools ?? this.toolsPath(sdk),
+      configuredPaths, pendingPaths,
       python: item?.python ?? null,
       path: sdk.kind === "idf"
         ? [item?.python && dirname(item.python), item && join(item.sdk, "tools")].filter(Boolean)
         : usesArm(sdk) && item ? [join(item.tools, "bin")] : [],
       loader: sdk.kind === "bk"
-        ? (await this.resources.describe(this.resources.select("bk-loader"))).executable ?? process.env.BK_LOADER_BIN ?? null
+        ? (await this.resources.describe(await this.resources.current("bk-loader"))).executable ?? process.env.BK_LOADER_BIN ?? null
         : undefined,
     };
   }
   async defaultEnvironment(inherited: Env = process.env): Promise<Env> {
     const installed: Sdk[] = [];
-    for (const sdk of this.entries.filter(item => item.default)) {
+    for (const name of [...new Set(this.entries.map(sdkName))]) {
+      const sdk = await this.currentSdk(name);
       if ((await this.record(sdk))?.ready) installed.push(sdk);
     }
     const hasResources = (await Promise.all(this.resources.entries.map(tool => this.resources.record(tool)))).some(Boolean);

@@ -17,13 +17,16 @@ Bun 1.3.9 or newer is required. Configure the GizClaw registry in `~/.npmrc`
 Replace an existing scope mapping rather than adding a duplicate. Use this
 global mapping for `bunx`; other dependencies keep their configured registry.
 Public package downloads require no token.
+SDK source preparation requires Git. SDK and host-tool downloads require
+Python 3, using its HTTPS client with certificate verification and pinned
+archive checksums.
 
 After a release has been imported into the registry by Deploy:
 
 ```sh
 bunx @gizclaw/gizos setup esp-idf 6.2
 bunx @gizclaw/gizos setup bk7258 3.1.1
-bunx @gizclaw/gizos setup adb 35.0.2
+bunx @gizclaw/gizos install adb 35.0.2
 bunx @gizclaw/gizos env
 ```
 
@@ -58,10 +61,11 @@ selection, source checkout and installation record.
 | BK7258 | `setup bk7258 3.1.1` or `setup bk7258 3.1.1-rd789d71` | SMP SDK, shared GNU Arm 10.3.1 and BK Loader; `BK7258_PATH`, `BK_SDK_DIR`, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT`, `BK_LOADER_BIN` |
 | BK7259 | `setup bk7259 4.0.1` | BK7259 source revision, shared GNU Arm 14.3.1 and BK Loader; `BK7259_PATH` and `BK_SDK_DIR` |
 | BK IDK | `setup bk_idk 2.0.1-r650e754` | One SDK snapshot for BK7236/BK7258, shared GNU Arm and BK Loader; `BK_IDK_PATH` and `BK_SDK_DIR` |
-| BK Loader | Installed with BK setup, or `setup bk-loader 1.1.0.2.post2` | Checksummed host executable from the public `GizClaw/bk_loader` Release; `BK_LOADER_BIN` and `bk_loader` on PATH |
-| ADB | `setup adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
+| BK Loader | Installed with BK setup, or `install bk-loader 4.1.7` | Checksummed official Beken CLI; `BK_LOADER_BIN` and `bk_loader` on PATH |
+| H2Loader native CLI | `install h2loader` | Builds the pinned GizOS release once with Bazel; shared `H2LOADER_BIN` and `h2loader` on PATH |
+| ADB | `install adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
 | JieLi SDKs | `setup jieli-ac695n`, `setup jieli-ac707n` or `setup jieli-ac791n` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
-| JieLi tools | Installed with a JieLi SDK, or `setup jieli-toolchain 20250805.1` and `setup jieli-postbuild 20260728.1` | `JIELI_TOOLCHAIN_ROOT`, `JIELI_POSTBUILD_ROOT` |
+| JieLi tools | Installed with a JieLi SDK, or `install jieli-toolchain 20250805.1` and `install jieli-postbuild 20260728.1` | `JIELI_TOOLCHAIN_ROOT`, `JIELI_POSTBUILD_ROOT` |
 
 `list` shows each SDK's source aliases, repositories, supported chips, default/current selection, catalog
 versions and installation status. `list <sdk>` filters the catalog. `env` displays
@@ -112,7 +116,7 @@ gizos list jieli-ac707n --json
 | `jieli-ac707n` | `Jieli` -> `e_badge/e_badge_707_sdk_200` (JieLi GitLab) | `h2vivi` -> `h2vivi/e_badge_707_sdk_200` (GitHub) |
 | `jieli-ac791n` | `h2vivi` -> `h2vivi/fw-AC791N_SDK` | None at the current pinned version |
 
-`config` takes a source alias from this list. Aliases are case insensitive and
+For source selection, `config` takes an alias from this list. Aliases are case insensitive and
 resolve to the exact maintained repository URL for the selected SDK or chip.
 Unlisted sources and arbitrary URLs are rejected; adding a supported source
 requires updating the project catalog. Previously listed full repository IDs
@@ -128,7 +132,7 @@ gizos config jieli-ac707n Jieli
 ```
 
 Without a source alias, the command displays the current/default aliases,
-repository IDs, URLs and available choices. With an alias, it stores the selection for every catalog
+repository IDs, URLs, available choices and saved version paths. With an alias, it stores the selection for every catalog
 version of that SDK. `gizos config` shows the shared root, configuration file
 and selected source aliases. `list --json` includes a `repositories` array
 containing the same choices alongside version and installation information.
@@ -198,40 +202,98 @@ returns the same descriptive data for scripts.
 
 `setup bk7258 <sdk-version>`, `setup bk7259 <sdk-version>` and
 `setup bk_idk <sdk-version>` also install the default BK Loader. The toolbox
-selects the macOS arm64/x86_64 or Linux arm64/x86_64 archive from the public
-`GizClaw/bk_loader` Release and verifies both archive and executable SHA-256
-against its bundled catalog. Repeated setup and different BK SDK versions reuse
-the same installed loader. `--sources-only` and `adopt` do not download it.
+defaults to the official Beken **4.1.7** release, build **4.1.7.261014250**.
+Its command reports `bk_loader, version 4.1.7.250`. Both archive and executable
+SHA-256 values are pinned in the catalog. Repeated setup and different BK SDK
+versions reuse the same installed loader. `--sources-only` and `adopt` do not
+download it. An already selected older loader stays selected until explicitly
+changed with `install bk-loader 4.1.7`.
 
 ```sh
+# Installs the SDK, compiler and BK Loader together.
 bunx @gizclaw/gizos setup bk7258 3.1.1
 bunx @gizclaw/gizos env bk-loader
 bunx @gizclaw/gizos run -- bk_loader --version
-bunx @gizclaw/gizos run -- bk_loader tools selftest
 ```
 
-The loader is written in Python. Its own Release freezes the interpreter,
-dependencies, flash database and runtime configuration into one executable;
-end users do not need pip or a separate loader Python environment. That Release
-builds macOS arm64/x86_64, Linux arm64/x86_64 and Windows x86_64 artifacts.
-GizOS SDK setup currently supports macOS and Linux. The loader's upstream
-version banner remains `bk_loader.py,v1.1.0.2`; the Release/package revision
-`1.1.0.2.post2` is reported by `tools selftest`.
+Installing BK Loader separately is optional, for example to update its selected
+version without reinstalling an SDK:
 
-For source development the previous `bk-loader 1.1.0.2.post1` catalog entry
-remains available at its immutable source commit and installs into a private
-Python environment. It is not the default distributed loader.
+```sh
+gizos install bk_loader
+gizos install bk_loader 4.1.7
+```
 
-The maintained source covers ordinary BK7258 CLI operations. The newer vendor reference
-application has additional secure-debug and key-injection orchestration that
-has not been reconstructed. Its macOS arm64 installation can be explicitly
-adopted as `bk-loader 4.0.2+260129055`; the entire directory, including
-`_internal`, must remain present. Binary self-tests and command discovery do
-not establish physical-device flashing acceptance.
+`bk_loader` and `bk-loader` select the same catalog tool. `install` without a
+version installs the catalog default.
+
+Official 4.1.7 distributions are available for macOS arm64/x86_64 and Linux
+x86_64. The macOS `.pkg` is expanded into the managed tool directory; GizOS
+does not run its installation scripts, request root access, or install into
+`/usr/local`. The full bundled Python framework and `_internal` directory stay
+beside the executable. Linux uses the vendor's standalone executable. No
+separate loader Python environment or pip installation is needed.
+On a headless Linux system, enable a UTF-8 locale such as
+`LANG=C.UTF-8 LC_ALL=C.UTF-8`; the vendor CLI rejects an ASCII-only locale.
+
+The Beken download site may require browser verification. If an automatic
+download is blocked, download the matching CLI package from the
+[official directory](https://dl.bekencorp.com/tools/bkfil/v4/cli) and import it:
+
+```sh
+# macOS Apple Silicon; use the x86_64 package for an Intel Mac.
+gizos install bk-loader 4.1.7 \
+  --archive ~/Downloads/bk_loader_macos_arm64_4.1.7.261014250.pkg
+
+# Linux x86_64.
+gizos install bk-loader 4.1.7 \
+  --archive ~/Downloads/bk_loader_linux_4.1.7.261014250.zip
+```
+
+`install --archive` verifies the matching host's exact checksum before placing the
+download in the shared cache and installing it. Other worktrees reuse that
+installation. It does not configure an independent installation path.
+`env bk-loader --json` includes the official build, CLI version and release time.
+
+The official macOS package contains Python 3.9 bytecode bundled by PyInstaller.
+A complete Python source distribution for 4.1.7 has not been located. The
+separate `GizClaw/bk_loader` source baseline remains `1.1.0.2`; it is not renamed
+to claim 4.1.7 compatibility. Its frozen maintenance release remains available
+as `install bk-loader 1.1.0.2.post2`, including Linux arm64, for which an official
+4.1.7 executable has not been located. `tools selftest` belongs to that
+maintenance release and is not an official 4.1.7 command.
+
+For source development, `install bk-loader 1.1.0.2.post1` installs the pinned
+maintained source into a private Python environment. The older macOS vendor
+runtime can also be adopted explicitly as `bk-loader 4.0.2+260129055`.
+Offline version and command checks do not establish physical-device flashing
+acceptance.
+
+## H2Loader native CLI installation
+
+Install the native host tool with the same tool command:
+
+```sh
+gizos install h2loader
+gizos env h2loader
+gizos run -- h2loader --help
+```
+
+The catalog pins GizOS release `v20261026-112329` and its exact source commit.
+The first installation requires Bazel 9.2.0 and the host C/C++ build tools.
+GizOS builds only the native CLI target and copies its executable into the
+shared tool directory. Repeated installs and other worktrees reuse that copy.
+Bazel uses the existing configured caches. This does not set up firmware SDKs,
+connect to serial devices or install firmware.
+
+The currently published `@gizclaw/h2loader` npm package is the browser SDK.
+It does not contain this native executable; a source build is used until
+native CLI release archives are available. The command in this repository is
+`h2loader`.
 
 ## Shared storage and versions
 
-Choose a shared location once:
+Choose a default shared location once:
 
 ```sh
 bunx @gizclaw/gizos config set root /path/on/shared/disk/gizos
@@ -242,6 +304,48 @@ data directory (`~/Library/Application Support/gizos/devenv` on macOS;
 `$XDG_DATA_HOME/gizos/devenv` or `~/.local/share/gizos/devenv` on Linux).
 Existing `devenv.json` settings and installation records remain compatible.
 State is independent of the invoking worktree and bunx's package cache.
+
+Each SDK and tool version can have independent installation paths. The shared
+root supplies defaults and stores installation records, downloads and compiler
+pools. Configure exact directories before installing:
+
+```sh
+gizos config esp_idf 6.2 --sdk /shared/sdks/esp-idf-6.2 --tools /shared/toolchains/esp-idf
+gizos config bk7258 3.1.1 --sdk /shared/sdks/bk7258-3.1.1 --tools /shared/toolchains/arm-10.3
+gizos config bk-loader --path /shared/tools/bk-loader
+gizos setup esp_idf 6.2
+gizos env esp_idf 6.2
+```
+
+Paths are saved under the canonical SDK/tool name and exact catalog version.
+Omitting the version targets the currently selected version, falling back to
+that entry's catalog default before a selection has been made. These
+settings are shared by every worktree on the machine. `--sdk` names the Git
+checkout root, `--tools` names the compiler/tool root, and `--path` names a
+standalone tool's installation directory. IDF also accepts
+`--python /path/to/an/existing/python` for an explicit Python environment.
+For JieLi post-build tools, configure `jieli-postbuild --path <directory>`.
+Directories may be absent when configured; `setup` creates and validates them.
+SDK source pins, archive checksums and compiler versions still apply.
+
+`config` only saves paths. If an environment is already installed, `env`
+continues to show its active paths and also shows any different configured
+paths as pending until `setup`. Setup at a different path preserves the old
+files and updates the installation record only after validation succeeds.
+Command-line `setup`/`adopt` path options override saved paths for that invocation.
+Without a saved tools override, compatible SDK versions keep using the shared
+compiler pool. An explicit tools override does not replace that default pool.
+
+Inspect or reset one version's path settings with:
+
+```sh
+gizos config esp_idf 6.2
+gizos config esp_idf 6.2 --reset-paths
+```
+
+Resetting paths preserves source selections and existing installations.
+`gizos config esp_idf --reset` separately resets the repository source.
+Changing the shared root does not move existing payloads.
 
 The toolbox owns `src/catalog.json`. Unknown versions are rejected; setup never
 falls back to master or latest. SDK labels are immutable: a changed commit gets
@@ -265,6 +369,74 @@ correct 14.3 tools. Cross-process locks serialize
 installations; modified SDKs and invalid existing tools are preserved and
 rejected rather than overwritten.
 
+## Select and switch versions
+
+Every SDK and standalone tool has a catalog version. SDK labels can represent
+an upstream release or a pinned snapshot; JieLi entries currently use commit
+prefixes as their labels. `gizos list <name>` displays the supported choices.
+SDK selection also accepts a catalogued Git tag, a full pinned commit, or an
+unambiguous commit prefix of at least seven hexadecimal characters:
+
+```sh
+gizos setup esp_idf 6.2
+gizos setup esp_idf v6.0.3
+gizos setup esp_idf ddb3852ab5c7f9e6dbc268203ef9d612de391bf8
+```
+
+These identifiers resolve to the same canonical version records and exact
+commit pins. A tag is a maintained alias for a pin; setup does not follow a
+moved tag or fetch arbitrary revisions outside the catalog. `describe --json`
+includes the registered tags. Standalone tools use their catalogued release
+versions; a registered release tag or full release commit is also accepted.
+
+Successful setup selects that version for the environment name. SDK sources
+and Python environments remain cached independently; compatible compiler
+releases stay shared. Setting up an already prepared version validates and
+selects its existing installation without running the installer again.
+Source-only preparation does not select an incomplete environment.
+
+```sh
+gizos setup esp_idf 6.2
+gizos run esp_idf -- idf.py --version
+gizos setup esp_idf 6.0.3
+gizos run esp_idf -- idf.py --version
+gizos run esp_idf 6.2 -- idf.py --version
+```
+
+The first two runs use the selected versions. The last run explicitly uses
+6.2 without changing the selected 6.0.3 environment. `env` and `list` mark the
+selected version while still listing other supported versions. Selection is
+shared across worktrees; build scripts can supply an explicit version.
+Use `env --shell` to apply the selected paths to the current terminal.
+
+## Remove environments and prune caches
+
+```sh
+gizos remove esp_idf 6.0.3 --dry-run
+gizos remove esp_idf 6.0.3
+gizos prune --dry-run
+gizos prune
+```
+
+`remove` unregisters one exact version and removes its unused, managed SDK
+checkout and Python environment. A standalone tool can be removed the same
+way. Other versions and shared toolchains remain registered. If the selected
+version is removed, selection falls back to another installed version,
+preferring the catalog default. Removing a tool required by an installed SDK
+is rejected.
+
+`prune` removes unused payloads, compiler pools, vendor snapshots and download
+archives that gizos recorded creating. Registered versions are retained;
+remove a version first to release its references. Active `run` and `shell`
+commands also retain the paths they are using until they exit.
+
+Adopted paths and legacy payloads without ownership records are retained.
+Modified SDK checkouts, untracked source files and replaced directories are
+retained and reported. Cleanup follows references from every installation
+record, including legacy aliases and other host tool records. Preview both
+operations with `--dry-run`; `--json` returns the removal and preservation
+lists. Path and source configuration remains available for later setup.
+
 ## Activate or run
 
 ```sh
@@ -275,7 +447,8 @@ bunx @gizclaw/gizos run esp-idf 6.2 -- bazel build --config=esp32s3 //path:targe
 bunx @gizclaw/gizos run -- bk_loader --help
 ```
 
-Without a resource argument, activation combines installed catalog defaults.
+Without a resource argument, activation combines the selected installed
+versions, falling back to catalog defaults when no selection exists.
 Missing optional resources are skipped. `env --shell` emits quoted statements;
 `eval` applies them to the caller. `shell` starts a child shell and `exit` returns
 to the parent. `run` keeps the caller's working directory and forwards child
@@ -306,9 +479,9 @@ bunx @gizclaw/gizos adopt jieli-postbuild 20260728.1 --path /existing/jieli-post
 
 `--sdk` is the Git checkout root; an SDK's internal `SDK/` directory is selected
 by the catalog. `--path` is a standalone tool's complete installation directory.
-For the native loader it is the extracted archive root containing
-`bin/bk_loader`; for the legacy source loader it is the Python environment
-directory. JieLi SDK adoption
+For the official macOS loader it is the directory containing `bk_loader`
+and `_internal`; the older GizClaw standalone archive has `bin/bk_loader`.
+For the legacy source loader it is the Python environment directory. JieLi SDK adoption
 uses the registered shared tools, or accepts `--tools` and `--postbuild` paths.
 `--python /path/to/python` selects an existing IDF Python environment explicitly.
 Adopted payloads remain external and must be retained while referenced.
