@@ -20,6 +20,7 @@
 static int close_result;
 static unsigned closes;
 static unsigned enters;
+static int reset_from_summary;
 
 int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
   (void)now;
@@ -29,7 +30,10 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
 }
 int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
   (void)now;
-  (void)action;
+  if (reset_from_summary && h2_mfg_model_complete(&m->model)) {
+    reset_from_summary = 0;
+    *action = "reset";
+  }
   if (m->model.current == 1) m->model.ready = m->ble_probed;
   return 0;
 }
@@ -266,7 +270,33 @@ static void completed_auto_without_app_keeps_summary_ui(void) {
   teardown(&r);
 }
 
+static void summary_retest_revokes_durable_acceptance(void) {
+  test_run_t r;
+  setup(&r);
+  assert(h2_loader_mfg_ensure_acceptance_revision(r.runtime.pref, 2, 1) == 0);
+  h2_loader_mfg_summary_t summary = {
+      .total = 2,
+      .step_status = {H2_LOADER_MFG_STEP_PASSED, H2_LOADER_MFG_STEP_PASSED}};
+  assert(h2_loader_mfg_write(r.runtime.pref, &summary) == 0);
+  reset_from_summary = 1;
+  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
+  await_step(&r, 0);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
+  int present = 0;
+  assert(h2_loader_mfg_read(r.runtime.pref, r.runtime.mem, &summary,
+                            &present) == 0);
+  assert(present && summary.step_status[0] == H2_LOADER_MFG_STEP_UNTESTED &&
+         summary.step_status[1] == H2_LOADER_MFG_STEP_UNTESTED);
+  assert(memcmp(&r.loader.status.mfg, &summary, sizeof(summary)) == 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
+  assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
+  teardown(&r);
+}
+
 int main(void) {
+  summary_retest_revokes_durable_acceptance();
   completed_auto_without_app_keeps_summary_ui();
   loader_candidate_bypasses_interactive_gate();
   stop_with_operation_lock_and_retry_failed_join();

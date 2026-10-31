@@ -62,14 +62,16 @@ static const h2_mfg_ui_config_t ui = {
     .preview = {48, 137, 384, 216},
 };
 
+/* Equal horizontal/vertical spacing, with the complete hit circles clear of
+ * the bottom controls on the circular display. */
 static const h2_mfg_touch_point_t touch_points[] = {
-    {80, 168},  {240, 168}, {400, 168}, {80, 288},  {240, 288},
-    {400, 288}, {80, 348},  {240, 348}, {400, 348},
+    {128, 144}, {240, 144}, {352, 144}, {128, 256}, {240, 256},
+    {352, 256}, {128, 368}, {240, 368}, {352, 368},
 };
 
 const h2_mfg_profile_t h2_mfg_board_profile = {
     .board = "esp_mosaico",
-    .revision = 3,
+    .revision = 4,
     .steps = steps,
     .total = sizeof(steps) / sizeof(steps[0]),
     .speaker_test_volume = 50,

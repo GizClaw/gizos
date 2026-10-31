@@ -289,7 +289,9 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
     }
     if (rc == 0 && !bypass) {
       int check_rc = h2_mfg_hardware_tick(m, now, &action);
-      if (check_rc != 0) {
+      if (check_rc != 0 && m->model.current >= m->profile->total) {
+        rc = check_rc;
+      } else if (check_rc != 0) {
         int cleanup = h2_mfg_hardware_leave(m);
         const char* step = m->profile->steps[m->model.current].name;
         rc = h2_mfg_model_action(&m->model, "fail", step, m->model.ticket);
@@ -299,10 +301,12 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
       }
     }
     if (rc == 0 && !bypass && action != NULL &&
-        m->model.current < m->profile->total) {
-      rc = h2_mfg_model_action(&m->model, action,
-                               m->profile->steps[m->model.current].name,
-                               m->model.ticket);
+        (m->model.current < m->profile->total ||
+         (strcmp(action, "reset") == 0 && h2_mfg_model_complete(&m->model)))) {
+      const char* step = strcmp(action, "reset") == 0
+                             ? "all"
+                             : m->profile->steps[m->model.current].name;
+      rc = h2_mfg_model_action(&m->model, action, step, m->model.ticket);
       /* Rejected premature local confirmation leaves the session usable. */
       if (rc == H2_PAL_ERR_INVALID_STATE) rc = 0;
     }

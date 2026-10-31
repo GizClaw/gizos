@@ -302,6 +302,8 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
     factory_center(
         m, h2_mfg_model_complete(&m->model) ? "全部通过" : "存在未通过项目", 3,
         h2_mfg_model_complete(&m->model) ? ui->passed : ui->failed);
+    if (h2_mfg_model_complete(&m->model))
+      factory_button(m, ui->retest, "重新测试", 1);
   } else {
     switch (step->check) {
       case H2_MFG_DISPLAY: {
@@ -346,6 +348,12 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         break;
       }
       case H2_MFG_AEC: {
+        if (failed) {
+          factory_center(m, "AEC 检测失败", 0, ui->failed);
+          factory_text(m, m->detail, ui->rows[1], ui->failed, 0);
+          factory_center(m, "请查看原因并重试", 3, ui->text);
+          break;
+        }
         factory_center(m, h2_mfg_aec_phase(m), 0, ui->text);
         int echo_db = h2_mfg_aec_echo_db(m);
         if (echo_db >= 0)
@@ -432,18 +440,35 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
                      m->motor_duty != 0 ? ui->accent : ui->disabled);
         factory_text(m, m->motor_duty != 0 ? "振动中" : "振动测试",
                      ui->vibration, ui->text, 1);
-        factory_center(
-            m,
-            m->profile->hold_vibration ? "按住振动  松开停止" : "200 ms / 2 s",
-            4, ui->text);
-        (void)snprintf(line, sizeof(line), "PULSES %u", m->motor_pulses);
-        factory_center(m, line, 5, ui->text);
+        if (!m->profile->hold_vibration) {
+          factory_center(m, "200 ms / 2 s", 4, ui->text);
+          (void)snprintf(line, sizeof(line), "PULSES %u", m->motor_pulses);
+          factory_center(m, line, 5, ui->text);
+        }
         break;
-      case H2_MFG_WIFI:
-        factory_center(m, "请通过串口连接 Wi-Fi", 0, ui->text);
-        factory_center(m, m->model.ready ? "IPv4 已连接" : "IPv4 等待连接", 2,
-                       m->model.ready ? ui->passed : ui->muted);
+      case H2_MFG_WIFI: {
+        const h2_pal_wifi_sta_status_t* wifi = &m->wifi_status;
+        int connected = h2_pal_wifi_sta_status_has_ip(wifi);
+        int ipv4 = connected && wifi->ip_valid && wifi->ip.ip4 != 0;
+        factory_center(m, connected ? "Wi-Fi 已连接" : "请通过串口连接 Wi-Fi",
+                       0, connected ? ui->passed : ui->text);
+        unsigned length = wifi->ssid_len <= H2_PAL_WIFI_SSID_MAX
+                              ? (unsigned)wifi->ssid_len
+                              : H2_PAL_WIFI_SSID_MAX;
+        (void)snprintf(line, sizeof(line), "SSID: %.*s", (int)length,
+                       wifi->ssid);
+        factory_center(m, line, 1, ui->text);
+        factory_center(m, ipv4 ? "IPv4 已连接" : "IPv4 等待连接", 2,
+                       ipv4 ? ui->passed : ui->muted);
+        if (ipv4) {
+          uint8_t bytes[4];
+          h2_pal_wifi_ip4_to_bytes(wifi->ip.ip4, bytes);
+          (void)snprintf(line, sizeof(line), "IP: %u.%u.%u.%u", bytes[0],
+                         bytes[1], bytes[2], bytes[3]);
+          factory_center(m, line, 3, ui->text);
+        }
         break;
+      }
       case H2_MFG_BLE:
         factory_center(m, "请连接蓝牙测试设备", 0, ui->text);
         (void)snprintf(line, sizeof(line), "mfg probe ble %08x",

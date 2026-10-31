@@ -505,6 +505,31 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   assert(h2_mfg_ui_draw(&m, 0) == 0);
   assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.accent);
 
+  /* Cleanup releases AEC state; failure must retain the actual reason instead
+   * of falling back to a listening prompt or stale live microphone metrics. */
+  m.model.ready = 0;
+  m.model.error = H2_PAL_ERR_IO;
+  strcpy(m.detail, "AEC headroom exceeded");
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(different(&m, ui.rows[1], ui.background) > 20);
+  assert(different(&m, ui.rows[2], ui.background) == 0);
+  assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.accent);
+  memcpy(saved, m.frame, pixels * sizeof(*saved));
+  m.mic_level = 4321;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) == 0);
+  strcpy(m.detail, "background unstable");
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
+  m.model.error = 0;
+  m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_FAILED;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(different(&m, ui.rows[2], ui.background) == 0);
+  m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_UNTESTED;
+  m.detail[0] = '\0';
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(different(&m, ui.rows[2], ui.background) > 20);
+
   step.check = H2_MFG_BLE;
   m.model.ready = m.ble_probed = 0;
   m.model.ticket = 0x12345678;
@@ -520,13 +545,45 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   assert(h2_mfg_ui_draw(&m, 0) == 0);
   assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.accent);
   m.model.error = 0;
+
+  step.check = H2_MFG_WIFI;
+  m.wifi_status =
+      (h2_pal_wifi_sta_status_t){.state = H2_PAL_WIFI_STA_STATE_GOT_IP,
+                                 .ssid = "Fixture A",
+                                 .ssid_len = 9,
+                                 .ip_valid = 1,
+                                 .ip = {.ip4 = 0xc0a8012au}};
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(different(&m, ui.rows[1], ui.background) > 20);
+  assert(different(&m, ui.rows[3], ui.background) > 20);
+  memcpy(saved, m.frame, pixels * sizeof(*saved));
+  memcpy(m.wifi_status.ssid, "Fixture B", 9);
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
+  memcpy(saved, m.frame, pixels * sizeof(*saved));
+  m.wifi_status.ip.ip4 = 0x0a020304u;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
+  m.wifi_status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(different(&m, ui.rows[3], ui.background) == 0);
+  memset(m.wifi_status.ssid, 'X', sizeof(m.wifi_status.ssid));
+  m.wifi_status.ssid_len = SIZE_MAX;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
   free(saved);
 
   step.check = H2_MFG_VIBRATION;
+  ui.vibration.height = 90;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
   assert(pixel(&m, ui.vibration.x, ui.vibration.y) == ui.disabled);
   m.motor_duty = 50;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(pixel(&m, ui.vibration.x, ui.vibration.y) == ui.accent);
+  assert(different(&m, ui.rows[4], ui.background) > 20);
+  profile.hold_vibration = 1;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(different(&m, ui.rows[4], ui.background) == 0);
+  assert(different(&m, ui.rows[5], ui.background) == 0);
   assert(pixel(&m, ui.vibration.x, ui.vibration.y) == ui.accent);
 
   step.check = H2_MFG_CAMERA;
@@ -563,6 +620,13 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   assert(different(&m, ui.controls[0], ui.background) == 0);
   assert(different(&m, ui.controls[1], ui.background) == 0);
   assert(pixel(&m, ui.retest.x - 1, ui.retest.y) == ui.background);
+  m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_PASSED;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(pixel(&m, ui.retest.x, ui.retest.y) == ui.accent);
+  assert(different(&m, ui.retest, ui.background) > 20);
+  m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_SKIPPED;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(different(&m, ui.retest, ui.background) == 0);
   ui.width++;
   assert(h2_mfg_ui_draw(&m, 0) == H2_PAL_ERR_UNSUPPORTED);
   free(allocation);

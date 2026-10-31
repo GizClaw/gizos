@@ -8,6 +8,29 @@
 static h2_esp_es8311_audio_system_t audio_system;
 static bool initialized;
 static bool codec_powered;
+static bool cleanup_pending;
+
+#ifdef H2_MOSAICO_MFG_DAC_OSR20
+/* Mosaico MFG uses the 6.144 MHz / 16 kHz DAC OSR coefficient 0x20.
+ * Prepare opens the codec without workers; keep shared defaults unchanged. */
+static int configure_mfg_dac_clock(void) {
+  int rc = h2_esp_es8311_audio_system_prepare(&audio_system);
+  if (rc != H2_AUDIO_OK) return rc;
+  uint8_t reg = 0x04, value = 0;
+  if (i2c_master_transmit_receive(audio_system.codec, &reg, 1, &value, 1,
+                                  100) != ESP_OK)
+    return H2_PAL_ERR_IO;
+  uint8_t command[] = {reg, (uint8_t)((value & 0x80u) | 0x20u)};
+  if (i2c_master_transmit(audio_system.codec, command, sizeof(command), 100) !=
+      ESP_OK)
+    return H2_PAL_ERR_IO;
+  if (i2c_master_transmit_receive(audio_system.codec, &reg, 1, &value, 1,
+                                  100) != ESP_OK ||
+      value != command[1])
+    return H2_PAL_ERR_IO;
+  return H2_PAL_OK;
+}
+#endif
 
 int h2_mosaico_audio_init(void) {
   if (initialized) return H2_PAL_OK;
@@ -65,6 +88,16 @@ int h2_mosaico_audio_init(void) {
 #endif
   };
   int rc = h2_esp_es8311_audio_system_init(&audio_system, &config);
+#ifdef H2_MOSAICO_MFG_DAC_OSR20
+  if (rc == H2_AUDIO_OK) {
+    rc = configure_mfg_dac_clock();
+    if (rc != H2_PAL_OK &&
+        h2_esp_es8311_audio_system_deinit(&audio_system) != H2_AUDIO_OK) {
+      cleanup_pending = true;
+      return rc;
+    }
+  }
+#endif
   if (rc == H2_AUDIO_OK)
     initialized = true;
   else if (bsp_power_set_codec_3v3(false) == ESP_OK)
@@ -72,10 +105,10 @@ int h2_mosaico_audio_init(void) {
   return rc;
 }
 int h2_mosaico_audio_deinit(void) {
-  if (initialized) {
+  if (initialized || cleanup_pending) {
     const int rc = h2_esp_es8311_audio_system_deinit(&audio_system);
     if (rc != H2_AUDIO_OK) return rc;
-    initialized = false;
+    initialized = cleanup_pending = false;
   }
   if (codec_powered) {
     if (bsp_power_set_codec_3v3(false) != ESP_OK) return H2_PAL_ERR_IO;

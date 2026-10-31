@@ -10,3 +10,8 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror
 if(H2_MOSAICO_AUDIO_AEC)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_MOSAICO_AUDIO_AEC=1)
 endif()
+
+# Mosaico MFG DAC coefficient; ordinary board images keep existing defaults.
+if(H2_MOSAICO_MFG_DAC_OSR20)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_MOSAICO_MFG_DAC_OSR20=1)
+endif()

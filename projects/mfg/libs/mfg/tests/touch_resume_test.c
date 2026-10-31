@@ -118,5 +118,33 @@ int main(void) {
   assert(m.touch_hits == 7u && m.touch_downs == 3 && m.touch_releases == 3 &&
          m.model.ready);
   assert(h2_mfg_hardware_close(&m) == 0);
+
+  /* A completed cold boot must open touch for an intentional full retest. */
+  const h2_mfg_ui_config_t ui = {
+      .width = 120, .height = 120, .retest = {20, 90, 80, 24}};
+  configured.ui = &ui;
+  m.profile = m.model.profile = &configured;
+  m.model.current = configured.total;
+  for (unsigned i = 0; i < configured.total; ++i)
+    m.model.summary.step_status[i] = H2_LOADER_MFG_STEP_PASSED;
+  unsigned prior_opens = opens;
+  assert(h2_mfg_hardware_enter(&m, 200) == 0);
+  assert(m.touch_open && opens == prior_opens + 1);
+  click(60);
+  action = NULL;
+  assert(h2_mfg_hardware_tick(&m, 220, &action) == 0);
+  assert(action && strcmp(action, "reset") == 0);
+  /* Release-only and a press outside the button cannot reset acceptance. */
+  click(60);
+  event_at = 1;
+  action = NULL;
+  assert(h2_mfg_hardware_tick(&m, 240, &action) == 0 && !action);
+  click(5);
+  events[1].x = 60;
+  assert(h2_mfg_hardware_tick(&m, 260, &action) == 0 && !action);
+  m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_SKIPPED;
+  click(60);
+  assert(h2_mfg_hardware_tick(&m, 280, &action) == 0 && !action);
+  assert(h2_mfg_hardware_close(&m) == 0);
   return 0;
 }

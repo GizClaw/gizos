@@ -3,7 +3,7 @@
 #include "h2_pal.h"
 #include "h2_es8311_volume.h"
 typedef struct {
-  int unused;
+  void* codec;
 } h2_esp_es8311_audio_system_t;
 typedef struct {
   int sample_rate_hz, frame_samples_per_channel, raw_channels,
@@ -26,6 +26,12 @@ typedef struct {
 int h2_esp_es8311_audio_system_init(h2_esp_es8311_audio_system_t*,
                                     const h2_esp_es8311_audio_system_config_t*);
 int h2_esp_es8311_audio_system_deinit(h2_esp_es8311_audio_system_t*);
+#ifdef H2_MOSAICO_MFG_DAC_OSR20
+int h2_esp_es8311_audio_system_prepare(h2_esp_es8311_audio_system_t*);
+int i2c_master_transmit_receive(void*, const uint8_t*, size_t, uint8_t*, size_t,
+                                int);
+int i2c_master_transmit(void*, const uint8_t*, size_t, int);
+#endif
 const h2_pal_audio_api_t* h2_esp_es8311_audio_system_audio(
     h2_esp_es8311_audio_system_t*);
 #endif

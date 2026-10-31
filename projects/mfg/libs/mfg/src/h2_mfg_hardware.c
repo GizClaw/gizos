@@ -215,7 +215,22 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
   }
   m->detail[0] = '\0';
   m->model.ready = 0;
-  if (m->model.current >= m->profile->total) return display_open(m);
+  if (m->model.current >= m->profile->total) {
+    int rc = display_open(m);
+    if (rc != 0 || m->profile->ui == NULL ||
+        !h2_mfg_model_complete(&m->model) || !has_check(m, H2_MFG_TOUCH) ||
+        m->touch_open)
+      return rc;
+    rc = h2_pal_touch_open(m->rt->touch);
+    if (rc != 0) return rc;
+    m->touch_open = 1;
+    h2_pal_touch_info_t info = {0};
+    rc = h2_pal_touch_get_info(m->rt->touch, &info);
+    if (rc == 0 && (info.width != (uint32_t)m->display.width ||
+                    info.height != (uint32_t)m->display.height))
+      rc = H2_PAL_ERR_FORMAT;
+    return rc;
+  }
   h2_mfg_check_t check = m->profile->steps[m->model.current].check;
   int rc = check == H2_MFG_STORAGE ? 0 : display_open(m);
   if (rc != 0 && (check == H2_MFG_DISPLAY || check == H2_MFG_TOUCH)) return rc;
@@ -316,6 +331,19 @@ static int touch(h2_mfg_t* m, h2_mfg_check_t check, const char** action) {
       return H2_PAL_ERR_FORMAT;
     m->touch_x = event.x;
     m->touch_y = event.y;
+    if (m->model.current >= m->profile->total) {
+      int hit = m->profile->ui != NULL && h2_mfg_model_complete(&m->model) &&
+                rect_hit(&m->profile->ui->retest, event.x, event.y);
+      if (event.kind == H2_PAL_TOUCH_EVENT_DOWN)
+        m->touch_action = hit ? 4u : 0u;
+      if (event.kind == H2_PAL_TOUCH_EVENT_MOVE && !hit) m->touch_action = 0;
+      if (event.kind == H2_PAL_TOUCH_EVENT_UP) {
+        if (hit && m->touch_action == 4u) *action = "reset";
+        m->touch_action = 0;
+        if (*action != NULL) return 0;
+      }
+      continue;
+    }
     if (event.kind == H2_PAL_TOUCH_EVENT_DOWN) {
       ++m->touch_downs;
       m->touch_pressed = 1;
@@ -461,7 +489,11 @@ int h2_mfg_audio_tick(h2_mfg_t* m, uint64_t now, int mic) {
 }
 
 int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
-  if (m->model.current >= m->profile->total) return 0;
+  if (m->model.current >= m->profile->total) {
+    if (m->profile->ui != NULL && h2_mfg_model_complete(&m->model))
+      return touch(m, H2_MFG_TOUCH, action);
+    return 0;
+  }
   const h2_mfg_step_t* step = &m->profile->steps[m->model.current];
   int failed =
       m->model.error != 0 || m->model.summary.step_status[m->model.current] ==
@@ -588,6 +620,7 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
     case H2_MFG_WIFI: {
       h2_pal_wifi_sta_status_t wifi = {0};
       rc = h2_pal_wifi_sta_get_status(m->rt->wifi_sta, &wifi);
+      m->wifi_status = rc == 0 ? wifi : (h2_pal_wifi_sta_status_t){0};
       m->model.ready = rc == 0 && h2_pal_wifi_sta_status_has_ip(&wifi);
       (void)snprintf(m->detail, sizeof(m->detail),
                      "Connect with Loader wifi command IP=%d", m->model.ready);
