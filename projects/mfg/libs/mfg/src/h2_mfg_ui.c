@@ -350,7 +350,19 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
       case H2_MFG_AEC: {
         if (failed) {
           factory_center(m, "AEC 检测失败", 0, ui->failed);
-          factory_text(m, m->detail, ui->rows[1], ui->failed, 0);
+          /* evaluate_echo appends the reason after five diagnostic tokens.
+           * Keep metrics in the log; the bounded screen row shows the reason.
+           */
+          const char* reason = m->detail;
+          if (strncmp(reason, "AEC echo_db=", 12) == 0) {
+            const char* next = reason;
+            for (unsigned i = 0; i < 5 && next != NULL; ++i) {
+              next = strchr(next, ' ');
+              if (next != NULL) ++next;
+            }
+            if (next != NULL && *next != '\0') reason = next;
+          }
+          factory_text(m, reason, ui->rows[1], ui->failed, 0);
           factory_center(m, "请查看原因并重试", 3, ui->text);
           break;
         }

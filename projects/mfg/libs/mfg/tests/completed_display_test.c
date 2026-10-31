@@ -5,6 +5,7 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -521,6 +522,12 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   strcpy(m.detail, "background unstable");
   assert(h2_mfg_ui_draw(&m, 0) == 0);
   assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
+  memcpy(saved, m.frame, pixels * sizeof(*saved));
+  (void)snprintf(m.detail, sizeof(m.detail),
+                 "AEC echo_db=%u raw=%llu residual=%llu noise=%llu %s", 19u,
+                 22253503ull, 261553ull, 30242ull, "background unstable");
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) == 0);
   m.model.error = 0;
   m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_FAILED;
   assert(h2_mfg_ui_draw(&m, 0) == 0);

@@ -501,6 +501,16 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
   int rc = buttons(m, action);
   if (rc != 0 && step->check != H2_MFG_BUTTONS) rc = 0;
   int touch_rc = touch(m, step->check, action);
+  if (touch_rc != 0 && m->profile->hold_vibration &&
+      step->check == H2_MFG_VIBRATION) {
+    m->vibration_requested = m->touch_pressed = m->touch_action = 0;
+    m->model.ready = 0;
+    *action = NULL;
+    /* Stop immediately, even when the surrounding session has already failed.
+     * Failed stops retain ownership for the normal leave/cleanup retry. */
+    int stop_rc = h2_mfg_peripheral_leave(m);
+    return stop_rc != 0 ? stop_rc : touch_rc;
+  }
   if (touch_rc != 0 && step->check == H2_MFG_TOUCH) rc = touch_rc;
   if (failed) {
     if (*action != NULL && strcmp(*action, "confirm") == 0) *action = "retry";

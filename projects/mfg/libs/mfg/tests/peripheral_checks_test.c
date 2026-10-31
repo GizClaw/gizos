@@ -18,6 +18,9 @@ typedef struct fake {
   h2_pal_imu_api_t imu;
   h2_pal_input_api_t input;
   h2_pal_pwm_switch_api_t motor;
+  h2_pal_touch_api_t touch;
+  h2_pal_touch_event_t touch_event;
+  int touch_pending, touch_error;
   int started, loaned, bad_format, start_error, release_error, stop_error;
   h2_pal_imu_reading_t motion;
   int motor_error, motor_read_error;
@@ -125,6 +128,17 @@ static int get_motor(void* user, h2_pal_periph_id_t id, uint16_t* duty) {
   *duty = f->duty;
   return 0;
 }
+static h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out) {
+  fake_t* f = user;
+  if (f->touch_pending) {
+    --f->touch_pending;
+    *out = f->touch_event;
+    return 0;
+  }
+  return f->touch_error ? f->touch_error : H2_PAL_ERR_WOULD_BLOCK;
+}
+static const h2_pal_touch_vtable_t touch_ops = {.poll_event = poll_touch};
+
 static const h2_pal_camera_vtable_t camera_ops = {
     .start = start, .acquire = acquire, .release = release, .stop = stop};
 static const h2_pal_imu_vtable_t imu_ops = {.read_imu = mag};
@@ -307,6 +321,45 @@ static void held_vibration_requires_drive_then_release(void) {
   assert(h2_mfg_hardware_leave(&f.m) == 0 && !f.duty);
 }
 
+static void held_vibration_stops_on_touch_failure(void) {
+  const h2_mfg_ui_config_t ui = {.vibration = {20, 20, 80, 60}};
+  for (unsigned scenario = 0; scenario < 3; ++scenario) {
+    fake_t f;
+    setup(&f, H2_MFG_VIBRATION);
+    f.profile.hold_vibration = 1;
+    f.profile.vibration_percent = 50;
+    f.profile.ui = &ui;
+    f.touch = (h2_pal_touch_api_t){.user = &f, .vtable = &touch_ops};
+    f.rt.touch = &f.touch;
+    assert(h2_mfg_hardware_enter(&f.m, 0) == 0);
+    f.m.display.width = f.m.display.height = 120;
+    f.m.touch_open = 1;
+    f.touch_event = (h2_pal_touch_event_t){
+        .kind = H2_PAL_TOUCH_EVENT_DOWN, .x = 40, .y = 40};
+    f.touch_pending = 1;
+    assert(tick(&f, 20) == 0 && f.duty == 5000 && f.m.vibration_requested);
+    if (scenario == 1) {
+      f.touch_event.x = 120;
+      f.touch_pending = 1;
+    } else {
+      f.touch_error = H2_PAL_ERR_IO;
+    }
+    if (scenario == 2) f.motor_error = 1;
+    assert(tick(&f, 40) == (scenario == 1   ? H2_PAL_ERR_FORMAT
+                            : scenario == 2 ? H2_PAL_ERR_BUSY
+                                            : H2_PAL_ERR_IO));
+    assert(!f.m.vibration_requested && !f.m.model.ready);
+    if (scenario == 2) {
+      assert(f.m.motor_started && f.duty == 5000);
+      f.motor_error = 0;
+    } else {
+      assert(!f.duty && !f.m.motor_started);
+    }
+    f.m.touch_open = 0;
+    assert(h2_mfg_hardware_leave(&f.m) == 0 && !f.duty);
+  }
+}
+
 static void sized_camera_retries_cleanly(void) {
   fake_t f;
   setup(&f, H2_MFG_CAMERA);
@@ -424,6 +477,7 @@ int main(void) {
   imu_acceptance_follows_available_channels();
   factory_camera_worker_keeps_control_available();
   held_vibration_requires_drive_then_release();
+  held_vibration_stops_on_touch_failure();
   sized_camera_retries_cleanly();
   camera_preserves_source_aspect();
   camera_preview_and_retained_loan();
