@@ -600,7 +600,7 @@
     },
     "//tools/bazel/native_repositories:bk_repositories.bzl%bk_repositories": {
       "general": {
-        "bzlTransitiveDigest": "lTqO10wvabKEowpNhT8dASg0VRbnCdV3BPolf9UREhY=",
+        "bzlTransitiveDigest": "H34du+EKzmOmyso3UU6ZR/AWeD3UTEV/iduMhBegYVo=",
         "usagesDigest": "0XBMgPy7bGQyP1RtWF/koXm6qgfD64JoC4DHG4TvNTg=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -627,7 +627,7 @@
     },
     "//tools/bazel/native_repositories:esp_repositories.bzl%esp_repositories": {
       "general": {
-        "bzlTransitiveDigest": "zioSEwhOpNQOTiKNZKdMDcUfQJ1rbO8RjdXnkte923A=",
+        "bzlTransitiveDigest": "zK1Y0Bob8GOQE0YIuBNNhBD8F4nOcSj4d37/C2uuPcs=",
         "usagesDigest": "27pbg8JY2J8pAD9Uy37l9nn74s2yPtaj1zQpp/ffdsI=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -659,7 +659,7 @@
     },
     "//tools/bazel/native_repositories:repositories.bzl%native_repositories": {
       "general": {
-        "bzlTransitiveDigest": "bu00ngZAwdewB78bSEN1qoS+3KGxttIo0WOfDOO1JTg=",
+        "bzlTransitiveDigest": "5PfnBEQB3403pxVJcVKq304oLGSwzH17zdtHsYcw6kw=",
         "usagesDigest": "fCQHbHWyxHU4pBYo/A9GZrhbJ1InAj7MZI3GG5+X9Gs=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -790,7 +790,7 @@
     },
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl%esp32s3_cc_toolchain": {
       "general": {
-        "bzlTransitiveDigest": "+8dl1evxyfsss+aymhtn8DGqTs5eR8rn0Bk6Zd8Uob4=",
+        "bzlTransitiveDigest": "rIstAjygf6M2gZFuwS6EVwomwengaJHdZXDUb8HSDDk=",
         "usagesDigest": "ThNWcQs68cS58YVY8fxEeAgWxkPnQNftCcSnKccvnDE=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -801,22 +801,9 @@
         }
       }
     },
-    "//tools/bazel/toolchains/kickpi_k4b:repositories.bzl%kickpi_k4b_toolchain": {
-      "general": {
-        "bzlTransitiveDigest": "SRtv1DC8pthSko4tHMBc4QTrJhevWVrO2e10+GSgfK0=",
-        "usagesDigest": "ZVNN/uz/WNlBy5vTnZwUXlWs3S9skXRG4FBmhHGDwgM=",
-        "recordedInputs": [],
-        "generatedRepoSpecs": {
-          "k4b_arm_gnu_toolchain": {
-            "repoRuleId": "@@//tools/bazel/toolchains/kickpi_k4b:repositories.bzl%_kickpi_k4b_toolchain_repository",
-            "attributes": {}
-          }
-        }
-      }
-    },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "ifhQGOfcnmMgHCPPDnomafW/CXU/gDB0ei9Pyh9FHSQ=",
+        "bzlTransitiveDigest": "mMdrGNi//EXw76vlMbd0JDmntdNDw6jwIEKWyuafRyE=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1046,7 +1033,7 @@
     },
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
-        "bzlTransitiveDigest": "GN36J8ZXGtronxAfN2q+0sqa5qSORQLPGXJJoOa1qYw=",
+        "bzlTransitiveDigest": "0EWOkwKVt1Hg7d0Zr8dKPbpGmvfohcquFhNuJvVGQuY=",
         "usagesDigest": "cuTol4HORQeZKkKDnnzVVGDv+58ybEqaEEn61ok5eiY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1062,12 +1049,6 @@
               "patches": [
                 "@@//third_party/fdk_aac_patch:fdk_aac_embedded_no_stdio.patch"
               ]
-            }
-          },
-          "h2_k4b_cedarx_sdk": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_k4b_cedarx_repository",
-            "attributes": {
-              "build_file": "@@//tools/bazel/vendor:kickpi_k4b_cedarx.BUILD.bazel"
             }
           },
           "h2_vendor_dr_libs": {

@@ -196,11 +196,6 @@ config_setting(
     constraint_values = [":cpu_pi32v2"],
 )
 
-filegroup(
-    name = "kickpi_k4b_definition",
-    srcs = ["BUILD.bazel"],
-)
-
 config_setting(
     name = "is_linux_x86_64",
     constraint_values = [
@@ -213,14 +208,6 @@ config_setting(
     name = "is_linux_arm64",
     constraint_values = [
         "@platforms//cpu:arm64",
-        "@platforms//os:linux",
-    ],
-)
-
-config_setting(
-    name = "is_linux_armv7_gnueabihf",
-    constraint_values = [
-        "@platforms//cpu:armv7",
         "@platforms//os:linux",
     ],
 )
@@ -308,14 +295,6 @@ platform(
     name = "linux_arm64",
     constraint_values = [
         "@platforms//cpu:arm64",
-        "@platforms//os:linux",
-    ],
-)
-
-platform(
-    name = "linux_armv7_gnueabihf",
-    constraint_values = [
-        "@platforms//cpu:armv7",
         "@platforms//os:linux",
     ],
 )

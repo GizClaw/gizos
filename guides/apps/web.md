@@ -39,7 +39,7 @@ projects/example/
 ├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
 ├── targets/pkg_tar/lua-script-input/ # Button 输入合同（demo_board plain 外观）：多源合并、blur/隐藏/结束释放
 ├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
-├── targets/pkg_tar/web-board-{amoled,bk7258,k4b,szp,p4-lcd43}/ # 每块 board 的检查页；包名保持短，避免 Windows 路径超长
+├── targets/pkg_tar/web-board-{amoled,bk7258,szp,p4-lcd43}/ # 每块 board 的检查页；包名保持短，避免 Windows 路径超长
 ├── targets/pkg_tar/lua-script-extension/ # 加 extension：capability 与 exit_requested
 └── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
                                    # starboy、lua-cosmic-drift、audio-system：
@@ -55,7 +55,7 @@ projects/h2loader/
 
 libs/pal/providers/web/pal_core/    # Canvas/Emscripten reusable PAL backend
 boards/<board>/web/                 # 有屏幕的 board 的 web board 与外观：amoled、bk7258_v3_202405、
-                                    # kickpi_k4b、szp、waveshare_esp32p4_wifi6_touch_lcd_4_3
+                                    # szp、waveshare_esp32p4_wifi6_touch_lcd_4_3
 tools/bazel/web/                   # Web 打包规则、HTML shell、board metadata 与布局工具
 libs/lua/web/                       # 单个 Lua 脚本页面的 h2_lua_web_app() 宏与通用入口
 ```
@@ -83,7 +83,7 @@ H2Loader Serial Web E2E 的 archive 是 `bazel-bin/projects/e2e/targets/pkg_tar/
 
 浏览器不能从本地 `file:` URL 加载生成的 `.wasm`。
 
-Lua Flappy Bird archive 在 Canvas 上运行与 Desktop/AMOLED 相同的 portable App 和 ported Lua bytes。Web C `main()` 通过 Emscripten `PROXY_TO_PTHREAD` 运行在 Worker，PAL Task 使用 pthread Workers 和共享 Wasm 内存。`lua-runtime` 使用两个 Worker 并报告 `scheduler=multi-worker`；同一 Lua VM 内部的 coroutine 仍遵守 Lua 自身调度。HTML 不增加 Back/Stop 控件； 浏览器把 Escape 键通过 `h2_runtime_button_push_edge()` 写入映射后的 Runtime Button edge，由 portable App 作为唯一 Runtime Event consumer 识别并取消 job，HTML 不直接 修改 Lua/Host 状态。
+Lua Flappy Bird archive 在 Canvas 上运行与 Desktop/AMOLED 相同的 portable App 和 ported Lua bytes。Web C `main()` 通过 Emscripten `PROXY_TO_PTHREAD` 运行在 Worker，PAL Task 使用 pthread Workers 和共享 Wasm 内存。`lua-runtime` 使用两个 Worker 并报告 `scheduler=multi-worker`；同一 Lua VM 内部的 coroutine 仍遵守 Lua 自身调度。页面先显示 `Starting Lua Flappy Bird`，portable App 触发 `on_ready` 后才显示 `Running Lua Flappy Bird`，浏览器测试以此等待 App 初始化和首帧完成后再发送退出输入。HTML 不增加 Back/Stop 控件； 浏览器把 Escape 键通过 `h2_runtime_button_push_edge()` 写入映射后的 Runtime Button edge，由 portable App 作为唯一 Runtime Event consumer 识别并取消 job，HTML 不直接 修改 Lua/Host 状态。
 
 仍使用 LVGL 的其他 Web App 与 Mobile 继续共享 `libs/lvgl:single_thread_config`。Web 的真实 Emscripten toolchain 需要 POSIX `strnlen` declaration，因此 `libs/lvgl:lvgl_web` 只增加 `_POSIX_C_SOURCE=200809L`，不复制配置或上游源码。
 
@@ -219,7 +219,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 页面 shell 把组件创建进外观的插槽：`data-h2-slot="display"` 放 Canvas（`#canvas`），`data-h2-slot="controls"` 放 Start/Stop，`data-h2-slot="status"` 放状态行；缺少的插槽使用普通容器。入口按需要调用 `h2WebBindButton(index, key, name)` 绑定键盘键和 `data-h2-button="<name>"` 元素。JavaScript 合并键盘和指针来源，只有按下状态变化才进入 128 项 FIFO；失焦或隐藏释放所有来源。入口 Worker 用 `h2WebTakeButtonEdge()` 取边沿，再调用 `h2_runtime_button_push_edge()`；0 表示空、-1 表示溢出，正值编码为 `(index + 1) * 2 + pressed`。`h2WebUnbindButtons()` 释放监听器并清空 FIFO。Stop 只设置 `Module.h2WebStopRequested`，由入口决定停止策略。页面根据 `H2_WEB_APP` 控制台标记更新状态，不拥有 Runtime/provider。
 
-组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 生成 `h2_web_board_config.h`，包含 `H2_WEB_BOARD_WIDTH/HEIGHT`、Button 数量以及名字/键表；入口自行选择是否使用这些常量以及如何映射到 Runtime。不指定 board 时用 `//tools/bazel/web:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。board 与外观放在该 board 自己的目录旁 `boards/<board>/web/`（下游产品 board 同理），同一块板上的所有 App 复用。GizOS 为有屏幕的五块 board 提供了 web board：`amoled`（368×448，`boot`、`power`）、`bk7258_v3_202405`（800×480，`prev`、`next`、`menu`，对应实体板的三个 ADC 键）、`kickpi_k4b`（1024×600，`action_button`）、`szp`（320×240，`boot`）、`waveshare_esp32p4_wifi6_touch_lcd_4_3`（480×800，`boot`），尺寸与 Button 名取自各自 BSP。`amoled` 的 `device` 外观按 Waveshare 官方尺寸图用 CSS 画出实物（黑色表壳 37.60 × 45.20 mm、屏幕 28.70 × 34.94 mm、右侧从上到下 BOOT、USB-C、PWR）；其余四块的 `device` 外观目前是按 BSP 参数画的示意图（屏幕尺寸与方向准确），之后按实物资料替换。外观只用 CSS 绘制，不嵌入厂商图片。无屏幕的 `devkit`、`esp32p4_func_ev_board_v1_4`、`waveshare_esp32s3_a7670e_4g` 暂不提供。
+组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 生成 `h2_web_board_config.h`，包含 `H2_WEB_BOARD_WIDTH/HEIGHT`、Button 数量以及名字/键表；入口自行选择是否使用这些常量以及如何映射到 Runtime。不指定 board 时用 `//tools/bazel/web:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。board 与外观放在该 board 自己的目录旁 `boards/<board>/web/`（下游产品 board 同理），同一块板上的所有 App 复用。GizOS 为有屏幕的四块 board 提供了 web board：`amoled`（368×448，`boot`、`power`）、`bk7258_v3_202405`（800×480，`prev`、`next`、`menu`，对应实体板的三个 ADC 键）、`szp`（320×240，`boot`）、`waveshare_esp32p4_wifi6_touch_lcd_4_3`（480×800，`boot`），尺寸与 Button 名取自各自 BSP。`amoled` 的 `device` 外观按 Waveshare 官方尺寸图用 CSS 画出实物（黑色表壳 37.60 × 45.20 mm、屏幕 28.70 × 34.94 mm、右侧从上到下 BOOT、USB-C、PWR）；其余三块的 `device` 外观目前是按 BSP 参数画的示意图（屏幕尺寸与方向准确），之后按实物资料替换。外观只用 CSS 绘制，不嵌入厂商图片。无屏幕的 `devkit`、`esp32p4_func_ev_board_v1_4`、`waveshare_esp32s3_a7670e_4g` 暂不提供。
 
 只运行一个 Lua 脚本的 App 不需要 `main.c`：`//libs/lua/web:lua_web_app.bzl` 的
 `h2_lua_web_app(name, script, board, skin, exit_button, extension)` 用
@@ -269,7 +269,7 @@ Lua Display 在获取时启动公共 `$lua/display` worker，`present/end_frame`
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
 | `lua-script` | `h2_lua_web_app()` + `demo_board` 默认 `device` 外观：canvas 与状态行进入外观的 slot；脚本校验 Button args 后 ready；点击外观的 `data-h2-button=ok` 元素触发脚本 OK 回调；点击页面 Stop（`#stop`）取消 job 并 PASS |
 | `lua-script-input` | `demo_board` 的 `plain` 外观，Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
-| `web-board-{amoled,bk7258,k4b,szp,p4-lcd43}` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
+| `web-board-{amoled,bk7258,szp,p4-lcd43}` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
 | `web-hardware` | `prepare` 与 `configure_runtime` 在 App 前运行、Runtime `board` 为 hook 设置的名字；Enter 的 Down 与 Up 经 `button` 推到 component 42 / periph 501；`release_runtime` 关闭 configuration 持有的真实文件后 FS/platform 完整释放。额外 browser case 验证 configuration 失败后仍释放一次，以及 release 失败保留文件/backend、不重复释放 |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |

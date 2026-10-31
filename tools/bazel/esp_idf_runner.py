@@ -103,6 +103,11 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
         if rom_elfs_root.is_dir()
         else []
     )
+    selected_rom = tools_locator.get("paths", {}).get("rom_elf_dir")
+    if selected_rom:
+        if not Path(selected_rom).is_dir():
+            raise RunnerError("SDK-selected ROM ELF directory is missing")
+        rom_elf_versions = [Path(selected_rom)]
     if len(rom_elf_versions) != 1:
         raise RunnerError(
             "ESP-IDF ROM ELF tools must contain exactly one installed version: "
@@ -111,7 +116,12 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
     compiler_name = TARGET_COMPILERS.get(arguments.target)
     if not compiler_name:
         raise RunnerError(f"unsupported ESP target: {arguments.target}")
-    compiler = find_unique_executable(tools_root, compiler_name, compiler_name)
+    key = "xtensa_bin" if compiler_name.startswith("xtensa-") else "riscv_bin"
+    selected_bin = tools_locator.get("paths", {}).get(key)
+    compiler = (
+        Path(selected_bin) / compiler_name if selected_bin
+        else find_unique_executable(tools_root, compiler_name, compiler_name)
+    )
     environment = fixed_environment([
         idf_path / "tools",
         python_root / "bin",

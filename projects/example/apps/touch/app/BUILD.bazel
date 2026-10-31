@@ -10,9 +10,8 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
-    # KickPi K4B hardware and the Browser Web target.
+    # Browser Web target.
     target_compatible_with = select({
-        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
         "@platforms//cpu:wasm32": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

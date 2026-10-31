@@ -33,15 +33,17 @@ make cfg-doctor
 
 `make cfg-doctor` 按以下顺序加载 shell environment，后加载的文件可以覆盖先加载的值：
 
-1. 仓库 `.env/devenv`
+1. 仓库 `scripts/config/gizos-devenv-env.sh`
 2. `~/.config/h2loader/env`
 
-`.env/devenv` 根据 GizOS 的仓库根目录解析 `../firmwares-devenv/export.sh`，不依赖启动命令的当前目录。所有开发者必须把 GizOS 与 `firmwares-devenv` 作为同级 checkout，并通过后者统一维护 ESP-IDF、BK SDK、toolchain 和 host tool。首次使用先初始化 devenv：
+GizOS 内的 `tools/gizos` 提供 TypeScript/Bun 管理器，版本清单与 npm 包随 GizOS 一起维护和发布。不同 worktree 共享 SDK/toolchain 安装，位置由管理器配置决定。源码内使用：
 
 ```sh
-git clone --recurse-submodules git@github.com:h2vivi/firmware-devenv.git ../firmwares-devenv
-make -C ../firmwares-devenv
+bun tools/gizos/src/cli.ts setup esp-idf 6.2
+bun tools/gizos/src/cli.ts env
 ```
+
+npm 发布后可以通过 `bunx @gizclaw/gizos` 运行同一组命令。未安装环境时 host-only 检查仍可运行；已有本地 `.env/devenv` 仅作为迁移兼容入口。私有 SDK 和厂商二进制通过显式路径接入。
 
 不再加载 `.env/<os-user>`；Wi-Fi credential 和其他 secret 只能放在 `~/.config/h2loader/env`。
 

@@ -1,0 +1,67 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:npm_release.bzl", "npm_release_tarball")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load(":defs.bzl", "gizos_cli", "gizos_package")
+
+package(default_visibility = ["//visibility:public"])
+
+POSIX_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+exports_files(["bun_repository.bzl"])
+
+gizos_package(
+    name = "package",
+    srcs = glob(["src/**"]),
+    entry = "src/cli.ts",
+    license = "//:LICENSE",
+    package_json = "package.json",
+    readme = "README.md",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+filegroup(
+    name = "release_manifest",
+    srcs = [":package"],
+    output_group = "manifest",
+)
+
+npm_release_tarball(
+    name = "release_tarball",
+    manifest = ":release_manifest",
+    package = ":package",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+gizos_cli(
+    name = "gizos",
+    package = ":package",
+    target_compatible_with = POSIX_HOST,
+)
+
+py_test(
+    name = "gizos_test",
+    srcs = ["test_runner.py"],
+    args = [
+        "$(location @gizos_bun//:bun)",
+        "$(location tests/manager.test.ts)",
+        "$(location tests/package.test.ts)",
+        "$(location tests/resources.test.ts)",
+    ],
+    data = glob([
+        "src/**",
+        "tests/**/*.ts",
+    ]) + [
+        "README.md",
+        "build.ts",
+        "package.json",
+        "//:LICENSE",
+        "@gizos_bun//:bun",
+    ],
+    legacy_create_init = 0,
+    main = "test_runner.py",
+    target_compatible_with = POSIX_HOST,
+)

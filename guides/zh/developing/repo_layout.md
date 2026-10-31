@@ -40,7 +40,6 @@
 │   │       ├── linux/                    # Linux userspace PAL backend
 │   │       ├── darwin/                   # Darwin host PAL backend
 │   │       ├── posix/                    # OS owner 私下复用的 POSIX source
-│   │       ├── allwinner-linux/          # Allwinner Linux vendor integration
 │   │       ├── desktop/                  # 跨 Linux/macOS Desktop composition
 │   │       ├── ios/                      # iOS PAL backend
 │   │       ├── android/                  # Android PAL backend
@@ -210,9 +209,9 @@ native_component_src/<chip>/cp/
 
 ESP-IDF 6.x components 统一放在 `native_component_src/esp-idf6.x/`。ESP32-S3、ESP32-P4 和 ESP32-C5 的差异通过 `IDF_TARGET`、target-specific source selection 或 component config 表达，不按 chip 复制 component root。Library 已经由 Bazel 编译为目标平台 archive 时，由具体 firmware entry 的唯一 `firmware_lib_component` 直接选择；只有还需要独立 SDK dependency、Kconfig、registration lifecycle 或 native source 时才建立 `firmware_native_component`。没有该 native contract 的 archive 不能创建仅转发 include 和 `.a` 的目录。`libs/pal/providers/` 只拥有由 Bazel C/C++ toolchain 直接编译的平台实现，不拥有原生 SDK registration adapter。
 
-Linux userspace 通用 PAL backend 归 `libs/pal/providers/linux/`；Darwin host backend 归 `libs/pal/providers/darwin/`；Allwinner CedarX 等 vendor SDK family integration 归 `libs/pal/providers/allwinner-linux/`。通用 OS component 不能依赖具体 board、App、Desktop target family 或 project launcher。Linux 和 Darwin 需要共用 POSIX 实现时，可以依赖 `libs/pal/providers/posix/` 的 private source-sharing target；该 root 不提供公共 provider API，也不能被 App 或 Desktop component 直接依赖。
+Linux userspace 通用 PAL backend 归 `libs/pal/providers/linux/`；Darwin host backend 归 `libs/pal/providers/darwin/`。通用 OS component 不能依赖具体 board、App、Desktop target family 或 project launcher。Linux 和 Darwin 需要共用 POSIX 实现时，可以依赖 `libs/pal/providers/posix/` 的 private source-sharing target；该 root 不提供公共 provider API，也不能被 App 或 Desktop component 直接依赖。
 
-跨 Linux/macOS Desktop 共用的 adapter、simulator package 和 Desktop-specific tests 归 `libs/pal/providers/desktop/`，不放入 OS backend 或设备 board BSP。纯 upstream SDL3、PortAudio 与 FFmpeg 由 `third_party/*.BUILD.bazel` 暴露稳定 vendor label；Desktop PAL 或 adapter 直接消费这些 label，不读取 host prefix。SDL3 只属于 Desktop host，不进入 T113 或其他嵌入式 board graph。Desktop root 不拥有 Netif、SystemEvent、Host Serial、CoreBluetooth 等 OS capability，也不能成为 Linux/Darwin target 复用这些能力的前置依赖。
+跨 Linux/macOS Desktop 共用的 adapter、simulator package 和 Desktop-specific tests 归 `libs/pal/providers/desktop/`，不放入 OS backend 或设备 board BSP。纯 upstream SDL3、PortAudio 与 FFmpeg 由 `third_party/*.BUILD.bazel` 暴露稳定 vendor label；Desktop PAL 或 adapter 直接消费这些 label，不读取 host prefix。SDL3 只属于 Desktop host，不进入 嵌入式 board graph。Desktop root 不拥有 Netif、SystemEvent、Host Serial、CoreBluetooth 等 OS capability，也不能成为 Linux/Darwin target 复用这些能力的前置依赖。
 
 `libs/pal/providers/desktop/app_support:app_support` 是 Linux/macOS Desktop Runtime composition owner：它按 Bazel target platform 选择 Linux 或 Darwin provider，再把 PAL API object 注入跨平台 Desktop integration。Windows 原生 OS capability 归 `libs/pal/providers/windows/pal_core`，不经过 Desktop-named accessor 或 forwarding facade；Windows Desktop 产品组装仍由具体 project owner 完成。所有 OS provider 都不能依赖另一个 OS provider 或 Desktop 实现。
 
@@ -305,7 +304,7 @@ App 或 library 的 Bazel target 只在 source、defines、toolchain compatibili
 普通 Embedded Linux executable 使用 App owner 的 `cc_binary/<app>/<board>`：
 
 ```text
-projects/example/targets/cc_binary/<app>/kickpi_k4b/
+projects/example/targets/cc_binary/<app>/<board>/
 ├── BUILD.bazel
 ├── main/
 └── package/

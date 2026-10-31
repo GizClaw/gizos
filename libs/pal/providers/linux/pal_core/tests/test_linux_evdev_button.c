@@ -26,7 +26,7 @@ static h2_pal_result_t fake_read(void* user, const char* device_name,
 }
 
 static void test_configuration_and_reads(void) {
-  char device_name[] = "sunxi-gpadc0";
+  char device_name[] = "fixture-buttons";
   const h2_linux_evdev_button_config_t config = {
       .periph_id = 7u,
       .device_name = device_name,
@@ -36,7 +36,7 @@ static void test_configuration_and_reads(void) {
   device_name[0] = 'X';
 
   fake_reader_state_t reader = {
-      .expected_device_name = "sunxi-gpadc0",
+      .expected_device_name = "fixture-buttons",
       .expected_key_code = 373u,
       .state = H2_PAL_BUTTON_STATE_PRESSED,
       .result = H2_PAL_OK,

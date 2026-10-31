@@ -186,12 +186,21 @@ def _arm_toolchain_repository_impl(repository_ctx):
     contract = _archive_contract(repository_ctx).get(host)
     if not contract:
         fail("BK toolchain archive contract is missing for %s" % host)
-    repository_ctx.download_and_extract(
-        url = contract.url,
-        output = "toolchain",
-        sha256 = contract.archive_sha256,
-        stripPrefix = contract.strip_prefix,
-    )
+    shared = _environment_value(repository_ctx, "GIZOS_BK_TOOLCHAIN_ROOT")
+    if shared:
+        root = repository_ctx.path(shared)
+        if not root.exists:
+            fail("configured shared BK toolchain is missing: %s" % root)
+        repository_ctx.watch_tree(root)
+        repository_ctx.symlink(root, "toolchain")
+    else:
+        repository_ctx.download_and_extract(
+            url = contract.url,
+            output = "toolchain",
+            sha256 = contract.archive_sha256,
+            stripPrefix = contract.strip_prefix,
+        )
+        root = repository_ctx.path("toolchain")
     python = repository_ctx.which("python3")
     if not python:
         fail("python3 is required to verify the downloaded BK toolchain")
@@ -199,13 +208,12 @@ def _arm_toolchain_repository_impl(repository_ctx):
         python,
         repository_ctx.path(repository_ctx.attr.identity_tool),
         "--directory",
-        repository_ctx.path("toolchain"),
+        root,
         "--expected",
         contract.tree_sha256,
     ], quiet = True)
     if result.return_code:
-        fail("downloaded BK toolchain identity validation failed: %s" % result.stderr.strip())
-    root = repository_ctx.path("toolchain")
+        fail("BK toolchain identity validation failed: %s" % result.stderr.strip())
     _write_locator(
         repository_ctx,
         "bk-arm-toolchain",
@@ -236,6 +244,7 @@ _arm_toolchain_repository = repository_rule(
         "archives_file": attr.label(allow_single_file = True, mandatory = True),
         "identity_tool": attr.label(allow_single_file = True, mandatory = True),
     },
+    environ = ["GIZOS_BK_TOOLCHAIN_ROOT"],
 )
 
 def _extension_impl(_module_ctx):

@@ -102,27 +102,24 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-The sibling `firmware-devenv` provides one pinned ESP-IDF 6.2 checkout and
-GCC 16.1 tools for all ESP targets. Install with `make idf-tools` and source
-its `export.sh`; both use the baseline fixed by that devenv revision.
-Consumers choose another SDK baseline by pinning another devenv commit.
-CI and Release pin the same compatible provider revision and verify its SDK
-gitlink against the GizOS version manifest. The tool root is
-`.tools/esp-idf-6.2`, keeping old compiler installations out of the current
-compiler namespace. The tools repository derives
-the unique `python_env/idf6.2_py*_env` installation and validates it
-against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
-locators. The native action receives those locator files instead of the
-machine paths or caller `PATH`.
+The TypeScript/Bun manager in `tools/gizos` owns the SDK version catalog and
+installs SDKs into a configurable shared store. Different GizOS worktrees reuse
+that store. IDF versions share their host-specific tools root; each compiler is
+selected from the chosen SDK's `tools/tools.json` rather than requiring a single
+compiler version in the entire directory. The CLI also selects the IDF Python
+environment explicitly. Native actions receive those validated paths through
+locators, preserving their existing sandbox/remote-execution contract.
 
 ```sh
-REPO_ROOT=$PWD
-export REPO_ROOT
-make -C ../firmwares-devenv idf-tools IDF_TARGETS=esp32s3,esp32p4,esp32c5
-. ../firmwares-devenv/export.sh
-bazel build --config=esp32s3  //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
-bazel build --config=esp32p4  //projects/example/targets/h2loader_tar_zlib/display/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
+bun tools/gizos/src/cli.ts setup idf 6.2
+eval "$(bun tools/gizos/src/cli.ts env idf 6.2 --shell sh)"
+bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
 ```
+
+Use `env` to inspect paths, `config set root /path/to/shared/store` to configure
+storage, and `adopt` to register an existing installation without moving or
+redownloading it. After npm publication the same commands work through
+`bunx @gizclaw/gizos`. See `tools/gizos/README.md`.
 
 The rule keeps its project-local `srcs` and explicit out-of-package support
 files as action inputs and dependency edges. `FirmwareInfo`
@@ -143,19 +140,19 @@ A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDEN
 
 ## BK7258 external builds
 
-Source `.env/devenv` before requesting a BK7258 build. The canonical provider
-exports only `BK7258_PATH`. A repository
+Install BK with `bun tools/gizos/src/cli.ts setup bk 3.1.1`, then activate it
+with `env bk 3.1.1 --shell sh`. This exports `BK7258_PATH`. A repository
 rule validates SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` and a
-clean tracked checkout. Another repository rule downloads Arm GNU
-10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values,
+clean tracked checkout. Another repository rule consumes the shared GNU Arm
+root from `GIZOS_BK_TOOLCHAIN_ROOT`, or downloads Arm GNU 10.3-2021.10 when unset.
+Both paths verify the committed expanded-tree SHA-256; downloads also verify the archive,
 and exposes compiler version `10.3.1` through a locator. The action receives
 those locators and a Bazel Python runtime; it does not inherit SDK, toolchain,
 archive, Python, or `PATH` variables from the caller.
 
 ```sh
-REPO_ROOT=$PWD
-export REPO_ROOT
-. .env/devenv
+bun tools/gizos/src/cli.ts setup bk 3.1.1
+eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1 --shell sh)"
 bazel build --config=bk7258  //projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405:package
 ```
 
@@ -261,7 +258,7 @@ Repository variables select the provisioned organization Larger Runner for each
 execution class:
 
 - `FIRMWARE_LINUX_RUNNER`: 2-core Linux for ESP32-P4 and the CI required aggregator;
-- `FIRMWARE_LINUX_4CORE_RUNNER`: 4-core Linux for Android Build/Test, Test coverage, and KickPi K4B;
+- `FIRMWARE_LINUX_4CORE_RUNNER`: 4-core Linux for Android Build/Test, Test coverage;
 - `FIRMWARE_LINUX_8CORE_RUNNER`: 8-core Linux for Linux Build/Test, ESP32-S3, and BK7258;
 - `FIRMWARE_MACOS_RUNNER`: 5-core macOS 15 arm64 for macOS Build/Test;
 - `FIRMWARE_WINDOWS_RUNNER`: 8-core Windows Server 2025 for Windows Build/Test.

@@ -14,7 +14,7 @@ H2Loader 保留两条固定格式的构建轨道：`h2loader_tar_zlib` 和既有
 
 ## Mobile E2E Python runtime
 
-移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`，所有移动 target 共用 `tools/bazel/mobile_e2e.py` main。Suite owner 在 BUILD 中用 `mobile_e2e_suite` 声明包名、报告路径、registry 格式/数量、期望字段、用例结果字段、超时、SDK/consumer 符号和可选 hook。Rule 只生成声明 JSON，转发 Python provider 与 registry、hook、fixture runfiles；实际启动、解析与严格断言都在公共 Python 工具内执行。标准 suite 无需独立 Python 文件，特殊流程和业务断言通过可选 hook 扩展，且不能绕过公共校验。IPA/APK 和 SDK 仍保持目标平台配置；`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime。声明与 Python 库使用 `HOST_OR_MOBILE_TOOL_COMPATIBILITY`，只允许匹配 host 和支持的 iOS/Android configuration，排除没有 Python runtime 的 embedded/K4B target。设备入口只声明 `manual` tag，并用 `local = True` 保证本机执行；批量验证使用 `--local_test_jobs=1` 并关闭测试结果缓存。接入合同见 `tools/bazel/mobile_e2e.md`。
+移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`，所有移动 target 共用 `tools/bazel/mobile_e2e.py` main。Suite owner 在 BUILD 中用 `mobile_e2e_suite` 声明包名、报告路径、registry 格式/数量、期望字段、用例结果字段、超时、SDK/consumer 符号和可选 hook。Rule 只生成声明 JSON，转发 Python provider 与 registry、hook、fixture runfiles；实际启动、解析与严格断言都在公共 Python 工具内执行。标准 suite 无需独立 Python 文件，特殊流程和业务断言通过可选 hook 扩展，且不能绕过公共校验。IPA/APK 和 SDK 仍保持目标平台配置；`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime。声明与 Python 库使用 `HOST_OR_MOBILE_TOOL_COMPATIBILITY`，只允许匹配 host 和支持的 iOS/Android configuration，排除没有 Python runtime 的 embedded target。设备入口只声明 `manual` tag，并用 `local = True` 保证本机执行；批量验证使用 `--local_test_jobs=1` 并关闭测试结果缓存。接入合同见 `tools/bazel/mobile_e2e.md`。
 
 ## 边界
 
@@ -44,7 +44,7 @@ ESP-IDF 构建沿用项目的组件依赖锁，不在构建过程中查询组件
 
 ESP32-P4、BK7258 与 JieLi pi32v2 的 portable archive 使用 `tools/bazel/toolchains/local_embedded_cc/` 共享 repository/toolchain config。ESP compiler 从 `@h2_esp_idf_tools` locator 选择；BK compiler 从 Bazel 下载并校验的 `@h2_bk_arm_toolchain` 选择，不读取 action environment 中的 path。目标 compile flags、compiler exact version、实际 compiler/assembler/cc1、builtin headers 与 archiver分别进入对应 compile/archive action input。Repository rule 分别以 C 与 C++ 探测 compiler 的系统 header 搜索列表（JieLi 这类没有内建 sysroot 的 compiler 通过 `system_include_dirs` 把 libc 目录加入探测），把每个根目录只镜像一次到 toolchain repository 的 `inputs/compiler/include/<n>`；compile action 用 `-nostdinc` 加按语言排序的 execroot-relative `-idirafter` 只搜索这些镜像，GCC 另加 `-fno-canonical-system-headers`，`cxx_builtin_include_directories` 以 `%crosstool_top%/` 相对路径声明同一组目录。因此 dependency file 和 object 不含 output base 或 compiler 安装位置的绝对路径，不同 workspace 共享 disk/remote cache 时 Bazel header inclusion check 仍然成立。`//tools/bazel/tests/embedded_include_paths:local_embedded_cc` 在每个使用该 toolchain 的 embedded config 下编译 C/C++ probe，出现绝对 builtin include directory 或绝对 dependency path 时 build 失败。所有 embedded archive 都使用与 native firmware 一致的 `-Os` size optimization；locator 未配置时 repository 仍可加载但注册为 incompatible，不能阻塞无关 host/mobile graph。P4 使用 RV32 `ilp32f`，BK7258 使用 Cortex-M33 hard-float/CMSE。Linux、macOS、Android 与 iOS 原生就是 Bazel C/C++ target，不需要 native SDK prebuilt handoff。
 
-同级 `firmware-devenv` 的每个 revision 只提供一套 ESP-IDF，当前基线统一为 IDF 6.2。调用方固定与 GizOS 版本清单匹配的 devenv commit，再安装并加载 provider，以激活干净的 SDK checkout、GCC 16.1 与 Python 环境；旧项目通过固定旧 devenv commit 选择旧 SDK。`IDF_PATH`、`IDF_TOOLS_PATH` 和 `H2LOADER_IDF_PATH` 必须指向同一套环境。`--config=esp` 仅用 `--repo_env` 把 `IDF_PATH` 与 `IDF_TOOLS_PATH` 交给 repository rules；tools repository 从固定的 `python_env/idf6.2_py*_env` layout 唯一解析 Python environment。Repository 在发布可 scrub 的 locator 前验证两个 target compiler、Ninja、SDK-owned tool check 与 Python dependency constraints，并监听 SDK 与 tools roots。Native action 只接收 `@h2_esp_idf_sdk` 与 `@h2_esp_idf_tools` locator，不继承这些变量、caller `PATH`、`FIRMWARE_DEVENV_ROOT` 或完整 environment。少数需要 operator 明确选择非敏感 build value 的诊断 image 可以在 rule 的 `cmake_variables` 中逐项 allowlist；只有同名 `--define=NAME=value` 会作为显式 `-D NAME=value` 进入 CMake action。Wrapper 自己拥有且调用方不能覆盖的常量使用 `cmake_definitions`，直接作为显式 `-D NAME=value` 进入 action；同一个名称不能同时出现在 `cmake_variables` 与 `cmake_definitions`。DevKit console profile 由 H2Loader wrapper 通过该 target-owned surface 传递，不能被 ambient `--define` 改写。Runner 在 cache miss 执行时再次验证 ESP-IDF commit `ddb3852ab5c7f9e6dbc268203ef9d612de391bf8`（IDF 6.2） 与相同工具合约，然后将 launcher 复制到独立临时 tree，以内部 `H2_REPO_ROOT` 运行原生 CMake build。
+`tools/gizos` 中的 Bun CLI 管理 SDK/toolchain 版本、下载和安装；各 GizOS worktree 通过 `env` 或 `run` 消费同一个共享存储。版本清单由工具维护，GizOS native version 文件继续校验兼容性。当前环境使用 IDF 6.2、GCC 16.1 和该 SDK 的 Python 环境；多版本可以共存。`IDF_PATH`、`IDF_TOOLS_PATH` 和 `H2LOADER_IDF_PATH` 必须指向同一套环境。`--config=esp` 仅用 `--repo_env` 把 `IDF_PATH`、`IDF_TOOLS_PATH` 和已选择的 `IDF_PYTHON_ENV_PATH` 交给 repository rules。共享工具目录允许多版本；repository 根据 SDK 的 `tools/tools.json` 选择 compiler/ROM ELF 版本并验证 Python environment。Repository 在发布可 scrub 的 locator 前验证两个 target compiler、Ninja、SDK-owned tool check 与 Python dependency constraints，并监听 SDK 与 tools roots。Native action 只接收 `@h2_esp_idf_sdk` 与 `@h2_esp_idf_tools` locator，不继承这些变量、caller `PATH`、`GIZOS_DEVENV_ROOT` 或完整 environment。少数需要 operator 明确选择非敏感 build value 的诊断 image 可以在 rule 的 `cmake_variables` 中逐项 allowlist；只有同名 `--define=NAME=value` 会作为显式 `-D NAME=value` 进入 CMake action。Wrapper 自己拥有且调用方不能覆盖的常量使用 `cmake_definitions`，直接作为显式 `-D NAME=value` 进入 action；同一个名称不能同时出现在 `cmake_variables` 与 `cmake_definitions`。DevKit console profile 由 H2Loader wrapper 通过该 target-owned surface 传递，不能被 ambient `--define` 改写。Runner 在 cache miss 执行时再次验证 ESP-IDF commit `ddb3852ab5c7f9e6dbc268203ef9d612de391bf8`（IDF 6.2） 与相同工具合约，然后将 launcher 复制到独立临时 tree，以内部 `H2_REPO_ROOT` 运行原生 CMake build。
 
 `FirmwareInfo` 返回 target-owned ELF、map、app、bootloader、partition-table image、由同一次构建的 flash arguments 生成并从 `0x0` 烧录的 `combined_factory_image`、完整 flash-files directory、规范化 `flasher_args.json` 和 firmware version。`esp_idf_firmware` 不知道 H2Loader image、role、archive path 或 recovery policy；它的 `DefaultInfo.files` 只包含标准 native 产物，不返回 release provider。所有 required file 必须非空，combined image 必须由 `idf.py merge-bin` 直接写入声明的 native build directory，metadata offset 和 path 必须有效且仍位于本次 build directory。CMake/Ninja intermediate 和 device-operation executable 不进入 provider；Action 不执行 flash、monitor、erase、reset 或 serial 操作。
 
@@ -62,7 +62,7 @@ ESP policy 还导出 `h2_esp_target_task_policy_install_with_configure()`，同�
 
 `bk7258_firmware` 的 `project` 指向 launcher `CMakeLists.txt`，`project_name` 与 SDK `PROJECT` 一致，`target` 固定为 `bk7258`。`srcs`、`support_files` 与 target-configured `graph` 的语义和 ESP rule 相同；compatible `h2loader_tar_zlib` 的 `:package` target 进入 BK7258 graph，native `:firmware` 由它依赖。launcher 中唯一的 `H2_BK_TARGET` 必须与 rule target 一致。全部 17 个 BK7258 launcher 都是 native external build target。
 
-调用方由 `.env/devenv` 提供 `BK7258_PATH`。`--config=bk7258` 仅用 `--repo_env` 将该 locator source 交给 `@h2_bk7258_sdk`；repository rule 验证 exact SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` 与 tracked cleanliness。`@h2_bk_arm_toolchain` 根据 host 从 Arm 官方地址下载 GNU 10.3-2021.10，先校验 archive SHA-256，再校验完整解压树摘要；macOS arm64 使用 x86_64 archive，并在 repository evaluation 时 fail closed 验证 Rosetta。Native action 只接收两个 locator 和 Bazel Python runtime，不继承 `BK_TOOLCHAIN_ARCHIVE`、`COMPILER_TOOLCHAIN_PATH`、caller `PATH` 或完整 environment。Runner 发布 outputs 前重新验证 SDK identity 与 cleanliness，并确认 GizOS checkout 未变化。
+Bun 管理器按自身版本清单获取 BK SDK，并导出 `BK7258_PATH` 与共享 `GIZOS_BK_TOOLCHAIN_ROOT`；既有环境也可以显式提供 SDK 路径。`--config=bk7258` 仅用 `--repo_env` 将该 locator source 交给 `@h2_bk7258_sdk`；repository rule 验证 exact SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` 与 tracked cleanliness。`@h2_bk_arm_toolchain` 根据 host 从 Arm 官方地址下载 GNU 10.3-2021.10，先校验 archive SHA-256，再校验完整解压树摘要；macOS arm64 使用 x86_64 archive，并在 repository evaluation 时 fail closed 验证 Rosetta。Native action 只接收两个 locator 和 Bazel Python runtime，不继承 `BK_TOOLCHAIN_ARCHIVE`、`COMPILER_TOOLCHAIN_PATH`、caller `PATH` 或完整 environment。Runner 发布 outputs 前重新验证 SDK identity 与 cleanliness，并确认 GizOS checkout 未变化。
 
 Action 将选中的 launcher 复制到 invocation-local source tree，以只读 `H2_REPO_ROOT` 引用原仓库，以临时 `H2_FIRMWARE_VERSION_FILE` 传递 firmware target 选择的 `FirmwareVersionInfo`，并直接调用 SDK `make`，把 `PROJECT_DIR` 与 `BUILD_DIR` 指向 action-owned 临时目录。它不调用 launcher Makefile；native build 完成后只发布平台固件产物，不判断 Loader role，也不生成 H2Loader recovery bundle。`zero_bk_1_0/apps/h106` 同时执行 source 与 post-link memory contract。Action 不执行 install、flash、reset、serial、network 或设备操作。
 
@@ -128,7 +128,7 @@ Native firmware action 向 Bazel 声明每个 action 预留的 CPU 与 memory，
 CI 按 execution class 通过 repository variable 选择 runner。GizOS 保持与 Firmwares 相同的变量接口和 class assignment，但 runner label 必须属于 `GizClaw` 组织可用的 runner pool：
 
 - `FIRMWARE_LINUX_RUNNER` 服务 ESP32-P4 与 CI required aggregator；
-- `FIRMWARE_LINUX_4CORE_RUNNER` 服务 Android Build/Test、Test coverage 与 K4B；
+- `FIRMWARE_LINUX_4CORE_RUNNER` 服务 Android Build/Test、Test coverage；
 - `FIRMWARE_LINUX_8CORE_RUNNER` 服务 Linux Build/Test、ESP32-S3 与 BK7258；
 - `FIRMWARE_MACOS_RUNNER` 服务 macOS Build/Test；
 - `FIRMWARE_WINDOWS_RUNNER` 服务 Windows Build/Test。
@@ -143,7 +143,6 @@ Linux runner 的 system dependency 安装是后续 SDK、toolchain 与 Bazel cac
 bazel test --config=macos_arm64 //libs/... //libs/pal/providers/desktop/... //projects/.../cc_binary/...
 bazel test --config=linux_x86_64 //libs/... //libs/pal/providers/desktop/... //projects/.../cc_binary/...
 bazel build --config=linux_arm64 //tools/bazel/tests/toolchain_smoke:cross_artifact
-bazel build -c opt --config=kickpi_k4b  //projects/example/targets/cc_binary/display/kickpi_k4b:display  //projects/example/targets/cc_binary/mp4-player/kickpi_k4b:mp4_player
 bazel test --config=ios_sim_arm64 //projects/example/targets/ios_application/tap-reset:package_validation_test
 bazel test --config=android_arm64 --platforms=//tools/bazel/platforms:linux_x86_64 //projects/example/targets/android_binary/tap-reset:package_validation_test //projects/example/targets/android_binary/mp4-player:package_validation_test
 ```
@@ -221,7 +220,6 @@ CI checkout 使用当前 event exact head 且不初始化 submodule。`MODULE.ba
 
 Repository cache 只保存由 Bazel 按 digest 索引的下载内容，不保存 expanded external repository、Git config、credential、hook、worktree、LFS payload 或 build output。Cache miss、eviction、corruption 或 restore/save error 只会触发重新下载，不能跳过 integrity validation、Bazel analysis 或 consumer。`third_party/` 中碰巧存在同名目录不能改变 archive resolution。
 
-`kickpi_k4b` config 固定 Linux x86_64 execution platform 与 ARMv7 GNU EABI hard-float target，并固定使用 `-c opt`。Bazel repository rule 从 Arm 官方地址下载 `gcc-arm-8.2-2018.11-x86_64-arm-linux-gnueabihf`，校验 SHA-256 并把完整 compiler/sysroot distribution 注册为 C/C++ toolchain；C 与 C++ builtin include 都来自该 distribution，compile/link action 不读取 `K4B_TOOLCHAIN_ROOT`、ambient `CC` 或 `PATH`。MP4 Player 另外通过 `--repo_env=K4B_CEDARX_INCLUDE_DIR` 与 `--repo_env=K4B_CEDARX_LIB_DIR` 把 `firmwares-devenv` provision 的 CedarX headers 和目标 image shared library closure 映射为 `@h2_k4b_cedarx_sdk`，由 `cc_import` 参与同一 Bazel link graph；AAC-LC decoder 则由 Bazel 使用固定 URL/SHA-256 下载 FDK-AAC 2.0.1 source 并交叉编译 decoder-only source closure。K4B board、launcher 与 CedarX production target 必须声明 Linux/ARMv7 `target_compatible_with`。没有 CedarX env 时真正分析、编译或链接 private CedarX consumer 必须 fail closed。
 
 ## GizClaw Bzlmod registry
 
@@ -268,18 +266,18 @@ Graph test 对目录、label、rule kind、artifact identity 和依赖边做校�
 
 ## CI execution contract
 
-Pull request、main push 和 workflow dispatch 使用同一份静态 platform matrix。K4B 在 #794 关闭前仍自动执行完整 build，但作为 non-blocking execution class：失败在 CI 中保持可见，却不阻塞 `CI required`；显式本地 `kickpi_k4b` config 保持不变。Pull request checkout exact head，main push 与手动运行 checkout event revision。Linux、macOS 与 Android 各使用一个 matrix job 顺序执行 Build/Test，复用同一个 Bazel server 和 output base；Windows 使用对应的单一 native job。iOS 继续用两个独立 task 并行执行：
+Pull request、main push 和 workflow dispatch 使用同一份静态 platform matrix。Pull request checkout exact head，main push 与手动运行 checkout event revision。Linux、macOS 与 Android 各使用一个 matrix job 顺序执行 Build/Test，复用同一个 Bazel server 和 output base；Windows 使用对应的单一 native job。iOS 继续用两个独立 task 并行执行：
 
 ```sh
 make bazel-build BAZEL_CONFIG=<config>
 make bazel-test BAZEL_CONFIG=<config>
 ```
 
-Linux 与 macOS Test 执行完整 compatible host test graph；Android 在同一个 job 中先 Build，再执行对应 package validation；iOS 的独立 Test task 同样只执行 package validation，因为普通 host `cc_test` 不能作为移动平台二进制直接在 runner OS 上执行。Firmware 和 KickPi class 只有 Build task；Test coverage 使用独立的 `make bazel-coverage-report`。Release workflow 保持独立的 closed artifact slice，不通过普通 CI command 生成 release bundle。
+Linux 与 macOS Test 执行完整 compatible host test graph；Android 在同一个 job 中先 Build，再执行对应 package validation；iOS 的独立 Test task 同样只执行 package validation，因为普通 host `cc_test` 不能作为移动平台二进制直接在 runner OS 上执行。Firmware class 只有 Build task；Test coverage 使用独立的 `make bazel-coverage-report`。Release workflow 保持独立的 closed artifact slice，不通过普通 CI command 生成 release bundle。
 
 Bazel 必须分析当前 config 下的完整 `//...` graph。Platform compatibility 决定 target 是否属于该 execution class；Bazel 特殊 tag `manual` 只用于阻止通配 target pattern 自动选择手工测试，不需要 tag filter。Repository cache、disk cache、persistent action cache 和 Skyframe 可以减少实际下载与 action execution，但不能成为省略 graph、build、test 或 coverage 的理由。
 
-Host tool compatibility 必须同时匹配 runner OS 与 CPU：当前 Linux host class 是 x86_64，macOS host class 是 arm64。Cross config（例如 KickPi ARMv7 或 Linux arm64）必须通过准确的 `target_compatible_with` 跳过顶层 host Python/tool targets，包括只在 host 上生成 filesystem image 的 `//tools/mklittlefs:mklittlefs`；这些 target 作为其他 rule 的 tool dependency 时由 exec transition 在 runner platform 构建，不能要求 cross target Python/C++ toolchain。Web artifact wrapper 与 validation 只兼容 Linux x86_64 或 macOS arm64 host，Web C/C++ target 只兼容 Emscripten transition 使用的 `wasm32` target platform，不能在普通 host、mobile 或 firmware platform 上直接编译。
+Host tool compatibility 必须同时匹配 runner OS 与 CPU：当前 Linux host class 是 x86_64，macOS host class 是 arm64。Cross config（例如 Linux arm64）必须通过准确的 `target_compatible_with` 跳过顶层 host Python/tool targets，包括只在 host 上生成 filesystem image 的 `//tools/mklittlefs:mklittlefs`；这些 target 作为其他 rule 的 tool dependency 时由 exec transition 在 runner platform 构建，不能要求 cross target Python/C++ toolchain。Web artifact wrapper 与 validation 只兼容 Linux x86_64 或 macOS arm64 host，Web C/C++ target 只兼容 Emscripten transition 使用的 `wasm32` target platform，不能在普通 host、mobile 或 firmware platform 上直接编译。
 
 ESP32-S3、ESP32-P4、BK7258 config 直接自动选择各自的全部 firmware endpoint。每个 native firmware action 向底层 native build 传递 4-way parallelism；BK7258 声明 4 CPU、4 GiB memory，ESP 的预留由 `--define=h2_native_build_jobs` 决定并默认相同。Bazel 在单台 runner 上按真实可用资源并发调度不同 launcher。Runner 规格增大时并行 launcher 数自动增加，不需要维护 affected target list 或为每个 launcher 展开 GitHub matrix。CI 通过 `BAZEL_NATIVE_BUILD_JOBS` 环境变量把该 define 传给 `make bazel-build`，未设置时使用默认值；ESP32-S3 的 execution class 因 launcher 数量最多而调低预留，ESP32-P4、ESP32-C5 与 BK 保持默认。
 

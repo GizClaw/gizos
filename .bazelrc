@@ -25,6 +25,7 @@ build:macos --define=h2_host_os=macos
 build:windows --define=h2_host_os=windows
 
 build --strip=never
+build --repo_env=GIZOS_BK_TOOLCHAIN_ROOT
 build --experimental_remote_scrubbing_config=tools/bazel/remote_scrubbing_config.textproto
 
 build:linux_x86_64 --platforms=//tools/bazel/platforms:linux_x86_64
@@ -39,12 +40,6 @@ coverage:test_coverage --experimental_use_llvm_covmap
 coverage:test_coverage --experimental_generate_llvm_lcov
 coverage:test_coverage --instrumentation_filter=^//
 
-build:kickpi_k4b --platforms=//tools/bazel/platforms:linux_armv7_gnueabihf
-build:kickpi_k4b --extra_toolchains=@k4b_arm_gnu_toolchain//:toolchain
-build:kickpi_k4b --extra_toolchains=//tools/bazel/platforms:linux_x86_64_test_toolchain
-build:kickpi_k4b -c opt
-build:kickpi_k4b --repo_env=K4B_CEDARX_INCLUDE_DIR
-build:kickpi_k4b --repo_env=K4B_CEDARX_LIB_DIR
 
 build:macos_arm64 --platforms=//tools/bazel/platforms:macos_arm64
 build:macos_arm64 --extra_toolchains=//tools/bazel/platforms:macos_arm64_test_toolchain
@@ -82,6 +77,7 @@ test --remote_download_outputs=minimal
 
 build:esp --repo_env=IDF_PATH
 build:esp --repo_env=IDF_TOOLS_PATH
+build:esp --repo_env=IDF_PYTHON_ENV_PATH
 build:esp --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT
 build:esp --action_env=H2LOADER_WIFI_CREDENTIALS
 build:esp32s3 --config=esp

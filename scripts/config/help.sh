@@ -7,6 +7,7 @@ printf '%s\n' \
   '' \
   'Configuration:' \
   '  help                             show every public Make target' \
+  '  gizos                            inspect shared SDKs (GIZOS_ARGS="setup esp-idf 6.2" to install)' \
   '  cfg-doctor                       report the local build and H2Loader environment' \
   '  format                           format C/C++, Lua and Bazel changes since origin/main' \
   '  format-check                     check C/C++, Lua and Bazel changes since origin/main' \
