@@ -17,6 +17,7 @@ static h2_pal_result_t attach_result;
 static unsigned attaches;
 static bool check_catalog_during_workspace;
 static bool wrong_workflow_get_name;
+static bool unavailable_workspace;
 static char bound_workflow[64] = "alpha";
 static void assert_catalog(void);
 
@@ -315,8 +316,9 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_get(
   *out = (h2_gizclaw_workspace_get_result_t){
       .created_at = (char*)created_at,
       .workspace = {.name = (char*)name.data,
-                    .workflow_name = bound_workflow,
-                    .available = true},
+                    .workflow_name =
+                        unavailable_workspace ? "" : bound_workflow,
+                    .available = !unavailable_workspace},
       .runtime_profile_name = "test-profile",
       .runtime_profile_revision = (char*)server_revision,
   };
@@ -442,6 +444,7 @@ static h2_gizclaw_session_config_t session_config(size_t tag_count) {
   attaches = 0u;
   check_catalog_during_workspace = false;
   wrong_workflow_get_name = false;
+  unavailable_workspace = false;
   strcpy(bound_workflow, "alpha");
   h2_atomic_store(&lists, 0u);
   h2_atomic_store(&gets, 0u);
@@ -512,6 +515,40 @@ static const h2_gizclaw_session_selection_t selection = {
 static void teardown(void) {
   assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
   assert(session == NULL);
+}
+
+static void test_unavailable_workspace_preserves_the_previous_selection(void) {
+  setup(2u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
+  const unsigned before_reload = h2_atomic_load(&reloads);
+  const unsigned before_get = h2_atomic_load(&gets);
+  const unsigned before_list = h2_atomic_load(&lists);
+  const h2_gizclaw_session_selection_t other = {.workflow_name = "beta",
+                                                .workspace_name = "other"};
+  unavailable_workspace = true;
+  assert(h2_gizclaw_session_select(session, &other, 1000u) ==
+         H2_PAL_ERR_UNAVAILABLE);
+  assert(h2_atomic_load(&gets) == before_get + 1u &&
+         h2_atomic_load(&reloads) == before_reload &&
+         h2_atomic_load(&creates) == 0u &&
+         h2_atomic_load(&lists) == before_list);
+  const h2_gizclaw_session_state_t state = snapshot();
+  assert(!state.can_start && state.workspace == H2_GIZCLAW_SESSION_FAILED &&
+         strcmp(state.current_workspace, selection.workspace_name) == 0 &&
+         strcmp(state.workflow_name, selection.workflow_name) == 0);
+  server_revision = "v2";
+  assert(h2_gizclaw_session_select(session, &other, 1000u) ==
+         H2_PAL_ERR_UNAVAILABLE);
+  assert(h2_atomic_load(&lists) == before_list + 1u &&
+         h2_atomic_load(&gets) == before_get + 3u &&
+         h2_atomic_load(&reloads) == before_reload);
+  unavailable_workspace = false;
+  strcpy(bound_workflow, "beta");
+  assert(h2_gizclaw_session_select(session, &other, 1000u) == H2_PAL_OK);
+  assert(snapshot().can_start &&
+         strcmp(snapshot().current_workspace, "other") == 0);
+  teardown();
 }
 
 static void test_tag_catalog_selector(void) {
@@ -1799,6 +1836,7 @@ int main(void) {
   assert(h2_atomic_bool_init(&gate_list, false) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&list_entered, false) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&waiter_entered, false) == H2_ATOMIC_OK);
+  test_unavailable_workspace_preserves_the_previous_selection();
   test_tag_catalog_selector();
   test_refresh_tags();
   test_streaming_catalog();

@@ -25,6 +25,8 @@ Conversation 创建在同一个准备操作中完成 Workspace 校验，然后�
 
 `h2_gizclaw_rpc_run_stop(service, timeout_ms, storage)` 停止 Peer 唯一的服务端 run，不删除 Workspace。附有 Session 时总是参与状态管理，即使没有当前 Workspace 也发送 `server.run.stop`（method 20，空参数）。先以 `H2_GIZCLAW_CANCEL_WORKSPACE` 停止本地 Conversation，最多等待 timeout_ms 完成本地取消分发；与其它同步 Workspace RPC 串行，已有 RPC 或输入重启时返回 BUSY，Session 已关闭时返回 CLOSED。成功后 workspace 为 EMPTY，清除当前 Workspace、Workflow 和已确认参数；target 与原 current 相同时也清除。下一次 select 或 conversation_create 从 get、reload 重新准备，同名也重新附着。进入操作后的任何失败（包括取消分发超时和 RPC 超时）都置 FAILED，因为服务端 run 是否停止可能不确定。成功后清空 Service 缓冲的下行 Opus/PCM；没有 Session 时同样清空。返回的 run status 不保留，合法的 response storage 不消耗字节。
 
+Profile 移除或重新绑定 Workflow 后，原 Workspace 可能合法地投影为不可用，且没有当前 Workflow 名称。SDK 保留该 Workspace 的名称与不可用状态，Session 返回 UNAVAILABLE；产品可以显示原因或引导用户处理原档案。该状态不会触发自动删除、重建或激活，也不应误报为响应格式错误。
+
 ## 交互模式与对话状态
 
 快照中的 `parameters` 复用现有 Workspace 参数类型，`input` 为 Push-to-Talk 或RealTime，`initiative` 保持既有 PEER / AGENT 含义；不引入新的首句发言者字段。只合并成功应用的 patch，省略成员保留原值，失败保留此前已确认参数。

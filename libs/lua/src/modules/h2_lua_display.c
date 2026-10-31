@@ -166,8 +166,14 @@ static h2_pal_result_t display_open(h2_lua_job_t* job) {
   if (pixel_count > SIZE_MAX / sizeof(*job->framebuffer)) {
     return H2_PAL_ERR_NO_SPACE;
   }
-  job->framebuffer = h2_pal_mem_alloc(job->host->config.allocator,
-                                      pixel_count * sizeof(*job->framebuffer));
+  const size_t bytes = pixel_count * sizeof(*job->framebuffer);
+  if (job->host->display_framebuffer != NULL) {
+    if (bytes > job->host->config.display_framebuffer_bytes)
+      return H2_PAL_ERR_NO_SPACE;
+    job->framebuffer = job->host->display_framebuffer;
+  } else {
+    job->framebuffer = h2_pal_mem_alloc(job->host->config.allocator, bytes);
+  }
   if (job->framebuffer == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -5073,7 +5079,8 @@ static h2_pal_result_t display_release(lua_State* state, h2_lua_job_t* job) {
     job->display_lease = 0;
     h2_atomic_store(&job->host->display_active, 0);
   }
-  h2_pal_mem_free(job->host->config.allocator, pixels);
+  if (pixels != job->host->display_framebuffer)
+    h2_pal_mem_free(job->host->config.allocator, pixels);
   return H2_PAL_OK;
 }
 

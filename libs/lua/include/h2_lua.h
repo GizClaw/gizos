@@ -149,6 +149,19 @@ typedef struct h2_lua_host_config {
   /** Optional successful-present observer; see h2_lua_display_present_fn. */
   h2_lua_display_present_fn on_display_present;
   void* display_present_user;
+  /** Optional capacity in bytes for one RGB565 drawing framebuffer, reserved
+   * from allocator at Host creation before vm_heap_bytes. Zero preserves lazy
+   * allocation on Display acquisition. Nonzero keeps one contiguous buffer
+   * until checked Host destruction, reused by the single Display-owning Job
+   * and cleared on every acquisition. It is separate from the VM heap/quota
+   * and the VM-accounted submission buffer.
+   *
+   * Size for width * height * sizeof(uint16_t), with checked arithmetic, using
+   * the caller's Display geometry. A larger Display returns NO_SPACE at
+   * acquisition without allocating a replacement. Reservation failure returns
+   * NO_MEMORY from create with no Host or leaked allocations. This reserves
+   * pixels only; it does not open the Display or create its worker. */
+  size_t display_framebuffer_bytes;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,

@@ -211,6 +211,8 @@ h2_pal_result_t h2_gizclaw_session_refresh_with_tags(
  * only while its creation timestamp, Workflow and parameters still match.
  * Pending deletion waits in at most 100 ms steps within timeout_ms, then
  * creates the same name only after NOT_FOUND. Unrelated errors fail directly;
+ * a server-projected unavailable Workspace returns UNAVAILABLE without
+ * deleting, recreating or reloading it.
  * cancel/close prevents further steps. A version mismatch permits one catalog
  * refresh and retry. */
 h2_pal_result_t h2_gizclaw_session_select(

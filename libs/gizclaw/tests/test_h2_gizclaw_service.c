@@ -7606,6 +7606,60 @@ static void test_workspace_direct_input_update(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+static void test_unavailable_workspace_without_a_workflow_alias(void) {
+  for (unsigned list = 0u; list < 2u; ++list) {
+    for (unsigned available = 0u; available < 2u; ++available) {
+      test_env_t env;
+      h2_gizclaw_service_t* service = create_profile_service(&env);
+      env.expected_method = list ? H2_GIZCLAW_RPC_SERVER_WORKSPACE_LIST
+                                 : H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET;
+      static const uint8_t get_params[] = {0x0a, 2u, 'w', 's'};
+      static const uint8_t list_params[] = {0x10, 1u};
+      env.expected_payload = list ? list_params : get_params;
+      env.expected_payload_len =
+          list ? sizeof(list_params) : sizeof(get_params);
+      /* An unavailable Workspace has no alias in the current Profile.
+       * Proto3 omits its empty workflow_name and false available fields. */
+      uint8_t response[] = {0x0a, 6u,   0x1a, 2u,  'w',  's', 0x58,
+                            0u,   0x12, 1u,   'p', 0x1a, 1u,  'r'};
+      response[0] = list ? 0x12 : 0x0a;
+      response[7] = (uint8_t)available;
+      response[8] = list ? 0x22 : 0x12;
+      response[11] = list ? 0x2a : 0x1a;
+      size_t response_len = sizeof(response);
+      if (!available) {
+        response[1] = 4u;
+        memmove(response + 6u, response + 8u, 6u);
+        response_len -= 2u;
+      }
+      env.response_payload = response;
+      env.response_payload_len = response_len;
+      assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+      uint8_t buffer[2048];
+      h2_gizclaw_resp_storage_t storage = {buffer, sizeof(buffer), 0u};
+      h2_gizclaw_workspace_page_t page = {0};
+      h2_gizclaw_workspace_get_result_t get = {0};
+      const h2_pal_result_t rc =
+          list ? h2_gizclaw_rpc_workspace_list(service, (h2_gizclaw_str_t){0},
+                                               1u, 1234u, &storage, &page)
+               : h2_gizclaw_rpc_workspace_get(service,
+                                              (h2_gizclaw_str_t){"ws", 2u},
+                                              1234u, &storage, &get);
+      assert(rc == (available ? H2_PAL_ERR_FORMAT : H2_PAL_OK));
+      if (!available) {
+        const h2_gizclaw_workspace_t* value =
+            list ? &page.items[0] : &get.workspace;
+        if (list) assert(page.count == 1u);
+        assert(strcmp(value->name, "ws") == 0);
+        assert(!value->available && value->workflow_name != NULL &&
+               value->workflow_name[0] == '\0');
+      }
+      assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+      assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    }
+  }
+}
+
 static void test_workspace_request_and_response_paths(void) {
   test_env_t env;
   h2_gizclaw_service_t* service = create_profile_service(&env);
@@ -15997,6 +16051,7 @@ int main(int argc, char** argv) {
   test_req_start_backpressure_deadline_and_cancel();
   test_contact_and_group_public_paths();
   test_contact_mutation_requests();
+  test_unavailable_workspace_without_a_workflow_alias();
   test_workspace_request_and_response_paths();
   test_workspace_list_options();
   test_workspace_direct_input_update();
