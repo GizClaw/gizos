@@ -74,39 +74,6 @@ int h2_mfg_create(h2_runtime_t* rt, const h2_mfg_profile_t* profile,
   return H2_PAL_OK;
 }
 
-/* Caller owns operation and session locks. Factory acceptance includes
- * successful peripheral shutdown; a failed stop must never become durable PASS.
- */
-static int factory_action(h2_mfg_t* m, const char* action, const char* step,
-                          uint32_t ticket) {
-  int confirm = strcmp(action, "confirm") == 0;
-  if (m->profile->cleanup_before_pass && confirm) {
-    if (ticket != m->model.ticket || m->hardware_ticket != ticket ||
-        m->model.current >= m->profile->total ||
-        strcmp(step, m->profile->steps[m->model.current].name) != 0 ||
-        !m->model.ready || m->model.error != 0 ||
-        m->model.summary.step_status[m->model.current] ==
-            H2_LOADER_MFG_STEP_FAILED)
-      return H2_PAL_ERR_INVALID_STATE;
-    if (m->profile->battery_manual_charge &&
-        m->profile->steps[m->model.current].check == H2_MFG_BATTERY &&
-        (m->battery_phase != 1 || m->phase != 1))
-      return H2_PAL_ERR_INVALID_STATE;
-    int rc = h2_mfg_hardware_leave(m);
-    m->hardware_ticket = 0;
-    if (rc != 0) {
-      m->model.ready = 0;
-      m->model.error = rc;
-      return rc;
-    }
-    m->model.ready = 1;
-    rc = h2_mfg_model_action(&m->model, action, step, ticket);
-    m->model.ready = 0;
-    return rc;
-  }
-  return h2_mfg_model_action(&m->model, action, step, ticket);
-}
-
 int h2_mfg_command(void* user, h2_loader_command_transport_t transport,
                    size_t argc, const char* const* argv, char* output,
                    size_t capacity) {
@@ -129,7 +96,6 @@ int h2_mfg_command(void* user, h2_loader_command_transport_t transport,
       if (transport != H2_LOADER_COMMAND_TRANSPORT_BLE ||
           m->model.current >= m->profile->total ||
           m->profile->steps[m->model.current].check != H2_MFG_BLE ||
-          m->profile->ble_scan_only ||
           strcmp(argv[1], m->profile->steps[m->model.current].name) != 0 ||
           ticket != m->model.ticket || m->hardware_ticket != ticket) {
         rc = H2_PAL_ERR_INVALID_STATE;
@@ -139,14 +105,8 @@ int h2_mfg_command(void* user, h2_loader_command_transport_t transport,
         (void)snprintf(m->detail, sizeof(m->detail), "BLE command round trip");
         rc = H2_PAL_OK;
       }
-    } else if (strcmp(argv[0], "confirm") == 0 &&
-               m->profile->battery_manual_charge &&
-               m->model.current < m->profile->total &&
-               m->profile->steps[m->model.current].check == H2_MFG_BATTERY &&
-               (m->battery_phase != 1 || m->phase != 1)) {
-      rc = H2_PAL_ERR_INVALID_STATE;
     } else {
-      rc = factory_action(m, argv[0], argv[1], ticket);
+      rc = h2_mfg_model_action(&m->model, argv[0], argv[1], ticket);
     }
   }
   status(m, output, capacity, rc);
@@ -223,8 +183,6 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
   if (rc != 0) return rc;
   (void)h2_pal_semaphore_take(m->rt->sync, m->finished, H2_PAL_SYNC_NO_WAIT);
   m->loader = loader;
-  m->wifi_sync = wifi_sync;
-  m->wifi_mutex = wifi_mutex;
   (void)h2_pal_mutex_unlock(m->rt->sync, m->mutex);
   for (;;) {
     /* Stop is checked before trying operation_mutex. No blocking acquisition
@@ -314,7 +272,6 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
         if (m->model.error != 0) {
           int error = m->model.error;
           int cleanup = h2_mfg_hardware_leave(m);
-          uint32_t selected_before_failure = m->model.current;
           int save_rc = m->model.current < m->profile->total
                             ? h2_mfg_model_action(
                                   &m->model, "fail",
@@ -323,8 +280,6 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
                             : error;
           /* The failed check stays selected, without repeatedly reopening it.
            */
-          if (save_rc == 0 && m->profile->sequential_traversal)
-            m->model.current = selected_before_failure;
           m->hardware_ticket = m->model.ticket;
           m->model.error = error;
           if (save_rc != 0) rc = save_rc;
@@ -336,47 +291,20 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
       int check_rc = h2_mfg_hardware_tick(m, now, &action);
       if (check_rc != 0) {
         int cleanup = h2_mfg_hardware_leave(m);
-        uint32_t selected_before_failure = m->model.current;
-        const char* step = m->model.current < m->profile->total
-                               ? m->profile->steps[m->model.current].name
-                               : NULL;
-        rc = step != NULL
-                 ? h2_mfg_model_action(&m->model, "fail", step, m->model.ticket)
-                 : check_rc;
-        if (rc == 0 && m->profile->sequential_traversal)
-          m->model.current = selected_before_failure;
+        const char* step = m->profile->steps[m->model.current].name;
+        rc = h2_mfg_model_action(&m->model, "fail", step, m->model.ticket);
         m->hardware_ticket = m->model.ticket;
         m->model.error = check_rc;
         if (rc == 0) rc = cleanup;
       }
     }
-    if (rc == 0 && !bypass && action != NULL) {
-      int action_rc = H2_PAL_ERR_INVALID_STATE;
-      if (strcmp(action, "reset") == 0) {
-        rc = h2_mfg_hardware_leave(m);
-        if (rc == 0)
-          action_rc =
-              h2_mfg_model_action(&m->model, "reset", "all", m->model.ticket);
-      } else if (m->model.current < m->profile->total) {
-        action_rc =
-            factory_action(m, action, m->profile->steps[m->model.current].name,
-                           m->model.ticket);
-      }
-      /* A rejected input or failed preference commit leaves the selected
-       * ticket and durable state intact. Keep controls alive for retry. */
-      if (action_rc != 0)
-        (void)snprintf(m->detail, sizeof(m->detail), "MFG action=%s code=%d",
-                       action, action_rc);
-    }
-    if (rc == 0 && !bypass && h2_mfg_model_complete(&m->model)) {
-      h2_loader_status_t current = {0};
-      rc = h2_loader_read_status(loader, &current);
-      if (rc == 0)
-        bypass = current.boot_intent == H2_LOADER_BOOT_INTENT_AUTO &&
-                 ((current.stage.valid &&
-                   current.stage.role == H2_LOADER_IMAGE_ROLE_APP) ||
-                  (current.partition_2.valid &&
-                   current.partition_2.role == H2_LOADER_IMAGE_ROLE_APP));
+    if (rc == 0 && !bypass && action != NULL &&
+        m->model.current < m->profile->total) {
+      rc = h2_mfg_model_action(&m->model, action,
+                               m->profile->steps[m->model.current].name,
+                               m->model.ticket);
+      /* Rejected premature local confirmation leaves the session usable. */
+      if (rc == H2_PAL_ERR_INVALID_STATE) rc = 0;
     }
     if (rc == 0 && !bypass && now - m->last_draw_ms >= 100) {
       m->last_draw_ms = now;

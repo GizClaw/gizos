@@ -21,94 +21,9 @@ static int camera_worker_enter(h2_mfg_t* m);
 static int camera_worker_tick(h2_mfg_t* m);
 static int camera_worker_leave(h2_mfg_t* m);
 
-/* The session mutex may be held by start/stop. Callbacks take only this lock.
- */
-static bool scan_result(void* user, const h2_pal_ble_scan_result_t* result) {
-  h2_mfg_t* m = user;
-  if (h2_pal_mutex_lock(m->rt->sync, m->scan_mutex) != 0) return true;
-  if (m->scan_started && !m->scan_done) {
-    if (result == NULL || (result->local_name_len && !result->local_name)) {
-      m->scan_error = H2_PAL_ERR_FORMAT;
-    } else {
-      unsigned i = 0;
-      for (; i < m->scan_count; ++i)
-        if (m->scan_devices[i].address.type == result->addr.type &&
-            memcmp(m->scan_devices[i].address.value, result->addr.value,
-                   sizeof(result->addr.value)) == 0)
-          break;
-      if (i < sizeof(m->scan_devices) / sizeof(m->scan_devices[0])) {
-        if (i == m->scan_count) {
-          m->scan_devices[i].address = result->addr;
-          ++m->scan_count;
-        }
-        m->scan_devices[i].rssi = result->rssi;
-        if (result->local_name_len) {
-          size_t n = result->local_name_len;
-          if (n >= sizeof(m->scan_devices[i].name))
-            n = sizeof(m->scan_devices[i].name) - 1;
-          memcpy(m->scan_devices[i].name, result->local_name, n);
-          m->scan_devices[i].name[n] = '\0';
-        }
-      }
-    }
-  }
-  (void)h2_pal_mutex_unlock(m->rt->sync, m->scan_mutex);
-  return false;
-}
-
-static int scan_stop(h2_mfg_t* m) {
-  /* Never hold scan_mutex while the provider finishes its callbacks. */
-  int rc = h2_pal_ble_stop_scan(m->rt->ble_host);
-  int locked = h2_pal_mutex_lock(m->rt->sync, m->scan_mutex);
-  if (locked != 0) return locked;
-  if (rc != 0) {
-    m->scan_error = rc;
-  } else {
-    m->scan_started = 0;
-    m->scan_done = 1;
-  }
-  int unlocked = h2_pal_mutex_unlock(m->rt->sync, m->scan_mutex);
-  return rc != 0 ? rc : unlocked;
-}
-
-static int scan_enter(h2_mfg_t* m) {
-  h2_pal_mutex_config_t config = {.name = "mfg_scan", .allocator = m->rt->mem};
-  int rc = h2_pal_mutex_create(m->rt->sync, &config, &m->scan_mutex);
-  if (rc != 0) return rc;
-  m->scan_count = 0;
-  m->scan_started = m->scan_done = m->scan_error = 0;
-  memset(m->scan_devices, 0, sizeof(m->scan_devices));
-  rc = h2_pal_ble_start(m->rt->ble_host);
-  if (rc != 0) {
-    m->scan_error = rc;
-    return rc;
-  }
-  /* Own the callback context even if a failed start needs stop cleanup. */
-  m->scan_started = 1;
-  h2_pal_ble_scan_params_t params = {
-      .mode = H2_PAL_BLE_SCAN_MODE_ACTIVE, .interval_ms = 100, .window_ms = 50};
-  rc = h2_pal_ble_start_scan(m->rt->ble_host, &params, scan_result, m);
-  if (rc != 0) {
-    int locked = h2_pal_mutex_lock(m->rt->sync, m->scan_mutex);
-    if (locked != 0) return locked;
-    m->scan_error = rc;
-    (void)h2_pal_mutex_unlock(m->rt->sync, m->scan_mutex);
-  }
-  return rc;
-}
-
 int h2_mfg_peripheral_enter(h2_mfg_t* m) {
   h2_mfg_check_t check = m->profile->steps[m->model.current].check;
-  if (check == H2_MFG_BLE && m->profile->ble_scan_only) return scan_enter(m);
-  if (check == H2_MFG_BATTERY && m->profile->battery_manual_charge) {
-    m->battery_phase = m->phase = m->samples = 0;
-    m->model.ready = 0;
-  }
   if (check == H2_MFG_MAGNETOMETERS) {
-    memset(m->mag_baseline_valid, 0, sizeof(m->mag_baseline_valid));
-    memset(m->magnet_present, 0, sizeof(m->magnet_present));
-    memset(m->magnet_responded, 0, sizeof(m->magnet_responded));
-    memset(m->magnet_error, 0, sizeof(m->magnet_error));
     for (unsigned i = 0; i < H2_MFG_MAGNETOMETER_MAX; ++i)
       for (unsigned axis = 0; axis < 3; ++axis) {
         m->mag_min[i][axis] = INT32_MAX;
@@ -156,15 +71,6 @@ int h2_mfg_peripheral_enter(h2_mfg_t* m) {
 }
 
 int h2_mfg_peripheral_leave(h2_mfg_t* m) {
-  if (m->scan_started) {
-    int rc = scan_stop(m);
-    if (rc != 0) return rc;
-  }
-  if (m->scan_mutex) {
-    int rc = h2_pal_mutex_destroy(m->rt->sync, m->scan_mutex);
-    if (rc != 0) return rc;
-    m->scan_mutex = NULL;
-  }
   if (m->motor_started) {
     int rc =
         h2_pal_pwm_switch_set_duty(m->rt->pwm_switch, m->profile->motor, 0);
@@ -192,55 +98,7 @@ int h2_mfg_peripheral_leave(h2_mfg_t* m) {
   return 0;
 }
 
-static int live_magnets(h2_mfg_t* m) {
-  int first_error = 0, ready = m->profile->magnetometer_count != 0;
-  int32_t threshold = m->profile->magnetic_delta_mgauss;
-  if (threshold <= 0) threshold = 80;
-  for (unsigned i = 0; i < m->profile->magnetometer_count; ++i) {
-    int rc = h2_pal_imu_read(m->rt->imu, m->profile->magnetometers[i],
-                             &m->magnetometers[i]);
-    if (rc == 0 && !(m->magnetometers[i].flags & H2_PAL_IMU_HAS_MAG))
-      rc = H2_PAL_ERR_FORMAT;
-    m->magnet_error[i] = rc;
-    m->magnet_present[i] = 0;
-    if (rc != 0) {
-      memset(m->mag_baseline_valid[i], 0, sizeof(m->mag_baseline_valid[i]));
-      if (first_error == 0) first_error = rc;
-      ready = 0;
-      continue; /* Read the other physical side even when this one fails. */
-    }
-    const h2_pal_vec3_i32_t* v = &m->magnetometers[i].mag_mgauss;
-    const int32_t axes[] = {v->x, v->y, v->z};
-    int valid = 0;
-    for (unsigned axis = 0; axis < 3; ++axis) {
-      if (axes[axis] == m->profile->magnetic_invalid_mgauss) {
-        m->mag_baseline_valid[i][axis] = 0;
-        continue;
-      }
-      ++valid;
-      if (!m->mag_baseline_valid[i][axis]) {
-        m->mag_baseline[i][axis] = axes[axis];
-        m->mag_baseline_valid[i][axis] = 1;
-        continue;
-      }
-      int64_t delta = (int64_t)axes[axis] - m->mag_baseline[i][axis];
-      if (delta >= threshold || delta <= -(int64_t)threshold)
-        m->magnet_present[i] = 1;
-    }
-    m->magnet_responded[i] |= m->magnet_present[i];
-    ready &= valid != 0 && m->magnet_responded[i];
-  }
-  m->model.ready = ready && first_error == 0;
-  (void)snprintf(
-      m->detail, sizeof(m->detail),
-      "Magnet 0 live=%d seen=%d error=%d; 1 live=%d seen=%d error=%d",
-      m->magnet_present[0], m->magnet_responded[0], m->magnet_error[0],
-      m->magnet_present[1], m->magnet_responded[1], m->magnet_error[1]);
-  return first_error;
-}
-
 static int magnets(h2_mfg_t* m) {
-  if (m->profile->live_magnets) return live_magnets(m);
   int moved = 1;
   for (unsigned i = 0; i < m->profile->magnetometer_count; ++i) {
     int rc = h2_pal_imu_read(m->rt->imu, m->profile->magnetometers[i],
@@ -266,35 +124,14 @@ static int magnets(h2_mfg_t* m) {
 }
 
 static int battery(h2_mfg_t* m) {
-  if (m->profile->battery_manual_charge) m->model.ready = 0;
   int rc =
       h2_pal_input_read_battery(m->rt->input, m->profile->battery, &m->battery);
   if (rc != 0) return rc;
   uint32_t required = H2_PAL_BATTERY_HAS_VOLTAGE_MV |
                       H2_PAL_BATTERY_HAS_PERCENT_X100 | H2_PAL_BATTERY_PRESENT;
-  if (m->profile->battery_manual_charge)
-    required |= H2_PAL_BATTERY_HAS_CURRENT_MA;
   if ((m->battery.flags & required) != required || m->battery.voltage_mv <= 0 ||
       m->battery.percent_x100 > 10000)
     return H2_PAL_ERR_IO;
-  if (m->profile->battery_manual_charge) {
-    if (m->battery_phase > 1) return H2_PAL_ERR_INVALID_STATE;
-    if (m->phase != m->battery_phase) {
-      m->phase = m->battery_phase;
-      m->samples = 0;
-    }
-    m->model.ready = ++m->samples >= (m->battery_phase ? 1u : 3u);
-    (void)snprintf(m->detail, sizeof(m->detail),
-                   "Battery present=%d mv=%" PRId32 " ma=%" PRId32
-                   " percent_x100=%u charging=%d full=%d manual=%s",
-                   !!(m->battery.flags & H2_PAL_BATTERY_PRESENT),
-                   m->battery.voltage_mv, m->battery.current_ma,
-                   (unsigned)m->battery.percent_x100,
-                   !!(m->battery.flags & H2_PAL_BATTERY_CHARGING),
-                   !!(m->battery.flags & H2_PAL_BATTERY_FULL),
-                   m->battery_phase ? "unplug_confirm" : "charge_confirm");
-    return 0;
-  }
   m->model.ready = ++m->samples >= 3;
   (void)snprintf(m->detail, sizeof(m->detail),
                  "Battery present voltage_mv=%" PRId32 " percent_x100=%u",
@@ -584,27 +421,6 @@ static int camera_worker_leave(h2_mfg_t* m) {
   return 0;
 }
 
-static int scan_tick(h2_mfg_t* m, uint64_t now) {
-  m->model.ready = 0;
-  if (!m->scan_mutex) return H2_PAL_ERR_INVALID_STATE;
-  uint32_t window =
-      m->profile->scan_window_ms ? m->profile->scan_window_ms : 10000;
-  int stopped = 0;
-  if (m->scan_started && now - m->started_ms >= window) stopped = scan_stop(m);
-  int rc = h2_pal_mutex_lock(m->rt->sync, m->scan_mutex);
-  if (rc != 0) return rc;
-  if (stopped != 0) m->scan_error = stopped;
-  if (m->scan_done && !m->scan_count && !m->scan_error)
-    m->scan_error = H2_PAL_ERR_TIMEOUT;
-  rc = m->scan_error;
-  m->model.ready = m->scan_done && m->scan_count != 0 && rc == 0;
-  (void)snprintf(m->detail, sizeof(m->detail),
-                 "BLE scan devices=%u done=%d error=%d manual=pending",
-                 m->scan_count, m->scan_done, rc);
-  (void)h2_pal_mutex_unlock(m->rt->sync, m->scan_mutex);
-  return rc;
-}
-
 int h2_mfg_peripheral_tick(h2_mfg_t* m, uint64_t now) {
   switch (m->profile->steps[m->model.current].check) {
     case H2_MFG_MAGNETOMETERS:
@@ -615,8 +431,6 @@ int h2_mfg_peripheral_tick(h2_mfg_t* m, uint64_t now) {
       return vibration(m, now);
     case H2_MFG_CAMERA:
       return camera(m, now);
-    case H2_MFG_BLE:
-      return m->profile->ble_scan_only ? scan_tick(m, now) : 0;
     default:
       return 0;
   }

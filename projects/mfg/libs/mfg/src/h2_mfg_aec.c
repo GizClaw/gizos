@@ -1,8 +1,6 @@
 #include "h2_mfg_internal.h"
 
 #include <inttypes.h>
-#include "h2_atomic.h"
-
 #include <stdio.h>
 #include <string.h>
 
@@ -51,13 +49,6 @@ struct h2_mfg_aec {
   unsigned samples, measured, warmup, echo_db, position;
   uint32_t mic_gain, volume;
   int diagnostics, registered, replayed;
-  /* Live-monitor state is private. The controller owns lifecycle and publishes
-   * UI fields; worker/callbacks only touch these atomics and worker-owned PCM.
-   * In particular no worker takes the controller mutex while it joins us. */
-  int monitor;
-  h2_pal_task_t* monitor_task;
-  h2_atomic_int_t monitor_stop, monitor_error;
-  h2_atomic_uint_t monitor_capture, monitor_playback, monitor_written;
   /* Each worker writes only its own meter. The controller reads these only
    * after BOTH workers have stopped and joined; UI uses controller fields. */
   capture_meter_t capture;
@@ -82,9 +73,7 @@ static const char* phase_name(phase_t phase) {
 }
 
 const char* h2_mfg_aec_phase(const h2_mfg_t* m) {
-  return m->aec == NULL    ? "STARTING"
-         : m->aec->monitor ? "LIVE MONITOR"
-                           : phase_name(m->aec->phase);
+  return m->aec == NULL ? "STARTING" : phase_name(m->aec->phase);
 }
 
 int h2_mfg_aec_echo_db(const h2_mfg_t* m) {
@@ -119,7 +108,6 @@ static void sample(int16_t value, uint64_t* energy, uint32_t* peak,
 
 static void on_capture(void* user, const h2_audio_aec_frame_t* f) {
   h2_mfg_aec_t* a = user;
-  if (a->monitor) return;
   capture_meter_t* c = &a->capture;
   if (f == NULL || f->raw == NULL || f->raw->channels < 2 ||
       f->raw->channels > 4 || !valid(a, f->raw, f->raw->channels) ||
@@ -164,23 +152,8 @@ static void on_capture(void* user, const h2_audio_aec_frame_t* f) {
   }
 }
 
-static void monitor_error(h2_mfg_aec_t* a, int rc) {
-  int expected = 0;
-  (void)h2_atomic_int_compare_exchange(&a->monitor_error, &expected,
-                                       rc == 0 ? H2_PAL_ERR_IO : rc,
-                                       H2_ATOMIC_SEQ_CST, H2_ATOMIC_SEQ_CST);
-}
-
 static void on_playback(void* user, const h2_audio_frame_t* f) {
   h2_mfg_aec_t* a = user;
-  if (a->monitor) {
-    if (!valid(a, f, 1))
-      monitor_error(a, H2_PAL_ERR_FORMAT);
-    else
-      (void)h2_atomic_uint_fetch_add(&a->monitor_playback, 1u,
-                                     H2_ATOMIC_SEQ_CST);
-    return;
-  }
   playback_meter_t* p = &a->playback;
   if (!valid(a, f, 1)) {
     p->result = H2_PAL_ERR_FORMAT;
@@ -243,25 +216,11 @@ int h2_mfg_aec_mic_frame(h2_mfg_t* m, const h2_audio_frame_t* f) {
 
 static void on_error(void* user, int capture, int result) {
   h2_mfg_aec_t* a = user;
-  if (a->monitor) {
-    monitor_error(a, result);
-    return;
-  }
   int* out = capture ? &a->capture.result : &a->playback.result;
   *out = result == 0 ? H2_PAL_ERR_IO : result;
 }
 
 static int stop_phase(h2_mfg_t* m) {
-  h2_mfg_aec_t* a = m->aec;
-  if (a->monitor) {
-    h2_atomic_int_store(&a->monitor_stop, 1, H2_ATOMIC_SEQ_CST);
-    m->model.ready = 0;
-    if (a->monitor_task != NULL) {
-      int rc = h2_pal_task_join(m->rt->task, a->monitor_task);
-      if (rc != 0) return rc;
-      a->monitor_task = NULL;
-    }
-  }
   int rc = h2_mfg_audio_stop(m);
   if (rc != 0) return rc;
   if (m->aec->registered) {
@@ -276,13 +235,6 @@ int h2_mfg_aec_close(h2_mfg_t* m) {
   if (m->aec == NULL) return 0;
   int rc = stop_phase(m);
   if (rc != 0) return rc;
-  if (m->aec->monitor) {
-    h2_atomic_int_destroy(&m->aec->monitor_stop);
-    h2_atomic_int_destroy(&m->aec->monitor_error);
-    h2_atomic_uint_destroy(&m->aec->monitor_capture);
-    h2_atomic_uint_destroy(&m->aec->monitor_playback);
-    h2_atomic_uint_destroy(&m->aec->monitor_written);
-  }
   /* The only recorded speech is this short-lived RAM buffer. */
   size_t bytes =
       sizeof(*m->aec) + 2 * recording_samples(m->aec) * sizeof(int16_t);
@@ -356,178 +308,6 @@ static int start_phase(h2_mfg_t* m, phase_t phase) {
   return rc;
 }
 
-/* A single 512-sample buffer bounds latency and ownership. Never overwrite a
- * pending suffix or treat a short provider write as accepting the whole frame.
- * Polling independently of the UI keeps a 100-ms display from starving 32-ms
- * PCM. Missing PCM/DAC progress is bounded; operator listening is not timed. */
-static void monitor_run(void* user) {
-  h2_mfg_aec_t* a = user;
-  h2_mfg_t* m = a->owner;
-  size_t captured = 0, offset = 0;
-  uint64_t capture_ms = a->start_ms, write_ms = a->start_ms;
-  uint64_t playback_ms = a->start_ms;
-  unsigned played = 0;
-  while (!h2_atomic_int_load(&a->monitor_stop, H2_ATOMIC_SEQ_CST) &&
-         h2_atomic_int_load(&a->monitor_error, H2_ATOMIC_SEQ_CST) == 0) {
-    uint64_t now = 0;
-    int rc = h2_pal_time_get_monotonic_ms(m->rt->time, &now);
-    if (rc != 0) {
-      monitor_error(a, rc);
-      break;
-    }
-    unsigned count =
-        h2_atomic_uint_load(&a->monitor_playback, H2_ATOMIC_SEQ_CST);
-    if (count != played) {
-      played = count;
-      playback_ms = now;
-    }
-    if ((captured < m->pcm_bytes && now - capture_ms >= 2000) ||
-        (captured == m->pcm_bytes && now - write_ms >= 2000) ||
-        now - playback_ms >= 2000) {
-      monitor_error(a, H2_PAL_ERR_TIMEOUT);
-      break;
-    }
-    if (captured < m->pcm_bytes) {
-      h2_audio_frame_t f = h2_audio_frame_for_buffer(
-          (uint8_t*)m->pcm + captured, m->pcm_bytes - captured,
-          m->audio_info.mic_format);
-      void* buffer = f.data;
-      size_t capacity = f.capacity;
-      rc = h2_pal_audio_mic_read(m->rt->audio, &f, 0);
-      if (rc == 0) {
-        if (f.data != buffer || f.capacity > capacity ||
-            f.sample_rate_hz != RATE || f.channels != 1 ||
-            f.sample_format != H2_AUDIO_SAMPLE_S16LE || f.bytes == 0 ||
-            f.bytes > capacity || f.bytes > f.capacity ||
-            f.bytes != (size_t)f.samples_per_channel * sizeof(int16_t)) {
-          monitor_error(a, H2_PAL_ERR_FORMAT);
-          break;
-        }
-        captured += f.bytes;
-        if (captured == m->pcm_bytes) {
-          (void)h2_atomic_uint_fetch_add(&a->monitor_capture, 1u,
-                                         H2_ATOMIC_SEQ_CST);
-          write_ms = now;
-        }
-      } else if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
-        monitor_error(a, rc);
-        break;
-      }
-    }
-    if (captured == m->pcm_bytes) {
-      h2_audio_frame_t f = h2_audio_frame_for_buffer(
-          (uint8_t*)m->pcm + offset, captured - offset,
-          m->audio_info.playback_format);
-      f.bytes = captured - offset;
-      f.samples_per_channel = (uint16_t)(f.bytes / sizeof(int16_t));
-      rc = h2_pal_audio_track_write(m->track, &f, 0);
-      if (rc >= 0) {
-        if (rc > 0 && ((size_t)rc > f.bytes || rc % 2 != 0)) {
-          monitor_error(a, H2_PAL_ERR_IO);
-          break;
-        }
-        offset += rc == 0 ? f.bytes : (size_t)rc;
-        if (offset == captured) {
-          (void)h2_atomic_uint_fetch_add(&a->monitor_written, 1u,
-                                         H2_ATOMIC_SEQ_CST);
-          captured = offset = 0;
-          capture_ms = now;
-        }
-      } else if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
-        monitor_error(a, rc);
-        break;
-      }
-    }
-    rc = h2_pal_time_sleep_ms(m->rt->time, 2);
-    if (rc != 0) monitor_error(a, rc);
-  }
-}
-
-static int monitor_enter(h2_mfg_t* m) {
-  h2_mfg_aec_t* a = m->aec;
-  h2_atomic_result_t init = h2_atomic_int_init(&a->monitor_stop, 0);
-  if (init == H2_ATOMIC_OK) init = h2_atomic_int_init(&a->monitor_error, 0);
-  if (init == H2_ATOMIC_OK) init = h2_atomic_uint_init(&a->monitor_capture, 0);
-  if (init == H2_ATOMIC_OK) init = h2_atomic_uint_init(&a->monitor_playback, 0);
-  if (init == H2_ATOMIC_OK) init = h2_atomic_uint_init(&a->monitor_written, 0);
-  if (init != H2_ATOMIC_OK) {
-    if (a->monitor_stop.storage) h2_atomic_int_destroy(&a->monitor_stop);
-    if (a->monitor_error.storage) h2_atomic_int_destroy(&a->monitor_error);
-    if (a->monitor_capture.storage) h2_atomic_uint_destroy(&a->monitor_capture);
-    if (a->monitor_playback.storage)
-      h2_atomic_uint_destroy(&a->monitor_playback);
-    if (a->monitor_written.storage) h2_atomic_uint_destroy(&a->monitor_written);
-    return init == H2_ATOMIC_NO_MEMORY ? H2_PAL_ERR_NO_MEMORY
-                                       : H2_PAL_ERR_UNSUPPORTED;
-  }
-  a->monitor = 1;
-  /* Real DAC callbacks distinguish playback from merely enqueuing samples.
-   * Errors from either provider worker must remain visible to the controller.
-   */
-  const h2_audio_aec_observer_t observer = {.user = a,
-                                            .on_capture = on_capture,
-                                            .on_playback = on_playback,
-                                            .on_error = on_error};
-  int rc = h2_pal_audio_set_aec_observer(m->rt->audio, &observer);
-  if (rc == 0) a->registered = 1;
-  if (rc == 0)
-    rc =
-        h2_pal_audio_get_speaker_volume_percent(m->rt->audio, &m->saved_volume);
-  if (rc == 0) m->volume_saved = 1;
-  a->volume = m->profile->speaker_test_volume == 0
-                  ? 50
-                  : m->profile->speaker_test_volume;
-  if (rc == 0)
-    rc = h2_pal_audio_set_speaker_volume_percent(m->rt->audio, a->volume);
-  if (rc == 0) rc = h2_pal_audio_start_mic(m->rt->audio);
-  if (rc == 0) m->mic_started = 1;
-  if (rc == 0) rc = h2_pal_audio_start_speaker(m->rt->audio);
-  if (rc == 0) m->speaker_started = 1;
-  const h2_audio_track_config_t track = {
-      .name = "mfg/monitor",
-      .format = m->audio_info.playback_format,
-      .volume_factor_milli = 1000,
-      .buffer_frames = 3,
-      .allocator = m->rt->mem};
-  if (rc == 0) rc = h2_pal_audio_create_track(m->rt->audio, &track, &m->track);
-  if (rc == 0) rc = h2_pal_time_get_monotonic_ms(m->rt->time, &a->start_ms);
-  const h2_pal_task_options_t options = {.name = "mfg/monitor",
-                                         .min_stack_size = 8192};
-  if (rc == 0)
-    rc = h2_pal_task_start(m->rt->task, &options, monitor_run, a,
-                           &a->monitor_task);
-  (void)snprintf(m->detail, sizeof(m->detail),
-                 "AEC live monitor captured=0 played=0 spk=%" PRIu32
-                 " listening=pending",
-                 a->volume);
-  return rc;
-}
-
-static int monitor_tick(h2_mfg_t* m) {
-  h2_mfg_aec_t* a = m->aec;
-  unsigned captured =
-      h2_atomic_uint_load(&a->monitor_capture, H2_ATOMIC_SEQ_CST);
-  unsigned played =
-      h2_atomic_uint_load(&a->monitor_playback, H2_ATOMIC_SEQ_CST);
-  unsigned written =
-      h2_atomic_uint_load(&a->monitor_written, H2_ATOMIC_SEQ_CST);
-  unsigned minimum = m->profile->monitor_min_frames;
-  if (minimum < 8) minimum = 8;
-  int rc = h2_atomic_int_load(&a->monitor_error, H2_ATOMIC_SEQ_CST);
-  m->audio_frames = captured < played ? captured : played;
-  m->audio_samples = (uint64_t)written * a->samples;
-  m->model.ready =
-      rc == 0 && !h2_atomic_int_load(&a->monitor_stop, H2_ATOMIC_SEQ_CST) &&
-      captured >= minimum && played >= minimum && written >= minimum;
-  (void)snprintf(m->detail, sizeof(m->detail),
-                 "AEC live monitor captured=%u played=%u queued=%u spk=%" PRIu32
-                 " rc=%d"
-                 " listening=%s",
-                 captured, played, written, a->volume, rc,
-                 m->model.ready ? "operator-confirm" : "pending");
-  return rc;
-}
-
 int h2_mfg_aec_enter(h2_mfg_t* m) {
   int rc = h2_pal_audio_get_info(m->rt->audio, &m->audio_info);
   if (rc != 0) return rc;
@@ -544,13 +324,8 @@ int h2_mfg_aec_enter(h2_mfg_t* m) {
       mic.sample_format != H2_AUDIO_SAMPLE_S16LE ||
       spk.sample_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_PAL_ERR_UNSUPPORTED;
-  if (m->profile->aec_live_monitor &&
-      mic.frame_samples_per_channel != MAX_SAMPLES)
-    return H2_PAL_ERR_UNSUPPORTED;
   unsigned samples = mic.frame_samples_per_channel;
-  unsigned measured = m->profile->aec_live_monitor
-                          ? 0
-                          : (WINDOW_SAMPLES + samples - 1) / samples;
+  unsigned measured = (WINDOW_SAMPLES + samples - 1) / samples;
   size_t bytes =
       sizeof(*m->aec) + 2 * (size_t)measured * samples * sizeof(int16_t);
   m->aec = h2_pal_mem_alloc(m->rt->mem, bytes);
@@ -563,7 +338,6 @@ int h2_mfg_aec_enter(h2_mfg_t* m) {
   m->pcm_bytes = samples * sizeof(int16_t);
   m->pcm = h2_pal_mem_alloc(m->rt->mem, m->pcm_bytes);
   if (m->pcm == NULL) return H2_PAL_ERR_NO_MEMORY;
-  if (m->profile->aec_live_monitor) return monitor_enter(m);
   rc = h2_pal_audio_get_speaker_volume_percent(m->rt->audio, &m->saved_volume);
   if (rc == 0) m->volume_saved = 1;
   if (rc == 0)
@@ -700,7 +474,6 @@ static int finish_window(h2_mfg_t* m) {
 int h2_mfg_aec_tick(h2_mfg_t* m) {
   h2_mfg_aec_t* a = m->aec;
   if (a == NULL) return H2_PAL_ERR_INVALID_STATE;
-  if (a->monitor) return monitor_tick(m);
   uint64_t now = 0;
   int rc = h2_pal_time_get_monotonic_ms(m->rt->time, &now);
   if (rc != 0) return rc;

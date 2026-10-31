@@ -8,21 +8,13 @@ unsupported provider，其他板不自动引入 Mosaico 驱动。
 
 ## Loader 与 MFG 最终组合
 
-同一块板的两个管理镜像均使用既有 `role=h2loader` 和 S31 layout：
+同一板子的普通 Loader 与 MFG 均为既有 `role=h2loader` 管理镜像，沿用 S31 layout。普通 Loader 入口不变；[MFG](/apps/h2loader/boards/esp_mosaico/mfg) 入口在 `projects/mfg/apps/esp_mosaico/`，revision 3 的 profile 声明十一项、app 触摸点、IMU channel 要求和 UI 配置。颜色图案与亮度合为原 DISPLAY 检查。
 
-- [普通 Loader](/apps/h2loader/boards/esp_mosaico/h2loader)：
-  `//projects/h2loader/targets/h2loader_tar_zlib/loader/esp_mosaico:package`，入口保持不变。
-- [MFG](/apps/h2loader/boards/esp_mosaico/mfg)：
-  `//projects/mfg/apps/esp_mosaico:package`，在 `main/profile.c` 声明十二项顺序、
-  外设 ID 与工厂交互策略；`main.c` 只接线共享 MFG/Loader 生命周期和命令。
+`main.c` 组合既有板级 Runtime、USB/BLE Loader 与共享 MFG，并拥有公开工厂 Wi-Fi 准备及磁力计基线/补偿哨兵/实时观察。共享 Wi-Fi 只观察已有 STA；磁力计共享检查维持原 min/max，UI 通过只读回调显示 app 观察。Loader 安装显示回调为 NULL。共享 model/session/AEC 源码与 main 一致，失败、重试、完成摘要及全项 PASSED 门控沿用原合同。
 
-二者使用 `--config=esp32s31` 构建并沿用现有 Type-C USB console/Loader adapter。 MFG 不启用 BLE 命令服务，BLE 验收仅扫描。MFG 以 `profile.total` 打开共享 全项 PASSED 门控；失败、跳过、未测、结果不可读或保存失败不能允许 App 安装/启动。 Loader 替换/恢复优先，使用既有 CLI 验证管理更新，参见[Mosaico 总览](/apps/h2loader/boards/esp_mosaico/)。
+MFG 使用 `H2_MOSAICO_AUDIO_AEC=ON` 运行原分阶段 AEC，不降低门限。BLE 使用真实 Loader 命令往返而非扫描验收。电池回到存在、电压与电量；保留按住振动、可配置触摸点、channel-aware 加速度/陀螺仪响应和异步相机。图像/声音等人工验收仍须在新镜像重测，旧 revision-2 通过不能覆盖此流程。
 
-MFG 使用现有 `H2_MOSAICO_AUDIO_AEC=ON` opt-in，实时监听处理后的 PAL PCM， 保留麦克风增益并人工判断；普通 Loader 不随之启用 AEC。MFG image-local `sdkconfig.mfg.defaults` 设置 `CONFIG_VFS_MAX_COUNT=16`，供现有 Loader 文件系统、CDC 和 Camera 同时使用。不能据仅编译成功推断运行时资源共存通过。
-
-共享 MFG 负责黑橙测试 UI、现有字体设施、固定顺序进度点及完成/重测页， 该入口不增加 LVGL 工作任务。Loader 的安装、失败、启动显示回调均为 NULL， 不增加品牌或安装进度界面。交接前共享 cleanup 停止监听/扫描/振动、归还 Camera 借帧并释放触摸/显示；清理失败保留资源并阻止交接，不能提前销毁 Runtime。
-
-本次集成没有新 GizOS 包的构建、容量或真机通过证据。后续必须记录准确 commit/package SHA-256 和串口证据，验证十二项、暖态/冷态重测、全部通过门控、 MFG ↔ Loader 替换及 App 安装/启动/恢复。旧 Firmwares 记录仅作行为参考。
+image-local `sdkconfig.mfg.defaults` 的 VFS 容量供 Loader 文件系统、CDC 和 Camera 组合使用。原生烧录只属于初始配置/恢复证据；MFG/Loader/App 管理安装、回滚、恢复和最终 metadata 验证另行记录。具体操作与 AEC 诊断见 [MFG 使用页](/apps/h2loader/boards/esp_mosaico/mfg)。
 
 ## Camera 调用与资源
 
@@ -92,5 +84,3 @@ context 由板级持有，生命周期覆盖整个启动周期。注入不可重
 
 共享 E2E App 保留原断言；Mosaico launcher 只负责板级组合、任务策略、fixture 与结果输出。
 AMOLED 对端仅作为已有协议及测试声源夹具，不扩大为其他板卡的产品适配交付。
-
-界面标题、尺寸、颜色、控件矩形和磁力计排列由 Mosaico profile 声明，共享绘制与触摸消费同一份配置。顺序遍历、通过前清理、显示图案验收和异步相机是独立策略，不随 UI 选择改变。

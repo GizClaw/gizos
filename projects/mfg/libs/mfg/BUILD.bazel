@@ -33,9 +33,8 @@ cc_library(
 )
 
 h2_tasks(
-    name = "monitor_tasks",
+    name = "camera_tasks",
     tasks = [
-        "$mfg/monitor",
         "$mfg/camera",
     ],
 )
@@ -87,23 +86,6 @@ cc_library(
 cc_test(
     name = "peripheral_checks_test",
     srcs = ["tests/peripheral_checks_test.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        ":mfg",
-        "//libs/atomic/providers/c11",
-        "//libs/pal/providers/desktop/pal_core",
-    ],
-)
-
-cc_test(
-    name = "network_checks_test",
-    srcs = ["tests/network_checks_test.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({

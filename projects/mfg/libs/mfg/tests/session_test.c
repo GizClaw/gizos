@@ -20,9 +20,6 @@
 static int close_result;
 static unsigned closes;
 static unsigned enters;
-static int request_reset;
-static int leave_result;
-static int tick_result;
 
 int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
   (void)now;
@@ -32,16 +29,13 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
 }
 int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
   (void)now;
-  if (request_reset && m->model.current >= m->profile->total) {
-    request_reset = 0;
-    *action = "reset";
-  }
+  (void)action;
   if (m->model.current == 1) m->model.ready = m->ble_probed;
-  return tick_result;
+  return 0;
 }
 int h2_mfg_hardware_leave(h2_mfg_t* m) {
   (void)m;
-  return leave_result;
+  return 0;
 }
 int h2_mfg_hardware_close(h2_mfg_t* m) {
   (void)m;
@@ -272,125 +266,7 @@ static void completed_auto_without_app_keeps_summary_ui(void) {
   teardown(&r);
 }
 
-static void terminal_touch_reset_revokes_gate_before_reentry(void) {
-  test_run_t r;
-  setup(&r);
-  assert(h2_loader_mfg_ensure_acceptance_revision(r.runtime.pref, 2, 1) == 0);
-  h2_loader_mfg_summary_t summary = {
-      .total = 2,
-      .step_status = {H2_LOADER_MFG_STEP_PASSED, H2_LOADER_MFG_STEP_PASSED}};
-  assert(h2_loader_mfg_write(r.runtime.pref, &summary) == 0);
-  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
-  await_step(&r, 2);
-  /* The command operation lock reserves the handoff boundary. The UI cannot
-   * mutate acceptance while a remote operation holds it. */
-  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
-  request_reset = 1;
-  assert(h2_pal_time_sleep_ms(r.runtime.time, 40) == 0);
-  assert(r.loader.status.mfg.step_status[0] == H2_LOADER_MFG_STEP_PASSED);
-  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
-  await_step(&r, 0);
-  int present;
-  assert(h2_loader_mfg_read(r.runtime.pref, r.runtime.mem, &summary,
-                            &present) == 0);
-  assert(present && summary.step_status[0] == H2_LOADER_MFG_STEP_UNTESTED);
-  assert(r.loader.status.mfg.step_status[0] == H2_LOADER_MFG_STEP_UNTESTED);
-  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
-         0);
-  assert(pthread_join(r.thread, NULL) == 0);
-  teardown(&r);
-}
-
-static void accepted_auto_app_returns_after_live_completion(void) {
-  test_run_t r;
-  setup(&r);
-  h2_pal_pref_namespace_t* ns;
-  assert(h2_pal_pref_open(r.runtime.pref, "h2loader",
-                          H2_PAL_PREF_OPEN_READ_WRITE, &ns) == 0);
-  assert(ns->set_u32(ns, "boot_intent", H2_LOADER_BOOT_INTENT_AUTO) == 0);
-  assert(ns->commit(ns) == 0 && ns->close(ns) == 0);
-  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
-  await_step(&r, 0);
-  assert(control(&r, "confirm", "display",
-                 H2_LOADER_COMMAND_TRANSPORT_SERIAL) == 0);
-  await_step(&r, 1);
-  assert(control(&r, "probe", "ble", H2_LOADER_COMMAND_TRANSPORT_BLE) == 0);
-  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
-  h2_loader_metadata_t app = {.valid = 1,
-                              .image_size = 1024,
-                              .role = H2_LOADER_IMAGE_ROLE_APP,
-                              .version = "1.0.0",
-                              .board = "test",
-                              .target = "host"};
-  memset(app.image_checksum, 'a', 64);
-  app.image_checksum[64] = 0;
-  assert(h2_loader_metadata_write(
-             r.runtime.pref, H2_LOADER_METADATA_SLOT_PARTITION_2, &app) == 0);
-  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
-  assert(control(&r, "confirm", "ble", H2_LOADER_COMMAND_TRANSPORT_BLE) == 0);
-  assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_OK);
-  assert(h2_mfg_model_complete(&r.mfg->model));
-  teardown(&r);
-}
-
-static void factory_cleanup_failure_cannot_commit_acceptance(void) {
-  test_run_t r;
-  setup(&r);
-  h2_mfg_profile_t factory = profile;
-  factory.cleanup_before_pass = 1;
-  r.mfg->profile = &factory;
-  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
-  await_step(&r, 0);
-  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
-  leave_result = H2_PAL_ERR_BUSY;
-  char output[768], ticket[9];
-  assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
-  (void)snprintf(ticket, sizeof(ticket), "%08" PRIx32, r.mfg->model.ticket);
-  assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
-  const char* argv[] = {"confirm", "display", ticket};
-  assert(h2_mfg_command(r.mfg, H2_LOADER_COMMAND_TRANSPORT_SERIAL, 3, argv,
-                        output, sizeof(output)) == H2_PAL_ERR_BUSY);
-  assert(r.mfg->model.current == 0 && !r.mfg->model.ready);
-  assert(r.loader.status.mfg.step_status[0] == H2_LOADER_MFG_STEP_UNTESTED);
-  leave_result = 0;
-  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
-  await_step(&r, 0);
-  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
-         0);
-  assert(pthread_join(r.thread, NULL) == 0);
-  teardown(&r);
-}
-
-static void automatic_error_waits_but_explicit_fail_advances(void) {
-  test_run_t r;
-  setup(&r);
-  h2_mfg_profile_t configured = profile;
-  configured.sequential_traversal = 1;
-  r.mfg->profile = &configured;
-  tick_result = H2_PAL_ERR_IO;
-  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
-  await_step(&r, 0);
-  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
-  assert(r.mfg->model.current == 0);
-  assert(r.loader.status.mfg.step_status[0] == H2_LOADER_MFG_STEP_FAILED);
-  tick_result = 0;
-  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
-  assert(control(&r, "fail", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) ==
-         0);
-  await_step(&r, 1);
-  assert(r.loader.status.mfg.step_status[0] == H2_LOADER_MFG_STEP_FAILED);
-  assert(!h2_mfg_model_complete(&r.mfg->model));
-  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
-         0);
-  assert(pthread_join(r.thread, NULL) == 0);
-  teardown(&r);
-}
-
 int main(void) {
-  automatic_error_waits_but_explicit_fail_advances();
-  factory_cleanup_failure_cannot_commit_acceptance();
-  accepted_auto_app_returns_after_live_completion();
-  terminal_touch_reset_revokes_gate_before_reentry();
   completed_auto_without_app_keeps_summary_ui();
   loader_candidate_bypasses_interactive_gate();
   stop_with_operation_lock_and_retry_failed_join();

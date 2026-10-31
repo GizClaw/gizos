@@ -2,7 +2,6 @@
 
 static const h2_mfg_step_t steps[] = {
     {"display", H2_MFG_DISPLAY, 0},
-    {"brightness", H2_MFG_BRIGHTNESS, 0},
     {"touch", H2_MFG_TOUCH, 0},
     {"buttons", H2_MFG_BUTTONS, 0},
     {"aec", H2_MFG_AEC, 0},
@@ -63,17 +62,14 @@ static const h2_mfg_ui_config_t ui = {
     .preview = {48, 137, 384, 216},
 };
 
-/* Public manufacturing fixture, matching the accepted source-branch setup. */
-static const h2_pal_wifi_sta_config_t wifi = {
-    .ssid = "HAIVIVI-MFG",
-    .ssid_len = sizeof("HAIVIVI-MFG") - 1u,
-    .password = "!haivivi",
-    .password_len = sizeof("!haivivi") - 1u,
+static const h2_mfg_touch_point_t touch_points[] = {
+    {80, 168},  {240, 168}, {400, 168}, {80, 288},  {240, 288},
+    {400, 288}, {80, 348},  {240, 348}, {400, 348},
 };
 
 const h2_mfg_profile_t h2_mfg_board_profile = {
     .board = "esp_mosaico",
-    .revision = 2,
+    .revision = 3,
     .steps = steps,
     .total = sizeof(steps) / sizeof(steps[0]),
     .speaker_test_volume = 50,
@@ -86,29 +82,15 @@ const h2_mfg_profile_t h2_mfg_board_profile = {
     .magnetometer_count = 2,
     .battery = 301,
     .motor = 401,
-    /* Factory IMU acceptance uses native response; no verified screen map. */
-    .touch_navigation = 1,
-    .sequential_touch_grid = 1,
-    .sequential_buttons = 1,
-    .aec_live_monitor = 1,
-    .battery_manual_charge = 1,
-    .ble_scan_only = 1,
-    .wifi_manual_ipv4 = 1,
-    .live_magnets = 1,
+    .touch_points = touch_points,
+    .touch_point_count = sizeof(touch_points) / sizeof(touch_points[0]),
     .hold_vibration = 1,
     .ui = &ui,
-    .sequential_traversal = 1,
-    .cleanup_before_pass = 1,
     .camera_async = 1,
-    .manual_display_patterns = 1,
-    .wifi_test_config = &wifi,
-    .wifi_timeout_ms = 15000,
-    .magnetic_invalid_mgauss = -327680,
-    .magnetic_delta_mgauss = 80,
+    /* Factory IMU acceptance uses native response; no verified screen map. */
     .accel_delta_mg = 150,
     .gyro_delta_mdps = 15000,
-    .scan_window_ms = 10000,
-    .monitor_min_frames = 8,
+    .imu_required_flags = H2_PAL_IMU_HAS_ACCEL | H2_PAL_IMU_HAS_GYRO,
     .vibration_percent = 50,
     .preview_width = 384,
     .preview_height = 216,

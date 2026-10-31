@@ -7,6 +7,7 @@ idf_component_register(
     h2_esp_board
     h2_mosaico_loader_usb
     h2_h2loader_runtime
+    h2_h2loader_ble
     h2_firmware_lib
 )
 

@@ -108,6 +108,22 @@ static const h2_mfg_ui_config_t factory_ui = {
     .preview = {48, 137, 384, 216},
 };
 
+typedef struct magnet_observation {
+  int present[H2_MFG_MAGNETOMETER_MAX];
+  int error[H2_MFG_MAGNETOMETER_MAX];
+  int result[H2_MFG_MAGNETOMETER_MAX];
+  unsigned calls[H2_MFG_MAGNETOMETER_MAX];
+} magnet_observation_t;
+
+static int read_magnet(void* user, uint32_t index, int* present, int* error) {
+  magnet_observation_t* observation = user;
+  assert(index < H2_MFG_MAGNETOMETER_MAX);
+  ++observation->calls[index];
+  *present = observation->present[index];
+  *error = observation->error[index];
+  return observation->result[index];
+}
+
 static void factory_tests(h2_runtime_t* rt) {
   width = height = 480;
   h2_mfg_step_t steps[] = {{"display", H2_MFG_DISPLAY, 0},
@@ -118,8 +134,7 @@ static void factory_tests(h2_runtime_t* rt) {
                               .steps = steps,
                               .total = 4,
                               .ui = &factory_ui,
-                              .magnetometer_count = 2,
-                              .sequential_touch_grid = 1};
+                              .magnetometer_count = 2};
   /* Guard both ends of the raw frame, including for edge touch cursors. */
   uint16_t* allocation = calloc(480u * 480u + 2u, sizeof(uint16_t));
   assert(allocation != NULL);
@@ -143,12 +158,12 @@ static void factory_tests(h2_runtime_t* rt) {
   assert(pixel(&m, 230, 114) == 0xf800);
   assert(pixel(&m, 250, 114) == 0x4208);
   assert(pixel(&m, 270, 114) == 0x4208);
-  assert(colored(&m, 150, 66, 180, 30) > 100);  /* 测试完成 */
-  assert(colored(&m, 140, 220, 200, 30) > 100); /* 等待固件刷入 */
-  assert(pixel(&m, 138, 396) == 0xfa60);
-  assert(pixel(&m, 341, 443) == 0xfa60);
+  assert(colored(&m, 150, 66, 180, 30) > 100); /* 测试完成 */
+  assert(colored(&m, 140, 220, 200, 30) == 0); /* No waiting prompt. */
+  assert(pixel(&m, 138, 396) == 0);
+  assert(pixel(&m, 341, 443) == 0);
   assert(pixel(&m, 137, 396) == 0 && pixel(&m, 342, 444) == 0);
-  assert(colored(&m, 180, 407, 120, 29) > 100);
+  assert(colored(&m, 180, 407, 120, 29) == 0); /* No retest control. */
   /* Incomplete traversal has red text; all-passed uses the shared gate. */
   unsigned red = 0;
   for (unsigned y = 265; y < 295; ++y)
@@ -178,21 +193,19 @@ static void factory_tests(h2_runtime_t* rt) {
 
   m.model.current = 0;
   m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_UNTESTED;
-  const uint16_t colors[] = {0xf800, 0x07e0, 0x001f, 0xffff};
   for (unsigned i = 0; i < 4; ++i) {
-    m.display_pattern = i;
-    assert(h2_mfg_ui_draw(&m, 0) == 0);
-    assert(pixel(&m, 100, 180) == colors[i]);
-    assert(pixel(&m, 379, 299) == colors[i]);
+    assert(h2_mfg_ui_draw(&m, i * 600u) == 0);
+    assert(pixel(&m, 100, 180) == 0xf800);
+    assert(pixel(&m, 379, 180) == 0x07e0);
+    assert(pixel(&m, 100, 299) == 0x001f);
+    assert(pixel(&m, 379, 299) == 0xffff);
     assert(pixel(&m, 99, 180) == 0 && pixel(&m, 380, 300) == 0);
   }
-  assert(m.display_patterns_seen == 15u);
-  m.display_patterns_seen = 0;
   draw_result = H2_PAL_ERR_IO;
-  assert(h2_mfg_ui_draw(&m, 0) == H2_PAL_ERR_IO && !m.display_patterns_seen);
+  assert(h2_mfg_ui_draw(&m, 0) == H2_PAL_ERR_IO);
   draw_result = 0;
   present_result = H2_PAL_ERR_IO;
-  assert(h2_mfg_ui_draw(&m, 0) == H2_PAL_ERR_IO && !m.display_patterns_seen);
+  assert(h2_mfg_ui_draw(&m, 0) == H2_PAL_ERR_IO);
   present_result = 0;
   m.model.ready = 0;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
@@ -202,15 +215,12 @@ static void factory_tests(h2_runtime_t* rt) {
 
   m.model.current = 1;
   m.model.summary.step_status[1] = H2_LOADER_MFG_STEP_UNTESTED;
-  m.magnet_present[1] = 1;
+  m.magnetometers[0].mag_mgauss = (h2_pal_vec3_i32_t){1, 2, 3};
+  m.magnetometers[1].mag_mgauss = (h2_pal_vec3_i32_t){4, 5, 6};
   assert(h2_mfg_ui_draw(&m, 0) == 0);
-  assert(pixel(&m, 100, 220) == 0xfa60 && pixel(&m, 320, 220) == 0);
-  m.magnet_present[1] = 0;
-  m.magnet_present[0] = 1;
-  m.magnet_error[1] = H2_PAL_ERR_IO;
-  assert(h2_mfg_ui_draw(&m, 0) == 0);
-  assert(pixel(&m, 60, 180) == 0xf800 && pixel(&m, 100, 220) == 0);
-  assert(pixel(&m, 320, 220) == 0xfa60);
+  assert(pixel(&m, 60, 180) == 0 && pixel(&m, 276, 180) == 0);
+  assert(colored(&m, 60, 180, 144, 144) > 20);
+  assert(colored(&m, 276, 180, 144, 144) > 20);
 
   uint16_t preview[12] = {0};
   for (unsigned i = 0; i < 12; ++i) preview[i] = (uint16_t)(0x1230u + i);
@@ -227,19 +237,19 @@ static void factory_tests(h2_runtime_t* rt) {
 
   m.model.current = 3;
   m.model.summary.step_status[3] = H2_LOADER_MFG_STEP_UNTESTED;
-  m.touch_target = 8;
-  m.touch_hits = 0xff;
+  const h2_mfg_touch_point_t points[] = {{60, 170}, {210, 240}, {380, 310}};
+  profile.touch_points = points;
+  profile.touch_point_count = 3;
+  m.touch_hits = 5;
   m.touch_pressed = 1;
   m.touch_x = m.touch_y = 0;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
-  for (unsigned i = 0; i < 9; ++i) {
+  for (unsigned i = 0; i < 3; ++i) {
     int x, y;
     h2_mfg_touch_target(&m, i, &x, &y);
-    const h2_mfg_ui_rect_t* target = &factory_ui.touch_targets[i];
-    assert(x == target->x + target->width / 2 &&
-           y == target->y + target->height / 2);
-    assert(pixel(&m, (unsigned)x - 18, (unsigned)y - 18) ==
-           (i == 8 ? 0xfa60 : 0x07e0));
+    assert(x == points[i].x && y == points[i].y);
+    assert(pixel(&m, (unsigned)x - 13, (unsigned)y - 13) ==
+           (i == 1 ? 0xffff : 0x07e0));
   }
   assert(allocation[0] == 0x1234 && allocation[480u * 480u + 1u] == 0x1234);
   free(allocation);
@@ -313,7 +323,6 @@ static void configured_layout_tests(h2_runtime_t* rt) {
       .button_names = {"KEY A", "KEY B", "KEY C", "KEY D", "KEY E", "KEY F",
                        "KEY G", "KEY H"},
       .magnetometer_count = 2,
-      .sequential_touch_grid = 1,
   };
   width = (int)ui.width;
   height = (int)ui.height;
@@ -338,8 +347,10 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   ui.title = "Fixture B";
   h2_mfg_ui_rect_t area = ui.display_pattern;
   assert(pixel(&m, area.x, area.y) == 0xf800);
+  assert(pixel(&m, area.x + area.width - 1, area.y) == 0x07e0);
+  assert(pixel(&m, area.x, area.y + area.height - 1) == 0x001f);
   assert(pixel(&m, area.x + area.width - 1, area.y + area.height - 1) ==
-         0xf800);
+         0xffff);
   assert(pixel(&m, area.x - 1, area.y) == ui.background);
   assert(pixel(&m, ui.controls[0].x, ui.controls[0].y) == ui.accent);
   assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.disabled);
@@ -347,34 +358,49 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   assert(h2_mfg_ui_draw(&m, 0) == 0);
   assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.accent);
 
-  step.check = H2_MFG_BRIGHTNESS;
-  m.brightness_percent = 50;
-  assert(h2_mfg_ui_draw(&m, 0) == 0);
-  area = ui.brightness_control;
-  for (unsigned i = 0; i < 10; ++i)
-    assert(pixel(&m, area.x + (int)i * area.width / 10, area.y) ==
-           (i == 4 ? ui.accent : ui.disabled));
-  assert(pixel(&m, area.x + area.width - 1, area.y + area.height - 1) ==
-         ui.disabled);
-  assert(pixel(&m, area.x - 1, area.y) == ui.background);
-
   step.check = H2_MFG_TOUCH;
-  m.touch_target = 4;
+  /* Application coordinates are independent of legacy nine-target geometry. */
+  const h2_mfg_touch_point_t points[] = {{44, 111}, {180, 204}, {309, 292}};
+  profile.touch_points = points;
+  profile.touch_point_count = 3;
   m.touch_hits = 1u;
-  for (unsigned i = 0; i < 9; ++i) {
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  for (unsigned i = 0; i < 3; ++i) {
     int x, y;
     h2_mfg_touch_target(&m, i, &x, &y);
-    area = ui.touch_targets[i];
-    assert(x == area.x + area.width / 2 && y == area.y + area.height / 2);
+    assert(x == points[i].x && y == points[i].y);
+    uint16_t expected = i == 0 ? ui.passed : ui.text;
+    assert(pixel(&m, x - 13, y - 13) == expected);
+    assert(pixel(&m, x + 13, y + 13) == expected);
   }
+
+  h2_mfg_touch_point_t many_points[32];
+  for (unsigned i = 0; i < 32; ++i)
+    many_points[i] = (h2_mfg_touch_point_t){40 + (int)(i % 8u) * 40,
+                                            110 + (int)(i / 8u) * 60};
+  profile.touch_points = many_points;
+  profile.touch_point_count = 32;
+  m.touch_hits = 0x80000001u;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
-  for (unsigned i = 0; i < 9; ++i) {
-    area = ui.touch_targets[i];
-    uint16_t expected = i == 0 ? ui.passed : i == 4 ? ui.accent : ui.disabled;
-    assert(pixel(&m, area.x, area.y) == expected);
-    assert(pixel(&m, area.x + area.width - 1, area.y + area.height - 1) ==
-           expected);
-    assert(pixel(&m, area.x - 1, area.y) == ui.background);
+  for (unsigned i = 0; i < 32; ++i) {
+    int x, y;
+    h2_mfg_touch_target(&m, i, &x, &y);
+    assert(x == many_points[i].x && y == many_points[i].y);
+    assert(pixel(&m, x - 13, y - 13) ==
+           (i == 0 || i == 31 ? ui.passed : ui.text));
+  }
+  /* Absent or empty application lists preserve the shared five positions. */
+  static const int default_xy[5][2] = {
+      {21, 25}, {79, 25}, {50, 50}, {21, 75}, {79, 75}};
+  for (unsigned absent = 0; absent < 2; ++absent) {
+    profile.touch_points = absent ? NULL : many_points;
+    profile.touch_point_count = absent ? 32 : 0;
+    for (unsigned i = 0; i < 5; ++i) {
+      int x, y;
+      h2_mfg_touch_target(&m, i, &x, &y);
+      assert(x == width * default_xy[i][0] / 100);
+      assert(y == height * default_xy[i][1] / 100);
+    }
   }
 
   step.check = H2_MFG_BUTTONS;
@@ -385,6 +411,11 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   assert(saved != NULL);
   memcpy(saved, m.frame, pixels * sizeof(*saved));
   profile.button_names[7] = "LAST";
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
+  memcpy(saved, m.frame, pixels * sizeof(*saved));
+  m.downs[7] = 3;
+  m.ups[7] = 2;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
   assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
   profile.button_count = 1;
@@ -399,8 +430,11 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   ui.rows[0] = (h2_mfg_ui_rect_t){20, 96, 320, 30};
 
   step.check = H2_MFG_MAGNETOMETERS;
-  m.magnet_present[0] = 1;
+  magnet_observation_t observation = {.present = {1, 0}};
+  ui.read_magnet = read_magnet;
+  ui.user = &observation;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(observation.calls[0] == 1 && observation.calls[1] == 1);
   assert(pixel(&m, ui.magnet_boxes[0].x + 10, ui.magnet_boxes[0].y + 10) ==
          ui.accent);
   assert(pixel(&m, ui.magnet_boxes[1].x + 10, ui.magnet_boxes[1].y + 10) ==
@@ -409,10 +443,83 @@ static void configured_layout_tests(h2_runtime_t* rt) {
   ui.magnet_names[0] = "Other";
   assert(h2_mfg_ui_draw(&m, 0) == 0);
   assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
-  m.magnet_error[1] = H2_PAL_ERR_IO;
+  observation.error[1] = H2_PAL_ERR_IO;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
   assert(pixel(&m, ui.magnet_boxes[1].x, ui.magnet_boxes[1].y) == ui.failed);
   assert(different(&m, ui.magnet_errors[1], ui.background) > 20);
+  observation.error[1] = 0;
+  observation.result[1] = H2_PAL_ERR_IO;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(pixel(&m, ui.magnet_boxes[1].x, ui.magnet_boxes[1].y) == ui.failed);
+  /* Reorder presentation slots while retaining the caller's index mapping. */
+  ui.magnet_order[0] = 1;
+  ui.magnet_order[1] = 0;
+  observation.result[1] = 0;
+  observation.present[1] = 0;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(pixel(&m, ui.magnet_boxes[1].x + 10, ui.magnet_boxes[1].y + 10) ==
+         ui.accent);
+  assert(pixel(&m, ui.magnet_boxes[0].x + 10, ui.magnet_boxes[0].y + 10) ==
+         ui.background);
+  /* The callback provides borrowed observations; rendering never classifies
+   * raw vectors or modifies acceptance/readiness. */
+  int ready = m.model.ready;
+  m.magnetometers[0].mag_mgauss = (h2_pal_vec3_i32_t){99999, -99999, 99999};
+  assert(h2_mfg_ui_draw(&m, 0) == 0 && m.model.ready == ready);
+  assert(observation.present[0] == 1 && observation.present[1] == 0);
+  ui.read_magnet = NULL;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(pixel(&m, ui.magnet_boxes[1].x, ui.magnet_boxes[1].y) ==
+         ui.background);
+  assert(different(&m, ui.magnet_boxes[1], ui.background) > 20);
+  step.check = H2_MFG_BATTERY;
+  m.battery.flags = H2_PAL_BATTERY_PRESENT | H2_PAL_BATTERY_HAS_VOLTAGE_MV |
+                    H2_PAL_BATTERY_HAS_PERCENT_X100;
+  m.battery.voltage_mv = 3800;
+  m.battery.percent_x100 = 6543;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  for (unsigned i = 0; i < 3; ++i)
+    assert(different(&m, ui.rows[i], ui.background) > 20);
+  assert(different(&m, ui.rows[3], ui.background) == 0);
+  assert(different(&m, ui.rows[4], ui.background) == 0);
+  memcpy(saved, m.frame, pixels * sizeof(*saved));
+  m.battery.flags |= H2_PAL_BATTERY_HAS_CURRENT_MA;
+  m.battery.current_ma = -123;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) == 0);
+  m.battery.flags = 0;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
+
+  step.check = H2_MFG_AEC;
+  m.model.ready = 0;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  for (unsigned i = 0; i < 4; ++i)
+    assert(different(&m, ui.rows[i], ui.background) > 20);
+  memcpy(saved, m.frame, pixels * sizeof(*saved));
+  m.mic_level = 1234;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
+  assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.disabled);
+  m.model.ready = 1;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.accent);
+
+  step.check = H2_MFG_BLE;
+  m.model.ready = m.ble_probed = 0;
+  m.model.ticket = 0x12345678;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(different(&m, ui.rows[0], ui.background) > 20);
+  assert(different(&m, ui.rows[2], ui.background) > 20);
+  memcpy(saved, m.frame, pixels * sizeof(*saved));
+  m.ble_probed = 1;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(memcmp(saved, m.frame, pixels * sizeof(*saved)) != 0);
+  assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.disabled);
+  m.model.error = H2_PAL_ERR_IO;
+  assert(h2_mfg_ui_draw(&m, 0) == 0);
+  assert(pixel(&m, ui.controls[1].x, ui.controls[1].y) == ui.accent);
+  m.model.error = 0;
   free(saved);
 
   step.check = H2_MFG_VIBRATION;
@@ -452,19 +559,20 @@ static void configured_layout_tests(h2_runtime_t* rt) {
 
   m.model.current = profile.total;
   assert(h2_mfg_ui_draw(&m, 0) == 0);
-  assert(pixel(&m, ui.retest.x, ui.retest.y) == ui.accent);
+  assert(different(&m, ui.retest, ui.background) == 0);
+  assert(different(&m, ui.controls[0], ui.background) == 0);
+  assert(different(&m, ui.controls[1], ui.background) == 0);
   assert(pixel(&m, ui.retest.x - 1, ui.retest.y) == ui.background);
   ui.width++;
   assert(h2_mfg_ui_draw(&m, 0) == H2_PAL_ERR_UNSUPPORTED);
   free(allocation);
 }
 
-static void compact_policies_do_not_require_configured_ui(h2_runtime_t* rt) {
+static void compact_defaults(h2_runtime_t* rt) {
   width = 320;
   height = 240;
   h2_mfg_step_t step = {"display", H2_MFG_DISPLAY, 0};
-  h2_mfg_profile_t profile = {
-      .steps = &step, .total = 1, .manual_display_patterns = 1};
+  h2_mfg_profile_t profile = {.steps = &step, .total = 1};
   h2_mfg_t m = {.rt = rt,
                 .profile = &profile,
                 .display = {.width = 320, .height = 240},
@@ -472,7 +580,10 @@ static void compact_policies_do_not_require_configured_ui(h2_runtime_t* rt) {
   m.frame = calloc((size_t)width * height, sizeof(*m.frame));
   assert(m.frame);
   for (unsigned i = 0; i < 4; ++i) assert(h2_mfg_ui_draw(&m, i * 600u) == 0);
-  assert(m.display_patterns_seen == 15u);
+  assert(pixel(&m, 0, 0) == 0xf800);
+  assert(pixel(&m, 319, 0) == 0x07e0);
+  assert(pixel(&m, 0, 239) == 0x001f);
+  assert(pixel(&m, 319, 239) == 0xffff);
   step.check = H2_MFG_CAMERA;
   uint16_t preview[] = {0x1234, 0x5678, 0x9abc, 0xdef0, 0x4321, 0x8765};
   m.camera_preview = preview;
@@ -510,6 +621,6 @@ int main(void) {
   assert(h2_mfg_hardware_close(&m) == 0 && closed == 1 && m.frame == NULL);
   factory_tests(&rt);
   configured_layout_tests(&rt);
-  compact_policies_do_not_require_configured_ui(&rt);
+  compact_defaults(&rt);
   return 0;
 }

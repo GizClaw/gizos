@@ -23,60 +23,27 @@ h2loader --no-ble --port <serial-port> status
 h2loader --no-ble --port <serial-port> mfg status
 ```
 
-管理镜像替换/恢复优先于交互验收与 profile revision 重置。 App 安装和启动始终要求十二项全部为 PASSED；FAILED、SKIPPED、UNTESTED、 不可读结果或保存失败都不能放行。接收 Stage、安装 App、启动 App 和替换 Loader 是不同操作，接收成功不代表允许安装。普通 Loader 的入口与策略保持原样。
+管理镜像替换/恢复优先于交互验收与 profile revision 重置。 App 安装和启动始终要求十一项全部为 PASSED；FAILED、SKIPPED、UNTESTED、 不可读结果或保存失败都不能放行。接收 Stage、安装 App、启动 App 和替换 Loader 是不同操作，接收成功不代表允许安装。普通 Loader 的入口与策略保持原样。
 
 Loader 安装、失败、启动显示回调均为 NULL，没有品牌或安装进度界面。 按[普通 Loader 的终态检查](./h2loader#usb-管理与更新)验证运行分区、 image/package identity、metadata 与 Stage；MFG 测试界面不报告安装成功。
 
-## 十二项操作者流程
+## 十一项操作者流程
 
-profile revision 2 固定以下顺序；界面为 480×480 黑底、橙色控件与中文文字。 进度点始终保留原顺序，绿色为通过、红色为失败，跳过或未测仍显示未完成。 具体数值由 `main/profile.c` 维护。
+Revision 3 复用原共享 model/session/AEC；显示颜色与亮度合并为一项，之后依次为触摸、按键、AEC、电池、IMU、磁力计、振动、Wi-Fi、BLE、相机。触摸点由 app profile 提供；按键沿用每键三次完整按下/松开及原确认逻辑。电池仅显示存在、电压和百分比。失败保留当前项，用原 ticketed retry/reset 命令补测；完成页仅显示原结果摘要。
 
-1. **显示**：观察四个测试图案，确认渲染、颜色与方向正常。
-2. **亮度**：触摸调整亮度，观察真实变化后确认。
-3. **触摸**：按顺序逐个按下并松开九个目标；拖出目标、陈旧按住和跨页触摸不能计数。
-4. **AI / BOOT**：先完整按下并松开 AI，再完成 BOOT。两键是被测对象，不用作全局确认。
-   AI 按住时的新 BOOT 点击是显式跳过，记录 SKIPPED，不能打开 App 门控。
-5. **AEC 实时监听**：进入即开始实际处理后麦克风 PCM 的采集与扬声器播放。
-   就绪后说话并听声音，以人工判断正常/异常；有效静音可作为 PCM，不能靠幅度自动通过。
-   不调整麦克风增益，不代表定量回声抑制或受控声学标定。
-6. **电池**：观察真实 presence、电压、有符号电流和电量百分比；接外电检查充电/满电指示，
-   再移除外电确认仍由电池工作。满电不要求正充电电流；插拔与充电指示由人工判断，
-   不从电流符号、USB 或 DTR 推断插拔，也不写电池 profile。
-7. **IMU**：移动/转动板子观察 BMI270 加速度和陀螺仪响应，就绪后人工确认。
-   使用原生响应，没有未经真机验证的屏幕轴映射。
-8. **双磁力计**：分别将磁铁靠近和移开右侧 202、左侧 203；对应橙色方块填充并恢复轮廓。
-   读取错误单独显示；补偿溢出哨兵不表示吸附，恢复后的首次有效轴只重建基线。
-9. **振动**：触摸按住驱动电机，松开即停；确认已实际振动并停止，再给出人工结果。
-10. **Wi-Fi**：进入时按板级 profile 自动连接公开工厂网络 `HAIVIVI-MFG`，等待显示真实可用 IPv4，再人工确认。不要求回环服务；测试配置不写入持久化 settings，结束时按共享同步合同恢复原先可还原的网络。
-11. **BLE 扫描**：进入即扫描周边，观察实际设备标识/名称和 RSSI 后确认。
-    没有观察、扫描或停止错误不能通过；无需配对、GATT 或第二块板，未启用 BLE 命令服务。
-12. **摄像头**：断电时预先接好左 H2 的 SC101IOT；进入即启动真实 1280×720 UYVY
-    采集并显示等比例 384×216 预览。移动物体，确认动态画面、颜色、方向和比例后通过。
-    缺摄像头或生命周期错误是失败；安装/拆卸必须断电。
+Wi-Fi 连接由 `apps/esp_mosaico/main/main.c` 在 Loader 启动前准备公开工厂网络，共享检查只观察已有 STA 状态。磁力计实时基线、补偿哨兵处理和方框反馈也由 app 拥有，公共 UI 仅消费观察回调；共享磁力计检查保持原 min/max 逻辑。app adapter 转发相对诊断磁场值以防无效轴/恢复产生伪运动，不将这些数值宣称为绝对磁场测量。
 
-初始显示/亮度/触摸之后用触摸导航。触摸和按键的完整新输入序列可推进对应项， 所有主观验收都须明确确认。启动失败、超时或 unsupported 保留实际错误，不能静默跳过。 外设操作有边界，等待操作者没有自动超时或自动结果；保持监听直到动作完成或明确取消。
+IMU 响应检查按 capability 区分加速度、陀螺仪或两者；Mosaico profile 明确要求两者。按住振动保留，松开/离页停止。相机保持异步任务、有效借帧/归还和按实际尺寸预览。
 
-## 结果、恢复与重新测试
+## BLE 对端
 
-进度经现有 Loader MFG preferences 持久化，重启恢复。 `mfg status` 的 `steps` 数字为 0=UNTESTED、1=PASSED、2=SKIPPED、3=FAILED； `complete=1` 才表示全部 required checks 已通过，`result=OK` 仅表示命令成功。 使用当前 step 和每次转换/启动更新的八位十六进制 ticket：
+原共享 BLE 检查需要真实连接和命令往返。已有 AMOLED、DevKit、Waveshare 1.75C 的 peer package 可按 DUT UID 构建；对联板连接 DUT Loader，读当前 MFG ticket，再从真实 BLE 连接发送 `mfg probe ble <ticket>` 并回读持久结果。串口 probe、仅扫描或仅连接均不足。
 
-```sh
-h2loader --no-ble --port <serial-port> mfg status
-h2loader --no-ble --port <serial-port> mfg confirm <step> <ticket>
-h2loader --no-ble --port <serial-port> mfg fail <step> <ticket>
-h2loader --no-ble --port <serial-port> mfg retry <step> <ticket> --monitor
-h2loader --no-ble --port <serial-port> mfg skip <step> <ticket>
-h2loader --no-ble --port <serial-port> mfg reset all <ticket>
-```
 
-未就绪或旧 ticket 的确认被拒绝。自动检测失败保留当前项，明确 RETRY 才开始新观测；点击“异常”则持久记录 FAILED 并继续下一项，不会放开 App 门控。 SKIPPED 仍阻止 App，可通过 retry 重测。保存失败不能发布通过或推进。 语义/顺序变化须提升 revision；不导入旧 Firmwares 的私有结果格式。
+## 原 AEC 诊断
 
-遍历结束显示“测试完成”“等待固件刷入”和“重新测试”，清除旧摄像头画面。 仅全部 PASSED 才显示“全部通过”；等待标签不能证明门控已打开。 暖态及冷启动完成页均可重新测试，按共享 `reset all` 先持久撤销验收再回到显示。 AUTO 中全部通过且确有 App 工作时，释放资源返回 Loader，不为等待页阻塞 App。 安装/重启前共享 cleanup 停止监听/扫描/振动、归还 Camera 帧、释放触摸和显示； 清理失败保留资源并阻止交接，重测与安装使用现有共享操作锁串行化。
+保留原分阶段流程和全部门限。板上采样为 16 kHz、512 samples，处理后单声道；MFG 启用真实 AEC。原阶段声源/回放用 100% 扬声器，而旧实时监听用了 50%，仅此差异不能证明失败原因。先采集 QUIET/ECHO TEST/QUIET AGAIN 的 `H2_MFG_AEC_WINDOW`、能量、reference、peak/clipped、时间和最终原因，再判断参数是否匹配，不降低门限或用监听成功替代定量结果。
 
-## 待记录的验收证据
+## 验收边界
 
-此页没有新 GizOS 包的构建、烧录或硬件通过记录。原 Firmwares checkpoint `abae140f50234c85428fc109c8b6c07a4a0a1bad` 仅用于行为参考。 验证时记录准确 GizOS commit、package SHA-256、板 identity、USB 端口、串口日志和人工结果。
-
-运行共享回归（含 `//projects/mfg/libs/mfg:network_checks_test`）、Loader/host/CLI 与 Mosaico USB/磁力计回归；完整命令见[共享 MFG README](https://github.com/GizClaw/gizos/blob/main/projects/mfg/README.md)。 构建两个准确 S31 包并核对容量后，在实体板执行全部十二项、失败/retry/skip、 重启恢复、保存失败、暖态/冷态重测、磁铁移入移出与哨兵恢复、真实音频、拔外电、BLE 扫描和相机动态画面。
-
-再用既有 CLI 验证 MFG ↔ 普通 Loader 替换、未完成时 App 拒绝和 Loader 修复、 cleanup 失败、重测与安装竞争、完成后 App stage/install/launch、返回 Loader 及恢复。 每次均核对实际运行分区与 image identity、metadata、Stage 终态和 `last_result`。 原生烧录仅用于初始配置/恢复，不能替代管理链路验收；未执行项记录 SKIP/UNSUPPORTED 及原因。
+`2a3279c9` 的十二项通过属于旧 revision 2，不能移作此 revision 3 的通过记录。新镜像需重新验收十一项、真实 BLE 对端、原 AEC 阶段、恢复与持久化。管理镜像更新优先复用 Loader；ROM 烧录仅用于已有下载模式的初始配置/恢复，不代表管理更新通过。记录准确 commit、镜像校验值、DUT UID、端口、日志、人工结果及未测原因。

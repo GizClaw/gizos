@@ -23,7 +23,6 @@ esp_target_task_policy(
         "$bleikcp/server    5        0  8192  psram",
         "$h2peer/net        7        0  8192  psram",
         "$h2peer/udp        7        0  8192  psram",
-        "$mfg/monitor       6      any  8192  psram",
         "$mfg/camera        5      any  8192  psram",
         "$runtime/input     default",
         "$runtime/nfc       default",
@@ -48,7 +47,7 @@ firmware_lib_component(
         "//libs/runtime",
         "//libs/wifi_sta",
         "//projects/mfg/libs/mfg",
-        "//projects/mfg/libs/mfg:monitor_tasks",
+        "//projects/mfg/libs/mfg:camera_tasks",
     ],
 )
 
@@ -70,6 +69,7 @@ firmware_native_component(
         "//native_component_src/esp-idf6.x/h2_pal_core",
         "//native_component_src/esp-idf6.x/zlib",
         "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_mosaico_usb",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
     ],

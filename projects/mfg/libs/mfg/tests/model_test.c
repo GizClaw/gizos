@@ -132,73 +132,11 @@ static void duplex_audio_requires_manual_aec(void) {
                            &durable) == H2_PAL_ERR_INVALID_ARG);
 }
 
-static void failed_verdict_advances_only_with_traversal_policy(void) {
-  h2_mfg_model_t m = fresh();
-  h2_mfg_profile_t configured = profile;
-  configured.sequential_traversal = 1;
-  m.profile = &configured;
-  save_result = H2_PAL_ERR_IO;
-  assert(h2_mfg_model_action(&m, "fail", "storage", m.ticket) == H2_PAL_ERR_IO);
-  assert(m.current == 0 &&
-         m.summary.step_status[0] == H2_LOADER_MFG_STEP_UNTESTED);
-  save_result = 0;
-  assert(h2_mfg_model_action(&m, "fail", "storage", m.ticket) == 0);
-  assert(m.current == 1 && durable.step_status[0] == H2_LOADER_MFG_STEP_FAILED);
-  assert(!h2_mfg_model_complete(&m));
-}
-
-static void factory_policies_and_terminal_reset(void) {
-  h2_mfg_profile_t factory = profile;
-  factory.sequential_traversal = factory.touch_navigation = 1;
-  h2_loader_mfg_summary_t summary = {.total = 3};
-  h2_mfg_model_t m;
-  save_result = 0;
-  assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) == 0);
-  assert(h2_mfg_model_action(&m, "skip", "storage", m.ticket) == 0);
-  m.ready = 1;
-  assert(h2_mfg_model_action(&m, "confirm", "display", m.ticket) == 0);
-  m.ready = 1;
-  assert(h2_mfg_model_action(&m, "confirm", "touch", m.ticket) == 0);
-  assert(m.current == factory.total && !h2_mfg_model_complete(&m));
-  h2_mfg_model_t before = m;
-  save_result = H2_PAL_ERR_IO;
-  assert(h2_mfg_model_action(&m, "reset", "all", m.ticket) == H2_PAL_ERR_IO);
-  assert(memcmp(&m, &before, sizeof(m)) == 0);
-  save_result = 0;
-  assert(h2_mfg_model_action(&m, "reset", "all", m.ticket) == 0);
-  assert(m.current == 0 && m.ticket != before.ticket &&
-         !h2_mfg_model_complete(&m));
-  factory.aec_live_monitor = 1;
-  assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) ==
-         H2_PAL_ERR_INVALID_ARG);
-  factory.monitor_min_frames = 8;
-  factory.live_magnets = 1;
-  assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) ==
-         H2_PAL_ERR_INVALID_ARG);
-  factory.magnetic_delta_mgauss = 80;
-  assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) == 0);
-  /* Execution policies have no dependency on presentation selection. */
-  factory.cleanup_before_pass = factory.camera_async =
-      factory.manual_display_patterns = 1;
-  assert(factory.ui == NULL);
-  assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) == 0);
-  const h2_mfg_ui_config_t malformed = {
-      .width = 320,
-      .height = 240,
-      .title = "test",
-      .controls = {{-1, 0, 10, 10}, {0, 0, 10, 10}}};
-  factory.ui = &malformed;
-  assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) ==
-         H2_PAL_ERR_INVALID_ARG);
-}
-
 int main(void) {
   confirmation_and_resume();
   persistence_failure_is_transactional();
   fail_skip_retry_and_gate();
   duplex_audio_requires_manual_aec();
-  factory_policies_and_terminal_reset();
-  failed_verdict_advances_only_with_traversal_policy();
   puts(
       "MFG model: readiness, stale tickets, durable resume, failed saves, "
       "failure/retry/reset and strict gate passed");

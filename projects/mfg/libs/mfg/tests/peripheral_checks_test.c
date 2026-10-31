@@ -19,6 +19,7 @@ typedef struct fake {
   h2_pal_input_api_t input;
   h2_pal_pwm_switch_api_t motor;
   int started, loaned, bad_format, start_error, release_error, stop_error;
+  h2_pal_imu_reading_t motion;
   int motor_error, motor_read_error;
   uint16_t duty;
   uint32_t battery_flags;
@@ -84,6 +85,11 @@ static int stop(void* user) {
 }
 static int mag(void* user, h2_pal_periph_id_t id, h2_pal_imu_reading_t* out) {
   fake_t* f = user;
+  if (id == 201) {
+    *out = f->motion;
+    out->id = id;
+    return 0;
+  }
   assert(id == 202 || id == 203);
   unsigned i = id - 202;
   ++f->mag_reads[i];
@@ -279,72 +285,6 @@ static void vibration_stops_before_handoff(void) {
   assert(h2_mfg_hardware_leave(&f.m) == 0 && f.duty == 0);
 }
 
-static void live_magnet_axes_recover_independently(void) {
-  fake_t f;
-  setup(&f, H2_MFG_MAGNETOMETERS);
-  f.profile.live_magnets = 1;
-  f.profile.magnetic_invalid_mgauss = -327680;
-  f.profile.magnetic_delta_mgauss = 80;
-  f.mag_value[0] = -327680;
-  assert(h2_mfg_hardware_enter(&f.m, 0) == 0);
-  assert(tick(&f, 0) == 0 && !f.m.model.ready);
-  f.mag_value[0] = 1000;
-  assert(tick(&f, 20) == 0 && !f.m.magnet_present[0]);
-  f.mag_value[0] = 1079;
-  assert(tick(&f, 40) == 0 && !f.m.magnet_present[0]);
-  f.mag_y[0] = 80;
-  assert(tick(&f, 60) == 0 && f.m.magnet_present[0] && !f.m.model.ready);
-  f.mag_value[1] = -80;
-  assert(tick(&f, 80) == 0 && f.m.model.ready);
-  f.mag_y[0] = f.mag_value[1] = 0;
-  assert(tick(&f, 100) == 0 && f.m.model.ready);
-  assert(!f.m.magnet_present[0] && !f.m.magnet_present[1]);
-  f.mag_error[0] = H2_PAL_ERR_IO;
-  unsigned reads = f.mag_reads[1];
-  f.mag_value[1] = 80;
-  assert(tick(&f, 120) == H2_PAL_ERR_IO && !f.m.model.ready);
-  assert(f.mag_reads[1] == reads + 1 && f.m.magnet_present[1]);
-  assert(f.m.magnet_error[0] == H2_PAL_ERR_IO && !f.m.magnet_error[1]);
-  f.mag_error[0] = 0;
-  f.mag_value[0] = INT32_MIN;
-  assert(tick(&f, 140) == 0 && !f.m.magnet_present[0]);
-  f.mag_value[0] = INT32_MAX;
-  assert(tick(&f, 160) == 0 && f.m.magnet_present[0]);
-  f.mag_value[0] = f.mag_y[0] = f.mag_z[0] = -327680;
-  assert(tick(&f, 180) == 0 && !f.m.magnet_present[0] && !f.m.model.ready);
-  f.mag_value[0] = f.mag_y[0] = f.mag_z[0] = 0;
-  assert(tick(&f, 200) == 0 && !f.m.magnet_present[0]);
-  assert(f.m.magnet_responded[0]);
-  f.mag_missing[1] = 1;
-  assert(tick(&f, 220) == H2_PAL_ERR_FORMAT && !f.m.model.ready);
-  assert(h2_mfg_hardware_leave(&f.m) == 0);
-}
-
-static void manual_battery_requires_each_stage_reading(void) {
-  fake_t f;
-  setup(&f, H2_MFG_BATTERY);
-  f.profile.battery_manual_charge = 1;
-  f.battery_flags = H2_PAL_BATTERY_HAS_VOLTAGE_MV |
-                    H2_PAL_BATTERY_HAS_PERCENT_X100 | H2_PAL_BATTERY_PRESENT;
-  assert(h2_mfg_hardware_enter(&f.m, 0) == 0);
-  assert(tick(&f, 0) == H2_PAL_ERR_IO && !f.m.model.ready);
-  f.battery_flags |= H2_PAL_BATTERY_HAS_CURRENT_MA | H2_PAL_BATTERY_FULL;
-  f.current_ma = -123; /* A full cell need not have positive current. */
-  for (unsigned i = 1; i <= 3; ++i) assert(tick(&f, i * 20) == 0);
-  assert(f.m.model.ready && f.m.battery_phase == 0);
-  assert(strstr(f.m.detail, "ma=-123") && strstr(f.m.detail, "full=1"));
-  f.m.battery_phase = 1;
-  f.m.model.ready = 0; /* Parent consumes the phase0 operator confirmation. */
-  f.battery_flags &= ~H2_PAL_BATTERY_PRESENT;
-  assert(tick(&f, 80) == H2_PAL_ERR_IO && !f.m.model.ready);
-  f.battery_flags |= H2_PAL_BATTERY_PRESENT;
-  assert(tick(&f, 100) == 0 && f.m.model.ready && f.m.phase == 1);
-  assert(strstr(f.m.detail, "unplug_confirm"));
-  f.percent_x100 = 10001;
-  assert(tick(&f, 120) == H2_PAL_ERR_IO && !f.m.model.ready);
-  assert(h2_mfg_hardware_leave(&f.m) == 0);
-}
-
 static void held_vibration_requires_drive_then_release(void) {
   fake_t f;
   setup(&f, H2_MFG_VIBRATION);
@@ -433,10 +373,56 @@ static void factory_camera_worker_keeps_control_available(void) {
   assert(h2_pal_semaphore_destroy(f.rt.sync, f.start_resume) == 0);
 }
 
+static void imu_acceptance_follows_available_channels(void) {
+  const uint32_t modes[] = {H2_PAL_IMU_HAS_GYRO, H2_PAL_IMU_HAS_ACCEL,
+                            H2_PAL_IMU_HAS_ACCEL | H2_PAL_IMU_HAS_GYRO};
+  for (unsigned i = 0; i < 3; ++i) {
+    fake_t f;
+    setup(&f, H2_MFG_IMU);
+    f.profile.imu = 201;
+    f.profile.accel_delta_mg = 150;
+    f.profile.gyro_delta_mdps = 15000;
+    f.motion.flags = modes[i];
+    assert(h2_mfg_hardware_enter(&f.m, 0) == 0);
+    assert(tick(&f, 0) == 0 && !f.m.model.ready);
+    f.motion.accel_mg.x = 150;
+    assert(tick(&f, 20) == 0);
+    assert(f.m.model.ready == (modes[i] == H2_PAL_IMU_HAS_ACCEL));
+    f.motion.gyro_mdps.z = 15000;
+    assert(tick(&f, 40) == 0 && f.m.model.ready);
+    assert(h2_mfg_hardware_leave(&f.m) == 0);
+  }
+  /* Threshold selection also limits the inferred channel set when the
+   * device advertises both channels. */
+  for (unsigned gyro = 0; gyro < 2; ++gyro) {
+    fake_t selected;
+    setup(&selected, H2_MFG_IMU);
+    selected.profile.imu = 201;
+    selected.profile.accel_delta_mg = gyro ? 0 : 150;
+    selected.profile.gyro_delta_mdps = gyro ? 15000 : 0;
+    selected.motion.flags = H2_PAL_IMU_HAS_ACCEL | H2_PAL_IMU_HAS_GYRO;
+    assert(h2_mfg_hardware_enter(&selected.m, 0) == 0);
+    assert(tick(&selected, 0) == 0 && !selected.m.model.ready);
+    selected.motion.accel_mg.x = 150;
+    selected.motion.gyro_mdps.z = 15000;
+    assert(tick(&selected, 20) == 0 && selected.m.model.ready);
+    assert(h2_mfg_hardware_leave(&selected.m) == 0);
+  }
+  fake_t f;
+  setup(&f, H2_MFG_IMU);
+  f.profile.imu = 201;
+  f.profile.accel_delta_mg = 150;
+  f.profile.gyro_delta_mdps = 15000;
+  f.profile.imu_required_flags = H2_PAL_IMU_HAS_ACCEL | H2_PAL_IMU_HAS_GYRO;
+  f.motion.flags = H2_PAL_IMU_HAS_GYRO;
+  assert(h2_mfg_hardware_enter(&f.m, 0) == 0);
+  assert(tick(&f, 0) == H2_PAL_ERR_UNSUPPORTED && !f.m.model.ready);
+  assert(h2_mfg_hardware_leave(&f.m) == 0);
+}
+
 int main(void) {
+  imu_acceptance_follows_available_channels();
   factory_camera_worker_keeps_control_available();
-  live_magnet_axes_recover_independently();
-  manual_battery_requires_each_stage_reading();
   held_vibration_requires_drive_then_release();
   sized_camera_retries_cleanly();
   camera_preserves_source_aspect();

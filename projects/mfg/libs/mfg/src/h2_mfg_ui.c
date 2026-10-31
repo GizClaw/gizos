@@ -56,14 +56,25 @@ static void center(h2_mfg_t* m, const char* s, int y, int scale,
 void h2_mfg_touch_target(const h2_mfg_t* m, unsigned i, int* x, int* y) {
   static const int xy[5][2] = {
       {21, 25}, {79, 25}, {50, 50}, {21, 75}, {79, 75}};
-  if (m->profile->sequential_touch_grid && m->profile->ui != NULL) {
-    const h2_mfg_ui_rect_t* target = &m->profile->ui->touch_targets[i % 9u];
-    *x = target->x + target->width / 2;
-    *y = target->y + target->height / 2;
+  if (m->profile->touch_points != NULL && i < m->profile->touch_point_count) {
+    *x = m->profile->touch_points[i].x;
+    *y = m->profile->touch_points[i].y;
   } else {
     *x = m->display.width * xy[i % 5u][0] / 100;
     *y = m->display.height * xy[i % 5u][1] / 100;
   }
+}
+
+static unsigned touch_target_count(const h2_mfg_t* m) {
+  if (m->profile->touch_points == NULL || m->profile->touch_point_count == 0)
+    return 5;
+  return m->profile->touch_point_count > 32 ? 32
+                                            : m->profile->touch_point_count;
+}
+
+static unsigned display_brightness(const h2_mfg_t* m, uint64_t now) {
+  uint64_t elapsed = now >= m->started_ms ? now - m->started_ms : 0;
+  return elapsed >= 600 && elapsed < 1200 ? 50 : 100;
 }
 
 static int clamp(int value, int radius) {
@@ -226,8 +237,6 @@ static const char* factory_heading(h2_mfg_check_t check) {
   switch (check) {
     case H2_MFG_DISPLAY:
       return "屏幕测试";
-    case H2_MFG_BRIGHTNESS:
-      return "亮度测试";
     case H2_MFG_TOUCH:
       return "触摸测试";
     case H2_MFG_BUTTONS:
@@ -245,61 +254,12 @@ static const char* factory_heading(h2_mfg_check_t check) {
     case H2_MFG_WIFI:
       return "Wi-Fi 测试";
     case H2_MFG_BLE:
-      return "蓝牙扫描";
+      return "蓝牙测试";
     case H2_MFG_CAMERA:
       return "摄像头测试";
     default:
       return "硬件测试";
   }
-}
-
-static int factory_ble(h2_mfg_t* m, uint64_t now) {
-  /* Advertisements arrive on another worker. Copy under its mutex and release
-   * before any font work; never retain callback-owned names/addresses. */
-  struct {
-    h2_pal_ble_addr_t address;
-    int rssi;
-    char name[32];
-  } devices[3];
-  unsigned count = 0;
-  int error = 0, done = 0;
-  if (m->scan_mutex != NULL) {
-    int rc = h2_pal_mutex_lock(m->rt->sync, m->scan_mutex);
-    if (rc != 0) return rc;
-    count = m->scan_count > 32 ? 32 : m->scan_count;
-    error = m->scan_error;
-    done = m->scan_done;
-    unsigned offset =
-        count > 3 ? (unsigned)((now / 3000u) % ((count + 2u) / 3u)) * 3u : 0;
-    unsigned shown = count - offset;
-    if (shown > 3) shown = 3;
-    for (unsigned i = 0; i < shown; ++i) {
-      devices[i].address = m->scan_devices[offset + i].address;
-      devices[i].rssi = m->scan_devices[offset + i].rssi;
-      memcpy(devices[i].name, m->scan_devices[offset + i].name, 32);
-      devices[i].name[31] = 0;
-    }
-    int rc_unlock = h2_pal_mutex_unlock(m->rt->sync, m->scan_mutex);
-    if (rc_unlock != 0) return rc_unlock;
-    count = shown;
-  }
-  const h2_mfg_ui_config_t* ui = m->profile->ui;
-  char line[96];
-  if (count == 0)
-    factory_center(m, done ? "未发现设备" : "扫描中", 2, ui->text);
-  for (unsigned i = 0; i < count; ++i) {
-    factory_text(m, devices[i].name[0] ? devices[i].name : "未命名设备",
-                 ui->rows[i * 2u], ui->text, 0);
-    const uint8_t* a = devices[i].address.value;
-    (void)snprintf(line, sizeof(line), "%02X:%02X:%02X:%02X:%02X:%02X  %d dBm",
-                   a[0], a[1], a[2], a[3], a[4], a[5], devices[i].rssi);
-    factory_text(m, line, ui->rows[i * 2u + 1u], ui->muted, 0);
-  }
-  if (error) {
-    (void)snprintf(line, sizeof(line), "扫描失败 %d", error);
-    factory_center(m, line, 6, ui->failed);
-  }
-  return 0;
 }
 
 static int factory_draw(h2_mfg_t* m, uint64_t now) {
@@ -339,58 +299,36 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
   }
   char line[160];
   if (!step) {
-    factory_center(m, "等待固件刷入", 2, ui->text);
     factory_center(
         m, h2_mfg_model_complete(&m->model) ? "全部通过" : "存在未通过项目", 3,
         h2_mfg_model_complete(&m->model) ? ui->passed : ui->failed);
-    factory_button(m, ui->retest, "重新测试", 1);
   } else {
     switch (step->check) {
       case H2_MFG_DISPLAY: {
-        static const uint16_t patterns[4] = {RED, GREEN, 0x001f, WHITE};
-        factory_rect(m, ui->display_pattern, patterns[m->display_pattern % 4u]);
-        (void)snprintf(line, sizeof(line), "点击色块切换 %u / 4",
-                       m->display_pattern % 4u + 1u);
+        h2_mfg_ui_rect_t area = ui->display_pattern;
+        int half_w = area.width / 2, half_h = area.height / 2;
+        rect(m, area.x, area.y, half_w, half_h, RED);
+        rect(m, area.x + half_w, area.y, area.width - half_w, half_h, GREEN);
+        rect(m, area.x, area.y + half_h, half_w, area.height - half_h, 0x001f);
+        rect(m, area.x + half_w, area.y + half_h, area.width - half_w,
+             area.height - half_h, WHITE);
+        uint64_t elapsed = now >= m->started_ms ? now - m->started_ms : 0;
+        if (m->model.ready)
+          (void)snprintf(line, sizeof(line), "亮度 %u%%  请人工确认",
+                         display_brightness(m, now));
+        else
+          (void)snprintf(line, sizeof(line), "亮度 %u%%  等待 %u ms",
+                         display_brightness(m, now),
+                         (unsigned)(elapsed < 1800 ? 1800 - elapsed : 0));
         factory_text(m, line, ui->display_note, ui->text, 1);
         break;
       }
-      case H2_MFG_BRIGHTNESS:
-        for (unsigned i = 0; i < 10; ++i) {
-          h2_mfg_ui_rect_t level = ui->brightness_levels;
-          int x0 = ((int)i * level.width + 9) / 10;
-          int x1 = ((int)(i + 1u) * level.width + 9) / 10;
-          unsigned v = (i + 1u) * 255u / 10u;
-          uint16_t grey =
-              (uint16_t)(((v >> 3) << 11) | ((v >> 2) << 5) | (v >> 3));
-          level.x += x0;
-          level.width = x1 - x0;
-          factory_rect(m, level, grey);
-          h2_mfg_ui_rect_t control = ui->brightness_control;
-          x0 = ((int)i * control.width + 9) / 10;
-          x1 = ((int)(i + 1u) * control.width + 9) / 10;
-          control.x += x0;
-          control.width = x1 - x0;
-          factory_rect(m, control,
-                       m->brightness_percent == (i + 1u) * 10u ? ui->accent
-                                                               : ui->disabled);
-        }
-        (void)snprintf(line, sizeof(line), "亮度 %u%%  点击选择 10-100%%",
-                       (unsigned)m->brightness_percent);
-        factory_text(m, line, ui->brightness_note, ui->text, 1);
-        break;
       case H2_MFG_TOUCH:
-        for (unsigned i = 0; i < (m->profile->sequential_touch_grid ? 9u : 5u);
-             ++i) {
-          h2_mfg_ui_rect_t target = ui->touch_targets[i];
-          if (!m->profile->sequential_touch_grid) {
-            int x, y;
-            h2_mfg_touch_target(m, i, &x, &y);
-            target = (h2_mfg_ui_rect_t){x - 13, y - 13, 27, 27};
-          }
-          uint16_t color = m->touch_hits & (1u << i) ? ui->passed
-                           : i == m->touch_target    ? ui->accent
-                                                     : ui->disabled;
-          outline(m, target.x, target.y, target.width, target.height, color);
+        for (unsigned i = 0; i < touch_target_count(m); ++i) {
+          int x, y;
+          h2_mfg_touch_target(m, i, &x, &y);
+          uint16_t color = m->touch_hits & (1u << i) ? ui->passed : ui->text;
+          outline(m, x - 13, y - 13, 27, 27, color);
         }
         if (m->touch_pressed)
           rect(m, m->touch_x - 4, m->touch_y - 4, 8, 8, ui->text);
@@ -400,24 +338,28 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         if (count > H2_MFG_BUTTON_MAX) count = H2_MFG_BUTTON_MAX;
         for (unsigned i = 0; i < count; ++i) {
           const char* name = m->profile->button_names[i];
-          (void)snprintf(line, sizeof(line), "%s %s", name ? name : "",
-                         m->button_index > i ? "已完成" : "按下并松开");
-          factory_text(m, line, ui->rows[i], ui->text, 1);
+          (void)snprintf(line, sizeof(line), "%s DOWN %u UP %u / 3",
+                         name ? name : "", m->downs[i], m->ups[i]);
+          factory_text(m, line, ui->rows[i],
+                       m->pressed[i] ? ui->accent : ui->text, 1);
         }
         break;
       }
-      case H2_MFG_AEC:
-        factory_center(m, "请说话并听取回放", 0, ui->text);
-        (void)snprintf(line, sizeof(line), "采集播放 %u / %u 帧",
-                       m->audio_frames,
-                       (unsigned)m->profile->monitor_min_frames);
-        factory_center(m, line, 1, ui->text);
+      case H2_MFG_AEC: {
+        factory_center(m, h2_mfg_aec_phase(m), 0, ui->text);
+        int echo_db = h2_mfg_aec_echo_db(m);
+        if (echo_db >= 0)
+          (void)snprintf(line, sizeof(line), "回声降低 %d dB", echo_db);
+        else
+          (void)snprintf(line, sizeof(line), "请听取回声");
+        factory_center(m, line, 1, echo_db >= 0 ? ui->passed : ui->text);
+        (void)snprintf(line, sizeof(line), "MIC LEVEL %u", m->mic_level);
+        factory_center(m, line, 2, ui->text);
         factory_center(
-            m, m->model.ready ? "监听就绪  请人工确认" : "等待采集播放就绪", 2,
+            m, m->model.ready ? "请人工确认回声和语音" : "请按照提示操作", 3,
             m->model.ready ? ui->accent : ui->muted);
-        factory_text(m, h2_mfg_aec_phase(m), ui->rows[3], ui->text, 0);
-        factory_text(m, m->detail, ui->rows[4], ui->muted, 0);
         break;
+      }
       case H2_MFG_BATTERY:
         factory_center(m,
                        m->battery.flags & H2_PAL_BATTERY_PRESENT
@@ -430,12 +372,6 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
             m,
             m->battery.flags & H2_PAL_BATTERY_HAS_VOLTAGE_MV ? line : "电压 --",
             1, ui->text);
-        (void)snprintf(line, sizeof(line), "电流 %+ld mA",
-                       (long)m->battery.current_ma);
-        factory_center(
-            m,
-            m->battery.flags & H2_PAL_BATTERY_HAS_CURRENT_MA ? line : "电流 --",
-            2, ui->text);
         (void)snprintf(line, sizeof(line), "电量 %u.%02u%%",
                        m->battery.percent_x100 / 100u,
                        m->battery.percent_x100 % 100u);
@@ -443,12 +379,7 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
                        m->battery.flags & H2_PAL_BATTERY_HAS_PERCENT_X100
                            ? line
                            : "电量 --",
-                       3, ui->text);
-        factory_center(m, m->battery_phase ? "拔除外部电源" : "连接外部电源", 4,
-                       ui->accent);
-        factory_center(
-            m, m->battery_phase ? "确认电池供电正常" : "人工检查充电或充满指示",
-            5, ui->text);
+                       2, ui->text);
         break;
       case H2_MFG_IMU: {
         const h2_pal_vec3_i32_t* a = &m->imu.accel_mg;
@@ -461,11 +392,8 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         (void)snprintf(line, sizeof(line), "%ld / %ld / %ld", (long)g->x,
                        (long)g->y, (long)g->z);
         factory_center(m, line, 3, ui->text);
-        factory_center(m,
-                       m->accel_responded && m->gyro_responded
-                           ? "运动已响应"
-                           : "请移动并旋转设备",
-                       4, ui->accent);
+        factory_center(m, m->model.ready ? "运动已响应" : "请移动并旋转设备", 4,
+                       ui->accent);
         break;
       }
       case H2_MFG_MAGNETOMETERS:
@@ -477,39 +405,53 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
           factory_text(m, ui->magnet_names[slot], ui->magnet_labels[slot],
                        ui->text, 0);
           h2_mfg_ui_rect_t box = ui->magnet_boxes[slot];
-          int error = m->magnet_error[i];
-          if (!error && m->magnet_present[i]) factory_rect(m, box, ui->accent);
-          outline(m, box.x, box.y, box.width, box.height,
-                  error ? ui->failed : ui->accent);
-          if (error) {
-            (void)snprintf(line, sizeof(line), "读取失败 %d", error);
-            factory_text(m, line, ui->magnet_errors[slot], ui->failed, 0);
+          if (ui->read_magnet != NULL) {
+            int present = 0, error = 0;
+            int rc = ui->read_magnet(ui->user, i, &present, &error);
+            if (rc != 0) error = rc;
+            if (!error && present) factory_rect(m, box, ui->accent);
+            outline(m, box.x, box.y, box.width, box.height,
+                    error ? ui->failed : ui->accent);
+            if (error) {
+              (void)snprintf(line, sizeof(line), "读取失败 %d", error);
+              factory_text(m, line, ui->magnet_errors[slot], ui->failed, 0);
+            }
+          } else {
+            const h2_pal_vec3_i32_t* v = &m->magnetometers[i].mag_mgauss;
+            (void)snprintf(line, sizeof(line), "%ld / %ld / %ld", (long)v->x,
+                           (long)v->y, (long)v->z);
+            factory_text(m, line, box, ui->text, 1);
           }
         }
+        if (ui->read_magnet == NULL)
+          factory_center(m, m->model.ready ? "运动已响应" : "请旋转设备", 5,
+                         m->model.ready ? ui->passed : ui->text);
         break;
       case H2_MFG_VIBRATION:
         factory_rect(m, ui->vibration,
                      m->motor_duty != 0 ? ui->accent : ui->disabled);
-        factory_text(m, m->motor_duty != 0 ? "振动中" : "按住振动",
+        factory_text(m, m->motor_duty != 0 ? "振动中" : "振动测试",
                      ui->vibration, ui->text, 1);
-        factory_center(m, "松开停止  请人工确认", 5, ui->text);
+        factory_center(
+            m,
+            m->profile->hold_vibration ? "按住振动  松开停止" : "200 ms / 2 s",
+            4, ui->text);
+        (void)snprintf(line, sizeof(line), "PULSES %u", m->motor_pulses);
+        factory_center(m, line, 5, ui->text);
         break;
       case H2_MFG_WIFI:
-        factory_text(m, m->wifi_status.ssid, ui->rows[0], ui->text, 0);
-        if (m->wifi_status.ip_valid && m->wifi_status.ip.ip4) {
-          uint8_t ip[4];
-          h2_pal_wifi_ip4_to_bytes(m->wifi_status.ip.ip4, ip);
-          (void)snprintf(line, sizeof(line), "IPv4 %u.%u.%u.%u", ip[0], ip[1],
-                         ip[2], ip[3]);
-          factory_center(m, line, 2, ui->text);
-        } else
-          factory_center(m, "IPv4 等待连接", 2, ui->muted);
+        factory_center(m, "请通过串口连接 Wi-Fi", 0, ui->text);
+        factory_center(m, m->model.ready ? "IPv4 已连接" : "IPv4 等待连接", 2,
+                       m->model.ready ? ui->passed : ui->muted);
         break;
-      case H2_MFG_BLE: {
-        int rc = factory_ble(m, now);
-        if (rc != 0) return rc;
+      case H2_MFG_BLE:
+        factory_center(m, "请连接蓝牙测试设备", 0, ui->text);
+        (void)snprintf(line, sizeof(line), "mfg probe ble %08x",
+                       (unsigned)m->model.ticket);
+        factory_center(m, line, 2, ui->text);
+        factory_center(m, m->ble_probed ? "蓝牙通信已确认" : "等待蓝牙通信确认",
+                       3, m->ble_probed ? ui->passed : ui->muted);
         break;
-      }
       case H2_MFG_CAMERA: {
         h2_mfg_ui_rect_t preview = ui->preview;
         if (m->camera_preview && m->preview_width && m->preview_height &&
@@ -537,14 +479,9 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
       (void)snprintf(line, sizeof(line), "检测失败 %d", m->model.error);
       factory_center(m, line, 6, ui->failed);
     }
-    /* These checks advance on their own fresh input sequence. In failure,
-     * retry remains reachable using the shared control geometry. */
-    if (failed ||
-        (step->check != H2_MFG_TOUCH && step->check != H2_MFG_BUTTONS)) {
-      factory_button(m, ui->controls[0], "异常", 1);
-      factory_button(m, ui->controls[1], failed ? "重试" : "正常",
-                     failed || m->model.ready);
-    }
+    factory_button(m, ui->controls[0], "异常", 1);
+    factory_button(m, ui->controls[1], failed ? "重试" : "确认",
+                   failed || m->model.ready);
   }
   h2_display_rect_t area = {.width = m->display.width,
                             .height = m->display.height};
@@ -552,8 +489,6 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
       m->rt->display, &area, m->frame,
       (size_t)m->display.width * sizeof(uint16_t), H2_DISPLAY_PIXEL_RGB565);
   if (rc == 0) rc = h2_pal_display_present(m->rt->display);
-  if (rc == 0 && step && step->check == H2_MFG_DISPLAY && !failed)
-    m->display_patterns_seen |= 1u << (m->display_pattern % 4u);
   return rc;
 }
 
@@ -571,16 +506,10 @@ int h2_mfg_ui_draw(h2_mfg_t* m, uint64_t now) {
       (step != NULL && m->model.summary.step_status[m->model.current] ==
                            H2_LOADER_MFG_STEP_FAILED);
   if (step != NULL && step->check == H2_MFG_DISPLAY && !failed) {
-    if (m->profile->manual_display_patterns) {
-      static const uint16_t patterns[] = {RED, GREEN, 0x001f, WHITE};
-      m->display_pattern = (unsigned)((now - m->started_ms) / 600u) % 4u;
-      rect(m, 0, 0, w, h, patterns[m->display_pattern]);
-    } else {
-      rect(m, 0, 0, w / 2, h / 2, RED);
-      rect(m, w / 2, 0, w - w / 2, h / 2, GREEN);
-      rect(m, 0, h / 2, w / 2, h - h / 2, 0x001f);
-      rect(m, w / 2, h / 2, w - w / 2, h - h / 2, WHITE);
-    }
+    rect(m, 0, 0, w / 2, h / 2, RED);
+    rect(m, w / 2, 0, w - w / 2, h / 2, GREEN);
+    rect(m, 0, h / 2, w / 2, h - h / 2, 0x001f);
+    rect(m, w / 2, h / 2, w - w / 2, h - h / 2, WHITE);
   }
   rect(m, w * 15 / 100, h * 5 / 100, w * 70 / 100, h * 14 / 100, BG);
   char line[96];
@@ -594,8 +523,20 @@ int h2_mfg_ui_draw(h2_mfg_t* m, uint64_t now) {
                                                           : "REVIEW REQUIRED")
                       : step->name,
          h * 13 / 100, scale, failed ? RED : WHITE);
-  if (step != NULL && step->check == H2_MFG_TOUCH) {
-    for (unsigned i = 0; i < 5; ++i) {
+  if (step != NULL && step->check == H2_MFG_DISPLAY && !failed) {
+    rect(m, w * 15 / 100, h * 30 / 100, w * 70 / 100, h * 40 / 100, BG);
+    (void)snprintf(line, sizeof(line), "BRIGHTNESS %u PERCENT",
+                   display_brightness(m, now));
+    center(m, line, h * 40 / 100, scale, WHITE);
+    uint64_t elapsed = now >= m->started_ms ? now - m->started_ms : 0;
+    if (m->model.ready)
+      (void)snprintf(line, sizeof(line), "CHECK COLORS AND BRIGHTNESS");
+    else
+      (void)snprintf(line, sizeof(line), "WAIT %u MS",
+                     (unsigned)(elapsed < 1800 ? 1800 - elapsed : 0));
+    center(m, line, h * 55 / 100, scale, WHITE);
+  } else if (step != NULL && step->check == H2_MFG_TOUCH) {
+    for (unsigned i = 0; i < touch_target_count(m); ++i) {
       int x, y;
       h2_mfg_touch_target(m, i, &x, &y);
       uint16_t color = m->touch_hits & (1u << i) ? GREEN : WHITE;
@@ -726,8 +667,5 @@ int h2_mfg_ui_draw(h2_mfg_t* m, uint64_t now) {
                                       (size_t)w * sizeof(*m->frame),
                                       H2_DISPLAY_PIXEL_RGB565);
   if (rc == 0) rc = h2_pal_display_present(m->rt->display);
-  if (rc == 0 && step && step->check == H2_MFG_DISPLAY && !failed &&
-      m->profile->manual_display_patterns)
-    m->display_patterns_seen |= 1u << m->display_pattern;
   return rc;
 }
