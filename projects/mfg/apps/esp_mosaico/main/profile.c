@@ -1,0 +1,53 @@
+#include "h2_mfg.h"
+
+static const h2_mfg_step_t steps[] = {
+    {"display", H2_MFG_DISPLAY, 0},
+    {"brightness", H2_MFG_BRIGHTNESS, 0},
+    {"touch", H2_MFG_TOUCH, 0},
+    {"buttons", H2_MFG_BUTTONS, 0},
+    {"aec", H2_MFG_AEC, 0},
+    {"battery", H2_MFG_BATTERY, 0},
+    {"imu", H2_MFG_IMU, 0},
+    {"magnets", H2_MFG_MAGNETOMETERS, 0},
+    {"vibration", H2_MFG_VIBRATION, 0},
+    {"wifi", H2_MFG_WIFI, 0},
+    {"ble", H2_MFG_BLE, 0},
+    {"camera", H2_MFG_CAMERA, 0},
+};
+
+const h2_mfg_profile_t h2_mfg_board_profile = {
+    .board = "esp_mosaico",
+    .revision = 1,
+    .steps = steps,
+    .total = sizeof(steps) / sizeof(steps[0]),
+    .speaker_test_volume = 50,
+    .buttons = {101, 102},
+    .button_names = {"AI", "BOOT"},
+    .button_count = 2,
+    .imu = 201,
+    /* Physical placement: first/right, second/left. */
+    .magnetometers = {202, 203},
+    .magnetometer_count = 2,
+    .battery = 301,
+    .motor = 401,
+    /* Factory IMU acceptance uses native response; no verified screen map. */
+    .touch_navigation = 1,
+    .sequential_touch_grid = 1,
+    .sequential_buttons = 1,
+    .aec_live_monitor = 1,
+    .battery_manual_charge = 1,
+    .ble_scan_only = 1,
+    .wifi_manual_ipv4 = 1,
+    .live_magnets = 1,
+    .hold_vibration = 1,
+    .factory_ui = 1,
+    .magnetic_invalid_mgauss = -327680,
+    .magnetic_delta_mgauss = 80,
+    .accel_delta_mg = 150,
+    .gyro_delta_mdps = 15000,
+    .scan_window_ms = 10000,
+    .monitor_min_frames = 8,
+    .vibration_percent = 50,
+    .preview_width = 384,
+    .preview_height = 216,
+};

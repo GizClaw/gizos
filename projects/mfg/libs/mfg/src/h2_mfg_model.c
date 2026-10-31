@@ -19,6 +19,16 @@ int h2_mfg_model_init(h2_mfg_model_t* m, const h2_mfg_profile_t* profile,
       profile->speaker_test_volume > 100 || summary->total != profile->total ||
       ticket == 0)
     return H2_PAL_ERR_INVALID_ARG;
+  if ((profile->sequential_touch_grid && !profile->touch_navigation) ||
+      (profile->aec_live_monitor && profile->monitor_min_frames == 0) ||
+      (profile->live_magnets && profile->magnetic_delta_mgauss <= 0) ||
+      (profile->hold_vibration &&
+       (profile->vibration_percent == 0 || profile->vibration_percent > 100)) ||
+      (profile->ble_scan_only && profile->scan_window_ms == 0) ||
+      (profile->preview_width == 0) != (profile->preview_height == 0) ||
+      profile->preview_width > 384 || profile->preview_height > 216 ||
+      profile->accel_delta_mg < 0 || profile->gyro_delta_mdps < 0)
+    return H2_PAL_ERR_INVALID_ARG;
   int microphone = 0, speaker = 0, aec = 0;
   for (uint32_t i = 0; i < H2_LOADER_MFG_STEP_MAX; ++i) {
     if (summary->step_status[i] > H2_LOADER_MFG_STEP_FAILED ||
@@ -34,6 +44,17 @@ int h2_mfg_model_init(h2_mfg_model_t* m, const h2_mfg_profile_t* profile,
            profile->magnetometer_count == 0) ||
           (profile->steps[i].check == H2_MFG_BATTERY && !profile->battery) ||
           (profile->steps[i].check == H2_MFG_VIBRATION && !profile->motor))
+        return H2_PAL_ERR_INVALID_ARG;
+      if ((profile->steps[i].check == H2_MFG_BRIGHTNESS &&
+           !profile->touch_navigation) ||
+          (profile->steps[i].check == H2_MFG_AEC &&
+           !profile->aec_live_monitor && profile->monitor_min_frames != 0) ||
+          (profile->steps[i].automatic &&
+           ((profile->steps[i].check == H2_MFG_WIFI &&
+             profile->wifi_manual_ipv4) ||
+            (profile->steps[i].check == H2_MFG_BLE && profile->ble_scan_only) ||
+            (profile->steps[i].check == H2_MFG_BATTERY &&
+             profile->battery_manual_charge))))
         return H2_PAL_ERR_INVALID_ARG;
       if (profile->steps[i].name == NULL || profile->steps[i].name[0] == '\0')
         return H2_PAL_ERR_INVALID_ARG;
@@ -85,6 +106,12 @@ int h2_mfg_model_action(h2_mfg_model_t* m, const char* action, const char* step,
         return H2_PAL_ERR_INVALID_STATE;
       next.step_status[selected] = H2_LOADER_MFG_STEP_PASSED;
       selected = first_pending(&next);
+      if (m->profile->factory_ui) {
+        selected = m->current + 1u;
+        while (selected < next.total &&
+               next.step_status[selected] == H2_LOADER_MFG_STEP_PASSED)
+          ++selected;
+      }
     } else if (strcmp(action, "fail") == 0) {
       next.step_status[selected] = H2_LOADER_MFG_STEP_FAILED;
     } else if (strcmp(action, "skip") == 0) {

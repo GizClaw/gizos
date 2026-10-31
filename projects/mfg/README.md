@@ -10,12 +10,7 @@ bazel build --noannounce_rc --config=esp32s3 \
   //projects/mfg/apps/waveshare_esp32s3_touch_amoled_1_75c:package
 ```
 
-Use `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching
-architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and
-`waveshare_esp32s3_a7670e_4g`. The remaining entries are
-`waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and
-`jieli_ac791n_devkit`.
-JieLi's native package build requires a Linux host.
+Use `--config=esp32s31` for `esp_mosaico`, or `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and `waveshare_esp32s3_a7670e_4g`. The remaining entries are `waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and `jieli_ac791n_devkit`. JieLi's native package build requires a Linux host.
 
 Physical acceptance recorded on 2026-10-30:
 
@@ -26,10 +21,7 @@ Physical acceptance recorded on 2026-10-30:
 | SZP | 10/11 durable results; corrected camera preview accepted by the operator | The camera confirmation was not captured in device storage before unplugging. |
 | Waveshare P4 4.3 | 9/10 passed | Camera acquired live frames; image quality and direction still require operator confirmation. |
 
-These records describe the tested firmware versions. They do not claim that
-all boards were flashed with the current source, or that host tests qualify
-physical peripherals. DevKit, A7670E, BK7258 and JieLi have MFG entries but no
-complete physical acceptance in this session.
+These records describe the tested firmware versions. They do not claim that all boards were flashed with the current source, or that host tests qualify physical peripherals. DevKit, A7670E, BK7258, JieLi and ESP-Mosaico have MFG entries but no complete physical acceptance of their current GizOS images recorded here.
 
 Every profile with both microphone and speaker checks also requires a separate,
 operator-confirmed AEC check. This includes 1.75C, AMOLED, SZP, P4, BK7258,
@@ -94,21 +86,35 @@ centering the complete image with black borders. SZP's 320x240 source becomes
 120x90 with 20-pixel borders on either side. Preview placement leaves the
 instructions below the image on SZP's 320x240 display.
 
-Install the package with the normal H2Loader CLI `send --file <package>` and
-`reboot upgrade`. Loader self-update completes before the interactive session
-starts. UART and BLE Loader commands stay available during acceptance.
-Loader recovery/update remains usable with unfinished or failed checks.
-App installation/launch requires all required checks to be PASSED.
+Install the package with the normal H2Loader CLI `send --file <package>` and `reboot upgrade`. Loader self-update completes before the interactive session starts. Existing UART and BLE Loader commands stay available on the profiles that enable them; ESP-Mosaico uses USB CDC management and scan-only BLE. Loader recovery/update remains usable with unfinished or failed checks. App installation/launch requires all required checks to be PASSED.
+
+## ESP-Mosaico
+
+```sh
+bazel build --config=esp32s31 \
+  //projects/mfg/apps/esp_mosaico:package \
+  //projects/h2loader/targets/h2loader_tar_zlib/loader/esp_mosaico:package
+```
+
+These are alternative `role=h2loader` management images on the existing S31 16 MiB layout, not a Loader plus MFG App. The ordinary Loader is unchanged. MFG uses the shared version at `//projects/mfg:version`, board identity `esp_mosaico`, target `esp32s31` and image `mfg`. Its explicit native graph uses the existing Mosaico USB console and Loader USB adapter with one RX owner. There is no BLE command service; no peer App or BLE `probe` is needed.
+
+Profile revision 1 opts into the shared factory UI and interaction policies: display, brightness, nine sequential touch targets, AI then BOOT, processed AEC live monitor, battery/manual charging, native IMU response, right/left magnets, touch-held vibration, manual IPv4 Wi-Fi, BLE scan and automatic camera preview. The authoritative IDs and exercised thresholds are in `apps/esp_mosaico/main/profile.c`. Screen-axis mapping remains unset because factory IMU acceptance uses native sensor response. All subjective checks require operator confirmation. Peripheral deadlines do not impose a timeout on the operator; keep listeners ready until the action completes or is cancelled.
+
+AEC is enabled only in this image with `H2_MOSAICO_AUDIO_AEC=ON`. The monitor plays actual processed capture, accepts valid silence, preserves microphone gain and uses manual listening rather than amplitude or quantitative echo-reduction thresholds. The shared playback factor remains unity (1000 milli). Battery charging/full indication and operation after removing external power are manual observations; current sign, USB and DTR are not charger detection. Magnetic overflow is handled per axis and cannot prove attachment; right 202 and left 203 must independently respond and return to outline on removal.
+
+Configure the factory AP with the existing Loader `wifi connect` command, then confirm the real usable IPv4 shown by MFG. BLE shows actual nearby devices and RSSI without connecting. Install/remove the left-H2 SC101IOT only with power off. The profile selects an aspect-preserving preview of the real camera source. `CONFIG_VFS_MAX_COUNT=16` is image-local for Loader filesystems, CDC and camera. No LVGL worker tasks or second UI controller are introduced by this entry; shared MFG owns rendering and uses existing font facilities.
+
+The black/orange factory UI keeps all progress indicators in fixed order. Its terminal screen says “测试完成”, “等待固件刷入” and “重新测试”, clears the camera view, and says “全部通过” only when every required check is PASSED. Traversal completion or waiting for firmware does not open the gate. Failed, skipped, untested, unreadable or uncommitted results block App installation/launch. Warm and cold-completed retest uses shared ticketed `reset all`, persists revocation first and returns to Display. AUTO returns to Loader when acceptance is complete and actual App work exists. Management replacement/recovery retains priority over interactive MFG and acceptance-revision reset.
+
+Before disruptive handoff, shared MFG stops/joins audio and scan work, stops the motor, returns camera loans and releases touch/display. Cleanup failure retains ownership and blocks handoff for retry; the shared operation lock serializes retest against installation. Loader presentation callbacks `install_progress`, `show_installing`, `show_install_failed`, `show_launching` are NULL. Installation has no brand/progress UI; use CLI results, status and actual running image identity.
+
+Use the same-checkout CLI with `--no-ble --port <serial-port>` for `status`, `send --file <package>`, `reboot upgrade --monitor` and a fresh `status`/`mfg status`. Managed MFG ↔ ordinary Loader replacement, incomplete-MFG App rejection and Loader repair, cleanup failures, retest/install contention, accepted App stage/install/launch, return-to-Loader and recovery all require separate evidence. After Loader replacement verify Partition 1, new active identity and valid metadata, Stage invalid and `last_result=0`. After App confirmation verify Partition 2 and matching identity/metadata with Stage cleared. Native flashing is only initial provisioning/recovery when the managed path is unavailable.
+
+Neither package builds nor hardware passes are claimed here. Validate both raw management images against the existing 3 MiB capacity. Record exact GizOS commit, package SHA-256, board/transport and serial evidence for all twelve checks, error/retry/skip, reboot/resume, save failures and warm/cold retest. The Firmwares checkpoint `abae140f50234c85428fc109c8b6c07a4a0a1bad` is a behavior reference, not certification of the new GizOS package. Unavailable validation remains SKIP/UNSUPPORTED with its reason. See the [operator and managed acceptance guide](../../guides/apps/h2loader/boards/esp_mosaico/mfg.md).
 
 ## Operator flow
 
-The board profile lists its checks in execution order. On a display board,
-wait for green PASS and short-press its first listed button to confirm the
-current check. On a board with Touch, opening the acceptance screen also opens
-the touch provider, including when a cold boot resumes a later or failed check.
-PASS, FAIL and RETRY accept touch input. FAIL records a failure;
-RETRY starts that check with fresh observations. The serial interface also
-works on boards without displays.
+The board profile lists its checks in execution order. With the default interaction policy, wait for green PASS on a display board and short-press its first listed button to confirm the current check. ESP-Mosaico instead selects touch navigation and uses AI/BOOT only as measured inputs. On a board with Touch, opening the acceptance screen also opens the touch provider, including when a cold boot resumes a later or failed check. PASS, FAIL and RETRY accept touch input. FAIL records a failure; RETRY starts that check with fresh observations. The serial interface also works on boards without displays.
 
 For the 1.75C:
 
@@ -378,12 +384,7 @@ h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg retry display 1234abcd
 h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg reset all 1234abcd
 ```
 
-Replace the step and eight-digit hexadecimal ticket with the current values
-from `mfg status`. Tickets change on each transition and each boot, so delayed
-confirmations cannot pass another check. `probe` is restricted to BLE; the
-other actions can use either Loader transport. `skip` records SKIPPED and
-continues, but a skipped required check still blocks App work. Use `retry`
-to revisit it.
+Replace the step and eight-digit hexadecimal ticket with the current values from `mfg status`. Tickets change on each transition and each boot, so delayed confirmations cannot pass another check. `probe` is restricted to a real BLE command round trip on profiles that require it; ESP-Mosaico's scan-only check does not use `probe`. Other actions use the enabled Loader transport(s). `skip` records SKIPPED and continues, but a skipped required check still blocks App work. Use `retry` to revisit it.
 
 `H2_MFG_STATUS` reports the selected check, readiness, error, ticket, total,
 completion and status digits. Digits are 0=UNTESTED, 1=PASSED, 2=SKIPPED,
@@ -419,6 +420,7 @@ bazel test --noannounce_rc \
   //projects/mfg/libs/mfg:aec_test \
   //projects/mfg/libs/mfg:touch_resume_test \
   //projects/mfg/libs/mfg:peripheral_checks_test \
+  //projects/mfg/libs/mfg:network_checks_test \
   //projects/mfg/libs/mfg:completed_display_test \
   //projects/mfg/libs/peer:scan_test \
   //projects/h2loader/libs/h2loader:h2loader_command_test \

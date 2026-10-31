@@ -6,6 +6,24 @@
 其中 Camera 默认绑定到 SC101IOT provider。公共 Runtime 未配置 Camera 时使用
 unsupported provider，其他板不自动引入 Mosaico 驱动。
 
+## Loader 与 MFG 最终组合
+
+同一块板的两个管理镜像均使用既有 `role=h2loader` 和 S31 layout：
+
+- [普通 Loader](/apps/h2loader/boards/esp_mosaico/h2loader)：
+  `//projects/h2loader/targets/h2loader_tar_zlib/loader/esp_mosaico:package`，入口保持不变。
+- [MFG](/apps/h2loader/boards/esp_mosaico/mfg)：
+  `//projects/mfg/apps/esp_mosaico:package`，在 `main/profile.c` 声明十二项顺序、
+  外设 ID 与工厂交互策略；`main.c` 只接线共享 MFG/Loader 生命周期和命令。
+
+二者使用 `--config=esp32s31` 构建并沿用现有 Type-C USB console/Loader adapter。 MFG 不启用 BLE 命令服务，BLE 验收仅扫描。MFG 以 `profile.total` 打开共享 全项 PASSED 门控；失败、跳过、未测、结果不可读或保存失败不能允许 App 安装/启动。 Loader 替换/恢复优先，使用既有 CLI 验证管理更新，参见[Mosaico 总览](/apps/h2loader/boards/esp_mosaico/)。
+
+MFG 使用现有 `H2_MOSAICO_AUDIO_AEC=ON` opt-in，实时监听处理后的 PAL PCM， 保留麦克风增益并人工判断；普通 Loader 不随之启用 AEC。MFG image-local `sdkconfig.mfg.defaults` 设置 `CONFIG_VFS_MAX_COUNT=16`，供现有 Loader 文件系统、CDC 和 Camera 同时使用。不能据仅编译成功推断运行时资源共存通过。
+
+共享 MFG 负责黑橙测试 UI、现有字体设施、固定顺序进度点及完成/重测页， 该入口不增加 LVGL 工作任务。Loader 的安装、失败、启动显示回调均为 NULL， 不增加品牌或安装进度界面。交接前共享 cleanup 停止监听/扫描/振动、归还 Camera 借帧并释放触摸/显示；清理失败保留资源并阻止交接，不能提前销毁 Runtime。
+
+本次集成没有新 GizOS 包的构建、容量或真机通过证据。后续必须记录准确 commit/package SHA-256 和串口证据，验证十二项、暖态/冷态重测、全部通过门控、 MFG ↔ Loader 替换及 App 安装/启动/恢复。旧 Firmwares 记录仅作行为参考。
+
 ## Camera 调用与资源
 
 仅支持左 H2 的 SC101IOT、1280×720 UYVY。关闭电源后安装或拆卸摄像头，
@@ -41,6 +59,8 @@ Runtime 创建/销毁不启动、取帧、归还或停止 Camera。应用必须�
 Mosaico 磁力计通过现有 [IMU PAL](https://github.com/GizClaw/gizos/blob/main/libs/pal/include/h2/pal/hal/h2_pal_imu.h) 读取。[板级适配器](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/src/h2_mosaico_peripherals.c) 根据 BSP 返回码决定读取成功或失败；成功时保留三轴补偿输出并统一换算为 PAL 单位，不因单轴补偿溢出而丢弃整份样本。初始化或读取失败仍返回既有错误并清空输出，不返回上次成功的样本。
 
 Bosch 补偿溢出哨兵也经过相同单位换算，具体映射见 [板级转换定义](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/src/h2_mosaico_mag.h)。该输出不是可信的磁场测量，也不能据其符号推断物理方向。读取成功与 `HAS_MAG` 表示交付了磁场通道输出，不保证每轴均为有效物理测量，更不代表磁铁已吸附。当前公共接口没有逐轴状态字段，消费此路径的产品必须处理这一板级语义；分类、滤波、基线和显示策略归产品层，不能把读取错误或溢出输出直接当作吸附。
+
+MFG profile 将补偿无效值 `-327680` mGauss 传入共享策略，逐轴忽略并撤销该轴 基线有效性；恢复后的首次有效值只建立新基线，不算磁铁响应。右侧 ID 202、 左侧 ID 203 分别比较有效基线、显示当前靠近/移开状态，历史响应就绪与人工结论 保持分离。共享引擎不依赖 Mosaico BSP，也不按 board 字符串分支。
 
 [板级回归说明](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/tests/README.md)中的磁力计测试覆盖补偿输出保留、换算和真实读取失败清空。真机验证需记录固件版本、两颗外设的返回码、flags 和三轴输出，并分别观察磁铁靠近和移开后的行为；未触发补偿溢出时，不能以正常读取替代该条件的硬件证据。没有轴输出的 IO 错误不能直接归因为饱和或硬件损坏。
 

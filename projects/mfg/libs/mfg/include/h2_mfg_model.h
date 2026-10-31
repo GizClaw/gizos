@@ -25,6 +25,7 @@ typedef enum h2_mfg_check {
   H2_MFG_BATTERY,
   H2_MFG_VIBRATION,
   H2_MFG_CAMERA,
+  H2_MFG_BRIGHTNESS,
 } h2_mfg_check_t;
 
 typedef struct h2_mfg_step {
@@ -64,6 +65,37 @@ typedef struct h2_mfg_profile {
   /* Signed 1-based native accelerometer axes: X=1, Y=2, Z=3. */
   int screen_x_axis;
   int screen_y_axis;
+  /** Disable physical confirm shortcuts; keep ticketed commands and touch. */
+  int touch_navigation;
+  /** Nine ordered fresh taps rather than the default five-point observation. */
+  int sequential_touch_grid;
+  /** One fresh down/up per configured button, in profile order. */
+  int sequential_buttons;
+  /** Processed PCM monitor with manual verdict; zero retains staged AEC. */
+  int aec_live_monitor;
+  /** Separate manual charging indication and unplugged-operation prompts. */
+  int battery_manual_charge;
+  /** Observe advertisements instead of requiring a BLE command round trip. */
+  int ble_scan_only;
+  /** Require connected IPv4 plus manual verdict; no transfer measurement. */
+  int wifi_manual_ipv4;
+  /** Live baseline response per magnetometer instead of min/max movement. */
+  int live_magnets;
+  /** Touch-held motor drive instead of the default timed pulses. */
+  int hold_vibration;
+  /** Circular 480x480 factory presentation and ordered traversal. Zero keeps
+   * existing board presentation and first-pending selection semantics. */
+  int factory_ui;
+  /** Per-axis invalid compensated value; used only with live_magnets. */
+  int32_t magnetic_invalid_mgauss;
+  int32_t magnetic_delta_mgauss;
+  int32_t accel_delta_mg;
+  int32_t gyro_delta_mdps;
+  uint32_t scan_window_ms;
+  uint32_t monitor_min_frames;
+  uint32_t vibration_percent;
+  uint32_t preview_width;
+  uint32_t preview_height;
 } h2_mfg_profile_t;
 
 typedef int (*h2_mfg_save_fn)(void* user,

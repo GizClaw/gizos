@@ -9,6 +9,12 @@
 
 static unsigned opens, closes;
 static h2_pal_touch_event_t events[2];
+static int save_result;
+static int persist(void* user, const h2_loader_mfg_summary_t* summary) {
+  (void)user;
+  (void)summary;
+  return save_result;
+}
 static unsigned event_at;
 static int open_display(void* user) {
   (void)user;
@@ -54,7 +60,60 @@ static void click(int x) {
   event_at = 0;
 }
 
+static int button_state[2];
+static int button_read(void* user, h2_pal_periph_id_t id,
+                       h2_pal_single_button_reading_t* out) {
+  (void)user;
+  assert(id == 101 || id == 102);
+  *out = (h2_pal_single_button_reading_t){
+      .id = id,
+      .state = button_state[id - 101] ? H2_PAL_BUTTON_STATE_PRESSED
+                                      : H2_PAL_BUTTON_STATE_RELEASED};
+  return 0;
+}
+static void ordered_button_edges_and_skip(void) {
+  static const h2_pal_button_vtable_t ops = {.read_single_button = button_read};
+  const h2_pal_button_api_t button = {.vtable = &ops};
+  h2_runtime_t rt = {.button = &button};
+  const h2_mfg_step_t step = {"buttons", H2_MFG_BUTTONS, 0};
+  const h2_mfg_profile_t profile = {.steps = &step,
+                                    .total = 1,
+                                    .buttons = {101, 102},
+                                    .button_count = 2,
+                                    .touch_navigation = 1,
+                                    .sequential_buttons = 1};
+  h2_mfg_t m = {.rt = &rt, .profile = &profile};
+  const char* action = NULL;
+  /* BOOT held before AI must neither pass BOOT nor form an AI-then-BOOT skip.
+   */
+  button_state[1] = 1;
+  assert(h2_mfg_hardware_tick(&m, 0, &action) == 0 && !action);
+  button_state[0] = 1;
+  assert(h2_mfg_hardware_tick(&m, 1, &action) == 0 && !action);
+  button_state[0] = 0;
+  assert(h2_mfg_hardware_tick(&m, 2, &action) == 0 && m.button_index == 1);
+  button_state[1] = 0;
+  assert(h2_mfg_hardware_tick(&m, 3, &action) == 0 && !action &&
+         m.button_index == 1);
+  button_state[1] = 1;
+  assert(h2_mfg_hardware_tick(&m, 4, &action) == 0 && !action);
+  button_state[1] = 0;
+  assert(h2_mfg_hardware_tick(&m, 5, &action) == 0 && action &&
+         !strcmp(action, "confirm"));
+  m.button_index = 0;
+  action = NULL;
+  button_state[0] = 1;
+  assert(h2_mfg_hardware_tick(&m, 6, &action) == 0);
+  button_state[1] = 1;
+  assert(h2_mfg_hardware_tick(&m, 7, &action) == 0);
+  button_state[1] = 0;
+  assert(h2_mfg_hardware_tick(&m, 8, &action) == 0 && action &&
+         !strcmp(action, "skip"));
+  button_state[0] = 0;
+}
+
 int main(void) {
+  ordered_button_edges_and_skip();
   const h2_pal_display_vtable_t display_vt = {
       .open = open_display,
       .get_info = display_info,
@@ -97,5 +156,61 @@ int main(void) {
   assert(action != NULL && strcmp(action, "fail") == 0);
   assert(h2_mfg_hardware_enter(&m, 60) == 0 && opens == 1);
   assert(h2_mfg_hardware_close(&m) == 0 && closes == 1);
+  /* Completed sessions still open touch, and a fresh tap requests the same
+   * ticketed durable reset used by commands without indexing steps[total]. */
+  h2_mfg_profile_t factory = profile;
+  factory.touch_navigation = 1;
+  m.profile = &factory;
+  m.model.profile = &factory;
+  m.model.current = factory.total;
+  m.model.ticket = 7;
+  m.model.save = persist;
+  assert(h2_mfg_hardware_enter(&m, 80) == 0 && m.touch_open);
+  events[0] = (h2_pal_touch_event_t){
+      .kind = H2_PAL_TOUCH_EVENT_DOWN, .x = 180, .y = 420};
+  events[1] =
+      (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_UP, .x = 180, .y = 420};
+  event_at = 0;
+  /* This fake display is small: reject out-of-bounds input without touching
+   * terminal-state result memory. */
+  action = NULL;
+  assert(h2_mfg_hardware_tick(&m, 100, &action) == H2_PAL_ERR_FORMAT);
+  assert(action == NULL && m.model.current == factory.total);
+  m.display.width = m.display.height = 480;
+  event_at = 0;
+  assert(h2_mfg_hardware_tick(&m, 120, &action) == 0);
+  assert(action && strcmp(action, "reset") == 0);
+  save_result = H2_PAL_ERR_IO;
+  assert(h2_mfg_model_action(&m.model, action, "all", 7) == H2_PAL_ERR_IO);
+  assert(m.model.current == factory.total && m.model.ticket == 7);
+  save_result = 0;
+  assert(h2_mfg_model_action(&m.model, action, "all", 7) == 0);
+  assert(m.model.current == 0 && m.model.ticket == 8);
+  assert(h2_mfg_hardware_close(&m) == 0);
+  factory.sequential_touch_grid = 1;
+  m.model.current = 1;
+  m.model.error = 0;
+  m.model.summary.step_status[1] = H2_LOADER_MFG_STEP_UNTESTED;
+  assert(h2_mfg_hardware_enter(&m, 140) == 0);
+  m.display.width = m.display.height = 480;
+  for (unsigned i = 0; i < 9; ++i) {
+    int x, y;
+    h2_mfg_touch_target(&m, i, &x, &y);
+    events[0] =
+        (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_DOWN, .x = x, .y = y};
+    events[1] = (h2_pal_touch_event_t){
+        .kind = H2_PAL_TOUCH_EVENT_UP, .x = x + 40, .y = y};
+    event_at = 0;
+    action = NULL;
+    assert(h2_mfg_hardware_tick(&m, 160 + i, &action) == 0 && !action);
+    assert(m.touch_target == i);
+    events[1].x = x;
+    event_at = 0;
+    assert(h2_mfg_hardware_tick(&m, 180 + i, &action) == 0);
+    assert(m.touch_target == i + 1);
+    assert(i == 8 ? action && !strcmp(action, "confirm") : action == NULL);
+  }
+  assert(m.touch_hits == 0x1ffu && m.model.ready);
+  assert(h2_mfg_hardware_close(&m) == 0);
   return 0;
 }

@@ -17,7 +17,7 @@ typedef struct fake_audio {
   unsigned head, count, played, underruns, writes, reads;
   unsigned capture_pending;
   uint32_t volume;
-  int speaker, mic, close_result, silent;
+  int speaker, mic, close_result, silent, restore_result;
 } fake_audio_t;
 
 static const h2_audio_pcm_format_t format = {
@@ -65,7 +65,9 @@ static int get_volume(void* user, uint32_t* out) {
 }
 
 static int set_volume(void* user, uint32_t percent) {
-  ((fake_audio_t*)user)->volume = percent;
+  fake_audio_t* a = user;
+  if (percent == 91 && a->restore_result != 0) return a->restore_result;
+  a->volume = percent;
   return 0;
 }
 
@@ -163,6 +165,11 @@ static void speaker_survives_slow_display(h2_mfg_t* m, fake_audio_t* a) {
   assert(h2_mfg_hardware_leave(m) == H2_PAL_ERR_BUSY);
   assert(m->pcm == pcm && m->track != NULL && a->speaker);
   a->close_result = 0;
+  a->restore_result = H2_PAL_ERR_IO;
+  assert(h2_mfg_hardware_leave(m) == H2_PAL_ERR_IO);
+  assert(m->volume_saved && m->pcm == pcm && a->volume == 100);
+  assert(m->track == NULL && !a->speaker);
+  a->restore_result = 0;
   assert(h2_mfg_hardware_leave(m) == 0);
   assert(m->pcm == NULL && m->track == NULL && !a->speaker && a->volume == 91);
 }
