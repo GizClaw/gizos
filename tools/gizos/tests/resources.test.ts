@@ -496,6 +496,12 @@ test("JieLi config installs new tool directories, resolves checkout aliases and 
   expect(environment.JIELI_AC707N_SDK_PATH).toBe(join(checkout, "SDK"));
   expect(environment.JIELI_TOOLCHAIN_ROOT).toBe(compiler);
   expect(environment.JIELI_POSTBUILD_ROOT).toBe(postbuild);
+  expect(environment.GIZOS_ENV_PATHS).toBe("");
+  for (const tool of entries) {
+    await expect(manager.remove(tool.kind, tool.version, true)).rejects.toThrow("required by");
+    await expect(manager.remove(tool.kind, tool.version)).rejects.toThrow("required by");
+    expect(await manager.resources.record(tool)).toBeDefined();
+  }
   expect((await manager.describe(sdk)).pendingPaths).toEqual({});
   const alias = join(root, "SDK symlink");
   await symlink(checkout, alias);
@@ -508,6 +514,12 @@ test("JieLi config installs new tool directories, resolves checkout aliases and 
   expect(fetches).toBe(before);
   expect(await exists(pending)).toBe(false);
   expect((await manager.resources.describe(entries[1])).pendingPaths).toEqual({ path: pending });
+  await manager.remove(sdk.name, sdk.version);
+  for (const tool of entries) await manager.remove(tool.kind, tool.version);
+  const cleared = await manager.defaultEnvironment(environment);
+  for (const key of ["JIELI_AC707N_SDK_PATH", "JIELI_TOOLCHAIN_ROOT", "JIELI_POSTBUILD_ROOT"]) {
+    expect(cleared[key]).toBeUndefined();
+  }
 });
 
 test("default activation includes standalone tools, removes only managed PATH entries and is idempotent", async () => {
@@ -528,6 +540,10 @@ test("default activation includes standalone tools, removes only managed PATH en
   expect(second).toEqual(first);
   expect(first.BK_LOADER_BIN).toBe(join(external, "bk_loader"));
   expect(first.PATH).toBe(`${external}:/operator/bin:/usr/bin:/bin`);
+  await manager.remove(tool.kind, tool.version);
+  const cleared = await manager.defaultEnvironment(first);
+  expect(cleared.PATH).toBe(original.PATH);
+  expect(cleared.BK_LOADER_BIN).toBeUndefined();
   expect(cleanEnvironment(first).PATH).toBe(original.PATH);
   expect(first.H2LOADER_PYTHON).toBeUndefined();
   const text = shellEnvironment(first, original);

@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
@@ -69,6 +69,23 @@ export async function atomicJson(path: string, value: unknown): Promise<void> {
 }
 
 export async function locked<T>(root: string, name: string, work: () => Promise<T>): Promise<T> {
+  const guard = join(root, "lockfiles", name);
+  await mkdir(dirname(guard), { recursive: true });
+  // Keep this inode: unlinking it would let queued callers lock different files.
+  const handle = await open(guard, "a+", 0o600);
+  try {
+    // The inherited descriptor shares our open-file description. Python acquires
+    // flock on stdin; our descriptor retains it after the helper exits.
+    const child = Bun.spawn(["python3", "-c", "import fcntl; fcntl.flock(0, fcntl.LOCK_EX)"], {
+      stdin: handle.fd, stdout: "ignore", stderr: "pipe",
+    });
+    const [message, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+    if (code !== 0) throw new Error(`Cannot lock shared state: ${message.trim()}`);
+    return await directoryLock(root, name, work);
+  } finally { await handle.close(); }
+}
+
+async function directoryLock<T>(root: string, name: string, work: () => Promise<T>): Promise<T> {
   const directory = join(root, "locks", name);
   await mkdir(dirname(directory), { recursive: true });
   for (;;) {
@@ -98,11 +115,19 @@ export async function locked<T>(root: string, name: string, work: () => Promise<
       await Bun.sleep(100);
     }
   }
+  const instance = await stat(directory);
   const owner = join(directory, "owner.json");
   try {
     await atomicJson(owner, { pid: process.pid, host: hostname() });
     return await work();
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    const current = await stat(directory).catch((error: any) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+    if (current?.dev === instance.dev && current?.ino === instance.ino) {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
 }
 
 export function quote(value: string): string { return "'" + value.replaceAll("'", "'\\''") + "'"; }

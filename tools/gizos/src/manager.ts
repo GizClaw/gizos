@@ -538,7 +538,7 @@ export class Manager {
     if ((await this.git(path, "rev-parse", "HEAD")).trim() !== sdk.commit) {
       throw new Error(`SDK commit mismatch: ${path}; existing files were preserved`);
     }
-    if ((await this.git(path, "status", "--porcelain=v1", "--untracked-files=no")).trim()) {
+    if ((await this.git(path, "status", "--porcelain=v1", "--untracked-files=no", "--ignore-submodules=none")).trim()) {
       throw new Error(`SDK has tracked changes: ${path}; existing files were preserved`);
     }
     const submodules = await this.git(path, "submodule", "status", "--recursive");
@@ -754,7 +754,8 @@ export class Manager {
       if (tool) {
         const active = await this.resources.current(tool.kind);
         const dependent = all.find(({ path, value }) => !files.includes(path) &&
-          (value.dependencies?.includes((selected as { root: string }).root) ||
+          (value.tools === (selected as { root: string }).root ||
+            value.dependencies?.includes((selected as { root: string }).root) ||
             !value.dependencies && tool.version === active.version && value.ready &&
             (value.kind === "bk" && tool.kind === "bk-loader" ||
               value.kind?.startsWith("ac") && ["jieli-toolchain", "jieli-postbuild"].includes(tool.kind))));
@@ -893,7 +894,12 @@ export class Manager {
       if ((await this.record(sdk))?.ready) installed.push(sdk);
     }
     const hasResources = (await Promise.all(this.resources.entries.map(tool => this.resources.record(tool)))).some(Boolean);
-    if (!installed.length && !hasResources) return { ...inherited, GIZOS_DEVENV_HOME: this.root };
+    if (!installed.length && !hasResources) {
+      return {
+        ...(inherited.GIZOS_ENV_PATHS === undefined ? inherited : cleanEnvironment(inherited)),
+        GIZOS_DEVENV_HOME: this.root,
+      };
+    }
     const baseline = cleanEnvironment(inherited);
     const environment = await this.resources.environment(baseline);
     environment.GIZOS_DEVENV_HOME = this.root;

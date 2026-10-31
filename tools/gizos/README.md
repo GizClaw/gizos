@@ -17,9 +17,9 @@ Bun 1.3.9 or newer is required. Configure the GizClaw registry in `~/.npmrc`
 Replace an existing scope mapping rather than adding a duplicate. Use this
 global mapping for `bunx`; other dependencies keep their configured registry.
 Public package downloads require no token.
-SDK source preparation requires Git. SDK and host-tool downloads require
-Python 3, using its HTTPS client with certificate verification and pinned
-archive checksums.
+SDK source preparation requires Git. Python 3 is required for shared-store
+coordination and SDK/host-tool downloads. Downloads use its HTTPS client with
+certificate verification and pinned archive checksums.
 
 After a release has been imported into the registry by Deploy:
 

@@ -309,9 +309,11 @@ describe("provisioning and environment activation", () => {
     await git(upstream, "add", ".gitmodules");
     await git(upstream, "commit", "--quiet", "-m", "add submodule");
     entries[0].commit = (await git(upstream, "rev-parse", "HEAD")).trim();
-    const item = await manager.setup(entries[0], { sourcesOnly: true });
+    const item = await manager.setup(entries[0]);
     expect(await exists(join(item.sdk, "components/child/component.c"))).toBe(true);
     await writeFile(join(item.sdk, "components/child/component.c"), "operator changes\n");
+    await expect(manager.setup(entries[0])).rejects.toThrow("tracked changes");
+    await expect(manager.environment(entries[0])).rejects.toThrow("tracked changes");
     const preview = await manager.remove("idf", "6.2", true);
     expect(preview.preserve.some(item => item.reason === "source has local changes")).toBe(true);
     await writeFile(join(item.sdk, "components/child/component.c"), "int component;\n");
@@ -541,9 +543,88 @@ describe("provisioning and environment activation", () => {
     await writeFile(join(lock, "owner.json"), JSON.stringify({ pid: child.pid, host: hostname() }));
     expect(await locked(root, "stale", async () => 42)).toBe(42);
   });
+  test("concurrent tasks and processes recover an abandoned lock without overlapping callbacks", async () => {
+    const root = await directory();
+    const dead = Bun.spawn([process.execPath, "-e", "process.exit(0)"]);
+    await dead.exited;
+    const lock = join(root, "locks", "stale");
+    await mkdir(lock, { recursive: true });
+    await writeFile(join(lock, "owner.json"), JSON.stringify({ pid: dead.pid, host: hostname() }));
+    let running = 0;
+    let peak = 0;
+    const tasks = await Promise.allSettled(Array.from({ length: 8 }, () => locked(root, "stale", async () => {
+      peak = Math.max(peak, ++running);
+      try { await Bun.sleep(30); }
+      finally { running--; }
+    })));
+    expect(tasks.every(result => result.status === "fulfilled")).toBe(true);
+    expect(peak).toBe(1);
+    await mkdir(lock, { recursive: true });
+    await writeFile(join(lock, "owner.json"), JSON.stringify({ pid: dead.pid, host: hostname() }));
+    const common = join(import.meta.dir, "../src/common.ts");
+    const children = Array.from({ length: 8 }, (_, index) => Bun.spawn([process.execPath, "-e", `
+import { locked, exists } from ${JSON.stringify(common)};
+import { mkdir, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+const root = ${JSON.stringify(root)};
+await writeFile(join(root, "ready-${index}"), "");
+while (!await exists(join(root, "go"))) await Bun.sleep(5);
+await locked(root, "stale", async () => {
+  const active = join(root, "active");
+  await mkdir(active);
+  try {
+    await Bun.sleep(40);
+    await writeFile(join(root, "completed-${index}"), "");
+  } finally { await rm(active, { recursive: true }); }
+});
+`], { stdout: "ignore", stderr: "pipe" }));
+    try {
+      const deadline = Date.now() + 10_000;
+      while ((await readdir(root)).filter(name => name.startsWith("ready-")).length !== children.length) {
+        if (Date.now() > deadline) throw new Error("Lock contenders did not start");
+        await Bun.sleep(10);
+      }
+      await writeFile(join(root, "go"), "");
+      const results = await Promise.all(children.map(async child => ({
+        code: await child.exited, error: await new Response(child.stderr).text(),
+      })));
+      expect(results).toEqual(children.map(() => ({ code: 0, error: "" })));
+      expect((await readdir(root)).filter(name => name.startsWith("completed-"))).toHaveLength(children.length);
+      expect(await readdir(join(root, "locks"))).toEqual([]);
+    } finally {
+      for (const child of children) child.kill();
+      await Promise.all(children.map(child => child.exited));
+    }
+  });
+  test("lock release preserves a replacement directory", async () => {
+    const root = await directory();
+    const lock = join(root, "locks", "replaced");
+    await locked(root, "replaced", async () => {
+      await rename(lock, `${lock}-original`);
+      await mkdir(lock);
+      await writeFile(join(lock, "successor"), "preserve");
+    });
+    expect(await readFile(join(lock, "successor"), "utf8")).toBe("preserve");
+  });
 });
 
 describe("version removal and managed cache cleanup", () => {
+  test("removing the last SDK clears its inherited activation and preserves operator paths", async () => {
+    const { manager } = await fixture();
+    await manager.setup(manager.sdk("idf", "6.2"));
+    const inherited = { PATH: "/operator/bin:/usr/bin:/bin", KEEP: "yes" };
+    const active = await manager.defaultEnvironment(inherited);
+    expect(active.GIZOS_ENV_PATHS).toBeTruthy();
+    await manager.remove("idf", "6.2");
+    const environment = await manager.defaultEnvironment(active);
+    expect(environment.PATH).toBe(inherited.PATH);
+    expect(environment.KEEP).toBe("yes");
+    for (const key of ["IDF_PATH", "IDF_TOOLS_PATH", "IDF_PYTHON_ENV_PATH", "H2LOADER_IDF_PATH", "VIRTUAL_ENV"]) {
+      expect(environment[key]).toBeUndefined();
+    }
+    expect(shellEnvironment(environment, active)).toContain("unset IDF_PATH");
+    expect(environment.GIZOS_DEVENV_HOME).toBe(manager.root);
+  });
   test("remove previews without changes, removes only one version and falls back to another installed version", async () => {
     const { manager } = await fixture();
     const current = await manager.setup(manager.sdk("idf", "6.2"));
