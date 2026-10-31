@@ -1026,6 +1026,16 @@ retry:
     if (rc != H2_PAL_OK && create_rc != H2_PAL_OK) rc = create_rc;
   }
   if (rc != H2_PAL_OK) goto done;
+  if (!same(workspace.workspace.name, selection->workspace_name) ||
+      !same(workspace.runtime_profile_name, snapshot.profile_name) ||
+      !same(workspace.runtime_profile_revision, snapshot.profile_revision)) {
+    rc = H2_PAL_ERR_INVALID_STATE;
+    goto done;
+  }
+  if (!workspace.workspace.available) {
+    rc = H2_PAL_ERR_UNAVAILABLE;
+    goto done;
+  }
   if (!workspace_matches(&workspace, selection, snapshot.profile_name,
                          snapshot.profile_revision) ||
       !text_valid(workspace.workspace.workflow_name,

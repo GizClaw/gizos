@@ -39,6 +39,8 @@ h2_pal_result_t h2_gizclaw_req_create_audio_play(
 
 typedef struct h2_gizclaw_workspace {
   char* name;
+  /** Owned by response storage; empty when no current Profile alias resolves
+   * this unavailable Workspace. Available Workspaces have a nonempty alias. */
   char* workflow_name;
   bool system;
   bool available;

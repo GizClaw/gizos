@@ -183,6 +183,22 @@ static void workspace_clear(const h2_pal_mem_api_t* allocator,
   memset(workspace, 0, sizeof(*workspace));
 }
 
+static int finish_workspace_decode(const h2_pal_mem_api_t* allocator,
+                                   h2_gizclaw_workspace_t* workspace,
+                                   bool system, bool available) {
+  if (workspace->name == NULL || workspace->name[0] == '\0' ||
+      (available && (workspace->workflow_name == NULL ||
+                     workspace->workflow_name[0] == '\0')))
+    return H2_PAL_ERR_FORMAT;
+  /* A removed/rebound Profile alias makes an existing Workspace unavailable.
+   * Proto3 omits that empty alias; retain an owned empty string for callers. */
+  const int rc = ensure_owned_empty(allocator, &workspace->workflow_name);
+  if (rc != H2_PAL_OK) return rc;
+  workspace->system = system;
+  workspace->available = available;
+  return H2_PAL_OK;
+}
+
 static void history_entry_clear(const h2_pal_mem_api_t* allocator,
                                 h2_gizclaw_workspace_history_entry_t* entry) {
   if (entry == NULL) return;
@@ -265,13 +281,11 @@ static bool decode_workspace_object(pb_istream_t* stream,
   set_text_decoder(&decoded.workflow_name, &text[1], allocator,
                    &out->workflow_name, 63u);
   if (!pb_decode(stream, gizclaw_rpc_v1_Workspace_fields, &decoded) ||
-      out->name == NULL || out->name[0] == '\0' || out->workflow_name == NULL ||
-      out->workflow_name[0] == '\0') {
+      finish_workspace_decode(allocator, out, decoded.system,
+                              decoded.available) != H2_PAL_OK) {
     workspace_clear(allocator, out);
     return false;
   }
-  out->system = decoded.system;
-  out->available = decoded.available;
   return true;
 }
 
@@ -391,13 +405,13 @@ static int decode_workspace_get(
   pb_istream_t stream = pb_istream_from_buffer(data, len);
   if (!pb_decode(&stream, gizclaw_rpc_v1_WorkspaceGetResponse_fields,
                  &decoded) ||
-      !decoded.has_value || out_workspace->name == NULL ||
-      out_workspace->workflow_name == NULL || *out_profile_name == NULL ||
+      !decoded.has_value || *out_profile_name == NULL ||
       *out_profile_revision == NULL) {
     return H2_PAL_ERR_FORMAT;
   }
-  out_workspace->system = decoded.value.system;
-  out_workspace->available = decoded.value.available;
+  const int workspace_rc = finish_workspace_decode(
+      allocator, out_workspace, decoded.value.system, decoded.value.available);
+  if (workspace_rc != H2_PAL_OK) return workspace_rc;
   const char* fence = NULL;
   if (decoded.value.has_parameters) {
     const gizclaw_rpc_v1_WorkspaceParameters* parameters =
@@ -457,13 +471,11 @@ static int decode_workspace_create_value(
   pb_istream_t stream = pb_istream_from_buffer(data, len);
   if (!pb_decode(&stream, gizclaw_rpc_v1_WorkspaceCreateResponse_fields,
                  &decoded) ||
-      !decoded.has_value || out_workspace->name == NULL ||
-      out_workspace->workflow_name == NULL) {
+      !decoded.has_value) {
     return H2_PAL_ERR_FORMAT;
   }
-  out_workspace->system = decoded.value.system;
-  out_workspace->available = decoded.value.available;
-  return H2_PAL_OK;
+  return finish_workspace_decode(allocator, out_workspace, decoded.value.system,
+                                 decoded.value.available);
 }
 
 static int decode_workspace_parameters_set_value(
@@ -479,13 +491,11 @@ static int decode_workspace_parameters_set_value(
   pb_istream_t stream = pb_istream_from_buffer(data, len);
   if (!pb_decode(&stream, gizclaw_rpc_v1_WorkspaceParametersSetResponse_fields,
                  &decoded) ||
-      !decoded.has_value || out_workspace->name == NULL ||
-      out_workspace->workflow_name == NULL) {
+      !decoded.has_value) {
     return H2_PAL_ERR_FORMAT;
   }
-  out_workspace->system = decoded.value.system;
-  out_workspace->available = decoded.value.available;
-  return H2_PAL_OK;
+  return finish_workspace_decode(allocator, out_workspace, decoded.value.system,
+                                 decoded.value.available);
 }
 
 static int decode_workspace_delete_value(
@@ -501,13 +511,11 @@ static int decode_workspace_delete_value(
   pb_istream_t stream = pb_istream_from_buffer(data, len);
   if (!pb_decode(&stream, gizclaw_rpc_v1_WorkspaceDeleteResponse_fields,
                  &decoded) ||
-      !decoded.has_value || out_workspace->name == NULL ||
-      out_workspace->workflow_name == NULL) {
+      !decoded.has_value) {
     return H2_PAL_ERR_FORMAT;
   }
-  out_workspace->system = decoded.value.system;
-  out_workspace->available = decoded.value.available;
-  return H2_PAL_OK;
+  return finish_workspace_decode(allocator, out_workspace, decoded.value.system,
+                                 decoded.value.available);
 }
 
 static bool workspace_input_mode_valid(
