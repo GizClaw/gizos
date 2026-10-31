@@ -1,9 +1,9 @@
-import { access, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
-import { createHash, randomUUID } from "node:crypto";
-import { createServer } from "node:net";
+import { randomUUID } from "node:crypto";
+import { Database } from "bun:sqlite";
 
 export type Env = Record<string, string | undefined>;
 export type InstallationPaths = { sdk?: string; tools?: string; python?: string; path?: string };
@@ -70,47 +70,28 @@ export async function atomicJson(path: string, value: unknown): Promise<void> {
 }
 
 export async function locked<T>(root: string, name: string, work: () => Promise<T>): Promise<T> {
-  if (process.platform === "win32") return pipeLock(root, name, work);
   const guard = join(root, "lockfiles", name);
   await mkdir(dirname(guard), { recursive: true });
   // Keep this inode: unlinking it would let queued callers lock different files.
-  const handle = await open(guard, "a+", 0o600);
+  const database = new Database(guard, { create: true });
+  let held = false;
   try {
-    // The inherited descriptor shares our open-file description. Python acquires
-    // flock on stdin; our descriptor retains it after the helper exits.
-    const child = Bun.spawn(["python3", "-I", "-c", "import fcntl; fcntl.flock(0, fcntl.LOCK_EX)"], {
-      stdin: handle.fd, stdout: "ignore", stderr: "pipe",
-    });
-    const [message, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
-    if (code !== 0) throw new Error(`Cannot lock shared state: ${message.trim()}`);
+    // Waiting in SQLite would block the JS callback that must release the lock.
+    database.exec("PRAGMA busy_timeout=0");
+    for (;;) {
+      try {
+        database.exec("BEGIN EXCLUSIVE");
+        held = true;
+        break;
+      } catch (error: any) {
+        if (!["SQLITE_BUSY", "SQLITE_LOCKED"].includes(error.code)) throw error;
+        await Bun.sleep(100);
+      }
+    }
     return await directoryLock(root, name, work);
-  } finally { await handle.close(); }
-}
-
-async function pipeLock<T>(root: string, name: string, work: () => Promise<T>): Promise<T> {
-  await mkdir(root, { recursive: true });
-  const identity = `${(await realpath(root)).toLowerCase()}\0${name.toLowerCase()}`;
-  const pipe = `\\\\.\\pipe\\gizos-${createHash("sha256").update(identity).digest("hex")}`;
-  for (;;) {
-    const server = createServer(socket => socket.destroy());
-    const failure = await new Promise<NodeJS.ErrnoException | undefined>(resolve => {
-      const onError = (error: NodeJS.ErrnoException) => resolve(error);
-      server.once("error", onError);
-      server.listen({ path: pipe, exclusive: true }, () => {
-        server.off("error", onError);
-        resolve(undefined);
-      });
-    });
-    if (failure) {
-      if (failure.code !== "EADDRINUSE") throw failure;
-      await Bun.sleep(100);
-      continue;
-    }
-    // Windows releases the exclusive named pipe when its owning process exits.
-    try { return await directoryLock(root, name, work); }
-    finally {
-      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    }
+  } finally {
+    try { if (held) database.exec("ROLLBACK"); }
+    finally { database.close(); }
   }
 }
 

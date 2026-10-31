@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, realpath, writeFile, rm, readdir, rename } from "node:fs/promises";
 import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { exists, locked } from "../src/common";
 import { configuration, configureRoot } from "../src/manager";
 
@@ -42,7 +43,7 @@ test("concurrent tasks and processes recover an abandoned lock without overlappi
   expect(peak).toBe(1);
   await mkdir(lock, { recursive: true });
   await writeFile(join(lock, "owner.json"), JSON.stringify({ pid: dead.pid, host: hostname() }));
-  const common = join(import.meta.dir, "../src/common.ts");
+  const common = pathToFileURL(join(import.meta.dir, "../src/common.ts")).href;
   const children = Array.from({ length: 8 }, (_, index) => Bun.spawn([process.execPath, "-e", `
 import { locked, exists } from ${JSON.stringify(common)};
 import { mkdir, writeFile, rm } from "node:fs/promises";
@@ -91,7 +92,7 @@ test("lock release preserves a replacement directory", async () => {
 test("process termination releases the shared-store guard", async () => {
   const root = await directory();
   const child = Bun.spawn([process.execPath, "-e", `
-import { locked } from ${JSON.stringify(join(import.meta.dir, "../src/common.ts"))};
+import { locked } from ${JSON.stringify(pathToFileURL(join(import.meta.dir, "../src/common.ts")).href)};
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 const root = ${JSON.stringify(root)};

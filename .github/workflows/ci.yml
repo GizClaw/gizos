@@ -1339,6 +1339,8 @@ jobs:
               '--disk_cache='
             )
           }
+          & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal --test_output=errors //tools/gizos:gizos_lock_test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:BAZEL_BIN "--output_user_root=$outputRoot" build @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
