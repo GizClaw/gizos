@@ -3973,8 +3973,7 @@ static void test_reserved_display_framebuffer(void) {
   h2_runtime_t* runtime = create_runtime();
   heap_test_mem_t mem = {0};
   heap_test_mem_init(&mem);
-  const h2_pal_mem_api_t api = {.user = &mem,
-                                .vtable = &heap_test_mem_vtable};
+  const h2_pal_mem_api_t api = {.user = &mem, .vtable = &heap_test_mem_vtable};
   h2_lua_host_config_t config = {
       .runtime = runtime,
       .allocator = &api,
@@ -3996,10 +3995,9 @@ static void test_reserved_display_framebuffer(void) {
     assert(h2_lua_host_start(host) == H2_PAL_OK);
     for (unsigned round = 0u; round < 2u; ++round) {
       const char* source =
-          round == 0u
-              ? "local d,e=require('display');assert(d,e);"
-                "d.clear('red');d.present()"
-              : "local d,e=require('display');assert(d,e);d.present()";
+          round == 0u ? "local d,e=require('display');assert(d,e);"
+                        "d.clear('red');d.present()"
+                      : "local d,e=require('display');assert(d,e);d.present()";
       h2_lua_job_id_t id;
       assert(h2_lua_job_submit_text(host, NULL, "@reserved-display",
                                     (const uint8_t*)source, strlen(source),
