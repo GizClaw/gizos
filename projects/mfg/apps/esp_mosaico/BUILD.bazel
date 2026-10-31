@@ -104,7 +104,6 @@ h2loader_esp_idf_firmware(
     board = "esp_mosaico",
     cmake_definitions = {
         "H2_MOSAICO_AUDIO_AEC": "ON",
-        "H2_MOSAICO_MFG_DAC_OSR20": "ON",
     },
     graph = [":h2loader_launcher"],
     layout_files = {
