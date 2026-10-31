@@ -28,6 +28,7 @@ typedef struct mosaico_mfg {
   const h2_pal_imu_api_t* imu;
   magnet_observation_t magnets[H2_MFG_MAGNETOMETER_MAX];
   const h2_pal_audio_api_t* audio;
+  int audio_config_error;
 } mosaico_mfg_t;
 
 /* MFG owns both this adapter and the UI callback on its controller task.
@@ -134,7 +135,25 @@ AUDIO_FORWARD0(stop_speaker)
     mosaico_mfg_t* app = user;                     \
     return h2_pal_audio_##name(app->audio, value); \
   }
-AUDIO_FORWARD(get_info, h2_audio_info_t*)
+/* Mosaico MFG uses 12 dB PGA through the board's 0..30 dB PAL mapping.
+ * Reject an unapplied setting without preventing Loader recovery. */
+static int configure_mic_gain(const h2_pal_audio_api_t* audio) {
+  uint32_t actual = 0;
+  int rc = h2_pal_audio_set_mic_gain_percent(audio, 40);
+  if (rc == 0) rc = h2_pal_audio_get_mic_gain_percent(audio, &actual);
+  if (rc == 0 && actual != 40) rc = H2_PAL_ERR_IO;
+  printf("H2_MOSAICO_MIC_GAIN requested=40 actual=%u code=%d\n",
+         (unsigned)actual, rc);
+  return rc;
+}
+static int app_get_info(void* user, h2_audio_info_t* info) {
+  mosaico_mfg_t* app = user;
+  if (app->audio_config_error != 0) {
+    memset(info, 0, sizeof(*info));
+    return app->audio_config_error;
+  }
+  return h2_pal_audio_get_info(app->audio, info);
+}
 AUDIO_FORWARD(get_speaker_volume_percent, uint32_t*)
 AUDIO_FORWARD(set_speaker_volume_percent, uint32_t)
 AUDIO_FORWARD(get_mic_gain_percent, uint32_t*)
@@ -231,6 +250,7 @@ static void image_entry(void* unused) {
   if (rc == H2_PAL_OK) {
     app.imu = runtime->imu;
     app.audio = runtime->audio;
+    app.audio_config_error = configure_mic_gain(app.audio);
     runtime->imu = &imu;
     runtime->audio = &audio;
     rc = h2_mfg_create(runtime, &profile, &mfg);
