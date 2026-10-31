@@ -257,12 +257,16 @@ installation. It does not configure an independent installation path.
 `env bk-loader --json` includes the official build, CLI version and release time.
 
 The official macOS package contains Python 3.9 bytecode bundled by PyInstaller.
-A complete Python source distribution for 4.1.7 has not been located. The
-separate `GizClaw/bk_loader` source baseline remains `1.1.0.2`; it is not renamed
-to claim 4.1.7 compatibility. Its frozen maintenance release remains available
+A complete upstream Python source distribution for 4.1.7 has not been located.
+`GizClaw/bk_loader` has recovered all 130 code modules and four namespace
+packages from the official macOS bytecode, with a per-module verification
+report, and now builds the maintained `4.1.7` Python source package. GizOS
+continues using the pinned official packages until the source-built release
+archives and checksums are published and added to this catalog.
+The previous frozen maintenance release remains available
 as `install bk-loader 1.1.0.2.post2`, including Linux arm64, for which an official
-4.1.7 executable has not been located. `tools selftest` belongs to that
-maintenance release and is not an official 4.1.7 command.
+4.1.7 executable has not been located. `tools selftest` is a GizClaw addition
+in its source-built packages; it is not a command in the official Beken binary.
 
 For source development, `install bk-loader 1.1.0.2.post1` installs the pinned
 maintained source into a private Python environment. The older macOS vendor
