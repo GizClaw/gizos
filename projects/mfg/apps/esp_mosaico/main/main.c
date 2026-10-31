@@ -5,10 +5,8 @@
 #include "h2_mosaico_loader_usb.h"
 #include "h2_mosaico_usb_console.h"
 #include "bsp/esp_mosaico.h"
-#include "aec_prepare.h"
 
 #include <stdio.h>
-#include <inttypes.h>
 #include <string.h>
 
 extern const h2_mfg_profile_t h2_mfg_board_profile;
@@ -30,10 +28,6 @@ typedef struct mosaico_mfg {
   const h2_pal_imu_api_t* imu;
   magnet_observation_t magnets[H2_MFG_MAGNETOMETER_MAX];
   const h2_pal_audio_api_t* audio;
-  const h2_pal_time_api_t* time;
-  int prepare_audio;
-  mosaico_aec_preparation_t preparation;
-
 } mosaico_mfg_t;
 
 /* MFG owns both this adapter and the UI callback on its controller task.
@@ -126,22 +120,6 @@ static h2_pal_result_t read_imu(void* user, h2_pal_periph_id_t id,
 
 static const h2_pal_imu_vtable_t imu_vtable = {.read_imu = read_imu};
 
-/* Mosaico settles capture once before the original shared AEC sequence. */
-static int app_set_aec_observer(void* user,
-                                const h2_audio_aec_observer_t* observer) {
-  mosaico_mfg_t* app = user;
-  if (observer != NULL && app->prepare_audio) {
-    uint32_t windows = 0, mse = 0;
-    int rc = mosaico_aec_prepare(app->audio, app->time, &app->preparation,
-                                 &windows, &mse);
-    printf("H2_MOSAICO_AEC_PREPARE code=%d windows=%" PRIu32 " mse=%" PRIu32
-           "\n",
-           rc, windows, mse);
-    if (rc != 0) return rc;
-    app->prepare_audio = 0;
-  }
-  return h2_pal_audio_set_aec_observer(app->audio, observer);
-}
 #define AUDIO_FORWARD0(name)                \
   static int app_##name(void* user) {       \
     mosaico_mfg_t* app = user;              \
@@ -159,13 +137,8 @@ AUDIO_FORWARD0(stop_speaker)
 AUDIO_FORWARD(get_info, h2_audio_info_t*)
 AUDIO_FORWARD(get_speaker_volume_percent, uint32_t*)
 AUDIO_FORWARD(set_speaker_volume_percent, uint32_t)
-/* Shared AEC reads gain once at entry, before registering its first phase.
- * Arm app preparation once per check/retry, not between measured phases. */
-static int app_get_mic_gain_percent(void* user, uint32_t* percent) {
-  mosaico_mfg_t* app = user;
-  app->prepare_audio = 1;
-  return h2_pal_audio_get_mic_gain_percent(app->audio, percent);
-}
+AUDIO_FORWARD(get_mic_gain_percent, uint32_t*)
+AUDIO_FORWARD(set_aec_observer, const h2_audio_aec_observer_t*)
 AUDIO_FORWARD(set_mic_gain_percent, uint32_t)
 #undef AUDIO_FORWARD
 #undef AUDIO_FORWARD0
@@ -258,7 +231,6 @@ static void image_entry(void* unused) {
   if (rc == H2_PAL_OK) {
     app.imu = runtime->imu;
     app.audio = runtime->audio;
-    app.time = runtime->time;
     runtime->imu = &imu;
     runtime->audio = &audio;
     rc = h2_mfg_create(runtime, &profile, &mfg);
