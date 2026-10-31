@@ -63,6 +63,7 @@ selection, source checkout and installation record.
 | BK IDK | `setup bk_idk 2.0.1-r650e754` | One SDK snapshot for BK7236/BK7258, shared GNU Arm and BK Loader; `BK_IDK_PATH` and `BK_SDK_DIR` |
 | BK Loader | Installed with BK setup, or `install bk-loader 4.1.7` | Checksummed official Beken CLI; `BK_LOADER_BIN` and `bk_loader` on PATH |
 | H2Loader native CLI | `install h2loader` | Builds the pinned GizOS release once with Bazel; shared `H2LOADER_BIN` and `h2loader` on PATH |
+| H6 Batch Loader GUI | `install h6loader` | Installs the checksummed desktop app in shared storage; `h6loader` opens the GUI |
 | ADB | `install adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
 | JieLi SDKs | `setup jieli-ac695n`, `setup jieli-ac707n` or `setup jieli-ac791n` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
 | JieLi tools | Installed with a JieLi SDK, or `install jieli-toolchain 20250805.1` and `install jieli-postbuild 20260728.1` | `JIELI_TOOLCHAIN_ROOT`, `JIELI_POSTBUILD_ROOT` |
@@ -290,6 +291,34 @@ The currently published `@gizclaw/h2loader` npm package is the browser SDK.
 It does not contain this native executable; a source build is used until
 native CLI release archives are available. The command in this repository is
 `h2loader`.
+
+## H6 Batch Loader GUI installation
+
+H6 Batch Loader is the desktop GUI from `GizClaw/h6infra`, distinct from the
+native `h2loader` CLI. Install it as a standalone tool:
+
+```sh
+gizos install h6loader
+gizos env h6loader
+gizos run -- h6loader
+```
+
+The catalog pins version 0.2.1 and the macOS Apple Silicon DMG published through
+the GizClaw static release registry. Installation verifies the archive checksum,
+mounts it read-only, copies the complete app into the shared tool directory,
+and detaches the disk image. The bundled H2Loader and session-adapter programs
+remain inside the app. The existing `/Applications/H6 Batch Loader.app` is
+preserved; no system application or shell-profile configuration is required.
+
+`env h6loader` reports the application path and launcher directory, and shell
+activation adds `h6loader` to PATH. `h6loader --version` and `--help` do not
+open the GUI. Running `h6loader` with no arguments opens the managed app.
+Installation itself does not start the app or access serial devices.
+
+The current official macOS build is ad-hoc signed and is not notarized;
+GizOS preserves its signature and does not change macOS security settings.
+The publisher also has a Windows installer, but GizOS GUI installation
+currently supports macOS arm64 only.
 
 ## Shared storage and versions
 

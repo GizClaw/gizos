@@ -262,6 +262,46 @@
       }
     },
     {
+      "kind": "h6loader",
+      "version": "0.2.1",
+      "default": true,
+      "release": {
+        "repository": "https://github.com/GizClaw/h6infra",
+        "tag": "h6infra-desktop-v0.2.1",
+        "commit": "f3c761723c2b222b6447cac5615c2e6666507dcb"
+      },
+      "application": {
+        "path": "H6 Batch Loader.app",
+        "identifier": "com.h6infra.batch-loader"
+      },
+      "requiredFiles": [
+        "bin/h6loader",
+        "H6 Batch Loader.app/Contents/Info.plist",
+        "H6 Batch Loader.app/Contents/MacOS/h6-batch-loader",
+        "H6 Batch Loader.app/Contents/MacOS/h2loader",
+        "H6 Batch Loader.app/Contents/MacOS/h6loader-session"
+      ],
+      "executable": "bin/h6loader",
+      "check": [
+        "--version"
+      ],
+      "expectedOutput": "h6loader 0.2.1",
+      "exports": {
+        "H6LOADER_APP_PATH": "H6 Batch Loader.app"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://static-volc.gizclaw.com/releases/h6infra/desktop/0.2.1/h6-batch-loader_0.2.1_macos_aarch64.dmg",
+          "sha256": "42a0e5ed6ebf583252de5a322018a2159744e1fe88fcafa2c4fee76bd433f3ac",
+          "format": "dmg",
+          "subdirectory": "H6 Batch Loader.app"
+        }
+      }
+    },
+    {
       "kind": "h2loader",
       "version": "20261026-112329",
       "default": true,

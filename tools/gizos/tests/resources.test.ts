@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -351,6 +351,90 @@ test("native tool installation builds pinned source once and exposes a shared ex
   expect(environment.H2LOADER_BIN).toBe(join(installed.root, "bin/h2loader"));
   expect(await execute(["sh", "-c", "command -v h2loader; h2loader --help"], { env: environment }))
     .toBe(`${environment.H2LOADER_BIN}\nh2loader fixture help`);
+});
+
+test("GUI tools retain their application bundle, detach the image and expose a launcher without opening the GUI", async () => {
+  const root = await directory();
+  const application = "H6 Batch Loader.app";
+  const identifier = "com.h6infra.batch-loader";
+  const payload = join(root, "payload", application);
+  await mkdir(join(payload, "Contents"), { recursive: true });
+  await writeFile(join(payload, "Contents/Info.plist"), JSON.stringify({
+    CFBundleIdentifier: identifier, CFBundleShortVersionString: "0.2.1",
+  }));
+  await script(join(payload, "Contents/MacOS/h6-batch-loader"), "exit 1\n");
+  const archive = join(root, "gui.dmg");
+  await writeFile(archive, "fixture disk image");
+  const tool: Tool = {
+    kind: "h6loader", version: "0.2.1", default: true,
+    application: { path: application, identifier },
+    requiredFiles: ["bin/h6loader", `${application}/Contents/Info.plist`, `${application}/Contents/MacOS/h6-batch-loader`],
+    executable: "bin/h6loader", check: ["--version"], expectedOutput: "h6loader 0.2.1",
+    exports: { H6LOADER_APP_PATH: application }, path: ["bin"],
+    hosts: { "darwin-arm64": {
+      url: "https://offline.invalid/gui.dmg", format: "dmg", subdirectory: application,
+      sha256: createHash("sha256").update(await readFile(archive)).digest("hex"),
+    } },
+  };
+  const images: string[][] = [];
+  const tracked: Command = async (args, options) => {
+    if (args[0] === "/usr/bin/hdiutil") {
+      images.push(args);
+      if (args[1] === "attach") {
+        expect(args).toContain("-readonly");
+        expect(args).toContain("-nobrowse");
+        const mount = args[args.indexOf("-mountpoint") + 1];
+        await cp(payload, join(mount, application), { recursive: true });
+      }
+      return "";
+    }
+    if (args[0] === "/usr/bin/plutil") {
+      return JSON.parse(await readFile(args[4], "utf8"))[args[2]];
+    }
+    return command(args, options);
+  };
+  const resources = new Resources(join(root, "shared"), tracked, [tool], "darwin-arm64");
+  await resources.importArchive(tool, archive);
+  const installed = await resources.setup(tool);
+  expect(images.map(args => args[1])).toEqual(["attach", "detach"]);
+  expect(await execute([join(installed.root, "bin/h6loader"), "--version"])).toBe("h6loader 0.2.1");
+  expect(await execute([join(installed.root, "bin/h6loader"), "--help"])).toContain("Usage: h6loader");
+  expect((await resources.describe(tool)).application).toBe(join(installed.root, application));
+  const environment = await resources.environment({ PATH: "/usr/bin:/bin" }, tool);
+  expect(environment.H6LOADER_APP_PATH).toBe(join(installed.root, application));
+  expect(environment.PATH).toBe(`${installed.root}/bin:/usr/bin:/bin`);
+  expect(await readFile(join(installed.root, "bin/h6loader"), "utf8")).toContain("exec /usr/bin/open");
+  await writeFile(join(installed.root, application, "Contents/Info.plist"), JSON.stringify({
+    CFBundleIdentifier: identifier, CFBundleShortVersionString: "0.3.0",
+  }));
+  await expect(resources.setup(tool)).rejects.toThrow("CFBundleShortVersionString differs");
+  expect(images).toHaveLength(2);
+});
+
+test("a GUI payload extraction failure still detaches its disk image and leaves no installation record", async () => {
+  const root = await directory();
+  const archive = join(root, "gui.dmg");
+  await writeFile(archive, "fixture disk image");
+  const tool: Tool = {
+    kind: "h6loader", version: "fixture", default: true,
+    requiredFiles: ["bin/h6loader"], exports: {}, path: ["bin"],
+    hosts: { any: {
+      url: "https://offline.invalid/gui.dmg", format: "dmg", subdirectory: "missing.app",
+      sha256: createHash("sha256").update(await readFile(archive)).digest("hex"),
+    } },
+  };
+  const images: string[] = [];
+  const tracked: Command = async args => {
+    if (args[0] !== "/usr/bin/hdiutil") throw new Error("Unexpected command");
+    images.push(args[1]);
+    return "";
+  };
+  const resources = new Resources(join(root, "shared"), tracked, [tool]);
+  await resources.importArchive(tool, archive);
+  await expect(resources.setup(tool)).rejects.toThrow();
+  expect(images).toEqual(["attach", "detach"]);
+  expect(await resources.record(tool)).toBeUndefined();
+  expect(await readdir(join(resources.root, "tools/h6loader"))).toHaveLength(0);
 });
 
 test("JieLi config installs new tool directories, resolves checkout aliases and keeps adoption offline", async () => {

@@ -1,5 +1,6 @@
-import { chmod, cp, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import bundledCatalog from "./catalog.json";
 import {
@@ -18,6 +19,7 @@ export type Tool = {
   kind: string; version: string; default?: boolean;
   release?: { repository: string; tag: string; commit: string };
   upstream?: { version: string; cliVersion: string; releasedAt: string; documentation: string };
+  application?: { path: string; identifier: string };
   hosts: Record<string, Distribution>; requiredFiles: string[];
   executable?: string; check?: string[]; expectedOutput?: string;
   exports: Record<string, string>; path: string[];
@@ -87,6 +89,15 @@ export class Resources {
     }
     if (tool.marker && (await readFile(join(root, ".firmware-devenv-version"), "utf8")).trim() !== tool.version) {
       throw new Error(`${tool.kind} version marker differs from ${tool.version}`);
+    }
+    if (tool.application && this.canRun(tool)) {
+      const info = join(root, tool.application.path, "Contents/Info.plist");
+      for (const [key, expected] of [
+        ["CFBundleIdentifier", tool.application.identifier], ["CFBundleShortVersionString", tool.version],
+      ]) {
+        const value = await this.command(["/usr/bin/plutil", "-extract", key, "raw", info]);
+        if (value.trim() !== expected) throw new Error(`${tool.kind} application ${key} differs from ${expected}`);
+      }
     }
     if (tool.executable) {
       const entry = join(root, tool.executable);
@@ -191,6 +202,23 @@ export class Resources {
     }));
   }
   async unpack(distribution: Distribution, archive: string, destination: string): Promise<void> {
+    if (distribution.format === "dmg") {
+      if (!distribution.subdirectory?.endsWith(".app")) throw new Error("A DMG tool must select an application bundle");
+      // macOS's disk-image helper needs an internal-volume mount point.
+      const mount = await mkdtemp(join(process.platform === "darwin" ? "/private/tmp" : tmpdir(), "gizos-dmg-"));
+      let mounted = false;
+      try {
+        await this.command(["/usr/bin/hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", mount, archive]);
+        mounted = true;
+        await cp(join(mount, distribution.subdirectory), join(destination, distribution.subdirectory), {
+          recursive: true, verbatimSymlinks: true,
+        });
+      } finally {
+        if (mounted) await this.command(["/usr/bin/hdiutil", "detach", mount]);
+        await rm(mount, { recursive: true, force: true });
+      }
+      return;
+    }
     const nested = distribution.format === "pkg" || Boolean(distribution.subdirectory);
     const extracted = nested ? `${destination}.extract` : destination;
     try {
@@ -290,6 +318,20 @@ export class Resources {
           for (const [before, after] of Object.entries(tool.rename ?? {})) {
             await rename(join(temporary, before), join(temporary, after));
           }
+          if (tool.application && tool.executable) {
+            const entry = join(temporary, tool.executable);
+            const application = relative(dirname(entry), join(temporary, tool.application.path));
+            const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+            await mkdir(dirname(entry), { recursive: true });
+            await writeFile(entry, `#!/bin/sh
+case "\${1-}" in
+  --version) printf '%s\\n' ${quote(`${tool.kind} ${tool.version}`)}; exit 0 ;;
+  --help|-h) printf '%s\\n' ${quote(`Usage: ${tool.kind} [application arguments]`)}; exit 0 ;;
+esac
+exec /usr/bin/open "$(dirname -- "$0")"/${quote(application)} --args "$@"
+`);
+            await chmod(entry, 0o755);
+          }
           if (tool.marker) await writeFile(join(temporary, ".firmware-devenv-version"), tool.version + "\n");
           await this.verify(tool, temporary);
           await rename(temporary, path);
@@ -316,6 +358,7 @@ export class Resources {
       configuredPaths: this.locations[tool.kind]?.[tool.version] ?? {},
       pendingPaths: pending ? { path: configured } : {},
       executable: item && tool.executable ? join(item.root, tool.executable) : null,
+      application: item && tool.application ? join(item.root, tool.application.path) : null,
       path: item && this.canRun(tool) ? tool.path.map(path => resolve(item.root, path)) : [],
       host: this.host, canRun: this.canRun(tool), source: this.distribution(tool)?.source ?? null,
       release: tool.release ?? null, upstream: tool.upstream ?? null,

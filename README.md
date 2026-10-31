@@ -102,6 +102,7 @@ bunx @gizclaw/gizos setup esp-idf 6.2
 bunx @gizclaw/gizos setup bk7258 3.1.1
 bunx @gizclaw/gizos install adb 35.0.2
 bunx @gizclaw/gizos install h2loader
+bunx @gizclaw/gizos install h6loader
 bunx @gizclaw/gizos env bk7258
 bun add --global @gizclaw/gizos
 gizos upgrade

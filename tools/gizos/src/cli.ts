@@ -39,7 +39,7 @@ SDKs: ${[...new Set(catalog.sdks.map(sdkName))].join(", ")}
 list shows supported chips, source aliases, repositories and versions.
 describe explains an SDK and shows usage examples in English.
 Legacy SDK names and family aliases remain accepted.
-Tools: adb, bk-loader, h2loader, jieli-toolchain, jieli-postbuild
+Tools: adb, bk-loader, h2loader, h6loader, jieli-toolchain, jieli-postbuild
 GIZOS_DEVENV_HOME overrides the configured shared directory.
 config saves independent SDK/tool version paths; root supplies default locations.
 Omitting a version selects the current version, falling back to the catalog default.
@@ -234,6 +234,7 @@ async function main() {
             console.log(`  Configured path: ${item.pendingPaths.path} (applied by setup)`);
           }
           if (item.executable) console.log(`  Executable: ${item.executable}`);
+          if (item.application) console.log(`  Application: ${item.application}`);
           if (item.upstream) console.log(`  Upstream: ${item.upstream.version} (CLI ${item.upstream.cliVersion})`);
           if (item.path.length) console.log(`  PATH: ${item.path.join(":")}`);
           if (!item.canRun) console.log("  Host execution: unsupported");
