@@ -47,6 +47,10 @@ def _toolchain_bin(repository_ctx):
     root = repository_ctx.path(environment_root)
     if repository_ctx.attr.layout == "bin_dir":
         return root
+    key = "riscv_bin" if repository_ctx.attr.family == "riscv32-esp-elf" else "xtensa_bin"
+    selected_bin = paths.get(key, "")
+    if selected_bin and repository_ctx.attr.family in ["riscv32-esp-elf", "xtensa-esp-elf"]:
+        return repository_ctx.path(selected_bin)
     family = root.get_child("tools").get_child(repository_ctx.attr.family)
     matches = []
     if family.exists:

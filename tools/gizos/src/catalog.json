@@ -1,0 +1,732 @@
+{
+  "schema": 1,
+  "sdkRepositories": [
+    {
+      "name": "esp-idf",
+      "aliases": [
+        "esp_idf"
+      ],
+      "description": "Espressif IoT Development Framework for ESP32 applications. GizOS manages the pinned SDK, its selected compiler tools and its Python environment in a shared store.",
+      "documentation": "https://docs.espressif.com/projects/esp-idf/en/stable/",
+      "notes": [
+        "GizClaw selects the maintained fork; Espressif selects the official upstream repository.",
+        "Use setup --targets to select chip families. env displays installation paths; env --shell prints shell activation statements."
+      ],
+      "repositories": [
+        {
+          "alias": "GizClaw",
+          "id": "GizClaw/esp-idf",
+          "url": "https://github.com/GizClaw/esp-idf.git"
+        },
+        {
+          "alias": "Espressif",
+          "id": "espressif/esp-idf",
+          "url": "https://github.com/espressif/esp-idf.git"
+        }
+      ]
+    },
+    {
+      "name": "bk7258",
+      "aliases": [
+        "bk_avdk_smp"
+      ],
+      "chips": [
+        "bk7258"
+      ],
+      "sdkVariable": "BK7258_PATH",
+      "description": "BK7258 audio/video SDK using Beken's Armino SMP framework. This entry follows the BK7258 3.1.1 line of bk_avdk_smp and includes the shared GNU Arm compiler and BK Loader.",
+      "documentation": "https://docs.bekencorp.com/arminodoc/bk_avdk_smp/smp_doc/bk7258/en/v3.1.1/index.html",
+      "notes": [
+        "Exports BK7258_PATH and BK_SDK_DIR. The GizOS BK7258 build integration uses this SMP SDK.",
+        "The 4.0.1 catalog pin belongs to BK7259; it is not an upgrade of this BK7258 environment."
+      ],
+      "repositories": [
+        {
+          "alias": "GizClaw",
+          "id": "GizClaw/bk_avdk_smp",
+          "url": "https://github.com/GizClaw/bk_avdk_smp.git"
+        },
+        {
+          "alias": "Beken",
+          "id": "bekencorp/bk_avdk_smp",
+          "url": "https://github.com/bekencorp/bk_avdk_smp.git"
+        }
+      ]
+    },
+    {
+      "name": "bk7259",
+      "aliases": [
+        "bk_avdk_smp"
+      ],
+      "chips": [
+        "bk7259"
+      ],
+      "sdkVariable": "BK7259_PATH",
+      "armVersion": "14.3.rel1",
+      "description": "BK7259 audio/video SDK from the 4.0.1 line of bk_avdk_smp. This chip entry uses its own shared GNU Arm 14.3 compiler pool and the common BK Loader installation.",
+      "notes": [
+        "Exports BK7259_PATH and BK_SDK_DIR. Selecting this environment clears a previously active BK7258_PATH.",
+        "SDK management does not add a BK7259 board or build target to the GizOS firmware graph."
+      ],
+      "repositories": [
+        {
+          "alias": "GizClaw",
+          "id": "GizClaw/bk_avdk_smp",
+          "url": "https://github.com/GizClaw/bk_avdk_smp.git"
+        },
+        {
+          "alias": "Beken",
+          "id": "bekencorp/bk_avdk_smp",
+          "url": "https://github.com/bekencorp/bk_avdk_smp.git"
+        }
+      ]
+    },
+    {
+      "name": "bk_idk",
+      "aliases": [],
+      "chips": [
+        "bk7236",
+        "bk7258"
+      ],
+      "sdkVariable": "BK_IDK_PATH",
+      "description": "Beken Armino IoT Development Kit covering multiple chips. The catalog pins one bk_idk snapshot for BK7236 and BK7258 and manages it as a single shared SDK installation.",
+      "notes": [
+        "Exports BK_IDK_PATH and BK_SDK_DIR, and reuses GNU Arm 10.3.1 and BK Loader.",
+        "For direct SDK builds, set CONFIG_TOOLCHAIN_PATH in the project SDK configuration to the exported COMPILER_TOOLCHAIN_PATH. This snapshot otherwise defaults to a compiler under /opt.",
+        "The GizOS BK7258 firmware integration requires the SMP SDK; use the bk7258 entry for that build workflow."
+      ],
+      "repositories": [
+        {
+          "alias": "GizClaw",
+          "id": "GizClaw/bk_idk",
+          "url": "https://github.com/GizClaw/bk_idk.git"
+        },
+        {
+          "alias": "Beken",
+          "id": "bekencorp/bk_idk",
+          "url": "https://github.com/bekencorp/bk_idk.git"
+        }
+      ]
+    },
+    {
+      "name": "jieli-ac695n",
+      "aliases": [
+        "AC695N_Soundbox_SDK"
+      ],
+      "description": "JieLi AC695N soundbox SDK using the maintained pinned snapshot. SDK preparation also locates the shared JieLi compiler and post-build tools.",
+      "notes": [
+        "The selected source and tool archives require access to their maintained asset repositories. JieLi compiler binaries run on Linux x86_64."
+      ],
+      "repositories": [
+        {
+          "alias": "h2vivi",
+          "id": "h2vivi/AC695N_Soundbox_SDK",
+          "url": "git@github.com:h2vivi/AC695N_Soundbox_SDK.git"
+        }
+      ]
+    },
+    {
+      "name": "jieli-ac707n",
+      "aliases": [
+        "e_badge_707_sdk_200"
+      ],
+      "description": "JieLi AC707N e-badge SDK. The default Jieli source is the verified public GitLab repository; the h2vivi alias selects the maintained GitHub snapshot at the same pinned commit.",
+      "notes": [
+        "The SDK source is public; compiler and post-build tool distribution is managed separately. JieLi compiler binaries run on Linux x86_64."
+      ],
+      "repositories": [
+        {
+          "alias": "Jieli",
+          "id": "e_badge/e_badge_707_sdk_200",
+          "url": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git"
+        },
+        {
+          "alias": "h2vivi",
+          "id": "h2vivi/e_badge_707_sdk_200",
+          "url": "git@github.com:h2vivi/e_badge_707_sdk_200.git"
+        }
+      ]
+    },
+    {
+      "name": "jieli-ac791n",
+      "aliases": [
+        "fw-AC791N_SDK"
+      ],
+      "description": "JieLi AC791N SDK using the maintained pinned snapshot. SDK preparation also locates the shared JieLi compiler and post-build tools.",
+      "notes": [
+        "The public AC79 upstream has not been matched to this catalog pin. The selected source and tool archives require access to their maintained asset repositories."
+      ],
+      "repositories": [
+        {
+          "alias": "h2vivi",
+          "id": "h2vivi/fw-AC791N_SDK",
+          "url": "git@github.com:h2vivi/fw-AC791N_SDK.git"
+        }
+      ]
+    }
+  ],
+  "sdks": [
+    {
+      "name": "esp-idf",
+      "kind": "idf",
+      "version": "6.0.3",
+      "tags": [
+        "v6.0.3"
+      ],
+      "repository": "https://github.com/GizClaw/esp-idf.git",
+      "commit": "76f5dedd9950a3012fee8fb7d5586df21fc67802",
+      "requiredFile": "tools/idf.py",
+      "pythonSeries": "6.0",
+      "targets": [
+        "esp32s3",
+        "esp32p4",
+        "esp32c5"
+      ]
+    },
+    {
+      "name": "esp-idf",
+      "kind": "idf",
+      "version": "6.2",
+      "default": true,
+      "repository": "https://github.com/GizClaw/esp-idf.git",
+      "commit": "ddb3852ab5c7f9e6dbc268203ef9d612de391bf8",
+      "requiredFile": "tools/idf.py",
+      "pythonSeries": "6.2",
+      "targets": [
+        "esp32s3",
+        "esp32p4",
+        "esp32c5",
+        "esp32s31"
+      ]
+    },
+    {
+      "name": "bk7258",
+      "kind": "bk",
+      "version": "3.1.1",
+      "default": true,
+      "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
+      "commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
+      "requiredFile": "Makefile"
+    },
+    {
+      "name": "bk7258",
+      "kind": "bk",
+      "version": "3.1.1-rd789d71",
+      "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
+      "commit": "d789d71d89d11584c3350ca67600ff9455a7f57a",
+      "requiredFile": "Makefile"
+    },
+    {
+      "name": "bk7259",
+      "kind": "bk",
+      "version": "4.0.1",
+      "default": true,
+      "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
+      "commit": "06cb0f2d9cdeab571ec5be2d54398c67e097a4cc",
+      "requiredFile": "Makefile"
+    },
+    {
+      "name": "bk_idk",
+      "kind": "bk",
+      "version": "2.0.1-r650e754",
+      "default": true,
+      "repository": "https://github.com/GizClaw/bk_idk.git",
+      "commit": "650e754e12fe1e43c37ce2316a973668b033fd48",
+      "requiredFile": "Makefile",
+      "requiredFiles": [
+        "middleware/soc/bk7236/toolchain-bk7236.cmake",
+        "middleware/soc/bk7258/toolchain-bk7258.cmake"
+      ]
+    },
+    {
+      "name": "jieli-ac695n",
+      "kind": "ac695n",
+      "version": "76b95777a083",
+      "default": true,
+      "repository": "git@github.com:h2vivi/AC695N_Soundbox_SDK.git",
+      "commit": "76b95777a083818dd9a3a492d9c70ad81baa6b8a",
+      "requiredFile": "SDK/Makefile",
+      "sdkSubdirectory": "SDK",
+      "lfs": true
+    },
+    {
+      "name": "jieli-ac707n",
+      "kind": "ac707n",
+      "version": "d0167685d032",
+      "default": true,
+      "repository": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git",
+      "commit": "d0167685d032d745d88fe50233302edd46941622",
+      "requiredFile": "SDK/Makefile",
+      "sdkSubdirectory": "SDK"
+    },
+    {
+      "name": "jieli-ac791n",
+      "kind": "ac791n",
+      "version": "eb04f1966cf2",
+      "default": true,
+      "repository": "git@github.com:h2vivi/fw-AC791N_SDK.git",
+      "commit": "eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a",
+      "requiredFile": "Makefile",
+      "lfs": true
+    }
+  ],
+  "arm": {
+    "version": "10.3-2021.10",
+    "compilerVersion": "10.3.1",
+    "hosts": {
+      "darwin": {
+        "url": "https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-mac.tar.bz2",
+        "sha256": "fb613dacb25149f140f73fe9ff6c380bb43328e6bf813473986e9127e2bc283b"
+      },
+      "linux": {
+        "url": "https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2",
+        "sha256": "97dbb4f019ad1650b732faffcc881689cedc14e2b7ee863d390e0a41ef16c9a3"
+      }
+    }
+  },
+  "armToolchains": [
+    {
+      "version": "14.3.rel1",
+      "compilerVersion": "14.3.1",
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-darwin-arm64-arm-none-eabi.tar.xz",
+          "sha256": "30f4d08b219190a37cded6aa796f4549504902c53cfc3c7e044a8490b6eba1f7"
+        },
+        "linux-x64": {
+          "url": "https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz",
+          "sha256": "8f6903f8ceb084d9227b9ef991490413014d991874a1e34074443c2a72b14dbd"
+        },
+        "linux-arm64": {
+          "url": "https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-aarch64-arm-none-eabi.tar.xz",
+          "sha256": "2d465847eb1d05f876270494f51034de9ace9abe87a4222d079f3360240184d3"
+        }
+      }
+    }
+  ],
+  "tools": [
+    {
+      "kind": "adb",
+      "version": "35.0.2",
+      "default": true,
+      "requiredFiles": [
+        "platform-tools/adb"
+      ],
+      "executable": "platform-tools/adb",
+      "check": [
+        "version"
+      ],
+      "expectedOutput": "Version 35.0.2-",
+      "exports": {
+        "ADB": "platform-tools/adb"
+      },
+      "path": [
+        "platform-tools"
+      ],
+      "hosts": {
+        "darwin": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r35.0.2-darwin.zip",
+          "sha256": "1820078db90bf21628d257ff052528af1c61bb48f754b3555648f5652fa35d78",
+          "format": "zip"
+        },
+        "linux-x64": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r35.0.2-linux.zip",
+          "sha256": "acfdcccb123a8718c46c46c059b2f621140194e5ec1ac9d81715be3d6ab6cd0a",
+          "format": "zip"
+        }
+      }
+    },
+    {
+      "kind": "h6loader",
+      "version": "0.2.1",
+      "default": true,
+      "release": {
+        "repository": "https://github.com/GizClaw/h6infra",
+        "tag": "h6infra-desktop-v0.2.1",
+        "commit": "f3c761723c2b222b6447cac5615c2e6666507dcb"
+      },
+      "application": {
+        "path": "H6 Batch Loader.app",
+        "identifier": "com.h6infra.batch-loader"
+      },
+      "requiredFiles": [
+        "bin/h6loader",
+        "H6 Batch Loader.app/Contents/Info.plist",
+        "H6 Batch Loader.app/Contents/MacOS/h6-batch-loader",
+        "H6 Batch Loader.app/Contents/MacOS/h2loader",
+        "H6 Batch Loader.app/Contents/MacOS/h6loader-session"
+      ],
+      "executable": "bin/h6loader",
+      "check": [
+        "--version"
+      ],
+      "expectedOutput": "h6loader 0.2.1",
+      "exports": {
+        "H6LOADER_APP_PATH": "H6 Batch Loader.app"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://static-volc.gizclaw.com/releases/h6infra/desktop/0.2.1/h6-batch-loader_0.2.1_macos_aarch64.dmg",
+          "sha256": "42a0e5ed6ebf583252de5a322018a2159744e1fe88fcafa2c4fee76bd433f3ac",
+          "format": "dmg",
+          "subdirectory": "H6 Batch Loader.app"
+        }
+      }
+    },
+    {
+      "kind": "h2loader",
+      "version": "20261026-112329",
+      "default": true,
+      "release": {
+        "repository": "https://github.com/GizClaw/gizos",
+        "tag": "v20261026-112329",
+        "commit": "33f6e6177a09c7a69878fa877e011414cc3e7d55"
+      },
+      "requiredFiles": [
+        "bin/h2loader"
+      ],
+      "executable": "bin/h2loader",
+      "check": [
+        "--help"
+      ],
+      "expectedOutput": "h2loader",
+      "exports": {
+        "H2LOADER_BIN": "bin/h2loader"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "source": {
+            "repository": "https://github.com/GizClaw/gizos.git",
+            "commit": "33f6e6177a09c7a69878fa877e011414cc3e7d55",
+            "path": "."
+          },
+          "installer": "bazel",
+          "build": {
+            "target": "//projects/h2loader/targets/cc_binary/cli:h2loader",
+            "output": "projects/h2loader/targets/cc_binary/cli/h2loader"
+          }
+        },
+        "linux": {
+          "source": {
+            "repository": "https://github.com/GizClaw/gizos.git",
+            "commit": "33f6e6177a09c7a69878fa877e011414cc3e7d55",
+            "path": "."
+          },
+          "installer": "bazel",
+          "build": {
+            "target": "//projects/h2loader/targets/cc_binary/cli:h2loader",
+            "output": "projects/h2loader/targets/cc_binary/cli/h2loader"
+          }
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "4.1.7",
+      "default": true,
+      "release": {
+        "repository": "https://github.com/GizClaw/bk_loader",
+        "tag": "v4.1.7",
+        "commit": "b2f968121bded732df52bd7c44dd0eb0cc7c0afb"
+      },
+      "upstream": {
+        "version": "4.1.7.261014250",
+        "cliVersion": "4.1.7.250",
+        "releasedAt": "2026-10-14T10:30:00+08:00",
+        "documentation": "https://docs.bekencorp.com/arminodoc/bk_app/bkfil_v4/en/latest/download/download_guide/download_guide.html"
+      },
+      "requiredFiles": [
+        "bin/bk_loader"
+      ],
+      "executable": "bin/bk_loader",
+      "check": [
+        "tools",
+        "selftest"
+      ],
+      "expectedOutput": "\"packageVersion\": \"4.1.7\"",
+      "exports": {
+        "BK_LOADER_BIN": "bin/bk_loader"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v4.1.7/bk-loader-4.1.7-darwin-arm64.tar.gz",
+          "sha256": "08cefec75ade20a1e2ecb3e6451c8103d4938203854250ed2938d5d561933122",
+          "executableSha256": "85b0720a541d0010288d3d01a14678df3b22f8c0fdba83962d4ecef6345b9d86",
+          "format": "tar"
+        },
+        "darwin-x64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v4.1.7/bk-loader-4.1.7-darwin-x64.tar.gz",
+          "sha256": "350dd5e4935f3ee63b55347658221c41d56c72ae19530dc0aa719b6799d550be",
+          "executableSha256": "6705953a26ed7349406828dd21729b2606c5769b09fcde51f19afa82ef838575",
+          "format": "tar"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v4.1.7/bk-loader-4.1.7-linux-arm64.tar.gz",
+          "sha256": "8786a05b5ffed04c3e8b2d1dcb80482d4e3530094e19512dff5dd9ee9e9a77e5",
+          "executableSha256": "afbfcb7fb06573c86d22c239ec88a3645621b4680b9ee2b8ff7c1cbab814ff18",
+          "format": "tar"
+        },
+        "linux-x64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v4.1.7/bk-loader-4.1.7-linux-x64.tar.gz",
+          "sha256": "e65e4731da9957039014e0a5ae79cb53a17c1801757d4cf79725606c847d34bb",
+          "executableSha256": "4bff82c9401baf628a612f9fba96e532b406525cc4f4c2ff286d6b17f65c4b81",
+          "format": "tar"
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "4.1.7+261014250",
+      "upstream": {
+        "version": "4.1.7.261014250",
+        "cliVersion": "4.1.7.250",
+        "releasedAt": "2026-10-14T10:30:00+08:00",
+        "documentation": "https://docs.bekencorp.com/arminodoc/bk_app/bkfil_v4/en/latest/download/download_guide/download_guide.html"
+      },
+      "requiredFiles": [
+        "bk_loader"
+      ],
+      "executable": "bk_loader",
+      "check": [
+        "--version"
+      ],
+      "expectedOutput": "bk_loader, version 4.1.7.250",
+      "exports": {
+        "BK_LOADER_BIN": "bk_loader"
+      },
+      "path": [
+        "."
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://dl.bekencorp.com/d/tools/bkfil/v4/cli/macos/bk_loader_macos_arm64_4.1.7.261014250.pkg",
+          "sha256": "43ce289ef27ecb572eb3ac60367cd55925117a45c9ba38e3ecf6fa7148d44383",
+          "executableSha256": "04d69c91aafaba5d02b5e71647cb2591c972e5942e91ae6769930731fe4c501e",
+          "format": "pkg",
+          "requiredFiles": [
+            "_internal/base_library.zip",
+            "_internal/Python.framework/Versions/3.9/Python",
+            "_internal/config/version.yaml",
+            "_internal/config/flash_info.yml"
+          ]
+        },
+        "darwin-x64": {
+          "url": "https://dl.bekencorp.com/d/tools/bkfil/v4/cli/macos/bk_loader_macos_x86_64_4.1.7.261014250.pkg",
+          "sha256": "60141b549c2ef2928a4eb51619f777fd448f7739c3b22ff907be378a48f58b7e",
+          "executableSha256": "545306d93a2ca33057f1ac04b65513f50b56b4cb5ac6694064f4a01cc39a1e58",
+          "format": "pkg",
+          "requiredFiles": [
+            "_internal/base_library.zip",
+            "_internal/Python.framework/Versions/3.9/Python",
+            "_internal/config/version.yaml",
+            "_internal/config/flash_info.yml"
+          ]
+        },
+        "linux-x64": {
+          "url": "https://dl.bekencorp.com/d/tools/bkfil/v4/cli/linux/bk_loader_linux_4.1.7.261014250.zip",
+          "sha256": "d42ef8af460eddd467f47197451f8896a61b0eaff7a0f1ef904042e6246479e2",
+          "executableSha256": "7b7ab1e86144f37cadfe96c4a5bbc8cbec267cea1791583e34d591c647345401",
+          "format": "zip",
+          "subdirectory": "bk_loader"
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "1.1.0.2.post2",
+      "release": {
+        "repository": "https://github.com/GizClaw/bk_loader",
+        "tag": "v1.1.0.2.post2",
+        "commit": "1151739e7394c9d60b65743ff1d6e77b2b1a027d"
+      },
+      "requiredFiles": [
+        "bin/bk_loader"
+      ],
+      "executable": "bin/bk_loader",
+      "check": [
+        "tools",
+        "selftest"
+      ],
+      "expectedOutput": "\"packageVersion\": \"1.1.0.2.post2\"",
+      "exports": {
+        "BK_LOADER_BIN": "bin/bk_loader"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v1.1.0.2.post2/bk-loader-1.1.0.2.post2-darwin-arm64.tar.gz",
+          "sha256": "ecfd3580c7786f4f247f9113bb1fce0b1a7ff578aa219d609b75607fa18d5f60",
+          "executableSha256": "095aba2b58a67fa35d0c4aa8069aa5cc28a92e850b63361105e5de2a53bdb7e1",
+          "format": "tar"
+        },
+        "darwin-x64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v1.1.0.2.post2/bk-loader-1.1.0.2.post2-darwin-x64.tar.gz",
+          "sha256": "3ab3ecc35d53d80d1f91c1fc0d4255cf85ce6e98f44830a7e305d33e594a198a",
+          "executableSha256": "d153e446ac831ca976ca09a8b25a28cd731328c173c49da1d79913ec6a2b812f",
+          "format": "tar"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v1.1.0.2.post2/bk-loader-1.1.0.2.post2-linux-arm64.tar.gz",
+          "sha256": "28dd4ef648fd4c617a70f6f9cb4fb440dd46f06173c7776716e953da04594158",
+          "executableSha256": "de7630ad600acc256e1d8b78dbcbabaea588e2681b55e58f2ab023d9d4902bfb",
+          "format": "tar"
+        },
+        "linux-x64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v1.1.0.2.post2/bk-loader-1.1.0.2.post2-linux-x64.tar.gz",
+          "sha256": "4918e800723dd86fd43f4e23624cb73c7063fb6d2cca21c52bce5d8f7926269e",
+          "executableSha256": "42ba33219d35fbbfec96eb65999e247dcccaff9698bf152dafd7de01426c4b04",
+          "format": "tar"
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "1.1.0.2.post1",
+      "requiredFiles": [
+        "bin/python",
+        "commands/bk_loader"
+      ],
+      "executable": "commands/bk_loader",
+      "check": [
+        "--version"
+      ],
+      "expectedOutput": "bk_loader.py,v1.1.0.2",
+      "exports": {
+        "BK_LOADER_BIN": "commands/bk_loader"
+      },
+      "path": [
+        "commands"
+      ],
+      "hosts": {
+        "darwin": {
+          "source": {
+            "repository": "https://github.com/GizClaw/bk_loader.git",
+            "commit": "21ae22d0b7d46b3d36885881b6b4b75bcdbe9696",
+            "path": "."
+          },
+          "installer": "python"
+        },
+        "linux": {
+          "source": {
+            "repository": "https://github.com/GizClaw/bk_loader.git",
+            "commit": "21ae22d0b7d46b3d36885881b6b4b75bcdbe9696",
+            "path": "."
+          },
+          "installer": "python"
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "4.0.2+260129055",
+      "requiredFiles": [
+        "bk_loader",
+        "_internal/Python",
+        "_internal/base_library.zip"
+      ],
+      "executable": "bk_loader",
+      "check": [
+        "--version"
+      ],
+      "expectedOutput": "bk_loader.py,v1.1.0.2",
+      "exports": {
+        "BK_LOADER_BIN": "bk_loader"
+      },
+      "path": [
+        "."
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "source": {
+            "repository": "git@github.com:h2vivi/firmware-devenv.git",
+            "commit": "42e5a45f7dcf2e31bed59dff9dd6005ad183917c",
+            "path": "tools/bk_loader/macos-arm64",
+            "lfs": true
+          }
+        }
+      },
+      "executableSha256": "26d8918f84002a44eacf5331aa7ef15689e75083ada52a7e0722ed32d6cfdd09"
+    },
+    {
+      "kind": "jieli-toolchain",
+      "version": "20250805.1",
+      "default": true,
+      "requiredFiles": [
+        "pi32/bin/clang",
+        "pi32v2/bin/clang",
+        "q32s/bin/clang",
+        "common/bin/clang"
+      ],
+      "exports": {
+        "JIELI_TOOLCHAIN_ROOT": "."
+      },
+      "path": [],
+      "executableHosts": [
+        "linux-x64"
+      ],
+      "hosts": {
+        "any": {
+          "source": {
+            "repository": "git@github.com:h2vivi/firmware-devenv.git",
+            "commit": "42e5a45f7dcf2e31bed59dff9dd6005ad183917c",
+            "path": "tools/jieli_toolchain/archives/jieli-linux-toolchains-20250805.1.tar.xz",
+            "lfs": true
+          },
+          "sha256": "f686586bcfb45e0f0bb27fd2b39c7a7f313cb4f0e88a66a14da621ffa8225958",
+          "format": "tar",
+          "strip": 1
+        }
+      },
+      "marker": true
+    },
+    {
+      "kind": "jieli-postbuild",
+      "version": "20260728.1",
+      "default": true,
+      "requiredFiles": [
+        "isd_download",
+        "fw_add",
+        "ufw_maker",
+        "pack_res",
+        "json_to_res",
+        "fat_comm",
+        "remove_tailing_zeros"
+      ],
+      "exports": {
+        "JIELI_POSTBUILD_ROOT": "."
+      },
+      "path": [],
+      "executableHosts": [
+        "linux-x64"
+      ],
+      "hosts": {
+        "any": {
+          "source": {
+            "repository": "git@github.com:h2vivi/firmware-devenv.git",
+            "commit": "42e5a45f7dcf2e31bed59dff9dd6005ad183917c",
+            "path": "tools/jieli_toolchain/archives/jieli-linux-post-build-tools-20260728.1.tar.xz",
+            "lfs": true
+          },
+          "sha256": "f4a458738c5eec32e78377c76b346bcac1cd515b03eda2b7eb11ab183298a858",
+          "format": "tar",
+          "strip": 1
+        }
+      },
+      "rename": {
+        "packres": "pack_res"
+      },
+      "marker": true
+    }
+  ]
+}

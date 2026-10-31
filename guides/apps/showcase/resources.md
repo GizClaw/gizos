@@ -59,7 +59,7 @@ Board Spec 不猜测 codec。Showcase 发布配置必须另行规定允许的 MP
 ## 验收
 
 - Scanner 拒绝目录穿越、symlink escape、device node、不可读文件和不支持的 media。
-- MP4 排序、角色 manifest 顺序和有效项结果在 Desktop 与 K4B 一致。
+- MP4 排序、角色 manifest 顺序和有效项结果在 各 target 一致。
 - 控制台只保存稳定 id，不从文件显示名或角色中文名反推 identity。
 - SD 卡移除时使用内置 fallback，控制台和进程保持运行。
 - 迟到 catalog/save/media result 通过 generation 丢弃。

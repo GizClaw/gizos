@@ -280,7 +280,6 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
-    continue-on-error: ${{ matrix.config == 'kickpi_k4b' }}
     permissions:
       actions: read
       contents: read
@@ -314,13 +313,6 @@ jobs:
             runner: ${{ vars.FIRMWARE_LINUX_4CORE_RUNNER }}
             config: test_coverage
             task: coverage
-            asset: linux-x86_64
-            sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
-            timeout: 60
-          - name: KickPi K4B / Build (non-blocking)
-            runner: ${{ vars.FIRMWARE_LINUX_4CORE_RUNNER }}
-            config: kickpi_k4b
-            task: build
             asset: linux-x86_64
             sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
             timeout: 60
@@ -570,50 +562,6 @@ jobs:
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
           submodules: false
 
-      - id: app-token
-        name: Create read-only h2vivi token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        with:
-          app-id: ${{ secrets.H2VIVI_GITHUB_APP_ID }}
-          private-key: ${{ secrets.H2VIVI_GITHUB_APP_PRIVATE_KEY }}
-          owner: h2vivi
-
-      - name: Check out Firmwares devenv
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: h2vivi/firmware-devenv
-          ref: e1f952f19f35d31ffce5ae65aee3d6f11a7105dc # Pinned IDF 6.2 provider
-          path: firmware-devenv
-          fetch-depth: 1
-          persist-credentials: false
-          submodules: false
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Check out pinned ESP-IDF 6.2 from Firmwares devenv
-        shell: bash
-        run: |
-          sdk_root="$GITHUB_WORKSPACE/firmware-devenv/third_party/esp_idf_6.2"
-          sdk_commit="$(cat tools/bazel/native_versions/esp_idf_commit.txt)"
-          test "$(git -C firmware-devenv rev-parse HEAD:third_party/esp_idf_6.2)" = "$sdk_commit"
-          git -C firmware-devenv submodule update --init --recursive --depth 1 third_party/esp_idf_6.2
-          test "$(git -C "$sdk_root" rev-parse HEAD)" = "$sdk_commit"
-          printf 'H2_ESP_IDF_SDK_ROOT=%s\n' "$sdk_root" >> "$GITHUB_ENV"
-
-      - name: Restore ESP-IDF tool cache
-        id: esp-idf-cache
-        continue-on-error: true
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: firmware-devenv/.tools/esp-idf-6.2
-          key: esp-idf-v4-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5-esp32s31
-
-      - name: Install ESP-IDF 6.2 tools
-        shell: bash
-        run: |
-          tools_root="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf-6.2"
-          IDF_TOOLS_PATH="$tools_root" "$H2_ESP_IDF_SDK_ROOT/install.sh" esp32s3,esp32p4,esp32c5,esp32s31
-          printf 'H2_ESP_IDF_TOOLS_ROOT=%s\n' "$tools_root" >> "$GITHUB_ENV"
-
       - name: Install native compiler cache
         shell: bash
         run: |
@@ -710,6 +658,38 @@ jobs:
           chmod +x "$bazel_path"
           printf 'BAZEL_BIN=%s\n' "$bazel_path" >> "$GITHUB_ENV"
 
+      - name: Build in-repository gizos command
+        shell: bash
+        run: |
+          "$BAZEL_BIN" build --config=linux_x86_64 //tools/gizos:gizos
+          printf 'GIZOS_BIN=%s/tools/gizos/gizos.sh\n' "$(realpath bazel-bin)" >> "$GITHUB_ENV"
+          printf 'GIZOS_DEVENV_HOME=%s/gizos-devenv\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: Fetch catalog-pinned ESP-IDF sources
+        shell: bash
+        run: |
+          "$GIZOS_BIN" setup esp-idf 6.2 --sources-only
+          "$GIZOS_BIN" env esp-idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
+          python3 - <<'PYENV'
+          import json, os
+          item = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "devenv-idf.json")))["environments"][0]
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write("H2_ESP_IDF_SDK_ROOT=" + item["sdk"] + "\n")
+              output.write("H2_ESP_IDF_TOOLS_ROOT=" + item["tools"] + "\n")
+          PYENV
+
+      - name: Restore ESP-IDF tool cache
+        id: esp-idf-cache
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/gizos-devenv/tools/idf
+          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5-esp32s31
+
+      - name: Install catalog-pinned ESP-IDF tools
+        shell: bash
+        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5,esp32s31'
+
       - name: Configure Bazel remote cache
         if: vars.BAZEL_REMOTE_CACHE_URL != ''
         shell: bash
@@ -767,8 +747,7 @@ jobs:
         env:
           BAZEL_NATIVE_BUILD_JOBS: ${{ matrix.native_build_jobs }}
         run: |
-          export FIRMWARE_DEVENV_ROOT="$GITHUB_WORKSPACE/firmware-devenv"
-          . firmware-devenv/export.sh
+          eval "$("$GIZOS_BIN" env esp-idf 6.2 --shell bash)"
           test "$IDF_PATH" = "$H2_ESP_IDF_SDK_ROOT"
           test "$H2LOADER_IDF_PATH" = "$IDF_PATH"
           test "$IDF_TOOLS_PATH" = "$H2_ESP_IDF_TOOLS_ROOT"
@@ -797,7 +776,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          path: firmware-devenv/.tools/esp-idf-6.2
+          path: ${{ runner.temp }}/gizos-devenv/tools/idf
           key: ${{ steps.esp-idf-cache.outputs.cache-primary-key }}
 
   bk7258-compatible-graph:
@@ -1130,8 +1109,9 @@ jobs:
           case '${{ matrix.config }}' in
             ac695n|ac707n|ac791n)
               root="$RUNNER_TEMP/jieli"
-              JIELI_TOOLS_DIR="$root" sh \
-                "$GITHUB_WORKSPACE/.firmware-devenv-jieli/tools/jieli_toolchain/bootstrap.sh"
+              JIELI_TOOLS_DIR="$root" \
+                JIELI_ARCHIVE_DIR="$GITHUB_WORKSPACE/.firmware-devenv-jieli/tools/jieli_toolchain/archives" \
+                sh "$GITHUB_WORKSPACE/tools/gizos/vendor/jieli/bootstrap.sh"
               manifest=tools/bazel/native_versions/jieli_toolchain_archives.txt
               while read -r kind _ _ _ directory; do
                 case "$kind" in ''|'#'*) continue ;; esac
@@ -1359,6 +1339,8 @@ jobs:
               '--disk_cache='
             )
           }
+          & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal --test_output=errors //tools/gizos:gizos_lock_test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:BAZEL_BIN "--output_user_root=$outputRoot" build @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...

@@ -152,6 +152,7 @@ npm_release_bundle(
     packages = [
         "//projects/gizclaw/targets/npm_package/firmware:release_tarball",
         "//projects/h2loader/targets/npm_package/h2loader:release_tarball",
+        "//tools/gizos:release_tarball",
     ],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )

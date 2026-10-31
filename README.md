@@ -31,7 +31,7 @@ GizOS provides a shared foundation for building portable firmware and applicatio
 
 | Family | Targets |
 | --- | --- |
-| Embedded | ESP32-S3, ESP32-P4, ESP32-C5, BK7258 AP/CP, AC695N, AC791N, T113-S3 |
+| Embedded | ESP32-S3, ESP32-P4, ESP32-C5, BK7258 AP/CP, AC695N, AC791N |
 | Desktop | Linux x86_64, macOS arm64, Windows x86_64 |
 | Mobile | iOS Simulator arm64, Android arm64 |
 | Web | WebAssembly via Emscripten |
@@ -80,6 +80,80 @@ Run `make format` before committing. It formats changes since `origin/main` with
 The command entries are `scripts/config/format.sh` and `scripts/config/format-check.sh`, with shared logic in `scripts/common/format.sh`. Both commands fail on tool errors while still checking the other languages. A successful C/C++ rewrite is accepted in fix mode; Lua fixes must stabilize within five passes. Run `python3 scripts/common/test_format.py` for the isolated failure-path regression tests; they need no formatter downloads.
 
 Keep embedded JavaScript in `EM_JS` / `EM_ASM` calls between `/* clang-format off */` and `/* clang-format on */` guards. A one-time full reformat uses `scripts/config/format.sh --all`, followed by `scripts/config/format-check.sh --all`. Long C/C++ string literals remain unbroken to avoid array string-concatenation warnings. Use `git blame --ignore-revs-file .git-blame-ignore-revs <path>` to look past the one-time formatting commit.
+
+## Shared SDK toolbox
+
+The TypeScript/Bun package `@gizclaw/gizos` requires Bun 1.3.9 or newer and
+manages SDK versions and shared toolchains. Its installed command is `gizos`;
+all GizOS worktrees share installation records. Each SDK and tool version can
+use its own configured installation paths.
+
+Configure the GizClaw registry in `~/.npmrc` (or `$XDG_CONFIG_HOME/.npmrc` when
+`XDG_CONFIG_HOME` is set) to use the toolbox from any directory:
+
+```ini
+@gizclaw:registry=https://static-volc.gizclaw.com/npm/
+```
+
+After the package has been published through Deploy's registry import:
+
+```sh
+bunx @gizclaw/gizos setup esp-idf 6.2
+bunx @gizclaw/gizos setup bk7258 3.1.1
+bunx @gizclaw/gizos install adb 35.0.2
+bunx @gizclaw/gizos install h2loader
+bunx @gizclaw/gizos install h6loader
+bunx @gizclaw/gizos env bk7258
+bun add --global @gizclaw/gizos
+gizos upgrade
+```
+
+`env` displays SDK, toolchain, Python, loader and ADB installation paths.
+BK setup automatically installs GizClaw's source-built BK Loader 4.1.7 for the host,
+verifies its checksums and adds it to PATH when activated. Individual tools
+use `gizos install`; a separate BK Loader install is optional. Releases come
+from `GizClaw/bk_loader` and need no Python installation or vendor browser
+verification. Use `gizos install bk_loader 4.1.7 --archive <release-archive>`
+to import a previously downloaded archive. `env --shell`
+prints shell activation statements, and `run` executes a command with the
+selected environment.
+`upgrade` updates the toolbox while preserving installed SDKs.
+
+Use `gizos config esp_idf 6.2 --sdk /shared/sdks/esp-idf-6.2 --tools /shared/toolchains/esp-idf`
+to save independent paths for an SDK version, or
+`gizos config bk-loader --path /shared/tools/bk-loader` for a standalone tool.
+Omitting the version uses the selected version, falling back to the catalog default.
+`setup` applies saved paths and selects the prepared version;
+`env` shows actual installations. The shared root supplies default locations
+and keeps records and download caches. Compatible compilers remain shared by
+default.
+
+`gizos setup esp_idf 6.2` selects the cached 6.2 environment; setting up 6.0.3
+switches the selected paths while retaining 6.2. Explicit versions in `run`
+or `shell` leave that selection unchanged. `env` marks the selected version.
+Use `gizos remove esp_idf 6.0.3` to remove one version and `gizos prune --dry-run`
+to preview unused managed caches. Cleanup preserves adopted payloads and
+shared dependencies.
+
+The project catalog owns stable SDK/chip names and their allowed source aliases.
+Run `gizos list` or `gizos list bk_idk` to see supported chips, source aliases,
+repositories, defaults, current selections and versions. Use
+`gizos describe esp_idf` for an English explanation, usage examples and
+documentation links. BK and ESP-IDF default to GizClaw forks;
+`gizos config bk7258 GizClaw`, `gizos config bk7259 GizClaw` and
+`gizos config bk_idk GizClaw` select the source for each entry. `bk_idk`
+manages one SDK for multiple chips. `gizos config esp_idf Espressif` selects
+the listed ESP-IDF upstream. Arbitrary URLs and unlisted sources are rejected.
+Omit the source alias to inspect
+the setting, or use `--reset` to restore the default. Existing SDKs and
+toolchains remain shared, and the catalog commit pins still apply.
+
+GizOS Release builds the npm archive, index and checksums; Deploy imports the
+validated release into `https://static-volc.gizclaw.com/npm/`. For development
+before registry publication, run `bun tools/gizos/src/cli.ts env` directly.
+See [the toolbox README](tools/gizos/README.md) for SDK setup, multi-version
+storage, environment activation and the release flow. Optional vendor assets
+remain explicit external inputs.
 
 ## Use GizOS from Bzlmod
 
