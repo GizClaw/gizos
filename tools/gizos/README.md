@@ -61,7 +61,7 @@ selection, source checkout and installation record.
 | BK7258 | `setup bk7258 3.1.1` or `setup bk7258 3.1.1-rd789d71` | SMP SDK, shared GNU Arm 10.3.1 and BK Loader; `BK7258_PATH`, `BK_SDK_DIR`, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT`, `BK_LOADER_BIN` |
 | BK7259 | `setup bk7259 4.0.1` | BK7259 source revision, shared GNU Arm 14.3.1 and BK Loader; `BK7259_PATH` and `BK_SDK_DIR` |
 | BK IDK | `setup bk_idk 2.0.1-r650e754` | One SDK snapshot for BK7236/BK7258, shared GNU Arm and BK Loader; `BK_IDK_PATH` and `BK_SDK_DIR` |
-| BK Loader | Installed with BK setup, or `install bk-loader 4.1.7` | Checksummed official Beken CLI; `BK_LOADER_BIN` and `bk_loader` on PATH |
+| BK Loader | Installed with BK setup, or `install bk-loader 4.1.7` | Checksummed GizClaw source-built CLI; `BK_LOADER_BIN` and `bk_loader` on PATH |
 | H2Loader native CLI | `install h2loader` | Builds the pinned GizOS release once with Bazel; shared `H2LOADER_BIN` and `h2loader` on PATH |
 | H6 Batch Loader GUI | `install h6loader` | Installs the checksummed desktop app in shared storage; `h6loader` opens the GUI |
 | ADB | `install adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
@@ -202,77 +202,72 @@ returns the same descriptive data for scripts.
 ## BK Loader installation
 
 `setup bk7258 <sdk-version>`, `setup bk7259 <sdk-version>` and
-`setup bk_idk <sdk-version>` also install the default BK Loader. The toolbox
-defaults to the official Beken **4.1.7** release, build **4.1.7.261014250**.
-Its command reports `bk_loader, version 4.1.7.250`. Both archive and executable
-SHA-256 values are pinned in the catalog. Repeated setup and different BK SDK
-versions reuse the same installed loader. `--sources-only` and `adopt` do not
-download it. An already selected older loader stays selected until explicitly
-changed with `install bk-loader 4.1.7`.
+`setup bk_idk <sdk-version>` also install the default BK Loader. The default
+is GizClaw's source-built **4.1.7** release from `GizClaw/bk_loader`, tag
+`v4.1.7`, source commit `b2f968121bded732df52bd7c44dd0eb0cc7c0afb`.
+Its CLI reports `bk_loader, version 4.1.7.250`, matching the recovered Beken
+product build `4.1.7.261014250`.
+
+The catalog pins both archive and executable SHA-256 values from the published
+Release manifest. The standalone executable bundles Python, its 86-entry
+flash database, configuration and native AES/P-256 dependencies. No system
+Python installation, pip, vendor installer or browser verification is needed.
+Installation runs the offline `tools selftest` before activating the tool.
 
 ```sh
-# Installs the SDK, compiler and BK Loader together.
+# Installs the SDK, compiler and default BK Loader together.
 bunx @gizclaw/gizos setup bk7258 3.1.1
+
+# Explicitly install/select the new standalone loader.
+bunx @gizclaw/gizos install bk_loader 4.1.7
 bunx @gizclaw/gizos env bk-loader
 bunx @gizclaw/gizos run -- bk_loader --version
+bunx @gizclaw/gizos run -- bk_loader tools selftest
 ```
 
-Installing BK Loader separately is optional, for example to update its selected
-version without reinstalling an SDK:
+`bk_loader` and `bk-loader` select the same tool. Repeated installation and
+different BK SDK versions reuse the shared executable. An explicitly selected
+older loader remains selected until `install bk-loader 4.1.7` selects this
+release. Reusing a prepared BK SDK refreshes its dependency record when the
+selected loader changes. `--sources-only` and `adopt` do not download a loader.
+
+The toolbox manages the macOS arm64/x64 and Linux arm64/x64 archives. The same
+Release also publishes a native Windows x64 executable for manual installation;
+SDK/toolbox installation currently targets macOS and Linux.
+
+Import a previously downloaded archive with the same catalog integrity checks:
 
 ```sh
-gizos install bk_loader
-gizos install bk_loader 4.1.7
+gizos install bk_loader 4.1.7 \
+  --archive ~/Downloads/bk-loader-4.1.7-darwin-arm64.tar.gz
 ```
 
-`bk_loader` and `bk-loader` select the same catalog tool. `install` without a
-version installs the catalog default.
+`--archive` verifies the host archive checksum before placing it in the shared
+cache. `env bk-loader --json` reports the installed directory, selected version,
+GizClaw release tag/commit and original upstream build metadata. Installations
+remain separate from firmware worktrees.
 
-Official 4.1.7 distributions are available for macOS arm64/x86_64 and Linux
-x86_64. The macOS `.pkg` is expanded into the managed tool directory; GizOS
-does not run its installation scripts, request root access, or install into
-`/usr/local`. The full bundled Python framework and `_internal` directory stay
-beside the executable. Linux uses the vendor's standalone executable. No
-separate loader Python environment or pip installation is needed.
-On a headless Linux system, enable a UTF-8 locale such as
-`LANG=C.UTF-8 LC_ALL=C.UTF-8`; the vendor CLI rejects an ASCII-only locale.
+The complete 4.1.7 Python implementation was recovered from the official macOS
+bytecode: 130 code modules and four namespace packages, with a per-module
+verification report in `GizClaw/bk_loader`. All five native Release builds pass
+protocol, configuration and crypto tests without accessing a device. These
+checks do not establish physical-device flashing/provisioning acceptance.
 
-The Beken download site may require browser verification. If an automatic
-download is blocked, download the matching CLI package from the
-[official directory](https://dl.bekencorp.com/tools/bkfil/v4/cli) and import it:
+For explicit compatibility testing, the previous official Beken runtime is
+still selectable as `bk-loader 4.1.7+261014250`. On macOS, its `.pkg` payload
+is expanded without running global installer scripts or writing to `/usr/local`.
+Beken's download site may require browser verification; import its package with:
 
 ```sh
-# macOS Apple Silicon; use the x86_64 package for an Intel Mac.
-gizos install bk-loader 4.1.7 \
+gizos install bk-loader 4.1.7+261014250 \
   --archive ~/Downloads/bk_loader_macos_arm64_4.1.7.261014250.pkg
-
-# Linux x86_64.
-gizos install bk-loader 4.1.7 \
-  --archive ~/Downloads/bk_loader_linux_4.1.7.261014250.zip
 ```
 
-`install --archive` verifies the matching host's exact checksum before placing the
-download in the shared cache and installing it. Other worktrees reuse that
-installation. It does not configure an independent installation path.
-`env bk-loader --json` includes the official build, CLI version and release time.
-
-The official macOS package contains Python 3.9 bytecode bundled by PyInstaller.
-A complete upstream Python source distribution for 4.1.7 has not been located.
-`GizClaw/bk_loader` has recovered all 130 code modules and four namespace
-packages from the official macOS bytecode, with a per-module verification
-report, and now builds the maintained `4.1.7` Python source package. GizOS
-continues using the pinned official packages until the source-built release
-archives and checksums are published and added to this catalog.
-The previous frozen maintenance release remains available
-as `install bk-loader 1.1.0.2.post2`, including Linux arm64, for which an official
-4.1.7 executable has not been located. `tools selftest` is a GizClaw addition
-in its source-built packages; it is not a command in the official Beken binary.
-
-For source development, `install bk-loader 1.1.0.2.post1` installs the pinned
-maintained source into a private Python environment. The older macOS vendor
-runtime can also be adopted explicitly as `bk-loader 4.0.2+260129055`.
-Offline version and command checks do not establish physical-device flashing
-acceptance.
+The previous GizClaw native release remains available as
+`install bk-loader 1.1.0.2.post2`. The older source environment can be selected
+with `1.1.0.2.post1`; the legacy macOS vendor runtime remains adoptable as
+`4.0.2+260129055`. `tools selftest` is a GizClaw command and is not available
+in the official Beken executable.
 
 ## H2Loader native CLI installation
 
@@ -512,8 +507,8 @@ bunx @gizclaw/gizos adopt jieli-postbuild 20260728.1 --path /existing/jieli-post
 
 `--sdk` is the Git checkout root; an SDK's internal `SDK/` directory is selected
 by the catalog. `--path` is a standalone tool's complete installation directory.
-For the official macOS loader it is the directory containing `bk_loader`
-and `_internal`; the older GizClaw standalone archive has `bin/bk_loader`.
+For GizClaw standalone releases it is the directory containing `bin/bk_loader`.
+For the optional official macOS loader it contains `bk_loader` and `_internal`.
 For the legacy source loader it is the Python environment directory. JieLi SDK adoption
 uses the registered shared tools, or accepts `--tools` and `--postbuild` paths.
 `--python /path/to/python` selects an existing IDF Python environment explicitly.

@@ -3,7 +3,9 @@
   "sdkRepositories": [
     {
       "name": "esp-idf",
-      "aliases": ["esp_idf"],
+      "aliases": [
+        "esp_idf"
+      ],
       "description": "Espressif IoT Development Framework for ESP32 applications. GizOS manages the pinned SDK, its selected compiler tools and its Python environment in a shared store.",
       "documentation": "https://docs.espressif.com/projects/esp-idf/en/stable/",
       "notes": [
@@ -11,14 +13,26 @@
         "Use setup --targets to select chip families. env displays installation paths; env --shell prints shell activation statements."
       ],
       "repositories": [
-        {"alias": "GizClaw", "id": "GizClaw/esp-idf", "url": "https://github.com/GizClaw/esp-idf.git"},
-        {"alias": "Espressif", "id": "espressif/esp-idf", "url": "https://github.com/espressif/esp-idf.git"}
+        {
+          "alias": "GizClaw",
+          "id": "GizClaw/esp-idf",
+          "url": "https://github.com/GizClaw/esp-idf.git"
+        },
+        {
+          "alias": "Espressif",
+          "id": "espressif/esp-idf",
+          "url": "https://github.com/espressif/esp-idf.git"
+        }
       ]
     },
     {
       "name": "bk7258",
-      "aliases": ["bk_avdk_smp"],
-      "chips": ["bk7258"],
+      "aliases": [
+        "bk_avdk_smp"
+      ],
+      "chips": [
+        "bk7258"
+      ],
       "sdkVariable": "BK7258_PATH",
       "description": "BK7258 audio/video SDK using Beken's Armino SMP framework. This entry follows the BK7258 3.1.1 line of bk_avdk_smp and includes the shared GNU Arm compiler and BK Loader.",
       "documentation": "https://docs.bekencorp.com/arminodoc/bk_avdk_smp/smp_doc/bk7258/en/v3.1.1/index.html",
@@ -27,14 +41,26 @@
         "The 4.0.1 catalog pin belongs to BK7259; it is not an upgrade of this BK7258 environment."
       ],
       "repositories": [
-        {"alias": "GizClaw", "id": "GizClaw/bk_avdk_smp", "url": "https://github.com/GizClaw/bk_avdk_smp.git"},
-        {"alias": "Beken", "id": "bekencorp/bk_avdk_smp", "url": "https://github.com/bekencorp/bk_avdk_smp.git"}
+        {
+          "alias": "GizClaw",
+          "id": "GizClaw/bk_avdk_smp",
+          "url": "https://github.com/GizClaw/bk_avdk_smp.git"
+        },
+        {
+          "alias": "Beken",
+          "id": "bekencorp/bk_avdk_smp",
+          "url": "https://github.com/bekencorp/bk_avdk_smp.git"
+        }
       ]
     },
     {
       "name": "bk7259",
-      "aliases": ["bk_avdk_smp"],
-      "chips": ["bk7259"],
+      "aliases": [
+        "bk_avdk_smp"
+      ],
+      "chips": [
+        "bk7259"
+      ],
       "sdkVariable": "BK7259_PATH",
       "armVersion": "14.3.rel1",
       "description": "BK7259 audio/video SDK from the 4.0.1 line of bk_avdk_smp. This chip entry uses its own shared GNU Arm 14.3 compiler pool and the common BK Loader installation.",
@@ -43,14 +69,25 @@
         "SDK management does not add a BK7259 board or build target to the GizOS firmware graph."
       ],
       "repositories": [
-        {"alias": "GizClaw", "id": "GizClaw/bk_avdk_smp", "url": "https://github.com/GizClaw/bk_avdk_smp.git"},
-        {"alias": "Beken", "id": "bekencorp/bk_avdk_smp", "url": "https://github.com/bekencorp/bk_avdk_smp.git"}
+        {
+          "alias": "GizClaw",
+          "id": "GizClaw/bk_avdk_smp",
+          "url": "https://github.com/GizClaw/bk_avdk_smp.git"
+        },
+        {
+          "alias": "Beken",
+          "id": "bekencorp/bk_avdk_smp",
+          "url": "https://github.com/bekencorp/bk_avdk_smp.git"
+        }
       ]
     },
     {
       "name": "bk_idk",
       "aliases": [],
-      "chips": ["bk7236", "bk7258"],
+      "chips": [
+        "bk7236",
+        "bk7258"
+      ],
       "sdkVariable": "BK_IDK_PATH",
       "description": "Beken Armino IoT Development Kit covering multiple chips. The catalog pins one bk_idk snapshot for BK7236 and BK7258 and manages it as a single shared SDK installation.",
       "notes": [
@@ -59,36 +96,72 @@
         "The GizOS BK7258 firmware integration requires the SMP SDK; use the bk7258 entry for that build workflow."
       ],
       "repositories": [
-        {"alias": "GizClaw", "id": "GizClaw/bk_idk", "url": "https://github.com/GizClaw/bk_idk.git"},
-        {"alias": "Beken", "id": "bekencorp/bk_idk", "url": "https://github.com/bekencorp/bk_idk.git"}
+        {
+          "alias": "GizClaw",
+          "id": "GizClaw/bk_idk",
+          "url": "https://github.com/GizClaw/bk_idk.git"
+        },
+        {
+          "alias": "Beken",
+          "id": "bekencorp/bk_idk",
+          "url": "https://github.com/bekencorp/bk_idk.git"
+        }
       ]
     },
     {
       "name": "jieli-ac695n",
-      "aliases": ["AC695N_Soundbox_SDK"],
+      "aliases": [
+        "AC695N_Soundbox_SDK"
+      ],
       "description": "JieLi AC695N soundbox SDK using the maintained pinned snapshot. SDK preparation also locates the shared JieLi compiler and post-build tools.",
-      "notes": ["The selected source and tool archives require access to their maintained asset repositories. JieLi compiler binaries run on Linux x86_64."],
+      "notes": [
+        "The selected source and tool archives require access to their maintained asset repositories. JieLi compiler binaries run on Linux x86_64."
+      ],
       "repositories": [
-        {"alias": "h2vivi", "id": "h2vivi/AC695N_Soundbox_SDK", "url": "git@github.com:h2vivi/AC695N_Soundbox_SDK.git"}
+        {
+          "alias": "h2vivi",
+          "id": "h2vivi/AC695N_Soundbox_SDK",
+          "url": "git@github.com:h2vivi/AC695N_Soundbox_SDK.git"
+        }
       ]
     },
     {
       "name": "jieli-ac707n",
-      "aliases": ["e_badge_707_sdk_200"],
+      "aliases": [
+        "e_badge_707_sdk_200"
+      ],
       "description": "JieLi AC707N e-badge SDK. The default Jieli source is the verified public GitLab repository; the h2vivi alias selects the maintained GitHub snapshot at the same pinned commit.",
-      "notes": ["The SDK source is public; compiler and post-build tool distribution is managed separately. JieLi compiler binaries run on Linux x86_64."],
+      "notes": [
+        "The SDK source is public; compiler and post-build tool distribution is managed separately. JieLi compiler binaries run on Linux x86_64."
+      ],
       "repositories": [
-        {"alias": "Jieli", "id": "e_badge/e_badge_707_sdk_200", "url": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git"},
-        {"alias": "h2vivi", "id": "h2vivi/e_badge_707_sdk_200", "url": "git@github.com:h2vivi/e_badge_707_sdk_200.git"}
+        {
+          "alias": "Jieli",
+          "id": "e_badge/e_badge_707_sdk_200",
+          "url": "https://gitlab.zh-jieli.com/e_badge/e_badge_707_sdk_200.git"
+        },
+        {
+          "alias": "h2vivi",
+          "id": "h2vivi/e_badge_707_sdk_200",
+          "url": "git@github.com:h2vivi/e_badge_707_sdk_200.git"
+        }
       ]
     },
     {
       "name": "jieli-ac791n",
-      "aliases": ["fw-AC791N_SDK"],
+      "aliases": [
+        "fw-AC791N_SDK"
+      ],
       "description": "JieLi AC791N SDK using the maintained pinned snapshot. SDK preparation also locates the shared JieLi compiler and post-build tools.",
-      "notes": ["The public AC79 upstream has not been matched to this catalog pin. The selected source and tool archives require access to their maintained asset repositories."],
+      "notes": [
+        "The public AC79 upstream has not been matched to this catalog pin. The selected source and tool archives require access to their maintained asset repositories."
+      ],
       "repositories": [
-        {"alias": "h2vivi", "id": "h2vivi/fw-AC791N_SDK", "url": "git@github.com:h2vivi/fw-AC791N_SDK.git"}
+        {
+          "alias": "h2vivi",
+          "id": "h2vivi/fw-AC791N_SDK",
+          "url": "git@github.com:h2vivi/fw-AC791N_SDK.git"
+        }
       ]
     }
   ],
@@ -97,7 +170,9 @@
       "name": "esp-idf",
       "kind": "idf",
       "version": "6.0.3",
-      "tags": ["v6.0.3"],
+      "tags": [
+        "v6.0.3"
+      ],
       "repository": "https://github.com/GizClaw/esp-idf.git",
       "commit": "76f5dedd9950a3012fee8fb7d5586df21fc67802",
       "requiredFile": "tools/idf.py",
@@ -355,6 +430,62 @@
       "kind": "bk-loader",
       "version": "4.1.7",
       "default": true,
+      "release": {
+        "repository": "https://github.com/GizClaw/bk_loader",
+        "tag": "v4.1.7",
+        "commit": "b2f968121bded732df52bd7c44dd0eb0cc7c0afb"
+      },
+      "upstream": {
+        "version": "4.1.7.261014250",
+        "cliVersion": "4.1.7.250",
+        "releasedAt": "2026-10-14T10:30:00+08:00",
+        "documentation": "https://docs.bekencorp.com/arminodoc/bk_app/bkfil_v4/en/latest/download/download_guide/download_guide.html"
+      },
+      "requiredFiles": [
+        "bin/bk_loader"
+      ],
+      "executable": "bin/bk_loader",
+      "check": [
+        "tools",
+        "selftest"
+      ],
+      "expectedOutput": "\"packageVersion\": \"4.1.7\"",
+      "exports": {
+        "BK_LOADER_BIN": "bin/bk_loader"
+      },
+      "path": [
+        "bin"
+      ],
+      "hosts": {
+        "darwin-arm64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v4.1.7/bk-loader-4.1.7-darwin-arm64.tar.gz",
+          "sha256": "08cefec75ade20a1e2ecb3e6451c8103d4938203854250ed2938d5d561933122",
+          "executableSha256": "85b0720a541d0010288d3d01a14678df3b22f8c0fdba83962d4ecef6345b9d86",
+          "format": "tar"
+        },
+        "darwin-x64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v4.1.7/bk-loader-4.1.7-darwin-x64.tar.gz",
+          "sha256": "350dd5e4935f3ee63b55347658221c41d56c72ae19530dc0aa719b6799d550be",
+          "executableSha256": "6705953a26ed7349406828dd21729b2606c5769b09fcde51f19afa82ef838575",
+          "format": "tar"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v4.1.7/bk-loader-4.1.7-linux-arm64.tar.gz",
+          "sha256": "8786a05b5ffed04c3e8b2d1dcb80482d4e3530094e19512dff5dd9ee9e9a77e5",
+          "executableSha256": "afbfcb7fb06573c86d22c239ec88a3645621b4680b9ee2b8ff7c1cbab814ff18",
+          "format": "tar"
+        },
+        "linux-x64": {
+          "url": "https://github.com/GizClaw/bk_loader/releases/download/v4.1.7/bk-loader-4.1.7-linux-x64.tar.gz",
+          "sha256": "e65e4731da9957039014e0a5ae79cb53a17c1801757d4cf79725606c847d34bb",
+          "executableSha256": "4bff82c9401baf628a612f9fba96e532b406525cc4f4c2ff286d6b17f65c4b81",
+          "format": "tar"
+        }
+      }
+    },
+    {
+      "kind": "bk-loader",
+      "version": "4.1.7+261014250",
       "upstream": {
         "version": "4.1.7.261014250",
         "cliVersion": "4.1.7.250",

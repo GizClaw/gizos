@@ -289,7 +289,8 @@ test("BK setup installs a checked native loader once while adoption and sources-
         executableSha256: digest(await readFile(entry)), format: "tar",
       } },
     };
-    const resources = new Resources(join(root, "shared"), command, [tool]);
+    const upgraded = { ...tool, version: "fixture-next", default: false };
+    const resources = new Resources(join(root, "shared"), command, [tool, upgraded]);
     class BkManager extends Manager {
       override get resources() { return resources; }
     }
@@ -301,6 +302,13 @@ test("BK setup installs a checked native loader once while adoption and sources-
     await manager.setup(sdk);
     expect(downloads).toBe(1);
     await expect(manager.remove(tool.kind, tool.version, true)).rejects.toThrow("required by");
+    const previous = (await resources.record(tool))!;
+    const next = await resources.setup(upgraded);
+    await manager.setup(sdk);
+    expect((await manager.record(sdk))?.dependencies).toEqual([next.root]);
+    expect(downloads).toBe(1);
+    expect(next.root).not.toBe(previous.root);
+    expect(await exists(previous.root)).toBe(true);
     const environment = await manager.environment(sdk, undefined, { PATH: "/usr/bin:/bin" });
     expect(await execute(["sh", "-c", "command -v bk_loader; bk_loader --version"], { env: environment }))
       .toBe(`${environment.BK_LOADER_BIN}\nfixture-loader`);

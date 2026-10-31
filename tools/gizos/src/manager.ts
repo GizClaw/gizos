@@ -658,14 +658,19 @@ export class Manager {
       if (usesArm(sdk) && !adopt && !options.sourcesOnly && !await exists(item.tools)) armDistribution(sdk);
       if (adopt) await this.verifySource(sdk, item.sdk);
       else await this.fetchSource(sdk, item.sdk);
-      const dependenciesReady = !usesArm(sdk) ||
-        await this.resources.record(await this.resources.current("bk-loader"));
+      const loader = usesArm(sdk)
+        ? await this.resources.record(await this.resources.current("bk-loader")) : undefined;
+      const dependenciesReady = !usesArm(sdk) || loader;
       const reuse = item.ready && dependenciesReady && !options.sourcesOnly && !adopt &&
         await exists(item.tools) && (sdk.kind !== "idf" || item.python && await exists(item.python)) &&
         item.targets.every(target => previous?.targets.includes(target)) &&
         (!requested.python || requested.python === previous?.python);
       if (reuse) {
         await this.environment(sdk, item);
+        if (loader && (item.dependencies?.length !== 1 || item.dependencies[0] !== loader.root)) {
+          item.dependencies = [loader.root];
+          await atomicJson(this.statePath(sdk), item);
+        }
         await selectVersion(this.root, sdkName(sdk), sdk.version);
         return item;
       }

@@ -109,11 +109,12 @@ gizos upgrade
 ```
 
 `env` displays SDK, toolchain, Python, loader and ADB installation paths.
-BK setup automatically installs the official BK Loader 4.1.7 for the host,
+BK setup automatically installs GizClaw's source-built BK Loader 4.1.7 for the host,
 verifies its checksums and adds it to PATH when activated. Individual tools
-use `gizos install`; a separate BK Loader install is optional. If Beken's
-download site requires browser verification, import the downloaded package with
-`gizos install bk_loader 4.1.7 --archive <package>`. `env --shell`
+use `gizos install`; a separate BK Loader install is optional. Releases come
+from `GizClaw/bk_loader` and need no Python installation or vendor browser
+verification. Use `gizos install bk_loader 4.1.7 --archive <release-archive>`
+to import a previously downloaded archive. `env --shell`
 prints shell activation statements, and `run` executes a command with the
 selected environment.
 `upgrade` updates the toolbox while preserving installed SDKs.
