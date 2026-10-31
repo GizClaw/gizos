@@ -18,8 +18,10 @@ Replace an existing scope mapping rather than adding a duplicate. Use this
 global mapping for `bunx`; other dependencies keep their configured registry.
 Public package downloads require no token.
 SDK source preparation requires Git. Python 3 is required for shared-store
-coordination and SDK/host-tool downloads. Downloads use its HTTPS client with
-certificate verification and pinned archive checksums.
+coordination on macOS/Linux and SDK/host-tool downloads. Downloads use its HTTPS
+client with certificate verification and pinned archive checksums. Windows
+discovery/configuration commands use native shared-store coordination; SDK and
+tool installation retain the host support described below.
 
 After a release has been imported into the registry by Deploy:
 

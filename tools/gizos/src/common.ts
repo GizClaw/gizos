@@ -2,7 +2,8 @@ import { access, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } 
 import { constants } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createServer } from "node:net";
 
 export type Env = Record<string, string | undefined>;
 export type InstallationPaths = { sdk?: string; tools?: string; python?: string; path?: string };
@@ -69,6 +70,7 @@ export async function atomicJson(path: string, value: unknown): Promise<void> {
 }
 
 export async function locked<T>(root: string, name: string, work: () => Promise<T>): Promise<T> {
+  if (process.platform === "win32") return pipeLock(root, name, work);
   const guard = join(root, "lockfiles", name);
   await mkdir(dirname(guard), { recursive: true });
   // Keep this inode: unlinking it would let queued callers lock different files.
@@ -76,13 +78,40 @@ export async function locked<T>(root: string, name: string, work: () => Promise<
   try {
     // The inherited descriptor shares our open-file description. Python acquires
     // flock on stdin; our descriptor retains it after the helper exits.
-    const child = Bun.spawn(["python3", "-c", "import fcntl; fcntl.flock(0, fcntl.LOCK_EX)"], {
+    const child = Bun.spawn(["python3", "-I", "-c", "import fcntl; fcntl.flock(0, fcntl.LOCK_EX)"], {
       stdin: handle.fd, stdout: "ignore", stderr: "pipe",
     });
     const [message, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
     if (code !== 0) throw new Error(`Cannot lock shared state: ${message.trim()}`);
     return await directoryLock(root, name, work);
   } finally { await handle.close(); }
+}
+
+async function pipeLock<T>(root: string, name: string, work: () => Promise<T>): Promise<T> {
+  await mkdir(root, { recursive: true });
+  const identity = `${(await realpath(root)).toLowerCase()}\0${name.toLowerCase()}`;
+  const pipe = `\\\\.\\pipe\\gizos-${createHash("sha256").update(identity).digest("hex")}`;
+  for (;;) {
+    const server = createServer(socket => socket.destroy());
+    const failure = await new Promise<NodeJS.ErrnoException | undefined>(resolve => {
+      const onError = (error: NodeJS.ErrnoException) => resolve(error);
+      server.once("error", onError);
+      server.listen({ path: pipe, exclusive: true }, () => {
+        server.off("error", onError);
+        resolve(undefined);
+      });
+    });
+    if (failure) {
+      if (failure.code !== "EADDRINUSE") throw failure;
+      await Bun.sleep(100);
+      continue;
+    }
+    // Windows releases the exclusive named pipe when its owning process exits.
+    try { return await directoryLock(root, name, work); }
+    finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  }
 }
 
 async function directoryLock<T>(root: string, name: string, work: () => Promise<T>): Promise<T> {
@@ -117,14 +146,18 @@ async function directoryLock<T>(root: string, name: string, work: () => Promise<
   }
   const instance = await stat(directory);
   const owner = join(directory, "owner.json");
+  const token = randomUUID();
   try {
-    await atomicJson(owner, { pid: process.pid, host: hostname() });
+    await atomicJson(owner, { pid: process.pid, host: hostname(), token });
     return await work();
   } finally {
     const current = await stat(directory).catch((error: any) => {
       if (error.code !== "ENOENT") throw error;
     });
-    if (current?.dev === instance.dev && current?.ino === instance.ino) {
+    const currentOwner = await readFile(owner, "utf8").then(JSON.parse).catch((error: any) => {
+      if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+    });
+    if (current?.dev === instance.dev && current?.ino === instance.ino && currentOwner?.token === token) {
       await rm(directory, { recursive: true, force: true });
     }
   }

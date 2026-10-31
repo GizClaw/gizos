@@ -65,3 +65,19 @@ py_test(
     main = "test_runner.py",
     target_compatible_with = POSIX_HOST,
 )
+
+py_test(
+    name = "gizos_lock_test",
+    srcs = ["test_runner.py"],
+    args = [
+        "$(location @gizos_bun//:bun)",
+        "$(location tests/locking.test.ts)",
+    ],
+    data = glob(["src/**"]) + [
+        "tests/locking.test.ts",
+        "@gizos_bun//:bun",
+    ],
+    legacy_create_init = 0,
+    main = "test_runner.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
