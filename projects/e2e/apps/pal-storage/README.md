@@ -1,6 +1,6 @@
 # PAL Storage E2E
 
-独立验证 FileSystem 的 11 个 vtable 操作和 Preferences 的 17 个操作（包括 namespace 上的 16 个方法），共 28 项。Disk 的六个接口操作裸分区擦写，单独归入后续 `pal-disk`；本 App 不擦写真实固件分区。
+独立验证 FileSystem 的 11 个 vtable 操作和 Preferences 的 17 个操作（包括 namespace 上的 16 个方法），共 28 项。Disk 的裸分区擦写与并发回归由 [PAL Disk E2E](../pal-disk/README.md) 验证；本 App 不擦写真实固件分区。
 
 Portable App 只借用 Runtime 中的 FS、Preferences 和 Memory，以及宿主独占的测试路径/namespace。宿主负责建立隔离的数据目录、真实 provider、进程重启和结果汇总。禁止把旧的混合 PAL App 当作本 App 的测试实现或把缺失接口当作通过。
 

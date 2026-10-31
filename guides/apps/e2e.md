@@ -47,6 +47,7 @@ GizClaw DevKit 入口在原保存配置缺失时，也可使用同一 Native 输
 | PAL Core | `//projects/e2e/apps/pal-core/app:pal_core_e2e` | 独立 Core v2：46 个接口、41 个必过用例；macOS、Browser/WASM、DevKit ESP32-S3 USB 串口、BK7258 AP UART1 H2Loader |
 | PAL JSON | `//projects/e2e/apps/pal-json/app:pal_json_e2e` | 独立 JSON：24 个接口、15 个必过用例；macOS、Browser/WASM、iOS/Android 实际 SDK 包、DevKit 与 BK7258，记录完整运行与清理证据 |
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
+| PAL Disk | `//projects/e2e/apps/pal-disk/app:pal_disk_e2e` | 裸分区发现、顺序擦写与双核并发读写、任务回收及测试区清理；入口和验收以 [App README](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-disk) 为准 |
 | PAL Storage | `//projects/e2e/apps/pal-storage/app:pal_storage_e2e` | 独立 FS/Pref 契约 2：28 个操作、36 个必跑 case；三个独立启动阶段及完成后再次启动检查，逐平台保留实际资格记录 |
 | PAL Net/TLS | `//projects/e2e/apps/pal-net-tls/app:pal_net_tls_e2e` | 独立 raw Net/TLS：21 个操作、39 个 case；37 个 mandatory 与两个按实际能力评估的 optional case，Browser 单独验证 unsupported 边界 |
 | PAL MQTT | `//projects/e2e/apps/pal-mqtt/app:pal_mqtt_e2e` | 独立 MQTT：8 个操作、36 个必跑 case；真实 TCP/TLS broker、事件/ACK 与资源清理，按各平台实际执行记录验收 |
@@ -232,7 +233,7 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 
 ## PAL Storage
 
-`projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。契约 2 的稳定 registry 包含 36 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Preferences 包含 16 KiB Blob、长度/整数/字符串边界、100 次 commit/close/reopen，以及 1000 次同键覆盖写后的精确键数和持久最终值。Disk 的分区擦写属于后续独立资格领域，不计入本 App。
+`projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。契约 2 的稳定 registry 包含 36 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Preferences 包含 16 KiB Blob、长度/整数/字符串边界、100 次 commit/close/reopen，以及 1000 次同键覆盖写后的精确键数和持久最终值。Disk 的分区擦写与并发回归由 PAL Disk 套件验证，不计入本 App。
 
 Storage 必须分三个独立进程或 boot 执行：seed 阶段执行 31 项并提交与 nonce 绑定的数据，verify 阶段执行 3 项，读回文件、16 KiB Blob、全部 Preferences 类型和覆盖写结果，再对 namespace A 逐键 remove+commit、namespace B clear+commit 并删除专用文件路径；clean-verify 阶段执行 2 项，使用全新 provider 确认测试键和文件路径均已持久删除。宿主最后再次启动检查完成状态仍为空；该重复结果单列，不增加唯一 case 通过数。只有全部阶段 case 清单、nonce、contract、版本、返回值和 cleanup 匹配才授予资格。Desktop/macOS 使用真实 OS FS 和 SQLite，Web 使用 IDBFS/localStorage 并重新启动整个浏览器，移动端使用实际 SDK 包中的原生 storage owner，并在四次独立 App 进程间保留 sandbox、核对 provider 导出与 SDK 字节。DevKit 使用板载 Flash LittleFS，BK7258 使用 SD FATFS 和 FlashDB；板级测试数据限定在 `/data/pal-storage` 和 `h2storea`/`h2storeb`，`h2storectl` 保存实际镜像版本、契约版本、nonce 和下一阶段。
 
@@ -296,6 +297,8 @@ BK launcher 在停止并 join 管理 worker 后借用 raw UART，写入和 drain
 
 行为验收使用编译并执行的 C/C++ 测试、真实 SDK 构建和实际平台运行。Python 可以驱动编译、浏览器、fixture 或设备，也可以测试构建工具的实际输入输出；源码关键字、调用顺序文本、固定源码哈希和文档字节快照不作为行为验收。历史报告及其中的源码、产物摘要保留原始身份，只描述记录时的版本；当前版本通过当前构建和真实运行验证，不通过重写历史摘要继承资格。
 
-## BK 原生 Flash 并发诊断
+## PAL Disk
 
-[Flash stress 入口](https://github.com/GizClaw/gizos/tree/main/projects/e2e/targets/h2loader_tar_zlib/flash-stress/bk7258)使用两个 AP 核执行真实 SDK Flash 读写与校验，用于复现底层并发停滞。测试仅使用板级布局明确预留的区域，先运行顺序对照，再运行并发；用例结果、异常复位、安装确认与设备恢复分别记录。它不运行 H106 Main，也不替代公共 PAL Storage 的完整接口资格。
+[PAL Disk E2E](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-disk) 持有裸分区顺序擦写与并发读写的正式用例。Portable App 通过 Disk、Task、Time、Memory PAL 和 Atomic 运行，用例 registry、完整账本和清理规则由 App 拥有；固件入口只提供 Board 预留的非启动测试分区、真实 provider、核绑定和输出。分区发现与读取结果不一致、数据错误、超时、未退出任务或清理失败均不能通过。
+
+[BK 入口](https://github.com/GizClaw/gizos/tree/main/projects/e2e/targets/h2loader_tar_zlib/pal-disk/bk7258_v3_202405) 在两个 AP 核上运行同一并发用例，用于回归 SDK Flash 共享锁的跨核访问。测试区来自 Board 的 `pal_disk` layout，运行前核对边界；真实平台资格需要完整 CASE、汇总与返回记录、精确镜像身份及原包恢复证据。当前 Host 使用受控 provider 验证失败和生命周期，BK 固件使用真实 Flash；其他平台没有实板记录时不声明资格。

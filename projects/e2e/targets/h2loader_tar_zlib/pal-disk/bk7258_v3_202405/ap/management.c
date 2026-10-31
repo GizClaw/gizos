@@ -10,7 +10,7 @@
 static h2_pal_fs_api_t management_fs;
 static h2_runtime_t* runtime;
 
-int h2_bk_flash_stress_management_start(void) {
+int h2_bk_pal_disk_management_start(void) {
   int rc = h2_bk7258_board_fs_init(&management_fs);
   if (rc) return rc;
   /* Assemble only management providers. Do not invoke the board's product
@@ -64,7 +64,7 @@ int h2_bk_flash_stress_management_start(void) {
   rc = h2_runtime_init(&config, &runtime);
   if (!rc)
     rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
-        runtime, "flash-stress", H2_LOADER_CAPABILITY_UART);
+        runtime, "pal-disk", H2_LOADER_CAPABILITY_UART);
   /* Installation health is distinct from the subsequent diagnostic verdict. */
   if (!rc) rc = h2_bk_h2loader_confirm_current_app(runtime);
   return rc;

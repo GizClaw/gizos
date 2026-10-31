@@ -1,4 +1,4 @@
-#include "h2_flash_stress.h"
+#include "h2_pal_disk_e2e.h"
 
 #include <string.h>
 
@@ -15,15 +15,15 @@ enum { READY, DONE, COUNT, STAGE, CORE, WORKER_VALUES };
 enum { VALUE_COUNT = WORKER_BASE + 2 * WORKER_VALUES };
 
 typedef struct worker {
-  h2_flash_stress_t* app;
+  h2_pal_disk_e2e_t* app;
   unsigned index;
   h2_pal_task_t* task;
   /* Published by DONE; only read after acquiring DONE. */
   int rc;
 } worker_t;
 
-struct h2_flash_stress {
-  h2_flash_stress_config_t config;
+struct h2_pal_disk_e2e {
+  h2_pal_disk_e2e_config_t config;
   h2_pal_disk_partition_t partition;
   h2_atomic_uint_t values[VALUE_COUNT];
   unsigned initialized;
@@ -33,22 +33,31 @@ struct h2_flash_stress {
   uint8_t read_buffer[CHUNK];
   int ran;
   int dirty;
-  h2_flash_stress_result_t result;
+  h2_pal_disk_e2e_result_t result;
 };
+
+const char* h2_pal_disk_e2e_case_name(h2_pal_disk_e2e_case_t index) {
+  static const char* const names[] = {
+#define H2_PAL_DISK_CASE(symbol, id) id,
+#include "h2_pal_disk_cases.inc"
+#undef H2_PAL_DISK_CASE
+  };
+  return (unsigned)index < H2_PAL_DISK_E2E_CASE_COUNT ? names[index] : NULL;
+}
 
 static unsigned key(unsigned worker, unsigned field) {
   return WORKER_BASE + worker * WORKER_VALUES + field;
 }
 
-static unsigned load(const h2_flash_stress_t* app, unsigned field) {
+static unsigned load(const h2_pal_disk_e2e_t* app, unsigned field) {
   return h2_atomic_uint_load(&app->values[field], H2_ATOMIC_ACQUIRE);
 }
 
-static void store(h2_flash_stress_t* app, unsigned field, unsigned value) {
+static void store(h2_pal_disk_e2e_t* app, unsigned field, unsigned value) {
   h2_atomic_uint_store(&app->values[field], value, H2_ATOMIC_RELEASE);
 }
 
-static void snapshot(h2_flash_stress_t* app) {
+static void snapshot(h2_pal_disk_e2e_t* app) {
   app->result.workers_joined = 1;
   for (unsigned i = 0; i < 2; ++i) {
     app->result.rounds[i] = load(app, key(i, COUNT));
@@ -58,7 +67,7 @@ static void snapshot(h2_flash_stress_t* app) {
   }
 }
 
-static int emit(h2_flash_stress_t* app, const char* phase) {
+static int emit(h2_pal_disk_e2e_t* app, const char* phase) {
   snapshot(app);
   if (!app->result.output_rc)
     app->result.output_rc =
@@ -66,11 +75,54 @@ static int emit(h2_flash_stress_t* app, const char* phase) {
   return app->result.output_rc;
 }
 
+static int record(h2_pal_disk_e2e_t* app, h2_pal_disk_e2e_case_t index, int rc,
+                  int blocked) {
+  h2_pal_disk_e2e_status_t status =
+      blocked || rc == H2_PAL_ERR_UNSUPPORTED
+          ? H2_PAL_DISK_E2E_BLOCKED
+          : (rc ? H2_PAL_DISK_E2E_FAIL : H2_PAL_DISK_E2E_PASS);
+  app->result.cases[index].status = status;
+  app->result.cases[index].rc = rc;
+  app->result.current_case = index;
+  if (status == H2_PAL_DISK_E2E_PASS) ++app->result.passed;
+  if (status == H2_PAL_DISK_E2E_FAIL) ++app->result.failed;
+  if (status == H2_PAL_DISK_E2E_BLOCKED) ++app->result.blocked;
+  const int output = emit(app, "case");
+  return rc ? rc : output;
+}
+
+typedef struct partition_scan {
+  const h2_pal_disk_partition_t* expected;
+  unsigned found;
+} partition_scan_t;
+
+static int listed_partition(void* user, const h2_pal_disk_partition_t* value) {
+  partition_scan_t* scan = user;
+  if (!value) return H2_PAL_ERR_INVALID_STATE;
+  const h2_pal_disk_partition_t* expected = scan->expected;
+  if (value->id != expected->id) return 0;
+  if (++scan->found != 1 || value->flags != expected->flags ||
+      value->size != expected->size ||
+      value->erase_block_size != expected->erase_block_size ||
+      value->write_alignment != expected->write_alignment ||
+      strncmp(value->name, expected->name, sizeof(value->name)))
+    return H2_PAL_ERR_INVALID_STATE;
+  return 0;
+}
+
+static int check_partitions(h2_pal_disk_e2e_t* app) {
+  partition_scan_t scan = {.expected = &app->partition};
+  int rc =
+      h2_pal_disk_list_partitions(app->config.disk, listed_partition, &scan);
+  if (!rc && scan.found != 1) rc = H2_PAL_ERR_NOT_FOUND;
+  return rc;
+}
+
 static uint8_t pattern(uint32_t round, uint32_t offset) {
   return (uint8_t)((round * 73u) ^ (offset * 29u) ^ (offset >> 8u) ^ 0xa5u);
 }
 
-static int read_pattern(h2_flash_stress_t* app, uint64_t base, uint32_t round,
+static int read_pattern(h2_pal_disk_e2e_t* app, uint64_t base, uint32_t round,
                         uint8_t* buffer) {
   for (uint32_t offset = 0; offset < app->partition.erase_block_size;
        offset += CHUNK) {
@@ -79,12 +131,12 @@ static int read_pattern(h2_flash_stress_t* app, uint64_t base, uint32_t round,
     if (rc) return rc;
     for (unsigned i = 0; i < CHUNK; ++i)
       if (buffer[i] != pattern(round, offset + i))
-        return H2_FLASH_STRESS_ERR_DATA;
+        return H2_PAL_DISK_E2E_ERR_DATA;
   }
   return 0;
 }
 
-static int write_pattern(h2_flash_stress_t* app, uint64_t base,
+static int write_pattern(h2_pal_disk_e2e_t* app, uint64_t base,
                          uint32_t round) {
   int rc = h2_pal_disk_erase(app->config.disk, app->config.partition_id, base,
                              app->partition.erase_block_size);
@@ -100,7 +152,7 @@ static int write_pattern(h2_flash_stress_t* app, uint64_t base,
   return h2_pal_disk_flush(app->config.disk, app->config.partition_id);
 }
 
-static int worker_error(h2_flash_stress_t* app) {
+static int worker_error(h2_pal_disk_e2e_t* app) {
   for (unsigned i = 0; i < 2; ++i)
     if (load(app, key(i, DONE)) && app->workers[i].rc)
       return app->workers[i].rc;
@@ -109,7 +161,7 @@ static int worker_error(h2_flash_stress_t* app) {
 
 static void worker_run(void* context) {
   worker_t* worker = context;
-  h2_flash_stress_t* app = worker->app;
+  h2_pal_disk_e2e_t* app = worker->app;
   const unsigned i = worker->index;
   int rc = 0;
   if (app->config.current_core)
@@ -123,15 +175,15 @@ static void worker_run(void* context) {
   while (!rc && !load(app, STOP)) {
     if (!i) {
       if (count == app->config.rounds) break;
-      store(app, key(i, STAGE), H2_FLASH_STRESS_STAGE_WRITE);
+      store(app, key(i, STAGE), H2_PAL_DISK_E2E_STAGE_WRITE);
       rc = write_pattern(app, 0, count + 1);
       if (!rc) {
-        store(app, key(i, STAGE), H2_FLASH_STRESS_STAGE_VERIFY);
+        store(app, key(i, STAGE), H2_PAL_DISK_E2E_STAGE_VERIFY);
         rc = read_pattern(app, 0, count + 1, app->verify_buffer);
       }
     } else {
       if (load(app, key(0, DONE))) break;
-      store(app, key(i, STAGE), H2_FLASH_STRESS_STAGE_READ);
+      store(app, key(i, STAGE), H2_PAL_DISK_E2E_STAGE_READ);
       rc = read_pattern(app, app->partition.erase_block_size, 0,
                         app->read_buffer);
     }
@@ -142,11 +194,11 @@ static void worker_run(void* context) {
   }
   worker->rc = rc;
   if (rc) store(app, STOP, 1);
-  store(app, key(i, STAGE), H2_FLASH_STRESS_STAGE_DONE);
+  store(app, key(i, STAGE), H2_PAL_DISK_E2E_STAGE_DONE);
   store(app, key(i, DONE), 1);
 }
 
-static int wait_workers(h2_flash_stress_t* app, unsigned field,
+static int wait_workers(h2_pal_disk_e2e_t* app, unsigned field,
                         uint32_t timeout_ms) {
   uint64_t started = 0, last_report = 0;
   int rc = h2_pal_time_get_monotonic_ms(app->config.time, &started);
@@ -166,7 +218,7 @@ static int wait_workers(h2_flash_stress_t* app, unsigned field,
   return rc;
 }
 
-static int cleanup(h2_flash_stress_t* app) {
+static int cleanup(h2_pal_disk_e2e_t* app) {
   /* Never erase while a worker can still be executing a Disk callback. */
   for (unsigned i = 0; i < 2; ++i) {
     worker_t* worker = &app->workers[i];
@@ -190,20 +242,20 @@ static int cleanup(h2_flash_stress_t* app) {
                           app->verify_buffer, CHUNK);
     if (rc) return rc;
     for (unsigned i = 0; i < CHUNK; ++i)
-      if (app->verify_buffer[i] != 0xff) return H2_FLASH_STRESS_ERR_ERASE;
+      if (app->verify_buffer[i] != 0xff) return H2_PAL_DISK_E2E_ERR_ERASE;
   }
   app->dirty = 0;
   return 0;
 }
 
-static void free_app(h2_flash_stress_t* app) {
+static void free_app(h2_pal_disk_e2e_t* app) {
   for (unsigned i = 0; i < app->initialized; ++i)
     h2_atomic_uint_destroy(&app->values[i]);
   h2_pal_mem_free(app->config.mem, app);
 }
 
-int h2_flash_stress_create(const h2_flash_stress_config_t* config,
-                           h2_flash_stress_t** out) {
+int h2_pal_disk_e2e_create(const h2_pal_disk_e2e_config_t* config,
+                           h2_pal_disk_e2e_t** out) {
   if (!out) return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
   if (!config || !config->emit || !config->mem || !config->mem->vtable ||
@@ -227,14 +279,14 @@ int h2_flash_stress_create(const h2_flash_stress_config_t* config,
                          H2_PAL_DISK_PARTITION_FLAG_WRITABLE |
                          H2_PAL_DISK_PARTITION_FLAG_ERASABLE;
   if (partition.id != config->partition_id ||
-      strncmp(partition.name, "flash_stress", sizeof(partition.name)) ||
+      strncmp(partition.name, "pal_disk", sizeof(partition.name)) ||
       (partition.flags & flags) != flags ||
       (partition.flags & H2_PAL_DISK_PARTITION_FLAG_BOOTABLE) ||
       !partition.erase_block_size || partition.erase_block_size % CHUNK ||
       !partition.write_alignment || CHUNK % partition.write_alignment ||
       partition.size < 2 * (uint64_t)partition.erase_block_size)
-    return H2_FLASH_STRESS_ERR_REGION;
-  h2_flash_stress_t* app = h2_pal_mem_alloc(config->mem, sizeof(*app));
+    return H2_PAL_DISK_E2E_ERR_REGION;
+  h2_pal_disk_e2e_t* app = h2_pal_mem_alloc(config->mem, sizeof(*app));
   if (!app) return H2_PAL_ERR_NO_MEMORY;
   memset(app, 0, sizeof(*app));
   app->config = *config;
@@ -259,20 +311,22 @@ int h2_flash_stress_create(const h2_flash_stress_config_t* config,
   return 0;
 }
 
-static int run_test(h2_flash_stress_t* app) {
-  int rc = emit(app, "region");
-  if (rc) return rc;
+static int sequential(h2_pal_disk_e2e_t* app) {
   app->dirty = 1;
+  int rc = 0;
   for (unsigned i = 0; i < 2; ++i) {
     const uint64_t base = (uint64_t)i * app->partition.erase_block_size;
     rc = write_pattern(app, base, 0);
     if (!rc) rc = read_pattern(app, base, 0, app->verify_buffer);
     if (rc) return rc;
   }
-  rc = emit(app, "sequential");
-  if (rc) return rc;
-  static const char* const names[] = {"flash-stress/writer",
-                                      "flash-stress/reader"};
+  return rc;
+}
+
+static int concurrent(h2_pal_disk_e2e_t* app) {
+  int rc = 0;
+  static const char* const names[] = {"pal-disk/e2e/writer",
+                                      "pal-disk/e2e/reader"};
   for (unsigned i = 0; i < 2; ++i) {
     const h2_pal_task_options_t options = {.name = names[i],
                                            .min_stack_size = 4096};
@@ -285,7 +339,7 @@ static int run_test(h2_flash_stress_t* app) {
   if (app->config.current_core) {
     for (unsigned i = 0; i < 2; ++i)
       if (load(app, key(i, CORE)) != app->config.expected_core[i])
-        return H2_FLASH_STRESS_ERR_CORE;
+        return H2_PAL_DISK_E2E_ERR_CORE;
     app->result.cores_verified = 1;
   }
   rc = emit(app, "concurrent_begin");
@@ -296,21 +350,36 @@ static int run_test(h2_flash_stress_t* app) {
   rc = worker_error(app);
   if (!rc && (load(app, key(0, COUNT)) != app->config.rounds ||
               !load(app, key(1, COUNT))))
-    rc = H2_FLASH_STRESS_ERR_INCOMPLETE;
+    rc = H2_PAL_DISK_E2E_ERR_INCOMPLETE;
   return rc;
 }
 
-int h2_flash_stress_run(h2_flash_stress_t* app,
-                        h2_flash_stress_result_t* result) {
+int h2_pal_disk_e2e_run(h2_pal_disk_e2e_t* app,
+                        h2_pal_disk_e2e_result_t* result) {
   if (!result) return H2_PAL_ERR_INVALID_ARG;
   memset(result, 0, sizeof(*result));
   result->rc = H2_PAL_ERR_INVALID_STATE;
   if (!app || app->ran) return result->rc;
   app->ran = 1;
-  app->result.rc = run_test(app);
+  int rc =
+      record(app, H2_PAL_DISK_E2E_CASE_PARTITIONS, check_partitions(app), 0);
+  if (!rc) rc = emit(app, "region");
+  const int ran_sequential = rc == 0;
+  int sequential_rc = rc ? H2_PAL_ERR_UNAVAILABLE : sequential(app);
+  int next =
+      record(app, H2_PAL_DISK_E2E_CASE_SEQUENTIAL, sequential_rc, rc != 0);
+  if (!rc) rc = next;
+  if (!rc) rc = emit(app, "sequential");
+  int concurrent_rc = rc ? H2_PAL_ERR_UNAVAILABLE : concurrent(app);
+  next = record(app, H2_PAL_DISK_E2E_CASE_CONCURRENT, concurrent_rc, rc != 0);
+  if (!rc) rc = next;
+  app->result.rc = rc;
   store(app, STOP, 1);
   store(app, GO, 1);
   app->result.cleanup_rc = cleanup(app);
+  (void)record(app, H2_PAL_DISK_E2E_CASE_CLEANUP,
+               ran_sequential ? app->result.cleanup_rc : H2_PAL_ERR_UNAVAILABLE,
+               !ran_sequential);
   if (!app->result.rc) app->result.rc = app->result.cleanup_rc;
   (void)emit(app, "result");
   if (!app->result.rc) app->result.rc = app->result.output_rc;
@@ -319,7 +388,7 @@ int h2_flash_stress_run(h2_flash_stress_t* app,
   return result->rc;
 }
 
-int h2_flash_stress_destroy(h2_flash_stress_t** app) {
+int h2_pal_disk_e2e_destroy(h2_pal_disk_e2e_t** app) {
   if (!app) return H2_PAL_ERR_INVALID_ARG;
   if (!*app) return 0;
   store(*app, STOP, 1);
