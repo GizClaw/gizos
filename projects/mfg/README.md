@@ -10,12 +10,7 @@ bazel build --noannounce_rc --config=esp32s3 \
   //projects/mfg/apps/waveshare_esp32s3_touch_amoled_1_75c:package
 ```
 
-Use `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching
-architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and
-`waveshare_esp32s3_a7670e_4g`. The remaining entries are
-`waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and
-`jieli_ac791n_devkit`.
-JieLi's native package build requires a Linux host.
+Use `--config=esp32s31` for `esp_mosaico`, or `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and `waveshare_esp32s3_a7670e_4g`. The remaining entries are `waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and `jieli_ac791n_devkit`. JieLi's native package build requires a Linux host.
 
 Physical acceptance recorded on 2026-10-30:
 
@@ -26,10 +21,7 @@ Physical acceptance recorded on 2026-10-30:
 | SZP | 10/11 durable results; corrected camera preview accepted by the operator | The camera confirmation was not captured in device storage before unplugging. |
 | Waveshare P4 4.3 | 9/10 passed | Camera acquired live frames; image quality and direction still require operator confirmation. |
 
-These records describe the tested firmware versions. They do not claim that
-all boards were flashed with the current source, or that host tests qualify
-physical peripherals. DevKit, A7670E, BK7258 and JieLi have MFG entries but no
-complete physical acceptance in this session.
+These records describe the tested firmware versions. They do not claim that all boards were flashed with the current source, or that host tests qualify physical peripherals. DevKit, A7670E, BK7258, JieLi and ESP-Mosaico have MFG entries but no complete physical acceptance of their current GizOS images recorded here.
 
 Every profile with both microphone and speaker checks also requires a separate,
 operator-confirmed AEC check. This includes 1.75C, AMOLED, SZP, P4, BK7258,
@@ -94,21 +86,29 @@ centering the complete image with black borders. SZP's 320x240 source becomes
 120x90 with 20-pixel borders on either side. Preview placement leaves the
 instructions below the image on SZP's 320x240 display.
 
-Install the package with the normal H2Loader CLI `send --file <package>` and
-`reboot upgrade`. Loader self-update completes before the interactive session
-starts. UART and BLE Loader commands stay available during acceptance.
-Loader recovery/update remains usable with unfinished or failed checks.
-App installation/launch requires all required checks to be PASSED.
+Install the package with the normal H2Loader CLI `send --file <package>` and `reboot upgrade`. Loader self-update completes before the interactive session starts. Existing UART and BLE Loader commands stay available on the profiles that enable them; ESP-Mosaico uses the existing USB CDC and BLE management services. Loader recovery/update remains usable with unfinished or failed checks. App installation/launch requires all required checks to be PASSED.
+
+## ESP-Mosaico
+
+```sh
+bazel build --config=esp32s31 //projects/mfg/apps/esp_mosaico:package
+```
+
+The revision-4 profile has eleven checks: combined display/brightness, nine evenly spaced app-defined touch points, original button cycles, staged AEC, battery, IMU, magnets, held vibration, Wi-Fi, BLE and camera. The shared model and AEC thresholds/phase logic remain unchanged. Explicit failure stays selected and required checks must all pass. The configured completion screen adds a deliberate press/release retest button using the existing transactional `reset all`: results are cleared durably and the Loader's in-memory acceptance gate is refreshed before starting again.
+
+Mosaico's app entry connects the public factory network before starting Loader. Shared Wi-Fi only observes existing STA state. The entry also owns compensated-magnet validity/baselines and live indication; shared UI reads a borrowed observation callback. An app-local IMU adapter preserves real valid magnetic deltas while freezing invalid/recovery samples for the original shared min/max check. Its forwarded axes are diagnostic relative values in mGauss, not absolute field measurements. Provider errors and all-invalid readings remain errors. No SDK or BSP implementation is copied.
+
+Shared additions include immutable presentation config, app-defined touch points, optional acceleration/gyro response checks based on reported/required channels, held vibration and asynchronous camera ownership. Wi-Fi rendering consumes the snapshot from the existing status poll to show the actual SSID and IPv4 without changing readiness or connection policy. Held-vibration presentation shows the button without overlapping hints; timed-vibration defaults retain their instructions. Battery shows presence, voltage and percentage; no current/charging stage is added.
+
+BLE reuses actual Loader command round-trip proof. Use an existing physical peer package configured for the DUT UID. A BLE connection must obtain the current ticket and execute `mfg probe ble <ticket>` over BLE; discovery or serial confirmation is insufficient.
+
+AEC uses the original QUIET/ECHO TEST/QUIET AGAIN/NEAR/DOUBLE-TALK/replay flow, measured windows and thresholds. Mosaico provides 16 kHz mono processed audio with 512-sample frames and image-local `H2_MOSAICO_AUDIO_AEC=ON`. The app adds no separate preparation stage: it uses the shared phase warmup directly. The earlier private preparation and its dedicated test have been removed. Its app sets the `mfg/aec` track amplitude to 250/1000 for both probe and voice replay. Codec phase volume remains the shared 100% request. The Mosaico MFG entry sets microphone gain to 40% (12 dB on its existing 0..30 dB PAL scale) and checks the reported setting before creating MFG; ADC digital volume remains `0xC8`. A configuration error blocks audio checks while Loader management remains available. Observers see actual PCM. Board audio initialization, codec clock coefficients and the common provider remain unchanged from main; the earlier private DAC OSR experiment has been removed. Repeated double-talk remains the original behavior. These image-specific levels do not qualify other output levels or independent-source calibration. Temporary provider/app measurement instrumentation is excluded from the PR.
+
+Both MFG and ordinary Loader are alternative `role=h2loader` images using the existing S31 layout. The ordinary Loader and its NULL install-display callbacks are unchanged. Image-local VFS capacity supports camera/CDC/filesystems. The twelve-check pass recorded for head `2a3279c9` belongs to the earlier revision-2 flow and does not certify this revision-4 image. The instrumented revision-3 image and cleaned revision-4 commit `8bedf532` each completed all eleven checks. The latter still contained the private DAC OSR override. After removing it, a local comparison passed quiet stability and far echo reduction but eventually failed double-talk headroom. Removing the extra app preparation also passed both quiet measurements and far echo reduction (17 dB), but double-talk eventually failed headroom. These comparisons do not establish either addition as necessary. A subsequent private PAL gain change from 60% to 40% reached voice replay with 20 dB far echo reduction and an unclipped first double-talk window on its second attempt; its first attempt still failed background stability. The operator reported acceptable playback, while device-side confirmation and a complete exact-image rerun remain pending. This evidence does not establish repeated-run reliability or acoustic calibration. Repeat hardware acceptance, completion-page reset/persistence and managed update/recovery checks.
 
 ## Operator flow
 
-The board profile lists its checks in execution order. On a display board,
-wait for green PASS and short-press its first listed button to confirm the
-current check. On a board with Touch, opening the acceptance screen also opens
-the touch provider, including when a cold boot resumes a later or failed check.
-PASS, FAIL and RETRY accept touch input. FAIL records a failure;
-RETRY starts that check with fresh observations. The serial interface also
-works on boards without displays.
+The board profile lists its checks in execution order. With the default interaction policy, wait for green PASS on a display board and short-press its first listed button to confirm the current check. ESP-Mosaico instead selects touch navigation and uses AI/BOOT only as measured inputs. On a board with Touch, opening the acceptance screen also opens the touch provider, including when a cold boot resumes a later or failed check. PASS, FAIL and RETRY accept touch input. FAIL records a failure; RETRY starts that check with fresh observations. The serial interface also works on boards without displays.
 
 For the 1.75C:
 
@@ -378,12 +378,7 @@ h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg retry display 1234abcd
 h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg reset all 1234abcd
 ```
 
-Replace the step and eight-digit hexadecimal ticket with the current values
-from `mfg status`. Tickets change on each transition and each boot, so delayed
-confirmations cannot pass another check. `probe` is restricted to BLE; the
-other actions can use either Loader transport. `skip` records SKIPPED and
-continues, but a skipped required check still blocks App work. Use `retry`
-to revisit it.
+Replace the step and eight-digit hexadecimal ticket with the current values from `mfg status`. Tickets change on each transition and each boot, so delayed confirmations cannot pass another check. `probe` is restricted to a real BLE command round trip on profiles that require it; ESP-Mosaico uses the same BLE proof. Other actions use the enabled Loader transport(s). `skip` records SKIPPED and continues, but a skipped required check still blocks App work. Use `retry` to revisit it.
 
 `H2_MFG_STATUS` reports the selected check, readiness, error, ticket, total,
 completion and status digits. Digits are 0=UNTESTED, 1=PASSED, 2=SKIPPED,

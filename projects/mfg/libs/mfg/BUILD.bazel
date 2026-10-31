@@ -1,6 +1,8 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -30,6 +32,30 @@ cc_library(
     ],
 )
 
+h2_tasks(
+    name = "camera_tasks",
+    tasks = [
+        "$mfg/camera",
+    ],
+)
+
+lvgl_font(
+    name = "factory_font",
+    size = 22,
+    out = "h2_mfg_factory_font.c",
+    bpp = 4,
+    font = "//projects/showcase:assets/fonts/NotoSansSC-Bold.ttf",
+    font_name = "h2_mfg_factory_font",
+    lv_include = "lvgl.h",
+    # Common spatial labels may be supplied by a profile, outside UI prose.
+    ranges = [
+        "0x20-0x7E",
+        "0x5DE6",
+        "0x53F3",
+    ],
+    symbol_sources = ["src/h2_mfg_ui.c"],
+)
+
 cc_library(
     name = "mfg",
     srcs = [
@@ -37,11 +63,24 @@ cc_library(
         "src/h2_mfg_hardware.c",
         "src/h2_mfg_peripherals.c",
         "src/h2_mfg_ui.c",
+        ":factory_font",
     ],
     hdrs = ["src/h2_mfg_font.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    deps = [":session"],
+    deps = [
+        ":session",
+        "//libs/atomic",
+    ] + select({
+        "//tools/bazel/platforms:is_bk7258": ["//libs/lvgl:firmware"],
+        "//tools/bazel/platforms:is_esp32p4": ["//libs/lvgl:firmware"],
+        "//tools/bazel/platforms:is_esp32s3": ["//libs/lvgl:firmware"],
+        "//tools/bazel/platforms:is_esp32s31": ["//libs/lvgl:firmware"],
+        "//conditions:default": [
+            "//libs/lvgl:platform",
+            "//libs/lvgl:upstream",
+        ],
+    }),
 )
 
 cc_test(
@@ -56,6 +95,7 @@ cc_test(
     }),
     deps = [
         ":mfg",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )
@@ -72,6 +112,7 @@ cc_test(
     }),
     deps = [
         ":mfg",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )
@@ -88,6 +129,7 @@ cc_test(
     }),
     deps = [
         ":mfg",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )
@@ -104,6 +146,7 @@ cc_test(
     }),
     deps = [
         ":mfg",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )
@@ -120,6 +163,7 @@ cc_test(
     }),
     deps = [
         ":mfg",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )

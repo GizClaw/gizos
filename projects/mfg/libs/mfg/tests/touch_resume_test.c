@@ -97,5 +97,54 @@ int main(void) {
   assert(action != NULL && strcmp(action, "fail") == 0);
   assert(h2_mfg_hardware_enter(&m, 60) == 0 && opens == 1);
   assert(h2_mfg_hardware_close(&m) == 0 && closes == 1);
+  static const h2_mfg_touch_point_t points[] = {{20, 40}, {100, 40}, {60, 70}};
+  h2_mfg_profile_t configured = profile;
+  configured.touch_points = points;
+  configured.touch_point_count = 3;
+  m.profile = &configured;
+  m.model.current = 1;
+  m.model.summary.step_status[1] = H2_LOADER_MFG_STEP_UNTESTED;
+  m.model.error = 0;
+  assert(h2_mfg_hardware_enter(&m, 100) == 0);
+  for (unsigned i = 0; i < 3; ++i) {
+    events[0] = (h2_pal_touch_event_t){
+        .kind = H2_PAL_TOUCH_EVENT_DOWN, .x = points[i].x, .y = points[i].y};
+    events[1] = (h2_pal_touch_event_t){
+        .kind = H2_PAL_TOUCH_EVENT_UP, .x = points[i].x, .y = points[i].y};
+    event_at = 0;
+    action = NULL;
+    assert(h2_mfg_hardware_tick(&m, 120 + i, &action) == 0 && !action);
+  }
+  assert(m.touch_hits == 7u && m.touch_downs == 3 && m.touch_releases == 3 &&
+         m.model.ready);
+  assert(h2_mfg_hardware_close(&m) == 0);
+
+  /* A completed cold boot must open touch for an intentional full retest. */
+  const h2_mfg_ui_config_t ui = {
+      .width = 120, .height = 120, .retest = {20, 90, 80, 24}};
+  configured.ui = &ui;
+  m.profile = m.model.profile = &configured;
+  m.model.current = configured.total;
+  for (unsigned i = 0; i < configured.total; ++i)
+    m.model.summary.step_status[i] = H2_LOADER_MFG_STEP_PASSED;
+  unsigned prior_opens = opens;
+  assert(h2_mfg_hardware_enter(&m, 200) == 0);
+  assert(m.touch_open && opens == prior_opens + 1);
+  click(60);
+  action = NULL;
+  assert(h2_mfg_hardware_tick(&m, 220, &action) == 0);
+  assert(action && strcmp(action, "reset") == 0);
+  /* Release-only and a press outside the button cannot reset acceptance. */
+  click(60);
+  event_at = 1;
+  action = NULL;
+  assert(h2_mfg_hardware_tick(&m, 240, &action) == 0 && !action);
+  click(5);
+  events[1].x = 60;
+  assert(h2_mfg_hardware_tick(&m, 260, &action) == 0 && !action);
+  m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_SKIPPED;
+  click(60);
+  assert(h2_mfg_hardware_tick(&m, 280, &action) == 0 && !action);
+  assert(h2_mfg_hardware_close(&m) == 0);
   return 0;
 }

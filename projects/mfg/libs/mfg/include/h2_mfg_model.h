@@ -36,6 +36,41 @@ typedef struct h2_mfg_step {
 #define H2_MFG_BUTTON_MAX 8u
 #define H2_MFG_MAGNETOMETER_MAX 2u
 
+/** Declarative presentation geometry in display pixels; no board or SDK types.
+ * The profile borrows this immutable config for its complete session lifetime.
+ * Drawing and touch use these same rectangles. */
+typedef struct h2_mfg_touch_point {
+  int x, y;
+} h2_mfg_touch_point_t;
+
+typedef struct h2_mfg_ui_rect {
+  int x, y, width, height;
+} h2_mfg_ui_rect_t;
+
+typedef struct h2_mfg_ui_config {
+  uint32_t width, height;
+  const char* title;
+  uint16_t background, accent, text, passed, failed, muted, disabled;
+  h2_mfg_ui_rect_t title_area, heading, progress;
+  h2_mfg_ui_rect_t controls[2], retest;
+  h2_mfg_ui_rect_t display_pattern, display_note;
+  h2_mfg_ui_rect_t brightness_levels, brightness_control, brightness_note;
+  h2_mfg_ui_rect_t touch_targets[9];
+  uint32_t touch_tolerance;
+  h2_mfg_ui_rect_t rows[8];
+  h2_mfg_ui_rect_t magnet_boxes[H2_MFG_MAGNETOMETER_MAX];
+  h2_mfg_ui_rect_t magnet_labels[H2_MFG_MAGNETOMETER_MAX];
+  h2_mfg_ui_rect_t magnet_errors[H2_MFG_MAGNETOMETER_MAX];
+  /** Visual slot -> profile magnetometer index, with profile-owned labels. */
+  uint32_t magnet_order[H2_MFG_MAGNETOMETER_MAX];
+  const char* magnet_names[H2_MFG_MAGNETOMETER_MAX];
+  h2_mfg_ui_rect_t vibration, preview;
+  /** App-owned, read-only observation snapshot; invoked on the MFG owner task.
+   * Does not acquire hardware or decide shared check readiness. */
+  int (*read_magnet)(void* user, uint32_t index, int* present, int* error);
+  void* user;
+} h2_mfg_ui_config_t;
+
 typedef struct h2_mfg_profile {
   const char* board;
   uint32_t revision;
@@ -64,6 +99,21 @@ typedef struct h2_mfg_profile {
   /* Signed 1-based native accelerometer axes: X=1, Y=2, Z=3. */
   int screen_x_axis;
   int screen_y_axis;
+  /** Optional app-owned test targets; NULL selects the original five points.
+   * Points and UI config are immutable and borrowed for the session lifetime.
+   */
+  const h2_mfg_touch_point_t* touch_points;
+  uint32_t touch_point_count;
+  const h2_mfg_ui_config_t* ui;
+  int32_t accel_delta_mg;
+  int32_t gyro_delta_mdps;
+  /** Required channels; zero uses channels advertised by each reading. */
+  uint32_t imu_required_flags;
+  int hold_vibration;
+  uint32_t vibration_percent;
+  int camera_async;
+  uint32_t preview_width;
+  uint32_t preview_height;
 } h2_mfg_profile_t;
 
 typedef int (*h2_mfg_save_fn)(void* user,

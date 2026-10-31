@@ -175,6 +175,15 @@ const appItems = [
             ],
           },
           {
+            text: "ESP-Mosaico",
+            collapsed: true,
+            items: [
+              { text: "总览", link: "/apps/h2loader/boards/esp_mosaico/" },
+              { text: "H2Loader", link: "/apps/h2loader/boards/esp_mosaico/h2loader" },
+              { text: "MFG", link: "/apps/h2loader/boards/esp_mosaico/mfg" },
+            ],
+          },
+          {
             text: "JieLi AC791N DevKit",
             collapsed: true,
             items: [

@@ -1,0 +1,2 @@
+# Loader filesystems, Type-C CDC and camera coexist in this MFG image.
+CONFIG_VFS_MAX_COUNT=16

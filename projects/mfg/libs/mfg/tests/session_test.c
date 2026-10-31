@@ -20,6 +20,18 @@
 static int close_result;
 static unsigned closes;
 static unsigned enters;
+static int reset_from_summary;
+static int polling_fault;
+static unsigned fault_ticks, failure_saves;
+static h2_mfg_save_fn original_save;
+static void* original_save_user;
+
+static int count_failure_saves(void* user,
+                               const h2_loader_mfg_summary_t* summary) {
+  assert(user == original_save_user);
+  ++failure_saves;
+  return original_save(user, summary);
+}
 
 int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
   (void)now;
@@ -29,7 +41,14 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
 }
 int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
   (void)now;
-  (void)action;
+  if (reset_from_summary && h2_mfg_model_complete(&m->model)) {
+    reset_from_summary = 0;
+    *action = "reset";
+  }
+  if (polling_fault) {
+    ++fault_ticks;
+    return H2_PAL_ERR_IO;
+  }
   if (m->model.current == 1) m->model.ready = m->ble_probed;
   return 0;
 }
@@ -266,7 +285,77 @@ static void completed_auto_without_app_keeps_summary_ui(void) {
   teardown(&r);
 }
 
+static void summary_retest_revokes_durable_acceptance(void) {
+  test_run_t r;
+  setup(&r);
+  assert(h2_loader_mfg_ensure_acceptance_revision(r.runtime.pref, 2, 1) == 0);
+  h2_loader_mfg_summary_t summary = {
+      .total = 2,
+      .step_status = {H2_LOADER_MFG_STEP_PASSED, H2_LOADER_MFG_STEP_PASSED}};
+  assert(h2_loader_mfg_write(r.runtime.pref, &summary) == 0);
+  reset_from_summary = 1;
+  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
+  await_step(&r, 0);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
+  int present = 0;
+  assert(h2_loader_mfg_read(r.runtime.pref, r.runtime.mem, &summary,
+                            &present) == 0);
+  assert(present && summary.step_status[0] == H2_LOADER_MFG_STEP_UNTESTED &&
+         summary.step_status[1] == H2_LOADER_MFG_STEP_UNTESTED);
+  assert(memcmp(&r.loader.status.mfg, &summary, sizeof(summary)) == 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
+  assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
+  teardown(&r);
+}
+
+static void consecutive_polling_failures_preserve_ticket_and_save_count(void) {
+  test_run_t r;
+  setup(&r);
+  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
+  await_step(&r, 0);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
+  original_save = r.mfg->model.save;
+  original_save_user = r.mfg->model.save_user;
+  r.mfg->model.save = count_failure_saves;
+  fault_ticks = failure_saves = 0;
+  polling_fault = 1;
+  uint32_t before = r.mfg->model.ticket;
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
+  unsigned observed = 0;
+  for (unsigned i = 0; i < 200 && observed < 5; ++i) {
+    assert(h2_pal_time_sleep_ms(r.runtime.time, 10) == 0);
+    assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
+    observed = fault_ticks;
+    if (observed) {
+      assert(r.mfg->model.ticket == before + 1 && failure_saves == 1);
+      assert(r.mfg->model.summary.step_status[0] == H2_LOADER_MFG_STEP_FAILED);
+    }
+    assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
+  }
+  assert(observed >= 5);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
+  char ticket[9], output[768];
+  (void)snprintf(ticket, sizeof(ticket), "%08" PRIx32, before + 1);
+  const char* argv[] = {"retry", "display", ticket};
+  assert(h2_mfg_command(r.mfg, H2_LOADER_COMMAND_TRANSPORT_SERIAL, 3, argv,
+                        output, sizeof(output)) == 0);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
+  polling_fault = 0;
+  r.mfg->model.save = original_save;
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
+  await_step(&r, 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
+  assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
+  teardown(&r);
+}
+
 int main(void) {
+  consecutive_polling_failures_preserve_ticket_and_save_count();
+  summary_retest_revokes_durable_acceptance();
   completed_auto_without_app_keeps_summary_ui();
   loader_candidate_bypasses_interactive_gate();
   stop_with_operation_lock_and_retry_failed_join();

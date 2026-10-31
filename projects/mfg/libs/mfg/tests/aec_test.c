@@ -278,6 +278,58 @@ static void operator_speech_and_replay_required(void) {
   teardown(&f);
 }
 
+static int draw_failure(void* user, const h2_display_rect_t* area,
+                        const void* pixels, size_t stride,
+                        h2_display_pixel_format_t format) {
+  (void)user;
+  assert(area->width == 480 && area->height == 480 && pixels != NULL);
+  assert(stride == 960 && format == H2_DISPLAY_PIXEL_RGB565);
+  return 0;
+}
+static int present_failure(void* user) {
+  (void)user;
+  return 0;
+}
+static void generated_echo_failure_shows_reason(fake_t* f) {
+  const char* reason = strstr(f->mfg.detail, "echo reduction below 10dB");
+  assert(reason != NULL && reason - f->mfg.detail > 50);
+  char expected[64];
+  strcpy(expected, reason);
+  const h2_mfg_ui_config_t ui = {.width = 480,
+                                 .height = 480,
+                                 .failed = 0xf800,
+                                 .text = 0xffff,
+                                 .rows = {{48, 144, 384, 30},
+                                          {48, 185, 384, 30},
+                                          {48, 225, 384, 30},
+                                          {48, 265, 384, 30}}};
+  h2_mfg_profile_t configured = profile;
+  configured.ui = &ui;
+  const h2_pal_display_vtable_t vt = {.draw_bitmap = draw_failure,
+                                      .present = present_failure};
+  const h2_pal_display_api_t display = {.vtable = &vt};
+  f->rt.display = &display;
+  f->mfg.profile = &configured;
+  f->mfg.model.error = H2_PAL_ERR_IO;
+  f->mfg.display_open = 1;
+  f->mfg.display.width = f->mfg.display.height = 480;
+  size_t bytes = 480u * 480u * sizeof(uint16_t);
+  f->mfg.frame = h2_pal_mem_alloc(f->rt.mem, bytes);
+  uint16_t* saved = h2_pal_mem_alloc(f->rt.mem, bytes);
+  assert(f->mfg.frame && saved);
+  assert(h2_mfg_ui_draw(&f->mfg, 0) == 0);
+  memcpy(saved, f->mfg.frame, bytes);
+  strcpy(f->mfg.detail, expected);
+  assert(h2_mfg_ui_draw(&f->mfg, 0) == 0);
+  assert(memcmp(saved, f->mfg.frame, bytes) == 0);
+  h2_pal_mem_free(f->rt.mem, saved);
+  h2_pal_mem_free(f->rt.mem, f->mfg.frame);
+  f->mfg.frame = NULL;
+  f->mfg.display_open = 0;
+  f->mfg.profile = &profile;
+  f->rt.display = NULL;
+}
+
 static void reject_missing_reference_echo_clipping_and_dac(void) {
   for (unsigned which = 0; which < 4; ++which) {
     fake_t f;
@@ -289,6 +341,7 @@ static void reject_missing_reference_echo_clipping_and_dac(void) {
     int rc = 0;
     while (rc == 0 && f.now < 25000) rc = tick(&f);
     assert(rc != 0 && !f.mfg.model.ready);
+    if (which == 0) generated_echo_failure_shows_reason(&f);
     teardown(&f);
   }
 }

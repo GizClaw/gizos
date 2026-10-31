@@ -3,6 +3,7 @@
 #include "h2_mfg.h"
 
 typedef struct h2_mfg_aec h2_mfg_aec_t;
+typedef struct h2_mfg_camera h2_mfg_camera_t;
 
 struct h2_mfg {
   h2_runtime_t* rt;
@@ -64,11 +65,40 @@ struct h2_mfg {
   int motor_started;
   uint16_t motor_duty;
   unsigned motor_pulses;
+  h2_mfg_camera_t* camera_worker;
   int camera_started;
   int camera_borrowed;
   h2_pal_camera_frame_t camera_frame;
   uint16_t* camera_preview;
   uint64_t camera_last_ms;
+  unsigned preview_width, preview_height;
+  unsigned display_pattern, display_patterns_seen, touch_target;
+  unsigned button_index, battery_phase;
+  int skip_armed;
+  uint32_t brightness_percent;
+  int touch_start_x, touch_start_y, touch_blocked;
+  int vibration_requested, vibration_observed;
+  int32_t imu_baseline[6];
+  int imu_baseline_valid, accel_responded, gyro_responded;
+  int32_t mag_baseline[H2_MFG_MAGNETOMETER_MAX][3];
+  int mag_baseline_valid[H2_MFG_MAGNETOMETER_MAX][3];
+  int magnet_present[H2_MFG_MAGNETOMETER_MAX];
+  int magnet_responded[H2_MFG_MAGNETOMETER_MAX];
+  int magnet_error[H2_MFG_MAGNETOMETER_MAX];
+  h2_pal_mutex_t* scan_mutex;
+  int scan_started, scan_done, scan_error;
+  unsigned scan_count;
+  struct {
+    h2_pal_ble_addr_t address;
+    int rssi;
+    char name[32];
+  } scan_devices[32];
+  h2_pal_wifi_sta_status_t wifi_status;
+  const h2_pal_sync_api_t* wifi_sync;
+  h2_pal_mutex_t* wifi_mutex;
+  h2_pal_wifi_sta_config_t wifi_previous;
+  int wifi_config_owned, wifi_lock_owned, wifi_previous_valid;
+  uint64_t wifi_started_ms;
 };
 
 enum { H2_MFG_PREVIEW_WIDTH = 160, H2_MFG_PREVIEW_HEIGHT = 90 };
