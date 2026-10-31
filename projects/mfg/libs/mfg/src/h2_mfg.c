@@ -294,7 +294,9 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
       } else if (check_rc != 0) {
         int cleanup = h2_mfg_hardware_leave(m);
         const char* step = m->profile->steps[m->model.current].name;
-        rc = h2_mfg_model_action(&m->model, "fail", step, m->model.ticket);
+        if (m->model.summary.step_status[m->model.current] !=
+            H2_LOADER_MFG_STEP_FAILED)
+          rc = h2_mfg_model_action(&m->model, "fail", step, m->model.ticket);
         m->hardware_ticket = m->model.ticket;
         m->model.error = check_rc;
         if (rc == 0) rc = cleanup;

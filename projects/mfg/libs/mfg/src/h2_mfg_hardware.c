@@ -509,7 +509,10 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
     /* Stop immediately, even when the surrounding session has already failed.
      * Failed stops retain ownership for the normal leave/cleanup retry. */
     int stop_rc = h2_mfg_peripheral_leave(m);
-    return stop_rc != 0 ? stop_rc : touch_rc;
+    if (stop_rc != 0) return stop_rc;
+    /* The first fault records failure. Later polls must not invalidate the
+     * ticket needed to retry or reset the already-failed, stopped check. */
+    return failed ? 0 : touch_rc;
   }
   if (touch_rc != 0 && step->check == H2_MFG_TOUCH) rc = touch_rc;
   if (failed) {

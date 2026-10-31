@@ -355,6 +355,14 @@ static void held_vibration_stops_on_touch_failure(void) {
     } else {
       assert(!f.duty && !f.m.motor_started);
     }
+    f.m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_FAILED;
+    f.m.model.error = H2_PAL_ERR_IO;
+    f.touch_error = H2_PAL_ERR_IO;
+    for (unsigned i = 0; i < 5; ++i) {
+      const char* action = NULL;
+      assert(h2_mfg_hardware_tick(&f.m, 60 + i * 20, &action) == 0);
+      assert(!action && !f.duty && !f.m.motor_started && !f.m.model.ready);
+    }
     f.m.touch_open = 0;
     assert(h2_mfg_hardware_leave(&f.m) == 0 && !f.duty);
   }
