@@ -20,6 +20,50 @@ def function(source, name):
     return source[match.start():end]
 
 
+def reversed_lock_order(source):
+    """Reintroduce the old cycle without depending on shallow Git history."""
+    fixed_entry = """\tuint32_t flags = rtos_disable_int();
+\tuint32_t cpu_id = bk_flash_shared_get_cpu_id();
+
+\tif (bk_flash_shared_acquire(cpu_id) != BK_OK) {
+\t\trtos_enable_int(flags);
+\t\tBK_ASSERT(0);
+\t}
+#ifdef CONFIG_FREERTOS_SMP
+\tspin_lock(&s_flash_aspl_spin_lock);
+#endif
+
+\treturn flags;"""
+    old_entry = """\tuint32_t flags = rtos_disable_int();
+#ifdef CONFIG_FREERTOS_SMP
+\tspin_lock(&s_flash_aspl_spin_lock);
+#endif
+\tuint32_t cpu_id = bk_flash_shared_get_cpu_id();
+
+\tif (bk_flash_shared_acquire(cpu_id) != BK_OK) {
+#ifdef CONFIG_FREERTOS_SMP
+\t\tspin_unlock(&s_flash_aspl_spin_lock);
+#endif
+\t\trtos_enable_int(flags);
+\t\tBK_ASSERT(0);
+\t}
+
+\treturn flags;"""
+    fixed_exit = """#ifdef CONFIG_FREERTOS_SMP
+\tspin_unlock(&s_flash_aspl_spin_lock);
+#endif
+\tbk_flash_shared_release(cpu_id);
+\trtos_enable_int(flags);"""
+    old_exit = """\tbk_flash_shared_release(cpu_id);
+#ifdef CONFIG_FREERTOS_SMP
+\tspin_unlock(&s_flash_aspl_spin_lock);
+#endif
+\trtos_enable_int(flags);"""
+    assert source.count(fixed_entry) == 1, "Revalidate SDK Flash critical entry"
+    assert source.count(fixed_exit) == 1, "Revalidate SDK Flash critical exit"
+    return source.replace(fixed_entry, old_entry).replace(fixed_exit, old_exit)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sdk", type=Path)
@@ -35,45 +79,19 @@ def main():
     assert actual == expected, (actual, expected)
     assert not subprocess.check_output(
         ["git", "-C", str(sdk), "status", "--porcelain", "--untracked-files=no"], text=True)
-    original = sdk / "ap/middleware/driver/flash/flash_shared_lock.c"
-    before = hashlib.sha256(original.read_bytes()).hexdigest()
-    driver = (original.parent / "flash_driver.c").read_text()
+    shared_path = sdk / "ap/middleware/driver/flash/flash_shared_lock.c"
+    before = hashlib.sha256(shared_path.read_bytes()).hexdigest()
+    fixed_source = shared_path.read_text()
+    driver = (shared_path.parent / "flash_driver.c").read_text()
     driver_lock = function(driver, "flash_lock") + "\n" + function(driver, "flash_unlock")
     probe = (component / "tests/flash_lock_order_probe.c").read_text()
-    cc, cmake = shutil.which("cc"), shutil.which("cmake")
-    assert cc and cmake
+    cc = shutil.which("cc")
+    assert cc
     with tempfile.TemporaryDirectory(prefix="h2-flash-lock-order-") as temporary:
         work = Path(temporary)
-        (work / "CMakeLists.txt").write_text('''cmake_minimum_required(VERSION 3.16)
-project(flash_lock C)
-set(CONFIG_FLASH ON)
-set(CONFIG_FREERTOS_SMP ON)
-add_library(driver STATIC "${BK_ARMINO_PATH}/middleware/driver/flash/flash_shared_lock.c")
-function(armino_component_get_property output component property)
-  set(${output} driver PARENT_SCOPE)
-endfunction()
-include("${H2_FLASH_COMPONENT}")
-file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
-  CONTENT "$<JOIN:$<TARGET_PROPERTY:driver,SOURCES>,\\n>")
-''')
-        for enabled in ("OFF", "ON"):
-            subprocess.run([
-                cmake, "-S", str(work), "-B", str(work / enabled.lower()),
-                "-DBK_ARMINO_PATH=" + str(sdk / "ap"),
-                "-DCONFIG_FLASH_CP_AP_DIRECT_ACCESS=" + enabled,
-                "-DH2_FLASH_COMPONENT=" + str(component / "src/h2_bk_flash_lock_component.cmake"),
-            ], check=True, capture_output=True, text=True)
-        assert Path((work / "off/selected.txt").read_text().strip()) == original
-        corrected = Path((work / "on/selected.txt").read_text().strip())
-        assert corrected != original
-        repeated = subprocess.run([
-            cmake, "-DH2_BK_FLASH_LOCK_INPUT=" + str(corrected),
-            "-DH2_BK_FLASH_LOCK_OUTPUT=" + str(work / "repeated.c"),
-            "-P", str(component / "src/h2_bk_flash_lock_order.cmake"),
-        ], capture_output=True, text=True)
-        assert repeated.returncode != 0 and "source changed" in repeated.stderr
-        for name, path in [("original", original), ("corrected", corrected)]:
-            shared = re.sub(r"^#include[^\n]*\n", "", path.read_text(), flags=re.M)
+        for name, source in [("negative", reversed_lock_order(fixed_source)),
+                             ("sdk", fixed_source)]:
+            shared = re.sub(r"^#include[^\n]*\n", "", source, flags=re.M)
             shared = shared.replace('__asm volatile("dmb sy" ::: "memory");',
                                     "atomic_thread_fence(memory_order_seq_cst);")
             # MMIO fields have independent core writers. Use atomic host
@@ -84,20 +102,20 @@ file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/selected.txt"
                             .replace("/* SDK_DRIVER_LOCK */", driver_lock))
             command = [cc, "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
                        "-pthread", str(unit), "-o", str(binary)]
-            if args.sanitize and name == "corrected":
+            if args.sanitize and name == "sdk":
                 command[1:1] = ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
             subprocess.run(command, check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
             run = subprocess.run([str(binary), "overlap"], capture_output=True, text=True, timeout=10)
-            if name == "original":
+            if name == "negative":
                 assert run.returncode == 86 and "LOCK_ORDER_CYCLE" in run.stderr, run
             else:
                 assert run.returncode == 0, run.stdout + run.stderr
                 print(run.stdout, end="")
-    assert hashlib.sha256(original.read_bytes()).hexdigest() == before
+    assert hashlib.sha256(shared_path.read_bytes()).hexdigest() == before
     print(json.dumps({"result": "PASS", "sdk_head": actual,
-                      "original_negative_control": "lock cycle",
-                      "corrected": "all workers joined and locks released",
+                      "reversed_order_negative_control": "lock cycle",
+                      "sdk": "all workers joined and locks released",
                       "sanitize": args.sanitize}, sort_keys=True))
 
 

@@ -821,7 +821,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: GizClaw/bk_avdk_smp
-          ref: d789d71d89d11584c3350ca67600ff9455a7f57a
+          ref: 6bbf62746a5e904a508dee056cac6b17675637f5
           path: .bk-sdk
           fetch-depth: 1
           persist-credentials: false
