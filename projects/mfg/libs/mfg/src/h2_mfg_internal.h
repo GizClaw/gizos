@@ -96,6 +96,9 @@ struct h2_mfg {
   h2_pal_wifi_sta_status_t wifi_status;
   const h2_pal_sync_api_t* wifi_sync;
   h2_pal_mutex_t* wifi_mutex;
+  h2_pal_wifi_sta_config_t wifi_previous;
+  int wifi_config_owned, wifi_lock_owned, wifi_previous_valid;
+  uint64_t wifi_started_ms;
 };
 
 enum { H2_MFG_PREVIEW_WIDTH = 160, H2_MFG_PREVIEW_HEIGHT = 90 };

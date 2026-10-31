@@ -8,6 +8,52 @@ static uint32_t first_pending(const h2_loader_mfg_summary_t* summary) {
   return summary->total;
 }
 
+static int ui_rect_valid(const h2_mfg_ui_config_t* ui,
+                         const h2_mfg_ui_rect_t* r) {
+  return r->x >= 0 && r->y >= 0 && r->width > 0 && r->height > 0 &&
+         (uint32_t)r->x < ui->width && (uint32_t)r->y < ui->height &&
+         (uint32_t)r->width <= ui->width - (uint32_t)r->x &&
+         (uint32_t)r->height <= ui->height - (uint32_t)r->y;
+}
+
+static int ui_valid(const h2_mfg_profile_t* profile) {
+  const h2_mfg_ui_config_t* ui = profile->ui;
+  if (ui == NULL) return !profile->sequential_touch_grid;
+  if (ui->width < 120 || ui->height < 120 || ui->width > 1024 ||
+      ui->height > 1024 || ui->title == NULL || ui->touch_tolerance > 1024)
+    return 0;
+  const h2_mfg_ui_rect_t* rects[] = {&ui->title_area,
+                                     &ui->heading,
+                                     &ui->progress,
+                                     &ui->controls[0],
+                                     &ui->controls[1],
+                                     &ui->retest,
+                                     &ui->display_pattern,
+                                     &ui->display_note,
+                                     &ui->brightness_levels,
+                                     &ui->brightness_control,
+                                     &ui->brightness_note,
+                                     &ui->vibration,
+                                     &ui->preview};
+  for (unsigned i = 0; i < sizeof(rects) / sizeof(rects[0]); ++i)
+    if (!ui_rect_valid(ui, rects[i])) return 0;
+  for (unsigned i = 0; i < 8; ++i)
+    if (!ui_rect_valid(ui, &ui->rows[i])) return 0;
+  if (profile->sequential_touch_grid)
+    for (unsigned i = 0; i < 9; ++i)
+      if (!ui_rect_valid(ui, &ui->touch_targets[i])) return 0;
+  for (unsigned i = 0; i < profile->magnetometer_count; ++i) {
+    if (ui->magnet_order[i] >= profile->magnetometer_count ||
+        !ui->magnet_names[i] || !ui_rect_valid(ui, &ui->magnet_boxes[i]) ||
+        !ui_rect_valid(ui, &ui->magnet_labels[i]) ||
+        !ui_rect_valid(ui, &ui->magnet_errors[i]))
+      return 0;
+    for (unsigned j = 0; j < i; ++j)
+      if (ui->magnet_order[j] == ui->magnet_order[i]) return 0;
+  }
+  return 1;
+}
+
 int h2_mfg_model_init(h2_mfg_model_t* m, const h2_mfg_profile_t* profile,
                       const h2_loader_mfg_summary_t* summary, uint32_t ticket,
                       h2_mfg_save_fn save, void* save_user) {
@@ -26,8 +72,14 @@ int h2_mfg_model_init(h2_mfg_model_t* m, const h2_mfg_profile_t* profile,
        (profile->vibration_percent == 0 || profile->vibration_percent > 100)) ||
       (profile->ble_scan_only && profile->scan_window_ms == 0) ||
       (profile->preview_width == 0) != (profile->preview_height == 0) ||
-      profile->preview_width > 384 || profile->preview_height > 216 ||
+      profile->preview_width > 1024 || profile->preview_height > 1024 ||
       profile->accel_delta_mg < 0 || profile->gyro_delta_mdps < 0)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (!ui_valid(profile) ||
+      (profile->wifi_test_config != NULL &&
+       (h2_pal_wifi_settings_validate_sta_config(profile->wifi_test_config) !=
+            0 ||
+        profile->wifi_timeout_ms == 0 || profile->wifi_timeout_ms > 60000)))
     return H2_PAL_ERR_INVALID_ARG;
   int microphone = 0, speaker = 0, aec = 0;
   for (uint32_t i = 0; i < H2_LOADER_MFG_STEP_MAX; ++i) {
@@ -106,7 +158,7 @@ int h2_mfg_model_action(h2_mfg_model_t* m, const char* action, const char* step,
         return H2_PAL_ERR_INVALID_STATE;
       next.step_status[selected] = H2_LOADER_MFG_STEP_PASSED;
       selected = first_pending(&next);
-      if (m->profile->factory_ui) {
+      if (m->profile->sequential_traversal) {
         selected = m->current + 1u;
         while (selected < next.total &&
                next.step_status[selected] == H2_LOADER_MFG_STEP_PASSED)
@@ -114,6 +166,12 @@ int h2_mfg_model_action(h2_mfg_model_t* m, const char* action, const char* step,
       }
     } else if (strcmp(action, "fail") == 0) {
       next.step_status[selected] = H2_LOADER_MFG_STEP_FAILED;
+      if (m->profile->sequential_traversal) {
+        ++selected;
+        while (selected < next.total &&
+               next.step_status[selected] == H2_LOADER_MFG_STEP_PASSED)
+          ++selected;
+      }
     } else if (strcmp(action, "skip") == 0) {
       next.step_status[selected] = H2_LOADER_MFG_STEP_SKIPPED;
       /* Review skipped/failed checks using retry; skipping never opens gate. */

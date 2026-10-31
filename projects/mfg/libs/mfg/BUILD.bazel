@@ -48,7 +48,12 @@ lvgl_font(
     font = "//projects/showcase:assets/fonts/NotoSansSC-Bold.ttf",
     font_name = "h2_mfg_factory_font",
     lv_include = "lvgl.h",
-    ranges = ["0x20-0x7E"],
+    # Common spatial labels may be supplied by a profile, outside UI prose.
+    ranges = [
+        "0x20-0x7E",
+        "0x5DE6",
+        "0x53F3",
+    ],
     symbol_sources = ["src/h2_mfg_ui.c"],
 )
 

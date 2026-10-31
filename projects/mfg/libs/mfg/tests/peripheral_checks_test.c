@@ -401,7 +401,7 @@ static void sized_camera_retries_cleanly(void) {
 static void factory_camera_worker_keeps_control_available(void) {
   fake_t f;
   setup(&f, H2_MFG_CAMERA);
-  f.profile.factory_ui = 1;
+  f.profile.camera_async = 1;
   f.profile.preview_width = 384;
   f.profile.preview_height = 216;
   f.rt.sync = h2_desktop_platform_sync_api();

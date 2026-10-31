@@ -22,6 +22,7 @@ static unsigned closes;
 static unsigned enters;
 static int request_reset;
 static int leave_result;
+static int tick_result;
 
 int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
   (void)now;
@@ -36,7 +37,7 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
     *action = "reset";
   }
   if (m->model.current == 1) m->model.ready = m->ble_probed;
-  return 0;
+  return tick_result;
 }
 int h2_mfg_hardware_leave(h2_mfg_t* m) {
   (void)m;
@@ -336,7 +337,7 @@ static void factory_cleanup_failure_cannot_commit_acceptance(void) {
   test_run_t r;
   setup(&r);
   h2_mfg_profile_t factory = profile;
-  factory.factory_ui = 1;
+  factory.cleanup_before_pass = 1;
   r.mfg->profile = &factory;
   assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
   await_step(&r, 0);
@@ -360,7 +361,33 @@ static void factory_cleanup_failure_cannot_commit_acceptance(void) {
   teardown(&r);
 }
 
+static void automatic_error_waits_but_explicit_fail_advances(void) {
+  test_run_t r;
+  setup(&r);
+  h2_mfg_profile_t configured = profile;
+  configured.sequential_traversal = 1;
+  r.mfg->profile = &configured;
+  tick_result = H2_PAL_ERR_IO;
+  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
+  await_step(&r, 0);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
+  assert(r.mfg->model.current == 0);
+  assert(r.loader.status.mfg.step_status[0] == H2_LOADER_MFG_STEP_FAILED);
+  tick_result = 0;
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
+  assert(control(&r, "fail", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) ==
+         0);
+  await_step(&r, 1);
+  assert(r.loader.status.mfg.step_status[0] == H2_LOADER_MFG_STEP_FAILED);
+  assert(!h2_mfg_model_complete(&r.mfg->model));
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
+  assert(pthread_join(r.thread, NULL) == 0);
+  teardown(&r);
+}
+
 int main(void) {
+  automatic_error_waits_but_explicit_fail_advances();
   factory_cleanup_failure_cannot_commit_acceptance();
   accepted_auto_app_returns_after_live_completion();
   terminal_touch_reset_revokes_gate_before_reentry();

@@ -147,8 +147,168 @@ int h2_mfg_audio_stop(h2_mfg_t* m) {
   return H2_PAL_OK;
 }
 
+static uint32_t wifi_timeout(const h2_mfg_t* m) {
+  return m->profile->wifi_timeout_ms ? m->profile->wifi_timeout_ms : 15000u;
+}
+
+static int wifi_matches(const h2_pal_wifi_sta_status_t* status,
+                        const h2_pal_wifi_sta_config_t* config) {
+  return status->ssid_len == config->ssid_len &&
+         status->ssid_len <= H2_PAL_WIFI_SSID_MAX &&
+         memcmp(status->ssid, config->ssid, status->ssid_len) == 0 &&
+         (!config->bssid_set ||
+          (status->bssid_set &&
+           memcmp(status->bssid, config->bssid, sizeof(config->bssid)) == 0));
+}
+
+static int wifi_lock(h2_mfg_t* m) {
+  if (m->wifi_lock_owned) return 0;
+  if (m->wifi_sync == NULL || m->wifi_mutex == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  int rc = h2_pal_mutex_try_lock(m->wifi_sync, m->wifi_mutex);
+  if (rc == 0) m->wifi_lock_owned = 1;
+  return rc;
+}
+
+static int wifi_unlock(h2_mfg_t* m, int rc) {
+  int unlock_rc = h2_pal_mutex_unlock(m->wifi_sync, m->wifi_mutex);
+  if (unlock_rc == 0) m->wifi_lock_owned = 0;
+  return rc != 0 ? rc : unlock_rc;
+}
+
+static void wifi_forget(h2_mfg_t* m) {
+  m->wifi_config_owned = m->wifi_previous_valid = 0;
+  memset(&m->wifi_previous, 0, sizeof(m->wifi_previous));
+}
+
+static int wifi_begin_connection(h2_mfg_t* m,
+                                 const h2_pal_wifi_sta_config_t* config) {
+  uint32_t budget = wifi_timeout(m);
+  if (budget > 1000u) budget = 1000u;
+  int rc = h2_pal_wifi_sta_connect(m->rt->wifi_sta, config, budget);
+  if (rc == H2_PAL_ERR_TIMEOUT) {
+    h2_pal_wifi_sta_status_t status = {0};
+    int status_rc = h2_pal_wifi_sta_get_status(m->rt->wifi_sta, &status);
+    if (status_rc != 0) return status_rc;
+    if (wifi_matches(&status, config) &&
+        (status.state == H2_PAL_WIFI_STA_STATE_CONNECTING ||
+         status.state == H2_PAL_WIFI_STA_STATE_CONNECTED ||
+         status.state == H2_PAL_WIFI_STA_STATE_GOT_IP))
+      return 0;
+  }
+  return rc;
+}
+
+static int h2_mfg_wifi_enter(h2_mfg_t* m, uint64_t now) {
+  m->wifi_started_ms = now;
+  memset(&m->wifi_status, 0, sizeof(m->wifi_status));
+  const h2_pal_wifi_sta_config_t* config = m->profile->wifi_test_config;
+  if (config == NULL) return 0;
+  int rc = h2_pal_wifi_settings_validate_sta_config(config);
+  if (rc != 0) return rc;
+  rc = wifi_lock(m);
+  if (rc != 0) return rc;
+  h2_pal_wifi_sta_status_t status = {0};
+  rc = h2_pal_wifi_sta_get_status(m->rt->wifi_sta, &status);
+  if (rc != 0) return wifi_unlock(m, rc);
+  if (status.state == H2_PAL_WIFI_STA_STATE_CONNECTED ||
+      status.state == H2_PAL_WIFI_STA_STATE_GOT_IP) {
+    /* An existing test association needs no mutation or restoration. PAL has
+     * no live credential getter: only replace another association when saved
+     * credentials describe it, as an unsaved management link cannot be rebuilt.
+     */
+    if (wifi_matches(&status, config)) return wifi_unlock(m, 0);
+    rc = h2_pal_wifi_settings_get_saved_sta_config(m->rt->wifi_settings,
+                                                   &m->wifi_previous);
+    if (rc == 0 &&
+        (h2_pal_wifi_settings_validate_sta_config(&m->wifi_previous) != 0 ||
+         !wifi_matches(&status, &m->wifi_previous)))
+      rc = H2_PAL_ERR_BUSY;
+    if (rc != 0) {
+      wifi_forget(m);
+      return wifi_unlock(m, rc);
+    }
+    m->wifi_previous_valid = 1;
+  } else if (status.state == H2_PAL_WIFI_STA_STATE_CONNECTING ||
+             status.state == H2_PAL_WIFI_STA_STATE_SCANNING) {
+    return wifi_unlock(m, H2_PAL_ERR_BUSY);
+  }
+  /* Keep ownership even on failure: providers may mutate before failing.
+   * Bound old-link disconnection too, then poll the ongoing association. */
+  m->wifi_config_owned = 1;
+  rc = wifi_begin_connection(m, config);
+  if (rc != 0)
+    (void)snprintf(m->detail, sizeof(m->detail), "WiFi connect code=%d", rc);
+  return wifi_unlock(m, rc);
+}
+
+static int h2_mfg_wifi_leave(h2_mfg_t* m) {
+  if (!m->wifi_config_owned) {
+    if (m->wifi_lock_owned) return wifi_unlock(m, 0);
+    return 0;
+  }
+  int rc = wifi_lock(m);
+  if (rc != 0) return rc;
+  h2_pal_wifi_sta_status_t status = {0};
+  rc = h2_pal_wifi_sta_get_status(m->rt->wifi_sta, &status);
+  if (rc != 0) return wifi_unlock(m, rc);
+  /* Loader may change WiFi between our short transactions. Never tear down
+   * another SSID/BSSID. An empty status can follow a failed connect/disconnect.
+   * The shared operation mutex protects this comparison and restoration. */
+  if (status.ssid_len != 0 &&
+      !wifi_matches(&status, m->profile->wifi_test_config) &&
+      !(m->wifi_config_owned == 2 && m->wifi_previous_valid &&
+        wifi_matches(&status, &m->wifi_previous))) {
+    wifi_forget(m);
+    return wifi_unlock(m, 0);
+  }
+  if (m->wifi_config_owned == 1) {
+    rc = h2_pal_wifi_sta_disconnect(m->rt->wifi_sta);
+    if (rc != 0) return wifi_unlock(m, rc);
+    m->wifi_config_owned =
+        2; /* Disconnect done; restoration remains retryable. */
+  }
+  if (m->wifi_previous_valid) rc = wifi_begin_connection(m, &m->wifi_previous);
+  if (rc == 0) wifi_forget(m);
+  return wifi_unlock(m, rc);
+}
+
+static int h2_mfg_wifi_tick(h2_mfg_t* m, uint64_t now) {
+  int configured = m->profile->wifi_test_config != NULL;
+  int rc = configured ? wifi_lock(m) : 0;
+  m->model.ready = 0;
+  if (rc != 0) return rc;
+  h2_pal_wifi_sta_status_t status = {0};
+  rc = h2_pal_wifi_sta_get_status(m->rt->wifi_sta, &status);
+  if (configured) rc = wifi_unlock(m, rc);
+  m->wifi_status = status;
+  if (rc != 0) return rc;
+  int target =
+      !configured || wifi_matches(&status, m->profile->wifi_test_config);
+  m->model.ready = target && h2_pal_wifi_sta_status_has_ip(&status);
+  if (m->profile->wifi_manual_ipv4)
+    m->model.ready = target && status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
+                     status.ip_valid && status.ip.ip4 != 0u;
+  if (configured && !m->model.ready) {
+    if (status.state == H2_PAL_WIFI_STA_STATE_FAILED)
+      rc = H2_PAL_ERR_IO;
+    else if (now - m->wifi_started_ms >= wifi_timeout(m))
+      rc = H2_PAL_ERR_TIMEOUT;
+  }
+  if (configured)
+    (void)snprintf(m->detail, sizeof(m->detail),
+                   "WiFi test IP=%d state=%d code=%d", m->model.ready,
+                   status.state, rc);
+  else
+    (void)snprintf(m->detail, sizeof(m->detail),
+                   "Connect with Loader wifi command IP=%d", m->model.ready);
+  return rc;
+}
+
 int h2_mfg_hardware_leave(h2_mfg_t* m) {
-  int rc = h2_mfg_peripheral_leave(m);
+  int rc = h2_mfg_wifi_leave(m);
+  if (rc != 0) return rc;
+  rc = h2_mfg_peripheral_leave(m);
   if (rc != 0) return rc;
   rc = h2_mfg_aec_close(m);
   if (rc != 0) return rc;
@@ -256,6 +416,7 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
   if (check == H2_MFG_SPEAKER || check == H2_MFG_MIC)
     rc = audio_enter(m, check == H2_MFG_MIC);
   if (check == H2_MFG_AEC) rc = h2_mfg_aec_enter(m);
+  if (check == H2_MFG_WIFI) rc = h2_mfg_wifi_enter(m, now);
   if (rc == 0) rc = h2_mfg_peripheral_enter(m);
   return rc;
 }
@@ -309,26 +470,42 @@ static int buttons(h2_mfg_t* m, const char** action) {
   return 0;
 }
 
+static int ui_hit(const h2_mfg_ui_rect_t* r, int x, int y) {
+  return x >= r->x && y >= r->y && x - r->x < r->width && y - r->y < r->height;
+}
+
 static unsigned factory_hit(h2_mfg_t* m, h2_mfg_check_t check, int x, int y) {
+  const h2_mfg_ui_config_t* ui = m->profile->ui;
+  if (ui == NULL) return 0;
   if (m->model.current >= m->profile->total)
-    return x >= 138 && x < 342 && y >= 396 && y < 444 ? 4 : 0;
-  if (check == H2_MFG_DISPLAY && x >= 100 && x < 380 && y >= 180 && y < 300)
-    return 5;
-  if (check == H2_MFG_BRIGHTNESS && x >= 48 && x < 432 && y >= 300 && y < 340)
-    return 10u + (unsigned)(x - 48) * 10u / 384u;
-  if (check == H2_MFG_VIBRATION && x >= 96 && x < 384 && y >= 168 && y < 328)
-    return 6;
+    return ui_hit(&ui->retest, x, y) ? 4 : 0;
+  if (check == H2_MFG_DISPLAY && ui_hit(&ui->display_pattern, x, y)) return 5;
+  if (check == H2_MFG_BRIGHTNESS && ui_hit(&ui->brightness_control, x, y))
+    return 10u + (unsigned)(x - ui->brightness_control.x) * 10u /
+                     (unsigned)ui->brightness_control.width;
+  if (check == H2_MFG_VIBRATION && ui_hit(&ui->vibration, x, y)) return 6;
   int failed =
       m->model.error != 0 || m->model.summary.step_status[m->model.current] ==
                                  H2_LOADER_MFG_STEP_FAILED;
-  if (check == H2_MFG_TOUCH && !failed && m->touch_target < 9) {
-    int tx, ty;
-    h2_mfg_touch_target(m, m->touch_target, &tx, &ty);
-    if (x >= tx - 28 && x <= tx + 28 && y >= ty - 28 && y <= ty + 28) return 7;
+  if (check == H2_MFG_TOUCH && !failed) {
+    unsigned first = m->profile->sequential_touch_grid ? m->touch_target : 0;
+    unsigned end = m->profile->sequential_touch_grid ? first + 1u : 5u;
+    if (end > 9) end = 9;
+    for (unsigned i = first; i < end; ++i) {
+      if (m->profile->sequential_touch_grid) {
+        if (ui_hit(&ui->touch_targets[i], x, y)) return 30u + i;
+      } else {
+        int tx, ty;
+        h2_mfg_touch_target(m, i, &tx, &ty);
+        int radius = (int)m->display.width / 20;
+        int dx = x - tx, dy = y - ty;
+        if (dx * dx + dy * dy <= radius * radius) return 30u + i;
+      }
+    }
   }
   if (!failed && (check == H2_MFG_TOUCH || check == H2_MFG_BUTTONS)) return 0;
-  if (x >= 24 && x < 228 && y >= 396 && y < 444) return 2;
-  if (x >= 252 && x < 456 && y >= 396 && y < 444) return 1;
+  if (ui_hit(&ui->controls[0], x, y)) return 2;
+  if (ui_hit(&ui->controls[1], x, y)) return 1;
   return 0;
 }
 
@@ -348,17 +525,23 @@ static int factory_touch(h2_mfg_t* m, h2_mfg_check_t check,
     if (e.kind == H2_PAL_TOUCH_EVENT_DOWN) {
       if (m->touch_pressed) continue;
       m->touch_pressed = 1;
+      ++m->touch_downs;
       m->touch_start_x = e.x;
       m->touch_start_y = e.y;
       m->touch_action = m->touch_blocked ? 0 : hit;
     } else if (e.kind == H2_PAL_TOUCH_EVENT_MOVE) {
       int dx = e.x - m->touch_start_x, dy = e.y - m->touch_start_y;
-      if (hit != m->touch_action || dx < -28 || dx > 28 || dy < -28 || dy > 28)
+      if (hit != m->touch_action ||
+          dx < -(int)m->profile->ui->touch_tolerance ||
+          dx > (int)m->profile->ui->touch_tolerance ||
+          dy < -(int)m->profile->ui->touch_tolerance ||
+          dy > (int)m->profile->ui->touch_tolerance)
         m->touch_action = 0;
     } else if (e.kind == H2_PAL_TOUCH_EVENT_UP) {
       unsigned selected =
           m->touch_pressed && !m->touch_blocked && hit == m->touch_action ? hit
                                                                           : 0;
+      if (m->touch_pressed) ++m->touch_releases;
       m->touch_pressed = m->touch_blocked = 0;
       m->touch_action = 0;
       if (selected == 4)
@@ -371,8 +554,10 @@ static int factory_touch(h2_mfg_t* m, h2_mfg_check_t check,
         if (rc != 0) return rc;
         m->model.ready |= percent != m->brightness_percent;
         m->brightness_percent = percent;
-      } else if (selected == 7 && m->touch_target < 9) {
-        m->touch_hits |= 1u << m->touch_target++;
+      } else if (selected >= 30 && selected < 39) {
+        m->touch_hits |= 1u << (selected - 30u);
+        if (m->profile->sequential_touch_grid && m->touch_target < 9)
+          ++m->touch_target;
         if (m->touch_target == 9) m->model.ready = 1;
       } else if (selected == 2)
         *action = "fail";
@@ -398,7 +583,7 @@ static int factory_touch(h2_mfg_t* m, h2_mfg_check_t check,
 }
 
 static int touch(h2_mfg_t* m, h2_mfg_check_t check, const char** action) {
-  if (m->profile->touch_navigation)
+  if (m->profile->touch_navigation && m->profile->ui != NULL)
     return m->touch_open ? factory_touch(m, check, action) : 0;
   if (!m->touch_open) return 0;
   h2_pal_touch_event_t event = {0};
@@ -562,7 +747,7 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
       m->model.ready = rc == 0;
       break;
     case H2_MFG_DISPLAY:
-      if (m->profile->factory_ui) {
+      if (m->profile->manual_display_patterns) {
         m->model.ready = m->display_patterns_seen == 15u;
         break;
       }
@@ -666,19 +851,9 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
     case H2_MFG_CAMERA:
       rc = h2_mfg_peripheral_tick(m, now);
       break;
-    case H2_MFG_WIFI: {
-      h2_pal_wifi_sta_status_t wifi = {0};
-      rc = h2_pal_wifi_sta_get_status(m->rt->wifi_sta, &wifi);
-      m->wifi_status = wifi;
-      m->model.ready = rc == 0 && h2_pal_wifi_sta_status_has_ip(&wifi);
-      if (m->profile->wifi_manual_ipv4)
-        m->model.ready = rc == 0 &&
-                         wifi.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
-                         wifi.ip_valid && wifi.ip.ip4 != 0u;
-      (void)snprintf(m->detail, sizeof(m->detail),
-                     "Connect with Loader wifi command IP=%d", m->model.ready);
+    case H2_MFG_WIFI:
+      rc = h2_mfg_wifi_tick(m, now);
       break;
-    }
     case H2_MFG_BLE:
       if (m->profile->ble_scan_only) {
         rc = h2_mfg_peripheral_tick(m, now);

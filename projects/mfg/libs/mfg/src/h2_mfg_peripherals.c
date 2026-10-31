@@ -127,7 +127,7 @@ int h2_mfg_peripheral_enter(h2_mfg_t* m) {
                                                  : H2_MFG_PREVIEW_WIDTH;
     m->preview_height = m->profile->preview_height ? m->profile->preview_height
                                                    : H2_MFG_PREVIEW_HEIGHT;
-    if (m->preview_width > 384 || m->preview_height > 216)
+    if (m->preview_width > 1024 || m->preview_height > 1024)
       return H2_PAL_ERR_INVALID_ARG;
     size_t bytes = (size_t)m->preview_width * m->preview_height *
                    sizeof(*m->camera_preview);
@@ -135,7 +135,7 @@ int h2_mfg_peripheral_enter(h2_mfg_t* m) {
     if (m->camera_preview == NULL) return H2_PAL_ERR_NO_MEMORY;
     memset(m->camera_preview, 0, bytes);
     m->camera_last_ms = m->started_ms;
-    if (m->profile->factory_ui) return camera_worker_enter(m);
+    if (m->profile->camera_async) return camera_worker_enter(m);
     /* Sized previews opt into bounded startup recovery; defaults stay one-shot.
      */
     unsigned attempts = m->profile->preview_width ? 3 : 1;

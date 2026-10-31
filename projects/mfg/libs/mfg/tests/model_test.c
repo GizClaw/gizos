@@ -132,9 +132,24 @@ static void duplex_audio_requires_manual_aec(void) {
                            &durable) == H2_PAL_ERR_INVALID_ARG);
 }
 
+static void failed_verdict_advances_only_with_traversal_policy(void) {
+  h2_mfg_model_t m = fresh();
+  h2_mfg_profile_t configured = profile;
+  configured.sequential_traversal = 1;
+  m.profile = &configured;
+  save_result = H2_PAL_ERR_IO;
+  assert(h2_mfg_model_action(&m, "fail", "storage", m.ticket) == H2_PAL_ERR_IO);
+  assert(m.current == 0 &&
+         m.summary.step_status[0] == H2_LOADER_MFG_STEP_UNTESTED);
+  save_result = 0;
+  assert(h2_mfg_model_action(&m, "fail", "storage", m.ticket) == 0);
+  assert(m.current == 1 && durable.step_status[0] == H2_LOADER_MFG_STEP_FAILED);
+  assert(!h2_mfg_model_complete(&m));
+}
+
 static void factory_policies_and_terminal_reset(void) {
   h2_mfg_profile_t factory = profile;
-  factory.factory_ui = factory.touch_navigation = 1;
+  factory.sequential_traversal = factory.touch_navigation = 1;
   h2_loader_mfg_summary_t summary = {.total = 3};
   h2_mfg_model_t m;
   save_result = 0;
@@ -162,6 +177,19 @@ static void factory_policies_and_terminal_reset(void) {
          H2_PAL_ERR_INVALID_ARG);
   factory.magnetic_delta_mgauss = 80;
   assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) == 0);
+  /* Execution policies have no dependency on presentation selection. */
+  factory.cleanup_before_pass = factory.camera_async =
+      factory.manual_display_patterns = 1;
+  assert(factory.ui == NULL);
+  assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) == 0);
+  const h2_mfg_ui_config_t malformed = {
+      .width = 320,
+      .height = 240,
+      .title = "test",
+      .controls = {{-1, 0, 10, 10}, {0, 0, 10, 10}}};
+  factory.ui = &malformed;
+  assert(h2_mfg_model_init(&m, &factory, &summary, 1, persist, &durable) ==
+         H2_PAL_ERR_INVALID_ARG);
 }
 
 int main(void) {
@@ -170,6 +198,7 @@ int main(void) {
   fail_skip_retry_and_gate();
   duplex_audio_requires_manual_aec();
   factory_policies_and_terminal_reset();
+  failed_verdict_advances_only_with_traversal_policy();
   puts(
       "MFG model: readiness, stale tickets, durable resume, failed saves, "
       "failure/retry/reset and strict gate passed");

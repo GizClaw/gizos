@@ -80,7 +80,7 @@ int h2_mfg_create(h2_runtime_t* rt, const h2_mfg_profile_t* profile,
 static int factory_action(h2_mfg_t* m, const char* action, const char* step,
                           uint32_t ticket) {
   int confirm = strcmp(action, "confirm") == 0;
-  if (m->profile->factory_ui && confirm) {
+  if (m->profile->cleanup_before_pass && confirm) {
     if (ticket != m->model.ticket || m->hardware_ticket != ticket ||
         m->model.current >= m->profile->total ||
         strcmp(step, m->profile->steps[m->model.current].name) != 0 ||
@@ -314,6 +314,7 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
         if (m->model.error != 0) {
           int error = m->model.error;
           int cleanup = h2_mfg_hardware_leave(m);
+          uint32_t selected_before_failure = m->model.current;
           int save_rc = m->model.current < m->profile->total
                             ? h2_mfg_model_action(
                                   &m->model, "fail",
@@ -322,6 +323,8 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
                             : error;
           /* The failed check stays selected, without repeatedly reopening it.
            */
+          if (save_rc == 0 && m->profile->sequential_traversal)
+            m->model.current = selected_before_failure;
           m->hardware_ticket = m->model.ticket;
           m->model.error = error;
           if (save_rc != 0) rc = save_rc;
@@ -333,12 +336,15 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
       int check_rc = h2_mfg_hardware_tick(m, now, &action);
       if (check_rc != 0) {
         int cleanup = h2_mfg_hardware_leave(m);
+        uint32_t selected_before_failure = m->model.current;
         const char* step = m->model.current < m->profile->total
                                ? m->profile->steps[m->model.current].name
                                : NULL;
         rc = step != NULL
                  ? h2_mfg_model_action(&m->model, "fail", step, m->model.ticket)
                  : check_rc;
+        if (rc == 0 && m->profile->sequential_traversal)
+          m->model.current = selected_before_failure;
         m->hardware_ticket = m->model.ticket;
         m->model.error = check_rc;
         if (rc == 0) rc = cleanup;

@@ -159,6 +159,23 @@ int main(void) {
   /* Completed sessions still open touch, and a fresh tap requests the same
    * ticketed durable reset used by commands without indexing steps[total]. */
   h2_mfg_profile_t factory = profile;
+  static const h2_mfg_ui_config_t ui = {
+      .width = 480,
+      .height = 480,
+      .retest = {138, 396, 204, 48},
+      .controls = {{24, 396, 204, 48}, {252, 396, 204, 48}},
+      .touch_tolerance = 28,
+      .touch_targets = {{52, 140, 56, 56},
+                        {212, 140, 56, 56},
+                        {372, 140, 56, 56},
+                        {52, 260, 56, 56},
+                        {212, 260, 56, 56},
+                        {372, 260, 56, 56},
+                        {52, 380, 56, 56},
+                        {212, 380, 56, 56},
+                        {372, 380, 56, 56}},
+  };
+  factory.ui = &ui;
   factory.touch_navigation = 1;
   m.profile = &factory;
   m.model.profile = &factory;
@@ -211,6 +228,24 @@ int main(void) {
     assert(i == 8 ? action && !strcmp(action, "confirm") : action == NULL);
   }
   assert(m.touch_hits == 0x1ffu && m.model.ready);
+  assert(h2_mfg_hardware_close(&m) == 0);
+  factory.sequential_touch_grid = 0;
+  m.model.current = 1;
+  assert(h2_mfg_hardware_enter(&m, 220) == 0);
+  m.display.width = m.display.height = 480;
+  for (unsigned i = 0; i < 5; ++i) {
+    int x, y;
+    h2_mfg_touch_target(&m, i, &x, &y);
+    events[0] =
+        (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_DOWN, .x = x, .y = y};
+    events[1] =
+        (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_UP, .x = x, .y = y};
+    event_at = 0;
+    action = NULL;
+    assert(h2_mfg_hardware_tick(&m, 240 + i, &action) == 0);
+  }
+  assert(m.model.ready && m.touch_hits == 31u && m.touch_downs == 5 &&
+         m.touch_releases == 5);
   assert(h2_mfg_hardware_close(&m) == 0);
   return 0;
 }
