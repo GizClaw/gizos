@@ -16,7 +16,7 @@ exports_files([
 
 app_version(
     name = "version",
-    value = "0.1.0-flash-stress",
+    value = "0.1.0-pal-disk",
 )
 
 py_test(
@@ -26,12 +26,13 @@ py_test(
         "--baseline",
         "$(location //boards/bk7258_v3_202405/bk7258/layouts/h2loader:partitions/bk7258/auto_partitions.csv)",
         "--diagnostic",
-        "$(location //boards/bk7258_v3_202405/bk7258/layouts/flash_stress:partitions/bk7258/auto_partitions.csv)",
+        "$(location //boards/bk7258_v3_202405/bk7258/layouts/pal_disk:partitions/bk7258/auto_partitions.csv)",
     ],
     data = [
-        "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:partitions/bk7258/auto_partitions.csv",
         "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:partitions/bk7258/auto_partitions.csv",
+        "//boards/bk7258_v3_202405/bk7258/layouts/pal_disk:partitions/bk7258/auto_partitions.csv",
     ],
+    legacy_create_init = False,
     main = "tests/test_layout.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
@@ -55,7 +56,7 @@ firmware_lib_component(
         "//libs/runtime",
         "//libs/utils",
         "//libs/wifi_sta",
-        "//projects/e2e/apps/flash-stress/app:flash_stress",
+        "//projects/e2e/apps/pal-disk/app:pal_disk_e2e",
     ],
 )
 
@@ -67,14 +68,14 @@ firmware_native_component(
         "ap/management.c",
     ],
     hdrs = ["ap/launcher.h"],
-    component_directory = "projects/e2e/targets/h2loader_tar_zlib/flash-stress/bk7258_v3_202405/ap",
+    component_directory = "projects/e2e/targets/h2loader_tar_zlib/pal-disk/bk7258_v3_202405/ap",
     component_name = "ap",
     data = ["ap/CMakeLists.txt"],
     execution_unit = "ap",
 )
 
 firmware_native_component(
-    name = "flash_stress_launcher",
+    name = "pal_disk_launcher",
     deps = [
         ":ap_launcher_component",
         ":firmware_lib",
@@ -82,7 +83,7 @@ firmware_native_component(
         "//native_component_src/bk7258/ap/h2_pal_core",
         "//native_component_src/bk7258/ap/zlib",
         "//native_component_src/bk7258/cp/h2_pal_core",
-        "//projects/e2e/apps/flash-stress/app:tasks",
+        "//projects/e2e/apps/pal-disk/app:tasks",
         "//projects/h2loader/apps/loader/app:tasks",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
@@ -94,8 +95,8 @@ bk7258_target_task_policy(
     ap_allocator = "sram",
     ap_default_policy = "7 0 8192 psram",
     ap_policies = [
-        "flash-stress/writer 7 0 4096 default",
-        "flash-stress/reader 7 1 4096 default",
+        "pal-disk/e2e/writer 7 0 4096 default",
+        "pal-disk/e2e/reader 7 1 4096 default",
         "h2loader/appcmd 5 0 32768 psram",
         "$h2loader/uartcmd 5 0 8192 psram",
         "$h2loader/return default",
@@ -113,7 +114,7 @@ bk7258_target_task_policy(
         "$lvgl/swdraw default",
     ],
     cp_default_policy = "6 4096 default",
-    graph = [":flash_stress_launcher"],
+    graph = [":pal_disk_launcher"],
 )
 
 h2loader_bk7258_firmware(
@@ -121,25 +122,25 @@ h2loader_bk7258_firmware(
     ap_task_policy = ":ap_task_policy",
     board = "bk7258_v3_202405",
     cp_task_policy = ":cp_task_policy",
-    graph = [":flash_stress_launcher"],
+    graph = [":pal_disk_launcher"],
     layout_files = {
         "ap_config": [
             "//boards/bk7258_v3_202405/bk7258:ap.defaults",
             "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:ap.defaults",
-            "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:ap.defaults",
+            "//boards/bk7258_v3_202405/bk7258/layouts/pal_disk:ap.defaults",
         ],
         "cp_config": [
             "//boards/bk7258_v3_202405/bk7258:cp.defaults",
             "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:cp.defaults",
-            "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:cp.defaults",
+            "//boards/bk7258_v3_202405/bk7258/layouts/pal_disk:cp.defaults",
         ],
-        "ap_gpio": "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:ap_gpio",
-        "cp_gpio": "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:cp_gpio",
-        "project_support_files": ["//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:layout"],
-        "ram_regions": "//boards/bk7258_v3_202405/bk7258/layouts/flash_stress:ram_regions",
+        "ap_gpio": "//boards/bk7258_v3_202405/bk7258/layouts/pal_disk:ap_gpio",
+        "cp_gpio": "//boards/bk7258_v3_202405/bk7258/layouts/pal_disk:cp_gpio",
+        "project_support_files": ["//boards/bk7258_v3_202405/bk7258/layouts/pal_disk:layout"],
+        "ram_regions": "//boards/bk7258_v3_202405/bk7258/layouts/pal_disk:ram_regions",
     },
     project = "CMakeLists.txt",
-    project_name = "h2_bk_flash_stress",
+    project_name = "h2_bk_pal_disk",
     target = "bk7258",
     version = ":version",
 )
@@ -148,7 +149,7 @@ h2loader_tar_zlib(
     name = "package",
     board = "bk7258_v3_202405",
     firmware = ":firmware",
-    image = "flash-stress",
+    image = "pal-disk",
     role = "app",
     target = "bk7258",
 )

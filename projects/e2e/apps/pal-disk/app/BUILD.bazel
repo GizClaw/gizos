@@ -7,15 +7,18 @@ package(default_visibility = ["//visibility:public"])
 h2_tasks(
     name = "tasks",
     tasks = [
-        "flash-stress/reader",
-        "flash-stress/writer",
+        "pal-disk/e2e/reader",
+        "pal-disk/e2e/writer",
     ],
 )
 
 cc_library(
-    name = "flash_stress",
-    srcs = ["src/h2_flash_stress.c"],
-    hdrs = ["include/h2_flash_stress.h"],
+    name = "pal_disk_e2e",
+    srcs = ["src/h2_pal_disk_e2e.c"],
+    hdrs = [
+        "include/h2_pal_disk_cases.inc",
+        "include/h2_pal_disk_e2e.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
@@ -27,8 +30,8 @@ cc_library(
 )
 
 cc_test(
-    name = "flash_stress_test",
-    srcs = ["tests/test_flash_stress.c"],
+    name = "pal_disk_e2e_test",
+    srcs = ["tests/test_pal_disk_e2e.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     linkopts = ["-pthread"],
@@ -38,7 +41,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":flash_stress",
+        ":pal_disk_e2e",
         "//libs/atomic/providers/c11",
         "//libs/pal",
     ],

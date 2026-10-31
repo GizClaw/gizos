@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "h2_flash_stress.h"
+#include "h2_pal_disk_e2e.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -27,12 +27,14 @@ typedef struct fixture {
   h2_pal_task_api_t task;
   h2_pal_time_api_t time;
   h2_pal_mem_api_t mem;
-  h2_flash_stress_config_t config;
+  h2_pal_disk_e2e_config_t config;
   fault_t fault;
   unsigned starts, joins, allocations, frees, erases, writes;
   int blocked, released, fail_start, fail_join, fail_alloc, wrong_core;
   const char* fail_output;
   unsigned results;
+  unsigned cases_seen;
+  unsigned list_fault;
 } fixture_t;
 
 struct h2_pal_task {
@@ -49,6 +51,18 @@ static int get_partition(void* user, uint32_t id,
   assert(id == 42);
   *out = f->partition;
   return 0;
+}
+
+static int list_partitions(void* user, h2_pal_disk_partition_cb_t cb,
+                           void* cb_user) {
+  fixture_t* f = user;
+  if (f->list_fault == 1) return H2_PAL_ERR_UNSUPPORTED;
+  if (f->list_fault == 2) return 0;
+  h2_pal_disk_partition_t partition = f->partition;
+  if (f->list_fault == 3) partition.size += BLOCK;
+  int rc = cb(cb_user, &partition);
+  if (!rc && f->list_fault == 4) rc = cb(cb_user, &partition);
+  return rc;
 }
 
 static void check_range(uint32_t id, uint64_t offset, uint64_t len) {
@@ -128,8 +142,8 @@ static int start(void* user, const h2_pal_task_options_t* options,
   h2_pal_task_t* task = calloc(1, sizeof(*task));
   assert(task);
   task->role = f->starts - 1;
-  assert(strcmp(options->name, task->role ? "flash-stress/reader"
-                                          : "flash-stress/writer") == 0);
+  assert(strcmp(options->name, task->role ? "pal-disk/e2e/reader"
+                                          : "pal-disk/e2e/writer") == 0);
   task->entry = entry;
   task->context = context;
   assert(pthread_create(&task->thread, NULL, trampoline, task) == 0);
@@ -185,9 +199,17 @@ static uint32_t core(void* user) {
 }
 
 static int output(void* user, const char* phase,
-                  const h2_flash_stress_result_t* result) {
+                  const h2_pal_disk_e2e_result_t* result) {
   fixture_t* f = user;
   assert(result);
+  if (strcmp(phase, "case") == 0) {
+    const unsigned index = result->current_case;
+    assert(index < H2_PAL_DISK_E2E_CASE_COUNT);
+    assert(!(f->cases_seen & (1u << index)));
+    assert(h2_pal_disk_e2e_case_name(result->current_case));
+    assert(result->cases[index].status != H2_PAL_DISK_E2E_NOT_RUN);
+    f->cases_seen |= 1u << index;
+  }
   if (strcmp(phase, "result") == 0) ++f->results;
   return f->fail_output && strcmp(f->fail_output, phase) == 0 ? H2_PAL_ERR_WRITE
                                                               : 0;
@@ -200,14 +222,15 @@ static void init(fixture_t* f) {
   assert(pthread_cond_init(&f->condition, NULL) == 0);
   f->partition =
       (h2_pal_disk_partition_t){.id = 42,
-                                .name = "flash_stress",
+                                .name = "pal_disk",
                                 .size = CAPACITY,
                                 .erase_block_size = BLOCK,
                                 .write_alignment = 4,
                                 .flags = H2_PAL_DISK_PARTITION_FLAG_READABLE |
                                          H2_PAL_DISK_PARTITION_FLAG_WRITABLE |
                                          H2_PAL_DISK_PARTITION_FLAG_ERASABLE};
-  static const h2_pal_disk_vtable_t disk = {.get_partition = get_partition,
+  static const h2_pal_disk_vtable_t disk = {.list_partitions = list_partitions,
+                                            .get_partition = get_partition,
                                             .read = read_disk,
                                             .write = write_disk,
                                             .erase = erase_disk,
@@ -221,7 +244,7 @@ static void init(fixture_t* f) {
   f->task = (h2_pal_task_api_t){f, &task};
   f->time = (h2_pal_time_api_t){f, &time};
   f->mem = (h2_pal_mem_api_t){f, &mem};
-  f->config = (h2_flash_stress_config_t){.disk = &f->disk,
+  f->config = (h2_pal_disk_e2e_config_t){.disk = &f->disk,
                                          .task = &f->task,
                                          .time = &f->time,
                                          .mem = &f->mem,
@@ -236,9 +259,9 @@ static void init(fixture_t* f) {
                                          .emit_user = f};
 }
 
-static void finish(fixture_t* f, h2_flash_stress_t** app) {
+static void finish(fixture_t* f, h2_pal_disk_e2e_t** app) {
   for (unsigned i = 0; i < 2000; ++i) {
-    int rc = h2_flash_stress_destroy(app);
+    int rc = h2_pal_disk_e2e_destroy(app);
     if (!rc) break;
     assert(rc == H2_PAL_ERR_BUSY);
     sleep_ms(NULL, 1);
@@ -259,30 +282,37 @@ static void test_normal(int observe_cores) {
   fixture_t f;
   init(&f);
   if (!observe_cores) f.config.current_core = NULL;
-  h2_flash_stress_t* app = NULL;
-  assert(h2_flash_stress_create(&f.config, &app) == 0);
-  h2_flash_stress_result_t result;
-  assert(h2_flash_stress_run(app, &result) == 0);
+  h2_pal_disk_e2e_t* app = NULL;
+  assert(h2_pal_disk_e2e_create(&f.config, &app) == 0);
+  h2_pal_disk_e2e_result_t result;
+  assert(h2_pal_disk_e2e_run(app, &result) == 0);
   assert(result.rc == 0 && result.cleanup_rc == 0 && result.output_rc == 0);
   assert(result.rounds[0] == 8 && result.rounds[1] > 0);
   assert(result.cores_verified == observe_cores);
   assert(result.workers_joined && f.results == 1);
+  assert(result.passed == H2_PAL_DISK_E2E_CASE_COUNT && !result.failed &&
+         !result.blocked);
+  assert(f.cases_seen == (1u << H2_PAL_DISK_E2E_CASE_COUNT) - 1u);
   assert_clean(&f);
-  assert(h2_flash_stress_run(app, &result) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_pal_disk_e2e_run(app, &result) == H2_PAL_ERR_INVALID_STATE);
   finish(&f, &app);
-  assert(h2_flash_stress_destroy(&app) == 0);
+  assert(h2_pal_disk_e2e_destroy(&app) == 0);
 }
 
 static void test_fault(fault_t fault) {
   fixture_t f;
   init(&f);
   f.fault = fault;
-  h2_flash_stress_t* app = NULL;
-  assert(h2_flash_stress_create(&f.config, &app) == 0);
-  h2_flash_stress_result_t result;
-  int expected = fault == CORRUPT_READ ? H2_FLASH_STRESS_ERR_DATA : IO_ERROR;
-  assert(h2_flash_stress_run(app, &result) == expected);
+  h2_pal_disk_e2e_t* app = NULL;
+  assert(h2_pal_disk_e2e_create(&f.config, &app) == 0);
+  h2_pal_disk_e2e_result_t result;
+  int expected = fault == CORRUPT_READ ? H2_PAL_DISK_E2E_ERR_DATA : IO_ERROR;
+  assert(h2_pal_disk_e2e_run(app, &result) == expected);
   assert(result.rc == expected && result.cleanup_rc == 0);
+  assert(result.cases[H2_PAL_DISK_E2E_CASE_CONCURRENT].status ==
+         H2_PAL_DISK_E2E_FAIL);
+  assert(result.cases[H2_PAL_DISK_E2E_CASE_CLEANUP].status ==
+         H2_PAL_DISK_E2E_PASS);
   assert_clean(&f);
   finish(&f, &app);
 }
@@ -317,9 +347,9 @@ static void test_reject_region(void) {
         f.partition.id = 41;
         break;
     }
-    h2_flash_stress_t* app = NULL;
-    assert(h2_flash_stress_create(&f.config, &app) ==
-           H2_FLASH_STRESS_ERR_REGION);
+    h2_pal_disk_e2e_t* app = NULL;
+    assert(h2_pal_disk_e2e_create(&f.config, &app) ==
+           H2_PAL_DISK_E2E_ERR_REGION);
     assert(!app && !f.erases && !f.writes && !f.allocations);
     finish(&f, &app);
   }
@@ -331,11 +361,11 @@ static void test_lifecycle_failure(unsigned which) {
   if (which == 0) f.wrong_core = 1;
   if (which == 1) f.fail_start = 1;
   if (which == 2) f.fail_join = 1;
-  h2_flash_stress_t* app = NULL;
-  assert(h2_flash_stress_create(&f.config, &app) == 0);
-  h2_flash_stress_result_t result;
-  int expected = which == 0 ? H2_FLASH_STRESS_ERR_CORE : H2_PAL_ERR_TASK;
-  assert(h2_flash_stress_run(app, &result) == expected);
+  h2_pal_disk_e2e_t* app = NULL;
+  assert(h2_pal_disk_e2e_create(&f.config, &app) == 0);
+  h2_pal_disk_e2e_result_t result;
+  int expected = which == 0 ? H2_PAL_DISK_E2E_ERR_CORE : H2_PAL_ERR_TASK;
+  assert(h2_pal_disk_e2e_run(app, &result) == expected);
   assert(app && f.frees == 0);
   finish(&f, &app);
   assert_clean(&f);
@@ -345,10 +375,10 @@ static void test_output_failure(const char* phase) {
   fixture_t f;
   init(&f);
   f.fail_output = phase;
-  h2_flash_stress_t* app = NULL;
-  assert(h2_flash_stress_create(&f.config, &app) == 0);
-  h2_flash_stress_result_t result;
-  assert(h2_flash_stress_run(app, &result) == H2_PAL_ERR_WRITE);
+  h2_pal_disk_e2e_t* app = NULL;
+  assert(h2_pal_disk_e2e_create(&f.config, &app) == 0);
+  h2_pal_disk_e2e_result_t result;
+  assert(h2_pal_disk_e2e_run(app, &result) == H2_PAL_ERR_WRITE);
   assert(result.rc == H2_PAL_ERR_WRITE && result.output_rc == H2_PAL_ERR_WRITE);
   finish(&f, &app);
 }
@@ -358,15 +388,15 @@ static void test_blocked_worker(void) {
   init(&f);
   f.fault = BLOCK_WRITER;
   f.config.deadline_ms = 50;
-  h2_flash_stress_t* app = NULL;
-  assert(h2_flash_stress_create(&f.config, &app) == 0);
-  h2_flash_stress_result_t result;
-  assert(h2_flash_stress_run(app, &result) == H2_PAL_ERR_TIMEOUT);
+  h2_pal_disk_e2e_t* app = NULL;
+  assert(h2_pal_disk_e2e_create(&f.config, &app) == 0);
+  h2_pal_disk_e2e_result_t result;
+  assert(h2_pal_disk_e2e_run(app, &result) == H2_PAL_ERR_TIMEOUT);
   assert(result.cleanup_rc == H2_PAL_ERR_BUSY && !result.workers_joined);
   assert(pthread_mutex_lock(&f.mutex) == 0);
   assert(f.blocked && f.erases == 2 && f.frees == 0);
   assert(pthread_mutex_unlock(&f.mutex) == 0);
-  assert(h2_flash_stress_destroy(&app) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_disk_e2e_destroy(&app) == H2_PAL_ERR_BUSY);
   assert(app && f.frees == 0);
   assert(pthread_mutex_lock(&f.mutex) == 0);
   f.released = 1;
@@ -379,14 +409,31 @@ static void test_blocked_worker(void) {
 static void test_create_failure(void) {
   fixture_t f;
   init(&f);
-  h2_flash_stress_t* app = NULL;
+  h2_pal_disk_e2e_t* app = NULL;
   f.fail_alloc = 1;
-  assert(h2_flash_stress_create(&f.config, &app) == H2_PAL_ERR_NO_MEMORY);
+  assert(h2_pal_disk_e2e_create(&f.config, &app) == H2_PAL_ERR_NO_MEMORY);
   assert(!app);
   f.config.emit = NULL;
-  assert(h2_flash_stress_create(&f.config, &app) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_disk_e2e_create(&f.config, &app) == H2_PAL_ERR_INVALID_ARG);
   assert(!app && !f.erases && !f.writes);
   finish(&f, &app);
+}
+
+static void test_partition_inventory(void) {
+  for (unsigned fault = 1; fault <= 4; ++fault) {
+    fixture_t f;
+    init(&f);
+    f.list_fault = fault;
+    h2_pal_disk_e2e_t* app = NULL;
+    assert(h2_pal_disk_e2e_create(&f.config, &app) == 0);
+    h2_pal_disk_e2e_result_t result;
+    assert(h2_pal_disk_e2e_run(app, &result) != 0);
+    assert(!f.erases && !f.writes && !f.starts);
+    assert(result.passed == 0 && result.blocked >= 3);
+    assert(f.cases_seen == (1u << H2_PAL_DISK_E2E_CASE_COUNT) - 1u);
+    finish(&f, &app);
+  }
+  assert(h2_pal_disk_e2e_case_name(H2_PAL_DISK_E2E_CASE_COUNT) == NULL);
 }
 
 int main(void) {
@@ -394,6 +441,7 @@ int main(void) {
   test_normal(1);
   test_reject_region();
   test_create_failure();
+  test_partition_inventory();
   for (unsigned i = 0; i < 3; ++i) test_lifecycle_failure(i);
   for (fault_t fault = CORRUPT_READ; fault <= FLUSH_ERROR; ++fault)
     test_fault(fault);
@@ -401,6 +449,7 @@ int main(void) {
   test_output_failure("sequential");
   test_output_failure("concurrent_begin");
   test_output_failure("result");
+  test_output_failure("case");
   test_blocked_worker();
   return 0;
 }

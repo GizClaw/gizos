@@ -4,7 +4,7 @@
 primary_bootloader,0x0,68k,code,TRUE,FALSE
 primary_cp_app,0x264000,1156k,code,TRUE,TRUE
 primary_ap_app,,3876k,code,TRUE,TRUE
-flash_stress,0x74e000,68k,data,TRUE,TRUE
+pal_disk,0x74e000,68k,data,TRUE,TRUE
 s_app,0x11000,2380k,data,TRUE,TRUE
 ota_fina_executive,0x75f000,4k,data,TRUE,TRUE
 usr_config,0x760000,124K,data,TRUE,TRUE

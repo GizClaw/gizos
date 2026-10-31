@@ -6,10 +6,10 @@
 #include <string.h>
 
 #if !CONFIG_SOC_SMP || !CONFIG_FLASH_CP_AP_DIRECT_ACCESS
-#error "Flash stress requires the native AP SMP/direct Flash path"
+#error "PAL Disk E2E requires the native AP SMP/direct Flash path"
 #endif
-#ifndef CONFIG_FLASH_STRESS_PARTITION_OFFSET
-#error "Select a board layout with an App-owned flash_stress partition"
+#ifndef CONFIG_PAL_DISK_PARTITION_OFFSET
+#error "Select a board layout with an App-owned pal_disk partition"
 #endif
 
 enum { SECTOR = 4096 };
@@ -18,14 +18,14 @@ static int get_partition(void* user, uint32_t id,
                          h2_pal_disk_partition_t* out) {
   (void)user;
   memset(out, 0, sizeof(*out));
-  if (id != H2_BK_FLASH_STRESS_PARTITION) return H2_PAL_ERR_NOT_FOUND;
+  if (id != H2_BK_PAL_DISK_PARTITION) return H2_PAL_ERR_NOT_FOUND;
   const bk_logic_partition_t* region =
-      bk_flash_partition_get_info(BK_PARTITION_FLASH_STRESS);
+      bk_flash_partition_get_info(BK_PARTITION_PAL_DISK);
   const bk_logic_partition_t* app =
       bk_flash_partition_get_info(BK_PARTITION_APPLICATION1);
   if (!region || !app || !region->partition_description ||
-      strcmp(region->partition_description, "flash_stress") ||
-      region->partition_start_addr != CONFIG_FLASH_STRESS_PARTITION_OFFSET ||
+      strcmp(region->partition_description, "pal_disk") ||
+      region->partition_start_addr != CONFIG_PAL_DISK_PARTITION_OFFSET ||
       region->partition_start_addr % SECTOR ||
       region->partition_length < 2u * SECTOR ||
       region->partition_length % SECTOR ||
@@ -42,9 +42,16 @@ static int get_partition(void* user, uint32_t id,
       .size = region->partition_length,
       .erase_block_size = SECTOR,
       .write_alignment = 1,
-      .name = "flash_stress",
+      .name = "pal_disk",
   };
   return 0;
+}
+
+static int list_partitions(void* user, h2_pal_disk_partition_cb_t cb,
+                           void* cb_user) {
+  h2_pal_disk_partition_t partition;
+  int rc = get_partition(user, H2_BK_PAL_DISK_PARTITION, &partition);
+  return rc ? rc : cb(cb_user, &partition);
 }
 
 static int range(uint32_t id, uint64_t offset, uint64_t len,
@@ -54,7 +61,7 @@ static int range(uint32_t id, uint64_t offset, uint64_t len,
   if (rc) return rc;
   if (offset > partition.size || len > partition.size - offset)
     return H2_PAL_ERR_INVALID_ARG;
-  *address = CONFIG_FLASH_STRESS_PARTITION_OFFSET + (uint32_t)offset;
+  *address = CONFIG_PAL_DISK_PARTITION_OFFSET + (uint32_t)offset;
   return 0;
 }
 
@@ -96,8 +103,9 @@ static int flush(void* user, uint32_t id) {
   return get_partition(user, id, &partition);
 }
 
-const h2_pal_disk_api_t* h2_bk_flash_stress_disk(void) {
+const h2_pal_disk_api_t* h2_bk_pal_disk_disk(void) {
   static const h2_pal_disk_vtable_t vtable = {
+      .list_partitions = list_partitions,
       .get_partition = get_partition,
       .read = read_bytes,
       .write = write_bytes,

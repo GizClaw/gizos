@@ -29,13 +29,13 @@ def partitions(path):
 
 class LayoutTest(unittest.TestCase):
     def test_only_app_tail_is_reassigned(self):
-        self.assertEqual(set(diagnostic), set(baseline) | {"flash_stress"})
+        self.assertEqual(set(diagnostic), set(baseline) | {"pal_disk"})
         for name in baseline:
             if name != "primary_ap_app":
                 self.assertEqual(diagnostic[name], baseline[name], name)
         old = baseline["primary_ap_app"]
         app = diagnostic["primary_ap_app"]
-        scratch = diagnostic["flash_stress"]
+        scratch = diagnostic["pal_disk"]
         self.assertEqual(app[0], old[0])
         self.assertEqual(app[1], scratch[0])
         self.assertEqual(scratch[1], old[1])
@@ -44,7 +44,7 @@ class LayoutTest(unittest.TestCase):
 
     def test_native_code_and_erase_alignment(self):
         app = diagnostic["primary_ap_app"]
-        scratch = diagnostic["flash_stress"]
+        scratch = diagnostic["pal_disk"]
         self.assertEqual((app[1] - app[0]) % (34 * 1024), 0)
         self.assertEqual(scratch[0] % 4096, 0)
         self.assertEqual((scratch[1] - scratch[0]) % 4096, 0)
