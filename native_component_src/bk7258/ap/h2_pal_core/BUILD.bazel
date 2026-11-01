@@ -216,6 +216,24 @@ cc_test(
     }),
 )
 
+py_test(
+    name = "ble_host_lifecycle_test",
+    srcs = ["tests/test_h2_bk_ble_host_lifecycle.py"],
+    data = [
+        "src/h2_bk_ble_gatt_schema.h",
+        "src/h2_bk_platform_ble.c",
+        "tests/ble_host_lifecycle_probe.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = False,
+    main = "tests/test_h2_bk_ble_host_lifecycle.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_test(
     name = "sync_cond_test",
     srcs = [

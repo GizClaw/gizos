@@ -1,0 +1,27 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ap.defaults",
+    "cp.defaults",
+    "ram_regions.csv",
+])
+
+alias(
+    name = "ap_gpio",
+    actual = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:ap_gpio_display",
+)
+
+alias(
+    name = "cp_gpio",
+    actual = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:cp_gpio",
+)
+
+alias(
+    name = "ram_regions",
+    actual = "ram_regions.csv",
+)
+
+alias(
+    name = "layout",
+    actual = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:layout",
+)

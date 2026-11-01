@@ -98,6 +98,7 @@ if(H2_BK_PLATFORM_ENABLE_WEBRTC)
 endif()
 
 set(H2_BK_PLATFORM_CORE_SRCS
+  "src/h2_bk_fault_snapshot.c"
   "src/h2_bk_platform_atomic.c"
   "src/h2_bk_atomic.c"
   "src/h2_bk_platform_mem.c"
@@ -161,6 +162,12 @@ armino_component_register(
     ${H2_BK_PLATFORM_CORE_PRIV_INCLUDE_DIRS}
   PRIV_REQUIRES
     ${H2_BK_PLATFORM_CORE_PRIV_REQUIRES})
+
+armino_build_set_property(LINK_OPTIONS "-Wl,-u,bk_fault_context_enter" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,-u,bk_fault_context_observe" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,-u,bk_fault_context_persist" APPEND)
+set_property(SOURCE "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_fault_snapshot.c"
+  TARGET_DIRECTORY ${COMPONENT_LIB} APPEND PROPERTY COMPILE_OPTIONS "-fno-lto")
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
   ${H2_BK_PLATFORM_CORE_COMPILE_DEFINITIONS}

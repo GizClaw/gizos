@@ -7,6 +7,7 @@
 
 #include "bk_private/bk_ota_private.h"
 #include "components/system.h"
+#include "components/log.h"
 #include "driver/flash.h"
 #include "h2/pal/core/h2_pal_errors.h"
 #include "modules/ota.h"
@@ -192,6 +193,10 @@ static h2_pal_result_t power_reboot(void* user, uint32_t reason) {
   (void)reason;
   /* Reset the whole device after committing the boot selection, so CP and
      AP restart together through the system firmware boot path. */
+#ifndef H2_BK_H2LOADER_POWER_HOST_TEST
+  BK_LOGW("h2-power", "H2_BK_REBOOT owner=h2loader reason=%lu caller=%p\r\n",
+          (unsigned long)reason, __builtin_return_address(0));
+#endif
   bk_wdt_force_reboot();
   return H2_PAL_OK;
 }

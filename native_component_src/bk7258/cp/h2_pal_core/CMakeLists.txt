@@ -18,6 +18,32 @@ armino_component_register(
   PRIV_REQUIRES
     ${H2_BK_PLATFORM_CORE_PRIV_REQUIRES})
 
+armino_build_set_property(LINK_OPTIONS "-Wl,-u,bk_fault_context_enter" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,-u,bk_fault_context_observe" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,-u,bk_fault_context_persist" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,-u,h2_bk_pm_diagnostics_start" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=sys_drv_enter_low_voltage" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=bk_aon_wdt_feed" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=bk_aon_wdt_stop" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=gpio_enter_low_power" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=gpio_exit_low_power" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=bk_flash_power_saving_enter" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=sys_hal_set_cp_sleep_vote_and_check_subcores_enter_wfi" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=sys_drv_enter_normal_sleep" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=vPortSuppressTicksAndSleep" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=vTaskStepTick" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=bk_aon_rtc_get_ms" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=arch_interrupt_get_handler" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=vPortEnterCritical" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=vPortExitCritical" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=vPortYield" APPEND)
+armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=shell_log_flush" APPEND)
+foreach(H2_BK_CP_SOURCE IN LISTS H2_COMPONENT_SOURCES)
+  if(H2_BK_CP_SOURCE MATCHES "/h2_bk_pm_(observer|vector)\\.c$")
+    set_source_files_properties("${H2_BK_CP_SOURCE}" PROPERTIES COMPILE_OPTIONS "-fno-lto")
+  endif()
+endforeach()
+
 # The public AP SDK disconnect lacks a radio-disassociate RPC; legacy
 # BK_CMD_DISCONNECT stops the entire service. Add a paired private command
 # to the pinned controller in a guarded build-tree copy, preserving the SDK.

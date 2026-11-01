@@ -275,6 +275,26 @@ static h2_pal_result_t bk_net_tls_load_ca(
   return H2_PAL_OK;
 }
 
+/* Numeric diagnostics identify native verification failures without exposing
+ * the peer certificate, hostname, request data or credentials. */
+static void bk_net_tls_trace_failure(const bk_net_tls_socket_t* socket,
+                                     int result, uint64_t started_ms) {
+  char diagnostic[192];
+  const uint64_t now = bk_net_now_ms();
+  (void)snprintf(
+      diagnostic, sizeof(diagnostic),
+      "tls_handshake fd=%d result=%d verify_flags=0x%08lx elapsed_ms=%llu "
+      "heap_free=%lu heap_min=%lu psram_free=%lu",
+      socket->fd, result,
+      (unsigned long)mbedtls_ssl_get_verify_result(&socket->ssl),
+      (unsigned long long)(now >= started_ms ? now - started_ms : 0u),
+      (unsigned long)rtos_get_free_heap_size(),
+      (unsigned long)rtos_get_minimum_free_heap_size(),
+      (unsigned long)rtos_get_psram_free_heap_size());
+  (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR, "pal/net",
+                         diagnostic);
+}
+
 /* Some SDK mbedTLS builds omit MBEDTLS_HAVE_TIME_DATE, which otherwise
  * accepts expired certificates even with VERIFY_REQUIRED. Compare the peer
  * chain against calibrated PAL wall time on every verified handshake. */
@@ -335,7 +355,8 @@ static int bk_net_tls_verify_dates(void* user, mbedtls_x509_crt* cert,
 static h2_pal_result_t bk_net_tls_handshake(
     bk_net_tls_socket_t* socket, uint32_t timeout_ms,
     h2_pal_net_tls_verify_t verify_mode) {
-  uint64_t deadline = bk_net_now_ms() + timeout_ms;
+  const uint64_t started_ms = bk_net_now_ms();
+  uint64_t deadline = started_ms + timeout_ms;
   for (;;) {
     int result = mbedtls_ssl_handshake(&socket->ssl);
     if (result == 0) {
@@ -343,12 +364,14 @@ static h2_pal_result_t bk_net_tls_handshake(
         return H2_PAL_OK;
       }
       if (mbedtls_ssl_get_verify_result(&socket->ssl) != 0u) {
+        bk_net_tls_trace_failure(socket, result, started_ms);
         return H2_PAL_ERR_TLS_VERIFY;
       }
       return H2_PAL_OK;
     }
     if (result != MBEDTLS_ERR_SSL_WANT_READ &&
         result != MBEDTLS_ERR_SSL_WANT_WRITE) {
+      bk_net_tls_trace_failure(socket, result, started_ms);
       return result == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
                  ? H2_PAL_ERR_TLS_VERIFY
                  : H2_PAL_ERR_IO;

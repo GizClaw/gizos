@@ -22,7 +22,7 @@ _ESP_LAYOUTS = {
 _BK7258_BOARDS = {
     ("bk7258", "bk7258_v3_202405"): struct(
         root = "//boards/bk7258_v3_202405/bk7258",
-        layouts = ["h2loader", "loader", "media", "wifi_csi"],
+        layouts = ["h2loader", "loader", "media", "wifi_csi", "e2e"],
     ),
 }
 

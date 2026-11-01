@@ -48,7 +48,7 @@ def main():
         compile_sources = [patched if p == sources[1] else p for p in sources]
         includes = [component / "tests/pref_nor_sdk", component / "include",
             component / "src/flashdb", component / "src", fdb / "inc", fdb / "port/fal/inc", repo / "libs/pal/include"]
-        cmd = [compiler, *(["-fsanitize=address", "-fno-omit-frame-pointer"] if os.environ.get("H2_PREF_NOR_SANITIZE") else []), *(["-DH2_PREF_NOR_DEBUG", "-DFDB_DEBUG_ENABLE"] if os.environ.get("H2_PREF_NOR_DEBUG") else []), "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Wno-unused-parameter",
+        cmd = [compiler, *(["-fsanitize=address,bounds", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"] if os.environ.get("H2_PREF_NOR_SANITIZE") else []), *(["-DH2_PREF_NOR_DEBUG", "-DFDB_DEBUG_ENABLE"] if os.environ.get("H2_PREF_NOR_DEBUG") else []), "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Wno-unused-parameter",
             *["-I" + str(p) for p in includes], *map(str, compile_sources),
             str(component / "src/h2_bk_platform_pref_flashdb_port.c"),
             str(component / "tests/test_h2_bk_pref_real_nor.c"), "-o", str(binary)]
@@ -62,6 +62,8 @@ def main():
         subprocess.run([str(binary),str(Path(tmp)/"port-cache.bin"),"clean"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"remove-prefetch.bin"),"remove-prefetch"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"remove-prefetch.bin"),"clean"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"independent-write-cache.bin"),"independent-write-cache"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"independent-write-cache.bin"),"clean"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"cache.bin"),"cache"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"cache.bin"),"clean"],check=True,timeout=90)
         if args.compare_baseline:

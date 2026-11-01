@@ -2698,8 +2698,11 @@ static h2_pal_result_t h2_bk_ble_start(h2_pal_ble_t* ble) {
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_bk_ble_unregister_gatt_services(h2_pal_ble_t* ble);
+
 static h2_pal_result_t h2_bk_ble_stop(h2_pal_ble_t* ble) {
-  (void)ble;
+  h2_pal_result_t detach_rc = h2_bk_ble_unregister_gatt_services(ble);
+  if (detach_rc != H2_PAL_OK) return detach_rc;
   if (s_h2_bk_ble_gatt_mutex != NULL &&
       rtos_lock_mutex(&s_h2_bk_ble_gatt_mutex) == kNoErr) {
     if (s_h2_bk_ble_gatts_tx.kind != H2_BK_BLE_GATTS_TX_IDLE) {
@@ -2731,7 +2734,9 @@ static h2_pal_result_t h2_bk_ble_stop(h2_pal_ble_t* ble) {
   s_h2_bk_ble_legacy_adv_data_valid = 0;
   memset(s_h2_bk_ble_adv_sets, 0, sizeof(s_h2_bk_ble_adv_sets));
   s_h2_bk_ble_started = 0;
-  memset(s_h2_bk_ble_service_started, 0, sizeof(s_h2_bk_ble_service_started));
+  /* The SDK keeps the installed GATT tables across a logical Host stop.
+   * Retain their state so the next start reuses them after callback rebinding;
+   * recreating them on each start exhausts the SDK's dynamic attribute pool. */
   h2_bk_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED, NULL, 0u);
   return H2_PAL_OK;
 }

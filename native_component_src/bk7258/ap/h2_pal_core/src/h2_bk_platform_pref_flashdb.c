@@ -126,7 +126,8 @@ static bool bk_pref_iterate_database(fdb_kvdb_t database,
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
 /* This caches only the selected database, never an on-flash record address.
  * All callers hold the PAL operation mutex (or initial pool mutex). Large
- * mutations invalidate before attempting publication, including late failures.
+ * mutations invalidate the affected key before attempting publication,
+ * including late failures.
  */
 #define H2_BK_PREF_ROUTE_CACHE_COUNT 16u
 static struct {
@@ -180,6 +181,18 @@ static fdb_kvdb_t bk_pref_route_find(const char* key) {
     }
   }
   return NULL;
+}
+
+/* Only this key can move between databases. GC moves record addresses within
+ * a database, which this cache never retains. Hardware faults still invalidate
+ * every route before recovery. */
+static void bk_pref_route_forget(const char* key) {
+  for (size_t i = 0u; i < H2_BK_PREF_ROUTE_CACHE_COUNT; ++i) {
+    if (s_pref_route_cache[i].database &&
+        !strcmp(s_pref_route_cache[i].key, key)) {
+      memset(&s_pref_route_cache[i], 0, sizeof(s_pref_route_cache[i]));
+    }
+  }
 }
 #endif
 
@@ -263,7 +276,7 @@ static int bk_pref_store_value(const char* key, const void* data,
 #endif
 #ifdef H2_BK_PREF_LARGE_FLASHDB_PATH
   if (database == &s_pref_large_database) {
-    bk_pref_route_invalidate();
+    bk_pref_route_forget(key);
     int rc = large_write(key, data, length);
     if (!rc) bk_pref_route_remember(key, &s_pref_large_database);
     return rc;

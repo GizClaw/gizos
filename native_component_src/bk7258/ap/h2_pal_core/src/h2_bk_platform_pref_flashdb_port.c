@@ -173,7 +173,8 @@ static int bk_pref_flash_read(long offset, uint8_t* buffer, size_t size) {
     } else
       rc = BK_OK;
     if (rc == BK_OK)
-      memcpy(buffer, s_read_ahead.bytes + address - s_read_ahead.offset, size);
+      memcpy(buffer, s_read_ahead.bytes + (address - s_read_ahead.offset),
+             size);
   } else
     rc = bk_flash_read_bytes(address, buffer, (uint32_t)size);
   if (rc != BK_OK) {

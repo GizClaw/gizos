@@ -13,6 +13,7 @@ void _fini(void) {}
 extern void rtos_set_user_app_entry(beken_thread_function_t entry);
 
 extern void h2loader_cp_try_fixed_app(void);
+extern void h2_bk_pm_diagnostics_start(void) __attribute__((weak));
 
 static int main_entered;
 
@@ -28,6 +29,7 @@ static void h2loader_cp_entry(void) {
   }
   /* Failure leaves AES status unknown; ordinary App boot still works. */
   (void)h2_bk_flash_status_start();
+  if (h2_bk_pm_diagnostics_start) h2_bk_pm_diagnostics_start();
   /* Preserve the SDK boot vote and system services. Managed UART and logs
    * belong to AP/UART1; CP owns no H2Loader UART transport. */
   bk_pm_module_vote_boot_cp1_ctrl(PM_BOOT_CP1_MODULE_NAME_APP,
