@@ -14,6 +14,7 @@ H2Loader 统一使用 `h2loader`、`app`、`dl`、`data`、`preference` 和 `cor
 - [BK7258 V3 202405](./bk7258_v3_202405/)
 - [DevKit](./devkit/)
 - [ESP-Mosaico](./esp_mosaico/)
+- [H202](./h202/)
 - [JieLi AC791N DevKit](./jieli_ac791n_devkit/)
 - [SZP](./szp/)
 - [Waveshare ESP32-S3-A7670E-4G](./waveshare_esp32s3_a7670e_4g/)

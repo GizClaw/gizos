@@ -184,6 +184,15 @@ const appItems = [
             ],
           },
           {
+            text: "H202",
+            collapsed: true,
+            items: [
+              { text: "总览", link: "/apps/h2loader/boards/h202/" },
+              { text: "H2Loader", link: "/apps/h2loader/boards/h202/h2loader" },
+              { text: "MFG", link: "/apps/h2loader/boards/h202/mfg" },
+            ],
+          },
+          {
             text: "JieLi AC791N DevKit",
             collapsed: true,
             items: [

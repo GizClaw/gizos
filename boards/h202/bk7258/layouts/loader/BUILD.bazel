@@ -1,0 +1,32 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ap.defaults",
+    "cp.defaults",
+    "ram_regions.csv",
+    "bk_loader.json",
+    "ap/usr_gpio_cfg.h",
+    "partitions/bk7258/ab_position_independent.csv",
+    "partitions/bk7258/ota_rbl.config",
+    "pj_config.mk",
+])
+
+filegroup(
+    name = "ap_gpio",
+    srcs = ["ap/usr_gpio_cfg.h"],
+)
+
+filegroup(
+    name = "cp_gpio",
+    srcs = ["//boards/h202/bk7258:cp/usr_gpio_cfg.h"],
+)
+
+filegroup(
+    name = "layout",
+    srcs = [
+        "partitions/bk7258/ab_position_independent.csv",
+        "partitions/bk7258/auto_partitions.csv",
+        "partitions/bk7258/ota_rbl.config",
+        "pj_config.mk",
+    ],
+)
