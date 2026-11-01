@@ -1,0 +1,66 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "h202/mfg",
+        "h202/mfg/audio",
+        "h202/mfg/sensor",
+        "h202/mfg/wifi",
+        "h202/mfg/cellular",
+        "h202/mfg/power",
+    ],
+)
+
+# Private H202 controller and service. Loader MFG records come from the
+# native h2loader_bk component on device and from the library in host tests.
+cc_library(
+    name = "mfg",
+    srcs = ["src/h2_h202_mfg.c"],
+    hdrs = ["include/h2_h202_mfg.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = select({
+        "//tools/bazel/platforms:host_linux_target_linux": ["-lm"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":tasks",
+        "//libs/ntp",
+        "//libs/pal",
+        "//libs/runtime",
+        "//libs/utils",
+        "//projects/h2loader/libs/h2loader:api",
+    ],
+)
+
+[
+    cc_test(
+        name = name,
+        srcs = [source],
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        linkopts = ["-pthread"],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            ":mfg",
+            "//libs/atomic/providers/c11",
+            "//projects/h2loader/libs/h2loader",
+        ],
+    )
+    for name, source in [
+        ("mfg_test", "tests/test_mfg.c"),
+        ("service_test", "tests/test_mfg_service.c"),
+    ]
+]

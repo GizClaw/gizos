@@ -1,0 +1,181 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl", "h2loader_bk_recovery")
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware.bzl", "firmware_version")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "CMakeLists.txt",
+    "ap/CMakeLists.txt",
+    "ap/ap_main.c",
+])
+
+bk7258_target_task_policy(
+    ap_default_policy = "7 0 16384 psram",
+    ap_policies = [
+        "bk/h2loader  6 0 65536 psram",
+        "h2loader/appcmd  5 0 49152 psram",
+        "$bleikcp/kcp  5 0 4096 psram",
+        "$bleikcp/server  5 0 4096 psram",
+        "$h2loader/blelink  5 0 4096 psram",
+        "$h2loader/return  default",
+        "$h2loader/uartcmd  5 0 49152 psram",
+        "$h2peer/net  default",
+        "$h2peer/udp  default",
+        "$runtime/input  default",
+        "$runtime/nfc  default",
+    ],
+    cp_default_policy = "6 16384 default",
+    graph = [":h2loader_launcher"],
+)
+
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["bk/h2loader"],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+        "//libs/utils",
+    ],
+)
+
+firmware_native_component(
+    name = "ap_launcher_component",
+    srcs = [
+        "ap/ap_main.c",
+    ],
+    hdrs = [],
+    component_directory = "projects/h2loader/targets/h2loader_tar_zlib/loader/h202/ap",
+    component_name = "ap",
+    data = ["ap/CMakeLists.txt"],
+    execution_unit = "ap",
+    native_srcs = [
+        "//projects/h2loader/apps/loader/app:h2loader_bleikcp.c",
+    ],
+    deps = ["//projects/h2loader/apps/loader/app:tasks"],
+)
+
+firmware_native_component(
+    name = "h2loader_launcher",
+    srcs = [],
+    hdrs = [],
+    data = [
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        ":ap_launcher_component",
+        ":entry_tasks",
+        ":firmware_lib",
+        "//boards/h202/bk7258",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/pal",
+        "//libs/runtime",
+        "//native_component_src/bk7258/ap/h2_pal_core",
+        "//native_component_src/bk7258/ap/zlib",
+        "//native_component_src/bk7258/cp/h2_pal_core",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
+        "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
+    ],
+)
+
+cc_test(
+    name = "launcher_test",
+    srcs = ["tests/test_loader_launcher.c"],
+    conlyopts = [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+    includes = ["."],
+    local_defines = ["H2_H202_LOADER_HOST_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":loader_test_source",
+        "//boards/h202/bk7258:loader_headers",
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+        "//projects/h2loader/libs/h2loader",
+    ],
+)
+
+cc_library(
+    name = "loader_test_source",
+    testonly = True,
+    textual_hdrs = ["ap/ap_main.c"],
+)
+
+firmware_version(
+    name = "version",
+    build = "//boards/h202:version",
+    main_version = "//projects/h2loader/apps/loader:version",
+)
+
+h2loader_bk7258_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "ap/CMakeLists.txt",
+        "ap/ap_main.c",
+    ],
+    ap_task_policy = ":ap_task_policy",
+    board = "h202",
+    cp_task_policy = ":cp_task_policy",
+    graph = [":h2loader_launcher"],
+    layout_files = {
+        "ap_config": [
+            "//boards/h202/bk7258:ap.defaults",
+            "//boards/h202/bk7258/layouts/loader:ap.defaults",
+        ],
+        "ap_gpio": "//boards/h202/bk7258/layouts/loader:ap_gpio",
+        "cp_config": [
+            "//boards/h202/bk7258:cp.defaults",
+            "//boards/h202/bk7258/layouts/loader:cp.defaults",
+        ],
+        "cp_gpio": "//boards/h202/bk7258/layouts/loader:cp_gpio",
+        "project_support_files": ["//boards/h202/bk7258/layouts/loader:layout"],
+        "ram_regions": "//boards/h202/bk7258/layouts/loader:ram_regions.csv",
+        "recovery_config": "//boards/h202/bk7258/layouts/loader:bk_loader.json",
+    },
+    project = ":CMakeLists.txt",
+    project_name = "h2_bk_h2loader",
+    target = "bk7258",
+    version = ":version",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "h202",
+    firmware = ":firmware",
+    image = "h202-loader",
+    role = "h2loader",
+    target = "bk7258",
+)
+
+h2loader_bk_recovery(
+    name = "encrypted_recovery",
+    board = "h202",
+    firmware = ":firmware",
+)

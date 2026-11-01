@@ -1,0 +1,224 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ap.defaults",
+    "cp.defaults",
+    "ap/usr_gpio_cfg.h",
+    "cp/usr_gpio_cfg.h",
+])
+
+firmware_native_component(
+    name = "bk7258",
+    srcs = [
+        "ap/src/h2_bk7258_board.c",
+        "ap/src/h2_bk7258_board_fs.c",
+    ],
+    hdrs = [
+        "ap/include/h2_bk7258_board.h",
+        "include/h2_h202_board_config.h",
+    ],
+    component_directory = "boards/h202/bk7258/ap",
+    component_name = "h2_bk7258_board",
+    data = ["ap/CMakeLists.txt"],
+    execution_unit = "ap",
+    deps = ["//native_component_src/bk7258/ap/h2_pal_core"],
+)
+
+h2_tasks(
+    name = "mfg_tasks",
+    tasks = ["h202/ppp-rx"],
+)
+
+firmware_native_component(
+    name = "mfg",
+    srcs = [
+        "ap/src/h2_bk7258_board.c",
+        "ap/src/h2_bk7258_board_audio.c",
+        "ap/src/h2_bk7258_board_fs.c",
+        "ap/src/h2_bk7258_board_input.c",
+        "ap/src/h2_bk7258_board_led.c",
+        "ap/src/h2_bk7258_board_modem.c",
+        "ap/src/h2_bk7258_board_power.c",
+        "ap/src/h2_bk7258_board_runtime.c",
+    ],
+    hdrs = [
+        "ap/include/h2_bk7258_board.h",
+        "ap/src/h2_bk7258_board_private.h",
+        "include/h2_h202_board_config.h",
+    ],
+    component_directory = "boards/h202/bk7258/ap",
+    component_name = "h2_bk7258_board",
+    data = ["ap/CMakeLists.txt"],
+    execution_unit = "ap",
+    deps = [
+        ":mfg_tasks",
+        "//native_component_src/bk7258/ap/h2_nfc_fm175xx",
+        "//native_component_src/bk7258/ap/h2_pal_core",
+    ],
+)
+
+[
+    cc_test(
+        name = name + "_test",
+        srcs = [
+            "tests/test_" + name + ".c",
+            "ap/usr_gpio_cfg.h",
+            "tests/h2_h202_board_test_sdk.h",
+            source,
+            "ap/include/h2_bk7258_board.h",
+            "include/h2_h202_board_config.h",
+        ],
+        conlyopts = [
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        ],
+        includes = [
+            "ap",
+            "ap/include",
+            "include",
+            "tests",
+        ],
+        local_defines = ["H2_H202_HOST_TEST=1"],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = ["//libs/pal"],
+    )
+    for name, source in [
+        ("board", "ap/src/h2_bk7258_board.c"),
+        ("fs", "ap/src/h2_bk7258_board_fs.c"),
+    ]
+]
+
+cc_library(
+    name = "loader_headers",
+    hdrs = [
+        "ap/include/h2_bk7258_board.h",
+        "include/h2_h202_board_config.h",
+    ],
+    includes = [
+        "ap/include",
+        "include",
+    ],
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "input_led_test",
+    srcs = [
+        "ap/include/h2_bk7258_board.h",
+        "ap/src/h2_bk7258_board_input.c",
+        "ap/src/h2_bk7258_board_led.c",
+        "ap/src/h2_bk7258_board_private.h",
+        "include/h2_h202_board_config.h",
+        "tests/h2_h202_board_test_sdk.h",
+        "tests/test_input_led.c",
+    ],
+    conlyopts = [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+    includes = [
+        "ap/include",
+        "ap/src",
+        "include",
+        "tests",
+    ],
+    local_defines = [
+        "H2_H202_HOST_TEST=1",
+        "H2_H202_MFG_TEST=1",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "audio_test",
+    srcs = [
+        "ap/include/h2_bk7258_board.h",
+        "ap/src/h2_bk7258_board_audio.c",
+        "ap/src/h2_bk7258_board_private.h",
+        "include/h2_h202_board_config.h",
+        "tests/h2_h202_board_test_sdk.h",
+        "tests/test_audio.c",
+    ],
+    conlyopts = [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+    includes = [
+        "ap/include",
+        "ap/src",
+        "include",
+        "tests",
+    ],
+    linkopts = ["-pthread"],
+    local_defines = ["H2_H202_AUDIO_HOST_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/atomic",
+        "//libs/atomic/providers/c11",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "power_test",
+    srcs = [
+        "ap/include/h2_bk7258_board.h",
+        "ap/src/h2_bk7258_board_power.c",
+        "ap/src/h2_bk7258_board_private.h",
+        "include/h2_h202_board_config.h",
+        "tests/h2_h202_board_test_sdk.h",
+        "tests/test_power.c",
+    ],
+    conlyopts = [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+    includes = [
+        "ap/include",
+        "ap/src",
+        "include",
+        "tests",
+    ],
+    local_defines = [
+        "H2_H202_HOST_TEST=1",
+        "H2_H202_MFG_TEST=1",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)

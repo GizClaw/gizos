@@ -1,0 +1,8 @@
+load("//tools/bazel:board_version.bzl", "board_version")
+
+package(default_visibility = ["//visibility:public"])
+
+board_version(
+    name = "version",
+    build = 1,
+)
