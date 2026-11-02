@@ -32,6 +32,9 @@ struct h2_pal_fs_file {
 };
 
 static int s_storage_mounted;
+#ifndef H2_H202_HOST_TEST
+static int s_jedec_logged;
+#endif
 
 static int map_errno(int error) {
   switch (error) {
@@ -153,6 +156,15 @@ static int mount_storage(void) {
    * storage must not reset GPIOs owned by active App providers. */
   ret = bk_vfs_mount("SOURCE_NONE", partition.mount_path, "littlefs", 0,
                      &partition);
+#ifndef H2_H202_HOST_TEST
+  /* The mount attempt initializes QSPI and a failed mount leaves it up, so
+   * the part ID is reported even when the volume is rejected. */
+  if (!s_jedec_logged) {
+    s_jedec_logged = 1;
+    printf("H2_H202_QSPI_FLASH jedec_id=0x%06x\r\n",
+           (unsigned)bk_qspi_flash_read_id(QSPI_ID_0));
+  }
+#endif
   if (ret != 0) {
     printf("H2_H202_QSPI_LFS_MOUNT_FAIL rc=%d start=%u size=%u\r\n", ret,
            (unsigned)partition.part_flash.start_addr,
@@ -161,10 +173,6 @@ static int mount_storage(void) {
   }
   printf("H2_H202_QSPI_LFS_MOUNT size=%u\r\n",
          (unsigned)partition.part_flash.size);
-#ifndef H2_H202_HOST_TEST
-  printf("H2_H202_QSPI_FLASH jedec_id=0x%06x\r\n",
-         (unsigned)bk_qspi_flash_read_id(QSPI_ID_0));
-#endif
   s_storage_mounted = 1;
   return ensure_storage_dirs();
 }

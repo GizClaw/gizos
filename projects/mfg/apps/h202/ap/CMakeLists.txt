@@ -47,7 +47,7 @@ set(H2_H202_PROMPTS
     charge_insert charge_remove charge_passed nfc nfc_passed wifi_passed
     cellular_passed mic_left mic_right listen power plus minus aging waiting
     charge_failed nfc_failed wifi_failed cellular_failed mic_failed
-    aging_failed incomplete unsaved poweroff_failed)
+    aging_failed incomplete unsaved poweroff_failed network)
 set(H2_H202_PROMPT_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_h202_mfg_prompts.c")
 set(H2_H202_PROMPT_TEXT "#include <stddef.h>\n")
 foreach(H2_PROMPT IN LISTS H2_H202_PROMPTS)

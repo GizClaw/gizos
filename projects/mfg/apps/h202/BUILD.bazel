@@ -40,6 +40,7 @@ filegroup(
         "prompts/zh/mic_left.pcm",
         "prompts/zh/mic_right.pcm",
         "prompts/zh/minus.pcm",
+        "prompts/zh/network.pcm",
         "prompts/zh/nfc.pcm",
         "prompts/zh/nfc_failed.pcm",
         "prompts/zh/nfc_passed.pcm",
@@ -76,7 +77,7 @@ bk7258_target_task_policy(
         "$runtime/input  default",
         "$runtime/nfc  default",
     ],
-    cp_default_policy = "6 16384 default",
+    cp_default_policy = "6 4096 default",
     graph = [":mfg_launcher"],
 )
 

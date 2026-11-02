@@ -12,6 +12,7 @@ each declared file into a C array; the player upsamples it to the board's
 | `charge_passed.pcm` | 充电检测成功。 | Same |
 | `nfc.pcm` | 请将测试卡靠近感应区。 | Same |
 | `nfc_passed.pcm` | NFC检测成功。 | Same |
+| `network.pcm` | 正在检测网络，请稍候。 | Same |
 | `wifi_passed.pcm` | Wi-Fi测试成功。 | Same |
 | `cellular_passed.pcm` | 4G连接成功。 | 四G连接成功。 |
 | `mic_left.pcm` | 左侧麦克风检测，请对着左侧麦克风说话。 | Same |

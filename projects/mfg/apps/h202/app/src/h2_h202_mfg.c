@@ -193,6 +193,9 @@ static void net_item(h2_h202_mfg_t* app) {
       if (net->state == H2_H202_MFG_NET_FAILED) fail(app, net->error);
       break;
     case H2_H202_MFG_NET_RUNNING:
+      /* The check can take its whole budget; tell the operator it runs. */
+      if (play(app, H2_H202_MFG_PROMPT_NETWORK) != H2_PAL_OK)
+        fail(app, H2_PAL_ERR_IO);
       break;
     case H2_H202_MFG_NET_PASSED:
       pass(app);
@@ -761,12 +764,21 @@ static int16_t goertzel_db(const float state[2], float coefficient,
   return (int16_t)(db < -1200.0f ? -1200 : db > 1200.0f ? 1200 : db);
 }
 
+static int16_t energy_db(float sum_squares, uint32_t samples) {
+  float power = sum_squares / (float)samples;
+  if (power < 1e-12f) return -1200;
+  float db = 100.0f * log10f(power);
+  return (int16_t)(db < -1200.0f ? -1200 : db > 0.0f ? 0 : db);
+}
+
 h2_pal_result_t h2_h202_mfg_aec_meter_init(
     h2_h202_mfg_aec_meter_t* meter, const h2_h202_mfg_aec_config_t* config,
     uint8_t lane) {
   if (meter == NULL || config == NULL || lane > 1u ||
       config->sample_rate_hz == 0u || config->block_ms < 100u ||
-      config->tone_hz == 0u || config->tone_hz * 2u >= config->sample_rate_hz ||
+      (!config->voice_only &&
+       (config->tone_hz == 0u ||
+        config->tone_hz * 2u >= config->sample_rate_hz)) ||
       config->measure_ms < config->block_ms ||
       config->measure_ms / config->block_ms > H2_H202_MFG_AEC_MAX_BLOCKS)
     return H2_PAL_ERR_INVALID_ARG;
@@ -813,24 +825,46 @@ void h2_h202_mfg_aec_meter_capture(h2_h202_mfg_aec_meter_t* meter,
   ++meter->lane_frames;
   for (unsigned i = 0; i < samples; ++i) {
     int16_t x = raw[i * channels + meter->lane];
-    if (x != 0) meter->nonzero = true;
     uint64_t position = meter->lane_samples++;
+    if (x != 0 &&
+        (!meter->config.voice_only || (position >= start && position < end)))
+      meter->nonzero = true;
     if (position < start || position >= end ||
         meter->blocks >= H2_H202_MFG_AEC_MAX_BLOCKS)
       continue;
-    goertzel(meter->raw, meter->coefficient, (float)x / 32768.0f);
-    goertzel(meter->reference, meter->coefficient,
-             (float)reference[i] / 32768.0f);
-    goertzel(meter->processed, meter->coefficient,
-             (float)processed[i] / 32768.0f);
+    if (processed[i] != 0) meter->processed_nonzero = true;
+    if (meter->config.voice_only) {
+      /* No known excitation: report broadband levels, never claim a measured
+       * echo reduction. Audible speech quality is confirmed by the operator. */
+      float input = (float)x / 32768.0f;
+      float ref = (float)reference[i] / 32768.0f;
+      float output = (float)processed[i] / 32768.0f;
+      meter->raw[0] += input * input;
+      meter->reference[0] += ref * ref;
+      meter->processed[0] += output * output;
+    } else {
+      goertzel(meter->raw, meter->coefficient, (float)x / 32768.0f);
+      goertzel(meter->reference, meter->coefficient,
+               (float)reference[i] / 32768.0f);
+      goertzel(meter->processed, meter->coefficient,
+               (float)processed[i] / 32768.0f);
+    }
     if (++meter->in_block < meter->block_samples) continue;
     int16_t raw_db =
-        goertzel_db(meter->raw, meter->coefficient, meter->block_samples);
+        meter->config.voice_only
+            ? energy_db(meter->raw[0], meter->block_samples)
+            : goertzel_db(meter->raw, meter->coefficient, meter->block_samples);
     int16_t processed_db =
-        goertzel_db(meter->processed, meter->coefficient, meter->block_samples);
+        meter->config.voice_only
+            ? energy_db(meter->processed[0], meter->block_samples)
+            : goertzel_db(meter->processed, meter->coefficient,
+                          meter->block_samples);
     meter->raw_db_x10[meter->blocks] = raw_db;
     meter->reference_db_x10[meter->blocks] =
-        goertzel_db(meter->reference, meter->coefficient, meter->block_samples);
+        meter->config.voice_only
+            ? energy_db(meter->reference[0], meter->block_samples)
+            : goertzel_db(meter->reference, meter->coefficient,
+                          meter->block_samples);
     meter->reduction_db_x10[meter->blocks] = (int16_t)(raw_db - processed_db);
     ++meter->blocks;
     meter->in_block = 0u;
@@ -874,13 +908,19 @@ h2_h202_mfg_aec_verdict_t h2_h202_mfg_aec_meter_result(
           median(meter->reference_db_x10, meter->blocks);
       result.reduction_db_x10 = median(meter->reduction_db_x10, meter->blocks);
       const h2_h202_mfg_aec_config_t* config = &meter->config;
-      result.verdict = result.reference_dbfs_x10 < config->min_tone_dbfs_x10
-                           ? H2_H202_MFG_AEC_REFERENCE_LOW
-                       : result.raw_dbfs_x10 < config->min_tone_dbfs_x10
-                           ? H2_H202_MFG_AEC_RAW_LOW
-                       : result.reduction_db_x10 < config->min_reduction_db_x10
-                           ? H2_H202_MFG_AEC_REDUCTION_LOW
-                           : H2_H202_MFG_AEC_PASS;
+      if (config->voice_only) {
+        result.reduction_db_x10 = 0; /* No controlled echo measurement. */
+        result.verdict = meter->processed_nonzero ? H2_H202_MFG_AEC_PASS
+                                                  : H2_H202_MFG_AEC_NO_SIGNAL;
+      } else
+        result.verdict =
+            result.reference_dbfs_x10 < config->min_tone_dbfs_x10
+                ? H2_H202_MFG_AEC_REFERENCE_LOW
+            : result.raw_dbfs_x10 < config->min_tone_dbfs_x10
+                ? H2_H202_MFG_AEC_RAW_LOW
+            : result.reduction_db_x10 < config->min_reduction_db_x10
+                ? H2_H202_MFG_AEC_REDUCTION_LOW
+                : H2_H202_MFG_AEC_PASS;
     }
   }
   if (out != NULL) *out = result;
@@ -1099,7 +1139,8 @@ static const char* const s_prompt_names[H2_H202_MFG_PROMPT_COUNT] = {
     "mic_right",     "listen",        "power",           "plus",
     "minus",         "aging",         "waiting",         "charge_failed",
     "nfc_failed",    "wifi_failed",   "cellular_failed", "mic_failed",
-    "aging_failed",  "incomplete",    "unsaved",         "poweroff_failed"};
+    "aging_failed",  "incomplete",    "unsaved",         "poweroff_failed",
+    "network"};
 static const char* const s_mode_names[] = {"off", "on", "blink"};
 
 static int eyes_frame(h2_h202_mfg_service_t* s, h2_h202_mfg_color_t color) {
@@ -1348,7 +1389,9 @@ static int audio_cycle(slot_t* slot, int lane) {
       capture.bytes < (size_t)p->frame_samples * 4u)
     return H2_PAL_ERR_IO;
   for (unsigned i = 0; i < p->frame_samples; ++i) {
-    int32_t sample = s->tone_period ? s->tone[s->tone_phase] : 0;
+    bool tone_enabled = lane < 0 || !p->aec.voice_only;
+    int32_t sample =
+        tone_enabled && s->tone_period ? s->tone[s->tone_phase] : 0;
     s->tone_phase = s->tone_period ? (s->tone_phase + 1u) % s->tone_period : 0u;
     if (lane >= 0)
       sample += ((int32_t)s->capture[i * 2u + (unsigned)lane] *
@@ -1386,7 +1429,8 @@ static void run_mic(slot_t* slot) {
     tone_init(s);
     s->meter_active = true;
     rc = audio_open(s, true, &observer);
-    slog(s, "H202_MFG_TONE lane=%s on rc=%d", lane ? "right" : "left", rc);
+    slog(s, "H202_MFG_TONE lane=%s on rc=%d mode=%s", lane ? "right" : "left",
+         rc, p->aec.voice_only ? "voice" : "tone");
   }
   uint64_t limit =
       service_now(s) + p->aec.convergence_ms + p->aec.measure_ms + 3000u;
@@ -1409,9 +1453,10 @@ static void run_mic(slot_t* slot) {
       h2_h202_mfg_aec_meter_result(&s->meter, &result);
   slog(s,
        "H202_MFG_AEC lane=%u rc=%d verdict=%d blocks=%u ref=%ld raw=%ld "
-       "reduction=%ld",
+       "reduction=%ld mode=%s",
        lane, rc, verdict, result.blocks, (long)result.reference_dbfs_x10,
-       (long)result.raw_dbfs_x10, (long)result.reduction_db_x10);
+       (long)result.raw_dbfs_x10, (long)result.reduction_db_x10,
+       p->aec.voice_only ? "voice" : "tone");
   post(slot, H2_H202_MFG_EVENT_DONE, rc, verdict);
 }
 
@@ -1600,7 +1645,13 @@ static int wifi_attempt(slot_t* slot) {
   rc = slot_canceled(slot)
            ? H2_PAL_ERR_CLOSED
            : h2_pal_wifi_sta_connect(runtime->wifi_sta, &config, 15000u);
-  if (rc == H2_PAL_OK && !wifi_up(s)) rc = H2_PAL_ERR_UNAVAILABLE;
+  /* Connect returns once associated; DHCP finishes later. Wait without the
+   * operation mutex so App confirm and management are not held off; the
+   * controller's Wi-Fi budget cancels this slot if no address arrives. */
+  operation_unlock(s);
+  while (rc == H2_PAL_OK && !wifi_up(s)) rc = slot_sleep(slot, 200u);
+  if (rc == H2_PAL_OK) rc = operation_lock(slot);
+  if (rc != H2_PAL_OK) return slot_canceled(slot) ? H2_PAL_ERR_CLOSED : rc;
   h2_pal_netif_ref_t ref;
   memset(&ref, 0, sizeof(ref));
   const h2_pal_netif_filter_t filter = {.kind = H2_PAL_NETIF_KIND_WIFI_STA};

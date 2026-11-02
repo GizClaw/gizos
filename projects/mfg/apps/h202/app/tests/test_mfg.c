@@ -152,6 +152,8 @@ static void pass_to_mics(void) {
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
   expect(H2_H202_MFG_WIFI, H2_H202_MFG_PHASE_ACTIVE);
   assert(f.color == H2_H202_MFG_COLOR_CYAN);
+  /* Wi-Fi is still running: say so instead of staying silent. */
+  expect_prompt(H2_H202_MFG_PROMPT_NETWORK);
   done(H2_H202_MFG_OP_WIFI, H2_PAL_OK, 0);
   expect_prompt(H2_H202_MFG_PROMPT_WIFI_PASSED);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
@@ -172,6 +174,12 @@ static void pass_mics_and_keys(void) {
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_PASS);
   expect(H2_H202_MFG_LISTEN, H2_H202_MFG_PHASE_ACTIVE);
   expect_prompt(H2_H202_MFG_PROMPT_LISTEN);
+  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
+  unsigned audio_jobs = count_jobs(H2_H202_MFG_JOB_MIC);
+  step(120000u); /* No second replay, timeout or automatic confirmation. */
+  expect(H2_H202_MFG_LISTEN, H2_H202_MFG_PHASE_ACTIVE);
+  assert(count_jobs(H2_H202_MFG_JOB_MIC) == audio_jobs);
+  assert(status().results[H2_H202_MFG_LISTEN] == H2_H202_MFG_UNTESTED);
   click(H2_H202_MFG_KEY_RECORD);
   expect(H2_H202_MFG_POWER, H2_H202_MFG_PHASE_ACTIVE);
   click(H2_H202_MFG_KEY_POWER);

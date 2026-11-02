@@ -28,6 +28,7 @@ H2_H202_PROMPT(mic_failed)
 H2_H202_PROMPT(aging_failed)
 H2_H202_PROMPT(incomplete)
 H2_H202_PROMPT(unsaved)
+H2_H202_PROMPT(network)
 H2_H202_PROMPT(poweroff_failed)
 #undef H2_H202_PROMPT
 
@@ -78,7 +79,7 @@ const h2_h202_mfg_profile_t h2_h202_mfg_profile = {
     .frame_samples = H2_H202_AUDIO_FRAME_SAMPLES,
     .volume_percent = 35u,
     .tone_hz = 1000u,
-    /* Tone plus AEC monitor at 1/4 gain stays below full scale. */
+    /* Aging tone level; voice-only loopback uses the 1/4 monitor gain below. */
     .tone_amplitude = 24000,
     .monitor_gain_q15 = 8192u,
     .aec = {.sample_rate_hz = H2_H202_AUDIO_RATE_HZ,
@@ -87,7 +88,8 @@ const h2_h202_mfg_profile_t h2_h202_mfg_profile = {
             .measure_ms = 7000u,
             .block_ms = 100u,
             .min_tone_dbfs_x10 = -400,
-            .min_reduction_db_x10 = 100},
+            .min_reduction_db_x10 = 100,
+            .voice_only = true},
     .aging_frame_ms = 40u,
     /* Existing public manufacturing fixture; never saved. */
     .wifi_ssid = "HAIVIVI-MFG",
@@ -120,5 +122,6 @@ const h2_h202_mfg_profile_t h2_h202_mfg_profile = {
             PROMPT(INCOMPLETE, incomplete),
             PROMPT(UNSAVED, unsaved),
             PROMPT(POWEROFF_FAILED, poweroff_failed),
+            PROMPT(NETWORK, network),
         },
 };

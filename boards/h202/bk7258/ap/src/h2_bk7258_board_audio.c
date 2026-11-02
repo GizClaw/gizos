@@ -2,6 +2,7 @@
 
 #include "h2_atomic_static.h"
 #include <string.h>
+#include <stdio.h>
 
 #ifdef H2_H202_AUDIO_HOST_TEST
 #include "h2_h202_board_test_sdk.h"
@@ -22,6 +23,9 @@ enum {
   MONO_BYTES = SAMPLES * 2,
   STEREO_BYTES = MONO_BYTES * 2,
   CAPTURE_FRAMES = 4,
+  /* aec_size takes delay capacity, not frame samples. The pinned SDK init
+   * uses an 800-sample ring; match its example's 1000-sample allocation. */
+  AEC_DELAY_CAPACITY = 1000,
   STOP_MS = 1000
 };
 
@@ -198,11 +202,16 @@ static int capture_write(audio_port_handle_t port, char* buffer, int length,
       ++s_audio.capture_count;
     }
   }
+  unsigned queued = s_audio.capture_count;
+  bool pending = s_audio.reference_pending;
   if (!valid) h2_atomic_bool_store(&s_capture_fault, true, H2_ATOMIC_SEQ_CST);
   if (rtos_unlock_mutex(&s_audio.capture_lock) != 0) {
     h2_atomic_bool_store(&s_capture_fault, true, H2_ATOMIC_SEQ_CST);
     return AEL_IO_FAIL;
   }
+  if (!valid)
+    printf("H202_AUDIO_CAPTURE_FAIL ref=%u length=%d queued=%u pending=%u\r\n",
+           reference ? 1u : 0u, length, queued, pending ? 1u : 0u);
   return valid ? length : AEL_IO_FAIL;
 }
 
@@ -228,10 +237,11 @@ static int init_mic(void* user) {
     /* Two independent AEC states; a shared state would cross-contaminate the
      * microphone results. The ADC reference taps the DAC output ahead of the
      * PA through BK_MIC2P/N. */
+    uint32_t context_size = aec_size(AEC_DELAY_CAPACITY);
     s_audio.aec[i] =
-        h2_pal_mem_alloc(h2_bk_platform_psram_allocator(), aec_size(320));
+        h2_pal_mem_alloc(h2_bk_platform_psram_allocator(), context_size);
     if (s_audio.aec[i] == NULL) return H2_PAL_ERR_NO_MEMORY;
-    memset(s_audio.aec[i], 0, aec_size(320));
+    memset(s_audio.aec[i], 0, context_size);
     aec_init(s_audio.aec[i], H2_H202_AUDIO_RATE_HZ);
     uint32_t frame_samples = 0;
     aec_ctrl(s_audio.aec[i], AEC_CTRL_CMD_GET_FRAME_SAMPLE,

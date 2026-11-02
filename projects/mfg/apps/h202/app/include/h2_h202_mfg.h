@@ -81,6 +81,7 @@ typedef enum h2_h202_mfg_prompt {
   H2_H202_MFG_PROMPT_INCOMPLETE,
   H2_H202_MFG_PROMPT_UNSAVED,
   H2_H202_MFG_PROMPT_POWEROFF_FAILED,
+  H2_H202_MFG_PROMPT_NETWORK, /**< Stage 04 while a result is pending. */
   H2_H202_MFG_PROMPT_COUNT,
 } h2_h202_mfg_prompt_t;
 
@@ -312,6 +313,8 @@ typedef struct h2_h202_mfg_aec_config {
   uint32_t block_ms;            /**< At least 100. */
   int32_t min_tone_dbfs_x10;    /**< -400: reference and raw lane. */
   int32_t min_reduction_db_x10; /**< 100: raw minus processed. */
+  bool voice_only; /**< No test tone; check signal continuity, operator judges
+                      audio. */
 } h2_h202_mfg_aec_config_t;
 
 typedef enum h2_h202_mfg_aec_verdict {
@@ -332,8 +335,10 @@ typedef struct h2_h202_mfg_aec_meter {
   uint64_t lane_samples;
   uint32_t lane_frames;
   bool nonzero;
+  bool processed_nonzero;
   float coefficient;
-  float raw[2], reference[2], processed[2]; /**< Goertzel s1/s2. */
+  float raw[2], reference[2],
+      processed[2]; /**< Goertzel state or voice energy. */
   uint32_t in_block;
   unsigned blocks;
   int16_t raw_db_x10[H2_H202_MFG_AEC_MAX_BLOCKS];

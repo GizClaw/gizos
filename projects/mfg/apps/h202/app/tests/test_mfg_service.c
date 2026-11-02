@@ -144,6 +144,28 @@ static void test_measurement(void) {
   bad.block_ms = 50u;
   h2_h202_mfg_aec_meter_t meter;
   assert(h2_h202_mfg_aec_meter_init(&meter, &bad, 0) == H2_PAL_ERR_INVALID_ARG);
+  /* Quiet-speaker mode measures signal presence, not echo reduction. */
+  h2_h202_mfg_aec_config_t voice = aec;
+  voice.voice_only = true;
+  voice.tone_hz = 0u;
+  signal_t spoken = {.raw = {0.2f, 0.2f}, .processed = 0.2f};
+  assert(h2_h202_mfg_aec_meter_init(&meter, &voice, 0) == H2_PAL_OK);
+  feed(&meter, &spoken, 0, 500);
+  assert(h2_h202_mfg_aec_meter_result(&meter, &r) == H2_H202_MFG_AEC_PASS);
+  assert(r.reduction_db_x10 == 0 && r.reference_dbfs_x10 == -1200);
+  spoken.processed = 0.0f;
+  assert(h2_h202_mfg_aec_meter_init(&meter, &voice, 1) == H2_PAL_OK);
+  feed(&meter, &spoken, 1, 500);
+  assert(h2_h202_mfg_aec_meter_result(&meter, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
+  spoken.raw[1] = 0.0f;
+  spoken.processed = 0.2f;
+  assert(h2_h202_mfg_aec_meter_init(&meter, &voice, 1) == H2_PAL_OK);
+  feed(&meter, &spoken, 1, 500);
+  assert(h2_h202_mfg_aec_meter_result(&meter, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
+  assert(h2_h202_mfg_aec_meter_init(&meter, &voice, 0) == H2_PAL_OK);
+  feed(&meter, &spoken, 0, 300);
+  assert(h2_h202_mfg_aec_meter_result(&meter, &r) ==
+         H2_H202_MFG_AEC_INCOMPLETE);
   puts("aec measurement ok");
 }
 
@@ -483,10 +505,20 @@ static h2_pal_result_t nfc_scan(void* user, h2_pal_periph_id_t id,
 static const h2_pal_nfc_vtable_t nfc_vtable = {.scan_nfc_reader = nfc_scan};
 static const h2_pal_nfc_api_t nfc_api = {.vtable = &nfc_vtable};
 
+/* Associated with the fixture while DHCP never completes. */
+static atomic_bool wifi_associated, wifi_wait_locked;
+static atomic_uint wifi_status_reads;
 static int wifi_status(void* user, h2_pal_wifi_sta_status_t* out) {
   (void)user;
   memset(out, 0, sizeof(*out));
   out->state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  if (atomic_load(&wifi_associated)) {
+    out->state = H2_PAL_WIFI_STA_STATE_CONNECTED;
+    out->ssid_len = strlen("HAIVIVI-MFG");
+    memcpy(out->ssid, "HAIVIVI-MFG", out->ssid_len);
+    atomic_fetch_add(&wifi_status_reads, 1u);
+    if (operation_held()) atomic_store(&wifi_wait_locked, true);
+  }
   return H2_PAL_OK;
 }
 static int wifi_scan(void* user, const h2_pal_wifi_scan_request_t* request,
@@ -506,6 +538,7 @@ static int wifi_connect(void* user, const h2_pal_wifi_sta_config_t* config,
   assert(strcmp(config->ssid, "HAIVIVI-MFG") == 0);
   atomic_store(&wifi_connect_locked, operation_held());
   atomic_fetch_add(&wifi_connects, 1u);
+  if (atomic_load(&wifi_associated)) return H2_PAL_OK;
   return H2_PAL_ERR_UNAVAILABLE; /* No fixture AP on the host. */
 }
 static int wifi_disconnect(void* user) {
@@ -979,6 +1012,26 @@ static void test_session(void) {
   puts("service session, network ownership and shutdown ok");
 }
 
+static void test_wifi_waits_for_address(void) {
+  /* BK connect returns once associated, before DHCP. Waiting for the address
+   * uses the whole Wi-Fi budget (3 s here) instead of failing at once, and
+   * does not hold the operation mutex that App confirm also needs. */
+  atomic_store(&wifi_associated, true);
+  uint64_t begin = 0u, end = 0u;
+  assert(now_ms(NULL, &begin) == H2_PAL_OK);
+  start();
+  for (unsigned i = 0; i < 600u && status().wifi != H2_H202_MFG_NET_FAILED; ++i)
+    sleep_ms(10);
+  assert(now_ms(NULL, &end) == H2_PAL_OK);
+  assert(status().wifi == H2_H202_MFG_NET_FAILED);
+  assert(end - begin >= 2500u);
+  assert(atomic_load(&wifi_status_reads) > 1u);
+  assert(!atomic_load(&wifi_wait_locked));
+  stop();
+  atomic_store(&wifi_associated, false);
+  puts("wifi waits for a DHCP address within its budget ok");
+}
+
 static void test_resume_and_aging(void) {
   /* Resume at the first item not PASSED; the record is cleared at boot. */
   start();
@@ -1049,6 +1102,7 @@ int main(void) {
                            .power = &power_api,
                            .audio = &audio_api};
   assert(mutex_create(NULL, NULL, &operation) == H2_PAL_OK);
+  test_wifi_waits_for_address();
   test_session();
   test_resume_and_aging();
   assert(mutex_destroy(NULL, operation) == H2_PAL_OK);

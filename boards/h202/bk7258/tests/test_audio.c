@@ -74,9 +74,11 @@ int rtos_deinit_mutex(beken_mutex_t* mutex) {
   --live_mutexes;
   return 0;
 }
-unsigned aec_size(unsigned samples) {
-  assert(samples == H2_H202_AUDIO_FRAME_SAMPLES);
-  return sizeof(AECContext);
+unsigned aec_size(unsigned delay_samples) {
+  /* The SDK initializes an 800-point delay ring independently of the
+   * 320-sample frame size. Underallocating corrupts the next AEC context. */
+  assert(delay_samples >= 800u);
+  return sizeof(AECContext) + delay_samples * sizeof(int16_t);
 }
 void aec_init(AECContext* aec, unsigned rate) {
   assert(aec != NULL && rate == H2_H202_AUDIO_RATE_HZ);

@@ -14,6 +14,8 @@
 
 #include <string.h>
 
+static h2_pal_result_t transport_flush(void* user);
+
 static struct {
   h2_quectel_modem_t quectel;
   h2_pal_modem_vtable_t methods;
@@ -85,7 +87,16 @@ static h2_pal_result_t transport_init(void* user) {
       gpio_dev_map(H2_H202_MODEM_RX_GPIO, GPIO_DEV_UART2_RXD) != 0 ||
       gpio_dev_map(H2_H202_MODEM_TX_GPIO, GPIO_DEV_UART2_TXD) != 0)
     rc = -1;
-  return rc == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+  /* Native init clears interrupt enables. read_bytes consumes the software
+   * FIFO filled by the default RX ISR, so enable it after init and remap. */
+  if (rc == 0 && bk_uart_enable_rx_interrupt(H2_H202_MODEM_UART_ID) != 0)
+    rc = -1;
+  if (rc != 0) return H2_PAL_ERR_IO;
+  /* Default UART2 pins carry charger levels before remap. Let the RX ISR
+   * drain that hardware FIFO, then discard stale bytes before the first AT;
+   * subsequent responses retain strict framing in the public provider. */
+  rtos_delay_milliseconds(20);
+  return transport_flush(NULL);
 }
 
 static h2_pal_result_t transport_deinit(void* user) {
