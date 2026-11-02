@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "Local batch-loader window",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}

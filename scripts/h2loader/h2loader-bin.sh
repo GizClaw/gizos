@@ -1,8 +1,8 @@
 #!/bin/sh
-# Build the native h2loader CLI for this host and print its absolute path on
+# Build the native Gizloader CLI for this host and print its absolute path on
 # stdout (everything else goes to stderr), so it can be used inline:
 #
-#   $(make h2loader-bin) --port <serial-port> send --file bazel-bin/.../x.update.tar
+#   $(make gizloader-bin) --port <serial-port> send --file bazel-bin/.../x.update.tar
 #
 # Running the binary from the caller's shell keeps the caller's cwd, so
 # relative package paths and bazel-bin symlinks resolve as typed.
@@ -18,7 +18,7 @@ if [ -z "$config" ]; then
   esac
 fi
 
-target=//projects/h2loader/targets/cc_binary/cli:h2loader
+target=//tools/gizloader/native:gizloader-cli
 "$bazel" build --config="$config" "$target" >&2
 bin_dir=$("$bazel" info --config="$config" bazel-bin 2>/dev/null)
-printf '%s/projects/h2loader/targets/cc_binary/cli/h2loader\n' "$bin_dir"
+printf '%s/tools/gizloader/native/gizloader-cli\n' "$bin_dir"

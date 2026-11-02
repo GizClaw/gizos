@@ -34,4 +34,5 @@ __pycache__/
 
 # Devenv CLI development output (SDKs live in the configured shared store).
 /tools/gizos/dist/
+/tools/gizos/dist-public/
 /tools/gizos/node_modules/

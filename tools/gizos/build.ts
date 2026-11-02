@@ -19,6 +19,17 @@ export async function build(options: Record<string, string>) {
   const source = options["package-json"] ?? join(base, "package.json");
   const manifest = JSON.parse(await readFile(source, "utf8"));
   manifest.version = releaseVersion(options.batch ?? "local", manifest.version);
+  if (options.version !== undefined) {
+    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(options.version)) {
+      throw new Error("Package version must be an exact semantic version");
+    }
+    manifest.version = options.version;
+  }
+  if (options["package-name"] !== undefined) {
+    if (options["package-name"] !== "gizos") throw new Error("The public package alias must be named gizos");
+    manifest.name = "gizos";
+    manifest.publishConfig = { access: "public", registry: "https://registry.npmjs.org/" };
+  }
   // Build/package dependencies belong to the source checkout, never the CLI.
   delete manifest.scripts;
   delete manifest.devDependencies;
@@ -26,7 +37,11 @@ export async function build(options: Record<string, string>) {
   const result = await Bun.build({
     entrypoints: [resolve(options.entry ?? join(base, "src/cli.ts"))],
     target: "bun",
-    define: { GIZOS_VERSION: JSON.stringify(manifest.version) },
+    define: {
+      GIZOS_VERSION: JSON.stringify(manifest.version),
+      GIZOS_PACKAGE: JSON.stringify(manifest.name),
+      GIZOS_REGISTRY: JSON.stringify(manifest.publishConfig.registry),
+    },
   });
   if (!result.success) throw new Error(result.logs.map(String).join("\n"));
   const javascript = await result.outputs[0].text();

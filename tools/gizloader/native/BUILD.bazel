@@ -1,0 +1,149 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load(":info_plist.bzl", "cli_info_plist")
+
+package(default_visibility = ["//visibility:public"])
+
+# Preparation passes the same description used by the GUI application's plist:
+# --//tools/gizloader/native:bluetooth_description="..."
+string_flag(
+    name = "bluetooth_description",
+    build_setting_default = "Gizloader uses Bluetooth to discover and communicate with GizOS devices.",
+)
+
+cli_info_plist(
+    name = "cli_info_plist",
+    out = "gizloader-cli.Info.plist",
+    description = ":bluetooth_description",
+)
+
+cli_info_plist(
+    name = "session_info_plist",
+    out = "gizloader-session.Info.plist",
+    bundle_id = "com.gizclaw.gizloader.session",
+    description = ":bluetooth_description",
+    executable = "gizloader-session",
+)
+
+# TCC reads the executable's __TEXT,__info_plist section, including for CLI-only
+# invocations outside an application bundle. Keep it a declared linker input.
+cc_library(
+    name = "macos_cli_metadata",
+    additional_linker_inputs = select({
+        "@platforms//os:macos": [":cli_info_plist"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-sectcreate,__TEXT,__info_plist,$(location :cli_info_plist)"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "macos_session_metadata",
+    additional_linker_inputs = select({
+        "@platforms//os:macos": [":session_info_plist"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-sectcreate,__TEXT,__info_plist,$(location :session_info_plist)"],
+        "//conditions:default": [],
+    }),
+)
+
+_NATIVE_COMPATIBILITY = select({
+    "//tools/bazel/platforms:is_macos_arm64": [],
+    "//tools/bazel/platforms:is_linux_x86_64": [],
+    "//tools/bazel/platforms:is_linux_arm64": [],
+    "//tools/bazel/platforms:is_windows_x86_64": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_NATIVE_DEPS = [
+    "//libs/bleikcp",
+    "//libs/command",
+    "//libs/h2loader_host",
+    "//libs/pal",
+    "//libs/runtime",
+    "//projects/h2loader/apps/cli/app:h2loader_cli_app",
+    "//projects/h2loader/targets/cc_binary/cli:platform",
+]
+
+cc_binary(
+    name = "gizloader-cli",
+    srcs = ["//projects/h2loader/targets/cc_binary/cli:cli_main"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _NATIVE_COMPATIBILITY,
+    deps = [":macos_cli_metadata"] + _NATIVE_DEPS,
+)
+
+cc_binary(
+    name = "gizloader-session",
+    srcs = ["session.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _NATIVE_COMPATIBILITY,
+    deps = [":macos_session_metadata"] + _NATIVE_DEPS,
+)
+
+cc_library(
+    name = "session_source",
+    textual_hdrs = ["session.c"],
+    visibility = ["//visibility:private"],
+)
+
+cc_test(
+    name = "session_test",
+    srcs = ["session_test.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _NATIVE_COMPATIBILITY,
+    deps = [":session_source"] + _NATIVE_DEPS,
+)
+
+# Exercise the unified binary with the existing CLI packaging/Unicode/startup
+# regression tests, without opening serial ports or starting Bluetooth.
+py_test(
+    name = "native_cli_test",
+    size = "small",
+    srcs = ["//projects/h2loader/targets/cc_binary/cli:test_h2_h2loader_cli_native.py"],
+    args = [
+        "$(location :gizloader-cli)",
+        "$(location //projects/h2loader/targets/cc_binary/cli:startup_failure_fixture)",
+    ],
+    data = [
+        ":gizloader-cli",
+        "//projects/h2loader/targets/cc_binary/cli:startup_failure_fixture",
+    ],
+    legacy_create_init = 0,
+    main = "test_h2_h2loader_cli_native.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "info_plist_test",
+    size = "small",
+    srcs = ["test_info_plist.py"],
+    args = [
+        "$(location :gizloader-cli)",
+        "$(location :cli_info_plist)",
+        "$(location :gizloader-session)",
+        "$(location :session_info_plist)",
+    ],
+    data = [
+        ":cli_info_plist",
+        ":gizloader-cli",
+        ":gizloader-session",
+        ":session_info_plist",
+    ],
+    legacy_create_init = 0,
+    main = "test_info_plist.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

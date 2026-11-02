@@ -185,6 +185,7 @@ static void test_help_and_usage(void) {
   memset(&output, 0, sizeof(output));
 
   assert(run_cli(&output, 2, help) == H2_H2LOADER_CLI_EXIT_OK);
+  assert(strstr(output.bytes, "usage: gizloader [--port ENDPOINT]") != NULL);
   assert(strstr(output.bytes, "commands: package golden check scan") != NULL);
   assert(strstr(output.bytes, "restart-monitor") == NULL);
   assert(strstr(output.bytes, "monitor") != NULL);
@@ -199,7 +200,7 @@ static void test_help_and_usage(void) {
 
   memset(&output, 0, sizeof(output));
   assert(run_cli(&output, 7, disabled_ble) == H2_H2LOADER_CLI_EXIT_USAGE);
-  assert(strstr(output.bytes, "usage: h2loader") != NULL);
+  assert(strstr(output.bytes, "usage: gizloader") != NULL);
 
   memset(&output, 0, sizeof(output));
   assert(run_cli(&output, 8, serial_only_ble_option) ==
@@ -224,7 +225,7 @@ static void test_help_and_usage(void) {
 
   memset(&output, 0, sizeof(output));
   assert(run_cli(&output, 4, raw) == H2_H2LOADER_CLI_EXIT_USAGE);
-  assert(strstr(output.bytes, "usage: h2loader") != NULL);
+  assert(strstr(output.bytes, "usage: gizloader") != NULL);
 
   memset(&output, 0, sizeof(output));
   assert(run_cli(&output, 5, missing_port) == H2_H2LOADER_CLI_EXIT_USAGE);
@@ -251,7 +252,7 @@ static void test_ble_transport_routes_the_shared_device_command(void) {
   assert(run_cli_with_ble(&output, 6, argv, &source) ==
          H2_H2LOADER_CLI_EXIT_RUNTIME);
   assert(source.calls == 1u);
-  assert(strstr(output.bytes, "usage: h2loader") == NULL);
+  assert(strstr(output.bytes, "usage: gizloader") == NULL);
   assert(strstr(output.bytes, "command failed") != NULL);
 }
 
@@ -707,11 +708,11 @@ static void test_parser_defaults_and_json_escaping(void) {
   assert(output.len == 0u);
   memset(&output, 0, sizeof(output));
   assert(run_cli(&output, 4, negative_delay) == H2_H2LOADER_CLI_EXIT_USAGE);
-  assert(strstr(output.bytes, "usage: h2loader") != NULL);
+  assert(strstr(output.bytes, "usage: gizloader") != NULL);
   memset(&output, 0, sizeof(output));
   assert(run_cli(&output, 12, download_timeout) ==
          H2_H2LOADER_CLI_EXIT_RUNTIME);
-  assert(strstr(output.bytes, "usage: h2loader") == NULL);
+  assert(strstr(output.bytes, "usage: gizloader") == NULL);
 
   memset(&output, 0, sizeof(output));
   assert(h2_h2loader_cli_output_json_string(

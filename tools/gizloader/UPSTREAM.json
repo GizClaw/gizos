@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/GizClaw/h6infra.git",
+  "commit": "f3c761723c2b222b6447cac5615c2e6666507dcb",
+  "paths": ["desktop/loader", "frontend/src/desktop/loader", "frontend/src/public/batch-loader"],
+  "integration": "Desktop workbench and session supervisor; native Host Core and protocols are built from the current GizOS checkout."
+}

@@ -1,14 +1,32 @@
-# @gizclaw/gizos
+# GizOS desktop installer and SDK toolbox
 
-A TypeScript + Bun toolbox for shared SDKs and host tools. The source and version
-catalog live in GizOS. All firmware worktrees use the same configurable store;
-installing or upgrading the npm command does not duplicate SDKs or toolchains.
+A TypeScript + Bun installer for Gizloader desktop and a toolbox for shared SDKs
+and host tools. The source and version catalog live in GizOS. All firmware
+worktrees use the same configurable store; installing or upgrading the npm
+command does not duplicate SDKs or toolchains.
 
 ## Registry and installation
 
-The package is `@gizclaw/gizos`; its installed command is `gizos`.
-Bun 1.3.9 or newer is required. Configure the GizClaw registry in `~/.npmrc`
-(or `$XDG_CONFIG_HOME/.npmrc` when `XDG_CONFIG_HOME` is set):
+Bun 1.3.9 or newer is required. The public, unscoped `gizos` package is published
+to npmjs and needs no registry configuration. Its installed command is `gizos`:
+
+```sh
+bunx gizos
+bunx gizos install gizloader
+bunx gizos loader -- --help
+bunx gizos loader --snapshot
+bunx gizos setup esp-idf 6.2
+```
+
+With no arguments, `gizos` installs Gizloader if needed and opens its desktop
+window. `gizos --help` explicitly displays toolbox help. `gizos loader` opens
+the window; arguments after `loader` run the bundled native CLI and preserve
+stdout, stderr and exit status. Use `--` before CLI flags that overlap installer
+options. `install gizloader` installs or updates without opening the window.
+
+The scoped SDK package `@gizclaw/gizos` remains available with the same commands.
+Configure its GizClaw registry in `~/.npmrc` (or `$XDG_CONFIG_HOME/.npmrc` when
+`XDG_CONFIG_HOME` is set):
 
 ```ini
 @gizclaw:registry=https://static-volc.gizclaw.com/npm/
@@ -17,7 +35,9 @@ Bun 1.3.9 or newer is required. Configure the GizClaw registry in `~/.npmrc`
 Replace an existing scope mapping rather than adding a duplicate. Use this
 global mapping for `bunx`; other dependencies keep their configured registry.
 Public package downloads require no token.
-SDK source preparation requires Git. SDK and host-tool downloads require
+Gizloader downloads use Bun's HTTPS client and file APIs on both supported
+platforms; they require no Python, Git or Unix archive utilities on Windows.
+SDK source preparation requires Git. Other SDK and host-tool downloads require
 Python 3, using its HTTPS client with certificate verification and pinned
 archive checksums. Discovery/configuration commands also support Windows;
 SDK and tool installation retain the host support described below.
@@ -63,8 +83,7 @@ selection, source checkout and installation record.
 | BK7259 | `setup bk7259 4.0.1` | BK7259 source revision, shared GNU Arm 14.3.1 and BK Loader; `BK7259_PATH` and `BK_SDK_DIR` |
 | BK IDK | `setup bk_idk 2.0.1-r650e754` | One SDK snapshot for BK7236/BK7258, shared GNU Arm and BK Loader; `BK_IDK_PATH` and `BK_SDK_DIR` |
 | BK Loader | Installed with BK setup, or `install bk-loader 4.1.7` | Checksummed GizClaw source-built CLI; `BK_LOADER_BIN` and `bk_loader` on PATH |
-| H2Loader native CLI | `install h2loader` | Builds the pinned GizOS release once with Bazel; shared `H2LOADER_BIN` and `h2loader` on PATH |
-| H6 Batch Loader GUI | `install h6loader` | Installs the checksummed desktop app in shared storage; `h6loader` opens the GUI |
+| Gizloader desktop and CLI | No arguments, or `install gizloader` | Verified macOS arm64 DMG or Windows x64 per-user installer; `gizloader` opens the desktop and `gizloader <arguments>` runs the bundled CLI |
 | ADB | `install adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
 | JieLi SDKs | `setup jieli-ac695n`, `setup jieli-ac707n` or `setup jieli-ac791n` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
 | JieLi tools | Installed with a JieLi SDK, or `install jieli-toolchain 20250805.1` and `install jieli-postbuild 20260728.1` | `JIELI_TOOLCHAIN_ROOT`, `JIELI_POSTBUILD_ROOT` |
@@ -270,55 +289,80 @@ with `1.1.0.2.post1`; the legacy macOS vendor runtime remains adoptable as
 `4.0.2+260129055`. `tools selftest` is a GizClaw command and is not available
 in the official Beken executable.
 
-## H2Loader native CLI installation
+## Gizloader desktop and CLI installation
 
-Install the native host tool with the same tool command:
-
-```sh
-gizos install h2loader
-gizos env h2loader
-gizos run -- h2loader --help
-```
-
-The catalog pins GizOS release `v20261026-112329` and its exact source commit.
-The first installation requires Bazel 9.2.0 and the host C/C++ build tools.
-GizOS builds only the native CLI target and copies its executable into the
-shared tool directory. Repeated installs and other worktrees reuse that copy.
-Bazel uses the existing configured caches. This does not set up firmware SDKs,
-connect to serial devices or install firmware.
-
-The currently published `@gizclaw/h2loader` npm package is the browser SDK.
-It does not contain this native executable; a source build is used until
-native CLI release archives are available. The command in this repository is
-`h2loader`.
-
-## H6 Batch Loader GUI installation
-
-H6 Batch Loader is the desktop GUI from `GizClaw/h6infra`, distinct from the
-native `h2loader` CLI. Install it as a standalone tool:
+Gizloader unifies the desktop loader and its native CLI. Supported bootstrap
+hosts are macOS Apple Silicon (`darwin-arm64`) and Windows x64 (`win32-x64`).
+SDK commands keep their independent host support.
 
 ```sh
-gizos install h6loader
-gizos env h6loader
-gizos run -- h6loader
+bunx gizos                          # Install if absent, then open the desktop
+bunx gizos install gizloader         # Fetch the latest stable release or update
+bunx gizos install gizloader 1.2.3   # Select an exact published release
+bunx gizos install gizloader --snapshot
+bunx gizos loader                   # Open the installed desktop
+bunx gizos loader -- --help         # Run the bundled CLI, retaining its exit code
 ```
 
-The catalog pins version 0.2.1 and the macOS Apple Silicon DMG published through
-the GizClaw static release registry. Installation verifies the archive checksum,
-mounts it read-only, copies the complete app into the shared tool directory,
-and detaches the disk image. The bundled H2Loader and session-adapter programs
-remain inside the app. The existing `/Applications/H6 Batch Loader.app` is
-preserved; no system application or shell-profile configuration is required.
+Stable discovery selects the latest published, non-prerelease
+`gizloader-v<semver>` release from `GizClaw/gizos`, independently of firmware
+releases. The release workflow preserves stable tags and assets; installation
+does not depend on GitHub's optional immutable-releases setting. `--snapshot`
+selects `gizloader-snapshot`. Existing matching installations are reused without
+a download when opening; run `install gizloader` to refresh the selected channel.
+The bootstrap retrieves `gizloader-index.json` and `SHA256SUMS` from the selected
+GitHub Release, requires matching hashes, and checks the archive's exact size
+and SHA-256 before mounting or executing it. Published checksums are required;
+the npm package does not invent pins for future releases.
 
-`env h6loader` reports the application path and launcher directory, and shell
-activation adds `h6loader` to PATH. `h6loader --version` and `--help` do not
-open the GUI. Running `h6loader` with no arguments opens the managed app.
-Installation itself does not start the app or access serial devices.
+On macOS the complete `Gizloader.app` bundle is copied from a read-only DMG to a
+versioned managed directory under `<shared-root>/gizloader/apps`. Installation
+verifies bundle identifier `com.gizclaw.gizloader`, exact `GizloaderVersion`
+Info.plist metadata (including snapshot suffixes), the numeric or full short
+version, and executable names, then atomically switches `~/Applications/Gizloader.app` to that directory.
+An existing real app at that path is preserved and must be moved before managed
+installation. `~/.local/bin/gizloader` opens the GUI with `/usr/bin/open` without
+arguments and executes `Contents/MacOS/gizloader --cli "$@"` with arguments.
+Add `~/.local/bin` to PATH to use that shim directly, or use `gizos loader`.
+The bundle includes `gizloader-cli` and `gizloader-session` internally.
 
-The current official macOS build is ad-hoc signed and is not notarized;
-GizOS preserves its signature and does not change macOS security settings.
-The publisher also has a Windows installer, but GizOS GUI installation
-currently supports macOS arm64 only.
+On Windows the verified NSIS installer runs per-user with `/S`, using
+`%LOCALAPPDATA%\Programs\Gizloader` without administrator privileges. Its shipped
+`gizloader.cmd` wrapper opens the desktop without arguments and forwards native
+CLI arguments and exit status. The bootstrap calls `gizloader.exe --cli` directly
+for `gizos loader <arguments>`, preserving inherited console streams. The
+installer supplies `gizloader-cli.exe` and `gizloader-session.exe` alongside it.
+
+Offline imports accept locally downloaded release metadata and an installer:
+
+```sh
+gizos install gizloader --index ./gizloader-index.json \
+  --checksums ./SHA256SUMS --archive ./gizloader-1.2.3-macos-arm64.dmg
+```
+
+Add `--snapshot` for snapshot metadata. `--archive` alone downloads the release
+metadata and verifies the local installer against it. Supplying `--index` or
+`--checksums` requires all three files; the same contract and integrity checks
+apply without network access.
+
+The artifact contract is schema 1:
+
+```text
+{ schema: 1, version: <semver>, channel: "release" | "snapshot", commit: <40 hex>,
+  artifacts: [{ platform: "darwin-arm64" | "win32-x64", file: <filename>,
+                sha256: <64 hex>, size: <positive bytes>, format: "dmg" | "nsis",
+                app?: "Gizloader.app" }] }
+```
+
+DMGs are named `gizloader-<version>-macos-arm64.dmg`; NSIS installers are named
+`gizloader-<version>-windows-x64-setup.exe`. `app`, when present, is only valid
+for macOS. `SHA256SUMS` must list every indexed artifact; when it lists the index,
+its checksum is checked too.
+
+Standalone `h2loader` and `h6loader` installation is retired. Their catalog
+records remain available for existing installation discovery, adoption and
+removal. Fresh installations do not build the old native CLI from source;
+use `gizos install gizloader`.
 
 ## Shared storage and versions
 
@@ -527,9 +571,11 @@ gizos upgrade
 gizos upgrade 2026.10.30-r012345
 ```
 
-`upgrade` explicitly uses the GizClaw registry and only updates the global
-package. SDK and tool records remain intact. Ephemeral bunx users can request
-`bunx @gizclaw/gizos@latest env`; CI should pin a package version.
+`upgrade` uses the invoking package's registry: the scoped build uses the
+GizClaw registry and the public `gizos` alias uses npmjs. It only updates that
+global package. SDK and tool records remain intact. Ephemeral bunx users can
+request `bunx gizos@latest env` or `bunx @gizclaw/gizos@latest env`; CI should pin
+a package version.
 
 Release package versions are `YYYY.M.D-rHHMMSS`, corresponding to GizOS's
 `vYYYYMMDD-HHMMSS` release. GizOS builds `gizclaw-gizos-<version>.tgz` and puts
@@ -551,9 +597,26 @@ bun install --frozen-lockfile
 bun run typecheck
 bun run test
 bun run build
+bun run build:public
 ```
 
+The default build writes the scoped package to `dist`. The public alias build
+writes a self-contained package with `name: gizos` and npmjs `publishConfig` to
+`dist-public`. To give a release build an exact semantic version from the repo
+root, run:
+
+```sh
+bun tools/gizos/build.ts --output tools/gizos/dist-public --package-name gizos --version 1.2.3
+```
+
+`--version` overrides the normal batch/fallback version. Building does not
+publish either package; the public alias can be published independently without
+changing scoped registry release assembly.
+
 Tests use local Git sources, synthetic executables and an HTTP archive fixture.
-They cover shared pools, atomic/checksummed installation, adoption, host
-compatibility, shell quoting, PATH switching and standalone package execution.
-They do not open or modify a device.
+Gizloader tests inject local metadata, archive bytes and command runners without
+network access, covering size/hash rejection, stable release discovery,
+channel selection, DMG cleanup, CLI output/exit forwarding and per-user NSIS
+arguments. The suite also covers shared pools, atomic installation, adoption,
+host compatibility, shell quoting, PATH switching and standalone package
+execution. Tests do not open or modify a device.

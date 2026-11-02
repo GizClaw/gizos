@@ -1,13 +1,15 @@
-# H2Loader CLI
+# Gizloader CLI
 
-H2Loader CLI 是 repository-only 的短生命周期 native C11 设备和 package App。支持的入口是 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- <args>`，命令应从仓库根目录执行。CLI 不启动 persistent Web server、tray、actor 或 Desktop process。
+The installed `gizloader` command and GUI are distributed together. Run `bunx gizos` to install and open the application, or `bunx gizos install gizloader` to install it without opening a window. Running `gizloader` opens the GUI; command arguments select the native CLI and preserve its standard I/O and exit code. See the [Gizloader guide](../../../../tools/gizloader/README.md) for DMG/EXE installation, permissions, signing and development.
+
+From a source checkout, use `bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- <args>`. The old H2Loader target remains a compatibility entry for existing consumers; it is no longer a separate installation. The commands described below use the same GizOS Host Core.
 
 ## 环境
 
 CLI 由 Bazel 直接编译为当前 host 的 native executable，不使用 Python、uv、venv、pyserial 或 Bleak。`<host>` 使用 `macos_arm64`、`linux_x86_64`、`linux_arm64` 或 `windows_x86_64`。Windows 使用 Win32 Host Serial PAL 枚举和打开 `COM<n>` endpoint，并把当前可访问的本地 fixed/removable DOS drive root 挂载到对应的小写 portable filesystem path，例如 `C:\` 挂载为 `/c`。查看完整命令：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- -h
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- -h
 ```
 
 Windows 文件参数接受本机 DOS absolute path（含 `\\?\C:\...`）、调用目录下的 relative path，以及既有 `/c/...` portable path。CLI 用 wide-character entrypoint 将 Windows UTF-16 参数转换为 UTF-8；relative path 优先使用 `BUILD_WORKING_DIRECTORY`，否则使用本机 cwd，不改变进程目录。Native path adapter 只做 lexical normalization，reparse component 继续由 Windows PAL filesystem 拒绝；UNC、device 和 `C:file` drive-relative path 不转换为其他 mount。
@@ -19,11 +21,11 @@ Windows 文件参数接受本机 DOS absolute path（含 `\\?\C:\...`）、调�
 也可以让 Make 先编译再返回当前 host 的二进制路径，直接在自己的 shell 里调用（cwd 保持不变，相对路径按当前目录解析）：
 
 ```sh
-$(make h2loader-bin) -h
-$(make h2loader-bin) --port <serial-port> send --file bazel-bin/<...>/x.update.tar
+$(make gizloader-bin) -h
+$(make gizloader-bin) --port <serial-port> send --file bazel-bin/<...>/x.update.tar
 ```
 
-`make h2loader-bin` 只把路径写到 stdout，编译日志走 stderr；host config 按 `uname` 选择 `macos`/`linux`，可用 `BAZEL_CONFIG` 覆盖。
+`make gizloader-bin` 只把路径写到 stdout，编译日志走 stderr；host config 按 `uname` 选择 `macos`/`linux`，可用 `BAZEL_CONFIG` 覆盖。
 
 仓库启动前可以只检查环境：
 
@@ -80,7 +82,7 @@ ESP build 和 flash 需要 ESP-IDF 环境；BK 操作需要 BK SDK、toolchain �
 先扫描当前串口与 BLE management endpoint，并以设备返回的结构化 identity 选择 board、target、role 和 transport：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- scan
 ```
 
 扫描输出 JSON；serial candidate 的 transport 是 `iostreamikcp`，BLE candidate 是 `bleikcp`。CLI 按枚举顺序对每个 serial candidate 恰好执行一次 reliable connect、live status 和 disconnect；成功 entry 的 `port` 是后续 `--port` 可原样复用的 opaque ID，并同时返回 authoritative `board`、`target`、active identity、running/next partition、`boot_intent`、Stage/Partition metadata、`probe_result="ok"` 和 `probe_code=0`。失败 entry 仍保留 exact `port` 与 `endpoint`，使用 `probe_result="error"` 和 exact PAL `probe_code`，上述 identity field 为空；一个端口失败不隐藏其他 serial 或 BLE candidate。
@@ -90,16 +92,16 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 BLE 的 `port` 为空，后续命令把 scan 返回的 `endpoint` 作为 `--port`。Legacy H2Loader advertisement 保留 management service UUID；compact identity 可以来自新固件的 manufacturer data，也兼容旧固件的 Service Data，并可由 scan response 补全。CoreBluetooth 没有合并 scan response 时，完整、connectable 且携带 private management service UUID 的 primary packet 仍作为 unknown-board candidate 返回，权威 identity 只在连接后的 status 中取得。BLE entry 的广播 board 仍只是 discovery evidence，不与 serial entry 配对，也不提升为 live identity。CLI 不以串口文件名、USB metadata、BLE display name、广播 board 或候选顺序猜测设备。所有后续管理命令都使用同一套命令解析、typed request、状态门禁与终止结果，只由 `--transport` 选择连接 adapter：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> memory
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --transport bleikcp --port <ble-endpoint> status
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --transport bleikcp --port <ble-endpoint> memory
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> status
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> memory
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --transport bleikcp --port <ble-endpoint> status
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --transport bleikcp --port <ble-endpoint> memory
 ```
 
 CLI 按需初始化 BLE Host：`scan`、显式选择 `--transport bleikcp` 的管理命令和参数校验通过的 `bleikcp-speed` 会启动 BLE；`--help`、`check`、package 命令和串口设备命令不会触碰 BLE。macOS 的 BLE Host 由 CoreBluetooth 提供，responsible process 没有 Bluetooth 权限（TCC）时启动 BLE 会被系统直接终止；serial-only 场景使用全局 `--no-ble`，让 `scan` 只做串口发现并完全跳过 BLE 初始化。`--no-ble` 与 `--transport bleikcp` 同时出现会在连接前作为 usage error 拒绝：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --no-ble scan
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --no-ble scan
 ```
 
 `check` 报告 BLE capability 时只检查平台是否提供 BLE Host，不启动它；`--no-ble` 下 BLE capability 报告为不可用。
@@ -123,7 +125,7 @@ Loader 与 app image 都返回结构化 `H2_LOADER_STATUS`。状态包括 device
 当前 image 具有 Wi-Fi capability 时，可以先通过 reliable command session 扫描附近的 Wi-Fi AP：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- \
   --port <serial-port> \
   wifi scan --limit 16 --timeout-ms 10000
 ```
@@ -137,7 +139,7 @@ Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 
 选择 SSID 后连接 Wi-Fi：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- \
   --port <serial-port> \
   wifi connect <ssid> <password>
 ```
@@ -147,7 +149,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 该命令是否可用只由当前连接的 `command_availability` 决定；APP 与 Loader 使用相同命令和响应，不由 Host 根据 role 另设限制。CLI 不提供任意 raw command 旁路。主动断开当前连接：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- \
   --port <serial-port> \
   wifi disconnect
 ```
@@ -181,7 +183,7 @@ create-exclusive contract。CLI 直接 truncate/write/sync 目标文件，写入
 使用已经构建的 app image 创建 package：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- package \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- package \
   --out /tmp/update.tar \
   --app-bin /absolute/path/to/app.bin \
   --role app \
@@ -195,10 +197,10 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 当前 PAL FS contract 没有目录枚举，因此 native CLI 暂不支持 `--data-dir`；带该参数会明确返回 unsupported，不会绕过 PAL。`golden` 只生成 parser 和 desktop test 使用的确定性 fixture，不用于真实固件发布：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- golden --out /tmp/golden.tar
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- golden --out /tmp/golden.tar
 ```
 
-Loader image 使用 `--role h2loader`，且不能包含 `--data-dir`。将 package Stage 到设备后，显式执行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot upgrade`；仅 Stage 不会安装固件。
+Loader image 使用 `--role h2loader`，且不能包含 `--data-dir`。将 package Stage 到设备后，显式执行 `bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> reboot upgrade`；仅 Stage 不会安装固件。
 
 ## Stage 和启动
 
@@ -209,7 +211,7 @@ APP 与 Loader 都直接支持 `send`、`send-url` 和 `stage abort`。Host 不�
 通过同一串口直接发送 package：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- \
   --port <serial-port> \
   send \
   --file /tmp/update.tar
@@ -218,7 +220,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage。无响应 BLE write 遇到 controller queue backpressure 时最多重试 40 次、每次间隔 2 ms；如果 package 已完整确认但同连接暂时读不到 durable staged metadata，CLI 只在旧 connection 成功 disconnect 后执行 bounded reconnect，再核对 exact staged bytes/SHA-256；teardown 失败不会打开并发替代 session。它不会改写命令、另建 BLE 指令表或跨 scan 猜测物理设备：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- \
   --transport bleikcp \
   --port <ble-endpoint> \
   send \
@@ -230,7 +232,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 通过已经部署的 HTTP server 让设备下载 package：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- \
   --port <serial-port> \
   send-url \
   --ssid <ssid> \
@@ -243,7 +245,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 URL staging 也使用相同参数集。选择 BLE 时，只有 Wi-Fi 与 `stage url` 控制命令经过 BLE；设备仍通过 Wi-Fi/HTTP 下载 package，不会把 package payload 回退到 BLE：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- \
   --transport bleikcp \
   --port <ble-endpoint> \
   send-url \
@@ -264,7 +266,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 `send-url` 是 package transport，不是唯一的 Stage 路径。ESP target 上如果 `send-url` 返回 `state=error`、`checksum_fail`、`step=size`、重复停在同一字节数，或者网络路径不能稳定传完整包，保持设备在当前可管理 role，改用默认 `iostreamikcp` transport 的 UART `send` 发送同一个 package：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- \
   --port <serial-port> \
   send \
   --file /tmp/update.tar
@@ -273,8 +275,8 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 不要为了绕过 transport 故障改变 package 内容、降低验收条件或直接进入底层烧录。UART `send` 成功必须收到 `H2_LOADER_STAGE_RECEIVE result=OK` 和 `H2_LOADER_STAGE result=OK`；URL staging 成功仍必须收到 `H2_LOADER_DOWNLOAD state=done` 和 `H2_LOADER_STAGE result=OK`。
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot upgrade
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> reboot upgrade
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> status
 ```
 
 `reboot upgrade` 设置 `boot_intent=AUTO` 并从 Partition 1 重新进入基于真实 metadata/checksum 的流程。APP package 完成后必须证明 active role 为 APP、运行在 Partition 2、Stage 已收尾且 Partition 2 identity 与 package 一致。Loader package 先在 Partition 2 启动候选 Loader，再安全回写 Partition 1；完成后必须运行在 Partition 1，Partition 1/2 identity 和 checksum 一致，Stage 已收尾。流程不持久化 install phase。
@@ -286,7 +288,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 主动取消当前 staged candidate：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> stage abort
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> stage abort
 ```
 
 `stage abort` 不是下一次 `send` 或 `send-url` 的前置步骤。只有调用方要放弃当前 candidate、且尚未开始替换时才需要显式执行。
@@ -298,21 +300,21 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 启动 Partition 2：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot app
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> reboot app
 ```
 
 启动 Partition 1 并停留在 Loader：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot loader
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> reboot loader
 ```
 
 串口可以单独监控普通日志，或在 reboot 后持续监控：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> monitor
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot app --monitor
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot loader --monitor
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> monitor
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> reboot app --monitor
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> reboot loader --monitor
 ```
 
 `monitor` 是 Host-only UART 操作，输出 iostreamikcp 已判定不是 iKCP frame 的日志 bytes；设备协议中没有 `monitor` 命令。`--monitor` 在 reboot accepted 后处理断线、重连并继续输出同类日志。BLE 可以执行三个 reboot 命令，但显式请求 monitoring 会在发送 reboot 前被拒绝。
@@ -320,9 +322,9 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 ## Coredump
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> coredump status
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> coredump dump
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> coredump erase
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> coredump status
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> coredump dump
+bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- --port <serial-port> coredump erase
 ```
 
 先使用 `status` 确认 partition 和内容，再执行 `dump`。`erase` 会删除设备上的 coredump，需要在确认已经保存必要诊断数据后执行。

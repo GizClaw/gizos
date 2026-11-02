@@ -208,7 +208,7 @@ void h2_h2loader_cli_send_progress(void* user, uint64_t acknowledged_bytes,
 }
 
 static const char help_text[] =
-    "usage: h2loader [--port ENDPOINT] [--transport iostreamikcp|bleikcp]\n"
+    "usage: gizloader [--port ENDPOINT] [--transport iostreamikcp|bleikcp]\n"
     "                [--baud RATE]\n"
     "                [--ready MARKER]\n"
     "                [--wait-timeout SECONDS] [--read-timeout SECONDS]\n"

@@ -12,4 +12,4 @@ esac
 
 exec scripts/config/h2loader-operation-env.sh \
   "${BAZEL_BIN:-bazel}" run "--config=$host_config" \
-  //projects/h2loader/targets/cc_binary/cli:h2loader -- check
+  //tools/gizloader/native:gizloader-cli -- check

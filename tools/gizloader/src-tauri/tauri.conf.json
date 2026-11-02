@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gizloader",
+  "version": "0.1.0",
+  "identifier": "com.gizclaw.gizloader",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://127.0.0.1:4176/desktop/loader.html",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{
+      "label": "main", "title": "Gizloader", "url": "desktop/loader.html",
+      "width": 1320, "height": 880, "minWidth": 800, "minHeight": 600
+    }],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:4176 ws://127.0.0.1:4176"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "externalBin": ["binaries/gizloader-cli", "binaries/gizloader-session"],
+    "resources": ["licenses/h2loader.txt"],
+    "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"],
+    "macOS": { "minimumSystemVersion": "13.0", "infoPlist": "Info.plist" },
+    "windows": { "nsis": {
+      "installMode": "currentUser", "installerHooks": "windows/installer.nsh",
+      "startMenuFolder": "Gizloader", "displayLanguageSelector": false
+    } }
+  }
+}
