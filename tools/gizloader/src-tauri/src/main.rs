@@ -84,10 +84,35 @@ impl AppState {
         if let Some((_, cancel)) = self.0.picker.lock().unwrap().as_ref() {
             cancel.cancel();
         }
-        for job in self.0.jobs.lock().unwrap().values() {
+        self.0.jobs.lock().unwrap().retain(|_, job| {
             job.cancel.cancel();
-        }
+            job.started.load(Ordering::SeqCst)
+        });
         self.0.packages.lock().unwrap().clear();
+    }
+    fn cancel_job(&self, id: &str) {
+        let mut jobs = self.0.jobs.lock().unwrap();
+        let remove = jobs.get(id).is_some_and(|job| {
+            job.cancel.cancel();
+            !job.started.load(Ordering::SeqCst)
+        });
+        if remove {
+            jobs.remove(id);
+        }
+    }
+    fn start_job(&self, id: &str) -> Result<Job, String> {
+        let mut jobs = self.0.jobs.lock().unwrap();
+        let job = jobs.get(id).cloned().ok_or("任务不存在。")?;
+        if self.0.closing.load(Ordering::SeqCst) || job.cancel.is_cancelled() {
+            if !job.started.load(Ordering::SeqCst) {
+                jobs.remove(id);
+            }
+            return Err("任务已取消。".into());
+        }
+        if job.started.swap(true, Ordering::SeqCst) {
+            return Err("任务已开始执行。".into());
+        }
+        Ok(job)
     }
     fn prepare(
         &self,
@@ -320,9 +345,7 @@ fn prepare_job(
 
 #[tauri::command]
 fn cancel_job(job_id: String, state: State<'_, AppState>) {
-    if let Some(job) = state.0.jobs.lock().unwrap().get(&job_id) {
-        job.cancel.cancel();
-    }
+    state.cancel_job(&job_id);
 }
 
 #[tauri::command]
@@ -444,17 +467,7 @@ async fn execute_job(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let state = state.inner().clone();
-    let job = state
-        .0
-        .jobs
-        .lock()
-        .unwrap()
-        .get(&job_id)
-        .cloned()
-        .ok_or("任务不存在。")?;
-    if job.started.swap(true, Ordering::SeqCst) {
-        return Err("任务已开始执行。".into());
-    }
+    let job = state.start_job(&job_id)?;
     let _guard = JobGuard {
         state: state.clone(),
         id: job_id,
@@ -491,8 +504,26 @@ fn run_cli(arguments: Vec<std::ffi::OsString>) -> ! {
     }
 }
 
+fn application_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
+
+fn application_info() -> Value {
+    let context = application_context();
+    json!({
+        "schema": 1,
+        "identifier": context.config().identifier,
+        "version": context.package_info().version.to_string(),
+        "target": env!("NATIVE_TARGET"),
+    })
+}
+
 fn main() {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if arguments.len() == 1 && arguments[0] == "--gizloader-info" {
+        println!("{}", application_info());
+        return;
+    }
     cli::dispatch_worker(&arguments);
     if let Some(arguments) = cli_arguments(arguments) {
         run_cli(arguments);
@@ -540,7 +571,7 @@ fn main() {
             logs::clear_logs,
             logs::export_logs
         ])
-        .build(tauri::generate_context!())
+        .build(application_context())
         .expect("Failed to start Gizloader");
     app.run(|app, event| {
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
@@ -575,6 +606,17 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn application_identity_reports_the_embedded_version_and_native_target() {
+        let info = application_info();
+        assert_eq!(info["schema"], 1);
+        assert_eq!(info["identifier"], "com.gizclaw.gizloader");
+        assert_eq!(info["target"], env!("NATIVE_TARGET"));
+        assert!(info["version"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+    }
 
     #[test]
     fn cli_dispatch_preserves_arguments_and_explicit_gui() {
@@ -619,6 +661,53 @@ mod tests {
     }
 
     #[test]
+    fn client_cleanup_releases_prepared_jobs_before_a_reloaded_client_executes_them() {
+        let state = AppState::new(PathBuf::from("unused"));
+        state.0.ports.lock().unwrap().insert("COM1".into());
+        let id = state
+            .prepare("COM1".into(), Operation::Status, None)
+            .unwrap();
+        let cancellation = state.0.jobs.lock().unwrap()[&id].cancel.clone();
+        state.cancel_all();
+        assert!(cancellation.is_cancelled());
+        assert!(state.0.jobs.lock().unwrap().is_empty());
+        assert!(state.start_job(&id).is_err());
+        assert!(state
+            .prepare("COM1".into(), Operation::Status, None)
+            .is_ok());
+    }
+
+    #[test]
+    fn individual_cancellation_releases_prepared_jobs_but_retains_running_port_ownership() {
+        let state = AppState::new(PathBuf::from("unused"));
+        state.0.ports.lock().unwrap().insert("COM1".into());
+        let prepared = state
+            .prepare("COM1".into(), Operation::Status, None)
+            .unwrap();
+        let cancellation = state.0.jobs.lock().unwrap()[&prepared].cancel.clone();
+        state.cancel_job(&prepared);
+        assert!(cancellation.is_cancelled());
+        assert!(state.start_job(&prepared).is_err());
+        let running = state
+            .prepare("COM1".into(), Operation::Status, None)
+            .unwrap();
+        let active = state.start_job(&running).unwrap();
+        state.cancel_job(&running);
+        assert!(active.cancel.is_cancelled());
+        assert!(state.0.jobs.lock().unwrap().contains_key(&running));
+        assert!(state
+            .prepare("COM1".into(), Operation::Status, None)
+            .is_err());
+        drop(JobGuard {
+            state: state.clone(),
+            id: running,
+        });
+        assert!(state
+            .prepare("COM1".into(), Operation::Status, None)
+            .is_ok());
+    }
+
+    #[test]
     fn job_registry_enforces_port_ownership_limit_and_early_cancellation() {
         let state = AppState::new(PathBuf::from("unused"));
         *state.0.ports.lock().unwrap() = (0..17).map(|i| format!("COM{i}")).collect();
@@ -631,8 +720,11 @@ mod tests {
         assert!(state
             .prepare("COM0".into(), Operation::Status, None)
             .is_err());
+        let active = state.start_job(&id).unwrap();
+        assert!(state.start_job(&id).is_err());
         state.cancel_all();
-        assert!(state.0.jobs.lock().unwrap()[&id].cancel.is_cancelled());
+        assert!(active.cancel.is_cancelled());
+        assert!(state.0.jobs.lock().unwrap().contains_key(&id));
         for i in 1..16 {
             state
                 .prepare(format!("COM{i}"), Operation::Status, None)

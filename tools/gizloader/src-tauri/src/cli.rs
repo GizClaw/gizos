@@ -45,15 +45,22 @@ mod macos {
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
     use std::{
         fs::{self, File, OpenOptions},
-        io::{self, Read, Seek, Write},
-        os::unix::{
-            ffi::{OsStrExt, OsStringExt},
-            fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
-            process::{CommandExt, ExitStatusExt},
+        io::{self, Read, Write},
+        os::{
+            fd::AsRawFd,
+            unix::{
+                ffi::{OsStrExt, OsStringExt},
+                fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+                process::{CommandExt, ExitStatusExt},
+            },
         },
         path::PathBuf,
         process::{Child, ExitStatus, Stdio},
-        sync::atomic::{AtomicI32, Ordering},
+        sync::{
+            atomic::{AtomicBool, AtomicI32, Ordering},
+            mpsc::{self, Receiver, TryRecvError},
+            Arc,
+        },
         thread,
         time::{Duration, Instant},
     };
@@ -112,10 +119,9 @@ mod macos {
             .open(directory.join(name))
     }
 
-    fn private_file(directory: &Path, name: &str, append: bool) -> io::Result<File> {
+    fn private_file(directory: &Path, name: &str) -> io::Result<File> {
         let file = OpenOptions::new()
-            .read(!append)
-            .append(append)
+            .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(directory.join(name))?;
         let metadata = file.metadata()?;
@@ -132,7 +138,7 @@ mod macos {
 
     fn read_json<T: DeserializeOwned>(directory: &Path, name: &str) -> io::Result<T> {
         let mut bytes = Vec::new();
-        private_file(directory, name, false)?
+        private_file(directory, name)?
             .take(LIMIT + 1)
             .read_to_end(&mut bytes)?;
         if bytes.len() as u64 > LIMIT {
@@ -174,32 +180,184 @@ mod macos {
         Ok(bytes)
     }
 
-    // File offsets retain partial lines and arbitrary bytes without buffering a full log.
-    fn tail(file: &mut File, output: &mut impl Write) -> io::Result<()> {
-        io::copy(&mut file.take(LIMIT), output)?;
-        output.flush()
+    fn fifo(directory: &Path, name: &str) -> io::Result<File> {
+        let path = std::ffi::CString::new(directory.join(name).as_os_str().as_bytes())?;
+        if unsafe { libc::mkfifo(path.as_ptr(), 0o600) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        private_fifo(directory, name, false)
     }
 
+    fn private_fifo(directory: &Path, name: &str, write: bool) -> io::Result<File> {
+        let file = OpenOptions::new()
+            .read(!write)
+            .write(write)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(directory.join(name))?;
+        let metadata = file.metadata()?;
+        if !metadata.file_type().is_fifo()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.mode() & 0o077 != 0
+        {
+            return Err(invalid(
+                "CLI streams must be private FIFOs owned by the caller",
+            ));
+        }
+        Ok(file)
+    }
+
+    fn blocking(file: File) -> io::Result<File> {
+        let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
+        if flags == -1
+            || unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK) }
+                == -1
+        {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(file)
+    }
+
+    struct Streams {
+        stdout: File,
+        stderr: File,
+        // Only the supervising caller holds this reader. Closing it is observable even
+        // when the native process is silent or a forwarding thread is backpressured.
+        caller: File,
+    }
+    impl Streams {
+        fn create(directory: &Path) -> io::Result<Self> {
+            Ok(Self {
+                stdout: fifo(directory, "stdout")?,
+                stderr: fifo(directory, "stderr")?,
+                caller: fifo(directory, "caller")?,
+            })
+        }
+    }
+
+    fn caller_alive(mut caller: &File) -> io::Result<bool> {
+        // A nonblocking probe reliably reports EPIPE on Darwin when the last
+        // reader dies. A full liveness FIFO still means the caller is connected;
+        // its contents stay bounded in the kernel and never reach disk.
+        match caller.write(&[0]) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(false),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                Ok(true)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    struct Forwarding {
+        finished: Arc<AtomicBool>,
+        results: Receiver<io::Result<()>>,
+        remaining: usize,
+    }
+    impl Forwarding {
+        fn start(
+            stdout: File,
+            stderr: File,
+            output: impl Write + Send + 'static,
+            errors: impl Write + Send + 'static,
+        ) -> Self {
+            let finished = Arc::new(AtomicBool::new(false));
+            let (sender, results) = mpsc::channel();
+            fn forward(
+                source: File,
+                mut sink: impl Write,
+                finished: &AtomicBool,
+            ) -> io::Result<()> {
+                let mut source = blocking(source)?;
+                let mut buffer = [0; LIMIT as usize];
+                loop {
+                    match source.read(&mut buffer) {
+                        Ok(0) if finished.load(Ordering::Acquire) => return sink.flush(),
+                        Ok(0) => thread::sleep(POLL),
+                        Ok(count) => {
+                            sink.write_all(&buffer[..count])?;
+                            sink.flush()?;
+                        }
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                        Err(error) => return Err(error),
+                    }
+                }
+            }
+            let stdout_finished = Arc::clone(&finished);
+            let stdout_sender = sender.clone();
+            thread::spawn(move || {
+                let _ = stdout_sender.send(forward(stdout, output, &stdout_finished));
+            });
+            let stderr_finished = Arc::clone(&finished);
+            thread::spawn(move || {
+                let _ = sender.send(forward(stderr, errors, &stderr_finished));
+            });
+            Self {
+                finished,
+                results,
+                remaining: 2,
+            }
+        }
+
+        fn drained(&mut self) -> io::Result<bool> {
+            while self.remaining != 0 {
+                match self.results.try_recv() {
+                    Ok(result) => {
+                        self.remaining -= 1;
+                        result?;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        return Err(io::Error::other("CLI output forwarding stopped"));
+                    }
+                }
+            }
+            Ok(self.remaining == 0)
+        }
+    }
+    impl Drop for Forwarding {
+        fn drop(&mut self) {
+            self.finished.store(true, Ordering::Release);
+        }
+    }
+
+    const INTERRUPTS: [i32; 3] = [libc::SIGINT, libc::SIGTERM, libc::SIGHUP];
     extern "C" fn interrupted(signal: libc::c_int) {
         let _ = SIGNAL.compare_exchange(0, signal, Ordering::Relaxed, Ordering::Relaxed);
     }
-    struct Signals([libc::sighandler_t; 2]);
+    struct Signals([libc::sighandler_t; 3]);
     impl Signals {
         fn install() -> Self {
             SIGNAL.store(0, Ordering::Relaxed);
-            Self([libc::SIGINT, libc::SIGTERM].map(|signal| unsafe {
+            Self(INTERRUPTS.map(|signal| unsafe {
                 libc::signal(signal, interrupted as *const () as libc::sighandler_t)
             }))
         }
     }
     impl Drop for Signals {
         fn drop(&mut self) {
-            for (signal, previous) in [libc::SIGINT, libc::SIGTERM].into_iter().zip(self.0) {
+            for (signal, previous) in INTERRUPTS.into_iter().zip(self.0) {
                 unsafe {
                     libc::signal(signal, previous);
                 }
             }
         }
+    }
+
+    fn signal_child(child: &Child, signal: i32) -> io::Result<()> {
+        // Both the LaunchServices helper and native child start their own process
+        // groups, so cancellation also reaches native helper descendants.
+        if unsafe { libc::kill(-(child.id() as libc::pid_t), signal) } == -1 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     fn wait_bounded(child: &mut Child, grace: Duration) -> io::Result<ExitStatus> {
@@ -209,7 +367,7 @@ mod macos {
                 return Ok(status);
             }
             if Instant::now() >= deadline {
-                child.kill()?;
+                signal_child(child, libc::SIGKILL)?;
                 return child.wait();
             }
             thread::sleep(POLL);
@@ -232,7 +390,7 @@ mod macos {
     }
     fn cancellation(directory: &Path) -> io::Result<Option<i32>> {
         match read_json::<i32>(directory, "cancel") {
-            Ok(signal) if [libc::SIGINT, libc::SIGTERM].contains(&signal) => Ok(Some(signal)),
+            Ok(signal) if INTERRUPTS.contains(&signal) => Ok(Some(signal)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
             _ => Err(invalid("Invalid CLI cancellation request")),
         }
@@ -246,10 +404,9 @@ mod macos {
         fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))?;
         let directory = temporary.path().canonicalize()?;
         create(&directory, "request.json")?.write_all(&bytes)?;
-        let mut out = create(&directory, "stdout")?;
-        let mut err = create(&directory, "stderr")?;
+        let streams = Streams::create(&directory)?;
         let _signals = Signals::install();
-        let mut launcher = Command::new("/usr/bin/open")
+        let launcher = Command::new("/usr/bin/open")
             .args(["-W", "-n"])
             .arg(bundle)
             .args(["--args", WORKER])
@@ -258,42 +415,64 @@ mod macos {
             .stdout(Stdio::null())
             .process_group(0)
             .spawn()?;
+        supervise(&directory, launcher, streams, io::stdout(), io::stderr())
+    }
+
+    fn supervise(
+        directory: &Path,
+        mut launcher: Child,
+        streams: Streams,
+        output: impl Write + Send + 'static,
+        errors: impl Write + Send + 'static,
+    ) -> io::Result<i32> {
+        let Streams {
+            stdout,
+            stderr,
+            caller: _caller,
+        } = streams;
+        // Forward separately so a blocked stdout/stderr consumer cannot prevent
+        // signal handling, cancellation, or reaping. Each thread holds at most
+        // one fixed-size buffer; FIFOs apply kernel backpressure to the native CLI.
+        let mut forwarding = Forwarding::start(stdout, stderr, output, errors);
         let result = (|| {
             let mut cancellation = None;
             loop {
-                tail(&mut out, &mut io::stdout().lock())?;
-                tail(&mut err, &mut io::stderr().lock())?;
                 let signal = SIGNAL.load(Ordering::Relaxed);
                 if signal != 0 && cancellation.is_none() {
-                    cancel(&directory, signal)?;
+                    cancel(directory, signal)?;
                     cancellation = Some(Instant::now());
                 }
+                let drained = match forwarding.drained() {
+                    Ok(drained) => drained,
+                    Err(_) if signal != 0 => false,
+                    Err(error) => return Err(error),
+                };
                 if launcher.try_wait()?.is_some() {
                     // The worker writes the result only after the native process is reaped.
-                    while out.metadata()?.len() > out.stream_position()? {
-                        tail(&mut out, &mut io::stdout().lock())?;
+                    forwarding.finished.store(true, Ordering::Release);
+                    if drained {
+                        let completed: Completed = read_json(directory, "result.json")?;
+                        return Ok(if signal == 0 {
+                            completed.code
+                        } else {
+                            128 + signal
+                        });
                     }
-                    while err.metadata()?.len() > err.stream_position()? {
-                        tail(&mut err, &mut io::stderr().lock())?;
-                    }
-                    let completed: Completed = read_json(&directory, "result.json")?;
-                    return Ok(if signal == 0 {
-                        completed.code
-                    } else {
-                        128 + signal
-                    });
                 }
                 if cancellation
                     .is_some_and(|start: Instant| start.elapsed() >= Duration::from_secs(5))
                 {
                     wait_bounded(&mut launcher, Duration::ZERO)?;
+                    // The CLI caller exits immediately after this function returns.
+                    // Do not join a forwarding thread blocked on a dead terminal or
+                    // stalled pipeline; process exit closes its bounded buffers.
                     return Ok(128 + signal);
                 }
                 thread::sleep(POLL);
             }
         })();
         if result.is_err() {
-            let _ = cancel(&directory, libc::SIGTERM);
+            let _ = cancel(directory, libc::SIGTERM);
             let _ = wait_bounded(&mut launcher, Duration::from_secs(5));
         }
         result
@@ -308,10 +487,16 @@ mod macos {
                 "CLI working directory must be canonical and absolute",
             ));
         }
-        let mut errors = private_file(directory, "stderr", true)?;
+        let caller = private_fifo(directory, "caller", true)?;
+        // Keep diagnostics nonblocking on a separate open description from the
+        // native stderr. Reporting an error must not delay native-child cleanup.
+        let mut errors = private_fifo(directory, "stderr", true)?;
         let outcome = (|| {
             if let Some(signal) = cancellation(directory)? {
                 return Ok(128 + signal);
+            }
+            if !caller_alive(&caller)? {
+                return Ok(128 + libc::SIGTERM);
             }
             let mut child = Command::new(binary.canonicalize()?)
                 .args(request.arguments.into_iter().map(OsString::from_vec))
@@ -320,23 +505,27 @@ mod macos {
                 )))
                 .current_dir(cwd)
                 .stdin(Stdio::null())
-                .stdout(private_file(directory, "stdout", true)?)
-                .stderr(errors.try_clone()?)
+                .stdout(blocking(private_fifo(directory, "stdout", true)?)?)
+                .stderr(blocking(private_fifo(directory, "stderr", true)?)?)
+                .process_group(0)
                 .spawn()?;
             let result = (|| loop {
                 if let Some(status) = child.try_wait()? {
                     return Ok(exit_code(status));
                 }
-                if let Some(signal) = cancellation(directory)? {
-                    unsafe {
-                        libc::kill(child.id() as libc::pid_t, signal);
-                    }
+                let signal = cancellation(directory)?.or(if caller_alive(&caller)? {
+                    None
+                } else {
+                    Some(libc::SIGTERM)
+                });
+                if let Some(signal) = signal {
+                    signal_child(&child, signal)?;
                     return wait_bounded(&mut child, Duration::from_secs(3)).map(exit_code);
                 }
                 thread::sleep(POLL);
             })();
             if result.is_err() {
-                let _ = child.kill();
+                let _ = signal_child(&child, libc::SIGKILL);
                 let _ = child.wait();
             }
             result
@@ -352,7 +541,7 @@ mod macos {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use std::io::Seek;
+        use std::{os::fd::FromRawFd, sync::Mutex};
 
         fn exchange(arguments: &[OsString], cwd: &Path) -> tempfile::TempDir {
             let directory = tempfile::tempdir().unwrap();
@@ -368,9 +557,92 @@ mod macos {
                     .unwrap(),
                 )
                 .unwrap();
-            create(directory.path(), "stdout").unwrap();
-            create(directory.path(), "stderr").unwrap();
             directory
+        }
+
+        fn shell(script: &str, cwd: &Path) -> tempfile::TempDir {
+            exchange(&["-c".into(), script.into()], cwd)
+        }
+
+        fn wait_for(mut condition: impl FnMut() -> bool) {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !condition() {
+                assert!(Instant::now() < deadline, "CLI bridge timed out");
+                thread::sleep(POLL);
+            }
+        }
+
+        fn native_pid(cwd: &Path) -> libc::pid_t {
+            let path = cwd.join("native.pid");
+            wait_for(|| fs::read_to_string(&path).is_ok_and(|pid| pid.parse::<i32>().is_ok()));
+            fs::read_to_string(path).unwrap().parse().unwrap()
+        }
+
+        fn assert_reaped(pid: libc::pid_t) {
+            assert_eq!(
+                unsafe { libc::kill(pid, 0) },
+                -1,
+                "native child still exists"
+            );
+            assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
+        }
+
+        // Keep a failed test from leaking the fake native process. The worker can
+        // then observe its exit and reap it normally.
+        struct NativeGuard(libc::pid_t);
+        impl Drop for NativeGuard {
+            fn drop(&mut self) {
+                unsafe { libc::kill(-self.0, libc::SIGKILL) };
+            }
+        }
+
+        #[derive(Clone, Default)]
+        struct Capture(Arc<Mutex<Vec<u8>>>);
+        impl Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        const HELPER: &str = "cli::macos::tests::subprocess_helper";
+        const MODE: &str = "GIZLOADER_CLI_TEST_MODE";
+        const DIRECTORY: &str = "GIZLOADER_CLI_TEST_DIRECTORY";
+        fn helper(mode: &str, directory: &Path) -> Command {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .args(["--exact", HELPER, "--nocapture"])
+                .env(MODE, mode)
+                .env(DIRECTORY, directory)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            command
+        }
+
+        // Exercise the production worker/supervisor in separate processes. Signal
+        // handlers never affect the test runner or parallel module tests.
+        #[test]
+        fn subprocess_helper() {
+            let Some(mode) = std::env::var_os(MODE) else {
+                return;
+            };
+            let directory = PathBuf::from(std::env::var_os(DIRECTORY).unwrap());
+            let result = if mode == "worker" {
+                worker(&directory, Path::new("/bin/sh"))
+            } else {
+                let _signals = Signals::install();
+                let streams = Streams::create(&directory).unwrap();
+                let launcher = helper("worker", &directory)
+                    .process_group(0)
+                    .spawn()
+                    .unwrap();
+                supervise(&directory, launcher, streams, io::stdout(), io::stderr())
+            };
+            std::process::exit(result.unwrap());
         }
 
         #[test]
@@ -461,33 +733,92 @@ mod macos {
         }
 
         #[test]
-        fn worker_preserves_cwd_stream_bytes_and_exit_status() {
+        fn worker_preserves_cwd_stream_bytes_raw_argv_environment_and_exit_status() {
             let cwd = tempfile::tempdir().unwrap();
             fs::write(cwd.path().join("relative"), b"\xfftail").unwrap();
             let directory = exchange(
                 &[
                     "-c".into(),
-                    "cat relative; printf '%s' \"$GIZLOADER_TEST_VALUE\"; printf diagnostic >&2; exit 7".into(),
+                    "cat relative; printf '%s' \"$GIZLOADER_TEST_VALUE\" \"$1\"; printf '\\376diagnostic\\000' >&2; exit 7".into(),
+                    "test".into(),
+                    OsString::from_vec(b"\xff raw argument".to_vec()),
                 ],
                 cwd.path(),
             );
             let path = directory.path().canonicalize().unwrap();
-            assert_eq!(worker(&path, Path::new("/bin/sh")).unwrap(), 7);
+            let streams = Streams::create(&path).unwrap();
+            let launcher = helper("worker", &path).process_group(0).spawn().unwrap();
+            let output = Capture::default();
+            let errors = Capture::default();
+            assert_eq!(
+                supervise(&path, launcher, streams, output.clone(), errors.clone()).unwrap(),
+                7
+            );
             assert_eq!(
                 read_json::<Completed>(&path, "result.json").unwrap().code,
                 7
             );
-            let mut output = private_file(&path, "stdout", false).unwrap();
-            let mut bytes = Vec::new();
-            tail(&mut output, &mut bytes).unwrap();
-            private_file(&path, "stdout", true)
+            assert_eq!(
+                *output.0.lock().unwrap(),
+                b"\xfftailrestored\xff raw argument"
+            );
+            assert_eq!(*errors.0.lock().unwrap(), b"\xfediagnostic\0");
+        }
+
+        #[test]
+        fn sustained_output_is_exact_backpressured_and_has_no_disk_spool() {
+            let cwd = tempfile::tempdir().unwrap();
+            let directory = shell(
+                "printf '%s' $$ > native.pid; printf '\\377'; /bin/dd if=/dev/zero bs=65536 count=64 2>/dev/null; printf '\\376' >&2; /bin/dd if=/dev/zero bs=65536 count=64 >&2 2>/dev/null; printf complete > completed",
+                cwd.path(),
+            );
+            let path = directory.path().canonicalize().unwrap();
+            let Streams {
+                stdout,
+                stderr,
+                caller: _caller,
+            } = Streams::create(&path).unwrap();
+            let mut child = helper("worker", &path).process_group(0).spawn().unwrap();
+            let native = NativeGuard(native_pid(cwd.path()));
+            thread::sleep(Duration::from_millis(100));
+            assert!(
+                !cwd.path().join("completed").exists(),
+                "writer bypassed backpressure"
+            );
+            for name in ["stdout", "stderr", "caller"] {
+                let metadata = fs::symlink_metadata(path.join(name)).unwrap();
+                assert!(metadata.file_type().is_fifo());
+                assert_eq!(metadata.len(), 0);
+            }
+            let output = Capture::default();
+            let errors = Capture::default();
+            let mut forwarding = Forwarding::start(stdout, stderr, output.clone(), errors.clone());
+            wait_for(|| child.try_wait().unwrap().is_some());
+            assert_eq!(child.wait().unwrap().code(), Some(0));
+            forwarding.finished.store(true, Ordering::Release);
+            wait_for(|| forwarding.drained().unwrap());
+            let output = output.0.lock().unwrap();
+            let errors = errors.0.lock().unwrap();
+            for (bytes, first) in [(&*output, 0xff), (&*errors, 0xfe)] {
+                assert_eq!(bytes.len(), 1 + 64 * LIMIT as usize);
+                assert_eq!(bytes[0], first);
+                assert!(bytes[1..].iter().all(|byte| *byte == 0));
+            }
+            assert_eq!(fs::read(cwd.path().join("completed")).unwrap(), b"complete");
+            let retained: u64 = fs::read_dir(&path)
                 .unwrap()
-                .write_all(b"next")
-                .unwrap();
-            tail(&mut output, &mut bytes).unwrap();
-            assert_eq!(bytes, b"\xfftailrestorednext");
-            assert_eq!(output.stream_position().unwrap(), 17);
-            assert_eq!(fs::read(path.join("stderr")).unwrap(), b"diagnostic");
+                .map(|entry| {
+                    let metadata = entry.unwrap().metadata().unwrap();
+                    if metadata.is_file() {
+                        metadata.len()
+                    } else {
+                        assert_eq!(metadata.len(), 0);
+                        0
+                    }
+                })
+                .sum();
+            assert!(retained <= LIMIT, "output accumulated in bridge storage");
+            assert_reaped(native.0);
         }
 
         #[test]
@@ -506,30 +837,251 @@ mod macos {
             assert!(validate_directory(&path).is_err());
         }
 
+        const MONITOR: &str = "exec 2>/dev/null; trap 'printf INT > received; exit 130' INT; trap 'printf TERM > received; exit 143' TERM; trap 'printf HUP > received; exit 129' HUP; printf '%s' $$ > native.pid; while :; do /bin/sleep 60; done";
+
         #[test]
         fn cancellation_marker_cooperatively_stops_and_reaps_the_native_child() {
             let cwd = tempfile::tempdir().unwrap();
-            let directory = exchange(
-                &[
-                    "-c".into(),
-                    "trap 'exit 130' INT TERM; printf ready; while :; do :; done".into(),
-                ],
+            let directory = shell(MONITOR, cwd.path());
+            let path = directory.path().canonicalize().unwrap();
+            let _streams = Streams::create(&path).unwrap();
+            let mut child = helper("worker", &path).process_group(0).spawn().unwrap();
+            let native = NativeGuard(native_pid(cwd.path()));
+            cancel(&path, libc::SIGTERM).unwrap();
+            wait_for(|| child.try_wait().unwrap().is_some());
+            assert_eq!(child.wait().unwrap().code(), Some(143));
+            assert_eq!(
+                read_json::<Completed>(&path, "result.json").unwrap().code,
+                143
+            );
+            assert_eq!(fs::read(cwd.path().join("received")).unwrap(), b"TERM");
+            assert_reaped(native.0);
+        }
+
+        #[test]
+        fn signals_cancel_and_reap_the_native_child_with_the_original_signal_code() {
+            for (signal, received) in [
+                (libc::SIGINT, "INT"),
+                (libc::SIGTERM, "TERM"),
+                (libc::SIGHUP, "HUP"),
+            ] {
+                let cwd = tempfile::tempdir().unwrap();
+                let directory = shell(MONITOR, cwd.path());
+                let path = directory.path().canonicalize().unwrap();
+                let mut caller = helper("caller", &path).spawn().unwrap();
+                let native = NativeGuard(native_pid(cwd.path()));
+                assert_eq!(unsafe { libc::kill(caller.id() as i32, signal) }, 0);
+                wait_for(|| caller.try_wait().unwrap().is_some());
+                assert_eq!(caller.wait().unwrap().code(), Some(128 + signal));
+                assert_eq!(read_json::<i32>(&path, "cancel").unwrap(), signal);
+                assert_eq!(
+                    read_json::<Completed>(&path, "result.json").unwrap().code,
+                    128 + signal
+                );
+                assert_eq!(
+                    fs::read(cwd.path().join("received")).unwrap(),
+                    received.as_bytes()
+                );
+                assert_reaped(native.0);
+            }
+        }
+
+        #[test]
+        fn terminal_hangup_cancels_and_reaps_the_native_child() {
+            let cwd = tempfile::tempdir().unwrap();
+            let directory = shell(MONITOR, cwd.path());
+            let path = directory.path().canonicalize().unwrap();
+            let (mut master, mut slave) = (-1, -1);
+            assert_eq!(
+                unsafe {
+                    libc::openpty(
+                        &mut master,
+                        &mut slave,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                    )
+                },
+                0
+            );
+            let master = unsafe { File::from_raw_fd(master) };
+            let slave = unsafe { File::from_raw_fd(slave) };
+            // The child must not inherit the master, or closing our copy would not hang up.
+            assert_eq!(
+                unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) },
+                0
+            );
+            let mut command = helper("caller", &path);
+            command
+                .stdin(slave.try_clone().unwrap())
+                .stdout(slave.try_clone().unwrap())
+                .stderr(slave);
+            unsafe {
+                command.pre_exec(|| {
+                    if libc::setsid() == -1
+                        || libc::ioctl(0, libc::TIOCSCTTY as libc::c_ulong, 0) == -1
+                    {
+                        return Err(io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let mut caller = command.spawn().unwrap();
+            let native = NativeGuard(native_pid(cwd.path()));
+            drop(master);
+            wait_for(|| caller.try_wait().unwrap().is_some());
+            assert_eq!(caller.wait().unwrap().code(), Some(128 + libc::SIGHUP));
+            assert_eq!(
+                read_json::<Completed>(&path, "result.json").unwrap().code,
+                129
+            );
+            assert_eq!(fs::read(cwd.path().join("received")).unwrap(), b"HUP");
+            assert_reaped(native.0);
+        }
+
+        #[test]
+        fn caller_death_cancels_a_silent_native_child_and_reaps_it() {
+            let cwd = tempfile::tempdir().unwrap();
+            let directory = shell(MONITOR, cwd.path());
+            let path = directory.path().canonicalize().unwrap();
+            let mut caller = helper("caller", &path).spawn().unwrap();
+            let native = NativeGuard(native_pid(cwd.path()));
+            caller.kill().unwrap();
+            caller.wait().unwrap();
+            wait_for(|| path.join("result.json").exists());
+            assert_eq!(
+                read_json::<Completed>(&path, "result.json").unwrap().code,
+                143
+            );
+            assert_eq!(fs::read(cwd.path().join("received")).unwrap(), b"TERM");
+            assert_reaped(native.0);
+        }
+
+        #[test]
+        fn full_liveness_fifo_still_detects_caller_death_without_disk_growth() {
+            let directory = tempfile::tempdir().unwrap();
+            let reader = fifo(directory.path(), "caller").unwrap();
+            let mut writer = private_fifo(directory.path(), "caller", true).unwrap();
+            let mut retained = 0;
+            loop {
+                match writer.write(&[0; 4096]) {
+                    Ok(count) => {
+                        retained += count;
+                        assert!(retained < 64 * LIMIT as usize);
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                    other => panic!("unexpected FIFO probe: {other:?}"),
+                }
+            }
+            assert!(retained > 0);
+            assert!(caller_alive(&writer).unwrap());
+            assert_eq!(writer.metadata().unwrap().len(), 0);
+            drop(reader);
+            assert!(!caller_alive(&writer).unwrap());
+        }
+
+        #[test]
+        fn stalled_stdout_consumer_cannot_block_signal_cancellation_or_native_reaping() {
+            let cwd = tempfile::tempdir().unwrap();
+            let directory = shell(
+                "exec 2>/dev/null; trap 'exit 143' TERM; printf '%s' $$ > native.pid; /bin/dd if=/dev/zero bs=65536 count=64; printf complete > completed; while :; do /bin/sleep 60; done",
                 cwd.path(),
             );
             let path = directory.path().canonicalize().unwrap();
-            let worker_path = path.clone();
-            let worker = thread::spawn(move || worker(&worker_path, Path::new("/bin/sh")));
-            let deadline = Instant::now() + Duration::from_secs(3);
-            while fs::metadata(path.join("stdout")).unwrap().len() == 0 && Instant::now() < deadline
-            {
-                thread::sleep(POLL);
-            }
+            let mut caller = helper("caller", &path)
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let native = NativeGuard(native_pid(cwd.path()));
+            thread::sleep(Duration::from_millis(100));
+            assert!(!cwd.path().join("completed").exists());
+            assert_eq!(unsafe { libc::kill(caller.id() as i32, libc::SIGTERM) }, 0);
+            wait_for(|| path.join("result.json").exists());
+            assert_reaped(native.0);
+            wait_for(|| caller.try_wait().unwrap().is_some());
+            assert_eq!(caller.wait().unwrap().code(), Some(143));
+            assert_eq!(read_json::<i32>(&path, "cancel").unwrap(), libc::SIGTERM);
+        }
+
+        #[test]
+        fn cancellation_kills_and_reaps_an_uncooperative_backpressured_child() {
+            let cwd = tempfile::tempdir().unwrap();
+            let directory = shell(
+                "trap '' INT TERM HUP; printf '%s' $$ > native.pid; while :; do printf 'full buffer full buffer full buffer'; done",
+                cwd.path(),
+            );
+            let path = directory.path().canonicalize().unwrap();
+            let _streams = Streams::create(&path).unwrap();
+            let mut child = helper("worker", &path).process_group(0).spawn().unwrap();
+            let native = NativeGuard(native_pid(cwd.path()));
             cancel(&path, libc::SIGTERM).unwrap();
-            assert_eq!(worker.join().unwrap().unwrap(), 130);
+            wait_for(|| child.try_wait().unwrap().is_some());
+            assert_eq!(child.wait().unwrap().code(), Some(128 + libc::SIGKILL));
             assert_eq!(
                 read_json::<Completed>(&path, "result.json").unwrap().code,
-                130
+                137
             );
+            assert_reaped(native.0);
+        }
+
+        #[test]
+        fn cancellation_before_launch_does_not_spawn_a_native_child() {
+            let cwd = tempfile::tempdir().unwrap();
+            let directory = shell(MONITOR, cwd.path());
+            let path = directory.path().canonicalize().unwrap();
+            let _streams = Streams::create(&path).unwrap();
+            cancel(&path, libc::SIGHUP).unwrap();
+            assert_eq!(worker(&path, Path::new("/bin/sh")).unwrap(), 129);
+            assert!(!cwd.path().join("native.pid").exists());
+            assert_eq!(
+                read_json::<Completed>(&path, "result.json").unwrap().code,
+                129
+            );
+        }
+
+        #[test]
+        fn private_streams_reject_regular_files_symlinks_and_public_permissions() {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().canonicalize().unwrap();
+            create(&path, "regular").unwrap();
+            assert!(private_fifo(&path, "regular", false).is_err());
+            let _reader = fifo(&path, "stream").unwrap();
+            std::os::unix::fs::symlink(path.join("stream"), path.join("symlink")).unwrap();
+            assert!(private_fifo(&path, "symlink", true).is_err());
+            assert!(private_fifo(&path, "symlink", false).is_err());
+            fs::set_permissions(path.join("stream"), fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(private_fifo(&path, "stream", true).is_err());
+            assert!(private_fifo(&path, "stream", false).is_err());
+        }
+
+        #[test]
+        fn cancellation_and_result_remain_atomic_private_regular_files() {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().canonicalize().unwrap();
+            assert_eq!(cancellation(&path).unwrap(), None);
+            for signal in INTERRUPTS {
+                cancel(&path, signal).unwrap();
+                assert_eq!(cancellation(&path).unwrap(), Some(signal));
+                let metadata = fs::symlink_metadata(path.join("cancel")).unwrap();
+                assert!(metadata.is_file());
+                assert_eq!(metadata.mode() & 0o077, 0);
+            }
+            cancel(&path, libc::SIGKILL).unwrap();
+            assert!(cancellation(&path).is_err());
+            fs::remove_file(path.join("cancel")).unwrap();
+            let target = path.join("untouched");
+            fs::write(&target, b"untouched").unwrap();
+            std::os::unix::fs::symlink(&target, path.join("result.json")).unwrap();
+            publish(&path, "result.json", &Completed { code: 7 }).unwrap();
+            assert_eq!(fs::read(target).unwrap(), b"untouched");
+            assert_eq!(
+                read_json::<Completed>(&path, "result.json").unwrap().code,
+                7
+            );
+            assert!(!fs::symlink_metadata(path.join("result.json"))
+                .unwrap()
+                .file_type()
+                .is_symlink());
         }
     }
 }

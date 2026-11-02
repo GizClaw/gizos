@@ -19,6 +19,9 @@ async function directory() {
 }
 const bytes = "a local verified installer fixture";
 const macPlatforms = ["darwin-arm64", "darwin-x64"] as const;
+const windowsIdentity = (version: string) => ({
+  schema: 1, identifier: "com.gizclaw.gizloader", version, target: "x86_64-pc-windows-msvc",
+});
 function index(platform: LoaderPlatform = "darwin-arm64", snapshot = false): LoaderIndex {
   const suffix = {
     "darwin-arm64": "macos-arm64.dmg", "darwin-x64": "macos-x64.dmg", "win32-x64": "windows-x64-setup.exe",
@@ -286,6 +289,10 @@ test("Windows snapshot installs per-user with NSIS /S and inherits native CLI st
   const bootstrap = new GizloaderBootstrap({
     root: join(root, "shared"), home: root, platform: "win32-x64", env: { LOCALAPPDATA: localAppData }, fetch: remote.fetch,
     command: async (args, options) => {
+      if (args[0] === join(installRoot, "gizloader.exe")) {
+        expect(args).toEqual([join(installRoot, "gizloader.exe"), "--gizloader-info"]);
+        return readFile(args[0], "utf8");
+      }
       calls.push(args);
       expect(args).toEqual([args[0], "/S"]);
       expect(args[0]).toEndWith(value.artifacts[0].file);
@@ -293,6 +300,7 @@ test("Windows snapshot installs per-user with NSIS /S and inherits native CLI st
       expect(options?.inherit).toBe(true);
       await mkdir(installRoot, { recursive: true });
       for (const name of ["gizloader.exe", "gizloader-cli.exe", "gizloader-session.exe", "gizloader.cmd"]) await writeFile(join(installRoot, name), "shipped executable");
+      await writeFile(join(installRoot, "gizloader.exe"), JSON.stringify(windowsIdentity(value.version)));
       return "";
     },
     run: async (args, detached) => { launches.push({ args, detached }); return 19; },
@@ -309,6 +317,65 @@ test("Windows snapshot installs per-user with NSIS /S and inherits native CLI st
   await bootstrap.ensure({ snapshot: true });
   expect(calls).toHaveLength(1);
   expect(await readdir(join(bootstrap.root, "downloads"))).toHaveLength(0);
+});
+
+test("Windows roots reject a shared installation replaced by another selected version", async () => {
+  const root = await directory();
+  const localAppData = join(root, "User Name/AppData/Local");
+  const installRoot = join(localAppData, "Programs/Gizloader");
+  const executable = join(installRoot, "gizloader.exe");
+  const launches: string[][] = [];
+  const stable = index("win32-x64");
+  const snapshot = index("win32-x64", true);
+  snapshot.version = "1.2.4-snapshot.5";
+  snapshot.artifacts[0].file = `gizloader-${snapshot.version}-windows-x64-setup.exe`;
+  const bootstrap = (store: string, value: LoaderIndex, payload: string) => {
+    value.artifacts[0].sha256 = digest(payload);
+    value.artifacts[0].size = Buffer.byteLength(payload);
+    return new GizloaderBootstrap({
+      root: join(root, store), home: root, platform: "win32-x64", env: { LOCALAPPDATA: localAppData },
+      fetch: github(value, payload).fetch,
+      command: async args => {
+        if (args[0] === executable) {
+          expect(args).toEqual([executable, "--gizloader-info"]);
+          return readFile(executable, "utf8");
+        }
+        expect(args).toEqual([args[0], "/S"]);
+        expect(await readFile(args[0], "utf8")).toBe(payload);
+        await mkdir(installRoot, { recursive: true });
+        for (const name of ["gizloader-cli.exe", "gizloader-session.exe", "gizloader.cmd"]) {
+          await writeFile(join(installRoot, name), "shipped executable");
+        }
+        await writeFile(executable, JSON.stringify(windowsIdentity(value.version)));
+        return "";
+      },
+      run: async args => { launches.push(args); return 0; },
+    });
+  };
+  const a = bootstrap("root A", stable, "stable installer");
+  const b = bootstrap("root B", snapshot, "snapshot installer");
+  const installedA = await a.install();
+  const installedB = await b.install({ snapshot: true });
+  await expect(a.ensure()).rejects.toThrow("differs from expected 1.2.3");
+  await expect(a.launch(installedA, ["--help"])).rejects.toThrow("differs from expected 1.2.3");
+  expect(launches).toHaveLength(0);
+  expect((await b.ensure({ snapshot: true })).index.version).toBe(snapshot.version);
+  expect(await b.launch(installedB, ["--help"])).toBe(0);
+  expect(launches).toEqual([[executable, "--cli", "--help"]]);
+  await a.install();
+  expect((await a.ensure()).index.version).toBe(stable.version);
+  await expect(b.ensure({ snapshot: true })).rejects.toThrow(`differs from expected ${snapshot.version}`);
+  for (const identity of [
+    { ...windowsIdentity(stable.version), schema: 2 },
+    { ...windowsIdentity(stable.version), identifier: "another.application" },
+    { ...windowsIdentity(stable.version), target: "aarch64-pc-windows-msvc" },
+    { ...windowsIdentity(stable.version), version: "not a version" },
+  ]) {
+    await writeFile(executable, JSON.stringify(identity));
+    await expect(a.ensure()).rejects.toThrow("identity is invalid");
+  }
+  await writeFile(executable, "unversioned legacy executable output");
+  await expect(a.ensure()).rejects.toThrow("Cannot verify the installed Gizloader");
 });
 
 test("unsupported desktop hosts fail before fetch and retired loader catalog entries cannot install", async () => {

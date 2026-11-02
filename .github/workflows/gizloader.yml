@@ -367,6 +367,11 @@ jobs:
             foreach ($file in @('gizloader.exe', 'gizloader-cli.exe', 'gizloader-session.exe', 'gizloader.cmd')) {
               if (-not (Test-Path (Join-Path $install $file) -PathType Leaf)) { throw "Missing installed root file: $file" }
             }
+            $identityOutput = Join-Path $env:RUNNER_TEMP 'gizloader-application-info.json'
+            $identityProcess = Start-Process -FilePath (Join-Path $install 'gizloader.exe') -ArgumentList '--gizloader-info' -Wait -PassThru -RedirectStandardOutput $identityOutput
+            if ($identityProcess.ExitCode -ne 0) { throw 'Installed application identity query failed' }
+            $identity = Get-Content $identityOutput -Raw | ConvertFrom-Json
+            if ($identity.schema -ne 1 -or $identity.identifier -ne 'com.gizclaw.gizloader' -or $identity.version -ne $env:GIZLOADER_VERSION -or $identity.target -ne 'x86_64-pc-windows-msvc') { throw 'Installed application identity differs from the release' }
             function Assert-InstalledHelp([string]$name, [string[]]$arguments) {
               $stdout = Join-Path $env:RUNNER_TEMP "$name.stdout"
               $stderr = Join-Path $env:RUNNER_TEMP "$name.stderr"

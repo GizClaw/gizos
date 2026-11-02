@@ -5,7 +5,7 @@
   "identifier": "com.gizclaw.gizloader",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://127.0.0.1:4176/desktop/loader.html",
+    "devUrl": "http://127.0.0.1:4176",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },

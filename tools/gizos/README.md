@@ -332,6 +332,10 @@ On Windows the verified NSIS installer runs per-user with `/S`, using
 CLI arguments and exit status. The bootstrap calls `gizloader.exe --cli` directly
 for `gizos loader <arguments>`, preserving inherited console streams. The
 installer supplies `gizloader-cli.exe` and `gizloader-session.exe` alongside it.
+Before reusing or launching a cached Windows installation, the bootstrap queries
+the installed application's embedded version, identifier and native target.
+Multiple roots share the per-user installation directory; if another root
+replaces its version, reinstall the version selected by the current root.
 
 Offline imports accept locally downloaded release metadata and an installer:
 

@@ -1,4 +1,17 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+
+test('development window URLs resolve from the server root', async ({ request }) => {
+  const config = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'))
+  expect(new URL(config.build.devUrl).pathname).toBe('/')
+  for (const path of [config.app.windows[0].url, 'desktop/loader.html?view=logs']) {
+    const url = new URL(path, config.build.devUrl)
+    expect(url.pathname).toBe('/desktop/loader.html')
+    const response = await request.get(url.href)
+    expect(response.ok()).toBe(true)
+    expect(await response.text()).toContain('/src/desktop/loader/main.tsx')
+  }
+})
 
 // IPC fixture exercises the real desktop adapter without opening hardware.
 test('desktop uses native scanning, actual port paths and only the inner workbench', async ({ page }, testInfo) => {
@@ -273,6 +286,76 @@ test('desktop connects and disconnects the list, restores it on startup and scan
   await page.locator('#connect-ports').click()
   await expect(page.locator('#desktop-connection-count')).toHaveText('已连接 2 台')
   await page.screenshot({ path: testInfo.outputPath('desktop-connections.png'), fullPage: true })
+})
+
+test('rescanning cached port status preserves a failed transfer outcome', async ({ page }) => {
+  await page.addInitScript(() => {
+    let sequence = 0
+    let connected = false
+    const portId = '/dev/cu.usbmodem-failed-transfer'
+    const jobs = new Map<string, string>()
+    const status = { board: 'fixture', target: 'esp32s3', active: { role: 'app', version: '1.2.3' }, commandAvailability: (1 << 0) | (1 << 11) }
+    const fixture = { scans: 0, operations: [] as string[], fail: () => {} }
+    Object.assign(globalThis, { isTauri: true, __rescanTest: fixture,
+      __TAURI_INTERNALS__: {
+        transformCallback: () => ++sequence,
+        unregisterCallback: () => {},
+        invoke: async (command: string, args: Record<string, unknown>) => {
+          if (command === 'native_info' || command === 'close_client') return null
+          if (command === 'remembered_ports') return []
+          if (command === 'connection_states') return connected ? [{ id: portId, active: true, connected: true, status }] : []
+          if (command === 'scan_ports') {
+            if (++fixture.scans > 1) status.active.version = '1.2.9'
+            return [{ id: portId, name: 'USB Serial', present: true, connected, active: connected, initialStatus: connected ? status : null }]
+          }
+          if (command === 'plugin:dialog|open') return '/fixtures/app.tar.zlib'
+          if (command === 'inspect_package') return { id: 'package-1', name: 'app.tar.zlib', size: 2097152, metadata: { role: 'app', board: 'fixture', target: 'esp32s3', version: '1.2.4' } }
+          if (command === 'prepare_job') {
+            const id = `job-${++sequence}`
+            jobs.set(id, String(args.operation))
+            return id
+          }
+          if (command === 'execute_job') {
+            const id = String(args.jobId)
+            const operation = jobs.get(id)!
+            fixture.operations.push(operation)
+            if (operation === 'connect') { connected = true; jobs.delete(id); return status }
+            if (operation === 'stage') {
+              const progress = args.progress as { onmessage: (value: unknown) => void }
+              progress.onmessage({ phase: 'stage', progress: 50, totalBytes: 2097152, acknowledgedBytes: 1048576 })
+              return new Promise((_resolve, reject) => {
+                fixture.fail = () => { jobs.delete(id); reject('Fixture transfer failed') }
+              })
+            }
+          }
+          throw new Error(`Unexpected IPC: ${command}`)
+        },
+      },
+    })
+  })
+  await page.goto('/desktop/loader.html')
+  await page.locator('#scan-ports').click()
+  await page.locator('#connect-ports').click()
+  await expect(page.locator('.batch-pill')).toHaveText('已连接')
+  await page.locator('.desktop-firmware-menu summary').click()
+  await page.locator('#batch-package-choose').click()
+  await expect(page.locator('.desktop-package-name')).toHaveText('app.tar.zlib')
+  await page.locator('[data-operation="stage"]').click()
+  await expect(page.locator('.batch-task-percent')).toHaveText('50%')
+  await page.evaluate(() => (globalThis as typeof globalThis & { __rescanTest: { fail: () => void } }).__rescanTest.fail())
+  await expect(page.locator('.batch-task')).toHaveAttribute('data-state', 'error')
+  await expect(page.locator('.batch-task-error')).toHaveText('Fixture transfer failed')
+  await expect(page.locator('.batch-transfer-size')).toHaveText('1.00 / 2.00 MiB')
+  const failedTask = await page.locator('.batch-task').innerText()
+  await page.locator('#scan-ports').click()
+  await expect(page.locator('#scan-ports')).toBeEnabled()
+  await expect(page.locator('#device-rows')).toContainText('1.2.9')
+  await expect(page.locator('#desktop-connection-count')).toHaveText('已连接 1 台')
+  await expect(page.locator('.batch-pill')).toHaveText('失败')
+  await expect(page.locator('.batch-task')).toHaveAttribute('data-state', 'error')
+  expect(await page.locator('.batch-task').innerText()).toBe(failedTask)
+  await expect(page.locator('.batch-task [role="progressbar"], .batch-task-percent, .batch-transfer-rate')).toHaveCount(0)
+  expect(await page.evaluate(() => (globalThis as typeof globalThis & { __rescanTest: { scans: number; operations: string[] } }).__rescanTest)).toMatchObject({ scans: 2, operations: ['connect', 'stage'] })
 })
 
 test('superseded native inspection releases its snapshot and keeps the latest selection', async ({ page }) => {

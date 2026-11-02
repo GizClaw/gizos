@@ -742,6 +742,24 @@ h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
              : H2_PAL_ERR_INVALID_STATE;
 }
 
+int h2_h2loader_cli_reboot_awaiting_confirmation(
+    h2_h2loader_host_command_t kind, const h2_h2loader_host_status_t* before,
+    const h2_h2loader_host_status_t* after) {
+  return kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE &&
+         before->stage.valid &&
+         before->stage.role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
+         after->stage.valid && metadata_equal(&after->stage, &before->stage) &&
+         after->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
+         after->running_partition == 2u && after->next_partition == 2u &&
+         after->boot_intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO &&
+         after->last == H2_PAL_OK &&
+         strcmp(after->device_uid, before->device_uid) == 0 &&
+         strcmp(after->board, before->board) == 0 &&
+         strcmp(after->target, before->target) == 0 &&
+         metadata_equal(&after->partition_1, &before->partition_1) &&
+         metadata_matches_stage(&after->partition_2, &before->stage);
+}
+
 typedef struct confirmation_wait {
   h2_h2loader_cli_context_t* context;
   uint64_t start_ms;
@@ -825,21 +843,8 @@ static h2_pal_result_t reconnect_and_verify_reboot(
        * confirmation. */
       if (transport->on_log != NULL && context->config->is_cancelled != NULL &&
           transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL &&
-          kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE &&
-          before->stage.valid &&
-          before->stage.role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
-          out_status->stage.valid &&
-          metadata_equal(&out_status->stage, &before->stage) &&
-          out_status->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
-          out_status->running_partition == 2u &&
-          out_status->next_partition == 2u &&
-          out_status->boot_intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO &&
-          out_status->last == H2_PAL_OK &&
-          strcmp(out_status->device_uid, before->device_uid) == 0 &&
-          strcmp(out_status->board, before->board) == 0 &&
-          strcmp(out_status->target, before->target) == 0 &&
-          metadata_equal(&out_status->partition_1, &before->partition_1) &&
-          metadata_matches_stage(&out_status->partition_2, &before->stage)) {
+          h2_h2loader_cli_reboot_awaiting_confirmation(kind, before,
+                                                       out_status)) {
         awaiting_confirmation = 1;
         continue;
       }

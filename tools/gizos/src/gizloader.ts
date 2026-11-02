@@ -238,6 +238,20 @@ export class GizloaderBootstrap {
       if (![installation.index.version, installation.index.version.split(/[-+]/)[0]].includes(shortVersion.trim())) {
         throw new Error(`Gizloader application CFBundleShortVersionString differs from ${installation.index.version}`);
       }
+    } else {
+      let identity: { schema?: unknown; identifier?: unknown; version?: unknown; target?: unknown };
+      try {
+        identity = JSON.parse(await this.command([installation.executable, "--gizloader-info"]));
+      } catch {
+        throw new Error("Cannot verify the installed Gizloader application; run gizos install gizloader to reinstall it");
+      }
+      if (!identity || identity.schema !== 1 || identity.identifier !== identifier ||
+          identity.target !== "x86_64-pc-windows-msvc" || typeof identity.version !== "string" || !semver.test(identity.version)) {
+        throw new Error("Installed Gizloader application identity is invalid; run gizos install gizloader to reinstall it");
+      }
+      if (identity.version !== installation.index.version) {
+        throw new Error(`Installed Gizloader version ${identity.version} differs from expected ${installation.index.version}; reinstall the version selected by this root`);
+      }
     }
   }
   private async activate(installation: LoaderInstallation) {
@@ -340,6 +354,7 @@ export class GizloaderBootstrap {
     }
   }
   async launch(installation: LoaderInstallation, args: string[] = []): Promise<number> {
+    if (!isMac(this.platform)) await this.verify(installation);
     if (args.length) return this.run([installation.executable, "--cli", ...args]);
     return isMac(this.platform) ? this.run(["/usr/bin/open", installation.application])
       : this.run([installation.executable], true);

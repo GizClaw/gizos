@@ -119,6 +119,10 @@ h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
     h2_h2loader_host_command_t kind, const h2_h2loader_host_status_t* before,
     const h2_h2loader_host_status_t* after);
 
+int h2_h2loader_cli_reboot_awaiting_confirmation(
+    h2_h2loader_host_command_t kind, const h2_h2loader_host_status_t* before,
+    const h2_h2loader_host_status_t* after);
+
 int h2_h2loader_cli_package_command(h2_h2loader_cli_context_t* context,
                                     int argc, const char* const* argv,
                                     int golden);

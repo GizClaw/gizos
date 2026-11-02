@@ -211,16 +211,17 @@ export function mountBatchLoader(root, { language, t, mode, createClient }) {
       if (seen.has(port.id)) return false;
       seen.add(port.id); return true;
     }).map((port, index) => ({
+      // Discovery initializes new rows; only an operation replaces a prior task outcome.
+      state: desktop && port.initialStatus ? 'success' : desktop && port.initialError ? 'error' : 'ready',
+      error: desktop ? port.initialError ?? null : null,
+      progress: desktop && port.initialStatus ? 100 : 0,
       ...previous.get(port.id),
       ...(desktop && Object.hasOwn(port, 'initialStatus') ? projectStatus(port.initialStatus) : {}),
       port, portId: port.id,
       name: port.name ?? previous.get(port.id)?.name ?? (language === 'en' ? `Device ${index + 1}` : `设备 ${index + 1}`),
       selected: desktop || (previous.get(port.id)?.selected ?? port.selectedByDefault ?? true),
       present: port.present !== false, remembered: Boolean(port.remembered), connected: Boolean(port.connected), active: Boolean(port.active),
-      state: desktop && port.initialStatus ? 'success' : desktop && port.initialError ? 'error' : 'ready',
       status: desktop && Object.hasOwn(port, 'initialStatus') ? port.initialStatus : previous.get(port.id)?.status,
-      error: desktop ? port.initialError ?? null : null,
-      progress: desktop && port.initialStatus ? 100 : 0,
       usbVendorId: port.usbVendorId, usbProductId: port.usbProductId,
     }));
   }

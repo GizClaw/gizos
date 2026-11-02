@@ -23,6 +23,9 @@ struct Saved {
     ports: BTreeMap<String, Record>,
     #[serde(default)]
     ambiguous_serials: BTreeSet<String>,
+    // The last scan chooses one visible identity per path, including offline rows.
+    #[serde(skip)]
+    visible_keys: BTreeMap<String, String>,
 }
 impl Default for Saved {
     fn default() -> Self {
@@ -30,6 +33,7 @@ impl Default for Saved {
             version: 1,
             ports: BTreeMap::new(),
             ambiguous_serials: BTreeSet::new(),
+            visible_keys: BTreeMap::new(),
         }
     }
 }
@@ -118,6 +122,7 @@ impl Preferences {
     pub fn scan(&self, discovered: Vec<Port>, add_new: bool) -> Result<Vec<Port>, String> {
         let mut saved = self.saved.lock().unwrap();
         let mut next = saved.clone();
+        next.visible_keys.clear();
         let mut counts = HashMap::new();
         for port in &discovered {
             if let Some(key) = Self::usb_key(port) {
@@ -151,9 +156,11 @@ impl Preferences {
             if seen.contains(&port.id) {
                 continue;
             }
-            let usb_key = Self::usb_key(&port).filter(|key| !next.ambiguous_serials.contains(key));
+            let usb_key = Self::usb_key(&port);
             let mut key = usb_key
-                .clone()
+                .as_ref()
+                .filter(|key| !next.ambiguous_serials.contains(*key))
+                .cloned()
                 .unwrap_or_else(|| format!("path:{}", port.id));
             let previous = next
                 .ports
@@ -187,12 +194,14 @@ impl Preferences {
                 }
                 next.ports.remove(&previous_key);
             }
+            next.visible_keys.insert(port.id.clone(), key.clone());
             next.ports.insert(key, record);
             seen.insert(port.id.clone());
             visible.push(port);
         }
-        for record in next.ports.values().filter(|r| !r.removed) {
+        for (key, record) in next.ports.iter().filter(|(_, r)| !r.removed) {
             if seen.insert(record.id.clone()) {
+                next.visible_keys.insert(record.id.clone(), key.clone());
                 visible.push(Self::port(record));
             }
         }
@@ -204,14 +213,12 @@ impl Preferences {
     pub fn remove(&self, id: &str) -> Result<(), String> {
         let mut saved = self.saved.lock().unwrap();
         let mut next = saved.clone();
-        let mut found = false;
-        for record in next.ports.values_mut().filter(|r| r.id == id) {
-            record.removed = true;
-            found = true;
-        }
-        if !found {
-            return Err("串口不在列表中，请重新扫描。".into());
-        }
+        let record = next
+            .visible_keys
+            .remove(id)
+            .and_then(|key| next.ports.get_mut(&key))
+            .ok_or("串口不在列表中，请重新扫描。")?;
+        record.removed = true;
         self.persist(&next)?;
         *saved = next;
         Ok(())
@@ -338,6 +345,75 @@ mod tests {
             .unwrap();
         assert_eq!(scanned.len(), 2);
         assert!(scanned.iter().all(|p| !p.remembered));
+    }
+    #[test]
+    fn forgetting_present_replacement_preserves_previous_usb_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ports.json");
+        let prefs = Preferences::open(path.clone()).unwrap();
+        prefs.scan(vec![port("COM1", Some("a"))], true).unwrap();
+        let replacement = prefs.scan(vec![port("COM1", Some("b"))], true).unwrap();
+        assert_eq!(replacement.len(), 1);
+        assert_eq!(replacement[0].usb_serial_number.as_deref(), Some("b"));
+        prefs.remove("COM1").unwrap();
+
+        let prefs = Preferences::open(path).unwrap();
+        let restored = prefs
+            .scan(
+                vec![port("COM9", Some("a")), port("COM1", Some("b"))],
+                false,
+            )
+            .unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].id, "COM9");
+        assert!(restored[0].present && restored[0].remembered);
+    }
+    #[test]
+    fn forgetting_shared_offline_path_removes_only_visible_identity() {
+        let prefs = Preferences::default();
+        prefs.scan(vec![port("COM1", Some("a"))], true).unwrap();
+        prefs.scan(vec![port("COM1", Some("b"))], true).unwrap();
+        let offline = prefs.scan(vec![], false).unwrap();
+        assert_eq!(offline.len(), 1);
+        assert!(!offline[0].present);
+        assert_eq!(offline[0].usb_serial_number.as_deref(), Some("a"));
+        prefs.remove("COM1").unwrap();
+
+        let restored = prefs
+            .scan(
+                vec![port("COM8", Some("a")), port("COM9", Some("b"))],
+                false,
+            )
+            .unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].id, "COM9");
+        assert!(restored[0].present && restored[0].remembered);
+    }
+    #[test]
+    fn forgetting_duplicate_endpoint_preserves_previous_usb_identity() {
+        let prefs = Preferences::default();
+        prefs.scan(vec![port("COM1", Some("a"))], true).unwrap();
+        prefs
+            .scan(
+                vec![port("COM1", Some("same")), port("COM2", Some("same"))],
+                true,
+            )
+            .unwrap();
+        prefs.remove("COM1").unwrap();
+        let restored = prefs
+            .scan(
+                vec![
+                    port("COM1", Some("same")),
+                    port("COM2", Some("same")),
+                    port("COM9", Some("a")),
+                ],
+                false,
+            )
+            .unwrap();
+        assert_eq!(restored.len(), 2);
+        assert_eq!(restored[0].id, "COM2");
+        assert_eq!(restored[1].id, "COM9");
+        assert!(restored.iter().all(|p| p.present && p.remembered));
     }
     #[test]
     fn failed_save_keeps_the_previous_in_memory_list() {

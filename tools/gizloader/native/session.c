@@ -223,6 +223,31 @@ static h2_pal_result_t stage(const char* path) {
     rc = H2_PAL_ERR_INVALID_STATE;
   return rc;
 }
+typedef struct confirmation_wait {
+  uint64_t start_ms;
+  h2_pal_result_t control_result;
+  int deadline_reached;
+} confirmation_wait_t;
+static int confirmation_wait_done(void* user) {
+  confirmation_wait_t* wait = user;
+  if (cancelled(NULL)) {
+    wait->control_result = H2_PAL_EXIT;
+    return 1;
+  }
+  uint64_t now_ms = 0u;
+  wait->control_result = h2_pal_time_get_monotonic_ms(clock_api, &now_ms);
+  if (wait->control_result != H2_PAL_OK) {
+    if (wait->control_result == H2_PAL_EXIT)
+      wait->control_result = H2_PAL_ERR_INVALID_STATE;
+    return 1;
+  }
+  if (now_ms < wait->start_ms) {
+    wait->control_result = H2_PAL_ERR_INVALID_STATE;
+    return 1;
+  }
+  wait->deadline_reached = now_ms - wait->start_ms >= 500u;
+  return wait->deadline_reached;
+}
 static h2_pal_result_t reboot(h2_h2loader_host_command_t command) {
   h2_h2loader_host_status_t before = status;
   h2_h2loader_host_command_request_t request = {
@@ -239,16 +264,43 @@ static h2_pal_result_t reboot(h2_h2loader_host_command_t command) {
   if (result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK)
     return H2_PAL_ERR_INVALID_STATE;
   disconnect_session();
-  for (unsigned i = 0; i < 120u && !cancelled(NULL); ++i) {
-    (void)h2_pal_time_sleep_ms(clock_api, 500u);
-    rc = connect_session();
-    if (rc == H2_PAL_ERR_INVALID_STATE)
-      return rc;  // identity changed: fail closed
+  int awaiting_confirmation = 0;
+  for (unsigned failed_attempts = 0u;
+       failed_attempts < 120u && !cancelled(NULL);) {
+    if (awaiting_confirmation) {
+      confirmation_wait_t wait = {0};
+      rc = h2_pal_time_get_monotonic_ms(clock_api, &wait.start_ms);
+      if (rc != H2_PAL_OK)
+        return rc == H2_PAL_EXIT ? H2_PAL_ERR_INVALID_STATE : rc;
+      rc = h2_h2loader_host_serial_monitor_logs(connection,
+                                                confirmation_wait_done, &wait);
+      if (wait.control_result != H2_PAL_OK) return wait.control_result;
+      if (rc == H2_PAL_EXIT && wait.deadline_reached)
+        rc = h2_h2loader_host_serial_read_status(connection, &status);
+      else if (rc == H2_PAL_EXIT || rc == H2_PAL_OK)
+        rc = H2_PAL_ERR_INVALID_STATE;
+    } else {
+      rc = h2_pal_time_sleep_ms(clock_api, 500u);
+      if (rc != H2_PAL_OK) return rc;
+      rc = connect_session();
+      if (rc == H2_PAL_ERR_INVALID_STATE)
+        return rc;  // identity changed: fail closed
+    }
     if (rc == H2_PAL_OK) {
+      if (strcmp(identity, status.device_uid)) return H2_PAL_ERR_INVALID_STATE;
       rc = h2_h2loader_cli_verify_reboot_status(command, &before, &status);
       if (rc == H2_PAL_OK) return rc;
+      /* The CLI's exact App/Stage classifier keeps healthy confirmation polls
+       * on this connection without spending the failed-attempt budget. */
+      if (h2_h2loader_cli_reboot_awaiting_confirmation(command, &before,
+                                                       &status)) {
+        awaiting_confirmation = 1;
+        continue;
+      }
     }
+    awaiting_confirmation = 0;
     disconnect_session();
+    ++failed_attempts;
   }
   return cancelled(NULL) ? H2_PAL_EXIT : rc;
 }

@@ -37,7 +37,7 @@ The application is a Tauri/Rust supervisor with a React workbench. `native/` con
 
 ## macOS permissions and signing
 
-The installed macOS command starts an App-owned worker through LaunchServices. This gives Bluetooth requests the App's privacy identity when invoked from a terminal or agent host. A private request directory carries arguments, SDK environment, working directory, streamed output, cancellation and the exact native exit code; no application window is created for CLI work. Use the packaged `gizloader` command for Bluetooth operations, because a bare development helper can inherit its host application's privacy identity.
+The installed macOS command starts an App-owned worker through LaunchServices. This gives Bluetooth requests the App's privacy identity when invoked from a terminal or agent host. A private request directory carries arguments, SDK environment, working directory, cancellation and the exact native exit code; no application window is created for CLI work. Output streams through private FIFOs with bounded buffers and backpressure, so consumed logs do not accumulate on disk. Terminal hangup and caller death stop the native process group. Use the packaged `gizloader` command for Bluetooth operations, because a bare development helper can inherit its host application's privacy identity.
 
 `GIZLOADER_BLUETOOTH_DESCRIPTION` configures the Bluetooth usage description at build time. Preparation writes the App's generated plist/config and embeds the same description in the native CLI Mach-O. A signed application's permission text cannot be changed at runtime; rebuild and sign after changing it.
 
