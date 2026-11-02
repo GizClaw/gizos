@@ -267,6 +267,8 @@ static atomic_bool usb, chrg, done_line, white, card, silent_right;
 static atomic_bool wifi_connect_locked, data_open_locked, shutdown_locked;
 static atomic_bool shutdown_key_down;
 static atomic_uint shutdowns, wifi_connects, led_frames, mic_starts;
+static atomic_uint reboots;
+static atomic_bool reboot_locked;
 static atomic_int last_color; /* Packed RGB of pixel 3. */
 static h2_pal_mutex_t* operation;
 static h2_runtime_t runtime;
@@ -557,9 +559,13 @@ static h2_pal_result_t modem_ok(void* user, uint32_t timeout_ms) {
   (void)timeout_ms;
   return H2_PAL_OK;
 }
+static atomic_uint modem_status_calls;
 static h2_pal_result_t modem_status(void* user, h2_pal_modem_status_t* out) {
   (void)user;
   memset(out, 0, sizeof(*out));
+  /* Lierda reports CME 14 (SIM busy) as WOULD_BLOCK; MFG keeps polling. */
+  if (atomic_fetch_add(&modem_status_calls, 1u) == 0u)
+    return H2_PAL_ERR_WOULD_BLOCK;
   out->sim = H2_PAL_MODEM_SIM_STATE_READY;
   return H2_PAL_OK;
 }
@@ -617,7 +623,15 @@ static h2_pal_result_t power_shutdown(void* user, uint32_t reason) {
   atomic_fetch_add(&shutdowns, 1u);
   return H2_PAL_ERR_IO; /* Host cannot power off: POWEROFF_FAILED path. */
 }
-static const h2_pal_power_vtable_t power_vtable = {.shutdown = power_shutdown};
+static h2_pal_result_t power_reboot(void* user, uint32_t reason) {
+  (void)user;
+  (void)reason;
+  atomic_store(&reboot_locked, operation_held());
+  atomic_fetch_add(&reboots, 1u);
+  return H2_PAL_ERR_IO; /* Host cannot reboot: RESET_FAILED path. */
+}
+static const h2_pal_power_vtable_t power_vtable = {.shutdown = power_shutdown,
+                                                   .reboot = power_reboot};
 static const h2_pal_power_api_t power_api = {.vtable = &power_vtable};
 
 /* Audio fake enforcing the PAL observer contract: registration only while
@@ -1032,6 +1046,28 @@ static void test_wifi_waits_for_address(void) {
   puts("wifi waits for a DHCP address within its budget ok");
 }
 
+static void test_reset(void) {
+  uint8_t results[H2_H202_MFG_ITEM_COUNT];
+  memset(results, H2_H202_MFG_PASSED, sizeof(results));
+  results[H2_H202_MFG_CELLULAR] = H2_H202_MFG_FAILED;
+  start();
+  wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
+  /* A record saved by an earlier shutdown, then Record + short power. */
+  assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
+  keys_now(2u);
+  keys_now(2u | 1u);
+  keys_now(2u);
+  keys_now(0u);
+  wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_RESET_FAILED);
+  assert(atomic_load(&reboots) == 1u && atomic_load(&reboot_locked));
+  h2_loader_mfg_summary_t summary;
+  stored(&summary);
+  for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
+    assert(summary.step_status[i] == H2_LOADER_MFG_STEP_UNTESTED);
+  stop();
+  puts("service reset gesture ok");
+}
+
 static void test_resume_and_aging(void) {
   /* Resume at the first item not PASSED; the record is cleared at boot. */
   start();
@@ -1105,6 +1141,7 @@ int main(void) {
   test_wifi_waits_for_address();
   test_session();
   test_resume_and_aging();
+  test_reset();
   assert(mutex_destroy(NULL, operation) == H2_PAL_OK);
   return 0;
 }

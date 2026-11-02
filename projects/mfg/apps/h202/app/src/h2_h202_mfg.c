@@ -341,6 +341,31 @@ static void shutdown(h2_h202_mfg_t* app) {
   }
 }
 
+static void reset_failed(h2_h202_mfg_t* app, h2_pal_result_t error) {
+  app->error = error;
+  app->phase = H2_H202_MFG_PHASE_RESET_FAILED;
+  app->pressed_since_entry = 0u;
+  note(app, "H202_MFG_RESET failed rc=%d", error);
+  light(app, H2_H202_MFG_COLOR_RED);
+}
+
+/* Record + short power: drop the saved record and reboot into stage 02. */
+static void reset_progress(h2_h202_mfg_t* app) {
+  if (app->phase == H2_H202_MFG_PHASE_SAVING ||
+      app->phase == H2_H202_MFG_PHASE_RESETTING)
+    return;
+  for (unsigned op = 0; op < H2_H202_MFG_OP_POWER; ++op)
+    stop(app, (h2_h202_mfg_operation_t)op);
+  app->phase = H2_H202_MFG_PHASE_RESETTING;
+  app->deadline_set = false;
+  app->pressed_since_entry = 0u;
+  note(app, "H202_MFG_RESET begin");
+  h2_pal_result_t rc =
+      begin(app, H2_H202_MFG_OP_POWER, H2_H202_MFG_JOB_RESET, app->item,
+            H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
+  if (rc != H2_PAL_OK) reset_failed(app, rc);
+}
+
 static void click(h2_h202_mfg_t* app, unsigned key) {
   if ((app->pressed_since_entry & key) == 0u) return;
   app->pressed_since_entry &= ~key;
@@ -351,6 +376,9 @@ static void click(h2_h202_mfg_t* app, unsigned key) {
     case H2_H202_MFG_PHASE_UNSAVED:
     case H2_H202_MFG_PHASE_POWEROFF_FAILED:
       if (key == H2_H202_MFG_KEY_RECORD) shutdown(app);
+      return;
+    case H2_H202_MFG_PHASE_RESET_FAILED:
+      if (key == H2_H202_MFG_KEY_RECORD) reset_progress(app);
       return;
     case H2_H202_MFG_PHASE_ACTIVE:
       break;
@@ -391,22 +419,31 @@ static void keys_changed(h2_h202_mfg_t* app, unsigned keys) {
   unsigned released = app->keys & ~keys;
   app->keys = keys;
   app->pressed_since_entry |= pressed;
+  if (pressed & H2_H202_MFG_KEY_RECORD) app->record_chord = false;
   if (pressed & H2_H202_MFG_KEY_POWER) {
     app->power_held = true;
     app->power_down_ms = app->now_ms;
+    if (keys & H2_H202_MFG_KEY_RECORD) app->record_chord = true;
   }
-  if (pressed & H2_H202_MFG_KEY_RECORD) app->record_chord = false;
   if (pressed & H2_H202_MFG_KEY_PLUS) {
     app->plus_chord = (keys & H2_H202_MFG_KEY_RECORD) != 0u;
     if (app->plus_chord) app->record_chord = true;
   }
   if (released & H2_H202_MFG_KEY_POWER) {
     bool held = app->power_held;
+    bool hold = app->now_ms - app->power_down_ms >= app->config.power_hold_ms;
     app->power_held = false;
-    if (held && app->now_ms - app->power_down_ms >= app->config.power_hold_ms)
+    if (keys & H2_H202_MFG_KEY_RECORD) {
+      /* Power with Record held is never a power press and consumes Record;
+       * only a short press resets, a long one does nothing. */
+      app->record_chord = true;
+      app->pressed_since_entry &= ~H2_H202_MFG_KEY_POWER;
+      if (held && !hold) reset_progress(app);
+    } else if (held && hold) {
       shutdown(app);
-    else if (held)
+    } else if (held) {
       click(app, H2_H202_MFG_KEY_POWER);
+    }
   }
   if (released & H2_H202_MFG_KEY_PLUS) {
     /* Plus with Record held is never a Volume + press and consumes Record. */
@@ -510,6 +547,13 @@ static void net_done(h2_h202_mfg_t* app, unsigned index,
 }
 
 static void power_event(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
+  if (app->phase == H2_H202_MFG_PHASE_RESETTING) {
+    /* A successful reboot never reports back. */
+    app->current[H2_H202_MFG_OP_POWER] = 0u;
+    reset_failed(app,
+                 c->result != H2_PAL_OK ? c->result : H2_PAL_ERR_INVALID_STATE);
+    return;
+  }
   if (app->phase != H2_H202_MFG_PHASE_SAVING) return;
   if (c->event == H2_H202_MFG_EVENT_COMMITTED && c->result == H2_PAL_OK) {
     app->committed = true;
@@ -574,7 +618,9 @@ static void deadlines(h2_h202_mfg_t* app) {
   if (app->phase == H2_H202_MFG_PHASE_ACTIVE && app->deadline_set &&
       app->now_ms >= app->deadline_ms)
     fail(app, H2_PAL_ERR_TIMEOUT);
+  /* With Record held the power key is the reset chord, never shutdown. */
   if (app->power_held && (app->keys & H2_H202_MFG_KEY_POWER) &&
+      !(app->keys & H2_H202_MFG_KEY_RECORD) &&
       app->now_ms - app->power_down_ms >= app->config.power_hold_ms) {
     app->power_held = false;
     shutdown(app);
@@ -682,6 +728,10 @@ void h2_h202_mfg_progress_load(const h2_pal_pref_api_t* pref,
     memset(out, 0, sizeof(*out));
     out->error = (h2_pal_result_t)rc;
   }
+}
+
+h2_pal_result_t h2_h202_mfg_progress_clear(const h2_pal_pref_api_t* pref) {
+  return (h2_pal_result_t)h2_loader_mfg_reset(pref, H2_H202_MFG_ITEM_COUNT);
 }
 
 h2_pal_result_t h2_h202_mfg_progress_commit(
@@ -1678,7 +1728,10 @@ static int cellular_attempt(slot_t* slot) {
   memset(&status, 0, sizeof(status));
   while (rc == H2_PAL_OK) {
     rc = h2_pal_modem_get_status(modem, &status);
-    if (rc != H2_PAL_OK || status.sim == H2_PAL_MODEM_SIM_STATE_READY) break;
+    if (rc == H2_PAL_ERR_WOULD_BLOCK)
+      rc = H2_PAL_OK; /* SIM still busy. */
+    else if (rc != H2_PAL_OK || status.sim == H2_PAL_MODEM_SIM_STATE_READY)
+      break;
     rc = slot_sleep(slot, 500u);
   }
   h2_pal_modem_identity_t identity;
@@ -1768,14 +1821,8 @@ static bool power_key_down(h2_h202_mfg_service_t* s) {
 }
 
 /* Commit happens only here. A management reboot never reaches this job. */
-static void run_shutdown(slot_t* slot) {
-  h2_h202_mfg_service_t* s = slot->service;
-  int rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
-  if (rc != H2_PAL_OK) {
-    post(slot, H2_H202_MFG_EVENT_COMMITTED, rc, 0);
-    return;
-  }
-  /* Every other job was canceled; wait for them to release audio/radios. */
+/* Every other job was canceled; wait for them to release audio/radios. */
+static void wait_jobs_released(h2_h202_mfg_service_t* s) {
   for (unsigned waited = 0; waited < 5000u; waited += WAIT_SLICE_MS) {
     bool busy = false;
     service_lock(s);
@@ -1786,6 +1833,16 @@ static void run_shutdown(slot_t* slot) {
     if (!busy || stopping) break;
     (void)h2_pal_time_sleep_ms(s->runtime->time, WAIT_SLICE_MS);
   }
+}
+
+static void run_shutdown(slot_t* slot) {
+  h2_h202_mfg_service_t* s = slot->service;
+  int rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
+  if (rc != H2_PAL_OK) {
+    post(slot, H2_H202_MFG_EVENT_COMMITTED, rc, 0);
+    return;
+  }
+  wait_jobs_released(s);
   rc = h2_h202_mfg_progress_commit(s->runtime->pref, slot->job.results);
   slog(s, "H202_MFG_COMMIT rc=%d", rc);
   post(slot, H2_H202_MFG_EVENT_COMMITTED, rc, 0);
@@ -1807,6 +1864,24 @@ static void run_shutdown(slot_t* slot) {
 }
 
 /* ---- Tasks ------------------------------------------------------------ */
+
+/* Clear under the operation mutex, then reboot; returning means no reboot. */
+static void run_reset(slot_t* slot) {
+  h2_h202_mfg_service_t* s = slot->service;
+  int rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
+  if (rc == H2_PAL_OK) {
+    wait_jobs_released(s);
+    rc = h2_h202_mfg_progress_clear(s->runtime->pref);
+    slog(s, "H202_MFG_RESET clear rc=%d", rc);
+    if (rc == H2_PAL_OK) {
+      rc = h2_pal_power_reboot(s->runtime->power, 0u);
+      if (rc == H2_PAL_OK) rc = H2_PAL_ERR_INVALID_STATE;
+      slog(s, "H202_MFG_REBOOT rc=%d", rc);
+    }
+    operation_unlock(s);
+  }
+  post(slot, H2_H202_MFG_EVENT_POWER_ERROR, rc, 0);
+}
 
 static void run_job(slot_t* slot) {
   switch (slot->job.job) {
@@ -1833,6 +1908,9 @@ static void run_job(slot_t* slot) {
       break;
     case H2_H202_MFG_JOB_SHUTDOWN:
       run_shutdown(slot);
+      break;
+    case H2_H202_MFG_JOB_RESET:
+      run_reset(slot);
       break;
   }
 }

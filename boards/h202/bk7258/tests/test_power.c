@@ -81,12 +81,19 @@ static void restored(void) {
   assert(mounted && !wake && levels[H2_H202_PERIPHERAL_ENABLE_GPIO]);
   for (unsigned i = 0; i < 64; ++i) assert(holds[i] == 0);
 }
+static unsigned reboots;
+void bk_wdt_force_reboot(void) { ++reboots; }
+
 int main(void) {
   levels[H2_H202_PERIPHERAL_ENABLE_GPIO] = 1;
   const h2_pal_power_api_t* power = h2_h202_power_api();
   h2_pal_power_capabilities_t capabilities;
   assert(h2_pal_power_get_capabilities(power, &capabilities) == 0);
   assert(capabilities.flags & H2_PAL_POWER_CAPABILITY_SHUTDOWN);
+  assert(capabilities.flags & H2_PAL_POWER_CAPABILITY_REBOOT);
+  /* A host watchdog stub returns, which must not look like a restart. */
+  assert(h2_pal_power_reboot(power, 0) == H2_PAL_ERR_UNAVAILABLE &&
+         reboots == 1);
   released = false;
   assert(h2_pal_power_shutdown(power, 0) == H2_PAL_ERR_BUSY);
   assert(unmounts == 0 && led_stops == 0 && requests == 0);

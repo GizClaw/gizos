@@ -447,6 +447,48 @@ static void test_power_hold(void) {
   puts("power hold ok");
 }
 
+static void test_reset_gesture(void) {
+  begin_test(NULL);
+  for (unsigned i = 0; i < 7u; ++i) skip_current();
+  set_keys(0);
+  expect(H2_H202_MFG_POWER, H2_H202_MFG_PHASE_ACTIVE);
+  /* Record + short power in stage 06: no Power PASS, clear and reboot. */
+  set_keys(H2_H202_MFG_KEY_RECORD);
+  set_keys(H2_H202_MFG_KEY_RECORD | H2_H202_MFG_KEY_POWER);
+  step(300);
+  set_keys(H2_H202_MFG_KEY_RECORD);
+  assert(status().phase == H2_H202_MFG_PHASE_RESETTING);
+  assert(status().results[H2_H202_MFG_POWER] == H2_H202_MFG_UNTESTED);
+  const h2_h202_mfg_request_t* reset = last(H2_H202_MFG_OP_POWER);
+  assert(reset != NULL && reset->job == H2_H202_MFG_JOB_RESET);
+  set_keys(0); /* Releasing Record afterwards is consumed. */
+  assert(status().phase == H2_H202_MFG_PHASE_RESETTING);
+  /* The reboot returned: red, Record retries. */
+  event(H2_H202_MFG_OP_POWER, H2_H202_MFG_EVENT_POWER_ERROR, H2_PAL_ERR_IO, 0);
+  assert(status().phase == H2_H202_MFG_PHASE_RESET_FAILED);
+  assert(f.color == H2_H202_MFG_COLOR_RED);
+  click(H2_H202_MFG_KEY_RECORD);
+  assert(status().phase == H2_H202_MFG_PHASE_RESETTING);
+  assert(count_jobs(H2_H202_MFG_JOB_RESET) == 2u);
+  /* Power pressed first, then Record: still the reset gesture. */
+  begin_test(NULL);
+  set_keys(H2_H202_MFG_KEY_POWER);
+  set_keys(H2_H202_MFG_KEY_POWER | H2_H202_MFG_KEY_RECORD);
+  set_keys(H2_H202_MFG_KEY_RECORD);
+  assert(status().phase == H2_H202_MFG_PHASE_RESETTING);
+  /* Record + a 2 s power hold is ambiguous: neither reset nor shutdown. */
+  begin_test(NULL);
+  set_keys(H2_H202_MFG_KEY_RECORD);
+  set_keys(H2_H202_MFG_KEY_RECORD | H2_H202_MFG_KEY_POWER);
+  step(2500);
+  set_keys(H2_H202_MFG_KEY_RECORD);
+  set_keys(0);
+  expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
+  assert(count_jobs(H2_H202_MFG_JOB_RESET) == 0u);
+  assert(count_jobs(H2_H202_MFG_JOB_SHUTDOWN) == 0u);
+  puts("reset gesture ok");
+}
+
 /* ---- One-shot progress through h2_loader_mfg_* ----------------------- */
 
 typedef struct entry {
@@ -675,6 +717,7 @@ int main(void) {
   test_failures_and_retry();
   test_stale_and_new_presses();
   test_power_hold();
+  test_reset_gesture();
   test_progress();
   test_charge();
   return 0;

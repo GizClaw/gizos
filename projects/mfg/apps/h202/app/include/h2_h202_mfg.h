@@ -118,6 +118,7 @@ typedef enum h2_h202_mfg_job {
   H2_H202_MFG_JOB_CHECK,    /**< WIFI/CELLULAR: one qualification attempt. */
   H2_H202_MFG_JOB_MAINTAIN, /**< WIFI/CELLULAR: restart, keep reconnecting. */
   H2_H202_MFG_JOB_SHUTDOWN, /**< POWER: commit results, then power off. */
+  H2_H202_MFG_JOB_RESET,    /**< POWER: clear saved progress, then reboot. */
 } h2_h202_mfg_job_t;
 
 typedef struct h2_h202_mfg_request {
@@ -134,7 +135,7 @@ typedef enum h2_h202_mfg_event {
   H2_H202_MFG_EVENT_DONE,        /**< Terminal: the job has released all. */
   H2_H202_MFG_EVENT_CHARGER,     /**< value: 1 inserted, 0 removed. */
   H2_H202_MFG_EVENT_COMMITTED,   /**< SHUTDOWN progress write result. */
-  H2_H202_MFG_EVENT_POWER_ERROR, /**< SHUTDOWN power-off returned. */
+  H2_H202_MFG_EVENT_POWER_ERROR, /**< SHUTDOWN/RESET did not power off. */
 } h2_h202_mfg_event_t;
 
 /** MIC DONE value: h2_h202_mfg_aec_verdict_t. */
@@ -179,6 +180,8 @@ typedef enum h2_h202_mfg_phase {
   H2_H202_MFG_PHASE_SAVING,
   H2_H202_MFG_PHASE_UNSAVED,
   H2_H202_MFG_PHASE_POWEROFF_FAILED,
+  H2_H202_MFG_PHASE_RESETTING,    /**< Record + power: clear and reboot. */
+  H2_H202_MFG_PHASE_RESET_FAILED, /**< Red; Record retries the reset. */
 } h2_h202_mfg_phase_t;
 
 typedef enum h2_h202_mfg_net_state {
@@ -276,6 +279,8 @@ void h2_h202_mfg_progress_load(const h2_pal_pref_api_t* pref,
                                const h2_pal_mem_api_t* mem,
                                h2_h202_mfg_restore_t* out);
 /** Power-hold shutdown only. The caller holds the operation mutex. */
+/** Drop the saved record, as the Record + power gesture requests. */
+h2_pal_result_t h2_h202_mfg_progress_clear(const h2_pal_pref_api_t* pref);
 h2_pal_result_t h2_h202_mfg_progress_commit(
     const h2_pal_pref_api_t* pref,
     const uint8_t results[H2_H202_MFG_ITEM_COUNT]);

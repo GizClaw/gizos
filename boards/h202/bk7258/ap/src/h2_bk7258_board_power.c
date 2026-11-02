@@ -7,6 +7,7 @@
 #include "gpio_driver.h"
 #include "modules/pm.h"
 #include "os/os.h"
+#include "wdt_driver.h"
 #endif
 
 static h2_pal_power_state_t s_state = H2_PAL_POWER_STATE_RUNNING;
@@ -15,8 +16,9 @@ static h2_pal_result_t capabilities(void* user,
                                     h2_pal_power_capabilities_t* out) {
   (void)user;
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
-  out->flags =
-      H2_PAL_POWER_CAPABILITY_SHUTDOWN | H2_PAL_POWER_CAPABILITY_DEEP_SLEEP;
+  out->flags = H2_PAL_POWER_CAPABILITY_SHUTDOWN |
+               H2_PAL_POWER_CAPABILITY_DEEP_SLEEP |
+               H2_PAL_POWER_CAPABILITY_REBOOT;
   return H2_PAL_OK;
 }
 
@@ -92,12 +94,22 @@ restore:
   return (h2_pal_result_t)rc;
 }
 
+/* Chip restart through the SDK watchdog, as the H2Loader BK power API does.
+ * The Loader then boots the confirmed App; returning means no restart. */
+static h2_pal_result_t power_reboot(void* user, uint32_t reason) {
+  (void)user;
+  (void)reason;
+  bk_wdt_force_reboot();
+  return H2_PAL_ERR_UNAVAILABLE;
+}
+
 const h2_pal_power_api_t* h2_h202_power_api(void) {
   static const h2_pal_power_vtable_t vtable = {
       .get_capabilities = capabilities,
       .get_state = state,
       .shutdown = shutdown,
       .deep_sleep = shutdown,
+      .reboot = power_reboot,
   };
   static const h2_pal_power_api_t api = {.vtable = &vtable};
   return &api;

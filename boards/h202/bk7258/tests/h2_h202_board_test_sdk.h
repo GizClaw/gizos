@@ -141,6 +141,7 @@ int bk_gpio_register_wakeup_source(gpio_id_t id, unsigned level);
 int bk_gpio_register_lowpower_keep_status(gpio_id_t id,
                                           const gpio_config_t* config);
 int bk_pm_ap_sleep_mode_set(unsigned mode);
+void bk_wdt_force_reboot(void);
 int bk_gpio_unregister_wakeup_source(gpio_id_t id);
 int bk_gpio_unregister_lowpower_keep_status(gpio_id_t id);
 void rtos_delay_milliseconds(unsigned ms);
