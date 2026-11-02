@@ -13,6 +13,30 @@ test("release version identifies the GizOS release batch", () => {
   expect(() => releaseVersion("../outside", "0.1.0")).toThrow("batch");
 });
 
+test("public gizos alias targets npmjs and retains standalone SDK commands", async () => {
+  const root = await mkdtemp(join(process.env.TEST_TMPDIR ?? tmpdir(), "gizos-public-package-"));
+  try {
+    const output = join(root, "package");
+    const manifest = await build({ output, "package-name": "gizos", batch: "20261030-012345", version: "1.2.3-snapshot.4" });
+    expect(manifest.name).toBe("gizos");
+    expect(manifest.version).toBe("1.2.3-snapshot.4");
+    expect(manifest.publishConfig).toEqual({ access: "public", registry: "https://registry.npmjs.org/" });
+    expect(manifest.bin).toEqual({ gizos: "bin/gizos.js" });
+    expect(manifest.scripts).toBeUndefined();
+    expect(manifest.devDependencies).toBeUndefined();
+    const entry = join(output, manifest.bin.gizos);
+    expect((await execute([process.execPath, entry, "--version"], { cwd: "/" })).trim()).toBe(manifest.version);
+    expect(await execute([process.execPath, entry, "--help"], { cwd: "/" })).toContain("from gizos and preserves SDKs");
+    const environment = { ...process.env, GIZOS_DEVENV_HOME: join(root, "shared"), XDG_CONFIG_HOME: join(root, "config") };
+    const result = JSON.parse(await execute([process.execPath, entry, "env", "bk", "--json"], { cwd: "/", env: environment }));
+    expect(result.environments[0].status).toBe("not installed");
+    await expect(build({ output, "package-name": "unexpected" })).rejects.toThrow("must be named gizos");
+    for (const version of ["latest", "01.2.3", "1.2.3-01", "../outside"]) {
+      await expect(build({ output, version })).rejects.toThrow("exact semantic version");
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("built npm entry runs from a separate directory without source checkout dependencies", async () => {
   const root = await mkdtemp(join(process.env.TEST_TMPDIR ?? tmpdir(), "gizos-package-"));
   try {
@@ -26,6 +50,10 @@ test("built npm entry runs from a separate directory without source checkout dep
     expect((await stat(entry)).mode & 0o111).toBe(0o111);
     expect(await readFile(entry, "utf8")).toStartWith("#!/usr/bin/env bun");
     expect((await execute([process.execPath, entry, "--version"], { cwd: "/" })).trim()).toBe(manifest.version);
+    const help = await execute([process.execPath, entry, "--help"], { cwd: "/" });
+    expect(help).toContain("Install/open Gizloader desktop");
+    expect(help).toContain("gizos install gizloader");
+    expect(help).not.toContain("Tools: adb, bk-loader, h2loader");
     const environment = {
       ...process.env, GIZOS_DEVENV_HOME: join(root, "shared"), XDG_CONFIG_HOME: join(root, "config"),
     };

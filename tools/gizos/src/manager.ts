@@ -80,8 +80,10 @@ export const catalog = {
     return { ...definition, ...sdk };
   }),
 } as Catalog;
-export const PACKAGE = "@gizclaw/gizos";
-export const REGISTRY = "https://static-volc.gizclaw.com/npm/";
+declare const GIZOS_PACKAGE: string;
+declare const GIZOS_REGISTRY: string;
+export const PACKAGE = typeof GIZOS_PACKAGE === "string" ? GIZOS_PACKAGE : "@gizclaw/gizos";
+export const REGISTRY = typeof GIZOS_REGISTRY === "string" ? GIZOS_REGISTRY : "https://static-volc.gizclaw.com/npm/";
 const controlled = [
   "IDF_PATH", "IDF_TOOLS_PATH", "IDF_PYTHON_ENV_PATH", "IDF_DEACTIVATE_FILE_PATH", "H2LOADER_IDF_PATH",
   "ESP_IDF_VERSION", "ESP_ROM_ELF_DIR", "OPENOCD_SCRIPTS",

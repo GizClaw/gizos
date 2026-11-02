@@ -1,0 +1,6 @@
+{
+  "identifier": "serial-logs",
+  "description": "Local serial log viewer window",
+  "windows": ["serial-logs"],
+  "permissions": ["core:default"]
+}

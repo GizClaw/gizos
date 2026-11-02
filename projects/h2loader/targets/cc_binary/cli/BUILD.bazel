@@ -5,6 +5,55 @@ load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WI
 
 package(default_visibility = ["//visibility:public"])
 
+# Entry point and regression coverage shared with the unified gizloader backend.
+filegroup(
+    name = "cli_main",
+    srcs = ["main.c"],
+)
+
+exports_files(["test_h2_h2loader_cli_native.py"])
+
+cc_library(
+    name = "platform",
+    srcs = select({
+        "@platforms//os:macos": ["platform_darwin.c"],
+        "@platforms//os:linux": ["platform_linux.c"],
+        "@platforms//os:windows": ["platform_windows.c"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["h2_h2loader_cli_target.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_windows_x86_64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":host_path",
+        "//libs/pal",
+        "//projects/h2loader/apps/cli/app:h2loader_cli_app",
+    ] + select({
+        "@platforms//os:macos": [
+            "//libs/pal/providers/darwin/pal_core",
+            "//libs/pal/providers/desktop/pal_core",
+        ],
+        "@platforms//os:linux": [
+            "//libs/pal/providers/desktop/pal_core",
+            "//libs/pal/providers/linux/pal_core",
+            "//libs/pal/providers/linux/serial_host",
+        ],
+        "@platforms//os:windows": [
+            "//libs/pal/providers/windows/pal_core",
+            "//libs/pal/providers/windows/serial_host",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
 cc_binary(
     name = "startup_failure_fixture",
     srcs = [
@@ -15,7 +64,7 @@ cc_binary(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    visibility = ["//visibility:private"],
+    visibility = ["//tools/gizloader/native:__pkg__"],
     deps = ["//projects/h2loader/apps/cli/app:h2loader_cli_app"],
 )
 
@@ -78,15 +127,7 @@ cc_test(
 
 cc_test(
     name = "target_lifecycle_test",
-    srcs = [
-        "h2_h2loader_cli_target.h",
-        "h2_h2loader_cli_target_test.c",
-    ] + select({
-        "@platforms//os:macos": ["platform_darwin.c"],
-        "@platforms//os:linux": ["platform_linux.c"],
-        "@platforms//os:windows": ["platform_windows.c"],
-        "//conditions:default": [],
-    }),
+    srcs = ["h2_h2loader_cli_target_test.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
@@ -96,38 +137,16 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":host_path",
+        ":platform",
         "//libs/pal",
         "//projects/h2loader/apps/cli/app:h2loader_cli_app",
-    ] + select({
-        "@platforms//os:macos": [
-            "//libs/pal/providers/darwin/pal_core",
-            "//libs/pal/providers/desktop/pal_core",
-        ],
-        "@platforms//os:linux": [
-            "//libs/pal/providers/desktop/pal_core",
-            "//libs/pal/providers/linux/pal_core",
-            "//libs/pal/providers/linux/serial_host",
-        ],
-        "@platforms//os:windows": [
-            "//libs/pal/providers/windows/pal_core",
-            "//libs/pal/providers/windows/serial_host",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
+# Compatibility target; native distribution is //tools/gizloader/native:gizloader-cli.
 cc_binary(
     name = "h2loader",
-    srcs = [
-        "h2_h2loader_cli_target.h",
-        "main.c",
-    ] + select({
-        "@platforms//os:macos": ["platform_darwin.c"],
-        "@platforms//os:linux": ["platform_linux.c"],
-        "@platforms//os:windows": ["platform_windows.c"],
-        "//conditions:default": [],
-    }),
+    srcs = [":cli_main"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
@@ -138,25 +157,11 @@ cc_binary(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":host_path",
+        ":platform",
         "//libs/command",
         "//libs/pal",
         "//libs/runtime",
         "//projects/h2loader/apps/cli/app:h2loader_cli_app",
-    ] + select({
-        "@platforms//os:macos": [
-            "//libs/pal/providers/darwin/pal_core",
-            "//libs/pal/providers/desktop/pal_core",
-        ],
-        "@platforms//os:linux": [
-            "//libs/pal/providers/desktop/pal_core",
-            "//libs/pal/providers/linux/pal_core",
-            "//libs/pal/providers/linux/serial_host",
-        ],
-        "@platforms//os:windows": [
-            "//libs/pal/providers/windows/pal_core",
-            "//libs/pal/providers/windows/serial_host",
-        ],
-        "//conditions:default": [],
-    }),
+        "//tools/gizloader/native:macos_cli_metadata",
+    ],
 )

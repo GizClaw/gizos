@@ -4,16 +4,22 @@ import {
   describeSdk, Manager, PACKAGE, catalog, sdkName, shellEnvironment, upgrade,
 } from "./manager";
 import { tools } from "./resources";
+import { GizloaderBootstrap, loaderRequest } from "./gizloader";
 import type { InstallationPaths } from "./common";
 import type { Env } from "./common";
 import { withLease, withStore } from "./store";
 import manifest from "../package.json";
+import { delimiter, dirname } from "node:path";
 
 declare const GIZOS_VERSION: string;
 const version = typeof GIZOS_VERSION === "string" ? GIZOS_VERSION : manifest.version;
-const help = `GizOS SDK and toolchain manager ${version}
+const help = `GizOS desktop installer and SDK toolbox ${version}
 
 Usage:
+  gizos                                      Install/open Gizloader desktop
+  gizos install gizloader [version] [--snapshot]
+  gizos loader [--snapshot] [-- <CLI arguments...>]
+  gizos install gizloader --index <json> --checksums <SHA256SUMS> --archive <installer>
   gizos setup <sdk> <version> [--targets esp32s3,esp32p4] [--sources-only]
   gizos install <tool> [version] [--archive <downloaded-archive>]
   gizos remove <sdk|tool> <version> [--dry-run] [--json]
@@ -39,7 +45,11 @@ SDKs: ${[...new Set(catalog.sdks.map(sdkName))].join(", ")}
 list shows supported chips, source aliases, repositories and versions.
 describe explains an SDK and shows usage examples in English.
 Legacy SDK names and family aliases remain accepted.
-Tools: adb, bk-loader, h2loader, h6loader, jieli-toolchain, jieli-postbuild
+Tools: gizloader, adb, bk-loader, jieli-toolchain, jieli-postbuild
+Gizloader supports macOS arm64 and Windows x64; --snapshot selects gizloader-snapshot.
+Gizloader installs the latest stable gizloader-v<semver> release by default.
+loader arguments run the bundled CLI with inherited stdout and exit status.
+Use gizos --help for toolbox help or gizos loader -- --help for native CLI help.
 GIZOS_DEVENV_HOME overrides the configured shared directory.
 config saves independent SDK/tool version paths; root supplies default locations.
 Omitting a version selects the current version, falling back to the catalog default.
@@ -75,11 +85,25 @@ function parse(args: string[]) {
 }
 
 async function main() {
-  const { flags, positional, tail } = parse(process.argv.slice(2));
+  const input = process.argv.slice(2);
+  const desktop = loaderRequest(input);
+  if (desktop) {
+    const root = await dataRoot(desktop.root);
+    const bootstrap = new GizloaderBootstrap({ root });
+    const installed = desktop.open ? await bootstrap.ensure(desktop) : await bootstrap.install(desktop);
+    const bin = dirname(installed.shim);
+    if (!desktop.args.length && process.platform === "darwin" && !(process.env.PATH ?? "").split(delimiter).includes(bin)) {
+      console.error(`Gizloader launcher: ${installed.shim}\nAdd ${bin} to PATH to use gizloader directly, or use gizos loader.`);
+    }
+    if (desktop.open) process.exitCode = await bootstrap.launch(installed, desktop.args);
+    else console.log(`Gizloader ${installed.index.version}: ready\nApplication: ${installed.application}\nLauncher: ${installed.shim}`);
+    return;
+  }
+  const { flags, positional, tail } = parse(input);
   const [action, requestedName, selected, ...extra] = positional;
   const normalized = requestedName?.replaceAll("_", "-");
   const name = tools.some(tool => tool.kind === normalized) ? normalized : requestedName;
-  if (flags.help || action === "help" || !action && !flags.version) { console.log(help); return; }
+  if (flags.help || action === "help") { console.log(help); return; }
   if (flags.version || action === "version") { console.log(version); return; }
   if (flags.reset && action !== "config") throw new Error("--reset is only supported by gizos config <sdk>");
   if (flags["reset-paths"] && action !== "config") throw new Error("--reset-paths is only supported by gizos config");
@@ -187,7 +211,7 @@ async function main() {
     if (selected && !name) throw new Error("Select an SDK family first");
     const tool = name && resources.isTool(name);
     const sdks = tool ? [] : selected ? [manager.sdk(name, selected)] : manager.sdks(name);
-    const tools = !name ? resources.entries : tool
+    const tools = !name ? resources.entries.filter(tool => !tool.retired) : tool
       ? selected ? [resources.select(name, selected)] : resources.entries.filter(tool => tool.kind === name) : [];
     const environments = await Promise.all(sdks.map(sdk => manager.describe(sdk)));
     const installations = await Promise.all(tools.map(tool => resources.describe(tool)));

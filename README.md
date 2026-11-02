@@ -83,13 +83,22 @@ Keep embedded JavaScript in `EM_JS` / `EM_ASM` calls between `/* clang-format of
 
 ## Shared SDK toolbox
 
-The TypeScript/Bun package `@gizclaw/gizos` requires Bun 1.3.9 or newer and
-manages SDK versions and shared toolchains. Its installed command is `gizos`;
-all GizOS worktrees share installation records. Each SDK and tool version can
-use its own configured installation paths.
+The public npm package `gizos` requires Bun 1.3.9 or newer. Run `bunx gizos`
+to install and open Gizloader desktop on macOS Apple Silicon or Windows x64;
+use `bunx gizos --help` for toolbox help. `bunx gizos install gizloader` installs
+or updates without opening the window, `bunx gizos loader -- --help` runs its
+bundled native CLI, and `--snapshot` selects the desktop snapshot release.
+Stable desktop installers come from `gizloader-v<semver>` releases in
+`GizClaw/gizos`. The release workflow preserves stable tags and assets; archive
+size and SHA-256 are verified against `gizloader-index.json` and `SHA256SUMS`
+before installation. The app also installs
+a user `gizloader` launcher: no arguments opens the GUI; arguments run the CLI.
 
-Configure the GizClaw registry in `~/.npmrc` (or `$XDG_CONFIG_HOME/.npmrc` when
-`XDG_CONFIG_HOME` is set) to use the toolbox from any directory:
+The same `gizos` command manages SDK versions and shared toolchains. All GizOS
+worktrees share installation records; each SDK and tool version can use its own
+configured paths. The scoped `@gizclaw/gizos` SDK package remains available.
+Configure its GizClaw registry in `~/.npmrc` (or `$XDG_CONFIG_HOME/.npmrc` when
+`XDG_CONFIG_HOME` is set):
 
 ```ini
 @gizclaw:registry=https://static-volc.gizclaw.com/npm/
@@ -101,8 +110,7 @@ After the package has been published through Deploy's registry import:
 bunx @gizclaw/gizos setup esp-idf 6.2
 bunx @gizclaw/gizos setup bk7258 3.1.1
 bunx @gizclaw/gizos install adb 35.0.2
-bunx @gizclaw/gizos install h2loader
-bunx @gizclaw/gizos install h6loader
+bunx gizos install gizloader
 bunx @gizclaw/gizos env bk7258
 bun add --global @gizclaw/gizos
 gizos upgrade
@@ -117,7 +125,9 @@ verification. Use `gizos install bk_loader 4.1.7 --archive <release-archive>`
 to import a previously downloaded archive. `env --shell`
 prints shell activation statements, and `run` executes a command with the
 selected environment.
-`upgrade` updates the toolbox while preserving installed SDKs.
+`upgrade` updates the toolbox while preserving installed SDKs. Standalone
+`h2loader` and `h6loader` installation is retired in favor of Gizloader; old
+installation records remain available for adoption and removal.
 
 Use `gizos config esp_idf 6.2 --sdk /shared/sdks/esp-idf-6.2 --tools /shared/toolchains/esp-idf`
 to save independent paths for an SDK version, or
@@ -148,9 +158,11 @@ Omit the source alias to inspect
 the setting, or use `--reset` to restore the default. Existing SDKs and
 toolchains remain shared, and the catalog commit pins still apply.
 
-GizOS Release builds the npm archive, index and checksums; Deploy imports the
-validated release into `https://static-volc.gizclaw.com/npm/`. For development
-before registry publication, run `bun tools/gizos/src/cli.ts env` directly.
+GizOS Release builds the scoped npm archive, index and checksums; Deploy imports
+the validated release into `https://static-volc.gizclaw.com/npm/`. The unscoped
+alias is built separately with `bun tools/gizos/build.ts --output tools/gizos/dist-public --package-name gizos --version <semver>`
+and targets npmjs. For development before registry publication, run
+`bun tools/gizos/src/cli.ts env` directly.
 See [the toolbox README](tools/gizos/README.md) for SDK setup, multi-version
 storage, environment activation and the release flow. Optional vendor assets
 remain explicit external inputs.
