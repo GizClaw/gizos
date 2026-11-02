@@ -1,6 +1,9 @@
 /* Test the production session dispatch against a fake SDK boundary. No serial
  * ports or firmware are touched. The real parser/ownership/command gates run.
  */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "h2_h2loader_host.h"
 #include "h2_h2loader_host_package.h"
 #include "h2/pal/os/h2_pal_fs.h"

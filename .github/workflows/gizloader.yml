@@ -292,7 +292,10 @@ jobs:
           options=(--config="$BAZEL_CONFIG" -c opt --test_output=errors)
           tests=(//tools/gizloader/native:session_test //tools/gizloader/native:native_cli_test)
           if [ "$RUNNER_OS" = macOS ]; then tests+=(//tools/gizloader/native:info_plist_test); fi
-          if [ "$RUNNER_OS" = Windows ]; then options+=(--copt=/wd5287 --features=static_link_msvcrt --lockfile_mode=off); fi
+          if [ "$RUNNER_OS" = Windows ]; then
+            export MSYS2_ARG_CONV_EXCL='*'
+            options+=(--copt=/wd5287 --features=static_link_msvcrt --lockfile_mode=off)
+          fi
           bazel test "${options[@]}" "${tests[@]}"
       - name: Test Rust supervisor
         run: cargo test --manifest-path tools/gizloader/src-tauri/Cargo.toml
