@@ -17,8 +17,8 @@ extern "C" {
  * Three layers, all portable (PAL IDs only, no SDK or board types):
  * - The controller is a synchronous ten-stage state machine. It never blocks,
  *   owns no task and talks to hardware only through begin/cancel/light.
- * - Pure helpers: progress through h2_loader_mfg_*, charge indication, 1 kHz
- *   Goertzel AEC measurement and 8 kHz prompt playback.
+ * - Pure helpers: progress through h2_loader_mfg_*, charge indication, the
+ *   stage 05 capture check and 8 kHz prompt playback.
  * - The service owns one controller task plus one worker task per operation
  *   and maps workers onto the Runtime PAL providers.
  */
@@ -309,26 +309,20 @@ h2_h202_mfg_charge_mode_t h2_h202_mfg_charge_update(
     h2_h202_mfg_charge_t* charge, uint64_t now_ms, bool usb_insert,
     bool charging, bool done, bool* led);
 
-/** Stage 05 measurement parameters; provisional values live in profile.c. */
+/** Stage 05 capture check parameters; values live in profile.c. There is no
+ * test tone: the check proves a live raw lane and AEC output, and the operator
+ * judges the loopback audio. */
 typedef struct h2_h202_mfg_aec_config {
   uint32_t sample_rate_hz;
-  uint32_t tone_hz;
   uint32_t convergence_ms;
   uint32_t measure_ms;
-  uint32_t block_ms;            /**< At least 100. */
-  int32_t min_tone_dbfs_x10;    /**< -400: reference and raw lane. */
-  int32_t min_reduction_db_x10; /**< 100: raw minus processed. */
-  bool voice_only; /**< No test tone; check signal continuity, operator judges
-                      audio. */
+  uint32_t block_ms; /**< At least 100. */
 } h2_h202_mfg_aec_config_t;
 
 typedef enum h2_h202_mfg_aec_verdict {
   H2_H202_MFG_AEC_PASS = 0,
-  H2_H202_MFG_AEC_NO_SIGNAL = 1,     /**< No complete lane frame or all zero. */
-  H2_H202_MFG_AEC_REFERENCE_LOW = 2, /**< Loopback or its ADC lane broken. */
-  H2_H202_MFG_AEC_RAW_LOW = 3,       /**< Silent speaker or microphone. */
-  H2_H202_MFG_AEC_REDUCTION_LOW = 4,
-  H2_H202_MFG_AEC_INCOMPLETE = 5, /**< Window not finished yet. */
+  H2_H202_MFG_AEC_NO_SIGNAL = 1,  /**< No lane frame, or all zero in window. */
+  H2_H202_MFG_AEC_INCOMPLETE = 2, /**< Window not finished yet. */
 } h2_h202_mfg_aec_verdict_t;
 
 enum { H2_H202_MFG_AEC_MAX_BLOCKS = 128 };
@@ -341,22 +335,20 @@ typedef struct h2_h202_mfg_aec_meter {
   uint32_t lane_frames;
   bool nonzero;
   bool processed_nonzero;
-  float coefficient;
-  float raw[2], reference[2],
-      processed[2]; /**< Goertzel state or voice energy. */
+  float raw, reference, processed; /**< Block sums of squares. */
   uint32_t in_block;
   unsigned blocks;
   int16_t raw_db_x10[H2_H202_MFG_AEC_MAX_BLOCKS];
   int16_t reference_db_x10[H2_H202_MFG_AEC_MAX_BLOCKS];
-  int16_t reduction_db_x10[H2_H202_MFG_AEC_MAX_BLOCKS];
+  int16_t processed_db_x10[H2_H202_MFG_AEC_MAX_BLOCKS];
 } h2_h202_mfg_aec_meter_t;
 
 typedef struct h2_h202_mfg_aec_result {
   h2_h202_mfg_aec_verdict_t verdict;
   unsigned blocks;
-  int32_t raw_dbfs_x10;       /**< Median tone level on the raw lane. */
-  int32_t reference_dbfs_x10; /**< Median tone level on the reference. */
-  int32_t reduction_db_x10;   /**< Median per-block echo reduction. */
+  int32_t raw_dbfs_x10;       /**< Median broadband level, raw lane. */
+  int32_t reference_dbfs_x10; /**< Median broadband level, reference. */
+  int32_t processed_dbfs_x10; /**< Median broadband level, AEC output. */
 } h2_h202_mfg_aec_result_t;
 
 h2_pal_result_t h2_h202_mfg_aec_meter_init(

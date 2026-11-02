@@ -15,26 +15,16 @@
 /* ---- Pure measurement and playback helpers --------------------------- */
 
 static const h2_h202_mfg_aec_config_t aec = {.sample_rate_hz = 16000u,
-                                             .tone_hz = 1000u,
                                              .convergence_ms = 3000u,
                                              .measure_ms = 7000u,
-                                             .block_ms = 100u,
-                                             .min_tone_dbfs_x10 = -400,
-                                             .min_reduction_db_x10 = 100};
+                                             .block_ms = 100u};
 
 typedef struct signal {
-  float raw[2]; /**< Tone amplitude per lane, full scale 1.0. */
+  float raw[2]; /**< Speech-like amplitude per lane, full scale 1.0. */
   float reference;
   float processed;
-  float noise;                     /**< Broadband noise on the raw lanes. */
-  uint64_t speech_from, speech_to; /**< Sample window with near-1 kHz speech. */
+  uint64_t raw_until; /**< Raw lanes go silent from this sample; 0 = never. */
 } signal_t;
-
-static uint32_t lcg = 1u;
-static float noise(void) {
-  lcg = lcg * 1103515245u + 12345u;
-  return (float)((lcg >> 16) & 0x7fffu) / 16384.0f - 1.0f;
-}
 
 static int16_t pcm(float x) {
   x *= 32767.0f;
@@ -45,19 +35,15 @@ static int16_t pcm(float x) {
 static void feed(h2_h202_mfg_aec_meter_t* meter, const signal_t* s,
                  uint8_t lane, unsigned frames) {
   static int16_t raw[320 * 3], reference[320], processed[320];
-  static uint64_t t;
-  t = 0;
+  uint64_t t = 0;
   for (unsigned f = 0; f < frames; ++f) {
     for (unsigned i = 0; i < 320u; ++i, ++t) {
-      float tone = sinf(2.0f * 3.14159265f * 1000.0f * (float)t / 16000.0f);
-      float speech =
-          t >= s->speech_from && t < s->speech_to
-              ? 0.4f * sinf(2.0f * 3.14159265f * 1002.0f * (float)t / 16000.0f)
-              : 0.0f;
+      float wave = sinf(2.0f * 3.14159265f * 300.0f * (float)t / 16000.0f);
+      bool live = s->raw_until == 0u || t < s->raw_until;
       for (unsigned l = 0; l < 2u; ++l)
-        raw[i * 3u + l] = pcm(s->raw[l] * tone + s->noise * noise() + speech);
-      raw[i * 3u + 2u] = reference[i] = pcm(s->reference * tone);
-      processed[i] = pcm(s->processed * tone + speech);
+        raw[i * 3u + l] = live ? pcm(s->raw[l] * wave) : 0;
+      raw[i * 3u + 2u] = reference[i] = pcm(s->reference * wave);
+      processed[i] = pcm(s->processed * wave);
     }
     h2_audio_frame_t r = {.data = raw,
                           .capacity = sizeof(raw),
@@ -95,48 +81,31 @@ static h2_h202_mfg_aec_verdict_t measure(const signal_t* s, uint8_t lane,
   return h2_h202_mfg_aec_meter_result(&meter, result);
 }
 
+/* Stage 05 checks signal presence only and reports broadband levels; there
+ * is no tone and no echo-reduction verdict. */
 static void test_measurement(void) {
   h2_h202_mfg_aec_result_t r;
-  const signal_t good = {.raw = {0.3f, 0.3f},
-                         .reference = 0.5f,
-                         .processed = 0.01f,
-                         .noise = 0.01f};
+  const signal_t good = {.raw = {0.2f, 0.2f}, .processed = 0.1f};
   assert(measure(&good, 0, 0, 500, &r) == H2_H202_MFG_AEC_PASS);
   assert(r.blocks == 70u);
-  assert(r.raw_dbfs_x10 > -110 && r.raw_dbfs_x10 < -95); /* ~ -10.5 dBFS */
-  assert(r.reference_dbfs_x10 > -65 && r.reference_dbfs_x10 < -55);
-  assert(r.reduction_db_x10 > 280 && r.reduction_db_x10 < 310);
+  assert(r.raw_dbfs_x10 > -175 && r.raw_dbfs_x10 < -165); /* 0.2 sine: -17 */
+  assert(r.processed_dbfs_x10 > -235 && r.processed_dbfs_x10 < -225);
+  assert(r.reference_dbfs_x10 == -1200);
   assert(measure(&good, 1, 1, 500, &r) == H2_H202_MFG_AEC_PASS);
   /* Silent lane: all-zero raw signal. */
   signal_t silent = good;
   silent.raw[1] = 0.0f;
-  silent.noise = 0.0f;
   assert(measure(&silent, 1, 1, 500, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
   /* No complete frame for this lane. */
   assert(measure(&good, 1, 0, 500, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
-  /* Missing reference: the DAC loopback or its ADC lane is broken. */
-  signal_t reference = good;
-  reference.reference = 0.0f;
-  assert(measure(&reference, 0, 0, 500, &r) == H2_H202_MFG_AEC_REFERENCE_LOW);
-  /* Silent speaker: microphone noise only, no tone on the raw lane. */
-  signal_t speaker = good;
-  speaker.raw[0] = 0.0f;
-  speaker.processed = 0.0f;
-  assert(measure(&speaker, 0, 0, 500, &r) == H2_H202_MFG_AEC_RAW_LOW);
-  /* Low echo reduction: 0.3 -> 0.2 is about 3.5 dB. */
-  signal_t weak = good;
-  weak.processed = 0.2f;
-  assert(measure(&weak, 0, 0, 500, &r) == H2_H202_MFG_AEC_REDUCTION_LOW);
-  assert(r.reduction_db_x10 > 20 && r.reduction_db_x10 < 50);
-  /* Speech in 2 s of the 7 s window: the median rejects those blocks. */
-  signal_t speech = good;
-  speech.speech_from = 16000u * 5u;
-  speech.speech_to = 16000u * 7u;
-  assert(measure(&speech, 0, 0, 500, &r) == H2_H202_MFG_AEC_PASS);
-  /* Speech over most of the window cannot be hidden. */
-  speech.speech_from = 16000u * 3u;
-  speech.speech_to = 16000u * 9u;
-  assert(measure(&speech, 0, 0, 500, &r) == H2_H202_MFG_AEC_REDUCTION_LOW);
+  /* Signal only during convergence does not count. */
+  signal_t early = good;
+  early.raw_until = 16000u * 2u;
+  assert(measure(&early, 0, 0, 500, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
+  /* No AEC output. */
+  signal_t dead = good;
+  dead.processed = 0.0f;
+  assert(measure(&dead, 0, 0, 500, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
   /* Window not finished; convergence frames are never measured. */
   assert(measure(&good, 0, 0, 300, &r) == H2_H202_MFG_AEC_INCOMPLETE);
   assert(measure(&good, 0, 0, 100, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
@@ -144,28 +113,6 @@ static void test_measurement(void) {
   bad.block_ms = 50u;
   h2_h202_mfg_aec_meter_t meter;
   assert(h2_h202_mfg_aec_meter_init(&meter, &bad, 0) == H2_PAL_ERR_INVALID_ARG);
-  /* Quiet-speaker mode measures signal presence, not echo reduction. */
-  h2_h202_mfg_aec_config_t voice = aec;
-  voice.voice_only = true;
-  voice.tone_hz = 0u;
-  signal_t spoken = {.raw = {0.2f, 0.2f}, .processed = 0.2f};
-  assert(h2_h202_mfg_aec_meter_init(&meter, &voice, 0) == H2_PAL_OK);
-  feed(&meter, &spoken, 0, 500);
-  assert(h2_h202_mfg_aec_meter_result(&meter, &r) == H2_H202_MFG_AEC_PASS);
-  assert(r.reduction_db_x10 == 0 && r.reference_dbfs_x10 == -1200);
-  spoken.processed = 0.0f;
-  assert(h2_h202_mfg_aec_meter_init(&meter, &voice, 1) == H2_PAL_OK);
-  feed(&meter, &spoken, 1, 500);
-  assert(h2_h202_mfg_aec_meter_result(&meter, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
-  spoken.raw[1] = 0.0f;
-  spoken.processed = 0.2f;
-  assert(h2_h202_mfg_aec_meter_init(&meter, &voice, 1) == H2_PAL_OK);
-  feed(&meter, &spoken, 1, 500);
-  assert(h2_h202_mfg_aec_meter_result(&meter, &r) == H2_H202_MFG_AEC_NO_SIGNAL);
-  assert(h2_h202_mfg_aec_meter_init(&meter, &voice, 0) == H2_PAL_OK);
-  feed(&meter, &spoken, 0, 300);
-  assert(h2_h202_mfg_aec_meter_result(&meter, &r) ==
-         H2_H202_MFG_AEC_INCOMPLETE);
   puts("aec measurement ok");
 }
 
@@ -898,12 +845,9 @@ static h2_h202_mfg_profile_t profile = {
     .tone_amplitude = 16384,
     .monitor_gain_q15 = 8192u,
     .aec = {.sample_rate_hz = 16000u,
-            .tone_hz = 1000u,
             .convergence_ms = 200u,
             .measure_ms = 600u,
-            .block_ms = 100u,
-            .min_tone_dbfs_x10 = -400,
-            .min_reduction_db_x10 = 100},
+            .block_ms = 100u},
     .aging_frame_ms = 40u,
     .wifi_ssid = "HAIVIVI-MFG",
     .wifi_password = "!haivivi",

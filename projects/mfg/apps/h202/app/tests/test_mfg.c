@@ -338,7 +338,7 @@ static void test_failures_and_retry(void) {
   set_keys(0);
   /* Microphone measurement failure and an instruction prompt error. */
   expect(H2_H202_MFG_LEFT_MIC, H2_H202_MFG_PHASE_ACTIVE);
-  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_REDUCTION_LOW);
+  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_NO_SIGNAL);
   expect(H2_H202_MFG_LEFT_MIC, H2_H202_MFG_PHASE_FAILED);
   expect_prompt(H2_H202_MFG_PROMPT_MIC_FAILED);
   click(H2_H202_MFG_KEY_RECORD);

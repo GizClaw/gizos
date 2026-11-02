@@ -795,25 +795,9 @@ h2_h202_mfg_charge_mode_t h2_h202_mfg_charge_update(
   return mode;
 }
 
-/* ---- Stage 05 AEC measurement ----------------------------------------- */
+/* ---- Stage 05 capture check ------------------------------------------ */
 
-static void goertzel(float state[2], float coefficient, float x) {
-  float s0 = x + coefficient * state[0] - state[1];
-  state[1] = state[0];
-  state[0] = s0;
-}
-
-/* Tone level in dBFS*10, where 0 is a full-scale sine at the tone. */
-static int16_t goertzel_db(const float state[2], float coefficient,
-                           uint32_t samples) {
-  float power = state[0] * state[0] + state[1] * state[1] -
-                coefficient * state[0] * state[1];
-  float amplitude = power > 0.0f ? 2.0f * sqrtf(power) / (float)samples : 0.0f;
-  if (amplitude < 1e-6f) return -1200;
-  float db = 200.0f * log10f(amplitude);
-  return (int16_t)(db < -1200.0f ? -1200 : db > 1200.0f ? 1200 : db);
-}
-
+/* Broadband level in dBFS*10, where 0 is full-scale DC. */
 static int16_t energy_db(float sum_squares, uint32_t samples) {
   float power = sum_squares / (float)samples;
   if (power < 1e-12f) return -1200;
@@ -826,9 +810,6 @@ h2_pal_result_t h2_h202_mfg_aec_meter_init(
     uint8_t lane) {
   if (meter == NULL || config == NULL || lane > 1u ||
       config->sample_rate_hz == 0u || config->block_ms < 100u ||
-      (!config->voice_only &&
-       (config->tone_hz == 0u ||
-        config->tone_hz * 2u >= config->sample_rate_hz)) ||
       config->measure_ms < config->block_ms ||
       config->measure_ms / config->block_ms > H2_H202_MFG_AEC_MAX_BLOCKS)
     return H2_PAL_ERR_INVALID_ARG;
@@ -837,8 +818,6 @@ h2_pal_result_t h2_h202_mfg_aec_meter_init(
   meter->lane = lane;
   meter->block_samples =
       (uint32_t)((uint64_t)config->sample_rate_hz * config->block_ms / 1000u);
-  meter->coefficient = 2.0f * cosf(2.0f * 3.14159265f * (float)config->tone_hz /
-                                   (float)config->sample_rate_hz);
   return H2_PAL_OK;
 }
 
@@ -876,51 +855,29 @@ void h2_h202_mfg_aec_meter_capture(h2_h202_mfg_aec_meter_t* meter,
   for (unsigned i = 0; i < samples; ++i) {
     int16_t x = raw[i * channels + meter->lane];
     uint64_t position = meter->lane_samples++;
-    if (x != 0 &&
-        (!meter->config.voice_only || (position >= start && position < end)))
-      meter->nonzero = true;
     if (position < start || position >= end ||
         meter->blocks >= H2_H202_MFG_AEC_MAX_BLOCKS)
       continue;
+    if (x != 0) meter->nonzero = true;
     if (processed[i] != 0) meter->processed_nonzero = true;
-    if (meter->config.voice_only) {
-      /* No known excitation: report broadband levels, never claim a measured
-       * echo reduction. Audible speech quality is confirmed by the operator. */
-      float input = (float)x / 32768.0f;
-      float ref = (float)reference[i] / 32768.0f;
-      float output = (float)processed[i] / 32768.0f;
-      meter->raw[0] += input * input;
-      meter->reference[0] += ref * ref;
-      meter->processed[0] += output * output;
-    } else {
-      goertzel(meter->raw, meter->coefficient, (float)x / 32768.0f);
-      goertzel(meter->reference, meter->coefficient,
-               (float)reference[i] / 32768.0f);
-      goertzel(meter->processed, meter->coefficient,
-               (float)processed[i] / 32768.0f);
-    }
+    /* No known excitation: broadband levels only, never a claimed echo
+     * reduction. Audible quality is confirmed by the operator. */
+    float input = (float)x / 32768.0f;
+    float ref = (float)reference[i] / 32768.0f;
+    float output = (float)processed[i] / 32768.0f;
+    meter->raw += input * input;
+    meter->reference += ref * ref;
+    meter->processed += output * output;
     if (++meter->in_block < meter->block_samples) continue;
-    int16_t raw_db =
-        meter->config.voice_only
-            ? energy_db(meter->raw[0], meter->block_samples)
-            : goertzel_db(meter->raw, meter->coefficient, meter->block_samples);
-    int16_t processed_db =
-        meter->config.voice_only
-            ? energy_db(meter->processed[0], meter->block_samples)
-            : goertzel_db(meter->processed, meter->coefficient,
-                          meter->block_samples);
-    meter->raw_db_x10[meter->blocks] = raw_db;
+    meter->raw_db_x10[meter->blocks] =
+        energy_db(meter->raw, meter->block_samples);
     meter->reference_db_x10[meter->blocks] =
-        meter->config.voice_only
-            ? energy_db(meter->reference[0], meter->block_samples)
-            : goertzel_db(meter->reference, meter->coefficient,
-                          meter->block_samples);
-    meter->reduction_db_x10[meter->blocks] = (int16_t)(raw_db - processed_db);
+        energy_db(meter->reference, meter->block_samples);
+    meter->processed_db_x10[meter->blocks] =
+        energy_db(meter->processed, meter->block_samples);
     ++meter->blocks;
     meter->in_block = 0u;
-    memset(meter->raw, 0, sizeof(meter->raw));
-    memset(meter->reference, 0, sizeof(meter->reference));
-    memset(meter->processed, 0, sizeof(meter->processed));
+    meter->raw = meter->reference = meter->processed = 0.0f;
   }
 }
 
@@ -956,21 +913,10 @@ h2_h202_mfg_aec_verdict_t h2_h202_mfg_aec_meter_result(
       result.raw_dbfs_x10 = median(meter->raw_db_x10, meter->blocks);
       result.reference_dbfs_x10 =
           median(meter->reference_db_x10, meter->blocks);
-      result.reduction_db_x10 = median(meter->reduction_db_x10, meter->blocks);
-      const h2_h202_mfg_aec_config_t* config = &meter->config;
-      if (config->voice_only) {
-        result.reduction_db_x10 = 0; /* No controlled echo measurement. */
-        result.verdict = meter->processed_nonzero ? H2_H202_MFG_AEC_PASS
-                                                  : H2_H202_MFG_AEC_NO_SIGNAL;
-      } else
-        result.verdict =
-            result.reference_dbfs_x10 < config->min_tone_dbfs_x10
-                ? H2_H202_MFG_AEC_REFERENCE_LOW
-            : result.raw_dbfs_x10 < config->min_tone_dbfs_x10
-                ? H2_H202_MFG_AEC_RAW_LOW
-            : result.reduction_db_x10 < config->min_reduction_db_x10
-                ? H2_H202_MFG_AEC_REDUCTION_LOW
-                : H2_H202_MFG_AEC_PASS;
+      result.processed_dbfs_x10 =
+          median(meter->processed_db_x10, meter->blocks);
+      result.verdict = meter->processed_nonzero ? H2_H202_MFG_AEC_PASS
+                                                : H2_H202_MFG_AEC_NO_SIGNAL;
     }
   }
   if (out != NULL) *out = result;
@@ -1423,9 +1369,8 @@ static int rainbow(slot_t* slot, uint64_t elapsed_ms) {
   return rc;
 }
 
-/* One capture frame in, one playback frame out: the tone plus, for a single
- * side, that side's AEC output at a fixed low gain. Peak is bounded by
- * tone_amplitude + 32767 * gain, which the profile keeps below full scale. */
+/* One capture frame in, one playback frame out: the tone for aging (lane < 0),
+ * or one side's AEC output at a fixed low gain for stage 05. */
 static int audio_cycle(slot_t* slot, int lane) {
   h2_h202_mfg_service_t* s = slot->service;
   const h2_h202_mfg_profile_t* p = s->profile;
@@ -1439,9 +1384,7 @@ static int audio_cycle(slot_t* slot, int lane) {
       capture.bytes < (size_t)p->frame_samples * 4u)
     return H2_PAL_ERR_IO;
   for (unsigned i = 0; i < p->frame_samples; ++i) {
-    bool tone_enabled = lane < 0 || !p->aec.voice_only;
-    int32_t sample =
-        tone_enabled && s->tone_period ? s->tone[s->tone_phase] : 0;
+    int32_t sample = lane < 0 && s->tone_period ? s->tone[s->tone_phase] : 0;
     s->tone_phase = s->tone_period ? (s->tone_phase + 1u) % s->tone_period : 0u;
     if (lane >= 0)
       sample += ((int32_t)s->capture[i * 2u + (unsigned)lane] *
@@ -1476,11 +1419,9 @@ static void run_mic(slot_t* slot) {
   if (rc == H2_PAL_OK)
     rc = h2_h202_mfg_aec_meter_init(&s->meter, &p->aec, lane);
   if (rc == H2_PAL_OK) {
-    tone_init(s);
     s->meter_active = true;
     rc = audio_open(s, true, &observer);
-    slog(s, "H202_MFG_TONE lane=%s on rc=%d mode=%s", lane ? "right" : "left",
-         rc, p->aec.voice_only ? "voice" : "tone");
+    slog(s, "H202_MFG_TONE lane=%s on rc=%d", lane ? "right" : "left", rc);
   }
   uint64_t limit =
       service_now(s) + p->aec.convergence_ms + p->aec.measure_ms + 3000u;
@@ -1503,10 +1444,9 @@ static void run_mic(slot_t* slot) {
       h2_h202_mfg_aec_meter_result(&s->meter, &result);
   slog(s,
        "H202_MFG_AEC lane=%u rc=%d verdict=%d blocks=%u ref=%ld raw=%ld "
-       "reduction=%ld mode=%s",
+       "processed=%ld",
        lane, rc, verdict, result.blocks, (long)result.reference_dbfs_x10,
-       (long)result.raw_dbfs_x10, (long)result.reduction_db_x10,
-       p->aec.voice_only ? "voice" : "tone");
+       (long)result.raw_dbfs_x10, (long)result.processed_dbfs_x10);
   post(slot, H2_H202_MFG_EVENT_DONE, rc, verdict);
 }
 

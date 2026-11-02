@@ -79,17 +79,13 @@ const h2_h202_mfg_profile_t h2_h202_mfg_profile = {
     .frame_samples = H2_H202_AUDIO_FRAME_SAMPLES,
     .volume_percent = 35u,
     .tone_hz = 1000u,
-    /* Aging tone level; voice-only loopback uses the 1/4 monitor gain below. */
+    /* Aging tone level; the stage 05 loopback uses the 1/4 monitor gain. */
     .tone_amplitude = 24000,
     .monitor_gain_q15 = 8192u,
     .aec = {.sample_rate_hz = H2_H202_AUDIO_RATE_HZ,
-            .tone_hz = 1000u,
             .convergence_ms = 3000u,
             .measure_ms = 7000u,
-            .block_ms = 100u,
-            .min_tone_dbfs_x10 = -400,
-            .min_reduction_db_x10 = 100,
-            .voice_only = true},
+            .block_ms = 100u},
     .aging_frame_ms = 40u,
     /* Existing public manufacturing fixture; never saved. */
     .wifi_ssid = "HAIVIVI-MFG",
