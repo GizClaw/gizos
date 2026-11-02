@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } fro
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateReleaseIdentity, writeArtifactMetadata } from './release-index.mjs';
+import { tauriEnvironment } from './package-environment.mjs';
 
 const directory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const root = resolve(directory, '../..');
@@ -32,10 +33,7 @@ writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 // Use the locked local Tauri CLI, with Bun available to beforeBuildCommand.
 execute(process.execPath, [join(directory, 'node_modules/@tauri-apps/cli/tauri.js'), 'build',
   '--config', configPath, '--bundles', mac ? 'app,dmg' : 'nsis'], {
-  env: { ...process.env, ...(mac && process.env.APPLE_API_KEY ? {
-    APPLE_API_KEY_PATH: process.env.APPLE_API_KEY,
-    APPLE_API_KEY: process.env.APPLE_API_KEY_ID,
-  } : {}) },
+  env: tauriEnvironment(process.env),
 });
 const cargoTarget = process.env.CARGO_TARGET_DIR ? resolve(directory, process.env.CARGO_TARGET_DIR) : join(directory, 'src-tauri/target');
 const bundle = join(cargoTarget, 'release/bundle');

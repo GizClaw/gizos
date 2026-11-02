@@ -10,7 +10,7 @@
     "prepare:native": "node scripts/prepare-native.mjs",
     "desktop:dev": "tauri dev --config src-tauri/gizloader.generated.conf.json",
     "desktop:build": "node scripts/package.mjs",
-    "test": "node --test scripts/release-index.test.mjs",
+    "test": "node --test scripts/release-index.test.mjs scripts/package-environment.test.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "package": "node scripts/package.mjs",
     "tauri": "tauri"

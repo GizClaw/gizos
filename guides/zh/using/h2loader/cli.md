@@ -1,6 +1,6 @@
 # Gizloader CLI
 
-The installed `gizloader` command and GUI are distributed together. Run `bunx gizos` to install and open the application, or `bunx gizos install gizloader` to install it without opening a window. Running `gizloader` opens the GUI; command arguments select the native CLI and preserve its standard I/O and exit code. See the [Gizloader guide](../../../../tools/gizloader/README.md) for DMG/EXE installation, permissions, signing and development.
+The installed `gizloader` command and GUI are distributed together. Run `bunx gizos` to install and open the application, or `bunx gizos install gizloader` to install it without opening a window. Running `gizloader` opens the GUI; command arguments select the native CLI and preserve its standard I/O and exit code. See the [Gizloader guide](https://github.com/GizClaw/gizos/blob/main/tools/gizloader/README.md) for DMG/EXE installation, permissions, signing and development.
 
 From a source checkout, use `bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- <args>`. The old H2Loader target remains a compatibility entry for existing consumers; it is no longer a separate installation. The commands described below use the same GizOS Host Core.
 
