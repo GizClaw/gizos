@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateReleaseIdentity, writeArtifactMetadata } from './release-index.mjs';
+import { artifactFilename, PLATFORMS, validateReleaseIdentity, writeArtifactMetadata } from './release-index.mjs';
 import { tauriEnvironment } from './package-environment.mjs';
 
 const directory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,7 +15,7 @@ const commit = process.env.GIZLOADER_COMMIT ?? execFileSync('git', ['rev-parse',
 validateReleaseIdentity({ version, channel, commit });
 const publicRelease = channel !== 'build';
 const platform = `${process.platform}-${process.arch}`;
-if (!['darwin-arm64', 'win32-x64'].includes(platform)) throw new Error(`No installer for ${platform}`);
+if (!PLATFORMS.includes(platform)) throw new Error(`No installer for ${platform}`);
 const mac = process.platform === 'darwin';
 const identity = process.env.APPLE_SIGNING_IDENTITY || undefined;
 if (mac && publicRelease && (!identity?.startsWith('Developer ID Application:') ||
@@ -44,6 +44,12 @@ let source;
 if (mac) {
   const app = join(bundle, 'macos/Gizloader.app');
   execute('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
+  const expected = process.arch === 'x64' ? 'x86_64' : 'arm64';
+  for (const name of ['gizloader', 'gizloader-cli', 'gizloader-session']) {
+    const binary = join(app, 'Contents/MacOS', name);
+    const architecture = execute('/usr/bin/lipo', ['-archs', binary], { encoding: 'utf8', stdio: 'pipe' }).trim();
+    if (architecture !== expected) throw new Error(`Expected ${expected} packaged ${name}, found ${architecture}`);
+  }
   const candidates = readdirSync(join(bundle, 'dmg')).filter(name => name.includes(`_${version}_`) && name.endsWith('.dmg'));
   if (candidates.length !== 1) throw new Error('Expected exactly one DMG');
   source = join(bundle, 'dmg', candidates[0]);
@@ -67,7 +73,7 @@ if (mac) {
   if (candidates.length !== 1) throw new Error('Expected exactly one NSIS installer');
   source = join(bundle, 'nsis', candidates[0]);
 }
-const file = mac ? `gizloader-${version}-macos-arm64.dmg` : `gizloader-${version}-windows-x64-setup.exe`;
+const file = artifactFilename(version, platform);
 copyFileSync(source, join(output, file));
 await writeArtifactMetadata({ directory: output, version, channel, commit, platform, app: mac ? 'Gizloader.app' : undefined, signing });
 console.log(`Packaged ${file}`);

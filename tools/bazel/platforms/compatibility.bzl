@@ -44,6 +44,12 @@ LINUX_ARM64_ARTIFACT_COMPATIBILITY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
+MACOS_ARTIFACT_COMPATIBILITY = select({
+    Label("//tools/bazel/platforms:is_macos_arm64"): [],
+    Label("//tools/bazel/platforms:is_macos_x86_64"): [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
 MACOS_ARM64_ARTIFACT_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:is_macos_arm64"): [],
     "//conditions:default": ["@platforms//:incompatible"],

@@ -18,7 +18,7 @@ gizloader scan
 gizloader --no-ble scan
 ```
 
-macOS supports Apple Silicon (13.0 or newer); Windows supports x64 serial devices. Windows BLE is not implemented by the native provider. The desktop workbench manages serial connections; Bluetooth commands use the CLI. Scanning the GUI port list does not connect or write firmware.
+macOS supports Intel x64 and Apple Silicon arm64 (13.0 or newer), with a separate native DMG for each architecture; Windows supports x64 serial devices. Windows BLE is not implemented by the native provider. The desktop workbench manages serial connections; Bluetooth commands use the CLI. Scanning the GUI port list does not connect or write firmware.
 
 ## Develop
 
@@ -45,7 +45,9 @@ Set `APPLE_SIGNING_IDENTITY` to a Developer ID Application identity for local si
 
 ## Releases
 
-The dedicated Gizloader workflow builds macOS `.dmg` and Windows NSIS `setup.exe` on native runners. Stable tags are `gizloader-v<version>`; the rolling prerelease is `gizloader-snapshot`. `gizloader-index.json` records the exact source commit, artifact sizes, hashes, platform, format and signing status; `SHA256SUMS` covers the index and installers. The bootstrap selects Gizloader releases independently of the firmware release's latest tag.
+The dedicated Gizloader workflow builds three installers on native runners: `gizloader-<version>-macos-x64.dmg` for Intel, `gizloader-<version>-macos-arm64.dmg` for Apple Silicon, and `gizloader-<version>-windows-x64-setup.exe` for Windows. The macOS jobs run separately on `macos-15-intel` and `macos-15`; `GIZLOADER_MACOS_X64_RUNNER` and `GIZLOADER_MACOS_RUNNER` can override those runners. Packaging verifies the exact Mach-O architecture of the app and both native sidecars. Public release assembly requires all three installers, with both macOS builds Developer ID signed, notarized and stapled.
+
+Stable tags are `gizloader-v<version>`; the rolling prerelease is `gizloader-snapshot`. `gizloader-index.json` records the exact source commit, artifact sizes, hashes, platform, format and signing status; `SHA256SUMS` covers the index and all three installers. The bootstrap selects Gizloader releases independently of the firmware release's latest tag.
 
 Windows installs per user under `%LOCALAPPDATA%/Programs/Gizloader`. The installer adds a `gizloader.cmd` launcher alongside `gizloader.exe` and registers its directory in the user PATH. The command invokes the bundled console binary to preserve standard I/O. macOS includes its CLI in `Gizloader.app/Contents/MacOS` and installs a user launcher pointing into the App.
 

@@ -171,12 +171,21 @@ jobs:
           - platform: darwin-arm64
             runner: ${{ vars.GIZLOADER_MACOS_RUNNER || 'macos-15' }}
             target: aarch64-apple-darwin
+            bazel_config: macos_arm64
             bazel_asset: darwin-arm64
             bazel_sha256: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
             suffix: macos-arm64.dmg
+          - platform: darwin-x64
+            runner: ${{ vars.GIZLOADER_MACOS_X64_RUNNER || 'macos-15-intel' }}
+            target: x86_64-apple-darwin
+            bazel_config: macos_x86_64
+            bazel_asset: darwin-x86_64
+            bazel_sha256: 14c9bcb01303b38192e0e2895051c1bcf19bf89d7e416f5aeeeb48b6b624cfbf
+            suffix: macos-x64.dmg
           - platform: win32-x64
             runner: ${{ vars.GIZLOADER_WINDOWS_RUNNER || 'windows-2025' }}
             target: x86_64-pc-windows-msvc
+            bazel_config: windows_x86_64
             bazel_asset: windows-x86_64.exe
             bazel_sha256: 5fc2f2805b8c697a54732558576938d06bab63aa0f9b6610cc01d2cae0388705
             suffix: windows-x64-setup.exe
@@ -274,6 +283,17 @@ jobs:
           bun install --cwd tools/gizloader --frozen-lockfile
           node tools/gizloader/scripts/prepare-native.mjs
           bun run --cwd tools/gizloader build
+      - name: Test native CLI and session backends
+        shell: bash
+        env:
+          BAZEL_CONFIG: ${{ matrix.bazel_config }}
+        run: |
+          set -euo pipefail
+          options=(--config="$BAZEL_CONFIG" -c opt --test_output=errors)
+          tests=(//tools/gizloader/native:session_test //tools/gizloader/native:native_cli_test)
+          if [ "$RUNNER_OS" = macOS ]; then tests+=(//tools/gizloader/native:info_plist_test); fi
+          if [ "$RUNNER_OS" = Windows ]; then options+=(--copt=/wd5287 --features=static_link_msvcrt --lockfile_mode=off); fi
+          bazel test "${options[@]}" "${tests[@]}"
       - name: Test Rust supervisor
         run: cargo test --manifest-path tools/gizloader/src-tauri/Cargo.toml
       # APPLE_CERTIFICATE is a base64 PKCS#12, APPLE_API_KEY_CONTENT is plaintext
@@ -457,7 +477,7 @@ jobs:
           pattern: gizloader-native-*
           merge-multiple: true
           path: tools/gizloader/release
-      - name: Assemble and verify exact desktop artifacts
+      - name: Assemble and verify all three desktop installers
         run: |
           node tools/gizloader/scripts/release-index.mjs assemble --directory tools/gizloader/release
           node tools/gizloader/scripts/release-index.mjs verify --directory tools/gizloader/release
@@ -527,7 +547,7 @@ jobs:
           const release = await api('releases', 'POST', {
             tag_name: tag, target_commitish: commit,
             name: channel === 'snapshot' ? `Gizloader snapshot ${version}` : `Gizloader ${version}`,
-            body: `Gizloader ${version}\n\nSource: ${commit}\n\nmacOS Apple Silicon: Developer ID signed, notarized, and stapled. Windows x64 NSIS: currently unsigned. Signing state, sizes, and SHA-256 hashes are recorded in gizloader-index.json; SHA256SUMS covers the index and installers.\n\nThe public gizos npm bootstrap is built separately. This desktop release does not imply npm publication.`,
+            body: `Gizloader ${version}\n\nSource: ${commit}\n\nmacOS Intel (x64) and Apple Silicon (arm64): separate native DMGs, both Developer ID signed, notarized, and stapled. Windows x64 NSIS: currently unsigned. Signing state, sizes, and SHA-256 hashes are recorded in gizloader-index.json; SHA256SUMS covers the index and installers.\n\nThe public gizos npm bootstrap is built separately. This desktop release does not imply npm publication.`,
             draft: true, prerelease: channel === 'snapshot', make_latest: 'false',
           });
           gh('release', 'upload', tag, '--repo', repository, ...files.map(file => join(directory, file)));

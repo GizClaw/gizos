@@ -7,8 +7,8 @@ import { parseArgs } from "node:util";
 
 export const INDEX_FILE = "gizloader-index.json";
 export const CHECKSUMS_FILE = "SHA256SUMS";
-export const PLATFORMS = ["darwin-arm64", "win32-x64"];
-const FORMATS = { "darwin-arm64": "dmg", "win32-x64": "nsis" };
+export const PLATFORMS = ["darwin-arm64", "darwin-x64", "win32-x64"];
+const FORMATS = { "darwin-arm64": "dmg", "darwin-x64": "dmg", "win32-x64": "nsis" };
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 function check(condition, message) {
@@ -34,8 +34,8 @@ export function validateReleaseIdentity({ version, channel, commit }, publicOnly
 
 export function artifactFilename(version, platform) {
   check(PLATFORMS.includes(platform), `Unsupported platform: ${platform}`);
-  return platform === "darwin-arm64"
-    ? `gizloader-${version}-macos-arm64.dmg`
+  return platform.startsWith("darwin-")
+    ? `gizloader-${version}-macos-${platform.slice("darwin-".length)}.dmg`
     : `gizloader-${version}-windows-x64-setup.exe`;
 }
 

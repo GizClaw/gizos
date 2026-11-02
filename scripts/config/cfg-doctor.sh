@@ -2,6 +2,7 @@
 
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) host_config=macos_arm64 ;;
+  Darwin:x86_64) host_config=macos_x86_64 ;;
   Linux:x86_64) host_config=linux_x86_64 ;;
   Linux:aarch64|Linux:arm64) host_config=linux_arm64 ;;
   *)

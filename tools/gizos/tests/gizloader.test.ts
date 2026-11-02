@@ -18,13 +18,18 @@ async function directory() {
   return root;
 }
 const bytes = "a local verified installer fixture";
+const macPlatforms = ["darwin-arm64", "darwin-x64"] as const;
 function index(platform: LoaderPlatform = "darwin-arm64", snapshot = false): LoaderIndex {
+  const suffix = {
+    "darwin-arm64": "macos-arm64.dmg", "darwin-x64": "macos-x64.dmg", "win32-x64": "windows-x64-setup.exe",
+  }[platform];
+  const mac = platform !== "win32-x64";
   return {
     schema: 1, version: "1.2.3", channel: snapshot ? "snapshot" : "release", commit: "a".repeat(40),
     artifacts: [{
-      platform, file: `gizloader-1.2.3-${platform === "darwin-arm64" ? "macos-arm64.dmg" : "windows-x64-setup.exe"}`,
-      format: platform === "darwin-arm64" ? "dmg" : "nsis", sha256: digest(bytes), size: Buffer.byteLength(bytes),
-      ...(platform === "darwin-arm64" ? { app: "Gizloader.app" } : {}),
+      platform, file: `gizloader-1.2.3-${suffix}`,
+      format: mac ? "dmg" : "nsis", sha256: digest(bytes), size: Buffer.byteLength(bytes),
+      ...(mac ? { app: "Gizloader.app" } : {}),
     }],
   };
 }
@@ -68,7 +73,7 @@ async function macFixture(root: string, version = "1.2.3") {
   };
   return { app, calls, command };
 }
-function github(value: LoaderIndex, payload = bytes) {
+function github(value: LoaderIndex, payload: string | Record<LoaderPlatform, string> = bytes) {
   const requests: string[] = [];
   const tag = value.channel === "snapshot" ? "gizloader-snapshot" : `gizloader-v${value.version}`;
   const base = `https://github.com/GizClaw/gizos/releases/download/${tag}/`;
@@ -87,7 +92,8 @@ function github(value: LoaderIndex, payload = bytes) {
     if (url.includes("api.github.com") && url.includes("/releases/tags/")) return Response.json(release);
     if (url === base + "gizloader-index.json") return new Response(JSON.stringify(value));
     if (url === base + "SHA256SUMS") return new Response(sums(value));
-    if (url === base + value.artifacts[0].file) return new Response(payload);
+    const artifact = value.artifacts.find(item => url === base + item.file);
+    if (artifact) return new Response(typeof payload === "string" ? payload : payload[artifact.platform]);
     throw new Error(`Unexpected fetch ${url}`);
   };
   return { requests, fetch };
@@ -108,13 +114,23 @@ test("no arguments opens desktop, explicit help remains toolbox help and CLI arg
 });
 
 test("index rejects malformed metadata, mismatched channels, duplicate platforms and unsafe filenames", () => {
-  expect(parseLoaderIndex(JSON.stringify(index()))).toEqual(index());
+  for (const platform of [...macPlatforms, "win32-x64"] as const) {
+    expect(parseLoaderIndex(JSON.stringify(index(platform)))).toEqual(index(platform));
+  }
   for (const change of [
     { schema: 2 }, { version: "01.2.3" }, { version: "1.2.3-01" }, { commit: "a".repeat(39) },
     { channel: "stable" }, { artifacts: [] }, { artifacts: [index().artifacts[0], index().artifacts[0]] },
+    { artifacts: [{ ...index("win32-x64").artifacts[0], platform: ["win32-x64"] }] },
   ]) expect(() => parseLoaderIndex(JSON.stringify({ ...index(), ...change }))).toThrow();
-  for (const change of [{ file: "../gizloader.dmg" }, { format: "tar" }, { size: 0 }, { sha256: "0" }, { app: "../Other.app" }]) {
-    expect(() => parseLoaderIndex(JSON.stringify({ ...index(), artifacts: [{ ...index().artifacts[0], ...change }] }))).toThrow();
+  for (const platform of macPlatforms) {
+    const value = index(platform);
+    for (const change of [
+      { file: "../gizloader.dmg" }, { format: "tar" }, { format: "nsis" }, { size: 0 }, { sha256: "0" }, { app: "../Other.app" },
+      { file: index(platform === "darwin-arm64" ? "darwin-x64" : "darwin-arm64").artifacts[0].file },
+      { platform: "darwin-ia32" },
+    ]) {
+      expect(() => parseLoaderIndex(JSON.stringify({ ...value, artifacts: [{ ...value.artifacts[0], ...change }] }))).toThrow();
+    }
   }
   expect(() => parseLoaderIndex(JSON.stringify(index()), { snapshot: true })).toThrow("channel/version");
   expect(() => parseLoaderIndex(JSON.stringify(index()), { version: "1.2.4" })).toThrow("channel/version");
@@ -122,20 +138,20 @@ test("index rejects malformed metadata, mismatched channels, duplicate platforms
   expect(() => parseLoaderChecksums(`${digest(bytes)}  ../x\n`)).toThrow();
 });
 
-test("offline mac install verifies before mounting, keeps bundle intact, activates atomically and forwards CLI stdout/exit", async () => {
+test.each([...macPlatforms])("offline %s install verifies before mounting, keeps bundle intact, activates atomically and forwards CLI stdout/exit", async platform => {
   const root = await directory();
-  const inputs = await local(root);
+  const inputs = await local(root, index(platform));
   const fixture = await macFixture(root);
   const launches: { args: string[]; detached?: boolean }[] = [];
   const bootstrap = new GizloaderBootstrap({
-    root: join(root, "shared"), home: join(root, "user's home"), platform: "darwin-arm64", fetch: offline,
+    root: join(root, "shared"), home: join(root, "user's home"), platform, fetch: offline,
     command: fixture.command, run: async (args, detached) => { launches.push({ args, detached }); return 23; },
   });
   await writeFile(inputs.archive, "corrupt installer");
   await expect(bootstrap.install(inputs)).rejects.toThrow("checksum mismatch");
   expect(fixture.calls).toHaveLength(0);
   expect(await readdir(join(bootstrap.root, "downloads"))).toHaveLength(0);
-  expect(await exists(join(bootstrap.root, "installed-darwin-arm64.json"))).toBe(false);
+  expect(await exists(join(bootstrap.root, `installed-${platform}.json`))).toBe(false);
   await writeFile(inputs.archive, bytes);
   const installed = await bootstrap.install(inputs);
   expect(fixture.calls.filter(args => args[0] === "/usr/bin/hdiutil").map(args => args[1])).toEqual(["attach", "detach"]);
@@ -158,14 +174,14 @@ test("offline mac install verifies before mounting, keeps bundle intact, activat
   expect(fixture.calls.filter(args => args[0] === "/usr/bin/hdiutil")).toHaveLength(2);
 });
 
-test("macOS snapshots validate the full GizloaderVersion while accepting a numeric short version", async () => {
+test.each([...macPlatforms])("%s snapshots validate the full GizloaderVersion while accepting a numeric short version", async platform => {
   const root = await directory();
-  const value = index("darwin-arm64", true);
+  const value = index(platform, true);
   value.version = "1.2.3-snapshot.4";
-  value.artifacts[0].file = `gizloader-${value.version}-macos-arm64.dmg`;
+  value.artifacts[0].file = value.artifacts[0].file.replace("1.2.3", value.version);
   const inputs = await local(root, value);
   const fixture = await macFixture(root, value.version);
-  const bootstrap = new GizloaderBootstrap({ root, home: join(root, "home"), platform: "darwin-arm64", command: fixture.command, fetch: offline });
+  const bootstrap = new GizloaderBootstrap({ root, home: join(root, "home"), platform, command: fixture.command, fetch: offline });
   const installed = await bootstrap.install({ ...inputs, snapshot: true });
   expect(installed.index.version).toBe(value.version);
   const plist = join(installed.application, "Contents/Info.plist");
@@ -173,6 +189,51 @@ test("macOS snapshots validate the full GizloaderVersion while accepting a numer
   metadata.GizloaderVersion = "1.2.3-snapshot.3";
   await writeFile(plist, JSON.stringify(metadata));
   await expect(bootstrap.ensure({ snapshot: true })).rejects.toThrow("GizloaderVersion differs");
+});
+
+test("Intel macOS selects the exact x64 DMG from a three-platform release index", async () => {
+  const root = await directory();
+  const fixture = await macFixture(root);
+  const payloads: Record<LoaderPlatform, string> = {
+    "darwin-arm64": "Apple Silicon installer", "win32-x64": "Windows installer", "darwin-x64": "Intel macOS installer bytes",
+  };
+  const value = index();
+  value.artifacts = (["darwin-arm64", "win32-x64", "darwin-x64"] as const).map(platform => ({
+    ...index(platform).artifacts[0], sha256: digest(payloads[platform]), size: Buffer.byteLength(payloads[platform]),
+  }));
+  const remote = github(value, payloads);
+  const bootstrap = new GizloaderBootstrap({
+    root, home: join(root, "home"), platform: "darwin-x64", fetch: remote.fetch,
+    command: async (args, options) => {
+      if (args[0] === "/usr/bin/hdiutil" && args[1] === "attach") {
+        expect(args.at(-1)).toEndWith("gizloader-1.2.3-macos-x64.dmg");
+        expect(await readFile(args.at(-1)!, "utf8")).toBe(payloads["darwin-x64"]);
+      }
+      return fixture.command(args, options);
+    },
+  });
+  const installed = await bootstrap.install();
+  expect(installed.index.artifacts).toHaveLength(3);
+  expect(installed.application).toBe(join(bootstrap.root, "apps", `1.2.3-${digest(payloads["darwin-x64"])}`, "Gizloader.app"));
+  expect(remote.requests.filter(url => url.endsWith(".dmg") || url.endsWith(".exe"))).toEqual([
+    "https://github.com/GizClaw/gizos/releases/download/gizloader-v1.2.3/gizloader-1.2.3-macos-x64.dmg",
+  ]);
+  expect(await exists(join(bootstrap.root, "installed-darwin-x64.json"))).toBe(true);
+  const before = remote.requests.length;
+  expect((await bootstrap.ensure()).application).toBe(installed.application);
+  expect(remote.requests).toHaveLength(before);
+});
+
+test.each([...macPlatforms])("%s rejects a release that only indexes the other macOS architecture", async platform => {
+  const root = await directory();
+  const remote = github(index(platform === "darwin-arm64" ? "darwin-x64" : "darwin-arm64"));
+  const bootstrap = new GizloaderBootstrap({
+    root, home: join(root, "home"), platform, fetch: remote.fetch,
+    command: async () => { throw new Error("No installer command may run"); },
+  });
+  await expect(bootstrap.install()).rejects.toThrow(`Gizloader release has no ${platform} artifact`);
+  expect(remote.requests.filter(url => url.endsWith(".dmg"))).toHaveLength(0);
+  expect(await exists(join(bootstrap.home, "Applications/Gizloader.app"))).toBe(false);
 });
 
 test("stable discovery accepts immutable:false while skipping GizOS, drafts, prereleases and invalid tags", async () => {
@@ -252,7 +313,10 @@ test("Windows snapshot installs per-user with NSIS /S and inherits native CLI st
 
 test("unsupported desktop hosts fail before fetch and retired loader catalog entries cannot install", async () => {
   const root = await directory();
-  expect(() => new GizloaderBootstrap({ root, platform: "linux-x64", fetch: offline })).toThrow("SDK commands remain available");
+  for (const platform of ["darwin-ia32", "darwin-arm", "win32-arm64", "win32-ia32", "linux-x64"]) {
+    expect(() => new GizloaderBootstrap({ root, platform, fetch: offline })).toThrow(`Gizloader desktop is unsupported on ${platform}`);
+    expect(() => new GizloaderBootstrap({ root, platform, fetch: offline })).toThrow("SDK commands remain available");
+  }
   for (const kind of ["h2loader", "h6loader"]) {
     const tool = tools.find(tool => tool.kind === kind)!;
     const resources = new Resources(join(root, kind), async () => { throw new Error("No builds or downloads allowed"); }, [tool], "darwin-arm64");

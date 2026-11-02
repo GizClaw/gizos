@@ -46,7 +46,7 @@ list shows supported chips, source aliases, repositories and versions.
 describe explains an SDK and shows usage examples in English.
 Legacy SDK names and family aliases remain accepted.
 Tools: gizloader, adb, bk-loader, jieli-toolchain, jieli-postbuild
-Gizloader supports macOS arm64 and Windows x64; --snapshot selects gizloader-snapshot.
+Gizloader supports macOS arm64/x64 and Windows x64; --snapshot selects gizloader-snapshot.
 Gizloader installs the latest stable gizloader-v<semver> release by default.
 loader arguments run the bundled CLI with inherited stdout and exit status.
 Use gizos --help for toolbox help or gizos loader -- --help for native CLI help.

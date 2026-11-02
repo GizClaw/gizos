@@ -84,8 +84,8 @@ Keep embedded JavaScript in `EM_JS` / `EM_ASM` calls between `/* clang-format of
 ## Shared SDK toolbox
 
 The public npm package `gizos` requires Bun 1.3.9 or newer. Run `bunx gizos`
-to install and open Gizloader desktop on macOS Apple Silicon or Windows x64;
-use `bunx gizos --help` for toolbox help. `bunx gizos install gizloader` installs
+to install and open Gizloader desktop on macOS (Apple Silicon or Intel) or
+Windows x64; use `bunx gizos --help` for toolbox help. `bunx gizos install gizloader` installs
 or updates without opening the window, `bunx gizos loader -- --help` runs its
 bundled native CLI, and `--snapshot` selects the desktop snapshot release.
 Stable desktop installers come from `gizloader-v<semver>` releases in

@@ -22,7 +22,8 @@ async function fixture(t, overrides = {}) {
   const options = { directory, version: "0.1.0", channel: "release", commit: COMMIT, ...overrides };
   for (const platform of PLATFORMS) {
     await writeFile(join(directory, artifactFilename(options.version, platform)), `fixture installer for ${platform}\n`);
-    await writeArtifactMetadata({ ...options, platform, app: platform === "darwin-arm64" ? "Gizloader.app" : "gizloader.exe", signing: platform === "darwin-arm64" ? SIGNED : { status: "unsigned" } });
+    const mac = platform.startsWith("darwin-");
+    await writeArtifactMetadata({ ...options, platform, app: mac ? "Gizloader.app" : "gizloader.exe", signing: mac ? SIGNED : { status: "unsigned" } });
   }
   return options;
 }
@@ -41,8 +42,11 @@ test("assemble and verify exact installers, provenance, signing, and checksums",
   assert.equal(index.schema, 1);
   assert.equal(index.commit, COMMIT);
   assert.deepEqual(index.artifacts.map((artifact) => artifact.platform), PLATFORMS);
-  assert.deepEqual(index.artifacts[0].signing, SIGNED);
-  assert.deepEqual(index.artifacts[1].signing, { status: "unsigned" });
+  assert.deepEqual(index.artifacts.map((artifact) => artifact.platform), ["darwin-arm64", "darwin-x64", "win32-x64"]);
+  assert.deepEqual(index.artifacts.map((artifact) => artifact.file), [
+    "gizloader-0.1.0-macos-arm64.dmg", "gizloader-0.1.0-macos-x64.dmg", "gizloader-0.1.0-windows-x64-setup.exe",
+  ]);
+  assert.deepEqual(index.artifacts.map((artifact) => artifact.signing), [SIGNED, SIGNED, { status: "unsigned" }]);
   const checksums = await readFile(join(options.directory, CHECKSUMS_FILE), "utf8");
   const expectedFiles = [...PLATFORMS.map((platform) => artifactFilename(options.version, platform)), INDEX_FILE].sort();
   assert.deepEqual(checksums.trim().split("\n").map((line) => line.slice(66)), expectedFiles);
@@ -76,24 +80,34 @@ test("reject invalid semver, release prereleases, and malformed commits", async 
 
 test("metadata writer returns a fragment and allows artifact-only ad-hoc builds", async (t) => {
   const options = await fixture(t, { channel: "build" });
-  const result = await writeArtifactMetadata({ ...options, platform: "darwin-arm64", signing: { status: "ad-hoc", notarized: false } });
-  assert.equal(result.path, join(options.directory, metadataFilename("darwin-arm64")));
-  assert.equal(result.metadata.artifacts.length, 1);
-  assert.deepEqual(result.metadata.artifacts[0].signing, { status: "ad-hoc", notarized: false });
+  for (const platform of ["darwin-arm64", "darwin-x64"]) {
+    const result = await writeArtifactMetadata({ ...options, platform, signing: { status: "ad-hoc", notarized: false } });
+    assert.equal(result.path, join(options.directory, metadataFilename(platform)));
+    assert.equal(result.metadata.artifacts.length, 1);
+    assert.deepEqual(result.metadata.artifacts[0].signing, { status: "ad-hoc", notarized: false });
+  }
 });
 
 test("public metadata fails closed for missing or unsigned macOS claims", async (t) => {
   const options = await fixture(t);
-  for (const signing of [undefined, { status: "unsigned" }, { status: "ad-hoc" }, { status: "signed", identity: "-", notarized: true }, { ...SIGNED, notarized: false }, { status: "signed", notarized: true }, { ...SIGNED, unexpected: true }]) {
-    await assert.rejects(writeArtifactMetadata({ ...options, platform: "darwin-arm64", signing }), /signing|signature|Unsigned/);
+  for (const platform of ["darwin-arm64", "darwin-x64"]) {
+    for (const signing of [undefined, { status: "unsigned" }, { status: "ad-hoc" }, { status: "signed", identity: "-", notarized: true }, { ...SIGNED, notarized: false }, { status: "signed", notarized: true }, { ...SIGNED, unexpected: true }]) {
+      await assert.rejects(writeArtifactMetadata({ ...options, platform, signing }), /signing|signature|Unsigned/);
+    }
   }
   await assert.rejects(writeArtifactMetadata({ ...options, platform: "win32-x64", signing: { status: "signed" } }), /Windows/);
 });
 
-test("assembly checks signing evidence even when fragments were not written by the helper", async (t) => {
-  const options = await fixture(t);
-  await editMetadata(options, "darwin-arm64", (metadata) => { delete metadata.artifacts[0].signing; });
-  await assert.rejects(assembleRelease(options), /signing/);
+test("assembly checks both macOS signatures even when fragments were not written by the helper", async (t) => {
+  for (const channel of ["release", "snapshot"]) {
+    for (const platform of ["darwin-arm64", "darwin-x64"]) {
+      for (const signing of [undefined, { status: "unsigned" }, { status: "ad-hoc", notarized: false }, { ...SIGNED, notarized: false }]) {
+        const options = await fixture(t, { channel });
+        await editMetadata(options, platform, (metadata) => { metadata.artifacts[0].signing = signing; });
+        await assert.rejects(assembleRelease(options), /signing|signature/);
+      }
+    }
+  }
 });
 
 test("reject tampered artifact hashes and sizes", async (t) => {
@@ -108,7 +122,7 @@ test("reject tampered artifact hashes and sizes", async (t) => {
   await assert.rejects(assembleRelease(options), /Size mismatch/);
 });
 
-test("require both unique platforms and reject inconsistent fragment provenance", async (t) => {
+test("require all three unique platforms and reject inconsistent fragment provenance", async (t) => {
   for (const field of ["version", "channel", "commit"]) {
     const options = await fixture(t);
     await editMetadata(options, "win32-x64", (metadata) => {
@@ -116,11 +130,20 @@ test("require both unique platforms and reject inconsistent fragment provenance"
     });
     await assert.rejects(assembleRelease(options), new RegExp(`Metadata ${field}`));
   }
-  const options = await fixture(t);
-  await rm(join(options.directory, metadataFilename("win32-x64")));
-  await assert.rejects(assembleRelease(options), /ENOENT/);
-  await writeFile(join(options.directory, metadataFilename("win32-x64")), await readFile(join(options.directory, metadataFilename("darwin-arm64"))));
-  await assert.rejects(assembleRelease(options), /platform/);
+  for (const platform of PLATFORMS) {
+    const options = await fixture(t);
+    const installer = join(options.directory, artifactFilename(options.version, platform));
+    const contents = await readFile(installer);
+    await rm(installer);
+    await assert.rejects(assembleRelease(options), /ENOENT/);
+    await writeFile(installer, contents);
+    const metadata = join(options.directory, metadataFilename(platform));
+    await rm(metadata);
+    await assert.rejects(assembleRelease(options), /ENOENT/);
+    const duplicate = PLATFORMS.find((candidate) => candidate !== platform);
+    await writeFile(metadata, await readFile(join(options.directory, metadataFilename(duplicate))));
+    await assert.rejects(assembleRelease(options), /platform/);
+  }
 });
 
 test("reject unexpected artifact names, formats, and extra metadata fields", async (t) => {

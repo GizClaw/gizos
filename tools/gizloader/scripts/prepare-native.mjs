@@ -8,6 +8,7 @@ const directory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const root = resolve(directory, '../..');
 const targets = {
   'darwin-arm64': { triple: 'aarch64-apple-darwin', config: 'macos_arm64' },
+  'darwin-x64': { triple: 'x86_64-apple-darwin', config: 'macos_x86_64' },
   'win32-x64': { triple: 'x86_64-pc-windows-msvc', config: 'windows_x86_64' },
   'linux-x64': { triple: 'x86_64-unknown-linux-gnu', config: 'linux_x86_64' },
   'linux-arm64': { triple: 'aarch64-unknown-linux-gnu', config: 'linux_arm64' },
@@ -35,6 +36,11 @@ const extension = process.platform === 'win32' ? '.exe' : '';
 const hashes = {};
 for (const name of ['gizloader-cli', 'gizloader-session']) {
   const source = join(output, 'tools/gizloader/native', name + extension);
+  if (process.platform === 'darwin') {
+    const architecture = execFileSync('/usr/bin/lipo', ['-archs', source], { encoding: 'utf8' }).trim();
+    const expected = process.arch === 'x64' ? 'x86_64' : 'arm64';
+    if (architecture !== expected) throw new Error(`Expected ${expected} native ${name}, found ${architecture}`);
+  }
   const destination = join(binaries, `${name}-${target.triple}${extension}`);
   copyFileSync(source, destination);
   // Bazel outputs are read-only; bundling must clear xattrs and sign its copy.

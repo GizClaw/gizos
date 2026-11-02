@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { atomicJson, execute, exists, locked, quote, type Command, type Env } from "./common";
 import { sha256 } from "./resources";
 
-export type LoaderPlatform = "darwin-arm64" | "win32-x64";
+export type LoaderPlatform = "darwin-arm64" | "darwin-x64" | "win32-x64";
 export type LoaderChannel = "release" | "snapshot";
 export type LoaderArtifact = {
   platform: LoaderPlatform; file: string; sha256: string; size: number; format: "dmg" | "nsis"; app?: string;
@@ -27,6 +27,10 @@ const indexFile = "gizloader-index.json";
 const sumsFile = "SHA256SUMS";
 const application = "Gizloader.app";
 const identifier = "com.gizclaw.gizloader";
+const installerSuffixes: Record<LoaderPlatform, string> = {
+  "darwin-arm64": "macos-arm64.dmg", "darwin-x64": "macos-x64.dmg", "win32-x64": "windows-x64-setup.exe",
+};
+const isMac = (platform: LoaderPlatform) => platform === "darwin-arm64" || platform === "darwin-x64";
 const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 export function loaderRequest(input: string[]): LoaderRequest | undefined {
@@ -84,10 +88,10 @@ export function parseLoaderIndex(text: string, options: LoaderOptions = {}): Loa
   }
   const platforms = new Set<string>();
   for (const artifact of index.artifacts) {
-    const mac = artifact?.platform === "darwin-arm64";
-    if (!artifact || !["darwin-arm64", "win32-x64"].includes(artifact.platform) || platforms.has(artifact.platform) ||
+    const mac = artifact && isMac(artifact.platform);
+    if (!artifact || typeof artifact.platform !== "string" || !Object.hasOwn(installerSuffixes, artifact.platform) || platforms.has(artifact.platform) ||
         artifact.format !== (mac ? "dmg" : "nsis") ||
-        artifact.file !== `gizloader-${index.version}-${mac ? "macos-arm64.dmg" : "windows-x64-setup.exe"}` ||
+        artifact.file !== `gizloader-${index.version}-${installerSuffixes[artifact.platform]}` ||
         !/^[0-9a-f]{64}$/.test(artifact.sha256) || !Number.isSafeInteger(artifact.size) || artifact.size <= 0 ||
         artifact.app !== undefined && (!mac || artifact.app !== application)) {
       throw new Error("Invalid Gizloader artifact contract");
@@ -134,8 +138,8 @@ export class GizloaderBootstrap {
     root: string; home?: string; platform?: string; env?: Env; fetch?: Fetch; command?: Command; run?: Runner;
   }) {
     const platform = options.platform ?? `${process.platform}-${process.arch}`;
-    if (platform !== "darwin-arm64" && platform !== "win32-x64") {
-      throw new Error(`Gizloader desktop is unsupported on ${platform}; supported hosts: macOS arm64 and Windows x64. SDK commands remain available.`);
+    if (platform !== "darwin-arm64" && platform !== "darwin-x64" && platform !== "win32-x64") {
+      throw new Error(`Gizloader desktop is unsupported on ${platform}; supported hosts: macOS arm64/x64 and Windows x64. SDK commands remain available.`);
     }
     this.root = join(resolve(options.root), "gizloader");
     this.home = options.home ?? homedir();
@@ -204,7 +208,7 @@ export class GizloaderBootstrap {
     return { index, artifact, url: asset?.browser_download_url };
   }
   private installation(index: LoaderIndex, artifact: LoaderArtifact): LoaderInstallation {
-    if (this.platform === "darwin-arm64") {
+    if (isMac(this.platform)) {
       const app = join(this.root, "apps", `${index.version}-${artifact.sha256}`, application);
       return { index, application: app, executable: join(app, "Contents/MacOS/gizloader"), shim: join(this.home, ".local/bin/gizloader") };
     }
@@ -213,7 +217,7 @@ export class GizloaderBootstrap {
   }
   private get state() { return join(this.root, `installed-${this.platform}.json`); }
   private async verify(installation: LoaderInstallation): Promise<void> {
-    const mac = this.platform === "darwin-arm64";
+    const mac = isMac(this.platform);
     const directory = mac ? join(installation.application, "Contents/MacOS") : installation.application;
     const required = mac ? ["gizloader", "gizloader-cli", "gizloader-session"]
       : ["gizloader.exe", "gizloader-cli.exe", "gizloader-session.exe", "gizloader.cmd"];
@@ -237,7 +241,7 @@ export class GizloaderBootstrap {
     }
   }
   private async activate(installation: LoaderInstallation) {
-    if (this.platform !== "darwin-arm64") return;
+    if (!isMac(this.platform)) return;
     const link = join(this.home, "Applications", application);
     await mkdir(dirname(link), { recursive: true });
     const current = await lstat(link).catch((error: any) => { if (error.code !== "ENOENT") throw error; });
@@ -282,7 +286,7 @@ export class GizloaderBootstrap {
     const { index, artifact, url } = await this.metadata(options);
     return locked(this.root, "install", async () => {
       const installation = this.installation(index, artifact);
-      const cachedMac = this.platform === "darwin-arm64" && await exists(installation.application);
+      const cachedMac = isMac(this.platform) && await exists(installation.application);
       if (cachedMac && !options.archive) {
         await this.verify(installation);
       } else {
@@ -298,7 +302,7 @@ export class GizloaderBootstrap {
             throw new Error("Gizloader archive size or SHA-256 checksum mismatch");
           }
           if (cachedMac) await this.verify(installation);
-          else if (this.platform === "darwin-arm64") await this.installMac(installation, archive);
+          else if (isMac(this.platform)) await this.installMac(installation, archive);
           else {
             // The shipped NSIS installer owns the per-user directory and CLI wrapper.
             await this.command([archive, "/S"], { inherit: true });
@@ -337,7 +341,7 @@ export class GizloaderBootstrap {
   }
   async launch(installation: LoaderInstallation, args: string[] = []): Promise<number> {
     if (args.length) return this.run([installation.executable, "--cli", ...args]);
-    return this.platform === "darwin-arm64" ? this.run(["/usr/bin/open", installation.application])
+    return isMac(this.platform) ? this.run(["/usr/bin/open", installation.application])
       : this.run([installation.executable], true);
   }
 }

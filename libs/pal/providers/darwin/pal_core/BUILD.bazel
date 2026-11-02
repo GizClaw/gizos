@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel/platforms:compatibility.bzl", "MACOS_ARM64_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/platforms:compatibility.bzl", "MACOS_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,7 +12,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/pal",
         "//libs/pal/providers/posix/pal_core",
@@ -35,7 +35,7 @@ cc_library(
         "src",
     ],
     linkopts = ["-lpthread"],
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = ["//libs/pal"],
 )
 
@@ -50,7 +50,7 @@ cc_library(
         "-framework CoreFoundation",
         "-framework IOKit",
     ],
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/pal",
         "//libs/pal/providers/posix/serial_host:serial_host_internal",
@@ -64,7 +64,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["src"],
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     visibility = ["//visibility:private"],
     deps = ["//libs/pal"],
 )
@@ -81,7 +81,7 @@ objc_library(
         "CoreBluetooth",
         "Foundation",
     ],
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [
         ":corebluetooth_uuid",
         ":netif_system_event",
@@ -94,7 +94,7 @@ cc_library(
     name = "pal_core",
     hdrs = ["include/h2_darwin_platform.h"],
     includes = ["include"],
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [
         ":corebluetooth",
         ":host_os",
@@ -108,7 +108,7 @@ cc_test(
     srcs = ["tests/test_darwin_corebluetooth.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [
         ":corebluetooth",
         ":corebluetooth_uuid",
@@ -121,7 +121,7 @@ cc_test(
     srcs = ["tests/test_darwin_corebluetooth_uuid.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [":corebluetooth_uuid"],
 )
 
@@ -144,7 +144,7 @@ cc_test(
         "src",
     ],
     linkopts = ["-lpthread"],
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/atomic/providers/c11",
         "//libs/pal",
@@ -157,7 +157,7 @@ cc_test(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     env_inherit = ["H2_DESKTOP_SERIAL_PRINT"],
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [
         ":serial_host",
         "//libs/pal/providers/posix/serial_host:serial_host_internal",
@@ -170,6 +170,6 @@ cc_test(
     srcs = ["tests/test_darwin_system_event.cpp"],
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
-    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
     deps = [":netif_system_event"],
 )

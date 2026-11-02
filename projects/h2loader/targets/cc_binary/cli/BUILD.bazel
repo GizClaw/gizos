@@ -27,6 +27,7 @@ cc_library(
     includes = ["."],
     target_compatible_with = select({
         "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_macos_x86_64": [],
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//tools/bazel/platforms:is_windows_x86_64": [],
@@ -96,6 +97,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
         "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_macos_x86_64": [],
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//tools/bazel/platforms:is_windows_x86_64": [],
@@ -132,6 +134,7 @@ cc_test(
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
         "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_macos_x86_64": [],
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -151,6 +154,7 @@ cc_binary(
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
         "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_macos_x86_64": [],
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//tools/bazel/platforms:is_windows_x86_64": [],

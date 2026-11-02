@@ -35,8 +35,8 @@ Configure its GizClaw registry in `~/.npmrc` (or `$XDG_CONFIG_HOME/.npmrc` when
 Replace an existing scope mapping rather than adding a duplicate. Use this
 global mapping for `bunx`; other dependencies keep their configured registry.
 Public package downloads require no token.
-Gizloader downloads use Bun's HTTPS client and file APIs on both supported
-platforms; they require no Python, Git or Unix archive utilities on Windows.
+Gizloader downloads use Bun's HTTPS client and file APIs on macOS and Windows;
+they require no Python, Git or Unix archive utilities on Windows.
 SDK source preparation requires Git. Other SDK and host-tool downloads require
 Python 3, using its HTTPS client with certificate verification and pinned
 archive checksums. Discovery/configuration commands also support Windows;
@@ -83,7 +83,7 @@ selection, source checkout and installation record.
 | BK7259 | `setup bk7259 4.0.1` | BK7259 source revision, shared GNU Arm 14.3.1 and BK Loader; `BK7259_PATH` and `BK_SDK_DIR` |
 | BK IDK | `setup bk_idk 2.0.1-r650e754` | One SDK snapshot for BK7236/BK7258, shared GNU Arm and BK Loader; `BK_IDK_PATH` and `BK_SDK_DIR` |
 | BK Loader | Installed with BK setup, or `install bk-loader 4.1.7` | Checksummed GizClaw source-built CLI; `BK_LOADER_BIN` and `bk_loader` on PATH |
-| Gizloader desktop and CLI | No arguments, or `install gizloader` | Verified macOS arm64 DMG or Windows x64 per-user installer; `gizloader` opens the desktop and `gizloader <arguments>` runs the bundled CLI |
+| Gizloader desktop and CLI | No arguments, or `install gizloader` | Verified macOS arm64/x64 DMG or Windows x64 per-user installer; `gizloader` opens the desktop and `gizloader <arguments>` runs the bundled CLI |
 | ADB | `install adb 35.0.2` | Checksummed official Platform Tools; `ADB` and `adb` on PATH |
 | JieLi SDKs | `setup jieli-ac695n`, `setup jieli-ac707n` or `setup jieli-ac791n` with the exact version from `list` | `JIELI_AC695N_SDK_PATH`, `JIELI_AC707N_SDK_PATH`, `JIELI_AC791N_SDK_PATH` |
 | JieLi tools | Installed with a JieLi SDK, or `install jieli-toolchain 20250805.1` and `install jieli-postbuild 20260728.1` | `JIELI_TOOLCHAIN_ROOT`, `JIELI_POSTBUILD_ROOT` |
@@ -292,8 +292,8 @@ in the official Beken executable.
 ## Gizloader desktop and CLI installation
 
 Gizloader unifies the desktop loader and its native CLI. Supported bootstrap
-hosts are macOS Apple Silicon (`darwin-arm64`) and Windows x64 (`win32-x64`).
-SDK commands keep their independent host support.
+hosts are macOS Apple Silicon (`darwin-arm64`), macOS Intel (`darwin-x64`) and
+Windows x64 (`win32-x64`). SDK commands keep their independent host support.
 
 ```sh
 bunx gizos                          # Install if absent, then open the desktop
@@ -349,15 +349,18 @@ The artifact contract is schema 1:
 
 ```text
 { schema: 1, version: <semver>, channel: "release" | "snapshot", commit: <40 hex>,
-  artifacts: [{ platform: "darwin-arm64" | "win32-x64", file: <filename>,
+  artifacts: [{ platform: "darwin-arm64" | "darwin-x64" | "win32-x64", file: <filename>,
                 sha256: <64 hex>, size: <positive bytes>, format: "dmg" | "nsis",
                 app?: "Gizloader.app" }] }
 ```
 
-DMGs are named `gizloader-<version>-macos-arm64.dmg`; NSIS installers are named
-`gizloader-<version>-windows-x64-setup.exe`. `app`, when present, is only valid
-for macOS. `SHA256SUMS` must list every indexed artifact; when it lists the index,
-its checksum is checked too.
+DMGs are named `gizloader-<version>-macos-arm64.dmg` and
+`gizloader-<version>-macos-x64.dmg`; NSIS installers are named
+`gizloader-<version>-windows-x64-setup.exe`. Published releases include all three
+variants. The bootstrap selects the exact platform reported by Bun and requires
+that variant in the index; explicitly supplied indexes may contain a subset.
+`app`, when present, is only valid for macOS. `SHA256SUMS` must list every
+indexed artifact; when it lists the index, its checksum is checked too.
 
 Standalone `h2loader` and `h6loader` installation is retired. Their catalog
 records remain available for existing installation discovery, adoption and
@@ -615,8 +618,9 @@ changing scoped registry release assembly.
 
 Tests use local Git sources, synthetic executables and an HTTP archive fixture.
 Gizloader tests inject local metadata, archive bytes and command runners without
-network access, covering size/hash rejection, stable release discovery,
-channel selection, DMG cleanup, CLI output/exit forwarding and per-user NSIS
+network access, covering exact host selection from all three release variants,
+size/hash rejection, stable release discovery, channel selection, DMG cleanup,
+CLI output/exit forwarding on both macOS architectures and per-user NSIS
 arguments. The suite also covers shared pools, atomic installation, adoption,
 host compatibility, shell quoting, PATH switching and standalone package
 execution. Tests do not open or modify a device.

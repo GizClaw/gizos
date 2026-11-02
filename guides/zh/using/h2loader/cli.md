@@ -6,7 +6,7 @@ From a source checkout, use `bazel run --config=<host> //tools/gizloader/native:
 
 ## 环境
 
-CLI 由 Bazel 直接编译为当前 host 的 native executable，不使用 Python、uv、venv、pyserial 或 Bleak。`<host>` 使用 `macos_arm64`、`linux_x86_64`、`linux_arm64` 或 `windows_x86_64`。Windows 使用 Win32 Host Serial PAL 枚举和打开 `COM<n>` endpoint，并把当前可访问的本地 fixed/removable DOS drive root 挂载到对应的小写 portable filesystem path，例如 `C:\` 挂载为 `/c`。查看完整命令：
+CLI 由 Bazel 直接编译为当前 host 的 native executable，不使用 Python、uv、venv、pyserial 或 Bleak。`<host>` 使用 `macos_arm64`、`macos_x86_64`、`linux_x86_64`、`linux_arm64` 或 `windows_x86_64`。Windows 使用 Win32 Host Serial PAL 枚举和打开 `COM<n>` endpoint，并把当前可访问的本地 fixed/removable DOS drive root 挂载到对应的小写 portable filesystem path，例如 `C:\` 挂载为 `/c`。查看完整命令：
 
 ```sh
 bazel run --config=<host> //tools/gizloader/native:gizloader-cli -- -h

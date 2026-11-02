@@ -8,7 +8,11 @@ if (process.platform !== 'darwin') throw new Error('The DMG install smoke check 
 const root = await mkdtemp(join(tmpdir(), 'gizloader-install-check-'));
 try {
   const directory = resolve(import.meta.dir, '../release');
-  const metadata = JSON.parse(await readFile(join(directory, 'gizloader-darwin-arm64.metadata.json'), 'utf8'));
+  const platform = `${process.platform}-${process.arch}`;
+  const metadata = JSON.parse(await readFile(join(directory, `gizloader-${platform}.metadata.json`), 'utf8'));
+  if (metadata.artifacts.length !== 1 || metadata.artifacts[0].platform !== platform) {
+    throw new Error(`Expected one native installer for ${platform}`);
+  }
   // Local build metadata is adapted only inside this disposable offline fixture.
   // It is never published or presented as notarized release metadata.
   const index = { ...metadata, channel: metadata.channel === 'build' ? 'release' : metadata.channel };
