@@ -21,8 +21,9 @@ printf '%s\n' \
   '  bazel-coverage-report            generate the repository LCOV and HTML report' \
   '  bazel-release                    build or assemble one closed release slice' \
   '' \
-  'H2Loader:' \
-  '  h2loader-bin                     build the native h2loader CLI and print its path' \
+  'Gizloader:' \
+  '  gizloader-bin                    build the native gizloader CLI and print its path' \
+  '  h2loader-bin                     compatibility alias for gizloader-bin' \
   '' \
   'Test:' \
   '  test-web                         build and validate Web archives and E2E programs' \

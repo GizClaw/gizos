@@ -16,7 +16,7 @@ type Distribution = {
   build?: { target: string; output: string };
 };
 export type Tool = {
-  kind: string; version: string; default?: boolean;
+  kind: string; version: string; default?: boolean; retired?: boolean;
   release?: { repository: string; tag: string; commit: string };
   upstream?: { version: string; cliVersion: string; releasedAt: string; documentation: string };
   application?: { path: string; identifier: string };
@@ -177,6 +177,7 @@ export class Resources {
     return archive;
   }
   async importArchive(tool: Tool, path: string): Promise<string> {
+    if (tool.retired) throw new Error(`${tool.kind} standalone installation is retired; run gizos install gizloader`);
     const distribution = this.distribution(tool);
     if (!distribution) throw new Error(`UNSUPPORTED ${tool.kind} host: ${this.host}`);
     const expected = distribution.sha256;
@@ -254,6 +255,7 @@ export class Resources {
         if (activate) await selectVersion(this.root, tool.kind, tool.version);
         return record;
       }
+      if (tool.retired) throw new Error(`${tool.kind} standalone installation is retired; run gizos install gizloader`);
       const path = configured ?? join(this.root, "tools", tool.kind, `${tool.version}-${this.host}`);
       let installed = path;
       if (!distribution.format && !distribution.installer) {

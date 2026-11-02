@@ -23,6 +23,7 @@ cc_library(
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_macos_x86_64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = _OS_OWNERS,

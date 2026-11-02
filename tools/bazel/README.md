@@ -67,6 +67,15 @@ layout, and device or browser E2E results.
 Historical evidence may name retired source-scanning test targets; those records
 describe past runs and are not the current test inventory.
 
+## macOS native loader builds
+
+Gizloader's native CLI, persistent session adapter, and Darwin PAL support both
+`--config=macos_arm64` and `--config=macos_x86_64`, with macOS 13.0 as their minimum
+version. The Intel configuration selects the x86_64 target platform and Xcode
+CPU. Native installer CI runs each architecture on its corresponding Mac runner
+and checks the App and both sidecars before publishing separate DMGs. See the
+[Gizloader build guide](../gizloader/README.md) for desktop packaging and signing.
+
 ## Windows compatible graph
 
 The native Windows x86_64 baseline uses the `rules_cc`

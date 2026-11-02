@@ -1,0 +1,9 @@
+/node_modules/
+/dist/
+/release/
+/bootstrap/
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/binaries/
+/src-tauri/gizloader.generated.conf.json
+/src-tauri/Info.generated.plist

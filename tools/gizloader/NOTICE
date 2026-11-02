@@ -1,0 +1,5 @@
+Gizloader
+
+The desktop workbench, Rust session supervisor and native session adapter were migrated from GizClaw/h6infra. The batch controller derives from GizClaw/gizway and retains its source attribution in the controller source.
+
+GizOS native Host Core and platform components are distributed under the repository's applicable licenses. The native Windows PAL uses wolfSSL; its third-party license terms apply independently of the root Apache-2.0 license. Tauri, Rust crates and JavaScript dependencies retain their respective licenses. The bundled native license notice is in src-tauri/licenses/h2loader.txt.

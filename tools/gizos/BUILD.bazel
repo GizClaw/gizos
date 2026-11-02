@@ -50,6 +50,7 @@ py_test(
         "$(location tests/manager.test.ts)",
         "$(location tests/package.test.ts)",
         "$(location tests/resources.test.ts)",
+        "$(location tests/gizloader.test.ts)",
     ],
     data = glob([
         "src/**",

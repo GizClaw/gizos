@@ -1,0 +1,32 @@
+package(default_visibility = ["//visibility:public"])
+
+# The desktop bundler runs on native release runners; protocol helpers and
+# their tests remain ordinary Bazel targets in native/.
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "src/**",
+        "src-tauri/src/**",
+        "src-tauri/windows/**",
+        "src-tauri/capabilities/**",
+        "src-tauri/icons/**",
+        "src-tauri/licenses/**",
+        "scripts/**",
+        "e2e/**",
+        "desktop/**",
+    ]) + [
+        "NOTICE",
+        "README.md",
+        "UPSTREAM.json",
+        "bun.lock",
+        "package.json",
+        "playwright.config.ts",
+        "src-tauri/Cargo.lock",
+        "src-tauri/Cargo.toml",
+        "src-tauri/Info.plist",
+        "src-tauri/build.rs",
+        "src-tauri/tauri.conf.json",
+        "tsconfig.json",
+        "vite.config.ts",
+    ],
+)

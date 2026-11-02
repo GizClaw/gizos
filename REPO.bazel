@@ -10,5 +10,10 @@ ignore_directories([
     "docs/**",
     "h2loader/**",
     "tests/**",
+    "tools/gizloader/node_modules/**",
+    "tools/gizloader/dist/**",
+    "tools/gizloader/release/**",
+    "tools/gizloader/src-tauri/target/**",
+    "tools/gizloader/src-tauri/gen/**",
     "x/**",
 ])

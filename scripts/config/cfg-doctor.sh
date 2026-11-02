@@ -2,6 +2,7 @@
 
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) host_config=macos_arm64 ;;
+  Darwin:x86_64) host_config=macos_x86_64 ;;
   Linux:x86_64) host_config=linux_x86_64 ;;
   Linux:aarch64|Linux:arm64) host_config=linux_arm64 ;;
   *)
@@ -12,4 +13,4 @@ esac
 
 exec scripts/config/h2loader-operation-env.sh \
   "${BAZEL_BIN:-bazel}" run "--config=$host_config" \
-  //projects/h2loader/targets/cc_binary/cli:h2loader -- check
+  //tools/gizloader/native:gizloader-cli -- check

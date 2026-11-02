@@ -338,6 +338,7 @@
     },
     {
       "kind": "h6loader",
+      "retired": true,
       "version": "0.2.1",
       "default": true,
       "release": {
@@ -378,6 +379,7 @@
     },
     {
       "kind": "h2loader",
+      "retired": true,
       "version": "20261026-112329",
       "default": true,
       "release": {
