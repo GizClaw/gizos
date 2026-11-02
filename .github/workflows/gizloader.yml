@@ -171,7 +171,7 @@ jobs:
           - platform: darwin-arm64
             runner: ${{ vars.GIZLOADER_MACOS_RUNNER || 'macos-15' }}
             target: aarch64-apple-darwin
-            bazel_asset: macos-arm64
+            bazel_asset: darwin-arm64
             bazel_sha256: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
             suffix: macos-arm64.dmg
           - platform: win32-x64
@@ -240,12 +240,19 @@ jobs:
             $key = $Matches[1]
             $value = $Matches[2]
             if ($key -ieq 'PATH') {
-              $value.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries) | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              [string[]]$directories = $value.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
+              [array]::Reverse($directories)
+              $directories | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
             } elseif ($key -in @('INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VSINSTALLDIR', 'VCToolsInstallDir', 'VCToolsVersion', 'WindowsSdkDir', 'WindowsSDKVersion')) {
               "$key=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             }
           }
           "BAZEL_VC=$(Join-Path $installation 'VC')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $toolsLine = $variables | Where-Object { $_ -match '^VCToolsInstallDir=' } | Select-Object -First 1
+          if (-not $toolsLine) { throw 'MSVC tool directory was not reported by vcvars64' }
+          $linker = Join-Path $toolsLine.Substring('VCToolsInstallDir='.Length) 'bin\Hostx64\x64\link.exe'
+          if (-not (Test-Path $linker)) { throw 'MSVC link.exe is missing' }
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install verified Bazel 9.2
         shell: bash
         env:
