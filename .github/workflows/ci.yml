@@ -140,7 +140,7 @@ jobs:
           )
           sudo apt-get "${apt_network_options[@]}" update
           sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake doxygen lcov libasound2-dev libx11-dev libxext-dev \
+            cmake lcov libasound2-dev libx11-dev libxext-dev \
             libxi-dev libxrandr-dev libssl-dev nasm ninja-build \
             pkg-config ripgrep unzip
 
@@ -148,7 +148,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          brew install cmake doxygen lcov ninja pkg-config ripgrep rsync
+          brew install cmake lcov ninja pkg-config ripgrep rsync
           sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
           test "$(xcodebuild -version | head -n 1)" = "Xcode 16.4"
 
@@ -337,7 +337,7 @@ jobs:
           )
           sudo apt-get "${apt_network_options[@]}" update
           sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake doxygen lcov libasound2-dev libx11-dev libxext-dev \
+            cmake lcov libasound2-dev libx11-dev libxext-dev \
             libxi-dev libxrandr-dev libssl-dev nasm ninja-build \
             pkg-config ripgrep unzip
 
@@ -345,7 +345,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          brew install cmake doxygen lcov ninja pkg-config ripgrep rsync
+          brew install cmake lcov ninja pkg-config ripgrep rsync
           sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
           test "$(xcodebuild -version | head -n 1)" = "Xcode 16.4"
 

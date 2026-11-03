@@ -607,7 +607,6 @@ static int suspend_write_reg(void* user, uint8_t reg, uint8_t value) {
 
 /* Espressif esp_codec_dev es8311_suspend / es7210_stop, release/v2.x.
  * Keep the complete ordered sequences, including repeated clock/reset writes.
- * See guides/zh/developing/components/esp_idf6_x.md for sources and lifecycle.
  */
 static int power_down_codecs(h2_esp_es8311_es7210_audio_system_t* state) {
   static const uint8_t es7210_off[][2] = {
