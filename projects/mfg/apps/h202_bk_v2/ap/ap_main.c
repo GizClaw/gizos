@@ -280,13 +280,11 @@ static void run_startup(void) {
     const int prepared = rc == H2_PAL_OK;
     if (prepared) {
       /* Core gates the App on the stored results alone; drop a record from
-       * other acceptance criteria first. If that fails, stay in command mode
-       * rather than boot an App the gate cannot vouch for. */
-      const int revision = h2_h202_mfg_acceptance_check(s_runtime->pref);
-      if (revision != H2_PAL_OK) {
+       * other acceptance criteria first, or keep the App closed. */
+      const int revision =
+          h2_h202_mfg_acceptance_gate(&s_loader, s_runtime->pref);
+      if (revision != H2_PAL_OK)
         printf("H202_MFG_REVISION_FAIL rc=%d\r\n", revision);
-        s_loader.force_command_mode = 1;
-      }
       rc = h2_loader_startup(&s_loader, &action);
     }
     if (rc != H2_PAL_OK) (void)h2_loader_set_last_result(&s_loader, rc);

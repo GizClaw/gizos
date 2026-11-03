@@ -19,7 +19,7 @@ bazel test //projects/mfg/apps/h202_bk_v2/... //boards/h202_bk_v2/bk7258/...
 H202 不使用共享 `h2_mfg_*`：它没有屏幕，需要充电、NFC、Wi-Fi 和左右麦等步骤。因此：
 
 - 入口按 H202 Loader 的方式组装 Loader Core：只对当前镜像计算一次身份 SHA-256，由 Core confirm，能力为 UART 与 Wi-Fi。Core 在命令模式就绪后才启动厂测；管理端发起重启时直接结束 MFG。
-- Core 只按已保存的结果放行 App，所以入口在启动检查前先用 `h2_loader_mfg_ensure_acceptance_revision` 作废其他验收版本保存的记录；这一步失败时 Core 保持命令模式，不进入 App，恢复仍然可用。
+- Core 只按已保存的结果放行 App，所以入口在启动检查前先用 `h2_loader_mfg_ensure_acceptance_revision` 作废其他验收版本保存的记录；这一步失败时 Core 保持命令模式，同时关闭 `reboot app`，直到校验成功才重新开放；恢复仍然可用。
 - 管理端的 Wi-Fi 扫描、连接、断开与 MFG 的 Wi-Fi 检测共用同一把操作锁；检测在等待 DHCP 时释放锁，重新拿锁后会再次确认仍连在测试热点上。
 - 设置 `mfg_required_total=10`：十项全部为 PASSED（SKIPPED 不算）时，开机才会进入分区 2 的 App，`reboot app` 也才可用；否则始终停在 MFG。暂存的 App 包仍可通过 `reboot upgrade` 写入分区 2，等厂测通过后再启动。
 - 不提供 `h2loader mfg ...` 命令；没有定向清除进度的管理命令，不要用清空整个数据卷代替。

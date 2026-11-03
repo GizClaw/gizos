@@ -747,9 +747,17 @@ void h2_h202_mfg_progress_load(const h2_pal_pref_api_t* pref,
   }
 }
 
-h2_pal_result_t h2_h202_mfg_acceptance_check(const h2_pal_pref_api_t* pref) {
-  return (h2_pal_result_t)h2_loader_mfg_ensure_acceptance_revision(
+h2_pal_result_t h2_h202_mfg_acceptance_gate(h2_loader_t* loader,
+                                            const h2_pal_pref_api_t* pref) {
+  if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
+  int rc = h2_loader_mfg_ensure_acceptance_revision(
       pref, H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_REVISION);
+  /* force_command_mode only stops automatic startup; reboot app follows
+   * command availability and the stored results. */
+  loader->force_command_mode = rc != H2_PAL_OK;
+  int closed = h2_loader_set_command_availability(
+      loader, H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP, rc == H2_PAL_OK);
+  return (h2_pal_result_t)(rc != H2_PAL_OK ? rc : closed);
 }
 
 h2_pal_result_t h2_h202_mfg_progress_clear(const h2_pal_pref_api_t* pref) {

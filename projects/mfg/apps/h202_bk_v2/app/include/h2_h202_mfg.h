@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "h2_loader_boot.h"
 #include "h2_runtime.h"
 
 #ifdef __cplusplus
@@ -289,10 +290,12 @@ void h2_h202_mfg_progress_load(const h2_pal_pref_api_t* pref,
                                const h2_pal_mem_api_t* mem,
                                h2_h202_mfg_restore_t* out);
 /** Power-hold shutdown only. The caller holds the operation mutex. */
-/** Before Loader Core startup, which gates the App on the stored results
- * alone: reset a record saved under other acceptance criteria. The caller
- * holds the operation mutex. */
-h2_pal_result_t h2_h202_mfg_acceptance_check(const h2_pal_pref_api_t* pref);
+/** Before each Loader Core startup, which gates the App on the stored
+ * results alone: reset a record saved under other acceptance criteria. Until
+ * that succeeds, keep Core in command mode and the reboot-app command closed;
+ * Loader recovery stays available. The caller holds the operation mutex. */
+h2_pal_result_t h2_h202_mfg_acceptance_gate(h2_loader_t* loader,
+                                            const h2_pal_pref_api_t* pref);
 /** Drop the saved record, as the Record + power gesture requests. */
 h2_pal_result_t h2_h202_mfg_progress_clear(const h2_pal_pref_api_t* pref);
 h2_pal_result_t h2_h202_mfg_progress_commit(

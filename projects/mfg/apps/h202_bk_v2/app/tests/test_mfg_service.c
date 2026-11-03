@@ -1178,7 +1178,30 @@ static void test_resume_and_aging(void) {
   puts("service resume, aging, accepted pass and unsaved shutdown ok");
 }
 
-static void test_acceptance_check(void) {
+/* What the UART command layer checks before reboot app, with an App in
+ * partition 2 and the stored results as Core reads them. */
+static bool reboot_app_open(h2_loader_t* loader) {
+  stored(&loader->status.mfg);
+  h2_loader_status_t status;
+  memset(&status, 0, sizeof(status));
+  status.capabilities = H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI;
+  status.partition_2.valid = 1;
+  status.partition_2.role = H2_LOADER_IMAGE_ROLE_APP;
+  return (h2_loader_get_command_availability(loader, &status) &
+          H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) != 0u;
+}
+
+static void test_acceptance_gate(void) {
+  /* The command gate as the Loader-role MFG sets it up: ten required
+   * results, every command implemented and available. */
+  h2_loader_t loader;
+  memset(&loader, 0, sizeof(loader));
+  loader.config.mfg_required_total = H2_H202_MFG_ITEM_COUNT;
+  assert(h2_atomic_int_init(&loader.mfg_gate_bypass, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&loader.implemented_commands, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&loader.command_availability, 0) == H2_ATOMIC_OK);
+  assert(h2_loader_set_implemented_commands(
+             &loader, H2_LOADER_COMMAND_AVAILABILITY_ALL) == H2_PAL_OK);
   /* Ten PASSED saved under other criteria never reach the Core gate. */
   uint8_t results[H2_H202_MFG_ITEM_COUNT];
   memset(results, H2_H202_MFG_PASSED, sizeof(results));
@@ -1186,17 +1209,31 @@ static void test_acceptance_check(void) {
              &pref_api, H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_REVISION - 1u) ==
          H2_PAL_OK);
   assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
-  assert(h2_h202_mfg_acceptance_check(&pref_api) == H2_PAL_OK);
+  assert(reboot_app_open(&loader)); /* Core alone would admit the stale pass. */
+  /* The reset fails while reads still succeed: the stale pass stays stored,
+   * so startup and reboot app must both stay closed. */
+  atomic_store(&fail_set_blob, 1);
+  assert(h2_h202_mfg_acceptance_gate(&loader, &pref_api) != H2_PAL_OK);
+  atomic_store(&fail_set_blob, 0);
   h2_loader_mfg_summary_t summary;
   stored(&summary);
+  assert(h2_loader_mfg_summary_is_passed(&summary, H2_H202_MFG_ITEM_COUNT));
+  assert(loader.force_command_mode && !reboot_app_open(&loader));
+  /* The next attempt resets the stale pass and reopens the command; the
+   * gate then stays closed only because nothing has passed. */
+  assert(h2_h202_mfg_acceptance_gate(&loader, &pref_api) == H2_PAL_OK);
+  stored(&summary);
   assert(!h2_loader_mfg_summary_is_passed(&summary, H2_H202_MFG_ITEM_COUNT));
+  assert(!loader.force_command_mode && !reboot_app_open(&loader));
   /* A pass under the current criteria is kept. */
   assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
-  assert(h2_h202_mfg_acceptance_check(&pref_api) == H2_PAL_OK);
-  stored(&summary);
-  assert(h2_loader_mfg_summary_is_passed(&summary, H2_H202_MFG_ITEM_COUNT));
+  assert(h2_h202_mfg_acceptance_gate(&loader, &pref_api) == H2_PAL_OK);
+  assert(!loader.force_command_mode && reboot_app_open(&loader));
   assert(h2_h202_mfg_progress_clear(&pref_api) == H2_PAL_OK);
-  puts("acceptance revision check ok");
+  h2_atomic_int_destroy(&loader.mfg_gate_bypass);
+  h2_atomic_int_destroy(&loader.implemented_commands);
+  h2_atomic_int_destroy(&loader.command_availability);
+  puts("acceptance revision gate ok");
 }
 
 static void test_retained_track_close(void) {
@@ -1242,7 +1279,7 @@ int main(void) {
   test_session();
   test_resume_and_aging();
   test_reset();
-  test_acceptance_check();
+  test_acceptance_gate();
   test_retained_track_close();
   assert(mutex_destroy(NULL, operation) == H2_PAL_OK);
   return 0;
