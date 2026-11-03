@@ -13,7 +13,7 @@ package(default_visibility = ["//visibility:public"])
 # H202 bumps its own Loader-role MFG independently of //projects/mfg:version.
 app_version(
     name = "version",
-    value = "0.3.2",
+    value = "0.3.3",
 )
 
 firmware_version(

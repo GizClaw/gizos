@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "h2_h202_mfg.h"
 #include "h2_loader_boot.h"
+#include "h2_loader_status.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -730,8 +731,16 @@ static int a_write(h2_pal_audio_track_t* track, const h2_audio_frame_t* frame,
   if (!audio.mic) sleep_ms(1);
   return H2_PAL_OK;
 }
+/* Close failures keep the track open, like the shared mixer's retry slot. */
+static atomic_uint close_failures, closes;
 static int a_close(h2_pal_audio_track_t* track) {
   (void)track;
+  atomic_fetch_add(&closes, 1u);
+  unsigned failures = atomic_load(&close_failures);
+  if (failures != 0u) {
+    atomic_store(&close_failures, failures - 1u);
+    return H2_PAL_ERR_IO;
+  }
   audio.track_open = false;
   return H2_PAL_OK;
 }
@@ -1169,6 +1178,44 @@ static void test_resume_and_aging(void) {
   puts("service resume, aging, accepted pass and unsaved shutdown ok");
 }
 
+static void test_acceptance_check(void) {
+  /* Ten PASSED saved under other criteria never reach the Core gate. */
+  uint8_t results[H2_H202_MFG_ITEM_COUNT];
+  memset(results, H2_H202_MFG_PASSED, sizeof(results));
+  assert(h2_loader_mfg_ensure_acceptance_revision(
+             &pref_api, H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_REVISION - 1u) ==
+         H2_PAL_OK);
+  assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
+  assert(h2_h202_mfg_acceptance_check(&pref_api) == H2_PAL_OK);
+  h2_loader_mfg_summary_t summary;
+  stored(&summary);
+  assert(!h2_loader_mfg_summary_is_passed(&summary, H2_H202_MFG_ITEM_COUNT));
+  /* A pass under the current criteria is kept. */
+  assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
+  assert(h2_h202_mfg_acceptance_check(&pref_api) == H2_PAL_OK);
+  stored(&summary);
+  assert(h2_loader_mfg_summary_is_passed(&summary, H2_H202_MFG_ITEM_COUNT));
+  assert(h2_h202_mfg_progress_clear(&pref_api) == H2_PAL_OK);
+  puts("acceptance revision check ok");
+}
+
+static void test_retained_track_close(void) {
+  /* The stage 02 prompt cannot close its track; the next prompt finishes that
+   * close before creating a track (the fake asserts it is not still open). */
+  unsigned before = atomic_load(&closes);
+  atomic_store(&close_failures, 1u);
+  start();
+  for (unsigned i = 0;
+       i < 300u && (atomic_load(&closes) < before + 3u || audio.track_open);
+       ++i)
+    sleep_ms(10);
+  assert(atomic_load(&close_failures) == 0u);
+  assert(atomic_load(&closes) >= before + 3u);
+  stop();
+  assert(h2_h202_mfg_progress_clear(&pref_api) == H2_PAL_OK);
+  puts("retained track close ok");
+}
+
 int main(void) {
   test_measurement();
   test_scale();
@@ -1195,6 +1242,8 @@ int main(void) {
   test_session();
   test_resume_and_aging();
   test_reset();
+  test_acceptance_check();
+  test_retained_track_close();
   assert(mutex_destroy(NULL, operation) == H2_PAL_OK);
   return 0;
 }

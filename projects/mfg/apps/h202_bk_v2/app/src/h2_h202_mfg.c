@@ -191,6 +191,14 @@ static void net_item(h2_h202_mfg_t* app) {
   }
 }
 
+static void accept_failed(h2_h202_mfg_t* app, h2_pal_result_t error) {
+  app->error = error;
+  app->phase = H2_H202_MFG_PHASE_ACCEPT_FAILED;
+  app->pressed_since_entry = 0u;
+  note(app, "H202_MFG_ACCEPT failed rc=%d", error);
+  light(app, H2_H202_MFG_COLOR_RED);
+}
+
 static void enter_wait(h2_h202_mfg_t* app) {
   stop(app, H2_H202_MFG_OP_SENSOR);
   stop(app, H2_H202_MFG_OP_AUDIO);
@@ -199,16 +207,21 @@ static void enter_wait(h2_h202_mfg_t* app) {
   app->deadline_set = false;
   bool passed = all_passed(app, H2_H202_MFG_ITEM_COUNT);
   note(app, "H202_MFG_STAGE stage=10 all_passed=%d", passed ? 1 : 0);
-  /* AUDIO was stopped first: an aging job checks cancellation under the eye
-   * lock, so its last rainbow frame can never overwrite this color. */
-  light(app, passed ? H2_H202_MFG_COLOR_GREEN : H2_H202_MFG_COLOR_YELLOW);
-  (void)play(
-      app, passed ? H2_H202_MFG_PROMPT_WAITING : H2_H202_MFG_PROMPT_INCOMPLETE);
-  /* Boot reads and clears progress, so save a pass at once: installing the
-   * next firmware must not need a power cycle first. */
-  if (passed)
-    (void)begin(app, H2_H202_MFG_OP_POWER, H2_H202_MFG_JOB_ACCEPT, app->item,
-                H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
+  if (!passed) {
+    /* AUDIO was stopped first: an aging job checks cancellation under the
+     * eye lock, so its last rainbow frame can never overwrite this color. */
+    light(app, H2_H202_MFG_COLOR_YELLOW);
+    (void)play(app, H2_H202_MFG_PROMPT_INCOMPLETE);
+    return;
+  }
+  /* Boot reads and clears progress, so save a pass before announcing it:
+   * installing the next firmware must not need a power cycle first. */
+  app->phase = H2_H202_MFG_PHASE_ACCEPTING;
+  app->pressed_since_entry = 0u;
+  h2_pal_result_t rc =
+      begin(app, H2_H202_MFG_OP_POWER, H2_H202_MFG_JOB_ACCEPT, app->item,
+            H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
+  if (rc != H2_PAL_OK) accept_failed(app, rc);
 }
 
 /* Next item not PASSED; aging is admitted only after nine PASSED results. */
@@ -370,6 +383,9 @@ static void click(h2_h202_mfg_t* app, unsigned key) {
       return;
     case H2_H202_MFG_PHASE_RESET_FAILED:
       if (key == H2_H202_MFG_KEY_RECORD) reset_progress(app);
+      return;
+    case H2_H202_MFG_PHASE_ACCEPT_FAILED:
+      if (key == H2_H202_MFG_KEY_RECORD) enter_wait(app);
       return;
     case H2_H202_MFG_PHASE_ACTIVE:
       break;
@@ -544,7 +560,15 @@ static void net_done(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
 static void power_event(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
   if (c->event == H2_H202_MFG_EVENT_DONE) { /* Only ACCEPT ends with DONE. */
     app->current[H2_H202_MFG_OP_POWER] = 0u;
-    note(app, "H202_MFG_ACCEPTED rc=%d", c->result);
+    if (app->phase != H2_H202_MFG_PHASE_ACCEPTING) return;
+    if (c->result != H2_PAL_OK) {
+      accept_failed(app, c->result);
+      return;
+    }
+    note(app, "H202_MFG_ACCEPTED");
+    app->phase = H2_H202_MFG_PHASE_WAITING;
+    light(app, H2_H202_MFG_COLOR_GREEN);
+    (void)play(app, H2_H202_MFG_PROMPT_WAITING);
     return;
   }
   if (app->phase == H2_H202_MFG_PHASE_RESETTING) {
@@ -721,6 +745,11 @@ void h2_h202_mfg_progress_load(const h2_pal_pref_api_t* pref,
     memset(out, 0, sizeof(*out));
     out->error = (h2_pal_result_t)rc;
   }
+}
+
+h2_pal_result_t h2_h202_mfg_acceptance_check(const h2_pal_pref_api_t* pref) {
+  return (h2_pal_result_t)h2_loader_mfg_ensure_acceptance_revision(
+      pref, H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_REVISION);
 }
 
 h2_pal_result_t h2_h202_mfg_progress_clear(const h2_pal_pref_api_t* pref) {
@@ -1372,7 +1401,8 @@ static void observe_error(void* user, int capture, int result) {
     s->observer_error = result != H2_PAL_OK ? result : H2_PAL_ERR_IO;
 }
 
-static int audio_close(h2_h202_mfg_service_t* s) {
+/* Releases what is still held; a failed step keeps its handle for retry. */
+static int audio_release(h2_h202_mfg_service_t* s) {
   const h2_pal_audio_api_t* audio = s->runtime->audio;
   int rc = H2_PAL_OK;
   if (s->track != NULL) {
@@ -1395,8 +1425,13 @@ static int audio_close(h2_h202_mfg_service_t* s) {
     if (rc != H2_PAL_OK) return rc;
     s->observer = false;
   }
-  s->meter_active = false;
   return H2_PAL_OK;
+}
+
+static int audio_close(h2_h202_mfg_service_t* s) {
+  int rc = audio_release(s);
+  if (rc == H2_PAL_OK) s->meter_active = false;
+  return rc;
 }
 
 /* The observer is registered while microphone and speaker are stopped. */
@@ -1404,7 +1439,10 @@ static int audio_open(h2_h202_mfg_service_t* s, bool microphone,
                       const h2_audio_aec_observer_t* observer) {
   const h2_pal_audio_api_t* audio = s->runtime->audio;
   const h2_h202_mfg_profile_t* p = s->profile;
-  int rc = H2_PAL_OK;
+  /* A failed close keeps its handles; finish that cleanup first instead of
+   * dropping a track the mixer is still closing. */
+  int rc = audio_release(s);
+  if (rc != H2_PAL_OK) return rc;
   if (observer != NULL) {
     s->observer_error = H2_PAL_OK;
     rc = h2_pal_audio_set_aec_observer(audio, observer);
@@ -1777,7 +1815,8 @@ static int wifi_time(slot_t* slot, const h2_pal_netif_ref_t* ref) {
 
 /* Fixture association, usable IPv4 and time sync through Wi-Fi. Scan and
  * association change routes and share BK state with management Wi-Fi
- * commands, so the whole qualification holds the operation mutex. */
+ * commands, which take the same operation mutex, so qualification holds it
+ * except while waiting for DHCP and rechecks the link after. */
 static int wifi_attempt(slot_t* slot) {
   h2_h202_mfg_service_t* s = slot->service;
   h2_runtime_t* runtime = s->runtime;
@@ -1812,6 +1851,8 @@ static int wifi_attempt(slot_t* slot) {
   while (rc == H2_PAL_OK && !wifi_up(s)) rc = slot_sleep(slot, 200u);
   if (rc == H2_PAL_OK) rc = operation_lock(slot);
   if (rc != H2_PAL_OK) return slot_canceled(slot) ? H2_PAL_ERR_CLOSED : rc;
+  /* Management may have changed the link while the lock was released. */
+  if (!wifi_up(s)) rc = H2_PAL_ERR_INVALID_STATE;
   h2_pal_netif_ref_t ref;
   memset(&ref, 0, sizeof(ref));
   const h2_pal_netif_filter_t filter = {.kind = H2_PAL_NETIF_KIND_WIFI_STA};

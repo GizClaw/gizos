@@ -122,8 +122,9 @@ typedef enum h2_h202_mfg_job {
   H2_H202_MFG_JOB_MAINTAIN, /**< WIFI: restart, keep reconnecting. */
   H2_H202_MFG_JOB_SHUTDOWN, /**< POWER: commit results, then power off. */
   H2_H202_MFG_JOB_RESET,    /**< POWER: clear saved progress, then reboot. */
-  /** POWER: stage 10 with all ten PASSED, save them now so Loader Core's MFG
-   * gate admits the App on the next boot (for example after an upgrade). */
+  /** POWER: stage 10 with all ten PASSED, save them before announcing so
+   * Loader Core's MFG gate admits the App on the next boot (for example after
+   * an upgrade). */
   H2_H202_MFG_JOB_ACCEPT,
 } h2_h202_mfg_job_t;
 
@@ -189,6 +190,9 @@ typedef enum h2_h202_mfg_phase {
   H2_H202_MFG_PHASE_POWEROFF_FAILED,
   H2_H202_MFG_PHASE_RESETTING,    /**< Record + power: clear and reboot. */
   H2_H202_MFG_PHASE_RESET_FAILED, /**< Red; Record retries the reset. */
+  /** Stage 10 with all ten PASSED: saving them before green and the prompt. */
+  H2_H202_MFG_PHASE_ACCEPTING,
+  H2_H202_MFG_PHASE_ACCEPT_FAILED, /**< Red; Record retries the save. */
 } h2_h202_mfg_phase_t;
 
 typedef enum h2_h202_mfg_net_state {
@@ -276,7 +280,7 @@ unsigned h2_h202_mfg_stage_of(h2_h202_mfg_item_t item);
 
 /** Revision bound to the ten results by
  * h2_loader_mfg_ensure_acceptance_revision. Change it with the criteria. */
-#define H2_H202_MFG_REVISION 0x20200002u
+#define H2_H202_MFG_REVISION 0x20200003u
 
 /** Boot: bind revision, read, then reset the one-shot record before any stage
  * runs. The caller holds the Loader operation mutex. Never fails: errors are
@@ -285,6 +289,10 @@ void h2_h202_mfg_progress_load(const h2_pal_pref_api_t* pref,
                                const h2_pal_mem_api_t* mem,
                                h2_h202_mfg_restore_t* out);
 /** Power-hold shutdown only. The caller holds the operation mutex. */
+/** Before Loader Core startup, which gates the App on the stored results
+ * alone: reset a record saved under other acceptance criteria. The caller
+ * holds the operation mutex. */
+h2_pal_result_t h2_h202_mfg_acceptance_check(const h2_pal_pref_api_t* pref);
 /** Drop the saved record, as the Record + power gesture requests. */
 h2_pal_result_t h2_h202_mfg_progress_clear(const h2_pal_pref_api_t* pref);
 h2_pal_result_t h2_h202_mfg_progress_commit(

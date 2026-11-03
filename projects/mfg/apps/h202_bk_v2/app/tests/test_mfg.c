@@ -222,24 +222,34 @@ static void test_flow(void) {
   click(H2_H202_MFG_KEY_PLUS);
   assert(f.volume_changes == 3u); /* Stopping ignores volume keys. */
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
-  expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
-  /* The rainbow is canceled before stage 10 lights green. */
+  /* All ten passed: save them for the Loader MFG gate before announcing. */
+  expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_ACCEPTING);
+  /* The rainbow is canceled before stage 10 lights. */
   bool rainbow_stopped = false;
   for (unsigned i = cancels; i < f.cancels; ++i)
     rainbow_stopped = rainbow_stopped || f.canceled[i] == rainbow;
   assert(rainbow_stopped);
   assert(status().stage == 10u);
-  assert(f.color == H2_H202_MFG_COLOR_GREEN);
-  expect_prompt(H2_H202_MFG_PROMPT_WAITING);
+  assert(f.color != H2_H202_MFG_COLOR_GREEN);
   for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
     assert(status().results[i] == H2_H202_MFG_PASSED);
-  /* A pass is saved at once for the Loader MFG gate, without powering off. */
   const h2_h202_mfg_request_t* accept = last(H2_H202_MFG_OP_POWER);
   assert(accept != NULL && accept->job == H2_H202_MFG_JOB_ACCEPT);
   for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
     assert(accept->results[i] == H2_H202_MFG_PASSED);
+  /* A failed save is red with no firmware-wait prompt; Record retries. */
+  done(H2_H202_MFG_OP_POWER, H2_PAL_ERR_IO, 0);
+  expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_ACCEPT_FAILED);
+  assert(f.color == H2_H202_MFG_COLOR_RED && status().error == H2_PAL_ERR_IO);
+  assert(status().prompt != H2_H202_MFG_PROMPT_WAITING);
+  unsigned accepts = count_jobs(H2_H202_MFG_JOB_ACCEPT);
+  click(H2_H202_MFG_KEY_RECORD);
+  expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_ACCEPTING);
+  assert(count_jobs(H2_H202_MFG_JOB_ACCEPT) == accepts + 1u);
   done(H2_H202_MFG_OP_POWER, H2_PAL_OK, 0);
   expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
+  assert(f.color == H2_H202_MFG_COLOR_GREEN);
+  expect_prompt(H2_H202_MFG_PROMPT_WAITING);
   /* Stage 10 ignores the skip gesture. */
   set_keys(H2_H202_MFG_KEY_RECORD);
   click(H2_H202_MFG_KEY_PLUS);

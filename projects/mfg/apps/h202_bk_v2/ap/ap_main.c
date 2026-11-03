@@ -239,6 +239,11 @@ static void start_loader(char device_uid[13]) {
   if (rc != H2_PAL_OK) fail("operation_mutex", rc);
   commands.operation_sync = s_runtime->sync;
   commands.operation_mutex = s_operation;
+  /* Management Wi-Fi scan/connect/disconnect lock only this one; share the
+   * recursive operation mutex so they never interleave with the MFG Wi-Fi
+   * qualification, which holds it. */
+  commands.wifi_operation_sync = s_runtime->sync;
+  commands.wifi_operation_mutex = s_operation;
   rc = h2_pal_mutex_lock(s_runtime->sync, s_operation);
   if (rc != H2_PAL_OK) fail("initialization_lock", rc);
   rc = h2_pal_firmware_info_get_current(s_runtime->firmware_info, &firmware);
@@ -273,7 +278,17 @@ static void run_startup(void) {
           H2_H202_MFG_STAGE_PATH, H2_H202_MFG_STAGE_PREV_PATH);
     }
     const int prepared = rc == H2_PAL_OK;
-    if (prepared) rc = h2_loader_startup(&s_loader, &action);
+    if (prepared) {
+      /* Core gates the App on the stored results alone; drop a record from
+       * other acceptance criteria first. If that fails, stay in command mode
+       * rather than boot an App the gate cannot vouch for. */
+      const int revision = h2_h202_mfg_acceptance_check(s_runtime->pref);
+      if (revision != H2_PAL_OK) {
+        printf("H202_MFG_REVISION_FAIL rc=%d\r\n", revision);
+        s_loader.force_command_mode = 1;
+      }
+      rc = h2_loader_startup(&s_loader, &action);
+    }
     if (rc != H2_PAL_OK) (void)h2_loader_set_last_result(&s_loader, rc);
     const int unlock_rc = h2_pal_mutex_unlock(s_runtime->sync, s_operation);
     if (unlock_rc != H2_PAL_OK) fail("startup_unlock", unlock_rc);
