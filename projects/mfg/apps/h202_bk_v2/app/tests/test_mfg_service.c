@@ -929,6 +929,11 @@ static void wait_for(h2_h202_mfg_item_t item, h2_h202_mfg_phase_t phase) {
 
 /* A loaded host can starve the controller past a fixed hold, so wait until
  * the service has debounced the new mask. */
+/* Wait for a state workers reach asynchronously; a loaded CI host can run
+ * far slower than the nominal timing. */
+#define WAIT_UNTIL(condition) \
+  for (unsigned wait_ = 0; wait_ < 500u && !(condition); ++wait_) sleep_ms(10)
+
 static void keys_now(unsigned mask) {
   atomic_store(&key_mask, mask);
   sleep_ms(60);
@@ -1004,10 +1009,10 @@ static void test_session(void) {
   /* Charge indicator runs in the background from the raw lines. */
   atomic_store(&usb, true);
   atomic_store(&chrg, true);
-  sleep_ms(200);
+  WAIT_UNTIL(atomic_load(&white));
   assert(atomic_load(&white));
   atomic_store(&usb, false);
-  sleep_ms(200);
+  WAIT_UNTIL(!atomic_load(&white));
   assert(!atomic_load(&white));
   atomic_store(&chrg, false);
   /* 2 s (here 400 ms) hold: commit and power off without waiting for release.
@@ -1116,7 +1121,8 @@ static void test_resume_and_aging(void) {
   start();
   wait_for(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
   unsigned frames = atomic_load(&led_frames);
-  sleep_ms(400);
+  sleep_ms(400); /* Also the window for the no-reconnect check below. */
+  WAIT_UNTIL(atomic_load(&led_frames) > frames + 3u);
   assert(atomic_load(&led_frames) > frames + 3u); /* Rainbow running. */
   assert(atomic_load(&wifi_connects) == connects);
   /* A dropped link is reconnected (and fails on the host fixture). */
