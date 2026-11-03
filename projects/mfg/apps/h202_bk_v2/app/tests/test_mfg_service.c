@@ -449,12 +449,17 @@ static bool operation_held(void) {
 /* Played clips arrive in order from the one audio worker. */
 static atomic_uint retry_tails, poweroff_tails;
 static bool previous_failed, previous_poweroff;
+/* Last debounced key mask the service reported. */
+static atomic_uint seen_keys;
 
 static int log_write(void* user, h2_pal_log_level_t level, const char* scope,
                      const char* message) {
   (void)user;
   (void)level;
   printf("[%s] %s\n", scope, message);
+  const char* keys = strstr(message, "H202_MFG_KEYS mask=");
+  if (keys != NULL)
+    atomic_store(&seen_keys, (unsigned)strtoul(keys + 19, NULL, 10));
   const char* play = strstr(message, "H202_MFG_PLAY prompt=");
   if (play != NULL) {
     const char* name = play + strlen("H202_MFG_PLAY prompt=");
@@ -913,9 +918,14 @@ static void wait_for(h2_h202_mfg_item_t item, h2_h202_mfg_phase_t phase) {
   abort();
 }
 
+/* A loaded host can starve the controller past a fixed hold, so wait until
+ * the service has debounced the new mask. */
 static void keys_now(unsigned mask) {
   atomic_store(&key_mask, mask);
   sleep_ms(60);
+  for (unsigned i = 0;
+       service != NULL && i < 500u && atomic_load(&seen_keys) != mask; ++i)
+    sleep_ms(10);
 }
 
 static void click(unsigned key) {
@@ -929,6 +939,8 @@ static void start(void) {
                                                .profile = &profile,
                                                .operation_sync = &sync_api,
                                                .operation_mutex = operation};
+  /* The service starts with the current keys as its stable mask. */
+  atomic_store(&seen_keys, atomic_load(&key_mask));
   assert(h2_h202_mfg_service_start(&config, &service) == H2_PAL_OK);
 }
 
