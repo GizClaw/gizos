@@ -16,7 +16,6 @@ armino_component_register(
     "${REPO_ROOT}/projects/e2e/libs/pal-display-device/include"
     "${REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${REPO_ROOT}/projects/h2loader/native_component_src/bk7258/ap/h2loader_bk/include"
-    "${REPO_ROOT}/boards/bk7258_v3_202405/bk7258/ap/include"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/include"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src"
     "${REPO_ROOT}/libs/atomic/include"
@@ -28,12 +27,7 @@ armino_component_register(
     bk_cli
     h2_firmware_lib
     h2loader_bk
-    h2_pal_core
-    driver
-    media_service
-    multimedia
-    bk_display
-    bk_peripheral)
+    h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
     -std=c11
