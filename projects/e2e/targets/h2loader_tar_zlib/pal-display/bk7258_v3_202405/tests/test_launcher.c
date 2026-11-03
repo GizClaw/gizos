@@ -48,9 +48,9 @@ typedef enum scenario {
 } scenario_t;
 
 enum { WIDTH = 16, HEIGHT = 16, PIXELS = WIDTH * HEIGHT };
+static jmp_buf terminal;
 static struct {
   scenario_t scenario;
-  jmp_buf terminal;
   h2_runtime_t runtime;
   void (*entry)(void*);
   h2_pal_task_entry_t runner;
@@ -70,10 +70,7 @@ static struct {
   unsigned registrations, detachments;
 #endif
 } f;
-static const h2_pal_mem_api_t control_memory;
-static const h2_pal_mem_api_t bitmap_allocator;
-static const h2_pal_display_api_t display_api;
-static const h2_pal_task_api_t task_api;
+static const h2_pal_mem_api_t control_memory = {0};
 
 static void capture_log(const char* line) {
   if (strstr(line, "H2_DISPLAY_OBSERVATION ") == line) {
@@ -303,7 +300,7 @@ void h2_display_device_replay(h2_runtime_t* value) {
 void rtos_delay_milliseconds(uint32_t ms) {
   if (ms == 1000 || ms == 3000) {
     f.terminal_reason = ms == 1000 ? 1 : 2;
-    longjmp(f.terminal, 1);
+    longjmp(terminal, 1);
   }
   if (ms == 200)
     assert(!commands_ready && f.failed);
@@ -356,7 +353,7 @@ static void reset(scenario_t scenario) {
 }
 static void drive(void (*callback)(void*), void* user) {
   f.terminal_reason = 0;
-  if (!setjmp(f.terminal)) {
+  if (!setjmp(terminal)) {
     callback(user);
     assert(0 && "launcher returned before a terminal boundary");
   }

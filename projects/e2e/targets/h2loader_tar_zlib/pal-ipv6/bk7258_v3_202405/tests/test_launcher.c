@@ -43,9 +43,9 @@ typedef enum scenario {
   EXCESS_RESULT,
   CONFIRM_ERROR,
 } scenario_t;
+static jmp_buf terminal;
 static struct {
   scenario_t scenario;
-  jmp_buf terminal;
   h2_runtime_t runtime;
   void (*entry)(void*);
   h2_pal_task_entry_t runner;
@@ -56,15 +56,11 @@ static struct {
   int failure_rc, terminal_reason, ready_rc, ready_confirm;
   char failure_stage[32];
 } f;
-static const h2_pal_mem_api_t control_memory;
+static const h2_pal_mem_api_t control_memory = {0};
 static h2_pal_mem_api_t psram_memory;
-static const h2_pal_dtls_api_t dtls_api;
-static const h2_pal_time_api_t time_api;
-static const h2_pal_net_api_t net_api;
-static const h2_pal_task_api_t task_api;
-static const h2_pal_firmware_info_api_t firmware_api;
-static const h2_pal_pref_api_t preferences;
-static const h2_pal_wifi_sta_api_t wifi_api;
+static const h2_pal_dtls_api_t dtls_api = {0};
+static const h2_pal_pref_api_t preferences = {0};
+static const h2_pal_wifi_sta_api_t wifi_api = {0};
 
 static int test_printf(const char* format, ...) {
   char line[1024];
@@ -266,7 +262,7 @@ const h2_pal_power_api_t* h2_bk_h2loader_power_api(void) { return &power_api; }
 void rtos_delay_milliseconds(uint32_t ms) {
   if (ms == 1000u || (ms == 5000u && f.reports == 2)) {
     f.terminal_reason = ms == 1000u ? 1 : 2;
-    longjmp(f.terminal, 1);
+    longjmp(terminal, 1);
   }
   if (ms == 5000u) {
     if (!f.reports) ++f.initial_waits;
@@ -304,7 +300,7 @@ static void reset(scenario_t scenario) {
 }
 static void drive(void (*callback)(void*), void* user) {
   f.terminal_reason = 0;
-  if (!setjmp(f.terminal)) {
+  if (!setjmp(terminal)) {
     callback(user);
     assert(0 && "launcher returned before a terminal boundary");
   }
