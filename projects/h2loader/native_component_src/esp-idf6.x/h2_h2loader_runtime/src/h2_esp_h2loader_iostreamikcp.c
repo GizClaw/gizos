@@ -15,8 +15,23 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef H2_LOADER_SERIAL_RX_BUFFER
 #define H2_LOADER_SERIAL_RX_BUFFER 8192u
+#endif
 #define H2_LOADER_SERIAL_TX_BUFFER 2048u
+#ifndef H2_LOADER_STREAM_RX_BUFFER
+#define H2_LOADER_STREAM_RX_BUFFER 4096u
+#endif
+#ifndef H2_LOADER_TRANSPORT_RECEIVE_WINDOW
+#define H2_LOADER_TRANSPORT_RECEIVE_WINDOW 20u
+#endif
+#if H2_LOADER_SERIAL_RX_BUFFER < 1024u || H2_LOADER_SERIAL_RX_BUFFER > 8192u || \
+    H2_LOADER_STREAM_RX_BUFFER < H2_IOSTREAMIKCP_DEFAULT_MTU || \
+    H2_LOADER_STREAM_RX_BUFFER > 4096u || \
+    H2_LOADER_TRANSPORT_RECEIVE_WINDOW < H2_IOSTREAMIKCP_MIN_RECEIVE_WINDOW || \
+    H2_LOADER_TRANSPORT_RECEIVE_WINDOW > 20
+#error "Invalid image-owned Loader receive budget"
+#endif
 #define H2_LOADER_CONSOLE_UART ((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM)
 #define H2_LOADER_TRANSPORT_DEFAULT_WRITE_TIMEOUT_MS 5000u
 #define H2_LOADER_TRANSPORT_MAX_FLUSH_TIMEOUT_MS 120000u
@@ -24,7 +39,6 @@
 #define H2_LOADER_TRANSPORT_POLL_INTERVAL_MS 10u
 #define H2_LOADER_TRANSPORT_PHYSICAL_READ_SIZE 512u
 #define H2_LOADER_TRANSPORT_SEGMENT_TIMEOUT_MS 60u
-#define H2_LOADER_TRANSPORT_RECEIVE_WINDOW 20u
 
 typedef struct h2_esp_h2loader_app_iostreamikcp {
   h2_esp_h2loader_command_transport_t transport;
@@ -424,7 +438,7 @@ h2_pal_result_t h2_esp_h2loader_command_transport_activate_pending(
       .now_ms = transport_now_ms,
       .conv = conv,
       .mtu = H2_IOSTREAMIKCP_DEFAULT_MTU,
-      .rx_buffer_size = 4096u,
+      .rx_buffer_size = H2_LOADER_STREAM_RX_BUFFER,
       .receive_window = transport->receive_window,
       .write_timeout_ms = 1000u,
   };

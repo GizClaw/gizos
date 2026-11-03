@@ -1,0 +1,16 @@
+load("//tools/bazel:board_version.bzl", "board_version")
+
+package(default_visibility = ["//visibility:public"])
+
+board_version(
+    name = "version",
+    build = 1,
+)
+
+filegroup(
+    name = "ai_passport",
+    srcs = [
+        "README.md",
+        "//boards/ai_passport/esp32c3",
+    ],
+)

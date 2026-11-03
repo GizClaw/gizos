@@ -1253,6 +1253,7 @@ int main(void) {
   runtime.service = &management_service;
   runtime.service_count = 1u;
   h2_atomic_store(&runtime.fail_next_register, 1);
+  h2_atomic_store(&runtime.fail_next_join, 1);
   h2_bleikcp_server_t* failed_server = NULL;
   CHECK(h2_bleikcp_server_open(&api, &config, server_handler, &handler_state,
                                &failed_server) == H2_PAL_ERR_NO_MEMORY);
@@ -1308,6 +1309,13 @@ int main(void) {
   CHECK(fake_post_payload(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED,
                           &mtu, sizeof(mtu)) == H2_PAL_OK);
 
+  /* A compact peer must retain complete transfers and retransmission when the
+   * other side keeps its default stream/window budgets. */
+  config.send_window = 8u;
+  config.recv_window = 8u;
+  config.tx_buffer_size = 2048u;
+  config.rx_buffer_size = 2048u;
+  config.input_frame_capacity = 8u;
   h2_atomic_store(&runtime.drop_next_gatt_write, 1);
   run_client_exchange(&api, &config, &runtime, &handler_state, &event_state, 7u,
                       1024u, true);

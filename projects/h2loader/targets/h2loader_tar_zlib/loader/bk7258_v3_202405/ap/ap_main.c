@@ -49,6 +49,17 @@ static int s_h2loader_initialized;
 static volatile int s_h2loader_file_points_ready;
 static volatile int s_h2loader_mount_in_progress;
 
+static void cleanup_failed_ble_open(
+    const h2loader_app_command_service_api_t* service) {
+  while (s_h2loader_ble_service != NULL) {
+    if (service->close(service->user, s_h2loader_ble_service) == H2_PAL_OK) {
+      s_h2loader_ble_service = NULL;
+    } else {
+      rtos_delay_milliseconds(50u);
+    }
+  }
+}
+
 __attribute__((weak)) int h2loader_board_extend_runtime(
     h2_runtime_config_t* config) {
   (void)config;
@@ -478,7 +489,10 @@ static void h2loader_startup_worker(void* user) {
       rc =
           service->open(service->user, s_runtime, &command_config, config.board,
                         config.hardware_capabilities, &s_h2loader_ble_service);
-      if (rc != H2_PAL_OK) record_startup_error("factory_ble", rc);
+      if (rc != H2_PAL_OK) {
+        record_startup_error("factory_ble", rc);
+        cleanup_failed_ble_open(service);
+      }
     }
   }
 
@@ -584,6 +598,7 @@ static void h2loader_startup_worker(void* user) {
                                      &s_h2loader_ble_service);
         }
         if (rc != H2_PAL_OK) {
+          cleanup_failed_ble_open(command_service);
           (void)snprintf(
               line, sizeof(line),
               "H2_BK_H2LOADER_STEP stage=bleikcp_start rc=%d recovery=uart\r\n",

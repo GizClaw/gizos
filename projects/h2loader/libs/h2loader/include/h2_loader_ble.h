@@ -54,8 +54,19 @@ typedef struct h2_loader_ble_service_config {
    * Extended mode retains identity data. Names are public display metadata,
    * never credentials or an authenticated device identity. */
   const char* local_name;
+  /** iKCP server task minimum stack bytes; zero preserves the 6 KiB default.
+   * A handler executing Loader commands inline requires at least 32 KiB. */
+  size_t server_task_stack_size;
+  /** TX/RX ring bytes; zero keeps 8 KiB in each direction. */
+  size_t stream_buffer_size;
+  /** Send/receive KCP window; zero keeps 32 segments in each direction. */
+  uint32_t stream_window;
+  /** Queued input datagrams; zero keeps 16. */
+  size_t input_frame_capacity;
 } h2_loader_ble_service_config_t;
 
+/** Opens a service. On error, a non-NULL output is a close-only handle whose
+ * cleanup must be retried before releasing any borrowed dependencies. */
 int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
                                h2_loader_ble_service_t** out_service);
 

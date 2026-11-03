@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "h2_iostreamikcp.h"
+/* BUDGETS */
 
 /* Only the native scheduler and transport boundary are faked. */
 typedef unsigned TickType_t;
@@ -44,7 +45,8 @@ h2_pal_result_t h2_iostreamikcp_open(const h2_iostreamikcp_config_t* config,
   assert(live == 0u);
   assert(config->conv != 0u);
   assert(config->mtu == H2_IOSTREAMIKCP_DEFAULT_MTU);
-  assert(config->rx_buffer_size == 4096u && config->receive_window == 20u);
+  assert(config->rx_buffer_size == H2_LOADER_STREAM_RX_BUFFER &&
+         config->receive_window == H2_LOADER_TRANSPORT_RECEIVE_WINDOW);
   ++opens;
   *out = NULL;
   if (open_result == H2_PAL_OK) {
@@ -96,7 +98,8 @@ int main(int argc, char** argv) {
   assert(argc == 2);
   const read_vtable_t io = {.read = read_byte};
   h2_esp_h2loader_app_iostreamikcp_t state = {
-      .transport = {.pending_conv = 7u, .receive_window = 20u},
+      .transport = {.pending_conv = 7u,
+                    .receive_window = H2_LOADER_TRANSPORT_RECEIVE_WINDOW},
       .io = {.vtable = &io},
   };
   if (strcmp(argv[1], "invalid") == 0) {

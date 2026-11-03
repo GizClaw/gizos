@@ -980,102 +980,112 @@ static int init_manifest_seen(tar_state_t* tar) {
   return H2_BUNDLE_OK;
 }
 
-int h2_bundle_archive_install_zlib_tar(
-    h2_bundle_installer_t* installer,
-    const h2_bundle_install_options_t* options) {
-  h2_pal_fs_file_t* archive = NULL;
+typedef struct archive_install_workspace {
   uint8_t in[H2_BUNDLE_IO_BUF_SIZE];
   uint8_t out[H2_BUNDLE_IO_BUF_SIZE];
   z_stream stream;
   tar_state_t tar;
+} archive_install_workspace_t;
+
+static int install_zlib_tar(h2_bundle_installer_t* installer,
+                            const h2_bundle_install_options_t* options,
+                            archive_install_workspace_t* workspace) {
+  h2_pal_fs_file_t* archive = NULL;
+  z_stream* stream = &workspace->stream;
+  tar_state_t* tar = &workspace->tar;
   int rc;
   int zrc;
 
-  if (installer == NULL || installer->fs == NULL || options == NULL ||
-      options->archive_path == NULL || options->dst_root == NULL) {
-    return H2_BUNDLE_ERR_INVALID_ARG;
-  }
-
   memset(&installer->stats, 0, sizeof(installer->stats));
-  memset(&tar, 0, sizeof(tar));
-  tar.installer = installer;
-  tar.options = options;
-  tar.kind = TAR_STATE_HEADER;
-  rc = init_manifest_seen(&tar);
-  if (rc != H2_BUNDLE_OK) {
-    return rc;
-  }
+  memset(tar, 0, sizeof(*tar));
+  tar->installer = installer;
+  tar->options = options;
+  tar->kind = TAR_STATE_HEADER;
+  rc = init_manifest_seen(tar);
+  if (rc != H2_BUNDLE_OK) return rc;
 
   rc = map_fs(bundle_fs_open(installer->fs, options->archive_path,
                              H2_PAL_FS_OPEN_READ, &archive));
   if (rc != H2_BUNDLE_OK) {
-    release_manifest_seen(&tar);
+    release_manifest_seen(tar);
     return rc;
   }
 
-  memset(&stream, 0, sizeof(stream));
-  stream.zalloc = zlib_alloc_adapter;
-  stream.zfree = zlib_free_adapter;
-  stream.opaque = (voidpf)installer->allocator;
-  zrc = inflateInit(&stream);
+  memset(stream, 0, sizeof(*stream));
+  stream->zalloc = zlib_alloc_adapter;
+  stream->zfree = zlib_free_adapter;
+  stream->opaque = (voidpf)installer->allocator;
+  zrc = inflateInit(stream);
   if (zrc != Z_OK) {
     bundle_fs_close(installer->fs, archive);
-    release_manifest_seen(&tar);
+    release_manifest_seen(tar);
     return H2_BUNDLE_ERR_ZLIB;
   }
 
   do {
     size_t read_len = 0u;
-    rc = map_fs(
-        bundle_fs_read(installer->fs, archive, in, sizeof(in), &read_len));
-    if (rc != H2_BUNDLE_OK) {
-      inflateEnd(&stream);
+    rc = map_fs(bundle_fs_read(installer->fs, archive, workspace->in,
+                               sizeof(workspace->in), &read_len));
+    if (rc != H2_BUNDLE_OK || read_len == 0u) {
+      inflateEnd(stream);
       bundle_fs_close(installer->fs, archive);
-      release_entry_buffers(&tar);
-      release_manifest_seen(&tar);
-      return rc;
-    }
-    if (read_len == 0u) {
-      inflateEnd(&stream);
-      bundle_fs_close(installer->fs, archive);
-      release_entry_buffers(&tar);
-      release_manifest_seen(&tar);
-      return H2_BUNDLE_ERR_ZLIB;
+      release_entry_buffers(tar);
+      release_manifest_seen(tar);
+      return rc != H2_BUNDLE_OK ? rc : H2_BUNDLE_ERR_ZLIB;
     }
 
-    stream.next_in = in;
-    stream.avail_in = (uInt)read_len;
+    stream->next_in = workspace->in;
+    stream->avail_in = (uInt)read_len;
     do {
-      stream.next_out = out;
-      stream.avail_out = (uInt)sizeof(out);
-      zrc = inflate(&stream, Z_NO_FLUSH);
+      stream->next_out = workspace->out;
+      stream->avail_out = (uInt)sizeof(workspace->out);
+      zrc = inflate(stream, Z_NO_FLUSH);
       if (zrc != Z_OK && zrc != Z_STREAM_END) {
-        inflateEnd(&stream);
+        inflateEnd(stream);
         bundle_fs_close(installer->fs, archive);
-        release_entry_buffers(&tar);
-        release_manifest_seen(&tar);
+        release_entry_buffers(tar);
+        release_manifest_seen(tar);
         return H2_BUNDLE_ERR_ZLIB;
       }
 
-      size_t have = sizeof(out) - stream.avail_out;
-      rc = tar_state_feed(&tar, out, have);
+      size_t have = sizeof(workspace->out) - stream->avail_out;
+      rc = tar_state_feed(tar, workspace->out, have);
       if (rc != H2_BUNDLE_OK) {
-        inflateEnd(&stream);
+        inflateEnd(stream);
         bundle_fs_close(installer->fs, archive);
-        release_manifest_seen(&tar);
+        release_entry_buffers(tar);
+        release_manifest_seen(tar);
         return rc;
       }
-    } while (stream.avail_in > 0u && zrc != Z_STREAM_END);
+    } while (stream->avail_in > 0u && zrc != Z_STREAM_END);
   } while (zrc != Z_STREAM_END);
 
-  inflateEnd(&stream);
+  inflateEnd(stream);
   rc = map_fs(bundle_fs_close(installer->fs, archive));
   if (rc != H2_BUNDLE_OK) {
-    release_entry_buffers(&tar);
-    release_manifest_seen(&tar);
+    release_entry_buffers(tar);
+    release_manifest_seen(tar);
     return rc;
   }
-  rc = tar_state_finish(&tar);
-  release_manifest_seen(&tar);
+  rc = tar_state_finish(tar);
+  release_entry_buffers(tar);
+  release_manifest_seen(tar);
+  return rc;
+}
+
+int h2_bundle_archive_install_zlib_tar(
+    h2_bundle_installer_t* installer,
+    const h2_bundle_install_options_t* options) {
+  if (installer == NULL || installer->fs == NULL || options == NULL ||
+      options->archive_path == NULL || options->dst_root == NULL) {
+    return H2_BUNDLE_ERR_INVALID_ARG;
+  }
+  /* Streaming state and both I/O blocks must not consume the caller's stack.
+   * Allocate before opening files or invoking any destructive writer callback. */
+  archive_install_workspace_t* workspace =
+      h2_pal_mem_alloc(installer->allocator, sizeof(*workspace));
+  if (workspace == NULL) return H2_BUNDLE_ERR_NO_MEMORY;
+  int rc = install_zlib_tar(installer, options, workspace);
+  h2_pal_mem_free(installer->allocator, workspace);
   return rc;
 }

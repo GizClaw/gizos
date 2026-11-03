@@ -28,6 +28,8 @@ static h2_esp_es8311_audio_system_t* read_worker;
 static esp_err_t read_result;
 static size_t read_bytes;
 static unsigned read_errors;
+static unsigned sr_init_calls;
+static int sr_init_result;
 static unsigned device_index(i2c_master_dev_handle_t dev) {
   assert(dev == (void*)1 || dev == (void*)2);
   return (unsigned)(uintptr_t)dev - 1u;
@@ -236,7 +238,9 @@ int h2_audio_mixer_create_track(h2_audio_mixer_t* m,
 int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* s,
                           const h2_esp_es8311_audio_system_config_t* c) {
   (void)c;
-  s->initialized = 1;
+  ++sr_init_calls;
+  if (sr_init_result != H2_AUDIO_OK) return sr_init_result;
+  s->initialized = s->available = 1;
   return H2_AUDIO_OK;
 }
 void h2_esp_es8311_sr_deinit(h2_esp_es8311_sr_state_t* s) {
@@ -508,7 +512,37 @@ static void test_aec_observer(void) {
   assert(captures == 2);
 }
 
+static void test_deferred_aec_does_not_block_playback_open(void) {
+  h2_esp_es8311_audio_system_t s = {0};
+  h2_esp_es8311_audio_system_config_t cfg = config();
+  cfg.enable_aec = 1;
+  cfg.frame_samples_per_channel = 512;
+  sr_init_calls = 0;
+  sr_init_result = H2_AUDIO_ERR_NO_MEMORY;
+  assert(h2_esp_es8311_audio_system_init(&s, &cfg) == H2_AUDIO_ERR_NO_MEMORY);
+  assert(sr_init_calls == 1);
+  cfg.defer_aec_init = 1;
+  sr_init_calls = 0;
+  assert(h2_esp_es8311_audio_system_init(&s, &cfg) == H2_AUDIO_OK);
+  assert(!s.sr_initialized && sr_init_calls == 0);
+  assert(es8311_audio_open(&s) == H2_AUDIO_OK);
+  assert(s.opened && sr_init_calls == 0);
+  h2_pal_audio_t* api = h2_esp_es8311_audio_system_audio(&s);
+  const h2_audio_aec_observer_t observer = {.user = &s,
+                                            .on_capture = capture_observer,
+                                            .on_playback = playback_observer,
+                                            .on_error = error_observer};
+  assert(h2_pal_audio_set_aec_observer(api, &observer) ==
+         H2_AUDIO_ERR_NO_MEMORY);
+  assert(!s.sr_initialized && s.aec_observer.on_capture == NULL);
+  assert(es8311_audio_start_mic(&s) == H2_AUDIO_ERR_NO_MEMORY);
+  assert(!s.mic_started && s.mic_task == NULL && sr_init_calls == 2);
+  assert(h2_esp_es8311_audio_system_deinit(&s) == H2_AUDIO_OK);
+  sr_init_result = H2_AUDIO_OK;
+}
+
 int main(void) {
+  test_deferred_aec_does_not_block_playback_open();
   test_mic_read_errors();
   test_diagnostic_capture_epoch();
   test_aec_observer();

@@ -22,3 +22,11 @@ idf_component_register(
     mbedtls)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+foreach(H2_RECEIVE_BUDGET IN ITEMS H2_LOADER_SERIAL_RX_BUFFER H2_LOADER_STREAM_RX_BUFFER H2_LOADER_TRANSPORT_RECEIVE_WINDOW)
+  if(DEFINED ${H2_RECEIVE_BUDGET})
+    if(NOT "${${H2_RECEIVE_BUDGET}}" MATCHES "^[1-9][0-9]*$")
+      message(FATAL_ERROR "Invalid ${H2_RECEIVE_BUDGET}")
+    endif()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE ${H2_RECEIVE_BUDGET}=${${H2_RECEIVE_BUDGET}})
+  endif()
+endforeach()

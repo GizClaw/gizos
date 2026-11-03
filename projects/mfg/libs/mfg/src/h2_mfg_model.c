@@ -28,7 +28,9 @@ int h2_mfg_model_init(h2_mfg_model_t* m, const h2_mfg_profile_t* profile,
       microphone |= profile->steps[i].check == H2_MFG_MIC;
       speaker |= profile->steps[i].check == H2_MFG_SPEAKER;
       aec |= profile->steps[i].check == H2_MFG_AEC;
-      if (profile->steps[i].check == H2_MFG_AEC && profile->steps[i].automatic)
+      if ((profile->steps[i].check == H2_MFG_AEC ||
+           profile->steps[i].check == H2_MFG_POWER) &&
+          profile->steps[i].automatic)
         return H2_PAL_ERR_INVALID_ARG;
       if ((profile->steps[i].check == H2_MFG_MAGNETOMETERS &&
            profile->magnetometer_count == 0) ||

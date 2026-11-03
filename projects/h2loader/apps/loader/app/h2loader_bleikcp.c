@@ -1,8 +1,18 @@
 #include "h2loader_bleikcp_internal.h"
 #include "h2loader_app_task_names.h"
 
-typedef struct h2loader_ble_session {
+#include <string.h>
+
+typedef struct h2loader_ble_service {
   const h2_pal_task_api_t* task_api;
+  const h2_pal_time_api_t* time_api;
+  const h2_pal_mem_api_t* allocator;
+  h2_loader_command_config_t command_config;
+  h2_loader_ble_service_t* service;
+  bool inline_commands;
+} h2loader_ble_service_t;
+
+typedef struct h2loader_ble_session {
   h2_loader_command_config_t command_config;
   h2_loader_command_t command;
   h2_bleikcp_t* stream;
@@ -31,7 +41,7 @@ static void command_task(void* ctx) {
 
 static int handle_session(void* user, h2_bleikcp_t* stream,
                           uint16_t conn_handle) {
-  const h2loader_ble_session_t* base = user;
+  const h2loader_ble_service_t* base = user;
   h2loader_ble_session_t session;
   h2_pal_task_t* task = NULL;
   const h2_pal_task_options_t options = {
@@ -45,37 +55,82 @@ static int handle_session(void* user, h2_bleikcp_t* stream,
     return H2_PAL_ERR_INVALID_ARG;
   }
   session = (h2loader_ble_session_t){
-      .task_api = base->task_api,
       .command_config = base->command_config,
       .stream = stream,
       .result = H2_PAL_OK,
   };
-  int rc = h2_pal_task_start(session.task_api, &options, command_task, &session,
+  if (base->inline_commands) {
+    command_task(&session);
+    return session.result;
+  }
+  int rc = h2_pal_task_start(base->task_api, &options, command_task, &session,
                              &task);
   if (rc != H2_PAL_OK) {
     return rc;
   }
-  rc = h2_pal_task_join(session.task_api, task);
-  return rc == H2_PAL_OK ? session.result : rc;
+  /* A failed join does not release the task or its borrowed stack context. */
+  while (h2_pal_task_join(base->task_api, task) != H2_PAL_OK) {
+    (void)h2_pal_time_sleep_ms(base->time_api, 10u);
+  }
+  return session.result;
+}
+
+static int close_command_service(void* user, void* service) {
+  h2loader_ble_service_t* owned = service;
+  (void)user;
+  if (owned == NULL) {
+    return H2_PAL_OK;
+  }
+  if (owned->service != NULL) {
+    int rc = h2_loader_ble_service_close(owned->service);
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+    owned->service = NULL;
+  }
+  int rc = h2_bleikcp_global_shutdown();
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  h2_pal_mem_free(owned->allocator, owned);
+  return H2_PAL_OK;
+}
+
+static bool valid_config(const h2loader_ble_command_service_config_t* config) {
+  return config == NULL || !config->inline_commands ||
+         config->server_task_stack_size >= 32768u;
 }
 
 static int open_command_service(
     void* user, h2_runtime_t* runtime,
     const h2_loader_command_config_t* command_config, const char* board,
     uint32_t capabilities, void** out_service) {
-  (void)user;
-  if (runtime == NULL || command_config == NULL || board == NULL ||
-      out_service == NULL) {
+  const h2loader_ble_command_service_config_t* config = user;
+  if (out_service == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_service = NULL;
-  int init_rc = h2_bleikcp_global_init();
-  if (init_rc != H2_PAL_OK) return init_rc;
-  static h2loader_ble_session_t base;
-  base = (h2loader_ble_session_t){
+  if (runtime == NULL || runtime->mem == NULL || command_config == NULL ||
+      board == NULL || !valid_config(config)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2loader_ble_service_t* owned =
+      h2_pal_mem_alloc(runtime->mem, sizeof(*owned));
+  if (owned == NULL) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  *owned = (h2loader_ble_service_t){
       .task_api = runtime->task,
+      .time_api = runtime->time,
+      .allocator = runtime->mem,
       .command_config = *command_config,
+      .inline_commands = config != NULL && config->inline_commands,
   };
+  int rc = h2_bleikcp_global_init();
+  if (rc != H2_PAL_OK) {
+    h2_pal_mem_free(runtime->mem, owned);
+    return rc;
+  }
   const h2_loader_ble_service_config_t service_config = {
       .log = runtime->log,
       .api =
@@ -92,26 +147,38 @@ static int open_command_service(
       .capabilities = capabilities,
       .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
       .handler = handle_session,
-      .handler_user = &base,
+      .handler_user = owned,
+      .server_task_stack_size = config != NULL ? config->server_task_stack_size
+                                                : 0u,
+      .stream_buffer_size = config != NULL ? config->stream_buffer_size : 0u,
+      .stream_window = config != NULL ? config->stream_window : 0u,
+      .input_frame_capacity = config != NULL ? config->input_frame_capacity : 0u,
   };
-  h2_loader_ble_service_t* service = NULL;
-  int rc = h2_loader_ble_service_open(&service_config, &service);
-  if (rc == H2_PAL_OK) {
-    *out_service = service;
-  } else {
-    (void)h2_bleikcp_global_shutdown();
+  rc = h2_loader_ble_service_open(&service_config, &owned->service);
+  if (rc == H2_PAL_OK || close_command_service(NULL, owned) != H2_PAL_OK) {
+    /* A partial-open cleanup failure retains the same close/retry ownership
+     * as an ordinary service close failure. Never drop its borrowed context. */
+    *out_service = owned;
   }
   return rc;
 }
 
-static int close_command_service(void* user, void* service) {
-  (void)user;
-  if (service == NULL) {
-    return H2_PAL_OK;
+int h2loader_bleikcp_command_service_with_config(
+    const h2loader_ble_command_service_config_t* config,
+    h2loader_app_command_service_api_t* out_api) {
+  if (out_api == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
   }
-  int rc = h2_loader_ble_service_close(service);
-  if (rc == H2_PAL_OK) (void)h2_bleikcp_global_shutdown();
-  return rc;
+  memset(out_api, 0, sizeof(*out_api));
+  if (!valid_config(config)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_api = (h2loader_app_command_service_api_t){
+      .user = (void*)config,
+      .open = open_command_service,
+      .close = close_command_service,
+  };
+  return H2_PAL_OK;
 }
 
 const h2loader_app_command_service_api_t* h2loader_bleikcp_command_service(

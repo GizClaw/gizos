@@ -89,7 +89,7 @@ int h2_esp_es8311_audio_system_init(
       (uint32_t)h2_esp_es8311_mic_gain_register(config->mic_gain_db) * 3u;
   system->mic_gain_percent = (applied_mic_gain_db - config->mic_gain_min_db) *
                              100u / (max_mic_gain_db - config->mic_gain_min_db);
-  if (config->enable_aec) {
+  if (config->enable_aec && !config->defer_aec_init) {
     int rc = h2_esp_es8311_sr_init(&system->sr, config);
     if (rc != H2_AUDIO_OK) {
       return rc;

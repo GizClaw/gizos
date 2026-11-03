@@ -87,6 +87,10 @@ typedef struct h2_esp_es8311_audio_system_config {
   h2_esp_es8311_aec_nlp_level_t aec_nlp_level;
   /** Optional board curve; zero initialization preserves legacy mapping. */
   h2_es8311_volume_config_t speaker_volume;
+  /** Defer enabled AEC allocation until microphone start or observer setup.
+   * Playback alone does not allocate AEC. Allocation errors still propagate;
+   * zero preserves eager initialization for existing callers. */
+  int defer_aec_init;
 } h2_esp_es8311_audio_system_config_t;
 
 typedef struct h2_esp_es8311_sr_state {

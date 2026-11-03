@@ -37,6 +37,7 @@ cc_library(
     srcs = [
         "src/h2_loader_app_client.c",
         "src/h2_loader_ble.c",
+        "src/h2_loader_ble_io.c",
         "src/h2_loader_boot.c",
         "src/h2_loader_command.c",
         "src/h2_loader_metadata.c",
@@ -80,6 +81,26 @@ cc_library(
         "//libs/crypto/sha256",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_zlib",
+    ],
+)
+
+cc_test(
+    name = "h2loader_ble_io_test",
+    srcs = [
+        "src/h2_loader_ble_io.c",
+        "tests/test_h2_loader_ble_io.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":api",
+        "//libs/atomic/providers/c11",
+        "//libs/bleikcp",
     ],
 )
 

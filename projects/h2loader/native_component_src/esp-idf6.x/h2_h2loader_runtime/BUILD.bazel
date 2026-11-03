@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
@@ -88,3 +89,20 @@ firmware_native_component(
         ("s3", "0"),
     ]
 ]
+
+py_test(
+    name = "command_service_test",
+    srcs = ["tests/test_command_service.py"],
+    data = [
+        "src/h2_esp_h2loader_runtime.c",
+        "tests/command_service_fixture.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_command_service.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

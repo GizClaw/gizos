@@ -165,6 +165,24 @@ void h2_mfg_rearm(void* user) {
   (void)h2_pal_mutex_unlock(m->rt->sync, m->mutex);
 }
 
+static int render_service(h2_mfg_t* m) {
+  uint64_t now = 0;
+  int rc = h2_pal_time_get_monotonic_ms(m->rt->time, &now);
+  return rc == 0 ? h2_mfg_hardware_service(m, now) : rc;
+}
+
+static int fail_current_check(h2_mfg_t* m, int error) {
+  int cleanup = h2_mfg_hardware_leave(m);
+  const char* step = m->profile->steps[m->model.current].name;
+  int rc = 0;
+  if (m->model.summary.step_status[m->model.current] != H2_LOADER_MFG_STEP_FAILED)
+    rc = h2_mfg_model_action(&m->model, "fail", step, m->model.ticket);
+  m->hardware_ticket = m->model.ticket;
+  m->model.ready = 0;
+  m->model.error = error;
+  return rc == 0 ? cleanup : rc;
+}
+
 int h2_mfg_run(void* user, h2_loader_t* loader,
                const h2_pal_sync_api_t* operation_sync,
                h2_pal_mutex_t* operation_mutex,
@@ -242,6 +260,7 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
         loader->status.mfg = summary;
         m->initialized = 1;
         m->hardware_ticket = 0;
+        m->preparing_ticket = 0;
         opened = 1;
         char line[192];
         (void)snprintf(
@@ -265,12 +284,31 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
     /* Hardware ownership stays on this task. Commands change only the model;
      * a new ticket always tears down the previous step before probing again. */
     if (rc == 0 && !bypass && m->hardware_ticket != m->model.ticket) {
-      rc = h2_mfg_hardware_leave(m);
-      if (rc == 0) {
-        m->hardware_ticket = m->model.ticket;
-        m->model.error = h2_mfg_hardware_enter(m, now);
-        if (m->model.error != 0) {
-          int error = m->model.error;
+      if (m->preparing_ticket != m->model.ticket) {
+        rc = h2_mfg_hardware_leave(m);
+        if (rc == 0) {
+          m->preparing_ticket = m->model.ticket;
+        } else if (rc == H2_PAL_ERR_BUSY || rc == H2_PAL_ERR_WOULD_BLOCK) {
+          rc = 0;
+          m->model.ready = 0;
+          (void)snprintf(m->detail, sizeof(m->detail),
+                         "Releasing prior check resources");
+        }
+      }
+      if (rc == 0 && m->preparing_ticket == m->model.ticket) {
+        int error = h2_mfg_hardware_enter(m, now);
+        int pending = error == H2_PAL_ERR_WOULD_BLOCK && m->preparation_pending;
+        if (pending) {
+          m->model.ready = 0;
+          m->model.error = 0;
+          (void)snprintf(m->detail, sizeof(m->detail),
+                         "Preparing check resources");
+        } else {
+          m->preparing_ticket = 0;
+          m->hardware_ticket = m->model.ticket;
+          m->model.error = error;
+        }
+        if (error != 0 && !pending) {
           int cleanup = h2_mfg_hardware_leave(m);
           int save_rc = m->model.current < m->profile->total
                             ? h2_mfg_model_action(
@@ -278,6 +316,11 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
                                   m->profile->steps[m->model.current].name,
                                   m->model.ticket)
                             : error;
+          char failure[160];
+          (void)snprintf(failure, sizeof(failure),
+                         "H2_MFG_CHECK_FAIL stage=enter primary=%d cleanup=%d save=%d",
+                         error, cleanup, save_rc);
+          (void)h2_pal_log_write(m->rt->log, H2_PAL_LOG_ERROR, "mfg", failure);
           /* The failed check stays selected, without repeatedly reopening it.
            */
           m->hardware_ticket = m->model.ticket;
@@ -287,19 +330,12 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
         }
       }
     }
-    if (rc == 0 && !bypass) {
+    if (rc == 0 && !bypass && m->hardware_ticket == m->model.ticket) {
       int check_rc = h2_mfg_hardware_tick(m, now, &action);
       if (check_rc != 0 && m->model.current >= m->profile->total) {
         rc = check_rc;
       } else if (check_rc != 0) {
-        int cleanup = h2_mfg_hardware_leave(m);
-        const char* step = m->profile->steps[m->model.current].name;
-        if (m->model.summary.step_status[m->model.current] !=
-            H2_LOADER_MFG_STEP_FAILED)
-          rc = h2_mfg_model_action(&m->model, "fail", step, m->model.ticket);
-        m->hardware_ticket = m->model.ticket;
-        m->model.error = check_rc;
-        if (rc == 0) rc = cleanup;
+        rc = fail_current_check(m, check_rc);
       }
     }
     if (rc == 0 && !bypass && action != NULL &&
@@ -314,7 +350,13 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
     }
     if (rc == 0 && !bypass && now - m->last_draw_ms >= 100) {
       m->last_draw_ms = now;
+      m->render_service_error = 0;
+      m->render_service = render_service;
       rc = h2_mfg_ui_draw(m, now);
+      m->render_service = NULL;
+      if (rc == 0 && m->render_service_error != 0 &&
+          m->model.current < m->profile->total)
+        rc = fail_current_check(m, m->render_service_error);
     }
     if (!bypass && now - m->last_log_ms >= 1000) {
       char line[240];

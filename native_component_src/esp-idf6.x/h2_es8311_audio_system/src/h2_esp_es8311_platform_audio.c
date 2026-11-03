@@ -556,7 +556,8 @@ static int es8311_audio_init_codec(h2_esp_es8311_audio_system_t* state) {
 }
 
 static int es8311_audio_init_system(h2_esp_es8311_audio_system_t* state) {
-  if (state->sr_initialized) {
+  if (state->sr_initialized ||
+      (state->config.enable_aec && state->config.defer_aec_init)) {
     return H2_AUDIO_OK;
   }
   if (state->config.enable_aec) {
@@ -1321,13 +1322,19 @@ static int es8311_audio_set_mic_gain_percent(void* user, uint32_t percent) {
 static int audio_set_aec_observer(void* user,
                                   const h2_audio_aec_observer_t* observer) {
   h2_esp_es8311_audio_system_t* state = user;
-  if (!state->config.enable_aec || !state->sr.available)
-    return H2_AUDIO_ERR_UNSUPPORTED;
+  if (!state->config.enable_aec) return H2_AUDIO_ERR_UNSUPPORTED;
   if (state->mic_started || state->mic_task != NULL ||
       state->mic_task_started || state->playback_started ||
       state->playback_task != NULL || state->playback_task_started ||
       state->codec_shutdown_pending)
     return H2_AUDIO_ERR_INVALID_STATE;
+  if (observer != NULL && !state->sr.available &&
+      state->config.defer_aec_init && !state->sr_initialized) {
+    int rc = h2_esp_es8311_sr_init(&state->sr, &state->config);
+    if (rc != H2_AUDIO_OK) return rc;
+    state->sr_initialized = 1;
+  }
+  if (!state->sr.available) return H2_AUDIO_ERR_UNSUPPORTED;
   if (observer != NULL)
     state->aec_observer = *observer;
   else

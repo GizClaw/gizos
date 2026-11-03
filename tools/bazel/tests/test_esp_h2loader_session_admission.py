@@ -32,18 +32,26 @@ class SessionAdmission(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / 'test.c'
             binary = Path(directory) / 'test'
-            unit.write_text(fixture.replace('/* FUNCTIONS */', code))
+            budgets = source[source.index('#ifndef H2_LOADER_SERIAL_RX_BUFFER'):
+                             source.index('#define H2_LOADER_CONSOLE_UART')]
+            unit.write_text(fixture.replace('/* BUDGETS */', budgets)
+                            .replace('/* FUNCTIONS */', code))
             for tick_ms in [1, 100]:
-                subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
-                    '-DTICK_MS=' + str(tick_ms),
-                    '-I' + str(ROOT / 'libs/pal/include'),
-                    '-I' + str(ROOT / 'libs/iostreamikcp/include'),
-                    str(unit), '-o', str(binary)], check=True)
-                for case in ['oom', 'ack', 'flood', 'success', 'invalid']:
-                    with self.subTest(tick_ms=tick_ms, case=case):
-                        result = subprocess.run([str(binary), case], capture_output=True,
-                                                text=True, timeout=10)
-                        self.assertEqual(result.returncode, 0, result.stderr)
+                for compact in [False, True]:
+                    defines = ['-DTICK_MS=' + str(tick_ms)]
+                    if compact:
+                        defines += ['-DH2_LOADER_SERIAL_RX_BUFFER=1024',
+                                    '-DH2_LOADER_STREAM_RX_BUFFER=1024',
+                                    '-DH2_LOADER_TRANSPORT_RECEIVE_WINDOW=8']
+                    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                        *defines, '-I' + str(ROOT / 'libs/pal/include'),
+                        '-I' + str(ROOT / 'libs/iostreamikcp/include'),
+                        str(unit), '-o', str(binary)], check=True)
+                    for case in ['oom', 'ack', 'flood', 'success', 'invalid']:
+                        with self.subTest(tick_ms=tick_ms, compact=compact, case=case):
+                            result = subprocess.run([str(binary), case], capture_output=True,
+                                                    text=True, timeout=10)
+                            self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':

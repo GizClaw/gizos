@@ -1,0 +1,31 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "esp32c3",
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_display.c",
+        "src/h2_esp_board_peripherals.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board.h",
+        "src/h2_esp_board_private.h",
+    ],
+    component_directory = "boards/ai_passport/esp32c3",
+    component_name = "h2_esp_board",
+    data = [
+        "CMakeLists.txt",
+        "sdkconfig.defaults",
+    ],
+    deps = [
+        "//libs/drivers/battery/cw2017",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_adc_oneshot",
+        "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+    ],
+)

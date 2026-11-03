@@ -70,6 +70,12 @@ void h2_esp_h2loader_run_with_ble_config(
       runtime, config, h2loader_bleikcp_command_service());
 }
 
+int h2_esp_h2loader_ble_command_service_with_config(
+    const h2loader_ble_command_service_config_t* config,
+    h2loader_app_command_service_api_t* out_api) {
+  return h2loader_bleikcp_command_service_with_config(config, out_api);
+}
+
 static int handle_ble_session(void* user, h2_bleikcp_t* stream,
                               uint16_t conn_handle) {
   h2_esp_h2loader_app_ble_t* ble = user;
@@ -264,7 +270,15 @@ int h2_esp_h2loader_app_commands_start_with_config(
       h2_esp_platform_wifi_set_activity_observer(app_wifi_activity, NULL);
       return H2_PAL_OK;
     }
-    s_ble.service = NULL;
+    /* A failed open may still own tasks; serial recovery stays available
+     * while their cleanup completes, before any retry or global shutdown. */
+    while (s_ble.service != NULL) {
+      if (h2_loader_ble_service_close(s_ble.service) == H2_PAL_OK) {
+        s_ble.service = NULL;
+      } else {
+        (void)h2_pal_time_sleep_ms(runtime->time, 50u);
+      }
+    }
     if (attempt == H2_ESP_H2LOADER_APP_BLE_START_ATTEMPTS) {
       printf("H2_ESP_H2LOADER_APP_BLE_START_FAIL rc=%d attempts=%u\n", rc,
              (unsigned)attempt);

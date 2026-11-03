@@ -1,0 +1,7 @@
+# C3 has no PSRAM. Run MFG/Loader on one SDK-owned internal entry stack.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=20480
+# Advertising, scanning and one connection; allocate host pools on demand.
+CONFIG_BT_CTRL_BLE_MAX_ACT=3
+CONFIG_BT_NIMBLE_STATIC_TO_DYNAMIC=y
+CONFIG_BT_NIMBLE_MEMPOOL_RUNTIME_ALLOC=y
+# CONFIG_BT_NIMBLE_MEMPOOL_BLOCK_REUSED is not set

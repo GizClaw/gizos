@@ -18,6 +18,8 @@ typedef struct fake_audio {
   unsigned capture_pending;
   uint32_t volume;
   int speaker, mic, close_result, silent;
+  unsigned prepare_calls, info_calls;
+  int prepare_error, aec_enabled;
 } fake_audio_t;
 
 static const h2_audio_pcm_format_t format = {
@@ -27,10 +29,12 @@ static const h2_audio_pcm_format_t format = {
     .sample_format = H2_AUDIO_SAMPLE_S16LE};
 
 static int info(void* user, h2_audio_info_t* out) {
-  (void)user;
+  fake_audio_t* a = user;
+  ++a->info_calls;
   *out = (h2_audio_info_t){.available = 1,
                            .mic_supported = 1,
                            .playback_supported = 1,
+                           .aec_enabled = a->aec_enabled,
                            .mic_format = format,
                            .playback_format = format};
   return 0;
@@ -190,7 +194,82 @@ static void microphone_drains_pending_capture(h2_mfg_t* m, fake_audio_t* a) {
   assert(h2_mfg_hardware_leave(m) == 0 && !a->mic && m->pcm == NULL);
 }
 
+static int release_after_stopped(void* user) {
+  fake_audio_t* a = user;
+  assert(!a->mic && !a->speaker && a->capacity == 0);
+  ++a->prepare_calls;
+  return a->prepare_error;
+}
+
+static void small_track_and_checked_release(void) {
+  fake_audio_t a = {.volume = 91};
+  const h2_pal_audio_api_t audio = {.user = &a, .vtable = &vtable};
+  h2_runtime_t rt = {.mem = h2_desktop_platform_default_allocator(), .audio = &audio};
+  h2_mfg_step_t step = {"speaker", H2_MFG_SPEAKER, 0};
+  const h2_mfg_profile_t profile = {
+      .board = "test", .steps = &step, .total = 1,
+      .playback_buffer_frames = 2, .release_check = release_after_stopped,
+      .release_check_user = &a};
+  h2_mfg_t m = {.rt = &rt, .profile = &profile,
+                .model = {.profile = &profile, .summary = {.total = 1}}};
+  assert(h2_mfg_hardware_enter(&m, 0) == 0 && a.capacity == 2);
+  a.prepare_error = H2_PAL_ERR_BUSY;
+  assert(h2_mfg_hardware_leave(&m) == H2_PAL_ERR_BUSY);
+  assert(a.prepare_calls == 1 && m.pcm == NULL && !a.speaker && a.volume == 91);
+  a.prepare_error = 0;
+  assert(h2_mfg_hardware_leave(&m) == 0 && a.prepare_calls == 2);
+}
+
+static int prepare_capture(void* user, h2_mfg_check_t check) {
+  fake_audio_t* a = user;
+  assert(!a->mic && !a->speaker);
+  ++a->prepare_calls;
+  a->aec_enabled = check == H2_MFG_AEC;
+  return a->prepare_error;
+}
+
+static void check_preparation_precedes_audio(void) {
+  fake_audio_t a = {.prepare_error = H2_PAL_ERR_NO_MEMORY};
+  const h2_pal_audio_api_t audio = {.user = &a, .vtable = &vtable};
+  h2_runtime_t rt = {.mem = h2_desktop_platform_default_allocator(),
+                     .audio = &audio};
+  h2_mfg_step_t step = {"mic", H2_MFG_MIC, 0};
+  const h2_mfg_profile_t profile = {.board = "test",
+                                    .steps = &step,
+                                    .total = 1,
+                                    .prepare_check = prepare_capture,
+                                    .prepare_check_user = &a};
+  h2_mfg_t m = {.rt = &rt,
+                .profile = &profile,
+                .model = {.profile = &profile, .summary = {.total = 1}}};
+  assert(h2_mfg_hardware_enter(&m, 0) == H2_PAL_ERR_NO_MEMORY);
+  assert(a.prepare_calls == 1 && a.info_calls == 0 && !a.mic && m.pcm == NULL);
+  a.prepare_error = 0;
+  assert(h2_mfg_hardware_enter(&m, 0) == 0);
+  assert(a.prepare_calls == 2 && a.info_calls == 1 && a.mic);
+  assert(m.audio_info.aec_enabled == 0 && !m.model.ready);
+  step.check = H2_MFG_AEC;
+  (void)snprintf(m.detail, sizeof(m.detail), "AEC owner phase");
+  a.capture_pending = 1;
+  assert(h2_mfg_audio_tick(&m, 10, 1) == 0);
+  assert(strcmp(m.detail, "AEC owner phase") == 0);
+  step.check = H2_MFG_MIC;
+  assert(h2_mfg_hardware_leave(&m) == 0 && !a.mic && m.pcm == NULL);
+  m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_FAILED;
+  assert(h2_mfg_hardware_enter(&m, 0) == 0);
+  assert(a.prepare_calls == 2 && a.info_calls == 1 && !a.mic);
+  m.model.summary.step_status[0] = H2_LOADER_MFG_STEP_UNTESTED;
+  step = (h2_mfg_step_t){"aec", H2_MFG_AEC, 0};
+  a.prepare_error = H2_PAL_ERR_NO_MEMORY;
+  assert(h2_mfg_hardware_enter(&m, 0) == H2_PAL_ERR_NO_MEMORY);
+  assert(a.aec_enabled && a.prepare_calls == 3 && a.info_calls == 1);
+  assert(!m.model.ready && m.aec == NULL);
+  assert(h2_mfg_hardware_close(&m) == 0);
+}
+
 int main(int argc, char** argv) {
+  small_track_and_checked_release();
+  check_preparation_precedes_audio();
   assert(argc <= 2);
   fake_audio_t a = {.volume = 91};
   const h2_pal_audio_api_t audio = {.user = &a, .vtable = &vtable};

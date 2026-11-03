@@ -1,0 +1,2 @@
+# Loader inspection and installation use one SDK-owned internal entry stack.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768

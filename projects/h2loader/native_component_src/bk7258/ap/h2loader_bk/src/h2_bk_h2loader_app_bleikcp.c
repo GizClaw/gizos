@@ -406,6 +406,13 @@ static int h2_bk_h2loader_start_app_ble_with_mode(
   if (rc == H2_PAL_OK) {
     s_started = 1;
   } else {
+    while (s_ble.service != NULL) {
+      if (h2_loader_ble_service_close(s_ble.service) == H2_PAL_OK) {
+        s_ble.service = NULL;
+      } else {
+        (void)h2_pal_time_sleep_ms(runtime->time, 50u);
+      }
+    }
     (void)h2_bleikcp_global_shutdown();
   }
   return rc;

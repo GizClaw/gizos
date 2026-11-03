@@ -24,6 +24,7 @@ firmware_native_component(
     ) + [
         "//projects/h2loader/apps/loader/app:h2loader_bleikcp.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_ble.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_ble_io.c",
     ],
     hdrs = glob(
         [

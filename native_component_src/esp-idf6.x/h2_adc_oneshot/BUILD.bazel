@@ -1,6 +1,17 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "radio_button_stabilizer",
+    srcs = ["src/h2_esp_adc_radio_button.c"],
+    hdrs = ["include/h2_esp_adc_stabilizer.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
 
 firmware_native_component(
     name = "h2_adc_oneshot",

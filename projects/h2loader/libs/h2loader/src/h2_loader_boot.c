@@ -452,6 +452,16 @@ static int seed_running_metadata(h2_loader_t* loader) {
   if (metadata_matches_identity(stored, &loader->config.active_identity)) {
     return H2_PAL_OK;
   }
+  if (slot == H2_LOADER_METADATA_SLOT_PARTITION_1 &&
+      loader->config.active_identity.role == H2_LOADER_IMAGE_ROLE_H2LOADER) {
+    /* An unknown or manually replaced P1 is a recovery image. Hold it before
+     * seeding its identity so a reset between writes cannot leave matching P1
+     * metadata with AUTO still armed to install an older Stage or boot P2. */
+    int rc = pref_set_u32(loader->config.pref, "boot_intent",
+                           (uint32_t)H2_LOADER_BOOT_INTENT_LOADER);
+    if (rc != H2_PAL_OK) return rc;
+    loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
+  }
   metadata_from_identity(&loader->config.active_identity, &active);
   if (stored->valid && stored->image_size == active.image_size &&
       strcmp(stored->image_checksum, active.image_checksum) == 0) {

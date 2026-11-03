@@ -10,7 +10,6 @@
 #define H2_ESP_DISK_PARTITION_LOADER 1u
 #define H2_ESP_DISK_PARTITION_APP 2u
 #define H2_ESP_DISK_PARTITION_COREDUMP 3u
-#define H2_ESP_DISK_CHUNK_SIZE (16u * 1024u)
 #define H2_ESP_DISK_SAFE_STACK_DEPTH 4096u
 
 typedef enum h2_esp_disk_op {
@@ -180,7 +179,7 @@ static h2_pal_result_t disk_read(void* user, uint32_t partition_id,
   h2_pal_result_t rc =
       h2_esp_platform_safe_io_acquire(&internal_data, &internal_capacity);
   if (rc != H2_PAL_OK || internal_data == NULL ||
-      internal_capacity < H2_ESP_DISK_CHUNK_SIZE) {
+      internal_capacity == 0u) {
     if (rc == H2_PAL_OK) {
       h2_esp_platform_safe_io_release();
     }
@@ -255,7 +254,7 @@ static h2_pal_result_t disk_write(void* user, uint32_t partition_id,
   h2_pal_result_t rc =
       h2_esp_platform_safe_io_acquire(&internal_data, &internal_capacity);
   if (rc != H2_PAL_OK || internal_data == NULL ||
-      internal_capacity < H2_ESP_DISK_CHUNK_SIZE) {
+      internal_capacity == 0u) {
     if (rc == H2_PAL_OK) {
       h2_esp_platform_safe_io_release();
     }
