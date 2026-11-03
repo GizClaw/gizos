@@ -1163,7 +1163,7 @@ int main(void) {
   test_prompt_playback();
   for (unsigned i = 0; i < H2_H202_MFG_PROMPT_COUNT; ++i)
     profile.prompts[i] = (h2_h202_mfg_adpcm_t){prompt_adpcm, &prompt_size};
-  runtime = (h2_runtime_t){.board = "h202",
+  runtime = (h2_runtime_t){.board = "h202_bk_v2",
                            .mem = &mem,
                            .log = &log_api,
                            .time = &time_api,

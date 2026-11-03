@@ -8,5 +8,5 @@ if(CONFIG_AUDIO_DMIC)
 endif()
 armino_component_register_ex(CONFIG_COMPONENT_NAME h2_bk7258_board
   SRCS ${H2_COMPONENT_SOURCES}
-  INCLUDE_DIRS "$ENV{H2_GIZOS_ROOT}/boards/h202/bk7258/include" "include"
+  INCLUDE_DIRS "$ENV{H2_GIZOS_ROOT}/boards/h202_bk_v2/bk7258/include" "include"
   PRIV_REQUIRES ${H2_H202_BOARD_REQUIRES})

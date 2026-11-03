@@ -1,6 +1,6 @@
 # H202 H2Loader
 
-入口 `projects/h2loader/targets/h2loader_tar_zlib/loader/h202/` 组装公共 H2Loader Core、UART 与 BLE 管理和恢复流程。最小 Runtime 只配置安全的电源电平和外置存储，不启动音频、NFC 或灯效；H202 不使用 4G 模组。[MFG](./mfg) 是 Loader 角色，与它互相替换。
+入口 `projects/h2loader/targets/h2loader_tar_zlib/loader/h202_bk_v2/` 组装公共 H2Loader Core、UART 与 BLE 管理和恢复流程。最小 Runtime 只配置安全的电源电平和外置存储，不启动音频、NFC 或灯效；H202 不使用 4G 模组。[MFG](./mfg) 是 Loader 角色，与它互相替换。
 
 ## 构建
 
@@ -8,12 +8,12 @@
 
 ```sh
 bazel build --config=bk7258 \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/h202:package \
-  //projects/mfg/apps/h202:package
+  //projects/h2loader/targets/h2loader_tar_zlib/loader/h202_bk_v2:package \
+  //projects/mfg/apps/h202_bk_v2:package
 bazel build //projects/h2loader/targets/cc_binary/cli:h2loader
 ```
 
-两个入口都通过显式 `layout_files` 选择 `boards/h202/bk7258/layouts/`，不修改 `h2loader_firmware.bzl` 的内建板表。包 identity 为 `board=h202`、`target=bk7258`、`role=h2loader`；Loader 为 `image=h202-loader`，MFG 为 `image=h202-mfg`。
+两个入口都通过显式 `layout_files` 选择 `boards/h202_bk_v2/bk7258/layouts/`，不修改 `h2loader_firmware.bzl` 的内建板表。包 identity 为 `board=h202_bk_v2`、`target=bk7258`、`role=h2loader`；Loader 为 `image=h202-loader`，MFG 为 `image=h202-mfg`。
 
 ## 存储、分区与 SDK 配置
 
@@ -26,7 +26,7 @@ bazel build //projects/h2loader/targets/cc_binary/cli:h2loader
 | Preference | FlashDB KVDB，起始 `0x780000`，大小 `0x6000` |
 | Console | UART1（GPIO0/1），460800 baud；ROM 下载走 UART0（GPIO10/11） |
 
-权威输入是 `boards/h202/bk7258/ap.defaults`、`cp.defaults`、`layouts/{loader,mfg}/` 下的 defaults，以及两者共用的 `layouts/loader/partitions/bk7258/auto_partitions.csv`；`layouts/mfg` 另行关闭蓝牙并保留 MFG 自己的 RAM 划分。App 窗口不小于 Loader 窗口，满足 [BK7258 布局要求](../../firmware_types#新-board-接入要求)。
+权威输入是 `boards/h202_bk_v2/bk7258/ap.defaults`、`cp.defaults`、`layouts/{loader,mfg}/` 下的 defaults，以及两者共用的 `layouts/loader/partitions/bk7258/auto_partitions.csv`；`layouts/mfg` 另行关闭蓝牙并保留 MFG 自己的 RAM 划分。App 窗口不小于 Loader 窗口，满足 [BK7258 布局要求](../../firmware_types#新-board-接入要求)。
 
 外置 Flash 和 NFC、RGB 都由 GPIO54 控制的 `WAKE_3V3` 供电，板级在挂载存储前先打开它。挂载失败时 Loader 保留诊断并有限频率重试，不自动格式化，也不改用其他介质。原理图把 SD NAND 和 SPI Flash 列为二选一，本板只支持 QSPI Flash；原理图列出 128/256 Mbit 器件，而早期设备读到的 JEDEC 为 `0x856017`，卷容量固定为 8 MiB，启动日志会打印实际 JEDEC。
 
@@ -49,11 +49,11 @@ h2loader --no-ble --port <serial-port> status
 
 ```sh
 <secret-provider> | bazel run --config=bk7258 \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/h202:encrypted_recovery -- \
+  //projects/h2loader/targets/h2loader_tar_zlib/loader/h202_bk_v2:encrypted_recovery -- \
   --key-fd 0 --output-dir <new-absolute-dir>
 
 <secret-provider> | bazel run --config=bk7258 \
-  //projects/mfg/apps/h202:encrypted_recovery -- \
+  //projects/mfg/apps/h202_bk_v2:encrypted_recovery -- \
   --key-fd 0 --output-dir <new-absolute-dir>
 ```
 

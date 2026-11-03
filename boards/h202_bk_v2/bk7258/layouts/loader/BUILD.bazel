@@ -19,7 +19,7 @@ filegroup(
 
 filegroup(
     name = "cp_gpio",
-    srcs = ["//boards/h202/bk7258:cp/usr_gpio_cfg.h"],
+    srcs = ["//boards/h202_bk_v2/bk7258:cp/usr_gpio_cfg.h"],
 )
 
 filegroup(

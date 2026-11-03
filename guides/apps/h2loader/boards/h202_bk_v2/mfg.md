@@ -1,10 +1,10 @@
 # H202 MFG
 
-入口 `projects/mfg/apps/h202/` 替换 [H202 H2Loader](./h2loader)，是 Loader 角色，包为 `board=h202`、`target=bk7258`、`image=h202-mfg`、`role=h2loader`。语音引导的状态机位于 `apps/h202/app/`，入口 `ap/` 组合板级 Runtime、公共 H2Loader Core、UART 管理和 profile。
+入口 `projects/mfg/apps/h202_bk_v2/` 替换 [H202 H2Loader](./h2loader)，是 Loader 角色，包为 `board=h202_bk_v2`、`target=bk7258`、`image=h202-mfg`、`role=h2loader`。语音引导的状态机位于 `apps/h202_bk_v2/app/`，入口 `ap/` 组合板级 Runtime、公共 H2Loader Core、UART 管理和 profile。
 
 ```sh
-bazel build --config=bk7258 //projects/mfg/apps/h202:package
-bazel test //projects/mfg/apps/h202/... //boards/h202/bk7258/...
+bazel build --config=bk7258 //projects/mfg/apps/h202_bk_v2:package
+bazel test //projects/mfg/apps/h202_bk_v2/... //boards/h202_bk_v2/bk7258/...
 ```
 
 ## Loader 角色与镜像大小
@@ -58,7 +58,7 @@ MFG Runtime 初始化后、启动 Loader Core 之前，入口立即点亮全部�
 MFG 与 H202 Loader 互相替换。MP_C（AES-off）可在 Loader 或 MFG 中用管理更新互换：`send` 对方的 `.update.tar.zlib` 后 `reboot upgrade`。MP_J（AES-on）时公共运行时拒绝 Loader 在线自升级，进出 MFG 都要用对应的加密 recovery 镜像走 ROM 恢复：
 
 ```sh
-<secret-provider> | bazel run --config=bk7258 //projects/mfg/apps/h202:encrypted_recovery -- \
+<secret-provider> | bazel run --config=bk7258 //projects/mfg/apps/h202_bk_v2:encrypted_recovery -- \
   --key-fd 0 --output-dir <new-absolute-dir>
 ```
 
@@ -82,7 +82,7 @@ MFG 与 H202 Loader 互相替换。MP_C（AES-off）可在 Loader 或 MFG 中用
 
 ## 语音
 
-仓库保存 26 段 8 kHz 单声道 PCM 原稿。构建时 `prompts/ima_adpcm.py` 把首尾静音裁到 80 ms，再编码为 4-bit IMA ADPCM C 数组（约 221 KiB，原 PCM 约 906 KiB）；播放时解码并升到 16 kHz；安装包不带语音数据。“单击肚子上的按键重试。”和“单击肚子上的按键重试关机。”各只存一份，播放器在 5 条检测失败语音和 2 条关机失败语音之后自动接上，工人听到的完整措辞不变。文案和生成方法见 `projects/mfg/apps/h202/prompts/README.md`。ADPCM 会带来可闻的量化噪声，每条语音须在真机上确认听得清。
+仓库保存 26 段 8 kHz 单声道 PCM 原稿。构建时 `prompts/ima_adpcm.py` 把首尾静音裁到 80 ms，再编码为 4-bit IMA ADPCM C 数组（约 221 KiB，原 PCM 约 906 KiB）；播放时解码并升到 16 kHz；安装包不带语音数据。“单击肚子上的按键重试。”和“单击肚子上的按键重试关机。”各只存一份，播放器在 5 条检测失败语音和 2 条关机失败语音之后自动接上，工人听到的完整措辞不变。文案和生成方法见 `projects/mfg/apps/h202_bk_v2/prompts/README.md`。ADPCM 会带来可闻的量化噪声，每条语音须在真机上确认听得清。
 
 ## 验收边界
 

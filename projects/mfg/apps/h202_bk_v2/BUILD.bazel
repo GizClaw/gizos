@@ -13,12 +13,12 @@ package(default_visibility = ["//visibility:public"])
 # H202 bumps its own Loader-role MFG independently of //projects/mfg:version.
 app_version(
     name = "version",
-    value = "0.3.1",
+    value = "0.3.2",
 )
 
 firmware_version(
     name = "firmware_version",
-    build = "//boards/h202:version",
+    build = "//boards/h202_bk_v2:version",
     main_version = ":version",
 )
 
@@ -104,7 +104,7 @@ firmware_lib_component(
         "//libs/runtime",
         "//libs/utils",
         "//libs/wifi_sta",
-        "//projects/mfg/apps/h202/app:mfg",
+        "//projects/mfg/apps/h202_bk_v2/app:mfg",
     ],
 )
 
@@ -115,7 +115,7 @@ firmware_native_component(
         "ap/profile.c",
     ],
     hdrs = [],
-    component_directory = "projects/mfg/apps/h202/ap",
+    component_directory = "projects/mfg/apps/h202_bk_v2/ap",
     component_name = "ap",
     data = [
         "ap/CMakeLists.txt",
@@ -137,7 +137,7 @@ firmware_native_component(
         ":ap_launcher_component",
         ":entry_tasks",
         ":firmware_lib",
-        "//boards/h202/bk7258:mfg",
+        "//boards/h202_bk_v2/bk7258:mfg",
         "//libs/bundle",
         "//libs/command",
         "//libs/pal",
@@ -150,7 +150,7 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
         "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
-        "//projects/mfg/apps/h202/app:mfg",
+        "//projects/mfg/apps/h202_bk_v2/app:mfg",
     ],
 )
 
@@ -163,24 +163,24 @@ h2loader_bk7258_firmware(
         "ap/profile.c",
     ],
     ap_task_policy = ":ap_task_policy",
-    board = "h202",
+    board = "h202_bk_v2",
     cp_task_policy = ":cp_task_policy",
     graph = [":mfg_launcher"],
     # Full MFG peripherals; CP/AP link at the App-window XIP addresses.
     layout_files = {
         "ap_config": [
-            "//boards/h202/bk7258:ap.defaults",
-            "//boards/h202/bk7258/layouts/mfg:ap.defaults",
+            "//boards/h202_bk_v2/bk7258:ap.defaults",
+            "//boards/h202_bk_v2/bk7258/layouts/mfg:ap.defaults",
         ],
-        "ap_gpio": "//boards/h202/bk7258/layouts/mfg:ap_gpio",
+        "ap_gpio": "//boards/h202_bk_v2/bk7258/layouts/mfg:ap_gpio",
         "cp_config": [
-            "//boards/h202/bk7258:cp.defaults",
-            "//boards/h202/bk7258/layouts/mfg:cp.defaults",
+            "//boards/h202_bk_v2/bk7258:cp.defaults",
+            "//boards/h202_bk_v2/bk7258/layouts/mfg:cp.defaults",
         ],
-        "cp_gpio": "//boards/h202/bk7258/layouts/mfg:cp_gpio",
-        "project_support_files": ["//boards/h202/bk7258/layouts/mfg:layout"],
-        "ram_regions": "//boards/h202/bk7258/layouts/mfg:ram_regions.csv",
-        "recovery_config": "//boards/h202/bk7258/layouts/loader:bk_loader.json",
+        "cp_gpio": "//boards/h202_bk_v2/bk7258/layouts/mfg:cp_gpio",
+        "project_support_files": ["//boards/h202_bk_v2/bk7258/layouts/mfg:layout"],
+        "ram_regions": "//boards/h202_bk_v2/bk7258/layouts/mfg:ram_regions.csv",
+        "recovery_config": "//boards/h202_bk_v2/bk7258/layouts/loader:bk_loader.json",
     },
     project = "CMakeLists.txt",
     project_name = "h2_bk_h202_mfg",
@@ -190,7 +190,7 @@ h2loader_bk7258_firmware(
 
 h2loader_tar_zlib(
     name = "package",
-    board = "h202",
+    board = "h202_bk_v2",
     firmware = ":firmware",
     image = "h202-mfg",
     role = "h2loader",
@@ -199,6 +199,6 @@ h2loader_tar_zlib(
 
 h2loader_bk_recovery(
     name = "encrypted_recovery",
-    board = "h202",
+    board = "h202_bk_v2",
     firmware = ":firmware",
 )

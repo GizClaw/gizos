@@ -108,7 +108,7 @@ int main(void) {
   assert(loader_runtime_config(&config) == H2_PAL_ERR_NO_MEMORY);
   fs_result = 0;
   assert(loader_runtime_config(&config) == H2_PAL_OK);
-  assert(strcmp(config.board, "h202") == 0 &&
+  assert(strcmp(config.board, "h202_bk_v2") == 0 &&
          strcmp(config.target, "bk7258") == 0);
   assert(config.fs == &s_h2loader_fs);
   assert(strcmp(config.ble_local_name, "h202-ABCDEF") == 0);

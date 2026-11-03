@@ -59,7 +59,7 @@ firmware_native_component(
         "ap/ap_main.c",
     ],
     hdrs = [],
-    component_directory = "projects/h2loader/targets/h2loader_tar_zlib/loader/h202/ap",
+    component_directory = "projects/h2loader/targets/h2loader_tar_zlib/loader/h202_bk_v2/ap",
     component_name = "ap",
     data = ["ap/CMakeLists.txt"],
     execution_unit = "ap",
@@ -82,7 +82,7 @@ firmware_native_component(
         ":ap_launcher_component",
         ":entry_tasks",
         ":firmware_lib",
-        "//boards/h202/bk7258",
+        "//boards/h202_bk_v2/bk7258",
         "//libs/bundle",
         "//libs/command",
         "//libs/pal",
@@ -114,7 +114,7 @@ cc_test(
     }),
     deps = [
         ":loader_test_source",
-        "//boards/h202/bk7258:loader_headers",
+        "//boards/h202_bk_v2/bk7258:loader_headers",
         "//libs/pal:unsupported",
         "//libs/runtime",
         "//projects/h2loader/libs/h2loader",
@@ -129,7 +129,7 @@ cc_library(
 
 firmware_version(
     name = "version",
-    build = "//boards/h202:version",
+    build = "//boards/h202_bk_v2:version",
     main_version = "//projects/h2loader/apps/loader:version",
 )
 
@@ -141,23 +141,23 @@ h2loader_bk7258_firmware(
         "ap/ap_main.c",
     ],
     ap_task_policy = ":ap_task_policy",
-    board = "h202",
+    board = "h202_bk_v2",
     cp_task_policy = ":cp_task_policy",
     graph = [":h2loader_launcher"],
     layout_files = {
         "ap_config": [
-            "//boards/h202/bk7258:ap.defaults",
-            "//boards/h202/bk7258/layouts/loader:ap.defaults",
+            "//boards/h202_bk_v2/bk7258:ap.defaults",
+            "//boards/h202_bk_v2/bk7258/layouts/loader:ap.defaults",
         ],
-        "ap_gpio": "//boards/h202/bk7258/layouts/loader:ap_gpio",
+        "ap_gpio": "//boards/h202_bk_v2/bk7258/layouts/loader:ap_gpio",
         "cp_config": [
-            "//boards/h202/bk7258:cp.defaults",
-            "//boards/h202/bk7258/layouts/loader:cp.defaults",
+            "//boards/h202_bk_v2/bk7258:cp.defaults",
+            "//boards/h202_bk_v2/bk7258/layouts/loader:cp.defaults",
         ],
-        "cp_gpio": "//boards/h202/bk7258/layouts/loader:cp_gpio",
-        "project_support_files": ["//boards/h202/bk7258/layouts/loader:layout"],
-        "ram_regions": "//boards/h202/bk7258/layouts/loader:ram_regions.csv",
-        "recovery_config": "//boards/h202/bk7258/layouts/loader:bk_loader.json",
+        "cp_gpio": "//boards/h202_bk_v2/bk7258/layouts/loader:cp_gpio",
+        "project_support_files": ["//boards/h202_bk_v2/bk7258/layouts/loader:layout"],
+        "ram_regions": "//boards/h202_bk_v2/bk7258/layouts/loader:ram_regions.csv",
+        "recovery_config": "//boards/h202_bk_v2/bk7258/layouts/loader:bk_loader.json",
     },
     project = ":CMakeLists.txt",
     project_name = "h2_bk_h2loader",
@@ -167,7 +167,7 @@ h2loader_bk7258_firmware(
 
 h2loader_tar_zlib(
     name = "package",
-    board = "h202",
+    board = "h202_bk_v2",
     firmware = ":firmware",
     image = "h202-loader",
     role = "h2loader",
@@ -176,6 +176,6 @@ h2loader_tar_zlib(
 
 h2loader_bk_recovery(
     name = "encrypted_recovery",
-    board = "h202",
+    board = "h202_bk_v2",
     firmware = ":firmware",
 )

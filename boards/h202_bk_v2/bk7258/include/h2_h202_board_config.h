@@ -2,7 +2,7 @@
 #define H2_H202_BOARD_CONFIG_H
 
 /* H202 BK main V2.0 / Pin Multiplexing V2.0; GPIO indices, not package pins. */
-#define H2_H202_BOARD_NAME "h202"
+#define H2_H202_BOARD_NAME "h202_bk_v2"
 #define H2_H202_TARGET_NAME "bk7258"
 #define H2_H202_INTERNAL_FLASH_SIZE_BYTES (8u * 1024u * 1024u)
 #define H2_H202_PSRAM_SIZE_BYTES (16u * 1024u * 1024u)

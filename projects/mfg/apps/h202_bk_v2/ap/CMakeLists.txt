@@ -10,11 +10,11 @@ armino_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "."
-    "${REPO_ROOT}/projects/mfg/apps/h202/app/include"
+    "${REPO_ROOT}/projects/mfg/apps/h202_bk_v2/app/include"
     "${REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${REPO_ROOT}/projects/h2loader/native_component_src/bk7258/ap/h2loader_bk/include"
-    "${REPO_ROOT}/boards/h202/bk7258/include"
-    "${REPO_ROOT}/boards/h202/bk7258/ap/include"
+    "${REPO_ROOT}/boards/h202_bk_v2/bk7258/include"
+    "${REPO_ROOT}/boards/h202_bk_v2/bk7258/ap/include"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/include"
     "${REPO_ROOT}/libs/atomic/include"
     "${REPO_ROOT}/libs/bundle/include"
@@ -49,7 +49,7 @@ set(H2_H202_PROMPTS
     mic_left mic_right listen power plus minus aging waiting charge_failed
     nfc_failed wifi_failed mic_failed aging_failed incomplete unsaved
     poweroff_failed network boot retry retry_poweroff)
-set(H2_H202_PROMPT_DIR "${REPO_ROOT}/projects/mfg/apps/h202/prompts")
+set(H2_H202_PROMPT_DIR "${REPO_ROOT}/projects/mfg/apps/h202_bk_v2/prompts")
 set(H2_H202_PROMPT_ENCODER "${H2_H202_PROMPT_DIR}/ima_adpcm.py")
 set(H2_H202_PROMPT_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_h202_mfg_prompts.c")
 set(H2_H202_PROMPT_ARGS)
