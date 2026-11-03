@@ -1,5 +1,19 @@
 # FoloToy AI Passport
 
+This in-tree board and its Loader/MFG entries are part of the expanded
+[PR 771](https://github.com/GizClaw/gizos/pull/771) scope. The board owns wiring
+and the product layout; `projects/mfg/apps/ai_passport` owns the ten-step profile,
+phase resource policy and encrypted recording store. Reusable libraries and ESP
+providers remain free of board pins and partition choices. Downstream Firmwares
+can still compose the public C3 integration without depending on these images.
+
+The MFG owner uses the checked ESP Wi-Fi stop API to release driver/netif memory
+between radio and audio phases, including the Wi-Fi-to-BLE transition in a single
+checklist. It quiesces clients and serializes ownership before stopping, preserves
+saved credentials, rejects a stop during active SoftAP use, and retries incomplete
+cleanup. This lifecycle is required by the no-PSRAM target's memory budget;
+completed checklists do not establish endurance or repeated-cycle guarantees.
+
 ESP32-C3 at 160 MHz, 8 MiB Flash, no PSRAM. The board composes public GizOS
 ESP-IDF providers with the product wiring; the shared manufacturing session is
 at `//projects/mfg/apps/ai_passport:package` (`--config=esp32c3`). The ordinary

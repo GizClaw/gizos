@@ -1,7 +1,9 @@
 #include "h2_esp_es8311_audio_system.h"
 #include "fake_sdk.h"
+#include "esp_aec.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Compile the complete platform implementation against SDK substitutes. */
@@ -30,6 +32,14 @@ static size_t read_bytes;
 static unsigned read_errors;
 static unsigned sr_init_calls;
 static int sr_init_result;
+static int live_e2e, sr_process_result;
+static unsigned sr_process_calls, live_direct_frames, live_worker_frames;
+static unsigned live_mic_starts, live_track_closes;
+static h2_pal_audio_track_t live_track;
+struct h2_pal_queue {
+  h2_esp_es8311_mic_queue_frame_t item;
+};
+static struct h2_pal_queue live_queue;
 static unsigned device_index(i2c_master_dev_handle_t dev) {
   assert(dev == (void*)1 || dev == (void*)2);
   return (unsigned)(uintptr_t)dev - 1u;
@@ -90,6 +100,7 @@ int i2c_master_bus_rm_device(i2c_master_dev_handle_t dev) {
 }
 int i2c_del_master_bus(i2c_master_bus_handle_t bus) {
   (void)bus;
+  if (live_e2e) running = NULL;
   return ESP_OK;
 }
 int i2s_new_channel(const i2s_chan_config_t* cfg, i2s_chan_handle_t* tx,
@@ -132,14 +143,28 @@ int i2s_channel_read(i2s_chan_handle_t ch, void* buf, size_t len, size_t* out,
   (void)buf;
   (void)len;
   (void)timeout;
+  if (live_e2e) {
+    assert(running && ch == running->rx_chan && len == 512u * 4u);
+    int16_t* pcm = buf;
+    for (unsigned i = 0; i < 512; ++i) {
+      pcm[2 * i + running->config.mic_channel_index] = 1000;
+      pcm[2 * i + running->config.ref_channel_index] = 200;
+    }
+    if (read_worker) {
+      ++live_worker_frames;
+    } else {
+      assert(!running->mic_started && !running->mic_task);
+      ++live_direct_frames;
+    }
+  }
   if (read_worker) {
     read_worker->mic_task_started =
         0; /* Run exactly one real worker iteration. */
     *out = read_bytes;
     return read_result;
   }
-  *out = 0;
-  return ESP_ERR_TIMEOUT;
+  *out = live_e2e ? len : 0;
+  return live_e2e ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 int i2s_channel_write(i2s_chan_handle_t ch, const void* buf, size_t len,
                       size_t* out, uint32_t timeout) {
@@ -199,6 +224,10 @@ BaseType_t xTaskCreatePinnedToCore(void (*fn)(void*), const char* name,
   (void)ctx;
   (void)priority;
   (void)core;
+  if (live_e2e && fn == es8311_audio_mic_task) {
+    assert(ctx == running);
+    ++live_mic_starts;
+  }
   *out = (void*)7;
   return pdPASS;
 }
@@ -232,15 +261,23 @@ int h2_audio_mixer_create_track(h2_audio_mixer_t* m,
   (void)m;
   (void)a;
   (void)c;
-  (void)t;
+  if (live_e2e) {
+    running = a->user;
+    live_track.audio = a;
+    *t = &live_track;
+    return H2_AUDIO_OK;
+  }
   return H2_AUDIO_ERR_UNSUPPORTED;
 }
 int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* s,
                           const h2_esp_es8311_audio_system_config_t* c) {
-  (void)c;
   ++sr_init_calls;
   if (sr_init_result != H2_AUDIO_OK) return sr_init_result;
   s->initialized = s->available = 1;
+  s->frame_samples = c->frame_samples_per_channel;
+  s->raw_channels = c->raw_channels;
+  s->mic_channel_index = c->mic_channel_index;
+  s->ref_channel_index = c->ref_channel_index;
   return H2_AUDIO_OK;
 }
 void h2_esp_es8311_sr_deinit(h2_esp_es8311_sr_state_t* s) {
@@ -250,11 +287,22 @@ void h2_esp_es8311_sr_reset(h2_esp_es8311_sr_state_t* s) { (void)s; }
 int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* s,
                              const h2_audio_frame_t* r, h2_audio_frame_t* o,
                              uint32_t t) {
-  (void)s;
-  (void)r;
-  (void)o;
   (void)t;
-  return H2_AUDIO_ERR_UNSUPPORTED;
+  if (!live_e2e) return H2_AUDIO_ERR_UNSUPPORTED;
+  assert(s->initialized && s->available && s->frame_samples == 512);
+  assert(r->channels == 2 && r->bytes == 512u * 4u);
+  assert(o->channels == 1 && o->capacity >= 512u * 2u);
+  ++sr_process_calls;
+  o->bytes = o->samples_per_channel = 0;
+  if (sr_process_result) return sr_process_result;
+  const int16_t* raw = r->data;
+  int16_t* out = o->data;
+  for (unsigned i = 0; i < 512; ++i)
+    out[i] = (int16_t)(raw[2 * i + s->mic_channel_index] -
+                       raw[2 * i + s->ref_channel_index]);
+  o->bytes = 512u * 2u;
+  o->samples_per_channel = 512;
+  return H2_AUDIO_OK;
 }
 
 static const h2_pal_queue_api_t queue_api = {0};
@@ -282,6 +330,160 @@ static h2_esp_es8311_audio_system_config_t config(void) {
       .sync_api = &sync_api,
   };
 }
+static int live_queue_create(void* user, const h2_pal_queue_config_t* cfg,
+                             h2_pal_queue_t** out) {
+  (void)user;
+  assert(cfg->item_size == sizeof(live_queue.item));
+  *out = &live_queue;
+  return H2_PAL_QUEUE_OK;
+}
+static void live_queue_destroy(void* user, h2_pal_queue_t* q) {
+  (void)user;
+  assert(q == &live_queue);
+}
+static int live_queue_reset(void* user, h2_pal_queue_t* q) {
+  (void)user;
+  assert(q == &live_queue);
+  memset(&live_queue.item, 0, sizeof(live_queue.item));
+  return H2_PAL_QUEUE_OK;
+}
+static int live_queue_send(void* user, h2_pal_queue_t* q, const void* item) {
+  (void)user;
+  assert(q == &live_queue);
+  live_queue.item = *(const h2_esp_es8311_mic_queue_frame_t*)item;
+  assert(live_queue.item.bytes == 512u * 2u);
+  for (unsigned i = 0; i < 512; ++i) assert(live_queue.item.samples[i] == 800);
+  return H2_PAL_QUEUE_OK;
+}
+static int live_queue_recv(void* user, h2_pal_queue_t* q, void* item,
+                           uint32_t timeout) {
+  (void)user;
+  (void)timeout;
+  assert(q == &live_queue && running && running->mic_started);
+  /* Deliver one real mic-worker iteration per PAL read without host threads.
+   * Keep its simulated task alive until the diagnostic stops the session. */
+  read_worker = running;
+  read_result = ESP_OK;
+  read_bytes = 512u * 4u;
+  es8311_audio_mic_task(running);
+  read_worker = NULL;
+  running->mic_task_started = 1;
+  running->mic_task = (void*)7;
+  memcpy(item, &live_queue.item, sizeof(live_queue.item));
+  return H2_PAL_QUEUE_OK;
+}
+static int live_track_write(h2_pal_audio_track_t* t,
+                            const h2_audio_frame_t* frame, uint32_t timeout) {
+  (void)timeout;
+  assert(t == &live_track && running && running->playback_started);
+  assert(frame->bytes == 512u * 2u && frame->samples_per_channel == 512);
+  return H2_AUDIO_OK;
+}
+static int live_track_close(h2_pal_audio_track_t* t) {
+  assert(t == &live_track);
+  ++live_track_closes;
+  return H2_AUDIO_OK;
+}
+
+/* SDK metrics are deterministic here; host runs do not measure device timing,
+ * heap use, or acoustics. Synthetic/mode probes are linked but never invoked.
+ */
+UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task) {
+  (void)task;
+  return 4096;
+}
+int64_t esp_timer_get_time(void) {
+  static int64_t now;
+  return ++now;
+}
+size_t heap_caps_get_free_size(unsigned caps) {
+  (void)caps;
+  return 1024u * 1024u;
+}
+size_t heap_caps_get_largest_free_block(unsigned caps) {
+  return heap_caps_get_free_size(caps);
+}
+size_t heap_caps_get_minimum_free_size(unsigned caps) {
+  return heap_caps_get_free_size(caps);
+}
+int heap_caps_monitor_local_minimum_free_size_start(void) { return ESP_OK; }
+int heap_caps_monitor_local_minimum_free_size_stop(void) { return ESP_OK; }
+void* heap_caps_aligned_calloc(size_t alignment, size_t count, size_t size,
+                               unsigned caps) {
+  (void)alignment;
+  (void)caps;
+  return calloc(count, size);
+}
+void heap_caps_free(void* p) { free(p); }
+aec_handle_t* aec_create_from_config(aec_config_t* c) {
+  (void)c;
+  assert(0 && "synthetic AEC probe is not part of this fixture");
+  return NULL;
+}
+int aec_get_chunksize(const aec_handle_t* h) {
+  (void)h;
+  return 512;
+}
+void aec_process(const aec_handle_t* h, int16_t* mic, int16_t* ref,
+                 int16_t* out) {
+  (void)h;
+  (void)mic;
+  (void)ref;
+  (void)out;
+  assert(0 && "synthetic AEC probe is not part of this fixture");
+}
+void aec_destroy(aec_handle_t* h) { (void)h; }
+
+#include "e2e/h2_es8311_aec_e2e.c"
+
+static void test_live_aec_diagnostic(void) {
+  const unsigned expected_direct_frames[] = {300, 0, 3};
+  const unsigned expected_sr_calls[] = {600, 0, 3};
+  const h2_pal_queue_vtable_t vtable = {
+      .create = live_queue_create,
+      .destroy = live_queue_destroy,
+      .reset = live_queue_reset,
+      .send_latest = live_queue_send,
+      .recv = live_queue_recv,
+  };
+  const h2_pal_queue_api_t live_queue_api = {.vtable = &vtable};
+  live_e2e = 1;
+  live_track.write = live_track_write;
+  live_track.close = live_track_close;
+  for (int deferred = 0; deferred < 2; ++deferred) {
+    h2_esp_es8311_audio_system_config_t cfg = config();
+    cfg.enable_aec = 1;
+    cfg.defer_aec_init = deferred;
+    cfg.frame_samples_per_channel = 512;
+    cfg.mic_channel_index = (uint8_t)deferred;
+    cfg.ref_channel_index = (uint8_t)(1 - deferred);
+    cfg.queue_api = &live_queue_api;
+    unsigned char original[sizeof(cfg)];
+    memcpy(original, &cfg, sizeof(cfg));
+    for (int fault = 0; fault < 3; ++fault) {
+      sr_init_result = fault == 1 ? H2_AUDIO_ERR_NO_MEMORY : H2_AUDIO_OK;
+      sr_process_result = fault == 2 ? H2_AUDIO_ERR_IO : H2_AUDIO_OK;
+      sr_init_calls = sr_process_calls = live_direct_frames = 0;
+      live_worker_frames = live_mic_starts = live_track_closes = 0;
+      write_count = i2s_creations = 0;
+      running = NULL;
+      assert(h2_es8311_aec_live_e2e(&cfg) == (fault ? 3 : 0));
+      assert(memcmp(original, &cfg, sizeof(cfg)) == 0);
+      assert(sr_init_calls == 3);
+      assert(live_direct_frames == expected_direct_frames[fault]);
+      assert(sr_process_calls == expected_sr_calls[fault]);
+      assert(live_worker_frames == (fault == 0 ? 300u : 0u));
+      assert(live_mic_starts == (fault == 0 ? 6u : 0u));
+      assert(live_track_closes == (fault == 1 ? 0u : 3u));
+      assert(i2s_creations == (fault == 1 ? 0u : 3u));
+      assert(!running && !pa_enabled && !read_worker);
+    }
+  }
+  live_e2e = 0;
+  sr_init_result = sr_process_result = 0;
+  write_count = 0;
+}
+
 static void open_system(h2_esp_es8311_audio_system_t* s) {
   h2_esp_es8311_audio_system_config_t cfg = config();
   assert(h2_esp_es8311_audio_system_init(s, &cfg) == H2_AUDIO_OK);
@@ -542,6 +744,7 @@ static void test_deferred_aec_does_not_block_playback_open(void) {
 }
 
 int main(void) {
+  test_live_aec_diagnostic();
   test_deferred_aec_does_not_block_playback_open();
   test_mic_read_errors();
   test_diagnostic_capture_epoch();

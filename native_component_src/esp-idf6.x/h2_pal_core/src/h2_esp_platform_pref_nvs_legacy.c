@@ -2,6 +2,7 @@
 #include "h2_esp_platform_pref_nvs_legacy.h"
 #include "h2_esp_platform_safe_call.h"
 
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
@@ -165,6 +166,7 @@ static esp_err_t pref_nvs_get_blob(nvs_handle_t handle, const char* key,
       .handle = handle,
   };
   uint8_t* scratch = NULL;
+  uint8_t* large_blob = NULL;
   size_t scratch_capacity = 0u;
   size_t capacity;
   esp_err_t result;
@@ -181,10 +183,19 @@ static esp_err_t pref_nvs_get_blob(nvs_handle_t handle, const char* key,
       if (rc == H2_PAL_OK) h2_esp_platform_safe_io_release();
       return ESP_ERR_NO_MEM;
     }
-    call.data = scratch;
-    if (call.data_len > scratch_capacity) {
-      call.data_len = scratch_capacity;
+    /* NVS reads whole blobs; a smaller scratch is not a smaller value limit.
+     * Keep the caller's capacity and stage larger values/manifests in transient
+     * byte-addressable Internal RAM for the cache-sensitive SDK call. */
+    if (capacity > scratch_capacity) {
+      large_blob = (uint8_t*)heap_caps_malloc(
+          capacity, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (large_blob == NULL) {
+        h2_esp_platform_safe_io_release();
+        return ESP_ERR_NO_MEM;
+      }
+      scratch = large_blob;
     }
+    call.data = scratch;
   }
   result = pref_nvs_submit(&call);
   *inout_len = call.data_len;
@@ -194,7 +205,10 @@ static esp_err_t pref_nvs_get_blob(nvs_handle_t handle, const char* key,
     else if (call.data_len > 0u)
       memcpy(out_data, scratch, call.data_len);
   }
-  if (out_data != NULL) h2_esp_platform_safe_io_release();
+  if (out_data != NULL) {
+    heap_caps_free(large_blob);
+    h2_esp_platform_safe_io_release();
+  }
   return result;
 }
 

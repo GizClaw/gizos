@@ -7,8 +7,13 @@ typedef struct {
   int mode, nlp_level;
 } aec_config_t;
 typedef struct aec_handle aec_handle_t;
-#define AEC_MODE_FD_LOW_COST 5
+typedef int aec_mode_t;
+#define AEC_MODE_SR_LOW_COST 1
+#define AEC_MODE_SR_HIGH_PERF 2
 #define AEC_MODE_VOIP_LOW_COST 3
+#define AEC_MODE_VOIP_HIGH_PERF 4
+#define AEC_MODE_FD_LOW_COST 5
+#define AEC_MODE_FD_HIGH_PERF 6
 #define AEC_NLP_LEVEL_NORMAL 0
 #define AEC_NLP_LEVEL_AGGR 1
 aec_handle_t* aec_create_from_config(aec_config_t* config);

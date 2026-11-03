@@ -79,7 +79,8 @@ int h2_es8311_aec_e2e(void) {
           int near = phase == 0 ? 0
                                 : (int)(3000 * sin(6.283185307179586 * 997.0 *
                                                    sample / 16000.0));
-          raw[2 * i] = echo + near;
+          /* Half-scale S16 echo plus the 3000-count tone fits in S16. */
+          raw[2 * i] = (int16_t)(echo + near);
           raw[2 * i + 1] = ref;
         }
         int64_t start = esp_timer_get_time();
@@ -161,12 +162,16 @@ int h2_es8311_aec_live_e2e(const h2_esp_es8311_audio_system_config_t* config) {
     printf("AEC_LIVE END result=FAIL reason=invalid_config\n");
     return 1;
   }
+  /* Direct capture precedes mic start, which normally activates deferred AEC.
+   * This diagnostic owns its system, so eagerly initialize a private config. */
+  h2_esp_es8311_audio_system_config_t live_config = *config;
+  live_config.defer_aec_init = 0;
   int failures = 0;
   for (int cycle = 0; cycle < 3; ++cycle) {
     size_t before = heap_caps_get_free_size(CAPS);
     h2_esp_es8311_audio_system_t* system = calloc(1, sizeof(*system));
     if (!system) return 1;
-    int rc = h2_esp_es8311_audio_system_init(system, config);
+    int rc = h2_esp_es8311_audio_system_init(system, &live_config);
     if (!rc) rc = h2_esp_es8311_audio_system_prepare(system);
     h2_pal_audio_t* audio =
         rc ? NULL : h2_esp_es8311_audio_system_audio(system);

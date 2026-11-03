@@ -16,8 +16,8 @@ typedef struct h2_cw2017_transport {
 } h2_cw2017_transport_t;
 
 typedef struct h2_cw2017_sample {
-  uint32_t voltage_uv;
-  uint16_t soc_q8; /**< State of charge in 1/256 percent units, 0..25600. */
+  uint32_t voltage_uv; /**< Microvolts; floor((VCELL & 0x3fff) * 625 / 2). */
+  uint16_t soc_q8; /**< Exact 1/256 percent units, inclusive range 0..25600. */
 } h2_cw2017_sample_t;
 
 /** Read version register 0x00. An ACK does not distinguish compatible chips.
@@ -25,13 +25,16 @@ typedef struct h2_cw2017_sample {
  * Returns INVALID_ARG, OK or the original transport error. */
 h2_pal_result_t h2_cw2017_read_version(const h2_cw2017_transport_t* transport,
                                        uint8_t* out_version);
-/** Read VCELL independently of SOC readiness. Output microvolts is cleared
- * on failure. Returns INVALID_ARG, OK or the original transport error.
- * Same borrowing, task-context and serialization contract as read_sample. */
+/** Read the low 14 bits of big-endian VCELL at 0x02, independently of SOC.
+ * Convert 312.5 microvolts/count to integer microvolts, rounding down.
+ * Output is cleared on failure. Returns INVALID_ARG, OK or the original
+ * transport error. Same borrowing and task-context contract as read_sample. */
 h2_pal_result_t h2_cw2017_read_voltage(const h2_cw2017_transport_t* transport,
                                        uint32_t* out_voltage_uv);
 /** Read voltage and SOC in two register transactions; not an atomic hardware
- * snapshot. Invalid/not-ready SOC returns WOULD_BLOCK and clears output.
+ * snapshot. SOC at 0x04 is big-endian Q8 percent, returned without rounding.
+ * The inclusive 0..25600 range represents 0..100 percent. Greater values return
+ * WOULD_BLOCK and clear both sample fields, including the valid voltage.
  * The caller must configure and wake the gauge with its own battery profile
  * before sampling. No reset, profile programming or battery policy is implied.
  * Voltage rounds half microvolts down. Returns INVALID_ARG, WOULD_BLOCK, OK

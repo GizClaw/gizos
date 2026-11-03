@@ -1,6 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "test_source",
+    testonly = True,
+    textual_hdrs = [
+        "h2_es8311_aec_e2e.c",
+        "h2_es8311_aec_e2e.h",
+    ],
+)
 
 firmware_native_component(
     name = "probe",

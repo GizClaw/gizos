@@ -132,12 +132,14 @@ static int screen_draw(void* user, const h2_display_rect_t* area,
       area->x >= WIDTH || area->y >= HEIGHT || area->width > WIDTH - area->x ||
       area->height > HEIGHT - area->y || stride < (size_t)area->width * 2u)
     return H2_PAL_ERR_INVALID_ARG;
+  const size_t row_bytes = (size_t)area->width * sizeof(*transfer);
+  if ((size_t)(area->height - 1) > (SIZE_MAX - row_bytes) / stride)
+    return H2_PAL_ERR_INVALID_ARG;
   for (int y = 0; y < area->height; y += ROWS) {
     int rows = area->height - y < ROWS ? area->height - y : ROWS;
     for (int row = 0; row < rows; ++row)
       memcpy(transfer + row * area->width,
-             (const uint8_t*)pixels + (size_t)(y + row) * stride,
-             (size_t)area->width * sizeof(*transfer));
+             (const uint8_t*)pixels + (size_t)(y + row) * stride, row_bytes);
     if (esp_lcd_panel_draw_bitmap(panel, area->x, area->y + y,
                                   area->x + area->width, area->y + y + rows,
                                   transfer) != ESP_OK ||
