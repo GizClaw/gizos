@@ -812,11 +812,12 @@ static void test_p1_recovery_guard_write_failures_remain_retryable(void) {
     if (failure == 5u) fixture.close_fail_after_commit = fixture.commits + 2u;
     const int expected =
         failure == 2u || failure == 5u ? H2_PAL_ERR_IO : H2_PAL_ERR_WRITE;
+    const uint32_t expected_boot_intent = failure < 2u
+                                              ? H2_LOADER_BOOT_INTENT_AUTO
+                                              : H2_LOADER_BOOT_INTENT_LOADER;
     assert(h2_loader_startup(&fixture.loader, &action) == expected);
     assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
-    assert(fixture.boot_intent == (failure < 2u
-                                       ? H2_LOADER_BOOT_INTENT_AUTO
-                                       : H2_LOADER_BOOT_INTENT_LOADER));
+    assert(fixture.boot_intent == expected_boot_intent);
     if (failure < 3u) assert(fixture.set_blob_calls == blob_writes);
     if (failure < 5u)
       assert_record_unchanged(&fixture, "partition_1", &old_p1);
