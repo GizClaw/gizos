@@ -14,6 +14,8 @@ typedef struct fake {
   uint32_t live[H2_H202_MFG_OP_COUNT];
   uint32_t canceled[256];
   unsigned cancels;
+  unsigned volume_changes;
+  int volume_delta;
   h2_h202_mfg_color_t color;
   h2_pal_result_t begin_rc;
 } fake_t;
@@ -48,14 +50,21 @@ static h2_pal_result_t fake_light(void* user, h2_h202_mfg_color_t color) {
   return H2_PAL_OK;
 }
 
+static void fake_aging_volume(void* user, int delta_percent) {
+  (void)user;
+  ++f.volume_changes;
+  f.volume_delta += delta_percent;
+}
+
 static const h2_h202_mfg_config_t config = {
     .charger_timeout_ms = 60000u,
     .nfc_timeout_ms = 60000u,
     .wifi_timeout_ms = 30000u,
-    .cellular_timeout_ms = 60000u,
     .power_hold_ms = 2000u,
-    .callbacks = {
-        .begin = fake_begin, .cancel = fake_cancel, .light = fake_light}};
+    .callbacks = {.begin = fake_begin,
+                  .cancel = fake_cancel,
+                  .light = fake_light,
+                  .aging_volume = fake_aging_volume}};
 
 static h2_h202_mfg_status_t status(void) {
   h2_h202_mfg_status_t out;
@@ -128,7 +137,7 @@ static void expect_prompt(h2_h202_mfg_prompt_t prompt) {
   assert(r != NULL && r->prompt_count >= 1u && r->prompts[0] == prompt);
 }
 
-/* Stage 02 through stage 04, with both networks passing. */
+/* Stage 02 through stage 04, with Wi-Fi passing. */
 static void pass_to_mics(void) {
   expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
   assert(f.color == H2_H202_MFG_COLOR_AMBER);
@@ -144,8 +153,6 @@ static void pass_to_mics(void) {
   assert(f.color == H2_H202_MFG_COLOR_PURPLE);
   expect_prompt(H2_H202_MFG_PROMPT_NFC);
   assert(last(H2_H202_MFG_OP_SENSOR)->job == H2_H202_MFG_JOB_NFC);
-  /* 4G finishes in the background before stage 04. */
-  done(H2_H202_MFG_OP_CELLULAR, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_SENSOR, H2_PAL_OK, 0);
   expect_prompt(H2_H202_MFG_PROMPT_NFC_PASSED);
@@ -156,9 +163,6 @@ static void pass_to_mics(void) {
   expect_prompt(H2_H202_MFG_PROMPT_NETWORK);
   done(H2_H202_MFG_OP_WIFI, H2_PAL_OK, 0);
   expect_prompt(H2_H202_MFG_PROMPT_WIFI_PASSED);
-  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
-  expect(H2_H202_MFG_CELLULAR, H2_H202_MFG_PHASE_ANNOUNCE);
-  expect_prompt(H2_H202_MFG_PROMPT_CELLULAR_PASSED);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
   expect(H2_H202_MFG_LEFT_MIC, H2_H202_MFG_PHASE_ACTIVE);
 }
@@ -192,34 +196,73 @@ static void pass_mics_and_keys(void) {
 static void test_flow(void) {
   begin_test(NULL);
   assert(status().wifi == H2_H202_MFG_NET_RUNNING);
-  assert(status().cellular == H2_H202_MFG_NET_RUNNING);
   pass_to_mics();
   pass_mics_and_keys();
   expect(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
   assert(last(H2_H202_MFG_OP_AUDIO)->job == H2_H202_MFG_JOB_AGING);
   assert(last(H2_H202_MFG_OP_WIFI)->job == H2_H202_MFG_JOB_MAINTAIN);
-  assert(last(H2_H202_MFG_OP_CELLULAR)->job == H2_H202_MFG_JOB_MAINTAIN);
+  /* The rainbow runs on the sensor worker, not inside the audio loop. */
+  assert(last(H2_H202_MFG_OP_SENSOR)->job == H2_H202_MFG_JOB_RAINBOW);
   /* Aging network loss is diagnostic only. */
   done(H2_H202_MFG_OP_WIFI, H2_PAL_ERR_IO, 0);
   assert(status().results[H2_H202_MFG_WIFI] == H2_H202_MFG_PASSED);
   uint32_t aging = f.live[H2_H202_MFG_OP_AUDIO];
+  uint32_t rainbow = f.live[H2_H202_MFG_OP_SENSOR];
   unsigned cancels = f.cancels;
+  assert(f.volume_changes == 0u); /* Earlier key checks keep their behavior. */
+  click(H2_H202_MFG_KEY_PLUS);
+  click(H2_H202_MFG_KEY_PLUS);
+  click(H2_H202_MFG_KEY_MINUS);
+  assert(f.volume_changes == 3u && f.volume_delta == 20);
+  assert(f.live[H2_H202_MFG_OP_AUDIO] == aging && f.cancels == cancels);
+  expect(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
   click(H2_H202_MFG_KEY_RECORD);
   expect(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_STOPPING);
   assert(f.cancels == cancels + 1u && f.canceled[cancels] == aging);
+  click(H2_H202_MFG_KEY_PLUS);
+  assert(f.volume_changes == 3u); /* Stopping ignores volume keys. */
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
   expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
+  /* The rainbow is canceled before stage 10 lights green. */
+  bool rainbow_stopped = false;
+  for (unsigned i = cancels; i < f.cancels; ++i)
+    rainbow_stopped = rainbow_stopped || f.canceled[i] == rainbow;
+  assert(rainbow_stopped);
   assert(status().stage == 10u);
   assert(f.color == H2_H202_MFG_COLOR_GREEN);
   expect_prompt(H2_H202_MFG_PROMPT_WAITING);
   for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
     assert(status().results[i] == H2_H202_MFG_PASSED);
+  /* A pass is saved at once for the Loader MFG gate, without powering off. */
+  const h2_h202_mfg_request_t* accept = last(H2_H202_MFG_OP_POWER);
+  assert(accept != NULL && accept->job == H2_H202_MFG_JOB_ACCEPT);
+  for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
+    assert(accept->results[i] == H2_H202_MFG_PASSED);
+  done(H2_H202_MFG_OP_POWER, H2_PAL_OK, 0);
+  expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
   /* Stage 10 ignores the skip gesture. */
   set_keys(H2_H202_MFG_KEY_RECORD);
   click(H2_H202_MFG_KEY_PLUS);
   set_keys(0);
   expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
   puts("flow ok");
+
+  /* An RGB error from the rainbow worker fails aging, and Record retries
+   * both the audio and the rainbow jobs. */
+  h2_h202_mfg_restore_t restore = {.present = true};
+  for (unsigned i = 0; i < H2_H202_MFG_AGING; ++i)
+    restore.results[i] = H2_H202_MFG_PASSED;
+  begin_test(&restore);
+  expect(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
+  assert(last(H2_H202_MFG_OP_SENSOR)->job == H2_H202_MFG_JOB_RAINBOW);
+  done(H2_H202_MFG_OP_SENSOR, H2_PAL_ERR_IO, 0);
+  expect(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_FAILED);
+  expect_prompt(H2_H202_MFG_PROMPT_AGING_FAILED);
+  unsigned rainbows = count_jobs(H2_H202_MFG_JOB_RAINBOW);
+  click(H2_H202_MFG_KEY_RECORD);
+  expect(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
+  assert(count_jobs(H2_H202_MFG_JOB_RAINBOW) == rainbows + 1u);
+  puts("aging rainbow worker ok");
 }
 
 static void skip_current(void) {
@@ -239,8 +282,6 @@ static void test_skip_and_admission(void) {
   done(H2_H202_MFG_OP_SENSOR, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_WIFI, H2_PAL_OK, 0);
-  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
-  done(H2_H202_MFG_OP_CELLULAR, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
   expect(H2_H202_MFG_LEFT_MIC, H2_H202_MFG_PHASE_ACTIVE);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_PASS);
@@ -271,6 +312,7 @@ static void test_skip_and_admission(void) {
   assert(status().results[H2_H202_MFG_AGING] == H2_H202_MFG_UNTESTED);
   assert(f.color == H2_H202_MFG_COLOR_YELLOW);
   expect_prompt(H2_H202_MFG_PROMPT_INCOMPLETE);
+  assert(count_jobs(H2_H202_MFG_JOB_ACCEPT) == 0u);
   puts("skip and aging admission ok");
 }
 
@@ -331,11 +373,6 @@ static void test_failures_and_retry(void) {
   click(H2_H202_MFG_KEY_RECORD);
   done(H2_H202_MFG_OP_WIFI, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
-  /* 4G's 60 s budget ran out long ago. */
-  expect(H2_H202_MFG_CELLULAR, H2_H202_MFG_PHASE_FAILED);
-  expect_prompt(H2_H202_MFG_PROMPT_CELLULAR_FAILED);
-  skip_current();
-  set_keys(0);
   /* Microphone measurement failure and an instruction prompt error. */
   expect(H2_H202_MFG_LEFT_MIC, H2_H202_MFG_PHASE_ACTIVE);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_NO_SIGNAL);
@@ -373,8 +410,6 @@ static void test_stale_and_new_presses(void) {
   done(H2_H202_MFG_OP_SENSOR, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_WIFI, H2_PAL_OK, 0);
-  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
-  done(H2_H202_MFG_OP_CELLULAR, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_PASS);
   /* Record pressed during the right mic, released after LISTEN starts. */
@@ -430,13 +465,7 @@ static void test_power_hold(void) {
   assert(status().phase == H2_H202_MFG_PHASE_SAVING);
   /* A 2 s hold inside stage 06 shuts down instead of passing it. */
   begin_test(NULL);
-  skip_current();
-  skip_current();
-  skip_current();
-  skip_current();
-  skip_current();
-  skip_current();
-  skip_current();
+  for (unsigned i = 0; i < 6u; ++i) skip_current();
   set_keys(0);
   expect(H2_H202_MFG_POWER, H2_H202_MFG_PHASE_ACTIVE);
   set_keys(H2_H202_MFG_KEY_POWER);
@@ -444,12 +473,25 @@ static void test_power_hold(void) {
   set_keys(0);
   assert(status().phase == H2_H202_MFG_PHASE_SAVING);
   assert(status().results[H2_H202_MFG_POWER] == H2_H202_MFG_UNTESTED);
+  /* The press that qualified wakeup is already held at controller start;
+   * it must not count as a fresh shutdown hold. */
+  begin_test(NULL);
+  assert(h2_h202_mfg_init(&app, &config) == H2_PAL_OK);
+  keys = H2_H202_MFG_KEY_POWER;
+  assert(h2_h202_mfg_start(&app, NULL, now, keys) == H2_PAL_OK);
+  step(2500);
+  expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
+  assert(count_jobs(H2_H202_MFG_JOB_SHUTDOWN) == 0u);
+  set_keys(0);
+  set_keys(H2_H202_MFG_KEY_POWER);
+  step(2000);
+  assert(status().phase == H2_H202_MFG_PHASE_SAVING);
   puts("power hold ok");
 }
 
 static void test_reset_gesture(void) {
   begin_test(NULL);
-  for (unsigned i = 0; i < 7u; ++i) skip_current();
+  for (unsigned i = 0; i < 6u; ++i) skip_current();
   set_keys(0);
   expect(H2_H202_MFG_POWER, H2_H202_MFG_PHASE_ACTIVE);
   /* Record + short power in stage 06: no Power PASS, clear and reboot. */
@@ -623,15 +665,15 @@ static void test_progress(void) {
   stored(&summary);
   for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
     assert(summary.step_status[i] == H2_LOADER_MFG_STEP_UNTESTED);
-  /* Resume: first item not PASSED is 4G; only 4G runs in the background. */
+  /* Resume at the first item not PASSED; Wi-Fi passed, so no background
+   * network check runs. */
   begin_test(&restore);
-  expect(H2_H202_MFG_CELLULAR, H2_H202_MFG_PHASE_ACTIVE);
+  expect(H2_H202_MFG_LEFT_MIC, H2_H202_MFG_PHASE_ACTIVE);
   assert(status().wifi == H2_H202_MFG_NET_IDLE);
-  assert(status().cellular == H2_H202_MFG_NET_RUNNING);
-  assert(count_jobs(H2_H202_MFG_JOB_CHECK) == 1u);
+  assert(count_jobs(H2_H202_MFG_JOB_CHECK) == 0u);
   /* Later PASSED results are kept and their items are not rerun. */
-  assert(status().results[H2_H202_MFG_LEFT_MIC] == H2_H202_MFG_PASSED);
-  assert(status().results[H2_H202_MFG_CELLULAR] == H2_H202_MFG_UNTESTED);
+  assert(status().results[H2_H202_MFG_RIGHT_MIC] == H2_H202_MFG_PASSED);
+  assert(status().results[H2_H202_MFG_LEFT_MIC] == H2_H202_MFG_UNTESTED);
   /* A reset after resume finds the cleared record: stage 02. */
   h2_h202_mfg_progress_load(&pref, &mem, &restore);
   begin_test(&restore);

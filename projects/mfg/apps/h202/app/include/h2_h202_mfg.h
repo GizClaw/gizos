@@ -31,12 +31,11 @@ enum {
   H2_H202_MFG_KEY_MASK = 15u,
 };
 
-/** The eleven results, in the order stored through h2_loader_mfg_*. */
+/** The ten results, in the order stored through h2_loader_mfg_*. */
 typedef enum h2_h202_mfg_item {
   H2_H202_MFG_CHARGER,
   H2_H202_MFG_NFC,
   H2_H202_MFG_WIFI,
-  H2_H202_MFG_CELLULAR,
   H2_H202_MFG_LEFT_MIC,
   H2_H202_MFG_RIGHT_MIC,
   H2_H202_MFG_LISTEN,
@@ -63,7 +62,6 @@ typedef enum h2_h202_mfg_prompt {
   H2_H202_MFG_PROMPT_NFC,
   H2_H202_MFG_PROMPT_NFC_PASSED,
   H2_H202_MFG_PROMPT_WIFI_PASSED,
-  H2_H202_MFG_PROMPT_CELLULAR_PASSED,
   H2_H202_MFG_PROMPT_MIC_LEFT,
   H2_H202_MFG_PROMPT_MIC_RIGHT,
   H2_H202_MFG_PROMPT_LISTEN,
@@ -75,13 +73,17 @@ typedef enum h2_h202_mfg_prompt {
   H2_H202_MFG_PROMPT_CHARGE_FAILED,
   H2_H202_MFG_PROMPT_NFC_FAILED,
   H2_H202_MFG_PROMPT_WIFI_FAILED,
-  H2_H202_MFG_PROMPT_CELLULAR_FAILED,
   H2_H202_MFG_PROMPT_MIC_FAILED,
   H2_H202_MFG_PROMPT_AGING_FAILED,
   H2_H202_MFG_PROMPT_INCOMPLETE,
   H2_H202_MFG_PROMPT_UNSAVED,
   H2_H202_MFG_PROMPT_POWEROFF_FAILED,
   H2_H202_MFG_PROMPT_NETWORK, /**< Stage 04 while a result is pending. */
+  H2_H202_MFG_PROMPT_BOOT,    /**< Boot accepted, before management starts. */
+  /** Shared tails: the player appends RETRY after each *_FAILED test prompt
+   * and RETRY_POWEROFF after UNSAVED and POWEROFF_FAILED. */
+  H2_H202_MFG_PROMPT_RETRY,
+  H2_H202_MFG_PROMPT_RETRY_POWEROFF,
   H2_H202_MFG_PROMPT_COUNT,
 } h2_h202_mfg_prompt_t;
 
@@ -96,6 +98,7 @@ typedef enum h2_h202_mfg_color {
   H2_H202_MFG_COLOR_GREEN,
   H2_H202_MFG_COLOR_YELLOW,
   H2_H202_MFG_COLOR_RED,
+  H2_H202_MFG_COLOR_WHITE, /**< Boot feedback until stage 02 lights. */
   H2_H202_MFG_COLOR_COUNT,
 } h2_h202_mfg_color_t;
 
@@ -104,7 +107,6 @@ typedef enum h2_h202_mfg_operation {
   H2_H202_MFG_OP_AUDIO,
   H2_H202_MFG_OP_SENSOR,
   H2_H202_MFG_OP_WIFI,
-  H2_H202_MFG_OP_CELLULAR,
   H2_H202_MFG_OP_POWER,
   H2_H202_MFG_OP_COUNT,
 } h2_h202_mfg_operation_t;
@@ -112,13 +114,17 @@ typedef enum h2_h202_mfg_operation {
 typedef enum h2_h202_mfg_job {
   H2_H202_MFG_JOB_PROMPT,   /**< AUDIO: play prompts[0..prompt_count). */
   H2_H202_MFG_JOB_MIC,      /**< AUDIO: instruction prompt, then measure. */
-  H2_H202_MFG_JOB_AGING,    /**< AUDIO: prompt, tone, dual AEC, rainbow. */
+  H2_H202_MFG_JOB_AGING,    /**< AUDIO: prompt, then the melody only. */
   H2_H202_MFG_JOB_CHARGER,  /**< SENSOR: report USB_INSERT state changes. */
   H2_H202_MFG_JOB_NFC,      /**< SENSOR: wait for any ISO14443A UID. */
-  H2_H202_MFG_JOB_CHECK,    /**< WIFI/CELLULAR: one qualification attempt. */
-  H2_H202_MFG_JOB_MAINTAIN, /**< WIFI/CELLULAR: restart, keep reconnecting. */
+  H2_H202_MFG_JOB_RAINBOW,  /**< SENSOR: aging eye rainbow until canceled. */
+  H2_H202_MFG_JOB_CHECK,    /**< WIFI: one qualification attempt. */
+  H2_H202_MFG_JOB_MAINTAIN, /**< WIFI: restart, keep reconnecting. */
   H2_H202_MFG_JOB_SHUTDOWN, /**< POWER: commit results, then power off. */
   H2_H202_MFG_JOB_RESET,    /**< POWER: clear saved progress, then reboot. */
+  /** POWER: stage 10 with all ten PASSED, save them now so Loader Core's MFG
+   * gate admits the App on the next boot (for example after an upgrade). */
+  H2_H202_MFG_JOB_ACCEPT,
 } h2_h202_mfg_job_t;
 
 typedef struct h2_h202_mfg_request {
@@ -157,6 +163,8 @@ typedef struct h2_h202_mfg_callbacks {
   void (*cancel)(void* user, h2_h202_mfg_operation_t operation,
                  uint32_t generation);
   h2_pal_result_t (*light)(void* user, h2_h202_mfg_color_t color);
+  /** Optional nonblocking request, active aging only; clamp to 0..100%. */
+  void (*aging_volume)(void* user, int delta_percent);
   /** Optional diagnostics line, borrowed for the call. */
   void (*log)(void* user, const char* line);
 } h2_h202_mfg_callbacks_t;
@@ -165,7 +173,6 @@ typedef struct h2_h202_mfg_config {
   uint32_t charger_timeout_ms;
   uint32_t nfc_timeout_ms;
   uint32_t wifi_timeout_ms;
-  uint32_t cellular_timeout_ms;
   uint32_t power_hold_ms;
   h2_h202_mfg_callbacks_t callbacks;
 } h2_h202_mfg_config_t;
@@ -215,7 +222,7 @@ typedef struct h2_h202_mfg {
   uint32_t current[H2_H202_MFG_OP_COUNT];
   h2_h202_mfg_job_t audio_job;
   bool maintaining;
-  h2_h202_mfg_net_t net[2];
+  h2_h202_mfg_net_t net; /**< Wi-Fi background check. */
   uint64_t now_ms;
   uint64_t deadline_ms;
   bool deadline_set;
@@ -240,7 +247,6 @@ typedef struct h2_h202_mfg_status {
   h2_h202_mfg_item_t item;
   uint8_t results[H2_H202_MFG_ITEM_COUNT];
   h2_h202_mfg_net_state_t wifi;
-  h2_h202_mfg_net_state_t cellular;
   h2_pal_result_t error;         /**< Last item or audio failure. */
   h2_pal_result_t restore_error; /**< Progress read/clear failure. */
   h2_h202_mfg_color_t color;     /**< Last requested eye color. */
@@ -268,9 +274,9 @@ h2_pal_result_t h2_h202_mfg_status(const h2_h202_mfg_t* app,
 /** Stage of an item (02..09). */
 unsigned h2_h202_mfg_stage_of(h2_h202_mfg_item_t item);
 
-/** Revision bound to the eleven results by
+/** Revision bound to the ten results by
  * h2_loader_mfg_ensure_acceptance_revision. Change it with the criteria. */
-#define H2_H202_MFG_REVISION 0x20200001u
+#define H2_H202_MFG_REVISION 0x20200002u
 
 /** Boot: bind revision, read, then reset the one-shot record before any stage
  * runs. The caller holds the Loader operation mutex. Never fails: errors are
@@ -361,23 +367,66 @@ bool h2_h202_mfg_aec_meter_done(const h2_h202_mfg_aec_meter_t* meter);
 h2_h202_mfg_aec_verdict_t h2_h202_mfg_aec_meter_result(
     const h2_h202_mfg_aec_meter_t* meter, h2_h202_mfg_aec_result_t* out);
 
-/** Embedded raw 8 kHz mono PCM16LE prompt. */
-typedef struct h2_h202_mfg_pcm {
+/** Aging melody: notes_hz played in turn, each for note_ms and followed by
+ * gap_ms of silence, repeating. With a gap each note fades in and out over a
+ * few milliseconds so its edges do not click; without one the phase runs on
+ * across notes, as the H106 Zero BK aging melody does. */
+#define H2_H202_MFG_SCALE_NOTES 8u
+typedef struct h2_h202_mfg_scale_config {
+  uint32_t sample_rate_hz;
+  uint16_t notes_hz[H2_H202_MFG_SCALE_NOTES];
+  uint32_t note_ms;
+  uint32_t gap_ms;
+  int16_t amplitude;
+} h2_h202_mfg_scale_config_t;
+
+/** Generator state; fields are private to h2_h202_mfg.c. */
+typedef struct h2_h202_mfg_scale {
+  h2_h202_mfg_scale_config_t config;
+  uint32_t note_samples;
+  uint32_t slot_samples;
+  uint32_t ramp_samples;
+  uint32_t position; /**< Sample within the current note + gap slot. */
+  unsigned note;
+  float phase; /**< Cycles, 0..1. */
+} h2_h202_mfg_scale_t;
+
+/** INVALID_ARG for a zero rate, note length or note frequency, or a note at
+ * or above Nyquist. Starts at the first note. */
+h2_pal_result_t h2_h202_mfg_scale_init(
+    h2_h202_mfg_scale_t* scale, const h2_h202_mfg_scale_config_t* config);
+/** Next output sample; 0 during gaps. */
+int16_t h2_h202_mfg_scale_next(h2_h202_mfg_scale_t* scale);
+
+/** Embedded 8 kHz mono 4-bit IMA ADPCM prompt, two samples per byte (low
+ * nibble first), decoded from a zero state; see prompts/ima_adpcm.py. */
+typedef struct h2_h202_mfg_adpcm {
   const unsigned char* data;
   const size_t* size;
-} h2_h202_mfg_pcm_t;
+} h2_h202_mfg_adpcm_t;
+
+/** IMA ADPCM decoder; zero-initialize before each prompt. */
+typedef struct h2_h202_mfg_adpcm_state {
+  int32_t predictor;
+  int32_t index;
+} h2_h202_mfg_adpcm_state_t;
+
+/** Decode one 4-bit code into the next sample. */
+int16_t h2_h202_mfg_adpcm_next(h2_h202_mfg_adpcm_state_t* state,
+                               unsigned nibble);
 
 /** 8 kHz to 16 kHz: two outputs per input, linear interpolation from the
  * previous sample (*state, start at 0). out must hold 2*count samples. */
 void h2_h202_mfg_upsample(const int16_t* in, size_t count, int16_t* out,
                           int16_t* state);
-/** Write a whole prompt as 320-sample 16 kHz frames, zero-padding the final
- * partial frame, then drain. canceled may be NULL. Odd byte counts are
- * INVALID_ARG; a canceled play returns CLOSED; write errors are returned. */
-h2_pal_result_t h2_h202_mfg_play_pcm8k(h2_pal_audio_track_t* track,
-                                       const unsigned char* pcm, size_t bytes,
-                                       bool (*canceled)(void* user),
-                                       void* user);
+/** Decode a whole ADPCM prompt and write it as 320-sample 16 kHz frames,
+ * zero-padding the final partial frame, then drain. canceled may be NULL; a
+ * canceled play returns CLOSED; write errors are returned. */
+h2_pal_result_t h2_h202_mfg_play_adpcm8k(h2_pal_audio_track_t* track,
+                                         const unsigned char* adpcm,
+                                         size_t bytes,
+                                         bool (*canceled)(void* user),
+                                         void* user);
 
 typedef struct h2_h202_mfg_profile {
   h2_h202_mfg_config_t controller; /**< callbacks are set by the service. */
@@ -400,24 +449,29 @@ typedef struct h2_h202_mfg_profile {
   uint32_t sample_rate_hz;
   uint16_t frame_samples;
   uint32_t volume_percent;
-  uint32_t tone_hz;
-  int16_t tone_amplitude;
-  uint16_t monitor_gain_q15; /**< AEC output mixed into the tone. */
+  h2_h202_mfg_scale_config_t aging_scale; /**< Stage 09 sound. */
+  uint16_t monitor_gain_q15;              /**< Stage 05 AEC loopback gain. */
   h2_h202_mfg_aec_config_t aec;
   uint32_t aging_frame_ms; /**< Rainbow update interval. */
   const char* wifi_ssid;
   const char* wifi_password;
   const char* ntp_host;
-  int32_t min_rssi_dbm;
-  h2_h202_mfg_pcm_t prompts[H2_H202_MFG_PROMPT_COUNT];
+  h2_h202_mfg_adpcm_t prompts[H2_H202_MFG_PROMPT_COUNT];
 } h2_h202_mfg_profile_t;
+
+/** Boot acknowledgement on the entry task, before management starts: all
+ * eyes white, then the boot prompt played to completion. Loader Core startup
+ * hashes the running image once before stage 02 lights.
+ * Logs H202_MFG_BOOT_FEEDBACK; errors are reported, never fatal to boot. */
+h2_pal_result_t h2_h202_mfg_boot_feedback(h2_runtime_t* runtime,
+                                          const h2_h202_mfg_profile_t* profile);
 
 typedef struct h2_h202_mfg_service h2_h202_mfg_service_t;
 
 typedef struct h2_h202_mfg_service_config {
   h2_runtime_t* runtime;
   const h2_h202_mfg_profile_t* profile;
-  /** From h2_bk_h2loader_app_commands_get_config; Stage-sensitive work,
+  /** The Loader operation mutex shared with management; Stage-sensitive work,
    * progress and power-off are serialized with it. */
   const h2_pal_sync_api_t* operation_sync;
   h2_pal_mutex_t* operation_mutex;

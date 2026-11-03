@@ -16,11 +16,12 @@ filegroup(
     srcs = ["//boards/h202/bk7258:cp/usr_gpio_cfg.h"],
 )
 
+# MFG replaces the Loader, so it links at the fixed Loader window.
 filegroup(
     name = "layout",
     srcs = [
-        "partitions/bk7258/auto_partitions.csv",
         "//boards/h202/bk7258/layouts/loader:partitions/bk7258/ab_position_independent.csv",
+        "//boards/h202/bk7258/layouts/loader:partitions/bk7258/auto_partitions.csv",
         "//boards/h202/bk7258/layouts/loader:partitions/bk7258/ota_rbl.config",
         "//boards/h202/bk7258/layouts/loader:pj_config.mk",
     ],

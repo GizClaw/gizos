@@ -15,8 +15,7 @@ int h2_bk7258_board_runtime_config(h2_runtime_config_t* config) {
   rc = h2_bk_platform_netif_monitor_init();
   if (rc != 0) return rc;
   int input = h2_h202_input_init();
-  int modem = h2_h202_modem_init();
-  printf("H202_BSP input=%d modem=%d\n", input, modem);
+  printf("H202_BSP input=%d\n", input);
   *config = (h2_runtime_config_t){
       .board = H2_H202_BOARD_NAME,
       .target = H2_H202_TARGET_NAME,
@@ -38,8 +37,8 @@ int h2_bk7258_board_runtime_config(h2_runtime_config_t* config) {
       .wifi_sta = h2_bk_platform_wifi_sta(),
       .wifi_settings = h2_bk_platform_wifi_settings(),
       .ble_host = h2_bk_platform_ble(),
-      .modem =
-          modem == 0 ? h2_h202_modem_api() : h2_pal_unsupported_modem_api(),
+      /* No 4G module is fitted; board init holds its rails off. */
+      .modem = h2_pal_unsupported_modem_api(),
       .power = h2_h202_power_api(),
       .audio = h2_h202_audio_api(),
       .button = h2_h202_button_api(),
@@ -70,8 +69,7 @@ int h2_bk7258_board_runtime_config(h2_runtime_config_t* config) {
 }
 
 int h2_bk7258_board_runtime_deinit(void) {
-  int rc = h2_h202_modem_deinit();
-  if (rc == 0) rc = h2_h202_audio_deinit();
+  int rc = h2_h202_audio_deinit();
   if (rc == 0) rc = h2_h202_led_deinit();
   if (rc == 0) rc = h2_bk7258_board_fs_deinit();
   return rc;

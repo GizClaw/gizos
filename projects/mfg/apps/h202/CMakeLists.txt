@@ -20,15 +20,14 @@ foreach(H2_BK_ROW_VAR H2_BK_PRIMARY_CP_ROW H2_BK_PRIMARY_AP_ROW H2_BK_S_APP_ROW)
   set("${H2_BK_ROW_VAR}_KIB" "${CMAKE_MATCH_1}")
 endforeach()
 math(EXPR H2_BK_PRIMARY_WINDOW_KIB "${H2_BK_PRIMARY_CP_ROW_KIB} + ${H2_BK_PRIMARY_AP_ROW_KIB}")
-# MFG is a managed App: CP/AP execute from the App window at 0x275000, and
-# s_app names the fixed Loader window at 0x11000. The App window must not be
-# smaller than the Loader window.
-if(NOT H2_BK_PRIMARY_CP_ROW MATCHES ",0x275000," OR
-   NOT H2_BK_S_APP_ROW MATCHES ",0x11000,")
-  message(FATAL_ERROR "H202 MFG must link at the managed App window")
+# MFG replaces the Loader: CP/AP execute from the fixed Loader window at
+# 0x11000. Loader self-update stages the image in the App window (s_app), so
+# s_app must hold at least the Loader window.
+if(NOT H2_BK_PRIMARY_CP_ROW MATCHES ",0x11000,")
+  message(FATAL_ERROR "H202 MFG must link at the fixed Loader window")
 endif()
-if(H2_BK_PRIMARY_WINDOW_KIB LESS H2_BK_S_APP_ROW_KIB)
-  message(FATAL_ERROR "BK fixed-XIP App window must not be smaller than the Loader window")
+if(H2_BK_S_APP_ROW_KIB LESS H2_BK_PRIMARY_WINDOW_KIB)
+  message(FATAL_ERROR "BK fixed-XIP App window (s_app) must not be smaller than the Loader window")
 endif()
 file(STRINGS "${H2_BK_PARTITION_CSV}" H2_BK_BOOT_REQUEST_ROW REGEX "^h2_boot_request,")
 if(NOT H2_BK_BOOT_REQUEST_ROW)

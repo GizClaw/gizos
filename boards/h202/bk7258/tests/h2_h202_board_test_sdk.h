@@ -37,6 +37,7 @@ enum {
   GPIO_PULL_UP_EN = 1,
   GPIO_INT_DISABLE = 0,
   GPIO_INT_TYPE_LOW_LEVEL = 0,
+  GPIO_INT_TYPE_FALLING_EDGE = 3,
   GPIO_LOW_POWER_DISCARD_IO_STATUS = 0,
   GPIO_DRIVER_CAPACITY_0 = 0,
   GPIO_DRIVER_CAPACITY_3 = 3,
@@ -117,6 +118,9 @@ enum {
   SPI_DMA_MODE_DISABLE = 0,
   PM_MODE_DEEP_SLEEP = 2,
   PM_MODE_DEFAULT = 3,
+  RESET_SOURCE_POWERON = 0,
+  RESET_SOURCE_WATCHDOG = 2,
+  RESET_SOURCE_DEEPPS_GPIO = 3,
   H2_BK_NFC_FM175XX_DEFAULT_READ_CAPACITY = 256,
 };
 typedef unsigned spi_id_t;
@@ -145,6 +149,8 @@ void bk_wdt_force_reboot(void);
 int bk_gpio_unregister_wakeup_source(gpio_id_t id);
 int bk_gpio_unregister_lowpower_keep_status(gpio_id_t id);
 void rtos_delay_milliseconds(unsigned ms);
+uint32_t rtos_get_time(void);
+uint32_t bk_misc_get_reset_reason(void);
 int rtos_init_semaphore(beken_semaphore_t* semaphore, unsigned count);
 int rtos_set_semaphore(beken_semaphore_t* semaphore);
 int rtos_get_semaphore(beken_semaphore_t* semaphore, unsigned timeout);

@@ -17,6 +17,7 @@
 #define H2_H202_EXTFLASH_IO3_GPIO 27u
 #define H2_H202_PERIPHERAL_ENABLE_GPIO 54u
 #define H2_H202_PA_ENABLE_GPIO 53u
+/* The 4G module is not fitted; firmware only holds these rails low. */
 #define H2_H202_MODEM_ENABLE_GPIO 7u
 #define H2_H202_MODEM_VBUS_ENABLE_GPIO 13u
 #define H2_H202_WHITE_LED_GPIO 37u
@@ -34,11 +35,6 @@
 #define H2_H202_NFC_I2C_ID 1u
 #define H2_H202_NFC_I2C_ADDRESS 0x28u
 #define H2_H202_NFC_I2C_HZ 100000u
-#define H2_H202_MODEM_RX_GPIO 40u
-#define H2_H202_MODEM_TX_GPIO 41u
-#define H2_H202_MODEM_SIM_GPIO 45u
-#define H2_H202_MODEM_DTR_GPIO 55u
-#define H2_H202_MODEM_UART_ID 2u
 #define H2_H202_DMIC_CLK_GPIO 8u
 #define H2_H202_DMIC_DATA_GPIO 9u
 #define H2_H202_RGB_PIXELS 6u

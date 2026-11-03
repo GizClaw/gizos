@@ -382,10 +382,11 @@ static void test_pairing(void) {
     produce(sequence);
     assert(read_frame(sequence, 0) == 0);
   }
-  for (unsigned sequence = 50; sequence < 54; ++sequence) produce(sequence);
+  /* Fill all eight queued frames. */
+  for (unsigned sequence = 50; sequence < 58; ++sequence) produce(sequence);
   /* SDK ignores rejected ref and still attempts mic. Both must fail even if
    * a consumer appears between them; no old mic/ref pair reaches AEC. */
-  assert(reference(54) < 0);
+  assert(reference(58) < 0);
   calls = aec_calls;
   assert(read_frame(50, 0) == H2_PAL_ERR_IO && aec_calls == calls);
   assert(microphone() < 0);

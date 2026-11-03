@@ -30,9 +30,14 @@ int h2_bk7258_board_fs_init(h2_pal_fs_api_t* fs);
  * SDK unmount consumes the mount even on error; subsequent use remounts.
  */
 int h2_bk7258_board_fs_deinit(void);
+/** Before MFG Runtime setup, qualify a GPIO deep-sleep wake by a continuous
+ * power-key hold. Early release requests deep sleep again; normal boots and
+ * software resets proceed immediately. A returning sleep request is an error.
+ */
+int h2_bk7258_board_wait_for_wakeup(uint32_t hold_ms);
 /** Populate MFG Runtime dependencies after task-policy installation. The
  * config borrows board providers until board_runtime_deinit succeeds. Does
- * not create Runtime or run tests. NFC/modem initialization errors leave the
+ * not create Runtime or run tests. An NFC initialization error leaves the
  * corresponding capability unavailable for an explicit failed MFG result. */
 int h2_bk7258_board_runtime_config(struct h2_runtime_config* config);
 /** After every Runtime/App/management user has stopped, release board-owned

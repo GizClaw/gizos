@@ -7,6 +7,7 @@ exports_files([
     "bk_loader.json",
     "ap/usr_gpio_cfg.h",
     "partitions/bk7258/ab_position_independent.csv",
+    "partitions/bk7258/auto_partitions.csv",
     "partitions/bk7258/ota_rbl.config",
     "pj_config.mk",
 ])

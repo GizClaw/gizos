@@ -1,6 +1,5 @@
 #include "h2_h202_mfg.h"
 
-#include "h2_apn.h"
 #include "h2_loader_boot.h"
 #include "h2_ntp.h"
 
@@ -12,45 +11,41 @@
 /* ---- Controller ------------------------------------------------------- */
 
 static const char* const s_item_names[H2_H202_MFG_ITEM_COUNT] = {
-    "charger", "nfc",   "wifi", "cellular", "left_mic", "right_mic",
+    "charger", "nfc",   "wifi", "left_mic", "right_mic",
     "listen",  "power", "plus", "minus",    "aging"};
 
-static const uint8_t s_stages[H2_H202_MFG_ITEM_COUNT] = {2, 3, 4, 4, 5, 5,
+static const uint8_t s_stages[H2_H202_MFG_ITEM_COUNT] = {2, 3, 4, 5, 5,
                                                          5, 6, 7, 8, 9};
 
 static const h2_h202_mfg_color_t s_colors[H2_H202_MFG_ITEM_COUNT] = {
-    H2_H202_MFG_COLOR_AMBER,     H2_H202_MFG_COLOR_PURPLE,
-    H2_H202_MFG_COLOR_CYAN,      H2_H202_MFG_COLOR_CYAN,
-    H2_H202_MFG_COLOR_BLUE_LEFT, H2_H202_MFG_COLOR_BLUE_RIGHT,
-    H2_H202_MFG_COLOR_BLUE,      H2_H202_MFG_COLOR_BLUE,
-    H2_H202_MFG_COLOR_BLUE,      H2_H202_MFG_COLOR_BLUE,
-    H2_H202_MFG_COLOR_OFF};
+    H2_H202_MFG_COLOR_AMBER,      H2_H202_MFG_COLOR_PURPLE,
+    H2_H202_MFG_COLOR_CYAN,       H2_H202_MFG_COLOR_BLUE_LEFT,
+    H2_H202_MFG_COLOR_BLUE_RIGHT, H2_H202_MFG_COLOR_BLUE,
+    H2_H202_MFG_COLOR_BLUE,       H2_H202_MFG_COLOR_BLUE,
+    H2_H202_MFG_COLOR_BLUE,       H2_H202_MFG_COLOR_OFF};
 
 static const h2_h202_mfg_prompt_t s_instructions[H2_H202_MFG_ITEM_COUNT] = {
-    H2_H202_MFG_PROMPT_NONE,     H2_H202_MFG_PROMPT_NFC,
-    H2_H202_MFG_PROMPT_NONE,     H2_H202_MFG_PROMPT_NONE,
-    H2_H202_MFG_PROMPT_MIC_LEFT, H2_H202_MFG_PROMPT_MIC_RIGHT,
-    H2_H202_MFG_PROMPT_LISTEN,   H2_H202_MFG_PROMPT_POWER,
-    H2_H202_MFG_PROMPT_PLUS,     H2_H202_MFG_PROMPT_MINUS,
-    H2_H202_MFG_PROMPT_AGING};
+    H2_H202_MFG_PROMPT_NONE,      H2_H202_MFG_PROMPT_NFC,
+    H2_H202_MFG_PROMPT_NONE,      H2_H202_MFG_PROMPT_MIC_LEFT,
+    H2_H202_MFG_PROMPT_MIC_RIGHT, H2_H202_MFG_PROMPT_LISTEN,
+    H2_H202_MFG_PROMPT_POWER,     H2_H202_MFG_PROMPT_PLUS,
+    H2_H202_MFG_PROMPT_MINUS,     H2_H202_MFG_PROMPT_AGING};
 
 static const h2_h202_mfg_prompt_t s_successes[H2_H202_MFG_ITEM_COUNT] = {
     H2_H202_MFG_PROMPT_CHARGE_PASSED, H2_H202_MFG_PROMPT_NFC_PASSED,
-    H2_H202_MFG_PROMPT_WIFI_PASSED,   H2_H202_MFG_PROMPT_CELLULAR_PASSED,
+    H2_H202_MFG_PROMPT_WIFI_PASSED,   H2_H202_MFG_PROMPT_NONE,
     H2_H202_MFG_PROMPT_NONE,          H2_H202_MFG_PROMPT_NONE,
     H2_H202_MFG_PROMPT_NONE,          H2_H202_MFG_PROMPT_NONE,
-    H2_H202_MFG_PROMPT_NONE,          H2_H202_MFG_PROMPT_NONE,
-    H2_H202_MFG_PROMPT_NONE};
+    H2_H202_MFG_PROMPT_NONE,          H2_H202_MFG_PROMPT_NONE};
 
 /* Key items cannot fail on their own; only an instruction prompt error can
  * fail them, and that error is announced by the red light alone. */
 static const h2_h202_mfg_prompt_t s_failures[H2_H202_MFG_ITEM_COUNT] = {
     H2_H202_MFG_PROMPT_CHARGE_FAILED, H2_H202_MFG_PROMPT_NFC_FAILED,
-    H2_H202_MFG_PROMPT_WIFI_FAILED,   H2_H202_MFG_PROMPT_CELLULAR_FAILED,
-    H2_H202_MFG_PROMPT_MIC_FAILED,    H2_H202_MFG_PROMPT_MIC_FAILED,
+    H2_H202_MFG_PROMPT_WIFI_FAILED,   H2_H202_MFG_PROMPT_MIC_FAILED,
+    H2_H202_MFG_PROMPT_MIC_FAILED,    H2_H202_MFG_PROMPT_NONE,
     H2_H202_MFG_PROMPT_NONE,          H2_H202_MFG_PROMPT_NONE,
-    H2_H202_MFG_PROMPT_NONE,          H2_H202_MFG_PROMPT_NONE,
-    H2_H202_MFG_PROMPT_AGING_FAILED};
+    H2_H202_MFG_PROMPT_NONE,          H2_H202_MFG_PROMPT_AGING_FAILED};
 
 unsigned h2_h202_mfg_stage_of(h2_h202_mfg_item_t item) {
   return (unsigned)item < H2_H202_MFG_ITEM_COUNT ? s_stages[item] : 10u;
@@ -98,7 +93,7 @@ static h2_pal_result_t begin(h2_h202_mfg_t* app,
   request.prompt_count = first == H2_H202_MFG_PROMPT_NONE    ? 0u
                          : second == H2_H202_MFG_PROMPT_NONE ? 1u
                                                              : 2u;
-  if (job == H2_H202_MFG_JOB_SHUTDOWN)
+  if (job == H2_H202_MFG_JOB_SHUTDOWN || job == H2_H202_MFG_JOB_ACCEPT)
     memcpy(request.results, app->results, sizeof(request.results));
   if (operation == H2_H202_MFG_OP_AUDIO) {
     app->audio_job = job;
@@ -126,14 +121,6 @@ static bool all_passed(const h2_h202_mfg_t* app, unsigned count) {
   for (unsigned i = 0; i < count; ++i)
     if (app->results[i] != H2_H202_MFG_PASSED) return false;
   return true;
-}
-
-static bool network_item(h2_h202_mfg_item_t item) {
-  return item == H2_H202_MFG_WIFI || item == H2_H202_MFG_CELLULAR;
-}
-
-static h2_h202_mfg_operation_t net_operation(unsigned index) {
-  return index == 0u ? H2_H202_MFG_OP_WIFI : H2_H202_MFG_OP_CELLULAR;
 }
 
 static void enter(h2_h202_mfg_t* app, h2_h202_mfg_item_t item);
@@ -169,27 +156,25 @@ static void pass(h2_h202_mfg_t* app) {
   resume(app, (unsigned)item + 1u);
 }
 
-static void start_net(h2_h202_mfg_t* app, unsigned index) {
-  h2_h202_mfg_net_t* net = &app->net[index];
-  h2_pal_result_t rc = begin(app, net_operation(index), H2_H202_MFG_JOB_CHECK,
-                             (h2_h202_mfg_item_t)(H2_H202_MFG_WIFI + index),
-                             H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
-  net->generation = app->current[net_operation(index)];
+static void start_net(h2_h202_mfg_t* app) {
+  h2_h202_mfg_net_t* net = &app->net;
+  h2_pal_result_t rc =
+      begin(app, H2_H202_MFG_OP_WIFI, H2_H202_MFG_JOB_CHECK, H2_H202_MFG_WIFI,
+            H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
+  net->generation = app->current[H2_H202_MFG_OP_WIFI];
   net->error = rc;
   net->state =
       rc == H2_PAL_OK ? H2_H202_MFG_NET_RUNNING : H2_H202_MFG_NET_FAILED;
   /* Each attempt or retry gets its own full budget. */
-  net->deadline_ms =
-      app->now_ms + (index == 0u ? app->config.wifi_timeout_ms
-                                 : app->config.cellular_timeout_ms);
+  net->deadline_ms = app->now_ms + app->config.wifi_timeout_ms;
 }
 
 /* Stage 04 reports background state; an earlier failure is announced now. */
 static void net_item(h2_h202_mfg_t* app) {
-  h2_h202_mfg_net_t* net = &app->net[app->item - H2_H202_MFG_WIFI];
+  h2_h202_mfg_net_t* net = &app->net;
   switch (net->state) {
     case H2_H202_MFG_NET_IDLE:
-      start_net(app, (unsigned)(app->item - H2_H202_MFG_WIFI));
+      start_net(app);
       if (net->state == H2_H202_MFG_NET_FAILED) fail(app, net->error);
       break;
     case H2_H202_MFG_NET_RUNNING:
@@ -219,9 +204,14 @@ static void enter_wait(h2_h202_mfg_t* app) {
   light(app, passed ? H2_H202_MFG_COLOR_GREEN : H2_H202_MFG_COLOR_YELLOW);
   (void)play(
       app, passed ? H2_H202_MFG_PROMPT_WAITING : H2_H202_MFG_PROMPT_INCOMPLETE);
+  /* Boot reads and clears progress, so save a pass at once: installing the
+   * next firmware must not need a power cycle first. */
+  if (passed)
+    (void)begin(app, H2_H202_MFG_OP_POWER, H2_H202_MFG_JOB_ACCEPT, app->item,
+                H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
 }
 
-/* Next item not PASSED; aging is admitted only after ten PASSED results. */
+/* Next item not PASSED; aging is admitted only after nine PASSED results. */
 static void resume(h2_h202_mfg_t* app, unsigned from) {
   for (unsigned i = from; i < H2_H202_MFG_AGING; ++i) {
     if (app->results[i] != H2_H202_MFG_PASSED) {
@@ -268,7 +258,6 @@ static void enter(h2_h202_mfg_t* app, h2_h202_mfg_item_t item) {
       app->deadline_set = true;
       break;
     case H2_H202_MFG_WIFI:
-    case H2_H202_MFG_CELLULAR:
       net_item(app);
       return;
     case H2_H202_MFG_LEFT_MIC:
@@ -281,13 +270,17 @@ static void enter(h2_h202_mfg_t* app, h2_h202_mfg_item_t item) {
     case H2_H202_MFG_AGING:
       rc = begin(app, H2_H202_MFG_OP_AUDIO, H2_H202_MFG_JOB_AGING, item,
                  s_instructions[item], H2_H202_MFG_PROMPT_NONE);
-      /* Both networks restart and keep reconnecting; their losses and
-       * results are diagnostics only and never revoke an earlier PASS. */
+      /* The rainbow runs on its own worker: LED writes block, and the audio
+       * loop must keep up with capture or the board latches a fault. */
+      if (rc == H2_PAL_OK)
+        rc = begin(app, H2_H202_MFG_OP_SENSOR, H2_H202_MFG_JOB_RAINBOW, item,
+                   H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
+      /* Wi-Fi restarts and keeps reconnecting; its losses and results are
+       * diagnostics only and never revoke an earlier PASS. */
       app->maintaining = true;
-      for (unsigned i = 0; i < 2u; ++i)
-        (void)begin(app, net_operation(i), H2_H202_MFG_JOB_MAINTAIN,
-                    (h2_h202_mfg_item_t)(H2_H202_MFG_WIFI + i),
-                    H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
+      (void)begin(app, H2_H202_MFG_OP_WIFI, H2_H202_MFG_JOB_MAINTAIN,
+                  H2_H202_MFG_WIFI, H2_H202_MFG_PROMPT_NONE,
+                  H2_H202_MFG_PROMPT_NONE);
       break;
     default:
       rc = play(app, s_instructions[item]);
@@ -298,8 +291,7 @@ static void enter(h2_h202_mfg_t* app, h2_h202_mfg_item_t item) {
 
 static void retry(h2_h202_mfg_t* app) {
   note(app, "H202_MFG_RETRY item=%s", item_name(app->item));
-  if (network_item(app->item))
-    start_net(app, (unsigned)(app->item - H2_H202_MFG_WIFI));
+  if (app->item == H2_H202_MFG_WIFI) start_net(app);
   enter(app, app->item);
 }
 
@@ -312,10 +304,9 @@ static void skip(h2_h202_mfg_t* app) {
   app->results[item] = H2_H202_MFG_SKIPPED;
   stop(app, H2_H202_MFG_OP_SENSOR);
   stop(app, H2_H202_MFG_OP_AUDIO);
-  if (network_item(item)) {
-    unsigned index = (unsigned)(item - H2_H202_MFG_WIFI);
-    stop(app, net_operation(index));
-    app->net[index].state = H2_H202_MFG_NET_IDLE;
+  if (item == H2_H202_MFG_WIFI) {
+    stop(app, H2_H202_MFG_OP_WIFI);
+    app->net.state = H2_H202_MFG_NET_IDLE;
   }
   note(app, "H202_MFG_RESULT item=%s result=skipped", item_name(item));
   resume(app, (unsigned)item + 1u);
@@ -399,8 +390,12 @@ static void click(h2_h202_mfg_t* app, unsigned key) {
       if (key == H2_H202_MFG_KEY_MINUS) pass(app);
       break;
     case H2_H202_MFG_AGING:
-      if (key == H2_H202_MFG_KEY_RECORD &&
-          app->current[H2_H202_MFG_OP_AUDIO] != 0u) {
+      if ((key == H2_H202_MFG_KEY_PLUS || key == H2_H202_MFG_KEY_MINUS) &&
+          app->config.callbacks.aging_volume != NULL) {
+        app->config.callbacks.aging_volume(
+            app->config.callbacks.user, key == H2_H202_MFG_KEY_PLUS ? 20 : -20);
+      } else if (key == H2_H202_MFG_KEY_RECORD &&
+                 app->current[H2_H202_MFG_OP_AUDIO] != 0u) {
         /* Keep the generation: the job's DONE is the clean-stop evidence. */
         app->phase = H2_H202_MFG_PHASE_STOPPING;
         note(app, "H202_MFG_AGING stop");
@@ -526,27 +521,32 @@ static void sensor_event(h2_h202_mfg_t* app,
     pass(app);
   else if (app->item == H2_H202_MFG_NFC || app->item == H2_H202_MFG_CHARGER)
     fail(app, c->result);
+  else if (app->item == H2_H202_MFG_AGING && c->result != H2_PAL_OK)
+    fail(app, c->result); /* RGB error. */
 }
 
-static void net_done(h2_h202_mfg_t* app, unsigned index,
-                     const h2_h202_mfg_completion_t* c) {
-  app->current[net_operation(index)] = 0u;
+static void net_done(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
+  app->current[H2_H202_MFG_OP_WIFI] = 0u;
   if (app->maintaining) {
-    note(app, "H202_MFG_NETWORK op=%u maintain rc=%d", index, c->result);
+    note(app, "H202_MFG_NETWORK op=wifi maintain rc=%d", c->result);
     return;
   }
-  h2_h202_mfg_net_t* net = &app->net[index];
+  h2_h202_mfg_net_t* net = &app->net;
   if (net->state != H2_H202_MFG_NET_RUNNING) return;
   net->state =
       c->result == H2_PAL_OK ? H2_H202_MFG_NET_PASSED : H2_H202_MFG_NET_FAILED;
   net->error = c->result;
-  note(app, "H202_MFG_NETWORK op=%u rc=%d", index, c->result);
-  if (app->phase == H2_H202_MFG_PHASE_ACTIVE &&
-      app->item == (h2_h202_mfg_item_t)(H2_H202_MFG_WIFI + index))
+  note(app, "H202_MFG_NETWORK op=wifi rc=%d", c->result);
+  if (app->phase == H2_H202_MFG_PHASE_ACTIVE && app->item == H2_H202_MFG_WIFI)
     net_item(app);
 }
 
 static void power_event(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
+  if (c->event == H2_H202_MFG_EVENT_DONE) { /* Only ACCEPT ends with DONE. */
+    app->current[H2_H202_MFG_OP_POWER] = 0u;
+    note(app, "H202_MFG_ACCEPTED rc=%d", c->result);
+    return;
+  }
   if (app->phase == H2_H202_MFG_PHASE_RESETTING) {
     /* A successful reboot never reports back. */
     app->current[H2_H202_MFG_OP_POWER] = 0u;
@@ -590,9 +590,7 @@ static void completion(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
       sensor_event(app, c);
       return;
     case H2_H202_MFG_OP_WIFI:
-    case H2_H202_MFG_OP_CELLULAR:
-      if (c->event == H2_H202_MFG_EVENT_DONE)
-        net_done(app, c->operation == H2_H202_MFG_OP_WIFI ? 0u : 1u, c);
+      if (c->event == H2_H202_MFG_EVENT_DONE) net_done(app, c);
       return;
     case H2_H202_MFG_OP_POWER:
       power_event(app, c);
@@ -603,16 +601,14 @@ static void completion(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
 }
 
 static void deadlines(h2_h202_mfg_t* app) {
-  for (unsigned i = 0; i < 2u && !app->maintaining; ++i) {
-    h2_h202_mfg_net_t* net = &app->net[i];
-    if (net->state != H2_H202_MFG_NET_RUNNING || app->now_ms < net->deadline_ms)
-      continue;
-    stop(app, net_operation(i));
+  h2_h202_mfg_net_t* net = &app->net;
+  if (!app->maintaining && net->state == H2_H202_MFG_NET_RUNNING &&
+      app->now_ms >= net->deadline_ms) {
+    stop(app, H2_H202_MFG_OP_WIFI);
     net->state = H2_H202_MFG_NET_FAILED;
     net->error = H2_PAL_ERR_TIMEOUT;
-    note(app, "H202_MFG_NETWORK op=%u timeout", i);
-    if (app->phase == H2_H202_MFG_PHASE_ACTIVE &&
-        app->item == (h2_h202_mfg_item_t)(H2_H202_MFG_WIFI + i))
+    note(app, "H202_MFG_NETWORK op=wifi timeout");
+    if (app->phase == H2_H202_MFG_PHASE_ACTIVE && app->item == H2_H202_MFG_WIFI)
       net_item(app);
   }
   if (app->phase == H2_H202_MFG_PHASE_ACTIVE && app->deadline_set &&
@@ -657,9 +653,7 @@ h2_pal_result_t h2_h202_mfg_start(h2_h202_mfg_t* app,
           app->results[i] = H2_H202_MFG_PASSED;
   }
   note(app, "H202_MFG_STAGE stage=1 restore=%d", app->restore_error);
-  for (unsigned i = 0; i < 2u; ++i)
-    if (app->results[H2_H202_MFG_WIFI + i] != H2_H202_MFG_PASSED)
-      start_net(app, i);
+  if (app->results[H2_H202_MFG_WIFI] != H2_H202_MFG_PASSED) start_net(app);
   resume(app, H2_H202_MFG_CHARGER);
   return H2_PAL_OK;
 }
@@ -688,8 +682,7 @@ h2_pal_result_t h2_h202_mfg_status(const h2_h202_mfg_t* app,
                                              ? 1u
                                              : h2_h202_mfg_stage_of(app->item),
                                 .item = app->item,
-                                .wifi = app->net[0].state,
-                                .cellular = app->net[1].state,
+                                .wifi = app->net.state,
                                 .error = app->error,
                                 .restore_error = app->restore_error,
                                 .color = app->color,
@@ -938,15 +931,47 @@ void h2_h202_mfg_upsample(const int16_t* in, size_t count, int16_t* out,
   *state = (int16_t)previous;
 }
 
-h2_pal_result_t h2_h202_mfg_play_pcm8k(h2_pal_audio_track_t* track,
-                                       const unsigned char* pcm, size_t bytes,
-                                       bool (*canceled)(void* user),
-                                       void* user) {
-  if (track == NULL || (pcm == NULL && bytes != 0u) || bytes % 2u != 0u)
+/* Standard IMA ADPCM tables; prompts/ima_adpcm.py encodes with the same. */
+static const int16_t s_adpcm_steps[89] = {
+    7,     8,     9,     10,    11,    12,    13,    14,    16,    17,
+    19,    21,    23,    25,    28,    31,    34,    37,    41,    45,
+    50,    55,    60,    66,    73,    80,    88,    97,    107,   118,
+    130,   143,   157,   173,   190,   209,   230,   253,   279,   307,
+    337,   371,   408,   449,   494,   544,   598,   658,   724,   796,
+    876,   963,   1060,  1166,  1282,  1411,  1552,  1707,  1878,  2066,
+    2272,  2499,  2749,  3024,  3327,  3660,  4026,  4428,  4871,  5358,
+    5894,  6484,  7132,  7845,  8630,  9493,  10442, 11487, 12635, 13899,
+    15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767};
+static const int8_t s_adpcm_index[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
+
+int16_t h2_h202_mfg_adpcm_next(h2_h202_mfg_adpcm_state_t* state,
+                               unsigned nibble) {
+  const int32_t step = s_adpcm_steps[state->index];
+  int32_t diff = step >> 3;
+  if (nibble & 4u) diff += step;
+  if (nibble & 2u) diff += step >> 1;
+  if (nibble & 1u) diff += step >> 2;
+  int32_t predictor =
+      (nibble & 8u) ? state->predictor - diff : state->predictor + diff;
+  if (predictor > INT16_MAX) predictor = INT16_MAX;
+  if (predictor < INT16_MIN) predictor = INT16_MIN;
+  int32_t index = state->index + s_adpcm_index[nibble & 7u];
+  state->index = index < 0 ? 0 : index > 88 ? 88 : index;
+  state->predictor = predictor;
+  return (int16_t)predictor;
+}
+
+h2_pal_result_t h2_h202_mfg_play_adpcm8k(h2_pal_audio_track_t* track,
+                                         const unsigned char* adpcm,
+                                         size_t bytes,
+                                         bool (*canceled)(void* user),
+                                         void* user) {
+  if (track == NULL || (adpcm == NULL && bytes != 0u))
     return H2_PAL_ERR_INVALID_ARG;
   int16_t input[PROMPT_INPUT];
   int16_t output[PROMPT_OUTPUT];
   int16_t state = 0;
+  h2_h202_mfg_adpcm_state_t decoder = {0};
   const h2_audio_pcm_format_t format = {
       .sample_rate_hz = 16000u,
       .frame_samples_per_channel = PROMPT_OUTPUT,
@@ -955,15 +980,17 @@ h2_pal_result_t h2_h202_mfg_play_pcm8k(h2_pal_audio_track_t* track,
   h2_audio_frame_t frame =
       h2_audio_frame_for_buffer(output, sizeof(output), format);
   frame.bytes = sizeof(output);
-  for (size_t offset = 0; offset < bytes; offset += sizeof(input)) {
+  for (size_t offset = 0; offset < bytes; offset += PROMPT_INPUT / 2u) {
     if (canceled != NULL && canceled(user)) return H2_PAL_ERR_CLOSED;
-    size_t count = (bytes - offset) / 2u;
-    if (count > PROMPT_INPUT) count = PROMPT_INPUT;
-    for (size_t i = 0; i < count; ++i)
-      input[i] = (int16_t)(uint16_t)(pcm[offset + i * 2u] |
-                                     (uint16_t)pcm[offset + i * 2u + 1u] << 8);
+    size_t count = bytes - offset;
+    if (count > PROMPT_INPUT / 2u) count = PROMPT_INPUT / 2u;
+    for (size_t i = 0; i < count; ++i) {
+      input[i * 2u] = h2_h202_mfg_adpcm_next(&decoder, adpcm[offset + i] & 15u);
+      input[i * 2u + 1u] =
+          h2_h202_mfg_adpcm_next(&decoder, adpcm[offset + i] >> 4);
+    }
     memset(output, 0, sizeof(output)); /* Final partial frame pads silence. */
-    h2_h202_mfg_upsample(input, count, output, &state);
+    h2_h202_mfg_upsample(input, count * 2u, output, &state);
     int rc = h2_pal_audio_track_write(track, &frame, 200u);
     if (rc != H2_PAL_OK) return (h2_pal_result_t)rc;
   }
@@ -971,12 +998,105 @@ h2_pal_result_t h2_h202_mfg_play_pcm8k(h2_pal_audio_track_t* track,
   return (h2_pal_result_t)h2_pal_audio_track_drain(track, 1000u);
 }
 
+h2_pal_result_t h2_h202_mfg_boot_feedback(h2_runtime_t* runtime,
+                                          const h2_h202_mfg_profile_t* p) {
+  if (runtime == NULL || p == NULL) return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_led_color_t pixels[32];
+  unsigned count = p->eye_count < 32u ? p->eye_count : 32u;
+  for (unsigned i = 0; i < count; ++i)
+    pixels[i] = p->colors[H2_H202_MFG_COLOR_WHITE];
+  int light = h2_pal_led_set_frame(runtime->led, p->eyes, pixels, count);
+  const h2_pal_audio_api_t* audio = runtime->audio;
+  const h2_h202_mfg_adpcm_t* pcm = &p->prompts[H2_H202_MFG_PROMPT_BOOT];
+  h2_pal_audio_track_t* track = NULL;
+  bool speaker = false;
+  int rc =
+      pcm->data == NULL || pcm->size == NULL
+          ? H2_PAL_ERR_NOT_FOUND
+          : h2_pal_audio_set_speaker_volume_percent(audio, p->volume_percent);
+  if (rc == H2_PAL_OK) {
+    speaker = true; /* Partial start is still owned. */
+    rc = h2_pal_audio_start_speaker(audio);
+  }
+  const h2_audio_track_config_t config = {
+      .name = "h202/boot",
+      .format = {.sample_rate_hz = p->sample_rate_hz,
+                 .frame_samples_per_channel = p->frame_samples,
+                 .channels = 1u,
+                 .sample_format = H2_AUDIO_SAMPLE_S16LE},
+      .volume_factor_milli = 1000u,
+      .buffer_frames = 4u,
+      .allocator = runtime->mem};
+  if (rc == H2_PAL_OK) rc = h2_pal_audio_create_track(audio, &config, &track);
+  if (rc == H2_PAL_OK)
+    rc = h2_h202_mfg_play_adpcm8k(track, pcm->data, *pcm->size, NULL, NULL);
+  if (track != NULL) {
+    int closed = h2_pal_audio_track_close(track);
+    if (rc == H2_PAL_OK) rc = closed;
+  }
+  if (speaker) {
+    int stopped = h2_pal_audio_stop_speaker(audio);
+    if (rc == H2_PAL_OK) rc = stopped;
+  }
+  char line[64];
+  (void)snprintf(line, sizeof(line), "H202_MFG_BOOT_FEEDBACK eyes=%d prompt=%d",
+                 light, rc);
+  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "h202/mfg", line);
+  return (h2_pal_result_t)(light != H2_PAL_OK ? light : rc);
+}
+
+h2_pal_result_t h2_h202_mfg_scale_init(
+    h2_h202_mfg_scale_t* scale, const h2_h202_mfg_scale_config_t* config) {
+  if (scale == NULL || config == NULL || config->sample_rate_hz == 0u ||
+      config->note_ms == 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  for (unsigned i = 0; i < H2_H202_MFG_SCALE_NOTES; ++i)
+    if (config->notes_hz[i] == 0u ||
+        2u * config->notes_hz[i] >= config->sample_rate_hz)
+      return H2_PAL_ERR_INVALID_ARG;
+  memset(scale, 0, sizeof(*scale));
+  scale->config = *config;
+  uint64_t rate = config->sample_rate_hz;
+  scale->note_samples = (uint32_t)(rate * config->note_ms / 1000u);
+  scale->slot_samples =
+      scale->note_samples + (uint32_t)(rate * config->gap_ms / 1000u);
+  if (scale->note_samples == 0u) return H2_PAL_ERR_INVALID_ARG;
+  /* 5 ms fades around gaps; a gapless melody keeps its phase instead. */
+  scale->ramp_samples =
+      config->gap_ms != 0u ? (uint32_t)(rate * 5u / 1000u) : 0u;
+  if (scale->ramp_samples > scale->note_samples / 2u)
+    scale->ramp_samples = scale->note_samples / 2u;
+  return H2_PAL_OK;
+}
+
+int16_t h2_h202_mfg_scale_next(h2_h202_mfg_scale_t* scale) {
+  float value = 0.0f;
+  uint32_t at = scale->position;
+  if (at < scale->note_samples) {
+    uint32_t edge =
+        at < scale->note_samples - 1u - at ? at : scale->note_samples - 1u - at;
+    float gain = scale->ramp_samples != 0u && edge < scale->ramp_samples
+                     ? (float)edge / (float)scale->ramp_samples
+                     : 1.0f;
+    value = (float)scale->config.amplitude * gain *
+            sinf(2.0f * 3.14159265f * scale->phase);
+    scale->phase += (float)scale->config.notes_hz[scale->note] /
+                    (float)scale->config.sample_rate_hz;
+    if (scale->phase >= 1.0f) scale->phase -= 1.0f;
+  }
+  if (++scale->position >= scale->slot_samples) {
+    scale->position = 0u;
+    if (scale->config.gap_ms != 0u) scale->phase = 0.0f;
+    scale->note = (scale->note + 1u) % H2_H202_MFG_SCALE_NOTES;
+  }
+  return (int16_t)value;
+}
+
 /* ---- Service ---------------------------------------------------------- */
 
 enum {
   MAILBOX = 16,
   TASK_STACK = 16384,
-  TONE_MAX = 64,
   WAIT_SLICE_MS = 20,
 };
 
@@ -1008,6 +1128,7 @@ struct h2_h202_mfg_service {
   unsigned mailbox_count;
   h2_h202_mfg_status_t status;
   h2_h202_mfg_restore_t restore;
+  uint32_t aging_volume_percent; /**< Controller request, protected by lock. */
   /* Controller task only. */
   h2_h202_mfg_t controller;
   unsigned raw_keys;
@@ -1029,9 +1150,7 @@ struct h2_h202_mfg_service {
   bool meter_active;
   int16_t capture[640];
   int16_t output[320];
-  int16_t tone[TONE_MAX];
-  unsigned tone_period;
-  unsigned tone_phase;
+  h2_h202_mfg_scale_t scale;
 };
 
 static void service_lock(h2_h202_mfg_service_t* s) {
@@ -1127,16 +1246,16 @@ static void operation_unlock(h2_h202_mfg_service_t* s) {
 
 /* Stable names in H202_MFG_* serial events, consumed by the test monitor. */
 static const char* const s_color_names[H2_H202_MFG_COLOR_COUNT] = {
-    "off",       "amber",      "purple", "cyan",   "blue",
-    "blue_left", "blue_right", "green",  "yellow", "red"};
+    "off",        "amber", "purple", "cyan", "blue", "blue_left",
+    "blue_right", "green", "yellow", "red",  "white"};
 static const char* const s_prompt_names[H2_H202_MFG_PROMPT_COUNT] = {
-    "charge_insert", "charge_remove", "charge_passed",   "nfc",
-    "nfc_passed",    "wifi_passed",   "cellular_passed", "mic_left",
-    "mic_right",     "listen",        "power",           "plus",
-    "minus",         "aging",         "waiting",         "charge_failed",
-    "nfc_failed",    "wifi_failed",   "cellular_failed", "mic_failed",
-    "aging_failed",  "incomplete",    "unsaved",         "poweroff_failed",
-    "network"};
+    "charge_insert", "charge_remove",   "charge_passed", "nfc",
+    "nfc_passed",    "wifi_passed",     "mic_left",      "mic_right",
+    "listen",        "power",           "plus",          "minus",
+    "aging",         "waiting",         "charge_failed", "nfc_failed",
+    "wifi_failed",   "mic_failed",      "aging_failed",  "incomplete",
+    "unsaved",       "poweroff_failed", "network",       "boot",
+    "retry",         "retry_poweroff"};
 static const char* const s_mode_names[] = {"off", "on", "blink"};
 
 static int eyes_frame(h2_h202_mfg_service_t* s, h2_h202_mfg_color_t color) {
@@ -1314,35 +1433,47 @@ static int audio_open(h2_h202_mfg_service_t* s, bool microphone,
   return rc;
 }
 
+/* Retry instructions are stored once and spoken after each failure. */
+static h2_h202_mfg_prompt_t prompt_tail(h2_h202_mfg_prompt_t prompt) {
+  switch (prompt) {
+    case H2_H202_MFG_PROMPT_CHARGE_FAILED:
+    case H2_H202_MFG_PROMPT_NFC_FAILED:
+    case H2_H202_MFG_PROMPT_WIFI_FAILED:
+    case H2_H202_MFG_PROMPT_MIC_FAILED:
+    case H2_H202_MFG_PROMPT_AGING_FAILED:
+      return H2_H202_MFG_PROMPT_RETRY;
+    case H2_H202_MFG_PROMPT_UNSAVED:
+    case H2_H202_MFG_PROMPT_POWEROFF_FAILED:
+      return H2_H202_MFG_PROMPT_RETRY_POWEROFF;
+    default:
+      return H2_H202_MFG_PROMPT_NONE;
+  }
+}
+
+static int play_clip(slot_t* slot, h2_h202_mfg_prompt_t prompt) {
+  h2_h202_mfg_service_t* s = slot->service;
+  if ((unsigned)prompt >= H2_H202_MFG_PROMPT_COUNT)
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_h202_mfg_adpcm_t* clip = &s->profile->prompts[prompt];
+  slog(s, "H202_MFG_PLAY prompt=%s", s_prompt_names[prompt]);
+  return clip->data == NULL || clip->size == NULL
+             ? H2_PAL_ERR_NOT_FOUND
+             : h2_h202_mfg_play_adpcm8k(s->track, clip->data, *clip->size,
+                                        slot_canceled, slot);
+}
+
 static int play_prompts(slot_t* slot, const h2_h202_mfg_prompt_t* prompts,
                         unsigned count) {
   h2_h202_mfg_service_t* s = slot->service;
   int rc = audio_open(s, false, NULL);
   for (unsigned i = 0; rc == H2_PAL_OK && i < count; ++i) {
-    if ((unsigned)prompts[i] >= H2_H202_MFG_PROMPT_COUNT) {
-      rc = H2_PAL_ERR_INVALID_ARG;
-      break;
-    }
-    const h2_h202_mfg_pcm_t* pcm = &s->profile->prompts[prompts[i]];
-    slog(s, "H202_MFG_PLAY prompt=%s", s_prompt_names[prompts[i]]);
-    rc = pcm->data == NULL || pcm->size == NULL
-             ? H2_PAL_ERR_NOT_FOUND
-             : h2_h202_mfg_play_pcm8k(s->track, pcm->data, *pcm->size,
-                                      slot_canceled, slot);
+    rc = play_clip(slot, prompts[i]);
+    const h2_h202_mfg_prompt_t tail = prompt_tail(prompts[i]);
+    if (rc == H2_PAL_OK && tail != H2_H202_MFG_PROMPT_NONE)
+      rc = play_clip(slot, tail);
   }
   int closed = audio_close(s);
   return rc == H2_PAL_OK ? closed : rc;
-}
-
-static void tone_init(h2_h202_mfg_service_t* s) {
-  const h2_h202_mfg_profile_t* p = s->profile;
-  s->tone_phase = 0u;
-  s->tone_period = p->tone_hz != 0u ? p->sample_rate_hz / p->tone_hz : 0u;
-  if (s->tone_period > TONE_MAX) s->tone_period = 0u;
-  for (unsigned i = 0; i < s->tone_period; ++i)
-    s->tone[i] =
-        (int16_t)((float)p->tone_amplitude *
-                  sinf(2.0f * 3.14159265f * (float)i / (float)s->tone_period));
 }
 
 /* Rainbow on every eye pixel; the eye lock and cancellation check keep a
@@ -1369,9 +1500,9 @@ static int rainbow(slot_t* slot, uint64_t elapsed_ms) {
   return rc;
 }
 
-/* One capture frame in, one playback frame out: the tone for aging (lane < 0),
- * or one side's AEC output at a fixed low gain for stage 05. */
-static int audio_cycle(slot_t* slot, int lane) {
+/* Stage 05: one capture frame in, that side's AEC output out at a fixed low
+ * gain. */
+static int audio_cycle(slot_t* slot, unsigned lane) {
   h2_h202_mfg_service_t* s = slot->service;
   const h2_h202_mfg_profile_t* p = s->profile;
   h2_audio_frame_t capture = {.data = s->capture,
@@ -1384,12 +1515,8 @@ static int audio_cycle(slot_t* slot, int lane) {
       capture.bytes < (size_t)p->frame_samples * 4u)
     return H2_PAL_ERR_IO;
   for (unsigned i = 0; i < p->frame_samples; ++i) {
-    int32_t sample = lane < 0 && s->tone_period ? s->tone[s->tone_phase] : 0;
-    s->tone_phase = s->tone_period ? (s->tone_phase + 1u) % s->tone_period : 0u;
-    if (lane >= 0)
-      sample += ((int32_t)s->capture[i * 2u + (unsigned)lane] *
-                 p->monitor_gain_q15) >>
-                15;
+    int32_t sample =
+        ((int32_t)s->capture[i * 2u + lane] * p->monitor_gain_q15) >> 15;
     s->output[i] = (int16_t)(sample > INT16_MAX   ? INT16_MAX
                              : sample < INT16_MIN ? INT16_MIN
                                                   : sample);
@@ -1450,33 +1577,76 @@ static void run_mic(slot_t* slot) {
   post(slot, H2_H202_MFG_EVENT_DONE, rc, verdict);
 }
 
-/* No echo threshold: only an audio, observer or RGB error fails aging. A
- * requested stop that cleans up without error is the PASS evidence. */
+/* Eye rainbow for aging on the sensor worker, until canceled. */
+static void run_rainbow(slot_t* slot) {
+  h2_h202_mfg_service_t* s = slot->service;
+  uint64_t started = service_now(s);
+  int rc = rainbow(slot, 0u);
+  slog(s, "H202_MFG_EYES color=rainbow rc=%d", rc);
+  while (rc == H2_PAL_OK && !slot_canceled(slot)) {
+    rc = slot_sleep(slot, s->profile->aging_frame_ms);
+    if (rc == H2_PAL_OK) rc = rainbow(slot, service_now(s) - started);
+  }
+  if (rc == H2_PAL_ERR_CLOSED && slot_canceled(slot)) rc = H2_PAL_OK;
+  post(slot, H2_H202_MFG_EVENT_DONE, rc, 0);
+}
+
+/* One melody frame to the speaker; the track write paces the loop. */
+static int aging_cycle(h2_h202_mfg_service_t* s) {
+  const h2_h202_mfg_profile_t* p = s->profile;
+  for (unsigned i = 0; i < p->frame_samples; ++i)
+    s->output[i] = h2_h202_mfg_scale_next(&s->scale);
+  const h2_audio_pcm_format_t format = {
+      .sample_rate_hz = p->sample_rate_hz,
+      .frame_samples_per_channel = p->frame_samples,
+      .channels = 1u,
+      .sample_format = H2_AUDIO_SAMPLE_S16LE};
+  h2_audio_frame_t playback =
+      h2_audio_frame_for_buffer(s->output, sizeof(s->output), format);
+  playback.bytes = (size_t)p->frame_samples * sizeof(int16_t);
+  return h2_pal_audio_track_write(s->track, &playback, 100u);
+}
+
+/* Playback only, like the H106 Zero BK aging: no microphone or AEC, so a
+ * capture queue can never overflow here. Only an audio error fails aging;
+ * the rainbow worker reports RGB errors. A requested stop that cleans up
+ * without error is the PASS evidence. */
 static void run_aging(slot_t* slot) {
   h2_h202_mfg_service_t* s = slot->service;
   const h2_h202_mfg_profile_t* p = s->profile;
   int rc = play_prompts(slot, slot->job.prompts, slot->job.prompt_count);
-  const h2_audio_aec_observer_t observer = {.user = s,
-                                            .on_capture = observe_capture,
-                                            .on_playback = observe_playback,
-                                            .on_error = observe_error};
+  if (rc == H2_PAL_OK) rc = h2_h202_mfg_scale_init(&s->scale, &p->aging_scale);
   if (rc == H2_PAL_OK) {
-    tone_init(s);
-    rc = audio_open(s, true, &observer);
-    slog(s, "H202_MFG_TONE lane=both on rc=%d", rc);
+    rc = audio_open(s, false, NULL);
+    slog(s, "H202_MFG_TONE melody on rc=%d", rc);
   }
-  uint64_t started = service_now(s), drawn = 0;
+  uint32_t volume = p->volume_percent;
   bool first = true;
+  /* Report frames written every 5 s; about 250 means real time. */
+  uint64_t window = service_now(s);
+  unsigned cycles = 0u;
   while (rc == H2_PAL_OK && !slot_canceled(slot)) {
-    rc = audio_cycle(slot, -1);
+    service_lock(s);
+    uint32_t requested = s->aging_volume_percent;
+    service_unlock(s);
+    if (first || requested != volume) {
+      rc =
+          h2_pal_audio_set_speaker_volume_percent(s->runtime->audio, requested);
+      slog(s, "H202_MFG_AGING_VOLUME percent=%lu rc=%d",
+           (unsigned long)requested, rc);
+      if (rc != H2_PAL_OK) break;
+      volume = requested;
+    }
+    first = false;
+    rc = aging_cycle(s);
+    if (rc == H2_PAL_OK) ++cycles;
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       rc = H2_PAL_OK;
-    uint64_t elapsed = service_now(s) - started;
-    if (rc == H2_PAL_OK && (first || elapsed - drawn >= p->aging_frame_ms)) {
-      rc = rainbow(slot, elapsed);
-      if (first) slog(s, "H202_MFG_EYES color=rainbow rc=%d", rc);
-      drawn = elapsed;
-      first = false;
+    uint64_t now = service_now(s);
+    if (now - window >= 5000u) {
+      slog(s, "H202_MFG_AGING_LOOP frames=%u", cycles);
+      window = now;
+      cycles = 0u;
     }
   }
   if (rc == H2_PAL_ERR_CLOSED && slot_canceled(slot)) rc = H2_PAL_OK;
@@ -1636,7 +1806,7 @@ static int wifi_attempt(slot_t* slot) {
            ? H2_PAL_ERR_CLOSED
            : h2_pal_wifi_sta_connect(runtime->wifi_sta, &config, 15000u);
   /* Connect returns once associated; DHCP finishes later. Wait without the
-   * operation mutex so App confirm and management are not held off; the
+   * operation mutex so management is not held off; the
    * controller's Wi-Fi budget cancels this slot if no address arrives. */
   operation_unlock(s);
   while (rc == H2_PAL_OK && !wifi_up(s)) rc = slot_sleep(slot, 200u);
@@ -1651,114 +1821,35 @@ static int wifi_attempt(slot_t* slot) {
   return slot_canceled(slot) ? H2_PAL_ERR_CLOSED : rc;
 }
 
-static bool digits(const char* text, size_t length) {
-  if (strlen(text) != length) return false;
-  for (size_t i = 0; i < length; ++i)
-    if (text[i] < '0' || text[i] > '9') return false;
-  return true;
-}
-
-/* Module/IMEI, SIM/IMSI, APN from h2_apn_from_imsi, signal, then PPP/IP. */
-static int cellular_attempt(slot_t* slot) {
-  h2_h202_mfg_service_t* s = slot->service;
-  const h2_pal_modem_api_t* modem = s->runtime->modem;
-  (void)h2_pal_modem_close(modem, 5000u); /* Fresh evidence per attempt. */
-  int rc = h2_pal_modem_open(modem, 15000u);
-  h2_pal_modem_status_t status;
-  memset(&status, 0, sizeof(status));
-  while (rc == H2_PAL_OK) {
-    rc = h2_pal_modem_get_status(modem, &status);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK)
-      rc = H2_PAL_OK; /* SIM still busy. */
-    else if (rc != H2_PAL_OK || status.sim == H2_PAL_MODEM_SIM_STATE_READY)
-      break;
-    rc = slot_sleep(slot, 500u);
-  }
-  h2_pal_modem_identity_t identity;
-  memset(&identity, 0, sizeof(identity));
-  if (rc == H2_PAL_OK) rc = h2_pal_modem_get_identity(modem, &identity);
-  if (rc == H2_PAL_OK &&
-      (!digits(identity.imei, 15u) || !digits(identity.imsi, 15u)))
-    rc = H2_PAL_ERR_IO;
-  const char* apn = rc == H2_PAL_OK ? h2_apn_from_imsi(identity.imsi) : NULL;
-  h2_pal_modem_apn_config_t config;
-  memset(&config, 0, sizeof(config));
-  if (rc == H2_PAL_OK && (apn == NULL || strlen(apn) >= sizeof(config.apn)))
-    rc = H2_PAL_ERR_UNAVAILABLE;
-  if (rc == H2_PAL_OK) {
-    memcpy(config.apn, apn, strlen(apn) + 1u);
-    rc = h2_pal_modem_set_apn(modem, &config);
-  }
-  h2_pal_modem_signal_t signal;
-  memset(&signal, 0, sizeof(signal));
-  while (rc == H2_PAL_OK) {
-    rc = h2_pal_modem_get_signal(modem, &signal);
-    if (rc != H2_PAL_OK || (signal.rssi_valid && signal.rssi_dbm != 0 &&
-                            signal.rssi_dbm >= s->profile->min_rssi_dbm))
-      break;
-    rc = slot_sleep(slot, 500u);
-  }
-  h2_pal_modem_data_status_t data;
-  memset(&data, 0, sizeof(data));
-  if (rc == H2_PAL_OK) {
-    rc = operation_lock(slot);
-    if (rc == H2_PAL_OK) {
-      rc = h2_pal_modem_data_open(modem, 30000u);
-      operation_unlock(s);
-    }
-  }
-  if (rc == H2_PAL_OK) rc = h2_pal_modem_get_data_status(modem, &data);
-  if (rc == H2_PAL_OK && (data.state != H2_PAL_MODEM_DATA_OPEN ||
-                          !data.ip4_valid || data.ip4 == 0u))
-    rc = H2_PAL_ERR_UNAVAILABLE;
-  slog(s, "H202_MFG_CELLULAR rc=%d imei=%s apn=%s rssi=%ld ip=%08lx", rc,
-       identity.imei, apn != NULL ? apn : "-", (long)signal.rssi_dbm,
-       (unsigned long)data.ip4);
-  return slot_canceled(slot) ? H2_PAL_ERR_CLOSED : rc;
-}
-
-static bool cellular_up(h2_h202_mfg_service_t* s) {
-  h2_pal_modem_data_status_t data;
-  memset(&data, 0, sizeof(data));
-  return h2_pal_modem_get_data_status(s->runtime->modem, &data) == H2_PAL_OK &&
-         data.state == H2_PAL_MODEM_DATA_OPEN && data.ip4_valid &&
-         data.ip4 != 0u;
-}
-
 static void run_network(slot_t* slot) {
   h2_h202_mfg_service_t* s = slot->service;
-  bool wifi = slot->job.operation == H2_H202_MFG_OP_WIFI;
   if (slot->job.job == H2_H202_MFG_JOB_CHECK) {
-    int rc = wifi ? wifi_attempt(slot) : cellular_attempt(slot);
-    slog(s, "H202_MFG_NETWORK op=%s rc=%d", wifi ? "wifi" : "cellular", rc);
+    int rc = wifi_attempt(slot);
+    slog(s, "H202_MFG_NETWORK op=wifi rc=%d", rc);
     post(slot, H2_H202_MFG_EVENT_DONE, rc, 0);
     return;
   }
-  /* Aging: restart, then keep reconnecting; disconnects are logged only. */
+  /* Aging: keep the stage 04 link and reconnect only after it drops; the
+   * disconnect, scan and association disturb live audio capture. Losses are
+   * logged only. */
   while (!slot_canceled(slot)) {
-    int rc = wifi ? wifi_attempt(slot) : cellular_attempt(slot);
-    slog(s, "H202_MFG_NETWORK op=%s reconnect=%d", wifi ? "wifi" : "cellular",
-         rc);
-    while (rc == H2_PAL_OK && slot_sleep(slot, 1000u) == H2_PAL_OK &&
-           (wifi ? wifi_up(s) : cellular_up(s))) {
+    int rc = H2_PAL_OK;
+    if (wifi_up(s)) {
+      slog(s, "H202_MFG_NETWORK op=wifi maintain=connected");
+    } else {
+      rc = wifi_attempt(slot);
+      slog(s, "H202_MFG_NETWORK op=wifi reconnect=%d", rc);
     }
-    if (!slot_canceled(slot))
-      slog(s, "H202_MFG_NETWORK op=%s disconnected",
-           wifi ? "wifi" : "cellular");
+    while (rc == H2_PAL_OK && slot_sleep(slot, 1000u) == H2_PAL_OK &&
+           wifi_up(s)) {
+    }
+    if (!slot_canceled(slot)) slog(s, "H202_MFG_NETWORK op=wifi disconnected");
     (void)slot_sleep(slot, 1000u);
   }
   post(slot, H2_H202_MFG_EVENT_DONE, H2_PAL_ERR_CLOSED, 0);
 }
 
 /* ---- Shutdown --------------------------------------------------------- */
-
-static bool power_key_down(h2_h202_mfg_service_t* s) {
-  h2_pal_single_button_reading_t reading;
-  memset(&reading, 0, sizeof(reading));
-  return h2_pal_button_read_single_button(
-             s->runtime->button, s->profile->keys[0], &reading) == H2_PAL_OK &&
-         reading.state == H2_PAL_BUTTON_STATE_PRESSED;
-}
 
 /* Commit happens only here. A management reboot never reaches this job. */
 /* Every other job was canceled; wait for them to release audio/radios. */
@@ -1790,17 +1881,23 @@ static void run_shutdown(slot_t* slot) {
     operation_unlock(s);
     return;
   }
-  {
-    /* The board refuses shutdown while the power key is still held. */
-    for (unsigned waited = 0; waited < 60000u && power_key_down(s);
-         waited += WAIT_SLICE_MS)
-      (void)h2_pal_time_sleep_ms(s->runtime->time, WAIT_SLICE_MS);
-    rc = h2_pal_power_shutdown(s->runtime->power, 0u);
-    if (rc == H2_PAL_OK) rc = H2_PAL_ERR_INVALID_STATE; /* Did not power off. */
-    slog(s, "H202_MFG_POWEROFF rc=%d", rc);
-  }
+  rc = h2_pal_power_shutdown(s->runtime->power, 0u);
+  if (rc == H2_PAL_OK) rc = H2_PAL_ERR_INVALID_STATE; /* Did not power off. */
+  slog(s, "H202_MFG_POWEROFF rc=%d", rc);
   operation_unlock(s);
   post(slot, H2_H202_MFG_EVENT_POWER_ERROR, rc, 0);
+}
+
+/* Save only; the worker keeps waiting for the next firmware. */
+static void run_accept(slot_t* slot) {
+  h2_h202_mfg_service_t* s = slot->service;
+  int rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
+  if (rc == H2_PAL_OK) {
+    rc = h2_h202_mfg_progress_commit(s->runtime->pref, slot->job.results);
+    operation_unlock(s);
+  }
+  slog(s, "H202_MFG_ACCEPT rc=%d", rc);
+  post(slot, H2_H202_MFG_EVENT_DONE, rc, 0);
 }
 
 /* ---- Tasks ------------------------------------------------------------ */
@@ -1842,6 +1939,9 @@ static void run_job(slot_t* slot) {
     case H2_H202_MFG_JOB_NFC:
       run_nfc(slot);
       break;
+    case H2_H202_MFG_JOB_RAINBOW:
+      run_rainbow(slot);
+      break;
     case H2_H202_MFG_JOB_CHECK:
     case H2_H202_MFG_JOB_MAINTAIN:
       run_network(slot);
@@ -1851,6 +1951,9 @@ static void run_job(slot_t* slot) {
       break;
     case H2_H202_MFG_JOB_RESET:
       run_reset(slot);
+      break;
+    case H2_H202_MFG_JOB_ACCEPT:
+      run_accept(slot);
       break;
   }
 }
@@ -1889,6 +1992,8 @@ static h2_pal_result_t service_begin(void* user,
     slot->request = *request;
     slot->pending = true;
     slot->wanted = request->generation;
+    if (request->job == H2_H202_MFG_JOB_AGING)
+      s->aging_volume_percent = s->profile->volume_percent;
   }
   service_unlock(s);
   if (stopping) return H2_PAL_ERR_CLOSED;
@@ -1903,6 +2008,16 @@ static void service_cancel(void* user, h2_h202_mfg_operation_t operation,
   if ((unsigned)operation >= H2_H202_MFG_OP_COUNT) return;
   service_lock(s);
   if (s->slots[operation].wanted == generation) s->slots[operation].wanted = 0u;
+  service_unlock(s);
+}
+
+static void service_aging_volume(void* user, int delta_percent) {
+  h2_h202_mfg_service_t* s = user;
+  service_lock(s);
+  int volume = (int)s->aging_volume_percent + delta_percent;
+  s->aging_volume_percent = volume < 0     ? 0u
+                            : volume > 100 ? 100u
+                                           : (uint32_t)volume;
   service_unlock(s);
 }
 
@@ -1951,8 +2066,7 @@ static void controller_task(void* user) {
 }
 
 static const char* const s_task_names[H2_H202_MFG_OP_COUNT] = {
-    "h202/mfg/audio", "h202/mfg/sensor", "h202/mfg/wifi", "h202/mfg/cellular",
-    "h202/mfg/power"};
+    "h202/mfg/audio", "h202/mfg/sensor", "h202/mfg/wifi", "h202/mfg/power"};
 
 static void service_free(h2_h202_mfg_service_t* s) {
   const h2_pal_sync_api_t* sync = s->runtime->sync;
@@ -2021,11 +2135,13 @@ h2_pal_result_t h2_h202_mfg_service_start(
                           s->profile->charge_toggles,
                           s->profile->charge_blink_period_ms);
   h2_h202_mfg_config_t controller = s->profile->controller;
-  controller.callbacks = (h2_h202_mfg_callbacks_t){.user = s,
-                                                   .begin = service_begin,
-                                                   .cancel = service_cancel,
-                                                   .light = service_light,
-                                                   .log = service_log};
+  controller.callbacks =
+      (h2_h202_mfg_callbacks_t){.user = s,
+                                .begin = service_begin,
+                                .cancel = service_cancel,
+                                .light = service_light,
+                                .aging_volume = service_aging_volume,
+                                .log = service_log};
   const h2_pal_mutex_config_t mutex = {.name = "h202/mfg",
                                        .allocator = runtime->mem};
   const h2_pal_semaphore_config_t wake = {

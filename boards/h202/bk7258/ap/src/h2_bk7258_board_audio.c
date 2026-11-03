@@ -22,7 +22,8 @@ enum {
   SAMPLES = H2_H202_AUDIO_FRAME_SAMPLES,
   MONO_BYTES = SAMPLES * 2,
   STEREO_BYTES = MONO_BYTES * 2,
-  CAPTURE_FRAMES = 4,
+  /* 160 ms of slack for a stalled consumer before a latched fault. */
+  CAPTURE_FRAMES = 8,
   /* aec_size takes delay capacity, not frame samples. The pinned SDK init
    * uses an 800-sample ring; match its example's 1000-sample allocation. */
   AEC_DELAY_CAPACITY = 1000,

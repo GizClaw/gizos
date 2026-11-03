@@ -3,12 +3,15 @@
 #ifdef H2_H202_HOST_TEST
 #include "h2_h202_board_test_sdk.h"
 #else
+#include "components/system.h"
 #include "driver/gpio.h"
 #include "gpio_driver.h"
 #include "modules/pm.h"
 #include "os/os.h"
 #include "wdt_driver.h"
 #endif
+
+#include <stdio.h>
 
 static h2_pal_power_state_t s_state = H2_PAL_POWER_STATE_RUNNING;
 
@@ -36,8 +39,6 @@ static h2_pal_result_t shutdown(void* user, uint32_t reason) {
   (void)user;
   (void)reason;
   s_state = H2_PAL_POWER_STATE_PREPARING_SHUTDOWN;
-  if (!bk_gpio_get_input((gpio_id_t)H2_H202_POWER_KEY_GPIO))
-    return H2_PAL_ERR_BUSY;
   int rc = h2_h202_led_deinit();
   if (rc != 0) return rc;
   rc = h2_bk7258_board_fs_deinit();
@@ -53,8 +54,10 @@ static h2_pal_result_t shutdown(void* user, uint32_t reason) {
                                 .func_mode = GPIO_SECOND_FUNC_DISABLE};
   bool wake_registered = false;
   unsigned kept = 0;
+  /* The shutdown press may still be held. Wake on the next press instead of
+   * the current low level; releasing this press must not wake the device. */
   if (bk_gpio_register_wakeup_source((gpio_id_t)H2_H202_POWER_KEY_GPIO,
-                                     GPIO_INT_TYPE_LOW_LEVEL) != 0) {
+                                     GPIO_INT_TYPE_FALLING_EDGE) != 0) {
     rc = H2_PAL_ERR_IO;
     goto restore;
   }
@@ -92,6 +95,31 @@ restore:
   if (h2_bk7258_board_fs_init(&fs) != 0) rc = H2_PAL_ERR_IO;
   s_state = H2_PAL_POWER_STATE_PREPARING_SHUTDOWN;
   return (h2_pal_result_t)rc;
+}
+
+int h2_bk7258_board_wait_for_wakeup(uint32_t hold_ms) {
+  if (hold_ms == 0u) return H2_PAL_ERR_INVALID_ARG;
+  if (bk_misc_get_reset_reason() != RESET_SOURCE_DEEPPS_GPIO) return H2_PAL_OK;
+  const gpio_id_t key = (gpio_id_t)H2_H202_POWER_KEY_GPIO;
+  const gpio_config_t input = {.io_mode = GPIO_INPUT_ENABLE,
+                               .pull_mode = GPIO_PULL_UP_EN,
+                               .func_mode = GPIO_SECOND_FUNC_DISABLE};
+  if (gpio_dev_unmap(key) != 0 || bk_gpio_set_config(key, &input) != 0)
+    return H2_PAL_ERR_IO;
+  printf("H202_POWER_WAKE waiting hold_ms=%lu\r\n", (unsigned long)hold_ms);
+  const uint32_t started = rtos_get_time();
+  for (;;) {
+    if (bk_gpio_get_input(key)) {
+      printf("H202_POWER_WAKE short_press sleep\r\n");
+      return shutdown(NULL, 0u);
+    }
+    uint32_t elapsed = rtos_get_time() - started;
+    if (elapsed >= hold_ms) break;
+    uint32_t left = hold_ms - elapsed;
+    rtos_delay_milliseconds(left < 20u ? left : 20u);
+  }
+  printf("H202_POWER_WAKE accepted\r\n");
+  return H2_PAL_OK;
 }
 
 /* Chip restart through the SDK watchdog, as the H2Loader BK power API does.

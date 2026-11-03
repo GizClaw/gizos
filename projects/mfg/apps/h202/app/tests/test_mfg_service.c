@@ -161,35 +161,103 @@ static void test_prompt_playback(void) {
   h2_h202_mfg_upsample(in, 3, out, &state);
   const int16_t expected[6] = {0, 0, 50, 100, 150, 200};
   assert(memcmp(out, expected, sizeof(out)) == 0 && state == 200);
-  /* 250 samples at 8 kHz: one whole frame and a zero-padded partial one. */
-  static unsigned char bytes[500];
-  for (unsigned i = 0; i < 250u; ++i) {
-    bytes[i * 2u] = 0x34;
-    bytes[i * 2u + 1u] = 0x12;
-  }
+  /* Reference values from prompts/ima_adpcm.py: low nibble first, a zero
+   * step for the first codes, sign bit 8, and index growth by 8. */
+  h2_h202_mfg_adpcm_state_t decoder = {0};
+  const unsigned char codes[3] = {0x08, 0x80, 0x7f};
+  const int16_t decoded[6] = {0, 0, 0, 0, -11, 19};
+  for (unsigned i = 0; i < 6u; ++i)
+    assert(h2_h202_mfg_adpcm_next(
+               &decoder, (codes[i / 2u] >> (i % 2u * 4u)) & 15u) == decoded[i]);
+  /* 125 bytes, 250 samples at 8 kHz: one whole frame and a zero-padded
+   * partial one; code 7 ramps 11, 41, 104 and saturates. */
+  static unsigned char bytes[125];
+  memset(bytes, 0x77, sizeof(bytes));
   track_fake_t t;
   track_init(&t);
-  assert(h2_h202_mfg_play_pcm8k(&t.track, bytes, sizeof(bytes), NULL, NULL) ==
+  assert(h2_h202_mfg_play_adpcm8k(&t.track, bytes, sizeof(bytes), NULL, NULL) ==
          H2_PAL_OK);
   assert(t.writes == 2u && t.drains == 1u);
-  assert(t.frames[0][0] == 0x1234 / 2 && t.frames[0][1] == 0x1234);
-  assert(t.frames[0][319] == 0x1234 && t.frames[1][0] == 0x1234);
-  assert(t.frames[1][179] == 0x1234 && t.frames[1][180] == 0);
+  assert(t.frames[0][0] == 11 / 2 && t.frames[0][1] == 11);
+  assert(t.frames[0][2] == (11 + 41) / 2 && t.frames[0][5] == 104);
+  assert(t.frames[0][319] == INT16_MAX && t.frames[1][0] == INT16_MAX);
+  assert(t.frames[1][179] == INT16_MAX && t.frames[1][180] == 0);
   assert(t.frames[1][319] == 0);
   /* Track write failure is the playback error; no drain follows. */
   track_init(&t);
   t.fail_at = 1;
-  assert(h2_h202_mfg_play_pcm8k(&t.track, bytes, sizeof(bytes), NULL, NULL) ==
+  assert(h2_h202_mfg_play_adpcm8k(&t.track, bytes, sizeof(bytes), NULL, NULL) ==
          H2_PAL_ERR_IO);
   assert(t.drains == 0u);
   track_init(&t);
   t.cancel_at = 1;
-  assert(h2_h202_mfg_play_pcm8k(&t.track, bytes, sizeof(bytes), track_canceled,
-                                &t) == H2_PAL_ERR_CLOSED);
+  assert(h2_h202_mfg_play_adpcm8k(&t.track, bytes, sizeof(bytes),
+                                  track_canceled, &t) == H2_PAL_ERR_CLOSED);
   assert(t.writes == 1u);
-  assert(h2_h202_mfg_play_pcm8k(&t.track, bytes, 3u, NULL, NULL) ==
+  assert(h2_h202_mfg_play_adpcm8k(&t.track, NULL, 1u, NULL, NULL) ==
          H2_PAL_ERR_INVALID_ARG);
-  puts("prompt conversion and framing ok");
+  puts("prompt decoding and framing ok");
+}
+
+/* Five notes in turn, each followed by true silence, faded at both edges,
+ * at the configured pitch, repeating from the first note. */
+static void test_scale(void) {
+  /* The H106 Zero BK melody: gapless, one continuous phase across notes. */
+  static const h2_h202_mfg_scale_config_t melody = {
+      .sample_rate_hz = 16000u,
+      .notes_hz = {523u, 659u, 784u, 659u, 587u, 698u, 880u, 698u},
+      .note_ms = 400u,
+      .gap_ms = 0u,
+      .amplitude = 10922};
+  h2_h202_mfg_scale_t scale;
+  assert(h2_h202_mfg_scale_init(&scale, &melody) == H2_PAL_OK);
+  int previous = 0;
+  for (unsigned round = 0; round < 2u; ++round) {
+    for (unsigned n = 0; n < H2_H202_MFG_SCALE_NOTES; ++n) {
+      int peak = 0, crossings = 0, step = 0;
+      for (unsigned i = 0; i < 6400u; ++i) {
+        int v = h2_h202_mfg_scale_next(&scale);
+        if (abs(v) > peak) peak = abs(v);
+        if ((previous < 0 && v >= 0) || (previous > 0 && v <= 0)) ++crossings;
+        /* No jump at note edges: at most one step of the highest note. */
+        if (abs(v - previous) > step) step = abs(v - previous);
+        previous = v;
+      }
+      assert(peak > 10800 && peak <= 10922 && step < 3800);
+      int expected = (int)(2u * melody.notes_hz[n] * 4u / 10u);
+      assert(abs(crossings - expected) <= 2);
+    }
+  }
+  /* With a gap, every note fades in and out and the gap is silent. */
+  static const h2_h202_mfg_scale_config_t config = {
+      .sample_rate_hz = 16000u,
+      .notes_hz = {523u, 587u, 659u, 784u, 880u, 523u, 587u, 659u},
+      .note_ms = 300u,
+      .gap_ms = 150u,
+      .amplitude = 24000};
+  assert(h2_h202_mfg_scale_init(&scale, &config) == H2_PAL_OK);
+  for (unsigned n = 0; n < H2_H202_MFG_SCALE_NOTES; ++n) {
+    int peak = 0, last = 0;
+    int first = h2_h202_mfg_scale_next(&scale);
+    for (unsigned i = 1; i < 4800u; ++i) {
+      last = h2_h202_mfg_scale_next(&scale);
+      if (abs(last) > peak) peak = abs(last);
+    }
+    assert(first == 0 && abs(last) < 600 && peak > 23000);
+    for (unsigned i = 0; i < 2400u; ++i)
+      assert(h2_h202_mfg_scale_next(&scale) == 0);
+  }
+  h2_h202_mfg_scale_config_t bad = melody;
+  bad.notes_hz[2] = 0u;
+  assert(h2_h202_mfg_scale_init(&scale, &bad) == H2_PAL_ERR_INVALID_ARG);
+  bad = melody;
+  bad.notes_hz[7] = 8000u;
+  assert(h2_h202_mfg_scale_init(&scale, &bad) == H2_PAL_ERR_INVALID_ARG);
+  bad = melody;
+  bad.note_ms = 0u;
+  assert(h2_h202_mfg_scale_init(&scale, &bad) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_h202_mfg_scale_init(NULL, &melody) == H2_PAL_ERR_INVALID_ARG);
+  puts("aging melody ok");
 }
 
 /* ---- Threaded service fixture ---------------------------------------- */
@@ -211,10 +279,10 @@ struct h2_pal_semaphore {
 static atomic_int tasks;
 static atomic_uint key_mask;
 static atomic_bool usb, chrg, done_line, white, card, silent_right;
-static atomic_bool wifi_connect_locked, data_open_locked, shutdown_locked;
+static atomic_bool wifi_connect_locked, shutdown_locked;
 static atomic_bool shutdown_key_down;
 static atomic_uint shutdowns, wifi_connects, led_frames, mic_starts;
-static atomic_uint reboots;
+static atomic_uint reboots, speaker_volume;
 static atomic_bool reboot_locked;
 static atomic_int last_color; /* Packed RGB of pixel 3. */
 static h2_pal_mutex_t* operation;
@@ -378,11 +446,29 @@ static bool operation_held(void) {
   return false;
 }
 
+/* Played clips arrive in order from the one audio worker. */
+static atomic_uint retry_tails, poweroff_tails;
+static bool previous_failed, previous_poweroff;
+
 static int log_write(void* user, h2_pal_log_level_t level, const char* scope,
                      const char* message) {
   (void)user;
   (void)level;
   printf("[%s] %s\n", scope, message);
+  const char* play = strstr(message, "H202_MFG_PLAY prompt=");
+  if (play != NULL) {
+    const char* name = play + strlen("H202_MFG_PLAY prompt=");
+    if (strcmp(name, "retry") == 0 && previous_failed)
+      atomic_fetch_add(&retry_tails, 1u);
+    if (strcmp(name, "retry_poweroff") == 0 && previous_poweroff)
+      atomic_fetch_add(&poweroff_tails, 1u);
+    const size_t length = strlen(name);
+    previous_failed = length > 7u &&
+                      strcmp(name + length - 7u, "_failed") == 0 &&
+                      strcmp(name, "poweroff_failed") != 0;
+    previous_poweroff =
+        strcmp(name, "poweroff_failed") == 0 || strcmp(name, "unsaved") == 0;
+  }
   return H2_PAL_OK;
 }
 static const h2_pal_log_vtable_t log_vtable = {.write = log_write};
@@ -455,12 +541,20 @@ static const h2_pal_nfc_vtable_t nfc_vtable = {.scan_nfc_reader = nfc_scan};
 static const h2_pal_nfc_api_t nfc_api = {.vtable = &nfc_vtable};
 
 /* Associated with the fixture while DHCP never completes. */
-static atomic_bool wifi_associated, wifi_wait_locked;
+static atomic_bool wifi_associated, wifi_online, wifi_wait_locked;
 static atomic_uint wifi_status_reads;
 static int wifi_status(void* user, h2_pal_wifi_sta_status_t* out) {
   (void)user;
   memset(out, 0, sizeof(*out));
   out->state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  if (atomic_load(&wifi_online)) { /* Linked with an address. */
+    out->state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+    out->ssid_len = strlen("HAIVIVI-MFG");
+    memcpy(out->ssid, "HAIVIVI-MFG", out->ssid_len);
+    out->ip_valid = 1u;
+    out->ip.ip4 = 0x0a000003u;
+    return H2_PAL_OK;
+  }
   if (atomic_load(&wifi_associated)) {
     out->state = H2_PAL_WIFI_STA_STATE_CONNECTED;
     out->ssid_len = strlen("HAIVIVI-MFG");
@@ -500,67 +594,6 @@ static const h2_pal_wifi_sta_vtable_t wifi_vtable = {
     .connect = wifi_connect,
     .disconnect = wifi_disconnect};
 static const h2_pal_wifi_sta_api_t wifi_api = {.vtable = &wifi_vtable};
-
-static h2_pal_result_t modem_ok(void* user, uint32_t timeout_ms) {
-  (void)user;
-  (void)timeout_ms;
-  return H2_PAL_OK;
-}
-static atomic_uint modem_status_calls;
-static h2_pal_result_t modem_status(void* user, h2_pal_modem_status_t* out) {
-  (void)user;
-  memset(out, 0, sizeof(*out));
-  /* Lierda reports CME 14 (SIM busy) as WOULD_BLOCK; MFG keeps polling. */
-  if (atomic_fetch_add(&modem_status_calls, 1u) == 0u)
-    return H2_PAL_ERR_WOULD_BLOCK;
-  out->sim = H2_PAL_MODEM_SIM_STATE_READY;
-  return H2_PAL_OK;
-}
-static h2_pal_result_t modem_identity(void* user,
-                                      h2_pal_modem_identity_t* out) {
-  (void)user;
-  memset(out, 0, sizeof(*out));
-  strcpy(out->imei, "861234567890123");
-  strcpy(out->imsi, "460011234567890");
-  return H2_PAL_OK;
-}
-static h2_pal_result_t modem_apn(void* user,
-                                 const h2_pal_modem_apn_config_t* config) {
-  (void)user;
-  assert(strcmp(config->apn, "3gnet") == 0); /* h2_apn_from_imsi(46001...). */
-  return H2_PAL_OK;
-}
-static h2_pal_result_t modem_signal(void* user, h2_pal_modem_signal_t* out) {
-  (void)user;
-  memset(out, 0, sizeof(*out));
-  out->rssi_valid = 1u;
-  out->rssi_dbm = -85;
-  return H2_PAL_OK;
-}
-static h2_pal_result_t modem_data_open(void* user, uint32_t timeout_ms) {
-  (void)user;
-  (void)timeout_ms;
-  atomic_store(&data_open_locked, operation_held());
-  return H2_PAL_OK;
-}
-static h2_pal_result_t modem_data(void* user, h2_pal_modem_data_status_t* out) {
-  (void)user;
-  memset(out, 0, sizeof(*out));
-  out->state = H2_PAL_MODEM_DATA_OPEN;
-  out->ip4 = 0x0a000002u;
-  out->ip4_valid = 1u;
-  return H2_PAL_OK;
-}
-static const h2_pal_modem_vtable_t modem_vtable = {
-    .open = modem_ok,
-    .close = modem_ok,
-    .get_status = modem_status,
-    .get_identity = modem_identity,
-    .set_apn = modem_apn,
-    .data_open = modem_data_open,
-    .get_data_status = modem_data,
-    .get_signal = modem_signal};
-static const h2_pal_modem_api_t modem_api = {.vtable = &modem_vtable};
 
 static h2_pal_result_t power_shutdown(void* user, uint32_t reason) {
   (void)user;
@@ -626,7 +659,8 @@ static int a_observer(void* user, const h2_audio_aec_observer_t* observer) {
 }
 static int a_volume(void* user, uint32_t percent) {
   (void)user;
-  assert(percent == 35u);
+  assert(percent <= 100u);
+  atomic_store(&speaker_volume, percent);
   return H2_PAL_OK;
 }
 static int a_mic_read(void* user, h2_audio_frame_t* out, uint32_t timeout_ms) {
@@ -808,14 +842,14 @@ static int pref_open(void* user, const char* space,
 static const h2_pal_pref_vtable_t pref_vtable = {.open = pref_open};
 static const h2_pal_pref_api_t pref_api = {.vtable = &pref_vtable};
 
-static const unsigned char prompt_pcm[400] = {0};
-static const size_t prompt_size = sizeof(prompt_pcm);
+/* 200 silent samples, as before ADPCM. */
+static const unsigned char prompt_adpcm[100] = {0};
+static const size_t prompt_size = sizeof(prompt_adpcm);
 
 static h2_h202_mfg_profile_t profile = {
     .controller = {.charger_timeout_ms = 5000u,
                    .nfc_timeout_ms = 5000u,
                    .wifi_timeout_ms = 3000u,
-                   .cellular_timeout_ms = 5000u,
                    .power_hold_ms = 400u},
     .keys = {1, 2, 3, 4},
     .usb_insert = USB_ID,
@@ -831,7 +865,8 @@ static h2_h202_mfg_profile_t profile = {
                [H2_H202_MFG_COLOR_BLUE_RIGHT] = {0, 0, 64, 0},
                [H2_H202_MFG_COLOR_GREEN] = {0, 64, 0, 0},
                [H2_H202_MFG_COLOR_YELLOW] = {64, 48, 0, 0},
-               [H2_H202_MFG_COLOR_RED] = {64, 0, 0, 0}},
+               [H2_H202_MFG_COLOR_RED] = {64, 0, 0, 0},
+               [H2_H202_MFG_COLOR_WHITE] = {32, 32, 32, 0}},
     .tick_ms = 10u,
     .key_debounce_ms = 20u,
     .charger_debounce_ms = 50u,
@@ -841,8 +876,12 @@ static h2_h202_mfg_profile_t profile = {
     .sample_rate_hz = 16000u,
     .frame_samples = 320u,
     .volume_percent = 35u,
-    .tone_hz = 1000u,
-    .tone_amplitude = 16384,
+    .aging_scale = {.sample_rate_hz = 16000u,
+                    .notes_hz = {523u, 659u, 784u, 659u, 587u, 698u, 880u,
+                                 698u},
+                    .note_ms = 30u,
+                    .gap_ms = 0u,
+                    .amplitude = 10922},
     .monitor_gain_q15 = 8192u,
     .aec = {.sample_rate_hz = 16000u,
             .convergence_ms = 200u,
@@ -852,7 +891,7 @@ static h2_h202_mfg_profile_t profile = {
     .wifi_ssid = "HAIVIVI-MFG",
     .wifi_password = "!haivivi",
     .ntp_host = "time.apple.com",
-    .min_rssi_dbm = -115};
+};
 
 static h2_h202_mfg_service_t* service;
 
@@ -917,11 +956,6 @@ static void test_session(void) {
   /* No Wi-Fi fixture: the background check failed under the lock. */
   wait_for(H2_H202_MFG_WIFI, H2_H202_MFG_PHASE_FAILED);
   assert(atomic_load(&wifi_connect_locked));
-  for (unsigned i = 0; i < 100u && status().cellular != H2_H202_MFG_NET_PASSED;
-       ++i)
-    sleep_ms(10);
-  assert(status().cellular == H2_H202_MFG_NET_PASSED);
-  assert(atomic_load(&data_open_locked));
   /* Left passes, the silent right lane fails, then retries after repair. */
   atomic_store(&silent_right, true);
   keys_now(2u);
@@ -955,17 +989,22 @@ static void test_session(void) {
   sleep_ms(200);
   assert(!atomic_load(&white));
   atomic_store(&chrg, false);
-  /* 2 s (here 400 ms) hold: commit, wait for release, then power off. */
+  /* 2 s (here 400 ms) hold: commit and power off without waiting for release.
+   */
   keys_now(1u);
-  sleep_ms(500);
-  keys_now(0u);
   wait_for(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_POWEROFF_FAILED);
   assert(status().committed && atomic_load(&shutdowns) == 1u);
-  assert(!atomic_load(&shutdown_key_down) && atomic_load(&shutdown_locked));
+  assert(atomic_load(&key_mask) == 1u);
+  assert(atomic_load(&shutdown_key_down) && atomic_load(&shutdown_locked));
+  keys_now(0u);
   h2_loader_mfg_summary_t summary;
   stored(&summary);
   for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
     assert(summary.step_status[i] == status().results[i]);
+  /* Failure prompts end with the shared retry instruction. */
+  for (unsigned i = 0; i < 200u && atomic_load(&poweroff_tails) == 0u; ++i)
+    sleep_ms(10);
+  assert(atomic_load(&retry_tails) > 0u && atomic_load(&poweroff_tails) > 0u);
   stop();
   puts("service session, network ownership and shutdown ok");
 }
@@ -993,7 +1032,7 @@ static void test_wifi_waits_for_address(void) {
 static void test_reset(void) {
   uint8_t results[H2_H202_MFG_ITEM_COUNT];
   memset(results, H2_H202_MFG_PASSED, sizeof(results));
-  results[H2_H202_MFG_CELLULAR] = H2_H202_MFG_FAILED;
+  results[H2_H202_MFG_AGING] = H2_H202_MFG_FAILED;
   start();
   wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
   /* A record saved by an earlier shutdown, then Record + short power. */
@@ -1012,37 +1051,88 @@ static void test_reset(void) {
   puts("service reset gesture ok");
 }
 
+/* Before management: white eyes, then the boot prompt played to the end
+ * with the speaker released again. A missing prompt still lights the eyes. */
+static void test_boot_feedback(void) {
+  memset(&audio, 0, sizeof(audio));
+  unsigned frames = atomic_load(&led_frames);
+  assert(h2_h202_mfg_boot_feedback(&runtime, &profile) == H2_PAL_OK);
+  assert(atomic_load(&led_frames) == frames + 1u);
+  assert(atomic_load(&last_color) == (32 << 16 | 32 << 8 | 32));
+  assert(audio.writes > 0u && atomic_load(&speaker_volume) == 35u);
+  assert(!audio.speaker && !audio.track_open && !audio.mic);
+  const h2_h202_mfg_adpcm_t saved = profile.prompts[H2_H202_MFG_PROMPT_BOOT];
+  profile.prompts[H2_H202_MFG_PROMPT_BOOT] = (h2_h202_mfg_adpcm_t){0};
+  unsigned writes = audio.writes;
+  assert(h2_h202_mfg_boot_feedback(&runtime, &profile) == H2_PAL_ERR_NOT_FOUND);
+  assert(atomic_load(&led_frames) == frames + 2u && audio.writes == writes);
+  assert(!audio.speaker && !audio.track_open);
+  profile.prompts[H2_H202_MFG_PROMPT_BOOT] = saved;
+  assert(h2_h202_mfg_boot_feedback(NULL, &profile) == H2_PAL_ERR_INVALID_ARG);
+  puts("boot feedback ok");
+}
+
 static void test_resume_and_aging(void) {
   /* Resume at the first item not PASSED; the record is cleared at boot. */
   start();
   for (unsigned i = 0; i < 100u && status().item != H2_H202_MFG_WIFI; ++i)
     sleep_ms(10);
   assert(status().item == H2_H202_MFG_WIFI);
-  assert(status().cellular == H2_H202_MFG_NET_IDLE);
   h2_loader_mfg_summary_t summary;
   stored(&summary);
   for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
     assert(summary.step_status[i] == H2_LOADER_MFG_STEP_UNTESTED);
   stop();
-  /* Ten PASSED results go straight to aging. */
+  /* Nine PASSED results go straight to aging. */
   uint8_t results[H2_H202_MFG_ITEM_COUNT];
   memset(results, H2_H202_MFG_PASSED, sizeof(results));
   results[H2_H202_MFG_AGING] = H2_H202_MFG_FAILED;
   assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
   unsigned mics = atomic_load(&mic_starts);
+  /* Wi-Fi is still linked from stage 04: aging keeps it, no reconnect. */
+  atomic_store(&wifi_online, true);
+  unsigned connects = atomic_load(&wifi_connects);
   start();
   wait_for(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
   unsigned frames = atomic_load(&led_frames);
   sleep_ms(400);
   assert(atomic_load(&led_frames) > frames + 3u); /* Rainbow running. */
-  assert(atomic_load(&mic_starts) == mics + 1u && audio.observer_set);
+  assert(atomic_load(&wifi_connects) == connects);
+  /* A dropped link is reconnected (and fails on the host fixture). */
+  atomic_store(&wifi_online, false);
+  for (unsigned i = 0; i < 300u && atomic_load(&wifi_connects) == connects; ++i)
+    sleep_ms(10);
+  assert(atomic_load(&wifi_connects) > connects);
+  /* Playback only, like H106: no microphone or AEC during aging. */
+  assert(atomic_load(&mic_starts) == mics && !audio.observer_set);
+  assert(atomic_load(&speaker_volume) == 35u);
+  click(H2_H202_MFG_KEY_PLUS);
+  assert(atomic_load(&speaker_volume) == 55u);
+  click(H2_H202_MFG_KEY_MINUS);
+  assert(atomic_load(&speaker_volume) == 35u);
+  /* Repeated presses clamp at both ends instead of wrapping. */
+  for (unsigned i = 0; i < 5u; ++i) click(H2_H202_MFG_KEY_PLUS);
+  assert(atomic_load(&speaker_volume) == 100u);
+  for (unsigned i = 0; i < 6u; ++i) click(H2_H202_MFG_KEY_MINUS);
+  assert(atomic_load(&speaker_volume) == 0u);
+  assert(status().phase == H2_H202_MFG_PHASE_ACTIVE);
   click(2u);
   wait_for(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
   assert(status().results[H2_H202_MFG_AGING] == H2_H202_MFG_PASSED);
   assert(status().color == H2_H202_MFG_COLOR_GREEN);
   sleep_ms(100); /* No late rainbow frame overwrites green. */
   assert(atomic_load(&last_color) == (64 << 8));
-  /* A failed commit announces unsaved and keeps running. */
+  assert(atomic_load(&speaker_volume) == 35u); /* Prompt volume is restored. */
+  /* The pass is saved without powering off, for the Loader MFG gate. */
+  bool accepted = false;
+  for (unsigned i = 0; i < 100u && !accepted; ++i) {
+    stored(&summary);
+    accepted = summary.step_status[H2_H202_MFG_AGING] == H2_H202_MFG_PASSED;
+    if (!accepted) sleep_ms(10);
+  }
+  for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
+    assert(summary.step_status[i] == H2_H202_MFG_PASSED);
+  /* A failed shutdown commit still announces unsaved and keeps running. */
   atomic_store(&fail_set_blob, 1);
   keys_now(1u);
   sleep_ms(500);
@@ -1051,21 +1141,28 @@ static void test_resume_and_aging(void) {
   assert(!status().committed);
   atomic_store(&fail_set_blob, 0);
   stop();
-  /* A management reboot (stop without hold) saves nothing. */
+  /* A management reboot (stop without hold) keeps the saved pass: boot
+   * clears it, stage 10 saves it again. */
   start();
-  wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
+  wait_for(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
+  accepted = false;
+  for (unsigned i = 0; i < 100u && !accepted; ++i) {
+    stored(&summary);
+    accepted = summary.step_status[H2_H202_MFG_AGING] == H2_H202_MFG_PASSED;
+    if (!accepted) sleep_ms(10);
+  }
+  assert(accepted);
   stop();
-  stored(&summary);
-  for (unsigned i = 0; i < H2_H202_MFG_ITEM_COUNT; ++i)
-    assert(summary.step_status[i] == H2_LOADER_MFG_STEP_UNTESTED);
-  puts("service resume, aging and unsaved shutdown ok");
+  assert(h2_h202_mfg_progress_clear(&pref_api) == H2_PAL_OK);
+  puts("service resume, aging, accepted pass and unsaved shutdown ok");
 }
 
 int main(void) {
   test_measurement();
+  test_scale();
   test_prompt_playback();
   for (unsigned i = 0; i < H2_H202_MFG_PROMPT_COUNT; ++i)
-    profile.prompts[i] = (h2_h202_mfg_pcm_t){prompt_pcm, &prompt_size};
+    profile.prompts[i] = (h2_h202_mfg_adpcm_t){prompt_adpcm, &prompt_size};
   runtime = (h2_runtime_t){.board = "h202",
                            .mem = &mem,
                            .log = &log_api,
@@ -1078,10 +1175,10 @@ int main(void) {
                            .led = &led_api,
                            .nfc = &nfc_api,
                            .wifi_sta = &wifi_api,
-                           .modem = &modem_api,
                            .power = &power_api,
                            .audio = &audio_api};
   assert(mutex_create(NULL, NULL, &operation) == H2_PAL_OK);
+  test_boot_feedback();
   test_wifi_waits_for_address();
   test_session();
   test_resume_and_aging();

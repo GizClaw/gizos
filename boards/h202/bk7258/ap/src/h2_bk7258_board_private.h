@@ -17,8 +17,5 @@ bool h2_h202_white_on(void);
 h2_pal_result_t h2_h202_led_deinit(void);
 const h2_pal_audio_api_t* h2_h202_audio_api(void);
 h2_pal_result_t h2_h202_audio_deinit(void);
-h2_pal_result_t h2_h202_modem_init(void);
-h2_pal_result_t h2_h202_modem_deinit(void);
-const h2_pal_modem_api_t* h2_h202_modem_api(void);
 
 #endif

@@ -1,3 +1,4 @@
+load("//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl", "h2loader_bk_recovery")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:app_version.bzl", "app_version")
@@ -9,10 +10,10 @@ load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-# H202 bumps its own App-role MFG independently of //projects/mfg:version.
+# H202 bumps its own Loader-role MFG independently of //projects/mfg:version.
 app_version(
     name = "version",
-    value = "0.2.0",
+    value = "0.3.1",
 )
 
 firmware_version(
@@ -21,15 +22,15 @@ firmware_version(
     main_version = ":version",
 )
 
-# Embedded as generated C arrays by ap/CMakeLists.txt; the package carries no
-# prompt data and MFG opens no prompt path.
+# Encoded to IMA ADPCM C arrays by ap/CMakeLists.txt with ima_adpcm.py; the
+# package carries no prompt data and MFG opens no prompt path.
 filegroup(
     name = "prompts",
     srcs = [
+        "prompts/ima_adpcm.py",
         "prompts/zh/aging.pcm",
         "prompts/zh/aging_failed.pcm",
-        "prompts/zh/cellular_failed.pcm",
-        "prompts/zh/cellular_passed.pcm",
+        "prompts/zh/boot.pcm",
         "prompts/zh/charge_failed.pcm",
         "prompts/zh/charge_insert.pcm",
         "prompts/zh/charge_passed.pcm",
@@ -47,6 +48,8 @@ filegroup(
         "prompts/zh/plus.pcm",
         "prompts/zh/power.pcm",
         "prompts/zh/poweroff_failed.pcm",
+        "prompts/zh/retry.pcm",
+        "prompts/zh/retry_poweroff.pcm",
         "prompts/zh/unsaved.pcm",
         "prompts/zh/waiting.pcm",
         "prompts/zh/wifi_failed.pcm",
@@ -54,27 +57,30 @@ filegroup(
     ],
 )
 
+# Priority and core follow the H106 Zero BK MFG policy (lower number runs
+# first): the controller on core 1 like h106/mfg, the audio loop lowest on
+# core 1 like mfg-audio, so the board capture (6) and speaker (5) elements
+# preempt it, and the eye/NFC/charger worker on core 0 like mfg-led.
 bk7258_target_task_policy(
     ap_default_policy = "7 0 16384 psram",
     ap_policies = [
         "h202/entry  6 0 32768 psram",
         "h2loader/appcmd  5 0 49152 psram",
         "h202/mfg  5 1 16384 psram",
-        "h202/mfg/audio  5 1 16384 psram",
-        "h202/mfg/sensor  5 1 16384 psram",
+        "h202/mfg/audio  9 1 16384 psram",
+        "h202/mfg/sensor  5 0 16384 psram",
         "h202/mfg/wifi  5 0 16384 psram",
-        "h202/mfg/cellular  5 0 16384 psram",
         "h202/mfg/power  5 0 16384 psram",
-        "h202/ppp-rx  5 0 8192 psram",
-        "$bleikcp/kcp  5 0 4096 psram",
-        "$bleikcp/server  5 0 4096 psram",
-        "$h2loader/blelink  5 0 4096 psram",
+        # Declared by shared modules; never created with Bluetooth disabled.
+        "$bleikcp/kcp  default",
+        "$bleikcp/server  default",
+        "$h2loader/blelink  default",
         "$h2loader/return  default",
         "$h2loader/uartcmd  5 0 49152 psram",
         "$h2peer/net  default",
         "$h2peer/udp  default",
-        "$runtime/input  default",
-        "$runtime/nfc  default",
+        "$runtime/input  5 0 16384 psram",
+        "$runtime/nfc  5 0 16384 psram",
     ],
     cp_default_policy = "6 4096 default",
     graph = [":mfg_launcher"],
@@ -89,14 +95,12 @@ firmware_lib_component(
     name = "firmware_lib",
     deps = [
         "//libs/atomic",
-        "//libs/bleikcp",
         "//libs/bundle",
         "//libs/command",
         "//libs/drivers/nfc/fm175xx",
         "//libs/iostreamikcp",
         "//libs/ntp",
         "//libs/pal:unsupported",
-        "//libs/pal/providers/modem/lierda:lierda_modem",
         "//libs/runtime",
         "//libs/utils",
         "//libs/wifi_sta",
@@ -189,6 +193,12 @@ h2loader_tar_zlib(
     board = "h202",
     firmware = ":firmware",
     image = "h202-mfg",
-    role = "app",
+    role = "h2loader",
     target = "bk7258",
+)
+
+h2loader_bk_recovery(
+    name = "encrypted_recovery",
+    board = "h202",
+    firmware = ":firmware",
 )

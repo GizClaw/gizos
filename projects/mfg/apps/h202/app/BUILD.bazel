@@ -12,7 +12,6 @@ h2_tasks(
         "h202/mfg/audio",
         "h202/mfg/sensor",
         "h202/mfg/wifi",
-        "h202/mfg/cellular",
         "h202/mfg/power",
     ],
 )
