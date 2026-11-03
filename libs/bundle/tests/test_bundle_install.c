@@ -287,18 +287,19 @@ static void allocation_and_io_failures_release_workspace(void) {
   size_t allocations = context.allocations;
   assert(allocations >= 2);
   for (size_t failure = 1; failure <= allocations; ++failure) {
-    context = (bundle_test_context_t){.archive = archive, .archive_len = length,
-                                     .fail_allocation = failure};
+    context = (bundle_test_context_t){
+        .archive = archive, .archive_len = length, .fail_allocation = failure};
     assert(install_archive(&context, 0, 0) < 0);
     if (failure == 1) {
       assert(context.archive_opens == 0 && context.app_begins == 0);
       assert(context.data_clears == 0 && context.checksum_writes == 0);
     }
   }
-  context = (bundle_test_context_t){.archive = archive, .archive_len = length,
-                                   .read_error = 1};
+  context = (bundle_test_context_t){
+      .archive = archive, .archive_len = length, .read_error = 1};
   assert(install_archive(&context, 0, 0) == H2_BUNDLE_ERR_FS);
-  context = (bundle_test_context_t){.archive = archive, .archive_len = length - 1};
+  context =
+      (bundle_test_context_t){.archive = archive, .archive_len = length - 1};
   assert(install_archive(&context, 0, 0) == H2_BUNDLE_ERR_ZLIB);
   assert(context.checksum_writes == 0);
 }

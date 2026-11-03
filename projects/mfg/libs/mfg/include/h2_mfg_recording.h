@@ -13,9 +13,10 @@ extern "C" {
  * run synchronously on the MFG owner, never on an audio observer callback.
  * open, begin and close run with both audio workers stopped. write_frame runs
  * while recording (the owner drains a bounded callback queue on diagnostics
- * paths), and may also run after both workers stop. read_frame runs during replay.
- * PCM pointers are borrowed only until that callback returns; a store must not
- * retain them. The store and user context are borrowed until close succeeds.
+ * paths), and may also run after both workers stop. read_frame runs during
+ * replay. PCM pointers are borrowed only until that callback returns; a store
+ * must not retain them. The store and user context are borrowed until close
+ * succeeds.
  *
  * open receives the complete measured frame count and native mono S16 samples
  * per frame. Diagnostics use one recording: voice at index 0. Opaque AEC uses
@@ -40,8 +41,8 @@ typedef struct h2_mfg_recording_store {
   int (*begin)(void* user, unsigned recording);
   int (*write_frame)(void* user, unsigned recording, unsigned frame,
                      const int16_t* pcm, unsigned samples);
-  int (*read_frame)(void* user, unsigned recording, unsigned frame, int16_t* pcm,
-                    unsigned samples);
+  int (*read_frame)(void* user, unsigned recording, unsigned frame,
+                    int16_t* pcm, unsigned samples);
   int (*close)(void* user);
 } h2_mfg_recording_store_t;
 

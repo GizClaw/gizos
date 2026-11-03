@@ -148,11 +148,12 @@ static int open_command_service(
       .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
       .handler = handle_session,
       .handler_user = owned,
-      .server_task_stack_size = config != NULL ? config->server_task_stack_size
-                                                : 0u,
+      .server_task_stack_size =
+          config != NULL ? config->server_task_stack_size : 0u,
       .stream_buffer_size = config != NULL ? config->stream_buffer_size : 0u,
       .stream_window = config != NULL ? config->stream_window : 0u,
-      .input_frame_capacity = config != NULL ? config->input_frame_capacity : 0u,
+      .input_frame_capacity =
+          config != NULL ? config->input_frame_capacity : 0u,
   };
   rc = h2_loader_ble_service_open(&service_config, &owned->service);
   if (rc == H2_PAL_OK || close_command_service(NULL, owned) != H2_PAL_OK) {

@@ -69,7 +69,8 @@ typedef struct h2loader_app_config {
   int (*serve)(void* user, h2_loader_t* loader, h2_loader_command_t* command,
                h2_loader_startup_action_t action);
   /** Command task minimum stack bytes; zero preserves 48 KiB.
-   * A nonzero image-owned budget must be at least 20 KiB and verified on target. */
+   * A nonzero image-owned budget must be at least 20 KiB and verified on
+   * target. */
   size_t command_task_stack_size;
 } h2loader_app_config_t;
 

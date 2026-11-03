@@ -13,14 +13,23 @@ static bool h2_atomic_bool_load(const h2_atomic_bool_t* value, int order) {
   (void)order;
   return *value;
 }
-static void h2_atomic_bool_store(h2_atomic_bool_t* value, bool next, int order) {
+static void h2_atomic_bool_store(h2_atomic_bool_t* value, bool next,
+                                 int order) {
   (void)order;
   *value = next;
 }
-typedef struct { int marker; } h2_runtime_t;
-typedef struct { int marker; } h2_loader_t;
-typedef struct { void* operation_mutex; } h2_loader_command_config_t;
-typedef struct { h2_loader_command_config_t config; } h2_loader_command_t;
+typedef struct {
+  int marker;
+} h2_runtime_t;
+typedef struct {
+  int marker;
+} h2_loader_t;
+typedef struct {
+  void* operation_mutex;
+} h2_loader_command_config_t;
+typedef struct {
+  h2_loader_command_config_t config;
+} h2_loader_command_t;
 typedef int h2_loader_startup_action_t;
 typedef struct {
   void* user;
@@ -32,7 +41,9 @@ typedef struct {
   h2_runtime_t* runtime;
   const h2_esp_h2loader_config_t* config;
 } h2_esp_h2loader_context_t;
-typedef struct { uint32_t pending_conv; } transport_t;
+typedef struct {
+  uint32_t pending_conv;
+} transport_t;
 
 static h2_atomic_bool_t s_command_stop_requested;
 static transport_t s_command_transport;
@@ -43,7 +54,7 @@ static h2_runtime_t runtime;
 static int stop_serve_loader(void* user);
 
 static int poll_service(void* user, h2_runtime_t* value,
-                         const h2_loader_command_config_t* command) {
+                        const h2_loader_command_config_t* command) {
   assert(user == &marker && value == &runtime && !locks_held);
   assert(command->operation_mutex == &marker);
   ++service_polls;
@@ -76,7 +87,8 @@ static int h2_loader_command_init(h2_loader_command_t* command,
   return H2_PAL_OK;
 }
 
-static int h2_esp_h2loader_command_transport_activate_pending(transport_t* value) {
+static int h2_esp_h2loader_command_transport_activate_pending(
+    transport_t* value) {
   assert(value == &s_command_transport && value->pending_conv != 0u);
   ++activations;
   value->pending_conv = 0u;
@@ -95,7 +107,7 @@ static void poll_usb(void) {
 }
 
 static int h2_esp_h2loader_command_transport_poll_session(transport_t* value,
-                                                        uint32_t timeout_ms) {
+                                                          uint32_t timeout_ms) {
   assert(value == &s_command_transport && timeout_ms == 50u);
   poll_usb();
   return H2_PAL_ERR_WOULD_BLOCK;
@@ -115,7 +127,8 @@ static bool h2_esp_h2loader_command_transport_replacement_pending(
   (void)value;
   return false;
 }
-static bool h2_esp_h2loader_command_transport_close_pending(transport_t* value) {
+static bool h2_esp_h2loader_command_transport_close_pending(
+    transport_t* value) {
   (void)value;
   return false;
 }

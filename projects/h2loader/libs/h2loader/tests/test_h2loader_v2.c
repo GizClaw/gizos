@@ -692,8 +692,8 @@ static void test_seed_running_metadata_preserves_package_origin(void) {
 }
 
 static void prepare_recovered_partition_1(test_fixture_t* fixture,
-                                           unsigned previous_identity,
-                                           h2_loader_image_role_t old_role) {
+                                          unsigned previous_identity,
+                                          h2_loader_image_role_t old_role) {
   fixture_init(fixture, 1u);
   fixture->boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
   fixture->boot_intent_present = 1;
@@ -703,7 +703,8 @@ static void prepare_recovered_partition_1(test_fixture_t* fixture,
   fixture->config.mfg_required_total = 7u;
   h2_loader_metadata_t old = metadata(old_role, SHA_B);
   old.package_size = 1024u;
-  (void)snprintf(old.package_checksum, sizeof(old.package_checksum), "%s", SHA_A);
+  (void)snprintf(old.package_checksum, sizeof(old.package_checksum), "%s",
+                 SHA_A);
   (void)snprintf(old.version, sizeof(old.version), "%s", "0.1.38");
   write_metadata(fixture, H2_LOADER_METADATA_SLOT_STAGE, &old);
   write_metadata(fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &old);
@@ -732,9 +733,9 @@ static void assert_record_unchanged(test_fixture_t* fixture, const char* key,
 }
 
 static void assert_recovered_partition_1_is_held(test_fixture_t* fixture,
-                                                const pref_record_t* stage,
-                                                const pref_record_t* p2,
-                                                const pref_record_t* mfg) {
+                                                 const pref_record_t* stage,
+                                                 const pref_record_t* p2,
+                                                 const pref_record_t* mfg) {
   int present;
   const h2_loader_metadata_t expected =
       metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
@@ -751,7 +752,8 @@ static void assert_recovered_partition_1_is_held(test_fixture_t* fixture,
     assert(fixture->loader.status.mfg.step_status[step] ==
            H2_LOADER_MFG_STEP_PASSED);
   }
-  assert(fixture->loader.status.mfg.step_status[6] == H2_LOADER_MFG_STEP_FAILED);
+  assert(fixture->loader.status.mfg.step_status[6] ==
+         H2_LOADER_MFG_STEP_FAILED);
   assert(fixture->package_present && fixture->package_removes == 0u);
   assert(fixture->writer_partition == 0u && fixture->writer_finishes == 0u);
   assert(fixture->next_partition == 1u && fixture->set_next_calls == 0u);
@@ -808,17 +810,19 @@ static void test_p1_recovery_guard_write_failures_remain_retryable(void) {
     if (failure == 3u) fixture.set_blob_fail_at = fixture.set_blob_calls + 1u;
     if (failure == 4u) fixture.commit_fail_at = fixture.commits + 2u;
     if (failure == 5u) fixture.close_fail_after_commit = fixture.commits + 2u;
-    const int expected = failure == 2u || failure == 5u ? H2_PAL_ERR_IO
-                                                       : H2_PAL_ERR_WRITE;
+    const int expected =
+        failure == 2u || failure == 5u ? H2_PAL_ERR_IO : H2_PAL_ERR_WRITE;
     assert(h2_loader_startup(&fixture.loader, &action) == expected);
     assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
-    assert(fixture.boot_intent == (failure < 2u ? H2_LOADER_BOOT_INTENT_AUTO
-                                               : H2_LOADER_BOOT_INTENT_LOADER));
+    assert(fixture.boot_intent == (failure < 2u
+                                       ? H2_LOADER_BOOT_INTENT_AUTO
+                                       : H2_LOADER_BOOT_INTENT_LOADER));
     if (failure < 3u) assert(fixture.set_blob_calls == blob_writes);
-    if (failure < 5u) assert_record_unchanged(&fixture, "partition_1", &old_p1);
+    if (failure < 5u)
+      assert_record_unchanged(&fixture, "partition_1", &old_p1);
     else {
-      const h2_loader_metadata_t p1 =
-          read_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
+      const h2_loader_metadata_t p1 = read_metadata(
+          &fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
       assert(present && strcmp(p1.image_checksum, SHA_A) == 0);
     }
     assert_record_unchanged(&fixture, "stage", &stage);
@@ -846,7 +850,7 @@ static void test_p1_recovery_guard_survives_power_loss_between_writes(void) {
       test_fixture_t* fixture = malloc(sizeof(*fixture));
       assert(fixture != NULL);
       prepare_recovered_partition_1(fixture, previous_identity,
-                                     H2_LOADER_IMAGE_ROLE_H2LOADER);
+                                    H2_LOADER_IMAGE_ROLE_H2LOADER);
       const pref_record_t stage = *find_record(fixture, "stage");
       const pref_record_t p2 = *find_record(fixture, "partition_2");
       const pref_record_t mfg = *find_record(fixture, "mfg");
@@ -866,8 +870,8 @@ static void test_p1_recovery_guard_survives_power_loss_between_writes(void) {
         assert_record_unchanged(fixture, "partition_1", &old_p1);
       else {
         int present;
-        const h2_loader_metadata_t p1 =
-            read_metadata(fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
+        const h2_loader_metadata_t p1 = read_metadata(
+            fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
         assert(present && strcmp(p1.image_checksum, SHA_A) == 0);
       }
       assert(fixture->last_result == H2_PAL_ERR_WRITE);

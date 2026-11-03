@@ -204,13 +204,17 @@ static int release_after_stopped(void* user) {
 static void small_track_and_checked_release(void) {
   fake_audio_t a = {.volume = 91};
   const h2_pal_audio_api_t audio = {.user = &a, .vtable = &vtable};
-  h2_runtime_t rt = {.mem = h2_desktop_platform_default_allocator(), .audio = &audio};
+  h2_runtime_t rt = {.mem = h2_desktop_platform_default_allocator(),
+                     .audio = &audio};
   h2_mfg_step_t step = {"speaker", H2_MFG_SPEAKER, 0};
-  const h2_mfg_profile_t profile = {
-      .board = "test", .steps = &step, .total = 1,
-      .playback_buffer_frames = 2, .release_check = release_after_stopped,
-      .release_check_user = &a};
-  h2_mfg_t m = {.rt = &rt, .profile = &profile,
+  const h2_mfg_profile_t profile = {.board = "test",
+                                    .steps = &step,
+                                    .total = 1,
+                                    .playback_buffer_frames = 2,
+                                    .release_check = release_after_stopped,
+                                    .release_check_user = &a};
+  h2_mfg_t m = {.rt = &rt,
+                .profile = &profile,
                 .model = {.profile = &profile, .summary = {.total = 1}}};
   assert(h2_mfg_hardware_enter(&m, 0) == 0 && a.capacity == 2);
   a.prepare_error = H2_PAL_ERR_BUSY;

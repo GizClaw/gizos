@@ -25,9 +25,9 @@ typedef struct esp_partition {
   char label[17];
 } esp_partition_t;
 
-const esp_partition_t* esp_partition_find_first(
-    esp_partition_type_t type, esp_partition_subtype_t subtype,
-    const char* label);
+const esp_partition_t* esp_partition_find_first(esp_partition_type_t type,
+                                                esp_partition_subtype_t subtype,
+                                                const char* label);
 esp_err_t esp_partition_read(const esp_partition_t* partition, size_t offset,
                              void* data, size_t len);
 esp_err_t esp_partition_write(const esp_partition_t* partition, size_t offset,

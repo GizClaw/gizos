@@ -17,7 +17,8 @@ void h2_passport_recording_bind(h2_runtime_t* runtime, h2_loader_t* loader);
  * current bindings, Loader metadata, disk geometry and physical partitions; a
  * matching permit skips only the expensive SDK image verifier. Direct open or
  * changed state performs full verification. Prepare never erases/writes flash
- * or creates a recording key; a partially failed open still needs checked close.
+ * or creates a recording key; a partially failed open still needs checked
+ * close.
  */
 int h2_passport_recording_prepare(void);
 

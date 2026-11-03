@@ -4,10 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-enum {
-  AUDIO_POLL_BUDGET = 16,
-  AUDIO_TEST_VOLUME = 70
-};
+enum { AUDIO_POLL_BUDGET = 16, AUDIO_TEST_VOLUME = 70 };
 
 static unsigned test_volume(const h2_mfg_t* m) {
   return m->profile->speaker_test_volume == 0 ? AUDIO_TEST_VOLUME
@@ -529,9 +526,9 @@ int h2_mfg_hardware_service(h2_mfg_t* m, uint64_t now) {
       m->hardware_ticket != m->model.ticket)
     return 0;
   h2_mfg_check_t check = m->profile->steps[m->model.current].check;
-  int failed = m->model.error != 0 ||
-               m->model.summary.step_status[m->model.current] ==
-                   H2_LOADER_MFG_STEP_FAILED;
+  int failed =
+      m->model.error != 0 || m->model.summary.step_status[m->model.current] ==
+                                 H2_LOADER_MFG_STEP_FAILED;
   int rc = poll_buttons(m, now);
   if (rc != 0 && check == H2_MFG_BUTTONS && !failed) return rc;
   if (failed) return 0;

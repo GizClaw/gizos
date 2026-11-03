@@ -46,8 +46,7 @@ static void disk(h2_mfg_t* m, int x, int y, int r, uint16_t color) {
 
 static void text(h2_mfg_t* m, const char* s, int x, int y, int scale,
                  uint16_t color) {
-  if (y >= m->frame_y + frame_rows(m) || y + 7 * scale <= m->frame_y)
-    return;
+  if (y >= m->frame_y + frame_rows(m) || y + 7 * scale <= m->frame_y) return;
   for (size_t i = 0; s[i] != '\0'; ++i) {
     int c = (unsigned char)s[i];
     if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
@@ -394,11 +393,13 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         else
           (void)snprintf(line, sizeof(line), "请听取回声");
         factory_center(m, line, 1, echo_db >= 0 ? ui->passed : ui->text);
-        (void)snprintf(line, sizeof(line), "MIC LEVEL %u", m->render_snapshot.mic_level);
+        (void)snprintf(line, sizeof(line), "MIC LEVEL %u",
+                       m->render_snapshot.mic_level);
         factory_center(m, line, 2, ui->text);
-        factory_center(
-            m, m->render_snapshot.ready ? "请人工确认回声和语音" : "请按照提示操作", 3,
-            m->render_snapshot.ready ? ui->accent : ui->muted);
+        factory_center(m,
+                       m->render_snapshot.ready ? "请人工确认回声和语音"
+                                                : "请按照提示操作",
+                       3, m->render_snapshot.ready ? ui->accent : ui->muted);
         break;
       }
       case H2_MFG_BATTERY:
@@ -433,8 +434,9 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         (void)snprintf(line, sizeof(line), "%ld / %ld / %ld", (long)g->x,
                        (long)g->y, (long)g->z);
         factory_center(m, line, 3, ui->text);
-        factory_center(m, m->render_snapshot.ready ? "运动已响应" : "请移动并旋转设备", 4,
-                       ui->accent);
+        factory_center(
+            m, m->render_snapshot.ready ? "运动已响应" : "请移动并旋转设备", 4,
+            ui->accent);
         break;
       }
       case H2_MFG_MAGNETOMETERS:
@@ -465,8 +467,9 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
           }
         }
         if (ui->read_magnet == NULL)
-          factory_center(m, m->render_snapshot.ready ? "运动已响应" : "请旋转设备", 5,
-                         m->render_snapshot.ready ? ui->passed : ui->text);
+          factory_center(m,
+                         m->render_snapshot.ready ? "运动已响应" : "请旋转设备",
+                         5, m->render_snapshot.ready ? ui->passed : ui->text);
         break;
       case H2_MFG_VIBRATION:
         factory_rect(m, ui->vibration,
@@ -662,7 +665,8 @@ static int draw_frame(h2_mfg_t* m, uint64_t now) {
   } else if (step != NULL && step->check == H2_MFG_MIC) {
     center(m, "SPEAK NEAR MIC", h * 34 / 100, scale, WHITE);
     unsigned bars = 0;
-    for (unsigned threshold = 32; threshold <= m->render_snapshot.mic_level && bars < 10;
+    for (unsigned threshold = 32;
+         threshold <= m->render_snapshot.mic_level && bars < 10;
          threshold *= 2u)
       ++bars;
     for (unsigned i = 0; i < 10; ++i)
@@ -672,9 +676,11 @@ static int draw_frame(h2_mfg_t* m, uint64_t now) {
            : i < 8   ? GREEN
            : i < 9   ? 0xffe0
                      : RED);
-    (void)snprintf(line, sizeof(line), "LEVEL %u", m->render_snapshot.mic_level);
+    (void)snprintf(line, sizeof(line), "LEVEL %u",
+                   m->render_snapshot.mic_level);
     center(m, line, h * 62 / 100, scale, WHITE);
-    (void)snprintf(line, sizeof(line), "FRAMES %u", m->render_snapshot.audio_frames);
+    (void)snprintf(line, sizeof(line), "FRAMES %u",
+                   m->render_snapshot.audio_frames);
     center(m, line, h * 69 / 100, scale, WHITE);
   } else if (step != NULL && step->check == H2_MFG_SPEAKER) {
     center(m, "LISTEN TO TONE", h * 34 / 100, scale, WHITE);
@@ -689,10 +695,13 @@ static int draw_frame(h2_mfg_t* m, uint64_t now) {
     else
       (void)snprintf(line, sizeof(line), "LISTEN FOR ECHO");
     center(m, line, h * 44 / 100, scale, echo_db >= 0 ? GREEN : WHITE);
-    (void)snprintf(line, sizeof(line), "MIC LEVEL %u", m->render_snapshot.mic_level);
+    (void)snprintf(line, sizeof(line), "MIC LEVEL %u",
+                   m->render_snapshot.mic_level);
     center(m, line, h * 56 / 100, scale, WHITE);
-    center(m, m->render_snapshot.ready ? "CHECK ECHO AND VOICE" : "FOLLOW THE PROMPT",
-           h * 68 / 100, scale, WHITE);
+    center(
+        m,
+        m->render_snapshot.ready ? "CHECK ECHO AND VOICE" : "FOLLOW THE PROMPT",
+        h * 68 / 100, scale, WHITE);
   } else if (step != NULL && step->check != H2_MFG_DISPLAY) {
     const char* prompt = step->check == H2_MFG_WIFI  ? "CONNECT WIFI BY SERIAL"
                          : step->check == H2_MFG_BLE ? "CONNECT A BOARD PEER"
@@ -701,14 +710,14 @@ static int draw_frame(h2_mfg_t* m, uint64_t now) {
   }
   if (step != NULL) {
     rect(m, w * 10 / 100, h * 83 / 100, w * 40 / 100, h * 10 / 100,
-         failed           ? BLUE
+         failed                     ? BLUE
          : m->render_snapshot.ready ? GREEN
-                          : GREY);
+                                    : GREY);
     rect(m, w / 2, h * 83 / 100, w * 40 / 100, h * 10 / 100, RED);
     text(m,
-         failed           ? "RETRY"
+         failed                     ? "RETRY"
          : m->render_snapshot.ready ? "PASS"
-                          : "WAIT",
+                                    : "WAIT",
          w * 22 / 100, h * 86 / 100, scale, WHITE);
     text(m, "FAIL", w * 62 / 100, h * 86 / 100, scale, WHITE);
     if (failed)

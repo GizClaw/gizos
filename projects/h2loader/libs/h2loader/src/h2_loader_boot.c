@@ -458,7 +458,7 @@ static int seed_running_metadata(h2_loader_t* loader) {
      * seeding its identity so a reset between writes cannot leave matching P1
      * metadata with AUTO still armed to install an older Stage or boot P2. */
     int rc = pref_set_u32(loader->config.pref, "boot_intent",
-                           (uint32_t)H2_LOADER_BOOT_INTENT_LOADER);
+                          (uint32_t)H2_LOADER_BOOT_INTENT_LOADER);
     if (rc != H2_PAL_OK) return rc;
     loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
   }

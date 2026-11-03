@@ -109,8 +109,7 @@ static void test_small_scratch_values(h2_esp_pref_store_t* store) {
   static const size_t sizes[] = {0u, 1u, 4096u, 4097u, 16384u};
   uint8_t* value = (uint8_t*)malloc(16384u);
   assert(value != NULL);
-  for (size_t i = 0u; i < 16384u; ++i)
-    value[i] = (uint8_t)(i * 37u + i / 251u);
+  for (size_t i = 0u; i < 16384u; ++i) value[i] = (uint8_t)(i * 37u + i / 251u);
   store->committed_budget = 128u * 1024u;
   for (size_t i = 0u; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
     const size_t size = sizes[i];

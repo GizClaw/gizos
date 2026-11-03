@@ -177,9 +177,9 @@ const h2_pal_wifi_csi_api_t* h2_esp_platform_wifi_csi(void);
 h2_pal_modem_t* h2_esp_platform_modem_unsupported(void);
 int h2_esp_platform_wifi_ensure_started(void);
 /**
- * Disconnects STA, stops/deinitializes its driver and destroys its netif without
- * changing saved credentials. Shared event infrastructure remains available;
- * later PAL Wi-Fi operations may start the driver again.
+ * Disconnects STA, stops/deinitializes its driver and destroys its netif
+ * without changing saved credentials. Shared event infrastructure remains
+ * available; later PAL Wi-Fi operations may start the driver again.
  *
  * The caller owns the Wi-Fi phase: quiesce network clients and serialize this
  * call with status/scan, AP, CSI and other Wi-Fi operations using the same

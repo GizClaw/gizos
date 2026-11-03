@@ -56,8 +56,10 @@ static int start_task(void* user, const h2_pal_task_options_t* options,
 static int join_task(void* user, h2_pal_task_t* task) {
   advertising_capture_t* capture = user;
   bool server = task == capture->server_task;
-  if (server) ++capture->server_joins;
-  else ++capture->link_joins;
+  if (server)
+    ++capture->server_joins;
+  else
+    ++capture->link_joins;
   if (capture->fail_join == (server ? 2u : 1u)) {
     capture->fail_join = 0u;
     return H2_PAL_ERR_TASK;
@@ -183,8 +185,8 @@ static void test_mode(h2_loader_ble_advertising_mode_t mode, bool named,
   advertising_capture_t capture = {0};
   const h2_pal_mem_vtable_t memory_ops = {.alloc = allocate, .free = release};
   const h2_pal_mem_api_t memory = {.user = &capture, .vtable = &memory_ops};
-  const h2_pal_task_vtable_t task_ops = {
-      .start = start_task, .join = join_task};
+  const h2_pal_task_vtable_t task_ops = {.start = start_task,
+                                         .join = join_task};
   const h2_pal_task_api_t task = {.user = &capture, .vtable = &task_ops};
   const h2_pal_ble_vtable_t ops = {
       .start = ok,
@@ -206,8 +208,8 @@ static void test_mode(h2_loader_ble_advertising_mode_t mode, bool named,
       .subscribe = subscribe,
       .unsubscribe = unsubscribe,
   };
-  const h2_pal_system_event_api_t events = {
-      .user = &capture, .vtable = &event_ops};
+  const h2_pal_system_event_api_t events = {.user = &capture,
+                                            .vtable = &event_ops};
   char name[] = "h106-tiga-A1B2C3";
   h2_loader_ble_service_config_t config = {
       .api = {.ble = &ble,
@@ -253,9 +255,9 @@ static void test_mode(h2_loader_ble_advertising_mode_t mode, bool named,
     if (failure <= 2u) capture.fail_join = failure;
     if (failure == 3u) capture.fail_unregister = true;
     if (failure == 4u) capture.fail_stop = true;
-    int expected = failure <= 2u ? H2_PAL_ERR_TASK
+    int expected = failure <= 2u   ? H2_PAL_ERR_TASK
                    : failure == 3u ? H2_PAL_ERR_WOULD_BLOCK
-                                    : H2_PAL_ERR_IO;
+                                   : H2_PAL_ERR_IO;
     assert(h2_loader_ble_service_close(service) == expected);
     assert(capture.live_allocations != 0u);
     assert(h2_loader_ble_service_request_advertising_paused(service, true) ==

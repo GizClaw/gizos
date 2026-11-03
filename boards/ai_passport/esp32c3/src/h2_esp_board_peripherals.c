@@ -19,7 +19,7 @@ enum {
 /* IDF may discard a partial DMA descriptor when the RX/TX queue backs up. */
 _Static_assert(AUDIO_FRAME_SAMPLES % AUDIO_DMA_FRAME_SAMPLES == 0,
                "Native audio frames must consume complete DMA descriptors");
-_Static_assert(AUDIO_DMA_DESCRIPTORS * AUDIO_DMA_FRAME_SAMPLES == 640,
+_Static_assert(AUDIO_DMA_DESCRIPTORS* AUDIO_DMA_FRAME_SAMPLES == 640,
                "Keep the board's 40 ms DMA payload budget");
 static SemaphoreHandle_t mutex;
 static i2c_master_bus_handle_t bus;

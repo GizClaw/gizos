@@ -74,8 +74,8 @@ static int service(h2_mfg_t* m) {
   fixture_t* f = m->rt->display->user;
   return h2_mfg_hardware_service(m, f->now);
 }
-static const h2_pal_button_vtable_t button_vtable = {
-    .read_radio_button_group = read_keys};
+static const h2_pal_button_vtable_t button_vtable = {.read_radio_button_group =
+                                                         read_keys};
 static const h2_pal_display_vtable_t display_vtable = {
     .open = open_display,
     .get_info = display_info,
@@ -89,16 +89,15 @@ static const h2_mfg_step_t steps[] = {
     {"fifth", H2_MFG_DISPLAY, 0},   {"sixth", H2_MFG_DISPLAY, 0},
     {"seventh", H2_MFG_DISPLAY, 0}, {"eighth", H2_MFG_DISPLAY, 0},
     {"ninth", H2_MFG_DISPLAY, 0},   {"power", H2_MFG_POWER, 0}};
-static const h2_mfg_profile_t profile = {
-    .board = "test",
-    .revision = 1,
-    .steps = steps,
-    .total = 10,
-    .buttons = {103, 102, 101},
-    .button_names = {"OK", "UP", "DOWN"},
-    .button_count = 3,
-    .button_group = 201,
-    .display_buffer_rows = ROWS};
+static const h2_mfg_profile_t profile = {.board = "test",
+                                         .revision = 1,
+                                         .steps = steps,
+                                         .total = 10,
+                                         .buttons = {103, 102, 101},
+                                         .button_names = {"OK", "UP", "DOWN"},
+                                         .button_count = 3,
+                                         .button_group = 201,
+                                         .display_buffer_rows = ROWS};
 
 static void enter(fixture_t* f) {
   assert(h2_mfg_hardware_enter(&f->mfg, f->now) == 0);
@@ -152,7 +151,7 @@ static void short_press_during_slow_frame(unsigned offset) {
   const char* action = tick(&f);
   assert(action != NULL && strcmp(action, "confirm") == 0);
   assert(h2_mfg_model_action(&f.mfg.model, action, "power",
-                              f.mfg.model.ticket) == 0);
+                             f.mfg.model.ticket) == 0);
   assert(f.saves == 1 && h2_mfg_model_complete(&f.mfg.model));
   for (unsigned i = 0; i < 10; ++i)
     assert(f.saved.step_status[i] == H2_LOADER_MFG_STEP_PASSED);
@@ -176,7 +175,7 @@ static void pending_press_cannot_cross_ticket(void) {
   render(&f);
   assert(f.mfg.downs[0] == 1 && f.mfg.ups[0] == 1);
   assert(h2_mfg_model_action(&f.mfg.model, "retry", "power",
-                              f.mfg.model.ticket) == 0);
+                             f.mfg.model.ticket) == 0);
   enter(&f);
   assert(tick(&f) == NULL);
   assert(f.mfg.model.current == 9 && !h2_mfg_model_complete(&f.mfg.model));
@@ -206,7 +205,7 @@ static void failed_check_short_press_retries(void) {
   const char* action = tick(&f);
   assert(action != NULL && strcmp(action, "retry") == 0);
   assert(h2_mfg_model_action(&f.mfg.model, action, "power",
-                              f.mfg.model.ticket) == 0);
+                             f.mfg.model.ticket) == 0);
   assert(f.mfg.model.current == 9 && f.mfg.model.error == 0);
   assert(f.saved.step_status[9] == H2_LOADER_MFG_STEP_UNTESTED);
   for (unsigned i = 0; i < 9; ++i)

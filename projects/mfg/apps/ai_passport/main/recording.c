@@ -127,8 +127,8 @@ static int same_validation(const recording_validation_t* a,
          a->running_partition_id == b->running_partition_id &&
          a->app_address == b->app_address &&
          a->running_address == b->running_address &&
-         a->running_size == b->running_size &&
-         a->disk.id == b->disk.id && a->disk.size == b->disk.size &&
+         a->running_size == b->running_size && a->disk.id == b->disk.id &&
+         a->disk.size == b->disk.size &&
          a->disk.erase_block_size == b->disk.erase_block_size &&
          a->disk.write_alignment == b->disk.write_alignment &&
          a->disk.flags == b->disk.flags &&
@@ -154,7 +154,7 @@ int h2_passport_recording_prepare(void) {
 }
 
 static int open_recording(void* user, unsigned count, unsigned frames,
-                           unsigned samples) {
+                          unsigned samples) {
   recording_state_t* s = user;
   /* prepare and open belong to one uninterrupted Loader operation. Even a
    * rejected open consumes its permit; it cannot survive a later retry. */
@@ -196,11 +196,12 @@ static int begin_recording(void* user, unsigned recording) {
   s->ready[recording] = 0;
   s->written[recording] = 0;
   /* Each retry gets a fresh nonce prefix and an erased recording region. */
-  int rc = h2_pal_crypto_random(s->runtime->crypto, s->nonce_prefix[recording], 8);
+  int rc =
+      h2_pal_crypto_random(s->runtime->crypto, s->nonce_prefix[recording], 8);
   if (rc == 0)
     rc = h2_pal_disk_erase(s->runtime->disk, PARTITION_ID,
-                            SCRATCH_OFFSET + recording * s->region_size,
-                            s->region_size);
+                           SCRATCH_OFFSET + recording * s->region_size,
+                           s->region_size);
   if (rc == 0) s->ready[recording] = 1;
   return rc;
 }
@@ -210,7 +211,7 @@ static void le32(uint8_t* bytes, unsigned value) {
 }
 
 static void frame_nonce(recording_state_t* s, unsigned recording,
-                         unsigned frame, uint8_t nonce[12], uint8_t aad[8]) {
+                        unsigned frame, uint8_t nonce[12], uint8_t aad[8]) {
   memcpy(nonce, s->nonce_prefix[recording], 8);
   le32(nonce + 8, frame);
   le32(aad, recording);
@@ -226,18 +227,18 @@ static int write_frame(void* user, unsigned recording, unsigned frame,
     return H2_PAL_ERR_INVALID_ARG;
   uint8_t nonce[12], aad[8];
   frame_nonce(s, recording, frame, nonce, aad);
-  h2_pal_crypto_buf_t ciphertext = {
-      .data = s->ciphertext, .cap = sizeof(s->ciphertext)};
+  h2_pal_crypto_buf_t ciphertext = {.data = s->ciphertext,
+                                    .cap = sizeof(s->ciphertext)};
   int rc = h2_pal_crypto_aead_seal(
-      s->runtime->crypto, H2_PAL_CRYPTO_AEAD_AES_128_GCM, s->key, sizeof(s->key),
-      nonce, sizeof(nonce), (const uint8_t*)pcm, samples * sizeof(*pcm), aad,
-      sizeof(aad), &ciphertext);
+      s->runtime->crypto, H2_PAL_CRYPTO_AEAD_AES_128_GCM, s->key,
+      sizeof(s->key), nonce, sizeof(nonce), (const uint8_t*)pcm,
+      samples * sizeof(*pcm), aad, sizeof(aad), &ciphertext);
   if (rc == 0 && ciphertext.len != s->stride) rc = H2_PAL_ERR_FORMAT;
   if (rc == 0)
-    rc = h2_pal_disk_write(s->runtime->disk, PARTITION_ID,
-                            SCRATCH_OFFSET + recording * s->region_size +
-                                frame * s->stride,
-                            s->ciphertext, ciphertext.len);
+    rc = h2_pal_disk_write(
+        s->runtime->disk, PARTITION_ID,
+        SCRATCH_OFFSET + recording * s->region_size + frame * s->stride,
+        s->ciphertext, ciphertext.len);
   clear_bytes(s->ciphertext, sizeof(s->ciphertext));
   if (rc == 0)
     ++s->written[recording];
@@ -254,18 +255,19 @@ static int read_frame(void* user, unsigned recording, unsigned frame,
       !s->ready[recording] || frame >= s->written[recording] ||
       samples != s->samples || pcm == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  int rc = h2_pal_disk_read(s->runtime->disk, PARTITION_ID,
-                            SCRATCH_OFFSET + recording * s->region_size +
-                                frame * s->stride,
-                            s->ciphertext, s->stride);
+  int rc = h2_pal_disk_read(
+      s->runtime->disk, PARTITION_ID,
+      SCRATCH_OFFSET + recording * s->region_size + frame * s->stride,
+      s->ciphertext, s->stride);
   uint8_t nonce[12], aad[8];
   frame_nonce(s, recording, frame, nonce, aad);
-  h2_pal_crypto_buf_t plaintext = {
-      .data = (uint8_t*)pcm, .cap = samples * sizeof(*pcm)};
+  h2_pal_crypto_buf_t plaintext = {.data = (uint8_t*)pcm,
+                                   .cap = samples * sizeof(*pcm)};
   if (rc == 0)
     rc = h2_pal_crypto_aead_open(
-        s->runtime->crypto, H2_PAL_CRYPTO_AEAD_AES_128_GCM, s->key, sizeof(s->key),
-        nonce, sizeof(nonce), s->ciphertext, s->stride, aad, sizeof(aad), &plaintext);
+        s->runtime->crypto, H2_PAL_CRYPTO_AEAD_AES_128_GCM, s->key,
+        sizeof(s->key), nonce, sizeof(nonce), s->ciphertext, s->stride, aad,
+        sizeof(aad), &plaintext);
   if (rc == 0 && plaintext.len != samples * sizeof(*pcm))
     rc = H2_PAL_ERR_FORMAT;
   clear_bytes(s->ciphertext, sizeof(s->ciphertext));
@@ -283,7 +285,7 @@ static int close_recording(void* user) {
   memset(s->ready, 0, sizeof(s->ready));
   if (!s->opened) return 0;
   int rc = h2_pal_disk_erase(s->runtime->disk, PARTITION_ID, SCRATCH_OFFSET,
-                              s->count * s->region_size);
+                             s->count * s->region_size);
   if (rc != 0) return rc;
   s->opened = 0;
   memset(s->written, 0, sizeof(s->written));

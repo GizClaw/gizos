@@ -134,9 +134,10 @@ static int service(h2_mfg_t* m) {
 
 static void render(uint16_t* output, unsigned rows, unsigned check, int factory,
                    int fail_y, int service_error_at) {
-  fixture_t f = {
-      .output = output, .rows = rows == 0 ? HEIGHT : rows, .fail_y = fail_y,
-      .service_error_at = service_error_at};
+  fixture_t f = {.output = output,
+                 .rows = rows == 0 ? HEIGHT : rows,
+                 .fail_y = fail_y,
+                 .service_error_at = service_error_at};
   h2_pal_mem_api_t mem = {.user = &f, .vtable = &mem_vtable};
   h2_pal_display_api_t display = {.user = &f, .vtable = &display_vtable};
   h2_runtime_t rt = {.mem = &mem, .display = &display};

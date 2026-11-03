@@ -75,9 +75,9 @@ h2_pal_result_t h2_esp_platform_safe_call(
   return H2_PAL_OK;
 }
 
-const esp_partition_t* esp_partition_find_first(
-    esp_partition_type_t type, esp_partition_subtype_t subtype,
-    const char* label) {
+const esp_partition_t* esp_partition_find_first(esp_partition_type_t type,
+                                                esp_partition_subtype_t subtype,
+                                                const char* label) {
   assert(label == NULL);
   return type == s_partition.type && subtype == s_partition.subtype
              ? &s_partition
@@ -85,7 +85,7 @@ const esp_partition_t* esp_partition_find_first(
 }
 
 static esp_err_t record_io(const esp_partition_t* partition, size_t offset,
-                            const void* data, size_t len) {
+                           const void* data, size_t len) {
   assert(partition == &s_partition && s_scratch_held && s_mutex_held);
   assert(data == s_scratch && len > 0u && len <= s_capacity);
   assert(offset <= sizeof(s_flash) && len <= sizeof(s_flash) - offset);
@@ -144,7 +144,8 @@ int main(void) {
     value[i] = (uint8_t)(i * 43u + i / 127u);
   memset(s_flash, 0x7d, sizeof(s_flash));
 
-  assert(h2_pal_disk_write(disk, 2u, offset, value, sizeof(value)) == H2_PAL_OK);
+  assert(h2_pal_disk_write(disk, 2u, offset, value, sizeof(value)) ==
+         H2_PAL_OK);
   expect_chunks(offset);
   assert(memcmp(s_flash + offset, value, sizeof(value)) == 0);
   assert(s_flash[offset - 1u] == 0x7d);
@@ -171,7 +172,8 @@ int main(void) {
          H2_PAL_ERR_NO_MEMORY);
   reset_io();
   s_fail_partition_call = 2u;
-  assert(h2_pal_disk_read(disk, 2u, offset, read, sizeof(read)) == H2_PAL_ERR_IO);
+  assert(h2_pal_disk_read(disk, 2u, offset, read, sizeof(read)) ==
+         H2_PAL_ERR_IO);
   assert(s_calls == 2u);
   reset_io();
   s_fail_partition_call = 2u;

@@ -20,7 +20,7 @@ typedef struct test_netif {
 } esp_netif_t;
 typedef struct test_event_group {
   EventBits_t bits;
-} *EventGroupHandle_t;
+}* EventGroupHandle_t;
 typedef void* esp_timer_handle_t;
 
 enum {
@@ -99,9 +99,7 @@ static void h2_esp_wifi_sta_reconnect_disable(void) {
   ++s_sdk.reconnect_disabled;
 }
 
-static void h2_esp_wifi_set_activity(int active) {
-  s_sdk.activity = active;
-}
+static void h2_esp_wifi_set_activity(int active) { s_sdk.activity = active; }
 
 static int h2_esp_wifi_map_error(esp_err_t error) {
   assert(error != ESP_OK);
@@ -155,14 +153,14 @@ static int h2_esp_platform_netif_reconcile_default(void) {
 }
 
 static EventBits_t xEventGroupClearBits(EventGroupHandle_t group,
-                                       EventBits_t bits) {
+                                        EventBits_t bits) {
   EventBits_t previous = group->bits;
   group->bits &= ~bits;
   return previous;
 }
 
 static EventBits_t xEventGroupSetBits(EventGroupHandle_t group,
-                                     EventBits_t bits) {
+                                      EventBits_t bits) {
   group->bits |= bits;
   return group->bits;
 }
@@ -286,14 +284,12 @@ static void test_cold_stop_without_shared_objects(void) {
 }
 
 static void test_failure_retains_ownership_and_can_retry(void) {
-  for (unsigned stage = CALL_DISCONNECT; stage <= CALL_DRIVER_DEINIT;
-       ++stage) {
+  for (unsigned stage = CALL_DISCONNECT; stage <= CALL_DRIVER_DEINIT; ++stage) {
     reset_connected();
-    esp_err_t* result =
-        stage == CALL_DISCONNECT    ? &s_sdk.disconnect_result
-        : stage == CALL_DHCP_STOP   ? &s_sdk.dhcp_result
-        : stage == CALL_DRIVER_STOP ? &s_sdk.stop_result
-                                    : &s_sdk.deinit_result;
+    esp_err_t* result = stage == CALL_DISCONNECT    ? &s_sdk.disconnect_result
+                        : stage == CALL_DHCP_STOP   ? &s_sdk.dhcp_result
+                        : stage == CALL_DRIVER_STOP ? &s_sdk.stop_result
+                                                    : &s_sdk.deinit_result;
     *result = TEST_SDK_FAILURE;
     assert(h2_esp_platform_wifi_stop() == H2_PAL_ERR_IO);
     assert(s_sdk.call_count == stage);

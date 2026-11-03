@@ -18,8 +18,8 @@ static int run_mfg(void* user, h2_loader_t* loader,
                    h2_pal_mutex_t* wifi_mutex) {
   h2_passport_recording_bind(active_runtime, loader);
   h2_passport_resources_bind_wifi(wifi_sync, wifi_mutex);
-  return h2_mfg_run(user, loader, operation_sync, operation_mutex,
-                    wifi_sync, wifi_mutex);
+  return h2_mfg_run(user, loader, operation_sync, operation_mutex, wifi_sync,
+                    wifi_mutex);
 }
 
 static int before_disruptive(void* user, h2_loader_disruptive_action_t action) {
@@ -36,7 +36,8 @@ static void image_entry(void* unused) {
   h2_mfg_t* mfg = NULL;
   int rc = h2_esp_board_runtime_config(&config);
   if (rc == 0) {
-    /* MFG polls its keys/battery directly; no Runtime input sources register. */
+    /* MFG polls its keys/battery directly; no Runtime input sources register.
+     */
     config.input_source_capacity = 1;
     config.component_mapping_capacity = 8;
     config.event_queue_capacity = 4;

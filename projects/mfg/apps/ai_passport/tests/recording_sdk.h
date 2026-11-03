@@ -35,9 +35,9 @@ typedef struct esp_image_metadata {
   uint32_t image_len;
 } esp_image_metadata_t;
 
-const esp_partition_t* esp_partition_find_first(
-    esp_partition_type_t type, esp_partition_subtype_t subtype,
-    const char* label);
+const esp_partition_t* esp_partition_find_first(esp_partition_type_t type,
+                                                esp_partition_subtype_t subtype,
+                                                const char* label);
 const esp_partition_t* esp_ota_get_running_partition(void);
 esp_err_t esp_image_verify(esp_image_load_mode_t mode,
                            const esp_partition_pos_t* position,

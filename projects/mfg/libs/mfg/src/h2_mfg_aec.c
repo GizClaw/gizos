@@ -149,7 +149,7 @@ static int open_recording(h2_mfg_aec_t* a) {
   /* Even a partially failed open needs a matching, retryable close. */
   a->store_opened = 1;
   int rc = a->store->open(a->store->user, a->diagnostics ? 1 : 2, a->measured,
-                        a->samples);
+                          a->samples);
   return rc == 0 ? 0 : store_failure(a, rc);
 }
 
@@ -158,7 +158,7 @@ static int write_recording(h2_mfg_aec_t* a) {
   if (a->stored_frames >= a->measured)
     return store_failure(a, H2_PAL_ERR_INVALID_STATE);
   int rc = a->store->write_frame(a->store->user, recording_index(a),
-                               a->stored_frames, a->recording, a->samples);
+                                 a->stored_frames, a->recording, a->samples);
   if (rc != 0) return store_failure(a, rc);
   ++a->stored_frames;
   return 0;
@@ -171,7 +171,7 @@ static int drain_recording(h2_mfg_aec_t* a) {
   if (a->recording_queue == NULL || !recorded_phase(a)) return 0;
   for (unsigned budget = 0; budget < RECORDING_QUEUE_FRAMES; ++budget) {
     int rc = h2_pal_queue_recv(a->owner->rt->queue, a->recording_queue,
-                              a->recording, H2_PAL_QUEUE_NO_WAIT);
+                               a->recording, H2_PAL_QUEUE_NO_WAIT);
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT) return 0;
     if (rc != 0) return store_failure(a, rc);
     rc = write_recording(a);
@@ -240,8 +240,8 @@ static void on_capture(void* user, const h2_audio_aec_frame_t* f) {
     } else if (c->result == 0) {
       /* The queue copies the complete borrowed frame before returning. Never
        * block, allocate, or call the store from this capture worker. */
-      int rc = h2_pal_queue_send(a->owner->rt->queue, a->recording_queue, output,
-                                H2_PAL_QUEUE_NO_WAIT);
+      int rc = h2_pal_queue_send(a->owner->rt->queue, a->recording_queue,
+                                 output, H2_PAL_QUEUE_NO_WAIT);
       if (rc != 0) {
         c->result = rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT
                         ? H2_PAL_ERR_IO
@@ -364,7 +364,8 @@ int h2_mfg_aec_close(h2_mfg_t* m) {
     m->aec->store_opened = 0;
   }
   /* Workers are joined and storage cleanup succeeded before releasing any
-   * dependencies. Both RAM recordings and the small assembly frame are erased. */
+   * dependencies. Both RAM recordings and the small assembly frame are erased.
+   */
   h2_pal_queue_destroy(m->rt->queue, m->aec->recording_queue);
   if (m->aec->recording != NULL)
     memset(m->aec->recording, 0, m->aec->recording_bytes);
@@ -426,8 +427,7 @@ static int start_phase(h2_mfg_t* m, phase_t phase) {
   if (rc == 0 && a->store != NULL && recorded_phase(a)) {
     if (a->recording_queue != NULL)
       rc = h2_pal_queue_reset(m->rt->queue, a->recording_queue);
-    if (rc == 0)
-      rc = a->store->begin(a->store->user, recording_index(a));
+    if (rc == 0) rc = a->store->begin(a->store->user, recording_index(a));
     if (rc != 0) return store_failure(a, rc);
   }
   if (rc == 0) rc = h2_pal_time_get_monotonic_ms(m->rt->time, &a->start_ms);
@@ -453,16 +453,16 @@ static int start_phase(h2_mfg_t* m, phase_t phase) {
                  " manual_voice=pending",
                  phase_name(phase),
                  a->diagnostics < 0 ? "starting"
-                 : a->diagnostics  ? "diagnostics"
-                                   : "operator",
+                 : a->diagnostics   ? "diagnostics"
+                                    : "operator",
                  h2_mfg_aec_echo_db(m), a->volume, a->mic_gain);
   return rc;
 }
 
 static int atomic_error(h2_atomic_result_t result) {
-  return result == H2_ATOMIC_NO_MEMORY ? H2_PAL_ERR_NO_MEMORY
+  return result == H2_ATOMIC_NO_MEMORY     ? H2_PAL_ERR_NO_MEMORY
          : result == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
-                                          : H2_PAL_ERR_INVALID_STATE;
+                                           : H2_PAL_ERR_INVALID_STATE;
 }
 
 int h2_mfg_aec_enter(h2_mfg_t* m) {
@@ -482,9 +482,9 @@ int h2_mfg_aec_enter(h2_mfg_t* m) {
       spk.sample_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_PAL_ERR_UNSUPPORTED;
   const h2_mfg_recording_store_t* store = m->profile->aec_recording_store;
-  if (store != NULL &&
-      (store->open == NULL || store->begin == NULL || store->write_frame == NULL ||
-       store->read_frame == NULL || store->close == NULL))
+  if (store != NULL && (store->open == NULL || store->begin == NULL ||
+                        store->write_frame == NULL ||
+                        store->read_frame == NULL || store->close == NULL))
     return H2_PAL_ERR_INVALID_ARG;
   unsigned samples = mic.frame_samples_per_channel;
   unsigned measured = (WINDOW_SAMPLES + samples - 1) / samples;
@@ -568,8 +568,7 @@ static int finish_window(h2_mfg_t* m) {
   const playback_meter_t* p = &a->playback;
   if (c->result != 0) return c->result;
   if (p->result != 0) return p->result;
-  if (a->store != NULL && recorded_phase(a) &&
-      a->stored_frames != a->measured)
+  if (a->store != NULL && recorded_phase(a) && a->stored_frames != a->measured)
     return store_failure(a, H2_PAL_ERR_INVALID_STATE);
   uint64_t end = c->end_ms > p->end_ms ? c->end_ms : p->end_ms;
   uint64_t elapsed = end >= a->start_ms ? end - a->start_ms : 0;
@@ -646,14 +645,13 @@ static int finish_window(h2_mfg_t* m) {
 }
 
 /* Owner work between synchronous display strips. This only services the live
- * phase: no worker lifecycle, blocking track drain, transitions or readiness. */
+ * phase: no worker lifecycle, blocking track drain, transitions or readiness.
+ */
 int h2_mfg_aec_service(h2_mfg_t* m, uint64_t now) {
   h2_mfg_aec_t* a = m->aec;
-  if (a == NULL || a->atomics_initialized != 2)
-    return H2_PAL_ERR_INVALID_STATE;
+  if (a == NULL || a->atomics_initialized != 2) return H2_PAL_ERR_INVALID_STATE;
   int rc = drain_recording(a);
-  if (rc == 0)
-    rc = h2_atomic_int_load(&a->worker_result, H2_ATOMIC_ACQUIRE);
+  if (rc == 0) rc = h2_atomic_int_load(&a->worker_result, H2_ATOMIC_ACQUIRE);
   if (rc != 0) {
     m->model.ready = 0;
     return rc;
@@ -674,7 +672,7 @@ int h2_mfg_aec_service(h2_mfg_t* m, uint64_t now) {
     if (a->store != NULL && replay(a->phase)) {
       if (!a->replay_frame_loaded) {
         rc = a->store->read_frame(a->store->user, recording_index(a),
-                                 a->position, pcm, a->samples);
+                                  a->position, pcm, a->samples);
         if (rc != 0) return store_failure(a, rc);
         a->replay_frame_loaded = 1;
       }
@@ -703,8 +701,7 @@ int h2_mfg_aec_service(h2_mfg_t* m, uint64_t now) {
     m->audio_samples += a->samples;
   }
   rc = drain_recording(a);
-  if (rc == 0)
-    rc = h2_atomic_int_load(&a->worker_result, H2_ATOMIC_ACQUIRE);
+  if (rc == 0) rc = h2_atomic_int_load(&a->worker_result, H2_ATOMIC_ACQUIRE);
   if (rc != 0) m->model.ready = 0;
   return rc;
 }
@@ -750,12 +747,12 @@ int h2_mfg_aec_tick(h2_mfg_t* m) {
     uint64_t elapsed = now >= a->start_ms ? now - a->start_ms : 0;
     unsigned completed = h2_atomic_uint_load(&a->completed, H2_ATOMIC_ACQUIRE);
     int complete = (completed & CAPTURE_COMPLETE) != 0 &&
-                   (a->diagnostics
-                        ? (completed & PLAYBACK_COMPLETE) != 0
-                        : m->audio_samples / a->samples >=
-                              a->warmup + a->measured);
+                   (a->diagnostics ? (completed & PLAYBACK_COMPLETE) != 0
+                                   : m->audio_samples / a->samples >=
+                                         a->warmup + a->measured);
     /* Completion publications avoid racing the worker-owned meters. Preserve
-     * the existing cadence limit, then join and run every strict window check. */
+     * the existing cadence limit, then join and run every strict window check.
+     */
     if ((elapsed >= nominal && complete) || elapsed >= nominal * 5 / 4 + 100)
       return finish_window(m);
   }

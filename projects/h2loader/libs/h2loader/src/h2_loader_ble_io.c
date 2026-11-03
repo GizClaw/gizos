@@ -18,7 +18,8 @@ static h2_pal_result_t command_write(void* user, const void* buffer, size_t len,
   *out_written = 0u;
   size_t chunk = len;
   int rc;
-  /* Command I/O permits short writes; a small ring must not truncate a reply. */
+  /* Command I/O permits short writes; a small ring must not truncate a reply.
+   */
   for (;;) {
     rc = h2_bleikcp_write(user, buffer, chunk, timeout_ms);
     if (rc != H2_PAL_ERR_NO_SPACE || chunk <= 1u) break;
@@ -61,7 +62,7 @@ int h2_loader_ble_app_write(void* user, const char* data, size_t len) {
   while (sent < len) {
     size_t written = 0u;
     int rc = command_write(user, data + sent, len - sent, &written,
-                            H2_LOADER_BLE_IO_TIMEOUT_MS);
+                           H2_LOADER_BLE_IO_TIMEOUT_MS);
     if (rc != H2_PAL_OK) return rc;
     if (written == 0u) return H2_PAL_ERR_IO;
     sent += written;

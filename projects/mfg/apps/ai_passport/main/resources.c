@@ -17,13 +17,15 @@
 /* Only the USB serve owner touches service handles. MFG publishes requests and
  * returns WOULD_BLOCK, releasing its state/operation locks before any joins. */
 H2_ATOMIC_DEFINE_STATIC(int, desired, 0);
-H2_ATOMIC_DEFINE_STATIC(int, active, 0); /* 0=off, 1=ready, 2=cleanup retained. */
+H2_ATOMIC_DEFINE_STATIC(int, active,
+                        0); /* 0=off, 1=ready, 2=cleanup retained. */
 H2_ATOMIC_DEFINE_STATIC(int, service_error, 0);
 H2_ATOMIC_DEFINE_STATIC(size, failed_size, 0);
 H2_ATOMIC_DEFINE_STATIC(uint, failed_caps, 0);
 
 #if !defined(H2_PASSPORT_RESOURCES_HOST_TEST)
-static void allocation_failed(size_t size, uint32_t caps, const char* function) {
+static void allocation_failed(size_t size, uint32_t caps,
+                              const char* function) {
   (void)function;
   h2_atomic_uint_store(&failed_caps, caps, H2_ATOMIC_RELAXED);
   h2_atomic_size_store(&failed_size, size, H2_ATOMIC_RELEASE);
@@ -45,11 +47,13 @@ static const h2loader_ble_command_service_config_t ble_config = {
     .input_frame_capacity = 8};
 
 static void memory(const char* phase) {
-  printf("H2_PASSPORT_RESOURCES phase=%s free=%u largest=%u stack_free=%u\n",
-         phase,
-         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-         (unsigned)uxTaskGetStackHighWaterMark(NULL));
+  printf(
+      "H2_PASSPORT_RESOURCES phase=%s free=%u largest=%u stack_free=%u\n",
+      phase,
+      (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                 MALLOC_CAP_8BIT),
+      (unsigned)uxTaskGetStackHighWaterMark(NULL));
 }
 
 int h2_passport_resources_init(h2_runtime_t* runtime) {
@@ -73,13 +77,14 @@ int h2_passport_resources_init(h2_runtime_t* runtime) {
 }
 
 void h2_passport_resources_bind_wifi(const h2_pal_sync_api_t* sync,
-                                    h2_pal_mutex_t* mutex) {
+                                     h2_pal_mutex_t* mutex) {
   wifi_sync = sync;
   wifi_mutex = mutex;
 }
 
 static int stop_wifi(void) {
-  int rc = wifi_mutex == NULL ? 0 : h2_pal_mutex_try_lock(wifi_sync, wifi_mutex);
+  int rc =
+      wifi_mutex == NULL ? 0 : h2_pal_mutex_try_lock(wifi_sync, wifi_mutex);
   if (rc == H2_PAL_ERR_BUSY) rc = H2_PAL_ERR_WOULD_BLOCK;
   if (rc != 0) return rc;
   rc = h2_esp_platform_wifi_stop();
@@ -118,7 +123,8 @@ int h2_passport_prepare_check(void* user, h2_mfg_check_t check) {
     h2_atomic_int_store(&desired, 0, H2_ATOMIC_RELEASE);
     if (h2_atomic_int_load(&active, H2_ATOMIC_ACQUIRE) != 0) return pending();
   }
-  int audio = check == H2_MFG_SPEAKER || check == H2_MFG_MIC || check == H2_MFG_AEC;
+  int audio =
+      check == H2_MFG_SPEAKER || check == H2_MFG_MIC || check == H2_MFG_AEC;
   int rc = audio ? h2_esp_board_audio_set_aec_enabled(check == H2_MFG_AEC)
                  : h2_esp_board_audio_release();
   if (rc == 0 && check != H2_MFG_WIFI) rc = stop_wifi();
@@ -166,11 +172,11 @@ static int close_service(h2_runtime_t* runtime) {
 }
 
 int h2_passport_resources_poll(void* user, h2_runtime_t* runtime,
-                              const h2_loader_command_config_t* command) {
+                               const h2_loader_command_config_t* command) {
   (void)user;
   int state = h2_atomic_int_load(&active, H2_ATOMIC_ACQUIRE);
-  if (state == 2 || (state == 1 &&
-                    h2_atomic_int_load(&desired, H2_ATOMIC_ACQUIRE) == 0)) {
+  if (state == 2 ||
+      (state == 1 && h2_atomic_int_load(&desired, H2_ATOMIC_ACQUIRE) == 0)) {
     int rc = close_service(runtime);
     if (rc != 0) {
       h2_atomic_int_store(&active, 2, H2_ATOMIC_RELEASE);
@@ -183,7 +189,7 @@ int h2_passport_resources_poll(void* user, h2_runtime_t* runtime,
       h2_atomic_int_load(&service_error, H2_ATOMIC_ACQUIRE) == 0) {
     h2_atomic_int_store(&active, 2, H2_ATOMIC_RELEASE);
     int rc = api.open(api.user, runtime, command, runtime->board,
-                     command->loader->config.hardware_capabilities, &service);
+                      command->loader->config.hardware_capabilities, &service);
     if (rc == 0) {
       h2_atomic_int_store(&active, 1, H2_ATOMIC_RELEASE);
       memory("ble-ready");
@@ -199,5 +205,6 @@ int h2_passport_resources_stop(void* user, h2_runtime_t* runtime) {
   (void)user;
   h2_atomic_int_store(&desired, 0, H2_ATOMIC_RELEASE);
   return h2_atomic_int_load(&active, H2_ATOMIC_ACQUIRE) == 0
-             ? 0 : close_service(runtime);
+             ? 0
+             : close_service(runtime);
 }

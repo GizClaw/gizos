@@ -260,7 +260,8 @@ static void advance(fake_t* f, uint64_t target) {
         ++f->echo_replay_frames;
       if (f->external && had_pcm) {
         unsigned recording = replay_recording(f);
-        unsigned position = f->recording.played[recording] % f->recording.frames;
+        unsigned position =
+            f->recording.played[recording] % f->recording.frames;
         assert(f->recording.played[recording] <
                f->recording.accepted[recording]);
         assert(memcmp(pcm,
@@ -305,15 +306,14 @@ static void advance(fake_t* f, uint64_t target) {
                                     .microphone_lane = 1,
                                     .reference_lane = 0,
                                     .microphone_mask = 10};
-      if (f->external &&
-          (strcmp(phase, "SPEAK OVER TONE") == 0 ||
-           (f->opaque && strcmp(phase, "ECHO TEST") == 0))) {
-        unsigned warmup = (WINDOW_SAMPLES + f->frame_samples - 1) /
-                          f->frame_samples;
-        if (f->sequence > warmup && f->sequence <= warmup + f->recording.frames) {
-          unsigned recording = strcmp(phase, "ECHO TEST") == 0 || !f->opaque
-                                   ? 0
-                                   : 1;
+      if (f->external && (strcmp(phase, "SPEAK OVER TONE") == 0 ||
+                          (f->opaque && strcmp(phase, "ECHO TEST") == 0))) {
+        unsigned warmup =
+            (WINDOW_SAMPLES + f->frame_samples - 1) / f->frame_samples;
+        if (f->sequence > warmup &&
+            f->sequence <= warmup + f->recording.frames) {
+          unsigned recording =
+              strcmp(phase, "ECHO TEST") == 0 || !f->opaque ? 0 : 1;
           unsigned position = (unsigned)f->sequence - warmup - 1;
           memcpy(recorded_frame(f, f->recording.expected, recording, position),
                  out, f->frame_samples * sizeof(int16_t));
@@ -379,8 +379,7 @@ static int recording_write(void* user, unsigned recording, unsigned frame,
   assert(recording < r->count && r->begins[recording] != 0 &&
          frame == r->writes[recording]);
   if (r->write_error) return r->write_error;
-  if (r->stopped_write_error && !f->mic && !f->speaker)
-    return H2_PAL_ERR_IO;
+  if (r->stopped_write_error && !f->mic && !f->speaker) return H2_PAL_ERR_IO;
   assert(memcmp(pcm, recorded_frame(f, r->expected, recording, frame),
                 samples * sizeof(int16_t)) == 0);
   memcpy(recorded_frame(f, r->pcm, recording, frame), pcm,
@@ -440,11 +439,12 @@ static void capture_queue_destroy(void* user, h2_pal_queue_t* queue) {
   f->capture_queue = NULL;
 }
 
-static int capture_queue_send(void* user, h2_pal_queue_t* queue, const void* item,
-                              uint32_t timeout) {
+static int capture_queue_send(void* user, h2_pal_queue_t* queue,
+                              const void* item, uint32_t timeout) {
   fake_t* f = user;
   assert(f->in_capture && timeout == H2_PAL_QUEUE_NO_WAIT);
-  return h2_pal_queue_send(h2_desktop_platform_queue_api(), queue, item, timeout);
+  return h2_pal_queue_send(h2_desktop_platform_queue_api(), queue, item,
+                           timeout);
 }
 
 static int capture_queue_recv(void* user, h2_pal_queue_t* queue, void* item,
@@ -454,7 +454,8 @@ static int capture_queue_recv(void* user, h2_pal_queue_t* queue, void* item,
   if (f->defer_final_recording && f->mic &&
       f->sequence >= 2 * f->recording.frames)
     return H2_PAL_ERR_WOULD_BLOCK;
-  return h2_pal_queue_recv(h2_desktop_platform_queue_api(), queue, item, timeout);
+  return h2_pal_queue_recv(h2_desktop_platform_queue_api(), queue, item,
+                           timeout);
 }
 
 static int capture_queue_reset(void* user, h2_pal_queue_t* queue) {
@@ -485,7 +486,8 @@ static int window_log(void* user, h2_pal_log_level_t level, const char* scope,
                 " samples=%u frames=%u dac=%u active=%u queued=%" SCNu64
                 " elapsed_ms=%" SCNu64 " warmup=%u",
                 &window->samples, &window->frames, &window->dac,
-                &window->active, &queued, &window->elapsed, &window->warmup) == 7);
+                &window->active, &queued, &window->elapsed,
+                &window->warmup) == 7);
   return 0;
 }
 
@@ -518,16 +520,16 @@ static void init_external(fake_t* f, unsigned samples, int opaque) {
   f->external = 1;
   f->tick_ms = 20;
   f->recording.api = (h2_mfg_recording_store_t){.user = f,
-                                               .open = recording_open,
-                                               .begin = recording_begin,
-                                               .write_frame = recording_write,
-                                               .read_frame = recording_read,
-                                               .close = recording_close};
+                                                .open = recording_open,
+                                                .begin = recording_begin,
+                                                .write_frame = recording_write,
+                                                .read_frame = recording_read,
+                                                .close = recording_close};
   f->recording.profile = profile;
   f->recording.profile.aec_recording_store = &f->recording.api;
   f->mfg.profile = f->mfg.model.profile = &f->recording.profile;
-  f->recording_queue_api = (h2_pal_queue_api_t){
-      .user = f, .vtable = &recording_queue_vtable};
+  f->recording_queue_api =
+      (h2_pal_queue_api_t){.user = f, .vtable = &recording_queue_vtable};
   f->rt.queue = &f->recording_queue_api;
 }
 
@@ -795,7 +797,7 @@ static void external_recordings_keep_all_pcm_with_small_memory(void) {
       fake_t f;
       init_external(&f, sizes[i], opaque);
       memory_budget_t budget = {.limit = 12u * 1024u,
-                                 .in_capture = &f.in_capture};
+                                .in_capture = &f.in_capture};
       h2_pal_mem_api_t mem = {.user = &budget, .vtable = &vtable};
       f.rt.mem = &mem;
       f.human_speech = 1;
@@ -813,7 +815,8 @@ static void external_recordings_keep_all_pcm_with_small_memory(void) {
         assert(f.recording.accepted[recording] == f.recording.frames);
         assert(f.recording.played[recording] == f.recording.frames);
         uint64_t samples = (uint64_t)f.recording.played[recording] * sizes[i];
-        assert(samples >= WINDOW_SAMPLES && samples < WINDOW_SAMPLES + sizes[i]);
+        assert(samples >= WINDOW_SAMPLES &&
+               samples < WINDOW_SAMPLES + sizes[i]);
       }
       assert(opaque ? h2_mfg_aec_echo_db(&f.mfg) == -1
                     : h2_mfg_aec_echo_db(&f.mfg) >= 10);
@@ -988,7 +991,8 @@ static void external_paths_preserve_acoustic_and_transport_rejection(void) {
   }
 }
 
-static void init_slow_ui(fake_t* f, unsigned samples, int opaque, int external) {
+static void init_slow_ui(fake_t* f, unsigned samples, int opaque,
+                         int external) {
   if (external) {
     init_external(f, samples, opaque);
   } else {
@@ -1061,13 +1065,13 @@ static void slow_ui_with_two_playback_frames_keeps_complete_windows(void) {
           assert(w->samples == sizes[i] && w->frames == measured);
           assert(w->dac == (opaque ? 0 : measured));
           assert(w->active == (opaque || !far ? 0 : measured));
-          uint64_t nominal =
-              (uint64_t)(w->warmup + measured) * sizes[i] / 16;
+          uint64_t nominal = (uint64_t)(w->warmup + measured) * sizes[i] / 16;
           assert(w->elapsed + 1 >= nominal &&
                  w->elapsed <= nominal * 5 / 4 + 100);
         }
         if (external)
-          for (unsigned recording = 0; recording < f.recording.count; ++recording)
+          for (unsigned recording = 0; recording < f.recording.count;
+               ++recording)
             assert(f.recording.writes[recording] == measured &&
                    f.recording.reads[recording] == measured &&
                    f.recording.accepted[recording] == measured &&
@@ -1172,11 +1176,11 @@ static void service_errors_and_callback_overflow_remain_failures(void) {
         advance(&f, f.now + 8);
         assert(service(&f) == 0);
       }
-      /* Five complete measured frames overflow the four-frame callback queue. */
+      /* Five complete measured frames overflow the four-frame callback queue.
+       */
       advance(&f, f.now + 5 * SAMPLES / 16);
     }
-    if (which == 3)
-      f.observer.on_error(f.observer.user, 1, H2_PAL_ERR_IO);
+    if (which == 3) f.observer.on_error(f.observer.user, 1, H2_PAL_ERR_IO);
     int rc = 0;
     uint64_t deadline = f.now + 10000;
     while (rc == 0 && f.now < deadline) {

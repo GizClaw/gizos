@@ -21,13 +21,13 @@ enum {
 };
 
 static const char* test_name;
-#define CHECK(expression)                                                     \
-  do {                                                                        \
-    if (!(expression)) {                                                      \
-      fprintf(stderr, "%s:%d: %s: %s\n", __FILE__, __LINE__, test_name,         \
-              #expression);                                                   \
-      exit(1);                                                                \
-    }                                                                         \
+#define CHECK(expression)                                               \
+  do {                                                                  \
+    if (!(expression)) {                                                \
+      fprintf(stderr, "%s:%d: %s: %s\n", __FILE__, __LINE__, test_name, \
+              #expression);                                             \
+      exit(1);                                                          \
+    }                                                                   \
   } while (0)
 
 static const h2_mfg_recording_store_t* const store =
@@ -82,9 +82,9 @@ static int entropy_fill(void* user, uint8_t* out, size_t length) {
   return 0;
 }
 
-const esp_partition_t* esp_partition_find_first(
-    esp_partition_type_t type, esp_partition_subtype_t subtype,
-    const char* label) {
+const esp_partition_t* esp_partition_find_first(esp_partition_type_t type,
+                                                esp_partition_subtype_t subtype,
+                                                const char* label) {
   CHECK(type == ESP_PARTITION_TYPE_APP);
   CHECK(subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1);
   CHECK(strcmp(label, "app") == 0);
@@ -229,10 +229,11 @@ static unsigned region_size(unsigned frames, unsigned samples) {
          BLOCK_SIZE;
 }
 
-static uint8_t* frame_bytes(unsigned recording, unsigned frame,
-                            unsigned frames, unsigned samples) {
+static uint8_t* frame_bytes(unsigned recording, unsigned frame, unsigned frames,
+                            unsigned samples) {
   return fixture.flash + APP_ADDRESS + SCRATCH_OFFSET +
-         recording * region_size(frames, samples) + frame * frame_stride(samples);
+         recording * region_size(frames, samples) +
+         frame * frame_stride(samples);
 }
 
 static void check_bytes(const void* data, size_t length, uint8_t value) {
@@ -246,14 +247,16 @@ static void check_outside_recordings(unsigned count, unsigned frames,
   size_t end = start + count * region_size(frames, samples);
   CHECK(end <= APP_ADDRESS + APP_SIZE);
   CHECK(memcmp(fixture.flash, fixture.before, start) == 0);
-  CHECK(memcmp(fixture.flash + end, fixture.before + end, FLASH_SIZE - end) == 0);
+  CHECK(memcmp(fixture.flash + end, fixture.before + end, FLASH_SIZE - end) ==
+        0);
 }
 
 static void fill_pcm(int16_t* pcm, unsigned samples, unsigned recording,
-                      unsigned frame) {
+                     unsigned frame) {
   for (unsigned i = 0; i < samples; ++i)
     pcm[i] = (int16_t)((int)((i * 73u + frame * 997u + recording * 13007u) &
-                            0xffffu) - 32768);
+                             0xffffu) -
+                       32768);
 }
 
 static void check_read(unsigned recording, unsigned frame, unsigned samples) {
@@ -262,16 +265,18 @@ static void check_read(unsigned recording, unsigned frame, unsigned samples) {
   memset(actual, 0xa5, sizeof(actual));
   CHECK(store->read_frame(store->user, recording, frame, actual, samples) == 0);
   CHECK(memcmp(actual, expected, samples * sizeof(*actual)) == 0);
-  check_bytes(actual + samples, sizeof(actual) - samples * sizeof(*actual), 0xa5);
+  check_bytes(actual + samples, sizeof(actual) - samples * sizeof(*actual),
+              0xa5);
 }
 
 static void check_read_failure(unsigned recording, unsigned frame,
-                                unsigned samples) {
+                               unsigned samples) {
   int16_t output[MAX_SAMPLES];
   memset(output, 0xa5, sizeof(output));
   CHECK(store->read_frame(store->user, recording, frame, output, samples) != 0);
   check_bytes(output, samples * sizeof(*output), 0);
-  check_bytes(output + samples, sizeof(output) - samples * sizeof(*output), 0xa5);
+  check_bytes(output + samples, sizeof(output) - samples * sizeof(*output),
+              0xa5);
 }
 
 static void write_pcm(unsigned recording, unsigned frame, unsigned samples) {
@@ -288,24 +293,72 @@ static void check_no_flash_changes(void) {
 
 static void test_open_guards(void) {
   enum guard {
-    NO_RUNTIME, NO_LOADER, RUNNING_P2, LOADER_IS_P2, RUNNING_UNKNOWN,
-    APP_ID, STAGE_VALID, P2_INVALID, P2_APP, P2_ROLE_UNKNOWN, P2_OVERLAP,
-    NO_DISK, DISK_QUERY, DISK_ID, DISK_SMALL, DISK_LARGE, DISK_ERASE_SIZE,
-    DISK_NO_READ, DISK_NO_WRITE, DISK_NO_ERASE, DISK_NAME, DISK_ALIGNMENT_ZERO,
-    DISK_ALIGNMENT_ODD, DISK_ALIGNMENT_TOO_LARGE, NO_PHYSICAL_APP,
-    NO_PHYSICAL_RUNNING, PHYSICAL_SMALL, PHYSICAL_LARGE, PHYSICAL_RUNNING_P2,
-    IMAGE_INVALID, IMAGE_EMPTY, IMAGE_OVERLAP, GUARD_COUNT,
+    NO_RUNTIME,
+    NO_LOADER,
+    RUNNING_P2,
+    LOADER_IS_P2,
+    RUNNING_UNKNOWN,
+    APP_ID,
+    STAGE_VALID,
+    P2_INVALID,
+    P2_APP,
+    P2_ROLE_UNKNOWN,
+    P2_OVERLAP,
+    NO_DISK,
+    DISK_QUERY,
+    DISK_ID,
+    DISK_SMALL,
+    DISK_LARGE,
+    DISK_ERASE_SIZE,
+    DISK_NO_READ,
+    DISK_NO_WRITE,
+    DISK_NO_ERASE,
+    DISK_NAME,
+    DISK_ALIGNMENT_ZERO,
+    DISK_ALIGNMENT_ODD,
+    DISK_ALIGNMENT_TOO_LARGE,
+    NO_PHYSICAL_APP,
+    NO_PHYSICAL_RUNNING,
+    PHYSICAL_SMALL,
+    PHYSICAL_LARGE,
+    PHYSICAL_RUNNING_P2,
+    IMAGE_INVALID,
+    IMAGE_EMPTY,
+    IMAGE_OVERLAP,
+    GUARD_COUNT,
   };
   static const char* const names[GUARD_COUNT] = {
-      "no runtime", "no loader", "running P2", "Loader configured as P2",
-      "unknown running partition", "wrong app ID", "valid Stage", "invalid P2",
-      "P2 app role", "unknown P2 role", "logical image overlap", "no disk",
-      "disk query failure", "wrong disk ID", "small disk", "large disk",
-      "wrong erase block", "unreadable disk", "unwritable disk",
-      "unerasable disk", "wrong disk name", "zero write alignment",
-      "odd write alignment", "incompatible write alignment", "no physical app",
-      "no physical running app", "small physical app", "large physical app",
-      "physical running P2", "invalid physical image", "empty physical image",
+      "no runtime",
+      "no loader",
+      "running P2",
+      "Loader configured as P2",
+      "unknown running partition",
+      "wrong app ID",
+      "valid Stage",
+      "invalid P2",
+      "P2 app role",
+      "unknown P2 role",
+      "logical image overlap",
+      "no disk",
+      "disk query failure",
+      "wrong disk ID",
+      "small disk",
+      "large disk",
+      "wrong erase block",
+      "unreadable disk",
+      "unwritable disk",
+      "unerasable disk",
+      "wrong disk name",
+      "zero write alignment",
+      "odd write alignment",
+      "incompatible write alignment",
+      "no physical app",
+      "no physical running app",
+      "small physical app",
+      "large physical app",
+      "physical running P2",
+      "invalid physical image",
+      "empty physical image",
       "physical image overlap",
   };
   for (unsigned attempt = 0; attempt < GUARD_COUNT * 2; ++attempt) {
@@ -431,7 +484,8 @@ static void test_open_guards(void) {
         CHECK(0);
     }
     /* A replaced physical image also changes its Loader identity. The permit
-     * is valid only while one continuous Loader operation excludes replacement. */
+     * is valid only while one continuous Loader operation excludes replacement.
+     */
     if (guard >= IMAGE_INVALID)
       fixture.loader.status.partition_2.image_checksum[0] = 'a';
     CHECK(store->open(store->user, 1, FRAME_COUNT, 256) == error);
@@ -475,8 +529,8 @@ static void check_aes_gcm_record(unsigned recording, unsigned samples) {
   int16_t actual[MAX_SAMPLES], expected[MAX_SAMPLES];
   memcpy(nonce, fixture.entropy.nonce[recording], 8);
   aad[0] = (uint8_t)recording;
-  h2_pal_crypto_buf_t plaintext = {
-      .data = (uint8_t*)actual, .cap = samples * sizeof(*actual)};
+  h2_pal_crypto_buf_t plaintext = {.data = (uint8_t*)actual,
+                                   .cap = samples * sizeof(*actual)};
   CHECK(h2_pal_crypto_aead_open(
             h2_wolfcrypt_crypto_api(), H2_PAL_CRYPTO_AEAD_AES_128_GCM,
             fixture.entropy.key, sizeof(fixture.entropy.key), nonce,
@@ -490,7 +544,8 @@ static void check_aes_gcm_record(unsigned recording, unsigned samples) {
 static void test_full_recordings(void) {
   static const unsigned sample_counts[] = {256, 320, 512};
   for (unsigned count = 1; count <= 2; ++count) {
-    for (size_t size = 0; size < sizeof(sample_counts) / sizeof(sample_counts[0]); ++size) {
+    for (size_t size = 0;
+         size < sizeof(sample_counts) / sizeof(sample_counts[0]); ++size) {
       unsigned samples = sample_counts[size];
       unsigned region = region_size(FRAME_COUNT, samples);
       reset_fixture();
@@ -505,11 +560,13 @@ static void test_full_recordings(void) {
         CHECK(store->begin(store->user, recording) == 0);
         CHECK(fixture.last_erase_offset == SCRATCH_OFFSET + recording * region);
         CHECK(fixture.last_erase_length == region);
-        check_bytes(frame_bytes(recording, 0, FRAME_COUNT, samples), region, 0xff);
+        check_bytes(frame_bytes(recording, 0, FRAME_COUNT, samples), region,
+                    0xff);
         for (unsigned frame = 0; frame < FRAME_COUNT; ++frame) {
           int16_t pcm[MAX_SAMPLES];
           fill_pcm(pcm, samples, recording, frame);
-          CHECK(store->write_frame(store->user, recording, frame, pcm, samples) == 0);
+          CHECK(store->write_frame(store->user, recording, frame, pcm,
+                                   samples) == 0);
           CHECK(memcmp(frame_bytes(recording, frame, FRAME_COUNT, samples), pcm,
                        samples * sizeof(*pcm)) != 0);
         }
@@ -525,7 +582,8 @@ static void test_full_recordings(void) {
       CHECK(store->close(store->user) == 0);
       CHECK(fixture.last_erase_offset == SCRATCH_OFFSET);
       CHECK(fixture.last_erase_length == count * region);
-      check_bytes(frame_bytes(0, 0, FRAME_COUNT, samples), count * region, 0xff);
+      check_bytes(frame_bytes(0, 0, FRAME_COUNT, samples), count * region,
+                  0xff);
       check_bytes(fixture.entropy.key_address, 16, 0);
       for (unsigned recording = 0; recording < count; ++recording)
         check_bytes(fixture.entropy.nonce_address[recording], 8, 0);
@@ -553,7 +611,8 @@ static void test_retry_renews_nonce(void) {
   CHECK(fixture.last_erase_length == region_size(FRAME_COUNT, 256));
   CHECK(memcmp(fixture.entropy.nonce[0], fixture.entropy.nonce[2], 8) != 0);
   CHECK(memcmp(fixture.entropy.key_address, fixture.entropy.key, 16) == 0);
-  check_bytes(frame_bytes(0, 0, FRAME_COUNT, 256), region_size(FRAME_COUNT, 256), 0xff);
+  check_bytes(frame_bytes(0, 0, FRAME_COUNT, 256),
+              region_size(FRAME_COUNT, 256), 0xff);
   CHECK(memcmp(other, frame_bytes(1, 0, FRAME_COUNT, 256), stride) == 0);
   check_read(1, 0, 256);
   int16_t pcm[MAX_SAMPLES];
@@ -574,7 +633,8 @@ static void test_tamper_and_read_failure(void) {
   CHECK(store->open(store->user, 2, 3, 320) == 0);
   for (unsigned recording = 0; recording < 2; ++recording) {
     CHECK(store->begin(store->user, recording) == 0);
-    for (unsigned frame = 0; frame < 3; ++frame) write_pcm(recording, frame, 320);
+    for (unsigned frame = 0; frame < 3; ++frame)
+      write_pcm(recording, frame, 320);
   }
   uint8_t* ciphertext = frame_bytes(0, 0, 3, 320);
   unsigned stride = frame_stride(320);
@@ -678,7 +738,8 @@ static void test_failed_close_retains_ownership_and_clears_key(void) {
   CHECK(store->read_frame(store->user, 1, 0, pcm, 512) != 0);
   CHECK(store->write_frame(store->user, 1, 1, pcm, 512) != 0);
   CHECK(store->begin(store->user, 1) != 0);
-  CHECK(store->open(store->user, 1, FRAME_COUNT, 256) == H2_PAL_ERR_INVALID_STATE);
+  CHECK(store->open(store->user, 1, FRAME_COUNT, 256) ==
+        H2_PAL_ERR_INVALID_STATE);
   CHECK(fixture.read_calls == 0 && fixture.write_calls == 2);
   CHECK(fixture.entropy.calls == entropy);
   CHECK(store->close(store->user) == 0);
@@ -710,11 +771,13 @@ static void test_failed_open_cleanup(void) {
           (missing_crypto ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_IO));
     check_no_flash_changes();
     CHECK(store->begin(store->user, 0) != 0);
-    CHECK(store->open(store->user, 1, FRAME_COUNT, 256) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(store->open(store->user, 1, FRAME_COUNT, 256) ==
+          H2_PAL_ERR_INVALID_STATE);
     fixture.fail_erase_on = 1;
     CHECK(store->close(store->user) == H2_PAL_ERR_IO);
     if (!missing_crypto) check_bytes(fixture.entropy.key_address, 16, 0);
-    CHECK(store->open(store->user, 1, FRAME_COUNT, 256) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(store->open(store->user, 1, FRAME_COUNT, 256) ==
+          H2_PAL_ERR_INVALID_STATE);
     CHECK(store->close(store->user) == 0);
     CHECK(fixture.last_erase_offset == SCRATCH_OFFSET);
     CHECK(fixture.last_erase_length == 2 * region_size(FRAME_COUNT, 320));
@@ -762,10 +825,26 @@ static void test_prepare_verifies_once(void) {
 
 static void test_prepare_state_changes(void) {
   enum change {
-    SAME_BIND, NEW_RUNTIME, NEW_LOADER, NEW_DISK_API, NEW_DISK_VTABLE,
-    IMAGE_CHECKSUM, PACKAGE_CHECKSUM, IMAGE_SIZE, PACKAGE_SIZE, VERSION, BOARD,
-    TARGET, VALID_VALUE, LOGICAL_RUNNING, WRITE_ALIGNMENT, DISK_FLAGS,
-    APP_ADDRESS_CHANGED, RUNNING_ADDRESS, RUNNING_SIZE, CHANGE_COUNT,
+    SAME_BIND,
+    NEW_RUNTIME,
+    NEW_LOADER,
+    NEW_DISK_API,
+    NEW_DISK_VTABLE,
+    IMAGE_CHECKSUM,
+    PACKAGE_CHECKSUM,
+    IMAGE_SIZE,
+    PACKAGE_SIZE,
+    VERSION,
+    BOARD,
+    TARGET,
+    VALID_VALUE,
+    LOGICAL_RUNNING,
+    WRITE_ALIGNMENT,
+    DISK_FLAGS,
+    APP_ADDRESS_CHANGED,
+    RUNNING_ADDRESS,
+    RUNNING_SIZE,
+    CHANGE_COUNT,
   };
   for (unsigned change = 0; change < CHANGE_COUNT; ++change) {
     reset_fixture();
@@ -850,8 +929,13 @@ static void test_prepare_state_changes(void) {
 
 static void test_prepare_token_invalidation(void) {
   enum invalidation {
-    BAD_DIMENSIONS, NO_CAPACITY, CLOSED, PREPARE_VERIFY_FAILURE,
-    PREPARE_GUARD_FAILURE, OPEN_GUARD_FAILURE, INVALIDATION_COUNT,
+    BAD_DIMENSIONS,
+    NO_CAPACITY,
+    CLOSED,
+    PREPARE_VERIFY_FAILURE,
+    PREPARE_GUARD_FAILURE,
+    OPEN_GUARD_FAILURE,
+    INVALIDATION_COUNT,
   };
   for (unsigned reason = 0; reason < INVALIDATION_COUNT; ++reason) {
     reset_fixture();
@@ -864,7 +948,8 @@ static void test_prepare_token_invalidation(void) {
               H2_PAL_ERR_INVALID_ARG);
         break;
       case NO_CAPACITY:
-        CHECK(store->open(store->user, 2, UINT_MAX, 256) == H2_PAL_ERR_NO_SPACE);
+        CHECK(store->open(store->user, 2, UINT_MAX, 256) ==
+              H2_PAL_ERR_NO_SPACE);
         break;
       case CLOSED:
         CHECK(store->close(store->user) == 0);
@@ -931,13 +1016,13 @@ static void test_frame_contract(void) {
 
 int main(void) {
   test_name = "wolfCrypt initialization";
-  h2_wolfcrypt_crypto_config_t crypto = {
-      .entropy_user = &fixture.entropy, .entropy = entropy_fill};
+  h2_wolfcrypt_crypto_config_t crypto = {.entropy_user = &fixture.entropy,
+                                         .entropy = entropy_fill};
   CHECK(h2_wolfcrypt_crypto_init(&crypto) == 0);
-#define RUN(test)            \
-  do {                       \
-    test_name = #test;        \
-    test();                  \
+#define RUN(test)               \
+  do {                          \
+    test_name = #test;          \
+    test();                     \
     printf("PASS %s\n", #test); \
   } while (0)
   RUN(test_open_guards);

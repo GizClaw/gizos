@@ -1081,7 +1081,8 @@ int h2_bundle_archive_install_zlib_tar(
     return H2_BUNDLE_ERR_INVALID_ARG;
   }
   /* Streaming state and both I/O blocks must not consume the caller's stack.
-   * Allocate before opening files or invoking any destructive writer callback. */
+   * Allocate before opening files or invoking any destructive writer callback.
+   */
   archive_install_workspace_t* workspace =
       h2_pal_mem_alloc(installer->allocator, sizeof(*workspace));
   if (workspace == NULL) return H2_BUNDLE_ERR_NO_MEMORY;

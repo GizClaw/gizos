@@ -66,7 +66,10 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
 int h2_mfg_hardware_leave(h2_mfg_t* m) {
   (void)m;
   ++leaves;
-  if (leave_busy) { --leave_busy; return H2_PAL_ERR_BUSY; }
+  if (leave_busy) {
+    --leave_busy;
+    return H2_PAL_ERR_BUSY;
+  }
   return 0;
 }
 int h2_mfg_hardware_close(h2_mfg_t* m) {
@@ -76,8 +79,7 @@ int h2_mfg_hardware_close(h2_mfg_t* m) {
 }
 int h2_mfg_ui_draw(h2_mfg_t* m, uint64_t now) {
   (void)now;
-  if (m->render_service != NULL)
-    m->render_service_error = m->render_service(m);
+  if (m->render_service != NULL) m->render_service_error = m->render_service(m);
   return 0;
 }
 
@@ -383,7 +385,8 @@ static void asynchronous_preparation_releases_locks_without_reopening(void) {
       assert(r.mfg->preparing_ticket == r.mfg->model.ticket);
       assert(r.mfg->hardware_ticket != r.mfg->model.ticket);
       assert(!r.mfg->model.ready && r.mfg->model.error == 0);
-      assert(r.mfg->model.summary.step_status[0] == H2_LOADER_MFG_STEP_UNTESTED);
+      assert(r.mfg->model.summary.step_status[0] ==
+             H2_LOADER_MFG_STEP_UNTESTED);
       assert(leaves == before_leaves + 1 && ticks == before_ticks);
       preparation_blocked = 0;
     }
@@ -393,7 +396,8 @@ static void asynchronous_preparation_releases_locks_without_reopening(void) {
   assert(observed);
   await_step(&r, 0);
   assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
-  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) == 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
   assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
   assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
   teardown(&r);
@@ -408,13 +412,15 @@ static void transient_prior_cleanup_does_not_end_session(void) {
   leave_busy = 3;
   unsigned before = enters;
   assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
-  assert(control(&r, "confirm", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) == 0);
+  assert(control(&r, "confirm", "display",
+                 H2_LOADER_COMMAND_TRANSPORT_SERIAL) == 0);
   await_step(&r, 1);
   assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
   assert(r.mfg->running && r.mfg->model.error == 0 && enters == before + 1);
   assert(leave_busy == 0);
   assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
-  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) == 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
   assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
   teardown(&r);
 }
@@ -430,14 +436,17 @@ static void hardware_would_block_is_not_async_preparation(void) {
   assert(r.mfg->model.error == H2_PAL_ERR_WOULD_BLOCK);
   preparation_error = 0;
   assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
-  assert(control(&r, "retry", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) == 0);
+  assert(control(&r, "retry", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) ==
+         0);
   await_step(&r, 0);
-  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) == 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
   assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
   teardown(&r);
 }
 
-static void render_service_failure_records_failure_without_ending_session(void) {
+static void render_service_failure_records_failure_without_ending_session(
+    void) {
   test_run_t r;
   setup(&r);
   render_fault = H2_PAL_ERR_IO;
@@ -455,9 +464,11 @@ static void render_service_failure_records_failure_without_ending_session(void) 
     assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
   }
   assert(failed);
-  assert(control(&r, "retry", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) == 0);
+  assert(control(&r, "retry", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) ==
+         0);
   await_step(&r, 0);
-  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) == 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
   assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
   teardown(&r);
 }

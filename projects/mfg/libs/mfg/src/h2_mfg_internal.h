@@ -117,7 +117,8 @@ struct h2_mfg {
 
 static inline unsigned h2_mfg_playback_buffer_frames(const h2_mfg_t* m) {
   return m->profile->playback_buffer_frames == 0
-             ? 8 : m->profile->playback_buffer_frames;
+             ? 8
+             : m->profile->playback_buffer_frames;
 }
 
 enum { H2_MFG_PREVIEW_WIDTH = 160, H2_MFG_PREVIEW_HEIGHT = 90 };

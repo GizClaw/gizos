@@ -676,12 +676,15 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
       .len = sizeof(h2_loader_ble_rx_uuid_bytes),
   };
   stream_config.send_window = config->stream_window != 0u
-                                  ? config->stream_window : H2_LOADER_BLE_WINDOW;
+                                  ? config->stream_window
+                                  : H2_LOADER_BLE_WINDOW;
   stream_config.recv_window = stream_config.send_window;
   stream_config.input_frame_capacity = config->input_frame_capacity != 0u
-      ? config->input_frame_capacity : H2_LOADER_BLE_INPUT_FRAME_CAPACITY;
+                                           ? config->input_frame_capacity
+                                           : H2_LOADER_BLE_INPUT_FRAME_CAPACITY;
   stream_config.tx_buffer_size = config->stream_buffer_size != 0u
-      ? config->stream_buffer_size : H2_LOADER_BLE_BUFFER_SIZE;
+                                     ? config->stream_buffer_size
+                                     : H2_LOADER_BLE_BUFFER_SIZE;
   stream_config.rx_buffer_size = stream_config.tx_buffer_size;
   stream_config.no_congestion_control = 0;
   stream_config.output_retry_count = 40u;

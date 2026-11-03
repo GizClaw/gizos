@@ -64,7 +64,10 @@ firmware_native_component(
         "main/recording.c",
         "main/resources.c",
     ],
-    hdrs = ["main/recording.h", "main/resources.h"],
+    hdrs = [
+        "main/recording.h",
+        "main/resources.h",
+    ],
     component_directory = "projects/mfg/apps/ai_passport/main",
     component_name = "main",
     data = ["main/CMakeLists.txt"],
@@ -126,7 +129,10 @@ cc_test(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["main", "tests"],
+    includes = [
+        "main",
+        "tests",
+    ],
     local_defines = ["H2_PASSPORT_RESOURCES_HOST_TEST=1"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
@@ -157,7 +163,10 @@ cc_test(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["main", "tests"],
+    includes = [
+        "main",
+        "tests",
+    ],
     local_defines = ["H2_PASSPORT_RECORDING_HOST_TEST=1"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [

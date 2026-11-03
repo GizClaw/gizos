@@ -10,7 +10,8 @@ extern "C" {
 
 /** Stream a format-1 archive with workspace owned by installer->allocator.
  * I/O blocks and parser state stay off the caller's stack. Workspace allocation
- * failure returns NO_MEMORY before opening files or invoking writer callbacks. */
+ * failure returns NO_MEMORY before opening files or invoking writer callbacks.
+ */
 int h2_bundle_archive_install_zlib_tar(
     h2_bundle_installer_t* installer,
     const h2_bundle_install_options_t* options);

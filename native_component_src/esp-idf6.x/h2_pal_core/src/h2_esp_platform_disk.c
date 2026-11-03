@@ -178,8 +178,7 @@ static h2_pal_result_t disk_read(void* user, uint32_t partition_id,
   size_t internal_capacity = 0u;
   h2_pal_result_t rc =
       h2_esp_platform_safe_io_acquire(&internal_data, &internal_capacity);
-  if (rc != H2_PAL_OK || internal_data == NULL ||
-      internal_capacity == 0u) {
+  if (rc != H2_PAL_OK || internal_data == NULL || internal_capacity == 0u) {
     if (rc == H2_PAL_OK) {
       h2_esp_platform_safe_io_release();
     }
@@ -253,8 +252,7 @@ static h2_pal_result_t disk_write(void* user, uint32_t partition_id,
   size_t internal_capacity = 0u;
   h2_pal_result_t rc =
       h2_esp_platform_safe_io_acquire(&internal_data, &internal_capacity);
-  if (rc != H2_PAL_OK || internal_data == NULL ||
-      internal_capacity == 0u) {
+  if (rc != H2_PAL_OK || internal_data == NULL || internal_capacity == 0u) {
     if (rc == H2_PAL_OK) {
       h2_esp_platform_safe_io_release();
     }

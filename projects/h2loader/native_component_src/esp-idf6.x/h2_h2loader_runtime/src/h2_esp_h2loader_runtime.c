@@ -850,7 +850,7 @@ static int serve_loader(void* user, h2_loader_t* loader,
     if (stopping) {
       rc = context->config->stop_command_service != NULL
                ? context->config->stop_command_service(context->config->user,
-                                                        context->runtime)
+                                                       context->runtime)
                : H2_PAL_OK;
       if (rc == H2_PAL_OK) {
         break;

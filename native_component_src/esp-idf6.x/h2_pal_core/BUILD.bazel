@@ -135,7 +135,10 @@ genrule(
         ],
         conlyopts = H2_C11_OPTS + ["-DCONFIG_ESP_WIFI_SOFTAP_SUPPORT=" + softap],
         copts = H2_WARNING_COPTS,
-        includes = [".", "src"],
+        includes = [
+            ".",
+            "src",
+        ],
         target_compatible_with = HOST_TOOL_COMPATIBILITY,
         deps = ["//libs/pal"],
     )
@@ -444,8 +447,14 @@ cc_test(
     )
     for suffix, defines in [
         ("", []),
-        ("_scratch_4096", ["-DH2_ESP_SAFE_IO_SCRATCH_CAPACITY=4096"]),
-        ("_scratch_8192", ["-DH2_ESP_SAFE_IO_SCRATCH_CAPACITY=8192"]),
+        (
+            "_scratch_4096",
+            ["-DH2_ESP_SAFE_IO_SCRATCH_CAPACITY=4096"],
+        ),
+        (
+            "_scratch_8192",
+            ["-DH2_ESP_SAFE_IO_SCRATCH_CAPACITY=8192"],
+        ),
     ]
 ]
 

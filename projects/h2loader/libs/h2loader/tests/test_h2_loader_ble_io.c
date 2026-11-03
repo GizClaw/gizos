@@ -17,7 +17,7 @@ typedef struct fixture {
 } fixture_t;
 
 int h2_bleikcp_write(h2_bleikcp_t* stream, const uint8_t* data, size_t len,
-                      uint32_t timeout_ms) {
+                     uint32_t timeout_ms) {
   fixture_t* f = (fixture_t*)stream;
   (void)timeout_ms;
   assert(f != NULL);
@@ -30,7 +30,7 @@ int h2_bleikcp_write(h2_bleikcp_t* stream, const uint8_t* data, size_t len,
   return 0;
 }
 int h2_bleikcp_read(h2_bleikcp_t* stream, uint8_t* data, size_t capacity,
-                     size_t* out_size, uint32_t timeout_ms) {
+                    size_t* out_size, uint32_t timeout_ms) {
   fixture_t* f = (fixture_t*)stream;
   (void)timeout_ms;
   *out_size = 0;
@@ -57,7 +57,7 @@ static void transfer(size_t capacity) {
   while (sent < sizeof(message)) {
     size_t written = 0;
     assert(io.vtable->write(io.user, message + sent, sizeof(message) - sent,
-                             &written, 1000) == 0);
+                            &written, 1000) == 0);
     assert(written != 0 && written <= capacity);
     sent += written;
   }
@@ -65,7 +65,8 @@ static void transfer(size_t capacity) {
   assert(io.vtable->flush(io.user) == 0 && f.flushes == 1);
 
   f.size = f.writes = f.flushes = 0;
-  assert(h2_loader_ble_app_write(&f, (const char*)message, sizeof(message)) == 0);
+  assert(h2_loader_ble_app_write(&f, (const char*)message, sizeof(message)) ==
+         0);
   assert(f.size == sizeof(message) && memcmp(f.data, message, f.size) == 0);
   assert(f.flushes == 1);
   assert(h2_loader_ble_app_write(&f, NULL, 0) == 0 && f.flushes == 2);
@@ -86,8 +87,10 @@ int main(void) {
   assert(h2_loader_ble_app_write(&f, (const char*)message, sizeof(message)) ==
          H2_PAL_ERR_TIMEOUT);
   assert(f.flushes == 0);
-  assert(io.vtable->write(io.user, NULL, 1, &written, 1) == H2_PAL_ERR_INVALID_ARG);
-  assert(io.vtable->write(io.user, message, 1, NULL, 1) == H2_PAL_ERR_INVALID_ARG);
+  assert(io.vtable->write(io.user, NULL, 1, &written, 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(io.vtable->write(io.user, message, 1, NULL, 1) ==
+         H2_PAL_ERR_INVALID_ARG);
   f.write_error = 0;
   f.flush_error = H2_PAL_ERR_IO;
   assert(h2_loader_ble_app_write(&f, NULL, 0) == H2_PAL_ERR_IO);
@@ -97,6 +100,7 @@ int main(void) {
   f.read_error = H2_PAL_ERR_TIMEOUT;
   assert(h2_loader_ble_app_read_byte(&f, 1) == EOF);
   f.read_error = H2_PAL_ERR_CLOSED;
-  assert(h2_loader_ble_app_read_byte(&f, 1) == H2_LOADER_APP_CLIENT_SESSION_CLOSED);
+  assert(h2_loader_ble_app_read_byte(&f, 1) ==
+         H2_LOADER_APP_CLIENT_SESSION_CLOSED);
   return 0;
 }

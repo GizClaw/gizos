@@ -132,11 +132,11 @@ int h2_loader_command_poll(h2_loader_command_t* command, uint32_t timeout_ms) {
   return command_results[command_polls++];
 }
 
-static const h2_pal_mem_vtable_t memory_vtable = {
-    .alloc = allocate, .free = release};
+static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
+                                                  .free = release};
 static const h2_pal_mem_api_t memory = {.vtable = &memory_vtable};
-static const h2_pal_task_vtable_t task_vtable = {
-    .start = start_task, .join = join_task};
+static const h2_pal_task_vtable_t task_vtable = {.start = start_task,
+                                                 .join = join_task};
 static const h2_pal_task_api_t task = {.vtable = &task_vtable};
 static const h2_pal_time_vtable_t time_vtable = {.sleep_ms = sleep_ms};
 static const h2_pal_time_api_t time_api = {.vtable = &time_vtable};
@@ -181,20 +181,20 @@ static void test_session(const h2loader_ble_command_service_config_t* config,
          (config != NULL ? config->input_frame_capacity : 0u));
   join_failures = 1u;
   assert(services[0].config.handler(services[0].config.handler_user,
-                                   (h2_bleikcp_t*)&stream_marker, 7u) ==
-         H2_PAL_OK);
+                                    (h2_bleikcp_t*)&stream_marker,
+                                    7u) == H2_PAL_OK);
   assert(command_polls == 4u);
   if (config != NULL && config->inline_commands) {
     assert(task_starts == 0u && task_joins == 0u && sleeps == 0u);
     command_polls = 0u;
     command_results[0] = H2_PAL_ERR_IO;
     assert(services[0].config.handler(services[0].config.handler_user,
-                                     (h2_bleikcp_t*)&stream_marker, 7u) ==
-           H2_PAL_ERR_IO);
+                                      (h2_bleikcp_t*)&stream_marker,
+                                      7u) == H2_PAL_ERR_IO);
     command_init_result = H2_PAL_ERR_NO_MEMORY;
     assert(services[0].config.handler(services[0].config.handler_user,
-                                     (h2_bleikcp_t*)&stream_marker, 7u) ==
-           H2_PAL_ERR_NO_MEMORY);
+                                      (h2_bleikcp_t*)&stream_marker,
+                                      7u) == H2_PAL_ERR_NO_MEMORY);
   } else {
     assert(task_starts == 1u && task_joins == 2u && sleeps == 1u);
     assert(command_stack_size == 49152u);

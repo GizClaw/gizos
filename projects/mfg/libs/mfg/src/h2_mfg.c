@@ -175,7 +175,8 @@ static int fail_current_check(h2_mfg_t* m, int error) {
   int cleanup = h2_mfg_hardware_leave(m);
   const char* step = m->profile->steps[m->model.current].name;
   int rc = 0;
-  if (m->model.summary.step_status[m->model.current] != H2_LOADER_MFG_STEP_FAILED)
+  if (m->model.summary.step_status[m->model.current] !=
+      H2_LOADER_MFG_STEP_FAILED)
     rc = h2_mfg_model_action(&m->model, "fail", step, m->model.ticket);
   m->hardware_ticket = m->model.ticket;
   m->model.ready = 0;
@@ -317,9 +318,10 @@ int h2_mfg_run(void* user, h2_loader_t* loader,
                                   m->model.ticket)
                             : error;
           char failure[160];
-          (void)snprintf(failure, sizeof(failure),
-                         "H2_MFG_CHECK_FAIL stage=enter primary=%d cleanup=%d save=%d",
-                         error, cleanup, save_rc);
+          (void)snprintf(
+              failure, sizeof(failure),
+              "H2_MFG_CHECK_FAIL stage=enter primary=%d cleanup=%d save=%d",
+              error, cleanup, save_rc);
           (void)h2_pal_log_write(m->rt->log, H2_PAL_LOG_ERROR, "mfg", failure);
           /* The failed check stays selected, without repeatedly reopening it.
            */

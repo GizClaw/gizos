@@ -54,7 +54,8 @@ static int service_open(void* user, h2_runtime_t* rt,
                         const char* board, uint32_t capabilities, void** out) {
   (void)user;
   unlocked_command_owner();
-  assert(rt == &runtime && cfg == &command && strcmp(board, "ai_passport") == 0);
+  assert(rt == &runtime && cfg == &command &&
+         strcmp(board, "ai_passport") == 0);
   assert(capabilities == 7 && !audio_live && !wifi_live);
   ++opens;
   *out = &handle;
@@ -65,14 +66,20 @@ static int service_close(void* user, void* service) {
   unlocked_command_owner();
   assert(service == &handle);
   ++closes;
-  if (close_busy) { --close_busy; return H2_PAL_ERR_BUSY; }
+  if (close_busy) {
+    --close_busy;
+    return H2_PAL_ERR_BUSY;
+  }
   return 0;
 }
 static int host_stop(void* user) {
   (void)user;
   unlocked_command_owner();
   ++host_stops;
-  if (stop_busy) { --stop_busy; return H2_PAL_ERR_BUSY; }
+  if (stop_busy) {
+    --stop_busy;
+    return H2_PAL_ERR_BUSY;
+  }
   return 0;
 }
 static const h2_pal_ble_vtable_t ble_vtable = {.stop = host_stop};
@@ -84,12 +91,14 @@ int h2_esp_h2loader_ble_command_service_with_config(
   assert(config->stream_buffer_size == 2048 && config->stream_window == 8);
   assert(config->input_frame_capacity == 8);
   *out = (h2loader_app_command_service_api_t){.open = service_open,
-                                             .close = service_close};
+                                              .close = service_close};
   return 0;
 }
 static void setup(void) {
-  runtime = (h2_runtime_t){.board = "ai_passport", .ble_host = &ble,
-      .sync = h2_desktop_platform_sync_api(), .time = &clock_api};
+  runtime = (h2_runtime_t){.board = "ai_passport",
+                           .ble_host = &ble,
+                           .sync = h2_desktop_platform_sync_api(),
+                           .time = &clock_api};
   loader.config.hardware_capabilities = 7;
   command.loader = &loader;
   const h2_pal_mutex_config_t mc = {
@@ -166,6 +175,7 @@ int main(void) {
   phases_and_retryable_shutdown();
   failed_partial_open_is_closed_before_retry();
   timeout_cancels_unstarted_service();
-  puts("Passport resources: phase exclusion, unlocked joins, partial open, retry and timeout passed");
+  puts(
+      "Passport resources: phase exclusion, unlocked joins, partial open, retry and timeout passed");
   return 0;
 }
