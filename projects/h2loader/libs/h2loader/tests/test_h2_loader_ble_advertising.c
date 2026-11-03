@@ -223,8 +223,32 @@ static void test_mode(h2_loader_ble_advertising_mode_t mode, bool named,
       .advertising_mode = mode,
       .handler = no_session,
       .server_task_stack_size = named ? 32768u : 0u,
+      .stream_buffer_size = named ? 2048u : 0u,
+      .stream_window = named ? 8u : 0u,
+      .input_frame_capacity = named ? 8u : 0u,
   };
   h2_loader_ble_service_t* service = NULL;
+  const uint32_t invalid_windows[] = {UINT16_MAX / 2u + 1u,
+                                      (uint32_t)UINT16_MAX + 1u, UINT32_MAX};
+  for (size_t i = 0u; i < sizeof(invalid_windows) / sizeof(invalid_windows[0]);
+       ++i) {
+    h2_loader_ble_service_config_t invalid = config;
+    invalid.stream_window = invalid_windows[i];
+    assert(h2_loader_ble_service_open(&invalid, &service) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(service == NULL && capture.live_allocations == 0u);
+    assert(capture.live_subscriptions == 0u && capture.task_starts == 0u);
+  }
+  const size_t invalid_inputs[] = {(size_t)UINT16_MAX + 1u, SIZE_MAX};
+  for (size_t i = 0u; i < sizeof(invalid_inputs) / sizeof(invalid_inputs[0]);
+       ++i) {
+    h2_loader_ble_service_config_t invalid = config;
+    invalid.input_frame_capacity = invalid_inputs[i];
+    assert(h2_loader_ble_service_open(&invalid, &service) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(service == NULL && capture.live_allocations == 0u);
+    assert(capture.live_subscriptions == 0u && capture.task_starts == 0u);
+  }
   if (failure == 5u) {
     capture.fail_start = true;
     capture.fail_unregister = true;

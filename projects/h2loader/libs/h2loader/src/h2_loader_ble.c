@@ -594,6 +594,8 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
       config->api.time == NULL || config->api.sync == NULL ||
       config->api.system_event == NULL || config->api.allocator == NULL ||
       config->board == NULL || config->handler == NULL ||
+      config->stream_window > UINT16_MAX / 2u ||
+      config->input_frame_capacity > UINT16_MAX ||
       (config->advertising_mode != H2_LOADER_BLE_ADVERTISING_LEGACY &&
        config->advertising_mode != H2_LOADER_BLE_ADVERTISING_EXTENDED)) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -675,13 +677,14 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
       .data = h2_loader_ble_rx_uuid_bytes,
       .len = sizeof(h2_loader_ble_rx_uuid_bytes),
   };
-  stream_config.send_window = config->stream_window != 0u
-                                  ? config->stream_window
-                                  : H2_LOADER_BLE_WINDOW;
+  stream_config.send_window =
+      (uint16_t)(config->stream_window != 0u ? config->stream_window
+                                             : H2_LOADER_BLE_WINDOW);
   stream_config.recv_window = stream_config.send_window;
-  stream_config.input_frame_capacity = config->input_frame_capacity != 0u
-                                           ? config->input_frame_capacity
-                                           : H2_LOADER_BLE_INPUT_FRAME_CAPACITY;
+  stream_config.input_frame_capacity =
+      (uint16_t)(config->input_frame_capacity != 0u
+                     ? config->input_frame_capacity
+                     : H2_LOADER_BLE_INPUT_FRAME_CAPACITY);
   stream_config.tx_buffer_size = config->stream_buffer_size != 0u
                                      ? config->stream_buffer_size
                                      : H2_LOADER_BLE_BUFFER_SIZE;

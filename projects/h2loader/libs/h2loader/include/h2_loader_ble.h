@@ -59,9 +59,10 @@ typedef struct h2_loader_ble_service_config {
   size_t server_task_stack_size;
   /** TX/RX ring bytes; zero keeps 8 KiB in each direction. */
   size_t stream_buffer_size;
-  /** Send/receive KCP window; zero keeps 32 segments in each direction. */
+  /** Send/receive KCP window; zero keeps 32 segments in each direction.
+   * Positive overrides must not exceed UINT16_MAX / 2. */
   uint32_t stream_window;
-  /** Queued input datagrams; zero keeps 16. */
+  /** Queued input datagrams; zero keeps 16, maximum override UINT16_MAX. */
   size_t input_frame_capacity;
 } h2_loader_ble_service_config_t;
 
