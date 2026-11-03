@@ -63,7 +63,8 @@ uses a two-frame playback queue; frame completeness, cadence and clipping
 requirements remain enforced. Checked target cleanup also releases DSP memory
 on a failed check before saving its result.
 
-The H2Loader layout preserves the existing product geometry: Loader at
+The [H2Loader layout contract](esp32c3/layouts/h2loader/README.md) defines
+image limits, recording admission and the complete Flash map: Loader at
 0x20000 (2 MiB), App at 0x220000 (3 MiB), preferences at 0x520000 (256 KiB),
 coredump at 0x560000 (64 KiB), data at 0x570000 through 0x800000. `/dl` and
 `/data` share the data partition, mounted under `/passport`; first-use formatting

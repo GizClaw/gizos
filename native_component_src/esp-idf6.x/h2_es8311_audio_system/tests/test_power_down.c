@@ -693,10 +693,10 @@ static void test_aec_observer(void) {
   s.playback_task_started = 0;
   int16_t ref[512] = {0};
   s.sr.ref_frame = ref;
-  h2_audio_frame_t raw = {.data = s.mic_raw_scratch};
+  h2_audio_frame_t raw_frame = {.data = s.mic_raw_scratch};
   h2_audio_frame_t processed = {.data = s.mic_processed_scratch};
-  observe_aec_capture(&s, &raw, &processed);
-  observe_aec_capture(&s, &raw, &processed);
+  observe_aec_capture(&s, &raw_frame, &processed);
+  observe_aec_capture(&s, &raw_frame, &processed);
   assert(captures == 2);
   s.mic_started = 1;
   s.mic_task_started = 1;
@@ -710,7 +710,7 @@ static void test_aec_observer(void) {
   assert(s.mic_task == NULL && !s.mic_task_started);
   running = NULL;
   assert(h2_pal_audio_set_aec_observer(audio, NULL) == H2_AUDIO_OK);
-  observe_aec_capture(&s, &raw, &processed);
+  observe_aec_capture(&s, &raw_frame, &processed);
   assert(captures == 2);
 }
 
