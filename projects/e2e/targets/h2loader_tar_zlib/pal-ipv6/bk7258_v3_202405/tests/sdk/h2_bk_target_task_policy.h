@@ -1,0 +1,4 @@
+#ifndef H2_IPV6_LAUNCHER_TEST_POLICY_H
+#define H2_IPV6_LAUNCHER_TEST_POLICY_H
+int h2_bk_target_task_policy_install(void);
+#endif
