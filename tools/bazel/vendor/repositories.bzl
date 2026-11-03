@@ -264,93 +264,6 @@ def _first_header_root(repository_ctx, candidates, marker):
             return path
     fail("system headers not found for %s" % marker)
 
-def _symlink_header_tree(repository_ctx, source_root, destination):
-    discovered = repository_ctx.execute(
-        ["find", "-L", str(source_root), "-type", "f"],
-        quiet = True,
-    )
-    if discovered.return_code != 0:
-        fail("failed to enumerate %s: %s" % (source_root, discovered.stderr))
-    prefix = str(source_root) + "/"
-    for source in discovered.stdout.splitlines():
-        if source.startswith(prefix):
-            repository_ctx.symlink(
-                source,
-                destination + "/" + source[len(prefix):],
-            )
-
-def _k4b_cedarx_repository_impl(repository_ctx):
-    include_directory = repository_ctx.os.environ.get(
-        "K4B_CEDARX_INCLUDE_DIR",
-        "",
-    )
-    library_directory = repository_ctx.os.environ.get(
-        "K4B_CEDARX_LIB_DIR",
-        "",
-    )
-    if not include_directory or not library_directory:
-        # Keep repository/package discovery query-safe so graph validation can
-        # decide whether the private K4B consumer is selected. The declared
-        # source files remain absent, so analyzing or building that consumer
-        # still fails closed instead of accepting an incomplete SDK.
-        repository_ctx.file(
-            "BUILD.bazel",
-            repository_ctx.read(repository_ctx.attr.build_file),
-        )
-        error_header = (
-            "#error K4B CedarX SDK is not configured; source .env/devenv " +
-            "to set K4B_CEDARX_INCLUDE_DIR and K4B_CEDARX_LIB_DIR\n"
-        )
-        repository_ctx.file("include/vdecoder.h", error_header)
-        repository_ctx.file("include/memoryAdapter.h", error_header)
-        return
-    include_root = repository_ctx.path(include_directory)
-    library_root = repository_ctx.path(library_directory)
-    required_libraries = [
-        "libMemAdapter.so",
-        "libVE.so",
-        "libaftertreatment.so",
-        "libawh264.so",
-        "libcdc_base.so",
-        "libcdx_ion.so",
-        "libfbm.so",
-        "libsbm.so",
-        "libscaledown.so",
-        "libvdecoder.so",
-        "libvideoengine.so",
-    ]
-    for root, marker in [
-        (include_root, "vdecoder.h"),
-        (include_root, "memoryAdapter.h"),
-    ] + [(library_root, library) for library in required_libraries]:
-        if not root.get_child(marker).exists:
-            fail("K4B CedarX SDK path %s does not contain %s" % (root, marker))
-    _symlink_header_tree(repository_ctx, include_root, "include")
-    for library in required_libraries:
-        repository_ctx.symlink(
-            library_root.get_child(library),
-            "lib/" + library,
-        )
-    repository_ctx.file(
-        "BUILD.bazel",
-        repository_ctx.read(repository_ctx.attr.build_file),
-    )
-
-_k4b_cedarx_repository = repository_rule(
-    implementation = _k4b_cedarx_repository_impl,
-    attrs = {
-        "build_file": attr.label(
-            allow_single_file = True,
-            mandatory = True,
-        ),
-    },
-    environ = [
-        "K4B_CEDARX_INCLUDE_DIR",
-        "K4B_CEDARX_LIB_DIR",
-    ],
-    local = True,
-)
-
 _repository = tag_class(
     attrs = {
         "build_file": attr.label(
@@ -381,10 +294,6 @@ def _vendor_repositories_impl(module_ctx):
             "//third_party/fdk_aac_patch:libFDK/include/fixpoint_math.h": "libFDK/include/fixpoint_math.h",
         },
         patches = ["//third_party/fdk_aac_patch:fdk_aac_embedded_no_stdio.patch"],
-    )
-    _k4b_cedarx_repository(
-        name = "h2_k4b_cedarx_sdk",
-        build_file = "//tools/bazel/vendor:kickpi_k4b_cedarx.BUILD.bazel",
     )
     for module in module_ctx.modules:
         for repository in module.tags.repository:

@@ -15,6 +15,8 @@ def _exec_host(repository_ctx):
     arch = repository_ctx.os.arch.lower()
     if name in ("mac os x", "macos") and arch in ("aarch64", "arm64"):
         return "macos_arm64"
+    if name in ("mac os x", "macos") and arch in ("amd64", "x86_64"):
+        return "macos_x86_64"
     if name == "linux" and arch in ("amd64", "x86_64"):
         return "linux_x86_64"
     fail("unsupported local embedded toolchain execution platform: %s/%s" % (name, arch))
@@ -23,6 +25,7 @@ def _exec_constraints(repository_ctx):
     return {
         "linux_x86_64": ["@platforms//cpu:x86_64", "@platforms//os:linux"],
         "macos_arm64": ["@platforms//cpu:arm64", "@platforms//os:macos"],
+        "macos_x86_64": ["@platforms//cpu:x86_64", "@platforms//os:macos"],
     }[_exec_host(repository_ctx)]
 
 def _tool_names(repository_ctx):
@@ -47,6 +50,10 @@ def _toolchain_bin(repository_ctx):
     root = repository_ctx.path(environment_root)
     if repository_ctx.attr.layout == "bin_dir":
         return root
+    key = "riscv_bin" if repository_ctx.attr.family == "riscv32-esp-elf" else "xtensa_bin"
+    selected_bin = paths.get(key, "")
+    if selected_bin and repository_ctx.attr.family in ["riscv32-esp-elf", "xtensa-esp-elf"]:
+        return repository_ctx.path(selected_bin)
     family = root.get_child("tools").get_child(repository_ctx.attr.family)
     matches = []
     if family.exists:

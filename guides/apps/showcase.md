@@ -1,6 +1,6 @@
 # Showcase 展架程序
 
-Showcase 是仓库顶层独立 portable App，代码 ownership 为 `projects/showcase/apps/showcase/`，不属于 H106 project group。首个目标是 KICKPI K4B Linux 展架设备：背景持续循环播放 SD 卡中的 MP4，用户通过单实体键发起对话或打开本机触屏控制台；对话时在右上角叠加当前角色窗口，控制台用于选择背景音乐视频和对话角色。
+Showcase 是仓库顶层独立 portable App，代码 ownership 为 `projects/showcase/apps/showcase/`，不属于 H106 project group。Desktop 入口验证共享的展架流程：背景持续循环播放 SD 卡中的 MP4，用户通过单实体键发起对话或打开本机触屏控制台；对话时在右上角叠加当前角色窗口，控制台用于选择背景音乐视频和对话角色。
 
 控制台是 Showcase 进程内的原生 Linux UI，不是网页，不提供 AP 地址，也不运行 HTTP 管理服务。背景 MP4 在待机、对话和控制台期间持续推进，所有前景界面由同一个 compositor 叠加。
 
@@ -8,7 +8,7 @@ Showcase 是仓库顶层独立 portable App，代码 ownership 为 `projects/sho
 
 | App | Portable source | Target integration |
 | --- | --- | --- |
-| Showcase | `projects/showcase/apps/showcase/` | K4B Linux service 与 Desktop `showcase` entry |
+| Showcase | `projects/showcase/apps/showcase/` | Desktop `showcase` entry |
 
 Showcase 定义固定逻辑输入 `showcase.action_button`。目标 launcher 负责把产品最终选定的电源键或喇叭键映射为该 component，并提供触摸、Display、audio、storage、network 和 MP4 media service。
 
@@ -34,9 +34,9 @@ Showcase 定义固定逻辑输入 `showcase.action_button`。目标 launcher 负
 
 ## Board
 
-当前首个目标为 [KICKPI K4B](/apps/showcase/board/k4b)：运行 Linux，使用 1024×600 横向触屏，并向用户提供一个实体操作键。Board 自带的 reset、烧录或维护键不属于 Showcase 输入。
+当前仓库提供 Desktop 入口；没有已启用的物理展架板卡。物理产品装配必须自行声明实际显示、触摸和用户输入。
 
-Showcase 是跨产品型号 App。新产品型号必须新增独立 Board Spec，不能修改 K4B 参数或让 portable App 依赖 K4B private device path。
+Showcase 是跨产品型号 App。新产品型号必须新增独立 Board Spec，不能覆盖其它型号参数或让 portable App 依赖某块板的 private device path。
 
 ## 文档关系
 

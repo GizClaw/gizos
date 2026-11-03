@@ -275,7 +275,6 @@ const appItems = [
         collapsed: true,
         items: [
           { text: "总览", link: "/apps/showcase/board/" },
-          { text: "KICKPI K4B", link: "/apps/showcase/board/k4b" },
         ],
       },
     ],
@@ -322,7 +321,6 @@ const zhUsageItems = [
     text: "Embedded Linux",
     items: [
       { text: "ADB 总览", link: "/zh/using/embed_linux/" },
-      { text: "KICKPI K4B", link: "/zh/using/embed_linux/kickpi_k4b" },
     ],
   },
   {

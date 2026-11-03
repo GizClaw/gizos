@@ -73,8 +73,29 @@ def _key_value_contract(repository_ctx, label, description):
         entries[key] = value
     return entries
 
-def _family_executable(tools_root, family, executable):
+def _sdk_tool_version(repository_ctx, idf_root, family):
+    metadata = idf_root.get_child("tools").get_child("tools.json")
+    if not metadata.exists:
+        return None
+    tools = json.decode(repository_ctx.read(metadata)).get("tools", [])
+    versions = [
+        version["name"]
+        for tool in tools
+        if tool.get("name") == family
+        for version in tool.get("versions", [])
+        if version.get("status") == "recommended"
+    ]
+    if len(versions) != 1:
+        fail("SDK must select one recommended %s version, found %s" % (family, versions))
+    return versions[0]
+
+def _family_executable(tools_root, family, executable, version_name = None):
     family_root = tools_root.get_child("tools").get_child(family)
+    if version_name:
+        selected = family_root.get_child(version_name).get_child(family).get_child("bin").get_child(executable)
+        if not selected.exists:
+            fail("SDK-selected compiler is missing: %s" % selected)
+        return selected
     matches = []
     if family_root.exists:
         for version in family_root.readdir():
@@ -245,12 +266,19 @@ def _esp_tools_repository_impl(repository_ctx):
            candidate.basename.endswith("_env") and
            candidate.get_child("bin").get_child("python").exists
     ])
-    if len(python_environment_names) != 1:
-        fail("expected exactly one ESP-IDF 6.2 Python environment under %s, found %s" % (
-            python_environment_root,
-            python_environment_names,
-        ))
-    python_root = python_environment_root.get_child(python_environment_names[0])
+    selected_python = _environment_value(repository_ctx, "IDF_PYTHON_ENV_PATH")
+    if selected_python:
+        python_root = repository_ctx.path(selected_python)
+        allowed = [str(python_environment_root.get_child(name).realpath) for name in python_environment_names]
+        if str(python_root.realpath) not in allowed:
+            fail("IDF_PYTHON_ENV_PATH must select an installed IDF 6.2 environment under %s" % python_environment_root)
+    else:
+        if len(python_environment_names) != 1:
+            fail("expected exactly one ESP-IDF 6.2 Python environment under %s, found %s" % (
+                python_environment_root,
+                python_environment_names,
+            ))
+        python_root = python_environment_root.get_child(python_environment_names[0])
     python = python_root.get_child("bin").get_child("python")
     compiler_contracts = [
         ("esp32p4", "riscv32-esp-elf", "riscv32-esp-elf-gcc"),
@@ -267,8 +295,11 @@ def _esp_tools_repository_impl(repository_ctx):
         "PYTHONDONTWRITEBYTECODE": "1",
         "TZ": "UTC",
     }
+    selected_paths = {}
     for key, family, executable in compiler_contracts:
-        compiler = _family_executable(tools_root, family, executable)
+        version_name = _sdk_tool_version(repository_ctx, idf_root, family)
+        compiler = _family_executable(tools_root, family, executable, version_name)
+        selected_paths["xtensa_bin" if family == "xtensa-esp-elf" else "riscv_bin"] = str(compiler.dirname.realpath)
         actual = _command_output(
             repository_ctx,
             [str(compiler), "--version"],
@@ -301,15 +332,22 @@ def _esp_tools_repository_impl(repository_ctx):
             environment,
             "ESP-IDF tools %s" % operation,
         )
+    rom_version = _sdk_tool_version(repository_ctx, idf_root, "esp-rom-elfs")
+    if rom_version:
+        rom_root = tools_root.get_child("tools").get_child("esp-rom-elfs").get_child(rom_version)
+        if not rom_root.exists:
+            fail("SDK-selected ROM ELF tools are missing: %s" % rom_root)
+        selected_paths["rom_elf_dir"] = str(rom_root.realpath)
+    selected_paths.update({
+        "python_root": str(python_root.realpath),
+        "tools_root": str(tools_root.realpath),
+    })
     repository_ctx.watch_tree(tools_root)
     _write_locator(
         repository_ctx,
         "esp-idf-tools",
         True,
-        paths = {
-            "python_root": str(python_root.realpath),
-            "tools_root": str(tools_root.realpath),
-        },
+        paths = selected_paths,
     )
 
 _esp_tools_repository = repository_rule(
@@ -324,7 +362,7 @@ _esp_tools_repository = repository_rule(
             mandatory = True,
         ),
     },
-    environ = ["IDF_TOOLS_PATH"],
+    environ = ["IDF_TOOLS_PATH", "IDF_PYTHON_ENV_PATH"],
 )
 
 def _ccache_runtime_repository_impl(repository_ctx):

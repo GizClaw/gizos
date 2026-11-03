@@ -52,9 +52,9 @@ Display PAL 的输入与 `native_format` 保持 RGB565。Provider 支持 native 
 
 ## Audio
 
-`alsa_audio` 运行时只解析 `libasound.so.2` 的 playback ABI，支持一个 S16LE mono/stereo track、nonblocking write、timeout、xrun recovery和软件音量。ALSA device name、sample rate、channels与 block size由 launcher配置；component不固定 K4B mixer route。
+`alsa_audio` 运行时只解析 `libasound.so.2` 的 playback ABI，支持一个 S16LE mono/stereo track、nonblocking write、timeout、xrun recovery和软件音量。ALSA device name、sample rate、channels与 block size由 launcher配置；component不固定具体 board 的 mixer route。
 
-`fdk_aac_decoder` 把固定版本的 FDK-AAC source适配到 Audio Decoder PAL，当前只接受 raw AAC-LC与 MPEG-4 AudioSpecificConfig，并输出 allocator-owned S16LE frame。它不依赖 CedarX、board path或 ALSA，codec packet与 PCM track仍由 portable MP4 App编排。FDK 编译选项由 `//libs/fdk_aac` 持有，`@h2_fdk_aac` 只暴露 upstream source/header groups。
+`fdk_aac_decoder` 把固定版本的 FDK-AAC source适配到 Audio Decoder PAL，当前只接受 raw AAC-LC与 MPEG-4 AudioSpecificConfig，并输出 allocator-owned S16LE frame。它不依赖 board path或 ALSA，codec packet与 PCM track仍由 portable MP4 App编排。FDK 编译选项由 `//libs/fdk_aac` 持有，`@h2_fdk_aac` 只暴露 upstream source/header groups。
 
 ## Build 与验证
 
@@ -75,7 +75,5 @@ Host test 覆盖 RGB conversion、double-buffer selection、Time、Task、Queue�
 
 ## Ownership 边界
 
-- Allwinner CedarX 等 vendor SDK integration 属于 `libs/pal/providers/allwinner-linux/`。
-- `/dev/fb0`、1024×600、T113-S3 identity 等物理配置属于 K4B BSP。
 - executable、signal handler、media path 和 systemd unit 属于 App owner 的 `cc_binary/<app>/<board>/`。
 - SDL window、desktop input 和跨 OS Desktop package integration 属于 `libs/pal/providers/desktop/`；Linux Netif/SystemEvent/Host Serial 不属于 Desktop。

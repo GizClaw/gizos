@@ -59,6 +59,14 @@ def manifest_files(manifest: dict) -> set[str]:
     return expected
 
 
+def manifest_bins(manifest: dict, files: set[str]) -> set[str]:
+    value = manifest.get("bin", {})
+    entries = [value] if isinstance(value, str) else list(value.values()) if isinstance(value, dict) else None
+    if entries is None or any(not isinstance(entry, str) or entry not in files for entry in entries):
+        raise ValueError("npm bin entries must name explicit package files")
+    return set(entries)
+
+
 def empty_output(output: Path) -> None:
     if output.exists():
         if not output.is_dir() or any(output.iterdir()):
@@ -70,6 +78,7 @@ def empty_output(output: Path) -> None:
 def pack(package: Path, manifest_path: Path, output: Path) -> Path:
     manifest = read_manifest(manifest_path)
     expected = manifest_files(manifest)
+    binaries = manifest_bins(manifest, expected)
     if not package.is_dir():
         raise ValueError(f"npm package tree is missing: {package}")
     actual = set()
@@ -108,7 +117,7 @@ def pack(package: Path, manifest_path: Path, output: Path) -> Path:
                         archive.addfile(info)
                     else:
                         source = members[name]
-                        info.mode = 0o644
+                        info.mode = 0o755 if name.removeprefix("package/") in binaries else 0o644
                         info.size = source.stat().st_size
                         with source.open("rb") as stream:
                             archive.addfile(info, stream)

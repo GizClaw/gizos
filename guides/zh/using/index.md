@@ -16,6 +16,5 @@ H2Loader 的产品合同、board/image 配置、代码结构与固件开发约�
 已经运行 Linux userspace 与 `adbd` 的设备通过标准 ADB 执行应用烧录：
 
 - [通用 ADB 流程](./embed_linux/)：准备 ADB、scan、显式设备选择、预检、临时运行、持久化安装与恢复。
-- [KICKPI K4B](./embed_linux/kickpi_k4b)：ARMv7 hard-float ABI、Display/MP4 Player framebuffer 互斥、CedarX runtime libraries、安装路径与验收 marker。
 
 该流程只传输和运行普通 Linux executable、资源及 service metadata，不安装操作系统或 rootfs。

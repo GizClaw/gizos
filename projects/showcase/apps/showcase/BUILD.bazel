@@ -33,7 +33,6 @@ cc_library(
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

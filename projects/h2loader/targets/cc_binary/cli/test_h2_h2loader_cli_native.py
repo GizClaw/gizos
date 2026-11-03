@@ -35,7 +35,7 @@ class NativeCliTest(unittest.TestCase):
             with self.subTest(hidden=hidden):
                 result = self.run_cli("--help", hidden=hidden)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("usage: h2loader", result.stdout)
+                self.assertIn("usage: gizloader [--port ENDPOINT]", result.stdout)
 
     def test_initialization_failure_reports_stage_and_exit(self):
         result = self.run_cli("--help", binary=FAILURE_BINARY)

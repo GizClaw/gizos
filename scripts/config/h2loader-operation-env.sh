@@ -63,7 +63,7 @@ load_env_file() {
   fi
 }
 
-load_env_file '.env/devenv' "$REPO_ROOT/.env/devenv" || exit 1
+load_env_file 'gizos-devenv' "$REPO_ROOT/scripts/config/gizos-devenv-env.sh" || exit 1
 if [ -n "${HOME:-}" ]; then
   load_env_file '~/.config/h2loader/env' "$HOME/.config/h2loader/env" || :
 else

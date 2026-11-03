@@ -50,7 +50,7 @@ Desktop simulator 和 CoreBluetooth backend 当前不能可靠观察单次 GATT 
 Desktop backend 使用的 host 能力包括：
 
 - pthread 提供线程和同步能力。
-- SDL3 提供 Desktop host 的 display、window 和 input integration；它不进入 T113 或其他嵌入式 target。
+- SDL3 提供 Desktop host 的 display、window 和 input integration；它不进入 嵌入式 target。
 - PortAudio 提供音频设备 integration。
 - Verified external repository `@h2_vendor_wolfssl` 由 `libs/pal/providers/wolfssl` 集成为静态链接的完整 wolfSSL/DTLS 与裁剪 wolfCrypt variants；Desktop 使用 `//libs/pal/providers/wolfssl:wolfssl`，受限固件使用 `//libs/pal/providers/wolfssl:wolfcrypt`。
 - SQLite 提供 filesystem-backed preference storage。

@@ -35,6 +35,3 @@ GizOS shared development environment 提供固定版本的 ADB client；通用�
 
 | Board | App | Build | Device operation |
 | --- | --- | --- | --- |
-| KICKPI K4B | Display smoke | Bazel | 标准 ADB；见 [K4B 使用页](/zh/using/embed_linux/kickpi_k4b) |
-| KICKPI K4B | MP4 Player smoke | Bazel + CedarX H.264 + FDK-AAC + ALSA | 标准 ADB；见 [K4B 使用页](/zh/using/embed_linux/kickpi_k4b) |
-| KICKPI K4B | Touch smoke | Bazel + Linux evdev Touch + LVGL + mapped Runtime Button | 标准 ADB；见 [K4B 使用页](/zh/using/embed_linux/kickpi_k4b) |

@@ -6,22 +6,16 @@ GizOS 使用标准 ADB 对已经运行 Linux userspace 和 `adbd` 的设备执�
 
 ## 准备 ADB
 
-GizOS 与 `firmwares-devenv` 必须是同级 checkout。首次安装或验证固定版本 ADB：
+使用 GizOS 工具箱安装或检查固定版本 ADB：
 
 ```sh
-make -C ../firmwares-devenv adb
-make -C ../firmwares-devenv adb-check
-```
-
-从 GizOS 仓库根目录加载 shared environment：
-
-```sh
-REPO_ROOT=$PWD . .env/devenv
+bunx @gizclaw/gizos setup adb 35.0.2
+eval "$(bunx @gizclaw/gizos env --shell sh)"
 test -x "$ADB"
 "$ADB" version
 ```
 
-`firmwares-devenv` 导出的 `ADB` 是经过版本和可执行性检查的绝对路径；同一 `platform-tools` 目录也会进入 `PATH`。自动化和文档命令使用 `"$ADB"`，避免误用机器上其它版本。
+工具箱导出经过版本检查的绝对路径 `ADB`，并把同一 `platform-tools` 目录加入 `PATH`。已有安装可以用 `adopt adb 35.0.2 --path <installation-directory>` 登记，避免重复下载。Registry 配置见根 README。npm 包首次导入前可以使用 `bun tools/gizos/src/cli.ts` 运行相同命令。
 
 ## Scan 与显式设备选择
 
@@ -68,4 +62,4 @@ export EMBED_LINUX_ADB_SERIAL='<adb-serial>'
 - 正常停止使用规定信号并产生 stopped marker。
 - 失败时清理临时目录并恢复安装前运行的冲突 service。
 
-Board-specific 命令与验收以对应使用页为准；KICKPI K4B 见 [K4B 应用烧录](/zh/using/embed_linux/kickpi_k4b)。
+Board-specific 命令与验收由对应 consumer 的使用页定义。

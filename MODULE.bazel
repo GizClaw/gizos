@@ -22,6 +22,10 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_python", version = "2.2.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 
+bun_repository = use_repo_rule("//tools/gizos:bun_repository.bzl", "bun_repository")
+
+bun_repository(name = "gizos_bun")
+
 node = use_extension(
     "@rules_nodejs//nodejs:extensions.bzl",
     "node",
@@ -513,7 +517,6 @@ vendor_repositories.repository(
 use_repo(
     vendor_repositories,
     "h2_fdk_aac",
-    "h2_k4b_cedarx_sdk",
     "h2_vendor_corehttp",
     "h2_vendor_coremqtt",
     "h2_vendor_dr_libs",
@@ -573,12 +576,6 @@ use_repo(
     "h2_jieli_postbuild",
     "h2_jieli_toolchain",
 )
-
-k4b_toolchain = use_extension(
-    "//tools/bazel/toolchains/kickpi_k4b:repositories.bzl",
-    "kickpi_k4b_toolchain",
-)
-use_repo(k4b_toolchain, "k4b_arm_gnu_toolchain")
 
 esp32s3_cc = use_extension(
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl",

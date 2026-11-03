@@ -141,6 +141,8 @@ __wrap_sys_drv_enter_low_voltage(void) {
                        *(volatile uint32_t*)(SOC_AON_PMU_REG_BASE + 12u));
 }
 
+/* The SDK omits both functions when the image disables AON watchdog. */
+#if CONFIG_AON_WDT
 __attribute__((section(".iram"), noinline)) bk_err_t
 __wrap_bk_aon_wdt_feed(void) {
   s_lv_phase = 1u;
@@ -164,6 +166,7 @@ __wrap_bk_aon_wdt_stop(void) {
                        *(volatile uint32_t*)SOC_AON_WDT_REG_BASE);
   return result;
 }
+#endif
 
 __attribute__((section(".iram"), noinline)) bk_err_t
 __wrap_gpio_enter_low_power(void* param) {

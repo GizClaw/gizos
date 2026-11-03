@@ -374,7 +374,7 @@ Touch PAL 不识别 click、long press、swipe 或其它 gesture，也不把屏�
 
 Decoder session 由 `open` 创建并由 `close` 销毁。一个 session 同时最多持有一个 acquired frame；`frame_get_info` 返回的 plane 是 CPU 可读 borrowed buffer，只在对应 `release_frame` 前有效。输出 plane 来自调用方在 `open` 时提供的 `frame_allocator`，由 session 持有并复用，调用方不释放。调用方必须先 release frame，才能 reset 或 close。显式 EOS 后先 drain delayed frame，最后返回 `H2_PAL_EXIT`；seek 和 loop 是容器层策略。
 
-PAL 保证返回 allocator-backed、CPU 可读的 linear plane，使 portable compositor 不需要处理 CedarX、DRM、DMA-BUF 或 FFmpeg private handle。硬件 decoder 可以保留 SDK-owned surface，但 provider 必须在 acquire 前复制或转换到 PAL output allocation。是否转换成 RGB565，以及 cache coherency 处理属于 target component。
+PAL 保证返回 allocator-backed、CPU 可读的 linear plane，使 portable compositor 不需要处理 DRM、DMA-BUF 或 FFmpeg private handle。硬件 decoder 可以保留 SDK-owned surface，但 provider 必须在 acquire 前复制或转换到 PAL output allocation。是否转换成 RGB565，以及 cache coherency 处理属于 target component。
 
 `h2_pal_audio_decoder.h` 使用相同生命周期解码 raw AAC-LC access unit，并返回 allocator-backed、interleaved S16LE PCM。Audio Decoder PAL 与 Audio PAL 分离：前者只解码压缩数据，后者负责设备播放、track 和 volume。
 

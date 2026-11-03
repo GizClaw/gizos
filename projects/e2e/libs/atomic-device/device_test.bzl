@@ -6,7 +6,7 @@ def _host_cli_impl(ctx):
     return [DefaultInfo(files = depset([ctx.executable.cli]), runfiles = ctx.attr.cli[DefaultInfo].default_runfiles)]
 
 _host_cli = rule(implementation = _host_cli_impl, attrs = {
-    "cli": attr.label(default = "//projects/h2loader/targets/cc_binary/cli:h2loader", cfg = "exec", executable = True),
+    "cli": attr.label(default = "//tools/gizloader/native:gizloader-cli", cfg = "exec", executable = True),
 })
 
 def _package_impl(ctx):

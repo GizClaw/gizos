@@ -6,7 +6,7 @@
 
 - 杰理工具链是私有 clang 4.0.1（`-target pi32v2 -mcpu=r3` 或 `-target q32s`），仅发布 Windows 与 Linux x86_64 预编译二进制；一个 tarball 同时包含 `common/`、`pi32/`、`pi32v2/`、`q32s/`。AC695N/AC696N/AC701N/AC707N/AC791N 都使用 `pi32v2/bin`，AC63/AW31N 使用 `q32s/bin`。
 - post-build 工具（`isd_download`、`fw_add`、`ufw_maker`、`packres`、`remove_tailing_zeros` 等）是 Linux x86_64 Qt 程序，必须以 `QT_QPA_PLATFORM=offscreen` 运行。
-- 上游下载短链每次重定向到最新版本且不保留历史，因此 tarball 由 firmwares-devenv 镜像（`tools/jieli_toolchain/archives`）并由 `make jieli-toolchain` 解包到 `.tools/jieli-linux-toolchains-20250805.1`、`.tools/jieli-linux-post-build-tools-20260728.1`（`--strip-components=1`，`packres` 改名 `pack_res`）；`tools/bazel/native_versions/jieli_toolchain_archives.txt` 固定 archive SHA-256 与 bootstrap 产出的 expanded-tree SHA-256，`@h2_jieli_toolchain` 与 `@h2_jieli_postbuild` repository 只消费 `JIELI_TOOLCHAIN_ROOT`、`JIELI_POSTBUILD_ROOT` 指向的解包树并用 `toolchain_identity.py` 校验，不从网络下载。CI 用 deploy key sparse-checkout firmware-devenv 的 `tools/jieli_toolchain` 并运行同一个 `bootstrap.sh`。
+- 上游下载短链每次重定向到最新版本且不保留历史，因此 tarball 由 firmwares-devenv 镜像（`tools/jieli_toolchain/archives`）并由 `make jieli-toolchain` 解包到 `.tools/jieli-linux-toolchains-20250805.1`、`.tools/jieli-linux-post-build-tools-20260728.1`（`--strip-components=1`，`packres` 改名 `pack_res`）；`tools/bazel/native_versions/jieli_toolchain_archives.txt` 固定 archive SHA-256 与 bootstrap 产出的 expanded-tree SHA-256，`@h2_jieli_toolchain` 与 `@h2_jieli_postbuild` repository 只消费 `JIELI_TOOLCHAIN_ROOT`、`JIELI_POSTBUILD_ROOT` 指向的解包树并用 `toolchain_identity.py` 校验，不从网络下载。CI 继续从私有资产库取得已授权归档，但 bootstrap 脚本来自同一 GizOS 提交中的 `tools/gizos/vendor/jieli`，通过 `JIELI_ARCHIVE_DIR` 指定归档目录；公开 provider 不携带厂商归档。
 - 链接需要 `ulimit -n >= 8192`；runner 在调用 Make 前提升该限制并 fail closed。
 
 ## pi32v2 compatible graph
@@ -17,8 +17,8 @@
 
 | 系列 | 变量 | 指向 | 验证 |
 | --- | --- | --- | --- |
-| AC695N (`br23`) | `JIELI_AC695N_SDK_PATH` | `h2vivi/AC695N_Soundbox_SDK` checkout 内的 SDK 根目录 `…/jieli_ac695n_sdk/SDK`（firmware-devenv 导出） | 所属 Git checkout 的 `native_versions/jieli_ac695n_sdk_commit.txt` exact commit、tracked cleanliness、`cpu/br23/sdk_ld.c` 与 post-build inputs 存在 |
-| AC707N (`br35`) | `JIELI_AC707N_SDK_PATH` | `h2vivi/e_badge_707_sdk_200` checkout 内的 SDK 根目录 `…/jieli_ac707n_sdk/SDK`（firmware-devenv 导出） | `native_versions/jieli_ac707n_sdk_commit.txt` exact commit、tracked cleanliness、`cpu/br35/sdk_ld.c` 与 post-build inputs 存在 |
+| AC695N (`br23`) | `JIELI_AC695N_SDK_PATH` | `h2vivi/AC695N_Soundbox_SDK` checkout 内的 SDK 根目录 `…/jieli_ac695n_sdk/SDK`（操作者显式提供） | 所属 Git checkout 的 `native_versions/jieli_ac695n_sdk_commit.txt` exact commit、tracked cleanliness、`cpu/br23/sdk_ld.c` 与 post-build inputs 存在 |
+| AC707N (`br35`) | `JIELI_AC707N_SDK_PATH` | `h2vivi/e_badge_707_sdk_200` checkout 内的 SDK 根目录 `…/jieli_ac707n_sdk/SDK`（操作者显式提供） | `native_versions/jieli_ac707n_sdk_commit.txt` exact commit、tracked cleanliness、`cpu/br35/sdk_ld.c` 与 post-build inputs 存在 |
 | AC791N (`wl82`) | `JIELI_AC791N_SDK_PATH` | `h2vivi/fw-AC791N_SDK` checkout 根目录（即 SDK 根） | `native_versions/jieli_ac791n_sdk_commit.txt`、cleanliness、`cpu/wl82/sdk_ld.c` 与 post-build inputs 存在 |
 
 三个 SDK 均由 h2vivi 私有 mirror 固定；AC695N 与 AC791N mirror 来自杰理代理商云芯 (`gitcode.com/yunthinker`) 的发布仓，AC707N mirror 来自杰理 GitLab 的 e-badge 2.0.0 仓。`fw-AC791N_SDK` 用 Git LFS 托管二进制，执行构建的 host（CI runner 或 dev container）必须安装 `git-lfs`，否则 runner 的 cleanliness 检查会把 LFS 文件判为已修改并 fail closed。`.bazelrc` 的 `--config=ac695n` / `--config=ac707n` / `--config=ac791n` 只用 `--repo_env` 把对应变量交给 repository rule；变量未设置时 repository 注册为 disabled locator，firmware target 因 compatibility 被跳过，不阻塞无关 graph。
@@ -138,7 +138,7 @@ Net provider 在 lwIP full-duplex 的单 reader、单 writer、单 closer 保证
 - `bazel test --config=macos_arm64 //tools/bazel/tests/jieli_task_policy:generated_policy_test //tools/bazel/tests/jieli_task_policy:missing_policy_test //tools/bazel/tests/jieli_task_policy:undeclared_policy_test` 实际加载 task policy 宏，验证生成 C、audit task list，以及缺失策略和未声明任务的 analysis failure；Linux host 使用对应 host config。
 - `bazel test //native_component_src/jieli/br23/h2_pal_core:test_jieli_br23_platform_core` 验证 BR23 PAL core。
 - `bazel test //native_component_src/jieli/wl82/...` 在 Linux/macOS host 运行 wl82 PAL core 测试。
-- Linux x86_64：`. ../firmwares-devenv/export.sh && bazel build --config=ac695n //projects/e2e/targets/jieli_firmware/reference-smoke/ac695n_reference:firmware`，并以 `--config=ac791n` 构建对应 AC791N target；重复构建应命中 action cache。
+- Linux x86_64：配置上述 SDK/toolchain 变量后运行 `bazel build --config=ac695n //projects/e2e/targets/jieli_firmware/reference-smoke/ac695n_reference:firmware`，并以 `--config=ac791n` 构建对应 AC791N target；重复构建应命中 action cache。
 - macOS：同一命令应报告 target incompatible 而非失败。
 - 真机：空片首刷与 `update.ufw` 升级在开发板到位后各验证一次，记录于对应 board 文档。
 

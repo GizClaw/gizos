@@ -67,6 +67,29 @@ class NpmReleaseTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "files differ"):
                     pack(package, manifest, root / "output")
 
+    def test_manifest_bin_is_executable_in_tarball(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package, manifest = self.package(root)
+            data = json.loads(manifest.read_text())
+            data["bin"] = {"example": "lib/index.js"}
+            manifest.write_text(json.dumps(data))
+            (package / "package.json").write_bytes(manifest.read_bytes())
+            tarball = pack(package, manifest, root / "output")
+            with tarfile.open(tarball) as archive:
+                self.assertEqual(archive.getmember("package/lib/index.js").mode, 0o755)
+                self.assertEqual(archive.getmember("package/README.md").mode, 0o644)
+
+    def test_rejects_unlisted_bin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package, manifest = self.package(root)
+            data = json.loads(manifest.read_text())
+            data["bin"] = {"example": "../outside"}
+            manifest.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError, "bin entries"):
+                pack(package, manifest, root / "output")
+
     def test_rejects_missing_or_invalid_identity(self) -> None:
         for key in ("name", "version"):
             for value in (None, "", 42, "../../escape"):

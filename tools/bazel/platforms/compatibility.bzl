@@ -8,7 +8,7 @@ HOST_TOOL_COMPATIBILITY = select({
 })
 
 # Python source libraries used by host tests and packaged mobile E2E runners.
-# The mobile configurations have an exec-runtime adapter; embedded/K4B targets
+# The mobile configurations have an exec-runtime adapter; embedded targets
 # have no target Python runtime and must not enter rules_python precompilation.
 HOST_OR_MOBILE_TOOL_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:host_linux_target_linux"): [],
@@ -44,8 +44,9 @@ LINUX_ARM64_ARTIFACT_COMPATIBILITY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
-LINUX_ARMV7_GNUEABIHF_ARTIFACT_COMPATIBILITY = select({
-    Label("//tools/bazel/platforms:is_linux_armv7_gnueabihf"): [],
+MACOS_ARTIFACT_COMPATIBILITY = select({
+    Label("//tools/bazel/platforms:is_macos_arm64"): [],
+    Label("//tools/bazel/platforms:is_macos_x86_64"): [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
 

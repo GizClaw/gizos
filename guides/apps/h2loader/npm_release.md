@@ -1,6 +1,6 @@
 # npm Release
 
-`@gizclaw/h2loader` 与 `@gizclaw/firmware` 的 npm tarball 与固件属于同一个 GizOS snapshot Release。`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，自动生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS` 与 `v<batch>` tag；不再接受 version 输入。上传 draft Release 后重新下载并逐文件 `cmp`，成功才公开；公开前失败会回滚生成的 draft 和 tag。
+`@gizclaw/h2loader`、`@gizclaw/firmware` 与 `@gizclaw/gizos` 的 npm tarball 与固件属于同一个 GizOS snapshot Release。`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，自动生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS` 与 `v<batch>` tag；不再接受 version 输入。上传 draft Release 后重新下载并逐文件 `cmp`，成功才公开；公开前失败会回滚生成的 draft 和 tag。
 
 ## Slice 与本地构建
 
@@ -13,7 +13,9 @@ make bazel-release RELEASE_SLICE=npm-packages RELEASE_BATCH=20260920-120000 RELE
 bazel test //tools/bazel:npm_release_test //tools/bazel:release_test //tools/bazel:release_bundle_test //projects/h2loader/targets/npm_package/h2loader:release_tarball_test
 ```
 
-`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 package manifests 分别声明 H2Loader 0.4.2 与可选固件 WASM runtime SDK 0.1.0，对应 gizclaw-h2loader-0.4.2.tgz、gizclaw-firmware-0.1.0.tgz 与 npm-index.json。后者只由需要对象/Promise API 的调用代码引入并绑定已有 WASM Module；固件和底层回调调用不需要它，见 [Web 固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。0.4.2 的 Web runtime 使用 pthread Worker 和共享 WASM 内存，使用方必须由 HTTPS 或 localhost 提供页面，并实际发送 `Cross-Origin-Opener-Policy: same-origin` 与 `Cross-Origin-Embedder-Policy: require-corp` 响应头。
+`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 package manifests 分别声明 H2Loader 0.4.3、可选固件 WASM runtime SDK 0.1.0 与共享 SDK/toolchain toolbox `@gizclaw/gizos`。前两者生成 gizclaw-h2loader-0.4.3.tgz 与 gizclaw-firmware-0.1.0.tgz；toolbox 的版本由发布批次转换为 `YYYY.M.D-rHHMMSS`，生成 `gizclaw-gizos-<version>.tgz`。固件 runtime SDK 只由需要对象/Promise API 的调用代码引入并绑定已有 WASM Module；固件和底层回调调用不需要它，见 [Web 固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。H2Loader 的 Web runtime 使用 pthread Worker 和共享 WASM 内存，使用方必须由 HTTPS 或 localhost 提供页面，并实际发送 `Cross-Origin-Opener-Policy: same-origin` 与 `Cross-Origin-Embedder-Policy: require-corp` 响应头。
+
+已发布的同名同版本 tarball 必须保持相同字节。WASM runtime 重编译后的内容变化同样需要提升 H2Loader SDK 版本；0.4.3 包含本次重建的 runtime，保留已发布的 0.4.2 归档。Deploy 的累积目录会拒绝以同一版本覆盖不同内容。
 
 合并已下载的两个 bundle 时，保留各自子目录即可；最终输入扫描拒绝 symlink 和重复 basename：
 
@@ -24,7 +26,7 @@ cp -R build/release/npm-packages build/release/input/npm
 make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH=20260920-120000 RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
 ```
 
-`release-bundle` 要求 `firmware-release-v<batch>.zip`、`npm-index.json` 与索引声明的全部 npm tarball。它重新校验 ZIP 内固件 identity、checksum coverage、SHA-256/size 和 exact-set，并校验 npm identity 与每个 tarball 的 SHA-256、字节数；多余或缺少任一 asset 都失败。当前恰好五个顶层资产：`firmware-release-v<batch>.zip`、`gizclaw-firmware-0.1.0.tgz`、`gizclaw-h2loader-0.4.2.tgz`、`npm-index.json`、重新计算的 `SHA256SUMS`。顶层校验和仅覆盖前四个文件；`firmware-index.json` 与固件自身的 `SHA256SUMS` 位于 ZIP 内。固件 ZIP 的布局和本地 `package` 命令见 [Firmware Release](./index#firmware-release)。
+`release-bundle` 要求 `firmware-release-v<batch>.zip`、`npm-index.json` 与索引声明的全部 npm tarball，并汇入 Lua Runtime 源码与其元数据。它重新校验 ZIP 内固件 identity、checksum coverage、SHA-256/size 和 exact-set，并校验 npm identity 与每个 tarball 的 SHA-256、字节数；多余或缺少任一 asset 都失败。完整 slice 重新生成顶层 `SHA256SUMS`，发布准备阶段再生成完整资产 `index.json`。`firmware-index.json` 与固件自身的 `SHA256SUMS` 位于 ZIP 内。固件 ZIP 的布局和本地 `package` 命令见 [Firmware Release](./index#firmware-release)。
 
 ## Tarball 合同
 

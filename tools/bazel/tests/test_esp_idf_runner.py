@@ -281,6 +281,7 @@ class EspIdfRunnerTest(unittest.TestCase):
         prebuilt_component: str = "h2_fixture=bazel-out/libfixture.a",
         tool_versions: str | None = None,
         cmake_variable: str | None = None,
+        selected_tools: dict[str, str] | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], Path]:
         mode_path = self.project / "mode"
         if mode == "success":
@@ -333,6 +334,7 @@ class EspIdfRunnerTest(unittest.TestCase):
             "paths": {
                 "python_root": str(environment_updates.get("IDF_PYTHON_ENV_PATH", self.python_environment)),
                 "tools_root": str(tools_root),
+                **(selected_tools or {}),
             } if tools_enabled else {},
             "metadata": {},
         }), encoding="utf-8")
@@ -486,6 +488,23 @@ class EspIdfRunnerTest(unittest.TestCase):
             "ESP-IDF ROM ELF tools must contain exactly one installed version",
             result.stderr,
         )
+
+    def test_sdk_selected_tools_allow_shared_multiple_versions(self):
+        self.root.joinpath("tools", "esp-rom-elfs", "another-sdk-version").mkdir()
+        extra = self.root / "unrelated-compiler" / "xtensa-esp-elf-gcc"
+        extra.parent.mkdir()
+        extra.write_text("#!/bin/sh\nexit 99\n")
+        extra.chmod(0o755)
+        result, output = self._run(
+            name="shared-tool-versions",
+            selected_tools={
+                "xtensa_bin": str(self.tool_bin),
+                "riscv_bin": str(self.tool_bin),
+                "rom_elf_dir": str(self.root / "tools/esp-rom-elfs/fixture-version"),
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(output.joinpath("firmware.elf").is_file())
 
     def test_allowlisted_cmake_variable_reaches_idf(self):
         result, _ = self._run(
