@@ -1,28 +1,29 @@
 """Resume real device frame parsers after a callback consumes its deadline."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCES = [
-    'projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_launcher.c',
-    'projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src/jieli_app_iostreamikcp.c',
-    'projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime/src/h2_esp_h2loader_iostreamikcp.c',
-    'projects/h2loader/native_component_src/bk7258/ap/h2loader_bk/src/h2_bk_h2loader_iostreamikcp.c',
+    ('libs/h2loader/device/src/h2_device_serial.c', 'poll_physical'),
 ]
 
 
 def function(source, name):
-    start = source.index(name + '(')
-    start = source.rfind('static ', 0, start)
+    match = re.search(r'^(?:static\s+)?(?:int|h2_pal_result_t)\s+' +
+                      re.escape(name) + r'\s*\(', source, re.MULTILINE)
+    if match is None:
+        raise ValueError('missing poll implementation: ' + name)
+    start = match.start()
     brace = source.index('{', start)
     depth = 1
     end = brace + 1
     while depth:
         depth += (source[end] == '{') - (source[end] == '}')
         end += 1
-    return source[start:end].replace('transport_poll_physical(', 'poll_physical(')
+    return source[start:end].replace(name, 'poll_physical', 1)
 
 
 class BufferedPoll(unittest.TestCase):
@@ -34,9 +35,8 @@ class BufferedPoll(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / 'test.c'
             binary = Path(directory) / 'test'
-            for source in SOURCES:
+            for source, name in SOURCES:
                 text = (ROOT / source).read_text()
-                name = 'transport_poll_physical' if 'esp-idf' in source else 'poll_physical'
                 unit.write_text(fixture.replace('/* FRAME */', frame).replace('/* POLL */', function(text, name)))
                 subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
                     '-I' + str(ROOT / 'libs/pal/include'),

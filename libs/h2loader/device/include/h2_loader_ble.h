@@ -1,0 +1,106 @@
+#ifndef H2_LOADER_BLE_H
+#define H2_LOADER_BLE_H
+
+#include "h2_bleikcp.h"
+#include "h2_command.h"
+#include "h2_loader_boot.h"
+#include "h2/pal/os/h2_pal_log.h"
+
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define H2_LOADER_BLE_PROTOCOL_VERSION 1u
+#define H2_LOADER_BLE_COMPACT_PROTOCOL_VERSION 2u
+#define H2_LOADER_BLE_BOARD_MAX 63u
+#define H2_LOADER_BLE_INLINE_BOARD_MAX 32u
+#define H2_LOADER_BLE_LOCAL_NAME_MAX 29u
+
+typedef enum h2_loader_ble_advertising_mode {
+  H2_LOADER_BLE_ADVERTISING_EXTENDED = 0,
+  H2_LOADER_BLE_ADVERTISING_LEGACY = 1,
+} h2_loader_ble_advertising_mode_t;
+
+extern const uint8_t h2_loader_ble_service_uuid_bytes[16];
+extern const uint8_t h2_loader_ble_tx_uuid_bytes[16];
+extern const uint8_t h2_loader_ble_rx_uuid_bytes[16];
+
+/** Encode the versioned Service Data payload, excluding its 128-bit UUID. */
+int h2_loader_ble_encode_identity(uint32_t capabilities, const char* board,
+                                  uint8_t* out, size_t out_capacity,
+                                  size_t* out_len);
+
+typedef struct h2_loader_ble_service h2_loader_ble_service_t;
+
+typedef struct h2_loader_ble_service_config {
+  h2_bleikcp_api_t api;
+  const char* board;
+  uint32_t capabilities;
+  h2_loader_ble_advertising_mode_t advertising_mode;
+  h2_bleikcp_server_handler_fn handler;
+  void* handler_user;
+  /** Optional diagnostics sink, borrowed until service close completes.
+   * The API, vtable and user must remain valid and accept concurrent task
+   * calls without reentering this service. Messages are borrowed for write
+   * only. Missing sinks discard diagnostics; write failures never replace
+   * the operation result. No standard-stream fallback is used. */
+  const h2_pal_log_api_t* log;
+  /** Optional nonempty complete name, at most LOCAL_NAME_MAX printable ASCII
+   * bytes, copied on open. NULL preserves unnamed advertisements. Legacy mode
+   * reserves identity space when it fits; longer names retain the management
+   * UUID and obtain board/capabilities from connected command status instead.
+   * Extended mode retains identity data. Names are public display metadata,
+   * never credentials or an authenticated device identity. */
+  const char* local_name;
+  /** Minimum stack for synchronous session handlers; zero keeps stream default.
+   */
+  size_t command_stack_size;
+} h2_loader_ble_service_config_t;
+
+int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
+                               h2_loader_ble_service_t** out_service);
+
+/** Idempotently stop connectable advertising without closing GATT or iKCP. */
+int h2_loader_ble_service_pause_advertising(h2_loader_ble_service_t* service);
+
+/** Idempotently resume the current connectable advertising payload. */
+int h2_loader_ble_service_resume_advertising(h2_loader_ble_service_t* service);
+
+/**
+ * Queue an advertising pause/resume update on the BLE link task.
+ *
+ * The wanted state is published without taking any lock and the link task
+ * applies it, so this is safe to call from a context that must not block. Only
+ * the most recent request is applied; the call returns H2_PAL_ERR_CLOSED once
+ * the service has started closing.
+ */
+int h2_loader_ble_service_request_advertising_paused(
+    h2_loader_ble_service_t* service, bool paused);
+
+/**
+ * Copy up to three service UUIDs into the advertising payload alongside the
+ * H2Loader management UUID. An active connection defers the payload update
+ * until disconnect; the caller retains ownership of the input array.
+ */
+int h2_loader_ble_service_set_additional_advertised_services(
+    h2_loader_ble_service_t* service, const h2_pal_ble_uuid_t* services,
+    size_t service_count);
+/** On failure the handle remains owned and close may be retried. Success joins
+ * all workers, unregisters GATT and releases the handle. */
+int h2_loader_ble_service_close(h2_loader_ble_service_t* service);
+
+/** Returns a borrowed synchronous command I/O adapter for one BLE iKCP session.
+ */
+h2_command_io_api_t h2_loader_ble_command_io(h2_bleikcp_t* stream);
+
+/** App-console adapters. read_byte returns SESSION_CLOSED after disconnect. */
+int h2_loader_ble_app_read_byte(void* user, uint32_t timeout_ms);
+int h2_loader_ble_app_write(void* user, const char* data, size_t len);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

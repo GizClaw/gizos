@@ -5,7 +5,7 @@
 ```sh
 bazel build --config=esp32p4 \
   --//tools/bazel:firmware_version=<version> \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
+  //projects/h2loader/targets/loader/waveshare/esp32p4_wifi6_touch_lcd_4_3:package
 ```
 
 首次恢复或已经确认 H2Loader 无法通信时，只能选择这个 target 生成的 `waveshare_esp32p4_wifi6_touch_lcd_4_3-h2loader-esp32p4.recovery.h2fb`，重新匹配实际 P4 port、确认 board/target identity、取得 destructive recovery 授权并执行恢复。
@@ -22,6 +22,6 @@ P4 启用 octal PSRAM、ESP-Hosted SDIO、remote Wi-Fi、NimBLE host、extended 
 
 ## 预期表现
 
-C6 ready 后，Loader 通过 UART 与 BLE iKCP 接受 command session。`bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 的结构化 identity 必须为 `board=waveshare_esp32p4_wifi6_touch_lcd_4_3`、`target=esp32p4`、`active_role=loader`，服务 ready 时输出 `H2_LOADER_READY target=esp status=ready`。
+C6 ready 后，Loader 通过 UART 与 BLE iKCP 接受 command session。`gizloader scan` 的结构化 identity 必须为 `board=waveshare_esp32p4_wifi6_touch_lcd_4_3`、`target=esp32p4`、`active_role=loader`，服务 ready 时输出 `H2_LOADER_READY target=esp status=ready`。
 
 Hosted 初始化失败不得伪装成 Wi-Fi/BLE ready；保留 UART session 用于查询状态和恢复。正常 Loader 更新使用 `send` 和 `reboot upgrade`；完成条件和断电复查见 [Loader 更新](../../update/loader)。

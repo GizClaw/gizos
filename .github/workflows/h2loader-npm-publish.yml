@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/h2loader-npm-publish.yml"
-      - "projects/h2loader/libs/web/**"
+      - "libs/h2loader/web/**"
       - "projects/h2loader/targets/npm_package/h2loader/**"
 
 permissions:

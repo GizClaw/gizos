@@ -7,7 +7,7 @@ stays off. Build:
 
 ```sh
 bazel build --config=esp32s3 \
-  //projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit:package
+  //projects/e2e/targets/lua-link/espressif/esp32s3_devkitc_1:package
 ```
 
 Install both boards as described in [DevKit H2Loader](./h2loader) and

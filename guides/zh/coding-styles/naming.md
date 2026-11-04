@@ -24,7 +24,7 @@
 ```text
 libs/<library>/
 native_component_src/<target-or-sdk>/
-boards/<board>/<chip-or-target>/
+boards/<company>/<board>/<chip-or-target>/
 projects/[<group>/]<app>/
 ```
 

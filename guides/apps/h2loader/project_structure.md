@@ -5,41 +5,47 @@
 ## 项目布局
 
 ```text
-projects/h2loader/
-├── apps/
-│   ├── loader/app/                       # Portable Loader App
-│   └── cli/app/                           # Portable native CLI App
-├── libs/
-│   ├── h2loader/                         # H2Loader 公共库
-│   ├── web/                               # Internal reusable H2Loader JS/runtime/WASM SDK
-│   └── cmake/                            # 可复用 image build helper
-├── native_component_src/
-│   └── <target>/                         # H2Loader 专用原生 SDK component source
-├── tools/bazel/
-│   ├── h2loader_firmware.bzl             # 按 target/board 注入 H2Loader firmware layout
-│   └── h2loader_tar_zlib.bzl             # H2Loader package artifact rule
-└── targets/
-    ├── cc_binary/cli/                     # macOS/Linux/Windows native CLI process 与 PAL 组装
-    ├── npm_package/h2loader/               # @gizclaw/h2loader Browser SDK
-    └── h2loader_tar_zlib/loader/<board>/  # Loader package 与内部平台 firmware
+libs/h2loader/
+├── host/                                # Host commands, package/flash clients and lifecycle
+├── device/                              # Device core, common service and serial/KCP engine
+└── web/                                 # Browser JS/runtime/WASM SDK
 
-projects/example/apps/<app>/app/          # 共享 target-independent Example
+projects/h2loader/
+├── apps/loader/app/                      # Portable Loader App
+├── tools/bazel/                          # Firmware layout, package and recovery rules
+└── targets/
+    ├── loader/<manufacturer>/<board>/   # Native firmware and both package formats
+    └── npm_package/h2loader/             # @gizclaw/h2loader artifact
+
 projects/e2e/apps/<test-app>/app/         # 共享 target-independent E2E 测试 App
-projects/pixa_games/apps/<game>/app/      # Portable PIXA game App
 projects/<group>/apps/<app>/app/           # 其它产品拥有的 portable App
-projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/ # Owner 的 H2Loader-managed package
-boards/<board>/<target>/                   # 物理 board BSP、defaults 与 firmware layouts
+projects/<owner>/targets/<app>/<manufacturer>/<board>/ # Owner 的 H2Loader-managed package
+boards/<company>/<board>/<target>/                   # 物理 board BSP、defaults 与 firmware layouts
 native_component_src/<target>/             # 跨产品原生 SDK component source
-libs/h2loader_host/                        # Portable Host Core
-projects/h2loader/apps/cli/app/            # Portable CLI command 与 output policy
-projects/h2loader/targets/cc_binary/cli/   # Native CLI executable target
+libs/h2loader/host/                        # Portable Host Core
+tools/gizloader/cli/                      # Commands, native entry, OS adapters and tests
+tools/gizloader/native/                   # Gizloader CLI/session sidecar composition
+projects/e2e/libs/h2loader_runner/         # Device E2E orchestration
+projects/e2e/targets/cc_binary/e2e-runner/  # Native E2E process entry
 ```
 
 ## 当前 Loader 身份
 
-普通 Loader 在初始化共享状态前，通过 `h2_loader_read_current_loader_identity()` 读取实际 running partition，验证匹配的 H2Loader metadata，并用有界 buffer 重新计算 Image Reader 字节的摘要。接口只读 partition metadata，不读取或迁移 MFG 记录；metadata 缺失、损坏或身份不匹配时使用 primary Loader 容量，candidate 运行在较大的 App slot 时也不扩大 Loader 镜像长度。真实 Preference、reader、digest 错误继续返回，digest/size 不符不能发布身份。依赖在调用期间借用，调用方在 task context 中串行化 package/digest 操作。
+`h2_loader_pal_current_image_identity()` reads the running partition through
+Power and hashes the explicitly configured Image view's known length. Stored
+artifact and native executable lengths remain separate; ESP startup explicitly
+selects its native length view to preserve the canonical running-image identity.
+Unknown exact length returns `UNSUPPORTED`; capacity is never silently treated
+as an exact image length. Compatibility composition can explicitly use
+`h2_loader_read_current_loader_identity()` with matching H2 metadata or its
+bounded primary-slot fallback policy. Native code length, stored artifact length
+and UFW shadow length remain distinct.
 
-BK Loader 与 App 的 UART/BLE composition 使用同一 `h2_bk_h2loader_get_device_uid()` 读取 controller Bluetooth identity MAC，输出 12 位小写十六进制。私有 consumer 通过固定 GizOS revision 调用这些公共接口，不复制 SDK MAC 格式化或运行镜像 metadata/hash 实现。
+Loader/App composition reads stable device bytes through Device Identity PAL
+and uses `h2_loader_pal_device_uid()` for the existing twelve lowercase hex
+digits. ESP32-P4 uses its local factory identity, and JieLi preserves the
+persisted controller-address byte ordering. Borrowed providers and shared digest
+state remain valid throughout each caller-serialized operation.
 
 ## App 入口
 
@@ -47,19 +53,24 @@ BK Loader 与 App 的 UART/BLE composition 使用同一 `h2_bk_h2loader_get_devi
 
 `apps/loader/app/` 保存 portable Loader App。它组织设备端 command、安装和启动流程，但不包含 board、partition label、SDK startup 或 Host UI。
 
-Batch Loader 产品 Web UI 已迁移到 `GizClaw/www`。本仓库的 `libs/web/` 通过 public Promise API 包装 Host Core 与 Web PAL，`targets/npm_package/h2loader/` 负责把 matching JS/runtime/WASM 发布为 `@gizclaw/h2loader`；消费方不使用 raw Emscripten ABI。
+The Batch Loader UI belongs to `GizClaw/www`. Shared browser bindings in
+`libs/h2loader/web` expose the public Promise API over Host Core and Web PAL.
+`projects/h2loader/targets/npm_package/h2loader` packages matching
+JS/runtime/WASM as `@gizclaw/h2loader`; consumers do not use the raw Emscripten
+ABI.
 
-`apps/cli/app/` 保存 portable C11 CLI App。它拥有参数校验、command dispatch、stable output 和 command-scoped policy，只消费 Runtime、现有 PAL contract、`libs/command/` 与 `libs/h2loader_host/`。`targets/cc_binary/cli/` 只拥有 argv/stdio、signal cancellation 和 macOS/Linux/Windows PAL provider 组装，不定义 project-private OS capability。
+`tools/gizloader/cli/` owns the C11 CLI implementation, argument validation, command dispatch, stable output, native process entry, OS adapters and regression tests. It consumes Runtime, PAL, `libs/command/` and `libs/h2loader/host/`. `tools/gizloader/native/` composes the CLI/session sidecars. The canonical public command is `gizloader`.
 
-`projects/example/apps/<app>/app/` 保存 reusable Example，`projects/e2e/apps/<test-app>/app/` 保存跨目标 headless test App，`projects/pixa_games/apps/<game>/app/` 保存 portable game App，H106 等产品 App 保留在自己的 project group。被 H2Loader 安装不改变 App 或最终 artifact 的 project ownership。
+`projects/e2e/apps/<test-app>/app/` owns cross-target test Apps; product Apps remain in their own project groups. H2Loader installation does not change App or artifact ownership.
 
-各 App owner 在自己的 `targets/h2loader_tar_zlib/<image>/<board>/` 中提供 Runtime、App command/confirmation、package identity、board wiring 和最终 package。它们可以依赖 H2Loader library、native component 与 packaging rule，但这些 adapter dependency 不把 artifact ownership 转移给 H2Loader。
+各 App owner 在自己的 `targets/<app>/<manufacturer>/<board>/` 中提供 Runtime、App command/confirmation、package identity、board wiring 和最终 package。它们可以依赖 H2Loader library、native component 与 packaging rule，但这些 adapter dependency 不把 artifact ownership 转移给 H2Loader。
 
 ## H2Loader 共用代码
 
-目录位置：`projects/h2loader/libs/h2loader/`
+目录位置：`libs/h2loader/device/`
 
-这里是 H2Loader 的 project-local library，保存 Loader firmware 与 H2Loader-managed App firmware 共用的稳定 API 和跨平台实现，包括：
+This shared Device library contains stable APIs and portable implementations
+used by Loader firmware and managed App firmware, including:
 
 - Package、image identity 与安装状态。
 - SDK-independent SHA-256 streaming helper，由 Loader/App 的 digest adapter 共用，不从其它 firmware entry 拉取源码。
@@ -71,23 +82,46 @@ Batch Loader 产品 Web UI 已迁移到 `GizClaw/www`。本仓库的 `libs/web/`
 
 [API Reference](/references/h2loader)
 
-## H2Loader 专用组件
+## PAL and device services
 
-目录位置：`projects/h2loader/native_component_src/`
+The device dependency is H2Loader application/protocol code → public PAL
+contracts → platform providers → vendor SDK. `libs/h2loader/device` contains
+both the core and one common Loader/App service with a shared serial/KCP
+engine. Timing, admission, allocator, package-entry and native-evidence needs
+are injected capabilities/configuration. Legacy persistence codecs preserve
+existing records without creating platform-specific service libraries.
 
-这里保存只服务 H2Loader 的 target component，例如 ESP H2Loader command runtime 或 BK AP adapter。
+- Image PAL owns native image access and the write/finish/abort transaction. Its
+  stored byte view is the exact artifact verification domain: ESP image bytes,
+  BK encoded physical bytes, or JieLi UFW shadow bytes.
+- Power PAL owns native boot state, preparation, confirmation and selection.
+  Finish leaves a prepared candidate; destination verification and H2 metadata
+  commits precede preparation and selection. Evidence returned by a provider is
+  caller-owned; H2 retains its checksum binding and persistence policy.
+- Device Identity and Mem PAL expose stable device bytes and real heap-region
+  observations. Unsupported observations remain explicit.
+- Stream setup, frame/log arbitration, synchronization, allocation, timing and
+  hardware access use PAL. SHA-256 uses the shared portable implementation, with
+  positive PAL scheduling delays where watchdog cooperation is required.
+- Cache/IRAM, Flash encryption, AP/CP handoff, native headers and early startup
+  mechanisms belong to platform providers under top-level
+  `native_component_src/`.
+- Physical wiring and layouts belong to `boards/`; targets compose capabilities
+  and retain minimal SDK startup/component registration.
+- Host CLI and OS adapters belong to `tools/gizloader/cli`; E2E orchestration,
+  firmware fixtures and targets belong to `projects/e2e`.
 
-- 可以依赖 H2Loader 共用代码和顶层 target component。
-- 不能拥有物理 board GPIO、partition layout 或某个 App 的业务。
-- 能被 H2Loader 以外产品复用且由原生 SDK 编译的实现必须放到顶层 `native_component_src/<target>/`；Bazel 直接编译的平台实现放到 `libs/pal/providers/`。
-
-ESP safe-call、BK AP/CP worker 等 SDK 实现细节属于对应 target component 文档，不进入 H2Loader 产品通用文档。
+Generic providers do not import H2Loader role, manifest, Stage, checksum binding
+or preference-policy types. The project has no separate native business-code
+ownership exemption. The repository's `libs/h2loader/README.md` describes the
+shared contracts and lifecycle ordering; `projects/h2loader/README.md` describes
+firmware and artifact composition.
 
 ## 固件构建入口
 
-目录位置：`projects/<owner>/targets/h2loader_tar_zlib/`
+目录位置：`projects/<owner>/targets/`
 
-每个 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 都是一个可独立构建的 H2Loader package 入口。`<owner>` 是真实 App owner；`h2loader_tar_zlib` 只表示安装产物类型。Entry 同时知道 portable App 与物理 board，因此负责：
+每个 `projects/<owner>/targets/<app>/<manufacturer>/<board>/` 都是一个可独立构建的 H2Loader package 入口。`<owner>` 是真实 App owner；`h2loader_tar_zlib` 只表示安装产物类型。Entry 同时知道 portable App 与物理 board，因此负责：
 
 1. 选择 BSP 和 target build config。
 2. 取得 board Runtime config。
@@ -105,7 +139,7 @@ package-local `firmware_native_component` launcher 依赖真实 App、Board、SD
 project 输入必须逐文件声明，不得使用 recursive glob，也不得把整个 Board、App 或
 Project root 当成 action input。CMake 文件仍作为原生 SDK 必需输入存在；entry 不保留
 image-local SDK config。GizOS 仓库内的 H2Loader wrapper 根据 entry 声明的
-`target` 与 `board` 从 `boards/<board>/<target>/layouts/` 注入 partition、layout
+`target` 与 `board` 从 `boards/<company>/<board>/<target>/layouts/` 注入 partition、layout
 defaults 和 recovery 配置。通过 Bzlmod 消费 GizOS 的下游仓库可以保留自己的私有
 Board，并通过 `layout_files` 显式传入该仓库拥有的完整 layout labels；私有 Board
 不得加入 GizOS 的内建 Board registry，也不得复制 H2Loader wrapper。最终 SDK 配置
@@ -118,13 +152,13 @@ component/source manifest，不接受调用方用 ambient cache value 改写 pro
 
 一个 portable App 只有一份实现；每个支持它的 board 仍需要单独 variant，因为 BSP、partition、component mapping 与 SDK build root 不同。
 
-ESP-IDF entry 的 CMake project 仍拥有 component discovery、Kconfig、linker、partition 和 bootloader 语义。内部 `:firmware` 使用 `h2loader_esp_idf_firmware` 按 `target` 与 `board` 选择 native layout，再委托通用 `esp_idf_firmware` 在 action-owned tree 内调用原生 `idf.py build`。它只暴露结构化 ELF、map、app、bootloader、partition table、由同一次构建的 flash arguments 生成并从 `0x0` 烧录的 `combined_factory.bin`、flash metadata 和完整 flash file set；Loader recovery 由外层 package rule 生成。公开交付从 `bazel build --config=<esp32s3|esp32p4> //projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>:package` 进入；`:package` 使用平台无关的 `h2loader_tar_zlib` 消费 `:firmware`，生成唯一 H2Loader package、recovery bundle、release metadata，并为 ESP Loader 把 combined image 复制成 target-owned `.combined_factory.bin` release asset。Metadata 用 `factory-flash`、`.combined_factory.bin` release suffix 和 offset `0` 描述直接烧录合同。仅供硬件验收的 alternate package 不得标记 `firmware-release`；release discovery 只选择显式 opt-in 的 Loader canonical `:package`，并额外拒绝诊断 identity。现有 `no-release` 仅作诊断标记，不再参与发布查询。Combined image 不取得 managed package identity，也不参与 H2Loader runtime update。调用方不能把 action 内部的 native command 或临时 build tree 当成第二个公开入口。
+ESP-IDF entry 的 CMake project 仍拥有 component discovery、Kconfig、linker、partition 和 bootloader 语义。内部 `:firmware` 使用 `h2loader_esp_idf_firmware` 按 `target` 与 `board` 选择 native layout，再委托通用 `esp_idf_firmware` 在 action-owned tree 内调用原生 `idf.py build`。它只暴露结构化 ELF、map、app、bootloader、partition table、由同一次构建的 flash arguments 生成并从 `0x0` 烧录的 `combined_factory.bin`、flash metadata 和完整 flash file set；Loader recovery 由外层 package rule 生成。公开交付从 `bazel build --config=<esp32s3|esp32p4> //projects/<owner>/targets/<app>/<manufacturer>/<board>:package` 进入；`:package` 使用平台无关的 `h2loader_tar_zlib` 消费 `:firmware`，生成唯一 H2Loader package、recovery bundle、release metadata，并为 ESP Loader 把 combined image 复制成 target-owned `.combined_factory.bin` release asset。Metadata 用 `factory-flash`、`.combined_factory.bin` release suffix 和 offset `0` 描述直接烧录合同。仅供硬件验收的 alternate package 不得标记 `firmware-release`；release discovery 只选择显式 opt-in 的 Loader canonical `:package_v2`，并额外拒绝诊断 identity。现有 `no-release` 仅作诊断标记，不再参与发布查询。Combined image 不取得 managed package identity，也不参与 H2Loader runtime update。调用方不能把 action 内部的 native command 或临时 build tree 当成第二个公开入口。
 
-BK7258 entry 的 CMake project 继续拥有 AP/CP 与 linker 语义。每块 H2Loader-managed BK7258 Board 在自己的 `boards/<board>/bk7258/` 中拥有 board defaults，并在 `layouts/<layout>/` 中拥有 OTA flash geometry、SMP build config、recovery config、GPIO、RAM region 和 AP/CP layout defaults；同一 Board 的 Loader 与 App 都由 `h2loader_bk7258_firmware` 注入对应 layout，target 目录不保留 SDK config。通过 Bzlmod 使用私有 Board 时，consumer 必须在 `layout_files` 中显式提供 AP/CP config、GPIO、RAM region、project-support 和 Loader layout 的 recovery-config labels。`h2loader_bk7258_firmware` 把 layout 固定的 recovery config 放入 `Bk7258FirmwareInfo`，外层 package rule 只消费 provider 生成 Loader recovery bundle，不按 board 名查找配置，也不接受 package-level override。支持跨 Board OTA 兼容的 Board 必须保持相同 flash geometry，并由 graph test 比较其内容。`ram_regions.csv` 是 image linker RAM profile 而不是 OTA partition layout。通用 `bk7258_firmware` 的结构化 provider 保持 native outputs 和 layout recovery config 的 owner/type 边界。
+BK7258 entry 的 CMake project 继续拥有 AP/CP 与 linker 语义。每块 H2Loader-managed BK7258 Board 在自己的 `boards/<company>/<board>/bk7258/` 中拥有 board defaults，并在 `layouts/<layout>/` 中拥有 OTA flash geometry、SMP build config、recovery config、GPIO、RAM region 和 AP/CP layout defaults；同一 Board 的 Loader 与 App 都由 `h2loader_bk7258_firmware` 注入对应 layout，target 目录不保留 SDK config。通过 Bzlmod 使用私有 Board 时，consumer 必须在 `layout_files` 中显式提供 AP/CP config、GPIO、RAM region、project-support 和 Loader layout 的 recovery-config labels。`h2loader_bk7258_firmware` 把 layout 固定的 recovery config 放入 `Bk7258FirmwareInfo`，外层 package rule 只消费 provider 生成 Loader recovery bundle，不按 board 名查找配置，也不接受 package-level override。支持跨 Board OTA 兼容的 Board 必须保持相同 flash geometry，并由 graph test 比较其内容。`ram_regions.csv` 是 image linker RAM profile 而不是 OTA partition layout。通用 `bk7258_firmware` 的结构化 provider 保持 native outputs 和 layout recovery config 的 owner/type 边界。
 
 ## 物理 Board 支持
 
-目录位置：`boards/<board>/<target>/`
+目录位置：`boards/<company>/<board>/<target>/`
 
 这里描述物理 board 的 GPIO、bus、peripheral、memory、BSP wiring 和 `layouts/<profile>/`。Board defaults 表达所有 firmware 共用的硬件条件，layout defaults 表达 `standard`、`h2loader` 等启动与升级模型共用的 partition、SDK config、link 和 recovery 输入；并非所有 image 都使用但能在同一 Board 上复用的 SDK、GPIO 或 memory 差异使用 layout 下可组合的具名 profile。最终 artifact entry 只选择 profile，不拥有 SDK config。Board 不知道某个 App 的业务状态，也不决定 package policy。
 
@@ -132,13 +166,19 @@ BK7258 entry 的 CMake project 继续拥有 AP/CP 与 linker 语义。每块 H2L
 
 目录位置：`native_component_src/<target>/`
 
-这里保存同一 target family 可跨产品复用的 SDK adapter。H2Loader 专用 glue 留在 `projects/h2loader/native_component_src/`；物理板差异留在 `boards/`。
+This tree contains reusable platform PAL providers and native startup
+mechanisms. It owns SDK image/update operations, boot headers, Flash/cache
+safety and physical transport drivers. Minimal image startup and capability
+composition remain in project targets; physical wiring and geometry remain in
+`boards/`.
 
 ## Host 工具
 
-目录位置：`projects/h2loader/apps/cli/app/` 和 `projects/h2loader/targets/cc_binary/cli/`
+The native CLI implementation, process entry, platform adapters and tests are in `tools/gizloader/cli/`. `tools/gizloader/native/` builds the Gizloader CLI/session sidecars. Public device operations use `gizloader`.
 
-可复用 JS/runtime/WASM SDK 位于 `libs/web/`，公共 npm artifact 位于 `targets/npm_package/h2loader/`；产品 Batch Loader UI 位于 `GizClaw/www`。Web SDK 与 native CLI 都通过 `libs/h2loader_host/` 取得 authoritative identity、typed command、package contract 与 lifecycle verification。CLI 的 App source、host target 和 tests 都由 `projects/h2loader/` 拥有，不在 `tools/` 维护第二套 protocol、package writer 或 Python runtime。Host 代码不属于 firmware，也不通过设备 Runtime 使用硬件能力。
+The reusable JS/runtime/WASM SDK remains in `libs/h2loader/web/`, its npm artifact in `projects/h2loader/targets/npm_package/h2loader/`, and the Batch Loader UI in `GizClaw/www`. Web SDK and native CLI share authoritative identity, typed commands, package validation and lifecycle verification through `libs/h2loader/host/`.
+
+Device E2E orchestration belongs to `projects/e2e/libs/h2loader_runner/`, with native entry `projects/e2e/targets/cc_binary/e2e-runner/`. Host code runs outside device firmware and does not use device Runtime hardware providers.
 
 ## Target-owned task policy
 

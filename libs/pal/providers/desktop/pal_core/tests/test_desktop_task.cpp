@@ -55,7 +55,7 @@ void self_join(void* user) {
 }  // namespace
 int main() {
   Heap heap;
-  const h2_pal_mem_vtable_t vtable = {alloc, nullptr, release};
+  const h2_pal_mem_vtable_t vtable = {alloc, nullptr, release, nullptr};
   const h2_pal_mem_api_t mem = {&heap, &vtable};
   const h2_desktop_task_stack_config_t config = {&mem, resolve, nullptr};
   assert(h2_desktop_platform_configure_task_stacks(&config) == H2_PAL_OK);

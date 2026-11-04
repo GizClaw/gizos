@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class RequestLifetimeTest(unittest.TestCase):
     def test_request(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
         begin = source.index('/* Connection request lifetime. */') if '/* Connection request lifetime. */' in source else source.index('static int h2_update_connection(')
         code = source[begin:source.index('static int h2_exchange_mtu(', begin)]
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_ble_request_lifetime.c').read_text()

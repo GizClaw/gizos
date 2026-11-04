@@ -15,9 +15,3 @@
 ## Images
 
 - [H2Loader](./h2loader)
-- [BLE Broadcaster](./ble_broadcaster)
-- [BLE Observer](./ble_observer)
-- [Modem Smoke](./modem_smoke)
-- [Crash Before Confirm](./crash_before_confirm)
-
-这些 App 都是普通诊断 App：记录各阶段实际结果，不生成汇总 `PASS`、`FAIL` 或 `SKIP` 判定。某一外设或网络阶段失败不会把 App image 本身定义为失败。

@@ -1,13 +1,25 @@
 # Board manufacturing acceptance
 
-Each physical board has one firmware entry at `projects/mfg/apps/<board_name>`.
-Build `:package` in that directory. These are H2Loader-role images with a
-portable acceptance session, not PAL/GizClaw E2E runners.
+Board profiles and firmware entries are organized by manufacturer and model:
+
+```text
+projects/mfg/
+├── apps/<brand>/<board>/                         # Declarative acceptance profile
+├── targets/mfg/<manufacturer>/<board>/            # Native launcher, SDK project and package
+└── libs/                                        # Shared acceptance and peer implementations
+```
+
+Each App package exports its `profile.c`. The corresponding target compiles it
+with the native launcher using the existing SDK component manifest. Target
+packages own CMake files, SDK configuration, task policies, firmware versions
+and package rules, including peer and calibration variants. Build `:package`
+from the target package. These are H2Loader-role manufacturing images with a
+portable acceptance session.
 
 ```sh
 source /path/to/firmwares-devenv/export.sh
 bazel build --noannounce_rc --config=esp32s3 \
-  //projects/mfg/apps/waveshare_esp32s3_touch_amoled_1_75c:package
+  //projects/mfg/targets/mfg/waveshare/esp32s3_touch_amoled_1_75c:package
 ```
 
 Use `--config=esp32s31` for `esp_mosaico`, or `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and `waveshare_esp32s3_a7670e_4g`. The remaining entries are `waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and `jieli_ac791n_devkit`. JieLi's native package build requires a Linux host.
@@ -91,7 +103,7 @@ Install the package with the normal H2Loader CLI `send --file <package>` and `re
 ## ESP-Mosaico
 
 ```sh
-bazel build --config=esp32s31 //projects/mfg/apps/esp_mosaico:package
+bazel build --config=esp32s31 //projects/mfg/targets/mfg/espressif/mosaico:package
 ```
 
 The revision-4 profile has eleven checks: combined display/brightness, nine evenly spaced app-defined touch points, original button cycles, staged AEC, battery, IMU, magnets, held vibration, Wi-Fi, BLE and camera. The shared model and AEC thresholds/phase logic remain unchanged. Explicit failure stays selected and required checks must all pass. The configured completion screen adds a deliberate press/release retest button using the existing transactional `reset all`: results are cleared durably and the Loader's in-memory acceptance gate is refreshed before starting again.
@@ -137,7 +149,7 @@ For the 1.75C:
 8. Connect Wi-Fi through the Loader command and wait for a usable IP address.
    The firmware contains no network credentials.
 9. Connect a **second development board** to this board's Loader BLE service.
-   Query MFG status there, then send `h2loader mfg probe ble <ticket>` over
+   Query MFG status there, then send `gizloader mfg probe ble <ticket>` over
    that actual BLE connection. A serial probe is rejected. No Mac radio is
    needed. This is a Loader GATT command round trip, not the full radio E2E
    suite.
@@ -215,8 +227,8 @@ DUT identity:
 ```sh
 bazel build --noannounce_rc --config=esp32s3 \
   --define=H2_MFG_PEER_DUT_UID=<12-digit-DUT-UID> \
-  //projects/mfg/apps/amoled:calibration_peer_package \
-  //projects/mfg/apps/waveshare_esp32s3_touch_amoled_1_75c:calibration_package
+  //projects/mfg/targets/mfg/waveshare/esp32s3_touch_amoled_1_8:calibration_peer_package \
+  //projects/mfg/targets/mfg/waveshare/esp32s3_touch_amoled_1_75c:calibration_package
 ```
 
 Keep both boards' original packages and identities. Install the source App
@@ -239,7 +251,7 @@ for the exact image's `H2_MFG_CALIBRATION_READY` before queuing a job.
 Start the peer's serial `monitor`, then request a fresh run on the DUT:
 
 ```sh
-h2loader --no-ble --port <DUT-port> mfg calibrate \
+gizloader --no-ble --port <DUT-port> mfg calibrate \
   <peer-IPv4> 100 100 <fresh-16-hex-run> <12-digit-peer-UID> --monitor
 ```
 
@@ -294,12 +306,12 @@ AMOLED, DevKit and 1.75C also provide a peer App in the same board directory:
 ```sh
 bazel build --noannounce_rc --config=esp32s3 \
   --define=H2_MFG_PEER_DUT_UID=b81f3fcad4fa \
-  //projects/mfg/apps/amoled:peer_package
+  //projects/mfg/targets/mfg/waveshare/esp32s3_touch_amoled_1_8:peer_package
 ```
 
 Use the intended DUT's 12-digit lowercase BLE UID from Loader `status`.
-The other supported peers are `//projects/mfg/apps/devkit:peer_package` and
-`//projects/mfg/apps/waveshare_esp32s3_touch_amoled_1_75c:peer_package`.
+The other supported peers are `//projects/mfg/targets/mfg/espressif/esp32s3_devkitc_1:peer_package` and
+`//projects/mfg/targets/mfg/waveshare/esp32s3_touch_amoled_1_75c:peer_package`.
 The peer merges ADV/SCAN_RSP from that identity, connects to Loader, verifies
 the authoritative UID, sends only the BLE probe, and reads back the committed
 result at the BLE index reported by MFG, including when later checks such as
@@ -358,7 +370,7 @@ the C6 address is unknown; each connection must still match the supplied DUT
 UID before it can probe or commit BLE acceptance.
 
 Build with `--config=esp32p4` and
-`//projects/mfg/apps/waveshare_esp32p4_wifi6_touch_lcd_4_3:package`.
+`//projects/mfg/targets/mfg/waveshare/esp32p4_wifi6_touch_lcd_4_3:package`.
 Use a physical board peer for BLE acceptance and restore its original image
 afterward. Camera requires three valid frames and operator confirmation of
 live motion, colors, orientation and proportions. Board entries and successful
@@ -370,12 +382,12 @@ Build the CLI from the same checkout to recognize the optional MFG
 availability bit:
 
 ```sh
-bazel build --noannounce_rc //projects/h2loader/targets/cc_binary/cli:h2loader
-h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg status
-h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg confirm display 1234abcd
-h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg fail display 1234abcd
-h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg retry display 1234abcd
-h2loader --no-ble --port /dev/cu.usbmodemXXXX mfg reset all 1234abcd
+bazel build --noannounce_rc //tools/gizloader/native:gizloader-cli
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg status
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg confirm display 1234abcd
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg fail display 1234abcd
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg retry display 1234abcd
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg reset all 1234abcd
 ```
 
 Replace the step and eight-digit hexadecimal ticket with the current values from `mfg status`. Tickets change on each transition and each boot, so delayed confirmations cannot pass another check. `probe` is restricted to a real BLE command round trip on profiles that require it; ESP-Mosaico uses the same BLE proof. Other actions use the enabled Loader transport(s). `skip` records SKIPPED and continues, but a skipped required check still blocks App work. Use `retry` to revisit it.
@@ -395,8 +407,9 @@ repairing the factory Loader.
 
 Changing a profile's check semantics/order requires incrementing its
 `revision`. This invalidates the previous acceptance record. Shared state,
-hardware and UI live under `projects/mfg/libs/mfg`; platform entry points and
-board policies remain directly under `apps/<board_name>`.
+hardware and UI live under `projects/mfg/libs/mfg`. Board profiles belong to
+`apps/<brand>/<board>`, while platform entry points and build policy belong to
+`targets/mfg/<manufacturer>/<board>`.
 
 BK/JieLi entries override the public Loader board extension hooks. They reuse
 the maintained transport, partition and recovery implementations. Before
@@ -416,11 +429,11 @@ bazel test --noannounce_rc \
   //projects/mfg/libs/mfg:peripheral_checks_test \
   //projects/mfg/libs/mfg:completed_display_test \
   //projects/mfg/libs/peer:scan_test \
-  //projects/h2loader/libs/h2loader:h2loader_command_test \
-  //libs/h2loader_host:h2loader_host_test \
-  //libs/h2loader_host:esp_boot_policy_test \
-  //libs/h2loader_host:esp_slip_test \
-  //projects/h2loader/apps/cli/app:h2loader_cli_app_test
+  //libs/h2loader/device:h2loader_command_test \
+  //libs/h2loader/host:h2loader_host_test \
+  //libs/h2loader/host:esp_boot_policy_test \
+  //libs/h2loader/host:esp_slip_test \
+  //tools/gizloader/cli:h2loader_cli_app_test
 ```
 
 Model tests cover readiness, stale tickets, failed persistence, resume,

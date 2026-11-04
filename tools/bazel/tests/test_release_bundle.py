@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.bazel.release_bundle import assemble, expected_asset_contracts, LOADER_ROOT
+from tools.bazel.release_bundle import assemble, expected_asset_contracts, LOADER_ENTRIES
 
 BATCH = "20260920-120000"
 
@@ -16,8 +16,9 @@ class ReleaseBundleTest(unittest.TestCase):
         catalog = []
         files = []
         for board, platform, target, version in entries:
-            entry = LOADER_ROOT + board
-            identity = dict(entry=entry, label="//" + entry + ":package", platform=platform,
+            entry = LOADER_ENTRIES[board]
+            package_target = "package_v2" if package_format == 2 else "package"
+            identity = dict(entry=entry, label="//" + entry + ":" + package_target, platform=platform,
                 board=board, image="loader", role="h2loader", target=target,
                 version=version, release_name="loader-" + board)
             catalog.append(identity)
@@ -95,7 +96,8 @@ class ReleaseBundleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             files = self.inputs(root, (("devkit", "esp", "esp32s3", "1.2.3"),
-                ("bk", "bk7258", "bk7258", "4.5.6-rc.1"), ("jl", "jieli", "wl82", "0.2.0")))
+                ("bk7258_v3_202405", "bk7258", "bk7258", "4.5.6-rc.1"),
+                ("jieli_ac791n_devkit", "jieli", "wl82", "0.2.0")))
             assemble(files, root / "output", BATCH)
             index = json.loads((root / "output/firmware-index.json").read_text())
             self.assertEqual(index["firmware_count"], 3)

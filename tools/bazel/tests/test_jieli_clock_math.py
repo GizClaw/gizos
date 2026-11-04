@@ -42,7 +42,8 @@ int main(void) {
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             "-fsanitize=undefined", "-I",
-                            str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
+                            str(ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/include"),
+                "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
                             str(test), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
 

@@ -28,10 +28,10 @@ macOS 使用 FFmpeg；Web 使用真实 WebCodecs，C 运行在 pthread Worker，
 ```sh
 bazel build --config=esp32s3 --lockfile_mode=off \
   --//tools/bazel:firmware_version=pal-adec-esp-<unique-version> \
-  //projects/e2e/targets/h2loader_tar_zlib/pal-audio-decoder/devkit:package
+  //projects/e2e/targets/pal-audio-decoder/espressif/esp32s3_devkitc_1:package
 bazel build --config=bk7258 --lockfile_mode=off \
   --//tools/bazel:firmware_version=pal-adec-bk-<unique-version> \
-  //projects/e2e/targets/h2loader_tar_zlib/pal-audio-decoder/bk7258_v3_202405:package
+  //projects/e2e/targets/pal-audio-decoder/beken/bk7258_v3_202405:package
 ```
 
 设备验收须核对 UID、原 P1 Loader 和 coredump，send 后核对 Stage 的版本及 package/image checksum，再执行 managed upgrade。只有 29 项全通过且资源全部释放才 confirm App，成功 marker 为 `H2_ADEC_READY rc=0 confirm=0`；失败保留明确 marker，不能确认。随后独立正常 App reboot 再跑一轮，最终核对 P1 保留、Stage 空、last_result=0 和真实 coredump 基线。重连后的 immutable ledger replay 不算独立运行。报告中的 retained=0 表示 Decoder session/PCM 已完整释放；设备 Runtime 持续服务 H2Loader 命令，不将其描述为 Runtime teardown。

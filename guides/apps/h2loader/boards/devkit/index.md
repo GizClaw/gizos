@@ -1,4 +1,7 @@
-# DevKit
+# ESP32-S3-DevKitC-1
+
+The BSP is `boards/espressif/esp32s3_devkitc_1/esp32s3`. Its RGB LED uses GPIO48,
+as on the initial board revision; Espressif's v1.1 guide specifies GPIO38.
 
 官网：[ESP32-S3-DevKitC-1 v1.1 用户指南](https://docs.espressif.com/projects/esp-dev-kits/zh_CN/latest/esp32s3/esp32-s3-devkitc-1/user_guide_v1.1.html)
 

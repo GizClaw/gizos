@@ -69,7 +69,7 @@ firmware 或 library 的构建。
 
 `projects/e2e/apps/iperf/app` 把 client 封装成固定矩阵的 portable E2E App，
 `//projects/e2e/targets/cc_binary/iperf:h2iperf` 提供 host 端 `server` 与 `client`，
-`projects/e2e/targets/h2loader_tar_zlib/iperf/amoled` 是 AMOLED 的 H2Loader image。
+`projects/e2e/targets/iperf/waveshare/esp32s3_touch_amoled_1_8` 是 AMOLED 的 H2Loader image。
 server 在同一个封装 UDP socket 上顺序服务多条 SCTP association，只有 INIT chunk 才会
 建立新的 passive association，前一条 association 的迟到 SACK/HEARTBEAT/SHUTDOWN 不会
 把下一条带偏。见 [E2E 测试 App](/apps/e2e#iperf) 与

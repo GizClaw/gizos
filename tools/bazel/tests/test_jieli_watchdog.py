@@ -8,9 +8,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 class WatchdogTest(unittest.TestCase):
     def test_progress(self):
-        source = (ROOT/'boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/src/watchdog.c').read_text()
+        source = (ROOT/'boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader/src/watchdog.c').read_text()
         source = '\n'.join(x for x in source.splitlines() if not x.startswith('#include'))
-        patch = (ROOT/'boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_patches/early_app_boot.patch').read_text()
+        patch = (ROOT/'boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_patches/early_app_boot.patch').read_text()
         part = patch[patch.index(' void setup_arch()'):]
         part = part[:part.index('@@', 1)]
         boot = '\n'.join(x[1:] for x in part.splitlines() if x.startswith((' ', '+')) and not x.startswith('+++'))

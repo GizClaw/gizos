@@ -15,7 +15,7 @@ _DEPS = [
     "//libs/pal/providers/yyjson:yyjson",
     "//projects/e2e/apps/pal-json/app:pal_json_e2e",
     "//projects/e2e/libs/pal-json-provider-probe:probe",
-    "//projects/example/libs/host_runtime",
+    "//projects/e2e/libs/host_runtime",
 ]
 
 cc_binary(

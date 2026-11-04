@@ -14,17 +14,13 @@
 
 client 使用创建时分配的缓冲区与请求表；输入 JSON 另外受解析预算约束。接收溢出会关闭 transport 并取消请求，避免继续报告一条已经丢失输入的连接正常。应用应按自身物模型和流量选择预算，并检查所有错误。先销毁 client，再销毁 JSON、MQTT 和其它借出的 provider。
 
-## Host 示例与验证
-
-Host 示例在最终 entry 中组装真实 CoreMQTT 和平台网络。它提交调用方提供的属性数据，等待平台应答；没有产品执行器的控制请求返回明确的未实现结果。接入参数、CA 和凭据由进程环境或参数提供，不写入代码。示例的输入格式见可执行入口的 usage 和 [源码](https://github.com/GizClaw/gizos/blob/main/projects/example/targets/cc_binary/onenet/main.c)。
+## Validation
 
 ```sh
 bazel test --config=macos_arm64 //libs/china_mobile/onenet:all
-bazel test --config=macos_arm64 //projects/example/targets/cc_binary/onenet:wire_test
-bazel run --config=macos_arm64 //projects/example/targets/cc_binary/onenet:onenet -- HOST PORT PRODUCT_ID DEVICE_NAME
 ```
 
-示例默认验证 TLS。进行本机 loopback 调试时才显式选择明文连接。wire test 使用本地 MQTT 对端，验证真实 CONNECT、SUBSCRIBE、OneJSON 上报、控制应答和断开流程；它不依赖公网账号，也不代表真实 OneNET、移动认证或物理设备通过。
+The retained [OneNET E2E App](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/onenet) and DevKit carrier entry exercise the portable client with caller-provided MQTT, JSON, Memory and Time PAL APIs. The launcher owns endpoint, CA, credentials and provider lifecycle. Credentials stay outside source and logs. Local library tests do not establish live OneNET registration, mobile authentication or physical-device qualification.
 
 真实平台验证需要调用方自己的产品、测试设备和权限。使用平台控制台检查属性与事件，并用应用模拟器下发控制；产品应用再验证从 OneNET 获取数据和经 OneNET 控制的完整路径。公共协议库的 host 测试不能替代这些验收。
 

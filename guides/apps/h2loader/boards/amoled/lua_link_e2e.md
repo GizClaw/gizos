@@ -7,7 +7,7 @@ stays off. Build:
 
 ```sh
 bazel build --config=esp32s3 \
-  //projects/e2e/targets/h2loader_tar_zlib/lua-link/amoled:package
+  //projects/e2e/targets/lua-link/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 The default role is `join`. To use AMOLED as the fixture for a board running `join`, build the same target with `--define=H2_LUA_LINK_E2E_ROLE=host`; only `host` and `join` are accepted. Both roles keep the original five sessions and final hold session. The entry sends the original test records through checked stdout and leaves a five-second serial reconnection window before the first round, without changing the board log level or session deadlines.

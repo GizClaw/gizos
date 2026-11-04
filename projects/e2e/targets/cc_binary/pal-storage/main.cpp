@@ -60,7 +60,7 @@ void* resize(void* user, void* pointer, size_t size) {
   release(user, pointer);
   return next;
 }
-const h2_pal_mem_vtable_t memory_methods = {allocate, resize, release};
+const h2_pal_mem_vtable_t memory_methods = {allocate, resize, release, nullptr};
 const h2_pal_mem_api_t memory = {nullptr, &memory_methods};
 struct Reporter {
   unsigned phase;

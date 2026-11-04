@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class MonitorTextLoss(unittest.TestCase):
     def test_monitor_text_loss(self):
-        serial = (ROOT / 'libs/h2loader_host/src/h2_h2loader_host_serial.c').read_text()
+        serial = (ROOT / 'libs/h2loader/host/src/h2_h2loader_host_serial.c').read_text()
         start = serial.index('/* A USB-UART adapter survives')
         end = serial.index('static h2_pal_result_t serial_wait_ready_marker(', start)
         # The READY marker constant is local to serial_stream_log.
@@ -42,7 +42,7 @@ h2_pal_result_t h2_iostreamikcp_read(
             subprocess.run([
                 'cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
                 '-I' + str(ROOT / 'libs/pal/include'),
-                '-I' + str(ROOT / 'libs/h2loader_host/include'),
+                '-I' + str(ROOT / 'libs/h2loader/host/include'),
                 '-I' + str(ROOT / 'libs/iostreamikcp/include'),
                 str(unit), '-o', str(binary),
             ], check=True)

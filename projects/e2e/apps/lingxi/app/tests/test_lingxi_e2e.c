@@ -84,7 +84,7 @@ static void report(void* user, const h2_lingxi_e2e_case_result_t* row) {
   ++f->reports;
 }
 
-static const h2_pal_mem_vtable_t mem_vtable = {allocate, resize, release};
+static const h2_pal_mem_vtable_t mem_vtable = {allocate, resize, release, NULL};
 static const h2_pal_http_vtable_t http_vtable = {request, response_free};
 static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms = now};
 

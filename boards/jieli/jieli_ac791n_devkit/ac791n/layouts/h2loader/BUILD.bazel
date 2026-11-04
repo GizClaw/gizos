@@ -1,0 +1,49 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+alias(
+    name = "warm_boot",
+    actual = "//native_component_src/jieli/wl82/h2_pal_image:warm_boot",
+)
+
+exports_files([
+    "defs.bzl",
+    "include/app_config.h",
+    "isd_reserved_expand.ini",
+    "project.mk",
+    "sdk_abi.ld",
+    "sdk_patches/early_app_boot.patch",
+    "sdk_patches/uart1_console.patch",
+    "sdk_patches/bounded_cdc_write.patch",
+    "sdk_patches/crash_recovery.patch",
+    "sdk_patches/h2_retained_ram.patch",
+    "sdk_patches/preserve_exception_log.patch",
+    "sdk_patches/ble_data_length.patch",
+    "sdk_patches/wifi_ap_credentials.patch",
+    "sdk_patches/wifi_ap_config.patch",
+    "sdk_patches/warm_boot.patch",
+    "src/platform.c",
+])
+
+firmware_native_component(
+    name = "layout",
+    srcs = [
+        "src/native_layout.c",
+        "src/platform.c",
+        "src/watchdog.c",
+    ],
+    hdrs = [
+        "include/app_config.h",
+        "isd_reserved_expand.ini",
+    ],
+    component_name = "jieli_ac791n_devkit_h2loader_layout",
+    data = ["sdk_abi.ld"],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_ac791n": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//native_component_src/jieli/wl82/h2_pal_image"],
+)

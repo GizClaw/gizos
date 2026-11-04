@@ -5,8 +5,8 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-APP = 'projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src/jieli_app_iostreamikcp.c'
-CLIENT = 'projects/h2loader/libs/h2loader/src/h2_loader_app_client.c'
+APP = 'libs/h2loader/device/src/h2_device_serial.c'
+CLIENT = 'libs/h2loader/device/src/h2_loader_app_client.c'
 
 
 def function(text, signature):
@@ -19,11 +19,16 @@ def function(text, signature):
 class IdleConsoleTest(unittest.TestCase):
     def test_idle_then_open(self):
         app = (ROOT / APP).read_text(); client = (ROOT / CLIENT).read_text()
-        code = function(app, 'static int poll_physical(')
+        engine = (ROOT / 'libs/h2loader/device/src/h2_device_serial.c').read_text()
+        code = function(engine, 'static h2_pal_result_t poll_physical(').replace('h2_device_serial_t', 'h2_jieli_app_transport_t')
         code += function(app, 'static int app_read_byte(')
         code += function(client, 'static h2_pal_result_t console_read(')
         code += function(client, 'static int run_return_console(')
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_idle_console.c').read_text()
+        fixture = fixture.replace('/* FUNCTIONS */', '#define transport_stopped(self) 0\n#define h2_device_serial_now(self) timer_get_ms()\n#define h2_device_serial_poll_session poll_physical\n#define transport_read(self,buffer,len,count,timeout) ((self)->physical_io.read((self)->physical_io.user,buffer,len,count,timeout))\n/* FUNCTIONS */')
+        fixture = fixture.replace('  void* stream;\n', '  struct { unsigned idle_timeout_ms; } config;\n  unsigned last_frame_ms;\n  void* stream;\n')
+        code = code.replace('h2_device_app_serial_t', 'h2_jieli_app_console_t')
+        fixture = fixture.replace('deactivate_current', 'h2_device_serial_deactivate').replace('activate_pending', 'h2_device_serial_activate_pending')
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / 'test.c'; binary = Path(directory) / 'test'
             unit.write_text(fixture.replace('/* FUNCTIONS */', code))

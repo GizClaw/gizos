@@ -10,7 +10,7 @@ Portable E2E 的并发 run guard 由每对象普通 static backing 提供，laun
 bazel build --config=esp32s3 \
   --define=H2_GIZCLAW_E2E_VOICE_ONLY=1 \
   --//tools/bazel:firmware_version=0.1.0-session-e2e \
-  //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
+  //projects/e2e/targets/gizclaw-e2e/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 未指定 `VOICE_ONLY` 时仍运行完整 `all` suite，其中 Voice 使用同一 Session 路径。Launcher 通过 `gizclaw_e2e_fixture` macro 显式注入E2E endpoint/RegistrationToken、期望RuntimeProfile、AppConfig key/value、NTP与Device API/tone输入URL；没有源码凭据或key默认值，缺输入在Runtime网络初始化和业务变更前失败，不确认该image。设备只借用已保存的Wi-Fi；不把 Wi-Fi 凭据编入固件。Voice 使用确定性的 16 kHz mono PCM，经真实网络上传，并在库的 PCM Track 上核验下行非静音音频；启用physical模式时Testing Audio wrapper同时drain真实麦克风，但上传的仍是fixture PCM；该用例不验收麦克风音质或扬声器听感。
@@ -23,7 +23,7 @@ bazel build --config=esp32s3 \
 bazel --bazelrc=/absolute/path/lua-fixture.bazelrc build --noannounce_rc --config=esp32s3 \
   --define=H2_GIZCLAW_E2E_LUA_ONLY=1 \
   --//tools/bazel:firmware_version=0.1.0-lua-e2e \
-  //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
+  //projects/e2e/targets/gizclaw-e2e/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 自签 HTTPS fixture 通过 `app_config_fixture_root_ca_hex` 注入 hex PEM；portable fixture 创建自己的 coreHTTP provider，保留 required TLS verification，退出时在所有请求和 Service join 后销毁它。Public control API 使用 Edge 入口，Server 私有 HTTP 入口不承载这些 API。Directed 本地测试的 Server/Edge ICE listen 应绑定实际 LAN 地址，避免把主机的其他接口 candidate 集合引入设备验收。

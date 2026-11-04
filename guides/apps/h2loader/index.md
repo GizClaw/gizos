@@ -1,6 +1,6 @@
 # H2Loader
 
-H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repository CLI、portable Host Core，以及设备上的 Loader image、H2Loader-managed App image 和共享生命周期协议组成，用于发现设备、安装与启动 App、确认新版本、回退、更新 Loader 和诊断故障。
+H2Loader provides GizOS firmware management through Batch Loader, the Gizloader CLI, portable Host Core, device Loader images, managed App images and the shared lifecycle protocol. Together they discover devices, install and start Apps, confirm versions, roll back, update Loader and diagnose failures.
 
 本目录是 H2Loader 产品与工程合同的唯一入口。面向使用者的构建、安装和设备恢复步骤仍放在[使用说明](/zh/using/h2loader/)；公开符号见 [API Reference](/references/h2loader)。
 
@@ -14,8 +14,6 @@ H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repositor
 | [固件结构分区与类型](./firmware_types) | Loader 固件、App 固件、指令与分区布局 |
 | [更新、启动与回退](./update/) | 更新包总览，以及彼此独立的 App 更新和 Loader self-upgrade |
 | [Boards](./boards/) | 各 board 的 Loader/App image、平台配置、运行表现与恢复边界 |
-| [BLE iKCP Baseline](./apps/bleikcp_speed/) | 两台设备之间的 BLE iKCP 吞吐和断线恢复基准 |
-| [Wi-Fi CSI Smoke](./apps/wifi_csi/) | 在屏幕上显示 Wi-Fi CSI、链路元数据和诊断错误 |
 
 ## 产品广播名称
 
@@ -25,7 +23,7 @@ H2Loader Loader 与 App 管理 adapter 消费 Runtime 的可选 `ble_local_name`
 
 ## App Board Matrix
 
-原始固件矩阵以 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 中当前具备 `:package` 构建入口的 image 为准，不把“存在 entry”误写成“已经完成实机验收”。
+原始固件矩阵以 `projects/<owner>/targets/<app>/<manufacturer>/<board>/` 中当前具备 `:package` 构建入口的 image 为准，不把“存在 entry”误写成“已经完成实机验收”。
 
 - `✓`：当前存在可构建的 Loader 或 App image 入口。
 - `△`：入口已完成构建验证，但对应真机验收尚未完成。
@@ -35,33 +33,13 @@ H2Loader Loader 与 App 管理 adapter 消费 Runtime 的可选 `ble_local_name`
 | Image / App | [AMOLED](./boards/amoled/) | [BK7258](./boards/bk7258_v3_202405/) | Zero BK 1.0 | [DevKit](./boards/devkit/) | H200 | H200 V2 | [SZP](./boards/szp/) | Tiga V4.2 | Zero ESP V3.0 | [Waveshare A7670E](./boards/waveshare_esp32s3_a7670e_4g/) | [Waveshare P4](./boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/) | [Waveshare 1.75C](./boards/waveshare_esp32s3_touch_amoled_1_75c/) |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | H2Loader | ✓ | ✓ | ✓ | ✓ | △ | △ | ✓ | ✓ | △ | ✓ | ✓ | △ |
-| Display | ✓ | ✓ | ✓ | — | — | — | ✓ | ✓ | — | — | ✓ | △ |
-| LVGL Smoke | — | — | ✓ | — | — | — | — | — | — | — | — | — |
-| Audio System | ✓ | ✓ | ✓ | — | △ | △ | ✓ | ✓ | — | — | ✓ | △ |
-| MP4 Player | — | ✓ | — | — | — | — | — | — | — | — | ✓ | — |
-| MP4 Player Small | ✓ | — | ✓ | — | — | — | — | ✓ | — | — | ✓ | — |
-| BLE Broadcaster | — | ✓ | — | ✓ | — | — | ✓ | — | — | ✓ | — | — |
-| BLE Observer | — | ✓ | — | ✓ | — | — | ✓ | — | — | ✓ | — | — |
-| BLE iKCP Baseline Server | ✓ | ✓ | — | — | — | — | ✓ | — | — | — | — | — |
-| BLE iKCP Baseline Client | ✓ | ✓ | — | — | — | — | ✓ | — | — | — | — | — |
-| Wi-Fi CSI Smoke | — | ✓ | — | — | — | — | ✓ | — | — | — | — | — |
-| Modem Smoke | — | — | — | — | — | — | — | — | — | ✓ | — | — |
-| Crash Before Confirm | ✓ | ✓ | — | ✓ | △ | △ | ✓ | ✓ | — | ✓ | ✓ | — |
-| Partial Update | — | — | — | — | — | — | ✓ | — | — | — | — | — |
-| GizClaw Ping Speed | ✓ | — | — | — | — | — | — | — | — | — | — | — |
 | iperf | ✓ | — | — | — | — | — | — | — | — | — | — | — |
 | iperf Server | [✓](./boards/amoled/iperf_server) | — | — | — | — | — | — | — | — | — | — | — |
 | WebRTC Performance | ✓ | — | — | ✓ | — | — | — | — | — | — | — | — |
 | GizClaw E2E | [✓](./boards/amoled/gizclaw_ota_e2e) | — | — | ✓ | — | — | — | — | — | — | — | — |
 | H106 E2E | — | — | △ | — | — | — | — | △ | — | — | — | — |
 | PAL Preference | — | — | — | ✓ | — | — | — | ✓ | — | — | — | — |
-| DinoBounce | — | — | — | — | — | — | — | ✓ | — | — | — | — |
-| DinoDive | — | — | — | — | — | — | — | ✓ | — | — | — | — |
-| DinoRun | — | — | — | — | — | — | — | ✓ | — | — | — | — |
-| DinoTetris | — | — | — | — | — | — | — | ✓ | — | — | — | — |
-| Tuxemon | — | — | — | — | — | — | — | ✓ | — | — | — | — |
 | H106 | — | — | — | — | — | — | — | ✓ | — | — | — | — |
-| Safe Call | — | — | — | — | — | — | — | ✓ | — | — | — | — |
 
 H106 MFG 是 Tiga 与 Zero ESP Loader image 启动前的内置产测流程，不是独立 App image，也不占矩阵行。各 image 的构建、预期表现与验收要求放在对应 board 使用页；矩阵只表达产品入口覆盖面。
 
@@ -69,9 +47,9 @@ H106 MFG 是 Tiga 与 Zero ESP Loader image 启动前的内置产测流程，不
 
 ```mermaid
 flowchart TD
-    Batch["Batch Loader<br/>React / JS / WASM"] --> WebSDK["projects/h2loader/libs/web"]
+    Batch["Batch Loader<br/>React / JS / WASM"] --> WebSDK["libs/h2loader/web"]
     WebSDK --> NpmSDK["@gizclaw/h2loader<br/>browser SDK package"]
-    WebSDK --> HostCore["libs/h2loader_host"]
+    WebSDK --> HostCore["libs/h2loader/host"]
     CLI["Native CLI App"] --> HostCore
     HostCore --> Transport["serial 或 BLE command transport"]
     Transport --> Loader["Loader image<br/>安装、选择、恢复"]
@@ -84,23 +62,23 @@ flowchart TD
 
 ### Host
 
-`projects/h2loader/libs/web/` 提供浏览器/Web Serial JS/runtime/WASM SDK source target，`projects/h2loader/targets/npm_package/h2loader/` 将同一组输出发布为公共 `@gizclaw/h2loader` npm package。产品 Batch Loader UI 由 `GizClaw/www` 消费该 package，GizOS 不再维护 React frontend 或 Batch Loader 静态 archive。npm package 不提供 Node.js serial-port runtime。Native CLI 的 portable App 位于 `projects/h2loader/apps/cli/app/`，macOS/Linux/Windows process 与 PAL 组装位于 `projects/h2loader/targets/cc_binary/cli/`。Web SDK 与 CLI 都通过 `libs/h2loader_host/` 执行 authoritative status、typed command、package 校验和 lifecycle verification，彼此不依赖 source。`projects/e2e/targets/pkg_tar/h2loader-serial/` 继续是非生产 Browser Host Serial 验证入口，不属于产品 UI 或发布物。Host 不属于设备固件，也不通过设备 Runtime 使用硬件能力。
+`libs/h2loader/web/` 提供浏览器/Web Serial JS/runtime/WASM SDK source target，`projects/h2loader/targets/npm_package/h2loader/` 将同一组输出发布为公共 `@gizclaw/h2loader` npm package。产品 Batch Loader UI 由 `GizClaw/www` 消费该 package，GizOS 不再维护 React frontend 或 Batch Loader 静态 archive。npm package 不提供 Node.js serial-port runtime。The complete native CLI implementation, process entry, platform adapters and tests belong to `tools/gizloader/cli/`. `tools/gizloader/native/` builds the CLI/session sidecars; the public command is `gizloader`. Web SDK 与 CLI 都通过 `libs/h2loader/host/` 执行 authoritative status、typed command、package 校验和 lifecycle verification，彼此不依赖 source。`projects/e2e/targets/pkg_tar/h2loader-serial/` 继续是非生产 Browser Host Serial 验证入口，不属于产品 UI 或发布物。Host 不属于设备固件，也不通过设备 Runtime 使用硬件能力。
 
 ### Loader image
 
-Loader image 是固定的管理与恢复入口。它初始化 board 和 Runtime，挂载 H2Loader 存储，注册 command transport，校验并安装 package，选择 App image，并管理 H2Loader self-upgrade。跨平台入口位于 `projects/h2loader/apps/loader/`，board-specific 构建与接线位于 `projects/h2loader/targets/h2loader_tar_zlib/loader/<board>/`。
+Loader image 是固定的管理与恢复入口。它初始化 board 和 Runtime，挂载 H2Loader 存储，注册 command transport，校验并安装 package，选择 App image，并管理 H2Loader self-upgrade。跨平台入口位于 `projects/h2loader/apps/loader/`，board-specific 构建与接线位于 `projects/h2loader/targets/loader/<manufacturer>/<board>/`。
 
 ### App image
 
-App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BSP 与 Runtime，接入 H2Loader App client，并调用 portable App 的阻塞式入口。Reusable Examples 由 `projects/example/` 持有，跨目标测试 App 由 `projects/e2e/` 持有，产品 App 由 H106 等对应 project group 持有；对应的 `targets/h2loader_tar_zlib` 也归同一个真实 App owner。使用 H2Loader 不改变源码或 artifact ownership。
+App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BSP 与 Runtime，接入 H2Loader App client，并调用 portable App 的阻塞式入口。Cross-target test Apps belong to `projects/e2e/`; product Apps and their `targets/h2loader_tar_zlib` entries belong to the corresponding product owner. 使用 H2Loader 不改变源码或 artifact ownership。
 
 ## Firmware Release
 
 `.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，且必须从仓库默认分支运行，不接收 version 输入。`catalog` 在 checkout 前拒绝非默认分支，checkout 后校验触发提交；所有 GizOS job 都固定 checkout 到该 `github.sha`。从 UTC 时钟生成 `RELEASE_BATCH=YYYYMMDD-HHMMSS` 和 `v<batch>` tag；batch 是发布批次，不是产品版本。DAG 为 `catalog → ESP32-S3/ESP32-P4/BK7258 → firmware-bundle → package → release-bundle → publish`，并行的 `npm-packages` producer 直接汇入最终 `release-bundle`。每一步保留 producer 子目录，拒绝重复 basename、symlink、缺失或额外文件。 Catalog 还构建供 LiteLink 使用的 Lua Runtime 源码包，由 LiteLink 在 Flutter App 原生层实现 PAL。
 
-发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_zlib_tar` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
+发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_zlib_tar` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
 
-发布集合由 `projects/h2loader/targets/h2loader_zlib_tar/loader/<board>/BUILD.bazel` 的 `firmware-release` 声明决定；catalog 必须覆盖这些声明，不能悄悄漏掉不兼容配置。Loader 的基础版本在 App 目录通过 `app_version` 人工维护；各 board 目录通过独立的 `board_version` 人工维护整数 `build`。版本声明不聚合源码，BSP 和文件集合继续使用原有构建入口。各 canonical Loader 固件 target 用 `firmware_version` 的 `main_version` 和 `build` 引用 App 与 board 的版本 label，并按需配置可选的 `variant` 和 `build_metadata`。调用方只填写 variant 名称；规则用点分隔非空 variant 与数字 board build，供标准 SemVer 按数值比较 build。空 variant 继续只使用数字 build；非空元数据由规则追加加号，不参与排序。字段的具体业务含义由调用方决定。修改版本时只改对应 owner 的声明。
+发布集合由 `projects/h2loader/targets/loader/<manufacturer>/<board>/BUILD.bazel` 的 `firmware-release` 声明决定；catalog 必须覆盖这些声明，不能悄悄漏掉不兼容配置。Loader 的基础版本在 App 目录通过 `app_version` 人工维护；各 board 目录通过独立的 `board_version` 人工维护整数 `build`。版本声明不聚合源码，BSP 和文件集合继续使用原有构建入口。各 canonical Loader 固件 target 用 `firmware_version` 的 `main_version` 和 `build` 引用 App 与 board 的版本 label，并按需配置可选的 `variant` 和 `build_metadata`。调用方只填写 variant 名称；规则用点分隔非空 variant 与数字 board build，供标准 SemVer 按数值比较 build。空 variant 继续只使用数字 build；非空元数据由规则追加加号，不参与排序。字段的具体业务含义由调用方决定。修改版本时只改对应 owner 的声明。
 
 Native firmware 通过 `version = ":version"` 消费组合后的版本，package 自动继承，catalog、native metadata 和 package manifest 必须一致。最终版本组合规则以 `tools/bazel/firmware.bzl` 为准。Release 不注入全局 `//tools/bazel:firmware_version`；该 compatibility flag 仍供没有独立版本的诊断 target 使用。E2E 备用镜像的显式版本属于测试 fixture，单独维护以构造不同镜像 identity，允许同一发布批次包含不同固件版本。
 
@@ -142,20 +120,26 @@ npm 的资产格式、索引兼容合同与本地组装命令见 [npm Release](.
 ```mermaid
 flowchart TD
     Batch["GizClaw/www<br/>Batch Loader UI"] --> NpmSDK["@gizclaw/h2loader<br/>browser SDK package"]
-    NpmSDK --> WebSDK["projects/h2loader/libs/web"]
-    WebSDK --> HostCore["libs/h2loader_host"]
+    NpmSDK --> WebSDK["libs/h2loader/web"]
+    WebSDK --> HostCore["libs/h2loader/host"]
     WebSDK --> WebPAL["Web PAL / Web Serial"]
     WebPAL --> Loader["H2Loader device"]
     HostCore --> WebPAL
-    H2Main["h2loader_tar_zlib/loader/&lt;board&gt;"] --> LoaderApp["apps/loader"]
-    AppMain["h2loader_tar_zlib/&lt;app&gt;/&lt;board&gt;"] --> PortableApp["portable App owner"]
+    H2Main["targets/loader/&lt;manufacturer&gt;/&lt;board&gt;"] --> LoaderApp["apps/loader"]
+    AppMain["targets/&lt;app&gt;/&lt;manufacturer&gt;/&lt;board&gt;"] --> PortableApp["portable App owner"]
     H2Main --> BSP["boards/&lt;board&gt;/&lt;target&gt;"]
     AppMain --> BSP
-    H2Main --> ProjectComponents["projects/h2loader/native_component_src"]
-    AppMain --> ProjectComponents
+    H2Main --> Services["libs/h2loader/device:service<br/>common device service"]
+    AppMain --> Services
+    H2Main --> Providers["native_component_src<br/>platform PAL providers"]
+    AppMain --> Providers
+    Services --> Common
+    Services --> Runtime
+    Services --> PAL
+    Providers --> SDK["vendor SDK"]
     LoaderApp --> Runtime["libs/runtime"]
     PortableApp --> Runtime
-    LoaderApp --> Common["projects/h2loader/libs/h2loader"]
+    LoaderApp --> Common["libs/h2loader/device"]
     Runtime --> PAL["libs/pal"]
     Common --> PAL
     Common --> Bundle["libs/bundle"]
@@ -163,15 +147,21 @@ flowchart TD
 ```
 
 - `projects/h2loader/apps/loader/` 拥有设备端安装、启动决策和 command handler。
-- Reusable Examples 位于 `projects/example/apps/`，跨目标测试 App 位于 `projects/e2e/apps/`，portable PIXA game App 位于 `projects/pixa_games/apps/`。
-- `projects/h2loader/libs/h2loader/` 保存 package、image identity、确认、回退、return-to-loader 和调试协议。
-- `projects/h2loader/native_component_src/` 保存只服务 H2Loader 的 target glue；可跨产品复用的原生 SDK component source 必须提升到顶层 `native_component_src/`，Bazel 平台实现提升到 `libs/pal/providers/`。
-- `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 保存 owner 的薄 image 入口、build config、BSP 选择、Runtime 生命周期与最终 H2Loader package target；H2Loader project 自己只保留 Loader image entry 与共享 package support。
-- `projects/h2loader/libs/web/` 保存可复用的浏览器/Web Serial SDK source，`projects/h2loader/targets/npm_package/h2loader/` 保存公共 `@gizclaw/h2loader` manifest 与 Bazel 发布规则，`libs/h2loader_host/` 保存 portable device policy 与 managed lifecycle；产品 Web UI 归 `GizClaw/www`。
-- `projects/h2loader/apps/cli/app/` 保存 portable CLI command、参数和输出 policy，并且只消费 Runtime、PAL 与 repository library；`projects/h2loader/targets/cc_binary/cli/` 只保存 native process entry 和 macOS/Linux/Windows PAL provider 组装。
+- Cross-target test Apps are in `projects/e2e/apps/`; each product owns its own portable Apps and final artifacts.
+- `libs/h2loader/device/` 保存 package、image identity、确认、回退、return-to-loader 和调试协议。
+- Shared libraries are grouped as `libs/h2loader/{host,device,web}`. The Device library has one common Loader/App service and serial/KCP engine, configured through PAL capabilities and policy. Native image, boot, Flash/cache and physical transport mechanisms belong to top-level `native_component_src/` providers. Project targets retain capability composition and minimal SDK startup registration.
+- `projects/<owner>/targets/<app>/<manufacturer>/<board>/` 保存 owner 的薄 image 入口、build config、BSP 选择、Runtime 生命周期与最终 H2Loader package target；H2Loader project 自己只保留 Loader image entry 与共享 package support。
+- `libs/h2loader/web/` 保存可复用的浏览器/Web Serial SDK source，`projects/h2loader/targets/npm_package/h2loader/` 保存公共 `@gizclaw/h2loader` manifest 与 Bazel 发布规则，`libs/h2loader/host/` 保存 portable device policy 与 managed lifecycle；产品 Web UI 归 `GizClaw/www`。
+- `tools/gizloader/cli/` owns CLI commands, the native process entry, OS adapters and tests; `tools/gizloader/native/` composes the Gizloader CLI/session sidecars.
+- `projects/e2e/libs/h2loader_runner/` owns device E2E orchestration; `projects/e2e/targets/cc_binary/e2e-runner/` owns its native entry.
 - `projects/h2loader/tools/bazel/` 保存 H2Loader 专用 package、recovery、release metadata writer 和对应 artifact rule；顶层 `tools/bazel/` 只保存全仓通用 firmware rule 与 runner。
 
-Runtime 不是 Common 的直接依赖：portable App 消费 Runtime；H2Loader artifact entry 负责把 Common 所需的 PAL API 与稳定配置传给 Common。
+The Device core has no direct Runtime dependency. Its optional `:service`
+target composes Runtime and the portable Loader App. Final image entries inject
+public Runtime capabilities and stable configuration; native SDK startup remains
+in target glue. Device services use `Runtime.io_stream` and the optional
+`Runtime.mem_external` allocator. Generic `firmware_lib_component` source inputs
+handle vendor C-runtime ABI requirements without chip-specific Loader components.
 
 ## Command Transport
 

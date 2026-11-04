@@ -48,6 +48,14 @@ static int unsupported_wifi_sta_set_power_save(void* p0,
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static int unsupported_wifi_sta_set_activity_observer(
+    void* user, h2_pal_wifi_activity_fn callback, void* callback_user) {
+  (void)user;
+  (void)callback;
+  (void)callback_user;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_wifi_sta_vtable_t unsupported_wifi_sta_vtable = {
     .get_status = unsupported_wifi_sta_get_status,
     .scan = unsupported_wifi_sta_scan,
@@ -56,6 +64,7 @@ static const h2_pal_wifi_sta_vtable_t unsupported_wifi_sta_vtable = {
     .disconnect = unsupported_wifi_sta_disconnect,
     .get_mac = unsupported_wifi_sta_get_mac,
     .set_power_save = unsupported_wifi_sta_set_power_save,
+    .set_activity_observer = unsupported_wifi_sta_set_activity_observer,
 };
 static const h2_pal_wifi_sta_api_t unsupported_wifi_sta_api = {
     .user = NULL, .vtable = &unsupported_wifi_sta_vtable};

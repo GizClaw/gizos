@@ -12,7 +12,10 @@ MP4 每个一秒 GOP 分片（`frag_keyframe+empty_moov+default_base_moof+skip_t
 
 Desktop launcher 先创建 recorder，再把 `h2_desktop_recording_hooks()` 返回的回调放入 `h2_desktop_capture_config_t.hooks` 并注册。Recorder 的 `on_mic` 为 NULL，MP4 音轨只来自 speaker。停止生产者并呈现最后 pending frame 后，launcher 先 destroy capture registration，等待 callback 退出，再 stop recorder。编码器写到停止时间与最后已接受 DAC sample 结束时间的较大值，保留最后 presentation、保持尾帧、补齐最后 AAC block、flush 两个 encoder 并写 trailer。正常完成、窗口退出和 SIGINT/SIGTERM 的协作取消使用相同收尾；SIGKILL、设备丢失和不可写存储不属于成功停止。
 
-Linux runtime closure 包含由固定 FFmpeg source build 提供的 `libavformat.so.62`；其精确 SONAME 纳入 `tools/bazel/linux_runtime` allowlist，真实 recorder binary 与 Showcase binary 都经过 `ldd` closure 集成检查。
+The Linux runtime allowlist includes `libavformat.so.62` from the pinned FFmpeg
+source build. The integration test checks the recorder smoke binary and the PAL
+Display E2E binary with `ldd`; running that closure check requires a matching
+Linux host.
 
 `h2_desktop_recording_result()` 可在录制期间读取锁存结果，OK 只表示目前未观察到错误；最终结果仍由 stop 返回。首次错误会立即停止接受新媒体，并在输出仍可写时让编码 worker 按当时已经接受的尾帧/尾音收尾关闭文件，不能等应用稍后退出时再把静帧和静音延长到那个时间。Desktop 控制循环发现错误后先注销 hooks，再停止生产者。首次错误诊断记录来源、当时采集和输出队列占用、编码 cursor，不包含像素或 PCM 内容。
 
@@ -24,11 +27,14 @@ Linux runtime closure 包含由固定 FFmpeg source build 提供的 `libavformat
 bazel test --config=macos_arm64 //libs/desktop_recording:all \
   //libs/pal/providers/sdl3:all //libs/pal/providers/portaudio:all \
   //libs/pal/providers/desktop/app_support:capture_test
-bazel run --config=macos_arm64 \
-  //projects/example/targets/cc_binary/recording:recording-smoke -- \
-  /absolute/new-output.mp4
 ```
 
-Smoke 在真实 SDL window 中显示移动的 LVGL 半透明 panel，通过真实 speaker 交替播放 440/880 Hz，并用独立 mic hook 统计真实输入 sample 数（不写入 MP4）；6 秒后或收到协作取消后关闭 MP4。必须核对音视频 track、尺寸、时长、decoded PCM 能量、色彩/频率转换时刻与正常/取消收尾，不能以“存在 audio track”替代非静音播放证据。无显示、mic 或 speaker 设备时报告失败。
+The retained Linux runtime integration fixture is `//tools/bazel/linux_runtime/tests/recording:recording-smoke`. It belongs to the build tool's runtime tests and is not a public sample App. With real display, microphone and speaker devices available, it shows a moving translucent LVGL panel, alternates 440/880 Hz speaker output and counts microphone samples through a separate hook without recording them. It closes the MP4 after six seconds or cooperative cancellation. Acceptance checks tracks, dimensions, duration, decoded PCM energy, color/frequency transition timing and normal/cancelled cleanup; an audio track alone does not prove non-silent playback.
+
+```sh
+bazel run --config=linux_x86_64 \
+  //tools/bazel/linux_runtime/tests/recording:recording-smoke -- \
+  /absolute/new-output.mp4
+```
 
 自动回归使用真实 POSIX pipe 阻塞 writer 超过两秒，同时持续提交画面与 PCM；恢复写入后解码 MP4，核对阻塞期间的音频与画面。另验证输出队列耗尽、ring wrap 字节顺序、断开的输出、首次错误停止及延迟应用退出不会延长失败录像。长录验收必须在真实 Desktop E2E 运行期间持续读取完整 MP4 分片，检查时间戳推进、可解码画面和音频，并在结束后核对整个时段；文件存在或大小增加不能单独作为成功证据。

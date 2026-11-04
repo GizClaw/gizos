@@ -24,7 +24,7 @@ bazel build --config=esp32s3 \
   --define=H2_WEBRTC_PERF_STUN_URL=stun:192.168.1.7:3478 \
   --define=H2_WEBRTC_PERF_POWER_SAVE=0 \
   --define=H2_WEBRTC_PERF_BLE_ADV=1 \
-  //projects/e2e/targets/h2loader_tar_zlib/webrtc-performance/amoled:package
+  //projects/e2e/targets/webrtc-performance/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 按标准 `status -> send -> reboot upgrade -> status` 流程安装。串口 marker 使用 `H2_WEBRTC_PERF_AMOLED` 前缀，summary 行末尾附带 `power_save=<n>`；有效结果必须包含 exact package checksum、`amoled/esp32s3` identity、LAN endpoint、selected UDP ICE pair、双向 exact 10 MiB、完整 performance summary 和三类 heap 的 KiB checkpoint。

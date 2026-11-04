@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class PowercutWaitTest(unittest.TestCase):
     def test_timeout_and_diagnostic_hold(self):
-        source = (ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/jieli_loader_platform.c").read_text()
+        source = (ROOT / "native_component_src/jieli/wl82/h2_pal_image/src/h2_jieli_wl82_platform_image.c").read_text()
         branch = source[source.index("  int pend_rc = OS_NO_ERR;"):source.index("  h2_atomic_bool_store(&state.burn_waiting, false", source.index("  int pend_rc = OS_NO_ERR;"))]
         stub = r'''
 #include <assert.h>

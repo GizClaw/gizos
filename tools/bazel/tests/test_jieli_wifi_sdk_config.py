@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH = ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_patches/wifi_ap_credentials.patch"
+PATCH = ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_patches/wifi_ap_credentials.patch"
 
 
 class WifiSdkConfigTest(unittest.TestCase):

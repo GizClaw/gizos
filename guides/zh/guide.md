@@ -89,20 +89,26 @@ projects/<group>/apps/<app>/app/          # project group 中的 app
   src/                                     # app private implementation
 ```
 
-例如 H2Loader project group 中的 app 位于 `projects/h2loader/apps/<app>/app/`，H2Loader Common 位于 `projects/h2loader/libs/h2loader/`。其他 project group 内多个 app 共用、但不适合提升为仓库级 `libs` 的代码，也按 `projects/<group>/libs/<library>/` 组织；只服务该 group、由原生 SDK 构建的 component source 放在 `projects/<group>/native_component_src/<platform-or-target>/<component>/`。
+例如 H2Loader project group 中的 app 位于 `projects/h2loader/apps/<app>/app/`，H2Loader Common 位于 `libs/h2loader/device/`。其他 project group 内多个 app 共用、但不适合提升为仓库级 `libs` 的代码，也按 `projects/<group>/libs/<library>/` 组织；只服务该 group、由原生 SDK 构建的 component source 放在 `projects/<group>/native_component_src/<platform-or-target>/<component>/`。
 
 ### targets {#definition-targets}
 
-`targets/<artifact-rule>/<app>[/<variant>]` 表示某个 App 的最终产物入口。Firmware variant 可以同时知道具体 App 与 board，提供 `sdkconfig` 等构建配置；host/mobile variant 则拥有对应 lifecycle、package metadata 和 Runtime assembly。入口负责取得 BSP Runtime config、提供 periph-component mapping 并初始化 Runtime；入口代码必须保持薄，不承载可复用业务逻辑。
+Board-specific firmware entries use
+`projects/<owner>/targets/<app>/<manufacturer>/<board>/`. Manufacturer and model
+names match the physical BSP under `boards`. Each entry owns native startup,
+Runtime assembly, task policy, SDK build inputs and package metadata; reusable
+App logic stays with its portable owner.
 
-`native_firmware` 是厂商原生、非 H2Loader 管理的 standalone firmware artifact root：
-入口位于 `projects/<owner>/targets/native_firmware/<app>/<board>/`，终态
-`:firmware` 直接暴露厂商可烧录或升级的镜像以及 ELF、symbol 和 manifest。
-它只用于同一个 portable App 需要独立于 H2Loader package 构建、烧录或升级的情况。
-`h2loader_tar_zlib` 则表示由 H2Loader Host 校验和传输的 format-1 package；即使两者
-消费同一份 native launcher graph，它们仍是不同 artifact contract。可复用 launcher、
-PAL 和 SDK glue 必须留在 `projects/<owner>/native_component_src/` 或顶层
-`native_component_src/`，两个 artifact entry 只选择 graph 和 package metadata。
+`:firmware` exposes vendor images, ELF, symbols and a manifest. In the same BUILD
+file, `:package` retains the format-1 H2Loader package, and `:package_v2` exposes
+format 2 where supported. Both consume the same native launcher graph. A
+standalone diagnostic uses the same directory hierarchy and only needs its
+native firmware target. Package board/image identities retain their existing
+values regardless of the directory name.
+
+Host, mobile, browser and npm entries retain their artifact-rule roots, such as
+`targets/cc_binary/<app>`, `targets/ios_application/<app>` and
+`targets/npm_package/<app>`.
 
 最终 artifact entry 负责完整的 App 启动和退出生命周期：
 
@@ -119,10 +125,10 @@ Artifact entry 只拥有具体产物的构建配置、SDK/platform startup、App
 Project group 中的固件入口目录：
 
 ```text
-projects/<group>/targets/<artifact-rule>/<app>[/<variant>]/
+projects/<group>/targets/<app>/<manufacturer>/<board>/
 ```
 
-例如 H2Loader 的 Loader image main 位于 `projects/h2loader/targets/h2loader_tar_zlib/loader/<board>/`，由 H2Loader 安装的 App image main 位于真实 App owner 的 `projects/<owner>/targets/h2loader_tar_zlib/<app>/<board>/`。
+例如 H2Loader 的 Loader image main 位于 `projects/h2loader/targets/loader/<manufacturer>/<board>/`，由 H2Loader 安装的 App image main 位于真实 App owner 的 `projects/<owner>/targets/<app>/<manufacturer>/<board>/`。
 
 ESP app 的入口代码位于 `main/`，固件项目目录包含 `CMakeLists.txt` 和 `sdkconfig.defaults`。BK app 按 AP/CP 分别使用 `ap/` 和 `cp/` 入口，并在同一个 app 固件项目目录中提供 project config、partition 和其他构建配置。
 
@@ -150,7 +156,7 @@ BSP 需要在物理 board 下面继续按 chip 或 target 拆分，因为同一�
 代码目录：
 
 ```text
-boards/<board>/<chip-or-target>/
+boards/<company>/<board>/<chip-or-target>/
   include/    # BSP public API
   src/        # BSP private implementation
 ```

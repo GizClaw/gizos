@@ -24,7 +24,7 @@ H2LOADER_WIFI_CREDENTIALS='{"ssid":"<ssid>","password":"<password>"}' \
   --action_env=H2LOADER_WIFI_CREDENTIALS \
   --define=H2_WEBRTC_PERF_ENDPOINT=http://192.168.1.7:18080 \
   --define=H2_WEBRTC_PERF_STUN_URL=stun:192.168.1.7:3478 \
-  //projects/e2e/targets/h2loader_tar_zlib/webrtc-performance/devkit:package
+  //projects/e2e/targets/webrtc-performance/espressif/esp32s3_devkitc_1:package
 ```
 
 设备已有 H2Loader 且 command transport 可通信时，必须按标准 `status -> send -> reboot upgrade -> status` 流程安装，不能底层 erase 或 flash。有效结果必须包含 exact package checksum、`devkit/esp32s3` identity、LAN endpoint、selected UDP ICE pair、双向 exact 10 MiB、完整 performance summary 和三类 heap 的 KiB checkpoint。只有 firmware build 或 package Stage 不能算真实设备通过。

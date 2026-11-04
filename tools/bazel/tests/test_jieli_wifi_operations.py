@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class WifiOperationsTest(unittest.TestCase):
     def test_reentry_and_failure_release(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c").read_text()
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c").read_text()
         begin = source.index("static unsigned wifi_operation_busy;")
         guard = source[begin:source.index("static int sta_connect_and_save(", begin)]
         state = source[re.search(r"\benum\s*\{\s*SCAN_IDLE\b", source).start():

@@ -3,7 +3,7 @@
 ## 存储与启动
 
 全部存储位于板载 32 MiB NOR Flash；H2Loader 不依赖 SD 卡。
-权威布局为 `boards/waveshare_esp32s3_touch_amoled_1_75c/esp32s3/layouts/h2loader/partition.csv`。
+权威布局为 `boards/waveshare/esp32s3_touch_amoled_1_75c/esp32s3/layouts/h2loader/partition.csv`。
 
 | 物理分区 | 容量 / 起点 | 用途 |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ PSRAM XIP、Wi-Fi、NimBLE extended advertising、USB Serial/JTAG console
 
 ```sh
 bazel build --config=esp32s3 \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/waveshare_esp32s3_touch_amoled_1_75c:package
+  //projects/h2loader/targets/loader/waveshare/esp32s3_touch_amoled_1_75c:package
 ```
 
 产物使用完整 board identity `waveshare_esp32s3_touch_amoled_1_75c` 和

@@ -551,6 +551,7 @@ def resolve_native_component_sources(
     definitions: list[str],
 ) -> dict[tuple[str, str], list[Path]]:
     components: dict[tuple[str, str], list[Path]] = {}
+    owners: dict[tuple[str, Path], str] = {}
     for definition in definitions:
         execution_unit, component_name, value = parse_native_key(
             definition, "native component source"
@@ -562,6 +563,14 @@ def resolve_native_component_sources(
             source_root / relative,
             f"native component {execution_unit}:{component_name} source",
         )
+        owner_key = (execution_unit, source)
+        previous_owner = owners.get(owner_key)
+        if previous_owner is not None and previous_owner != component_name:
+            raise RunnerError(
+                f"native source has multiple owners: {source}: "
+                f"{execution_unit}:{previous_owner}, {execution_unit}:{component_name}"
+            )
+        owners[owner_key] = component_name
         sources = components.setdefault((execution_unit, component_name), [])
         if source not in sources:
             sources.append(source)
@@ -649,14 +658,15 @@ def resolve_prebuilt_component_includes(
     source_root: Path,
     values: list[str],
     components: dict[str, Path],
+    generated_components: list[str] | tuple[str, ...] = (),
 ) -> dict[str, list[Path]]:
-    includes = {name: [] for name in components}
+    includes = {name: [] for name in set(components) | set(generated_components)}
     for value in values:
         component_name, separator, raw_path = value.partition("=")
         relative_path = Path(raw_path)
         if (
             not separator
-            or component_name not in components
+            or component_name not in includes
             or not raw_path
             or relative_path.is_absolute()
             or ".." in relative_path.parts
@@ -674,18 +684,24 @@ def render_prebuilt_component(
     component_name: str,
     includes: list[Path],
     archive_helper: Path,
+    sources: list[Path] | tuple[Path, ...] = (),
+    *,
+    import_archive: bool = True,
 ) -> str:
     lines = ["armino_component_register("]
+    if sources:
+        lines.append("  SRCS")
+        lines.extend(f'    "{source.as_posix()}"' for source in sorted(sources))
     if includes:
         lines.append("  INCLUDE_DIRS")
         lines.extend(f'    "{include.as_posix()}"' for include in includes)
-    lines.extend([
-        ")",
-        "",
-        f'include("{archive_helper.as_posix()}")',
-        f"h2_bk_import_bazel_archive({component_name} H2_BAZEL_PREBUILT_{component_name.upper()})",
-        "",
-    ])
+    lines.extend([")", ""])
+    if import_archive:
+        lines.extend([
+            f'include("{archive_helper.as_posix()}")',
+            f"h2_bk_import_bazel_archive({component_name} H2_BAZEL_PREBUILT_{component_name.upper()})",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -725,6 +741,7 @@ def run(arguments: argparse.Namespace) -> None:
         source_root,
         arguments.prebuilt_component_include,
         prebuilt_components,
+        arguments.generate_prebuilt_component,
     )
     project_file = Path(arguments.project)
     source_project = resolve_project(source_root, project_file, arguments.target)
@@ -744,12 +761,15 @@ def run(arguments: argparse.Namespace) -> None:
         source_root,
         arguments.native_component_source,
     )
+    declared_components = set(native_components) | {
+        ("ap", name) for name in arguments.generate_prebuilt_component
+    }
     for key in sorted(
         set(native_component_files)
         | set(native_component_includes)
         | set(native_component_sources)
     ):
-        if key not in native_components:
+        if key not in declared_components:
             raise RunnerError(
                 "BK7258 native component input has no component descriptor: "
                 f"{key[0]}:{key[1]}"
@@ -846,12 +866,15 @@ def run(arguments: argparse.Namespace) -> None:
             GIZOS_ROOT
             / "native_component_src/bk7258/ap/cmake/h2_bazel_archive.cmake"
         )
-        if arguments.generate_prebuilt_component:
+        if any(name in prebuilt_components for name in arguments.generate_prebuilt_component):
             archive_helper = required_file(archive_helper, "BK7258 Bazel archive helper")
         for component_name in sorted(arguments.generate_prebuilt_component):
-            if component_name not in prebuilt_components:
-                raise RunnerError(f"unknown generated BK7258 prebuilt component: {component_name}")
             key = ("ap", component_name)
+            if not SAFE_COMPONENT_NAME.fullmatch(component_name) or key in staged_components:
+                raise RunnerError(f"invalid or duplicate generated BK7258 component: {component_name}")
+            sources = native_component_sources.get(key, [])
+            if component_name not in prebuilt_components and not sources:
+                raise RunnerError(f"unknown generated BK7258 prebuilt component: {component_name}")
             if key in native_components:
                 raise RunnerError(
                     f"BK7258 component ap:{component_name} is both native and prebuilt"
@@ -863,10 +886,13 @@ def run(arguments: argparse.Namespace) -> None:
                     component_name,
                     prebuilt_component_includes[component_name],
                     archive_helper,
+                    sources,
+                    import_archive=component_name in prebuilt_components,
                 ),
                 encoding="utf-8",
             )
             staged_components[key] = generated
+            native_component_includes[key] = prebuilt_component_includes[component_name]
         for key, directory in sorted(native_components.items()):
             execution_unit, component_name = key
             try:
@@ -904,7 +930,7 @@ def run(arguments: argparse.Namespace) -> None:
                 except ValueError:
                     manifest_lines.append(f'  "{directory.as_posix()}"')
             manifest_lines.append(")")
-        for (execution_unit, component_name), _directory in sorted(native_components.items()):
+        for execution_unit, component_name in sorted(staged_components):
             variable = f"H2_BAZEL_COMPONENT_SRCS_{execution_unit}_{component_name}".upper()
             manifest_lines.append(f"set({variable}")
             for source in sorted(native_component_sources.get((execution_unit, component_name), [])):

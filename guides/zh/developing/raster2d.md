@@ -23,11 +23,9 @@ bazel test //libs/raster2d:all
 bazel test //libs/lua:all
 bazel run -c opt --copt=-UNDEBUG //libs/raster2d:benchmark_raster2d
 bazel run -c opt --copt=-UNDEBUG //libs/lua:lua_test -- --raster-benchmark
-bazel test //projects/example/targets/pkg_tar/raster2d:browser_test
-bazel run //projects/example/targets/pkg_tar/raster2d:serve
 ```
 
-独立 C/WASM 示例显示两套颜色的端点、中间值、裁剪与顺序覆盖；它不加载 Lua。C 单测用独立像素 oracle 检查输出和 guard，并穷举 R5/G6/B5 通道对及进度验证插值。Lua 测试使用真实 Host，验证错误、背景损伤、OOM 与成功热路径零分配。
+C unit tests use an independent pixel oracle to check output and guards, and exhaustively validate interpolation across R5/G6/B5 channel pairs and progress values. Lua tests use the real Host to verify errors, background damage, OOM and zero allocation on successful hot paths.
 
 基准使用独立生成的通用图案，主 workload 为 240×240、1536 个不重叠矩形与共享几何的三套 palette；更小/更大批次以及裁剪重叠场景用于观察规模变化。纯 C benchmark 单独报告 palette 与 replay，Lua harness 对比逐块 fill_rect、旧 commands 与新 replay，分开统计初始化、palette、填充及损伤、恢复和提交。记录 warm-up、样本数、p50/p95、内存、调用与分配，不把初始化或首个缓存建立算作稳态分配。
 

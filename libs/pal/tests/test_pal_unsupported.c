@@ -107,7 +107,158 @@ static void test_firmware_info_contract(void) {
   assert(firmware_info.version[0] == '\0');
 }
 
+static h2_pal_result_t fixture_device_identity_get(
+    void* user, h2_pal_device_identity_t* out_identity) {
+  *out_identity = *(const h2_pal_device_identity_t*)user;
+  return out_identity->bytes[0] == 0xffu ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+
+static h2_pal_result_t fixture_mem_get_stats(void* user,
+                                             h2_pal_mem_region_t region,
+                                             h2_pal_mem_stats_t* out_stats) {
+  (void)user;
+  out_stats->total_bytes = 1024u;
+  out_stats->free_bytes = 512u;
+  out_stats->minimum_free_bytes = 128u;
+  out_stats->largest_free_block_bytes = 256u;
+  return region == H2_PAL_MEM_REGION_EXTERNAL ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+
+static void test_identity_and_memory_contracts(void) {
+  static const h2_pal_device_identity_vtable_t identity_vtable = {
+      .get = fixture_device_identity_get,
+  };
+  h2_pal_device_identity_t stored = {.bytes = {1, 2, 3, 4, 5, 6}, .size = 6u};
+  const h2_pal_device_identity_api_t identity_api = {
+      .user = &stored, .vtable = &identity_vtable};
+  h2_pal_device_identity_t identity;
+  const h2_pal_device_identity_t empty_identity = {0};
+  assert(h2_pal_device_identity_get(&identity_api, &identity) == H2_PAL_OK);
+  stored.bytes[1] = 9u;
+  assert(identity.size == 6u && identity.bytes[1] == 2u);
+  stored.bytes[0] = 0xffu;
+  assert(h2_pal_device_identity_get(&identity_api, &identity) == H2_PAL_ERR_IO);
+  assert(memcmp(&identity, &empty_identity, sizeof(identity)) == 0);
+  stored.bytes[0] = 1u;
+  stored.size = H2_PAL_DEVICE_IDENTITY_MAX + 1u;
+  assert(h2_pal_device_identity_get(&identity_api, &identity) ==
+         H2_PAL_ERR_TRUNCATED);
+  assert(identity.size == 0u);
+  stored.size = 0u;
+  assert(h2_pal_device_identity_get(&identity_api, &identity) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(h2_pal_device_identity_get(NULL, &identity) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_device_identity_get(&identity_api, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_device_identity_get(h2_pal_unsupported_device_identity_api(),
+                                    &identity) == H2_PAL_ERR_UNSUPPORTED);
+
+  static const h2_pal_mem_vtable_t mem_vtable = {
+      .get_stats = fixture_mem_get_stats,
+  };
+  const h2_pal_mem_api_t mem_api = {.vtable = &mem_vtable};
+  h2_pal_mem_stats_t stats;
+  const h2_pal_mem_stats_t empty_stats = {0};
+  assert(h2_pal_mem_get_stats(&mem_api, H2_PAL_MEM_REGION_INTERNAL, &stats) ==
+         H2_PAL_OK);
+  assert(stats.total_bytes == 1024u && stats.free_bytes == 512u &&
+         stats.minimum_free_bytes == 128u &&
+         stats.largest_free_block_bytes == 256u);
+  assert(h2_pal_mem_get_stats(&mem_api, H2_PAL_MEM_REGION_EXTERNAL, &stats) ==
+         H2_PAL_ERR_IO);
+  assert(memcmp(&stats, &empty_stats, sizeof(stats)) == 0);
+  assert(h2_pal_mem_get_stats(&mem_api, (h2_pal_mem_region_t)3, &stats) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_mem_get_stats(&s_allocator, H2_PAL_MEM_REGION_INTERNAL,
+                              &stats) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_mem_get_stats(h2_pal_unsupported_mem_api(),
+                              H2_PAL_MEM_REGION_INTERNAL,
+                              &stats) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_mem_get_stats(&mem_api, H2_PAL_MEM_REGION_INTERNAL, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+}
+
+static h2_pal_result_t fixture_prepare_boot(
+    void* user, const h2_pal_power_boot_request_t* request,
+    h2_pal_power_native_evidence_t* out_evidence) {
+  (void)request;
+  *out_evidence = *(const h2_pal_power_native_evidence_t*)user;
+  return H2_PAL_OK;
+}
+
+static void test_image_and_boot_contracts(void) {
+  const h2_pal_image_api_t* image = h2_pal_unsupported_image_api();
+  CHECK_UNSUPPORTED_API(image);
+  h2_pal_image_info_t info;
+  memset(&info, 0x5a, sizeof(info));
+  assert(h2_pal_image_get_info(image, 1u, H2_PAL_IMAGE_VIEW_STORED, &info) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(info.capacity == 0u && info.image_size == 0u && info.flags == 0u);
+  assert(h2_pal_image_get_info(image, 1u, (h2_pal_image_view_t)2, &info) ==
+         H2_PAL_ERR_INVALID_ARG);
+  h2_pal_image_write_request_t write = {1u, 1u, 3u};
+  assert(h2_pal_image_begin(image, &write) == H2_PAL_ERR_UNSUPPORTED);
+  write.image_size = 0u;
+  assert(h2_pal_image_begin(image, &write) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_image_read(image, 1u, H2_PAL_IMAGE_VIEW_STORED, UINT64_MAX,
+                           &write, 1u) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_image_write(image, NULL, 1u) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_image_finish(image) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_image_abort(image) == H2_PAL_ERR_UNSUPPORTED);
+
+  h2_pal_power_native_evidence_t evidence;
+  const h2_pal_power_native_evidence_t empty_evidence = {0};
+  h2_pal_power_boot_request_t request = {2u, H2_PAL_POWER_BOOT_POLICY_TRIAL};
+  memset(&evidence, 0x5a, sizeof(evidence));
+  assert(h2_pal_power_prepare_next_boot_partition(
+             h2_pal_unsupported_power_api(), &request, &evidence) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(memcmp(&evidence, &empty_evidence, sizeof(evidence)) == 0);
+  static const h2_pal_power_vtable_t vtable = {.prepare_next_boot_partition =
+                                                   fixture_prepare_boot};
+  h2_pal_power_native_evidence_t stored = {
+      .format = 1u, .size = 40u, .bytes = {1u, 2u, 3u}};
+  const h2_pal_power_api_t power = {.user = &stored, .vtable = &vtable};
+  assert(h2_pal_power_prepare_next_boot_partition(&power, &request,
+                                                  &evidence) == H2_PAL_OK);
+  stored.bytes[0] = 9u;
+  assert(evidence.bytes[0] == 1u);
+  stored.size = H2_PAL_POWER_NATIVE_EVIDENCE_MAX + 1u;
+  assert(h2_pal_power_prepare_next_boot_partition(
+             &power, &request, &evidence) == H2_PAL_ERR_FORMAT);
+  assert(memcmp(&evidence, &empty_evidence, sizeof(evidence)) == 0);
+  stored.size = 0u;
+  assert(h2_pal_power_prepare_next_boot_partition(
+             &power, &request, &evidence) == H2_PAL_ERR_FORMAT);
+  stored.format = 0u;
+  assert(h2_pal_power_prepare_next_boot_partition(&power, &request,
+                                                  &evidence) == H2_PAL_OK);
+  request.policy = (h2_pal_power_boot_policy_t)99;
+  assert(h2_pal_power_prepare_next_boot_partition(
+             &power, &request, &evidence) == H2_PAL_ERR_INVALID_ARG);
+  h2_pal_power_image_state_t state;
+  assert(h2_pal_power_get_image_state(h2_pal_unsupported_power_api(), 1u,
+                                      &state) == H2_PAL_ERR_UNSUPPORTED);
+  assert(state.state == H2_PAL_POWER_IMAGE_STATE_UNKNOWN && state.flags == 0u);
+  h2_pal_power_image_confirmation_t confirmation;
+  stored.size = H2_PAL_POWER_NATIVE_EVIDENCE_MAX + 1u;
+  assert(h2_pal_power_confirm_running_image(&power, &stored, &confirmation) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(confirmation.was_pending == 0u && confirmation.partition_id == 0u);
+  assert(h2_pal_power_confirm_running_image(h2_pal_unsupported_power_api(),
+                                            NULL, &confirmation) ==
+         H2_PAL_ERR_UNSUPPORTED);
+}
+
 int main(void) {
+  test_identity_and_memory_contracts();
+  test_image_and_boot_contracts();
+  assert(h2_pal_fs_prepare(h2_pal_unsupported_fs_api(), "/data") ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_fs_prepare(h2_pal_unsupported_fs_api(), "") ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_power_feed_watchdog(h2_pal_unsupported_power_api()) ==
+         H2_PAL_ERR_UNSUPPORTED);
   static const h2_pal_firmware_info_vtable_t partial_vtable = {0};
   const h2_pal_firmware_info_api_t missing_vtable_api = {
       .user = NULL,
@@ -235,6 +386,20 @@ int main(void) {
   CHECK_UNSUPPORTED_API(task);
   CHECK_UNSUPPORTED_API(time);
   CHECK_UNSUPPORTED_API(timer);
+  CHECK_UNSUPPORTED_API(io_stream);
+  const h2_pal_io_stream_api_t* stream = h2_pal_unsupported_io_stream_api();
+  char stream_byte = 0;
+  size_t stream_count = 99u;
+  assert(h2_pal_io_stream_start(stream) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_io_stream_read(stream, &stream_byte, 1u, &stream_count, 0u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(stream_count == 0u);
+  stream_count = 99u;
+  assert(h2_pal_io_stream_write(stream, &stream_byte, 1u, &stream_count, 0u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(stream_count == 0u);
+  assert(h2_pal_io_stream_flush(stream) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_io_stream_release(stream) == H2_PAL_ERR_UNSUPPORTED);
   CHECK_UNSUPPORTED_API(uart_io_stream);
   CHECK_UNSUPPORTED_API(usb_jtag_io_stream);
   CHECK_UNSUPPORTED_API(video_decoder);

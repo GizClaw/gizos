@@ -9,7 +9,7 @@ H2Loader 使用说明的两个入口是正式维护的工厂 Batch Loader 和 re
 在仓库中生成 package、自动化可靠串口操作或运行诊断命令时使用：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- -h
+gizloader -h
 ```
 
 完整命令见 [H2Loader CLI](./cli)。
@@ -47,7 +47,7 @@ npm 发布后可以通过 `bunx @gizclaw/gizos` 运行同一组命令。未安�
 
 不再加载 `.env/<os-user>`；Wi-Fi credential 和其他 secret 只能放在 `~/.config/h2loader/env`。
 
-`.env/users/<os-user>.md` 是供用户和 Agent 阅读的本机 operator context，不是 shell env，`make` 不会 source 它。直接执行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader --` 也不会主动加载 operation env，只使用当前进程已经继承的环境。
+`.env/users/<os-user>.md` 是供用户和 Agent 阅读的本机 operator context，不是 shell env，`make` 不会 source 它。直接执行 `gizloader` 也不会主动加载 operation env，只使用当前进程已经继承的环境。
 
 ## Repository maintenance
 

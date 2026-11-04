@@ -1,12 +1,12 @@
 # ESP-Mosaico MFG
 
-入口 `projects/mfg/apps/esp_mosaico/` 只组合板级 Runtime/USB、声明式 profile、 共享 MFG 和现有 Loader。包为 `board=esp_mosaico`、`target=esp32s31`、 `image=mfg`、`role=h2loader`；与[普通 Loader](./h2loader)互相替换。
+入口 `projects/mfg/targets/mfg/espressif/mosaico/` 只组合板级 Runtime/USB、声明式 profile、 共享 MFG 和现有 Loader。包为 `board=esp_mosaico`、`target=esp32s31`、 `image=mfg`、`role=h2loader`；与[普通 Loader](./h2loader)互相替换。
 
 ```sh
 bazel build --config=esp32s31 \
-  //projects/mfg/apps/esp_mosaico:package \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/esp_mosaico:package
-bazel build //projects/h2loader/targets/cc_binary/cli:h2loader
+  //projects/mfg/targets/mfg/espressif/mosaico:package \
+  //projects/h2loader/targets/loader/espressif/mosaico:package
+bazel build //tools/gizloader/native:gizloader-cli
 ```
 
 MFG 单独启用 `H2_MOSAICO_AUDIO_AEC=ON`，并以 image-local `CONFIG_VFS_MAX_COUNT=16` 容纳 Loader 文件系统、CDC 和 Camera。 使用现有 16 MiB 布局；两个准确管理镜像都须验证不超过 3 MiB 容量。

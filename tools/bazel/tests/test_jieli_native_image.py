@@ -43,7 +43,7 @@ int main(void) {
             source.write_text(program)
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Werror", "-I",
-                            str(ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"),
+                            str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
                             str(source), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
 

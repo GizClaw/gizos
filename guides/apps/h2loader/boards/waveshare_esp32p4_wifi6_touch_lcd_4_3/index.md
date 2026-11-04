@@ -6,11 +6,6 @@
 
 - [H2Loader](./h2loader)
 - [Board MFG](./mfg)
-- [Display](./display)
-- [Audio System](./audio_system)
-- [MP4 Player](./mp4_player)
-- [MP4 Player Small](./mp4_player_small)
-- [Crash Before Confirm](./crash_before_confirm)
 
 ## P4 transport
 

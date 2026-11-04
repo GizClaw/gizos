@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class BleSnapshotsTest(unittest.TestCase):
     def test_snapshots(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
         trace = source[source.index('typedef struct h2_jieli_att_trace'):re.search(r'\bstatic\s+int\s+h2_unregister_gatt\s*\(\s*void\s*\*\s*user\s*\)\s*;', source).start()]
         getter = source[source.index('static int h2_exchange_mtu('):source.index('/* The central owns PHY selection.')]
         begin = source.index('/* Legacy connectable advertising')

@@ -40,7 +40,7 @@ cc_library(
         ":config",
         ":scan_protocol",
         ":tasks",
-        "//libs/h2loader_host:ble_client",
+        "//libs/h2loader/host:ble_client",
         "//libs/runtime",
     ],
 )

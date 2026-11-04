@@ -924,6 +924,32 @@ cc_test(
     ],
 )
 
+[
+    cc_test(
+        name = "device_identity_" + target + "_test",
+        srcs = [
+            "include/h2_esp_platform_core.h",
+            "src/h2_esp_platform_firmware_info.c",
+            "tests/test_h2_esp_device_identity.c",
+        ] + glob(["tests/sdk/**/*.h"]),
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/sdk",
+        ],
+        local_defines = ["CONFIG_IDF_TARGET_" + target.upper() + "=1"],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+        deps = ["//libs/pal"],
+    )
+    for target in [
+        "esp32s3",
+        "esp32s31",
+        "esp32c5",
+        "esp32p4",
+    ]
+]
+
 cc_test(
     name = "memory_contract_test",
     srcs = [
@@ -1053,5 +1079,103 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "image_lifecycle_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "include/h2_esp_platform_image.h",
+        "include/h2_esp_platform_power_wake.h",
+        "include/h2_esp_platform_safe_call.h",
+        "src/h2_esp_platform_image.c",
+        "src/h2_esp_platform_power.c",
+        "src/h2_esp_platform_pref_migration.h",
+        "src/h2_esp_platform_pref_store.h",
+        "tests/test_h2_esp_platform_image.c",
+    ] + glob([
+        "tests/image_sdk/**/*.h",
+        "tests/sdk/freertos/*.h",
+    ]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/image_sdk",
+        "tests/sdk",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+[
+    cc_test(
+        name = "io_stream_" + name + "_test",
+        srcs = [
+            "include/h2_esp_platform_core.h",
+            "src/h2_esp_platform_io_stream.c",
+            "tests/sdk/sdkconfig.h",
+            "tests/test_h2_esp_io_stream_selection.c",
+        ],
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/sdk",
+        ],
+        local_defines = [
+            "CONFIG_ESP_CONSOLE_UART=" + uart,
+            "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=" + usb,
+            "CONFIG_ESP_CONSOLE_UART_BAUDRATE=460800",
+        ],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+        deps = ["//libs/pal:unsupported"],
+    )
+    for name, uart, usb in [
+        ("uart", "1", "0"),
+        ("usb", "0", "1"),
+        ("usb_preferred", "1", "1"),
+        ("unsupported", "0", "0"),
+    ]
+]
+
+cc_test(
+    name = "console_stream_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_uart_io_stream.c",
+        "src/h2_esp_platform_usb_jtag_io_stream.c",
+        "tests/test_h2_esp_console_stream.c",
+    ] + glob([
+        "tests/stream_sdk/**/*.h",
+        "tests/image_sdk/**/*.h",
+        "tests/sdk/freertos/*.h",
+    ]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-DCONFIG_ESP_CONSOLE_UART=1",
+        "-DCONFIG_ESP_CONSOLE_UART_NUM=0",
+        "-DCONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=1",
+        "-DconfigTICK_RATE_HZ=100u",
+    ],
+    includes = [
+        "include",
+        "tests/image_sdk",
+        "tests/sdk",
+        "tests/stream_sdk",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "test_platform_headers",
+    testonly = True,
+    hdrs = [
+        "include/h2_esp_platform_core.h",
+        "include/h2_esp_platform_image.h",
+    ],
+    includes = ["include"],
     deps = ["//libs/pal"],
 )

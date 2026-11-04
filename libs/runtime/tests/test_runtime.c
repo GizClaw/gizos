@@ -914,6 +914,118 @@ static void test_runtime_firmware_info_provider(void) {
   h2_runtime_deinit(runtime);
 }
 
+static h2_pal_result_t test_device_identity_get(
+    void* user, h2_pal_device_identity_t* out_identity) {
+  memcpy(out_identity->bytes, user, 6u);
+  out_identity->size = 6u;
+  return H2_PAL_OK;
+}
+
+static void test_runtime_device_identity_provider(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_pal_device_identity_t identity;
+  assert(runtime->device_identity != NULL && runtime->image != NULL);
+  h2_pal_image_info_t image_info;
+  assert(h2_pal_image_get_info(runtime->image, 1u, H2_PAL_IMAGE_VIEW_STORED,
+                               &image_info) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_device_identity_get(runtime->device_identity, &identity) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_deinit(runtime);
+
+  static const h2_pal_device_identity_vtable_t vtable = {
+      .get = test_device_identity_get,
+  };
+  uint8_t bytes[6] = {1u, 2u, 3u, 4u, 5u, 6u};
+  h2_pal_device_identity_api_t api = {.user = bytes, .vtable = &vtable};
+  config.device_identity = &api;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->device_identity != &api);
+  api.user = NULL;
+  api.vtable = NULL;
+  assert(h2_pal_device_identity_get(runtime->device_identity, &identity) ==
+         H2_PAL_OK);
+  assert(identity.size == sizeof(bytes));
+  assert(memcmp(identity.bytes, bytes, sizeof(bytes)) == 0);
+  h2_runtime_deinit(runtime);
+}
+
+static h2_pal_result_t test_runtime_image_get_info(
+    void* user, uint32_t partition_id, h2_pal_image_view_t view,
+    h2_pal_image_info_t* out_info) {
+  assert(partition_id == 1u && view == H2_PAL_IMAGE_VIEW_STORED);
+  out_info->capacity = *(const uint64_t*)user;
+  out_info->flags = H2_PAL_IMAGE_FLAG_READABLE;
+  return H2_PAL_OK;
+}
+
+static void test_runtime_image_provider(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  uint64_t capacity = 64u;
+  static const h2_pal_image_vtable_t vtable = {.get_info =
+                                                   test_runtime_image_get_info};
+  h2_pal_image_api_t api = {.user = &capacity, .vtable = &vtable};
+  config.image = &api;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->image != &api);
+  api.user = NULL;
+  api.vtable = NULL;
+  h2_pal_image_info_t info;
+  assert(h2_pal_image_get_info(runtime->image, 1u, H2_PAL_IMAGE_VIEW_STORED,
+                               &info) == H2_PAL_OK);
+  assert(info.capacity == capacity && info.image_size == 0u);
+  h2_runtime_deinit(runtime);
+}
+
+static h2_pal_result_t test_io_lifecycle(void* user) {
+  ++*(unsigned*)user;
+  return H2_PAL_OK;
+}
+
+static void test_runtime_optional_stream_and_memory(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->mem_external == NULL);
+  assert(runtime->io_stream != h2_pal_unsupported_io_stream_api());
+  assert(runtime->io_stream->vtable ==
+         h2_pal_unsupported_io_stream_api()->vtable);
+  assert(h2_pal_io_stream_start(runtime->io_stream) == H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_deinit(runtime);
+
+  unsigned calls = 0;
+  static const h2_pal_io_stream_vtable_t vtable = {
+      .start = test_io_lifecycle, .release = test_io_lifecycle};
+  h2_pal_io_stream_api_t stream = {.user = &calls, .vtable = &vtable};
+  h2_pal_mem_api_t external = *h2_pal_unsupported_mem_api();
+  external.user = &calls;
+  config.io_stream = &stream;
+  config.mem_external = &external;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->io_stream != &stream && runtime->mem_external != &external);
+  assert(runtime->mem->user == env.mem.user);
+  assert(runtime->mem->vtable == env.mem.vtable);
+  stream.user = NULL;
+  stream.vtable = NULL;
+  external.user = NULL;
+  external.vtable = NULL;
+  assert(runtime->mem_external->user == &calls);
+  assert(runtime->mem_external->vtable == h2_pal_unsupported_mem_api()->vtable);
+  assert(calls == 0u); /* Init does not start the physical provider. */
+  assert(h2_pal_io_stream_start(runtime->io_stream) == H2_PAL_OK);
+  assert(calls == 1u);
+  h2_runtime_deinit(runtime);
+  assert(calls == 1u); /* Deinit never releases a borrowed physical console. */
+}
+
 static void test_runtime_capabilities_are_bound_at_init(void) {
   test_runtime_env_t env;
   test_env_init(&env);
@@ -5373,6 +5485,9 @@ int main(void) {
   test_wifi_best_saved();
   test_time_adjusted_event();
   test_runtime_firmware_info_provider();
+  test_runtime_device_identity_provider();
+  test_runtime_image_provider();
+  test_runtime_optional_stream_and_memory();
   test_runtime_capabilities_are_bound_at_init();
   test_runtime_rejects_incomplete_video_decoder();
   test_runtime_rejects_missing_wifi_csi();

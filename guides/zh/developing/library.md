@@ -27,7 +27,7 @@ header-only `//libs/pal:pal`；直接调用 canonical unsupported accessor 的 t
 `//libs/pal:unsupported`。Unsupported source 按 capability 拆成独立 object，最终静态
 链接只抽取真实引用的 capability，不能用 `alwayslink` 或 whole-archive 保留全集。
 
-Library family 可以增加一层只用于分类的 container。例如 `libs/crypto/` 按算法组织密码学能力，`libs/crypto/sha256/` 是独立 library；`projects/pixa_games/libs` 按 game 组织 reusable library。分类 container 本身不是 library，不能直接放 `include/`、`src/` 或 shared implementation；每个子 library 遵守上述标准结构。Family 可以在具名的 `libs/cmake/` package 中提供跨 target build system 复用的 CMake API；该 build library 只拥有 family source inventory、include 和 portable compile contract，不能包含 board wiring、image policy、target SDK glue 或 platform implementation。PIXA Games 的 Host 只注入 shared Player PIXA，game-owned legacy UI 贴图转换成 `src/` 中的 ARGB4444 代码数据；具体边界见 [PIXA Games](/apps/pixa_games)。
+A library family may add a container used only for classification. For example, `libs/crypto/` groups algorithms and `libs/crypto/sha256/` is an independent library. The container itself has no `include/`, `src/` or shared implementation; each child follows the standard library structure. A named `libs/cmake/` package may provide a portable CMake API for source inventory, includes and compile contracts. Board wiring, image policy, SDK glue and platform implementations remain with their respective owners.
 
 ## 依赖边界
 
@@ -42,7 +42,7 @@ Library 可以依赖：
 Library 不能直接依赖：
 
 - ESP-IDF、Armino、FreeRTOS 或其他 target SDK。
-- `boards/<board>` BSP。
+- `boards/<company>/<board>` BSP。
 - `libs/pal/providers/<platform>` 或 `native_component_src/<sdk-family>` private header。
 - Project launcher 或具体 firmware image。
 - Board partition、GPIO wiring、mount policy、boot policy 或 app policy。
@@ -136,7 +136,6 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`drivers`](./drivers.md)：modem、motion、NFC 等 portable driver family。
   NFC 子目录中的 `type2` protocol engine 与 `fm17660k` controller driver 分别拥有协议和设备状态机；board wiring 仍由 component/BSP 注入。
 - [`game_runtime`](./game_runtime.md)：跨平台 game runtime。
-- [`pixa_games`](/apps/pixa_games)：可以被多个 project 引用的 PIXA game library family。
 - [`gizclaw`](./gizclaw.md)：GizClaw client、config、公共类型和复用异步 API-key state 的 [BLE 绑定窗口](./gizclaw_ble_binding.md)。
 - [`lua/apps`](./lua.md#lua-app-目录与流式安装)：预装与安装应用的统一目录、增量包校验和原子安装；不依赖 GizClaw 或产品 UI。
 - [`h2peer`](./h2peer.md)：由 GizOS 维护、通过 PAL 注入平台能力的 portable WebRTC core。

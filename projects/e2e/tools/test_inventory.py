@@ -23,7 +23,7 @@ class InventoryTest(unittest.TestCase):
             for name in ("pal-core", "peripherals", "perpheral", "chip", "loader", "__pycache__"):
                 (apps / name).mkdir(parents=True)
             (root / "projects/h2loader/targets/loader").mkdir(parents=True)
-            (root / "boards/esp32s31_chip/tests").mkdir(parents=True)
+            (root / "boards/espressif/mosaico/tests").mkdir(parents=True)
             self.assertEqual(discover_apps(root), ["pal-core"])
 
     def test_does_not_report_success_for_a_missing_app_tree(self):

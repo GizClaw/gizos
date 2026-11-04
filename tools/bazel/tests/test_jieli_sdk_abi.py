@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_abi.ld"
+SCRIPT = ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_abi.ld"
 
 
 @unittest.skipUnless(platform.system() == "Linux", "requires the native Linux GNU linker")

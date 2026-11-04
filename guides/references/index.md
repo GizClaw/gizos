@@ -33,6 +33,6 @@
 - [Utils](./utils.md)
 - [WolfSSL](./wolfssl.md)
 
-## `projects/h2loader/libs/`
+## `libs/h2loader/`
 
 - [H2Loader](./h2loader.md)

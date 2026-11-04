@@ -54,5 +54,4 @@ span 都可以用 `int` 表示，超出范围返回 `H2_PAL_ERR_INVALID_ARG` 而
 bazel test //libs/qrcode:all
 ```
 
-`qrcode` Example 消费该 library，Desktop 与 AMOLED 入口见
-[Examples](/apps/example) 与 [AMOLED QR Code](/apps/h2loader/boards/amoled/qrcode)。
+Consumers own Display PAL submission and the resulting device or UI acceptance.

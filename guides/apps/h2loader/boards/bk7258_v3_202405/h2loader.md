@@ -7,8 +7,7 @@ SD 的 FatFs 实例和 sector window 使用 64-byte 对齐的固定 `.psram.bss`
 ```sh
 bazel build --config=bk7258 \
   --//tools/bazel:firmware_version=<version> \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/bk7258_v3_202405:package \
-  //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/bk7258_v3_202405:package
+  //projects/h2loader/targets/loader/beken/bk7258_v3_202405:package
 ```
 
 该命令先通过内部 `:firmware` 构建 AP、CP、combined image 和 `app_ab_crc.rbl`，再通过 `:package` 生成 `update.tar.zlib`。`firmware_version` 同时注入当前固件 metadata 和 package manifest，二者不得使用不同版本。
@@ -52,9 +51,7 @@ APP 的 Loader client 必须显式传入 `app_entry_path=app/bk/app_ab_crc.rbl`�
 启动身份校验使用独立 SHA256 context，避免与已经开放的 UART/BLE 收包共用摘要状态。
 APP 确认与 Stage/reboot 命令使用同一 operation mutex；先提交运行镜像 metadata，
 再确认平台执行标记，成功后才清理匹配的已安装 Stage。
-需要耗时自检的 App 应在开放命令服务前初始化并持有 operation mutex，
-在同一启动任务完成确认后释放。`ble-broadcaster` 使用此顺序，防止启动期间
-新收到的同版本包被延后的确认误认为已安装 Stage 并清理。
+An App that performs a long self-check must acquire the operation mutex before opening its command service and release it after confirmation in the same startup task. This prevents delayed confirmation from clearing a newly received Stage as though it were the installed package.
 
 原生启动标记始终保持 A，复位总是先运行 Loader CP；Loader CP 在 `driver_init` 之后、无线与 AP 启动之前读取 `0x77f000` 的启动记录，决定是否转入 App CP 的独立 Flash 向量。记录只在发布新请求时擦除一次，其余转换都只清位：
 
@@ -85,7 +82,7 @@ BK 条件变量等待使用栈上的静态信号量，但 SDK 仍为每个信号
 
 ## 预期表现
 
-运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 后，只选择结构化 identity 为 `board=bk7258_v3_202405`、`target=bk7258`、`active_role=loader`、`transport=iostreamikcp` 的设备。APP 或 Loader 状态都可以通过 `send --file <build-dir>/update.tar.zlib` 直接发布 Stage；安装使用 `reboot upgrade`。
+运行 `gizloader scan` 后，只选择结构化 identity 为 `board=bk7258_v3_202405`、`target=bk7258`、`active_role=loader`、`transport=iostreamikcp` 的设备。APP 或 Loader 状态都可以通过 `send --file <build-dir>/update.tar.zlib` 直接发布 Stage；安装使用 `reboot upgrade`。
 
 固定布局验收需要确认：Loader 镜像为 2437120 字节，App 为 5222400 字节；UART1 安装后 App 的实际 PC 落在独立 XIP 地址，SDK native slot 仍为 A；已确认 App 在复位（包括 App 启动过程中连续复位）后由 CP 直接进入；`reboot loader`/`reboot app` 往返；确认前崩溃的 App 回到 Loader 且不再自动启动，重新安装正常 App 后恢复；正常 App 安装不覆盖 Loader。
 

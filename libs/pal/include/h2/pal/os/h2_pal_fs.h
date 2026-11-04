@@ -39,12 +39,24 @@ typedef struct h2_pal_fs_vtable {
   int (*clear)(void* user, const char* path);
   int (*remove)(void* user, const char* path);
   int (*rename)(void* user, const char* old_path, const char* new_path);
+  /** Make the backing filesystem for path available using the provider's
+   * configured mount/recovery policy. Idempotent synchronous worker call;
+   * this does not change formatting policy or clear application data. */
+  h2_pal_result_t (*prepare)(void* user, const char* path);
 } h2_pal_fs_vtable_t;
 
 typedef struct h2_pal_fs_api {
   void* user;
   const h2_pal_fs_vtable_t* vtable;
 } h2_pal_fs_api_t;
+
+static inline h2_pal_result_t h2_pal_fs_prepare(const h2_pal_fs_api_t* api,
+                                                const char* path) {
+  if (path == NULL || path[0] == '\0') return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL || api->vtable->prepare == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->prepare(api->user, path);
+}
 
 static inline int h2_pal_fs_mkdir(const h2_pal_fs_api_t* api,
                                   const char* path) {

@@ -1,6 +1,6 @@
 # AMOLED Display
 
-独立 PAL Display qualification App 为 `//projects/e2e/targets/h2loader_tar_zlib/pal-display/amoled:package`，使用本 board 的原有 H2Loader layout；只安装 App/P2，保留 Loader/P1、Stage 和 coredump 所有权。
+独立 PAL Display qualification App 为 `//projects/e2e/targets/pal-display/waveshare/esp32s3_touch_amoled_1_8:package`，使用本 board 的原有 H2Loader layout；只安装 App/P2，保留 Loader/P1、Stage 和 coredump 所有权。
 
 ## 预期表现
 

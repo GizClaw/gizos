@@ -61,8 +61,18 @@ def validate_package_manifest(item: dict[str, object]) -> None:
 
 
 RELEASE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,190}$")
-LOADER_ROOT = "projects/h2loader/targets/h2loader_zlib_tar/loader/"
-LEGACY_LOADER_ROOT = "projects/h2loader/targets/h2loader_tar_zlib/loader/"
+LOADER_ROOT = "projects/h2loader/targets/loader/"
+LOADER_ENTRIES = {
+    "amoled": LOADER_ROOT + "waveshare/esp32s3_touch_amoled_1_8",
+    "devkit": LOADER_ROOT + "espressif/esp32s3_devkitc_1",
+    "szp": LOADER_ROOT + "jlc/esp32s3_szp",
+    "bk7258_v3_202405": LOADER_ROOT + "beken/bk7258_v3_202405",
+    "jieli_ac791n_devkit": LOADER_ROOT + "jieli/jieli_ac791n_devkit",
+    "waveshare_esp32p4_wifi6_touch_lcd_4_3": LOADER_ROOT + "waveshare/esp32p4_wifi6_touch_lcd_4_3",
+    "waveshare_esp32s3_a7670e_4g": LOADER_ROOT + "waveshare/esp32s3_a7670e_4g",
+    "waveshare_esp32s3_touch_amoled_1_75c": LOADER_ROOT + "waveshare/esp32s3_touch_amoled_1_75c",
+    "esp_mosaico": LOADER_ROOT + "espressif/mosaico",
+}
 PLATFORM_TARGETS = {"esp": {"esp32s3", "esp32p4"}, "bk7258": {"bk7258"}, "jieli": {"wl82"}}
 
 
@@ -88,15 +98,14 @@ def validate_catalog(catalog: object) -> list[dict[str, object]]:
         ):
             raise ValueError("firmware catalog contains an invalid entry")
         validate_firmware_version(item.get("version"), item["entry"])
-        package_format(item)
+        package_target = "package_v2" if package_format(item) == 2 else "package"
         if item["target"] not in PLATFORM_TARGETS.get(item["platform"], set()):
             raise ValueError("firmware catalog contains an invalid entry platform/target")
-        # Only canonical Loader entries may opt in. Alternate packages and all
-        # e2e/example launchers remain diagnostic even if accidentally tagged.
+        # Only exact canonical Loader entries may opt in. Alternate packages and
+        # all diagnostic/application launchers remain excluded even if tagged.
         if (
-            "/e2e/" in f"/{item['entry']}/"
-            or item["entry"] not in (LOADER_ROOT + item["board"], LEGACY_LOADER_ROOT + item["board"])
-            or item["label"] != "//" + item["entry"] + ":package"
+            item["entry"] != LOADER_ENTRIES.get(item["board"])
+            or item["label"] != "//" + item["entry"] + ":" + package_target
             or item["image"] != "loader"
             or item["role"] != "h2loader"
         ):
@@ -164,7 +173,8 @@ def validate_index(index: object, batch: str) -> dict[str, dict[str, object]]:
             or index["firmware_count"] != len(index["firmware"])):
         raise ValueError("firmware index identity is invalid")
     firmware = index["firmware"]
-    validate_catalog([{**item, "label": "//" + str(item.get("entry")) + ":package"}
+    validate_catalog([{**item, "label": "//" + str(item.get("entry"))
+                       + (":package_v2" if package_format(item) == 2 else ":package")}
                       if isinstance(item, dict) else item for item in firmware])
     assets = {}
     for item in firmware:

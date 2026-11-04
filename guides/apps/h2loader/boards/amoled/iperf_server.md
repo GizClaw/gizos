@@ -1,6 +1,6 @@
 # AMOLED iperf Server
 
-`iperf-server` 是触屏操作的设备间吞吐测试台，portable App 位于 `projects/e2e/apps/iperf-server/app`，AMOLED H2Loader target 为 `//projects/e2e/targets/h2loader_tar_zlib/iperf-server/amoled:package`。它复用 PAL-only `libs/iperf` 的 iperf3 server；网络与测速后台任务不调用 LVGL，屏幕通过同步 snapshot 显示状态、连接数量和各地址族的累计平均吞吐。
+`iperf-server` 是触屏操作的设备间吞吐测试台，portable App 位于 `projects/e2e/apps/iperf-server/app`，AMOLED H2Loader target 为 `//projects/e2e/targets/iperf-server/waveshare/esp32s3_touch_amoled_1_8:package`。它复用 PAL-only `libs/iperf` 的 iperf3 server；网络与测速后台任务不调用 LVGL，屏幕通过同步 snapshot 显示状态、连接数量和各地址族的累计平均吞吐。
 
 ## 屏幕操作
 
@@ -29,12 +29,12 @@ AMOLED board 的 DMA option 零值沿用 64 行默认值，只有这个 App 显�
 ## 构建和运行
 
 ```sh
-bazel build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/iperf-server/amoled:package
+bazel build --config=esp32s3 //projects/e2e/targets/iperf-server/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 按 H2Loader 的定向 `status -> send -> reboot upgrade -> status` 流程安装并检查 exact image identity。Display/Touch 打开且首次 render 完成后输出 `H2_IPERF_SERVER_UI_READY` 并确认 App；确认 UI 启动不等于完成无线吞吐或物理触摸验收。
 
-设备间自动性能验收可增加 `--define=H2_IPERF_SERVER_AUTOSTART_MODE=4`、`6` 或 `46`，在真实 UI ready 后通过同一个控制器自动启动所选模式；默认 `0` 仍保持触屏选择、开机停止。这个入口不注入触摸事件，也不代替物理触摸验收。DevKit client target 为 `//projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit:package`，每次 server 换模式后 fresh boot，按本次 DHCP/SLAAC 地址族执行三轮 TCP/UDP 双向性能矩阵。
+设备间自动性能验收可增加 `--define=H2_IPERF_SERVER_AUTOSTART_MODE=4`、`6` 或 `46`，在真实 UI ready 后通过同一个控制器自动启动所选模式；默认 `0` 仍保持触屏选择、开机停止。这个入口不注入触摸事件，也不代替物理触摸验收。DevKit client target 为 `//projects/e2e/targets/iperf-client/espressif/esp32s3_devkitc_1:package`，每次 server 换模式后 fresh boot，按本次 DHCP/SLAAC 地址族执行三轮 TCP/UDP 双向性能矩阵。
 
 其他设备连接 AP 后，用 iperf3 测试；GizOS MCU 可使用 `h2_iperf_client_run()` 对屏幕地址发起同样的协议。ESP-IDF 自带 iperf2 示例不能作为该 iperf3 server 的客户端。
 

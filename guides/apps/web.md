@@ -31,22 +31,12 @@ App host 在产品 hardware hook 完成后，将 Periph API 绑定到公共 Web 
 ## Structure
 
 ```text
-projects/example/
-├── libs/web/tap-reset/            # Web presentation 与 App contract conversion
-├── libs/web/demo_board/           # 示例 web board：240×240 屏幕、left/ok/back，device 与 plain 两套外观
-├── targets/pkg_tar/lua-flappybird/ # 同一 Lua Flappy Bird App 的 Canvas archive（自带 shell）
-├── targets/pkg_tar/mp4-player/    # WebCodecs MP4 播放 archive（自带 shell）
-├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
-├── targets/pkg_tar/lua-script-input/ # Button 输入合同（demo_board plain 外观）：多源合并、blur/隐藏/结束释放
-├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
-├── targets/pkg_tar/web-board-{amoled,bk7258,szp,p4-lcd43}/ # 每块 board 的检查页；包名保持短，避免 Windows 路径超长
-├── targets/pkg_tar/lua-script-extension/ # 加 extension：capability 与 exit_requested
-└── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
-                                   # starboy、lua-cosmic-drift、audio-system：
-                                   # main.c + h2_web_app()
+projects/<owner>/
+├── libs/web/<app>/                # Optional App-specific Web adapter
+└── targets/pkg_tar/<app>/         # Consumer-owned main.c and archive
 
 projects/e2e/targets/pkg_tar/
-├── pal/                           # portable PAL E2E；?suite=browser 跑浏览器套件
+├── pal-core/                      # Portable PAL Core browser qualification
 └── lua-runtime/                   # Lua Runtime 九 case Browser archive
 
 projects/h2loader/
@@ -54,7 +44,7 @@ projects/h2loader/
 └── targets/npm_package/h2loader/  # @gizclaw/h2loader Browser SDK npm package
 
 libs/pal/providers/web/pal_core/    # Canvas/Emscripten reusable PAL backend
-boards/<board>/web/                 # 有屏幕的 board 的 web board 与外观：amoled、bk7258_v3_202405、
+boards/<company>/<board>/web/                 # 有屏幕的 board 的 web board 与外观：amoled、bk7258_v3_202405、
                                     # szp、waveshare_esp32p4_wifi6_touch_lcd_4_3
 tools/bazel/web/                   # Web 打包规则、HTML shell、board metadata 与布局工具
 libs/lua/web/                       # 单个 Lua 脚本页面的 h2_lua_web_app() 宏与通用入口
@@ -64,26 +54,23 @@ libs/lua/web/                       # 单个 Lua 脚本页面的 h2_lua_web_app(
 
 ## Build Boundary
 
-Web wrapper C source 由 `//projects/example/libs/web/tap-reset:tap_reset_web` 提供 Bazel ownership。`@emsdk` 的 `wasm_cc_binary` 用真实 Emscripten toolchain 编译 App 与依赖，`@rules_pkg` 的 `pkg_tar` 再把 `index.html`、`index.js` 和 `index.wasm` 打成 serve-ready archive：
+The structure above uses `<owner>` and `<app>` as generic consumer placeholders. Each actual entry declares its own source and dependencies. `@emsdk` compiles them with the real Emscripten toolchain through `wasm_cc_binary`; `@rules_pkg` packages the HTML, JavaScript and WASM as a serve-ready archive:
 
 ```sh
 make test-web
 ```
 
-`make test-web` 构建 `projects/example/targets/pkg_tar/` 与 `projects/e2e/targets/pkg_tar/` 下的 Web archive，验证归档根目录、入口引用和 WASM magic，通过 Emscripten/Node 执行 Web PAL、portable PAL registry 与 fake Web Serial E2E，并在真实 Chromium 中运行各 archive 的 `:browser_test`（见下文 [Example 与 E2E 的 Web target](#example-与-e2e-的-web-target)）。每个 target 的 `:serve` 可在本机托管 archive。浏览器运行需要 HTTPS 或 localhost，以及 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp`。Archive 内的 `_headers` 声明这两项响应头，仓库服务器会实际发送；其他静态服务器也必须配置，只有文件而未发送响应头不会启用 SharedArrayBuffer。直接调试使用：
+`make test-web` validates retained Web archives and platform/E2E tests. Individual entries expose `:serve` where supported. Browser execution requires HTTPS or localhost, `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. The archive's `_headers` records this policy, but the hosting server must actually send those headers to enable SharedArrayBuffer. For a retained E2E entry:
 
 ```sh
-bazel run //projects/example/targets/pkg_tar/tap-reset:serve
 bazel run //projects/e2e/targets/pkg_tar/pal-core:serve
 ```
 
 H2Loader Serial Web E2E 的 archive 是 `bazel-bin/projects/e2e/targets/pkg_tar/h2loader-serial/h2loader-serial.web.tar`。页面必须由用户点击按钮调用 Web Serial chooser；授权完成后，portable App 才能使用 opaque port ID。真实 status、只读 command 和 managed install 继续走同一 Host Core，install 由 launcher 提供精确 catalog SHA 与资源读取器。
 
-[H2Loader Web SDK](./h2loader/apps/batch_loader/) 由 `//projects/h2loader/libs/web:h2loader_web` 提供 public JS module、matching Emscripten runtime 和 WASM，并通过 Web PAL/Host Core 执行 Web Serial、package inspection 和 managed lifecycle。`//projects/h2loader/targets/npm_package/h2loader:h2loader` 使用提交的 `package.json` 将完全相同的 SDK outputs 组装成 `@gizclaw/h2loader`；npm 是 Browser SDK 的分发格式，不提供 Node.js serial-port runtime。独立 workflow 在相关改动进入 `main` 后只发布尚不存在的版本。产品 frontend、hosting headers 和浏览器 UI 验收由 `GizClaw/www` 负责。浏览器保留 `SerialPort` 与 `File` 对象，C 只接收 runtime-scoped opaque handle 和 bounded slice。现有 H2Loader Serial Web E2E 继续验证底层协议与平台，不是产品 UI。
+[H2Loader Web SDK](./h2loader/apps/batch_loader/) 由 `//libs/h2loader/web:web` 提供 public JS module、matching Emscripten runtime 和 WASM，并通过 Web PAL/Host Core 执行 Web Serial、package inspection 和 managed lifecycle。`//projects/h2loader/targets/npm_package/h2loader:h2loader` 使用提交的 `package.json` 将完全相同的 SDK outputs 组装成 `@gizclaw/h2loader`；npm 是 Browser SDK 的分发格式，不提供 Node.js serial-port runtime。独立 workflow 在相关改动进入 `main` 后只发布尚不存在的版本。产品 frontend、hosting headers 和浏览器 UI 验收由 `GizClaw/www` 负责。浏览器保留 `SerialPort` 与 `File` 对象，C 只接收 runtime-scoped opaque handle 和 bounded slice。现有 H2Loader Serial Web E2E 继续验证底层协议与平台，不是产品 UI。
 
 浏览器不能从本地 `file:` URL 加载生成的 `.wasm`。
-
-Lua Flappy Bird archive 在 Canvas 上运行与 Desktop/AMOLED 相同的 portable App 和 ported Lua bytes。Web C `main()` 通过 Emscripten `PROXY_TO_PTHREAD` 运行在 Worker，PAL Task 使用 pthread Workers 和共享 Wasm 内存。`lua-runtime` 使用两个 Worker 并报告 `scheduler=multi-worker`；同一 Lua VM 内部的 coroutine 仍遵守 Lua 自身调度。页面先显示 `Starting Lua Flappy Bird`，portable App 触发 `on_ready` 后才显示 `Running Lua Flappy Bird`，浏览器测试以此等待 App 初始化和首帧完成后再发送退出输入。HTML 不增加 Back/Stop 控件； 浏览器把 Escape 键通过 `h2_runtime_button_push_edge()` 写入映射后的 Runtime Button edge，由 portable App 作为唯一 Runtime Event consumer 识别并取消 job，HTML 不直接 修改 Lua/Host 状态。
 
 仍使用 LVGL 的其他 Web App 与 Mobile 继续共享 `libs/lvgl:single_thread_config`。Web 的真实 Emscripten toolchain 需要 POSIX `strnlen` declaration，因此 `libs/lvgl:lvgl_web` 只增加 `_POSIX_C_SOURCE=200809L`，不复制配置或上游源码。
 
@@ -203,11 +190,11 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 // ... remaining Web providers and canonical unsupported APIs.
 ```
 
-### Example 与 E2E 的 Web target
+### E2E Web targets
 
-`targets/pkg_tar/<app>/main.c` 直接创建 Web platform、组装 Runtime、调用 App，并按依赖顺序清理。`-sPROXY_TO_PTHREAD=1` 已让 main 在 Worker 上运行，Web PAL 自己的 Worker 负责导入事件；入口无需再套 Host task。需要输入的入口显式调用 `h2_runtime_input_start()`，结束时停止外部 producer/App/Lua/Service worker，使用 `h2_runtime_destroy(&runtime)` 检查 Runtime 清理，只有输出指针为 NULL 才释放其 provider；失败且指针保留时留待重试。Filesystem、LVGL、音频任务只由使用它们的入口初始化和清理；无法确认消费者已停止时保留其依赖并打印 `result=FAIL ... retained=1`。LVGL smoke 没有停止回调，入口单独启动一个 PAL task，在 Stop 或测试期限到达后请求协作取消并 join；其余入口直接运行 App。`h2_web_app()` 位于 `//tools/bazel/web:web_app.bzl`，生成 `.web.tar`、`:serve` 与 `:browser_test`，只负责编译、页面资源、预加载和打包。
+`targets/pkg_tar/<app>/main.c` 直接创建 Web platform、组装 Runtime、调用 App，并按依赖顺序清理。`-sPROXY_TO_PTHREAD=1` 已让 main 在 Worker 上运行，Web PAL 自己的 Worker 负责导入事件；入口无需再套 Host task。需要输入的入口显式调用 `h2_runtime_input_start()`，结束时停止外部 producer/App/Lua/Service worker，使用 `h2_runtime_destroy(&runtime)` 检查 Runtime 清理，只有输出指针为 NULL 才释放其 provider；失败且指针保留时留待重试。Filesystem、LVGL、音频任务只由使用它们的入口初始化和清理；无法确认消费者已停止时保留其依赖并打印 `result=FAIL ... retained=1`。`h2_web_app()` 位于 `//tools/bazel/web:web_app.bzl`，生成 `.web.tar`、`:serve` 与 `:browser_test`，只负责编译、页面资源、预加载和打包。
 
-板级配置直接写在 entry：在需要的时点准备资源，把 `power`、`periph`、`input`、`pwm_switch` 或 component mapper 放进 `h2_runtime_config_t`，并在最后一个消费者结束后释放。`web-hardware/main.c` 演示 component 42 到 peripheral 501 的显式映射，以及配置失败时只释放一次、释放失败时保留文件和依赖的行为。没有统一 hardware hook 表或通用 run 对象。`h2_web_app()` 的 `copts` 只追加到调用方源文件；生成的 board header 仅含常量 metadata。
+板级配置直接写在 entry：在需要的时点准备资源，把 `power`、`periph`、`input`、`pwm_switch` 或 component mapper 放进 `h2_runtime_config_t`，并在最后一个消费者结束后释放。没有统一 hardware hook 表或通用 run 对象。`h2_web_app()` 的 `copts` 只追加到调用方源文件；生成的 board header 仅含常量 metadata。
 
 ### Web board
 
@@ -219,7 +206,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 页面 shell 把组件创建进外观的插槽：`data-h2-slot="display"` 放 Canvas（`#canvas`），`data-h2-slot="controls"` 放 Start/Stop，`data-h2-slot="status"` 放状态行；缺少的插槽使用普通容器。入口按需要调用 `h2WebBindButton(index, key, name)` 绑定键盘键和 `data-h2-button="<name>"` 元素。JavaScript 合并键盘和指针来源，只有按下状态变化才进入 128 项 FIFO；失焦或隐藏释放所有来源。入口 Worker 用 `h2WebTakeButtonEdge()` 取边沿，再调用 `h2_runtime_button_push_edge()`；0 表示空、-1 表示溢出，正值编码为 `(index + 1) * 2 + pressed`。`h2WebUnbindButtons()` 释放监听器并清空 FIFO。Stop 只设置 `Module.h2WebStopRequested`，由入口决定停止策略。页面根据 `H2_WEB_APP` 控制台标记更新状态，不拥有 Runtime/provider。
 
-组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 生成 `h2_web_board_config.h`，包含 `H2_WEB_BOARD_WIDTH/HEIGHT`、Button 数量以及名字/键表；入口自行选择是否使用这些常量以及如何映射到 Runtime。不指定 board 时用 `//tools/bazel/web:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。board 与外观放在该 board 自己的目录旁 `boards/<board>/web/`（下游产品 board 同理），同一块板上的所有 App 复用。GizOS 为有屏幕的四块 board 提供了 web board：`amoled`（368×448，`boot`、`power`）、`bk7258_v3_202405`（800×480，`prev`、`next`、`menu`，对应实体板的三个 ADC 键）、`szp`（320×240，`boot`）、`waveshare_esp32p4_wifi6_touch_lcd_4_3`（480×800，`boot`），尺寸与 Button 名取自各自 BSP。`amoled` 的 `device` 外观按 Waveshare 官方尺寸图用 CSS 画出实物（黑色表壳 37.60 × 45.20 mm、屏幕 28.70 × 34.94 mm、右侧从上到下 BOOT、USB-C、PWR）；其余三块的 `device` 外观目前是按 BSP 参数画的示意图（屏幕尺寸与方向准确），之后按实物资料替换。外观只用 CSS 绘制，不嵌入厂商图片。无屏幕的 `devkit`、`esp32p4_func_ev_board_v1_4`、`waveshare_esp32s3_a7670e_4g` 暂不提供。
+组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 生成 `h2_web_board_config.h`，包含 `H2_WEB_BOARD_WIDTH/HEIGHT`、Button 数量以及名字/键表；入口自行选择是否使用这些常量以及如何映射到 Runtime。不指定 board 时用 `//tools/bazel/web:default_board`（240×240、无 Button、朴素布局 `default_layout.html`）。board 与外观放在该 board 自己的目录旁 `boards/<company>/<board>/web/`（下游产品 board 同理），同一块板上的所有 App 复用。GizOS 为有屏幕的四块 board 提供了 web board：`amoled`（368×448，`boot`、`power`）、`bk7258_v3_202405`（800×480，`prev`、`next`、`menu`，对应实体板的三个 ADC 键）、`szp`（320×240，`boot`）、`waveshare_esp32p4_wifi6_touch_lcd_4_3`（480×800，`boot`），尺寸与 Button 名取自各自 BSP。`amoled` 的 `device` 外观按 Waveshare 官方尺寸图用 CSS 画出实物（黑色表壳 37.60 × 45.20 mm、屏幕 28.70 × 34.94 mm、右侧从上到下 BOOT、USB-C、PWR）；其余三块的 `device` 外观目前是按 BSP 参数画的示意图（屏幕尺寸与方向准确），之后按实物资料替换。外观只用 CSS 绘制，不嵌入厂商图片。无屏幕的 `devkit`、`esp32p4_func_ev_board_v1_4`、`waveshare_esp32s3_a7670e_4g` 暂不提供。
 
 只运行一个 Lua 脚本的 App 不需要 `main.c`：`//libs/lua/web:lua_web_app.bzl` 的
 `h2_lua_web_app(name, script, board, skin, exit_button, extension)` 用
@@ -246,37 +233,20 @@ Lua Display 在获取时启动公共 `$lua/display` worker，`present/end_frame`
 
 #### Lua 脚本配置与预算
 
-`h2_lua_web_app()` 的 `vm_memory_limit_bytes` 默认 524288（512 KiB），允许 65536..16777216；`source_limit_bytes` 默认 131072（128 KiB），允许 1..1048576。两者必须是整数，不能传入 bool 或字符串。默认调用的预算不变，较大的程序由自己的 artifact entry 显式选择预算；Display 的 VM 计费发送缓冲兼任 baseline，需要宽×高×2 字节加元数据，Host allocator 另持有一份绘制缓冲；现有应用还需脚本与图层缓存空间，因此 AMOLED、800×480/480×800、1024×600 board 示例分别显式选择 1、2、3 MiB VM 预算；可接受的配置不保证任意程序都能在该预算内运行。超限源码仍按 Host resource 校验失败，VM 分配耗尽仍报告 job failure，不自动扩容。
+`h2_lua_web_app()` 的 `vm_memory_limit_bytes` 默认 524288（512 KiB），允许 65536..16777216；`source_limit_bytes` 默认 131072（128 KiB），允许 1..1048576。两者必须是整数，不能传入 bool 或字符串。默认调用的预算不变，较大的程序由自己的 artifact entry 显式选择预算；Display 的 VM 计费发送缓冲兼任 baseline，需要宽×高×2 字节加元数据，Host allocator 另持有一份绘制缓冲；可接受的配置不保证任意程序都能在该预算内运行。超限源码仍按 Host resource 校验失败，VM 分配耗尽仍报告 job failure，不自动扩容。
 
 可选 `script_args` 是最多 16 项的 string-to-string 字典。名字为 1..32 个 ASCII `[a-z0-9_]` 字符，值为最多 256 个可打印 ASCII 字符，允许空值、引号和反斜线；控制字符和非 ASCII 内容会被拒绝。宏按名字排序并转义为固定 C 字符串，参数在提交时复制为 Lua `args` 字符串，不执行 Lua 表达式。任何名字与所选 board 的 Button（包括 `exit_button`）冲突都会在 analysis 阶段失败，不能覆盖 board 的输入 ID。参数属于 App 配置，不改变 board/skin 或共享入口的 lifecycle。
 
-`//libs/lua/web:lua_web_app_argument_test` 验证预算、参数类型/长度/字符及 board 名冲突的校验函数。`//projects/example/targets/pkg_tar/lua-script-config:browser_test` 使用真实共享入口加载构建时生成的超过 128 KiB 的 Lua 文本，在显式 4 MiB VM 内保留 768 KiB 字符串，验证自定义参数和 Button ID，最后经页面 Stop 回收。该脚本是通用配置示例，不包含私有游戏；浏览器结果不代表设备内存余量或帧率。
+`//libs/lua/web:lua_web_app_argument_test` validates budget bounds, argument types, lengths, characters and conflicts with board button names. Each consumer must choose and verify a memory budget for its actual script and display.
 
 `tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`clicks`（按 CSS selector 点击页面元素）、`evals`（在页面执行一段 JS，例如驱动输入边沿）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
 
-| Target | 浏览器测试验证 |
-|---|---|
-| e2e `pal`（`?suite=browser`） | Memory/Time/Timer/Task/Queue/Mutex/Condition、IndexedDB Filesystem、Fetch HTTP、Netif、System Event 分发给 Runtime、raw Net 返回 `UNSUPPORTED`；teardown `fs=0 destroy=0` |
-| e2e `lua-runtime` | pthread 多 Worker；Lua 九 case |
-| e2e `pal-core` | 41 个 Core 契约用例、真实栈和资源回收、无 yield 并行验证 |
-| `display`、`qrcode`、`log` | Display 输出（非黑像素）、App 正常返回 |
-| `lvgl-smoke` | LVGL 在 Web Task/Timer 上渲染，停止后 LVGL/Runtime 干净退出 |
-| `touch` | Canvas 点击成为 Runtime Touch down/up（坐标一致），Enter 成为 Button down/up/action |
-| `starboy` | 首帧 ready、持续动画、`should_stop` 退出 |
-| `lua-cosmic-drift` | Lua 场景 ready、Canvas 点击、Escape → Back Button 取消 Lua job |
-| `audio-system` | `--preload-file` 只读根上的 Opus 资源播放、fake 麦克风非静音 PCM 回环、worker join |
-| `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
-| `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
-| `lua-script` | `h2_lua_web_app()` + `demo_board` 默认 `device` 外观：canvas 与状态行进入外观的 slot；脚本校验 Button args 后 ready；点击外观的 `data-h2-button=ok` 元素触发脚本 OK 回调；点击页面 Stop（`#stop`）取消 job 并 PASS |
-| `lua-script-input` | `demo_board` 的 `plain` 外观，Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
-| `web-board-{amoled,bk7258,szp,p4-lcd43}` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
-| `web-hardware` | `prepare` 与 `configure_runtime` 在 App 前运行、Runtime `board` 为 hook 设置的名字；Enter 的 Down 与 Up 经 `button` 推到 component 42 / periph 501；`release_runtime` 关闭 configuration 持有的真实文件后 FS/platform 完整释放。额外 browser case 验证 configuration 失败后仍释放一次，以及 release 失败保留文件/backend、不重复释放 |
-| `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
-| `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
-| `lua-script-vector` | 共享 Lua 入口绘制多边形、椭圆、硬边/平滑笔画和保留命令；唯一 native extension 经公开 Display API 创建／更新几何并重放缓存；真实 Canvas 检查边界、裁剪、变换、颜色与错误更新后旧数据，验证背景恢复、透明快照、retained 提交量、GC 后绘制和页面 Stop 回收 |
-| `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
+| Retained target | Browser validation |
+| --- | --- |
+| E2E `lua-runtime` | Multiple pthread Workers and nine Lua cases |
+| E2E `pal-core` | 41 Core cases, real stacks, resource cleanup and parallel execution |
 
-未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。
+Raw sockets, physical BLE, real Wi-Fi CSI and board OTA require capabilities unavailable to ordinary browser providers. Real service registration also requires caller-provided credentials and remains separate from automatic local tests.
 
 独立 `pal-core` Browser suite 验证 Core 与 System Event；`pal-wifi` Browser suite 验证 Netif 和真实 offline/online Runtime event；`pal-net-tls` 的 boundary test 验证 raw socket 不可用。`scripts/test/test-web.sh` 显式运行这些入口。Web provider 另有真实浏览器测试：
 
@@ -289,9 +259,7 @@ bazel test --config=macos_arm64 --strategy=TestRunner=local --test_env=HOME \
 
 第二条使用本机 Google Chrome 以覆盖 H.264/AAC 解码。
 
-## Raster2D example
-
-`//projects/example/targets/pkg_tar/raster2d:serve` 运行唯一无 Lua 的 C/WASM 示例，展示 RGB565 颜色端点、中间值、裁剪和覆盖。`:browser_test` 检查完整 240×240 Canvas。它直接运行 portable App，并复用 Web PAL Canvas backend。现有 `//projects/example/targets/pkg_tar/lua-script-vector:browser_test` 继续承担 Lua/C/WASM 显示回归；新增 binding 合同由 `//libs/lua:lua_test` 的真实 Host 测试覆盖。
+## System Event shutdown
 
 Web 的同步 SystemEvent PAL API 只借给 C Worker，浏览器主线程 accessor 返回 `NULL`。浏览器发起退订时使用 `h2_web_platform_system_event_unsubscribe_async`：成功后立即停止新回调并将 subscription 所有权交给 platform Worker；完成回调仅在所有在途 handler 返回后执行，调用方此前必须保留 handler context。主线程入队使用 try-lock，竞争返回 BUSY 并交还所有权，不能同步阻塞浏览器等待 Worker。回调自身不能等待自己的异步退订完成。
 
@@ -327,10 +295,19 @@ if (id < 0) console.error('Request was not admitted:', id);
 
 底层 `request(method, bytes, callback, {timeout_ms?})` 接受 canonical method/protobuf，返回正 call ID 或负 admission error；拒绝时不调用 callback。接受的请求在 request 返回之后异步且恰好回调一次，回调在 UI 线程同步返回 signed delivery result。回复包含 code、hasError、rpcCode、rpcMessage、已复制的 payload 和可选 nativeTools；返回 0 表示已成功消费，负数表示失败，抛异常或返回非整数按 FORMAT 处理。回调不可 async；调用方可以自行包装 Promise，但 delivery acknowledgement 必须同步完成。`cancel(id)` 取消已接受调用并回调 CLOSED；超时回调 TIMEOUT。接口公开 version、容量、字节限制、默认 deadline 和 closed。
 
-H106 等产品只通过 C 注册已有 Service：先 `h2_gizclaw_local_start()`，再用 `h2_web_gizclaw_open()` 打开 `//libs/gizclaw/web`；统一字节绑定随固件构建。产品先 close C adapter，再走原有 Service stop/poll/deinit。对象 codec、类型与 Promise API 属于 `projects/gizclaw/libs/web`；npm package/tarball 属于 `projects/gizclaw/targets/npm_package/firmware`。两者共用 ABI version，固件不链接对象 SDK、codec 或 TypeScript compiler。
+Products register their existing C service with `h2_gizclaw_local_start()` and
+open `//libs/gizclaw/web` through `h2_web_gizclaw_open()`. Close the adapter before
+stopping, draining and deinitializing the service. The optional
+`@gizclaw/firmware` object/Promise SDK is consumed from its already published npm
+versions; this checkout no longer contains its source, package builder or release
+producer. Consumers must match the SDK to the firmware byte interface's ABI.
 
 SDK 对象方法使用 pinned GizClaw codec/map，调用同一 Service、工具注册表和 MHS 实例表。lua.app.run 的可用性仍由产品 prepare hook 决定，安装格式和交接语义见 [GizClaw Lua App](/zh/developing/gizclaw#lua-app)。SDK 不增加 Lua catalog、安装器或生命周期；`call(method, Uint8Array, options?)` 保留字节调用。请求和回复均复制，SDK 在复制/解码成功后同步确认 native delivery；error.code 保留 signed PAL result，wire-only error 使用 -1000 并保留 rpcCode/rpcMessage，0/false 保留 optional presence。
 
 同一 runtime 可同时绑定多个 client，共享底层容量；不同 runtime 相互独立。调用支持 `{signal?, timeout_ms?}`，取消或超时不能撤销已发生的写入。`client.close()` 只取消自己的 pending 请求，不停止固件或影响其它 client、底层调用。Native detach/page teardown 使接口关闭并拒绝 pending 请求，旧引用也返回 CLOSED；failed join 保留依赖供重试。SDK 不要求 iframe，不增加跨 origin 页面通信或加载裸 WASM 的机制；调用方须持有运行中的 Module，并等待其 Service 注册完成。
 
-`//projects/gizclaw/targets/npm_package/firmware:release_tarball` 生成独立 npm tarball。`libs/gizclaw/web/tests/local/` 在不加载 npm 的情况下调用真实 WASM 底层 callback API；npm `tests/runtime/` 在当前页面的真实 WASM 上验证 SDK、现有 tool/MHS、Lua install/list/uninstall、delivery、容量、取消和 close retry，并用第二个实例验证隔离。`package_test` 从实际 tarball 验证 Node 无 DOM 的实例绑定和严格类型。测试 HTTP/Filesystem PAL 不代表真实服务器、Trial/H106 产品或物理设备验收。
+`libs/gizclaw/web/tests/local/` continues to exercise the real WASM callback
+interface directly without loading npm. Published SDK packages remain available
+independently of this repository; their former local package/runtime-consumer
+tests are no longer part of this checkout. Platform fixtures do not establish
+physical-device or product acceptance.

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class InputLifecycleTest(unittest.TestCase):
     def test_provider(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_input.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_input.c').read_text()
         source = '\n'.join(line for line in source.splitlines() if not line.startswith('#include'))
         # The native ioctl ABI is 32-bit. Preserve pointer width in the host fake.
         source = source.replace('(uint32_t)value', '(uintptr_t)value')
@@ -26,7 +26,7 @@ class InputLifecycleTest(unittest.TestCase):
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')),
                 '-I', str(ROOT / 'libs/pal/include'),
-                '-I', str(ROOT / 'boards/jieli_ac791n_devkit/ac791n/include'),
+                '-I', str(ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/include'),
                 '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
                 str(unit), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             for case in ['invalid_input', 'flush_failure', 'display_close_error', 'touch_close_error', 'rs_order', 'flush_lost_irq', 'flush_stale', 'open_pending', 'open_flush_error',

@@ -470,7 +470,17 @@ h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
   } while (0)
 
   H2_RUNTIME_BIND_PROXY(firmware_info);
+  private_state->device_identity_proxy =
+      *(config->device_identity != NULL
+            ? config->device_identity
+            : h2_pal_unsupported_device_identity_api());
+  runtime->device_identity = &private_state->device_identity_proxy;
   H2_RUNTIME_BIND_PROXY(mem);
+  H2_RUNTIME_BIND_PROXY(mem_external);
+  private_state->io_stream_proxy =
+      *(config->io_stream != NULL ? config->io_stream
+                                  : h2_pal_unsupported_io_stream_api());
+  runtime->io_stream = &private_state->io_stream_proxy;
   H2_RUNTIME_BIND_PROXY(log);
   private_state->time_provider = *config->time;
   private_state->time_proxy =
@@ -482,6 +492,9 @@ h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
   H2_RUNTIME_BIND_PROXY(sync);
   H2_RUNTIME_BIND_PROXY(fs);
   H2_RUNTIME_BIND_PROXY(disk);
+  private_state->image_proxy =
+      *(config->image != NULL ? config->image : h2_pal_unsupported_image_api());
+  runtime->image = &private_state->image_proxy;
   H2_RUNTIME_BIND_PROXY(pref);
   H2_RUNTIME_BIND_PROXY(crypto);
   H2_RUNTIME_BIND_PROXY(http);

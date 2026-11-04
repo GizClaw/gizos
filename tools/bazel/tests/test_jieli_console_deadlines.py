@@ -10,9 +10,9 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class ConsoleDeadlinesTest(unittest.TestCase):
     def test_uart(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_console.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_console.c').read_text()
         source = '\n'.join(line for line in source.splitlines() if not line.startswith('#include'))
-        platform = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/src/platform.c').read_text()
+        platform = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader/src/platform.c').read_text()
         uart = platform[platform.index('UART1_PLATFORM_DATA_BEGIN'):platform.index('UART1_PLATFORM_DATA_END')]
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_console_deadlines.c').read_text()
         fixture = fixture.replace('/* ASYNC_MODE */', '1' if '.disable_tx_irq = 1' in uart else '0')

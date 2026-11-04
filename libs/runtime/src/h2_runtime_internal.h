@@ -324,7 +324,10 @@ struct h2_runtime_private {
   struct h2_runtime_test_control* test_control;
 
   h2_pal_mem_api_t mem_proxy;
+  h2_pal_mem_api_t mem_external_proxy;
+  h2_pal_io_stream_api_t io_stream_proxy;
   h2_pal_firmware_info_api_t firmware_info_proxy;
+  h2_pal_device_identity_api_t device_identity_proxy;
   h2_pal_log_api_t log_proxy;
   h2_pal_time_api_t time_proxy;
   h2_pal_time_api_t time_provider;
@@ -334,6 +337,7 @@ struct h2_runtime_private {
   h2_pal_sync_api_t sync_proxy;
   h2_pal_fs_api_t fs_proxy;
   h2_pal_disk_api_t disk_proxy;
+  h2_pal_image_api_t image_proxy;
   h2_pal_pref_api_t pref_proxy;
   h2_pal_crypto_api_t crypto_proxy;
   h2_pal_http_api_t http_proxy;

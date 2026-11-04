@@ -28,7 +28,8 @@ static void release(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
-static const h2_pal_mem_vtable_t memory_vtable = {allocate, resize, release};
+static const h2_pal_mem_vtable_t memory_vtable = {allocate, resize, release,
+                                                  NULL};
 
 int main(void) {
   const h2_pal_mem_api_t memory = {NULL, &memory_vtable};

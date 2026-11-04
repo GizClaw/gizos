@@ -5,30 +5,30 @@ load("//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
 load("//tools/bazel:jieli.bzl", "jieli_firmware")
 
 _ESP_LAYOUTS = {
-    ("esp32s3", "amoled"): struct(root = "//boards/amoled/esp32s3/layouts/h2loader"),
+    ("esp32s3", "amoled"): struct(root = "//boards/waveshare/esp32s3_touch_amoled_1_8/esp32s3/layouts/h2loader"),
     ("esp32s3", "devkit"): struct(
-        root = "//boards/devkit/esp32s3/layouts/h2loader",
+        root = "//boards/espressif/esp32s3_devkitc_1/esp32s3/layouts/h2loader",
         consoles = {
             "uart": "loader_uart.defaults",
             "usb": "loader_usb.defaults",
         },
     ),
-    ("esp32s3", "szp"): struct(root = "//boards/szp/esp32s3/layouts/h2loader"),
-    ("esp32s3", "waveshare_esp32s3_a7670e_4g"): struct(root = "//boards/waveshare_esp32s3_a7670e_4g/esp32s3/layouts/h2loader"),
-    ("esp32s3", "waveshare_esp32s3_touch_amoled_1_75c"): struct(root = "//boards/waveshare_esp32s3_touch_amoled_1_75c/esp32s3/layouts/h2loader"),
-    ("esp32p4", "waveshare_esp32p4_wifi6_touch_lcd_4_3"): struct(root = "//boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/esp32p4/layouts/h2loader"),
+    ("esp32s3", "szp"): struct(root = "//boards/jlc/esp32s3_szp/esp32s3/layouts/h2loader"),
+    ("esp32s3", "waveshare_esp32s3_a7670e_4g"): struct(root = "//boards/waveshare/esp32s3_a7670e_4g/esp32s3/layouts/h2loader"),
+    ("esp32s3", "waveshare_esp32s3_touch_amoled_1_75c"): struct(root = "//boards/waveshare/esp32s3_touch_amoled_1_75c/esp32s3/layouts/h2loader"),
+    ("esp32p4", "waveshare_esp32p4_wifi6_touch_lcd_4_3"): struct(root = "//boards/waveshare/esp32p4_wifi6_touch_lcd_4_3/esp32p4/layouts/h2loader"),
 }
 
 _BK7258_BOARDS = {
     ("bk7258", "bk7258_v3_202405"): struct(
-        root = "//boards/bk7258_v3_202405/bk7258",
+        root = "//boards/beken/bk7258_v3_202405/bk7258",
         layouts = ["h2loader", "loader", "media", "wifi_csi"],
     ),
 }
 
 _JIELI_LAYOUTS = {
     ("wl82", "jieli_ac791n_devkit"): struct(
-        root = "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader",
+        root = "//boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader",
     ),
 }
 
@@ -169,7 +169,7 @@ def h2loader_bk7258_firmware(
         **kwargs):
     """Declares BK7258 firmware from one repository-owned board layout.
 
-    Every layout under boards/<board>/bk7258/layouts/<layout>/ owns one
+    Every layout under boards/<company>/<board>/bk7258/layouts/<layout>/ owns one
     complete AP configuration, CP configuration, GPIO selection, RAM-region
     plan, partition metadata, and optional recovery flashing config. The
     concrete firmware target passes its AP and CP task policies explicitly.

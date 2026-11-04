@@ -5,7 +5,7 @@ Embedded Linux entry 归 portable App 的 project owner，使用 `cc_binary/<app
 ## Ownership
 
 ```text
-projects/example/targets/cc_binary/<app>/<board>/
+projects/<owner>/targets/cc_binary/<app>/<board>/
 ├── BUILD.bazel
 ├── main/
 └── package/

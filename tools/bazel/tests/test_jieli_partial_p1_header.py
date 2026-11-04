@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class PartialP1Test(unittest.TestCase):
     def test_guards_and_recovery_does_not_pause_twice(self):
-        source = (ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_partial_p1_header.c").read_text()
+        source = (ROOT / "projects/h2loader/targets/loader/jieli/jieli_ac791n_devkit/src/loader_partial_p1_header.c").read_text()
         source = "\n".join(line for line in source.splitlines() if not line.startswith('#include "'))
         stub = r'''
 #include <stdint.h>
@@ -72,7 +72,7 @@ int main(void){
             path = Path(directory)
             (path / "test.c").write_text(stub + source + main)
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                            "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"),
+                            "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
                             "-I", str(ROOT / "libs/atomic/include"),
                             str(ROOT / "libs/atomic/providers/c11/src/h2_atomic_c11.c"),
                             str(path / "test.c"), "-o", str(path / "test")], check=True, timeout=60)

@@ -14,7 +14,8 @@ extern "C" {
  * The API and its user context are borrowed until
  * h2loader_app_run_with_command_service() returns. open() borrows all input
  * arguments, stores an owned service handle in out_service on success, and
- * leaves out_service NULL on failure. close() releases that handle.
+ * leaves out_service NULL on failure. A failed close() retains the handle for
+ * retry; a successful close() joins all workers and releases it.
  */
 typedef struct h2loader_app_command_service_api {
   void* user;
@@ -51,7 +52,9 @@ typedef struct h2loader_app_config {
  *
  * runtime, config and all callback contexts are borrowed until the call
  * returns. serve always runs on the target's h2loader/appcmd task and is
- * stopped when required and joined before this function returns.
+ * stopped when required and joined before this function returns. Cleanup errors
+ * are retried with PAL sleep while borrowers remain; the first error is
+ * returned only after every worker and additional service has stopped.
  */
 int h2loader_app_run(h2_runtime_t* runtime,
                      const h2loader_app_config_t* config);

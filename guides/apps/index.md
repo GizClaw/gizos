@@ -30,17 +30,8 @@ Product IA 优先在 Figma 中组织产品页面、关键状态和跨模块关�
 
 - [H2Loader](/apps/h2loader/)：Host、Loader/App image、package 生命周期、board 支持矩阵与设备端诊断 App。
     - [H2Loader Web SDK](/apps/h2loader/apps/batch_loader/)：发布 `@gizclaw/h2loader`，通过 Web Serial、Host Core 与 Web PAL 提供 package inspection 和 managed lifecycle；产品 UI 位于 `GizClaw/www`。
-    - [BLE iKCP Baseline](/apps/h2loader/apps/bleikcp_speed/)：设备对设备的 BLE iKCP 吞吐、断线恢复和屏幕诊断合同。
 - [GizClaw](/apps/gizclaw)：跨 App 的连接、请求状态、Audio System 和 OTA 集成合同。
 - [Mobile](/apps/mobile)：真实 portable App 到 mobile contract 的 adapter，以及彼此独立的 iOS、Android launcher。
 - [Web](/apps/web)：真实 portable App 到 Browser/WebAssembly contract 的 adapter、Bazel `pkg_tar` 交付物和 hosting gap。
 - [Embedded Linux](/apps/embed_linux)：普通 Linux executable/service launcher、Bazel artifact 与标准 ADB 应用烧录边界。
 - [E2E 测试 App](/apps/e2e)：可由 Desktop 与真实设备复用的 headless test registry、launcher ownership 与分层验收边界。
-- [Examples](/apps/example)：target-independent runnable Example project group；包含 Audio System、BLE Broadcaster/Observer、BLE iKCP Baseline、BLE Provider、Display、GizClaw Ping Speed、Log、LVGL、Modem、MP4 Player、Tap Reset 与 Wi-Fi CSI。
-- [Showcase 展架程序](/apps/showcase)：跨产品型号复用的待机视频、按住说话、前景角色对话和本地管理程序。
-- [Tuxemon](/apps/pixa_games/tuxemon)：基于 Tuxemon 地图资源的 2D tile RPG 原型，支持大世界、室内、碰撞、传送和持续移动。
-- [PIXA Games](/apps/pixa_games)：使用 Runtime input、Game Runtime、PixelRoot32 和 PIXA 实现的 reusable game library family。
-    - [DinoRun](/apps/pixa_games/dinorun)：横向自动奔跑与 charge jump。
-    - [DinoDive](/apps/pixa_games/dinodive)：平台下落、方向切换与 floor progression。
-    - [DinoBounce](/apps/pixa_games/dinobounce)：paddle、fireball 与下降 brick。
-    - [DinoTetris](/apps/pixa_games/dinotetris)：10 × 20 falling-block game。

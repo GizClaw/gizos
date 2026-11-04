@@ -28,7 +28,7 @@
 `jieli_firmware(name, target, board, image, project_makefile, graph, srcs, sdk_patches = [])`：
 
 - `target` 只能是 `br23`、`br35` 或 `wl82`；macro 按 target 绑定 SDK locator、commit 文件、本地 post 脚本（`tools/bazel/jieli/local_post_<target>.sh`）与 SDK 子目录，调用方不得覆盖。
-- `project_makefile` 必须是 `boards/<board>/<chip>/layouts/<profile>/project.mk` 中的仓库文件。它拥有完整 compiler flags、defines、include paths、SDK source inventory、linker inputs、generated files 与 output paths；SDK application/demo Makefile 不得成为 input，也不得被 include。
+- `project_makefile` 必须是 `boards/<company>/<board>/<chip>/layouts/<profile>/project.mk` 中的仓库文件。它拥有完整 compiler flags、defines、include paths、SDK source inventory、linker inputs、generated files 与 output paths；SDK application/demo Makefile 不得成为 input，也不得被 include。
 - Runner 把 SDK 子树复制到 invocation-local 目录（排除 `.git`、`doc`、`ui_project`），在 SDK 根执行 layout-owned project，并用 `TOOL_DIR=<pi32v2/bin>` 覆盖 `/opt/jieli` 默认值。SDK 只提供 source/header/archive/linker/post-build substrate。随后仓库自有 post 脚本用 objcopy、`isd_download`、`fw_add` 与 `ufw_maker` 生成发布输出。
 - `sdk_patches` 是仓库内 `.patch` 文件的 label list，进入 action inputs，按声明顺序通过 `git apply --whitespace=error` 应用于 invocation-local SDK 副本，原始 SDK checkout 不被修改。路径越出 source root、文件不存在、后缀不符或 patch 无法应用都会使 action 失败。
 - WL82 post-build 先清除副本中的旧打包输出，`jl_isd.bin` 发布 `-extend-bin` 生成的 `jl_isd_extend.bin` 完整镜像；`BR22_TWS_DB=YES;` 双 bank 模式下，`update.ufw` 承载 `db_update_files_data.bin`，单 bank 模式保留原有 UFW 打包流程。
@@ -49,7 +49,7 @@
 
 `native_component_src/jieli/wl82/h2_pal_core` 为 AC791N 实现 Memory、Log、Time、Timer、Sync、Queue、Task、System Event 与 Firmware Info 的 PAL provider，公开入口是 `include/h2_jieli_wl82_platform_core.h`：
 
-- **SDK 边界。** Provider 只依赖 `h2_jieli_wl82_sdk_port.h`（SDK heap、调试输出、board 提供的 64 位单调时钟、`os_time_dly`、`os_mutex_*`/`os_sem_*`、`os_task_create`/删除/park/当前任务、`sys_timer` 派发，以及异常捕获用的单次 `testset` 字节锁）。`src/h2_jieli_wl82_sdk_port.c` 是唯一 include SDK 头文件的翻译单元，只由 `jieli_firmware` native 构建编译（`h2_pal_core` target 为 `manual`）。它在链接时需要 board layout 提供的 `task_info_table` 与 `h2_jieli_default_task_policy`；AC791N DevKit BSP 位于 `boards/jieli_ac791n_devkit/ac791n`；板级实现、task policy 生成、linker export guard 与 firmware link 验收不属于 `h2_pal_core` package。零超时的 mutex/semaphore 用 `os_*_accept`，因为 SDK `pend(…, 0)` 表示永久等待。
+- **SDK 边界。** Provider 只依赖 `h2_jieli_wl82_sdk_port.h`（SDK heap、调试输出、board 提供的 64 位单调时钟、`os_time_dly`、`os_mutex_*`/`os_sem_*`、`os_task_create`/删除/park/当前任务、`sys_timer` 派发，以及异常捕获用的单次 `testset` 字节锁）。`src/h2_jieli_wl82_sdk_port.c` 是唯一 include SDK 头文件的翻译单元，只由 `jieli_firmware` native 构建编译（`h2_pal_core` target 为 `manual`）。它在链接时需要 board layout 提供的 `task_info_table` 与 `h2_jieli_default_task_policy`；AC791N DevKit BSP 位于 `boards/jieli/jieli_ac791n_devkit/ac791n`；板级实现、task policy 生成、linker export guard 与 firmware link 验收不属于 `h2_pal_core` package。零超时的 mutex/semaphore 用 `os_*_accept`，因为 SDK `pend(…, 0)` 表示永久等待。
 - **与 br23 的能力差异。**
   - Sync 支持递归 mutex 和 condition variable。condition 为每个 wait 使用独立 SDK semaphore，只接受非递归 mutex，仍有等待者时 destroy 返回 `H2_PAL_ERR_INVALID_STATE`。
   - Task 支持 `join`：每个任务有唯一 native 名 `<policy>/<hex id>`（匿名任务为 `$h2anon/…`，调用者不能使用该前缀），join 等待完成后按该名字删除；同名 policy 的多个任务互不影响。
@@ -69,13 +69,16 @@
 
 ## Repository-owned native project
 
-AC695N、AC707N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_config.h`、TASK policy、系列所需的 interrupt 配置与最小 board composition；具体 firmware launcher 自己提供 `app_main`。Runner 在 invocation-local SDK 根执行 `make -f <layout>/project.mk h2_link`，但 project 只选择 SDK 的 CPU/common substrate、headers、archives、linker inputs 与 post-build inputs，不编译 `apps/soundbox/**`、`apps/demo/**` 或其它 SDK application project。`tools/bazel/jieli/h2_project_rules.mk` 只提供 Bazel native object/archive 的通用追加规则，不 include SDK Makefile。每个 `firmware_native_component` 源文件使用 layout project 的 flags 与 Bazel include roots 编译到 `$(BUILD_DIR)/h2_bazel/`，`firmware_lib_component` archive 以 link group 进入同一条 `lto-wrapper` 链接。Bazel archive 是非 LTO ELF object，SDK source object 是 LTO bitcode。
+The AC791N DevKit directly owns its native project in `boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader/project.mk`. This physical-board layout owns compiler flags, defines, include paths, SDK source inventory, startup sources, linker inputs, generated files and output paths. It has no dependency on a dummy chip component; the firmware launcher supplies `app_main`. The AC695N, AC707N and AC791N SDK locators and toolchains remain available after removal of the chip-only board profiles and reference firmware entries.
 
-AC791N `compile_only/project.mk` 支持调用方提供 `H2_JIELI_LAYOUT_ROOT`，并通过以下 hooks 扩展 reference build；不设置时保持原有配置：
+The runner executes `make -f <layout>/project.mk h2_link` at the invocation-local SDK root. The project selects SDK CPU/common sources, headers, archives, linker inputs and post-build inputs without building SDK application/demo projects. `tools/bazel/jieli/h2_project_rules.mk` continues to append Bazel native objects and archives without including an SDK Makefile. Each `firmware_native_component` source uses the layout project's flags and Bazel include roots and compiles into `$(BUILD_DIR)/h2_bazel/`; each `firmware_lib_component` archive enters the same `lto-wrapper` link in a link group. Bazel archives contain non-LTO ELF objects, while SDK source objects contain LTO bitcode.
 
-- `H2_JIELI_BOARD_DEFINES`、`H2_JIELI_BOARD_INCLUDES`、`H2_JIELI_BOARD_C_SRC_FILES` 分别追加到 `DEFINES`、`INCLUDES`、`c_SRC_FILES`；`H2_JIELI_BOARD_LIBS` 追加到 `LFLAGS` 的 `--start-group` / `--end-group` 内。
-- `H2_JIELI_SDRAM_ENABLE=1` 使用 `-DH2_JIELI_SDRAM_ENABLE=1`，默认仍使用 `-DCONFIG_NO_SDRAM_ENABLE`。
-- `H2_JIELI_RESERVED_EXPAND_CONFIG_FILE` 非空时，`pre_build` 将该文件的配置行插入生成的 `isd_config.ini` 中 `[BURNER_CONFIG]` 之前。
+The AC791N DevKit project keeps SDRAM enabled by default and accepts Make command-line overrides and the existing extension variables:
+
+- `H2_JIELI_LAYOUT_ROOT` selects the layout input root.
+- `H2_JIELI_BOARD_DEFINES`, `H2_JIELI_BOARD_INCLUDES` and `H2_JIELI_BOARD_C_SRC_FILES` append to `DEFINES`, `INCLUDES` and `c_SRC_FILES`; `H2_JIELI_BOARD_LIBS` appends inside the `LFLAGS` link group.
+- `H2_JIELI_SDRAM_ENABLE` defaults to `1` for this physical board and can be overridden on the Make command line.
+- When `H2_JIELI_RESERVED_EXPAND_CONFIG_FILE` is nonempty, `pre_build` inserts its configuration lines before `[BURNER_CONFIG]` in the generated `isd_config.ini`.
 
 ## Target task policy
 
@@ -91,16 +94,13 @@ FDK AAC 与 Linux FDK AAC decoder provider 允许 pi32v2；`libs/fdk_aac` 在该
 
 ## 板与 artifact entry
 
-- `boards/ac695n_chip/ac695n/layouts/compile_only/`、`boards/ac707n_chip/ac707n/layouts/compile_only/` 与 `boards/ac791n_chip/ac791n/layouts/compile_only/` 拥有裸芯片验证 project。
-- `jieli_firmware` 是底层 external build rule；`targets/jieli_firmware` 是现有
-  reference-smoke artifact root。后者只保留 AC695N/AC791N 的完整 native link
-  smoke，不作为新 portable App 的通用入口，也不为 SDK 自带 demo 建 entry。
+- `jieli_firmware` is the underlying external build rule. Firmware artifact entries select a physical board and its layout-owned native project; the AC791N DevKit uses its own H2Loader layout.
 - 新增 standalone 厂商固件使用
-  `projects/<owner>/targets/native_firmware/<image>/<board>/:firmware`。它拥有
+  `projects/<owner>/targets/<app>/<manufacturer>/<board>/:firmware`。它拥有
   image/board 选择并直接暴露 `JieliFirmwareInfo` 中的 ELF、symbol、NOR、FW、UFW
   和 manifest；它不表示 H2Loader 已能安装或启动该镜像。
 - 同一 App 的 H2Loader package 使用
-  `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/:package`，消费同一
+  `projects/<owner>/targets/<app>/<manufacturer>/<board>/:package`，消费同一
   `JieliFirmwareInfo` 并把 UFW 放入 format-1 package。standalone 与 package entry
   必须复用 `projects/<owner>/native_component_src/jieli/<family>/<image>/` 的 launcher
   graph，不能复制 App main、PAL provider 或 SDK glue。
@@ -110,7 +110,7 @@ FDK AAC 与 Linux FDK AAC decoder provider 允许 pi32v2；`libs/fdk_aac` 在该
 
 ### AC791N DevKit BSP
 
-`boards/jieli_ac791n_devkit/ac791n` 提供 board identity 与 device UID、TIMER5 单调时钟、UART console、NOR disk partition、NOR 上基于 LittleFS 的 Pref、共享引用计数 NOR write window、SD filesystem、Net/Netif 与 Wi-Fi（STA、AP、saved settings）、BLE host、Audio、Display/Touch/Button input，以及 board runtime config。
+`boards/jieli/jieli_ac791n_devkit/ac791n` 提供 board identity 与 device UID、TIMER5 单调时钟、UART console、NOR disk partition、NOR 上基于 LittleFS 的 Pref、共享引用计数 NOR write window、SD filesystem、Net/Netif 与 Wi-Fi（STA、AP、saved settings）、BLE host、Audio、Display/Touch/Button input，以及 board runtime config。
 
 SDK 最多保存 63 字节密码，超过 63 字节的密码会被拒绝并返回 `INVALID_ARG`。STA 需要提取 `wpasupplicant.a` 中的真实 supplicant，覆盖 `wl_wifi.a` 的弱 stub。H2Loader layout 将 `wpasupplicant.a` 放在 `wl_wifi.a` 前，移除 `hostapd_and_wpasupplicant.a`，并通过 `LFLAGS += --undefined=wpa_supplicant_get_state` 保证提取该成员。连接前调用 SDK `wifi_set_sta_connect_timeout()`，非零 PAL 预算向上取整为秒，零预算使用 30 秒。`wifi_enter_sta_mode()` 以非阻塞方式调用，其返回值只反映站点是否已经连接，因此忽略该返回值；连接结果由 PAL 预算内的 SDK 事件决定。radio 关闭时，provider 在 `wifi_on()` 前将目标设为强制且不由 SDK 保存的 STA 默认配置，让 HSM 首次进入 STA 就携带目标（先以占位 SSID 进入、再调用 `wifi_enter_sta_mode()` 无法关联）；radio 已开启时使用 `wifi_enter_sta_mode()`。STA disconnect 通过进入 SDK 配置/monitor 模式保留 radio 和 lwIP，因为 `wifi_off()` 后再 `wifi_on()` 会触发 `netif already added` 断言；重连通过 `wifi_enter_sta_mode()` 再次进入 STA。按照 [仓库布局](../repo_layout.md) 的归属规则，每个具备 Wi-Fi capability 的 App target 都在自己的 task policy 中列出五条 SDK driver task 配置（`tcpip_thread`、`tasklet`、`RtmpMlmeTask`、`RtmpCmdQTask`、`wl_rx_irq_thread`），因为 SDK `task_create` 遇到 `task_info_table` 中缺失的名称会失败。其中 `RtmpMlmeTask` 使用 1400 words 栈。
 
@@ -134,13 +134,12 @@ Net provider 在 lwIP full-duplex 的单 reader、单 writer、单 closer 保证
 
 ## Validation
 
-- `bazel test --config=macos_arm64 //tools/bazel:jieli_runner_test //tools/bazel:jieli_post_wl82_test //tools/bazel:jieli_decode_coredump_test //tools/bazel:jieli_task_policy_test //tools/bazel:jieli_compile_only_project_test` 验证 runner、离线打包、解码、task policy 与 Make hooks；Linux host 使用对应 host config。
+- `bazel test --config=macos_arm64 //tools/bazel:jieli_runner_test //tools/bazel:jieli_post_wl82_test //tools/bazel:jieli_decode_coredump_test //tools/bazel:jieli_task_policy_test //tools/bazel:jieli_native_project_test` validates runner behavior, offline packaging, decoding, task policy and native Make hooks. The native-project test exercises the AC791N DevKit's physical-board H2Loader layout. Use the matching host config on Linux.
 - `bazel test --config=macos_arm64 //tools/bazel/tests/jieli_task_policy:generated_policy_test //tools/bazel/tests/jieli_task_policy:missing_policy_test //tools/bazel/tests/jieli_task_policy:undeclared_policy_test` 实际加载 task policy 宏，验证生成 C、audit task list，以及缺失策略和未声明任务的 analysis failure；Linux host 使用对应 host config。
 - `bazel test //native_component_src/jieli/br23/h2_pal_core:test_jieli_br23_platform_core` 验证 BR23 PAL core。
 - `bazel test //native_component_src/jieli/wl82/...` 在 Linux/macOS host 运行 wl82 PAL core 测试。
-- Linux x86_64：配置上述 SDK/toolchain 变量后运行 `bazel build --config=ac695n //projects/e2e/targets/jieli_firmware/reference-smoke/ac695n_reference:firmware`，并以 `--config=ac791n` 构建对应 AC791N target；重复构建应命中 action cache。
-- macOS：同一命令应报告 target incompatible 而非失败。
-- 真机：空片首刷与 `update.ufw` 升级在开发板到位后各验证一次，记录于对应 board 文档。
+- Validate native compilation through maintained AC791N DevKit artifact entries on Linux x86_64 after configuring the SDK/toolchain variables above. On macOS, run firmware builds through a Linux/amd64 container as required by the external rule.
+- Record first-flash and `update.ufw` upgrade acceptance in the corresponding physical-board documentation. Host tests and native links do not establish hardware acceptance.
 
 ## AC707N (BR35) 工具链
 
@@ -154,9 +153,9 @@ SDK locator 使用 `JIELI_AC707N_SDK_PATH`，由 firmware-devenv 导出为
 `h2vivi/e_badge_707_sdk_200@d0167685d032d745d88fe50233302edd46941622`。
 这是 2.0.0 系列吧唧 SDK；头文件位于 `interface`。
 
-`boards/ac707n_chip/ac707n/layouts/compile_only` 保留 SDK 的 BR35 startup、 CPU/system/config/VM/FS/device 库和链接脚本配置。旧 PAL Core launcher、普通 firmware 与 H2Loader package 入口已经下线；独立 `pal-core` 尚无 AC707N launcher。JieLi 之前未进行 PAL E2E v2 验收，当前已纳入后续平台接入缺口； 旧入口清理与待补范围记录在 `projects/e2e/apps/README.md`。 保留的 toolchain/layout 不表示仍有完整 Runtime E2E image。
+The AC707N SDK locator and BR35 toolchain remain available. The chip-only board profile has been removed; the former PAL Core launcher, ordinary firmware and H2Loader package entries are also retired. The standalone `pal-core` App has no AC707N launcher. JieLi PAL E2E v2 acceptance remains a platform-integration gap, with retired entries and remaining scope recorded in `projects/e2e/apps/README.md`. The retained SDK and toolchain do not provide a complete Runtime E2E image.
 
-firmware-devenv 的 `make jieli-ac707n-toolchain-check` 可以另行验证 BR35 参数下 的编译及 `r3-large` 运行库链接，不代表硬件运行验收。当前 compile-only 配置 采用 8 MiB Flash、24 MHz 晶振和 PB07 reset，实际板卡必须另建并验证板级配置。 设备端 H2Loader UFW 安装、Loader/App 选择及回退仍需 BR35 专用 backend 验收， 普通 SDK 双 bank OTA 不代表已完成 H2Loader 启动协议。
+The firmware-devenv `make jieli-ac707n-toolchain-check` command can check compilation with BR35 flags and linking against the `r3-large` runtime. A physical board must own and validate its board configuration. Device-side H2Loader UFW installation, Loader/App selection and rollback still require BR35 backend acceptance; SDK dual-bank OTA and toolchain checks do not establish H2Loader boot-protocol or hardware acceptance.
 
 BR35 PAL core 在 `native_component_src/jieli/br35/h2_pal_core`，使用 UCOS，
 仅 CPU0；互斥量采用二值信号量，零等待在关中断区域查询并消费已有 token，

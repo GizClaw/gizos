@@ -43,7 +43,7 @@ DIN GPIO10 在初始化及重启交接时保持输入；ESP-IDF 的 RX 路由设
 独立 `aec-probe` App 提供单机三音／静音基线和增益扫描，采用真实
 direct AEC 与 512-sample 帧，比较单麦／双麦和独立 reference PGA。
 入口和日志分析见
-`projects/e2e/targets/h2loader_tar_zlib/aec-probe/waveshare_esp32s3_touch_amoled_1_75c/README.md`。
+`projects/e2e/targets/aec-probe/waveshare/esp32s3_touch_amoled_1_75c/README.md`。
 单机 far-only 结果仅用于回声、通道和 headroom 调参；完整 AEC Calibration
 仍需独立近端声源检查声音保留和双讲。
 
@@ -58,17 +58,15 @@ RTC、额外扩展 GPIO、充电参数配置和电池电量 PAL 暂未接入。
 ```sh
 . /path/to/firmwares-devenv/export.sh
 bazel build --config=esp32s3 \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/waveshare_esp32s3_touch_amoled_1_75c:package \
-  //projects/example/targets/h2loader_tar_zlib/display/waveshare_esp32s3_touch_amoled_1_75c:package \
-  //projects/example/targets/h2loader_tar_zlib/audio-system/waveshare_esp32s3_touch_amoled_1_75c:package
+  //projects/h2loader/targets/loader/waveshare/esp32s3_touch_amoled_1_75c:package
 
 bazel test --config=macos_arm64 \
-  //boards/waveshare_esp32s3_touch_amoled_1_75c/esp32s3:display_buffer_test
+  //boards/waveshare/esp32s3_touch_amoled_1_75c/esp32s3:display_buffer_test
 ```
 
-显示与音频 App 使用既有跨平台 smoke App。显示 App 应呈现八色竖条并完成
-App 确认；音频 App 的操作和预期行为见 [Example Apps](/apps/example)。
-两个 App 均先启动 H2Loader serial/BLE command service，再运行测试并确认 App。
+Display and audio qualification use the retained [PAL E2E Apps](/apps/e2e).
+Each suite defines its own case registry, managed installation and confirmation
+requirements; a Loader build does not establish peripheral qualification.
 
 本接入的串口探测记录：2026-10-28，macOS 出现较新设备
 `/dev/cu.usbmodem1401`，USB VID:PID 为 `303a:1001`，读取到
@@ -86,7 +84,7 @@ BOOT/PWR 按下与松开、修正后的 IMU 屏幕方向、扬声器、麦克风
 IMU 绝对标定及不限输入电平的音质认证不在此验收范围。
 
 13 个现有 PAL E2E 和 GizClaw ALL 的独立入口均位于
-`projects/e2e/targets/h2loader_tar_zlib/<image>/waveshare_esp32s3_touch_amoled_1_75c`。
+`projects/e2e/targets/<app>/waveshare/esp32s3_touch_amoled_1_75c`。
 网络套件使用现有 fixture Bazel 配置；Wi-Fi 需要独立 seed 与后续合格镜像，
 版本以 `pal-wifi-` 开头；IPv6 使用同一 session 的 AMOLED 无线对端。
 GizClaw 默认使用完整 ALL suite，包含 Resource/Firmware 等八个顶层域，

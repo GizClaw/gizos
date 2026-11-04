@@ -18,7 +18,7 @@ static void release(void* user, void* p) {
   (void)user;
   free(p);
 }
-static const h2_pal_mem_vtable_t vtable = {alloc, resize, release};
+static const h2_pal_mem_vtable_t vtable = {alloc, resize, release, NULL};
 
 static void assert_cleared(const h2_carrier_device_inputs_t* inputs) {
   const unsigned char* bytes = (const unsigned char*)inputs;

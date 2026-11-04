@@ -35,7 +35,7 @@ projects/<owner>/
     └── macos_application/<app>/    # macOS/rules_apple bundle，可选
 ```
 
-例如 Example Display 位于 `projects/example/targets/cc_binary/display/`。H106 Main 使用一个 `projects/h106/targets/cc_binary/main/` package 和共享 `main.cpp`，由 `:h106-tiga` 与 `:h106-zero` 两个 Bazel target 设置产品 defines；不能复制两个 source entry。group 内多个 entry 共用的 Desktop host assembly 属于该 group 的 target component，例如 H106 使用 `projects/h106/libs/desktop/main/`。
+H106 Main 使用一个 `projects/h106/targets/cc_binary/main/` package 和共享 `main.cpp`，由 `:h106-tiga` 与 `:h106-zero` 两个 Bazel target 设置产品 defines；不能复制两个 source entry。group 内多个 entry 共用的 Desktop host assembly 属于该 group 的 target component，例如 H106 使用 `projects/h106/libs/desktop/main/`。
 
 ## PAL Backend
 
@@ -62,7 +62,7 @@ Desktop backend 使用的 host 能力包括：
 
 macOS Host Serial、CoreBluetooth、Netif 和 SystemEvent 见 [Darwin Components](./darwin)；Linux Host Serial 与既有 Netif/SystemEvent 见 [Linux Components](./linux)。两端共享的 private termios session 见 [POSIX Components](./posix)。
 
-H2Loader native CLI 是 project-owned headless `cc_binary`，不是 Desktop 产品。portable CLI 只消费 Runtime、PAL、Command I/O 与 H2Loader Host Core；target 只组装 Darwin、Linux 或 Windows 已有 provider，并用标准 C stdio 接入 Command I/O。它不拥有 filesystem、socket 或 process 的私有跨平台替代层，也不依赖 Desktop `app_support`、SDL window、layout 或 application bundle。
+Gizloader's headless command implementation, native process entry and macOS/Linux/Windows adapters belong to `tools/gizloader/cli/`. The adapters compose platform providers and standard C stdio for Command I/O; the command implementation consumes Runtime, PAL, Command I/O and H2Loader Host Core. `tools/gizloader/native/` builds CLI/session sidecars. Headless CLI startup does not require Desktop `app_support`, SDL, layout or a GUI bundle.
 
 Desktop unit tests 使用 test-only bounded SystemEvent provider 验证 `NULL`、重复 accessor 与 BLE/modem event delivery，不链接任一 OS component。测试 helper 不进入 `:pal_core` production target。
 
@@ -100,7 +100,7 @@ Display hook 取得实际 SDL 呈现的完整 RGB565 framebuffer 与 brightness�
 
 `//libs/pal/providers/ffmpeg:ffmpeg` 使用 FFmpeg 的 `libavcodec`、`libavutil` 和 `libswscale` 提供 Audio Decoder 与 Video Decoder PAL。Video provider 接收 packet-fed H.264 Annex-B access unit，并把 frame 规范化到调用方 allocator-backed 的 CPU-readable format；Audio provider 解码 raw AAC-LC，并返回 allocator-backed interleaved S16LE。两个 provider 都不打开路径、不选择 MP4 track，也不依赖 `libavformat`；FFmpeg context、packet、frame、sample format 和 scaler 都属于 provider private state。
 
-`projects/example/targets/cc_binary/mp4-player` 是 MP4 Decoder、Audio PAL 与 Display PAL 的 smoke entry。测试素材使用 Showcase 的 1024×600 Big Buck Bunny 视频流，并把内嵌音轨编码为 Desktop Audio PAL 支持的 16 kHz mono AAC-LC；App 通过 `libs/mp4_decoder` 获取同步 presentation frame，把借用数据复制到三个循环使用的 presentation slot。decoder 和 Audio writer 使用独立 Runtime task，阻塞式 App 调用线程专职呈现 RGB565、轮询 SDL event 并通过 `seek(0)` 循环，避免把 host window 操作迁移到 worker thread。
+A consumer combines `libs/mp4_decoder`, Audio PAL and Display PAL according to its own playback contract. Presentation buffers must outlive every decoder, audio and display consumer; launcher code owns SDL event processing and cooperative shutdown. Reusable decoder capability does not imply a maintained sample player artifact.
 
 Launcher 必须持续处理 SDL event。窗口关闭事件是进程退出条件；失去焦点时必须释放所有 keyboard-backed button，避免 sticky press。
 
@@ -108,7 +108,7 @@ Launcher 必须持续处理 SDL event。窗口关闭事件是进程退出条件�
 
 ## Strict JSON 配置
 
-每个 entry 的 `layout.json` 由 `tools/bazel/desktop_layout/generate_layout.py` 按 strict schema 验证并生成 C++ config。配置只描述 Desktop integration，不描述 LVGL screen/widget layout：
+Each entry's `layout.json` is validated by `tools/bazel/desktop_layout/generate_layout.py` and generates C++ configuration. It describes Desktop integration. The paths below use `<owner>` and `<app>` as placeholders for actual consumer-owned data:
 
 ```json
 {
@@ -119,7 +119,7 @@ Launcher 必须持续处理 SDL event。窗口关闭事件是进程退出条件�
   },
   "filesystem": {
     "mounts": [
-      {"source": "projects/example/data", "target": "/data"}
+      {"source": "projects/<owner>/data", "target": "/data"}
     ]
   },
   "peripherals": [
@@ -150,7 +150,7 @@ Battery、GPIO wake、confirmed incoming 和 power snapshot injection 属于 `h2
 {
   "mounts": [
     {"source": "local/h2loader/downloads", "target": "/dl"},
-    {"source": "projects/example/apps/audio-system/data", "target": "/data"}
+    {"source": "projects/<owner>/apps/<app>/data", "target": "/data"}
   ]
 }
 ```
@@ -161,7 +161,7 @@ Runtime 只看到 `/dl`、`/data` 等 portable path。Host backend 负责 open�
 
 Simulation 是 peripheral-kind 的行为，不是通用 `fake` wrapper。Button 由 SDL keyboard event 驱动；NFC reader 在没有注入卡片时返回正常的 no-card/not-found 状态；IMU 默认返回零值。未知 `periph_id` 必须返回 PAL not-found。
 
-外部 NFC reader、modem 等真实 host 设备未来应通过独立 UART adapter 接入。PortAudio 是 audio PAL 的真实设备 backend，不属于 peripheral simulation。`example/audio-system` 要求真实 default input/output device；初始化、设备选择、open 或 start 失败时必须终止启动，不能降级为 synthetic mic 或 sink output。
+外部 NFC reader、modem 等真实 host 设备未来应通过独立 UART adapter 接入。PortAudio is the real-device Audio PAL backend. Consumers requiring real capture/playback must fail when device selection, initialization, open or start fails; a synthetic microphone or discarded output cannot establish that contract.
 
 ## Build 与 Package
 
@@ -174,20 +174,14 @@ bazel build --config=linux_x86_64 //libs/pal/providers/desktop:all
 bazel test --config=linux_x86_64 //libs/pal/providers/desktop:all
 ```
 
-Project-owned Desktop entry 的 build、test 和 run 入口是：
+Each project documents its actual Desktop entry and exact target label. The following commands are generic templates; replace every placeholder with an existing consumer-owned target:
 
 ```sh
-bazel build --config=macos_arm64 //projects/.../cc_binary/...
-bazel run --config=macos_arm64 //projects/example/targets/cc_binary/display:example-display
-bazel run --config=macos_arm64 //projects/example/targets/cc_binary/audio-system:example-audio-system
-bazel build --config=macos_arm64 //projects/example/targets/macos_application/tap-reset:tap_reset_app
+bazel run --config=macos_arm64 '//projects/<owner>/targets/cc_binary/<app>:<target>'
+bazel build --config=macos_arm64 '//projects/<owner>/targets/macos_application/<app>:<target>'
 ```
 
-每个 Desktop App 是独立 `cc_binary`，必须通过 exact Bazel label 选择；不存在的 label 直接失败，不从命令行字符串动态生成 target。
-
-可分发的 macOS App bundle 使用 `rules_apple` 的 `macos_application` 直接构建，不先生成 `cc_binary` 再由脚本拼装 `.app`。Tap Reset 的 portable App 与 Desktop adapter 仍是普通 C/C++ Bazel library；`projects/example/targets/macos_application/tap-reset/` 只拥有 native entry、`Info.plist` 和 bundle rule。该目标产出 `tap_reset_app.zip`，其中包含 `GizOSTapReset.app`；需要脚本解析绝对输出路径时使用 `bazel cquery --config=macos_arm64 //projects/example/targets/macos_application/tap-reset:tap_reset_app --output=files`。
-
-`ci-graph` configured analysis 和 Linux native build 在解析 Apple toolchain transition 前通过 `--deleted_packages` 排除该 bundle package。macOS native build 不使用这项 Linux-only 配置，仍会从 project-owned `macos_application` package 构建真实 artifact。真实 artifact 必须由使用 `--config=macos_arm64` 的 macOS build/CI 验证，不能用 Linux graph exclusion 代替 macOS 构建。
+A distributable macOS bundle uses `rules_apple` `macos_application`. The entry owns native startup, `Info.plist` and bundle metadata, while portable App and Desktop adapter code remain ordinary libraries. Use the actual target's `bazel cquery --output=files` result for artifact paths. Validate Apple artifacts with their matching macOS configuration and toolchain; another platform's graph exclusion does not prove a successful bundle build.
 
 H2Loader 的工厂 Batch Loader 是独立 Web 产品，不属于通用 Desktop component，也不由 macOS application bundle 发布。
 
@@ -281,7 +275,7 @@ Desktop Component 不应该：
 - 把 host filesystem path 固化为 app contract。
 - 向产品入口注入业务 seed、fake provider 或伪造的服务成功结果。
 - 在要求真实硬件结果时替代 ESP 或 BK 验证。
-- 把 H106、Dinorun 或其他 app 的 Desktop entry 放回 portable app tree。
+- Put a product's Desktop entry back into its portable App source tree.
 
 ### 网络状态模拟
 

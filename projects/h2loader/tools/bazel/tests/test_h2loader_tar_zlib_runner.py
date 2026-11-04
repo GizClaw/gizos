@@ -85,8 +85,8 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             result = subprocess.run([
                 sys.executable, str(RUNNER), "--source-root", str(root),
                 "--app-image", str(payload), "--app-path", "app/jieli/update.ufw",
-                "--entry", "projects/test/targets/h2loader_tar_zlib/fixture/ac707n_chip",
-                "--platform", "jieli", "--board", "ac707n_chip", "--image", "fixture",
+                "--entry", "projects/test/targets/h2loader_tar_zlib/fixture/fixture_board",
+                "--platform", "jieli", "--board", "fixture_board", "--image", "fixture",
                 "--role", "app", "--target", "ac707n", "--version", "1.0.0",
                 "--package-output", str(package), "--metadata-output", str(metadata),
             ], capture_output=True, text=True)
@@ -363,7 +363,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "--app-path",
                     "app/esp/app.bin",
                     "--entry",
-                    "projects/example/targets/h2loader_tar_zlib/example/board",
+                    "projects/test/targets/h2loader_tar_zlib/fixture/board",
                     "--platform",
                     "esp",
                     "--board",
@@ -397,7 +397,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     ["data/config.json"],
                 )
             release = json.loads(metadata.read_text(encoding="utf-8"))
-            self.assertEqual(release["entry"], "projects/example/targets/h2loader_tar_zlib/example/board")
+            self.assertEqual(release["entry"], "projects/test/targets/h2loader_tar_zlib/fixture/board")
             self.assertEqual(release["assets"][0]["operation"], "managed-install")
             self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar")
             self.assertEqual(release["native_artifacts"][0]["name"], "firmware.elf")
@@ -568,7 +568,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "--app-path",
                     "app/bk/app_ab_crc.rbl",
                     "--entry",
-                    "projects/h2loader/targets/h2loader_tar_zlib/loader/board",
+                    "projects/h2loader/targets/loader/vendor/board",
                     "--platform",
                     "bk7258",
                     "--board",

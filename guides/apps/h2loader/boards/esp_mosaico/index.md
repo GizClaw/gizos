@@ -1,13 +1,13 @@
 # ESP-Mosaico
 
-ESP-Mosaico 使用 ESP32-S31、480×480 圆形触摸屏和板载 Type-C OTG CDC。 板级支持位于 `boards/esp_mosaico/esp32s31/`，沿用现有 16 MiB NOR `layouts/h2loader`，管理镜像容量 3 MiB、App 容量 7 MiB。
+ESP-Mosaico 使用 ESP32-S31、480×480 圆形触摸屏和板载 Type-C OTG CDC。 板级支持位于 `boards/espressif/mosaico/esp32s31/`，沿用现有 16 MiB NOR `layouts/h2loader`，管理镜像容量 3 MiB、App 容量 7 MiB。
 
 同一块板有两个可替换的管理镜像，二者均为 `role=h2loader`：
 
 | 入口 | Canonical package target | 用途 |
 | --- | --- | --- |
-| [普通 H2Loader](./h2loader) | `//projects/h2loader/targets/h2loader_tar_zlib/loader/esp_mosaico:package` | 现有管理、安装与恢复 |
-| [MFG](./mfg) | `//projects/mfg/apps/esp_mosaico:package` | 十一项共享验收；全部 PASSED 后才允许 App 安装和启动 |
+| [普通 H2Loader](./h2loader) | `//projects/h2loader/targets/loader/espressif/mosaico:package` | 现有管理、安装与恢复 |
+| [MFG](./mfg) | `//projects/mfg/targets/mfg/espressif/mosaico:package` | 十一项共享验收；全部 PASSED 后才允许 App 安装和启动 |
 
 MFG 替换管理镜像，无需另装一个 MFG App。普通 Loader 保持现有实现；两个入口 均复用板级 Runtime、USB console 和 Loader USB adapter。MFG 仅通过 USB 提供 管理命令，BLE 用于扫描验收，不启用 BLE 命令服务。
 

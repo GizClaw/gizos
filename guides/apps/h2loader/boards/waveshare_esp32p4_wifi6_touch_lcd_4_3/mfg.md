@@ -1,6 +1,6 @@
 # P4 Board MFG
 
-验收程序位于 `projects/mfg/apps/waveshare_esp32p4_wifi6_touch_lcd_4_3/`，
+验收程序位于 `projects/mfg/targets/mfg/waveshare/esp32p4_wifi6_touch_lcd_4_3/`，
 包含存储、显示、触摸、BOOT 按键、扬声器、麦克风、Wi-Fi、BLE、AEC、
 摄像头十项验收。
 
@@ -11,7 +11,7 @@ speaker、mic、Wi-Fi、实体板 BLE 对端及 AEC 均已通过。
 
 ```sh
 bazel build --noannounce_rc --config=esp32p4 \
-  //projects/mfg/apps/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
+  //projects/mfg/targets/mfg/waveshare/esp32p4_wifi6_touch_lcd_4_3:package
 ```
 
 通过 H2Loader 安装生成的 `waveshare_esp32p4_wifi6_touch_lcd_4_3-mfg-esp32p4.update.tar.zlib`，
@@ -56,7 +56,7 @@ AEC 页先测静音与远端回声，再提示 `SPEAK NOW`、`SPEAK OVER TONE`�
 
 ```sh
 bazel build --noannounce_rc --config=esp32p4 \
-  //projects/mfg/apps/waveshare_esp32p4_wifi6_touch_lcd_4_3:gain_package
+  //projects/mfg/targets/mfg/waveshare/esp32p4_wifi6_touch_lcd_4_3:gain_package
 ```
 
 先保存原 Loader 对应的 update 包与分区校验值，再临时安装扫描 Loader。

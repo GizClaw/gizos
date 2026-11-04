@@ -354,14 +354,6 @@ def validate_layout(layout: Any, app_name: str, repo_root: pathlib.Path) -> dict
                     "$.simulation.telemetry.temperature_milli_celsius",
                     -100_000, 200_000)
 
-    if app_name == "example/display" and mounts:
-        fail("$.filesystem.mounts", "example/display cannot declare mounts")
-    if app_name == "example/audio-system":
-        if len(mounts) != 1 or \
-                mounts[0]["source"] != "projects/example/apps/audio-system/data" or \
-                mounts[0]["target"] != "/data":
-            fail("$.filesystem.mounts",
-                 "example/audio-system requires its /data audio mount")
     relative_path(app_name, "app_name")
     return root
 

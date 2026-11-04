@@ -56,9 +56,9 @@ def _logical(physical: int) -> int:
     return physical // 34 * 32
 
 
-def validate_layout(metadata: Path, image_size: int) -> list[tuple[int, int]]:
+def validate_layout(metadata: Path | dict, image_size: int) -> list[tuple[int, int]]:
     """Accept only contiguous legacy Bootloader/CP/AP code starting at Flash zero."""
-    table = json.loads((metadata / "partitions.json").read_text(encoding="utf-8"))
+    table = metadata if isinstance(metadata, dict) else json.loads((metadata / "partitions.json").read_text(encoding="utf-8"))
     if not isinstance(table, dict):
         raise ImageError("LAYOUT_FORMAT")
     if table.get("crc_enable") is not True or not isinstance(table.get("section"), list):
@@ -118,8 +118,8 @@ def check_rbl(plain: bytes, payload_start: int, ap_start: int) -> int:
     return payload_end
 
 
-def encrypt_recovery(source: bytes, metadata: Path, key: bytes) -> bytes:
-    """Validate and transform a complete supported native image without publishing it."""
+def validate_recovery(source: bytes, metadata: Path | dict) -> tuple[bytes, list[tuple[int, int]]]:
+    """Validate a complete native Bootloader/CP/AP image without requiring a key."""
     ranges = validate_layout(metadata, len(source))
     blocks = []
     for offset in range(0, len(source), 34):
@@ -142,6 +142,12 @@ def encrypt_recovery(source: bytes, metadata: Path, key: bytes) -> bytes:
         logical_reset = (flash_address & ~1) - 0x02000000
         if stack in (0, 0xFFFFFFFF) or stack % 8 or not reset & 1 or not start <= logical_reset < code_end:
             raise ImageError("CODE_VECTOR_LAYOUT")
+    return plain, ranges
+
+
+def encrypt_recovery(source: bytes, metadata: Path | dict, key: bytes) -> bytes:
+    """Transform a complete native image, including the BootROM marker exception."""
+    plain, ranges = validate_recovery(source, metadata)
     cipher = BekenXTS(key)
     encrypted = bytearray(b"".join(cipher.block(plain[i:i + 32], i) for i in range(0, len(plain), 32)))
     encrypted[0x100:0x110] = plain[0x100:0x110]
@@ -156,7 +162,7 @@ def encrypt_recovery(source: bytes, metadata: Path, key: bytes) -> bytes:
 
 
 def validate_app(source: bytes, metadata: Path | dict) -> tuple[bytes, int, int]:
-    """Return plaintext, final logical base and AP offset for a managed App.
+    """Return plaintext, final logical base and AP offset for a native CP/AP image.
 
     Unlike recovery, the App starts at its final CP partition, has no BootROM
     marker exception, and may end before the partition window's capacity.

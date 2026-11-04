@@ -96,6 +96,37 @@ static h2_pal_result_t unsupported_power_set_deep_sleep_wake_timer(
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_power_prepare_next_boot_partition(
+    void* user, const h2_pal_power_boot_request_t* request,
+    h2_pal_power_native_evidence_t* out_evidence) {
+  (void)user;
+  (void)request;
+  (void)out_evidence;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_power_get_image_state(
+    void* user, uint32_t partition_id, h2_pal_power_image_state_t* out_state) {
+  (void)user;
+  (void)partition_id;
+  (void)out_state;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_power_confirm_running_image(
+    void* user, const h2_pal_power_native_evidence_t* evidence,
+    h2_pal_power_image_confirmation_t* out_confirmation) {
+  (void)user;
+  (void)evidence;
+  (void)out_confirmation;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_power_feed_watchdog(void* user) {
+  (void)user;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_power_vtable_t unsupported_power_vtable = {
     .get_capabilities = unsupported_power_get_capabilities,
     .get_boot_info = unsupported_power_get_boot_info,
@@ -111,6 +142,11 @@ static const h2_pal_power_vtable_t unsupported_power_vtable = {
     .sleep = unsupported_power_sleep,
     .deep_sleep = unsupported_power_deep_sleep,
     .set_deep_sleep_wake_timer = unsupported_power_set_deep_sleep_wake_timer,
+    .prepare_next_boot_partition =
+        unsupported_power_prepare_next_boot_partition,
+    .get_image_state = unsupported_power_get_image_state,
+    .confirm_running_image = unsupported_power_confirm_running_image,
+    .feed_watchdog = unsupported_power_feed_watchdog,
 };
 static const h2_pal_power_api_t unsupported_power_api = {
     .user = NULL, .vtable = &unsupported_power_vtable};

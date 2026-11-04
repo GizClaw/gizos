@@ -1,5 +1,7 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -91,8 +93,17 @@ cc_library(
         ":tasks",
         "//libs/bleikcp",
         "//libs/command",
+        "//libs/h2loader/device",
         "//libs/pal",
         "//libs/runtime",
-        "//projects/h2loader/libs/h2loader",
     ],
+)
+
+cc_test(
+    name = "lifetime_test",
+    srcs = ["tests/test_lifetime.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":loader"],
 )

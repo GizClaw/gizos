@@ -7,11 +7,8 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-PATHS = [
-    'projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_launcher.c',
-    'projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src/jieli_app_iostreamikcp.c',
-]
-PATCH = 'boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_patches/bounded_cdc_write.patch'
+PATHS = ['native_component_src/jieli/wl82/h2_pal_image/src/h2_jieli_wl82_console.c']
+PATCH = 'boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_patches/bounded_cdc_write.patch'
 
 def function(source, signature):
     begin = source.index(signature)
@@ -30,11 +27,11 @@ class UsbDeadlinesTest(unittest.TestCase):
         sdk = function(sdk, 'u32 cdc_write_data(')
         for path in PATHS:
             source = (ROOT / path).read_text()
-            app = 'h2_jieli_app_console_t' in source
+            app = True
             fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_usb_deadlines.c').read_text()
             fixture = fixture.replace('/* SDK_WRITE */', sdk)
             fixture = fixture.replace('/* TICKS */', function(source, 'static uint32_t ms_to_ticks('))
-            fixture = fixture.replace('/* PHYSICAL_WRITE */', function(source, 'static int physical_write('))
+            fixture = fixture.replace('/* PHYSICAL_WRITE */', function(source, 'h2_pal_result_t h2_jieli_wl82_console_write(').replace('h2_jieli_wl82_console_write', 'physical_write').replace('h2_jieli_console_t', 'h2_jieli_app_console_t').replace('&state', '&app'))
             fixture = fixture.replace('/* OUTER_MUTEX */', '&app.tx_mutex' if app else '&usb_tx_mutex')
             fixture = fixture.replace('/* USER */', '&app' if app else 'NULL')
             with tempfile.TemporaryDirectory() as directory:

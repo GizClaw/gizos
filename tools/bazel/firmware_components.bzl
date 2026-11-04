@@ -8,38 +8,51 @@ def _declared_include_root(root):
     return path not in ("", ".") and not path.startswith("bazel-out/")
 
 FirmwareLibComponentInfo = provider(
-    doc = "One native firmware component backed by multiple Bazel libraries.",
+    doc = "One native firmware component combining Bazel archives and SDK-compiled sources.",
     fields = {
         "archives": "Complete ordered static archive closure imported by the component.",
         "component_name": "Native SDK component name.",
         "headers": "Complete public header closure required by native consumers.",
         "include_roots": "Declared public include roots required by native consumers.",
+        "native_srcs": "Explicit portable sources compiled by the SDK with its C runtime ABI.",
     },
 )
 
 FirmwareComponentsInfo = provider(
-    doc = "Native firmware component archives reachable from a dependency graph.",
-    fields = {"components": "Depset of component archive records."},
+    doc = "Native firmware library components reachable from a dependency graph.",
+    fields = {"components": "Depset of component archive/source records."},
 )
 
 def _firmware_lib_component_impl(ctx):
     cc_toolchain = find_cpp_toolchain(ctx)
-    if ctx.attr.validate_archive_abi and not cc_toolchain.nm_executable:
-        fail("C++ toolchain for %s does not provide nm" % ctx.label)
     linked_archives = []
     seen_archives = {}
     include_roots = {}
     header_sets = []
+    native_srcs = depset(ctx.files.native_srcs)
+    for source in native_srcs.to_list():
+        if source.extension not in ["c", "cc", "cpp", "cxx", "s", "S"]:
+            fail("firmware native source %s is not a C/C++ or assembly source" % source.path)
+    for root in ctx.attr.native_include_roots:
+        if not root or root.startswith("/") or ".." in root.split("/"):
+            fail("firmware native include root must be repository-relative: %s" % root)
+        include_roots[(ctx.label.workspace_root + "/" + root) if ctx.label.workspace_root else root] = True
+    for header in ctx.files.native_hdrs:
+        include_roots[header.dirname] = True
+
     for dependency in ctx.attr.deps:
-        cc_info = dependency[CcInfo]
-        for linker_input in cc_info.linking_context.linker_inputs.to_list():
+        for linker_input in dependency[CcInfo].linking_context.linker_inputs.to_list():
             for library in linker_input.libraries:
                 archive = library.static_library
                 if archive and archive.path not in seen_archives:
                     seen_archives[archive.path] = True
                     linked_archives.append(archive)
 
-        compilation_context = cc_info.compilation_context
+    # Header APIs may also be ordinary cc_library targets. Consume only their
+    # public compilation context, never their archives: these sources must be
+    # compiled by the SDK rather than by Bazel's potentially different libc.
+    for dependency in ctx.attr.deps + ctx.attr.native_deps:
+        compilation_context = dependency[CcInfo].compilation_context
         header_sets.append(compilation_context.headers)
         for roots in [
             compilation_context.includes,
@@ -51,8 +64,10 @@ def _firmware_lib_component_impl(ctx):
                 if _declared_include_root(root):
                     include_roots[str(root)] = True
 
-    if not linked_archives:
-        fail("firmware library component %s does not contain a static archive" % ctx.label)
+    if not linked_archives and not ctx.files.native_srcs:
+        fail("firmware library component %s does not contain a static archive or native source" % ctx.label)
+    if linked_archives and ctx.attr.validate_archive_abi and not cc_toolchain.nm_executable:
+        fail("C++ toolchain for %s does not provide nm" % ctx.label)
 
     validated_archives = []
     for index, archive in enumerate(linked_archives):
@@ -85,13 +100,17 @@ def _firmware_lib_component_impl(ctx):
         )
         validated_archives.append(validated_archive)
 
+    headers = depset(direct = ctx.files.native_hdrs, transitive = header_sets)
+    archives = depset(validated_archives, order = "topological")
+    files = depset(transitive = [archives, native_srcs, headers], order = "topological") if ctx.files.native_srcs else archives
     return [
-        DefaultInfo(files = depset(validated_archives, order = "topological")),
+        DefaultInfo(files = files),
         FirmwareLibComponentInfo(
-            archives = depset(validated_archives, order = "topological"),
+            archives = archives,
             component_name = ctx.attr.component_name,
-            headers = depset(transitive = header_sets),
+            headers = headers,
             include_roots = sorted(include_roots),
+            native_srcs = native_srcs,
         ),
     ]
 
@@ -105,6 +124,21 @@ _firmware_lib_component_attrs = {
         providers = [CcInfo],
     ),
     "component_name": attr.string(default = "h2_firmware_lib"),
+    "native_srcs": attr.label_list(
+        allow_files = True,
+        doc = "Explicit C/C++ or assembly source groups compiled by the SDK in this component.",
+    ),
+    "native_hdrs": attr.label_list(
+        allow_files = True,
+        doc = "Headers for SDK compilation; their directories are also exported as include roots.",
+    ),
+    "native_include_roots": attr.string_list(
+        doc = "Additional include roots relative to the declaring repository, not the package.",
+    ),
+    "native_deps": attr.label_list(
+        providers = [CcInfo],
+        doc = "Public CcInfo headers and declared include roots for SDK compilation; archives, defines and compiler options are not imported.",
+    ),
     "validate_archive_abi": attr.bool(),
 } | CC_TOOLCHAIN_ATTRS
 
@@ -116,7 +150,7 @@ _firmware_lib_component = rule(
 )
 
 def firmware_lib_component(name, **kwargs):
-    """Declares a firmware component and validates archives in embedded configs."""
+    """Combines validated Bazel archives and explicit SDK-compiled sources."""
     _firmware_lib_component(
         name = name,
         validate_archive_abi = select({
@@ -143,6 +177,7 @@ def _firmware_components_aspect_impl(target, ctx):
             component_name = component.component_name,
             headers = component.headers,
             include_roots = component.include_roots,
+            native_srcs = component.native_srcs,
             owner = str(target.label),
         ))
 
@@ -159,11 +194,11 @@ def _component_name(record):
     return record.component_name
 
 def sort_firmware_components(components):
-    """Returns component archive records ordered by native component name."""
+    """Returns component archive/source records ordered by native component name."""
     return sorted(components, key = _component_name)
 
 def collect_firmware_components(graph):
-    """Returns validated native component archive records from graph dependencies.
+    """Returns validated native component archive/source records from graph dependencies.
 
     Args:
       graph: Dependencies carrying ``FirmwareComponentsInfo`` providers.
@@ -186,14 +221,25 @@ def collect_firmware_components(graph):
             by_owner[component.owner] = component
 
     result = []
+    source_owners = {}
     for component in sort_firmware_components(by_owner.values()):
         component_name = component.component_name
         archives = component.archives.to_list()
+        for source in component.native_srcs.to_list():
+            previous_owner = source_owners.get(source.path)
+            if previous_owner and previous_owner != component.owner:
+                fail("firmware native source %s is owned by both %s and %s" % (
+                    source.path,
+                    previous_owner,
+                    component.owner,
+                ))
+            source_owners[source.path] = component.owner
         result.append(struct(
-            archive = archives[0],
+            archive = archives[0] if archives else None,
             component_name = component_name,
             headers = component.headers,
             include_roots = component.include_roots,
+            native_srcs = component.native_srcs,
             generate_component = True,
         ))
         dependency_index = 0
@@ -203,6 +249,7 @@ def collect_firmware_components(graph):
                 component_name = "%s_dependency_%d" % (component_name, dependency_index),
                 headers = depset(),
                 include_roots = [],
+                native_srcs = depset(),
                 generate_component = False,
             ))
             dependency_index += 1

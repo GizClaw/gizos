@@ -225,19 +225,21 @@ int wifi_connect_and_save(void* user, const h2_pal_wifi_sta_config_t* config,
   if (!lock.owns_lock()) return H2_PAL_ERR_BUSY;
   const h2_pal_wifi_sta_vtable_t raw_vtable = {
       wifi_get_status, nullptr, wifi_connect, nullptr,
-      wifi_disconnect, nullptr, nullptr};
+      wifi_disconnect, nullptr, nullptr,      nullptr};
   const h2_pal_wifi_sta_api_t raw = {user, &raw_vtable};
   const h2_wifi_sta_dependencies_t deps = {&raw, &wifi_settings,
                                            h2_desktop_platform_time_api()};
   return h2_wifi_sta_connect_and_save(&deps, config, timeout_ms);
 }
-const h2_pal_wifi_sta_vtable_t wifi_sta_vtable = {wifi_get_status,
-                                                  wifi_scan,
-                                                  wifi_connect_serialized,
-                                                  wifi_connect_and_save,
-                                                  wifi_disconnect_serialized,
-                                                  wifi_get_mac,
-                                                  /*set_power_save=*/nullptr};
+const h2_pal_wifi_sta_vtable_t wifi_sta_vtable = {
+    wifi_get_status,
+    wifi_scan,
+    wifi_connect_serialized,
+    wifi_connect_and_save,
+    wifi_disconnect_serialized,
+    wifi_get_mac,
+    /*set_power_save=*/nullptr,
+    /*set_activity_observer=*/nullptr};
 h2_pal_wifi_sta_t wifi_sta = {nullptr, &wifi_sta_vtable};
 
 int wifi_ap_start(void*, const h2_pal_wifi_ap_config_t* config, uint32_t) {
@@ -736,6 +738,10 @@ const h2_pal_power_vtable_t power_vtable = {
     nullptr,
     power_deep_sleep,
     power_set_deep_sleep_wake_timer,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
 };
 h2_pal_power_api_t power_api = {nullptr, &power_vtable};
 

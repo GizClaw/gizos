@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class NetTimeoutErrorsTest(unittest.TestCase):
     def test_failed_timeout_does_not_enter_io(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_net.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_net.c').read_text()
         def section(begin, end):
             return source[source.index(begin):source.index(end, source.index(begin))]
         functions = section('static uint32_t stack_gate;', 'static h2_pal_result_t map_socket_error(')

@@ -12,8 +12,8 @@ The App reports the count, peak and sum of squared magnitudes for returned micro
 | Chromium/WASM Worker | `//projects/e2e/targets/pkg_tar/pal-audio:browser_test` |
 | iOS Simulator | `//projects/e2e/targets/ios_application/pal-audio:ios_pal_audio_simulator_test` |
 | Android Emulator | `//projects/e2e/targets/android_binary/pal-audio:android_pal_audio_simulator_test` |
-| ESP32-S3 AMOLED | `//projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled:package` |
-| BK7258 | `//projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405:package` |
+| ESP32-S3 AMOLED | `//projects/e2e/targets/pal-audio/waveshare/esp32s3_touch_amoled_1_8:package` |
+| BK7258 | `//projects/e2e/targets/pal-audio/beken/bk7258_v3_202405:package` |
 
 The iOS App links the built Swift Package/XCFramework binary, and the Android App links the AAR binary; the Android runner compares the AAR and APK library bytes. Both mobile runners also inject a tracked per-track allocator, require allocation failure to reject track creation, then write/drain/close a successful track and verify every caller-owned allocation was freed. For boards, install only through H2Loader `send --file` and `reboot upgrade`, then independently `reboot app --monitor` and require the same complete case ledger, `confirm=0`, intact Partition 1 Loader, empty Stage and unchanged coredump. Device launchers replay the stored terminal case ledger while idle because H2Loader control frames can interrupt a serial log line. Do not erase an existing coredump.
 

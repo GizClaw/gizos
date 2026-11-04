@@ -735,7 +735,7 @@ Display 只持有两份全屏 RGB565 像素：Lua 绘制缓冲 A 与 worker 发�
 
 `deinit`、job release 和 Host join 在帧传输未完成时返回 busy，保留 VM 引用和所有权，调用方稍后重试。关闭请求通过同一 worker 执行；随后 PAL join 可等待退出或返回 busy，成功后才释放占用和缓冲区。`h2_lua_host_destroy_checked()` 只有成功才释放 Host；失败后不能销毁 Runtime 或恢复借用 Display 的 UI。兼容的 void destroy 也保留失败对象，但调用方必须使用 checked 入口判断释放是否完成。PAL 错误会锁存并停止新提交；唤醒或复制交接等待失败不能证明 worker 已停止读取 A，因此同时冻结绘制并保留两份缓冲。提交任务退出后可 join，但不会在不确定设备状态下自动 close/open 或重试。该原型没有解除故障隔离的 API：fault 后保留 Host/VM/device lease，消费端须维持依赖并走其外部恢复或进程重启流程。PAL 的无限等待可能令同步调用或任务无法退出；软件 busy 不意味着已取消硬件，不能强删任务后 free。
 
-帧率只用成功且像素变化的完成记录计算；submitted、无变化 submit 和失败都不能计为变化帧 FPS。时间是 PAL monotonic transport 完成时间，不是面板 scanout；Web 的传输完成也不证明浏览器已合成到屏幕。观察者不能并发读取 worker 正在更新的普通 64 位字段，应消费 `status/flush` 发布的完成记录。已提交的同源消费例位于 `libs/lua/tests/display_submit.lua`，由 native worker 和 `projects/example/targets/pkg_tar/lua-script-submit` 的浏览器测试共同运行。
+帧率只用成功且像素变化的完成记录计算；submitted、无变化 submit 和失败都不能计为变化帧 FPS。时间是 PAL monotonic transport 完成时间，不是面板 scanout；Web 的传输完成也不证明浏览器已合成到屏幕。观察者不能并发读取 worker 正在更新的普通 64 位字段，应消费 `status/flush` 发布的完成记录。The retained native worker regression uses `libs/lua/tests/display_submit.lua`.
 
 Host 回归可直接编译生产目录、GizClaw handler 和 Desktop PAL，运行包校验、卸载、持久化、故障恢复及 stream 测试：
 

@@ -18,13 +18,13 @@ def function(source, signature):
 
 class AdvertisingLifetimeTest(unittest.TestCase):
     def test_advertising(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
         begin = source.index('struct h2_pal_ble_adv_set {')
         types = source[begin:source.index('typedef struct h2_jieli_ble_state', begin)]
         begin = source.index('struct h2_ext_adv_param {')
         types += source[begin:source.index('static void h2_ble_post(', begin)]
         begin = source.index('static int h2_adv_append(')
-        code = source[begin:source.index('static int h2_ble_start(', begin)]
+        code = 'static char h2_gap_name[30];\n' + source[begin:source.index('static int h2_ble_start(', begin)]
         begin = source.index('static int h2_adv_set_create(')
         code += source[begin:source.index('static int h2_register_gatt(', begin)]
         code += function(source, 'static int h2_command_rearm(void) {')

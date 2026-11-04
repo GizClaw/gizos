@@ -58,6 +58,7 @@ api_reference(
         "//libs/gizclaw",
         "//libs/gizclaw:local",
         "//libs/gizclaw/web:headers",
+        "//libs/h2loader/device",
         "//libs/iostreamikcp",
         "//libs/iperf",
         "//libs/lua",
@@ -87,7 +88,6 @@ api_reference(
         "//libs/runtime",
         "//libs/semver",
         "//libs/utils",
-        "//projects/h2loader/libs/h2loader",
     ],
 )
 

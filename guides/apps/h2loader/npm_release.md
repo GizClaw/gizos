@@ -1,6 +1,12 @@
 # npm Release
 
-`@gizclaw/h2loader`、`@gizclaw/firmware` 与 `@gizclaw/gizos` 的 npm tarball 与固件属于同一个 GizOS snapshot Release。`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，自动生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS` 与 `v<batch>` tag；不再接受 version 输入。上传 draft Release 后重新下载并逐文件 `cmp`，成功才公开；公开前失败会回滚生成的 draft 和 tag。
+The current npm release bundle contains `@gizclaw/h2loader` and
+`@gizclaw/gizos`, alongside the firmware snapshot. Already published
+`@gizclaw/firmware` versions remain available in npm, but this repository no
+longer builds or includes that package in new releases. The release workflow
+retains its explicit default-branch dispatch, shared UTC batch/tag, fixed source
+commit and download-verification contract.
+
 
 ## Slice 与本地构建
 
@@ -13,7 +19,14 @@ make bazel-release RELEASE_SLICE=npm-packages RELEASE_BATCH=20260920-120000 RELE
 bazel test //tools/bazel:npm_release_test //tools/bazel:release_test //tools/bazel:release_bundle_test //projects/h2loader/targets/npm_package/h2loader:release_tarball_test
 ```
 
-`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 package manifests 分别声明 H2Loader 0.4.3、可选固件 WASM runtime SDK 0.1.0 与共享 SDK/toolchain toolbox `@gizclaw/gizos`。前两者生成 gizclaw-h2loader-0.4.3.tgz 与 gizclaw-firmware-0.1.0.tgz；toolbox 的版本由发布批次转换为 `YYYY.M.D-rHHMMSS`，生成 `gizclaw-gizos-<version>.tgz`。固件 runtime SDK 只由需要对象/Promise API 的调用代码引入并绑定已有 WASM Module；固件和底层回调调用不需要它，见 [Web 固件控制 SDK](/apps/web#可选的-gizclaw-固件控制-sdk)。H2Loader 的 Web runtime 使用 pthread Worker 和共享 WASM 内存，使用方必须由 HTTPS 或 localhost 提供页面，并实际发送 `Cross-Origin-Opener-Policy: same-origin` 与 `Cross-Origin-Embedder-Policy: require-corp` 响应头。
+`npm-packages` is a source producer and does not accept `RELEASE_INPUT_DIR`.
+`//tools/bazel:npm_release_bundle` builds its explicit package list. Staging holds
+one `.tgz` per package and `npm-index.json`, without a separate `SHA256SUMS`.
+The H2Loader manifest currently declares version 0.4.3; the toolbox version is
+derived from the release batch as `YYYY.M.D-rHHMMSS`. H2Loader's pthread Web runtime
+requires a secure origin and actual `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` response headers.
+
 
 已发布的同名同版本 tarball 必须保持相同字节。WASM runtime 重编译后的内容变化同样需要提升 H2Loader SDK 版本；0.4.3 包含本次重建的 runtime，保留已发布的 0.4.2 归档。Deploy 的累积目录会拒绝以同一版本覆盖不同内容。
 
@@ -48,11 +61,11 @@ make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH=20260920-120000 RE
   "package_count": 2,
   "packages": [
     {
-      "name": "@gizclaw/firmware",
+      "name": "@gizclaw/gizos",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "size": 123,
-      "tarball": "gizclaw-firmware-0.1.0.tgz",
-      "version": "0.1.0"
+      "tarball": "gizclaw-gizos-2026.9.20-r120000.tgz",
+      "version": "2026.9.20-r120000"
     },
     {
       "name": "@gizclaw/h2loader",

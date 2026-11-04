@@ -26,8 +26,8 @@ After browser platform teardown, the C pthread queries the real HTTP registry th
 | WASM | `targets/pkg_tar/pal-http` | C runs in a pthread Worker; real Chromium Fetch; no pending JS requests after teardown |
 | iOS simulator | `targets/ios_application/pal-http` | Real Swift Package archive; CoreHTTP + POSIX Net + full WolfSSL; system SecRandom entropy |
 | Android emulator | `targets/android_binary/pal-http` | Real AAR binary checked against APK; same full provider; system `/dev/urandom` entropy |
-| DevKit ESP32-S3 | `targets/h2loader_tar_zlib/pal-http/devkit` | USB H2Loader command service, saved STA settings, independent CoreHTTP with injected test CA |
-| BK7258 AP | `targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405` | UART1 H2Loader command service, saved STA settings, independent CoreHTTP with injected test CA |
+| DevKit ESP32-S3 | `targets/pal-http/espressif/esp32s3_devkitc_1` | USB H2Loader command service, saved STA settings, independent CoreHTTP with injected test CA |
+| BK7258 AP | `targets/pal-http/beken/bk7258_v3_202405` | UART1 H2Loader command service, saved STA settings, independent CoreHTTP with injected test CA |
 
 ```sh
 bazel test //projects/e2e/apps/pal-http/app:reject_missing_test

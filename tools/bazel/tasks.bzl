@@ -22,6 +22,9 @@ H2TasksInfo = provider(
 
 _TASK_ATTRIBUTES = [
     "deps",
+    "native_deps",
+    "native_srcs",
+    "native_hdrs",
     "implementation_deps",
     "exports",
     "runtime_deps",

@@ -5,7 +5,7 @@ import subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[3]
 class SaveTest(unittest.TestCase):
     def test_sdk_bool_header_order(self):
-        source=(ROOT/'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
+        source=(ROOT/'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
         headers = [line for line in source.splitlines()
                    if line in ('#include "asm/includes.h"', '#include "h2_wifi_sta.h"')]
         with tempfile.TemporaryDirectory() as directory:
@@ -19,7 +19,7 @@ class SaveTest(unittest.TestCase):
                             '-o',str(root/'test')],check=True)
 
     def test_save(self):
-        source=(ROOT/'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
+        source=(ROOT/'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
         shared=(ROOT/'libs/wifi_sta/tests/test_wifi_sta.c').read_text()
         fixture=shared[:shared.index('static void run_cases')]
         match=re.search(r'\bstatic\s+int\s+sta_connect_and_save\s*\(\s*void\s*\*\s*user\s*,', source)

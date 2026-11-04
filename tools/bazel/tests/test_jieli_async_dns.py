@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class AsyncDnsTest(unittest.TestCase):
     def test_pending_close_capacity_and_completion(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_net.c").read_text()
         state = source[source.index("struct h2_pal_net_resolver {"):
                        source.index("static h2_pal_result_t map_socket_error")]

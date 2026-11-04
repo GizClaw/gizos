@@ -493,7 +493,15 @@ static int esp_pref_open(void* user, const char* name_space,
   return H2_PAL_OK;
 }
 
-static const h2_pal_pref_vtable_t s_pref_vtable = {.open = esp_pref_open};
+static h2_pal_result_t esp_pref_finalize_migration(void* user) {
+  (void)user;
+  return h2_esp_platform_pref_finalize_migration();
+}
+
+static const h2_pal_pref_vtable_t s_pref_vtable = {
+    .open = esp_pref_open,
+    .finalize_migration = esp_pref_finalize_migration,
+};
 static const h2_pal_pref_api_t s_pref_api = {.user = NULL,
                                              .vtable = &s_pref_vtable};
 

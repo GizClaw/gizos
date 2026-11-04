@@ -61,14 +61,15 @@
 │       ├── ap/                           # BK AP reusable components
 │       └── cp/                           # BK CP reusable components
 │
-├── boards/                               # 物理 board BSP
-│   └── <board>/
-│       ├── BUILD.bazel                    # 独立 board_version 声明和既有 board 入口
-│       └── <chip-or-target>/
-│           ├── include/                  # BSP public API
-│           ├── src/                      # BSP private implementation
-│           ├── layouts/<profile>/        # Standard、H2Loader 等 firmware layout
-│           └── <board-config>            # GPIO、SDK defaults 等
+├── boards/                               # Board support grouped by manufacturer
+│   └── <company>/                        # beken, espressif, jieli, jlc, waveshare
+│       └── <board>/
+│           ├── BUILD.bazel                # Board version and public board targets
+│           └── <chip-or-target>/
+│               ├── include/              # BSP public API
+│               ├── src/                  # BSP private implementation
+│               ├── layouts/<profile>/    # Standard and H2Loader firmware layouts
+│               └── <board-config>        # GPIO and SDK defaults
 │
 ├── projects/                             # Project-owned App、library、native component source 与最终产物
 │   ├── <app>/                            # 独立 portable app project
@@ -173,20 +174,6 @@ App 的启动顺序、Runtime assembly 和清理由 artifact entry 拥有；prov
 
 Library 集成的 upstream dependency 需要补充 CPU/ABI implementation 时，修改 upstream selection 的 patch 与新增 backend source 统一归 `third_party/<dependency>_patch/`；vendor repository 将它们应用到固定 upstream checkout，`libs/<library>` 仍只暴露一个 semantic target。Backend 可以使用目标 compiler/ABI，但不能取得 SDK lifecycle、board wiring 或 firmware policy；upstream checkout 本身保持未修改。
 
-PIXA Games 使用 library family 结构：
-
-```text
-projects/pixa_games/libs/
-├── dinorun/
-├── dinodive/
-├── dinobounce/
-└── dinotetris/
-```
-
-`projects/pixa_games/libs` 只作为 family container，不能直接放 `include/`、`src/` 或 shared implementation。每个 `projects/pixa_games/libs/<game>/` 都是独立 reusable library，遵守普通 library 的 `include/`、`src/`、`tests/` 和 `BUILD.bazel` 边界。Host 只向需要 player 的 game 传入 shared Player PIXA；game-owned legacy UI 贴图和样式栅格化结果生成到 `src/` 的 ARGB4444 代码数据，HUD 等运行时几何由 PixelRoot 绘制，不新增聚合的 `environment.pixa`。Game library 只关心自身 required button role、gameplay、PixelRoot scene、Player PIXA clip contract 和 result，不依赖引用它的 project。
-
-H106、Desktop 或其他 project 只引用需要的 game library，并在 host main loop 中把自己的 Runtime `component_id` 映射成 game button role。Host component 到 board `periph_id` 的 mapping 仍由对应 launcher 提供。具体 contract 见 [PIXA Games](/apps/pixa_games)。
-
 `libs/pal/include/` 是特殊边界，只保存 PAL contract：`h2_pal.h` 是根级全量 aggregate header，其他 public header 按 `h2/pal/core`、`os`、`net`、`application` 和 `hal` 分类，canonical unsupported accessor 位于 `h2/pal/h2_pal_unsupported.h`。这些目录仍属于同一个 `libs/pal` Bazel package 和 header-only `//libs/pal:pal` target，不引入子 package、分层 contract target 或新的 provider/runtime boundary。`libs/pal/src/unsupported/` 只保存所有平台共用的 canonical unsupported API object，并按 capability 保持一个 translation unit；直接使用 accessor 的 consumer 依赖 `//libs/pal:unsupported`，由静态链接器按 object 抽取。PAL 仍然必须遵守相同的 `tests/` 约定。真实 PAL backend、dummy backend、target-specific unavailable adapter 和 test fake 属于 `libs/pal/providers`、原生 SDK `components`、BSP 或 test adapter，不能放进 PAL contract package。
 
 `libs/drivers/` 可以继续按 modem、motion、NFC 等 portable driver family 拆分，但 driver 不能拥有具体 board 的 pin、bus instance 或 wiring。
@@ -219,9 +206,9 @@ iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/p
 
 ## `boards`
 
-`boards/<board>/BUILD.bazel` 通过独立的 `board_version(name, build)` 人工维护这块板的整数构建号。版本声明不依赖 App、源码或 BSP，也不拥有固件 variant；原有 filegroup 和 `<chip-or-target>/` 下的 BSP/component target 继续管理文件与构建。App 基础版本归 App 目录；最终固件 target 引用 App 与 board 的版本声明，并配置自己的 `variant`。版本组合用法见 [Bazel 构建与 CI 依赖图](/zh/developing/bazel)。
+`boards/<company>/<board>/BUILD.bazel` 通过独立的 `board_version(name, build)` 人工维护这块板的整数构建号。版本声明不依赖 App、源码或 BSP，也不拥有固件 variant；原有 filegroup 和 `<chip-or-target>/` 下的 BSP/component target 继续管理文件与构建。App 基础版本归 App 目录；最终固件 target 引用 App 与 board 的版本声明，并配置自己的 `variant`。版本组合用法见 [Bazel 构建与 CI 依赖图](/zh/developing/bazel)。
 
-`boards/<board>/<chip-or-target>/` 保存物理 board BSP：
+`boards/<company>/<board>/<chip-or-target>/` 保存物理 board BSP：
 
 - GPIO、pin mux、bus、address 和 channel。
 - 板上实际外设及其 `periph_id`。
@@ -231,7 +218,7 @@ iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/p
 - Board firmware profile，放在 `layouts/<profile>/`，包含该启动与升级模型共用的 partition、layout-specific SDK defaults、link 和 recovery 输入。
 - Embedded task scheduling policy 属于具体 firmware target，而不是 board layout 或某个上层 packaging workflow。任何使用 PAL task policy 的 `projects/**/targets/**/<board>/` package 都按 execution unit 声明 portable task name 到 priority、core affinity、minimum stack 和 stack-memory region 的最终映射；board layout 只提供硬件、SDK、partition、GPIO 与 RAM-region 输入。Shared PAL provider 只翻译已解析 policy 到 SDK task creation，App/library 只拥有稳定 portable name 与 requested minimum stack。Launcher 在 Runtime/PAL task access 前安装且只安装一个 target policy。
 
-有屏幕的 board 另有 `boards/<board>/web/`：`h2_web_board()` 声明这块板在浏览器里提供的屏幕尺寸和 Button（名字取 BSP 的 periph 名），以及一套或多套外观 HTML/CSS；浏览器页面选这块板和其中一套外观运行（见 [Web](/apps/web)）。它不含 BSP 源码，也不依赖任何 project。
+有屏幕的 board 另有 `boards/<company>/<board>/web/`：`h2_web_board()` 声明这块板在浏览器里提供的屏幕尺寸和 Button（名字取 BSP 的 periph 名），以及一套或多套外观 HTML/CSS；浏览器页面选这块板和其中一套外观运行（见 [Web](/apps/web)）。它不含 BSP 源码，也不依赖任何 project。
 
 同一个物理 board 包含多个 chip 或 core 时，它们仍放在同一个 `<board>` 根目录下，再按 `<chip-or-target>` 拆分。例如 BK7258 的 AP/CP 或同时包含 ESP32-P4、ESP32-C5 的开发板。
 
@@ -241,42 +228,40 @@ iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/p
 
 `projects/` 同时保存 portable project 和 project-owned artifact entry。Portable project 拥有 App、assets/data、project-local library 和 project policy；artifact entry 负责把这些 App 组装成某个平台可执行、可安装或可加载的产物，但不取得 portable App 源码 ownership。仓库中的 portable project 支持独立 App 与 project group 两种形态。
 
-### Artifact-rule roots
+### Firmware and platform entries
 
-最终产物直接归拥有 App 的 project，并统一放在 `targets/` 下，以 Bazel rule 名作为产物类型目录：
+Final artifacts belong to the project that owns the App. Board-specific firmware
+uses application, manufacturer and physical model as its directory hierarchy:
 
 ```text
-projects/<project>/targets/<artifact-rule>/<app>[/<variant>]/
+projects/<project>/targets/<app>/<manufacturer>/<board>/
 ```
 
-当前稳定 rule roots 包括 `cc_binary`、`macos_application`、`ios_application`、
-`android_binary`、`h2loader_tar_zlib`、`native_firmware` 和
-`jieli_firmware`。`native_firmware` 保存 portable App 的 standalone vendor firmware
-entry，终态 `:firmware` 直接交付 vendor image、ELF、symbol 和 manifest；它只拥有
-App/board graph selection 与固件 metadata。`jieli_firmware` root 保留现有杰理
-reference-smoke entry，底层同名 external build rule 也可由 `native_firmware` 或
-`h2loader_tar_zlib` entry 调用。二者消费通过 `JIELI_*` locator 提供的杰理 SDK
-checkout 与解包工具链，SDK 不进入本仓 submodule。若同一 App 同时提供 standalone
-固件和 H2Loader package，两者必须复用 project-owned native launcher graph；
-`h2loader_tar_zlib` 另外拥有 format-1 package metadata，而 `native_firmware` 不表示
-设备已支持 H2Loader 安装或启动。
+Manufacturer and model names match `boards/<manufacturer>/<board>`. The entry
+owns native startup, Runtime assembly, task policy, SDK inputs and packaging.
+`:firmware` delivers vendor images, ELF, symbols and a manifest. `:package` retains
+the format-1 H2Loader package; `:package_v2` exposes format 2 where supported, in
+the same BUILD file and using the same native image graph. Standalone diagnostics
+use the same directory hierarchy and expose their native firmware target.
+Directory names do not redefine package board/image identities or imply device
+support for installation, boot or recovery.
 
-目录名描述最终交付物的 rule 类型，App 名描述业务入口；只有同一 App 的原生构建
-必须按 board 隔离、或多个 package 必须保留相同本地 target 名时，才增加
-`<variant>`。H2Loader package root 内部可以用 `esp_idf_firmware`、
-`bk7258_firmware` 或 `jieli_firmware` 生成平台原生固件，但平台 rule 不是该目录的
-最终交付物。
+Host, mobile, browser and npm entries retain artifact-rule roots such as
+`cc_binary`, `ios_application`, `android_binary`, `pkg_tar` and `npm_package`.
+Their platform lifecycle and packaging remain separate from physical BSPs.
+SDK locators and toolchains stay in the environment manager; SDKs are not
+repository submodules.
 
 `targets/cc_binary/<app>` 保存普通 host 或 Linux executable 的薄 main、Runtime assembly、layout 和显式 runtime data。Desktop 可复用支持仍归 `libs/pal/providers/desktop/`，project 私有、由 Bazel 编译的 Desktop glue 归 `projects/<project>/libs/desktop*/`。
 
 ### Mobile Entry
 
-Mobile 产物同样归真实 App owner。例如 Tap Reset 使用：
+Mobile artifacts belong to the actual App owner. The following paths use placeholders for a consumer project and App:
 
 ```text
-projects/example/libs/mobile/tap-reset/
-projects/example/targets/ios_application/tap-reset/
-projects/example/targets/android_binary/tap-reset/
+projects/<owner>/libs/mobile/<app>/
+projects/<owner>/targets/ios_application/<app>/
+projects/<owner>/targets/android_binary/<app>/
 libs/pal/providers/ios/pal_core/
 libs/pal/providers/android/pal_core/
 ```
@@ -288,8 +273,8 @@ App-specific Mobile adapter 与 contract conversion 归 project 的具名 `libs/
 Web 入口也归 portable App owner。最终交付物使用实际 Bazel packaging rule 命名的 root：
 
 ```text
-projects/example/libs/web/tap-reset/
-projects/example/targets/pkg_tar/tap-reset/
+projects/<owner>/libs/web/<app>/
+projects/<owner>/targets/pkg_tar/<app>/
 libs/pal/providers/web/pal_core/
 tools/bazel/web/
 libs/lua/web/
@@ -304,7 +289,7 @@ App 或 library 的 Bazel target 只在 source、defines、toolchain compatibili
 普通 Embedded Linux executable 使用 App owner 的 `cc_binary/<app>/<board>`：
 
 ```text
-projects/example/targets/cc_binary/<app>/<board>/
+projects/<owner>/targets/cc_binary/<app>/<board>/
 ├── BUILD.bazel
 ├── main/
 └── package/
@@ -314,14 +299,6 @@ projects/example/targets/cc_binary/<app>/<board>/
 
 Launcher 使用 Bazel 生成 executable，并把 service metadata、resource 与需要的 target runtime library 声明为显式 data。设备发现、设备选择、应用烧录、运行、状态查询和恢复由开发环境提供的标准 ADB 完成，具体流程见 [Embedded Linux 使用说明](/zh/using/embed_linux/)。设备必须已经运行可用的 Linux userspace 与 `adbd`；制作或安装 OS/rootfs 不属于 App launcher 的职责。
 
-### Examples
-
-`projects/example/` 是 target-independent runnable Example project group。每个 Example 位于 `projects/example/apps/<app>/app/`，通过可观察场景展示 Runtime、PAL、portable library 与 launcher 的组合方式，可以有意覆盖多个相关能力，也可以同时被 Desktop、iOS、Android、Web 或设备 launcher 消费。
-
-Example-owned 的最终产物按 rule 放在 `projects/example/targets/<artifact-rule>/<app>[/<board>]`。该 entry 只拥有目标 Runtime、SDK、Board 组装、build entry 和产物路径，可以消费对应 `boards/`、`libs/pal/providers/` 与 `native_component_src/`；它不拥有产品 App 或产品 policy。
-
-Example 不能 include target SDK、launcher private type 或 H2Loader product policy。归属只取决于 public Runtime/PAL contract 和行为是否与产品 lifecycle ownership 解耦，与当前 consumer 数量无关。具体 board 与 platform launcher 决定自己提供哪些 Example；portable App 不按平台身份分支，也不把缺少 required capability 转换成运行时 `SKIP`。只有行为本身用于验证某个 board、image、transport 或 H2Loader Stage 收尾、metadata recovery、update lifecycle 的 fixture 才继续留在对应 owner project。
-
 ### E2E 测试 App
 
 `projects/e2e/` 是 reusable cross-target test App 与设备间吞吐测试台 project group。每个 portable registry 位于 `projects/e2e/apps/<test-app>/app/`，持有机器可验证的 case、deadline、progress、non-fail-fast aggregation、result schema 与 App-owned cleanup；library-local unit、fake、parser 和 protocol test 仍留在对应 library owner。
@@ -330,7 +307,9 @@ Portable E2E App 只依赖 Runtime/PAL 和被测 target-independent library，�
 
 `iperf-server` 是交互式吞吐测试台：portable App 持有触屏页面、异步控制器、测量结果和 server 生命周期，launcher 注入 AP 网络生命周期并持有 SDK-specific IPv4 DHCP/IPv6 SLAAC 配置。它与 headless case registry 共用相同的 Runtime/PAL 与 artifact ownership 边界。
 
-H2Loader-managed E2E image 位于 `projects/e2e/targets/h2loader_tar_zlib/<image>/<board>/`。`h2loader_tar_zlib` 表示安装产物类型，不改变 E2E App ownership。没有 H2Loader 的 standalone diagnostic image 位于 `projects/e2e/targets/<firmware-rule>/<image>/<board>/`。
+H2Loader-managed E2E image 位于 `projects/e2e/targets/<app>/<manufacturer>/<board>/`。`h2loader_tar_zlib` 表示安装产物类型，不改变 E2E App ownership。没有 H2Loader 的 standalone diagnostic image 位于 `projects/e2e/targets/<app>/<manufacturer>/<board>/`。
+
+H2Loader device-test orchestration belongs to `projects/e2e/libs/h2loader_runner/`; its native process entry is `projects/e2e/targets/cc_binary/e2e-runner/`. The shared host Runtime utility used by E2E launchers is `projects/e2e/libs/host_runtime/`.
 
 ### 独立 App
 
@@ -386,9 +365,9 @@ projects/h106/
 
 projects/h106/targets/cc_binary/main/              # Shared main；Bazel targets 选择 Tiga/Zero defines
 projects/h106/libs/desktop/main/     # 两个 H106 entry 共用的 Desktop target component
-projects/h106/targets/h2loader_tar_zlib/main/<board>/
+projects/h106/targets/main/<manufacturer>/<board>/
                                              # Main App 的 H2Loader package image
-projects/h2loader/targets/h2loader_tar_zlib/loader/<board>/
+projects/h2loader/targets/loader/<manufacturer>/<board>/
                                              # 固定 Loader image；需要时先运行 MFG App
 ```
 
@@ -400,82 +379,40 @@ Final artifact entry 同时知道具体 App 与具体 target，负责 SDK/build 
 
 Firmware final artifact entry 还负责选择 image-specific SDK role、connection/activity capacity、prebuilt Stack/BIM/OAD 输入和 configuration header。物理 Board 只提供 wiring、外设、Flash/RAM 约束和可选 linker layout，不能把一个 project 的 image policy 作为所有 consumer 的默认配置；同一 Board 的不同 project 必须能够显式选择不同配置。
 
-Showcase 是跨产品型号复用的独立 App，不属于 H106 project group：
-
-```text
-projects/showcase/
-├── app/                                  # Portable Showcase App
-├── assets/                               # 展架角色与 fallback 资源
-├── data/                                 # 可选的 App package data
-└── ia/                                   # 展架产品与页面设计输入
-
-projects/showcase/targets/cc_binary/showcase/            # Showcase Desktop entry
-```
-
-`projects/showcase/apps/showcase/` 拥有展架业务状态机、管理 command 和 portable UI；各产品型号通过自己的 board、target component 和 launcher 提供按键、SD 卡、显示、音频、网络与开机服务。Showcase 不能依赖 H106 private state、资源目录、component id 或 launcher wiring。
-
-### PIXA Games Projects
-
-PIXA Games 使用 project group 保存 portable game App shell 及其 project-level 输入：
-
-```text
-projects/pixa_games/
-├── libs/
-│   ├── cmake/
-│   │   └── pixa_game.cmake               # Reusable firmware build API
-│   └── <game>/                           # Reusable game public contract 与 implementation
-├── apps/<game>/
-│   ├── app/                              # Portable Runtime/game host App
-│   ├── assets/                           # 上游 attribution 与制作输入，可选
-│   ├── data/                             # App package data，可选
-│   └── BUILD.bazel
-```
-
-`projects/pixa_games/apps/<game>/app/` 负责 Runtime lifecycle、game input role mapping、Display/Audio/Filesystem 接线和阻塞式 App entry。Reusable gameplay、scene 和 game public contract 属于 `projects/pixa_games/libs/<game>/`，可以被 H106、Desktop 和其他 consumer project 直接引用。Firmware entry 通过 `projects/pixa_games/libs/cmake/pixa_game.cmake` 把 portable game sources 接入已有 image component，不为每个 game 创建 ESP-IDF 或 BK component wrapper。H2Loader package entry 和 Desktop executable entry分别位于 `projects/pixa_games/targets/h2loader_tar_zlib/<game>/<board>/` 与 `projects/pixa_games/targets/cc_binary/<game>/`；它们消费 portable game App，不能复制 App implementation 或取得 gameplay ownership。
-
 ### H2Loader Project Group
 
 H2Loader 的完整目录结构是：
 
 ```text
+libs/h2loader/
+├── host/                                 # Shared Host policy and transport clients
+├── device/                               # Device core and common Loader/App service
+└── web/                                  # Browser JS/runtime/WASM SDK
+
 projects/h2loader/
-├── libs/
-│   ├── h2loader/
-│   │   ├── include/                      # Shared H2Loader contract
-│   │   └── src/                          # Package、image、boot portable core
-│   ├── web/                              # Reusable H2Loader JS/runtime/WASM SDK
-│   └── cmake/                            # Shared H2Loader package helper
-├── native_component_src/                 # H2Loader-only native SDK component source
-│   ├── esp-idf6.x/
-│   │   ├── h2_h2loader_runtime/          # ESP Loader/App base runtime glue
-│   │   └── h2_h2loader_ble/              # Entry-selected BLE command service
-│   └── bk7258/
-│       └── ap/
-│           └── h2loader_bk/
 ├── apps/
-│   ├── loader/                           # H2Loader 固件 app
-│   │   └── app/
-│   └── cli/                              # Portable native CLI App
+│   └── loader/                           # H2Loader firmware App
 │       └── app/
 ├── tools/
 │   └── bazel/                            # H2Loader package、recovery 与 artifact build helper
 └── targets/
-    ├── cc_binary/cli/                    # Native CLI process 与 host PAL assembly
-    ├── npm_package/h2loader/             # @gizclaw/h2loader Browser SDK npm artifact
-    └── h2loader_tar_zlib/loader/<board>/  # Loader package；内部选择 ESP-IDF 或 BK7258 firmware
+    ├── loader/<manufacturer>/<board>/    # Native firmware, :package and :package_v2
+    └── npm_package/h2loader/              # @gizclaw/h2loader browser SDK
 ```
 
-设备端 Loader App、共用 library、H2Loader 专用 target component、Loader image entry 和 H2Loader package tooling 归 `projects/h2loader/`。`projects/h2loader/tools/bazel/` 拥有 `h2loader_tar_zlib` artifact rule、按 `target`/`board` 选择 layout 的 firmware wrapper，以及共用 partition、recovery 和 variant build input；全仓通用 ESP-IDF、BK firmware rule 仍归顶层 `tools/bazel/`。可复用 Example 归 `projects/example/apps/`，跨目标测试 App 归 `projects/e2e/apps/`，PIXA game App 归 `projects/pixa_games/apps/`；它们的 H2Loader-managed package 同样位于各自 project 的 `targets/h2loader_tar_zlib/`。被 H2Loader 安装不会改变源码或 artifact ownership。内部可复用 Web SDK 与 npm artifact 分别归 `libs/web/` 与 `targets/npm_package/h2loader/`；产品 React/shadcn UI 归 `GizClaw/www`。npm artifact 提交自己的 `package.json` 作为 package identity/version source of truth，并只组装 `libs/web` 的 matching JS/runtime/WASM outputs；它不取得 Browser lifecycle 或 Node.js runtime ownership。Native CLI App 与 executable target 分别归 `projects/h2loader/apps/cli/app/` 和 `projects/h2loader/targets/cc_binary/cli/`；portable Host Core 归 `libs/h2loader_host/`。具体职责见 [H2Loader 产品文档](/apps/h2loader/)。
+`libs/h2loader/{host,device,web}` owns shared libraries. Device lifecycle and transport use one common service with capability/configuration injection; legacy persistence codecs preserve compatibility. `projects/h2loader/` owns the Loader App, minimal target startup/composition, Loader image entries and package tooling. Vendor operations belong to public PAL providers. Its `tools/bazel/` owns package rules, layout selection, recovery and shared build inputs; repository-wide firmware rules remain in top-level `tools/bazel/`. Cross-target test Apps and their artifacts belong to `projects/e2e/`. Installing an App through H2Loader does not change its source or artifact owner.
 
-### GizClaw Firmware Browser SDK
+The reusable Web SDK and npm artifact stay in `libs/h2loader/web/` and `projects/h2loader/targets/npm_package/h2loader/`. The product UI belongs to `GizClaw/www`. The npm package owns its manifest and matching JS/runtime/WASM outputs, while the consumer owns browser lifecycle.
 
-```text
-projects/gizclaw/
-├── libs/web/                       # Optional runtime SDK, canonical codec and TypeScript contract
-└── targets/npm_package/firmware/    # @gizclaw/firmware package identity, tarball and consumer tests
-```
+`tools/gizloader/cli/` owns the CLI implementation, native process entry, OS adapters and tests. `tools/gizloader/native/` composes the CLI/session sidecars; the canonical public command is `gizloader`. Portable Host Core stays in `libs/h2loader/host/`. See the [H2Loader guide](/apps/h2loader/) for the dependency boundaries.
 
-`projects/gizclaw/libs/web` 拥有绑定明确 WASM Module 的可选 npm SDK；最终 artifact 由 `targets/npm_package/firmware` 组装。固件不依赖 npm 包，产品通过 C 使用 `libs/gizclaw/web` 和已有 Service，由固件提供独立的 `Module.h2GizClaw` 字节/回调接口。共享 ABI version 位于 `libs/gizclaw/web/protocol.json`，对象 codec/map 和类型只进入 npm 包。SDK 不包含产品固件，不取得 H106、Runtime、Service 或页面 lifecycle ownership；它只封装传入的 runtime。同一实例可有多个 client，`close()` 只取消所属 client 的调用。
+### Published GizClaw Firmware Browser SDK
+
+The optional `@gizclaw/firmware` browser SDK is consumed from its already
+published npm versions. This checkout no longer builds or publishes that package.
+The firmware-side C service and `Module.h2GizClaw` byte interface remain owned by
+`libs/gizclaw` and `libs/gizclaw/web`; browser consumers keep their existing
+instance and lifecycle contracts.
 
 ## `tools`
 
@@ -547,4 +484,10 @@ guides/.vitepress/dist/
 
 ### H2Loader 双格式产物
 
-保留 `targets/h2loader_tar_zlib/<image>/<board>/` 的 native firmware ownership 与 format-1 package。新增 `targets/h2loader_zlib_tar/<image>/<board>/` 只声明 format-2 artifact wrapper，其 `source` 指向对应旧 package 的原始输入 provider，不复制 CMake、native component、task policy 或 App source。H106 private consumer 使用相同边界。两类安装产物的实现归 `projects/h2loader/tools/bazel/`；checksum matrix fixture builder 与两种 package action 复用 native image，不取得 firmware ownership。
+Both package formats live in the board's existing
+`targets/<app>/<manufacturer>/<board>/BUILD.bazel`. Format-1 targets retain their
+names, such as `:package`; format-2 wrappers append `_v2`, such as `:package_v2`.
+Their `source` references the matching format-1 input provider, so CMake, native
+components, task policy and App sources have one owner. Package implementations
+remain in `projects/h2loader/tools/bazel/`; checksum fixtures and both package
+actions reuse that native image.

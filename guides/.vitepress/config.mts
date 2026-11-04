@@ -149,8 +149,6 @@ const appItems = [
               { text: "总览", link: "/apps/h2loader/boards/amoled/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/amoled/h2loader" },
               { text: "Display", link: "/apps/h2loader/boards/amoled/display" },
-              { text: "QR Code", link: "/apps/h2loader/boards/amoled/qrcode" },
-              { text: "Crash Before Confirm", link: "/apps/h2loader/boards/amoled/crash_before_confirm" },
               { text: "iperf", link: "/apps/h2loader/boards/amoled/iperf" },
               { text: "iperf Server", link: "/apps/h2loader/boards/amoled/iperf_server" },
               { text: "WebRTC Performance", link: "/apps/h2loader/boards/amoled/webrtc_performance" },
@@ -189,7 +187,6 @@ const appItems = [
             items: [
               { text: "总览", link: "/apps/h2loader/boards/jieli_ac791n_devkit/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/jieli_ac791n_devkit/h2loader" },
-              { text: "Crash Before Confirm", link: "/apps/h2loader/boards/jieli_ac791n_devkit/crash_before_confirm" },
             ],
           },
           {
@@ -198,7 +195,6 @@ const appItems = [
             items: [
               { text: "总览", link: "/apps/h2loader/boards/szp/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/szp/h2loader" },
-              { text: "Partial Update Smoke", link: "/apps/h2loader/boards/szp/partial_update_smoke" },
             ],
           },
           {
@@ -215,10 +211,6 @@ const appItems = [
             items: [
               { text: "总览", link: "/apps/h2loader/boards/waveshare_esp32s3_a7670e_4g/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/waveshare_esp32s3_a7670e_4g/h2loader" },
-              { text: "BLE Broadcaster", link: "/apps/h2loader/boards/waveshare_esp32s3_a7670e_4g/ble_broadcaster" },
-              { text: "BLE Observer", link: "/apps/h2loader/boards/waveshare_esp32s3_a7670e_4g/ble_observer" },
-              { text: "Modem Smoke", link: "/apps/h2loader/boards/waveshare_esp32s3_a7670e_4g/modem_smoke" },
-              { text: "Crash Before Confirm", link: "/apps/h2loader/boards/waveshare_esp32s3_a7670e_4g/crash_before_confirm" },
             ],
           },
           {
@@ -227,9 +219,6 @@ const appItems = [
             items: [
               { text: "总览", link: "/apps/h2loader/boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/h2loader" },
-              { text: "Display", link: "/apps/h2loader/boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/display" },
-              { text: "Audio System", link: "/apps/h2loader/boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/audio_system" },
-              { text: "Crash Before Confirm", link: "/apps/h2loader/boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/crash_before_confirm" },
             ],
           },
         ],
@@ -242,8 +231,6 @@ const appItems = [
             text: "Batch Loader",
             link: "/apps/h2loader/apps/batch_loader/",
           },
-          { text: "BLE iKCP Baseline", link: "/apps/h2loader/apps/bleikcp_speed/" },
-          { text: "Wi-Fi CSI Smoke", link: "/apps/h2loader/apps/wifi_csi/" },
         ],
       },
     ],
@@ -260,42 +247,9 @@ const appItems = [
     ],
   },
   {
-    text: "Showcase 展架程序",
-    collapsed: true,
-    items: [
-      { text: "总览", link: "/apps/showcase" },
-      { text: "App 生命周期", link: "/apps/showcase/lifecycle" },
-      { text: "Display 与背景视频", link: "/apps/showcase/display" },
-      { text: "对话", link: "/apps/showcase/conversation" },
-      { text: "触屏控制台", link: "/apps/showcase/console" },
-      { text: "资源与持久化", link: "/apps/showcase/resources" },
-      {
-        text: "Board Spec",
-        link: "/apps/showcase/board/",
-        collapsed: true,
-        items: [
-          { text: "总览", link: "/apps/showcase/board/" },
-        ],
-      },
-    ],
-  },
-  {
     text: "拍学机",
     collapsed: true,
     items: [{ text: "Prototyping", link: "/apps/paixueji" }],
-  },
-  {
-    text: "PIXA Games",
-    collapsed: true,
-    items: [
-      { text: "总览", link: "/apps/pixa_games" },
-      { text: "DinoRun", link: "/apps/pixa_games/dinorun" },
-      { text: "DinoDive", link: "/apps/pixa_games/dinodive" },
-      { text: "DinoBounce", link: "/apps/pixa_games/dinobounce" },
-      { text: "DinoTetris", link: "/apps/pixa_games/dinotetris" },
-      { text: "Polygon Battle", link: "/apps/pixa_games/polygon_battle" },
-      { text: "Tuxemon", link: "/apps/pixa_games/tuxemon" },
-    ],
   },
 ];
 

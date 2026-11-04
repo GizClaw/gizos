@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "projects/h2loader/apps/e2e-runner/src/h2_h2loader_e2e_runner.c"
+SOURCE = ROOT / "projects/e2e/libs/h2loader_runner/src/h2_h2loader_e2e_runner.c"
 
 STUBS = r"""
 #include <assert.h>

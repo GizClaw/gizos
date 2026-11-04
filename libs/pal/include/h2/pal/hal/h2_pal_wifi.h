@@ -196,6 +196,14 @@ typedef int (*h2_pal_wifi_sta_get_mac_fn)(void* user, uint8_t out_mac[6]);
 typedef int (*h2_pal_wifi_sta_set_power_save_fn)(void* user,
                                                  h2_pal_wifi_power_save_t mode);
 
+/** Observe disruptive radio operations. Overlaps are reference counted; true
+ * means at least one operation is active. Installation reports a synchronous
+ * snapshot immediately. Callback is inline, must not block or reenter WiFi.
+ * One observer per radio; NULL unregisters. Callback/user remain borrowed until
+ * unregistration and all in-flight WiFi worker calls have completed.
+ */
+typedef void (*h2_pal_wifi_activity_fn)(void* user, bool active);
+
 typedef struct h2_pal_wifi_sta_vtable {
   h2_pal_wifi_sta_get_status_fn get_status;
   h2_pal_wifi_sta_scan_fn scan;
@@ -208,12 +216,23 @@ typedef struct h2_pal_wifi_sta_vtable {
   h2_pal_wifi_sta_get_mac_fn get_mac;
   /** Optional; NULL reports H2_PAL_ERR_UNSUPPORTED. */
   h2_pal_wifi_sta_set_power_save_fn set_power_save;
+  int (*set_activity_observer)(void* user, h2_pal_wifi_activity_fn callback,
+                               void* callback_user);
 } h2_pal_wifi_sta_vtable_t;
 
 struct h2_pal_wifi_sta_api {
   void* user;
   const h2_pal_wifi_sta_vtable_t* vtable;
 };
+
+static inline int h2_pal_wifi_sta_set_activity_observer(
+    const h2_pal_wifi_sta_api_t* sta, h2_pal_wifi_activity_fn callback,
+    void* callback_user) {
+  if (sta == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (sta->vtable == NULL || sta->vtable->set_activity_observer == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return sta->vtable->set_activity_observer(sta->user, callback, callback_user);
+}
 
 typedef int (*h2_pal_wifi_ap_start_fn)(void* user,
                                        const h2_pal_wifi_ap_config_t* config,

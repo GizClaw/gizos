@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class AudioCapacityTest(unittest.TestCase):
     def test_capacity_fits_native_pcm_buffer(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_audio.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_audio.c').read_text()
         begin = source.index('static int audio_create_track(')
         end = begin + re.search(r'\bjieli_audio_track_t\s*\*\s*track\s*=\s*NULL\s*;', source[begin:]).start()
         stub = r'''

@@ -122,7 +122,7 @@ locators, preserving their existing sandbox/remote-execution contract.
 ```sh
 bun tools/gizos/src/cli.ts setup idf 6.2
 eval "$(bun tools/gizos/src/cli.ts env idf 6.2 --shell sh)"
-bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
+bazel build --config=esp32s3 //projects/h2loader/targets/loader/espressif/esp32s3_devkitc_1:package
 ```
 
 Use `env` to inspect paths, `config set root /path/to/shared/store` to configure
@@ -143,7 +143,7 @@ CMake/Ninja intermediates and device-operation executables are not outputs.
 
 The action copies only the selected launcher project into an invocation-local temporary tree, points it at the read-only repository source, and invokes the native `idf.py build` followed by `idf.py merge-bin`. It is explicitly unsandboxed and ineligible for remote execution, while its declared outputs may use the local disk cache or the authenticated remote cache. The runner constructs a fixed subprocess environment from the validated locators, pinned SDK version, and the final `FirmwareVersionInfo` selected by the firmware target.
 
-An App manually maintains its shared base with `app_version(name, value)` from `//tools/bazel:app_version.bzl`. Each board independently maintains an integer build number with `board_version(name, build)` from `//tools/bazel:board_version.bzl` in `boards/<board>/BUILD.bazel`. Both are version metadata; board versions have no source, BSP, file-collection, or platform dependencies. Existing filegroups and chip BSP/component targets keep their original responsibilities. Each firmware target declares `firmware_version`, passes its base declaration as `main_version` and its numeric counter declaration as `build`, and may set optional `variant` and `build_metadata` strings. The rule owns SemVer composition and validation; the meaning of these strings belongs to the caller. Non-empty `build_metadata` is appended after a plus and does not affect precedence. A non-empty variant and the numeric board build use separate SemVer prerelease identifiers, so standard SemVer comparison orders board builds numerically. An omitted or empty variant keeps the numeric board build as the sole prerelease identifier; callers supply the variant name without a separator. The `main_version` input requires the provider and declaration marker emitted by `app_version`, including aliases forwarding them; the `build` input requires `BoardVersionInfo`. Native firmware rules consume the final label through their existing `version` attribute, and package and release metadata inherit that value. Legacy complete `firmware_version(value = ...)` declarations, Lua App versions, and the diagnostic compatibility setting remain supported.
+An App manually maintains its shared base with `app_version(name, value)` from `//tools/bazel:app_version.bzl`. Each board independently maintains an integer build number with `board_version(name, build)` from `//tools/bazel:board_version.bzl` in `boards/<company>/<board>/BUILD.bazel`. Both are version metadata; board versions have no source, BSP, file-collection, or platform dependencies. Existing filegroups and chip BSP/component targets keep their original responsibilities. Each firmware target declares `firmware_version`, passes its base declaration as `main_version` and its numeric counter declaration as `build`, and may set optional `variant` and `build_metadata` strings. The rule owns SemVer composition and validation; the meaning of these strings belongs to the caller. Non-empty `build_metadata` is appended after a plus and does not affect precedence. A non-empty variant and the numeric board build use separate SemVer prerelease identifiers, so standard SemVer comparison orders board builds numerically. An omitted or empty variant keeps the numeric board build as the sole prerelease identifier; callers supply the variant name without a separator. The `main_version` input requires the provider and declaration marker emitted by `app_version`, including aliases forwarding them; the `build` input requires `BoardVersionInfo`. Native firmware rules consume the final label through their existing `version` attribute, and package and release metadata inherit that value. Legacy complete `firmware_version(value = ...)` declarations, Lua App versions, and the diagnostic compatibility setting remain supported.
 
 A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDENTIALS` JSON object containing exact `ssid` and `password` fields; the runner validates it and exposes the two values only to that target's ESP-IDF subprocess. Unrelated ESP-IDF subprocesses never receive them. The runner neither activates the SDK nor performs flash, erase, monitor, reset, serial, network, or installation operations.
 
@@ -162,7 +162,7 @@ archive, Python, or `PATH` variables from the caller.
 ```sh
 bun tools/gizos/src/cli.ts setup bk 3.1.1
 eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1 --shell sh)"
-bazel build --config=bk7258  //projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405:package
+bazel build --config=bk7258 //projects/e2e/targets/pal-display/beken/bk7258_v3_202405:package
 ```
 
 `Bk7258FirmwareInfo` exposes target-owned AP and CP ELF,
@@ -191,7 +191,7 @@ inputs bind the stable external execution environment into the action key.
 
 ## H2Loader package builds
 
-Every package below `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/`
+Every package below `projects/<owner>/targets/<app>/<manufacturer>/<board>/`
 declares an internal `:firmware` target using `h2loader_esp_idf_firmware` or
 `h2loader_bk7258_firmware`, followed by the public `:package` target using
 `h2loader_tar_zlib`. The H2Loader wrappers select partition and recovery inputs

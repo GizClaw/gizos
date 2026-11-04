@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class BleAdvBoundsTest(unittest.TestCase):
     def test_service_payload_overflow(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
         funcs = source[source.index('static int h2_adv_append('):source.index('static uint8_t h2_adv_phy(')]
         stub = r'''
 #include <assert.h>

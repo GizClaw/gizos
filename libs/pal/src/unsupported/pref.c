@@ -12,8 +12,14 @@ static int unsupported_pref_open(void* p0, const char* p1,
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_pref_finalize_migration(void* user) {
+  (void)user;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_pref_vtable_t unsupported_pref_vtable = {
     .open = unsupported_pref_open,
+    .finalize_migration = unsupported_pref_finalize_migration,
 };
 static const h2_pal_pref_api_t unsupported_pref_api = {
     .user = NULL, .vtable = &unsupported_pref_vtable};

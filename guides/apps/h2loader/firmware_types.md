@@ -43,7 +43,7 @@ ESP target 的 `preference` 是独立的 256 KiB internal LittleFS partition；2
 Loader 固件是设备的固件管理与恢复入口。Portable Loader App 位于 `projects/h2loader/apps/loader/app/`；每个 Board 的构建入口位于：
 
 ```text
-projects/h2loader/targets/h2loader_tar_zlib/loader/<board>/
+projects/h2loader/targets/loader/<manufacturer>/<board>/
 ```
 
 Loader 固件负责接收和校验更新包、安装 App 固件与数据、选择下一次启动的固件、更新 Loader 自身，并在 App 无法正常启动时提供恢复入口。
@@ -83,7 +83,7 @@ Wi-Fi、memory stats 或 Coredump 的底层能力不可用时，对应命令不�
 App 固件是由 H2Loader 安装和启动的产品或诊断应用。每个 App 固件拥有独立的 Board 构建入口：
 
 ```text
-projects/<owner>/targets/h2loader_tar_zlib/<app>/<board>/
+projects/<owner>/targets/<app>/<manufacturer>/<board>/
 ```
 
 `<owner>` 是 Portable App 的真实 project owner。Artifact entry 只组合 App、BSP 和 H2Loader App client；`h2loader_tar_zlib` 只表达安装产物类型，不改变源码或 artifact ownership。

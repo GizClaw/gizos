@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class AudioLifecycleTest(unittest.TestCase):
     def test_lifecycle(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_audio.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_audio.c').read_text()
         source = source[source.index('enum {'):source.rindex('\n#else')]
         source = re.sub(r'^#include .*\n', '', source, flags=re.M)
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_audio_lifecycle.c').read_text()

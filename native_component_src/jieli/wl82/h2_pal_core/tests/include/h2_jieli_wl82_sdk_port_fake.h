@@ -32,6 +32,9 @@ void h2_jieli_fake_set_time_ms(uint32_t ms);
 void h2_jieli_fake_set_time_us(uint64_t us);
 uint32_t h2_jieli_fake_sleep_total_ms(void);
 
+/** Set the SDK identity result and its six Loader-order bytes. */
+void h2_jieli_fake_set_device_identity(int result, const uint8_t identity[6]);
+
 /** Outstanding allocations (alloc minus free) for leak checks. */
 int h2_jieli_fake_live_allocations(void);
 /** Fail one SDK malloc call without affecting existing allocations. */

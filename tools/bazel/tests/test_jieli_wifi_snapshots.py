@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class WifiSnapshotsTest(unittest.TestCase):
     def test_snapshots(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
         slots = re.search(r'\benum\s*\{\s*H2_JIELI_AP_STATION_SLOTS\b', source)
         state_begin = slots.start() if slots else source.index('typedef struct h2_jieli_wifi_state')
         state = source[state_begin:re.search(r'\benum\s*\{\s*SCAN_IDLE\b', source).start()]

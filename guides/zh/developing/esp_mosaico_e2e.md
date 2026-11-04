@@ -11,27 +11,26 @@ Lingxi、OneNET 暂不接入、不计入本次验收。它不承诺整板外设�
 | `libs/pal` | 稳定能力 contract、Camera borrowed-frame contract 和 unsupported 实现 | 共享 PAL contract 回归 |
 | `libs/runtime` | 注入真实 provider；Camera 未配置时使用 unsupported；无隐式采集生命周期 | Runtime 注入/生命周期回归 |
 | `native_component_src/esp-idf6.x` | ESP 网络和音频适配 | 各平台组件回归 |
-| `boards/esp_mosaico/esp32s31` | GPIO/总线/器件 wiring、驱动组合、通用单 CDC 传输 | 板级驱动回归，不增加 E2E 包 |
+| `boards/espressif/mosaico/esp32s31` | GPIO/总线/器件 wiring、驱动组合、通用单 CDC 传输 | 板级驱动回归，不增加 E2E 包 |
 | `projects/h2loader` | 产品 Loader、Mosaico 协议与 CDC 绑定 | 现有 `h2loader-serial` App |
 | `projects/e2e/apps`、`libs` | 可复用用例、runner、受控 fixture；保留公共断言 | 全量清单，不按 `pal-` 前缀过滤 |
 | `projects/e2e/targets` | Mosaico 原生 launcher、任务策略、布局及 fixture 注入 | 配置化 package、独立 GizClaw package |
-| `tools/bazel/smoke/esp32s31` | 芯片工具链/链接检查，compile-only | 不烧录成 Mosaico 固件、不计 E2E 包 |
 
 不存在 `peripherals`、`chip`、`loader` 三个独立 E2E suite。
 传感器、电池、按键、触摸、PWM 驱动保留在 BSP，绑定既有 PAL 接口；
 不建立聚合 peripherals PAL、不安排独立马达验证。
-板层只拥有通用 CDC，Loader 注入位于
-`projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_mosaico_usb`，
-板层不反向依赖产品 Loader。
+The board owns generic CDC transport and injects it through `Runtime.io_stream`.
+Final firmware entries call the shared `libs/h2loader/device` service; native
+stream setup and complete-frame writes remain in the board/PAL provider.
 
 ## 构建与清单
 
 ```sh
 bazel run //projects/e2e/tools:list_apps -- --repository "$PWD"
 bazel build --config=esp32s31 --define=mosaico_e2e=core \
-  //projects/e2e/targets/h2loader_tar_zlib/mosaico/esp_mosaico:package
+  //projects/e2e/targets/mosaico/espressif/mosaico:package
 bazel build --config=esp32s31 \
-  //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/esp_mosaico:package
+  //projects/e2e/targets/gizclaw-e2e/espressif/mosaico:package
 ```
 
 通用入口允许 `core`、`storage`、`display`、`audio`、`camera`、

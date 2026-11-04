@@ -18,7 +18,7 @@ native_component_src/esp-idf6.x/
 └── zlib/
 ```
 
-只有包含 ESP-IDF implementation source，或拥有独立 SDK dependency 或 registration identity 的 component 才放在这个 root。没有该 native contract 的 Bazel archive 由真实 source component 或 firmware composition owner 直接导入，不建立只转发 include 和 `.a` 的目录。具体 board 的 `sdkconfig.defaults`、partition、GPIO 和 wiring 仍然属于 `boards/<board>/<esp-chip>/` 或具体 image entry。SDK 配置的所有权分两层并按序合并：board 拥有完整的 canonical `sdkconfig.defaults`；layout 只拥有 partition/rollback 或注册变体（如诊断串口、E2E 内存保留）等 layout 专属项。ESP 没有具名 config profile，也没有 project-local SDK config；配置项不得替代 component 依赖声明。
+只有包含 ESP-IDF implementation source，或拥有独立 SDK dependency 或 registration identity 的 component 才放在这个 root。没有该 native contract 的 Bazel archive 由真实 source component 或 firmware composition owner 直接导入，不建立只转发 include 和 `.a` 的目录。具体 board 的 `sdkconfig.defaults`、partition、GPIO 和 wiring 仍然属于 `boards/<company>/<board>/<esp-chip>/` 或具体 image entry。SDK 配置的所有权分两层并按序合并：board 拥有完整的 canonical `sdkconfig.defaults`；layout 只拥有 partition/rollback 或注册变体（如诊断串口、E2E 内存保留）等 layout 专属项。ESP 没有具名 config profile，也没有 project-local SDK config；配置项不得替代 component 依赖声明。
 
 ## Lierda data-only UART PPP
 
@@ -70,7 +70,7 @@ ESP chip 差异通过以下方式表达：
 
 Runtime-capable launcher 必须在 board Runtime configuration、`h2_runtime_init()` 或直接 PAL task creation 前调用 `h2_esp_target_task_policy_install()`，安装失败必须停止 startup。配置只能成功一次；未配置启动、重复配置和任意 task start attempt 后配置都返回 `H2_PAL_ERR_INVALID_STATE`。生成的 component 通过 `h2_trie_set_fallback()` 注册默认 handler；trie 未命中时把完整 task name 放在 `match.path` 传给该函数，该 handler 返回 target 在 `default_policy` 里写明的 priority、core、minimum stack 与 stack placement。Public H2Loader targets 的 `default_policy` 是 `"4  any  4096  psram"`；private target 可不注册该 handler，或让 handler 返回 `H2_PAL_ERR_NOT_FOUND` 来拒绝，并通过 firmware macro 的 `task_policy` 参数注入私有 component，不能把私有 task name 发布到 GizOS。PAL 只调用 target 提供的单一 resolver，不实现第二套 fallback 分发。
 
-Maintained Runtime scope 是使用 ESP32-S3 与 ESP32-P4 五种 public board layouts 的 H2Loader firmware targets。特定 App 的 route 只进入实际构建它的 target：`bleikcp-speed/*` 只属于 BLEIKCP speed client/server，modem routes 只属于 modem smoke。`standard` 与 ESP32-C5 `compile_only` images 不初始化 Runtime，因此不安装 task policy，也不属于此 contract 的 firmware validation scope。
+The maintained Runtime scope covers H2Loader firmware targets using public ESP32-S3 and ESP32-P4 physical-board layouts. Each target declares the App-specific routes required by its actual dependency graph. Task-policy integration is validated through maintained firmware entries and the host regressions below.
 
 PSRAM-stack PAL task 的 entry 返回后先发出 completion semaphore，再 suspend 等待 join。默认 `esp_task_join()` 消费 completion 后调用 `vTaskDeleteWithCaps(handle)`；配置 `psram_stack_allocator` 时则挂起并等待 worker 离开所有 core，调用 `vTaskDelete` 后分别释放 caller stack 和 internal TCB。两条路径均由 joiner 同步回收 worker storage，再销毁 semaphore 和 PAL handle，不为每个结束的 worker 创建临时清理 task。仓库锁定的 ESP-IDF 实现会先 suspend 目标并等待它退出 running 状态，再执行删除和释放，因此 join 可以发生在 completion signal 与 worker 自行 suspend 之间，包括跨 core 的情形。Worker 发出 completion 后不再访问 PAL handle 或 entry context。
 
@@ -199,7 +199,7 @@ AMOLED Board 在 `h2_esp_board_runtime_config()` 之前，通过可选的 `h2_es
 
 不依赖最终 `sdkconfig.h`、IDF lifecycle 或 IDF-owned source selection 的 portable library，由最终 firmware entry 的唯一 `firmware_lib_component` 统一选择；runner 将其主 `.a` 与 `CcInfo` 传递静态依赖注册为单个 `h2_firmware_lib` component，并作为一个 rescan group 链接。依赖最终 IDF configuration 的 first-party source 由 `firmware_native_component` 声明，runner 为当前 action 生成 component directory/name/direct-source manifest，再由 `idf_component_register()` 在同一次 `idf.py build` 中编译。共享 archive import helper 位于 `native_component_src/esp-idf6.x/cmake/`。
 
-`h2_audio_mixer`、`h2_bleikcp`、`h2_iostreamikcp`、`h2_pixa`、`h2_mp4_decoder`、`h2_tinyh264`、`h2_utils`、`h2_yyjson`、PAL 和 CoreHTTP 等 portable libraries，都由消费它们的 firmware entry 在同一个 `firmware_lib_component` 中列举；跨平台 library package 和 `h2_pal_core` 不定义 image composition target。PIXA Games 不创建逐游戏 native component wrapper；project-owned game library 仍由对应 firmware entry 完成 archive handoff。静态 archive 只按最终链接中的真实未解析符号抽取 object，不使用全库 retention。`lvgl_port`、`h2_esp_audio_decoder`、`opus_port` 和 `zlib` 是 SDK-dependent source component，由相同 firmware graph 声明 direct source、header 与 metadata，并继续由 IDF 使用最终 configuration 编译。ESP32 的 AEC 由 `esp-sr` managed component 提供，不创建 SpeexDSP archive adapter。GizOS 的跨平台 API 仍然属于对应 library owner。
+`h2_audio_mixer`、`h2_bleikcp`、`h2_iostreamikcp`、`h2_pixa`、`h2_mp4_decoder`、`h2_tinyh264`、`h2_utils`、`h2_yyjson`、PAL 和 CoreHTTP 等 portable libraries，都由消费它们的 firmware entry 在同一个 `firmware_lib_component` 中列举；跨平台 library package 和 `h2_pal_core` 不定义 image composition target。Project-owned portable libraries use the consuming firmware entry's archive handoff. 静态 archive 只按最终链接中的真实未解析符号抽取 object，不使用全库 retention。`lvgl_port`、`h2_esp_audio_decoder`、`opus_port` 和 `zlib` 是 SDK-dependent source component，由相同 firmware graph 声明 direct source、header 与 metadata，并继续由 IDF 使用最终 configuration 编译。ESP32 的 AEC 由 `esp-sr` managed component 提供，不创建 SpeexDSP archive adapter。GizOS 的跨平台 API 仍然属于对应 library owner。
 
 ESP Net 的 UDP source-address bind 使用真实 lwIP `bind` 和 `getsockname`；失败时释放新 socket 并保持输出无有效 handle。Raw TLS 保留 ESP-IDF 在证书 bundle attach 时安装的验证 callback，由该 callback 继续决定 bundle membership、签名信任与 SDK flags，再对每个真实 peer-chain certificate 使用校准后的 PAL wall time 校验有效期，即使 SDK 未启用内置日期检查或不保留完成后的 chain，`REQUIRED`/`DEFAULT` 也不能接受 expired/future certificate；时钟不可用时 fail closed。ESP-IDF cross-signed bundle 的 CA lookup 可以生成只含 subject/SPKI、没有 DER 与有效期字段的信任锚；只有 bundle delegate 存在、depth 大于 0、raw 为空且两端 year 都为 0 的此类锚不重复添加日期错误，SDK 的未信任 flags 和 fatal result 始终保留，真实叶证书、intermediate 与显式 PEM CA 不使用该例外。校准时钟不可用仍失败。显式 `INSECURE_TEST_ONLY` 保持测试专用行为，无效 verify enum 返回 `INVALID_ARG`。独立 Net/TLS E2E 对已有 ICMP callback 执行真实 echo，不能将支持项标成未评估。
 
@@ -214,7 +214,7 @@ ESP-IDF component 变更需要对每个 maintained target 执行 compile validat
 - Component dependency 没有把某个 chip-only SDK module 带入其他 target。
 - BSP 和 image component search path 只使用 `native_component_src/esp-idf6.x/` 中真实需要的 SDK component，以及所依赖 library 的 `native/esp-idf6.x/` adapter。
 
-现有 SDK 构建配置包括 ESP32-S3、ESP32-P4、ESP32-C5，并统一使用 IDF 6.2。C5 通过 `esp32c5_chip` 的 reference-smoke 入口验证芯片级编译；`boards/esp32p4_func_ev_board_v1_4/esp32c5/` 的产品板级 config/partition skeleton 不因此获得完整 BSP 或外设验收。组件变更须验证对应的现有配置，缺少实物或产品入口的验证仍记为 `SKIP` 并报告 residual risk。
+ESP32-S3 and ESP32-P4 component builds are validated through maintained physical-board firmware entries using IDF 6.2. The ESP32-C5 SDK and toolchain remain available, but its former chip validation entry has been removed. The product-board config/partition skeleton at `boards/espressif/esp32p4_func_ev_board_v1_4/esp32c5/` does not establish a complete BSP or peripheral acceptance. Where no maintained C5 product entry is buildable, record component compile validation as `SKIP` and report the remaining risk; unavailable hardware validation also remains `SKIP`.
 
 Canonical SDK 由 GizOS 的 `tools/bazel/native_versions/esp_idf_commit.txt` 固定为 IDF 6.2 commit `ddb3852ab5c7f9e6dbc268203ef9d612de391bf8`。`tools/gizos` 的 TypeScript/Bun CLI 维护下载版本清单，各 worktree 共用 SDK 和工具安装。SDK 源码按版本和 commit 存储；IDF tools 由所选 SDK 的官方 installer 安装到共享根目录，按 SDK `tools/tools.json` 推荐版本选择编译器和 ROM ELF，Python environment 由 CLI 显式选择。CI/Release 从同一个 GizOS 提交构建管理器，不依赖另一个 devenv 源码仓库。Native action 不安装、修改或回退到系统 SDK。`IDF_PATH` 与 `IDF_TOOLS_PATH` 只在 repository evaluation 阶段分别定位 ESP-IDF SDK 与 tools repository；tools repository 从固定的 `python_env/idf6.2_py*_env` layout 唯一解析并验证 Python environment。Native action 接收已经验证的 locator 与 committed commit/tool-version identity，不继承这些绝对路径或 caller `PATH`。现有 ESP launcher 使用内部 `esp_idf_firmware` target，要求显式匹配的 ESP32-S3、ESP32-P4 或 ESP32-C5 platform，验证 SDK commit、Python、chip compiler 和 launcher `H2_ESP_TARGET`，再在隔离的临时 project/build tree 调用原生 `idf.py build`。
 
@@ -264,9 +264,9 @@ Host 回归编译真实 public header、init 与完整 platform implementation�
 bazel test //libs/drivers/audio/es8311/... \
   //native_component_src/esp-idf6.x/h2_es8311_audio_system/... \
   //native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system/...
-bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/audio-system/amoled:firmware \
-  //projects/example/targets/h2loader_tar_zlib/audio-system/szp:firmware
-bazel build --config=esp32p4 //projects/example/targets/h2loader_tar_zlib/audio-system/waveshare_esp32p4_wifi6_touch_lcd_4_3:firmware
+# Replace each placeholder with a maintained consumer that uses the audio component.
+bazel build --config=esp32s3 '//projects/<owner>/targets/<app>/<manufacturer>/<board>:firmware'
+bazel build --config=esp32p4 '//projects/<owner>/targets/<app>/<manufacturer>/<board>:firmware'
 ```
 
 该能力进入官方驱动的软件 power-down 状态，不切断物理电源。无板卡时，深睡电流、唤醒后播放/采集、pop noise 和 idle stop 后无 I2S 时钟的关断行为标记 `SKIP`；host 测试与 firmware build 不证明这些硬件结果，消费固件需在板级验收中实测。ESP32-C5 当前没有 ES8311 可构建板级 target，codec 路径为 `SKIP`，通用 C5 CI 不代表此路径通过。没有仓库配置的 canonical SDK 时，本地 firmware build 标记 `SKIP` 并由当前 PR head 的 ESP32-S3/P4 CI 承担编译验证。
@@ -344,12 +344,7 @@ bazel test //libs/drivers/audio/es8311:volume_test \
 代码创建 ESP-IDF registration 或 CMake adapter。私有 Firmwares 固件入口也需要
 在该 archive composition 中加入 `//libs/drivers/audio/es8311`。
 
-共享 ESP-IDF 组件的编译验证包括 ESP32-S3 的 `audio-system/amoled:firmware`、
-`audio-system/szp:firmware` 以及 ESP32-P4 的
-`audio-system/waveshare_esp32p4_wifi6_touch_lcd_4_3:firmware`，这些 target 均位于
-`//projects/example/targets/h2loader_tar_zlib/`。分别使用 `--config=esp32s3` 和
-`--config=esp32p4`。ESP32-C5 的 ES8311 消费路径目前没有可构建的板级 target，
-因此该 codec 路径标记为 SKIP；C5 通用 CI 通过也不证明其 codec 集成或硬件行为。
+Compile validation must select a maintained consumer that actually links the audio component, using its owner-declared `:firmware` target with `--config=esp32s3` or `--config=esp32p4`. The commands above are templates rather than concrete targets. ESP32-C5 currently has no buildable board-level ES8311 consumer; record that codec path as `SKIP`. Generic C5 CI does not establish codec integration or hardware behavior.
 
 NimBLE 的 extended-advertising 编码缓存与扫描 UUID 列表，以及 H2Loader App 的 serial client／iKCP framing state 只由任务访问，使用 `EXT_RAM_BSS_ATTR`；允许 external BSS 的 target 将它们放在 PSRAM，其余 target 保持 SDK 的普通 BSS 布局。UART/BLE driver 的 ISR storage、DMA ring、atomic backing、safe-call worker 与 safe I/O scratch 继续保留其 Internal allocation contract。最终 firmware 的 ELF/map 必须核对这些对象的实际地址；host fixture 只验证行为，不证明设备上的内存区域。
 
@@ -383,7 +378,7 @@ ESP Wi-Fi admission 与 WebRTC/H2Peer singleton 各使用一个文件级 static 
 
 ### Storage 资格
 
-DevKit 的 `pal-storage` managed App 使用板载 Flash 上的 LittleFS 与独立 pref store，不需要 SD 卡。LittleFS 的目录 clear 与目录 remove 在既有 internal-stack safe-call 中完成；空长度 read/write 按 public wrapper 允许 NULL buffer。测试只清理 `/data/pal-storage` 子目录，整分区 format 仍属于显式 board policy。真实两次 boot 的资格结果位于 `projects/e2e/targets/h2loader_tar_zlib/pal-storage/devkit/evidence`。
+DevKit 的 `pal-storage` managed App 使用板载 Flash 上的 LittleFS 与独立 pref store，不需要 SD 卡。LittleFS 的目录 clear 与目录 remove 在既有 internal-stack safe-call 中完成；空长度 read/write 按 public wrapper 允许 NULL buffer。测试只清理 `/data/pal-storage` 子目录，整分区 format 仍属于显式 board policy。真实两次 boot 的资格结果位于 `projects/e2e/targets/pal-storage/espressif/esp32s3_devkitc_1/evidence`。
 
 Crypto 的 `random(NULL, 0)` 是成功 no-op；ESP adapter 在零长度时不调用要求非空 buffer 的 `esp_fill_random`，避免合法 PAL 边界触发 SDK assert。`pal-crypto` DevKit E2E 覆盖该边界并验证完整 15 操作 / 22 case，同一 App 还在其他五个平台执行。
 

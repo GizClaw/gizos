@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_partial_header.c"
+SOURCE = ROOT / "projects/h2loader/targets/loader/jieli/jieli_ac791n_devkit/src/loader_partial_header.c"
 
 
 class PartialHeaderTest(unittest.TestCase):
@@ -74,8 +74,9 @@ int main(void) {
                     "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                     f"-DH2_JIELI_TEST_PREFIX_BYTES={prefix}",
                     "-I", str(root),
-                    "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
-                    "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"),
+                    "-I", str(ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/include"),
+                "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
+                    "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
                     str(root / "test.c"), "-o", str(binary),
                 ], check=True, timeout=60)
                 subprocess.run([str(binary)], check=True, timeout=10)

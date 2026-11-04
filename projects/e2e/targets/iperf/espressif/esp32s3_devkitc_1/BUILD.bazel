@@ -1,0 +1,117 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+esp_target_task_policy(
+    default_policy = "4 any 4096 psram",
+    graph = [":iperf_launcher"],
+    policies = [
+        "h2loader/appcmd    8        0  4096  psram",
+        "h2loader/blecmd    8        0  4096  psram",
+        "$h2loader/return   8        0  4096  psram",
+        "$h2loader/blelink  6        0  4096  psram",
+        "$bleikcp/kcp       7        0  4096  psram",
+        "$bleikcp/server    5        0  4096  psram",
+        "$h2peer/net        7        0  4096  psram",
+        "$h2peer/udp        7        0  4096  psram",
+        "$runtime/input     default",
+        "$runtime/nfc       default",
+        "$h2loader/uartcmd  default",
+    ],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    native_deps = ["//libs/h2loader/device:firmware_api"],
+    native_srcs = ["//libs/h2loader/device:firmware_sources"],
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/iperf",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/e2e/apps/iperf/app:iperf_e2e",
+    ],
+)
+
+firmware_native_component(
+    name = "iperf_launcher",
+    srcs = ["main/main.c"],
+    hdrs = ["//projects/e2e/libs/fixture-wifi:h2_e2e_fixture_wifi.h"],
+    component_directory = "projects/e2e/targets/iperf/espressif/esp32s3_devkitc_1/main",
+    component_name = "main",
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "//projects/e2e/libs/fixture-wifi:fixture_wifi.cmake",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":firmware_lib",
+        "//boards/espressif/esp32s3_devkitc_1/esp32s3",
+        "//libs/h2loader/device",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
+        "//native_component_src/esp-idf6.x/zlib",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "devkit",
+    cmake_variables = [
+        "H2_IPERF_BLE_ADV",
+        "H2_IPERF_SERVER",
+        "H2_IPERF_POWER_SAVE",
+        "H2_IPERF_ROLE_SERVER",
+    ],
+    console = "usb",
+    graph = [":iperf_launcher"],
+    project = "CMakeLists.txt",
+    project_name = "h2_iperf_e2e_devkit",
+    target = "esp32s3",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "devkit",
+    firmware = ":firmware",
+    image = "iperf",
+    role = "app",
+    target = "esp32s3",
+)
+
+h2loader_zlib_tar(
+    name = "package_v2",
+    source = "//projects/e2e/targets/iperf/espressif/esp32s3_devkitc_1:package",
+)

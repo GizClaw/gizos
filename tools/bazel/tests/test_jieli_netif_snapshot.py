@@ -11,9 +11,9 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class NetifSnapshotTest(unittest.TestCase):
     def test_snapshot(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_netif.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_netif.c').read_text()
         source = source[source.index('static '):source.index('\n#else')]
-        wifi = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
+        wifi = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
         pack = wifi[wifi.index('static uint32_t pack_ip4('):wifi.index('static h2_pal_wifi_security_t')]
         refresh = wifi[re.search(r'\bstatic\s+void\s+update_sta_snapshot\s*\(\s*h2_pal_wifi_sta_status_t\s*\*\s*status\s*\)\s*\{', wifi).start():wifi.index('static int sta_get_status(')]
         source += pack + refresh

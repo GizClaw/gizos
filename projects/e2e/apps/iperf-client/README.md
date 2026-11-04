@@ -1,6 +1,6 @@
 # iperf Client
 
-`app:iperf_client` runs the same TCP/UDP throughput matrix over explicit IPv4 and IPv6 addresses using Runtime and the existing portable `iperf_e2e` runner. The portable network entry uses public Wi-Fi/Net and verifies Runtime IP event/state, disconnect/reconnect and saved-credential preservation. Image confirmation and device lifecycle belong to the launcher. The DevKit target is `//projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit:package`; the BK7258 target is `//projects/e2e/targets/h2loader_tar_zlib/iperf-client/bk7258_v3_202405:package`.
+`app:iperf_client` runs the same TCP/UDP throughput matrix over explicit IPv4 and IPv6 addresses using Runtime and the existing portable `iperf_e2e` runner. The portable network entry uses public Wi-Fi/Net and verifies Runtime IP event/state, disconnect/reconnect and saved-credential preservation. Image confirmation and device lifecycle belong to the launcher. The DevKit target is `//projects/e2e/targets/iperf-client/espressif/esp32s3_devkitc_1:package`; the BK7258 target is `//projects/e2e/targets/iperf-client/beken/bk7258_v3_202405:package`.
 
 The client temporarily associates with the AMOLED server AP `GizOS-iPerf` / `gizosiperf`, channel 6. It never calls `connect_and_save`, clears credentials or modifies the Loader partition. The App does not start its management BLE service and Wi-Fi power save is set to NONE. The BK launcher leaves SDK Bluetooth-controller initialization policy unchanged. IPv4 comes from DHCP, IPv6 from the server's on-link ULA/SLAAC. After 15 seconds for DHCP, RA and DAD, the App identifies the available families and requires matching PAL and Runtime readiness. IPv6-only requires public Wi-Fi GOT_IP with IPv4 invalid and IPv6 ready, without entry-side SDK initialization. Reboot the App after changing the server mode so the station starts with a fresh netif.
 
@@ -28,9 +28,9 @@ Invalid, partial or failed ledger writes retain the first error. A failed pre-co
 ```sh
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:client_test
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:network_test
-bazel test --config=macos_arm64 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/bk7258_v3_202405:uart_handoff_test
-bazel build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit:package
-bazel build --config=bk7258 //projects/e2e/targets/h2loader_tar_zlib/iperf-client/bk7258_v3_202405:package
+bazel test --config=macos_arm64 //projects/e2e/targets/iperf-client/beken/bk7258_v3_202405:uart_handoff_test
+bazel build --config=esp32s3 //projects/e2e/targets/iperf-client/espressif/esp32s3_devkitc_1:package
+bazel build --config=bk7258 //projects/e2e/targets/iperf-client/beken/bk7258_v3_202405:package
 ```
 
 The host test uses real loopback IPv4/IPv6 sockets, exercises 60 TCP/UDP exchanges including repeated dual-family rounds, validates non-fail-fast accounting on a refused endpoint and rejects inconsistent mode/family configuration before traffic. Hardware qualification additionally requires exact UID/port, source/package/image hashes, complete serial logs and final coredump/firmware state.
@@ -53,4 +53,4 @@ This App and the AMOLED touch server measure TCP and UDP. `libs/iperf` also impl
 
 The launcher never creates link-local/SLAAC through the SDK. `H2_IPERF_CLIENT_LINK` also reports PAL station state, IPv4 validity, IPv6 readiness and matching Runtime IP readiness. `H2_IPERF_CLIENT_COMPLETE` requires public readiness, a real disconnect that clears Wi-Fi/Runtime/Netif IP state, a second public association with the same mode and an unchanged canonical saved-credential signature. No password or signature bytes are printed. These lifecycle checks are separate from optical/finger touchscreen acceptance and from Internet/default-router qualification. The network setup uses a 20-second association call followed by at most 45 seconds for address/event matching; the first 15 seconds allow both families to settle before classifying the server mode.
 
-The DevKit SDK defaults are board-owned. Its canonical board file supplies IPv6/SLAAC policy; `boards/devkit/esp32s3/layouts/h2loader/sdkconfig.iperf-client.defaults` supplies the existing INFO diagnostics and 12-socket/6-active-TCP/4-listener budget. The firmware target declares this variant and the common Loader defaults as project support files, with the USB console selected explicitly.
+The DevKit SDK defaults are board-owned. Its canonical board file supplies IPv6/SLAAC policy; `boards/espressif/esp32s3_devkitc_1/esp32s3/layouts/h2loader/sdkconfig.iperf-client.defaults` supplies the existing INFO diagnostics and 12-socket/6-active-TCP/4-listener budget. The firmware target declares this variant and the common Loader defaults as project support files, with the USB console selected explicitly.

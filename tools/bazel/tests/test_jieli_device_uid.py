@@ -10,10 +10,10 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class DeviceUidTest(unittest.TestCase):
     def test_controller_identity(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_ble.c").read_text()
         start = re.search(r"\bconst\s+char\s*\*\s*h2_jieli_ac791n_devkit_device_uid\s*\(\s*void\s*\)", source).start()
-        end = source.index("static int h2_uuid_equal", start)
+        end = source.index("static int h2_adv_append", start)
         stub = r'''
 #include <assert.h>
 #include <stdint.h>

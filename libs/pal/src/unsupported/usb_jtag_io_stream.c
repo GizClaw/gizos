@@ -29,11 +29,19 @@ static h2_pal_result_t unsupported_usb_jtag_io_stream_flush(void* p0) {
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_usb_jtag_io_stream_configure(
+    void* user, const h2_pal_usb_jtag_io_stream_config_t* config) {
+  (void)user;
+  (void)config;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_usb_jtag_io_stream_vtable_t
     unsupported_usb_jtag_io_stream_vtable = {
         .read = unsupported_usb_jtag_io_stream_read,
         .write = unsupported_usb_jtag_io_stream_write,
         .flush = unsupported_usb_jtag_io_stream_flush,
+        .configure = unsupported_usb_jtag_io_stream_configure,
 };
 static const h2_pal_usb_jtag_io_stream_api_t
     unsupported_usb_jtag_io_stream_api = {

@@ -24,7 +24,7 @@ cc_binary(
     copts = H2_WARNING_COPTS,
     target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
-        "//libs/h2loader_host",
+        "//libs/h2loader/host",
         "//libs/pal/providers/darwin/pal_core",
         "//libs/pal/providers/desktop/pal_core",
     ],

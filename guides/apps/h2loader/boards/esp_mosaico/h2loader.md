@@ -1,6 +1,6 @@
 # ESP-Mosaico H2Loader
 
-普通 Loader 的 canonical 入口保持为 `projects/h2loader/targets/h2loader_tar_zlib/loader/esp_mosaico/`。 它初始化板级 Runtime、Mosaico USB console 和 Loader USB adapter，调用现有 `h2_esp_h2loader_run()`。MFG 是同一板子的[另一管理镜像](./mfg)。
+普通 Loader 的 canonical 入口保持为 `projects/h2loader/targets/loader/espressif/mosaico/`。 它初始化板级 Runtime、Mosaico USB console 和 Loader USB adapter，调用现有 `h2_esp_h2loader_run()`。MFG 是同一板子的[另一管理镜像](./mfg)。
 
 ## 构建与容量
 
@@ -8,11 +8,11 @@
 
 ```sh
 bazel build --config=esp32s31 \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/esp_mosaico:package
-bazel build //projects/h2loader/targets/cc_binary/cli:h2loader
+  //projects/h2loader/targets/loader/espressif/mosaico:package
+bazel build //tools/gizloader/native:gizloader-cli
 ```
 
-包 identity 为 `board=esp_mosaico`、`target=esp32s31`、`image=loader`、 `role=h2loader`。既有 16 MiB NOR 布局的权威输入是 `boards/esp_mosaico/esp32s31/layouts/h2loader/partition.csv` 和同目录 `sdkconfig.h2loader.defaults`；Loader 容量 3 MiB、App 容量 7 MiB。 核对实际 raw image 大小及 staging/data 可用空间后再安装，压缩包大小不能 证明镜像满足目标分区容量。
+包 identity 为 `board=esp_mosaico`、`target=esp32s31`、`image=loader`、 `role=h2loader`。既有 16 MiB NOR 布局的权威输入是 `boards/espressif/mosaico/esp32s31/layouts/h2loader/partition.csv` 和同目录 `sdkconfig.h2loader.defaults`；Loader 容量 3 MiB、App 容量 7 MiB。 核对实际 raw image 大小及 staging/data 可用空间后再安装，压缩包大小不能 证明镜像满足目标分区容量。
 
 ## USB 管理与更新
 

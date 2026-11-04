@@ -83,6 +83,12 @@ static int unsupported_fs_rename(void* p0, const char* p1, const char* p2) {
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_fs_prepare(void* user, const char* path) {
+  (void)user;
+  (void)path;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_fs_vtable_t unsupported_fs_vtable = {
     .mkdir = unsupported_fs_mkdir,
     .open = unsupported_fs_open,
@@ -95,6 +101,7 @@ static const h2_pal_fs_vtable_t unsupported_fs_vtable = {
     .clear = unsupported_fs_clear,
     .remove = unsupported_fs_remove,
     .rename = unsupported_fs_rename,
+    .prepare = unsupported_fs_prepare,
 };
 static const h2_pal_fs_api_t unsupported_fs_api = {
     .user = NULL, .vtable = &unsupported_fs_vtable};

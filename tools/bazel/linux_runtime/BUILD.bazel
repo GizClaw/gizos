@@ -41,8 +41,8 @@ py_test(
     ],
     data = [
         "ubuntu_24_04_x86_64_allowlist.json",
-        "//projects/example/targets/cc_binary/recording:recording-smoke",
-        "//projects/showcase/targets/cc_binary/showcase",
+        "//projects/e2e/targets/cc_binary/pal-display:pal_display_e2e",
+        "//tools/bazel/linux_runtime/tests/recording:recording-smoke",
     ],
     legacy_create_init = 0,
     main = "test_validate_integration.py",

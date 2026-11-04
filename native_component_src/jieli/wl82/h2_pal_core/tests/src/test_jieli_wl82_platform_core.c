@@ -27,6 +27,49 @@ static void test_mem_round_trip(void) {
   CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 
+static void test_device_identity_and_unavailable_heap_observations(void) {
+  h2_jieli_fake_reset();
+  const h2_pal_device_identity_api_t* api =
+      h2_jieli_wl82_platform_device_identity_api();
+  const h2_pal_mem_api_t* mem = h2_jieli_wl82_platform_mem_api();
+  const uint8_t expected[6] = {0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12};
+  h2_pal_device_identity_t identity;
+  const h2_pal_device_identity_t empty_identity = {0};
+  CHECK(api == h2_jieli_wl82_platform_device_identity_api());
+  CHECK(api->vtable->get(api->user, NULL) == H2_PAL_ERR_INVALID_ARG);
+  CHECK(h2_pal_device_identity_get(api, &identity) == H2_PAL_ERR_UNSUPPORTED);
+  CHECK(memcmp(&identity, &empty_identity, sizeof(identity)) == 0);
+  h2_jieli_fake_set_device_identity(H2_PAL_OK, expected);
+  for (unsigned i = 0u; i < 2u; ++i) {
+    CHECK(h2_pal_device_identity_get(api, &identity) == H2_PAL_OK);
+    CHECK(identity.size == sizeof(expected));
+    CHECK(memcmp(identity.bytes, expected, sizeof(expected)) == 0);
+    for (size_t j = sizeof(expected); j < sizeof(identity.bytes); ++j)
+      CHECK(identity.bytes[j] == 0u);
+  }
+  h2_jieli_fake_set_device_identity(H2_PAL_ERR_IO, expected);
+  memset(&identity, 0xa5, sizeof(identity));
+  CHECK(api->vtable->get(api->user, &identity) == H2_PAL_ERR_IO);
+  CHECK(memcmp(&identity, &empty_identity, sizeof(identity)) == 0);
+  const h2_pal_mem_region_t regions[] = {
+      H2_PAL_MEM_REGION_INTERNAL,
+      H2_PAL_MEM_REGION_INTERNAL_EXECUTABLE,
+      H2_PAL_MEM_REGION_EXTERNAL,
+  };
+  const h2_pal_mem_stats_t empty_stats = {0};
+  h2_pal_mem_stats_t stats;
+  for (size_t i = 0u; i < sizeof(regions) / sizeof(regions[0]); ++i) {
+    memset(&stats, 0xa5, sizeof(stats));
+    CHECK(h2_pal_mem_get_stats(mem, regions[i], &stats) ==
+          H2_PAL_ERR_UNSUPPORTED);
+    CHECK(memcmp(&stats, &empty_stats, sizeof(stats)) == 0);
+  }
+  CHECK(mem->vtable->get_stats(mem->user, (h2_pal_mem_region_t)99, &stats) ==
+        H2_PAL_ERR_INVALID_ARG);
+  CHECK(mem->vtable->get_stats(mem->user, regions[0], NULL) ==
+        H2_PAL_ERR_INVALID_ARG);
+}
+
 static void test_log_formats_level_scope_and_crlf(void) {
   const h2_pal_log_api_t* log = h2_jieli_wl82_platform_log_api();
   h2_jieli_fake_reset();
@@ -1025,6 +1068,7 @@ static void test_firmware_info_reports_build_version(void) {
 
 int main(void) {
   test_mem_round_trip();
+  test_device_identity_and_unavailable_heap_observations();
   test_log_formats_level_scope_and_crlf();
   test_log_truncates_long_messages_without_overflow();
   test_log_bounds_long_scope_and_message_together();

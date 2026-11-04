@@ -86,6 +86,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--native-component-source", action="append", default=[])
     parser.add_argument("--native-include-root", action="append", default=[])
     parser.add_argument("--prebuilt-component", action="append", default=[])
+    parser.add_argument("--generate-prebuilt-component", action="append", default=[])
     parser.add_argument("--sdk-patch", action="append", default=[])
     return parser.parse_args(argv)
 
@@ -306,8 +307,11 @@ def resolve_under(root: Path, value: str, label: str) -> Path:
     return (root / path).resolve()
 
 
-def resolve_native_sources(root: Path, definitions: list[str]) -> list[Path]:
+def resolve_native_component_sources(
+    root: Path, definitions: list[str]
+) -> dict[str, list[Path]]:
     owners: dict[Path, str] = {}
+    components: dict[str, list[Path]] = {}
     for definition in definitions:
         name, separator, value = definition.partition("=")
         if not separator or not SAFE_NAME.fullmatch(name) or not value:
@@ -319,7 +323,15 @@ def resolve_native_sources(root: Path, definitions: list[str]) -> list[Path]:
         if previous is not None and previous != name:
             raise RunnerError(f"native source has multiple owners: {source}")
         owners[source] = name
-    return sorted(owners)
+        sources = components.setdefault(name, [])
+        if source not in sources:
+            sources.append(source)
+    return components
+
+
+def resolve_native_sources(root: Path, definitions: list[str]) -> list[Path]:
+    components = resolve_native_component_sources(root, definitions)
+    return sorted(source for sources in components.values() for source in sources)
 
 
 def resolve_include_roots(root: Path, definitions: list[str]) -> list[Path]:
@@ -343,6 +355,8 @@ def render_component_manifest(
     include_roots: list[Path],
     archives: dict[str, Path],
     defines: list[str],
+    component_sources: dict[str, list[Path]] | None = None,
+    component_names: list[str] | tuple[str, ...] = (),
 ) -> str:
     lines = [
         "# Generated from the Bazel native component graph.",
@@ -352,6 +366,14 @@ def render_component_manifest(
         "H2_BAZEL_DEFINES := " + " ".join(defines),
     ]
     lines.extend(f"H2_BAZEL_PREBUILT_{name.upper()} := {archives[name]}" for name in sorted(archives))
+    component_sources = component_sources or {}
+    names = sorted(set(component_names) | set(component_sources))
+    lines.append("H2_BAZEL_COMPONENT_NAMES := " + " ".join(names))
+    for name in names:
+        lines.append(
+            f"H2_BAZEL_COMPONENT_SRCS_{name.upper()} := "
+            + " ".join(str(source) for source in sorted(component_sources.get(name, [])))
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -384,7 +406,22 @@ def build(arguments: argparse.Namespace) -> None:
     for name, archive in archives.items():
         if not archive.is_file() or archive.suffix != ".a":
             raise RunnerError(f"prebuilt component {name} archive is invalid: {archive}")
-    native_sources = resolve_native_sources(source_root, arguments.native_component_source)
+    source_components = resolve_native_component_sources(source_root, arguments.native_component_source)
+    native_sources = sorted(source for sources in source_components.values() for source in sources)
+    component_names = set(arguments.native_component)
+    if len(component_names) != len(arguments.native_component) or any(
+        not SAFE_NAME.fullmatch(name) for name in component_names
+    ):
+        raise RunnerError("invalid or duplicate native component")
+    for name in arguments.generate_prebuilt_component:
+        if not SAFE_NAME.fullmatch(name) or name in component_names:
+            raise RunnerError(f"invalid or duplicate generated component: {name}")
+        if name not in archives and not source_components.get(name):
+            raise RunnerError(f"generated component has no archive or native source: {name}")
+        component_names.add(name)
+    undeclared = sorted(set(source_components) - component_names)
+    if undeclared:
+        raise RunnerError("native component sources have no declared component: " + ", ".join(undeclared))
     include_roots = resolve_include_roots(source_root, arguments.native_include_root)
     project_makefile_label = Path(arguments.project_makefile).as_posix()
     project_makefile = resolve_under(
@@ -456,6 +493,8 @@ def build(arguments: argparse.Namespace) -> None:
                     include_roots,
                     archives,
                     [shell_quote_define("H2_JIELI_FIRMWARE_VERSION", arguments.version)],
+                    source_components,
+                    sorted(component_names),
                 ),
                 encoding="utf-8",
             )
@@ -515,7 +554,15 @@ def build(arguments: argparse.Namespace) -> None:
                 "entry": arguments.entry,
                 "family": FAMILIES[arguments.target],
                 "image": arguments.image,
-                "native_components": sorted(arguments.native_component),
+                "native_components": sorted(component_names),
+                "native_source_components": {
+                    name: sorted(
+                        definition.partition("=")[2]
+                        for definition in arguments.native_component_source
+                        if definition.partition("=")[0] == name
+                    )
+                    for name in sorted(component_names)
+                },
                 "native_sources": sorted(
                     definition.partition("=")[2] for definition in arguments.native_component_source
                 ),

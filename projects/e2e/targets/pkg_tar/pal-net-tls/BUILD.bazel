@@ -35,7 +35,7 @@ cc_binary(
         "//libs/pal:unsupported",
         "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
-        "//projects/example/libs/host_runtime",
+        "//projects/e2e/libs/host_runtime",
     ],
 )
 

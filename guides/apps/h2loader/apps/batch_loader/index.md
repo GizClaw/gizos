@@ -5,9 +5,9 @@ GizOS 提供 `@gizclaw/h2loader` Browser SDK，负责 package inspection、Web S
 ## Ownership
 
 ```text
-projects/h2loader/libs/web/                       # JS wrapper、Emscripten runtime 与 WASM source target
+libs/h2loader/web/                       # JS wrapper、Emscripten runtime 与 WASM source target
 projects/h2loader/targets/npm_package/h2loader/   # @gizclaw/h2loader package identity 与发布规则
-libs/h2loader_host/                               # 协议、package 与 lifecycle authority
+libs/h2loader/host/                               # 协议、package 与 lifecycle authority
 libs/pal/providers/web/pal_core/                  # Web Serial 与浏览器调度
 GizClaw/www                                       # GizOS 网站、Batch Loader UI、状态和交互
 ```

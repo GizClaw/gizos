@@ -187,7 +187,7 @@ firmware_native_component(
 
 native_component_paths(
     name = "native_component_paths",
-    explicit = "@gizos//boards/devkit/esp32s3",
+    explicit = "@gizos//boards/espressif/esp32s3_devkitc_1/esp32s3",
     inferred = "@gizos//native_component_src/esp-idf6.x/zlib",
     local = ":font_native_component",
 )

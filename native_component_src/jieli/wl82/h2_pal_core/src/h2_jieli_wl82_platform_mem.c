@@ -25,10 +25,24 @@ static void mem_free(void* user, void* ptr) {
   }
 }
 
+static h2_pal_result_t mem_get_stats(void* user, h2_pal_mem_region_t region,
+                                     h2_pal_mem_stats_t* out_stats) {
+  (void)user;
+  if (out_stats == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_stats, 0, sizeof(*out_stats));
+  if (region != H2_PAL_MEM_REGION_INTERNAL &&
+      region != H2_PAL_MEM_REGION_INTERNAL_EXECUTABLE &&
+      region != H2_PAL_MEM_REGION_EXTERNAL)
+    return H2_PAL_ERR_INVALID_ARG;
+  /* The wl82 SDK does not expose all four whole-region observations. */
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_mem_vtable_t s_mem_vtable = {
     .alloc = mem_alloc,
     .realloc = mem_realloc,
     .free = mem_free,
+    .get_stats = mem_get_stats,
 };
 
 static const h2_pal_mem_api_t s_mem_api = {

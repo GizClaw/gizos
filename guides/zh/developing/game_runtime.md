@@ -14,7 +14,7 @@ Game Runtime 使用 PAL display，不直接访问具体 display controller、tou
 
 这个 library 是 game-specific runtime，不替代负责整个 app 硬件访问与 event/state 聚合的 `libs/runtime`。
 
-PIXA Games library family 的 host button mapping、PixelRoot scene ownership 和 PIXA asset 组织见 [PIXA Games](/apps/pixa_games)。
+Each consumer owns its game implementation, host button mapping, scene composition and assets. The reusable image format is documented in [PIXA](./pixa).
 
 ## Framebuffer 提交
 

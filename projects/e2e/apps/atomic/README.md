@@ -68,7 +68,7 @@ H2_ATOMIC_DEVICE_PORT=<port> H2_ATOMIC_DEVICE_UID=<uid> \
   --extra_toolchains=//projects/e2e/libs/atomic-device:host_python_toolchain \
   --extra_toolchains=//tools/bazel/platforms:macos_arm64_test_toolchain \
   --//tools/bazel:firmware_version=<unique-version> \
-  //projects/e2e/targets/h2loader_tar_zlib/atomic/devkit:device_test
+  //projects/e2e/targets/atomic/espressif/esp32s3_devkitc_1:device_test
 ```
 
 Use `--config=bk7258` and the `atomic/bk7258_v3_202405:device_test` label for BK.

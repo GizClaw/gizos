@@ -9,13 +9,13 @@ bazel build --config=esp32s3 \
   --define=H2_GIZCLAW_E2E_OTA_ONLY=1 \
   --define=H2_GIZCLAW_E2E_OTA_TOKEN=amoled-ota-e2e-20260906 \
   --//tools/bazel:firmware_version=0.1.1-ota-target \
-  //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
+  //projects/e2e/targets/gizclaw-e2e/waveshare/esp32s3_touch_amoled_1_8:package
 # Preserve the target package before building the source version.
 bazel build --config=esp32s3 \
   --define=H2_GIZCLAW_E2E_OTA_ONLY=1 \
   --define=H2_GIZCLAW_E2E_OTA_TOKEN=amoled-ota-e2e-20260906 \
   --//tools/bazel:firmware_version=0.1.1-ota-source \
-  //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
+  //projects/e2e/targets/gizclaw-e2e/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 Upload the target package to the E2E distribution store, verify an anonymous HTTPS download through `tos-accelerate.volces.com` or the configured CDN against its SHA-256 and size, and bind it to the `develop` slot of the isolated Firmware `amoled-ota-e2e-20260906`. The equally named RegistrationToken binds that Firmware and RuntimeProfile `default`. Do not replace the shared `deploy-default` fixture or product channels.

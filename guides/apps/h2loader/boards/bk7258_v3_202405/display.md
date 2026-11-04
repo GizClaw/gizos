@@ -1,6 +1,6 @@
 # BK7258 V3 202405 Display
 
-独立 PAL Display qualification App 为 `//projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405:package`，使用本 board 的原有 H2Loader layout；只安装 App/P2，保留 Loader/P1、Stage 和 coredump 所有权。
+独立 PAL Display qualification App 为 `//projects/e2e/targets/pal-display/beken/bk7258_v3_202405:package`，使用本 board 的原有 H2Loader layout；只安装 App/P2，保留 Loader/P1、Stage 和 coredump 所有权。
 
 launcher 选择独立的 Display GPIO profile，保留已知可工作的 board RGB clock/control/data 共 29 个引脚，GPIO0/1 保留为 H2Loader UART1。SDK 没有启用 RGB GPIO 初始化，且 runtime GPIO mapper 不接受 profile 中缺失的引脚；因此不能使用仅有 UART/SDIO 的普通 H2Loader GPIO profile。board Display 每次 open 检查真实 RGB mux，仅恢复不正确的映射；H050IWV 没有 SPI 初始化回调，禁用可选 SPI control bus，避免占用 UART1。
 

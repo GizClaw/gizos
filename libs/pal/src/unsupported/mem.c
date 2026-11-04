@@ -20,10 +20,19 @@ static void unsupported_mem_free(void* p0, void* p1) {
   (void)p1;
 }
 
+static h2_pal_result_t unsupported_mem_get_stats(
+    void* user, h2_pal_mem_region_t region, h2_pal_mem_stats_t* out_stats) {
+  (void)user;
+  (void)region;
+  (void)out_stats;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_mem_vtable_t unsupported_mem_vtable = {
     .alloc = unsupported_mem_alloc,
     .realloc = unsupported_mem_realloc,
     .free = unsupported_mem_free,
+    .get_stats = unsupported_mem_get_stats,
 };
 static const h2_pal_mem_api_t unsupported_mem_api = {
     .user = NULL, .vtable = &unsupported_mem_vtable};

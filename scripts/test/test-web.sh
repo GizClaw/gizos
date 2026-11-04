@@ -3,7 +3,6 @@ set -eu
 
 exec bazel test \
   //tools/bazel:web_archive_server_test \
-  //projects/example/targets/pkg_tar/... \
   //projects/e2e/targets/pkg_tar/lua-runtime/... \
   //projects/e2e/targets/pkg_tar/pal-core:browser_test \
   //projects/e2e/targets/pkg_tar/pal-storage/... \
@@ -14,7 +13,7 @@ exec bazel test \
   //projects/e2e/targets/pkg_tar/h2loader-serial:h2loader_serial_wasm_test \
   //projects/e2e/targets/pkg_tar/h2loader-serial:run_poller_test \
   //projects/e2e/targets/pkg_tar/h2loader-serial:shutdown_test \
-  //libs/h2loader_host:h2loader_host_package_test \
-  //projects/h2loader/libs/web:h2loader_web \
-  //projects/h2loader/libs/web:h2loader_ports_test \
+  //libs/h2loader/host:h2loader_host_package_test \
+  //libs/h2loader/web:web \
+  //libs/h2loader/web:h2loader_ports_test \
   //projects/h2loader/targets/npm_package/h2loader:wasm_url_test

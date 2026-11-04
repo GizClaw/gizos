@@ -60,7 +60,7 @@ void* resize(void* user, void* pointer, size_t size) {
   pthread_mutex_unlock(&accounting);
   return next + 1;
 }
-const h2_pal_mem_vtable_t memory_methods = {allocate, resize, release};
+const h2_pal_mem_vtable_t memory_methods = {allocate, resize, release, nullptr};
 const h2_pal_mem_api_t memory = {nullptr, &memory_methods};
 void* stack_allocate(void* user, size_t size) {
   pthread_mutex_lock(&accounting);
@@ -69,7 +69,8 @@ void* stack_allocate(void* user, size_t size) {
   pthread_mutex_unlock(&accounting);
   return reject ? nullptr : allocate(user, size);
 }
-const h2_pal_mem_vtable_t stack_methods = {stack_allocate, nullptr, release};
+const h2_pal_mem_vtable_t stack_methods = {stack_allocate, nullptr, release,
+                                           nullptr};
 const h2_pal_mem_api_t stack_memory = {nullptr, &stack_methods};
 pthread_mutex_t core_lock = PTHREAD_MUTEX_INITIALIZER;
 h2_posix_thread_core_t* core;

@@ -49,7 +49,7 @@ h2_gizclaw_ota_start(service, H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
 
 ```sh
 bazel build --config=esp32s3 --define=H2_GIZCLAW_E2E_DEVICE_ONLY=ON \
-  //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
+  //projects/e2e/targets/gizclaw-e2e/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 需先配置仓库要求的 `IDF_PATH` / `IDF_TOOLS_PATH`。AMOLED 使用本仓库生成并按提交固定版本的 32 秒 Ogg/Opus 测试音频 `playback_tone_32s_v1.ogg`，生成方法见 `projects/e2e/apps/gizclaw/data/README.md`：

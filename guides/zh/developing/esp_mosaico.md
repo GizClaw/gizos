@@ -1,14 +1,14 @@
 # ESP-Mosaico 板级支持
 
 本实现基于 main 固定的 ESP-IDF 6.2。应用直接依赖
-`//boards/esp_mosaico/esp32s31` 并选择其 `layouts/h2loader` 配置（16 MB NOR、Loader 3 MB / App 7 MB）；无需引用
+`//boards/espressif/mosaico/esp32s31` 并选择其 `layouts/h2loader` 配置（16 MB NOR、Loader 3 MB / App 7 MB）；无需引用
 `e2e-app` 或 GizClaw 测试包。`h2_esp_board_runtime_config()` 提供板级配置，
 其中 Camera 默认绑定到 SC101IOT provider。公共 Runtime 未配置 Camera 时使用
 unsupported provider，其他板不自动引入 Mosaico 驱动。
 
 ## Loader 与 MFG 最终组合
 
-同一板子的普通 Loader 与 MFG 均为既有 `role=h2loader` 管理镜像，沿用 S31 layout。普通 Loader 入口不变；[MFG](/apps/h2loader/boards/esp_mosaico/mfg) 入口在 `projects/mfg/apps/esp_mosaico/`，revision 3 的 profile 声明十一项、app 触摸点、IMU channel 要求和 UI 配置。颜色图案与亮度合为原 DISPLAY 检查。
+同一板子的普通 Loader 与 MFG 均为既有 `role=h2loader` 管理镜像，沿用 S31 layout。普通 Loader 入口不变；[MFG](/apps/h2loader/boards/esp_mosaico/mfg) 入口在 `projects/mfg/targets/mfg/espressif/mosaico/`，revision 3 的 profile 声明十一项、app 触摸点、IMU channel 要求和 UI 配置。颜色图案与亮度合为原 DISPLAY 检查。
 
 `main.c` 组合既有板级 Runtime、USB/BLE Loader 与共享 MFG，并拥有公开工厂 Wi-Fi 准备及磁力计基线/补偿哨兵/实时观察。共享 Wi-Fi 只观察已有 STA；磁力计共享检查维持原 min/max，UI 通过只读回调显示 app 观察。Loader 安装显示回调为 NULL。共享 model/session/AEC 源码与 main 一致，失败、重试、完成摘要及全项 PASSED 门控沿用原合同。
 
@@ -48,13 +48,13 @@ Runtime 创建/销毁不启动、取帧、归还或停止 Camera。应用必须�
 
 ## 磁力计读取与补偿输出
 
-Mosaico 磁力计通过现有 [IMU PAL](https://github.com/GizClaw/gizos/blob/main/libs/pal/include/h2/pal/hal/h2_pal_imu.h) 读取。[板级适配器](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/src/h2_mosaico_peripherals.c) 根据 BSP 返回码决定读取成功或失败；成功时保留三轴补偿输出并统一换算为 PAL 单位，不因单轴补偿溢出而丢弃整份样本。初始化或读取失败仍返回既有错误并清空输出，不返回上次成功的样本。
+Mosaico 磁力计通过现有 [IMU PAL](https://github.com/GizClaw/gizos/blob/main/libs/pal/include/h2/pal/hal/h2_pal_imu.h) 读取。[板级适配器](https://github.com/GizClaw/gizos/blob/main/boards/espressif/mosaico/esp32s31/src/h2_mosaico_peripherals.c) 根据 BSP 返回码决定读取成功或失败；成功时保留三轴补偿输出并统一换算为 PAL 单位，不因单轴补偿溢出而丢弃整份样本。初始化或读取失败仍返回既有错误并清空输出，不返回上次成功的样本。
 
-Bosch 补偿溢出哨兵也经过相同单位换算，具体映射见 [板级转换定义](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/src/h2_mosaico_mag.h)。该输出不是可信的磁场测量，也不能据其符号推断物理方向。读取成功与 `HAS_MAG` 表示交付了磁场通道输出，不保证每轴均为有效物理测量，更不代表磁铁已吸附。当前公共接口没有逐轴状态字段，消费此路径的产品必须处理这一板级语义；分类、滤波、基线和显示策略归产品层，不能把读取错误或溢出输出直接当作吸附。
+Bosch 补偿溢出哨兵也经过相同单位换算，具体映射见 [板级转换定义](https://github.com/GizClaw/gizos/blob/main/boards/espressif/mosaico/esp32s31/src/h2_mosaico_mag.h)。该输出不是可信的磁场测量，也不能据其符号推断物理方向。读取成功与 `HAS_MAG` 表示交付了磁场通道输出，不保证每轴均为有效物理测量，更不代表磁铁已吸附。当前公共接口没有逐轴状态字段，消费此路径的产品必须处理这一板级语义；分类、滤波、基线和显示策略归产品层，不能把读取错误或溢出输出直接当作吸附。
 
 MFG profile 将补偿无效值 `-327680` mGauss 传入共享策略，逐轴忽略并撤销该轴 基线有效性；恢复后的首次有效值只建立新基线，不算磁铁响应。右侧 ID 202、 左侧 ID 203 分别比较有效基线、显示当前靠近/移开状态，历史响应就绪与人工结论 保持分离。共享引擎不依赖 Mosaico BSP，也不按 board 字符串分支。
 
-[板级回归说明](https://github.com/GizClaw/gizos/blob/main/boards/esp_mosaico/esp32s31/tests/README.md)中的磁力计测试覆盖补偿输出保留、换算和真实读取失败清空。真机验证需记录固件版本、两颗外设的返回码、flags 和三轴输出，并分别观察磁铁靠近和移开后的行为；未触发补偿溢出时，不能以正常读取替代该条件的硬件证据。没有轴输出的 IO 错误不能直接归因为饱和或硬件损坏。
+[板级回归说明](https://github.com/GizClaw/gizos/blob/main/boards/espressif/mosaico/esp32s31/tests/README.md)中的磁力计测试覆盖补偿输出保留、换算和真实读取失败清空。真机验证需记录固件版本、两颗外设的返回码、flags 和三轴输出，并分别观察磁铁靠近和移开后的行为；未触发补偿溢出时，不能以正常读取替代该条件的硬件证据。没有轴输出的 IO 错误不能直接归因为饱和或硬件损坏。
 
 ## Type-C OTG CDC Loader
 
@@ -75,12 +75,11 @@ context 由板级持有，生命周期覆盖整个启动周期。注入不可重
 已通过方案见 [Mosaico PAL E2E](esp_mosaico_e2e.md)。Lingxi、OneNET 暂不接入。
 板级驱动与 Camera/Runtime/USB 是测试运行所需的基础组合，不表示整板外设验收完成。
 
-`peripherals`、`chip`、`loader` 不作为独立 E2E 包：
+Board and Loader validation follows the existing ownership boundaries:
 
 - 传感器、电池、按键、触摸和 PWM 绑定既有 PAL，实现在板级目录，回归归板级 tests。
-- 芯片最小配置保留在 `boards/esp32s31_chip`，编译检查归 `tools/bazel/smoke/esp32s31`。
-- Loader 协议绑定归 `projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_mosaico_usb`，
-  真实管理/安装链路由已有 `h2loader-serial` 验证。BSP 只暴露通用单 CDC 传输。
+- The physical Mosaico board owns its ESP32-S31 configuration in `boards/espressif/mosaico/esp32s31/` and its `layouts/h2loader/` profile. Validate component integration through maintained Mosaico firmware targets; firmware builds and host regressions do not establish peripheral acceptance.
+- Portable Loader protocol/session logic belongs to `libs/h2loader/device`. Final firmware entries use its common service through `Runtime.io_stream`; BSP/PAL providers own single-CDC setup and complete-frame arbitration. The existing `h2loader-serial` test covers management/installation.
 
 共享 E2E App 保留原断言；Mosaico launcher 只负责板级组合、任务策略、fixture 与结果输出。
 AMOLED 对端仅作为已有协议及测试声源夹具，不扩大为其他板卡的产品适配交付。

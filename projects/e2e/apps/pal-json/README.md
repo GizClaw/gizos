@@ -25,10 +25,10 @@ DevKit 和 BK7258 使用原有 H2Loader、P1 和 coredump，构建 managed App u
 # 先 source 仓库固定的 firmware-devenv/export.sh；BK7258_PATH 须指向干净的 3.1.1 SDK checkout。
 bazel build --config=esp32s3 --lockfile_mode=off \
   --//tools/bazel:firmware_version=pal-json-esp-<unique-version> \
-  //projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit:package
+  //projects/e2e/targets/pal-json/espressif/esp32s3_devkitc_1:package
 bazel build --config=bk7258 --lockfile_mode=off \
   --//tools/bazel:firmware_version=pal-json-bk-<unique-version> \
-  //projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405:package
+  //projects/e2e/targets/pal-json/beken/bk7258_v3_202405:package
 ```
 
 本次 [结构化资格记录](qualification.json) 分别保存当前源码和实际运行快照的 SHA-256，以及各端实际 artifact、SDK 包、Bazel test log 和设备串口 log 的摘要。macOS、WASM、iOS 和 Android 已按当前原始源码重新构建并实际运行。两块板保留 r4 镜像的原始源码摘要、安装和重启记录，不把这些历史摘要改成新源码。各块板的 boot ID 是宿主根据独立 reboot 命令与原始 log 摘要分配的观测 ID，不冒充设备内部随机 run ID。资格或 provider teardown 失败时，launcher 留下明确失败标记并保持 App 未确认；只有完整通过且 H2Loader 确认成功后才输出 `H2_JSON_READY rc=0 confirm=0`。

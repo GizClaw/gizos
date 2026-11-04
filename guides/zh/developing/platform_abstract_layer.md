@@ -550,7 +550,7 @@ libs/pal/include/                   # 单一 PAL package 的分层 public contra
 └── h2/pal/{core,os,net,application,hal}/
 libs/pal/src/unsupported/           # one capability per canonical unsupported source
 native_component_src/<platform-or-chip>/     # 原生 SDK 编译的平台或芯片级 backend
-boards/<board>/<chip-or-target>/   # board-specific 实现和组装
+boards/<company>/<board>/<chip-or-target>/   # board-specific 实现和组装
 ```
 
 这条路线用于依赖芯片 SDK 或操作系统的能力。`components` 封装 SDK 和芯片能力，对外提供可复用组件；BSP 负责为当前 board 提供 GPIO、bus、address、channel、外设实例和其他 wiring 配置。
@@ -562,7 +562,7 @@ third_party/<upstream>/             # 上游第三方代码
 libs/pal/providers/<integration>/   # PAL adapter 和跨平台集成
 firmware entry 的 firmware_lib_component       # 选择全部 PAL/library archives
 native_component_src/<platform-or-sdk>/<component>/    # SDK-coupled 实现
-boards/<board>/<chip-or-target>/             # 注入 target 能力并组装 provider
+boards/<company>/<board>/<chip-or-target>/             # 注入 target 能力并组装 provider
 ```
 
 这条路线用于 Crypto、MQTT、WebRTC 等本身可以跨 target 复用的协议或软件能力。`libs/pal/providers/<integration>` 依赖 PAL、config 或 callback 提供的底层能力，例如 net、time、log、mem 和 entropy，并把 third-party API 封装成稳定 PAL contract。只负责导入 Bazel archive 的构建适配统一位于 `libs/pal/providers/<sdk-family>`；直接包含 SDK header、读取 SDK config 或实现 SDK lifecycle 的源码才属于 `native_component_src/<platform-or-sdk>`。不需要这两类适配时，BSP 直接使用 provider public lifecycle 和 accessor。

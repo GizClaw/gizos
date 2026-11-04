@@ -21,7 +21,7 @@ Desktop target owner 的 registry、Serial Loader cache 和 H106 normalized layo
 上限大于 PAL document 上限。Direct vendor header 不能从这些 target package 泄漏到 portable
 library、PAL contract 或 App public API。
 
-Provider 由 composition owner 选择。ESP-IDF 6.x 和 BK7258 AP 提供 yyjson SDK build adapter，由指定的 crash-before-confirm image 编译链接；Runtime 不暴露 JSON capability。
+The composition owner selects the provider. ESP-IDF 6.x and BK7258 AP consumers declare yyjson in their firmware graph and inject the resulting API where required. The provider owns its allocator and lifecycle; a library consumer does not select a board or image.
 
 ## 数据与 ownership
 
@@ -91,14 +91,7 @@ bazel test //libs/pal:all
 bazel test //libs/pal/providers/yyjson:all
 ```
 
-Firmware compile validation 使用：
-
-- ESP32-S3 DevKit crash-before-confirm。
-- ESP32-P4 Waveshare crash-before-confirm。
-- BK7258 V3 202405 crash-before-confirm AP；CP 不注册或链接 `h2_yyjson`。
-
-ESP32-C5 当前没有 maintained launcher，记录为 `SKIP`。这三项是 build/link
-carrier，不执行 JSON runtime flow，也不替代真实设备验收。
+Firmware compile validation uses retained PAL JSON consumers on supported boards. Each entry declares its actual yyjson dependency; BK7258 CP does not register or link `h2_yyjson`. ESP32-C5 currently has no maintained JSON consumer and remains `SKIP`. Compilation and linkage do not establish runtime JSON qualification.
 
 独立的 [`pal-json` E2E App](/apps/e2e) 用同一份
 mandatory registry 在 macOS、Chromium Worker、iOS Simulator、Android Emulator、

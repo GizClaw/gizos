@@ -4,7 +4,18 @@ GizOS 使用 Bazel 9.2.0 作为 stable host C/C++ package 以及 ESP-IDF/BK7258 
 
 `BUILD.bazel`、`.bzl`、target 命名和 platform variant 同时遵守 [Bazel 代码规范](/zh/coding-styles/bazel)。
 
-H2Loader 保留两条固定格式的构建轨道：`h2loader_tar_zlib` 和既有 `targets/h2loader_tar_zlib/` label 输出 format 1 `.update.tar.zlib`；新增 `h2loader_zlib_tar` 和 `targets/h2loader_zlib_tar/` label 输出 format 2 `.update.tar`，外层 USTAR 不压缩，app/data 独立 zlib 压缩。两种 rule 都没有 `package_format` attribute。新 rule 使用 `source = "//.../h2loader_tar_zlib/...:package"`，通过 `FirmwareReleaseInfo.native`、`package_data` 和 `package_data_root` 借用原始输入；action 直接读取同一个 native image 和 data，不以旧压缩包为输入。原始 firmware target 与源码不复制，两个 package action 独立。Provider、catalog、metadata 的 `package_format`、manifest 与 suffix 必须对应 1/2。发布标签只挂在选定的新轨道，避免两个格式重复发布同一身份；旧 target 仍可显式构建并作为旧设备的过渡包。
+Both H2Loader package formats live in
+`targets/<app>/<manufacturer>/<board>/BUILD.bazel`. `h2loader_tar_zlib`, normally
+named `:package`, produces format 1 `.update.tar.zlib`. `h2loader_zlib_tar`, named
+`:package_v2`, produces format 2 `.update.tar`: the outer USTAR is uncompressed,
+and app/data members are independently zlib-compressed. Neither rule has a
+`package_format` attribute. The format-2 wrapper uses `source = ":package"` to
+borrow `FirmwareReleaseInfo.native`, `package_data` and `package_data_root`; its
+action reads the same native image and data rather than the format-1 archive.
+Both actions retain separate outputs and one native source/launcher graph.
+Provider, catalog, metadata, manifest and suffix must agree on format 1 or 2.
+Only the selected canonical `:package_v2` carries `firmware-release`; format 1
+remains explicitly buildable for compatible devices.
 
 `h2loader_checksum_matrix` 消费两个同 board/target 的 App package source，要求不同 raw image，生成两种格式各五个独立 E2E fixture：baseline、unchanged、app-only、data-only、both-changed。新格式三个跳过用例的未变段故意设置无效 zlib CMF，并同步 compressed SHA-256；原始 App/data identity 不变。Fixture 属于测试，不挂发布标签。运行方式见 [Loader E2E runner](/apps/h2loader/boards/devkit/h2loader#e2e-runner)。
 
@@ -27,7 +38,7 @@ ESP-IDF 构建沿用项目的组件依赖锁，不在构建过程中查询组件
 - 每个 firmware rule 只从显式 `graph` 收集 component descriptor 与 archive provider。相同 execution-unit/component name 只能有一个 owner，每个 direct source 在一个 firmware closure 内只能有一个 source owner。Runner 生成 invocation-local manifest，ESP-IDF、Armino 和 JieLi Make 只消费 manifest，不从 CMake/Make 推断 Bazel dependency，也不保留 first-party source fallback。Graph validation 覆盖全部 maintained firmware endpoint。
 - Vendor overlay 作为 `third_party/<dependency>.BUILD.bazel` 维护，默认只选择目标实际消费的固定 upstream 文件并暴露 source/header/file group。公开 upstream source 由 `MODULE.bazel` 中 immutable commit archive URL、SHA-256 和 extracted root 唯一固定；repository rule 必须先校验并解压到 external repository，再应用 BUILD overlay、source overlay 和遗留兼容 patch。GizOS-owned upstream 覆盖位于 `third_party/<dependency>_patch/`，其中保存完整 replacement 或新增文件；新增或迁移的 repository rule 只通过显式 `overlay_files` 装配这些文件，不新增 textual patch。GizOS 自有 upstream 的修复必须回到其 owner repository；在 upstream 版本尚未包含修复前，遗留 textual patch 只能作为有上游 Issue 的临时兼容，不能扩展为新的 downstream patch 面。`libs/<library>/BUILD.bazel` 或对应 component 负责把 vendor groups 与 PAL、GizOS API 和 platform dependency 编译成 repository-owned target。明确直接使用纯 upstream contract 时，overlay 可以保留 compiled target；仅用于补齐 upstream portable build 的 config header 可以由 `overlay_files` materialize 到 external repository，但不能 include GizOS header、改变 public API 或取得 platform lifecycle ownership。其中 CMake/configure upstream 可以通过 `rules_foreign_cc` 产生受 Bazel action 管理的 header、link input 和 runtime library。External repository 永远不能反向引用 first-party target label。少量 committed local vendor source 使用独立 local repository path，并监听 source tree；它不能代替公开 archive pin。
 - ESP native firmware 必须使用 `esp_idf_firmware`，BK7258 native firmware 必须使用 `bk7258_firmware`；不得再用 graph-only `filegroup` 伪装可编译入口。H2Loader 的 ESP/BK7258 最终交付必须另外使用平台无关的 `h2loader_tar_zlib` 消费 native firmware provider。Host Tool 与 Artifact compatibility 是平台选择的唯一 source of truth；BUILD target 不声明自定义 CI tag，也不保存 machine-local SDK path 或 CI runner command。
-- App 在自己的 `apps/<app>/BUILD.bazel` 中通过 `app_version(name, value)` 人工维护共享基础版本。每块板在自己的 `boards/<board>/BUILD.bazel` 中通过独立的 `board_version(name, build)` 人工维护整数构建号；这是纯版本元数据，不包含源码、BSP、文件集合或平台依赖。原有 filegroup 和芯片目录下的 BSP/component target 继续管理代码。具体固件 target 用 `firmware_version` 的 `main_version` 和 `build` 引用各自的版本声明，并按需配置可选的 `variant` 和 `build_metadata`；GizOS 只负责结构与合法性校验，字段的业务含义由调用方决定。非空 variant 与数字 board build 由规则分为独立的 SemVer prerelease identifier，标准 SemVer 比较即可按数值排序 board build；调用方只填写 variant 名称，不附加分隔符。省略或留空时直接使用数字 build 作为 prerelease。非空 `build_metadata` 由规则追加在加号后，必须满足 SemVer 元数据语法，不参与版本排序；完整字符串继续经过统一长度校验。`main_version` attribute 要求 App 版本声明提供的 provider 和声明标记，允许 alias 转发，不能误传普通文件或最终固件版本；`build` attribute 要求独立的 `BoardVersionInfo`。Native firmware、package manifest、release metadata 和设备 runtime 消费同一个最终版本。各层在自己的目录维护数据，不重复保存别人的版本值。具体参数与校验以 `tools/bazel/app_version.bzl`、`tools/bazel/board_version.bzl` 和 `tools/bazel/firmware.bzl` 为准。旧的 `firmware_version(value = ...)` 和诊断 target 的 `//tools/bazel:firmware_version` build setting 继续兼容；Lua package 直接消费 App version。Release batch 标识 immutable assembly，不覆盖版本声明。
+- App 在自己的 `apps/<app>/BUILD.bazel` 中通过 `app_version(name, value)` 人工维护共享基础版本。每块板在自己的 `boards/<company>/<board>/BUILD.bazel` 中通过独立的 `board_version(name, build)` 人工维护整数构建号；这是纯版本元数据，不包含源码、BSP、文件集合或平台依赖。原有 filegroup 和芯片目录下的 BSP/component target 继续管理代码。具体固件 target 用 `firmware_version` 的 `main_version` 和 `build` 引用各自的版本声明，并按需配置可选的 `variant` 和 `build_metadata`；GizOS 只负责结构与合法性校验，字段的业务含义由调用方决定。非空 variant 与数字 board build 由规则分为独立的 SemVer prerelease identifier，标准 SemVer 比较即可按数值排序 board build；调用方只填写 variant 名称，不附加分隔符。省略或留空时直接使用数字 build 作为 prerelease。非空 `build_metadata` 由规则追加在加号后，必须满足 SemVer 元数据语法，不参与版本排序；完整字符串继续经过统一长度校验。`main_version` attribute 要求 App 版本声明提供的 provider 和声明标记，允许 alias 转发，不能误传普通文件或最终固件版本；`build` attribute 要求独立的 `BoardVersionInfo`。Native firmware、package manifest、release metadata 和设备 runtime 消费同一个最终版本。各层在自己的目录维护数据，不重复保存别人的版本值。具体参数与校验以 `tools/bazel/app_version.bzl`、`tools/bazel/board_version.bzl` 和 `tools/bazel/firmware.bzl` 为准。旧的 `firmware_version(value = ...)` 和诊断 target 的 `//tools/bazel:firmware_version` build setting 继续兼容；Lua package 直接消费 App version。Release batch 标识 immutable assembly，不覆盖版本声明。
 - 稳定文件需要 Bazel source ownership 不代表它会进入任何 runtime 或 build action。只服务 repository policy、且没有对应 consumer 的文件使用独立 `filegroup`。
 - `generate_graph.py --check` 只验证目录、source ownership、label、artifact rule 和依赖图完整性。依赖边的 source of truth 始终是 checked-in BUILD target。
 
@@ -54,7 +65,7 @@ ESP32-S3 的专用 `esp32s3_cc` toolchain 同样分别探测 C/C++ include 顺�
 
 ## BK7258 external rule
 
-H2Loader-managed firmware layout 由 `boards/<board>/<target>/layouts/` 拥有并由 wrapper 按 Board 注入。ESP 没有具名 config profile：每块板拥有一套 canonical `sdkconfig.defaults`，layout 只拥有 partition table、rollback defaults 等 layout 专属项；确有真实差异的变体（例如 Tiga 的诊断串口和 E2E 内存保留）注册为该 board 的独立 layout，firmware target 用 `layout` 属性选择，`config_profile`/`config_profiles` 不再是 ESP rule 接口，能力差异只能由 component graph 表达。BK7258 没有具名 config/GPIO/memory profile：每个 `layouts/<layout>/` 自包含一组 AP/CP defaults、GPIO 选择、`ram_regions.csv` 和 partition metadata，firmware target 用 `layout` 属性选择一个注册 layout；`bk7258_firmware` 只接收显式的 `ap_config`/`cp_config`（按序合并、后层覆盖）与 `ap_gpio`/`cp_gpio` 输入，`config_profile`、`config_profiles`、`gpio_profile`、`memory_profile` 和 runner 的 `--config-layer` 都已删除。App、E2E、产品和 Loader target 都不能复制或覆盖这些 layout 输入，也不能保留 project-local SDK config。最终 SDK 配置按 board canonical defaults、layout defaults 的顺序合并，后层覆盖前层。`ram_regions.csv` 只描述 BK image linker RAM/PSRAM 分配，不属于 OTA geometry，并由拥有它的 layout 声明。
+H2Loader-managed firmware layout 由 `boards/<company>/<board>/<target>/layouts/` 拥有并由 wrapper 按 Board 注入。ESP 没有具名 config profile：每块板拥有一套 canonical `sdkconfig.defaults`，layout 只拥有 partition table、rollback defaults 等 layout 专属项；确有真实差异的变体（例如 Tiga 的诊断串口和 E2E 内存保留）注册为该 board 的独立 layout，firmware target 用 `layout` 属性选择，`config_profile`/`config_profiles` 不再是 ESP rule 接口，能力差异只能由 component graph 表达。BK7258 没有具名 config/GPIO/memory profile：每个 `layouts/<layout>/` 自包含一组 AP/CP defaults、GPIO 选择、`ram_regions.csv` 和 partition metadata，firmware target 用 `layout` 属性选择一个注册 layout；`bk7258_firmware` 只接收显式的 `ap_config`/`cp_config`（按序合并、后层覆盖）与 `ap_gpio`/`cp_gpio` 输入，`config_profile`、`config_profiles`、`gpio_profile`、`memory_profile` 和 runner 的 `--config-layer` 都已删除。App、E2E、产品和 Loader target 都不能复制或覆盖这些 layout 输入，也不能保留 project-local SDK config。最终 SDK 配置按 board canonical defaults、layout defaults 的顺序合并，后层覆盖前层。`ram_regions.csv` 只描述 BK image linker RAM/PSRAM 分配，不属于 OTA geometry，并由拥有它的 layout 声明。
 
 Native firmware rules 在 target graph 上接受 task policy：ESP `esp_idf_firmware` 使用可选的 `task_policy`，BK7258 `bk7258_firmware` 使用可选的 `ap_task_policy` 与 `cp_task_policy`；只有实际使用 PAL task policy 的 target 才传入。H2Loader wrapper 对这些参数 fail closed，并且不再从 `layout_files` 派生 policy。Private downstream target 遵循同一 target-owned contract。ESP image graph 只能包含一个 `h2_esp_target_task_policy`；BK graph 对 AP/CP 各包含一个 execution-unit-specific `h2_bk_target_task_policy`，相同 component name 由 native-component execution-unit key 隔离。每个 target 的安装 API header、component `CMakeLists.txt`、policy source 与 host test 由 `//tools/bazel:target_task_policy.bzl` 从 BUILD 里的 policy table 生成，生成物落在 bazel-out 的 `task_policy/`，consumer 不需要创建本地 `task_policy/` 目录。`directory` 只选择 package-relative 生成目录；native component 从已声明的生成 `CMakeLists.txt` 取得真实目录，使头文件、源码和 CMake 一起进入 native action inputs，BK staging 保留 AP/CP execution-unit key。Module 用 `//tools/bazel:tasks.bzl` 的 `h2_tasks` 声明它启动的 runtime task name 并把该声明放进自己的 `deps`，target 用 `graph`（与 firmware rule 相同的依赖图）收集这些声明，用 `policies` 逐条给出 `"<task>  <priority>  <core>  <stack>  <region>"`（BK CP 无 core 列），确有意走默认策略的写成 `"<task>  default"`，前缀路由写成尾部带 `*` 的 task。图里任何一个已声明 task 没有对应行、行里字段不全、或某行指向图中不存在的 task，都在 analysis 阶段失败，因此新增依赖带进来的 task 不会静默落到默认策略上。每个 target 仍然拥有自己的完整 route 表与 resolver，生成器只统一模板，不共享 runtime 状态。
 
@@ -80,15 +91,14 @@ Action 将选中的 launcher 复制到 invocation-local source tree，以只读 
 
 ## JieLi external rule
 
-`jieli_firmware` external rule 覆盖 `target = br23`（AC695N）、`target = br35`
-（AC707N）与 `target = wl82`（AC791N）。它是构建 provider，不等同于 artifact
-root。现有 `targets/jieli_firmware/reference-smoke/<board>/` 保留为仅验证完整
-native link 的历史 smoke artifact；需要表达 portable App standalone 固件的新增入口
-使用 `projects/<owner>/targets/native_firmware/<app>/<board>/`，终态 `:firmware`
-直接返回 vendor ELF、symbol、NOR/FW/UFW 和 manifest。需要 H2Loader format-1
-package 时，在同一 owner 的 `targets/h2loader_tar_zlib/<app>/<board>/` 增加
-`:package`，并复用相同的 project-local native launcher graph；package 不能反向成为
-standalone artifact 的 owner。
+The `jieli_firmware` build rule supports `target = br23` (AC695N), `target = br35`
+(AC707N) and `target = wl82` (AC791N). It supplies a firmware provider rather than
+an artifact root. Standalone portable App firmware belongs under
+`projects/<owner>/targets/<app>/<manufacturer>/<board>/`; its `:firmware` target
+returns vendor ELF, symbols, NOR/FW/UFW images and a manifest. An H2Loader
+format-1 package belongs under the same owner's
+`targets/<app>/<manufacturer>/<board>/:package` and reuses the project-local
+native launcher graph. The package does not own the standalone artifact.
 
 `--config=ac695n` / `--config=ac707n` / `--config=ac791n` 只用 `--repo_env`
 把 `JIELI_AC695N_SDK_PATH` / `JIELI_AC707N_SDK_PATH` /
@@ -100,7 +110,7 @@ standalone artifact 的 owner。
 解包出的 expanded tree。SDK repository 验证
 `native_versions/jieli_<family>_sdk_commit.txt` exact commit 与 tracked cleanliness。
 
-Runner 把 pinned SDK 子树复制到 invocation-local 目录，用 Bazel 验证过的 `pi32v2/bin` 覆盖 `TOOL_DIR`，并从 `boards/<board>/<chip>/layouts/<profile>/project.mk` 驱动仓库自有 native project。Project 明确拥有 SDK source inventory、flags、linker inputs 与 generated outputs；`tools/bazel/jieli/h2_project_rules.mk` 只追加 Bazel native sources 与 archives，不能 include SDK application Makefile。随后仓库自有 `tools/bazel/jieli/local_post_<target>.sh` 用 Linux `isd_download`/`fw_add`/`ufw_maker` 本地出包。Portable archive 由 `@h2_jieli_pi32v2_cc_toolchain` 编译为非 LTO ELF 对象，SDK source object 为 LTO bitcode。每个 target 固定返回 `firmware/firmware.elf`、`symbols.txt`、`jl_isd.bin`、`jl_isd.fw`、`update.ufw` 与 `manifest.json`。
+Runner 把 pinned SDK 子树复制到 invocation-local 目录，用 Bazel 验证过的 `pi32v2/bin` 覆盖 `TOOL_DIR`，并从 `boards/<company>/<board>/<chip>/layouts/<profile>/project.mk` 驱动仓库自有 native project。Project 明确拥有 SDK source inventory、flags、linker inputs 与 generated outputs；`tools/bazel/jieli/h2_project_rules.mk` 只追加 Bazel native sources 与 archives，不能 include SDK application Makefile。随后仓库自有 `tools/bazel/jieli/local_post_<target>.sh` 用 Linux `isd_download`/`fw_add`/`ufw_maker` 本地出包。Portable archive 由 `@h2_jieli_pi32v2_cc_toolchain` 编译为非 LTO ELF 对象，SDK source object 为 LTO bitcode。每个 target 固定返回 `firmware/firmware.elf`、`symbols.txt`、`jl_isd.bin`、`jl_isd.fw`、`update.ufw` 与 `manifest.json`。
 
 pi32v2 compatible graph 覆盖所有无平台门控的 `cc_library`；clang 4.0.1 编不了的目标用 `PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY` 显式退出并注明原因（见 [JieLi Components](./components/jieli)）。工具链只有 Linux x86_64 二进制，因此 rule 的 compatibility 同时要求 `h2_firmware_target` 与 `h2_host_os=linux`：Linux CI 与 Linux 开发机原生执行，macOS host 上这些 target 被标为 incompatible 并跳过，macOS 开发者在 Linux dev container 内运行整个 Bazel；不在 action 内包装 `docker run`，runner 也在触碰 SDK 前拒绝非 Linux x86_64 host。
 
@@ -143,8 +153,8 @@ Linux runner 的 system dependency 安装是后续 SDK、toolchain 与 Bazel cac
 bazel test --config=macos_arm64 //libs/... //libs/pal/providers/desktop/... //projects/.../cc_binary/...
 bazel test --config=linux_x86_64 //libs/... //libs/pal/providers/desktop/... //projects/.../cc_binary/...
 bazel build --config=linux_arm64 //tools/bazel/tests/toolchain_smoke:cross_artifact
-bazel test --config=ios_sim_arm64 //projects/example/targets/ios_application/tap-reset:package_validation_test
-bazel test --config=android_arm64 --platforms=//tools/bazel/platforms:linux_x86_64 //projects/example/targets/android_binary/tap-reset:package_validation_test //projects/example/targets/android_binary/mp4-player:package_validation_test
+bazel build --config=ios_sim_arm64 //...
+bazel build --config=android_arm64 //...
 ```
 
 ## Windows compatible graph
@@ -333,52 +343,123 @@ make bazel-release RELEASE_SLICE=lua-runtime RELEASE_BATCH=20260925-120000 RELEA
 
 行为测试必须执行被测实现，或检查构建工具实际生成的产物。Python 运行器可以保留用于真实编译、C/C++ 断言、浏览器、网络 fixture、设备和工具输入输出；不使用源码子串、正则匹配函数体、固定源码哈希或精确文档字节作为验收。编译器、类型检查和有语义的数据校验继续承担各自的静态检查职责。
 
-## BK7258 离线加密恢复镜像
+## BK7258 native image encryption
 
-### 调用方选择普通或加密产物
-
-Firmwares 可以用一个发布入口封装普通构建和可选的加密后处理：未提供 key 时发布现有普通产物；显式提供 key 时先完成同一套无密钥编译，再调用下述 GizOS 加密入口，通过匿名 pipe/socket 的 descriptor 注入 key，发布加密产物。提供了 key 但读取、编码或加密校验失败时必须终止，不能退回普通产物。`bazel run` 启动的本机加密进程可以接收 descriptor，但 key 不是 Bazel rule attribute、`--define` 或构建 action 的输入，加密输出也不进入 Bazel 缓存。
-
-这个选择不替换 `bk7258_v3_202405` BSP，也不新增按 MP_C/MP_J 命名的 BSP。实际 GPIO、存储和布局仍由调用方的物理 board 提供，两种产物共用 H2Loader 源码。MP_C/MP_J 是本次资格测试使用的芯片；是否提供 key 只选择产物，运行时仍以芯片真实 Flash AES 状态决定能力。GizOS 接收下面定义的 canonical key bytes，不读取 OTP，也不把任意 OTP 分区原始字节直接当成 key。
-
-### 加密恢复入口
-
-`//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl` 的 `h2loader_bk_recovery` 是显式运行的本机工具入口，消费现有 `Bk7258FirmwareInfo`，不修改 native 编译流程。仅支持从物理地址零开始、连续 Bootloader/CP/AP code 分区的 legacy AB recovery 布局；分区 geometry 来自 native `partitions.json`。它核对各 code 分区的对齐启动栈指针及分区内 Thumb reset handler（CP/AP reset 目标还必须位于 RBL 摘要覆盖的 payload 内），校验 Flash CRC、原始 BootROM marker、未压缩未加密的 RBL payload/header 摘要及覆盖到 AP 的有效载荷范围，要求 RBL 摘要范围外至尾部 header 的间隙和 header 页剩余空间为擦除态，然后按已验证的 Beken XTS 字节序处理整个逻辑镜像，保留原始 marker/version，重建 CRC，复核解密结果。TF-M/Direct-XIP 和其他布局明确拒绝，不依赖 Docker 或原厂 `.so`。
-
-私有 firmware entry 声明下面的目标；`firmware` 必须提供选定 board layout 的 `recovery_config`，不接受在 recovery rule 覆盖 offset/baud：
+BK Flash encryption is a native firmware capability. The public
+`bk7258_encrypted_firmware` rule in `//tools/bazel:bk7258.bzl` consumes any target
+providing `Bk7258FirmwareInfo`, including firmware built directly with
+`bk7258_firmware`. It has no H2Loader dependency and does not read or produce an
+H2Loader update/recovery package.
 
 ```python
-load("@gizos//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl", "h2loader_bk_recovery")
+load("@gizos//tools/bazel:bk7258.bzl", "bk7258_encrypted_firmware")
 
-h2loader_bk_recovery(
-    name = "encrypted_recovery",
-    board = "my_private_board",
+bk7258_encrypted_firmware(
+    name = "encrypted_app",
     firmware = ":firmware",
+    image = "app",
+)
+
+bk7258_encrypted_firmware(
+    name = "encrypted_full",
+    firmware = ":firmware",
+    image = "full",
 )
 ```
 
-`bazel build --config=bk7258 //path/to/entry:encrypted_recovery` 只编译普通无密钥固件、准备运行入口，不执行加密。运行时通过 `--key-fd 0` 从匿名 pipe/socket 接收 stdin 的 **32 个原始 key bytes 加 EOF**（拒绝普通文件和终端 descriptor，读取及 EOF 等待共用 30 秒期限）；私有 firmware 层的 secret provider 应通过匿名管道提供数据，不能打印到终端、写入 BUILD/flag/environment、磁盘 keyfile、日志或共享 cache。这里的 key 是 canonical 组合 key：前 16 字节是 data AES key，后 16 字节是 tweak AES key；工具不自动读取、转换或识别设备 OTP 内容。不要将 hex 文本直接送入该描述符。
+`image = "app"` encrypts the native paired CP/AP image at its final partition
+address. `image = "full"` encrypts the complete supported legacy Bootloader/CP/AP
+image from Flash address zero and preserves its BootROM marker. Native partition
+metadata, CRC, RBL integrity and startup vectors are validated before reading the
+key. Unsupported layouts are rejected; neither mode changes the input image.
 
-```sh
-# private-secret-provider 表示调用方已有的受控本机 secret provider，不是本仓库命令。
-private-secret-provider | bazel run --config=bk7258 //path/to/entry:encrypted_recovery -- \
-  --key-fd 0 --output-dir /absolute/local/new-recovery
+Building these targets only prepares their unkeyed native inputs and executable.
+Run the executable explicitly with `--key-fd` and `--output-dir`; the runtime
+pipe/socket supplies exactly 32 raw key bytes and EOF. Keys are not BUILD
+attributes or action inputs, and encrypted files are published outside Bazel
+outputs. App mode writes `app.flash-aes.rbl`; full mode writes
+`full.flash-aes.bin`. Both also write `validation.json` with source/image/layout
+hashes and the logical/physical base. No H2Loader manifest, package role or board
+identity is required. These host transformations do not establish device/key
+matching or on-device boot acceptance.
+
+The standalone `//tools/bazel:bk7258_encrypt` executable provides the same native
+transform for images and `partition-metadata` directories already built elsewhere.
+The cipher and native image checks live in `bk7258_flash_aes.py`; runtime key
+handling is shared through `firmware_crypto.py`.
+
+### Runtime invocation
+
+The caller supplies exactly 32 raw key bytes and EOF through an anonymous pipe
+or socket, with a total 30-second input deadline. The first 16 bytes are the data
+AES key and the second 16 bytes the tweak AES key. The tool does not read OTP or
+interpret device-specific raw key storage. Keep key bytes out of BUILD files,
+arguments, environment variables, keyfiles, logs and shared caches.
+
+```bash
+# private-secret-provider is the caller's existing local secret provider.
+private-secret-provider | bazel run --config=bk7258 //path/to/entry:encrypted_app -- \
+  --key-fd 0 --output-dir /absolute/local/encrypted-app
 ```
 
-也可先 build 再直接运行生成的 executable，让调用方通过继承的 descriptor 注入；不要为了传递 descriptor 而把 key 改成 argv/environment。加密发生在运行阶段，不是可缓存的 Bazel action；output-dir 必须是尚不存在的绝对目录，位于 Bazel execroot/runfiles/output tree 外。成功后原子发布目录，包含 `encrypted.bin`、`recovery.h2fb` 和不含密钥的 `validation.json` 摘要收据；失败不发布半成品，不降级为明文；若操作系统拒绝清理私有 staging 目录，工具返回失败并输出不含异常详情的清理提示，可能需要调用方清理输出父目录下的 `.bk-recovery-*`。输出目录和文件限制为当前用户访问，运行进程在读取密钥前禁用 core dump；Linux 另外设置并核实 `PR_SET_DUMPABLE=0`，防止管道式 core collector 绕过 `RLIMIT_CORE`，无法建立保护则拒绝读取密钥。诊断输出立即 flush；关闭的输出管道不会改变已发布产物的成功状态。Python 对象和密码库内存不承诺可靠擦除，secret provider 也必须遵循本机 secret 生命周期约束。
+Use the `encrypted_full` target for the complete supported Flash image. The same
+program can be run directly after `bazel build`. Output directories must be new,
+absolute and outside Bazel execroot/runfiles/output trees. Files are published
+atomically with owner-only permissions; failure produces no plaintext fallback.
+Core dumps are disabled before the key is read; Linux also disables and verifies
+process dumpability. A closed diagnostic pipe does not change a completed
+publication's status. Python and cipher-library memory do not promise reliable
+secret erasure.
 
-该入口不生成 managed update、不自动发布 release、不连接设备、不读取 OTP，也不执行烧录。非秘密向量与离线解密校验不能识别任意错误的芯片 key；新工具输出仍需另行授权的实际 recovery/启动资格验证。
+This selection does not change the BSP or create chip-mode-specific boards.
+Ordinary compilation and plaintext outputs retain their existing behavior.
+Encrypted images still require independent device/key/layout and boot validation;
+offline checks do not establish hardware acceptance.
 
-### BK7258 预加密 App 包
+## H2Loader package conversion
 
-普通构建仍产出无密钥的 CP/AP 固件和 managed package。显式主机工具可以将已有的 BK7258 App package 转成预加密包；输入的 partition metadata 必须来自同一次 App 原生构建，不能使用 Loader 自身的分区表。工具从 App 最终地址计算 tweak，保留数据文件，重新计算密文镜像、压缩流和包的摘要。加密包绑定密钥与布局，不是可跨任意设备安装的通用包。
+The H2Loader project only wraps an already processed native image. Its
+`//projects/h2loader/tools/bazel:repackage` command does not accept key descriptors
+or encrypt bytes. The public BK rule/tool above performs encryption first.
 
-```sh
-bazel run //projects/h2loader/tools/bazel:encrypted_bk_app -- \
-  --source /absolute/path/app.update.tar \
-  --metadata /absolute/path/app/partition_metadata \
-  --key-fd 0 \
-  --output-dir /absolute/path/new-encrypted-app
+### App update package
+
+Build the original managed package and native image from the same firmware.
+After native encryption, provide its image and `validation.json` together with
+the original package:
+
+```bash
+bazel run //projects/h2loader/tools/bazel:repackage -- app \
+  --source /absolute/path/original-app.update.tar \
+  --image /absolute/local/encrypted-app/app.flash-aes.rbl \
+  --receipt /absolute/local/encrypted-app/validation.json \
+  --output-dir /absolute/local/managed-app
 ```
 
-密钥由调用方通过匿名 pipe/socket 提供，使用与 recovery 相同的受保护 descriptor 合同；不要使用普通 key 文件、命令参数或环境变量保存密钥。输出目录必须尚不存在且位于 Bazel outputs 之外。工具只接受经过完整校验的标准格式包，不处理刻意损坏的 checksum-matrix 跳过测试流，也不执行设备操作。输出收据不证明密钥与设备匹配，实际安装还必须通过 native RBL 和启动确认。
+Conversion validates the original archive and binds the processed image's size,
+hash, target and source-image hash to the native receipt. It preserves board,
+version, role, package format and data, then recalculates image, compression and
+archive identities. Outputs are `image.bin`, `app.update.tar` or
+`app.update.tar.zlib`, `firmware.json` and `validation.json`. Format-1 App paths are
+retained; the same conversion supports other native target formats without
+implementing their transforms.
+
+### Recovery bundle
+
+Wrap the public full-image output with the selected board's recovery config:
+
+```bash
+bazel run //projects/h2loader/tools/bazel:repackage -- recovery \
+  --image /absolute/local/encrypted-full/full.flash-aes.bin \
+  --receipt /absolute/local/encrypted-full/validation.json \
+  --config /absolute/path/board/recovery.json \
+  --board my_private_board --target bk7258 \
+  --output-dir /absolute/local/managed-recovery
+```
+
+This command verifies the native full-image receipt and zero Flash base, then
+creates the standard driver-2 `.h2fb` envelope without changing image bytes.
+Outputs are `image.bin`, `recovery.h2fb` and `validation.json`. The recovery image
+is distinct from an App update. Neither packaging command connects to a device,
+reads OTP, flashes firmware or publishes a release. Their receipts establish
+artifact consistency and do not prove that a key matches a device.

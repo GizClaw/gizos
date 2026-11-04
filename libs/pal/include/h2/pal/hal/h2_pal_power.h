@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,6 +25,10 @@ typedef enum h2_pal_power_capability {
   H2_PAL_POWER_CAPABILITY_BOOT_SOURCE = 1u << 7,
   H2_PAL_POWER_CAPABILITY_RESET_REASON = 1u << 8,
   H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER = 1u << 9,
+  H2_PAL_POWER_CAPABILITY_IMAGE_STATE = 1u << 10,
+  H2_PAL_POWER_CAPABILITY_PREPARE_BOOT = 1u << 11,
+  H2_PAL_POWER_CAPABILITY_CONFIRM_IMAGE = 1u << 12,
+  H2_PAL_POWER_CAPABILITY_WATCHDOG_FEED = 1u << 13,
 } h2_pal_power_capability_t;
 
 typedef struct h2_pal_power_capabilities {
@@ -99,6 +104,60 @@ typedef struct h2_pal_power_boot_partition {
   char name[H2_PAL_POWER_BOOT_PARTITION_NAME_MAX];
 } h2_pal_power_boot_partition_t;
 
+/** Native boot policy, independent of a package or application role. */
+typedef enum h2_pal_power_boot_policy {
+  H2_PAL_POWER_BOOT_POLICY_EXISTING = 0,
+  H2_PAL_POWER_BOOT_POLICY_TRIAL = 1,
+  H2_PAL_POWER_BOOT_POLICY_TRIAL_WITH_RECOVERY = 2,
+} h2_pal_power_boot_policy_t;
+
+typedef struct h2_pal_power_boot_request {
+  uint32_t partition_id;
+  h2_pal_power_boot_policy_t policy;
+} h2_pal_power_boot_request_t;
+
+#define H2_PAL_POWER_NATIVE_EVIDENCE_MAX 64u
+
+/** Versioned provider-defined native evidence in caller-owned storage. Callers
+ * may persist and return these bytes but must not infer executable facts from
+ * their contents. Empty
+ * evidence uses format=0,size=0. No package role, hash, or preference key is
+ * encoded here; any package binding belongs to the caller's envelope.
+ */
+typedef struct h2_pal_power_native_evidence {
+  uint32_t format;
+  uint32_t size;
+  uint8_t bytes[H2_PAL_POWER_NATIVE_EVIDENCE_MAX];
+} h2_pal_power_native_evidence_t;
+
+typedef enum h2_pal_power_image_state_kind {
+  H2_PAL_POWER_IMAGE_STATE_UNKNOWN = 0,
+  H2_PAL_POWER_IMAGE_STATE_NEW = 1,
+  H2_PAL_POWER_IMAGE_STATE_PENDING_VERIFY = 2,
+  H2_PAL_POWER_IMAGE_STATE_VALID = 3,
+  H2_PAL_POWER_IMAGE_STATE_INVALID = 4,
+  H2_PAL_POWER_IMAGE_STATE_ABORTED = 5,
+} h2_pal_power_image_state_kind_t;
+
+typedef enum h2_pal_power_image_flag {
+  H2_PAL_POWER_IMAGE_FLAG_CONFIRMATION_REQUIRED = 1u << 0,
+  H2_PAL_POWER_IMAGE_FLAG_RECOVERY_REQUIRED = 1u << 1,
+  H2_PAL_POWER_IMAGE_FLAG_RECOVERY_READY = 1u << 2,
+  H2_PAL_POWER_IMAGE_FLAG_UNCONFIRMED_ATTEMPT = 1u << 3,
+  H2_PAL_POWER_IMAGE_FLAG_RECOVERY_PUBLISHED = 1u << 4,
+} h2_pal_power_image_flag_t;
+
+typedef struct h2_pal_power_image_state {
+  h2_pal_power_image_state_kind_t state;
+  uint32_t flags;
+} h2_pal_power_image_state_t;
+
+typedef struct h2_pal_power_image_confirmation {
+  uint32_t partition_id;
+  uint32_t flags;
+  uint8_t was_pending;
+} h2_pal_power_image_confirmation_t;
+
 typedef struct h2_pal_power_hold_state {
   int enabled;
 } h2_pal_power_hold_state_t;
@@ -140,6 +199,26 @@ typedef struct h2_pal_power_vtable {
   h2_pal_result_t (*sleep)(void* user, uint32_t reason);
   h2_pal_result_t (*deep_sleep)(void* user, uint32_t reason);
   h2_pal_result_t (*set_deep_sleep_wake_timer)(void* user, uint32_t delay_ms);
+  /** Prepare native boot facts after destination verification. This does not
+   * select, reboot, or publish a boot header. Evidence is caller-owned. A
+   * duplicate request must be retry-safe or fail explicitly. EXISTING for the
+   * running partition may return read-only native evidence without opening or
+   * consuming an update transaction or changing the next boot selection. */
+  h2_pal_result_t (*prepare_next_boot_partition)(
+      void* user, const h2_pal_power_boot_request_t* request,
+      h2_pal_power_native_evidence_t* out_evidence);
+  h2_pal_result_t (*get_image_state)(void* user, uint32_t partition_id,
+                                     h2_pal_power_image_state_t* out_state);
+  /** Confirm only the running image, idempotently. A provider may require
+   * evidence returned by prepare before reset. Selection of a confirmed
+   * running recovery image through set_next remains the publication barrier
+   * required before invalidating its former recovery partition. */
+  h2_pal_result_t (*confirm_running_image)(
+      void* user, const h2_pal_power_native_evidence_t* evidence,
+      h2_pal_power_image_confirmation_t* out_confirmation);
+  /** Refresh the configured hardware watchdog from its designated task.
+   * Does not change timeout, enablement or watchdog ownership policy. */
+  h2_pal_result_t (*feed_watchdog)(void* user);
 } h2_pal_power_vtable_t;
 
 typedef struct h2_pal_power_api {
@@ -296,6 +375,70 @@ static inline h2_pal_result_t h2_pal_power_set_deep_sleep_wake_timer(
     return H2_PAL_ERR_UNSUPPORTED;
   }
   return api->vtable->set_deep_sleep_wake_timer(api->user, delay_ms);
+}
+
+static inline h2_pal_result_t h2_pal_power_prepare_next_boot_partition(
+    const h2_pal_power_api_t* api, const h2_pal_power_boot_request_t* request,
+    h2_pal_power_native_evidence_t* out_evidence) {
+  h2_pal_result_t rc;
+  if (out_evidence == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_evidence, 0, sizeof(*out_evidence));
+  if (request == NULL ||
+      (request->policy != H2_PAL_POWER_BOOT_POLICY_EXISTING &&
+       request->policy != H2_PAL_POWER_BOOT_POLICY_TRIAL &&
+       request->policy != H2_PAL_POWER_BOOT_POLICY_TRIAL_WITH_RECOVERY))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->prepare_next_boot_partition == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  rc = api->vtable->prepare_next_boot_partition(api->user, request,
+                                                out_evidence);
+  if (rc == H2_PAL_OK &&
+      (out_evidence->size > sizeof(out_evidence->bytes) ||
+       (out_evidence->size == 0u) != (out_evidence->format == 0u)))
+    rc = H2_PAL_ERR_FORMAT;
+  if (rc != H2_PAL_OK) memset(out_evidence, 0, sizeof(*out_evidence));
+  return rc;
+}
+
+static inline h2_pal_result_t h2_pal_power_get_image_state(
+    const h2_pal_power_api_t* api, uint32_t partition_id,
+    h2_pal_power_image_state_t* out_state) {
+  h2_pal_result_t rc;
+  if (out_state == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_state, 0, sizeof(*out_state));
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->get_image_state == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  rc = api->vtable->get_image_state(api->user, partition_id, out_state);
+  if (rc != H2_PAL_OK) memset(out_state, 0, sizeof(*out_state));
+  return rc;
+}
+
+static inline h2_pal_result_t h2_pal_power_confirm_running_image(
+    const h2_pal_power_api_t* api,
+    const h2_pal_power_native_evidence_t* evidence,
+    h2_pal_power_image_confirmation_t* out_confirmation) {
+  h2_pal_result_t rc;
+  if (out_confirmation == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_confirmation, 0, sizeof(*out_confirmation));
+  if (evidence != NULL && (evidence->size > sizeof(evidence->bytes) ||
+                           (evidence->size == 0u) != (evidence->format == 0u)))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->confirm_running_image == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  rc =
+      api->vtable->confirm_running_image(api->user, evidence, out_confirmation);
+  if (rc != H2_PAL_OK) memset(out_confirmation, 0, sizeof(*out_confirmation));
+  return rc;
+}
+
+static inline h2_pal_result_t h2_pal_power_feed_watchdog(
+    const h2_pal_power_api_t* api) {
+  if (api == NULL || api->vtable == NULL || api->vtable->feed_watchdog == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->feed_watchdog(api->user);
 }
 
 #ifdef __cplusplus

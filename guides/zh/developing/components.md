@@ -108,7 +108,13 @@ Third-party port 负责把上游代码接入当前 target 的 compiler、OS 或 
 
 只在某个 target 上成立、并且可由多个 project 复用的启动与运行时适配可以作为顶层 component，例如 BK CP transport。它们可以组合 target SDK 与仓库共享逻辑，但不能拥有具体 board 的 image 配置或 app 业务。
 
-只服务某个 project group、并由原生 SDK 构建的 target glue 属于 `projects/<group>/native_component_src/<platform-or-target>/`。例如 H2Loader 的 ESP runtime glue 和 BK AP adapter 放在 `projects/h2loader/native_component_src/`，不进入顶层 `native_component_src/`；由 Bazel 直接编译的 project-local reusable code 则属于 `projects/<group>/libs/`。
+Project-owned business and protocol code belongs in `projects/<group>/libs/`
+and consumes public PAL capabilities. Minimal SDK startup registration and
+capability composition stay with project targets. Native image/update, boot,
+Flash/cache and physical transport operations belong to reusable platform PAL
+providers under top-level `native_component_src/`. Native SDK compilation does
+not create an exemption from that boundary. H2Loader follows this split through
+its portable device-service libraries and target-owned composition.
 
 ## Public Interface
 
@@ -147,7 +153,7 @@ BSP
 Component 不应该：
 
 - 依赖 `projects/<app>` 或定义 app 业务流程。
-- 依赖某个具体 `boards/<board>`。
+- 依赖某个具体 `boards/<company>/<board>`。
 - 拥有 app `component_id` 到 board `periph_id` 的 mapping。
 - 固化某块 board 的 GPIO、I2C address、partition table 或 image policy。
 - 复制 `libs` 中已有的公共 API 和 portable implementation。

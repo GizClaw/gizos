@@ -10,7 +10,12 @@
 #include "h2_jieli_wl82_sdk_port.h"
 #include "h2_jieli_wl82_platform_core.h"
 
+#include "app_config.h"
 #include "system/includes.h"
+#include "syscfg/syscfg_id.h"
+#ifdef H2_JIELI_BLE_ENABLE
+#include "bt_common.h"
+#endif
 #include "system/timer.h"
 #include "event/event.h"
 #include "asm/cpu.h"
@@ -29,6 +34,44 @@ struct h2_jieli_sdk_mutex {
 struct h2_jieli_sdk_sem {
   OS_SEM native;
 };
+
+/* ---- Stable public identity --------------------------------------------- */
+
+int h2_jieli_sdk_device_identity(uint8_t out_identity[6]) {
+  if (out_identity == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_identity, 0, 6u);
+#ifdef H2_JIELI_BLE_ENABLE
+  uint8_t mac[6];
+  static const uint8_t erased[6] = {
+      0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+  };
+  /* Keep the board controller's BLE-only provisioning path. The generic
+   * bt_get_mac_addr() waits for Wi-Fi, even when only BLE is being started. */
+  if (syscfg_read(CFG_BT_MAC_ADDR, mac, sizeof(mac)) != (int)sizeof(mac) ||
+      memcmp(mac, erased, sizeof(mac)) == 0) {
+    uint8_t flash_uid[16];
+    memcpy(flash_uid, get_norflash_uuid(), sizeof(flash_uid));
+    do {
+      const uint32_t crc32 = rand32() ^ CRC32(flash_uid, sizeof(flash_uid));
+      const uint16_t crc16 = rand32() ^ CRC16(flash_uid, sizeof(flash_uid));
+      memcpy(mac, &crc32, sizeof(crc32));
+      memcpy(mac + sizeof(crc32), &crc16, sizeof(crc16));
+    } while (!bytecmp(mac, 0, sizeof(mac)));
+    mac[0] &= (uint8_t)~((1u << 0u) | (1u << 1u));
+    if (syscfg_write(CFG_BT_MAC_ADDR, mac, sizeof(mac)) != (int)sizeof(mac))
+      return H2_PAL_ERR_IO;
+  }
+  uint8_t address[6];
+  extern void lib_make_ble_address(uint8_t* ble_address, uint8_t* edr_address);
+  lib_make_ble_address(address, mac);
+  /* Loader has always formatted the controller address in display order. */
+  for (size_t i = 0u; i < sizeof(address); ++i)
+    out_identity[i] = address[sizeof(address) - 1u - i];
+  return H2_PAL_OK;
+#else
+  return H2_PAL_ERR_UNSUPPORTED;
+#endif
+}
 
 /* ---- Memory --------------------------------------------------------------
  * The SDK heap exports malloc/free but no realloc, so every block carries a

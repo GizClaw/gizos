@@ -64,7 +64,8 @@ static void* realloc_block(void* user, void* ptr, size_t bytes) {
   }
   return next;
 }
-static const h2_pal_mem_vtable_t vtable = {alloc, realloc_block, free_block};
+static const h2_pal_mem_vtable_t vtable = {alloc, realloc_block, free_block,
+                                           NULL};
 static const h2_pal_mem_api_t fallback = {&block_count, &vtable};
 static void* region;
 
@@ -236,7 +237,7 @@ static void test_realloc(void) {
 static void test_fallback_without_realloc(void) {
   h2_mem_arena_t* arena = create(true, false);
   assert(h2_mem_arena_destroy(arena) == H2_PAL_OK);
-  const h2_pal_mem_vtable_t alloc_free = {alloc, NULL, free_block};
+  const h2_pal_mem_vtable_t alloc_free = {alloc, NULL, free_block, NULL};
   const h2_pal_mem_api_t mem_fallback = {&block_count, &alloc_free};
   h2_mem_arena_config_t cfg = config(true, false);
   cfg.fallback = &mem_fallback;

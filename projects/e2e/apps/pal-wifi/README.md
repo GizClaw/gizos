@@ -90,8 +90,9 @@ H2_IOS_SIMULATOR_UDID=<booted-test-device> make bazel-test-ios_pal_wifi_simulato
 H2_ANDROID_SERIAL=<booted-test-emulator> make bazel-test-android_pal_wifi_simulator_test
 ```
 
-Firmware packages are under `targets/h2loader_tar_zlib/pal-wifi`: `devkit`,
-`bk7258_v3_202405` and `amoled-fixture`. The fixture window is ten minutes and
+Firmware packages are under `targets/pal-wifi/<manufacturer>/<board>`:
+`espressif/esp32s3_devkitc_1`, `beken/bk7258_v3_202405` and
+`waveshare/esp32s3_touch_amoled_1_8` (the controlled fixture). The fixture window is ten minutes and
 ends by stopping its AP, verifying saved credentials unchanged, and reconnecting
 the original network. Hardware receipts must bind UID, image version, source and
 package/image hashes, full case ledger, fixture MAC/IP corroboration, original

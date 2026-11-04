@@ -24,7 +24,7 @@ static void release(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
-static const h2_pal_mem_vtable_t mem_vtable = {allocate, resize, release};
+static const h2_pal_mem_vtable_t mem_vtable = {allocate, resize, release, NULL};
 static const h2_pal_mem_api_t allocator = {.vtable = &mem_vtable};
 static void* storage_allocate(void* user, size_t size) {
   (void)user;
@@ -34,8 +34,8 @@ static void* storage_resize(void* user, void* ptr, size_t size) {
   (void)user;
   return realloc(ptr, size);
 }
-static const h2_pal_mem_vtable_t storage_vtable = {storage_allocate,
-                                                   storage_resize, release};
+static const h2_pal_mem_vtable_t storage_vtable = {
+    storage_allocate, storage_resize, release, NULL};
 static const h2_pal_mem_api_t storage = {.vtable = &storage_vtable};
 #define URI(s) ((h2_lua_app_source_t){s, sizeof(s) - 1u})
 static const unsigned char source[] = "assert(args.mode == \"single\")\n";

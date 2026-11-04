@@ -33,7 +33,7 @@
 | `libs/pal/providers/desktop` | [Components](/zh/developing/components) 和 [Desktop](/zh/developing/components/desktop) |
 | `native_component_src/esp-idf6.x` | [Components](/zh/developing/components) 和 [ESP-IDF 6.x](/zh/developing/components/esp_idf6_x) |
 | `native_component_src/bk7258` | [Components](/zh/developing/components) 和 [BK7258](/zh/developing/components/bk7258) |
-| `boards/<board>` | [开发指引总览](/zh/guide)、对应 target 和 H2Loader 指引 |
+| `boards/<company>/<board>` | [开发指引总览](/zh/guide)、对应 target 和 H2Loader 指引 |
 | H2Loader common、app 或 launcher | [H2Loader](/apps/h2loader/) 及其子文档 |
 | 根 `BUILD.bazel`、`REPO.bazel`、`tools/bazel` 或 Bazel CI | [Bazel 代码规范](/zh/coding-styles/bazel) 和 [Bazel CI 依赖图](/zh/developing/bazel) |
 | `guides/` | [Markdown](/zh/coding-styles/markdown) |

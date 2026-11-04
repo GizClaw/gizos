@@ -13,7 +13,7 @@ _DEPS = [
     "//libs/atomic/providers/c11",
     "//libs/pal/providers/desktop/pal_core:core",
     "//libs/pal/providers/wolfssl:wolfssl",
-    "//projects/example/libs/host_runtime",
+    "//projects/e2e/libs/host_runtime",
     "//projects/e2e/apps/pal-crypto/app:pal_crypto_e2e",
 ] + select({
     "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core:host_os"],

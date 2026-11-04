@@ -17,7 +17,7 @@ INPUT                  = libs/app_test/include \
                          libs/gizclaw/include \
                          libs/pal/providers/h2peer/include \
                          libs/pal/providers/h2sctp/include \
-                         projects/h2loader/libs/h2loader/include \
+                         libs/h2loader/device/include \
                          libs/iostreamikcp/include \
                          libs/lua/include/h2_lua_display.h \
                          libs/lua/include/h2_lua_numeric.h \

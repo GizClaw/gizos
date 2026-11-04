@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class DisplayBoundsTest(unittest.TestCase):
     def test_rectangles_are_rejected_before_hardware_access(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_input.c").read_text()
         begin = source.index("static int display_draw_bitmap_impl(")
         end = source.index("  /* Official JieLi LCD fills", begin)

@@ -5,7 +5,7 @@
 
 ```sh
 bazel build --config=esp32s3 \
-  //projects/e2e/targets/h2loader_tar_zlib/lua-runtime/amoled:package
+  //projects/e2e/targets/lua-runtime/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 安装和恢复必须遵守 [AMOLED H2Loader](./h2loader)。串口日志必须保留九条

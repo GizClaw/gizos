@@ -62,7 +62,7 @@ static int is_live(const void* ptr) {
   return 0;
 }
 static const h2_pal_mem_vtable_t memory_vtable = {
-    tracked_alloc, tracked_realloc, tracked_free};
+    tracked_alloc, tracked_realloc, tracked_free, NULL};
 static const h2_pal_mem_api_t memory_api = {NULL, &memory_vtable};
 
 static h2_pal_result_t clock_now(void* user, uint64_t* us) {

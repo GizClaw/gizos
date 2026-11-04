@@ -1,6 +1,6 @@
 # Portable H2Loader Host Core
 
-`libs/h2loader_host/` 是 Batch Loader internal Web SDK 与 native CLI 共用的 target-independent library。它位于 PAL 之上，不依赖 Swift、AppKit、CoreBluetooth、IOKit、BlueZ、termios、LVGL、CLI 或 Desktop/Web project 类型。
+`libs/h2loader/host/` 是 Batch Loader internal Web SDK 与 native CLI 共用的 target-independent library。它位于 PAL 之上，不依赖 Swift、AppKit、CoreBluetooth、IOKit、BlueZ、termios、LVGL、CLI 或 Desktop/Web project 类型。
 
 ## Ownership
 
@@ -93,7 +93,7 @@ JSON/CSV writer 是 caller 提供的 byte sink，逐字段转义。当前 export
 
 ## Browser Host Serial
 
-`libs/h2loader_host` 的 serial、catalog、managed operation、ESP recovery 与 BK7258 recovery graph 可以编译为 wasm32，但 Browser 产品能力只由实际验证过的 Web Serial flow 决定。Web launcher 必须从直接用户手势调用 chooser，随后只向 Host Core 注入 opaque port ID；`scan()` 不请求权限。Browser 不伪造 OS path、USB serial、display name 或 board identity，权威 board/target 仍来自可靠连接后的 status。
+`libs/h2loader/host` 的 serial、catalog、managed operation、ESP recovery 与 BK7258 recovery graph 可以编译为 wasm32，但 Browser 产品能力只由实际验证过的 Web Serial flow 决定。Web launcher 必须从直接用户手势调用 chooser，随后只向 Host Core 注入 opaque port ID；`scan()` 不请求权限。Browser 不伪造 OS path、USB serial、display name 或 board identity，权威 board/target 仍来自可靠连接后的 status。
 
 `projects/e2e/targets/pkg_tar/h2loader-serial/` 只验证 Browser Host Serial contract；它不是产品 UI。[H2Loader Web SDK](/apps/h2loader/apps/batch_loader/) 通过本 Core 与 Web PAL 提供 authoritative status、managed operation、progress 与 final verification，但不暴露 destructive recovery。产品 React UI 位于 `GizClaw/www`，只消费发布的 `@gizclaw/h2loader` Promise API。
 
@@ -101,11 +101,11 @@ Web Serial Promise completion 只记录 generation-tagged result，等待任务�
 
 ## Validation
 
-`//projects/h2loader/apps/cli/app:cli_control_lines_test` 从 public CLI 驱动真实 Host serial/iKCP，与注入 UART/时钟上的真实 KCP peer 交互。Scan 和普通 status 各覆盖成功、open/stream failure、handshake timeout、坏 status 及 close failure；monitor 覆盖连接后取消；`reboot loader --monitor` 覆盖断开再连接、正确角色进入 monitor，以及错误角色先关闭再重试。所有路径检查零 control-line 调用、保留初始 DTR/RTS mask、每个已取得 session 只关闭一次及无分配泄漏。该回归验证软件调用和既有 lifecycle，不替代硬件电平或设备资格。
+`//tools/gizloader/cli:cli_control_lines_test` 从 public CLI 驱动真实 Host serial/iKCP，与注入 UART/时钟上的真实 KCP peer 交互。Scan 和普通 status 各覆盖成功、open/stream failure、handshake timeout、坏 status 及 close failure；monitor 覆盖连接后取消；`reboot loader --monitor` 覆盖断开再连接、正确角色进入 monitor，以及错误角色先关闭再重试。所有路径检查零 control-line 调用、保留初始 DTR/RTS mask、每个已取得 session 只关闭一次及无分配泄漏。该回归验证软件调用和既有 lifecycle，不替代硬件电平或设备资格。
 
 ```sh
-bazel test //libs/h2loader_host:all
-bazel test //projects/h2loader/libs/web:all
+bazel test //libs/h2loader/host:all
+bazel test //libs/h2loader/web:all
 bazel build //projects/h2loader/targets/npm_package/h2loader:h2loader
 ```
 
@@ -120,12 +120,21 @@ Package inspector 的 `data_sha256` 是验证后的 canonical data identity：fo
 
 ## BK7258 加密恢复产物
 
-BK7258 legacy AB Loader 可使用 `h2loader_bk_recovery` 的显式本机入口，从已有 native image 生成 Flash AES 加密镜像，再复用标准 driver=2 的 `.h2fb` recovery bundle。构建声明、运行时匿名密钥通道和输出边界见 [Bazel 离线加密恢复镜像](./bazel.md#bk7258-离线加密恢复镜像)。`firmware_output.py` 只编排校验后的加密及恢复包发布；Beken cipher 和 image 验证由公共 BK7258 工具负责。普通 native compilation、明文 package 和已有恢复包路径保持原语义。
+BK7258 native image encryption belongs to the public
+`bk7258_encrypted_firmware` rule in `//tools/bazel:bk7258.bzl`. Full-image mode
+produces `full.flash-aes.bin` and a native validation receipt independently of
+H2Loader. The project's `:repackage recovery` command then wraps those bytes in
+the standard driver-2 `.h2fb` envelope using the board-owned recovery config. It
+does not accept keys or perform encryption. See [native encryption](./bazel.md#bk7258-native-image-encryption)
+and [package conversion](./bazel.md#h2loader-package-conversion).
 
-`encrypted.bin` 是用于该 recovery 流程的完整物理 Flash 字节，包含重建的 CRC 和保留的原始 BootROM marker/version；`validation.json` 记录源镜像、密文和 bundle 摘要，不证明 key 与设备匹配。不能把它当作 `app_ab_crc.rbl` managed update，也不能由离线 recovery 生成成功推断 Loader 自升级支持 AES。此工具不发起恢复安装或其他设备操作；实际芯片、key、SDK/layout 匹配及启动验收需独立授权和证据。
+The full image retains Flash CRC and the original BootROM marker/version. It is
+distinct from an `app_ab_crc.rbl` managed update. Offline receipts do not prove
+device/key matching, boot acceptance or AES support for Loader self-update; no
+recovery installation or device operation is performed by these tools.
 
 ### BK7258 App 加密升级
 
-BK7258 使用主机预加密路线：非加密芯片安装普通 App 包，加密芯片安装匹配密钥及最终 App 地址的预加密包。生成入口见 [Bazel 预加密 App 包](./bazel.md#bk7258-预加密-app-包)。包内镜像摘要描述实际存储字节，因此加密包的摘要是密文字节及其 Flash CRC 的摘要；设备原始读回、已安装身份和 App 确认继续使用同一表示。原生 RBL/FNV 与启动向量另通过受校验的映射明文读取。
+BK7258 使用主机预加密路线：非加密芯片安装普通 App 包，加密芯片安装匹配密钥及最终 App 地址的预加密包。生成入口见 [native encryption](./bazel.md#bk7258-native-image-encryption) and [App package conversion](./bazel.md#app-update-package)。包内镜像摘要描述实际存储字节，因此加密包的摘要是密文字节及其 Flash CRC 的摘要；设备原始读回、已安装身份和 App 确认继续使用同一表示。原生 RBL/FNV 与启动向量另通过受校验的映射明文读取。
 
 Host 不发送密钥，不要求设备将明文包再加密。选错密钥或地址的包可能在写入后才被 native 校验拒绝；此时保留 Loader 恢复路径，不能将完整传输等同于安装成功。加密 Loader 自升级不受支持。E2E runner 的 `--app-lifecycle` 可单独验证 App 安装与确认，不要求提供 Loader 自升级包；两种硬件状态分别保留测试报告和实际模式证据。
