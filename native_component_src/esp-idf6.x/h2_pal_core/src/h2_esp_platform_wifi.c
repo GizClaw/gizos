@@ -1515,6 +1515,14 @@ static int h2_esp_wifi_disconnect(void* user) {
   return rc;
 }
 
+static int h2_esp_wifi_set_activity_observer(void* user,
+                                             h2_pal_wifi_activity_fn callback,
+                                             void* callback_user) {
+  (void)user;
+  h2_esp_platform_wifi_set_activity_observer(callback, callback_user);
+  return H2_PAL_OK;
+}
+
 static int h2_esp_wifi_connect_and_save(void* user,
                                         const h2_pal_wifi_sta_config_t* config,
                                         uint32_t timeout_ms) {
@@ -1536,14 +1544,6 @@ static int h2_esp_wifi_connect_and_save(void* user,
   int rc = h2_wifi_sta_connect_and_save(&deps, config, timeout_ms);
   h2_atomic_flag_clear(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST);
   return rc;
-}
-
-static int h2_esp_wifi_set_activity_observer(void* user,
-                                             h2_pal_wifi_activity_fn callback,
-                                             void* callback_user) {
-  (void)user;
-  h2_esp_platform_wifi_set_activity_observer(callback, callback_user);
-  return H2_PAL_OK;
 }
 
 static const h2_pal_wifi_sta_vtable_t s_h2_esp_wifi_sta_vtable = {

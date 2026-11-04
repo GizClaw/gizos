@@ -58,7 +58,7 @@ esp_err_t usb_serial_jtag_driver_uninstall(void) {
   return ESP_OK;
 }
 esp_err_t usb_serial_jtag_driver_install(
-    const usb_serial_jtag_driver_config_t* config) {
+    usb_serial_jtag_driver_config_t* config) {
   assert(config->rx_buffer_size == 8192u && config->tx_buffer_size == 2048u);
   ++s_usb_installs;
   s_usb_installed = s_install_error == ESP_OK;

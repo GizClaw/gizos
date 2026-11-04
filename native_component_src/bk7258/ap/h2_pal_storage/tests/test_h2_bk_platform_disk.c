@@ -15,7 +15,7 @@ int bk_flash_set_protect_type(flash_protect_type_t value) {
 }
 int bk_flash_read_bytes(uint32_t address, void* out, uint32_t size) {
   assert(address >= BASE && size <= sizeof(storage) - (address - BASE));
-  memcpy(out, storage + address - BASE, size);
+  memcpy(out, storage + (address - BASE), size);
   return 0;
 }
 int bk_flash_write_bytes(uint32_t address, const void* data, uint32_t size) {
@@ -30,7 +30,7 @@ int bk_flash_erase_sector(uint32_t address) {
          address - BASE <= 4096);
   ++erases;
   if (fail_erase) return -1;
-  memset(storage + address - BASE, 255, 4096);
+  memset(storage + (address - BASE), 255, 4096);
   return 0;
 }
 void rtos_delay_milliseconds(uint32_t ms) {

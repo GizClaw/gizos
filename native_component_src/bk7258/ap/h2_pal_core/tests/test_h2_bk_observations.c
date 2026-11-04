@@ -7,6 +7,7 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,7 +17,14 @@ static unsigned mac_calls;
 static size_t allocations, allocation_bytes;
 
 typedef union block_header {
+#if defined(_MSC_VER) && !defined(__clang__)
+  /* MSVC's C headers omit max_align_t; cover its scalar alignments. */
+  long double alignment;
+  long long integer_alignment;
+  void* pointer_alignment;
+#else
   max_align_t alignment;
+#endif
   size_t size;
 } block_header_t;
 

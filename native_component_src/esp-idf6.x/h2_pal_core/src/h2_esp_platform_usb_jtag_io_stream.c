@@ -17,7 +17,7 @@ static h2_pal_result_t configure(
       config->tx_buffer_size == 0u)
     return H2_PAL_ERR_INVALID_ARG;
   if (s_configured) return H2_PAL_OK;
-  const usb_serial_jtag_driver_config_t native = {
+  usb_serial_jtag_driver_config_t native = {
       .rx_buffer_size = config->rx_buffer_size,
       .tx_buffer_size = config->tx_buffer_size,
   };

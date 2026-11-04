@@ -299,7 +299,11 @@ static void usb_cdc_wakeup(void *device) { (void)device; }
 static int os_task_create(void (*entry)(void *),void *user,int priority,int stack,int queue,const char *name) {
  assert(entry==usb_rx_task && user==&state && priority==12 && stack==4096 && queue==0);
  assert(strcmp(name,"h2console_rx")==0 && live==4 && handlers==0 && worker_count==0);
- if(worker_fail)return -1;++worker_count;return 0;
+ if (worker_fail) {
+   return -1;
+ }
+ ++worker_count;
+ return 0;
 }
 static void cdc_set_wakeup_handler(usb_dev id,void (*handler)(void *)) {
  (void)id;assert(handler==usb_cdc_wakeup && worker_count==1 && live==4);++handlers;
