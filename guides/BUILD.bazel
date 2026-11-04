@@ -7,6 +7,16 @@ load(":guides.bzl", "api_reference")
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "lua_docs_sources",
+    srcs = [
+        "references/lua.md",
+        "references/lua-numeric.md",
+        "references/lua-runtime.md",
+        "zh/developing/lua.md",
+    ],
+)
+
 npm_link_all_packages(name = "node_modules")
 
 js_binary(

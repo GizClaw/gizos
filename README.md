@@ -202,6 +202,8 @@ tools/                  Build, packaging, code generation, and support tools
 - [Development guide](guides/zh/guide.md)
 - [Bazel and platform builds](tools/bazel/README.md)
 - [API references](guides/references/index.md)
+- [Lua scripting API](guides/references/lua-runtime.md)
+- [Versioned Lua documentation npm data package](libs/lua/targets/npm_package/lua-docs/README.md) — static manifest, module/symbol index, canonical contracts and examples, pinned to immutable Runtime source for browser and service consumers.
 - [Application documentation](guides/apps/index.md)
 
 Build the documentation locally with:

@@ -10,6 +10,15 @@ load(":tests/display_tasks.bzl", "display_task_tests")
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "docs_runtime_sources",
+    srcs = glob([
+        "include/*.h",
+        "src/**/*.c",
+        "src/**/*.h",
+    ]),
+)
+
 exports_files([
     "lua_app.bzl",
     "lua_app_catalog.cquery",

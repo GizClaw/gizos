@@ -65,6 +65,7 @@ Camera layout is `{fx,fy,cx,cy,near}` with near ≥ .001, +Z forward and project
 
 All transforms and point projection accept n ≤ 21845; prefix3 n ≤ 21844; polyline expansion accepts 1..4097 points; segment projection n ≤ 4096; splitting n ≤ 2048. Buffers must fit every requested scalar prefix. Segment projection requires worst-case space for n output rows/IDs; splitting requires 2*n output rows/tags even if no segment crosses. Mesh active counts must fit its capacities.
 
+<!-- example: numeric-projection -->
 ```lua
 local v, g = require('vmath'), require('geometry')
 local xyz, xy, mask, camera = v.buffer(6, "f32"), v.buffer(4, "f32"), v.buffer(2, "f32"), v.buffer(5, "f32")

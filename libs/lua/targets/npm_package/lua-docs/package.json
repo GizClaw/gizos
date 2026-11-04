@@ -1,0 +1,24 @@
+{
+  "name": "@gizclaw/lua-docs",
+  "version": "0.1.0",
+  "description": "Versioned static GizOS Lua Runtime documentation, symbol index and examples",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GizClaw/gizos.git",
+    "directory": "libs/lua/targets/npm_package/lua-docs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "main": "./manifest.json",
+  "exports": {
+    ".": "./manifest.json",
+    "./package.json": "./package.json",
+    "./manifest.json": "./manifest.json",
+    "./index.json": "./index.json",
+    "./docs/*": "./docs/*",
+    "./examples/*": "./examples/*"
+  }
+}

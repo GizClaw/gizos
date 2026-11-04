@@ -150,6 +150,7 @@ py_binary(
 npm_release_bundle(
     name = "npm_release_bundle",
     packages = [
+        "//libs/lua/targets/npm_package/lua-docs:release_tarball",
         "//projects/gizclaw/targets/npm_package/firmware:release_tarball",
         "//projects/h2loader/targets/npm_package/h2loader:release_tarball",
         "//tools/gizos:release_tarball",
