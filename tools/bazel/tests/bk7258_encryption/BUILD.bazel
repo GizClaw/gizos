@@ -14,6 +14,7 @@ py_library(
     name = "fixture_support",
     testonly = True,
     srcs = ["fixture.py"],
+    target_compatible_with = _POSIX_HOST,
     visibility = ["//projects/h2loader/tools/bazel:__pkg__"],
     deps = ["//tools/bazel:bk7258_flash_aes"],
 )
@@ -24,6 +25,7 @@ py_binary(
     srcs = ["fixture.py"],
     legacy_create_init = False,
     main = "fixture.py",
+    target_compatible_with = _POSIX_HOST,
     deps = [":fixture_support"],
 )
 
@@ -32,6 +34,7 @@ py_binary(
         name = image + "_native",
         testonly = True,
         image = image,
+        target_compatible_with = _POSIX_HOST,
     )
     for image in [
         "app",
