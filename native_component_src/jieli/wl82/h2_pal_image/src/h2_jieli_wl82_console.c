@@ -73,7 +73,7 @@ static void usb_cdc_wakeup(struct usb_device_t* device) {
 
 static void usb_rx_task(void* user) {
   h2_jieli_console_t* self = user != NULL ? user : &state;
-  uint8_t packet[H2_USB_PACKET_SIZE] __attribute__((aligned(4)));
+  _Alignas(4) uint8_t packet[H2_USB_PACKET_SIZE];
   for (;;) {
     (void)os_sem_pend(&self->rx_wakeup_sem, 0u);
     for (uint32_t packets = 0u; packets < 32u; ++packets) {
