@@ -15,6 +15,7 @@ typedef struct fixture {
   h2_pal_webrtc_track_t track;
   h2_pal_result_t write_result;
   size_t calls;
+  size_t reads;
   size_t accepted;
   uint8_t values[128];
   size_t allocations;
@@ -67,6 +68,18 @@ static h2_pal_result_t write_frame(void* user, const uint8_t* opus,
   if (len == 0u) assert(opus == NULL);
   f->values[f->accepted++] = len == 0u ? 0xffu : opus[0];
   return H2_PAL_OK;
+}
+
+static h2_pal_result_t read_eos(void* user, uint8_t* opus, size_t capacity,
+                                size_t* out_len) {
+  fixture_t* f = user;
+  (void)opus;
+  (void)capacity;
+  *out_len = 0u;
+  ++f->reads;
+  /* A conversation reader consumes encoder EOS as a side effect and returns
+   * WOULD_BLOCK. The caller may then send its reliable control boundary. */
+  return H2_PAL_ERR_WOULD_BLOCK;
 }
 
 static void initialize(fixture_t* f) {
@@ -199,9 +212,41 @@ static void failures(void) {
   cleanup(&f);
 }
 
+static void pending_rtp_defers_track_eos(void) {
+  fixture_t f;
+  initialize(&f);
+  static const h2_pal_webrtc_track_vtable_t track = {.write = write_frame,
+                                                     .read = read_eos};
+  f.track.vtable = &track;
+  const uint8_t packet = 0x42;
+  h2_peer_webrtc_emit_opus_frame(&f.peer, &packet, 1u);
+  assert(f.peer.media_receive_count == 1u);
+  f.write_result = H2_PAL_OK;
+
+  uint8_t last_packet = 0x24;
+  h2_peer_tx_item_t last_frame = {
+      .data = &last_packet, .len = 1u, .capacity = 1u};
+  h2_atomic_store_explicit(&f.peer.rtp_pending, &last_frame, H2_ATOMIC_RELEASE);
+  for (size_t i = 0u; i < 3u; ++i) {
+    assert(h2_peer_webrtc_service_media(&f.peer) == H2_PAL_OK);
+    assert(f.reads == 0u);
+    assert(h2_atomic_load_explicit(&f.peer.rtp_pending, H2_ATOMIC_ACQUIRE) ==
+           &last_frame);
+  }
+  /* The blocked uplink must not prevent already received audio delivery. */
+  assert(f.accepted == 1u && f.values[0] == packet);
+  assert(f.peer.media_receive_count == 0u);
+
+  h2_atomic_store_explicit(&f.peer.rtp_pending, NULL, H2_ATOMIC_RELEASE);
+  assert(h2_peer_webrtc_service_media(&f.peer) == H2_PAL_OK);
+  assert(f.reads == 1u);
+  cleanup(&f);
+}
+
 int main(void) {
   fifo_and_packet_loss();
   limits_and_cleanup();
   failures();
+  pending_rtp_defers_track_eos();
   return 0;
 }
