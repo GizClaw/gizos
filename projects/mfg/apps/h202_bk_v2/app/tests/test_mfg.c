@@ -850,6 +850,8 @@ static void test_charge(void) {
   for (unsigned period = 0u; period <= 1u; ++period) {
     h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u, period);
     (void)charge(&c, 500, true, true, false, &duty);
+    assert(duty == 5000u); /* Default 2 s cycle: quarter way is half. */
+    (void)charge(&c, 1000, true, true, false, &duty);
     assert(duty == 10000u);
   }
   h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u, 3u);

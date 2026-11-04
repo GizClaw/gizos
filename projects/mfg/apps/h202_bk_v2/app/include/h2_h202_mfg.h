@@ -312,7 +312,7 @@ typedef struct h2_h202_mfg_charge {
   uint32_t window_ms;         /**< CHRG toggle detection window (2000). */
   unsigned toggles;           /**< Changes within window that mean toggling. */
   uint32_t blink_period_ms;   /**< 500 for 2 Hz. */
-  uint32_t breathe_period_ms; /**< Full charging cycle (1000). */
+  uint32_t breathe_period_ms; /**< Full charging cycle (2000). */
   bool have_chrg;
   bool chrg;
   uint64_t changes[8];
@@ -466,7 +466,7 @@ typedef struct h2_h202_mfg_profile {
   uint32_t charge_window_ms;
   unsigned charge_toggles;
   uint32_t charge_blink_period_ms;
-  uint32_t charge_breathe_period_ms; /**< 0 defaults to a 1000 ms cycle. */
+  uint32_t charge_breathe_period_ms; /**< 0 defaults to a 2000 ms cycle. */
   uint32_t sample_rate_hz;
   uint16_t frame_samples;
   uint32_t volume_percent;

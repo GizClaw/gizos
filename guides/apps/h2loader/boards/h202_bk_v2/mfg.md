@@ -86,7 +86,7 @@ MFG 与 H202 Loader 互相替换。MP_C（AES-off）可在 Loader 或 MFG 中用
 
 SLOW_CHARGE（GPIO6）在 Loader 和 MFG 初始化时拉低，休眠保持低电平，使用快充。
 
-白灯（GPIO37）与充电芯片没有硬件连接，MFG 读取 USB 插入、CHRG（GPIO30）和 DONE（GPIO31）后点灯：未插线灭，充电中按 1 秒完整周期呼吸，充满常亮，无电池但有充电器时保持 2 Hz 闪烁；欠压、温度异常也保持闪烁。2 秒内 CHRG 翻转至少 2 次视为电池未接，窗口为暂定值。呼吸通过板级 PAL PWM provider 驱动 PWM11，载波为 1 kHz；全亮、灭灯和休眠释放 PWM 后恢复 GPIO 电平。充电指示不算测试项，只在 MFG 运行时有效。
+白灯（GPIO37）与充电芯片没有硬件连接，MFG 读取 USB 插入、CHRG（GPIO30）和 DONE（GPIO31）后点灯：未插线灭，充电中按 2 秒完整周期呼吸（1 秒渐亮、1 秒渐灭），充满常亮，无电池但有充电器时保持 2 Hz 闪烁；欠压、温度异常也保持闪烁。2 秒内 CHRG 翻转至少 2 次视为电池未接，窗口为暂定值。呼吸通过板级 PAL PWM provider 驱动 PWM11，载波为 1 kHz；全亮、灭灯和休眠释放 PWM 后恢复 GPIO 电平。充电指示不算测试项，只在 MFG 运行时有效。
 
 电池检测在第 02 步与充电检测同时进行：VBAT 经 R67/R66（10k/10k）分压、Q1 由 WAKE_UP 打开后接到 GPIO12（SARADC 通道 14），读数换算回 VBAT 后低于 2500 mV 视为没有电池。读取流程与 H106 Zero BK 相同（每次 acquire、配置、读取、release）。2500 mV 为暂定值，须在不装电池、只插 USB 的板子上实测后确认。
 

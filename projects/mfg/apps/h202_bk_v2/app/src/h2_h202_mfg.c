@@ -825,7 +825,7 @@ void h2_h202_mfg_charge_init(h2_h202_mfg_charge_t* charge, uint32_t window_ms,
   charge->toggles = toggles;
   charge->blink_period_ms = blink_period_ms != 0u ? blink_period_ms : 1u;
   charge->breathe_period_ms =
-      breathe_period_ms >= 2u ? breathe_period_ms : 1000u;
+      breathe_period_ms >= 2u ? breathe_period_ms : 2000u;
 }
 
 h2_h202_mfg_charge_mode_t h2_h202_mfg_charge_update(
