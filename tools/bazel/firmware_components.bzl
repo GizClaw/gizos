@@ -43,7 +43,7 @@ def _firmware_lib_component_impl(ctx):
     for dependency in ctx.attr.deps:
         for linker_input in dependency[CcInfo].linking_context.linker_inputs.to_list():
             for library in linker_input.libraries:
-                archive = library.static_library
+                archive = library.static_library or library.pic_static_library
                 if archive and archive.path not in seen_archives:
                     seen_archives[archive.path] = True
                     linked_archives.append(archive)
