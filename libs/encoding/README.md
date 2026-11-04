@@ -20,6 +20,6 @@ h2_encoding_init(&star, H2_ENCODING_KIND_BASE32, h2_encoding_base32_std.alphabet
 
 Encoding always produces canonical output and decoding accepts only canonical input, each in a single pass. `H2_ENCODING_ERR_NO_SPACE` reports the exact size needed and `H2_ENCODING_ERR_CORRUPT` reports the offset of the first bad byte; on either error the output buffer contents are unspecified. Line wrapping, Ascii85 `<~ ~>` framing, and streaming readers or writers are outside this library.
 
-See the [development guide](../../guides/zh/developing/encoding.md) for ownership and behavior. Public API parameters and return values are documented in [h2_encoding.h](include/h2_encoding.h), the source for generated API reference pages.
+Public API parameters, ownership, and return values are documented in [h2_encoding.h](include/h2_encoding.h).
 
 Run host tests with `bazel test --config=macos_arm64 //libs/encoding:all` (or `--config=linux_x86_64` / `--config=windows_x86_64` on those hosts), and the CPU-time benchmark with `bazel run -c opt --config=macos_arm64 //libs/encoding:benchmark_encoding`.

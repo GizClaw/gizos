@@ -140,7 +140,7 @@ jobs:
           )
           sudo apt-get "${apt_network_options[@]}" update
           sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake doxygen lcov libasound2-dev libx11-dev libxext-dev \
+            cmake lcov libasound2-dev libx11-dev libxext-dev \
             libxi-dev libxrandr-dev libssl-dev nasm ninja-build \
             pkg-config ripgrep unzip
 
@@ -148,7 +148,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          brew install cmake doxygen lcov ninja pkg-config ripgrep rsync
+          brew install cmake lcov ninja pkg-config ripgrep rsync
           sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
           test "$(xcodebuild -version | head -n 1)" = "Xcode 16.4"
 
@@ -337,7 +337,7 @@ jobs:
           )
           sudo apt-get "${apt_network_options[@]}" update
           sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake doxygen lcov libasound2-dev libx11-dev libxext-dev \
+            cmake lcov libasound2-dev libx11-dev libxext-dev \
             libxi-dev libxrandr-dev libssl-dev nasm ninja-build \
             pkg-config ripgrep unzip
 
@@ -345,7 +345,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          brew install cmake doxygen lcov ninja pkg-config ripgrep rsync
+          brew install cmake lcov ninja pkg-config ripgrep rsync
           sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
           test "$(xcodebuild -version | head -n 1)" = "Xcode 16.4"
 
@@ -365,10 +365,20 @@ jobs:
         if: matrix.config == 'android_arm64'
         shell: bash
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "build-tools;$ANDROID_BUILD_TOOLS_VERSION" \
-            "ndk;$ANDROID_NDK_VERSION" \
-            "platforms;android-$ANDROID_API_LEVEL"
+          for attempt in 1 2 3; do
+            if "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+              "build-tools;$ANDROID_BUILD_TOOLS_VERSION" \
+              "ndk;$ANDROID_NDK_VERSION" \
+              "platforms;android-$ANDROID_API_LEVEL"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo 'Android SDK installation failed after 3 attempts.' >&2
+              exit 1
+            fi
+            echo "Android SDK installation failed; retrying after attempt $attempt." >&2
+            sleep "$((attempt * 5))"
+          done
           printf 'ANDROID_NDK_HOME=%s/ndk/%s\n' \
             "$ANDROID_HOME" "$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
 

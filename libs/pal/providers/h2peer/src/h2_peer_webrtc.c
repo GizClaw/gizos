@@ -2162,6 +2162,10 @@ h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t* peer) {
     h2_peer_free(h2_peer_mem(peer), frame);
   }
   if (track->vtable->read == NULL) return H2_PAL_OK;
+  /* Reading the Track may consume its EOS and let the caller send a control
+   * boundary. Do not advance it while the preceding RTP frame is queued. */
+  if (h2_atomic_load_explicit(&peer->rtp_pending, H2_ATOMIC_ACQUIRE) != NULL)
+    return H2_PAL_OK;
   if (peer->media_pending_opus_len == 0u) {
     size_t opus_len = 0u;
     h2_pal_result_t result =

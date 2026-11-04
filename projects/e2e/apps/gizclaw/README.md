@@ -179,8 +179,7 @@ Debug 的 `req_create_debug_set` / `resp_parse_debug_set`、`req_create_debug_ge
 
 `h2_gizclaw_service_get_time_sync_status` 纳入 227 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。Service 实际读取并验证校时状态与尝试次数；`calibrated=1` 仅在 SUCCEEDED 且 last_rc=0 时记录。RETRY/UNSUPPORTED 可证明状态查询契约，但不能证明成功校时。本地边界测试分别覆盖读取失败、未尝试、错误状态和虚假成功，在线结果仍须单独验收。
 
-Session 的 15 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、完整文字输入、释放和重连。文字输入在 PTT 轮次之后用 `h2_gizclaw_session_send_text` 提交一段文字，`session_send_text-assert` 要求 Session 先进入 WAITING、completion 恰好一次且为 FINISHED/OK、随后从 Track 听到非静音回复并回到 IDLE。一轮语音结束、Session 回到 IDLE 后调用 `h2_gizclaw_session_interrupt_playback`，`session_interrupt_playback-assert` 要求返回成功、Session 状态不变且 Track 仍为空；打断正在播放的回复由产品 E2E 覆盖。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 227 项审计仍按缺失 evidence 拒绝通过。AMOLED 的构建和设备验收见 [Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
-
+Session 的 15 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、完整文字输入、释放和重连。文字输入在 PTT 轮次之后用 `h2_gizclaw_session_send_text` 提交一段文字，`session_send_text-assert` 要求 Session 先进入 WAITING、completion 恰好一次且为 FINISHED/OK、随后从 Track 听到非静音回复并回到 IDLE。一轮语音结束、Session 回到 IDLE 后调用 `h2_gizclaw_session_interrupt_playback`，`session_interrupt_playback-assert` 要求返回成功、Session 状态不变且 Track 仍为空；打断正在播放的回复由产品 E2E 覆盖。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 227 项审计仍按缺失 evidence 拒绝通过。
 ## Resource state E2E
 
 `resource` 是独立的 portable suite（`H2_GIZCLAW_E2E_SUITE_RESOURCE`），也包含在 `all` 中。Desktop runner 支持 `resource` suite 参数；AMOLED 使用 `--define=H2_GIZCLAW_E2E_RESOURCE_ONLY=1` 单独构建。它创建一个专用临时 Peer，四种 Resource store 顺序运行并分别关闭/销毁；不同 store 不与原始接口混合执行修改。联系人失败后由 fixture 的精确删除账本兜底，仍有 store 未销毁时禁止交接清理。
@@ -206,7 +205,7 @@ AppConfig 的 list/get 六个 typed API 纳入 `rpc/app-config` 的审计要求�
 
 ## app_test 接入
 
-本目录复用 `//libs/app_test:testing_audio` 和 `//libs/app_test:testing_pal`，接线和所有权说明见 [App Test 的 GizClaw 样例](../../../../guides/zh/developing/app_test.md#gizclaw-e2e-接入样例)。
+This App reuses `//libs/app_test:testing_audio` and `//libs/app_test:testing_pal` from [App Test](../../../../libs/app_test/). The table below defines the shared fixtures and App-owned responsibilities.
 
 | 路径 | 共享能力 | 本目录保留的职责 |
 | --- | --- | --- |

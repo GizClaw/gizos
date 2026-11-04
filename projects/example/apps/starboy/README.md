@@ -14,7 +14,7 @@ bazel run \
   //projects/example/targets/cc_binary/starboy:example-starboy
 ```
 
-AMOLED target 只支持原版 Waveshare ESP32-S3-Touch-AMOLED-1.8。构建命令与板级验收流程见 [AMOLED Starboy guide](/apps/h2loader/boards/amoled/starboy)。
+The AMOLED target supports only the original Waveshare ESP32-S3-Touch-AMOLED-1.8. Build and validation commands are below.
 
 ## Capability fallback
 

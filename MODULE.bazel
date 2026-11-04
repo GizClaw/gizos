@@ -144,11 +144,6 @@ npm = use_extension(
     "npm",
 )
 npm.npm_translate_lock(
-    name = "guides_npm",
-    pnpm_lock = "//guides:pnpm-lock.yaml",
-    run_lifecycle_hooks = False,
-)
-npm.npm_translate_lock(
     name = "lvgl_conv_i18n_yaml_npm",
     pnpm_lock = "//tools/lvgl/conv_i18n_yaml:pnpm-lock.yaml",
     run_lifecycle_hooks = False,
@@ -160,7 +155,6 @@ npm.npm_translate_lock(
 )
 use_repo(
     npm,
-    "guides_npm",
     "lvgl_conv_i18n_yaml_npm",
     "lvgl_font_conv_npm",
 )
