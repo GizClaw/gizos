@@ -15,6 +15,7 @@
 #include "gpio_driver.h"
 #include "modules/aec.h"
 #include "audio_osi_wrapper.h"
+#include "bk_misc.h"
 #include "os/os.h"
 #endif
 
@@ -382,6 +383,43 @@ static int read_mic(void* user, h2_audio_frame_t* out, uint32_t timeout_ms) {
   return H2_PAL_OK;
 }
 
+/* AW8733A one-wire mode select: hold EN low past its shutdown time, then N
+ * rising edges with highs and lows inside the 0.75-10 us window, ending
+ * high. The SDK's PA control gives a single edge, which is mode 1. */
+static int pa_off(void) {
+  return bk_gpio_set_output_low((gpio_id_t)H2_H202_PA_ENABLE_GPIO) == 0
+             ? H2_PAL_OK
+             : H2_PAL_ERR_IO;
+}
+
+static int pa_on(void) {
+  const gpio_id_t pa = (gpio_id_t)H2_H202_PA_ENABLE_GPIO;
+  const gpio_config_t output = {.io_mode = GPIO_OUTPUT_ENABLE,
+                                .pull_mode = GPIO_PULL_DISABLE,
+                                .func_mode = GPIO_SECOND_FUNC_DISABLE};
+  if (gpio_dev_unmap(pa) != 0 || bk_gpio_set_config(pa, &output) != 0 ||
+      pa_off() != H2_PAL_OK)
+    return H2_PAL_ERR_IO;
+  rtos_delay_milliseconds(2);
+  uint32_t level = rtos_disable_int();
+  int rc = 0;
+  for (unsigned i = 0; rc == 0 && i < H2_H202_PA_MODE; ++i) {
+    if (i != 0u) {
+      rc = bk_gpio_set_output_low(pa);
+      bk_delay_us(2);
+    }
+    if (rc == 0) rc = bk_gpio_set_output_high(pa);
+    bk_delay_us(2);
+  }
+  rtos_enable_int(level);
+  if (rc != 0) {
+    (void)pa_off();
+    return H2_PAL_ERR_IO;
+  }
+  rtos_delay_milliseconds(10); /* PA start-up before the first frame. */
+  return H2_PAL_OK;
+}
+
 static int init_speaker(void* user) {
   (void)user;
   if (s_audio.playback_started) return H2_PAL_OK;
@@ -397,11 +435,7 @@ static int init_speaker(void* user) {
   config.task_stack = 8192;
   config.task_core = 1;
   config.task_prio = 5;
-  config.pa_ctrl_en = true;
-  config.pa_ctrl_gpio = H2_H202_PA_ENABLE_GPIO;
-  config.pa_on_level = 1;
-  config.pa_on_delay = 10;
-  config.pa_off_delay = 10;
+  config.pa_ctrl_en = false; /* Driven here to select the PA mode. */
   s_audio.playback = onboard_speaker_stream_init(&config);
   if (s_audio.playback == NULL) return H2_PAL_ERR_NO_MEMORY;
   if (audio_element_set_input_port(s_audio.playback, s_audio.speaker) != 0 ||
@@ -412,12 +446,17 @@ static int init_speaker(void* user) {
       audio_element_resume(s_audio.playback, 0, BK_MS_TO_TICKS(STOP_MS)) != 0)
     return H2_PAL_ERR_IO;
   s_audio.playback_started = true;
-  return H2_PAL_OK;
+  return pa_on();
 }
 
 static int stop_speaker(void* user) {
   (void)user;
   if (s_audio.track_open) return H2_PAL_ERR_BUSY;
+  if (s_audio.playback_started) {
+    int off = pa_off();
+    if (off != H2_PAL_OK) return off;
+    rtos_delay_milliseconds(10); /* Silence the PA before the DAC stops. */
+  }
   int rc = stop_element(&s_audio.playback, &s_audio.playback_task);
   if (rc != H2_PAL_OK) return rc;
   s_audio.playback_started = false;

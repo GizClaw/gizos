@@ -126,7 +126,8 @@ static bool all_passed(const h2_h202_mfg_t* app, unsigned count) {
 static void enter(h2_h202_mfg_t* app, h2_h202_mfg_item_t item);
 static void resume(h2_h202_mfg_t* app, unsigned from);
 
-static void fail(h2_h202_mfg_t* app, h2_pal_result_t error) {
+static void fail_with(h2_h202_mfg_t* app, h2_pal_result_t error,
+                      h2_h202_mfg_prompt_t prompt) {
   h2_h202_mfg_item_t item = app->item;
   app->results[item] = H2_H202_MFG_FAILED;
   app->error = error != H2_PAL_OK ? error : H2_PAL_ERR_IO;
@@ -138,8 +139,11 @@ static void fail(h2_h202_mfg_t* app, h2_pal_result_t error) {
   note(app, "H202_MFG_RESULT item=%s result=failed rc=%d", item_name(item),
        app->error);
   light(app, H2_H202_MFG_COLOR_RED);
-  if (s_failures[item] != H2_H202_MFG_PROMPT_NONE)
-    (void)play(app, s_failures[item]);
+  if (prompt != H2_H202_MFG_PROMPT_NONE) (void)play(app, prompt);
+}
+
+static void fail(h2_h202_mfg_t* app, h2_pal_result_t error) {
+  fail_with(app, error, s_failures[app->item]);
 }
 
 static void pass(h2_h202_mfg_t* app) {
@@ -257,6 +261,7 @@ static void enter(h2_h202_mfg_t* app, h2_h202_mfg_item_t item) {
     case H2_H202_MFG_CHARGER:
       app->charger_initial = -1;
       app->charger_edges = 0u;
+      app->battery_present = false;
       rc = begin(app, H2_H202_MFG_OP_SENSOR, H2_H202_MFG_JOB_CHARGER, item,
                  H2_H202_MFG_PROMPT_NONE, H2_H202_MFG_PROMPT_NONE);
       app->deadline_ms = app->now_ms + app->config.charger_timeout_ms;
@@ -370,6 +375,19 @@ static void reset_progress(h2_h202_mfg_t* app) {
   if (rc != H2_PAL_OK) reset_failed(app, rc);
 }
 
+/* Stage 10 Volume -: page back and run aging again. Aging admission still
+ * needs the nine earlier results PASSED; a saved pass stays saved until the
+ * next stage 10 or shutdown save. */
+static void back_to_aging(h2_h202_mfg_t* app) {
+  if (!all_passed(app, H2_H202_MFG_AGING)) {
+    note(app, "H202_MFG_BACK refused");
+    return;
+  }
+  note(app, "H202_MFG_BACK item=aging");
+  app->results[H2_H202_MFG_AGING] = H2_H202_MFG_UNTESTED;
+  enter(app, H2_H202_MFG_AGING);
+}
+
 static void click(h2_h202_mfg_t* app, unsigned key) {
   if ((app->pressed_since_entry & key) == 0u) return;
   app->pressed_since_entry &= ~key;
@@ -386,6 +404,10 @@ static void click(h2_h202_mfg_t* app, unsigned key) {
       return;
     case H2_H202_MFG_PHASE_ACCEPT_FAILED:
       if (key == H2_H202_MFG_KEY_RECORD) enter_wait(app);
+      if (key == H2_H202_MFG_KEY_MINUS) back_to_aging(app);
+      return;
+    case H2_H202_MFG_PHASE_WAITING:
+      if (key == H2_H202_MFG_KEY_MINUS) back_to_aging(app);
       return;
     case H2_H202_MFG_PHASE_ACTIVE:
       break;
@@ -496,10 +518,11 @@ static void audio_done(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
       if (app->phase != H2_H202_MFG_PHASE_ACTIVE) return;
       note(app, "H202_MFG_MIC item=%s rc=%d verdict=%d", item_name(app->item),
            c->result, (int)c->value);
-      if (c->result == H2_PAL_OK && c->value == H2_H202_MFG_AEC_PASS)
+      /* Levels are diagnostics; the operator confirms with Record. */
+      if (c->result == H2_PAL_OK)
         pass(app);
       else
-        fail(app, c->result != H2_PAL_OK ? c->result : H2_PAL_ERR_IO);
+        fail(app, c->result);
       return;
     case H2_H202_MFG_JOB_AGING:
       /* Passes only after a requested stop finished cleanly. */
@@ -517,13 +540,26 @@ static void audio_done(h2_h202_mfg_t* app, const h2_h202_mfg_completion_t* c) {
 static void sensor_event(h2_h202_mfg_t* app,
                          const h2_h202_mfg_completion_t* c) {
   if (app->phase != H2_H202_MFG_PHASE_ACTIVE) return;
+  /* Battery and charger are checked together in stage 02; a missing
+   * battery is announced at once with its own prompt. */
+  if (c->event == H2_H202_MFG_EVENT_BATTERY &&
+      app->item == H2_H202_MFG_CHARGER) {
+    app->battery_present = c->result == H2_PAL_OK && c->value != 0;
+    if (!app->battery_present)
+      fail_with(app, c->result != H2_PAL_OK ? c->result : H2_PAL_ERR_NOT_FOUND,
+                H2_H202_MFG_PROMPT_BATTERY_FAILED);
+    return;
+  }
   if (c->event == H2_H202_MFG_EVENT_CHARGER &&
       app->item == H2_H202_MFG_CHARGER) {
     bool inserted = c->value != 0;
     if (app->charger_initial < 0) {
       app->charger_initial = inserted ? 1 : 0;
     } else if (++app->charger_edges >= 2u) {
-      pass(app);
+      if (app->battery_present)
+        pass(app);
+      else
+        fail_with(app, H2_PAL_ERR_NOT_FOUND, H2_H202_MFG_PROMPT_BATTERY_FAILED);
       return;
     }
     if (play(app, inserted ? H2_H202_MFG_PROMPT_CHARGE_REMOVE
@@ -1292,7 +1328,7 @@ static const char* const s_prompt_names[H2_H202_MFG_PROMPT_COUNT] = {
     "aging",         "waiting",         "charge_failed", "nfc_failed",
     "wifi_failed",   "mic_failed",      "aging_failed",  "incomplete",
     "unsaved",       "poweroff_failed", "network",       "boot",
-    "retry",         "retry_poweroff"};
+    "retry",         "retry_poweroff",  "battery_failed"};
 static const char* const s_mode_names[] = {"off", "on", "blink"};
 
 static int eyes_frame(h2_h202_mfg_service_t* s, h2_h202_mfg_color_t color) {
@@ -1487,6 +1523,7 @@ static h2_h202_mfg_prompt_t prompt_tail(h2_h202_mfg_prompt_t prompt) {
     case H2_H202_MFG_PROMPT_WIFI_FAILED:
     case H2_H202_MFG_PROMPT_MIC_FAILED:
     case H2_H202_MFG_PROMPT_AGING_FAILED:
+    case H2_H202_MFG_PROMPT_BATTERY_FAILED:
       return H2_H202_MFG_PROMPT_RETRY;
     case H2_H202_MFG_PROMPT_UNSAVED:
     case H2_H202_MFG_PROMPT_POWEROFF_FAILED:
@@ -1596,17 +1633,29 @@ static void run_mic(slot_t* slot) {
     rc = audio_open(s, true, &observer);
     slog(s, "H202_MFG_TONE lane=%s on rc=%d", lane ? "right" : "left", rc);
   }
-  uint64_t limit =
-      service_now(s) + p->aec.convergence_ms + p->aec.measure_ms + 3000u;
-  while (rc == H2_PAL_OK && !h2_h202_mfg_aec_meter_done(&s->meter)) {
+  /* The operator judges the loopback; the side runs for its whole window
+   * and levels are only logged. A capture fault restarts the audio rather
+   * than ending the window; only a restart that fails is an error. */
+  const uint64_t limit =
+      service_now(s) + p->aec.convergence_ms + p->aec.measure_ms;
+  unsigned restarts = 0u;
+  while (rc == H2_PAL_OK && service_now(s) < limit) {
     if (slot_canceled(slot)) {
       rc = H2_PAL_ERR_CLOSED;
       break;
     }
-    if (service_now(s) >= limit) break; /* Judged as missing frames below. */
     rc = audio_cycle(slot, lane);
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       rc = H2_PAL_OK;
+    if (rc != H2_PAL_OK && !slot_canceled(slot) && restarts < 3u) {
+      ++restarts;
+      slog(s, "H202_MFG_MIC_RESTART lane=%u rc=%d", lane, rc);
+      rc = audio_close(s);
+      if (rc == H2_PAL_OK) {
+        s->meter_active = true;
+        rc = audio_open(s, true, &observer);
+      }
+    }
   }
   s->meter_active = false;
   int closed = audio_close(s);
@@ -1707,6 +1756,15 @@ static void run_aging(slot_t* slot) {
 
 static void run_charger(slot_t* slot) {
   h2_h202_mfg_service_t* s = slot->service;
+  h2_pal_battery_reading_t battery;
+  memset(&battery, 0, sizeof(battery));
+  int read = h2_pal_input_read_battery(s->runtime->input, s->profile->battery,
+                                       &battery);
+  bool present =
+      read == H2_PAL_OK && (battery.flags & H2_PAL_BATTERY_PRESENT) != 0u;
+  slog(s, "H202_MFG_BATTERY rc=%d present=%d mv=%ld", read, present ? 1 : 0,
+       (long)battery.voltage_mv);
+  post(slot, H2_H202_MFG_EVENT_BATTERY, read, present ? 1 : 0);
   bool stable = false, candidate = false;
   int rc = read_switch(s, s->profile->usb_insert, &stable);
   if (rc == H2_PAL_OK) post(slot, H2_H202_MFG_EVENT_CHARGER, rc, stable);

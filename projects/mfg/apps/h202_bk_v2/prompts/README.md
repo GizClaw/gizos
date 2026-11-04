@@ -9,7 +9,7 @@ size). The player decodes it and upsamples to the board's 16 kHz track.
 Regenerate only when wording or parameters change.
 
 The retry instruction is stored once: the player appends `retry` after each
-`*_failed` test prompt and `retry_poweroff` after `unsaved` and
+`*_failed` test prompt (including `battery_failed`) and `retry_poweroff` after `unsaved` and
 `poweroff_failed`. The spoken text column is what the operator hears.
 
 | File | Wording | Spoken text |
@@ -35,6 +35,7 @@ The retry instruction is stored once: the player appends `retry` after each
 | `wifi_failed.pcm` | Wi-Fi测试失败。 | Wi-Fi测试失败。单击肚子上的按键重试。 |
 | `mic_failed.pcm` | 麦克风检测失败。 | 麦克风检测失败。单击肚子上的按键重试。 |
 | `aging_failed.pcm` | 老化失败。 | 老化失败。单击肚子上的按键重试。 |
+| `battery_failed.pcm` | 未检测到电池。 | 未检测到电池。单击肚子上的按键重试。 |
 | `incomplete.pcm` | 检测未全部通过，请关机后重新开机复测。 | Same |
 | `unsaved.pcm` | 关机失败，进度未保存。 | 关机失败，进度未保存。单击肚子上的按键重试关机。 |
 | `poweroff_failed.pcm` | 进度已保存，关机执行失败。 | 进度已保存，关机执行失败。单击肚子上的按键重试关机。 |

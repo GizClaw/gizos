@@ -56,6 +56,42 @@ h2_pal_result_t h2_bk_nfc_fm175xx_init(
 const h2_pal_nfc_api_t* h2_bk_nfc_fm175xx_api(h2_bk_nfc_fm175xx_t* adapter) {
   return &adapter->api;
 }
+/* SARADC: the pin voltage, a read failure, and a balanced session. */
+static uint16_t adc_pin_mv;
+static int adc_read_rc;
+static int adc_sessions;
+int bk_adc_acquire(void) {
+  ++adc_sessions;
+  return 0;
+}
+int bk_adc_release(void) {
+  --adc_sessions;
+  return 0;
+}
+int bk_adc_init(adc_chan_t chan) {
+  assert(chan == H2_H202_BATTERY_ADC_CHANNEL);
+  return 0;
+}
+int bk_adc_deinit(adc_chan_t chan) {
+  assert(chan == H2_H202_BATTERY_ADC_CHANNEL);
+  return 0;
+}
+int bk_adc_set_config(adc_config_t* config) {
+  assert(config->chan == H2_H202_BATTERY_ADC_CHANNEL);
+  return 0;
+}
+int bk_adc_enable_bypass_clalibration(void) { return 0; }
+int bk_adc_start(void) { return 0; }
+int bk_adc_stop(void) { return 0; }
+int bk_adc_read(uint16_t* data, uint32_t timeout) {
+  assert(timeout == 100);
+  *data = 1234;
+  return adc_read_rc;
+}
+uint16_t bk_adc_data_calculate(uint16_t value, uint8_t chan) {
+  assert(value == 1234 && chan == H2_H202_BATTERY_ADC_CHANNEL);
+  return adc_pin_mv;
+}
 int rtos_init_semaphore(beken_semaphore_t* out, unsigned count) {
   assert(count == 1);
   *out = &semaphore;
@@ -151,6 +187,25 @@ static void test_inputs(void) {
            H2_PAL_ERR_UNSUPPORTED);
   }
   assert(h2_pal_switch_get(lines, 99, &state) == H2_PAL_ERR_NOT_FOUND);
+  /* Battery: VBAT through the 1/2 divider; no reading means absent. */
+  const h2_pal_input_api_t* input = h2_h202_input_api();
+  h2_pal_battery_reading_t battery;
+  adc_pin_mv = 1900;
+  assert(h2_pal_input_read_battery(input, H2_H202_BATTERY_ID, &battery) == 0);
+  assert(battery.voltage_mv == 3800 &&
+         (battery.flags & H2_PAL_BATTERY_PRESENT) != 0u &&
+         (battery.flags & H2_PAL_BATTERY_HAS_VOLTAGE_MV) != 0u);
+  adc_pin_mv = 12;
+  assert(h2_pal_input_read_battery(input, H2_H202_BATTERY_ID, &battery) == 0);
+  assert(battery.voltage_mv == 24 &&
+         (battery.flags & H2_PAL_BATTERY_PRESENT) == 0u);
+  adc_read_rc = -1;
+  assert(h2_pal_input_read_battery(input, H2_H202_BATTERY_ID, &battery) ==
+         H2_PAL_ERR_IO);
+  adc_read_rc = 0;
+  assert(adc_sessions == 0);
+  assert(h2_pal_input_read_battery(input, 99, &battery) ==
+         H2_PAL_ERR_NOT_FOUND);
 }
 
 static void test_lights(void) {

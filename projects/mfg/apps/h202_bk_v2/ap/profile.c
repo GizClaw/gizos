@@ -31,6 +31,7 @@ H2_H202_PROMPT(boot)
 H2_H202_PROMPT(poweroff_failed)
 H2_H202_PROMPT(retry)
 H2_H202_PROMPT(retry_poweroff)
+H2_H202_PROMPT(battery_failed)
 #undef H2_H202_PROMPT
 
 #define PROMPT(id, name) \
@@ -49,6 +50,7 @@ const h2_h202_mfg_profile_t h2_h202_mfg_profile = {
     .usb_insert = H2_H202_USB_INSERT_ID,
     .charging = H2_H202_CHARGING_ID,
     .charge_done = H2_H202_CHARGE_DONE_ID,
+    .battery = H2_H202_BATTERY_ID,
     .white = H2_H202_WHITE_ID,
     .nfc = H2_H202_NFC_ID,
     .eyes = H2_H202_EYES_ID,
@@ -125,5 +127,6 @@ const h2_h202_mfg_profile_t h2_h202_mfg_profile = {
             PROMPT(BOOT, boot),
             PROMPT(RETRY, retry),
             PROMPT(RETRY_POWEROFF, retry_poweroff),
+            PROMPT(BATTERY_FAILED, battery_failed),
         },
 };

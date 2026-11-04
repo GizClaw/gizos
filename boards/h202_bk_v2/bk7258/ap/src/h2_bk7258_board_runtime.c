@@ -62,7 +62,7 @@ int h2_bk7258_board_runtime_config(h2_runtime_config_t* config) {
       .imu = h2_pal_unsupported_imu_api(),
       .gpio_irq = h2_pal_unsupported_gpio_irq_api(),
       .nfc_card_emulation = h2_pal_unsupported_nfc_card_emulation_api(),
-      .input = h2_pal_unsupported_input_api(),
+      .input = h2_h202_input_api(),
       .video_decoder = h2_pal_unsupported_video_decoder_api(),
   };
   return H2_PAL_OK;

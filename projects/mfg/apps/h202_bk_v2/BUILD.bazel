@@ -13,7 +13,7 @@ package(default_visibility = ["//visibility:public"])
 # H202 bumps its own Loader-role MFG independently of //projects/mfg:version.
 app_version(
     name = "version",
-    value = "0.3.4",
+    value = "0.3.5",
 )
 
 firmware_version(
@@ -30,6 +30,7 @@ filegroup(
         "prompts/ima_adpcm.py",
         "prompts/zh/aging.pcm",
         "prompts/zh/aging_failed.pcm",
+        "prompts/zh/battery_failed.pcm",
         "prompts/zh/boot.pcm",
         "prompts/zh/charge_failed.pcm",
         "prompts/zh/charge_insert.pcm",

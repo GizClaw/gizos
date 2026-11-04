@@ -53,6 +53,48 @@ const h2_pal_time_api_t* h2_bk_platform_time_api(void) {
   return &api;
 }
 void rtos_delay_milliseconds(unsigned ms) { now_ms += ms; }
+
+/* PA enable line: rising edges since the last 2 ms low hold select the mode. */
+static bool pa_high, pa_irq_off;
+static unsigned pa_edges, pa_us;
+static uint64_t pa_low_since;
+int gpio_dev_unmap(gpio_id_t pin) {
+  assert(pin == H2_H202_PA_ENABLE_GPIO);
+  return 0;
+}
+int bk_gpio_set_config(gpio_id_t pin, const gpio_config_t* config) {
+  assert(pin == H2_H202_PA_ENABLE_GPIO &&
+         config->io_mode == GPIO_OUTPUT_ENABLE);
+  return 0;
+}
+int bk_gpio_set_output_low(gpio_id_t pin) {
+  assert(pin == H2_H202_PA_ENABLE_GPIO);
+  if (pa_high) pa_low_since = now_ms;
+  pa_high = false;
+  return 0;
+}
+int bk_gpio_set_output_high(gpio_id_t pin) {
+  assert(pin == H2_H202_PA_ENABLE_GPIO);
+  if (!pa_high) {
+    if (now_ms - pa_low_since >= 2u) pa_edges = 0; /* Shutdown resets. */
+    assert(pa_edges == 0u || pa_irq_off);          /* Pulses stay tight. */
+    ++pa_edges;
+  }
+  pa_high = true;
+  return 0;
+}
+void bk_delay_us(uint32_t us) {
+  assert(us >= 1u && us <= 10u);
+  pa_us += us;
+}
+uint32_t rtos_disable_int(void) {
+  pa_irq_off = true;
+  return 7u;
+}
+void rtos_enable_int(uint32_t level) {
+  assert(level == 7u && pa_irq_off);
+  pa_irq_off = false;
+}
 int rtos_init_mutex(beken_mutex_t* mutex) {
   if (fail()) return -1;
   *mutex = malloc(sizeof(**mutex));
@@ -162,8 +204,9 @@ audio_element_handle_t onboard_dual_dmic_mic_stream_init(
 }
 audio_element_handle_t onboard_speaker_stream_init(
     onboard_speaker_stream_cfg_t* config) {
+  /* The board drives the PA itself to select its mode. */
   assert(config->frame_size == H2_H202_AUDIO_FRAME_SAMPLES * 2 &&
-         config->pa_ctrl_gpio == H2_H202_PA_ENABLE_GPIO);
+         !config->pa_ctrl_en);
   return element();
 }
 int audio_element_set_output_port(audio_element_handle_t el,
@@ -369,6 +412,7 @@ static void restart(void) {
 }
 static void test_pairing(void) {
   errors_clear();
+  now_ms = 0; /* Earlier speaker stops waited for the PA. */
   assert(start(true) == 0);
   assert(read_frame(0, 7) == H2_PAL_ERR_WOULD_BLOCK && now_ms == 7);
   produce(1);
@@ -536,8 +580,23 @@ static void test_observer(void) {
   clean();
   assert(h2_pal_audio_set_aec_observer(audio, NULL) == 0);
 }
+static void test_pa_mode(void) {
+  errors_clear();
+  pa_high = false;
+  pa_low_since = now_ms;
+  assert(start(false) == 0);
+  /* Four rising edges after the shutdown hold: AW8733A mode 4, left on. */
+  assert(pa_high && pa_edges == H2_H202_PA_MODE && !pa_irq_off);
+  clean();
+  assert(!pa_high);
+  /* A restart selects the mode again rather than counting on. */
+  assert(start(false) == 0 && pa_high && pa_edges == H2_H202_PA_MODE);
+  clean();
+  assert(!pa_high);
+}
 int main(void) {
   audio = h2_h202_audio_api();
+  test_pa_mode();
   test_start_failures();
   test_pairing();
   test_concurrent_pairing();

@@ -85,6 +85,7 @@ typedef enum h2_h202_mfg_prompt {
    * and RETRY_POWEROFF after UNSAVED and POWEROFF_FAILED. */
   H2_H202_MFG_PROMPT_RETRY,
   H2_H202_MFG_PROMPT_RETRY_POWEROFF,
+  H2_H202_MFG_PROMPT_BATTERY_FAILED, /**< Stage 02: no battery reading. */
   H2_H202_MFG_PROMPT_COUNT,
 } h2_h202_mfg_prompt_t;
 
@@ -140,8 +141,11 @@ typedef struct h2_h202_mfg_request {
 } h2_h202_mfg_request_t;
 
 typedef enum h2_h202_mfg_event {
-  H2_H202_MFG_EVENT_DONE,        /**< Terminal: the job has released all. */
-  H2_H202_MFG_EVENT_CHARGER,     /**< value: 1 inserted, 0 removed. */
+  H2_H202_MFG_EVENT_DONE,    /**< Terminal: the job has released all. */
+  H2_H202_MFG_EVENT_CHARGER, /**< value: 1 inserted, 0 removed. */
+  /** CHARGER job, before its first CHARGER event: value 1 when a battery
+   * reads present; result is the read error. */
+  H2_H202_MFG_EVENT_BATTERY,
   H2_H202_MFG_EVENT_COMMITTED,   /**< SHUTDOWN progress write result. */
   H2_H202_MFG_EVENT_POWER_ERROR, /**< SHUTDOWN/RESET did not power off. */
 } h2_h202_mfg_event_t;
@@ -185,7 +189,7 @@ typedef enum h2_h202_mfg_phase {
   H2_H202_MFG_PHASE_ANNOUNCE, /**< Success prompt, then the next item. */
   H2_H202_MFG_PHASE_FAILED,   /**< Red; Record retries, skip records SKIPPED. */
   H2_H202_MFG_PHASE_STOPPING, /**< Aging stop requested, awaiting clean DONE. */
-  H2_H202_MFG_PHASE_WAITING,  /**< Stage 10. */
+  H2_H202_MFG_PHASE_WAITING,  /**< Stage 10; Volume - goes back to aging. */
   H2_H202_MFG_PHASE_SAVING,
   H2_H202_MFG_PHASE_UNSAVED,
   H2_H202_MFG_PHASE_POWEROFF_FAILED,
@@ -239,6 +243,7 @@ typedef struct h2_h202_mfg {
   uint64_t power_down_ms;
   int charger_initial;
   unsigned charger_edges;
+  bool battery_present; /**< Stage 02 battery read succeeded and present. */
   bool committed;
   h2_pal_result_t error;
   h2_pal_result_t restore_error;
@@ -281,7 +286,7 @@ unsigned h2_h202_mfg_stage_of(h2_h202_mfg_item_t item);
 
 /** Revision bound to the ten results by
  * h2_loader_mfg_ensure_acceptance_revision. Change it with the criteria. */
-#define H2_H202_MFG_REVISION 0x20200003u
+#define H2_H202_MFG_REVISION 0x20200004u
 
 /** Boot: bind revision, read, then reset the one-shot record before any stage
  * runs. The caller holds the Loader operation mutex. Never fails: errors are
@@ -445,6 +450,7 @@ typedef struct h2_h202_mfg_profile {
   h2_pal_periph_id_t usb_insert;
   h2_pal_periph_id_t charging;
   h2_pal_periph_id_t charge_done;
+  h2_pal_periph_id_t battery; /**< Read through runtime->input. */
   h2_pal_periph_id_t white;
   h2_pal_periph_id_t nfc;
   h2_pal_led_id_t eyes;

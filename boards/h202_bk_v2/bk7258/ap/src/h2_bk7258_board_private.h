@@ -10,6 +10,9 @@ const h2_pal_button_api_t* h2_h202_button_api(void);
 /** USB_INSERT, CHRG and DONE report ON when asserted; WHITE is on/off. */
 const h2_pal_switch_api_t* h2_h202_switch_api(void);
 const h2_pal_nfc_api_t* h2_h202_nfc_api(void);
+/** read_battery for H2_H202_BATTERY_ID: VBAT, PRESENT when above
+ * H2_H202_BATTERY_PRESENT_MV. */
+const h2_pal_input_api_t* h2_h202_input_api(void);
 const h2_pal_power_api_t* h2_h202_power_api(void);
 const h2_pal_led_api_t* h2_h202_led_api(void);
 h2_pal_result_t h2_h202_white_set(bool on);

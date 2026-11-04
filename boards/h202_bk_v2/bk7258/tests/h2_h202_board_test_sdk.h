@@ -163,6 +163,28 @@ int bk_spi_write_bytes_async(spi_id_t id, const void* data, unsigned size);
 h2_pal_result_t h2_bk_nfc_fm175xx_init(
     h2_bk_nfc_fm175xx_t* adapter, const h2_bk_nfc_fm175xx_config_t* config);
 const h2_pal_nfc_api_t* h2_bk_nfc_fm175xx_api(h2_bk_nfc_fm175xx_t* adapter);
+typedef unsigned adc_chan_t;
+enum {
+  ADC_CONTINUOUS_MODE = 3,
+  ADC_SCLK_XTAL_26M = 1,
+  ADC_SATURATE_MODE_3 = 3,
+};
+typedef struct {
+  uint32_t clk, adc_filter, steady_ctrl;
+  unsigned adc_mode, src_clk;
+  adc_chan_t chan;
+  unsigned saturate_mode;
+} adc_config_t;
+int bk_adc_acquire(void);
+int bk_adc_release(void);
+int bk_adc_init(adc_chan_t chan);
+int bk_adc_deinit(adc_chan_t chan);
+int bk_adc_set_config(adc_config_t* config);
+int bk_adc_enable_bypass_clalibration(void);
+int bk_adc_start(void);
+int bk_adc_stop(void);
+int bk_adc_read(uint16_t* data, uint32_t timeout);
+uint16_t bk_adc_data_calculate(uint16_t value, uint8_t chan);
 #endif
 
 #ifdef H2_H202_AUDIO_HOST_TEST
@@ -238,6 +260,9 @@ int rtos_lock_mutex(beken_mutex_t* mutex);
 int rtos_unlock_mutex(beken_mutex_t* mutex);
 int rtos_deinit_mutex(beken_mutex_t* mutex);
 void rtos_delay_milliseconds(unsigned ms);
+void bk_delay_us(uint32_t us);
+uint32_t rtos_disable_int(void);
+void rtos_enable_int(uint32_t level);
 audio_port_handle_t audio_port_init(audio_port_cfg_t* config);
 audio_port_handle_t ringbuf_port_init(ringbuf_port_cfg_t* config);
 int audio_port_set_type(audio_port_handle_t port, int type);

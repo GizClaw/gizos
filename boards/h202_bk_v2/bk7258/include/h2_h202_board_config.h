@@ -17,6 +17,9 @@
 #define H2_H202_EXTFLASH_IO3_GPIO 27u
 #define H2_H202_PERIPHERAL_ENABLE_GPIO 54u
 #define H2_H202_PA_ENABLE_GPIO 53u
+/* AW8733A: the number of enable rising edges selects the mode; 4 is the
+ * loudest. */
+#define H2_H202_PA_MODE 4u
 /* The 4G module is not fitted; firmware only holds these rails low. */
 #define H2_H202_MODEM_ENABLE_GPIO 7u
 #define H2_H202_MODEM_VBUS_ENABLE_GPIO 13u
@@ -35,6 +38,14 @@
 #define H2_H202_NFC_I2C_ID 1u
 #define H2_H202_NFC_I2C_ADDRESS 0x28u
 #define H2_H202_NFC_I2C_HZ 100000u
+/* Battery Level Detect: VBAT through R67/R66 (10k/10k) when Q1 is switched
+ * on by WAKE_UP; GPIO12 is SARADC channel 14. */
+#define H2_H202_BATTERY_ADC_GPIO 12u
+#define H2_H202_BATTERY_ADC_CHANNEL 14u
+#define H2_H202_BATTERY_DIVIDER 2u
+/* Below this the cell is treated as absent (no reading); provisional until
+ * measured on a board without a battery. */
+#define H2_H202_BATTERY_PRESENT_MV 2500u
 #define H2_H202_DMIC_CLK_GPIO 8u
 #define H2_H202_DMIC_DATA_GPIO 9u
 #define H2_H202_RGB_PIXELS 6u
@@ -54,5 +65,6 @@
 #define H2_H202_WHITE_ID 8u
 #define H2_H202_CHARGING_ID 9u
 #define H2_H202_CHARGE_DONE_ID 10u
+#define H2_H202_BATTERY_ID 11u
 
 #endif

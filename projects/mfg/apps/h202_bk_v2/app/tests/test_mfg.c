@@ -138,9 +138,15 @@ static void expect_prompt(h2_h202_mfg_prompt_t prompt) {
 }
 
 /* Stage 02 through stage 04, with Wi-Fi passing. */
+static void battery(bool present) {
+  event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_BATTERY, H2_PAL_OK,
+        present ? 1 : 0);
+}
+
 static void pass_to_mics(void) {
   expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
   assert(f.color == H2_H202_MFG_COLOR_AMBER);
+  battery(true);
   event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 1);
   expect_prompt(H2_H202_MFG_PROMPT_CHARGE_REMOVE);
   event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 0);
@@ -255,6 +261,22 @@ static void test_flow(void) {
   click(H2_H202_MFG_KEY_PLUS);
   set_keys(0);
   expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
+  /* Volume - pages back to aging, which runs again from the start. */
+  unsigned agings = count_jobs(H2_H202_MFG_JOB_AGING);
+  click(H2_H202_MFG_KEY_MINUS);
+  expect(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
+  assert(status().stage == 9u &&
+         status().results[H2_H202_MFG_AGING] == H2_H202_MFG_UNTESTED);
+  assert(count_jobs(H2_H202_MFG_JOB_AGING) == agings + 1u);
+  expect_prompt(H2_H202_MFG_PROMPT_AGING);
+  click(H2_H202_MFG_KEY_RECORD);
+  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
+  expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_ACCEPTING);
+  /* From a failed save too. */
+  done(H2_H202_MFG_OP_POWER, H2_PAL_ERR_IO, 0);
+  expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_ACCEPT_FAILED);
+  click(H2_H202_MFG_KEY_MINUS);
+  expect(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
   puts("flow ok");
 
   /* An RGB error from the rainbow worker fails aging, and Record retries
@@ -323,11 +345,41 @@ static void test_skip_and_admission(void) {
   assert(f.color == H2_H202_MFG_COLOR_YELLOW);
   expect_prompt(H2_H202_MFG_PROMPT_INCOMPLETE);
   assert(count_jobs(H2_H202_MFG_JOB_ACCEPT) == 0u);
+  /* Paging back cannot bypass aging admission. */
+  click(H2_H202_MFG_KEY_MINUS);
+  expect(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
+  assert(count_jobs(H2_H202_MFG_JOB_AGING) == 0u);
   puts("skip and aging admission ok");
 }
 
 static void test_failures_and_retry(void) {
+  /* No battery reading fails stage 02 at once with its own prompt, while
+   * the charger check runs; Record retries the whole stage. */
   begin_test(NULL);
+  battery(false);
+  expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_FAILED);
+  assert(f.color == H2_H202_MFG_COLOR_RED &&
+         status().results[H2_H202_MFG_CHARGER] == H2_H202_MFG_FAILED);
+  expect_prompt(H2_H202_MFG_PROMPT_BATTERY_FAILED);
+  unsigned chargers = count_jobs(H2_H202_MFG_JOB_CHARGER);
+  click(H2_H202_MFG_KEY_RECORD);
+  expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
+  assert(count_jobs(H2_H202_MFG_JOB_CHARGER) == chargers + 1u);
+  /* A read error is a missing battery too. */
+  event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_BATTERY, H2_PAL_ERR_IO, 0);
+  expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_FAILED);
+  expect_prompt(H2_H202_MFG_PROMPT_BATTERY_FAILED);
+  /* Both cable transitions without a battery reading still do not pass. */
+  click(H2_H202_MFG_KEY_RECORD);
+  event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 0);
+  event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 1);
+  event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 0);
+  expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_FAILED);
+  expect_prompt(H2_H202_MFG_PROMPT_BATTERY_FAILED);
+  puts("battery check ok");
+
+  begin_test(NULL);
+  battery(true);
   /* Charger: 60 s without both transitions fails with the red light. */
   event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 0);
   step(59000);
@@ -346,6 +398,7 @@ static void test_failures_and_retry(void) {
   click(H2_H202_MFG_KEY_RECORD);
   expect(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
   assert(f.live[H2_H202_MFG_OP_SENSOR] != old);
+  battery(true);
   event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 0);
   event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 1);
   event(H2_H202_MFG_OP_SENSOR, H2_H202_MFG_EVENT_CHARGER, H2_PAL_OK, 0);
@@ -383,13 +436,14 @@ static void test_failures_and_retry(void) {
   click(H2_H202_MFG_KEY_RECORD);
   done(H2_H202_MFG_OP_WIFI, H2_PAL_OK, 0);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, 0);
-  /* Microphone measurement failure and an instruction prompt error. */
+  /* The operator judges the loopback: a silent lane still passes, only an
+   * audio error fails, and an instruction prompt error fails too. */
   expect(H2_H202_MFG_LEFT_MIC, H2_H202_MFG_PHASE_ACTIVE);
-  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_NO_SIGNAL);
+  done(H2_H202_MFG_OP_AUDIO, H2_PAL_ERR_IO, 0);
   expect(H2_H202_MFG_LEFT_MIC, H2_H202_MFG_PHASE_FAILED);
   expect_prompt(H2_H202_MFG_PROMPT_MIC_FAILED);
   click(H2_H202_MFG_KEY_RECORD);
-  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_PASS);
+  done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_NO_SIGNAL);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_OK, H2_H202_MFG_AEC_PASS);
   expect(H2_H202_MFG_LISTEN, H2_H202_MFG_PHASE_ACTIVE);
   done(H2_H202_MFG_OP_AUDIO, H2_PAL_ERR_IO, 0);

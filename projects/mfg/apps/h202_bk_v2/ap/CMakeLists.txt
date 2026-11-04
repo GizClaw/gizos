@@ -48,7 +48,7 @@ set(H2_H202_PROMPTS
     charge_insert charge_remove charge_passed nfc nfc_passed wifi_passed
     mic_left mic_right listen power plus minus aging waiting charge_failed
     nfc_failed wifi_failed mic_failed aging_failed incomplete unsaved
-    poweroff_failed network boot retry retry_poweroff)
+    poweroff_failed network boot retry retry_poweroff battery_failed)
 set(H2_H202_PROMPT_DIR "${REPO_ROOT}/projects/mfg/apps/h202_bk_v2/prompts")
 set(H2_H202_PROMPT_ENCODER "${H2_H202_PROMPT_DIR}/ima_adpcm.py")
 set(H2_H202_PROMPT_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_h202_mfg_prompts.c")

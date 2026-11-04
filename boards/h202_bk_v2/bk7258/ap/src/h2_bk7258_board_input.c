@@ -5,6 +5,7 @@
 #ifdef H2_H202_HOST_TEST
 #include "h2_h202_board_test_sdk.h"
 #else
+#include "driver/adc.h"
 #include "driver/gpio.h"
 #include "gpio_driver.h"
 #include "h2_bk_nfc_fm175xx.h"
@@ -133,6 +134,68 @@ h2_pal_result_t h2_h202_input_init(void) {
   h2_pal_result_t rc = h2_bk_nfc_fm175xx_init(&s_nfc, &config);
   if (rc == H2_PAL_OK) s_initialized = true;
   return rc;
+}
+
+/* The CP SARADC server drops the channel config on release, so every read
+ * runs acquire, init, config, start, read, stop, deinit and release, as the
+ * H106 Zero BK board does. */
+static h2_pal_result_t battery_pin_mv(uint16_t* out) {
+  static bool unmapped;
+  const adc_chan_t chan = (adc_chan_t)H2_H202_BATTERY_ADC_CHANNEL;
+  if (!unmapped) {
+    (void)gpio_dev_unmap((gpio_id_t)H2_H202_BATTERY_ADC_GPIO);
+    unmapped = true;
+  }
+  if (bk_adc_acquire() != 0) return H2_PAL_ERR_IO;
+  h2_pal_result_t rc = bk_adc_init(chan) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+  adc_config_t config;
+  memset(&config, 0, sizeof(config));
+  config.chan = chan;
+  config.adc_mode = ADC_CONTINUOUS_MODE;
+  config.src_clk = ADC_SCLK_XTAL_26M;
+  config.clk = 3203125;
+  config.saturate_mode = ADC_SATURATE_MODE_3;
+  config.steady_ctrl = 7;
+  if (rc == H2_PAL_OK &&
+      (bk_adc_set_config(&config) != 0 ||
+       bk_adc_enable_bypass_clalibration() != 0 || bk_adc_start() != 0))
+    rc = H2_PAL_ERR_IO;
+  if (rc == H2_PAL_OK) {
+    uint16_t raw = 0;
+    if (bk_adc_read(&raw, 100) != 0)
+      rc = H2_PAL_ERR_IO;
+    else
+      *out = bk_adc_data_calculate(raw, (uint8_t)chan);
+    (void)bk_adc_stop();
+  }
+  (void)bk_adc_deinit(chan);
+  (void)bk_adc_release();
+  return rc;
+}
+
+static h2_pal_result_t read_battery(void* user, h2_pal_periph_id_t id,
+                                    h2_pal_battery_reading_t* out) {
+  (void)user;
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (id != H2_H202_BATTERY_ID) return H2_PAL_ERR_NOT_FOUND;
+  uint16_t pin_mv = 0;
+  h2_pal_result_t rc = battery_pin_mv(&pin_mv);
+  if (rc != H2_PAL_OK) return rc;
+  const int32_t mv = (int32_t)pin_mv * (int32_t)H2_H202_BATTERY_DIVIDER;
+  *out = (h2_pal_battery_reading_t){
+      .id = id,
+      .flags =
+          H2_PAL_BATTERY_HAS_VOLTAGE_MV |
+          (mv >= (int32_t)H2_H202_BATTERY_PRESENT_MV ? H2_PAL_BATTERY_PRESENT
+                                                     : 0u),
+      .voltage_mv = mv};
+  return H2_PAL_OK;
+}
+
+const h2_pal_input_api_t* h2_h202_input_api(void) {
+  static const h2_pal_input_vtable_t vtable = {.read_battery = read_battery};
+  static const h2_pal_input_api_t api = {.vtable = &vtable};
+  return &api;
 }
 
 const h2_pal_button_api_t* h2_h202_button_api(void) {

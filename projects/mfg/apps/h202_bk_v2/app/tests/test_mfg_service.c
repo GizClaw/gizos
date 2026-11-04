@@ -494,7 +494,14 @@ static const h2_pal_button_vtable_t button_vtable = {.read_single_button =
                                                          button_read};
 static const h2_pal_button_api_t button_api = {.vtable = &button_vtable};
 
-enum { USB_ID = 5, WHITE_ID = 8, CHRG_ID = 9, DONE_ID = 10, EYES_ID = 7 };
+enum {
+  USB_ID = 5,
+  WHITE_ID = 8,
+  CHRG_ID = 9,
+  DONE_ID = 10,
+  EYES_ID = 7,
+  BATTERY_ID = 11
+};
 
 static h2_pal_result_t switch_get(void* user, h2_pal_periph_id_t id,
                                   h2_pal_switch_state_t* out) {
@@ -517,6 +524,23 @@ static h2_pal_result_t switch_set(void* user, h2_pal_periph_id_t id,
 static const h2_pal_switch_vtable_t switch_vtable = {.get = switch_get,
                                                      .set = switch_set};
 static const h2_pal_switch_api_t switch_api = {.vtable = &switch_vtable};
+
+static atomic_bool no_battery;
+static h2_pal_result_t battery_read(void* user, h2_pal_periph_id_t id,
+                                    h2_pal_battery_reading_t* out) {
+  (void)user;
+  assert(id == BATTERY_ID);
+  bool present = !atomic_load(&no_battery);
+  *out = (h2_pal_battery_reading_t){
+      .id = id,
+      .flags = H2_PAL_BATTERY_HAS_VOLTAGE_MV |
+               (present ? H2_PAL_BATTERY_PRESENT : 0u),
+      .voltage_mv = present ? 3900 : 20};
+  return H2_PAL_OK;
+}
+static const h2_pal_input_vtable_t input_vtable = {.read_battery =
+                                                       battery_read};
+static const h2_pal_input_api_t input_api = {.vtable = &input_vtable};
 
 static h2_pal_result_t led_frame(void* user, h2_pal_led_id_t id,
                                  const h2_pal_led_color_t* pixels,
@@ -867,6 +891,7 @@ static h2_h202_mfg_profile_t profile = {
                    .power_hold_ms = 400u},
     .keys = {1, 2, 3, 4},
     .usb_insert = USB_ID,
+    .battery = BATTERY_ID,
     .charging = CHRG_ID,
     .charge_done = DONE_ID,
     .white = WHITE_ID,
@@ -971,7 +996,14 @@ static void stored(h2_loader_mfg_summary_t* out) {
 }
 
 static void test_session(void) {
+  /* With no battery reading, stage 02 fails at once through the input API;
+   * Record retries once the battery is fitted. */
+  atomic_store(&no_battery, true);
   start();
+  wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_FAILED);
+  assert(status().prompt == H2_H202_MFG_PROMPT_BATTERY_FAILED);
+  atomic_store(&no_battery, false);
+  click(2u);
   wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
   /* Unplugged at start: insert, then remove. */
   atomic_store(&usb, true);
@@ -982,17 +1014,17 @@ static void test_session(void) {
   /* No Wi-Fi fixture: the background check failed under the lock. */
   wait_for(H2_H202_MFG_WIFI, H2_H202_MFG_PHASE_FAILED);
   assert(atomic_load(&wifi_connect_locked));
-  /* Left passes, the silent right lane fails, then retries after repair. */
+  /* No level threshold: even a silent right lane runs its window and
+   * passes; the operator hears it and decides at the Record step. */
   atomic_store(&silent_right, true);
   keys_now(2u);
   keys_now(2u | 4u);
   keys_now(2u);
   keys_now(0u);
-  wait_for(H2_H202_MFG_RIGHT_MIC, H2_H202_MFG_PHASE_FAILED);
-  assert(status().results[H2_H202_MFG_LEFT_MIC] == H2_H202_MFG_PASSED);
-  atomic_store(&silent_right, false);
-  click(2u);
   wait_for(H2_H202_MFG_LISTEN, H2_H202_MFG_PHASE_ACTIVE);
+  assert(status().results[H2_H202_MFG_LEFT_MIC] == H2_H202_MFG_PASSED);
+  assert(status().results[H2_H202_MFG_RIGHT_MIC] == H2_H202_MFG_PASSED);
+  atomic_store(&silent_right, false);
   click(2u);
   wait_for(H2_H202_MFG_POWER, H2_H202_MFG_PHASE_ACTIVE);
   click(1u);
@@ -1274,6 +1306,7 @@ int main(void) {
                            .pref = &pref_api,
                            .button = &button_api,
                            .switch_api = &switch_api,
+                           .input = &input_api,
                            .led = &led_api,
                            .nfc = &nfc_api,
                            .wifi_sta = &wifi_api,
