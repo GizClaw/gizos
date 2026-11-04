@@ -46,8 +46,10 @@ static StaticSemaphore_t s_ota_mutex_storage;
 static SemaphoreHandle_t s_ota_mutex;
 static portMUX_TYPE s_ota_mutex_init_lock = portMUX_INITIALIZER_UNLOCKED;
 
-h2_pal_result_t __attribute__((weak)) h2_esp_platform_power_before_reboot(
-    uint32_t reason) {
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak))
+#endif
+h2_pal_result_t h2_esp_platform_power_before_reboot(uint32_t reason) {
   (void)reason;
   return H2_PAL_OK;
 }

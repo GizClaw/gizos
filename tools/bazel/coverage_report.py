@@ -105,9 +105,46 @@ def parse_target_inventory(output: str) -> list[dict[str, object]]:
     return sorted(targets, key=lambda target: str(target["label"]))
 
 
+def parse_source_inventory_json(output: str) -> dict[str, list[str]]:
+    sources: dict[str, list[str]] = {}
+    for line_number, line in enumerate(output.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ReportError(
+                f"malformed configured source JSON on line {line_number}: {error}"
+            ) from error
+        if (
+            not isinstance(row, dict)
+            or not isinstance(row.get("label"), str)
+            or not isinstance(row.get("sources"), list)
+            or any(not isinstance(source, str) for source in row["sources"])
+        ):
+            raise ReportError(f"malformed configured source row on line {line_number}")
+        label = row["label"].removeprefix("@@")
+        if not label.startswith("//"):
+            continue
+        paths = sorted({
+            PurePosixPath(source).as_posix()
+            for source in row["sources"]
+            if not source.startswith(("/", "external/", "bazel-out/"))
+            and ".." not in PurePosixPath(source).parts
+            and not source_is_excluded(source)
+        })
+        if label in sources and sources[label] != paths:
+            raise ReportError(
+                f"configured C/C++ source has inconsistent variants: {label}"
+            )
+        sources[label] = paths
+    return sources
+
+
 def parse_target_inventory_json(
     output: str,
     compatible_labels: list[str],
+    source_files: dict[str, list[str]],
 ) -> list[dict[str, object]]:
     try:
         document = json.loads(output)
@@ -132,17 +169,17 @@ def parse_target_inventory_json(
             for attribute in rule.get("attribute", [])
             if isinstance(attribute, dict)
         }
-        srcs_attribute = attributes.get("srcs", {})
-        hdrs_attribute = attributes.get("hdrs", {})
-        sources = sorted({
-            path
-            for source_label in [
-                *srcs_attribute.get("stringListValue", []),
-                *hdrs_attribute.get("stringListValue", []),
-            ]
-            if (path := _label_to_path(str(source_label))) is not None
-            and not source_is_excluded(path)
-        })
+        sources: set[str] = set()
+        for attribute_name in ("srcs", "hdrs"):
+            for source_label in attributes.get(attribute_name, {}).get("stringListValue", []):
+                source_label = str(source_label).removeprefix("@@")
+                if not source_label.startswith("//"):
+                    continue
+                if source_label not in source_files:
+                    raise ReportError(
+                        f"configured source label is missing file evidence: {source_label}"
+                    )
+                sources.update(source_files[source_label])
         kind = str(rule.get("ruleClass", ""))
         if kind not in INSTRUMENTABLE_RULE_KINDS:
             raise ReportError(f"unsupported coverage target kind: {kind}: {label}")
@@ -153,7 +190,7 @@ def parse_target_inventory_json(
             "name": name,
             "display_name": f"{kind}/{name}",
             "package": label.removeprefix("//").split(":", 1)[0],
-            "declared_sources": sources,
+            "declared_sources": sorted(sources),
         }
         previous = variants.get(label)
         if previous is not None and previous != target:

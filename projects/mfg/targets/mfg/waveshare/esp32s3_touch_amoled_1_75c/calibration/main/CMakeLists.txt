@@ -14,6 +14,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/bundle/include"
   REQUIRES
+    esp_app_format
     h2_esp_target_task_policy
     espcoredump
     lwip
