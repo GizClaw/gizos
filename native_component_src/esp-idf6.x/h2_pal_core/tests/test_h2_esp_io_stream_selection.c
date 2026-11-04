@@ -8,7 +8,7 @@
 
 static unsigned configurations, reads, writes, flushes;
 static h2_pal_result_t configure_result = H2_PAL_ERR_NO_MEMORY;
-static const char uart_user, usb_user;
+static const char uart_user = 0, usb_user = 0;
 
 static h2_pal_result_t configure_uart(
     void* user, const h2_pal_uart_io_stream_config_t* config) {

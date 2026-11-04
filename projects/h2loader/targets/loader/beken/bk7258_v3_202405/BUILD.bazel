@@ -89,6 +89,7 @@ firmware_native_component(
         ":ap_launcher_component",
         ":entry_tasks",
         ":firmware_lib",
+        "//boards/beken/bk7258_v3_202405/bk7258",
         "//libs/bundle",
         "//libs/command",
         "//libs/h2loader/device",

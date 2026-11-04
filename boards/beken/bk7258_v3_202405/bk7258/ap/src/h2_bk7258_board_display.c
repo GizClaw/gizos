@@ -1,4 +1,5 @@
 #include "h2_bk7258_board_private.h"
+#include "h2/pal/h2_pal_unsupported.h"
 #include "h2_bk7258_display_backlight.h"
 #include "h2_bk7258_display_buffer.h"
 #include "h2_atomic_static.h"
@@ -24,6 +25,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#if defined(CONFIG_MEDIA_DISPLAY_SERVICE) && CONFIG_MEDIA_DISPLAY_SERVICE && \
+    defined(CONFIG_LCD) && CONFIG_LCD
 
 #define TAG "h2_bk_display"
 #define LCD_LDO_PIN GPIO_13
@@ -734,3 +738,19 @@ int h2_bk7258_board_display_capture(uint16_t* pixels, size_t capacity) {
 
   return H2_DISPLAY_OK;
 }
+
+#else
+
+h2_pal_display_t* h2_bk7258_board_display(void) {
+  return (h2_pal_display_t*)h2_pal_unsupported_display_api();
+}
+
+int h2_bk7258_board_display_black(void) { return H2_DISPLAY_ERR_UNSUPPORTED; }
+
+int h2_bk7258_board_display_capture(uint16_t* pixels, size_t capacity) {
+  (void)pixels;
+  (void)capacity;
+  return H2_DISPLAY_ERR_UNSUPPORTED;
+}
+
+#endif

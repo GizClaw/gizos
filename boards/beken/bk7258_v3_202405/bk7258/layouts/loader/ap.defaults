@@ -10,6 +10,9 @@ CONFIG_UART_PRINT_BAUD_RATE=460800
 CONFIG_DUMP_UART_PRINT_PORT=1
 
 # Loader keeps update/recovery and BLE; business services belong to App.
+# Keep shell UART plumbing without optional SDK demo command tables.
+CONFIG_CLI_CODE_SIZE_OPTIMIZE_ENABLE=y
+# CONFIG_WIFI_CLI_ENABLE is not set
 # CONFIG_MEDIA_DISPLAY_SERVICE is not set
 # CONFIG_AUDIO_PLAY is not set
 # CONFIG_AUDIO_RECORD is not set
