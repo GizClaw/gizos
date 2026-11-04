@@ -1,5 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/bazel:bk7258.bzl", "bk7258_encrypted_firmware")
+load("//tools/bazel:bk7258.bzl", "bk7258_firmware_encrypt")
 load(":fixture.bzl", "native_fixture")
 
 package(default_visibility = ["//visibility:private"])
@@ -43,7 +43,7 @@ py_binary(
 ]
 
 [
-    bk7258_encrypted_firmware(
+    bk7258_firmware_encrypt(
         name = image + "_encrypted",
         testonly = True,
         firmware = ":" + image + "_native",

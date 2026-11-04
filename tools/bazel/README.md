@@ -184,12 +184,12 @@ inputs bind the stable external execution environment into the action key.
 
 ## BK7258 native image encryption
 
-The public `bk7258_encrypted_firmware` rule in [bk7258.bzl](bk7258.bzl) accepts a native `Bk7258FirmwareInfo` provider independently of H2Loader. Declare a local executable target beside the firmware:
+The public `bk7258_firmware_encrypt` rule in [bk7258.bzl](bk7258.bzl) accepts a native `Bk7258FirmwareInfo` provider independently of H2Loader. Declare a local executable target beside the firmware:
 
 ```python
-load("@gizos//tools/bazel:bk7258.bzl", "bk7258_encrypted_firmware")
+load("@gizos//tools/bazel:bk7258.bzl", "bk7258_firmware_encrypt")
 
-bk7258_encrypted_firmware(
+bk7258_firmware_encrypt(
     name = "encrypted_app",
     firmware = ":firmware",
     image = "app",

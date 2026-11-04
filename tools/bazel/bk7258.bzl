@@ -319,7 +319,7 @@ def _encryption_runfile(ctx, file):
 def _shell_quote(value):
     return "'" + value.replace("'", "'\\''") + "'"
 
-def _bk7258_encrypted_firmware_impl(ctx):
+def _bk7258_firmware_encrypt_impl(ctx):
     firmware = ctx.attr.firmware[Bk7258FirmwareInfo]
     if firmware.target != "bk7258":
         fail("BK encryption requires native bk7258 firmware")
@@ -338,8 +338,8 @@ exec "$r"/%s --source "$r"/%s --metadata "$r"/%s --image %s "$@"
     runfiles = runfiles.merge(ctx.attr._tool[DefaultInfo].default_runfiles)
     return [DefaultInfo(executable = executable, runfiles = runfiles)]
 
-bk7258_encrypted_firmware = rule(
-    implementation = _bk7258_encrypted_firmware_impl,
+bk7258_firmware_encrypt = rule(
+    implementation = _bk7258_firmware_encrypt_impl,
     executable = True,
     attrs = {
         "firmware": attr.label(mandatory = True, providers = [Bk7258FirmwareInfo]),

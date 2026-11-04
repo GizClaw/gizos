@@ -12,7 +12,7 @@ Vendor image/update, boot, Flash/cache and physical transport mechanisms belong 
 
 Physical wiring and layout geometry belong to [`boards/<company>/<board>`](../../boards). The project has no native business code tree or chip-specific Loader components. Final entries call the common Device service with public Runtime capabilities. Generic `firmware_lib_component` source declarations handle vendor C-runtime ABI requirements.
 
-BK7258 native image encryption belongs to `//tools/bazel:bk7258.bzl` and its `bk7258_encrypted_firmware` rule; it also accepts non-H2Loader firmware. This project's `:repackage` command accepts the already processed image and its native receipt, preserves managed-package data/identity or adds a `.h2fb` envelope, and does not read keys or perform encryption.
+BK7258 native image encryption belongs to `//tools/bazel:bk7258.bzl` and its `bk7258_firmware_encrypt` rule; it also accepts non-H2Loader firmware. This project's `:repackage` command accepts the already processed image and its native receipt, preserves managed-package data/identity or adds a `.h2fb` envelope, and does not read keys or perform encryption.
 
 The native command-line implementation and OS adapters belong to [`tools/gizloader`](../../tools/gizloader). Cross-device test Apps, orchestration and firmware fixtures belong to [`projects/e2e`](../e2e). The product Batch Loader UI belongs to `GizClaw/www`; this project's npm target packages the shared Web SDK as `@gizclaw/h2loader`.
 
