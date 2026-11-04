@@ -19,17 +19,19 @@ Read before adding or moving code. Follow [development rules](development.md) fo
 
 - A standalone App uses `projects/<app>/app/{include,src}/`. A project group uses `projects/<group>/apps/<app>/app/{include,src}/`. App assets and package data stay with their owner.
 - Project libraries use named `projects/<project>/libs/<library>/` packages with the same public/private/test boundaries as repository libraries. Family containers do not contain shared `include/` or `src/` trees.
-- Keep reusable code with its explicit project owner, even when another project consumes its public API. Dependencies point from consumer to provider and must not form cycles.
+- Keep reusable code with its explicit project owner, even when another project consumes its public API. Dependencies point from consumer to provider and must not form cycles. Shared subsystems may group role-specific libraries under `libs/<subsystem>/<role>/`; final entries do not own duplicate implementations.
 - Board firmware entries use `projects/<project>/targets/<app>/<manufacturer>/<board>/`, matching physical BSP manufacturer/model names. Host, mobile, browser and npm entries retain their artifact-rule roots. Both firmware package formats belong to the same board entry and native image graph.
-- Add an artifact variant only when native builds need board isolation or distinct packages need the same local target name. Installing an artifact through another project does not transfer source ownership.
+- Add an artifact variant only when native builds need board isolation or distinct packages need the same local target name. Installing an artifact through another project does not transfer source ownership. A path rename must preserve existing wire/package identities and historical qualification receipts or pinned source recipes; update current callers and links instead.
 - The final entry selects App and platform, maps logical components to peripherals, owns Runtime lifetime, and supplies image configuration and task policy. Keep it thin; reusable behavior returns to its proper owner.
 - Project-only SDK sources use `projects/<project>/native_component_src/<platform-or-target>/`; Bazel-compiled reusable code uses named `libs/` packages. Do not introduce a project `components/` ownership root.
 - Keep all chips/cores of one physical board under the same board root. Native components may split by execution unit such as AP/CP. Board layouts do not own App policy or task scheduling.
+- Retiring a project includes its build, release and documentation entries. Move resources still used by other consumers to their appropriate shared owner; preserve historical evidence and published artifacts.
 
 ## Platform and build boundaries
 
-- Portable libraries do not own board wiring, firmware registration, or image policy. PAL backends implement capabilities; they do not choose an App or its startup policy. OS backends must not depend on another OS backend or Desktop composition.
+- Portable libraries do not own board wiring, firmware registration, or image policy. PAL backends implement capabilities; they do not choose an App or its startup policy. OS backends must not depend on another OS backend or Desktop composition. Shared device logic consumes public PAL capabilities; SDK compilation differences do not justify chip-specific business facades.
 - Use PAL providers for Bazel-compiled platform implementations and native components for SDK-owned compilation/registration. Do not create native components merely to forward a prebuilt archive.
+- Native image transforms, including encryption, belong to public platform build tools and must be usable without a package-format project. Package owners wrap the processed image and validate its receipt; they do not own native encryption or key handling.
 - Each firmware entry owns one `firmware_lib_component` selecting validated Bazel archives and explicit SDK-compiled portable sources. Native SDK components use `firmware_native_component`; native build files consume the declared graph instead of scanning the checkout or maintaining another first-party inventory.
 - Keep `libs/pal` one contract package. `//libs/pal:pal` is header-only; consumers of canonical unsupported accessors also select `//libs/pal:unsupported`. Atomic contracts/providers belong to `libs/atomic`, independently of PAL.
 - A library's primary target matches its directory name. Split `_embed`, `_desktop`, `_mobile`, or `_web` targets only for real source, define, compatibility, or dependency differences; do not copy libraries per consumer.

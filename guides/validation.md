@@ -9,7 +9,7 @@ Use Bazel as the source of truth for dependencies, toolchains, compatibility, bu
 - Keep dependencies directed from consumers through their first-party owner to vendor code. External repository targets must not depend back on first-party GizOS labels.
 - Vendor overlays expose upstream sources and headers; the first-party owner selects integration and platform dependencies. A pure upstream build may remain in its overlay when it requires no GizOS contract or platform wiring.
 - Declare sources, headers, data, and dependencies explicitly. Preserve include ordering when a test header must override a production header.
-- Use `firmware_native_component` for code compiled by a native SDK and one `firmware_lib_component` per firmware entry to collect Bazel libraries. Keep compile, link, SDK configuration, and lifecycle in the native entry.
+- Use `firmware_native_component` for native SDK components and one `firmware_lib_component` per firmware entry to select validated Bazel archives and explicit SDK-compiled portable sources. Preserve archive ABI validation and a single source inventory. Keep compile, link, SDK configuration, and lifecycle in the native entry.
 - Keep native SDK versions and inputs declared. Native actions use explicit environment allowlists and declared outputs, run on the current runner with `no-sandbox` and `no-remote-exec`, and do not flash, reset, or monitor devices.
 - Cache configuration changes performance only. Keep compiler caches in normal per-user cache directories, separate from SDK installations; exclude secrets and credentials from action keys, logs, and artifacts.
 
