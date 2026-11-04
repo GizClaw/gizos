@@ -57,7 +57,6 @@ Native builds require a configured vendor SDK/toolchain and supported native
 host. Package builds do not flash devices or publish releases. Host fixtures and
 build-graph analysis do not establish hardware acceptance.
 
-See the [shared library README](../../libs/h2loader/README.md),
-[project guide](../../guides/apps/h2loader/index.md), and
-[source ownership guide](../../guides/apps/h2loader/project_structure.md) for
-contracts and lifecycle ordering.
+See the [shared library README](../../libs/h2loader/README.md), public headers
+and the owning BUILD targets for contracts and lifecycle ordering. Repository
+constraints are indexed in [guides](../../guides/index.md).

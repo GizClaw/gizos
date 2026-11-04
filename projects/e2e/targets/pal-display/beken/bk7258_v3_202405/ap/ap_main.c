@@ -1,7 +1,5 @@
 #include "bk_private/bk_init.h"
-#include "components/media_types.h"
 #include "device_runner.h"
-#include "frame_buffer.h"
 #include "h2_bk7258_board.h"
 #include "h2_device_service.h"
 #include "h2_bk_platform_core.h"
@@ -31,60 +29,77 @@ static h2_device_app_commands_t h2_management = {
 
 static h2_runtime_t* runtime;
 static volatile int finished;
+static int commands_ready;
 static uint16_t* scanout;
-/* SDK reserves large display slabs separately from its 640KB AP PSRAM heap.
- * This launcher-owned Memory API uses that real pool for bitmap working sets;
- * it is unrelated to the Runtime Core allocator and PAL Display vtable. */
-typedef struct bitmap_block {
-  frame_buffer_t* frame;
-  size_t length;
-} bitmap_block_t;
-#define BITMAP_HEADER_BYTES 16u
-static void* bitmap_alloc(void* user, size_t length) {
+static h2_display_info_t display_info;
+static const h2_pal_mem_api_t* bitmap_memory;
+
+#ifdef H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE
+/* The Board lends completed wire transfers while the serialized Display owner
+ * runs the public cases. Keep that observation independent of its draw buffer.
+ */
+static struct {
+  int next_y, error;
+  size_t chunks, observed_chunks;
+} capture_state;
+
+static void capture(void* user, const h2_display_rect_t* rect,
+                    const uint8_t* bytes, size_t length) {
   (void)user;
-  if (length > UINT32_MAX - BITMAP_HEADER_BYTES) return NULL;
-  frame_buffer_t* frame =
-      frame_buffer_display_malloc((uint32_t)length + BITMAP_HEADER_BYTES);
-  if (!frame) return NULL;
-  bitmap_block_t header = {.frame = frame, .length = length};
-  memcpy(frame->frame, &header, sizeof(header));
-  return frame->frame + BITMAP_HEADER_BYTES;
-}
-static void bitmap_free(void* user, void* pointer) {
-  (void)user;
-  if (!pointer) return;
-  bitmap_block_t header;
-  memcpy(&header, (uint8_t*)pointer - BITMAP_HEADER_BYTES, sizeof(header));
-  frame_buffer_display_free(header.frame);
-}
-static void* bitmap_realloc(void* user, void* pointer, size_t length) {
-  if (!pointer) return bitmap_alloc(user, length);
-  if (!length) {
-    bitmap_free(user, pointer);
-    return NULL;
+  if (!scanout || !rect || !bytes || rect->x != 0 || rect->y < 0 ||
+      rect->width != display_info.width || rect->height <= 0 ||
+      rect->y >= display_info.height ||
+      rect->height > display_info.height - rect->y ||
+      length != (size_t)rect->width * rect->height * 2u) {
+    capture_state.error = H2_DISPLAY_ERR_IO;
+    return;
   }
-  bitmap_block_t header;
-  memcpy(&header, (uint8_t*)pointer - BITMAP_HEADER_BYTES, sizeof(header));
-  void* next = bitmap_alloc(user, length);
-  if (!next) return NULL;
-  memcpy(next, pointer, length < header.length ? length : header.length);
-  bitmap_free(user, pointer);
-  return next;
+  if (rect->y == 0 && capture_state.next_y == display_info.height)
+    capture_state.next_y = 0;
+  if (rect->y != capture_state.next_y) {
+    capture_state.error = H2_DISPLAY_ERR_IO;
+    return;
+  }
+  for (int y = 0; y < rect->height; ++y)
+    for (int x = 0; x < rect->width; ++x) {
+      size_t offset = ((size_t)y * rect->width + x) * 2u;
+      scanout[(size_t)(rect->y + y) * rect->width + x] =
+          (uint16_t)((uint16_t)bytes[offset] << 8) | bytes[offset + 1u];
+    }
+  capture_state.next_y += rect->height;
+  ++capture_state.chunks;
 }
-static const h2_pal_mem_vtable_t bitmap_vtable = {
-    .alloc = bitmap_alloc, .realloc = bitmap_realloc, .free = bitmap_free};
-static const h2_pal_mem_api_t bitmap_memory = {.vtable = &bitmap_vtable};
+#endif
+
 static int observe(void* user, const uint16_t* pixels, int width, int height,
                    uint32_t brightness, const char* id) {
   (void)user;
-  if (width != 800 || height != 480) return H2_DISPLAY_ERR_IO;
+  if (width != display_info.width || height != display_info.height)
+    return H2_DISPLAY_ERR_IO;
+#ifdef H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE
+  int rc = capture_state.error;
+  if (!rc && (capture_state.next_y != height ||
+              capture_state.chunks <= capture_state.observed_chunks ||
+              H2_BK7258_BOARD_DISPLAY_BACKLIGHT_PERCENT() != brightness))
+    rc = H2_DISPLAY_ERR_IO;
+#else
   int rc = h2_bk7258_board_display_capture(scanout, (size_t)width * height);
+#endif
   if (!rc && memcmp(pixels, scanout, (size_t)width * height * 2u))
     rc = H2_DISPLAY_ERR_IO;
+#ifdef H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE
+  printf(
+      "H2_DISPLAY_OBSERVATION case=%s source=completed-transfer chunks=%zu "
+      "brightness_command=%u optical_verified=0 rc=%d\n",
+      id, capture_state.chunks - capture_state.observed_chunks,
+      (unsigned)brightness, rc);
+  capture_state.observed_chunks = capture_state.chunks;
+#else
   printf(
       "H2_DISPLAY_OBSERVATION case=%s source=LCD-active-DMA "
       "refresh=observed optical_verified=0 brightness_command=%u rc=%d\n",
       id, (unsigned)brightness, rc);
+#endif
   return rc;
 }
 static void hold(void) {
@@ -92,6 +107,11 @@ static void hold(void) {
 }
 static void fail(const char* stage, int rc) {
   printf("H2_DISPLAY_LAUNCHER_FAIL stage=%s rc=%d\n", stage, rc);
+  fflush(stdout);
+  if (!commands_ready) {
+    rtos_delay_milliseconds(200u);
+    (void)h2_pal_power_reboot(h2_device_app_commands_power(&h2_management), 0u);
+  }
   hold();
 }
 static void watchdog(void* unused) {
@@ -103,17 +123,36 @@ static void watchdog(void* unused) {
 static void run(void* unused) {
   (void)unused;
   rtos_delay_milliseconds(5000);
-  /* Prime the real process-owned media slab without leaving Display open.
-   * The shared App still starts from closed state and checks every operation.
-   */
+#ifdef H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE
+  display_info = H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE(NULL, NULL);
+#else
+  /* Query the open provider and prime its process-owned media slab, leaving
+   * Display closed for the public cases even when get_info fails. */
   int prepare = h2_pal_display_open(runtime->display);
-  if (!prepare) prepare = h2_pal_display_close(runtime->display);
+  if (!prepare) {
+    prepare = h2_pal_display_get_info(runtime->display, &display_info);
+    int closed = h2_pal_display_close(runtime->display);
+    if (!prepare) prepare = closed;
+  }
   if (prepare) fail("media-prepare", prepare);
-  scanout = h2_pal_mem_alloc(&bitmap_memory, 800u * 480u * 2u);
+#endif
+  bitmap_memory = h2_bk7258_board_display_allocator();
+  if (display_info.width < 16 || display_info.height < 16 ||
+      display_info.width > 4096 || display_info.height > 4096 ||
+      display_info.native_format != H2_DISPLAY_PIXEL_RGB565)
+    fail("capture-info", H2_DISPLAY_ERR_IO);
+  scanout = h2_pal_mem_alloc(
+      bitmap_memory, (size_t)display_info.width * display_info.height * 2u);
   if (!scanout) fail("capture-allocation", H2_DISPLAY_ERR_NO_MEMORY);
+#ifdef H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE
+  (void)H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE(capture, NULL);
+#endif
   int rc = h2_display_device_run(runtime, H2_DISPLAY_VERSION, observe, NULL,
-                                 &bitmap_memory);
-  h2_pal_mem_free(&bitmap_memory, scanout);
+                                 bitmap_memory);
+#ifdef H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE
+  (void)H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE(NULL, NULL);
+#endif
+  h2_pal_mem_free(bitmap_memory, scanout);
   scanout = NULL;
   finished = 1;
   if (rc != H2_PAL_OK) {
@@ -144,10 +183,11 @@ static void entry(void* unused) {
   rc = h2_device_app_commands_start_serial_named(
       &h2_management, runtime, "pal-display", H2_LOADER_CAPABILITY_UART);
   if (rc) fail("commands", rc);
+  commands_ready = 1;
   beken_thread_t timer;
-  if (rtos_core0_create_psram_thread(&timer, 7, "store_deadline", watchdog,
+  if (rtos_core0_create_psram_thread(&timer, 7, "display_deadline", watchdog,
                                      4096, NULL) != kNoErr)
-    fail("watchdog", -12);
+    fail("watchdog", H2_PAL_ERR_TASK);
   const h2_pal_task_options_t options = {.name = "pal-display/e2e/runner",
                                          .min_stack_size = 65536};
   h2_pal_task_t* task = NULL;

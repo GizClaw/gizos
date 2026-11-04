@@ -45,5 +45,4 @@ bazel test --config=macos_arm64 //projects/e2e/tools:inventory_test
 
 Vendor firmware builds require their configured SDK/toolchain and supported host.
 A successful build or host test does not establish physical-device acceptance.
-See the [E2E guide](../../guides/apps/e2e.md) and each App's README for lifecycle,
-fixture and qualification contracts.
+See each App's README and public headers for lifecycle, fixture and qualification contracts. Repository constraints are indexed in [guides](../../guides/index.md).

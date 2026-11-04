@@ -24,7 +24,7 @@ GizOS provides a shared foundation for building portable firmware and applicatio
 - **Platform Abstraction Layer (PAL)** — consistent contracts for tasks, networking, storage, audio, display, input, and other system capabilities.
 - **Reusable libraries** — networking, media, protocols, UI, game runtime, command routing, serialization, security, and utilities.
 - **Board and SDK integration** — public board packages and native components for ESP, Beken, JieLi, and embedded Linux targets.
-- **Applications and tooling** — H2Loader, Gizloader, manufacturing checks, E2E programs, packaging tools, and generated API documentation.
+- **Applications and tooling** — H2Loader, Gizloader, manufacturing checks, E2E programs, packaging tools, and validation tools.
 - **Reproducible builds** — Bazel is the source of truth for dependency resolution, cross-platform builds, tests, artifacts, and releases.
 
 ## Supported targets
@@ -187,7 +187,7 @@ The consuming repository owns its root platform selection and product compositio
 
 ```text
 boards/                 Board definitions and target-specific composition
-guides/                 Architecture, development, usage, and API documentation
+guides/                 Concise AI development constraints
 libs/                   Portable libraries, runtimes, and PAL providers
 native_component_src/   Components compiled by native platform SDKs
 projects/               Firmware applications, manufacturing checks, and E2E programs
@@ -200,18 +200,10 @@ Board definitions are grouped by their manufacturer under `boards/<company>/<boa
 
 ## Documentation
 
-- [Project documentation](guides/index.md)
-- [Development guide](guides/zh/guide.md)
-- [Bazel and platform builds](tools/bazel/README.md)
-- [API references](guides/references/index.md)
-- [Application documentation](guides/apps/index.md)
+- [AI development constraints](guides/index.md): directory ownership, implementation boundaries, coding, validation, and review.
+- [Bazel and platform builds](tools/bazel/README.md).
 
-Build the documentation locally with:
-
-```sh
-make guides-build
-make guides-preview
-```
+Module READMEs describe local usage; Public Headers document API contracts. `guides/` is a small set of Markdown constraints for AI agents and has no website build.
 
 ## License
 

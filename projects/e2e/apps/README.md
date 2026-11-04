@@ -1,6 +1,6 @@
 # E2E Apps
 
-这里保存可由不同平台 launcher 复用的 headless E2E App。App 负责公共 case、结果、有限执行预算和资源清理；launcher 负责真实 Runtime/provider、测试 fixture、平台生命周期与证据采集。当前 App 清单和 ownership 规则见 [E2E 指南](../../../guides/apps/e2e.md)，各 App 的 README 保存自己的接口和验收合同。
+These headless E2E Apps are shared across platform launchers. Each App owns its cases, results, bounded execution, and resource cleanup; launchers own Runtime/provider assembly, fixtures, platform lifecycle, and evidence capture. Each App's README describes its interfaces and acceptance criteria.
 
 ## PAL E2E v2 平台范围
 

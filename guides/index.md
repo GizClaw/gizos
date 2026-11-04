@@ -1,34 +1,15 @@
----
-layout: home
+# AI development guidance
 
-hero:
-  name: GizOS 项目文档
-  tagline: 跨平台固件的开发指引和使用说明
-  actions:
-    - theme: brand
-      text: 开发指引
-      link: /zh/guide
-    - theme: alt
-      text: 使用说明
-      link: /zh/using/
-    - theme: alt
-      text: Reference
-      link: /references/
+These guides contain concise constraints for AI agents working on GizOS. Read only the files relevant to the change.
 
-features:
-  - title: 开发指引
-    details: GizOS 的项目结构、依赖关系、Runtime 组合关系和各模块定义。
-    link: /zh/guide
-  - title: 审核指引
-    details: GizOS 的代码与变更审查约定。
-    link: /zh/reviewing/
-  - title: 编码规范
-    details: GizOS 各类代码和文档的统一风格约定。
-    link: /zh/coding-styles/
-  - title: 使用说明
-    details: H2Loader 等用户侧功能的操作说明。
-    link: /zh/using/
-  - title: Reference
-    details: 从项目 Public Header 和 Doxygen 注释生成的结构化 API 参考。
-    link: /references/
----
+| When changing | Read |
+| --- | --- |
+| Directories, ownership, dependencies, or artifact entries | [Repository structure](structure.md) |
+| Libraries, Apps, Runtime, PAL, or asynchronous behavior | [Development constraints](development.md) |
+| Source code, public interfaces, names, or Markdown | [Coding conventions](coding.md) |
+| Build rules, tests, CI, or validation | [Build and validation](validation.md) |
+| Issues, self-review, or pull requests | [Review guidance](reviewing.md) |
+
+Production code, Public Headers, executable configuration, and tests define behavior. Check the relevant sources before editing; these guides do not duplicate API declarations, constants, resource lists, or support matrices.
+
+Keep App prototypes, Product IA, architecture diagrams, product specifications, tutorials, and generated API mirrors out of `guides/`. Update these files only when a development constraint changes. Put module-specific usage beside its source and API contracts in Public Headers.

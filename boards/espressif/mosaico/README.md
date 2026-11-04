@@ -4,10 +4,7 @@ CoreBoard V1.2 board composition for the pinned ESP-IDF 6.2 baseline. Sources
 implement PAL wiring, default SC101IOT Camera injection and Type-C OTG CDC
 Loader integration.
 
-This delivery supports PAL E2E execution on Mosaico. The accepted device-suite
-results and their image-specific limits are recorded in issue #708 and
-`guides/zh/developing/esp_mosaico_e2e.md`. They do not qualify every physical
-peripheral or a complete product. Lingxi and OneNET remain outside acceptance.
+This delivery supports PAL E2E execution on Mosaico. The accepted device-suite results and their image-specific limits are recorded in [GizClaw/gizos#708](https://github.com/GizClaw/gizos/issues/708). They do not qualify every physical peripheral or a complete product. Lingxi and OneNET remain outside acceptance.
 
 Use the maintained `IDF_PATH` / `IDF_TOOLS_PATH` and build configuration:
 
@@ -19,8 +16,7 @@ bazel build --config=esp32s31 \
 ```
 
 Applications depend directly on `//boards/espressif/mosaico/esp32s31` and the board
-layout; no `e2e-app/esp_mosaico` package is required. See
-`guides/zh/developing/esp_mosaico.md` for ownership and validation boundaries.
+layout; no `e2e-app/esp_mosaico` package is required. Ownership and validation boundaries are described below.
 
 Only the user's left-slot SC101IOT, 1280x720 UYVY, is in scope. Camera provider
 injection does not probe or start capture. AEC calibration is limited to the controlled fixture conditions; no product
