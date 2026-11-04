@@ -15,6 +15,6 @@ if (h2_semver_compare("1.2.3-rc.1", "1.2.3", &order)) {
 
 Comparison accepts invalid versions as the lowest rank; callers that need to reject them use strict validation first. Build metadata is validated but ignored for ordering. Non-NULL inputs must be NUL-terminated and remain valid and immutable during the call. Version ranges and automatic tag-prefix removal are outside this library.
 
-See the [development guide](../../guides/zh/developing/semver.md) for ownership and behavior. Public API parameters and return values are documented in [h2_semver.h](include/h2_semver.h), the source for generated API reference pages.
+Public API parameters, ownership, and return values are documented in [h2_semver.h](include/h2_semver.h).
 
 Run host tests with `bazel test --config=macos_arm64 //libs/semver:all` (or `--config=linux_x86_64` / `--config=windows_x86_64` on those hosts).

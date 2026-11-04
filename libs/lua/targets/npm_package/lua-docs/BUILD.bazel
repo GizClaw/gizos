@@ -12,8 +12,8 @@ SOURCES = [
     "package.py",
     "runtime-pin.json",
     "//:LICENSE",
-    "//guides:lua_docs_sources",
     "//libs/lua:docs_runtime_sources",
+    "//libs/lua:docs_sources",
 ]
 
 py_binary(

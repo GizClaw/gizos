@@ -1,11 +1,11 @@
 {
   "documents": [
-    {"id": "runtime", "source": "guides/references/lua-runtime.md", "modules": ["runtime", "delay", "system", "json", "capability", "storage", "kv", "audio", "lcd_touch", "button", "display", "link"], "language": "en"},
-    {"id": "host", "source": "guides/zh/developing/lua.md", "modules": ["runtime", "storage", "kv", "audio", "link"], "language": "zh"},
+    {"id": "runtime", "source": "libs/lua/docs/runtime.md", "modules": ["runtime", "delay", "system", "json", "capability", "storage", "kv", "audio", "lcd_touch", "button", "display", "link"], "language": "en"},
+    {"id": "host", "source": "libs/lua/docs/host.md", "modules": ["runtime", "storage", "kv", "audio", "link"], "language": "zh"},
     {"id": "display", "source": "libs/lua/include/h2_lua_display.h", "modules": ["display"], "language": "en", "format": "header", "title": "Lua Display contract"},
     {"id": "numeric", "source": "libs/lua/include/h2_lua_numeric.h", "modules": ["vmath", "geometry"], "language": "en", "format": "header", "title": "Lua numeric and geometry contract"},
-    {"id": "numeric-guide", "source": "guides/references/lua-numeric.md", "modules": ["vmath", "geometry"], "language": "en"},
-    {"id": "display-guide", "source": "guides/references/lua.md", "modules": ["display"], "language": "en"}
+    {"id": "numeric-guide", "source": "libs/lua/docs/numeric_guide.md", "modules": ["vmath", "geometry"], "language": "en"},
+    {"id": "display-guide", "source": "libs/lua/docs/display_guide.md", "modules": ["display"], "language": "en"}
   ],
   "receivers": {
     "b": "vmath.buffer",

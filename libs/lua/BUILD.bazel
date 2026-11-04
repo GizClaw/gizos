@@ -11,6 +11,16 @@ load(":tests/display_tasks.bzl", "display_task_tests")
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
+    name = "docs_sources",
+    srcs = [
+        "docs/display_guide.md",
+        "docs/host.md",
+        "docs/numeric_guide.md",
+        "docs/runtime.md",
+    ],
+)
+
+filegroup(
     name = "docs_runtime_sources",
     srcs = glob([
         "include/*.h",

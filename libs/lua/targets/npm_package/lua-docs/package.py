@@ -103,7 +103,9 @@ def rewrite_links(text: str, source: str, documents: dict[str, str], revision: s
         parsed = urlsplit(target)
         if parsed.scheme or parsed.netloc or target.startswith("#"):
             return match[0]
-        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(source), parsed.path)) if not target.startswith("/") else "guides/" + parsed.path.lstrip("/")
+        if target.startswith("/"):
+            raise ValueError(f"canonical document links must be relative or external: {source} -> {target}")
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(source), parsed.path))
         if not posixpath.splitext(resolved)[1]:
             resolved += ".md"
         if resolved in documents:
@@ -201,12 +203,7 @@ def assemble(inputs: Inputs) -> dict[str, bytes]:
         text = source.decode("utf-8")
         if doc.get("format") == "header":
             text = header_contract(text, doc["title"])
-        else:
-            # The Display guide's VitePress include becomes the same canonical
-            # header contract we ship, without requiring Doxygen or VitePress.
-            text = text.replace("<!--@include: ../.generated/api/lua.md-->",
-                                "See the [public Display contract](./display.md).")
-        text = rewrite_links(text, doc["source"], paths | {"guides/references/display.md": "docs/display.md"}, pin["revision"])
+        text = rewrite_links(text, doc["source"], paths, pin["revision"])
         files[doc["path"]] = text.encode()
         doc["title"] = doc.get("title") or text.splitlines()[0].removeprefix("# ")
         doc["sourceSha256"] = sha256(source)
@@ -296,7 +293,7 @@ def validate(files: dict[str, bytes]) -> None:
             raise ValueError("invalid document path/source provenance")
         text = files[doc["path"]].decode()
         if "<!--@include:" in text:
-            raise ValueError(f"unexpanded VitePress include: {doc['path']}")
+            raise ValueError(f"unexpanded document include: {doc['path']}")
         for match in LINK.finditer(text):
             target = match[2]
             parsed = urlsplit(target)
