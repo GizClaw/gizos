@@ -496,19 +496,30 @@ typedef struct h2_h202_mfg_service_config {
    * progress and power-off are serialized with it. */
   const h2_pal_sync_api_t* operation_sync;
   h2_pal_mutex_t* operation_mutex;
+  /** Optional owner hook to refresh the live Loader gate after progress is
+   * saved or cleared. Called under operation_mutex with a borrowed summary;
+   * must copy it before returning. Callback context stays borrowed until stop.
+   */
+  h2_pal_result_t (*progress_changed)(void* user,
+                                      const h2_loader_mfg_summary_t* summary);
+  void* progress_user;
   /** Discard queued Runtime events so producers never see a full queue. */
   bool drain_runtime_events;
 } h2_h202_mfg_service_config_t;
 
 /** Loads one-shot progress on the calling task, then starts the workers and
- * the controller. Runtime, profile and mutex stay borrowed until stop. */
+ * the controller. Runtime, profile and mutex stay borrowed until stop.
+ * On failure, *out may retain a stopped/partially started service if cleanup
+ * failed; retry stop before releasing any borrowed dependencies. */
 h2_pal_result_t h2_h202_mfg_service_start(
     const h2_h202_mfg_service_config_t* config, h2_h202_mfg_service_t** out);
 /** Copy controller status. */
 h2_pal_result_t h2_h202_mfg_service_status(h2_h202_mfg_service_t* service,
                                            h2_h202_mfg_status_t* out);
-/** Stop and join every task without saving; frees on success. Host tests
- * only: on the device a management reboot ends MFG. */
+/** Stop and join every task without saving, then release audio; frees on
+ * success only. On join/audio cleanup failure, *service and its borrowed
+ * dependencies must remain alive for a later stop retry. On the device a
+ * management reboot ends MFG. */
 h2_pal_result_t h2_h202_mfg_service_stop(h2_h202_mfg_service_t** service);
 
 #ifdef __cplusplus

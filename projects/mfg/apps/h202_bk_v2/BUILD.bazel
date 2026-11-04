@@ -1,7 +1,9 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl", "h2loader_bk_recovery")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:app_version.bzl", "app_version")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:firmware.bzl", "firmware_version")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -13,7 +15,7 @@ package(default_visibility = ["//visibility:public"])
 # H202 bumps its own Loader-role MFG independently of //projects/mfg:version.
 app_version(
     name = "version",
-    value = "0.3.7",
+    value = "0.3.8",
 )
 
 firmware_version(
@@ -151,6 +153,35 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
         "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
+        "//projects/mfg/apps/h202_bk_v2/app:mfg",
+    ],
+)
+
+cc_library(
+    name = "launcher_test_source",
+    testonly = True,
+    textual_hdrs = [
+        "ap/ap_main.c",
+        "ap/tests/h2_h202_mfg_launcher_platform.h",
+    ],
+)
+
+cc_test(
+    name = "launcher_test",
+    srcs = ["ap/tests/test_mfg_launcher.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    local_defines = ["H2_H202_MFG_LAUNCHER_HOST_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":launcher_test_source",
+        "//boards/h202_bk_v2/bk7258:loader_headers",
+        "//libs/atomic/providers/c11",
+        "//projects/h2loader/libs/h2loader",
         "//projects/mfg/apps/h202_bk_v2/app:mfg",
     ],
 )

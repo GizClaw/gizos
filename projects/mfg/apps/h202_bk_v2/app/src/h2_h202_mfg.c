@@ -1,6 +1,7 @@
 #include "h2_h202_mfg.h"
 
 #include "h2_loader_boot.h"
+#include "h2_loader_status.h"
 #include "h2_ntp.h"
 
 #include <math.h>
@@ -788,8 +789,18 @@ h2_pal_result_t h2_h202_mfg_acceptance_gate(h2_loader_t* loader,
   if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_loader_mfg_ensure_acceptance_revision(
       pref, H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_REVISION);
+  if (rc == H2_PAL_OK) {
+    h2_loader_mfg_summary_t summary = {.total = H2_H202_MFG_ITEM_COUNT};
+    int present = 0;
+    rc = h2_loader_mfg_read(pref, loader->config.package.allocator, &summary,
+                            &present);
+    if (rc == H2_PAL_OK) {
+      if (!present) summary.total = H2_H202_MFG_ITEM_COUNT;
+      rc = h2_loader_status_set_mfg(&loader->status, &summary);
+    }
+  }
   /* force_command_mode only stops automatic startup; reboot app follows
-   * command availability and the stored results. */
+   * command availability and the live results. */
   loader->force_command_mode = rc != H2_PAL_OK;
   int closed = h2_loader_set_command_availability(
       loader, H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP, rc == H2_PAL_OK);
@@ -1210,6 +1221,9 @@ struct h2_h202_mfg_service {
   const h2_h202_mfg_profile_t* profile;
   const h2_pal_sync_api_t* operation_sync;
   h2_pal_mutex_t* operation_mutex;
+  h2_pal_result_t (*progress_changed)(void* user,
+                                      const h2_loader_mfg_summary_t* summary);
+  void* progress_user;
   bool drain_runtime_events;
   h2_pal_mutex_t* lock; /**< Slots, mailbox, status and stopping. */
   h2_pal_mutex_t* eyes; /**< Eye LED writes from controller and aging. */
@@ -1934,11 +1948,37 @@ static int wifi_attempt(slot_t* slot) {
   rc = slot_canceled(slot)
            ? H2_PAL_ERR_CLOSED
            : h2_pal_wifi_sta_connect(runtime->wifi_sta, &config, 15000u);
-  /* Connect returns once associated; DHCP finishes later. Wait without the
-   * operation mutex so management is not held off; the
-   * controller's Wi-Fi budget cancels this slot if no address arrives. */
+  /* Connect returns once associated; DHCP finishes later. Release the mutex
+   * while waiting, but bound each attempt even for aging maintenance, whose
+   * controller job has no deadline. A lost/changed association retries early.
+   */
   operation_unlock(s);
-  while (rc == H2_PAL_OK && !wifi_up(s)) rc = slot_sleep(slot, 200u);
+  uint64_t started = service_now(s);
+  uint32_t budget = s->profile->controller.wifi_timeout_ms;
+  if (budget == 0u) budget = 30000u;
+  while (rc == H2_PAL_OK) {
+    h2_pal_wifi_sta_status_t status;
+    memset(&status, 0, sizeof(status));
+    rc = h2_pal_wifi_sta_get_status(runtime->wifi_sta, &status);
+    if (rc != H2_PAL_OK) break;
+    if ((status.state != H2_PAL_WIFI_STA_STATE_CONNECTED &&
+         status.state != H2_PAL_WIFI_STA_STATE_GOT_IP) ||
+        status.ssid_len != ssid ||
+        memcmp(status.ssid, config.ssid, ssid) != 0) {
+      rc = H2_PAL_ERR_INVALID_STATE;
+      break;
+    }
+    if (h2_pal_wifi_sta_status_has_ip(&status) && status.ip_valid &&
+        status.ip.ip4 != 0u)
+      break;
+    uint64_t elapsed = service_now(s) - started;
+    if (elapsed >= budget) {
+      rc = H2_PAL_ERR_TIMEOUT;
+      break;
+    }
+    uint32_t left = budget - (uint32_t)elapsed;
+    rc = slot_sleep(slot, left < 200u ? left : 200u);
+  }
   if (rc == H2_PAL_OK) rc = operation_lock(slot);
   if (rc != H2_PAL_OK) return slot_canceled(slot) ? H2_PAL_ERR_CLOSED : rc;
   /* Management may have changed the link while the lock was released. */
@@ -1980,6 +2020,23 @@ static void run_network(slot_t* slot) {
   post(slot, H2_H202_MFG_EVENT_DONE, H2_PAL_ERR_CLOSED, 0);
 }
 
+/* Called only with operation_mutex held, including the initial one-shot
+ * clear. The entry owns Loader's cached summary; keep it in sync before any
+ * management command can observe a successful save or reset. */
+static int progress_changed(h2_h202_mfg_service_t* s, const uint8_t* results) {
+  if (s->progress_changed == NULL) return H2_PAL_OK;
+  h2_loader_mfg_summary_t summary = {.total = H2_H202_MFG_ITEM_COUNT};
+  if (results != NULL)
+    memcpy(summary.step_status, results, H2_H202_MFG_ITEM_COUNT);
+  return s->progress_changed(s->progress_user, &summary);
+}
+
+static int progress_commit(h2_h202_mfg_service_t* s, const uint8_t* results) {
+  int rc = h2_h202_mfg_progress_commit(s->runtime->pref, results);
+  if (rc == H2_PAL_OK) rc = progress_changed(s, results);
+  return rc;
+}
+
 /* ---- Shutdown --------------------------------------------------------- */
 
 /* Commit happens only here. A management reboot never reaches this job. */
@@ -2005,7 +2062,7 @@ static void run_shutdown(slot_t* slot) {
     return;
   }
   wait_jobs_released(s);
-  rc = h2_h202_mfg_progress_commit(s->runtime->pref, slot->job.results);
+  rc = progress_commit(s, slot->job.results);
   slog(s, "H202_MFG_COMMIT rc=%d", rc);
   post(slot, H2_H202_MFG_EVENT_COMMITTED, rc, 0);
   if (rc != H2_PAL_OK) {
@@ -2024,7 +2081,7 @@ static void run_accept(slot_t* slot) {
   h2_h202_mfg_service_t* s = slot->service;
   int rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
   if (rc == H2_PAL_OK) {
-    rc = h2_h202_mfg_progress_commit(s->runtime->pref, slot->job.results);
+    rc = progress_commit(s, slot->job.results);
     operation_unlock(s);
   }
   slog(s, "H202_MFG_ACCEPT rc=%d", rc);
@@ -2040,6 +2097,7 @@ static void run_reset(slot_t* slot) {
   if (rc == H2_PAL_OK) {
     wait_jobs_released(s);
     rc = h2_h202_mfg_progress_clear(s->runtime->pref);
+    if (rc == H2_PAL_OK) rc = progress_changed(s, NULL);
     slog(s, "H202_MFG_RESET clear rc=%d", rc);
     if (rc == H2_PAL_OK) {
       rc = h2_pal_power_reboot(s->runtime->power, 0u);
@@ -2261,6 +2319,8 @@ h2_pal_result_t h2_h202_mfg_service_start(
   s->profile = config->profile;
   s->operation_sync = config->operation_sync;
   s->operation_mutex = config->operation_mutex;
+  s->progress_changed = config->progress_changed;
+  s->progress_user = config->progress_user;
   s->drain_runtime_events = config->drain_runtime_events;
   h2_h202_mfg_charge_init(
       &s->charge, s->profile->charge_window_ms, s->profile->charge_toggles,
@@ -2296,6 +2356,11 @@ h2_pal_result_t h2_h202_mfg_service_start(
   rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
   if (rc == H2_PAL_OK) {
     h2_h202_mfg_progress_load(runtime->pref, runtime->mem, &s->restore);
+    rc = progress_changed(s, NULL);
+    if (rc != H2_PAL_OK) {
+      memset(&s->restore, 0, sizeof(s->restore));
+      s->restore.error = (h2_pal_result_t)rc;
+    }
     operation_unlock(s);
   } else {
     s->restore.error = (h2_pal_result_t)rc;
@@ -2321,7 +2386,14 @@ h2_pal_result_t h2_h202_mfg_service_start(
                            &s->controller_task);
   }
   if (rc != H2_PAL_OK) {
-    if (service_join(s) == H2_PAL_OK) service_free(s);
+    int cleanup = service_join(s);
+    if (cleanup == H2_PAL_OK) cleanup = audio_close(s);
+    if (cleanup == H2_PAL_OK) {
+      service_free(s);
+    } else {
+      *out = s; /* Keep the sole cleanup owner and all Runtime borrows. */
+      return (h2_pal_result_t)cleanup;
+    }
     return (h2_pal_result_t)rc;
   }
   *out = s;
@@ -2343,7 +2415,8 @@ h2_pal_result_t h2_h202_mfg_service_stop(h2_h202_mfg_service_t** service) {
   h2_h202_mfg_service_t* s = *service;
   h2_pal_result_t rc = service_join(s);
   if (rc != H2_PAL_OK) return rc;
-  (void)audio_close(s);
+  rc = (h2_pal_result_t)audio_close(s);
+  if (rc != H2_PAL_OK) return rc;
   service_free(s);
   *service = NULL;
   return H2_PAL_OK;

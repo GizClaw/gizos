@@ -278,6 +278,7 @@ struct h2_pal_semaphore {
 };
 
 static atomic_int tasks;
+static atomic_uint task_starts, task_fail_at, join_failures;
 static atomic_uint key_mask;
 static atomic_bool usb, chrg, done_line, card, silent_right;
 static atomic_uint white_duty, white_writes, white_modes, white_pwm_logs;
@@ -336,6 +337,9 @@ static int task_start(void* user, const h2_pal_task_options_t* options,
                       h2_pal_task_t** out) {
   (void)user;
   assert(strncmp(options->name, "h202/mfg", 8) == 0);
+  *out = NULL;
+  unsigned attempt = atomic_fetch_add(&task_starts, 1u) + 1u;
+  if (attempt == atomic_load(&task_fail_at)) return H2_PAL_ERR_NO_MEMORY;
   h2_pal_task_t* task = calloc(1, sizeof(*task));
   task->entry = entry;
   task->user = ctx;
@@ -346,6 +350,11 @@ static int task_start(void* user, const h2_pal_task_options_t* options,
 }
 static int task_join(void* user, h2_pal_task_t* task) {
   (void)user;
+  unsigned failures = atomic_load(&join_failures);
+  if (failures != 0u) {
+    atomic_store(&join_failures, failures - 1u);
+    return H2_PAL_ERR_TIMEOUT;
+  }
   assert(pthread_join(task->native, NULL) == 0);
   atomic_fetch_sub(&tasks, 1);
   free(task);
@@ -660,15 +669,17 @@ static const h2_pal_power_api_t power_api = {.vtable = &power_vtable};
 /* Audio fake enforcing the PAL observer contract: registration only while
  * microphone and speaker are stopped, per-lane capture frames. */
 static struct {
-  bool mic, speaker;
-  bool observer_set;
+  atomic_bool mic, speaker;
+  atomic_bool observer_set;
   h2_audio_aec_observer_t observer;
-  bool track_open;
+  atomic_bool track_open;
   uint64_t t;
   int16_t raw[960], ref[320], processed[2][320];
   unsigned writes;
 } audio;
 static h2_pal_audio_track_t audio_track;
+static atomic_bool deny_close, deny_observer_clear, deny_mic_stop,
+    deny_speaker_stop;
 
 static int a_start_mic(void* user) {
   (void)user;
@@ -679,6 +690,7 @@ static int a_start_mic(void* user) {
 }
 static int a_stop_mic(void* user) {
   (void)user;
+  if (atomic_load(&deny_mic_stop)) return H2_PAL_ERR_IO;
   audio.mic = false;
   return H2_PAL_OK;
 }
@@ -690,12 +702,15 @@ static int a_start_speaker(void* user) {
 static int a_stop_speaker(void* user) {
   (void)user;
   if (audio.track_open) return H2_PAL_ERR_BUSY;
+  if (atomic_load(&deny_speaker_stop)) return H2_PAL_ERR_IO;
   audio.speaker = false;
   return H2_PAL_OK;
 }
 static int a_observer(void* user, const h2_audio_aec_observer_t* observer) {
   (void)user;
   if (audio.mic || audio.speaker) return H2_PAL_ERR_INVALID_STATE;
+  if (observer == NULL && atomic_load(&deny_observer_clear))
+    return H2_PAL_ERR_IO;
   audio.observer_set = observer != NULL;
   if (observer != NULL) audio.observer = *observer;
   return H2_PAL_OK;
@@ -773,6 +788,7 @@ static atomic_uint close_failures, closes;
 static int a_close(h2_pal_audio_track_t* track) {
   (void)track;
   atomic_fetch_add(&closes, 1u);
+  if (atomic_load(&deny_close)) return H2_PAL_ERR_IO;
   unsigned failures = atomic_load(&close_failures);
   if (failures != 0u) {
     atomic_store(&close_failures, failures - 1u);
@@ -986,12 +1002,35 @@ static void click(unsigned key) {
   keys_now(atomic_load(&key_mask) & ~key);
 }
 
+static h2_loader_t live_loader;
+
+static h2_pal_result_t refresh_live_progress(
+    void* user, const h2_loader_mfg_summary_t* summary) {
+  assert(user == &live_loader && operation_held());
+  return (h2_pal_result_t)h2_loader_status_set_mfg(&live_loader.status,
+                                                   summary);
+}
+
+static bool live_app_gate(void) {
+  assert(h2_pal_mutex_lock(&sync_api, operation) == H2_PAL_OK);
+  h2_loader_status_t status = {
+      .capabilities = H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI,
+      .partition_2 = {.valid = 1, .role = H2_LOADER_IMAGE_ROLE_APP}};
+  bool open = (h2_loader_get_command_availability(&live_loader, &status) &
+               H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) != 0u;
+  assert(h2_pal_mutex_unlock(&sync_api, operation) == H2_PAL_OK);
+  return open;
+}
+
 static void start(void) {
   memset(&audio, 0, sizeof(audio));
-  const h2_h202_mfg_service_config_t config = {.runtime = &runtime,
-                                               .profile = &profile,
-                                               .operation_sync = &sync_api,
-                                               .operation_mutex = operation};
+  const h2_h202_mfg_service_config_t config = {
+      .runtime = &runtime,
+      .profile = &profile,
+      .operation_sync = &sync_api,
+      .operation_mutex = operation,
+      .progress_changed = refresh_live_progress,
+      .progress_user = &live_loader};
   /* The service starts with the current keys as its stable mask. */
   atomic_store(&seen_keys, atomic_load(&key_mask));
   assert(h2_h202_mfg_service_start(&config, &service) == H2_PAL_OK);
@@ -1230,21 +1269,33 @@ static void test_resume_and_aging(void) {
   assert(atomic_load(&mic_starts) == mics && !audio.observer_set);
   assert(atomic_load(&speaker_volume) == 35u);
   click(H2_H202_MFG_KEY_PLUS);
+  WAIT_UNTIL(atomic_load(&speaker_volume) == 55u);
   assert(atomic_load(&speaker_volume) == 55u);
   click(H2_H202_MFG_KEY_MINUS);
+  WAIT_UNTIL(atomic_load(&speaker_volume) == 35u);
   assert(atomic_load(&speaker_volume) == 35u);
   /* Repeated presses clamp at both ends instead of wrapping. */
   for (unsigned i = 0; i < 5u; ++i) click(H2_H202_MFG_KEY_PLUS);
+  WAIT_UNTIL(atomic_load(&speaker_volume) == 100u);
   assert(atomic_load(&speaker_volume) == 100u);
   for (unsigned i = 0; i < 6u; ++i) click(H2_H202_MFG_KEY_MINUS);
+  WAIT_UNTIL(atomic_load(&speaker_volume) == 0u);
   assert(atomic_load(&speaker_volume) == 0u);
   assert(status().phase == H2_H202_MFG_PHASE_ACTIVE);
+  assert(!live_app_gate());
+  atomic_store(&fail_set_blob, 1);
+  click(2u);
+  wait_for(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_ACCEPT_FAILED);
+  assert(!live_app_gate()); /* Failed save cannot open the management gate. */
+  atomic_store(&fail_set_blob, 0);
   click(2u);
   wait_for(H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_PHASE_WAITING);
+  assert(live_app_gate()); /* Same session, without reloading from prefs. */
   assert(status().results[H2_H202_MFG_AGING] == H2_H202_MFG_PASSED);
   assert(status().color == H2_H202_MFG_COLOR_GREEN);
   sleep_ms(100); /* No late rainbow frame overwrites green. */
   assert(atomic_load(&last_color) == (64 << 8));
+  WAIT_UNTIL(atomic_load(&speaker_volume) == 35u);
   assert(atomic_load(&speaker_volume) == 35u); /* Prompt volume is restored. */
   /* The pass is saved without powering off, for the Loader MFG gate. */
   bool accepted = false;
@@ -1283,7 +1334,6 @@ static void test_resume_and_aging(void) {
 /* What the UART command layer checks before reboot app, with an App in
  * partition 2 and the stored results as Core reads them. */
 static bool reboot_app_open(h2_loader_t* loader) {
-  stored(&loader->status.mfg);
   h2_loader_status_t status;
   memset(&status, 0, sizeof(status));
   status.capabilities = H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI;
@@ -1299,6 +1349,7 @@ static void test_acceptance_gate(void) {
   h2_loader_t loader;
   memset(&loader, 0, sizeof(loader));
   loader.config.mfg_required_total = H2_H202_MFG_ITEM_COUNT;
+  loader.config.package.allocator = &mem;
   assert(h2_atomic_int_init(&loader.mfg_gate_bypass, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&loader.implemented_commands, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&loader.command_availability, 0) == H2_ATOMIC_OK);
@@ -1311,6 +1362,7 @@ static void test_acceptance_gate(void) {
              &pref_api, H2_H202_MFG_ITEM_COUNT, H2_H202_MFG_REVISION - 1u) ==
          H2_PAL_OK);
   assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
+  stored(&loader.status.mfg);       /* Model the initial Core cache. */
   assert(reboot_app_open(&loader)); /* Core alone would admit the stale pass. */
   /* The reset fails while reads still succeed: the stale pass stays stored,
    * so startup and reboot app must both stay closed. */
@@ -1355,6 +1407,100 @@ static void test_retained_track_close(void) {
   puts("retained track close ok");
 }
 
+static void test_aging_dhcp_retry(void) {
+  uint32_t budget = profile.controller.wifi_timeout_ms;
+  for (unsigned drop = 0; drop < 2u; ++drop) {
+    uint8_t results[H2_H202_MFG_ITEM_COUNT];
+    memset(results, H2_H202_MFG_PASSED, sizeof(results));
+    results[H2_H202_MFG_AGING] = H2_H202_MFG_UNTESTED;
+    assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
+    profile.controller.wifi_timeout_ms = drop ? 30000u : 600u;
+    atomic_store(&wifi_online, true);
+    atomic_store(&wifi_associated, false);
+    start();
+    wait_for(H2_H202_MFG_AGING, H2_H202_MFG_PHASE_ACTIVE);
+    unsigned connects = atomic_load(&wifi_connects);
+    unsigned reads = atomic_load(&wifi_status_reads);
+    atomic_store(&wifi_associated, true);
+    atomic_store(&wifi_online, false);
+    WAIT_UNTIL(atomic_load(&wifi_connects) > connects &&
+               atomic_load(&wifi_status_reads) > reads);
+    assert(atomic_load(&wifi_connects) > connects &&
+           atomic_load(&wifi_status_reads) > reads);
+    connects = atomic_load(&wifi_connects);
+    if (drop) atomic_store(&wifi_associated, false);
+    /* No controller Wi-Fi deadline in aging: either DHCP timeout or loss of
+     * association must still return to the maintenance retry loop. */
+    WAIT_UNTIL(atomic_load(&wifi_connects) > connects);
+    assert(atomic_load(&wifi_connects) > connects);
+    assert(status().item == H2_H202_MFG_AGING &&
+           status().results[H2_H202_MFG_WIFI] == H2_H202_MFG_PASSED);
+    stop();
+  }
+  atomic_store(&wifi_online, false);
+  atomic_store(&wifi_associated, false);
+  profile.controller.wifi_timeout_ms = budget;
+  assert(h2_h202_mfg_progress_clear(&pref_api) == H2_PAL_OK);
+  puts("aging reconnect retries DHCP timeout and lost association ok");
+}
+
+static void test_partial_start_cleanup(void) {
+  const h2_h202_mfg_service_config_t config = {.runtime = &runtime,
+                                               .profile = &profile,
+                                               .operation_sync = &sync_api,
+                                               .operation_mutex = operation};
+  atomic_store(&task_fail_at, atomic_load(&task_starts) + 3u);
+  atomic_store(&join_failures, 1u);
+  assert(h2_h202_mfg_service_start(&config, &service) == H2_PAL_ERR_TIMEOUT);
+  assert(service != NULL && atomic_load(&tasks) == 1);
+  atomic_store(&task_fail_at, 0u);
+  stop(); /* The sole failed join still has an owner and can be retried. */
+  assert(h2_h202_mfg_progress_clear(&pref_api) == H2_PAL_OK);
+  puts("partial task-start failure retains its cleanup owner ok");
+}
+
+static void test_stop_audio_retry(void) {
+  uint8_t results[H2_H202_MFG_ITEM_COUNT] = {0};
+  results[H2_H202_MFG_CHARGER] = H2_H202_MFG_PASSED;
+  results[H2_H202_MFG_NFC] = H2_H202_MFG_PASSED;
+  results[H2_H202_MFG_WIFI] = H2_H202_MFG_PASSED;
+  assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
+  uint32_t measure = profile.aec.measure_ms;
+  profile.aec.measure_ms = 10000u;
+  unsigned before = atomic_load(&mic_starts);
+  start();
+  WAIT_UNTIL(atomic_load(&mic_starts) > before && atomic_load(&audio.mic));
+  assert(atomic_load(&audio.mic) && atomic_load(&audio.observer_set));
+  atomic_store(&deny_close, true);
+  atomic_store(&deny_mic_stop, true);
+  atomic_store(&deny_speaker_stop, true);
+  atomic_store(&deny_observer_clear, true);
+  h2_h202_mfg_service_t* retained = service;
+  assert(h2_h202_mfg_service_stop(&service) == H2_PAL_ERR_IO);
+  assert(service == retained && atomic_load(&tasks) == 0 &&
+         atomic_load(&audio.track_open));
+  atomic_store(&deny_close, false);
+  assert(h2_h202_mfg_service_stop(&service) == H2_PAL_ERR_IO);
+  assert(service == retained && !atomic_load(&audio.track_open) &&
+         atomic_load(&audio.mic));
+  atomic_store(&deny_mic_stop, false);
+  assert(h2_h202_mfg_service_stop(&service) == H2_PAL_ERR_IO);
+  assert(service == retained && !atomic_load(&audio.mic) &&
+         atomic_load(&audio.speaker));
+  atomic_store(&deny_speaker_stop, false);
+  assert(h2_h202_mfg_service_stop(&service) == H2_PAL_ERR_IO);
+  assert(service == retained && !atomic_load(&audio.speaker) &&
+         atomic_load(&audio.observer_set));
+  /* A provider-held callback still points into the retained service. */
+  audio.observer.on_error(audio.observer.user, 1, H2_PAL_ERR_IO);
+  atomic_store(&deny_observer_clear, false);
+  stop();
+  profile.aec.measure_ms = measure;
+  assert(h2_h202_mfg_progress_clear(&pref_api) == H2_PAL_OK);
+  puts(
+      "service stop retains audio resources and observer context for retry ok");
+}
+
 int main(void) {
   test_measurement();
   test_scale();
@@ -1378,6 +1524,14 @@ int main(void) {
                            .power = &power_api,
                            .audio = &audio_api};
   assert(mutex_create(NULL, NULL, &operation) == H2_PAL_OK);
+  live_loader.config.mfg_required_total = H2_H202_MFG_ITEM_COUNT;
+  assert(h2_atomic_int_init(&live_loader.mfg_gate_bypass, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&live_loader.implemented_commands, 0) ==
+         H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&live_loader.command_availability, 0) ==
+         H2_ATOMIC_OK);
+  assert(h2_loader_set_implemented_commands(
+             &live_loader, H2_LOADER_COMMAND_AVAILABILITY_ALL) == H2_PAL_OK);
   test_boot_feedback();
   test_wifi_waits_for_address();
   test_session();
@@ -1385,6 +1539,12 @@ int main(void) {
   test_reset();
   test_acceptance_gate();
   test_retained_track_close();
+  test_aging_dhcp_retry();
+  test_partial_start_cleanup();
+  test_stop_audio_retry();
+  h2_atomic_int_destroy(&live_loader.mfg_gate_bypass);
+  h2_atomic_int_destroy(&live_loader.implemented_commands);
+  h2_atomic_int_destroy(&live_loader.command_availability);
   assert(mutex_destroy(NULL, operation) == H2_PAL_OK);
   return 0;
 }

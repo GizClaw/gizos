@@ -1,18 +1,23 @@
 #include "h2_bk7258_board.h"
-#include "h2_bk_h2loader.h"
-#include "h2_bk_platform_core.h"
-#include "h2_bk_target_task_policy.h"
 #include "h2_h202_board_config.h"
 #include "h2_h202_mfg.h"
 #include "h2_loader_boot.h"
 #include "h2_loader_command.h"
 #include "h2_loader_package.h"
+#include "h2_loader_status.h"
 
+#ifdef H2_H202_MFG_LAUNCHER_HOST_TEST
+#include "tests/h2_h202_mfg_launcher_platform.h"
+#else
+#include "h2_bk_h2loader.h"
+#include "h2_bk_platform_core.h"
+#include "h2_bk_target_task_policy.h"
 #include "bk_private/bk_init.h"
 #include "driver/flash.h"
 #include "driver/wdt.h"
 #include "mbedtls/sha256.h"
 #include "os/os.h"
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -184,6 +189,19 @@ static const h2_pal_disk_vtable_t s_coredump_vtable = {
 
 static const h2_pal_disk_api_t s_coredump = {.vtable = &s_coredump_vtable};
 
+/* The caller holds the operation mutex, including before UART is exposed. */
+static int validate_acceptance(void) {
+  const int rc = h2_h202_mfg_acceptance_gate(&s_loader, s_runtime->pref);
+  if (rc != H2_PAL_OK) printf("H202_MFG_REVISION_FAIL rc=%d\r\n", rc);
+  return rc;
+}
+
+static h2_pal_result_t progress_changed(
+    void* user, const h2_loader_mfg_summary_t* summary) {
+  (void)user;
+  return (h2_pal_result_t)h2_loader_status_set_mfg(&s_loader.status, summary);
+}
+
 /* Loader Core boot, as the H202 Loader does it but UART-only like the H106
  * MFG: the Loader identity is hashed once, Core confirms the running image
  * and boots partition 2 only after all ten MFG results passed. A management
@@ -254,6 +272,9 @@ static void start_loader(char device_uid[13]) {
   if (rc != H2_PAL_OK) fail("active_identity", rc);
   rc = h2_loader_init(&s_loader, &config);
   if (rc != H2_PAL_OK) fail("loader_init", rc);
+  /* Validation closes REBOOT_APP on failure. Keep UART recovery available and
+   * retry validation during startup, even when storage preparation fails. */
+  (void)validate_acceptance();
   h2_bundle_installer_set_progress(&s_loader.package.installer,
                                    install_progress, NULL);
   rc = h2_bk_h2loader_start_loader_iostreamikcp(s_runtime, &s_command,
@@ -270,6 +291,7 @@ static void run_startup(void) {
     h2_loader_startup_action_t action = H2_LOADER_STARTUP_ACTION_COMMAND_MODE;
     int rc = h2_pal_mutex_lock(s_runtime->sync, s_operation);
     if (rc != H2_PAL_OK) fail("startup_lock", rc);
+    const int revision = validate_acceptance();
     rc = mount_file_point(NULL, H2_BK7258_DL_MOUNT_PATH);
     if (rc == H2_PAL_OK) rc = mount_file_point(NULL, H2_BK7258_DATA_MOUNT_PATH);
     if (rc == H2_PAL_OK) {
@@ -278,21 +300,16 @@ static void run_startup(void) {
           H2_H202_MFG_STAGE_PATH, H2_H202_MFG_STAGE_PREV_PATH);
     }
     const int prepared = rc == H2_PAL_OK;
-    if (prepared) {
-      /* Core gates the App on the stored results alone; drop a record from
-       * other acceptance criteria first, or keep the App closed. */
-      const int revision =
-          h2_h202_mfg_acceptance_gate(&s_loader, s_runtime->pref);
-      if (revision != H2_PAL_OK)
-        printf("H202_MFG_REVISION_FAIL rc=%d\r\n", revision);
-      rc = h2_loader_startup(&s_loader, &action);
-    }
+    if (prepared) rc = h2_loader_startup(&s_loader, &action);
+    if (rc == H2_PAL_OK) rc = revision;
     if (rc != H2_PAL_OK) (void)h2_loader_set_last_result(&s_loader, rc);
     const int unlock_rc = h2_pal_mutex_unlock(s_runtime->sync, s_operation);
     if (unlock_rc != H2_PAL_OK) fail("startup_unlock", unlock_rc);
     printf("H2_BK_H2LOADER_READY rc=%d action=%d prepared=%d\r\n", rc,
            (int)action, prepared);
-    if (prepared && action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) return;
+    if (prepared && revision == H2_PAL_OK &&
+        action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE)
+      return;
     rtos_delay_milliseconds(H2_H202_MFG_RETRY_DELAY_MS);
   }
 }
@@ -318,7 +335,9 @@ static void mfg_entry(void* user) {
       .profile = &h2_h202_mfg_profile,
       .operation_sync = s_runtime->sync,
       .operation_mutex = s_operation,
-      .drain_runtime_events = true};
+      .drain_runtime_events = true,
+      .progress_changed = progress_changed,
+      .progress_user = NULL};
   rc = h2_h202_mfg_service_start(&service, &s_service);
   /* UART management stays reachable whatever the result. */
   printf("H202_MFG_BOOT rc=%d\r\n", rc);
