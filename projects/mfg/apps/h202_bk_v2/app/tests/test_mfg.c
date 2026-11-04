@@ -777,43 +777,88 @@ static void test_progress(void) {
 
 static h2_h202_mfg_charge_mode_t charge(h2_h202_mfg_charge_t* c, uint64_t t,
                                         bool usb, bool chrg, bool done,
-                                        bool* led) {
-  return h2_h202_mfg_charge_update(c, t, usb, chrg, done, led);
+                                        uint16_t* duty) {
+  return h2_h202_mfg_charge_update(c, t, usb, chrg, done, duty);
 }
 
 static void test_charge(void) {
   h2_h202_mfg_charge_t c;
-  bool led = true;
-  h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u);
-  assert(charge(&c, 0, false, false, false, &led) == H2_H202_MFG_CHARGE_OFF);
-  assert(!led);
-  assert(charge(&c, 100, true, true, false, &led) == H2_H202_MFG_CHARGE_ON);
-  assert(led);
-  /* Charging ends in full: one CHRG change, the indicator turns off. */
-  assert(charge(&c, 5000, true, false, true, &led) == H2_H202_MFG_CHARGE_OFF);
-  assert(!led);
+  uint16_t duty = 1u;
+  h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u, 1000u);
+  assert(charge(&c, 0, false, false, false, &duty) == H2_H202_MFG_CHARGE_OFF);
+  assert(duty == 0u);
+  /* Charging rises and falls once per second, with real intermediate PWM
+   * duty rather than switching between just 0 and 100 percent. */
+  const uint16_t breathing[] = {0u, 5000u, 10000u, 5000u, 0u};
+  for (unsigned i = 0; i < 5u; ++i) {
+    assert(charge(&c, i * 250u, true, true, false, &duty) ==
+           H2_H202_MFG_CHARGE_BREATHE);
+    assert(duty == breathing[i]);
+  }
+  assert(charge(&c, UINT64_C(5000000250), true, true, false, &duty) ==
+         H2_H202_MFG_CHARGE_BREATHE);
+  assert(duty == 5000u);
+  /* Charging ends in full: one CHRG change, solid 100 percent. */
+  assert(charge(&c, UINT64_C(5000005000), true, false, true, &duty) ==
+         H2_H202_MFG_CHARGE_ON);
+  assert(duty == 10000u);
+  assert(charge(&c, UINT64_C(5000005250), true, false, true, &duty) ==
+         H2_H202_MFG_CHARGE_ON);
+  assert(duty == 10000u);
   /* USB in, both status lines off: undervoltage/temperature fault blinks. */
-  h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u);
-  assert(charge(&c, 1000, true, false, false, &led) ==
+  h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u, 1000u);
+  assert(charge(&c, 1000, true, false, false, &duty) ==
          H2_H202_MFG_CHARGE_BLINK);
-  assert(led);
-  (void)charge(&c, 1250, true, false, false, &led);
-  assert(!led);
-  (void)charge(&c, 1500, true, false, false, &led);
-  assert(led);
+  assert(duty == 10000u);
+  (void)charge(&c, 1250, true, false, false, &duty);
+  assert(duty == 0u);
+  (void)charge(&c, 1500, true, false, false, &duty);
+  assert(duty == 10000u);
   /* No battery: CHRG toggling with DONE on blinks; one change is full. */
-  h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u);
-  assert(charge(&c, 0, true, false, true, &led) == H2_H202_MFG_CHARGE_OFF);
-  assert(charge(&c, 500, true, true, true, &led) == H2_H202_MFG_CHARGE_BLINK);
-  assert(charge(&c, 1000, true, false, true, &led) == H2_H202_MFG_CHARGE_BLINK);
-  assert(charge(&c, 2400, true, false, true, &led) == H2_H202_MFG_CHARGE_BLINK);
-  assert(charge(&c, 2600, true, false, true, &led) == H2_H202_MFG_CHARGE_OFF);
+  h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u, 1000u);
+  assert(charge(&c, 0, true, false, true, &duty) == H2_H202_MFG_CHARGE_ON);
+  assert(duty == 10000u);
+  assert(charge(&c, 500, true, true, true, &duty) == H2_H202_MFG_CHARGE_BLINK);
+  assert(charge(&c, 1000, true, false, true, &duty) ==
+         H2_H202_MFG_CHARGE_BLINK);
+  assert(duty == 10000u);
+  assert(charge(&c, 1250, true, false, true, &duty) ==
+         H2_H202_MFG_CHARGE_BLINK);
+  assert(duty == 0u);
+  assert(charge(&c, 2400, true, false, true, &duty) ==
+         H2_H202_MFG_CHARGE_BLINK);
+  assert(charge(&c, 2500, true, false, true, &duty) == H2_H202_MFG_CHARGE_ON);
+  assert(duty == 10000u); /* Detection window excludes its exact boundary. */
   /* Toggles spread wider than the window are not blinking. */
-  assert(charge(&c, 5000, true, true, true, &led) == H2_H202_MFG_CHARGE_BLINK);
-  assert(charge(&c, 7500, true, false, true, &led) == H2_H202_MFG_CHARGE_OFF);
-  /* Unplugged always turns the indicator off. */
-  assert(charge(&c, 7600, false, true, true, &led) == H2_H202_MFG_CHARGE_OFF);
-  assert(!led);
+  assert(charge(&c, 5000, true, true, true, &duty) == H2_H202_MFG_CHARGE_BLINK);
+  assert(charge(&c, 5250, true, true, true, &duty) == H2_H202_MFG_CHARGE_BLINK);
+  assert(duty == 0u); /* Both-on abnormal status also keeps blinking. */
+  assert(charge(&c, 7500, true, false, true, &duty) == H2_H202_MFG_CHARGE_ON);
+  assert(duty == 10000u);
+  /* Unplugged always turns the indicator off, regardless of status lines. */
+  for (unsigned bits = 0; bits < 4u; ++bits) {
+    assert(charge(&c, 7600u + bits, false, bits & 1u, bits & 2u, &duty) ==
+           H2_H202_MFG_CHARGE_OFF);
+    assert(duty == 0u);
+  }
+  /* Configuration: custom period, omitted/invalid period fallback, and
+   * odd periods stay bounded and reach the peak without division by zero. */
+  h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u, 2000u);
+  assert(charge(&c, 500, true, true, false, &duty) ==
+         H2_H202_MFG_CHARGE_BREATHE);
+  assert(duty == 5000u);
+  for (unsigned period = 0u; period <= 1u; ++period) {
+    h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u, period);
+    (void)charge(&c, 500, true, true, false, &duty);
+    assert(duty == 10000u);
+  }
+  h2_h202_mfg_charge_init(&c, 2000u, 2u, 500u, 3u);
+  const uint16_t odd[] = {0u, 10000u, 5000u, 0u};
+  for (unsigned i = 0u; i < 4u; ++i) {
+    (void)charge(&c, i, true, true, false, &duty);
+    assert(duty == odd[i]);
+  }
+  assert(charge(&c, 4, true, true, false, NULL) == H2_H202_MFG_CHARGE_BREATHE);
   puts("charge indication ok");
 }
 

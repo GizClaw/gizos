@@ -43,12 +43,11 @@ static h2_pal_result_t shutdown(void* user, uint32_t reason) {
   if (rc != 0) return rc;
   rc = h2_bk7258_board_fs_deinit();
   if (rc != 0) return rc;
-  const unsigned off[] = {H2_H202_PA_ENABLE_GPIO,
-                          H2_H202_MODEM_ENABLE_GPIO,
-                          H2_H202_MODEM_VBUS_ENABLE_GPIO,
-                          H2_H202_WHITE_LED_GPIO,
-                          H2_H202_RGB_GPIO,
-                          H2_H202_PERIPHERAL_ENABLE_GPIO};
+  const unsigned off[] = {
+      H2_H202_SLOW_CHARGE_GPIO,      H2_H202_PA_ENABLE_GPIO,
+      H2_H202_MODEM_ENABLE_GPIO,     H2_H202_MODEM_VBUS_ENABLE_GPIO,
+      H2_H202_WHITE_LED_GPIO,        H2_H202_RGB_GPIO,
+      H2_H202_PERIPHERAL_ENABLE_GPIO};
   const gpio_config_t config = {.io_mode = GPIO_OUTPUT_ENABLE,
                                 .pull_mode = GPIO_PULL_DOWN_EN,
                                 .func_mode = GPIO_SECOND_FUNC_DISABLE};

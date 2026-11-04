@@ -15,11 +15,9 @@ int h2_bk7258_board_init(void) {
     unsigned gpio;
     int high;
   } outputs[] = {
-      {H2_H202_PA_ENABLE_GPIO, 0},
-      {H2_H202_MODEM_ENABLE_GPIO, 0},
-      {H2_H202_MODEM_VBUS_ENABLE_GPIO, 0},
-      {H2_H202_WHITE_LED_GPIO, 0},
-      {H2_H202_RGB_GPIO, 0},
+      {H2_H202_SLOW_CHARGE_GPIO, 0},       {H2_H202_PA_ENABLE_GPIO, 0},
+      {H2_H202_MODEM_ENABLE_GPIO, 0},      {H2_H202_MODEM_VBUS_ENABLE_GPIO, 0},
+      {H2_H202_WHITE_LED_GPIO, 0},         {H2_H202_RGB_GPIO, 0},
       {H2_H202_PERIPHERAL_ENABLE_GPIO, 1},
   };
   const gpio_config_t config = {

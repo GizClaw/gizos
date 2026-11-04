@@ -23,7 +23,12 @@
 /* The 4G module is not fitted; firmware only holds these rails low. */
 #define H2_H202_MODEM_ENABLE_GPIO 7u
 #define H2_H202_MODEM_VBUS_ENABLE_GPIO 13u
+/* SLOW_CHARGE stays low for fast charging, including deep sleep. */
+#define H2_H202_SLOW_CHARGE_GPIO 6u
 #define H2_H202_WHITE_LED_GPIO 37u
+#define H2_H202_WHITE_PWM_CHANNEL 11u
+/* XTAL 26 MHz / 26000 cycles = 1 kHz carrier. */
+#define H2_H202_WHITE_PWM_PERIOD 26000u
 #define H2_H202_RGB_GPIO 4u
 #define H2_H202_POWER_KEY_GPIO 2u
 #define H2_H202_USB_INSERT_GPIO 3u

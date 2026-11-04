@@ -8,6 +8,7 @@
 #include "driver/gpio.h"
 #include "gpio_driver.h"
 #include "driver/spi.h"
+#include "driver/pwm.h"
 #include "os/os.h"
 #endif
 
@@ -22,7 +23,10 @@ static bool s_spi_live;
 static bool s_semaphore_live;
 static bool s_spi_ready;
 static unsigned s_brightness = 35;
-static bool s_white_on;
+static uint16_t s_white_duty;
+static bool s_pwm_live;
+static bool s_pwm_ready;
+static bool s_pwm_started;
 
 static void tx_complete(spi_id_t id, void* user) {
   (void)id;
@@ -146,16 +150,88 @@ static h2_pal_result_t brightness(void* user, h2_pal_led_id_t id,
   return transmit();
 }
 
-/* Board init configures GPIO37 as a low output; this only changes its level. */
-h2_pal_result_t h2_h202_white_set(bool on) {
-  gpio_id_t gpio = (gpio_id_t)H2_H202_WHITE_LED_GPIO;
-  if ((on ? bk_gpio_set_output_high(gpio) : bk_gpio_set_output_low(gpio)) != 0)
-    return H2_PAL_ERR_IO;
-  s_white_on = on;
+static h2_pal_result_t release_white_pwm(void) {
+  s_pwm_ready = false;
+  if (s_pwm_started) {
+    if (bk_pwm_stop((pwm_chan_t)H2_H202_WHITE_PWM_CHANNEL) != 0)
+      return H2_PAL_ERR_IO;
+    s_pwm_started = false;
+  }
+  if (s_pwm_live) {
+    if (bk_pwm_deinit((pwm_chan_t)H2_H202_WHITE_PWM_CHANNEL) != 0)
+      return H2_PAL_ERR_IO;
+    s_pwm_live = false;
+  }
   return H2_PAL_OK;
 }
 
-bool h2_h202_white_on(void) { return s_white_on; }
+/* Endpoints use GPIO so darkness/full brightness and sleep have explicit
+ * levels. Release PWM before reclaiming the pin; retain ownership on error. */
+h2_pal_result_t h2_h202_white_set(bool on) {
+  h2_pal_result_t rc = release_white_pwm();
+  if (rc != H2_PAL_OK) return rc;
+  const gpio_id_t gpio = (gpio_id_t)H2_H202_WHITE_LED_GPIO;
+  const gpio_config_t config = {.io_mode = GPIO_OUTPUT_ENABLE,
+                                .pull_mode = GPIO_PULL_DISABLE,
+                                .func_mode = GPIO_SECOND_FUNC_DISABLE};
+  if (gpio_dev_unmap(gpio) != 0 || bk_gpio_set_config(gpio, &config) != 0 ||
+      (on ? bk_gpio_set_output_high(gpio) : bk_gpio_set_output_low(gpio)) != 0)
+    return H2_PAL_ERR_IO;
+  s_white_duty = on ? H2_PAL_PWM_SWITCH_DUTY_MAX_X100 : 0u;
+  return H2_PAL_OK;
+}
+
+bool h2_h202_white_on(void) { return s_white_duty != 0u; }
+
+static h2_pal_result_t white_duty(void* user, h2_pal_periph_id_t id,
+                                  uint16_t duty) {
+  (void)user;
+  if (id != H2_H202_WHITE_ID) return H2_PAL_ERR_NOT_FOUND;
+  if (duty > H2_PAL_PWM_SWITCH_DUTY_MAX_X100) return H2_PAL_ERR_INVALID_ARG;
+  if (duty == 0u || duty == H2_PAL_PWM_SWITCH_DUTY_MAX_X100)
+    return h2_h202_white_set(duty != 0u);
+  const pwm_chan_t channel = (pwm_chan_t)H2_H202_WHITE_PWM_CHANNEL;
+  const uint32_t cycles =
+      ((uint32_t)duty * H2_H202_WHITE_PWM_PERIOD + 5000u) / 10000u;
+  if (!s_pwm_ready) {
+    h2_pal_result_t rc = release_white_pwm();
+    if (rc != H2_PAL_OK) return rc;
+    if (bk_pwm_driver_init() != 0) return H2_PAL_ERR_IO;
+    const pwm_init_config_t config = {.period_cycle = H2_H202_WHITE_PWM_PERIOD,
+                                      .duty_cycle = cycles};
+    /* Init/start can partially acquire hardware before reporting failure. */
+    s_pwm_live = true;
+    if (bk_pwm_init(channel, &config) != 0) return H2_PAL_ERR_IO;
+    s_pwm_started = true;
+    if (bk_pwm_start(channel) != 0) return H2_PAL_ERR_IO;
+    s_pwm_ready = true;
+  } else {
+    pwm_period_duty_config_t config = {.period_cycle = H2_H202_WHITE_PWM_PERIOD,
+                                       .duty_cycle = cycles};
+    if (bk_pwm_set_period_duty(channel, &config) != 0) {
+      s_pwm_ready = false;
+      return H2_PAL_ERR_IO;
+    }
+  }
+  s_white_duty = duty;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t white_get_duty(void* user, h2_pal_periph_id_t id,
+                                      uint16_t* out) {
+  (void)user;
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (id != H2_H202_WHITE_ID) return H2_PAL_ERR_NOT_FOUND;
+  *out = s_white_duty;
+  return H2_PAL_OK;
+}
+
+const h2_pal_pwm_switch_api_t* h2_h202_pwm_switch_api(void) {
+  static const h2_pal_pwm_switch_vtable_t vtable = {.set_duty = white_duty,
+                                                    .get_duty = white_get_duty};
+  static const h2_pal_pwm_switch_api_t api = {.vtable = &vtable};
+  return &api;
+}
 
 const h2_pal_led_api_t* h2_h202_led_api(void) {
   static const h2_pal_led_vtable_t vtable = {
@@ -169,7 +245,7 @@ const h2_pal_led_api_t* h2_h202_led_api(void) {
 }
 
 h2_pal_result_t h2_h202_led_deinit(void) {
-  if (s_white_on && h2_h202_white_set(false) != H2_PAL_OK) return H2_PAL_ERR_IO;
+  if (h2_h202_white_set(false) != H2_PAL_OK) return H2_PAL_ERR_IO;
   if (s_spi_live) {
     if (bk_spi_deinit(H2_H202_RGB_SPI_ID) != 0) return H2_PAL_ERR_IO;
     s_spi_live = s_spi_ready = false;

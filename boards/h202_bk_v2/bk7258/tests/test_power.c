@@ -65,6 +65,8 @@ int bk_pm_ap_sleep_mode_set(unsigned mode) {
   assert(mode == PM_MODE_DEEP_SLEEP || mode == PM_MODE_DEFAULT);
   if (mode == PM_MODE_DEEP_SLEEP) {
     assert(wake && !mounted);
+    assert(holds[H2_H202_SLOW_CHARGE_GPIO] &&
+           !levels[H2_H202_SLOW_CHARGE_GPIO]);
     requested_while_held =
         requested_while_held || !bk_gpio_get_input(H2_H202_POWER_KEY_GPIO);
     last_request_at = clock_ms;
@@ -153,7 +155,7 @@ int main(void) {
   assert(h2_pal_power_shutdown(power, 0) == H2_PAL_ERR_IO);
   restored();
   wake_error = 0;
-  const unsigned rails[] = {53, 7, 13, 37, 4, 54};
+  const unsigned rails[] = {6, 53, 7, 13, 37, 4, 54};
   for (unsigned i = 0; i < sizeof(rails) / sizeof(rails[0]); ++i) {
     keep_error_pin = (int)rails[i];
     assert(h2_pal_power_shutdown(power, 0) == H2_PAL_ERR_IO);

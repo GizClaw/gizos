@@ -309,9 +309,10 @@ h2_pal_result_t h2_h202_mfg_progress_commit(
 
 /** Background white-LED charge indicator, from raw asserted levels. */
 typedef struct h2_h202_mfg_charge {
-  uint32_t window_ms;       /**< CHRG toggle detection window (2000). */
-  unsigned toggles;         /**< Changes within window that mean toggling. */
-  uint32_t blink_period_ms; /**< 500 for 2 Hz. */
+  uint32_t window_ms;         /**< CHRG toggle detection window (2000). */
+  unsigned toggles;           /**< Changes within window that mean toggling. */
+  uint32_t blink_period_ms;   /**< 500 for 2 Hz. */
+  uint32_t breathe_period_ms; /**< Full charging cycle (1000). */
   bool have_chrg;
   bool chrg;
   uint64_t changes[8];
@@ -322,14 +323,16 @@ typedef enum h2_h202_mfg_charge_mode {
   H2_H202_MFG_CHARGE_OFF,
   H2_H202_MFG_CHARGE_ON,
   H2_H202_MFG_CHARGE_BLINK,
+  H2_H202_MFG_CHARGE_BREATHE,
 } h2_h202_mfg_charge_mode_t;
 
 void h2_h202_mfg_charge_init(h2_h202_mfg_charge_t* charge, uint32_t window_ms,
-                             unsigned toggles, uint32_t blink_period_ms);
-/** Feed one sample; returns the mode, *led the white LED level now. */
+                             unsigned toggles, uint32_t blink_period_ms,
+                             uint32_t breathe_period_ms);
+/** Feed one sample; returns the mode and PAL PWM duty (0..10000) now. */
 h2_h202_mfg_charge_mode_t h2_h202_mfg_charge_update(
     h2_h202_mfg_charge_t* charge, uint64_t now_ms, bool usb_insert,
-    bool charging, bool done, bool* led);
+    bool charging, bool done, uint16_t* duty_x100);
 
 /** Stage 05 capture check parameters; values live in profile.c. There is no
  * test tone: the check proves a live raw lane and AEC output, and the operator
@@ -463,6 +466,7 @@ typedef struct h2_h202_mfg_profile {
   uint32_t charge_window_ms;
   unsigned charge_toggles;
   uint32_t charge_blink_period_ms;
+  uint32_t charge_breathe_period_ms; /**< 0 defaults to a 1000 ms cycle. */
   uint32_t sample_rate_hz;
   uint16_t frame_samples;
   uint32_t volume_percent;

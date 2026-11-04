@@ -55,7 +55,7 @@ int bk_wifi_sta_get_mac(uint8_t mac[6]) {
   return 0;
 }
 int main(void) {
-  for (int i = 1; i <= 18; ++i) {
+  for (int i = 1; i <= 21; ++i) {
     calls = 0;
     fail_at = i;
     assert(h2_bk7258_board_init() == H2_PAL_ERR_IO);
@@ -65,6 +65,8 @@ int main(void) {
   calls = 0;
   assert(h2_bk7258_board_init() == 0);
   assert(last_pin == 54 && high[54] == 1);
+  assert(output_enabled[H2_H202_SLOW_CHARGE_GPIO] &&
+         !high[H2_H202_SLOW_CHARGE_GPIO]);
   assert(!high[7] && !high[13] && !high[53] && !high[37] && !high[4]);
   assert(h2_bk7258_board_init() == 0);
   assert(h2_bk7258_board_ble_local_name() == NULL);

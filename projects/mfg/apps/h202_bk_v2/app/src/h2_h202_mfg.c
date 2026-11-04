@@ -817,17 +817,20 @@ h2_pal_result_t h2_h202_mfg_progress_commit(
 /* ---- Charge indication ------------------------------------------------ */
 
 void h2_h202_mfg_charge_init(h2_h202_mfg_charge_t* charge, uint32_t window_ms,
-                             unsigned toggles, uint32_t blink_period_ms) {
+                             unsigned toggles, uint32_t blink_period_ms,
+                             uint32_t breathe_period_ms) {
   if (charge == NULL) return;
   memset(charge, 0, sizeof(*charge));
   charge->window_ms = window_ms;
   charge->toggles = toggles;
   charge->blink_period_ms = blink_period_ms != 0u ? blink_period_ms : 1u;
+  charge->breathe_period_ms =
+      breathe_period_ms >= 2u ? breathe_period_ms : 1000u;
 }
 
 h2_h202_mfg_charge_mode_t h2_h202_mfg_charge_update(
     h2_h202_mfg_charge_t* charge, uint64_t now_ms, bool usb_insert,
-    bool charging, bool done, bool* led) {
+    bool charging, bool done, uint16_t* duty_x100) {
   enum { HISTORY = sizeof(charge->changes) / sizeof(charge->changes[0]) };
   if (!charge->have_chrg) {
     charge->have_chrg = true;
@@ -849,15 +852,33 @@ h2_h202_mfg_charge_mode_t h2_h202_mfg_charge_update(
   else if (toggling && done) /* No battery: LGS4056 CHRG blinks. */
     mode = H2_H202_MFG_CHARGE_BLINK;
   else if (charging && !done)
-    mode = H2_H202_MFG_CHARGE_ON;
+    mode = H2_H202_MFG_CHARGE_BREATHE;
   else if (!charging && done) /* Full. */
-    mode = H2_H202_MFG_CHARGE_OFF;
+    mode = H2_H202_MFG_CHARGE_ON;
   else /* Both off: undervoltage or temperature fault. Both on: abnormal. */
     mode = H2_H202_MFG_CHARGE_BLINK;
-  if (led != NULL)
-    *led = mode == H2_H202_MFG_CHARGE_ON ||
-           (mode == H2_H202_MFG_CHARGE_BLINK &&
-            now_ms % charge->blink_period_ms < charge->blink_period_ms / 2u);
+  if (duty_x100 != NULL) {
+    uint16_t duty = 0u;
+    if (mode == H2_H202_MFG_CHARGE_BREATHE) {
+      /* A full rise and fall per period, calculated from monotonic time so
+       * delayed controller ticks cannot stretch the cycle. */
+      uint32_t period = charge->breathe_period_ms;
+      uint32_t phase = (uint32_t)(now_ms % period);
+      uint32_t rise = period / 2u;
+      duty =
+          (uint16_t)(phase <= rise ? (uint64_t)phase *
+                                         H2_PAL_PWM_SWITCH_DUTY_MAX_X100 / rise
+                                   : (uint64_t)(period - phase) *
+                                         H2_PAL_PWM_SWITCH_DUTY_MAX_X100 /
+                                         (period - rise));
+    } else if (mode == H2_H202_MFG_CHARGE_ON ||
+               (mode == H2_H202_MFG_CHARGE_BLINK &&
+                now_ms % charge->blink_period_ms <
+                    charge->blink_period_ms / 2u)) {
+      duty = H2_PAL_PWM_SWITCH_DUTY_MAX_X100;
+    }
+    *duty_x100 = duty;
+  }
   return mode;
 }
 
@@ -1209,8 +1230,9 @@ struct h2_h202_mfg_service {
   uint64_t raw_since;
   h2_h202_mfg_charge_t charge;
   bool white_known;
-  bool white_on;
+  uint16_t white_duty_x100; /**< Last successfully applied PWM duty. */
   int charge_read_error;
+  int charge_write_error;
   int logged_inputs; /**< Last logged USB/CHRG/DONE bits, -1 before any. */
   int logged_mode;   /**< Last logged charge indicator mode, -1 before any. */
   /* AUDIO worker only; observer callbacks run on that same worker. */
@@ -1329,7 +1351,7 @@ static const char* const s_prompt_names[H2_H202_MFG_PROMPT_COUNT] = {
     "wifi_failed",   "mic_failed",      "aging_failed",  "incomplete",
     "unsaved",       "poweroff_failed", "network",       "boot",
     "retry",         "retry_poweroff",  "battery_failed"};
-static const char* const s_mode_names[] = {"off", "on", "blink"};
+static const char* const s_mode_names[] = {"off", "on", "blink", "breathe"};
 
 static int eyes_frame(h2_h202_mfg_service_t* s, h2_h202_mfg_color_t color) {
   const h2_h202_mfg_profile_t* p = s->profile;
@@ -1365,7 +1387,8 @@ static int read_switch(h2_h202_mfg_service_t* s, h2_pal_periph_id_t id,
 
 /* Background for the whole session; never a result, errors logged only. */
 static void charge_tick(h2_h202_mfg_service_t* s, uint64_t now) {
-  bool usb = false, charging = false, done = false, led = false;
+  bool usb = false, charging = false, done = false;
+  uint16_t duty_x100 = 0u;
   int rc = read_switch(s, s->profile->usb_insert, &usb);
   if (rc == H2_PAL_OK) rc = read_switch(s, s->profile->charging, &charging);
   if (rc == H2_PAL_OK) rc = read_switch(s, s->profile->charge_done, &done);
@@ -1380,21 +1403,22 @@ static void charge_tick(h2_h202_mfg_service_t* s, uint64_t now) {
     slog(s, "H202_MFG_CHARGER usb=%d chrg=%d done=%d", usb, charging, done);
     s->logged_inputs = inputs;
   }
-  h2_h202_mfg_charge_mode_t mode =
-      h2_h202_mfg_charge_update(&s->charge, now, usb, charging, done, &led);
+  h2_h202_mfg_charge_mode_t mode = h2_h202_mfg_charge_update(
+      &s->charge, now, usb, charging, done, &duty_x100);
   if ((int)mode != s->logged_mode) {
     slog(s, "H202_MFG_WHITE mode=%s", s_mode_names[mode]);
     s->logged_mode = (int)mode;
   }
-  if (s->white_known && led == s->white_on) return;
-  rc =
-      h2_pal_switch_set(s->runtime->switch_api, s->profile->white,
-                        led ? H2_PAL_SWITCH_STATE_ON : H2_PAL_SWITCH_STATE_OFF);
+  if (s->white_known && duty_x100 == s->white_duty_x100) return;
+  rc = h2_pal_pwm_switch_set_duty(s->runtime->pwm_switch, s->profile->white,
+                                  duty_x100);
+  if (rc != s->charge_write_error)
+    slog(s, "H202_MFG_CHARGE white pwm rc=%d", rc);
+  s->charge_write_error = rc;
   if (rc == H2_PAL_OK) {
     s->white_known = true;
-    s->white_on = led;
-  } else if (s->white_known) {
-    slog(s, "H202_MFG_CHARGE white rc=%d", rc);
+    s->white_duty_x100 = duty_x100;
+  } else {
     s->white_known = false;
   }
 }
@@ -2238,9 +2262,9 @@ h2_pal_result_t h2_h202_mfg_service_start(
   s->operation_sync = config->operation_sync;
   s->operation_mutex = config->operation_mutex;
   s->drain_runtime_events = config->drain_runtime_events;
-  h2_h202_mfg_charge_init(&s->charge, s->profile->charge_window_ms,
-                          s->profile->charge_toggles,
-                          s->profile->charge_blink_period_ms);
+  h2_h202_mfg_charge_init(
+      &s->charge, s->profile->charge_window_ms, s->profile->charge_toggles,
+      s->profile->charge_blink_period_ms, s->profile->charge_breathe_period_ms);
   h2_h202_mfg_config_t controller = s->profile->controller;
   controller.callbacks =
       (h2_h202_mfg_callbacks_t){.user = s,

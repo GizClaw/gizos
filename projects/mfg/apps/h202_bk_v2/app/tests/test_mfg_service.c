@@ -279,7 +279,10 @@ struct h2_pal_semaphore {
 
 static atomic_int tasks;
 static atomic_uint key_mask;
-static atomic_bool usb, chrg, done_line, white, card, silent_right;
+static atomic_bool usb, chrg, done_line, card, silent_right;
+static atomic_uint white_duty, white_writes, white_modes, white_pwm_logs;
+static atomic_uint charger_reads, white_intermediate_writes;
+static atomic_bool white_fail;
 static atomic_bool wifi_connect_locked, shutdown_locked;
 static atomic_bool shutdown_key_down;
 static atomic_uint shutdowns, wifi_connects, led_frames, mic_starts;
@@ -458,6 +461,10 @@ static int log_write(void* user, h2_pal_log_level_t level, const char* scope,
   (void)user;
   (void)level;
   printf("[%s] %s\n", scope, message);
+  if (strstr(message, "H202_MFG_WHITE mode=") != NULL)
+    atomic_fetch_add(&white_modes, 1u);
+  if (strstr(message, "H202_MFG_CHARGE white pwm rc=") != NULL)
+    atomic_fetch_add(&white_pwm_logs, 1u);
   const char* keys = strstr(message, "H202_MFG_KEYS mask=");
   if (keys != NULL)
     atomic_store(&seen_keys, (unsigned)strtoul(keys + 19, NULL, 10));
@@ -506,24 +513,30 @@ enum {
 static h2_pal_result_t switch_get(void* user, h2_pal_periph_id_t id,
                                   h2_pal_switch_state_t* out) {
   (void)user;
-  bool on = id == USB_ID     ? atomic_load(&usb)
-            : id == CHRG_ID  ? atomic_load(&chrg)
-            : id == DONE_ID  ? atomic_load(&done_line)
-            : id == WHITE_ID ? atomic_load(&white)
-                             : false;
+  assert(id == USB_ID || id == CHRG_ID || id == DONE_ID);
+  if (id == USB_ID) atomic_fetch_add(&charger_reads, 1u);
+  bool on = id == USB_ID    ? atomic_load(&usb)
+            : id == CHRG_ID ? atomic_load(&chrg)
+                            : atomic_load(&done_line);
   *out = on ? H2_PAL_SWITCH_STATE_ON : H2_PAL_SWITCH_STATE_OFF;
   return H2_PAL_OK;
 }
-static h2_pal_result_t switch_set(void* user, h2_pal_periph_id_t id,
-                                  h2_pal_switch_state_t state) {
+static const h2_pal_switch_vtable_t switch_vtable = {.get = switch_get};
+static const h2_pal_switch_api_t switch_api = {.vtable = &switch_vtable};
+
+static h2_pal_result_t pwm_set(void* user, h2_pal_periph_id_t id,
+                               uint16_t duty_x100) {
   (void)user;
-  if (id != WHITE_ID) return H2_PAL_ERR_UNSUPPORTED;
-  atomic_store(&white, state == H2_PAL_SWITCH_STATE_ON);
+  assert(id == WHITE_ID && duty_x100 <= H2_PAL_PWM_SWITCH_DUTY_MAX_X100);
+  atomic_fetch_add(&white_writes, 1u);
+  if (atomic_load(&white_fail)) return H2_PAL_ERR_IO;
+  if (duty_x100 > 0u && duty_x100 < H2_PAL_PWM_SWITCH_DUTY_MAX_X100)
+    atomic_fetch_add(&white_intermediate_writes, 1u);
+  atomic_store(&white_duty, duty_x100);
   return H2_PAL_OK;
 }
-static const h2_pal_switch_vtable_t switch_vtable = {.get = switch_get,
-                                                     .set = switch_set};
-static const h2_pal_switch_api_t switch_api = {.vtable = &switch_vtable};
+static const h2_pal_pwm_switch_vtable_t pwm_vtable = {.set_duty = pwm_set};
+static const h2_pal_pwm_switch_api_t pwm_api = {.vtable = &pwm_vtable};
 
 static atomic_bool no_battery;
 static h2_pal_result_t battery_read(void* user, h2_pal_periph_id_t id,
@@ -912,6 +925,7 @@ static h2_h202_mfg_profile_t profile = {
     .charge_window_ms = 2000u,
     .charge_toggles = 2u,
     .charge_blink_period_ms = 500u,
+    .charge_breathe_period_ms = 1000u,
     .sample_rate_hz = 16000u,
     .frame_samples = 320u,
     .volume_percent = 35u,
@@ -995,6 +1009,64 @@ static void stored(h2_loader_mfg_summary_t* out) {
   assert(present && out->total == H2_H202_MFG_ITEM_COUNT);
 }
 
+static void assert_white_cached(unsigned duty) {
+  WAIT_UNTIL(atomic_load(&white_duty) == duty);
+  assert(atomic_load(&white_duty) == duty);
+  unsigned reads = atomic_load(&charger_reads);
+  WAIT_UNTIL(atomic_load(&charger_reads) >= reads + 3u);
+  assert(atomic_load(&charger_reads) >= reads + 3u);
+  unsigned writes = atomic_load(&white_writes);
+  reads = atomic_load(&charger_reads);
+  WAIT_UNTIL(atomic_load(&charger_reads) >= reads + 3u);
+  assert(atomic_load(&charger_reads) >= reads + 3u);
+  assert(atomic_load(&white_writes) == writes);
+}
+
+/* Called while the controller is waiting: indicator runs independently of
+ * stage results and uses only the public Runtime PAL PWM provider. */
+static void test_charge_indicator(void) {
+  assert_white_cached(0u);
+  atomic_store(&done_line, true);
+  atomic_store(&usb, true);
+  assert_white_cached(10000u); /* Full is steady across controller ticks. */
+
+  /* Failed duty changes are retried, logged once, and never cached. */
+  unsigned writes = atomic_load(&white_writes);
+  unsigned errors = atomic_load(&white_pwm_logs);
+  atomic_store(&white_fail, true);
+  atomic_store(&usb, false);
+  WAIT_UNTIL(atomic_load(&white_writes) >= writes + 3u);
+  assert(atomic_load(&white_writes) >= writes + 3u);
+  assert(atomic_load(&white_duty) == 10000u);
+  assert(atomic_load(&white_pwm_logs) == errors + 1u);
+  atomic_store(&white_fail, false);
+  assert_white_cached(0u);
+  assert(atomic_load(&white_pwm_logs) == errors + 2u); /* One recovery log. */
+
+  unsigned intermediate = atomic_load(&white_intermediate_writes);
+  atomic_store(&done_line, false);
+  atomic_store(&chrg, true);
+  atomic_store(&usb, true);
+  WAIT_UNTIL(atomic_load(&white_intermediate_writes) > intermediate);
+  assert(atomic_load(&white_intermediate_writes) > intermediate);
+  unsigned modes = atomic_load(&white_modes);
+  writes = atomic_load(&white_writes);
+  WAIT_UNTIL(atomic_load(&white_writes) >= writes + 5u);
+  assert(atomic_load(&white_writes) >= writes + 5u);
+  assert(atomic_load(&white_modes) == modes); /* No per-duty mode logs. */
+
+  atomic_store(&chrg, false); /* Both status lines off: fault blinks. */
+  WAIT_UNTIL(atomic_load(&white_duty) == 10000u);
+  assert(atomic_load(&white_duty) == 10000u);
+  WAIT_UNTIL(atomic_load(&white_duty) == 0u);
+  assert(atomic_load(&white_duty) == 0u);
+  WAIT_UNTIL(atomic_load(&white_duty) == 10000u);
+  assert(atomic_load(&white_duty) == 10000u);
+  atomic_store(&usb, false);
+  assert_white_cached(0u);
+  puts("service PWM charge modes, duty cache and sparse logs ok");
+}
+
 static void test_session(void) {
   /* With no battery reading, stage 02 fails at once through the input API;
    * Record retries once the battery is fitted. */
@@ -1038,15 +1110,7 @@ static void test_session(void) {
   assert(atomic_load(&last_color) == (64 << 16 | 48 << 8));
   assert(status().results[H2_H202_MFG_WIFI] == H2_H202_MFG_SKIPPED);
   assert(status().results[H2_H202_MFG_AGING] == H2_H202_MFG_UNTESTED);
-  /* Charge indicator runs in the background from the raw lines. */
-  atomic_store(&usb, true);
-  atomic_store(&chrg, true);
-  WAIT_UNTIL(atomic_load(&white));
-  assert(atomic_load(&white));
-  atomic_store(&usb, false);
-  WAIT_UNTIL(!atomic_load(&white));
-  assert(!atomic_load(&white));
-  atomic_store(&chrg, false);
+  test_charge_indicator();
   /* 2 s (here 400 ms) hold: commit and power off without waiting for release.
    */
   keys_now(1u);
@@ -1306,6 +1370,7 @@ int main(void) {
                            .pref = &pref_api,
                            .button = &button_api,
                            .switch_api = &switch_api,
+                           .pwm_switch = &pwm_api,
                            .input = &input_api,
                            .led = &led_api,
                            .nfc = &nfc_api,

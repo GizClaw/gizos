@@ -45,7 +45,7 @@ int h2_bk7258_board_runtime_config(h2_runtime_config_t* config) {
       .nfc = h2_h202_nfc_api() != NULL ? h2_h202_nfc_api()
                                        : h2_pal_unsupported_nfc_api(),
       .led = h2_h202_led_api(),
-      .pwm_switch = h2_pal_unsupported_pwm_switch_api(),
+      .pwm_switch = h2_h202_pwm_switch_api(),
       .switch_api = h2_h202_switch_api(),
       .system_event = h2_bk_platform_system_event_api(),
       .disk = h2_pal_unsupported_disk_api(),

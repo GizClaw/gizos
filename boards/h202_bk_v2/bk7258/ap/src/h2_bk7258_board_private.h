@@ -15,6 +15,7 @@ const h2_pal_nfc_api_t* h2_h202_nfc_api(void);
 const h2_pal_input_api_t* h2_h202_input_api(void);
 const h2_pal_power_api_t* h2_h202_power_api(void);
 const h2_pal_led_api_t* h2_h202_led_api(void);
+const h2_pal_pwm_switch_api_t* h2_h202_pwm_switch_api(void);
 h2_pal_result_t h2_h202_white_set(bool on);
 bool h2_h202_white_on(void);
 h2_pal_result_t h2_h202_led_deinit(void);

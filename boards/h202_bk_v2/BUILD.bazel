@@ -4,5 +4,5 @@ package(default_visibility = ["//visibility:public"])
 
 board_version(
     name = "version",
-    build = 1,
+    build = 2,
 )

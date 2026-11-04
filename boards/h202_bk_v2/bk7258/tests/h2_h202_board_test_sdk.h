@@ -123,6 +123,17 @@ enum {
   RESET_SOURCE_DEEPPS_GPIO = 3,
   H2_BK_NFC_FM175XX_DEFAULT_READ_CAPACITY = 256,
 };
+typedef unsigned pwm_chan_t;
+typedef struct {
+  uint32_t period_cycle, duty_cycle, duty2_cycle, duty3_cycle, psc;
+} pwm_init_config_t;
+typedef pwm_init_config_t pwm_period_duty_config_t;
+int bk_pwm_driver_init(void);
+int bk_pwm_init(pwm_chan_t chan, const pwm_init_config_t* config);
+int bk_pwm_deinit(pwm_chan_t chan);
+int bk_pwm_start(pwm_chan_t chan);
+int bk_pwm_stop(pwm_chan_t chan);
+int bk_pwm_set_period_duty(pwm_chan_t chan, pwm_period_duty_config_t* config);
 typedef unsigned spi_id_t;
 typedef void (*spi_isr_t)(spi_id_t, void*);
 typedef void* beken_semaphore_t;
