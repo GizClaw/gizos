@@ -26,9 +26,4 @@ printf '%s\n' \
   '  h2loader-bin                     compatibility alias for gizloader-bin' \
   '' \
   'Test:' \
-  '  test-web                         build and validate Web archives and E2E programs' \
-  '' \
-  'Guides:' \
-  '  guides-build                     build and audit Guides' \
-  '  guides-watch                     serve Guides with hot reload' \
-  '  guides-preview                   build and preview Guides'
+  '  test-web                         build and validate Web archives and E2E programs'

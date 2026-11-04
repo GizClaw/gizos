@@ -1,21 +1,16 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help cfg-doctor format format-check bazel-build bazel-test bazel-test-downstream-consumer bazel-coverage-report bazel-release gizloader-bin h2loader-bin test-web guides-build guides-watch guides-preview
+.PHONY: help cfg-doctor format format-check bazel-build bazel-test bazel-test-downstream-consumer bazel-coverage-report bazel-release gizloader-bin h2loader-bin test-web
 
 BAZEL_BIN ?= bazel
 BUN_BIN ?= bun
 GIZOS_ARGS ?= env
-GUIDES_WATCH_HOST ?= 127.0.0.1
-GUIDES_WATCH_PORT ?= 5174
-GUIDES_PREVIEW_HOST ?= 127.0.0.1
-GUIDES_PREVIEW_PORT ?= 4173
 
 export BAZEL_BIN BAZEL_CONFIG RELEASE_SLICE RELEASE_BATCH RELEASE_INPUT_DIR
 export RELEASE_STAGING_DIR H2_BAZEL_CONFIG
 export BAZEL_REMOTE_CACHE_URL BAZEL_REMOTE_CACHE_MODE
 export BAZEL_BUILD_REMOTE_DOWNLOAD_OUTPUTS
 export H2_NATIVE_CCACHE_RUNTIME_ROOT
-export GUIDES_WATCH_HOST GUIDES_WATCH_PORT GUIDES_PREVIEW_HOST GUIDES_PREVIEW_PORT
 
 help:
 	@scripts/config/help.sh
@@ -53,15 +48,6 @@ gizloader-bin h2loader-bin:
 
 test-web:
 	@scripts/test/test-web.sh
-
-guides-build:
-	@scripts/guides/guides-build.sh
-
-guides-watch:
-	@scripts/guides/guides-watch.sh
-
-guides-preview:
-	@scripts/guides/guides-preview.sh
 
 .PHONY: bazel-test-ios_pal_core_simulator_test bazel-test-android_pal_core_simulator_test
 bazel-test-ios_pal_core_simulator_test:
