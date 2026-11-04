@@ -38,17 +38,31 @@ Wi-Fi. Its BLE server executes commands on its own 32 KiB stack rather than
 starting another command task. Phase changes wait without holding command
 locks across BLE joins. USB recovery remains available.
 
-| Peripheral | Wiring / logical identity |
-| --- | --- |
-| ST7789 240x320 | SPI2 MOSI 9, SCLK 8, CS 1, DC 20, no reset; backlight PWM 21 |
-| ADC keys | GPIO0 / ADC1 channel 0; UP 102 below 150 mV, DOWN 101 below 447 mV, OK 103 below 1900 mV; radio group 201 |
-| I2C | SDA 10, SCL 7, 100 kHz; ES8311 0x18, CW2017 0x63 |
-| Audio I2S0 | MCLK 6, BCLK 5, WS 3, DOUT 2, DIN 4; no PA GPIO |
-| Battery | CW2017, input 401; read-only voltage and SOC, no profile programming |
-| Console | Native USB Serial/JTAG |
+## Supported hardware definition
 
-Wiring follows the [FoloToy BSP](https://github.com/FoloToy/ai-passport/tree/3d685a90bdb96dd8526d84edde1e63fec25b460e/components/bsp)
-and the existing Firmwares AI Passport integration. Audio uses 16 kHz mono,
+This BSP supports the ESP32-C3, 8 MiB Flash, no-PSRAM FoloToy AI Passport hardware map in the vendor's [bsp_pins.h](https://github.com/FoloToy/ai-passport/blob/3d685a90bdb96dd8526d84edde1e63fec25b460e/components/bsp/include/bsp_pins.h), pinned to commit `3d685a90bdb96dd8526d84edde1e63fec25b460e`. This source-pinned definition is the compatibility boundary; a numeric PCB silkscreen revision was not established during device acceptance. Units with a different panel, key ladder, wiring or audio lane order require separate configuration and qualification.
+
+| Peripheral | Supported hardware / GizOS configuration |
+| --- | --- |
+| LCD | ST7789P3, 240 × 320, four-wire SPI2, RGB565; MOSI GPIO9, SCLK GPIO8, CS GPIO1, DC GPIO20; reset is not MCU-connected (`-1`, software reset); SPI mode 0, inversion enabled |
+| Backlight | GPIO21, LEDC low-speed timer 0 / channel 0, 5 kHz, 10-bit duty |
+| Key ADC | GPIO0 / ADC1 channel 0, calibrated millivolts with 12 dB attenuation; radio group 201 |
+| UP | Physical ladder window `0 <= mV < 150`; logical button 102 |
+| DOWN | Physical ladder window `150 <= mV < 447`; logical button 101 |
+| OK | Physical ladder window `447 <= mV < 1900`; logical button 103 |
+| Keys released | `mV >= 1900`; valid samples pass through the two-sample ADC stabilizer |
+| I2C | Port 0, SDA GPIO10, SCL GPIO7; GizOS uses 100 kHz; ES8311 address `0x18`, CW2017 address `0x63` (both 7-bit) |
+| Audio I2S0 | MCLK GPIO6, BCLK GPIO5, WS GPIO3, MCU-to-codec DOUT GPIO2, codec-to-MCU DIN GPIO4; no MCU-controlled PA (`-1`) |
+| Audio receive | Philips I2S, stereo S16LE on the wire: raw lane 0 is the microphone ADC, raw lane 1 is the DAC playback reference; mono processed output |
+| Battery | CW2017, logical input 401; read-only voltage and SOC, no profile programming |
+| Console | ESP32-C3 native USB Serial/JTAG |
+| POWER / NFC | POWER is an operator-confirmed off/on switch without an MCU button mapping; the passive NFC tag has no MCU interface |
+
+The vendor [button implementation](https://github.com/FoloToy/ai-passport/blob/3d685a90bdb96dd8526d84edde1e63fec25b460e/components/bsp/src/bsp_button.c) confirms half-open calibrated voltage windows. Its [display implementation](https://github.com/FoloToy/ai-passport/blob/3d685a90bdb96dd8526d84edde1e63fec25b460e/components/bsp/src/bsp_display.c) identifies the ST7789P3 panel. GizOS deliberately selects a 40 MHz LCD clock instead of the vendor's 80 MHz default; wiring compatibility does not copy the vendor's task, DMA or clock policy.
+
+The [board audio configuration](esp32c3/src/h2_esp_board_peripherals.c) sets `raw_channels=2`, `mic_channel_index=0`, `ref_channel_index=1` and `processed_channels=1`. The [ESP audio provider](../../native_component_src/esp-idf6.x/h2_es8311_audio_system/src/h2_esp_es8311_platform_audio.c) enables the codec DAC reference through ES8311 register `0x44 = 0x58`; the [SR adapter](../../native_component_src/esp-idf6.x/h2_es8311_audio_system/src/h2_esp_es8311_sr.c) feeds raw sample `2*i` to the microphone input and `2*i+1` to the reference input. AEC uses this separate captured reference lane; the basic MIC check selects raw microphone processing with AEC disabled.
+
+Audio uses 16 kHz mono,
 512-sample frames, MCLK multiple 384, five 128-frame DMA descriptors and real
 ESP-SR C3 AEC. Each native frame consumes four complete DMA descriptors, avoiding
 IDF's partial-descriptor cursor replacement under queue pressure. Total DMA
