@@ -28,6 +28,7 @@ cc_test(
         "tests/h2_bk_fixed_boot_test_sdk.h",
         "tests/test_h2_bk_fixed_boot.c",
     ],
+    conlyopts = H2_C11_OPTS,
     includes = [
         "src",
         "tests",
