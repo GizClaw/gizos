@@ -227,10 +227,12 @@ static void test_audio_failure_still_completes_teardown(void) {
   assert(s_corehttp_destroy_calls == 1);
   assert(s_fs_deinit_calls == 1);
 
-  /* State was reset, so a second call is a no-op. */
-  reset_stubs();
+  h2_runtime_config_t config;
+  assert(h2_esp_board_runtime_config(&config) == H2_PAL_ERR_INVALID_STATE);
+  s_audio_deinit_result = H2_PAL_OK;
   assert(h2_esp_board_runtime_deinit() == H2_PAL_OK);
-  assert(s_corehttp_destroy_calls == 0);
+  assert(s_audio_deinit_calls == 2);
+  assert(s_corehttp_destroy_calls == 1 && s_fs_deinit_calls == 1);
 }
 
 static void test_first_error_wins_over_later_failures(void) {
@@ -241,6 +243,10 @@ static void test_first_error_wins_over_later_failures(void) {
 
   assert(h2_esp_board_runtime_deinit() == H2_PAL_ERR_IO);
   assert(s_fs_deinit_calls == 1);
+  s_audio_deinit_result = H2_PAL_OK;
+  s_fs_deinit_result = H2_PAL_OK;
+  assert(h2_esp_board_runtime_deinit() == H2_PAL_OK);
+  assert(s_audio_deinit_calls == 2 && s_fs_deinit_calls == 2);
 }
 
 static void test_later_failure_is_reported_when_audio_succeeds(void) {
@@ -250,6 +256,9 @@ static void test_later_failure_is_reported_when_audio_succeeds(void) {
 
   assert(h2_esp_board_runtime_deinit() == H2_PAL_ERR_INVALID_STATE);
   assert(s_corehttp_destroy_calls == 1);
+  s_fs_deinit_result = H2_PAL_OK;
+  assert(h2_esp_board_runtime_deinit() == H2_PAL_OK);
+  assert(s_audio_deinit_calls == 1 && s_fs_deinit_calls == 2);
 }
 
 static void test_fs_clear_routes_owned_paths(void) {

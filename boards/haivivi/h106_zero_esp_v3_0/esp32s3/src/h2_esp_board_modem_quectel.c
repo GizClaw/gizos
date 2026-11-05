@@ -1,4 +1,5 @@
 #include "h2_esp_board_modem_handshake.h"
+#include "h2_esp_board_modem_lifecycle.h"
 #include "h2_esp_board_modem_audio.h"
 #include "h2_esp_board_modem_ri.h"
 #include "h2_esp_board_modem_sleep.h"
@@ -141,7 +142,7 @@ H2_ATOMIC_DEFINE_STATIC(uint, s_call_audio_route_generation, 0u);
 static bool s_cmux_enabled;
 /* Transport state survives provider SIM invalidation of data_status. */
 static bool s_ppp_data_mode;
-static bool s_ppp_close_requested;
+H2_ATOMIC_DEFINE_STATIC(bool, s_ppp_close_requested, false);
 static bool s_apn_auto_selected;
 static bool s_dce_apn_configured;
 /* Module baud is independent of the lifetime of the local UART transport. */
@@ -253,6 +254,17 @@ static h2_pal_result_t zero_esp_modem_open_run(void* user,
     h2_atomic_ptr_store(&s_open_task, NULL, H2_ATOMIC_SEQ_CST);
     return rc;
   }
+  rc = h2_pal_mutex_lock(s_modem.config.sync_api, s_modem.lock);
+  if (rc == H2_PAL_OK) {
+    const bool ota_hold = s_modem.ota_hold != 0u;
+    rc = h2_pal_mutex_unlock(s_modem.config.sync_api, s_modem.lock);
+    if (rc == H2_PAL_OK && ota_hold) rc = H2_PAL_ERR_BUSY;
+  }
+  if (rc != H2_PAL_OK) {
+    (void)modem_operation_unlock();
+    h2_atomic_ptr_store(&s_open_task, NULL, H2_ATOMIC_SEQ_CST);
+    return rc;
+  }
   if (!h2_atomic_load(&s_power_requested)) {
     (void)modem_operation_unlock();
     h2_atomic_ptr_store(&s_open_task, NULL, H2_ATOMIC_SEQ_CST);
@@ -310,25 +322,43 @@ static h2_pal_result_t zero_esp_modem_open_run(void* user,
   return rc != H2_PAL_OK ? rc : unlock_rc;
 }
 
-static h2_pal_result_t zero_esp_modem_close_run(void* user,
-                                                uint32_t timeout_ms) {
-  const TickType_t start = xTaskGetTickCount();
+typedef struct {
+  void* user;
+  TickType_t started;
+} modem_close_context_t;
+
+static h2_pal_result_t modem_close_admit(void) {
+  return h2_quectel_modem_transport_closing(&s_modem);
+}
+
+static h2_pal_result_t modem_close_admitted(void* user, uint32_t timeout_ms) {
+  const modem_close_context_t* context = user;
   h2_atomic_store(&s_cleanup_required, true);
   h2_atomic_store(&s_power_requested, false);
-  /* Power-off is a serialized request; cut the rail before SDK cleanup. */
-  (void)modem_enable_set_level(0);
-  /* Share the provider's recursive operation lock across the entire board
-   * transaction: individual AT commands cannot serialize baud/CMUX changes. */
-  h2_pal_result_t rc = modem_operation_lock(timeout_ms);
-  if (rc != H2_PAL_OK) return rc;
   const uint32_t remaining =
-      timeout_ms == 0u ? 15000u : remaining_timeout_ms(timeout_ms, start);
-  rc = remaining == 0u
-           ? H2_PAL_ERR_TIMEOUT
-           : zero_esp_modem_close(zero_esp_modem_platform_from_user(user),
-                                  remaining);
-  const h2_pal_result_t unlock_rc = modem_operation_unlock();
-  return rc != H2_PAL_OK ? rc : unlock_rc;
+      timeout_ms == 0u ? 15000u
+                       : remaining_timeout_ms(timeout_ms, context->started);
+  return remaining == 0u
+             ? H2_PAL_ERR_TIMEOUT
+             : zero_esp_modem_close(
+                   zero_esp_modem_platform_from_user(context->user), remaining);
+}
+
+static h2_pal_result_t zero_esp_modem_close_run(void* user,
+                                                uint32_t timeout_ms) {
+  modem_close_context_t context = {user, xTaskGetTickCount()};
+  const h2_board_modem_close_ops_t ops = {
+      modem_operation_lock, modem_close_admit, modem_close_admitted,
+      modem_operation_unlock};
+  return h2_board_modem_close_run(&ops, &context, timeout_ms);
+}
+
+static void modem_failed_open(void* user, h2_pal_result_t error) {
+  (void)user;
+  h2_atomic_store(&s_cleanup_required, true);
+  h2_atomic_store(&s_power_requested, false);
+  (void)modem_enable_set_level(0);
+  ESP_LOGW(TAG, "H2_H106_CELLULAR stage=lifecycle_failed on=1 rc=%d", error);
 }
 
 /* The app modem task owns the complete lifecycle, including SDK teardown. */
@@ -340,7 +370,7 @@ static h2_pal_result_t modem_lifecycle(void* user, uint32_t timeout_ms,
     if (!h2_atomic_load(&s_modem_accessed))
       h2_atomic_store(&s_modem_powered, h2_esp_board_modem_is_powered());
     h2_atomic_store(&s_modem_accessed, true);
-    h2_atomic_store(&s_power_requested, opening);
+    if (opening) h2_atomic_store(&s_power_requested, true);
   }
   portEXIT_CRITICAL(&s_power_gpio_lock);
   if (!allowed) return H2_PAL_ERR_CLOSED;
@@ -350,17 +380,9 @@ static h2_pal_result_t modem_lifecycle(void* user, uint32_t timeout_ms,
     ESP_LOGW(TAG, "H2_H106_CELLULAR stage=open_already_ready rc=0");
     return H2_PAL_OK;
   }
-  const h2_pal_result_t rc = opening
-                                 ? zero_esp_modem_open_run(user, timeout_ms)
-                                 : zero_esp_modem_close_run(user, timeout_ms);
-  if (rc != H2_PAL_OK) {
-    h2_atomic_store(&s_cleanup_required, true);
-    h2_atomic_store(&s_power_requested, false);
-    (void)modem_enable_set_level(0);
-    ESP_LOGW(TAG, "H2_H106_CELLULAR stage=lifecycle_failed on=%d rc=%d",
-             opening, rc);
-  }
-  return rc;
+  const h2_board_modem_lifecycle_ops_t ops = {
+      zero_esp_modem_open_run, zero_esp_modem_close_run, modem_failed_open};
+  return h2_board_modem_lifecycle_run(&ops, user, timeout_ms, opening);
 }
 
 static h2_pal_result_t zero_esp_modem_open_adapter(void* user,
@@ -697,9 +719,8 @@ static esp_err_t zero_esp_modem_at_raw(const char* cmd, char* response,
   h2_atomic_ptr_store(&s_sdk_wait_task, NULL, H2_ATOMIC_SEQ_CST);
   zero_esp_modem_rx_set_command(NULL);
   if (err == ESP_ERR_TIMEOUT) {
-    const char* command = strncmp(cmd, "ATD", 3u) == 0 ? "ATD<redacted>" : cmd;
-    ESP_LOGW(TAG, "modem AT timeout cmd=%s baud=%d cmux=%d", command,
-             s_modem_baud, s_cmux_enabled);
+    ESP_LOGW(TAG, "modem AT timeout baud=%d cmux=%d", s_modem_baud,
+             s_cmux_enabled);
   }
   return h2_atomic_load(&s_power_requested) ? err : ESP_ERR_INVALID_STATE;
 }
@@ -877,8 +898,30 @@ static void zero_esp_modem_report_netif_change(void) {
   (void)h2_esp_platform_netif_reconcile_default();
 }
 
+static bool modem_data_is_open(void) {
+  h2_pal_modem_data_status_t status = {0};
+  return h2_pal_modem_get_data_status(&s_modem.platform, &status) ==
+             H2_PAL_OK &&
+         status.state == H2_PAL_MODEM_DATA_OPEN && status.ip4_valid != 0u;
+}
+
+static h2_pal_result_t modem_data_state_set(h2_pal_modem_data_state_t state,
+                                            h2_pal_result_t error) {
+  const h2_pal_result_t rc =
+      h2_pal_mutex_lock(s_modem.config.sync_api, s_modem.lock);
+  if (rc != H2_PAL_OK) return rc;
+  if (state == H2_PAL_MODEM_DATA_OPENING)
+    memset(&s_modem.data_status, 0, sizeof(s_modem.data_status));
+  s_modem.data_status.state = state;
+  s_modem.data_status.last_error = error;
+  if (state == H2_PAL_MODEM_DATA_CLOSED) s_modem.data_status.ip4_valid = 0u;
+  return h2_pal_mutex_unlock(s_modem.config.sync_api, s_modem.lock);
+}
+
 static void zero_esp_modem_mark_data_closed(h2_pal_result_t result,
                                             int post_event) {
+  if (h2_pal_mutex_lock(s_modem.config.sync_api, s_modem.lock) != H2_PAL_OK)
+    return;
   s_modem.data_status.state = H2_PAL_MODEM_DATA_CLOSED;
   s_modem.data_status.ip4_valid = 0u;
   s_modem.data_status.last_error = result;
@@ -887,6 +930,7 @@ static void zero_esp_modem_mark_data_closed(h2_pal_result_t result,
                               &s_modem.data_status,
                               sizeof(s_modem.data_status));
   }
+  (void)h2_pal_mutex_unlock(s_modem.config.sync_api, s_modem.lock);
 }
 
 static int modem_data_swap(void) {
@@ -1087,7 +1131,7 @@ static void zero_esp_modem_ppp_ip_handler_locked(void* arg,
     }
     zero_esp_modem_report_netif_change();
     zero_esp_modem_mark_data_closed(
-        s_ppp_close_requested ? H2_PAL_OK : H2_PAL_ERR_IO, 1);
+        h2_atomic_load(&s_ppp_close_requested) ? H2_PAL_OK : H2_PAL_ERR_IO, 1);
   }
 }
 
@@ -1099,16 +1143,18 @@ static void zero_esp_modem_ppp_ip_handler(void* arg, esp_event_base_t base,
   (void)h2_pal_mutex_unlock(s_modem.config.sync_api, s_modem.lock);
 }
 
-static void zero_esp_modem_ppp_status_handler(void* arg, esp_event_base_t base,
-                                              int32_t event_id,
-                                              void* event_data) {
+static void zero_esp_modem_ppp_status_handler_locked(void* arg,
+                                                     esp_event_base_t base,
+                                                     int32_t event_id,
+                                                     void* event_data) {
   (void)arg;
   (void)base;
   (void)event_data;
   ESP_LOGI(TAG, "PPP status event id=%" PRId32, event_id);
-  if (s_ppp_close_requested && (event_id == NETIF_PPP_ERRORUSER ||
-                                event_id == NETIF_PPP_PHASE_DISCONNECT ||
-                                event_id == NETIF_PPP_PHASE_DEAD)) {
+  if (h2_atomic_load(&s_ppp_close_requested) &&
+      (event_id == NETIF_PPP_ERRORUSER ||
+       event_id == NETIF_PPP_PHASE_DISCONNECT ||
+       event_id == NETIF_PPP_PHASE_DEAD)) {
     if (s_ppp_events != NULL) {
       xEventGroupClearBits(s_ppp_events, H2_ZERO_ESP_MODEM_PPP_GOT_IP_BIT |
                                              H2_ZERO_ESP_MODEM_PPP_ERROR_BIT);
@@ -1131,6 +1177,15 @@ static void zero_esp_modem_ppp_status_handler(void* arg, esp_event_base_t base,
     zero_esp_modem_report_netif_change();
     zero_esp_modem_mark_data_closed(H2_PAL_ERR_IO, 1);
   }
+}
+
+static void zero_esp_modem_ppp_status_handler(void* arg, esp_event_base_t base,
+                                              int32_t event_id,
+                                              void* event_data) {
+  if (h2_pal_mutex_lock(s_modem.config.sync_api, s_modem.lock) != H2_PAL_OK)
+    return;
+  zero_esp_modem_ppp_status_handler_locked(arg, base, event_id, event_data);
+  (void)h2_pal_mutex_unlock(s_modem.config.sync_api, s_modem.lock);
 }
 
 static int modem_dtr_drive_gpio(int level) {
@@ -1328,6 +1383,11 @@ static h2_pal_result_t zero_esp_modem_deinit(void* user) {
 }
 
 static h2_pal_result_t modem_destroy_transport(uint32_t timeout_ms) {
+  /* Drain provider callbacks under its state lock before SDK joins. Never
+   * hold that lock while unregistering handlers or destroying the UART. */
+  const h2_pal_result_t admission =
+      h2_quectel_modem_transport_closing(&s_modem);
+  if (admission != H2_PAL_OK) return admission;
   h2_atomic_store(&s_cleanup_required, true);
   const h2_pal_result_t power_rc = modem_enable_set_level(0);
   if (power_rc != H2_PAL_OK) return power_rc;
@@ -1394,7 +1454,7 @@ static h2_pal_result_t modem_destroy_transport(uint32_t timeout_ms) {
   }
   s_cmux_enabled = false;
   s_ppp_data_mode = false;
-  s_ppp_close_requested = false;
+  h2_atomic_store(&s_ppp_close_requested, false);
   s_dce_apn_configured = false;
   taskENTER_CRITICAL(&s_call_monitor_lock);
   memset(&s_call_monitor_status, 0, sizeof(s_call_monitor_status));
@@ -1496,7 +1556,7 @@ static h2_pal_result_t zero_esp_modem_command_locked(void* user,
                esp_err_to_name(urc_port_err), urc_port_response);
       return map_esp_error(urc_port_err);
     }
-    char sms_response[64] = {0};
+    char sms_response[H2_ZERO_ESP_MODEM_AT_RESPONSE_SIZE] = {0};
     esp_err_t sms_rc =
         zero_esp_modem_at("AT+CNMI=0,0,0,0,0", sms_response, 2000);
     if (sms_rc != ESP_OK) return map_esp_error(sms_rc);
@@ -2151,10 +2211,9 @@ static h2_pal_result_t zero_esp_modem_data_open(h2_pal_modem_t* platform,
                                                 uint32_t timeout_ms) {
   (void)platform;
   const TickType_t start_ticks = xTaskGetTickCount();
-  s_ppp_close_requested = false;
+  h2_atomic_store(&s_ppp_close_requested, false);
   if (s_ppp_data_mode &&
-      (h2_atomic_load(&s_sim_data_invalid) ||
-       s_modem.data_status.state != H2_PAL_MODEM_DATA_OPEN)) {
+      (h2_atomic_load(&s_sim_data_invalid) || !modem_data_is_open())) {
     const esp_err_t err = modem_leave_data_mode();
     if (err != ESP_OK) return map_esp_error(err);
   }
@@ -2165,36 +2224,31 @@ static h2_pal_result_t zero_esp_modem_data_open(h2_pal_modem_t* platform,
   }
 
   EventBits_t bits = xEventGroupGetBits(s_ppp_events);
-  if ((bits & H2_ZERO_ESP_MODEM_PPP_GOT_IP_BIT) != 0u &&
-      s_modem.data_status.state == H2_PAL_MODEM_DATA_OPEN &&
-      s_modem.data_status.ip4_valid != 0u) {
+  if ((bits & H2_ZERO_ESP_MODEM_PPP_GOT_IP_BIT) != 0u && modem_data_is_open()) {
     return H2_PAL_OK;
   }
 
   xEventGroupClearBits(s_ppp_events, H2_ZERO_ESP_MODEM_PPP_GOT_IP_BIT |
                                          H2_ZERO_ESP_MODEM_PPP_STOPPED_BIT |
                                          H2_ZERO_ESP_MODEM_PPP_ERROR_BIT);
-  memset(&s_modem.data_status, 0, sizeof(s_modem.data_status));
-  s_modem.data_status.state = H2_PAL_MODEM_DATA_OPENING;
+  rc = modem_data_state_set(H2_PAL_MODEM_DATA_OPENING, H2_PAL_OK);
+  if (rc != H2_PAL_OK) return rc;
 
   rc = zero_esp_modem_configure_apn_from_imsi();
   if (rc != H2_PAL_OK) {
-    s_modem.data_status.state = H2_PAL_MODEM_DATA_CLOSED;
-    s_modem.data_status.last_error = rc;
+    (void)modem_data_state_set(H2_PAL_MODEM_DATA_CLOSED, rc);
     return rc;
   }
 
   uint32_t remaining_ms = remaining_timeout_ms(timeout_ms, start_ticks);
   if (remaining_ms == 0u) {
-    s_modem.data_status.state = H2_PAL_MODEM_DATA_CLOSED;
-    s_modem.data_status.last_error = H2_PAL_ERR_TIMEOUT;
+    (void)modem_data_state_set(H2_PAL_MODEM_DATA_CLOSED, H2_PAL_ERR_TIMEOUT);
     return H2_PAL_ERR_TIMEOUT;
   }
 
   rc = zero_esp_modem_wait_registered(remaining_ms);
   if (rc != H2_PAL_OK) {
-    s_modem.data_status.state = H2_PAL_MODEM_DATA_CLOSED;
-    s_modem.data_status.last_error = rc;
+    (void)modem_data_state_set(H2_PAL_MODEM_DATA_CLOSED, rc);
     return rc;
   }
 
@@ -2203,10 +2257,9 @@ static h2_pal_result_t zero_esp_modem_data_open(h2_pal_modem_t* platform,
   /* Reset framing after the temporary command-terminal swap. */
   zero_esp_modem_rx_restart();
   if (err != ESP_OK) {
-    s_modem.data_status.state = H2_PAL_MODEM_DATA_CLOSED;
-    s_modem.data_status.last_error = map_esp_error(err);
-    zero_esp_modem_cleanup_ppp_session(s_modem.data_status.last_error);
-    return s_modem.data_status.last_error;
+    const h2_pal_result_t error = map_esp_error(err);
+    zero_esp_modem_cleanup_ppp_session(error);
+    return error;
   }
 
   remaining_ms = remaining_timeout_ms(timeout_ms, start_ticks);
@@ -2225,9 +2278,7 @@ static h2_pal_result_t zero_esp_modem_data_open(h2_pal_modem_t* platform,
                              pdFALSE, pdFALSE, wait_ticks);
   h2_atomic_ptr_store(&s_sdk_wait_task, NULL, H2_ATOMIC_SEQ_CST);
   if (!h2_atomic_load(&s_power_requested)) return H2_PAL_ERR_CLOSED;
-  if ((bits & H2_ZERO_ESP_MODEM_PPP_GOT_IP_BIT) != 0u &&
-      s_modem.data_status.state == H2_PAL_MODEM_DATA_OPEN &&
-      s_modem.data_status.ip4_valid != 0u) {
+  if ((bits & H2_ZERO_ESP_MODEM_PPP_GOT_IP_BIT) != 0u && modem_data_is_open()) {
     zero_esp_modem_report_netif_change();
     return H2_PAL_OK;
   }
@@ -2237,7 +2288,7 @@ static h2_pal_result_t zero_esp_modem_data_open(h2_pal_modem_t* platform,
                                 : H2_PAL_ERR_TIMEOUT;
   zero_esp_modem_cleanup_ppp_session(failure);
   ESP_LOGW(TAG, "PPP open failed bits=0x%" PRIx32 " last_error=%d",
-           (uint32_t)bits, s_modem.data_status.last_error);
+           (uint32_t)bits, failure);
   return failure;
 }
 
@@ -2249,21 +2300,27 @@ static h2_pal_result_t zero_esp_modem_data_close(h2_pal_modem_t* platform,
       xEventGroupClearBits(s_ppp_events, H2_ZERO_ESP_MODEM_PPP_GOT_IP_BIT);
     }
     zero_esp_modem_report_netif_change();
-    s_ppp_close_requested = false;
+    h2_atomic_store(&s_ppp_close_requested, false);
     zero_esp_modem_mark_data_closed(H2_PAL_OK, 0);
     return H2_PAL_OK;
   }
-  if (s_modem.data_status.state == H2_PAL_MODEM_DATA_CLOSED && !s_ppp_data_mode)
+  h2_pal_modem_data_status_t status = {0};
+  const h2_pal_result_t status_rc =
+      h2_pal_modem_get_data_status(&s_modem.platform, &status);
+  if (status_rc != H2_PAL_OK) return status_rc;
+  if (status.state == H2_PAL_MODEM_DATA_CLOSED && !s_ppp_data_mode)
     return H2_PAL_OK;
   if (s_dce != NULL && s_cmux_enabled) {
-    s_ppp_close_requested = true;
-    s_modem.data_status.state = H2_PAL_MODEM_DATA_CLOSING;
+    h2_atomic_store(&s_ppp_close_requested, true);
+    const h2_pal_result_t state_rc =
+        modem_data_state_set(H2_PAL_MODEM_DATA_CLOSING, H2_PAL_OK);
+    if (state_rc != H2_PAL_OK) return state_rc;
     esp_err_t err = modem_leave_data_mode();
     zero_esp_modem_rx_restart();
     if (err != ESP_OK) {
       h2_pal_result_t result = map_esp_error(err);
-      s_ppp_close_requested = false;
-      s_modem.data_status.last_error = result;
+      h2_atomic_store(&s_ppp_close_requested, false);
+      (void)modem_data_state_set(H2_PAL_MODEM_DATA_CLOSING, result);
       ESP_LOGW(TAG, "PPP close command mode failed: %s", esp_err_to_name(err));
       return result;
     }
@@ -2286,7 +2343,7 @@ static h2_pal_result_t zero_esp_modem_data_close(h2_pal_modem_t* platform,
       rc = H2_PAL_ERR_TIMEOUT;
     }
   }
-  s_ppp_close_requested = false;
+  h2_atomic_store(&s_ppp_close_requested, false);
   zero_esp_modem_mark_data_closed(rc, 1);
   return rc;
 }

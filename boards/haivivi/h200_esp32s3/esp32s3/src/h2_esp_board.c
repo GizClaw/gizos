@@ -72,33 +72,6 @@ int h2_esp_h200_board_set_pa(int enabled) {
 int h2_esp_board_h2loader_fs_init(h2_pal_fs_api_t* fs);
 int h2_esp_board_h2loader_fs_deinit(void);
 
-int h2_esp_board_fs_init(h2_pal_fs_api_t* fs) {
-  uint8_t partition_subtype;
-  const h2_esp_platform_spiffs_config_t config = {
-      .base_path = H2_ESP_BOARD_FS_BASE_PATH,
-      .partition_label = H2_ESP_BOARD_FS_PARTITION_LABEL,
-      .max_files = 16u,
-      .format_if_mount_failed = true,
-  };
-  h2_pal_result_t rc = h2_esp_platform_data_partition_subtype(
-      H2_ESP_BOARD_FS_PARTITION_LABEL, &partition_subtype);
-  if (rc == H2_PAL_OK) {
-    return h2_esp_platform_spiffs_fs_init(fs, &config);
-  }
-  if (rc != H2_PAL_ERR_NOT_FOUND) {
-    return rc;
-  }
-  return h2_esp_board_h2loader_fs_init(fs);
-}
-
-int h2_esp_board_fs_deinit(void) {
-  int legacy_rc =
-      h2_esp_platform_spiffs_fs_deinit(H2_ESP_BOARD_FS_PARTITION_LABEL);
-  int h2loader_rc = h2_esp_board_h2loader_fs_deinit();
-  return legacy_rc == H2_PAL_FS_OK || h2loader_rc == H2_PAL_FS_OK ? H2_PAL_FS_OK
-                                                                  : h2loader_rc;
-}
-
 h2_pal_mem_api_t* h2_esp_board_default_allocator(void) {
   return h2_esp_platform_default_allocator();
 }

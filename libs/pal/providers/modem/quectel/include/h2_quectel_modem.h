@@ -238,6 +238,7 @@ struct h2_quectel_modem {
   uint8_t call_volume_range_cached;
   uint8_t opened;
   uint8_t transport_closed;
+  uint8_t raw_ppp_owned; /* Board UART is exclusively owned by raw PPP. */
   uint8_t cell_locate_token_sent;
   uint32_t capabilities;
   /* Optional DSCI configuration is volatile; ERROR is latched per instance. */
@@ -280,6 +281,26 @@ h2_pal_result_t h2_quectel_modem_init(h2_quectel_modem_t* modem,
  * stops the URC worker outside the provider lock, then releases resources.
  * On failure retain the instance and retry; never free it before success. */
 h2_pal_result_t h2_quectel_modem_deinit(h2_quectel_modem_t* modem);
+
+/** Admit overall transport shutdown while holding the operation lock.
+ * Synchronizes with provider URC callbacks and rejects subsequent URCs until
+ * prepare. BUSY during OTA or raw PPP ownership leaves state unchanged.
+ * A failed teardown retains
+ * the instance and must be retried; this does not complete cleanup. Never use
+ * for a data-only close. Returns the state-lock error if admission fails. */
+h2_pal_result_t h2_quectel_modem_transport_closing(h2_quectel_modem_t* modem);
+
+/** Publish a board-owned complete data snapshot under the state lock only.
+ * May run from a callback; performs no I/O, event delivery or worker join. */
+h2_pal_result_t h2_quectel_modem_data_status_update(
+    h2_quectel_modem_t* modem, const h2_pal_modem_data_status_t* status);
+/** Caller holds operation_lock across ownership changes and UART transitions.
+ * Claim rejects OTA; while owned all provider command operations return BUSY.
+ * Release only after PPP readers stop and the PCB is safe; reclaim on failed
+ * hangup before releasing operation_lock. Pure state snapshots remain usable.
+ */
+h2_pal_result_t h2_quectel_modem_set_raw_ppp_owned(h2_quectel_modem_t* modem,
+                                                   int owned);
 
 /** @brief Reset observations after board-owned transport shutdown and
  * power-off.

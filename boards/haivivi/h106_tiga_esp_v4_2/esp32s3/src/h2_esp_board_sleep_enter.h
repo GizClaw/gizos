@@ -11,28 +11,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Both terminal paths hold digital IOs, so esp_deep_sleep_start() always runs
- * esp_sleep_isolate_digital_gpio(). That function isolates the MSPI pads, so
- * IDF 6 asserts that the stack of the calling task lives in internal RAM: a
- * PSRAM stack can no longer be read once the pads are gone. The supervisor
- * commit already runs on the internal-stack "h106/shutdown" task, but the
- * plain PAL deep-sleep request runs on the "h106/modem" worker, whose stack is
- * in PSRAM. Hand the final step to a short-lived task instead of moving whole
- * workers into internal RAM: FreeRTOS allocates task stacks with
- * MALLOC_CAP_INTERNAL, so this one always satisfies the assert. */
+/* GPIO isolation makes PSRAM inaccessible. Reserve an internal-stack helper
+ * before any peripheral shutdown or pad holds; it cannot sleep until commit. */
 #define H2_TIGA_SLEEP_ENTER_TASK_NAME "h2/deep-sleep"
 #define H2_TIGA_SLEEP_ENTER_TASK_STACK 4096u
 #define H2_TIGA_SLEEP_ENTER_TASK_PRIORITY (configMAX_PRIORITIES - 1)
-/* Only bounds a sleep that never starts; normally the chip stops inside. */
 #define H2_TIGA_SLEEP_ENTER_TIMEOUT_MS 3000u
 #define H2_TIGA_SLEEP_ENTER_POLL_MS 10u
 
-/* The state is board-owned and protected across the two ESP cores. A timed-out
- * caller leaves IN_FLIGHT intact: only the helper may release its handoff
- * after esp_deep_sleep_start() has returned. */
 enum {
   H2_TIGA_SLEEP_ENTER_IDLE,
+  H2_TIGA_SLEEP_ENTER_RESERVED,
+  H2_TIGA_SLEEP_ENTER_QUEUED,
   H2_TIGA_SLEEP_ENTER_IN_FLIGHT,
+  H2_TIGA_SLEEP_ENTER_CANCELLED,
   H2_TIGA_SLEEP_ENTER_RETURNED,
 };
 static portMUX_TYPE h2_tiga_sleep_enter_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -47,8 +39,9 @@ static int h2_tiga_sleep_enter_get_state(void) {
 
 static bool h2_tiga_sleep_enter_claim(void) {
   portENTER_CRITICAL(&h2_tiga_sleep_enter_lock);
-  bool claimed = h2_tiga_sleep_enter_state != H2_TIGA_SLEEP_ENTER_IN_FLIGHT;
-  if (claimed) h2_tiga_sleep_enter_state = H2_TIGA_SLEEP_ENTER_IN_FLIGHT;
+  bool claimed = h2_tiga_sleep_enter_state == H2_TIGA_SLEEP_ENTER_IDLE ||
+                 h2_tiga_sleep_enter_state == H2_TIGA_SLEEP_ENTER_RETURNED;
+  if (claimed) h2_tiga_sleep_enter_state = H2_TIGA_SLEEP_ENTER_RESERVED;
   portEXIT_CRITICAL(&h2_tiga_sleep_enter_lock);
   return claimed;
 }
@@ -59,29 +52,30 @@ static void h2_tiga_sleep_enter_finish(void) {
   portEXIT_CRITICAL(&h2_tiga_sleep_enter_lock);
 }
 
+static bool h2_tiga_sleep_enter_begin(void) {
+  portENTER_CRITICAL(&h2_tiga_sleep_enter_lock);
+  bool start = h2_tiga_sleep_enter_state == H2_TIGA_SLEEP_ENTER_QUEUED;
+  if (start) h2_tiga_sleep_enter_state = H2_TIGA_SLEEP_ENTER_IN_FLIGHT;
+  portEXIT_CRITICAL(&h2_tiga_sleep_enter_lock);
+  return start;
+}
+
 static void h2_tiga_sleep_enter_task(void* user) {
   (void)user;
-  esp_deep_sleep_start();
+  while (h2_tiga_sleep_enter_get_state() == H2_TIGA_SLEEP_ENTER_RESERVED)
+    vTaskDelay(pdMS_TO_TICKS(H2_TIGA_SLEEP_ENTER_POLL_MS));
+  if (h2_tiga_sleep_enter_begin()) esp_deep_sleep_start();
+  /* Cancelled helpers never touch hardware. No caller borrows their stack. */
   h2_tiga_sleep_enter_finish();
-  /* The task owns its own stack: self-deleting returns that internal RAM, so
-   * a refused sleep cannot leak a stack per attempt. */
   vTaskDelete(NULL);
 }
 
-/* Enters deep sleep; it does not return when the chip stops. Returns
- * ESP_ERR_INVALID_STATE when esp_deep_sleep_start() itself returned,
- * ESP_ERR_NO_MEM when the internal-stack task could not be created, and
- * ESP_ERR_TIMEOUT when the handoff task neither slept nor reported back.
- * A PSRAM-stack retry while that helper is still active returns
- * ESP_ERR_INVALID_STATE without starting another helper. Callers whose stack
- * is already internal keep the previous direct call even during a stuck
- * handoff: the terminal supervisor must always be able to enter sleep. */
-static inline esp_err_t h2_tiga_sleep_enter_deep_sleep(void) {
+/* Serialized owner: reserve before hardware preparation, then commit or cancel
+ * from that same caller. Allocation failure has no GPIO/peripheral effects.
+ * An internal-stack terminal supervisor needs no allocation. */
+static inline esp_err_t h2_tiga_sleep_prepare_deep_sleep(void) {
   volatile char stack_probe = 0;
-  if (esp_ptr_internal((const void*)&stack_probe)) {
-    esp_deep_sleep_start();
-    return ESP_ERR_INVALID_STATE;
-  }
+  if (esp_ptr_internal((const void*)&stack_probe)) return ESP_OK;
   if (!h2_tiga_sleep_enter_claim()) return ESP_ERR_INVALID_STATE;
   if (xTaskCreate(h2_tiga_sleep_enter_task, H2_TIGA_SLEEP_ENTER_TASK_NAME,
                   H2_TIGA_SLEEP_ENTER_TASK_STACK, NULL,
@@ -89,7 +83,37 @@ static inline esp_err_t h2_tiga_sleep_enter_deep_sleep(void) {
     h2_tiga_sleep_enter_finish();
     return ESP_ERR_NO_MEM;
   }
-  for (uint32_t waited = 0u; waited < H2_TIGA_SLEEP_ENTER_TIMEOUT_MS;
+  return ESP_OK;
+}
+
+static inline void h2_tiga_sleep_cancel_prepared(void) {
+  volatile char stack_probe = 0;
+  if (esp_ptr_internal((const void*)&stack_probe)) return;
+  portENTER_CRITICAL(&h2_tiga_sleep_enter_lock);
+  if (h2_tiga_sleep_enter_state == H2_TIGA_SLEEP_ENTER_RESERVED ||
+      h2_tiga_sleep_enter_state == H2_TIGA_SLEEP_ENTER_QUEUED)
+    h2_tiga_sleep_enter_state = H2_TIGA_SLEEP_ENTER_CANCELLED;
+  portEXIT_CRITICAL(&h2_tiga_sleep_enter_lock);
+}
+
+/* A refused/stuck commit retains the in-flight helper until it reports back.
+ * Never delete its active stack. Internal terminal callers may still sleep. */
+static inline esp_err_t h2_tiga_sleep_enter_deep_sleep(void) {
+  volatile char stack_probe = 0;
+  if (esp_ptr_internal((const void*)&stack_probe)) {
+    esp_deep_sleep_start();
+    return ESP_ERR_INVALID_STATE;
+  }
+  if (h2_tiga_sleep_enter_get_state() != H2_TIGA_SLEEP_ENTER_RESERVED) {
+    esp_err_t rc = h2_tiga_sleep_prepare_deep_sleep();
+    if (rc != ESP_OK) return rc;
+  }
+  portENTER_CRITICAL(&h2_tiga_sleep_enter_lock);
+  bool ready = h2_tiga_sleep_enter_state == H2_TIGA_SLEEP_ENTER_RESERVED;
+  if (ready) h2_tiga_sleep_enter_state = H2_TIGA_SLEEP_ENTER_QUEUED;
+  portEXIT_CRITICAL(&h2_tiga_sleep_enter_lock);
+  if (!ready) return ESP_ERR_INVALID_STATE;
+  for (uint32_t waited = 0; waited < H2_TIGA_SLEEP_ENTER_TIMEOUT_MS;
        waited += H2_TIGA_SLEEP_ENTER_POLL_MS) {
     if (h2_tiga_sleep_enter_get_state() == H2_TIGA_SLEEP_ENTER_RETURNED)
       return ESP_ERR_INVALID_STATE;
@@ -97,10 +121,16 @@ static inline esp_err_t h2_tiga_sleep_enter_deep_sleep(void) {
   }
   if (h2_tiga_sleep_enter_get_state() == H2_TIGA_SLEEP_ENTER_RETURNED)
     return ESP_ERR_INVALID_STATE;
-  /* The task is still inside esp_deep_sleep_start() and owns its stack, so it
-   * must not be deleted from here; it self-deletes if that call ever returns.
-   */
-  return ESP_ERR_TIMEOUT;
+  /* A queued helper can still be cancelled atomically against its SDK entry.
+   * Once the SDK has started, this terminal operation cannot return a recovery
+   * error while that call may still sleep later. Retain ownership until reset
+   * or an actual SDK return; the internal supervisor can still override it. */
+  h2_tiga_sleep_cancel_prepared();
+  while (h2_tiga_sleep_enter_get_state() == H2_TIGA_SLEEP_ENTER_IN_FLIGHT)
+    vTaskDelay(pdMS_TO_TICKS(H2_TIGA_SLEEP_ENTER_POLL_MS));
+  return h2_tiga_sleep_enter_get_state() == H2_TIGA_SLEEP_ENTER_RETURNED
+             ? ESP_ERR_INVALID_STATE
+             : ESP_ERR_TIMEOUT;
 }
 
 #endif

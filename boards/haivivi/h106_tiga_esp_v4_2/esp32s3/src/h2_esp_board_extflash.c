@@ -1,3 +1,6 @@
+#ifdef H2_ESP_BOARD_EXTFLASH_CLEAR_TEST
+#include "h2_esp_extflash_clear_test_sdk.h"
+#else
 #include "h2_esp_board_private.h"
 
 #include "h2_esp_board_config.h"
@@ -14,6 +17,7 @@
 #include "hal/spi_flash_types.h"
 
 #include "h2_esp_board_extflash_recovery.h"
+#endif
 
 #include <dirent.h>
 #include <errno.h>
@@ -32,6 +36,7 @@
 #define H2_TIGA_ESP_EXTFLASH_TRANSFER_SIZE 4096u
 #define H2_TIGA_ESP_EXTFLASH_SAFE_STACK_DEPTH 4096u
 
+#ifndef H2_ESP_BOARD_EXTFLASH_CLEAR_TEST
 static const char* TAG = "h2_tiga_esp_extflash";
 static esp_flash_t* s_extflash;
 static const esp_partition_t* s_extflash_partition;
@@ -339,14 +344,21 @@ int h2_esp_board_extflash_unmount_data(void) {
   return H2_PAL_FS_OK;
 }
 
+#endif
+
 static int clear_directory_contents(const char* path) {
   DIR* dir = opendir(path);
   if (dir == NULL) {
     return errno == ENOENT ? ensure_directory(path) : H2_PAL_FS_ERR_IO;
   }
   int rc = H2_PAL_FS_OK;
-  struct dirent* entry;
-  while (rc == H2_PAL_FS_OK && (entry = readdir(dir)) != NULL) {
+  while (rc == H2_PAL_FS_OK) {
+    errno = 0;
+    struct dirent* entry = readdir(dir);
+    if (entry == NULL) {
+      if (errno != 0) rc = H2_PAL_FS_ERR_IO;
+      break;
+    }
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
       continue;
     }
@@ -377,6 +389,7 @@ static int clear_directory_contents(const char* path) {
   return rc;
 }
 
+#ifndef H2_ESP_BOARD_EXTFLASH_CLEAR_TEST
 int h2_esp_board_storage_usage(size_t* out_total, size_t* out_used) {
   if (out_total == NULL || out_used == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_total = *out_used = 0u;
@@ -389,6 +402,8 @@ int h2_esp_board_storage_usage(size_t* out_total, size_t* out_used) {
   }
   return H2_PAL_FS_OK;
 }
+
+#endif
 
 int h2_esp_board_extflash_clear_data(void) {
   int rc = h2_esp_board_extflash_mount_data();

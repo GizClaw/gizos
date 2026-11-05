@@ -103,6 +103,10 @@ int main(void) {
  /* Arrival in the requested mapping preserves trial evidence and cannot
   * consume/jump again. A later ROM return snapshots the old image once. */
  sfc.BASE_ADR=H2_JIELI_BANK_2_SFC_BASE;h2_jieli_wl82_warm_boot_early();assert(jumps==1 && flushes==3);
+ assert(h2_jieli_warm_request_take_origin(&request,sfc.BASE_ADR,
+  H2_JIELI_BANK_1_SFC_BASE,H2_JIELI_BANK_2_SFC_BASE)==H2_JIELI_BANK_1_SFC_BASE);
+ assert(h2_jieli_warm_request_take_origin(&request,sfc.BASE_ADR,
+  H2_JIELI_BANK_1_SFC_BASE,H2_JIELI_BANK_2_SFC_BASE)==0);
  sfc.BASE_ADR=H2_JIELI_BANK_1_SFC_BASE;h2_jieli_wl82_warm_boot_early();
  assert(jumps==1 && flushes==3 && request.inflight==0 && request.count==3);
  return 0;
@@ -124,8 +128,17 @@ int main(void) {
 #include <stddef.h>
 #include "h2_jieli_warm_request.h"
 int main(void) {
-  _Static_assert(sizeof(h2_jieli_warm_request_t)==24, "retained ABI");
+  _Static_assert(offsetof(h2_jieli_warm_request_t,magic)==0, "retained ABI");
+  _Static_assert(offsetof(h2_jieli_warm_request_t,sfc_base)==4, "retained ABI");
+  _Static_assert(offsetof(h2_jieli_warm_request_t,check)==8, "retained ABI");
+  _Static_assert(offsetof(h2_jieli_warm_request_t,count)==12, "retained ABI");
+  _Static_assert(offsetof(h2_jieli_warm_request_t,last_base)==16, "retained ABI");
   _Static_assert(offsetof(h2_jieli_warm_request_t,inflight)==20, "retained ABI");
+  _Static_assert(offsetof(h2_jieli_warm_request_t,origin_base)==24, "origin receipt ABI");
+  _Static_assert(offsetof(h2_jieli_warm_request_t,origin_check)==28, "origin receipt ABI");
+  _Static_assert(offsetof(h2_jieli_warm_request_t,origin_magic)==32, "origin receipt ABI");
+  _Static_assert(sizeof(h2_jieli_warm_request_t)==36, "origin receipt ABI");
+  _Static_assert(sizeof(h2_jieli_warm_request_t)<=0x40, "must not overlap handoff");
   const uint32_t banks[]={H2_JIELI_BANK_1_SFC_BASE,H2_JIELI_BANK_2_SFC_BASE};
   h2_jieli_warm_request_t arriving={.sfc_base=H2_JIELI_BANK_2_SFC_BASE,
     .last_base=H2_JIELI_BANK_2_SFC_BASE,.inflight=H2_JIELI_WARM_INFLIGHT,

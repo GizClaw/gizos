@@ -58,52 +58,6 @@ i2c_master_bus_handle_t h2_esp_zero_esp_board_i2c_bus(void) {
   return s_i2c_bus;
 }
 
-int h2_esp_board_fs_init(h2_pal_fs_api_t* fs) {
-  uint8_t partition_subtype;
-  const h2_esp_platform_littlefs_config_t littlefs_config = {
-      .base_path = H2_ESP_BOARD_FS_BASE_PATH,
-      .partition_label = H2_ESP_BOARD_FS_PARTITION_LABEL,
-      .format_if_mount_failed = true,
-  };
-  const h2_esp_platform_spiffs_config_t spiffs_config = {
-      .base_path = H2_ESP_BOARD_FS_BASE_PATH,
-      .partition_label = H2_ESP_BOARD_FS_PARTITION_LABEL,
-      .max_files = 16u,
-      .format_if_mount_failed = true,
-  };
-
-  h2_pal_result_t partition_rc = h2_esp_platform_data_partition_subtype(
-      H2_ESP_BOARD_FS_PARTITION_LABEL, &partition_subtype);
-  if (partition_rc == H2_PAL_OK &&
-      partition_subtype == ESP_PARTITION_SUBTYPE_DATA_SPIFFS) {
-    return h2_esp_platform_spiffs_fs_init(fs, &spiffs_config);
-  }
-  if (partition_rc == H2_PAL_OK) {
-    int rc = h2_esp_platform_littlefs_fs_init(fs, &littlefs_config);
-    if (rc == H2_PAL_FS_OK) {
-      return rc;
-    }
-  } else if (partition_rc != H2_PAL_ERR_NOT_FOUND) {
-    return partition_rc;
-  }
-  return h2_esp_board_h2loader_fs_init(fs);
-}
-
-int h2_esp_board_fs_deinit(void) {
-  int legacy_rc =
-      h2_esp_platform_littlefs_fs_deinit(H2_ESP_BOARD_FS_PARTITION_LABEL);
-  if (legacy_rc != H2_PAL_FS_OK) {
-    legacy_rc =
-        h2_esp_platform_spiffs_fs_deinit(H2_ESP_BOARD_FS_PARTITION_LABEL);
-  }
-  int h2loader_rc = h2_esp_board_h2loader_fs_deinit();
-
-  if (legacy_rc == H2_PAL_FS_OK || h2loader_rc == H2_PAL_FS_OK) {
-    return H2_PAL_FS_OK;
-  }
-  return h2loader_rc;
-}
-
 h2_pal_mem_api_t* h2_esp_board_default_allocator(void) {
   return h2_esp_platform_default_allocator();
 }

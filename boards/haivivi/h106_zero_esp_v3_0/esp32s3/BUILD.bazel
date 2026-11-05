@@ -456,3 +456,71 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+cc_test(
+    name = "zero_esp_fs_cleanup_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_private.h",
+        "tests/test_h2_esp_board_fs.c",
+    ] + glob([
+        "tests/fs_include/**",
+        "tests/system_include/**",
+    ]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/fs_include",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "zero_esp_extflash_clear_test",
+    srcs = [
+        "src/h2_esp_board_extflash.c",
+        "tests/h2_esp_extflash_clear_test_sdk.h",
+        "tests/test_h2_esp_board_extflash_clear.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    local_defines = ["H2_ESP_BOARD_EXTFLASH_CLEAR_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "modem_lifecycle_test",
+    srcs = [
+        "src/h2_esp_board_modem_lifecycle.h",
+        "tests/test_h2_esp_board_modem_lifecycle.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)

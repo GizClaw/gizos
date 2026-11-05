@@ -56,6 +56,13 @@ uint32_t h2_jieli_warm_boot_running_base(int native_result,
       h2_jieli_wl82_boot_geometry()->bank_2_sfc_base);
 }
 
+uint32_t h2_jieli_warm_boot_take_rom_base(void) {
+  const h2_jieli_wl82_boot_geometry_t* geometry = h2_jieli_wl82_boot_geometry();
+  return h2_jieli_warm_request_take_origin(REQUEST, JL_SFC->BASE_ADR,
+                                           geometry->bank_1_sfc_base,
+                                           geometry->bank_2_sfc_base);
+}
+
 void h2_jieli_warm_boot_report(void (*write)(const char* line)) {
   extern int snprintf(char* buffer, size_t size, const char* format, ...);
   char line[160];
@@ -116,11 +123,14 @@ void h2_jieli_warm_boot_mark_handoff(uint32_t sfc_base) {
   REQUEST->count = REQUEST->count + 1u;
   REQUEST->last_base = sfc_base;
   REQUEST->inflight = H2_JIELI_WARM_INFLIGHT;
+  /* This still runs under the ROM-selected mapping, before warm_jump. */
+  h2_jieli_warm_request_record_origin(REQUEST, JL_SFC->BASE_ADR);
   /* A marker only the target image's own boot probe can overwrite. */
   ((volatile uint32_t*)RAM_MARKER_ADDR)[2] = UINT32_C(0xabcd0001);
 }
 
 void h2_jieli_wl82_warm_boot_request(uint32_t base) {
+  REQUEST->origin_magic = 0u;
   REQUEST->magic = 0u;
   REQUEST->sfc_base = base;
   REQUEST->check = h2_jieli_warm_request_check(base);

@@ -59,6 +59,7 @@ typedef struct h2_jieli_image_state {
   int confirmed_evidence_valid;
   uint8_t confirmed_header[H2_JIELI_UPGRADE_HEADER_SIZE];
   uint32_t warm_partition_id;
+  int warm_loader_return_allowed;
   uint16_t reboot_timer_id;
 } h2_jieli_image_state_t;
 static h2_jieli_image_state_t state;
@@ -67,6 +68,11 @@ static h2_jieli_image_state_t state;
 #define BANK_2_ID (state.config.bank_2_partition_id)
 #define BANK_1_BASE (h2_jieli_wl82_boot_geometry()->bank_1_sfc_base)
 #define BANK_2_BASE (h2_jieli_wl82_boot_geometry()->bank_2_sfc_base)
+
+static int clear_update_boot_info(void) {
+  state.warm_loader_return_allowed = 0;
+  return flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK);
+}
 
 static void image_reader_close(void) {
   if (state.reader != NULL) {
@@ -238,6 +244,8 @@ static int image_writer_begin(void* user,
       (state.committed_partition_id != 0u && !state.update_committed) ||
       state.reboot_timer_id != 0u)
     return H2_PAL_ERR_BUSY;
+  /* An update may change the ROM choice; stop relying on the boot receipt. */
+  state.warm_loader_return_allowed = 0;
   /* Beginning canonical copy must not invoke public abort: the activated
    * second-bank header is the recovery barrier while bank one is erased. */
   writer_abort_internal();
@@ -273,7 +281,7 @@ static int image_writer_begin(void* user,
   h2_jieli_wl82_diag_write(line);
   if (init_rc != 0u || allow_rc != 0u) {
     writer_abort_internal();
-    (void)flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK);
+    (void)clear_update_boot_info();
     return H2_PAL_ERR_NO_SPACE;
   }
   state.writer_partition_id = partition_id;
@@ -420,7 +428,7 @@ static int image_writer_write(void* user, const void* data, size_t len) {
       rc = update_flush_buffer();
       if (rc != H2_PAL_OK) {
         writer_abort_internal();
-        (void)flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK);
+        (void)clear_update_boot_info();
         return rc;
       }
     }
@@ -473,7 +481,7 @@ static int image_writer_finish(void* user) {
     rc = h2_pal_fs_rename(state.fs, state.config.shadow_temp_path, final_path);
   }
   if (rc != H2_PAL_OK) {
-    (void)flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK);
+    (void)clear_update_boot_info();
     writer_abort_internal();
     return rc;
   }
@@ -493,7 +501,7 @@ static int image_writer_abort(void* user) {
   (void)user;
   if (!state.configured) return H2_PAL_ERR_UNAVAILABLE;
   writer_abort_internal();
-  int cleared = flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK);
+  int cleared = clear_update_boot_info();
   return !state.poisoned && cleared == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
@@ -790,9 +798,12 @@ static int publish_confirmed_bank_2(void) {
   struct BootInfo native;
   memset(&native, 0, sizeof(native));
   if (get_current_boot_info(&native) == 0 &&
-      native.baseAddress == BANK_2_BASE && native.codeLength != 0u)
+      native.baseAddress == BANK_2_BASE && native.codeLength != 0u) {
+    state.warm_loader_return_allowed = 0;
     return H2_PAL_OK;
+  }
   if (!state.confirmed_evidence_valid) return H2_PAL_ERR_INVALID_STATE;
+  state.warm_loader_return_allowed = 0;
   return h2_jieli_upgrade_header_publish(state.confirmed_header) == 0
              ? H2_PAL_OK
              : H2_PAL_ERR_IO;
@@ -816,7 +827,7 @@ static int power_set_next(void* user, uint32_t partition_id) {
       /* A failed reboot/transition may restore the previous running choice
        * after the inactive header was activated. Retain the running recovery
        * header first, then cancel only that inactive candidate's BootInfo. */
-      int cleared = flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK);
+      int cleared = clear_update_boot_info();
       if (cleared != 0 || h2_jieli_upgrade_erase_failed()) return H2_PAL_ERR_IO;
       writer_abort_internal();
       if (state.poisoned) return H2_PAL_ERR_IO;
@@ -842,9 +853,12 @@ static int power_set_next(void* user, uint32_t partition_id) {
   } else if (state.update_active || state.writer_partition_id != 0u) {
     return H2_PAL_ERR_INVALID_STATE;
   } else if (partition_id == BANK_1_ID) {
-    /* An existing bank one has no native selector or supported warm remap.
-     * Only a freshly prepared bank-one update can replace ROM's bank choice. */
-    return H2_PAL_ERR_UNSUPPORTED;
+    /* A fresh, consumed warm receipt proves ROM entered the canonical Loader.
+     * Returning there needs a plain reset, never an invented bank-one remap.
+     * Without that proof keep rejecting an ineffective selector change. */
+    if (state.running_partition_id != BANK_2_ID ||
+        !state.warm_loader_return_allowed)
+      return H2_PAL_ERR_UNSUPPORTED;
   }
   /* A bank-two trial is entered through the warm remap; ROM remains on bank
    * one until a confirmed recovery image crosses the same-running barrier. */
@@ -935,6 +949,9 @@ h2_pal_result_t h2_jieli_wl82_platform_image_configure(
   state.warm_partition_id = mapped_base == geometry->bank_2_sfc_base
                                 ? config->bank_2_partition_id
                                 : 0u;
+  const uint32_t rom_base = h2_jieli_warm_boot_take_rom_base();
+  state.warm_loader_return_allowed = mapped_base == geometry->bank_2_sfc_base &&
+                                     rom_base == geometry->bank_1_sfc_base;
   state.configured = 1;
   h2_jieli_warm_boot_report(h2_jieli_wl82_diag_write);
   return H2_PAL_OK;

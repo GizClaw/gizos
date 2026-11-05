@@ -283,11 +283,48 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t* platform,
   return rc == H2_PAL_OK ? restore_result : rc;
 }
 
+h2_pal_result_t h2_quectel_modem_data_status_update(
+    h2_quectel_modem_t* modem, const h2_pal_modem_data_status_t* status) {
+  if (modem == NULL || status == NULL) return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_result_t rc = h2_quectel_state_lock(modem);
+  if (rc != H2_PAL_OK) return rc;
+  modem->data_status = *status;
+  h2_quectel_state_unlock(modem);
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_quectel_modem_set_raw_ppp_owned(h2_quectel_modem_t* modem,
+                                                   int owned) {
+  if (modem == NULL) return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_result_t rc = h2_quectel_state_lock(modem);
+  if (rc != H2_PAL_OK) return rc;
+  if (owned && modem->ota_hold) {
+    h2_quectel_state_unlock(modem);
+    return H2_PAL_ERR_BUSY;
+  }
+  modem->raw_ppp_owned = owned ? 1u : 0u;
+  h2_quectel_state_unlock(modem);
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_quectel_modem_transport_closing(h2_quectel_modem_t* modem) {
+  if (modem == NULL) return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_result_t rc = h2_quectel_state_lock(modem);
+  if (rc != H2_PAL_OK) return rc;
+  if (modem->ota_hold || modem->raw_ppp_owned) {
+    h2_quectel_state_unlock(modem);
+    return H2_PAL_ERR_BUSY;
+  }
+  modem->transport_closed = 1u;
+  h2_quectel_state_unlock(modem);
+  return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_quectel_modem_transport_closed(h2_quectel_modem_t* modem) {
   if (modem == NULL) return H2_PAL_ERR_INVALID_ARG;
   const h2_pal_result_t rc = h2_quectel_state_lock(modem);
   if (rc != H2_PAL_OK) return rc;
-  if (modem->ota_hold) {
+  if (modem->ota_hold || modem->raw_ppp_owned) {
     h2_quectel_state_unlock(modem);
     return H2_PAL_ERR_BUSY;
   }

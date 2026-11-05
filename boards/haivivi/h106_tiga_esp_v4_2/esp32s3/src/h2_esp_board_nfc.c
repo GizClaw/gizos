@@ -11,6 +11,7 @@
 
 static h2_esp_nfc_fm175xx_t s_nfc;
 static int s_nfc_initialized;
+static int s_nfc_shutdown_pending;
 H2_ATOMIC_DEFINE_STATIC(bool, s_nfc_enabled, false);
 
 /* Serialize scan, read and teardown without blocking either caller. */
@@ -24,8 +25,26 @@ bool h2_esp_board_nfc_enabled(void) {
   return h2_atomic_bool_load(&s_nfc_enabled, H2_ATOMIC_SEQ_CST);
 }
 
+static h2_pal_result_t shutdown_nfc_adapter(void) {
+  if (s_nfc_initialized) {
+    h2_esp_nfc_fm175xx_deinit(&s_nfc);
+    s_nfc_initialized = 0;
+    s_nfc_shutdown_pending = 1;
+  }
+  if (s_nfc_shutdown_pending) {
+    if (h2_tiga_sleep_nfc_prepare(h2_esp_tiga_board_i2c_bus()) != ESP_OK)
+      return H2_PAL_ERR_IO;
+    s_nfc_shutdown_pending = 0;
+  }
+  return H2_PAL_OK;
+}
+
 static h2_pal_result_t ensure_nfc_adapter(void) {
   if (!h2_esp_board_nfc_enabled()) return H2_PAL_ERR_UNSUPPORTED;
+  if (s_nfc_shutdown_pending) {
+    h2_pal_result_t pending = shutdown_nfc_adapter();
+    if (pending != H2_PAL_OK) return pending;
+  }
   if (s_nfc_initialized != 0) {
     return H2_PAL_OK;
   }
@@ -62,12 +81,8 @@ static h2_pal_result_t scan_nfc_reader(void* user, h2_pal_periph_id_t id,
     return H2_PAL_ERR_BUSY;
   h2_pal_result_t rc = H2_PAL_ERR_UNSUPPORTED;
   if (!h2_esp_board_nfc_enabled()) {
-    if (s_nfc_initialized) {
-      h2_esp_nfc_fm175xx_deinit(&s_nfc);
-      s_nfc_initialized = 0;
-      if (h2_tiga_sleep_nfc_prepare(h2_esp_tiga_board_i2c_bus()) != ESP_OK)
-        rc = H2_PAL_ERR_IO;
-    }
+    rc = shutdown_nfc_adapter();
+    if (rc == H2_PAL_OK) rc = H2_PAL_ERR_UNSUPPORTED;
   } else {
     rc = ensure_nfc_adapter();
     if (rc == H2_PAL_OK)

@@ -57,6 +57,7 @@ esp_err_t ledc_channel_config(const ledc_channel_config_t* cfg) {
   return ESP_OK;
 }
 static size_t s_color_tx_count;
+static size_t s_total_color_tx_count;
 static unsigned s_sleep_in_count, s_sleep_out_count;
 static unsigned s_display_on_count, s_display_off_count;
 static size_t s_color_tx_count_at_display_on;
@@ -67,9 +68,11 @@ static bool s_check_sleep_before_backlight;
 static bool s_backlight_enabled_before_color;
 static uint32_t s_backlight_duty;
 static unsigned s_backlight_call_count;
+static bool s_fail_backlight_on;
 esp_err_t ledc_set_duty(ledc_mode_t m, ledc_channel_t c, uint32_t d) {
   (void)m;
   (void)c;
+  if (d > 0u && s_fail_backlight_on) return ESP_FAIL;
   s_backlight_duty = d;
   ++s_backlight_call_count;
   if (s_check_sleep_before_backlight && d == 0u) assert(s_sleep_in_count == 1u);
@@ -95,6 +98,11 @@ esp_err_t spi_bus_initialize(spi_host_device_t h, const spi_bus_config_t* c,
   return ESP_OK;
 }
 static int s_fake_panel_io;
+static unsigned s_panel_io_creations;
+static unsigned s_panel_io_deletions;
+static bool s_panel_io_live;
+static esp_err_t s_delete_result;
+static esp_err_t s_param_result;
 static uint8_t s_colmod;
 static uint8_t s_pixels[7680];
 static size_t s_pixel_bytes;
@@ -104,14 +112,25 @@ esp_err_t esp_lcd_new_panel_io_spi(
     const esp_lcd_panel_io_spi_config_t* io_config,
     esp_lcd_panel_io_handle_t* ret_io) {
   (void)bus;
+  assert(!s_panel_io_live);
+  s_panel_io_live = true;
+  ++s_panel_io_creations;
   s_color_done_callback = io_config->on_color_trans_done;
   assert(s_color_done_callback != NULL);
   *ret_io = (esp_lcd_panel_io_handle_t)(void*)&s_fake_panel_io;
   return ESP_OK;
 }
+esp_err_t esp_lcd_panel_io_del(esp_lcd_panel_io_handle_t io) {
+  assert(io != NULL && s_panel_io_live);
+  if (s_delete_result != ESP_OK) return s_delete_result;
+  s_panel_io_live = false;
+  ++s_panel_io_deletions;
+  return ESP_OK;
+}
 esp_err_t esp_lcd_panel_io_tx_param(esp_lcd_panel_io_handle_t io, int cmd,
                                     const void* p, size_t n) {
-  (void)io;
+  assert(io != NULL && s_panel_io_live);
+  if (s_param_result != ESP_OK) return s_param_result;
   if (cmd == 0x10) {
     ++s_sleep_in_count;
     if (s_display_off_count == 0u) s_sleep_in_before_display_off = true;
@@ -135,6 +154,7 @@ esp_err_t esp_lcd_panel_io_tx_color(esp_lcd_panel_io_handle_t io, int cmd,
   memcpy(s_pixels, c, n);
   s_pixel_bytes = n;
   ++s_color_tx_count;
+  ++s_total_color_tx_count;
   return ESP_OK;
 }
 size_t heap_caps_get_free_size(uint32_t caps) {
@@ -181,6 +201,31 @@ static void test_draw_bitmap_rejects_a_null_rect_before_opening(void) {
          H2_DISPLAY_ERR_INVALID_STATE);
 }
 
+static void test_partial_initialization_reuses_panel_io(void) {
+  h2_pal_display_t* display = h2_esp_board_display();
+  const h2_pal_display_vtable_t* vtable = display_vtable(display);
+  s_param_result = ESP_FAIL;
+  assert(vtable->open(display->user) == H2_DISPLAY_ERR_IO);
+  assert(s_panel_io_creations == 1u && s_panel_io_deletions == 1u);
+  s_param_result = ESP_OK;
+  s_color_result = ESP_FAIL;
+  s_delete_result = ESP_FAIL;
+  assert(vtable->open(display->user) == H2_DISPLAY_ERR_IO);
+  assert(s_panel_io_creations == 2u && s_panel_io_live);
+  assert(vtable->close(display->user) == H2_DISPLAY_ERR_IO);
+  assert(vtable->open(display->user) == H2_DISPLAY_ERR_IO);
+  assert(s_panel_io_creations == 2u);
+  s_delete_result = ESP_OK;
+  assert(vtable->close(display->user) == H2_DISPLAY_OK);
+  assert(!s_panel_io_live && s_panel_io_deletions == 2u);
+  s_color_result = ESP_OK;
+  s_fail_backlight_on = true;
+  assert(vtable->open(display->user) == H2_DISPLAY_ERR_IO);
+  assert(s_panel_io_creations == 3u && s_panel_io_deletions == 3u);
+  s_fail_backlight_on = false;
+  s_display_on_count = 0u;
+}
+
 static void test_open_clears_panel_before_enabling_backlight(void) {
   h2_pal_display_t* display = h2_esp_board_display();
   const h2_pal_display_vtable_t* vtable = display_vtable(display);
@@ -188,6 +233,7 @@ static void test_open_clears_panel_before_enabling_backlight(void) {
   s_backlight_enabled_before_color = false;
 
   assert(vtable->open(display->user) == H2_DISPLAY_OK);
+  assert(s_panel_io_creations == 4u);
   assert(s_color_tx_count == 15u);
   assert(s_colmod == 0x05u);
   assert(s_pixel_bytes == 7680u);
@@ -325,7 +371,7 @@ static void test_diagnostics_observe_dma_progress_and_bound_output(void) {
   assert(length == strlen(out));
   char expected[80];
   snprintf(expected, sizeof(expected), "color_queued=%lu color_done=0 ",
-           (unsigned long)s_color_tx_count);
+           (unsigned long)s_total_color_tx_count);
   assert(strstr(out, expected) != NULL);
   assert(strstr(out, "queued_age_ms=250 done_age_ms=-1") != NULL);
   assert(strstr(out,
@@ -347,7 +393,7 @@ static void test_diagnostics_observe_dma_progress_and_bound_output(void) {
   s_color_result = ESP_OK;
   h2_esp_board_display_diagnostics(out, sizeof(out));
   snprintf(expected, sizeof(expected), "color_queued=%lu color_done=1 ",
-           (unsigned long)s_color_tx_count);
+           (unsigned long)s_total_color_tx_count);
   assert(strstr(out, expected) != NULL);
 
   char short_out[9];
@@ -369,6 +415,7 @@ static void test_diagnostics_observe_dma_progress_and_bound_output(void) {
 int main(void) {
   test_diagnostics_before_first_transfer();
   test_draw_bitmap_rejects_a_null_rect_before_opening();
+  test_partial_initialization_reuses_panel_io();
   test_open_clears_panel_before_enabling_backlight();
   test_draw_bitmap_rejects_a_null_rect_when_open();
   test_draw_bitmap_rejects_null_pixels_when_open();

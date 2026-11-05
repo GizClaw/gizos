@@ -492,6 +492,12 @@ static h2_pal_result_t power_set_deep_sleep_wake_timer(void* user,
 
 static h2_pal_result_t power_deep_sleep(void* user, uint32_t reason) {
   (void)user;
+  /* Allocate the internal-stack handoff before any hardware is dismantled. */
+  const esp_err_t reserved = h2_zero_esp_sleep_prepare_deep_sleep();
+  if (reserved != ESP_OK)
+    return reserved == ESP_ERR_NO_MEM ? H2_PAL_ERR_NO_MEMORY
+                                      : H2_PAL_ERR_INVALID_STATE;
+  bool transition_saved = false;
   printf("H2_BOARD_DEEP_SLEEP stage=prepare_begin reason=%lu\n",
          (unsigned long)reason);
   h2_pal_result_t rc = h2_esp_board_modem_is_powered()
@@ -499,7 +505,7 @@ static h2_pal_result_t power_deep_sleep(void* user, uint32_t reason) {
                            : H2_PAL_OK;
   printf("H2_BOARD_DEEP_SLEEP stage=ri_ready rc=%d\n", rc);
   if (rc != H2_PAL_OK) {
-    return rc;
+    goto failed;
   }
   const uint64_t wake_mask =
       (1ULL << H2_ZERO_ESP_BOOT_BUTTON_GPIO) |
@@ -516,34 +522,36 @@ static h2_pal_result_t power_deep_sleep(void* user, uint32_t reason) {
   if (esp_sleep_enable_ext1_wakeup_io(wake_mask, ESP_EXT1_WAKEUP_ANY_LOW) !=
       ESP_OK) {
     printf("H2_BOARD_DEEP_SLEEP stage=wake_enable rc=%d\n", H2_PAL_ERR_IO);
-    return H2_PAL_ERR_IO;
+    rc = H2_PAL_ERR_IO;
+    goto failed;
   }
   printf("H2_BOARD_DEEP_SLEEP stage=wake_enable rc=0\n");
   rc = save_planned_transition(H2_PAL_POWER_PREVIOUS_TRANSITION_DEEP_SLEEP,
                                reason);
   printf("H2_BOARD_DEEP_SLEEP stage=transition_saved rc=%d\n", rc);
   if (rc != H2_PAL_OK) {
-    return rc;
+    goto failed;
   }
+  transition_saved = true;
   shutdown_non_wake_peripherals();
   if (h2_zero_esp_sleep_gpio_prepare(!h2_esp_board_modem_is_powered()) !=
-      ESP_OK)
-    return H2_PAL_ERR_IO;
+      ESP_OK) {
+    rc = H2_PAL_ERR_IO;
+    goto failed;
+  }
   rc = arm_deep_sleep_wake_timer(true);
   if (rc != H2_PAL_OK) {
-    (void)discard_planned_transition();
-    return rc;
+    goto failed;
   }
   rc = prepare_sleep_power_domains(h2_esp_board_modem_is_powered());
   printf("H2_BOARD_MODEM_RETENTION enable=1 dtr_high=1 rc=%d\n", rc);
-  if (rc != H2_PAL_OK) return rc;
+  if (rc != H2_PAL_OK) goto failed;
   /* On battery the latched rail also feeds EC25; releasing GPIO15 here drops
    * network standby and RI wake. Only physical shutdown releases it. */
   rc = apply_power_hold_level(1);
   printf("H2_BOARD_DEEP_SLEEP stage=power_hold_retained rc=%d\n", rc);
   if (rc != H2_PAL_OK) {
-    (void)discard_planned_transition();
-    return rc;
+    goto failed;
   }
   printf("H2_BOARD_DEEP_SLEEP stage=enter\n");
   fflush(stdout);
@@ -553,8 +561,11 @@ static h2_pal_result_t power_deep_sleep(void* user, uint32_t reason) {
    * instead of treating the request as a completed sleep. */
   printf("H2_BOARD_DEEP_SLEEP stage=unexpected_return err=%d\n",
          (int)enter_err);
-  (void)discard_planned_transition();
-  return H2_PAL_ERR_IO;
+  rc = H2_PAL_ERR_IO;
+failed:
+  h2_zero_esp_sleep_cancel_prepared();
+  if (transition_saved) (void)discard_planned_transition();
+  return rc;
 }
 
 static h2_pal_result_t drive_gpio_group_low(uint64_t mask) {

@@ -1,8 +1,37 @@
 #include "h2_esp_board_private.h"
 
 #include "h2_esp_platform_core.h"
+#include "h2_esp_board_config.h"
+#include "esp_partition.h"
 
 #include <string.h>
+
+int h2_esp_board_fs_init(h2_pal_fs_api_t* fs) {
+  if (fs == NULL) return H2_PAL_FS_ERR_INVALID_ARG;
+  uint8_t partition_subtype;
+  const h2_esp_platform_spiffs_config_t config = {
+      .base_path = H2_ESP_BOARD_FS_BASE_PATH,
+      .partition_label = H2_ESP_BOARD_FS_PARTITION_LABEL,
+      .max_files = 16u,
+      .format_if_mount_failed = true,
+  };
+  h2_pal_result_t rc = h2_esp_platform_data_partition_subtype(
+      H2_ESP_BOARD_FS_PARTITION_LABEL, &partition_subtype);
+  if (rc == H2_PAL_OK) {
+    return h2_esp_platform_spiffs_fs_init(fs, &config);
+  }
+  if (rc != H2_PAL_ERR_NOT_FOUND) {
+    return rc;
+  }
+  return h2_esp_board_h2loader_fs_init(fs);
+}
+
+int h2_esp_board_fs_deinit(void) {
+  int legacy_rc =
+      h2_esp_platform_spiffs_fs_deinit(H2_ESP_BOARD_FS_PARTITION_LABEL);
+  int h2loader_rc = h2_esp_board_h2loader_fs_deinit();
+  return legacy_rc != H2_PAL_FS_OK ? legacy_rc : h2loader_rc;
+}
 
 static h2_pal_fs_api_t s_mount_fs;
 static int s_mount_fs_ready;
@@ -23,7 +52,8 @@ static int mount_partition(const char* path) {
       .partition_label = path + 1,
       .format_if_mount_failed = true,
   };
-  return h2_esp_platform_littlefs_mount(&config);
+  int rc = h2_esp_platform_littlefs_mount(&config);
+  return rc;
 }
 
 int h2_esp_board_h2loader_fs_init(h2_pal_fs_api_t* fs) {
@@ -45,8 +75,7 @@ int h2_esp_board_h2loader_fs_init(h2_pal_fs_api_t* fs) {
 int h2_esp_board_h2loader_fs_deinit(void) {
   int dl_rc = h2_esp_platform_littlefs_fs_deinit("dl");
   int data_rc = h2_esp_platform_littlefs_fs_deinit("data");
-  return dl_rc == H2_PAL_FS_OK && data_rc == H2_PAL_FS_OK ? H2_PAL_FS_OK
-                                                          : H2_PAL_FS_ERR_IO;
+  return dl_rc != H2_PAL_FS_OK ? dl_rc : data_rc;
 }
 
 static int ensure_mount_fs(void) {
@@ -125,6 +154,7 @@ int h2_esp_board_fs_mount_all(void) {
 }
 
 int h2_esp_board_fs_unmount_all(void) {
-  s_mount_fs_ready = 0;
-  return h2_esp_board_fs_deinit();
+  int rc = h2_esp_board_fs_deinit();
+  if (rc == H2_PAL_FS_OK) s_mount_fs_ready = 0;
+  return rc;
 }

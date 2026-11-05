@@ -44,11 +44,18 @@ h2_pal_result_t h2_quectel_operation_begin(h2_quectel_modem_t* modem) {
       return rc;
     }
   }
+  if (modem->raw_ppp_owned) {
+    if (modem->operation_depth == 0u) h2_quectel_state_unlock(modem);
+    if (modem->operation_lock != NULL)
+      (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->operation_lock);
+    return H2_PAL_ERR_BUSY;
+  }
   modem->operation_depth++;
   return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_quectel_power_wake(h2_quectel_modem_t* modem) {
+  if (modem->raw_ppp_owned) return H2_PAL_ERR_BUSY;
   if ((modem->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) == 0u) {
     return H2_PAL_OK;
   }
@@ -63,8 +70,8 @@ h2_pal_result_t h2_quectel_power_wake(h2_quectel_modem_t* modem) {
 
 h2_pal_result_t h2_quectel_power_reconcile(h2_quectel_modem_t* modem,
                                            h2_pal_result_t result) {
-  if (modem->opened != 0u && modem->power_configured != 0u &&
-      modem->power_fault == 0u &&
+  if (!modem->raw_ppp_owned && modem->opened != 0u &&
+      modem->power_configured != 0u && modem->power_fault == 0u &&
       modem->power_policy == H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP &&
       modem->gnss_hold == 0u && modem->call_hold == 0u &&
       modem->data_hold == 0u && modem->ota_hold == 0u &&

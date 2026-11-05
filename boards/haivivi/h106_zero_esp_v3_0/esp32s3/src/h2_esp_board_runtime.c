@@ -19,6 +19,8 @@ static h2_runtime_config_t s_runtime_config;
 static h2_corehttp_t* s_runtime_http;
 static h2_pal_http_api_t s_runtime_http_api;
 static int s_runtime_config_ready;
+static int s_runtime_audio_pending;
+static int s_runtime_fs_pending;
 static char s_ble_local_name[17];
 
 static const char* runtime_ble_local_name(void) {
@@ -73,9 +75,14 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
     *out_config = s_runtime_config;
     return H2_PAL_OK;
   }
+  if (s_runtime_audio_pending || s_runtime_fs_pending) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
   h2_esp_board_arena_init();
+  s_runtime_fs_pending = 1;
   h2_pal_result_t rc = h2_esp_board_fs_init(&s_runtime_fs);
   if (rc != H2_PAL_OK) {
+    if (h2_esp_board_fs_deinit() == H2_PAL_OK) s_runtime_fs_pending = 0;
     return rc;
   }
   if (rc == H2_PAL_OK && s_runtime_fs.vtable != NULL) {
@@ -92,7 +99,7 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
   };
   rc = h2_corehttp_create(&http_config, &s_runtime_http, &s_runtime_http_api);
   if (rc != H2_PAL_OK) {
-    (void)h2_esp_board_fs_deinit();
+    if (h2_esp_board_fs_deinit() == H2_PAL_OK) s_runtime_fs_pending = 0;
     return rc;
   }
   *out_config = (h2_runtime_config_t){
@@ -148,30 +155,33 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
   };
   s_runtime_config = *out_config;
   s_runtime_config_ready = 1;
+  s_runtime_audio_pending = 1;
   return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_esp_board_runtime_deinit(void) {
-  if (!s_runtime_config_ready && s_runtime_http == NULL) {
-    return H2_PAL_OK;
+  h2_pal_result_t first_error = H2_PAL_OK;
+  if (s_runtime_audio_pending) {
+    first_error = h2_esp_board_audio_deinit();
+    if (first_error == H2_PAL_OK) s_runtime_audio_pending = 0;
   }
-
-  /* Every teardown step is independent, and the entry task never retries
-   * after this returns. Run them all and report the first failure, so an
-   * audio error cannot leave the HTTP provider or the filesystem live. */
-  h2_pal_result_t first_error = h2_esp_board_audio_deinit();
-
-  h2_corehttp_destroy(s_runtime_http);
-  s_runtime_http = NULL;
-  memset(&s_runtime_http_api, 0, sizeof(s_runtime_http_api));
-  memset(&s_runtime_config, 0, sizeof(s_runtime_config));
-  memset(&s_runtime_fs, 0, sizeof(s_runtime_fs));
-  s_runtime_fs_provider_clear = NULL;
+  if (s_runtime_http != NULL) {
+    h2_corehttp_destroy(s_runtime_http);
+    s_runtime_http = NULL;
+    memset(&s_runtime_http_api, 0, sizeof(s_runtime_http_api));
+  }
   s_runtime_config_ready = 0;
-
-  const h2_pal_result_t fs_rc = h2_esp_board_fs_deinit();
-  if (first_error == H2_PAL_OK) {
-    first_error = fs_rc;
+  if (s_runtime_fs_pending) {
+    const h2_pal_result_t fs_rc = h2_esp_board_fs_deinit();
+    if (fs_rc == H2_PAL_OK) {
+      s_runtime_fs_pending = 0;
+      memset(&s_runtime_fs, 0, sizeof(s_runtime_fs));
+      s_runtime_fs_provider_clear = NULL;
+    }
+    if (first_error == H2_PAL_OK) first_error = fs_rc;
+  }
+  if (!s_runtime_audio_pending && !s_runtime_fs_pending) {
+    memset(&s_runtime_config, 0, sizeof(s_runtime_config));
   }
   return first_error;
 }

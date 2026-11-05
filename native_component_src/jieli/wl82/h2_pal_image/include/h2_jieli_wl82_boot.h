@@ -27,7 +27,23 @@ typedef struct h2_jieli_warm_request {
   uint32_t count;
   uint32_t last_base;
   uint32_t inflight;
+  /* Additive origin receipt in the reserved space before handoff +0x40.
+   * Existing publisher/consumer fields keep their offsets. */
+  uint32_t origin_base;
+  uint32_t origin_check;
+  uint32_t origin_magic;
 } h2_jieli_warm_request_t;
+
+#define H2_JIELI_WARM_ORIGIN_MAGIC UINT32_C(0x314f5248)
+
+static inline void h2_jieli_warm_request_record_origin(
+    volatile h2_jieli_warm_request_t* request, uint32_t origin_base) {
+  request->origin_magic = 0u;
+  request->origin_base = origin_base;
+  request->origin_check = ~(origin_base ^ request->sfc_base ^ request->count ^
+                            H2_JIELI_WARM_ORIGIN_MAGIC);
+  request->origin_magic = H2_JIELI_WARM_ORIGIN_MAGIC;
+}
 
 static inline uint32_t h2_jieli_warm_request_check(uint32_t base) {
   return ~(H2_JIELI_WARM_MAGIC ^ base ^ UINT32_C(0x5a5aa5a5));
@@ -52,6 +68,24 @@ static inline uint32_t h2_jieli_warm_request_mapped_base(
   return h2_jieli_warm_request_active_at(request, mapped_base, bank_2_base)
              ? mapped_base
              : 0u;
+}
+
+/* Consume the origin once in the target image. A later direct ROM boot cannot
+ * reuse the previous warm image's receipt. Legacy/torn receipts fail closed. */
+static inline uint32_t h2_jieli_warm_request_take_origin(
+    volatile h2_jieli_warm_request_t* request, uint32_t mapped_base,
+    uint32_t bank_1_base, uint32_t bank_2_base) {
+  uint32_t magic = request->origin_magic;
+  uint32_t origin = request->origin_base;
+  uint32_t check = request->origin_check;
+  request->origin_magic = 0u;
+  if (magic != H2_JIELI_WARM_ORIGIN_MAGIC ||
+      (origin != bank_1_base && origin != bank_2_base) ||
+      !h2_jieli_warm_request_active_at(request, mapped_base, bank_2_base) ||
+      check != ~(origin ^ request->sfc_base ^ request->count ^
+                 H2_JIELI_WARM_ORIGIN_MAGIC))
+    return 0u;
+  return origin;
 }
 
 /* Consume before attempting a handoff. Interrupted/torn/replayed publication

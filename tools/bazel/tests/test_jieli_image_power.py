@@ -30,6 +30,8 @@ class ImagePowerTest(unittest.TestCase):
                 "stored", "readonly", "trial", "recovery", "late", "cleanup",
                 "failed_mapping", "short_tail", "small", "existing_bank_one",
                 "confirmed_bank_one", "warm_bank_one", "cancel_warm_trial",
+                "return_warm_loader", "return_warm_confirmed", "return_warm_wrong_origin",
+                "return_warm_torn", "return_warm_updated",
             ):
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=10)

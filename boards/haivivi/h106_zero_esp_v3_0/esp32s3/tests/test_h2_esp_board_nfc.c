@@ -7,6 +7,7 @@
 static unsigned bus_calls, init_calls, deinit_calls, scans, reads, writes;
 static h2_pal_result_t init_result = H2_PAL_OK;
 static int bus_storage, device_storage;
+static unsigned sequence_writes, fail_write;
 i2c_master_bus_handle_t h2_esp_zero_esp_board_i2c_bus(void) {
   ++bus_calls;
   return (i2c_master_bus_handle_t)&bus_storage;
@@ -58,6 +59,7 @@ esp_err_t i2c_master_bus_add_device(i2c_master_bus_handle_t bus,
                                     i2c_master_dev_handle_t* device) {
   assert(bus == (i2c_master_bus_handle_t)&bus_storage);
   assert(config->device_address == 0x28u);
+  sequence_writes = 0;
   *device = (i2c_master_dev_handle_t)&device_storage;
   return ESP_OK;
 }
@@ -67,10 +69,11 @@ esp_err_t i2c_master_transmit(i2c_master_dev_handle_t device,
   static const uint8_t expected[][2] = {{1, 0x20}, {0x14, 0x80}, {1, 0x30}};
   assert(device == (i2c_master_dev_handle_t)&device_storage);
   assert(size == 2u && timeout_ms == 20);
-  assert(data[0] == expected[writes % 3u][0]);
-  assert(data[1] == expected[writes % 3u][1]);
+  assert(data[0] == expected[sequence_writes % 3u][0]);
+  assert(data[1] == expected[sequence_writes % 3u][1]);
   ++writes;
-  return ESP_OK;
+  ++sequence_writes;
+  return sequence_writes == fail_write ? ESP_ERR_INVALID_STATE : ESP_OK;
 }
 esp_err_t i2c_master_bus_rm_device(i2c_master_dev_handle_t device) {
   assert(device == (i2c_master_dev_handle_t)&device_storage);
@@ -114,5 +117,36 @@ int main(void) {
   init_result = H2_PAL_OK;
   assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_OK);
   assert(init_calls == 3);
+  for (unsigned failed = 1; failed <= 3; ++failed) {
+    h2_esp_board_set_nfc_enabled(true);
+    assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_OK);
+    unsigned before_deinit = deinit_calls;
+    h2_esp_board_set_nfc_enabled(false);
+    fail_write = failed;
+    assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_ERR_IO);
+    assert(deinit_calls == before_deinit + 1u);
+    unsigned before_writes = writes;
+    fail_write = 0;
+    assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(writes == before_writes + 3u && deinit_calls == before_deinit + 1u);
+    before_writes = writes;
+    assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(writes == before_writes);
+  }
+  /* Re-enabling cannot overwrite an incompletely powered-down reader. */
+  h2_esp_board_set_nfc_enabled(true);
+  assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_OK);
+  unsigned before_init = init_calls;
+  h2_esp_board_set_nfc_enabled(false);
+  fail_write = 2;
+  assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_ERR_IO);
+  h2_esp_board_set_nfc_enabled(true);
+  assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_ERR_IO);
+  assert(init_calls == before_init);
+  fail_write = 0;
+  assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_OK);
+  assert(init_calls == before_init + 1u);
   return 0;
 }

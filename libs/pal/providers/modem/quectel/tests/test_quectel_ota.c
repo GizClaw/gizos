@@ -247,6 +247,9 @@ static void test_flow(const char* model, const char* source, const char* target,
   assert(h2_pal_modem_ota_start(&f.modem.platform, &r) == H2_PAL_ERR_BUSY &&
          f.starts == 1u);
   assert(h2_pal_modem_close(&f.modem.platform, 0u) == H2_PAL_ERR_BUSY);
+  assert(h2_quectel_modem_transport_closing(&f.modem) == H2_PAL_ERR_BUSY);
+  assert(h2_quectel_modem_set_raw_ppp_owned(&f.modem, 1) == H2_PAL_ERR_BUSY);
+  assert(f.modem.transport_closed == 0u && !f.modem.raw_ppp_owned);
   assert(h2_quectel_modem_transport_closed(&f.modem) == H2_PAL_ERR_BUSY);
   assert(h2_quectel_modem_deinit(&f.modem) == H2_PAL_ERR_BUSY &&
          f.deinits == 0u);
@@ -521,7 +524,62 @@ static void test_admission_and_urls(void) {
   finish(&f);
 }
 
+static void test_raw_ppp_ownership(void) {
+  fixture_t f;
+  init(&f, "EC25", "EC25-R01", 0);
+  /* Board adapters own an outer recursive operation lock while invoking
+   * provider vtables and changing the UART ownership. */
+  assert(mutex_lock(NULL, f.modem.operation_lock) == H2_PAL_OK);
+  assert(h2_quectel_modem_set_raw_ppp_owned(&f.modem, 1) == H2_PAL_OK);
+  assert(h2_quectel_modem_transport_closing(&f.modem) == H2_PAL_ERR_BUSY);
+  assert(h2_quectel_modem_transport_closed(&f.modem) == H2_PAL_ERR_BUSY);
+  assert(!f.modem.transport_closed && f.modem.raw_ppp_owned);
+  const unsigned count = f.count;
+  h2_pal_modem_identity_t identity;
+  assert(h2_pal_modem_get_identity(&f.modem.platform, &identity) ==
+         H2_PAL_ERR_BUSY);
+  h2_pal_modem_ota_request_t r =
+      request("https://example.com/synthetic.bin", "EC25-R01", "EC25-R02");
+  assert(h2_pal_modem_ota_start(&f.modem.platform, &r) == H2_PAL_ERR_BUSY);
+  assert(f.count == count && !f.modem.ota_hold);
+  const h2_pal_modem_data_status_t update = {
+      .state = H2_PAL_MODEM_DATA_CLOSING,
+      .ip4 = 123u,
+      .last_error = H2_PAL_ERR_TIMEOUT,
+  };
+  assert(h2_quectel_modem_data_status_update(&f.modem, &update) == H2_PAL_OK);
+  h2_pal_modem_data_status_t snapshot;
+  assert(h2_pal_modem_get_data_status(&f.modem.platform, &snapshot) ==
+         H2_PAL_OK);
+  assert(snapshot.state == update.state && snapshot.ip4 == update.ip4 &&
+         snapshot.last_error == update.last_error);
+  assert(f.modem.operation_depth == 0u && f.modem.lock->depth == 0u &&
+         f.modem.operation_lock->depth == 1u);
+  assert(h2_quectel_modem_set_raw_ppp_owned(&f.modem, 0) == H2_PAL_OK);
+  assert(h2_pal_modem_get_identity(&f.modem.platform, &identity) == H2_PAL_OK);
+  assert(f.count > count);
+  assert(mutex_unlock(NULL, f.modem.operation_lock) == H2_PAL_OK);
+  finish(&f);
+}
+
+static void test_transport_closing(void) {
+  fixture_t f;
+  init(&f, "EC25", "EC25-R01", 0);
+  assert(h2_quectel_modem_transport_closing(NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_quectel_modem_transport_closing(&f.modem) == H2_PAL_OK);
+  assert(f.modem.transport_closed && f.modem.opened);
+  const uint32_t generation = f.modem.sim_generation;
+  h2_quectel_handle_urc_line(&f.modem, "+QSIMSTAT: 0,0");
+  assert(f.modem.sim_generation == generation);
+  assert(h2_quectel_modem_transport_closing(&f.modem) == H2_PAL_OK);
+  assert(h2_quectel_modem_transport_closed(&f.modem) == H2_PAL_OK);
+  assert(!f.modem.opened);
+  finish(&f);
+}
+
 int main(void) {
+  test_transport_closing();
+  test_raw_ppp_ownership();
   test_flow("EC25", "EC25-R01", "EC25-R02", "https://example.com/fw.zip", 0);
   test_flow("EC800M", "EC800MCNLER06A07M08", "EC800MCNLER06A08M08",
             "http://example.com/fw.mini_1", 0);

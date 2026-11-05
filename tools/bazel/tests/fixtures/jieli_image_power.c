@@ -20,6 +20,11 @@ struct BootInfo {
 static struct BootInfo native = {0x4020u, 1024u, 7u, {1, 2, 3, 4, 5, 6, 7}};
 static int native_error, warm_proof, erase_failed, exit_error, pend_error;
 static uint32_t mapped_base = 0x4020u;
+static h2_jieli_warm_request_t origin_request;
+uint32_t h2_jieli_warm_boot_take_rom_base(void) {
+  return h2_jieli_warm_request_take_origin(&origin_request, mapped_base,
+                                           0x4020u, 0x37c020u);
+}
 static unsigned creates, inits, exits, clears, burns, arms, publications;
 static unsigned minimum_publications_before_clear;
 static unsigned native_writes, native_bytes, first_write_size, reset_calls,
@@ -304,6 +309,20 @@ int main(int argc, char** argv) {
   int existing_bank_one = strcmp(argv[1], "existing_bank_one") == 0 ||
                           strcmp(argv[1], "confirmed_bank_one") == 0 ||
                           strcmp(argv[1], "warm_bank_one") == 0;
+  int warm_return = strncmp(argv[1], "return_warm_", 12) == 0;
+  if (warm_return) {
+    mapped_base = 0x37c020u;
+    native_error = warm_proof = 1;
+    origin_request.sfc_base = origin_request.last_base = mapped_base;
+    origin_request.check = h2_jieli_warm_request_check(mapped_base);
+    origin_request.inflight = H2_JIELI_WARM_INFLIGHT;
+    origin_request.count = 3u;
+    h2_jieli_warm_request_record_origin(
+        &origin_request, strcmp(argv[1], "return_warm_wrong_origin") == 0
+                             ? mapped_base
+                             : 0x4020u);
+    if (strcmp(argv[1], "return_warm_torn") == 0) ++origin_request.origin_check;
+  }
   if (existing_bank_one) {
     mapped_base = native.baseAddress = 0x37c020u;
     if (strcmp(argv[1], "warm_bank_one") == 0) {
@@ -332,6 +351,39 @@ int main(int argc, char** argv) {
                                       H2_PAL_POWER_CAPABILITY_PREPARE_BOOT |
                                       H2_PAL_POWER_CAPABILITY_CONFIRM_IMAGE;
   assert((capabilities.flags & image_capabilities) == image_capabilities);
+  if (warm_return) {
+    assert(state.running_partition_id == 2 &&
+           origin_request.origin_magic == 0u);
+    assert(h2_jieli_warm_boot_take_rom_base() ==
+           0u); /* receipt cannot replay */
+    if (strcmp(argv[1], "return_warm_confirmed") == 0) {
+      h2_pal_power_image_confirmation_t confirmation;
+      assert(h2_pal_power_confirm_running_image(power, NULL, &confirmation) ==
+             0);
+    }
+    if (strcmp(argv[1], "return_warm_updated") == 0) {
+      const h2_pal_image_write_request_t update = {1, 2, sizeof(ufw)};
+      assert(h2_pal_image_begin(image, &update) == 0);
+      assert(h2_pal_image_abort(image) == 0);
+    }
+    const h2_pal_power_boot_request_t request = {
+        1, H2_PAL_POWER_BOOT_POLICY_EXISTING};
+    h2_pal_power_native_evidence_t evidence;
+    assert(h2_pal_power_prepare_next_boot_partition(power, &request,
+                                                    &evidence) == 0);
+    int reject = strcmp(argv[1], "return_warm_wrong_origin") == 0 ||
+                 strcmp(argv[1], "return_warm_torn") == 0 ||
+                 strcmp(argv[1], "return_warm_updated") == 0;
+    assert(h2_pal_power_set_next_boot_partition(power, 1) ==
+           (reject ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK));
+    h2_pal_power_boot_partition_t next;
+    assert(h2_pal_power_get_next_boot_partition(power, &next) == 0 &&
+           next.id == (reject ? 2u : 1u));
+    assert(h2_pal_power_reboot(power, 0) == 0);
+    reset_callback(reset_argument);
+    assert(reset_calls == 1 && warm_requests == (reject ? 1u : 0u));
+    return 0;
+  }
   if (existing_bank_one) {
     h2_pal_power_boot_partition_t partition;
     assert(h2_pal_power_get_running_boot_partition(power, &partition) == 0 &&

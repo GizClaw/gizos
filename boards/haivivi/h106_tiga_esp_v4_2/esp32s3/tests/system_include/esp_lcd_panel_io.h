@@ -24,6 +24,7 @@ esp_err_t esp_lcd_new_panel_io_spi(
     esp_lcd_spi_bus_handle_t bus,
     const esp_lcd_panel_io_spi_config_t* io_config,
     esp_lcd_panel_io_handle_t* ret_io);
+esp_err_t esp_lcd_panel_io_del(esp_lcd_panel_io_handle_t io);
 esp_err_t esp_lcd_panel_io_tx_param(esp_lcd_panel_io_handle_t io, int lcd_cmd,
                                     const void* param, size_t param_size);
 esp_err_t esp_lcd_panel_io_tx_color(esp_lcd_panel_io_handle_t io, int lcd_cmd,

@@ -393,9 +393,25 @@ static int clear_panel_black(h2_esp_tiga_display_state_t* state) {
   return H2_DISPLAY_OK;
 }
 
+static int cleanup_partial_display(h2_esp_tiga_display_state_t* state) {
+  int rc = set_backlight_percent(0u);
+  if (rc != H2_DISPLAY_OK) return rc;
+  if (state->panel_io != NULL) {
+    rc = esp_result(esp_lcd_panel_io_del(state->panel_io));
+    if (rc != H2_DISPLAY_OK) return rc;
+    state->panel_io = NULL;
+  }
+  return H2_DISPLAY_OK;
+}
+
 static int init_display(h2_esp_tiga_display_state_t* state) {
   if (state->initialized) {
     return H2_DISPLAY_OK;
+  }
+
+  if (state->panel_io != NULL) {
+    int cleanup_rc = cleanup_partial_display(state);
+    if (cleanup_rc != H2_DISPLAY_OK) return cleanup_rc;
   }
 
   ESP_LOGI(TAG, "init %s ST7789 SPI RGB565 panel", H2_ESP_BOARD_NAME);
@@ -442,11 +458,14 @@ static int init_display(h2_esp_tiga_display_state_t* state) {
       .trans_queue_depth = 2,
       .on_color_trans_done = color_trans_done,
   };
-  err = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config,
-                                 &state->panel_io);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "esp_lcd_new_panel_io_spi failed: %s", esp_err_to_name(err));
-    return esp_result(err);
+  if (state->panel_io == NULL) {
+    err = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST,
+                                   &io_config, &state->panel_io);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "esp_lcd_new_panel_io_spi failed: %s",
+               esp_err_to_name(err));
+      return esp_result(err);
+    }
   }
 
   rc = open_panel(state);
@@ -672,6 +691,7 @@ static int tiga_open(void* user) {
   const bool was_initialized = state->initialized;
   int rc = init_display(state);
   if (rc != H2_DISPLAY_OK) {
+    if (state->panel_io != NULL) (void)cleanup_partial_display(state);
     return rc;
   }
   if (was_initialized) {
@@ -700,6 +720,9 @@ static int tiga_open(void* user) {
 
 static int tiga_close(void* user) {
   h2_esp_tiga_display_state_t* state = (h2_esp_tiga_display_state_t*)user;
+  if (!state->initialized && state->panel_io != NULL) {
+    return cleanup_partial_display(state);
+  }
   if (!state->opened || state->panel_io == NULL) {
     return H2_DISPLAY_OK;
   }

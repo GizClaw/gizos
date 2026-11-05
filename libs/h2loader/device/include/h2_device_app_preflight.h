@@ -3,6 +3,10 @@
 
 #include "h2_runtime.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct h2_device_app_preflight {
   h2_pal_mutex_t* operation_mutex;
   h2_pal_firmware_info_t firmware_info;
@@ -11,5 +15,9 @@ typedef struct h2_device_app_preflight {
 
 int h2_device_app_preflight(const h2_runtime_config_t* runtime_config,
                             h2_device_app_preflight_t* out_preflight);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

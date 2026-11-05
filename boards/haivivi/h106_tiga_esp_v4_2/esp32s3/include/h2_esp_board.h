@@ -41,7 +41,9 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config);
  * All HTTP requests must have returned before this call. The teardown destroys
  * the HTTP provider before releasing its filesystem dependency. A caller whose
  * h2_runtime_init() fails after runtime_config() succeeds must also call this
- * function. Repeated calls after teardown return H2_PAL_OK.
+ * function. On failure, call again to retry retained cleanup before requesting
+ * another Runtime configuration. Repeated calls after teardown return
+ * H2_PAL_OK.
  */
 h2_pal_result_t h2_esp_board_runtime_deinit(void);
 

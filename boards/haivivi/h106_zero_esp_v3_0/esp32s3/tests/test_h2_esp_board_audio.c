@@ -11,6 +11,7 @@
 
 static unsigned s_init, s_down, s_deinit, s_power, s_lazy_init;
 static int s_down_result, s_power_result, s_deinit_result;
+static int s_shutdown_pending;
 static int backend_info(void* user, h2_audio_info_t* info) {
   assert(user != NULL);
   memset(info, 0, sizeof(*info));
@@ -20,7 +21,7 @@ static int backend_info(void* user, h2_audio_info_t* info) {
 }
 static int backend_speaker(void* user) {
   assert(user != NULL);
-  return H2_AUDIO_OK;
+  return s_shutdown_pending ? H2_AUDIO_ERR_INVALID_STATE : H2_AUDIO_OK;
 }
 static const h2_pal_audio_vtable_t s_backend = {
     .get_info = backend_info,
@@ -66,12 +67,14 @@ int h2_esp_es8311_audio_system_init(
 int h2_esp_es8311_audio_system_deinit(h2_esp_es8311_audio_system_t* system) {
   assert(system != NULL);
   ++s_deinit;
+  if (s_deinit_result == H2_AUDIO_OK) s_shutdown_pending = 0;
   return s_deinit_result;
 }
 int h2_esp_es8311_audio_system_power_down(
     h2_esp_es8311_audio_system_t* system) {
   assert(system != NULL);
   ++s_down;
+  s_shutdown_pending = s_down_result != H2_AUDIO_OK;
   return s_down_result;
 }
 int h2_esp_es8311_audio_system_prepare(h2_esp_es8311_audio_system_t* system) {
@@ -142,9 +145,11 @@ int main(void) {
   unsigned initialized = s_init;
   assert(h2_esp_board_audio_power_down() == H2_AUDIO_ERR_IO);
   assert(h2_esp_board_audio_if_initialized() != NULL);
-  available(&borrowed);
+  assert(h2_pal_audio_start_speaker(&borrowed) == H2_AUDIO_ERR_INVALID_STATE);
   assert(s_init == initialized);
   s_down_result = H2_AUDIO_OK;
+  assert(h2_esp_board_audio_power_down() == H2_AUDIO_OK);
+  available(&borrowed);
   s_deinit_result = H2_AUDIO_ERR_IO;
   assert(h2_esp_board_audio_deinit() == H2_AUDIO_ERR_IO);
   available(&borrowed);
