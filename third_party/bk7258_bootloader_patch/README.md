@@ -19,6 +19,8 @@ reads the header and payload from the same partition.
   destinations, unsupported partition geometry, and a Loader image that fails
   the checker's RBL, vector or digest rules.
 
+The pinned SDK enables I/D caches before the checker. Each mapping transition invalidates the canonical read-only Flash data window and the instruction cache, with DSB/ISB barriers, before validation or fallback. Cache enable bits and dirty RAM/stack lines are preserved.
+
 `apply.py` runs inside the native build. It has no key, device access or SDK
 mutation, and the patched region stays plaintext until the Flash-AES packaging
 step. This code does not depend on GizOS Core, PAL, boards or projects.

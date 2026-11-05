@@ -34,6 +34,10 @@ static unsigned crc_counter;
 static int crc_calls_until_error;
 static int omit_trial_record;
 static int failures;
+static uint8_t cached_view[LOADER_LOGICAL];
+static int cache_model;
+static unsigned sync_calls;
+static unsigned sync_mapped;
 
 volatile uint32_t bk_mapped_ab_test_registers[5];
 
@@ -48,8 +52,23 @@ const uint8_t* bk_mapped_ab_test_lookup(const char* name) {
   return NULL;
 }
 
+void bk_mapped_ab_test_sync_view(uint32_t base, uint32_t size) {
+  if (base != A_BASE || size != LOADER_LOGICAL) {
+    fprintf(stderr, "cache maintenance escaped the canonical Flash window\n");
+    ++failures;
+  }
+  ++sync_calls;
+  const int mapped = (bk_mapped_ab_test_registers[REG_ENABLE] & 1u) != 0;
+  if (mapped) ++sync_mapped;
+  if (cache_model)
+    memcpy(cached_view, flash + (mapped ? B_LOGICAL : A_LOGICAL),
+           sizeof(cached_view));
+}
+
 const volatile uint8_t* bk_mapped_ab_test_xip(uint32_t address) {
   const volatile uint32_t* r = bk_mapped_ab_test_registers;
+  if (cache_model && (r[REG_CCR] & (1u << 16)) && address == A_BASE)
+    return cached_view;
   if ((r[REG_ENABLE] & 1u) && address >= r[REG_BEGIN] && address < r[REG_END])
     address += r[REG_DELTA] - BK_MAPPED_AB_XIP_BASE;
   return flash + (address - BK_MAPPED_AB_XIP_BASE);
@@ -121,6 +140,8 @@ static void reset(void) {
   memset(flash, 0xff, sizeof(flash));
   memset((void*)bk_mapped_ab_test_registers, 0,
          sizeof(bk_mapped_ab_test_registers));
+  cache_model = 0;
+  sync_calls = sync_mapped = 0;
   crc_counter = 0;
   crc_calls_until_error = 0;
   omit_trial_record = 0;
@@ -272,14 +293,32 @@ static void test_crc_counter_rejects_changes_and_saturation(void) {
   CHECK(bk_mapped_ab_check(NULL, "appa") == 0);
 }
 
-static void test_rejects_enabled_caches(void) {
-  reset();
-  bk_mapped_ab_test_registers[REG_CCR] = 1u << 16;
-  CHECK(bk_mapped_ab_check(NULL, "appa") != 0);
-  reset();
-  bk_mapped_ab_test_registers[REG_CCR] = 1u << 17;
-  CHECK(bk_mapped_ab_check(NULL, "s_app") != 0);
-  CHECK(!mapping_enabled());
+static void test_enabled_caches_follow_mapping(void) {
+  static const uint32_t modes[] = {1u << 16, 1u << 17, 0x30201u};
+  for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+    reset();
+    bk_mapped_ab_test_registers[REG_CCR] = modes[i];
+    cache_model = 1;
+    memset(cached_view, 0xff, sizeof(cached_view));
+    CHECK(bk_mapped_ab_check(NULL, "appa") == 0);
+    CHECK(sync_calls == 1u && sync_mapped == 0u);
+    CHECK(bk_mapped_ab_test_registers[REG_CCR] == modes[i]);
+
+    /* An old, valid A cache must never make a corrupt B appear valid. */
+    flash[B_LOGICAL + 0x1000] ^= 1u;
+    CHECK(bk_mapped_ab_check(NULL, "s_app") != 0);
+    CHECK(!mapping_enabled());
+    CHECK(sync_calls == 4u && sync_mapped == 1u);
+    CHECK(memcmp(cached_view, flash + A_LOGICAL, sizeof(cached_view)) == 0);
+    CHECK(bk_mapped_ab_check(NULL, "appa") == 0);
+
+    /* A valid B can replace a stale A cache without disabling either cache. */
+    flash[B_LOGICAL + 0x1000] ^= 1u;
+    CHECK(bk_mapped_ab_check(NULL, "s_app") == 0);
+    CHECK(mapping_enabled());
+    CHECK(memcmp(cached_view, flash + B_LOGICAL, sizeof(cached_view)) == 0);
+    CHECK(bk_mapped_ab_test_registers[REG_CCR] == modes[i]);
+  }
 }
 
 static void test_rejects_descriptor_and_partition_mismatch(void) {
@@ -378,7 +417,7 @@ int main(void) {
   test_rejects_malformed_headers();
   test_rejects_bad_vectors();
   test_crc_counter_rejects_changes_and_saturation();
-  test_rejects_enabled_caches();
+  test_enabled_caches_follow_mapping();
   test_rejects_descriptor_and_partition_mismatch();
   test_contract_geometry_limits();
   if (failures) fprintf(stderr, "%d mapped AB checks failed\n", failures);
