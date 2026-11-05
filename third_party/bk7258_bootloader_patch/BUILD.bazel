@@ -42,7 +42,10 @@ cc_test(
 
 py_test(
     name = "apply_test",
-    srcs = ["apply.py", "tests/test_apply.py"],
+    srcs = [
+        "apply.py",
+        "tests/test_apply.py",
+    ],
     data = [
         "manifest.json",
         "mapped_ab.c",
