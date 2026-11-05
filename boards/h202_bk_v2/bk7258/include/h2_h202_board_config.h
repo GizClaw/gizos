@@ -1,0 +1,75 @@
+#ifndef H2_H202_BOARD_CONFIG_H
+#define H2_H202_BOARD_CONFIG_H
+
+/* H202 BK main V2.0 / Pin Multiplexing V2.0; GPIO indices, not package pins. */
+#define H2_H202_BOARD_NAME "h202_bk_v2"
+#define H2_H202_TARGET_NAME "bk7258"
+#define H2_H202_INTERNAL_FLASH_SIZE_BYTES (8u * 1024u * 1024u)
+#define H2_H202_PSRAM_SIZE_BYTES (16u * 1024u * 1024u)
+#define H2_H202_EXTFLASH_SIZE_BYTES (8u * 1024u * 1024u)
+#define H2_H202_DEBUG_UART_TX_GPIO 0u
+#define H2_H202_DEBUG_UART_RX_GPIO 1u
+#define H2_H202_EXTFLASH_CLK_GPIO 22u
+#define H2_H202_EXTFLASH_CS_GPIO 23u
+#define H2_H202_EXTFLASH_IO0_GPIO 24u
+#define H2_H202_EXTFLASH_IO1_GPIO 25u
+#define H2_H202_EXTFLASH_IO2_GPIO 26u
+#define H2_H202_EXTFLASH_IO3_GPIO 27u
+#define H2_H202_PERIPHERAL_ENABLE_GPIO 54u
+#define H2_H202_PA_ENABLE_GPIO 53u
+/* AW8733A: the number of enable rising edges selects the mode; 4 is the
+ * loudest. */
+#define H2_H202_PA_MODE 4u
+/* The 4G module is not fitted; firmware only holds these rails low. */
+#define H2_H202_MODEM_ENABLE_GPIO 7u
+#define H2_H202_MODEM_VBUS_ENABLE_GPIO 13u
+/* SLOW_CHARGE stays low for fast charging, including deep sleep. */
+#define H2_H202_SLOW_CHARGE_GPIO 6u
+#define H2_H202_WHITE_LED_GPIO 37u
+#define H2_H202_WHITE_PWM_CHANNEL 11u
+/* XTAL 26 MHz / 26000 cycles = 1 kHz carrier. */
+#define H2_H202_WHITE_PWM_PERIOD 26000u
+#define H2_H202_RGB_GPIO 4u
+#define H2_H202_POWER_KEY_GPIO 2u
+#define H2_H202_USB_INSERT_GPIO 3u
+#define H2_H202_CHARGING_GPIO 30u
+#define H2_H202_CHARGE_DONE_GPIO 31u
+#define H2_H202_PLUS_KEY_GPIO 33u
+#define H2_H202_MINUS_KEY_GPIO 34u
+#define H2_H202_RECORD_KEY_GPIO 35u
+#define H2_H202_NFC_RESET_GPIO 32u
+#define H2_H202_NFC_SCL_GPIO 38u
+#define H2_H202_NFC_SDA_GPIO 39u
+#define H2_H202_NFC_I2C_ID 1u
+#define H2_H202_NFC_I2C_ADDRESS 0x28u
+#define H2_H202_NFC_I2C_HZ 100000u
+/* Battery Level Detect: VBAT through R67/R66 (10k/10k) when Q1 is switched
+ * on by WAKE_UP; GPIO12 is SARADC channel 14. */
+#define H2_H202_BATTERY_ADC_GPIO 12u
+#define H2_H202_BATTERY_ADC_CHANNEL 14u
+#define H2_H202_BATTERY_DIVIDER 2u
+/* Below this the cell is treated as absent (no reading); provisional until
+ * measured on a board without a battery. */
+#define H2_H202_BATTERY_PRESENT_MV 2500u
+#define H2_H202_DMIC_CLK_GPIO 8u
+#define H2_H202_DMIC_DATA_GPIO 9u
+#define H2_H202_RGB_PIXELS 6u
+#define H2_H202_RGB_SPI_ID 1u
+#define H2_H202_RGB_SPI_HZ 3200000u
+#define H2_H202_AUDIO_RATE_HZ 16000u
+#define H2_H202_AUDIO_FRAME_SAMPLES 320u
+
+/* PAL IDs are product-local, independent of GPIO and controller key masks. */
+#define H2_H202_POWER_KEY_ID 1u
+#define H2_H202_RECORD_KEY_ID 2u
+#define H2_H202_PLUS_KEY_ID 3u
+#define H2_H202_MINUS_KEY_ID 4u
+#define H2_H202_USB_INSERT_ID 5u
+#define H2_H202_NFC_ID 6u
+#define H2_H202_EYES_ID 7u
+#define H2_H202_WHITE_ID 8u
+#define H2_H202_CHARGING_ID 9u
+#define H2_H202_CHARGE_DONE_ID 10u
+#define H2_H202_BATTERY_ID 11u
+
+#endif

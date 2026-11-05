@@ -12,6 +12,12 @@ bazel build --noannounce_rc --config=esp32s3 \
 
 Use `--config=esp32s31` for `esp_mosaico`, or `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and `waveshare_esp32s3_a7670e_4g`. The remaining entries are `waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and `jieli_ac791n_devkit`. JieLi's native package build requires a Linux host.
 
+`h202_bk_v2` is also H2Loader-role, but voice-guided and UART-only, with a private
+controller under `apps/h202_bk_v2/app/` instead of the shared session. It does not
+use `h2_mfg_*` or the `h2loader mfg` command; its ten results gate the App
+through `mfg_required_total`. See
+[H202 MFG](../../guides/apps/h2loader/boards/h202_bk_v2/mfg.md).
+
 Physical acceptance recorded on 2026-10-30:
 
 | Board | Recorded result | Remaining acceptance |

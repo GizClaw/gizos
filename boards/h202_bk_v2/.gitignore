@@ -1,0 +1,2 @@
+# Local private Bazel repository; device keys must never be committed.
+.private/
