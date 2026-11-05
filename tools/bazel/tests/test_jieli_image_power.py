@@ -26,7 +26,11 @@ class ImagePowerTest(unittest.TestCase):
                 "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
                 str(unit), str(ROOT / "libs/atomic/providers/c11/src/h2_atomic_c11.c"),
                 "-o", str(binary)], check=True, timeout=60)
-            for case in ("stored", "readonly", "trial", "recovery", "late", "cleanup", "failed_mapping", "short_tail", "small"):
+            for case in (
+                "stored", "readonly", "trial", "recovery", "late", "cleanup",
+                "failed_mapping", "short_tail", "small", "existing_bank_one",
+                "confirmed_bank_one", "warm_bank_one", "cancel_warm_trial",
+            ):
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=10)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

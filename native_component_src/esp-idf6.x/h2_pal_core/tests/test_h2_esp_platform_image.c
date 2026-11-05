@@ -260,6 +260,12 @@ static void test_images(void) {
 
 static void test_power(void) {
   const h2_pal_power_api_t* power = h2_esp_platform_power_api();
+  h2_pal_power_capabilities_t capabilities;
+  assert(h2_pal_power_get_capabilities(power, &capabilities) == H2_PAL_OK);
+  const uint32_t image_capabilities = H2_PAL_POWER_CAPABILITY_IMAGE_STATE |
+                                      H2_PAL_POWER_CAPABILITY_PREPARE_BOOT |
+                                      H2_PAL_POWER_CAPABILITY_CONFIRM_IMAGE;
+  assert((capabilities.flags & image_capabilities) == image_capabilities);
   h2_pal_power_native_evidence_t evidence;
   for (unsigned policy = H2_PAL_POWER_BOOT_POLICY_EXISTING;
        policy <= H2_PAL_POWER_BOOT_POLICY_TRIAL_WITH_RECOVERY; ++policy) {

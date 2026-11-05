@@ -684,7 +684,9 @@ static int power_get_capabilities(
   out_capabilities->flags = H2_PAL_POWER_CAPABILITY_REBOOT |
                             H2_PAL_POWER_CAPABILITY_BOOT_PARTITIONS |
                             H2_PAL_POWER_CAPABILITY_SET_NEXT_BOOT_PARTITION |
-                            H2_PAL_POWER_CAPABILITY_IMAGE_STATE;
+                            H2_PAL_POWER_CAPABILITY_IMAGE_STATE |
+                            H2_PAL_POWER_CAPABILITY_PREPARE_BOOT |
+                            H2_PAL_POWER_CAPABILITY_CONFIRM_IMAGE;
   return H2_PAL_OK;
 }
 
@@ -839,6 +841,10 @@ static int power_set_next(void* user, uint32_t partition_id) {
     state.update_committed = 1;
   } else if (state.update_active || state.writer_partition_id != 0u) {
     return H2_PAL_ERR_INVALID_STATE;
+  } else if (partition_id == BANK_1_ID) {
+    /* An existing bank one has no native selector or supported warm remap.
+     * Only a freshly prepared bank-one update can replace ROM's bank choice. */
+    return H2_PAL_ERR_UNSUPPORTED;
   }
   /* A bank-two trial is entered through the warm remap; ROM remains on bank
    * one until a confirmed recovery image crosses the same-running barrier. */

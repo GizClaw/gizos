@@ -312,6 +312,9 @@ static h2_pal_result_t power_get_capabilities(
                             H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER |
                             H2_PAL_POWER_CAPABILITY_BOOT_PARTITIONS |
                             H2_PAL_POWER_CAPABILITY_SET_NEXT_BOOT_PARTITION |
+                            H2_PAL_POWER_CAPABILITY_IMAGE_STATE |
+                            H2_PAL_POWER_CAPABILITY_PREPARE_BOOT |
+                            H2_PAL_POWER_CAPABILITY_CONFIRM_IMAGE |
                             H2_PAL_POWER_CAPABILITY_RESET_REASON;
   return H2_PAL_OK;
 }

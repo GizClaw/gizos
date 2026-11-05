@@ -283,6 +283,9 @@ static void write_candidate(void) {
   assert(h2_pal_image_begin(h2_jieli_wl82_platform_image_api(), &request) ==
          H2_PAL_ERR_BUSY);
   assert(inits == 1);
+  assert(h2_pal_power_set_next_boot_partition(
+             h2_jieli_wl82_platform_power_api(), 2) ==
+         H2_PAL_ERR_INVALID_STATE);
   assert(h2_pal_image_write(h2_jieli_wl82_platform_image_api(), ufw, 4096) ==
          0);
   assert(native_writes == 1 && first_write_size == 4096 - 0x123u);
@@ -298,6 +301,16 @@ int main(int argc, char** argv) {
   build_ufw();
   const h2_jieli_wl82_image_config_t config = {
       &fs, 1, 2, 0x37d000u, "temporary", "one", "two"};
+  int existing_bank_one = strcmp(argv[1], "existing_bank_one") == 0 ||
+                          strcmp(argv[1], "confirmed_bank_one") == 0 ||
+                          strcmp(argv[1], "warm_bank_one") == 0;
+  if (existing_bank_one) {
+    mapped_base = native.baseAddress = 0x37c020u;
+    if (strcmp(argv[1], "warm_bank_one") == 0) {
+      native_error = 1;
+      warm_proof = 1;
+    }
+  }
   if (strcmp(argv[1], "failed_mapping") == 0) {
     native_error = 1;
     assert(h2_jieli_wl82_platform_image_configure(&config) == H2_PAL_ERR_IO);
@@ -313,6 +326,58 @@ int main(int argc, char** argv) {
   assert(h2_jieli_wl82_platform_image_configure(&config) == 0 && creates == 1);
   const h2_pal_image_api_t* image = h2_jieli_wl82_platform_image_api();
   const h2_pal_power_api_t* power = h2_jieli_wl82_platform_power_api();
+  h2_pal_power_capabilities_t capabilities;
+  assert(h2_pal_power_get_capabilities(power, &capabilities) == H2_PAL_OK);
+  const uint32_t image_capabilities = H2_PAL_POWER_CAPABILITY_IMAGE_STATE |
+                                      H2_PAL_POWER_CAPABILITY_PREPARE_BOOT |
+                                      H2_PAL_POWER_CAPABILITY_CONFIRM_IMAGE;
+  assert((capabilities.flags & image_capabilities) == image_capabilities);
+  if (existing_bank_one) {
+    h2_pal_power_boot_partition_t partition;
+    assert(h2_pal_power_get_running_boot_partition(power, &partition) == 0 &&
+           partition.id == 2);
+    if (strcmp(argv[1], "confirmed_bank_one") == 0) {
+      h2_pal_power_image_confirmation_t confirmed;
+      assert(h2_pal_power_confirm_running_image(power, NULL, &confirmed) == 0);
+      assert(confirmed.partition_id == 2);
+    }
+    uint8_t before[sizeof(state)];
+    memcpy(before, &state, sizeof(state));
+    const h2_pal_power_boot_request_t request = {
+        1, H2_PAL_POWER_BOOT_POLICY_EXISTING};
+    h2_pal_power_native_evidence_t evidence;
+    assert(h2_pal_power_prepare_next_boot_partition(power, &request,
+                                                    &evidence) == 0);
+    assert(evidence.format == 0 && evidence.size == 0);
+    assert(memcmp(before, &state, sizeof(state)) == 0);
+    assert(h2_pal_power_set_next_boot_partition(power, 1) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(memcmp(before, &state, sizeof(state)) == 0);
+    assert(h2_pal_power_get_next_boot_partition(power, &partition) == 0 &&
+           partition.id == 2 &&
+           (partition.flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_NEXT));
+    assert(burns == 0 && clears == 0 && publications == 0 && exits == 0 &&
+           opens == 0 && closes == 0 && native_writes == 0 &&
+           warm_requests == 0 && reset_calls == 0);
+    assert(h2_pal_power_reboot(power, 0) == 0 && warm_requests == 0);
+    reset_callback(reset_argument);
+    assert(warm_requests == 1 && reset_calls == 1);
+    return 0;
+  }
+  if (strcmp(argv[1], "cancel_warm_trial") == 0) {
+    h2_pal_power_boot_partition_t partition;
+    assert(h2_pal_power_set_next_boot_partition(power, 2) == 0);
+    assert(h2_pal_power_get_next_boot_partition(power, &partition) == 0 &&
+           partition.id == 2 && warm_requests == 0);
+    assert(h2_pal_power_set_next_boot_partition(power, 1) == 0);
+    assert(h2_pal_power_get_next_boot_partition(power, &partition) == 0 &&
+           partition.id == 1);
+    assert(h2_pal_power_reboot(power, 0) == 0 && warm_requests == 0);
+    reset_callback(reset_argument);
+    assert(reset_calls == 1 && warm_requests == 0 && burns == 0 &&
+           clears == 0 && publications == 0 && native_writes == 0);
+    return 0;
+  }
   h2_pal_image_info_t info;
   assert(h2_pal_image_get_info(image, 1, H2_PAL_IMAGE_VIEW_STORED, &info) == 0);
   assert(info.capacity == 0x37d000u &&
@@ -461,7 +526,7 @@ int main(int argc, char** argv) {
       assert(h2_pal_power_prepare_next_boot_partition(power, &canonical,
                                                       &unused) == 0);
       assert(h2_pal_power_set_next_boot_partition(power, 1) == 0 &&
-             state.update_committed);
+             state.update_committed && state.warm_partition_id == 0);
       assert(files[1].exists && files[2].exists &&
              state.next_partition_id == 1);
       timer_allocation = 0;
