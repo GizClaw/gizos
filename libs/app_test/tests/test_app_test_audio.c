@@ -378,7 +378,7 @@ static void test_contended_backoff_failure(void) {
 static void test_subframe_jitter_keeps_mic_deadlines(void) {
   const struct {
     uint32_t sample_rate;
-    uint32_t frame_samples;
+    uint16_t frame_samples;
     uint64_t times[5];
   } cases[] = {
       {16000u, 320u, {1000u, 1021u, 1040u, 1061u, 1080u}},
