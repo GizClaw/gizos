@@ -2,6 +2,8 @@
 #include "h2_mosaico_display_capture.h"
 #include "h2_mosaico_surface.h"
 #include "bsp/display.h"
+#include "bsp/esp_mosaico.h"
+#include "driver/gpio.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -208,6 +210,11 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
   if (rc != H2_PAL_OK) return rc;
   if (!touch_opened)
     rc = H2_PAL_ERR_INVALID_STATE;
+  else if (gpio_get_level(BSP_LCD_TOUCH_INT) != 0)
+    /* HYN212 reports are acknowledged by read_data(). No interrupt means
+     * there is no new report: preserve the last pointer edge rather than
+     * treating an already-acknowledged report as a release. */
+    rc = H2_PAL_ERR_WOULD_BLOCK;
   else
     rc = result(esp_lcd_touch_read_data(touch));
   if (rc == H2_PAL_OK) {
