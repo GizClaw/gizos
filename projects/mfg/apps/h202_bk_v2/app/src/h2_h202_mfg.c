@@ -1249,12 +1249,12 @@ struct h2_h202_mfg_service {
   int charge_write_error;
   int logged_inputs; /**< Last logged USB/CHRG/DONE bits, -1 before any. */
   int logged_mode;   /**< Last logged charge indicator mode, -1 before any. */
-  /* AUDIO worker only; observer callbacks run on that same worker. */
+  /* AUDIO worker state, except errors reported by the DAC worker. */
   h2_pal_audio_track_t* track;
   bool speaker;
   bool microphone;
   bool observer;
-  int observer_error;
+  int observer_error; /**< Protected by lock across capture/DAC callbacks. */
   h2_h202_mfg_aec_meter_t meter;
   bool meter_active;
   int16_t capture[640];
@@ -1479,8 +1479,10 @@ static void observe_playback(void* user, const h2_audio_frame_t* frame) {
 static void observe_error(void* user, int capture, int result) {
   h2_h202_mfg_service_t* s = user;
   (void)capture;
+  service_lock(s);
   if (s->observer_error == H2_PAL_OK)
     s->observer_error = result != H2_PAL_OK ? result : H2_PAL_ERR_IO;
+  service_unlock(s);
 }
 
 /* Releases what is still held; a failed step keeps its handle for retry. */
@@ -1526,7 +1528,9 @@ static int audio_open(h2_h202_mfg_service_t* s, bool microphone,
   int rc = audio_release(s);
   if (rc != H2_PAL_OK) return rc;
   if (observer != NULL) {
+    service_lock(s);
     s->observer_error = H2_PAL_OK;
+    service_unlock(s);
     rc = h2_pal_audio_set_aec_observer(audio, observer);
     s->observer = rc == H2_PAL_OK;
   }
@@ -1651,7 +1655,9 @@ static int audio_cycle(slot_t* slot, unsigned lane) {
       h2_audio_frame_for_buffer(s->output, sizeof(s->output), format);
   playback.bytes = (size_t)p->frame_samples * sizeof(int16_t);
   rc = h2_pal_audio_track_write(s->track, &playback, 100u);
+  service_lock(s);
   if (rc == H2_PAL_OK && s->observer_error != H2_PAL_OK) rc = s->observer_error;
+  service_unlock(s);
   return rc;
 }
 

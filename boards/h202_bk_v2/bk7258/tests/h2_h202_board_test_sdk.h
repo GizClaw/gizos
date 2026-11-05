@@ -224,6 +224,7 @@ enum {
   PORT_TYPE_RB = 1,
   PORT_TYPE_CB = 3,
   AEL_IO_FAIL = -1,
+  AEL_IO_ABORT = -3,
   AEL_IO_TIMEOUT = -4
 };
 #define BK_MS_TO_TICKS(ms) (ms)
@@ -239,12 +240,76 @@ typedef struct {
 #define DEFAULT_ONBOARD_DUAL_DMIC_STREAM_CONFIG() \
   ((onboard_dual_dmic_mic_stream_cfg_t){0})
 typedef struct {
-  unsigned sample_rate, frame_size, task_stack, task_core, task_prio;
-  bool pa_ctrl_en;
-  unsigned pa_ctrl_gpio, pa_on_level, pa_on_delay, pa_off_delay;
-} onboard_speaker_stream_cfg_t;
-#define DEFAULT_ONBOARD_SPEAKER_STREAM_CONFIG() \
-  ((onboard_speaker_stream_cfg_t){0})
+  int (*open)(audio_element_handle_t);
+  int (*process)(audio_element_handle_t, char*, int);
+  unsigned buffer_len, task_stack, task_core, task_prio, in_type, out_type;
+  const char* tag;
+} audio_element_cfg_t;
+#define DEFAULT_AUDIO_ELEMENT_CONFIG() ((audio_element_cfg_t){0})
+typedef unsigned dma_id_t;
+typedef void (*dma_isr_t)(dma_id_t);
+enum {
+  DMA_ID_MAX = 16,
+  DMA_DEV_AUDIO = 2,
+  DMA_DEV_DTCM = 0,
+  DMA_WORK_MODE_REPEAT = 1,
+  DMA_DATA_WIDTH_32BITS = 4,
+  DMA_DATA_WIDTH_16BITS = 2,
+  DMA_ADDR_INC_ENABLE = 1,
+  DMA_ADDR_LOOP_ENABLE = 1,
+  DMA_TRANS_DEFAULT = 0,
+  RB_DMA_TYPE_READ = 1
+};
+typedef struct {
+  unsigned dev, width, addr_inc_en, addr_loop_en;
+  uint32_t start_addr, end_addr;
+} dma_port_config_t;
+typedef struct {
+  unsigned mode, chan_prio, trans_type;
+  dma_port_config_t src, dst;
+} dma_config_t;
+typedef struct {
+  uint8_t* address;
+  uint32_t capacity;
+  dma_id_t dma_id;
+} RingBufferContext;
+typedef struct {
+  uint32_t samp_rate, dac_gain;
+} aud_dac_config_t;
+#define DEFAULT_AUD_DAC_CONFIG() ((aud_dac_config_t){.dac_gain = 0x2d})
+#ifndef H2_H202_MFG_TEST
+typedef void* beken_semaphore_t;
+int rtos_init_semaphore(beken_semaphore_t* semaphore, unsigned count);
+int rtos_set_semaphore(beken_semaphore_t* semaphore);
+int rtos_get_semaphore(beken_semaphore_t* semaphore, unsigned timeout);
+int rtos_deinit_semaphore(beken_semaphore_t* semaphore);
+#endif
+int bk_aud_dac_init(aud_dac_config_t* config);
+int bk_aud_dac_deinit(void);
+int bk_aud_dac_start(void);
+int bk_aud_dac_stop(void);
+int bk_aud_dac_mute(void);
+int bk_aud_dac_unmute(void);
+int bk_aud_dac_get_fifo_addr(uint32_t* out);
+int bk_aud_set_ana_dac_gain(uint8_t gain);
+int bk_dma_driver_init(void);
+dma_id_t bk_dma_alloc(uint16_t user);
+int bk_dma_free(uint16_t user, dma_id_t id);
+int bk_dma_init(dma_id_t id, const dma_config_t* config);
+int bk_dma_deinit(dma_id_t id);
+int bk_dma_start(dma_id_t id);
+int bk_dma_stop(dma_id_t id);
+uint32_t bk_dma_get_enable_status(dma_id_t id);
+int bk_dma_set_transfer_len(dma_id_t id, uint32_t length);
+int bk_dma_register_isr(dma_id_t id, dma_isr_t half, dma_isr_t finish);
+int bk_dma_enable_finish_interrupt(dma_id_t id);
+int bk_dma_disable_finish_interrupt(dma_id_t id);
+void* audio_dma_mem_calloc(uint32_t count, uint32_t size);
+void audio_dma_mem_free(void* pointer);
+void ring_buffer_init(RingBufferContext* rb, uint8_t* address,
+                      uint32_t capacity, dma_id_t channel, uint32_t direction);
+uint32_t ring_buffer_write(RingBufferContext* rb, uint8_t* bytes,
+                           uint32_t size);
 
 typedef struct {
   int16_t ref[H2_H202_AUDIO_FRAME_SAMPLES];
@@ -283,8 +348,9 @@ int audio_port_write(audio_port_handle_t port, char* buffer, int bytes,
 int audio_port_get_filled_size(audio_port_handle_t port);
 audio_element_handle_t onboard_dual_dmic_mic_stream_init(
     onboard_dual_dmic_mic_stream_cfg_t* config);
-audio_element_handle_t onboard_speaker_stream_init(
-    onboard_speaker_stream_cfg_t* config);
+audio_element_handle_t audio_element_init(audio_element_cfg_t* config);
+int audio_element_input(audio_element_handle_t element, char* bytes,
+                        int length);
 int audio_element_set_output_port(audio_element_handle_t el,
                                   audio_port_handle_t port);
 int audio_element_set_multi_output_port(audio_element_handle_t el,
@@ -295,7 +361,7 @@ int audio_element_set_output_timeout(audio_element_handle_t el,
                                      TickType_t ticks);
 int audio_element_set_input_timeout(audio_element_handle_t el,
                                     TickType_t ticks);
-enum { AEL_STATE_INIT, AEL_STATE_ERROR };
+enum { AEL_STATE_INIT, AEL_STATE_ERROR, AEL_STATE_RUNNING };
 int audio_element_get_state(audio_element_handle_t el);
 int audio_element_run(audio_element_handle_t el);
 int audio_element_resume(audio_element_handle_t el, float threshold,

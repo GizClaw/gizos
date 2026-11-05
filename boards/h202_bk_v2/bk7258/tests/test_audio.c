@@ -9,19 +9,24 @@
 struct test_audio_port {
   port_stream_func write;
   int type;
+  unsigned used;
+  char queued[H2_H202_AUDIO_FRAME_SAMPLES * 2 * 4];
 };
 struct test_audio_element {
   audio_port_handle_t input, output, reference;
   bool task, running;
   int state;
+  int (*open)(audio_element_handle_t);
+  int (*process)(audio_element_handle_t, char*, int);
 };
 
-static audio_element_handle_t capture, last_element;
+static audio_element_handle_t capture, playback, last_element;
 static unsigned live_ports, live_elements, live_aec, live_mutexes;
 static unsigned step, fail_step, aec_calls, stop_without_task, terminations;
 static int run_error, resume_error, stop_error, wait_error, terminate_error;
 static bool run_creates_task, run_delays_task, termination_finishes_later;
 static uint64_t now_ms;
+static int input_result;
 
 static bool fail(void) { return ++step == fail_step; }
 static void* allocate(void* user, size_t size) {
@@ -180,11 +185,28 @@ int audio_port_write(audio_port_handle_t port, char* buffer, int bytes,
                      TickType_t ticks) {
   if (port->write != NULL) return port->write(port, buffer, bytes, ticks, NULL);
   assert(port->type == PORT_TYPE_RB);
-  return bytes;
+  unsigned free_bytes = sizeof(port->queued) - port->used;
+  unsigned copied = (unsigned)bytes < free_bytes ? (unsigned)bytes : free_bytes;
+  memcpy(port->queued + port->used, buffer, copied);
+  port->used += copied;
+  return (int)copied;
 }
 int audio_port_get_filled_size(audio_port_handle_t port) {
   assert(port != NULL);
-  return 0;
+  return (int)port->used;
+}
+int audio_element_input(audio_element_handle_t element, char* buffer,
+                        int length) {
+  if (input_result != 0) return input_result;
+  audio_port_handle_t port = element->input;
+  assert(port != NULL && port->type == PORT_TYPE_RB);
+  unsigned copied =
+      (unsigned)length < port->used ? (unsigned)length : port->used;
+  if (copied == 0u) return AEL_IO_TIMEOUT;
+  memcpy(buffer, port->queued, copied);
+  port->used -= copied;
+  memmove(port->queued, port->queued + copied, port->used);
+  return (int)copied;
 }
 static audio_element_handle_t element(void) {
   if (fail()) return NULL;
@@ -202,12 +224,16 @@ audio_element_handle_t onboard_dual_dmic_mic_stream_init(
   capture = element();
   return capture;
 }
-audio_element_handle_t onboard_speaker_stream_init(
-    onboard_speaker_stream_cfg_t* config) {
-  /* The board drives the PA itself to select its mode. */
-  assert(config->frame_size == H2_H202_AUDIO_FRAME_SAMPLES * 2 &&
-         !config->pa_ctrl_en);
-  return element();
+audio_element_handle_t audio_element_init(audio_element_cfg_t* config) {
+  assert(config->buffer_len == H2_H202_AUDIO_FRAME_SAMPLES * 2 &&
+         config->process != NULL && config->task_core == 1u &&
+         config->task_prio == 5u && config->task_stack == 8192u);
+  playback = element();
+  if (playback != NULL) {
+    playback->open = config->open;
+    playback->process = config->process;
+  }
+  return playback;
 }
 int audio_element_set_output_port(audio_element_handle_t el,
                                   audio_port_handle_t port) {
@@ -235,7 +261,8 @@ int audio_element_set_output_timeout(audio_element_handle_t el,
 }
 int audio_element_set_input_timeout(audio_element_handle_t el,
                                     TickType_t ticks) {
-  return audio_element_set_output_timeout(el, ticks);
+  assert(el == playback && ticks == 0u);
+  return fail() ? -1 : 0;
 }
 int audio_element_get_state(audio_element_handle_t el) { return el->state; }
 int audio_element_run(audio_element_handle_t el) {
@@ -248,6 +275,11 @@ int audio_element_run(audio_element_handle_t el) {
 int audio_element_resume(audio_element_handle_t el, float threshold,
                          TickType_t ticks) {
   assert(el->task && threshold == 0 && ticks == 1000);
+  /* Match the SDK: a NULL open returns success without advancing INIT. */
+  if (el->open != NULL) {
+    if (el->open(el) != 0) return -1;
+    el->state = AEL_STATE_RUNNING;
+  }
   el->running = true;
   return resume_error;
 }
@@ -283,21 +315,196 @@ int audio_element_deinit(audio_element_handle_t el) {
   if (el->output != NULL && el->output->type == PORT_TYPE_CB)
     audio_port_deinit(el->output);
   if (el == capture) capture = NULL;
+  if (el == playback) playback = NULL;
   --live_elements;
   free(el);
   return 0;
+}
+
+/* The fake distinguishes producer enqueue from worker consumption and the
+ * verified DAC-ring write. No DMA completion is implied by enqueueing. */
+static bool dac_live, dac_running, dma_claimed, dma_live, dma_running;
+static unsigned dma_buffers, semaphores, dac_writes;
+static int dma_stop_error, dac_stop_error;
+static bool short_dac_write;
+static dma_isr_t dma_finish;
+static int16_t last_dac_pcm[H2_H202_AUDIO_FRAME_SAMPLES];
+int rtos_init_semaphore(beken_semaphore_t* out, unsigned count) {
+  assert(count == 1u);
+  if (fail()) return -1;
+  *out = calloc(1, sizeof(bool));
+  assert(*out != NULL);
+  ++semaphores;
+  return 0;
+}
+int rtos_set_semaphore(beken_semaphore_t* semaphore) {
+  assert(*semaphore != NULL);
+  *(bool*)*semaphore = true;
+  return 0;
+}
+int rtos_get_semaphore(beken_semaphore_t* semaphore, unsigned timeout) {
+  assert(*semaphore != NULL && timeout == 1000u);
+  if (!*(bool*)*semaphore) return -1;
+  *(bool*)*semaphore = false;
+  return 0;
+}
+int rtos_deinit_semaphore(beken_semaphore_t* semaphore) {
+  assert(!dma_live && !dma_running && semaphores > 0u);
+  free(*semaphore);
+  *semaphore = NULL;
+  --semaphores;
+  return 0;
+}
+int bk_aud_dac_init(aud_dac_config_t* config) {
+  assert(!dac_live && config->samp_rate == 16000u && config->dac_gain == 0x2du);
+  if (fail()) return -1;
+  dac_live = true;
+  return 0;
+}
+int bk_aud_dac_deinit(void) {
+  assert(dac_live && !dac_running);
+  dac_live = false;
+  return 0;
+}
+int bk_aud_dac_start(void) {
+  assert(dac_live && dma_running);
+  dac_running = true;
+  return fail() ? -1 : 0;
+}
+int bk_aud_dac_stop(void) {
+  assert(dac_live && !dma_running);
+  if (dac_stop_error) return dac_stop_error;
+  dac_running = false;
+  return 0;
+}
+int bk_aud_dac_mute(void) { return fail() ? -1 : 0; }
+int bk_aud_dac_unmute(void) { return fail() ? -1 : 0; }
+int bk_aud_dac_get_fifo_addr(uint32_t* out) {
+  *out = 0x1000u;
+  return fail() ? -1 : 0;
+}
+int bk_aud_set_ana_dac_gain(uint8_t gain) {
+  assert(gain == 0x0au);
+  return fail() ? -1 : 0;
+}
+int bk_dma_driver_init(void) { return fail() ? -1 : 0; }
+dma_id_t bk_dma_alloc(uint16_t user) {
+  assert(user == DMA_DEV_AUDIO && !dma_claimed);
+  if (fail()) return DMA_ID_MAX;
+  dma_claimed = true;
+  return 0;
+}
+int bk_dma_free(uint16_t user, dma_id_t id) {
+  assert(user == DMA_DEV_AUDIO && id == 0u && dma_claimed && !dma_live);
+  dma_claimed = false;
+  return 0;
+}
+int bk_dma_init(dma_id_t id, const dma_config_t* config) {
+  assert(id == 0u && dma_claimed && !dma_live);
+  assert(config->mode == DMA_WORK_MODE_REPEAT && config->chan_prio == 1u);
+  assert(config->src.width == DMA_DATA_WIDTH_32BITS &&
+         config->dst.width == DMA_DATA_WIDTH_16BITS &&
+         config->src.end_addr - config->src.start_addr == 1288u &&
+         config->dst.start_addr == 0x1000u && config->dst.end_addr == 0x1004u);
+  dma_live = true; /* Partial init is still owned if it reports failure. */
+  return fail() ? -1 : 0;
+}
+int bk_dma_deinit(dma_id_t id) {
+  assert(id == 0u && dma_live && !dma_running);
+  dma_live = false;
+  dma_finish = NULL;
+  return 0;
+}
+int bk_dma_start(dma_id_t id) {
+  assert(id == 0u && dma_live);
+  dma_running = true;
+  return fail() ? -1 : 0;
+}
+int bk_dma_stop(dma_id_t id) {
+  assert(id == 0u && dma_live);
+  if (dma_stop_error) return dma_stop_error;
+  dma_running = false;
+  return 0;
+}
+uint32_t bk_dma_get_enable_status(dma_id_t id) {
+  assert(id == 0u && dma_live);
+  return dma_running;
+}
+int bk_dma_set_transfer_len(dma_id_t id, uint32_t length) {
+  assert(id == 0u && dma_live && length == 640u);
+  return fail() ? -1 : 0;
+}
+int bk_dma_register_isr(dma_id_t id, dma_isr_t half, dma_isr_t finish) {
+  assert(id == 0u && dma_live && half == NULL);
+  dma_finish = finish;
+  return finish != NULL && fail() ? -1 : 0;
+}
+int bk_dma_enable_finish_interrupt(dma_id_t id) {
+  assert(id == 0u && dma_live);
+  return fail() ? -1 : 0;
+}
+int bk_dma_disable_finish_interrupt(dma_id_t id) {
+  assert(id == 0u && dma_live && !dma_running);
+  return 0;
+}
+void* audio_dma_mem_calloc(uint32_t count, uint32_t size) {
+  assert(count * size == 1288u);
+  if (fail()) return NULL;
+  ++dma_buffers;
+  return calloc(count, size);
+}
+void audio_dma_mem_free(void* ptr) {
+  assert(dma_buffers > 0u && !dma_live && !dma_running);
+  --dma_buffers;
+  free(ptr);
+}
+void ring_buffer_init(RingBufferContext* rb, uint8_t* address,
+                      uint32_t capacity, dma_id_t id, uint32_t direction) {
+  assert(id == 0u && capacity == 1288u && direction == RB_DMA_TYPE_READ);
+  *rb = (RingBufferContext){
+      .address = address, .capacity = capacity, .dma_id = id};
+}
+uint32_t ring_buffer_write(RingBufferContext* rb, uint8_t* bytes,
+                           uint32_t size) {
+  assert(rb->dma_id == 0u && dma_live);
+  if (!dma_running) {
+    assert(size == 1280u);
+    return fail() ? 0u : size;
+  }
+  assert(size == 640u);
+  if (short_dac_write) return size - 2u;
+  memcpy(last_dac_pcm, bytes, size);
+  ++dac_writes;
+  return size;
+}
+
+static int consume_speaker(bool dma_signal) {
+  assert(playback != NULL && playback->process != NULL);
+  if (!playback->running || playback->state != AEL_STATE_RUNNING)
+    return AEL_IO_FAIL;
+  if (dma_signal) {
+    assert(dma_finish != NULL);
+    dma_finish(0);
+  }
+  int16_t frame[H2_H202_AUDIO_FRAME_SAMPLES];
+  return playback->process(playback, (char*)frame, sizeof(frame));
 }
 
 static const h2_pal_audio_api_t* audio;
 static void clean(void) {
   assert(h2_h202_audio_deinit() == 0);
   assert(live_ports == 0 && live_elements == 0 && live_aec == 0 &&
-         live_mutexes == 0 && capture == NULL);
+         live_mutexes == 0 && capture == NULL && playback == NULL);
+  assert(!dac_live && !dac_running && !dma_claimed && !dma_live &&
+         !dma_running && dma_buffers == 0u && semaphores == 0u);
 }
 static void errors_clear(void) {
   run_error = resume_error = stop_error = wait_error = terminate_error = 0;
   run_creates_task = run_delays_task = termination_finishes_later = false;
   fail_step = step = 0;
+  dma_stop_error = dac_stop_error = 0;
+  short_dac_write = false;
+  input_result = 0;
 }
 static int start(bool mic) {
   return mic ? audio->vtable->start_mic(NULL)
@@ -342,6 +549,9 @@ static void test_start_failures(void) {
     assert(start(mic) == H2_PAL_ERR_TIMEOUT);
     assert(live_elements == 1 && live_ports > 0);
     if (mic) assert(live_aec == 2 && live_mutexes == 1);
+    /* A failed start is not proof that its pending worker is stopped. */
+    assert(h2_pal_audio_set_aec_observer(audio, NULL) ==
+           H2_PAL_ERR_INVALID_STATE);
     errors_clear();
     clean();
     run_error = -1;
@@ -509,6 +719,7 @@ static void test_concurrent_pairing(void) {
   clean();
 }
 static unsigned observed_captures, observed_playbacks, observed_errors;
+static int last_error_capture;
 static void on_capture(void* user, const h2_audio_aec_frame_t* frame) {
   assert(user == &observed_captures);
   unsigned lane = observed_captures % 2;
@@ -530,10 +741,13 @@ static void on_playback(void* user, const h2_audio_frame_t* frame) {
   assert(user == &observed_captures);
   assert(frame->channels == 1 &&
          frame->bytes == H2_H202_AUDIO_FRAME_SAMPLES * 2);
+  assert(dac_writes > 0u &&
+         memcmp(frame->data, last_dac_pcm, frame->bytes) == 0);
   ++observed_playbacks;
 }
 static void on_error(void* user, int capture, int result) {
-  assert(user == &observed_captures && capture == 1 && result == H2_PAL_ERR_IO);
+  assert(user == &observed_captures && result == H2_PAL_ERR_IO);
+  last_error_capture = capture;
   ++observed_errors;
 }
 static void test_observer(void) {
@@ -573,12 +787,73 @@ static void test_observer(void) {
       .samples_per_channel = H2_H202_AUDIO_FRAME_SAMPLES,
       .channels = 1,
       .sample_format = H2_AUDIO_SAMPLE_S16LE};
-  assert(track->write(track, &frame, 10) == 0 && observed_playbacks == 1);
+  for (unsigned i = 0; i < H2_H202_AUDIO_FRAME_SAMPLES; ++i) pcm[i] = 1000;
+  unsigned writes = dac_writes;
+  assert(track->write(track, &frame, 10) == 0 && observed_playbacks == 0);
+  assert(dac_writes == writes); /* Producer success only means enqueued. */
+  memset(pcm, 0, sizeof(pcm));  /* Queue owns the scaled bytes. */
+  assert(track->drain(track, 0) == H2_PAL_ERR_TIMEOUT);
+  assert(consume_speaker(true) == (int)sizeof(pcm));
+  assert(observed_playbacks == 1 && dac_writes == writes + 1u);
+  for (unsigned i = 0; i < H2_H202_AUDIO_FRAME_SAMPLES; ++i)
+    assert(last_dac_pcm[i] == 350);
+  assert(track->drain(track, 100) == 0);
+  /* Enqueue still succeeds when the later DAC write fails. Consumption must
+   * report an error, never playback, and the failure remains visible to drain.
+   */
+  assert(track->write(track, &frame, 10) == 0);
+  short_dac_write = true;
+  assert(consume_speaker(true) == AEL_IO_FAIL);
+  assert(observed_playbacks == 1 && observed_errors == 2 &&
+         last_error_capture == 0);
+  assert(track->drain(track, 100) == H2_PAL_ERR_IO);
+  assert(track->write(track, &frame, 10) == H2_PAL_ERR_IO);
   assert(track->close(track) == 0);
   assert(h2_pal_audio_set_aec_observer(audio, NULL) ==
          H2_PAL_ERR_INVALID_STATE);
   clean();
+  errors_clear();
+  assert(start(false) == 0);
+  assert(audio->vtable->create_track(NULL, &config, &track) == 0);
+  assert(track->write(track, &frame, 10) == 0);
+  assert(consume_speaker(false) == AEL_IO_FAIL); /* DMA stopped signaling. */
+  assert(observed_playbacks == 1 && observed_errors == 3 &&
+         last_error_capture == 0);
+  assert(track->close(track) == 0);
+  clean();
+  errors_clear();
+  assert(start(false) == 0);
+  assert(audio->vtable->create_track(NULL, &config, &track) == 0);
+  assert(track->write(track, &frame, 10) == 0);
+  dma_running = false; /* A late signal cannot make a stopped DMA valid. */
+  assert(consume_speaker(true) == AEL_IO_FAIL);
+  assert(observed_playbacks == 1 && observed_errors == 4);
+  assert(track->close(track) == 0);
+  clean();
+  errors_clear();
+  assert(start(false) == 0);
+  assert(audio->vtable->create_track(NULL, &config, &track) == 0);
+  input_result = AEL_IO_ABORT; /* A normal SDK stop is not a transport fault. */
+  assert(consume_speaker(true) == AEL_IO_ABORT);
+  assert(observed_playbacks == 1 && observed_errors == 4);
+  assert(track->close(track) == 0);
+  clean();
   assert(h2_pal_audio_set_aec_observer(audio, NULL) == 0);
+}
+static void test_dac_cleanup(void) {
+  errors_clear();
+  assert(start(false) == 0);
+  dma_stop_error = -1;
+  assert(h2_h202_audio_deinit() == H2_PAL_ERR_IO);
+  assert(playback == NULL && dma_running && dma_live && semaphores == 1u &&
+         dma_buffers == 1u && live_ports == 1u);
+  assert(start(false) != H2_PAL_OK);
+  dma_stop_error = 0;
+  dac_stop_error = -1;
+  assert(h2_h202_audio_deinit() == H2_PAL_ERR_IO);
+  assert(!dma_running && dac_running && semaphores == 1u && dma_buffers == 1u);
+  dac_stop_error = 0;
+  clean();
 }
 static void test_pa_mode(void) {
   errors_clear();
@@ -601,5 +876,6 @@ int main(void) {
   test_pairing();
   test_concurrent_pairing();
   test_observer();
+  test_dac_cleanup();
   return 0;
 }

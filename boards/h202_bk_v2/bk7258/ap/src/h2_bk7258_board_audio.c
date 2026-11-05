@@ -9,8 +9,12 @@
 #else
 #include "h2_bk_platform_core.h"
 #include "components/bk_audio/audio_streams/onboard_dual_dmic_mic_stream.h"
-#include "components/bk_audio/audio_streams/onboard_speaker_stream.h"
+#include "components/bk_audio/audio_pipeline/audio_element.h"
+#include "components/bk_audio/audio_pipeline/audio_mem.h"
 #include "components/bk_audio/audio_pipeline/rb_port.h"
+#include "driver/aud_dac.h"
+#include "driver/audio_ring_buff.h"
+#include "driver/dma.h"
 #include "driver/gpio.h"
 #include "gpio_driver.h"
 #include "modules/aec.h"
@@ -28,6 +32,8 @@ enum {
   /* aec_size takes delay capacity, not frame samples. The pinned SDK init
    * uses an 800-sample ring; match its example's 1000-sample allocation. */
   AEC_DELAY_CAPACITY = 1000,
+  /* Same two-frame DMA ring and pause-address guard as the SDK speaker. */
+  DAC_RING_BYTES = MONO_BYTES * 2 + 8,
   STOP_MS = 1000
 };
 
@@ -46,6 +52,14 @@ static struct {
   audio_port_handle_t microphones;
   audio_port_handle_t reference;
   audio_port_handle_t speaker;
+  RingBufferContext dac_ring;
+  uint8_t* dac_buffer;
+  dma_id_t dac_dma;
+  beken_semaphore_t dac_ready;
+  bool dac_initialized;
+  bool dac_running;
+  bool dma_initialized;
+  bool dma_running;
   AECContext* aec[2];
   int16_t* aec_ref[2];
   int16_t* aec_mic[2];
@@ -71,9 +85,12 @@ static struct {
   h2_audio_aec_observer_t observer;
   bool observer_set;
   uint64_t sequence;
-} s_audio = {.volume = 35, .factor = 1000};
+} s_audio = {.volume = 35, .factor = 1000, .dac_dma = DMA_ID_MAX};
 
 H2_ATOMIC_DEFINE_STATIC(bool, s_capture_fault, false);
+H2_ATOMIC_DEFINE_STATIC(bool, s_playback_fault, false);
+H2_ATOMIC_DEFINE_STATIC(u32, s_playback_submitted, 0u);
+H2_ATOMIC_DEFINE_STATIC(u32, s_playback_accepted, 0u);
 
 static h2_audio_pcm_format_t pcm(unsigned channels) {
   return (h2_audio_pcm_format_t){.sample_rate_hz = H2_H202_AUDIO_RATE_HZ,
@@ -420,27 +437,187 @@ static int pa_on(void) {
   return H2_PAL_OK;
 }
 
+static void dac_frame_done(dma_id_t channel) {
+  (void)channel;
+  /* The SDK semaphore give is ISR-safe. No observer runs in interrupt context.
+   */
+  (void)rtos_set_semaphore(&s_audio.dac_ready);
+}
+
+static int stop_dac_transport(void) {
+  if (s_audio.dma_running) {
+    if (bk_dma_stop(s_audio.dac_dma) != 0) return H2_PAL_ERR_IO;
+    s_audio.dma_running = false;
+  }
+  if (s_audio.dac_running) {
+    if (bk_aud_dac_stop() != 0) return H2_PAL_ERR_IO;
+    s_audio.dac_running = false;
+  }
+  if (s_audio.dma_initialized) {
+    if (bk_dma_disable_finish_interrupt(s_audio.dac_dma) != 0 ||
+        bk_dma_register_isr(s_audio.dac_dma, NULL, NULL) != 0 ||
+        bk_dma_deinit(s_audio.dac_dma) != 0)
+      return H2_PAL_ERR_IO;
+    s_audio.dma_initialized = false;
+  }
+  if (s_audio.dac_dma != DMA_ID_MAX) {
+    if (bk_dma_free(DMA_DEV_AUDIO, s_audio.dac_dma) != 0) return H2_PAL_ERR_IO;
+    s_audio.dac_dma = DMA_ID_MAX;
+  }
+  if (s_audio.dac_initialized) {
+    if (bk_aud_dac_deinit() != 0) return H2_PAL_ERR_IO;
+    s_audio.dac_initialized = false;
+  }
+  if (s_audio.dac_ready != NULL &&
+      rtos_deinit_semaphore(&s_audio.dac_ready) != 0)
+    return H2_PAL_ERR_IO;
+  s_audio.dac_ready = NULL;
+  if (s_audio.dac_buffer != NULL) {
+    audio_dma_mem_free(s_audio.dac_buffer);
+    s_audio.dac_buffer = NULL;
+  }
+  h2_atomic_bool_store(&s_playback_fault, false, H2_ATOMIC_SEQ_CST);
+  h2_atomic_u32_store(&s_playback_submitted, 0u, H2_ATOMIC_SEQ_CST);
+  h2_atomic_u32_store(&s_playback_accepted, 0u, H2_ATOMIC_SEQ_CST);
+  return H2_PAL_OK;
+}
+
+static int start_dac_transport(void) {
+  aud_dac_config_t dac = DEFAULT_AUD_DAC_CONFIG();
+  dac.samp_rate = H2_H202_AUDIO_RATE_HZ;
+  if (bk_aud_dac_init(&dac) != 0) return H2_PAL_ERR_IO;
+  s_audio.dac_initialized = true;
+  if (bk_aud_set_ana_dac_gain(0x0a) != 0 || bk_aud_dac_mute() != 0 ||
+      bk_dma_driver_init() != 0)
+    return H2_PAL_ERR_IO;
+  if (rtos_init_semaphore(&s_audio.dac_ready, 1) != 0)
+    return H2_PAL_ERR_NO_MEMORY;
+  s_audio.dac_dma = bk_dma_alloc(DMA_DEV_AUDIO);
+  if ((unsigned)s_audio.dac_dma >= DMA_ID_MAX) {
+    s_audio.dac_dma = DMA_ID_MAX;
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  s_audio.dac_buffer = audio_dma_mem_calloc(1u, DAC_RING_BYTES);
+  if (s_audio.dac_buffer == NULL) return H2_PAL_ERR_NO_MEMORY;
+  ring_buffer_init(&s_audio.dac_ring, s_audio.dac_buffer, DAC_RING_BYTES,
+                   s_audio.dac_dma, RB_DMA_TYPE_READ);
+  uint32_t fifo = 0;
+  if (bk_aud_dac_get_fifo_addr(&fifo) != 0) return H2_PAL_ERR_IO;
+  const dma_config_t dma = {
+      .mode = DMA_WORK_MODE_REPEAT,
+      .chan_prio = 1,
+      .src = {.dev = DMA_DEV_DTCM,
+              .width = DMA_DATA_WIDTH_32BITS,
+              .addr_inc_en = DMA_ADDR_INC_ENABLE,
+              .addr_loop_en = DMA_ADDR_LOOP_ENABLE,
+              .start_addr = (uint32_t)(uintptr_t)s_audio.dac_buffer,
+              .end_addr =
+                  (uint32_t)(uintptr_t)s_audio.dac_buffer + DAC_RING_BYTES},
+      .dst = {.dev = DMA_DEV_AUDIO,
+              .width = DMA_DATA_WIDTH_16BITS,
+              .addr_inc_en = DMA_ADDR_INC_ENABLE,
+              .addr_loop_en = DMA_ADDR_LOOP_ENABLE,
+              .start_addr = fifo,
+              .end_addr = fifo + 4u},
+      .trans_type = DMA_TRANS_DEFAULT};
+  /* Init can claim the channel before reporting failure; deinit is retryable.
+   */
+  s_audio.dma_initialized = true;
+  if (bk_dma_init(s_audio.dac_dma, &dma) != 0 ||
+      bk_dma_set_transfer_len(s_audio.dac_dma, MONO_BYTES) != 0 ||
+      bk_dma_register_isr(s_audio.dac_dma, NULL, dac_frame_done) != 0 ||
+      bk_dma_enable_finish_interrupt(s_audio.dac_dma) != 0)
+    return H2_PAL_ERR_IO;
+#if CONFIG_SPE
+  if (bk_dma_set_dest_sec_attr(s_audio.dac_dma, DMA_ATTR_SEC) != 0 ||
+      bk_dma_set_src_sec_attr(s_audio.dac_dma, DMA_ATTR_SEC) != 0)
+    return H2_PAL_ERR_IO;
+#endif
+  int16_t silence[SAMPLES * 2] = {0};
+  if (ring_buffer_write(&s_audio.dac_ring, (uint8_t*)silence,
+                        sizeof(silence)) != sizeof(silence))
+    return H2_PAL_ERR_IO;
+  s_audio.dma_running = true;
+  if (bk_dma_start(s_audio.dac_dma) != 0) return H2_PAL_ERR_IO;
+  s_audio.dac_running = true;
+  if (bk_aud_dac_start() != 0) return H2_PAL_ERR_IO;
+  rtos_delay_milliseconds(4);
+  return bk_aud_dac_unmute() == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+
+static int playback_error(void) {
+  h2_atomic_bool_store(&s_playback_fault, true, H2_ATOMIC_SEQ_CST);
+  if (s_audio.observer_set)
+    s_audio.observer.on_error(s_audio.observer.user, 0, H2_PAL_ERR_IO);
+  return AEL_IO_FAIL;
+}
+
+static int playback_open(audio_element_handle_t element) {
+  (void)element;
+  /* The SDK only changes INIT to RUNNING through a non-NULL open callback. */
+  return s_audio.dac_running && s_audio.dma_running ? 0 : AEL_IO_FAIL;
+}
+
+/* The speaker worker owns the DAC DMA ring. A successful producer write only
+ * enqueues: observations and real transport errors are dispatched here after
+ * checking the complete DAC-ring write, never from the producer or ISR. */
+static int playback_process(audio_element_handle_t element, char* buffer,
+                            int length) {
+  if (h2_atomic_bool_load(&s_playback_fault, H2_ATOMIC_SEQ_CST))
+    return AEL_IO_FAIL;
+  if (buffer == NULL || length != MONO_BYTES) return playback_error();
+  if (rtos_get_semaphore(&s_audio.dac_ready, BK_MS_TO_TICKS(STOP_MS)) != 0)
+    return playback_error();
+  int bytes = audio_element_input(element, buffer, length);
+  if (bytes == AEL_IO_ABORT) return bytes; /* Normal element stop. */
+  bool queued = bytes == MONO_BYTES;
+  if (bytes == AEL_IO_TIMEOUT || bytes == 0) {
+    memset(buffer, 0, (size_t)length);
+  } else if (!queued) {
+    return playback_error();
+  }
+  if (!bk_dma_get_enable_status(s_audio.dac_dma) ||
+      ring_buffer_write(&s_audio.dac_ring, (uint8_t*)buffer, MONO_BYTES) !=
+          MONO_BYTES)
+    return playback_error();
+  if (s_audio.observer_set) {
+    h2_audio_frame_t accepted = observed((int16_t*)buffer, 1);
+    s_audio.observer.on_playback(s_audio.observer.user, &accepted);
+  }
+  if (queued)
+    (void)h2_atomic_u32_fetch_add(&s_playback_accepted, 1u, H2_ATOMIC_SEQ_CST);
+  return MONO_BYTES;
+}
+
 static int init_speaker(void* user) {
   (void)user;
-  if (s_audio.playback_started) return H2_PAL_OK;
+  if (s_audio.playback_started)
+    return s_audio.playback != NULL &&
+                   !h2_atomic_bool_load(&s_playback_fault, H2_ATOMIC_SEQ_CST)
+               ? H2_PAL_OK
+               : H2_PAL_ERR_INVALID_STATE;
   if (s_audio.playback != NULL || s_audio.speaker != NULL)
     return H2_PAL_ERR_INVALID_STATE;
   if (bk_audio_osi_funcs_init() != 0) return H2_PAL_ERR_IO;
   ringbuf_port_cfg_t port_config = {.ringbuf_size = MONO_BYTES * 4};
   s_audio.speaker = ringbuf_port_init(&port_config);
   if (s_audio.speaker == NULL) return H2_PAL_ERR_NO_MEMORY;
-  onboard_speaker_stream_cfg_t config = DEFAULT_ONBOARD_SPEAKER_STREAM_CONFIG();
-  config.sample_rate = H2_H202_AUDIO_RATE_HZ;
-  config.frame_size = MONO_BYTES;
+  int transport = start_dac_transport();
+  if (transport != H2_PAL_OK) return transport;
+  audio_element_cfg_t config = DEFAULT_AUDIO_ELEMENT_CONFIG();
+  config.open = playback_open;
+  config.process = playback_process;
+  config.buffer_len = MONO_BYTES;
   config.task_stack = 8192;
   config.task_core = 1;
   config.task_prio = 5;
-  config.pa_ctrl_en = false; /* Driven here to select the PA mode. */
-  s_audio.playback = onboard_speaker_stream_init(&config);
+  config.in_type = PORT_TYPE_RB;
+  config.out_type = PORT_TYPE_CB;
+  config.tag = "h202_speaker";
+  s_audio.playback = audio_element_init(&config);
   if (s_audio.playback == NULL) return H2_PAL_ERR_NO_MEMORY;
   if (audio_element_set_input_port(s_audio.playback, s_audio.speaker) != 0 ||
-      audio_element_set_input_timeout(s_audio.playback, BK_MS_TO_TICKS(100)) !=
-          0)
+      audio_element_set_input_timeout(s_audio.playback, 0) != 0)
     return H2_PAL_ERR_IO;
   if (run_element(s_audio.playback, &s_audio.playback_task) != 0 ||
       audio_element_resume(s_audio.playback, 0, BK_MS_TO_TICKS(STOP_MS)) != 0)
@@ -458,6 +635,8 @@ static int stop_speaker(void* user) {
     rtos_delay_milliseconds(10); /* Silence the PA before the DAC stops. */
   }
   int rc = stop_element(&s_audio.playback, &s_audio.playback_task);
+  if (rc != H2_PAL_OK) return rc;
+  rc = stop_dac_transport();
   if (rc != H2_PAL_OK) return rc;
   s_audio.playback_started = false;
   return free_port(&s_audio.speaker);
@@ -481,6 +660,8 @@ static int track_write(h2_pal_audio_track_t* track,
     return H2_PAL_ERR_INVALID_ARG;
   if (!s_audio.playback_started || !s_audio.track_open)
     return H2_PAL_ERR_CLOSED;
+  if (h2_atomic_bool_load(&s_playback_fault, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_IO;
   const int16_t* input = frame->data;
   for (unsigned i = 0; i < SAMPLES; ++i) {
     int64_t sample =
@@ -489,18 +670,18 @@ static int track_write(h2_pal_audio_track_t* track,
                                   : sample < INT16_MIN ? INT16_MIN
                                                        : sample);
   }
+  (void)h2_atomic_u32_fetch_add(&s_playback_submitted, 1u, H2_ATOMIC_SEQ_CST);
   int written = audio_port_write(s_audio.speaker, (char*)s_audio.output,
                                  MONO_BYTES, BK_MS_TO_TICKS(timeout_ms));
   if (written != MONO_BYTES) {
-    if (s_audio.observer_set)
-      s_audio.observer.on_error(s_audio.observer.user, 0, H2_PAL_ERR_IO);
+    /* A partial enqueue cannot be consumed as a complete PCM frame. Keep the
+     * failure latched through drain/close until the speaker is restarted. */
+    h2_atomic_bool_store(&s_playback_fault, true, H2_ATOMIC_SEQ_CST);
     return H2_PAL_ERR_IO;
   }
-  if (s_audio.observer_set) {
-    h2_audio_frame_t accepted = observed(s_audio.output, 1);
-    s_audio.observer.on_playback(s_audio.observer.user, &accepted);
-  }
-  return H2_PAL_OK;
+  return h2_atomic_bool_load(&s_playback_fault, H2_ATOMIC_SEQ_CST)
+             ? H2_PAL_ERR_IO
+             : H2_PAL_OK;
 }
 
 static int track_close(h2_pal_audio_track_t* track) {
@@ -514,11 +695,16 @@ static int track_drain(h2_pal_audio_track_t* track, uint32_t timeout_ms) {
   if (!s_audio.track_open || timeout_ms == UINT32_MAX)
     return H2_PAL_ERR_INVALID_ARG;
   unsigned elapsed = 0;
-  while (audio_port_get_filled_size(s_audio.speaker) > 0) {
+  while (h2_atomic_u32_load(&s_playback_submitted, H2_ATOMIC_SEQ_CST) !=
+         h2_atomic_u32_load(&s_playback_accepted, H2_ATOMIC_SEQ_CST)) {
+    if (h2_atomic_bool_load(&s_playback_fault, H2_ATOMIC_SEQ_CST))
+      return H2_PAL_ERR_IO;
     if (elapsed >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
     rtos_delay_milliseconds(1);
     ++elapsed;
   }
+  if (h2_atomic_bool_load(&s_playback_fault, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_IO;
   /* Last dequeued frame may still be in the two-frame DAC DMA ring. */
   if (timeout_ms - elapsed < 60) return H2_PAL_ERR_TIMEOUT;
   rtos_delay_milliseconds(60);
@@ -566,7 +752,9 @@ static int get_info(void* user, h2_audio_info_t* out) {
 static int set_aec_observer(void* user,
                             const h2_audio_aec_observer_t* observer) {
   (void)user;
-  if (s_audio.capture_started || s_audio.playback_started)
+  if (s_audio.capture_started || s_audio.playback_started ||
+      s_audio.capture != NULL || s_audio.playback != NULL ||
+      s_audio.dac_initialized)
     return H2_PAL_ERR_INVALID_STATE;
   if (observer == NULL) {
     memset(&s_audio.observer, 0, sizeof(s_audio.observer));

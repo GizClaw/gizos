@@ -548,10 +548,13 @@ static const h2_pal_pwm_switch_vtable_t pwm_vtable = {.set_duty = pwm_set};
 static const h2_pal_pwm_switch_api_t pwm_api = {.vtable = &pwm_vtable};
 
 static atomic_bool no_battery;
+static atomic_uint battery_delay_once;
 static h2_pal_result_t battery_read(void* user, h2_pal_periph_id_t id,
                                     h2_pal_battery_reading_t* out) {
   (void)user;
   assert(id == BATTERY_ID);
+  unsigned delay = atomic_exchange(&battery_delay_once, 0u);
+  if (delay != 0u) sleep_ms(delay);
   bool present = !atomic_load(&no_battery);
   *out = (h2_pal_battery_reading_t){
       .id = id,
@@ -1114,11 +1117,18 @@ static void test_session(void) {
   wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_FAILED);
   assert(status().prompt == H2_H202_MFG_PROMPT_BATTERY_FAILED);
   atomic_store(&no_battery, false);
+  atomic_store(&battery_delay_once,
+               300u); /* Delay the sensor's USB baseline. */
   click(2u);
   wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
-  /* Unplugged at start: insert, then remove. */
+  /* ACTIVE only queues the job. Wait until the sensor worker's baseline and
+   * each debounced transition have reached the controller before changing USB.
+   */
+  WAIT_UNTIL(status().prompt == H2_H202_MFG_PROMPT_CHARGE_INSERT);
+  assert(status().prompt == H2_H202_MFG_PROMPT_CHARGE_INSERT);
   atomic_store(&usb, true);
-  sleep_ms(200);
+  WAIT_UNTIL(status().prompt == H2_H202_MFG_PROMPT_CHARGE_REMOVE);
+  assert(status().prompt == H2_H202_MFG_PROMPT_CHARGE_REMOVE);
   atomic_store(&usb, false);
   wait_for(H2_H202_MFG_NFC, H2_H202_MFG_PHASE_ACTIVE);
   atomic_store(&card, true);
@@ -1459,6 +1469,12 @@ static void test_partial_start_cleanup(void) {
   puts("partial task-start failure retains its cleanup owner ok");
 }
 
+static void* report_dac_error(void* context) {
+  h2_audio_aec_observer_t* observer = context;
+  observer->on_error(observer->user, 0, H2_PAL_ERR_IO);
+  return NULL;
+}
+
 static void test_stop_audio_retry(void) {
   uint8_t results[H2_H202_MFG_ITEM_COUNT] = {0};
   results[H2_H202_MFG_CHARGER] = H2_H202_MFG_PASSED;
@@ -1471,6 +1487,15 @@ static void test_stop_audio_retry(void) {
   start();
   WAIT_UNTIL(atomic_load(&mic_starts) > before && atomic_load(&audio.mic));
   assert(atomic_load(&audio.mic) && atomic_load(&audio.observer_set));
+  /* Playback errors arrive on the DAC worker, concurrently with capture.
+   * The service must safely observe the error and restart the audio cycle. */
+  h2_audio_aec_observer_t observer = audio.observer;
+  before = atomic_load(&mic_starts);
+  pthread_t dac_worker;
+  assert(pthread_create(&dac_worker, NULL, report_dac_error, &observer) == 0);
+  assert(pthread_join(dac_worker, NULL) == 0);
+  WAIT_UNTIL(atomic_load(&mic_starts) > before && atomic_load(&audio.mic));
+  assert(atomic_load(&mic_starts) > before && atomic_load(&audio.mic));
   atomic_store(&deny_close, true);
   atomic_store(&deny_mic_stop, true);
   atomic_store(&deny_speaker_stop, true);
