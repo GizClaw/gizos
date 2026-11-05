@@ -4,10 +4,7 @@
 App 只使用 Runtime 的 Memory 与 Display capability，不初始化 LVGL，也不包含
 board、H2Loader 或 target SDK header。
 
-编码和栅格化由 [`libs/qrcode`](/zh/developing/qrcode) 完成。App 按 16 行一组
-渲染 RGB565 band 并逐条 `h2_pal_display_draw_bitmap()`，因此不需要整屏
-framebuffer；modules、scratch 与 band 缓冲全部来自 Runtime Memory PAL，并在返回
-前释放。
+Encoding and rasterization are owned by [libs/qrcode](../../../../libs/qrcode/). The App renders RGB565 in 16-row bands through `h2_pal_display_draw_bitmap()`, without a full-screen framebuffer. Modules, scratch, and band buffers come from Runtime Memory PAL and are released before returning.
 
 阻塞入口是 `h2_qrcode_example_run(h2_runtime_t *, const h2_qrcode_example_config_t *)`。
 它只绘制一次：编码、绘制、present、调用可选的 `on_ready`，然后返回，不循环也不
