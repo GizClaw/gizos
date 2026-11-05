@@ -41,6 +41,13 @@ _CI_GRAPH = Label("//tools/bazel/platforms:ci_graph")
 def _bk7258_firmware_impl(ctx):
     if bool(ctx.file.memory_contract) != bool(ctx.executable.memory_checker):
         fail("memory_contract and memory_checker must be declared together")
+    bootloader_recipes = [
+        source
+        for source in ctx.files.bootloader_patch
+        if source.basename == "CMakeLists.txt"
+    ]
+    if ctx.attr.bootloader_patch and len(bootloader_recipes) != 1:
+        fail("bootloader_patch must contain exactly one CMakeLists.txt")
     output_root = ctx.label.name
     version = ctx.attr.version[FirmwareVersionInfo].value
     ap_elf = ctx.actions.declare_file(output_root + "/ap/firmware.elf")
@@ -75,7 +82,7 @@ def _bk7258_firmware_impl(ctx):
     prebuilt_files = [component.archive for component in prebuilt_components]
     prebuilt_headers = [component.headers for component in prebuilt_components]
     inputs = depset(
-        [ctx.file.project, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._toolchain_archives, ctx.file._sdk_locator, ctx.file._toolchain_locator, ctx.file._ccache_locator, ctx.file.ram_regions] + ctx.files.srcs + ctx.files.support_files + ctx.files.project_support_files + ctx.files.ap_config + ctx.files.cp_config + [ctx.file.ap_gpio, ctx.file.cp_gpio] + prebuilt_files + ([ctx.file.memory_contract] if ctx.file.memory_contract else []),
+        [ctx.file.project, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._toolchain_archives, ctx.file._sdk_locator, ctx.file._toolchain_locator, ctx.file._ccache_locator, ctx.file.ram_regions] + ctx.files.srcs + ctx.files.bootloader_patch + ctx.files.support_files + ctx.files.project_support_files + ctx.files.ap_config + ctx.files.cp_config + [ctx.file.ap_gpio, ctx.file.cp_gpio] + prebuilt_files + ([ctx.file.memory_contract] if ctx.file.memory_contract else []),
         transitive = graph_sources + prebuilt_headers,
     )
 
@@ -103,6 +110,8 @@ def _bk7258_firmware_impl(ctx):
     args.add("--recovery-output", recovery_image.path)
     args.add("--partition-metadata-output", partition_metadata.path)
     args.add("--ram-regions", ctx.file.ram_regions.path)
+    if bootloader_recipes:
+        args.add("--bootloader-patch", bootloader_recipes[0].path)
     if ctx.file.memory_contract:
         args.add("--memory-contract", ctx.file.memory_contract.path)
         args.add("--memory-checker", ctx.executable.memory_checker.path)
@@ -209,6 +218,10 @@ _bk7258_firmware = rule(
             default = "//tools/bazel:native_component.cmake",
         ),
         "board": attr.string(mandatory = True),
+        "bootloader_patch": attr.label(
+            allow_files = True,
+            doc = "Optional recipe that patches the recovery image bootloader and publishes bootloader.json in partition_metadata.",
+        ),
         "graph": attr.label_list(
             aspects = [firmware_components_aspect],
             doc = "Launcher source graph analyzed for the selected firmware platform.",

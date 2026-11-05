@@ -24,78 +24,6 @@ def fixture_path(name: str) -> Path:
 
 
 class FirmwareArtifactsTest(unittest.TestCase):
-    @unittest.skipIf(os.name == "nt", "runtime key descriptors require POSIX")
-    def test_encrypted_app_runtime_publication(self):
-        from unittest.mock import patch
-        from contextlib import redirect_stdout, redirect_stderr
-        from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_app_main
-        from tools.bazel.bk7258_flash_aes import flash_crc
-
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            plain = bytearray(b"\xff" * 12288)
-            for offset in (0,4096):
-                struct.pack_into("<II",plain,offset,0x28030000,0x2240000+offset+0x101)
-            header=bytearray(96);header[:4]=b"RBL\0"
-            fnv=0x811c9dc5
-            for b in plain[:8192]: fnv=((fnv^b)*0x1000193)&0xffffffff
-            struct.pack_into("<4I",header,76,zlib.crc32(plain[:8192]),fnv,8192,8192)
-            struct.pack_into("<I",header,92,zlib.crc32(header[:92]))
-            plain[8192:8288]=header
-            raw=b"".join(plain[i:i+32]+flash_crc(plain[i:i+32]) for i in range(0,len(plain),32))
-            (root/"partitions.json").write_text(json.dumps({"crc_enable":True,"section":[
-                {"Name":"primary_cp_app","Offset":0x264000,"Size":4352,"Execute":True},
-                {"Name":"primary_ap_app","Offset":0x264000+4352,"Size":8704,"Execute":True}]}))
-            for fmt in (1,2):
-                source=root/f"source-{fmt}"
-                entries=[BundleEntry("data/test.txt",b"unchanged")]
-                write_package(source,"app/bk/app_ab_crc.rbl",raw,entries,role="app",board="fixture",target="bk7258",version="1",package_format=fmt)
-                dest=root/f"encrypted-{fmt}"
-                rd,wr=os.pipe();os.write(wr,bytes(range(32)));os.close(wr)
-                try:
-                    with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"),redirect_stdout(io.StringIO()):
-                        rc=encrypted_bk_app_main(["--source",str(source),"--metadata",str(root),"--key-fd",str(rd),"--output-dir",str(dest)])
-                finally: os.close(rd)
-                self.assertEqual(rc,0)
-                receipt=json.loads((dest/"validation.json").read_text())
-                archive=next(dest.glob("*.update.*"))
-                parsed=read_managed_package(archive.read_bytes())
-                self.assertEqual(parsed.data,entries)
-                self.assertNotEqual(parsed.app,raw)
-                self.assertEqual(receipt["image_sha256"],hashlib.sha256(parsed.app).hexdigest())
-                self.assertEqual(receipt["logical_base"],0x240000)
-                for path in dest.iterdir(): self.assertEqual(path.stat().st_mode & 0o777,0o600)
-            # Run the built public executable, not only the Python function.
-            if "TEST_SRCDIR" in os.environ:
-                from python.runfiles import Runfiles
-                command = [Runfiles.Create().Rlocation("gizos/projects/h2loader/tools/bazel/encrypted_bk_app")]
-            else:
-                command = [sys.executable, "-m", "projects.h2loader.tools.bazel.encrypted_bk_app"]
-            result = subprocess.run(command + ["--source", str(source), "--metadata", str(root),
-                                              "--key-fd", "0", "--output-dir", str(root / "cli-output")],
-                                    input=bytes(range(32)), capture_output=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stderr.decode())
-            self.assertTrue((root / "cli-output" / "validation.json").is_file())
-            # The ordinary build output stays plaintext. Selecting encryption
-            # with a missing/invalid key must never publish a plaintext fallback.
-            self.assertEqual(read_managed_package(source.read_bytes()).app, raw)
-            for label, key_args, key_input in (
-                ("missing-key", [], b""),
-                ("short-key", ["--key-fd", "0"], bytes(range(16))),
-            ):
-                destination = root / label
-                refused = subprocess.run(
-                    command + ["--source", str(source), "--metadata", str(root),
-                               "--output-dir", str(destination)] + key_args,
-                    input=key_input, capture_output=True, timeout=30)
-                self.assertNotEqual(refused.returncode, 0)
-                self.assertFalse(destination.exists())
-            self.assertFalse(list(root.glob(".bk-app-*")))
-            source.write_bytes(b"invalid")
-            with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"),patch("projects.h2loader.tools.bazel.firmware_output._read_recovery_key") as read_key,redirect_stderr(io.StringIO()):
-                self.assertEqual(encrypted_bk_app_main(["--source",str(source),"--metadata",str(root),"--key-fd","0","--output-dir",str(root/"bad")]),1)
-                read_key.assert_not_called()
-
     def test_conversion_reader_roundtrip_and_corruption(self):
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory)/"update"
@@ -216,197 +144,236 @@ class FirmwareArtifactsTest(unittest.TestCase):
                 )
 
 
+@unittest.skipIf(os.name == "nt", "Flash AES packaging requires POSIX process protection")
+class FlashAesEncryptionTests(unittest.TestCase):
+    KEY = bytes(range(32))
 
-@unittest.skipIf(os.name == "nt", "local recovery entrypoint requires POSIX secret descriptors")
-class EncryptedRecoveryTests(unittest.TestCase):
+    def encrypt(self, root: Path, role: str, *, key: bytes | None = None, metadata_role: str | None = None, offset: str = "0x0", mutate=None):
+        from projects.h2loader.tools.bazel import firmware_output
+        from projects.h2loader.tools.bazel.tests import bk_package_fixture as fixture
+
+        native = root / "native"
+        native.mkdir(exist_ok=True)
+        managed, recovery, config = native / "managed.rbl", native / "recovery.bin", native / "config.json"
+        metadata = native / "metadata"
+        fixture.write_outputs(metadata_role or role, native / "unused.rbl", recovery, metadata, config)
+        fixture.write_outputs(role, managed, recovery, native / "own-metadata", config)
+        config.write_text(json.dumps({"offset": offset, "baud": 115200}))
+        key_file = root / "key"
+        key_file.write_bytes(self.KEY if key is None else key)
+        is_loader = role == "h2loader"
+        if mutate is not None:
+            mutate(managed, recovery, metadata, config)
+        return firmware_output.encrypt_bk_images(
+            key_file=key_file,
+            partition_metadata=metadata,
+            app_image=managed,
+            app_output=root / "encrypted.rbl",
+            recovery_image=recovery if is_loader else None,
+            recovery_config=config if is_loader else None,
+            recovery_output=root / "encrypted.bin" if is_loader else None,
+        )
+
     def test_linux_dump_protection_fails_closed(self):
-        from projects.h2loader.tools.bazel.firmware_output import _protect_recovery_process
+        from projects.h2loader.tools.bazel.firmware_output import _protect_secret_process
         from unittest.mock import patch
 
         with patch("sys.platform", "linux"), patch("resource.setrlimit"), patch("ctypes.CDLL") as library:
             for results in ((-1,), (0, 1)):
                 library.return_value.prctl.side_effect = results
                 with self.subTest(results=results), self.assertRaisesRegex(ValueError, "DUMP_PROTECTION_FAILED"):
-                    _protect_recovery_process()
+                    _protect_secret_process()
             library.return_value.prctl.side_effect = (0, 0)
-            _protect_recovery_process()
+            _protect_secret_process()
 
     @unittest.skipUnless(sys.platform == "linux", "Linux process dumpability")
     def test_linux_process_is_not_dumpable(self):
-        import subprocess
-        import sys
-
         script = (
             "import sys; sys.path[:] = " + repr(sys.path) + "; "
-            "from projects.h2loader.tools.bazel.firmware_output import _protect_recovery_process; "
-            "_protect_recovery_process(); import ctypes; "
+            "from projects.h2loader.tools.bazel.firmware_output import _protect_secret_process; "
+            "_protect_secret_process(); import ctypes; "
             "assert ctypes.CDLL(None).prctl(3, 0, 0, 0, 0) == 0"
         )
         subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, timeout=10)
 
-    def test_secret_stream_has_a_total_deadline(self):
-        from projects.h2loader.tools.bazel.firmware_output import _read_recovery_key
-        import socket
+    def test_key_file_is_exactly_32_raw_bytes(self):
+        from projects.h2loader.tools.bazel.firmware_output import read_flash_aes_key
 
-        for data in (b"", bytes(16), bytes(32)):
-            with self.subTest(length=len(data)):
-                reader, writer = os.pipe()
-                try:
-                    os.write(writer, data)
-                    with self.assertRaisesRegex(ValueError,"KEY_INPUT_TIMEOUT"):
-                        _read_recovery_key(reader, timeout=0.02)
-                finally:
-                    os.close(reader)
-                    os.close(writer)
-        # select.select rejects valid descriptors >= FD_SETSIZE on POSIX.
-        # Exercise the public descriptor contract when the host limit allows it.
-        import fcntl
-        import resource
-        if resource.getrlimit(resource.RLIMIT_NOFILE)[0] > 1024:
-            reader, writer = os.pipe()
-            high_fd = None
-            try:
-                high_fd = fcntl.fcntl(reader, fcntl.F_DUPFD, 1024)
-                os.write(writer,bytes(range(32)))
-                os.close(writer)
-                writer = None
-                self.assertEqual(_read_recovery_key(high_fd),bytearray(range(32)))
-            finally:
-                os.close(reader)
-                if high_fd is not None:
-                    os.close(high_fd)
-                if writer is not None:
-                    os.close(writer)
-        left, right = socket.socketpair()
-        try:
-            right.sendall(bytes(range(32)))
-            right.shutdown(socket.SHUT_WR)
-            self.assertEqual(_read_recovery_key(left.fileno()),bytearray(range(32)))
-        finally:
-            left.close()
-            right.close()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "key"
+            path.write_bytes(self.KEY)
+            self.assertEqual(read_flash_aes_key(path), bytearray(self.KEY))
+            for value in (b"", self.KEY[:31], self.KEY + b"\n", self.KEY.hex().encode()):
+                with self.subTest(length=len(value)):
+                    path.write_bytes(value)
+                    with self.assertRaisesRegex(ValueError, "^KEY_LENGTH$"):
+                        read_flash_aes_key(path)
 
-    def test_runtime_pipe_and_atomic_publication(self):
-        from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_recovery_main
-        from tools.bazel.bk7258_flash_aes import flash_crc
+    def test_key_file_must_be_regular(self):
+        from projects.h2loader.tools.bazel.firmware_output import read_flash_aes_key
+
+        with tempfile.TemporaryDirectory() as directory:
+            fifo = Path(directory) / "key"
+            os.mkfifo(fifo)
+            with self.assertRaisesRegex(ValueError, "KEY_REQUIRES_REGULAR_FILE"):
+                read_flash_aes_key(fifo)
+
+    def test_invalid_key_publishes_nothing(self):
+        for role in ("app", "h2loader"):
+            for value in (b"", self.KEY[:31], self.KEY + b"\n"):
+                with self.subTest(role=role, length=len(value)), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    with self.assertRaisesRegex(ValueError, "^KEY_LENGTH$"):
+                        self.encrypt(root, role, key=value)
+                    self.assertFalse((root / "encrypted.rbl").exists())
+                    self.assertFalse((root / "encrypted.bin").exists())
+
+    def test_invalid_layout_is_refused_before_the_key_is_read(self):
         from unittest.mock import patch
-        import contextlib
+
+        for kwargs, message in (
+            ({"metadata_role": "app"}, "APP_VECTOR"),
+            ({"offset": "0x1000"}, "RECOVERY_REQUIRES_ZERO_OFFSET"),
+        ):
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                with patch("projects.h2loader.tools.bazel.firmware_output.read_flash_aes_key") as read_key:
+                    with self.assertRaisesRegex(ValueError, message):
+                        self.encrypt(root, "h2loader", **kwargs)
+                    read_key.assert_not_called()
+                self.assertFalse((root / "encrypted.rbl").exists())
+
+    def test_unprotected_process_never_reads_the_key(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("projects.h2loader.tools.bazel.firmware_output._protect_secret_process", side_effect=ValueError("DUMP_PROTECTION_FAILED")),
+                patch("projects.h2loader.tools.bazel.firmware_output.read_flash_aes_key") as read_key,
+                self.assertRaisesRegex(ValueError, "DUMP_PROTECTION_FAILED"),
+            ):
+                self.encrypt(Path(directory), "app")
+            read_key.assert_not_called()
+
+    def test_inputs_are_bounded_before_reading_the_key(self):
+        from unittest.mock import patch
+
+        for index, limit in ((0, 16 * 1024 * 1024), (1, 16 * 1024 * 1024), (2, 1024 * 1024), (3, 1024 * 1024)):
+            def oversize(*paths):
+                path = paths[index] / "partitions.json" if index == 2 else paths[index]
+                with path.open("wb") as stream:
+                    stream.truncate(limit + 1)
+
+            with self.subTest(input=index), tempfile.TemporaryDirectory() as directory:
+                with patch("projects.h2loader.tools.bazel.firmware_output.read_flash_aes_key") as read_key:
+                    with self.assertRaisesRegex(ValueError, "ENCRYPTION_INPUT_SIZE"):
+                        self.encrypt(Path(directory), "h2loader", mutate=oversize)
+                    read_key.assert_not_called()
+
+    def test_keyless_inputs_and_receipt_hashes_use_one_snapshot(self):
+        from projects.h2loader.tools.bazel import firmware_output
+        from projects.h2loader.tools.bazel.tests import bk_package_fixture as fixture
+        from tools.bazel.bk7258_flash_aes import encrypt_app, encrypt_recovery
+        from unittest.mock import patch
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            sections = [
-                dict(Name="primary_bootloader", Offset=0, Size=4352, Execute=True),
-                dict(Name="primary_cp_app", Offset=4352, Size=4352, Execute=True),
-                dict(Name="primary_ap_app", Offset=8704, Size=8704, Execute=True),
-            ]
-            (root / "partitions.json").write_text(json.dumps(dict(crc_enable=True, section=sections)))
-            plain = bytearray(b"\xff" * 16384)
-            for start in (0, 4096, 8192):
-                struct.pack_into("<II", plain, start, 0x28030000, 0x02000000 + start + 0x81)
-            plain[256:272] = b"BK7236-test-only"
-            payload = plain[4096:12288]
-            fnv = 0x811C9DC5
-            for b in payload:
-                fnv = ((fnv ^ b) * 0x1000193) & 0xFFFFFFFF
-            header = bytearray(96)
-            header[:4] = b"RBL\0"
-            struct.pack_into("<4I", header, 76, zlib.crc32(payload), fnv, len(payload), len(payload))
-            struct.pack_into("<I", header, 92, zlib.crc32(header[:92]))
-            plain[12288:12384] = header
-            source = b"".join(plain[i:i+32]+flash_crc(plain[i:i+32]) for i in range(0,len(plain),32))
-            (root / "source.bin").write_bytes(source)
-            (root / "config.json").write_text(json.dumps(dict(offset="0x00000000", baud=115200)))
-            def invoke(secret, destination, failure=False):
-                read_fd, write_fd = os.pipe()
-                os.write(write_fd, secret)
-                os.close(write_fd)
-                capture = io.StringIO()
-                try:
-                    with contextlib.redirect_stdout(capture), contextlib.redirect_stderr(capture):
-                        with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"):
-                            if failure:
-                                with patch("projects.h2loader.tools.bazel.firmware_output.publish_bk_recovery", side_effect=ValueError("SECRET_MARKER")):
-                                    rc = encrypted_bk_recovery_main(args(read_fd,destination))
-                            else:
-                                rc = encrypted_bk_recovery_main(args(read_fd,destination))
-                    self.assertNotIn("SECRET_MARKER", capture.getvalue())
-                    if secret:
-                        self.assertNotIn(secret.hex(), capture.getvalue())
-                    return rc
-                finally:
-                    os.close(read_fd)
-            def args(fd,dest):
-                return ["--source",str(root/"source.bin"),"--metadata",str(root),"--config",str(root/"config.json"),"--board","fixture","--target","bk7258","--key-fd",str(fd),"--output-dir",str(dest)]
-            output = root / "published"
-            self.assertEqual(invoke(bytes(range(32)),output),0)
-            self.assertEqual(set(p.name for p in output.iterdir()),{"encrypted.bin","recovery.h2fb","validation.json"})
-            bundle = (output/"recovery.h2fb").read_bytes()
-            self.assertEqual(bundle[:4], b"H2FB")
-            self.assertEqual(struct.unpack_from("<HHIII",bundle,4),(1,2,1,115200,1))
-            from projects.h2loader.tools.bazel.firmware_artifacts import FACTORY_IDENTITY_SIZE
-            flash_offset, data_offset, length = struct.unpack_from("<IQQ",bundle,20+2*FACTORY_IDENTITY_SIZE)
-            self.assertEqual(flash_offset,0)
-            self.assertEqual(bundle[data_offset:data_offset+length],(output/"encrypted.bin").read_bytes())
-            self.assertNotEqual((output/"encrypted.bin").read_bytes(),source)
-            receipt=json.loads((output/"validation.json").read_text())
-            self.assertEqual(receipt["encrypted_sha256"],hashlib.sha256((output/"encrypted.bin").read_bytes()).hexdigest())
-            self.assertEqual(output.stat().st_mode & 0o777,0o700)
-            self.assertEqual(invoke(bytes(range(32)),output),1)
-            with patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process", side_effect=ValueError("DUMP_PROTECTION_FAILED")), patch("projects.h2loader.tools.bazel.firmware_output._read_recovery_key") as read_key, contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(encrypted_bk_recovery_main(args(0,root/"unprotected")),1)
-                read_key.assert_not_called()
-            self.assertFalse((root/"unprotected").exists())
-            with patch("builtins.print", side_effect=BrokenPipeError("SECRET_MARKER")):
-                self.assertEqual(invoke(bytes(range(32)),root/"closed-stdout"),0)
-            self.assertEqual(set(p.name for p in (root/"closed-stdout").iterdir()),{"encrypted.bin","recovery.h2fb","validation.json"})
-            with patch("builtins.print", side_effect=BrokenPipeError("SECRET_MARKER")):
-                self.assertEqual(invoke(bytes(31),root/"closed-stderr"),1)
-            self.assertFalse((root/"closed-stderr").exists())
-            with patch("builtins.print", side_effect=ValueError("closed stream")):
-                self.assertEqual(invoke(bytes(range(32)),root/"closed-stream"),0)
-            self.assertTrue((root/"closed-stream"/"validation.json").is_file())
-            # Exercise CPython's actual buffered-stream shutdown, rather than
-            # replacing print: a late flush used to change success to exit 120.
-            import subprocess
-            import sys
-            for error_stream in (False, True):
-                destination = root / ("pipe-error" if error_stream else "pipe-success")
-                script = (
-                    "import sys; sys.path[:] = " + repr(sys.path) + "; "
-                    "from projects.h2loader.tools.bazel.firmware_output import encrypted_bk_recovery_main; "
-                    "sys.exit(encrypted_bk_recovery_main(" + repr(args(0,destination)) + "))"
-                )
-                reader, writer = os.pipe()
-                os.close(reader)
-                try:
-                    with subprocess.Popen(
-                        [sys.executable,"-c",script], stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE if error_stream else writer,
-                        stderr=writer if error_stream else subprocess.PIPE,
-                    ) as child:
-                        os.close(writer)
-                        writer = None
-                        stdout, stderr = child.communicate(bytes(31) if error_stream else bytes(range(32)),timeout=30)
-                        self.assertEqual(child.returncode,1 if error_stream else 0,(stdout,stderr))
-                        self.assertEqual(stdout if error_stream else stderr,b"")
-                finally:
-                    if writer is not None:
-                        os.close(writer)
-                self.assertEqual(destination.exists(),not error_stream)
-            for secret in [b"",bytes(31),bytes(33)]:
-                self.assertEqual(invoke(secret,root/"bad"),1)
-                self.assertFalse((root/"bad").exists())
-            self.assertEqual(invoke(bytes(range(32)),root/"partial",True),1)
-            self.assertFalse((root/"partial").exists())
-            self.assertFalse(list(root.glob(".bk-recovery-*")))
-            with (root/"source.bin").open("rb") as regular, patch("projects.h2loader.tools.bazel.firmware_output._protect_recovery_process"), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(encrypted_bk_recovery_main(args(regular.fileno(),root/"file-key")),1)
-            self.assertFalse((root/"file-key").exists())
-            with patch("shutil.rmtree", side_effect=OSError("SECRET_MARKER")):
-                self.assertEqual(invoke(bytes(range(32)),root/"cleanup-failure",True),1)
-            self.assertFalse((root/"cleanup-failure").exists())
-            self.assertTrue(list(root.glob(".bk-recovery-*")))
+            original_app = fixture.managed_image(fixture.LOADER_PHYSICAL_BASE)
+            original_recovery = fixture.recovery_image()
+            original_metadata = json.dumps(fixture.partition_table(fixture.LOADER_PHYSICAL_BASE)).encode()
 
+            def read_key(path):
+                # Change all original inputs at the moment the secret is read.
+                # Encryption and later receipts must describe the earlier bytes.
+                for name in ("managed.rbl", "recovery.bin", "metadata/partitions.json", "config.json"):
+                    (root / "native" / name).write_bytes(b"replaced after snapshot")
+                return bytearray(self.KEY)
+
+            with patch.object(firmware_output, "read_flash_aes_key", side_effect=read_key):
+                result = self.encrypt(root, "h2loader")
+            frozen = root / "expected-metadata"
+            frozen.mkdir()
+            (frozen / "partitions.json").write_bytes(original_metadata)
+            self.assertEqual((root / "encrypted.rbl").read_bytes(), encrypt_app(original_app, frozen, self.KEY))
+            self.assertEqual((root / "encrypted.bin").read_bytes(), encrypt_recovery(original_recovery, frozen, self.KEY))
+            self.assertEqual(result.source_image_sha256, hashlib.sha256(original_app).hexdigest())
+            self.assertEqual(result.partition_metadata_sha256, hashlib.sha256(original_metadata).hexdigest())
+            self.assertEqual(result.recovery_config, {"offset": "0x0", "baud": 115200})
+
+    def test_optional_bootloader_receipt_is_recorded_or_refused_before_the_key(self):
+        from unittest.mock import patch
+
+        def receipt(**fields):
+            def write(managed, recovery, metadata, config):
+                document = {"schema": 1, "contract": "mapped_ab_v1", "native_image_sha256": hashlib.sha256(recovery.read_bytes()).hexdigest()}
+                (metadata / "bootloader.json").write_text(json.dumps(document | fields))
+            return write
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.encrypt(root, "h2loader", mutate=receipt())
+            self.assertEqual(result.bootloader_contract, "mapped_ab_v1")
+            self.assertEqual(result.bootloader_receipt_sha256, hashlib.sha256((root / "native/metadata/bootloader.json").read_bytes()).hexdigest())
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertIsNone(self.encrypt(Path(directory), "h2loader").bootloader_contract)
+        for fields, message in (
+            ({"schema": True}, "^BOOTLOADER_RECEIPT$"),
+            ({"schema": 2}, "^BOOTLOADER_RECEIPT$"),
+            ({"contract": "other"}, "^BOOTLOADER_RECEIPT$"),
+            ({"native_image_sha256": "0" * 64}, "^BOOTLOADER_RECEIPT_IMAGE$"),
+        ):
+            with self.subTest(fields=fields), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                with patch("projects.h2loader.tools.bazel.firmware_output.read_flash_aes_key") as read_key:
+                    with self.assertRaisesRegex(ValueError, message):
+                        self.encrypt(root, "h2loader", mutate=receipt(**fields))
+                    read_key.assert_not_called()
+                self.assertFalse((root / "encrypted.rbl").exists())
+
+    def test_corrupt_recovery_publishes_nothing_and_clears_the_key(self):
+        from unittest.mock import patch
+
+        def corrupt(managed, recovery, metadata, config):
+            data = bytearray(recovery.read_bytes())
+            data[0] ^= 1
+            recovery.write_bytes(data)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = bytearray(self.KEY)
+            with patch("projects.h2loader.tools.bazel.firmware_output.read_flash_aes_key", return_value=key):
+                with self.assertRaisesRegex(ValueError, "SOURCE_CRC"):
+                    self.encrypt(root, "h2loader", mutate=corrupt)
+            self.assertEqual(key, bytearray(32))
+            self.assertFalse((root / "encrypted.rbl").exists())
+            self.assertFalse((root / "encrypted.bin").exists())
+
+    def test_corrupt_app_is_refused_before_reading_the_key(self):
+        from projects.h2loader.tools.bazel.tests import bk_package_fixture as fixture
+        from unittest.mock import patch
+
+        for repair_crc, message in ((False, "SOURCE_CRC"), (True, "RBL_DIGEST")):
+            def corrupt(managed, recovery, metadata, config):
+                data = bytearray(managed.read_bytes())
+                data[32 * 34] ^= 1
+                if repair_crc:
+                    plain = b"".join(data[i:i + 32] for i in range(0, len(data), 34))
+                    data = fixture._stored(plain)
+                managed.write_bytes(data)
+
+            with self.subTest(repair_crc=repair_crc), tempfile.TemporaryDirectory() as directory:
+                with patch("projects.h2loader.tools.bazel.firmware_output.read_flash_aes_key") as read_key:
+                    with self.assertRaisesRegex(ValueError, message):
+                        self.encrypt(Path(directory), "app", mutate=corrupt)
+                    read_key.assert_not_called()
+
+    def test_each_role_encrypts_for_its_own_window(self):
+        for role, logical_base in (("app", 0x240000), ("h2loader", 0x1000)):
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertEqual(self.encrypt(root, role).logical_base, logical_base)
+                self.assertNotEqual((root / "encrypted.rbl").read_bytes(), (root / "native/managed.rbl").read_bytes())
+                self.assertEqual((root / "encrypted.bin").exists(), role == "h2loader")
 
 
 if __name__ == "__main__":

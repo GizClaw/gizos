@@ -23,17 +23,45 @@ cc_test(
 cc_test(
     name = "fixed_boot_test",
     srcs = [
+        "src/h2_bk_boot_context.h",
         "src/h2_bk_fixed_boot.c",
         "tests/h2_bk_fixed_boot_test_sdk.h",
         "tests/test_h2_bk_fixed_boot.c",
     ],
-    includes = ["tests"],
+    conlyopts = H2_C11_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
     local_defines = ["H2_BK_FIXED_BOOT_HOST_TEST=1"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         "//libs/pal",
         "//projects/h2loader/native_component_src/bk7258/fixed_flash:flash_access",
         "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout",
+        "//third_party/bk7258_bootloader_patch:contract",
+    ],
+)
+
+cc_test(
+    name = "boot_context_test",
+    srcs = [
+        "include/h2_bk_h2loader.h",
+        "src/h2_bk_boot_context.c",
+        "src/h2_bk_boot_context.h",
+        "tests/test_h2_bk_boot_context.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//libs/pal",
+        "//libs/runtime",
+        "//projects/h2loader/libs/h2loader",
     ],
 )
 
@@ -72,6 +100,7 @@ firmware_native_component(
         "//projects/h2loader/native_component_src/bk7258/fixed_flash:flash_access.h",
         "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h",
         "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout_check.h",
+        "//third_party/bk7258_bootloader_patch:contract.h",
     ],
     data = [
         "CMakeLists.txt",

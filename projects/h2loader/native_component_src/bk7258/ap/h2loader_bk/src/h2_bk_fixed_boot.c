@@ -10,6 +10,8 @@
 #endif
 #include "layout.h"
 #include "flash_access.h"
+#include "contract.h"
+#include "h2_bk_boot_context.h"
 #ifndef H2_BK_FIXED_BOOT_HOST_TEST
 #include "h2_bk_flash_access.h"
 #endif
@@ -57,6 +59,63 @@ const h2_fixed_layout_t* h2_bk_fixed_layout(void) {
 }
 
 int h2_bk_fixed_layout_active(void) { return h2_bk_fixed_layout() != NULL; }
+
+int h2_bk_fixed_mapped_abi(void) {
+  const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
+  const bk_logic_partition_t* cp =
+      bk_flash_partition_get_info(BK_PARTITION_APPLICATION);
+  uint8_t bytes[sizeof(bk_mapped_ab_contract_t)];
+  uint32_t words[sizeof(bytes) / 4u];
+  bk_mapped_ab_contract_t contract;
+  if (!layout || !cp) return H2_PAL_ERR_INVALID_STATE;
+  int rc = h2_bk_flash_read_boot_plain(layout->loader.offset,
+                                       BK_MAPPED_AB_DESCRIPTOR_OFFSET, bytes,
+                                       sizeof(bytes));
+  if (rc != H2_PAL_OK) return rc;
+  for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); ++i) {
+    const uint8_t* p = bytes + i * 4u;
+    words[i] = (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 |
+               (uint32_t)p[3] << 24;
+  }
+  memcpy(&contract, words, sizeof(contract));
+  if (contract.magic != BK_MAPPED_AB_MAGIC) return 0;
+  if (!bk_mapped_ab_contract_valid(&contract) ||
+      contract.boot_size != layout->loader.offset ||
+      contract.loader_offset != layout->loader.offset ||
+      contract.loader_size != layout->loader.size ||
+      contract.trial_offset != layout->app.offset ||
+      contract.trial_size != layout->app.size ||
+      /* cp_size splits the Loader image; only a Loader table can restate it. */
+      (!layout->app_table && contract.cp_size != cp->partition_length))
+    return H2_PAL_ERR_FORMAT;
+  uint8_t chunk[256];
+  uint32_t crc = 0xffffffffu;
+  for (uint32_t offset = 0; offset < contract.payload_size;) {
+    size_t take = contract.payload_size - offset;
+    if (take > sizeof(chunk)) take = sizeof(chunk);
+    rc = h2_bk_flash_read_boot_plain(
+        contract.boot_size, contract.payload_offset + offset, chunk, take);
+    if (rc != H2_PAL_OK) return rc;
+    for (size_t i = 0; i < take; ++i)
+      crc = bk_mapped_ab_crc_step(crc, chunk[i]);
+    offset += (uint32_t)take;
+  }
+  return ~crc == contract.payload_crc32 ? 1 : H2_PAL_ERR_FORMAT;
+}
+
+int h2_bk_fixed_loader_update_check(uint64_t image_size) {
+  const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
+  const unsigned aes = h2_bk_flash_aes_state();
+  if (aes != H2_BK_FLASH_AES_OFF && aes != H2_BK_FLASH_AES_ON)
+    return H2_PAL_ERR_UNSUPPORTED;
+  if (!layout) return aes == H2_BK_FLASH_AES_OFF ? 0 : H2_PAL_ERR_UNSUPPORTED;
+  const int mapped = h2_bk_fixed_mapped_abi();
+  if (mapped < 0) return mapped;
+  if (!mapped) return aes == H2_BK_FLASH_AES_OFF ? 0 : H2_PAL_ERR_UNSUPPORTED;
+  if (image_size != layout->loader.size || image_size > layout->app.size)
+    return H2_PAL_ERR_FORMAT;
+  return 1;
+}
 
 static void log_role_once(uint8_t slot, int app_table, uint32_t cp_phys) {
   static int logged;
@@ -183,6 +242,20 @@ int h2_bk_fixed_app_window_holds_loader(void) {
   const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
   uint32_t vector[2];
   if (layout == NULL) return H2_PAL_ERR_INVALID_STATE;
+  const int mapped = h2_bk_fixed_mapped_abi();
+  if (mapped < 0) return mapped;
+  if (mapped) {
+    /* Ciphertext vectors are not evidence of a role: mapped_ab_v1 candidates
+     * are identified only by committed metadata, and an unbound context or a
+     * missing record fails closed. Callers gate Loader relay on AES state. */
+    uint64_t size = 0;
+    const int loader = h2_bk_boot_candidate_is_loader(&size);
+    if (loader < 0) return loader;
+    if (!size || size > layout->app.size ||
+        (loader && size != layout->loader.size))
+      return H2_PAL_ERR_FORMAT;
+    return loader;
+  }
   if (native_relay_active()) {
     uint8_t block[34];
     if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
@@ -211,9 +284,53 @@ int h2_bk_fixed_confirm_loader(void) {
    * rewrites the Loader window returns to it instead of the half-written
    * Loader window. */
   if (!native_relay_active()) return H2_PAL_OK;
-  if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-    return H2_PAL_ERR_UNSUPPORTED;
+  const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
+  if (!layout) return H2_PAL_ERR_INVALID_STATE;
+  int rc = h2_bk_fixed_loader_update_check(layout->loader.size);
+  if (rc < 0) return rc;
+  if (rc == 1) {
+    if (layout->app_table) return H2_PAL_ERR_INVALID_STATE;
+    rc = h2_bk_fixed_app_window_holds_loader();
+    if (rc != 1) return rc < 0 ? rc : H2_PAL_ERR_INVALID_STATE;
+  }
   return write_native_flags(s_native_relay_confirmed);
+}
+
+int h2_bk_fixed_boot_context_check(void) {
+  const int mapped = h2_bk_fixed_mapped_abi();
+  if (mapped < 0) return mapped;
+  return mapped ? h2_bk_boot_context_ready() : H2_PAL_OK;
+}
+
+/* A failed or interrupted copy-back leaves Partition 1 cleared and A partial.
+ * Leaving native B then would replace the confirmed candidate with that A.
+ * Returns 1 when the selection must keep confirmed B, so a reboot still works
+ * and retries the copy; 0 when it may leave B; negative otherwise. */
+static int relay_exit_check(void) {
+  uint8_t flags[12];
+  if (!native_relay_active()) return 0;
+  const int mapped = h2_bk_fixed_mapped_abi();
+  if (mapped <= 0) return mapped;
+  const int committed = h2_bk_boot_loader_window_committed();
+  if (committed == 1) return 0;
+  if (read_native_flags(flags) &&
+      memcmp(flags, s_native_relay_confirmed, sizeof(flags)) == 0)
+    return 1;
+  return committed < 0 ? committed : H2_PAL_ERR_INVALID_STATE;
+}
+
+int h2_bk_fixed_relay_confirmed(void) {
+  /* The Loader window may be erased only when a reset cannot reach it: the
+   * image must be executing from native B and B must be the confirmed
+   * selection. */
+  const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
+  uint8_t flags[12];
+  if (!layout || layout->app_table || !native_relay_active())
+    return H2_PAL_ERR_INVALID_STATE;
+  if (!read_native_flags(flags)) return H2_PAL_ERR_IO;
+  return memcmp(flags, s_native_relay_confirmed, sizeof(flags)) == 0
+             ? H2_PAL_OK
+             : H2_PAL_ERR_INVALID_STATE;
 }
 
 static int request_is_blank(const h2_fixed_boot_request_t* r) {
@@ -237,15 +354,17 @@ int h2_bk_fixed_select(uint32_t partition_id) {
     if (holds_loader < 0) return holds_loader;
   }
   if (holds_loader) {
-    if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-      return H2_PAL_ERR_UNSUPPORTED;
+    int compatible = h2_bk_fixed_loader_update_check(layout->loader.size);
+    if (compatible < 0) return compatible;
     /* A Loader in the App window runs through the native B remap, not
      * through the CP handoff; keep an existing B selection as it is. */
     if (native_selects_relay()) return H2_PAL_OK;
     int rc = h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID);
     return rc == H2_PAL_OK ? write_native_flags(s_native_relay_pending) : rc;
   }
-  int rc = keep_native_loader_boot();
+  int rc = relay_exit_check();
+  if (rc != 0) return rc < 0 ? rc : H2_PAL_OK;
+  rc = keep_native_loader_boot();
   if (rc != H2_PAL_OK) return rc;
   if (!read_request(&current)) return H2_PAL_ERR_IO;
   if (partition_id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID) {

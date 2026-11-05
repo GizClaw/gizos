@@ -8,6 +8,7 @@ FirmwareReleaseInfo = provider(
     doc = "Canonical H2Loader release outputs for one firmware entry.",
     fields = {
         "board": "Physical board identity.",
+        "encrypted": "True when release assets hold Flash AES ciphertext.",
         "entry": "Source-root-relative launcher entry.",
         "factory": "ESP Loader combined factory image or None.",
         "image": "Image identity.",
@@ -26,7 +27,9 @@ FirmwareReleaseInfo = provider(
     },
 )
 
+_ENCRYPTION_KEY_FLAG = "//projects/h2loader/tools/bazel:encryption_key"
 _IDENTITY_CHARACTERS = "0123456789abcdefghijklmnopqrstuvwxyz._-"
+_PLAINTEXT_BK_FLASH_IMAGES = ("ap/app.bin", "cp/app.bin", "all-app.bin")
 
 def _validate_identity(board, image, role, target):
     if role not in ("app", "h2loader"):
@@ -81,6 +84,7 @@ def _native_firmware(ctx):
                 struct(name = "app_ab_crc.rbl", file = firmware.managed_app_image),
                 struct(name = "all-app.bin", file = firmware.recovery_image),
             ],
+            partition_metadata = firmware.partition_metadata,
             platform = "bk7258",
             recovery_config = firmware.recovery_config,
             recovery_image = firmware.recovery_image,
@@ -113,9 +117,22 @@ def _native_firmware(ctx):
         )
     fail("firmware must provide FirmwareInfo, Bk7258FirmwareInfo or JieliFirmwareInfo")
 
-def _package_impl(ctx, package_format):
+def _encryption_key_file(ctx):
+    keys = ctx.attr.encryption_key[DefaultInfo].files.to_list()
+    if len(keys) != 1:
+        fail("encrypted packages require one key file: set --%s=<label>" % _ENCRYPTION_KEY_FLAG)
+    return keys[0]
+
+def _package_impl(ctx, package_format, encrypted = False):
     firmware = _native_firmware(ctx)
     source = ctx.attr.source[FirmwareReleaseInfo] if ctx.attr.source else None
+
+    # A sibling reads the plaintext native inputs, so deriving one from an
+    # encrypted package would silently publish plaintext under its name.
+    if source and source.encrypted:
+        fail("package source must be plaintext: %s" % ctx.attr.source.label)
+    if encrypted and firmware.platform != "bk7258":
+        fail("encrypted packages support BK7258 only, not %s" % firmware.platform)
     board = source.board if source else ctx.attr.board
     image = source.image if source else ctx.attr.image
     role = source.role if source else ctx.attr.role
@@ -138,11 +155,12 @@ def _package_impl(ctx, package_format):
         if firmware.factory_image:
             factory = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".combined_factory.bin")
 
+    entry = source.entry if encrypted else ctx.label.package
     args = ctx.actions.args()
     args.add("--source-root", ".")
     args.add("--app-image", firmware.app_image.path)
     args.add("--app-path", firmware.app_path)
-    args.add("--entry", ctx.label.package)
+    args.add("--entry", entry)
     args.add("--platform", firmware.platform)
     args.add("--board", board)
     args.add("--image", image)
@@ -174,16 +192,47 @@ def _package_impl(ctx, package_format):
         # because either may contain any character a filename may contain.
         args.add("--package-data-file", data_file.short_path)
         args.add("--package-data-source", data_file.path)
-    for native in firmware.native_artifacts:
-        args.add("--native-artifact", "%s=%s" % (native.name, native.file.path))
 
+    # Published flash images are ciphertext, so their metadata must say so; one
+    # without a ciphertext counterpart is omitted. Debug symbols keep describing
+    # the borrowed plaintext build.
+    flash_outputs = {}
+    evidence_files = []
     action_inputs = firmware.inputs + package_data
+    execution_requirements = None
+    if encrypted:
+        key = _encryption_key_file(ctx)
+        encrypted_image = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".flash-aes.rbl")
+        receipt = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".flash-aes.json")
+        flash_outputs[firmware.app_image] = encrypted_image
+        evidence_files = [encrypted_image, receipt]
+        args.add("--flash-aes-key", key.path)
+        args.add("--partition-metadata", firmware.partition_metadata.path)
+        args.add("--encrypted-image-output", encrypted_image.path)
+        args.add("--encryption-receipt", receipt.path)
+        if recovery:
+            encrypted_recovery = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".flash-aes.bin")
+            flash_outputs[firmware.recovery_image] = encrypted_recovery
+            evidence_files.append(encrypted_recovery)
+            args.add("--encrypted-recovery-output", encrypted_recovery.path)
+        action_inputs = action_inputs + [key]
+
+        # The key file is an action input: keep the action on this machine and
+        # its outputs out of every shared or persistent result cache.
+        execution_requirements = {"local": "1", "no-cache": "1", "no-remote": "1"}
+    for native in firmware.native_artifacts:
+        if encrypted and native.file not in flash_outputs and native.name in _PLAINTEXT_BK_FLASH_IMAGES:
+            continue
+        args.add("--native-artifact", "%s=%s" % (native.name, flash_outputs.get(native.file, native.file).path))
+
+    mnemonic = "H2LoaderTarZlib" if package_format == 1 else "H2LoaderZlibTar"
     ctx.actions.run(
         arguments = [args],
+        execution_requirements = execution_requirements,
         executable = ctx.executable._runner,
         inputs = depset(action_inputs),
-        mnemonic = "H2LoaderTarZlib" if package_format == 1 else "H2LoaderZlibTar",
-        outputs = [package, metadata] + ([factory] if factory else []) + ([recovery] if recovery else []),
+        mnemonic = "H2LoaderEncryptedPackage" if encrypted else mnemonic,
+        outputs = [package, metadata] + ([factory] if factory else []) + ([recovery] if recovery else []) + evidence_files,
         progress_message = "Packaging H2Loader archive %{label}",
         tools = [ctx.executable._runner],
     )
@@ -191,10 +240,11 @@ def _package_impl(ctx, package_format):
     release_files = depset([package, metadata] + ([factory] if factory else []) + ([recovery] if recovery else []))
     return [
         DefaultInfo(files = release_files),
-        OutputGroupInfo(release = release_files),
+        OutputGroupInfo(encryption_evidence = depset(evidence_files), release = release_files),
         FirmwareReleaseInfo(
             board = board,
-            entry = ctx.label.package,
+            encrypted = encrypted,
+            entry = entry,
             factory = factory,
             image = image,
             metadata = metadata,
@@ -218,6 +268,9 @@ def _tar_zlib_impl(ctx):
 def _zlib_tar_impl(ctx):
     return _package_impl(ctx, 2)
 
+def _encrypted_package_impl(ctx):
+    return _package_impl(ctx, ctx.attr.source[FirmwareReleaseInfo].package_format, encrypted = True)
+
 def _attrs():
     return {
         "_runner": attr.label(default = "//projects/h2loader/tools/bazel:h2loader_tar_zlib_runner", cfg = "exec", executable = True),
@@ -233,6 +286,10 @@ def _attrs():
 
 _h2loader_tar_zlib = rule(implementation = _tar_zlib_impl, attrs = _attrs())
 _h2loader_zlib_tar = rule(implementation = _zlib_tar_impl, attrs = _attrs())
+_h2loader_encrypted_package = rule(
+    implementation = _encrypted_package_impl,
+    attrs = _attrs() | {"encryption_key": attr.label(allow_files = True, default = _ENCRYPTION_KEY_FLAG)},
+)
 
 def h2loader_tar_zlib(name, board, image, role, target, **kwargs):
     """Preserve the original labels and format-1 monolithic zlib output."""
@@ -253,3 +310,16 @@ def h2loader_zlib_tar(name, source, **kwargs):
         if key in kwargs:
             fail("zlib_tar inherits %s from source" % key)
     _h2loader_zlib_tar(name = name, source = source, **kwargs)
+
+def h2loader_encrypted_package(name, source, tags = [], **kwargs):
+    """Produce the Flash AES counterpart of a plaintext BK7258 package.
+
+    One rule serves App, Loader and manufacturing sources: identity, format and
+    package data come from source, addresses from its partition metadata.
+    Plaintext native inputs are consumed directly, so the plaintext package is
+    not built. The target is manual because //... has no key to build it with.
+    """
+    for key in ("firmware", "board", "image", "role", "target", "package_data", "package_data_root", "package_format"):
+        if key in kwargs:
+            fail("encrypted package inherits %s from source" % key)
+    _h2loader_encrypted_package(name = name, source = source, tags = tags + ["manual"], **kwargs)

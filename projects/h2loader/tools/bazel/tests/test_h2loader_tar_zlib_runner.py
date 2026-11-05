@@ -608,5 +608,214 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             )
 
 
+@unittest.skipIf(os.name == "nt", "Flash AES packaging requires POSIX process protection")
+class EncryptedRunnerTest(unittest.TestCase):
+    def arguments(self, root: Path, role="app"):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+        from projects.h2loader.tools.bazel.tests import bk_package_fixture as fixture
+
+        native = root / "native"
+        native.mkdir()
+        fixture.write_outputs(role, native / "managed.rbl", native / "all-app.bin", native / "metadata", native / "config.json")
+        (root / "public-test.key").write_bytes(bytes(range(32)))
+        args = runner.parse_arguments([
+            "--source-root", str(root), "--app-image", str(native / "managed.rbl"),
+            "--app-path", "app/bk/app_ab_crc.rbl", "--entry", "source/entry",
+            "--platform", "bk7258", "--board", "fixture", "--image", "mfg" if role == "h2loader" else "app",
+            "--role", role, "--target", "bk7258", "--version", "1.2.3",
+            "--package-output", str(root / "out/package.update.tar"),
+            "--metadata-output", str(root / "out/package.firmware.json"),
+            "--flash-aes-key", str(root / "public-test.key"),
+            "--partition-metadata", str(native / "metadata"),
+            "--encrypted-image-output", str(root / "out/image.rbl"),
+            "--encryption-receipt", str(root / "out/receipt.json"),
+        ])
+        args.native_artifact = [("app_ab_crc.rbl", Path(args.encrypted_image_output))]
+        if role == "h2loader":
+            args.recovery = str(root / "out/recovery.h2fb")
+            args.bk_recovery_image = str(native / "all-app.bin")
+            args.bk_recovery_config = str(native / "config.json")
+            args.encrypted_recovery_output = str(root / "out/recovery.bin")
+            args.native_artifact.append(("all-app.bin", Path(args.encrypted_recovery_output)))
+        return args
+
+    def assert_no_publication(self, root):
+        self.assertEqual(list((root / "out").rglob("*")) if (root / "out").exists() else [], [])
+
+    def test_incomplete_or_empty_encryption_arguments_cannot_publish_plaintext(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+
+        for field in runner._ENCRYPTION_FIELDS:
+            for value in (None, ""):
+                with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    args = self.arguments(root, "h2loader")
+                    setattr(args, field, value)
+                    with self.assertRaises(ValueError):
+                        runner.run(args)
+                    self.assert_no_publication(root)
+
+    def test_wrong_identity_and_recovery_arguments_are_refused(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+
+        for field, value in (
+            ("target", "esp32s3"), ("platform", "esp"), ("app_path", "app/esp/app.bin"),
+            ("factory_image", "factory.bin"), ("recovery", None), ("bk_recovery_image", None),
+            ("bk_recovery_config", None), ("package_data_file", ["data/config"]),
+        ):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                args = self.arguments(root, "h2loader")
+                setattr(args, field, value)
+                with self.assertRaises(ValueError):
+                    runner.run(args)
+                self.assert_no_publication(root)
+
+    def test_invalid_key_removes_stale_outputs(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+
+        for role in ("app", "h2loader"):
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                args = self.arguments(root, role)
+                (root / "out").mkdir()
+                for field in runner._OUTPUT_FIELDS:
+                    if getattr(args, field):
+                        Path(getattr(args, field)).write_bytes(b"stale output")
+                Path(args.flash_aes_key).write_bytes(b"short key")
+                with self.assertRaisesRegex(ValueError, "KEY_LENGTH"):
+                    runner.run(args)
+                self.assert_no_publication(root)
+
+    def test_failure_in_common_packaging_or_metadata_removes_all_outputs(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+        from unittest.mock import patch
+
+        for helper in ("publish_managed_package", "publish_metadata", "publish_encryption_receipt"):
+            with self.subTest(helper=helper), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                args = self.arguments(root, "h2loader")
+                with patch.object(runner, helper, side_effect=OSError("simulated publication failure")):
+                    with self.assertRaises(OSError):
+                        runner.run(args)
+                self.assert_no_publication(root)
+
+    def test_failed_final_move_removes_already_published_files(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = self.arguments(root, "h2loader")
+            replace = Path.replace
+
+            def fail_metadata(source, destination):
+                if destination == Path(args.metadata_output):
+                    raise OSError("simulated final publication failure")
+                return replace(source, destination)
+
+            with patch.object(Path, "replace", fail_metadata):
+                with self.assertRaises(OSError):
+                    runner.run(args)
+            self.assert_no_publication(root)
+
+    def test_output_collision_cannot_delete_or_overwrite_native_input(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = self.arguments(root)
+            source = Path(args.app_image).read_bytes()
+            args.package_output = args.app_image
+            with self.assertRaises(ValueError):
+                runner.run(args)
+            self.assertEqual(Path(args.app_image).read_bytes(), source)
+            self.assert_no_publication(root)
+
+    def test_runtime_errors_do_not_log_values_or_tracebacks(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+        from unittest.mock import patch
+        from contextlib import redirect_stderr, redirect_stdout
+        import io
+
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(runner, "parse_arguments"), patch.object(runner, "run", side_effect=ValueError("sensitive contents")):
+            with redirect_stdout(out), redirect_stderr(err):
+                self.assertEqual(runner.main(["--flash-aes-key", "key-file"]), 1)
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("encrypted package refused", err.getvalue())
+        self.assertNotIn("sensitive contents", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+    def test_bootloader_receipt_identity_reaches_only_mapped_evidence(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = self.arguments(root, "h2loader")
+            document = json.dumps({
+                "schema": 1, "contract": "mapped_ab_v1",
+                "native_image_sha256": hashlib.sha256(Path(args.bk_recovery_image).read_bytes()).hexdigest(),
+            }).encode()
+            (Path(args.partition_metadata) / "bootloader.json").write_bytes(document)
+            runner.run(args)
+            receipt = json.loads(Path(args.encryption_receipt).read_text())
+            self.assertEqual(receipt["bootloader_contract"], "mapped_ab_v1")
+            self.assertEqual(receipt["bootloader_receipt_sha256"], hashlib.sha256(document).hexdigest())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = self.arguments(root, "h2loader")
+            runner.run(args)
+            receipt = json.loads(Path(args.encryption_receipt).read_text())
+            self.assertNotIn("bootloader_contract", receipt)
+            self.assertNotIn("bootloader_receipt_sha256", receipt)
+
+    def test_duplicate_or_abbreviated_encryption_flags_are_rejected(self):
+        from projects.h2loader.tools.bazel import h2loader_tar_zlib_runner as runner
+        from contextlib import redirect_stderr
+        import io
+
+        # Use the real CLI to exercise parser rejection before any publication.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = self.arguments(root)
+            command = [
+                "--source-root", str(root), "--app-image", args.app_image,
+                "--app-path", args.app_path, "--entry", "entry", "--platform", "bk7258",
+                "--board", "fixture", "--image", "app", "--role", "app", "--target", "bk7258",
+                "--version", "1", "--package-output", args.package_output, "--metadata-output", args.metadata_output,
+            ]
+            for extra in (["--flash-aes-key=key", "--flash-aes-key="], ["--flash-aes-ke=key"]):
+                with self.subTest(extra=extra), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    runner.parse_arguments(command + extra)
+                self.assert_no_publication(root)
+
+    def test_recovery_bundle_and_receipt_use_the_original_snapshots(self):
+        from projects.h2loader.tools.bazel import firmware_output, h2loader_tar_zlib_runner as runner
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = self.arguments(root, "h2loader")
+            source_hash = hashlib.sha256(Path(args.app_image).read_bytes()).hexdigest()
+            metadata_hash = hashlib.sha256((Path(args.partition_metadata) / "partitions.json").read_bytes()).hexdigest()
+            read_key = firmware_output.read_flash_aes_key
+
+            def change_inputs(path):
+                for source in (Path(args.app_image), Path(args.bk_recovery_image), Path(args.bk_recovery_config), Path(args.partition_metadata) / "partitions.json"):
+                    source.write_bytes(b"changed after snapshot")
+                return read_key(path)
+
+            with patch.object(firmware_output, "read_flash_aes_key", side_effect=change_inputs):
+                runner.run(args)
+            receipt = json.loads(Path(args.encryption_receipt).read_text())
+            self.assertEqual(receipt["source_image_sha256"], source_hash)
+            self.assertEqual(receipt["partition_metadata_sha256"], metadata_hash)
+            metadata = json.loads(Path(args.metadata_output).read_text())
+            self.assertEqual(metadata["entry"], "source/entry")
+            self.assertEqual(metadata["image"], "mfg")
+            self.assertTrue(Path(args.recovery).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

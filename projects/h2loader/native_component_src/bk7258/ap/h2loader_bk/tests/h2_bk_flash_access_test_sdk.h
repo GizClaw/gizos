@@ -5,6 +5,12 @@
 #define BK_OK 0
 #define CONFIG_FLASH_CP_AP_DIRECT_ACCESS 0
 #define CONFIG_CACHE_ENABLE 0
+#define BK_PARTITION_APPLICATION 1u
+#define BK_PARTITION_S_APP 3u
+typedef struct {
+  uint32_t partition_start_addr;
+} bk_logic_partition_t;
+const bk_logic_partition_t* bk_flash_partition_get_info(uint32_t);
 int bk_flash_read_bytes(uint32_t, uint8_t*, uint32_t);
 uint8_t bk_ota_get_current_partition(void);
 uint32_t rtos_enter_critical(void);

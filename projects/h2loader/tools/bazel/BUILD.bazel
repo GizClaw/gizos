@@ -1,15 +1,15 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/bazel:app_version.bzl", "app_version")
 load("//tools/bazel:firmware.bzl", "firmware_version")
-load(":h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load(":h2loader_tar_zlib.bzl", "h2loader_encrypted_package", "h2loader_tar_zlib")
 load(":h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
-load(":tests/package_rules.bzl", "package_rules_firmware")
+load(":tests/encrypted_package_analysis.bzl", "encrypted_package_analysis_tests")
+load(":tests/package_rules.bzl", "bk_package_rules_firmware", "package_rules_firmware")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "h2loader_firmware.bzl",
-    "h2loader_bk_recovery.bzl",
     "h2loader_tar_zlib.bzl",
     "h2loader_zlib_tar.bzl",
     "checksum_matrix.bzl",
@@ -28,15 +28,15 @@ py_library(
 
 py_test(
     name = "firmware_artifacts_test",
-    srcs = ["tests/test_firmware_artifacts.py"],
+    srcs = [
+        "tests/bk_package_fixture.py",
+        "tests/test_firmware_artifacts.py",
+    ],
     data = [
         "tests/fixtures/h2loader_format1.sha256",
         "tests/fixtures/h2loader_format1.tar.zlib",
         "tests/fixtures/h2loader_format2.sha256",
-    ] + select({
-        "@platforms//os:windows": [],
-        "//conditions:default": [":encrypted_bk_app"],
-    }),
+    ],
     legacy_create_init = 0,
     main = "tests/test_firmware_artifacts.py",
     target_compatible_with = select({
@@ -83,7 +83,10 @@ py_binary(
 
 py_test(
     name = "h2loader_tar_zlib_runner_test",
-    srcs = ["tests/test_h2loader_tar_zlib_runner.py"],
+    srcs = [
+        "tests/bk_package_fixture.py",
+        "tests/test_h2loader_tar_zlib_runner.py",
+    ],
     data = ["h2loader_tar_zlib_runner.py"],
     legacy_create_init = 0,
     main = "tests/test_h2loader_tar_zlib_runner.py",
@@ -166,33 +169,140 @@ py_test(
     target_compatible_with = _HOST_PACKAGE_TEST,
 )
 
-py_binary(
-    name = "encrypted_bk_app",
-    srcs = ["encrypted_bk_app.py"],
-    legacy_create_init = False,
-    main = "encrypted_bk_app.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        ":firmware_output",
-    ],
+# Selects the private 32-byte Flash AES key file for :encrypted_package targets.
+# The empty default makes an unset key an analysis error, never plaintext.
+filegroup(name = "no_encryption_key")
+
+label_flag(
+    name = "encryption_key",
+    build_setting_default = ":no_encryption_key",
 )
 
+_POSIX_PACKAGE_TEST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
 py_binary(
-    name = "encrypted_bk_recovery",
-    srcs = ["firmware_output.py"],
-    legacy_create_init = False,
-    main = "firmware_output.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    name = "bk_package_fixture_writer",
+    testonly = True,
+    srcs = ["tests/bk_package_fixture.py"],
+    legacy_create_init = 0,
+    main = "tests/bk_package_fixture.py",
+    target_compatible_with = _HOST_PACKAGE_TEST,
+    deps = ["//tools/bazel:bk7258_flash_aes"],
+)
+
+bk_package_rules_firmware(
+    name = "encrypted_rules_app_native",
+    testonly = True,
+    role = "app",
+    target_compatible_with = _POSIX_PACKAGE_TEST,
+    version = ":package_rules_version",
+)
+
+bk_package_rules_firmware(
+    name = "encrypted_rules_loader_native",
+    testonly = True,
+    role = "h2loader",
+    target_compatible_with = _POSIX_PACKAGE_TEST,
+    version = ":package_rules_version",
+)
+
+h2loader_tar_zlib(
+    name = "encrypted_rules_app_plain",
+    testonly = True,
+    board = "fixture",
+    firmware = ":encrypted_rules_app_native",
+    image = "app",
+    package_data = ["tests/fixtures/encrypted_package_data/config.txt"],
+    package_data_root = "projects/h2loader/tools/bazel/tests/fixtures/encrypted_package_data",
+    role = "app",
+    target = "bk7258",
+)
+
+h2loader_zlib_tar(
+    name = "encrypted_rules_app_plain_format2",
+    testonly = True,
+    source = ":encrypted_rules_app_plain",
+)
+
+h2loader_tar_zlib(
+    name = "encrypted_rules_loader_plain",
+    testonly = True,
+    board = "fixture",
+    firmware = ":encrypted_rules_loader_native",
+    image = "mfg",
+    role = "h2loader",
+    target = "bk7258",
+)
+
+h2loader_zlib_tar(
+    name = "encrypted_rules_loader_plain_format2",
+    testonly = True,
+    source = ":encrypted_rules_loader_plain",
+)
+
+[h2loader_encrypted_package(
+    name = source + "_encrypted",
+    testonly = True,
+    encryption_key = "tests/fixtures/flash_aes_public_test.key",
+    source = ":" + source,
+) for source in (
+    "encrypted_rules_app_plain",
+    "encrypted_rules_app_plain_format2",
+    "encrypted_rules_loader_plain",
+    "encrypted_rules_loader_plain_format2",
+)]
+
+filegroup(
+    name = "encrypted_rules_evidence",
+    testonly = True,
+    srcs = [":%s_encrypted" % source for source in (
+        "encrypted_rules_app_plain",
+        "encrypted_rules_app_plain_format2",
+        "encrypted_rules_loader_plain",
+        "encrypted_rules_loader_plain_format2",
+    )],
+    output_group = "encryption_evidence",
+)
+
+py_test(
+    name = "encrypted_package_rules_test",
+    srcs = ["tests/test_encrypted_package_rules.py"],
+    args = [
+        "$(rootpaths :encrypted_rules_evidence)",
+        "$(rootpaths :encrypted_rules_app_plain_encrypted)",
+        "$(rootpaths :encrypted_rules_app_plain_format2_encrypted)",
+        "$(rootpaths :encrypted_rules_loader_plain_encrypted)",
+        "$(rootpaths :encrypted_rules_loader_plain_format2_encrypted)",
+        "$(rootpaths :encrypted_rules_app_native)",
+        "$(rootpaths :encrypted_rules_loader_native)",
+    ],
+    data = [
+        "tests/fixtures/flash_aes_public_test.key",
+        ":encrypted_rules_app_native",
+        ":encrypted_rules_app_plain_encrypted",
+        ":encrypted_rules_app_plain_format2_encrypted",
+        ":encrypted_rules_evidence",
+        ":encrypted_rules_loader_native",
+        ":encrypted_rules_loader_plain_encrypted",
+        ":encrypted_rules_loader_plain_format2_encrypted",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_encrypted_package_rules.py",
+    target_compatible_with = _POSIX_PACKAGE_TEST,
     deps = [
         ":firmware_artifacts",
         "//tools/bazel:bk7258_flash_aes",
     ],
+)
+
+encrypted_package_analysis_tests(
+    name = "encrypted_package_analysis",
+    compatibility = _POSIX_PACKAGE_TEST,
+    encrypted_target = ":encrypted_rules_app_plain_encrypted",
+    plain_esp_source = ":package_rules_old",
+    plain_source = ":encrypted_rules_app_plain",
 )

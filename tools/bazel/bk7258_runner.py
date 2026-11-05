@@ -414,11 +414,62 @@ def validate_partition_metadata(
     return sources
 
 
+def apply_bootloader_patch(
+    recipe: Path,
+    native_root: Path,
+    work_root: Path,
+    python: Path,
+    make: Path,
+    environment: dict[str, str],
+) -> tuple[Path, Path]:
+    """Build a declared recipe into a patched copy of the recovery image."""
+    toolchain = Path(environment["COMPILER_TOOLCHAIN_PATH"])
+    build_root = work_root / "build"
+    image = work_root / "output" / "all-app.bin"
+    receipt = work_root / "output" / "bootloader.json"
+    cmake = find_executable("cmake", environment)
+    commands = (
+        [
+            str(cmake),
+            "-S",
+            str(recipe.parent),
+            "-B",
+            str(build_root),
+            "-G",
+            "Unix Makefiles",
+            f"-DCMAKE_MAKE_PROGRAM={make}",
+            f"-DCMAKE_C_COMPILER={toolchain / 'arm-none-eabi-gcc'}",
+            f"-DCMAKE_ASM_COMPILER={toolchain / 'arm-none-eabi-gcc'}",
+            f"-DCMAKE_OBJCOPY={toolchain / 'arm-none-eabi-objcopy'}",
+            f"-DPYTHON={python}",
+            f"-DINPUT_IMAGE={native_root / 'package' / 'all-app.bin'}",
+            f"-DPARTITION_METADATA={native_root / 'partitions'}",
+            f"-DOUTPUT_IMAGE={image}",
+            f"-DOUTPUT_RECEIPT={receipt}",
+        ],
+        [str(cmake), "--build", str(build_root)],
+    )
+    for command in commands:
+        try:
+            result = subprocess.run(command, check=False, env=environment)
+        except OSError as error:
+            raise RunnerError(f"cannot execute BK7258 bootloader patch: {error}") from error
+        if result.returncode != 0:
+            raise RunnerError(
+                f"BK7258 bootloader patch failed with exit code {result.returncode}"
+            )
+    return (
+        required_file(image, "patched recovery image"),
+        required_file(receipt, "bootloader patch receipt"),
+    )
+
+
 def publish_outputs(
     build_directory: Path,
     native_project: str,
     target: str,
     arguments: argparse.Namespace,
+    patched_bootloader: tuple[Path, Path] | None = None,
 ) -> None:
     native_root = build_directory / target / native_project
     ap_root = native_root / f"{target}_ap"
@@ -440,6 +491,9 @@ def publish_outputs(
         native_root / "partitions",
         build_directory,
     )
+    if patched_bootloader is not None:
+        native_outputs["recovery image"] = patched_bootloader[0]
+        metadata_sources.append(("bootloader.json", patched_bootloader[1]))
 
     metadata_output = Path(arguments.partition_metadata_output)
     if metadata_output.exists():
@@ -492,6 +546,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--recovery-output", required=True)
     parser.add_argument("--partition-metadata-output", required=True)
     parser.add_argument("--ram-regions", required=True)
+    parser.add_argument("--bootloader-patch")
     parser.add_argument("--memory-contract")
     parser.add_argument("--memory-checker")
     parser.add_argument("--support-file", action="append", default=[])
@@ -725,6 +780,11 @@ def run(arguments: argparse.Namespace) -> None:
         source_root,
         arguments.prebuilt_component_include,
         prebuilt_components,
+    )
+    bootloader_patch = (
+        required_file(source_root / arguments.bootloader_patch, "BK7258 bootloader patch")
+        if arguments.bootloader_patch
+        else None
     )
     project_file = Path(arguments.project)
     source_project = resolve_project(source_root, project_file, arguments.target)
@@ -970,6 +1030,16 @@ def run(arguments: argparse.Namespace) -> None:
             result = subprocess.run(command, check=False, env=subprocess_environment)
         except OSError as error:
             raise RunnerError(f"cannot execute BK7258 build: {error}") from error
+        patched_bootloader = None
+        if result.returncode == 0 and bootloader_patch is not None:
+            patched_bootloader = apply_bootloader_patch(
+                bootloader_patch,
+                build_directory / arguments.target / project_copy.name,
+                temporary_root / "bootloader-patch",
+                python,
+                make,
+                subprocess_environment,
+            )
         validate_sdk(sdk_path, git, expected_sdk_commit, environment)
         validate_tracked_state(
             git,
@@ -985,6 +1055,7 @@ def run(arguments: argparse.Namespace) -> None:
             project_copy.name,
             arguments.target,
             arguments,
+            patched_bootloader,
         )
         if arguments.memory_contract:
             post_link_check = subprocess.run(

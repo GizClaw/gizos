@@ -27,6 +27,10 @@ flash_protect_type_t bk_flash_get_protect_type(void);
 uint8_t bk_ota_get_current_partition(void);
 const h2_fixed_layout_t* h2_bk_fixed_layout(void);
 int h2_bk_fixed_layout_active(void);
+int h2_bk_fixed_mapped_abi(void);
+int h2_bk_fixed_loader_update_check(uint64_t image_size);
+int h2_bk_fixed_boot_context_check(void);
+int h2_bk_fixed_relay_confirmed(void);
 uint8_t h2_bk_fixed_current_slot(void);
 int h2_bk_fixed_select(uint32_t partition_id);
 int h2_bk_fixed_next_app(void);
@@ -41,4 +45,5 @@ int h2_bk_fixed_publish_relay_head(uint32_t window_offset, uint32_t window_size,
                                    uint32_t image_size, uint32_t head_size);
 
 int h2_bk_flash_read_plain(uint32_t, uint32_t, uint32_t, void*, size_t);
+int h2_bk_flash_read_boot_plain(uint32_t, uint32_t, void*, size_t);
 unsigned h2_bk_flash_aes_state(void);

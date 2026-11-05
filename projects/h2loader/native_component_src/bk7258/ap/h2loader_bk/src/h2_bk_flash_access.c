@@ -5,6 +5,7 @@
 #include "h2_bk_flash_access_test_sdk.h"
 #else
 #include "driver/flash.h"
+#include "driver/flash_partition.h"
 #include "driver/mb_ipc.h"
 #include "h2/pal/core/h2_pal_errors.h"
 #include "modules/ota.h"
@@ -22,8 +23,8 @@ int h2_bk_flash_access_ready(void) {
 #endif
 }
 
-int h2_bk_flash_read_plain(uint32_t physical, uint32_t capacity,
-                           uint32_t offset, void* output, size_t size) {
+static int read_plain(uint32_t physical, uint32_t capacity, uint32_t offset,
+                      void* output, size_t size) {
   uint8_t* dst = output;
   uint8_t packets[16u * 34u];
   const uint32_t logical_capacity = capacity / 34u * 32u;
@@ -31,7 +32,6 @@ int h2_bk_flash_read_plain(uint32_t physical, uint32_t capacity,
       capacity > 0x1000000u - physical || offset > logical_capacity ||
       size > logical_capacity - offset)
     return H2_PAL_ERR_INVALID_ARG;
-  if (h2_bk_flash_access_ready() != H2_PAL_OK) return H2_PAL_ERR_UNSUPPORTED;
   while (size) {
     const uint32_t first_block = offset / 32u;
     size_t blocks = (offset % 32u + size + 31u) / 32u;
@@ -68,6 +68,32 @@ int h2_bk_flash_read_plain(uint32_t physical, uint32_t capacity,
     }
   }
   return H2_PAL_OK;
+}
+
+int h2_bk_flash_read_plain(uint32_t physical, uint32_t capacity,
+                           uint32_t offset, void* output, size_t size) {
+  if (h2_bk_flash_access_ready() != H2_PAL_OK) return H2_PAL_ERR_UNSUPPORTED;
+  return read_plain(physical, capacity, offset, output, size);
+}
+
+int h2_bk_flash_read_boot_plain(uint32_t boot_size, uint32_t offset,
+                                void* output, size_t size) {
+#if CONFIG_FLASH_CP_AP_DIRECT_ACCESS || CONFIG_CACHE_ENABLE
+  (void)boot_size;
+  (void)offset;
+  (void)output;
+  (void)size;
+  return H2_PAL_ERR_UNSUPPORTED;
+#else
+  const bk_logic_partition_t* own =
+      bk_flash_partition_get_info(BK_PARTITION_APPLICATION);
+  const bk_logic_partition_t* other =
+      bk_flash_partition_get_info(BK_PARTITION_S_APP);
+  if (!own || !other || !boot_size || boot_size > own->partition_start_addr ||
+      boot_size > other->partition_start_addr)
+    return H2_PAL_ERR_INVALID_ARG;
+  return read_plain(0u, boot_size, offset, output, size);
+#endif
 }
 
 unsigned h2_bk_flash_aes_state(void) {
