@@ -5,19 +5,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "h2/pal/hal/h2_pal_ble.h"
 #include "h2_bk_ble_gatt_schema.h"
 
-typedef int h2_pal_ble_t;
+typedef struct {
+  uint16_t len;
+  union {
+    uint8_t uuid128[16];
+  } uuid;
+} bk_bt_uuid_t;
+
+static bk_bt_uuid_t s_h2_bk_ble_service_uuid[H2_BK_BLE_MAX_GATT_SERVICES];
+static bk_bt_uuid_t s_h2_bk_ble_char_uuid[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static uint8_t* s_h2_bk_ble_value[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static uint16_t s_h2_bk_ble_value_len[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static uint16_t s_h2_bk_ble_value_max_len[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static uint32_t s_h2_bk_ble_properties[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static uint32_t s_h2_bk_ble_permissions[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static uint16_t s_h2_bk_ble_value_handle[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static uint16_t s_h2_bk_ble_cccd_handle[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
 enum {
   BK_OK = 0,
   kNoErr = 0,
   BK_BLE_HOST_STACK_TYPE_ETHERMIND = 1,
   BK_UUID_LEN_16 = 2,
+  BK_UUID_LEN_32 = 4,
+  BK_UUID_LEN_128 = 16,
+  H2_BK_BLE_MAX_VALUE_LEN = H2_PAL_BLE_ATT_MAX_VALUE_LEN,
   H2_BK_BLE_ADV_SET_COUNT = 2,
   H2_BK_BLE_TIMEOUT_MS = 100,
   H2_BK_BLE_GATTS_TX_IDLE = 0,
-  H2_PAL_BLE_INVALID_CONN_HANDLE = 65535,
   H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED = 1,
   H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED = 2
 };
@@ -37,8 +54,10 @@ static uint16_t s_h2_bk_ble_service_handle[H2_BK_BLE_MAX_GATT_SERVICES];
 static size_t s_h2_bk_ble_pending_service_index;
 static int s_h2_bk_ble_gatts_if = 1;
 static int s_h2_bk_ble_started, s_h2_bk_ble_gatt_attached;
-static const void* s_h2_bk_ble_read[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
-static const void* s_h2_bk_ble_write[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static h2_pal_ble_gatt_read_fn
+    s_h2_bk_ble_read[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
+static h2_pal_ble_gatt_write_fn
+    s_h2_bk_ble_write[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
 static void* s_h2_bk_ble_gatt_user[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
 static uint16_t* s_h2_bk_ble_out_service_handle[H2_BK_BLE_MAX_GATT_SERVICES];
 static uint16_t*
@@ -75,6 +94,29 @@ static int rtos_unlock_mutex(void** mutex) {
 static int bk_ble_get_host_stack_type(void) {
   return BK_BLE_HOST_STACK_TYPE_ETHERMIND;
 }
+static int h2_bk_ble_ensure_gatt_mutex(void) { return H2_PAL_OK; }
+static void* psram_malloc(size_t size) { return malloc(size); }
+static void h2_bk_ble_rollback_service_slot(size_t index) {
+  (void)index;
+  assert(!"unexpected registration rollback");
+}
+static h2_pal_result_t probe_read(void* user,
+                                  const h2_pal_ble_gatt_access_t* access,
+                                  uint8_t* out, size_t size, size_t* out_len) {
+  (void)access;
+  assert(size > 0 && user != NULL);
+  out[0] = (uint8_t)*(int*)user;
+  *out_len = 1;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t probe_write(void* user,
+                                   const h2_pal_ble_gatt_access_t* access,
+                                   const uint8_t* data, size_t size) {
+  (void)access;
+  assert(size == 1 && user != NULL);
+  *(int*)user = data[0];
+  return H2_PAL_OK;
+}
 static int h2_bk_ble_ensure_sem(void) { return H2_PAL_OK; }
 static int h2_bk_ble_ensure_gap_registered(void) { return H2_PAL_OK; }
 static int h2_bk_ble_ensure_gatts_registered(void) { return H2_PAL_OK; }
@@ -105,6 +147,11 @@ static int bk_ble_gatts_create_attr_tab(const int* db, int interface,
   /* SDK service tables survive the provider's logical Host stop. */
   if (sdk_tables == 6) return -1;
   s_h2_bk_ble_service_handle[index] = (uint16_t)(100 + ++sdk_tables);
+  size_t first = h2_bk_ble_gatt_schema_first_slot(index);
+  for (size_t i = 0; i < s_h2_bk_ble_service_characteristic_count[index]; ++i) {
+    s_h2_bk_ble_value_handle[first + i] = (uint16_t)(200 + first + i);
+    s_h2_bk_ble_cccd_handle[first + i] = (uint16_t)(300 + first + i);
+  }
   return BK_OK;
 }
 static int bk_ble_gatts_start_service(uint16_t handle) {
@@ -138,10 +185,125 @@ static int h2_bk_ble_cleanup_initiator(void) { return H2_PAL_OK; }
 
 /* PRODUCTION_FUNCTIONS */
 
+static void probe_retained_schema(int scenario) {
+  const uint8_t service_uuid[] = {0x00, 0x18};
+  const uint8_t char_uuid[] = {0x00, 0x2a};
+  const uint8_t initial[] = {42};
+  int old_user = 11, new_user = 22;
+  uint16_t service_handle = 0, value_handle = 0, cccd_handle = 0;
+  h2_pal_ble_gatt_characteristic_t chars[2] = {{
+      .uuid = {.data = char_uuid, .len = sizeof(char_uuid)},
+      .properties =
+          H2_PAL_BLE_GATT_PROPERTY_READ | H2_PAL_BLE_GATT_PROPERTY_WRITE,
+      .permissions =
+          H2_PAL_BLE_GATT_PERMISSION_READ | H2_PAL_BLE_GATT_PERMISSION_WRITE,
+      .initial_value = initial,
+      .initial_value_len = sizeof(initial),
+      .max_value_len = 0,
+      .read = probe_read,
+      .write = probe_write,
+      .user = &old_user,
+      .out_value_handle = &value_handle,
+      .out_cccd_handle = &cccd_handle,
+  }};
+  chars[1] = chars[0];
+  h2_pal_ble_gatt_service_t service = {
+      .uuid = {.data = service_uuid, .len = sizeof(service_uuid)},
+      .primary = true,
+      .characteristics = chars,
+      .characteristic_count = 2,
+      .out_service_handle = &service_handle,
+  };
+  s_h2_bk_ble_service_count = 0;
+  assert(h2_bk_ble_register_gatt_services(NULL, &service, 1) == H2_PAL_OK);
+  assert(h2_bk_ble_start(NULL) == H2_PAL_OK);
+  assert(h2_bk_ble_stop(NULL) == H2_PAL_OK);
+  const uint32_t properties = chars[1].properties;
+  const uint32_t permissions = chars[1].permissions;
+  chars[0].user = chars[1].user = &new_user;
+  if (scenario < 6) {
+    /* A mismatch in the last characteristic must not partially rebind the
+     * first. */
+    unsigned cases = scenario == 3 ? 8 : scenario == 4 ? 5 : 2;
+    for (unsigned i = 0; i < cases; ++i) {
+      chars[1].permissions = permissions;
+      chars[1].properties = properties;
+      chars[1].max_value_len = 0;
+      if (scenario == 3) {
+        /* Include permission removal and encrypted/authenticated tightening. */
+        if (i < 6) {
+          chars[1].permissions = permissions ^ (1u << i);
+        } else {
+          chars[1].permissions =
+              i == 6 ? H2_PAL_BLE_GATT_PERMISSION_READ_ENCRYPTED |
+                           H2_PAL_BLE_GATT_PERMISSION_WRITE_ENCRYPTED
+                     : H2_PAL_BLE_GATT_PERMISSION_READ_AUTHENTICATED |
+                           H2_PAL_BLE_GATT_PERMISSION_WRITE_AUTHENTICATED;
+        }
+      } else if (scenario == 4) {
+        /* Includes adding notify/indicate (CCCD layout) and write-no-response.
+         */
+        chars[1].properties = properties ^ (1u << i);
+      } else {
+        assert(scenario == 5);
+        chars[1].max_value_len = i == 0 ? 16 : 128;
+      }
+      service_handle = value_handle = cccd_handle = 999;
+      assert(h2_bk_ble_register_gatt_services(NULL, &service, 1) ==
+             H2_PAL_ERR_INVALID_STATE);
+      assert(mutex_depth == 0 && !s_h2_bk_ble_gatt_attached);
+      assert(service_handle == 999 && value_handle == 999 &&
+             cccd_handle == 999);
+      for (size_t j = 0; j < 2; ++j) {
+        assert(s_h2_bk_ble_read[j] == NULL && s_h2_bk_ble_write[j] == NULL);
+        assert(s_h2_bk_ble_gatt_user[j] == NULL);
+        assert(s_h2_bk_ble_out_value_handle[j] == NULL);
+        assert(s_h2_bk_ble_properties[j] == properties);
+        assert(s_h2_bk_ble_permissions[j] == permissions);
+        assert(s_h2_bk_ble_value_max_len[j] == H2_BK_BLE_MAX_VALUE_LEN);
+        assert(s_h2_bk_ble_value[j][0] == initial[0]);
+      }
+      assert(sdk_tables == 1 && sdk_starts == 1);
+    }
+  } else {
+    assert(scenario == 6);
+  }
+  chars[1].permissions = permissions;
+  chars[1].properties = properties;
+  /* Explicit full capacity and default capacity describe the same schema. */
+  chars[1].max_value_len = H2_BK_BLE_MAX_VALUE_LEN;
+  chars[0].read = NULL;
+  for (unsigned cycle = 0; cycle < 128; ++cycle) {
+    assert(h2_bk_ble_register_gatt_services(NULL, &service, 1) == H2_PAL_OK);
+    assert(service_handle == 101 && value_handle == 201 && cccd_handle == 301);
+    assert(h2_bk_ble_start(NULL) == H2_PAL_OK);
+    assert(s_h2_bk_ble_read[0] == NULL);
+    uint8_t out = 0;
+    size_t out_len = 0;
+    assert(s_h2_bk_ble_read[1](s_h2_bk_ble_gatt_user[1], NULL, &out, 1,
+                               &out_len) == H2_PAL_OK);
+    assert(out == (uint8_t)new_user && out_len == 1);
+    const uint8_t value = (uint8_t)cycle;
+    assert(s_h2_bk_ble_write[1](s_h2_bk_ble_gatt_user[1], NULL, &value, 1) ==
+           H2_PAL_OK);
+    assert(new_user == (int)cycle && old_user == 11);
+    assert(h2_bk_ble_stop(NULL) == H2_PAL_OK);
+    assert(s_h2_bk_ble_read[1] == NULL && s_h2_bk_ble_gatt_user[1] == NULL);
+  }
+  assert(sdk_tables == 1 && sdk_starts == 1);
+  for (size_t j = 0; j < 2; ++j) free(s_h2_bk_ble_value[j]);
+  puts(
+      "PASS retained schema validation and callback rebinding across Host stop");
+}
+
 int main(int argc, char** argv) {
   (void)h2_bk_ble_unregister_gatt_services;
   assert(argc == 2);
   int scenario = atoi(argv[1]);
+  if (scenario >= 3) {
+    probe_retained_schema(scenario);
+    return 0;
+  }
   uint16_t output = 0;
   int borrowed = 123;
   if (scenario == 0) {
@@ -163,8 +325,8 @@ int main(int argc, char** argv) {
   }
   assert(h2_bk_ble_start(NULL) == H2_PAL_OK);
   s_h2_bk_ble_gatt_attached = 1;
-  s_h2_bk_ble_read[0] = &borrowed;
-  s_h2_bk_ble_write[0] = &borrowed;
+  s_h2_bk_ble_read[0] = probe_read;
+  s_h2_bk_ble_write[0] = probe_write;
   s_h2_bk_ble_gatt_user[0] = &borrowed;
   s_h2_bk_ble_out_service_handle[0] = &output;
   s_h2_bk_ble_out_value_handle[0] = &output;

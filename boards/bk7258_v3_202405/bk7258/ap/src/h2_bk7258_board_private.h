@@ -92,6 +92,9 @@ h2_pal_modem_t* h2_bk7258_board_modem(void);
 h2_pal_display_t* h2_bk7258_board_display(void);
 h2_pal_audio_t* h2_bk7258_board_audio(void);
 int h2_bk7258_board_display_black(void);
+/* Task-context, storage-only initialization. Mounts /dl and /data before
+ * publishing fs; repeated calls reuse the mount. Propagates storage errors.
+ * Does not initialize product display/audio/input providers. */
 int h2_bk7258_board_fs_init(h2_pal_fs_api_t* fs);
 
 #ifdef __cplusplus

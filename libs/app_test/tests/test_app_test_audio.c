@@ -376,37 +376,52 @@ static void test_contended_backoff_failure(void) {
 }
 
 static void test_subframe_jitter_keeps_mic_deadlines(void) {
-  const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};
-  fake_time_t time = {.now_ms = 1000u};
-  time.api = (h2_pal_time_api_t){.user = &time, .vtable = &s_time_vtable};
-  fake_audio_t fake = {.mic_format = {16000u, 320u, 1u, H2_AUDIO_SAMPLE_S16LE}};
-  fake.api = (h2_pal_audio_api_t){.user = &fake, .vtable = &s_audio_vtable};
-  uint8_t pcm[640u * 8u];
-  memset(pcm, 0x35, sizeof(pcm));
-  const h2_app_test_audio_fixture_t fixture = {pcm, sizeof(pcm),
-                                               fake.mic_format};
-  h2_app_test_audio_t* audio = NULL;
-  assert(h2_app_test_audio_create(&mem, &time.api, &fake.api, &fixture,
-                                  &audio) == H2_PAL_OK);
-  h2_app_test_audio_set_capture_active(audio, true);
-  const h2_pal_audio_api_t* api = h2_app_test_audio_api(audio);
-  assert(h2_pal_audio_start_mic(api) == H2_PAL_OK);
-  uint8_t output[640];
-  h2_audio_frame_t frame =
-      h2_audio_frame_for_buffer(output, sizeof(output), fake.mic_format);
-  const uint64_t times[] = {1000u, 1021u, 1040u, 1061u, 1080u};
-  for (size_t i = 0u; i < sizeof(times) / sizeof(times[0]); ++i) {
-    time.now_ms = times[i];
+  const struct {
+    uint32_t sample_rate;
+    uint32_t frame_samples;
+    uint64_t times[5];
+  } cases[] = {
+      {16000u, 320u, {1000u, 1021u, 1040u, 1061u, 1080u}},
+      /* 256/48000 s alternates rounded frame intervals of 5 and 6 ms. */
+      {48000u, 256u, {1000u, 1006u, 1011u, 1016u, 1022u}},
+      /* The 11 ms read has missed the next rounded deadline, despite being
+       * less than ceil(256/48000 s) late. It must not burst another frame. */
+      {48000u, 256u, {1000u, 1011u, 1016u, 1021u, 1027u}},
+  };
+  for (size_t c = 0u; c < sizeof(cases) / sizeof(cases[0]); ++c) {
+    const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};
+    fake_time_t time = {.now_ms = 1000u};
+    time.api = (h2_pal_time_api_t){.user = &time, .vtable = &s_time_vtable};
+    fake_audio_t fake = {.mic_format = {cases[c].sample_rate,
+                                        cases[c].frame_samples, 1u,
+                                        H2_AUDIO_SAMPLE_S16LE}};
+    fake.api = (h2_pal_audio_api_t){.user = &fake, .vtable = &s_audio_vtable};
+    uint8_t pcm[640u * 8u];
+    memset(pcm, 0x35, sizeof(pcm));
+    const h2_app_test_audio_fixture_t fixture = {pcm, sizeof(pcm),
+                                                 fake.mic_format};
+    h2_app_test_audio_t* audio = NULL;
+    assert(h2_app_test_audio_create(&mem, &time.api, &fake.api, &fixture,
+                                    &audio) == H2_PAL_OK);
+    h2_app_test_audio_set_capture_active(audio, true);
+    const h2_pal_audio_api_t* api = h2_app_test_audio_api(audio);
+    assert(h2_pal_audio_start_mic(api) == H2_PAL_OK);
+    uint8_t output[640];
+    h2_audio_frame_t frame =
+        h2_audio_frame_for_buffer(output, sizeof(output), fake.mic_format);
+    for (size_t i = 0u; i < sizeof(cases[c].times) / sizeof(cases[c].times[0]);
+         ++i) {
+      time.now_ms = cases[c].times[i];
+      assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+      assert(frame.bytes == cases[c].frame_samples * 2u);
+      assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+    }
+    time.now_ms = 2000u;
     assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
-    assert(frame.bytes == sizeof(output));
     assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+    assert(h2_pal_audio_stop_mic(api) == H2_PAL_OK);
+    assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
   }
-  /* Real stalls retain the existing no-catch-up behavior. */
-  time.now_ms = 2000u;
-  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
-  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
-  assert(h2_pal_audio_stop_mic(api) == H2_PAL_OK);
-  assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
 }
 
 static void test_fixture_ready_lead_in(void) {

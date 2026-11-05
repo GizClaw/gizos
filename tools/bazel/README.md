@@ -149,11 +149,11 @@ A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDEN
 
 ## BK7258 external builds
 
-Source `.env/devenv` before requesting a BK7258 build. The canonical provider exports only `BK7258_PATH`. A repository rule validates the SDK commit in [`native_versions/bk7258_sdk_commit.txt`](native_versions/bk7258_sdk_commit.txt) and a clean tracked checkout. Another repository rule downloads Arm GNU 10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values, and exposes compiler version `10.3.1` through a locator. The action receives those locators and a Bazel Python runtime; it does not inherit SDK, toolchain, archive, Python, or `PATH` variables from the caller.
+Set up and activate the catalog's `3.1.1-r6bbf627` entry before requesting a BK7258 build. The native repository consumes `BK7258_PATH` from that environment. A repository rule validates the SDK commit in [`native_versions/bk7258_sdk_commit.txt`](native_versions/bk7258_sdk_commit.txt) and a clean tracked checkout. Another repository rule downloads Arm GNU 10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values, and exposes compiler version `10.3.1` through a locator. The action receives those locators and a Bazel Python runtime; it does not inherit SDK, toolchain, archive, Python, or `PATH` variables from the caller.
 
 ```sh
-bun tools/gizos/src/cli.ts setup bk 3.1.1
-eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1 --shell sh)"
+bun tools/gizos/src/cli.ts setup bk 3.1.1-r6bbf627
+eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1-r6bbf627 --shell sh)"
 bazel build --config=bk7258  //projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405:package
 ```
 

@@ -126,11 +126,13 @@ h2loader_bk7258_firmware(
         "ap_config": [
             "//boards/bk7258_v3_202405/bk7258:ap.defaults",
             "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:ap.defaults",
+            ":mfg.defaults",
         ],
         "ap_gpio": "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:ap_gpio_display",
         "cp_config": [
             "//boards/bk7258_v3_202405/bk7258:cp.defaults",
             "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:cp.defaults",
+            ":mfg.defaults",
         ],
         "cp_gpio": "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:cp_gpio",
         "project_support_files": ["//boards/bk7258_v3_202405/bk7258/layouts/loader:layout"],

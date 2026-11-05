@@ -433,15 +433,14 @@ static int decorated_mic_read(void* user, h2_audio_frame_t* out_frame,
     fixture_unlock(audio);
     return H2_PAL_ERR_NO_SPACE;
   }
-  /* Sub-frame scheduling jitter must not move the next absolute deadline:
-   * doing so makes an on-time nonblocking pump miss every other frame.
-   * Rebase after a whole-frame stall so old frames still cannot burst. */
+  /* Small scheduling jitter preserves the absolute sample clock. Rebase once
+   * the following rounded sample deadline is reached, so fractional frame
+   * durations cannot deliver a second old frame at the same timestamp. */
   const uint64_t lateness = now_ms > audio->fixture_next_due_ms
                                 ? now_ms - audio->fixture_next_due_ms
                                 : 0u;
-  const uint64_t frame_ms =
-      (frame_samples * UINT64_C(1000) + sample_rate - 1u) / sample_rate;
-  const uint64_t shift = lateness >= frame_ms ? lateness : 0u;
+  const uint64_t next_due_ms = audio->fixture_epoch_ms + due_offset_ms;
+  const uint64_t shift = now_ms >= next_due_ms ? lateness : 0u;
   if (shift > UINT64_MAX - audio->fixture_epoch_ms - due_offset_ms) {
     fixture_unlock(audio);
     return H2_PAL_ERR_NO_SPACE;

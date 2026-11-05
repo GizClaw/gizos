@@ -444,6 +444,9 @@ int h2_bk7258_board_fs_init(h2_pal_fs_api_t* fs) {
   if (fs == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  int rc = board_mount_file_point(H2_BK7258_DL_MOUNT_PATH);
+  if (rc == H2_PAL_OK) rc = board_mount_file_point(H2_BK7258_DATA_MOUNT_PATH);
+  if (rc != H2_PAL_OK) return rc;
   *fs = api;
   return H2_PAL_OK;
 }
@@ -459,12 +462,6 @@ h2_pal_result_t h2_bk7258_board_runtime_config(
     return H2_PAL_OK;
   }
   h2_pal_result_t rc = h2_bk7258_board_fs_init(&s_runtime_fs);
-  if (rc == H2_PAL_OK) {
-    rc = board_mount_file_point(H2_BK7258_DL_MOUNT_PATH);
-  }
-  if (rc == H2_PAL_OK) {
-    rc = board_mount_file_point(H2_BK7258_DATA_MOUNT_PATH);
-  }
   if (rc != H2_PAL_OK) {
     return rc;
   }

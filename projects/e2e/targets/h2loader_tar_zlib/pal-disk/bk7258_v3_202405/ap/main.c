@@ -3,7 +3,7 @@
 #include <bk_private/bk_init.h>
 #include <inttypes.h>
 #include <os/os.h>
-#include <soc/reg_base.h>
+#include <common/sys_config.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -43,19 +43,13 @@ static int emit(void* user, const char* phase,
         result->cores_verified, result->workers_joined);
   }
   if (len < 0 || (size_t)len >= sizeof(line)) return H2_PAL_ERR_TRUNCATED;
-  volatile uint32_t* uart = (volatile uint32_t*)SOC_UART1_REG_BASE;
-  for (int i = 0; i < len; ++i) {
-    unsigned attempts = 0;
-    for (; attempts < 200000u; ++attempts) {
-      const uint32_t status = uart[6];
-      if (!(status & (1u << 16u)) && (status & (1u << 20u))) {
-        uart[7] = (uint8_t)line[i];
-        break;
-      }
-    }
-    if (attempts == 200000u) return H2_PAL_ERR_WRITE;
-  }
-  return 0;
+  size_t written = 0;
+  /* One write keeps the complete record under the management transport's TX
+   * mutex and shell suspension. Never retry a suffix after releasing ownership.
+   */
+  int rc = h2_pal_uart_io_stream_write(h2_bk_platform_uart_io_stream_api(),
+                                       line, (size_t)len, &written, 1000u);
+  return rc ? rc : written == (size_t)len ? H2_PAL_OK : H2_PAL_ERR_WRITE;
 }
 
 static uint32_t current_core(void* user) {
@@ -101,6 +95,16 @@ static void controller(void* argument) {
 int main(void) {
   if (h2_bk_target_task_policy_install() != 0) return -1;
   bk_init();
+  const h2_pal_uart_io_stream_config_t uart_config = {
+      .baud_rate = CONFIG_UART_PRINT_BAUD_RATE,
+      .data_bits = 8,
+      .stop_bits = 1,
+      .parity = H2_PAL_UART_PARITY_NONE,
+      .flow_control = H2_PAL_UART_FLOW_CONTROL_NONE,
+  };
+  if (h2_pal_uart_io_stream_configure(h2_bk_platform_uart_io_stream_api(),
+                                      &uart_config))
+    return -1;
   const h2_pal_disk_e2e_result_t result = {0};
   if (emit(NULL, "boot", &result)) return -1;
   beken_thread_t thread;

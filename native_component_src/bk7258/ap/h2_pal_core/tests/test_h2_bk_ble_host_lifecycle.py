@@ -22,11 +22,16 @@ class BKBLEHostLifecycle(unittest.TestCase):
     def setUpClass(cls):
         source = (COMPONENT / "src/h2_bk_platform_ble.c").read_text()
         functions = [
+            "h2_bk_ble_uuid_from_pal",
+            "h2_bk_ble_uuid_equal",
+            "h2_bk_ble_service_characteristic_first",
+            "h2_bk_ble_update_out_handles",
             "h2_bk_ble_clear_out_handle_ptrs",
             "h2_bk_ble_unregister_gatt_services",
             "h2_bk_ble_start_configured_services",
             "h2_bk_ble_start",
             "h2_bk_ble_stop",
+            "h2_bk_ble_register_gatt_services",
         ]
         body = "\n\n".join(function_source(source, name) for name in functions)
         probe = (COMPONENT / "tests/ble_host_lifecycle_probe.c").read_text()
@@ -57,6 +62,18 @@ class BKBLEHostLifecycle(unittest.TestCase):
 
     def test_failed_detach_retains_ownership_for_retry(self):
         self.run_scenario(2)
+
+    def test_permission_changes_after_stop_are_rejected(self):
+        self.run_scenario(3)
+
+    def test_property_changes_after_stop_are_rejected(self):
+        self.run_scenario(4)
+
+    def test_maximum_length_changes_after_stop_are_rejected(self):
+        self.run_scenario(5)
+
+    def test_unchanged_schema_rebinds_callbacks_after_stop(self):
+        self.run_scenario(6)
 
 
 if __name__ == "__main__":

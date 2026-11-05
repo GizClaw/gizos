@@ -22,6 +22,38 @@ def function(source, name):
     return source[match.start():end]
 
 
+def negative_control(source):
+    """Restore the completion races in a copy of the pinned implementation.
+
+    Clearing a waiter flag after signaling permits the resumed core's next
+    transfer to lose its completion. Removing DMA/ordinary-IRQ ownership guards
+    also lets an ordinary IRQ consume a DMA transfer. No SDK history is needed.
+    """
+    for direction in ("tx", "rx"):
+        name = "spi_dma_" + direction + "_finish_handler"
+        current = function(source, name)
+        changed, count = re.subn(
+            r"\n\s*if \(was_blocked\) \{\n\s*s_spi\[spi_id\]\.is_" + direction
+            + r"_blocked = false;\n\s*\}", "", current, count=1)
+        assert count == 1, "pinned DMA completion claim changed: " + name
+        signal = "rtos_set_semaphore(&s_spi[spi_id]." + direction + "_sema);"
+        assert changed.count(signal) == 1
+        changed = changed.replace(signal, signal + "\n\t\ts_spi[spi_id].is_" + direction + "_blocked = false;")
+        assert source.count(current) == 1
+        source = source.replace(current, changed)
+    current = function(source, "spi_isr_common")
+    changed, guards = re.subn(r"!s_spi\[id\]\.completion_(?:tx|rx)_dma_active\s*&&\s*", "", current)
+    assert guards == 7, "pinned ordinary-IRQ ownership guards changed"
+    changed, claims = re.subn(r"\n\s*s_spi\[id\]\.is_(?:tx|rx)_blocked = false;", "", changed)
+    assert claims == 4, "pinned ordinary-IRQ completion claims changed"
+    for direction in ("tx", "rx"):
+        signal = "rtos_set_semaphore(&s_spi[id]." + direction + "_sema);"
+        assert changed.count(signal) == 1
+        changed = changed.replace(signal, signal + "\n\t\ts_spi[id].is_" + direction + "_blocked = false;")
+    assert source.count(current) == 1
+    return source.replace(current, changed)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sdk", type=Path)
@@ -45,10 +77,10 @@ def main():
     with tempfile.TemporaryDirectory(prefix="h2-spi-completion-") as temporary:
         work = Path(temporary)
         baseline = work / "baseline_spi.c"
-        baseline.write_text(subprocess.check_output(["git", "-C", str(sdk), "show", "9020466789460701a62a823deb4a98edd6ea0e5d:ap/middleware/driver/spi/spi_driver.c"], text=True))
+        baseline.write_text(negative_control(original.read_text()))
         generated = original
         corrected_profiles, negative_controls = 0, 0
-        for name, source in (("original", baseline), ("corrected", generated)):
+        for name, source in (("negative", baseline), ("corrected", generated)):
             unit, binary = work / (name + ".c"), work / name
             functions = "\n".join(function(source.read_text(), symbol) for symbol in (
                 "bk_spi_clr_tx", "bk_spi_clr_rx", "spi_isr_common",
@@ -71,7 +103,7 @@ def main():
                                 if irq:
                                     command.append(irq)
                                 run = subprocess.run(command, capture_output=True, text=True, timeout=15)
-                                if name == "original":
+                                if name == "negative":
                                     assert run.returncode != 0, "uncorrected SDK unexpectedly passed"
                                     negative_controls += 1
                                     expected_errors = ["second SPI completion lost"]
@@ -86,7 +118,7 @@ def main():
                 for retry in ("normal", "retry"):
                     run = subprocess.run([str(binary), "duplex", role, retry],
                                          capture_output=True, text=True, timeout=15)
-                    if name == "original":
+                    if name == "negative":
                         assert run.returncode != 0, "uncorrected duplex SDK unexpectedly passed"
                         negative_controls += 1
                         assert "ordinary SPI IRQ consumed duplex DMA completion" in run.stderr, run.stderr
@@ -96,7 +128,7 @@ def main():
                         print(run.stdout, end="")
     assert hashlib.sha256(original.read_bytes()).hexdigest() == before, "sealed SDK was modified"
     print(json.dumps(dict(result="PASS", sdk_commit=actual, sdk_source_sha256=before,
-                          original_negative_controls="TX/RX FAIL as expected",
+                          negative_control="pinned-source completion-race mutations fail as expected",
                           corrected="TX/RX CPU/DMA SMP handoff, ordinary IRQ isolation and duplex retry PASS",
                           corrected_profiles=corrected_profiles, negative_controls=negative_controls,
                           sanitized=args.sanitize),

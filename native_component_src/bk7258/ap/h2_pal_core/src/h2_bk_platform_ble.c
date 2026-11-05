@@ -3354,11 +3354,22 @@ static h2_pal_result_t h2_bk_ble_register_gatt_services(
     return H2_PAL_ERR_INVALID_STATE;
   }
   size_t first = h2_bk_ble_service_characteristic_first(service_index);
+  /* Retained SDK tables cannot adopt a new schema through callback rebinding.
+   * Validate every characteristic before changing any bindings or values. */
   for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
+    const h2_pal_ble_gatt_characteristic_t* ch =
+        &services[0].characteristics[i];
+    uint16_t max_value_len =
+        ch->max_value_len > 0u && ch->max_value_len < H2_BK_BLE_MAX_VALUE_LEN
+            ? (uint16_t)ch->max_value_len
+            : H2_BK_BLE_MAX_VALUE_LEN;
     if (!add_service &&
         (s_h2_bk_ble_value[first + i] == NULL ||
          !h2_bk_ble_uuid_equal(&s_h2_bk_ble_char_uuid[first + i],
-                               &char_uuids[i]))) {
+                               &char_uuids[i]) ||
+         s_h2_bk_ble_properties[first + i] != ch->properties ||
+         s_h2_bk_ble_permissions[first + i] != ch->permissions ||
+         s_h2_bk_ble_value_max_len[first + i] != max_value_len)) {
       (void)rtos_unlock_mutex(&s_h2_bk_ble_gatt_mutex);
       return H2_PAL_ERR_INVALID_STATE;
     }
