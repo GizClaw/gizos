@@ -44,6 +44,19 @@ bazel build --config=bk7258 \
 
 `/absolute/path/to/private-keys` 是仓库外的私有目录，含空的 `REPO.bazel`、导出 `device.key` 的 `BUILD.bazel` 和设备匹配的 32 字节密钥文件。key 是加密 action 的声明输入；native 编译不接触 key，Gizloader 和设备也不接收 key。缺失或长度错误会失败，不回退到明文。加密 action 为 local、no-remote、no-cache；Bazel 仍保留本地输入摘要和密文输出。普通 CI 使用公共测试 key，不使用设备私钥。
 
+也可使用板级本地配置：在 `boards/h202_bk_v2/.private/` 中提供空的 `REPO.bazel`、导出 `device.key` 的 `BUILD.bazel`，并把 `device.key` 设为私钥文件或指向仓库外私钥的符号链接。该目录由板级 `.gitignore` 排除，不随源码提交；Bazel 的普通板级通配查询也不会进入这个私有 repository。
+
+板级 `encryption.bazelrc` 只保存公开的文件引用方式，须显式选择 H202 配置，避免其他板误用密钥：
+
+```bash
+bazel --bazelrc=boards/h202_bk_v2/encryption.bazelrc build \
+  --config=h202_encrypted \
+  //projects/mfg/apps/h202_bk_v2:encrypted_package \
+  --output_groups=+encryption_evidence
+```
+
+该配置同时选择 BK7258 平台和私有 key label；native 编译仍不接触密钥，普通 CI 不需要这个私有目录。
+
 加密目标继承普通目标的身份、版本、格式和数据，输出目录为 `encrypted_package/`。Gizloader 使用其中的标准 `.update.tar.zlib`；`encryption_evidence` 还提供密文 `.flash-aes.rbl`、完整恢复 `.flash-aes.bin` 和回执。旧的 `:encrypted_recovery`、运行时 `--key-fd` 和私有离线加密脚本不再是 H202 构建入口。
 
 ## 安装与恢复

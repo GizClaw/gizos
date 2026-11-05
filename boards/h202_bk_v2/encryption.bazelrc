@@ -1,0 +1,5 @@
+# Opt in with --bazelrc=boards/h202_bk_v2/encryption.bazelrc and
+# --config=h202_encrypted. The private repository is local and Git-ignored.
+build:h202_encrypted --config=bk7258
+build:h202_encrypted --inject_repository=private_keys=boards/h202_bk_v2/.private
+build:h202_encrypted --//projects/h2loader/tools/bazel:encryption_key=@private_keys//:device.key
