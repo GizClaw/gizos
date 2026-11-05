@@ -433,16 +433,20 @@ static int decorated_mic_read(void* user, h2_audio_frame_t* out_frame,
     fixture_unlock(audio);
     return H2_PAL_ERR_NO_SPACE;
   }
-  /* A delayed consumer must not burst old frames into a realtime uplink.
-   * Preserve fractional-rate rounding while moving the epoch past a stall. */
+  /* Sub-frame scheduling jitter must not move the next absolute deadline:
+   * doing so makes an on-time nonblocking pump miss every other frame.
+   * Rebase after a whole-frame stall so old frames still cannot burst. */
   const uint64_t lateness = now_ms > audio->fixture_next_due_ms
                                 ? now_ms - audio->fixture_next_due_ms
                                 : 0u;
-  if (lateness > UINT64_MAX - audio->fixture_epoch_ms - due_offset_ms) {
+  const uint64_t frame_ms =
+      (frame_samples * UINT64_C(1000) + sample_rate - 1u) / sample_rate;
+  const uint64_t shift = lateness >= frame_ms ? lateness : 0u;
+  if (shift > UINT64_MAX - audio->fixture_epoch_ms - due_offset_ms) {
     fixture_unlock(audio);
     return H2_PAL_ERR_NO_SPACE;
   }
-  audio->fixture_epoch_ms += lateness;
+  audio->fixture_epoch_ms += shift;
   uint8_t* output = out_frame->data;
   const bool content_started =
       h2_atomic_load(&audio->fixture_content_started) ||
