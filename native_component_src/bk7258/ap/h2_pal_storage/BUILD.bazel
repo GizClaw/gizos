@@ -11,7 +11,7 @@ firmware_native_component(
     hdrs = glob(["include/*.h"]),
     data = ["CMakeLists.txt"],
     execution_unit = "ap",
-    deps = ["//libs/pal"],
+    deps = ["//libs/pal:unsupported"],
 )
 
 cc_test(
@@ -50,4 +50,19 @@ cc_test(
     local_defines = ["H2_BK_SD_FS_HOST_TEST=1"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "sd_fs_disabled_test",
+    srcs = [
+        "include/h2_bk_platform_storage.h",
+        "src/h2_bk_platform_sd_fs.c",
+        "tests/test_h2_bk_platform_sd_fs_disabled.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    local_defines = ["H2_BK_SD_FS_ENABLED=0"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/pal:unsupported"],
 )

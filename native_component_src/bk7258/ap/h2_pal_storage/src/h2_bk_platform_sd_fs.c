@@ -1,5 +1,8 @@
 #include "h2_bk_platform_storage.h"
 
+#if defined(H2_BK_SD_FS_HOST_TEST) || \
+    (defined(H2_BK_SD_FS_ENABLED) && H2_BK_SD_FS_ENABLED)
+
 #ifdef H2_BK_SD_FS_HOST_TEST
 #include "h2_bk_sd_fs_test_sdk.h"
 #else
@@ -422,3 +425,29 @@ int h2_bk_platform_sd_fs_init(const h2_bk_sd_fs_config_t* config,
   *fs = api;
   return H2_PAL_OK;
 }
+
+#else
+
+#include "h2/pal/h2_pal_unsupported.h"
+
+int h2_bk_platform_sd_fs_init(const h2_bk_sd_fs_config_t* config,
+                              h2_pal_fs_api_t* fs) {
+  if (config == NULL || fs == NULL) return H2_PAL_ERR_INVALID_ARG;
+  *fs = *h2_pal_unsupported_fs_api();
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
+int h2_bk_platform_sd_fs_mount(void* user, const char* path) {
+  (void)user;
+  return path == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_ERR_UNSUPPORTED;
+}
+
+int h2_bk_platform_sd_fs_clear(void* user, const char* path) {
+  (void)user;
+  return path == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_ERR_UNSUPPORTED;
+}
+
+void h2_bk_platform_sd_fs_prepare(void) {}
+void h2_bk_platform_sd_fs_release(void) {}
+
+#endif
