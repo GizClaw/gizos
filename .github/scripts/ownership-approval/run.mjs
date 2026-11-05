@@ -1,5 +1,4 @@
 import {appendFile, readFile} from "node:fs/promises";
-import {execFileSync} from "node:child_process";
 
 import {
   OWNERSHIP_ELIGIBILITY_CONTEXT,
@@ -14,6 +13,7 @@ import {
   parseCodeowners,
   PolicyError,
 } from "./common.mjs";
+import {changedFileEvidence, trustedCheckoutSha} from "./file-evidence.mjs";
 
 const API_VERSION = "2022-11-28";
 const FORK_CHECKS_AUTHORIZATION_DESCRIPTION =
@@ -164,6 +164,28 @@ function eventPullRequest(event) {
   return pullRequest;
 }
 
+function assertPullRequestIdentity(expected, current, repository) {
+  if (
+    current.state !== "open" ||
+    current.number !== expected.number ||
+    current.head?.sha !== expected.head.sha ||
+    current.base?.sha !== expected.base.sha ||
+    current.base.ref !== "main" ||
+    current.base.repo?.full_name !== repository ||
+    !current.head.repo?.full_name ||
+    (expected.head.repo?.full_name &&
+      current.head.repo.full_name !== expected.head.repo.full_name) ||
+    (expected.user?.login &&
+      current.user?.login?.toLowerCase() !== expected.user.login.toLowerCase()) ||
+    (expected.changed_files !== undefined &&
+      current.changed_files !== expected.changed_files)
+  ) {
+    throw new PolicyError(
+      "event pull-request identity is stale or incomplete; wait for the current PR event to rerun",
+    );
+  }
+}
+
 async function main() {
   const repository = requiredEnvironment("GITHUB_REPOSITORY");
   const eventPath = requiredEnvironment("GITHUB_EVENT_PATH");
@@ -184,41 +206,33 @@ async function main() {
       `/repos/${repository}/pulls/${eventPr.number}`,
     );
 
-    const checkedOutSha = execFileSync("git", ["rev-parse", "HEAD"], {
-      encoding: "utf8",
-    }).trim();
+    const checkedOutSha = await trustedCheckoutSha();
     if (checkedOutSha !== eventPr.base.sha) {
       throw new PolicyError(
         `trusted checkout mismatch: expected ${eventPr.base.sha}, received ${checkedOutSha}`,
       );
     }
-    if (currentPr.state !== "open") {
-      throw new PolicyError(`pull request #${eventPr.number} is not open`);
-    }
-    if (
-      currentPr.head.sha !== eventPr.head.sha ||
-      currentPr.base.sha !== eventPr.base.sha ||
-      currentPr.base.ref !== "main" ||
-      (eventPr.user?.login &&
-        currentPr.user.login.toLowerCase() !== eventPr.user.login.toLowerCase())
-    ) {
-      throw new PolicyError(
-        "event pull-request identity is stale; wait for the current PR event to rerun",
-      );
-    }
+    assertPullRequestIdentity(eventPr, currentPr, repository);
+    validateSha(currentPr.base.sha, "pull-request base SHA");
 
-    const [files, reviews, codeownersText] = await Promise.all([
-      paginated(`/repos/${repository}/pulls/${eventPr.number}/files`),
-      paginated(`/repos/${repository}/pulls/${eventPr.number}/reviews`),
+    const [files, codeownersText] = await Promise.all([
+      changedFileEvidence(
+        currentPr,
+        {
+          repository,
+          serverUrl: process.env.GITHUB_SERVER_URL ?? "https://github.com",
+          token: requiredEnvironment("GITHUB_TOKEN"),
+        },
+        () => paginated(`/repos/${repository}/pulls/${eventPr.number}/files`),
+      ),
       readFile(".github/CODEOWNERS", "utf8"),
     ]);
-    if (files.length !== currentPr.changed_files) {
-      throw new PolicyError(
-        `changed-file evidence is incomplete: expected ${currentPr.changed_files}, received ${files.length}`,
-      );
-    }
 
     const rules = parseCodeowners(codeownersText);
+    // Approvals can be dismissed while Git evidence is collected.
+    const reviews = await paginated(
+      `/repos/${repository}/pulls/${eventPr.number}/reviews`,
+    );
     const result = evaluateOwnership({
       rules,
       files,
@@ -230,10 +244,12 @@ async function main() {
       author: currentPr.user.login,
       headSha: currentPr.head.sha,
     });
+    // File/review collection can outlive a push, retarget or close event.
+    const latestPr = await githubRequest(
+      `/repos/${repository}/pulls/${eventPr.number}`,
+    );
+    assertPullRequestIdentity(currentPr, latestPr, repository);
     const statuses = await assertCurrentGeneration(repository, headSha, runUrl);
-    if (!currentPr.head.repo?.full_name) {
-      throw new PolicyError("pull-request head repository identity is missing");
-    }
     const isFork = currentPr.head.repo?.full_name !== repository;
     const hasApprovedForkChecks =
       isFork && result.success && result.approvalApprovers.length > 0;

@@ -59,7 +59,8 @@ function compilePattern(rawPattern, lineNumber) {
     rawPattern.endsWith("/") ||
     (!finalSegment.includes("*") && !finalSegment.includes("?"));
   const suffix = directoryCapable ? "(?:/.*)?$" : "$";
-  return new RegExp(`${prefix}${globToRegex(pattern)}${suffix}`);
+  // Git paths can contain line separators inside directory and globstar matches.
+  return new RegExp(`${prefix}${globToRegex(pattern)}${suffix}`, "s");
 }
 
 export function parseCodeowners(text) {
