@@ -1,0 +1,2 @@
+# Keep both sides of the socket RPC on the same address-family profile.
+CONFIG_IPV6=y

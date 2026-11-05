@@ -66,16 +66,16 @@ _NATIVE_COMPATIBILITY = select({
 _NATIVE_DEPS = [
     "//libs/bleikcp",
     "//libs/command",
-    "//libs/h2loader_host",
+    "//libs/h2loader/host",
     "//libs/pal",
     "//libs/runtime",
-    "//projects/h2loader/apps/cli/app:h2loader_cli_app",
-    "//projects/h2loader/targets/cc_binary/cli:platform",
+    "//tools/gizloader/cli:h2loader_cli_app",
+    "//tools/gizloader/cli:platform",
 ]
 
 cc_binary(
     name = "gizloader-cli",
-    srcs = ["//projects/h2loader/targets/cc_binary/cli:cli_main"],
+    srcs = ["//tools/gizloader/cli:cli_main"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = _NATIVE_COMPATIBILITY,
@@ -111,14 +111,14 @@ cc_test(
 py_test(
     name = "native_cli_test",
     size = "small",
-    srcs = ["//projects/h2loader/targets/cc_binary/cli:test_h2_h2loader_cli_native.py"],
+    srcs = ["//tools/gizloader/cli:test_h2_h2loader_cli_native.py"],
     args = [
         "$(location :gizloader-cli)",
-        "$(location //projects/h2loader/targets/cc_binary/cli:startup_failure_fixture)",
+        "$(location //tools/gizloader/cli:startup_failure_fixture)",
     ],
     data = [
         ":gizloader-cli",
-        "//projects/h2loader/targets/cc_binary/cli:startup_failure_fixture",
+        "//tools/gizloader/cli:startup_failure_fixture",
     ],
     legacy_create_init = 0,
     main = "test_h2_h2loader_cli_native.py",

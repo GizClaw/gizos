@@ -1,0 +1,101 @@
+<!-- zero_esp_v3_0 "device" skin: the Zero enclosure drawn in SVG after the
+     product renders, front and back side by side (440 x 640 units each).
+     Every key is its own shape: Back / OK above Left / Right, the Power
+     microphone key between them, Volume Down on the left edge and Volume Up on the
+     right edge. The separate gem is Record. -->
+<style>
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: radial-gradient(circle at 50% 30%, #1c2c44, #080d16 70%); color: #e5e7eb; font-family: system-ui, sans-serif; }
+  .zero { --w: min(360px, calc(78vh * 440 / 640), 56vw); --u: calc(var(--w) / 440); display: grid; gap: 14px; justify-items: center; }
+  .zero-views { display: flex; gap: calc(40 * var(--u)); align-items: flex-end; }
+  .zero-device { position: relative; width: var(--w); height: calc(640 * var(--u)); }
+  .zero-device.back { width: calc(0.6 * var(--w)); height: calc(0.6 * 640 * var(--u)); }
+  .zero svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 calc(14 * var(--u)) calc(18 * var(--u)) #000a); }
+  .zero-screen { position: absolute; left: calc(150 * var(--u)); top: calc(70 * var(--u)); width: calc(140 * var(--u)); height: calc(140 * var(--u)); display: grid; place-items: center; background: #000; border-radius: calc(4 * var(--u)); }
+  .zero #canvas { display: block; width: calc(140 * var(--u)); height: calc(140 * var(--u)); background: #000; }
+  .zero [data-h2-button] { cursor: pointer; transform-box: fill-box; transform-origin: center; filter: drop-shadow(0 2.5px 0 #0008); transition: transform 70ms ease-out, filter 70ms ease-out; }
+  .zero [data-h2-button]:hover { filter: brightness(1.08) drop-shadow(0 2.5px 0 #0008); }
+  .zero [data-h2-button][data-pressed="true"] { transform: translateY(2.5px) scale(0.95); filter: brightness(0.78); transition-duration: 40ms; }
+  .zero [data-h2-button="volume_down"] { transform-origin: right center; transition-duration: 120ms; }
+  .zero [data-h2-button="volume_down"][data-pressed="true"] { transform: scaleX(0.6); }
+  .zero [data-h2-button="volume_up"] { transform-origin: left center; transition-duration: 120ms; }
+  .zero [data-h2-button="volume_up"][data-pressed="true"] { transform: scaleX(0.6); }
+  .zero .gem[data-pressed="true"] { transform: scale(0.9); filter: brightness(0.7) drop-shadow(0 0 0 #0000); }
+  .zero .key { fill: url(#zero-key); stroke: #4b5563; stroke-width: 1.5; }
+  .zero .silver { fill: url(#zero-silver); stroke: #6b7280; stroke-width: 1.5; }
+  .zero .icon { fill: none; stroke: #374151; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+  .zero [data-h2-slot="controls"] { display: flex; gap: 8px; }
+  .zero [data-h2-slot="controls"] button { padding: 6px 16px; border: 0; border-radius: 6px; background: #93c5fd; color: #0b1a33; font: 700 12px system-ui, sans-serif; cursor: pointer; }
+  .zero [data-h2-slot="controls"] button:disabled { cursor: default; opacity: 0.6; }
+  .zero #status { margin: 0; color: #9fb3cc; font-size: 12px; }
+  .zero-hint { margin: 0; color: #6b7f99; font-size: 11px; }
+</style>
+<main class="zero">
+  <div class="zero-views">
+    <div class="zero-device">
+      <svg viewBox="0 0 440 640" aria-label="Zero screen side">
+        <defs>
+          <polygon id="zero-body" points="220,14 276,16 300,32 334,112 338,196 392,210 410,228 410,318 394,338 352,346 348,420 318,556 272,616 220,632 168,616 122,556 92,420 88,346 46,338 30,318 30,228 48,210 102,196 106,112 140,32 164,16" />
+          <clipPath id="zero-clip"><use href="#zero-body" /></clipPath>
+          <linearGradient id="zero-blue" x1="0" y1="0" x2="1" y2="0.2"><stop offset="0" stop-color="#9cc3f5" /><stop offset="0.45" stop-color="#5b8fd6" /><stop offset="1" stop-color="#2f5ea8" /></linearGradient>
+          <linearGradient id="zero-chrome" x1="0" y1="0" x2="1" y2="0.3"><stop offset="0" stop-color="#ffffff" /><stop offset="0.5" stop-color="#dfe3e8" /><stop offset="1" stop-color="#9aa1ab" /></linearGradient>
+          <linearGradient id="zero-red" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ff8a80" /><stop offset="1" stop-color="#e53935" /></linearGradient>
+          <linearGradient id="zero-key" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f8fafc" /><stop offset="1" stop-color="#c3c9d2" /></linearGradient>
+          <linearGradient id="zero-silver" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f9fafb" /><stop offset="1" stop-color="#9ca3af" /></linearGradient>
+          <linearGradient id="zero-bezel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fb0ee" /><stop offset="1" stop-color="#3b6fc0" /></linearGradient>
+        </defs>
+        <g class="side">
+          <g data-h2-button="volume_down" aria-label="Volume down"><rect class="silver" x="14" y="242" width="20" height="75" rx="8" /><path class="icon" d="M20 279 h8" /></g>
+          <g data-h2-button="volume_up" aria-label="Volume up"><rect class="silver" x="406" y="242" width="20" height="75" rx="8" /><path class="icon" d="M412 279 h8 M416 275 v8" /></g>
+        </g>
+        <rect x="286" y="18" width="30" height="10" rx="3" fill="#9aa1ab" transform="rotate(62 300 24)" />
+        <g clip-path="url(#zero-clip)">
+          <rect width="440" height="640" fill="url(#zero-blue)" />
+          <polygon points="220,14 276,16 300,32 334,112 338,196 316,226 304,300 262,340 220,380 178,340 136,300 124,226 102,196 106,112 140,32 164,16" fill="url(#zero-chrome)" />
+          <polygon points="338,196 392,210 410,228 372,236 344,224" fill="#e5e9ef" />
+          <polygon points="102,196 48,210 30,228 68,236 96,224" fill="#f4f6f9" />
+          <polygon points="220,524 250,490 268,522 298,500 292,560 272,616 220,632 168,616 148,560 142,500 172,522 190,490" fill="url(#zero-red)" />
+          <path d="M262 432 L334 412 M262 446 L302 512 M178 432 L106 412 M178 446 L138 512" stroke="#e5e7eb" stroke-width="11" stroke-linecap="round" />
+        </g>
+        <use href="#zero-body" fill="none" stroke="#9aa1ab" stroke-width="3" />
+        <polyline points="220,380 262,340 304,300 316,226 338,196" fill="none" stroke="#7b8594" stroke-width="2" />
+        <polyline points="220,380 178,340 136,300 124,226 102,196" fill="none" stroke="#7b8594" stroke-width="2" />
+        <polygon points="138,70 160,48 280,48 302,70 302,214 292,224 148,224 138,214" fill="url(#zero-bezel)" stroke="#2d5a9e" stroke-width="2" />
+        <rect x="150" y="70" width="140" height="140" rx="3" fill="#111" />
+        <circle cx="210" cy="418" r="4.5" fill="#e0b64c" /><circle cx="230" cy="418" r="4.5" fill="#e0b64c" />
+        <polygon points="92,256 348,256 352,292 330,342 110,342 88,292" fill="#aeb5bf" stroke="#6b7280" stroke-width="1.5" />
+        <g>
+          <g data-h2-button="left" aria-label="Left"><polygon class="key" points="96,262 122,262 152,298 200,298 200,336 146,336 96,288" /><path class="icon" d="M176 310 l-7 7 l7 7" /></g>
+          <g data-h2-button="back" aria-label="Back"><polygon class="key" points="130,262 200,262 200,292 156,292" /><path class="icon" d="M170 270 h16 M168 277 h18 M170 284 h16" /></g>
+        </g>
+        <g transform="matrix(-1 0 0 1 440 0)">
+          <g data-h2-button="right" aria-label="Right"><polygon class="key" points="96,262 122,262 152,298 200,298 200,336 146,336 96,288" /><path class="icon" d="M176 310 l-7 7 l7 7" /></g>
+          <g data-h2-button="ok" aria-label="OK"><polygon class="key" points="130,262 200,262 200,292 156,292" /><circle class="icon" cx="178" cy="277" r="7" /></g>
+        </g>
+        <g data-h2-button="power" aria-label="Power"><polygon class="silver" points="220,256 237,275 237,321 220,342 203,321 203,275" /><rect class="icon" x="216" y="284" width="8" height="14" rx="4" /><path class="icon" d="M212 295 a8 8 0 0 0 16 0 M220 303 v5" /></g>
+      </svg>
+      <div class="zero-screen"><div data-h2-slot="display"></div></div>
+    </div>
+    <div class="zero-device back">
+      <svg viewBox="0 0 440 640" aria-label="Zero gem side">
+        <defs>
+          <linearGradient id="zero-shell" x1="0" y1="0" x2="1" y2="0.2"><stop offset="0" stop-color="#f3f4f6" /><stop offset="0.55" stop-color="#d1d5db" /><stop offset="1" stop-color="#8b9099" /></linearGradient>
+          <clipPath id="zero-gem"><ellipse cx="220" cy="250" rx="104" ry="140" /></clipPath>
+        </defs>
+        <rect x="6" y="242" width="20" height="75" rx="7" fill="#c7cad1" stroke="#6b7280" />
+        <rect x="414" y="242" width="20" height="75" rx="7" fill="#c7cad1" stroke="#6b7280" />
+        <polygon points="220,14 276,16 300,32 334,112 338,196 392,210 410,228 410,318 394,338 352,346 348,420 318,556 272,616 220,632 168,616 122,556 92,420 88,346 46,338 30,318 30,228 48,210 102,196 106,112 140,32 164,16" fill="url(#zero-shell)" stroke="#6b7280" stroke-width="3" />
+        <polygon points="338,196 392,210 410,228 410,318 394,338 352,346" fill="#c3c8cf" stroke="#8b9099" />
+        <polygon points="102,196 48,210 30,228 30,318 46,338 88,346" fill="#e2e5e9" stroke="#8b9099" />
+        <path d="M220 400 V628 M220 400 L140 560 M220 400 L300 560" stroke="#a3a9b2" stroke-width="2" fill="none" />
+        <g class="gem" data-h2-button="record" aria-label="Record">
+          <ellipse cx="220" cy="250" rx="116" ry="152" fill="#b8bcc4" stroke="#7b8089" stroke-width="3" />
+          <g clip-path="url(#zero-gem)"><polygon points="245,248 231,280 220,250" fill="rgb(203,203,209)"/><polygon points="231,280 207,280 220,250" fill="rgb(218,218,224)"/><polygon points="207,280 194,256 220,250" fill="rgb(223,223,229)"/><polygon points="194,256 204,223 220,250" fill="rgb(202,202,208)"/><polygon points="204,223 229,219 220,250" fill="rgb(203,203,209)"/><polygon points="229,219 245,248 220,250" fill="rgb(202,202,208)"/><polygon points="274,249 265,280 245,248" fill="rgb(196,196,202)"/><polygon points="265,280 246,315 245,248" fill="rgb(202,202,208)"/><polygon points="246,315 231,280 245,248" fill="rgb(206,206,212)"/><polygon points="246,315 219,319 231,280" fill="rgb(196,196,202)"/><polygon points="219,319 192,304 231,280" fill="rgb(191,191,197)"/><polygon points="192,304 207,280 231,280" fill="rgb(205,205,211)"/><polygon points="192,304 175,280 207,280" fill="rgb(206,206,212)"/><polygon points="175,280 170,254 207,280" fill="rgb(214,214,220)"/><polygon points="170,254 194,256 207,280" fill="rgb(225,225,231)"/><polygon points="170,254 172,216 194,256" fill="rgb(221,221,227)"/><polygon points="172,216 191,191 194,256" fill="rgb(217,217,223)"/><polygon points="191,191 204,223 194,256" fill="rgb(219,219,225)"/><polygon points="191,191 221,181 204,223" fill="rgb(222,222,228)"/><polygon points="221,181 245,193 204,223" fill="rgb(202,202,208)"/><polygon points="245,193 229,219 204,223" fill="rgb(224,224,230)"/><polygon points="245,193 261,212 229,219" fill="rgb(218,218,224)"/><polygon points="261,212 274,249 229,219" fill="rgb(218,218,224)"/><polygon points="274,249 245,248 229,219" fill="rgb(215,215,221)"/><polygon points="297,252 295,284 274,249" fill="rgb(196,196,202)"/><polygon points="295,284 279,315 274,249" fill="rgb(195,195,201)"/><polygon points="279,315 265,280 274,249" fill="rgb(188,188,194)"/><polygon points="279,315 257,345 265,280" fill="rgb(201,201,207)"/><polygon points="257,345 246,315 265,280" fill="rgb(186,186,192)"/><polygon points="257,345 236,354 246,315" fill="rgb(185,185,191)"/><polygon points="236,354 206,358 246,315" fill="rgb(191,191,197)"/><polygon points="206,358 219,319 246,315" fill="rgb(191,191,197)"/><polygon points="206,358 180,337 219,319" fill="rgb(199,199,205)"/><polygon points="180,337 192,304 219,319" fill="rgb(193,193,199)"/><polygon points="180,337 160,310 192,304" fill="rgb(195,195,201)"/><polygon points="160,310 145,288 192,304" fill="rgb(202,202,208)"/><polygon points="145,288 175,280 192,304" fill="rgb(201,201,207)"/><polygon points="145,288 142,254 175,280" fill="rgb(212,212,218)"/><polygon points="142,254 170,254 175,280" fill="rgb(203,203,209)"/><polygon points="142,254 144,219 170,254" fill="rgb(230,230,236)"/><polygon points="144,219 161,179 170,254" fill="rgb(224,224,230)"/><polygon points="161,179 172,216 170,254" fill="rgb(210,210,216)"/><polygon points="161,179 185,159 172,216" fill="rgb(215,215,221)"/><polygon points="185,159 191,191 172,216" fill="rgb(216,216,222)"/><polygon points="185,159 208,145 191,191" fill="rgb(218,218,224)"/><polygon points="208,145 234,147 191,191" fill="rgb(209,209,215)"/><polygon points="234,147 221,181 191,191" fill="rgb(228,228,234)"/><polygon points="234,147 264,157 221,181" fill="rgb(229,229,235)"/><polygon points="264,157 245,193 221,181" fill="rgb(213,213,219)"/><polygon points="264,157 281,181 245,193" fill="rgb(211,211,217)"/><polygon points="281,181 293,208 245,193" fill="rgb(196,196,202)"/><polygon points="293,208 261,212 245,193" fill="rgb(197,197,203)"/><polygon points="293,208 297,252 261,212" fill="rgb(199,199,205)"/><polygon points="297,252 274,249 261,212" fill="rgb(196,196,202)"/><polygon points="324,252 319,292 297,252" fill="rgb(205,205,211)"/><polygon points="319,292 308,324 297,252" fill="rgb(184,184,190)"/><polygon points="308,324 295,284 297,252" fill="rgb(182,182,188)"/><polygon points="308,324 295,347 295,284" fill="rgb(205,205,211)"/><polygon points="295,347 279,315 295,284" fill="rgb(194,194,200)"/><polygon points="295,347 273,371 279,315" fill="rgb(182,182,188)"/><polygon points="273,371 257,345 279,315" fill="rgb(195,195,201)"/><polygon points="273,371 245,386 257,345" fill="rgb(179,179,185)"/><polygon points="245,386 225,390 257,345" fill="rgb(195,195,201)"/><polygon points="225,390 236,354 257,345" fill="rgb(209,209,215)"/><polygon points="225,390 193,385 236,354" fill="rgb(207,207,213)"/><polygon points="193,385 206,358 236,354" fill="rgb(205,205,211)"/><polygon points="193,385 171,373 206,358" fill="rgb(195,195,201)"/><polygon points="171,373 180,337 206,358" fill="rgb(200,200,206)"/><polygon points="171,373 149,352 180,337" fill="rgb(197,197,203)"/><polygon points="149,352 132,325 180,337" fill="rgb(217,217,223)"/><polygon points="132,325 160,310 180,337" fill="rgb(211,211,217)"/><polygon points="132,325 119,283 160,310" fill="rgb(223,223,229)"/><polygon points="119,283 145,288 160,310" fill="rgb(211,211,217)"/><polygon points="119,283 116,255 145,288" fill="rgb(212,212,218)"/><polygon points="116,255 142,254 145,288" fill="rgb(228,228,234)"/><polygon points="116,255 119,217 142,254" fill="rgb(237,237,243)"/><polygon points="119,217 129,181 142,254" fill="rgb(235,235,241)"/><polygon points="129,181 144,219 142,254" fill="rgb(232,232,238)"/><polygon points="129,181 149,148 144,219" fill="rgb(236,236,242)"/><polygon points="149,148 161,179 144,219" fill="rgb(232,232,238)"/><polygon points="149,148 165,132 161,179" fill="rgb(220,220,226)"/><polygon points="165,132 185,159 161,179" fill="rgb(226,226,232)"/><polygon points="165,132 193,115 185,159" fill="rgb(222,222,228)"/><polygon points="193,115 220,110 185,159" fill="rgb(211,211,217)"/><polygon points="220,110 208,145 185,159" fill="rgb(210,210,216)"/><polygon points="220,110 250,116 208,145" fill="rgb(215,215,221)"/><polygon points="250,116 234,147 208,145" fill="rgb(213,213,219)"/><polygon points="250,116 275,131 234,147" fill="rgb(222,222,228)"/><polygon points="275,131 264,157 234,147" fill="rgb(228,228,234)"/><polygon points="275,131 296,154 264,157" fill="rgb(210,210,216)"/><polygon points="296,154 309,178 264,157" fill="rgb(221,221,227)"/><polygon points="309,178 281,181 264,157" fill="rgb(222,222,228)"/><polygon points="309,178 320,213 281,181" fill="rgb(217,217,223)"/><polygon points="320,213 293,208 281,181" fill="rgb(200,200,206)"/><polygon points="320,213 324,252 293,208" fill="rgb(192,192,198)"/><polygon points="324,252 297,252 293,208" fill="rgb(192,192,198)"/></g>
+          <ellipse cx="220" cy="250" rx="104" ry="140" fill="none" stroke="#5b6069" stroke-width="3" />
+        </g>
+      </svg>
+    </div>
+  </div>
+  <div data-h2-slot="controls"></div>
+  <p class="zero-hint">←/→ Left/Right · Enter OK · Esc Back · Space Record · P Power · [ ] Volume</p>
+  <div data-h2-slot="status"></div>
+</main>

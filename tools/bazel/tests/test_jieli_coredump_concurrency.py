@@ -9,16 +9,18 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 class CoredumpTest(unittest.TestCase):
     def test_capture(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/src/coredump.c').read_text()
+        source = (ROOT / 'native_component_src/jieli/wl82/h2_pal_image/src/coredump.c').read_text()
         source = '\n'.join(line for line in source.splitlines() if not line.startswith('#include'))
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_coredump_concurrency.c').read_text()
-        launcher = (ROOT / 'projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_launcher.c').read_text()
-        expression = re.search(r'crash_recovery_active\s*=([^;]+);', launcher[launcher.index('void app_main(void)'):]).group(1)
-        expression = expression.replace('h2_jieli_wl82_take_loader_crash_pending()', 'pending').replace('reset_reason', 'reason')
-        fixture = fixture.replace('/* RECOVERY_POLICY */', 'static int recovery_policy(uint32_t reason, int pending) { (void)reason; return '+expression+'; }')
-        warm = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/src/jieli_warm_boot.c').read_text()
+        runner = (ROOT / 'projects/h2loader/targets/loader/jieli/jieli_ac791n_devkit/src/loader_launcher.c').read_text()
+        self.assertIn('h2_jieli_wl82_take_loader_crash_pending() != 0', runner)
+        self.assertIn('.force_command_mode = crash_recovery_active', runner)
+        self.assertRegex(runner, r'h2_device_loader_run\(&loader,\s*runtime,\s*&service,\s*NULL,\s*!crash_recovery_active\)')
+        fixture = fixture.replace('/* RECOVERY_POLICY */', 'static int recovery_policy(uint32_t reason, int pending) { (void)reason; return pending != 0; }')
+        source = source.replace('h2_jieli_wl82_boot_geometry()->coredump_flash_address', 'H2_JIELI_COREDUMP_ADDRESS')
+        warm = (ROOT / 'native_component_src/jieli/wl82/h2_pal_image/src/jieli_warm_boot.c').read_text()
         warm_types = warm[warm.index('typedef struct warm_snapshot'):warm.index('#define SNAPSHOT (')]
-        warm_report = warm[warm.index('void h2_jieli_warm_boot_report'):warm.index('#define CACHE_CON')]
+        warm_report = warm[warm.index('void h2_jieli_warm_boot_report'):warm.index('void h2_jieli_warm_boot_snapshot_previous(')]
         warm_constants = '\n'.join(line for line in warm.splitlines() if line.startswith(('#define RAM_MARKER_ADDR ', '#define RETAINED_LOG_ADDR ', '#define RETAINED_LOG_CAPACITY ', '#define SNAPSHOT_MAGIC ')))
         fixture = fixture.replace('/* WARM_REPORT */', warm_constants+'\n'+warm_types+'\nstatic warm_snapshot_t warm_test;\n#define SNAPSHOT (&warm_test)\n'+warm_report)
         modern = 'static volatile uint8_t log_lock;' in source

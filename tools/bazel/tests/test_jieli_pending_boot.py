@@ -1,4 +1,4 @@
-"""Validate the persisted candidate identity and decoded native boot header."""
+"""Preserve pending112 bytes and separately verify native boot evidence."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -9,77 +9,75 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class PendingBootTest(unittest.TestCase):
     def test_record_and_header_must_match_candidate(self):
+        provider = (ROOT / "native_component_src/jieli/wl82/h2_pal_image/src/h2_jieli_wl82_platform_image.c").read_text()
+        native_check = provider[provider.index("static int native_header_valid("):provider.index("static int native_burn(")]
         program = r'''
 #include <assert.h>
 #include "jieli_pending_boot.h"
+#include "jieli_native_image.h"
+#define BOOT_EVIDENCE_V1 1u
+#define BOOT_EVIDENCE_SIZE 40u
+#define H2_JIELI_UPGRADE_HEADER_SIZE 32u
+static struct { struct { uint32_t image_capacity; } config; } state = {{0x37d000u}};
+static uint32_t decode_data_by_user_key(uint16_t key,uint8_t *p,uint16_t n,uint32_t a,uint8_t b) {
+  assert(key==0xffff && n==32 && a==0 && b==32);(void)p;return 0;
+}
+/* NATIVE_CHECK */
 static void crc(uint8_t *p) {
   uint16_t c=h2_jieli_native_header_crc(p);p[0]=(uint8_t)c;p[1]=(uint8_t)(c>>8);
 }
 int main(void) {
-  h2_jieli_pending_boot_t r={0};
-  r.magic=H2_JIELI_PENDING_BOOT_MAGIC;r.code_length=1024;r.code_crc=0x1234;
-  memset(r.image_checksum,'a',64);
-  char sha[65];memcpy(sha,r.image_checksum,65);
-  assert(h2_jieli_pending_boot_matches(&r,sizeof(r),sha));
-  uint8_t wire[H2_JIELI_PENDING_BOOT_WIRE_SIZE];
-  h2_jieli_pending_boot_encode(&r,wire);
-  assert(sizeof(wire)==112 && wire[0]=='H' && wire[1]=='P');
-  assert(wire[4]==0 && wire[5]==4 && wire[8]==0x34 && wire[9]==0x12);
-  h2_jieli_pending_boot_t decoded;
-  assert(!h2_jieli_pending_boot_decode(NULL,wire,sizeof(wire)));
-  assert(!h2_jieli_pending_boot_decode(&decoded,NULL,sizeof(wire)));
-  assert(h2_jieli_pending_boot_decode(&decoded,wire,sizeof(wire)));
-  assert(h2_jieli_pending_boot_matches(&decoded,sizeof(decoded),sha));
-  assert(decoded.code_length==r.code_length && decoded.code_crc==r.code_crc);
-  for(unsigned i=0;i<32;++i) r.header[i]=(uint8_t)(i+128u);
-  h2_jieli_pending_boot_encode(&r,wire);
-  for(unsigned i=0;i<32;++i) assert(wire[77u+i]==(uint8_t)(i+128u));
-  assert(h2_jieli_pending_boot_decode(&decoded,wire,sizeof(wire)));
-  assert(memcmp(decoded.header,r.header,32)==0);
-  uint8_t reencoded[112];h2_jieli_pending_boot_encode(&decoded,reencoded);
-  assert(memcmp(wire,reencoded,sizeof(wire))==0);
-  for(size_t n=0;n<sizeof(wire);++n)
-    assert(!h2_jieli_pending_boot_decode(&decoded,wire,n));
-  assert(!h2_jieli_pending_boot_decode(&decoded,wire,sizeof(wire)+1));
-  for(unsigned n=109;n<112;++n) {
-    wire[n]=1;assert(!h2_jieli_pending_boot_decode(&decoded,wire,sizeof(wire)));
-    wire[n]=0;
+  char sha[65];memset(sha,'a',64);sha[64]=0;
+  h2_pal_power_native_evidence_t evidence={.format=1,.size=40};
+  evidence.bytes[1]=4; evidence.bytes[4]=0x34; evidence.bytes[5]=0x12;
+  uint8_t *header=evidence.bytes+8;
+  header[4]=0x34;header[5]=0x12;header[9]=4;crc(header);
+  assert(native_header_valid(&evidence));
+  uint8_t wire[112], golden[112]={0x48,0x50,0x42,0x31,0,4,0,0,0x34,0x12,0,0};
+  memcpy(golden+12,sha,65);memcpy(golden+77,header,32);
+  assert(h2_jieli_pending_boot_encode(&evidence,sha,wire));
+  assert(memcmp(wire,golden,112)==0);
+  h2_pal_power_native_evidence_t decoded;
+  assert(h2_jieli_pending_boot_decode(wire,112,sha,&decoded));
+  assert(memcmp(&evidence,&decoded,sizeof(evidence))==0);
+  assert(native_header_valid(&decoded));
+  for(size_t n=0;n<112;++n) assert(!h2_jieli_pending_boot_decode(wire,n,sha,&decoded));
+  assert(!h2_jieli_pending_boot_decode(wire,113,sha,&decoded));
+  assert(!h2_jieli_pending_boot_decode(NULL,112,sha,&decoded));
+  assert(!h2_jieli_pending_boot_decode(wire,112,NULL,&decoded));
+  assert(!h2_jieli_pending_boot_decode(wire,112,sha,NULL));
+  for(unsigned i=0;i<112;++i) {
+    if(i>=77 && i<109) continue; /* Header facts belong only to the provider. */
+    uint8_t bad[112];memcpy(bad,wire,112);bad[i]^=1;
+    if(i>=4 && i<10) continue; /* Code facts are also checked natively. */
+    assert(!h2_jieli_pending_boot_decode(bad,112,sha,&decoded));
   }
-  assert(!h2_jieli_pending_boot_matches(NULL,sizeof(r),sha));
-  assert(!h2_jieli_pending_boot_matches(&r,sizeof(r),NULL));
-  for(size_t i=0;i<sizeof(r);++i)
-    assert(!h2_jieli_pending_boot_matches(&r,i,sha));
-  assert(!h2_jieli_pending_boot_matches(&r,sizeof(r)+1,sha));
-  h2_jieli_pending_boot_t bad=r;bad.magic^=1;
-  assert(!h2_jieli_pending_boot_matches(&bad,sizeof(bad),sha));
-  bad=r;bad.reserved=1;assert(!h2_jieli_pending_boot_matches(&bad,sizeof(bad),sha));
-  bad=r;bad.image_checksum[64]='a';
-  assert(!h2_jieli_pending_boot_matches(&bad,sizeof(bad),sha));
-  bad=r;bad.image_checksum[0]='z';
-  assert(!h2_jieli_pending_boot_matches(&bad,sizeof(bad),sha));
-  sha[0]='b';assert(!h2_jieli_pending_boot_matches(&r,sizeof(r),sha));sha[0]='a';
-  bad=r;bad.code_length=0;assert(!h2_jieli_pending_boot_matches(&bad,sizeof(bad),sha));
-  bad.code_length=H2_JIELI_IMAGE_MAX_SIZE+1;
-  assert(!h2_jieli_pending_boot_matches(&bad,sizeof(bad),sha));
-  uint8_t header[32]={0};header[4]=0x34;header[5]=0x12;header[9]=4;crc(header);
-  assert(h2_jieli_pending_boot_header_valid(&r,header));
-  for(unsigned i=0;i<32;i++)for(unsigned bit=0;bit<8;bit++) {
-    uint8_t corrupt[32];memcpy(corrupt,header,32);corrupt[i]^=1u<<bit;
-    assert(!h2_jieli_pending_boot_header_valid(&r,corrupt));
+  for(unsigned i=0;i<32;++i)for(unsigned bit=0;bit<8;++bit) {
+    h2_pal_power_native_evidence_t bad=evidence;bad.bytes[8+i]^=1u<<bit;
+    assert(!native_header_valid(&bad));
   }
-  header[4]^=1;crc(header);assert(!h2_jieli_pending_boot_header_valid(&r,header));
-  header[4]^=1;header[9]^=1;crc(header);
-  assert(!h2_jieli_pending_boot_header_valid(&r,header));
+  h2_pal_power_native_evidence_t bad=evidence;bad.bytes[4]^=1;
+  assert(!native_header_valid(&bad));
+  bad=evidence;bad.bytes[1]^=1;assert(!native_header_valid(&bad));
+  bad=evidence;memset(bad.bytes,0,4);assert(!native_header_valid(&bad));
+  bad=evidence;memset(bad.bytes,0xff,4);assert(!native_header_valid(&bad));
+  bad=evidence;bad.format=2;assert(!h2_jieli_pending_boot_encode(&bad,sha,wire));
+  bad=evidence;bad.size=39;assert(!h2_jieli_pending_boot_encode(&bad,sha,wire));
+  bad=evidence;bad.bytes[6]=1;assert(!h2_jieli_pending_boot_encode(&bad,sha,wire));
+  sha[0]='A';assert(!h2_jieli_pending_boot_encode(&evidence,sha,wire));
+  sha[0]='a';sha[64]='x';assert(!h2_jieli_pending_boot_encode(&evidence,sha,wire));
+  return 0;
 }
 '''
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "test.c"
-            source.write_text(program)
+            source.write_text(program.replace("/* NATIVE_CHECK */", native_check))
             binary = Path(directory) / "test"
             subprocess.run([
-                "cc", "-std=c11", "-Wall", "-Werror",
-                "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"),
-                "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", str(ROOT / "libs/h2loader/device/include"),
+                "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
+                "-I", str(ROOT / "libs/pal/include"),
                 str(source), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
 

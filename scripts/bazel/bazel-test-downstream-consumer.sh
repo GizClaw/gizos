@@ -75,7 +75,7 @@ cp "$repository_root/libs/lua/tests/app_fixture/xyz/tone.pcm" "$consumer_root/xy
 touch "$consumer_root/lua_app_catalog.jsonl" \
     "$consumer_root/lua_app_release_files.jsonl" \
     "$consumer_root/lua_app_default_files.txt"
-cp "$repository_root/projects/showcase/assets/fonts/NotoSansSC-Bold.ttf" \
+cp "$repository_root/libs/fonts/noto_sans_sc/NotoSansSC-Bold.ttf" \
     "$consumer_root/font.ttf"
 cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
 cp "$fixture_root/partition.csv" "$consumer_root/partition.csv"
@@ -314,7 +314,6 @@ cp BUILD.bazel.complete BUILD.bazel
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
     @gizos//tools/openapi_codegen:openapi_codegen \
     @gizos//libs/gizclaw/web/tests/local:local \
-    @gizos//projects/gizclaw/targets/npm_package/firmware:release_tarball \
     //:firmware_lib \
     //:embedded_menu_font_test \
     //:font_consumer \
@@ -356,7 +355,6 @@ test ! -e "$consumer_root/private_bk_task_policy"
     //:onenet_consumer_test \
     @gizos//libs/gizclaw:h2_gizclaw_local_test \
     @gizos//libs/lua/apps/web/tests/scoped_http:browser_test \
-    @gizos//projects/gizclaw/targets/npm_package/firmware:package_test \
     //:private_esp_task_policy_test \
     //:private_bk_ap_task_policy_test \
     //:private_bk_cp_task_policy_test \

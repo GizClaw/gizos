@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c"
+SOURCE = ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c"
 
 
 GATE = r"""
@@ -89,7 +89,11 @@ int main(void) {
 #include <stdint.h>
 enum { H2_PAL_ERR_INVALID_ARG=-1, H2_JIELI_GATT_TX_VALUE_HANDLE=6,
  H2_PAL_BLE_ATT_HEADER_LEN=3, ATT_OP_AUTO_READ_CCC=1 };
-static struct { uint16_t conn_handle, mtu; } h2_ble;
+#define H2_PAL_BLE_GATT_PROPERTY_NOTIFY 8u
+static struct { uint16_t conn_handle, mtu; int gatt_registered;
+ struct { uint32_t properties; size_t max_value_len; } characteristics[1];
+} h2_ble={.gatt_registered=1,.characteristics={{8u,512u}}};
+static struct { size_t count; uint16_t value_handles[1]; } h2_gatt_database={1,{6}};
 static int sends, vendor_result;
 static uint16_t sent_length;
 static int h2_ble_cmd_result(int result) { return result; }

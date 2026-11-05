@@ -1,8 +1,0 @@
-package(default_visibility = ["//visibility:public"])
-
-filegroup(
-    name = "bleikcp_speed",
-    srcs = [
-        "//projects/example/apps/bleikcp-speed/app:bleikcp_speed",
-    ],
-)

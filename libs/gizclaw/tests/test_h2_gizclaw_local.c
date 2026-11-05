@@ -33,7 +33,8 @@ static void release(void* u, void* p) {
     free(p);
   }
 }
-static const h2_pal_mem_vtable_t memory_vtable = {allocate, resize, release};
+static const h2_pal_mem_vtable_t memory_vtable = {allocate, resize, release,
+                                                  NULL};
 static const h2_pal_mem_api_t memory = {.vtable = &memory_vtable};
 static const h2_pal_task_api_t* base_task;
 static h2_pal_task_t* rpc_task;

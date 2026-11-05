@@ -30,7 +30,7 @@ def compile_run(source, includes=(), args=()):
 
 class BKConsoleLifecycle(unittest.TestCase):
     def test_run_control_ownership_and_outcomes(self):
-        launcher = (ROOT / "projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405/ap/ap_main.c").read_text()
+        launcher = (ROOT / "projects/e2e/targets/single/pal-storage/beken/bk7258_v3_202405/ap/ap_main.c").read_text()
         run = section(launcher, "static void run(", "static void entry(")
         fixture = r'''
 #include <assert.h>
@@ -43,6 +43,8 @@ class BKConsoleLifecycle(unittest.TestCase):
 #define H2_LOADER_CAPABILITY_UART 1
 #define H2_STORAGE_VERSION "console-test"
 typedef struct { int unused; } h2_runtime_t;
+typedef struct { int unused; } h2_device_app_commands_t;
+static h2_device_app_commands_t h2_management;
 static h2_runtime_t actual;
 static h2_runtime_t *runtime=&actual;
 static volatile int finished;
@@ -54,7 +56,8 @@ static void rtos_delay_milliseconds(unsigned ms) {
     else if(ms==200u){assert(!active && runs==1 && replays==1);drain++;}
     else {assert(ms==3000u && active && finished);if(++repeats==3)longjmp(done,1);}
 }
-static int h2_bk_h2loader_stop_app_iostreamikcp(void) {
+static int h2_device_app_commands_stop_serial(h2_device_app_commands_t *s) {
+    assert(s==&h2_management);
     assert(settle==1 && !runs);stops++;if(!stop_rc)active=0;return stop_rc;
 }
 static int h2_storage_device_run(h2_runtime_t *r,const char *path,const char *version) {
@@ -66,10 +69,12 @@ static void h2_storage_device_replay(h2_runtime_t *r) {
     if(active){assert(starts==1);replay_after++;}else{assert(!starts);}
     puts("TEST_IMMUTABLE_REPLAY");
 }
-static int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(h2_runtime_t *r,const char *name,int capability) {
+static int h2_device_app_commands_start_serial_named(h2_device_app_commands_t *s,h2_runtime_t *r,const char *name,unsigned capability) {
+    assert(s==&h2_management);
     assert(r==runtime && !strcmp(name,"pal-storage") && capability==1 && replays==1 && drain==1);starts++;if(!restart_rc)active=1;return restart_rc;
 }
-static int h2_bk_h2loader_confirm_current_app(h2_runtime_t *r) {
+static int h2_device_app_confirm(h2_device_app_commands_t *s,h2_runtime_t *r) {
+    assert(s==&h2_management);
     assert(r==runtime && active && starts==1 && suite_rc==0);confirms++;return confirm_rc;
 }
 /* RUN */
@@ -98,7 +103,7 @@ int main(int argc,char **argv){
                     self.assertNotIn("H2_STORAGE_READY rc=0 confirm=0", output)
 
     def test_real_filter_forwards_fresh_boot_before_session_ack(self):
-        serial = (ROOT / "libs/h2loader_host/src/h2_h2loader_host_serial.c").read_text()
+        serial = (ROOT / "libs/h2loader/host/src/h2_h2loader_host_serial.c").read_text()
         log_output = section(serial, "static h2_pal_result_t serial_log_output(", "static h2_pal_result_t serial_status_emit(")
         handshake = section(serial, "typedef struct session_ack_context", "/* A USB-UART adapter survives")
         frame = (ROOT / "libs/iostreamikcp/src/h2_iostreamikcp_frame.c").read_text().replace(
@@ -149,7 +154,7 @@ int main(void){
  puts("PASS native fresh BOOT reaches sink with fragmented/no/delayed session ACK");return 0;
 }
 '''.replace("/* FRAME */", frame).replace("/* LOG */", log_output).replace("/* HANDSHAKE */", handshake)
-        output = compile_run(fixture, includes=["libs/pal/include", "libs/h2loader_host/include", "libs/iostreamikcp/include"])
+        output = compile_run(fixture, includes=["libs/pal/include", "libs/h2loader/host/include", "libs/iostreamikcp/include"])
         self.assertIn("PASS native fresh BOOT reaches sink", output)
 
 

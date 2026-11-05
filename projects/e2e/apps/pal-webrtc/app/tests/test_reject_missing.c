@@ -113,7 +113,7 @@ static h2_pal_result_t sleep_ms(void* user, uint32_t milliseconds) {
   return H2_PAL_OK;
 }
 int main(void) {
-  const h2_pal_mem_vtable_t mv = {allocate, resize, release};
+  const h2_pal_mem_vtable_t mv = {allocate, resize, release, NULL};
   const h2_pal_mem_api_t memory = {NULL, &mv};
   const h2_pal_time_vtable_t tv = {.get_monotonic_ms = clock_ms,
                                    .sleep_ms = sleep_ms};

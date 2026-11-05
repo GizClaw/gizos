@@ -8,6 +8,8 @@
 #include "h2/pal/hal/h2_pal_ble.h"
 #include "h2/pal/os/h2_pal_system_event.h"
 #include "h2_jieli_wl82_atomic.h"
+#include "h2_jieli_wl82_gatt.h"
+static h2_jieli_gatt_database_t h2_gatt_database;
 typedef uint16_t hci_con_handle_t;
 enum {
   H2_JIELI_GATT_SERVICE_HANDLE = 4,
@@ -19,13 +21,10 @@ static const uint8_t h2_service_uuid[16] = {1};
 static const uint8_t h2_tx_uuid[16] = {2};
 static const uint8_t h2_rx_uuid[16] = {3};
 static struct {
-  h2_pal_ble_gatt_characteristic_t characteristics[2];
-  int gatt_registered;
+  h2_pal_ble_gatt_characteristic_t
+      characteristics[H2_JIELI_GATT_MAX_CHARACTERISTICS];
+  int gatt_registered, started, starting, native_created;
 } h2_ble;
-static int h2_uuid_equal(const h2_pal_ble_uuid_t* uuid, const uint8_t* value) {
-  return uuid->len == 16 && uuid->data != NULL &&
-         memcmp(uuid->data, value, 16) == 0;
-}
 static void h2_att_trace_record(int kind, uint16_t handle, uint16_t offset,
                                 const uint8_t* buffer, uint16_t size) {
   (void)kind;
@@ -98,8 +97,12 @@ int main(int argc, char** argv) {
 
   assert(argc == 2);
   h2_pal_ble_gatt_characteristic_t characteristics[2] = {
-      {.uuid = {.data = h2_tx_uuid, .len = 16}},
+      {.uuid = {.data = h2_tx_uuid, .len = 16},
+       .properties = H2_PAL_BLE_GATT_PROPERTY_NOTIFY,
+       .max_value_len = 512},
       {.uuid = {.data = h2_rx_uuid, .len = 16},
+       .properties = H2_PAL_BLE_GATT_PROPERTY_WRITE,
+       .max_value_len = 512,
        .write = write_callback,
        .user = &context_freed},
   };
@@ -110,6 +113,20 @@ int main(int argc, char** argv) {
       .characteristic_count = 2,
   };
   assert(h2_register_gatt(NULL, &service, 1) == H2_PAL_OK);
+  if (strcmp(argv[1], "live_rebind") == 0) {
+    h2_ble.started = 1;
+    uint8_t profile[H2_JIELI_GATT_DATABASE_SIZE];
+    memcpy(profile, h2_gatt_database.bytes, sizeof(profile));
+    assert(h2_unregister_gatt(NULL) == H2_PAL_OK);
+    assert(h2_register_gatt(NULL, &service, 1) == H2_PAL_OK);
+    assert(memcmp(profile, h2_gatt_database.bytes, sizeof(profile)) == 0);
+    static const uint8_t different[16] = {4};
+    characteristics[1].uuid.data = different;
+    assert(h2_register_gatt(NULL, &service, 1) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_ble.gatt_registered &&
+           h2_ble.characteristics[1].uuid.data == h2_rx_uuid);
+    return 0;
+  }
   if (strcmp(argv[1], "self_unregister") == 0) {
     self_unregister = 1;
     write_thread(NULL);

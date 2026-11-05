@@ -1,0 +1,368 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+_SERVICE_SOURCES = [
+    "src/h2_device_app.c",
+    "src/h2_device_app_preflight.c",
+    "src/h2_device_loader.c",
+]
+
+_SERVICE_HEADERS = [
+    "include/h2_device_service.h",
+    "include/h2_device_app_preflight.h",
+]
+
+_CORE_SOURCES = glob(
+    ["src/*.c"],
+    exclude = _SERVICE_SOURCES,
+)
+
+exports_files(glob([
+    "include/*.h",
+    "src/*.c",
+]))
+
+filegroup(
+    name = "h2loader_headers",
+    srcs = glob(
+        ["include/*.h"],
+        exclude = _SERVICE_HEADERS,
+    ),
+)
+
+filegroup(
+    name = "device_sources",
+    srcs = _CORE_SOURCES,
+)
+
+filegroup(
+    name = "service_sources",
+    srcs = _SERVICE_SOURCES,
+)
+
+filegroup(
+    name = "service_headers",
+    srcs = _SERVICE_HEADERS,
+)
+
+filegroup(
+    name = "service_fixture_sources",
+    testonly = True,
+    srcs = glob([
+        "src/*.c",
+        "include/*.h",
+    ]),
+)
+
+# Public API for callers that compile the implementation with the SDK ABI.
+cc_library(
+    name = "api",
+    hdrs = [":h2loader_headers"],
+    includes = ["include"],
+    deps = [
+        "//libs/atomic",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/pal",
+    ],
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$h2loader/return",
+        "$h2loader/blelink",
+        "$h2loader/uartcmd",
+    ],
+)
+
+cc_library(
+    name = "device",
+    srcs = [":device_sources"],
+    hdrs = [":h2loader_headers"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+    ],
+    local_defines = select({
+        "//tools/bazel/platforms:is_ac707n": ["H2_LOADER_REQUIRE_OUTPUT_CALLBACK=1"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":tasks",
+        "//libs/atomic",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/crypto/sha256",
+        "//libs/iostreamikcp",
+        "//libs/pal",
+        "//tools/bazel:vendor_third_party_zlib",
+    ],
+)
+
+cc_test(
+    name = "h2loader_ble_advertising_test",
+    srcs = ["tests/test_h2_loader_ble_advertising.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "ble_name_test",
+    srcs = [
+        "tests/test_h2_loader_ble_name.c",
+        "//libs/pal/providers/desktop/pal_core:tests/h2_desktop_test_system_event.c",
+        "//libs/pal/providers/desktop/pal_core:tests/h2_desktop_test_system_event.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "h2loader_sha256_test",
+    srcs = ["tests/test_h2loader_sha256.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2loader_pal_test",
+    srcs = ["tests/test_h2_loader_pal.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2loader_test",
+    srcs = ["tests/test_h2loader_v2.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2loader_metadata_test",
+    srcs = ["tests/test_h2loader_metadata.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2loader_segmented_test",
+    srcs = ["tests/test_h2loader_segmented.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+        "//libs/h2loader/host",
+    ],
+)
+
+cc_test(
+    name = "h2loader_command_test",
+    srcs = ["tests/test_h2loader_command_v2.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2loader_stage_writer_test",
+    srcs = ["tests/test_h2_loader_stage_writer.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+# One portable source/API inventory for every firmware SDK. The generic
+# firmware_lib_component compiles these sources alongside validated archives.
+filegroup(
+    name = "firmware_sources",
+    srcs = [
+        ":device_sources",
+        ":service_sources",
+        "//libs/crypto/sha256:src/h2_sha256.c",
+        "//projects/h2loader/apps/loader/app:app.c",
+        "//projects/h2loader/apps/loader/app:task_names.c",
+    ],
+)
+
+cc_library(
+    name = "firmware_api",
+    hdrs = [":service_headers"],
+    includes = ["include"],
+    deps = [
+        ":api",
+        ":tasks",
+        "//libs/crypto/sha256",
+        "//libs/runtime",
+        "//projects/h2loader/apps/loader/app:loader",
+    ],
+)
+
+# Optional Runtime composition. The portable Loader app depends only on :device.
+# Native SDK builds compile these same declared C sources with their vendor ABI.
+cc_library(
+    name = "service",
+    srcs = [":service_sources"],
+    hdrs = [":service_headers"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":device",
+        "//libs/runtime",
+        "//projects/h2loader/apps/loader/app:loader",
+    ],
+)
+
+cc_test(
+    name = "activity_lifetime_test",
+    srcs = ["tests/test_h2_device_activity.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "app_preflight_cpp_link_test",
+    srcs = ["tests/test_h2_device_app_preflight_cpp.cc"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":service"],
+)
+
+cc_test(
+    name = "app_preflight_test",
+    srcs = ["tests/test_h2_device_app_preflight.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":service"],
+)
+
+cc_test(
+    name = "serial_test",
+    srcs = ["tests/test_h2_device_serial.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":device",
+        "//libs/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "app_lifecycle_test",
+    srcs = ["tests/test_h2_device_app.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":service",
+        "//libs/atomic/providers/c11",
+    ],
+)

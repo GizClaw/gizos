@@ -41,7 +41,7 @@ cc_binary(
         "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e",
-        "//projects/example/libs/host_runtime",
+        "//projects/e2e/libs/host_runtime",
     ],
 )
 
@@ -83,7 +83,7 @@ cc_binary(
         "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e",
-        "//projects/example/libs/host_runtime",
+        "//projects/e2e/libs/host_runtime",
     ],
 )
 

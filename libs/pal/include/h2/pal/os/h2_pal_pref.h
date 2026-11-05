@@ -40,6 +40,10 @@ typedef int (*h2_pal_pref_api_open_fn)(void* user, const char* name_space,
 
 typedef struct h2_pal_pref_vtable {
   h2_pal_pref_api_open_fn open;
+  /** Optional durable migration retirement, called only after the application
+   * has committed its replacement state. Idempotent; never changes namespaces.
+   */
+  h2_pal_result_t (*finalize_migration)(void* user);
 } h2_pal_pref_vtable_t;
 
 typedef struct h2_pal_pref_api {
@@ -56,6 +60,14 @@ static inline int h2_pal_pref_open(const h2_pal_pref_api_t* api,
     return H2_PAL_ERR_INVALID_ARG;
   }
   return api->vtable->open(api->user, name_space, mode, out_namespace);
+}
+
+/** A provider without migration support has nothing to retire. */
+static inline h2_pal_result_t h2_pal_pref_finalize_migration(
+    const h2_pal_pref_api_t* api) {
+  if (api == NULL || api->vtable == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api->vtable->finalize_migration == NULL) return H2_PAL_OK;
+  return api->vtable->finalize_migration(api->user);
 }
 
 typedef int (*h2_pal_pref_namespace_close_fn)(h2_pal_pref_namespace_t* ns);

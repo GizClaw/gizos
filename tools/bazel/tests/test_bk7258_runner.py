@@ -121,6 +121,24 @@ if mode == "generated-policy-graph":
         source_list = manifest_text.split(f"set({key}\n", 1)[1].split(")", 1)[0]
         if source not in source_list:
             raise SystemExit(f"wrong generated source for {unit}: {source_list}")
+if mode in ("firmware-lib", "firmware-lib-source-only"):
+    manifest = Path(os.environ["H2_BAZEL_COMPONENT_MANIFEST"]).read_text()
+    generated = project.parents[2] / "components/ap/portable_library/CMakeLists.txt"
+    cmake = generated.read_text()
+    if cmake.count("armino_component_register(") != 1:
+        raise SystemExit("generated firmware library is not a single component")
+    for relative in ("external/portable_repo+/native.c", "bazel-out/generated/second.c"):
+        source = str((source_root / relative).resolve())
+        if source not in cmake or source not in manifest:
+            raise SystemExit(f"generated firmware library omits SDK source: {source}")
+    include = str(source_root / "external/portable_repo+/include")
+    if include not in cmake or include not in manifest:
+        raise SystemExit("generated firmware library omits public headers")
+    if "H2_BAZEL_COMPONENT_SRCS_AP_PORTABLE_LIBRARY" not in manifest:
+        raise SystemExit("generated component has no source inventory")
+    expected_archive = mode == "firmware-lib"
+    if ("h2_bk_import_bazel_archive(" in cmake) != expected_archive:
+        raise SystemExit("generated firmware library imports the wrong archives")
 if mode == "make-failure":
     raise SystemExit(23)
 project.joinpath("generated.lock").write_text("temporary\n", encoding="utf-8")
@@ -569,6 +587,51 @@ class Bk7258RunnerTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(output.joinpath("all-app.bin").is_file())
+
+    def test_generated_firmware_library_includes_declared_sdk_sources(self):
+        external = self.source / "external/portable_repo+"
+        external.joinpath("include").mkdir(parents=True)
+        external.joinpath("native.c").write_text("int portable;\n")
+        external.joinpath("include/portable.h").write_text("extern int portable;\n")
+        generated = self.source / "bazel-out/generated/second.c"
+        generated.parent.mkdir(parents=True)
+        generated.write_text("int generated;\n")
+        for source_only in (False, True):
+            with self.subTest(source_only=source_only):
+                arguments = [
+                    "--generate-prebuilt-component", "portable_library",
+                    "--native-component-source", "ap:portable_library=external/portable_repo+/native.c",
+                    "--native-component-source", "ap:portable_library=bazel-out/generated/second.c",
+                    "--prebuilt-component-include", "portable_library=external/portable_repo+/include",
+                ]
+                if not source_only:
+                    arguments.extend(["--prebuilt-component", "portable_library=libh2_fixture.a"])
+                mode = "firmware-lib-source-only" if source_only else "firmware-lib"
+                result, _ = self._run(name=mode, mode=mode, extra_arguments=arguments)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_generated_firmware_component_rejects_duplicate_registration(self):
+        result, _ = self._run(
+            name="duplicate-generated",
+            extra_arguments=[
+                "--generate-prebuilt-component", "h2_fixture",
+                "--generate-prebuilt-component", "h2_fixture",
+            ],
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate generated BK7258 component", result.stderr)
+
+    def test_generated_firmware_component_rejects_shared_native_source(self):
+        result, _ = self._run(
+            name="duplicate-native-source",
+            native_graph=True,
+            extra_arguments=[
+                "--generate-prebuilt-component", "portable_library",
+                "--native-component-source", "ap:portable_library=components/board/board.c",
+            ],
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("native source has multiple owners", result.stderr)
 
     def test_generated_policy_components_stage_without_source_directories(self):
         arguments = []

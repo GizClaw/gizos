@@ -241,7 +241,7 @@ def apply(directory, public):
     matrix['failed_platforms'] = []
     matrix['pending_platforms'] = []
     matrix['all_platforms_qualified'] = True
-    matrix['firmware_builds'].append(dict(target='//projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405:package',
+    matrix['firmware_builds'].append(dict(target='//projects/e2e/targets/single/pal-storage/beken/bk7258_v3_202405:package',
         source_revision=SOURCE, version=VERSION, status='build_passed', hardware_qualification='passed',
         artifact_sha256=PACKAGE, image_sha256=IMAGE))
     matrix['qualification_boundary'] = 'All six platforms have their own source/artifact-bound contract 2 36-case receipt. BK R4 completes five fresh 1/2/3/4/4 boots, valid P2/Stage empty, unchanged original P1 and nonblank dump. The original de68 capacity failure and R2/R3 collector failures remain historical evidence. Mobile and other earlier source identities are unchanged; no physical-phone or power-loss guarantee is inferred. DevKit Stage-empty qualification precedes its separately recorded restoration of the original App and original nonempty Stage. Contract 1 historical receipts remain unchanged.'

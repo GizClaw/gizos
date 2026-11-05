@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c"
+SOURCE = ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c"
 
 
 # Pinned SDK include_lib/net/wifi/wifi_connect.h (eb04f1966cf2).

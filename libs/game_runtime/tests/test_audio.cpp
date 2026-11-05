@@ -202,7 +202,7 @@ int create_track(void* user, const h2_audio_track_config_t* config,
 
 void run_audio_case(uint16_t frame_samples, bool test_join_retry) {
   static const h2_pal_mem_vtable_t mem_vtable = {mem_alloc, mem_realloc,
-                                                 mem_free};
+                                                 mem_free, nullptr};
   const h2_pal_mem_api_t mem = {nullptr, &mem_vtable};
   static const h2_pal_queue_vtable_t queue_vtable = {
       queue_create, queue_destroy, queue_send, nullptr,
@@ -289,7 +289,7 @@ void run_audio_case(uint16_t frame_samples, bool test_join_retry) {
 std::vector<std::vector<int16_t>> capture_priority_frames(
     bool queue_regular_recipe) {
   static const h2_pal_mem_vtable_t mem_vtable = {mem_alloc, mem_realloc,
-                                                 mem_free};
+                                                 mem_free, nullptr};
   const h2_pal_mem_api_t mem = {nullptr, &mem_vtable};
   static const h2_pal_queue_vtable_t queue_vtable = {
       queue_create, queue_destroy, queue_send, nullptr,
@@ -370,7 +370,7 @@ int32_t peak_abs(const std::vector<int16_t>& frame) {
 
 void test_priority_recipe_stops_active_effects() {
   static const h2_pal_mem_vtable_t mem_vtable = {mem_alloc, mem_realloc,
-                                                 mem_free};
+                                                 mem_free, nullptr};
   const h2_pal_mem_api_t mem = {nullptr, &mem_vtable};
   static const h2_pal_queue_vtable_t queue_vtable = {
       queue_create, queue_destroy, queue_send, nullptr,

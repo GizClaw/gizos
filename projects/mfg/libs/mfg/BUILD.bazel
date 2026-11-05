@@ -13,7 +13,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
-    deps = ["//projects/h2loader/libs/h2loader:api"],
+    deps = ["//libs/h2loader/device:api"],
 )
 
 cc_library(
@@ -44,7 +44,7 @@ lvgl_font(
     size = 22,
     out = "h2_mfg_factory_font.c",
     bpp = 4,
-    font = "//projects/showcase:assets/fonts/NotoSansSC-Bold.ttf",
+    font = "//libs/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
     font_name = "h2_mfg_factory_font",
     lv_include = "lvgl.h",
     # Common spatial labels may be supplied by a profile, outside UI prose.
@@ -190,8 +190,8 @@ cc_test(
     deps = [
         ":session",
         "//libs/atomic/providers/c11",
+        "//libs/h2loader/device",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/sqlite",
-        "//projects/h2loader/libs/h2loader",
     ],
 )

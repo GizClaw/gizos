@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/jieli_loader_platform.c"
+SOURCE = ROOT / "libs/h2loader/device/src/h2_device_boot_policy.c"
 
 STUB = r'''
 #include <assert.h>
@@ -14,6 +14,8 @@ STUB = r'''
 #include <stdlib.h>
 #include <string.h>
 #define H2_PAL_OK 0
+#define H2_PAL_ERR_INVALID_STATE -5
+#define H2_PAL_PREF_OPEN_READ_ONLY 0
 #define H2_PAL_ERR_NOT_FOUND -4
 #define H2_JIELI_PARTITION_LOADER 1
 #define H2_JIELI_PARTITION_APP 2
@@ -43,10 +45,11 @@ typedef ns_t h2_pal_pref_namespace_t;
 static h2_loader_status_t status_value;
 static const char *stored_attempt;
 static char written_attempt[65];
-static struct {
+typedef struct {
+ struct { const int *pref, *allocator; unsigned loader_partition_id, app_partition_id; } config;
  unsigned running_partition_id; int app_trial_rolled_back;
- const int *pref; const int *allocator;
-} state;
+} h2_device_boot_policy_t;
+static h2_device_boot_policy_t state;
 static int removed, freed, commits;
 static int get_string(ns_t *n, const int *a, const char *k, char **out) {
  assert(strcmp(k, H2_JIELI_TRIAL_ATTEMPT_KEY) == 0);
@@ -72,7 +75,7 @@ static int h2_loader_metadata_image_equal(const metadata_t *a,const metadata_t *
  return strcmp(a->image_checksum,b->image_checksum)==0;
 }
 static void h2_pal_mem_free(const int *a,void *p) { ++freed; free(p); }
-static void h2_jieli_loader_diag_write(const char *s) {}
+
 static void reset(void) {
  memset(&status_value,0,sizeof(status_value));
  status_value.stage.valid=status_value.partition_2.valid=1;
@@ -80,7 +83,7 @@ static void reset(void) {
  strcpy(status_value.stage.image_checksum,"checksum-A");
  strcpy(status_value.partition_2.image_checksum,"checksum-A");
  stored_attempt="checksum-A"; written_attempt[0]=0;
- state.running_partition_id=1;
+ state.running_partition_id=1; state.config.loader_partition_id=1; state.config.app_partition_id=2;
  state.app_trial_rolled_back=removed=freed=commits=0;
 }
 '''
@@ -89,43 +92,43 @@ MAIN = r'''
 int main(void) {
  h2_pal_power_boot_partition_t p;
  /* The Loader recorded this App attempt and it was never confirmed. */
- reset(); reconcile_trial_state(NULL,NULL);
+ reset(); reconcile_trial_state(&state);
  assert(state.app_trial_rolled_back && freed==1 && removed==0);
  fill_partition(&p,2,8); assert(!(p.flags&1) && (p.flags&8));
  fill_partition(&p,1,4); assert((p.flags&1) && (p.flags&4));
  /* Stage merely equals old P2 metadata: a restage, not a boot attempt. */
- reset(); stored_attempt=NULL; reconcile_trial_state(NULL,NULL);
+ reset(); stored_attempt=NULL; reconcile_trial_state(&state);
  assert(!state.app_trial_rolled_back && removed==0);
  fill_partition(&p,2,8); assert(p.flags&1);
- reset(); stored_attempt="older-image"; reconcile_trial_state(NULL,NULL);
+ reset(); stored_attempt="older-image"; reconcile_trial_state(&state);
  assert(!state.app_trial_rolled_back && freed==1);
  reset(); strcpy(status_value.stage.image_checksum,"new-image");
- reconcile_trial_state(NULL,NULL);
+ reconcile_trial_state(&state);
  /* A new download does not erase evidence of the installed App's failure. */
  assert(state.app_trial_rolled_back && removed==0 && commits==0);
  reset(); stored_attempt="older-image";
  strcpy(status_value.stage.image_checksum,"new-image");
- reconcile_trial_state(NULL,NULL);
+ reconcile_trial_state(&state);
  assert(!state.app_trial_rolled_back && removed==3 && commits==1);
- reset(); state.running_partition_id=2; reconcile_trial_state(NULL,NULL);
+ reset(); state.running_partition_id=2; reconcile_trial_state(&state);
  assert(!state.app_trial_rolled_back);
- reset(); status_value.stage.valid=0; reconcile_trial_state(NULL,NULL);
+ reset(); status_value.stage.valid=0; reconcile_trial_state(&state);
  /* Installed-App warm trials have no Stage, but still require confirmation. */
  assert(state.app_trial_rolled_back && removed==0);
  reset(); status_value.stage.valid=0; stored_attempt=NULL;
- reconcile_trial_state(NULL,NULL);
+ reconcile_trial_state(&state);
  assert(!state.app_trial_rolled_back && removed==3);
  /* Both App and Loader candidates require an attempted/confirmed lifecycle. */
- reset(); assert(set_trial_attempt(1)==0);
+ reset(); assert(set_trial_attempt(&state,1)==0);
  assert(strcmp(written_attempt,"checksum-A")==0 && commits==1);
  reset(); status_value.partition_2.role=1;
- assert(set_trial_attempt(1)==0 && strcmp(written_attempt,"checksum-A")==0 && commits==1);
- reconcile_trial_state(NULL,NULL); assert(state.app_trial_rolled_back);
+ assert(set_trial_attempt(&state,1)==0 && strcmp(written_attempt,"checksum-A")==0 && commits==1);
+ reconcile_trial_state(&state); assert(state.app_trial_rolled_back);
  reset(); status_value.partition_2.role=1;state.running_partition_id=2;
- reconcile_trial_state(NULL,NULL); assert(!state.app_trial_rolled_back);
+ reconcile_trial_state(&state); assert(!state.app_trial_rolled_back);
  reset(); status_value.partition_2.role=0;
- assert(set_trial_attempt(1)==0 && written_attempt[0]==0 && commits==0);
- reset(); assert(set_trial_attempt(0)==0 && removed==1 && commits==1);
+ assert(set_trial_attempt(&state,1)==H2_PAL_ERR_INVALID_STATE && written_attempt[0]==0 && commits==0);
+ reset(); assert(set_trial_attempt(&state,0)==0 && removed==1 && commits==1);
  return 0;
 }
 '''
@@ -134,10 +137,15 @@ int main(void) {
 class TrialRollbackTest(unittest.TestCase):
     def test_actual_pal_trial_reconciliation_and_partition_flags(self):
         source = SOURCE.read_text()
-        reconcile = source[source.index("static void reconcile_trial_state("):
-                           source.index("static int image_path(")]
-        fill = source[source.index("static void fill_partition("):
-                      source.index("static int power_list(")]
+        reconcile = source[source.index("static int read_status("):
+                           source.index("static int pending_boot_save(")]
+        fill = source[source.index("static void policy_partition("):
+                      source.index("struct list_context {")]
+        fill += r"""
+static void fill_partition(h2_pal_power_boot_partition_t *p,unsigned id,unsigned flags) {
+ memset(p,0,sizeof(*p));p->id=id;p->flags=1u|flags;policy_partition(&state,p);
+}
+"""
         with tempfile.TemporaryDirectory(prefix="h2-trial-test-") as directory:
             test = Path(directory) / "test.c"
             test.write_text(STUB + reconcile + fill + MAIN)

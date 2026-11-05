@@ -24,6 +24,15 @@ typedef enum h2_pal_uart_flow_control {
       H2_PAL_UART_FLOW_CONTROL_RTS | H2_PAL_UART_FLOW_CONTROL_CTS,
 } h2_pal_uart_flow_control_t;
 
+typedef enum h2_pal_uart_io_stream_config_flag {
+  H2_PAL_UART_IO_STREAM_CONFIG_ROUTE_STDIO = 1u << 0,
+  H2_PAL_UART_IO_STREAM_CONFIG_FLUSH_INPUT = 1u << 1,
+} h2_pal_uart_io_stream_config_flag_t;
+
+/** Configure serially during startup, before readers/writers attach. Routing
+ * stdio shares the driver's atomic TX arbitration with complete stream writes.
+ * A stream user never owns or uninstalls the shared console driver.
+ */
 typedef struct h2_pal_uart_io_stream_config {
   uint32_t baud_rate;
   uint8_t data_bits;
@@ -32,6 +41,7 @@ typedef struct h2_pal_uart_io_stream_config {
   h2_pal_uart_flow_control_t flow_control;
   size_t rx_buffer_size;
   size_t tx_buffer_size;
+  uint32_t flags;
 } h2_pal_uart_io_stream_config_t;
 
 typedef struct h2_pal_uart_io_stream_vtable {
@@ -42,6 +52,10 @@ typedef struct h2_pal_uart_io_stream_vtable {
   h2_pal_result_t (*write)(void* user, const void* buffer, size_t len,
                            size_t* out_written, uint32_t timeout_ms);
   h2_pal_result_t (*flush)(void* user);
+  /** Release provider-owned configuration/session resources after all I/O has
+   * stopped. Idempotent on success. This does not imply ownership or uninstall
+   * of a shared console driver; backend-specific ownership stays below PAL. */
+  h2_pal_result_t (*release)(void* user);
 } h2_pal_uart_io_stream_vtable_t;
 
 typedef struct h2_pal_uart_io_stream_api {
@@ -100,6 +114,14 @@ static inline h2_pal_result_t h2_pal_uart_io_stream_flush(
     return H2_PAL_ERR_UNSUPPORTED;
   }
   return api->vtable->flush(api->user);
+}
+
+static inline h2_pal_result_t h2_pal_uart_io_stream_release(
+    const h2_pal_uart_io_stream_api_t* api) {
+  if (api == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api->vtable == NULL || api->vtable->release == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->release(api->user);
 }
 
 #ifdef __cplusplus

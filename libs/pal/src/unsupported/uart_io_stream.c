@@ -37,12 +37,18 @@ static h2_pal_result_t unsupported_uart_io_stream_flush(void* p0) {
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_uart_io_stream_release(void* user) {
+  (void)user;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_uart_io_stream_vtable_t unsupported_uart_io_stream_vtable =
     {
         .configure = unsupported_uart_io_stream_configure,
         .read = unsupported_uart_io_stream_read,
         .write = unsupported_uart_io_stream_write,
         .flush = unsupported_uart_io_stream_flush,
+        .release = unsupported_uart_io_stream_release,
 };
 static const h2_pal_uart_io_stream_api_t unsupported_uart_io_stream_api = {
     .user = NULL, .vtable = &unsupported_uart_io_stream_vtable};

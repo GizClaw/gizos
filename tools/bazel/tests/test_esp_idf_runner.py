@@ -109,6 +109,25 @@ if mode == "ccache":
 if mode == "ccache-read-only":
     if os.environ.get("CCACHE_READONLY") != "1":
         raise SystemExit("credential-bearing ESP build can write shared ccache")
+if mode in ("firmware-lib", "firmware-lib-source-only"):
+    manifest = Path(os.environ["H2_BAZEL_COMPONENT_MANIFEST"]).read_text()
+    generated = project.parents[2] / "components/portable_library/CMakeLists.txt"
+    cmake = generated.read_text()
+    if cmake.count("idf_component_register(") != 1:
+        raise SystemExit("generated firmware library is not a single component")
+    source_root = Path(os.environ["H2_REPO_ROOT"])
+    for relative in ("external/portable_repo+/native.c", "bazel-out/generated/second.c"):
+        source = str(source_root / relative)
+        if source not in cmake or source not in manifest:
+            raise SystemExit(f"generated firmware library omits SDK source: {source}")
+    include = str(source_root / "external/portable_repo+/include")
+    if include not in cmake or include not in manifest:
+        raise SystemExit("generated firmware library omits public headers")
+    if "H2_BAZEL_COMPONENT_SRCS_PORTABLE_LIBRARY" not in manifest:
+        raise SystemExit("generated component has no source inventory")
+    expected_archive = mode == "firmware-lib"
+    if ("h2_idf_import_bazel_archive(" in cmake) != expected_archive:
+        raise SystemExit("generated firmware library imports the wrong archives")
 if mode == "idf-failure":
     raise SystemExit(19)
 if "merge-bin" in args:
@@ -282,6 +301,7 @@ class EspIdfRunnerTest(unittest.TestCase):
         tool_versions: str | None = None,
         cmake_variable: str | None = None,
         selected_tools: dict[str, str] | None = None,
+        extra_arguments: list[str] | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], Path]:
         mode_path = self.project / "mode"
         if mode == "success":
@@ -442,6 +462,7 @@ class EspIdfRunnerTest(unittest.TestCase):
             command.append("--h2loader-wifi-environment")
         if cmake_variable is not None:
             command.extend(["--cmake-variable", cmake_variable])
+        command.extend(extra_arguments or [])
         return (
             subprocess.run(command, env=environment, text=True, capture_output=True),
             output,
@@ -563,6 +584,51 @@ class EspIdfRunnerTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("invalid CMake variable", result.stderr)
+
+    def test_generated_firmware_library_includes_declared_sdk_sources(self):
+        external = self.source / "external/portable_repo+"
+        external.joinpath("include").mkdir(parents=True)
+        external.joinpath("native.c").write_text("int portable;\n")
+        external.joinpath("include/portable.h").write_text("extern int portable;\n")
+        generated = self.source / "bazel-out/generated/second.c"
+        generated.parent.mkdir(parents=True)
+        generated.write_text("int generated;\n")
+        for source_only in (False, True):
+            with self.subTest(source_only=source_only):
+                arguments = [
+                    "--generate-prebuilt-component", "portable_library",
+                    "--native-component-source", "portable_library=external/portable_repo+/native.c",
+                    "--native-component-source", "portable_library=bazel-out/generated/second.c",
+                    "--prebuilt-component-include", "portable_library=external/portable_repo+/include",
+                ]
+                if not source_only:
+                    arguments.extend(["--prebuilt-component", "portable_library=bazel-out/libfixture.a"])
+                mode = "firmware-lib-source-only" if source_only else "firmware-lib"
+                result, _ = self._run(name=mode, mode=mode, extra_arguments=arguments)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_generated_firmware_component_rejects_duplicate_registration(self):
+        result, _ = self._run(
+            name="duplicate-generated",
+            extra_arguments=[
+                "--generate-prebuilt-component", "h2_fixture",
+                "--generate-prebuilt-component", "h2_fixture",
+            ],
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate generated ESP-IDF component", result.stderr)
+
+    def test_native_component_sources_allow_external_repository_symlinks(self):
+        checkout = self.root / "external-library"
+        checkout.mkdir()
+        source = checkout / "portable.c"
+        source.write_text("int portable;\n")
+        self.source.joinpath("external").mkdir()
+        self.source.joinpath("external/portable_repo+").symlink_to(checkout, target_is_directory=True)
+        resolved = runner.resolve_native_component_sources(
+            self.source, ["portable_library=external/portable_repo+/portable.c"]
+        )
+        self.assertEqual(resolved["portable_library"][0].read_text(), "int portable;\n")
 
     def test_native_component_manifest_is_stable_and_complete(self):
         components = {

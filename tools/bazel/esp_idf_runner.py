@@ -461,14 +461,15 @@ def resolve_prebuilt_component_includes(
     source_root: Path,
     values: list[str],
     components: dict[str, Path],
+    generated_components: list[str] | tuple[str, ...] = (),
 ) -> dict[str, list[Path]]:
-    includes = {name: [] for name in components}
+    includes = {name: [] for name in set(components) | set(generated_components)}
     for value in values:
         component_name, separator, raw_path = value.partition("=")
         relative_path = Path(raw_path)
         if (
             not separator
-            or component_name not in components
+            or component_name not in includes
             or not raw_path
             or relative_path.is_absolute()
             or ".." in relative_path.parts
@@ -486,21 +487,27 @@ def render_prebuilt_component(
     component_name: str,
     includes: list[Path],
     archive_helper: Path,
+    sources: list[Path] | tuple[Path, ...] = (),
+    *,
+    import_archive: bool = True,
 ) -> str:
     lines = ["idf_component_register("]
+    if sources:
+        lines.append("  SRCS")
+        lines.extend(f'    "{source.as_posix()}"' for source in sorted(sources))
     if includes:
         lines.append("  INCLUDE_DIRS")
         lines.extend(f'    "{include.as_posix()}"' for include in includes)
-    lines.extend([
-        ")",
-        "",
-        "if(CMAKE_BUILD_EARLY_EXPANSION)",
-        "  return()",
-        "endif()",
-        f'include("{archive_helper.as_posix()}")',
-        f"h2_idf_import_bazel_archive({component_name} H2_BAZEL_PREBUILT_{component_name.upper()})",
-        "",
-    ])
+    lines.extend([")", ""])
+    if import_archive:
+        lines.extend([
+            "if(CMAKE_BUILD_EARLY_EXPANSION)",
+            "  return()",
+            "endif()",
+            f'include("{archive_helper.as_posix()}")',
+            f"h2_idf_import_bazel_archive({component_name} H2_BAZEL_PREBUILT_{component_name.upper()})",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -761,6 +768,7 @@ def run(arguments: argparse.Namespace) -> None:
         source_root,
         arguments.prebuilt_component_include,
         prebuilt_components,
+        arguments.generate_prebuilt_component,
     )
     native_components = resolve_native_components(
         source_root,
@@ -872,10 +880,16 @@ def run(arguments: argparse.Namespace) -> None:
             GIZOS_ROOT
             / "native_component_src/esp-idf6.x/cmake/h2_bazel_archive.cmake"
         )
-        if arguments.generate_prebuilt_component:
+        if any(name in prebuilt_components for name in arguments.generate_prebuilt_component):
             archive_helper = required_file(archive_helper, "ESP-IDF Bazel archive helper")
         for component_name in sorted(arguments.generate_prebuilt_component):
-            if component_name not in prebuilt_components:
+            if (
+                not SAFE_COMPONENT_NAME.fullmatch(component_name)
+                or component_name in component_directories
+            ):
+                raise RunnerError(f"invalid or duplicate generated ESP-IDF component: {component_name}")
+            sources = native_component_sources.get(component_name, [])
+            if component_name not in prebuilt_components and not sources:
                 raise RunnerError(f"unknown generated ESP-IDF prebuilt component: {component_name}")
             if component_name in native_components:
                 raise RunnerError(
@@ -888,10 +902,13 @@ def run(arguments: argparse.Namespace) -> None:
                     component_name,
                     prebuilt_component_includes[component_name],
                     archive_helper,
+                    sources,
+                    import_archive=component_name in prebuilt_components,
                 ),
                 encoding="utf-8",
             )
             component_directories[component_name] = generated
+            native_component_includes[component_name] = prebuilt_component_includes[component_name]
         for component_name, component_directory in sorted(native_components.items()):
             if component_directory.name == component_name:
                 component_directories[component_name] = component_directory

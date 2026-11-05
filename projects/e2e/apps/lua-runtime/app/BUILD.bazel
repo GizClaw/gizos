@@ -51,6 +51,6 @@ cc_test(
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",
-        "//projects/example/libs/host_runtime",
+        "//projects/e2e/libs/host_runtime",
     ],
 )

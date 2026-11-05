@@ -118,11 +118,12 @@ def _esp_idf_firmware_impl(ctx):
     ]
     native_components = collect_native_components(ctx.attr.graph)
     prebuilt_components = collect_firmware_components(ctx.attr.graph)
-    prebuilt_files = [component.archive for component in prebuilt_components]
+    prebuilt_files = [component.archive for component in prebuilt_components if component.archive]
+    prebuilt_sources = [component.native_srcs for component in prebuilt_components]
     prebuilt_headers = [component.headers for component in prebuilt_components]
     inputs = depset(
         [ctx.file.project, ctx.file.partition, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._tool_versions, ctx.file._sdk_locator, ctx.file._tools_locator, ctx.file._ccache_locator] + ctx.files.srcs + support_files + ctx.files.project_support_files + prebuilt_files,
-        transitive = graph_sources + prebuilt_headers,
+        transitive = graph_sources + prebuilt_headers + prebuilt_sources,
     )
 
     args = ctx.actions.args()
@@ -162,9 +163,12 @@ def _esp_idf_firmware_impl(ctx):
         args.add("--cmake-variable", name + "=" + ctx.attr.cmake_definitions[name])
     args.add("--support-file", ctx.file._native_component_cmake.path)
     for component in prebuilt_components:
-        args.add("--prebuilt-component", component.component_name + "=" + component.archive.path)
+        if component.archive:
+            args.add("--prebuilt-component", component.component_name + "=" + component.archive.path)
         if component.generate_component:
             args.add("--generate-prebuilt-component", component.component_name)
+        for source in component.native_srcs.to_list():
+            args.add("--native-component-source", component.component_name + "=" + source.path)
         for include_root in component.include_roots:
             args.add("--prebuilt-component-include", component.component_name + "=" + include_root)
     for component in native_components:

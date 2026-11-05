@@ -66,7 +66,8 @@ void* reallocate(void*, void* p, size_t size) {
   }
   return next;
 }
-const h2_pal_mem_vtable_t allocator_vtable = {allocate, reallocate, deallocate};
+const h2_pal_mem_vtable_t allocator_vtable = {allocate, reallocate, deallocate,
+                                              nullptr};
 const h2_pal_mem_api_t allocator = {nullptr, &allocator_vtable};
 void* stack_allocate(void*, size_t size) {
   {
@@ -78,7 +79,7 @@ void* stack_allocate(void*, size_t size) {
   return allocate(nullptr, size);
 }
 const h2_pal_mem_vtable_t stack_vtable = {stack_allocate, reallocate,
-                                          deallocate};
+                                          deallocate, nullptr};
 const h2_pal_mem_api_t stack_allocator = {nullptr, &stack_vtable};
 h2_pal_result_t resolve_stack(void*, const h2_pal_task_options_t* options,
                               size_t* bytes) {

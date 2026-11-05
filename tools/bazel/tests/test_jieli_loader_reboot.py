@@ -9,10 +9,9 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class LoaderRebootTest(unittest.TestCase):
     def test_request_is_published_only_by_successfully_scheduled_reset(self):
-        source = (ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/"
-                  "jieli_ac791n_devkit/src/jieli_loader_platform.c").read_text()
+        source = (ROOT / "native_component_src/jieli/wl82/h2_pal_image/src/h2_jieli_wl82_platform_image.c").read_text()
         functions = source[source.index("static void power_reboot_timer("):
-                           source.index("int h2_jieli_loader_platform_init(")]
+                           source.index("h2_pal_result_t h2_jieli_wl82_platform_image_configure(")]
         stub = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -21,15 +20,17 @@ class LoaderRebootTest(unittest.TestCase):
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_INVALID_STATE -1
 #define H2_PAL_ERR_NO_MEMORY -2
-#define H2_JIELI_PARTITION_APP 2
+#define BANK_2_ID 2
+#define BANK_2_BASE 0x37c020u
+#define H2_PAL_ERR_UNAVAILABLE -3
 #define H2_JIELI_BANK_2_SFC_BASE 0x37c020u
 static struct { unsigned next_partition_id, running_partition_id;
-  int update_committed; unsigned warm_partition_id, reboot_timer_id; } state;
+  int update_committed, configured; unsigned committed_partition_id, warm_partition_id, reboot_timer_id; } state={.configured=1};
 static unsigned allocation, publications, resets;
 static void (*callback)(void *);
 static void *argument;
-static void h2_jieli_loader_diag_write(const char *s) { (void)s; }
-static void h2_jieli_warm_boot_request(uint32_t base) {
+static void h2_jieli_wl82_diag_write(const char *s) { (void)s; }
+static void h2_jieli_wl82_warm_boot_request(uint32_t base) {
   assert(base == H2_JIELI_BANK_2_SFC_BASE); ++publications;
 }
 static void system_reset(void) { ++resets; }
@@ -54,7 +55,7 @@ int main(void) {
   state.reboot_timer_id=0; state.next_partition_id=1;
   assert(power_reboot(NULL,0)==0); callback(argument);
   assert(publications==1 && resets==2);
-  state.reboot_timer_id=0; state.next_partition_id=2;
+  state.reboot_timer_id=0; state.next_partition_id=2; state.committed_partition_id=2;
   assert(power_reboot(NULL,0)==H2_PAL_ERR_INVALID_STATE);
   assert(publications==1 && resets==2);
 }

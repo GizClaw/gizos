@@ -1,0 +1,82 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "esp32s3",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    component_name = "h2_esp_board",
+    data = [
+        "CMakeLists.txt",
+        "idf_component.yml",
+        "sdkconfig.defaults",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_adc_oneshot",
+        "//native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system",
+        "//native_component_src/esp-idf6.x/h2_nfc_fm175xx",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+    ],
+)
+
+cc_test(
+    name = "h200_fs_cleanup_test",
+    srcs = [
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_private.h",
+        "tests/test_h2_esp_board_fs.c",
+    ] + glob(["tests/fs_include/**"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/fs_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)

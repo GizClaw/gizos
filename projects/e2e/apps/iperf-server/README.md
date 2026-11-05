@@ -26,12 +26,12 @@ The UI reports connected stations and cumulative local RX/TX throughput for each
 ## Build and install
 
 ```sh
-bazel build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/iperf-server/amoled:package
+bazel build --config=esp32s3 //projects/e2e/targets/pair/iperf-server/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 Use the existing H2Loader transport: inspect the directed AMOLED port/UID and preserve firmware, P1, Stage and coredump evidence; send the package, reboot upgrade, then verify the exact running image and `H2_IPERF_SERVER_UI_READY`. The default UI waits for touch input; flashing alone does not qualify throughput or physical touch operation.
 
-For automated two-board qualification, `--define=H2_IPERF_SERVER_AUTOSTART_MODE=4`, `6` or `46` starts the same controller after Display/Touch readiness. Default `0` retains stopped-at-boot operation. This does not inject touch events or qualify finger interaction. Pair it with `//projects/e2e/targets/h2loader_tar_zlib/iperf-client/devkit:package` and reboot the client after each server mode change; see the [client App](../iperf-client/README.md).
+For automated two-board qualification, `--define=H2_IPERF_SERVER_AUTOSTART_MODE=4`, `6` or `46` starts the same controller after Display/Touch readiness. Default `0` retains stopped-at-boot operation. This does not inject touch events or qualify finger interaction. Pair it with `//projects/e2e/targets/pair/iperf-client/espressif/esp32s3_devkitc_1:package` and reboot the client after each server mode change; see the [client App](../iperf-client/README.md).
 
 ## Client commands
 
@@ -56,4 +56,4 @@ bazel test --config=macos_arm64 //libs/iperf:all
 
 The controller test uses real PAL sockets: 16 TCP/UDP forward/reverse scenarios across single-family and dual modes, eight official iperf3 client interop scenarios, six control/data-handshake/result-exchange cancellation scenarios, four active-test cancellations, oversized block/JSON rejection and recovery, failed startup recovery, queued-start cancellation and repeated teardown/rebind. Five persistent cleanup failure scenarios cover AP stop after normal stop/partial startup, retained worker join, manager mutex failure and a network-start error with active network ownership; destroy returns an error without freeing borrowed/live state and succeeds on retry after the fault is cleared. The UI test sends ten Touch PAL down/up pairs through the production LVGL input callback to select/start/stop all three modes and retry a failed stop, and verifies Display/Touch lifecycle; it exports production RGB565 rendering as PPM for inspection. These host tests do not replace an AMOLED optical/touch check or an external client's over-the-air throughput run.
 
-The AMOLED SDK defaults are board-owned. Its canonical board file supplies IPv6/SLAAC policy; `boards/amoled/esp32s3/layouts/h2loader/sdkconfig.iperf-server.defaults` supplies the existing INFO diagnostics and 12-socket/6-active-TCP/4-listener budget. The firmware target declares this variant and the common Loader defaults as project support files.
+The AMOLED SDK defaults are board-owned. Its canonical board file supplies IPv6/SLAAC policy; `boards/waveshare/esp32s3_touch_amoled_1_8/esp32s3/layouts/h2loader/sdkconfig.iperf-server.defaults` supplies the existing INFO diagnostics and 12-socket/6-active-TCP/4-listener budget. The firmware target declares this variant and the common Loader defaults as project support files.

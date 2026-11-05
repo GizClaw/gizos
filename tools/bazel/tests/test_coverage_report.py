@@ -76,11 +76,106 @@ class CoverageReportTest(unittest.TestCase):
         targets = coverage_report.parse_target_inventory_json(
             json.dumps(document),
             ["//a:lib"],
+            {
+                "//a:a.c": ["a/a.c"],
+                "//a:a.h": ["a/a.h"],
+                "//a:public.hpp": ["a/public.hpp"],
+            },
         )
         self.assertEqual(
             targets[0]["declared_sources"],
             ["a/a.c", "a/a.h", "a/public.hpp"],
         )
+
+    def test_configured_sources_attribute_filegroup_outputs_to_their_owner(self):
+        sources = coverage_report.parse_source_inventory_json(
+            json.dumps({
+                "label": "@@//inventory:nested_sources",
+                "sources": ["shared/b.c", "shared/a.c", "shared/a.c"],
+            }) + "\n" + json.dumps({
+                "label": "//inventory:headers.h",
+                "sources": ["shared/include/public.h"],
+            }) + "\n" + json.dumps({
+                "label": "//unrelated:files",
+                "sources": ["shared/unowned.h"],
+            }) + "\n"
+        )
+        targets = coverage_report.parse_target_inventory_json(
+            json.dumps({"results": [{"target": {"rule": {
+                "name": "//owner:lib",
+                "ruleClass": "cc_library",
+                "attribute": [
+                    {"name": "srcs", "stringListValue": ["@@//inventory:nested_sources"]},
+                    {"name": "hdrs", "stringListValue": ["//inventory:headers.h"]},
+                    {"name": "data", "stringListValue": ["//unrelated:files"]},
+                ],
+            }}}]}),
+            ["//owner:lib"],
+            sources,
+        )
+        self.assertEqual(targets[0]["declared_sources"], [
+            "shared/a.c", "shared/b.c", "shared/include/public.h",
+        ])
+        record = {
+            "metrics": {
+                name: {"covered": 1, "total": 1, "percent": 100.0}
+                for name in ("lines", "functions", "branches")
+            },
+        }
+        report = coverage_report.build_target_report(
+            targets,
+            {"shared/a.c": record, "shared/include/public.h": record},
+        )
+        self.assertEqual(report["targets"][0]["status"], "measured")
+        self.assertEqual(report["targets"][0]["attributed_lcov_files"], [
+            "shared/a.c", "shared/include/public.h",
+        ])
+        with self.assertRaisesRegex(coverage_report.ReportError, "outside eligible targets"):
+            coverage_report.build_target_report(
+                targets,
+                {"shared/a.c": record, "shared/unowned.h": record},
+            )
+
+    def test_configured_sources_exclude_nonproduction_and_nonworkspace_files(self):
+        sources = coverage_report.parse_source_inventory_json(json.dumps({
+            "label": "//a:files",
+            "sources": [
+                "a/a.c", "a/tests/a_test.c", "a/generated/a.h", "a/tool.py",
+                "../vendor/a.h", "external/vendor/a.h", "bazel-out/bin/a.h",
+                "/outside/a.h", "a/../unowned.h",
+            ],
+        }) + "\n" + json.dumps({
+            "label": "@@vendor//:files",
+            "sources": ["vendor/a.h"],
+        }))
+        self.assertEqual(sources, {"//a:files": ["a/a.c"]})
+
+    def test_configured_sources_reject_missing_evidence(self):
+        document = {"results": [{"target": {"rule": {
+            "name": "//a:lib",
+            "ruleClass": "cc_library",
+            "attribute": [{"name": "srcs", "stringListValue": ["//a:a.c"]}],
+        }}}]}
+        with self.assertRaisesRegex(coverage_report.ReportError, "missing file evidence"):
+            coverage_report.parse_target_inventory_json(
+                json.dumps(document), ["//a:lib"], {},
+            )
+
+    def test_configured_sources_reject_inconsistent_variants(self):
+        first = json.dumps({"label": "//a:files", "sources": ["a/a.c"]})
+        second = json.dumps({"label": "//a:files", "sources": ["a/b.c"]})
+        self.assertEqual(
+            coverage_report.parse_source_inventory_json(first + "\n" + first),
+            {"//a:files": ["a/a.c"]},
+        )
+        with self.assertRaisesRegex(coverage_report.ReportError, "inconsistent variants"):
+            coverage_report.parse_source_inventory_json(first + "\n" + second)
+
+    def test_configured_sources_reject_malformed_evidence(self):
+        for output in ("{not-json}", "[]", '{"label":"//a:files","sources":"a/a.c"}'):
+            with self.subTest(output=output):
+                with self.assertRaisesRegex(coverage_report.ReportError, "configured source"):
+                    coverage_report.parse_source_inventory_json(output)
 
     def _write_bep(self, root: Path, events: list[dict[str, object]]) -> Path:
         path = root / "bep.json"

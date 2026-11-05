@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class ClockDriverTest(unittest.TestCase):
     def test_start_pending_overflow_and_concurrent_readers(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_clock.c").read_text()
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_clock.c").read_text()
         body = source[source.index("static DEFINE_SPINLOCK"):source.rindex("#endif")]
         fixture = r'''
 #include <assert.h>
@@ -90,7 +90,8 @@ int main(void) {
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
                             "-fsanitize=undefined", "-I", str(ROOT / "libs/pal/include"),
-                            "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
+                            "-I", str(ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/include"),
+                "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
                             str(test), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
 

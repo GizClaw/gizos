@@ -9,10 +9,8 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "h2loader_firmware.bzl",
-    "h2loader_bk_recovery.bzl",
     "h2loader_tar_zlib.bzl",
     "h2loader_zlib_tar.bzl",
-    "checksum_matrix.bzl",
 ])
 
 py_library(
@@ -33,10 +31,7 @@ py_test(
         "tests/fixtures/h2loader_format1.sha256",
         "tests/fixtures/h2loader_format1.tar.zlib",
         "tests/fixtures/h2loader_format2.sha256",
-    ] + select({
-        "@platforms//os:windows": [],
-        "//conditions:default": [":encrypted_bk_app"],
-    }),
+    ],
     legacy_create_init = 0,
     main = "tests/test_firmware_artifacts.py",
     target_compatible_with = select({
@@ -63,7 +58,6 @@ py_library(
     }),
     deps = [
         ":firmware_artifacts",
-        "//tools/bazel:bk7258_flash_aes",
     ],
 )
 
@@ -94,20 +88,6 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":firmware_output"],
-)
-
-py_binary(
-    name = "checksum_fixture_writer",
-    srcs = ["checksum_fixture_writer.py"],
-    legacy_create_init = 0,
-    main = "checksum_fixture_writer.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":firmware_artifacts"],
 )
 
 _HOST_PACKAGE_TEST = select({
@@ -166,33 +146,47 @@ py_test(
     target_compatible_with = _HOST_PACKAGE_TEST,
 )
 
-py_binary(
-    name = "encrypted_bk_app",
-    srcs = ["encrypted_bk_app.py"],
-    legacy_create_init = False,
-    main = "encrypted_bk_app.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+py_library(
+    name = "package_conversion",
+    srcs = ["repackage.py"],
+    target_compatible_with = _HOST_PACKAGE_TEST,
     deps = [
+        ":firmware_artifacts",
         ":firmware_output",
+        "//tools/bazel:firmware_crypto",
     ],
 )
 
 py_binary(
-    name = "encrypted_bk_recovery",
-    srcs = ["firmware_output.py"],
+    name = "repackage",
+    srcs = ["repackage.py"],
     legacy_create_init = False,
-    main = "firmware_output.py",
+    main = "repackage.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":package_conversion"],
+)
+
+py_test(
+    name = "package_conversion_test",
+    srcs = ["tests/test_package_conversion.py"],
+    data = [
+        ":repackage",
+        "//tools/bazel:bk7258_encrypt",
+    ],
+    legacy_create_init = False,
+    main = "tests/test_package_conversion.py",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":firmware_artifacts",
-        "//tools/bazel:bk7258_flash_aes",
+        ":package_conversion",
+        "//tools/bazel/tests/bk7258_encryption:fixture_support",
+        "@rules_python//python/runfiles",
     ],
 )

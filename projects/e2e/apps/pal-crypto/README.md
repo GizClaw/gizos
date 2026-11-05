@@ -19,7 +19,7 @@ Desktop 注入真实 Darwin/Linux 系统 entropy。Provider 只在 launcher 初�
 
 WASM 在真实 Chromium 的 Worker 中执行；iOS、Android 从实际打包的 Swift Package/AAR 消费平台 provider，移动端 E2E 配置默认绑定使用系统熵的 wolfCrypt 实现。移动端每次安装后删除旧 report 并启动 App，由宿主核对实际版本、完整 registry、退出和 teardown；模拟器结果不能代表手机实机验收。
 
-DevKit、BK7258 使用板级 Runtime 与 H2Loader managed serial 安装。设备每次 boot 只运行一次，随后 replay 不可变 case ledger；重连获取 replay 不算重新执行。安装前后核对 UID、镜像和 package 摘要、Loader/P1、Stage、App/P2 与 coredump。构建、接线和安装约束见对应 `targets/h2loader_tar_zlib/pal-crypto` README。
+DevKit、BK7258 使用板级 Runtime 与 H2Loader managed serial 安装。设备每次 boot 只运行一次，随后 replay 不可变 case ledger；重连获取 replay 不算重新执行。安装前后核对 UID、镜像和 package 摘要、Loader/P1、Stage、App/P2 与 coredump。构建、接线和安装约束见对应 `targets/pal-crypto/<manufacturer>/<board>` README。
 
 测试发现并修复了 ESP 零长度随机请求触发 SDK assert、ESP/BK 对 X25519 低阶公钥的错误归类、BK PSA 配置未传播造成的 operation object 越界，以及 BK TrustEngine 对 Curve25519/压缩 P-256 公钥的能力缺口。BK AP 选择 SDK 官方软件 Crypto 分支，并通过标准 `mbedtls_hardware_poll` 接入 TRNG，避免该 SDK 分支默认 `rand()` stub 进入 PSA 内部 DRBG；不复制第三方密码源码或自行实现曲线运算。
 

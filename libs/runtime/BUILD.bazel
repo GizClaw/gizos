@@ -56,6 +56,7 @@ RUNTIME_DEPS = [
     ":tasks",
     "//libs/atomic",
     "//libs/pal",
+    "//libs/pal:unsupported",
 ]
 
 # Host platforms, where the Runtime unit tests can actually run.

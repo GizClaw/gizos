@@ -37,7 +37,7 @@ cc_binary(
         "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e",
-        "//projects/example/libs/host_runtime",
+        "//projects/e2e/libs/host_runtime",
     ],
 )
 

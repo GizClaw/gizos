@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_console.c"
+SOURCE = ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_console.c"
 
 STUB = r"""
 #include <stdint.h>
@@ -108,155 +108,101 @@ int main(void) {
 
 class UartConsoleTest(unittest.TestCase):
     def test_app_console_start_retry_keeps_live_transport(self):
-        source = (ROOT / "projects/h2loader/native_component_src/jieli/wl82/"
-                  "h2loader_app/src/jieli_app_iostreamikcp.c").read_text()
-        begin = source.index("static int console_sync_init(")
+        source = (ROOT / "libs/h2loader/device/src/h2_device_serial.c").read_text()
+        def function(name):
+            begin = source.index(name)
+            end = source.index("{", begin) + 1
+            depth = 1
+            while depth:
+                depth += (source[end] == "{") - (source[end] == "}")
+                end += 1
+            return source[begin:end]
+        code = function("int h2_device_app_serial_start_with_config(") + function("void h2_device_app_serial_admit_sessions(")
         stub = r'''
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
-enum { OS_NO_ERR=0, H2_PAL_OK=0, H2_PAL_ERR_NO_MEMORY=-1,
-       H2_PAL_ERR_INVALID_ARG=-2, H2_PAL_ERR_INVALID_STATE=-3,
-       H2_PAL_ERR_IO=-4, H2_USB_RX_TASK_STACK_SIZE=4096,
-       H2_APP_COMMAND_STACK_SIZE=49152, USB_MAX_HW_NUM=2 };
-typedef int h2_loader_app_client_t;
-typedef int h2_pal_task_api_t;
-typedef int h2_pal_mem_api_t;
-typedef int usb_dev;
-typedef struct { void *user; int read, write, flush; } h2_iostreamikcp_io_t;
+enum { H2_PAL_OK=0,H2_PAL_ERR_INVALID_ARG=-1,H2_PAL_ERR_INVALID_STATE=-2,
+ H2_PAL_ERR_NO_MEMORY=-3,H2_ATOMIC_RELEASE=0,H2_SESSION_GATE_FALLBACK_MS=8000,
+ H2_APP_COMMAND_STACK_SIZE=49152,H2_ATOMIC_OK=0 };
+static const char h2_loader_uart_command_task_name[]= "console";
+typedef int h2_loader_app_client_t,h2_pal_task_api_t,h2_pal_mem_api_t;
+typedef uint32_t h2_atomic_bool_t;
+typedef struct { void *user; int read,write,flush; } h2_iostreamikcp_io_t;
 typedef struct { void *user; int *vtable; } h2_command_io_api_t;
 typedef struct {
-  const h2_pal_mem_api_t *allocator;
-  h2_iostreamikcp_io_t physical_io;
-  int filter;
-  volatile uint32_t sessions_admitted;
-  uint32_t gate_started_ms;
-} transport_t;
-static uint32_t now_ms_value = 1234u;
-static uint32_t timer_get_ms(void) { return now_ms_value; }
-static uint32_t h2_jieli_atomic_load_u32(volatile uint32_t *a) { return *a; }
-static void h2_jieli_atomic_store_u32(volatile uint32_t *a, uint32_t v) { *a = v; }
+ h2_iostreamikcp_io_t physical_io; const h2_pal_mem_api_t *allocator;
+ h2_atomic_bool_t *sessions_admitted,*stop_requested; const void *time; unsigned admission_fallback_ms;
+} h2_device_serial_config_t;
 typedef struct {
-  transport_t transport;
-  h2_command_io_api_t io;
-  h2_loader_app_client_t *client;
-  int rx_mutex, tx_mutex, rx_wakeup_sem, rx_data_sem;
-  usb_dev usb_id;
-  int initialized, started;
-} h2_jieli_app_console_t;
+ h2_device_serial_config_t config; h2_iostreamikcp_io_t physical_io;
+ const h2_pal_mem_api_t *allocator; const void *time; h2_command_io_api_t io; uint32_t gate_started_ms;
+} h2_device_serial_t;
+typedef struct { h2_device_serial_config_t transport; const h2_pal_task_api_t *task; const char *task_name; size_t stack_size; } h2_device_app_serial_config_t;
 typedef struct {
-  h2_loader_app_client_t *client;
-  const h2_pal_task_api_t *task;
-  void *read_user, *write_user;
-  int read_byte, write;
-  const char *task_name;
-  size_t stack_size;
+ h2_device_serial_t transport; h2_command_io_api_t io;
+ h2_loader_app_client_t *client; const h2_pal_task_api_t *task; h2_atomic_bool_t stop_requested,sessions_admitted; int admission_requested,initialized,started;
+} h2_device_app_serial_t;
+typedef struct {
+ h2_loader_app_client_t *client; const h2_pal_task_api_t *task;
+ void *read_user,*write_user; int read_byte,write;
+ const char *task_name; size_t stack_size;
 } h2_loader_app_client_return_console_config_t;
-static h2_jieli_app_console_t state;
-static int physical_read, physical_write, physical_flush, command_io_vtable;
-static int app_read_byte, app_write;
-static int live, creates, board_calls, command_calls;
-static int board_fail, worker_fail, command_fail, worker_count, handlers;
-static int os_mutex_create(int *o) {
-  assert(*o==0); *o=++creates; ++live; return OS_NO_ERR;
+static h2_device_app_serial_t state;
+static int h2_atomic_bool_init(h2_atomic_bool_t *value,bool initial) { *value=initial;return H2_ATOMIC_OK; }
+static void h2_atomic_bool_destroy(h2_atomic_bool_t *value) { *value=0; }
+static int app_read_byte,app_write,transport_inits,command_calls,command_fail;
+static uint32_t now_ms_value=1234;
+static void h2_atomic_bool_store(h2_atomic_bool_t *value,bool admitted,int order) {
+ (void)order;*value=admitted;
 }
-static int os_sem_create(int *o, int n) {
-  assert(n==0); return os_mutex_create(o);
+static int h2_device_serial_init_with_config(h2_device_serial_t *transport,const h2_device_serial_config_t *config) {
+ ++transport_inits;transport->config=*config;transport->physical_io=config->physical_io;
+ transport->allocator=config->allocator;transport->time=config->time;return 0;
 }
-static int os_mutex_del(int *o, int force) {
-  assert(*o!=0 && force==0 && worker_count==0 && handlers==0);
-  *o=0; --live; return OS_NO_ERR;
-}
-static int os_sem_del(int *o, int force) { return os_mutex_del(o,force); }
-static void h2_iostreamikcp_filter_init(int *filter) { *filter=17; }
-static int board_start(void) {
-  ++board_calls; assert(live==4); return board_fail ? H2_PAL_ERR_IO : 0;
-}
-#define h2_jieli_ac791n_devkit_console_start board_start
-#define h2_jieli_ac791n_devkit_usb_debug_start board_start
-#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
-static int usb_rx_task, usb_cdc_wakeup;
-static int os_task_create(int entry, void *ctx, int priority, int stack,
-                          int queue, const char *name) {
-  (void)entry; (void)priority; (void)stack; (void)queue; (void)name;
-  assert(ctx==&state && live==4 && handlers==0 && worker_count==0);
-  if (worker_fail) return -1;
-  ++worker_count; return 0;
-}
-static void cdc_set_wakeup_handler(usb_dev id, int handler) {
-  (void)id; (void)handler;
-  assert(worker_count==1 && live==4); ++handlers;
-}
-#endif
-static int h2_loader_app_client_start_return_console(
-    const h2_loader_app_client_return_console_config_t *config) {
-  assert(config->read_user==&state && config->write_user==&state);
-  assert(state.initialized && state.started && live==4);
-  ++command_calls;
-  return command_fail ? H2_PAL_ERR_NO_MEMORY : 0;
+static h2_command_io_api_t h2_device_serial_io(h2_device_serial_t *transport) { return (h2_command_io_api_t){.user=transport}; }
+static uint32_t h2_device_serial_now(h2_device_serial_t *transport) { (void)transport;return now_ms_value; }
+static int h2_loader_app_client_start_return_console(const h2_loader_app_client_return_console_config_t *config) {
+ assert(config->read_user==&state && config->write_user==&state && state.started && state.initialized);
+ assert(config->stack_size==49152);++command_calls;return command_fail?H2_PAL_ERR_NO_MEMORY:0;
 }
 '''
         main = r'''
 int main(void) {
-  h2_loader_app_client_t client=0, other_client=0;
-  h2_pal_task_api_t task=0;
-  h2_pal_mem_api_t allocator=0, other_allocator=0;
-  board_fail=1;
-  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_IO);
-  assert(live==0 && !state.initialized);
-  board_fail=0;
-  /* A session admission requested before the transport starts must survive
-   * both the fresh initialization and every command-task retry below. */
-  h2_jieli_app_iostreamikcp_admit_sessions();
-  assert(state.transport.sessions_admitted==1u);
-#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
-  worker_fail=1;
-  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_NO_MEMORY);
-  assert(live==0 && handlers==0 && !state.initialized);
-#endif
-  worker_fail=0; command_fail=1;
-  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_NO_MEMORY);
-  assert(live==4 && state.initialized && !state.started);
-  int saved_creates=creates, saved_board_calls=board_calls;
-  int saved_mutex=state.rx_mutex;
-  /* Preserve data written by a live worker between command-start attempts. */
-  state.usb_id=1;
-  assert(h2_jieli_app_iostreamikcp_start(&other_client,&task,&allocator)==H2_PAL_ERR_INVALID_STATE);
-  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&other_allocator)==H2_PAL_ERR_INVALID_STATE);
-  assert(command_calls==1);
-  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_NO_MEMORY);
-  command_fail=0;
-  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==0);
-  assert(state.started && state.usb_id==1 && state.rx_mutex==saved_mutex);
-  assert(state.transport.sessions_admitted==1u && state.transport.gate_started_ms==now_ms_value);
-  assert(creates==saved_creates && board_calls==saved_board_calls && live==4);
-#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
-  assert(worker_count==1 && handlers==USB_MAX_HW_NUM);
-#endif
-  assert(command_calls==3);
-  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_INVALID_STATE);
-  assert(command_calls==3);
-  return 0;
+ h2_loader_app_client_t client=0,other_client=0;h2_pal_task_api_t task=0;
+ h2_pal_mem_api_t allocator=0,other_allocator=0;
+ h2_device_app_serial_config_t config={.task=&task,.stack_size=49152,.transport={.admission_fallback_ms=8000,.allocator=&allocator,.physical_io={.user=&task,.read=1,.write=2}}};
+ h2_device_app_serial_admit_sessions(&state);assert(state.admission_requested==1);
+ command_fail=1;
+ assert(h2_device_app_serial_start_with_config(&state,&client,&config)==H2_PAL_ERR_NO_MEMORY);
+ assert(state.initialized && !state.started && transport_inits==1 && state.sessions_admitted==1);
+ assert(h2_device_app_serial_start_with_config(&state,&other_client,&config)==H2_PAL_ERR_INVALID_STATE);
+ config.transport.allocator=&other_allocator;
+ assert(h2_device_app_serial_start_with_config(&state,&client,&config)==H2_PAL_ERR_INVALID_STATE);
+ config.transport.allocator=&allocator;
+ assert(h2_device_app_serial_start_with_config(&state,&client,&config)==H2_PAL_ERR_NO_MEMORY);
+ assert(transport_inits==1 && command_calls==2 && state.sessions_admitted==1);
+ command_fail=0;now_ms_value=5678;
+ assert(h2_device_app_serial_start_with_config(&state,&client,&config)==0);
+ assert(state.started && state.transport.gate_started_ms==5678 && transport_inits==1 && state.sessions_admitted==1);
+ assert(state.transport.config.sessions_admitted==&state.sessions_admitted && state.transport.config.admission_fallback_ms==8000);
+ assert(h2_device_app_serial_start_with_config(&state,&client,&config)==H2_PAL_ERR_INVALID_STATE && command_calls==3);
+ return 0;
 }
 '''
-        with tempfile.TemporaryDirectory(prefix="h2-app-start-test-") as directory:
-            test = Path(directory) / "test.c"
-            test.write_text(stub + source[begin:] + main)
-            for uart in (False, True):
-                with self.subTest(uart=uart):
-                    binary = Path(directory) / ("uart" if uart else "usb")
-                    flags = ["-DCONFIG_H2_UART1_DEBUG_ENABLE=1"] if uart else []
-                    subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra",
-                                    "-Werror", *flags, str(test), "-o", str(binary)],
-                                   check=True, timeout=60)
-                    subprocess.run([str(binary)], check=True, timeout=60)
+        with tempfile.TemporaryDirectory() as directory:
+            unit = Path(directory) / "test.c"
+            binary = Path(directory) / "test"
+            unit.write_text(stub + code + main)
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(unit), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=10)
 
     def test_app_console_sync_create_failure_unwinds(self):
-        source = (ROOT / "projects/h2loader/native_component_src/jieli/wl82/"
-                  "h2loader_app/src/jieli_app_iostreamikcp.c").read_text()
+        source = (ROOT / "native_component_src/jieli/wl82/h2_pal_image/src/h2_jieli_wl82_console.c").read_text()
         begin = source.index("static int console_sync_init(")
-        end = source.index("int h2_jieli_app_iostreamikcp_start(", begin)
+        end = source.index("int h2_jieli_wl82_console_start(", begin)
         stub = r'''
 #include <assert.h>
 #include <string.h>
@@ -305,99 +251,95 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory(prefix="h2-app-sync-test-") as directory:
             test = Path(directory) / "test.c"
-            test.write_text(stub + source[begin:end] + main)
+            test.write_text(stub + source[begin:end].replace("h2_jieli_console_t", "h2_jieli_app_console_t") + main)
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             str(test), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=60)
 
-    def test_color_bars_follow_pal_dimensions(self):
-        app = (ROOT / "projects/example/native_component_src/jieli/wl82/"
-               "devkit_app/src/color_bar_pal.c").read_text()
-        function = app[app.index("static int draw_color_bars("):
-                       app.index("static int probe_sd_filesystem(")]
+    def test_native_console_start_retry_preserves_live_rx_storage(self):
+        source = (ROOT / "native_component_src/jieli/wl82/h2_pal_image/src/h2_jieli_wl82_console.c").read_text()
+        code = source[source.index("static int console_sync_init("):source.index("void h2_jieli_wl82_diag_write(")]
         stub = r'''
 #include <assert.h>
-#include <stdint.h>
 #include <stddef.h>
-enum { H2_DISPLAY_OK=0, H2_DISPLAY_ERR_INVALID_ARG=-1,
-       H2_DISPLAY_PIXEL_RGB565=0, H2_LCD_MAX_WIDTH=480 };
-typedef int h2_pal_display_api_t;
-typedef struct { int width, height; } h2_display_info_t;
-typedef struct { int x, y, width, height; } h2_display_rect_t;
-static uint16_t color_line[H2_LCD_MAX_WIDTH];
-static int width, height, rows;
-static int h2_pal_display_get_info(const int *d, h2_display_info_t *i) {
-  (void)d;
-  i->width=width; i->height=height; return 0;
-}
-static int h2_pal_display_draw_bitmap(const int *d,
-    const h2_display_rect_t *r, const void *p, size_t stride, int fmt) {
-  (void)d;
-  assert(fmt == H2_DISPLAY_PIXEL_RGB565);
-  assert(r->x==0 && r->y==rows && r->width==width && r->height==1);
-  assert(r->y<height && stride >= (size_t)width*2u);
-  assert(((const uint16_t *)p)[0]==0xffff);
-  assert(((const uint16_t *)p)[width-1]==0);
-  ++rows; return 0;
-}
-static int h2_pal_display_present(const int *d) { (void)d; assert(rows==height); return 0; }
-'''
-        main = r'''
-int main(void) {
-  int display=0;
-  width=480; height=320; assert(draw_color_bars(&display)==0);
-  width=320; height=480; rows=0; assert(draw_color_bars(&display)==0);
-  width=481; assert(draw_color_bars(&display)==-1);
-  width=0; assert(draw_color_bars(&display)==-1);
-  return 0;
-}
-'''
-        with tempfile.TemporaryDirectory(prefix="h2-color-size-test-") as directory:
-            source = Path(directory) / "test.c"
-            source.write_text(stub + function + main)
-            binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(binary)],
-                           check=True, timeout=60)
-            subprocess.run([str(binary)], check=True, timeout=60)
-
-    def test_app_boot_logs_before_command_transport(self):
-        app = (ROOT / "projects/example/native_component_src/jieli/wl82/"
-               "devkit_app/src/color_bar_pal.c").read_text()
-        start = re.search(r"\bstatic\s+void\s+usb_write_status\s*\(\s*const\s+char\s*\*\s*format\s*,\s*\.\.\.\s*\)\s*\{", app).start()
-        end = app.index("static void report_previous_exception(void)", start)
-        stub = r'''
-#include <assert.h>
-#include <stdarg.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
-#define CONFIG_H2_UART1_DEBUG_ENABLE
-static char received[1024];
-static unsigned calls;
-static int h2_jieli_ac791n_devkit_console_write(
-    const void *data, size_t size, uint32_t timeout) {
-  assert(size < sizeof(received) && timeout == 100);
-  memcpy(received, data, size); received[size] = 0; ++calls;
-  return (int)size;
+enum { OS_NO_ERR=0,H2_PAL_OK=0,H2_PAL_ERR_NO_MEMORY=-1,H2_PAL_ERR_IO=-2,H2_PAL_ERR_BUSY=-3,
+ DEBUG_RAW_IDLE=0,DEBUG_RAW_BUSY,DEBUG_STARTING,DEBUG_READY,H2_USB_RX_TASK_STACK_SIZE=4096,USB_MAX_HW_NUM=2 };
+typedef unsigned usb_dev;
+typedef struct {
+ int rx_mutex,tx_mutex,rx_wakeup_sem,rx_data_sem,initialized,started;
+ unsigned usb_id;uint8_t rx_ring[8192];size_t rx_count;
+} h2_jieli_console_t;
+static h2_jieli_console_t state;
+static volatile uint32_t debug_gate=DEBUG_RAW_IDLE;
+static int creates,live,board_calls,board_fail,worker_fail,worker_count,handlers,raw_waits;
+static void h2_jieli_atomic_store_u32(volatile uint32_t *p,uint32_t v) { *p=v; }
+static int h2_jieli_atomic_cas_u32(volatile uint32_t *p,uint32_t *expected,uint32_t v) {
+ if(*p!=*expected) { *expected=*p;return 0; } *p=v;return 1;
 }
+static void os_time_dly(unsigned ticks) {
+ assert(ticks==1 && debug_gate==DEBUG_RAW_BUSY && creates==0);++raw_waits;debug_gate=DEBUG_RAW_IDLE;
+}
+static int os_mutex_create(int *object) { assert(*object==0);*object=++creates;++live;return 0; }
+static int os_sem_create(int *object,int n) { assert(n==0);return os_mutex_create(object); }
+static int os_mutex_del(int *object,int force) {
+ assert(force==0 && *object!=0 && worker_count==0 && handlers==0);*object=0;--live;return 0;
+}
+static int os_sem_del(int *object,int force) { return os_mutex_del(object,force); }
+static int board_start(void) { ++board_calls;assert(live==4);return board_fail?H2_PAL_ERR_IO:0; }
+typedef struct { int (*start)(void); } h2_jieli_wl82_console_config_t;
+static const h2_jieli_wl82_console_config_t *h2_jieli_wl82_console_board_config(void) {
+ static const h2_jieli_wl82_console_config_t config={board_start};return &config;
+}
+#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
+static void usb_rx_task(void *user) { (void)user; }
+static void usb_cdc_wakeup(void *device) { (void)device; }
+static int os_task_create(void (*entry)(void *),void *user,int priority,int stack,int queue,const char *name) {
+ assert(entry==usb_rx_task && user==&state && priority==12 && stack==4096 && queue==0);
+ assert(strcmp(name,"h2console_rx")==0 && live==4 && handlers==0 && worker_count==0);
+ if (worker_fail) {
+   return -1;
+ }
+ ++worker_count;
+ return 0;
+}
+static void cdc_set_wakeup_handler(usb_dev id,void (*handler)(void *)) {
+ (void)id;assert(handler==usb_cdc_wakeup && worker_count==1 && live==4);++handlers;
+}
+#endif
 '''
         main = r'''
 int main(void) {
-  h2_jieli_wl82_boot_probe(100);
-  assert(calls == 1 && strcmp(received, "JIELI_BOOT_STAGE stage=100\r\n") == 0);
-  usb_write_status("JIELI_APP_INIT result=%d\r\n", -7);
-  assert(calls == 2 && strstr(received, "result=-7") != NULL);
-  return 0;
+ debug_gate=DEBUG_RAW_BUSY;board_fail=1;
+ assert(h2_jieli_wl82_console_start()==H2_PAL_ERR_IO && raw_waits==1 && live==0 && debug_gate==DEBUG_RAW_IDLE);
+ board_fail=0;
+#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
+ worker_fail=1;
+ assert(h2_jieli_wl82_console_start()==H2_PAL_ERR_NO_MEMORY && live==0 && !state.initialized && handlers==0 && debug_gate==DEBUG_RAW_IDLE);
+#endif
+ worker_fail=0;
+ assert(h2_jieli_wl82_console_start()==0 && state.initialized && state.started && live==4 && debug_gate==DEBUG_READY);
+ int saved_creates=creates,saved_board_calls=board_calls,saved_mutex=state.rx_mutex;
+ state.usb_id=1;state.rx_ring[0]=0x42;state.rx_count=1;
+ assert(h2_jieli_wl82_console_start()==0 && state.usb_id==1 && state.rx_ring[0]==0x42 && state.rx_count==1 && state.rx_mutex==saved_mutex);
+ assert(creates==saved_creates && board_calls==saved_board_calls && live==4);
+#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
+ assert(worker_count==1 && handlers==USB_MAX_HW_NUM);
+#endif
+ return 0;
 }
 '''
-        with tempfile.TemporaryDirectory(prefix="h2-app-log-test-") as directory:
-            source = Path(directory) / "test.c"
-            source.write_text(stub + app[start:end] + main)
-            binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(binary)],
-                           check=True, timeout=60)
-            subprocess.run([str(binary)], check=True, timeout=60)
+        with tempfile.TemporaryDirectory() as directory:
+            unit = Path(directory) / "test.c"
+            unit.write_text(stub + code + main)
+            for uart in (False, True):
+                with self.subTest(uart=uart):
+                    binary = Path(directory) / ("uart" if uart else "usb")
+                    flags = ["-DCONFIG_H2_UART1_DEBUG_ENABLE=1"] if uart else []
+                    subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", *flags, str(unit), "-o", str(binary)], check=True)
+                    subprocess.run([str(binary)], check=True, timeout=10)
 
     def test_sdk_sequence_and_atomic_writes(self):
         source = "\n".join(line for line in SOURCE.read_text().splitlines()

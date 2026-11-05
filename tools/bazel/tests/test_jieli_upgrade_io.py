@@ -1,11 +1,12 @@
 """Exercise the layout-owned NOR upgrade adapter against a fake SDK driver."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/src/jieli_upgrade_io.c"
+SOURCE = ROOT / "native_component_src/jieli/wl82/h2_pal_image/src/jieli_upgrade_io.c"
 
 
 class UpgradeIoTest(unittest.TestCase):
@@ -35,7 +36,7 @@ static struct { h2_atomic_bool_t burn_waiting; int update_result, update_sem; } 
 #define H2_PAL_ERR_IO -8
 static int posts;
 static void os_sem_post(int *sem) { (void)sem; posts++; }
-static void h2_jieli_loader_diag_write(const char *line) { (void)line; }
+static void h2_jieli_wl82_diag_write(const char *line) { (void)line; }
 /* COMPLETION */
 static int result, calls, suspended, resumed;
 static int erase_mode, erase_fault;
@@ -281,7 +282,7 @@ int main(int argc,char **argv) {
   }
 }
 '''
-        platform = (ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/jieli_loader_platform.c").read_text()
+        platform = (ROOT / "native_component_src/jieli/wl82/h2_pal_image/src/h2_jieli_wl82_platform_image.c").read_text()
         completion = platform[platform.index("static int update_burn_complete("):platform.index("static int image_writer_write(")]
         program = program.replace("/* COMPLETION */", completion)
         program = program.replace("int main(int argc,char **argv) {", "int main(int argc,char **argv) {\n assert(h2_atomic_bool_init(&state.burn_waiting, false) == H2_ATOMIC_OK);")
@@ -294,12 +295,16 @@ int main(int argc,char **argv) {
             (root / "device/ioctl_cmds.h").write_text(
                 "#define IOCTL_ERASE_BLOCK 201\n#define IOCTL_ERASE_SECTOR 200\n"
                 "#define IOCTL_ERASE_PAGE 204\n")
-            (root / "adapter.c").write_text(SOURCE.read_text())
+            # Supply this board's geometry independently of macro line wrapping.
+            adapter = re.sub(r'^#define H2_JIELI_BANK_[12]_SFC_BASE[^\n]*\n', '',
+                             SOURCE.read_text().replace('\\\n', ''), flags=re.MULTILINE)
+            (root / "adapter.c").write_text('#include "h2_jieli_warm_request.h"\n' + adapter)
             (root / "test.c").write_text(program)
             command = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                        "-I", str(root),
                        "-I", str(SOURCE.parent.parent / "include"),
-                       "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
+                       "-I", str(ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/include"),
+                "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
                        "-I", str(ROOT / "libs/atomic/include"),
                        str(root / "test.c"),
                        str(ROOT / "libs/atomic/providers/c11/src/h2_atomic_c11.c"),

@@ -133,7 +133,15 @@ jobs:
         timeout-minutes: 15
         shell: bash
         run: |
+          # All declared packages come from Ubuntu, independently of runner-added repositories.
+          apt_sources=/etc/apt/sources.list
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            apt_sources=/etc/apt/sources.list.d/ubuntu.sources
+          fi
+          test -s "$apt_sources"
           apt_network_options=(
+            -o "Dir::Etc::sourcelist=$apt_sources"
+            -o Dir::Etc::sourceparts=-
             -o Acquire::Retries=0
             -o Acquire::http::Timeout=30
             -o Acquire::https::Timeout=30
@@ -330,7 +338,15 @@ jobs:
         timeout-minutes: 15
         shell: bash
         run: |
+          # All declared packages come from Ubuntu, independently of runner-added repositories.
+          apt_sources=/etc/apt/sources.list
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            apt_sources=/etc/apt/sources.list.d/ubuntu.sources
+          fi
+          test -s "$apt_sources"
           apt_network_options=(
+            -o "Dir::Etc::sourcelist=$apt_sources"
+            -o Dir::Etc::sourceparts=-
             -o Acquire::Retries=0
             -o Acquire::http::Timeout=30
             -o Acquire::https::Timeout=30

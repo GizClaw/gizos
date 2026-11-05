@@ -1,0 +1,5 @@
+dependencies:
+  espressif/esp_modem:
+    version: "^1.4.0"
+  espressif/led_strip:
+    version: "3.0.3"

@@ -13,7 +13,9 @@
 #include "h2/pal/net/h2_pal_net.h"
 #include "h2/pal/net/h2_pal_netif.h"
 #include "h2/pal/os/h2_pal_crypto.h"
+#include "h2/pal/os/h2_pal_device_identity.h"
 #include "h2/pal/os/h2_pal_firmware_info.h"
+#include "h2/pal/os/h2_pal_io_stream.h"
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_pref.h"
@@ -72,6 +74,8 @@ h2_pal_mem_api_t* h2_bk_platform_sram_allocator(void);
 h2_pal_mem_api_t* h2_bk_platform_psram_allocator(void);
 const h2_pal_log_api_t* h2_bk_platform_log_api(void);
 const h2_pal_firmware_info_api_t* h2_bk_platform_firmware_info_api(void);
+/** Local Bluetooth MAC in the existing Loader UID byte order. */
+const h2_pal_device_identity_api_t* h2_bk_platform_device_identity_api(void);
 const h2_pal_net_api_t* h2_bk_platform_net_api(void);
 const h2_pal_netif_api_t* h2_bk_platform_netif_api(void);
 void h2_bk_platform_netif_register(void* netif_handle,
@@ -99,6 +103,7 @@ h2_pal_wifi_ap_t* h2_bk_platform_wifi_ap(void);
 h2_pal_wifi_settings_t* h2_bk_platform_wifi_settings(void);
 const h2_pal_wifi_csi_api_t* h2_bk_platform_wifi_csi(void);
 h2_pal_modem_t* h2_bk_platform_modem_unsupported(void);
+const h2_pal_io_stream_api_t* h2_bk_platform_io_stream_api(void);
 const h2_pal_uart_io_stream_api_t* h2_bk_platform_uart_io_stream_api(void);
 void h2_bk_platform_uart_io_stream_deinit(void);
 

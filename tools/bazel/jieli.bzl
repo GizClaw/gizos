@@ -88,6 +88,7 @@ def _jieli_firmware_impl(ctx):
     ]
     native_components = collect_native_components(ctx.attr.graph)
     prebuilt_components = collect_firmware_components(ctx.attr.graph)
+    prebuilt_sources = [component.native_srcs for component in prebuilt_components]
     prebuilt_headers = [component.headers for component in prebuilt_components]
     inputs = depset(
         [
@@ -99,8 +100,8 @@ def _jieli_firmware_impl(ctx):
             ctx.file.sdk_locator,
             ctx.file._toolchain_locator,
             ctx.file._postbuild_locator,
-        ] + [component.archive for component in prebuilt_components] + ctx.files.srcs + ctx.files.sdk_patches,
-        transitive = graph_sources + prebuilt_headers,
+        ] + [component.archive for component in prebuilt_components if component.archive] + ctx.files.srcs + ctx.files.sdk_patches,
+        transitive = graph_sources + prebuilt_headers + prebuilt_sources,
     )
 
     args = ctx.actions.args()
@@ -134,7 +135,12 @@ def _jieli_firmware_impl(ctx):
             if _is_native_source(source.path):
                 args.add("--native-component-source", "%s=%s" % (component.name, source.path))
     for component in prebuilt_components:
-        args.add("--prebuilt-component", "%s=%s" % (component.component_name, component.archive.path))
+        if component.archive:
+            args.add("--prebuilt-component", "%s=%s" % (component.component_name, component.archive.path))
+        if component.generate_component:
+            args.add("--generate-prebuilt-component", component.component_name)
+        for source in component.native_srcs.to_list():
+            args.add("--native-component-source", "%s=%s" % (component.component_name, source.path))
         for include_root in component.include_roots:
             args.add("--native-include-root", include_root)
 

@@ -3,7 +3,9 @@
 #include "h2_esp_platform_pref_migration.h"
 #include "h2_esp_platform_safe_call.h"
 
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
+#include "esp_image_format.h"
 #include "esp_ota_ops.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
@@ -24,6 +26,7 @@ typedef enum h2_esp_power_ota_op {
   H2_ESP_POWER_OTA_GET_STATE,
   H2_ESP_POWER_OTA_CONFIRM_RUNNING,
   H2_ESP_POWER_REBOOT,
+  H2_ESP_POWER_OTA_PREPARE,
 } h2_esp_power_ota_op_t;
 
 typedef struct h2_esp_power_ota_call {
@@ -32,6 +35,9 @@ typedef struct h2_esp_power_ota_call {
   uint32_t partition_id;
   esp_err_t result;
   esp_ota_img_states_t state;
+  esp_partition_pos_t position;
+  esp_image_metadata_t metadata;
+  uint8_t was_pending;
 } h2_esp_power_ota_call_t;
 
 static int s_h2_esp_power_hold;
@@ -40,8 +46,10 @@ static StaticSemaphore_t s_ota_mutex_storage;
 static SemaphoreHandle_t s_ota_mutex;
 static portMUX_TYPE s_ota_mutex_init_lock = portMUX_INITIALIZER_UNLOCKED;
 
-h2_pal_result_t __attribute__((weak)) h2_esp_platform_power_before_reboot(
-    uint32_t reason) {
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((weak))
+#endif
+h2_pal_result_t h2_esp_platform_power_before_reboot(uint32_t reason) {
   (void)reason;
   return H2_PAL_OK;
 }
@@ -68,6 +76,15 @@ static h2_pal_result_t power_deep_sleep(void* user, uint32_t reason);
 static h2_pal_result_t power_set_deep_sleep_wake_timer(void* user,
                                                        uint32_t delay_ms);
 
+static h2_pal_result_t power_prepare_next_boot_partition(
+    void* user, const h2_pal_power_boot_request_t* request,
+    h2_pal_power_native_evidence_t* out_evidence);
+static h2_pal_result_t power_get_image_state(
+    void* user, uint32_t partition_id, h2_pal_power_image_state_t* out_state);
+static h2_pal_result_t power_confirm_running_image(
+    void* user, const h2_pal_power_native_evidence_t* evidence,
+    h2_pal_power_image_confirmation_t* out_confirmation);
+
 static const h2_pal_power_vtable_t s_power_vtable = {
     .get_capabilities = power_get_capabilities,
     .get_boot_info = power_get_boot_info,
@@ -81,6 +98,9 @@ static const h2_pal_power_vtable_t s_power_vtable = {
     .reboot = power_reboot,
     .deep_sleep = power_deep_sleep,
     .set_deep_sleep_wake_timer = power_set_deep_sleep_wake_timer,
+    .prepare_next_boot_partition = power_prepare_next_boot_partition,
+    .get_image_state = power_get_image_state,
+    .confirm_running_image = power_confirm_running_image,
 };
 
 static const h2_pal_power_api_t s_default_power_api = {
@@ -151,7 +171,36 @@ static void IRAM_ATTR power_ota_safe_callback(void* context) {
               : esp_ota_get_state_partition(call->partition, &call->state);
       break;
     case H2_ESP_POWER_OTA_CONFIRM_RUNNING:
-      call->result = esp_ota_mark_app_valid_cancel_rollback();
+      call->partition = esp_ota_get_running_partition();
+      call->state = ESP_OTA_IMG_UNDEFINED;
+      call->was_pending = 0u;
+      if (call->partition == NULL) {
+        call->result = ESP_ERR_NOT_FOUND;
+        break;
+      }
+      call->result = esp_ota_get_state_partition(call->partition, &call->state);
+      if (call->result == ESP_ERR_NOT_FOUND) {
+        call->result = ESP_OK;
+      } else if (call->result == ESP_OK &&
+                 (call->state == ESP_OTA_IMG_NEW ||
+                  call->state == ESP_OTA_IMG_PENDING_VERIFY)) {
+        call->result = esp_ota_mark_app_valid_cancel_rollback();
+        call->was_pending = call->result == ESP_OK;
+      }
+      break;
+    case H2_ESP_POWER_OTA_PREPARE:
+      call->partition = partition_for_id(call->partition_id);
+      if (call->partition == NULL) {
+        call->result = ESP_ERR_NOT_FOUND;
+        break;
+      }
+      call->position.offset = call->partition->address;
+      call->position.size = call->partition->size;
+      call->result = esp_image_get_metadata(&call->position, &call->metadata);
+      if (call->result == ESP_OK &&
+          (call->metadata.image_len == 0u ||
+           call->metadata.image_len > call->partition->size))
+        call->result = ESP_FAIL;
       break;
     case H2_ESP_POWER_REBOOT:
       esp_restart();
@@ -263,6 +312,9 @@ static h2_pal_result_t power_get_capabilities(
                             H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER |
                             H2_PAL_POWER_CAPABILITY_BOOT_PARTITIONS |
                             H2_PAL_POWER_CAPABILITY_SET_NEXT_BOOT_PARTITION |
+                            H2_PAL_POWER_CAPABILITY_IMAGE_STATE |
+                            H2_PAL_POWER_CAPABILITY_PREPARE_BOOT |
+                            H2_PAL_POWER_CAPABILITY_CONFIRM_IMAGE |
                             H2_PAL_POWER_CAPABILITY_RESET_REASON;
   return H2_PAL_OK;
 }
@@ -436,6 +488,84 @@ static h2_pal_result_t power_set_next_boot_partition(void* user,
     call->partition_id = partition_id;
   }
   h2_pal_result_t rc = power_ota_call(call);
+  heap_caps_free(call);
+  return rc;
+}
+
+static h2_pal_result_t power_prepare_next_boot_partition(
+    void* user, const h2_pal_power_boot_request_t* request,
+    h2_pal_power_native_evidence_t* out_evidence) {
+  (void)user;
+  if (request == NULL || out_evidence == NULL ||
+      (request->policy != H2_PAL_POWER_BOOT_POLICY_EXISTING &&
+       request->policy != H2_PAL_POWER_BOOT_POLICY_TRIAL &&
+       request->policy != H2_PAL_POWER_BOOT_POLICY_TRIAL_WITH_RECOVERY))
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_evidence, 0, sizeof(*out_evidence));
+  h2_esp_power_ota_call_t* call =
+      power_ota_call_alloc(H2_ESP_POWER_OTA_PREPARE);
+  if (call != NULL) call->partition_id = request->partition_id;
+  h2_pal_result_t rc = power_ota_call(call);
+  heap_caps_free(call);
+  return rc;
+}
+
+static h2_pal_result_t power_get_image_state(
+    void* user, uint32_t partition_id, h2_pal_power_image_state_t* out_state) {
+  (void)user;
+  if (out_state == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_state, 0, sizeof(*out_state));
+  if (partition_for_id(partition_id) == NULL) return H2_PAL_ERR_NOT_FOUND;
+  h2_esp_power_ota_call_t* call =
+      power_ota_call_alloc(H2_ESP_POWER_OTA_GET_STATE);
+  if (call != NULL) call->partition_id = partition_id;
+  h2_pal_result_t rc = power_ota_call(call);
+  /* A valid factory-written OTA image may have no otadata state yet. */
+  if (rc == H2_PAL_ERR_NOT_FOUND)
+    rc = H2_PAL_OK;
+  else if (rc == H2_PAL_OK) {
+    switch (call->state) {
+      case ESP_OTA_IMG_NEW:
+        out_state->state = H2_PAL_POWER_IMAGE_STATE_NEW;
+        out_state->flags = H2_PAL_POWER_IMAGE_FLAG_CONFIRMATION_REQUIRED;
+        break;
+      case ESP_OTA_IMG_PENDING_VERIFY:
+        out_state->state = H2_PAL_POWER_IMAGE_STATE_PENDING_VERIFY;
+        out_state->flags = H2_PAL_POWER_IMAGE_FLAG_CONFIRMATION_REQUIRED;
+        break;
+      case ESP_OTA_IMG_VALID:
+        out_state->state = H2_PAL_POWER_IMAGE_STATE_VALID;
+        break;
+      case ESP_OTA_IMG_INVALID:
+        out_state->state = H2_PAL_POWER_IMAGE_STATE_INVALID;
+        break;
+      case ESP_OTA_IMG_ABORTED:
+        out_state->state = H2_PAL_POWER_IMAGE_STATE_ABORTED;
+        break;
+      default:
+        break;
+    }
+  }
+  heap_caps_free(call);
+  return rc;
+}
+
+static h2_pal_result_t power_confirm_running_image(
+    void* user, const h2_pal_power_native_evidence_t* evidence,
+    h2_pal_power_image_confirmation_t* out_confirmation) {
+  (void)user;
+  if (out_confirmation == NULL ||
+      (evidence != NULL && (evidence->format != 0u || evidence->size != 0u)))
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_confirmation, 0, sizeof(*out_confirmation));
+  h2_esp_power_ota_call_t* call =
+      power_ota_call_alloc(H2_ESP_POWER_OTA_CONFIRM_RUNNING);
+  h2_pal_result_t rc = power_ota_call(call);
+  if (rc == H2_PAL_OK) {
+    out_confirmation->partition_id = id_for_partition(call->partition);
+    out_confirmation->was_pending = call->was_pending;
+    if (out_confirmation->partition_id == 0u) rc = H2_PAL_ERR_NOT_FOUND;
+  }
   heap_caps_free(call);
   return rc;
 }

@@ -1515,6 +1515,14 @@ static int h2_esp_wifi_disconnect(void* user) {
   return rc;
 }
 
+static int h2_esp_wifi_set_activity_observer(void* user,
+                                             h2_pal_wifi_activity_fn callback,
+                                             void* callback_user) {
+  (void)user;
+  h2_esp_platform_wifi_set_activity_observer(callback, callback_user);
+  return H2_PAL_OK;
+}
+
 static int h2_esp_wifi_connect_and_save(void* user,
                                         const h2_pal_wifi_sta_config_t* config,
                                         uint32_t timeout_ms) {
@@ -1523,6 +1531,7 @@ static int h2_esp_wifi_connect_and_save(void* user,
     return H2_PAL_ERR_BUSY;
   static const h2_pal_wifi_sta_vtable_t raw_vtable = {
       .get_status = (h2_pal_wifi_sta_get_status_fn)h2_esp_wifi_sta_get_status,
+      .set_activity_observer = h2_esp_wifi_set_activity_observer,
       .connect = (h2_pal_wifi_sta_connect_fn)h2_esp_wifi_sta_connect,
       .disconnect = (h2_pal_wifi_sta_disconnect_fn)h2_esp_wifi_sta_disconnect,
   };
@@ -1539,6 +1548,7 @@ static int h2_esp_wifi_connect_and_save(void* user,
 
 static const h2_pal_wifi_sta_vtable_t s_h2_esp_wifi_sta_vtable = {
     .get_status = (h2_pal_wifi_sta_get_status_fn)h2_esp_wifi_sta_get_status,
+    .set_activity_observer = h2_esp_wifi_set_activity_observer,
     .scan = (h2_pal_wifi_sta_scan_fn)h2_esp_wifi_sta_scan,
     .connect = h2_esp_wifi_connect,
     .connect_and_save = h2_esp_wifi_connect_and_save,

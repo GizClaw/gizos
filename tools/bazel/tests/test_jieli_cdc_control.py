@@ -13,7 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 CDC = Path("apps/common/usb/device/cdc.c")
-PATCH = ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_patches/early_app_boot.patch"
+PATCH = ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader/sdk_patches/early_app_boot.patch"
 
 
 def function(source, name, prefix="static "):

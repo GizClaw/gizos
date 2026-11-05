@@ -14,7 +14,7 @@ Bk7258FirmwareInfo = provider(
         "cp_image": "CP application binary image.",
         "cp_map": "CP application linker map.",
         "files": "Stable depset containing every public output.",
-        "managed_app_image": "Managed app_ab_crc.rbl update image.",
+        "managed_app_image": "Native paired CP/AP app_ab_crc.rbl image; usable independently of H2Loader.",
         "partition_metadata": "Directory containing validated package metadata.",
         "recovery_config": "Board-layout recovery flashing config or None.",
         "recovery_image": "Combined all-app.bin recovery image.",
@@ -72,11 +72,12 @@ def _bk7258_firmware_impl(ctx):
         if component.execution_unit not in ["ap", "cp"]:
             fail("BK7258 native component %s must declare execution_unit ap or cp" % component.owner)
     prebuilt_components = collect_firmware_components(ctx.attr.graph)
-    prebuilt_files = [component.archive for component in prebuilt_components]
+    prebuilt_files = [component.archive for component in prebuilt_components if component.archive]
+    prebuilt_sources = [component.native_srcs for component in prebuilt_components]
     prebuilt_headers = [component.headers for component in prebuilt_components]
     inputs = depset(
         [ctx.file.project, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._toolchain_archives, ctx.file._sdk_locator, ctx.file._toolchain_locator, ctx.file._ccache_locator, ctx.file.ram_regions] + ctx.files.srcs + ctx.files.support_files + ctx.files.project_support_files + ctx.files.ap_config + ctx.files.cp_config + [ctx.file.ap_gpio, ctx.file.cp_gpio] + prebuilt_files + ([ctx.file.memory_contract] if ctx.file.memory_contract else []),
-        transitive = graph_sources + prebuilt_headers,
+        transitive = graph_sources + prebuilt_headers + prebuilt_sources,
     )
 
     args = ctx.actions.args()
@@ -117,9 +118,12 @@ def _bk7258_firmware_impl(ctx):
     args.add("--ap-gpio", ctx.file.ap_gpio.path)
     args.add("--cp-gpio", ctx.file.cp_gpio.path)
     for component in prebuilt_components:
-        args.add("--prebuilt-component", component.component_name + "=" + component.archive.path)
+        if component.archive:
+            args.add("--prebuilt-component", component.component_name + "=" + component.archive.path)
         if component.generate_component:
             args.add("--generate-prebuilt-component", component.component_name)
+        for source in component.native_srcs.to_list():
+            args.add("--native-component-source", "ap:" + component.component_name + "=" + source.path)
         for include_root in component.include_roots:
             args.add("--prebuilt-component-include", component.component_name + "=" + include_root)
     for component in native_components:
@@ -307,3 +311,48 @@ def bk7258_firmware(name, target, ap_task_policy = None, cp_task_policy = None, 
         target_compatible_with = compatibility,
         **kwargs
     )
+
+def _encryption_runfile(ctx, file):
+    path = file.short_path
+    return path[3:] if path.startswith("../") else ctx.workspace_name + "/" + path
+
+def _shell_quote(value):
+    return "'" + value.replace("'", "'\\''") + "'"
+
+def _bk7258_firmware_encrypt_impl(ctx):
+    firmware = ctx.attr.firmware[Bk7258FirmwareInfo]
+    if firmware.target != "bk7258":
+        fail("BK encryption requires native bk7258 firmware")
+    source = firmware.managed_app_image if ctx.attr.image == "app" else firmware.recovery_image
+    executable = ctx.actions.declare_file(ctx.label.name)
+    paths = [
+        _encryption_runfile(ctx, file)
+        for file in [ctx.executable._tool, source, firmware.partition_metadata]
+    ]
+    ctx.actions.write(executable, """#!/bin/bash
+set -eu
+r="${RUNFILES_DIR:-$0.runfiles}"
+exec "$r"/%s --source "$r"/%s --metadata "$r"/%s --image %s "$@"
+""" % (_shell_quote(paths[0]), _shell_quote(paths[1]), _shell_quote(paths[2]), _shell_quote(ctx.attr.image)), is_executable = True)
+    runfiles = ctx.runfiles(files = [ctx.executable._tool, source, firmware.partition_metadata])
+    runfiles = runfiles.merge(ctx.attr._tool[DefaultInfo].default_runfiles)
+    return [DefaultInfo(executable = executable, runfiles = runfiles)]
+
+bk7258_firmware_encrypt = rule(
+    implementation = _bk7258_firmware_encrypt_impl,
+    executable = True,
+    attrs = {
+        "firmware": attr.label(mandatory = True, providers = [Bk7258FirmwareInfo]),
+        "image": attr.string(
+            mandatory = True,
+            values = ["app", "full"],
+            doc = "Native paired CP/AP App or complete Bootloader/CP/AP Flash image.",
+        ),
+        "_tool": attr.label(
+            default = Label("//tools/bazel:bk7258_encrypt"),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+    doc = "Build unkeyed BK native inputs; run explicitly with --key-fd and --output-dir to encrypt outside Bazel outputs.",
+)

@@ -38,8 +38,8 @@ bazel run --config=macos_arm64 --lockfile_mode=off //projects/e2e/targets/cc_bin
 bazel test --config=macos_arm64 --lockfile_mode=off //projects/e2e/targets/pkg_tar/pal-display:browser_test
 bazel test --config=ios_sim_arm64 --lockfile_mode=off //projects/e2e/targets/ios_application/pal-display:ios_pal_display_simulator_test
 bazel test --config=android_arm64 --lockfile_mode=off //projects/e2e/targets/android_binary/pal-display:android_pal_display_simulator_test
-bazel build --config=esp32s3 --lockfile_mode=off //projects/e2e/targets/h2loader_tar_zlib/pal-display/amoled:package
-bazel build --config=bk7258 --lockfile_mode=off //projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405:package
+bazel build --config=esp32s3 --lockfile_mode=off //projects/e2e/targets/single/pal-display/waveshare/esp32s3_touch_amoled_1_8:package
+bazel build --config=bk7258 --lockfile_mode=off //projects/e2e/targets/single/pal-display/beken/bk7258_v3_202405:package
 ```
 
 The desktop binary opens a real window. Linux CI's focused desktop test uses SDL's software/dummy surface and is integration coverage only; it is not the real macOS qualification. Simulator runners require explicit `H2_IOS_SIMULATOR_UDID`/`H2_ANDROID_SERIAL` plus SDK tool paths. Native builds require the existing versioned SDK/toolchain locators. Keep the configured Bazel disk cache enabled.
@@ -82,4 +82,4 @@ The RGB provider now retains its canonical shadow and two immutable scanout buff
 
 ## AMOLED DMA ceiling
 
-The AMOLED driver accepts an opt-in DMA row ceiling of 8, 16, 32 or 64; zero keeps the existing 64-row default. The production driver calls the same ceiling function exercised by `//boards/amoled/esp32s3:display_config_host_test`. The iperf launcher selects 8 rows and FT3168 adds read-error diagnostics. Current-source behavior is verified by executable C tests and actual native builds. Historical DMA/device receipts keep their original source/artifact identities; the new row choice has no current physical or finger/optical acceptance.
+The AMOLED driver accepts an opt-in DMA row ceiling of 8, 16, 32 or 64; zero keeps the existing 64-row default. The production driver calls the same ceiling function exercised by `//boards/waveshare/esp32s3_touch_amoled_1_8/esp32s3:display_config_host_test`. The iperf launcher selects 8 rows and FT3168 adds read-error diagnostics. Current-source behavior is verified by executable C tests and actual native builds. Historical DMA/device receipts keep their original source/artifact identities; the new row choice has no current physical or finger/optical acceptance.

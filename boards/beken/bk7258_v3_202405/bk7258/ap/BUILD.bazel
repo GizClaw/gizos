@@ -1,0 +1,192 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["usr_gpio_cfg.h"])
+
+filegroup(
+    name = "firmware_sources",
+    srcs = [
+        "CMakeLists.txt",
+        "src/h2_bk7258_board.c",
+        "src/h2_bk7258_board_audio.c",
+        "src/h2_bk7258_board_display.c",
+        "src/h2_bk7258_board_display_memory.c",
+        "src/h2_bk7258_board_input.c",
+        "src/h2_bk7258_board_platform.c",
+        "src/h2_bk7258_board_private.h",
+        "src/h2_bk7258_board_runtime.c",
+        "src/h2_bk7258_board_task.c",
+        "src/h2_bk7258_board_touch.c",
+        "src/h2_bk7258_display_backlight.h",
+        "src/h2_bk7258_display_buffer.h",
+    ],
+)
+
+filegroup(
+    name = "native_sources",
+    srcs = [
+        "src/h2_bk7258_board.c",
+        "src/h2_bk7258_board_audio.c",
+        "src/h2_bk7258_board_display.c",
+        "src/h2_bk7258_board_display_memory.c",
+        "src/h2_bk7258_board_input.c",
+        "src/h2_bk7258_board_platform.c",
+        "src/h2_bk7258_board_runtime.c",
+        "src/h2_bk7258_board_task.c",
+        "src/h2_bk7258_board_touch.c",
+    ],
+)
+
+filegroup(
+    name = "native_headers",
+    srcs = [
+        "include/h2_bk7258_board.h",
+        "include/h2_bk7258_board_storage.h",
+        "src/h2_bk7258_board_private.h",
+        "src/h2_bk7258_display_backlight.h",
+        "src/h2_bk7258_display_buffer.h",
+    ],
+)
+
+cc_test(
+    name = "runtime_recovery_test",
+    srcs = [
+        "include/h2_bk7258_board.h",
+        "include/h2_bk7258_board_storage.h",
+        "src/h2_bk7258_board_private.h",
+        "src/h2_bk7258_board_runtime.c",
+        "tests/h2_bk7258_board_runtime_test_sdk.h",
+        "tests/test_runtime_recovery.c",
+        "//native_component_src/bk7258/ap/h2_pal_core:include/h2_bk_platform_core.h",
+        "//native_component_src/bk7258/ap/h2_pal_image:include/h2_bk_platform_image.h",
+        "//native_component_src/bk7258/ap/h2_pal_storage:include/h2_bk_platform_storage.h",
+        "//native_component_src/bk7258/ap/h2_pal_storage:src/h2_bk_platform_sd_fs.c",
+        "//native_component_src/bk7258/ap/h2_pal_storage:tests/h2_bk_sd_fs_test_sdk.h",
+    ],
+    additional_compiler_inputs = ["//native_component_src/bk7258/ap/h2_pal_storage:tests/test_h2_bk_platform_sd_fs.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Inative_component_src/bk7258/ap/h2_pal_core/include",
+        "-Inative_component_src/bk7258/ap/h2_pal_image/include",
+        "-Inative_component_src/bk7258/ap/h2_pal_storage/include",
+        "-Inative_component_src/bk7258/ap/h2_pal_storage/tests",
+    ],
+    includes = [
+        "include",
+        "src",
+        "tests",
+    ],
+    local_defines = [
+        "H2_BK7258_BOARD_RUNTIME_HOST_TEST=1",
+        "H2_BK_SD_FS_HOST_TEST=1",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "board_task_host_test",
+    srcs = [
+        "include/h2_bk7258_board.h",
+        "src/h2_bk7258_board_task.c",
+        "tests/h2_bk7258_board_task_test_sdk.h",
+        "tests/test_h2_bk7258_board_task.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = [":firmware_sources"],
+    includes = [
+        "include",
+        "tests",
+    ],
+    local_defines = ["H2_BK7258_BOARD_TASK_HOST_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "board_touch_host_test",
+    srcs = [
+        "src/h2_bk7258_board_private.h",
+        "src/h2_bk7258_board_touch.c",
+        "tests/test_h2_bk7258_board_touch.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "board_display_backlight_host_test",
+    srcs = [
+        "src/h2_bk7258_display_backlight.h",
+        "tests/h2_bk7258_display_backlight_test_sdk.h",
+        "tests/test_h2_bk7258_display_backlight.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = ["H2_BK7258_DISPLAY_BACKLIGHT_HOST_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "board_display_buffer_host_test",
+    srcs = [
+        "src/h2_bk7258_display_buffer.h",
+        "tests/test_h2_bk7258_display_buffer.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/atomic",
+        "//libs/atomic/providers/c11",
+        "//libs/pal",
+    ],
+)

@@ -17,16 +17,9 @@ owners beneath the Bazel entry.
 
 ## One firmware graph, two compilation boundaries
 
-Every maintained firmware endpoint declares one `graph` rooted at a package-local
-`firmware_native_component`. Portable libraries that do not consume final SDK-generated
-configuration remain ordinary `cc_library` targets. Each firmware entry owns exactly
-one `firmware_lib_component`, which collects every Bazel library selected by that
-image into the single generated native component `h2_firmware_lib`. Its physical
-archives remain separate and are linked as one rescan group. SDK-dependent components,
-boards, and launchers declare direct
-sources, headers, include roots, metadata, dependencies, and an optional AP/CP
-execution unit through `firmware_native_component`; that rule describes ownership but
-does not precompile those sources.
+Every maintained firmware endpoint declares one `graph` rooted at a package-local `firmware_native_component`. Portable libraries remain ordinary `cc_library` owners. Each firmware entry selects its validated Bazel archive closure and explicit SDK-compiled portable sources through one `firmware_lib_component`, producing the generated native component `h2_firmware_lib`. Archives remain separate and link as one rescan group; archive ABI validation remains enabled.
+
+Use `native_srcs` for the library's declared portable source inventory and `native_deps` for its public headers/include roots when the SDK must supply the C runtime ABI. Header-only dependencies do not import archives, compiler options or defines. This changes compilation, not ownership: H2Loader uses the same `//libs/h2loader/device:firmware_sources` and `:firmware_api` inventory on every chip. Boards and SDK components retain their own direct sources, registration, configuration and execution unit through `firmware_native_component`.
 
 The runners turn this same graph into invocation-local native manifests.
 ESP-IDF receives ordered component directories/names and direct source lists,
@@ -122,7 +115,7 @@ locators, preserving their existing sandbox/remote-execution contract.
 ```sh
 bun tools/gizos/src/cli.ts setup idf 6.2
 eval "$(bun tools/gizos/src/cli.ts env idf 6.2 --shell sh)"
-bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
+bazel build --config=esp32s3 //projects/h2loader/targets/loader/espressif/esp32s3_devkitc_1:package
 ```
 
 Use `env` to inspect paths, `config set root /path/to/shared/store` to configure
@@ -143,7 +136,7 @@ CMake/Ninja intermediates and device-operation executables are not outputs.
 
 The action copies only the selected launcher project into an invocation-local temporary tree, points it at the read-only repository source, and invokes the native `idf.py build` followed by `idf.py merge-bin`. It is explicitly unsandboxed and ineligible for remote execution, while its declared outputs may use the local disk cache or the authenticated remote cache. The runner constructs a fixed subprocess environment from the validated locators, pinned SDK version, and the final `FirmwareVersionInfo` selected by the firmware target.
 
-An App manually maintains its shared base with `app_version(name, value)` from `//tools/bazel:app_version.bzl`. Each board independently maintains an integer build number with `board_version(name, build)` from `//tools/bazel:board_version.bzl` in `boards/<board>/BUILD.bazel`. Both are version metadata; board versions have no source, BSP, file-collection, or platform dependencies. Existing filegroups and chip BSP/component targets keep their original responsibilities. Each firmware target declares `firmware_version`, passes its base declaration as `main_version` and its numeric counter declaration as `build`, and may set optional `variant` and `build_metadata` strings. The rule owns SemVer composition and validation; the meaning of these strings belongs to the caller. Non-empty `build_metadata` is appended after a plus and does not affect precedence. A non-empty variant and the numeric board build use separate SemVer prerelease identifiers, so standard SemVer comparison orders board builds numerically. An omitted or empty variant keeps the numeric board build as the sole prerelease identifier; callers supply the variant name without a separator. The `main_version` input requires the provider and declaration marker emitted by `app_version`, including aliases forwarding them; the `build` input requires `BoardVersionInfo`. Native firmware rules consume the final label through their existing `version` attribute, and package and release metadata inherit that value. Legacy complete `firmware_version(value = ...)` declarations, Lua App versions, and the diagnostic compatibility setting remain supported.
+An App manually maintains its shared base with `app_version(name, value)` from `//tools/bazel:app_version.bzl`. Each board independently maintains an integer build number with `board_version(name, build)` from `//tools/bazel:board_version.bzl` in `boards/<company>/<board>/BUILD.bazel`. Both are version metadata; board versions have no source, BSP, file-collection, or platform dependencies. Existing filegroups and chip BSP/component targets keep their original responsibilities. Each firmware target declares `firmware_version`, passes its base declaration as `main_version` and its numeric counter declaration as `build`, and may set optional `variant` and `build_metadata` strings. The rule owns SemVer composition and validation; the meaning of these strings belongs to the caller. Non-empty `build_metadata` is appended after a plus and does not affect precedence. A non-empty variant and the numeric board build use separate SemVer prerelease identifiers, so standard SemVer comparison orders board builds numerically. An omitted or empty variant keeps the numeric board build as the sole prerelease identifier; callers supply the variant name without a separator. The `main_version` input requires the provider and declaration marker emitted by `app_version`, including aliases forwarding them; the `build` input requires `BoardVersionInfo`. Native firmware rules consume the final label through their existing `version` attribute, and package and release metadata inherit that value. Legacy complete `firmware_version(value = ...)` declarations, Lua App versions, and the diagnostic compatibility setting remain supported.
 
 A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDENTIALS` JSON object containing exact `ssid` and `password` fields; the runner validates it and exposes the two values only to that target's ESP-IDF subprocess. Unrelated ESP-IDF subprocesses never receive them. The runner neither activates the SDK nor performs flash, erase, monitor, reset, serial, network, or installation operations.
 
@@ -162,7 +155,7 @@ archive, Python, or `PATH` variables from the caller.
 ```sh
 bun tools/gizos/src/cli.ts setup bk 3.1.1
 eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1 --shell sh)"
-bazel build --config=bk7258  //projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405:package
+bazel build --config=bk7258 //projects/e2e/targets/single/pal-display/beken/bk7258_v3_202405:package
 ```
 
 `Bk7258FirmwareInfo` exposes target-owned AP and CP ELF,
@@ -189,20 +182,37 @@ validates this contract with a fake SDK runner and graph tests; a real build
 remains a canonical local devenv check. Committed SDK and toolchain identity
 inputs bind the stable external execution environment into the action key.
 
+## BK7258 native image encryption
+
+The public `bk7258_firmware_encrypt` rule in [bk7258.bzl](bk7258.bzl) accepts a native `Bk7258FirmwareInfo` provider independently of H2Loader. Declare a local executable target beside the firmware:
+
+```python
+load("@gizos//tools/bazel:bk7258.bzl", "bk7258_firmware_encrypt")
+
+bk7258_firmware_encrypt(
+    name = "encrypted_app",
+    firmware = ":firmware",
+    image = "app",
+)
+```
+
+`image = "app"` selects the paired CP/AP image and its final partition address. `image = "full"` selects the supported legacy Bootloader/CP/AP Flash image from address zero, preserving its BootROM marker. Both validate native CRC, RBL integrity and startup vectors using the firmware's partition metadata. Unsupported layouts fail explicitly.
+
+`bazel build` prepares unkeyed native inputs and the executable. Run it explicitly with an anonymous pipe/socket containing 32 raw key bytes and EOF; the first 16 bytes are the data AES key and the second 16 are the tweak AES key. The following secret-provider name is a caller-owned placeholder, not a repository command:
+
+```bash
+private-secret-provider | bazel run --config=bk7258 //path/to/entry:encrypted_app -- --key-fd 0 --output-dir /absolute/local/encrypted-app
+```
+
+Keys are runtime-only, never BUILD attributes, environment values or cached action inputs. Outputs require a new absolute directory outside Bazel outputs. App mode writes `app.flash-aes.rbl`; full mode writes `full.flash-aes.bin`; both write `validation.json` with source/image/layout hashes and logical/physical base. Ordinary native outputs remain unchanged. Offline checks do not establish device/key matching or boot acceptance.
+
+The standalone [bk7258_encrypt.py](bk7258_encrypt.py), exposed as `//tools/bazel:bk7258_encrypt`, accepts native images and partition metadata already built elsewhere. [bk7258_flash_aes.py](bk7258_flash_aes.py) owns the native transform and validation, and [firmware_crypto.py](firmware_crypto.py) owns runtime key/process handling. H2Loader only wraps the processed outputs; see its [package conversion usage](../../projects/h2loader/README.md#package-conversion).
+
 ## H2Loader package builds
 
-Every package below `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/`
-declares an internal `:firmware` target using `h2loader_esp_idf_firmware` or
-`h2loader_bk7258_firmware`, followed by the public `:package` target using
-`h2loader_tar_zlib`. The H2Loader wrappers select partition and recovery inputs
-from the declared `target` and `board`, then delegate native compilation to the
-generic rules in this directory. The package rule consumes `FirmwareInfo` or `Bk7258FirmwareInfo`, writes
-the target-specific image path, installs optional `package_data` relative to
-`package_data_root`, and produces the single `.update.tar.zlib` plus
-`.firmware.json`. For Loader role it creates recovery from standard native outputs and owns
-`FirmwareReleaseInfo`, `DefaultInfo`, and the `release` output group for the
-deliverable. CI and release tags bind to `:package`, so release builds always
-traverse the native `:firmware` dependency before packaging.
+Firmware entries use `projects/<owner>/targets/<app>/<manufacturer>/<board>/`, with manufacturer and model matching their physical BSP. The entry selects one native firmware graph and exposes `:package` through `h2loader_tar_zlib` for format 1. Where supported, `:package_v2` uses `h2loader_zlib_tar(source = ":package")` for format 2 in the same BUILD file. Both formats reuse the same native inputs; package board/image identities are independent of directory names.
+
+The project-owned ESP/BK/JieLi wrappers select board layout and recovery inputs, then delegate native compilation to the generic rules here. Package rules consume native providers and add managed identity, optional data, update archives, recovery envelopes and release metadata. Current canonical release tags select `:package_v2`; only explicit canonical Loader entries may opt in. A native `:firmware` target has no H2Loader package identity. Detailed composition and package conversion usage belong to the [H2Loader README](../../projects/h2loader/README.md).
 
 Every build/ownership unit declares its sources and dependency edges in its own
 `BUILD.bazel`. Add or update that local package when a source boundary or

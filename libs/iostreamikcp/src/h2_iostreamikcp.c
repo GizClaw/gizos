@@ -169,6 +169,28 @@ h2_pal_result_t h2_iostreamikcp_input_frame(
   return stream_drain_kcp(stream);
 }
 
+static h2_pal_result_t pal_io_read(void* user, void* buffer, size_t len,
+                                   size_t* out_read, uint32_t timeout_ms) {
+  return h2_pal_io_stream_read(user, buffer, len, out_read, timeout_ms);
+}
+
+static h2_pal_result_t pal_io_write(void* user, const void* buffer, size_t len,
+                                    size_t* out_written, uint32_t timeout_ms) {
+  return h2_pal_io_stream_write(user, buffer, len, out_written, timeout_ms);
+}
+
+static h2_pal_result_t pal_io_flush(void* user) {
+  return h2_pal_io_stream_flush(user);
+}
+
+h2_iostreamikcp_io_t h2_iostreamikcp_io_from_stream(
+    const h2_pal_io_stream_api_t* api) {
+  return (h2_iostreamikcp_io_t){.user = (void*)api,
+                                .read = pal_io_read,
+                                .write = pal_io_write,
+                                .flush = pal_io_flush};
+}
+
 static h2_pal_result_t uart_io_read(void* user, void* buffer, size_t len,
                                     size_t* out_read, uint32_t timeout_ms) {
   return h2_pal_uart_io_stream_read((const h2_pal_uart_io_stream_api_t*)user,

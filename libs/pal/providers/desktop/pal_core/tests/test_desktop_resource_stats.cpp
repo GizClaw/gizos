@@ -88,7 +88,8 @@ int main() {
   assert(h2_pal_cond_destroy(sync, condition) == H2_PAL_OK);
 
   Allocator allocator;
-  const h2_pal_mem_vtable_t allocator_vtable = {allocate, nullptr, release};
+  const h2_pal_mem_vtable_t allocator_vtable = {allocate, nullptr, release,
+                                                nullptr};
   const h2_pal_mem_api_t tracked = {&allocator, &allocator_vtable};
   h2_pal_queue_config_t fail_queue = queue_config;
   fail_queue.allocator = &tracked;

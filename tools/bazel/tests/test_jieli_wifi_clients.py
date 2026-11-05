@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class WifiClientsTest(unittest.TestCase):
     def test_output_capacity_does_not_change_total(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c").read_text()
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c").read_text()
         begin = source.index("static int ap_get_clients(")
         function = source[begin:source.index("/* Serialize task-side", begin)]
         fixture = r'''

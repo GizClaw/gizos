@@ -7,6 +7,8 @@ static int capacity, accepted, suspended, resumes, byte_error;
 static uint32_t write_drain_ms;
 static int awake, votes, pm_error, baud_error, resume_ms;
 static int sdk_pending, sdk_outputs;
+static unsigned rx_disables, rx_restores, mutex_releases;
+static int disable_error, restore_error, mutex_release_error;
 static int control(shell_dev_t* dev, int cmd, void* arg) {
   (void)dev;
   (void)arg;
@@ -35,7 +37,8 @@ int rtos_init_mutex(beken_mutex_t* m) {
 }
 int rtos_deinit_mutex(beken_mutex_t* m) {
   (void)m;
-  return 0;
+  ++mutex_releases;
+  return mutex_release_error;
 }
 int rtos_trylock_mutex(beken_mutex_t* m) {
   if (now_ms < lock_until || *m) return -1;
@@ -76,11 +79,13 @@ int bk_uart_enable_rx_interrupt(uart_id_t id) {
 }
 int bk_uart_disable_rx_interrupt(uart_id_t id) {
   (void)id;
-  return 0;
+  ++rx_disables;
+  return disable_error;
 }
 int bk_uart_recover_rx_isr(uart_id_t id) {
   (void)id;
-  return 0;
+  ++rx_restores;
+  return restore_error;
 }
 int bk_uart_set_enable_tx(uart_id_t id, bool on) {
   (void)id;
@@ -118,7 +123,11 @@ static void reset(void) {
   awake = 1;
   votes = pm_error = baud_error = resume_ms = 0;
   sdk_pending = sdk_outputs = 0;
+  rx_disables = rx_restores = mutex_releases = 0;
+  disable_error = restore_error = mutex_release_error = 0;
   s_direct_initialized = 1;
+  s_direct_releasing = 0;
+  s_direct_release_steps = 0u;
   s_direct_write_mutex = 0;
 }
 static int write_test(uint32_t timeout, size_t* n) {
@@ -198,10 +207,13 @@ int main(void) {
   assert(direct_configure(NULL, &config) == H2_PAL_OK && votes == 1);
   write_drain_ms = 3;
   assert(write_test(5, &n) == H2_PAL_OK && awake && now_ms == 3);
-  h2_bk_platform_uart_io_stream_deinit();
-  assert(!s_direct_initialized && !awake && votes == 2);
-  h2_bk_platform_uart_io_stream_deinit();
-  assert(votes == 2);
+  const h2_pal_uart_io_stream_api_t* api = h2_bk_platform_uart_io_stream_api();
+  assert(h2_pal_uart_io_stream_release(api) == H2_PAL_OK);
+  assert(!s_direct_initialized && !awake && votes == 2 && rx_disables == 1 &&
+         rx_restores == 1 && mutex_releases == 1);
+  assert(h2_pal_uart_io_stream_release(api) == H2_PAL_OK);
+  assert(votes == 2 && rx_disables == 1 && rx_restores == 1 &&
+         mutex_releases == 1);
   assert(write_test(5, &n) == H2_PAL_ERR_CLOSED && n == 0);
   reset();
   s_direct_initialized = 0;
@@ -215,5 +227,56 @@ int main(void) {
   baud_error = -1;
   assert(direct_configure(NULL, &config) == H2_PAL_ERR_IO &&
          !s_direct_initialized && !awake && votes == 2);
+  reset();
+  s_direct_initialized = 0;
+  awake = 0;
+  const h2_pal_io_stream_api_t* stream = h2_bk_platform_io_stream_api();
+  assert(!s_direct_initialized && votes == 0);
+  baud_error = -1;
+  assert(h2_pal_io_stream_start(stream) == H2_PAL_ERR_IO);
+  assert(!s_direct_initialized && !awake);
+  baud_error = 0;
+  assert(h2_pal_io_stream_start(stream) == H2_PAL_OK);
+  int start_votes = votes;
+  assert(h2_pal_io_stream_start(stream) == H2_PAL_OK && votes == start_votes);
+  sdk_pending = 1;
+  write_drain_ms = 2;
+  assert(h2_pal_io_stream_write(stream, "frame", 5u, &n, 10u) == H2_PAL_OK);
+  assert(n == 5u && sdk_outputs == 1 && !suspended);
+  capacity = accepted + 2;
+  write_drain_ms = 0;
+  assert(h2_pal_io_stream_write(stream, "frame", 5u, &n, 0u) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(n == 2u && !suspended);
+  assert(h2_pal_io_stream_flush(stream) == H2_PAL_OK);
+  assert(h2_pal_io_stream_release(stream) == H2_PAL_OK);
+  assert(h2_pal_io_stream_release(stream) == H2_PAL_OK);
+  assert(!s_direct_initialized && !awake);
+  assert(h2_pal_io_stream_read(stream, &n, sizeof(n), &n, 0u) ==
+         H2_PAL_ERR_CLOSED);
+  assert(h2_pal_io_stream_start(stream) == H2_PAL_OK);
+  assert(h2_pal_io_stream_release(stream) == H2_PAL_OK);
+  for (unsigned failure = 0u; failure < 4u; ++failure) {
+    reset();
+    int* error = failure == 0u   ? &disable_error
+                 : failure == 1u ? &restore_error
+                 : failure == 2u ? &mutex_release_error
+                                 : &pm_error;
+    *error = -1;
+    assert(h2_pal_io_stream_release(stream) == H2_PAL_ERR_IO);
+    assert(s_direct_initialized && s_direct_releasing);
+    assert(h2_pal_io_stream_start(stream) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_pal_io_stream_write(stream, "f", 1u, &n, 0u) ==
+           H2_PAL_ERR_CLOSED);
+    assert(n == 0u);
+    *error = 0;
+    unsigned saved_mutex_releases = mutex_releases;
+    assert(h2_pal_io_stream_release(stream) == H2_PAL_OK);
+    assert(!s_direct_initialized && !s_direct_releasing && !awake);
+    assert(mutex_releases == saved_mutex_releases + (failure < 3u ? 1u : 0u));
+    saved_mutex_releases = mutex_releases;
+    assert(h2_pal_io_stream_release(stream) == H2_PAL_OK);
+    assert(mutex_releases == saved_mutex_releases);
+  }
   return 0;
 }

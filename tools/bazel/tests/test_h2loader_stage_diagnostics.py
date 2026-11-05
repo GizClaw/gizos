@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class StageDiagnosticsTest(unittest.TestCase):
     def test_fragmented_error_terminals(self):
-        source = (ROOT / "libs/h2loader_host/src/h2_h2loader_host_serial.c").read_text()
+        source = (ROOT / "libs/h2loader/host/src/h2_h2loader_host_serial.c").read_text()
         start = source.index("typedef struct serial_stage_output {")
         end = source.index("h2_pal_result_t h2_h2loader_host_serial_stage(", start)
         stub = r'''

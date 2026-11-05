@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-BOARD = ROOT / "boards/jieli_ac791n_devkit/ac791n"
+BOARD = ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n"
 
 
 def source(path):
@@ -54,7 +54,7 @@ static inline void os_time_dly(unsigned t) {(void)t;sched_yield();}
             pref = source(BOARD / "src/h2_jieli_ac791n_devkit_pref.c")
             (p / "pref.c").write_text(pref[pref.index("static int pref_flash_read("):
                                                pref.index("static int pref_flash_sync(")])
-            (p / "window.c").write_text((BOARD / "src/h2_jieli_ac791n_devkit_flash_window.c").read_text())
+            (p / "window.c").write_text((ROOT / "native_component_src/jieli/wl82/h2_pal_image/src/h2_jieli_wl82_flash_window.c").read_text())
             (p / "test.c").write_text(r'''
 #include <assert.h>
 #include <stdlib.h>
@@ -167,7 +167,7 @@ int main(int argc,char **argv) {
             binary = p / "test"
             flags = ["-fsanitize=thread", "-g"] if os.environ.get("JIELI_TSAN") else []
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
-                            *flags, "-I", str(p), "-I", str(BOARD / "include"),
+                            *flags, "-I", str(p), "-I", str(BOARD / "include"), "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_image/include"),
                             "-I", str(ROOT / "libs/pal/include"),
                             "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_core/include"),
                             str(p / "test.c"), "-o", str(binary)], check=True)

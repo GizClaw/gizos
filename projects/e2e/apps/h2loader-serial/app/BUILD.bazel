@@ -28,7 +28,7 @@ cc_library(
     ],
     deps = [
         ":tasks",
-        "//libs/h2loader_host",
+        "//libs/h2loader/host",
         "//libs/pal",
         "//libs/runtime",
     ],

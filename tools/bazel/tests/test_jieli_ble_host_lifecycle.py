@@ -22,7 +22,7 @@ def function(source, signature):
 
 class HostLifecycleTest(unittest.TestCase):
     def test_extended_disable_storage(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
         begin = source.index('struct h2_ext_adv_enable {')
         end = source.index('} __attribute__((packed));', begin) + len('} __attribute__((packed));')
         code = source[begin:end] + '\n'
@@ -42,7 +42,7 @@ class HostLifecycleTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_lifecycle(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
         if '/* Host lifetime helpers. */' in source:
             helpers = source.split('/* Host lifetime helpers. */', 1)[1].split('/* End host lifetime helpers. */', 1)[0]
             retained = function(source, 'static int h2_ble_start_retained(')

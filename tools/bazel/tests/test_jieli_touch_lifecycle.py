@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class TouchLifecycleTest(unittest.TestCase):
     def test_configuration_failures_unwind_and_allow_retry(self):
-        source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_input.c').read_text()
+        source = (ROOT / 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_input.c').read_text()
         # Extract the unlocked implementations; INPUT_OPERATION adds the lock.
         opening = source[source.index('static h2_pal_result_t touch_open_impl('):source.index('static h2_pal_result_t touch_get_info_impl(')]
         closing = source[source.index('static h2_pal_result_t touch_close_impl('):source.index('INPUT_OPERATION(touch_open,')]

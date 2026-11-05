@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-BOARD = 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c'
+BOARD = 'boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c'
 IMPLEMENTED = dict(zip(
     'start stop set_adv_data start_advertising stop_advertising adv_set_create adv_set_set_data adv_set_start adv_set_stop adv_set_destroy register_gatt_services unregister_gatt_services notify disconnect update_connection exchange_mtu set_preferred_phy'.split(),
     'h2_ble_start_retained h2_ble_stop h2_legacy_set_adv_data_retained h2_legacy_start_advertising_retained h2_legacy_stop_advertising_retained h2_adv_set_create_retained h2_adv_set_data_retained h2_adv_set_start_retained h2_adv_set_stop_retained h2_adv_set_destroy_retained h2_register_gatt_retained h2_unregister_gatt_retained h2_notify_retained h2_disconnect_retained h2_update_connection_retained h2_exchange_mtu_retained h2_set_phy_retained'.split()))

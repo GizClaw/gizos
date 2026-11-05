@@ -12,9 +12,11 @@
 #include "h2/pal/net/h2_pal_net.h"
 #include "h2/pal/net/h2_pal_netif.h"
 #include "h2/pal/os/h2_pal_crypto.h"
+#include "h2/pal/os/h2_pal_device_identity.h"
 #include "h2/pal/os/h2_pal_disk.h"
 #include "h2/pal/os/h2_pal_firmware_info.h"
 #include "h2/pal/os/h2_pal_fs.h"
+#include "h2/pal/os/h2_pal_io_stream.h"
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_pref.h"
@@ -100,10 +102,16 @@ const h2_pal_timer_api_t* h2_esp_platform_timer_api(void);
 
 h2_pal_mem_api_t* h2_esp_platform_default_allocator(void);
 h2_pal_mem_api_t* h2_esp_platform_psram_allocator(void);
+/** Optional external heap for task-context work, NULL without a PSRAM heap. */
+const h2_pal_mem_api_t* h2_esp_platform_external_allocator(void);
+/** Board-configured console; getter performs no driver operations. */
+const h2_pal_io_stream_api_t* h2_esp_platform_io_stream_api(void);
 h2_pal_mem_api_t* h2_esp_platform_internal_allocator(void);
 h2_pal_mem_api_t* h2_esp_platform_dma_allocator(void);
 const h2_pal_log_api_t* h2_esp_platform_log_api(void);
 const h2_pal_firmware_info_api_t* h2_esp_platform_firmware_info_api(void);
+/** Local Bluetooth MAC, or local factory eFuse MAC on ESP32-P4. */
+const h2_pal_device_identity_api_t* h2_esp_platform_device_identity_api(void);
 /**
  * Reads the subtype of a named data partition from an internal-stack context.
  *

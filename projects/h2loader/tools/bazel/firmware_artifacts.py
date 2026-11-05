@@ -35,6 +35,7 @@ class ManagedPackage:
     manifest: dict[str, str]
     app: bytes
     data: list[BundleEntry]
+    app_path: str = ""
 
 
 def _inflate_bounded(data: bytes, limit: int) -> bytes:
@@ -119,6 +120,7 @@ def read_managed_package(data: bytes) -> ManagedPackage:
             raise ValueError("PACKAGE_DIGEST")
         if key.endswith(("size", "bytes")) and not re.fullmatch("0|[1-9][0-9]{0,8}", value):
             raise ValueError("PACKAGE_LENGTH")
+    app_path = ""
     if fmt == "2":
         if set(members) != {"manifest", "app.bin.zlib", "data.tar.zlib"}:
             raise ValueError("PACKAGE_MEMBERS")
@@ -133,9 +135,12 @@ def read_managed_package(data: bytes) -> ManagedPackage:
         data_members = _package_members(data_tar, 64 * 1024 * 1024)
         checksum = manifest["data_sha256"]
     else:
-        if "app/bk/app_ab_crc.rbl" not in members or "checksum" not in members:
+        app_members = [name for name in members if name.startswith("app/")]
+        if len(app_members) != 1 or "checksum" not in members:
             raise ValueError("PACKAGE_MEMBERS")
-        app = members.pop("app/bk/app_ab_crc.rbl")
+        app_path = app_members[0]
+        validate_app_path(app_path)
+        app = members.pop(app_path)
         checksum_bytes = members.pop("checksum")
         if not re.fullmatch(b"[0-9a-f]{64}\n", checksum_bytes):
             raise ValueError("PACKAGE_DATA_DIGEST")
@@ -157,7 +162,7 @@ def read_managed_package(data: bytes) -> ManagedPackage:
         for field, is_pixa in (("data_bytes", False), ("pixa_bytes", True)):
             if int(manifest[field]) != sum(len(e.data) for e in entries if e.name.endswith(".pixa") == is_pixa):
                 raise ValueError("PACKAGE_DATA_LENGTH")
-    return ManagedPackage(manifest, app, entries)
+    return ManagedPackage(manifest, app, entries, app_path)
 
 
 def write_package(

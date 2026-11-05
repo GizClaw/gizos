@@ -27,13 +27,13 @@ class ValidateIntegrationTest(unittest.TestCase):
 
     def test_representative_desktop_binary_closure(self):
         sonames = self.validate_binary(
-            "projects/showcase/targets/cc_binary/showcase/showcase"
+            "projects/e2e/targets/cc_binary/pal-display/pal_display_e2e"
         )
         self.assertIn("libc.so.6", sonames)
 
     def test_recording_binary_closure(self):
         sonames = self.validate_binary(
-            "projects/example/targets/cc_binary/recording/recording-smoke"
+            "tools/bazel/linux_runtime/tests/recording/recording-smoke"
         )
         self.assertIn("libavformat.so.62", sonames)
 

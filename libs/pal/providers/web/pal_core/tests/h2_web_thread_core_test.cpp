@@ -265,7 +265,7 @@ void test_timer() {
 int main() {
   alarm(30u);
   Heap heap;
-  const h2_pal_mem_vtable_t vtable = {allocate, nullptr, release};
+  const h2_pal_mem_vtable_t vtable = {allocate, nullptr, release, nullptr};
   memory = {&heap, &vtable};
   assert(h2_web_thread_core_create(&memory, &core) == H2_PAL_OK);
   tasks = h2_web_thread_core_task_api(core);

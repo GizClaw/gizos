@@ -24,11 +24,12 @@ BATCH = "20260920-120000"
 ARCHIVE = f"firmware-release-v{BATCH}.zip"
 
 
-def catalog_entry(board="devkit", platform="esp", target="esp32s3", version="0.1.0"):
-    entry = release_bundle.LOADER_ROOT + board
-    return dict(entry=entry, label="//" + entry + ":package", board=board,
+def catalog_entry(board="devkit", platform="esp", target="esp32s3", version="0.1.0", package_format=2):
+    entry = release_bundle.LOADER_ENTRIES[board]
+    package_target = "package_v2" if package_format == 2 else "package"
+    return dict(entry=entry, label="//" + entry + ":" + package_target, board=board,
                 image="loader", role="h2loader", platform=platform, target=target,
-                version=version, release_name="loader-" + board)
+                version=version, release_name="loader-" + board, package_format=package_format)
 
 
 def query_xml(labels, tag="firmware-release"):
@@ -40,7 +41,7 @@ def query_xml(labels, tag="firmware-release"):
 class ReleaseTest(unittest.TestCase):
     def firmware_inputs(self, root, batch=BATCH):
         item = catalog_entry()
-        item["package_manifest"] = dict(format=1, board=item["board"], role=item["role"],
+        item["package_manifest"] = dict(format=item["package_format"], board=item["board"], role=item["role"],
             target=item["target"], version=item["version"], image_size=8, image_sha256="0" * 64)
         item["assets"] = []
         for suffix, operation in sorted(release_bundle.expected_asset_contracts(item)):
@@ -87,19 +88,75 @@ class ReleaseTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(release.ReleaseError):
                 release.validate_batch(value)
 
+    def test_catalog_accepts_exact_physical_paths_and_preserves_public_ids(self):
+        boards = (
+            ("amoled", "waveshare/esp32s3_touch_amoled_1_8", "esp", "esp32s3"),
+            ("devkit", "espressif/esp32s3_devkitc_1", "esp", "esp32s3"),
+            ("szp", "jlc/esp32s3_szp", "esp", "esp32s3"),
+            ("bk7258_v3_202405", "beken/bk7258_v3_202405", "bk7258", "bk7258"),
+            ("jieli_ac791n_devkit", "jieli/jieli_ac791n_devkit", "jieli", "wl82"),
+            ("waveshare_esp32p4_wifi6_touch_lcd_4_3", "waveshare/esp32p4_wifi6_touch_lcd_4_3", "esp", "esp32p4"),
+            ("waveshare_esp32s3_a7670e_4g", "waveshare/esp32s3_a7670e_4g", "esp", "esp32s3"),
+            ("waveshare_esp32s3_touch_amoled_1_75c", "waveshare/esp32s3_touch_amoled_1_75c", "esp", "esp32s3"),
+            ("esp_mosaico", "espressif/mosaico", "esp", "esp32s3"),
+        )
+        self.assertEqual(set(release_bundle.LOADER_ENTRIES), {board[0] for board in boards})
+        for board, physical_board, platform, target in boards:
+            for package_format, package_target in ((1, "package"), (2, "package_v2")):
+                with self.subTest(board=board, package_format=package_format):
+                    item = catalog_entry(board, platform, target, package_format=package_format)
+                    entry = "projects/h2loader/targets/loader/" + physical_board
+                    self.assertEqual(item["entry"], entry)
+                    self.assertEqual(item["label"], "//" + entry + ":" + package_target)
+                    self.assertEqual(item["release_name"], "loader-" + board)
+                    self.assertEqual(release_bundle.validate_catalog([item]), [item])
+        legacy = catalog_entry(package_format=1)
+        del legacy["package_format"]
+        self.assertEqual(release_bundle.validate_catalog([legacy]), [legacy])
+
     def test_catalog_rejects_diagnostics_even_when_tagged(self):
+        canonical = catalog_entry()["entry"]
         for entry, label in (
-            ("projects/e2e/targets/h2loader_tar_zlib/pal-core/devkit", None),
-            ("projects/example/targets/h2loader_tar_zlib/button/devkit", None),
-            ("projects/h2loader/targets/h2loader_tar_zlib/e2e-app/devkit", None),
-            (release_bundle.LOADER_ROOT + "devkit", ":package_usb"),
+            ("projects/e2e/targets/single/pal-core/espressif/esp32s3_devkitc_1", None),
+            ("projects/test/targets/app/espressif/fixture_board", None),
+            ("projects/e2e/targets/single/e2e-app/espressif/esp32s3_devkitc_1", None),
+            ("projects/h2loader/targets/app/espressif/esp32s3_devkitc_1", None),
+            (release_bundle.LOADER_ROOT + "waveshare/esp32s3_devkitc_1", None),
+            (release_bundle.LOADER_ROOT + "devkit", None),
+            (canonical + "/diagnostic", None),
+            (canonical + "_variant", None),
+            ("projects/h2loader/targets/h2loader_tar_zlib/loader/devkit", ":package"),
+            ("projects/h2loader/targets/h2loader_zlib_tar/loader/devkit", ":package"),
+            (canonical, ":package_usb_v2"),
+            (canonical, ":package_uart_460800_v2"),
         ):
             with self.subTest(entry=entry, label=label), tempfile.TemporaryDirectory() as directory:
-                item = {**catalog_entry(), "entry": entry, "label": "//" + entry + (label or ":package")}
+                item = {**catalog_entry(), "entry": entry, "label": "//" + entry + (label or ":package_v2")}
                 path = Path(directory) / "firmware-catalog.json"
                 path.write_text(json.dumps([item]))
                 with self.assertRaisesRegex(release.ReleaseError, "diagnostic"):
                     release.load_catalog([path])
+
+    def test_catalog_rejects_package_target_and_format_mismatch(self):
+        for package_format, package_target in ((1, "package_v2"), (2, "package")):
+            with self.subTest(package_format=package_format), tempfile.TemporaryDirectory() as directory:
+                item = catalog_entry(package_format=package_format)
+                item["label"] = "//" + item["entry"] + ":" + package_target
+                path = Path(directory) / "firmware-catalog.json"
+                path.write_text(json.dumps([item]))
+                with self.assertRaisesRegex(release.ReleaseError, "diagnostic"):
+                    release.load_catalog([path])
+
+    def test_catalog_rejects_duplicate_package_formats(self):
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            release_bundle.validate_catalog([catalog_entry(package_format=1), catalog_entry(package_format=2)])
+
+    def test_catalog_rejects_unknown_or_physical_board_ids(self):
+        for board in ("unknown", "esp32s3_devkitc_1", "mosaico"):
+            with self.subTest(board=board):
+                item = {**catalog_entry(), "board": board, "release_name": "loader-" + board}
+                with self.assertRaisesRegex(ValueError, "diagnostic"):
+                    release_bundle.validate_catalog([item])
 
     def test_catalog_rejects_bad_version_release_name_and_platform(self):
         for key, value in (("release_name", "wrong"), ("version", "1.02.3"),
@@ -111,8 +168,8 @@ class ReleaseTest(unittest.TestCase):
                     release.load_catalog([path])
 
     def test_catalog_queries_all_configs_with_opt_in_and_independent_versions(self):
-        entries = [catalog_entry(), catalog_entry("p4", target="esp32p4", version="2.0.0"),
-                   catalog_entry("bk", "bk7258", "bk7258")]
+        entries = [catalog_entry(), catalog_entry("waveshare_esp32p4_wifi6_touch_lcd_4_3", target="esp32p4", version="2.0.0"),
+                   catalog_entry("bk7258_v3_202405", "bk7258", "bk7258")]
         results = [subprocess.CompletedProcess([], 0, query_xml([i["label"] for i in entries]), "")]
         results += [subprocess.CompletedProcess([], 0, json.dumps(item), "") for item in entries]
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(release, "command", side_effect=results) as command:
@@ -120,8 +177,10 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(command.call_count, 4)
             self.assertEqual(command.call_args_list[0].args[1][2:4], [release.RELEASE_QUERY, "--output=xml"])
             self.assertIn('attr("tags", "firmware-release",', release.RELEASE_QUERY)
+            self.assertIn('kind("h2loader_zlib_tar rule", //projects/...)', release.RELEASE_QUERY)
             for config, call in zip(("esp32s3", "esp32p4", "bk7258"), command.call_args_list[1:]):
                 self.assertIn("--config=" + config, call.args[1])
+                self.assertIn("set(%s)" % " ".join(sorted(item["label"] for item in entries)), call.args[1])
                 self.assertFalse(any("firmware_version=" in arg for arg in call.args[1]))
             data = json.loads((Path(directory) / "firmware-catalog.json").read_text())
             self.assertEqual({i["version"] for i in data}, {"0.1.0", "2.0.0"})
@@ -132,7 +191,7 @@ class ReleaseTest(unittest.TestCase):
                     subprocess.CompletedProcess([], 0, query_xml([catalog_entry()["label"]], tag), "")):
                 with self.assertRaisesRegex(release.ReleaseError, "exactly one"):
                     release.build_catalog(ROOT, "bazel", Path("unused"))
-        results = [subprocess.CompletedProcess([], 0, query_xml([catalog_entry()["label"], catalog_entry("missing")["label"]]), "")]
+        results = [subprocess.CompletedProcess([], 0, query_xml([catalog_entry()["label"], catalog_entry("amoled")["label"]]), "")]
         results += [subprocess.CompletedProcess([], 0, json.dumps(catalog_entry()) if i == 0 else "", "") for i in range(3)]
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(release, "command", side_effect=results):
             with self.assertRaisesRegex(release.ReleaseError, "coverage"):
@@ -232,7 +291,7 @@ class ReleaseTest(unittest.TestCase):
                 if mutation == "missing-checksum":
                     (root / "SHA256SUMS").write_text((root / "SHA256SUMS").read_text().splitlines()[0] + "\n")
                 elif mutation == "tamper":
-                    (root / "loader-devkit.update.tar.zlib").write_bytes(b"tampered")
+                    (root / "loader-devkit.update.tar").write_bytes(b"tampered")
                 elif mutation == "extra":
                     extra = root / "debug.log"; extra.write_text("private"); files.append(extra)
                 else:
@@ -309,7 +368,7 @@ class ReleaseTest(unittest.TestCase):
                     contents = [(i, archive.read(i)) for i in archive.infolist()]
                 with zipfile.ZipFile(path, "w") as archive:
                     for info, data in contents:
-                        if mutation == "tamper" and info.filename.endswith(".update.tar.zlib"): data = b"tampered"
+                        if mutation == "tamper" and info.filename.endswith(".update.tar"): data = b"tampered"
                         if mutation == "checksum-coverage" and info.filename.endswith("SHA256SUMS"): data = data.splitlines()[0] + b"\n"
                         if mutation in {"size", "batch"} and info.filename.endswith("firmware-index.json"):
                             index = json.loads(data)

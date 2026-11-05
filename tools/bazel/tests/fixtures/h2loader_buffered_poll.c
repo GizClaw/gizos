@@ -6,29 +6,20 @@
 /* FRAME */
 
 typedef struct transport {
+  struct {
+    uint32_t idle_timeout_ms;
+  } config;
+  uint32_t last_frame_ms;
   h2_iostreamikcp_io_t physical_io;
   h2_iostreamikcp_filter_t filter;
   h2_iostreamikcp_t* stream;
   uint32_t pending_conv;
   int replacement_pending, close_pending;
 } transport_t;
-typedef transport_t h2_jieli_transport_t;
-typedef transport_t h2_jieli_app_transport_t;
-typedef transport_t h2_esp_h2loader_command_transport_t;
-typedef transport_t h2_bk_serial_transport_t;
-enum {
-  H2_PHYSICAL_READ_SIZE = 512,
-  H2_PHYSICAL_POLL_MS = 10,
-  H2_LOADER_TRANSPORT_PHYSICAL_READ_SIZE = 512,
-  H2_LOADER_TRANSPORT_POLL_INTERVAL_MS = 10,
-  H2_BK_SERIAL_PHYSICAL_READ_SIZE = 512,
-  H2_BK_SERIAL_POLL_INTERVAL_MS = 10
-};
-#define stop_requested 0
-#define transport_stop_requested(transport) 0
-#define timer_get_ms() 0u
-#define transport_now_ms(user) 0u
-#define transport_on_frame on_frame
+typedef transport_t h2_device_serial_t;
+enum { H2_PHYSICAL_READ_SIZE = 512, H2_PHYSICAL_POLL_MS = 10 };
+#define transport_stopped(transport) 0
+#define h2_device_serial_now(user) 0u
 static uint8_t input[512];
 static size_t input_size;
 static int callback_timeout;
@@ -50,6 +41,13 @@ static h2_pal_result_t read_physical(void* user, void* buffer, size_t size,
   *count = input_size;
   input_size = 0u;
   return H2_PAL_OK;
+}
+
+static h2_pal_result_t transport_read(void* user, void* buffer, size_t size,
+                                      size_t* count, uint32_t timeout_ms) {
+  transport_t* self = user;
+  return self->physical_io.read(self->physical_io.user, buffer, size, count,
+                                timeout_ms);
 }
 
 static h2_pal_result_t on_frame(void* user,
@@ -78,10 +76,8 @@ h2_pal_result_t h2_iostreamikcp_update(h2_iostreamikcp_t* stream,
   return H2_PAL_OK;
 }
 
-/* ESP injected IO adds CLOSED handling; other fixture adapters do not use it.
- */
-int s_physical_io_configured;
-void h2_esp_h2loader_command_transport_deactivate(transport_t* transport) {
+/* The portable serial endpoint resets a physically closed session. */
+void h2_device_serial_deactivate(transport_t* transport) {
   transport->stream = NULL;
 }
 

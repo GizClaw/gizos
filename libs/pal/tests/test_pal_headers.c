@@ -7,6 +7,19 @@
 static void use_firmware_info(void) {
   h2_pal_firmware_info_t info = {0};
   (void)h2_pal_firmware_info_get_current(NULL, &info);
+  h2_pal_device_identity_t identity = {0};
+  h2_pal_mem_stats_t stats = {0};
+  (void)h2_pal_device_identity_get(NULL, &identity);
+  (void)h2_pal_mem_get_stats(NULL, H2_PAL_MEM_REGION_INTERNAL, &stats);
+  h2_pal_image_info_t image = {0};
+  h2_pal_image_write_request_t write = {1u, 1u, 1u};
+  h2_pal_power_boot_request_t boot = {1u, H2_PAL_POWER_BOOT_POLICY_TRIAL};
+  h2_pal_power_native_evidence_t evidence = {0};
+  h2_pal_power_image_confirmation_t confirmation = {0};
+  (void)h2_pal_image_get_info(NULL, 1u, H2_PAL_IMAGE_VIEW_STORED, &image);
+  (void)h2_pal_image_begin(NULL, &write);
+  (void)h2_pal_power_prepare_next_boot_partition(NULL, &boot, &evidence);
+  (void)h2_pal_power_confirm_running_image(NULL, &evidence, &confirmation);
 }
 
 static void use_video_decoder(void) {
@@ -29,6 +42,20 @@ static void use_audio_task_names(void) {
 static void use_wifi_csi(void) {
   h2_pal_wifi_csi_capabilities_t capabilities = {0};
   (void)h2_pal_wifi_csi_get_capabilities(NULL, &capabilities);
+}
+
+static void use_io_stream(void) {
+  char byte = 0;
+  size_t count = 99u;
+  assert(h2_pal_io_stream_start(NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_io_stream_read(NULL, &byte, 1u, &count, 0u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(count == 0u);
+  assert(h2_pal_io_stream_write(NULL, &byte, 1u, &count, 0u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(count == 0u);
+  assert(h2_pal_io_stream_flush(NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_io_stream_release(NULL) == H2_PAL_ERR_INVALID_ARG);
 }
 
 static void use_serial_host(void) {
@@ -326,6 +353,7 @@ int main(void) {
   use_wifi_csi();
   use_audio_decoder();
   use_audio_task_names();
+  use_io_stream();
   use_serial_host();
   use_crypto();
   use_dtls();

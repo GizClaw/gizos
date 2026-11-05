@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class MountTest(unittest.TestCase):
     def test_mount_ownership(self):
-        text = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_sd_fs.c").read_text()
+        text = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_sd_fs.c").read_text()
         code = text[text.index("h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init("):]
         stub = r'''
 #include <assert.h>

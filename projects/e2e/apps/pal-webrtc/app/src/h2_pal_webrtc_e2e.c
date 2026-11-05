@@ -77,7 +77,8 @@ static void* resize(void* user, void* ptr, size_t len) {
   if (!allocation_allowed(a)) return NULL;
   return h2_pal_mem_realloc(a->base, ptr, len);
 }
-static const h2_pal_mem_vtable_t memory_vtable = {allocate, resize, release};
+static const h2_pal_mem_vtable_t memory_vtable = {allocate, resize, release,
+                                                  NULL};
 static h2_pal_result_t track_read(void* user, uint8_t* opus, size_t capacity,
                                   size_t* out_len) {
   track_state_t* t = user;

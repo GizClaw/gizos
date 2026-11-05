@@ -35,6 +35,24 @@ cc_library(
 )
 
 cc_test(
+    name = "quectel_transport_concurrency_test",
+    srcs = ["tests/test_quectel_transport_concurrency.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":quectel_modem",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
     name = "quectel_status_events_test",
     srcs = ["tests/test_quectel_status_events.c"],
     conlyopts = H2_C11_OPTS,

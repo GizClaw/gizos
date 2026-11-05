@@ -131,7 +131,7 @@ class JieliRunnerFixture:
         values = dict(
             source_root=str(self.root),
             target=self.target,
-            entry="projects/e2e/targets/jieli_firmware/reference-smoke/ac791n_reference",
+            entry="projects/test/targets/native_firmware/demo/fixture_board",
             board="fixture_board",
             image="demo",
             project_makefile=str(self.project_makefile.relative_to(self.root)),
@@ -153,6 +153,7 @@ class JieliRunnerFixture:
             native_component_source=[],
             native_include_root=[],
             prebuilt_component=[],
+            generate_prebuilt_component=[],
             sdk_patch=[],
         )
         values.update(overrides)
@@ -405,6 +406,61 @@ class JieliRunnerTest(unittest.TestCase):
             output = json.loads((fixture.outputs / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(output["native_sources"], ["launcher/main.c"])
             self.assertEqual(output["prebuilt_components"], ["h2_firmware_lib"])
+
+    def test_generated_firmware_library_has_source_inventory_with_or_without_archives(self):
+        for source_only in (False, True):
+            with self.subTest(source_only=source_only), tempfile.TemporaryDirectory() as temporary:
+                fixture = JieliRunnerFixture(Path(temporary).resolve())
+                checkout = fixture.root / "portable-library"
+                checkout.joinpath("include").mkdir(parents=True)
+                checkout.joinpath("native.c").write_text("int portable;\n")
+                checkout.joinpath("include/portable.h").write_text("extern int portable;\n")
+                fixture.root.joinpath("external").mkdir()
+                fixture.root.joinpath("external/portable_repo+").symlink_to(checkout, target_is_directory=True)
+                fixture.root.joinpath("libportable.a").write_bytes(b"!<arch>\n")
+                captured = {}
+                original_make = runner.run_native_make
+
+                def capture(make, project, environment, variables, targets, stage):
+                    manifest = next(value.partition("=")[2] for value in variables
+                                    if value.startswith("H2_BAZEL_COMPONENT_MANIFEST="))
+                    captured["manifest"] = Path(manifest).read_text()
+                    return original_make(make, project, environment, variables, targets, stage)
+
+                with mock.patch.object(runner, "run_native_make", capture):
+                    runner.build(fixture.arguments(
+                        generate_prebuilt_component=["portable_library"],
+                        native_component_source=["portable_library=external/portable_repo+/native.c"],
+                        native_include_root=["external/portable_repo+/include"],
+                        prebuilt_component=[] if source_only else ["portable_library=libportable.a"],
+                    ))
+                manifest = captured["manifest"]
+                self.assertIn(f"H2_BAZEL_NATIVE_SRCS := {checkout / 'native.c'}", manifest)
+                self.assertIn(f"H2_BAZEL_COMPONENT_SRCS_PORTABLE_LIBRARY := {checkout / 'native.c'}", manifest)
+                self.assertIn(f"H2_BAZEL_NATIVE_INCLUDES := -I{checkout / 'include'}", manifest)
+                self.assertEqual("H2_BAZEL_PREBUILT_PORTABLE_LIBRARY" in manifest, not source_only)
+                output = json.loads((fixture.outputs / "manifest.json").read_text())
+                self.assertEqual(output["native_components"], ["launcher", "portable_library"])
+                self.assertEqual(output["native_source_components"]["portable_library"],
+                                 ["external/portable_repo+/native.c"])
+
+    def test_generated_firmware_library_rejects_duplicate_components_and_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = JieliRunnerFixture(Path(temporary).resolve())
+            fixture.root.joinpath("native.c").write_text("int portable;\n")
+            for names in (["launcher"], ["portable_library", "portable_library"]):
+                with self.subTest(names=names), self.assertRaisesRegex(runner.RunnerError, "duplicate generated component"):
+                    runner.build(fixture.arguments(
+                        generate_prebuilt_component=names,
+                        native_component_source=["portable_library=native.c"],
+                    ))
+            with self.assertRaisesRegex(runner.RunnerError, "multiple owners"):
+                runner.build(fixture.arguments(
+                    generate_prebuilt_component=["portable_library"],
+                    native_component_source=["launcher=native.c", "portable_library=native.c"],
+                ))
+            with self.assertRaisesRegex(runner.RunnerError, "no declared component"):
+                runner.build(fixture.arguments(native_component_source=["missing=native.c"]))
 
     def test_build_rejects_missing_project_and_escaping_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:

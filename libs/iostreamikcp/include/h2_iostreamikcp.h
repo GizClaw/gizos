@@ -4,6 +4,7 @@
 #include "h2_iostreamikcp_types.h"
 #include "h2/pal/hal/h2_pal_uart_io_stream.h"
 #include "h2/pal/hal/h2_pal_usb_jtag_io_stream.h"
+#include "h2/pal/os/h2_pal_io_stream.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,6 +67,8 @@ h2_pal_result_t h2_iostreamikcp_flush(h2_iostreamikcp_t* stream);
 h2_pal_result_t h2_iostreamikcp_get_stats(h2_iostreamikcp_t* stream,
                                           h2_iostreamikcp_stats_t* out_stats);
 
+h2_iostreamikcp_io_t h2_iostreamikcp_io_from_stream(
+    const h2_pal_io_stream_api_t* api);
 h2_iostreamikcp_io_t h2_iostreamikcp_io_from_uart(
     const h2_pal_uart_io_stream_api_t* api);
 h2_iostreamikcp_io_t h2_iostreamikcp_io_from_usb_jtag(

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class SdPathTest(unittest.TestCase):
     def test_mapping_rejects_traversal(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_sd_fs.c").read_text()
         begin = source.index("static int translate_path(")
         end = source.index("\n}\n", begin) + 3

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class WifiScanTest(unittest.TestCase):
     def test_ap_status_ssid_is_terminated_at_declared_length(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
         begin = source.index("  memcpy(wifi_state.ap.ssid,")
         copy = source[begin:source.index("  if (wifi_enter_ap_mode", begin)]
@@ -60,7 +60,7 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=10)
 
     def test_start_binds_events_for_existing_interface(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
         start = source[source.index("static int ensure_wifi_on(void)"):
                        source.index("static void update_sta_snapshot(", source.index("static int ensure_wifi_on(void)"))]
@@ -122,7 +122,7 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=10)
 
     def test_timeout_is_cleaned_only_after_completion(self):
-        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+        source = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
         state = source[re.search(r"\benum\s*\{\s*SCAN_IDLE\b", source).start():
                        source.index("static void post_system_event")]

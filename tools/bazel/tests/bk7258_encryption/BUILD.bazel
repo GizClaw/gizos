@@ -1,0 +1,75 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/bazel:bk7258.bzl", "bk7258_firmware_encrypt")
+load(":fixture.bzl", "native_fixture")
+
+package(default_visibility = ["//visibility:private"])
+
+_POSIX_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+py_library(
+    name = "fixture_support",
+    testonly = True,
+    srcs = ["fixture.py"],
+    target_compatible_with = _POSIX_HOST,
+    visibility = ["//projects/h2loader/tools/bazel:__pkg__"],
+    deps = ["//tools/bazel:bk7258_flash_aes"],
+)
+
+py_binary(
+    name = "fixture_writer",
+    testonly = True,
+    srcs = ["fixture.py"],
+    legacy_create_init = False,
+    main = "fixture.py",
+    target_compatible_with = _POSIX_HOST,
+    deps = [":fixture_support"],
+)
+
+[
+    native_fixture(
+        name = image + "_native",
+        testonly = True,
+        image = image,
+        target_compatible_with = _POSIX_HOST,
+    )
+    for image in [
+        "app",
+        "full",
+    ]
+]
+
+[
+    bk7258_firmware_encrypt(
+        name = image + "_encrypted",
+        testonly = True,
+        firmware = ":" + image + "_native",
+        image = image,
+        target_compatible_with = _POSIX_HOST,
+    )
+    for image in [
+        "app",
+        "full",
+    ]
+]
+
+py_test(
+    name = "native_encryption_test",
+    srcs = ["test_encrypt.py"],
+    data = [
+        ":app_encrypted",
+        ":full_encrypted",
+        "//tools/bazel:bk7258_encrypt",
+    ],
+    legacy_create_init = False,
+    main = "test_encrypt.py",
+    target_compatible_with = _POSIX_HOST,
+    deps = [
+        ":fixture_support",
+        "//tools/bazel:bk7258_encryption",
+        "@rules_python//python/runfiles",
+    ],
+)

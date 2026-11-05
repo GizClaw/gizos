@@ -6,8 +6,8 @@ Start the fixture explicitly on an operator-selected LAN address, keep it runnin
 
 ```sh
 bazel run //projects/e2e/libs/pal-http-fixture:serve -- --bind 0.0.0.0 --advertised <host-lan-ip> --bazelrc /tmp/pal-http-fixture.bazelrc
-bazel --bazelrc=/tmp/pal-http-fixture.bazelrc build --config=esp32s3 //projects/e2e/targets/h2loader_tar_zlib/pal-http/devkit:package
-bazel --bazelrc=/tmp/pal-http-fixture.bazelrc build --config=bk7258 //projects/e2e/targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405:package
+bazel --bazelrc=/tmp/pal-http-fixture.bazelrc build --config=esp32s3 //projects/e2e/targets/single/pal-http/espressif/esp32s3_devkitc_1:package
+bazel --bazelrc=/tmp/pal-http-fixture.bazelrc build --config=bk7258 //projects/e2e/targets/single/pal-http/beken/bk7258_v3_202405:package
 ```
 
 The generated Bazel settings contain only fixture URLs, public CA PEM encoded as hex, and fixture time. Private keys remain in the fixture's temporary directory. Never commit generated settings or keys. Empty default settings permit CI compilation but fail setup at runtime. Build and install remain separate operations; this runner does not open serial ports, reset a board, flash a Loader, format storage or publish artifacts. Follow the board's H2Loader-first installation workflow and record actual UID/version/image hash, exact case registry, final confirmation and empty Stage before marking that platform passed.
