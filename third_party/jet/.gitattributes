@@ -1,0 +1,2 @@
+# Preserve upstream whitespace in the evaluation snapshot.
+src/** whitespace=-blank-at-eol,-blank-at-eof

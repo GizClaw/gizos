@@ -1,0 +1,19 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "tgx_backend",
+    srcs = ["src/tgx_backend.cpp"],
+    copts = [
+        "-O2",
+        "-w",
+    ],
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    deps = [
+        "//projects/gfx_bench/libs/car_model",
+        "//projects/gfx_bench/libs/scene",
+        "//third_party/tgx",
+    ],
+)

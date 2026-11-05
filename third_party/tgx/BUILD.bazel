@@ -1,0 +1,49 @@
+# vindar/tgx d43f88906ab87f877ea249af2232896b097f15a7, LGPL-2.1.
+# Local evaluation sources without optional fonts. Review licensing on adoption.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "tgx",
+    srcs = [
+        "src/Color.cpp",
+        "src/Fonts.cpp",
+        "src/Renderer3D.cpp",
+    ],
+    hdrs = [
+        "src/Box2.h",
+        "src/Box3.h",
+        "src/Color.h",
+        "src/Color.inl",
+        "src/Fonts.h",
+        "src/Image.h",
+        "src/Image.inl",
+        "src/Mat4.h",
+        "src/Mesh3D.h",
+        "src/Mesh3D.inl",
+        "src/Mesh3Dv2.h",
+        "src/Mesh3Dv2.inl",
+        "src/Misc.h",
+        "src/Rasterizer.h",
+        "src/Renderer3D.h",
+        "src/Renderer3D.inl",
+        "src/Renderer3DFlash.h",
+        "src/Renderer3DSpotLightData.h",
+        "src/ShaderParams.h",
+        "src/Shaders.h",
+        "src/Vec2.h",
+        "src/Vec3.h",
+        "src/Vec4.h",
+        "src/bseg.h",
+        "src/tgx.h",
+        "src/tgx_config.h",
+    ],
+    copts = [
+        "-O2",
+        "-w",
+    ],
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = ["src"],
+)

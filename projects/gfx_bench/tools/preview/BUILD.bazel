@@ -1,0 +1,11 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "preview",
+    srcs = ["preview.c"],
+    deps = [
+        "//projects/gfx_bench/libs/jet_backend",
+        "//projects/gfx_bench/libs/scene",
+        "//projects/gfx_bench/libs/tgx_backend",
+    ],
+)

@@ -1,0 +1,28 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["gfx/touch"],
+)
+
+cc_library(
+    name = "app",
+    srcs = ["src/h2_gfx_bench.c"],
+    hdrs = ["include/h2_gfx_bench.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-O2"],
+    includes = ["include"],
+    deps = [
+        ":tasks",
+        "//libs/atomic",
+        "//libs/runtime",
+        "//projects/gfx_bench/libs/car_model",
+        "//projects/gfx_bench/libs/jet_backend",
+        "//projects/gfx_bench/libs/scene",
+        "//projects/gfx_bench/libs/tgx_backend",
+    ],
+)

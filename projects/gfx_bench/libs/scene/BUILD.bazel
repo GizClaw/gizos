@@ -1,0 +1,24 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "scene",
+    srcs = ["src/h2_gfx_scene.c"],
+    hdrs = ["include/h2_gfx_scene.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-O2"],
+    includes = ["include"],
+    deps = [
+        "//libs/pal",
+        "//projects/gfx_bench/libs/car_model",
+    ],
+)
+
+cc_test(
+    name = "scene_test",
+    srcs = ["tests/test_scene.c"],
+    conlyopts = H2_C11_OPTS,
+    deps = [":scene"],
+)

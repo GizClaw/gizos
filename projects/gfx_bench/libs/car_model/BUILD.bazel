@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "local_car",
+    define_values = {"gfx_local_car": "1"},
+)
+
+# The optional car asset stays outside Git. Clean checkouts compile a descriptor
+# that reports unavailable at runtime; local evaluation explicitly selects data.
+cc_library(
+    name = "car_model",
+    srcs = select({
+        ":local_car": ["local/car_model_data.c"],
+        "//conditions:default": ["src/car_model_unavailable.c"],
+    }),
+    hdrs = ["include/h2_car_model.h"],
+    conlyopts = H2_C11_OPTS,
+    includes = ["include"],
+)

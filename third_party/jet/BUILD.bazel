@@ -1,0 +1,56 @@
+# CubeCoders/Jet 601143f95a1dfaa2ef9f5e700b462538e9aa7dcb, MIT.
+# Local evaluation sources; adoption should use an immutable MODULE.bazel pin.
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "src/BlendSpans.cpp",
+        "src/Camera.cpp",
+        "src/Light.cpp",
+        "src/Material.cpp",
+        "src/Object.cpp",
+        "src/PostFX.cpp",
+        "src/Primitives.cpp",
+        "src/Renderer.cpp",
+        "src/Scene.cpp",
+        "src/Sprite2D.cpp",
+        "src/Texture.cpp",
+        "src/TiledSpan.cpp",
+        "src/TrigLUT.cpp",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "src/BlendSpans.hpp",
+        "src/Camera.hpp",
+        "src/DepthBuckets.hpp",
+        "src/EnvironmentMapping.hpp",
+        "src/FastMath.hpp",
+        "src/Jet.hpp",
+        "src/LensFlare.hpp",
+        "src/Light.hpp",
+        "src/Material.hpp",
+        "src/Math.hpp",
+        "src/ObjLoader.h",
+        "src/Object.hpp",
+        "src/ParticleSystem.hpp",
+        "src/Picking.hpp",
+        "src/PixelOps.hpp",
+        "src/PostFX.hpp",
+        "src/Primitives.hpp",
+        "src/Renderer.hpp",
+        "src/Scene.hpp",
+        "src/Shader.hpp",
+        "src/Specular.hpp",
+        "src/Sprite2D.hpp",
+        "src/Texture.hpp",
+        "src/TextureSpans.hpp",
+        "src/TileTexture.hpp",
+        "src/TiledSpan.hpp",
+        "src/TriangleSpans.hpp",
+        "src/TrigLUT.hpp",
+    ],
+)

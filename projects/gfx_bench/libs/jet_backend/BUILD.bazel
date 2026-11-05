@@ -1,0 +1,25 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "jet_backend",
+    srcs = [
+        "src/JetConfig.hpp",
+        "src/jet_backend.cpp",
+        "//third_party/jet:headers",
+        "//third_party/jet:sources",
+    ],
+    copts = [
+        "-O2",
+        "-w",
+        "-Iprojects/gfx_bench/libs/jet_backend/src",
+        "-Ithird_party/jet/src",
+    ],
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    deps = [
+        "//projects/gfx_bench/libs/car_model",
+        "//projects/gfx_bench/libs/scene",
+    ],
+)
