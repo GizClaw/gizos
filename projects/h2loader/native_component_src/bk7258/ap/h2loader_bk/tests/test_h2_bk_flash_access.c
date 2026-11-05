@@ -8,6 +8,14 @@
 static uint8_t packets[18 * 34], plain[18 * 32];
 static int critical, mapped, raw_reads, invalidated, barrier;
 static uint8_t native_slot;
+static int raw_read_error, partitions_missing;
+#define BOOT_WINDOW 0x11000u
+static const bk_logic_partition_t own_window = {BOOT_WINDOW};
+static const bk_logic_partition_t other_window = {BASE};
+const bk_logic_partition_t* bk_flash_partition_get_info(uint32_t id) {
+  if (partitions_missing) return NULL;
+  return id == BK_PARTITION_APPLICATION ? &own_window : &other_window;
+}
 static void make_packets(void) {
   for (unsigned i = 0; i < sizeof(plain); i++) plain[i] = (uint8_t)i;
   for (unsigned b = 0; b < 18; b++) {
@@ -24,8 +32,12 @@ static void make_packets(void) {
   }
 }
 int bk_flash_read_bytes(uint32_t p, uint8_t* out, uint32_t n) {
-  assert(!critical && p >= BASE && p + n <= BASE + sizeof(packets));
-  memcpy(out, packets + (p - BASE), n);
+  /* The same packets model the boot window at physical zero and the App
+   * window at BASE; anything else is a read outside the permitted region. */
+  const uint32_t base = p < sizeof(packets) ? 0u : BASE;
+  assert(!critical && p >= base && p + n <= base + sizeof(packets));
+  if (raw_read_error) return -1;
+  memcpy(out, packets + (p - base), n);
   raw_reads++;
   return 0;
 }
@@ -50,9 +62,10 @@ void __DSB(void) {
   barrier = 1;
 }
 void h2_bk_test_mapped_copy(uintptr_t a, uint32_t within, void* out, size_t n) {
-  assert(critical && invalidated && barrier && a >= 0x2240000 &&
-         a + within + n <= 0x2240000 + sizeof(plain));
-  memcpy(out, plain + (a - 0x2240000 + within), n);
+  const uintptr_t base = a >= 0x2240000u ? 0x2240000u : 0x2000000u;
+  assert(critical && invalidated && barrier && a >= base &&
+         a + within + n <= base + sizeof(plain));
+  memcpy(out, plain + (a - base + within), n);
   mapped++;
   invalidated = barrier = 0;
 }
@@ -102,6 +115,34 @@ int main(void) {
   assert(h2_bk_flash_read_plain(BASE, 68, 64, out, 1) < 0);
   native_slot = 1;
   assert(h2_bk_flash_read_plain(BASE, 68, 0, out, 1) == H2_PAL_ERR_UNSUPPORTED);
+
+  /* Native B keeps the boot window readable, and only the boot window: the
+   * generic reader still refuses it and every executable window. */
+  make_packets();
+  mapped = raw_reads = 0;
+  memset(out, 0, sizeof(out));
+  assert(h2_bk_flash_read_boot_plain(BOOT_WINDOW, 7, out, 50) == H2_PAL_OK &&
+         !memcmp(out, plain + 7, 50));
+  assert(mapped == 2 && raw_reads == 1 && !critical);
+  assert(h2_bk_flash_read_plain(0, sizeof(packets), 0, out, 1) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  mapped = raw_reads = 0;
+  assert(h2_bk_flash_read_boot_plain(0, 0, out, 1) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_bk_flash_read_boot_plain(BOOT_WINDOW + 34u, 0, out, 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_bk_flash_read_boot_plain(BOOT_WINDOW, BOOT_WINDOW / 34u * 32u - 1u,
+                                     out, 2) == H2_PAL_ERR_INVALID_ARG);
+  partitions_missing = 1;
+  assert(h2_bk_flash_read_boot_plain(BOOT_WINDOW, 0, out, 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  partitions_missing = 0;
+  assert(!raw_reads && !mapped);
+  raw_read_error = 1;
+  assert(h2_bk_flash_read_boot_plain(BOOT_WINDOW, 0, out, 1) == H2_PAL_ERR_IO);
+  raw_read_error = 0;
+  packets[0] ^= 1;
+  assert(h2_bk_flash_read_boot_plain(BOOT_WINDOW, 0, out, 1) == H2_PAL_ERR_IO);
+  assert(!mapped && !critical);
 #ifdef TEST_UNKNOWN
   assert(h2_bk_flash_aes_state() == H2_BK_FLASH_AES_UNKNOWN);
 #else

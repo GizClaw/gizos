@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
-import struct
+import os
+import stat
 import sys
+import tempfile
 from pathlib import Path
 
 from projects.h2loader.tools.bazel.firmware_artifacts import (
@@ -153,12 +156,12 @@ def publish_esp_recovery(
 def publish_bk_recovery(
     *,
     recovery_image: Path,
-    recovery_config: Path,
+    recovery_config: Path | dict,
     output: Path,
     board: str,
     target: str,
 ) -> None:
-    config = json.loads(recovery_config.read_text(encoding="utf-8"))
+    config = recovery_config if isinstance(recovery_config, dict) else json.loads(recovery_config.read_text(encoding="utf-8"))
     offset = config.get("offset")
     baud = config.get("baud")
     if not isinstance(offset, str) or not isinstance(baud, int):
@@ -169,7 +172,7 @@ def publish_bk_recovery(
         board=board,
         target=target,
         baud=baud,
-        files=[(int(offset, 0), recovery_image.name, recovery_image)],
+        files=[(int(offset, 0), "all-app.bin", recovery_image)],
     )
 
 
@@ -258,31 +261,12 @@ def publish_metadata(
     output.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _recovery_message(message: str, *, error: bool = False) -> None:
-    """Diagnostics cannot change publication state or expose an I/O exception."""
-    import os
-
-    stream = sys.stderr if error else sys.stdout
-    if stream is None:
-        return
+def _protect_secret_process() -> None:
+    """Establish crash-dump protection before reading any secret bytes."""
     try:
-        print(message, file=stream, flush=True)
-    except (OSError, ValueError):
-        # CPython retries buffered standard streams at shutdown and can replace
-        # the operation's exit status with 120. Retire the failed descriptor.
-        try:
-            with open(os.devnull, "w") as sink:
-                os.dup2(sink.fileno(), stream.fileno())
-        except (OSError, ValueError, AttributeError):
-            if error:
-                sys.stderr = None
-            else:
-                sys.stdout = None
-
-
-def _protect_recovery_process() -> None:
-    """Establish crash-dump protection before accepting any secret bytes."""
-    import resource
+        import resource
+    except ImportError:
+        raise ValueError("DUMP_PROTECTION_UNAVAILABLE") from None
 
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     if sys.platform == "linux":
@@ -300,29 +284,15 @@ def _protect_recovery_process() -> None:
             raise ValueError("DUMP_PROTECTION_FAILED")
 
 
-def _read_recovery_key(fd: int, timeout: float = 30.0) -> bytearray:
-    """Read one bounded EOF-terminated secret from an owned pipe/socket stream."""
-    import os
-    import selectors
-    import stat
-    import time
-
-    mode = os.fstat(fd).st_mode
-    if not (stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode)):
-        raise ValueError("KEY_REQUIRES_PIPE_OR_SOCKET")
+def read_flash_aes_key(path: Path) -> bytearray:
+    """Read exactly 32 raw bytes; never block opening a non-regular input."""
     key = bytearray()
     try:
-        deadline = time.monotonic() + timeout
-        with os.fdopen(os.dup(fd), "rb", buffering=0) as secret, selectors.DefaultSelector() as readiness:
-            readiness.register(secret, selectors.EVENT_READ)
-            while len(key) < 33:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0 or not readiness.select(remaining):
-                    raise ValueError("KEY_INPUT_TIMEOUT")
-                chunk = os.read(secret.fileno(), 33 - len(key))
-                if not chunk:
-                    break
-                key.extend(chunk)
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb", buffering=0) as secret:
+            if not stat.S_ISREG(os.fstat(secret.fileno()).st_mode):
+                raise ValueError("KEY_REQUIRES_REGULAR_FILE")
+            key.extend(secret.read(33))
         if len(key) != 32:
             raise ValueError("KEY_LENGTH")
         return key
@@ -331,180 +301,139 @@ def _read_recovery_key(fd: int, timeout: float = 30.0) -> bytearray:
         raise
 
 
-def encrypted_bk_recovery_main(argv: list[str] | None = None) -> int:
-    """Explicit local operation; stdin/descriptor carries exactly 32 raw key bytes."""
-    import argparse
-    import os
-    import shutil
-    import tempfile
+def _read_bounded(path: Path, limit: int) -> bytes:
+    with path.open("rb") as source:
+        data = source.read(limit + 1)
+    if not data or len(data) > limit:
+        raise ValueError("ENCRYPTION_INPUT_SIZE")
+    return data
 
-    from tools.bazel.bk7258_flash_aes import encrypt_recovery
 
-    parser = argparse.ArgumentParser(description="Create offline encrypted BK7258 AB recovery; no device access", allow_abbrev=False)
-    parser.add_argument("--source", required=True)
-    parser.add_argument("--metadata", required=True)
-    parser.add_argument("--config", required=True)
-    parser.add_argument("--board", required=True)
-    parser.add_argument("--target", choices=["bk7258"], required=True)
-    parser.add_argument("--key-fd", type=int, required=True, help="Runtime descriptor containing exactly 32 raw bytes, then EOF; 0 uses stdin")
-    parser.add_argument("--output-dir", required=True, help="New absolute local output directory, outside Bazel outputs")
-    tokens = sys.argv[1:] if argv is None else argv
-    for flag in ("--source", "--metadata", "--config", "--board", "--target", "--key-fd", "--output-dir"):
-        if sum(token == flag or token.startswith(flag + "=") for token in tokens) > 1:
-            parser.error("duplicate option")
-    args = parser.parse_args(tokens)
-    temporary = None
-    key = bytearray()
-    try:
-        _protect_recovery_process()
-        output = Path(args.output_dir)
-        if not output.is_absolute() or output.exists() or output.is_symlink():
-            raise ValueError("OUTPUT_DIRECTORY")
-        parent = output.parent.resolve(strict=True)
-        # Refuse declared Bazel output trees; keyed results are runtime-only.
-        if any(part in ("bazel-out", "execroot") or part.endswith(".runfiles") for part in parent.parts):
-            raise ValueError("BAZEL_OUTPUT_DIRECTORY")
-        config = Path(args.config)
-        settings = json.loads(config.read_text(encoding="utf-8"))
+@dataclass(frozen=True)
+class BkEncryptionResult:
+    logical_base: int
+    source_image_sha256: str
+    partition_metadata_sha256: str
+    recovery_config: dict | None
+    bootloader_contract: str | None = None
+    bootloader_receipt_sha256: str | None = None
+
+
+def _bootloader_identity(partition_metadata: Path, recovery: bytes | None) -> tuple[str | None, str | None]:
+    """Return the optional mapped-boot receipt identity; a bad receipt fails closed."""
+    path = partition_metadata / "bootloader.json"
+    if not os.path.lexists(path):
+        return None, None
+    data = _read_bounded(path, 1024 * 1024)
+    receipt = json.loads(data)
+    if (
+        not isinstance(receipt, dict)
+        or type(receipt.get("schema")) is not int
+        or receipt["schema"] != 1
+        or receipt.get("contract") != "mapped_ab_v1"
+    ):
+        raise ValueError("BOOTLOADER_RECEIPT")
+    if recovery is not None and receipt.get("native_image_sha256") != hashlib.sha256(recovery).hexdigest():
+        raise ValueError("BOOTLOADER_RECEIPT_IMAGE")
+    return receipt["contract"], hashlib.sha256(data).hexdigest()
+
+
+def encrypt_bk_images(
+    *,
+    key_file: Path,
+    partition_metadata: Path,
+    app_image: Path,
+    app_output: Path,
+    recovery_image: Path | None,
+    recovery_config: Path | None,
+    recovery_output: Path | None,
+) -> BkEncryptionResult:
+    """Snapshot bounded native inputs before reading the key, then encrypt them.
+
+    An App or Loader encrypts for its own window from its partition metadata.
+    Recovery's path-based cipher API receives a frozen copy of the same table;
+    publication and receipts never reopen the original unkeyed inputs.
+    """
+    from tools.bazel.bk7258_flash_aes import encrypt_app, encrypt_recovery, validate_app, validate_layout
+
+    if (recovery_image is None) != (recovery_output is None):
+        raise ValueError("encrypted recovery image and output must be declared together")
+    if (recovery_image is None) != (recovery_config is None):
+        raise ValueError("encrypted recovery requires its layout config")
+    settings = None
+    recovery = None
+    if recovery_image is not None:
+        settings = json.loads(_read_bounded(recovery_config, 1024 * 1024))
         if not isinstance(settings, dict) or not isinstance(settings.get("offset"), str) or int(settings["offset"], 0) != 0:
             raise ValueError("RECOVERY_REQUIRES_ZERO_OFFSET")
         if type(settings.get("baud")) is not int or settings["baud"] <= 0:
             raise ValueError("RECOVERY_BAUD")
-        key = _read_recovery_key(args.key_fd)
-        if not 0 < Path(args.source).stat().st_size <= 16 * 1024 * 1024:
-            raise ValueError("SOURCE_LENGTH")
-        source_bytes = Path(args.source).read_bytes()
-        encrypted = encrypt_recovery(source_bytes, Path(args.metadata), bytes(key))
-        temporary = Path(tempfile.mkdtemp(prefix=".bk-recovery-", dir=parent))
-        image = temporary / "encrypted.bin"
-        with image.open("xb") as stream:
-            os.chmod(image, 0o600)
-            stream.write(encrypted)
-        frozen_config = temporary / ".recovery-config.json"
-        frozen_config.write_text(json.dumps(settings), encoding="utf-8")
-        publish_bk_recovery(
-            recovery_image=image, recovery_config=frozen_config,
-            output=temporary / "recovery.h2fb", board=args.board, target=args.target,
-        )
-        frozen_config.unlink()
-        os.chmod(temporary / "recovery.h2fb", 0o600)
-        receipt = {
-            "format": "bk7258-encrypted-recovery-v1",
-            "board": args.board,
-            "target": args.target,
-            "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
-            "encrypted_sha256": sha256(image),
-            "bundle_sha256": sha256(temporary / "recovery.h2fb"),
-        }
-        receipt_path = temporary / "validation.json"
-        receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
-        os.chmod(receipt_path, 0o600)
-        if output.exists() or output.is_symlink():
-            raise ValueError("OUTPUT_DIRECTORY")
-        temporary.rename(output)
-        temporary = None
-        # Publication already committed. A closed logging consumer must not
-        # turn a complete output into a reported validation failure.
-        _recovery_message("Encrypted recovery created; hardware/key matching is not verified.")
-        return 0
-    except (OSError, ValueError, KeyError, TypeError, struct.error):
-        # Never expose exception details, input values or a secret-bearing traceback.
-        _recovery_message("Encrypted recovery refused: invalid input, secret descriptor or output.", error=True)
-        return 1
-    finally:
-        key[:] = b"\0" * len(key)
-        if temporary is not None:
-            try:
-                shutil.rmtree(temporary)
-            except OSError:
-                _recovery_message("Private recovery staging cleanup failed; no output was published.", error=True)
+        recovery = _read_bounded(recovery_image, 16 * 1024 * 1024)
+    metadata_bytes = _read_bounded(partition_metadata / "partitions.json", 1024 * 1024)
+    metadata = json.loads(metadata_bytes)
+    app = _read_bounded(app_image, 16 * 1024 * 1024)
+    _, base, _ = validate_app(app, metadata)
+    bootloader_contract, bootloader_receipt_sha256 = _bootloader_identity(partition_metadata, recovery)
+    with tempfile.TemporaryDirectory(prefix="h2loader-layout-") as temporary:
+        frozen_metadata = Path(temporary)
+        (frozen_metadata / "partitions.json").write_bytes(metadata_bytes)
+        if recovery is not None:
+            validate_layout(frozen_metadata, len(recovery))
+        _protect_secret_process()
+        key = read_flash_aes_key(key_file)
+        try:
+            encrypted_app = encrypt_app(app, metadata, bytes(key))
+            encrypted_recovery = (
+                encrypt_recovery(recovery, frozen_metadata, bytes(key))
+                if recovery is not None
+                else None
+            )
+        finally:
+            key[:] = b"\0" * len(key)
+    app_output.parent.mkdir(parents=True, exist_ok=True)
+    app_output.write_bytes(encrypted_app)
+    if recovery_output is not None:
+        recovery_output.parent.mkdir(parents=True, exist_ok=True)
+        recovery_output.write_bytes(encrypted_recovery)
+    return BkEncryptionResult(
+        logical_base=base,
+        source_image_sha256=hashlib.sha256(app).hexdigest(),
+        partition_metadata_sha256=hashlib.sha256(metadata_bytes).hexdigest(),
+        recovery_config=settings,
+        bootloader_contract=bootloader_contract,
+        bootloader_receipt_sha256=bootloader_receipt_sha256,
+    )
 
 
-def encrypted_bk_app_main(argv: list[str] | None = None) -> int:
-    """Convert an existing App package locally, before any device operation."""
-    import argparse
-    import os
-    import shutil
-    import tempfile
-
-    from projects.h2loader.tools.bazel.firmware_artifacts import read_managed_package
-    from tools.bazel.bk7258_flash_aes import encrypt_app, validate_app
-
-    parser = argparse.ArgumentParser(description="Pre-encrypt a BK7258 App package; no device access", allow_abbrev=False)
-    for flag in ("source", "metadata", "output-dir"):
-        parser.add_argument("--" + flag, required=True)
-    parser.add_argument("--key-fd", type=int, required=True)
-    tokens = sys.argv[1:] if argv is None else argv
-    for flag in ("--source", "--metadata", "--output-dir", "--key-fd"):
-        if sum(t == flag or t.startswith(flag + "=") for t in tokens) > 1:
-            parser.error("duplicate option")
-    args = parser.parse_args(tokens)
-    temporary = None
-    key = bytearray()
-    try:
-        _protect_recovery_process()
-        output = Path(args.output_dir)
-        if not output.is_absolute() or output.exists() or output.is_symlink():
-            raise ValueError("OUTPUT_DIRECTORY")
-        parent = output.parent.resolve(strict=True)
-        if any(p in ("bazel-out", "execroot") or p.endswith(".runfiles") for p in parent.parts):
-            raise ValueError("BAZEL_OUTPUT_DIRECTORY")
-        with Path(args.source).open("rb") as stream:
-            source = stream.read(128 * 1024 * 1024 + 1)
-        package = read_managed_package(source)
-        manifest = package.manifest
-        if manifest["target"] != "bk7258" or manifest["role"] != "app":
-            raise ValueError("APP_IDENTITY")
-        # Snapshot and validate unkeyed inputs before receiving a secret. Do
-        # not reopen metadata or package files after accepting the descriptor.
-        with (Path(args.metadata) / "partitions.json").open("rb") as stream:
-            metadata_bytes = stream.read(1024 * 1024 + 1)
-        if len(metadata_bytes) > 1024 * 1024:
-            raise ValueError("METADATA_SIZE")
-        metadata = json.loads(metadata_bytes)
-        _, base, _ = validate_app(package.app, metadata)
-        key = _read_recovery_key(args.key_fd)
-        encrypted = encrypt_app(package.app, metadata, bytes(key))
-        temporary = Path(tempfile.mkdtemp(prefix=".bk-app-", dir=parent))
-        image = temporary / "app.flash-aes.rbl"
-        image.write_bytes(encrypted)
-        fmt = int(manifest["format"])
-        archive = temporary / ("app.flash-aes.update.tar.zlib" if fmt == 1 else "app.flash-aes.update.tar")
-        write_package(archive, "app/bk/app_ab_crc.rbl", encrypted, package.data,
-                      board=manifest["board"], target="bk7258", role="app", version=manifest["version"], package_format=fmt)
-        publish_metadata(output=temporary / "firmware.json", entry="offline/bk7258", platform="bk7258",
-                         board=manifest["board"], image="app", role="app", target="bk7258", version=manifest["version"],
-                         app_image=image, package=archive, factory=None, recovery=None, native=[], package_format=fmt)
-        receipt = {
-            "format": "bk7258-encrypted-app-v1", "board": manifest["board"], "target": "bk7258",
-            "version": manifest["version"], "logical_base": base, "physical_base": base // 32 * 34,
-            "source_package_sha256": hashlib.sha256(source).hexdigest(),
-            "source_image_sha256": hashlib.sha256(package.app).hexdigest(),
-            "image_sha256": sha256(image), "package_sha256": sha256(archive),
-            "partition_metadata_sha256": hashlib.sha256(metadata_bytes).hexdigest(),
-        }
-        (temporary / "validation.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
-        for path in temporary.iterdir():
-            os.chmod(path, 0o600)
-        if output.exists() or output.is_symlink():
-            raise ValueError("OUTPUT_DIRECTORY")
-        temporary.rename(output)
-        temporary = None
-        _recovery_message("Encrypted App package created; device/key matching requires native verification.")
-        return 0
-    except (OSError, ValueError, KeyError, TypeError, struct.error, UnicodeError):
-        _recovery_message("Encrypted App refused: invalid input, secret descriptor or output.", error=True)
-        return 1
-    finally:
-        key[:] = b"\0" * len(key)
-        if temporary is not None:
-            try:
-                shutil.rmtree(temporary)
-            except OSError:
-                _recovery_message("Private App staging cleanup failed; no output was published.", error=True)
-
-
-if __name__ == "__main__":
-    if sys.argv[1:2] == ["app"]:
-        raise SystemExit(encrypted_bk_app_main(sys.argv[2:]))
-    raise SystemExit(encrypted_bk_recovery_main())
+def publish_encryption_receipt(
+    *,
+    output: Path,
+    board: str,
+    role: str,
+    target: str,
+    version: str,
+    encryption: BkEncryptionResult,
+    encrypted_image: Path,
+    package: Path,
+    recovery: Path | None,
+) -> None:
+    """Record key-free evidence; a device key match still needs native proof."""
+    receipt = {
+        "format": "bk7258-flash-aes-package-v1",
+        "board": board,
+        "role": role,
+        "target": target,
+        "version": version,
+        "logical_base": encryption.logical_base,
+        "physical_base": encryption.logical_base // 32 * 34,
+        "source_image_sha256": encryption.source_image_sha256,
+        "image_sha256": sha256(encrypted_image),
+        "package_sha256": sha256(package),
+        "partition_metadata_sha256": encryption.partition_metadata_sha256,
+    }
+    if recovery is not None:
+        receipt["recovery_sha256"] = sha256(recovery)
+    if encryption.bootloader_contract is not None:
+        receipt["bootloader_contract"] = encryption.bootloader_contract
+        receipt["bootloader_receipt_sha256"] = encryption.bootloader_receipt_sha256
+    output.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")

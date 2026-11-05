@@ -149,6 +149,8 @@ A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDEN
 
 ## BK7258 external builds
 
+A BK7258 target may set `bootloader_patch` to a declared recipe, such as `//third_party/bk7258_bootloader_patch:mapped_ab_v1`. After the native build, the runner configures that recipe's `CMakeLists.txt` in the invocation-local temporary tree with the pinned ARM toolchain. The recipe replaces only the recovery image and adds `bootloader.json` to `partition_metadata`. Without the attribute, native outputs are unchanged. Patch failures fail the action, and the shared SDK is never modified.
+
 Install BK with `bun tools/gizos/src/cli.ts setup bk 3.1.1`, then activate it
 with `env bk 3.1.1 --shell sh`. This exports `BK7258_PATH`. A repository
 rule validates SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` and a
@@ -203,6 +205,28 @@ the target-specific image path, installs optional `package_data` relative to
 `FirmwareReleaseInfo`, `DefaultInfo`, and the `release` output group for the
 deliverable. CI and release tags bind to `:package`, so release builds always
 traverse the native `:firmware` dependency before packaging.
+
+A BK7258 package may declare a manual `:encrypted_package` with
+`h2loader_encrypted_package(name = "encrypted_package", source = ":package")`
+from `//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl`. It inherits the
+source identity, version, format and data, consumes the native outputs rather
+than the plaintext package, and publishes the same file names with ciphertext
+digests. Loader-role sources also publish encrypted recovery. The
+`encryption_evidence` output group holds raw ciphertext and receipts.
+
+```sh
+bazel build //path/to/entry:encrypted_package \
+  --inject_repository=private_keys=/path/to/keyrepo \
+  --//projects/h2loader/tools/bazel:encryption_key=@private_keys//:device.key
+```
+
+The key stays outside this repository, in a private directory holding the key
+file, an empty `REPO.bazel` and a `BUILD.bazel` that exports it. The flag selects
+exactly one 32-byte key file; an unset key fails analysis and there is no
+plaintext fallback. The
+action is tagged `local`, `no-remote` and `no-cache`, but Bazel still records
+the digest of its declared inputs locally and retains ciphertext outputs. Do
+not use real keys in shared CI. Automatic tests use the public fixture key.
 
 Every build/ownership unit declares its sources and dependency edges in its own
 `BUILD.bazel`. Add or update that local package when a source boundary or

@@ -95,10 +95,39 @@ static void test_fixed_layout_rollback_bootability(
   g_fixed_slot = 0u;
 }
 
+int g_fixed_select_result;
+uint32_t g_fixed_selected;
+
+/* The unchanged power_api(void) surfaces every fixed-layout selection refusal
+ * (unbound context, invalid ABI, unknown AES) and has no native fallback. */
+static void test_fixed_selection_failures_propagate(
+    const h2_pal_power_api_t* api) {
+  static const int errors[] = {H2_PAL_ERR_INVALID_STATE, H2_PAL_ERR_FORMAT,
+                               H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_IO};
+  uint8_t before[sizeof(data)];
+  memset(data, 255, sizeof(data));
+  memcpy(before, data, sizeof(before));
+  g_fixed_active = 1;
+  for (size_t i = 0; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+    g_fixed_select_result = errors[i];
+    g_fixed_selected = 0u;
+    assert(h2_pal_power_set_next_boot_partition(api, 2u) == errors[i]);
+    assert(g_fixed_selected == 2u);
+    assert(memcmp(data, before, sizeof(before)) == 0);
+  }
+  g_fixed_select_result = H2_PAL_OK;
+  assert(h2_pal_power_set_next_boot_partition(api, 1u) == H2_PAL_OK);
+  assert(g_fixed_selected == 1u);
+  assert(h2_pal_power_set_next_boot_partition(api, 3u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  g_fixed_active = 0;
+}
+
 int main(void) {
   const h2_pal_power_api_t* api = h2_bk_h2loader_power_api();
   test_rollback_bootability(api);
   test_fixed_layout_rollback_bootability(api);
+  test_fixed_selection_failures_propagate(api);
   h2_pal_power_boot_partition_t out;
   assert(h2_pal_power_get_next_boot_partition(api, NULL) ==
          H2_PAL_ERR_INVALID_ARG);
