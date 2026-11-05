@@ -81,6 +81,7 @@ struct bk_little_fs_partition {
 int bk_vfs_mount(const char* source, const char* path, const char* type,
                  unsigned flags, void* partition);
 int bk_vfs_umount(const char* path);
+int bk_vfs_mkfs(const char* partition_name, const char* type, const void* data);
 int bk_vfs_mkdir(const char* path, unsigned mode);
 int bk_vfs_stat(const char* path, struct stat* info);
 int h2_h202_test_open(const char* path, int flags);

@@ -264,6 +264,13 @@ static void start_loader(char device_uid[13]) {
   commands.wifi_operation_mutex = s_operation;
   rc = h2_pal_mutex_lock(s_runtime->sync, s_operation);
   if (rc != H2_PAL_OK) fail("initialization_lock", rc);
+  rc = h2_bk_h2loader_boot_context_bind(s_runtime->pref,
+                                        config.package.allocator);
+  if (rc != H2_PAL_OK) {
+    int unlock = h2_pal_mutex_unlock(s_runtime->sync, s_operation);
+    if (unlock != H2_PAL_OK) fail("initialization_unlock", unlock);
+    fail("boot_context", rc);
+  }
   rc = h2_pal_firmware_info_get_current(s_runtime->firmware_info, &firmware);
   if (rc == H2_PAL_OK) {
     rc = h2_loader_read_current_loader_identity(&config, firmware.version,
@@ -287,12 +294,17 @@ static void start_loader(char device_uid[13]) {
 /* Retries mount and publish recovery like the Loader; returns once Core
  * settled in command mode. A successful reboot never returns. */
 static void run_startup(void) {
+  bool factory_mount = true;
   for (;;) {
     h2_loader_startup_action_t action = H2_LOADER_STARTUP_ACTION_COMMAND_MODE;
     int rc = h2_pal_mutex_lock(s_runtime->sync, s_operation);
     if (rc != H2_PAL_OK) fail("startup_lock", rc);
     const int revision = validate_acceptance();
-    rc = mount_file_point(NULL, H2_BK7258_DL_MOUNT_PATH);
+    /* Factory recovery is allowed once, before filesystem users run. UART
+     * recovery stays published; later retries never repeat formatting. */
+    rc = h2_bk7258_board_fs_mount(factory_mount);
+    factory_mount = false;
+    if (rc == H2_PAL_OK) rc = mount_file_point(NULL, H2_BK7258_DL_MOUNT_PATH);
     if (rc == H2_PAL_OK) rc = mount_file_point(NULL, H2_BK7258_DATA_MOUNT_PATH);
     if (rc == H2_PAL_OK) {
       rc = h2_loader_package_recover_publish(

@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <string.h>
 static int mount_error, unmount_error, mount_count, unmount_count;
+static int format_error, format_count;
 static unsigned volume_size = H2_H202_EXTFLASH_SIZE_BYTES;
 static unsigned last_mount_size;
 static int read_dir_error, remove_dir_error, mkdir_error;
@@ -36,6 +37,17 @@ int bk_vfs_mount(const char* source, const char* path, const char* type,
   ++mount_count;
   return mount_error ? mount_error : (last_mount_size == volume_size ? 0 : -1);
 }
+int bk_vfs_mkfs(const char* name, const char* type, const void* data) {
+  const struct bk_little_fs_partition* p = data;
+  assert(strcmp(name, VFS_QSPI_FLASH_0_PATITION_0) == 0);
+  assert(strcmp(type, "littlefs") == 0 && p->part_type == LFS_QSPI_FLASH);
+  assert(p->part_flash.start_addr == 0u &&
+         p->part_flash.size == H2_H202_EXTFLASH_SIZE_BYTES);
+  ++format_count;
+  if (format_error) return format_error;
+  volume_size = p->part_flash.size;
+  return 0;
+}
 int bk_vfs_umount(const char* path) {
   (void)path;
   ++unmount_count;
@@ -48,6 +60,46 @@ int bk_vfs_mkdir(const char* path, unsigned mode) {
 int bk_vfs_stat(const char* path, struct stat* info) {
   return stat(path, info) == 0 ? 0 : -errno;
 }
+static void test_factory_mount(h2_pal_fs_api_t* fs) {
+  int formats = format_count;
+  assert(h2_bk7258_board_fs_mount(true) == H2_PAL_OK);
+  assert(format_count == formats); /* Healthy volumes are never formatted. */
+  assert(h2_bk7258_board_fs_deinit() == H2_PAL_OK);
+  volume_size = 4u * 1024u * 1024u;
+  int mounts = mount_count;
+  assert(h2_bk7258_board_fs_mount(false) == H2_PAL_ERR_IO);
+  assert(mount_count == mounts + 1 && format_count == formats);
+  mounts = mount_count;
+  assert(h2_bk7258_board_fs_mount(true) == H2_PAL_OK);
+  assert(mount_count == mounts + 2 && format_count == ++formats);
+  assert(volume_size == H2_H202_EXTFLASH_SIZE_BYTES);
+  mounts = mount_count;
+  assert(h2_bk7258_board_fs_mount(true) == H2_PAL_OK);
+  assert(mount_count == mounts && format_count == formats);
+  mkdir_error = 1;
+  assert(h2_bk7258_board_fs_mount(true) == H2_PAL_ERR_INVALID_ARG);
+  assert(format_count == formats); /* Directory errors do not reformat. */
+  mkdir_error = 0;
+  assert(h2_bk7258_board_fs_deinit() == H2_PAL_OK);
+
+  volume_size = 4u * 1024u * 1024u;
+  format_error = -1;
+  mounts = mount_count;
+  assert(h2_bk7258_board_fs_mount(true) == H2_PAL_ERR_IO);
+  assert(mount_count == mounts + 1 && format_count == ++formats);
+  format_error = 0;
+  mount_error = -1;
+  mounts = mount_count;
+  assert(h2_bk7258_board_fs_mount(true) == H2_PAL_ERR_IO);
+  assert(mount_count == mounts + 2 && format_count == ++formats);
+  assert(h2_pal_fs_mkdir(fs, "/dl") == H2_PAL_ERR_IO);
+  assert(format_count == formats); /* Normal retry remains non-destructive. */
+  mount_error = 0;
+  assert(h2_bk7258_board_fs_mount(false) == H2_PAL_OK);
+  assert(format_count == formats);
+  assert(h2_bk7258_board_fs_deinit() == H2_PAL_OK);
+}
+
 int main(void) {
   char temporary[] = "/tmp/h202-fs-XXXXXX";
   char* directory = mkdtemp(temporary);
@@ -61,7 +113,7 @@ int main(void) {
   mount_error = -1;
   assert(h2_pal_fs_stat(&fs, "/data/progress", &info) == H2_PAL_ERR_IO);
   assert(info.size == 0 && !info.is_dir);
-  assert(mount_count == 1); /* No fallback, format or success cache. */
+  assert(mount_count == 1 && format_count == 0); /* Strict lazy access. */
   mount_error = 0;
   assert(h2_pal_fs_stat(&fs, "/data/progress", &info) == H2_PAL_ERR_NOT_FOUND);
   assert(h2_pal_fs_mkdir(&fs, "/dl") == 0);
@@ -143,6 +195,7 @@ int main(void) {
   assert(h2_pal_fs_close(&fs, f) == 0);
   assert(h2_bk7258_board_fs_deinit() == 0);
   assert(unlink("h2loader/data/keep") == 0);
+  test_factory_mount(&fs);
   assert(rmdir("h2loader/dl") == 0 && rmdir("h2loader/data") == 0 &&
          rmdir("h2loader") == 0);
   assert(chdir("/") == 0 && rmdir(directory) == 0);

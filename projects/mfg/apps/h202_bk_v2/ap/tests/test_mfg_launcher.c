@@ -39,10 +39,11 @@ const h2_h202_mfg_profile_t h2_h202_mfg_profile = {0};
 static jmp_buf stopped;
 static struct {
   unsigned locked, locks, unlocks, uart, service, retries, validations;
-  unsigned mounts, publish_stats;
+  unsigned mounts, publish_stats, binds, identities, storage_calls;
   bool active, fail_reset, fail_validation, fail_dl, fail_data, fail_publish;
   bool initial_failure, current_revision;
 } f;
+static bool fail_bind, fail_storage_once;
 
 typedef struct entry {
   char key[40];
@@ -216,6 +217,12 @@ int h2_bk7258_board_runtime_config(h2_runtime_config_t* config) {
   memset(config, 0, sizeof(*config));
   return H2_PAL_OK;
 }
+int h2_bk7258_board_fs_mount(bool format_on_mount_failure) {
+  assert(f.uart == 1u && f.locked == 1u);
+  assert(format_on_mount_failure == (f.storage_calls == 0u));
+  ++f.storage_calls;
+  return fail_storage_once && f.storage_calls == 1u ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
 int h2_bk_h2loader_get_device_uid(char* out, size_t capacity) {
   assert(capacity >= 13u);
   memcpy(out, "123456abcdef", 13u);
@@ -238,15 +245,24 @@ static h2_pal_result_t test_feedback(h2_runtime_t* r,
   (void)profile;
   return H2_PAL_OK;
 }
+int h2_bk_h2loader_boot_context_bind(const h2_pal_pref_api_t* pref_api,
+                                     const h2_pal_mem_api_t* allocator) {
+  assert(f.locked == 1u && f.uart == 0u && f.identities == 0u);
+  assert(pref_api == runtime.pref && allocator == runtime.mem);
+  ++f.binds;
+  return fail_bind ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
+}
 static int test_firmware(const h2_pal_firmware_info_api_t* api,
                          h2_pal_firmware_info_t* out) {
   (void)api;
+  assert(f.binds == 1u);
   snprintf(out->version, sizeof(out->version), "test-loader");
   return H2_PAL_OK;
 }
 static int test_identity(const h2_loader_config_t* config, const char* version,
                          h2_loader_image_identity_t* out) {
-  assert(f.locked == 1u);
+  assert(f.locked == 1u && f.binds == 1u);
+  ++f.identities;
   *out = config->active_identity;
   snprintf(out->version, sizeof(out->version), "%s", version);
   memset(out->image_sha256, 'a', 64u);
@@ -321,6 +337,11 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
 }
 void rtos_delay_milliseconds(uint32_t delay_ms) {
   assert(f.locked == 0u);
+  if (fail_bind) {
+    assert(delay_ms == 1000u && f.binds == 1u && f.uart == 0u &&
+           f.service == 0u && f.identities == 0u);
+    longjmp(stopped, 1);
+  }
   if (delay_ms == H2_H202_MFG_RETRY_DELAY_MS) {
     assert(f.service == 0u && f.retries == 0u && f.validations == 2u);
     assert_recovery_available(false);
@@ -328,6 +349,7 @@ void rtos_delay_milliseconds(uint32_t delay_ms) {
     assert((s_loader.force_command_mode != 0) == f.initial_failure);
     if (f.fail_dl || f.fail_data) assert(f.publish_stats == 0u);
     if (f.fail_publish) assert(f.publish_stats != 0u);
+    if (fail_storage_once) assert(f.mounts == 0u && f.publish_stats == 0u);
     ++f.retries;
     f.fail_reset = f.fail_validation = f.fail_dl = f.fail_data =
         f.fail_publish = false;
@@ -406,9 +428,17 @@ static void run_case(bool dl, bool data, bool publish, bool reset,
   f.current_revision = current_revision;
   f.active = true;
   if (setjmp(stopped) == 0) mfg_entry(NULL);
+  if (fail_bind) {
+    assert(f.uart == 0u && f.service == 0u && f.identities == 0u &&
+           f.binds == 1u && f.validations == 0u && f.locks == f.unlocks);
+    return;
+  }
+  assert(f.binds == 1u && f.identities == 1u);
   assert(f.uart == 1u && f.service == 1u && f.locked == 0u);
   assert(f.locks == f.unlocks);
-  assert(f.retries == (unsigned)(dl || data || publish || reset || validation));
+  assert(f.retries == (unsigned)(dl || data || publish || reset || validation ||
+                                 fail_storage_once));
+  assert(f.storage_calls == 1u + f.retries);
   assert(f.validations == 2u + f.retries);
   h2_loader_deinit(&s_loader);
 }
@@ -421,6 +451,11 @@ int main(void) {
   run_case(false, false, false, true, false, false);
   run_case(false, false, false, false, true, false);
   run_case(false, false, false, false, false, true);
-  puts("H202 MFG launcher startup regression passed");
+  fail_storage_once = true;
+  run_case(false, false, false, false, false, false);
+  fail_storage_once = false;
+  fail_bind = true;
+  run_case(false, false, false, false, false, true);
+  puts("H202 MFG launcher startup and boot-context regression passed");
   return 0;
 }

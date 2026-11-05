@@ -14,7 +14,7 @@ bazel test //projects/mfg/apps/h202_bk_v2/... //boards/h202_bk_v2/bk7258/...
 - 与 H106 MFG 相同，只用 UART 管理：`layouts/mfg` 关闭 AP 蓝牙主机和 CP 蓝牙控制器，入口在蓝牙配置打开时编译报错；同时关闭 iperf。
 - 语音构建时编码为 4-bit IMA ADPCM，并把重复的重试提示单独存一份，见[语音](#语音)。
 
-当前构建（MFG `0.3.9-2`）AP 为 1,063,036 字节（约 1038 KiB）、CP 为 770,796 字节（约 753 KiB），以构建产物为准。
+当前构建（MFG `0.3.10-14`）AP 为 1,065,260 字节（约 1040 KiB）、CP 为 770,796 字节（约 753 KiB），以构建产物为准。
 
 H202 不使用共享 `h2_mfg_*`：它没有屏幕，需要充电、NFC、Wi-Fi 和左右麦等步骤。因此：
 
@@ -58,14 +58,24 @@ MFG Runtime 初始化后、启动 Loader Core 之前，入口立即点亮全部�
 
 ## 安装
 
-MFG 与 H202 Loader 互相替换。MP_C（AES-off）可在 Loader 或 MFG 中用管理更新互换：`send` 对方的 `.update.tar.zlib` 后 `reboot upgrade`。MP_J（AES-on）时公共运行时拒绝 Loader 在线自升级，进出 MFG 都要用对应的加密 recovery 镜像走 ROM 恢复：
+MFG 与 H202 Loader 都保持 `role=h2loader`，通过管理更新互相替换。MP_C（AES-off）使用 `:package`；MP_J（AES-on）使用统一的 Bazel `:encrypted_package`：
 
-```sh
-<secret-provider> | bazel run --config=bk7258 //projects/mfg/apps/h202_bk_v2:encrypted_recovery -- \
-  --key-fd 0 --output-dir <new-absolute-dir>
+```bash
+bazel build --config=bk7258 //projects/mfg/apps/h202_bk_v2:encrypted_package \
+  --inject_repository=private_keys=/absolute/path/to/private-keys \
+  --//projects/h2loader/tools/bazel:encryption_key=@private_keys//:device.key \
+  --output_groups=+encryption_evidence
 ```
 
-恢复镜像覆盖 Bootloader 与 Loader 窗口，不触碰分区 2 与尾部分区，已保存的进度和 App 保持不变。
+密钥目录、bootloader 合同和产物说明见 [H2Loader](./h2loader#mp-c-与-mp-j)。设备必须先具备匹配的 `mapped_ab_v1` bootloader，当前 Loader 也须支持 PR832 的通用 BK 升级合同；两个 H202 入口都在管理开放前绑定 boot context。满足基线后，将 `encrypted_package/` 内的标准 `.update.tar.zlib` 交给 Gizloader，经 110 口 `send`、核对 Stage 后执行 `reboot upgrade`。
+
+必须分别记录 Loader→MFG→Loader 的 P2 候选运行、确认、回写及最终 P1 版本/SHA，最终 Stage 清空且 `last_result=0`。未完成 MFG 时 Loader 角色修复仍可用，普通 App 的厂测门禁保持关闭。管理更新借用 App 窗口，会覆盖其中原 App 的可执行镜像；加密 recovery 则用于建立兼容基线或不可通信设备恢复，覆盖 bootloader 与 Loader 窗口。两者均不等于已经完成当前版本的真机验收。
+
+## 外置 SPI Flash 启动检查
+
+UART 管理开放后、启动文件系统恢复前，MFG 在共享操作锁下挂载外置 8 MiB QSPI Flash 的 LittleFS。首次挂载失败时，调用 SDK `bk_vfs_mkfs` 格式化同一个外置分区，再重挂载一次。已有正常卷不会格式化，挂载成功后的目录错误也不会触发格式化。
+
+格式化会清除该 LittleFS 卷的 `/dl` 和 `/data` 内容，不擦写片内 bootloader、固件或 FlashDB 验收记录。格式化或重挂载失败仍报错，UART 恢复保持可用；本次启动后续只重试普通挂载，不重复格式化。标准 Loader 的普通文件操作不启用此工厂恢复策略。
 
 ## 4G
 

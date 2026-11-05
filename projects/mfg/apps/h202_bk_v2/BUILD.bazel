@@ -1,7 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl", "h2loader_bk_recovery")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
-load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_encrypted_package", "h2loader_tar_zlib")
 load("//tools/bazel:app_version.bzl", "app_version")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:firmware.bzl", "firmware_version")
@@ -15,7 +14,7 @@ package(default_visibility = ["//visibility:public"])
 # H202 bumps its own Loader-role MFG independently of //projects/mfg:version.
 app_version(
     name = "version",
-    value = "0.3.9",
+    value = "0.3.10",
 )
 
 firmware_version(
@@ -196,9 +195,10 @@ h2loader_bk7258_firmware(
     ],
     ap_task_policy = ":ap_task_policy",
     board = "h202_bk_v2",
+    bootloader_patch = "//third_party/bk7258_bootloader_patch:mapped_ab_v1",
     cp_task_policy = ":cp_task_policy",
     graph = [":mfg_launcher"],
-    # Full MFG peripherals; CP/AP link at the App-window XIP addresses.
+    # Full MFG peripherals; CP/AP link for the fixed Loader execution window.
     layout_files = {
         "ap_config": [
             "//boards/h202_bk_v2/bk7258:ap.defaults",
@@ -229,8 +229,7 @@ h2loader_tar_zlib(
     target = "bk7258",
 )
 
-h2loader_bk_recovery(
-    name = "encrypted_recovery",
-    board = "h202_bk_v2",
-    firmware = ":firmware",
+h2loader_encrypted_package(
+    name = "encrypted_package",
+    source = ":package",
 )

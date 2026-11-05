@@ -13,6 +13,8 @@
 h2_pal_mem_api_t* h2_bk_platform_psram_allocator(void);
 const h2_pal_task_api_t* h2_bk_platform_task_api(void);
 const h2_pal_power_api_t* h2_bk_h2loader_power_api(void);
+int h2_bk_h2loader_boot_context_bind(const h2_pal_pref_api_t* pref,
+                                     const h2_pal_mem_api_t* mem);
 int h2_bk_h2loader_start_loader_iostreamikcp(
     h2_runtime_t* runtime, h2_loader_command_t* command,
     const h2_loader_command_config_t* config);

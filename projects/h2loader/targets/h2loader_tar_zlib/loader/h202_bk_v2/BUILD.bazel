@@ -1,7 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//projects/h2loader/tools/bazel:h2loader_bk_recovery.bzl", "h2loader_bk_recovery")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
-load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_encrypted_package", "h2loader_tar_zlib")
 load("//tools/bazel:firmware.bzl", "firmware_version")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -142,6 +141,7 @@ h2loader_bk7258_firmware(
     ],
     ap_task_policy = ":ap_task_policy",
     board = "h202_bk_v2",
+    bootloader_patch = "//third_party/bk7258_bootloader_patch:mapped_ab_v1",
     cp_task_policy = ":cp_task_policy",
     graph = [":h2loader_launcher"],
     layout_files = {
@@ -174,8 +174,7 @@ h2loader_tar_zlib(
     target = "bk7258",
 )
 
-h2loader_bk_recovery(
-    name = "encrypted_recovery",
-    board = "h202_bk_v2",
-    firmware = ":firmware",
+h2loader_encrypted_package(
+    name = "encrypted_package",
+    source = ":package",
 )

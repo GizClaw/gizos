@@ -11,6 +11,6 @@ H202 是无屏 BK7258 产品，板级支持位于 `boards/h202_bk_v2/bk7258/`。
 
 与其他 MFG 一样，H202 MFG 替换管理镜像；为放进 Loader 窗口所做的取舍见 [MFG](./mfg#loader-角色与镜像大小)。
 
-MP_C（AES-off）和 MP_J（AES-on）两种芯片共用同一 board、源码、identity 和版本，只在交付时选择普通或加密产物，见 [H2Loader](./h2loader#mp-c-与-mp-j)。
+MP_C（AES-off）和 MP_J（AES-on）共用同一 board、源码、identity 和版本，分别使用 `:package` 与统一 Bazel `:encrypted_package`。两个入口均选择 `mapped_ab_v1` bootloader；AES-on 管理升级还要求设备已具备兼容 bootloader 和支持该合同的运行中 Loader，见 [H2Loader](./h2loader#mp-c-与-mp-j)。
 
 本文档不宣称任何 H202 GizOS 镜像已通过真机安装或厂测验收。

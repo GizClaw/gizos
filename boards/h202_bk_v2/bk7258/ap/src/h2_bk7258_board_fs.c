@@ -137,7 +137,7 @@ static int ensure_storage_dirs(void) {
   return rc;
 }
 
-static int mount_storage(void) {
+static int mount_storage(bool format_on_mount_failure) {
   struct bk_little_fs_partition partition = {
       .part_type = LFS_QSPI_FLASH,
       .mount_path = H2_H202_QSPI_LFS_MOUNT,
@@ -169,7 +169,16 @@ static int mount_storage(void) {
     printf("H2_H202_QSPI_LFS_MOUNT_FAIL rc=%d start=%u size=%u\r\n", ret,
            (unsigned)partition.part_flash.start_addr,
            (unsigned)partition.part_flash.size);
-    return H2_PAL_ERR_IO;
+    if (!format_on_mount_failure) return H2_PAL_ERR_IO;
+    ret = bk_vfs_mkfs(partition.mount_path, "littlefs", &partition);
+    printf("H2_H202_QSPI_LFS_FORMAT rc=%d start=%u size=%u\r\n", ret,
+           (unsigned)partition.part_flash.start_addr,
+           (unsigned)partition.part_flash.size);
+    if (ret != 0) return H2_PAL_ERR_IO;
+    ret = bk_vfs_mount("SOURCE_NONE", partition.mount_path, "littlefs", 0,
+                       &partition);
+    printf("H2_H202_QSPI_LFS_REMOUNT rc=%d\r\n", ret);
+    if (ret != 0) return H2_PAL_ERR_IO;
   }
   printf("H2_H202_QSPI_LFS_MOUNT size=%u\r\n",
          (unsigned)partition.part_flash.size);
@@ -177,12 +186,16 @@ static int mount_storage(void) {
   return ensure_storage_dirs();
 }
 
+int h2_bk7258_board_fs_mount(bool format_on_mount_failure) {
+  return mount_storage(format_on_mount_failure);
+}
+
 static int fs_mkdir(void* user, const char* path) {
   char mapped[H2_H202_FS_PATH_MAX];
   int rc;
 
   (void)user;
-  rc = mount_storage();
+  rc = mount_storage(false);
   if (rc != H2_PAL_OK) {
     return rc;
   }
@@ -202,7 +215,7 @@ static int fs_open(void* user, const char* path, h2_pal_fs_open_mode_t mode,
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_file = NULL;
-  rc = mount_storage();
+  rc = mount_storage(false);
   if (rc != H2_PAL_OK) {
     return rc;
   }
@@ -317,7 +330,7 @@ static int fs_stat(void* user, const char* path, h2_pal_fs_stat_t* out_stat) {
   if (rc != H2_PAL_OK) {
     return rc;
   }
-  rc = mount_storage();
+  rc = mount_storage(false);
   if (rc != H2_PAL_OK) return rc;
   rc = bk_vfs_stat(mapped, &info);
   if (rc != LFS_ERR_OK) {

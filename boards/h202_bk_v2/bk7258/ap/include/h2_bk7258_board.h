@@ -2,6 +2,7 @@
 #define H2_H202_BK7258_BOARD_H
 
 #include "h2/pal/os/h2_pal_fs.h"
+#include <stdbool.h>
 struct h2_runtime_config;
 
 #define H2_BK7258_DL_MOUNT_PATH "/dl"
@@ -25,6 +26,14 @@ const char* h2_bk7258_board_ble_local_name(void);
  * exit.
  */
 int h2_bk7258_board_fs_init(h2_pal_fs_api_t* fs);
+/** Mount the external QSPI LittleFS before starting concurrent users.
+ * When format_on_mount_failure is true, a failed initial mount formats only
+ * that external partition and retries mounting once. This destroys its /dl
+ * and /data contents. MFG opts in once at startup; normal PAL operations and
+ * the Loader never format. Directory errors on a mounted volume never format.
+ * The boot owner must configure rails first and serialize with filesystem use.
+ */
+int h2_bk7258_board_fs_mount(bool format_on_mount_failure);
 /** @brief Unmount storage after all users and open files have stopped.
  * @return H2_PAL_OK (including repeat calls), or H2_PAL_ERR_IO.
  * SDK unmount consumes the mount even on error; subsequent use remounts.

@@ -4,8 +4,16 @@
 #include "h2/pal/h2_pal_unsupported.h"
 #include <assert.h>
 #include <string.h>
-static int board_result, fs_result;
+static int board_result, fs_result, bind_result, bind_calls;
+static const h2_pal_mem_api_t boot_mem = {0};
+static const h2_pal_pref_api_t boot_pref = {0};
 static h2_pal_fs_api_t s_h2loader_fs;
+int h2_bk_h2loader_boot_context_bind(const h2_pal_pref_api_t* pref,
+                                     const h2_pal_mem_api_t* mem) {
+  assert(pref == &boot_pref && mem == &boot_mem);
+  ++bind_calls;
+  return bind_result;
+}
 int h2_bk7258_board_init(void) { return board_result; }
 int h2_bk7258_board_fs_init(h2_pal_fs_api_t* fs) {
   (void)fs;
@@ -13,13 +21,13 @@ int h2_bk7258_board_fs_init(h2_pal_fs_api_t* fs) {
 }
 const char* h2_bk7258_board_ble_local_name(void) { return "h202-ABCDEF"; }
 #define h2_bk_platform_firmware_info_api() NULL
-#define h2_bk_platform_default_allocator() NULL
+#define h2_bk_platform_default_allocator() (&boot_mem)
 #define h2_bk_platform_log_api() NULL
 #define h2_bk_platform_time_api() NULL
 #define h2_bk_platform_task_api() NULL
 #define h2_bk_platform_queue_api() NULL
 #define h2_bk_platform_sync_api() NULL
-#define h2_bk_platform_pref_api() NULL
+#define h2_bk_platform_pref_api() (&boot_pref)
 #define h2_bk_platform_crypto_api() NULL
 #define h2_bk_platform_ble() NULL
 #define h2_bk_platform_system_event_api() NULL
@@ -107,7 +115,13 @@ int main(void) {
   fs_result = H2_PAL_ERR_NO_MEMORY;
   assert(loader_runtime_config(&config) == H2_PAL_ERR_NO_MEMORY);
   fs_result = 0;
+  assert(bind_calls == 0);
   assert(loader_runtime_config(&config) == H2_PAL_OK);
+  assert(bind_calls == 1 && config.pref == &boot_pref &&
+         config.mem == &boot_mem);
+  bind_result = H2_PAL_ERR_INVALID_STATE;
+  assert(loader_runtime_config(&config) == H2_PAL_ERR_INVALID_STATE);
+  assert(bind_calls == 2); /* Do not start Runtime with an unbound adapter. */
   assert(strcmp(config.board, "h202_bk_v2") == 0 &&
          strcmp(config.target, "bk7258") == 0);
   assert(config.fs == &s_h2loader_fs);

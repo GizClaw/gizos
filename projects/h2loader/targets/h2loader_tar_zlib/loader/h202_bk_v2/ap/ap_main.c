@@ -613,7 +613,10 @@ static int loader_runtime_config(h2_runtime_config_t* config) {
       .input = h2_pal_unsupported_input_api(),
       .video_decoder = h2_pal_unsupported_video_decoder_api(),
   };
-  return H2_PAL_OK;
+  /* Bind the singleton adapter before Runtime or any management transport can
+   * select/confirm a mapped Loader. These platform APIs have static lifetime.
+   */
+  return h2_bk_h2loader_boot_context_bind(config->pref, config->mem);
 }
 
 #ifndef H2_H202_LOADER_HOST_TEST
