@@ -1,6 +1,8 @@
 #include "h2_lvgl_platform.h"
 #include "h2_desktop_platform.h"
+#include "h2_atomic.h"
 #include "lvgl.h"
+#include "osal/lv_os_private.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -27,17 +29,32 @@ typedef struct allocator_state {
   size_t fail_call;
 } allocator_state_t;
 
+/* OSAL objects share this allocator but do not hold the LVGL pool mutex. */
+static h2_atomic_flag_t s_allocator_lock;
+
+static void allocator_lock(void) {
+  while (h2_atomic_flag_test_and_set(&s_allocator_lock, H2_ATOMIC_ACQUIRE)) {
+  }
+}
+
+static void allocator_unlock(void) {
+  h2_atomic_flag_clear(&s_allocator_lock, H2_ATOMIC_RELEASE);
+}
+
 static void* test_alloc(void* user, size_t bytes) {
   allocator_state_t* state = user;
+  allocator_lock();
   size_t call = (state->calls++) + 1u;
-  if (call == state->fail_call ||
-      bytes > SIZE_MAX - sizeof(allocation_header_t))
-    return NULL;
+  const int fail = call == state->fail_call;
+  allocator_unlock();
+  if (fail || bytes > SIZE_MAX - sizeof(allocation_header_t)) return NULL;
   allocation_header_t* header = malloc(sizeof(*header) + bytes);
   if (header == NULL) return NULL;
   header->bytes = bytes;
+  allocator_lock();
   ++state->live;
   state->bytes += bytes;
+  allocator_unlock();
   return header + 1;
 }
 
@@ -45,15 +62,19 @@ static void test_free(void* user, void* ptr) {
   if (ptr == NULL) return;
   allocator_state_t* state = user;
   allocation_header_t* header = (allocation_header_t*)ptr - 1;
+  allocator_lock();
   assert(state->live > 0u);
   --state->live;
   state->bytes -= header->bytes;
+  allocator_unlock();
   free(header);
 }
 
 static void* test_realloc(void* user, void* ptr, size_t bytes) {
   allocator_state_t* state = user;
+  allocator_lock();
   ++state->reallocs;
+  allocator_unlock();
   if (bytes == 0u) {
     test_free(user, ptr);
     return NULL;
@@ -283,6 +304,13 @@ static void allocation_worker(void* ctx) {
     ptr = lv_realloc_core(ptr, i % 7u == 0u ? 4096u : 256u);
     check_bytes(ptr, size, value);
     lv_free_core(ptr);
+    /* OSAL backing allocations also use the caller allocator, outside the
+     * pool mutex. Exercise them alongside the serialized memory hooks. */
+    lv_mutex_t mutex = NULL;
+    assert(lv_mutex_init(&mutex) == LV_RESULT_OK);
+    assert(lv_mutex_lock(&mutex) == LV_RESULT_OK);
+    assert(lv_mutex_unlock(&mutex) == LV_RESULT_OK);
+    assert(lv_mutex_delete(&mutex) == LV_RESULT_OK);
     (void)snapshot();
   }
 }
@@ -377,10 +405,12 @@ static void test_lifecycle(void) {
 }
 
 int main(void) {
+  assert(h2_atomic_flag_init(&s_allocator_lock) == H2_ATOMIC_OK);
   test_growth_and_realloc();
   test_isolated_block_reuse();
   test_failures();
   test_concurrent_hooks();
   test_lifecycle();
+  h2_atomic_flag_destroy(&s_allocator_lock);
   return 0;
 }

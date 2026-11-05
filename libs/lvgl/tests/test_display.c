@@ -1,6 +1,7 @@
 #include "h2_lvgl_display.h"
 #include "h2_lvgl_platform.h"
 #include "h2_desktop_platform.h"
+#include "h2_atomic.h"
 
 #include <assert.h>
 #include <limits.h>
@@ -24,38 +25,64 @@ typedef struct allocator_state {
   size_t live_blocks;
 } allocator_state_t;
 
+/* LVGL workers and the UI thread share the caller's allocator. */
+static h2_atomic_flag_t s_allocator_lock;
+
+static void allocator_lock(void) {
+  while (h2_atomic_flag_test_and_set(&s_allocator_lock, H2_ATOMIC_ACQUIRE)) {
+  }
+}
+
+static void allocator_unlock(void) {
+  h2_atomic_flag_clear(&s_allocator_lock, H2_ATOMIC_RELEASE);
+}
+
+static size_t allocator_live_blocks(const allocator_state_t* state) {
+  allocator_lock();
+  size_t live = state->live_blocks;
+  allocator_unlock();
+  return live;
+}
+
 static void* test_alloc(void* user, size_t len) {
   allocator_state_t* state = user;
+  allocator_lock();
   const size_t call = (state->calls++) + 1u;
   void* ptr = call == state->fail_call ? NULL : malloc(len);
   if (ptr != NULL) ++state->live_blocks;
+  allocator_unlock();
   return ptr;
 }
 
 static void* test_realloc(void* user, void* ptr, size_t len) {
   allocator_state_t* state = user;
+  allocator_lock();
   if (len == 0u) {
     if (ptr != NULL) {
       assert(state->live_blocks > 0u);
       --state->live_blocks;
     }
     free(ptr);
+    allocator_unlock();
     return NULL;
   }
   const int new_block = ptr == NULL;
   void* resized = realloc(ptr, len);
   if (resized != NULL && new_block) ++state->live_blocks;
+  allocator_unlock();
   return resized;
 }
 
 static void test_free(void* user, void* ptr) {
   allocator_state_t* state = user;
+  allocator_lock();
   ++state->frees;
   if (ptr != NULL) {
     assert(state->live_blocks > 0u);
     --state->live_blocks;
   }
   free(ptr);
+  allocator_unlock();
 }
 
 static const h2_pal_mem_vtable_t test_mem_vtable = {
@@ -99,6 +126,7 @@ static int display_close(void* user) {
 }
 
 int main(void) {
+  assert(h2_atomic_flag_init(&s_allocator_lock) == H2_ATOMIC_OK);
   test_state_t state = {.width = 64, .height = 48};
   allocator_state_t lifecycle_allocator = {0};
   const h2_pal_mem_api_t lifecycle_mem = {&lifecycle_allocator,
@@ -120,7 +148,7 @@ int main(void) {
 
   assert(h2_lvgl_platform_init(&platform) == 0);
   lv_init();
-  assert(lifecycle_allocator.live_blocks > 0u);
+  assert(allocator_live_blocks(&lifecycle_allocator) > 0u);
   h2_lvgl_display_t* adapter = NULL;
   const h2_lvgl_display_config_t config = {&display, mem, 8u};
   assert(h2_lvgl_display_create(&config, &adapter) == H2_PAL_OK);
@@ -167,19 +195,20 @@ int main(void) {
   assert(allocator.frees == 1u);
   assert(state.close_calls == 4u);
   lv_deinit();
-  assert(lifecycle_allocator.live_blocks == 0u);
+  assert(allocator_live_blocks(&lifecycle_allocator) == 0u);
   h2_lvgl_platform_deinit();
 
   // Rebinding the same allocator must not accumulate a general OS mutex.
   for (unsigned cycle = 0u; cycle < 2u; ++cycle) {
     assert(h2_lvgl_platform_init(&platform) == 0);
     lv_init();
-    assert(lifecycle_allocator.live_blocks > 0u);
+    assert(allocator_live_blocks(&lifecycle_allocator) > 0u);
     lv_lock();
     lv_unlock();
     lv_deinit();
-    assert(lifecycle_allocator.live_blocks == 0u);
+    assert(allocator_live_blocks(&lifecycle_allocator) == 0u);
     h2_lvgl_platform_deinit();
   }
+  h2_atomic_flag_destroy(&s_allocator_lock);
   return 0;
 }
