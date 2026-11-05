@@ -33,6 +33,18 @@ typedef struct h2_esp_h2loader_config {
   void (*show_installing)(void* user);
   void (*show_install_failed)(void* user, int code);
   void (*show_launching)(void* user);
+  /** Image-owned command-task stack budget; zero keeps the shared default. */
+  size_t command_task_stack_size;
+  /** Optional service work performed by the USB owner before each poll,
+   * outside Loader/MFG operation locks. Errors and WOULD_BLOCK leave USB
+   * recovery available. command and its borrowed dependencies stay valid
+   * until stop_command_service succeeds. */
+  int (*poll_command_service)(void* user, h2_runtime_t* runtime,
+                              const h2_loader_command_config_t* command);
+  /** Optional shutdown/join performed outside Loader/MFG operation locks.
+   * Retried while USB recovery continues until H2_PAL_OK; only then may
+   * serve return and release Loader/config/mutex dependencies. */
+  int (*stop_command_service)(void* user, h2_runtime_t* runtime);
 } h2_esp_h2loader_config_t;
 
 /** Runs the blocking ESP H2Loader with an optional board MFG gate and UI. */

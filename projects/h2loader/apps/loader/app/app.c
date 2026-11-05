@@ -29,6 +29,10 @@ static void destroy_operation_mutexes(h2_runtime_t* runtime,
   }
 }
 
+static int close_additional_command_service(
+    h2_runtime_t* runtime,
+    const h2loader_app_command_service_api_t* command_service, void* service);
+
 static void start_additional_command_service(
     h2_runtime_t* runtime,
     const h2loader_app_command_service_api_t* command_service,
@@ -42,18 +46,31 @@ static void start_additional_command_service(
                                  capabilities, out_service);
   printf("H2_LOADER_COMMAND_SERVICE stage=open-return code=%d\n", rc);
   if (rc != H2_PAL_OK) {
-    /* Keep the independent serial command task available for recovery
-     * after an additional command service fails to start. */
+    /* Keep serial recovery running while partial-open cleanup is retried. */
+    (void)close_additional_command_service(runtime, command_service,
+                                           *out_service);
     *out_service = NULL;
   }
 }
 
 static int close_additional_command_service(
+    h2_runtime_t* runtime,
     const h2loader_app_command_service_api_t* command_service, void* service) {
   if (service == NULL) {
     return H2_PAL_OK;
   }
-  return command_service->close(command_service->user, service);
+  int last_rc = H2_PAL_OK;
+  for (;;) {
+    int rc = command_service->close(command_service->user, service);
+    if (rc == H2_PAL_OK) {
+      return H2_PAL_OK;
+    }
+    if (rc != last_rc) {
+      printf("H2_LOADER_COMMAND_SERVICE stage=close-retry code=%d\n", rc);
+      last_rc = rc;
+    }
+    (void)h2_pal_time_sleep_ms(runtime->time, 50u);
+  }
 }
 
 int h2loader_app_run_with_command_service(
@@ -73,7 +90,9 @@ int h2loader_app_run_with_command_service(
   int prepare_rc = H2_PAL_OK;
   int rc;
 
-  if (runtime == NULL || config == NULL || config->serve == NULL) {
+  if (runtime == NULL || config == NULL || config->serve == NULL ||
+      (config->command_task_stack_size != 0 &&
+       config->command_task_stack_size < 20480u)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (config->before_startup != NULL && config->stop_serve == NULL) {
@@ -166,19 +185,21 @@ int h2loader_app_run_with_command_service(
   if (config->before_startup != NULL) {
     const h2_pal_task_options_t options = {
         .name = h2loader_app_command_task_name,
-        .min_stack_size = 49152u,
+        .min_stack_size = config->command_task_stack_size == 0
+                              ? 49152u
+                              : config->command_task_stack_size,
     };
     loader.force_command_mode = 1;
     rc = h2_loader_startup(&loader, &action);
     if (rc != H2_PAL_OK) {
-      (void)close_additional_command_service(command_service,
+      (void)close_additional_command_service(runtime, command_service,
                                              additional_command_service);
       destroy_operation_mutexes(runtime, operation_mutex, wifi_operation_mutex);
       h2_loader_deinit(&loader);
       return rc;
     }
     if (action != H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
-      (void)close_additional_command_service(command_service,
+      (void)close_additional_command_service(runtime, command_service,
                                              additional_command_service);
       destroy_operation_mutexes(runtime, operation_mutex, wifi_operation_mutex);
       h2_loader_deinit(&loader);
@@ -194,7 +215,7 @@ int h2loader_app_run_with_command_service(
     rc = h2_pal_task_start(runtime->task, &options, serve_task, &serve_context,
                            &serve_handle);
     if (rc != H2_PAL_OK) {
-      (void)close_additional_command_service(command_service,
+      (void)close_additional_command_service(runtime, command_service,
                                              additional_command_service);
       destroy_operation_mutexes(runtime, operation_mutex, wifi_operation_mutex);
       h2_loader_deinit(&loader);
@@ -249,7 +270,9 @@ int h2loader_app_run_with_command_service(
   if (serve_handle == NULL) {
     const h2_pal_task_options_t options = {
         .name = h2loader_app_command_task_name,
-        .min_stack_size = 49152u,
+        .min_stack_size = config->command_task_stack_size == 0
+                              ? 49152u
+                              : config->command_task_stack_size,
     };
     serve_context = (h2loader_serve_context_t){
         .config = config,
@@ -261,7 +284,7 @@ int h2loader_app_run_with_command_service(
     rc = h2_pal_task_start(runtime->task, &options, serve_task, &serve_context,
                            &serve_handle);
     if (rc != H2_PAL_OK) {
-      (void)close_additional_command_service(command_service,
+      (void)close_additional_command_service(runtime, command_service,
                                              additional_command_service);
       destroy_operation_mutexes(runtime, operation_mutex, wifi_operation_mutex);
       h2_loader_deinit(&loader);
@@ -279,11 +302,17 @@ int h2loader_app_run_with_command_service(
                         : H2_PAL_OK;
   }
   if (serve_handle != NULL) {
-    rc = h2_pal_task_join(runtime->task, serve_handle);
+    /* The task still borrows Loader and stack contexts after a failed join. */
+    do {
+      rc = h2_pal_task_join(runtime->task, serve_handle);
+      if (rc != H2_PAL_OK) {
+        (void)h2_pal_time_sleep_ms(runtime->time, 50u);
+      }
+    } while (rc != H2_PAL_OK);
     int result = serve_stop_rc != H2_PAL_OK
                      ? serve_stop_rc
                      : (rc == H2_PAL_OK ? serve_context.result : rc);
-    int close_rc = close_additional_command_service(command_service,
+    int close_rc = close_additional_command_service(runtime, command_service,
                                                     additional_command_service);
     if (result == H2_PAL_OK) {
       result = close_rc;
@@ -292,7 +321,7 @@ int h2loader_app_run_with_command_service(
     h2_loader_deinit(&loader);
     return result;
   }
-  (void)close_additional_command_service(command_service,
+  (void)close_additional_command_service(runtime, command_service,
                                          additional_command_service);
   destroy_operation_mutexes(runtime, operation_mutex, wifi_operation_mutex);
   h2_loader_deinit(&loader);

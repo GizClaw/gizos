@@ -1,8 +1,6 @@
 #include "h2_loader_ble.h"
 #include "h2_loader_task_names.h"
 
-#include "h2_loader_app_client.h"
-
 #include "h2_atomic.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -11,7 +9,6 @@
 #define H2_LOADER_BLE_ADV_INTERVAL_MIN_MS 100u
 #define H2_LOADER_BLE_ADV_INTERVAL_MAX_MS 120u
 #define H2_LOADER_BLE_ADV_SID 0u
-#define H2_LOADER_BLE_IO_TIMEOUT_MS 5000u
 #define H2_LOADER_BLE_WINDOW 32u
 #define H2_LOADER_BLE_INPUT_FRAME_CAPACITY 16u
 #define H2_LOADER_BLE_BUFFER_SIZE (8u * 1024u)
@@ -139,6 +136,7 @@ struct h2_loader_ble_service {
                        H2_LOADER_BLE_BOARD_MAX];
   size_t service_data_len;
   bool name_only_legacy;
+  bool advertising_configured;
   char local_name[H2_LOADER_BLE_LOCAL_NAME_MAX + 1u];
   h2_pal_ble_uuid_t
       additional_services[H2_LOADER_BLE_MAX_ADDITIONAL_ADVERTISED_SERVICES];
@@ -576,68 +574,6 @@ int h2_loader_ble_encode_identity(uint32_t capabilities, const char* board,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t command_read(void* user, void* buffer, size_t len,
-                                    size_t* out_read, uint32_t timeout_ms) {
-  return (h2_pal_result_t)h2_bleikcp_read(user, buffer, len, out_read,
-                                          timeout_ms);
-}
-
-static h2_pal_result_t command_write(void* user, const void* buffer, size_t len,
-                                     size_t* out_written, uint32_t timeout_ms) {
-  int rc;
-  if (out_written == NULL || (len > 0u && buffer == NULL)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  *out_written = 0u;
-  rc = h2_bleikcp_write(user, buffer, len, timeout_ms);
-  if (rc == H2_PAL_OK) {
-    *out_written = len;
-  }
-  return rc;
-}
-
-static h2_pal_result_t command_flush(void* user) {
-  return (h2_pal_result_t)h2_bleikcp_flush(user, H2_LOADER_BLE_IO_TIMEOUT_MS);
-}
-
-h2_command_io_api_t h2_loader_ble_command_io(h2_bleikcp_t* stream) {
-  static const h2_command_io_vtable_t vtable = {
-      .read = command_read,
-      .write = command_write,
-      .flush = command_flush,
-  };
-  return (h2_command_io_api_t){
-      .user = stream,
-      .vtable = stream != NULL ? &vtable : NULL,
-  };
-}
-
-int h2_loader_ble_app_read_byte(void* user, uint32_t timeout_ms) {
-  uint8_t value = 0u;
-  size_t count = 0u;
-  int rc = h2_bleikcp_read(user, &value, sizeof(value), &count, timeout_ms);
-  if (rc == H2_PAL_OK && count == 1u) {
-    return value;
-  }
-  if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK ||
-      (rc == H2_PAL_OK && count == 0u)) {
-    return EOF;
-  }
-  return H2_LOADER_APP_CLIENT_SESSION_CLOSED;
-}
-
-int h2_loader_ble_app_write(void* user, const char* data, size_t len) {
-  int rc;
-  if (data == NULL && len > 0u) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  rc = len > 0u ? h2_bleikcp_write(user, (const uint8_t*)data, len,
-                                   H2_LOADER_BLE_IO_TIMEOUT_MS)
-                : H2_PAL_OK;
-  return rc == H2_PAL_OK ? h2_bleikcp_flush(user, H2_LOADER_BLE_IO_TIMEOUT_MS)
-                         : rc;
-}
-
 int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
                                h2_loader_ble_service_t** out_service) {
   h2_loader_ble_service_t* service;
@@ -658,6 +594,8 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
       config->api.time == NULL || config->api.sync == NULL ||
       config->api.system_event == NULL || config->api.allocator == NULL ||
       config->board == NULL || config->handler == NULL ||
+      config->stream_window > UINT16_MAX / 2u ||
+      config->input_frame_capacity > UINT16_MAX ||
       (config->advertising_mode != H2_LOADER_BLE_ADVERTISING_LEGACY &&
        config->advertising_mode != H2_LOADER_BLE_ADVERTISING_EXTENDED)) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -739,16 +677,25 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
       .data = h2_loader_ble_rx_uuid_bytes,
       .len = sizeof(h2_loader_ble_rx_uuid_bytes),
   };
-  stream_config.send_window = H2_LOADER_BLE_WINDOW;
-  stream_config.recv_window = H2_LOADER_BLE_WINDOW;
-  stream_config.input_frame_capacity = H2_LOADER_BLE_INPUT_FRAME_CAPACITY;
-  stream_config.tx_buffer_size = H2_LOADER_BLE_BUFFER_SIZE;
-  stream_config.rx_buffer_size = H2_LOADER_BLE_BUFFER_SIZE;
+  stream_config.send_window =
+      (uint16_t)(config->stream_window != 0u ? config->stream_window
+                                             : H2_LOADER_BLE_WINDOW);
+  stream_config.recv_window = stream_config.send_window;
+  stream_config.input_frame_capacity =
+      (uint16_t)(config->input_frame_capacity != 0u
+                     ? config->input_frame_capacity
+                     : H2_LOADER_BLE_INPUT_FRAME_CAPACITY);
+  stream_config.tx_buffer_size = config->stream_buffer_size != 0u
+                                     ? config->stream_buffer_size
+                                     : H2_LOADER_BLE_BUFFER_SIZE;
+  stream_config.rx_buffer_size = stream_config.tx_buffer_size;
   stream_config.no_congestion_control = 0;
   stream_config.output_retry_count = 40u;
   stream_config.output_retry_delay_ms = 2u;
   stream_config.on_event = h2_loader_ble_stream_event;
   stream_config.user = &service->config;
+  stream_config.server_task_options.min_stack_size =
+      config->server_task_stack_size;
   rc = h2_bleikcp_server_open(&service->config.api, &stream_config,
                               config->handler, config->handler_user,
                               &service->server);
@@ -801,6 +748,7 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
       goto fail;
     }
   }
+  service->advertising_configured = true;
   rc = h2_loader_ble_service_update_advertising(service, NULL, 0u, false);
   if (rc != H2_PAL_OK) {
     rc = h2_loader_ble_open_error(&service->config, "adv_data_or_start", rc);
@@ -809,38 +757,28 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
   *out_service = service;
   return H2_PAL_OK;
 
-fail:
-  for (size_t i = 0u; i < H2_LOADER_BLE_EVENT_SUBSCRIPTION_COUNT; ++i) {
-    if (service->event_subscriptions[i] != NULL) {
-      (void)h2_pal_system_event_unsubscribe(config->api.system_event,
-                                            service->event_subscriptions[i]);
-    }
+fail: {
+  int close_rc = h2_loader_ble_service_close(service);
+  if (close_rc != H2_PAL_OK) {
+    /* Cleanup still owns tasks and borrowed callbacks. Publish a close-only
+     * handle instead of losing it or freeing memory they can still access. */
+    *out_service = service;
+    return h2_loader_ble_open_error(&service->config, "open_cleanup", close_rc);
   }
-  int link_rc = h2_loader_ble_stop_link_task(service);
-  if (link_rc != H2_PAL_OK) {
-    return h2_loader_ble_open_error(&service->config, "link_task_stop",
-                                    link_rc);
-  }
-  if (service->adv_set != NULL) {
-    (void)h2_pal_ble_adv_set_destroy(config->api.ble, service->adv_set);
-  } else if (service->config.advertising_mode ==
-             H2_LOADER_BLE_ADVERTISING_LEGACY) {
-    (void)h2_pal_ble_stop_advertising(config->api.ble);
-  }
-  if (service->server != NULL) {
-    (void)h2_bleikcp_server_close(service->server);
-  }
-  h2_atomic_int_destroy(&service->advertising_pause_request);
-  h2_atomic_bool_destroy(&service->closing_requested);
-  h2_pal_mem_free(config->api.allocator, service);
   return rc;
+}
 }
 
 int h2_loader_ble_service_close(h2_loader_ble_service_t* service) {
-  int adv_rc;
-  int server_rc;
   if (service == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2_atomic_store(&service->closing_requested, true);
+  if (service->link_mutex != NULL) {
+    (void)h2_pal_mutex_lock(service->config.api.sync, service->link_mutex);
+    service->closing = true;
+    service->link_pending = false;
+    (void)h2_pal_mutex_unlock(service->config.api.sync, service->link_mutex);
   }
   for (size_t i = 0u; i < H2_LOADER_BLE_EVENT_SUBSCRIPTION_COUNT; ++i) {
     if (service->event_subscriptions[i] != NULL) {
@@ -849,27 +787,36 @@ int h2_loader_ble_service_close(h2_loader_ble_service_t* service) {
       service->event_subscriptions[i] = NULL;
     }
   }
-  int link_rc = h2_loader_ble_stop_link_task(service);
-  if (link_rc != H2_PAL_OK) {
-    return link_rc;
+  int rc = h2_loader_ble_stop_link_task(service);
+  if (rc != H2_PAL_OK) {
+    return rc;
   }
-  adv_rc = service->config.advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY
-               ? h2_pal_ble_stop_advertising(service->config.api.ble)
-           : service->adv_set != NULL
-               ? h2_pal_ble_adv_set_destroy(service->config.api.ble,
-                                            service->adv_set)
-               : H2_PAL_OK;
-  if (adv_rc == H2_PAL_ERR_INVALID_STATE &&
-      service->config.advertising_mode == H2_LOADER_BLE_ADVERTISING_LEGACY) {
-    adv_rc = H2_PAL_OK;
+  if (service->adv_set != NULL) {
+    rc = h2_pal_ble_adv_set_destroy(service->config.api.ble, service->adv_set);
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+    service->adv_set = NULL;
+    service->advertising_configured = false;
+  } else if (service->advertising_configured) {
+    rc = h2_pal_ble_stop_advertising(service->config.api.ble);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_INVALID_STATE) {
+      return rc;
+    }
+    service->advertising_configured = false;
   }
-  server_rc = service->server != NULL ? h2_bleikcp_server_close(service->server)
-                                      : H2_PAL_OK;
+  if (service->server != NULL) {
+    rc = h2_bleikcp_server_close(service->server);
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+    service->server = NULL;
+  }
   const h2_pal_mem_api_t* allocator = service->config.api.allocator;
   h2_atomic_int_destroy(&service->advertising_pause_request);
   h2_atomic_bool_destroy(&service->closing_requested);
   h2_pal_mem_free(allocator, service);
-  return adv_rc != H2_PAL_OK ? adv_rc : server_rc;
+  return H2_PAL_OK;
 }
 
 static int h2_loader_ble_service_pause_advertising_locked(

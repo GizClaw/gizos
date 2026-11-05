@@ -119,5 +119,17 @@ int main(void) {
   assert(s_task.core == 0);
   assert(s_task.entry != NULL);
   assert(s_task.context != NULL);
+
+  uint8_t* scratch = NULL;
+  size_t capacity = 0u;
+  assert(h2_esp_platform_safe_io_acquire(&scratch, &capacity) == H2_PAL_OK);
+  assert(scratch != NULL);
+#ifdef H2_ESP_SAFE_IO_SCRATCH_CAPACITY
+  assert(capacity == H2_ESP_SAFE_IO_SCRATCH_CAPACITY);
+#else
+  assert(capacity == 16384u);
+#endif
+  memset(scratch, 0x5a, capacity);
+  h2_esp_platform_safe_io_release();
   return 0;
 }

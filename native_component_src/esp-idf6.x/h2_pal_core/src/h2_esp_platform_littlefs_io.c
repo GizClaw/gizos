@@ -4,6 +4,7 @@
 #include "h2_esp_io_phase.h"
 
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,8 @@ typedef struct h2_esp_pref_io_call {
   char marker_value[H2_ESP_PREF_IO_MARKER_VALUE_MAX + 1u];
   h2_pal_pref_entry_type_t type;
   uint8_t* scratch;
+  /* GET transfers the store's exact-size allocation through the copied call. */
+  uint8_t* value;
   size_t value_size;
   h2_esp_pref_store_entry_t* entries;
   size_t count;
@@ -89,15 +92,16 @@ static void IRAM_ATTR pref_io_callback(void* context) {
     size_t value_size = 0u;
     call->result = h2_esp_pref_store_get(&store, call->name_space, call->key,
                                          call->type, &value, &value_size);
+    if (call->result == H2_PAL_OK && value_size > H2_ESP_PREF_IO_VALUE_MAX)
+      call->result = H2_PAL_ERR_IO;
     if (call->result == H2_PAL_OK) {
-      if (value_size > H2_ESP_PREF_IO_VALUE_MAX) {
-        call->result = H2_PAL_ERR_IO;
-      } else if (value_size > 0u) {
-        memcpy(call->scratch, value, value_size);
-      }
+      /* The store already returns a malloc-owned, exact-size value. Preserve
+       * that ownership instead of requiring a maximum-size bounce buffer. */
+      call->value = value;
       call->value_size = value_size;
+    } else {
+      free(value);
     }
-    free(value);
   } else if (call->op == H2_ESP_PREF_IO_SET) {
     call->result =
         h2_esp_pref_store_set(&store, call->name_space, call->key, call->type,
@@ -158,7 +162,6 @@ int h2_esp_pref_io_get(h2_esp_pref_store_t* store, const char* name_space,
   h2_esp_pref_io_call_t call;
   uint8_t* scratch = NULL;
   size_t capacity = 0u;
-  uint8_t* copy;
   int rc;
   if (out_value == NULL || out_value_size == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -178,23 +181,13 @@ int h2_esp_pref_io_get(h2_esp_pref_store_t* store, const char* name_space,
       h2_esp_io_phase_elapsed(scratch_started, h2_esp_io_phase_now());
 #endif
   if (rc != H2_PAL_OK) return rc;
-  if (capacity < H2_ESP_PREF_IO_VALUE_MAX) {
-    h2_esp_platform_safe_io_release();
-    return H2_PAL_ERR_NO_MEMORY;
-  }
   call.type = expected_type;
-  call.scratch = scratch;
   rc = run_call_on(store, &call);
   if (rc == H2_PAL_OK) {
-    copy = (uint8_t*)malloc(call.value_size == 0u ? 1u : call.value_size);
-    if (copy == NULL)
-      rc = H2_PAL_ERR_NO_MEMORY;
-    else if (call.value_size > 0u)
-      memcpy(copy, scratch, call.value_size);
-    if (rc == H2_PAL_OK) {
-      *out_value = copy;
-      *out_value_size = call.value_size;
-    }
+    *out_value = call.value;
+    *out_value_size = call.value_size;
+  } else {
+    free(call.value);
   }
   h2_esp_platform_safe_io_release();
 #if H2_ESP_IO_PHASE_DIAGNOSTICS
@@ -209,6 +202,7 @@ int h2_esp_pref_io_set(h2_esp_pref_store_t* store, const char* name_space,
                        const void* value, size_t value_size) {
   h2_esp_pref_io_call_t call;
   uint8_t* scratch = NULL;
+  uint8_t* large_value = NULL;
   size_t capacity = 0u;
   int rc = init_call(&call, store, H2_ESP_PREF_IO_SET);
   if (rc == H2_PAL_OK)
@@ -227,14 +221,20 @@ int h2_esp_pref_io_set(h2_esp_pref_store_t* store, const char* name_space,
 #endif
   if (rc != H2_PAL_OK) return rc;
   if (capacity < value_size) {
-    h2_esp_platform_safe_io_release();
-    return H2_PAL_ERR_NO_MEMORY;
+    large_value = (uint8_t*)heap_caps_malloc(
+        value_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (large_value == NULL) {
+      h2_esp_platform_safe_io_release();
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+    scratch = large_value;
   }
   if (value_size > 0u) memcpy(scratch, value, value_size);
   call.type = type;
   call.scratch = scratch;
   call.value_size = value_size;
   rc = run_call_on(store, &call);
+  heap_caps_free(large_value);
   h2_esp_platform_safe_io_release();
 #if H2_ESP_IO_PHASE_DIAGNOSTICS
   h2_esp_io_phase_report("pref", H2_ESP_PREF_IO_SET, value_size, rc,

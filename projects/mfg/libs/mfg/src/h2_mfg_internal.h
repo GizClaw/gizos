@@ -17,11 +17,22 @@ struct h2_mfg {
   int cleanup_result;
   h2_mfg_model_t model;
   uint32_t hardware_ticket;
+  uint32_t preparing_ticket;
+  int preparation_pending;
+  /** Owner work between synchronous display strips; never changes phase. */
+  int (*render_service)(h2_mfg_t* m);
+  int render_service_error;
+  struct {
+    int ready;
+    unsigned mic_level, audio_frames;
+  } render_snapshot;
   uint64_t started_ms;
   uint64_t last_draw_ms;
   uint64_t last_log_ms;
   char detail[160];
   uint16_t* frame;
+  unsigned frame_rows;
+  int frame_y;
   h2_display_info_t display;
   int display_open;
   int touch_open;
@@ -36,6 +47,9 @@ struct h2_mfg {
   int armed[H2_MFG_BUTTON_MAX];
   unsigned downs[H2_MFG_BUTTON_MAX];
   unsigned ups[H2_MFG_BUTTON_MAX];
+  uint64_t last_button_ms;
+  int button_sampled;
+  uint32_t button_confirm_ticket;
   h2_pal_imu_reading_t imu;
   int32_t imu_min[2];
   int32_t imu_max[2];
@@ -101,18 +115,26 @@ struct h2_mfg {
   uint64_t wifi_started_ms;
 };
 
+static inline unsigned h2_mfg_playback_buffer_frames(const h2_mfg_t* m) {
+  return m->profile->playback_buffer_frames == 0
+             ? 8
+             : m->profile->playback_buffer_frames;
+}
+
 enum { H2_MFG_PREVIEW_WIDTH = 160, H2_MFG_PREVIEW_HEIGHT = 90 };
 int h2_mfg_peripheral_enter(h2_mfg_t* m);
 int h2_mfg_peripheral_tick(h2_mfg_t* m, uint64_t now);
 int h2_mfg_peripheral_leave(h2_mfg_t* m);
 int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now);
 int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action);
+int h2_mfg_hardware_service(h2_mfg_t* m, uint64_t now);
 int h2_mfg_hardware_leave(h2_mfg_t* m);
 int h2_mfg_hardware_close(h2_mfg_t* m);
 int h2_mfg_audio_stop(h2_mfg_t* m);
 int h2_mfg_audio_tick(h2_mfg_t* m, uint64_t now, int mic);
 int h2_mfg_aec_enter(h2_mfg_t* m);
 int h2_mfg_aec_tick(h2_mfg_t* m);
+int h2_mfg_aec_service(h2_mfg_t* m, uint64_t now);
 int h2_mfg_aec_close(h2_mfg_t* m);
 const char* h2_mfg_aec_phase(const h2_mfg_t* m);
 /** -1 means no pre/post diagnostics; operator echo/voice acceptance applies. */

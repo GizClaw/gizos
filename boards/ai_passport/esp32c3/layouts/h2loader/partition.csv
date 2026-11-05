@@ -1,0 +1,9 @@
+# Name, Type, SubType, Offset, Size, Flags
+nvs,data,nvs,0x9000,24K,
+otadata,data,ota,0xf000,8K,
+phy_init,data,phy,0x11000,4K,
+h2loader,app,ota_0,0x20000,2M,
+app,app,ota_1,0x220000,3M,
+pref,data,littlefs,0x520000,256K,
+coredump,data,coredump,0x560000,64K,
+data,data,littlefs,0x570000,0x290000,

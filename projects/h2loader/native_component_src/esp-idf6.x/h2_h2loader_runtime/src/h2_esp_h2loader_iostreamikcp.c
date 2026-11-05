@@ -15,8 +15,24 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef H2_LOADER_SERIAL_RX_BUFFER
 #define H2_LOADER_SERIAL_RX_BUFFER 8192u
+#endif
 #define H2_LOADER_SERIAL_TX_BUFFER 2048u
+#ifndef H2_LOADER_STREAM_RX_BUFFER
+#define H2_LOADER_STREAM_RX_BUFFER 4096u
+#endif
+#ifndef H2_LOADER_TRANSPORT_RECEIVE_WINDOW
+#define H2_LOADER_TRANSPORT_RECEIVE_WINDOW 20u
+#endif
+#if H2_LOADER_SERIAL_RX_BUFFER < 1024u ||                                      \
+    H2_LOADER_SERIAL_RX_BUFFER > 8192u ||                                      \
+    H2_LOADER_STREAM_RX_BUFFER < H2_IOSTREAMIKCP_DEFAULT_MTU ||                \
+    H2_LOADER_STREAM_RX_BUFFER > 4096u ||                                      \
+    H2_LOADER_TRANSPORT_RECEIVE_WINDOW < H2_IOSTREAMIKCP_MIN_RECEIVE_WINDOW || \
+    H2_LOADER_TRANSPORT_RECEIVE_WINDOW > 20
+#error "Invalid image-owned Loader receive budget"
+#endif
 #define H2_LOADER_CONSOLE_UART ((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM)
 #define H2_LOADER_TRANSPORT_DEFAULT_WRITE_TIMEOUT_MS 5000u
 #define H2_LOADER_TRANSPORT_MAX_FLUSH_TIMEOUT_MS 120000u
@@ -24,7 +40,6 @@
 #define H2_LOADER_TRANSPORT_POLL_INTERVAL_MS 10u
 #define H2_LOADER_TRANSPORT_PHYSICAL_READ_SIZE 512u
 #define H2_LOADER_TRANSPORT_SEGMENT_TIMEOUT_MS 60u
-#define H2_LOADER_TRANSPORT_RECEIVE_WINDOW 20u
 
 typedef struct h2_esp_h2loader_app_iostreamikcp {
   h2_esp_h2loader_command_transport_t transport;
@@ -414,32 +429,32 @@ h2_pal_result_t h2_esp_h2loader_command_transport_activate_pending(
     return H2_PAL_ERR_INVALID_STATE;
   }
   uint32_t conv = transport->pending_conv;
-  h2_iostreamikcp_close(transport->stream);
-  transport->stream = NULL;
+  h2_esp_h2loader_command_transport_deactivate(transport);
+  /* Consume this OPEN even on failure. A later peer OPEN may retry after
+   * memory recovers; keeping it pending would bypass physical I/O forever. */
+  transport->pending_conv = 0u;
   h2_iostreamikcp_config_t config = {
       .io = transport->physical_io,
       .allocator = transport->allocator,
       .now_ms = transport_now_ms,
       .conv = conv,
       .mtu = H2_IOSTREAMIKCP_DEFAULT_MTU,
-      .rx_buffer_size = 4096u,
+      .rx_buffer_size = H2_LOADER_STREAM_RX_BUFFER,
       .receive_window = transport->receive_window,
       .write_timeout_ms = 1000u,
   };
   h2_pal_result_t rc = h2_iostreamikcp_open(&config, &transport->stream);
-  if (rc != H2_PAL_OK) {
-    return rc;
+  if (rc == H2_PAL_OK) {
+    transport->conv = conv;
+    rc = transport_send_control(transport,
+                                H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, conv);
   }
-  transport->conv = conv;
-  transport->pending_conv = 0u;
-  transport->replacement_pending = 0;
-  transport->close_pending = 0;
-  rc = transport_send_control(transport, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK,
-                              conv);
   if (rc != H2_PAL_OK) {
-    h2_iostreamikcp_close(transport->stream);
-    transport->stream = NULL;
-    transport->conv = 0u;
+    h2_esp_h2loader_command_transport_deactivate(transport);
+    /* Block, rather than taskYIELD: lower-priority tasks may own the
+     * scratch memory needed for admission. Also bound repeated OPENs. */
+    TickType_t ticks = pdMS_TO_TICKS(H2_LOADER_TRANSPORT_POLL_INTERVAL_MS);
+    vTaskDelay(ticks != 0u ? ticks : 1u);
   }
   return rc;
 }

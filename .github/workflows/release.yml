@@ -137,11 +137,11 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ runner.temp }}/gizos-devenv/tools/idf
-          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5
+          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c3-esp32c5
 
       - name: Install catalog-pinned ESP-IDF tools
         shell: bash
-        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
+        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c3,esp32c5'
 
       - name: Build catalog slice
         run: |
@@ -290,11 +290,11 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ runner.temp }}/gizos-devenv/tools/idf
-          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5
+          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native_versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c3-esp32c5
 
       - name: Install catalog-pinned ESP-IDF tools
         shell: bash
-        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
+        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c3,esp32c5'
 
       - name: Install native compiler cache
         run: |

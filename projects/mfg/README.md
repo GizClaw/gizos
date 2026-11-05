@@ -10,7 +10,7 @@ bazel build --noannounce_rc --config=esp32s3 \
   //projects/mfg/apps/waveshare_esp32s3_touch_amoled_1_75c:package
 ```
 
-Use `--config=esp32s31` for `esp_mosaico`, or `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and `waveshare_esp32s3_a7670e_4g`. The remaining entries are `waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and `jieli_ac791n_devkit`. JieLi's native package build requires a Linux host.
+Use `--config=esp32c3` for `ai_passport`, `--config=esp32s31` for `esp_mosaico`, or `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and `waveshare_esp32s3_a7670e_4g`. The remaining entries are `waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and `jieli_ac791n_devkit`. JieLi's native package build requires a Linux host.
 
 Physical acceptance recorded on 2026-10-30:
 
@@ -25,7 +25,7 @@ These records describe the tested firmware versions. They do not claim that all 
 
 Every profile with both microphone and speaker checks also requires a separate,
 operator-confirmed AEC check. This includes 1.75C, AMOLED, SZP, P4, BK7258,
-and JieLi. The model rejects a duplex-audio profile which omits AEC or attempts to
+JieLi and AI Passport. The model rejects a duplex-audio profile which omits AEC or attempts to
 confirm it automatically. DevKit and A7670E have no built-in duplex audio in
 their profiles and omit these audio checks.
 
@@ -87,6 +87,195 @@ centering the complete image with black borders. SZP's 320x240 source becomes
 instructions below the image on SZP's 320x240 display.
 
 Install the package with the normal H2Loader CLI `send --file <package>` and `reboot upgrade`. Loader self-update completes before the interactive session starts. Existing UART and BLE Loader commands stay available on the profiles that enable them; ESP-Mosaico uses the existing USB CDC and BLE management services. Loader recovery/update remains usable with unfinished or failed checks. App installation/launch requires all required checks to be PASSED.
+
+## AI Passport
+
+```sh
+bazel build --config=esp32c3 //projects/mfg/apps/ai_passport:package
+```
+
+The Folotoy AI Passport revision-4 profile has ten checks: storage, display and
+brightness, three ADC ladder keys, battery, speaker, microphone, AEC, Wi-Fi,
+BLE and the physical POWER switch. Revision 4 appends POWER after the unchanged
+nine revision-3 checks, preserving their recorded results. POWER has no MCU
+input in the supplier BSP: the operator must physically switch the board off
+and on, verify session resume, and explicitly confirm the result. This is
+manual acceptance, not a GPIO or automatic power-cycle measurement. Press and release OK to confirm a ready manual check; UP/DOWN are measured
+inputs. Serial FAIL/RETRY and ticketed BLE peer confirmation use the shared
+commands. Revision 2 invalidates the earlier product's revision-1 acceptance
+record because the nine checks have different meanings and order. Revision 3
+selects a 32 KiB simultaneous RAM probe for the C3 instead of the shared 64 KiB
+default; filesystem readback remains 512 bytes. Other boards retain their
+original probe size. The passive
+NFC tag has no MCU interface and is outside this profile. MFG 0.1.34 starts USB
+management immediately and enables BLE only for its check. Before each phase,
+checked cleanup releases prior audio/DSP resources and fully stops Wi-Fi,
+including its driver and STA netif, when Wi-Fi is no longer selected. BLE joins
+run on the USB serve owner outside MFG/operation locks; pending preparation
+releases those locks and retries without marking failure. Its command server
+uses one 32 KiB stack, with no duplicate 48 KiB command task. MFG 0.1.36 also
+uses 1 KiB native RX, 1 KiB framed stream RX and an eight-segment receive window;
+shared transport defaults and wire framing stay unchanged. BLE still requires
+a real ticketed command round trip; enabling advertising does not pass it.
+MFG 0.1.44 also selects 2 KiB TX/RX BLE rings, eight queued input datagrams and
+an eight-segment KCP window for this image. Shared defaults remain 8 KiB rings,
+16 queued inputs and 32-segment windows. The server and worker task stacks are
+unchanged. Loader BLE command I/O supports bounded partial writes, and its App
+output adapter completes the entire message before flushing; replies larger
+than an image's ring are not truncated. Host tests cover 8 KiB messages through
+512-byte, 513-byte and 2 KiB rings, error propagation and compact-peer packet
+loss/retransmission against a default-budget peer.
+
+This ESP32-C3 board has 8 MiB Flash and no PSRAM. Its 240x320 presentation uses
+a four-row RGB565 buffer (1920 bytes), preserving the full display geometry.
+The board borrows synchronous display strips only until each draw returns.
+The owner services bounded microphone, playback and recording work between
+strips, so a slow complete-screen redraw does not starve a short audio queue.
+MFG 0.1.42 also samples physical buttons at 20 ms intervals between strips,
+retaining the ADC ladder's two-sample debounce. A completed OK press/release is
+retained for its current ticket and consumed only by a normal controller tick;
+repaint cannot change a check, and retry/phase changes discard stale input.
+This keeps normal short presses usable when resuming POWER with nine accepted
+checks. A regression uses the actual ADC stabilizer and a 320 ms striped redraw
+to exercise 100 ms presses, bounce rejection, readiness and retry boundaries.
+One frame uses a snapshot of displayed meters/readiness. Rendering never changes
+AEC phase or grants acceptance; normal ticks own transitions and replay drain.
+Actual capture and DAC completion publications must satisfy the existing full
+window, clipping and cadence checks before advancing.
+MFG 0.1.43 aligns the board's 512-sample native audio frames with five 128-frame
+DMA descriptors, retaining the original 640-frame payload capacity per direction.
+This avoids IDF replacing an unread descriptor tail when its queue backs up.
+The striped renderer also skips glyph expansion outside the current strip,
+reducing work competing with audio servicing. Window logs append separate
+capture and DAC elapsed times; frame counts, active playback, cadence, clipping
+and echo-reduction thresholds remain unchanged.
+
+Diagnostic AEC retains one approximately three-second processed voice recording;
+SDKs without raw/DAC observers still retain both recordings for operator replay.
+This image selects the shared optional recording-store interface: the capture
+callback copies native PCM into a four-frame nonblocking queue; the owner writes
+complete, lossless frames as AES-128-GCM ciphertext into the verified unused
+256 KiB tail of the inactive P2 Loader candidate. Both cached metadata and the
+actual ESP image boundary must fit before that tail, with no staged update and
+P1 running. The canonical App partition stays 3 MiB. Every retry erases its
+recording region and renews nonces; checked close destroys the RAM-only key and
+erases temporary ciphertext. Authentication, queue overflow, missing frames or
+storage errors fail the check. Replay reads actual authenticated PCM. Other
+profiles keep their RAM recording path. The shared phases, durations and
+acceptance thresholds are unchanged. Audio is
+checked before Wi-Fi to avoid allocating C3 AEC after the normal network setup;
+retries still require the same real resource and audio prerequisites.
+AI Passport opts into deferred AEC creation: playback initializes codec/I2S
+without reserving the standalone AEC heap. Microphone start or diagnostic
+observer registration still creates the real algorithm and propagates any
+allocation error; it does not substitute unprocessed PCM for AEC acceptance.
+MFG 0.1.33 explicitly selects raw capture for the basic MIC check and reports
+`aec=0`; the separate AEC check selects the actual algorithm and still requires
+its resources and acoustic acceptance. The app's preparation callback runs only
+after the previous check's audio users stop, and a failed mode switch fails the
+new check. Existing boards without a preparation callback keep their behavior.
+MFG 0.1.35 adds checked target release after shared hardware stops, so a failed
+AEC attempt releases DSP before result persistence and USB recovery. It moves
+physical scratch verification before DSP allocation within the same serialized
+Loader operation. Complete frames use a two-frame playback queue; the main and
+USB stacks each reserve 24 KiB based on live 0.1.34 peak measurements of 14,384
+and 12,252 bytes. MFG 0.1.37 selects 20 KiB for these two stacks and four queued
+Runtime events, retaining the existing microphone and speaker worker stacks.
+On 0.1.34, AEC creation succeeded but a later allocation failed;
+the primary `NO_MEMORY` error was followed by an I/O error while saving failure.
+That installation did not pass AEC or qualify the remaining checklist.
+On the physical AI Passport, 0.1.33-1 resumed MIC with `error=0`, `aec=0` and
+628 captured frames with nonzero energy after the earlier AEC allocation
+failure. The five prior passed checks were retained. Speech responsiveness
+still requires operator confirmation; this result does not qualify AEC.
+
+The package is an alternative H2Loader image using the board-owned 8 MiB layout,
+not the C3 chip fixture's compile-only layout. For first installation, build and
+install `//projects/h2loader/targets/h2loader_tar_zlib/loader/ai_passport:package`,
+verify its serial status, then send this MFG package and run `reboot upgrade`
+through the ordinary Loader. MFG uses the shared Loader self-update path. Build and host-test results do not
+establish physical acceptance. On 2026-11-02, MFG 0.1.30-1 was installed on AI Passport UID
+`4c11ae31056a` through the ordinary Loader's send/Stage verification/reboot-upgrade
+path. The final P1 image hash matched the build, Stage was cleared and
+`last_result=0`. The 32 KiB RAM/filesystem check passed automatically; the
+session reached display with `ready=1`, `error=0`. A second USB send also
+completed and verified while that display session was active; its test Stage
+was explicitly aborted and cleared without changing acceptance. Physical display, keys, audio,
+battery and RF acceptance were pending at that stage. By 0.1.33-1, the operator
+had accepted display, keys, battery, speaker and basic microphone response;
+storage was already passed. AEC, Wi-Fi, BLE and POWER remain separate checks.
+
+On 2026-11-03, MFG 0.1.31-1 was installed through Loader self-upgrade on the
+same device. The revision-4 append migration retained the passed storage,
+display, three-key and battery results and left POWER untested. Before the fix,
+standalone AEC allocation failed during speaker initialization. With deferred
+AEC, a speaker retry reached `ready=1`, `error=0` and produced 901 frames
+(28.832 seconds of PCM in 28.750 seconds) at the unchanged 70% test volume.
+This establishes device-side playback progress; audible quality still requires
+operator confirmation. Microphone/AEC resource acceptance and POWER off/on
+acceptance remain separate, unpassed checks. After the operator reported the
+70% tone was too quiet, MFG 0.1.32 selects 100% for this board's speaker check.
+With the existing ES8311 maximum register 0xBF this requests 0 dB, instead of
+legacy register-linear 70% (0x85, about -29 dB). The board's maximum, microphone
+gain, test waveform and acceptance requirements are unchanged. After audio has
+been opened, stop the current check and use the managed `reboot loader` command
+before staging an update on older C3 images: retained audio allocations otherwise
+leave too little headroom for package inspection. The reboot preserves MFG
+results. Version 0.1.34 additionally powers audio down after checked MFG teardown
+before a disruptive Loader command, and selects a 4 KiB shared safe-I/O buffer
+without reducing disk lengths or the existing 16 KiB preference contract.
+
+The archive installer now allocates its input/output buffers and parser state
+from the installer allocator rather than the update task stack. Allocation
+failure is reported before opening an archive or invoking a writer. A manually
+recovered P1 Loader whose identity differs from stored metadata durably selects
+Loader command mode before seeding that metadata, retaining an older Stage/P2
+until the operator aborts or replaces it. Managed updates with matching running
+metadata retain AUTO behavior and do not reset MFG acceptance.
+
+On 2026-11-03, an AI Passport running MFG 0.1.41-1 completed the managed P2/P1
+update and cleared Stage with matching image/package hashes and last_result=0.
+Its diagnostic quiet, far and subsequent quiet measurements each retained all
+96 native capture/DAC frames. Far playback had 96 active frames, no clipping and
+33 dB background-subtracted echo reduction. An independent physical test voice
+then completed near and double-talk measurements, retained all 96 double-talk
+capture/DAC frames without clipping, and reached authenticated recorded replay
+with ready=1 and error=0. The runtime test ended UNTESTED pending operator listening
+and confirmation; the host issued no AEC acceptance command. A later device
+status recorded the first seven checks PASSED. The existing fixture-network
+profile then obtained an IP and the automatic Wi-Fi check passed, leaving the
+first eight checks accepted. After macOS Bluetooth authorization completed, the
+host connected through the real BLE transport and verified board `ai_passport`,
+target `esp32c3` and UID `4c11ae31056a` with a Loader status command. A subsequent
+`mfg probe ble <ticket>` over that BLE connection returned `ready=1`, `error=0`
+and `BLE command round trip`. An independent serial readback recorded the first
+nine checks PASSED and the active POWER check. Physical POWER off/on, session
+resume and operator confirmation were still pending at that point.
+
+MFG 0.1.42-1 was subsequently installed through the managed P2/P1 update path,
+with both partitions reporting the new image/package hashes, Stage cleared and
+`last_result=0`. The first nine accepted checks were retained and POWER resumed
+with `ready=1`, `error=0`. The short-press fix is covered by host regressions.
+A later live query reported `step=done`, `complete=1` and `steps=1111111111`,
+recording all ten checks PASSED. The host issued no POWER confirmation command.
+
+A later full retest on 0.1.42-1 reproduced an AEC window failure with 96 capture
+and DAC frames but only 95 active tone frames and 7781 ms elapsed. On 0.1.43-1,
+the aligned-DMA ECHO window retained 96 capture/DAC/active frames in 6197 ms.
+A subsequent voice and double-talk run reported 26 dB echo reduction, all 96
+double-talk capture/DAC/active frames in 6183 ms, no clipping, and completed
+recorded playback with `ready=1`, `error=0`. A later device readback recorded AEC
+PASSED and advanced to Wi-Fi. The host issued no AEC confirmation command.
+
+MFG 0.1.44-1 retained the first eight accepted checks through a managed Loader
+update. Real BLE status verified UID `4c11ae31056a` and version `0.1.44-1`, then
+its current-ticket BLE probe returned `ready=1`, `error=0`. Independent serial
+readback recorded `steps=1111111110` with POWER active. The temporary BLE skip
+used to release radio resources for staging was cleared before this real probe;
+no skipped check was counted as passed. Following the operator's final
+confirmation, independent device readback on `0.1.44-1` reported `step=done`,
+`complete=1` and `steps=1111111111`. Both executable partitions were valid with
+matching image/package hashes, Stage was clear and `last_result=0`.
 
 ## ESP-Mosaico
 

@@ -4,6 +4,8 @@
 #include "h2_loader_command.h"
 #include "h2_runtime.h"
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -13,8 +15,10 @@ extern "C" {
  *
  * The API and its user context are borrowed until
  * h2loader_app_run_with_command_service() returns. open() borrows all input
- * arguments, stores an owned service handle in out_service on success, and
- * leaves out_service NULL on failure. close() releases that handle.
+ * arguments and stores an owned service handle in out_service on success.
+ * On failure, a non-NULL handle requires cleanup: retry close() until success
+ * before releasing borrowed inputs or reopening. close() releases the handle
+ * only on H2_PAL_OK; failures retain ownership for retry.
  */
 typedef struct h2loader_app_command_service_api {
   void* user;
@@ -23,6 +27,26 @@ typedef struct h2loader_app_command_service_api {
               uint32_t capabilities, void** out_service);
   int (*close)(void* user, void* service);
 } h2loader_app_command_service_api_t;
+
+/** Optional BLE command-service budgets; zero preserves existing defaults. */
+typedef struct h2loader_ble_command_service_config {
+  /** Execute commands on the iKCP server task instead of a separate task. */
+  bool inline_commands;
+  /** Server task minimum stack bytes. Inline commands require at least 32 KiB.
+   * Zero keeps the 6 KiB server plus a separate 48 KiB command task. */
+  size_t server_task_stack_size;
+  /** Optional stream budgets, validated on open. Zero keeps shared defaults. */
+  size_t stream_buffer_size;
+  uint32_t stream_window;
+  size_t input_frame_capacity;
+} h2loader_ble_command_service_config_t;
+
+/** Configure a BLE command-service adapter without starting it.
+ * config is borrowed and immutable until all opened services are closed.
+ * The output API is caller-owned; invalid configs clear the output. */
+int h2loader_bleikcp_command_service_with_config(
+    const h2loader_ble_command_service_config_t* config,
+    h2loader_app_command_service_api_t* out_api);
 
 typedef struct h2loader_app_config {
   h2_loader_config_t loader;
@@ -44,6 +68,10 @@ typedef struct h2loader_app_config {
   int (*stop_serve)(void* user);
   int (*serve)(void* user, h2_loader_t* loader, h2_loader_command_t* command,
                h2_loader_startup_action_t action);
+  /** Command task minimum stack bytes; zero preserves 48 KiB.
+   * A nonzero image-owned budget must be at least 20 KiB and verified on
+   * target. */
+  size_t command_task_stack_size;
 } h2loader_app_config_t;
 
 /**

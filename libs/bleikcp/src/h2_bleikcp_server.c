@@ -357,8 +357,11 @@ fail:
     server->closing = true;
     (void)h2_pal_cond_broadcast(api->sync, server->cond);
     (void)h2_pal_mutex_unlock(api->sync, server->mutex);
-    int join_rc = h2_pal_task_join(api->task, server->dispatch_task);
-    if (join_rc != H2_PAL_OK) return join_rc;
+    /* Open has not published a handle. Retain the server and its callback
+     * context until the task is actually joined, including transient errors. */
+    while (h2_pal_task_join(api->task, server->dispatch_task) != H2_PAL_OK) {
+      (void)h2_pal_time_sleep_ms(api->time, 10u);
+    }
     server->dispatch_task = NULL;
   }
   for (size_t i = 0u; i < H2_BLEIKCP_SERVER_SUBSCRIPTION_COUNT; ++i) {

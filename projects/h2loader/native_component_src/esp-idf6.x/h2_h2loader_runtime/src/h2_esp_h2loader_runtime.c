@@ -834,15 +834,45 @@ static int prepare_loader(void* user, h2_loader_t* loader) {
 static int serve_loader(void* user, h2_loader_t* loader,
                         h2_loader_command_t* command,
                         h2_loader_startup_action_t action) {
+  h2_esp_h2loader_context_t* context = user;
   h2_loader_command_config_t command_config = command->config;
+  int service_result = H2_PAL_OK;
   int rc;
 
-  (void)user;
   (void)loader;
   printf("H2_LOADER_READY target=esp status=ready action=%d\n", (int)action);
   fflush(stdout);
-  h2_atomic_bool_store(&s_command_stop_requested, false, H2_ATOMIC_RELEASE);
-  while (!h2_atomic_bool_load(&s_command_stop_requested, H2_ATOMIC_ACQUIRE)) {
+  for (;;) {
+    /* The USB owner holds no operation/MFG lock here. Service open/close can
+     * block while a BLE command finishes and releases those locks. */
+    const bool stopping =
+        h2_atomic_bool_load(&s_command_stop_requested, H2_ATOMIC_ACQUIRE);
+    if (stopping) {
+      rc = context->config->stop_command_service != NULL
+               ? context->config->stop_command_service(context->config->user,
+                                                       context->runtime)
+               : H2_PAL_OK;
+      if (rc == H2_PAL_OK) {
+        break;
+      }
+    } else {
+      rc = context->config->poll_command_service != NULL
+               ? context->config->poll_command_service(
+                     context->config->user, context->runtime, &command_config)
+               : H2_PAL_OK;
+    }
+    if (rc != service_result && rc != H2_PAL_OK &&
+        rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
+      printf("H2_LOADER_ERROR reason=command_service_%s_failed code=%d\n",
+             stopping ? "stop" : "poll", rc);
+      fflush(stdout);
+    }
+    service_result = rc;
+    if (stopping) {
+      /* Keep cleanup retries bounded even when USB currently has buffered
+       * input, and retain all command dependencies until cleanup succeeds. */
+      sleep_ms(NULL, 10u);
+    }
     if (s_command_transport.pending_conv != 0u) {
       rc = h2_loader_command_init(command, &command_config);
       if (rc == H2_PAL_OK) {
@@ -988,6 +1018,8 @@ void h2_esp_h2loader_run_with_command_service_config(
   config.command.mfg_user = runtime_loader_config->user;
   config.command.mfg_command = runtime_loader_config->mfg_command;
   config.user = &context;
+  config.command_task_stack_size =
+      runtime_loader_config->command_task_stack_size;
   config.prepare = prepare_loader;
   config.before_startup_user = runtime_loader_config->user;
   config.before_startup = runtime_loader_config->run_mfg;

@@ -54,6 +54,15 @@ int h2_jieli_app_loader_ble_start(const h2_loader_app_client_config_t* config) {
   int rc = h2_bleikcp_global_init();
   if (rc != H2_PAL_OK) return rc;
   rc = h2_loader_ble_service_open(&service, &ble_service);
-  if (rc != H2_PAL_OK) (void)h2_bleikcp_global_shutdown();
+  if (rc != H2_PAL_OK) {
+    while (ble_service != NULL) {
+      if (h2_loader_ble_service_close(ble_service) == H2_PAL_OK) {
+        ble_service = NULL;
+      } else {
+        (void)h2_pal_time_sleep_ms(service.api.time, 50u);
+      }
+    }
+    (void)h2_bleikcp_global_shutdown();
+  }
   return rc;
 }

@@ -4,6 +4,7 @@
 #include "h2_esp_h2loader_runtime.h"
 
 #include "h2_loader_app_client.h"
+#include "h2loader_app.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,6 +13,16 @@ extern "C" {
 /** Runs the blocking ESP H2Loader with the BLE command service attached. */
 void h2_esp_h2loader_run_with_ble_config(
     h2_runtime_t* runtime, const h2_esp_h2loader_config_t* config);
+
+/** Configures an optional Loader BLE service without starting it.
+ * config is borrowed and immutable until all handles opened with out_api are
+ * closed. Set inline_commands=true and server_task_stack_size>=32768 to run
+ * commands on the server task. NULL preserves the existing task defaults.
+ * On open failure, retain any non-NULL output handle and retry close until
+ * H2_PAL_OK before releasing command/config dependencies or reopening. */
+int h2_esp_h2loader_ble_command_service_with_config(
+    const h2loader_ble_command_service_config_t* config,
+    h2loader_app_command_service_api_t* out_api);
 
 /**
  * App command identity and service config; strings remain borrowed while

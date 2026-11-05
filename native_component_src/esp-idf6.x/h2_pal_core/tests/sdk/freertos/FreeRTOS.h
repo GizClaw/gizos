@@ -23,10 +23,14 @@ typedef int portMUX_TYPE;
 #define portMAX_DELAY 0xffffffffu
 #endif
 #define configMAX_PRIORITIES 16u
+#if defined(H2_TASK_POLICY_TEST_NO_PSRAM)
+#define CONFIG_FREERTOS_NUMBER_OF_CORES 1
+#else
 #define CONFIG_FREERTOS_NUMBER_OF_CORES 2
 #define CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM 1
 #define CONFIG_SPIRAM 1
 #define CONFIG_SPIRAM_XIP_FROM_PSRAM 1
+#endif
 #define portMUX_INITIALIZER_UNLOCKED 0
 #define portENTER_CRITICAL(lock) ((void)(lock))
 #define portEXIT_CRITICAL(lock) ((void)(lock))

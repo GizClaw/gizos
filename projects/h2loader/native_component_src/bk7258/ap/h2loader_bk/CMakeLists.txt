@@ -11,6 +11,7 @@ set(H2_BK_H2LOADER_SRCS
   "${REPO_ROOT}/projects/h2loader/apps/loader/app/task_names.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_app_client.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_ble.c"
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_ble_io.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_boot.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_command.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_metadata.c"
