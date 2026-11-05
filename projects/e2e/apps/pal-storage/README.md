@@ -33,7 +33,7 @@ H2_ANDROID_SERIAL=emulator-5580 bazel test --config=android_arm64 --cache_test_r
 
 Desktop 三个生命周期测试的每进程预算为 180 秒，整个 Bazel test 使用 long timeout；大值与真实同步/重新打开压力必须在有限预算内完成。外部设备与已启动模拟器的结果缓存关闭，构建缓存保持启用。
 
-硬件由 `projects/e2e/targets/pal-storage/espressif/esp32s3_devkitc_1:package` 和 `projects/e2e/targets/pal-storage/beken/bk7258_v3_202405:package` 构建。每次设置独立 firmware version，使用 H2Loader managed serial send，核对 Stage 的包/镜像 SHA 后 `reboot upgrade --monitor` 收集 seed；再 `reboot app --monitor` 收集 verify，再次正常重启收集 clean-verify，最后重启确认 already-complete empty=1 rc=0。原始串口日志可能含重放，只接受版本/nonce/phase 一致的完整唯一 case ledger。最后确认 Stage 为空、P2 App 有效、Loader 保留且 coredump 与原基线一致。
+硬件由 `projects/e2e/targets/single/pal-storage/espressif/esp32s3_devkitc_1:package` 和 `projects/e2e/targets/single/pal-storage/beken/bk7258_v3_202405:package` 构建。每次设置独立 firmware version，使用 H2Loader managed serial send，核对 Stage 的包/镜像 SHA 后 `reboot upgrade --monitor` 收集 seed；再 `reboot app --monitor` 收集 verify，再次正常重启收集 clean-verify，最后重启确认 already-complete empty=1 rc=0。原始串口日志可能含重放，只接受版本/nonce/phase 一致的完整唯一 case ledger。最后确认 Stage 为空、P2 App 有效、Loader 保留且 coredump 与原基线一致。
 
 
 ## 资格边界

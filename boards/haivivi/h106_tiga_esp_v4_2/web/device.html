@@ -1,0 +1,97 @@
+<!-- tiga_esp_v4_2 "device" skin: the Tiga enclosure drawn in SVG after the
+     product renders, screen and gem sides side by side (400 x 640 units each).
+     Every key is its own shape: Back / OK above Left / Right, the gray
+     microphone-shaped Power key between them, Volume Down on the left edge
+     and Volume Up on the right edge. The large round gem is Record. -->
+<style>
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: radial-gradient(circle at 50% 30%, #2a2340, #0c0a14 70%); color: #e5e7eb; font-family: system-ui, sans-serif; }
+  .tiga { --w: min(360px, calc(78vh * 400 / 640), 56vw); --u: calc(var(--w) / 400); display: grid; gap: 14px; justify-items: center; }
+  .tiga-views { display: flex; gap: calc(40 * var(--u)); align-items: flex-end; }
+  .tiga-device { position: relative; width: var(--w); height: calc(640 * var(--u)); }
+  .tiga-device.back { width: calc(0.6 * var(--w)); height: calc(0.6 * 640 * var(--u)); }
+  .tiga svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 calc(14 * var(--u)) calc(18 * var(--u)) #000a); }
+  .tiga-screen { position: absolute; left: calc(118 * var(--u)); top: calc(102 * var(--u)); width: calc(164 * var(--u)); height: calc(164 * var(--u)); display: grid; place-items: center; background: #000; border-radius: calc(4 * var(--u)); }
+  .tiga #canvas { display: block; width: calc(164 * var(--u)); height: calc(164 * var(--u)); background: #000; }
+  .tiga [data-h2-button] { cursor: pointer; transform-box: fill-box; transform-origin: center; filter: drop-shadow(0 2.5px 0 #0008); transition: transform 70ms ease-out, filter 70ms ease-out; }
+  .tiga [data-h2-button]:hover { filter: brightness(1.08) drop-shadow(0 2.5px 0 #0008); }
+  .tiga [data-h2-button][data-pressed="true"] { transform: translateY(2.5px) scale(0.95); filter: brightness(0.78); transition-duration: 40ms; }
+  .tiga [data-h2-button="volume_down"] { transform-origin: right center; transition-duration: 120ms; }
+  .tiga [data-h2-button="volume_down"][data-pressed="true"] { transform: scaleX(0.6); }
+  .tiga [data-h2-button="volume_up"] { transform-origin: left center; transition-duration: 120ms; }
+  .tiga [data-h2-button="volume_up"][data-pressed="true"] { transform: scaleX(0.6); }
+  .tiga .gem[data-pressed="true"] { transform: scale(0.9); filter: brightness(0.7) drop-shadow(0 0 0 #0000); }
+  .tiga .gold { fill: url(#tiga-gold); stroke: #9a7424; stroke-width: 1.5; }
+  .tiga .silver { fill: url(#tiga-silver); stroke: #6b7280; stroke-width: 1.5; }
+  .tiga .icon { fill: none; stroke: #6b5313; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+  .tiga .silver + .icon, .tiga .side .icon { stroke: #4b5563; }
+  .tiga [data-h2-slot="controls"] { display: flex; gap: 8px; }
+  .tiga [data-h2-slot="controls"] button { padding: 6px 16px; border: 0; border-radius: 6px; background: #a78bfa; color: #1e1036; font: 700 12px system-ui, sans-serif; cursor: pointer; }
+  .tiga [data-h2-slot="controls"] button:disabled { cursor: default; opacity: 0.6; }
+  .tiga #status { margin: 0; color: #a1a1c2; font-size: 12px; }
+  .tiga-hint { margin: 0; color: #77779a; font-size: 11px; }
+</style>
+<main class="tiga">
+  <div class="tiga-views">
+    <div class="tiga-device">
+      <svg viewBox="0 0 400 640" aria-label="Tiga screen side">
+        <defs>
+          <path id="tiga-body" d="M200 18 C302 18 372 118 373 250 C374 385 282 520 200 628 C118 520 26 385 27 250 C28 118 98 18 200 18 Z" />
+          <clipPath id="tiga-clip"><use href="#tiga-body" /></clipPath>
+          <linearGradient id="tiga-purple" x1="0" y1="0" x2="1" y2="0.3"><stop offset="0" stop-color="#a58bf0" /><stop offset="0.45" stop-color="#7b5ad8" /><stop offset="1" stop-color="#4b2ea6" /></linearGradient>
+          <linearGradient id="tiga-red" x1="0" y1="0" x2="1" y2="0.2"><stop offset="0" stop-color="#ff8a80" /><stop offset="0.5" stop-color="#ef5350" /><stop offset="1" stop-color="#c62828" /></linearGradient>
+          <linearGradient id="tiga-band" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff" /><stop offset="0.6" stop-color="#e5e7eb" /><stop offset="1" stop-color="#9ca3af" /></linearGradient>
+          <linearGradient id="tiga-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fde68a" /><stop offset="1" stop-color="#e0b64c" /></linearGradient>
+          <linearGradient id="tiga-silver" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f9fafb" /><stop offset="1" stop-color="#9ca3af" /></linearGradient>
+          <linearGradient id="tiga-bezel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff8f87" /><stop offset="1" stop-color="#e5534b" /></linearGradient>
+        </defs>
+        <g class="side">
+          <g data-h2-button="volume_down" aria-label="Volume down"><rect class="silver" x="14" y="196" width="20" height="100" rx="8" /><path class="icon" d="M20 246 h8" /></g>
+          <g data-h2-button="volume_up" aria-label="Volume up"><rect class="silver" x="366" y="196" width="20" height="100" rx="8" /><path class="icon" d="M372 246 h8 M376 242 v8" /></g>
+        </g>
+        <rect x="168" y="10" width="64" height="14" rx="6" fill="#5b3fb5" />
+        <g clip-path="url(#tiga-clip)">
+          <rect width="400" height="640" fill="url(#tiga-red)" />
+          <path d="M0 0 H400 V372 L200 452 L0 372 Z" fill="url(#tiga-purple)" />
+          <path d="M0 372 L200 452 L400 372 V430 L200 512 L0 430 Z" fill="url(#tiga-band)" />
+          <path d="M150 500 L200 520 L250 500 L200 548 Z" fill="#fff" opacity="0.9" />
+        </g>
+        <use href="#tiga-body" fill="none" stroke="#3b2388" stroke-width="3" />
+        <path d="M200 34 C292 34 356 128 357 250 C358 372 276 500 200 604" fill="none" stroke="#ffffff33" stroke-width="3" />
+        <path d="M106 100 L150 62 H250 L294 100 V270 Q294 280 284 280 H116 Q106 280 106 270 Z" fill="url(#tiga-bezel)" stroke="#b9322c" stroke-width="2" />
+        <rect x="118" y="102" width="164" height="164" rx="4" fill="#111" />
+        <circle cx="188" cy="470" r="5" fill="#e0b64c" /><circle cx="212" cy="470" r="5" fill="#e0b64c" />
+        <g>
+          <g data-h2-button="left" aria-label="Left"><path class="gold" d="M102 318 C110 352 128 380 150 400 H182 V368 H158 C146 356 138 340 134 318 Z" /><path class="icon" d="M168 377 l-7 7 l7 7" /></g>
+          <g data-h2-button="back" aria-label="Back"><path class="gold" d="M142 316 H182 V358 H162 C154 346 147 332 142 316 Z" /><path class="icon" d="M158 330 h14 M156 337 h16 M158 344 h14" /></g>
+        </g>
+        <g transform="matrix(-1 0 0 1 400 0)">
+          <g data-h2-button="right" aria-label="Right"><path class="gold" d="M102 318 C110 352 128 380 150 400 H182 V368 H158 C146 356 138 340 134 318 Z" /><path class="icon" d="M168 377 l-7 7 l7 7" /></g>
+          <g data-h2-button="ok" aria-label="OK"><path class="gold" d="M142 316 H182 V358 H162 C154 346 147 332 142 316 Z" /><circle class="icon" cx="166" cy="337" r="7" /></g>
+        </g>
+        <g data-h2-button="power" aria-label="Power"><path class="silver" d="M200 308 L217 336 L212 390 L200 406 L188 390 L183 336 Z" /><rect class="icon" x="196" y="341" width="8" height="14" rx="4" /><path class="icon" d="M192 352 a8 8 0 0 0 16 0 M200 360 v5" /></g>
+      </svg>
+      <div class="tiga-screen"><div data-h2-slot="display"></div></div>
+    </div>
+    <div class="tiga-device back">
+      <svg viewBox="0 0 400 640" aria-label="Tiga gem side">
+        <defs>
+          <linearGradient id="tiga-shell" x1="0" y1="0" x2="1" y2="0.2"><stop offset="0" stop-color="#f3f4f6" /><stop offset="0.55" stop-color="#d1d5db" /><stop offset="1" stop-color="#8b9099" /></linearGradient>
+          <clipPath id="tiga-gem"><ellipse cx="200" cy="215" rx="124" ry="146" /></clipPath>
+        </defs>
+        <rect x="6" y="196" width="20" height="100" rx="8" fill="#c7cad1" stroke="#6b7280" />
+        <rect x="366" y="196" width="20" height="100" rx="8" fill="#c7cad1" stroke="#6b7280" />
+        <path d="M200 18 C302 18 372 118 373 250 C374 385 282 520 200 628 C118 520 26 385 27 250 C28 118 98 18 200 18 Z" fill="url(#tiga-shell)" stroke="#6b7280" stroke-width="3" />
+        <path d="M200 372 V620" stroke="#9ca3af" stroke-width="2" />
+        <path d="M200 372 C150 430 120 480 110 520" fill="none" stroke="#ffffff88" stroke-width="2" />
+        <g class="gem" data-h2-button="record" aria-label="Record">
+          <ellipse cx="200" cy="215" rx="136" ry="158" fill="#b8bcc4" stroke="#7b8089" stroke-width="3" />
+          <g clip-path="url(#tiga-gem)"><polygon points="230,213 213,246 200,215" fill="rgb(203,203,209)"/><polygon points="213,246 184,246 200,215" fill="rgb(218,218,224)"/><polygon points="184,246 169,221 200,215" fill="rgb(223,223,229)"/><polygon points="169,221 180,187 200,215" fill="rgb(202,202,208)"/><polygon points="180,187 211,183 200,215" fill="rgb(203,203,209)"/><polygon points="211,183 230,213 200,215" fill="rgb(202,202,208)"/><polygon points="264,214 254,246 230,213" fill="rgb(196,196,202)"/><polygon points="254,246 231,282 230,213" fill="rgb(202,202,208)"/><polygon points="231,282 213,246 230,213" fill="rgb(206,206,212)"/><polygon points="231,282 199,287 213,246" fill="rgb(196,196,202)"/><polygon points="199,287 166,272 213,246" fill="rgb(191,191,197)"/><polygon points="166,272 184,246 213,246" fill="rgb(205,205,211)"/><polygon points="166,272 146,246 184,246" fill="rgb(206,206,212)"/><polygon points="146,246 141,220 184,246" fill="rgb(214,214,220)"/><polygon points="141,220 169,221 184,246" fill="rgb(225,225,231)"/><polygon points="141,220 143,179 169,221" fill="rgb(221,221,227)"/><polygon points="143,179 166,153 169,221" fill="rgb(217,217,223)"/><polygon points="166,153 180,187 169,221" fill="rgb(219,219,225)"/><polygon points="166,153 202,143 180,187" fill="rgb(222,222,228)"/><polygon points="202,143 230,155 180,187" fill="rgb(202,202,208)"/><polygon points="230,155 211,183 180,187" fill="rgb(224,224,230)"/><polygon points="230,155 249,175 211,183" fill="rgb(218,218,224)"/><polygon points="249,175 264,214 211,183" fill="rgb(218,218,224)"/><polygon points="264,214 230,213 211,183" fill="rgb(215,215,221)"/><polygon points="292,217 289,250 264,214" fill="rgb(196,196,202)"/><polygon points="289,250 270,283 264,214" fill="rgb(195,195,201)"/><polygon points="270,283 254,246 264,214" fill="rgb(188,188,194)"/><polygon points="270,283 245,314 254,246" fill="rgb(201,201,207)"/><polygon points="245,314 231,282 254,246" fill="rgb(186,186,192)"/><polygon points="245,314 219,323 231,282" fill="rgb(185,185,191)"/><polygon points="219,323 183,328 231,282" fill="rgb(191,191,197)"/><polygon points="183,328 199,287 231,282" fill="rgb(191,191,197)"/><polygon points="183,328 153,306 199,287" fill="rgb(199,199,205)"/><polygon points="153,306 166,272 199,287" fill="rgb(193,193,199)"/><polygon points="153,306 129,277 166,272" fill="rgb(195,195,201)"/><polygon points="129,277 110,255 166,272" fill="rgb(202,202,208)"/><polygon points="110,255 146,246 166,272" fill="rgb(201,201,207)"/><polygon points="110,255 107,220 146,246" fill="rgb(212,212,218)"/><polygon points="107,220 141,220 146,246" fill="rgb(203,203,209)"/><polygon points="107,220 109,183 141,220" fill="rgb(230,230,236)"/><polygon points="109,183 130,141 141,220" fill="rgb(224,224,230)"/><polygon points="130,141 143,179 141,220" fill="rgb(210,210,216)"/><polygon points="130,141 158,120 143,179" fill="rgb(215,215,221)"/><polygon points="158,120 166,153 143,179" fill="rgb(216,216,222)"/><polygon points="158,120 186,106 166,153" fill="rgb(218,218,224)"/><polygon points="186,106 217,108 166,153" fill="rgb(209,209,215)"/><polygon points="217,108 202,143 166,153" fill="rgb(228,228,234)"/><polygon points="217,108 252,118 202,143" fill="rgb(229,229,235)"/><polygon points="252,118 230,155 202,143" fill="rgb(213,213,219)"/><polygon points="252,118 272,143 230,155" fill="rgb(211,211,217)"/><polygon points="272,143 288,171 230,155" fill="rgb(196,196,202)"/><polygon points="288,171 249,175 230,155" fill="rgb(197,197,203)"/><polygon points="288,171 292,217 249,175" fill="rgb(199,199,205)"/><polygon points="292,217 264,214 249,175" fill="rgb(196,196,202)"/><polygon points="324,217 318,259 292,217" fill="rgb(205,205,211)"/><polygon points="318,259 306,292 292,217" fill="rgb(184,184,190)"/><polygon points="306,292 289,250 292,217" fill="rgb(182,182,188)"/><polygon points="306,292 289,316 289,250" fill="rgb(205,205,211)"/><polygon points="289,316 270,283 289,250" fill="rgb(194,194,200)"/><polygon points="289,316 263,341 270,283" fill="rgb(182,182,188)"/><polygon points="263,341 245,314 270,283" fill="rgb(195,195,201)"/><polygon points="263,341 230,357 245,314" fill="rgb(179,179,185)"/><polygon points="230,357 205,361 245,314" fill="rgb(195,195,201)"/><polygon points="205,361 219,323 245,314" fill="rgb(209,209,215)"/><polygon points="205,361 168,356 219,323" fill="rgb(207,207,213)"/><polygon points="168,356 183,328 219,323" fill="rgb(205,205,211)"/><polygon points="168,356 141,344 183,328" fill="rgb(195,195,201)"/><polygon points="141,344 153,306 183,328" fill="rgb(200,200,206)"/><polygon points="141,344 115,322 153,306" fill="rgb(197,197,203)"/><polygon points="115,322 95,293 153,306" fill="rgb(217,217,223)"/><polygon points="95,293 129,277 153,306" fill="rgb(211,211,217)"/><polygon points="95,293 79,249 129,277" fill="rgb(223,223,229)"/><polygon points="79,249 110,255 129,277" fill="rgb(211,211,217)"/><polygon points="79,249 76,220 110,255" fill="rgb(212,212,218)"/><polygon points="76,220 107,220 110,255" fill="rgb(228,228,234)"/><polygon points="76,220 80,180 107,220" fill="rgb(237,237,243)"/><polygon points="80,180 92,143 107,220" fill="rgb(235,235,241)"/><polygon points="92,143 109,183 107,220" fill="rgb(232,232,238)"/><polygon points="92,143 115,108 109,183" fill="rgb(236,236,242)"/><polygon points="115,108 130,141 109,183" fill="rgb(232,232,238)"/><polygon points="115,108 134,91 130,141" fill="rgb(220,220,226)"/><polygon points="134,91 158,120 130,141" fill="rgb(226,226,232)"/><polygon points="134,91 167,74 158,120" fill="rgb(222,222,228)"/><polygon points="167,74 201,69 158,120" fill="rgb(211,211,217)"/><polygon points="201,69 186,106 158,120" fill="rgb(210,210,216)"/><polygon points="201,69 236,75 186,106" fill="rgb(215,215,221)"/><polygon points="236,75 217,108 186,106" fill="rgb(213,213,219)"/><polygon points="236,75 265,91 217,108" fill="rgb(222,222,228)"/><polygon points="265,91 252,118 217,108" fill="rgb(228,228,234)"/><polygon points="265,91 291,115 252,118" fill="rgb(210,210,216)"/><polygon points="291,115 306,139 252,118" fill="rgb(221,221,227)"/><polygon points="306,139 272,143 252,118" fill="rgb(222,222,228)"/><polygon points="306,139 320,176 272,143" fill="rgb(217,217,223)"/><polygon points="320,176 288,171 272,143" fill="rgb(200,200,206)"/><polygon points="320,176 324,217 288,171" fill="rgb(192,192,198)"/><polygon points="324,217 292,217 288,171" fill="rgb(192,192,198)"/></g>
+          <ellipse cx="200" cy="215" rx="124" ry="146" fill="none" stroke="#5b6069" stroke-width="3" />
+        </g>
+      </svg>
+    </div>
+  </div>
+  <div data-h2-slot="controls"></div>
+  <p class="tiga-hint">←/→ Left/Right · Enter OK · Esc Back · Space Record · P Power · [ ] Volume</p>
+  <div data-h2-slot="status"></div>
+</main>

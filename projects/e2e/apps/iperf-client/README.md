@@ -1,6 +1,6 @@
 # iperf Client
 
-`app:iperf_client` runs the same TCP/UDP throughput matrix over explicit IPv4 and IPv6 addresses using Runtime and the existing portable `iperf_e2e` runner. The portable network entry uses public Wi-Fi/Net and verifies Runtime IP event/state, disconnect/reconnect and saved-credential preservation. Image confirmation and device lifecycle belong to the launcher. The DevKit target is `//projects/e2e/targets/iperf-client/espressif/esp32s3_devkitc_1:package`; the BK7258 target is `//projects/e2e/targets/iperf-client/beken/bk7258_v3_202405:package`.
+`app:iperf_client` runs the same TCP/UDP throughput matrix over explicit IPv4 and IPv6 addresses using Runtime and the existing portable `iperf_e2e` runner. The portable network entry uses public Wi-Fi/Net and verifies Runtime IP event/state, disconnect/reconnect and saved-credential preservation. Image confirmation and device lifecycle belong to the launcher. The DevKit target is `//projects/e2e/targets/pair/iperf-client/espressif/esp32s3_devkitc_1:package`; the BK7258 target is `//projects/e2e/targets/pair/iperf-client/beken/bk7258_v3_202405:package`.
 
 The client temporarily associates with the AMOLED server AP `GizOS-iPerf` / `gizosiperf`, channel 6. It never calls `connect_and_save`, clears credentials or modifies the Loader partition. The App does not start its management BLE service and Wi-Fi power save is set to NONE. The BK launcher leaves SDK Bluetooth-controller initialization policy unchanged. IPv4 comes from DHCP, IPv6 from the server's on-link ULA/SLAAC. After 15 seconds for DHCP, RA and DAD, the App identifies the available families and requires matching PAL and Runtime readiness. IPv6-only requires public Wi-Fi GOT_IP with IPv4 invalid and IPv6 ready, without entry-side SDK initialization. Reboot the App after changing the server mode so the station starts with a fresh netif.
 
@@ -28,9 +28,9 @@ Invalid, partial or failed ledger writes retain the first error. A failed pre-co
 ```sh
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:client_test
 bazel test --config=macos_arm64 //projects/e2e/apps/iperf-client/app:network_test
-bazel test --config=macos_arm64 //projects/e2e/targets/iperf-client/beken/bk7258_v3_202405:uart_handoff_test
-bazel build --config=esp32s3 //projects/e2e/targets/iperf-client/espressif/esp32s3_devkitc_1:package
-bazel build --config=bk7258 //projects/e2e/targets/iperf-client/beken/bk7258_v3_202405:package
+bazel test --config=macos_arm64 //projects/e2e/targets/pair/iperf-client/beken/bk7258_v3_202405:uart_handoff_test
+bazel build --config=esp32s3 //projects/e2e/targets/pair/iperf-client/espressif/esp32s3_devkitc_1:package
+bazel build --config=bk7258 //projects/e2e/targets/pair/iperf-client/beken/bk7258_v3_202405:package
 ```
 
 The host test uses real loopback IPv4/IPv6 sockets, exercises 60 TCP/UDP exchanges including repeated dual-family rounds, validates non-fail-fast accounting on a refused endpoint and rejects inconsistent mode/family configuration before traffic. Hardware qualification additionally requires exact UID/port, source/package/image hashes, complete serial logs and final coredump/firmware state.

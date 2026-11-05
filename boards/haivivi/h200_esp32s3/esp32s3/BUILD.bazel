@@ -1,0 +1,54 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "esp32s3",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    component_name = "h2_esp_board",
+    data = [
+        "CMakeLists.txt",
+        "idf_component.yml",
+        "sdkconfig.defaults",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_adc_oneshot",
+        "//native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system",
+        "//native_component_src/esp-idf6.x/h2_nfc_fm175xx",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+    ],
+)

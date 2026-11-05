@@ -155,7 +155,7 @@ archive, Python, or `PATH` variables from the caller.
 ```sh
 bun tools/gizos/src/cli.ts setup bk 3.1.1
 eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1 --shell sh)"
-bazel build --config=bk7258 //projects/e2e/targets/pal-display/beken/bk7258_v3_202405:package
+bazel build --config=bk7258 //projects/e2e/targets/single/pal-display/beken/bk7258_v3_202405:package
 ```
 
 `Bk7258FirmwareInfo` exposes target-owned AP and CP ELF,

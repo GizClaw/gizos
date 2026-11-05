@@ -107,7 +107,7 @@ DevKit fixture target shares the original launcher and uses a separate linked
 version for its alternate App:
 
 ```sh
-bazel build --config=esp32s3 //projects/e2e/targets/e2e-app/espressif/esp32s3_devkitc_1:checksum-matrix
+bazel build --config=esp32s3 //projects/e2e/targets/single/e2e-app/espressif/esp32s3_devkitc_1:checksum-matrix
 bazel run --config=macos_arm64 //projects/e2e/targets/cc_binary/e2e-runner -- \
   --uart <directed-port> --expected-board devkit --expected-target esp32s3 \
   --checksum-tar-zlib <absolute-checksum-matrix-dir>/tar_zlib \

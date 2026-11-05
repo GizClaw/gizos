@@ -279,7 +279,7 @@ Mac 只编译、安装和收串口日志，不参与 BLE 扫描或 GATT 通信�
 bazel build --config=esp32s3 \
   --define=H2_BLE_PEER_DUT_UID=<被测板的BLE_UID> \
   --define=H2_BLE_PEER_ORIGIN=<本次HTTPS设备API根地址> \
-  //projects/e2e/targets/gizclaw-ble-peer/waveshare/esp32s3_touch_amoled_1_8:package
+  //projects/e2e/targets/pair/gizclaw-ble-peer/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 AMOLED peer 只扫描显式 UID，在真实广播/扫描响应中匹配 service UUID 与本次

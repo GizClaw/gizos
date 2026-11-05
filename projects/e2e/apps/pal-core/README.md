@@ -98,12 +98,12 @@ Browser integration uses one `h2_web_main_call(callback, context)` entry. A brow
 
 ## DevKit ESP32-S3
 
-The independent managed package is `//projects/e2e/targets/pal-core/espressif/esp32s3_devkitc_1:package`. It runs the same complete Core contract on actual ESP providers, with native resource counters, real PSRAM stack observation/failure injection and a separate serial management allocator. See the [launcher guide](../../targets/pal-core/espressif/esp32s3_devkitc_1/README.md) for build/install commands and device evidence. No missing capability or observation can qualify this target as PASS.
+The independent managed package is `//projects/e2e/targets/single/pal-core/espressif/esp32s3_devkitc_1:package`. It runs the same complete Core contract on actual ESP providers, with native resource counters, real PSRAM stack observation/failure injection and a separate serial management allocator. See the [launcher guide](../../targets/pal-core/espressif/esp32s3_devkitc_1/README.md) for build/install commands and device evidence. No missing capability or observation can qualify this target as PASS.
 
 The 2026-09-28 DevKit run of `pal-core-devkit-20260928-r6` passed all 41 cases, with zero FAIL/BLOCKED/NOT_RUN and cleanup=0. The stored [device report](../../targets/pal-core/espressif/esp32s3_devkitc_1/evidence/2026-09-28/qualified.json) also records the 100-cycle Task probe, actual 4/16/64 KiB stacks, allocation failure recovery and final H2Loader/image identity.
 
 ## BK7258 AP qualification
 
-The managed package `//projects/e2e/targets/pal-core/beken/bk7258_v3_202405:package` runs the complete Core v2 contract on real BK providers. The [board launcher](../../targets/pal-core/beken/bk7258_v3_202405/README.md) records the UART1 install and two 41/41 runs of `pal-core-bk-20260928-r7`, including one after a normal App reboot. Neither run has FAIL, BLOCKED or NOT_RUN; cleanup and App confirmation both succeed.
+The managed package `//projects/e2e/targets/single/pal-core/beken/bk7258_v3_202405:package` runs the complete Core v2 contract on real BK providers. The [board launcher](../../targets/pal-core/beken/bk7258_v3_202405/README.md) records the UART1 install and two 41/41 runs of `pal-core-bk-20260928-r7`, including one after a normal App reboot. Neither run has FAIL, BLOCKED or NOT_RUN; cleanup and App confirmation both succeed.
 
 The launcher independently verifies the real 4/16/64 KiB task stacks and injects failure into the actual stack allocation path. Native object and PAL allocation counters must match their initial baselines. Management transport and client metadata buffers use a separate SDK PSRAM allocator, so host status polling cannot affect these comparisons. No count is replaced with zero and no Core assertion is relaxed. Runtime's Atomic prerequisite has its own AP cross-core check; Atomic remains outside the PAL Core case count.

@@ -117,9 +117,9 @@ class ReleaseTest(unittest.TestCase):
     def test_catalog_rejects_diagnostics_even_when_tagged(self):
         canonical = catalog_entry()["entry"]
         for entry, label in (
-            ("projects/e2e/targets/pal-core/espressif/esp32s3_devkitc_1", None),
+            ("projects/e2e/targets/single/pal-core/espressif/esp32s3_devkitc_1", None),
             ("projects/test/targets/app/espressif/fixture_board", None),
-            ("projects/e2e/targets/e2e-app/espressif/esp32s3_devkitc_1", None),
+            ("projects/e2e/targets/single/e2e-app/espressif/esp32s3_devkitc_1", None),
             ("projects/h2loader/targets/app/espressif/esp32s3_devkitc_1", None),
             (release_bundle.LOADER_ROOT + "waveshare/esp32s3_devkitc_1", None),
             (release_bundle.LOADER_ROOT + "devkit", None),

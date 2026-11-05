@@ -21,12 +21,36 @@ def discover_apps(repository):
     )
 
 
+def discover_entries(repository, kind):
+    if kind not in ("single", "pair"):
+        raise ValueError("E2E kind must be single or pair")
+    root = Path(repository) / "projects/e2e/targets" / kind
+    if not root.is_dir():
+        raise ValueError(f"projects/e2e/targets/{kind} is missing")
+    entries = []
+    for build in sorted(root.glob("*/*/*/BUILD.bazel")):
+        app, manufacturer, board = build.parent.relative_to(root).parts
+        entries.append({
+            "app": app,
+            "manufacturer": manufacturer,
+            "board": board,
+            "path": build.parent.relative_to(Path(repository)).as_posix(),
+        })
+    return entries
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", required=True, type=Path)
+    parser.add_argument("--kind", choices=("single", "pair"))
     arguments = parser.parse_args()
-    apps = discover_apps(arguments.repository)
-    print(json.dumps({"apps": apps, "total": len(apps)}, ensure_ascii=False))
+    if arguments.kind is not None:
+        entries = discover_entries(arguments.repository, arguments.kind)
+        result = {"kind": arguments.kind, "entries": entries, "total": len(entries)}
+    else:
+        apps = discover_apps(arguments.repository)
+        result = {"apps": apps, "total": len(apps)}
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

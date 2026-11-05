@@ -21,7 +21,7 @@ H2_IOS_SIMULATOR_UDID=<test-udid> make bazel-test-ios_pal_webrtc_simulator_test
 H2_ANDROID_SERIAL=emulator-5580 H2_WEBRTC_FIXTURE_IP=<host-lan-ip> make bazel-test-android_pal_webrtc_simulator_test
 ```
 
-Device artifacts live under `projects/e2e/targets/pal-webrtc/espressif/esp32s3_devkitc_1` and `projects/e2e/targets/pal-webrtc/beken/bk7258_v3_202405`. Configure `--define=H2_PAL_WEBRTC_OFFER_URL=http://<fixture-ip>:<port>/offer` and `--define=H2_PAL_WEBRTC_STUN_URL=stun:<fixture-ip>:<port>`. Empty endpoints deliberately produce a setup failure. The operator launches an isolated `tools/webrtc-test-server` instance on a host reachable from the board. Do not publish LAN fixture builds as production packages.
+Device artifacts live under `projects/e2e/targets/single/pal-webrtc/espressif/esp32s3_devkitc_1` and `projects/e2e/targets/single/pal-webrtc/beken/bk7258_v3_202405`. Configure `--define=H2_PAL_WEBRTC_OFFER_URL=http://<fixture-ip>:<port>/offer` and `--define=H2_PAL_WEBRTC_STUN_URL=stun:<fixture-ip>:<port>`. Empty endpoints deliberately produce a setup failure. The operator launches an isolated `tools/webrtc-test-server` instance on a host reachable from the board. Do not publish LAN fixture builds as production packages.
 
 A platform is qualified only by a full ledger and matching artifact provenance. Building an artifact does not qualify it. See [qualification.json](qualification.json) for the current six-platform result and per-artifact receipts.
 

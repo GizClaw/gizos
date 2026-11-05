@@ -1,0 +1,40 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ap.defaults",
+    "ap.ipv6.defaults",
+    "ap/h2loader/usr_gpio_cfg.h",
+    "bk_loader.json",
+    "cp.defaults",
+    "cp.ipv6.defaults",
+    "partitions/bk7258/ab_position_independent.csv",
+    "partitions/bk7258/auto_partitions.csv",
+    "partitions/bk7258/ota_rbl.config",
+    "pj_config.mk",
+    "ram_regions.csv",
+])
+
+filegroup(
+    name = "ap_gpio",
+    srcs = ["ap/h2loader/usr_gpio_cfg.h"],
+)
+
+filegroup(
+    name = "cp_gpio",
+    srcs = ["//boards/haivivi/h106_zero_bk_1_0/bk7258:cp/usr_gpio_cfg.h"],
+)
+
+alias(
+    name = "ram_regions",
+    actual = "ram_regions.csv",
+)
+
+filegroup(
+    name = "layout",
+    srcs = [
+        "partitions/bk7258/ab_position_independent.csv",
+        "partitions/bk7258/auto_partitions.csv",
+        "partitions/bk7258/ota_rbl.config",
+        "pj_config.mk",
+    ],
+)

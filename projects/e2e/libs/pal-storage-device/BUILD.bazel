@@ -49,7 +49,7 @@ py_test(
         "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
         "//libs/iostreamikcp:src/h2_iostreamikcp_frame.c",
         "//libs/pal:pal_header_files",
-        "//projects/e2e/targets/pal-storage/beken/bk7258_v3_202405:ap/ap_main.c",
+        "//projects/e2e/targets/single/pal-storage/beken/bk7258_v3_202405:ap/ap_main.c",
     ],
     legacy_create_init = False,
     main = "tests/test_bk_console_lifecycle.py",

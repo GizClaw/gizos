@@ -1,0 +1,38 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ap.defaults",
+    "cp.defaults",
+    "ram_regions.csv",
+    "partitions/bk7258/auto_partitions.csv",
+])
+
+filegroup(
+    name = "ap_gpio",
+    srcs = ["//boards/haivivi/h106_zero_bk_1_0/bk7258/layouts/h2loader:ap/h2loader/usr_gpio_cfg.h"],
+)
+
+filegroup(
+    name = "cp_gpio",
+    srcs = ["//boards/haivivi/h106_zero_bk_1_0/bk7258:cp/usr_gpio_cfg.h"],
+)
+
+alias(
+    name = "ram_regions",
+    actual = "ram_regions.csv",
+)
+
+filegroup(
+    name = "layout",
+    srcs = [
+        "partitions/bk7258/auto_partitions.csv",
+        "//boards/haivivi/h106_zero_bk_1_0/bk7258/layouts/h2loader:partitions/bk7258/ab_position_independent.csv",
+        "//boards/haivivi/h106_zero_bk_1_0/bk7258/layouts/h2loader:partitions/bk7258/ota_rbl.config",
+        "//boards/haivivi/h106_zero_bk_1_0/bk7258/layouts/h2loader:pj_config.mk",
+    ],
+)
+
+alias(
+    name = "recovery_config",
+    actual = "//boards/haivivi/h106_zero_bk_1_0/bk7258/layouts/h2loader:bk_loader.json",
+)

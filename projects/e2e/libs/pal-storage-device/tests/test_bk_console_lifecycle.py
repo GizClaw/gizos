@@ -30,7 +30,7 @@ def compile_run(source, includes=(), args=()):
 
 class BKConsoleLifecycle(unittest.TestCase):
     def test_run_control_ownership_and_outcomes(self):
-        launcher = (ROOT / "projects/e2e/targets/pal-storage/beken/bk7258_v3_202405/ap/ap_main.c").read_text()
+        launcher = (ROOT / "projects/e2e/targets/single/pal-storage/beken/bk7258_v3_202405/ap/ap_main.c").read_text()
         run = section(launcher, "static void run(", "static void entry(")
         fixture = r'''
 #include <assert.h>

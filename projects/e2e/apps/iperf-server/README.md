@@ -26,12 +26,12 @@ The UI reports connected stations and cumulative local RX/TX throughput for each
 ## Build and install
 
 ```sh
-bazel build --config=esp32s3 //projects/e2e/targets/iperf-server/waveshare/esp32s3_touch_amoled_1_8:package
+bazel build --config=esp32s3 //projects/e2e/targets/pair/iperf-server/waveshare/esp32s3_touch_amoled_1_8:package
 ```
 
 Use the existing H2Loader transport: inspect the directed AMOLED port/UID and preserve firmware, P1, Stage and coredump evidence; send the package, reboot upgrade, then verify the exact running image and `H2_IPERF_SERVER_UI_READY`. The default UI waits for touch input; flashing alone does not qualify throughput or physical touch operation.
 
-For automated two-board qualification, `--define=H2_IPERF_SERVER_AUTOSTART_MODE=4`, `6` or `46` starts the same controller after Display/Touch readiness. Default `0` retains stopped-at-boot operation. This does not inject touch events or qualify finger interaction. Pair it with `//projects/e2e/targets/iperf-client/espressif/esp32s3_devkitc_1:package` and reboot the client after each server mode change; see the [client App](../iperf-client/README.md).
+For automated two-board qualification, `--define=H2_IPERF_SERVER_AUTOSTART_MODE=4`, `6` or `46` starts the same controller after Display/Touch readiness. Default `0` retains stopped-at-boot operation. This does not inject touch events or qualify finger interaction. Pair it with `//projects/e2e/targets/pair/iperf-client/espressif/esp32s3_devkitc_1:package` and reboot the client after each server mode change; see the [client App](../iperf-client/README.md).
 
 ## Client commands
 
