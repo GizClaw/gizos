@@ -23,6 +23,8 @@ const h2_pal_power_api_t* h2_bk_h2loader_power_api(void);
 /* Fixed-layout doubles; the legacy-bank fixtures leave them all zero. */
 extern int g_fixed_active, g_fixed_app_failed, g_fixed_relay_failed;
 extern uint8_t g_fixed_slot;
+extern int g_fixed_select_result;
+extern uint32_t g_fixed_selected;
 static inline int h2_bk_fixed_layout_active(void) { return g_fixed_active; }
 static inline uint8_t h2_bk_fixed_current_slot(void) {
   return g_fixed_active ? g_fixed_slot : bk_ota_get_current_partition();
@@ -33,6 +35,6 @@ static inline int h2_bk_fixed_relay_failed(void) {
 }
 static inline int h2_bk_fixed_next_app(void) { return 0; }
 static inline int h2_bk_fixed_select(uint32_t id) {
-  (void)id;
-  return H2_PAL_ERR_UNSUPPORTED;
+  g_fixed_selected = id;
+  return g_fixed_select_result;
 }

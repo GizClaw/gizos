@@ -1,6 +1,8 @@
 #include "h2_bk_fixed_boot_test_sdk.h"
 #include "layout.h"
 #include "flash_access.h"
+#include "contract.h"
+#include "h2_bk_boot_context.h"
 #include <assert.h>
 #include <stddef.h>
 #include <string.h>
@@ -17,6 +19,17 @@ static uint8_t native_slot;
 static unsigned native_erases, request_erases;
 static unsigned aes_state, flash_mutations;
 static int mapped_view, plain_read_error;
+static int flash_read_error, flash_write_error;
+/* Logical boot window: descriptor at 0x7f00 and payload from 0x8000. */
+#define BOOT_LOGICAL 0x10000u
+#define PAYLOAD_SIZE 300u
+static uint8_t boot_logical[BOOT_LOGICAL];
+static int boot_read_error;
+/* Committed Partition 2 metadata as bound through the boot context. */
+static int candidate_role = H2_PAL_ERR_INVALID_STATE;
+static uint64_t candidate_size;
+static int boot_context_rc;
+static int loader_window_committed = 1;
 /* Board partition table (Loader image): Loader window 2380 KiB, App window
  * 5100 KiB, boot record sector at 0x77f000. */
 #define LOADER_OFFSET 0x11000u
@@ -52,11 +65,13 @@ const bk_logic_partition_t* bk_flash_partition_get_info(bk_partition_t id) {
                                               : &native;
 }
 int bk_flash_read_bytes(uint32_t address, uint8_t* out, uint32_t size) {
+  if (flash_read_error) return BK_FAIL;
   memcpy(out, sector_at(address, size), size);
   return BK_OK;
 }
 int bk_flash_write_bytes(uint32_t address, const uint8_t* in, uint32_t size) {
   ++flash_mutations;
+  if (flash_write_error) return BK_FAIL;
   uint8_t* cell = sector_at(address, size);
   for (uint32_t i = 0; i < size; ++i) cell[i] &= in[i];
   return BK_OK;
@@ -96,6 +111,23 @@ int h2_bk_flash_read_plain(uint32_t base, uint32_t capacity, uint32_t offset,
   }
   return H2_PAL_OK;
 }
+
+int h2_bk_flash_read_boot_plain(uint32_t boot_size, uint32_t offset, void* out,
+                                size_t size) {
+  /* Only ever a bounded read of the boot window, from a board-derived size. */
+  assert(boot_size == LOADER_OFFSET && size <= 256u &&
+         offset + size <= BOOT_LOGICAL);
+  if (boot_read_error) return boot_read_error;
+  memcpy(out, boot_logical + offset, size);
+  return H2_PAL_OK;
+}
+int h2_bk_boot_candidate_is_loader(uint64_t* out_image_size) {
+  *out_image_size = candidate_role < 0 ? 0u : candidate_size;
+  return candidate_role;
+}
+
+int h2_bk_boot_context_ready(void) { return boot_context_rc; }
+int h2_bk_boot_loader_window_committed(void) { return loader_window_committed; }
 
 /* Mirrors h2loader_cp_try_fixed_app: returns whether CP enters App. */
 static int cp_boot(void) {
@@ -335,6 +367,319 @@ static void test_loader_relay_through_native_b(void) {
   assert(memcmp(native_sector, loader_flags, 12) == 0);
 }
 
+static bk_mapped_ab_contract_t board_contract(void) {
+  return (bk_mapped_ab_contract_t){
+      .magic = BK_MAPPED_AB_MAGIC,
+      .version = BK_MAPPED_AB_VERSION,
+      .descriptor_size = sizeof(bk_mapped_ab_contract_t),
+      .flags = BK_MAPPED_AB_FLAGS,
+      .boot_size = LOADER_OFFSET,
+      .loader_offset = LOADER_OFFSET,
+      .loader_size = LOADER_SIZE,
+      .trial_offset = APP_OFFSET,
+      .trial_size = APP_SIZE,
+      .cp_size = LOADER_CP,
+      .payload_offset = BK_MAPPED_AB_PAYLOAD_OFFSET,
+      .payload_size = PAYLOAD_SIZE,
+      .patch_entry = BK_MAPPED_AB_PATCH_ENTRY,
+  };
+}
+
+/* Flash a descriptor with correct CRCs, so tests reach the check under test
+ * instead of an earlier integrity rejection. */
+static void flash_contract(bk_mapped_ab_contract_t c) {
+  uint8_t* payload = boot_logical + BK_MAPPED_AB_PAYLOAD_OFFSET;
+  for (uint32_t i = 0; i < PAYLOAD_SIZE; ++i) payload[i] = (uint8_t)(i * 3u);
+  c.payload_crc32 = bk_mapped_ab_crc32(payload, PAYLOAD_SIZE);
+  c.descriptor_crc32 = bk_mapped_ab_crc32(
+      &c, offsetof(bk_mapped_ab_contract_t, descriptor_crc32));
+  memcpy(boot_logical + BK_MAPPED_AB_DESCRIPTOR_OFFSET, &c, sizeof(c));
+}
+
+static void erase_contract(void) {
+  memset(boot_logical, 0xff, sizeof(boot_logical));
+}
+
+static void reset_boot_records(void) {
+  memset(native_sector, 0xff, sizeof(native_sector));
+  memset(request_sector, 0xff, sizeof(request_sector));
+  native_slot = 0u;
+}
+
+static void assert_rejected_without_writes(int expected) {
+  const unsigned before = flash_mutations;
+  assert(h2_bk_fixed_mapped_abi() == expected);
+  assert(h2_bk_fixed_loader_update_check(LOADER_SIZE) == expected);
+  assert(flash_mutations == before);
+}
+
+static void test_boot_context_check(void) {
+  put_encrypted_app_vector();
+  reset_boot_records();
+  /* Stock boards never need a boot context. */
+  boot_context_rc = H2_PAL_ERR_INVALID_STATE;
+  assert(h2_bk_fixed_boot_context_check() == H2_PAL_OK);
+  flash_contract(board_contract());
+  assert(h2_bk_fixed_boot_context_check() == H2_PAL_ERR_INVALID_STATE);
+  boot_context_rc = H2_PAL_OK;
+  assert(h2_bk_fixed_boot_context_check() == H2_PAL_OK);
+  boot_read_error = H2_PAL_ERR_IO;
+  assert(h2_bk_fixed_boot_context_check() == H2_PAL_ERR_IO);
+  boot_read_error = 0;
+  erase_contract();
+}
+
+static void test_mapped_descriptor_rejections(void) {
+  reset_boot_records();
+  aes_state = H2_BK_FLASH_AES_ON;
+
+  /* Missing ABI: a stock bootloader. AES-on has no Loader path; AES-off keeps
+   * the stock relay. */
+  erase_contract();
+  assert(h2_bk_fixed_mapped_abi() == 0);
+  assert(h2_bk_fixed_loader_update_check(LOADER_SIZE) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  aes_state = H2_BK_FLASH_AES_OFF;
+  assert(h2_bk_fixed_loader_update_check(LOADER_SIZE) == 0);
+  aes_state = H2_BK_FLASH_AES_ON;
+
+  flash_contract(board_contract());
+  assert(h2_bk_fixed_mapped_abi() == 1);
+  assert(h2_bk_fixed_loader_update_check(LOADER_SIZE) == 1);
+  aes_state = H2_BK_FLASH_AES_OFF;
+  assert(h2_bk_fixed_loader_update_check(LOADER_SIZE) == 1);
+  aes_state = H2_BK_FLASH_AES_ON;
+
+  /* A descriptor that is intact but disagrees with the board's table. */
+  bk_mapped_ab_contract_t c = board_contract();
+  c.loader_size = LOADER_SIZE - H2_FIXED_WINDOW_ALIGN;
+  flash_contract(c);
+  assert_rejected_without_writes(H2_PAL_ERR_FORMAT);
+  c = board_contract();
+  c.trial_size = APP_SIZE - H2_FIXED_WINDOW_ALIGN;
+  flash_contract(c);
+  assert_rejected_without_writes(H2_PAL_ERR_FORMAT);
+  c = board_contract();
+  c.trial_offset = APP_OFFSET + H2_FIXED_WINDOW_ALIGN;
+  flash_contract(c);
+  assert_rejected_without_writes(H2_PAL_ERR_FORMAT);
+  c = board_contract();
+  c.cp_size = LOADER_CP + H2_FIXED_WINDOW_ALIGN;
+  flash_contract(c);
+  assert_rejected_without_writes(H2_PAL_ERR_FORMAT);
+
+  /* Unknown version with a matching CRC, then each integrity failure. */
+  c = board_contract();
+  c.version = BK_MAPPED_AB_VERSION + 1u;
+  flash_contract(c);
+  assert_rejected_without_writes(H2_PAL_ERR_FORMAT);
+  flash_contract(board_contract());
+  boot_logical[BK_MAPPED_AB_DESCRIPTOR_OFFSET + 8u] ^= 1u;
+  assert_rejected_without_writes(H2_PAL_ERR_FORMAT);
+  flash_contract(board_contract());
+  boot_logical[BK_MAPPED_AB_PAYLOAD_OFFSET + PAYLOAD_SIZE - 1u] ^= 1u;
+  assert_rejected_without_writes(H2_PAL_ERR_FORMAT);
+
+  flash_contract(board_contract());
+  boot_read_error = H2_PAL_ERR_IO;
+  assert_rejected_without_writes(H2_PAL_ERR_IO);
+  boot_read_error = 0;
+
+  /* Unknown AES and a non-canonical image never pass a valid descriptor. */
+  const unsigned before = flash_mutations;
+  aes_state = H2_BK_FLASH_AES_UNKNOWN;
+  assert(h2_bk_fixed_mapped_abi() == 1);
+  assert(h2_bk_fixed_loader_update_check(LOADER_SIZE) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  aes_state = H2_BK_FLASH_AES_ON;
+  assert(h2_bk_fixed_loader_update_check(LOADER_SIZE - 34u) ==
+         H2_PAL_ERR_FORMAT);
+  assert(h2_bk_fixed_loader_update_check(APP_SIZE) == H2_PAL_ERR_FORMAT);
+  assert(flash_mutations == before);
+
+  erase_contract();
+  aes_state = H2_BK_FLASH_AES_OFF;
+}
+
+static void test_mapped_selection_uses_committed_role(void) {
+  put_encrypted_app_vector();
+  reset_boot_records();
+  flash_contract(board_contract());
+  unsigned before = flash_mutations;
+
+  /* power_api(void) without a bound context, or a cleared record. */
+  candidate_role = H2_PAL_ERR_INVALID_STATE;
+  assert(h2_bk_fixed_app_window_holds_loader() == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(!h2_bk_fixed_next_app() && flash_mutations == before);
+
+  /* Undecodable vectors say nothing: the record alone decides, in both ways. */
+  plain_read_error = H2_PAL_ERR_IO;
+  candidate_role = 0;
+  candidate_size = APP_SIZE;
+  assert(h2_bk_fixed_app_window_holds_loader() == 0);
+  candidate_role = 1;
+  candidate_size = LOADER_SIZE;
+  assert(h2_bk_fixed_app_window_holds_loader() == 1);
+
+  /* A size the mapped bootloader could not validate is never selected. */
+  candidate_size = LOADER_SIZE - 34u;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) ==
+         H2_PAL_ERR_FORMAT);
+  candidate_role = 0;
+  candidate_size = APP_SIZE + 34u;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) ==
+         H2_PAL_ERR_FORMAT);
+  candidate_size = 0u;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) ==
+         H2_PAL_ERR_FORMAT);
+  assert(flash_mutations == before);
+
+  /* An App record keeps the ordinary CP handoff under AES. */
+  static const uint32_t loader_flags[3] = {0u, 0u, 3u};
+  candidate_size = APP_SIZE;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
+  assert(memcmp(native_sector, loader_flags, sizeof(loader_flags)) == 0);
+  assert(h2_bk_fixed_next_app() && cp_boot());
+  assert(h2_bk_fixed_confirm_app() == H2_PAL_OK);
+
+  /* Unknown AES cannot relay a Loader. */
+  reset_boot_records();
+  before = flash_mutations;
+  candidate_role = 1;
+  candidate_size = LOADER_SIZE;
+  aes_state = H2_BK_FLASH_AES_UNKNOWN;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(flash_mutations == before);
+  aes_state = H2_BK_FLASH_AES_ON;
+
+  plain_read_error = 0;
+  mapped_view = 0;
+  candidate_role = H2_PAL_ERR_INVALID_STATE;
+  aes_state = H2_BK_FLASH_AES_OFF;
+  erase_contract();
+}
+
+static void test_unknown_aes_keeps_ordinary_app_handoff(void) {
+  static const uint32_t loader_flags[3] = {0u, 0u, 3u};
+  reset_boot_records();
+  erase_contract();
+  aes_state = H2_BK_FLASH_AES_UNKNOWN;
+  put_app_window_image(APP_OFFSET);
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
+  assert(memcmp(native_sector, loader_flags, sizeof(loader_flags)) == 0);
+  assert(h2_bk_fixed_next_app());
+
+  /* The same unknown state refuses a stock Loader relay. */
+  reset_boot_records();
+  put_app_window_image(LOADER_OFFSET);
+  const unsigned before = flash_mutations;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(flash_mutations == before);
+  aes_state = H2_BK_FLASH_AES_OFF;
+}
+
+static void test_mapped_candidate_confirmation(void) {
+  put_encrypted_app_vector();
+  reset_boot_records();
+  flash_contract(board_contract());
+  plain_read_error = H2_PAL_ERR_IO; /* Ciphertext vectors must stay unused. */
+  candidate_role = 1;
+  candidate_size = LOADER_SIZE;
+
+  /* Selection arms B and clears the CP handoff, with no relocated head. */
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
+  assert(memcmp(native_sector, relay_pending, 12) == 0);
+  assert(!cp_boot() && h2_bk_fixed_next_app());
+
+  /* Still on A, or pending on B: the Loader window stays off limits. */
+  assert(h2_bk_fixed_relay_confirmed() == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_OK);
+  assert(memcmp(native_sector, relay_pending, 12) == 0);
+  native_slot = 1u;
+  assert(h2_bk_fixed_relay_confirmed() == H2_PAL_ERR_INVALID_STATE);
+
+  /* Confirmation re-proves ABI and role from native B; a failure leaves the
+   * pending record, so the bootloader can still roll back. */
+  unsigned before = flash_mutations;
+  boot_logical[BK_MAPPED_AB_PAYLOAD_OFFSET] ^= 1u;
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_ERR_FORMAT);
+  boot_logical[BK_MAPPED_AB_PAYLOAD_OFFSET] ^= 1u;
+  erase_contract();
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_ERR_UNSUPPORTED);
+  flash_contract(board_contract());
+  candidate_role = 0;
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_ERR_INVALID_STATE);
+  candidate_role = H2_PAL_ERR_INVALID_STATE;
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_ERR_INVALID_STATE);
+  candidate_role = 1;
+  aes_state = H2_BK_FLASH_AES_UNKNOWN;
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_ERR_UNSUPPORTED);
+  aes_state = H2_BK_FLASH_AES_ON;
+  assert(flash_mutations == before);
+  assert(memcmp(native_sector, relay_pending, 12) == 0);
+
+  /* A failed write is reported and does not count as confirmed. */
+  flash_write_error = 1;
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_ERR_IO);
+  flash_write_error = 0;
+  memcpy(native_sector, relay_pending, sizeof(relay_pending));
+  flash_read_error = 1;
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_ERR_IO);
+  assert(h2_bk_fixed_relay_confirmed() == H2_PAL_ERR_IO);
+  flash_read_error = 0;
+
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_OK);
+  assert(memcmp(native_sector, relay_confirmed, 12) == 0);
+  assert(h2_bk_fixed_relay_confirmed() == H2_PAL_OK);
+
+  /* Core re-selects B before copying: B and its confirmation stay untouched. */
+  before = flash_mutations;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
+  assert(flash_mutations == before);
+  assert(memcmp(native_sector, relay_confirmed, 12) == 0);
+
+  /* Copyback failed or was interrupted: A is partial. Reboot commands succeed
+   * but keep the confirmed B, so the restart retries the copy. */
+  before = flash_mutations;
+  loader_window_committed = 0;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) == H2_PAL_OK);
+  assert(h2_bk_fixed_invalidate_app() == H2_PAL_OK);
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
+  loader_window_committed = H2_PAL_ERR_IO;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) == H2_PAL_OK);
+  assert(flash_mutations == before);
+  assert(memcmp(native_sector, relay_confirmed, 12) == 0);
+
+  /* Without a confirmed B there is nothing safe to keep. */
+  memcpy(native_sector, relay_pending, sizeof(relay_pending));
+  loader_window_committed = 0;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) ==
+         H2_PAL_ERR_INVALID_STATE);
+  loader_window_committed = H2_PAL_ERR_IO;
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) ==
+         H2_PAL_ERR_IO);
+  loader_window_committed = 1;
+  assert(memcmp(native_sector, relay_pending, 12) == 0);
+  memcpy(native_sector, relay_confirmed, sizeof(relay_confirmed));
+
+  /* Copyback finished: Loader selection returns native boot to A. */
+  static const uint32_t loader_flags[3] = {0u, 0u, 3u};
+  assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) == H2_PAL_OK);
+  assert(memcmp(native_sector, loader_flags, 12) == 0);
+  assert(h2_bk_fixed_relay_confirmed() == H2_PAL_ERR_INVALID_STATE);
+
+  native_slot = 0u;
+  plain_read_error = 0;
+  mapped_view = 0;
+  candidate_role = H2_PAL_ERR_INVALID_STATE;
+  aes_state = H2_BK_FLASH_AES_OFF;
+  erase_contract();
+}
+
 static void test_relay_head_shares_image_sector(void) {
   /* A 16 KiB window with a 10 KiB image: the head copy lands in the sector
    * that also holds the image's last 2 KiB, which must survive the erase. */
@@ -383,6 +728,26 @@ static void test_app_layout_slot(void) {
   assert(h2_bk_fixed_confirm_app() == H2_PAL_OK);
   assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) == H2_PAL_OK);
   assert(!h2_bk_fixed_app_failed() && !cp_boot());
+  /* The App table does not list the Loader's CP split, so it cannot and must
+   * not compare cp_size; the shared windows are still checked. */
+  bk_mapped_ab_contract_t c = board_contract();
+  c.cp_size = LOADER_CP + H2_FIXED_WINDOW_ALIGN;
+  flash_contract(c);
+  assert(h2_bk_fixed_mapped_abi() == 1);
+  /* An App image never owns a Loader relay, even if the native slot says B. */
+  native_slot = 1u;
+  aes_state = H2_BK_FLASH_AES_ON;
+  candidate_role = 1;
+  candidate_size = LOADER_SIZE;
+  assert(h2_bk_fixed_relay_confirmed() == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_bk_fixed_confirm_loader() == H2_PAL_ERR_INVALID_STATE);
+  native_slot = 0u;
+  aes_state = H2_BK_FLASH_AES_OFF;
+  candidate_role = H2_PAL_ERR_INVALID_STATE;
+  c.trial_size = APP_SIZE - H2_FIXED_WINDOW_ALIGN;
+  flash_contract(c);
+  assert(h2_bk_fixed_mapped_abi() == H2_PAL_ERR_FORMAT);
+  erase_contract();
   /* A table without matching windows is not a fixed layout. */
   ap.partition_start_addr += SECTOR;
   assert(!h2_bk_fixed_layout_active());
@@ -411,6 +776,7 @@ static void test_board_owned_loader_size(void) {
 }
 
 int main(void) {
+  erase_contract();
   put_app_window_image(APP_OFFSET);
   test_confirmed_app_boots_without_writes();
   test_unconfirmed_attempt_and_loader_selection();
@@ -419,6 +785,11 @@ int main(void) {
   test_loader_relay_through_native_b();
   test_ciphertext_uses_mapped_app_role();
   test_role_read_failure_does_not_select_boot();
+  test_boot_context_check();
+  test_mapped_descriptor_rejections();
+  test_mapped_selection_uses_committed_role();
+  test_unknown_aes_keeps_ordinary_app_handoff();
+  test_mapped_candidate_confirmation();
   test_relay_head_shares_image_sector();
   test_board_owned_loader_size();
   test_app_layout_slot();

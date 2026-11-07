@@ -7,6 +7,8 @@ def _checksum_matrix_impl(ctx):
     b = ctx.attr.alternate[FirmwareReleaseInfo]
     if a.role != "app" or b.role != "app" or a.board != b.board or a.target != b.target:
         fail("checksum matrix requires two Apps for the same board and target")
+    if a.encrypted or b.encrypted:
+        fail("checksum matrix requires plaintext packages: its fixtures copy native inputs")
     outputs = []
     for family, suffix in (("tar_zlib", ".update.tar.zlib"), ("zlib_tar", ".update.tar")):
         for case in ("baseline", "unchanged", "app-only", "data-only", "both-changed"):

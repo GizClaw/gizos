@@ -54,6 +54,10 @@ static int s_staged_app_ready;
 /* Writing a Loader image into the App window for the native B relay. */
 static int s_writing_loader_relay;
 static int s_writing_loader_image;
+static int s_mapped_loader;
+/* Core owns ciphertext SHA verification. Only a verified mapped_ab_v1
+ * bootloader can check Loader plaintext through the canonical A mapping. */
+static int s_loader_plaintext_deferred;
 static uint8_t s_verify_buffer[H2_BK_OTA_VERIFY_CHUNK_SIZE];
 static bk_logic_partition_t s_primary_window_partition;
 static bk_logic_partition_t s_fixed_partitions[2];
@@ -209,17 +213,55 @@ static int verify_legacy_staged_rbl(void) {
   return H2_PAL_OK;
 }
 
+static int read_staged_plain(uint32_t offset, void* output, size_t size) {
+  if (!s_mapped_loader)
+    return h2_bk_flash_read_plain(s_partition->partition_start_addr, s_total,
+                                  offset, output, size);
+  /* AES-off mapped Loader copyback may execute on B, where generic mapped
+   * reads are deliberately unavailable. Strip checked CRC units from raw
+   * storage instead; ciphertext never reaches this path. */
+  uint8_t packets[16u * H2_BK_OTA_CRC_BLOCK_SIZE];
+  uint8_t* dst = output;
+  while (size) {
+    const uint32_t first_block = offset / H2_BK_OTA_CRC_BLOCK_DATA_SIZE;
+    size_t blocks = (offset % H2_BK_OTA_CRC_BLOCK_DATA_SIZE + size + 31u) /
+                    H2_BK_OTA_CRC_BLOCK_DATA_SIZE;
+    if (blocks > 16u) blocks = 16u;
+    if (bk_flash_read_bytes(
+            s_partition->partition_start_addr +
+                first_block * H2_BK_OTA_CRC_BLOCK_SIZE,
+            packets, (uint32_t)blocks * H2_BK_OTA_CRC_BLOCK_SIZE) != BK_OK)
+      return H2_PAL_ERR_IO;
+    for (size_t i = 0; i < blocks; ++i) {
+      const uint8_t* packet = packets + i * H2_BK_OTA_CRC_BLOCK_SIZE;
+      const uint32_t within = offset % H2_BK_OTA_CRC_BLOCK_DATA_SIZE;
+      size_t take = H2_BK_OTA_CRC_BLOCK_DATA_SIZE - within;
+      if (take > size) take = size;
+      if (h2_bk_flash_erased(packet)) {
+        memset(dst, 0xff, take);
+      } else {
+        if (!h2_bk_flash_crc_valid(packet)) return H2_PAL_ERR_IO;
+        memcpy(dst, packet + within, take);
+      }
+      dst += take;
+      offset += (uint32_t)take;
+      size -= take;
+    }
+  }
+  return H2_PAL_OK;
+}
+
 static int verify_staged_rbl(void) {
-  if (s_writing_loader_image || !h2_bk_fixed_layout_active())
+  if (s_loader_plaintext_deferred) return H2_PAL_OK;
+  if ((s_writing_loader_image && !s_mapped_loader) ||
+      !h2_bk_fixed_layout_active())
     return verify_legacy_staged_rbl();
   struct ota_rbl_head header;
   _Static_assert(sizeof(header) == 96, "Pinned RBL ABI changed");
   const uint32_t capacity = s_total / 34u * 32u;
   if (!s_flash_open || !s_partition || s_total % 34u || capacity < RBL_HEAD_POS)
     return H2_PAL_ERR_FORMAT;
-  int rc =
-      h2_bk_flash_read_plain(s_partition->partition_start_addr, s_total,
-                             capacity - RBL_HEAD_POS, &header, sizeof(header));
+  int rc = read_staged_plain(capacity - RBL_HEAD_POS, &header, sizeof(header));
   if (rc != H2_PAL_OK) return rc;
   if (memcmp(header.magic, "RBL\0", 4) || header.algo != 0 ||
       !header.size_raw || header.size_raw % 32u ||
@@ -228,11 +270,15 @@ static int verify_staged_rbl(void) {
       h2_bk_flash_crc32(0, (const uint8_t*)&header, 92) != header.info_crc32)
     return H2_PAL_ERR_FORMAT;
   uint32_t vector[2];
-  rc = h2_bk_flash_read_plain(s_partition->partition_start_addr, s_total, 0,
-                              vector, sizeof(vector));
+  rc = read_staged_plain(0, vector, sizeof(vector));
   if (rc != H2_PAL_OK) return rc;
-  const uint32_t base =
-      0x02000000u + s_partition->partition_start_addr / 34u * 32u;
+  /* A mapped Loader always links for and validates at the Loader window, even
+   * while staged in the App window. */
+  const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
+  const uint32_t start = s_mapped_loader && layout != NULL
+                             ? layout->loader.offset
+                             : s_partition->partition_start_addr;
+  const uint32_t base = 0x02000000u + start / 34u * 32u;
   if (vector[0] < 0x28000000u || vector[0] > 0x280a0000u || (vector[0] & 7u) ||
       !(vector[1] & 1u) || vector[1] < base ||
       vector[1] - base >= header.size_raw)
@@ -241,8 +287,7 @@ static int verify_staged_rbl(void) {
   for (uint32_t offset = 0; offset < header.size_raw;) {
     uint32_t take = header.size_raw - offset;
     if (take > sizeof(s_verify_buffer)) take = sizeof(s_verify_buffer);
-    rc = h2_bk_flash_read_plain(s_partition->partition_start_addr, s_total,
-                                offset, s_verify_buffer, take);
+    rc = read_staged_plain(offset, s_verify_buffer, take);
     if (rc != H2_PAL_OK) return rc;
     hash = ota_calc_hash(hash, s_verify_buffer, take);
     crc = h2_bk_flash_crc32(crc, s_verify_buffer, take);
@@ -320,6 +365,8 @@ static int ota_writer_begin(void* user, const h2_bundle_entry_t* entry) {
   (void)user;
   s_writing_loader_image = 0;
   s_writing_loader_relay = 0;
+  s_mapped_loader = 0;
+  s_loader_plaintext_deferred = 0;
   if (entry == NULL ||
       strcmp(entry->path, H2_BK_H2LOADER_APP_ENTRY_PATH) != 0) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -553,9 +600,23 @@ static int image_writer_begin(void* user, uint32_t partition_id,
     return H2_PAL_ERR_INVALID_ARG;
   }
   s_writing_loader_image = identity->role != H2_LOADER_IMAGE_ROLE_APP;
-  if (s_writing_loader_image && h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-    return H2_PAL_ERR_UNSUPPORTED;
   s_writing_loader_relay = 0;
+  s_mapped_loader = 0;
+  s_loader_plaintext_deferred = 0;
+  if (h2_bk_fixed_layout_active()) {
+    /* Selection after a finished write needs this; find out before erasing. */
+    const int rc = h2_bk_fixed_boot_context_check();
+    if (rc != H2_PAL_OK) return rc;
+  }
+  if (s_writing_loader_image) {
+    /* Everything here is read-only: rejection leaves Flash and boot state
+     * untouched. */
+    const int mapped = h2_bk_fixed_loader_update_check(identity->image_size);
+    if (mapped < 0) return mapped;
+    s_mapped_loader = mapped;
+    s_loader_plaintext_deferred =
+        mapped && h2_bk_flash_aes_state() == H2_BK_FLASH_AES_ON;
+  }
   if (h2_bk_fixed_layout_active() &&
       identity->role != H2_LOADER_IMAGE_ROLE_APP) {
     /* A Loader image is linked for the Loader window. The running Loader
@@ -568,7 +629,15 @@ static int image_writer_begin(void* user, uint32_t partition_id,
            slot == EXEC_B_PART))) {
       return H2_PAL_ERR_UNSUPPORTED;
     }
-    s_writing_loader_relay = partition_id == H2_BK_H2LOADER_APP_PARTITION_ID;
+    /* mapped_ab_v1 validates the canonical A-length RBL through the A mapping,
+     * so it never needs a relocated head at the end of B. */
+    s_writing_loader_relay =
+        !s_mapped_loader && partition_id == H2_BK_H2LOADER_APP_PARTITION_ID;
+    if (s_mapped_loader &&
+        partition_id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID) {
+      const int rc = h2_bk_fixed_relay_confirmed();
+      if (rc != H2_PAL_OK) return rc;
+    }
   }
   return ota_writer_begin_partition(partition_id, identity->image_size);
 }

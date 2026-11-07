@@ -204,6 +204,50 @@ elif mode == "mutate-source":
 '''
 
 
+FAKE_CMAKE = r'''#!/usr/bin/env python3
+import json
+from pathlib import Path
+import sys
+
+mode_path = Path(sys.argv[0]).with_name("cmake-mode")
+mode = mode_path.read_text(encoding="utf-8").strip() if mode_path.exists() else "success"
+if sys.argv[1] == "--build":
+    state = json.loads(Path(sys.argv[2], "state.json").read_text(encoding="utf-8"))
+    if mode == "build-failure":
+        raise SystemExit(7)
+    if Path(state["INPUT_IMAGE"]).read_bytes() != b"recovery":
+        raise SystemExit("recipe did not receive the native recovery image")
+    if "name" not in json.loads(
+        Path(state["PARTITION_METADATA"], "partitions.json").read_text(encoding="utf-8")
+    ):
+        raise SystemExit("recipe did not receive native partition metadata")
+    output = Path(state["OUTPUT_IMAGE"])
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"patched")
+    if mode != "missing-receipt":
+        Path(state["OUTPUT_RECEIPT"]).write_text('{"contract": "fixture"}', encoding="utf-8")
+    raise SystemExit(0)
+if mode == "configure-failure":
+    raise SystemExit(5)
+definitions = dict(
+    value[2:].split("=", 1) for value in sys.argv if value.startswith("-D")
+)
+for name, tool in (
+    ("CMAKE_C_COMPILER", "arm-none-eabi-gcc"),
+    ("CMAKE_ASM_COMPILER", "arm-none-eabi-gcc"),
+    ("CMAKE_OBJCOPY", "arm-none-eabi-objcopy"),
+):
+    if Path(definitions[name]) != Path(sys.argv[0]).with_name(tool):
+        raise SystemExit(f"recipe did not use the pinned toolchain for {name}")
+build = Path(sys.argv[sys.argv.index("-B") + 1])
+source = Path(sys.argv[sys.argv.index("-S") + 1])
+if not source.joinpath("CMakeLists.txt").is_file():
+    raise SystemExit("recipe source directory is wrong")
+build.mkdir(parents=True)
+build.joinpath("state.json").write_text(json.dumps(definitions), encoding="utf-8")
+'''
+
+
 class Bk7258RunnerTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -314,6 +358,9 @@ class Bk7258RunnerTest(unittest.TestCase):
         compiler.write_text("#!/bin/sh\nprintf '10.3.1\\n'\n", encoding="utf-8")
         compiler.chmod(0o755)
         shutil.copy2(make, self.toolchain / "make")
+        cmake = self.toolchain / "cmake"
+        cmake.write_text(FAKE_CMAKE, encoding="utf-8")
+        cmake.chmod(0o755)
         self.ccache = self.root / "fake-ccache"
         self.ccache.write_text(
             "#!/bin/sh\ntest \"$1\" = --version && echo 'ccache version 4.13.6'\n",
@@ -526,6 +573,8 @@ class Bk7258RunnerTest(unittest.TestCase):
         self.assertEqual(output.joinpath("cp/app.bin").read_bytes(), b"cp-image")
         self.assertEqual(output.joinpath("app_ab_crc.rbl").read_bytes(), b"managed-app")
         self.assertFalse(output.joinpath("app_ab_ota.rbl").exists())
+        self.assertEqual(output.joinpath("all-app.bin").read_bytes(), b"recovery")
+        self.assertFalse(output.joinpath("partition-metadata/bootloader.json").exists())
         for name in (
             "partitions.json",
             "bk_ota_partitions.json",
@@ -537,6 +586,42 @@ class Bk7258RunnerTest(unittest.TestCase):
                 dict,
             )
         self.assertFalse(self.project.joinpath("generated.lock").exists())
+
+    def _bootloader_patch_arguments(self) -> list[str]:
+        recipe = self.source / "third_party/fixture_patch/CMakeLists.txt"
+        recipe.parent.mkdir(parents=True, exist_ok=True)
+        recipe.write_text("# recipe\n", encoding="utf-8")
+        return ["--bootloader-patch", "third_party/fixture_patch/CMakeLists.txt"]
+
+    def test_bootloader_patch_replaces_only_recovery_and_adds_receipt(self):
+        result, output = self._run(extra_arguments=self._bootloader_patch_arguments())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output.joinpath("all-app.bin").read_bytes(), b"patched")
+        self.assertEqual(output.joinpath("app_ab_crc.rbl").read_bytes(), b"managed-app")
+        self.assertEqual(
+            json.loads(output.joinpath("partition-metadata/bootloader.json").read_text()),
+            {"contract": "fixture"},
+        )
+
+    def test_bootloader_patch_failures_publish_nothing(self):
+        for mode in ("configure-failure", "build-failure", "missing-receipt"):
+            with self.subTest(mode=mode):
+                self.toolchain.joinpath("cmake-mode").write_text(mode, encoding="utf-8")
+                result, output = self._run(
+                    name=mode, extra_arguments=self._bootloader_patch_arguments()
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("error:", result.stderr)
+                self.assertFalse(output.joinpath("all-app.bin").exists())
+
+    def test_missing_bootloader_patch_fails_before_native_build(self):
+        result, output = self._run(
+            mode="make-failure",
+            extra_arguments=["--bootloader-patch", "third_party/missing/CMakeLists.txt"],
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("BK7258 bootloader patch", result.stderr)
+        self.assertFalse(output.joinpath("all-app.bin").exists())
 
     def test_ccache_environment_reaches_armino(self):
         # The runner must hand ccache the real path of a symlinked TMPDIR,

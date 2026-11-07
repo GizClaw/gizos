@@ -1,0 +1,15 @@
+{
+  "contract": "mapped_ab_v1",
+  "schema": 1,
+  "source_size": 18720,
+  "source_sha256": "9ce0da920a751ea8b635f363b898625e9da6d8355c10c18f2f18466bf8b66c41",
+  "entry_offset": 8304,
+  "entry_original_hex": "10b598b0",
+  "descriptor_offset": 32512,
+  "payload_offset": 32768,
+  "maximum_payload_size": 32768,
+  "vendor_lookup_thumb_address": 33566085,
+  "physical_flash_limit": 16777216,
+  "logging_changes": false,
+  "payload_sha256": "f4ea1dedee17898c71b0ab842757fb2db3282abf5b7e11a062655cadbf8c4587"
+}

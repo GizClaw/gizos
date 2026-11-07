@@ -11,6 +11,13 @@
 int h2_bk_flash_read_plain(uint32_t physical, uint32_t capacity,
                            uint32_t offset, void* output, size_t size);
 int h2_bk_flash_access_ready(void);
+/* Only the unremapped boot window, physical base zero. boot_size MUST be
+ * derived from the board's first executable boundary before reading a flashed
+ * descriptor. Unlike read_plain, this remains valid while running native B.
+ * The same task-context, CRC, cache and programming serialization rules apply.
+ */
+int h2_bk_flash_read_boot_plain(uint32_t boot_size, uint32_t offset,
+                                void* output, size_t size);
 /* One read-only query per boot; unknown/failure never permits Loader relay. */
 unsigned h2_bk_flash_aes_state(void);
 

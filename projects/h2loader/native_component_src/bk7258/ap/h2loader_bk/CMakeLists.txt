@@ -2,6 +2,7 @@ set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 
 set(H2_BK_H2LOADER_SRCS
   "src/h2_bk_fixed_boot.c"
+  "src/h2_bk_boot_context.c"
   "src/h2_bk_flash_access.c"
   "src/h2_bk_h2loader_app_control.c"
   "src/h2_bk_h2loader_app_bleikcp.c"
@@ -58,6 +59,8 @@ armino_component_register(
     "${REPO_ROOT}/libs/trie/include"
     "${REPO_ROOT}/libs/iostreamikcp/include"
     "${REPO_ROOT}/libs/pal/include"
+  PRIV_INCLUDE_DIRS
+    "${REPO_ROOT}/third_party/bk7258_bootloader_patch"
   PRIV_REQUIRES ${H2_BK_H2LOADER_PRIV_REQUIRES})
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
