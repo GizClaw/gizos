@@ -365,7 +365,7 @@ void h2_quectel_call_watchdog(void* user) {
       id == modem->incoming_call_id && !modem->incoming_dsci_seen) {
     h2_pal_modem_call_status_t status;
     size_t matched_line = 0u;
-    int valid = !response->truncated, matches = 0;
+    int valid = !response->truncated, matches = 0, ambiguous_number = 0;
     for (size_t i = 0u; i < response->count; i++) {
       if (strncmp(response->lines[i], "+CLCC:", 6u) != 0 ||
           !h2_quectel_parse_clcc_line(response->lines[i], &status) ||
@@ -381,13 +381,16 @@ void h2_quectel_call_watchdog(void* user) {
       if (modem->incoming_modem_call_id == 0 &&
           modem->observed_call.number[0] != '\0' && status.number[0] != '\0' &&
           strcmp(modem->observed_call.number, status.number) != 0) {
+        /* Different number text cannot prove absence without a modem ID:
+         * CLIP and CLCC can use different country-code representations. */
+        ambiguous_number = 1;
         continue;
       }
       matched_line = i;
       matches++;
     }
     /* Ambiguous/malformed lists are unknown, just like a timeout. */
-    if (valid && matches == 0) {
+    if (valid && matches == 0 && !ambiguous_number) {
       status = modem->observed_call;
       status.state = H2_PAL_MODEM_CALL_STATE_ENDED;
       h2_quectel_post_call_status(
@@ -396,9 +399,14 @@ void h2_quectel_call_watchdog(void* user) {
       (void)h2_quectel_parse_clcc_line(response->lines[matched_line], &status);
       modem->incoming_modem_call_id = status.call_id;
       status.call_id = id;
-      if (status.state != modem->observed_call.state) {
-        h2_quectel_post_call_status(
-            modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, &status);
+      if (status.state != modem->observed_call.state ||
+          (status.number[0] != '\0' &&
+           strcmp(status.number, modem->observed_call.number) != 0)) {
+        const h2_pal_system_event_type_t type =
+            status.state == H2_PAL_MODEM_CALL_STATE_INCOMING
+                ? H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING
+                : H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED;
+        h2_quectel_post_call_status(modem, type, &status);
       }
     }
   }
