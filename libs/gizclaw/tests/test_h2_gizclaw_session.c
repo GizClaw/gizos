@@ -74,6 +74,7 @@ static void catalog_test_free(void* user, void* data) {
 static const h2_pal_mem_vtable_t catalog_test_mem_vtable = {
     .alloc = catalog_test_alloc, .free = catalog_test_free};
 static h2_atomic_uint_t lists, gets, creates, reloads, conversations;
+static h2_atomic_uint_t workflow_gets;
 static size_t list_limit;
 static bool list_failure, bad_revision, missing, close_during_list,
     reload_failure, divergent_fences;
@@ -280,6 +281,7 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_get(
     h2_gizclaw_resp_storage_t* storage, h2_gizclaw_workflow_get_result_t* out) {
   (void)service;
   assert(timeout > 0u);
+  h2_atomic_fetch_add(&workflow_gets, 1u);
   if (name.len == 7u && !memcmp(name.data, "missing", 7u))
     return H2_PAL_ERR_NOT_FOUND;
   h2_gizclaw_resp_arena_t arena;
@@ -451,6 +453,7 @@ static h2_gizclaw_session_config_t session_config(size_t tag_count) {
   h2_atomic_store(&creates, 0u);
   h2_atomic_store(&reloads, 0u);
   h2_atomic_store(&conversations, 0u);
+  h2_atomic_store(&workflow_gets, 0u);
   terminal_count = 0u;
   list_limit = 0u;
   audio_starts = audio_ends = 0u;
@@ -824,6 +827,89 @@ static void test_streaming_catalog(void) {
   assert(h2_gizclaw_session_register(session, "token", 1000u) ==
          H2_PAL_ERR_CLOSED);
   assert(sink.commit == 0u && sink.abort == 1u);
+  teardown();
+}
+
+static void test_streaming_workspace_reuse(void) {
+  streaming_sink_state_t sink = {0};
+  h2_gizclaw_session_config_t config = session_config(1u);
+  config.catalog_sink = streaming_sink;
+  config.catalog_sink_user = &sink;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  h2_gizclaw_workspace_parameters_patch_t patch = {
+      .has_input = true,
+      .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+      .has_tts_speech_rate_percent = true,
+      .tts_speech_rate_percent = 70,
+  };
+  h2_gizclaw_session_selection_t sel = selection;
+  sel.parameters = &patch;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "gr") == 0 && h2_atomic_load(&workflow_gets) == 1u &&
+         h2_atomic_load(&reloads) == 1u);
+
+  /* A repeat still validates Workflow and Workspace identity, but does not
+   * restart the confirmed instance or republish its catalog. */
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(h2_atomic_load(&reloads) == 1u);
+  assert(strcmp(rpc_trace, "g") == 0 && h2_atomic_load(&workflow_gets) == 2u &&
+         h2_atomic_load(&gets) == 2u);
+  for (unsigned i = 0u; i < 2u; ++i) {
+    h2_gizclaw_conversation_t* conversation = NULL;
+    rpc_trace[0] = '\0';
+    assert(h2_gizclaw_session_conversation_create(session, &sel, 1000u, NULL,
+                                                  NULL, NULL,
+                                                  &conversation) == H2_PAL_OK);
+    assert(conversation != NULL && h2_atomic_load(&reloads) == 1u);
+    assert(strcmp(rpc_trace, "g") == 0 &&
+           h2_atomic_load(&workflow_gets) == 3u + i &&
+           h2_atomic_load(&gets) == 3u + i &&
+           h2_atomic_load(&conversations) == 1u + i);
+    h2_gizclaw_session_conversation_release(session, conversation);
+    assert(snapshot().can_start);
+  }
+  assert(h2_atomic_load(&lists) == 1u && h2_atomic_load(&creates) == 0u &&
+         sink.begin == 1u && sink.commit == 1u && audio_starts == 0u);
+
+  /* A changed parameter still needs a new activation. */
+  patch.tts_speech_rate_percent = 150;
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "gr") == 0 && h2_atomic_load(&reloads) == 2u);
+  assert(snapshot().parameters.tts_speech_rate_percent == 150);
+
+  /* The same names and patch do not identify a recreated server instance. */
+  created_at = "2026-10-18T00:00:00Z";
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "gr") == 0 && h2_atomic_load(&reloads) == 3u);
+
+  /* Even a matching timestamp cannot preserve confirmation across NOT_FOUND. */
+  missing = true;
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "gcgr") == 0 && h2_atomic_load(&creates) == 1u &&
+         h2_atomic_load(&reloads) == 4u && snapshot().can_start);
+
+  /* A changed Profile is refreshed and activated, never reused as READY. */
+  server_revision = "v2";
+  const unsigned before = h2_atomic_load(&workflow_gets);
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "gr") == 0 &&
+         h2_atomic_load(&workflow_gets) == before + 2u &&
+         h2_atomic_load(&lists) == 2u && h2_atomic_load(&reloads) == 5u);
+  assert(strcmp(snapshot().profile_revision, "v2") == 0 && sink.commit == 2u);
+
+  /* Without an instance discriminator, every preparation must reload. */
+  created_at = NULL;
+  for (unsigned i = 0u; i < 2u; ++i) {
+    rpc_trace[0] = '\0';
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+    assert(strcmp(rpc_trace, "gr") == 0 && h2_atomic_load(&reloads) == 6u + i);
+  }
   teardown();
 }
 
@@ -1830,6 +1916,7 @@ int main(void) {
   assert(h2_atomic_uint_init(&creates, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&reloads, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&conversations, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&workflow_gets, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&last_cancel_source, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&cancel_entered, false) == H2_ATOMIC_OK);
   assert(h2_atomic_size_init(&now, 0u) == H2_ATOMIC_OK);
@@ -1840,6 +1927,7 @@ int main(void) {
   test_tag_catalog_selector();
   test_refresh_tags();
   test_streaming_catalog();
+  test_streaming_workspace_reuse();
   test_catalog_buffer_lifetime(false, false);
   test_catalog_buffer_lifetime(true, false);
   test_catalog_buffer_lifetime(false, true);
