@@ -1115,16 +1115,14 @@ static h2_pal_result_t select_workspace(
     unlock(s);
     return H2_PAL_ERR_CLOSED;
   }
-  bool ready =
-      s->state.catalog == H2_GIZCLAW_SESSION_READY &&
-      (s->config.catalog_sink == NULL || selection->workflow_name == NULL) &&
-      s->state.workspace == H2_GIZCLAW_SESSION_READY &&
-      !s->safety_fence_dirty &&
-      same(s->state.current_workspace, selection->workspace_name) &&
-      (selection->workflow_name == NULL ||
-       same(s->state.workflow_name, selection->workflow_name)) &&
-      (selection->parameters == NULL ||
-       patch_same(&s->state.parameters, selection->parameters));
+  bool ready = s->state.catalog == H2_GIZCLAW_SESSION_READY &&
+               s->state.workspace == H2_GIZCLAW_SESSION_READY &&
+               !s->safety_fence_dirty &&
+               same(s->state.current_workspace, selection->workspace_name) &&
+               (selection->workflow_name == NULL ||
+                same(s->state.workflow_name, selection->workflow_name)) &&
+               (selection->parameters == NULL ||
+                patch_same(&s->state.parameters, selection->parameters));
   strcpy(s->state.target_workspace, selection->workspace_name);
   bool catalog_ready = s->state.catalog == H2_GIZCLAW_SESSION_READY;
   s->state.workspace = H2_GIZCLAW_SESSION_PREPARING;

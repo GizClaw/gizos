@@ -607,6 +607,127 @@ static void test_ring_watchdog(const h2_pal_system_event_api_t* events) {
   }
 }
 
+static void test_empty_caller_id(const h2_pal_system_event_api_t* events) {
+  const char* lines[] = {
+      "+CLIP: \"\",129,,,,1",
+      "+CLIP: \"\",145,,,,2",
+      "+CLCC: 7,1,4,0,0,\"\",129",
+      "+CLCC: 7,1,4,0,0,\"\",145",
+  };
+  for (size_t i = 0u; i < sizeof(lines) / sizeof(lines[0]); ++i) {
+    h2_quectel_modem_t modem;
+    const h2_quectel_modem_config_t config = {.command = command,
+                                              .system_events = events};
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    h2_quectel_handle_urc_line(&modem, "RING");
+    const int32_t id = last_call.call_id;
+    h2_quectel_handle_urc_line(&modem, lines[i]);
+    assert(last_call.call_id == id && last_call.number[0] == '\0');
+    assert(modem.observed_call.number[0] == '\0');
+    h2_quectel_handle_urc_line(&modem, "+CLIP: \"+8613800138000\",145");
+    assert(last_call.call_id == id &&
+           strcmp(last_call.number, "+8613800138000") == 0);
+    /* A later empty field must not erase an identity already learned. */
+    h2_quectel_handle_urc_line(&modem, lines[i]);
+    assert(last_call.call_id == id &&
+           strcmp(last_call.number, "+8613800138000") == 0);
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+  }
+}
+
+static void test_watchdog_caller_id_update(
+    const h2_pal_system_event_api_t* events) {
+  h2_quectel_modem_t modem;
+  watchdog_transport_t t = {
+      .modem = &modem,
+      .reply = "+CLCC: 7,1,4,0,0,\"13800138000\",129\r\nOK\r\n"};
+  const h2_quectel_modem_config_t config = {
+      .command = watchdog_command,
+      .transport_user = &t,
+      .system_events = events,
+  };
+  assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+  assert(h2_pal_modem_open(&modem.platform, 1000u) == H2_PAL_OK);
+  h2_quectel_handle_urc_line(&modem, "RING");
+  const int32_t id = last_call.call_id;
+  const unsigned incoming = call_events, ended = ended_events,
+                 changed = changed_events;
+
+  /* CLCC can supply caller ID without a separate CLIP or state transition. */
+  h2_quectel_call_watchdog(&modem);
+  assert(call_events == incoming + 1u && ended_events == ended);
+  assert(last_call.call_id == id && modem.incoming_modem_call_id == 7);
+  assert(last_call.state == H2_PAL_MODEM_CALL_STATE_INCOMING);
+  assert(strcmp(last_call.number, "13800138000") == 0);
+  assert(strcmp(modem.observed_call.number, "13800138000") == 0);
+  h2_quectel_call_watchdog(&modem);
+  assert(call_events == incoming + 1u && changed_events == changed);
+
+  /* Empty polls preserve caller ID; a known modem ID can change formatting. */
+  t.reply = "+CLCC: 7,1,4,0,0,\"\",129\r\nOK\r\n";
+  h2_quectel_call_watchdog(&modem);
+  assert(call_events == incoming + 1u && ended_events == ended);
+  assert(strcmp(modem.observed_call.number, "13800138000") == 0);
+  t.reply = "+CLCC: 7,1,4,0,0,\"+8613800138000\",145\r\nOK\r\n";
+  h2_quectel_call_watchdog(&modem);
+  assert(call_events == incoming + 2u && last_call.call_id == id);
+  assert(strcmp(last_call.number, "+8613800138000") == 0);
+  h2_quectel_call_watchdog(&modem);
+  assert(call_events == incoming + 2u && ended_events == ended);
+
+  t.reply = "+CLCC: 7,1,0,0,0,\"13800138000\",129\r\nOK\r\n";
+  h2_quectel_call_watchdog(&modem);
+  assert(changed_events == changed + 1u && last_call.call_id == id);
+  assert(last_call.state == H2_PAL_MODEM_CALL_STATE_ACTIVE);
+  assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+}
+
+static void test_watchdog_unbound_caller_id(
+    const h2_pal_system_event_api_t* events) {
+  static const struct {
+    const char* clip;
+    const char* clcc;
+  } cases[] = {
+      {"+CLIP: \"+8613800138000\",145",
+       "+CLCC: 7,1,4,0,0,\"13800138000\",129\r\nOK\r\n"},
+      {"+CLIP: \"13800138000\",129",
+       "+CLCC: 7,1,4,0,0,\"+8613800138000\",145\r\nOK\r\n"},
+      {"+CLIP: \"123\",129", "+CLCC: 7,1,4,0,0,\"456\",129\r\nOK\r\n"},
+      {"+CLIP: \"123\",129",
+       "+CLCC: 7,1,4,0,0,\"456\",129\r\n"
+       "+CLCC: 8,1,5,0,0,\"789\",129\r\nOK\r\n"},
+  };
+  for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    h2_quectel_modem_t modem;
+    watchdog_transport_t t = {.modem = &modem, .reply = cases[i].clcc};
+    const h2_quectel_modem_config_t config = {
+        .command = watchdog_command,
+        .transport_user = &t,
+        .system_events = events,
+    };
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    assert(h2_pal_modem_open(&modem.platform, 1000u) == H2_PAL_OK);
+    h2_quectel_handle_urc_line(&modem, "RING");
+    h2_quectel_handle_urc_line(&modem, cases[i].clip);
+    const int32_t id = last_call.call_id;
+    const unsigned incoming = call_events, ended = ended_events,
+                   changed = changed_events;
+    h2_quectel_call_watchdog(&modem);
+    assert(ended_events == ended && modem.incoming_call_id == id);
+    assert(call_events == incoming && changed_events == changed);
+    assert(modem.incoming_modem_call_id == 0);
+    /* Do not claim that different text identifies the same caller. */
+    assert(strcmp(last_call.number, modem.observed_call.number) == 0);
+
+    /* An actually empty call list still confirms remote disappearance. */
+    t.reply = "OK\r\n";
+    h2_quectel_call_watchdog(&modem);
+    assert(ended_events == ended + 1u && last_call.call_id == id);
+    assert(!modem.incoming_call_id && !modem.call_hold);
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+  }
+}
+
 typedef struct raw_watchdog_transport {
   const char* cursor;
   unsigned waited;
@@ -846,6 +967,9 @@ int main(void) {
   assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
   test_raw_watchdog(&events);
   test_ring_watchdog(&events);
+  test_empty_caller_id(&events);
+  test_watchdog_caller_id_update(&events);
+  test_watchdog_unbound_caller_id(&events);
   test_delayed_raw_cpin(&events);
   test_dsci(&events);
   test_dsci_during_command(&events);

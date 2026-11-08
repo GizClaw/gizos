@@ -477,7 +477,11 @@ void h2_quectel_copy_token(char* dst, size_t dst_len, const char* src) {
   if (src == NULL) {
     return;
   }
-  while (*src == ' ' || *src == '"' || *src == ',') {
+  while (*src == ' ' || *src == ',') {
+    src++;
+  }
+  /* Consume one opening quote; an empty quoted field ends at the next one. */
+  if (*src == '"') {
     src++;
   }
   size_t i = 0u;

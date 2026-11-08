@@ -31,7 +31,8 @@ const config = {
 const configPath = join(directory, 'src-tauri/gizloader.generated.conf.json');
 writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 // Use the locked local Tauri CLI, with Bun available to beforeBuildCommand.
-execute(process.execPath, [join(directory, 'node_modules/@tauri-apps/cli/tauri.js'), 'build',
+// Tauri only exposes the DMG subprocess output with verbose logging enabled.
+execute(process.execPath, [join(directory, 'node_modules/@tauri-apps/cli/tauri.js'), 'build', '--verbose',
   '--config', configPath, '--bundles', mac ? 'app,dmg' : 'nsis'], {
   env: tauriEnvironment(process.env),
 });
