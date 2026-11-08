@@ -422,8 +422,9 @@ export function cleanEnvironment(source: Env = process.env): Env {
       const candidate = resolve(entry);
       return candidate === parent || candidate.startsWith(parent + sep);
     })).join(process.platform === "win32" ? ";" : ":");
+  const downloadPreferences = ["IDF_GITHUB_ASSETS", "IDF_MIRROR_PREFIX_MAP"];
   for (const key of Object.keys(environment)) {
-    if (key.startsWith("IDF_") || controlled.includes(key) ||
+    if ((key.startsWith("IDF_") && !downloadPreferences.includes(key)) || controlled.includes(key) ||
         ["VIRTUAL_ENV", "PYTHONHOME", "PYTHONPATH"].includes(key)) delete environment[key];
   }
   return environment;

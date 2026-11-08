@@ -477,12 +477,17 @@ describe("provisioning and environment activation", () => {
   test("cleans active SDK paths before installing another version", () => {
     const environment = cleanEnvironment({
       PATH: "/old/tools/gcc/bin:/usr/bin:/bin",
-      IDF_TOOLS_PATH: "/old/tools", IDF_PATH: "/old/idf",
+      IDF_TOOLS_PATH: "/old/tools", IDF_PATH: "/old/idf", IDF_PYTHON_ENV_PATH: "/old/python",
+      IDF_GITHUB_ASSETS: "dl.espressif.com/github_assets",
+      IDF_MIRROR_PREFIX_MAP: "https://github.com/,https://mirror.example/",
       H2LOADER_IDF_PATH: "/old/idf", VIRTUAL_ENV: "/old/python", KEEP: "yes",
     });
     expect(environment.PATH).toBe("/usr/bin:/bin");
     expect(environment.IDF_PATH).toBeUndefined();
+    expect(environment.IDF_PYTHON_ENV_PATH).toBeUndefined();
     expect(environment.H2LOADER_IDF_PATH).toBeUndefined();
+    expect(environment.IDF_GITHUB_ASSETS).toBe("dl.espressif.com/github_assets");
+    expect(environment.IDF_MIRROR_PREFIX_MAP).toBe("https://github.com/,https://mirror.example/");
     expect(environment.KEEP).toBe("yes");
   });
   test("switching IDF versions removes the previous Python and compiler paths without accumulating duplicates", async () => {

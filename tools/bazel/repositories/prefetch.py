@@ -17,11 +17,11 @@ from github_release import DownloadError, download_verified
 from toolchain_assets import prefetch_bun, prefetch_yq
 
 
-DEFAULT_DIRECTORY = Path.home() / ".cache/bazel/distdir"
+DEFAULT_DIRECTORY = Path(".cache/bazel/distdir")
 
 
-def prefetch(lockfile, directory=DEFAULT_DIRECTORY, download=download_verified, host=None):
-    directory = Path(directory)
+def prefetch(lockfile, directory=None, download=download_verified, host=None):
+    directory = Path(directory) if directory is not None else Path.home() / DEFAULT_DIRECTORY
     metadata_directory = directory / ".registry"
     metadata_directory.mkdir(parents=True, exist_ok=True)
     lock = json.loads(Path(lockfile).read_text())
@@ -97,7 +97,7 @@ def prefetch(lockfile, directory=DEFAULT_DIRECTORY, download=download_verified, 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lockfile", type=Path, default=Path("MODULE.bazel.lock"))
-    parser.add_argument("--directory", type=Path, default=DEFAULT_DIRECTORY)
+    parser.add_argument("--directory", type=Path)
     arguments = parser.parse_args()
     prefetch(arguments.lockfile, arguments.directory)
 

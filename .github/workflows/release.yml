@@ -144,6 +144,8 @@ jobs:
 
       - name: Install catalog-pinned ESP-IDF tools
         shell: bash
+        env:
+          IDF_GITHUB_ASSETS: dl.espressif.com/github_assets
         run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
 
       - name: Build catalog slice
@@ -303,6 +305,8 @@ jobs:
 
       - name: Install catalog-pinned ESP-IDF tools
         shell: bash
+        env:
+          IDF_GITHUB_ASSETS: dl.espressif.com/github_assets
         run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
 
       - name: Install native compiler cache

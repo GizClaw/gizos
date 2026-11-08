@@ -9,6 +9,7 @@ import tarfile
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 SOURCE = Path(__file__).resolve().parents[1] / "prefetch.py"
@@ -55,6 +56,17 @@ class PrefetchTest(unittest.TestCase):
             "registryFileHashes": dict(entries), "moduleExtensions": extensions or {},
         }))
         return prefetch.prefetch(self.lock, self.distdir, self.download, host)
+
+    def test_import_and_explicit_cache_work_without_a_home_directory(self):
+        self.lock.write_text(json.dumps({"registryFileHashes": {}}))
+        isolated_spec = importlib.util.spec_from_file_location("prefetch_without_home", SOURCE)
+        isolated = importlib.util.module_from_spec(isolated_spec)
+        with mock.patch.object(Path, "home", side_effect=RuntimeError("no home directory")) as home:
+            isolated_spec.loader.exec_module(isolated)
+            self.assertEqual(isolated.prefetch(self.lock, self.distdir, self.download), 0)
+            home.assert_not_called()
+            with self.assertRaisesRegex(RuntimeError, "no home directory"):
+                isolated.prefetch(self.lock)
 
     def test_mirror_archive_has_exact_bytes_and_keeps_original_pin(self):
         original = "https://github.com/example/rules/releases/download/v1/rules.tar.gz"
