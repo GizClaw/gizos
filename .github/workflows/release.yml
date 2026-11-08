@@ -106,6 +106,8 @@ jobs:
           printf 'tag=v%s\n' "$batch" >> "$GITHUB_OUTPUT"
 
       - name: Install Bazel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
@@ -203,6 +205,8 @@ jobs:
           create_credentials_file: true
 
       - name: Install Bazel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
@@ -261,6 +265,8 @@ jobs:
           path: build/release/input
 
       - name: Install Bazel for gizos
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
@@ -300,6 +306,8 @@ jobs:
         run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
 
       - name: Install native compiler cache
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           manifest=tools/bazel/native/versions/native_ccache_tools.txt
           read -r _ ccache_version ccache_sha256 ccache_url < <(awk '$1 == "ccache" { print; exit }' "$manifest")
@@ -431,6 +439,8 @@ jobs:
           submodules: recursive
 
       - name: Configure BK7258 SDK, native cache, and Bazel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           test "$(git -C .bk-sdk rev-parse HEAD)" = "$BK7258_SDK_COMMIT"
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
@@ -549,6 +559,8 @@ jobs:
           path: build/release/input/bk7258
 
       - name: Install Bazel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict

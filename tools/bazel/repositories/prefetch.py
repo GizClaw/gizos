@@ -14,16 +14,18 @@ from urllib.parse import unquote, urlsplit
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from github_release import DownloadError, download_verified
+from toolchain_assets import prefetch_bun, prefetch_yq
 
 
 DEFAULT_DIRECTORY = Path.home() / ".cache/bazel/distdir"
 
 
-def prefetch(lockfile, directory=DEFAULT_DIRECTORY, download=download_verified):
+def prefetch(lockfile, directory=DEFAULT_DIRECTORY, download=download_verified, host=None):
     directory = Path(directory)
     metadata_directory = directory / ".registry"
     metadata_directory.mkdir(parents=True, exist_ok=True)
-    registry = json.loads(Path(lockfile).read_text())["registryFileHashes"]
+    lock = json.loads(Path(lockfile).read_text())
+    registry = lock["registryFileHashes"]
     metadata = [
         (url, digest)
         for url, digest in registry.items()
@@ -87,7 +89,9 @@ def prefetch(lockfile, directory=DEFAULT_DIRECTORY, download=download_verified):
     with ThreadPoolExecutor(max_workers=4) as workers:
         for name in workers.map(fetch, unique):
             print("Verified Bazel distfile: " + name, flush=True)
-    return len(unique)
+    tools = prefetch_yq(lock, directory, download, host)
+    tools += prefetch_bun(Path(lockfile).resolve().parent / "tools/gizos/bun_runtime.json", directory, download, host)
+    return len(unique) + tools
 
 
 def main():

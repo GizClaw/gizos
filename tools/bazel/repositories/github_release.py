@@ -1,5 +1,6 @@
 """Download pinned HTTPS assets, with an official GitHub release API fallback."""
 
+import base64
 import hashlib
 import http.client
 import json
@@ -46,8 +47,8 @@ def _read(response, size):
         raise DownloadError("HTTPS transfer failed") from None
 
 
-def _copy(url, output):
-    digest = hashlib.sha256()
+def _copy(url, output, algorithm):
+    digest = hashlib.new(algorithm)
     with _open(url, "application/octet-stream") as response:
         while True:
             chunk = _read(response, _CHUNK_SIZE)
@@ -103,8 +104,24 @@ def _release_asset(url):
     return base + "/releases/assets/" + str(asset_id)
 
 
+def _checksum_spec(checksum):
+    if isinstance(checksum, str):
+        if re.fullmatch(r"[0-9a-fA-F]{64}", checksum):
+            return "sha256", checksum.lower()
+        if checksum.startswith("sha384-"):
+            try:
+                digest = base64.b64decode(checksum[len("sha384-"):], validate=True)
+            except ValueError:
+                digest = b""
+            if len(digest) == 48:
+                return "sha384", digest.hex()
+    raise ValueError("A pinned SHA-256 digest or SHA-384 SRI is required")
+
+
 def download_verified(url, sha256, destination) -> None:
-    """Stream an HTTPS asset and atomically install it only after SHA-256 validation.
+    """Stream an HTTPS asset and atomically install it after pinned digest validation.
+
+    The checksum accepts the existing SHA-256 hex form or an upstream SHA-384 SRI.
 
     Reuses an existing matching regular, nonsymlink destination without network.
     Raises IntegrityError for mismatches, ValueError for invalid inputs or metadata,
@@ -113,8 +130,7 @@ def download_verified(url, sha256, destination) -> None:
     Existing destinations survive
     failure, and only this invocation's same-directory temporary file is removed.
     """
-    if not isinstance(sha256, str) or re.fullmatch(r"[0-9a-fA-F]{64}", sha256) is None:
-        raise ValueError("SHA-256 must contain exactly 64 hexadecimal characters")
+    algorithm, expected = _checksum_spec(sha256)
     try:
         parsed = urllib.parse.urlsplit(url)
         valid = (parsed.scheme == "https" and parsed.hostname
@@ -126,11 +142,11 @@ def download_verified(url, sha256, destination) -> None:
     destination = Path(destination)
     if not destination.is_symlink() and destination.is_file():
         try:
-            digest = hashlib.sha256()
+            digest = hashlib.new(algorithm)
             with destination.open("rb") as cached:
                 for chunk in iter(lambda: cached.read(_CHUNK_SIZE), b""):
                     digest.update(chunk)
-            if digest.hexdigest() == sha256.lower():
+            if digest.hexdigest() == expected:
                 return
         except OSError:
             pass
@@ -141,16 +157,17 @@ def download_verified(url, sha256, destination) -> None:
         ) as output:
             staged = output.name
             try:
-                actual = _copy(url, output)
+                actual = _copy(url, output, algorithm)
             except DownloadError:
                 fallback = _release_asset(url)
                 if fallback is None:
                     raise DownloadError("HTTPS download failed") from None
                 output.seek(0)
                 output.truncate()
-                actual = _copy(fallback, output)
-            if actual != sha256.lower():
-                raise IntegrityError("Downloaded asset SHA-256 mismatch")
+                actual = _copy(fallback, output, algorithm)
+            if actual != expected:
+                label = "SHA-256" if algorithm == "sha256" else "SHA-384"
+                raise IntegrityError("Downloaded asset " + label + " mismatch")
         os.replace(staged, destination)
     finally:
         if staged is not None:
@@ -162,7 +179,7 @@ def download_verified(url, sha256, destination) -> None:
 
 def main():
     if len(sys.argv) != 4:
-        print("Usage: github_release.py URL SHA256 DESTINATION", file=sys.stderr)
+        print("Usage: github_release.py URL CHECKSUM DESTINATION", file=sys.stderr)
         return 2
     try:
         download_verified(*sys.argv[1:])

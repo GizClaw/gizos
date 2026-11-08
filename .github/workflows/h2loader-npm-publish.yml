@@ -75,6 +75,8 @@ jobs:
       - name: Install Bazel
         if: steps.package.outputs.publish == 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"

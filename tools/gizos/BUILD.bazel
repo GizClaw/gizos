@@ -11,7 +11,10 @@ POSIX_HOST = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
-exports_files(["bun_repository.bzl"])
+exports_files([
+    "bun_repository.bzl",
+    "bun_runtime.json",
+])
 
 gizos_package(
     name = "package",

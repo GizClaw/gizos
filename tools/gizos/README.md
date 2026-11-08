@@ -58,6 +58,8 @@ bun tools/gizos/src/cli.ts --help
 bazel run //tools/gizos:gizos -- env
 ```
 
+Bazel's Bun runtime version, archive identities and SHA-256 values are maintained in `bun_runtime.json`. CI verifies the selected host archive in its dependency cache before repository setup; Bazel applies the same digest again when extracting it.
+
 ## Supported environments
 
 The project catalog gives each SDK a stable name: `esp-idf`, `bk7258`, `bk7259`,

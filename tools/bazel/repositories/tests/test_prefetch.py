@@ -3,7 +3,9 @@
 import base64
 import hashlib
 import importlib.util
+import io
 import json
+import tarfile
 from pathlib import Path
 import tempfile
 import unittest
@@ -24,6 +26,7 @@ class PrefetchTest(unittest.TestCase):
         self.distdir = self.root / "distdir"
         self.payloads = {}
         self.calls = []
+        self.checksums = []
 
     def metadata(self, name, archive, payload):
         url = "https://bcr.bazel.build/modules/" + name + "/1.0/source.json"
@@ -36,16 +39,22 @@ class PrefetchTest(unittest.TestCase):
 
     def download(self, url, digest, destination):
         self.calls.append(url)
+        self.checksums.append((url, digest))
         if url not in self.payloads:
             raise prefetch.DownloadError("HTTP 404")
         data = self.payloads[url]
-        if hashlib.sha256(data).hexdigest() != digest:
+        actual = hashlib.sha256(data).hexdigest()
+        if digest.startswith("sha384-"):
+            actual = "sha384-" + base64.b64encode(hashlib.sha384(data).digest()).decode()
+        if actual != digest:
             raise ValueError("Integrity mismatch")
         Path(destination).write_bytes(data)
 
-    def run_prefetch(self, entries):
-        self.lock.write_text(json.dumps({"registryFileHashes": dict(entries)}))
-        return prefetch.prefetch(self.lock, self.distdir, self.download)
+    def run_prefetch(self, entries, extensions=None, host=None):
+        self.lock.write_text(json.dumps({
+            "registryFileHashes": dict(entries), "moduleExtensions": extensions or {},
+        }))
+        return prefetch.prefetch(self.lock, self.distdir, self.download, host)
 
     def test_mirror_archive_has_exact_bytes_and_keeps_original_pin(self):
         original = "https://github.com/example/rules/releases/download/v1/rules.tar.gz"
@@ -110,6 +119,94 @@ class PrefetchTest(unittest.TestCase):
         entry = self.metadata("other", "https://example.invalid/archive.tar.gz", b"archive")
         self.assertEqual(self.run_prefetch([entry]), 0)
         self.assertEqual(self.calls, [entry[0]])
+
+    def bun_fixture(self, archive="bun-linux-x64-baseline"):
+        data = b"pinned Bun archive"
+        digest = hashlib.sha256(data).hexdigest()
+        manifest = self.root / "tools/gizos/bun_runtime.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({
+            "version": "1.3.9",
+            "url": "https://github.com/oven-sh/bun/releases/download/bun-v{version}/{archive}.zip",
+            "archives": {"linux-x64": {"archive": archive, "sha256": digest}},
+        }))
+        url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.9/" + archive + ".zip"
+        self.payloads[url] = data
+        return url, digest
+
+    def test_bun_host_uses_the_single_owner_manifest(self):
+        url, digest = self.bun_fixture()
+        self.assertEqual(self.run_prefetch([], host="linux_amd64"), 1)
+        self.assertEqual((self.distdir / "bun-linux-x64-baseline.zip").read_bytes(), self.payloads[url])
+        self.assertIn((url, digest), self.checksums)
+
+    def test_bun_archive_mismatch_fails_without_installation(self):
+        url, digest = self.bun_fixture()
+        self.payloads[url] = b"wrong archive"
+        with self.assertRaisesRegex(ValueError, "Integrity mismatch"):
+            self.run_prefetch([], host="linux_amd64")
+        self.assertFalse((self.distdir / "bun-linux-x64-baseline.zip").exists())
+
+    def test_bun_unsupported_host_is_rejected_before_network(self):
+        self.bun_fixture()
+        with self.assertRaisesRegex(ValueError, "Unsupported pinned Bun host"):
+            self.run_prefetch([], host="windows_arm64")
+        self.assertFalse(self.calls)
+
+    def test_bun_manifest_cannot_escape_the_distdir(self):
+        self.bun_fixture("../../escape")
+        with self.assertRaisesRegex(ValueError, "filename"):
+            self.run_prefetch([], host="linux_amd64")
+        self.assertFalse(self.calls)
+        self.assertFalse((self.root / "escape.zip").exists())
+
+    def yq_fixture(self, contents=None):
+        tool = b"pinned yq executable bytes"
+        integrity = "sha384-" + base64.b64encode(hashlib.sha384(tool).digest()).decode()
+        if contents is None:
+            contents = "YQ_VERSIONS = " + repr({"4.45.2": {"linux_amd64": integrity}})
+            contents += "\nraise RuntimeError('vendor code must not execute')\n"
+        contents = contents.encode()
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            member = tarfile.TarInfo("upstream/yq/toolchain/versions.bzl")
+            member.size = len(contents)
+            archive.addfile(member, io.BytesIO(contents))
+        data = buffer.getvalue()
+        source = "https://github.com/example/yq.bzl/releases/download/v1/yq.tar.gz"
+        entry = self.metadata("yq.bzl", source, data)
+        self.payloads[source.replace("https://github.com/", "https://mirror.bazel.build/github.com/")] = data
+        url = "https://github.com/mikefarah/yq/releases/download/v4.45.2/yq_linux_amd64"
+        self.payloads[url] = tool
+        extensions = {"yq": {"general": {"generatedRepoSpecs": {"host": {
+            "repoRuleId": "@@yq.bzl+//yq/toolchain:platforms.bzl%yq_platform_repo",
+            "attributes": {"platform": "linux_amd64", "version": "4.45.2"},
+        }}}}}
+        return entry, extensions, url, integrity
+
+    def test_yq_host_pin_is_read_as_literal_data_without_execution(self):
+        entry, extensions, url, integrity = self.yq_fixture()
+        self.assertEqual(self.run_prefetch([entry], extensions, "linux_amd64"), 2)
+        self.assertEqual((self.distdir / "yq_linux_amd64").read_bytes(), self.payloads[url])
+        self.assertIn((url, integrity), self.checksums)
+
+    def test_yq_nonliteral_table_is_not_executed(self):
+        entry, extensions, url, integrity = self.yq_fixture("YQ_VERSIONS = __import__('os').getcwd()")
+        with self.assertRaises(ValueError):
+            self.run_prefetch([entry], extensions, "linux_amd64")
+        self.assertNotIn(url, self.calls)
+
+    def test_yq_wrong_bytes_fail_the_original_sha384_pin(self):
+        entry, extensions, url, integrity = self.yq_fixture()
+        self.payloads[url] = b"corrupt executable"
+        with self.assertRaisesRegex(ValueError, "Integrity mismatch"):
+            self.run_prefetch([entry], extensions, "linux_amd64")
+        self.assertFalse((self.distdir / "yq_linux_amd64").exists())
+
+    def test_yq_other_host_is_not_downloaded(self):
+        entry, extensions, url, integrity = self.yq_fixture()
+        self.assertEqual(self.run_prefetch([entry], extensions, "darwin_arm64"), 1)
+        self.assertNotIn(url, self.calls)
 
 
 if __name__ == "__main__":

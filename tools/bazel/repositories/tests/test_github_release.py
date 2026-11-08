@@ -1,5 +1,6 @@
 """Offline behavior tests; runnable directly with python3 -I."""
 
+import base64
 import hashlib
 import http.client
 import importlib.util
@@ -103,6 +104,31 @@ class DownloadTests(unittest.TestCase):
             release.download_verified(_URL, _HASH, self.destination)
         self.assertEqual(self.urlopen.call_count, 1)
         self.assert_clean()
+
+    def test_sha384_sri_and_matching_cache_preserve_the_upstream_algorithm(self):
+        integrity = "sha384-" + base64.b64encode(hashlib.sha384(_DATA).digest()).decode()
+        self.urlopen.return_value = io.BytesIO(_DATA)
+        release.download_verified(_URL, integrity, self.destination)
+        self.assert_clean(_DATA)
+        self.urlopen.reset_mock()
+        release.download_verified(_URL, integrity, self.destination)
+        self.urlopen.assert_not_called()
+
+    def test_sha384_mismatch_never_falls_back(self):
+        integrity = "sha384-" + base64.b64encode(hashlib.sha384(_DATA).digest()).decode()
+        self.urlopen.return_value = io.BytesIO(b"wrong contents")
+        with self.assertRaisesRegex(release.IntegrityError, "SHA-384 mismatch"):
+            release.download_verified(_URL, integrity, self.destination)
+        self.assertEqual(self.urlopen.call_count, 1)
+        self.assert_clean()
+
+    def test_invalid_sha384_integrity_is_rejected_before_io(self):
+        for integrity in ("sha384-", "sha384-invalid!", "sha384-eA==", "sha1-eA=="):
+            with self.subTest(integrity=integrity):
+                with self.assertRaises(ValueError):
+                    release.download_verified(_URL, integrity, self.destination)
+                self.urlopen.assert_not_called()
+                self.assert_clean()
 
     def test_invalid_or_missing_asset(self):
         for assets in ([], [{"name": "other", "id": 42}],
