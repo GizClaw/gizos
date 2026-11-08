@@ -43,13 +43,18 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
 
-      - name: Test formatter failure handling
-        run: python3 scripts/common/test_format.py
+      - name: Test download and formatter failure handling
+        run: |
+          python3 -I tools/bazel/repositories/tests/test_github_release.py
+          python3 -I tools/bazel/repositories/tests/test_prefetch.py
+          python3 -I scripts/common/test_format.py
 
       - name: Install clang-format
         run: pipx install clang-format==22.1.5
 
       - name: Check formatting of the source tree
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/config/format-check.sh --all
 
   private-dependencies:
@@ -222,6 +227,8 @@ jobs:
 
       - name: Install and verify Bazel
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
@@ -229,6 +236,7 @@ jobs:
             --output "$bazel_path"
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.sha }}"
           chmod +x "$bazel_path"
+          python3 -I tools/bazel/repositories/prefetch.py
           {
             printf 'BAZEL_BIN=%s\n' "$bazel_path"
             printf 'BAZEL_CONFIG=%s\n' '${{ matrix.config }}'
@@ -460,6 +468,8 @@ jobs:
 
       - name: Install and verify Bazel
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
@@ -467,6 +477,7 @@ jobs:
             --output "$bazel_path"
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.sha }}"
           chmod +x "$bazel_path"
+          python3 -I tools/bazel/repositories/prefetch.py
           {
             printf 'BAZEL_BIN=%s\n' "$bazel_path"
             printf 'BAZEL_CONFIG=%s\n' '${{ matrix.config }}'
@@ -589,6 +600,8 @@ jobs:
 
       - name: Install native compiler cache
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           manifest=tools/bazel/native/versions/native_ccache_tools.txt
           read -r _ ccache_version ccache_sha256 ccache_url < <(awk '$1 == "ccache" { print; exit }' "$manifest")
@@ -597,10 +610,10 @@ jobs:
           test "$helper_version" = 0.8
           runtime_root="$RUNNER_TEMP/native-ccache-runtime"
           mkdir -p "$runtime_root/bin" "$runtime_root/cache" "$runtime_root/ccache" "$runtime_root/helper"
-          curl --fail --location --silent --show-error "$ccache_url" --output "$runtime_root/ccache.tar.xz"
+          python3 -I tools/bazel/repositories/github_release.py "$ccache_url" "$ccache_sha256" "$runtime_root/ccache.tar.xz"
           printf '%s  %s\n' "$ccache_sha256" "$runtime_root/ccache.tar.xz" | sha256sum --check --strict
           tar --extract --xz --file "$runtime_root/ccache.tar.xz" --strip-components=1 --directory "$runtime_root/ccache"
-          curl --fail --location --silent --show-error "$helper_url" --output "$runtime_root/helper.tar.gz"
+          python3 -I tools/bazel/repositories/github_release.py "$helper_url" "$helper_sha256" "$runtime_root/helper.tar.gz"
           printf '%s  %s\n' "$helper_sha256" "$runtime_root/helper.tar.gz" | sha256sum --check --strict
           tar --extract --gzip --file "$runtime_root/helper.tar.gz" --strip-components=1 --directory "$runtime_root/helper"
           install -m 0755 "$runtime_root/ccache/ccache" "$runtime_root/bin/ccache"
@@ -674,6 +687,8 @@ jobs:
 
       - name: Install and verify Bazel
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
@@ -681,6 +696,7 @@ jobs:
             --output "$bazel_path"
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
+          python3 -I tools/bazel/repositories/prefetch.py
           printf 'BAZEL_BIN=%s\n' "$bazel_path" >> "$GITHUB_ENV"
 
       - name: Build in-repository gizos command
@@ -837,6 +853,8 @@ jobs:
 
       - name: Install native compiler cache
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           manifest=tools/bazel/native/versions/native_ccache_tools.txt
           read -r _ ccache_version ccache_sha256 ccache_url < <(awk '$1 == "ccache" { print; exit }' "$manifest")
@@ -845,10 +863,10 @@ jobs:
           test "$helper_version" = 0.8
           runtime_root="$RUNNER_TEMP/native-ccache-runtime"
           mkdir -p "$runtime_root/bin" "$runtime_root/cache" "$runtime_root/ccache" "$runtime_root/helper"
-          curl --fail --location --silent --show-error "$ccache_url" --output "$runtime_root/ccache.tar.xz"
+          python3 -I tools/bazel/repositories/github_release.py "$ccache_url" "$ccache_sha256" "$runtime_root/ccache.tar.xz"
           printf '%s  %s\n' "$ccache_sha256" "$runtime_root/ccache.tar.xz" | sha256sum --check --strict
           tar --extract --xz --file "$runtime_root/ccache.tar.xz" --strip-components=1 --directory "$runtime_root/ccache"
-          curl --fail --location --silent --show-error "$helper_url" --output "$runtime_root/helper.tar.gz"
+          python3 -I tools/bazel/repositories/github_release.py "$helper_url" "$helper_sha256" "$runtime_root/helper.tar.gz"
           printf '%s  %s\n' "$helper_sha256" "$runtime_root/helper.tar.gz" | sha256sum --check --strict
           tar --extract --gzip --file "$runtime_root/helper.tar.gz" --strip-components=1 --directory "$runtime_root/helper"
           install -m 0755 "$runtime_root/ccache/ccache" "$runtime_root/bin/ccache"
@@ -922,6 +940,8 @@ jobs:
 
       - name: Install and verify Bazel
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
@@ -929,6 +949,7 @@ jobs:
             --output "$bazel_path"
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
+          python3 -I tools/bazel/repositories/prefetch.py
           printf 'BAZEL_BIN=%s\n' "$bazel_path" >> "$GITHUB_ENV"
 
       - name: Configure Bazel remote cache
@@ -1207,6 +1228,8 @@ jobs:
 
       - name: Install and verify Bazel
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
@@ -1214,6 +1237,7 @@ jobs:
             --output "$bazel_path"
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
+          python3 -I tools/bazel/repositories/prefetch.py
           printf 'BAZEL_BIN=%s\n' "$bazel_path" >> "$GITHUB_ENV"
 
       - name: Configure Bazel remote cache
@@ -1322,6 +1346,8 @@ jobs:
 
       - name: Install and verify Bazel
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $bazel = Join-Path $env:RUNNER_TEMP 'bazel.exe'
           curl.exe --fail --location --silent --show-error `
@@ -1330,6 +1356,8 @@ jobs:
           if ((Get-FileHash -Algorithm SHA256 $bazel).Hash.ToLowerInvariant() -ne $env:BAZEL_WINDOWS_X86_64_SHA256) {
             throw 'Bazel SHA-256 mismatch'
           }
+          python -I tools/bazel/repositories/prefetch.py
+          if ($LASTEXITCODE -ne 0) { throw 'Bazel dependency prefetch failed' }
           "BAZEL_BIN=$bazel" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build and test compatible graph

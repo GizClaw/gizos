@@ -267,6 +267,7 @@ jobs:
         env:
           BAZEL_ASSET: ${{ matrix.bazel_asset }}
           BAZEL_SHA256: ${{ matrix.bazel_sha256 }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/gizloader-tools"
@@ -275,6 +276,11 @@ jobs:
           curl --fail --location --retry 3 "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-$BAZEL_ASSET" --output "$tool"
           TOOL_PATH="$tool" node --input-type=module -e 'import { readFileSync } from "node:fs"; import { createHash } from "node:crypto"; if (createHash("sha256").update(readFileSync(process.env.TOOL_PATH)).digest("hex") !== process.env.BAZEL_SHA256) throw new Error("Bazel SHA-256 mismatch")'
           chmod +x "$tool"
+          if [ "$RUNNER_OS" = Windows ]; then
+            python -I tools/bazel/repositories/prefetch.py
+          else
+            python3 -I tools/bazel/repositories/prefetch.py
+          fi
           printf '%s\n' "$RUNNER_TEMP/gizloader-tools" >> "$GITHUB_PATH"
       - name: Build pinned native sidecars and frontend
         shell: bash

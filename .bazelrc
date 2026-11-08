@@ -5,6 +5,8 @@ common --noenable_workspace
 common --enable_platform_specific_config
 common --announce_rc
 common --repository_cache=~/.cache/bazel/repository
+common --distdir=~/.cache/bazel/distdir
+common --downloader_config=tools/bazel/repositories/downloader.cfg
 
 # GizClaw modules (gizclaw_c_sdk) are served from our own Bazel registry.
 # --registry replaces the default list, so BCR has to be named explicitly.

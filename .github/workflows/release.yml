@@ -110,6 +110,7 @@ jobs:
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
+          python3 -I tools/bazel/repositories/prefetch.py
 
       - name: Build in-repository gizos command
         shell: bash
@@ -206,6 +207,7 @@ jobs:
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
+          python3 -I tools/bazel/repositories/prefetch.py
 
       - name: Build npm packages slice
         run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=npm-packages RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_STAGING_DIR=build/release/npm-packages
@@ -263,6 +265,7 @@ jobs:
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
+          python3 -I tools/bazel/repositories/prefetch.py
 
       - name: Build in-repository gizos command
         shell: bash
@@ -305,10 +308,10 @@ jobs:
           test "$helper_version" = 0.8
           runtime_root="$RUNNER_TEMP/native-ccache-runtime"
           mkdir -p "$runtime_root/bin" "$runtime_root/cache" "$runtime_root/ccache" "$runtime_root/helper"
-          curl --fail --location --silent --show-error "$ccache_url" --output "$runtime_root/ccache.tar.xz"
+          python3 -I tools/bazel/repositories/github_release.py "$ccache_url" "$ccache_sha256" "$runtime_root/ccache.tar.xz"
           printf '%s  %s\n' "$ccache_sha256" "$runtime_root/ccache.tar.xz" | sha256sum --check --strict
           tar --extract --xz --file "$runtime_root/ccache.tar.xz" --strip-components=1 --directory "$runtime_root/ccache"
-          curl --fail --location --silent --show-error "$helper_url" --output "$runtime_root/helper.tar.gz"
+          python3 -I tools/bazel/repositories/github_release.py "$helper_url" "$helper_sha256" "$runtime_root/helper.tar.gz"
           printf '%s  %s\n' "$helper_sha256" "$runtime_root/helper.tar.gz" | sha256sum --check --strict
           tar --extract --gzip --file "$runtime_root/helper.tar.gz" --strip-components=1 --directory "$runtime_root/helper"
           install -m 0755 "$runtime_root/ccache/ccache" "$runtime_root/bin/ccache"
@@ -433,6 +436,7 @@ jobs:
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
+          python3 -I tools/bazel/repositories/prefetch.py
           manifest=tools/bazel/native/versions/native_ccache_tools.txt
           read -r _ ccache_version ccache_sha256 ccache_url < <(awk '$1 == "ccache" { print; exit }' "$manifest")
           read -r _ helper_version helper_sha256 helper_url < <(awk '$1 == "ccache-storage-http-go" { print; exit }' "$manifest")
@@ -440,10 +444,10 @@ jobs:
           test "$helper_version" = 0.8
           runtime_root="$RUNNER_TEMP/native-ccache-runtime"
           mkdir -p "$runtime_root/bin" "$runtime_root/cache" "$runtime_root/ccache" "$runtime_root/helper"
-          curl --fail --location --silent --show-error "$ccache_url" --output "$runtime_root/ccache.tar.xz"
+          python3 -I tools/bazel/repositories/github_release.py "$ccache_url" "$ccache_sha256" "$runtime_root/ccache.tar.xz"
           printf '%s  %s\n' "$ccache_sha256" "$runtime_root/ccache.tar.xz" | sha256sum --check --strict
           tar --extract --xz --file "$runtime_root/ccache.tar.xz" --strip-components=1 --directory "$runtime_root/ccache"
-          curl --fail --location --silent --show-error "$helper_url" --output "$runtime_root/helper.tar.gz"
+          python3 -I tools/bazel/repositories/github_release.py "$helper_url" "$helper_sha256" "$runtime_root/helper.tar.gz"
           printf '%s  %s\n' "$helper_sha256" "$runtime_root/helper.tar.gz" | sha256sum --check --strict
           tar --extract --gzip --file "$runtime_root/helper.tar.gz" --strip-components=1 --directory "$runtime_root/helper"
           install -m 0755 "$runtime_root/ccache/ccache" "$runtime_root/bin/ccache"
@@ -549,6 +553,7 @@ jobs:
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
+          python3 -I tools/bazel/repositories/prefetch.py
 
       - name: Assemble firmware bundle
         run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=firmware-bundle RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/firmware-bundle

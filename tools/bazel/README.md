@@ -145,6 +145,12 @@ CPU. Native installer CI runs each architecture on its corresponding Mac runner
 and checks the App and both sidecars before publishing separate DMGs. See the
 [Gizloader build guide](../gizloader/README.md) for desktop packaging and signing.
 
+## Verified dependency downloads
+
+Bazel prefers its official mirror for GitHub release archives and retains the original URL as a fallback. CI also runs `python3 -I tools/bazel/repositories/prefetch.py` before graph evaluation. This derives archive URLs and checksums from the existing `MODULE.bazel.lock`, verifies registry metadata against its locked digest, and stages complete verified archives in the per-user `~/.cache/bazel/distdir`. No separate dependency inventory is maintained; Bazel still applies the declared archive integrity and patches.
+
+The shared `github_release.py` downloader falls back from a failed GitHub release URL to the official release-asset API. It replaces destinations only after complete SHA-256 verification and never retries an integrity mismatch through another origin. Its optional `GH_TOKEN` is sent only to the API and is not forwarded on redirects. Formatter and native compiler-cache downloads retain their existing version and SHA-256 checks.
+
 ## Windows compatible graph
 
 The native Windows x86_64 baseline uses the `rules_cc`

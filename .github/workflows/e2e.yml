@@ -163,6 +163,7 @@ jobs:
           curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.bazel_sha256 }}"
           chmod +x "$bazel_path"
+          python3 -I tools/bazel/repositories/prefetch.py
 
       - name: Configure Bazel remote cache
         if: vars.BAZEL_REMOTE_CACHE_URL != ''
