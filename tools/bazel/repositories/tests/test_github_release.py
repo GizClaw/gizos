@@ -47,6 +47,7 @@ class DownloadTests(unittest.TestCase):
         self.destination = Path(self.directory.name) / "asset.zip"
         self.destination.write_bytes(b"old destination")
         self.urlopen = mock.patch.object(release.urllib.request, "urlopen").start()
+        self.sleep = mock.patch.object(release.time, "sleep").start()
         self.addCleanup(mock.patch.stopall)
         self.environment = mock.patch.dict(os.environ, {}, clear=True)
         self.environment.start()
@@ -165,13 +166,68 @@ class DownloadTests(unittest.TestCase):
         release.download_verified(_URL, _HASH, self.destination)
         self.assert_clean(_DATA)
 
+    def test_transient_api_http_error_retries_then_succeeds(self):
+        failure = urllib.error.HTTPError(_METADATA_URL, 504, "private redirect", {}, None)
+        self.urlopen.side_effect = [unavailable(), failure, metadata(), io.BytesIO(_DATA)]
+        release.download_verified(_URL, _HASH, self.destination)
+        self.assert_clean(_DATA)
+        self.assertEqual(self.urlopen.call_count, 4)
+        self.sleep.assert_called_once_with(1)
+        self.assertEqual(self.urlopen.call_args_list[2].args[0].get_header("Cache-control"), "no-cache")
+
+    def test_api_network_error_retries_then_succeeds(self):
+        self.urlopen.side_effect = [unavailable(), urllib.error.URLError("private signed URL"), metadata(), io.BytesIO(_DATA)]
+        release.download_verified(_URL, _HASH, self.destination)
+        self.assert_clean(_DATA)
+        self.sleep.assert_called_once_with(1)
+
+    def test_api_retry_exhaustion_preserves_destination_and_redacts_details(self):
+        failure = urllib.error.HTTPError(_METADATA_URL, 503, "private signed URL", {}, None)
+        self.urlopen.side_effect = [unavailable(), failure, failure, failure]
+        with self.assertRaisesRegex(release.DownloadError, "HTTP 503") as error:
+            release.download_verified(_URL, _HASH, self.destination)
+        self.assertNotIn("private", str(error.exception))
+        self.assertEqual(self.urlopen.call_count, 4)
+        self.assertEqual(self.sleep.call_args_list, [mock.call(1), mock.call(2)])
+        self.assert_clean()
+
+    def test_permanent_api_http_error_is_not_retried(self):
+        for code in (401, 403, 404):
+            with self.subTest(code=code):
+                self.urlopen.reset_mock()
+                self.sleep.reset_mock()
+                failure = urllib.error.HTTPError(_METADATA_URL, code, "private URL", {}, None)
+                self.urlopen.side_effect = [unavailable(), failure]
+                with self.assertRaisesRegex(release.DownloadError, "HTTP " + str(code)):
+                    release.download_verified(_URL, _HASH, self.destination)
+                self.assertEqual(self.urlopen.call_count, 2)
+                self.sleep.assert_not_called()
+                self.assert_clean()
+
+    def test_retry_after_is_respected(self):
+        failure = urllib.error.HTTPError(_METADATA_URL, 429, "rate limited", {"Retry-After": "7"}, None)
+        self.urlopen.side_effect = [unavailable(), failure, metadata(), io.BytesIO(_DATA)]
+        release.download_verified(_URL, _HASH, self.destination)
+        self.sleep.assert_called_once_with(7)
+        self.assert_clean(_DATA)
+
+    def test_unbounded_retry_after_is_not_shortened_or_waited(self):
+        failure = urllib.error.HTTPError(_METADATA_URL, 429, "rate limited", {"Retry-After": "120"}, None)
+        self.urlopen.side_effect = [unavailable(), failure]
+        with self.assertRaisesRegex(release.DownloadError, "HTTP 429"):
+            release.download_verified(_URL, _HASH, self.destination)
+        self.assertEqual(self.urlopen.call_count, 2)
+        self.sleep.assert_not_called()
+        self.assert_clean()
+
     def test_metadata_failures_cleanup(self):
         for failure in (urllib.error.URLError("secret signed URL"),
                         io.BytesIO(b"not json"), io.BytesIO(b"[]"),
                         io.BytesIO(b'{"assets": {}}'),
                         io.BytesIO(b"x" * (release._METADATA_LIMIT + 1))):
             with self.subTest(failure=type(failure).__name__):
-                self.urlopen.side_effect = [unavailable(), failure]
+                attempts = [failure] * 3 if isinstance(failure, urllib.error.URLError) else [failure]
+                self.urlopen.side_effect = [unavailable(), *attempts]
                 with self.assertRaises((RuntimeError, ValueError)):
                     release.download_verified(_URL, _HASH, self.destination)
                 self.assert_clean()

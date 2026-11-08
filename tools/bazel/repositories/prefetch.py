@@ -26,16 +26,17 @@ def prefetch(lockfile, directory=None, download=download_verified, host=None):
     metadata_directory.mkdir(parents=True, exist_ok=True)
     lock = json.loads(Path(lockfile).read_text())
     registry = lock["registryFileHashes"]
-    metadata = [
-        (url, digest)
-        for url, digest in registry.items()
-        if url.endswith("/source.json") and digest is not None
-    ]
+    metadata_by_digest = {}
+    for url, digest in registry.items():
+        if not url.endswith("/source.json") or digest is None:
+            continue
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("Registry metadata requires a pinned SHA-256")
+        metadata_by_digest.setdefault(digest, url)
+    metadata = [(url, digest) for digest, url in metadata_by_digest.items()]
 
     def resolve(item):
         url, digest = item
-        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-            raise ValueError("Registry metadata requires a pinned SHA-256")
         cached = metadata_directory / (digest + ".json")
         download(url, digest, cached)
         source = json.loads(cached.read_text())
@@ -83,7 +84,10 @@ def prefetch(lockfile, directory=None, download=download_verified, host=None):
         try:
             download(mirror, digest, destination)
         except DownloadError:
-            download(archive, digest, destination)
+            try:
+                download(archive, digest, destination)
+            except DownloadError as error:
+                raise DownloadError("Locked archive " + name + ": " + str(error)) from None
         return name
 
     with ThreadPoolExecutor(max_workers=4) as workers:

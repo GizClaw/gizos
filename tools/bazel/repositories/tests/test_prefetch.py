@@ -126,6 +126,7 @@ class PrefetchTest(unittest.TestCase):
         self.payloads[mirror] = b"pinned archive"
         self.assertEqual(self.run_prefetch([first, second]), 1)
         self.assertEqual(self.calls.count(mirror), 1)
+        self.assertEqual(self.calls.count(first[0]) + self.calls.count(second[0]), 1)
 
     def test_other_archive_transports_are_left_to_bazel(self):
         entry = self.metadata("other", "https://example.invalid/archive.tar.gz", b"archive")

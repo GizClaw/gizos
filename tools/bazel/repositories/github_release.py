@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,17 +28,46 @@ class DownloadError(RuntimeError):
     pass
 
 
+def _retry_delay(error, attempt):
+    retry_after = (error.headers or {}).get("Retry-After")
+    if error.code not in (408, 429, 500, 502, 503, 504) and not (error.code == 403 and retry_after):
+        return None
+    if retry_after is not None:
+        try:
+            delay = float(retry_after)
+        except ValueError:
+            return None
+        # Never retry earlier than requested or wait without a finite bound.
+        return delay if 0 <= delay <= 60 else None
+    return 60 if error.code == 429 else 2 ** attempt
+
+
 def _open(url, accept):
-    request = urllib.request.Request(url, headers={"Accept": accept})
-    if urllib.parse.urlsplit(url).netloc == "api.github.com":
-        token = os.environ.get("GH_TOKEN")
-        if token:
-            # urllib's redirect handler copies ordinary headers only.
-            request.add_unredirected_header("Authorization", "Bearer " + token)
-    try:
-        return urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS)
-    except _NETWORK_ERRORS:
-        raise DownloadError("HTTPS request failed") from None
+    api = urllib.parse.urlsplit(url).netloc == "api.github.com"
+    attempts = 3 if api else 1
+    for attempt in range(attempts):
+        headers = {"Accept": accept, "User-Agent": "GizOS-dependency-downloader"}
+        if attempt:
+            headers["Cache-Control"] = "no-cache"
+        request = urllib.request.Request(url, headers=headers)
+        if api:
+            token = os.environ.get("GH_TOKEN")
+            if token:
+                # urllib's redirect handler copies ordinary headers only.
+                request.add_unredirected_header("Authorization", "Bearer " + token)
+        try:
+            return urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS)
+        except urllib.error.HTTPError as error:
+            failure = DownloadError("HTTPS request failed (HTTP " + str(error.code) + ")")
+            delay = _retry_delay(error, attempt) if api else None
+            if error.fp is not None:
+                error.close()
+        except _NETWORK_ERRORS:
+            failure = DownloadError("HTTPS request failed")
+            delay = 2 ** attempt if api else None
+        if delay is None or attempt + 1 == attempts:
+            raise failure from None
+        time.sleep(delay)
 
 
 def _read(response, size):
@@ -126,7 +156,8 @@ def download_verified(url, sha256, destination) -> None:
     Reuses an existing matching regular, nonsymlink destination without network.
     Raises IntegrityError for mismatches, ValueError for invalid inputs or metadata,
     RuntimeError for network failures, and OSError for local filesystem failures.
-    Each request has a finite socket timeout; no requests are retried.
+    Each request has a finite socket timeout. Transient API request failures
+    get at most three attempts; integrity and permanent HTTP errors are not retried.
     Existing destinations survive
     failure, and only this invocation's same-directory temporary file is removed.
     """
@@ -183,6 +214,10 @@ def main():
         return 2
     try:
         download_verified(*sys.argv[1:])
+    except DownloadError as error:
+        # Transport messages contain only controlled text and HTTP status codes.
+        print("Verified asset download failed: " + str(error), file=sys.stderr)
+        return 1
     except (ValueError, RuntimeError, OSError):
         # Do not expose exception details containing URLs, headers or credentials.
         print("Verified asset download failed", file=sys.stderr)

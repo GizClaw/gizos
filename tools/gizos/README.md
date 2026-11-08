@@ -42,7 +42,7 @@ Python 3, using its HTTPS client with certificate verification and pinned
 archive checksums. Discovery/configuration commands also support Windows;
 SDK and tool installation retain the host support described below.
 
-ESP-IDF download preferences `IDF_GITHUB_ASSETS` and `IDF_MIRROR_PREFIX_MAP` are forwarded to the SDK installer while stale SDK and Python paths are cleared; its original archive size and checksum checks remain active.
+ESP-IDF download preferences `IDF_GITHUB_ASSETS` and `IDF_MIRROR_PREFIX_MAP` are forwarded to the SDK installer while stale SDK and Python paths are cleared; its original archive size and checksum checks remain active. CI mirrors only the verified `espressif/binutils-gdb` release path and leaves other SDK asset URLs unchanged.
 
 After a release has been imported into the registry by Deploy:
 
