@@ -70,11 +70,9 @@ http_archive = use_repo_rule(
 # the same canonical protocol, without copying root-only overrides.
 http_archive(
     name = "gizclaw_c_sdk",
-    patch_args = ["-p1"],
-    patches = ["//third_party:gizclaw_sdk_deferred.patch"],
-    sha256 = "c9aaf31ddde5317bffad98749d39016b27632b2c93b7697300cb42e2f55436a0",
-    strip_prefix = "gizclaw-c-sdk-0.34.0",
-    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.34.0.tar.gz"],
+    sha256 = "d31c5615846a878d344a762af9450636af5ed0b37e2283d105d6c1520f1e5700",
+    strip_prefix = "gizclaw-c-sdk-0.35.15",
+    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.35.15.tar.gz"],
 )
 
 # Canonical object codecs and numeric/name registries from the C SDK release's
@@ -82,10 +80,10 @@ http_archive(
 http_archive(
     name = "h2_gizclaw_protocol",
     build_file = "//third_party:gizclaw_protocol.BUILD.bazel",
-    sha256 = "f61641fe34a15a06ff8bb37139a75b2a0b3dff484cb1ac780baddc5a29d86c19",
-    strip_prefix = "gizclaw-54938382b9877a55204c3bf4bec56baddae125d6",
+    sha256 = "d65ced876d51af4aded52300198ac20490c2acd8bc2362ac138ff98730c34492",
+    strip_prefix = "gizclaw-8dd719c70f2dc8e49d10ea3af1dfce6421be1ca6",
     type = "tar.gz",
-    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/54938382b9877a55204c3bf4bec56baddae125d6"],
+    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/8dd719c70f2dc8e49d10ea3af1dfce6421be1ca6"],
 )
 
 # The declaration emitter is a pinned host tool, independent of runtime code.
@@ -462,10 +460,7 @@ vendor_repositories.repository(
 vendor_repositories.repository(
     name = "h2_vendor_tinyh264",
     build_file = "//third_party:tinyh264.BUILD.bazel",
-    patches = [
-        "//third_party:tinyh264_msvc_inline.patch",
-        "//third_party:tinyh264_standard_string_header.patch",
-    ],
+    patches = ["//third_party/tinyh264_patch:tinyh264.patch"],
     sha256 = "c0499a09b10194aba6380a5d70b235a9eb51098195475593e2f9ff3a9f315171",
     strip_prefix = "tinyh264-524a702b6d98f8b9271238fdda9a064a1e6861e7",
     urls = ["https://codeload.github.com/udevbe/tinyh264/tar.gz/524a702b6d98f8b9271238fdda9a064a1e6861e7"],

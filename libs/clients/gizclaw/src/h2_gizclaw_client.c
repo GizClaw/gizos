@@ -13,9 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Supplied by the pinned SDK patch; identity is scoped to one inbound call. */
-gzc_rtc_channel_t* gzc_client_provider_channel_internal(gzc_client_t* client);
-
 typedef struct h2_gizclaw_pending_provider {
   gzc_rtc_channel_t* channel;
   h2_gizclaw_rpc_deferred_response_t deferred;
@@ -730,8 +727,7 @@ static int h2_gizclaw_tool_bridge(void* userdata, gzc_str_t request_payload,
   const h2_gizclaw_tool_handler_t* handler = binding->handler;
   if (!respond) return GZC_ERR_INVALID_ARGUMENT;
   h2_gizclaw_rpc_provider_response_t response = {0};
-  gzc_rtc_channel_t* channel =
-      gzc_client_provider_channel_internal(client->gzc);
+  gzc_rtc_channel_t* channel = gzc_client_rpc_provider_channel(client->gzc);
   if (channel == NULL) channel = client->provider_channel;
   h2_gizclaw_pending_provider_t* pending = NULL;
   for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i)

@@ -8,7 +8,6 @@ exports_files([
     "coremqtt.BUILD.bazel",
     "ffmpeg.BUILD.bazel",
     "gizclaw_protocol.BUILD.bazel",
-    "gizclaw_sdk_deferred.patch",
     "ikcp.BUILD.bazel",
     "iperf.BUILD.bazel",
     "libsrtp.BUILD.bazel",
@@ -36,7 +35,6 @@ filegroup(
         "fdk_aac.BUILD.bazel",
         "ffmpeg.BUILD.bazel",
         "gizclaw_protocol.BUILD.bazel",
-        "gizclaw_sdk_deferred.patch",
         "ikcp.BUILD.bazel",
         "iperf.BUILD.bazel",
         "libsrtp.BUILD.bazel",
@@ -50,12 +48,11 @@ filegroup(
         "speexdsp.BUILD.bazel",
         "sqlite.BUILD.bazel",
         "tinyh264.BUILD.bazel",
-        "tinyh264_msvc_inline.patch",
-        "tinyh264_standard_string_header.patch",
         "typescript.BUILD.bazel",
         "wolfssl.BUILD.bazel",
         "yyjson.BUILD.bazel",
         "zlib.BUILD.bazel",
+        "//third_party/tinyh264_patch:tinyh264.patch",
     ],
 )
 
@@ -185,6 +182,4 @@ cc_library(
 
 exports_files([
     "fdk_aac.BUILD.bazel",
-    "tinyh264_msvc_inline.patch",
-    "tinyh264_standard_string_header.patch",
 ])

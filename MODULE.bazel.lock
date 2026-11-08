@@ -480,7 +480,7 @@
     "//tools/bazel/repositories:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "2JZy85z5MiIaUpyUMEYbak7QXyt1MNAqmSOeoGW3Et0=",
-        "usagesDigest": "Pa1XLpgtKcjZDx8bGh+2rMPvtMkI73FWtM2qqGvQGqs=",
+        "usagesDigest": "0LkVlF4CH6yBDfQmmLaDQ9Xd7miK9eNuCh9vqgxUmbE=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -846,8 +846,7 @@
               "nested_archive_urls": {},
               "overlay_files": {},
               "patches": [
-                "@@//third_party:tinyh264_msvc_inline.patch",
-                "@@//third_party:tinyh264_standard_string_header.patch"
+                "@@//third_party/tinyh264_patch:tinyh264.patch"
               ],
               "sha256": "c0499a09b10194aba6380a5d70b235a9eb51098195475593e2f9ff3a9f315171",
               "strip_prefix": "tinyh264-524a702b6d98f8b9271238fdda9a064a1e6861e7",
