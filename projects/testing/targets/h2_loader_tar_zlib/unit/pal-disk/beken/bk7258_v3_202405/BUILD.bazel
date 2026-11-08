@@ -163,6 +163,7 @@ bk7258_target_task_policy(
     ap_allocator = "sram",
     ap_default_policy = "7 0 8192 psram",
     ap_policies = [
+        "h2_touch           default",
         "pal-disk/e2e/writer 7 0 4096 default",
         "pal-disk/e2e/reader 7 1 4096 default",
         "h2loader/appcmd 5 0 32768 psram",

@@ -11,6 +11,7 @@ bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",
     ap_policies = [
+        "h2_touch           default",
         "gizclaw/e2e/runner   7 0 65536 psram",
         "gizclaw/e2e/launcher 7 0 65536 psram",
         "gizclaw/e2e/wifi     default",
