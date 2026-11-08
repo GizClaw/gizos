@@ -13,7 +13,7 @@ py_binary(
     srcs = ["provision.py"],
     main = "provision.py",
     target_compatible_with = _PROVISION_COMPATIBILITY,
-    deps = ["//tools/h2loader:firmware_artifacts"],
+    deps = ["//tools/bazel/h2loader:firmware_artifacts"],
 )
 
 py_test(
@@ -25,5 +25,5 @@ py_test(
     imports = ["."],
     main = "test_provision.py",
     target_compatible_with = _PROVISION_COMPATIBILITY,
-    deps = ["//tools/h2loader:firmware_artifacts"],
+    deps = ["//tools/bazel/h2loader:firmware_artifacts"],
 )

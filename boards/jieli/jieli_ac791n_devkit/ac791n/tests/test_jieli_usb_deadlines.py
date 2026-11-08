@@ -21,7 +21,7 @@ def function(source, signature):
 
 class UsbDeadlinesTest(unittest.TestCase):
     def test_writers(self):
-        applied = 'bounded_cdc_write.patch' in (ROOT / 'tools/h2loader/h2loader_firmware.bzl').read_text()
+        applied = 'bounded_cdc_write.patch' in (ROOT / 'tools/bazel/h2loader/h2loader_firmware.bzl').read_text()
         lines = (ROOT / PATCH).read_text().splitlines()
         sdk = '\n'.join(line[1:] for line in lines if line and line[0] in (' ', '+' if applied else '-') and not line.startswith(('+++', '---')))
         sdk = function(sdk, 'u32 cdc_write_data(')

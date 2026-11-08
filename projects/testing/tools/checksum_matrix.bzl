@@ -1,6 +1,6 @@
 """Build both package formats for all four checksum transitions."""
 
-load("//tools/h2loader:h2loader_tar_zlib.bzl", "FirmwareReleaseInfo")
+load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "FirmwareReleaseInfo")
 
 def _checksum_matrix_impl(ctx):
     a = ctx.attr.base[FirmwareReleaseInfo]

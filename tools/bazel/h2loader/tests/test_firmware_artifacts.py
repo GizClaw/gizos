@@ -13,14 +13,14 @@ import json
 import tarfile
 import zlib
 
-from tools.h2loader.firmware_artifacts import BundleEntry, read_managed_package, write_factory_bundle, write_package
+from tools.bazel.h2loader.firmware_artifacts import BundleEntry, read_managed_package, write_factory_bundle, write_package
 
 
 def fixture_path(name: str) -> Path:
     if "TEST_SRCDIR" not in os.environ:
         return Path(__file__).parent / "fixtures" / name
     from python.runfiles import Runfiles
-    return Path(Runfiles.Create().Rlocation("gizos/tools/h2loader/tests/fixtures/" + name))
+    return Path(Runfiles.Create().Rlocation("gizos/tools/bazel/h2loader/tests/fixtures/" + name))
 
 
 class FirmwareArtifactsTest(unittest.TestCase):

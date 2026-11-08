@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import time
 
-from tools.h2loader.firmware_artifacts import BundleEntry, write_package
+from tools.bazel.h2loader.firmware_artifacts import BundleEntry, write_package
 
 LINGXI_FIELDS = {
     "base_url": "LINGXI_BASE_URL",

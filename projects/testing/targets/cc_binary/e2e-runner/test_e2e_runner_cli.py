@@ -5,7 +5,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from tools.h2loader.firmware_artifacts import write_package
+from tools.bazel.h2loader.firmware_artifacts import write_package
 
 BINARY = sys.argv[1]
 

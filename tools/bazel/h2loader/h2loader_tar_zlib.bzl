@@ -220,7 +220,7 @@ def _zlib_tar_impl(ctx):
 
 def _attrs():
     return {
-        "_runner": attr.label(default = "//tools/h2loader:h2loader_tar_zlib_runner", cfg = "exec", executable = True),
+        "_runner": attr.label(default = "//tools/bazel/h2loader:h2loader_tar_zlib_runner", cfg = "exec", executable = True),
         "board": attr.string(),
         "firmware": attr.label(),
         "image": attr.string(),

@@ -42,7 +42,7 @@ py_test(
     name = "release_test",
     srcs = [
         "tests/test_release.py",
-        "//tools/h2loader:release_bundle.py",
+        "//tools/bazel/h2loader:release_bundle.py",
     ],
     data = ["//:make_command_files"],
     legacy_create_init = 0,

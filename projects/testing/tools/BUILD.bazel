@@ -40,7 +40,7 @@ py_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//tools/h2loader:firmware_artifacts"],
+    deps = ["//tools/bazel/h2loader:firmware_artifacts"],
 )
 
 py_test(

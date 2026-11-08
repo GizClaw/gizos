@@ -1,6 +1,6 @@
 # H2Loader firmware and artifacts
 
-This project owns the portable headless Loader and manufacturing acceptance Apps, their shared support, thin firmware startup/composition, Loader and MFG image entries and browser npm artifact. Host packaging, recovery and release tooling belongs to [`tools/h2loader`](../../tools/h2loader). Portable libraries are organized as [`libs/h2loader/{host,device}`](../../libs/h2loader). [`libs/device_service`](libs/device_service) composes the Device core, Runtime and Loader App without introducing a project dependency into the portable libraries. Browser JS/runtime bindings belong to [`libs/web`](libs/web) within this project.
+This project owns the portable headless Loader and manufacturing acceptance Apps, their shared support, thin firmware startup/composition, Loader and MFG image entries and browser npm artifact. Host packaging, recovery and release tooling belongs to [`tools/bazel/h2loader`](../../tools/bazel/h2loader). Portable libraries are organized as [`libs/h2loader/{host,device}`](../../libs/h2loader). [`libs/device_service`](libs/device_service) composes the Device core, Runtime and Loader App without introducing a project dependency into the portable libraries. Browser JS/runtime bindings belong to [`libs/web`](libs/web) within this project.
 
 | Directory | Responsibility |
 | --- | --- |

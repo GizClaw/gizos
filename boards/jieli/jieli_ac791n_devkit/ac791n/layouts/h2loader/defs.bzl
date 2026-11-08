@@ -1,6 +1,6 @@
 """Compatibility wrapper for the AC791N board's one H2Loader layout."""
 
-load("//tools/h2loader:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 
 def jieli_ac791n_devkit_h2loader_firmware(name, graph, task_policy, **kwargs):
     h2loader_jieli_firmware(
