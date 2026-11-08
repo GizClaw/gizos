@@ -5,11 +5,11 @@
  * native_component_src/esp-idf6.x/h2_pal_core/include/h2_esp_platform_core.h.
  * It declares only the accessors h2_esp_board_runtime.c consumes. */
 
-#include "h2/pal/hal/h2_pal_wifi.h"
-#include "h2/pal/os/h2_pal_firmware_info.h"
-#include "h2/pal/os/h2_pal_timer.h"
-#include "h2/pal/net/h2_pal_net.h"
-#include "h2/pal/net/h2_pal_netif.h"
+#include "hal/h2_pal_wifi.h"
+#include "os/h2_pal_firmware_info.h"
+#include "os/h2_pal_timer.h"
+#include "net/h2_pal_net.h"
+#include "net/h2_pal_netif.h"
 
 struct h2_esp_task_policy;
 typedef struct h2_esp_task_policy_config {

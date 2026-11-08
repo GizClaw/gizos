@@ -1,5 +1,5 @@
 #include "h2_jieli_wl82_sdk_port_fake.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #include <stdlib.h>
 #include <string.h>

@@ -2,7 +2,7 @@
 
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_ac791n_devkit_network.h"
-#include "h2/pal/net/h2_pal_netif.h"
+#include "net/h2_pal_netif.h"
 
 #ifdef H2_JIELI_NETWORK_ENABLE
 

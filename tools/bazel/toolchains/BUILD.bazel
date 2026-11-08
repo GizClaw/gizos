@@ -1,0 +1,7 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "build_setting_header.bzl",
+    "cc_options.bzl",
+    "go_host_toolchains.bzl",
+])

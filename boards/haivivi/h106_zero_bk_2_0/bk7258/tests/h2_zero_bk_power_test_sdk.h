@@ -1,6 +1,6 @@
 #ifndef H2_ZERO_BK_POWER_TEST_SDK_H
 #define H2_ZERO_BK_POWER_TEST_SDK_H
-#include "h2/pal/hal/h2_pal_power.h"
+#include "hal/h2_pal_power.h"
 #include "h2_zero_bk_board_config.h"
 #define CONFIG_AUDIO_PLAY 1
 #define CONFIG_AUDIO_RECORD 1

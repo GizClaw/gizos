@@ -1,6 +1,8 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/bazel:app_version.bzl", "app_version")
-load("//tools/bazel:firmware.bzl", "firmware_version")
+load("//projects/h2loader/tools/bazel:release_bundle.bzl", "firmware_release_bundle")
+load("//tools/bazel/firmware:app_version.bzl", "app_version")
+load("//tools/bazel/firmware:firmware.bzl", "firmware_version")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load(":h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load(":h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 load(":tests/package_rules.bzl", "package_rules_firmware")
@@ -16,12 +18,7 @@ exports_files([
 py_library(
     name = "firmware_artifacts",
     srcs = ["firmware_artifacts.py"],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_test(
@@ -34,12 +31,7 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "tests/test_firmware_artifacts.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":firmware_artifacts",
         ":firmware_output",
@@ -50,12 +42,7 @@ py_test(
 py_library(
     name = "firmware_output",
     srcs = ["firmware_output.py"],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":firmware_artifacts",
     ],
@@ -66,12 +53,7 @@ py_binary(
     srcs = ["h2loader_tar_zlib_runner.py"],
     legacy_create_init = 0,
     main = "h2loader_tar_zlib_runner.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":firmware_output"],
 )
 
@@ -81,21 +63,11 @@ py_test(
     data = ["h2loader_tar_zlib_runner.py"],
     legacy_create_init = 0,
     main = "tests/test_h2loader_tar_zlib_runner.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":firmware_output"],
 )
 
-_HOST_PACKAGE_TEST = select({
-    "//tools/bazel/platforms:host_linux_target_linux": [],
-    "//tools/bazel/platforms:host_macos_target_macos": [],
-    "//tools/bazel/platforms:host_windows_target_windows": [],
-    "//conditions:default": ["@platforms//:incompatible"],
-})
+_HOST_PACKAGE_TEST = HOST_TOOL_COMPATIBILITY
 
 app_version(
     name = "package_rules_app_version",
@@ -146,47 +118,34 @@ py_test(
     target_compatible_with = _HOST_PACKAGE_TEST,
 )
 
-py_library(
-    name = "package_conversion",
-    srcs = ["repackage.py"],
-    target_compatible_with = _HOST_PACKAGE_TEST,
-    deps = [
-        ":firmware_artifacts",
-        ":firmware_output",
-        "//tools/bazel:firmware_crypto",
-    ],
+py_binary(
+    name = "release_bundle_assembler",
+    srcs = ["release_bundle.py"],
+    legacy_create_init = 0,
+    main = "release_bundle.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
-py_binary(
-    name = "repackage",
-    srcs = ["repackage.py"],
-    legacy_create_init = False,
-    main = "repackage.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":package_conversion"],
+firmware_release_bundle(
+    name = "firmware_release_bundle",
+    srcs = ["@h2_firmware_release_inputs//:all"],
+    tags = ["manual"],
 )
 
 py_test(
-    name = "package_conversion_test",
-    srcs = ["tests/test_package_conversion.py"],
-    data = [
-        ":repackage",
-        "//tools/bazel:bk7258_encrypt",
+    name = "release_bundle_test",
+    srcs = [
+        "release_bundle.py",
+        "tests/test_release_bundle.py",
     ],
-    legacy_create_init = False,
-    main = "tests/test_package_conversion.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        ":package_conversion",
-        "//tools/bazel/tests/bk7258_encryption:fixture_support",
-        "@rules_python//python/runfiles",
-    ],
+    legacy_create_init = 0,
+    main = "tests/test_release_bundle.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
+
+exports_files([
+    "firmware_catalog.cquery",
+    "firmware_release_files.cquery",
+    "release_bundle.bzl",
+    "release_bundle.py",
+])

@@ -1,5 +1,4 @@
 #include "h2_bk_target_task_policy.h"
-#include "flash_access.h"
 
 #include "bk_private/bk_init.h"
 #include "components/system.h"
@@ -26,8 +25,6 @@ static void h2_bk_cp_entry(void) {
   if (h2_bk_target_task_policy_install() != H2_PAL_OK) {
     return;
   }
-  /* Failure leaves AES status unknown; ordinary App boot still works. */
-  (void)h2_bk_flash_status_start();
   /* Preserve the SDK boot vote and system services. Managed UART and logs
    * belong to AP/UART1; CP owns no H2Loader UART transport. */
   bk_pm_module_vote_boot_cp1_ctrl(PM_BOOT_CP1_MODULE_NAME_APP,

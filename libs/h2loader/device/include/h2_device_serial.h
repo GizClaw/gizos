@@ -5,7 +5,7 @@
 #include "h2_command.h"
 #include "h2_iostreamikcp.h"
 #include "h2_loader_app_client.h"
-#include "h2/pal/os/h2_pal_time.h"
+#include "os/h2_pal_time.h"
 
 #ifdef __cplusplus
 extern "C" {

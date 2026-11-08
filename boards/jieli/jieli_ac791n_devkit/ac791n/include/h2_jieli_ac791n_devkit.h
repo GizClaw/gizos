@@ -3,15 +3,15 @@
 
 #include <stddef.h>
 
-#include "h2/pal/hal/h2_pal_button.h"
-#include "h2/pal/hal/h2_pal_audio.h"
-#include "h2/pal/hal/h2_pal_ble.h"
-#include "h2/pal/hal/h2_pal_display.h"
-#include "h2/pal/hal/h2_pal_touch.h"
-#include "h2/pal/os/h2_pal_disk.h"
-#include "h2/pal/os/h2_pal_fs.h"
-#include "h2/pal/os/h2_pal_pref.h"
-#include "h2/pal/os/h2_pal_log.h"
+#include "hal/h2_pal_button.h"
+#include "hal/h2_pal_audio.h"
+#include "hal/h2_pal_ble.h"
+#include "hal/h2_pal_display.h"
+#include "hal/h2_pal_touch.h"
+#include "os/h2_pal_disk.h"
+#include "os/h2_pal_fs.h"
+#include "os/h2_pal_pref.h"
+#include "os/h2_pal_log.h"
 
 typedef struct h2_runtime_config h2_runtime_config_t;
 typedef struct h2_pal_wifi_sta_api h2_pal_wifi_sta_api_t;

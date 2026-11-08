@@ -5,8 +5,7 @@
 #include "h2_bk_flash_access_test_sdk.h"
 #else
 #include "driver/flash.h"
-#include "driver/mb_ipc.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "modules/ota.h"
 #include "os/os.h"
 #include "armstar.h"
@@ -68,38 +67,4 @@ int h2_bk_flash_read_plain(uint32_t physical, uint32_t capacity,
     }
   }
   return H2_PAL_OK;
-}
-
-unsigned h2_bk_flash_aes_state(void) {
-  static unsigned state = H2_BK_FLASH_AES_UNKNOWN;
-  static int queried;
-  static uint32_t handle;
-  /* These remain alive after a transport timeout; never reuse a pending
-   * request or close a socket while its peer might still consume the bytes. */
-  static uint8_t request[16], reply[16];
-  uint32_t flags = rtos_enter_critical();
-  if (queried) {
-    unsigned result = state;
-    rtos_exit_critical(flags);
-    return result;
-  }
-  queried = 1;
-  rtos_exit_critical(flags);
-  h2_bk_flash_status_request(request);
-  handle = mb_ipc_socket(H2_BK_FLASH_STATUS_CLIENT, NULL);
-  uint8_t command = 0;
-  unsigned result = H2_BK_FLASH_AES_UNKNOWN;
-  if (handle &&
-      mb_ipc_connect(handle, 0, H2_BK_FLASH_STATUS_SERVER, 500) == 0 &&
-      mb_ipc_send(handle, H2_BK_FLASH_STATUS_COMMAND, request, sizeof(request),
-                  500) == 0 &&
-      mb_ipc_recv(handle, &command, reply, sizeof(reply), 500) ==
-          sizeof(reply) &&
-      command == H2_BK_FLASH_STATUS_COMMAND &&
-      h2_bk_flash_status_valid(reply, 1))
-    result = reply[12];
-  flags = rtos_enter_critical();
-  state = result;
-  rtos_exit_critical(flags);
-  return result;
 }

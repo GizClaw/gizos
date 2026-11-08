@@ -1,7 +1,7 @@
 #ifndef H2_BK_PLATFORM_STORAGE_H
 #define H2_BK_PLATFORM_STORAGE_H
-#include "h2/pal/os/h2_pal_disk.h"
-#include "h2/pal/os/h2_pal_fs.h"
+#include "os/h2_pal_disk.h"
+#include "os/h2_pal_fs.h"
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus

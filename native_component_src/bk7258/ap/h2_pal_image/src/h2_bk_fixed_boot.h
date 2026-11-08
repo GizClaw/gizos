@@ -1,7 +1,7 @@
 #ifndef H2_BK_FIXED_BOOT_H
 #define H2_BK_FIXED_BOOT_H
 #include "layout.h"
-#include "h2/pal/hal/h2_pal_power.h"
+#include "hal/h2_pal_power.h"
 #include <stdint.h>
 /* Windows derived from this image's partition table, or NULL when the board
  * layout is not a fixed Loader/App layout. */

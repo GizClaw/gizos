@@ -2,9 +2,9 @@
 #ifndef H2_STATUS_API_H
 #define H2_STATUS_API_H
 
-#include "h2/pal/application/h2_pal_http.h"
-#include "h2/pal/os/h2_pal_json.h"
-#include "h2/pal/os/h2_pal_mem.h"
+#include "application/h2_pal_http.h"
+#include "os/h2_pal_json.h"
+#include "os/h2_pal_mem.h"
 
 #include <stdbool.h>
 #include <stddef.h>

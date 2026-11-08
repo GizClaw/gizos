@@ -1,7 +1,7 @@
 #include "h2_zero_bk_board_config.h"
 
 #if !H2_ZERO_BK_LED_STRIP_SPI_SUPPORTED
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 const h2_pal_led_api_t* h2_bk7258_board_led_api(void) {
   return h2_pal_unsupported_led_api();

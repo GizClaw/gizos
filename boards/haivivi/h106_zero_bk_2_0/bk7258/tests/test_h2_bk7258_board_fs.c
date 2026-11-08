@@ -3,6 +3,7 @@
 #include <string.h>
 static unsigned s_mounts, s_unmounts;
 static int s_unmount_result;
+static int s_mkdir_result = LFS_ERR_EXIST;
 int bk_vfs_mount(const char* source, const char* path, const char* type,
                  unsigned flags, void* partition) {
   (void)source;
@@ -20,7 +21,7 @@ int bk_vfs_umount(const char* path) {
 int bk_vfs_mkdir(const char* path, unsigned mode) {
   (void)mode;
   assert(strncmp(path, "/qspi/", 6) == 0);
-  return LFS_ERR_EXIST;
+  return s_mkdir_result;
 }
 h2_pal_result_t h2_zero_bk_peripheral_power_enable(void) { return H2_PAL_OK; }
 void rtos_delay_milliseconds(unsigned ms) { assert(ms == 10u); }
@@ -29,6 +30,16 @@ int main(void) {
   assert(h2_bk7258_board_fs_deinit() == H2_PAL_OK);
   assert(s_unmounts == 0u);
   assert(h2_bk7258_board_fs_init(&fs) == H2_PAL_OK);
+  assert(s_mounts == 1u);
+  assert(h2_pal_fs_prepare(&fs, "/dl") == H2_PAL_OK);
+  assert(h2_pal_fs_prepare(&fs, "/data/owned/file") == H2_PAL_OK);
+  assert(s_mounts == 1u);
+  s_mkdir_result = -99;
+  assert(h2_pal_fs_prepare(&fs, "/dl") == H2_PAL_ERR_IO);
+  s_mkdir_result = LFS_ERR_EXIST;
+  assert(h2_pal_fs_prepare(&fs, "/data") == H2_PAL_OK);
+  assert(h2_pal_fs_prepare(&fs, "/outside") == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_fs_prepare(&fs, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(s_mounts == 1u);
   s_unmount_result = -1;
   assert(h2_bk7258_board_fs_deinit() == H2_PAL_ERR_IO);

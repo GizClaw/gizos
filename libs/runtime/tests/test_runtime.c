@@ -3,10 +3,10 @@
 #include "h2_runtime_task_names.h"
 #include "h2_runtime_test.h"
 
-#include "h2/pal/hal/h2_pal_ble.h"
-#include "h2/pal/hal/h2_pal_gpio_irq.h"
-#include "h2/pal/hal/h2_pal_modem.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
+#include "hal/h2_pal_ble.h"
+#include "hal/h2_pal_gpio_irq.h"
+#include "hal/h2_pal_modem.h"
+#include "hal/h2_pal_wifi.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -3067,6 +3067,32 @@ static void run_nfc_task_once(test_runtime_env_t* env, h2_runtime_t* runtime) {
   h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 }
 
+static void test_nfc_initial_empty_scan_and_unchanged_state(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 20u, H2_PAL_PERIPH_TYPE_NFC_READER, NULL, 0u);
+  env.nfc_state.scan = (h2_pal_nfc_scan_t){.stage = H2_PAL_NFC_STAGE_ABSENT};
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  run_nfc_task_once(&env, runtime);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE);
+  h2_runtime_nfc_state_t state;
+  assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.status == H2_RUNTIME_NFC_STATE_ABSENT && state.result == 0);
+  uint64_t baseline = state.updated_at_ms;
+  env.time_state.now_ms += H2_RUNTIME_NFC_POLL_INTERVAL_MS;
+  run_nfc_task_once(&env, runtime);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.status == H2_RUNTIME_NFC_STATE_ABSENT &&
+         state.updated_at_ms == baseline);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_nfc_discovery_and_state(void) {
   test_runtime_env_t env;
   test_env_init(&env);
@@ -5529,6 +5555,7 @@ int main(void) {
   test_push_button_uses_mapping_and_retained_pressed_state();
   test_test_control_discards_stale_push_edges();
   test_button_push_rejects_non_push_and_invalid_payload();
+  test_nfc_initial_empty_scan_and_unchanged_state();
   test_nfc_discovery_and_state();
   test_nfc_background_task_does_not_block_input_task();
   test_imu_tilt_event_and_state();

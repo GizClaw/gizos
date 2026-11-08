@@ -92,5 +92,8 @@
 #define H2_ZERO_BK_NFC_I2C_ADDRESS 0x28u
 #define H2_ZERO_BK_NFC_I2C_FREQUENCY_HZ 100000u
 #define H2_ZERO_BK_NFC_READ_CAPACITY 256u
+/* Beken's receiver gain with the chip's reset decoder threshold. */
+#define H2_ZERO_BK_NFC_RF_CONFIG 0x7fu
+#define H2_ZERO_BK_NFC_RX_THRESHOLD 0x84u
 
 #endif

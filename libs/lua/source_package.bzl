@@ -26,7 +26,7 @@ def _path(path):
 
 def _sources_impl(target, ctx):
     package = ctx.label.package
-    if package.startswith("libs/pal/providers/") or package == "libs/bleikcp" or package.startswith("boards/") or package.startswith("native_component_src/"):
+    if package.startswith("pal/providers/") or package == "libs/net/bleikcp" or package.startswith("boards/") or package.startswith("native_component_src/"):
         fail("Platform assembly leaked into portable Lua: %s" % ctx.label)
     if getattr(ctx.rule.attr, "implementation_deps", []):
         fail("Portable source export requires explicit deps: %s" % ctx.label)
@@ -110,9 +110,9 @@ lua_source_package = rule(
     implementation = _package_impl,
     attrs = {
         "_content_id_tool": attr.label(default = ":source_content_id", executable = True, cfg = "exec"),
-        "atomic": attr.label(default = "//libs/atomic/providers/c11", aspects = [_sources]),
+        "atomic": attr.label(default = "//libs/sync/atomic/providers/c11", aspects = [_sources]),
         "license": attr.label(default = "//:LICENSE", allow_single_file = True),
-        "defaults": attr.label(default = "//libs/pal:unsupported", aspects = [_sources]),
+        "defaults": attr.label(default = "//pal:unsupported", aspects = [_sources]),
         "runtime": attr.label(mandatory = True, aspects = [_sources]),
     },
 )

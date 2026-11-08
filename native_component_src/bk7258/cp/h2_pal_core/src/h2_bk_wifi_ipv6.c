@@ -1,5 +1,5 @@
 #include "h2_bk_wifi_ipv6.h"
-#include "h2/pal/net/h2_pal_net.h"
+#include "net/h2_pal_net.h"
 #include "lwip/netif.h"
 #include "lwip/tcpip.h"
 #include "lwip/timeouts.h"

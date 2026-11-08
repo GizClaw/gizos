@@ -1,7 +1,7 @@
 #ifndef H2_BK_WIFI_LEASE_SLOTS_H
 #define H2_BK_WIFI_LEASE_SLOTS_H
 
-#include "h2/pal/hal/h2_pal_wifi.h"
+#include "hal/h2_pal_wifi.h"
 #include "h2_bk_wifi_lease.h"
 #include <stdint.h>
 #include <string.h>

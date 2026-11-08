@@ -9,7 +9,7 @@ ROOT = CORE.parents[3]
 SOURCE = CORE / "src/h2_jieli_wl82_sdk_port.c"
 
 STUB = r'''
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
@@ -130,7 +130,7 @@ class DeviceIdentitySdkTest(unittest.TestCase):
                 binary = root / "identity-test"
                 unit.write_text(STUB + text[start:end] + MAIN)
                 command = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                           "-I", str(ROOT / "libs/pal/include")]
+                           "-I", str(ROOT / "pal/include")]
                 if enabled:
                     command.append("-DH2_JIELI_BLE_ENABLE=1")
                 subprocess.run(command + [str(unit), "-o", str(binary)],

@@ -1,10 +1,10 @@
 /* SDK/provider double containing only the configuration this board consumes. */
 #ifndef H2_TEST_ES8311_AUDIO_SYSTEM_H
 #define H2_TEST_ES8311_AUDIO_SYSTEM_H
-#include "h2/pal/hal/h2_pal_audio.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_queue.h"
-#include "h2/pal/os/h2_pal_sync.h"
+#include "hal/h2_pal_audio.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_queue.h"
+#include "os/h2_pal_sync.h"
 #include "driver/i2c_master.h"
 #include <stdint.h>
 typedef struct {

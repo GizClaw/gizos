@@ -31,14 +31,14 @@ else()
   message(FATAL_ERROR "unknown H200 identity: ${H2_ESP_BOARD_IDENTITY}")
 endif()
 
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_sources(H2_BOARD_SOURCES h2_esp_board)
 
 idf_component_register(
   SRCS ${H2_BOARD_SOURCES}
   INCLUDE_DIRS
     "include"
-    "$ENV{H2_GIZOS_ROOT}/libs/pal/include"
+    "$ENV{H2_GIZOS_ROOT}/pal/include"
     "$ENV{H2_GIZOS_ROOT}/libs/runtime/include"
   REQUIRES
     esp_adc

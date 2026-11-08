@@ -1,12 +1,12 @@
 #ifndef H2_LOADER_APP_CLIENT_H
 #define H2_LOADER_APP_CLIENT_H
 
-#include "h2/pal/hal/h2_pal_power.h"
-#include "h2/pal/os/h2_pal_pref.h"
-#include "h2/pal/os/h2_pal_task.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_disk.h"
-#include "h2/pal/os/h2_pal_sync.h"
+#include "hal/h2_pal_power.h"
+#include "os/h2_pal_pref.h"
+#include "os/h2_pal_task.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_disk.h"
+#include "os/h2_pal_sync.h"
 #include "h2_loader_memory.h"
 #include "h2_loader_command.h"
 

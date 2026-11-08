@@ -212,16 +212,16 @@ jobs:
           run_pal() {
             "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
               "${cache_args[@]}" --cache_test_results=no \
-              //projects/e2e/targets/cc_binary/pal-mqtt:public_broker_test
+              //projects/testing/targets/cc_binary/pal-mqtt:public_broker_test
           }
           run_gizclaw_target() {
             "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
               "${cache_args[@]}" --cache_test_results=no \
-              "--//projects/e2e/apps/gizclaw:app_config_fixture_profile=$GIZCLAW_FIXTURE_PROFILE" \
-              "--//projects/e2e/apps/gizclaw:app_config_fixture_key=$GIZCLAW_FIXTURE_KEY" \
-              "--//projects/e2e/apps/gizclaw:app_config_fixture_value=$GIZCLAW_FIXTURE_VALUE" \
+              "--//projects/testing/integration/gizclaw:app_config_fixture_profile=$GIZCLAW_FIXTURE_PROFILE" \
+              "--//projects/testing/integration/gizclaw:app_config_fixture_key=$GIZCLAW_FIXTURE_KEY" \
+              "--//projects/testing/integration/gizclaw:app_config_fixture_value=$GIZCLAW_FIXTURE_VALUE" \
               "--test_arg=--endpoint=$H2_GIZCLAW_E2E_ENDPOINT" \
-              "//projects/e2e/targets/cc_test/gizclaw:gizclaw_${1}_live_test"
+              "//projects/testing/targets/cc_test/gizclaw:gizclaw_${1}_live_test"
           }
           run_gizclaw() {
             case "$E2E_BACKEND" in

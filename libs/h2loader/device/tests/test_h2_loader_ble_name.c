@@ -1,6 +1,6 @@
 #include "h2_loader_ble.h"
 #include "h2_desktop_platform.h"
-#include "libs/pal/providers/desktop/pal_core/tests/h2_desktop_test_system_event.h"
+#include "pal/providers/platforms/desktop/pal_core/tests/h2_desktop_test_system_event.h"
 
 #include <assert.h>
 #include <stdlib.h>

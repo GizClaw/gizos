@@ -1,7 +1,7 @@
 #ifndef H2_ESP_BOARD_BUTTON_ADC_H
 #define H2_ESP_BOARD_BUTTON_ADC_H
 
-#include "h2/pal/hal/h2_pal_periph.h"
+#include "hal/h2_pal_periph.h"
 
 /* Stateless press classification in raw ADC counts, not calibrated mV.
  * Zero means no pressed child; release/debounce remain with the provider. */

@@ -1,7 +1,7 @@
 """SDK-free lifetime regression for a board-owned BK audio implementation."""
 
 load("@rules_cc//cc:defs.bzl", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 def bk_audio_reader_test(name, source):
     native.genrule(

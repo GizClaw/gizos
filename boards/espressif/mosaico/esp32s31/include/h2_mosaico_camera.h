@@ -1,6 +1,6 @@
 #ifndef H2_MOSAICO_CAMERA_H
 #define H2_MOSAICO_CAMERA_H
-#include "h2/pal/hal/h2_pal_camera.h"
+#include "hal/h2_pal_camera.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -5,21 +5,20 @@ it:
 
 ```text
 libs/h2loader/
-├── host/       # Device discovery, commands, package/flash clients and lifecycle
-├── device/     # Device protocol, package/boot policy and common service
-└── web/        # Browser JS/runtime/WASM bindings around the Host library
+├── host/       # Device discovery, commands, package transfer and lifecycle
+└── device/     # Device protocol, package/boot policy and portable session engine
 ```
 
 The native CLI and its OS adapters belong to
 [`tools/gizloader`](../../tools/gizloader). Loader App entry, firmware startup,
 SDK composition and package artifacts belong to
 [`projects/h2loader`](../../projects/h2loader). E2E orchestration and fixtures
-belong to [`projects/e2e`](../../projects/e2e).
+belong to [`projects/testing`](../../projects/testing).
 
 ## Host
 
 `host` provides device discovery, typed commands, authoritative status,
-package validation/writing, boot-ROM flash clients and managed lifecycle. Its
+package validation/writing and managed lifecycle over the H2Loader protocol. Its
 BLE client can also be used by a factory peer acting as the Host. Native CLI
 and browser bindings share this policy; neither owns another copy.
 
@@ -30,16 +29,16 @@ capabilities are injected through PAL. The public C interface remains in
 ## Device
 
 `device` owns package validation, Stage, image identity, boot intent,
-confirmation, rollback, commands and diagnostics. Its common service owns
-Loader/App orchestration and a single serial/KCP session engine. Timing,
-admission, allocator, package-entry and recovery requirements are configured
-through capabilities and policy; there are no separate chip-specific service
-libraries.
+confirmation, rollback, commands, diagnostics and a portable serial/KCP session
+engine. Timing, admission, allocator, package-entry and recovery requirements
+are configured through capabilities and policy. Runtime and Loader/App
+orchestration belong to the project service described below.
 
 The core `//libs/h2loader/device` uses PAL and portable libraries without a
-Runtime dependency. The optional `:service` target composes Runtime and the
-portable Loader App. Caller-owned service state and borrowed providers must
-outlive tasks and pending callbacks. Firmware targets own product and task policy.
+Runtime or project dependency. Runtime/Loader App composition belongs to
+[`projects/h2loader/libs/device_service`](../../projects/h2loader/libs/device_service).
+Caller-owned service state and borrowed providers must outlive tasks and pending
+callbacks. Firmware targets own product and task policy.
 They consume `Runtime.io_stream` and `Runtime.mem_external`; board and native
 providers select and configure the physical transport and optional external heap.
 
@@ -83,10 +82,12 @@ Key core files are [`h2_loader_boot.c`](device/src/h2_loader_boot.c),
 
 ## Web
 
-`web` provides the reusable browser JS/runtime/WASM SDK around `host` and Web
-PAL. Its runtime and JavaScript are packaged together as `@gizclaw/h2loader` by
-`projects/h2loader/targets/npm_package/h2loader`. The product Batch Loader UI
-belongs to `GizClaw/www`. Native CLI code remains in `tools/gizloader`.
+Browser JS/runtime/WASM bindings belong to
+[`projects/h2loader/libs/web`](../../projects/h2loader/libs/web), outside these
+portable libraries. Its runtime and JavaScript are packaged together as
+`@gizclaw/h2loader` by `projects/h2loader/targets/npm_package/h2loader`. The
+product Batch Loader UI belongs to `GizClaw/www`; native CLI code remains in
+`tools/gizloader`.
 
 ## Validation
 

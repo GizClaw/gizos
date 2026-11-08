@@ -1,7 +1,7 @@
 #ifndef H2_BK_BLE_GATTS_TX_TRACKER_H
 #define H2_BK_BLE_GATTS_TX_TRACKER_H
 
-#include "h2/pal/hal/h2_pal_ble.h"
+#include "hal/h2_pal_ble.h"
 
 typedef enum h2_bk_ble_gatts_tx_kind {
   H2_BK_BLE_GATTS_TX_IDLE = 0,

@@ -4,7 +4,7 @@
 #include "h2_bleikcp.h"
 #include "h2_command.h"
 #include "h2_loader_boot.h"
-#include "h2/pal/os/h2_pal_log.h"
+#include "os/h2_pal_log.h"
 
 #include <stdbool.h>
 

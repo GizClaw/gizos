@@ -21,7 +21,7 @@ def main():
     repo = Path(__file__).resolve().parents[5]
     sdk = Path(json.loads(args.locator.read_text())["paths"]["checkout"]
                if args.locator else os.environ["BK7258_PATH"])
-    expected = (repo / "tools/bazel/native_versions/bk7258_sdk_commit.txt").read_text().strip()
+    expected = (repo / "tools/bazel/native/versions/bk7258_sdk_commit.txt").read_text().strip()
     actual = subprocess.check_output(["git", "-C", str(sdk), "rev-parse", "HEAD"], text=True).strip()
     assert actual == expected, (actual, expected)
     assert not subprocess.check_output(["git", "-C", str(sdk), "status", "--porcelain=v1", "--untracked-files=no"], text=True)

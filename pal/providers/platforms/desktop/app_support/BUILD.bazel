@@ -1,0 +1,193 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//pal:provider_assembly"])
+
+cc_library(
+    name = "bundle_rpath",
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-rpath,@loader_path/../../Frameworks"],
+        "//conditions:default": [],
+    }),
+)
+
+_TLS_FIXTURES = [
+    "//pal/providers/platforms/posix/pal_core:tests/fixtures/localhost_ca.pem",
+    "//pal/providers/platforms/posix/pal_core:tests/fixtures/wrong_ca.pem",
+    "//pal/providers/platforms/posix/pal_core:tests/fixtures/localhost_cert.pem",
+    "//pal/providers/platforms/posix/pal_core:tests/fixtures/localhost_key.pem",
+]
+
+cc_test(
+    name = "app_support_test",
+    srcs = ["tests/test_h2_desktop_app_support.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["tests/resource.txt"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "network_services_test",
+    srcs = ["tests/test_h2_desktop_network_services.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+        "//pal/providers/backends/h2peer",
+        "//pal/providers/backends/h2sctp",
+    ],
+)
+
+cc_test(
+    name = "runtime_config_test",
+    srcs = ["tests/test_h2_desktop_runtime_config.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/backends/ffmpeg",
+    ],
+)
+
+cc_test(
+    name = "corehttp_integration_test",
+    srcs = ["tests/test_h2_desktop_corehttp.c"],
+    args = ["$(location %s)" % fixture for fixture in _TLS_FIXTURES],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = _TLS_FIXTURES,
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+        "//pal/providers/backends/corehttp",
+        "//pal/providers/backends/wolfssl",
+    ],
+)
+
+cc_test(
+    name = "display_lvgl_integration_test",
+    srcs = ["tests/test_h2_desktop_display_lvgl.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    local_defines = ["SDL_DISABLE_OLD_NAMES"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/ui/lvgl:platform",
+        "//pal/providers/backends/sdl3",
+        "//pal/providers/platforms/desktop/pal_core",
+        "@h2_vendor_sdl3//:sdl3",
+    ],
+)
+
+cc_library(
+    name = "app_support",
+    srcs = [
+        "h2_desktop_app_support.cpp",
+        "h2_desktop_app_support_c.cpp",
+        "h2_desktop_lvgl_input.cpp",
+        "h2_desktop_lvgl_input.h",
+        "h2_desktop_status_surface.cpp",
+    ],
+    hdrs = [
+        "h2_desktop_app_support.h",
+        "h2_desktop_app_support_c.h",
+    ],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//libs/ui/lvgl:display",
+        "//libs/ui/lvgl:platform",
+        "//pal",
+        "//pal:unsupported",
+        "//pal/providers/backends/coremqtt",
+        "//pal/providers/backends/ffmpeg",
+        "//pal/providers/backends/h2peer",
+        "//pal/providers/backends/h2sctp",
+        "//pal/providers/backends/portaudio",
+        "//pal/providers/backends/sdl3",
+        "//pal/providers/backends/sqlite",
+        "//pal/providers/backends/wolfssl",
+        "//pal/providers/platforms/desktop/pal_core",
+    ] + select({
+        "@platforms//os:linux": [
+            "//pal/providers/platforms/linux/pal_core",
+            "//pal/providers/platforms/linux/serial_host",
+        ],
+        "@platforms//os:macos": ["//pal/providers/platforms/darwin/pal_core"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "capture",
+    srcs = ["src/h2_desktop_capture.cpp"],
+    hdrs = ["include/h2_desktop_capture.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    deps = [
+        "//pal/providers/backends/portaudio",
+        "//pal/providers/backends/sdl3",
+    ],
+)
+
+cc_test(
+    name = "capture_test",
+    srcs = ["tests/test_h2_desktop_capture.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    deps = [
+        ":capture",
+        "//pal/providers/backends/portaudio",
+        "//pal/providers/platforms/desktop/pal_core",
+    ],
+)
+
+cc_library(
+    name = "app_support_test_support",
+    testonly = True,
+    visibility = ["//libs:__subpackages__"],
+    deps = [":app_support"],
+)

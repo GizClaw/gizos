@@ -4,8 +4,8 @@
 #include "h2_atomic.h"
 #include "h2_loader_metadata.h"
 #include "h2_loader_package.h"
-#include "h2/pal/hal/h2_pal_power.h"
-#include "h2/pal/os/h2_pal_pref.h"
+#include "hal/h2_pal_power.h"
+#include "os/h2_pal_pref.h"
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -127,10 +127,8 @@ static int read_vector(uint32_t id, uint32_t vector[2]) {
   if (h2_bk_flash_access_ready() == H2_PAL_OK)
     return h2_bk_flash_read_plain(p->partition_start_addr, p->partition_length,
                                   0u, vector, 8u);
-  /* A remapped primary-linked candidate cannot use the fixed XIP view. Raw
-   * vector bytes are executable facts only when AES is positively disabled. */
-  if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-    return H2_PAL_ERR_UNSUPPORTED;
+  /* A remapped primary-linked candidate cannot use the fixed XIP view.
+   * Validate its stored CRC packet before reading the vector. */
   uint8_t packet[34];
   if (bk_flash_read_bytes(p->partition_start_addr, packet, sizeof(packet)) !=
       BK_OK)
@@ -197,6 +195,19 @@ static h2_pal_result_t image_get_info(void* user, uint32_t id,
       out->flags |= H2_PAL_IMAGE_FLAG_SIZE_KNOWN;
       out->image_size = s_total;
     }
+  } else if (view == H2_PAL_IMAGE_VIEW_STORED && id == running_partition() &&
+             h2_bk_fixed_layout_active()) {
+    const bk_logic_partition_t* cp =
+        bk_flash_partition_get_info(BK_PARTITION_APPLICATION);
+    const bk_logic_partition_t* ap =
+        bk_flash_partition_get_info(BK_PARTITION_APPLICATION1);
+    if (cp && ap) {
+      /* This SDK image is padded to its code partitions, not the complete
+       * managed slot: an App-owned data tail is capacity, not artifact bytes.
+       * The running table does not describe the inactive image's length. */
+      out->image_size = (uint64_t)cp->partition_length + ap->partition_length;
+      out->flags |= H2_PAL_IMAGE_FLAG_SIZE_KNOWN;
+    }
   }
   uint32_t execution;
   if (h2_bk_image_execution_partition(id, &execution) == H2_PAL_OK) {
@@ -244,8 +255,6 @@ static h2_pal_result_t image_begin(
    */
   const int primary_linked =
       request->execution_partition_id == H2_BK_PRIMARY_PARTITION_ID;
-  if (primary_linked && h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-    return H2_PAL_ERR_UNSUPPORTED;
   const int fixed = h2_bk_fixed_layout_active();
   if (fixed && primary_linked &&
       request->partition_id == H2_BK_PRIMARY_PARTITION_ID &&
@@ -460,8 +469,6 @@ int h2_bk_image_publish_native_footer(uint32_t id) {
   if (!h2_bk_image_prepared(id) || id != H2_BK_APP_PARTITION_ID ||
       s_execution_partition_id != H2_BK_PRIMARY_PARTITION_ID)
     return H2_PAL_OK;
-  if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-    return H2_PAL_ERR_UNSUPPORTED;
   const bk_logic_partition_t* p = image_partition(id);
   if (!p) return H2_PAL_ERR_NOT_FOUND;
   /* Selection is the publication barrier. A successful finish leaves all boot

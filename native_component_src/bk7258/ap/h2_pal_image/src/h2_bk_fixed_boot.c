@@ -10,7 +10,7 @@
 #endif
 #include "layout.h"
 #include "flash_access.h"
-#include "h2/pal/hal/h2_pal_power.h"
+#include "hal/h2_pal_power.h"
 #ifndef H2_BK_FIXED_BOOT_HOST_TEST
 #include "h2_bk_flash_access.h"
 #endif
@@ -45,13 +45,18 @@ const h2_fixed_layout_t* h2_bk_fixed_layout(void) {
    * h2_boot_request partition is not a fixed layout. */
 #ifdef BK_PARTITION_H2_BOOT_REQUEST
   static h2_fixed_layout_t layout;
-  return h2_fixed_layout_from_partitions(
-             partition_window(BK_PARTITION_APPLICATION),
-             partition_window(BK_PARTITION_APPLICATION1),
-             partition_window(BK_PARTITION_S_APP),
-             partition_window(BK_PARTITION_H2_BOOT_REQUEST), &layout)
-             ? &layout
-             : NULL;
+  h2_fixed_layout_t candidate;
+  if (!h2_fixed_layout_from_partitions(
+          partition_window(BK_PARTITION_APPLICATION),
+          partition_window(BK_PARTITION_APPLICATION1),
+          partition_window(BK_PARTITION_S_APP),
+          partition_window(BK_PARTITION_H2_BOOT_REQUEST), &candidate) ||
+      !h2_fixed_layout_complete_app_window(
+          &candidate, partition_window(BK_PARTITION_OTA_FINA_EXECUTIVE)))
+    return NULL;
+  /* Do not publish the intermediate, code-only App extent. */
+  layout = candidate;
+  return &layout;
 #else
   return NULL;
 #endif
@@ -240,8 +245,6 @@ int h2_bk_fixed_app_window_holds_loader(void) {
   if (layout == NULL) return H2_PAL_ERR_INVALID_STATE;
   if (native_relay_active()) {
     uint8_t block[34];
-    if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-      return H2_PAL_ERR_UNSUPPORTED;
     if (bk_flash_read_bytes(layout->app.offset, block, sizeof(block)) !=
             BK_OK ||
         !h2_bk_flash_crc_valid(block))
@@ -266,8 +269,6 @@ int h2_bk_fixed_confirm_loader(void) {
    * rewrites the Loader window returns to it instead of the half-written
    * Loader window. */
   if (!native_relay_active()) return H2_PAL_OK;
-  if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-    return H2_PAL_ERR_UNSUPPORTED;
   return write_native_flags(s_native_relay_confirmed);
 }
 
@@ -292,8 +293,6 @@ int h2_bk_fixed_select(uint32_t partition_id) {
     if (holds_loader < 0) return holds_loader;
   }
   if (holds_loader) {
-    if (h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-      return H2_PAL_ERR_UNSUPPORTED;
     /* A Loader in the App window runs through the native B remap, not
      * through the CP handoff; keep an existing B selection as it is. */
     if (native_selects_relay()) return H2_PAL_OK;

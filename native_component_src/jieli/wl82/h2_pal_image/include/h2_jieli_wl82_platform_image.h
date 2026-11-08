@@ -1,9 +1,9 @@
 #ifndef H2_JIELI_WL82_PLATFORM_IMAGE_H
 #define H2_JIELI_WL82_PLATFORM_IMAGE_H
 
-#include "h2/pal/hal/h2_pal_power.h"
-#include "h2/pal/os/h2_pal_fs.h"
-#include "h2/pal/os/h2_pal_image.h"
+#include "hal/h2_pal_power.h"
+#include "os/h2_pal_fs.h"
+#include "os/h2_pal_image.h"
 
 #ifdef __cplusplus
 extern "C" {

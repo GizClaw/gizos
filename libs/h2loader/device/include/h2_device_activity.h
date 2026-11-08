@@ -1,8 +1,8 @@
 #ifndef H2_DEVICE_ACTIVITY_H
 #define H2_DEVICE_ACTIVITY_H
 
-#include "h2/pal/hal/h2_pal_wifi.h"
-#include "h2/pal/os/h2_pal_time.h"
+#include "hal/h2_pal_wifi.h"
+#include "os/h2_pal_time.h"
 
 #ifdef __cplusplus
 extern "C" {

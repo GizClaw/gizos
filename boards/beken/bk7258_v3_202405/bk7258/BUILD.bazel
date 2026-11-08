@@ -1,4 +1,5 @@
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -7,6 +8,11 @@ exports_files([
     "cp.defaults",
     "cp/usr_gpio_cfg.h",
 ])
+
+h2_tasks(
+    name = "touch_tasks",
+    tasks = ["h2_touch"],
+)
 
 firmware_native_component(
     name = "bk7258",
@@ -24,10 +30,11 @@ firmware_native_component(
         "manual",
     ],
     deps = [
-        "//libs/atomic",
-        "//libs/pal",
+        ":touch_tasks",
         "//libs/runtime",
+        "//libs/sync/atomic",
         "//native_component_src/bk7258/ap/h2_pal_image",
         "//native_component_src/bk7258/ap/h2_pal_storage",
+        "//pal",
     ],
 )

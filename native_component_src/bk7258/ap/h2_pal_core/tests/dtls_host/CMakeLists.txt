@@ -24,7 +24,7 @@ add_executable(bk_dtls_contract_test
     test_dtls.c
     "${H2_REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c")
 target_include_directories(bk_dtls_contract_test PRIVATE
-    "${H2_REPO_ROOT}/libs/pal/include"
+    "${H2_REPO_ROOT}/pal/include"
     "${H2_REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/include")
 target_compile_options(bk_dtls_contract_test PRIVATE -UNDEBUG)
 target_link_libraries(bk_dtls_contract_test mbedtls mbedx509 mbedcrypto)

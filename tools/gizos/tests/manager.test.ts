@@ -73,6 +73,12 @@ describe("catalog and shared storage", () => {
     for (const entry of catalog.sdks) expect(entry.commit).toMatch(/^[0-9a-f]{40}$/);
     expect(selectSdk("esp", "6.2").kind).toBe("idf");
     expect(selectSdk("bk7258", "3.1.1").kind).toBe("bk");
+    const defaultBk = catalog.sdks.find(entry => entry.name === "bk7258" && entry.default)!;
+    expect(defaultBk.version).toBe("3.1.1-r6bbf627");
+    expect(defaultBk.commit).toBe("6bbf62746a5e904a508dee056cac6b17675637f5");
+    expect(selectSdk("bk", "3.1.1-r6bbf627")).toBe(defaultBk);
+    expect(selectSdk("bk7258", "3.1.1").commit).toBe("aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca");
+    expect(selectSdk("bk7258", "3.1.1-rd789d71").commit).toBe("d789d71d89d11584c3350ca67600ff9455a7f57a");
     expect(selectSdk("bk_avdk_smp", "3.1.1")).toBe(selectSdk("bk", "3.1.1"));
     expect(sdkName(selectSdk("bk_avdk_smp", "3.1.1"))).toBe("bk7258");
     expect(sdkName(selectSdk("bk_avdk_smp", "4.0.1"))).toBe("bk7259");
@@ -823,7 +829,7 @@ describe("CLI discovery", () => {
     await run("config", "bk7258", "--sdk", join(base, "SDKs/bk7258"));
     await run("config", "bk-loader", "--path", loader);
     const configured = JSON.parse(await run("config"));
-    expect(configured.paths.bk7258["3.1.1"].sdk).toBe(join(base, "SDKs/bk7258"));
+    expect(configured.paths.bk7258["3.1.1-r6bbf627"].sdk).toBe(join(base, "SDKs/bk7258"));
     expect(Object.values(configured.paths["bk-loader"])[0]).toEqual({ path: loader });
     expect(JSON.parse(await run("config", "esp_idf")).paths["6.2"]).toEqual(saved.paths);
     expect(JSON.parse(await run("config", "esp_idf", "6.2"))).toEqual(saved);
@@ -920,7 +926,7 @@ describe("CLI discovery", () => {
     const text = await run("list", "bk7258");
     expect(text).toContain("* Beken -> bekencorp/bk_avdk_smp (selected)");
     expect(text).toContain("GizClaw -> GizClaw/bk_avdk_smp (default)");
-    expect(text).toContain("3.1.1 (selected): not installed");
+    expect(text).toContain("3.1.1-r6bbf627 (selected): not installed");
     expect(await run("list", "jieli-ac707n")).toContain("e_badge/e_badge_707_sdk_200");
     const before = await readFile(configFile(env), "utf8");
     await expect(run("config", "bk7258", "other-org/bk_avdk_smp")).rejects.toThrow("Repository is not in the catalog");

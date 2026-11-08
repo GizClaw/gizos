@@ -56,30 +56,6 @@ void h2_bk_test_mapped_copy(uintptr_t a, uint32_t within, void* out, size_t n) {
   mapped++;
   invalidated = barrier = 0;
 }
-uint32_t mb_ipc_socket(uint8_t p, void* cb) {
-  assert(p == 19 && !cb);
-  return 1;
-}
-int mb_ipc_connect(uint32_t h, uint8_t cpu, uint8_t port, uint32_t t) {
-  assert(h == 1 && cpu == 0 && port == 4 && t == 500);
-  return 0;
-}
-int mb_ipc_send(uint32_t h, uint8_t cmd, uint8_t* d, uint32_t n, uint32_t t) {
-  assert(h == 1 && cmd == 1 && n == 16 && t == 500 &&
-         h2_bk_flash_status_valid(d, 0));
-  return 0;
-}
-int mb_ipc_recv(uint32_t h, uint8_t* cmd, uint8_t* d, uint32_t n, uint32_t t) {
-  assert(h == 1 && n == 16 && t == 500);
-  *cmd = 1;
-  h2_bk_flash_status_request(d);
-  d[12] = 1;
-#ifdef TEST_UNKNOWN
-  return -1;
-#else
-  return 16;
-#endif
-}
 int main(void) {
   uint8_t out[sizeof(plain)];
   make_packets();
@@ -102,10 +78,5 @@ int main(void) {
   assert(h2_bk_flash_read_plain(BASE, 68, 64, out, 1) < 0);
   native_slot = 1;
   assert(h2_bk_flash_read_plain(BASE, 68, 0, out, 1) == H2_PAL_ERR_UNSUPPORTED);
-#ifdef TEST_UNKNOWN
-  assert(h2_bk_flash_aes_state() == H2_BK_FLASH_AES_UNKNOWN);
-#else
-  assert(h2_bk_flash_aes_state() == H2_BK_FLASH_AES_ON);
-#endif
   return 0;
 }

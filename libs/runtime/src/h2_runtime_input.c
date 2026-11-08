@@ -853,7 +853,8 @@ static h2_pal_result_t apply_nfc_scan(h2_runtime_t* runtime,
     return publish_error(runtime, source, H2_PAL_ERR_INVALID_ARG, now_ms);
   }
 
-  int changed = source->nfc_state.stage != scan->stage ||
+  int changed = source->nfc_state.status == H2_RUNTIME_NFC_STATE_NONE ||
+                source->nfc_state.stage != scan->stage ||
                 source->nfc_state.tag_type != scan->tag_type ||
                 source->nfc_state.result != scan->result ||
                 !nfc_uid_same(&source->nfc_state, scan);

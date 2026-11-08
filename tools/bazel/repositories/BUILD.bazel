@@ -1,0 +1,12 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "repository_definitions",
+    srcs = ["repositories.bzl"],
+)
+
+exports_files(["repositories.bzl"])
+
+exports_files([
+    "repositories.bzl",
+])

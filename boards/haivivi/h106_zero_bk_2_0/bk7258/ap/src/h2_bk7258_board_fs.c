@@ -155,6 +155,13 @@ static int mount_storage(void) {
   return ensure_storage_dirs();
 }
 
+static h2_pal_result_t fs_prepare(void* user, const char* path) {
+  (void)user;
+  char mapped[H2_ZERO_BK_FS_PATH_MAX];
+  const int rc = translate_path(path, mapped, sizeof(mapped));
+  return rc == H2_PAL_OK ? mount_storage() : rc;
+}
+
 static int fs_mkdir(void* user, const char* path) {
   char mapped[H2_ZERO_BK_FS_PATH_MAX];
   int rc;
@@ -393,6 +400,7 @@ int h2_bk7258_board_fs_init(h2_pal_fs_api_t* fs) {
       .clear = fs_clear,
       .remove = fs_remove,
       .rename = fs_rename,
+      .prepare = fs_prepare,
   };
   static const h2_pal_fs_api_t api = {
       .user = NULL,

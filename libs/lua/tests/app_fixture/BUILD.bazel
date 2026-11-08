@@ -1,5 +1,5 @@
 load("//libs/lua:lua_app.bzl", "lua_app", "lua_app_index")
-load("//tools/bazel:app_version.bzl", "app_version")
+load("//tools/bazel/firmware:app_version.bzl", "app_version")
 
 package(default_visibility = ["//libs/lua:__pkg__"])
 

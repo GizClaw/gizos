@@ -1,6 +1,4 @@
 #include "h2_h2loader_host.h"
-#include "h2_h2loader_host_factory.h"
-#include "h2_h2loader_host_flash.h"
 #include "h2_h2loader_host_internal.h"
 #include "h2_h2loader_host_scheduler.h"
 
@@ -433,7 +431,7 @@ static int command_transport_cancelled(void* user) {
 static void test_data_checksum_waits_for_second_line(void) {
   static const uint8_t status_only[] = "H2_LOADER_STATUS board=devkit\n";
   static const uint8_t response[] =
-      "H2_BK_FLASH_REJECTION valid=1 aes=1 rc=-3 erase_calls=0 write_calls=0\n"
+      "H2_BK_FLASH_ERROR rc=-3 erase_calls=0 write_calls=0\n"
       "H2_LOADER_STATUS board=devkit\n"
       "H2_LOADER_DATA_CHECKSUM checksum="
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
@@ -455,7 +453,7 @@ static void test_data_checksum_waits_for_second_line(void) {
   h2_h2loader_host_command_result_t result = {0};
   assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
   /* Every split within the actual checksum marker must keep collecting, even
-   * H/H2/H2_ which also prefix the target's rejection audit record. */
+   * H/H2/H2_ which also prefix the target's diagnostic record. */
   const uint8_t* checksum =
       (const uint8_t*)strstr((const char*)response, "H2_LOADER_DATA_CHECKSUM");
   assert(checksum != NULL);
@@ -1120,237 +1118,6 @@ static void test_status_version_metadata(void) {
   assert(strcmp(status.partition_2.version, version) == 0);
 }
 
-static void write_le16(uint8_t* out, uint16_t value) {
-  out[0] = (uint8_t)value;
-  out[1] = (uint8_t)(value >> 8u);
-}
-
-static void write_le32(uint8_t* out, uint32_t value) {
-  for (size_t i = 0u; i < 4u; ++i) {
-    out[i] = (uint8_t)(value >> (i * 8u));
-  }
-}
-
-static void write_le64(uint8_t* out, uint64_t value) {
-  for (size_t i = 0u; i < 8u; ++i) {
-    out[i] = (uint8_t)(value >> (i * 8u));
-  }
-}
-
-static h2_pal_result_t factory_read(void* user, uint64_t offset, uint8_t* out,
-                                    size_t out_size, size_t* out_read) {
-  resource_fixture_t* fixture = user;
-  *out_read = 0u;
-  if (offset > fixture->len) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  size_t remaining = fixture->len - (size_t)offset;
-  size_t take = remaining < out_size ? remaining : out_size;
-  memcpy(out, &fixture->bytes[offset], take);
-  *out_read = take;
-  return H2_PAL_OK;
-}
-
-static void test_factory_bundle(void) {
-  static const uint8_t member_sha[32] = {
-      0x88u, 0xd4u, 0x26u, 0x6fu, 0xd4u, 0xe6u, 0x33u, 0x8du,
-      0x13u, 0xb8u, 0x45u, 0xfcu, 0xf2u, 0x89u, 0x57u, 0x9du,
-      0x20u, 0x9cu, 0x89u, 0x78u, 0x23u, 0xb9u, 0x21u, 0x7du,
-      0xa3u, 0xe1u, 0x61u, 0x93u, 0x6fu, 0x03u, 0x15u, 0x89u,
-  };
-  uint8_t bundle[H2_H2LOADER_HOST_FACTORY_HEADER_SIZE + 4u] = {0};
-  memcpy(bundle, "H2FB", 4u);
-  write_le16(&bundle[4], 1u);
-  write_le16(&bundle[6], H2_H2LOADER_HOST_FACTORY_DRIVER_ESP_ROM);
-  write_le32(&bundle[8], 1u);
-  write_le32(&bundle[12], 115200u);
-  write_le32(&bundle[16], 1u);
-  strcpy((char*)&bundle[20], "devkit");
-  strcpy((char*)&bundle[20 + H2_H2LOADER_HOST_IDENTITY_MAX_LEN], "esp32s3");
-  const size_t record = 20u + 2u * H2_H2LOADER_HOST_IDENTITY_MAX_LEN;
-  write_le32(&bundle[record], 0x1000u);
-  write_le64(&bundle[record + 4u], H2_H2LOADER_HOST_FACTORY_HEADER_SIZE);
-  write_le64(&bundle[record + 12u], 4u);
-  memcpy(&bundle[record + 20u], member_sha, sizeof(member_sha));
-  strcpy((char*)&bundle[record + 52u], "loader.bin");
-  memcpy(&bundle[H2_H2LOADER_HOST_FACTORY_HEADER_SIZE], "abcd", 4u);
-  resource_fixture_t fixture = {
-      .bytes = bundle,
-      .len = sizeof(bundle),
-  };
-  h2_h2loader_host_catalog_entry_t asset = {
-      .bytes = sizeof(bundle),
-      .role = H2_H2LOADER_HOST_ASSET_ROLE_LOADER,
-      .operation = H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY,
-  };
-  strcpy(asset.board, "devkit");
-  strcpy(asset.target, "esp32s3");
-  h2_h2loader_host_factory_manifest_t manifest;
-  assert(h2_h2loader_host_factory_open(&asset, factory_read, &fixture,
-                                       &manifest) == H2_PAL_OK);
-  assert(manifest.file_count == 1u);
-  assert(manifest.files[0].flash_offset == 0x1000u);
-  uint8_t output[4];
-  size_t read = 0u;
-  assert(h2_h2loader_host_factory_read_member(
-             &manifest, 0u, factory_read, &fixture, 0u, output, sizeof(output),
-             &read) == H2_PAL_OK);
-  assert(read == 4u && memcmp(output, "abcd", 4u) == 0);
-  bundle[sizeof(bundle) - 1u] ^= 1u;
-  assert(h2_h2loader_host_factory_open(&asset, factory_read, &fixture,
-                                       &manifest) == H2_PAL_ERR_FORMAT);
-}
-
-typedef struct flash_fixture {
-  h2_pal_result_t prepare_result;
-  int prepare_count;
-  int erase_count;
-  int write_count;
-  int verify_count;
-  int reset_count;
-  int close_count;
-} flash_fixture_t;
-
-static h2_pal_result_t flash_prepare(
-    void* user, const h2_h2loader_host_catalog_entry_t* asset,
-    h2_h2loader_host_payload_read_fn read_payload, void* payload_user) {
-  (void)asset;
-  (void)read_payload;
-  (void)payload_user;
-  flash_fixture_t* fixture = user;
-  ++fixture->prepare_count;
-  return fixture->prepare_result;
-}
-
-static h2_pal_result_t flash_erase(void* user,
-                                   h2_h2loader_host_cancelled_fn is_cancelled,
-                                   void* cancel_user) {
-  (void)is_cancelled;
-  (void)cancel_user;
-  ++((flash_fixture_t*)user)->erase_count;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t flash_write(
-    void* user, const h2_h2loader_host_catalog_entry_t* asset,
-    h2_h2loader_host_payload_read_fn read_payload, void* payload_user,
-    h2_h2loader_host_cancelled_fn is_cancelled, void* cancel_user,
-    h2_h2loader_host_progress_fn on_progress, void* progress_user) {
-  (void)asset;
-  (void)read_payload;
-  (void)payload_user;
-  (void)is_cancelled;
-  (void)cancel_user;
-  (void)on_progress;
-  (void)progress_user;
-  ++((flash_fixture_t*)user)->write_count;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t flash_verify(void* user,
-                                    h2_h2loader_host_cancelled_fn is_cancelled,
-                                    void* cancel_user) {
-  (void)is_cancelled;
-  (void)cancel_user;
-  ++((flash_fixture_t*)user)->verify_count;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t flash_reset(void* user) {
-  ++((flash_fixture_t*)user)->reset_count;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t flash_close(void* user) {
-  ++((flash_fixture_t*)user)->close_count;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t unused_payload_read(void* user, uint64_t offset,
-                                           uint8_t* out, size_t out_size,
-                                           size_t* out_read) {
-  (void)user;
-  (void)offset;
-  (void)out;
-  (void)out_size;
-  *out_read = 0u;
-  return H2_PAL_OK;
-}
-
-static void test_recovery(void) {
-  static const h2_h2loader_host_flash_driver_vtable_t vtable = {
-      .prepare = flash_prepare,
-      .erase = flash_erase,
-      .write = flash_write,
-      .verify = flash_verify,
-      .reset_to_loader = flash_reset,
-      .close = flash_close,
-  };
-  flash_fixture_t fixture = {
-      .prepare_result = H2_PAL_OK,
-  };
-  h2_h2loader_host_flash_driver_t driver = {
-      .user = &fixture,
-      .vtable = &vtable,
-  };
-  h2_h2loader_host_catalog_entry_t asset = {
-      .role = H2_H2LOADER_HOST_ASSET_ROLE_LOADER,
-      .operation = H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY,
-  };
-  h2_h2loader_host_recovery_authorization_t authorization = {
-      .transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL,
-      .reason = H2_H2LOADER_HOST_RECOVERY_PROBE_FAILED,
-      .probe_result = H2_PAL_ERR_TIMEOUT,
-      .probe_completed_ms = 100u,
-      .expires_ms = 200u,
-      .probe_attempts = 2u,
-      .identity_confirmed = 1u,
-      .destructive_confirmed = 1u,
-  };
-  assert(h2_h2loader_host_recovery_run(&authorization, &asset, 150u, &driver,
-                                       unused_payload_read, NULL, NULL, NULL,
-                                       NULL, NULL) == H2_PAL_OK);
-  assert(fixture.erase_count == 1);
-  assert(fixture.prepare_count == 1);
-  assert(fixture.write_count == 1);
-  assert(fixture.verify_count == 1);
-  assert(fixture.reset_count == 1);
-  assert(fixture.close_count == 1);
-  fixture.prepare_result = H2_PAL_ERR_FORMAT;
-  assert(h2_h2loader_host_recovery_run(&authorization, &asset, 150u, &driver,
-                                       unused_payload_read, NULL, NULL, NULL,
-                                       NULL, NULL) == H2_PAL_ERR_FORMAT);
-  assert(fixture.prepare_count == 2);
-  assert(fixture.erase_count == 1);
-  assert(fixture.close_count == 2);
-  fixture.prepare_result = H2_PAL_OK;
-  authorization.probe_result = H2_PAL_OK;
-  assert(h2_h2loader_host_recovery_run(&authorization, &asset, 150u, &driver,
-                                       unused_payload_read, NULL, NULL, NULL,
-                                       NULL, NULL) == H2_PAL_ERR_INVALID_STATE);
-  assert(fixture.prepare_count == 2);
-  assert(fixture.close_count == 3);
-  assert(h2_h2loader_host_recovery_validate(&authorization, &asset, 150u) ==
-         H2_PAL_ERR_INVALID_STATE);
-  authorization.probe_result = H2_PAL_ERR_TIMEOUT;
-  authorization.probe_attempts = 1u;
-  assert(h2_h2loader_host_recovery_validate(&authorization, &asset, 150u) ==
-         H2_PAL_ERR_INVALID_STATE);
-  authorization.probe_attempts = 2u;
-  authorization.transport = H2_H2LOADER_HOST_TRANSPORT_BLE;
-  assert(h2_h2loader_host_recovery_validate(&authorization, &asset, 150u) ==
-         H2_PAL_ERR_INVALID_STATE);
-  authorization.transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL;
-  authorization.reason = H2_H2LOADER_HOST_RECOVERY_BLANK_FIXTURE;
-  authorization.probe_attempts = 1u;
-  authorization.probe_result = H2_PAL_ERR_IO;
-  assert(h2_h2loader_host_recovery_validate(&authorization, &asset, 150u) ==
-         H2_PAL_ERR_INVALID_STATE);
-  authorization.probe_result = H2_PAL_ERR_TIMEOUT;
-  assert(h2_h2loader_host_recovery_validate(&authorization, &asset, 150u) ==
-         H2_PAL_OK);
-}
-
 typedef struct operation_fixture {
   int connect_count;
   int stage_count;
@@ -1524,6 +1291,22 @@ static void operation_event(void* user,
   ++fixture->event_count;
 }
 
+static h2_pal_result_t operation_payload_read(void* user, uint64_t offset,
+                                              uint8_t* out, size_t out_size,
+                                              size_t* out_read) {
+  static const uint8_t payload[] = {'a', 'b', 'c'};
+  (void)user;
+  if (out_read == NULL || (out == NULL && out_size != 0u) ||
+      offset > sizeof(payload)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  size_t remaining = sizeof(payload) - (size_t)offset;
+  size_t take = remaining < out_size ? remaining : out_size;
+  if (take != 0u) memcpy(out, payload + (size_t)offset, take);
+  *out_read = take;
+  return H2_PAL_OK;
+}
+
 static void test_managed_operation(void) {
   static const char package_sha[] =
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -1564,7 +1347,7 @@ static void test_managed_operation(void) {
               .vtable = &transport_vtable,
           },
       .asset = &fixture.asset,
-      .read_payload = unused_payload_read,
+      .read_payload = operation_payload_read,
       .is_cancelled = operation_cancelled,
       .cancel_user = &fixture,
       .on_event = operation_event,
@@ -2365,8 +2148,6 @@ int main(void) {
   test_catalog_esp_loader_assets();
   test_status();
   test_status_version_metadata();
-  test_factory_bundle();
-  test_recovery();
   test_managed_operation();
   test_scheduler();
   test_serial_connect_deasserts_dtr_and_rts();

@@ -9,7 +9,7 @@
 #include "h2_runtime_input_nfc_defs.h"
 #include "h2_runtime_component.h"
 #include "h2_runtime_input.h"
-#include "h2/pal/hal/h2_pal_nfc.h"
+#include "hal/h2_pal_nfc.h"
 
 #ifdef __cplusplus
 extern "C" {

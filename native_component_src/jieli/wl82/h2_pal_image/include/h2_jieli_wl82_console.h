@@ -1,7 +1,7 @@
 #ifndef H2_JIELI_WL82_CONSOLE_H
 #define H2_JIELI_WL82_CONSOLE_H
 
-#include "h2/pal/os/h2_pal_io_stream.h"
+#include "os/h2_pal_io_stream.h"
 
 const h2_pal_io_stream_api_t* h2_jieli_wl82_platform_io_stream_api(void);
 #include <stddef.h>

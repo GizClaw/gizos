@@ -1,30 +1,30 @@
 #ifndef H2_BK_PLATFORM_CORE_H
 #define H2_BK_PLATFORM_CORE_H
 
-#include "h2/pal/application/h2_pal_mqtt.h"
-#include "h2/pal/application/h2_pal_webrtc.h"
-#include "h2/pal/hal/h2_pal_ble.h"
-#include "h2/pal/hal/h2_pal_modem.h"
-#include "h2/pal/hal/h2_pal_uart_io_stream.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
-#include "h2/pal/hal/h2_pal_wifi_csi.h"
-#include "h2/pal/hal/h2_pal_wifi_settings.h"
-#include "h2/pal/net/h2_pal_dtls.h"
-#include "h2/pal/net/h2_pal_net.h"
-#include "h2/pal/net/h2_pal_netif.h"
-#include "h2/pal/os/h2_pal_crypto.h"
-#include "h2/pal/os/h2_pal_device_identity.h"
-#include "h2/pal/os/h2_pal_firmware_info.h"
-#include "h2/pal/os/h2_pal_io_stream.h"
-#include "h2/pal/os/h2_pal_log.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_pref.h"
-#include "h2/pal/os/h2_pal_queue.h"
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/os/h2_pal_system_event.h"
-#include "h2/pal/os/h2_pal_task.h"
-#include "h2/pal/os/h2_pal_time.h"
-#include "h2/pal/os/h2_pal_timer.h"
+#include "application/h2_pal_mqtt.h"
+#include "application/h2_pal_webrtc.h"
+#include "hal/h2_pal_ble.h"
+#include "hal/h2_pal_modem.h"
+#include "hal/h2_pal_uart_io_stream.h"
+#include "hal/h2_pal_wifi.h"
+#include "hal/h2_pal_wifi_csi.h"
+#include "hal/h2_pal_wifi_settings.h"
+#include "net/h2_pal_dtls.h"
+#include "net/h2_pal_net.h"
+#include "net/h2_pal_netif.h"
+#include "os/h2_pal_crypto.h"
+#include "os/h2_pal_device_identity.h"
+#include "os/h2_pal_firmware_info.h"
+#include "os/h2_pal_io_stream.h"
+#include "os/h2_pal_log.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_pref.h"
+#include "os/h2_pal_queue.h"
+#include "os/h2_pal_sync.h"
+#include "os/h2_pal_system_event.h"
+#include "os/h2_pal_task.h"
+#include "os/h2_pal_time.h"
+#include "os/h2_pal_timer.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -53,7 +53,9 @@ typedef struct h2_bk_task_policy_config {
   h2_bk_task_policy_resolver_t resolver;
   void* resolver_user;
   const h2_pal_mem_api_t* task_allocator;
-  /** Optional actual PSRAM stack allocator. Borrowed until every task joins. */
+  /** Optional actual PSRAM stack allocator. Borrowed until every task joins.
+   * Generated AP policies supply this so the native TCB follows task_allocator
+   * while the stack follows the per-task PSRAM policy. */
   const h2_pal_mem_api_t* psram_stack_allocator;
 } h2_bk_task_policy_config_t;
 

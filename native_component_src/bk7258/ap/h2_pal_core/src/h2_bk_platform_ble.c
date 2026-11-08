@@ -2032,10 +2032,10 @@ static void h2_bk_ble_build_legacy_attr_db(void) {
     s_h2_bk_ble_legacy_attr_db[decl_index].uuid[0] = 0x03u;
     s_h2_bk_ble_legacy_attr_db[decl_index].uuid[1] = 0x28u;
     s_h2_bk_ble_legacy_attr_db[decl_index].perm = BK_BLE_PERM_SET(RD, ENABLE);
-    s_h2_bk_ble_legacy_attr_db[value_index].uuid[0] =
-        (uint8_t)(s_h2_bk_ble_char_uuid[i].uuid.uuid16 & 0xffu);
-    s_h2_bk_ble_legacy_attr_db[value_index].uuid[1] =
-        (uint8_t)(s_h2_bk_ble_char_uuid[i].uuid.uuid16 >> 8);
+    /* The legacy SDK stores full UUIDs and encodes their width separately. */
+    const bk_bt_uuid_t* uuid = &s_h2_bk_ble_char_uuid[i];
+    memcpy(s_h2_bk_ble_legacy_attr_db[value_index].uuid, &uuid->uuid,
+           uuid->len);
     uint16_t permissions = 0u;
     if ((s_h2_bk_ble_properties[i] & H2_PAL_BLE_GATT_PROPERTY_READ) != 0u)
       permissions |= BK_BLE_PERM_SET(RD, ENABLE);
@@ -2061,8 +2061,12 @@ static void h2_bk_ble_build_legacy_attr_db(void) {
       permissions |= BK_BLE_PERM_SET(WP, UNAUTH);
     }
     s_h2_bk_ble_legacy_attr_db[value_index].perm = permissions;
+    uint16_t uuid_perm =
+        uuid->len == BK_UUID_LEN_128  ? BK_BLE_PERM_SET(UUID_LEN, UUID_128)
+        : uuid->len == BK_UUID_LEN_32 ? BK_BLE_PERM_SET(UUID_LEN, UUID_32)
+                                      : BK_BLE_PERM_SET(UUID_LEN, UUID_16);
     s_h2_bk_ble_legacy_attr_db[value_index].ext_perm =
-        BK_BLE_PERM_SET(RI, ENABLE) | BK_BLE_PERM_SET(UUID_LEN, UUID_16);
+        BK_BLE_PERM_SET(RI, ENABLE) | uuid_perm;
     s_h2_bk_ble_legacy_attr_db[value_index].max_size =
         s_h2_bk_ble_value_max_len[i];
     s_h2_bk_ble_legacy_attr_db[cccd_index].uuid[0] = 0x02u;
@@ -2073,15 +2077,16 @@ static void h2_bk_ble_build_legacy_attr_db(void) {
 
   memset(&s_h2_bk_ble_legacy_db_cfg, 0, sizeof(s_h2_bk_ble_legacy_db_cfg));
   s_h2_bk_ble_legacy_db_cfg.prf_task_id = H2_BK_BLE_LEGACY_PRF_ID;
-  s_h2_bk_ble_legacy_db_cfg.uuid[0] =
-      (uint8_t)(s_h2_bk_ble_service_uuid[0].uuid.uuid16 & 0xffu);
-  s_h2_bk_ble_legacy_db_cfg.uuid[1] =
-      (uint8_t)(s_h2_bk_ble_service_uuid[0].uuid.uuid16 >> 8);
+  const bk_bt_uuid_t* uuid = &s_h2_bk_ble_service_uuid[0];
+  memcpy(s_h2_bk_ble_legacy_db_cfg.uuid, &uuid->uuid, uuid->len);
   s_h2_bk_ble_legacy_db_cfg.att_db_nb =
       (uint8_t)(1u + 3u * s_h2_bk_ble_service_characteristic_count[0]);
   s_h2_bk_ble_legacy_db_cfg.start_hdl = 0u;
   s_h2_bk_ble_legacy_db_cfg.att_db = s_h2_bk_ble_legacy_attr_db;
-  s_h2_bk_ble_legacy_db_cfg.svc_perm = BK_BLE_PERM_SET(SVC_UUID_LEN, UUID_16);
+  s_h2_bk_ble_legacy_db_cfg.svc_perm =
+      uuid->len == BK_UUID_LEN_128  ? BK_BLE_PERM_SET(SVC_UUID_LEN, UUID_128)
+      : uuid->len == BK_UUID_LEN_32 ? BK_BLE_PERM_SET(SVC_UUID_LEN, UUID_32)
+                                    : BK_BLE_PERM_SET(SVC_UUID_LEN, UUID_16);
 }
 
 static int32_t h2_bk_ble_gatts_cb_unlocked(bk_gatts_cb_event_t event,
@@ -2579,17 +2584,6 @@ static h2_pal_result_t h2_bk_ble_set_local_mtu(void) {
     if (s_h2_bk_ble_service_count > 1u) {
       return H2_PAL_ERR_UNSUPPORTED;
     }
-    if (s_h2_bk_ble_service_count == 1u &&
-        s_h2_bk_ble_service_uuid[0].len != BK_UUID_LEN_16) {
-      return H2_PAL_ERR_UNSUPPORTED;
-    }
-    for (size_t i = 0u; s_h2_bk_ble_service_count == 1u &&
-                        i < s_h2_bk_ble_service_characteristic_count[0];
-         ++i) {
-      if (s_h2_bk_ble_char_uuid[i].len != BK_UUID_LEN_16) {
-        return H2_PAL_ERR_UNSUPPORTED;
-      }
-    }
     bk_ble_set_notice_cb(h2_bk_ble_notice_cb);
     h2_pal_result_t rc = h2_bk_ble_ensure_sem();
     if (rc != H2_PAL_OK) {
@@ -2698,8 +2692,11 @@ static h2_pal_result_t h2_bk_ble_start(h2_pal_ble_t* ble) {
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_bk_ble_unregister_gatt_services(h2_pal_ble_t* ble);
+
 static h2_pal_result_t h2_bk_ble_stop(h2_pal_ble_t* ble) {
-  (void)ble;
+  h2_pal_result_t detach_rc = h2_bk_ble_unregister_gatt_services(ble);
+  if (detach_rc != H2_PAL_OK) return detach_rc;
   if (s_h2_bk_ble_gatt_mutex != NULL &&
       rtos_lock_mutex(&s_h2_bk_ble_gatt_mutex) == kNoErr) {
     if (s_h2_bk_ble_gatts_tx.kind != H2_BK_BLE_GATTS_TX_IDLE) {
@@ -2731,7 +2728,9 @@ static h2_pal_result_t h2_bk_ble_stop(h2_pal_ble_t* ble) {
   s_h2_bk_ble_legacy_adv_data_valid = 0;
   memset(s_h2_bk_ble_adv_sets, 0, sizeof(s_h2_bk_ble_adv_sets));
   s_h2_bk_ble_started = 0;
-  memset(s_h2_bk_ble_service_started, 0, sizeof(s_h2_bk_ble_service_started));
+  /* The SDK keeps the installed GATT tables across a logical Host stop.
+   * Retain their state so the next start reuses them after callback rebinding;
+   * recreating them on each start exhausts the SDK's dynamic attribute pool. */
   h2_bk_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED, NULL, 0u);
   return H2_PAL_OK;
 }
@@ -3349,11 +3348,22 @@ static h2_pal_result_t h2_bk_ble_register_gatt_services(
     return H2_PAL_ERR_INVALID_STATE;
   }
   size_t first = h2_bk_ble_service_characteristic_first(service_index);
+  /* Retained SDK tables cannot adopt a new schema through callback rebinding.
+   * Validate every characteristic before changing any bindings or values. */
   for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
+    const h2_pal_ble_gatt_characteristic_t* ch =
+        &services[0].characteristics[i];
+    uint16_t max_value_len =
+        ch->max_value_len > 0u && ch->max_value_len < H2_BK_BLE_MAX_VALUE_LEN
+            ? (uint16_t)ch->max_value_len
+            : H2_BK_BLE_MAX_VALUE_LEN;
     if (!add_service &&
         (s_h2_bk_ble_value[first + i] == NULL ||
          !h2_bk_ble_uuid_equal(&s_h2_bk_ble_char_uuid[first + i],
-                               &char_uuids[i]))) {
+                               &char_uuids[i]) ||
+         s_h2_bk_ble_properties[first + i] != ch->properties ||
+         s_h2_bk_ble_permissions[first + i] != ch->permissions ||
+         s_h2_bk_ble_value_max_len[first + i] != max_value_len)) {
       (void)rtos_unlock_mutex(&s_h2_bk_ble_gatt_mutex);
       return H2_PAL_ERR_INVALID_STATE;
     }

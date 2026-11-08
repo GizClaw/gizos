@@ -1,7 +1,7 @@
 #ifndef H2_ESP_LAZY_AUDIO_H
 #define H2_ESP_LAZY_AUDIO_H
 
-#include "h2/pal/hal/h2_pal_audio.h"
+#include "hal/h2_pal_audio.h"
 
 #ifdef __cplusplus
 extern "C" {

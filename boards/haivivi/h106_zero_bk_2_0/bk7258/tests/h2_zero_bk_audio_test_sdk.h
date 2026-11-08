@@ -3,9 +3,9 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-#include "h2/pal/hal/h2_pal_audio.h"
-#include "h2/pal/os/h2_pal_queue.h"
-#include "h2/pal/os/h2_pal_task.h"
+#include "hal/h2_pal_audio.h"
+#include "os/h2_pal_queue.h"
+#include "os/h2_pal_task.h"
 #include "h2_audio_mixer.h"
 
 typedef struct {

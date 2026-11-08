@@ -504,7 +504,13 @@ const h2_pal_nfc_api_t* h2_bk7258_board_nfc_api(void) {
         .i2c_speed_hz = H2_ZERO_BK_NFC_I2C_FREQUENCY_HZ,
         .read_capacity = H2_ZERO_BK_NFC_READ_CAPACITY,
     };
-    if (h2_bk_nfc_fm175xx_init(&s_nfc, &config) != H2_PAL_OK) {
+    const h2_fm175xx_type_a_profile_t profile = {
+        .rf_config = H2_ZERO_BK_NFC_RF_CONFIG,
+        .rx_threshold = H2_ZERO_BK_NFC_RX_THRESHOLD,
+        .preserve_tx_drive = 1u,
+    };
+    if (h2_bk_nfc_fm175xx_init_with_profile(&s_nfc, &config, &profile) !=
+        H2_PAL_OK) {
       return NULL;
     }
     s_nfc_initialized = 1;

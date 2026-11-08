@@ -1,4 +1,4 @@
-#include "h2/pal/hal/h2_pal_ble.h"
+#include "hal/h2_pal_ble.h"
 
 #include <assert.h>
 #include <stdbool.h>

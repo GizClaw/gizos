@@ -1,6 +1,6 @@
 #ifndef H2_ESP_EXTFLASH_CLEAR_TEST_SDK_H
 #define H2_ESP_EXTFLASH_CLEAR_TEST_SDK_H
-#include "h2/pal/os/h2_pal_fs.h"
+#include "os/h2_pal_fs.h"
 #include <dirent.h>
 #include <errno.h>
 #include <sys/stat.h>

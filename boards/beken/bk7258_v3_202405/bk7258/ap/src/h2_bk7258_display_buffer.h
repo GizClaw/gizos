@@ -1,7 +1,7 @@
 #ifndef H2_BK7258_DISPLAY_BUFFER_H
 #define H2_BK7258_DISPLAY_BUFFER_H
 
-#include "h2/pal/hal/h2_pal_display.h"
+#include "hal/h2_pal_display.h"
 #include "h2_atomic.h"
 #include <string.h>
 

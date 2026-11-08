@@ -2,8 +2,8 @@
 #define H2_LOADER_METADATA_H
 
 #include "h2_loader_package.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_pref.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_pref.h"
 
 #include <stddef.h>
 #include <stdint.h>

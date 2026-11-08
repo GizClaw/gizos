@@ -1,12 +1,10 @@
 #pragma once
-#include "h2/pal/hal/h2_pal_power.h"
+#include "hal/h2_pal_power.h"
 #include "layout.h"
 #include <stddef.h>
 #include <stdint.h>
 #define BK_OK 0
 #define BK_PARTITION_OTA_FINA_EXECUTIVE 1
-#define H2_BK_FLASH_AES_OFF 0u
-#define H2_BK_FLASH_AES_UNKNOWN 2u
 #define CONFIG_OTA_POSITION_INDEPENDENT_AB 1
 typedef enum { UPDATE_A_PART, UPDATE_B_PART } part_flag;
 int bk_ota_update_partition_flag(int);
@@ -28,7 +26,6 @@ int bk_wdt_feed(void);
 void bk_ota_double_check_for_execution(void);
 void bk_ota_confirm_update_partition(unsigned);
 void h2_bk_platform_sd_fs_release(void);
-unsigned h2_bk_flash_aes_state(void);
 
 extern int g_fixed_active, g_fixed_app_failed, g_fixed_relay_failed;
 extern uint8_t g_fixed_slot;

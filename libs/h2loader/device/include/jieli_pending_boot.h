@@ -1,7 +1,7 @@
 #ifndef H2_JIELI_PENDING_BOOT_H
 #define H2_JIELI_PENDING_BOOT_H
 
-#include "h2/pal/hal/h2_pal_power.h"
+#include "hal/h2_pal_power.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

@@ -1,6 +1,6 @@
 #ifndef H2_MOSAICO_USB_DIAGNOSTIC_H
 #define H2_MOSAICO_USB_DIAGNOSTIC_H
-#include "h2/pal/hal/h2_pal_uart_io_stream.h"
+#include "hal/h2_pal_uart_io_stream.h"
 
 #ifdef __cplusplus
 extern "C" {

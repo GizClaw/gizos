@@ -1,8 +1,8 @@
 #include "sdkconfig.h"
 #include "h2_esp_platform_core.h"
-#include "h2/pal/hal/h2_pal_uart_io_stream.h"
-#include "h2/pal/hal/h2_pal_usb_jtag_io_stream.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "hal/h2_pal_uart_io_stream.h"
+#include "hal/h2_pal_usb_jtag_io_stream.h"
+#include "h2_pal_unsupported.h"
 
 #include <assert.h>
 

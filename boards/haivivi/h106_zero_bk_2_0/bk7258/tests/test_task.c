@@ -94,7 +94,7 @@ static void run(const char* name, uint32_t size, int stack_psram,
 int main(void) {
   run("bk/h106-e2e", 64u * 1024u, 1, 0, BEKEN_APPLICATION_PRIORITY);
   run("bk/h106", 24u * 1024u, 1, 1, 6u);
-  run("bk/h2loader", 24u * 1024u, 0, 0, 6u);
+  run("bk/h2loader", 48u * 1024u, 0, 0, 6u);
   run("bk/display", 24u * 1024u, 0, 1, 6u);
   run("bk/other", 24u * 1024u, 0, 0, BEKEN_APPLICATION_PRIORITY);
   reset();

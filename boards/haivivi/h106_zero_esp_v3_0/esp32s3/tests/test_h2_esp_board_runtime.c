@@ -58,6 +58,9 @@ static int s_provider_clear_result;
 static void* s_fs_user;
 static const char* s_clear_path;
 static unsigned s_arena_init_calls;
+static unsigned s_fs_prepare_calls;
+static h2_pal_result_t s_fs_prepare_result;
+static const char* s_fs_prepare_path;
 static esp_err_t s_mac_result;
 static bool s_mac_zero;
 
@@ -73,6 +76,9 @@ static void reset_stubs(void) {
   s_fs_user = NULL;
   s_clear_path = NULL;
   s_arena_init_calls = 0;
+  s_fs_prepare_calls = 0;
+  s_fs_prepare_result = H2_PAL_OK;
+  s_fs_prepare_path = NULL;
   s_mac_result = ESP_OK;
   s_mac_zero = false;
 }
@@ -145,6 +151,13 @@ int h2_esp_board_fs_init(h2_pal_fs_api_t* fs) {
   assert(s_arena_init_calls == 1u);
   *fs = (h2_pal_fs_api_t){.user = s_fs_user, .vtable = &s_provider_fs_vtable};
   return H2_PAL_OK;
+}
+
+int h2_esp_board_fs_mount(const char* path) {
+  ++s_fs_prepare_calls;
+  assert(strcmp(path, "/dl") == 0 || strcmp(path, "/data") == 0);
+  s_fs_prepare_path = path;
+  return s_fs_prepare_result;
 }
 
 int h2_esp_board_fs_clear(const char* path) {
@@ -291,6 +304,27 @@ static void test_fs_clear_routes_owned_paths(void) {
   assert(h2_esp_board_runtime_deinit() == H2_PAL_OK);
 }
 
+static void test_loader_file_points_prepare_without_clearing_data(void) {
+  reset_stubs();
+  h2_runtime_config_t config;
+  assert(h2_esp_board_runtime_config(&config) == H2_PAL_OK);
+  assert(h2_pal_fs_prepare(config.fs, "/dl") == H2_PAL_OK);
+  assert(strcmp(s_fs_prepare_path, "/dl") == 0);
+  assert(h2_pal_fs_prepare(config.fs, "/data/owned/file") == H2_PAL_OK);
+  assert(strcmp(s_fs_prepare_path, "/data") == 0);
+  assert(h2_pal_fs_prepare(config.fs, "/dl/package.tar") == H2_PAL_OK);
+  assert(strcmp(s_fs_prepare_path, "/dl") == 0);
+  s_fs_prepare_result = H2_PAL_ERR_IO;
+  assert(h2_pal_fs_prepare(config.fs, "/data") == H2_PAL_ERR_IO);
+  assert(s_fs_prepare_calls == 4u);
+  assert(h2_pal_fs_prepare(config.fs, "/data-other") ==
+         H2_PAL_FS_ERR_UNSUPPORTED);
+  assert(h2_pal_fs_prepare(config.fs, NULL) == H2_PAL_FS_ERR_INVALID_ARG);
+  assert(s_fs_prepare_calls == 4u);
+  assert(s_fs_clear_calls == 0 && s_provider_clear_calls == 0);
+  assert(h2_esp_board_runtime_deinit() == H2_PAL_OK);
+}
+
 static void test_fs_clear_keeps_provider_after_reconfiguration(void) {
   int users[2] = {0};
   const char owned[] = "/data/owned";
@@ -373,6 +407,7 @@ int main(void) {
   test_first_error_wins_over_later_failures();
   test_later_failure_is_reported_when_audio_succeeds();
   test_fs_clear_routes_owned_paths();
+  test_loader_file_points_prepare_without_clearing_data();
   test_fs_clear_keeps_provider_after_reconfiguration();
   for (unsigned mode = 0u; mode < 2u; ++mode) {
     reset_stubs();

@@ -2,7 +2,7 @@
 #define H2_BK7258_BOARD_H
 
 #include "h2_runtime.h"
-#include "h2/pal/os/h2_pal_mem.h"
+#include "os/h2_pal_mem.h"
 #include "h2_zero_bk_display_capture.h"
 
 /* The shared Display launcher observes completed wire transfers through the

@@ -1,0 +1,8 @@
+# Match the pinned BK7258 LVGL widgets/86box AP touch-screen profile.
+# Existing board/SOC defaults select the V3 transport and its GPIO mapping.
+CONFIG_TP=y
+CONFIG_I2C=y
+CONFIG_SIM_I2C=y
+CONFIG_SIM_I2C_HW_BOARD_V3=y
+CONFIG_TP_GT911=y
+CONFIG_TP_GT1151=y

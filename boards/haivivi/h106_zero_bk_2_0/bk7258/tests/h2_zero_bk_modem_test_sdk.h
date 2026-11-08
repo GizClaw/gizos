@@ -1,7 +1,7 @@
 #ifndef H2_ZERO_BK_MODEM_TEST_SDK_H
 #define H2_ZERO_BK_MODEM_TEST_SDK_H
 #include "h2_quectel_modem.h"
-#include "h2/pal/net/h2_pal_netif.h"
+#include "net/h2_pal_netif.h"
 #include <stdbool.h>
 #include <stdint.h>
 

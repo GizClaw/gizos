@@ -1,5 +1,5 @@
 #pragma once
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include <stdint.h>
 #include <stdio.h>
 #define BK_OK 0

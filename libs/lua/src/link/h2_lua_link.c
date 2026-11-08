@@ -1,7 +1,7 @@
 #include "../runtime/h2_lua_internal.h"
 #include "h2_bleikcp.h"
 #include "h2_lua_link.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 #include <stddef.h>
 #include <string.h>

@@ -1,6 +1,6 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_dtls_state.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 #include "esp_log.h"
 

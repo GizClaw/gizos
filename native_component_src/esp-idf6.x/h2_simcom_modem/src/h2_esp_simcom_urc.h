@@ -2,7 +2,7 @@
 #define H2_ESP_SIMCOM_URC_H
 
 #include "esp_err.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include <stddef.h>
 #include <stdint.h>
 

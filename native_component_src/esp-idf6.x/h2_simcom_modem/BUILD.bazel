@@ -1,6 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -44,9 +44,9 @@ firmware_native_component(
         "manual",
     ],
     deps = [
-        "//libs/pal",
-        "//libs/pal/providers/modem/simcom:simcom_modem",
         "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//pal",
+        "//pal/providers/devices/modem/simcom:simcom_modem",
     ],
 )
 
@@ -66,7 +66,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(
@@ -89,5 +89,5 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal/providers/modem/simcom:simcom_modem"],
+    deps = ["//pal/providers/devices/modem/simcom:simcom_modem"],
 )

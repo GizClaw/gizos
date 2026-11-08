@@ -1,4 +1,4 @@
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_sources(H2_VENDOR_SOURCES mosaico_module_camera)
 list(GET H2_VENDOR_SOURCES 0 H2_VENDOR_SOURCE)
 get_filename_component(H2_VENDOR_DIR "${H2_VENDOR_SOURCE}" DIRECTORY)

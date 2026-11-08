@@ -2,12 +2,12 @@
 #define H2_H2LOADER_HOST_H
 
 #include "h2_h2loader_host_catalog.h"
-#include "h2/pal/hal/h2_pal_ble.h"
-#include "h2/pal/os/h2_pal_serial_host.h"
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/os/h2_pal_system_event.h"
-#include "h2/pal/os/h2_pal_task.h"
-#include "h2/pal/os/h2_pal_time.h"
+#include "hal/h2_pal_ble.h"
+#include "os/h2_pal_serial_host.h"
+#include "os/h2_pal_sync.h"
+#include "os/h2_pal_system_event.h"
+#include "os/h2_pal_task.h"
+#include "os/h2_pal_time.h"
 
 #include <stddef.h>
 #include <stdint.h>

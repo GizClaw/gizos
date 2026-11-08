@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 from common.bazel import cache_options  # noqa: E402
-from tools.bazel import coverage_report  # noqa: E402
+import tools.bazel.coverage.coverage_report as coverage_report
 
 
 OUTPUT = ROOT / "build/coverage/test"

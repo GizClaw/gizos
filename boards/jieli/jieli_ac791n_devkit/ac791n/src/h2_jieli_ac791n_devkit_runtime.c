@@ -2,7 +2,7 @@
 
 #include "h2_jieli_ac791n_devkit.h"
 
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_platform_image.h"
 #include "h2_jieli_wl82_console.h"

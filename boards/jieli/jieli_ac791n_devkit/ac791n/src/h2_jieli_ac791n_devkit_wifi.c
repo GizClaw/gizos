@@ -4,7 +4,7 @@
 
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_ac791n_devkit_network.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
+#include "hal/h2_pal_wifi.h"
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_atomic.h"
 

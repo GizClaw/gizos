@@ -1,9 +1,9 @@
 #ifndef H2_ESP_SIMCOM_MODEM_H
 #define H2_ESP_SIMCOM_MODEM_H
 
-#include "h2/pal/hal/h2_pal_modem.h"
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/os/h2_pal_system_event.h"
+#include "hal/h2_pal_modem.h"
+#include "os/h2_pal_sync.h"
+#include "os/h2_pal_system_event.h"
 
 #ifdef __cplusplus
 extern "C" {

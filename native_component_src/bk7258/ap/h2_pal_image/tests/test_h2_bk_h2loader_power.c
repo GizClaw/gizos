@@ -6,7 +6,7 @@
 static uint8_t data[12];
 static int fail, missing, feed_error;
 static unsigned releases, reboots, feeds, sdk_confirms, flag_erases;
-static unsigned aes_state, native_execution, staged_partition, sdk_commits;
+static unsigned native_execution, staged_partition, sdk_commits;
 static int sdk_commit_error;
 part_flag update_part_flag;
 static uint8_t running;
@@ -82,7 +82,6 @@ int h2_bk_image_execution_partition(uint32_t id, uint32_t* out) {
   *out = native_execution ? native_execution : id;
   return 0;
 }
-unsigned h2_bk_flash_aes_state(void) { return aes_state; }
 static h2_pal_result_t collect_app(
     void* user, const h2_pal_power_boot_partition_t* partition) {
   if (partition->id == 2u) *(uint32_t*)user = partition->flags;
@@ -209,7 +208,6 @@ int main(void) {
          !confirmation.was_pending);
   assert(sdk_confirms == 2 && flag_erases == confirmed_erases);
   /* Returning to the installed canonical window never engages the remap. */
-  aes_state = H2_BK_FLASH_AES_UNKNOWN;
   native_execution = 1;
   request.partition_id = 1;
   request.policy = H2_PAL_POWER_BOOT_POLICY_EXISTING;
@@ -219,11 +217,11 @@ int main(void) {
   g_fixed_active = 1;
   assert(h2_pal_power_prepare_next_boot_partition(api, &request, &evidence) ==
          0);
-  /* Only fixed native B selection of a primary-linked image needs AES off. */
+  /* Both native link windows support ordinary fixed App selection. */
   request.partition_id = 2;
   request.policy = H2_PAL_POWER_BOOT_POLICY_TRIAL;
   assert(h2_pal_power_prepare_next_boot_partition(api, &request, &evidence) ==
-         H2_PAL_ERR_UNSUPPORTED);
+         0);
   native_execution = 2;
   assert(h2_pal_power_prepare_next_boot_partition(api, &request, &evidence) ==
          0);
@@ -232,7 +230,6 @@ int main(void) {
   assert(h2_pal_power_prepare_next_boot_partition(api, &request, &evidence) ==
          0);
   native_execution = 0;
-  aes_state = H2_BK_FLASH_AES_OFF;
   h2_pal_power_capabilities_t capabilities;
   assert(h2_pal_power_get_capabilities(api, &capabilities) == 0 &&
          (capabilities.flags & H2_PAL_POWER_CAPABILITY_WATCHDOG_FEED));

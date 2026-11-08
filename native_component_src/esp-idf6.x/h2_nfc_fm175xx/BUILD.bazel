@@ -1,4 +1,6 @@
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -42,6 +44,39 @@ firmware_native_component(
     ],
     deps = [
         "//libs/drivers/nfc/fm175xx",
-        "//libs/pal",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "i2c_transport_test",
+    srcs = [
+        "include/h2_esp_nfc_fm175xx.h",
+        "src/h2_esp_nfc_fm175xx_i2c.c",
+        "src/h2_esp_nfc_fm175xx_internal.h",
+        "src/h2_esp_nfc_fm175xx_spi_address.h",
+        "tests/sdk/driver/i2c_master.h",
+        "tests/sdk/driver/spi_master.h",
+        "tests/sdk/freertos/FreeRTOS.h",
+        "tests/sdk/freertos/task.h",
+        "tests/test_h2_esp_nfc_fm175xx_i2c.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = [
+        "//libs/drivers/nfc/fm175xx",
+        "//pal",
     ],
 )

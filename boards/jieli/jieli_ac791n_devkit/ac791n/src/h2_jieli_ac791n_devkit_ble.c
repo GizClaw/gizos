@@ -22,7 +22,7 @@
 #include "h2_jieli_wl82_atomic.h"
 #include "h2_jieli_wl82_sdk_port.h"
 #include "h2_jieli_wl82_gatt.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 #include <string.h>
 #include <stdarg.h>
@@ -1973,7 +1973,7 @@ const h2_pal_ble_host_api_t* h2_jieli_ac791n_devkit_ble_host_api(
 #else
 
 #include "h2_jieli_ac791n_devkit.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 const h2_pal_ble_host_api_t* h2_jieli_ac791n_devkit_ble_host_api(
     const h2_pal_log_api_t* log) {

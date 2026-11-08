@@ -1,0 +1,497 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_GNU_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
+
+package(default_visibility = ["//visibility:public"])
+
+# Concrete providers are selected by assembly code, not portable libraries.
+# Test-only provider facades allow library tests to use real implementations.
+package_group(
+    name = "provider_assembly",
+    packages = [
+        "-//libs/...",
+        "public",
+    ],
+)
+
+# Source-only native SDK components consume the PAL contract headers without
+# asking Bazel to resolve a C++ toolchain for the vendor-owned final link.
+filegroup(
+    name = "pal_header_files",
+    srcs = glob(["include/**/*.h"]),
+)
+
+cc_library(
+    name = "pal",
+    hdrs = [
+        "include/application/h2_pal_http.h",
+        "include/application/h2_pal_mqtt.h",
+        "include/application/h2_pal_webrtc.h",
+        "include/core/h2_pal_errors.h",
+        "include/core/h2_pal_types.h",
+        "include/h2_pal.h",
+        "include/h2_pal_unsupported.h",
+        "include/hal/h2_pal_audio.h",
+        "include/hal/h2_pal_audio_decoder.h",
+        "include/hal/h2_pal_audio_task_names.h",
+        "include/hal/h2_pal_ble.h",
+        "include/hal/h2_pal_button.h",
+        "include/hal/h2_pal_buzzer.h",
+        "include/hal/h2_pal_camera.h",
+        "include/hal/h2_pal_display.h",
+        "include/hal/h2_pal_gpio_irq.h",
+        "include/hal/h2_pal_imu.h",
+        "include/hal/h2_pal_input.h",
+        "include/hal/h2_pal_led.h",
+        "include/hal/h2_pal_modem.h",
+        "include/hal/h2_pal_nfc.h",
+        "include/hal/h2_pal_periph.h",
+        "include/hal/h2_pal_power.h",
+        "include/hal/h2_pal_pwm_switch.h",
+        "include/hal/h2_pal_switch.h",
+        "include/hal/h2_pal_touch.h",
+        "include/hal/h2_pal_uart_io_stream.h",
+        "include/hal/h2_pal_usb_jtag_io_stream.h",
+        "include/hal/h2_pal_video_decoder.h",
+        "include/hal/h2_pal_wifi.h",
+        "include/hal/h2_pal_wifi_csi.h",
+        "include/hal/h2_pal_wifi_settings.h",
+        "include/net/h2_pal_dtls.h",
+        "include/net/h2_pal_net.h",
+        "include/net/h2_pal_netif.h",
+        "include/net/h2_pal_sctp.h",
+        "include/os/h2_pal_crypto.h",
+        "include/os/h2_pal_device_identity.h",
+        "include/os/h2_pal_disk.h",
+        "include/os/h2_pal_firmware_info.h",
+        "include/os/h2_pal_fs.h",
+        "include/os/h2_pal_image.h",
+        "include/os/h2_pal_io_stream.h",
+        "include/os/h2_pal_json.h",
+        "include/os/h2_pal_log.h",
+        "include/os/h2_pal_mem.h",
+        "include/os/h2_pal_pref.h",
+        "include/os/h2_pal_queue.h",
+        "include/os/h2_pal_serial_host.h",
+        "include/os/h2_pal_sync.h",
+        "include/os/h2_pal_system_event.h",
+        "include/os/h2_pal_task.h",
+        "include/os/h2_pal_time.h",
+        "include/os/h2_pal_timer.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+)
+
+cc_library(
+    name = "unsupported",
+    srcs = [
+        "src/unsupported_audio.c",
+        "src/unsupported_audio_decoder.c",
+        "src/unsupported_ble_host.c",
+        "src/unsupported_button.c",
+        "src/unsupported_buzzer.c",
+        "src/unsupported_camera.c",
+        "src/unsupported_crypto.c",
+        "src/unsupported_device_identity.c",
+        "src/unsupported_disk.c",
+        "src/unsupported_display.c",
+        "src/unsupported_dtls.c",
+        "src/unsupported_firmware_info.c",
+        "src/unsupported_fs.c",
+        "src/unsupported_gpio_irq.c",
+        "src/unsupported_http.c",
+        "src/unsupported_image.c",
+        "src/unsupported_imu.c",
+        "src/unsupported_input.c",
+        "src/unsupported_io_stream.c",
+        "src/unsupported_json.c",
+        "src/unsupported_led.c",
+        "src/unsupported_log.c",
+        "src/unsupported_mem.c",
+        "src/unsupported_modem.c",
+        "src/unsupported_mqtt.c",
+        "src/unsupported_net.c",
+        "src/unsupported_netif.c",
+        "src/unsupported_nfc.c",
+        "src/unsupported_nfc_card_emulation.c",
+        "src/unsupported_periph.c",
+        "src/unsupported_power.c",
+        "src/unsupported_pref.c",
+        "src/unsupported_pwm_switch.c",
+        "src/unsupported_queue.c",
+        "src/unsupported_sctp.c",
+        "src/unsupported_serial_host.c",
+        "src/unsupported_switch.c",
+        "src/unsupported_sync.c",
+        "src/unsupported_system_event.c",
+        "src/unsupported_task.c",
+        "src/unsupported_time.c",
+        "src/unsupported_timer.c",
+        "src/unsupported_touch.c",
+        "src/unsupported_uart_io_stream.c",
+        "src/unsupported_usb_jtag_io_stream.c",
+        "src/unsupported_video_decoder.c",
+        "src/unsupported_webrtc.c",
+        "src/unsupported_wifi_ap.c",
+        "src/unsupported_wifi_csi.c",
+        "src/unsupported_wifi_settings.c",
+        "src/unsupported_wifi_sta.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [":pal"],
+)
+
+cc_library(
+    name = "json_conformance",
+    testonly = True,
+    srcs = ["tests/h2_pal_json_conformance.c"],
+    hdrs = ["tests/h2_pal_json_conformance.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_audio_decoder_test",
+    srcs = [
+        "tests/test_pal_audio_decoder.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_ble_advertising_test",
+    srcs = [
+        "tests/test_pal_ble_advertising.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":pal",
+        ":unsupported",
+    ],
+)
+
+cc_test(
+    name = "pal_ble_scanning_test",
+    srcs = [
+        "tests/test_pal_ble_scanning.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_ble_gatt_server_events_test",
+    srcs = ["tests/src/test_ble_gatt_server_events.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_buzzer_test",
+    srcs = ["tests/src/test_buzzer.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":unsupported",
+    ],
+)
+
+cc_test(
+    name = "pal_headers_test",
+    srcs = [
+        "tests/test_pal_headers.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_result_representation_test",
+    srcs = ["tests/test_pal_result_representation.c"],
+    # Keep default MSVC C mode covered; the public header must not require C11.
+    conlyopts = H2_GNU_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts(["-fshort-enums"]),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_result_representation_cpp_test",
+    srcs = ["tests/test_pal_result_representation.cpp"],
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts(["-fshort-enums"]),
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_headers_cpp_test",
+    srcs = [
+        "tests/test_pal_headers.cpp",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_netif_test",
+    srcs = ["tests/test_pal_netif.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_http_test",
+    srcs = ["tests/test_pal_http.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
+    name = "pal_json_test",
+    srcs = ["tests/test_pal_json.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":unsupported",
+    ],
+)
+
+cc_test(
+    name = "pal_nfc_card_emulation_test",
+    srcs = [
+        "tests/src/test_nfc_card_emulation.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":unsupported",
+    ],
+)
+
+cc_test(
+    name = "pal_sctp_test",
+    srcs = ["tests/test_pal_sctp.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":unsupported",
+    ],
+)
+
+cc_test(
+    name = "pal_unsupported_test",
+    srcs = [
+        "tests/test_pal_unsupported.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":unsupported",
+    ],
+)
+
+cc_test(
+    name = "pal_video_decoder_test",
+    srcs = [
+        "tests/test_pal_video_decoder.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_library(
+    name = "test_allocator",
+    testonly = True,
+    hdrs = ["tests/h2_test_allocator.h"],
+    includes = ["tests"],
+    deps = [
+        ":pal",
+        "//libs/sync/atomic",
+    ],
+)
+
+cc_test(
+    name = "pal_wifi_ipv6_test",
+    srcs = [
+        "tests/test_pal_wifi_ipv6.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "test_pal_camera",
+    srcs = ["tests/test_pal_camera.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":pal",
+        ":unsupported",
+    ],
+)

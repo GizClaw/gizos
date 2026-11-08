@@ -22,7 +22,7 @@ GizOS provides a shared foundation for building portable firmware and applicatio
 
 - **Portable application runtime** — compose applications from reusable libraries and platform-independent interfaces.
 - **Platform Abstraction Layer (PAL)** — consistent contracts for tasks, networking, storage, audio, display, input, and other system capabilities.
-- **Reusable libraries** — networking, media, protocols, UI, game runtime, command routing, serialization, security, and utilities.
+- **Reusable libraries** — platform-independent networking, media, protocols, UI, command routing, serialization, cryptography, and utilities.
 - **Board and SDK integration** — public board packages and native components for ESP, Beken, JieLi, and embedded Linux targets.
 - **Applications and tooling** — H2Loader, Gizloader, manufacturing checks, E2E programs, packaging tools, and validation tools.
 - **Reproducible builds** — Bazel is the source of truth for dependency resolution, cross-platform builds, tests, artifacts, and releases.

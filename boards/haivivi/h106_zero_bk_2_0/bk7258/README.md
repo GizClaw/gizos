@@ -12,7 +12,7 @@ The shared SPI writer serializes LCD and LED transfers and retains the awake vot
 
 ## Image composition
 
-Final firmware entries select this BSP, its task policies and board-owned layouts. The full-board MFG defaults disable Bluetooth on AP/CP and retain UART management, QSPI storage and display/audio peripherals. They do not use another BK board's SD-card mapping. Public acceptance behavior belongs to [the MFG project](../../../../projects/mfg/README.md); private product factory behavior remains in Firmwares.
+Final firmware entries select this BSP, its task policies and board-owned layouts. The full-board MFG defaults disable Bluetooth on AP/CP and retain UART management, QSPI storage and display/audio peripherals. They do not use another BK board's SD-card mapping. Public acceptance behavior belongs to [the MFG project](../../../../projects/testing/mfg/README.md); private product factory behavior remains in Firmwares.
 
 The native H2Loader wrapper accepts explicit layout files from `layouts/loader`, `layouts/h2loader` or `layouts/mfg`. Recovery configuration and partition geometry remain board-owned. The minimal recovery Runtime and full Runtime preserve the native Image, Power, identity and console interfaces; initialize and destroy their borrowed providers in the order documented by the public board header.
 

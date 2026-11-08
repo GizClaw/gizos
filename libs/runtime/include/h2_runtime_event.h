@@ -3,7 +3,7 @@
 
 /* Scope: Runtime event envelope and delivery API. */
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "h2_runtime_component.h"
 #include "h2_runtime_types.h"
 

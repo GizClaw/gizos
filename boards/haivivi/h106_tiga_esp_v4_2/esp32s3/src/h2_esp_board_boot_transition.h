@@ -1,7 +1,7 @@
 #ifndef H2_ESP_BOARD_BOOT_TRANSITION_H
 #define H2_ESP_BOARD_BOOT_TRANSITION_H
 
-#include "h2/pal/hal/h2_pal_power.h"
+#include "hal/h2_pal_power.h"
 
 #include <stdbool.h>
 #include <stdint.h>

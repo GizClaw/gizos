@@ -239,19 +239,14 @@ static h2_pal_result_t power_prepare(void* user,
     return H2_PAL_ERR_INVALID_ARG;
   memset(evidence, 0, sizeof(*evidence));
   if (h2_bk_image_write_active()) return H2_PAL_ERR_BUSY;
-  /* Only native B selection of the fixed App window can run a primary-linked
-   * image through the SDK remap, which needs AES known off. Selecting the
-   * installed canonical window reads nothing: an App must always be able to
-   * return to it, whatever its AES or cache configuration. Legacy SDK A/B
-   * selection keeps its SDK-owned remap/copy behaviour. */
+  /* Validate the fixed App execution window before preparing selection.
+   * Selecting the installed canonical Loader requires no App vector read.
+   * Legacy SDK A/B retains its SDK-owned remap/copy behaviour. */
   if (h2_bk_fixed_layout_active() &&
       request->partition_id == H2_BK_APP_PARTITION_ID) {
     uint32_t execution = 0;
     int rc = h2_bk_image_execution_partition(request->partition_id, &execution);
     if (rc != H2_PAL_OK) return rc;
-    if (execution == H2_BK_PRIMARY_PARTITION_ID &&
-        h2_bk_flash_aes_state() != H2_BK_FLASH_AES_OFF)
-      return H2_PAL_ERR_UNSUPPORTED;
   }
   /* Empty evidence: the native control records survive reset. */
   s_prepared_partition = request->partition_id;

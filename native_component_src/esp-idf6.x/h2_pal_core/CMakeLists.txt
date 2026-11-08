@@ -102,7 +102,7 @@ else()
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS "src/h2_esp_platform_webrtc_unsupported.c")
 endif()
 
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_select_sources(
   H2_COMPONENT_SOURCES
   h2_pal_core
@@ -112,14 +112,14 @@ idf_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "include"
-    "${REPO_ROOT}/libs/pal/include"
-    "${REPO_ROOT}/libs/atomic/include"
-    "${REPO_ROOT}/libs/atomic/providers/c11"
-    "${REPO_ROOT}/libs/mem_arena/include"
-    "${REPO_ROOT}/libs/wifi_sta/include"
-    "${REPO_ROOT}/libs/pal/providers/corehttp/include"
-    "${REPO_ROOT}/libs/pal/providers/h2peer/include"
-    "${REPO_ROOT}/libs/pal/providers/h2sctp/include"
+    "${REPO_ROOT}/pal/include"
+    "${REPO_ROOT}/libs/sync/atomic/include"
+    "${REPO_ROOT}/libs/sync/atomic/providers/c11"
+    "${REPO_ROOT}/libs/memory/arena/include"
+    "${REPO_ROOT}/libs/net/wifi_sta/include"
+    "${REPO_ROOT}/pal/providers/backends/corehttp/include"
+    "${REPO_ROOT}/pal/providers/backends/h2peer/include"
+    "${REPO_ROOT}/pal/providers/backends/h2sctp/include"
   PRIV_REQUIRES
     ${H2_ESP_PLATFORM_CORE_REQUIRES}
     h2_firmware_lib

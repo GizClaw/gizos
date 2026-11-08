@@ -420,7 +420,7 @@
  * use h2_raster2d.h without a VM; its implementation-only span helper is not
  * API.
  */
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include <stddef.h>
 #include <stdint.h>
 

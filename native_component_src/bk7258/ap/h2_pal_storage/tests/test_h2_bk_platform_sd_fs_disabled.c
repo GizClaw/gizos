@@ -1,5 +1,5 @@
 #include "h2_bk_platform_storage.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 #ifdef NDEBUG
 #undef NDEBUG

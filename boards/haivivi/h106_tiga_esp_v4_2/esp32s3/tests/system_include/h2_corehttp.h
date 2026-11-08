@@ -1,15 +1,15 @@
 #ifndef H2_COREHTTP_TEST_SHADOW_H
 #define H2_COREHTTP_TEST_SHADOW_H
 
-/* Host-test shadow of libs/pal/providers/corehttp/include/h2_corehttp.h.
+/* Host-test shadow of pal/providers/backends/corehttp/include/h2_corehttp.h.
  * It declares only what h2_esp_board_runtime.c consumes, so the runtime
  * teardown path can be linked and observed without the real provider. */
 
-#include "h2/pal/application/h2_pal_http.h"
-#include "h2/pal/net/h2_pal_net.h"
-#include "h2/pal/os/h2_pal_log.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_time.h"
+#include "application/h2_pal_http.h"
+#include "net/h2_pal_net.h"
+#include "os/h2_pal_log.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_time.h"
 
 typedef struct h2_corehttp h2_corehttp_t;
 

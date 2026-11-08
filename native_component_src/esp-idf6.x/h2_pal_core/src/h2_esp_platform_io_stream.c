@@ -1,6 +1,6 @@
 #include "sdkconfig.h"
 #include "h2_esp_platform_core.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_UART
 /* Serial startup, boot-lifetime driver ownership. Failed setup remains

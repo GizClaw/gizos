@@ -1,0 +1,68 @@
+load("@gizos//tools/bazel/native/esp_idf:esp_idf.bzl", "FirmwareInfo")
+load("@gizos//tools/bazel/firmware:native_component.bzl", "H2NativeComponentInfo")
+
+def _native_component_paths_impl(ctx):
+    for target, name in [(ctx.attr.explicit, "h2_esp_board"), (ctx.attr.inferred, "zlib")]:
+        components = [component for component in target[H2NativeComponentInfo].components if component.name == name]
+        if len(components) != 1:
+            fail("expected one native component named " + name)
+        component = components[0]
+        cmake = [file for file in component.files if file.basename == "CMakeLists.txt"]
+        if len(cmake) != 1 or component.directory != cmake[0].dirname:
+            fail("native directory must resolve to the declared CMake input: " + name)
+        if not component.directory.startswith("external/"):
+            fail("external native owner lost its repository directory")
+    local = [component for component in ctx.attr.local[H2NativeComponentInfo].components if component.name == "embedded_menu_font"]
+    if len(local) != 1 or local[0].directory != ".":
+        fail("main-repository explicit component directory changed")
+    output = ctx.actions.declare_file(ctx.label.name + ".txt")
+    ctx.actions.write(output, "external explicit, external inferred, and local directories passed\n")
+    return [DefaultInfo(files = depset([output]))]
+
+native_component_paths = rule(
+    implementation = _native_component_paths_impl,
+    attrs = {
+        "explicit": attr.label(mandatory = True, providers = [H2NativeComponentInfo]),
+        "inferred": attr.label(mandatory = True, providers = [H2NativeComponentInfo]),
+        "local": attr.label(mandatory = True, providers = [H2NativeComponentInfo]),
+    },
+)
+
+def _fake_firmware_impl(ctx):
+    outputs = []
+    for name in [
+        "app.bin",
+        "bootloader.bin",
+        "combined_factory.bin",
+        "firmware.elf",
+        "firmware.map",
+        "partition-table.bin",
+        "flasher_args.json",
+    ]:
+        output = ctx.actions.declare_file(ctx.label.name + "/" + name)
+        ctx.actions.write(output, "{}" if name.endswith(".json") else "fixture")
+        outputs.append(output)
+    flash_files = ctx.actions.declare_directory(ctx.label.name + "/flash-files")
+    ctx.actions.run_shell(
+        command = "mkdir -p \"$1\"",
+        arguments = [flash_files.path],
+        outputs = [flash_files],
+    )
+    return [
+        DefaultInfo(files = depset(outputs + [flash_files])),
+        FirmwareInfo(
+            app_image = outputs[0],
+            bootloader_image = outputs[1],
+            combined_factory_image = outputs[2],
+            elf = outputs[3],
+            files = depset(outputs + [flash_files]),
+            flash_files = flash_files,
+            flash_metadata = outputs[6],
+            map = outputs[4],
+            partition_table_image = outputs[5],
+            target = "esp32s3",
+            version = "consumer-check",
+        ),
+    ]
+
+fake_firmware = rule(implementation = _fake_firmware_impl)

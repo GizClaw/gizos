@@ -1,6 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -54,9 +54,9 @@ RUNTIME_HDRS = [
 
 RUNTIME_DEPS = [
     ":tasks",
-    "//libs/atomic",
-    "//libs/pal",
-    "//libs/pal:unsupported",
+    "//libs/sync/atomic",
+    "//pal",
+    "//pal:unsupported",
 ]
 
 # Host platforms, where the Runtime unit tests can actually run.
@@ -137,9 +137,9 @@ cc_test(
     }),
     deps = [
         ":runtime",
-        "//libs/atomic/providers/c11",
-        "//libs/pal:test_allocator",
-        "//libs/pal:unsupported",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:test_allocator",
+        "//pal:unsupported",
     ],
 )
 
@@ -163,8 +163,8 @@ cc_test(
     }),
     deps = [
         ":runtime",
-        "//libs/atomic/providers/c11",
-        "//libs/pal:unsupported",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
     ],
 )
 
@@ -188,8 +188,8 @@ cc_test(
     }),
     deps = [
         ":runtime",
-        "//libs/atomic/providers/c11",
-        "//libs/pal:unsupported",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
     ],
 )
 
@@ -209,7 +209,7 @@ cc_test(
     target_compatible_with = RUNTIME_HOST_ONLY,
     deps = [
         ":runtime_no_audio_levels",
-        "//libs/atomic/providers/c11",
-        "//libs/pal:unsupported",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
     ],
 )

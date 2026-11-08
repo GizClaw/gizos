@@ -2,7 +2,7 @@
 #include "h2_h2loader_cli_internal.h"
 #include "h2_bleikcp.h"
 
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 #include <assert.h>
 #include <stdint.h>

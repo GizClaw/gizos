@@ -4,9 +4,11 @@
 /* The board's partition tables own every offset and size. Each image carries
  * its own table: the Loader table lists the Loader window as
  * primary_cp_app + primary_ap_app and the App window as s_app; the App table
- * lists the App window as primary_cp_app + primary_ap_app and the Loader
- * window as s_app. Both list the same h2_boot_request sector. Executable
- * images contain 32 data bytes + 2 CRC bytes per block.
+ * lists its code as primary_cp_app + primary_ap_app and the Loader window as
+ * s_app. App-owned data may follow that code before ota_fina_executive; the
+ * complete managed App slot still ends at the execution-flags partition.
+ * Both images list the same h2_boot_request sector. Executable images contain
+ * 32 data bytes + 2 CRC bytes per block.
  */
 #define H2_FIXED_REQUEST_MAGIC 0x58495031u
 #define H2_FIXED_ERASED 0xffffffffu
@@ -31,6 +33,26 @@ static inline int h2_fixed_window_end(const h2_fixed_window_t* w,
                                       uint32_t* out) {
   if (w->size == 0u || w->offset > UINT32_MAX - w->size) return 0;
   *out = w->offset + w->size;
+  return 1;
+}
+
+/* Resolve the complete managed slot after deriving the code windows. An App
+ * can reserve a data tail without changing its installed Loader's boot record
+ * or update capacity. A Loader's explicit s_app extent must already agree;
+ * do not silently enlarge a mismatched board layout. No mutation on failure. */
+static inline int h2_fixed_layout_complete_app_window(
+    h2_fixed_layout_t* layout, h2_fixed_window_t execution_flags) {
+  uint32_t code_end, flags_end;
+  if (!layout || !h2_fixed_window_end(&layout->app, &code_end) ||
+      !h2_fixed_window_end(&execution_flags, &flags_end) ||
+      execution_flags.size < H2_FIXED_SECTOR_SIZE ||
+      execution_flags.offset % H2_FIXED_SECTOR_SIZE != 0u ||
+      execution_flags.offset < code_end || flags_end > layout->control_offset ||
+      (!layout->app_table && execution_flags.offset != code_end))
+    return 0;
+  const uint32_t size = execution_flags.offset - layout->app.offset;
+  if (size % H2_FIXED_WINDOW_ALIGN != 0u) return 0;
+  layout->app.size = size;
   return 1;
 }
 

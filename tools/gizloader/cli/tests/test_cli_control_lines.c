@@ -1,6 +1,6 @@
 #include "h2_h2loader_cli_app.h"
 #include "h2_iostreamikcp.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 #include <assert.h>
 #include <stdio.h>

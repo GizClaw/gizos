@@ -6,14 +6,14 @@ set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   bk_cli
   lwip_intf_v2_1
   wpa_supplicant-2.10)
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_pal_core cp)
 
 armino_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "include"
-    "${REPO_ROOT}/libs/pal/include"
+    "${REPO_ROOT}/pal/include"
     "${REPO_ROOT}/native_component_src/bk7258/shared"
   PRIV_REQUIRES
     ${H2_BK_PLATFORM_CORE_PRIV_REQUIRES})

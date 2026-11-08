@@ -21,7 +21,7 @@ Update procedure:
 1. Download the selected upstream `sqlite-amalgamation-<version>.zip` archive.
 2. Replace `sqlite3.c`, `sqlite3.h`, and `sqlite3ext.h` from that archive.
 3. Update this README with the version, release date, and source archive URL.
-4. Run `bazel test --config=macos_arm64 //libs/pal/providers/sqlite:all` to
+4. Run `bazel test --config=macos_arm64 //pal/providers/backends/sqlite:all` to
    validate the desktop preference backend.
 
 Do not include SQLite from public H2 platform headers, ESP components, BK

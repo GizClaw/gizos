@@ -6,24 +6,24 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_log.h"
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/os/h2_pal_queue.h"
-#include "h2/pal/os/h2_pal_task.h"
-#include "h2/pal/os/h2_pal_time.h"
-#include "h2/pal/hal/h2_pal_touch.h"
-#include "h2/pal/os/h2_pal_system_event.h"
-#include "h2/pal/hal/h2_pal_ble.h"
-#include "h2/pal/hal/h2_pal_display.h"
-#include "h2/pal/hal/h2_pal_audio.h"
-#include "h2/pal/os/h2_pal_crypto.h"
-#include "h2/pal/os/h2_pal_pref.h"
-#include "h2/pal/hal/h2_pal_input.h"
-#include "h2/pal/application/h2_pal_webrtc.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
-#include "h2/pal/hal/h2_pal_wifi_settings.h"
-#include "h2/pal/hal/h2_pal_modem.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_log.h"
+#include "os/h2_pal_sync.h"
+#include "os/h2_pal_queue.h"
+#include "os/h2_pal_task.h"
+#include "os/h2_pal_time.h"
+#include "hal/h2_pal_touch.h"
+#include "os/h2_pal_system_event.h"
+#include "hal/h2_pal_ble.h"
+#include "hal/h2_pal_display.h"
+#include "hal/h2_pal_audio.h"
+#include "os/h2_pal_crypto.h"
+#include "os/h2_pal_pref.h"
+#include "hal/h2_pal_input.h"
+#include "application/h2_pal_webrtc.h"
+#include "hal/h2_pal_wifi.h"
+#include "hal/h2_pal_wifi_settings.h"
+#include "hal/h2_pal_modem.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,8 +60,8 @@ typedef struct h2_bk7258_audio_config {
 
 typedef struct h2_bk7258_button_adc_range {
   uint8_t id;
-  uint16_t min_mv;
-  uint16_t max_mv;
+  uint16_t min_raw;
+  uint16_t max_raw;
 } h2_bk7258_button_adc_range_t;
 
 extern const h2_bk7258_audio_config_t h2_bk7258_audio_config;

@@ -39,4 +39,4 @@ Read before changing App, library, Runtime, or provider behavior. Use [structure
 - Portable firmware libraries use injected Log PAL for diagnostics, not implicit `stdout`, `stderr`, or `FILE *` dependencies. Keep platform policy and backend-specific recovery in their owners.
 - Validate the changed behavior through the owning package and affected public boundary. Reuse production event/transition paths in App tests; do not create test-only shortcuts that bypass them. See the [Bazel guide](../tools/bazel/README.md) for build and test rules.
 
-Consult the live [Runtime](../libs/runtime/include/h2_runtime.h), [event delivery](../libs/runtime/include/h2_runtime_event.h), [custom event](../libs/runtime/include/h2_runtime_custom_event.h), and [PAL](../libs/pal/include/h2_pal.h) headers for exact API contracts.
+Consult the live [Runtime](../libs/runtime/include/h2_runtime.h), [event delivery](../libs/runtime/include/h2_runtime_event.h), [custom event](../libs/runtime/include/h2_runtime_custom_event.h), and [PAL](../pal/include/h2_pal.h) headers for exact API contracts.

@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -86,7 +86,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     strip_include_prefix = "testdata/golden",
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_library(
@@ -96,7 +96,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     strip_include_prefix = "testdata/golden_no_body",
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(
@@ -113,7 +113,7 @@ cc_test(
     deps = [
         ":golden_client",
         ":golden_no_body_client",
-        "//libs/pal/providers/yyjson",
+        "//pal/providers/backends/yyjson",
     ],
 )
 

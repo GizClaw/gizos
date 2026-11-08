@@ -1,10 +1,14 @@
 #include "layout.h"
 #include "flash_access.h"
+#ifdef H2_BK_CP_FIXED_BOOT_HOST_TEST
+#include "fixed_boot_test_sdk.h"
+#else
 #include "armstar.h"
 #include "driver/flash.h"
 #include "driver/flash_partition.h"
 #include "layout_check.h"
 #include "os/os.h"
+#endif
 
 extern void stop_cpu1_core(void);
 extern void stop_cpu2_core(void);
@@ -12,6 +16,7 @@ extern void stop_cpu2_core(void);
 /* Enter the new image with reset-like CPU state. This function must not use
  * the old task stack after switching CONTROL/MSP. Both images remain in Flash.
  */
+#ifndef H2_BK_CP_FIXED_BOOT_HOST_TEST
 __attribute__((naked, noreturn)) static void enter_image(uint32_t msp,
                                                          uint32_t pc) {
   __asm__ volatile(
@@ -23,6 +28,7 @@ __attribute__((naked, noreturn)) static void enter_image(uint32_t msp,
       "msr msp, r0\n"
       "bx r1\n");
 }
+#endif
 
 static h2_fixed_window_t partition_window(bk_partition_t id) {
   const bk_logic_partition_t* p = bk_flash_partition_get_info(id);
@@ -42,6 +48,8 @@ void h2_bk_cp_try_fixed_app(void) {
           partition_window(BK_PARTITION_APPLICATION1),
           partition_window(BK_PARTITION_S_APP),
           partition_window(BK_PARTITION_H2_BOOT_REQUEST), &layout) ||
+      !h2_fixed_layout_complete_app_window(
+          &layout, partition_window(BK_PARTITION_OTA_FINA_EXECUTIVE)) ||
       layout.app_table)
     return;
   if (bk_flash_read_bytes(layout.control_offset, (uint8_t*)&request,
@@ -61,8 +69,7 @@ void h2_bk_cp_try_fixed_app(void) {
                                 sizeof(consumed));
   (void)bk_flash_set_protect_type(protect);
   if (rc != BK_OK) return;
-  const volatile uint32_t* vector =
-      (const volatile uint32_t*)H2_FIXED_XIP_ADDRESS(layout.app.offset);
+  const uint32_t vector_address = H2_FIXED_XIP_ADDRESS(layout.app.offset);
   uint32_t checked_vector[2];
   if (h2_bk_flash_cp_vector(layout.app.offset, checked_vector) != 0) return;
   uint32_t msp = checked_vector[0], pc = checked_vector[1];
@@ -84,9 +91,13 @@ void h2_bk_cp_try_fixed_app(void) {
   SCB_DisableDCache();
   SCB_DisableICache();
   ARM_MPU_Disable();
-  SCB->VTOR = (uint32_t)vector;
+  SCB->VTOR = vector_address;
   __DSB();
   __ISB();
+#ifdef H2_BK_CP_FIXED_BOOT_HOST_TEST
+  h2_bk_test_enter_image(msp, pc);
+#else
   enter_image(msp, pc);
+#endif
 #endif
 }

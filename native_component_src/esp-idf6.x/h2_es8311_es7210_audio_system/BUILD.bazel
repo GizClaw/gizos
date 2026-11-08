@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -45,7 +45,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
-        "//libs/audio_mixer",
+        "//libs/audio/mixer:audio_mixer",
         "//libs/drivers/audio/es8311",
     ],
 )
@@ -124,9 +124,9 @@ cc_test(
     deps = [
         ":platform_test_source",
         ":test_sdk",
-        "//libs/audio_mixer",
+        "//libs/audio/mixer:audio_mixer",
         "//libs/drivers/audio/es8311",
-        "//libs/pal",
+        "//pal",
     ],
 )
 

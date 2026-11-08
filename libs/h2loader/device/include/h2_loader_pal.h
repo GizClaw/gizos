@@ -4,9 +4,9 @@
 #include "h2_loader_boot.h"
 #include "h2_loader_digest.h"
 #include "h2_loader_memory.h"
-#include "h2/pal/os/h2_pal_device_identity.h"
-#include "h2/pal/os/h2_pal_image.h"
-#include "h2/pal/os/h2_pal_time.h"
+#include "os/h2_pal_device_identity.h"
+#include "os/h2_pal_image.h"
+#include "os/h2_pal_time.h"
 
 #ifdef __cplusplus
 extern "C" {

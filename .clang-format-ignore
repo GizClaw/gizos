@@ -6,4 +6,4 @@ tools/openapi_codegen/testdata/golden/**
 tools/openapi_codegen/testdata/golden_no_body/**
 
 # Embedded binary audio fixture; formatting the byte array adds noisy churn.
-libs/pal/providers/linux/fdk_aac_decoder/tests/h2_fdk_aac_test_fixture.h
+pal/providers/platforms/linux/fdk_aac_decoder/tests/h2_fdk_aac_test_fixture.h

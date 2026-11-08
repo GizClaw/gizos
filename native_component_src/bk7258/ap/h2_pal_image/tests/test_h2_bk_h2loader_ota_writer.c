@@ -10,13 +10,15 @@
 #define LOGICAL 12288u
 #define STORED (LOGICAL / 32u * 34u)
 static uint8_t storage[69632], image[STORED], plain[LOGICAL];
-static unsigned mode, erased, invalidated, committed, fail_write, relay_heads;
+static unsigned erased, invalidated, committed, fail_write, relay_heads;
 static int fail_restore, primary_fixture;
+static int fixed_layout = 1;
+static uint8_t running_slot;
 part_flag update_part_flag;
-static const h2_fixed_layout_t layout = {.loader = {0x11000, 69632},
-                                         .app = {BASE, 69632},
-                                         .control_offset = 0x770000};
-static const bk_logic_partition_t parts[] = {
+static h2_fixed_layout_t layout = {.loader = {0x11000, 69632},
+                                   .app = {BASE, 69632},
+                                   .control_offset = 0x770000};
+static bk_logic_partition_t parts[] = {
     {0}, {0x11000, 34816}, {0x19800, 34816}, {BASE, 69632}, {0x770000, 4096}};
 const bk_logic_partition_t* bk_flash_partition_get_info(unsigned i) {
   return i < 5 ? &parts[i] : NULL;
@@ -69,9 +71,11 @@ uint32_t ota_calc_hash(uint32_t h, const void* data, size_t n) {
   while (n--) h = (h ^ *p++) * 0x1000193u;
   return h;
 }
-const h2_fixed_layout_t* h2_bk_fixed_layout(void) { return &layout; }
-int h2_bk_fixed_layout_active(void) { return 1; }
-uint8_t h2_bk_fixed_current_slot(void) { return 0; }
+const h2_fixed_layout_t* h2_bk_fixed_layout(void) {
+  return fixed_layout ? &layout : NULL;
+}
+int h2_bk_fixed_layout_active(void) { return fixed_layout; }
+uint8_t h2_bk_fixed_current_slot(void) { return running_slot; }
 int h2_bk_fixed_invalidate_app(void) {
   invalidated++;
   return 0;
@@ -91,16 +95,16 @@ int h2_bk_fixed_publish_relay_head(uint32_t a, uint32_t b, uint32_t c,
   relay_heads++;
   return 0;
 }
-unsigned h2_bk_flash_aes_state(void) { return mode; }
 int h2_bk_flash_access_ready(void) { return 0; }
 int h2_bk_flash_read_plain(uint32_t p, uint32_t c, uint32_t o, void* dst,
                            size_t n) {
-  assert(p == BASE && c >= STORED && o + n <= LOGICAL);
+  if (p != BASE) return H2_PAL_ERR_NOT_FOUND;
+  assert(c >= STORED && o + n <= LOGICAL);
   uint8_t* d = dst;
   while (n--) {
     uint32_t b = o / 32u;
     assert(h2_bk_flash_crc_valid(storage + b * 34u));
-    *d++ = storage[b * 34u + o % 32u] ^ (mode == 1 ? 0x5a : 0);
+    *d++ = storage[b * 34u + o % 32u];
     o++;
   }
   return 0;
@@ -122,8 +126,7 @@ static void fixture(void) {
   memcpy(plain + 8192, &h, sizeof(h));
   for (unsigned b = 0; b < LOGICAL / 32; b++) {
     uint8_t* p = image + b * 34;
-    for (unsigned i = 0; i < 32; i++)
-      p[i] = plain[b * 32 + i] ^ (mode == 1 ? 0x5a : 0);
+    for (unsigned i = 0; i < 32; i++) p[i] = plain[b * 32 + i];
     uint16_t crc = 0xffff;
     for (unsigned i = 0; i < 32; i++) {
       crc ^= (uint16_t)p[i] << 8;
@@ -134,42 +137,89 @@ static void fixture(void) {
     p[33] = (uint8_t)crc;
   }
 }
+static void test_running_image_size_excludes_data_tail(void) {
+  const h2_pal_image_api_t* api = h2_bk_platform_image_api();
+  const h2_fixed_layout_t saved_layout = layout;
+  bk_logic_partition_t saved_parts[5];
+  memcpy(saved_parts, parts, sizeof(parts));
+  fixture();
+  memcpy(storage, image, sizeof(image));
+  h2_pal_image_info_t info;
+
+  /* Only the running SDK table describes an exact, padded artifact length. */
+  assert(h2_pal_image_get_info(api, 1, H2_PAL_IMAGE_VIEW_STORED, &info) == 0);
+  assert((info.flags & H2_PAL_IMAGE_FLAG_SIZE_KNOWN) &&
+         info.image_size == 69632u && info.capacity == 69632u);
+  assert(h2_pal_image_get_info(api, 2, H2_PAL_IMAGE_VIEW_STORED, &info) == 0);
+  assert(!(info.flags & H2_PAL_IMAGE_FLAG_SIZE_KNOWN));
+
+  layout.app.size = 2u * 69632u;
+  layout.app_table = 1;
+  parts[1] = (bk_logic_partition_t){BASE, 34816};
+  parts[2] = (bk_logic_partition_t){BASE + 34816u, 34816};
+  parts[3] = (bk_logic_partition_t){0x11000, 69632};
+  running_slot = 1u;
+  assert(h2_pal_image_get_info(api, 2, H2_PAL_IMAGE_VIEW_STORED, &info) == 0);
+  assert((info.flags & H2_PAL_IMAGE_FLAG_SIZE_KNOWN) &&
+         !(info.flags & H2_PAL_IMAGE_FLAG_PREPARED) &&
+         info.image_size == 69632u && info.capacity == 2u * 69632u &&
+         info.execution_partition_id == 2u);
+  assert(h2_pal_image_get_info(api, 2, H2_PAL_IMAGE_VIEW_NATIVE, &info) == 0);
+  assert(!(info.flags & H2_PAL_IMAGE_FLAG_SIZE_KNOWN) &&
+         info.capacity == 2u * 65536u);
+  assert(h2_pal_image_get_info(api, 1, H2_PAL_IMAGE_VIEW_STORED, &info) == 0);
+  assert(!(info.flags & H2_PAL_IMAGE_FLAG_SIZE_KNOWN));
+
+  /* A Loader executing through native B still owns only its Loader image
+   * bytes, even though its temporary destination has App-slot capacity. */
+  layout = saved_layout;
+  layout.app.size = 2u * 69632u;
+  memcpy(parts, saved_parts, sizeof(parts));
+  assert(h2_pal_image_get_info(api, 2, H2_PAL_IMAGE_VIEW_STORED, &info) == 0);
+  assert((info.flags & H2_PAL_IMAGE_FLAG_SIZE_KNOWN) &&
+         info.image_size == 69632u && info.capacity == 2u * 69632u);
+  fixed_layout = 0;
+  assert(h2_pal_image_get_info(api, 2, H2_PAL_IMAGE_VIEW_STORED, &info) == 0);
+  assert(!(info.flags & H2_PAL_IMAGE_FLAG_SIZE_KNOWN));
+  fixed_layout = 1;
+  running_slot = 0u;
+  layout = saved_layout;
+}
+
 int main(void) {
+  test_running_image_size_excludes_data_tail();
   const h2_pal_image_api_t* api = h2_bk_platform_image_api();
   h2_pal_image_write_request_t request = {
       .partition_id = 2, .execution_partition_id = 2, .image_size = STORED};
   const unsigned chunks[] = {1, 31, 32, 33, 34, 35, 511, 512, 4096};
-  for (mode = 0; mode < 2; mode++)
-    for (unsigned c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
-      fixture();
-      erased = invalidated = 0;
-      assert(h2_pal_image_begin(api, &request) == 0 &&
-             update_part_flag == UPDATE_B_PART);
-      assert(h2_pal_image_begin(api, &request) == H2_PAL_ERR_BUSY);
-      for (unsigned i = 0; i < STORED; i += chunks[c]) {
-        unsigned n = STORED - i < chunks[c] ? STORED - i : chunks[c];
-        assert(h2_pal_image_write(api, image + i, n) == 0);
-      }
-      assert(h2_pal_image_finish(api) == 0 && invalidated == 1 && erased == 4);
-      assert(!committed && !relay_heads);
-      h2_pal_image_info_t info;
-      assert(h2_pal_image_get_info(api, 2, H2_PAL_IMAGE_VIEW_STORED, &info) ==
-             0);
-      assert(info.capacity == sizeof(storage) && info.image_size == STORED &&
-             (info.flags & H2_PAL_IMAGE_FLAG_PREPARED) &&
-             info.execution_partition_id == 2);
-      assert(h2_pal_image_begin(api, &request) == H2_PAL_ERR_BUSY);
-      uint8_t copy[STORED];
-      assert(h2_pal_image_read(api, 2, H2_PAL_IMAGE_VIEW_STORED, 0, copy,
-                               sizeof(copy)) == 0 &&
-             !memcmp(copy, image, sizeof(copy)));
-      assert(h2_pal_image_abort(api) == 0);
-      assert(h2_pal_image_read(api, 2, H2_PAL_IMAGE_VIEW_STORED, 0, copy,
-                               sizeof(copy)) == 0 &&
-             !memcmp(copy, image, sizeof(copy)));
+  for (unsigned c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+    fixture();
+    erased = invalidated = 0;
+    assert(h2_pal_image_begin(api, &request) == 0 &&
+           update_part_flag == UPDATE_B_PART);
+    assert(h2_pal_image_begin(api, &request) == H2_PAL_ERR_BUSY);
+    for (unsigned i = 0; i < STORED; i += chunks[c]) {
+      unsigned n = STORED - i < chunks[c] ? STORED - i : chunks[c];
+      assert(h2_pal_image_write(api, image + i, n) == 0);
     }
+    assert(h2_pal_image_finish(api) == 0 && invalidated == 1 && erased == 4);
+    assert(!committed && !relay_heads);
+    h2_pal_image_info_t info;
+    assert(h2_pal_image_get_info(api, 2, H2_PAL_IMAGE_VIEW_STORED, &info) == 0);
+    assert(info.capacity == sizeof(storage) && info.image_size == STORED &&
+           (info.flags & H2_PAL_IMAGE_FLAG_PREPARED) &&
+           info.execution_partition_id == 2);
+    assert(h2_pal_image_begin(api, &request) == H2_PAL_ERR_BUSY);
+    uint8_t copy[STORED];
+    assert(h2_pal_image_read(api, 2, H2_PAL_IMAGE_VIEW_STORED, 0, copy,
+                             sizeof(copy)) == 0 &&
+           !memcmp(copy, image, sizeof(copy)));
+    assert(h2_pal_image_abort(api) == 0);
+    assert(h2_pal_image_read(api, 2, H2_PAL_IMAGE_VIEW_STORED, 0, copy,
+                             sizeof(copy)) == 0 &&
+           !memcmp(copy, image, sizeof(copy)));
+  }
   /* Native linkage is checked independently of the caller's constraint. */
-  mode = 0;
   fixture();
   request.execution_partition_id = 1;
   assert(h2_pal_image_begin(api, &request) == 0);
@@ -204,22 +254,6 @@ int main(void) {
   assert(h2_pal_image_begin(api, &request) == H2_PAL_ERR_BUSY);
   fail_restore = 0;
   assert(h2_pal_image_abort(api) == 0);
-  /* Valid storage CRC with the wrong mapped plaintext never becomes prepared.
-   */
-  mode = 1;
-  fixture();
-  mode = 0;
-  assert(h2_pal_image_begin(api, &request) == 0);
-  assert(h2_pal_image_write(api, image, sizeof(image)) == 0);
-  assert(h2_pal_image_finish(api) != 0 && !committed);
-  assert(h2_pal_image_abort(api) == 0);
-  for (mode = 1; mode <= 2; mode++) {
-    request.execution_partition_id = 1;
-    erased = invalidated = 0;
-    assert(h2_pal_image_begin(api, &request) == H2_PAL_ERR_UNSUPPORTED &&
-           !erased && !invalidated);
-  }
-  mode = 0;
   request.execution_partition_id = 0;
   assert(h2_pal_image_begin(api, &request) == H2_PAL_ERR_INVALID_ARG);
   request.execution_partition_id = 2;

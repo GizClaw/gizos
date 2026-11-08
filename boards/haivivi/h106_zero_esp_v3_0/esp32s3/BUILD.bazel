@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
-load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -56,10 +56,10 @@ firmware_native_component(
     ],
     deps = [
         ":tasks",
-        "//libs/atomic",
-        "//libs/pal",
         "//libs/runtime",
+        "//libs/sync/atomic",
         "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//pal",
     ],
 )
 
@@ -86,9 +86,9 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "//libs/pal",
-        "//libs/pal:unsupported",
         "//libs/runtime",
+        "//pal",
+        "//pal:unsupported",
     ],
 )
 
@@ -120,8 +120,8 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "//libs/pal",
         "//libs/runtime",
+        "//pal",
     ],
 )
 
@@ -147,9 +147,9 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "//libs/pal",
-        "//libs/pal:unsupported",
         "//libs/runtime",
+        "//pal",
+        "//pal:unsupported",
     ],
 )
 
@@ -169,7 +169,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(
@@ -210,7 +210,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(
@@ -307,7 +307,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/atomic/providers/c11"],
+    deps = ["//libs/sync/atomic/providers/c11"],
 )
 
 cc_test(
@@ -352,10 +352,10 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "//libs/atomic",
-        "//libs/atomic/providers/c11",
-        "//libs/pal",
         "//libs/runtime",
+        "//libs/sync/atomic",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
     ],
 )
 
@@ -398,7 +398,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(
@@ -415,7 +415,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(
@@ -483,9 +483,9 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "//libs/pal",
-        "//libs/pal:unsupported",
         "//libs/runtime",
+        "//pal",
+        "//pal:unsupported",
     ],
 )
 
@@ -505,7 +505,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(
@@ -522,5 +522,5 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )

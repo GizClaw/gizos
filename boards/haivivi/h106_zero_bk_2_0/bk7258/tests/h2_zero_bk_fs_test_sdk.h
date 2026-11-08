@@ -1,6 +1,6 @@
 #ifndef H2_ZERO_BK_FS_TEST_SDK_H
 #define H2_ZERO_BK_FS_TEST_SDK_H
-#include "h2/pal/os/h2_pal_fs.h"
+#include "os/h2_pal_fs.h"
 #include <dirent.h>
 #include <stdlib.h>
 #include <sys/stat.h>

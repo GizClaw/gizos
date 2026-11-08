@@ -1,7 +1,7 @@
 #ifndef H2_ESP_PLATFORM_IMAGE_H
 #define H2_ESP_PLATFORM_IMAGE_H
 
-#include "h2/pal/os/h2_pal_image.h"
+#include "os/h2_pal_image.h"
 
 #ifdef __cplusplus
 extern "C" {

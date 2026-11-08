@@ -1,0 +1,4 @@
+# Manufacturing uses BLE management and radio checks, not Classic audio.
+# Preserve the existing Loader Flash/RAM layout and factory peripherals.
+# CONFIG_BT is not set
+CONFIG_BLE=y

@@ -1,6 +1,6 @@
 #pragma once
-#include "h2/pal/core/h2_pal_errors.h"
-#include "h2/pal/hal/h2_pal_power.h"
+#include "core/h2_pal_errors.h"
+#include "hal/h2_pal_power.h"
 #include "layout.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -44,4 +44,3 @@ int h2_bk_fixed_publish_relay_head(uint32_t window_offset, uint32_t window_size,
                                    uint32_t image_size, uint32_t head_size);
 
 int h2_bk_flash_read_plain(uint32_t, uint32_t, uint32_t, void*, size_t);
-unsigned h2_bk_flash_aes_state(void);

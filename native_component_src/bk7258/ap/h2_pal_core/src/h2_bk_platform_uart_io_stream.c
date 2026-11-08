@@ -4,8 +4,8 @@
 #include "h2_bk_platform_core.h"
 #endif
 
-#include "h2/pal/os/h2_pal_io_stream.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "os/h2_pal_io_stream.h"
+#include "h2_pal_unsupported.h"
 
 #if CONFIG_SYS_PRINT_DEV_UART
 #ifndef H2_BK_UART_IO_TEST

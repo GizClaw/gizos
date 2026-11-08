@@ -1,5 +1,5 @@
 #include "h2_esp_platform_core.h"
-#include "h2/pal/hal/h2_pal_uart_io_stream.h"
+#include "hal/h2_pal_uart_io_stream.h"
 
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"

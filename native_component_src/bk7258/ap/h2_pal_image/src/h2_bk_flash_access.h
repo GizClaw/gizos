@@ -11,7 +11,5 @@
 int h2_bk_flash_read_plain(uint32_t physical, uint32_t capacity,
                            uint32_t offset, void* output, size_t size);
 int h2_bk_flash_access_ready(void);
-/* One read-only query per boot; unknown/failure never permits Loader relay. */
-unsigned h2_bk_flash_aes_state(void);
 
 #endif

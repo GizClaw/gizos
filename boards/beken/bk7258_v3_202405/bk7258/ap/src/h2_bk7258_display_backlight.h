@@ -1,7 +1,7 @@
 #ifndef H2_BK7258_DISPLAY_BACKLIGHT_H
 #define H2_BK7258_DISPLAY_BACKLIGHT_H
 
-#include "h2/pal/hal/h2_pal_display.h"
+#include "hal/h2_pal_display.h"
 #include <stdbool.h>
 #include <stdint.h>
 #ifdef H2_BK7258_DISPLAY_BACKLIGHT_HOST_TEST

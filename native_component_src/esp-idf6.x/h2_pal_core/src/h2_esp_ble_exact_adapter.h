@@ -1,7 +1,7 @@
 #ifndef H2_ESP_BLE_EXACT_ADAPTER_H
 #define H2_ESP_BLE_EXACT_ADAPTER_H
 
-#include "h2/pal/hal/h2_pal_ble.h"
+#include "hal/h2_pal_ble.h"
 
 typedef h2_pal_result_t (*h2_esp_ble_exact_submit_fn)(void* user,
                                                       uint8_t instance,

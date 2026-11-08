@@ -1,7 +1,7 @@
 #ifndef H2_ESP_TIGA_BATTERY_ADC_H
 #define H2_ESP_TIGA_BATTERY_ADC_H
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -3,10 +3,10 @@
 
 #include "h2_bundle_installer.h"
 #include "h2_bundle_segmented.h"
-#include "h2/pal/os/h2_pal_disk.h"
-#include "h2/pal/os/h2_pal_fs.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_pref.h"
+#include "os/h2_pal_disk.h"
+#include "os/h2_pal_fs.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_pref.h"
 
 #include <stddef.h>
 #include <stdint.h>

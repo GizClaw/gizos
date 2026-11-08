@@ -1,6 +1,6 @@
 #include "h2_esp_platform_net_socket.h"
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #if defined(ESP_PLATFORM)
 #include "esp_log.h"

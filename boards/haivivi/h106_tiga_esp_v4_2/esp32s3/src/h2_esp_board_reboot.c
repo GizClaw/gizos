@@ -1,5 +1,5 @@
 #include "h2_esp_board_config.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "driver/gpio.h"
 
 /* H2Loader can reboot from its own task while App/Runtime still own audio

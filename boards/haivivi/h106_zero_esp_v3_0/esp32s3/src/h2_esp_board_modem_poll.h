@@ -1,7 +1,7 @@
 #ifndef H2_ESP_BOARD_MODEM_POLL_H
 #define H2_ESP_BOARD_MODEM_POLL_H
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/hal/h2_pal_modem.h"
+#include "os/h2_pal_sync.h"
+#include "hal/h2_pal_modem.h"
 
 /* Close owns the operation lock while joining the monitor. Never wait for
  * that lock here: return to the worker's STOP check when a transaction owns it.

@@ -32,7 +32,7 @@ py_test(
 
 ttf_subset_c(
     name = "fixture_font",
-    font = "//libs/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
     out_c = "fixture_font.c",
     out_h = "fixture_font.h",
     ranges = ["0x20-0x7E"],

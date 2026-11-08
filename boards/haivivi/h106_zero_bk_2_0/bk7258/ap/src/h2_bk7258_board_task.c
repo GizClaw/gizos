@@ -10,6 +10,8 @@
 #include <string.h>
 
 #define H2_BK7258_ENTRY_TASK_STACK_SIZE (24u * 1024u)
+/* Loader installation nests package inspection and filesystem callbacks. */
+#define H2_BK7258_LOADER_TASK_STACK_SIZE (48u * 1024u)
 /* The E2E runner nests product snapshots and synchronous fixture calls. */
 #define H2_BK7258_H106_E2E_TASK_STACK_SIZE (64u * 1024u)
 
@@ -51,7 +53,9 @@ h2_pal_result_t h2_bk7258_board_start_entry_task(
   const int h106_e2e = strcmp(name, "bk/h106-e2e") == 0;
   const int use_psram = strcmp(name, "bk/h106") == 0 || h106_e2e;
   const uint32_t stack_size = h106_e2e ? H2_BK7258_H106_E2E_TASK_STACK_SIZE
-                                       : H2_BK7258_ENTRY_TASK_STACK_SIZE;
+                              : strcmp(name, "bk/h2loader") == 0
+                                  ? H2_BK7258_LOADER_TASK_STACK_SIZE
+                                  : H2_BK7258_ENTRY_TASK_STACK_SIZE;
   if (h106_e2e) fallback = 0;
   h2_bk7258_board_entry_task_context_t* context =
       use_psram ? psram_malloc(sizeof(*context)) : os_malloc(sizeof(*context));

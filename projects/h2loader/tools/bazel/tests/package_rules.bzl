@@ -1,7 +1,7 @@
 """Host-only native input fixture for real package-rule action tests."""
 
-load("//tools/bazel:esp_idf.bzl", "FirmwareInfo")
-load("//tools/bazel:firmware.bzl", "FirmwareVersionInfo")
+load("//tools/bazel/firmware:firmware.bzl", "FirmwareVersionInfo")
+load("//tools/bazel/native/esp_idf:esp_idf.bzl", "FirmwareInfo")
 
 def _impl(ctx):
     image = ctx.actions.declare_file(ctx.label.name + "/app.bin")

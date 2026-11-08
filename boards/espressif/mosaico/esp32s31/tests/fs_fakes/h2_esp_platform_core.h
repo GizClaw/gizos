@@ -1,7 +1,7 @@
 #ifndef H2_TEST_ESP_PLATFORM_CORE_H
 #define H2_TEST_ESP_PLATFORM_CORE_H
 #include <stdbool.h>
-#include "h2/pal/os/h2_pal_fs.h"
+#include "os/h2_pal_fs.h"
 typedef struct {
   const char* base_path;
   const char* partition_label;

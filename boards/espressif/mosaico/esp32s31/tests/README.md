@@ -21,9 +21,9 @@ sequence, timed vibration pulse or interactive `peripherals` firmware mode.
 Touch hardware is adapted by `src/h2_mosaico_display.c` using the existing
 PAL touch API; sensor and battery adapters remain in the board driver owner.
 
-E2E Apps remain under `projects/e2e/apps`. Their inventory includes GizClaw,
+E2E Apps remain under `projects/testing`. Their inventory includes GizClaw,
 atomic, Lua and performance Apps, not only names beginning with `pal-`.
-Use `//projects/e2e/tools:list_apps` to enumerate them.
+Use `//projects/testing/tools:list_apps` to enumerate them.
 
 H2Loader is a product firmware entry under `projects/h2loader/targets`.
 It is not an E2E App or a selectable Mosaico E2E suite.

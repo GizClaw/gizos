@@ -1,6 +1,8 @@
 #include "h2_esp_nfc_fm175xx.h"
 #include "h2_esp_nfc_fm175xx_internal.h"
 
+#include "esp_log.h"
+
 #include <string.h>
 
 static h2_pal_result_t pal_rc_from_fm(int rc) {
@@ -53,6 +55,32 @@ static h2_pal_result_t ensure_open(h2_esp_nfc_fm175xx_t* adapter) {
   return H2_PAL_OK;
 }
 
+/* Inspect control/status only; never consume FIFO or print a card UID. */
+static void report_activation(h2_esp_nfc_fm175xx_t* adapter, int result,
+                              const h2_fm175xx_type_a_card_t* card) {
+  const uint8_t addresses[] = {0x37u, 0x11u, 0x14u, 0x12u, 0x13u, 0x0du,
+                               0x04u, 0x06u, 0x0au, 0x26u, 0x18u, 0x2au};
+  uint8_t values[sizeof(addresses)] = {0};
+  int reads = H2_FM175XX_OK;
+  const h2_fm175xx_transport_t* transport = &adapter->reader.transport;
+  for (size_t i = 0u; i < sizeof(addresses); ++i) {
+    const int rc =
+        transport->read_reg(transport->user, addresses[i], &values[i]);
+    if (reads == H2_FM175XX_OK && rc != H2_FM175XX_OK) reads = rc;
+  }
+  ESP_LOGW("h2_nfc_fm175xx",
+           "H2_NFC_DIAG fm=%d atqa_seen=%u uid_bytes=%u version=0x%02x "
+           "mode=0x%02x txctrl=0x%02x txmode=0x%02x rxmode=0x%02x "
+           "framing=0x%02x irq=0x%02x error=0x%02x fifo=%u gain=0x%02x "
+           "threshold=0x%02x timer=0x%02x reads=%d",
+           result, (unsigned)((card->atqa[0] | card->atqa[1]) != 0u),
+           (unsigned)card->uid_len, (unsigned)values[0], (unsigned)values[1],
+           (unsigned)values[2], (unsigned)values[3], (unsigned)values[4],
+           (unsigned)values[5], (unsigned)values[6], (unsigned)values[7],
+           (unsigned)values[8], (unsigned)values[9], (unsigned)values[10],
+           (unsigned)values[11], reads);
+}
+
 static h2_pal_result_t scan_nfc_reader(void* user, h2_pal_periph_id_t id,
                                        h2_pal_nfc_scan_t* out_scan) {
   h2_esp_nfc_fm175xx_t* adapter = (h2_esp_nfc_fm175xx_t*)user;
@@ -76,6 +104,12 @@ static h2_pal_result_t scan_nfc_reader(void* user, h2_pal_periph_id_t id,
 
   h2_fm175xx_type_a_card_t card;
   const int rc = h2_fm175xx_type_a_activate(&adapter->reader, &card);
+  ++adapter->scan_count;
+  if (adapter->scan_count == 1u || adapter->last_scan_error != rc ||
+      adapter->scan_count % 64u == 0u) {
+    report_activation(adapter, rc, &card);
+  }
+  adapter->last_scan_error = rc;
   if (rc == H2_FM175XX_ERR_TIMEOUT) {
     out_scan->stage = H2_PAL_NFC_STAGE_ABSENT;
     out_scan->result = H2_PAL_OK;

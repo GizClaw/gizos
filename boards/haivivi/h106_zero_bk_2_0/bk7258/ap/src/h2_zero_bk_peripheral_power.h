@@ -1,7 +1,7 @@
 #ifndef H2_ZERO_BK_PERIPHERAL_POWER_H
 #define H2_ZERO_BK_PERIPHERAL_POWER_H
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 /* The shared peripheral rail supplies mounted QSPI storage. Consumers may
  * enable it, but their open/close lifecycle must never release its output. */

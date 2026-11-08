@@ -1,7 +1,7 @@
 #ifndef H2_ESP_BOARD_DISPLAY_BUFFER_H
 #define H2_ESP_BOARD_DISPLAY_BUFFER_H
 
-#include "h2/pal/hal/h2_pal_display.h"
+#include "hal/h2_pal_display.h"
 
 /* Store RGB565 in panel byte order and return an even-aligned transfer area.
  * The shadow buffer preserves pixels surrounding odd/partial updates. */

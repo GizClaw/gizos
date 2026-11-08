@@ -1,7 +1,7 @@
 #ifndef H2_ESP_SIMCOM_TEARDOWN_H
 #define H2_ESP_SIMCOM_TEARDOWN_H
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 typedef h2_pal_result_t (*h2_esp_simcom_teardown_operation_fn)(void* user);
 

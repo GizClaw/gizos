@@ -12,11 +12,9 @@
 #define APP_MODEL (4u * SECTOR)
 static uint8_t native_sector[SECTOR], request_sector[SECTOR],
     app_sector[APP_MODEL];
-static uint8_t mapped_app[APP_MODEL / 34u * 32u];
 static uint8_t native_slot;
-static unsigned native_erases, request_erases;
-static unsigned aes_state, flash_mutations;
-static int mapped_view, plain_read_error;
+static unsigned native_erases, request_erases, flash_mutations;
+static int plain_read_error;
 /* Board partition table (Loader image): Loader window 2380 KiB, App window
  * 5100 KiB, boot record sector at 0x77f000. */
 #define LOADER_OFFSET 0x11000u
@@ -79,19 +77,17 @@ flash_protect_type_t bk_flash_get_protect_type(void) {
 }
 uint8_t bk_ota_get_current_partition(void) { return native_slot; }
 
-unsigned h2_bk_flash_aes_state(void) { return aes_state; }
 int h2_bk_flash_read_plain(uint32_t base, uint32_t capacity, uint32_t offset,
                            void* out, size_t size) {
   if (plain_read_error) return plain_read_error;
   assert(offset <= capacity / 34u * 32u &&
          size <= capacity / 34u * 32u - offset);
-  if (mapped_view) assert(offset + size <= sizeof(mapped_app));
   uint8_t* dst = out;
   while (size--) {
     uint8_t* packet = sector_at(base + offset / 32u * 34u, 34);
     if (!h2_bk_flash_erased(packet) && !h2_bk_flash_crc_valid(packet))
       return H2_PAL_ERR_IO;
-    *dst++ = mapped_view ? mapped_app[offset] : packet[offset % 32u];
+    *dst++ = packet[offset % 32u];
     ++offset;
   }
   return H2_PAL_OK;
@@ -210,46 +206,9 @@ static void put_app_window_image(uint32_t offset) {
   set_app_packet_crc();
 }
 
-static void put_encrypted_app_vector(void) {
-  /* Public key bytes(range(32)), logical address 0x240000, from #810.
-   * Raw reset PC 0x0219975a falls in Loader, mapped PC 0x02240101 in App. */
-  static const uint8_t ciphertext[32] = {
-      0xed, 0x61, 0x1b, 0x53, 0x5a, 0x97, 0x19, 0x02, 0x42, 0x1b, 0xd5,
-      0x2e, 0x64, 0x76, 0x41, 0x95, 0x98, 0x51, 0x6b, 0x10, 0xa0, 0xb5,
-      0x6e, 0x62, 0x91, 0x90, 0xb3, 0xf3, 0xdf, 0x2e, 0xc7, 0xb7};
-  static const uint8_t plaintext[32] = {0x00, 0x00, 0x03, 0x28, 0x01,
-                                        0x01, 0x24, 0x02, 0x0d};
-  memset(app_sector, 0xff, sizeof(app_sector));
-  memset(mapped_app, 0xff, sizeof(mapped_app));
-  memcpy(app_sector, ciphertext, sizeof(ciphertext));
-  memcpy(mapped_app, plaintext, sizeof(plaintext));
-  set_app_packet_crc();
-  mapped_view = 1;
-  aes_state = H2_BK_FLASH_AES_ON;
-  native_slot = 0u;
-}
-
-static void test_ciphertext_uses_mapped_app_role(void) {
-  put_encrypted_app_vector();
-  const h2_fixed_layout_t* layout = h2_bk_fixed_layout();
-  uint32_t raw_pc;
-  memcpy(&raw_pc, app_sector + 4, sizeof(raw_pc));
-  assert(h2_fixed_xip_in_window(raw_pc, &layout->loader));
-  assert(!h2_fixed_xip_in_window(raw_pc, &layout->app));
-  assert(h2_bk_fixed_app_window_holds_loader() == 0);
-  memset(native_sector, 0xff, sizeof(native_sector));
-  memset(request_sector, 0xff, sizeof(request_sector));
-  assert(h2_bk_fixed_select(H2_BK_APP_PARTITION_ID) == H2_PAL_OK);
-  static const uint32_t loader_flags[3] = {0u, 0u, 3u};
-  assert(memcmp(native_sector, loader_flags, sizeof(loader_flags)) == 0);
-  assert(h2_bk_fixed_next_app() && cp_boot());
-  assert(h2_bk_fixed_confirm_app() == H2_PAL_OK);
-  mapped_view = 0;
-  aes_state = H2_BK_FLASH_AES_OFF;
-}
-
 static void test_role_read_failure_does_not_select_boot(void) {
-  put_encrypted_app_vector();
+  put_app_window_image(APP_OFFSET);
+  native_slot = 0u;
   memset(native_sector, 0xff, sizeof(native_sector));
   memset(request_sector, 0xff, sizeof(request_sector));
   const unsigned before = flash_mutations;
@@ -264,11 +223,10 @@ static void test_role_read_failure_does_not_select_boot(void) {
   app_sector[0] ^= 1u;
   assert(h2_bk_fixed_select(H2_BK_APP_PARTITION_ID) == H2_PAL_ERR_IO);
   app_sector[0] ^= 1u;
-  mapped_app[4] &= 0xfeu; /* A non-Thumb mapped reset PC is invalid. */
+  app_sector[4] &= 0xfeu; /* A non-Thumb reset PC is invalid. */
+  set_app_packet_crc();
   assert(h2_bk_fixed_select(H2_BK_APP_PARTITION_ID) == H2_PAL_ERR_FORMAT);
   assert(flash_mutations == before);
-  mapped_view = 0;
-  aes_state = H2_BK_FLASH_AES_OFF;
 }
 
 static void test_loader_relay_through_native_b(void) {
@@ -419,6 +377,73 @@ static void test_board_owned_loader_size(void) {
          h2_bk_fixed_next_app());
 }
 
+static void test_app_data_tail_keeps_loader_boot_record(void) {
+  cp = (bk_logic_partition_t){LOADER_OFFSET, LOADER_CP};
+  ap = (bk_logic_partition_t){LOADER_OFFSET + LOADER_CP,
+                              LOADER_SIZE - LOADER_CP};
+  s_app = (bk_logic_partition_t){APP_OFFSET, APP_SIZE};
+  native_slot = 0u;
+  memset(request_sector, 0xff, sizeof(request_sector));
+  memset(native_sector, 0xff, sizeof(native_sector));
+  put_app_window_image(APP_OFFSET);
+  assert(h2_bk_fixed_select(H2_BK_APP_PARTITION_ID) == H2_PAL_OK);
+  assert(cp_boot());
+
+  /* App-owned data shrinks code without changing the installed Loader's slot.
+   * Keep the consumed request visible to the App until confirmation. */
+  cp = (bk_logic_partition_t){APP_OFFSET, LOADER_CP};
+  ap = (bk_logic_partition_t){APP_OFFSET + LOADER_CP,
+                              APP_SIZE - LOADER_CP - 68u * 1024u};
+  s_app = (bk_logic_partition_t){LOADER_OFFSET, LOADER_SIZE};
+  assert(h2_bk_fixed_layout_active());
+  assert(h2_bk_fixed_layout()->app.size == APP_SIZE);
+  assert(h2_bk_fixed_app_failed());
+  const unsigned erases = request_erases;
+  assert(h2_bk_fixed_select(H2_BK_PRIMARY_PARTITION_ID) == H2_PAL_OK);
+  assert(request_erases == erases && h2_bk_fixed_app_failed());
+  assert(h2_bk_fixed_confirm_app() == H2_PAL_OK);
+  h2_fixed_boot_request_t record;
+  memcpy(&record, request_sector, sizeof(record));
+  assert(record.confirmed == 0u && record.app_size == APP_SIZE);
+  assert(h2_bk_fixed_next_app());
+
+  cp = (bk_logic_partition_t){LOADER_OFFSET, LOADER_CP};
+  ap = (bk_logic_partition_t){LOADER_OFFSET + LOADER_CP,
+                              LOADER_SIZE - LOADER_CP};
+  s_app = (bk_logic_partition_t){APP_OFFSET, APP_SIZE};
+  assert(h2_bk_fixed_next_app() && !h2_bk_fixed_app_failed() && cp_boot());
+}
+
+static void test_rejects_execution_flags_before_publishing_layout(void) {
+  const h2_fixed_layout_t* published = h2_bk_fixed_layout();
+  const h2_fixed_layout_t before = *published;
+  const bk_logic_partition_t saved_native = native;
+  const unsigned mutations = flash_mutations;
+  cp = (bk_logic_partition_t){APP_OFFSET, LOADER_CP};
+  ap = (bk_logic_partition_t){APP_OFFSET + LOADER_CP,
+                              APP_SIZE - LOADER_CP - 68u * 1024u};
+  s_app = (bk_logic_partition_t){LOADER_OFFSET, LOADER_SIZE};
+  native.partition_length = 0u;
+  assert(!h2_bk_fixed_layout_active());
+  assert(published->app.size == before.app.size &&
+         published->app_table == before.app_table);
+  assert(h2_bk_fixed_select(H2_BK_APP_PARTITION_ID) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(flash_mutations == mutations);
+  native = saved_native;
+
+  cp = (bk_logic_partition_t){LOADER_OFFSET, LOADER_CP};
+  ap = (bk_logic_partition_t){LOADER_OFFSET + LOADER_CP,
+                              LOADER_SIZE - LOADER_CP};
+  s_app = (bk_logic_partition_t){APP_OFFSET, APP_SIZE - 68u * 1024u};
+  assert(!h2_bk_fixed_layout_active());
+  assert(h2_bk_fixed_select(H2_BK_PRIMARY_PARTITION_ID) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(flash_mutations == mutations);
+  s_app.partition_length = APP_SIZE;
+  assert(h2_bk_fixed_layout_active());
+}
+
 int main(void) {
   put_app_window_image(APP_OFFSET);
   test_confirmed_app_boots_without_writes();
@@ -426,10 +451,11 @@ int main(void) {
   test_invalidate_before_app_write();
   test_torn_request_is_not_bootable();
   test_loader_relay_through_native_b();
-  test_ciphertext_uses_mapped_app_role();
   test_role_read_failure_does_not_select_boot();
   test_relay_head_shares_image_sector();
   test_board_owned_loader_size();
+  test_app_data_tail_keeps_loader_boot_record();
+  test_rejects_execution_flags_before_publishing_layout();
   test_app_layout_slot();
   return 0;
 }

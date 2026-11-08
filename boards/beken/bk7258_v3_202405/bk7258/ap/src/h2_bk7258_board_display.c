@@ -1,5 +1,5 @@
 #include "h2_bk7258_board_private.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 #include "h2_bk7258_display_backlight.h"
 #include "h2_bk7258_display_buffer.h"
 #include "h2_atomic_static.h"

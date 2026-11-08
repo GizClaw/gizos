@@ -427,6 +427,7 @@ int main(int argc, char** argv) {
   legacy_loader(!strcmp(phase, "seed") || !strcmp(phase, "fault-seed") ||
                 !strcmp(phase, "profile") || !strcmp(phase, "cache") ||
                 !strcmp(phase, "port-cache") ||
+                !strcmp(phase, "independent-write-cache") ||
                 !strcmp(phase, "remove-prefetch"));
   h2_pal_pref_namespace_t *ns = open_ns("nor"), *isolated = open_ns("norother");
 #ifndef H2_PREF_NOR_BASELINE
@@ -476,6 +477,24 @@ int main(int argc, char** argv) {
     assert(!ns->get_u32(ns, "counter", &actual) && actual == 199u);
     expect_blob(ns, "resident", value, sizeof(value));
     assert(!ns->clear(ns));
+  } else if (!strcmp(phase, "independent-write-cache")) {
+    assert(!ns->set_blob(ns, "resident", value, sizeof(value)));
+    assert(!isolated->set_u32(isolated, "counter", 1234u));
+    uint32_t actual = 0u;
+    assert(!isolated->get_u32(isolated, "counter", &actual) && actual == 1234u);
+    value[0] ^= 0xffu;
+    assert(!ns->set_blob(ns, "resident", value, sizeof(value)));
+    uint64_t reads_before = hardware_reads;
+    assert(!isolated->get_u32(isolated, "counter", &actual) && actual == 1234u);
+    uint64_t reads = hardware_reads - reads_before;
+    /* A typed scalar read must not rescan an unrelated 16 KiB value after
+     * that value changes. Count real backend reads, not host elapsed time. */
+    assert(reads <= 16u);
+    expect_blob(ns, "resident", value, sizeof(value));
+    printf("PASS independent scalar after large write hardware_reads=%llu\n",
+           (unsigned long long)reads);
+    assert(!ns->clear(ns));
+    assert(!isolated->clear(isolated));
   } else if (!strcmp(phase, "remove-prefetch")) {
     assert(!ns->set_blob(ns, "resident", value, sizeof(value)));
     assert(!isolated->set_blob(isolated, "resident", other, sizeof(other)));

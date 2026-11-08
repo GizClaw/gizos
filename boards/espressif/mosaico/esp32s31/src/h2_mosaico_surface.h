@@ -1,6 +1,6 @@
 #ifndef H2_MOSAICO_SURFACE_H
 #define H2_MOSAICO_SURFACE_H
-#include "h2/pal/hal/h2_pal_display.h"
+#include "hal/h2_pal_display.h"
 enum {
   H2_MOSAICO_WIDTH = 480,
   H2_MOSAICO_HEIGHT = 480,

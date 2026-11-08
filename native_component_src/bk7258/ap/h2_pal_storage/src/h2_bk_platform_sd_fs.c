@@ -12,7 +12,7 @@
 #include "diskio.h"
 #include "ff.h"
 #include "gpio_driver.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "os/mem.h"
 #include "os/os.h"
 #endif
@@ -428,7 +428,7 @@ int h2_bk_platform_sd_fs_init(const h2_bk_sd_fs_config_t* config,
 
 #else
 
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 int h2_bk_platform_sd_fs_init(const h2_bk_sd_fs_config_t* config,
                               h2_pal_fs_api_t* fs) {

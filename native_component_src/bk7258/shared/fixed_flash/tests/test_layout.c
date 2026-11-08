@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stddef.h>
 #include "layout.h"
 
 #define KIB(n) ((uint32_t)(n) * 1024u)
@@ -119,10 +120,60 @@ static void test_relay_head_offset(void) {
   assert(h2_fixed_relay_head_offset(KIB(2380), KIB(2448), head, &offset) == -1);
 }
 
+static void test_app_owned_data_tail(void) {
+  h2_fixed_layout_t loader, app;
+  tables((board_t){2448u, 1156u, 1156u}, &loader, &app);
+  const h2_fixed_window_t flags = {0x75f000u, KIB(4)};
+  assert(h2_fixed_layout_complete_app_window(&loader, flags));
+  app.app.size -= KIB(68);
+  const h2_fixed_layout_t code_layout = app;
+  h2_fixed_boot_request_t request = {H2_FIXED_REQUEST_MAGIC, loader.app.offset,
+                                     loader.app.size, 0u, H2_FIXED_ERASED};
+  request.check = ~(request.magic ^ request.app_offset ^ request.app_size);
+  assert(!h2_fixed_request_valid(&request, &app));
+  assert(h2_fixed_layout_complete_app_window(&app, flags));
+  assert(app.app.size == loader.app.size &&
+         app.app.size == code_layout.app.size + KIB(68));
+  assert(h2_fixed_request_valid(&request, &app));
+  request.magic = request.confirmed = 0u;
+  assert(h2_fixed_request_confirmed(&request, &loader) &&
+         h2_fixed_request_confirmed(&request, &app));
+
+  /* Reject flags inside code, unaligned slots, a missing/short sector, an
+   * overflowing extent and flags overlapping the separate boot request. */
+  const h2_fixed_window_t invalid_flags[] = {
+      {flags.offset - KIB(136), KIB(4)},
+      {flags.offset + 1u, KIB(4)},
+      {flags.offset + KIB(4), KIB(4)},
+      {flags.offset, KIB(132)},
+      {flags.offset, 0u},
+      {flags.offset, KIB(4) - 1u},
+      {UINT32_MAX - KIB(4) + 1u, KIB(8)},
+      {0u, KIB(4)},
+  };
+  for (unsigned i = 0; i < sizeof(invalid_flags) / sizeof(invalid_flags[0]);
+       ++i) {
+    app = code_layout;
+    assert(!h2_fixed_layout_complete_app_window(&app, invalid_flags[i]));
+    assert(app.app.size == code_layout.app.size &&
+           app.app.offset == code_layout.app.offset &&
+           app.loader.offset == code_layout.loader.offset &&
+           app.loader.size == code_layout.loader.size &&
+           app.control_offset == code_layout.control_offset &&
+           app.app_table == code_layout.app_table);
+  }
+  assert(!h2_fixed_layout_complete_app_window(NULL, flags));
+  loader.app.size -= KIB(68);
+  const uint32_t old_size = loader.app.size;
+  assert(!h2_fixed_layout_complete_app_window(&loader, flags) &&
+         loader.app.size == old_size);
+}
+
 int main(void) {
   test_relay_head_offset();
   test_board_owned_sizes();
   test_rejects_non_fixed_tables();
   test_request_follows_layout();
+  test_app_owned_data_tail();
   return 0;
 }

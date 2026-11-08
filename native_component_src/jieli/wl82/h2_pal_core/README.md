@@ -4,7 +4,7 @@
 
 PAL timeout `0` means try without waiting. The SDK's `os_mutex_pend` and `os_sem_pend` instead interpret timeout `0` as an infinite wait. Therefore `h2_jieli_wl82_sdk_port.c` uses the public `os_mutex_accept` and `os_sem_accept` operations for this case; substituting `pend(..., 0)` would introduce a hang.
 
-The pinned AC791N SDK revision is recorded in `tools/bazel/native_versions/jieli_ac791n_sdk_commit.txt`. At revision `eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a`:
+The pinned AC791N SDK revision is recorded in `tools/bazel/native/versions/jieli_ac791n_sdk_commit.txt`. At revision `eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a`:
 
 - `include_lib/system/os/os_api.h:355` declares `int os_sem_accept(OS_SEM *sem)`.
 - The same header at line 440 declares `int os_mutex_accept(OS_MUTEX *mutex)`.
@@ -77,7 +77,7 @@ cpu/wl82/liba/event.a:event.c.o:-------- T register_sys_event_handler
 cpu/wl82/liba/event.a:event.c.o:-------- T sys_event_notify
 ```
 
-The host fake, pthread driver and `//tools/bazel:jieli_sys_event_port_test` cover queueing, ownership, quiescence and the SDK port contract. These checks establish software behavior only; native linking and the AC791N board acceptance round remain separate validation.
+The host fake, pthread driver and `//native_component_src/jieli/wl82/h2_pal_core:jieli_sys_event_port_test` cover queueing, ownership, quiescence and the SDK port contract. These checks establish software behavior only; native linking and the AC791N board acceptance round remain separate validation.
 
 ## Caller allocator ownership
 

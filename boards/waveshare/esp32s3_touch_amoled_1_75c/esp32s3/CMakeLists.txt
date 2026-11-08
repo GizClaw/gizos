@@ -4,14 +4,14 @@ else()
   get_filename_component(H2_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 endif()
 
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_sources(H2_BOARD_SOURCES h2_esp_board)
 
 idf_component_register(
   SRCS ${H2_BOARD_SOURCES}
   INCLUDE_DIRS
     "include"
-    "${H2_REPO_ROOT}/libs/pal/include"
+    "${H2_REPO_ROOT}/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"
   REQUIRES
     esp_driver_gpio

@@ -4,11 +4,11 @@
 #include "h2_command.h"
 #include "h2_loader_boot.h"
 #include "h2_loader_memory.h"
-#include "h2/pal/os/h2_pal_disk.h"
-#include "h2/pal/os/h2_pal_fs.h"
-#include "h2/pal/application/h2_pal_http.h"
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
+#include "os/h2_pal_disk.h"
+#include "os/h2_pal_fs.h"
+#include "application/h2_pal_http.h"
+#include "os/h2_pal_sync.h"
+#include "hal/h2_pal_wifi.h"
 
 #include <stddef.h>
 #include <stdint.h>

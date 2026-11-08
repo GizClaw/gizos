@@ -1,7 +1,7 @@
 #ifndef H2_TEST_NFC_FM175XX_H
 #define H2_TEST_NFC_FM175XX_H
 #include "driver/i2c_master.h"
-#include "h2/pal/hal/h2_pal_nfc.h"
+#include "hal/h2_pal_nfc.h"
 typedef struct {
   int unused;
 } h2_esp_nfc_fm175xx_t;

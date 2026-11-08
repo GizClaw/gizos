@@ -1,5 +1,5 @@
 #include "h2_esp_platform_core.h"
-#include "h2/pal/hal/h2_pal_usb_jtag_io_stream.h"
+#include "hal/h2_pal_usb_jtag_io_stream.h"
 
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"

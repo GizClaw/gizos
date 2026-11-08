@@ -12,7 +12,7 @@ Use the maintained `IDF_PATH` / `IDF_TOOLS_PATH` and build configuration:
 bazel test //boards/espressif/mosaico/esp32s31:camera_test \
   //boards/espressif/mosaico/esp32s31:usb_test
 bazel build --config=esp32s31 \
-  //projects/h2loader/targets/loader/espressif/mosaico:package
+  //projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/mosaico:package
 ```
 
 Applications depend directly on `//boards/espressif/mosaico/esp32s31` and the board
@@ -30,9 +30,9 @@ calibration is applied. SPI NAND, OV3640 and other product features are excluded
   `libs/h2loader/device`. Final firmware entries use the common Device service
   through `Runtime.io_stream`; board and native providers own TinyUSB setup and
   complete-frame write arbitration.
-- `projects/e2e/apps` owns the reusable E2E Apps, including GizClaw,
+- `projects/testing` owns the reusable E2E Apps, including GizClaw,
   atomic, Lua, performance and business Apps. Enumerate all of them with
-  `//projects/e2e/tools:list_apps`; do not filter only `pal-*` names.
+  `//projects/testing/tools:list_apps`; do not filter only `pal-*` names.
 - The product Loader is not an E2E App entry.
 
 There is no `peripherals` firmware suite. Driver regression is grouped by

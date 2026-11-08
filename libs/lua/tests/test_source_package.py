@@ -38,11 +38,11 @@ def main():
         assert manifest["schema_version"] == 1
         assert manifest["runtime_profile_id"] == "runtime.lua.gizos"
         assert (root / "LICENSE").is_file()
-        assert "libs/trie/src/h2_trie.c" in manifest["sources"]
-        assert (root / "libs/trie/include/h2_trie.h").is_file()
+        assert "libs/container/trie/src/h2_trie.c" in manifest["sources"]
+        assert (root / "libs/container/trie/include/h2_trie.h").is_file()
         assert len(manifest["sources"]) == len(set(manifest["sources"]))
         assert all("/pal/providers/" not in p and "/bleikcp/" not in p for p in manifest["sources"])
-        assert "libs/atomic/providers/c11/src/h2_atomic_c11.c" in manifest["sources"]
+        assert "libs/sync/atomic/providers/c11/src/h2_atomic_c11.c" in manifest["sources"]
         compiler = shlex.split(os.environ.get("CC", "cc"))
         flags = manifest["cflags"] + ["-I" + p for p in manifest["include_dirs"]]
         flags += ["-D" + d for d in manifest["defines"]]
@@ -62,7 +62,7 @@ def main():
                     seen.add(name)
                     for flag in ("-O3", "-fno-fast-math"):
                         assert flag in unit["cflags"], (source, flag, unit)
-                elif source.startswith("libs/lua/") or source.startswith("libs/raster2d/"):
+                elif source.startswith("libs/lua/") or source.startswith("libs/image/raster2d/"):
                     assert "-O3" not in unit["cflags"], (source, unit)
         assert seen == optimized, seen
         for unit in manifest["compilation_units"]:

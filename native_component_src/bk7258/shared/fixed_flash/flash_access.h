@@ -4,31 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define H2_BK_FLASH_STATUS_SERVER 4u
-#define H2_BK_FLASH_STATUS_CLIENT 19u
-#define H2_BK_FLASH_STATUS_COMMAND 1u
-#define H2_BK_FLASH_STATUS_SIZE 16u
-#define H2_BK_FLASH_AES_OFF 0u
-#define H2_BK_FLASH_AES_ON 1u
-#define H2_BK_FLASH_AES_UNKNOWN 2u
-
-/* Private byte-encoded IPC, never a key or a caller-selected memory address. */
-static inline void h2_bk_flash_status_request(uint8_t out[16]) {
-  const uint8_t request[16] = {'H', '2', 'F', 'S', 1, 0, 0, 0,
-                               1,   0,   0,   0,   2, 0, 0, 0};
-  for (size_t i = 0; i < 16; ++i) out[i] = request[i];
-}
-
-static inline int h2_bk_flash_status_valid(const uint8_t data[16], int reply) {
-  uint8_t request[16];
-  h2_bk_flash_status_request(request);
-  for (size_t i = 0; i < 16; ++i) {
-    if (i == 12 && reply) continue;
-    if (data[i] != request[i]) return 0;
-  }
-  return data[12] <= H2_BK_FLASH_AES_UNKNOWN;
-}
-
 static inline int h2_bk_flash_erased(const uint8_t packet[34]) {
   for (size_t i = 0; i < 34; ++i)
     if (packet[i] != 0xffu) return 0;
@@ -56,8 +31,7 @@ static inline uint32_t h2_bk_flash_crc32(uint32_t crc, const uint8_t* data,
   return ~crc;
 }
 
-/* Implemented on CP; used before the AP starts as well as by its query task. */
-int h2_bk_flash_status_start(void);
+/* Implemented on CP; used before the AP starts. */
 int h2_bk_flash_cp_vector(uint32_t physical, uint32_t vector[2]);
 
 #endif

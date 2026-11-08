@@ -14,7 +14,7 @@ from io import BytesIO
 
 
 ROOT = Path(__file__).resolve().parents[5]
-RUNNER = ROOT / "projects" / "h2loader" / "tools" / "bazel" / "h2loader_tar_zlib_runner.py"
+RUNNER = ROOT / "projects" / "h2loader" / "tools/bazel/h2loader_tar_zlib_runner.py"
 os.environ["PYTHONPATH"] = str(ROOT)
 
 
@@ -568,7 +568,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "--app-path",
                     "app/bk/app_ab_crc.rbl",
                     "--entry",
-                    "projects/h2loader/targets/loader/vendor/board",
+                    "projects/h2loader/targets/h2_loader_tar_zlib/loader/vendor/board",
                     "--platform",
                     "bk7258",
                     "--board",

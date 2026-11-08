@@ -6,7 +6,7 @@ import path from 'node:path'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: [
-    { find: /^@gizclaw\/h2loader$/, replacement: path.resolve(import.meta.dirname, '../../libs/h2loader/web/src/h2loader_protocol.js') },
+    { find: /^@gizclaw\/h2loader$/, replacement: path.resolve(import.meta.dirname, '../../projects/h2loader/libs/web/src/h2loader_protocol.js') },
     { find: '@', replacement: path.resolve(import.meta.dirname, 'src') },
   ] },
   publicDir: false,

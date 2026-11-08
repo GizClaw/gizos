@@ -1,0 +1,333 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:private"])
+
+exports_files(
+    ["src/h2_posix_net.c"],
+    visibility = ["//projects/testing:__subpackages__"],
+)
+
+exports_files(
+    glob(["tests/fixtures/*.pem"]),
+    visibility = ["//pal/providers/platforms/desktop/app_support:__pkg__"],
+)
+
+_POSIX_OWNERS = [
+    "//pal/providers/platforms/darwin/pal_core:__pkg__",
+    "//pal/providers/platforms/linux/pal_core:__pkg__",
+]
+
+cc_library(
+    name = "host_fs",
+    srcs = ["src/h2_posix_host_fs.c"],
+    hdrs = ["include/h2_posix_pal_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": [
+            "-D_DEFAULT_SOURCE",
+            "-D_XOPEN_SOURCE=700",
+        ],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _POSIX_OWNERS + [
+        "//pal/providers/platforms/android/pal_core:__pkg__",
+        "//pal/providers/platforms/ios/pal_core:__pkg__",
+    ],
+    deps = ["//pal"],
+)
+
+cc_library(
+    name = "host_fs_web",
+    srcs = ["src/h2_posix_host_fs.c"],
+    hdrs = ["include/h2_posix_pal_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-D_XOPEN_SOURCE=700"],
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    visibility = ["//pal:provider_assembly"],
+    deps = ["//pal"],
+)
+
+cc_library(
+    name = "net",
+    srcs = ["src/h2_posix_net.c"],
+    hdrs = ["include/h2_posix_pal_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    linkopts = select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["-lpthread"],
+    }),
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _POSIX_OWNERS + [
+        "//pal/providers/platforms/android/pal_core:__pkg__",
+        "//pal/providers/platforms/ios/pal_core:__pkg__",
+    ],
+    deps = [
+        "//pal",
+        "//pal/providers/backends/wolfssl",
+    ],
+)
+
+cc_library(
+    name = "entropy",
+    srcs = ["src/h2_posix_entropy.c"],
+    hdrs = ["include/h2_posix_pal_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _POSIX_OWNERS,
+    deps = ["//pal"],
+)
+
+cc_library(
+    name = "pal_core",
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _POSIX_OWNERS,
+    deps = [
+        ":entropy",
+        ":host_fs",
+        ":net",
+    ],
+)
+
+cc_test(
+    name = "host_fs_test",
+    srcs = ["tests/test_posix_host_fs.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": [
+            "-D_DEFAULT_SOURCE",
+            "-D_XOPEN_SOURCE=700",
+        ],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":host_fs",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "net_test",
+    srcs = ["tests/test_posix_net.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":net",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "net_tls_test",
+    srcs = ["tests/test_posix_net_tls.c"],
+    args = [
+        "$(location tests/fixtures/localhost_ca.pem)",
+        "$(location tests/fixtures/wrong_ca.pem)",
+        "$(location tests/fixtures/localhost_cert.pem)",
+        "$(location tests/fixtures/localhost_key.pem)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = glob(["tests/fixtures/*.pem"]),
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":entropy",
+        ":net",
+        "//pal",
+        "//pal/providers/backends/wolfssl",
+    ],
+)
+
+# Public CA signatures may use P-384 even when the TLS leaf key uses P-256.
+cc_test(
+    name = "net_tls_p384_test",
+    srcs = ["tests/test_posix_net_tls.c"],
+    args = [
+        "$(location tests/fixtures/p384_ca.pem)",
+        "$(location tests/fixtures/wrong_ca.pem)",
+        "$(location tests/fixtures/p384_signed_localhost.pem)",
+        "$(location tests/fixtures/p384_signed_localhost_key.pem)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = glob(["tests/fixtures/*.pem"]),
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":entropy",
+        ":net",
+        "//pal",
+        "//pal/providers/backends/wolfssl",
+    ],
+)
+
+# RSA-4096 roots sign contemporary public Web PKI certificate chains.
+cc_test(
+    name = "net_tls_rsa4096_test",
+    srcs = ["tests/test_posix_net_tls.c"],
+    args = [
+        "$(location tests/fixtures/rsa4096_ca.pem)",
+        "$(location tests/fixtures/wrong_ca.pem)",
+        "$(location tests/fixtures/rsa4096_signed_localhost.pem)",
+        "$(location tests/fixtures/rsa4096_signed_localhost_key.pem)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = glob(["tests/fixtures/*.pem"]),
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":entropy",
+        ":net",
+        "//pal",
+        "//pal/providers/backends/wolfssl",
+    ],
+)
+
+cc_test(
+    name = "entropy_test",
+    srcs = ["tests/test_posix_entropy.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":entropy",
+        "//pal",
+    ],
+)
+
+_CORE_OWNERS = [
+    "//pal/providers/platforms/ios/pal_core:__pkg__",
+    "//pal/providers/platforms/android/pal_core:__pkg__",
+    "//pal/providers/platforms/web/pal_core:__pkg__",
+]
+
+cc_library(
+    name = "thread_core",
+    srcs = ["src/h2_posix_thread_core.cpp"],
+    hdrs = ["include/h2_posix_thread_core.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "@platforms//cpu:wasm32": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _CORE_OWNERS,
+    deps = ["//pal"],
+)
+
+cc_library(
+    name = "mobile_core",
+    srcs = [
+        "src/h2_posix_core.cpp",
+        "src/h2_posix_system_event.c",
+    ],
+    hdrs = ["include/h2_posix_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _CORE_OWNERS,
+    deps = [
+        ":thread_core",
+        "//pal",
+    ],
+)
+
+# Controlled OS resolver answers exercise the actual production implementation.
+cc_test(
+    name = "resolver_list_test",
+    srcs = [
+        "include/h2_posix_pal_core.h",
+        "src/h2_posix_net.c",
+        "tests/test_posix_resolver.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Dgetaddrinfo=h2_test_getaddrinfo",
+        "-Dfreeaddrinfo=h2_test_freeaddrinfo",
+    ] + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//pal",
+        "//pal/providers/backends/wolfssl",
+    ],
+)

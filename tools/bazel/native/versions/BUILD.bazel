@@ -1,0 +1,15 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "bk7258_sdk_commit.txt",
+    "bk_tool_versions.txt",
+    "bk_toolchain_archives.txt",
+    "esp_idf_commit.txt",
+    "esp_idf_tool_versions.txt",
+    "jieli_ac695n_sdk_commit.txt",
+    "jieli_ac707n_sdk_commit.txt",
+    "jieli_ac791n_sdk_commit.txt",
+    "jieli_tool_versions.txt",
+    "jieli_toolchain_archives.txt",
+    "native_ccache_tools.txt",
+])

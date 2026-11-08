@@ -4,7 +4,7 @@
 #include "asm/irq.h"
 #include "system/spinlock.h"
 #include "h2_jieli_ac791n_clock_math.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #ifdef H2_JIELI_CLOCK_TIMER5
 

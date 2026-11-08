@@ -1,8 +1,8 @@
 """Build parallel format-1 and format-2 packages from shared native inputs."""
 
-load("//tools/bazel:bk7258.bzl", "Bk7258FirmwareInfo")
-load("//tools/bazel:esp_idf.bzl", "FirmwareInfo")
-load("//tools/bazel:jieli.bzl", "JieliFirmwareInfo")
+load("//tools/bazel/native/bk7258:bk7258.bzl", "Bk7258FirmwareInfo")
+load("//tools/bazel/native/esp_idf:esp_idf.bzl", "FirmwareInfo")
+load("//tools/bazel/native/jieli:jieli.bzl", "JieliFirmwareInfo")
 
 FirmwareReleaseInfo = provider(
     doc = "Canonical H2Loader release outputs for one firmware entry.",

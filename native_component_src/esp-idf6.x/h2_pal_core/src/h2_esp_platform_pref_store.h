@@ -1,7 +1,7 @@
 #ifndef H2_ESP_PLATFORM_PREF_STORE_H
 #define H2_ESP_PLATFORM_PREF_STORE_H
 
-#include "h2/pal/os/h2_pal_pref.h"
+#include "os/h2_pal_pref.h"
 
 #include <stddef.h>
 #include <stdint.h>

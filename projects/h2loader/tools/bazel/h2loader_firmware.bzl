@@ -1,8 +1,8 @@
 """H2Loader-managed native firmware declarations."""
 
-load("//tools/bazel:bk7258.bzl", "bk7258_firmware")
-load("//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
-load("//tools/bazel:jieli.bzl", "jieli_firmware")
+load("//tools/bazel/native/bk7258:bk7258.bzl", "bk7258_firmware")
+load("//tools/bazel/native/esp_idf:esp_idf.bzl", "esp_idf_firmware")
+load("//tools/bazel/native/jieli:jieli.bzl", "jieli_firmware")
 
 _ESP_LAYOUTS = {
     ("esp32s3", "amoled"): struct(root = "//boards/waveshare/esp32s3_touch_amoled_1_8/esp32s3/layouts/h2loader"),

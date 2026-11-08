@@ -1,7 +1,7 @@
 #ifndef H2_JIELI_WL82_GATT_H
 #define H2_JIELI_WL82_GATT_H
 
-#include "h2/pal/hal/h2_pal_ble.h"
+#include "hal/h2_pal_ble.h"
 #include <string.h>
 
 #define H2_JIELI_GATT_MAX_CHARACTERISTICS 16u

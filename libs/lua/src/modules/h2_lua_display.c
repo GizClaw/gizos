@@ -1,7 +1,7 @@
 #include "h2_lua_display.h"
 #include "h2_encoding.h"
 #include "h2_raster2d.h"
-#include "../../../raster2d/src/h2_raster2d_internal.h"
+#include "../../../image/raster2d/src/h2_raster2d_internal.h"
 #include "h2_lua_numeric.h"
 #include "h2_lua_geometry_batches_internal.h"
 #include "h2_f32_math.h"

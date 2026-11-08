@@ -1,6 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_test")
-load("//tools/bazel:npm_release.bzl", "npm_release_tarball")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/release:npm_release.bzl", "npm_release_tarball")
 load(":defs.bzl", "gizos_cli", "gizos_package")
 
 package(default_visibility = ["//visibility:public"])

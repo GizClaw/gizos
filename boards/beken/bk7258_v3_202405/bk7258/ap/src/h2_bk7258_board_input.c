@@ -1,21 +1,29 @@
 #include "h2_bk7258_board_private.h"
 
+#if defined(H2_BK7258_BOARD_INPUT_HOST_TEST)
+#include "h2_bk7258_board_input_test_sdk.h"
+#else
 #include <common/bk_err.h>
 #include <driver/adc.h>
 #include <driver/gpio.h>
+#include <os/os.h>
+#include "gpio_driver.h"
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
-#include "gpio_driver.h"
-
 #define H2_BK7258_SOC_TEMPERATURE_ID 501u
-#define H2_BK7258_ADC_KEY_GPIO GPIO_28
-#define H2_BK7258_ADC_KEY_CHAN 4
+/* EVB V3 schematic sheet 2: J27 connects the K3..K6 ladder to P12/ADC14. */
+#define H2_BK7258_ADC_KEY_GPIO GPIO_12
+#define H2_BK7258_ADC_KEY_CHAN 14
 
 extern bk_err_t bk_phy_get_current_temperature(float* temperature);
 
-static bool s_adc_initialized;
+static bool s_adc_release_pending;
+static unsigned s_adc_reported_errors;
 
 static const h2_pal_periph_radio_button_payload_t s_adc_button_payload = {
     .group_id = H2_BK7258_ADC_BUTTON_GROUP_ID,
@@ -31,19 +39,41 @@ static h2_pal_result_t map_bk_rc(bk_err_t rc) {
   return H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t adc_init(void) {
-  if (s_adc_initialized) {
-    return H2_PAL_OK;
+static h2_pal_result_t adc_result(const char* stage, bk_err_t native) {
+  if (native != BK_OK && s_adc_reported_errors < 16u) {
+    ++s_adc_reported_errors;
+    printf("H2_BK_ADC_ERROR stage=%s native=%d\n", stage, (int)native);
   }
+  return map_bk_rc(native);
+}
 
-  (void)gpio_dev_unmap(H2_BK7258_ADC_KEY_GPIO);
+static h2_pal_result_t adc_release(void) {
+  h2_pal_result_t rc = adc_result("release", bk_adc_release());
+  if (rc == H2_PAL_OK) {
+    s_adc_release_pending = false;
+  }
+  return rc;
+}
 
-  h2_pal_result_t rc =
-      map_bk_rc(bk_adc_init((adc_chan_t)H2_BK7258_ADC_KEY_CHAN));
+static h2_pal_result_t adc_read_raw(uint16_t* out_raw) {
+  /* The SDK shares ADC power, configuration and ISR ownership with other users.
+   * Restore the complete channel under its lock on every sampling transaction.
+   */
+  if (s_adc_release_pending) {
+    h2_pal_result_t rc = adc_release();
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+  }
+  h2_pal_result_t rc = adc_result("acquire", bk_adc_acquire());
   if (rc != H2_PAL_OK) {
     return rc;
   }
+  s_adc_release_pending = true;
 
+  bool initialized = false;
+  bool started = false;
+  uint16_t raw = 0, first_raw = 0;
   adc_config_t config;
   memset(&config, 0, sizeof(config));
   config.chan = (adc_chan_t)H2_BK7258_ADC_KEY_CHAN;
@@ -54,64 +84,83 @@ static h2_pal_result_t adc_init(void) {
   config.steady_ctrl = 7;
   config.adc_filter = 0;
 
-  rc = map_bk_rc(bk_adc_set_config(&config));
+  rc = adc_result("gpio_unmap", gpio_dev_unmap(H2_BK7258_ADC_KEY_GPIO));
   if (rc != H2_PAL_OK) {
-    return rc;
+    goto cleanup;
   }
-  rc = map_bk_rc(bk_adc_enable_bypass_clalibration());
+  /* P12 is AP-owned. Keep the schematic's external R14 pull-up; selecting
+   * ADC14 disables digital I/O, internal pulls and GPIO interrupts. */
+  rc = adc_result("gpio_map",
+                  gpio_dev_map(H2_BK7258_ADC_KEY_GPIO, GPIO_DEV_ADC14));
   if (rc != H2_PAL_OK) {
-    return rc;
+    goto cleanup;
   }
-  s_adc_initialized = true;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t adc_read_voltage_mv(uint32_t* voltage_mv) {
-  h2_pal_result_t rc = adc_init();
+  rc = adc_result("init", bk_adc_init(config.chan));
   if (rc != H2_PAL_OK) {
-    return rc;
+    goto cleanup;
   }
-
-  if (bk_adc_acquire() != BK_OK) {
-    return H2_PAL_ERR_IO;
-  }
-
-  rc = H2_PAL_OK;
-  uint16_t raw = 0;
-  if (bk_adc_start() != BK_OK) {
-    rc = H2_PAL_ERR_IO;
-    goto out_release;
-  }
-  if (bk_adc_set_channel((adc_chan_t)H2_BK7258_ADC_KEY_CHAN) != BK_OK) {
-    rc = H2_PAL_ERR_IO;
-    goto out_stop;
-  }
-  if (bk_adc_read(&raw, 100) != BK_OK) {
-    rc = H2_PAL_ERR_IO;
-    goto out_stop;
-  }
-
-  *voltage_mv = ((uint32_t)raw * 2400u) / 4096u;
-
-out_stop:
-  (void)bk_adc_stop();
-out_release:
-  (void)bk_adc_release();
+  initialized = true;
+  rc = adc_result("config", bk_adc_set_config(&config));
   if (rc != H2_PAL_OK) {
-    return H2_PAL_ERR_IO;
+    goto cleanup;
   }
-  return H2_PAL_OK;
+  rc = adc_result("bypass", bk_adc_enable_bypass_clalibration());
+  if (rc != H2_PAL_OK) {
+    goto cleanup;
+  }
+  rc = adc_result("start", bk_adc_start());
+  if (rc != H2_PAL_OK) {
+    goto cleanup;
+  }
+  started = true;
+  rc = adc_result("channel", bk_adc_set_channel(config.chan));
+  if (rc == H2_PAL_OK) {
+    /* Discard the first conversion after restoring shared ADC power/config.
+     * Keep continuous mode running while the analog input settles. */
+    rc = adc_result("prime", bk_adc_read(&first_raw, 100));
+    if (rc == H2_PAL_OK) rc = adc_result("settle", rtos_delay_milliseconds(5));
+    if (rc == H2_PAL_OK) rc = adc_result("read", bk_adc_read(&raw, 100));
+    static bool reported_config;
+    if (rc == H2_PAL_OK && !reported_config) {
+      printf("H2_BK_ADC_CONFIG gpio=%u channel=%u first=%u raw=%u\n",
+             (unsigned)H2_BK7258_ADC_KEY_GPIO, (unsigned)H2_BK7258_ADC_KEY_CHAN,
+             (unsigned)first_raw, (unsigned)raw);
+      reported_config = true;
+    }
+  }
+
+cleanup:
+  if (started) {
+    h2_pal_result_t stop = adc_result("stop", bk_adc_stop());
+    if (rc == H2_PAL_OK) {
+      rc = stop;
+    }
+  }
+  if (initialized) {
+    h2_pal_result_t deinit = adc_result("deinit", bk_adc_deinit(config.chan));
+    if (rc == H2_PAL_OK) {
+      rc = deinit;
+    }
+  }
+  h2_pal_result_t release = adc_release();
+  if (rc == H2_PAL_OK) {
+    rc = release;
+  }
+  if (rc == H2_PAL_OK) {
+    *out_raw = raw;
+  }
+  return rc;
 }
 
 static bool button_is_pressed(const h2_bk7258_button_adc_range_t* range,
-                              uint32_t voltage_mv) {
-  return voltage_mv >= range->min_mv && voltage_mv <= range->max_mv;
+                              uint16_t raw) {
+  return raw >= range->min_raw && raw <= range->max_raw;
 }
 
-static h2_pal_periph_id_t pressed_radio_button_id(uint32_t voltage_mv) {
+static h2_pal_periph_id_t pressed_radio_button_id(uint16_t raw) {
   for (size_t i = 0; i < h2_bk7258_button_range_count; i += 1u) {
     const h2_bk7258_button_adc_range_t* range = &h2_bk7258_button_ranges[i];
-    if (button_is_pressed(range, voltage_mv)) {
+    if (button_is_pressed(range, raw)) {
       return (h2_pal_periph_id_t)range->id;
     }
   }
@@ -249,15 +298,30 @@ static h2_pal_result_t read_radio_button_group(
     return H2_PAL_ERR_NOT_FOUND;
   }
 
-  uint32_t voltage_mv = 0;
-  h2_pal_result_t rc = adc_read_voltage_mv(&voltage_mv);
+  uint16_t raw = 0;
+  h2_pal_result_t rc = adc_read_raw(&raw);
   if (rc != H2_PAL_OK) {
     return rc;
   }
 
+  h2_pal_periph_id_t pressed = pressed_radio_button_id(raw);
+  static bool reported;
+  static uint16_t last_raw;
+  static h2_pal_periph_id_t last_pressed;
+  uint32_t drift_raw = raw > last_raw ? raw - last_raw : last_raw - raw;
+  /* Log changes without an image-lifetime count cap: interactive MFG retries
+   * must remain observable after an earlier capture has consumed 64 events. */
+  if (!reported || pressed != last_pressed || drift_raw >= 64u) {
+    printf("H2_BK_ADC_SAMPLE raw=%u key=%lu\n", (unsigned)raw,
+           (unsigned long)pressed);
+    (void)fflush(stdout);
+    reported = true;
+    last_raw = raw;
+    last_pressed = pressed;
+  }
   *out_reading = (h2_pal_radio_button_group_reading_t){
       .id = id,
-      .pressed_button_id = pressed_radio_button_id(voltage_mv),
+      .pressed_button_id = pressed,
   };
   return H2_PAL_OK;
 }

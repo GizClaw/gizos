@@ -4,7 +4,7 @@
 /** @file h2_lua_link.h @brief BLE KCP peer link for Lua jobs (`link` module).
  */
 
-#include "h2/pal/hal/h2_pal_ble.h"
+#include "hal/h2_pal_ble.h"
 #include "h2_lua.h"
 
 #ifdef __cplusplus

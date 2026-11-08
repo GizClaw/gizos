@@ -11,7 +11,7 @@ REPO = PACKAGE.parents[3]
 
 FAMILY_PROBE = r"""
 #include "h2_bk_net_addr.h"
-#include "h2/pal/net/h2_pal_netif.h"
+#include "net/h2_pal_netif.h"
 #include <assert.h>
 #include <string.h>
 #include <unistd.h>
@@ -167,7 +167,7 @@ class SocketProfiles(unittest.TestCase):
                          "-fsanitize=address,undefined", f"-DLWIP_IPV6={enabled}",
                          "-I", str(PACKAGE / "src"),
                          "-I", str(PACKAGE / "tests/ipv6_sdk"),
-                         "-I", str(REPO / "libs/pal/include"),
+                         "-I", str(REPO / "pal/include"),
                          str(unit), "-o", str(binary)], capture_output=True, text=True)
                     self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
                     run = subprocess.run([str(binary)], capture_output=True,

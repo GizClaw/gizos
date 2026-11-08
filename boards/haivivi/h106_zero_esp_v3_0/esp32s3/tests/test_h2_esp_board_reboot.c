@@ -1,5 +1,5 @@
 #include "h2_esp_board_config.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "driver/gpio.h"
 #include <assert.h>
 

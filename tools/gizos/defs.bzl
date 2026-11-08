@@ -1,6 +1,6 @@
 """Build one npm package and a local Bazel entry point for the Bun CLI."""
 
-load("//tools/bazel:firmware.bzl", "FirmwareVersionInfo")
+load("//tools/bazel/firmware:firmware.bzl", "FirmwareVersionInfo")
 
 def _package_impl(ctx):
     package = ctx.actions.declare_directory(ctx.label.name)
@@ -39,7 +39,7 @@ gizos_package = rule(
         "readme": attr.label(allow_single_file = True, mandatory = True),
         "license": attr.label(allow_single_file = True, mandatory = True),
         "_builder": attr.label(default = ":build.ts", allow_single_file = True),
-        "_batch": attr.label(default = "//tools/bazel:release_batch"),
+        "_batch": attr.label(default = "//tools/bazel/release:release_batch"),
         "_bun": attr.label(default = "@gizos_bun//:bun", allow_single_file = True, executable = True, cfg = "exec"),
     },
 )

@@ -11,7 +11,7 @@ These BSPs were promoted from `h2vivi/firmwares`. Each board retains its existin
 
 The H200 identities select the original and Donghui battery profiles of the same physical BSP; they do not establish separate PCB revisions. Lucky Kitty v1.3 is retired and is not maintained here.
 
-H106 product Main, Loader, MFG, their shared factory code and Loader UI remain owned by Firmwares. Public manufacturing acceptance belongs to [the MFG project](../../projects/mfg/README.md), with final image composition owned by its entries. This directory owns hardware configuration and Runtime/PAL composition only; it does not import private factory workflows, contain product credentials or perform provisioning. The BK model is Zero BK 2.0 (LED GPIO4, modem enable GPIO6); the previously mislabeled 1.0 entry is retired. There is no H200 MFG program.
+H106 product Main, Loader, MFG, their shared factory code and Loader UI remain owned by Firmwares. Public manufacturing acceptance belongs to [the MFG project](../../projects/testing/mfg/README.md), with final image composition owned by its entries. This directory owns hardware configuration and Runtime/PAL composition only; it does not import private factory workflows, contain product credentials or perform provisioning. The BK model is Zero BK 2.0 (LED GPIO4, modem enable GPIO6); the previously mislabeled 1.0 entry is retired. There is no H200 MFG program.
 
 Run the existing BSP host regressions with the appropriate host configuration, for example:
 

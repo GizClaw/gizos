@@ -1,9 +1,9 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//native_component_src/bk7258/ap/h2_pal_core:tests/audio_reader_test.bzl", "bk_audio_reader_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
-load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,7 +26,7 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":modem_test_source",
-        "//libs/pal/providers/modem/quectel:quectel_modem",
+        "//pal/providers/devices/modem/quectel:quectel_modem",
     ],
 )
 
@@ -50,9 +50,9 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":audio_test_source",
-        "//libs/audio_mixer",
-        "//libs/pal",
+        "//libs/audio/mixer:audio_mixer",
         "//native_component_src/bk7258/ap/h2_pal_core:audio_reader_lifetime",
+        "//pal",
     ],
 )
 
@@ -88,7 +88,7 @@ cc_test(
             "CONFIG_CPU_CNT=2",
         ],
         target_compatible_with = HOST_TOOL_COMPATIBILITY,
-        deps = ["//libs/pal"],
+        deps = ["//pal"],
     )
     for mode, smp in [
         ("smp", "1"),
@@ -127,7 +127,7 @@ cc_test(
         "CONFIG_SPI_DMA=1",
     ],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = ["//projects/e2e/apps/pal-display/app:pal_display_e2e"],
+    deps = ["//projects/testing/unit/pal-display/app:pal_display_e2e"],
 )
 
 cc_test(
@@ -175,7 +175,7 @@ cc_test(
     ],
     local_defines = ["H2_ZERO_BK_PERIPHERAL_POWER_HOST_TEST=1"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(
@@ -207,7 +207,7 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":power_test_source",
-        "//libs/pal",
+        "//pal",
     ],
 )
 
@@ -294,14 +294,14 @@ firmware_native_component(
     ],
     deps = [
         ":tasks",
-        "//libs/audio_mixer",
-        "//libs/pal/providers/modem/quectel:quectel_modem",
+        "//libs/audio/mixer:audio_mixer",
+        "//libs/net/apn",
         "//libs/runtime",
-        "//libs/utils",
         "//native_component_src/bk7258/ap/h2_nfc_fm175xx",
         "//native_component_src/bk7258/ap/h2_pal_core",
         "//native_component_src/bk7258/ap/h2_pal_image",
         "//native_component_src/bk7258/ap/h2_pal_storage",
+        "//pal/providers/devices/modem/quectel:quectel_modem",
     ],
 )
 
@@ -320,5 +320,5 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )

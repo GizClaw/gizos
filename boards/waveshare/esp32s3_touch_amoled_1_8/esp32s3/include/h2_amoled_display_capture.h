@@ -1,6 +1,6 @@
 #ifndef H2_AMOLED_DISPLAY_CAPTURE_H
 #define H2_AMOLED_DISPLAY_CAPTURE_H
-#include "h2/pal/hal/h2_pal_display.h"
+#include "hal/h2_pal_display.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

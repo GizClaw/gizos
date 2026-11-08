@@ -1,0 +1,535 @@
+from __future__ import annotations
+
+import copy
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+import zipfile
+
+from projects.h2loader.tools.bazel import release_bundle
+
+ROOT = Path(__file__).resolve().parents[4]
+SPEC = importlib.util.spec_from_file_location("h2_release", ROOT / "scripts/bazel/bazel-release.py")
+assert SPEC and SPEC.loader
+release = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = release
+SPEC.loader.exec_module(release)
+BATCH = "20260920-120000"
+ARCHIVE = f"firmware-release-v{BATCH}.zip"
+
+
+def catalog_entry(board="devkit", platform="esp", target="esp32s3", version="0.1.0", package_format=2):
+    entry = release_bundle.LOADER_ENTRIES[board]
+    package_target = "package_v2" if package_format == 2 else "package"
+    return dict(entry=entry, label="//" + entry + ":" + package_target, board=board,
+                image="loader", role="h2loader", platform=platform, target=target,
+                version=version, release_name="loader-" + board, package_format=package_format)
+
+
+def query_xml(labels, tag="firmware-release"):
+    return '<query>' + ''.join(
+        f'<rule name="{label}"><list name="tags"><string value="{tag}"/></list></rule>'
+        for label in labels) + '</query>'
+
+
+class ReleaseTest(unittest.TestCase):
+    def firmware_inputs(self, root, batch=BATCH):
+        item = catalog_entry()
+        item["package_manifest"] = dict(format=item["package_format"], board=item["board"], role=item["role"],
+            target=item["target"], version=item["version"], image_size=8, image_sha256="0" * 64)
+        item["assets"] = []
+        for suffix, operation in sorted(release_bundle.expected_asset_contracts(item)):
+            path = root / (item["release_name"] + suffix)
+            path.write_bytes(b"firmware" + suffix.encode())
+            asset = dict(name=path.name, release_suffix=suffix, operation=operation,
+                         size=path.stat().st_size, sha256=release.sha256(path))
+            if operation == "factory-flash":
+                asset["flash_offset"] = 0
+            item["assets"].append(asset)
+        (root / "firmware-index.json").write_text(json.dumps(dict(
+            format=1, batch=batch, firmware_count=1, firmware=[item])))
+        self.write_checksums(root)
+        return list(root.iterdir())
+
+    def write_checksums(self, root):
+        (root / "SHA256SUMS").write_text(''.join(
+            f"{release.sha256(root / name)}  {name}\n" for name in sorted(p.name for p in root.iterdir())
+            if name != "SHA256SUMS"))
+
+    def final_inputs(self, root):
+        with tempfile.TemporaryDirectory() as directory:
+            release.package_bundle(self.firmware_inputs(Path(directory)), root, BATCH)
+        tarball = root / "scope-example-2.3.4.tgz"
+        tarball.write_bytes(b"npm tarball fixture")
+        (root / "npm-index.json").write_text(json.dumps(dict(
+            format=1, version=BATCH, package_count=1, packages=[dict(
+                name="@scope/example", version="2.3.4", tarball=tarball.name,
+                sha256=release.sha256(tarball), size=tarball.stat().st_size)])))
+        content_id = "a" * 64
+        lua = root / f"gizos-lua-runtime-src-{content_id}.tar.gz"
+        lua.write_bytes(b"lua source fixture")
+        (root / (lua.name + ".sha256")).write_text(f"{release.sha256(lua)}  {lua.name}\n")
+        (root / "lua-runtime.json").write_text(json.dumps(dict(
+            schema_version=1, batch=BATCH, commit="b" * 40,
+            lua_runtime={**release.file_identity(lua), "content_id": content_id})))
+        return list(root.iterdir())
+
+    def test_batch_validates_format_calendar_and_zip_range(self):
+        for value in (BATCH, "20240229-235959", "19800101-000000", "21071231-235959"):
+            release.validate_batch(value)
+        for value in ("", "1.2.3", "v" + BATCH, "2026092-120000", "20260920-120000\n",
+                      "20260229-120000", "20261301-000000", "20260920-240000", "19791231-235959", "21080101-000000"):
+            with self.subTest(value=value), self.assertRaises(release.ReleaseError):
+                release.validate_batch(value)
+
+    def test_catalog_accepts_exact_physical_paths_and_preserves_public_ids(self):
+        boards = (
+            ("amoled", "waveshare/esp32s3_touch_amoled_1_8", "esp", "esp32s3"),
+            ("devkit", "espressif/esp32s3_devkitc_1", "esp", "esp32s3"),
+            ("szp", "jlc/esp32s3_szp", "esp", "esp32s3"),
+            ("bk7258_v3_202405", "beken/bk7258_v3_202405", "bk7258", "bk7258"),
+            ("jieli_ac791n_devkit", "jieli/jieli_ac791n_devkit", "jieli", "wl82"),
+            ("waveshare_esp32p4_wifi6_touch_lcd_4_3", "waveshare/esp32p4_wifi6_touch_lcd_4_3", "esp", "esp32p4"),
+            ("waveshare_esp32s3_a7670e_4g", "waveshare/esp32s3_a7670e_4g", "esp", "esp32s3"),
+            ("waveshare_esp32s3_touch_amoled_1_75c", "waveshare/esp32s3_touch_amoled_1_75c", "esp", "esp32s3"),
+            ("esp_mosaico", "espressif/mosaico", "esp", "esp32s3"),
+        )
+        self.assertEqual(set(release_bundle.LOADER_ENTRIES), {board[0] for board in boards})
+        for board, physical_board, platform, target in boards:
+            for package_format, package_target in ((1, "package"), (2, "package_v2")):
+                with self.subTest(board=board, package_format=package_format):
+                    item = catalog_entry(board, platform, target, package_format=package_format)
+                    entry = "projects/h2loader/targets/h2_loader_tar_zlib/loader/" + physical_board
+                    self.assertEqual(item["entry"], entry)
+                    self.assertEqual(item["label"], "//" + entry + ":" + package_target)
+                    self.assertEqual(item["release_name"], "loader-" + board)
+                    self.assertEqual(release_bundle.validate_catalog([item]), [item])
+        legacy = catalog_entry(package_format=1)
+        del legacy["package_format"]
+        self.assertEqual(release_bundle.validate_catalog([legacy]), [legacy])
+
+    def test_catalog_rejects_diagnostics_even_when_tagged(self):
+        canonical = catalog_entry()["entry"]
+        for entry, label in (
+            ("projects/testing/targets/h2_loader_tar_zlib/unit/pal-core/espressif/esp32s3_devkitc_1", None),
+            ("projects/test/targets/app/espressif/fixture_board", None),
+            ("projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1", None),
+            ("projects/h2loader/targets/app/espressif/esp32s3_devkitc_1", None),
+            (release_bundle.LOADER_ROOT + "waveshare/esp32s3_devkitc_1", None),
+            (release_bundle.LOADER_ROOT + "devkit", None),
+            (canonical + "/diagnostic", None),
+            (canonical + "_variant", None),
+            ("projects/h2loader/targets/h2loader_tar_zlib/loader/devkit", ":package"),
+            ("projects/h2loader/targets/h2loader_zlib_tar/loader/devkit", ":package"),
+            (canonical, ":package_usb_v2"),
+            (canonical, ":package_uart_460800_v2"),
+        ):
+            with self.subTest(entry=entry, label=label), tempfile.TemporaryDirectory() as directory:
+                item = {**catalog_entry(), "entry": entry, "label": "//" + entry + (label or ":package_v2")}
+                path = Path(directory) / "firmware-catalog.json"
+                path.write_text(json.dumps([item]))
+                with self.assertRaisesRegex(release.ReleaseError, "diagnostic"):
+                    release.load_catalog([path])
+
+    def test_catalog_rejects_package_target_and_format_mismatch(self):
+        for package_format, package_target in ((1, "package_v2"), (2, "package")):
+            with self.subTest(package_format=package_format), tempfile.TemporaryDirectory() as directory:
+                item = catalog_entry(package_format=package_format)
+                item["label"] = "//" + item["entry"] + ":" + package_target
+                path = Path(directory) / "firmware-catalog.json"
+                path.write_text(json.dumps([item]))
+                with self.assertRaisesRegex(release.ReleaseError, "diagnostic"):
+                    release.load_catalog([path])
+
+    def test_catalog_rejects_duplicate_package_formats(self):
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            release_bundle.validate_catalog([catalog_entry(package_format=1), catalog_entry(package_format=2)])
+
+    def test_catalog_rejects_unknown_or_physical_board_ids(self):
+        for board in ("unknown", "esp32s3_devkitc_1", "mosaico"):
+            with self.subTest(board=board):
+                item = {**catalog_entry(), "board": board, "release_name": "loader-" + board}
+                with self.assertRaisesRegex(ValueError, "diagnostic"):
+                    release_bundle.validate_catalog([item])
+
+    def test_catalog_rejects_bad_version_release_name_and_platform(self):
+        for key, value in (("release_name", "wrong"), ("version", "1.02.3"),
+                           ("version", "20260920-120000"), ("platform", "unsupported")):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "firmware-catalog.json"
+                path.write_text(json.dumps([{**catalog_entry(), key: value}]))
+                with self.assertRaises(release.ReleaseError):
+                    release.load_catalog([path])
+
+    def test_catalog_queries_all_configs_with_opt_in_and_independent_versions(self):
+        entries = [catalog_entry(), catalog_entry("waveshare_esp32p4_wifi6_touch_lcd_4_3", target="esp32p4", version="2.0.0"),
+                   catalog_entry("bk7258_v3_202405", "bk7258", "bk7258")]
+        results = [subprocess.CompletedProcess([], 0, query_xml([i["label"] for i in entries]), "")]
+        results += [subprocess.CompletedProcess([], 0, json.dumps(item), "") for item in entries]
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(release, "command", side_effect=results) as command:
+            release.build_catalog(ROOT, "bazel", Path(directory))
+            self.assertEqual(command.call_count, 4)
+            self.assertEqual(command.call_args_list[0].args[1][2:4], [release.RELEASE_QUERY, "--output=xml"])
+            self.assertIn('attr("tags", "firmware-release",', release.RELEASE_QUERY)
+            self.assertIn('kind("h2loader_zlib_tar rule", //projects/...)', release.RELEASE_QUERY)
+            for config, call in zip(("esp32s3", "esp32p4", "bk7258"), command.call_args_list[1:]):
+                self.assertIn("--config=" + config, call.args[1])
+                self.assertIn("set(%s)" % " ".join(sorted(item["label"] for item in entries)), call.args[1])
+                self.assertFalse(any("firmware_version=" in arg for arg in call.args[1]))
+            data = json.loads((Path(directory) / "firmware-catalog.json").read_text())
+            self.assertEqual({i["version"] for i in data}, {"0.1.0", "2.0.0"})
+
+    def test_catalog_rejects_partial_tag_matches_and_missing_coverage(self):
+        for tag in ("not-firmware-release", "firmware-release-extra"):
+            with self.subTest(tag=tag), mock.patch.object(release, "command", return_value=
+                    subprocess.CompletedProcess([], 0, query_xml([catalog_entry()["label"]], tag), "")):
+                with self.assertRaisesRegex(release.ReleaseError, "exactly one"):
+                    release.build_catalog(ROOT, "bazel", Path("unused"))
+        results = [subprocess.CompletedProcess([], 0, query_xml([catalog_entry()["label"], catalog_entry("amoled")["label"]]), "")]
+        results += [subprocess.CompletedProcess([], 0, json.dumps(catalog_entry()) if i == 0 else "", "") for i in range(3)]
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(release, "command", side_effect=results):
+            with self.assertRaisesRegex(release.ReleaseError, "coverage"):
+                release.build_catalog(ROOT, "bazel", Path(directory))
+
+    def test_catalog_rejects_starlark_errors_with_zero_exit(self):
+        results = [subprocess.CompletedProcess([], 0, query_xml([catalog_entry()["label"]]), ""),
+                   subprocess.CompletedProcess([], 0, "", "ERROR: Starlark evaluation error")]
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(release, "command", side_effect=results):
+            with self.assertRaisesRegex(release.ReleaseError, "reported an error"):
+                release.build_catalog(ROOT, "bazel", Path(directory))
+
+    def test_s3_release_keeps_wifi_credentials_out_of_argv(self):
+        credentials = '{"ssid":"fixture","password":"fixture"}'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog = root / "firmware-catalog.json"
+            catalog.write_text(json.dumps([catalog_entry()]))
+            asset = root / "asset"
+            asset.write_bytes(b"firmware")
+            output = root / "output"
+            output.mkdir()
+            with mock.patch.dict(os.environ, {"H2LOADER_WIFI_CREDENTIALS": credentials}), mock.patch.object(release, "command", side_effect=[
+                    subprocess.CompletedProcess([], 0, "", ""), subprocess.CompletedProcess([], 0, str(asset) + "\n", "")]) as command:
+                release.build_firmware(root, "bazel", "esp32s3", [catalog], output)
+            args = command.call_args_list[0].args[1]
+            self.assertNotIn(credentials, " ".join(args))
+            self.assertTrue(args[1].startswith("--bazelrc="))
+            self.assertEqual(args[2:4], ["build", "--noannounce_rc"])
+            self.assertFalse(Path(args[1].partition("=")[2]).exists())
+            self.assertFalse(any("firmware_version=" in arg for call in command.call_args_list for arg in call.args[1]))
+
+    def test_zip_determinism_layout_and_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = root / "input"
+            inputs.mkdir()
+            files = self.firmware_inputs(inputs)
+            first, second = root / "first", root / "second"
+            first.mkdir(); second.mkdir()
+            release.package_bundle(files, first, BATCH)
+            for path in files:
+                os.utime(path, (1234567890, 1234567890))
+                path.chmod(0o755)
+            release.package_bundle(list(reversed(files)), second, BATCH)
+            self.assertEqual((first / ARCHIVE).read_bytes(), (second / ARCHIVE).read_bytes())
+            with zipfile.ZipFile(first / ARCHIVE) as archive:
+                # Match package_bundle's string ordering; Windows Path ordering ignores case.
+                self.assertEqual(archive.namelist(), [ARCHIVE[:-4] + "/" + name for name in sorted(p.name for p in files)])
+                for info in archive.infolist():
+                    self.assertEqual(info.date_time, (2026, 9, 20, 12, 0, 0))
+                    self.assertEqual(info.create_system, 3)
+                    self.assertEqual(info.external_attr, 0o100644 << 16)
+                    self.assertEqual(info.compress_type, zipfile.ZIP_DEFLATED)
+            release.validate_archive(first / ARCHIVE, BATCH)
+
+    def test_zip_odd_second_batch_round_trip(self):
+        for batch, seconds in (("20260920-120001", 0), ("20260920-120059", 58)):
+            with self.subTest(batch=batch), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inputs = root / "input"
+                inputs.mkdir()
+                release.package_bundle(self.firmware_inputs(inputs, batch), root, batch)
+                path = root / f"firmware-release-v{batch}.zip"
+                with zipfile.ZipFile(path) as archive:
+                    for info in archive.infolist():
+                        self.assertEqual(info.date_time, (2026, 9, 20, 12, 0, seconds))
+                release.validate_archive(path, batch)
+
+    def test_zip_rejects_tampered_member_timestamps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            path = root / ARCHIVE
+            with zipfile.ZipFile(path) as archive:
+                contents = [(info, archive.read(info)) for info in archive.infolist()]
+            for member, _ in contents:
+                with self.subTest(member=member.filename):
+                    with zipfile.ZipFile(path, "w") as archive:
+                        for original, data in contents:
+                            info = copy.copy(original)
+                            if info.filename == member.filename:
+                                info.date_time = (2026, 9, 20, 12, 0, 2)
+                            archive.writestr(info, data)
+                    with self.assertRaisesRegex(release.ReleaseError, "ZIP member timestamp mismatch") as error:
+                        release.validate_archive(path, BATCH)
+                    self.assertIn(member.filename, str(error.exception))
+                    self.assertIn(BATCH, str(error.exception))
+                    with self.assertRaisesRegex(release.ReleaseError, "ZIP member timestamp mismatch"):
+                        release.assemble_final(files, root / "output", BATCH)
+
+    def test_package_rejects_checksum_coverage_tamper_and_extra_inputs(self):
+        for mutation in ("missing-checksum", "tamper", "extra", "batch", "release-name", "missing-asset"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.firmware_inputs(root)
+                if mutation == "missing-checksum":
+                    (root / "SHA256SUMS").write_text((root / "SHA256SUMS").read_text().splitlines()[0] + "\n")
+                elif mutation == "tamper":
+                    (root / "loader-devkit.update.tar").write_bytes(b"tampered")
+                elif mutation == "extra":
+                    extra = root / "debug.log"; extra.write_text("private"); files.append(extra)
+                else:
+                    path = root / "firmware-index.json"
+                    index = json.loads(path.read_text())
+                    if mutation == "batch": index["batch"] = "20260920-120001"
+                    elif mutation == "release-name": index["firmware"][0]["release_name"] = "wrong"
+                    else: index["firmware"][0]["assets"].pop()
+                    path.write_text(json.dumps(index)); self.write_checksums(root)
+                with self.assertRaises(release.ReleaseError):
+                    release.package_bundle(files, root / "output", BATCH)
+
+    def test_final_bundle_has_lua_source_and_release_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); inputs = root / "input"; inputs.mkdir()
+            output = root / "output"; output.mkdir()
+            release.assemble_final(self.final_inputs(inputs), output, BATCH)
+            lua_name = f"gizos-lua-runtime-src-{'a' * 64}.tar.gz"
+            expected = {ARCHIVE, "scope-example-2.3.4.tgz", "npm-index.json",
+                        lua_name, lua_name + ".sha256", "gizos-release.json"}
+            self.assertEqual({p.name for p in output.iterdir()}, expected | {"SHA256SUMS"})
+            release.validate_checksums(output / "SHA256SUMS", {p.name: p for p in output.iterdir()}, expected)
+            metadata = json.loads((output / "gizos-release.json").read_text())
+            self.assertEqual(metadata["release_tag"], f"v{BATCH}")
+            self.assertEqual(metadata["packages"]["lua_runtime"]["content_id"], "a" * 64)
+
+    def test_final_bundle_rejects_corrupt_lua_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            lua = next(path for path in files if path.name.endswith(".tar.gz"))
+            lua.write_bytes(b"tampered")
+            with self.assertRaisesRegex(release.ReleaseError, "Lua runtime asset integrity mismatch"):
+                release.assemble_final(files, root / "output", BATCH)
+
+    def test_final_slice_merges_separate_artifacts_and_multiple_packages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = root / "input"
+            inputs.mkdir()
+            for path in self.final_inputs(inputs):
+                artifact = inputs / ("firmware" if path.suffix == ".zip" else "npm")
+                artifact.mkdir(exist_ok=True)
+                path.rename(artifact / path.name)
+            npm = inputs / "npm"
+            second = npm / "zebra-4.5.6.tgz"
+            second.write_bytes(b"second package")
+            index_path = npm / "npm-index.json"
+            index = json.loads(index_path.read_text())
+            index["packages"].append(dict(name="zebra", version="4.5.6", tarball=second.name,
+                sha256=release.sha256(second), size=second.stat().st_size))
+            index["package_count"] = 2
+            index_path.write_text(json.dumps(index))
+            output = root / "output"
+            release.run_slice(root, "unused-bazel", "release-bundle", BATCH, inputs, output)
+            lua_name = f"gizos-lua-runtime-src-{'a' * 64}.tar.gz"
+            expected = {ARCHIVE, "npm-index.json", "scope-example-2.3.4.tgz", second.name,
+                        lua_name, lua_name + ".sha256", "gizos-release.json"}
+            self.assertEqual({p.name for p in output.iterdir()}, expected | {"SHA256SUMS"})
+            release.validate_checksums(output / "SHA256SUMS", {p.name: p for p in output.iterdir()}, expected)
+            # Duplicated artifact names fail before clearing the valid output.
+            (npm / ARCHIVE).write_bytes(b"unexpected duplicate")
+            with self.assertRaisesRegex(release.ReleaseError, "duplicate"):
+                release.run_slice(root, "unused-bazel", "release-bundle", BATCH, inputs, output)
+            self.assertEqual({p.name for p in output.iterdir()}, expected | {"SHA256SUMS"})
+
+    def test_final_revalidates_zip_interior(self):
+        for mutation in ("tamper", "checksum-coverage", "extra", "duplicate", "traversal", "size", "batch"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.final_inputs(root)
+                path = root / ARCHIVE
+                with zipfile.ZipFile(path) as archive:
+                    contents = [(i, archive.read(i)) for i in archive.infolist()]
+                with zipfile.ZipFile(path, "w") as archive:
+                    for info, data in contents:
+                        if mutation == "tamper" and info.filename.endswith(".update.tar"): data = b"tampered"
+                        if mutation == "checksum-coverage" and info.filename.endswith("SHA256SUMS"): data = data.splitlines()[0] + b"\n"
+                        if mutation in {"size", "batch"} and info.filename.endswith("firmware-index.json"):
+                            index = json.loads(data)
+                            if mutation == "batch": index["batch"] = "20260920-120001"
+                            else: index["firmware"][0]["assets"][0]["size"] += 1
+                            data = json.dumps(index).encode()
+                        archive.writestr(info, data)
+                    if mutation in {"extra", "duplicate", "traversal"}:
+                        info = zipfile.ZipInfo(ARCHIVE[:-4] + "/" + {"extra": "extra", "duplicate": "SHA256SUMS", "traversal": "../escape"}[mutation], date_time=(2026, 9, 20, 12, 0, 0))
+                        info.create_system = 3; info.external_attr = 0o100644 << 16; info.compress_type = zipfile.ZIP_DEFLATED
+                        archive.writestr(info, b"extra")
+                with self.assertRaises(release.ReleaseError):
+                    release.assemble_final(files, root / "output", BATCH)
+
+    def test_retired_desktop_slice_is_not_registered(self):
+        self.assertNotIn("desktop-" + "macos-arm64", release.SLICES)
+
+    def test_relative_output_must_stay_below_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertEqual(
+                release.resolve_output(root, "catalog", None),
+                (root / "build/release/catalog").resolve(),
+            )
+            with self.assertRaisesRegex(release.ReleaseError, "below build"):
+                release.resolve_output(root, "catalog", Path("../escape"))
+
+    def test_absolute_output_requires_actions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.dict(release.os.environ, {}, clear=True):
+                with self.assertRaisesRegex(
+                    release.ReleaseError, "GitHub Actions"
+                ):
+                    release.resolve_output(
+                        Path.cwd(), "catalog", Path(directory)
+                    )
+
+    def test_input_rejects_symlink_and_duplicate_basename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target"
+            target.write_text("data", encoding="utf-8")
+            (root / "link").symlink_to(target)
+            with self.assertRaisesRegex(release.ReleaseError, "symlink"):
+                release.input_files(root)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a").mkdir()
+            (root / "b").mkdir()
+            (root / "a/file").write_text("a", encoding="utf-8")
+            (root / "b/file").write_text("b", encoding="utf-8")
+            with self.assertRaisesRegex(release.ReleaseError, "duplicate"):
+                release.input_files(root)
+
+    def test_final_bundle_rejects_missing_npm_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            with self.assertRaisesRegex(release.ReleaseError, "incomplete.*npm-index.json"):
+                release.assemble_final([path for path in files if path.name != "npm-index.json"], root / "output", BATCH)
+
+    def test_final_bundle_rejects_corrupt_npm_tarball(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            tarball = root / "scope-example-2.3.4.tgz"
+            # Preserve size so this exercises the digest check specifically.
+            tarball.write_bytes(b"x" * tarball.stat().st_size)
+            with self.assertRaisesRegex(release.ReleaseError, "tarball integrity mismatch"):
+                release.assemble_final(files, root / "output", BATCH)
+
+    def test_final_bundle_rejects_missing_npm_tarball(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            with self.assertRaisesRegex(release.ReleaseError, "inputs differ: missing=.*scope-example"):
+                release.assemble_final([path for path in files if path.suffix != ".tgz"], root / "output", BATCH)
+
+    def test_final_bundle_rejects_invalid_npm_index_identity(self):
+        for key, value in (("format", 2), ("format", True), ("version", "2.0.0"), ("package_count", 2), ("package_count", True), ("packages", [])):
+            with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.final_inputs(root)
+                path = root / "npm-index.json"
+                data = json.loads(path.read_text())
+                data[key] = value
+                path.write_text(json.dumps(data))
+                with self.assertRaisesRegex(release.ReleaseError, "npm index identity"):
+                    release.assemble_final(files, root / "output", BATCH)
+
+    def test_final_bundle_rejects_invalid_npm_entry(self):
+        for key, value in (
+            ("tarball", "dir/package.tgz"), ("tarball", "../package.tgz"),
+            ("tarball", "dir\\package.tgz"), ("tarball", ""),
+            ("sha256", "F" * 64), ("sha256", "0" * 63),
+            ("sha256", "0" * 64), ("size", 1),
+            ("size", True), ("size", 0), ("size", -1), ("size", 2.5),
+            ("name", ""), ("name", "  "), ("version", ""),
+        ):
+            with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.final_inputs(root)
+                path = root / "npm-index.json"
+                data = json.loads(path.read_text())
+                data["packages"][0][key] = value
+                path.write_text(json.dumps(data))
+                with self.assertRaises(release.ReleaseError):
+                    release.assemble_final(files, root / "output", BATCH)
+
+    def test_final_bundle_rejects_duplicate_or_unsorted_npm_packages(self):
+        for name, tarball in (("@scope/example", "second.tgz"), ("@scope/another", "second.tgz"), ("@scope/zebra", "scope-example-2.3.4.tgz")):
+            with self.subTest(name=name, tarball=tarball), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.final_inputs(root)
+                path = root / "npm-index.json"
+                data = json.loads(path.read_text())
+                data["packages"].append({**data["packages"][0], "name": name, "tarball": tarball})
+                data["package_count"] = 2
+                path.write_text(json.dumps(data))
+                with self.assertRaisesRegex(release.ReleaseError, "unique names|duplicate npm"):
+                    release.assemble_final(files, root / "output", BATCH)
+
+    def test_npm_slice_is_a_producer_and_rejects_input(self):
+        self.assertIn("npm-packages", release.SLICES)
+        self.assertIn("npm-packages", release.PRODUCERS)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(release.ReleaseError, "does not accept"):
+                release.run_slice(root, "bazel", "npm-packages", BATCH, root, root / "output")
+
+    def test_final_bundle_rejects_unexpected_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            unexpected = root / "debug.log"
+            unexpected.write_text("private output", encoding="utf-8")
+            with self.assertRaisesRegex(
+                release.ReleaseError,
+                "unexpected=.*debug.log",
+            ):
+                release.assemble_final(
+                    [*files, unexpected],
+                    root / "output",
+                    BATCH,
+                )
+
+    def test_catalog_slice_rejects_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(
+                release.ReleaseError, "does not accept"
+            ):
+                release.run_slice(
+                    root,
+                    "bazel",
+                    "catalog",
+                    BATCH,
+                    root,
+                    root / "output",
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

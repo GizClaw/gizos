@@ -1,7 +1,7 @@
 #ifndef H2_BK7258_BOARD_TASK_TEST_SDK_H
 #define H2_BK7258_BOARD_TASK_TEST_SDK_H
 
-#include "h2/pal/os/h2_pal_task.h"
+#include "os/h2_pal_task.h"
 
 #include <stdint.h>
 #include <stdlib.h>
