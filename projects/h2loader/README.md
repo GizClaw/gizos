@@ -1,6 +1,6 @@
 # H2Loader firmware and artifacts
 
-This project owns the portable headless Loader and manufacturing acceptance Apps, their shared support, thin firmware startup/composition, Loader and MFG image entries, browser npm artifact and firmware package rules. Portable libraries are organized as [`libs/h2loader/{host,device}`](../../libs/h2loader). [`libs/device_service`](libs/device_service) composes the Device core, Runtime and Loader App without introducing a project dependency into the portable libraries. Browser JS/runtime bindings belong to [`libs/web`](libs/web) within this project.
+This project owns the portable headless Loader and manufacturing acceptance Apps, their shared support, thin firmware startup/composition, Loader and MFG image entries and browser npm artifact. Host packaging, recovery and release tooling belongs to [`tools/h2loader`](../../tools/h2loader). Portable libraries are organized as [`libs/h2loader/{host,device}`](../../libs/h2loader). [`libs/device_service`](libs/device_service) composes the Device core, Runtime and Loader App without introducing a project dependency into the portable libraries. Browser JS/runtime bindings belong to [`libs/web`](libs/web) within this project.
 
 | Directory | Responsibility |
 | --- | --- |
@@ -8,7 +8,6 @@ This project owns the portable headless Loader and manufacturing acceptance Apps
 | [`apps/mfg`](apps/mfg) | Manufacturing acceptance App, session, model and UI |
 | `libs/mfg-peer`, `libs/mfg-aec-source` | Manufacturing peer and acoustic-fixture support |
 | `targets` | Firmware and npm artifact composition, minimal SDK startup registration |
-| `tools/bazel` | Firmware package, recovery and release artifact rules |
 
 Vendor image/update, boot, Flash/cache and physical transport mechanisms belong to platform PAL providers under [`native_component_src`](../../native_component_src). Firmware entries are grouped as `targets/h2_loader_tar_zlib/<app>/<manufacturer>/<board>`, for example `targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1`. Each BUILD file owns the native firmware and its package variants: `:package` retains format 1 and `:package_v2` provides format 2 where supported. Both reuse the same image graph. Directory manufacturer/model names match the physical BSP; package board and image identities retain their existing values.
 

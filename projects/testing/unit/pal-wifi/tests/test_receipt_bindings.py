@@ -15,7 +15,7 @@ import zlib
 sys.path.insert(0, str(Path('projects/testing/unit/pal-wifi').resolve()))
 sys.path.insert(0, str(Path.cwd()))
 from receipt_bindings import check_status, capture_snapshot, check_captured_status
-from projects.h2loader.tools.bazel.firmware_artifacts import package_manifest, write_package
+from tools.h2loader.firmware_artifacts import package_manifest, write_package
 
 
 def digest(path):

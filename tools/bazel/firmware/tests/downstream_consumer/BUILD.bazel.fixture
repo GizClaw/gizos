@@ -1,6 +1,6 @@
 load("@gizos//libs/lua:lua_app.bzl", "lua_app")
-load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
-load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("@gizos//tools/h2loader:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
+load("@gizos//tools/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("@gizos//tools/bazel/firmware:app_version.bzl", "app_version")
 load("@gizos//tools/bazel/native/bk7258:bk7258.bzl", "bk7258_firmware")
 load("@gizos//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")

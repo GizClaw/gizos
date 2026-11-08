@@ -10,7 +10,7 @@ import sys
 import tarfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from projects.h2loader.tools.bazel.firmware_artifacts import BundleEntry, bundle_checksum, write_package
+from tools.h2loader.firmware_artifacts import BundleEntry, bundle_checksum, write_package
 
 CASES = ("baseline", "unchanged", "app-only", "data-only", "both-changed")
 

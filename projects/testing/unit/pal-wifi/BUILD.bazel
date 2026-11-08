@@ -24,7 +24,7 @@ py_test(
     legacy_create_init = 0,
     main = "tests/test_fixture_witnesses.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = ["//projects/h2loader/tools/bazel:firmware_artifacts"],
+    deps = ["//tools/h2loader:firmware_artifacts"],
 )
 
 py_test(
@@ -36,5 +36,5 @@ py_test(
     legacy_create_init = 0,
     main = "tests/test_receipt_bindings.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = ["//projects/h2loader/tools/bazel:firmware_artifacts"],
+    deps = ["//tools/h2loader:firmware_artifacts"],
 )

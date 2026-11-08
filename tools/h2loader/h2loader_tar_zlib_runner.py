@@ -8,8 +8,8 @@ from pathlib import Path
 import shutil
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
-from projects.h2loader.tools.bazel.firmware_output import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.h2loader.firmware_output import (
     publish_bk_recovery,
     publish_esp_recovery,
     publish_managed_package,

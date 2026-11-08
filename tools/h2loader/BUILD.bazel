@@ -1,8 +1,8 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//projects/h2loader/tools/bazel:release_bundle.bzl", "firmware_release_bundle")
 load("//tools/bazel/firmware:app_version.bzl", "app_version")
 load("//tools/bazel/firmware:firmware.bzl", "firmware_version")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/h2loader:release_bundle.bzl", "firmware_release_bundle")
 load(":h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load(":h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 load(":tests/package_rules.bzl", "package_rules_firmware")
@@ -76,7 +76,7 @@ app_version(
 
 firmware_version(
     name = "package_rules_version",
-    build = "//projects/h2loader/tools/bazel/tests/fixtures/boards/fixture:version",
+    build = "//tools/h2loader/tests/fixtures/boards/fixture:version",
     build_metadata = "fixture",
     main_version = ":package_rules_app_version",
     variant = "e2e",

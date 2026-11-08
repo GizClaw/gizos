@@ -13,8 +13,8 @@ import zlib
 from io import BytesIO
 
 
-ROOT = Path(__file__).resolve().parents[5]
-RUNNER = ROOT / "projects" / "h2loader" / "tools/bazel/h2loader_tar_zlib_runner.py"
+ROOT = Path(__file__).resolve().parents[3]
+RUNNER = ROOT / "tools/h2loader/h2loader_tar_zlib_runner.py"
 os.environ["PYTHONPATH"] = str(ROOT)
 
 

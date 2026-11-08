@@ -13,6 +13,7 @@ Keep naming, nesting and file-placement rules here. Each directory entry below s
 - Group providers under `pal/providers/{platforms,backends,devices}/`. The pthread atomic backend belongs to `pal/providers/platforms/posix/atomic/`.
 - Group libraries by capability: `net`, `sync`, `memory`, `container`, `archive`, `audio`, `video`, `image`, `ui`, `clients`, `drivers` and `math`. Retain established `encoding`, `crypto`, `command`, `semver`, `lua`, `runtime` and `h2loader` ownership; clearly named standalone packages may remain directly under `libs/`. Each leaf owns public `include/`, private `src/`, local `tests/`, resources and explicit BUILD inputs. Do not create catch-all `utils` packages or legacy forwarding paths.
 - Native SDK components may have execution-unit subdivisions where required. SDK compilation alone does not change source ownership.
+- H2Loader host and build tooling lives directly in `tools/h2loader/`, including package/recovery writers, Bazel rules and release assembly. `projects/h2loader/` owns its Apps, project libraries and final artifact entries; do not nest a second tooling owner there.
 - H2Loader Apps live directly in `projects/h2loader/apps/{headless,mfg}/`, each with its own `include/`, `src/`, `tests/` and BUILD. Manufacturing helpers belong to `projects/h2loader/libs/{mfg-peer,mfg-aec-source}/`, and MFG final entries to `projects/h2loader/targets/<artifact-kind>/mfg/`. A named or role App is already an App root: use `iperf/{client_app,server_app,libs}` and `lua_link/{host_app,join_app,libs}`, without another nested `app/`. Shared repository command logic belongs to `scripts/common/`.
 - The first directory under every `targets/` names the final artifact kind, such as `cc_binary`, `cc_test`, `h2_loader_tar_zlib`, `android_binary`, `ios_application`, `pkg_tar` or `npm_package`. Internal ESP/BK/JieLi compilation rules remain dependencies inside the entry BUILD file. MFG `profile.c` belongs beside its concrete board entry. Both package formats share one entry directory and native image graph; do not add separate source trees or legacy entry aliases.
 - Keep source tests with their owner and create only directories with owned content. Caches, SDK installations and generated outputs are not source dependencies.
@@ -181,6 +182,13 @@ Owns host and build tooling so development automation stays outside firmware lib
 
 1. **Include:** Host CLIs, environment management, generators, native image transformations, shared build rules and platform-bound tool support.
 2. **Exclude:** Firmware App business logic, physical board wiring and duplicated portable library implementations.
+
+### `tools/h2loader/`
+
+Owns H2Loader host tooling so portable libraries and final entries share package and release support.
+
+1. **Include:** H2Loader Bazel integration, package and recovery writers, canonical release assembly, host command support and their local tests/fixtures.
+2. **Exclude:** Firmware App business logic, physical wiring, Runtime lifetime, final task policy and native SDK driver implementations.
 
 ### `scripts/`
 

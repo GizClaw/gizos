@@ -7,8 +7,8 @@ Native packages use real `cc_library`, `cc_binary`, `cc_test`, `go_library`,
 launchers use the local-only `esp_idf_firmware` external rule and all maintained
 BK7258 launchers use `bk7258_firmware`; fixed non-build endpoints may still
 use `filegroup`.
-H2Loader ESP/BK7258 delivery targets use the project-owned wrappers and
-platform-neutral package rule in `projects/h2loader/tools/bazel/` on top of
+H2Loader ESP/BK7258 delivery targets use the host tooling's wrappers and
+platform-neutral package rule in `tools/h2loader/` on top of
 those native firmware providers.
 Web artifacts use the official Emscripten `wasm_cc_binary` transition and
 `rules_pkg` `pkg_tar`; both rules participate in graph validation.
@@ -89,7 +89,7 @@ Owns upstream repository acquisition so pinned source setup stays separate from 
 1. **Include:** Generic archive/local-source repository rules and extension registration.
 2. **Exclude:** Upstream overlays, patches, production dependency facades and native SDK installation locators.
 
-H2Loader artifact and canonical-release assembly belongs to `projects/h2loader/tools/bazel/`. Firmware tests and their C fixtures belong to their BSP, PAL component, library or project owner. Move harnesses, fixtures and BUILD declarations together.
+H2Loader artifact and canonical-release assembly belongs to `tools/h2loader/`. Firmware tests and their C fixtures belong to their BSP, PAL component, library or project owner. Move harnesses, fixtures and BUILD declarations together.
 
 ## One firmware graph, two compilation boundaries
 
@@ -111,7 +111,7 @@ Use the exact Bazel version from `.bazelversion`:
 
 ```sh
 bazel test //tools/bazel/...
-bazel test //tools/bazel/native/bk7258:bk7258_runner_test //tools/bazel/native/esp_idf:esp_idf_runner_test //projects/h2loader/tools/bazel:h2loader_tar_zlib_runner_test
+bazel test //tools/bazel/native/bk7258:bk7258_runner_test //tools/bazel/native/esp_idf:esp_idf_runner_test //tools/h2loader:h2loader_tar_zlib_runner_test
 make bazel-build BAZEL_CONFIG=linux_x86_64
 make bazel-test BAZEL_CONFIG=linux_x86_64
 ```

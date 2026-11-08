@@ -24,7 +24,7 @@ firmware_release_bundle = rule(
     implementation = _impl,
     attrs = {
         "_assembler": attr.label(
-            default = "//projects/h2loader/tools/bazel:release_bundle_assembler",
+            default = "//tools/h2loader:release_bundle_assembler",
             cfg = "exec",
             executable = True,
         ),

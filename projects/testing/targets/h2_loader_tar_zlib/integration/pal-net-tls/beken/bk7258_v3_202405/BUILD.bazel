@@ -1,10 +1,10 @@
-load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
-load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/firmware:target_task_policy.bzl", "bk7258_target_task_policy")
 load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/h2loader:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
+load("//tools/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 
 package(default_visibility = ["//visibility:public"])
 

@@ -555,7 +555,7 @@ py_test(
         "//libs/sync/atomic/providers/c11:src/h2_atomic_c11.c",
         "//pal:pal_header_files",
         "//projects/h2loader/targets/h2_loader_tar_zlib/loader/jieli/jieli_ac791n_devkit:src/loader_launcher.c",
-        "//projects/h2loader/tools/bazel:h2loader_firmware.bzl",
+        "//tools/h2loader:h2loader_firmware.bzl",
     ],
     legacy_create_init = 0,
     main = "tests/test_jieli_usb_deadlines.py",

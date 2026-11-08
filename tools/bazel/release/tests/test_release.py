@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 import zipfile
 
-from projects.h2loader.tools.bazel import release_bundle
+from tools.h2loader import release_bundle
 
 ROOT = Path(__file__).resolve().parents[4]
 SPEC = importlib.util.spec_from_file_location("h2_release", ROOT / "scripts/bazel/bazel-release.py")

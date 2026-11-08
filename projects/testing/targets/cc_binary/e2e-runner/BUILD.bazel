@@ -39,5 +39,5 @@ py_test(
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//projects/h2loader/tools/bazel:firmware_artifacts"],
+    deps = ["//tools/h2loader:firmware_artifacts"],
 )

@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from projects.h2loader.tools.bazel.release_bundle import assemble, expected_asset_contracts, LOADER_ENTRIES
+from tools.h2loader.release_bundle import assemble, expected_asset_contracts, LOADER_ENTRIES
 
 BATCH = "20260920-120000"
 

@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from projects.h2loader.tools.bazel.firmware_artifacts import (
+from tools.h2loader.firmware_artifacts import (
     BundleEntry,
     data_entry_name,
     package_manifest,
