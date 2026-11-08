@@ -13,8 +13,9 @@ bool h2_esp_adc_radio_button_update(h2_esp_adc_radio_button_state_t* state,
                                     uint32_t button_id,
                                     uint32_t* out_button_id) {
   if (state == NULL || out_button_id == NULL ||
-      kind < H2_ESP_ADC_RADIO_BUTTON_SAMPLE_UNKNOWN ||
-      kind > H2_ESP_ADC_RADIO_BUTTON_SAMPLE_PRESSED ||
+      (kind != H2_ESP_ADC_RADIO_BUTTON_SAMPLE_UNKNOWN &&
+       kind != H2_ESP_ADC_RADIO_BUTTON_SAMPLE_RELEASED &&
+       kind != H2_ESP_ADC_RADIO_BUTTON_SAMPLE_PRESSED) ||
       (kind == H2_ESP_ADC_RADIO_BUTTON_SAMPLE_PRESSED && button_id == 0u) ||
       (kind != H2_ESP_ADC_RADIO_BUTTON_SAMPLE_PRESSED && button_id != 0u)) {
     return false;

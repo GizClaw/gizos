@@ -466,9 +466,18 @@ static void test_invalid_samples_do_not_change_state(void) {
   assert(!h2_esp_adc_radio_button_update(&button_state,
                                          H2_ESP_ADC_RADIO_BUTTON_SAMPLE_PRESSED,
                                          0u, &stable_button));
-  assert(!h2_esp_adc_radio_button_update(
-      &button_state, (h2_esp_adc_radio_button_sample_kind_t)-1, 0u,
-      &stable_button));
+  stable_button = 99u;
+  const h2_esp_adc_radio_button_sample_kind_t invalid_kinds[] = {
+      (h2_esp_adc_radio_button_sample_kind_t)-1,
+      (h2_esp_adc_radio_button_sample_kind_t)(H2_ESP_ADC_RADIO_BUTTON_SAMPLE_PRESSED +
+                                              1),
+  };
+  for (size_t i = 0u; i < sizeof(invalid_kinds) / sizeof(invalid_kinds[0]);
+       ++i) {
+    assert(!h2_esp_adc_radio_button_update(&button_state, invalid_kinds[i], 0u,
+                                           &stable_button));
+    assert(stable_button == 99u);
+  }
   h2_esp_adc_radio_button_state_t expected_button_state;
   memset(&expected_button_state, 0, sizeof(expected_button_state));
   assert(memcmp(&button_state, &expected_button_state, sizeof(button_state)) ==
