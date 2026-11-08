@@ -48,6 +48,18 @@ py_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
+py_test(
+    name = "browser_cleanup_test",
+    srcs = [
+        "tests/test_browser_cleanup.py",
+        "web_archive_browser_test.py",
+        "web_archive_server.py",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_browser_cleanup.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
 exports_files([
     "web_archive.bzl",
     "web_archive_browser_test.py",

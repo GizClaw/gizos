@@ -22,6 +22,7 @@ py_test(
         "provision.py",
         "test_provision.py",
     ],
+    imports = ["."],
     main = "test_provision.py",
     target_compatible_with = _PROVISION_COMPATIBILITY,
     deps = ["//projects/h2loader/tools/bazel:firmware_artifacts"],

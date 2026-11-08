@@ -18,7 +18,7 @@ from fixture import Fixture
 root = Path(__file__).absolute().parents[5]
 sys.path.insert(0, str(root / 'tools/bazel/web'))
 sys.path.insert(0, str(root / 'projects/testing/targets/cc_binary/pal-http'))
-from web_archive_browser_test import Cdp, find_browser
+from web_archive_browser_test import Cdp, close_browser, find_browser
 from web_archive_server import prepared_archive, make_handler, read_header_policy
 from run_desktop import validate
 from browser_evidence import WorkerEvidenceError, validate_worker_state, validate_certificate_error
@@ -130,11 +130,14 @@ def run(args, endpoint_fault=None, worker_fault=None):
                     return
             raise RuntimeError('browser qualification timed out')
         finally:
-            process.terminate()
-            process.wait(timeout=10)
-            server.shutdown()
-            server.server_close()
-            serving.join(timeout=2)
+            try:
+                close_browser(process, cdp)
+            finally:
+                try:
+                    server.shutdown()
+                finally:
+                    server.server_close()
+                    serving.join(timeout=2)
 
 
 if __name__ == '__main__':

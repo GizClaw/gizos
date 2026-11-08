@@ -162,7 +162,7 @@ class JieliRunnerFixture:
 
 class Br35PostBuildTest(unittest.TestCase):
     def test_rejects_capacity_failure_even_when_packager_emits_files(self):
-        script = MODULE_PATH.parent / "jieli/local_post_br35.sh"
+        script = MODULE_PATH.parent / "local_post_br35.sh"
         for failed in (False, True):
             with self.subTest(failed=failed), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)

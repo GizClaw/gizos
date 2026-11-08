@@ -122,6 +122,17 @@ class Cdp:
         return reply.get("result", {})
 
 
+def close_browser(process: subprocess.Popen, cdp: Cdp) -> None:
+    """Request orderly Chromium exit, then kill and reap if it stalls."""
+    with contextlib.suppress(Exception):
+        cdp.send("Browser.close")
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
 def event_lines(message: dict) -> list[str]:
     method = message.get("method")
     params = message.get("params", {})
@@ -402,14 +413,10 @@ def main() -> int:
                         print("[harness] page text: " +
                               repr(page.get("result", {}).get("value")))
             finally:
-                with contextlib.suppress(Exception):
-                    cdp.send("Browser.close")
                 try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
-                server.shutdown()
+                    close_browser(process, cdp)
+                finally:
+                    server.shutdown()
                 if outcome != "pass":
                     log.seek(0)
                     print(log.read()[-8000:])

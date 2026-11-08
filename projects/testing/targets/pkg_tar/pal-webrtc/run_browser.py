@@ -18,7 +18,7 @@ import re
 root = Path(__file__).absolute().parents[5]
 sys.path.insert(0, str(root / 'tools/bazel/web'))
 sys.path.insert(0, str(root / 'pal/providers/platforms/web/pal_core/tests'))
-from web_archive_browser_test import Cdp, find_browser
+from web_archive_browser_test import Cdp, close_browser, find_browser
 from web_archive_server import prepared_archive, make_handler, read_header_policy
 from run_webrtc_browser import ice_server
 
@@ -170,11 +170,14 @@ def run(args):
                     return
             raise RuntimeError('browser qualification timed out')
         finally:
-            process.terminate()
-            process.wait(timeout=10)
-            server.shutdown()
-            server.server_close()
-            serving.join(timeout=2)
+            try:
+                close_browser(process, cdp)
+            finally:
+                try:
+                    server.shutdown()
+                finally:
+                    server.server_close()
+                    serving.join(timeout=2)
 
 
 if __name__ == '__main__':

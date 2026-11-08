@@ -86,7 +86,10 @@ int main(void) {
             source = Path(directory) / "test.c"
             binary = Path(directory) / "test"
             source.write_text(program.replace("/* FUNCTION */", function).replace("EXPECTED", expected))
-            includes = list((ROOT / "libs").glob("*/include")) + [
+            includes = [
+                ROOT / "pal/include",
+                ROOT / "libs/sync/atomic/include",
+                ROOT / "libs/archive/bundle/include",
                 ROOT / "libs/h2loader/device/include",
                 ROOT / "libs/crypto/sha256/include",
             ]
