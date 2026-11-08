@@ -8,6 +8,7 @@ import json
 import tarfile
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -51,11 +52,14 @@ class PrefetchTest(unittest.TestCase):
             raise ValueError("Integrity mismatch")
         Path(destination).write_bytes(data)
 
-    def run_prefetch(self, entries, extensions=None, host=None):
+    def run_prefetch(self, entries, extensions=None, host=None, download=None):
         self.lock.write_text(json.dumps({
             "registryFileHashes": dict(entries), "moduleExtensions": extensions or {},
         }))
-        return prefetch.prefetch(self.lock, self.distdir, self.download, host)
+        return prefetch.prefetch(
+            self.lock, self.distdir,
+            self.download if download is None else download, host,
+        )
 
     def test_import_and_explicit_cache_work_without_a_home_directory(self):
         self.lock.write_text(json.dumps({"registryFileHashes": {}}))
@@ -196,6 +200,45 @@ class PrefetchTest(unittest.TestCase):
             "attributes": {"platform": "linux_amd64", "version": "4.45.2"},
         }}}}}
         return entry, extensions, url, integrity
+
+    def test_host_tools_download_concurrently_with_original_pins(self):
+        bun_url, bun_digest = self.bun_fixture()
+        entry, extensions, yq_url, yq_digest = self.yq_fixture()
+        ready = threading.Barrier(2, timeout=10)
+
+        def download(url, digest, destination):
+            if url in (bun_url, yq_url):
+                ready.wait()
+            self.download(url, digest, destination)
+
+        self.assertEqual(self.run_prefetch(
+            [entry], extensions, "linux_amd64", download=download,
+        ), 3)
+        for url, digest, name in (
+            (bun_url, bun_digest, "bun-linux-x64-baseline.zip"),
+            (yq_url, yq_digest, "yq_linux_amd64"),
+        ):
+            self.assertIn((url, digest), self.checksums)
+            self.assertEqual((self.distdir / name).read_bytes(), self.payloads[url])
+
+    def test_host_tool_failures_keep_yq_priority_and_join_the_peer(self):
+        bun_url, _ = self.bun_fixture()
+        entry, extensions, yq_url, _ = self.yq_fixture()
+        bun_failed = threading.Event()
+
+        def download(url, digest, destination):
+            if url == yq_url:
+                raise prefetch.DownloadError("yq unavailable")
+            if url == bun_url:
+                bun_failed.set()
+                raise prefetch.DownloadError("Bun unavailable")
+            self.download(url, digest, destination)
+
+        with self.assertRaisesRegex(prefetch.DownloadError, "yq unavailable"):
+            self.run_prefetch([entry], extensions, "linux_amd64", download=download)
+        self.assertTrue(bun_failed.is_set())
+        self.assertFalse((self.distdir / "bun-linux-x64-baseline.zip").exists())
+        self.assertFalse((self.distdir / "yq_linux_amd64").exists())
 
     def test_yq_host_pin_is_read_as_literal_data_without_execution(self):
         entry, extensions, url, integrity = self.yq_fixture()

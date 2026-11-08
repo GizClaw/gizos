@@ -93,9 +93,13 @@ def prefetch(lockfile, directory=None, download=download_verified, host=None):
     with ThreadPoolExecutor(max_workers=4) as workers:
         for name in workers.map(fetch, unique):
             print("Verified Bazel distfile: " + name, flush=True)
-    tools = prefetch_yq(lock, directory, download, host)
-    tools += prefetch_bun(Path(lockfile).resolve().parent / "tools/gizos/bun_runtime.json", directory, download, host)
-    return len(unique) + tools
+        yq = workers.submit(prefetch_yq, lock, directory, download, host)
+        bun = workers.submit(
+            prefetch_bun,
+            Path(lockfile).resolve().parent / "tools/gizos/bun_runtime.json",
+            directory, download, host,
+        )
+        return len(unique) + yq.result() + bun.result()
 
 
 def main():

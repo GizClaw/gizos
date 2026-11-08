@@ -326,11 +326,6 @@ def resolve_native_component_sources(
     return components
 
 
-def resolve_native_sources(root: Path, definitions: list[str]) -> list[Path]:
-    components = resolve_native_component_sources(root, definitions)
-    return sorted(source for sources in components.values() for source in sources)
-
-
 def resolve_include_roots(root: Path, definitions: list[str]) -> list[Path]:
     roots: set[Path] = set()
     for definition in definitions:
