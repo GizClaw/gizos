@@ -9,9 +9,9 @@ class InventoryTest(unittest.TestCase):
     def test_includes_suites_from_each_category(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "projects/testing"
-            for name in ("unit/pal-json", "integration/gizclaw", "unit/atomic", "e2e/lua_link", "benchmark/webrtc-performance", "mfg/app"):
+            for name in ("unit/pal-json", "integration/gizclaw", "unit/atomic", "e2e/lua_link", "benchmark/webrtc-performance"):
                 (root / name).mkdir(parents=True)
-            self.assertEqual(discover_apps(directory), ["atomic", "gizclaw", "lua_link", "mfg", "pal-json", "webrtc-performance"])
+            self.assertEqual(discover_apps(directory), ["atomic", "gizclaw", "lua_link", "pal-json", "webrtc-performance"])
 
     def test_excludes_helpers_and_artifact_directories(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -23,7 +23,7 @@ class InventoryTest(unittest.TestCase):
     def test_lists_category_and_role_without_test_helper_packages(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "projects/testing/targets/h2_loader_tar_zlib"
-            for name in ("unit/pal-core/haivivi/h106_zero_esp_v3_0", "e2e/lua_link/host/espressif/esp32s3_devkitc_1", "mfg/haivivi/h106_zero_esp_v3_0"):
+            for name in ("unit/pal-core/haivivi/h106_zero_esp_v3_0", "e2e/lua_link/host/espressif/esp32s3_devkitc_1"):
                 entry = root / name
                 entry.mkdir(parents=True)
                 (entry / "BUILD.bazel").write_text('h2loader_tar_zlib(name = "package")\n')
@@ -38,7 +38,8 @@ class InventoryTest(unittest.TestCase):
                 "app": "lua_link", "role": "host", "manufacturer": "espressif", "board": "esp32s3_devkitc_1",
                 "path": "projects/testing/targets/h2_loader_tar_zlib/e2e/lua_link/host/espressif/esp32s3_devkitc_1",
             }])
-            self.assertEqual(discover_entries(directory, "mfg")[0]["app"], "mfg")
+            with self.assertRaisesRegex(ValueError, "Testing category"):
+                discover_entries(directory, "mfg")
 
     def test_rejects_unknown_or_missing_categories(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -14,7 +14,7 @@ package(default_visibility = ["//visibility:public"])
 firmware_version(
     name = "version",
     build = "//boards/jieli/jieli_ac791n_devkit:version",
-    main_version = "//projects/h2loader/apps/loader:version",
+    main_version = "//projects/h2loader/apps/headless:version",
 )
 
 AC791N_COMPATIBILITY = select({
@@ -104,8 +104,8 @@ firmware_native_component(
     ],
     component_name = "h2loader_ac791n_devkit_launcher",
     include_roots = [
-        "projects/h2loader/apps/loader/app/include",
-        "projects/h2loader/apps/loader/app",
+        "projects/h2loader/apps/headless/include",
+        "projects/h2loader/apps/headless/src",
         "libs/h2loader/device/include",
     ],
     tags = ["manual"],

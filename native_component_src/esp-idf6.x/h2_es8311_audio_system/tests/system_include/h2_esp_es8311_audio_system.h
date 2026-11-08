@@ -8,10 +8,7 @@
 #define H2_ESP_ES8311_AUDIO_SYSTEM_MAX_FRAME_SAMPLES 512u
 #define H2_ESP_ES8311_AUDIO_SYSTEM_MAX_RAW_CHANNELS 2u
 
-#define H2_AUDIO_OK 0
-#define H2_AUDIO_ERR_INVALID_ARG -1
-#define H2_AUDIO_ERR_UNSUPPORTED -2
-#define H2_AUDIO_SAMPLE_S16LE 1
+#include "hal/h2_pal_audio.h"
 
 typedef struct h2_pal_queue_api {
   int unused;
@@ -25,22 +22,6 @@ typedef enum h2_esp_es8311_aec_nlp_level {
   H2_ESP_ES8311_AEC_NLP_NORMAL = 0,
   H2_ESP_ES8311_AEC_NLP_AGGRESSIVE = 1,
 } h2_esp_es8311_aec_nlp_level_t;
-
-typedef struct h2_audio_frame {
-  void* data;
-  size_t capacity;
-  size_t bytes;
-  uint32_t sample_rate_hz;
-  uint16_t samples_per_channel;
-  uint8_t channels;
-  int sample_format;
-} h2_audio_frame_t;
-
-static inline size_t h2_audio_frame_frame_bytes(const h2_audio_frame_t* frame) {
-  return frame != NULL && frame->sample_format == H2_AUDIO_SAMPLE_S16LE
-             ? (size_t)frame->channels * sizeof(int16_t)
-             : 0u;
-}
 
 typedef struct h2_esp_es8311_audio_system_config {
   uint32_t sample_rate_hz;

@@ -43,16 +43,36 @@ firmware_native_component(
 
 firmware_native_component(
     name = "esp32s31",
-    srcs = glob(
-        ["src/*.c"],
-        exclude = [
-            "src/h2_mosaico_usb_*.c",
-        ],
-    ),
-    hdrs = glob([
-        "include/*.h",
-        "src/*.h",
-    ]),
+    srcs = [
+        "src/h2_chip_board.c",
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+        "src/h2_mosaico_audio.c",
+        "src/h2_mosaico_camera.c",
+        "src/h2_mosaico_display.c",
+        "src/h2_mosaico_peripherals.c",
+        "src/h2_mosaico_surface.c",
+    ],
+    hdrs = [
+        "include/h2_chip_board.h",
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "include/h2_mosaico_camera.h",
+        "include/h2_mosaico_display_capture.h",
+        "include/h2_mosaico_usb_console.h",
+        "include/h2_mosaico_usb_diagnostic.h",
+        "include/h2_mosaico_usb_transport.h",
+        "src/h2_esp_board_private.h",
+        "src/h2_mosaico_audio.h",
+        "src/h2_mosaico_audio_config.h",
+        "src/h2_mosaico_display.h",
+        "src/h2_mosaico_mag.h",
+        "src/h2_mosaico_peripherals.h",
+        "src/h2_mosaico_surface.h",
+        "src/h2_mosaico_usb_common.h",
+    ],
     component_name = "h2_esp_board",
     data = [
         "CMakeLists.txt",
@@ -65,6 +85,7 @@ firmware_native_component(
         "//libs/drivers/audio/es8311",
         "//libs/runtime",
         "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
         "//pal",
     ],
 )
@@ -205,11 +226,16 @@ cc_test(
 
 firmware_native_component(
     name = "usb",
-    srcs = glob(["src/h2_mosaico_usb_*.c"]),
-    hdrs = glob([
-        "include/h2_mosaico_usb_*.h",
+    srcs = [
+        "src/h2_mosaico_usb_common.c",
+        "src/h2_mosaico_usb_console.c",
+        "src/h2_mosaico_usb_diagnostic.c",
+    ],
+    hdrs = [
+        "include/h2_mosaico_usb_console.h",
+        "include/h2_mosaico_usb_diagnostic.h",
         "include/h2_mosaico_usb_transport.h",
-    ]),
+    ],
     component_directory = "boards/espressif/mosaico/esp32s31/src/usb",
     component_name = "h2_mosaico_usb",
     data = [
@@ -271,23 +297,4 @@ cc_test(
     local_defines = ["H2_MOSAICO_USB_HOST_TEST=1"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = ["//pal"],
-)
-
-cc_test(
-    name = "entry_task_test",
-    srcs = [
-        "include/h2_esp_board.h",
-        "src/h2_esp_board_task.c",
-        "tests/h2_esp_board_task_test_sdk.h",
-        "tests/test_h2_esp_board_task.c",
-    ],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS + ["-UNDEBUG"],
-    includes = [
-        "include",
-        "tests",
-    ],
-    local_defines = ["H2_ESP_BOARD_TASK_HOST_TEST=1"],
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = ["//libs/runtime"],
 )

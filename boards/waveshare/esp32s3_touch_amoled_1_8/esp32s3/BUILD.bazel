@@ -6,36 +6,28 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "esp32s3",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_audio_config.c",
+        "src/h2_esp_board_audio_es8311.c",
+        "src/h2_esp_board_display.c",
+        "src/h2_esp_board_display_config.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_i2c.c",
+        "src/h2_esp_board_input.c",
+        "src/h2_esp_board_power.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+        "src/h2_esp_board_touch_ft3168.c",
+    ],
+    hdrs = [
+        "include/h2_amoled_display_capture.h",
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_display_config_internal.h",
+        "src/h2_esp_board_internal.h",
+        "src/h2_esp_board_private.h",
+    ],
     component_name = "h2_esp_board",
     data = [
         "CMakeLists.txt",
@@ -48,6 +40,7 @@ firmware_native_component(
     deps = [
         "//libs/drivers/motion/qmi8658",
         "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
         "//pal",
     ],
 )

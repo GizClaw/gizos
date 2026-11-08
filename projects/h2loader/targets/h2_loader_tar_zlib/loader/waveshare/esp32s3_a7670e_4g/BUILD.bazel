@@ -5,19 +5,26 @@ load("//tools/bazel/firmware:firmware.bzl", "firmware_version")
 load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
 firmware_version(
     name = "version",
     build = "//boards/waveshare/esp32s3_a7670e_4g:version",
-    main_version = "//projects/h2loader/apps/loader:version",
+    main_version = "//projects/h2loader/apps/headless:version",
+)
+
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["waveshare-a7670e/h2loader"],
 )
 
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":h2loader_launcher"],
     policies = [
+        "waveshare-a7670e/h2loader 4 any 65536 psram",
         "h2loader/appcmd    8        0  4096  psram",
         "h2loader/blecmd    8        0  4096  psram",
         "$h2loader/return   8        0  4096  psram",
@@ -72,6 +79,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        ":entry_tasks",
         ":firmware_lib",
         "//boards/waveshare/esp32s3_a7670e_4g/esp32s3",
         "//libs/archive/bundle",

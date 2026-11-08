@@ -4,36 +4,11 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "h2_gizclaw",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/gzc_esp_platform.c",
+        "src/h2_esp_gizclaw_time_compat.c",
+    ],
+    hdrs = [],
     data = [
         "CMakeLists.txt",
         "idf_component.yml",

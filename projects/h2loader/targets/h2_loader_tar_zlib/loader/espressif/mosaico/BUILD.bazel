@@ -4,6 +4,7 @@ load("//tools/bazel/firmware:app_version.bzl", "app_version")
 load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,10 +13,16 @@ app_version(
     value = "0.1.0",
 )
 
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["mosaico/h2loader"],
+)
+
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":h2loader_launcher"],
     policies = [
+        "mosaico/h2loader 4 any 65536 psram",
         "h2loader/appcmd    8        0  4096  psram",
         "h2loader/blecmd    8        0  4096  psram",
         "$h2loader/return   8        0  4096  psram",
@@ -37,6 +44,7 @@ firmware_lib_component(
     deps = [
         "//libs/archive/bundle",
         "//libs/audio/mixer:audio_mixer",
+        "//libs/audio/pcm",
         "//libs/command",
         "//libs/drivers/audio/es8311",
         "//libs/net/bleikcp",
@@ -66,6 +74,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        ":entry_tasks",
         ":firmware_lib",
         "//boards/espressif/mosaico/esp32s31",
         "//libs/archive/bundle",

@@ -48,7 +48,8 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config);
 h2_pal_result_t h2_esp_board_runtime_deinit(void);
 
 /**
- * Starts the board image entry point on a detached PSRAM-backed task.
+ * Starts the board image entry on a detached task using the generated target
+ * policy. Install that policy before calling from serialized task context.
  *
  * The caller must return from app_main after this function succeeds. The
  * supplied user pointer must remain valid until the entry function returns.

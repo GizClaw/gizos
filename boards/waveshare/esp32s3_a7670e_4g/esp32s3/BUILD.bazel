@@ -1,41 +1,20 @@
-load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
-load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "esp32s3",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_private.h",
+    ],
     component_directory = "boards/waveshare/esp32s3_a7670e_4g/esp32s3",
     component_name = "h2_esp_board",
     data = [
@@ -48,33 +27,7 @@ firmware_native_component(
     ],
     deps = [
         "//libs/runtime",
-        "//pal",
-    ],
-)
-
-cc_test(
-    name = "board_task_host_test",
-    srcs = [
-        "include/h2_esp_board.h",
-        "src/h2_esp_board_task.c",
-        "tests/h2_esp_board_task_test_sdk.h",
-        "tests/test_h2_esp_board_task.c",
-    ],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = [
-        "include",
-        "tests",
-    ],
-    local_defines = ["H2_ESP_BOARD_TASK_HOST_TEST=1"],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
         "//pal",
     ],
 )

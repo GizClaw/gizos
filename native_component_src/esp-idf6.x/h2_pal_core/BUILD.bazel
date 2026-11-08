@@ -166,36 +166,89 @@ py_test(
 
 firmware_native_component(
     name = "h2_pal_core",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_atomic.c",
+        "src/h2_esp_ble_exact_adapter.c",
+        "src/h2_esp_io_phase.c",
+        "src/h2_esp_lazy_audio.c",
+        "src/h2_esp_platform_arena.c",
+        "src/h2_esp_platform_ble.c",
+        "src/h2_esp_platform_crypto.c",
+        "src/h2_esp_platform_disk.c",
+        "src/h2_esp_platform_dtls.c",
+        "src/h2_esp_platform_dtls_state.c",
+        "src/h2_esp_platform_entry_task.c",
+        "src/h2_esp_platform_firmware_info.c",
+        "src/h2_esp_platform_image.c",
+        "src/h2_esp_platform_io_stream.c",
+        "src/h2_esp_platform_littlefs.c",
+        "src/h2_esp_platform_littlefs_io.c",
+        "src/h2_esp_platform_log.c",
+        "src/h2_esp_platform_mem.c",
+        "src/h2_esp_platform_modem_unsupported.c",
+        "src/h2_esp_platform_net.c",
+        "src/h2_esp_platform_net_socket.c",
+        "src/h2_esp_platform_net_tls_verify.c",
+        "src/h2_esp_platform_netif.c",
+        "src/h2_esp_platform_partition.c",
+        "src/h2_esp_platform_power.c",
+        "src/h2_esp_platform_ppp.c",
+        "src/h2_esp_platform_pref_littlefs.c",
+        "src/h2_esp_platform_pref_migration.c",
+        "src/h2_esp_platform_pref_nvs_legacy.c",
+        "src/h2_esp_platform_pref_store.c",
+        "src/h2_esp_platform_queue.c",
+        "src/h2_esp_platform_safe_call.c",
+        "src/h2_esp_platform_spiffs.c",
+        "src/h2_esp_platform_sync.c",
+        "src/h2_esp_platform_system_event.c",
+        "src/h2_esp_platform_task.c",
+        "src/h2_esp_platform_time.c",
+        "src/h2_esp_platform_timer.c",
+        "src/h2_esp_platform_uart_io_stream.c",
+        "src/h2_esp_platform_usb_jtag_io_stream.c",
+        "src/h2_esp_platform_webrtc.c",
+        "src/h2_esp_platform_webrtc_unsupported.c",
+        "src/h2_esp_platform_wifi.c",
+        "src/h2_esp_platform_wifi_csi.c",
+        "src/h2_esp_platform_wifi_csi_unsupported.c",
+        "src/h2_esp_platform_wifi_settings.c",
+        "src/h2_esp_platform_wifi_settings_unsupported.c",
+        "src/h2_esp_platform_wifi_unsupported.c",
+        "src/h2_esp_resource_stats.c",
+        "src/h2_esp_wifi_ip.c",
+        "src/h2_esp_wifi_teardown.c",
+    ],
+    hdrs = [
+        "include/h2_esp_lazy_audio.h",
+        "include/h2_esp_platform_arena.h",
+        "include/h2_esp_platform_core.h",
+        "include/h2_esp_platform_entry_task.h",
+        "include/h2_esp_platform_image.h",
+        "include/h2_esp_platform_power_wake.h",
+        "include/h2_esp_platform_safe_call.h",
+        "include/h2_esp_platform_wifi_activity.h",
+        "src/h2_esp_ble_adv_stop.h",
+        "src/h2_esp_ble_connect_role.h",
+        "src/h2_esp_ble_exact_adapter.h",
+        "src/h2_esp_ble_gatt_schema.h",
+        "src/h2_esp_ble_indication_tracker.h",
+        "src/h2_esp_ble_pair_tracker.h",
+        "src/h2_esp_io_phase.h",
+        "src/h2_esp_platform_dtls_state.h",
+        "src/h2_esp_platform_littlefs_io.h",
+        "src/h2_esp_platform_net_socket.h",
+        "src/h2_esp_platform_net_tls_verify.h",
+        "src/h2_esp_platform_pref_migration.h",
+        "src/h2_esp_platform_pref_nvs_legacy.h",
+        "src/h2_esp_platform_pref_store.h",
+        "src/h2_esp_platform_wifi_internal.h",
+        "src/h2_esp_resource_stats_internal.h",
+        "src/h2_esp_wifi_activity_tracker.h",
+        "src/h2_esp_wifi_ip.h",
+        "src/h2_esp_wifi_saved_record.h",
+        "src/h2_esp_wifi_teardown.h",
+    ],
     data = [
         "CMakeLists.txt",
         "idf_component.yml",
@@ -231,33 +284,47 @@ cc_test(
     deps = ["//libs/sync/atomic/providers/c11:c11_template"],
 )
 
-cc_test(
-    name = "task_policy_test",
-    srcs = [
-        "include/h2_esp_platform_core.h",
-        "src/h2_esp_platform_task.c",
-        "src/h2_esp_resource_stats.c",
-        "src/h2_esp_resource_stats_internal.h",
-        "tests/test_h2_esp_platform_task_policy.c",
-    ] + glob(["tests/sdk/**/*.h"]),
-    conlyopts = H2_C11_OPTS + ["-DH2_TASK_POLICY_TEST=1"],
-    copts = H2_WARNING_COPTS,
-    includes = [
-        "include",
-        "tests/sdk",
-    ],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//libs/sync/atomic/providers/c11",
-        "//pal",
-        "//pal:test_allocator",
-    ],
-)
+[
+    cc_test(
+        name = name,
+        srcs = [
+            "include/h2_esp_platform_core.h",
+            "src/h2_esp_platform_task.c",
+            "src/h2_esp_resource_stats.c",
+            "src/h2_esp_resource_stats_internal.h",
+            "tests/test_h2_esp_platform_task_policy.c",
+        ] + glob(["tests/sdk/**/*.h"]),
+        conlyopts = H2_C11_OPTS + ["-DH2_TASK_POLICY_TEST=1"],
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/sdk",
+        ],
+        local_defines = local_defines,
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//tools/bazel/platforms:host_windows_target_windows": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//libs/sync/atomic/providers/c11",
+            "//pal",
+            "//pal:test_allocator",
+        ],
+    )
+    for name, local_defines in [
+        ("task_policy_test", []),
+        (
+            "task_policy_no_psram_test",
+            ["CONFIG_SPIRAM=0"],
+        ),
+        (
+            "task_policy_no_ext_mem_test",
+            ["CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=0"],
+        ),
+    ]
+]
 
 cc_test(
     name = "power_wake_test",
@@ -1086,6 +1153,7 @@ cc_test(
     name = "image_lifecycle_test",
     srcs = [
         "include/h2_esp_platform_core.h",
+        "include/h2_esp_platform_entry_task.h",
         "include/h2_esp_platform_image.h",
         "include/h2_esp_platform_power_wake.h",
         "include/h2_esp_platform_safe_call.h",
@@ -1174,8 +1242,52 @@ cc_library(
     testonly = True,
     hdrs = [
         "include/h2_esp_platform_core.h",
+        "include/h2_esp_platform_entry_task.h",
         "include/h2_esp_platform_image.h",
     ],
     includes = ["include"],
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "wifi_unsupported_test",
+    srcs = [
+        "src/h2_esp_platform_wifi_unsupported.c",
+        "tests/test_h2_esp_wifi_unsupported.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":test_platform_headers",
+        "//pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "entry_task_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "include/h2_esp_platform_entry_task.h",
+        "src/h2_esp_platform_entry_task.c",
+        "tests/test_h2_esp_platform_entry_task.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = ["//pal"],
 )

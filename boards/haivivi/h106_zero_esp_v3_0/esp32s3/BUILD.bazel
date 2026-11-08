@@ -1,49 +1,51 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
-load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
-h2_tasks(
-    name = "tasks",
-    tasks = [
-        "h106/entry",
-    ],
-)
-
 firmware_native_component(
     name = "esp32s3",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_audio_es8311.c",
+        "src/h2_esp_board_battery_curve.c",
+        "src/h2_esp_board_boot_transition.c",
+        "src/h2_esp_board_button_adc.c",
+        "src/h2_esp_board_display_st7789.c",
+        "src/h2_esp_board_extflash.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_input.c",
+        "src/h2_esp_board_led.c",
+        "src/h2_esp_board_modem_quectel.c",
+        "src/h2_esp_board_nfc.c",
+        "src/h2_esp_board_power.c",
+        "src/h2_esp_board_reboot.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+        "src/h2_esp_board_vibration.c",
+        "src/h2_esp_zero_esp_call_monitor_controller.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_battery_curve.h",
+        "src/h2_esp_board_boot_transition.h",
+        "src/h2_esp_board_button_adc.h",
+        "src/h2_esp_board_extflash_recovery.h",
+        "src/h2_esp_board_modem_audio.h",
+        "src/h2_esp_board_modem_handshake.h",
+        "src/h2_esp_board_modem_lifecycle.h",
+        "src/h2_esp_board_modem_poll.h",
+        "src/h2_esp_board_modem_ri.h",
+        "src/h2_esp_board_modem_sleep.h",
+        "src/h2_esp_board_private.h",
+        "src/h2_esp_board_sleep_enter.h",
+        "src/h2_esp_board_sleep_gpio.h",
+        "src/h2_esp_board_sleep_i2c.h",
+        "src/h2_esp_zero_esp_board_internal.h",
+        "src/h2_esp_zero_esp_call_monitor_controller.h",
+    ],
     component_directory = "boards/haivivi/h106_zero_esp_v3_0/esp32s3",
     component_name = "h2_esp_board",
     data = [
@@ -55,7 +57,6 @@ firmware_native_component(
         "manual",
     ],
     deps = [
-        ":tasks",
         "//libs/runtime",
         "//libs/sync/atomic",
         "//native_component_src/esp-idf6.x/h2_pal_core",

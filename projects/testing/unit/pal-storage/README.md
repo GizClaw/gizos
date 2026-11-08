@@ -1,6 +1,6 @@
 # PAL Storage E2E
 
-This suite validates FileSystem and Preferences through Runtime. Raw-partition erase/write and concurrent access are covered by [PAL Disk](../pal-disk/README.md); this App does not erase firmware partitions.
+This suite validates FileSystem and Preferences through Runtime. Raw-partition erase/write and concurrent access are covered by [PAL Disk](../pal-disk/app/include/h2_pal_disk_e2e.h); this App does not erase firmware partitions.
 
 Portable App 只借用 Runtime 中的 FS、Preferences 和 Memory，以及宿主独占的测试路径/namespace。宿主负责建立隔离的数据目录、真实 provider、进程重启和结果汇总。禁止把旧的混合 PAL App 当作本 App 的测试实现或把缺失接口当作通过。
 

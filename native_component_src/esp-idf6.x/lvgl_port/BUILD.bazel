@@ -4,36 +4,11 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "lvgl_port",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = ["//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h"] + glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [],
+    hdrs = [
+        "private_include/atomic.h",
+        "//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h",
+    ],
     data = [
         "CMakeLists.txt",
     ],

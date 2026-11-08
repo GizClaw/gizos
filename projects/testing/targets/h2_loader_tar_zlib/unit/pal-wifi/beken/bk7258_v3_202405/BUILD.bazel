@@ -8,10 +8,16 @@ load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["bk/pal-wifi"],
+)
+
 bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",
     ap_policies = [
+        "bk/pal-wifi 6 any 24576 default",
         "h2_touch           default",
         "pal-wifi/e2e/runner 7 0 65536 psram",
         "pal-wifi/e2e/dhcpdiag 6 0 8192 default",
@@ -72,7 +78,10 @@ firmware_native_component(
         "//native_component_src/bk7258/shared:h2_bk_dhcp_ring.h",
     ],
     execution_unit = "ap",
-    deps = [":diag_tasks"],
+    deps = [
+        ":diag_tasks",
+        ":entry_tasks",
+    ],
 )
 
 firmware_native_component(
@@ -93,7 +102,7 @@ firmware_native_component(
         "//native_component_src/bk7258/cp/h2_pal_core",
         "//native_component_src/bk7258/cp/h2_startup",
         "//pal",
-        "//projects/h2loader/apps/loader/app:tasks",
+        "//projects/h2loader/apps/headless:tasks",
         "//projects/testing/unit/pal-wifi/libs/device:runner",
     ],
 )

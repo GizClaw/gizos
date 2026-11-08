@@ -7,8 +7,31 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "ac791n",
-    srcs = glob(["src/*.c"]),
-    hdrs = glob(["include/*.h"]),
+    srcs = [
+        "src/h2_jieli_ac791n_devkit.c",
+        "src/h2_jieli_ac791n_devkit_audio.c",
+        "src/h2_jieli_ac791n_devkit_ble.c",
+        "src/h2_jieli_ac791n_devkit_btctrler_config.c",
+        "src/h2_jieli_ac791n_devkit_clock.c",
+        "src/h2_jieli_ac791n_devkit_console.c",
+        "src/h2_jieli_ac791n_devkit_disk.c",
+        "src/h2_jieli_ac791n_devkit_input.c",
+        "src/h2_jieli_ac791n_devkit_net.c",
+        "src/h2_jieli_ac791n_devkit_netif.c",
+        "src/h2_jieli_ac791n_devkit_pref.c",
+        "src/h2_jieli_ac791n_devkit_runtime.c",
+        "src/h2_jieli_ac791n_devkit_sd_fs.c",
+        "src/h2_jieli_ac791n_devkit_wifi.c",
+    ],
+    hdrs = [
+        "include/h2_jieli_ac791n_clock_math.h",
+        "include/h2_jieli_ac791n_devkit.h",
+        "include/h2_jieli_ac791n_devkit_flash_window.h",
+        "include/h2_jieli_ac791n_devkit_network.h",
+        "include/h2_jieli_ac791n_devkit_partitions.h",
+        "include/h2_jieli_ac791n_devkit_sdk_config.h",
+        "include/h2_jieli_warm_request.h",
+    ],
     component_name = "h2_jieli_ac791n_devkit",
     include_roots = [
         "boards/jieli/jieli_ac791n_devkit/ac791n/include",

@@ -6,36 +6,17 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "h2_nfc_fm175xx",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_nfc_fm175xx.c",
+        "src/h2_esp_nfc_fm175xx_i2c.c",
+        "src/h2_esp_nfc_fm175xx_spi.c",
+        "src/h2_esp_nfc_fm175xx_spi_address.c",
+    ],
+    hdrs = [
+        "include/h2_esp_nfc_fm175xx.h",
+        "src/h2_esp_nfc_fm175xx_internal.h",
+        "src/h2_esp_nfc_fm175xx_spi_address.h",
+    ],
     data = [
         "CMakeLists.txt",
     ],

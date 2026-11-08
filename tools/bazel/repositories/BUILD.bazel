@@ -33,7 +33,3 @@ filegroup(
 )
 
 exports_files(["repositories.bzl"])
-
-exports_files([
-    "repositories.bzl",
-])

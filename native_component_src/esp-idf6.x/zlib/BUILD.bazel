@@ -5,20 +5,7 @@ package(default_visibility = ["//visibility:public"])
 firmware_native_component(
     name = "zlib",
     srcs = ["@h2_vendor_zlib//:firmware_sources"],
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    hdrs = [],
     data = [
         "CMakeLists.txt",
     ],

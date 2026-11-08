@@ -7,11 +7,17 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "h2_pal_image",
-    srcs = glob(["src/*.c"]),
-    hdrs = glob([
-        "include/*.h",
-        "src/*.h",
-    ]) + [
+    srcs = [
+        "src/h2_bk_fixed_boot.c",
+        "src/h2_bk_flash_access.c",
+        "src/h2_bk_platform_image.c",
+        "src/h2_bk_platform_power.c",
+    ],
+    hdrs = [
+        "include/h2_bk_platform_image.h",
+        "src/h2_bk_fixed_boot.h",
+        "src/h2_bk_flash_access.h",
+        "src/h2_bk_image_internal.h",
         "//native_component_src/bk7258/shared/fixed_flash:flash_access.h",
         "//native_component_src/bk7258/shared/fixed_flash:layout.h",
         "//native_component_src/bk7258/shared/fixed_flash:layout_check.h",

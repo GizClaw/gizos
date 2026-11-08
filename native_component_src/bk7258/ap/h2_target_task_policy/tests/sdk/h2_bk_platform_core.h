@@ -6,6 +6,8 @@
 
 #include <stdint.h>
 
+#define H2_BK_TASK_CORE_ANY UINT32_MAX
+
 typedef enum {
   H2_BK_TASK_STACK_DEFAULT = 0,
   H2_BK_TASK_STACK_PSRAM = 1,

@@ -23,7 +23,4 @@ printf '%s\n' \
   '' \
   'Gizloader:' \
   '  gizloader-bin                    build the native gizloader CLI and print its path' \
-  '  h2loader-bin                     compatibility alias for gizloader-bin' \
-  '' \
-  'Test:' \
-  '  test-web                         build and validate Web archives and E2E programs'
+  '  h2loader-bin                     compatibility alias for gizloader-bin'

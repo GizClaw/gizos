@@ -154,7 +154,7 @@ firmware_native_component(
         "//native_component_src/bk7258/ap/zlib",
         "//native_component_src/bk7258/cp/h2_pal_core",
         "//native_component_src/bk7258/cp/h2_startup",
-        "//projects/h2loader/apps/loader/app:tasks",
+        "//projects/h2loader/apps/headless:tasks",
         "//projects/testing/unit/pal-disk/app:tasks",
     ],
 )

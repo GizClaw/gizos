@@ -103,6 +103,28 @@ static h2_pal_result_t esp_policy_validate(const char* name,
   return H2_PAL_OK;
 }
 
+h2_pal_result_t h2_esp_platform_task_reserve_policy(
+    const char* name, h2_esp_task_policy_t* out_policy) {
+  if (out_policy == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_policy = (h2_esp_task_policy_t){0};
+  s_task_started = true;
+  if (!s_task_configured) {
+    esp_task_fail(name, "configure", "not-configured");
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  h2_esp_task_policy_t policy = {0};
+  h2_pal_result_t rc = esp_policy_resolve(name, &policy);
+  if (rc == H2_PAL_OK) {
+    rc = esp_policy_validate(name, &policy);
+  }
+  if (rc == H2_PAL_OK) {
+    *out_policy = policy;
+  }
+  return rc;
+}
+
 /* IDF WithCaps self-deletion allocates a temporary cleanup task, which then
  * self-deletes and needs idle time for reclamation. Let join reclaim PSRAM
  * workers directly, without allocating another task under memory pressure.
@@ -136,18 +158,9 @@ static int esp_task_start(void* user, const h2_pal_task_options_t* options,
   if (options == NULL || entry == NULL || out_task == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  s_task_started = true;
-  if (!s_task_configured) {
-    esp_task_fail(options->name, "configure", "not-configured");
-    return H2_PAL_ERR_INVALID_STATE;
-  }
-
   h2_esp_task_policy_t policy = {0};
-  h2_pal_result_t rc = esp_policy_resolve(options->name, &policy);
-  if (rc != H2_PAL_OK) {
-    return rc;
-  }
-  rc = esp_policy_validate(options->name, &policy);
+  h2_pal_result_t rc =
+      h2_esp_platform_task_reserve_policy(options->name, &policy);
   if (rc != H2_PAL_OK) {
     return rc;
   }

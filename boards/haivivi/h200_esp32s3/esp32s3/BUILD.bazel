@@ -6,36 +6,24 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "esp32s3",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_audio_es8311_es7210.c",
+        "src/h2_esp_board_battery_profile.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_input.c",
+        "src/h2_esp_board_led.c",
+        "src/h2_esp_board_power.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_private.h",
+        "src/h2_esp_h200_battery_profile.h",
+        "src/h2_esp_h200_board_internal.h",
+    ],
     component_name = "h2_esp_board",
     data = [
         "CMakeLists.txt",

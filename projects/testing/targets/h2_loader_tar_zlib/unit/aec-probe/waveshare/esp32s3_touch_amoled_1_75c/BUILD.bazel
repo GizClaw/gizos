@@ -35,11 +35,17 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["ws175c/aec-probe"],
+)
+
 esp_target_task_policy(
     name = "task_policy",
     default_policy = "4 any 4096 psram",
     graph = [":launcher"],
     policies = [
+        "ws175c/aec-probe 4 any 65536 psram",
         "aec-probe/e2e/runner 4 0 65536 psram",
         "h2loader/appcmd 8 0 4096 psram",
         "h2loader/blecmd 8 0 4096 psram",
@@ -62,6 +68,7 @@ firmware_lib_component(
     deps = [
         "//libs/archive/bundle",
         "//libs/audio/mixer:audio_mixer",
+        "//libs/audio/pcm",
         "//libs/command",
         "//libs/drivers/audio/es8311",
         "//libs/drivers/motion/qmi8658",
@@ -89,6 +96,7 @@ firmware_native_component(
     ],
     tags = ["manual"],
     deps = [
+        ":entry_tasks",
         ":firmware_lib",
         ":tasks",
         "//boards/waveshare/esp32s3_touch_amoled_1_75c/esp32s3",

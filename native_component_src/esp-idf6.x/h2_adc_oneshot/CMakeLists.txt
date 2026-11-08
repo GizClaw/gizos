@@ -7,6 +7,7 @@ idf_component_register(
     "include"
   REQUIRES
     esp_adc
+    h2_firmware_lib
     freertos)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)

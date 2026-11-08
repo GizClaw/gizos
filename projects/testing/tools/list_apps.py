@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 
-CATEGORIES = ("unit", "e2e", "integration", "benchmark", "mfg")
+CATEGORIES = ("unit", "e2e", "integration", "benchmark")
 EXCLUDED_ENTRIES = frozenset(("peripherals", "perpheral", "chip", "loader"))
 
 
@@ -13,8 +13,8 @@ def discover_apps(repository):
     root = Path(repository) / "projects/testing"
     if not root.is_dir():
         raise ValueError("projects/testing is missing")
-    apps = {"mfg"} if (root / "mfg/app").is_dir() else set()
-    for category in CATEGORIES[:-1]:
+    apps = set()
+    for category in CATEGORIES:
         directory = root / category
         if not directory.is_dir():
             continue
@@ -39,16 +39,10 @@ def discover_entries(repository, kind):
         # Support exports/test helper packages without treating them as firmware.
         if "h2loader_tar_zlib(" not in build.read_text():
             continue
-        if kind == "mfg":
-            if len(parts) < 2:
-                continue
-            manufacturer, board, *variant = parts
-            app, role = "mfg", "/".join(variant)
-        else:
-            if len(parts) < 3:
-                continue
-            app, *role_parts, manufacturer, board = parts
-            role = "/".join(role_parts)
+        if len(parts) < 3:
+            continue
+        app, *role_parts, manufacturer, board = parts
+        role = "/".join(role_parts)
         entry = {
             "app": app,
             "manufacturer": manufacturer,

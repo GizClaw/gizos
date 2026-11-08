@@ -10,8 +10,8 @@ armino_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "."
-    "${REPO_ROOT}/projects/h2loader/apps/loader/app"
-    "${REPO_ROOT}/projects/h2loader/apps/loader/app/include"
+    "${REPO_ROOT}/projects/h2loader/apps/headless/src"
+    "${REPO_ROOT}/projects/h2loader/apps/headless/include"
     "${REPO_ROOT}/libs/h2loader/device/include"
     "${REPO_ROOT}/libs/command/include"
     "${REPO_ROOT}/libs/container/trie/include"

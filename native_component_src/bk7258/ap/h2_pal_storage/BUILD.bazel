@@ -7,8 +7,13 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "h2_pal_storage",
-    srcs = glob(["src/*.c"]),
-    hdrs = glob(["include/*.h"]),
+    srcs = [
+        "src/h2_bk_platform_disk.c",
+        "src/h2_bk_platform_sd_fs.c",
+    ],
+    hdrs = [
+        "include/h2_bk_platform_storage.h",
+    ],
     data = ["CMakeLists.txt"],
     execution_unit = "ap",
     deps = ["//pal:unsupported"],

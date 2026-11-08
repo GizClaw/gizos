@@ -25,7 +25,11 @@ firmware_native_component(
         "src/h2_jieli_br35_atomic_provider.c",
         "src/h2_jieli_br35_sdk_port.c",
     ],
-    hdrs = glob(["include/*.h"]),
+    hdrs = [
+        "include/h2_jieli_br35_atomic.h",
+        "include/h2_jieli_br35_platform_core.h",
+        "include/h2_jieli_br35_sdk_port.h",
+    ],
     component_name = "h2_pal_core",
     include_roots = [
         "libs/sync/atomic/include",

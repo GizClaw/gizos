@@ -4,36 +4,12 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "h2_bk_audio_decoder",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_bk_audio_decoder.c",
+    ],
+    hdrs = [
+        "include/h2_bk_audio_decoder.h",
+    ],
     data = [
         "CMakeLists.txt",
     ],

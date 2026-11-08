@@ -380,7 +380,8 @@ esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     directory = "task_policy_lua_link",
     graph = _POLICY_GRAPH + ["//projects/testing/e2e/lua_link/libs/session:lua_link_e2e"],
-    policies = _COMMON_TASK_POLICIES + [
+    policies = [p for p in _COMMON_TASK_POLICIES if not p.startswith("mosaico/e2e/runner ")] + [
+        "mosaico/e2e/runner 4 any 65536 psram",
         "$lua/worker default",
         "$lua/display default",
         "$lua/link default",
@@ -391,7 +392,7 @@ esp_target_task_policy(
     name = "task_policy_aec",
     default_policy = "4 any 4096 psram",
     directory = "task_policy_aec",
-    graph = _POLICY_GRAPH + ["//projects/testing/e2e/aec-calibration/app:aec_calibration"],
+    graph = _POLICY_GRAPH + ["//projects/testing/unit/aec-calibration/app:aec_calibration"],
     policies = _COMMON_TASK_POLICIES,
 )
 
@@ -403,6 +404,7 @@ firmware_lib_component(
         ":tasks",
         "//libs/archive/bundle",
         "//libs/audio/mixer:audio_mixer",
+        "//libs/audio/pcm",
         "//libs/command",
         "//libs/drivers/audio/es8311",
         "//libs/net/bleikcp",
@@ -435,7 +437,7 @@ firmware_lib_component(
         ":lua_runtime": ["//projects/testing/unit/lua-runtime/app:lua_runtime_e2e"],
         ":lua_link": ["//projects/testing/e2e/lua_link/libs/session:lua_link_e2e"],
         ":webrtc_performance": ["//projects/testing/benchmark/webrtc-performance/app:webrtc_performance"],
-        ":aec_calibration": ["//projects/testing/e2e/aec-calibration/app:aec_calibration"],
+        ":aec_calibration": ["//projects/testing/unit/aec-calibration/app:aec_calibration"],
         ":storage": ["//projects/testing/unit/pal-storage/libs/device:runner"],
         ":display": ["//projects/testing/unit/pal-display/libs/device:runner"],
         ":audio": ["//projects/testing/unit/pal-audio/app:pal_audio_e2e"],

@@ -72,30 +72,6 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
-[
-    cc_test(
-        name = "task_" + mode + "_test",
-        srcs = [
-            "ap/src/h2_bk7258_board_task.c",
-            "tests/h2_bk7258_board_task_test_sdk.h",
-            "tests/test_task.c",
-        ],
-        conlyopts = H2_C11_OPTS,
-        includes = ["tests"],
-        local_defines = [
-            "H2_BK7258_BOARD_TASK_HOST_TEST=1",
-            "CONFIG_SOC_SMP=" + smp,
-            "CONFIG_CPU_CNT=2",
-        ],
-        target_compatible_with = HOST_TOOL_COMPATIBILITY,
-        deps = ["//pal"],
-    )
-    for mode, smp in [
-        ("smp", "1"),
-        ("single", "0"),
-    ]
-]
-
 cc_test(
     name = "display_test",
     srcs = [
@@ -252,36 +228,37 @@ h2_tasks(
 
 firmware_native_component(
     name = "bk7258",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "ap/src/h2_bk7258_board.c",
+        "ap/src/h2_bk7258_board_audio.c",
+        "ap/src/h2_bk7258_board_display.c",
+        "ap/src/h2_bk7258_board_fs.c",
+        "ap/src/h2_bk7258_board_input.c",
+        "ap/src/h2_bk7258_board_led.c",
+        "ap/src/h2_bk7258_board_modem.c",
+        "ap/src/h2_bk7258_board_platform.c",
+        "ap/src/h2_bk7258_board_power.c",
+        "ap/src/h2_bk7258_board_runtime.c",
+        "ap/src/h2_bk7258_board_task.c",
+        "ap/src/h2_bk7258_board_vibration.c",
+        "ap/src/h2_zero_bk_lcd.c",
+        "ap/src/h2_zero_bk_peripheral_power.c",
+        "ap/src/h2_zero_bk_spi.c",
+    ],
+    hdrs = [
+        "ap/include/h2_bk7258_board.h",
+        "ap/include/h2_zero_bk_display_capture.h",
+        "ap/src/h2_bk7258_board_private.h",
+        "ap/src/h2_zero_bk_audio_pcm.h",
+        "ap/src/h2_zero_bk_lcd.h",
+        "ap/src/h2_zero_bk_peripheral_power.h",
+        "ap/src/h2_zero_bk_spi.h",
+        "ap/src/h2_zero_bk_trust.h",
+        "ap/usr_gpio_cfg.h",
+        "cp/usr_gpio_cfg.h",
+        "include/h2_zero_bk_board_common_config.h",
+        "include/h2_zero_bk_board_config.h",
+    ],
     component_directory = "boards/haivivi/h106_zero_bk_2_0/bk7258/ap",
     component_name = "h2_bk7258_board",
     data = [

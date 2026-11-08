@@ -6,36 +6,16 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "h2_simcom_modem",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_simcom_modem.c",
+        "src/h2_esp_simcom_teardown.c",
+        "src/h2_esp_simcom_urc.c",
+    ],
+    hdrs = [
+        "include/h2_esp_simcom_modem.h",
+        "src/h2_esp_simcom_teardown.h",
+        "src/h2_esp_simcom_urc.h",
+    ],
     data = [
         "CMakeLists.txt",
         "idf_component.yml",

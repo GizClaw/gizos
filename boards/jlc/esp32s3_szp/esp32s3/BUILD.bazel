@@ -7,36 +7,24 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "esp32s3",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_audio_es8311_es7210.c",
+        "src/h2_esp_board_camera_gc0308.c",
+        "src/h2_esp_board_display_st7789.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_input.c",
+        "src/h2_esp_board_power.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+        "src/h2_esp_board_touch_ft6336.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_private.h",
+        "src/h2_esp_szp_board_internal.h",
+    ],
     component_directory = "boards/jlc/esp32s3_szp/esp32s3",
     component_name = "h2_esp_board",
     data = [
@@ -49,6 +37,7 @@ firmware_native_component(
     ],
     deps = [
         "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
         "//pal",
     ],
 )

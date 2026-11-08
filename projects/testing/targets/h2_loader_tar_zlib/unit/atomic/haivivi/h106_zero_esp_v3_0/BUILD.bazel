@@ -3,8 +3,14 @@ load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib
 load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["h106/entry"],
+)
 
 esp_target_task_policy(
     name = "task_policy",
@@ -40,7 +46,9 @@ firmware_lib_component(
     deps = [
         "//libs/archive/bundle",
         "//libs/audio/mixer:audio_mixer",
+        "//libs/audio/pcm",
         "//libs/command",
+        "//libs/drivers/adc",
         "//libs/drivers/audio/es8311",
         "//libs/drivers/nfc/fm175xx",
         "//libs/memory/arena:mem_arena",
@@ -73,6 +81,7 @@ firmware_native_component(
     ],
     tags = ["manual"],
     deps = [
+        ":entry_tasks",
         ":firmware_lib",
         "//boards/haivivi/h106_zero_esp_v3_0/esp32s3",
         "//libs/runtime",

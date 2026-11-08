@@ -4,6 +4,7 @@ load("//projects/h2loader/tools/bazel:h2loader_zlib_tar.bzl", "h2loader_zlib_tar
 load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,11 +17,17 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["ws175c/pal-audio"],
+)
+
 esp_target_task_policy(
     name = "task_policy",
     default_policy = "4 any 4096 psram",
     graph = [":launcher"],
     policies = [
+        "ws175c/pal-audio 4 any 65536 psram",
         "pal-audio/e2e/runner 4 0 32768 psram",
         "h2loader/appcmd 8 0 4096 psram",
         "h2loader/blecmd 8 0 4096 psram",
@@ -43,6 +50,7 @@ firmware_lib_component(
     deps = [
         "//libs/archive/bundle",
         "//libs/audio/mixer:audio_mixer",
+        "//libs/audio/pcm",
         "//libs/command",
         "//libs/drivers/audio/es8311",
         "//libs/drivers/motion/qmi8658",
@@ -71,6 +79,7 @@ firmware_native_component(
     ],
     tags = ["manual"],
     deps = [
+        ":entry_tasks",
         ":firmware_lib",
         "//boards/waveshare/esp32s3_touch_amoled_1_75c/esp32s3",
         "//libs/runtime",

@@ -28,7 +28,12 @@ firmware_native_component(
         "src/h2_jieli_wl82_atomic_provider.c",
         "src/h2_jieli_wl82_sdk_port.c",
     ],
-    hdrs = glob(["include/*.h"]),
+    hdrs = [
+        "include/h2_jieli_wl82_allocator.h",
+        "include/h2_jieli_wl82_atomic.h",
+        "include/h2_jieli_wl82_platform_core.h",
+        "include/h2_jieli_wl82_sdk_port.h",
+    ],
     component_name = "h2_pal_core",
     include_roots = [
         "pal/include",

@@ -43,6 +43,7 @@ firmware_lib_component(
     deps = [
         "//libs/archive/bundle",
         "//libs/audio/mixer:audio_mixer",
+        "//libs/audio/pcm",
         "//libs/command",
         "//libs/drivers/audio/es8311",
         "//libs/drivers/motion/qmi8658",

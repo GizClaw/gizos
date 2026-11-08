@@ -1,8 +1,6 @@
-# 1.75C 单机回声与增益探针
+# 1.75C single-device echo and gain probe
 
-此独立 H2Loader App 复用原 H200 单机探针的三音信号和静音基线扫描方法，
-通过真实 Audio PAL 同时播放、采集并观察 raw ADC、实际 AEC reference、
-processed PCM 和已完成的 DAC 写入。它不启动 GizClaw 或注入麦克风 PCM。
+This independent H2Loader App reuses the original H200 single-device probe's three-tone signal and silence-baseline scan. Real Audio PAL simultaneously plays, captures and observes raw ADC, actual AEC reference, processed PCM and completed DAC writes. It does not start GizClaw or inject microphone PCM.
 
 ```sh
 . /path/to/firmwares-devenv/export.sh
@@ -10,30 +8,15 @@ bazel build --config=esp32s3 \
   //projects/testing/targets/h2_loader_tar_zlib/unit/aec-probe/waveshare/esp32s3_touch_amoled_1_75c:package
 ```
 
-使用 H2Loader 管理安装，先核对 board 和设备 UID。设备将发出约三分钟的间歇
-校准音；测试期间保持扬声器、麦克风位置和环境稳定。原始串口日志绑定 App
-版本、UID 和随机 run。测试完成后停止并 join 音频、关闭 track、撤销 observer，
-再确认 App。失败保留错误，成功完成测量不等于所有候选都有效。
+Use managed H2Loader installation after verifying board and device UID. The device emits intermittent calibration tones for approximately three minutes; keep speaker/microphone placement and the environment stable. Raw serial logs bind App version, UID and a random run ID. On completion, stop and join audio, close the track and remove the observer before confirming the App. Failures retain their errors; completed measurement does not imply every candidate is valid.
 
-四个实际 direct-AEC profile 分别测单麦／双麦与 0／12 dB reference PGA。
-每个 profile 在 75／100% speaker 和约 18／24／30 dB mic 的若干组合中记录
-10 个有序静音／far-only 窗口，四组共 40 个。PAL mic 百分比按 codec 的实际量化值回读；
-reference PGA 不随 mic 调节改变。原板默认配置不因运行探针而持久化。
-每个 far 窗口预热 96 帧、计分 96 帧，静音预热 32 帧、计分 64 帧；
-16 kHz、512 samples。检查完整实际 DAC 帧、原始输入、AEC 输出和实时 cadence。
-日志只保留功率、peak 和 clipping 统计，不保存麦克风 PCM。
+Four actual direct-AEC profiles cover single/dual microphone and 0/12 dB reference PGA. Each profile records ten ordered silence/far-only windows across combinations of 75/100% speaker and approximately 18/24/30 dB microphone gain, forty windows overall. PAL microphone percentages are read back at the codec's actual quantized values. Microphone adjustments do not change reference PGA. Running the probe does not persist changes to board defaults. Each far window warms up for 96 frames and scores 96; silence warms up for 32 and scores 64, at 16 kHz with 512 samples. Checks cover complete actual DAC frames, raw input, AEC output and real-time cadence. Logs retain power, peak and clipping statistics without microphone PCM.
 
 ```sh
 python3 projects/testing/targets/h2_loader_tar_zlib/unit/aec-probe/waveshare/esp32s3_touch_amoled_1_75c/analyze.py \
   --log /absolute/path/serial.log --uid <device-uid> --version <image-version>
 ```
 
-分析器拒绝身份、时序、声道、窗口或 DAC 证据不完整的日志，并独立检查静音
-背景稳定性、signal/noise、reference 活性、30000 peak headroom 和至少 10 dB
-的背景扣除后 far-only 回声功率降低。`far_echo_probe_passed` 仅针对这次单机
-信号和电平；它始终保留 `acoustic_qualified=false`。数字 headroom 不证明模拟
-功放／扬声器没有失真。真实近端保留和双讲需要另行实测；完整自动验收使用
-`projects/testing/e2e/aec-calibration` 及其独立真实近端声源，不复用此探针的局部通过。
+The analyzer rejects incomplete identity, timing, channel, window or DAC evidence. It independently checks silence-background stability, signal/noise, reference activity, 30000 peak headroom and at least 10 dB of background-subtracted far-only echo-power reduction. `far_echo_probe_passed` applies only to this single-device signal and level; `acoustic_qualified=false` always remains. Digital headroom does not prove low analog amplifier/speaker distortion. Real near-end retention and double-talk require separate measurements. Full automatic acceptance uses `projects/testing/unit/aec-calibration` with its independent real near-end acoustic fixture and does not inherit this probe's partial success.
 
-基于实际日志选择参数后修改 BSP，再重新构建和实机验证相关 Audio／GizClaw
-镜像；不能把探针临时 profile 或旧镜像的成功当作新默认配置已验证。
+After selecting parameters from actual logs, change the BSP, rebuild and verify the relevant Audio/GizClaw images on hardware. Temporary probe profiles or success from an older image cannot establish validation of new defaults.

@@ -13,7 +13,7 @@ Keep naming, nesting and file-placement rules here. Each directory entry below s
 - Group providers under `pal/providers/{platforms,backends,devices}/`. The pthread atomic backend belongs to `pal/providers/platforms/posix/atomic/`.
 - Group libraries by capability: `net`, `sync`, `memory`, `container`, `archive`, `audio`, `video`, `image`, `ui`, `clients`, `drivers` and `math`. Retain established `encoding`, `crypto`, `command`, `semver`, `lua`, `runtime` and `h2loader` ownership; clearly named standalone packages may remain directly under `libs/`. Each leaf owns public `include/`, private `src/`, local `tests/`, resources and explicit BUILD inputs. Do not create catch-all `utils` packages or legacy forwarding paths.
 - Native SDK components may have execution-unit subdivisions where required. SDK compilation alone does not change source ownership.
-- MFG uses `projects/testing/mfg/{app,libs}/`; named helpers include `peer` and `aec-source`. A role App is already an App root: use `iperf/{client_app,server_app,libs}` and `lua_link/{host_app,join_app,libs}`, without another nested `app/`. Shared repository command logic belongs to `scripts/common/`.
+- H2Loader Apps live directly in `projects/h2loader/apps/{headless,mfg}/`, each with its own `include/`, `src/`, `tests/` and BUILD. Manufacturing helpers belong to `projects/h2loader/libs/{mfg-peer,mfg-aec-source}/`, and MFG final entries to `projects/h2loader/targets/<artifact-kind>/mfg/`. A named or role App is already an App root: use `iperf/{client_app,server_app,libs}` and `lua_link/{host_app,join_app,libs}`, without another nested `app/`. Shared repository command logic belongs to `scripts/common/`.
 - The first directory under every `targets/` names the final artifact kind, such as `cc_binary`, `cc_test`, `h2_loader_tar_zlib`, `android_binary`, `ios_application`, `pkg_tar` or `npm_package`. Internal ESP/BK/JieLi compilation rules remain dependencies inside the entry BUILD file. MFG `profile.c` belongs beside its concrete board entry. Both package formats share one entry directory and native image graph; do not add separate source trees or legacy entry aliases.
 - Keep source tests with their owner and create only directories with owned content. Caches, SDK installations and generated outputs are not source dependencies.
 
@@ -105,7 +105,7 @@ Owns a product or test suite so its behavior, integrations and artifacts stay to
 1. **Include:** Apps, project-specific integrations, resources, named shared libraries, local tests and final artifact entries.
 2. **Exclude:** Copies of public PAL, portable libraries, shared native SDK components and reusable physical BSPs.
 
-### App directories: `app/`, `client_app/`, `server_app/`, `host_app/`, `join_app/`
+### App directories: `apps/<name>/`, `app/`, `client_app/`, `server_app/`, `host_app/`, `join_app/`
 
 Own portable App behavior so final entries can compose it for different targets.
 
@@ -133,12 +133,19 @@ Composes one final artifact so startup, policy and packaging have an explicit ow
 1. **Include:** Runtime lifetime, startup/exit, logical-to-physical mapping, task policy, native configuration, board-specific MFG profiles and packaging declarations.
 2. **Exclude:** Portable App business logic, reusable driver implementations and physical board wiring.
 
-### `projects/testing/mfg/`
+### `projects/h2loader/apps/headless/`
 
-Owns manufacturing acceptance so the common program can serve multiple board entries.
+Owns the headless Loader App so device service composition can reuse one portable implementation.
 
-1. **Include:** The common manufacturing App, acceptance logic, test orchestration, manufacturing peer support and calibration audio helpers.
-2. **Exclude:** Board-specific profiles, physical wiring, ordinary source unit tests and private product manufacturing business logic.
+1. **Include:** Loader App behavior, public contracts, command composition and App-local tests.
+2. **Exclude:** Manufacturing acceptance, native SDK operations, physical wiring, Runtime construction and final task or package policy.
+
+### `projects/h2loader/apps/mfg/`
+
+Owns manufacturing acceptance as an H2Loader App so the common program can serve multiple board entries.
+
+1. **Include:** Portable acceptance logic, test orchestration, public contracts and App-local source tests; named manufacturing helpers remain in H2Loader project libraries.
+2. **Exclude:** Board-specific profiles, physical wiring, final artifact assembly and private product manufacturing business logic.
 
 ### `projects/testing/unit/`
 

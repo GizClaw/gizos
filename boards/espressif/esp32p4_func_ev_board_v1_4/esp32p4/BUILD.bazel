@@ -4,36 +4,17 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "esp32p4",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_audio_none.c",
+        "src/h2_esp_board_display_none.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_input.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_private.h",
+    ],
     component_directory = "boards/espressif/esp32p4_func_ev_board_v1_4/esp32p4",
     component_name = "h2_esp_board",
     data = [

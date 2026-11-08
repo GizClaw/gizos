@@ -7,36 +7,28 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "esp32s3",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_audio_es8311_es7210.c",
+        "src/h2_esp_board_display_buffer.c",
+        "src/h2_esp_board_display_co5300.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_i2c.c",
+        "src/h2_esp_board_input.c",
+        "src/h2_esp_board_power.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+        "src/h2_esp_board_touch_cst9217.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "include/h2_ws175c_audio_diagnostics.h",
+        "include/h2_ws175c_display_capture.h",
+        "src/h2_esp_board_display_buffer.h",
+        "src/h2_esp_board_internal.h",
+        "src/h2_esp_board_private.h",
+    ],
     component_directory = "boards/waveshare/esp32s3_touch_amoled_1_75c/esp32s3",
     component_name = "h2_esp_board",
     data = [
@@ -50,6 +42,7 @@ firmware_native_component(
     deps = [
         "//libs/drivers/motion/qmi8658",
         "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
         "//pal",
     ],
 )

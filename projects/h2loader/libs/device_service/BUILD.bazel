@@ -44,8 +44,8 @@ filegroup(
     srcs = [
         ":service_sources",
         "//libs/h2loader/device:firmware_sources",
-        "//projects/h2loader/apps/loader/app:app.c",
-        "//projects/h2loader/apps/loader/app:task_names.c",
+        "//projects/h2loader/apps/headless:src/app.c",
+        "//projects/h2loader/apps/headless:src/task_names.c",
     ],
 )
 
@@ -58,7 +58,7 @@ cc_library(
         "//libs/h2loader/device:api",
         "//libs/h2loader/device:tasks",
         "//libs/runtime",
-        "//projects/h2loader/apps/loader/app:loader",
+        "//projects/h2loader/apps/headless:loader",
     ],
 )
 
@@ -72,7 +72,7 @@ cc_library(
     deps = [
         "//libs/h2loader/device",
         "//libs/runtime",
-        "//projects/h2loader/apps/loader/app:loader",
+        "//projects/h2loader/apps/headless:loader",
     ],
 )
 

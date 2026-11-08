@@ -22,7 +22,11 @@ PROVIDER_SRCS = [
 firmware_native_component(
     name = "h2_pal_core",
     srcs = PROVIDER_SRCS + ["src/h2_jieli_br23_sdk_port.c"],
-    hdrs = glob(["include/*.h"]),
+    hdrs = [
+        "include/h2_jieli_br23_atomic.h",
+        "include/h2_jieli_br23_platform_core.h",
+        "include/h2_jieli_br23_sdk_port.h",
+    ],
     component_name = "h2_pal_core",
     include_roots = [
         "pal/include",

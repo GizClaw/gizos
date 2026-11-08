@@ -70,7 +70,7 @@ static int h2_esp_wifi_ap_unsupported_stop(h2_pal_wifi_ap_t* ap,
                                            uint32_t timeout_ms) {
   (void)ap;
   (void)timeout_ms;
-  return H2_PAL_OK;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
 static int h2_esp_wifi_ap_unsupported_get_status(
@@ -81,7 +81,7 @@ static int h2_esp_wifi_ap_unsupported_get_status(
   }
   memset(out_status, 0, sizeof(*out_status));
   out_status->state = H2_PAL_WIFI_AP_STATE_STOPPED;
-  return H2_PAL_OK;
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
 static int h2_esp_wifi_ap_unsupported_get_clients(

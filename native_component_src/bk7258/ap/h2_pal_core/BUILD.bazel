@@ -75,36 +75,69 @@ cc_test(
 
 firmware_native_component(
     name = "h2_pal_core",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_bk_atomic.c",
+        "src/h2_bk_ble_exact_adapter.c",
+        "src/h2_bk_net_addr.c",
+        "src/h2_bk_platform_atomic.c",
+        "src/h2_bk_platform_ble.c",
+        "src/h2_bk_platform_ble_heap.c",
+        "src/h2_bk_platform_crypto.c",
+        "src/h2_bk_platform_dtls.c",
+        "src/h2_bk_platform_entry_task.c",
+        "src/h2_bk_platform_firmware_info.c",
+        "src/h2_bk_platform_log.c",
+        "src/h2_bk_platform_mem.c",
+        "src/h2_bk_platform_modem_unsupported.c",
+        "src/h2_bk_platform_mqtt.c",
+        "src/h2_bk_platform_net.c",
+        "src/h2_bk_platform_netif.c",
+        "src/h2_bk_platform_pref_flashdb.c",
+        "src/h2_bk_platform_pref_flashdb_port.c",
+        "src/h2_bk_platform_queue.c",
+        "src/h2_bk_platform_sync.c",
+        "src/h2_bk_platform_system_event.c",
+        "src/h2_bk_platform_task.c",
+        "src/h2_bk_platform_time.c",
+        "src/h2_bk_platform_timer.c",
+        "src/h2_bk_platform_uart_io_stream.c",
+        "src/h2_bk_platform_webrtc.c",
+        "src/h2_bk_platform_webrtc_unsupported.c",
+        "src/h2_bk_platform_wifi.c",
+        "src/h2_bk_platform_wifi_csi.c",
+        "src/h2_bk_platform_wifi_event_dispatch.c",
+        "src/h2_bk_platform_wifi_settings.c",
+        "src/h2_bk_psa_serialized.c",
+        "src/h2_bk_resource_stats.c",
+        "src/h2_bk_task_tls.c",
+        "src/h2_bk_wifi_ipv6_sync.c",
+    ],
+    hdrs = [
+        "include/h2_bk_audio_reader.h",
+        "include/h2_bk_mbedtls_config.h",
+        "include/h2_bk_platform_core.h",
+        "include/h2_bk_platform_entry_task.h",
+        "include/h2_bk_wifi_lease_slots.h",
+        "src/flashdb/fal_cfg.h",
+        "src/h2_bk_ble_exact_adapter.h",
+        "src/h2_bk_ble_gatt_schema.h",
+        "src/h2_bk_ble_gatts_tx_tracker.h",
+        "src/h2_bk_net_addr.h",
+        "src/h2_bk_net_result.h",
+        "src/h2_bk_netif_internal.h",
+        "src/h2_bk_pref_large.h",
+        "src/h2_bk_psa_calls.h",
+        "src/h2_bk_resource_stats_internal.h",
+        "src/h2_bk_socket_errno_reader.h",
+        "src/h2_bk_socket_errno_writer.h",
+        "src/h2_bk_task_create_internal.h",
+        "src/h2_bk_task_lifetime_internal.h",
+        "src/h2_bk_task_tls.h",
+        "src/h2_bk_task_tls_hooks.h",
+        "src/h2_bk_udp_receive.h",
+        "src/h2_bk_wifi_ipv6_internal.h",
+        "src/h2_bk_wifi_ipv6_sync.h",
+    ],
     data = [
         "CMakeLists.txt",
         "src/flashdb/h2_fdb_do_gc.inc",
@@ -178,34 +211,41 @@ cc_test(
     deps = ["//pal"],
 )
 
-cc_test(
-    name = "task_policy_test",
-    srcs = [
-        "include/h2_bk_platform_core.h",
-        "src/h2_bk_platform_task.c",
-        "src/h2_bk_resource_stats.c",
-        "src/h2_bk_resource_stats_internal.h",
-        "src/h2_bk_task_lifetime_internal.h",
-        "tests/test_h2_bk_platform_task_policy.c",
-    ] + glob(["tests/sdk/**/*.h"]),
-    conlyopts = H2_C11_OPTS + [
-        "-DH2_TASK_POLICY_TEST=1",
-        "-DCONFIG_SOC_SMP=1",
-        "-DCONFIG_CPU_CNT=2",
-    ],
-    copts = H2_WARNING_COPTS,
-    includes = [
-        "include",
-        "tests/sdk",
-    ],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = ["//pal"],
-)
+[
+    cc_test(
+        name = name,
+        srcs = [
+            "include/h2_bk_platform_core.h",
+            "src/h2_bk_platform_task.c",
+            "src/h2_bk_resource_stats.c",
+            "src/h2_bk_resource_stats_internal.h",
+            "src/h2_bk_task_create_internal.h",
+            "src/h2_bk_task_lifetime_internal.h",
+            "tests/test_h2_bk_platform_task_policy.c",
+        ] + glob(["tests/sdk/**/*.h"]),
+        conlyopts = H2_C11_OPTS + [
+            "-DH2_TASK_POLICY_TEST=1",
+            "-DCONFIG_SOC_SMP=" + smp,
+            "-DCONFIG_CPU_CNT=2",
+        ],
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/sdk",
+        ],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//tools/bazel/platforms:host_windows_target_windows": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = ["//pal"],
+    )
+    for name, smp in [
+        ("task_policy_test", "1"),
+        ("task_policy_single_test", "0"),
+    ]
+]
 
 cc_test(
     name = "atomic_shim_test",
@@ -753,3 +793,32 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+[
+    cc_test(
+        name = "entry_task_" + mode + "_test",
+        srcs = [
+            "include/h2_bk_platform_core.h",
+            "include/h2_bk_platform_entry_task.h",
+            "src/h2_bk_platform_entry_task.c",
+            "src/h2_bk_task_create_internal.h",
+            "tests/test_h2_bk_platform_entry_task.c",
+        ] + glob(["tests/sdk/**/*.h"]),
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "tests/sdk",
+        ],
+        local_defines = [
+            "CONFIG_SOC_SMP=" + smp,
+            "CONFIG_CPU_CNT=2",
+        ],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+        deps = ["//pal"],
+    )
+    for mode, smp in [
+        ("smp", "1"),
+        ("single", "0"),
+    ]
+]

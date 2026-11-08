@@ -22,10 +22,12 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config);
 h2_pal_result_t h2_esp_board_runtime_deinit(void);
 
 /**
- * Starts the board image entry point on a detached PSRAM-backed task.
+ * Starts the image entry point using the final entry's installed task policy.
  *
- * The caller must return from app_main after this function succeeds. The
- * supplied user pointer must remain valid until the entry function returns.
+ * The final entry declares task policy; the platform starts and reclaims the
+ * detached task. This BSP adapter supplies its provider-cleanup callback.
+ * The caller must return from app_main after this function succeeds.
+ * The supplied user pointer must remain valid until the entry function returns.
  * The entry function must release Runtime before returning; the task wrapper
  * then calls h2_esp_board_runtime_deinit() before deleting itself.
  */

@@ -33,6 +33,7 @@ firmware_native_component(
         ":touch_tasks",
         "//libs/runtime",
         "//libs/sync/atomic",
+        "//native_component_src/bk7258/ap/h2_pal_core",
         "//native_component_src/bk7258/ap/h2_pal_image",
         "//native_component_src/bk7258/ap/h2_pal_storage",
         "//pal",

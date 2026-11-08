@@ -179,7 +179,8 @@ def bk7258_target_task_policy(
       cp_name: Name of the generated CP native component target.
       directory: Package-relative generated output directory for the policy components.
       graph: The firmware dependency graph whose tasks the AP policy serves.
-      ap_policies: One row per AP task. See ``esp_target_task_policy``.
+      ap_policies: One row per AP task. Core is ``0``, ``1`` or ``any``;
+        ``any`` retains native unpinned AP scheduling. See ``esp_target_task_policy``.
       ap_default_policy: ``"<priority>  <core>  <stack>  <region>"`` served to
         AP task names without a row of their own.
       ap_allocator: Memory for AP task control objects. Stack regions remain

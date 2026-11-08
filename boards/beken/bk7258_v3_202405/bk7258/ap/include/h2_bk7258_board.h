@@ -46,7 +46,9 @@ const h2_pal_mem_api_t* h2_bk7258_board_display_allocator(void);
 h2_pal_mem_api_t* h2_bk7258_board_psram_allocator(void);
 
 /**
- * Starts the board image entry point on a detached board-owned worker task.
+ * Starts the board image entry on a detached native task using the generated
+ * target policy. Install that policy before calling from serialized task
+ * context. Priority, affinity, stack size and region belong to the final entry.
  *
  * The caller must return from the SDK user entry after this function succeeds.
  * The supplied user pointer must remain valid until the entry function returns.

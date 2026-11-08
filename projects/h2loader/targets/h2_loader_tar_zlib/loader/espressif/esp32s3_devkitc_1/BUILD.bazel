@@ -11,7 +11,7 @@ package(default_visibility = ["//visibility:public"])
 firmware_version(
     name = "version",
     build = "//boards/espressif/esp32s3_devkitc_1:version",
-    main_version = "//projects/h2loader/apps/loader:version",
+    main_version = "//projects/h2loader/apps/headless:version",
 )
 
 esp_target_task_policy(

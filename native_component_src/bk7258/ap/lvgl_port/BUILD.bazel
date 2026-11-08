@@ -7,39 +7,15 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_native_component(
     name = "lvgl_port",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "h2_lvgl_bk_dma2d.c",
+        "h2_lvgl_bk_lifecycle.c",
+    ],
     hdrs = [
+        "h2_lvgl_bk_power.h",
         "//third_party/lvgl_patch:config/bk7258/h2_lvgl_bk_dma2d.h",
         "//third_party/lvgl_patch:config/bk7258/lv_conf.h",
-    ] + glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    ],
     data = [
         "CMakeLists.txt",
     ],

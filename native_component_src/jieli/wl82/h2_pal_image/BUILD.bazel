@@ -10,11 +10,25 @@ package(default_visibility = ["//visibility:public"])
 # every dev_upgrade_api symbol must precede update.a extraction under LTO.
 firmware_native_component(
     name = "h2_pal_image",
-    srcs = glob(
-        ["src/*.c"],
-        exclude = ["src/jieli_warm_boot_early.c"],
-    ),
-    hdrs = glob(["include/*.h"]),
+    srcs = [
+        "src/coredump.c",
+        "src/h2_jieli_wl82_console.c",
+        "src/h2_jieli_wl82_flash_window.c",
+        "src/h2_jieli_wl82_platform_image.c",
+        "src/h2_jieli_wl82_platform_io_stream.c",
+        "src/jieli_upgrade_io.c",
+        "src/jieli_warm_boot.c",
+    ],
+    hdrs = [
+        "include/h2_jieli_wl82_boot.h",
+        "include/h2_jieli_wl82_console.h",
+        "include/h2_jieli_wl82_flash_window.h",
+        "include/h2_jieli_wl82_gatt.h",
+        "include/h2_jieli_wl82_platform_image.h",
+        "include/jieli_native_image.h",
+        "include/jieli_upgrade_io.h",
+        "include/jieli_warm_boot.h",
+    ],
     component_name = "h2_jieli_wl82_image",
     include_roots = ["native_component_src/jieli/wl82/h2_pal_image/include"],
     tags = ["manual"],
@@ -70,7 +84,16 @@ filegroup(
 firmware_native_component(
     name = "warm_boot",
     srcs = ["src/jieli_warm_boot_early.c"],
-    hdrs = glob(["include/*.h"]),
+    hdrs = [
+        "include/h2_jieli_wl82_boot.h",
+        "include/h2_jieli_wl82_console.h",
+        "include/h2_jieli_wl82_flash_window.h",
+        "include/h2_jieli_wl82_gatt.h",
+        "include/h2_jieli_wl82_platform_image.h",
+        "include/jieli_native_image.h",
+        "include/jieli_upgrade_io.h",
+        "include/jieli_warm_boot.h",
+    ],
     component_name = "h2_jieli_wl82_warm_boot",
     include_roots = ["native_component_src/jieli/wl82/h2_pal_image/include"],
     tags = ["manual"],

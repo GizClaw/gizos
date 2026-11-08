@@ -37,7 +37,7 @@ bazel test --config=macos_arm64 --cache_test_results=no \
   //projects/testing/targets/cc_binary/pal-mqtt:public_broker_test
 ```
 
-该入口继续使用 `H2_MQTT_SMOKE_*` 配置。`scripts/test/test-web.sh` 显式运行独立 Core、Storage、HTTP 和 Wi-Fi/Netif 测试。raw Net/TLS E2E 与其 Browser boundary target 保持 `manual` / `external`，按需直接指定 label 执行，不进入 CI 或 Web 批量测试入口。没有旧 `pal.web.tar` 或旧 Browser launcher。
+This entry continues to use `H2_MQTT_SMOKE_*` configuration. Browser archives and automatic tests are selected through their declared Bazel targets and the compatible automatic test graph; no separate shell test inventory is maintained. Raw Net/TLS qualification and its Browser boundary target retain `manual` / `external` tags and run only by explicit label, outside automatic CI. The retired `pal.web.tar` and Browser launcher are not retained.
 
 ## 待补的平台覆盖
 

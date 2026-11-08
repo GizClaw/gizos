@@ -1,10 +1,12 @@
 # H2Loader firmware and artifacts
 
-This project owns the portable Loader App, thin firmware startup/composition, Loader image entries, browser npm artifact and firmware package rules. Portable libraries are organized as [`libs/h2loader/{host,device}`](../../libs/h2loader). [`libs/device_service`](libs/device_service) composes the Device core, Runtime and Loader App without introducing a project dependency into the portable libraries. Browser JS/runtime bindings belong to [`libs/web`](libs/web) within this project.
+This project owns the portable headless Loader and manufacturing acceptance Apps, their shared support, thin firmware startup/composition, Loader and MFG image entries, browser npm artifact and firmware package rules. Portable libraries are organized as [`libs/h2loader/{host,device}`](../../libs/h2loader). [`libs/device_service`](libs/device_service) composes the Device core, Runtime and Loader App without introducing a project dependency into the portable libraries. Browser JS/runtime bindings belong to [`libs/web`](libs/web) within this project.
 
 | Directory | Responsibility |
 | --- | --- |
-| `apps/loader/app` | Portable Loader App entry and command/startup composition |
+| [`apps/headless`](apps/headless) | Portable headless Loader App entry and command/startup composition |
+| [`apps/mfg`](apps/mfg) | Manufacturing acceptance App, session, model and UI |
+| `libs/mfg-peer`, `libs/mfg-aec-source` | Manufacturing peer and acoustic-fixture support |
 | `targets` | Firmware and npm artifact composition, minimal SDK startup registration |
 | `tools/bazel` | Firmware package, recovery and release artifact rules |
 

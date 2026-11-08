@@ -154,6 +154,15 @@ h2_pal_result_t h2_esp_platform_ppp_quiesce(void* netif_handle,
 const h2_pal_task_api_t* h2_esp_platform_task_api(void);
 h2_pal_result_t h2_esp_platform_task_configure(
     const h2_esp_task_policy_config_t* config);
+/** Resolve and validate a native task's generated target policy, sealing Task
+ * configuration against later replacement even when lookup fails. Call from
+ * serialized startup task context after task_configure, never from an ISR.
+ * name is borrowed for this call and passed unchanged to the resolver (NULL
+ * follows the resolver's unnamed-task contract). out_policy is caller-owned,
+ * required, and cleared on failure. No native task or stack is allocated.
+ * Returns INVALID_ARG, INVALID_STATE, NOT_FOUND, TASK, or OK. */
+h2_pal_result_t h2_esp_platform_task_reserve_policy(
+    const char* name, h2_esp_task_policy_t* out_policy);
 const h2_pal_queue_api_t* h2_esp_platform_queue_api(void);
 const h2_pal_time_api_t* h2_esp_platform_time_api(void);
 const h2_pal_system_event_api_t* h2_esp_platform_system_event_api(void);
