@@ -227,7 +227,7 @@ static int disable_rf_field(h2_bk_nfc_fm175xx_t* adapter) {
   int rc = fm_i2c_read_reg(adapter, H2_FM175XX_REG_TX_CTRL, &control);
   if (rc != H2_FM175XX_OK) return rc;
   rc = fm_i2c_write_reg(adapter, H2_FM175XX_REG_TX_CTRL,
-                        (uint8_t)(control & (uint8_t)~0x03u));
+                        (uint8_t)(control & 0xfcu));
   if (rc != H2_FM175XX_OK) return rc;
   rc = fm_i2c_read_reg(adapter, H2_FM175XX_REG_TX_CTRL, &control);
   if (rc == H2_FM175XX_OK && (control & 0x03u) != 0u) rc = H2_FM175XX_ERR_IO;

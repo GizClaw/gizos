@@ -204,7 +204,7 @@ int main(void) {
   assert(result.stage == H2_PAL_NFC_STAGE_ABSENT && result.result == 0);
   assert(result.uid_len == 0u && fifo_size == 0u);
   assert(adapter.fifo_verified_cases == 5u);
-  assert((registers[H2_FM175XX_REG_TX_CTRL] & 3u) == 0u);
+  assert(registers[H2_FM175XX_REG_TX_CTRL] == 0x80u);
   /* The next poll can activate a real card; a successful selection keeps
    * RF available for the following content read. */
   activation_result = H2_FM175XX_OK;

@@ -149,7 +149,7 @@ static int write_register(void* user, uint8_t reg, uint8_t value) {
     f->pending_rx_len = 0u;
     f->registers[reg] = 0u;
   } else if (reg == H2_FM175XX_REG_TX_CTRL && f->reject_rf_enable) {
-    f->registers[reg] = value & (uint8_t)~0x03u;
+    f->registers[reg] = value & 0xfcu;
   } else if (reg == H2_FM175XX_REG_RX_SEL && f->reject_receiver_select) {
     f->registers[reg] = 0x04u;
   } else if (reg == H2_FM175XX_REG_RFCFG && f->reject_rf_gain) {

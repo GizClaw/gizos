@@ -297,6 +297,9 @@ jobs:
             options+=(--copt=/wd5287 --features=static_link_msvcrt --lockfile_mode=off)
           fi
           bazel test "${options[@]}" "${tests[@]}"
+      - name: Test macOS image packaging
+        if: runner.os == 'macOS'
+        run: node --test tools/gizloader/scripts/package-dmg.test.mjs
       - name: Test Rust supervisor
         run: cargo test --manifest-path tools/gizloader/src-tauri/Cargo.toml
       # APPLE_CERTIFICATE is a base64 PKCS#12, APPLE_API_KEY_CONTENT is plaintext
