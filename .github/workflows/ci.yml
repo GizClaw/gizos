@@ -225,7 +225,7 @@ jobs:
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
-            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
+            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
             --output "$bazel_path"
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.sha }}"
           chmod +x "$bazel_path"
@@ -463,7 +463,7 @@ jobs:
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
-            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
+            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
             --output "$bazel_path"
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.sha }}"
           chmod +x "$bazel_path"
@@ -677,7 +677,7 @@ jobs:
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
-            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" \
+            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
             --output "$bazel_path"
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
@@ -925,7 +925,7 @@ jobs:
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
-            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" \
+            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
             --output "$bazel_path"
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
@@ -1210,7 +1210,7 @@ jobs:
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
-            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" \
+            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
             --output "$bazel_path"
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
@@ -1325,7 +1325,7 @@ jobs:
         run: |
           $bazel = Join-Path $env:RUNNER_TEMP 'bazel.exe'
           curl.exe --fail --location --silent --show-error `
-            "https://github.com/bazelbuild/bazel/releases/download/$env:BAZEL_VERSION/bazel-$env:BAZEL_VERSION-windows-x86_64.exe" `
+            "https://releases.bazel.build/$env:BAZEL_VERSION/release/bazel-$env:BAZEL_VERSION-windows-x86_64.exe" `
             --output $bazel
           if ((Get-FileHash -Algorithm SHA256 $bazel).Hash.ToLowerInvariant() -ne $env:BAZEL_WINDOWS_X86_64_SHA256) {
             throw 'Bazel SHA-256 mismatch'

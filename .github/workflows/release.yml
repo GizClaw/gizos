@@ -107,7 +107,7 @@ jobs:
 
       - name: Install Bazel
         run: |
-          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
 
@@ -203,7 +203,7 @@ jobs:
 
       - name: Install Bazel
         run: |
-          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
 
@@ -260,7 +260,7 @@ jobs:
 
       - name: Install Bazel for gizos
         run: |
-          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
 
@@ -430,7 +430,7 @@ jobs:
       - name: Configure BK7258 SDK, native cache, and Bazel
         run: |
           test "$(git -C .bk-sdk rev-parse HEAD)" = "$BK7258_SDK_COMMIT"
-          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
           manifest=tools/bazel/native/versions/native_ccache_tools.txt
@@ -546,7 +546,7 @@ jobs:
 
       - name: Install Bazel
         run: |
-          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
 

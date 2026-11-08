@@ -160,7 +160,7 @@ jobs:
         run: |
           set -euo pipefail
           bazel_path="$RUNNER_TEMP/bazel"
-          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
+          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.bazel_sha256 }}"
           chmod +x "$bazel_path"
 
