@@ -75,17 +75,6 @@ http_archive(
     urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.35.15.tar.gz"],
 )
 
-# Canonical object codecs and numeric/name registries from the C SDK release's
-# source commit. The overlay exposes only upstream source files.
-http_archive(
-    name = "h2_gizclaw_protocol",
-    build_file = "//third_party:gizclaw_protocol.BUILD.bazel",
-    sha256 = "d65ced876d51af4aded52300198ac20490c2acd8bc2362ac138ff98730c34492",
-    strip_prefix = "gizclaw-8dd719c70f2dc8e49d10ea3af1dfce6421be1ca6",
-    type = "tar.gz",
-    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/8dd719c70f2dc8e49d10ea3af1dfce6421be1ca6"],
-)
-
 # The declaration emitter is a pinned host tool, independent of runtime code.
 http_archive(
     name = "h2_typescript",
