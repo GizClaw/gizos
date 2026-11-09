@@ -259,6 +259,27 @@ h2_pal_result_t h2_gizclaw_session_snapshot(h2_gizclaw_session_t* session,
   if (session == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock(session);
   if (rc != H2_PAL_OK) return rc;
+  if (session->state.conversation_input_open) {
+    bool ended = false, empty = false;
+    rc = h2_gizclaw_service_audio_end_snapshot_internal(session->config.service,
+                                                        &ended, &empty);
+    if (rc != H2_PAL_OK) {
+      unlock(session);
+      return rc;
+    }
+    if (ended) {
+      session->state.conversation_input_open = false;
+      session->state.conversation =
+          empty || session->state.parameters.input ==
+                       H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
+              ? H2_GIZCLAW_SESSION_CONVERSATION_IDLE
+              : H2_GIZCLAW_SESSION_CONVERSATION_WAITING;
+      uint64_t now = 0u;
+      (void)h2_pal_time_get_monotonic_ms(session->config.time, &now);
+      session->wait_deadline_ms = now + H2_GIZCLAW_SESSION_WAIT_MS;
+      ++session->state.revision;
+    }
+  }
   if (session->state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING) {
     /* Downstream sound takes over from WAITING; without any, give up
      * silently at the deadline. */
@@ -1644,7 +1665,9 @@ h2_pal_result_t h2_gizclaw_session_interrupt_playback(
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t audio_input(h2_gizclaw_session_t* s, bool start) {
+static h2_pal_result_t audio_input(h2_gizclaw_session_t* s, bool start,
+                                   h2_gizclaw_track_t* track,
+                                   h2_gizclaw_pcm_capture_id_t capture_id) {
   h2_gizclaw_audio_log_t logs = {0};
   if (s == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock(s);
@@ -1675,7 +1698,7 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t* s, bool start) {
     record_audio(s, start ? "audio_start_already_open" : "audio_end_not_open",
                  &logs, H2_PAL_OK, 0u, 0);
     unlock_audio(s, &logs);
-    return H2_PAL_OK;
+    return capture_id != 0u ? H2_PAL_ERR_BUSY : H2_PAL_OK;
   }
   if (start && s->conversation_running) {
     s->busy = true;
@@ -1696,8 +1719,10 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t* s, bool start) {
     }
   }
   bool empty_input = false;
-  rc = h2_gizclaw_service_audio_control_internal(s->config.service, start,
-                                                 &logs, &empty_input);
+  rc = capture_id != 0u ? h2_gizclaw_service_audio_adopt_internal(
+                              s->config.service, track, capture_id, &logs)
+                        : h2_gizclaw_service_audio_control_internal(
+                              s->config.service, start, &logs, &empty_input);
   record_audio(s, start ? "audio_start" : "audio_end", &logs, rc, 0u, 0);
   if (rc == H2_PAL_OK) {
     s->state.conversation =
@@ -1724,6 +1749,8 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t* s, bool start) {
       record_audio(s, "audio_end_cancel", &logs, rc, 0u, 0);
     }
     if (start) {
+      s->wait_mark =
+          h2_gizclaw_conversation_downlink_writes_internal(s->config.service);
       s->conversation_running = true;
       s->state.last_error = H2_PAL_OK;
       s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_NONE;
@@ -1741,10 +1768,16 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t* s, bool start) {
   return rc;
 }
 h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t* s) {
-  return audio_input(s, true);
+  return audio_input(s, true, NULL, 0u);
 }
 h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t* s) {
-  return audio_input(s, false);
+  return audio_input(s, false, NULL, 0u);
+}
+h2_pal_result_t h2_gizclaw_session_audio_adopt(h2_gizclaw_session_t* s,
+                                               h2_gizclaw_track_t* track,
+                                               h2_gizclaw_pcm_capture_id_t id) {
+  if (track == NULL || id == 0u) return H2_PAL_ERR_INVALID_ARG;
+  return audio_input(s, true, track, id);
 }
 
 h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t* s,

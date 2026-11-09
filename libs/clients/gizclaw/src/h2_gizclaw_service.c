@@ -1092,10 +1092,17 @@ h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t* service,
     unlock_service(service);
     return H2_PAL_ERR_INVALID_STATE;
   }
+  /* Refusing an owned capture must not transiently close the live route. */
+  if (h2_gizclaw_pcm_capture_busy_internal(track)) {
+    unlock_service(service);
+    return H2_PAL_ERR_BUSY;
+  }
   service->pcm_track_unsetting = true;
   while (service->pcm_track_refs != 0u && rc == H2_PAL_OK)
     rc = h2_pal_cond_wait(service->config.sync, service->progress_cond,
                           service->mutex, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK && h2_gizclaw_pcm_capture_busy_internal(track))
+    rc = H2_PAL_ERR_BUSY;
   if (rc == H2_PAL_OK) {
     h2_atomic_store(&service->pcm_track, NULL);
     h2_gizclaw_pcm_track_detach_internal(track);
@@ -1128,6 +1135,22 @@ bool h2_gizclaw_service_pcm_readable_internal(h2_gizclaw_service_t* service) {
   bool readable = track->vtable->read != NULL;
   pcm_track_release(service);
   return readable;
+}
+
+h2_pal_result_t h2_gizclaw_service_pcm_adopt_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_pcm_input_t* input,
+    h2_gizclaw_track_t* expected_track, h2_gizclaw_pcm_capture_id_t id) {
+  if (service == NULL || input == NULL || expected_track == NULL || id == 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_track_t* track = pcm_track_acquire(service);
+  if (track == NULL) return H2_PAL_ERR_CLOSED;
+  h2_pal_result_t rc =
+      track != expected_track
+          ? H2_PAL_ERR_INVALID_STATE
+          : h2_gizclaw_pcm_input_adopt(input, track,
+                                       service->client_config.allocator, id);
+  pcm_track_release(service);
+  return rc;
 }
 
 h2_pal_result_t h2_gizclaw_service_pcm_input_internal(
@@ -1442,6 +1465,11 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t* service) {
       (void)h2_pal_log_write(service->config.client_config->log,
                              H2_PAL_LOG_WARN, "gizclaw", message);
     return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (h2_gizclaw_pcm_capture_busy_internal(
+          h2_atomic_load(&service->pcm_track))) {
+    unlock_service(service);
+    return H2_PAL_ERR_BUSY;
   }
   h2_gizclaw_track_t* track = h2_atomic_exchange(&service->pcm_track, NULL);
   h2_gizclaw_pcm_track_detach_internal(track);

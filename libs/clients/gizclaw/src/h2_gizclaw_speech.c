@@ -151,6 +151,18 @@ static h2_pal_result_t speech_audio_control(
   return rc;
 }
 
+h2_pal_result_t h2_gizclaw_speech_audio_adopt_internal(
+    void* context, h2_gizclaw_track_t* track, h2_gizclaw_pcm_capture_id_t id) {
+  speech_t* speech = context;
+  const h2_pal_sync_api_t* sync = speech->service->config.sync;
+  h2_pal_result_t rc = h2_pal_mutex_lock(sync, speech->input_mutex);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_gizclaw_service_pcm_adopt_internal(speech->service, &speech->input,
+                                             track, id);
+  (void)h2_pal_mutex_unlock(sync, speech->input_mutex);
+  return rc;
+}
+
 h2_pal_result_t h2_gizclaw_speech_audio_start_internal(void* context) {
   return speech_audio_control(context, H2_GIZCLAW_PCM_INPUT_START);
 }

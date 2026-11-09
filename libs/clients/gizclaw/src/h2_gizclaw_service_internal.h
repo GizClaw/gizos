@@ -345,6 +345,11 @@ h2_pal_result_t h2_gizclaw_service_pcm_input_internal(
     h2_gizclaw_service_t* service, h2_gizclaw_pcm_input_t* input,
     h2_gizclaw_pcm_input_action_t action, uint8_t* pcm, size_t len,
     size_t* out_len);
+h2_pal_result_t h2_gizclaw_service_pcm_adopt_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_pcm_input_t* input,
+    h2_gizclaw_track_t* expected_track, h2_gizclaw_pcm_capture_id_t id);
+h2_pal_result_t h2_gizclaw_speech_audio_adopt_internal(
+    void* context, h2_gizclaw_track_t* track, h2_gizclaw_pcm_capture_id_t id);
 h2_pal_result_t h2_gizclaw_speech_audio_start_internal(void* context);
 h2_pal_result_t h2_gizclaw_speech_audio_end_internal(void* context);
 h2_pal_result_t h2_gizclaw_speech_input_snapshot_internal(void* context,
