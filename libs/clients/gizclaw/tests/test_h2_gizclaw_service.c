@@ -14021,7 +14021,7 @@ static void test_conversation_adopts_local_capture(void) {
            ++spins)
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
       assert(capture_snapshot(track, id).pending_bytes == 0u);
-      assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+      assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
       h2_gizclaw_pcm_capture_snapshot_t stopping = capture_snapshot(track, id);
       assert(stopping.state == H2_GIZCLAW_PCM_CAPTURE_STOPPING &&
              stopping.producer_busy);
@@ -14038,13 +14038,18 @@ static void test_conversation_adopts_local_capture(void) {
                                                  sizeof(pcm) - prefix,
                                                  H2_PAL_OK) == H2_PAL_OK);
     }
-    /* Only capture_end is used: the route must drain and finish by itself. */
+    /* Neither END path requires a caller drain loop or a second end call. */
     for (unsigned spins = 0u; spins < 4000u && !h2_atomic_load(&test.done);
          ++spins) {
       assert(h2_gizclaw_service_poll(service, 32u, NULL) == H2_PAL_OK);
       h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
     }
     assert(h2_atomic_load(&test.done) && test.result == H2_PAL_OK);
+    bool ended_after_dispatch = false, empty_after_dispatch = true;
+    assert(h2_gizclaw_service_audio_end_snapshot_internal(
+               service, &ended_after_dispatch, &empty_after_dispatch) ==
+           H2_PAL_OK);
+    assert(ended_after_dispatch && !empty_after_dispatch);
     assert(h2_atomic_load(&test.audio_eos) && h2_atomic_load(&test.eos));
     assert(!h2_atomic_load(&test.canceled));
     conversation_read_owned(track, test.output, 13u * 640u);

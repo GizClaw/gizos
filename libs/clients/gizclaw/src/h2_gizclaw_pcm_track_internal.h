@@ -32,7 +32,11 @@ bool h2_gizclaw_pcm_capture_busy_internal(h2_gizclaw_track_t* track);
 /* One recording window. The route's input mutex serializes this object.
  * Managed inputs borrow the Track until deinit; the Track mutex serializes
  * their ring access with capture control and producer frame submission.
- * Legacy frozen tails own their storage and may outlive the Track. */
+ * Legacy inputs pin the ring until tail save or deinit. Saved tails own their
+ * storage; prepare/read/deinit then need no live Track. Do not copy live
+ * inputs. Deinit always clears the input: managed Mutex failures transfer
+ * retirement to Track-owned atomic state, collected on the next successful
+ * Track lock. */
 typedef struct h2_gizclaw_pcm_input {
   h2_gizclaw_track_t* track;
   size_t begin, end;
@@ -41,6 +45,8 @@ typedef struct h2_gizclaw_pcm_input {
   size_t tail_len, tail_offset;
   bool active, ended, begun, tail_taken;
   bool empty; /* Frozen at END for library-owned Tracks. */
+  bool
+      legacy_lease; /* Pins the Track only until legacy tail save/retirement. */
   h2_gizclaw_pcm_capture_id_t
       capture_id; /* Nonzero owns a managed reader lease. */
 } h2_gizclaw_pcm_input_t;

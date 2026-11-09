@@ -36,7 +36,8 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
 h2_pal_result_t h2_gizclaw_service_audio_adopt_internal(
     h2_gizclaw_service_t* service, h2_gizclaw_track_t* track,
     h2_gizclaw_pcm_capture_id_t id, h2_gizclaw_audio_log_t* log);
-/* Observe producer-acknowledged END on the current conversation only. */
+/* Observe producer-acknowledged END on the current conversation, retaining
+ * final managed facts after request retirement until the route starts again. */
 h2_pal_result_t h2_gizclaw_service_audio_end_snapshot_internal(
     h2_gizclaw_service_t* service, bool* ended, bool* empty);
 typedef enum h2_gizclaw_cancel_source {

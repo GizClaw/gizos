@@ -1358,6 +1358,54 @@ static void test_audio_adopt_and_automatic_end_snapshot(void) {
   }
 }
 
+static void test_managed_end_before_snapshot_and_completion(void) {
+  for (unsigned mode = 0u; mode < 3u; ++mode) {
+    for (unsigned control_end = 0u; control_end < 2u; ++control_end) {
+      setup(1u);
+      assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+      const h2_gizclaw_workspace_parameters_patch_t parameters = {
+          .has_input = true,
+          .input = mode == 2u ? H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
+                              : H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+      h2_gizclaw_session_selection_t sel = selection;
+      sel.parameters = &parameters;
+      h2_gizclaw_conversation_t* conversation = NULL;
+      assert(h2_gizclaw_session_conversation_create(
+                 session, &sel, 1000u, NULL, NULL, NULL, &conversation) ==
+             H2_PAL_OK);
+      char track_token;
+      assert(h2_gizclaw_session_audio_adopt(
+                 session, (h2_gizclaw_track_t*)&track_token, 21u) == H2_PAL_OK);
+      if (control_end != 0u) {
+        /* END accepted while a producer frame is leased must not choose empty
+         * input or cancel realtime before the producer acknowledgement. */
+        assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
+        const h2_gizclaw_session_state_t pending = snapshot();
+        assert(pending.conversation_input_open);
+        assert(pending.conversation ==
+               (mode == 2u ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING
+                           : H2_GIZCLAW_SESSION_CONVERSATION_RECORDING));
+        assert(!h2_atomic_load(&cancel_entered));
+      }
+      audio_capture_empty = mode == 1u;
+      audio_capture_ended = true;
+      const h2_gizclaw_operation_result_t sent = {
+          .terminal_kind = H2_GIZCLAW_OPERATION_FINISHED, .result = H2_PAL_OK};
+      /* Dispatch before the next snapshot: END must survive request retirement
+       * and managed realtime must never open a new legacy input. */
+      terminal(terminal_user, conversation, &sent);
+      const h2_gizclaw_session_state_t finished = snapshot();
+      assert(!finished.conversation_input_open);
+      assert(finished.conversation ==
+             (mode == 0u ? H2_GIZCLAW_SESSION_CONVERSATION_WAITING
+                         : H2_GIZCLAW_SESSION_CONVERSATION_IDLE));
+      assert(audio_starts == 0u && audio_ends == control_end);
+      h2_gizclaw_session_conversation_release(session, conversation);
+      teardown();
+    }
+  }
+}
+
 /* Mirrors the synchronous delete RPC's Session participation at the typed
  * boundary; a successful server delete makes the next get return Not Found. */
 static h2_pal_result_t delete_workspace(const char* name,
@@ -2043,6 +2091,7 @@ int main(void) {
   test_send_text();
   test_control_boundaries();
   test_audio_adopt_and_automatic_end_snapshot();
+  test_managed_end_before_snapshot_and_completion();
   test_run_stop();
   test_workspace_delete();
   test_pending_workspace_recovery();

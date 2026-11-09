@@ -13,6 +13,15 @@ typedef struct pcm_track {
   h2_gizclaw_pcm_ring_t downlink;
   h2_gizclaw_pcm_capture_snapshot_t capture;
   size_t capture_begin;
+  /* A legacy START can be an empty placeholder. Once it has accepted PCM,
+   * begun reading, or ended, its ring bytes must survive until tail save. */
+  size_t legacy_begin;
+  h2_gizclaw_pcm_capture_id_t legacy_capture_id;
+  bool legacy_begun, legacy_ended;
+  h2_atomic_bool_t legacy_lease;
+  /* A retired managed reader leaves no pointer into its former owner. The
+   * next successful Track lock returns the still-pinning consumer lease. */
+  h2_atomic_bool_t reader_retire_pending;
   h2_atomic_bool_t bound;
   /* A new audio request records the downlink write index here; the consumer
    * skips everything before it on its next read. Only the consumer moves
@@ -21,9 +30,17 @@ typedef struct pcm_track {
   h2_atomic_bool_t downlink_discard_pending;
 } pcm_track_t;
 
+static void retire_reader(pcm_track_t* track);
+
 static h2_pal_result_t track_lock(pcm_track_t* track) {
-  return track->sync == NULL ? H2_PAL_OK
-                             : h2_pal_mutex_lock(track->sync, track->mutex);
+  h2_pal_result_t rc = track->sync == NULL
+                           ? H2_PAL_OK
+                           : h2_pal_mutex_lock(track->sync, track->mutex);
+  if (rc == H2_PAL_OK &&
+      h2_atomic_exchange_explicit(&track->reader_retire_pending, false,
+                                  H2_ATOMIC_ACQ_REL))
+    retire_reader(track);
+  return rc;
 }
 
 static h2_pal_result_t track_unlock(pcm_track_t* track,
@@ -48,6 +65,36 @@ static void discard_uplink(pcm_track_t* track) {
       h2_atomic_load_explicit(&track->uplink.write_index, H2_ATOMIC_ACQUIRE),
       H2_ATOMIC_RELEASE);
   track->capture.pending_bytes = 0u;
+}
+
+static void retire_reader(pcm_track_t* track) {
+  track->capture.consumer_busy = false;
+  if (track->capture.state == H2_GIZCLAW_PCM_CAPTURE_FROZEN) {
+    discard_uplink(track);
+    track->capture.state = H2_GIZCLAW_PCM_CAPTURE_DONE;
+  } else if (track->capture.state == H2_GIZCLAW_PCM_CAPTURE_CAPTURING ||
+             track->capture.state == H2_GIZCLAW_PCM_CAPTURE_STOPPING) {
+    discard_uplink(track);
+    track->capture.state = track->capture.producer_busy
+                               ? H2_GIZCLAW_PCM_CAPTURE_DISCARDING
+                               : H2_GIZCLAW_PCM_CAPTURE_DISCARDED;
+  }
+}
+
+static bool legacy_ring_busy(const pcm_track_t* track) {
+  return h2_atomic_load_explicit(&track->legacy_lease, H2_ATOMIC_ACQUIRE) &&
+         track->legacy_capture_id == track->capture.id &&
+         (track->legacy_begun || track->legacy_ended ||
+          h2_atomic_load_explicit(&track->uplink.write_index,
+                                  H2_ATOMIC_ACQUIRE) != track->legacy_begin);
+}
+
+static void release_legacy(h2_gizclaw_pcm_input_t* input, pcm_track_t* track) {
+  input->legacy_lease = false;
+  /* No mutex is needed to return this lifetime pin. A completed tail no longer
+   * borrows the Track, and deinit must not touch it after publishing release.
+   */
+  h2_atomic_store_explicit(&track->legacy_lease, false, H2_ATOMIC_RELEASE);
 }
 
 static h2_pal_result_t read_uplink(void* user, uint8_t* pcm, size_t len,
@@ -125,6 +172,9 @@ h2_pal_result_t h2_gizclaw_pcm_track_create(
   track->base = (h2_gizclaw_track_t){.user = track, .vtable = &pcm_vtable};
   h2_pal_result_t rc = H2_PAL_OK;
   if (h2_atomic_bool_init(&track->bound, false) != H2_ATOMIC_OK ||
+      h2_atomic_bool_init(&track->legacy_lease, false) != H2_ATOMIC_OK ||
+      h2_atomic_bool_init(&track->reader_retire_pending, false) !=
+          H2_ATOMIC_OK ||
       h2_atomic_size_init(&track->downlink_discard_until, 0u) != H2_ATOMIC_OK ||
       h2_atomic_bool_init(&track->downlink_discard_pending, false) !=
           H2_ATOMIC_OK)
@@ -151,6 +201,8 @@ h2_pal_result_t h2_gizclaw_pcm_track_create(
     if (track->mutex != NULL)
       (void)h2_pal_mutex_destroy(track->sync, track->mutex);
     h2_atomic_bool_destroy(&track->bound);
+    h2_atomic_bool_destroy(&track->legacy_lease);
+    h2_atomic_bool_destroy(&track->reader_retire_pending);
     h2_atomic_size_destroy(&track->downlink_discard_until);
     h2_atomic_bool_destroy(&track->downlink_discard_pending);
     h2_pal_mem_free(config->allocator, track);
@@ -167,8 +219,10 @@ h2_pal_result_t h2_gizclaw_pcm_track_destroy(h2_gizclaw_track_t** base) {
   if (track == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = track_lock(track);
   if (rc != H2_PAL_OK) return rc;
-  const bool busy = capture_busy(track) ||
-                    h2_atomic_load_explicit(&track->bound, H2_ATOMIC_ACQUIRE);
+  const bool busy =
+      capture_busy(track) ||
+      h2_atomic_load_explicit(&track->legacy_lease, H2_ATOMIC_ACQUIRE) ||
+      h2_atomic_load_explicit(&track->bound, H2_ATOMIC_ACQUIRE);
   rc = track_unlock(track, busy ? H2_PAL_ERR_BUSY : H2_PAL_OK);
   if (rc != H2_PAL_OK) return rc;
   if (track->mutex != NULL) {
@@ -179,6 +233,8 @@ h2_pal_result_t h2_gizclaw_pcm_track_destroy(h2_gizclaw_track_t** base) {
   h2_gizclaw_pcm_ring_deinit(&track->uplink);
   h2_gizclaw_pcm_ring_deinit(&track->downlink);
   h2_atomic_bool_destroy(&track->bound);
+  h2_atomic_bool_destroy(&track->legacy_lease);
+  h2_atomic_bool_destroy(&track->reader_retire_pending);
   h2_atomic_size_destroy(&track->downlink_discard_until);
   h2_atomic_bool_destroy(&track->downlink_discard_pending);
   h2_pal_mem_free(allocator, track);
@@ -194,7 +250,8 @@ h2_pal_result_t h2_gizclaw_pcm_capture_begin(
   if (track->sync == NULL) return H2_PAL_ERR_UNSUPPORTED;
   h2_pal_result_t rc = track_lock(track);
   if (rc != H2_PAL_OK) return rc;
-  if (capture_busy(track)) return track_unlock(track, H2_PAL_ERR_BUSY);
+  if (capture_busy(track) || legacy_ring_busy(track))
+    return track_unlock(track, H2_PAL_ERR_BUSY);
   /* Never wrap an identity into one that could still exist in a stale caller.
    */
   if (track->capture.id == UINT64_MAX)
@@ -238,11 +295,11 @@ h2_pal_result_t h2_gizclaw_pcm_capture_frame_submit(
     track->capture.state = H2_GIZCLAW_PCM_CAPTURE_DISCARDED;
     return track_unlock(track, H2_PAL_OK);
   }
-  const bool empty = pcm == NULL && len == 0u &&
-                     (producer_result == H2_PAL_ERR_WOULD_BLOCK ||
-                      producer_result == H2_PAL_ERR_TIMEOUT);
+  const bool transient = producer_result == H2_PAL_ERR_WOULD_BLOCK ||
+                         producer_result == H2_PAL_ERR_TIMEOUT;
+  const bool empty = transient && pcm == NULL && len == 0u;
   if (!empty) {
-    rc = producer_result;
+    rc = transient ? H2_PAL_ERR_INVALID_ARG : producer_result;
     if (rc == H2_PAL_OK) {
       if (pcm == NULL || len == 0u || (len & 1u) != 0u)
         rc = H2_PAL_ERR_INVALID_ARG;
@@ -418,6 +475,7 @@ h2_pal_result_t h2_gizclaw_pcm_input_adopt(h2_gizclaw_pcm_input_t* input,
       track->capture.state != H2_GIZCLAW_PCM_CAPTURE_STOPPING &&
       track->capture.state != H2_GIZCLAW_PCM_CAPTURE_FROZEN)
     return track_unlock(track, H2_PAL_ERR_CLOSED);
+  if (input->legacy_lease) release_legacy(input, track);
   *input = (h2_gizclaw_pcm_input_t){.track = base,
                                     .begin = track->capture_begin,
                                     .tail_allocator = allocator,
@@ -439,6 +497,8 @@ h2_pal_result_t h2_gizclaw_pcm_input_start(h2_gizclaw_pcm_input_t* input,
     h2_pal_result_t rc = track_lock(track);
     if (rc != H2_PAL_OK) return rc;
     if (capture_busy(track)) return track_unlock(track, H2_PAL_ERR_WOULD_BLOCK);
+    if (h2_atomic_load_explicit(&track->legacy_lease, H2_ATOMIC_ACQUIRE))
+      return track_unlock(track, H2_PAL_ERR_BUSY);
   }
   input->track = base;
   input->tail_allocator = allocator;
@@ -447,6 +507,14 @@ h2_pal_result_t h2_gizclaw_pcm_input_start(h2_gizclaw_pcm_input_t* input,
                      : h2_atomic_load_explicit(&track->uplink.write_index,
                                                H2_ATOMIC_ACQUIRE);
   input->active = true;
+  if (track != NULL) {
+    input->legacy_lease = true;
+    track->legacy_begin = input->begin;
+    track->legacy_capture_id = track->capture.id;
+    track->legacy_begun = false;
+    track->legacy_ended = false;
+    h2_atomic_store_explicit(&track->legacy_lease, true, H2_ATOMIC_RELEASE);
+  }
   return track == NULL ? H2_PAL_OK : track_unlock(track, H2_PAL_OK);
 }
 
@@ -464,6 +532,9 @@ h2_pal_result_t h2_gizclaw_pcm_input_end(h2_gizclaw_pcm_input_t* input,
     h2_pal_result_t rc = track_lock(track);
     if (rc != H2_PAL_OK) return rc;
     if (capture_busy(track)) return track_unlock(track, H2_PAL_ERR_WOULD_BLOCK);
+    if (!input->legacy_lease || track->legacy_capture_id != track->capture.id)
+      return track_unlock(track, H2_PAL_ERR_INVALID_STATE);
+    track->legacy_ended = true;
   }
   input->end = track == NULL
                    ? 0u
@@ -503,6 +574,9 @@ static h2_pal_result_t managed_prepare(h2_gizclaw_pcm_input_t* input,
 static h2_pal_result_t legacy_prepare(h2_gizclaw_pcm_input_t* input,
                                       pcm_track_t* track) {
   if (capture_busy(track)) return H2_PAL_ERR_WOULD_BLOCK;
+  if (!input->legacy_lease || track->legacy_capture_id != track->capture.id)
+    return H2_PAL_ERR_INVALID_STATE;
+  track->legacy_begun = true;
   h2_gizclaw_pcm_ring_t* ring = &track->uplink;
   size_t read = h2_atomic_load_explicit(&ring->read_index, H2_ATOMIC_RELAXED);
   if (!input->begun) {
@@ -529,6 +603,7 @@ static h2_pal_result_t legacy_prepare(h2_gizclaw_pcm_input_t* input,
       input->tail_len = len;
     }
     input->tail_taken = true;
+    release_legacy(input, track);
   }
   return H2_PAL_OK;
 }
@@ -537,6 +612,7 @@ h2_pal_result_t h2_gizclaw_pcm_input_prepare(h2_gizclaw_pcm_input_t* input,
                                              h2_gizclaw_track_t* base) {
   if (input == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (!input->active) return H2_PAL_ERR_WOULD_BLOCK;
+  if (input->capture_id == 0u && input->tail_taken) return H2_PAL_OK;
   if (base == NULL || input->track != base) return H2_PAL_ERR_CLOSED;
   pcm_track_t* track = owned_track(base);
   if (track == NULL) { /* Private fault-injection port, not an app vtable. */
@@ -605,23 +681,16 @@ h2_pal_result_t h2_gizclaw_pcm_input_read(h2_gizclaw_pcm_input_t* input,
 void h2_gizclaw_pcm_input_deinit(h2_gizclaw_pcm_input_t* input) {
   if (input == NULL) return;
   if (input->capture_id != 0u) {
-    pcm_track_t* track;
-    if (capture_lock(input->track, input->capture_id, &track) != H2_PAL_OK)
-      return; /* Retain the lease/input so cleanup can be retried. */
-    track->capture.consumer_busy = false;
-    if (track->capture.state == H2_GIZCLAW_PCM_CAPTURE_FROZEN) {
-      discard_uplink(track);
-      track->capture.state = H2_GIZCLAW_PCM_CAPTURE_DONE;
-    } else if (track->capture.state == H2_GIZCLAW_PCM_CAPTURE_CAPTURING ||
-               track->capture.state == H2_GIZCLAW_PCM_CAPTURE_STOPPING) {
-      /* A detached consumer cannot drain a future tail. Stop this window too.
-       */
-      discard_uplink(track);
-      track->capture.state = track->capture.producer_busy
-                                 ? H2_GIZCLAW_PCM_CAPTURE_DISCARDING
-                                 : H2_GIZCLAW_PCM_CAPTURE_DISCARDED;
-    }
-    (void)track_unlock(track, H2_PAL_OK);
+    pcm_track_t* track = owned_track(input->track);
+    /* This input's exclusive consumer lease prevents replacement/destruction
+     * until retirement is collected. Publish before trying the fallible lock;
+     * the caller may free the input owner as soon as deinit returns. */
+    h2_atomic_store_explicit(&track->reader_retire_pending, true,
+                             H2_ATOMIC_RELEASE);
+    if (track_lock(track) == H2_PAL_OK) (void)track_unlock(track, H2_PAL_OK);
+  } else if (input->legacy_lease) {
+    /* Returning a legacy pin never requires the fallible Track mutex. */
+    release_legacy(input, owned_track(input->track));
   }
   if (input->tail != NULL) h2_pal_mem_free(input->tail_allocator, input->tail);
   memset(input, 0, sizeof(*input));

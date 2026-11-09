@@ -175,8 +175,15 @@ h2_pal_result_t h2_gizclaw_speech_input_snapshot_internal(void* context,
                                                           bool* active,
                                                           bool* ready) {
   speech_t* speech = context;
-  return h2_gizclaw_req_pcm_input_snapshot_internal(speech->request, active,
-                                                    ready);
+  const h2_pal_sync_api_t* sync = speech->service->config.sync;
+  h2_pal_result_t rc = h2_pal_mutex_lock(sync, speech->input_mutex);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_gizclaw_req_pcm_input_snapshot_internal(speech->request, active,
+                                                  ready);
+  if (rc == H2_PAL_OK && speech->input.capture_id != 0u && speech->input.ended)
+    *active = *ready = false;
+  (void)h2_pal_mutex_unlock(sync, speech->input_mutex);
+  return rc;
 }
 
 static int speech_frame(void* context,

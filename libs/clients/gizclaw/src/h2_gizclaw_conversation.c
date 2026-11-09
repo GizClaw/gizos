@@ -178,6 +178,8 @@ struct h2_gizclaw_conversation {
   uint64_t next_generation;
   int service_mode;
   bool input_ended;
+  bool input_managed;
+  bool input_empty;
   h2_gizclaw_client_t* client;
   const h2_pal_mem_api_t* allocator;
   gzc_client_t* gzc;
@@ -2055,6 +2057,12 @@ static void service_conversation_complete(
   const h2_gizclaw_operation_result_t result_copy = request->operation_result;
   h2_gizclaw_conversation_completion_fn completion = conversation->completion;
   void* callback_user = conversation->callback_user;
+  /* Preserve acknowledged managed END for Session's completion callback,
+   * which can run before its next snapshot and after this request is freed. */
+  if (conversation->input_managed) {
+    conversation->input_ended = h2_atomic_load(&request->committed);
+    conversation->input_empty = h2_atomic_load(&request->input_empty);
+  }
   conversation->service_request = NULL;
   conversation_generation_destroy(request);
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
@@ -2154,7 +2162,11 @@ h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
         conversation->callback != NULL ? service_conversation_event : NULL,
         service_conversation_complete, conversation,
         &conversation->service_request, log, text, NULL, 0u);
-    if (rc == H2_PAL_OK) conversation->input_ended = true;
+    if (rc == H2_PAL_OK) {
+      conversation->input_ended = true;
+      conversation->input_managed = false;
+      conversation->input_empty = false;
+    }
   }
   record_audio_control(service, conversation, "service_send_text", rc,
                        H2_PAL_LOG_INFO, log);
@@ -2195,6 +2207,8 @@ static h2_pal_result_t conversation_audio_start(
   if (rc == H2_PAL_OK) {
     conversation->service_request = request;
     conversation->input_ended = false;
+    conversation->input_managed = capture_id != 0u;
+    conversation->input_empty = false;
   }
   return rc;
 }
@@ -2316,6 +2330,9 @@ h2_pal_result_t h2_gizclaw_service_audio_end_snapshot_internal(
     h2_gizclaw_conversation_request_t* request = conversation->service_request;
     *ended = h2_atomic_load_explicit(&request->committed, H2_ATOMIC_ACQUIRE);
     if (*ended) *empty = h2_atomic_load(&request->input_empty);
+  } else if (conversation != NULL && conversation->input_managed) {
+    *ended = conversation->input_ended;
+    *empty = conversation->input_empty;
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
   return H2_PAL_OK;

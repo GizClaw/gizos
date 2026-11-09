@@ -31,6 +31,7 @@ struct h2_gizclaw_session {
   h2_gizclaw_workflow_page_t catalog;
   h2_gizclaw_conversation_t* conversation;
   bool conversation_running;
+  bool managed_input;
   /* WAITING ends once downstream audio passes wait_mark, or at the
    * deadline. */
   size_t wait_mark;
@@ -83,6 +84,28 @@ static void changed(h2_gizclaw_session_t* session) {
   if (session->config.runtime != NULL)
     h2_runtime_notify(session->config.runtime);
 }
+/* Apply producer-acknowledged END before either observing or dispatching a
+ * managed input's completion. The logical route retains the final facts after
+ * its request is retired. */
+static h2_pal_result_t reconcile_capture_end(h2_gizclaw_session_t* session) {
+  if (!session->managed_input || !session->state.conversation_input_open)
+    return H2_PAL_OK;
+  bool ended = false, empty = false;
+  h2_pal_result_t rc = h2_gizclaw_service_audio_end_snapshot_internal(
+      session->config.service, &ended, &empty);
+  if (rc != H2_PAL_OK || !ended) return rc;
+  session->state.conversation_input_open = false;
+  session->state.conversation = empty || session->state.parameters.input ==
+                                             H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
+                                    ? H2_GIZCLAW_SESSION_CONVERSATION_IDLE
+                                    : H2_GIZCLAW_SESSION_CONVERSATION_WAITING;
+  uint64_t now = 0u;
+  (void)h2_pal_time_get_monotonic_ms(session->config.time, &now);
+  session->wait_deadline_ms = now + H2_GIZCLAW_SESSION_WAIT_MS;
+  changed(session);
+  return H2_PAL_OK;
+}
+
 static bool text_valid(const char* text, size_t max) {
   return text != NULL && text[0] != '\0' && strlen(text) <= max;
 }
@@ -259,26 +282,10 @@ h2_pal_result_t h2_gizclaw_session_snapshot(h2_gizclaw_session_t* session,
   if (session == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = lock(session);
   if (rc != H2_PAL_OK) return rc;
-  if (session->state.conversation_input_open) {
-    bool ended = false, empty = false;
-    rc = h2_gizclaw_service_audio_end_snapshot_internal(session->config.service,
-                                                        &ended, &empty);
-    if (rc != H2_PAL_OK) {
-      unlock(session);
-      return rc;
-    }
-    if (ended) {
-      session->state.conversation_input_open = false;
-      session->state.conversation =
-          empty || session->state.parameters.input ==
-                       H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
-              ? H2_GIZCLAW_SESSION_CONVERSATION_IDLE
-              : H2_GIZCLAW_SESSION_CONVERSATION_WAITING;
-      uint64_t now = 0u;
-      (void)h2_pal_time_get_monotonic_ms(session->config.time, &now);
-      session->wait_deadline_ms = now + H2_GIZCLAW_SESSION_WAIT_MS;
-      ++session->state.revision;
-    }
+  rc = reconcile_capture_end(session);
+  if (rc != H2_PAL_OK) {
+    unlock(session);
+    return rc;
   }
   if (session->state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING) {
     /* Downstream sound takes over from WAITING; without any, give up
@@ -1257,7 +1264,9 @@ static void conversation_complete(void* user,
     unlock_audio(s, &logs);
     return;
   }
-  if (!s->closed && !s->workspace_rpc_active &&
+  const h2_pal_result_t end_rc = reconcile_capture_end(s);
+  if (end_rc != H2_PAL_OK) effective_result.result = end_rc;
+  if (!s->managed_input && !s->closed && !s->workspace_rpc_active &&
       s->state.workspace == H2_GIZCLAW_SESSION_READY &&
       s->state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_CALLING &&
       result->terminal_kind != H2_GIZCLAW_OPERATION_CANCELED &&
@@ -1724,7 +1733,15 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t* s, bool start,
                         : h2_gizclaw_service_audio_control_internal(
                               s->config.service, start, &logs, &empty_input);
   record_audio(s, start ? "audio_start" : "audio_end", &logs, rc, 0u, 0);
+  if (rc == H2_PAL_OK && !start && s->managed_input) {
+    /* OK accepts END. Keep input open until the leased producer frame returns;
+     * managed realtime sends its final frame/EOS instead of canceling it. */
+    rc = reconcile_capture_end(s);
+    unlock_audio(s, &logs);
+    return rc;
+  }
   if (rc == H2_PAL_OK) {
+    if (start) s->managed_input = capture_id != 0u;
     s->state.conversation =
         s->state.parameters.input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
             ? (start ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING

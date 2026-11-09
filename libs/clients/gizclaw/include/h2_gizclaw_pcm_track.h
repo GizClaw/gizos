@@ -53,16 +53,21 @@ h2_pal_result_t h2_gizclaw_pcm_track_create(
 
 /** Stop the external pumps and unset the Track (or deinit its Service) first.
  * Returns BUSY while bound, while a capture awaits completion/adoption, or
- * while a producer/managed reader lease remains. Must not race with any Track
- * access. On success sets *track to NULL; a NULL *track is already destroyed.
+ * while a producer/managed reader lease remains, or while a legacy input still
+ * borrows the ring. A saved legacy tail no longer pins the Track. Must not race
+ * with any Track access. On success sets *track to NULL; a NULL *track is
+ * already destroyed.
  */
 h2_pal_result_t h2_gizclaw_pcm_track_destroy(h2_gizclaw_track_t** track);
 
 /** Begin a local capture, discarding pre-begin ambient PCM. On success writes a
  * fresh nonzero Track-scoped identity to out_id (zeroed on failure). BUSY until
  * the previous capture is DONE, DISCARDED, or FAILED and both leases returned;
- * an unadopted FROZEN capture must be adopted or discarded first. No PCM
- * storage is allocated: the window occupies the existing uplink ring.
+ * an unadopted FROZEN capture must be adopted or discarded first. Also BUSY
+ * while a live legacy window has accepted PCM, begun reading, or ended, until
+ * its tail is saved or its input retires. An untouched empty START placeholder
+ * may be adopted after begin; its old watermark is invalidated. No PCM storage
+ * is allocated: the window occupies the existing uplink ring.
  *
  * Capture APIs are task-context, thread-safe via the injected Mutex PAL, and do
  * not wait for device I/O. Missing sync returns UNSUPPORTED. Except snapshot,
@@ -81,7 +86,8 @@ h2_pal_result_t h2_gizclaw_pcm_capture_frame_acquire(
 
 /** Return the matching frame lease. Successful PCM is copied before return and
  * must be nonempty PCM16 mono. WOULD_BLOCK/TIMEOUT with NULL PCM and zero
- * length completes an empty frame without stopping capture. Other producer
+ * length completes an empty frame without stopping capture; any other buffer
+ * or length combination with those results latches INVALID_ARG. Other producer
  * failures, malformed PCM, or insufficient capacity latch FAILED and its first
  * result; saturation returns NO_SPACE without overwriting or partially
  * appending PCM. END accepts the one leased frame then freezes; DISCARD drops
