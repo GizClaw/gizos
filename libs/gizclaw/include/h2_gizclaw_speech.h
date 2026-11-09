@@ -32,11 +32,14 @@ typedef struct h2_gizclaw_speech_extract_response {
 } h2_gizclaw_speech_extract_response_t;
 
 /** Copy options without I/O. do reserves the bound PCM Track's uplink route;
- * service_audio_start explicitly starts capture. A conflicting route rejects
- * do without replacing its owner. content_type must describe the
+ * service_audio_start opens legacy input; service_audio_adopt binds a local
+ * capture. A conflicting route rejects do without replacing its owner.
+ * content_type must describe the
  * Track's actual PCM format; no microphone or codec is created by this API.
  * service_audio_end freezes the current PCM prefix, drains it and sends EOS.
  * wait alone does not end recording. timeout_ms bounds the network operation.
+ * Terminal detach retires its PCM input after worker references drain, even
+ * while a request handle or an undispatched completion retains the response.
  */
 h2_pal_result_t h2_gizclaw_req_create_speech_transcribe(
     h2_gizclaw_service_t* service, uint64_t identity,

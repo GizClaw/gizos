@@ -137,6 +137,11 @@ static void detach_input(speech_t* speech) {
     (void)h2_pal_cond_wait(sync, service->progress_cond, service->mutex,
                            H2_PAL_SYNC_WAIT_FOREVER);
   (void)h2_pal_mutex_unlock(sync, service->mutex);
+  /* audio_mutex still excludes control/snapshot users, and no uplink reader
+   * remains. PCM ownership ends here, independently of retained request handles
+   * or caller-thread completion dispatch. */
+  h2_gizclaw_pcm_input_deinit(&speech->input);
+  speech->capture_pending_len = 0u;
 }
 
 static h2_pal_result_t speech_audio_control(

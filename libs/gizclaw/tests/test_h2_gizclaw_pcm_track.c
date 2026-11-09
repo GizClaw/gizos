@@ -321,6 +321,8 @@ static void discard_downlink(const h2_pal_mem_api_t* allocator) {
 typedef struct sync_state {
   size_t live, fail_locks;
   bool fail_create, fail_lock, fail_destroy;
+  void (*before_lock)(void* user);
+  void* before_lock_user;
 } sync_state_t;
 
 struct h2_pal_mutex {
@@ -355,6 +357,7 @@ static h2_pal_result_t destroy_mutex(void* user, h2_pal_mutex_t* mutex) {
 
 static h2_pal_result_t lock_mutex(void* user, h2_pal_mutex_t* mutex) {
   sync_state_t* state = user;
+  if (state->before_lock != NULL) state->before_lock(state->before_lock_user);
   if (state->fail_lock) return H2_PAL_ERR_IO;
   if (state->fail_locks != 0u) {
     --state->fail_locks;
@@ -931,6 +934,76 @@ static void capture_reader_cleanup(const h2_pal_mem_api_t* allocator,
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
 }
 
+typedef struct reader_deinit_gate {
+  pthread_mutex_t mutex;
+  pthread_cond_t progress;
+  h2_gizclaw_pcm_input_t* input;
+  bool entered, resume;
+} reader_deinit_gate_t;
+static _Thread_local bool reader_deinit_task;
+
+static void pause_reader_deinit(void* user) {
+  if (!reader_deinit_task) return;
+  reader_deinit_gate_t* gate = user;
+  assert(pthread_mutex_lock(&gate->mutex) == 0);
+  gate->entered = true;
+  assert(pthread_cond_broadcast(&gate->progress) == 0);
+  while (!gate->resume)
+    assert(pthread_cond_wait(&gate->progress, &gate->mutex) == 0);
+  assert(pthread_mutex_unlock(&gate->mutex) == 0);
+}
+static void* reader_deinit_entry(void* user) {
+  reader_deinit_gate_t* gate = user;
+  reader_deinit_task = true;
+  h2_gizclaw_pcm_input_deinit(gate->input);
+  reader_deinit_task = false;
+  return NULL;
+}
+
+static void capture_reader_deinit_pins_track(const h2_pal_mem_api_t* allocator,
+                                             const h2_pal_sync_api_t* sync) {
+  h2_gizclaw_track_t* track = capture_track(allocator, sync, 8u);
+  h2_gizclaw_pcm_input_t input = {0};
+  h2_gizclaw_pcm_capture_id_t id, next;
+  const uint8_t pcm[2] = {1, 2};
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_submit(track, id, pcm, sizeof(pcm));
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_adopt(&input, track, allocator, id) == H2_PAL_OK);
+  reader_deinit_gate_t gate = {.input = &input};
+  assert(pthread_mutex_init(&gate.mutex, NULL) == 0);
+  assert(pthread_cond_init(&gate.progress, NULL) == 0);
+  sync_state_t* state = sync->user;
+  state->before_lock = pause_reader_deinit;
+  state->before_lock_user = &gate;
+  pthread_t reader;
+  assert(pthread_create(&reader, NULL, reader_deinit_entry, &gate) == 0);
+  assert(pthread_mutex_lock(&gate.mutex) == 0);
+  while (!gate.entered)
+    assert(pthread_cond_wait(&gate.progress, &gate.mutex) == 0);
+  assert(pthread_mutex_unlock(&gate.mutex) == 0);
+
+  /* Deinit is paused before acquiring the PAL mutex. Another Track user must
+   * not collect its lease and allow destruction while it still needs Track. */
+  const h2_gizclaw_pcm_capture_snapshot_t snapshot =
+      capture_snapshot(track, id, H2_GIZCLAW_PCM_CAPTURE_FROZEN);
+  assert(snapshot.consumer_busy && snapshot.pending_bytes == sizeof(pcm));
+  assert(h2_gizclaw_pcm_capture_begin(track, &next) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_ERR_BUSY);
+
+  assert(pthread_mutex_lock(&gate.mutex) == 0);
+  gate.resume = true;
+  assert(pthread_cond_broadcast(&gate.progress) == 0);
+  assert(pthread_mutex_unlock(&gate.mutex) == 0);
+  assert(pthread_join(reader, NULL) == 0);
+  state->before_lock = NULL;
+  state->before_lock_user = NULL;
+  assert(input.track == NULL && !input.active && input.capture_id == 0u);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  assert(pthread_cond_destroy(&gate.progress) == 0);
+  assert(pthread_mutex_destroy(&gate.mutex) == 0);
+}
+
 static void capture_reader_retirement_retry(const h2_pal_mem_api_t* allocator,
                                             const h2_pal_sync_api_t* sync) {
   sync_state_t* state = sync->user;
@@ -1114,6 +1187,7 @@ int main(void) {
   capture_malformed_transient(&allocator, &sync);
   capture_stop_during_frame(&allocator, &sync);
   capture_reader_cleanup(&allocator, &sync);
+  capture_reader_deinit_pins_track(&allocator, &sync);
   capture_reader_retirement_retry(&allocator, &sync);
   legacy_reader_retirement_retry(&allocator, &sync);
   capture_validation(&allocator, &sync);
