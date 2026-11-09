@@ -6,7 +6,26 @@ load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS
 
 package(default_visibility = ["//visibility:public"])
 
-_CORE_SOURCES = glob(["src/*.c"])
+_CORE_SOURCES = [
+    "src/h2_device_activity.c",
+    "src/h2_device_boot_policy.c",
+    "src/h2_device_serial.c",
+    "src/h2_loader_app_client.c",
+    "src/h2_loader_ble.c",
+    "src/h2_loader_ble_io.c",
+    "src/h2_loader_boot.c",
+    "src/h2_loader_command.c",
+    "src/h2_loader_digest.c",
+    "src/h2_loader_metadata.c",
+    "src/h2_loader_mfg.c",
+    "src/h2_loader_package.c",
+    "src/h2_loader_pal.c",
+    "src/h2_loader_sha256.c",
+    "src/h2_loader_stage.c",
+    "src/h2_loader_stage_writer.c",
+    "src/h2_loader_status.c",
+    "src/h2_loader_task_names.c",
+]
 
 exports_files(glob([
     "include/*.h",
@@ -70,6 +89,22 @@ cc_library(
         "//libs/sync/atomic",
         "//pal",
         "//third_party:vendor_third_party_zlib",
+    ],
+)
+
+cc_test(
+    name = "h2loader_ble_io_test",
+    srcs = [
+        "src/h2_loader_ble_io.c",
+        "tests/test_h2_loader_ble_io.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":api",
+        "//libs/net/bleikcp",
+        "//libs/sync/atomic/providers/c11",
     ],
 )
 
@@ -229,6 +264,21 @@ cc_test(
         ":device",
         "//libs/sync/atomic/providers/c11",
     ],
+)
+
+py_test(
+    name = "serial_session_admission_test",
+    srcs = ["tests/test_serial_session_admission.py"],
+    data = [
+        "src/h2_device_serial.c",
+        "tests/fixtures/serial_session_admission.c",
+        "//libs/net/iostreamikcp:include/h2_iostreamikcp.h",
+        "//libs/net/iostreamikcp:include/h2_iostreamikcp_types.h",
+        "//pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_serial_session_admission.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
 )
 
 py_test(

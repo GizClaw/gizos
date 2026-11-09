@@ -13,12 +13,29 @@ enum {
   GREY = 0x4208
 };
 
+static int frame_rows(const h2_mfg_t* m) {
+  int rows = m->frame_rows == 0 ? m->display.height : (int)m->frame_rows;
+  int remaining = m->display.height - m->frame_y;
+  return rows < remaining ? rows : remaining;
+}
+
+static int draw_strip(h2_mfg_t* m) {
+  h2_display_rect_t area = {
+      .y = m->frame_y, .width = m->display.width, .height = frame_rows(m)};
+  return h2_pal_display_draw_bitmap(
+      m->rt->display, &area, m->frame,
+      (size_t)m->display.width * sizeof(*m->frame), H2_DISPLAY_PIXEL_RGB565);
+}
+
 static void rect(h2_mfg_t* m, int x, int y, int w, int h, uint16_t color) {
-  for (int row = y; row < y + h; ++row)
+  int first = y < m->frame_y ? m->frame_y : y;
+  int end = y + h;
+  int limit = m->frame_y + frame_rows(m);
+  if (end > limit) end = limit;
+  for (int row = first; row < end; ++row)
     for (int col = x; col < x + w; ++col)
-      if (row >= 0 && col >= 0 && row < m->display.height &&
-          col < m->display.width)
-        m->frame[(size_t)row * m->display.width + col] = color;
+      if (col >= 0 && col < m->display.width)
+        m->frame[(size_t)(row - m->frame_y) * m->display.width + col] = color;
 }
 
 static void disk(h2_mfg_t* m, int x, int y, int r, uint16_t color) {
@@ -29,6 +46,7 @@ static void disk(h2_mfg_t* m, int x, int y, int r, uint16_t color) {
 
 static void text(h2_mfg_t* m, const char* s, int x, int y, int scale,
                  uint16_t color) {
+  if (y >= m->frame_y + frame_rows(m) || y + 7 * scale <= m->frame_y) return;
   for (size_t i = 0; s[i] != '\0'; ++i) {
     int c = (unsigned char)s[i];
     if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
@@ -247,8 +265,10 @@ static void factory_text(h2_mfg_t* m, const char* s, h2_mfg_ui_rect_t area,
           unsigned alpha = (bitmap[bit / 2u] >> (bit % 2u ? 0 : 4)) & 15u;
           int px = x + glyph.ofs_x + (int)col, py = top + (int)row;
           if (alpha && px >= left && px < right && py >= area.y && py >= 0 &&
-              py < bottom) {
-            uint16_t* pixel = &m->frame[(size_t)py * m->display.width + px];
+              py < bottom && py >= m->frame_y &&
+              py < m->frame_y + frame_rows(m)) {
+            uint16_t* pixel =
+                &m->frame[(size_t)(py - m->frame_y) * m->display.width + px];
             *pixel = blend565(color, *pixel, alpha);
           }
         }
@@ -359,7 +379,7 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         rect(m, area.x + half_w, area.y + half_h, area.width - half_w,
              area.height - half_h, WHITE);
         uint64_t elapsed = now >= m->started_ms ? now - m->started_ms : 0;
-        if (m->model.ready)
+        if (m->render_snapshot.ready)
           (void)snprintf(line, sizeof(line), "亮度 %u%%  请人工确认",
                          display_brightness(m, now));
         else
@@ -417,11 +437,13 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         else
           (void)snprintf(line, sizeof(line), "请听取回声");
         factory_center(m, line, 1, echo_db >= 0 ? ui->passed : ui->text);
-        (void)snprintf(line, sizeof(line), "MIC LEVEL %u", m->mic_level);
+        (void)snprintf(line, sizeof(line), "MIC LEVEL %u",
+                       m->render_snapshot.mic_level);
         factory_center(m, line, 2, ui->text);
-        factory_center(
-            m, m->model.ready ? "请人工确认回声和语音" : "请按照提示操作", 3,
-            m->model.ready ? ui->accent : ui->muted);
+        factory_center(m,
+                       m->render_snapshot.ready ? "请人工确认回声和语音"
+                                                : "请按照提示操作",
+                       3, m->render_snapshot.ready ? ui->accent : ui->muted);
         break;
       }
       case H2_MFG_BATTERY:
@@ -456,8 +478,9 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         (void)snprintf(line, sizeof(line), "%ld / %ld / %ld", (long)g->x,
                        (long)g->y, (long)g->z);
         factory_center(m, line, 3, ui->text);
-        factory_center(m, m->model.ready ? "运动已响应" : "请移动并旋转设备", 4,
-                       ui->accent);
+        factory_center(
+            m, m->render_snapshot.ready ? "运动已响应" : "请移动并旋转设备", 4,
+            ui->accent);
         break;
       }
       case H2_MFG_MAGNETOMETERS:
@@ -488,8 +511,9 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
           }
         }
         if (ui->read_magnet == NULL)
-          factory_center(m, m->model.ready ? "运动已响应" : "请旋转设备", 5,
-                         m->model.ready ? ui->passed : ui->text);
+          factory_center(m,
+                         m->render_snapshot.ready ? "运动已响应" : "请旋转设备",
+                         5, m->render_snapshot.ready ? ui->passed : ui->text);
         break;
       case H2_MFG_VIBRATION:
         factory_rect(m, ui->vibration,
@@ -550,11 +574,14 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
             m->preview_height <= (uint32_t)preview.height &&
             m->preview_width <= (uint32_t)(m->display.width - preview.x) &&
             m->preview_height <= (uint32_t)(m->display.height - preview.y)) {
-          for (unsigned row = 0; row < m->preview_height; ++row)
-            memcpy(m->frame + ((size_t)preview.y + row) * m->display.width +
+          for (unsigned row = 0; row < m->preview_height; ++row) {
+            int y = preview.y + (int)row;
+            if (y < m->frame_y || y >= m->frame_y + frame_rows(m)) continue;
+            memcpy(m->frame + (size_t)(y - m->frame_y) * m->display.width +
                        preview.x,
                    m->camera_preview + (size_t)row * m->preview_width,
                    (size_t)m->preview_width * sizeof(uint16_t));
+          }
         } else
           factory_center(m, "等待摄像头画面", 2, ui->muted);
         break;
@@ -569,48 +596,12 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
     }
     factory_button(m, ui->controls[0], "异常", 1);
     factory_button(m, ui->controls[1], failed ? "重试" : "确认",
-                   failed || m->model.ready);
+                   failed || m->render_snapshot.ready);
   }
-  h2_display_rect_t area = {.width = m->display.width,
-                            .height = m->display.height};
-  int rc = h2_pal_display_draw_bitmap(
-      m->rt->display, &area, m->frame,
-      (size_t)m->display.width * sizeof(uint16_t), H2_DISPLAY_PIXEL_RGB565);
-  if (rc == 0) rc = h2_pal_display_present(m->rt->display);
-  return rc;
+  return draw_strip(m);
 }
 
-static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now);
-
-int h2_mfg_ui_draw(h2_mfg_t* m, uint64_t now) {
-  if (m->frame == NULL || !m->display_open) return 0;
-  int capture_busy = m->aec != NULL && m->model.current < m->profile->total &&
-                     m->profile->steps[m->model.current].check == H2_MFG_AEC &&
-                     !m->model.ready && m->model.error == 0 &&
-                     m->model.summary.step_status[m->model.current] !=
-                         H2_LOADER_MFG_STEP_FAILED;
-  const char* phase = capture_busy ? h2_mfg_aec_phase(m) : NULL;
-  /* Full-screen software rendering shares the audio consumer's task. Keep
-   * phase prompts live without repeatedly starving its bounded mic queue. */
-  if (phase != NULL && phase == m->last_aec_draw_phase) return 0;
-  uint64_t started = 0, finished = 0;
-  int measured =
-      capture_busy && h2_pal_time_get_monotonic_ms(m->rt->time, &started) == 0;
-  int rc = h2_mfg_ui_draw_frame(m, now);
-  if (rc == 0) m->last_aec_draw_phase = phase;
-  if (measured && h2_pal_time_get_monotonic_ms(m->rt->time, &finished) == 0 &&
-      finished >= started) {
-    char line[128];
-    (void)snprintf(line, sizeof(line),
-                   "H2_MFG_AEC_UI phase=%s draw_ms=%llu code=%d", phase,
-                   (unsigned long long)(finished - started), rc);
-    (void)h2_pal_log_write(m->rt->log, H2_PAL_LOG_INFO, "mfg/aec", line);
-  }
-  return rc;
-}
-
-static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now) {
-  if (m->frame == NULL || !m->display_open) return 0;
+static int draw_frame(h2_mfg_t* m, uint64_t now) {
   if (m->profile->ui != NULL) return factory_draw(m, now);
   int w = m->display.width, h = m->display.height;
   int scale = w >= 320 ? 2 : 1;
@@ -646,7 +637,7 @@ static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now) {
                    display_brightness(m, now));
     center(m, line, h * 40 / 100, scale, WHITE);
     uint64_t elapsed = now >= m->started_ms ? now - m->started_ms : 0;
-    if (m->model.ready)
+    if (m->render_snapshot.ready)
       (void)snprintf(line, sizeof(line), "CHECK COLORS AND BRIGHTNESS");
     else
       (void)snprintf(line, sizeof(line), "WAIT %u MS",
@@ -668,6 +659,11 @@ static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now) {
     disk(m, w / 2 + clamp(imu_axis(m, m->profile->screen_x_axis), radius - 10),
          h / 2 + clamp(imu_axis(m, m->profile->screen_y_axis), radius - 10), 8,
          GREEN);
+  } else if (step != NULL && step->check == H2_MFG_POWER) {
+    center(m, "USE THE POWER BUTTON", h * 32 / 100, scale, WHITE);
+    center(m, "POWER OFF THEN ON", h * 44 / 100, scale, WHITE);
+    center(m, "CHECK SESSION RESUMES", h * 56 / 100, scale, WHITE);
+    center(m, "THEN OK TO CONFIRM", h * 68 / 100, scale, WHITE);
   } else if (step != NULL && step->check == H2_MFG_BUTTONS) {
     buttons_draw(m, now);
   } else if (step != NULL && step->check == H2_MFG_CAMERA) {
@@ -705,7 +701,8 @@ static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now) {
   } else if (step != NULL && step->check == H2_MFG_MIC) {
     center(m, "SPEAK NEAR MIC", h * 34 / 100, scale, WHITE);
     unsigned bars = 0;
-    for (unsigned threshold = 32; threshold <= m->mic_level && bars < 10;
+    for (unsigned threshold = 32;
+         threshold <= m->render_snapshot.mic_level && bars < 10;
          threshold *= 2u)
       ++bars;
     for (unsigned i = 0; i < 10; ++i)
@@ -715,9 +712,11 @@ static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now) {
            : i < 8   ? GREEN
            : i < 9   ? 0xffe0
                      : RED);
-    (void)snprintf(line, sizeof(line), "LEVEL %u", m->mic_level);
+    (void)snprintf(line, sizeof(line), "LEVEL %u",
+                   m->render_snapshot.mic_level);
     center(m, line, h * 62 / 100, scale, WHITE);
-    (void)snprintf(line, sizeof(line), "FRAMES %u", m->audio_frames);
+    (void)snprintf(line, sizeof(line), "FRAMES %u",
+                   m->render_snapshot.audio_frames);
     center(m, line, h * 69 / 100, scale, WHITE);
   } else if (step != NULL && step->check == H2_MFG_SPEAKER) {
     center(m, "LISTEN TO TONE", h * 34 / 100, scale, WHITE);
@@ -732,10 +731,13 @@ static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now) {
     else
       (void)snprintf(line, sizeof(line), "LISTEN FOR ECHO");
     center(m, line, h * 44 / 100, scale, echo_db >= 0 ? GREEN : WHITE);
-    (void)snprintf(line, sizeof(line), "MIC LEVEL %u", m->mic_level);
+    (void)snprintf(line, sizeof(line), "MIC LEVEL %u",
+                   m->render_snapshot.mic_level);
     center(m, line, h * 56 / 100, scale, WHITE);
-    center(m, m->model.ready ? "CHECK ECHO AND VOICE" : "FOLLOW THE PROMPT",
-           h * 68 / 100, scale, WHITE);
+    center(
+        m,
+        m->render_snapshot.ready ? "CHECK ECHO AND VOICE" : "FOLLOW THE PROMPT",
+        h * 68 / 100, scale, WHITE);
   } else if (step != NULL && step->check != H2_MFG_DISPLAY) {
     const char* prompt = step->check == H2_MFG_WIFI  ? "CONNECT WIFI BY SERIAL"
                          : step->check == H2_MFG_BLE ? "CONNECT A BOARD PEER"
@@ -745,14 +747,14 @@ static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now) {
   }
   if (step != NULL) {
     rect(m, w * 10 / 100, h * 83 / 100, w * 40 / 100, h * 10 / 100,
-         failed           ? BLUE
-         : m->model.ready ? GREEN
-                          : GREY);
+         failed                     ? BLUE
+         : m->render_snapshot.ready ? GREEN
+                                    : GREY);
     rect(m, w / 2, h * 83 / 100, w * 40 / 100, h * 10 / 100, RED);
     text(m,
-         failed           ? "RETRY"
-         : m->model.ready ? "PASS"
-                          : "WAIT",
+         failed                     ? "RETRY"
+         : m->render_snapshot.ready ? "PASS"
+                                    : "WAIT",
          w * 22 / 100, h * 86 / 100, scale, WHITE);
     text(m, "FAIL", w * 62 / 100, h * 86 / 100, scale, WHITE);
     if (failed)
@@ -765,10 +767,53 @@ static int h2_mfg_ui_draw_frame(h2_mfg_t* m, uint64_t now) {
                      (unsigned)m->model.ticket);
     center(m, line, h * 79 / 100, 1, failed ? RED : WHITE);
   }
-  h2_display_rect_t area = {.width = w, .height = h};
-  int rc = h2_pal_display_draw_bitmap(m->rt->display, &area, m->frame,
-                                      (size_t)w * sizeof(*m->frame),
-                                      H2_DISPLAY_PIXEL_RGB565);
-  if (rc == 0) rc = h2_pal_display_present(m->rt->display);
+  return draw_strip(m);
+}
+
+int h2_mfg_ui_draw(h2_mfg_t* m, uint64_t now) {
+  m->render_service_error = 0;
+  m->render_snapshot.ready = m->model.ready;
+  m->render_snapshot.mic_level = m->mic_level;
+  m->render_snapshot.audio_frames = m->audio_frames;
+  if (m->frame == NULL || !m->display_open) return 0;
+  int capture_busy = m->aec != NULL && m->model.current < m->profile->total &&
+                     m->profile->steps[m->model.current].check == H2_MFG_AEC &&
+                     !m->model.ready && m->model.error == 0 &&
+                     m->model.summary.step_status[m->model.current] !=
+                         H2_LOADER_MFG_STEP_FAILED;
+  const char* phase = capture_busy ? h2_mfg_aec_phase(m) : NULL;
+  /* Full-frame profiles still avoid starving capture with repeated repaint.
+   * Strip profiles service audio between draws and can keep meters live. */
+  if (m->profile->display_buffer_rows == 0 && phase != NULL &&
+      phase == m->last_aec_draw_phase)
+    return 0;
+  uint64_t started = 0, finished = 0;
+  int measured = capture_busy && m->profile->display_buffer_rows == 0 &&
+                 h2_pal_time_get_monotonic_ms(m->rt->time, &started) == 0;
+  m->frame_y = 0;
+  int rows = frame_rows(m);
+  if (rows <= 0) return H2_PAL_ERR_FORMAT;
+  int rc = 0;
+  for (int y = 0; y < m->display.height && rc == 0; y += rows) {
+    m->frame_y = y;
+    rc = draw_frame(m, now);
+    if (rc == 0 && m->render_service != NULL) {
+      m->render_service_error = m->render_service(m);
+      if (m->render_service_error != 0) break;
+    }
+  }
+  m->frame_y = 0;
+  if (rc == 0 && m->render_service_error == 0) {
+    rc = h2_pal_display_present(m->rt->display);
+    if (rc == 0) m->last_aec_draw_phase = phase;
+  }
+  if (measured && h2_pal_time_get_monotonic_ms(m->rt->time, &finished) == 0 &&
+      finished >= started) {
+    char line[128];
+    (void)snprintf(line, sizeof(line),
+                   "H2_MFG_AEC_UI phase=%s draw_ms=%llu code=%d", phase,
+                   (unsigned long long)(finished - started), rc);
+    (void)h2_pal_log_write(m->rt->log, H2_PAL_LOG_INFO, "mfg/aec", line);
+  }
   return rc;
 }

@@ -6,11 +6,7 @@
 
 #define H2_MFG_MODEM_TIMEOUT_MS 30000u
 
-enum {
-  AUDIO_POLL_BUDGET = 16,
-  AUDIO_PLAYBACK_BUFFER_FRAMES = 8,
-  AUDIO_TEST_VOLUME = 70
-};
+enum { AUDIO_POLL_BUDGET = 16, AUDIO_TEST_VOLUME = 70 };
 
 static unsigned test_volume(const h2_mfg_t* m) {
   return m->profile->speaker_test_volume == 0 ? AUDIO_TEST_VOLUME
@@ -26,17 +22,20 @@ static int has_check(const h2_mfg_t* m, h2_mfg_check_t check) {
 static int storage(h2_mfg_t* m) {
   enum { SIZE = 65536, CHUNK = 512 };
   const char* path = "/data/.gizos-mfg-probe";
+  size_t size = m->profile->storage_ram_bytes;
+  if (size == 0) size = SIZE;
+  if (size < CHUNK || size > SIZE) return H2_PAL_ERR_INVALID_ARG;
   const h2_pal_mem_api_t* allocator = m->rt->mem_external;
-  uint8_t* data = h2_pal_mem_alloc(allocator, SIZE);
+  uint8_t* data = h2_pal_mem_alloc(allocator, size);
   if (data == NULL) {
     allocator = m->rt->mem;
-    data = h2_pal_mem_alloc(allocator, SIZE);
+    data = h2_pal_mem_alloc(allocator, size);
   }
   if (data == NULL) return H2_PAL_ERR_NO_MEMORY;
   volatile uint8_t* ram = data;
-  for (size_t i = 0; i < SIZE; ++i) ram[i] = (uint8_t)(i ^ (i >> 8) ^ 0xa5);
+  for (size_t i = 0; i < size; ++i) ram[i] = (uint8_t)(i ^ (i >> 8) ^ 0xa5);
   int rc = 0;
-  for (size_t i = 0; i < SIZE; ++i)
+  for (size_t i = 0; i < size; ++i)
     if (ram[i] != (uint8_t)(i ^ (i >> 8) ^ 0xa5)) rc = H2_PAL_ERR_IO;
   h2_pal_fs_file_t* file = NULL;
   if (rc == 0)
@@ -62,7 +61,7 @@ static int storage(h2_mfg_t* m) {
   if (rc == 0) rc = remove_rc;
   h2_pal_mem_free(allocator, data);
   (void)snprintf(m->detail, sizeof(m->detail),
-                 "RAM pattern 64KiB filesystem readback 512B rc=%d", rc);
+                 "RAM pattern %zuB filesystem readback 512B rc=%d", size, rc);
   return rc;
 }
 
@@ -85,8 +84,13 @@ static int display_open(h2_mfg_t* m) {
   if (m->display.width < 120 || m->display.height < 120 ||
       m->display.width > 1024 || m->display.height > 1024)
     return H2_PAL_ERR_FORMAT;
+  m->frame_rows = m->profile->display_buffer_rows;
+  if (m->frame_rows == 0) m->frame_rows = (unsigned)m->display.height;
+  if (m->frame_rows > (unsigned)m->display.height)
+    return H2_PAL_ERR_INVALID_ARG;
+  m->frame_y = 0;
   const size_t bytes =
-      (size_t)m->display.width * m->display.height * sizeof(*m->frame);
+      (size_t)m->display.width * m->frame_rows * sizeof(*m->frame);
   m->frame_allocator = m->profile->frame_allocator != NULL
                            ? m->profile->frame_allocator
                            : m->rt->mem_external;
@@ -138,7 +142,7 @@ static int audio_enter(h2_mfg_t* m, int mic) {
           .name = "mfg/tone",
           .format = format,
           .volume_factor_milli = 1000,
-          .buffer_frames = AUDIO_PLAYBACK_BUFFER_FRAMES,
+          .buffer_frames = h2_mfg_playback_buffer_frames(m),
           .allocator = m->rt->mem};
       rc = h2_pal_audio_create_track(m->rt->audio, &config, &m->track);
     }
@@ -211,7 +215,9 @@ int h2_mfg_hardware_leave(h2_mfg_t* m) {
     if (rc != 0) return rc;
     m->led_started = 0;
   }
-  return H2_PAL_OK;
+  return m->profile->release_check == NULL
+             ? H2_PAL_OK
+             : m->profile->release_check(m->profile->release_check_user);
 }
 
 int h2_mfg_hardware_close(h2_mfg_t* m) {
@@ -235,7 +241,11 @@ int h2_mfg_hardware_close(h2_mfg_t* m) {
 }
 
 int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
-  if ((m->profile->touch_points == NULL) !=
+  m->preparation_pending = 0;
+  if ((m->profile->playback_buffer_frames != 0 &&
+       (m->profile->playback_buffer_frames < 2 ||
+        m->profile->playback_buffer_frames > 8)) ||
+      (m->profile->touch_points == NULL) !=
           (m->profile->touch_point_count == 0) ||
       m->profile->touch_point_count > 32 || m->profile->accel_delta_mg < 0 ||
       m->profile->gyro_delta_mdps < 0 ||
@@ -252,6 +262,8 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
   memset(m->downs, 0, sizeof(m->downs));
   memset(m->ups, 0, sizeof(m->ups));
   memset(m->armed, 0, sizeof(m->armed));
+  m->button_sampled = 0;
+  m->button_confirm_ticket = 0;
   m->buttons_deferred = 0;
   m->last_aec_draw_phase = NULL;
   m->samples = m->audio_frames = m->mic_peak = m->mic_level = m->phase = 0;
@@ -312,6 +324,11 @@ int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
     (void)snprintf(m->detail, sizeof(m->detail), "Failed check requires retry");
     return 0;
   }
+  if (m->profile->prepare_check != NULL) {
+    rc = m->profile->prepare_check(m->profile->prepare_check_user, check);
+    m->preparation_pending = rc == H2_PAL_ERR_WOULD_BLOCK;
+    if (rc != 0) return rc;
+  }
   if (check == H2_MFG_SPEAKER || check == H2_MFG_MIC)
     rc = audio_enter(m, check == H2_MFG_MIC);
   if (check == H2_MFG_AEC) rc = h2_mfg_aec_enter(m);
@@ -357,6 +374,36 @@ static int buttons(h2_mfg_t* m, const char** action) {
     }
   }
   return 0;
+}
+
+static int poll_buttons(h2_mfg_t* m, uint64_t now) {
+  int failed =
+      m->model.error != 0 || m->model.summary.step_status[m->model.current] ==
+                                 H2_LOADER_MFG_STEP_FAILED;
+  /* Before AEC replay is ready, a blocking ADC poll can outlast the microphone
+   * queue. Defer it on controller ticks and between synchronous strips. */
+  int capture_busy = m->profile->steps[m->model.current].check == H2_MFG_AEC &&
+                     !failed && !m->model.ready;
+  if (capture_busy) {
+    m->buttons_deferred = 1;
+    m->button_confirm_ticket = 0;
+    return 0;
+  }
+  if (m->profile->button_count == 0 ||
+      (m->button_sampled && now - m->last_button_ms < 20))
+    return 0;
+  int resuming = m->buttons_deferred && !failed;
+  if (resuming) memset(m->armed, 0, sizeof(m->armed));
+  m->button_sampled = 1;
+  m->last_button_ms = now;
+  const char* action = NULL;
+  int rc = buttons(m, &action);
+  if (rc == 0) m->buttons_deferred = 0;
+  /* A key held through capture must be released and pressed again to accept. */
+  if (resuming) memset(m->armed, 0, sizeof(m->armed));
+  /* Collect releases during repaint; only the controller can change a check. */
+  if (rc == 0 && action != NULL) m->button_confirm_ticket = m->model.ticket;
+  return rc;
 }
 
 static int rect_hit(const h2_mfg_ui_rect_t* r, int x, int y) {
@@ -503,9 +550,13 @@ int h2_mfg_audio_tick(h2_mfg_t* m, uint64_t now, int mic) {
     }
     m->model.ready =
         m->audio_frames >= 40 && m->mic_peak >= 128 && m->mic_energy >= 1000000;
-    (void)snprintf(m->detail, sizeof(m->detail),
-                   "Speak near mic frames=%u level=%u peak=%u energy=%" PRIu64,
-                   m->audio_frames, m->mic_level, m->mic_peak, m->mic_energy);
+    if (m->model.current < m->profile->total &&
+        m->profile->steps[m->model.current].check == H2_MFG_MIC)
+      (void)snprintf(m->detail, sizeof(m->detail),
+                     "Speak near mic frames=%u level=%u peak=%u energy=%" PRIu64
+                     " aec=%d",
+                     m->audio_frames, m->mic_level, m->mic_peak, m->mic_energy,
+                     m->audio_info.aec_enabled);
     return 0;
   }
   /* Keep a bounded playback queue full before drawing the screen. One
@@ -541,6 +592,23 @@ int h2_mfg_audio_tick(h2_mfg_t* m, uint64_t now, int mic) {
   return 0;
 }
 
+int h2_mfg_hardware_service(h2_mfg_t* m, uint64_t now) {
+  if (m->model.current >= m->profile->total ||
+      m->hardware_ticket != m->model.ticket)
+    return 0;
+  h2_mfg_check_t check = m->profile->steps[m->model.current].check;
+  int failed =
+      m->model.error != 0 || m->model.summary.step_status[m->model.current] ==
+                                 H2_LOADER_MFG_STEP_FAILED;
+  int rc = poll_buttons(m, now);
+  if (rc != 0 && check == H2_MFG_BUTTONS && !failed) return rc;
+  if (failed) return 0;
+  if (check == H2_MFG_AEC) return h2_mfg_aec_service(m, now);
+  if (check == H2_MFG_SPEAKER || check == H2_MFG_MIC)
+    return h2_mfg_audio_tick(m, now, check == H2_MFG_MIC);
+  return 0;
+}
+
 int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
   if (m->model.current >= m->profile->total) {
     if (m->profile->ui != NULL && h2_mfg_model_complete(&m->model))
@@ -551,19 +619,11 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
   int failed =
       m->model.error != 0 || m->model.summary.step_status[m->model.current] ==
                                  H2_LOADER_MFG_STEP_FAILED;
-  /* Before AEC replay is ready, buttons cannot accept the check. A blocking
-   * ADC poll here can outlast the microphone queue and discard real frames.
-   * Keep touch controls live and resume key polling for acceptance or retry. */
-  int capture_busy = step->check == H2_MFG_AEC && !failed && !m->model.ready;
-  int resuming = !capture_busy && m->buttons_deferred && !failed;
-  if (resuming) memset(m->armed, 0, sizeof(m->armed));
-  int rc = capture_busy ? 0 : buttons(m, action);
-  if (capture_busy)
-    m->buttons_deferred = 1;
-  else if (rc == 0)
-    m->buttons_deferred = 0;
-  /* A key held through capture must be released and pressed again to accept. */
-  if (resuming) memset(m->armed, 0, sizeof(m->armed));
+  int rc = poll_buttons(m, now);
+  if (m->button_confirm_ticket != 0) {
+    if (m->button_confirm_ticket == m->model.ticket) *action = "confirm";
+    m->button_confirm_ticket = 0;
+  }
   if (rc != 0 && step->check != H2_MFG_BUTTONS) rc = 0;
   int touch_rc = touch(m, step->check, action);
   if (touch_rc != 0 && m->profile->hold_vibration &&
@@ -615,6 +675,12 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
                      m->touch_hits, m->touch_downs, m->touch_releases);
       break;
     }
+    case H2_MFG_POWER:
+      /* The switch has no MCU input: only an operator can attest off/on. */
+      m->model.ready = 1;
+      (void)snprintf(m->detail, sizeof(m->detail),
+                     "POWER off/on and resume; operator confirmation required");
+      break;
     case H2_MFG_BUTTONS:
       m->model.ready = m->profile->button_count > 0;
       for (unsigned i = 0; i < m->profile->button_count; ++i)

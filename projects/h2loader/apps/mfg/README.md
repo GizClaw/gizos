@@ -1,6 +1,6 @@
 # Manufacturing acceptance App
 
-This App owns portable manufacturing acceptance, its model, session and UI. Public contracts live in [`include/`](include), implementation in [`src/`](src), and source regressions in [`tests/`](tests). [`BUILD.bazel`](BUILD.bazel) defines `:mfg`, `:model`, `:session` and version `0.1.49`.
+This App owns portable manufacturing acceptance, its model, session and UI. Public contracts live in [`include/`](include), implementation in [`src/`](src), and source regressions in [`tests/`](tests). [`BUILD.bazel`](BUILD.bazel) defines `:mfg`, `:model`, `:session` and base version `0.1.44`.
 
 Concrete profiles, SDK startup, task policies and firmware packages belong to [`../../targets/h2_loader_tar_zlib/mfg`](../../targets/h2_loader_tar_zlib/mfg). Each board's `profile.c` stays beside its final entry. Shared peer and acoustic-fixture support belongs to [`../../libs/mfg-peer`](../../libs/mfg-peer) and [`../../libs/mfg-aec-source`](../../libs/mfg-aec-source).
 

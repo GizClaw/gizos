@@ -105,6 +105,49 @@ genrule(
     tools = [":wifi_ap_stop_test_source_generator"],
 )
 
+py_binary(
+    name = "wifi_stop_test_source_generator",
+    testonly = True,
+    srcs = ["tests/extract_wifi_stop.py"],
+    legacy_create_init = False,
+    main = "tests/extract_wifi_stop.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+genrule(
+    name = "wifi_stop_test_source",
+    testonly = True,
+    srcs = ["src/h2_esp_platform_wifi.c"],
+    outs = ["h2_esp_wifi_stop_test_source.inc"],
+    cmd = "$(execpath :wifi_stop_test_source_generator) $(location src/h2_esp_platform_wifi.c) $@",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    tools = [":wifi_stop_test_source_generator"],
+)
+
+[
+    cc_test(
+        name = "wifi_stop" + suffix + "_test",
+        srcs = [
+            "src/h2_esp_wifi_teardown.c",
+            "src/h2_esp_wifi_teardown.h",
+            "tests/test_h2_esp_wifi_stop.c",
+            ":wifi_stop_test_source",
+        ],
+        conlyopts = H2_C11_OPTS + ["-DCONFIG_ESP_WIFI_SOFTAP_SUPPORT=" + softap],
+        copts = H2_WARNING_COPTS,
+        includes = [
+            ".",
+            "src",
+        ],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+        deps = ["//pal"],
+    )
+    for suffix, softap in [
+        ("", "1"),
+        ("_no_softap", "0"),
+    ]
+]
+
 cc_library(
     name = "wifi_ap_stop_test_header",
     testonly = True,
@@ -323,6 +366,14 @@ cc_test(
             "task_policy_no_ext_mem_test",
             ["CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=0"],
         ),
+        (
+            "task_policy_c3_test",
+            [
+                "H2_TASK_POLICY_TEST_NO_PSRAM=1",
+                "CONFIG_SPIRAM=0",
+                "CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=0",
+            ],
+        ),
     ]
 ]
 
@@ -415,19 +466,58 @@ cc_test(
     deps = ["//pal"],
 )
 
+[
+    cc_test(
+        name = "safe_call_policy" + suffix + "_test",
+        srcs = [
+            "include/h2_esp_platform_safe_call.h",
+            "src/h2_esp_io_phase.h",
+            "src/h2_esp_platform_safe_call.c",
+            "tests/test_h2_esp_platform_safe_call.c",
+        ] + glob(["tests/sdk/**/*.h"]),
+        conlyopts = H2_C11_OPTS + defines,
+        copts = H2_WARNING_COPTS,
+        includes = [
+            "include",
+            "src",
+            "tests/sdk",
+        ],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = ["//pal"],
+    )
+    for suffix, defines in [
+        ("", []),
+        (
+            "_scratch_4096",
+            ["-DH2_ESP_SAFE_IO_SCRATCH_CAPACITY=4096"],
+        ),
+        (
+            "_scratch_8192",
+            ["-DH2_ESP_SAFE_IO_SCRATCH_CAPACITY=8192"],
+        ),
+    ]
+]
+
 cc_test(
-    name = "safe_call_policy_test",
+    name = "disk_chunk_test",
     srcs = [
+        "include/h2_esp_platform_core.h",
         "include/h2_esp_platform_safe_call.h",
-        "src/h2_esp_io_phase.h",
-        "src/h2_esp_platform_safe_call.c",
-        "tests/test_h2_esp_platform_safe_call.c",
+        "src/h2_esp_platform_disk.c",
+        "tests/disk_sdk/esp_partition.h",
+        "tests/test_h2_esp_platform_disk.c",
     ] + glob(["tests/sdk/**/*.h"]),
-    conlyopts = H2_C11_OPTS,
+    conlyopts = H2_C11_OPTS + h2_gnu_only_copts([
+        "-D_POSIX_C_SOURCE=200809L",
+    ]),
     copts = H2_WARNING_COPTS,
     includes = [
         "include",
-        "src",
+        "tests/disk_sdk",
         "tests/sdk",
     ],
     target_compatible_with = select({
@@ -512,6 +602,27 @@ cc_test(
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "ble_gatt_schema_compact_test",
+    srcs = [
+        "src/h2_esp_ble_gatt_schema.h",
+        "tests/test_h2_esp_ble_gatt_schema_compact.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = [
+        "H2_ESP_BLE_MAX_GATT_SERVICES=1",
+        "H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE=2",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//pal"],
@@ -652,6 +763,61 @@ cc_test(
     }),
     deps = ["//pal"],
 )
+
+cc_library(
+    name = "pref_nvs_legacy_test_source",
+    testonly = True,
+    hdrs = [
+        "include/h2_esp_platform_safe_call.h",
+        "src/h2_esp_platform_littlefs_io.h",
+        "src/h2_esp_platform_pref_nvs_legacy.h",
+        "src/h2_esp_platform_pref_store.h",
+    ] + glob([
+        "tests/pref_nvs_sdk/**/*.h",
+        "tests/sdk/**/*.h",
+    ]),
+    includes = [
+        "include",
+        "src",
+        "tests/pref_nvs_sdk",
+        "tests/sdk",
+    ],
+    textual_hdrs = ["src/h2_esp_platform_pref_nvs_legacy.c"],
+    deps = ["//pal"],
+)
+
+[
+    cc_test(
+        name = "pref_nvs_legacy" + suffix + "_test",
+        srcs = [
+            "src/h2_esp_io_phase.h",
+            "src/h2_esp_platform_littlefs_io.c",
+            "src/h2_esp_platform_pref_store.c",
+            "tests/test_h2_esp_platform_pref_nvs_legacy.c",
+        ],
+        conlyopts = H2_C11_OPTS + h2_gnu_only_copts([
+            "-D_POSIX_C_SOURCE=200809L",
+        ]) + defines,
+        copts = H2_WARNING_COPTS,
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [":pref_nvs_legacy_test_source"],
+    )
+    for suffix, defines in [
+        ("", []),
+        (
+            "_scratch_4096",
+            ["-DH2_ESP_SAFE_IO_SCRATCH_CAPACITY=4096"],
+        ),
+        (
+            "_scratch_8192",
+            ["-DH2_ESP_SAFE_IO_SCRATCH_CAPACITY=8192"],
+        ),
+    ]
+]
 
 cc_test(
     name = "fs_io_phase_test",
@@ -1196,15 +1362,33 @@ cc_test(
             "CONFIG_ESP_CONSOLE_UART=" + uart,
             "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=" + usb,
             "CONFIG_ESP_CONSOLE_UART_BAUDRATE=460800",
-        ],
+        ] + buffer_defines,
         target_compatible_with = HOST_TOOL_COMPATIBILITY,
         deps = ["//pal:unsupported"],
     )
-    for name, uart, usb in [
-        ("uart", "1", "0"),
-        ("usb", "0", "1"),
-        ("usb_preferred", "1", "1"),
-        ("unsupported", "0", "0"),
+    for name, uart, usb, buffer_defines in [
+        ("uart", "1", "0", []),
+        ("usb", "0", "1", []),
+        ("usb_preferred", "1", "1", []),
+        ("unsupported", "0", "0", []),
+        (
+            "uart_compact",
+            "1",
+            "0",
+            [
+                "H2_LOADER_SERIAL_RX_BUFFER=1024",
+                "TEST_SERIAL_RX_BUFFER=1024",
+            ],
+        ),
+        (
+            "usb_compact",
+            "0",
+            "1",
+            [
+                "H2_LOADER_SERIAL_RX_BUFFER=1024",
+                "TEST_SERIAL_RX_BUFFER=1024",
+            ],
+        ),
     ]
 ]
 

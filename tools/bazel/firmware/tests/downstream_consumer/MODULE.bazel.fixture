@@ -54,3 +54,5 @@ bk_repositories = use_extension(
     "bk_repositories",
 )
 use_repo(bk_repositories, "gizos_bk_arm_toolchain")
+
+register_toolchains("@gizos//tools/bazel/toolchains/local_embedded_cc/esp32c3:toolchain")

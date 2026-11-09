@@ -441,6 +441,33 @@ static int h2_esp_wifi_teardown_driver(void) {
   return h2_esp_wifi_run_driver_teardown(&config);
 }
 
+static int h2_esp_wifi_release_driver(void) {
+  int rc = h2_esp_wifi_teardown_driver();
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+
+  if (s_h2_esp_wifi_address_timer != NULL)
+    (void)esp_timer_stop(s_h2_esp_wifi_address_timer);
+  if (s_h2_esp_wifi_sta_netif != NULL) {
+    esp_netif_t* netif = s_h2_esp_wifi_sta_netif;
+    s_h2_esp_wifi_sta_netif = NULL;
+    esp_netif_destroy_default_wifi(netif);
+    (void)h2_esp_platform_netif_reconcile_default();
+  }
+  s_h2_esp_wifi_sta_dns_handler_registered = 0;
+  s_h2_esp_wifi_started = 0;
+  s_h2_esp_wifi_had_ip = 0;
+  s_h2_esp_wifi_sta_disconnect_reason = 0;
+  memset(&s_h2_esp_wifi_association, 0, sizeof(s_h2_esp_wifi_association));
+  if (s_h2_esp_wifi_events != NULL) {
+    xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_CONNECTED |
+                                                   H2_ESP_WIFI_EVENT_GOT_IP);
+    xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED);
+  }
+  return H2_PAL_OK;
+}
+
 static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
   if (s_h2_esp_wifi_events != NULL) {
     EventBits_t bits = xEventGroupGetBits(s_h2_esp_wifi_events);
@@ -457,24 +484,7 @@ static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
   }
 
   h2_esp_wifi_sta_reconnect_disable();
-  int rc = h2_esp_wifi_teardown_driver();
-  if (rc != H2_PAL_OK) {
-    return rc;
-  }
-
-  if (s_h2_esp_wifi_sta_netif != NULL) {
-    esp_netif_destroy_default_wifi(s_h2_esp_wifi_sta_netif);
-    s_h2_esp_wifi_sta_netif = NULL;
-    s_h2_esp_wifi_sta_dns_handler_registered = 0;
-    (void)h2_esp_platform_netif_reconcile_default();
-  }
-  s_h2_esp_wifi_started = 0;
-  if (s_h2_esp_wifi_events != NULL) {
-    xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_CONNECTED |
-                                                   H2_ESP_WIFI_EVENT_GOT_IP);
-    xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED);
-  }
-  return H2_PAL_OK;
+  return h2_esp_wifi_release_driver();
 }
 
 /* Runs only on the serialized ESP event loop. Re-read current addresses,
@@ -1492,8 +1502,39 @@ static int h2_esp_wifi_ap_get_mac(h2_pal_wifi_ap_t* ap, uint8_t out_mac[6]) {
 }
 #endif
 
-/* One admission gate covers the entire authentication/IP/save transaction. */
+/* One admission gate covers authentication/IP/save and coordinated stop. */
 H2_ATOMIC_DEFINE_STATIC(flag, s_h2_esp_wifi_connect_busy, 0u);
+
+int h2_esp_platform_wifi_stop(void) {
+  if (h2_atomic_flag_test_and_set(&s_h2_esp_wifi_connect_busy,
+                                  H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  int rc = H2_PAL_OK;
+#if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
+  portENTER_CRITICAL(&s_h2_esp_wifi_ap_lock);
+  int ap_active = s_h2_esp_wifi_ap_active;
+  portEXIT_CRITICAL(&s_h2_esp_wifi_ap_lock);
+  if (ap_active != 0) {
+    h2_atomic_flag_clear(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST);
+    return H2_PAL_ERR_BUSY;
+  }
+#endif
+  h2_esp_wifi_sta_reconnect_disable();
+  h2_esp_wifi_set_activity(1);
+  esp_err_t err = esp_wifi_disconnect();
+  /* A previous stop may have stopped the driver before deinit failed. Also
+   * clean up a partially initialized driver even when started was never set. */
+  if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT &&
+      err != ESP_ERR_WIFI_NOT_STARTED && err != ESP_ERR_WIFI_NOT_CONNECT &&
+      err != ESP_ERR_WIFI_NOT_ASSOC) {
+    rc = h2_esp_wifi_map_error(err);
+  } else {
+    rc = h2_esp_wifi_release_driver();
+  }
+  h2_esp_wifi_set_activity(0);
+  h2_atomic_flag_clear(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
 
 static int h2_esp_wifi_connect(void* user,
                                const h2_pal_wifi_sta_config_t* config,

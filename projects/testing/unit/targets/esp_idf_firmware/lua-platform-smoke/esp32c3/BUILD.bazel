@@ -1,0 +1,67 @@
+load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel/native/esp_idf:esp_idf.bzl", "esp_idf_firmware")
+
+package(default_visibility = ["//visibility:public"])
+
+esp_target_task_policy(
+    name = "task_policy",
+    default_policy = "4 0 4096 internal",
+    graph = [":main"],
+    policies = [
+        "$runtime/input default",
+        "$runtime/nfc default",
+        "$lua/worker 4 0 16384 internal",
+        "$lua/display default",
+        "$h2peer/net default",
+        "$h2peer/udp default",
+    ],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    target_compatible_with = ["//tools/bazel/platforms:target_esp32c3"],
+    deps = [
+        "//libs/runtime",
+        "//pal:unsupported",
+        "//projects/testing/unit/lua-platform-smoke/app:lua_platform_smoke",
+    ],
+)
+
+firmware_native_component(
+    name = "main",
+    srcs = [
+        "main/c3_smoke_runtime.c",
+        "main/main.c",
+    ],
+    hdrs = ["main/c3_smoke_runtime.h"],
+    component_directory = "projects/testing/unit/targets/esp_idf_firmware/lua-platform-smoke/esp32c3/main",
+    component_name = "main",
+    data = ["main/CMakeLists.txt"],
+    deps = [
+        ":firmware_lib",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+    ],
+)
+
+esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/c3_smoke_runtime.c",
+        "main/c3_smoke_runtime.h",
+        "main/main.c",
+        "sdkconfig.defaults",
+    ],
+    board = "esp32c3_chip",
+    graph = [
+        ":main",
+        ":task_policy",
+    ],
+    partition = "partition.csv",
+    project = "CMakeLists.txt",
+    project_name = "h2_esp32c3_lua_platform_smoke",
+    target = "esp32c3",
+)

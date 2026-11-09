@@ -87,6 +87,10 @@ typedef struct h2_esp_es8311_audio_system_config {
   h2_esp_es8311_aec_nlp_level_t aec_nlp_level;
   /** Optional board curve; zero initialization preserves legacy mapping. */
   h2_es8311_volume_config_t speaker_volume;
+  /** Defer enabled AEC allocation until microphone start or observer setup.
+   * Playback alone does not allocate AEC. Allocation errors still propagate;
+   * zero preserves eager initialization for existing callers. */
+  int defer_aec_init;
 } h2_esp_es8311_audio_system_config_t;
 
 typedef struct h2_esp_es8311_sr_state {
@@ -192,6 +196,16 @@ int h2_esp_es8311_audio_system_process_mic(h2_esp_es8311_audio_system_t* system,
                                            h2_audio_frame_t* out_frame,
                                            uint32_t timeout_ms);
 
+/**
+ * Initialize caller-owned SR storage; deinit before reinitializing a live
+ * state. AEC requires 16 kHz mono mic plus a distinct reference lane. Buffers
+ * and algorithm use internal RAM on C3. Initialization failure owns no
+ * resources. Serialize all SR calls in task context; processing is synchronous
+ * (timeout is ignored). Input/output buffers are borrowed only during process.
+ * The configured frame size must equal the SDK AEC chunk size (at most 512
+ * samples); a mismatch returns H2_AUDIO_ERR_UNSUPPORTED. Each process call
+ * consumes and produces one complete chunk without cross-frame buffering.
+ */
 int h2_esp_es8311_sr_init(h2_esp_es8311_sr_state_t* state,
                           const h2_esp_es8311_audio_system_config_t* config);
 
@@ -199,6 +213,7 @@ int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t* state,
                              const h2_audio_frame_t* raw_frame,
                              h2_audio_frame_t* out_frame, uint32_t timeout_ms);
 
+/** Clear PCM work buffers; adaptive filter history remains until deinit. */
 void h2_esp_es8311_sr_reset(h2_esp_es8311_sr_state_t* state);
 
 void h2_esp_es8311_sr_deinit(h2_esp_es8311_sr_state_t* state);

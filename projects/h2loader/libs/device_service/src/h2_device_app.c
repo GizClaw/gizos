@@ -289,17 +289,25 @@ int h2_device_app_commands_start(
   uint32_t attempts =
       config->ble_start_attempts != 0u ? config->ble_start_attempts : 6u;
   uint32_t retry_ms = 250u;
-  for (uint32_t attempt = 1u; attempt <= attempts; ++attempt) {
+  for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
     rc = h2_loader_ble_service_open(&service, &self->service);
     if (rc == H2_PAL_OK) {
       (void)h2_pal_wifi_sta_set_activity_observer(runtime->wifi_sta,
                                                   app_wifi_activity, self);
       return H2_PAL_OK;
     }
-    self->service = NULL;
-    if (attempt == attempts) break;
+    /* Failed open can retain workers and callbacks. Join them before retrying
+     * or dropping the BLE global reference; serial recovery stays available. */
+    while (self->service != NULL) {
+      if (h2_loader_ble_service_close(self->service) == H2_PAL_OK) {
+        self->service = NULL;
+      } else {
+        (void)h2_pal_time_sleep_ms(runtime->time, 50u);
+      }
+    }
+    if (attempt == attempts - 1u) break;
     printf("H2_DEVICE_APP_BLE_START_RETRY rc=%d attempt=%u delay_ms=%u\n", rc,
-           (unsigned)attempt, (unsigned)retry_ms);
+           (unsigned)(attempt + 1u), (unsigned)retry_ms);
     rc = h2_pal_time_sleep_ms(runtime->time, retry_ms);
     if (rc != H2_PAL_OK) break;
     retry_ms = retry_ms < 2500u ? retry_ms * 2u : 5000u;

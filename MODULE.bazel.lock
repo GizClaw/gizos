@@ -344,7 +344,7 @@
     },
     "//tools/bazel/native/esp_idf:repositories.bzl%esp_repositories": {
       "general": {
-        "bzlTransitiveDigest": "ftvxF1qSUScgxzeZV4ShAXRdHDmZPjlMSWlkIe6Ji8Y=",
+        "bzlTransitiveDigest": "i9vS4V8CtQVV51kSASWjQ8Eiab2yJPoRaDXhC0IeKQ4=",
         "usagesDigest": "FpiQGzYc4XH7eJq+rJweOINr7PZkynWwhG2y1gFNZzY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -467,7 +467,7 @@
     "//tools/bazel/release:release_inputs.bzl%release_inputs": {
       "general": {
         "bzlTransitiveDigest": "HpWKT6TGVXgw7/VRIDg7T0dfKEMZb0Z0qD6JxXV47F0=",
-        "usagesDigest": "LIU8ZIfQBba0JNPFSj8BHKpvx7evMVMuDQWtrT5q+kY=",
+        "usagesDigest": "y/IAIp614H56FU0W+OgbAaxxMBrWlzZtYsUFd7O+/oY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_firmware_release_inputs": {
@@ -895,7 +895,7 @@
     "//tools/bazel/toolchains:go_host_toolchains.bzl%go_host_toolchains": {
       "general": {
         "bzlTransitiveDigest": "0/ucshTZjGqyJ/esN1xgxq/2tN9K0SVn1AsH9fOTO+U=",
-        "usagesDigest": "24awH0qk5k+ZC+p8z/9V+SgCPuTAN5kfDG2iaCh1FuA=",
+        "usagesDigest": "NHLnCka/Tmd+xU3xxo1Gxb27aWT8WFhMUedtOWymorU=",
         "recordedInputs": [
           "REPO_MAPPING:,io_bazel_rules_go rules_go+",
           "REPO_MAPPING:rules_go+,bazel_tools bazel_tools",
@@ -1177,7 +1177,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "FlSOMTxclj1LN9tIMM18JxctUVB7dWZb+davTreodMI=",
+        "bzlTransitiveDigest": "dBiUMNsbgwUcBE6ADDA7OTcIsJYVlaRZwOGdMV/+8wM=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1207,6 +1207,31 @@
               "toolchain_identifier": "bk7258-local-arm-10.3.1",
               "version_key": "arm_gcc",
               "versions_file": "@@//tools/bazel/native/versions:bk_tool_versions.txt"
+            }
+          },
+          "gizos_esp32c3_cc_toolchain": {
+            "repoRuleId": "@@//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_repository",
+            "attributes": {
+              "compile_flags": [
+                "-Os",
+                "-march=rv32imc_zicsr_zifencei",
+                "-mabi=ilp32",
+                "-ffunction-sections",
+                "-fdata-sections",
+                "-fno-common"
+              ],
+              "family": "riscv32-esp-elf",
+              "first_party_registration": true,
+              "layout": "idf_tools",
+              "locator": "@@+esp_repositories+gizos_esp_idf_tools//:locator.json",
+              "locator_path": "tools_root",
+              "prefix": "riscv32-esp-elf-",
+              "target_constraints": [],
+              "target_cpu": "riscv32",
+              "target_system_name": "esp32c3-elf",
+              "toolchain_identifier": "esp32c3-local-esp-16.1.0",
+              "version_key": "esp32c3",
+              "versions_file": "@@//tools/bazel/native/versions:esp_idf_tool_versions.txt"
             }
           },
           "gizos_esp32c5_cc_toolchain": {

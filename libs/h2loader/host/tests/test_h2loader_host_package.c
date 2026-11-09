@@ -19,6 +19,7 @@ typedef struct test_buffer {
 
 typedef struct package_options {
   const char* role;
+  const char* target_override;
   const char* first_data_path;
   const char* second_data_path;
   const char* checksum_override;
@@ -137,11 +138,12 @@ static test_buffer_t build_package(const package_options_t* options) {
       "format=1\n"
       "role=%s\n"
       "board=devkit\n"
-      "target=esp32s3\n"
+      "target=%s\n"
       "version=%s\n"
       "image_size=%s\n"
       "image_sha256=%s\n",
       role,
+      options->target_override != NULL ? options->target_override : "esp32s3",
       options->version_override != NULL ? options->version_override : "v1.2.3",
       options->image_size_override != NULL ? options->image_size_override
                                            : image_size,
@@ -201,8 +203,9 @@ static h2_pal_result_t inspect(test_buffer_t* package, uint64_t reported_bytes,
   return h2_h2loader_host_package_inspect(&config, out_asset);
 }
 
-static void test_valid_app_package(void) {
+static void test_valid_app_package(const char* target) {
   package_options_t options = {
+      .target_override = target,
       .first_data_path = "data/version.txt",
   };
   test_buffer_t package = build_package(&options);
@@ -216,7 +219,7 @@ static void test_valid_app_package(void) {
   assert(asset.identity_source ==
          H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST);
   assert(strcmp(asset.board, "devkit") == 0);
-  assert(strcmp(asset.target, "esp32s3") == 0);
+  assert(strcmp(asset.target, target) == 0);
   assert(strcmp(asset.version, "v1.2.3") == 0);
   assert(asset.image[0] == '\0');
   assert(asset.bytes == package.len);
@@ -224,13 +227,15 @@ static void test_valid_app_package(void) {
   assert(h2_h2loader_host_is_sha256(asset.image_sha256));
 }
 
-static void test_valid_loader_package(void) {
-  package_options_t options = {.role = "h2loader"};
+static void test_valid_loader_package(const char* target) {
+  package_options_t options = {.role = "h2loader", .target_override = target};
   test_buffer_t package = build_package(&options);
   h2_h2loader_host_catalog_entry_t asset;
 
   assert(inspect(&package, package.len, &asset) == H2_PAL_OK);
   assert(asset.role == H2_H2LOADER_HOST_ASSET_ROLE_LOADER);
+  assert(asset.operation == H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL);
+  assert(strcmp(asset.target, target) == 0);
   assert(h2_h2loader_host_is_sha256(asset.image_sha256));
 }
 
@@ -345,8 +350,10 @@ static void test_rejects_truncation_and_trailing_bytes(void) {
 }
 
 int main(void) {
-  test_valid_app_package();
-  test_valid_loader_package();
+  test_valid_app_package("esp32s3");
+  test_valid_app_package("esp32c3");
+  test_valid_loader_package("esp32s3");
+  test_valid_loader_package("esp32c3");
   test_package_version_metadata();
   test_loader_rejects_data();
   test_rejects_bad_checksums();

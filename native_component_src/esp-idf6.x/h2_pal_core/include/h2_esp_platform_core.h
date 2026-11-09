@@ -193,6 +193,20 @@ h2_pal_wifi_settings_t* h2_esp_platform_wifi_settings(void);
 const h2_pal_wifi_csi_api_t* h2_esp_platform_wifi_csi(void);
 h2_pal_modem_t* h2_esp_platform_modem_unsupported(void);
 int h2_esp_platform_wifi_ensure_started(void);
+/**
+ * Disconnects STA, stops/deinitializes its driver and destroys its netif
+ * without changing saved credentials. Shared event infrastructure remains
+ * available; later PAL Wi-Fi operations may start the driver again.
+ *
+ * The caller owns the Wi-Fi phase: quiesce network clients and serialize this
+ * call with status/scan, AP, CSI and other Wi-Fi operations using the same
+ * ownership mutex. Call from an ordinary task, never an SDK event callback.
+ * The native connect/disconnect transaction gate also rejects concurrent calls.
+ * Returns BUSY without disrupting an active SoftAP. Repeated stops succeed;
+ * teardown failures retain owned resources/state for a subsequent stop retry.
+ * Returns UNSUPPORTED when the native Wi-Fi provider is disabled.
+ */
+int h2_esp_platform_wifi_stop(void);
 int h2_esp_platform_wifi_connect_saved(uint32_t timeout_ms);
 int h2_esp_platform_spiffs_fs_init(
     h2_pal_fs_api_t* fs, const h2_esp_platform_spiffs_config_t* config);

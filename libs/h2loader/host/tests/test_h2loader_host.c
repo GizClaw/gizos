@@ -1147,6 +1147,7 @@ typedef struct operation_fixture {
   h2_pal_result_t event_result[32];
   size_t event_count;
   char status_board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+  char status_target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
   h2_h2loader_host_catalog_entry_t asset;
 } operation_fixture_t;
 
@@ -1160,7 +1161,9 @@ static h2_pal_result_t operation_connect(
   }
   memset(out_status, 0, sizeof(*out_status));
   strcpy(out_status->board, fixture->status_board);
-  strcpy(out_status->target, fixture->asset.target);
+  strcpy(out_status->target, fixture->status_target[0] != '\0'
+                                 ? fixture->status_target
+                                 : fixture->asset.target);
   out_status->active_role = fixture->initial_active_role;
   out_status->command_availability =
       (fixture->stage_unavailable ||
@@ -1307,7 +1310,7 @@ static h2_pal_result_t operation_payload_read(void* user, uint64_t offset,
   return H2_PAL_OK;
 }
 
-static void test_managed_operation(void) {
+static void test_managed_operation(const char* target) {
   static const char package_sha[] =
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
   static const char image_sha[] =
@@ -1327,7 +1330,7 @@ static void test_managed_operation(void) {
   fixture.initial_active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
   strcpy(fixture.status_board, "devkit");
   strcpy(fixture.asset.board, "devkit");
-  strcpy(fixture.asset.target, "esp32s3");
+  strcpy(fixture.asset.target, target);
   strcpy(fixture.asset.image, "display");
   strcpy(fixture.asset.version, "v1");
   strcpy(fixture.asset.sha256, package_sha);
@@ -1369,6 +1372,24 @@ static void test_managed_operation(void) {
   assert(fixture.event_phase[fixture.event_count - 1u] ==
          H2_H2LOADER_HOST_OPERATION_COMPLETE);
   assert(fixture.event_result[fixture.event_count - 1u] == H2_PAL_OK);
+  assert(strcmp(final_status.target, target) == 0);
+
+  const operation_fixture_t successful = fixture;
+  const char* incompatible_targets[] = {"esp32p4", "ESP32C3"};
+  for (size_t i = 0u;
+       i < sizeof(incompatible_targets) / sizeof(incompatible_targets[0]);
+       ++i) {
+    fixture = successful;
+    fixture.connect_count = fixture.stage_count = fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.event_count = 0u;
+    strcpy(fixture.status_target, incompatible_targets[i]);
+    assert(h2_h2loader_host_managed_operation_run(&config, &final_status) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.stage_count == 0 && fixture.activate_count == 0);
+    assert(fixture.disconnect_count == 1);
+  }
+  fixture = successful;
 
   fixture.connect_count = 0;
   fixture.stage_count = 0;
@@ -2148,7 +2169,8 @@ int main(void) {
   test_catalog_esp_loader_assets();
   test_status();
   test_status_version_metadata();
-  test_managed_operation();
+  test_managed_operation("esp32s3");
+  test_managed_operation("esp32c3");
   test_scheduler();
   test_serial_connect_deasserts_dtr_and_rts();
   return 0;

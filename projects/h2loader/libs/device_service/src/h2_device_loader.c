@@ -110,6 +110,8 @@ static int handle_session(void* user, h2_bleikcp_t* stream,
   return session.result;
 }
 
+static int close_command_service(void* user, void* service);
+
 static int open_command_service(
     void* user, h2_runtime_t* runtime,
     const h2_loader_command_config_t* command_config, const char* board,
@@ -122,6 +124,7 @@ static int open_command_service(
   *out_service = NULL;
   int init_rc = h2_bleikcp_global_init();
   if (init_rc != H2_PAL_OK) return init_rc;
+  owner->ble_global_initialized = 1;
   owner->ble_command = *command_config;
   const h2_loader_ble_service_config_t service_config = {
       .log = runtime->log,
@@ -144,13 +147,15 @@ static int open_command_service(
   };
   h2_loader_ble_service_t* service = NULL;
   int rc = h2_loader_ble_service_open(&service_config, &service);
+  owner->ble_service = service;
   if (rc == H2_PAL_OK) {
-    owner->ble_service = service;
     (void)h2_device_activity_bind(&owner->wifi_activity, runtime->wifi_sta,
                                   runtime->time, loader_wifi_activity, owner);
-    *out_service = service;
-  } else {
-    (void)h2_bleikcp_global_shutdown();
+    *out_service = owner;
+  } else if (close_command_service(owner, owner) != H2_PAL_OK) {
+    /* A partial-open service is a close-only handle which still borrows owner.
+     */
+    *out_service = owner;
   }
   return rc;
 }
@@ -161,10 +166,17 @@ static int close_command_service(void* user, void* service) {
     return H2_PAL_OK;
   }
   h2_device_activity_unbind(&owner->wifi_activity);
-  int rc = h2_loader_ble_service_close(service);
-  if (rc == H2_PAL_OK) owner->ble_service = NULL;
-  if (rc == H2_PAL_OK) (void)h2_bleikcp_global_shutdown();
-  return rc;
+  if (owner->ble_service != NULL) {
+    int rc = h2_loader_ble_service_close(owner->ble_service);
+    if (rc != H2_PAL_OK) return rc;
+    owner->ble_service = NULL;
+  }
+  if (owner->ble_global_initialized) {
+    int rc = h2_bleikcp_global_shutdown();
+    if (rc != H2_PAL_OK) return rc;
+    owner->ble_global_initialized = 0;
+  }
+  return H2_PAL_OK;
 }
 
 static int runtime_fs_clear_adapter(void* user, const char* path) {
@@ -190,6 +202,7 @@ static int serve_loader(void* user, h2_loader_t* loader,
                         h2_loader_command_t* command,
                         h2_loader_startup_action_t action) {
   h2_loader_command_config_t command_config = command->config;
+  int service_result = H2_PAL_OK;
   int rc;
 
   h2_device_loader_t* context = user;
@@ -197,7 +210,36 @@ static int serve_loader(void* user, h2_loader_t* loader,
     context->config->command_ready(context->config->user, loader);
   printf("H2_LOADER_READY status=ready action=%d\n", (int)action);
   fflush(stdout);
-  while (!h2_atomic_bool_load(&context->stop_requested, H2_ATOMIC_ACQUIRE)) {
+  for (;;) {
+    /* Service work may join a BLE command which holds Loader/MFG locks. This
+     * serial owner holds none of those locks while opening or closing it. */
+    const bool stopping =
+        h2_atomic_bool_load(&context->stop_requested, H2_ATOMIC_ACQUIRE);
+    if (stopping) {
+      rc = context->config->stop_command_service != NULL
+               ? context->config->stop_command_service(context->config->user,
+                                                       context->runtime)
+               : H2_PAL_OK;
+      if (rc == H2_PAL_OK) break;
+      /* The stop flag interrupts an in-flight serial operation. Once on this
+       * cleanup path, keep servicing recovery while borrowed workers drain. */
+      context->serial.config.stop_requested = NULL;
+    } else {
+      rc = context->config->poll_command_service != NULL
+               ? context->config->poll_command_service(
+                     context->config->user, context->runtime, &command_config)
+               : H2_PAL_OK;
+    }
+    if (rc != service_result && rc != H2_PAL_OK &&
+        rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
+      printf("H2_LOADER_ERROR reason=command_service_%s_failed code=%d\n",
+             stopping ? "stop" : "poll", rc);
+      fflush(stdout);
+    }
+    service_result = rc;
+    if (stopping) {
+      (void)h2_pal_time_sleep_ms(context->runtime->time, 10u);
+    }
     if (context->serial.pending_conv != 0u) {
       rc = h2_loader_command_init(command, &command_config);
       if (rc == H2_PAL_OK) {
@@ -257,7 +299,9 @@ static int loader_run(h2_device_loader_t* context, h2_runtime_t* runtime,
       runtime->fs == NULL || runtime->pref == NULL || runtime->power == NULL ||
       runtime->mem == NULL || runtime->image == NULL || runtime->time == NULL ||
       runtime->task == NULL || runtime->sync == NULL ||
-      runtime->firmware_info == NULL || physical_io == NULL) {
+      runtime->firmware_info == NULL || physical_io == NULL ||
+      (runtime_loader_config->command_task_stack_size != 0u &&
+       runtime_loader_config->command_task_stack_size < 20480u)) {
     printf("H2_LOADER_READY status=runtime_config_fail\n");
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -305,6 +349,8 @@ static int loader_run(h2_device_loader_t* context, h2_runtime_t* runtime,
       .stop_requested = &context->stop_requested,
       .idle_timeout_ms = runtime_loader_config->serial_idle_timeout_ms,
       .post_write_poll_ms = runtime_loader_config->serial_post_write_poll_ms,
+      .rx_buffer_size = runtime_loader_config->serial_rx_buffer_size,
+      .receive_window = runtime_loader_config->serial_receive_window,
   };
   rc = h2_device_serial_init_with_config(&context->serial, &serial);
   if (rc != H2_PAL_OK) {
@@ -365,6 +411,8 @@ static int loader_run(h2_device_loader_t* context, h2_runtime_t* runtime,
   config.command.mfg_user = runtime_loader_config->user;
   config.command.mfg_command = runtime_loader_config->mfg_command;
   config.user = context;
+  config.command_task_stack_size =
+      runtime_loader_config->command_task_stack_size;
   config.prepare = prepare_loader;
   config.before_startup_user = runtime_loader_config->user;
   config.before_startup = runtime_loader_config->run_mfg;

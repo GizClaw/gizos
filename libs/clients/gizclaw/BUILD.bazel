@@ -178,6 +178,7 @@ cc_library(
     ] + select({
         "@platforms//cpu:wasm32": ["//third_party:vendor_third_party_gizclaw"],
         "//tools/bazel/platforms:is_bk7258": ["//third_party:vendor_third_party_gizclaw_firmware"],
+        "//tools/bazel/platforms:is_esp32c3": ["//third_party:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32p4": ["//third_party:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32s3": ["//third_party:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32s31": ["//third_party:vendor_third_party_gizclaw_firmware"],

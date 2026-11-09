@@ -583,6 +583,9 @@ jobs:
           - name: ESP32-P4 / Build
             config: esp32p4
             runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+          - name: ESP32-C3 / Build
+            config: esp32c3
+            runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
           - name: ESP32-C5 / Build
             config: esp32c5
             runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
@@ -725,14 +728,14 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ runner.temp }}/gizos-devenv/tools/idf
-          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native/versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5-esp32s31
+          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native/versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c3-esp32c5-esp32s31
 
       - name: Install catalog-pinned ESP-IDF tools
         shell: bash
         env:
           IDF_GITHUB_ASSETS: ""
           IDF_MIRROR_PREFIX_MAP: 'https://github\.com/espressif/binutils-gdb/,https://dl.espressif.com/github_assets/espressif/binutils-gdb/'
-        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5,esp32s31'
+        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c3,esp32c5,esp32s31'
 
       - name: Configure Bazel remote cache
         if: vars.BAZEL_REMOTE_CACHE_URL != ''

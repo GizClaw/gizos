@@ -2,6 +2,7 @@
 #define H2_MFG_MODEL_H
 
 #include "h2_loader_boot.h"
+#include "h2_mfg_recording.h"
 #include "hal/h2_pal_periph.h"
 #include "os/h2_pal_mem.h"
 
@@ -27,6 +28,9 @@ typedef enum h2_mfg_check {
   H2_MFG_VIBRATION,
   H2_MFG_CAMERA,
   H2_MFG_NFC,
+  /** Operator verifies the physical power switch through a real off/on cycle.
+   */
+  H2_MFG_POWER,
 } h2_mfg_check_t;
 
 typedef struct h2_mfg_step {
@@ -125,6 +129,27 @@ typedef struct h2_mfg_profile {
   /** Optional framebuffer allocator, borrowed for the entire session. Invoked
    * after Display opens; NULL prefers Runtime external memory, then default. */
   const h2_pal_mem_api_t* frame_allocator;
+  /** Maximum RGB565 rows kept in RAM. Zero keeps the complete framebuffer.
+   * Nonzero redraws each strip synchronously with the same full-screen
+   * geometry. The display must finish borrowing pixels before draw_bitmap
+   * returns. */
+  uint32_t display_buffer_rows;
+  /** Simultaneous RAM pattern probe, 512..65536 bytes; zero selects 64 KiB. */
+  uint32_t storage_ram_bytes;
+  /** Optional app preparation on the MFG owner after prior hardware cleanup.
+   * Called before acquiring the selected check's hardware. WOULD_BLOCK retries
+   * preparation without probing hardware or recording failure; other errors
+   * fail the check. Must not block on command users while the operation mutex
+   * is held. NULL preserves existing behavior. Context is borrowed. */
+  int (*prepare_check)(void* user, h2_mfg_check_t check);
+  void* prepare_check_user;
+  /** Checked target cleanup after shared hardware users stop; retryable. */
+  int (*release_check)(void* user);
+  void* release_check_user;
+  /** Audio track queue depth, 2..8 frames; zero preserves eight frames. */
+  uint32_t playback_buffer_frames;
+  /** Optional owner-managed AEC recording store; NULL retains PCM in RAM. */
+  const h2_mfg_recording_store_t* aec_recording_store;
 } h2_mfg_profile_t;
 
 typedef int (*h2_mfg_save_fn)(void* user,

@@ -45,6 +45,7 @@ filegroup(
         ":service_sources",
         "//libs/h2loader/device:firmware_sources",
         "//projects/h2loader/apps/headless:src/app.c",
+        "//projects/h2loader/apps/headless:src/h2loader_bleikcp.c",
         "//projects/h2loader/apps/headless:src/task_names.c",
     ],
 )
@@ -104,6 +105,19 @@ cc_test(
         ":service",
         "//libs/sync/atomic/providers/c11",
     ],
+)
+
+py_test(
+    name = "command_service_test",
+    srcs = ["tests/test_command_service.py"],
+    data = [
+        "src/h2_device_loader.c",
+        "tests/command_service_fixture.c",
+        "//pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_command_service.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
 )
 
 py_test(

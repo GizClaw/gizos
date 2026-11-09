@@ -29,6 +29,10 @@ static void destroy_operation_mutexes(h2_runtime_t* runtime,
   }
 }
 
+static int close_additional_command_service(
+    h2_runtime_t* runtime,
+    const h2loader_app_command_service_api_t* command_service, void* service);
+
 static void start_additional_command_service(
     h2_runtime_t* runtime,
     const h2loader_app_command_service_api_t* command_service,
@@ -42,8 +46,9 @@ static void start_additional_command_service(
                                  capabilities, out_service);
   printf("H2_LOADER_COMMAND_SERVICE stage=open-return code=%d\n", rc);
   if (rc != H2_PAL_OK) {
-    /* Keep the independent serial command task available for recovery
-     * after an additional command service fails to start. */
+    /* Keep serial recovery running while partial-open cleanup is retried. */
+    (void)close_additional_command_service(runtime, command_service,
+                                           *out_service);
     *out_service = NULL;
   }
 }
@@ -97,7 +102,9 @@ int h2loader_app_run_with_command_service(
   int prepare_rc = H2_PAL_OK;
   int rc;
 
-  if (runtime == NULL || config == NULL || config->serve == NULL) {
+  if (runtime == NULL || config == NULL || config->serve == NULL ||
+      (config->command_task_stack_size != 0 &&
+       config->command_task_stack_size < 20480u)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (config->before_startup != NULL && config->stop_serve == NULL) {
@@ -190,7 +197,9 @@ int h2loader_app_run_with_command_service(
   if (config->before_startup != NULL) {
     const h2_pal_task_options_t options = {
         .name = h2loader_app_command_task_name,
-        .min_stack_size = 49152u,
+        .min_stack_size = config->command_task_stack_size == 0
+                              ? 49152u
+                              : config->command_task_stack_size,
     };
     loader.force_command_mode = 1;
     rc = h2_loader_startup(&loader, &action);
@@ -273,7 +282,9 @@ int h2loader_app_run_with_command_service(
   if (serve_handle == NULL) {
     const h2_pal_task_options_t options = {
         .name = h2loader_app_command_task_name,
-        .min_stack_size = 49152u,
+        .min_stack_size = config->command_task_stack_size == 0
+                              ? 49152u
+                              : config->command_task_stack_size,
     };
     serve_context = (h2loader_serve_context_t){
         .config = config,

@@ -6,6 +6,10 @@
 
 #include <assert.h>
 
+#ifndef TEST_SERIAL_RX_BUFFER
+#define TEST_SERIAL_RX_BUFFER 8192u
+#endif
+
 static unsigned configurations, reads, writes, flushes;
 static h2_pal_result_t configure_result = H2_PAL_ERR_NO_MEMORY;
 static const char uart_user = 0, usb_user = 0;
@@ -17,7 +21,8 @@ static h2_pal_result_t configure_uart(
   assert(config->baud_rate == 460800u && config->data_bits == 8u &&
          config->stop_bits == 1u && config->parity == H2_PAL_UART_PARITY_NONE &&
          config->flow_control == H2_PAL_UART_FLOW_CONTROL_NONE);
-  assert(config->rx_buffer_size == 8192u && config->tx_buffer_size == 2048u);
+  assert(config->rx_buffer_size == TEST_SERIAL_RX_BUFFER &&
+         config->tx_buffer_size == 2048u);
   assert(config->flags == (H2_PAL_UART_IO_STREAM_CONFIG_ROUTE_STDIO |
                            H2_PAL_UART_IO_STREAM_CONFIG_FLUSH_INPUT));
   ++configurations;
@@ -26,8 +31,8 @@ static h2_pal_result_t configure_uart(
 static h2_pal_result_t configure_usb(
     void* user, const h2_pal_usb_jtag_io_stream_config_t* config) {
   assert(user == &usb_user && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG);
-  assert(config->rx_buffer_size == 8192u && config->tx_buffer_size == 2048u &&
-         config->route_stdio == 1);
+  assert(config->rx_buffer_size == TEST_SERIAL_RX_BUFFER &&
+         config->tx_buffer_size == 2048u && config->route_stdio == 1);
   ++configurations;
   return configure_result;
 }

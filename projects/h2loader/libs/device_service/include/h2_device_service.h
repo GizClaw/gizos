@@ -28,6 +28,21 @@ typedef struct h2_device_loader_config {
   uint32_t digest_yield_ms;
   uint32_t serial_idle_timeout_ms;
   uint32_t serial_post_write_poll_ms;
+  /** Optional reliable-serial receive budgets; zero selects 4096 bytes/20
+   * segments. rx_buffer_size is at least the stream MTU and at most 4096. */
+  size_t serial_rx_buffer_size;
+  uint32_t serial_receive_window;
+  /** Image-owned command-task minimum; zero keeps 48 KiB, otherwise >=20 KiB.
+   */
+  size_t command_task_stack_size;
+  /** Optional service work run by the serial owner before each poll, outside
+   * Loader/MFG operation locks. Errors keep serial recovery available. */
+  int (*poll_command_service)(void* user, h2_runtime_t* runtime,
+                              const h2_loader_command_config_t* command);
+  /** Optional shutdown/join outside Loader/MFG operation locks. Retried while
+   * serial recovery continues until H2_PAL_OK, retaining command dependencies.
+   */
+  int (*stop_command_service)(void* user, h2_runtime_t* runtime);
   h2_loader_ble_advertising_mode_t ble_advertising_mode;
   int force_command_mode;
   uint32_t mfg_required_total;
@@ -62,6 +77,7 @@ typedef struct h2_device_loader {
   h2_atomic_bool_t stop_requested;
   h2_loader_command_config_t ble_command;
   h2_loader_ble_service_t* ble_service;
+  int ble_global_initialized;
   h2_device_activity_t wifi_activity;
 } h2_device_loader_t;
 

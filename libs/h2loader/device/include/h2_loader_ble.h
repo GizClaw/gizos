@@ -55,10 +55,22 @@ typedef struct h2_loader_ble_service_config {
    * never credentials or an authenticated device identity. */
   const char* local_name;
   /** Minimum stack for synchronous session handlers; zero keeps stream default.
-   */
+   * The server uses the larger of this and server_task_stack_size. */
   size_t command_stack_size;
+  /** iKCP server task minimum stack bytes; zero preserves the 6 KiB default.
+   * A handler executing Loader commands inline requires at least 32 KiB. */
+  size_t server_task_stack_size;
+  /** TX/RX ring bytes; zero keeps 8 KiB in each direction. */
+  size_t stream_buffer_size;
+  /** Send/receive KCP window; zero keeps 32 segments in each direction.
+   * Positive overrides must not exceed UINT16_MAX / 2. */
+  uint32_t stream_window;
+  /** Queued input datagrams; zero keeps 16, maximum override UINT16_MAX. */
+  size_t input_frame_capacity;
 } h2_loader_ble_service_config_t;
 
+/** Opens a service. On error, a non-NULL output is a close-only handle whose
+ * cleanup must be retried before releasing any borrowed dependencies. */
 int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
                                h2_loader_ble_service_t** out_service);
 

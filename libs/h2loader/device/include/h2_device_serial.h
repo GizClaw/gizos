@@ -37,7 +37,11 @@ typedef struct h2_device_serial_config {
   uint32_t admission_fallback_ms;
   uint32_t idle_timeout_ms;
   uint32_t post_write_poll_ms;
-  /** Zero selects the common window of 20 segments. */
+  /** Zero selects 4096 bytes. Overrides must be between the stream MTU and
+   * 4096 bytes, inclusive. */
+  size_t rx_buffer_size;
+  /** Zero selects 20 segments. Positive overrides follow the iostreamikcp
+   * minimum and maximum receive-window limits. */
   uint32_t receive_window;
 } h2_device_serial_config_t;
 
@@ -69,6 +73,8 @@ void h2_device_serial_deinit(h2_device_serial_t* transport);
 h2_command_io_api_t h2_device_serial_io(h2_device_serial_t* transport);
 h2_pal_result_t h2_device_serial_poll_session(h2_device_serial_t* transport,
                                               uint32_t timeout_ms);
+/** Consumes one OPEN in task context. Failure releases the candidate and
+ * sleeps for one physical poll interval before the peer can retry. */
 h2_pal_result_t h2_device_serial_activate_pending(
     h2_device_serial_t* transport);
 uint32_t h2_device_serial_now(h2_device_serial_t* transport);

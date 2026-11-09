@@ -15,6 +15,8 @@ static uint64_t clock_ms;
 static int sleep_failure, task_failure, join_failure;
 static int stream_start_failure, stream_release_failure;
 static unsigned stream_starts, stream_releases;
+static unsigned ble_closes, close_failures, partial_live;
+static int partial_open;
 static h2_loader_ble_service_config_t ble_config;
 static const uint8_t image_bytes[] = "native-image-with-package-padding";
 
@@ -208,6 +210,7 @@ static int flush_stream(void* user) {
 
 int h2_bleikcp_global_init(void) { return 0; }
 int h2_bleikcp_global_shutdown(void) {
+  assert(partial_live == 0u);
   ++shutdowns;
   return 0;
 }
@@ -217,9 +220,26 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
   ble_config = *config;
   ++ble_opens;
   *out = NULL;
-  if (ble_opens <= open_failures) return H2_PAL_ERR_IO;
+  if (ble_opens <= open_failures) {
+    if (partial_open) {
+      assert(partial_live == 0u);
+      partial_live = 1u;
+      *out = (h2_loader_ble_service_t*)&ble_opens;
+    }
+    return H2_PAL_ERR_IO;
+  }
   *out = (h2_loader_ble_service_t*)&ble_opens;
   return 0;
+}
+int h2_loader_ble_service_close(h2_loader_ble_service_t* service) {
+  assert(service == (void*)&ble_opens && partial_live == 1u);
+  ++ble_closes;
+  if (close_failures != 0u) {
+    --close_failures;
+    return H2_PAL_ERR_TASK;
+  }
+  partial_live = 0u;
+  return H2_PAL_OK;
 }
 int h2_loader_ble_service_request_advertising_paused(
     h2_loader_ble_service_t* service, bool paused) {
@@ -356,6 +376,19 @@ int main(void) {
   assert(h2_device_app_commands_start(&state, &runtime, &commands) ==
          H2_PAL_ERR_TASK);
   assert(state.serial_started && ble_opens == 1u && shutdowns == 2u);
+  ble_opens = delay_count = 0u;
+  partial_open = 1;
+  close_failures = 2u;
+  sleep_failure = 0;
+  h2_device_app_commands_config_t one_attempt = commands;
+  one_attempt.ble_start_attempts = 1u;
+  assert(h2_device_app_commands_start(&state, &runtime, &one_attempt) ==
+         H2_PAL_ERR_IO);
+  assert(ble_opens == 1u && ble_closes == 3u && shutdowns == 3u);
+  assert(delay_count == 2u && delays[0] == 50u && delays[1] == 50u);
+  assert(partial_live == 0u && !state.service && !state.runtime &&
+         state.serial_started);
+  partial_open = 0;
   ble_opens = delay_count = 0u;
   open_failures = 5u;
   sleep_failure = 0;

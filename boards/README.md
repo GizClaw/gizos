@@ -10,6 +10,8 @@ boards/
 │   ├── esp32p4_func_ev_board_v1_4/
 │   ├── esp32s3_devkitc_1/
 │   └── mosaico/
+├── folotoy/
+│   └── ai_passport/
 ├── jieli/
 │   └── jieli_ac791n_devkit/
 ├── jlc/

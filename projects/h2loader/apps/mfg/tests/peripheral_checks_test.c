@@ -226,6 +226,7 @@ static void mixed_buttons(void) {
   assert(h2_mfg_model_init(&f.m.model, &f.profile, &summary, 1, save_buttons,
                            &f) == 0);
   assert(h2_mfg_hardware_enter(&f.m, 0) == 0);
+  uint64_t now = 0;
   const char* action = NULL;
   for (unsigned i = 0; i < 8; ++i) {
     for (unsigned cycle = 0; cycle < 3; ++cycle) {
@@ -233,42 +234,45 @@ static void mixed_buttons(void) {
         f.group_pressed = f.profile.buttons[i];
       else
         f.single_pressed = 1;
-      assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && !action &&
+      assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 && !action &&
              !f.m.model.ready);
       f.group_pressed = 0;
       f.single_pressed = 0;
-      assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && !action);
+      assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 && !action);
     }
   }
   assert(f.m.model.ready && f.single_reads && f.group_reads);
   f.group_pressed = 102;
-  assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && !action &&
+  assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 && !action &&
          !f.m.model.ready);
   f.group_pressed = 0;
-  assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && action &&
+  assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 && action &&
          !strcmp(action, "confirm"));
   action = NULL;
   f.single_pressed = 1;
-  assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && !f.m.model.ready);
+  assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 &&
+         !f.m.model.ready);
   assert(h2_mfg_model_action(&f.m.model, "retry", "test", f.m.model.ticket) ==
          0);
   assert(h2_mfg_hardware_leave(&f.m) == 0);
   assert(h2_mfg_hardware_enter(&f.m, 0) == 0);
-  assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && !f.m.model.ready);
+  assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 &&
+         !f.m.model.ready);
   assert(f.m.downs[7] == 0 && f.m.ups[7] == 0);
   f.single_pressed = 0;
-  assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && !f.m.model.ready);
+  assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 &&
+         !f.m.model.ready);
   f.profile.button_group_mask = 0;
   unsigned reads = f.single_reads;
-  assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 &&
+  assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 &&
          f.single_reads == reads);
   assert(h2_mfg_hardware_enter(&f.m, 0) == 0);
   for (unsigned i = 0; i < 8; ++i) {
     for (unsigned cycle = 0; cycle < 3; ++cycle) {
       f.group_pressed = f.profile.buttons[i];
-      assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && !action);
+      assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 && !action);
       f.group_pressed = 0;
-      assert(h2_mfg_hardware_tick(&f.m, 0, &action) == 0 && !action);
+      assert(h2_mfg_hardware_tick(&f.m, now += 20, &action) == 0 && !action);
     }
   }
   assert(f.m.model.ready && f.single_reads == reads);

@@ -2,6 +2,13 @@
 #include "h2_esp_platform_core.h"
 #include "h2_pal_unsupported.h"
 
+#ifndef H2_LOADER_SERIAL_RX_BUFFER
+#define H2_LOADER_SERIAL_RX_BUFFER 8192u
+#endif
+#if H2_LOADER_SERIAL_RX_BUFFER < 1024u || H2_LOADER_SERIAL_RX_BUFFER > 8192u
+#error "Invalid image-owned console receive budget"
+#endif
+
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_UART
 /* Serial startup, boot-lifetime driver ownership. Failed setup remains
  * retryable; successful setup never flushes RX again during an app retry. */
@@ -12,7 +19,9 @@ static h2_pal_result_t stream_start(void* user) {
   if (started) return H2_PAL_OK;
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
   const h2_pal_usb_jtag_io_stream_config_t config = {
-      .rx_buffer_size = 8192u, .tx_buffer_size = 2048u, .route_stdio = 1};
+      .rx_buffer_size = H2_LOADER_SERIAL_RX_BUFFER,
+      .tx_buffer_size = 2048u,
+      .route_stdio = 1};
   h2_pal_result_t rc = h2_pal_usb_jtag_io_stream_configure(
       h2_esp_platform_usb_jtag_io_stream_api(), &config);
 #else
@@ -20,7 +29,7 @@ static h2_pal_result_t stream_start(void* user) {
       .baud_rate = CONFIG_ESP_CONSOLE_UART_BAUDRATE,
       .data_bits = 8u,
       .stop_bits = 1u,
-      .rx_buffer_size = 8192u,
+      .rx_buffer_size = H2_LOADER_SERIAL_RX_BUFFER,
       .tx_buffer_size = 2048u,
       .flags = H2_PAL_UART_IO_STREAM_CONFIG_ROUTE_STDIO |
                H2_PAL_UART_IO_STREAM_CONFIG_FLUSH_INPUT,
