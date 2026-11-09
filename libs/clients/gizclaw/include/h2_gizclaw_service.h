@@ -309,7 +309,9 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
  * already completed (including by timeout), waking waiters before stop returns.
  * Accepted callbacks remain pending for caller-thread dispatch.
  * If a task join fails, its handle is retained; retry stop before deinit.
- * Tasks already joined successfully are not joined again.
+ * Tasks already joined successfully are not joined again. Pending Speech
+ * retirement also retains its request on audio-lock failure; retry stop after
+ * that PAL failure is resolved before deinit.
  * With optional local ingress enabled, also closes admission, cancels and
  * joins local dispatch. Local provider completions settle on their owner;
  * caller-thread operation callbacks still require poll. Retained local result

@@ -60,6 +60,9 @@ typedef struct h2_gizclaw_req_vtable {
 struct h2_gizclaw_req {
   const h2_gizclaw_req_vtable_t* vtable;
 };
+/* Pin a known live managed request; pair with req_release. The caller already
+ * owns a reference or holds an owner's mutex that protects an existing one. */
+bool h2_gizclaw_req_retain_internal(h2_gizclaw_req_t* request);
 
 /* One owner-task submission, with no pending poll or retry. Even WOULD_BLOCK
  * is terminal. Context ownership transfers only on successful construction. */
@@ -356,6 +359,10 @@ h2_pal_result_t h2_gizclaw_speech_input_snapshot_internal(void* context,
                                                           bool* active,
                                                           bool* ready);
 void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t* service);
+/* Retry pending retirement once. Failure keeps its Service-owned request
+ * reference; stop must retry before declaring the Service fully stopped. */
+h2_pal_result_t h2_gizclaw_speech_retire_internal(
+    h2_gizclaw_service_t* service);
 void h2_gizclaw_conversation_uplink_step_internal(
     h2_gizclaw_service_t* service);
 void h2_gizclaw_conversation_downlink_step_internal(

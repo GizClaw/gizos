@@ -1368,6 +1368,14 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t* service) {
       rc = lock_service(service);
       if (rc != H2_PAL_OK) return rc;
     }
+    if (h2_atomic_load(&service->speech_request) != NULL) {
+      service->stopping = true;
+      unlock_service(service);
+      rc = h2_gizclaw_speech_retire_internal(service);
+      if (rc != H2_PAL_OK) return rc;
+      rc = lock_service(service);
+      if (rc != H2_PAL_OK) return rc;
+    }
     service->stopped = true;
     unlock_service(service);
     return H2_PAL_OK;
@@ -1414,6 +1422,8 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t* service) {
     if (rc != H2_PAL_OK) return rc;
     service->data_downlink_task = NULL;
   }
+  rc = h2_gizclaw_speech_retire_internal(service);
+  if (rc != H2_PAL_OK) return rc;
   rc = h2_gizclaw_local_stop_internal(service->local);
   if (rc != H2_PAL_OK) return rc;
   rc = h2_gizclaw_device_stop_internal(service->device);
