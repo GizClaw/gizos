@@ -682,12 +682,16 @@ void h2_gizclaw_pcm_input_deinit(h2_gizclaw_pcm_input_t* input) {
   if (input == NULL) return;
   if (input->capture_id != 0u) {
     pcm_track_t* track = owned_track(input->track);
-    /* This input's exclusive consumer lease prevents replacement/destruction
-     * until retirement is collected. Publish before trying the fallible lock;
-     * the caller may free the input owner as soon as deinit returns. */
-    h2_atomic_store_explicit(&track->reader_retire_pending, true,
-                             H2_ATOMIC_RELEASE);
-    if (track_lock(track) == H2_PAL_OK) (void)track_unlock(track, H2_PAL_OK);
+    /* The reader lease pins Track through this lock attempt. On failure the
+     * final Track access transfers retirement to a future lock owner; after
+     * publishing it, Track may already be destroyed by another task. */
+    if (track_lock(track) == H2_PAL_OK) {
+      retire_reader(track);
+      (void)track_unlock(track, H2_PAL_OK);
+    } else {
+      h2_atomic_store_explicit(&track->reader_retire_pending, true,
+                               H2_ATOMIC_RELEASE);
+    }
   } else if (input->legacy_lease) {
     /* Returning a legacy pin never requires the fallible Track mutex. */
     release_legacy(input, owned_track(input->track));

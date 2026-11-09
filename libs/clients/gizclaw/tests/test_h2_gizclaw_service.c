@@ -11571,6 +11571,85 @@ static int speech_pacing_log(void* user, h2_pal_log_level_t level,
   return H2_PAL_OK;
 }
 
+static void detached_speech_complete(
+    void* user, h2_gizclaw_req_t* request,
+    const h2_gizclaw_operation_result_t* result) {
+  speech_wire_test_t* wire = user;
+  assert(request != NULL);
+  assert(result->result ==
+         (wire->mode == 6u ? H2_GIZCLAW_ERR_REMOTE : H2_PAL_ERR_CLOSED));
+  h2_atomic_fetch_add(&wire->callbacks, 1u);
+}
+
+static void test_speech_detach_releases_legacy_window(void) {
+  for (unsigned failure = 0u; failure < 2u; ++failure) {
+    for (unsigned queued_callback = 0u; queued_callback < 2u;
+         ++queued_callback) {
+      test_env_t env;
+      h2_gizclaw_service_t* service = create_service(&env, 4u);
+      h2_atomic_store(&env.event_emitted, true);
+      h2_gizclaw_track_t* track = NULL;
+      const h2_gizclaw_pcm_track_config_t config = {
+          .allocator = service->client_config.allocator,
+          .sync = service->config.sync};
+      assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+      assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+      assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+      h2_gizclaw_async_rpc_test_set_ops(&speech_test_ops);
+      const h2_gizclaw_speech_transcribe_options_t options = {
+          .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+      speech_wire_test_t first = {.service = service,
+                                  .app_thread = pthread_self(),
+                                  .mode = failure ? 6u : 0u};
+      speech_wire_test_atomics_init(&first);
+      s_speech = &first;
+      h2_gizclaw_req_t* previous = NULL;
+      assert(h2_gizclaw_req_create_speech_transcribe(
+                 service, 10001u, &options, 2000u, &previous) == H2_PAL_OK);
+      assert(h2_gizclaw_req_do(previous, &first, NULL, NULL,
+                               queued_callback ? detached_speech_complete
+                                               : NULL) == H2_PAL_OK);
+      assert(speech_audio_start(&first) == H2_PAL_OK);
+      wait_for_count(&first.starts, 3u);
+      if (!failure) assert(h2_gizclaw_req_cancel(previous) == H2_PAL_OK);
+      assert(h2_gizclaw_req_wait(previous, 3000u) ==
+             (failure ? H2_GIZCLAW_ERR_REMOTE : H2_PAL_ERR_CLOSED));
+      assert(h2_atomic_load(&first.destroys) == 1u);
+      assert(h2_atomic_load(&first.callbacks) == 0u);
+      if (queued_callback) {
+        h2_gizclaw_req_release(previous);
+        previous = NULL; /* Only undispatched completion retains its owner. */
+      }
+
+      /* No END was sent. A retained handle or pending callback must not retain
+       * PCM ownership once terminal detach has drained its worker references.
+       */
+      speech_wire_test_t second = {.service = service,
+                                   .app_thread = pthread_self()};
+      speech_wire_test_atomics_init(&second);
+      s_speech = &second;
+      h2_gizclaw_req_t* next = NULL;
+      assert(h2_gizclaw_req_create_speech_transcribe(
+                 service, 10002u, &options, 2000u, &next) == H2_PAL_OK);
+      assert(h2_gizclaw_req_do(next, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+      assert(speech_audio_start(&second) == H2_PAL_OK);
+      assert(h2_atomic_load(&first.callbacks) == 0u);
+      assert(h2_gizclaw_req_cancel(next) == H2_PAL_OK);
+      assert(h2_gizclaw_req_wait(next, 3000u) == H2_PAL_ERR_CLOSED);
+      h2_gizclaw_req_release(next);
+      if (previous != NULL) h2_gizclaw_req_release(previous);
+      assert(h2_gizclaw_service_poll(service, 32u, NULL) == H2_PAL_OK);
+      assert(h2_atomic_load(&first.callbacks) == queued_callback);
+      assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+      assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+      assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+      assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+      h2_gizclaw_async_rpc_test_set_ops(NULL);
+      s_speech = NULL;
+    }
+  }
+}
+
 static void test_speech_managed_requests(void) {
   for (unsigned mode = 0u; mode < 19u; ++mode) {
     test_env_t env;
@@ -16286,11 +16365,13 @@ int main(int argc, char** argv) {
   if (argc == 2 && strcmp(argv[1], "--managed-capture-only") == 0) {
     test_conversation_adopts_local_capture();
     test_speech_adopts_capture_across_rounds();
+    test_speech_detach_releases_legacy_window();
     test_capture_producer_lease_blocks_track_unset();
     return 0;
   }
   if (argc == 2 && strcmp(argv[1], "--pcm-stream-only") == 0) {
     test_speech_adopts_capture_across_rounds();
+    test_speech_detach_releases_legacy_window();
     test_capture_producer_lease_blocks_track_unset();
     test_asr_from_owned_pcm_track();
     test_speech_options_and_created_lifetime();
@@ -16335,6 +16416,7 @@ int main(int argc, char** argv) {
   test_workspace_pending_error_mapping();
   test_conversation_adopts_local_capture();
   test_speech_adopts_capture_across_rounds();
+  test_speech_detach_releases_legacy_window();
   test_capture_producer_lease_blocks_track_unset();
   test_asr_from_owned_pcm_track();
   test_owned_pcm_track_binding();
