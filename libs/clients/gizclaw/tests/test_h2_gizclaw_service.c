@@ -11805,6 +11805,95 @@ static void test_speech_retirement_retries_audio_lock(void) {
   }
 }
 
+typedef struct speech_admission_gate {
+  h2_gizclaw_service_t* service;
+  h2_gizclaw_req_t* request;
+  const h2_pal_sync_api_t* original;
+  h2_pal_mutex_t* audio_mutex;
+  pthread_mutex_t gate;
+  pthread_cond_t progress;
+  bool entered, resume;
+  unsigned attempts;
+  h2_pal_result_t result;
+} speech_admission_gate_t;
+static speech_admission_gate_t* s_speech_admission_gate;
+static _Thread_local bool speech_admission_task;
+
+static h2_pal_result_t speech_admission_lock(void* user,
+                                             h2_pal_mutex_t* mutex) {
+  speech_admission_gate_t* gate = s_speech_admission_gate;
+  if (speech_admission_task && mutex == gate->audio_mutex) {
+    /* First lock is admission after req_do's initial service-state check.
+     * A later cleanup attempt would fail, reproducing the stranded-route case.
+     */
+    if (gate->attempts++ != 0u) return H2_PAL_ERR_IO;
+    assert(pthread_mutex_lock(&gate->gate) == 0);
+    gate->entered = true;
+    assert(pthread_cond_broadcast(&gate->progress) == 0);
+    while (!gate->resume)
+      assert(pthread_cond_wait(&gate->progress, &gate->gate) == 0);
+    assert(pthread_mutex_unlock(&gate->gate) == 0);
+  }
+  return gate->original->vtable->lock_mutex(user, mutex);
+}
+static void* speech_admission_entry(void* user) {
+  speech_admission_gate_t* gate = user;
+  speech_admission_task = true;
+  gate->result = h2_gizclaw_req_do(gate->request, NULL, NULL, NULL, NULL);
+  speech_admission_task = false;
+  return NULL;
+}
+
+static void test_speech_admission_after_stop(void) {
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_service(&env, 4u);
+  h2_atomic_store(&env.event_emitted, true);
+  speech_admission_gate_t gate = {.service = service,
+                                  .original = service->config.sync,
+                                  .audio_mutex = service->audio_mutex};
+  assert(pthread_mutex_init(&gate.gate, NULL) == 0);
+  assert(pthread_cond_init(&gate.progress, NULL) == 0);
+  h2_pal_sync_vtable_t sync_vtable = *gate.original->vtable;
+  sync_vtable.lock_mutex = speech_admission_lock;
+  const h2_pal_sync_api_t sync = {.user = gate.original->user,
+                                  .vtable = &sync_vtable};
+  s_speech_admission_gate = &gate;
+  service->config.sync = &sync;
+  h2_gizclaw_track_t* track = NULL;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = service->client_config.allocator, .sync = &sync};
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  const h2_gizclaw_speech_transcribe_options_t options = {
+      .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+  assert(h2_gizclaw_req_create_speech_transcribe(
+             service, 12001u, &options, 2000u, &gate.request) == H2_PAL_OK);
+  pthread_t admission;
+  assert(pthread_create(&admission, NULL, speech_admission_entry, &gate) == 0);
+  assert(pthread_mutex_lock(&gate.gate) == 0);
+  while (!gate.entered)
+    assert(pthread_cond_wait(&gate.progress, &gate.gate) == 0);
+  assert(pthread_mutex_unlock(&gate.gate) == 0);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK && service->stopped);
+  assert(pthread_mutex_lock(&gate.gate) == 0);
+  gate.resume = true;
+  assert(pthread_cond_broadcast(&gate.progress) == 0);
+  assert(pthread_mutex_unlock(&gate.gate) == 0);
+  assert(pthread_join(admission, NULL) == 0);
+  assert(gate.result == H2_PAL_ERR_CLOSED && gate.attempts == 1u);
+  assert(h2_atomic_load(&service->speech_request) == NULL);
+  h2_gizclaw_req_release(gate.request);
+  assert(service->request_reference_count == 0u);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  s_speech_admission_gate = NULL;
+  assert(pthread_cond_destroy(&gate.progress) == 0);
+  assert(pthread_mutex_destroy(&gate.gate) == 0);
+}
+
 static void test_speech_managed_requests(void) {
   for (unsigned mode = 0u; mode < 19u; ++mode) {
     test_env_t env;
@@ -16522,6 +16611,7 @@ int main(int argc, char** argv) {
     test_speech_adopts_capture_across_rounds();
     test_speech_detach_releases_legacy_window();
     test_speech_retirement_retries_audio_lock();
+    test_speech_admission_after_stop();
     test_capture_producer_lease_blocks_track_unset();
     return 0;
   }
@@ -16529,6 +16619,7 @@ int main(int argc, char** argv) {
     test_speech_adopts_capture_across_rounds();
     test_speech_detach_releases_legacy_window();
     test_speech_retirement_retries_audio_lock();
+    test_speech_admission_after_stop();
     test_capture_producer_lease_blocks_track_unset();
     test_asr_from_owned_pcm_track();
     test_speech_options_and_created_lifetime();
@@ -16575,6 +16666,7 @@ int main(int argc, char** argv) {
   test_speech_adopts_capture_across_rounds();
   test_speech_detach_releases_legacy_window();
   test_speech_retirement_retries_audio_lock();
+  test_speech_admission_after_stop();
   test_capture_producer_lease_blocks_track_unset();
   test_asr_from_owned_pcm_track();
   test_owned_pcm_track_binding();
