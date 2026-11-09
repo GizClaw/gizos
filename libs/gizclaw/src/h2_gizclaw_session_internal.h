@@ -33,6 +33,12 @@ void h2_gizclaw_service_flush_audio_log_internal(
 h2_pal_result_t h2_gizclaw_service_audio_control_internal(
     h2_gizclaw_service_t* service, bool start, h2_gizclaw_audio_log_t* log,
     bool* out_empty);
+h2_pal_result_t h2_gizclaw_service_audio_adopt_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_track_t* track,
+    h2_gizclaw_pcm_capture_id_t id, h2_gizclaw_audio_log_t* log);
+/* Observe producer-acknowledged END on the current conversation only. */
+h2_pal_result_t h2_gizclaw_service_audio_end_snapshot_internal(
+    h2_gizclaw_service_t* service, bool* ended, bool* empty);
 typedef enum h2_gizclaw_cancel_source {
   H2_GIZCLAW_CANCEL_UNSPECIFIED,
   H2_GIZCLAW_CANCEL_API,

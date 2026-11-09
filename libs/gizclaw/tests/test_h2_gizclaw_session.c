@@ -106,6 +106,11 @@ static void* terminal_user;
 static unsigned terminal_count;
 static unsigned audio_starts, audio_ends;
 static h2_pal_result_t audio_start_result, audio_end_result;
+static unsigned audio_adopts;
+static h2_gizclaw_track_t* adopted_track;
+static h2_gizclaw_pcm_capture_id_t adopted_id;
+static h2_pal_result_t audio_adopt_result, audio_snapshot_result;
+static bool audio_capture_ended, audio_capture_empty;
 static char audio_error_log[H2_PAL_LOG_MESSAGE_MAX];
 static h2_atomic_int_t last_cancel_source;
 static unsigned end_noops;
@@ -146,6 +151,24 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
   (void)log;
   return start ? h2_gizclaw_service_audio_start(service)
                : h2_gizclaw_service_audio_end(service);
+}
+
+h2_pal_result_t h2_gizclaw_service_audio_adopt_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_track_t* track,
+    h2_gizclaw_pcm_capture_id_t id, h2_gizclaw_audio_log_t* log) {
+  assert(service == (h2_gizclaw_service_t*)&lists && log != NULL);
+  ++audio_adopts;
+  adopted_track = track;
+  adopted_id = id;
+  return audio_adopt_result;
+}
+
+h2_pal_result_t h2_gizclaw_service_audio_end_snapshot_internal(
+    h2_gizclaw_service_t* service, bool* ended, bool* empty) {
+  assert(service == (h2_gizclaw_service_t*)&lists);
+  *ended = audio_capture_ended;
+  *empty = audio_capture_empty;
+  return audio_snapshot_result;
 }
 
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
@@ -456,7 +479,11 @@ static h2_gizclaw_session_config_t session_config(size_t tag_count) {
   h2_atomic_store(&workflow_gets, 0u);
   terminal_count = 0u;
   list_limit = 0u;
-  audio_starts = audio_ends = 0u;
+  audio_starts = audio_ends = audio_adopts = 0u;
+  adopted_track = NULL;
+  adopted_id = 0u;
+  audio_adopt_result = audio_snapshot_result = H2_PAL_OK;
+  audio_capture_ended = audio_capture_empty = false;
   releases = text_sends = 0u;
   text_result = H2_PAL_OK;
   text_seen[0] = '\0';
@@ -1254,6 +1281,83 @@ static void test_control_boundaries(void) {
   teardown();
 }
 
+static void test_audio_adopt_and_automatic_end_snapshot(void) {
+  for (unsigned mode = 0u; mode < 3u; ++mode) {
+    setup(1u);
+    assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+    const h2_gizclaw_workspace_parameters_patch_t parameters = {
+        .has_input = true,
+        .input = mode == 2u ? H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
+                            : H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+    h2_gizclaw_session_selection_t sel = selection;
+    sel.parameters = &parameters;
+    h2_gizclaw_conversation_t* conversation = NULL;
+    assert(h2_gizclaw_session_conversation_create(session, &sel, 1000u, NULL,
+                                                  NULL, NULL,
+                                                  &conversation) == H2_PAL_OK);
+    char track_token;
+    h2_gizclaw_track_t* track = (h2_gizclaw_track_t*)&track_token;
+    assert(h2_gizclaw_session_audio_adopt(NULL, track, 17u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_gizclaw_session_audio_adopt(session, NULL, 17u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_gizclaw_session_audio_adopt(session, track, 0u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(audio_adopts == 0u && audio_starts == 0u);
+    /* Service rejects the stale identity; Session must not mark input open. */
+    audio_adopt_result = H2_PAL_ERR_NOT_FOUND;
+    assert(h2_gizclaw_session_audio_adopt(session, track, 16u) ==
+           H2_PAL_ERR_NOT_FOUND);
+    assert(adopted_track == track && adopted_id == 16u);
+    assert(!snapshot().conversation_input_open &&
+           snapshot().last_error == H2_PAL_ERR_NOT_FOUND);
+    audio_adopt_result = H2_PAL_OK;
+    assert(h2_gizclaw_session_audio_adopt(session, track, 17u) == H2_PAL_OK);
+    assert(audio_adopts == 2u && adopted_track == track && adopted_id == 17u);
+    h2_gizclaw_session_state_t state = snapshot();
+    assert(state.conversation_input_open && state.last_error == H2_PAL_OK);
+    assert(state.conversation ==
+           (mode == 2u ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING
+                       : H2_GIZCLAW_SESSION_CONVERSATION_RECORDING));
+    assert(h2_gizclaw_session_audio_adopt(session, track, 18u) ==
+           H2_PAL_ERR_BUSY);
+    assert(audio_adopts == 2u && adopted_id == 17u);
+    /* Until Service observes the producer acknowledgement, input stays open. */
+    assert(snapshot().revision == state.revision);
+    audio_snapshot_result = H2_PAL_ERR_IO;
+    assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_ERR_IO);
+    audio_snapshot_result = H2_PAL_OK;
+    assert(snapshot().conversation_input_open);
+    audio_capture_empty = mode == 1u;
+    audio_capture_ended = true;
+    state = snapshot();
+    assert(!state.conversation_input_open);
+    assert(state.conversation == (mode == 0u
+                                      ? H2_GIZCLAW_SESSION_CONVERSATION_WAITING
+                                      : H2_GIZCLAW_SESSION_CONVERSATION_IDLE));
+    assert(audio_starts == 0u && audio_ends == 0u);
+    assert(snapshot().revision == state.revision);
+    if (mode == 0u) {
+      ++downlink_writes;
+      assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+    }
+    const h2_gizclaw_operation_result_t sent = {
+        .terminal_kind = H2_GIZCLAW_OPERATION_FINISHED, .result = H2_PAL_OK};
+    terminal(terminal_user, conversation, &sent);
+    /* The same logical Conversation accepts a later capture identity. */
+    audio_capture_ended = audio_capture_empty = false;
+    assert(h2_gizclaw_session_audio_adopt(session, track, 18u) == H2_PAL_OK);
+    assert(audio_adopts == 3u && adopted_id == 18u);
+    assert(snapshot().conversation_input_open);
+    audio_capture_ended = true;
+    assert(!snapshot().conversation_input_open);
+    assert(audio_starts == 0u && audio_ends == 0u);
+    terminal(terminal_user, conversation, &sent);
+    h2_gizclaw_session_conversation_release(session, conversation);
+    teardown();
+  }
+}
+
 /* Mirrors the synchronous delete RPC's Session participation at the typed
  * boundary; a successful server delete makes the next get return Not Found. */
 static h2_pal_result_t delete_workspace(const char* name,
@@ -1938,6 +2042,7 @@ int main(void) {
   test_speech_rate_parameter();
   test_send_text();
   test_control_boundaries();
+  test_audio_adopt_and_automatic_end_snapshot();
   test_run_stop();
   test_workspace_delete();
   test_pending_workspace_recovery();
