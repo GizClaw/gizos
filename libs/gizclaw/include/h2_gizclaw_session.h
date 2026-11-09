@@ -246,9 +246,12 @@ h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t* session);
  * Workspace preparation. The bound Track and nonzero id must match the local
  * capture; repeated adoption while input is open returns BUSY. See
  * service_audio_adopt for ownership, failure and EOS semantics. capture_end
- * automatically closes input after producer acknowledgement; snapshot projects
- * RECORDING to WAITING (or IDLE for empty input). No application drain is
- * needed.
+ * automatically closes input after producer acknowledgement, projecting
+ * RECORDING to WAITING (or IDLE for empty input). Completion applies this even
+ * before another snapshot; managed realtime never restarts a legacy input.
+ * audio_end on an adopted window only requests END: input stays open until
+ * producer acknowledgement and its final frame is retained. No application
+ * drain is needed.
  */
 h2_pal_result_t h2_gizclaw_session_audio_adopt(h2_gizclaw_session_t* session,
                                                h2_gizclaw_track_t* track,

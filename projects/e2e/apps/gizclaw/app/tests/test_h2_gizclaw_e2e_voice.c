@@ -273,6 +273,27 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
     *out_empty = s_conversation != NULL && s_conversation->input_bytes == 0u;
   return rc;
 }
+/* This fixture uses legacy PCM boundaries. Resolve Session's managed bridge
+ * here as well, so its fake Service never links the real Service
+ * implementation.
+ */
+h2_pal_result_t h2_gizclaw_service_audio_adopt_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_track_t* track,
+    h2_gizclaw_pcm_capture_id_t id, h2_gizclaw_audio_log_t* log) {
+  (void)service;
+  (void)track;
+  (void)id;
+  (void)log;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+h2_pal_result_t h2_gizclaw_service_audio_end_snapshot_internal(
+    h2_gizclaw_service_t* service, bool* ended, bool* empty) {
+  (void)service;
+  *ended = false;
+  *empty = false;
+  return H2_PAL_OK;
+}
+
 /* The Session's text input: a complete input that is already ended, so the
  * poll below completes it and the reply follows as downstream audio. */
 h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
