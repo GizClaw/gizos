@@ -286,8 +286,12 @@ static h2_pal_result_t speech_admit(void* context) {
     return rc;
   }
   h2_gizclaw_track_t* track = h2_atomic_load(&service->pcm_track);
-  if (track == NULL || service->pcm_track_unsetting ||
-      track->vtable->read == NULL)
+  if (service->stopping || service->stopped)
+    rc = H2_PAL_ERR_CLOSED;
+  else if (!service->started)
+    rc = H2_PAL_ERR_INVALID_STATE;
+  else if (track == NULL || service->pcm_track_unsetting ||
+           track->vtable->read == NULL)
     rc = H2_PAL_ERR_INVALID_STATE;
   else if (h2_atomic_load(&service->speech_request) != NULL ||
            h2_atomic_load(&service->media_request) != NULL)

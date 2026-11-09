@@ -351,8 +351,12 @@ static void h2_web_test_serial_read_edge(void* user) {
   }
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void*[]){&(int){test->mode}});
+  /* Only the timeout case tests a deadline. Other cases verify data/closure
+   * across async worker turns and must tolerate coverage-runner scheduling. */
+  const uint32_t read_timeout_ms =
+      test->expected == H2_PAL_ERR_TIMEOUT ? 1u : 2000u;
   const h2_pal_result_t result = h2_pal_uart_io_stream_read(
-      stream, bytes, sizeof(bytes), &transferred, 1u);
+      stream, bytes, sizeof(bytes), &transferred, read_timeout_ms);
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void*[]){&(int){0}});
   const h2_pal_result_t close_result =
