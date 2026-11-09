@@ -32,7 +32,7 @@ const config = {
 const configPath = join(directory, 'src-tauri/gizloader.generated.conf.json');
 writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 // Use the locked local Tauri CLI, with Bun available to beforeBuildCommand.
-// Build/sign/notarize the app with Tauri; assemble the DMG without a writable mount.
+// Build/sign/notarize the app with Tauri; assemble the DMG from staged contents.
 execute(process.execPath, [join(directory, 'node_modules/@tauri-apps/cli/tauri.js'), 'build', '--verbose',
   '--config', configPath, '--bundles', mac ? 'app' : 'nsis'], {
   env: tauriEnvironment(process.env),
