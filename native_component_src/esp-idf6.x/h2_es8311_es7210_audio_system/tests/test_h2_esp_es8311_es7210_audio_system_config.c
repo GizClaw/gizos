@@ -1,6 +1,7 @@
 #include "h2_esp_es8311_es7210_audio_system.h"
 
 #include <assert.h>
+#include <string.h>
 
 int h2_esp_es8311_es7210_sr_init(
     h2_esp_es8311_es7210_sr_state_t* state,
@@ -23,6 +24,47 @@ int h2_esp_es8311_es7210_sr_process(h2_esp_es8311_es7210_sr_state_t* state,
 
 void h2_esp_es8311_es7210_sr_deinit(h2_esp_es8311_es7210_sr_state_t* state) {
   (void)state;
+}
+
+static void test_mic_fallback(
+    h2_esp_es8311_es7210_audio_system_config_t config) {
+  config.enable_aec = 0;
+  h2_esp_es8311_es7210_audio_system_t system;
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
+         H2_AUDIO_OK);
+  uint8_t raw_pcm[] = {
+      99, 0, 0, 128, 0, 128, 7, 0, 98, 0, 255, 127, 255, 127, 6, 0,
+  };
+  const uint8_t expected[] = {0, 128, 255, 127};
+  uint8_t out_pcm[4] = {0};
+  const h2_audio_pcm_format_t raw_format = {
+      .sample_rate_hz = config.sample_rate_hz,
+      .channels = 4u,
+      .sample_format = H2_AUDIO_SAMPLE_S16LE,
+  };
+  h2_audio_pcm_format_t out_format = raw_format;
+  out_format.channels = 1u;
+  h2_audio_frame_t raw =
+      h2_audio_frame_for_buffer(raw_pcm, sizeof(raw_pcm), raw_format);
+  raw.bytes = sizeof(raw_pcm);
+  h2_audio_frame_t out =
+      h2_audio_frame_for_buffer(out_pcm, sizeof(out_pcm), out_format);
+  assert(h2_esp_es8311_es7210_audio_system_process_mic(&system, &raw, &out,
+                                                       0u) == H2_AUDIO_OK);
+  assert(memcmp(out_pcm, expected, sizeof(expected)) == 0);
+  assert(out.bytes == sizeof(expected) && out.samples_per_channel == 2u);
+
+  out.capacity = 2u;
+  assert(h2_esp_es8311_es7210_audio_system_process_mic(&system, &raw, &out,
+                                                       0u) == H2_AUDIO_OK);
+  assert(out.bytes == 2u && out.samples_per_channel == 1u);
+  raw.bytes = 0u;
+  assert(h2_esp_es8311_es7210_audio_system_process_mic(
+             &system, &raw, &out, 0u) == H2_AUDIO_ERR_INVALID_ARG);
+  assert(out.bytes == 2u && out.samples_per_channel == 1u);
+  raw.sample_rate_hz /= 2u;
+  assert(h2_esp_es8311_es7210_audio_system_process_mic(
+             &system, &raw, &out, 0u) == H2_AUDIO_ERR_UNSUPPORTED);
 }
 
 int main(void) {
@@ -56,6 +98,7 @@ int main(void) {
   config.sync_api = &sync_api;
   assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
          H2_AUDIO_OK);
+  test_mic_fallback(config);
   config.mic_gain_db = 24u;
   config.mic_gain_min_db = 0u;
   config.mic_gain_max_db = 38u;

@@ -1,8 +1,8 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load(":info_plist.bzl", "cli_info_plist")
 
 package(default_visibility = ["//visibility:public"])
@@ -64,18 +64,18 @@ _NATIVE_COMPATIBILITY = select({
 })
 
 _NATIVE_DEPS = [
-    "//libs/bleikcp",
+    "//libs/net/bleikcp",
     "//libs/command",
-    "//libs/h2loader_host",
-    "//libs/pal",
+    "//libs/h2loader/host",
+    "//pal",
     "//libs/runtime",
-    "//projects/h2loader/apps/cli/app:h2loader_cli_app",
-    "//projects/h2loader/targets/cc_binary/cli:platform",
+    "//tools/gizloader/cli:h2loader_cli_app",
+    "//tools/gizloader/cli:platform",
 ]
 
 cc_binary(
     name = "gizloader-cli",
-    srcs = ["//projects/h2loader/targets/cc_binary/cli:cli_main"],
+    srcs = ["//tools/gizloader/cli:cli_main"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = _NATIVE_COMPATIBILITY,
@@ -111,14 +111,14 @@ cc_test(
 py_test(
     name = "native_cli_test",
     size = "small",
-    srcs = ["//projects/h2loader/targets/cc_binary/cli:test_h2_h2loader_cli_native.py"],
+    srcs = ["//tools/gizloader/cli:test_h2_h2loader_cli_native.py"],
     args = [
         "$(location :gizloader-cli)",
-        "$(location //projects/h2loader/targets/cc_binary/cli:startup_failure_fixture)",
+        "$(location //tools/gizloader/cli:startup_failure_fixture)",
     ],
     data = [
         ":gizloader-cli",
-        "//projects/h2loader/targets/cc_binary/cli:startup_failure_fixture",
+        "//tools/gizloader/cli:startup_failure_fixture",
     ],
     legacy_create_init = 0,
     main = "test_h2_h2loader_cli_native.py",

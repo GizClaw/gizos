@@ -1,8 +1,8 @@
 """Exercise real Lua dependency closures and the unchanged task-policy audit."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
-load("//tools/bazel:target_task_policy_codegen.bzl", "task_policy_audit")
-load("//tools/bazel:tasks.bzl", "H2TasksInfo", "h2_tasks")
+load("//tools/bazel/firmware:target_task_policy_codegen.bzl", "task_policy_audit")
+load("//tools/bazel/firmware:tasks.bzl", "H2TasksInfo", "h2_tasks")
 
 def _inventory_impl(ctx):
     env = analysistest.begin(ctx)

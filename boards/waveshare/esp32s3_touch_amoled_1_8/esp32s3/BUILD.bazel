@@ -1,0 +1,91 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "esp32s3",
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_audio_config.c",
+        "src/h2_esp_board_audio_es8311.c",
+        "src/h2_esp_board_display.c",
+        "src/h2_esp_board_display_config.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_i2c.c",
+        "src/h2_esp_board_input.c",
+        "src/h2_esp_board_power.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+        "src/h2_esp_board_touch_ft3168.c",
+    ],
+    hdrs = [
+        "include/h2_amoled_display_capture.h",
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_display_config_internal.h",
+        "src/h2_esp_board_internal.h",
+        "src/h2_esp_board_private.h",
+    ],
+    component_name = "h2_esp_board",
+    data = [
+        "CMakeLists.txt",
+        "idf_component.yml",
+        "sdkconfig.defaults",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/drivers/motion/qmi8658",
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "audio_config_host_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "src/h2_esp_board_audio_config.c",
+        "tests/test_h2_esp_board_audio_config.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "display_config_host_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "src/h2_esp_board_display_config.c",
+        "src/h2_esp_board_display_config_internal.h",
+        "tests/test_h2_esp_board_display_config.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//pal",
+    ],
+)

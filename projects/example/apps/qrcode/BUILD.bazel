@@ -1,8 +1,0 @@
-package(default_visibility = ["//visibility:public"])
-
-filegroup(
-    name = "qrcode",
-    srcs = [
-        "//projects/example/apps/qrcode/app:qrcode",
-    ],
-)

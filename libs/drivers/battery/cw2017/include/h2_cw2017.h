@@ -1,6 +1,6 @@
 #ifndef H2_CW2017_H
 #define H2_CW2017_H
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus

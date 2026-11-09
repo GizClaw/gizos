@@ -1,0 +1,112 @@
+load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+esp_target_task_policy(
+    default_policy = "4 any 4096 psram",
+    graph = [":webrtc_performance_launcher"],
+    policies = [
+        "h2loader/appcmd    8        0  4096  psram",
+        "h2loader/blecmd    8        0  4096  psram",
+        "$h2loader/return   8        0  4096  psram",
+        "$h2loader/blelink  6        0  4096  psram",
+        "$bleikcp/kcp       7        0  4096  psram",
+        "$bleikcp/server    5        0  4096  psram",
+        "$h2peer/net        7        0  4096  psram",
+        "$h2peer/udp        7        0  4096  psram",
+        "$runtime/input     default",
+        "$runtime/nfc       default",
+        "$h2loader/uartcmd  default",
+    ],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    native_deps = ["//projects/h2loader/libs/device_service:firmware_api"],
+    native_srcs = ["//projects/h2loader/libs/device_service:firmware_sources"],
+    deps = [
+        "//libs/archive/bundle",
+        "//libs/command",
+        "//libs/net/bleikcp",
+        "//libs/net/iostreamikcp",
+        "//libs/net/wifi_sta",
+        "//libs/runtime",
+        "//libs/ui/pixa",
+        "//pal:unsupported",
+        "//pal/providers/backends/corehttp",
+        "//pal/providers/backends/h2peer",
+        "//pal/providers/backends/h2sctp",
+        "//projects/testing/benchmark/webrtc-performance/app:webrtc_performance",
+    ],
+)
+
+firmware_native_component(
+    name = "webrtc_performance_launcher",
+    srcs = ["main/main.c"],
+    component_directory = "projects/testing/targets/h2_loader_tar_zlib/benchmark/webrtc-performance/espressif/esp32s3_devkitc_1/main",
+    component_name = "main",
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":firmware_lib",
+        "//boards/espressif/esp32s3_devkitc_1/esp32s3",
+        "//libs/h2loader/device",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//pal",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "devkit",
+    cmake_variables = [
+        "H2_WEBRTC_PERF_ENDPOINT",
+        "H2_WEBRTC_PERF_STUN_URL",
+    ],
+    console = "usb",
+    graph = [":webrtc_performance_launcher"],
+    h2loader_wifi_environment = True,
+    project = "CMakeLists.txt",
+    project_name = "h2_webrtc_performance_devkit",
+    target = "esp32s3",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "devkit",
+    firmware = ":firmware",
+    image = "webrtc-performance",
+    role = "app",
+    target = "esp32s3",
+)
+
+h2loader_zlib_tar(
+    name = "package_v2",
+    source = "//projects/testing/targets/h2_loader_tar_zlib/benchmark/webrtc-performance/espressif/esp32s3_devkitc_1:package",
+)

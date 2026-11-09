@@ -1,6 +1,6 @@
 #include "h2_bk_platform_core.h"
 
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 
 #if H2_BK_PLATFORM_CORE_ENABLE_MQTT
 #include "h2_coremqtt.h"

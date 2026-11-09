@@ -1,0 +1,31 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_test")
+load("//tools/bazel/platforms:compatibility.bzl", "MACOS_ARM64_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_test(
+    name = "desktop_contract_test",
+    srcs = ["main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//pal:unsupported",
+        "//pal/providers/platforms/darwin/pal_core:netif_system_event",
+        "//projects/testing/unit/pal-wifi/app:pal_wifi_e2e",
+    ],
+)
+
+cc_binary(
+    name = "device_monitor",
+    srcs = ["device_monitor.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/h2loader/host",
+        "//pal/providers/platforms/darwin/pal_core",
+        "//pal/providers/platforms/desktop/pal_core",
+    ],
+)

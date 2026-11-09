@@ -42,11 +42,13 @@ Python 3, using its HTTPS client with certificate verification and pinned
 archive checksums. Discovery/configuration commands also support Windows;
 SDK and tool installation retain the host support described below.
 
+ESP-IDF download preferences `IDF_GITHUB_ASSETS` and `IDF_MIRROR_PREFIX_MAP` are forwarded to the SDK installer while stale SDK and Python paths are cleared; its original archive size and checksum checks remain active. CI mirrors only the verified `espressif/binutils-gdb` release path and leaves other SDK asset URLs unchanged.
+
 After a release has been imported into the registry by Deploy:
 
 ```sh
 bunx @gizclaw/gizos setup esp-idf 6.2
-bunx @gizclaw/gizos setup bk7258 3.1.1
+bunx @gizclaw/gizos setup bk7258 3.1.1-r6bbf627
 bunx @gizclaw/gizos install adb 35.0.2
 bunx @gizclaw/gizos env
 ```
@@ -57,6 +59,8 @@ Before the initial publication, run the same commands from the source checkout:
 bun tools/gizos/src/cli.ts --help
 bazel run //tools/gizos:gizos -- env
 ```
+
+Bazel's Bun runtime version, archive identities and SHA-256 values are maintained in `bun_runtime.json`. CI verifies the selected host archive in its dependency cache before repository setup; Bazel applies the same digest again when extracting it.
 
 ## Supported environments
 
@@ -79,7 +83,7 @@ selection, source checkout and installation record.
 | Resource | Preparation | Environment contract |
 | --- | --- | --- |
 | ESP-IDF | `setup esp-idf 6.2` or `setup esp-idf 6.0.3` | SDK-selected compilers, Python and tools; `IDF_PATH`, `IDF_TOOLS_PATH`, `IDF_PYTHON_ENV_PATH`, `H2LOADER_IDF_PATH` |
-| BK7258 | `setup bk7258 3.1.1` or `setup bk7258 3.1.1-rd789d71` | SMP SDK, shared GNU Arm 10.3.1 and BK Loader; `BK7258_PATH`, `BK_SDK_DIR`, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT`, `BK_LOADER_BIN` |
+| BK7258 | `setup bk7258 3.1.1-r6bbf627` | SMP SDK, shared GNU Arm 10.3.1 and BK Loader; `BK7258_PATH`, `BK_SDK_DIR`, `COMPILER_TOOLCHAIN_PATH`, `GIZOS_BK_TOOLCHAIN_ROOT`, `BK_LOADER_BIN` |
 | BK7259 | `setup bk7259 4.0.1` | BK7259 source revision, shared GNU Arm 14.3.1 and BK Loader; `BK7259_PATH` and `BK_SDK_DIR` |
 | BK IDK | `setup bk_idk 2.0.1-r650e754` | One SDK snapshot for BK7236/BK7258, shared GNU Arm and BK Loader; `BK_IDK_PATH` and `BK_SDK_DIR` |
 | BK Loader | Installed with BK setup, or `install bk-loader 4.1.7` | Checksummed GizClaw source-built CLI; `BK_LOADER_BIN` and `bk_loader` on PATH |
@@ -236,7 +240,7 @@ Installation runs the offline `tools selftest` before activating the tool.
 
 ```sh
 # Installs the SDK, compiler and default BK Loader together.
-bunx @gizclaw/gizos setup bk7258 3.1.1
+bunx @gizclaw/gizos setup bk7258 3.1.1-r6bbf627
 
 # Explicitly install/select the new standalone loader.
 bunx @gizclaw/gizos install bk_loader 4.1.7
@@ -427,12 +431,7 @@ Resetting paths preserves source selections and existing installations.
 `gizos config esp_idf --reset` separately resets the repository source.
 Changing the shared root does not move existing payloads.
 
-The toolbox owns `src/catalog.json`. Unknown versions are rejected; setup never
-falls back to master or latest. SDK labels are immutable: a changed commit gets
-a new version/revision. The existing GizOS `bk7258 3.1.1` pin is retained. The newer
-Firmwares commit `d789d71d89d11584c3350ca67600ff9455a7f57a` is available as
-`3.1.1-rd789d71`; select it explicitly when the consumer requires that revision.
-Consumers independently validate SDK/toolchain compatibility.
+The toolbox owns `src/catalog.json`. Unknown versions are rejected; setup never falls back to master or latest. SDK labels are immutable: a changed commit gets a new version/revision. BK7258 defaults to `3.1.1-r6bbf627`, matching the [native build revision](../bazel/native/versions/bk7258_sdk_commit.txt). Existing `3.1.1` and `3.1.1-rd789d71` labels retain their original pins for explicit legacy selection. Consumers independently validate SDK/toolchain compatibility.
 
 Source revisions and installation records are keyed by stable SDK name and
 version. Legacy repository/family records and cached sources are still read;

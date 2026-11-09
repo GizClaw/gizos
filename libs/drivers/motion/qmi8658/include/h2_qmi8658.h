@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "h2_qmi8658_defs.h"
 #include "h2_qmi8658_transport.h"
 

@@ -7,4 +7,4 @@
 *.yml text eol=lf
 
 # Unified-diff blank context lines intentionally contain one space.
-third_party/gizclaw_c_sdk_lua_app_uninstall.patch whitespace=-trailing-space
+third_party/*_patch/*.patch whitespace=-trailing-space

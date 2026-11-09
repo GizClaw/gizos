@@ -4,6 +4,9 @@
 #include "h2_bk_platform_core.h"
 #endif
 
+#include "os/h2_pal_io_stream.h"
+#include "h2_pal_unsupported.h"
+
 #if CONFIG_SYS_PRINT_DEV_UART
 #ifndef H2_BK_UART_IO_TEST
 #include "common/bk_include.h"
@@ -22,6 +25,8 @@ static uint8_t s_direct_rx[H2_BK_DIRECT_RX_CAPACITY];
 static size_t s_direct_head, s_direct_tail;
 static int s_direct_overflow;
 static int s_direct_initialized;
+static int s_direct_releasing;
+static unsigned s_direct_release_steps;
 static beken_mutex_t s_direct_write_mutex;
 static const uart_id_t s_direct_port = CONFIG_UART_PRINT_PORT;
 static const pm_sleep_module_name_e s_direct_sleep_module =
@@ -50,6 +55,7 @@ static h2_pal_result_t direct_configure(
       config->parity != H2_PAL_UART_PARITY_NONE ||
       config->flow_control != H2_PAL_UART_FLOW_CONTROL_NONE)
     return H2_PAL_ERR_INVALID_ARG;
+  if (s_direct_releasing) return H2_PAL_ERR_INVALID_STATE;
   if (s_direct_initialized) return H2_PAL_OK;
   if (!shell_uart.dev_drv || !shell_uart.dev_drv->io_ctrl)
     return H2_PAL_ERR_INVALID_STATE;
@@ -78,7 +84,7 @@ static h2_pal_result_t direct_read(void* user, void* buffer, size_t len,
   (void)user;
   if (!buffer || !out_read) return H2_PAL_ERR_INVALID_ARG;
   *out_read = 0;
-  if (!s_direct_initialized) return H2_PAL_ERR_CLOSED;
+  if (!s_direct_initialized || s_direct_releasing) return H2_PAL_ERR_CLOSED;
   uint32_t started = rtos_get_time();
   do {
     uint32_t level = rtos_enter_critical();
@@ -114,7 +120,7 @@ static h2_pal_result_t direct_write(void* user, const void* buffer, size_t len,
   if (!buffer || !out_written || len > UINT32_MAX)
     return H2_PAL_ERR_INVALID_ARG;
   *out_written = 0;
-  if (!s_direct_initialized) return H2_PAL_ERR_CLOSED;
+  if (!s_direct_initialized || s_direct_releasing) return H2_PAL_ERR_CLOSED;
   if (len == 0u) return H2_PAL_OK;
   uint32_t started = rtos_get_time();
   h2_pal_result_t result = H2_PAL_OK;
@@ -179,29 +185,84 @@ static h2_pal_result_t direct_write(void* user, const void* buffer, size_t len,
 }
 static h2_pal_result_t direct_flush(void* user) {
   (void)user;
-  return s_direct_initialized ? H2_PAL_OK : H2_PAL_ERR_CLOSED;
+  return s_direct_initialized && !s_direct_releasing ? H2_PAL_OK
+                                                     : H2_PAL_ERR_CLOSED;
 }
+static h2_pal_result_t direct_release(void* user);
 static const h2_pal_uart_io_stream_vtable_t s_direct_vtable = {
     .configure = direct_configure,
     .read = direct_read,
     .write = direct_write,
     .flush = direct_flush,
+    .release = direct_release,
 };
 static const h2_pal_uart_io_stream_api_t s_direct_api = {.vtable =
                                                              &s_direct_vtable};
 const h2_pal_uart_io_stream_api_t* h2_bk_platform_uart_io_stream_api(void) {
   return &s_direct_api;
 }
-void h2_bk_platform_uart_io_stream_deinit(void) {
-  if (s_direct_initialized) {
-    (void)bk_uart_disable_rx_interrupt(s_direct_port);
-    (void)bk_uart_recover_rx_isr(s_direct_port);
-    s_direct_initialized = 0;
-    (void)rtos_deinit_mutex(&s_direct_write_mutex);
-    (void)bk_pm_module_vote_sleep_ctrl(s_direct_sleep_module, 1u, 0u);
+void h2_bk_platform_uart_io_stream_deinit(void) { (void)direct_release(NULL); }
+static h2_pal_result_t direct_release(void* user) {
+  (void)user;
+  if (!s_direct_initialized) return H2_PAL_OK;
+  /* Stop I/O admission as soon as release begins. Retain completed steps so a
+   * failed native cleanup can retry without freeing the mutex twice. */
+  s_direct_releasing = 1;
+  if ((s_direct_release_steps & 1u) == 0u) {
+    if (bk_uart_disable_rx_interrupt(s_direct_port) != BK_OK)
+      return H2_PAL_ERR_IO;
+    s_direct_release_steps |= 1u;
   }
+  if ((s_direct_release_steps & 2u) == 0u) {
+    if (bk_uart_recover_rx_isr(s_direct_port) != BK_OK) return H2_PAL_ERR_IO;
+    s_direct_release_steps |= 2u;
+  }
+  if ((s_direct_release_steps & 4u) == 0u) {
+    if (rtos_deinit_mutex(&s_direct_write_mutex) != kNoErr)
+      return H2_PAL_ERR_IO;
+    s_direct_release_steps |= 4u;
+  }
+  if (bk_pm_module_vote_sleep_ctrl(s_direct_sleep_module, 1u, 0u) != BK_OK)
+    return H2_PAL_ERR_IO;
+  s_direct_initialized = 0;
+  s_direct_releasing = 0;
+  s_direct_release_steps = 0u;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t stream_start(void* user) {
+  const h2_pal_uart_io_stream_config_t config = {
+      .baud_rate = CONFIG_UART_PRINT_BAUD_RATE,
+      .data_bits = 8u,
+      .stop_bits = 1u,
+      .rx_buffer_size = 4096u,
+      .tx_buffer_size = 2048u,
+  };
+  return direct_configure(user, &config);
+}
+static h2_pal_result_t stream_write(void* user, const void* buffer, size_t len,
+                                    size_t* out_written, uint32_t timeout_ms) {
+  h2_pal_result_t rc = direct_write(user, buffer, len, out_written, timeout_ms);
+  /* Native polling may accept only a prefix. TX ownership has ended, so the
+   * caller must not retry that suffix as though it were still one frame. */
+  if (rc == H2_PAL_OK && *out_written != len)
+    return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
+  return rc;
+}
+static const h2_pal_io_stream_vtable_t s_stream_vtable = {
+    .start = stream_start,
+    .read = direct_read,
+    .write = stream_write,
+    .flush = direct_flush,
+    .release = direct_release,
+};
+static const h2_pal_io_stream_api_t s_stream_api = {.vtable = &s_stream_vtable};
+const h2_pal_io_stream_api_t* h2_bk_platform_io_stream_api(void) {
+  return &s_stream_api;
 }
 #else
+const h2_pal_io_stream_api_t* h2_bk_platform_io_stream_api(void) {
+  return h2_pal_unsupported_io_stream_api();
+}
 /* This provider requires an AP-owned physical UART. No CP tunnel fallback. */
 const h2_pal_uart_io_stream_api_t* h2_bk_platform_uart_io_stream_api(void) {
   return NULL;

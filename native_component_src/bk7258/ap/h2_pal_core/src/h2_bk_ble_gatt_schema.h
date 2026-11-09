@@ -7,8 +7,8 @@
 /**
  * Static capacity of the BK GATT server schema.
  *
- * Three characteristics per service, because libs/ble_wifi_config publishes a
- * command, a scan and a provisioning characteristic in one service. Every
+ * Three characteristics per service, because libs/net/ble_wifi_config publishes
+ * a command, a scan and a provisioning characteristic in one service. Every
  * table is sized off these; value buffers are allocated from PSRAM when a
  * service registers.
  */

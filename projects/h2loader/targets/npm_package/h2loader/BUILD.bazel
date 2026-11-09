@@ -1,7 +1,7 @@
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@rules_python//python:defs.bzl", "py_test")
-load("//tools/bazel:npm_release.bzl", "npm_release_tarball")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/release:npm_release.bzl", "npm_release_tarball")
 
 package(default_visibility = ["//visibility:public"])
 

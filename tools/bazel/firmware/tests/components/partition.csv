@@ -1,0 +1,2 @@
+name,type,offset,size
+fixture,app,0x10000,0x10000

@@ -7,6 +7,12 @@ HOST_TOOL_COMPATIBILITY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
+POSIX_HOST_TOOL_COMPATIBILITY = select({
+    Label("//tools/bazel/platforms:host_linux_target_linux"): [],
+    Label("//tools/bazel/platforms:host_macos_target_macos"): [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
 # Python source libraries used by host tests and packaged mobile E2E runners.
 # The mobile configurations have an exec-runtime adapter; embedded targets
 # have no target Python runtime and must not enter rules_python precompilation.

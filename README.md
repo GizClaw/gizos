@@ -22,9 +22,9 @@ GizOS provides a shared foundation for building portable firmware and applicatio
 
 - **Portable application runtime** — compose applications from reusable libraries and platform-independent interfaces.
 - **Platform Abstraction Layer (PAL)** — consistent contracts for tasks, networking, storage, audio, display, input, and other system capabilities.
-- **Reusable libraries** — networking, media, protocols, UI, game runtime, command routing, serialization, security, and utilities.
+- **Reusable libraries** — platform-independent networking, media, protocols, UI, command routing, serialization, cryptography, and utilities.
 - **Board and SDK integration** — public board packages and native components for ESP, Beken, JieLi, and embedded Linux targets.
-- **Applications and tooling** — H2Loader, examples, E2E programs, PIXA games, showcases, packaging, and validation tools.
+- **Applications and tooling** — H2Loader, Gizloader, manufacturing checks, E2E programs, packaging tools, and validation tools.
 - **Reproducible builds** — Bazel is the source of truth for dependency resolution, cross-platform builds, tests, artifacts, and releases.
 
 ## Supported targets
@@ -190,11 +190,13 @@ boards/                 Board definitions and target-specific composition
 guides/                 Concise AI development constraints
 libs/                   Portable libraries, runtimes, and PAL providers
 native_component_src/   Components compiled by native platform SDKs
-projects/               Applications, examples, games, and E2E programs
+projects/               Firmware applications, manufacturing checks, and E2E programs
 scripts/                Stable repository command implementations
 third_party/            Bazel overlays, patches, and integration metadata
 tools/                  Build, packaging, code generation, and support tools
 ```
+
+Board definitions are grouped by their manufacturer under `boards/<company>/<board>/`, with chip or target support below each board. See the [board directory guide](boards/README.md) for company names and examples.
 
 ## Documentation
 

@@ -1,8 +1,8 @@
 #ifndef TEST_H2_ESP_PLATFORM_CORE_H
 #define TEST_H2_ESP_PLATFORM_CORE_H
 
-#include "h2/pal/core/h2_pal_errors.h"
-#include "h2/pal/os/h2_pal_mem.h"
+#include "core/h2_pal_errors.h"
+#include "os/h2_pal_mem.h"
 
 #include <stdint.h>
 

@@ -1,6 +1,6 @@
 #include "h2_esp_wifi_teardown.h"
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #include <stddef.h>
 

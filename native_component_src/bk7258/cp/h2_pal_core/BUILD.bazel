@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,36 +13,20 @@ exports_files([
 
 firmware_native_component(
     name = "h2_pal_core",
-    srcs = glob(
-        [
-            "**/*.c",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.s",
-            "**/*.S",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
-    hdrs = glob(
-        [
-            "**/*.h",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-        ],
-        allow_empty = True,
-        exclude = [
-            "examples/**",
-            "test/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "src/h2_bk_dhcp_ring.c",
+        "src/h2_bk_platform_log.c",
+        "src/h2_bk_platform_mem.c",
+        "src/h2_bk_platform_queue.c",
+        "src/h2_bk_platform_sync.c",
+        "src/h2_bk_platform_task.c",
+        "src/h2_bk_platform_time.c",
+        "src/h2_bk_wifi_ipv6.c",
+        "src/h2_bk_wifi_lease.c",
+    ],
+    hdrs = [
+        "include/h2_bk_platform_core.h",
+    ],
     data = [
         "CMakeLists.txt",
         "//native_component_src/bk7258/shared:h2_bk_cp_lease.cmake",
@@ -60,7 +44,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
-        "//libs/pal",
+        "//pal",
     ],
 )
 
@@ -73,7 +57,7 @@ py_test(
     ],
     data = [
         "//native_component_src/bk7258/shared:h2_bk_wifi_ipv6.cmake",
-        "//tools/bazel:native_versions/bk7258_sdk_commit.txt",
+        "//tools/bazel/native/versions:bk7258_sdk_commit.txt",
         "@gizos_bk7258_sdk//:locator.json",
     ],
     legacy_create_init = False,
@@ -108,7 +92,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 
 cc_test(

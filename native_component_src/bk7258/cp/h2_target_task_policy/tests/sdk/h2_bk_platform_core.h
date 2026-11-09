@@ -1,7 +1,7 @@
 #ifndef TEST_H2_BK_PLATFORM_CORE_H
 #define TEST_H2_BK_PLATFORM_CORE_H
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #include <stdint.h>
 

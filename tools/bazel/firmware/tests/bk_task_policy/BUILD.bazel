@@ -1,0 +1,32 @@
+load("//tools/bazel/firmware:target_task_policy.bzl", "bk7258_target_task_policy")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+
+h2_tasks(
+    name = "entry_tasks",
+    tasks = [
+        "entry/any",
+        "entry/pinned",
+    ],
+)
+
+# Compile the production config with distinct control and PSRAM stack allocators.
+[
+    bk7258_target_task_policy(
+        ap_allocator = allocator,
+        ap_default_policy = "5 0 4096 psram",
+        ap_name = allocator + "_ap_policy",
+        ap_policies = [
+            "entry/any 6 any 24576 default",
+            "entry/pinned 7 1 65536 psram",
+        ],
+        cp_default_policy = "6 4096 default",
+        cp_name = allocator + "_cp_policy",
+        directory = allocator,
+        graph = [":entry_tasks"],
+    )
+    for allocator in [
+        "sram",
+        "psram",
+        "default",
+    ]
+]

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 from common.bazel import cache_options  # noqa: E402
-from tools.bazel import coverage_report  # noqa: E402
+import tools.bazel.coverage.coverage_report as coverage_report
 
 
 OUTPUT = ROOT / "build/coverage/test"
@@ -30,6 +30,11 @@ TEST_EXPRESSION = (
 TARGET_EXPRESSION = (
     'str(target.label) if "IncompatiblePlatformProvider" not in '
     'providers(target) else ""'
+)
+SOURCE_EXPRESSION = (
+    'json.encode({"label": str(target.label), "sources": '
+    '[file.short_path for file in target.files.to_list() if file.is_source]}) '
+    'if "IncompatiblePlatformProvider" not in providers(target) else ""'
 )
 
 
@@ -118,6 +123,18 @@ def query_graph(bazel: str, bazel_cache_options: list[str]) -> tuple[list[str], 
         [*common, target_graph, "--output=jsonproto"],
         capture=True,
     ).stdout
+    # Resolve only each owner's selected source/header labels. DefaultInfo files
+    # expand filegroups and aliases without claiming data or dependency sources.
+    source_output = run(
+        [
+            *common,
+            f"let owners = ({target_graph}) in "
+            'labels(srcs, $owners) union labels(hdrs, kind("^cc_library rule$", $owners))',
+            "--output=starlark",
+            f"--starlark:expr={SOURCE_EXPRESSION}",
+        ],
+        capture=True,
+    ).stdout
     return (
         coverage_report.parse_test_inventory(test_output),
         coverage_report.parse_target_inventory_json(
@@ -126,6 +143,7 @@ def query_graph(bazel: str, bazel_cache_options: list[str]) -> tuple[list[str], 
                 target_labels_output,
                 "C/C++ target",
             ),
+            coverage_report.parse_source_inventory_json(source_output),
         ),
     )
 

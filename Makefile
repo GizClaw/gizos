@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help cfg-doctor format format-check bazel-build bazel-test bazel-test-downstream-consumer bazel-coverage-report bazel-release gizloader-bin h2loader-bin test-web
+.PHONY: help cfg-doctor format format-check bazel-build bazel-test bazel-test-downstream-consumer bazel-coverage-report bazel-release gizloader-bin h2loader-bin
 
 BAZEL_BIN ?= bazel
 BUN_BIN ?= bun
@@ -45,9 +45,6 @@ bazel-release:
 
 gizloader-bin h2loader-bin:
 	@scripts/h2loader/h2loader-bin.sh
-
-test-web:
-	@scripts/test/test-web.sh
 
 .PHONY: bazel-test-ios_pal_core_simulator_test bazel-test-android_pal_core_simulator_test
 bazel-test-ios_pal_core_simulator_test:

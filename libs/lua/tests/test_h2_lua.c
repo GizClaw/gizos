@@ -1230,7 +1230,7 @@ static const h2_pal_time_api_t* s_copy_time_base;
 static h2_pal_time_api_t s_copy_time_api;
 static h2_pal_time_vtable_t s_copy_time_vtable;
 static test_display_gate_t s_copy_gate;
-static pthread_t s_copy_controller;
+static _Thread_local int s_copy_waiter;
 
 /* Hold the worker before it copies A. Fail the Lua thread's handoff wait,
  * and release only after Lua observes COPYING as busy and drawing is frozen. */
@@ -1248,12 +1248,19 @@ static h2_pal_result_t test_copy_clock(void* user, uint64_t* out_us) {
 }
 
 static h2_pal_result_t test_copy_sleep(void* user, uint32_t ms) {
-  if (!pthread_equal(s_copy_controller, pthread_self()) &&
-      h2_atomic_load(&s_copy_gate.stage) == 1) {
+  if (h2_atomic_load(&s_copy_gate.stage) == 1) {
     assert(pthread_mutex_lock(&s_copy_gate.mutex) == 0);
-    h2_atomic_store(&s_copy_gate.stage, 2);
+    if (s_copy_waiter) {
+      /* Exercise the competing Runtime sleep before injecting the Lua fault. */
+      while (!s_copy_gate.entered)
+        assert(pthread_cond_wait(&s_copy_gate.cond, &s_copy_gate.mutex) == 0);
+      h2_atomic_store(&s_copy_gate.stage, 2);
+    } else {
+      s_copy_gate.entered = 1;
+      assert(pthread_cond_broadcast(&s_copy_gate.cond) == 0);
+    }
     assert(pthread_mutex_unlock(&s_copy_gate.mutex) == 0);
-    return H2_PAL_ERR_IO;
+    if (s_copy_waiter) return H2_PAL_ERR_IO;
   }
   return s_copy_time_base->vtable->sleep_ms(user, ms);
 }
@@ -1272,6 +1279,8 @@ static int test_copy_release(lua_State* state) {
 static int test_copy_module(void* raw, void* user) {
   lua_State* state = raw;
   (void)user;
+  /* Only this Lua worker may consume the handoff fault, not Runtime input. */
+  s_copy_waiter = 1;
   lua_pushcfunction(state, test_copy_release);
   return 1;
 }
@@ -1324,22 +1333,22 @@ static void test_display_submission_fault(int mode) {
     s_test_display_fixture.width = mode == 9 ? 4096 : 48;
     s_test_display_fixture.height = mode == 9 ? 33 : 48;
   }
-  h2_runtime_t* runtime = create_runtime();
+  const h2_pal_time_api_t* time = h2_desktop_platform_time_api();
   if (mode == 11) {
     s_copy_gate.block = s_copy_gate.enforce_owner = 1;
-    s_copy_controller = pthread_self();
     assert(pthread_mutex_init(&s_copy_gate.mutex, NULL) == 0);
     assert(pthread_cond_init(&s_copy_gate.cond, NULL) == 0);
     assert(h2_atomic_int_init(&s_copy_gate.stage, 0) == H2_ATOMIC_OK);
     s_display_gate = &s_copy_gate;
-    s_copy_time_base = runtime->time;
-    s_copy_time_vtable = *runtime->time->vtable;
+    s_copy_time_base = time;
+    s_copy_time_vtable = *time->vtable;
     s_copy_time_vtable.get_monotonic_us = test_copy_clock;
     s_copy_time_vtable.sleep_ms = test_copy_sleep;
-    s_copy_time_api = *runtime->time;
+    s_copy_time_api = *time;
     s_copy_time_api.vtable = &s_copy_time_vtable;
-    runtime->time = &s_copy_time_api;
+    time = &s_copy_time_api;
   }
+  h2_runtime_t* runtime = create_runtime_with_time(time);
   if (mode == 7) assert(h2_pal_display_open(runtime->display) == H2_PAL_OK);
   if (mode == 5 || mode == 6) {
     s_wake_init_fault = mode == 6;
@@ -1378,6 +1387,7 @@ static void test_display_submission_fault(int mode) {
       "d.clear('black');local bg=d.capture_region(0,0,d.width,d.height);d.restore_background(bg);d.present({retained=true,tiles=true});"
       "for y=0,d.height-1,32 do for x=0,d.width-1,32 do d.fill_rect(x,y,1,1,'red') end end;"
       "n.fail(tonumber(args.partial),args.partial=='0') end;"
+      "local copy=args.copy=='yes' and require('copy_test');"
       "local n,e=d.submit({tiles=true});if args.wake=='yes' then "
       "assert(n==nil and e<0 and e~=d.BUSY);"
       "local n2,e2=d.submit();assert(n2==nil and e2==e);"
@@ -1385,7 +1395,7 @@ static void test_display_submission_fault(int mode) {
       "if args.copy=='yes' then "
       "assert(record.busy,'COPYING is in flight but status.busy is false');"
       "assert(record.submitted==1 and record.completed==0 and record.successful==0);"
-      "assert(not pcall(d.clear,'blue'));require('copy_test')() end;"
+      "assert(not pcall(d.clear,'blue'));copy() end;"
       "assert(not pcall(d.present));assert(not pcall(d.clear,'blue'));return end;"
       "assert(n==(args.partial=='no' and 1 or 2));local s,e=d.flush();"
       "while not s and e==d.BUSY do r.sleep(1);s,e=d.flush() end;"
@@ -1414,7 +1424,13 @@ static void test_display_submission_fault(int mode) {
   assert(state.state == (mode == 4 || mode == 7 || mode == 6
                              ? H2_LUA_JOB_FAILED
                              : H2_LUA_JOB_SUCCEEDED));
-  if (mode == 11) assert(h2_atomic_load(&s_copy_gate.stage) == 3);
+  if (mode == 11) {
+    assert(h2_atomic_load(&s_copy_gate.stage) == 3);
+    h2_runtime_input_status_t input;
+    assert(h2_runtime_input_status(runtime, &input) == H2_PAL_OK);
+    assert(input.phase == H2_RUNTIME_INPUT_PHASE_TASK_RUNNING &&
+           input.worker_result == H2_PAL_OK);
+  }
   h2_pal_result_t expected = mode == 4 || mode == 7 ? H2_DISPLAY_ERR_INVALID_ARG
                              : mode == 6            ? H2_PAL_ERR_TASK
                                                     : H2_PAL_ERR_IO;

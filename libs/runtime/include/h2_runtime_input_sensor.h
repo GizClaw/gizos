@@ -3,7 +3,7 @@
 
 /* Scope: App-visible Battery and Temperature snapshot payloads. */
 
-#include "h2/pal/hal/h2_pal_input.h"
+#include "hal/h2_pal_input.h"
 #include "h2_runtime_input_sensor_defs.h"
 #include "h2_runtime_types.h"
 

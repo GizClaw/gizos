@@ -30,6 +30,12 @@ int h2_jieli_sdk_try_lock_byte(volatile uint8_t* lock);
 void h2_jieli_sdk_unlock_byte(volatile uint8_t* lock);
 void h2_jieli_sdk_capture_barrier(void);
 
+/* ---- Stable public identity --------------------------------------------- */
+
+/** Persist/provision the controller base MAC and derive the BLE identity.
+ * Copies six bytes in Loader display order; returns a PAL result code. */
+int h2_jieli_sdk_device_identity(uint8_t out_identity[6]);
+
 /* ---- Memory (SDK heap) --------------------------------------------------- */
 
 void* h2_jieli_sdk_malloc(size_t size);

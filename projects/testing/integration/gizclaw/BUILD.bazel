@@ -1,0 +1,172 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_OR_MOBILE_TOOL_COMPATIBILITY", "HOST_TOOL_COMPATIBILITY")
+load(":fixture.bzl", "gizclaw_e2e_fixture")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "api_coverage",
+    srcs = ["api_coverage.py"],
+    legacy_create_init = False,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "api_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_api_coverage.py",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_api_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "connectivity_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_connectivity_coverage.py",
+    ],
+    data = [
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_connectivity_test",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_connectivity_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "workspace_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_workspace_coverage.py",
+    ],
+    data = [
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_workspace_test",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_workspace_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "contact_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_contact_coverage.py",
+    ],
+    data = [
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_contact_test",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_contact_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "telemetry_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_telemetry_coverage.py",
+    ],
+    data = [
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_telemetry_test",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_telemetry_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "group_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_group_coverage.py",
+    ],
+    data = [
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_group_test",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_group_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+filegroup(
+    name = "voice_prompt",
+    srcs = ["data/voice_prompt_l16_16khz_mono.pcm"],
+)
+
+py_test(
+    name = "friend_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_friend_coverage.py",
+    ],
+    data = [
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_friend_test",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_friend_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "service_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_service_coverage.py",
+    ],
+    data = [
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_fixture_test",
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_request_cases_test",
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_voice_test",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_service_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+filegroup(
+    name = "gizclaw_e2e",
+    srcs = [
+        ":voice_prompt",
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e",
+    ],
+)
+
+py_test(
+    name = "metadata_coverage_test",
+    srcs = [
+        "api_coverage.py",
+        "test_metadata_coverage.py",
+    ],
+    data = [
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_metadata_test",
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e_social_ping_test",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_metadata_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+exports_files(["api_coverage.py"])
+
+# No default profile key is invented: live RPC/all requires an explicit flag.
+gizclaw_e2e_fixture(name = "app_config_fixture")
+
+py_library(
+    name = "coverage_library",
+    srcs = ["api_coverage.py"],
+    imports = ["."],
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
+)

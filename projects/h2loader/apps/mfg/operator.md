@@ -1,0 +1,265 @@
+# Board manufacturing acceptance
+
+Board profiles and firmware entries are organized by manufacturer and model:
+
+```text
+projects/h2loader/
+├── apps/mfg/                                     # Portable acceptance App
+├── libs/{mfg-peer,mfg-aec-source}/                 # Peer and acoustic-source support
+└── targets/h2_loader_tar_zlib/mfg/<manufacturer>/<board>/
+    ├── profile.c                                # Declarative board acceptance profile
+    └── BUILD.bazel                              # Native image and package entries
+```
+
+Each board target exports and compiles its `profile.c` with the native launcher using the existing SDK component manifest. Target packages own CMake files, SDK configuration, task policies, firmware versions and package rules, including peer and calibration variants. Build `:package` from the target package. These are H2Loader-role manufacturing images with a portable acceptance session.
+
+```sh
+source /path/to/firmwares-devenv/export.sh
+bazel build --noannounce_rc --config=esp32s3 \
+  //projects/h2loader/targets/h2_loader_tar_zlib/mfg/waveshare/esp32s3_touch_amoled_1_75c:package
+```
+
+Use `--config=esp32c3` for `ai_passport`, `--config=esp32s31` for `esp_mosaico`, or `--config=esp32p4`, `--config=bk7258`, or `--config=ac791n` for the matching architecture. Other ESP32-S3 entries are `amoled`, `devkit`, `szp`, and `waveshare_esp32s3_a7670e_4g`. The remaining entries are `waveshare_esp32p4_wifi6_touch_lcd_4_3`, `bk7258_v3_202405`, and `jieli_ac791n_devkit`. JieLi's native package build requires a Linux host.
+
+Physical acceptance recorded on 2026-10-30:
+
+| Board | Recorded result | Remaining acceptance |
+| --- | --- | --- |
+| Waveshare 1.75C | 10/10 passed | Absolute optical, IMU and acoustic metrology are outside MFG scope. |
+| AMOLED | 10/10 passed | BLE used a physical 1.75C peer, whose exact original firmware was restored. |
+| SZP | 10/11 durable results; corrected camera preview accepted by the operator | The camera confirmation was not captured in device storage before unplugging. |
+| Waveshare P4 4.3 | 9/10 passed | Camera acquired live frames; image quality and direction still require operator confirmation. |
+
+These records describe the tested firmware versions. They do not claim that all boards were flashed with the current source, or that host tests qualify physical peripherals. DevKit, A7670E, BK7258, JieLi and ESP-Mosaico have MFG entries but no complete physical acceptance of their current GizOS images recorded here.
+
+Every profile with both microphone and speaker checks also requires a separate, operator-confirmed AEC check. This includes 1.75C, AMOLED, SZP, P4, BK7258, JieLi and AI Passport. The model rejects a duplex-audio profile which omits AEC or attempts to confirm it automatically. DevKit and A7670E have no built-in duplex audio in their profiles and omit these audio checks.
+
+AMOLED's MFG entry explicitly enables `H2_AMOLED_BOARD_ENABLE_QMI8658` on the board component and links the QMI8658 driver. The base BSP keeps this provider opt-in; declaring an IMU step alone does not enable it. MFG 0.1.8 fixes the missing opt-in in the previous AMOLED package. Existing acceptance results remain valid; retry a previously failed IMU step after updating. MFG 0.1.10 maps this board's QMI8658 axes to the portrait tilt-ball display: screen X is negative native Y and screen Y is native X. Raw PAL coordinates and the requirement for at least 400 mg variation on both native axes are unchanged, so the profile revision and existing acceptance results remain valid.
+
+SZP's 320x240 screen has an FT6336 capacitive touch controller. MFG 0.1.11 connects its PAL Touch provider through Espressif's FT5x06 driver and enables PASS/FAIL/RETRY on screen. The board uses the shared I2C bus (SDA 1, SCL 2), address 0x38, with native X mirrored before swapping X/Y for landscape. SZP profile revision 3 appends a required five-target touch check after the unchanged nine revision-2 checks, preserving their recorded results. MFG 0.1.13 maps SZP's tilt-ball coordinates into this landscape viewport: screen X is native accelerometer Y, and screen Y is native X. Raw PAL coordinates and both-axis movement thresholds remain unchanged. MFG 0.1.14 includes SZP's board volume curve: 70% selects DAC register 0xA4 (-13.5 dB), replacing the former register-linear 0x7B (-34 dB). The maximum remains 0xB0 (-7.5 dB), microphone/reference gains are unchanged, and the speaker check still requires the operator to hear an undistorted tone. MFG 0.1.15 raises SZP's speaker check to 100% and its DAC ceiling to 0xBF (0 dB). The existing curve now attenuates below unity. Playback startup verifies the PA output/configuration bits and logs actual DAC/mute/DRC registers. Microphone and reference gains are unchanged. Audible loudness, distortion and AEC still require their physical acceptance checks. MFG 0.1.16 includes an ES8311/ES7210 I2S input initialization fix. Before allocating channels, the shared provider restores DIN to input and verifies its output driver is disabled. SZP's reboot hook drives GPIO12 low, and retained output enable previously produced all-zero raw microphone frames after software reboot or managed update. Existing gains, AEC processing, MIC acceptance thresholds and recorded checks are unchanged. MFG 0.1.17 connects SZP's GC0308 camera through esp32-camera 2.1.8. Profile revision 4 appends camera as check 11, preserving the ten revision-3 results. It captures actual 320x240 YUV422 frames and displays the shared live preview. Three valid frames are prerequisites; the operator must move an object and confirm that the preview follows it with correct colors and orientation. The provider borrows the existing I2C bus, controls PCA9557 IO2 standby, uses the supplier's DVP pins and 24 MHz XCLK, and normalizes GC0308 YUYV to PAL UYVY while each frame is borrowed. Capture has the SDK's 4000 ms timeout; stop rejects a live frame loan. Returning a frame restores its native bytes. MFG 0.1.18 caps camera DMA buffering at 16 KiB to fit alongside the active display and Loader transports, and handles the SDK's own failed-init cleanup without double-deinitializing an already freed camera. SZP's general PAL allocator explicitly uses PSRAM for Runtime/UI/audio buffers; internal and DMA allocations use their separate allocators. Both camera framebuffers are in PSRAM and the provider verifies each acquired address. The SDK's ISR-visible queues, descriptors and internal camera task stack retain their required internal memory. Camera startup logs PSRAM and DMA heap availability so this allocation policy can be checked on the physical board. MFG 0.1.19 preserves the source aspect ratio in the 160x90 preview viewport, centering the complete image with black borders. SZP's 320x240 source becomes 120x90 with 20-pixel borders on either side. Preview placement leaves the instructions below the image on SZP's 320x240 display.
+
+Install the package with the normal H2Loader CLI `send --file <package>` and `reboot upgrade`. Loader self-update completes before the interactive session starts. Existing UART and BLE Loader commands stay available on the profiles that enable them; ESP-Mosaico uses the existing USB CDC and BLE management services. Loader recovery/update remains usable with unfinished or failed checks. App installation/launch requires all required checks to be PASSED.
+
+## AI Passport
+
+```sh
+bazel build --config=esp32c3 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/folotoy/ai_passport:package
+```
+
+The Folotoy AI Passport revision-4 profile has ten checks: storage, display and brightness, three ADC ladder keys, battery, speaker, microphone, AEC, Wi-Fi, BLE and the physical POWER switch. Revision 4 appends POWER after the unchanged nine revision-3 checks, preserving their recorded results. POWER has no MCU input in the supplier BSP: the operator must physically switch the board off and on, verify session resume, and explicitly confirm the result. This is manual acceptance, not a GPIO or automatic power-cycle measurement. Press and release OK to confirm a ready manual check; UP/DOWN are measured inputs. Serial FAIL/RETRY and ticketed BLE peer confirmation use the shared commands. Revision 2 invalidates the earlier product's revision-1 acceptance record because the nine checks have different meanings and order. Revision 3 selects a 32 KiB simultaneous RAM probe for the C3 instead of the shared 64 KiB default; filesystem readback remains 512 bytes. Other boards retain their original probe size. The passive NFC tag has no MCU interface and is outside this profile. MFG 0.1.34 starts USB management immediately and enables BLE only for its check. Before each phase, checked cleanup releases prior audio/DSP resources and fully stops Wi-Fi, including its driver and STA netif, when Wi-Fi is no longer selected. BLE joins run on the USB serve owner outside MFG/operation locks; pending preparation releases those locks and retries without marking failure. Its command server uses one 32 KiB stack, with no duplicate 48 KiB command task. MFG 0.1.36 also uses 1 KiB native RX, 1 KiB framed stream RX and an eight-segment receive window; shared transport defaults and wire framing stay unchanged. BLE still requires a real ticketed command round trip; enabling advertising does not pass it. MFG 0.1.44 also selects 2 KiB TX/RX BLE rings, eight queued input datagrams and an eight-segment KCP window for this image. Shared defaults remain 8 KiB rings, 16 queued inputs and 32-segment windows. The server and worker task stacks are unchanged. Loader BLE command I/O supports bounded partial writes, and its App output adapter completes the entire message before flushing; replies larger than an image's ring are not truncated. Host tests cover 8 KiB messages through 512-byte, 513-byte and 2 KiB rings, error propagation and compact-peer packet loss/retransmission against a default-budget peer.
+
+This ESP32-C3 board has 8 MiB Flash and no PSRAM. Its 240x320 presentation uses a four-row RGB565 buffer (1920 bytes), preserving the full display geometry. The board borrows synchronous display strips only until each draw returns. The owner services bounded microphone, playback and recording work between strips, so a slow complete-screen redraw does not starve a short audio queue. MFG 0.1.42 samples physical buttons at 20 ms intervals between strips outside active AEC capture, retaining the ADC ladder's two-sample debounce. A completed OK press/release is retained for its current ticket and consumed only by a normal controller tick; repaint cannot change a check, and retry/phase changes discard stale input. AEC defers blocking key acquisition until replay is ready, and a key held through capture must be released and pressed again. This keeps normal short presses usable when resuming POWER with nine accepted checks. A regression uses the actual ADC stabilizer and a 320 ms striped redraw to exercise 100 ms presses, bounce rejection, readiness and retry boundaries. One frame uses a snapshot of displayed meters/readiness. Rendering never changes AEC phase or grants acceptance; normal ticks own transitions and replay drain. Actual capture and DAC completion publications must satisfy the existing full window, clipping and cadence checks before advancing. MFG 0.1.43 aligns the board's 512-sample native audio frames with five 128-frame DMA descriptors, retaining the original 640-frame payload capacity per direction. This avoids IDF replacing an unread descriptor tail when its queue backs up. The striped renderer also skips glyph expansion outside the current strip, reducing work competing with audio servicing. Window logs append separate capture and DAC elapsed times; frame counts, active playback, cadence, clipping and echo-reduction thresholds remain unchanged.
+
+Diagnostic AEC retains one approximately three-second processed voice recording; SDKs without raw/DAC observers still retain both recordings for operator replay. This image selects the shared optional recording-store interface: the capture callback copies native PCM into a four-frame nonblocking queue; the owner writes complete, lossless frames as AES-128-GCM ciphertext into the verified unused 256 KiB tail of the inactive P2 Loader candidate. Both cached metadata and the actual ESP image boundary must fit before that tail, with no staged update and P1 running. The canonical App partition stays 3 MiB. Every retry erases its recording region and renews nonces; checked close destroys the RAM-only key and erases temporary ciphertext. Authentication, queue overflow, missing frames or storage errors fail the check. Replay reads actual authenticated PCM. Other profiles keep their RAM recording path. The shared phases, durations and acceptance thresholds are unchanged. Audio is checked before Wi-Fi to avoid allocating C3 AEC after the normal network setup; retries still require the same real resource and audio prerequisites. AI Passport opts into deferred AEC creation: playback initializes codec/I2S without reserving the standalone AEC heap. Microphone start or diagnostic observer registration still creates the real algorithm and propagates any allocation error; it does not substitute unprocessed PCM for AEC acceptance. MFG 0.1.33 explicitly selects raw capture for the basic MIC check and reports `aec=0`; the separate AEC check selects the actual algorithm and still requires its resources and acoustic acceptance. The app's preparation callback runs only after the previous check's audio users stop, and a failed mode switch fails the new check. Existing boards without a preparation callback keep their behavior. MFG 0.1.35 adds checked target release after shared hardware stops, so a failed AEC attempt releases DSP before result persistence and USB recovery. It moves physical scratch verification before DSP allocation within the same serialized Loader operation. Complete frames use a two-frame playback queue; the main and USB stacks each reserve 24 KiB based on live 0.1.34 peak measurements of 14,384 and 12,252 bytes. MFG 0.1.37 selects 20 KiB for these two stacks and four queued Runtime events, retaining the existing microphone and speaker worker stacks. On 0.1.34, AEC creation succeeded but a later allocation failed; the primary `NO_MEMORY` error was followed by an I/O error while saving failure. That installation did not pass AEC or qualify the remaining checklist. On the physical AI Passport, 0.1.33-1 resumed MIC with `error=0`, `aec=0` and 628 captured frames with nonzero energy after the earlier AEC allocation failure. The five prior passed checks were retained. Speech responsiveness still requires operator confirmation; this result does not qualify AEC.
+
+The package is an alternative H2Loader image using the board-owned 8 MiB layout, not a compile-only chip layout. For first installation, build and install `//projects/h2loader/targets/h2_loader_tar_zlib/loader/folotoy/ai_passport:package`, verify its serial status, then send this MFG package and run `reboot upgrade` through the ordinary Loader. MFG uses the shared Loader self-update path. Build and host-test results do not establish physical acceptance. On 2026-11-02, MFG 0.1.30-1 was installed on AI Passport UID `4c11ae31056a` through the ordinary Loader's send/Stage verification/reboot-upgrade path. The final P1 image hash matched the build, Stage was cleared and `last_result=0`. The 32 KiB RAM/filesystem check passed automatically; the session reached display with `ready=1`, `error=0`. A second USB send also completed and verified while that display session was active; its test Stage was explicitly aborted and cleared without changing acceptance. Physical display, keys, audio, battery and RF acceptance were pending at that stage. By 0.1.33-1, the operator had accepted display, keys, battery, speaker and basic microphone response; storage was already passed. AEC, Wi-Fi, BLE and POWER remain separate checks.
+
+On 2026-11-03, MFG 0.1.31-1 was installed through Loader self-upgrade on the same device. The revision-4 append migration retained the passed storage, display, three-key and battery results and left POWER untested. Before the fix, standalone AEC allocation failed during speaker initialization. With deferred AEC, a speaker retry reached `ready=1`, `error=0` and produced 901 frames (28.832 seconds of PCM in 28.750 seconds) at the unchanged 70% test volume. This establishes device-side playback progress; audible quality still requires operator confirmation. Microphone/AEC resource acceptance and POWER off/on acceptance remain separate, unpassed checks. After the operator reported the 70% tone was too quiet, MFG 0.1.32 selects 100% for this board's speaker check. With the existing ES8311 maximum register 0xBF this requests 0 dB, instead of legacy register-linear 70% (0x85, about -29 dB). The board's maximum, microphone gain, test waveform and acceptance requirements are unchanged. After audio has been opened, stop the current check and use the managed `reboot loader` command before staging an update on older C3 images: retained audio allocations otherwise leave too little headroom for package inspection. The reboot preserves MFG results. Version 0.1.34 additionally powers audio down after checked MFG teardown before a disruptive Loader command, and selects a 4 KiB shared safe-I/O buffer without reducing disk lengths or the existing 16 KiB preference contract.
+
+The archive installer now allocates its input/output buffers and parser state from the installer allocator rather than the update task stack. Allocation failure is reported before opening an archive or invoking a writer. A manually recovered P1 Loader whose identity differs from stored metadata durably selects Loader command mode before seeding that metadata, retaining an older Stage/P2 until the operator aborts or replaces it. Managed updates with matching running metadata retain AUTO behavior and do not reset MFG acceptance.
+
+On 2026-11-03, an AI Passport running MFG 0.1.41-1 completed the managed P2/P1 update and cleared Stage with matching image/package hashes and last_result=0. Its diagnostic quiet, far and subsequent quiet measurements each retained all 96 native capture/DAC frames. Far playback had 96 active frames, no clipping and 33 dB background-subtracted echo reduction. An independent physical test voice then completed near and double-talk measurements, retained all 96 double-talk capture/DAC frames without clipping, and reached authenticated recorded replay with ready=1 and error=0. The runtime test ended UNTESTED pending operator listening and confirmation; the host issued no AEC acceptance command. A later device status recorded the first seven checks PASSED. The existing fixture-network profile then obtained an IP and the automatic Wi-Fi check passed, leaving the first eight checks accepted. After macOS Bluetooth authorization completed, the host connected through the real BLE transport and verified board `ai_passport`, target `esp32c3` and UID `4c11ae31056a` with a Loader status command. A subsequent `mfg probe ble <ticket>` over that BLE connection returned `ready=1`, `error=0` and `BLE command round trip`. An independent serial readback recorded the first nine checks PASSED and the active POWER check. Physical POWER off/on, session resume and operator confirmation were still pending at that point.
+
+MFG 0.1.42-1 was subsequently installed through the managed P2/P1 update path, with both partitions reporting the new image/package hashes, Stage cleared and `last_result=0`. The first nine accepted checks were retained and POWER resumed with `ready=1`, `error=0`. The short-press fix is covered by host regressions. A later live query reported `step=done`, `complete=1` and `steps=1111111111`, recording all ten checks PASSED. The host issued no POWER confirmation command.
+
+A later full retest on 0.1.42-1 reproduced an AEC window failure with 96 capture and DAC frames but only 95 active tone frames and 7781 ms elapsed. On 0.1.43-1, the aligned-DMA ECHO window retained 96 capture/DAC/active frames in 6197 ms. A subsequent voice and double-talk run reported 26 dB echo reduction, all 96 double-talk capture/DAC/active frames in 6183 ms, no clipping, and completed recorded playback with `ready=1`, `error=0`. A later device readback recorded AEC PASSED and advanced to Wi-Fi. The host issued no AEC confirmation command.
+
+MFG 0.1.44-1 retained the first eight accepted checks through a managed Loader update. Real BLE status verified UID `4c11ae31056a` and version `0.1.44-1`, then its current-ticket BLE probe returned `ready=1`, `error=0`. Independent serial readback recorded `steps=1111111110` with POWER active. The temporary BLE skip used to release radio resources for staging was cleared before this real probe; no skipped check was counted as passed. Following the operator's final confirmation, independent device readback on `0.1.44-1` reported `step=done`, `complete=1` and `steps=1111111111`. Both executable partitions were valid with matching image/package hashes, Stage was clear and `last_result=0`.
+
+## Haivivi H106
+
+The H106 board profiles reuse this project's shared MFG session, UI, persistence and Loader commands. They are independent of the private H106 product MFG, factory helpers and Loader UI in Firmwares.
+
+| Physical board | Firmware/package board identity | Checks | Management |
+| --- | --- | --- | --- |
+| [H106 Zero ESP v3.0](../../targets/h2_loader_tar_zlib/mfg/haivivi/h106_zero_esp_v3_0/profile.c) | `zero_esp_v3_0` | 13 | UART and BLE |
+| [H106 Tiga ESP v4.2](../../targets/h2_loader_tar_zlib/mfg/haivivi/h106_tiga_esp_v4_2/profile.c) | `tiga_esp_v4_2` | 13 | UART and BLE |
+| [H106 Zero BK 2.0](../../targets/h2_loader_tar_zlib/mfg/haivivi/h106_zero_bk_2_0/profile.c) | `zero_bk_2_0` | 12 | UART; the board's MFG layout disables Bluetooth |
+
+All three check storage, display/brightness, eight keys, speaker, microphone, Wi-Fi STA, RGB LEDs, modem, battery, vibration, NFC and manual AEC. ESP additionally requires an actual BLE Loader command probe. No touch, IMU, camera or magnetometer check is invented for these boards. The eight measured keys are OK, LEFT, RIGHT, BACK, VOL+, VOL-, RECORD and BOOT/POWER. Each requires three press/release cycles and a final release; a separate OK press/release confirms a ready manual check. ESP combines seven ADC keys with its independent BOOT key; the BSP's ADC thresholds remain unchanged.
+
+Activate the pinned SDK with the [GizOS SDK manager](../../../../tools/gizos/README.md), then build the selected physical entry:
+
+```bash
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_zero_esp_v3_0:package_v2
+```
+
+```bash
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_tiga_esp_v4_2:package_v2
+```
+
+```bash
+bazel build --config=bk7258 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_zero_bk_2_0:package_v2
+```
+
+Each entry also exposes `:firmware` and format-1 `:package`; both package formats reuse the same native image with `image=mfg` and `role=h2loader`. Entries select the existing managed Loader partitions and board-owned storage. Zero BK uses its QSPI LittleFS and full MFG peripheral configuration, not another board's SD backend or a media-disabled Loader configuration.
+
+Connect Wi-Fi through the existing Loader commands and wait for a usable IP address. No network or product provisioning credentials are embedded by these entries. Modem acceptance requires the appropriate SIM/network fixture. NFC uses the Runtime-owned reader and requires a valid fresh discovery for the current attempt. Remove a tag retained from an earlier attempt before presenting it again; stale events, malformed results and reader errors cannot complete the check. The NFC check never starts a second polling loop.
+
+ESP uses its existing 16 kHz mono 512-sample AEC provider and diagnostics. Zero BK uses its real mandatory AEC path with 320-sample frames and the shared operator recording/replay procedure described below. An unsupported optional diagnostic observer does not become fabricated raw/reference/DAC evidence or an echo-reduction measurement. The operator must listen to both processed recordings and confirm only after the shared activity, timing, clipping and playback prerequisites pass.
+
+These entries have no recorded hardware acceptance here. Native builds and host tests do not qualify panel illumination, NFC antenna/tag interoperability, audio acoustics, modem RF, charging, LED ordering or vibration strength.
+
+## ESP-Mosaico
+
+```sh
+bazel build --config=esp32s31 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/espressif/mosaico:package
+```
+
+The revision-4 profile has eleven checks: combined display/brightness, nine evenly spaced app-defined touch points, original button cycles, staged AEC, battery, IMU, magnets, held vibration, Wi-Fi, BLE and camera. The shared model and AEC thresholds/phase logic remain unchanged. Explicit failure stays selected and required checks must all pass. The configured completion screen adds a deliberate press/release retest button using the existing transactional `reset all`: results are cleared durably and the Loader's in-memory acceptance gate is refreshed before starting again.
+
+Mosaico's app entry connects the public factory network before starting Loader. Shared Wi-Fi only observes existing STA state. The entry also owns compensated-magnet validity/baselines and live indication; shared UI reads a borrowed observation callback. An app-local IMU adapter preserves real valid magnetic deltas while freezing invalid/recovery samples for the original shared min/max check. Its forwarded axes are diagnostic relative values in mGauss, not absolute field measurements. Provider errors and all-invalid readings remain errors. No SDK or BSP implementation is copied.
+
+Shared additions include immutable presentation config, app-defined touch points, optional acceleration/gyro response checks based on reported/required channels, held vibration and asynchronous camera ownership. Wi-Fi rendering consumes the snapshot from the existing status poll to show the actual SSID and IPv4 without changing readiness or connection policy. Held-vibration presentation shows the button without overlapping hints; timed-vibration defaults retain their instructions. Battery shows presence, voltage and percentage; no current/charging stage is added.
+
+BLE reuses actual Loader command round-trip proof. Use an existing physical peer package configured for the DUT UID. A BLE connection must obtain the current ticket and execute `mfg probe ble <ticket>` over BLE; discovery or serial confirmation is insufficient.
+
+AEC uses the original QUIET/ECHO TEST/QUIET AGAIN/NEAR/DOUBLE-TALK/replay flow, measured windows and thresholds. Mosaico provides 16 kHz mono processed audio with 512-sample frames and image-local `H2_MOSAICO_AUDIO_AEC=ON`. The app adds no separate preparation stage: it uses the shared phase warmup directly. The earlier private preparation and its dedicated test have been removed. Its app sets the `mfg/aec` track amplitude to 250/1000 for both probe and voice replay. Codec phase volume remains the shared 100% request. The Mosaico MFG entry sets microphone gain to 40% (12 dB on its existing 0..30 dB PAL scale) and checks the reported setting before creating MFG; ADC digital volume remains `0xC8`. A configuration error blocks audio checks while Loader management remains available. Observers see actual PCM. Board audio initialization, codec clock coefficients and the common provider remain unchanged from main; the earlier private DAC OSR experiment has been removed. Repeated double-talk remains the original behavior. These image-specific levels do not qualify other output levels or independent-source calibration. Temporary provider/app measurement instrumentation is excluded from the PR.
+
+Both MFG and ordinary Loader are alternative `role=h2loader` images using the existing S31 layout. The ordinary Loader and its NULL install-display callbacks are unchanged. Image-local VFS capacity supports camera/CDC/filesystems. The twelve-check pass recorded for head `2a3279c9` belongs to the earlier revision-2 flow and does not certify this revision-4 image. The instrumented revision-3 image and cleaned revision-4 commit `8bedf532` each completed all eleven checks. The latter still contained the private DAC OSR override. After removing it, a local comparison passed quiet stability and far echo reduction but eventually failed double-talk headroom. Removing the extra app preparation also passed both quiet measurements and far echo reduction (17 dB), but double-talk eventually failed headroom. These comparisons do not establish either addition as necessary. A subsequent private PAL gain change from 60% to 40% reached voice replay with 20 dB far echo reduction and an unclipped first double-talk window on its second attempt; its first attempt still failed background stability. The operator reported acceptable playback, while device-side confirmation and a complete exact-image rerun remain pending. This evidence does not establish repeated-run reliability or acoustic calibration. Repeat hardware acceptance, completion-page reset/persistence and managed update/recovery checks.
+
+## Operator flow
+
+Serial `mfg status` includes the latest `touch_x`, `touch_y`, `display_width` and `display_height` for coordinate debugging. These observations do not grant physical touch acceptance.
+
+The board profile lists its checks in execution order. With the default interaction policy, wait for green PASS on a display board and short-press its first listed button to confirm the current check. ESP-Mosaico instead selects touch navigation and uses AI/BOOT only as measured inputs. On a board with Touch, opening the acceptance screen also opens the touch provider, including when a cold boot resumes a later or failed check. PASS, FAIL and RETRY accept touch input. FAIL records a failure; RETRY starts that check with fresh observations. The serial interface also works on boards without displays.
+
+The RAM probe (64 KiB unless a profile selects a bounded size) and the larger AEC RAM recording buffers prefer Runtime's external-memory allocator and fall back to its default allocator. Each buffer is released through the allocator that supplied it, after its users stop. AEC recordings are wiped before release; failed cleanup retains their owner for retry. Allocation failure and filesystem readback errors remain failures. A profile may supply a borrowed `frame_allocator` for display buffers; MFG invokes it after Display opens and returns every frame through that allocator. This lets a target use its display memory pool while keeping Runtime's general external heap available for other working sets.
+
+For the 1.75C:
+
+1. RAM pattern and filesystem readback run automatically. This tests a 64 KiB allocation and a dedicated 512-byte temporary file; it is not an exhaustive Flash/PSRAM capacity or destructive storage test. 2. Inspect the red/green/blue/white quadrants and full/half/full brightness. 3. Touch and release all five crosses, using at least five distinct presses. 4. Press and release BOOT and PWR three times each. A subsequent BOOT press confirms; the final test release cannot confirm itself. 5. Tilt left/right and up/down, checking the moving ball. Both axes must vary by at least 400 mg. This board's panel axes are native Y/X, both positive, as physically confirmed on 2026-10-29. The PAL axes remain native. 6. Confirm the 440 Hz speaker tone is audible and undistorted: half a second of sound every two seconds, at 100% volume on 1.75C. Its DAC ceiling is unity gain (`0xBF`), raised from the original -7.5 dB (`0xB0`) ceiling. SZP and P4 also request 100%; other boards use the default 70% check volume. The previous volume is restored when leaving this check. 7. Speak near the microphone and check that the live LEVEL bars rise with speech and fall in silence. Confirm only when they respond. FRAMES counts captured PCM; a green PASS means the automatic prerequisites are ready for operator confirmation. The check requires captured PCM, nonzero energy and a minimum peak. It does not certify AEC, near-end intelligibility, or double-talk performance. 8. Connect Wi-Fi through the Loader command and wait for a usable IP address. The firmware contains no network credentials. 9. Connect a **second development board** to this board's Loader BLE service. Query MFG status there, then send `gizloader mfg probe ble <ticket>` over that actual BLE connection. A serial probe is rejected. No Mac radio is needed. This is a Loader GATT command round trip, not the full radio E2E suite. 10. Follow the separate **AEC** check. Remain quiet through QUIET, ECHO TEST
+    and QUIET AGAIN. The board plays the single-board 500/1000/2500 Hz probe
+    at 100% volume and uses actual pre/post-AEC and DAC observations. Each
+    measured window needs 96 complete capture/DAC frames, real-time cadence,
+    active reference, no clipping and at least 10 dB of background-subtracted
+    far echo reduction. Background must be stable and the real echo must
+    exceed it by at least 10 dB.
+    At SPEAK NOW, speak near the mic; keep speaking at SPEAK OVER TONE.
+    Those stages repeat while activity is insufficient. LISTEN TO VOICE
+    replays about three seconds of the actual AEC output recorded during
+    simultaneous playback and speech. Confirm only if your voice is clear
+    and the far test tone is suppressed. The recording stays in RAM and is
+    erased on leaving the check.
+
+On 1.75C, AMOLED, SZP and P4, the AEC check combines automatic single-board echo/headroom evidence with operator judgement of processed speech. It does not grant controlled independent-source calibration, measured near/double-talk retention, or unrestricted voice qualification. The existing `projects/testing/unit/aec-calibration` runner retains those stronger fixture requirements. MFG does not retune or persist microphone or AEC gains. The board's unity DAC ceiling is a BSP configuration change and affects all Apps built against this board.
+
+### AEC on the other audio boards
+
+The shared check uses each board's actual 16 kHz mono frame size rather than requiring the 1.75C's 512-sample frames. Measurement and warmup lengths keep the same approximately 3.1-second and 1.0/3.1-second durations. SZP's BSP now enables its existing ES7210 reference/AEC path with the 512-sample ESP-SR processing frame; its previous 256-sample configuration had disabled AEC.
+
+BK7258 and JieLi already run AEC but currently expose only the processed microphone PCM, without the full raw/reference/DAC observer. Their MFG AEC check therefore uses operator acceptance:
+
+1. Follow QUIET, ECHO TEST and QUIET AGAIN while the board plays the far probe. 2. Speak at SPEAK NOW, then keep speaking at SPEAK OVER TONE. 3. At LISTEN FOR ECHO, listen to the actual far-only AEC output recording. The test tone should be suppressed. 4. At LISTEN TO VOICE, listen to the actual double-talk AEC output recording. Voice should remain clear while the far tone is suppressed. 5. Confirm only after both recordings have played and both sound correct. FAIL and RETRY remain available. The two recordings repeat for listening.
+
+This path requires the provider to report real AEC enabled, complete processed PCM windows, real-time capture cadence, no observed output clipping, audible near activity and downstream playback drain. Partial SDK reads are assembled into complete windows. A missing/disabled AEC path or a diagnostics error does not become a successful operator check. Only an explicit UNSUPPORTED diagnostics response selects this path. Muted output cannot complete the speech phases.
+
+The screen shows LISTEN FOR ECHO instead of an invented dB measurement. Serial windows identify `mode=operator raw_observed=0 dac_observed=0`, and `echo_db=-1` means unmeasured. Queued/drained audio is not reported as observed physical DAC frames. This is manual functional acceptance; it does not grant the quantitative pre/post qualification or gain-calibration certificate. Both short recordings remain in RAM and are erased on exit.
+
+## Controlled gain calibration
+
+The 1.75C also has a separate `:calibration_package` entry in its board directory. It calls the existing, unchanged `//projects/testing/unit/aec-calibration/app:aec_calibration` runner. This entry is a temporary Loader image with normal H2Loader recovery and update; it never marks manual MFG checks passed. It accepts one gain pair per job, keeping the command service available and rejecting installation/reboot during a job.
+
+AMOLED provides `:calibration_peer_package`, an App which plays the runner's actual near probe through its physical speaker. Build it for the intended DUT identity:
+
+```sh
+bazel build --noannounce_rc --config=esp32s3 \
+  --define=H2_MFG_PEER_DUT_UID=<12-digit-DUT-UID> \
+  //projects/h2loader/targets/h2_loader_tar_zlib/mfg/waveshare/esp32s3_touch_amoled_1_8:calibration_peer_package \
+  //projects/h2loader/targets/h2_loader_tar_zlib/mfg/waveshare/esp32s3_touch_amoled_1_75c:calibration_package
+```
+
+Keep both boards' original packages and identities. Install the source App only in the peer's App partition, preserving its original Loader. The source uses its saved test Wi-Fi without modifying those credentials; READY requires an actual IPv4 address. Connect the DUT Loader to that same test network. Leave the boards in fixed positions and record the fixture geometry/levels with the results. The Mac is a serial controller and log sink.
+
+The source fixture uses 95% volume and settles its physical output for two seconds before acknowledging START. This is recorded as source-control time; the runner's DUT warmup, measurements and acceptance thresholds are unchanged. Each source span logs accepted playback-queue frames and elapsed time. These are producer cadence observations, not hardware DAC/drop counters; the DUT also checks the actual near input's spectral stability.
+
+After a managed DUT Loader update, issue `reboot loader --monitor` and wait for the exact image's `H2_MFG_CALIBRATION_READY` before queuing a job.
+
+Start the peer's serial `monitor`, then request a fresh run on the DUT:
+
+```sh
+gizloader --no-ble --port <DUT-port> mfg calibrate \
+  <peer-IPv4> 100 100 <fresh-16-hex-run> <12-digit-peer-UID> --monitor
+```
+
+The first percentage is speaker volume and the second is microphone gain. On 1.75C, 100% mic uses ES7210's physical maximum **37.5 dB** PGA setting. The integer configuration represents that top setting as 38. From MFG 0.1.6, 95% correctly selects 36 dB; older mapping selected 34.5 dB for that request, so those historical measurements must retain their actual hardware meaning. The board's DAC ceiling is unity gain, and the ADC reference stays at 12 dB. Register observations from stopped/joined windows report the real DAC and ADC control bytes. Calibration restores the original controls after each job.
+
+Each job keeps the existing runner's two probe amplitudes, six distinct frequency bins, background/far/near/double-talk/stability phases, 64-frame warmup, 96-frame measurements and 640-frame stability windows. Every window checks actual complete ADC/AEC/DAC observations, real-time cadence and headroom. The unchanged public report verifier must accept the complete log; an emitted summary or a low total output level alone cannot grant a pass. Match every source request to the physical peer's nonce, sequence, UID, probe checksum and successful start/stop acknowledgement.
+
+The peer accepts increasing nonzero sequences within each run and replays an acknowledgement only for an exact copy of the latest request. Delayed controls from earlier sequences or retired run nonces cannot change playback or extend its lease. Each new job needs a fresh nonce, starts at sequence 1, and requires the previous source to be stopped. Shutdown continues the last job's sequence. The peer retains up to 256 run nonces per boot and rejects further new runs without evicting old entries; restart the stopped peer before another batch.
+
+Search speaker volume first, then microphone gain within that volume. Compare hardware gain steps, preserve failed candidates and repeat boundary and selected settings. Results apply to the recorded probe amplitudes and fixture, not an unrestricted voice or absolute loudness specification. Do not silently reinterpret a failed run as passed.
+
+When finished, use `mfg source-shutdown --monitor` on the DUT and require the peer's `H2_MFG_AEC_PEER_END ... cleanup=0 retained=0` before restoring its original App. Restore the DUT's formal MFG Loader using the calibrated board configuration. Repeat the audio checks affected by new defaults; preserve other accepted checks. Verify exact firmware identities, empty Stage, zero last result, blank coredump and released serial ports on both boards.
+
+Audio-board profile revision 2 explicitly appends AEC to each unchanged revision-1 prefix: nine checks for 1.75C/AMOLED, eight for SZP/P4/BK7258, and seven for JieLi. All previous status digits, including failures, are preserved; only AEC starts UNTESTED. Other unknown revisions follow reset rules. AEC remains required before App startup.
+
+AMOLED, DevKit and 1.75C also provide a peer App in the same board directory:
+
+```sh
+bazel build --noannounce_rc --config=esp32s3 \
+  --define=H2_MFG_PEER_DUT_UID=b81f3fcad4fa \
+  //projects/h2loader/targets/h2_loader_tar_zlib/mfg/waveshare/esp32s3_touch_amoled_1_8:peer_package
+```
+
+Use the intended DUT's 12-digit lowercase BLE UID from Loader `status`. The other supported peers are `//projects/h2loader/targets/h2_loader_tar_zlib/mfg/espressif/esp32s3_devkitc_1:peer_package` and `//projects/h2loader/targets/h2_loader_tar_zlib/mfg/waveshare/esp32s3_touch_amoled_1_75c:peer_package`. The peer merges ADV/SCAN_RSP from that identity, connects to Loader, verifies the authoritative UID, sends only the BLE probe, and reads back the committed result at the BLE index reported by MFG, including when later checks such as AEC remain untested. It never confirms manual checks. Completion emits `H2_MFG_PEER_PASS ... durable=1` and `H2_MFG_PEER_END ... code=0`. Keep the peer's original package and restore it after bench use.
+
+The profile for a board without built-in audio omits speaker/microphone tests. DevKit tests its RGB LED. A7670E tests the modem identity response; it does not register a product or place a call. JieLi lists all eight ADC keys; BK reads its three keys through their radio-button group.
+
+P4 MFG 0.1.20 adds GT911 Touch PAL and OV5647 MIPI-CSI Camera PAL. Profile revision 3 appends Camera after the nine revision-2 checks; those nine results are preserved when migrating from revision 2. Its ten checks are storage, display, touch, BOOT, speaker, microphone, Wi-Fi, BLE, AEC and camera. The speaker check requests 100% volume.
+
+Touch uses the display's native 480x800 coordinates, GPIO23 reset, and probes both GT911 addresses (0x5d and 0x14). Touch, camera and ES8311/ES7210 audio borrow one board-owned I2C bus on SDA7/SCL8. Closing one provider does not delete the bus used by the others.
+
+Camera uses pinned esp_video 2.5.0 with the OV5647 1280x960 RAW10 binning mode. The P4 ISP supplies UYVY BT.601 limited-range frames, matching the shared MFG preview converter. Two 128-byte-aligned framebuffers are explicitly allocated in PSRAM. Every exported address and frame length is validated. Dequeue has a 1000 ms timeout. Live loans block stop; failed requeue or cleanup retains ownership for retry. Board teardown and reboot stop capture first. P4's general allocator and ISP controller task stack use PSRAM; dedicated internal/DMA allocators retain their separate behavior. MFG 0.1.21 fixes P4 Loader and App command identity initialization: P4 uses its factory eFuse MAC because it has no local Bluetooth MAC. Other ESP targets retain their existing Bluetooth-MAC identities. MFG 0.1.22 reserves 16 VFS registrations on P4 so CSI/ISP devices fit alongside Loader filesystems and transports. GT911 reset now completes before probing its two addresses, preventing reset from invalidating the selected address. `mfg retry <step> <ticket> --monitor` captures startup diagnostics through the same serial session. MFG 0.1.23 fixes P4 BOOT to the schematic's GPIO35 (active low). Its button page includes all three physical keys: BOOT down/up counts, POWER off/on and RESET restart/resume. POWER connects to the independent U20 key controller; RESET connects to ESP_EN. Their physical actions require operator confirmation and are not fabricated GPIO counts. Test POWER and RESET first, then complete three BOOT cycles and confirm the complete button check. MFG 0.1.24 uses 512-sample/32-ms P4 audio frames to match the pinned ESP-SR direct AEC library. The former 256-sample configuration was rejected during AEC initialization and made the entire lazy audio provider unavailable, including the speaker check. AEC remains enabled. When the C6's on-air Bluetooth address differs from that P4 UID, build the physical BLE peer with `--define=H2_MFG_PEER_DUT_BLE_ADDRESS=<12-hex-address>` in addition to `H2_MFG_PEER_DUT_UID`. The address selects advertisements; the connected Loader's authoritative UID must still match before any probe. Set that address to `000000000000` to discover Loader service candidates when the C6 address is unknown; each connection must still match the supplied DUT UID before it can probe or commit BLE acceptance.
+
+Build with `--config=esp32p4` and `//projects/h2loader/targets/h2_loader_tar_zlib/mfg/waveshare/esp32p4_wifi6_touch_lcd_4_3:package`. Use a physical board peer for BLE acceptance and restore its original image afterward. Camera requires three valid frames and operator confirmation of live motion, colors, orientation and proportions. Board entries and successful compilation do not establish physical acceptance.
+
+## CLI and persistent results
+
+Build the CLI from the same checkout to recognize the optional MFG availability bit:
+
+```sh
+bazel build --noannounce_rc //tools/gizloader/native:gizloader-cli
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg status
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg confirm display 1234abcd
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg fail display 1234abcd
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg retry display 1234abcd
+gizloader --no-ble --port /dev/cu.usbmodemXXXX mfg reset all 1234abcd
+```
+
+Replace the step and eight-digit hexadecimal ticket with the current values from `mfg status`. Tickets change on each transition and each boot, so delayed confirmations cannot pass another check. `probe` is restricted to a real BLE command round trip on profiles that require it; ESP-Mosaico uses the same BLE proof. Other actions use the enabled Loader transport(s). `skip` records SKIPPED and continues, but a skipped required check still blocks App work. Use `retry` to revisit it.
+
+`H2_MFG_STATUS` reports the selected check, readiness, error, ticket, total, completion and status digits. Digits are 0=UNTESTED, 1=PASSED, 2=SKIPPED, 3=FAILED. `result=OK` acknowledges the command; `complete=1` alone means every required check is passed. A completed record is resumed across reboots. Each result is committed through the existing H2Loader MFG preferences before the next check starts. Storage errors are returned rather than silently advancing.
+
+A completed display board shows its summary again after a cold boot when there is no App to launch. Pending Loader replacements bypass the interactive session and the App acceptance gate, so an unfinished check cannot prevent repairing the factory Loader.
+
+Changing a profile's check semantics/order requires incrementing its `revision`. This invalidates the previous acceptance record. Shared state, hardware and UI live under `projects/h2loader/apps/mfg`. Board profiles, platform entry points and build policy belong to `projects/h2loader/targets/h2_loader_tar_zlib/mfg/<manufacturer>/<board>`.
+
+BK/JieLi entries override the public Loader board extension hooks. They reuse the maintained transport, partition and recovery implementations. Before installation/reboot, MFG stops polling, closes the audio track before the speaker, joins capture/playback, and closes touch/display. Failed cleanup retains handles and blocks the transition for retry.
+
+## Focused validation
+
+```sh
+bazel test --noannounce_rc \
+  //projects/h2loader/apps/mfg:model_test \
+  //projects/h2loader/apps/mfg:session_test \
+  //projects/h2loader/apps/mfg:audio_test \
+  //projects/h2loader/apps/mfg:aec_test \
+  //projects/h2loader/apps/mfg:touch_resume_test \
+  //projects/h2loader/apps/mfg:peripheral_checks_test \
+  //projects/h2loader/apps/mfg:completed_display_test \
+  //projects/h2loader/apps/mfg:display_strip_test \
+  //projects/h2loader/apps/mfg:button_poll_test \
+  //projects/h2loader/apps/mfg:storage_budget_test \
+  //projects/h2loader/apps/mfg:storage_test \
+  //projects/h2loader/apps/mfg:modem_test \
+  //projects/h2loader/apps/mfg:nfc_test \
+  //projects/h2loader/libs/mfg-peer:scan_test \
+  //libs/h2loader/device:h2loader_command_test \
+  //libs/h2loader/host:h2loader_host_test \
+  //tools/gizloader/cli:h2loader_cli_app_test
+```
+
+Model tests cover readiness, stale tickets, failed persistence, resume, failure/retry/reset, mandatory AEC for duplex audio and the strict all-PASSED gate. Session tests use real locks and SQLite preferences to exercise BLE transport proof, recovery bypass, handoff while the operation mutex is held, and failed join retention. Optical and acoustic results require an operator on the real device. Audio tests simulate a 125 ms display iteration against a 32 ms PCM consumer to detect playback starvation, verify that pending microphone frames are drained, and check volume restoration and failed track-close retention. AEC regressions cover mandatory human speech/replay, missing reference, missing echo reduction, clipping, a muted output and failed cleanup retention. They exercise 256/320/512-sample frames, partial processed-PCM reads, both operator recordings, disabled AEC, diagnostics errors, missing capture and failed downstream drain. Touch resume regression checks the two screen controls after a cold boot directly into a failed AEC step without entering Touch first.
+
+The bounded-resource regressions compare full-frame and strip output, including partial final strips, snapshots, draw failures and owner-service failures; exercise 100 ms keys against real two-sample ADC stabilization; and retain complete 256/320/512-sample diagnostic/operator recordings under constrained memory or temporary storage. AEC service cannot advance a phase, drain playback, grant readiness or hide queue, authentication, acoustic, transport or timing failures. Preparation retries release controller/operation locks without reopening hardware, while checked release and failed cleanup retain every dependency for retry. Blocking ADC polls and repeated full-frame redraws are deferred during AEC capture.

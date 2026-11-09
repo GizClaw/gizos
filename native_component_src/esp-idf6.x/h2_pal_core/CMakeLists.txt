@@ -22,6 +22,7 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_io_phase.c"
   "src/h2_esp_lazy_audio.c"
   "src/h2_esp_platform_mem.c"
+  "src/h2_esp_platform_io_stream.c"
   "src/h2_esp_resource_stats.c"
   "src/h2_esp_platform_timer.c"
   "src/h2_esp_atomic.c"
@@ -35,6 +36,7 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_platform_netif.c"
   "src/h2_esp_platform_ppp.c"
   "src/h2_esp_platform_task.c"
+  "src/h2_esp_platform_entry_task.c"
   "src/h2_esp_platform_queue.c"
   "src/h2_esp_platform_safe_call.c"
   "src/h2_esp_platform_time.c"
@@ -43,6 +45,7 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_platform_dtls_state.c"
   "src/h2_esp_platform_net_socket.c"
   "src/h2_esp_platform_power.c"
+  "src/h2_esp_platform_image.c"
   "src/h2_esp_platform_disk.c"
   "src/h2_esp_platform_littlefs_io.c"
   "src/h2_esp_platform_pref_littlefs.c"
@@ -115,7 +118,7 @@ else()
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS "src/h2_esp_platform_webrtc_unsupported.c")
 endif()
 
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_select_sources(
   H2_COMPONENT_SOURCES
   h2_pal_core
@@ -125,14 +128,14 @@ idf_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "include"
-    "${REPO_ROOT}/libs/pal/include"
-    "${REPO_ROOT}/libs/atomic/include"
-    "${REPO_ROOT}/libs/atomic/providers/c11"
-    "${REPO_ROOT}/libs/mem_arena/include"
-    "${REPO_ROOT}/libs/wifi_sta/include"
-    "${REPO_ROOT}/libs/pal/providers/corehttp/include"
-    "${REPO_ROOT}/libs/pal/providers/h2peer/include"
-    "${REPO_ROOT}/libs/pal/providers/h2sctp/include"
+    "${REPO_ROOT}/pal/include"
+    "${REPO_ROOT}/libs/sync/atomic/include"
+    "${REPO_ROOT}/libs/sync/atomic/providers/c11"
+    "${REPO_ROOT}/libs/memory/arena/include"
+    "${REPO_ROOT}/libs/net/wifi_sta/include"
+    "${REPO_ROOT}/pal/providers/backends/corehttp/include"
+    "${REPO_ROOT}/pal/providers/backends/h2peer/include"
+    "${REPO_ROOT}/pal/providers/backends/h2sctp/include"
   PRIV_REQUIRES
     ${H2_ESP_PLATFORM_CORE_REQUIRES}
     h2_firmware_lib
@@ -145,6 +148,14 @@ endif()
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
   H2_ESP_SAFE_IO_SCRATCH_CAPACITY=${H2_ESP_SAFE_IO_SCRATCH_CAPACITY})
+if(DEFINED H2_LOADER_SERIAL_RX_BUFFER)
+  if(NOT "${H2_LOADER_SERIAL_RX_BUFFER}" MATCHES "^[1-9][0-9]*$" OR
+     H2_LOADER_SERIAL_RX_BUFFER LESS 1024 OR H2_LOADER_SERIAL_RX_BUFFER GREATER 8192)
+    message(FATAL_ERROR "H2_LOADER_SERIAL_RX_BUFFER must be between 1024 and 8192")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_LOADER_SERIAL_RX_BUFFER=${H2_LOADER_SERIAL_RX_BUFFER})
+endif()
 foreach(H2_GATT_LIMIT IN ITEMS H2_ESP_BLE_MAX_GATT_SERVICES H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)
   if(DEFINED ${H2_GATT_LIMIT})
     target_compile_definitions(${COMPONENT_LIB} PRIVATE ${H2_GATT_LIMIT}=${${H2_GATT_LIMIT}})

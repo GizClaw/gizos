@@ -1,7 +1,7 @@
 #ifndef H2_ESP_AUDIO_DECODER_H
 #define H2_ESP_AUDIO_DECODER_H
 
-#include "h2/pal/hal/h2_pal_audio_decoder.h"
+#include "hal/h2_pal_audio_decoder.h"
 
 #ifdef __cplusplus
 extern "C" {

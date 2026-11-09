@@ -103,9 +103,9 @@ static int set_timer(h2_fm175xx_t* reader, uint32_t timeout_ms) {
 }
 
 static int pre_cmd(h2_fm175xx_t* reader) {
-  int rc = clear_fifo(reader);
+  int rc = write_reg(reader, H2_FM175XX_REG_COMMAND, H2_FM175XX_CMD_IDLE);
   if (rc == H2_FM175XX_OK) {
-    rc = write_reg(reader, H2_FM175XX_REG_COMMAND, H2_FM175XX_CMD_IDLE);
+    rc = clear_fifo(reader);
   }
   if (rc == H2_FM175XX_OK) {
     rc = write_reg(reader, H2_FM175XX_REG_WATER_LEVEL, 0x20u);
@@ -124,10 +124,15 @@ static int post_cmd(h2_fm175xx_t* reader, int rc) {
       rc = H2_FM175XX_ERR_PROTOCOL;
     }
   }
-  (void)set_bit_mask(reader, H2_FM175XX_REG_CONTROL, 0x80u);
-  (void)write_reg(reader, H2_FM175XX_REG_COMMAND, H2_FM175XX_CMD_IDLE);
-  (void)set_bit_mask(reader, H2_FM175XX_REG_BIT_FRAMING, 0x00u);
-  return rc;
+  int cleanup_rc = set_bit_mask(reader, H2_FM175XX_REG_CONTROL, 0x80u);
+  const int idle_rc =
+      write_reg(reader, H2_FM175XX_REG_COMMAND, H2_FM175XX_CMD_IDLE);
+  if (cleanup_rc == H2_FM175XX_OK) cleanup_rc = idle_rc;
+  const int framing_rc =
+      clear_bit_mask(reader, H2_FM175XX_REG_BIT_FRAMING, 0x80u);
+  if (cleanup_rc == H2_FM175XX_OK) cleanup_rc = framing_rc;
+  /* A bus failure during cleanup must not publish a tag or become silence. */
+  return cleanup_rc == H2_FM175XX_OK ? rc : cleanup_rc;
 }
 
 static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
@@ -140,9 +145,25 @@ static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
   if (rc != H2_FM175XX_OK) {
     return rc;
   }
+  /* Prime the FIFO before starting RF. FIFO-low is a refill indication, not
+   * a prerequisite for sending the first bytes of a short command. */
+  if (in_len != 0u) {
+    const size_t chunk = in_len > 32u ? 32u : in_len;
+    rc = write_fifo(reader, in, chunk);
+    if (rc != H2_FM175XX_OK) return post_cmd(reader, rc);
+    uint8_t loaded = 0u;
+    rc = read_reg(reader, H2_FM175XX_REG_FIFO_LEVEL, &loaded);
+    if (rc != H2_FM175XX_OK) return post_cmd(reader, rc);
+    if (loaded != chunk) return post_cmd(reader, H2_FM175XX_ERR_IO);
+    in += chunk;
+    in_len -= chunk;
+  }
   rc = set_bit_mask(reader, H2_FM175XX_REG_TMODE, 0x80u);
   if (rc == H2_FM175XX_OK) {
     rc = write_reg(reader, H2_FM175XX_REG_COMMAND, H2_FM175XX_CMD_TRANSCEIVE);
+  }
+  if (rc == H2_FM175XX_OK) {
+    rc = set_bit_mask(reader, H2_FM175XX_REG_BIT_FRAMING, 0x80u);
   }
   if (rc != H2_FM175XX_OK) {
     return post_cmd(reader, rc);
@@ -155,7 +176,9 @@ static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
     if (rc != H2_FM175XX_OK) {
       return post_cmd(reader, rc);
     }
-    if ((irq & 0x01u) != 0u) {
+    /* On a slow host RX completion and timer expiry can be observed together.
+     * Validate the completed reply before treating the timer as no response. */
+    if ((irq & 0x01u) != 0u && ((irq & 0x20u) == 0u || in_len != 0u)) {
       return post_cmd(reader, H2_FM175XX_ERR_TIMEOUT);
     }
     if ((irq & 0x04u) != 0u && in_len > 0u) {
@@ -166,10 +189,7 @@ static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
       }
       in += chunk;
       in_len -= chunk;
-      rc = set_bit_mask(reader, H2_FM175XX_REG_BIT_FRAMING, 0x80u);
-      if (rc == H2_FM175XX_OK) {
-        rc = write_reg(reader, H2_FM175XX_REG_COMIRQ, 0x04u);
-      }
+      rc = write_reg(reader, H2_FM175XX_REG_COMIRQ, 0x04u);
       if (rc != H2_FM175XX_OK) {
         return post_cmd(reader, rc);
       }
@@ -196,6 +216,10 @@ static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
       }
     }
     if ((irq & 0x20u) != 0u && in_len == 0u) {
+      /* Acknowledge the observed completion before inspecting FIFO state.
+       * A later real packet must retain its own RX interrupt. */
+      rc = write_reg(reader, H2_FM175XX_REG_COMIRQ, 0x20u);
+      if (rc != H2_FM175XX_OK) return post_cmd(reader, rc);
       uint8_t fifo_level = 0;
       uint8_t last_bits = 0;
       rc = read_reg(reader, H2_FM175XX_REG_FIFO_LEVEL, &fifo_level);
@@ -206,9 +230,21 @@ static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
         return post_cmd(reader, rc);
       }
       last_bits &= 0x07u;
-      if (fifo_level == 0u && last_bits > 0u) {
-        fifo_level = 1u;
+      if (fifo_level == 0u && out_len == 0u) {
+        uint8_t error = 0u;
+        rc = read_reg(reader, H2_FM175XX_REG_ERROR, &error);
+        if (rc != H2_FM175XX_OK) return post_cmd(reader, rc);
+        if (error != 0u) return post_cmd(reader, H2_FM175XX_ERR_PROTOCOL);
+        if ((irq & 0x01u) != 0u)
+          return post_cmd(reader, H2_FM175XX_ERR_TIMEOUT);
+        /* Without FIFO bytes RxLastBits can still describe an older packet.
+         * It is neither received data nor a malformed new reply. Do not clear
+         * RX again here: a real packet may have arrived during these reads. */
+        sleep_ms(reader, 1u);
+        continue;
       }
+      if (fifo_level == 0u && last_bits > 0u)
+        return post_cmd(reader, H2_FM175XX_ERR_PROTOCOL);
       if (out_len + fifo_level > out_cap) {
         return post_cmd(reader, H2_FM175XX_ERR_PROTOCOL);
       }
@@ -226,16 +262,18 @@ static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
   return post_cmd(reader, H2_FM175XX_ERR_TIMEOUT);
 }
 
-static int type_a_halt(h2_fm175xx_t* reader) {
+static int type_a_halt(h2_fm175xx_t* reader, uint32_t timeout_ms) {
   int rc = write_reg(reader, H2_FM175XX_REG_BIT_FRAMING, 0x00u);
   if (rc == H2_FM175XX_OK) {
     rc = set_bit_mask(reader, H2_FM175XX_REG_TX_MODE, 0x80u);
   }
   if (rc == H2_FM175XX_OK) {
-    rc = set_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
+    /* HLTA has no reply. Only TX needs CRC; leave RX unfiltered so even an
+     * unexpected short reply is visible and rejected instead of stripped. */
+    rc = clear_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
   }
   if (rc == H2_FM175XX_OK) {
-    rc = set_timer(reader, 1u);
+    rc = set_timer(reader, timeout_ms);
   }
   if (rc != H2_FM175XX_OK) {
     return rc;
@@ -252,7 +290,8 @@ static int type_a_halt(h2_fm175xx_t* reader) {
              : (rc == H2_FM175XX_OK ? H2_FM175XX_ERR_PROTOCOL : rc);
 }
 
-static int type_a_request(h2_fm175xx_t* reader, uint8_t out_atqa[2]) {
+static int type_a_request(h2_fm175xx_t* reader, uint32_t timeout_ms,
+                          uint8_t out_atqa[2]) {
   int rc = clear_bit_mask(reader, H2_FM175XX_REG_TX_MODE, 0x80u);
   if (rc == H2_FM175XX_OK) {
     rc = clear_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
@@ -264,22 +303,26 @@ static int type_a_request(h2_fm175xx_t* reader, uint8_t out_atqa[2]) {
     rc = write_reg(reader, H2_FM175XX_REG_BIT_FRAMING, 0x07u);
   }
   if (rc == H2_FM175XX_OK) {
-    rc = set_timer(reader, 1u);
+    rc = set_timer(reader, timeout_ms);
   }
   if (rc != H2_FM175XX_OK) {
     return rc;
   }
-  const uint8_t request = 0x52u;
-  size_t bits = 0u;
-  rc = transceive(reader, &request, 1u, out_atqa, 2u, &bits);
-  if (rc != H2_FM175XX_OK) {
-    return rc;
+  /* Poll IDLE cards with REQA first. A preceding selected card is in HALT
+   * and needs WUPA; only an actual timeout permits that second attempt. */
+  const uint8_t requests[] = {0x26u, 0x52u};
+  for (size_t i = 0u; i < sizeof(requests); ++i) {
+    size_t bits = 0u;
+    rc = transceive(reader, &requests[i], 1u, out_atqa, 2u, &bits);
+    if (rc == H2_FM175XX_ERR_TIMEOUT && i == 0u) continue;
+    if (rc != H2_FM175XX_OK) return rc;
+    return bits == 16u ? H2_FM175XX_OK : H2_FM175XX_ERR_PROTOCOL;
   }
-  return bits == 16u ? H2_FM175XX_OK : H2_FM175XX_ERR_PROTOCOL;
+  return H2_FM175XX_ERR_TIMEOUT;
 }
 
-static int type_a_anticollision(h2_fm175xx_t* reader, uint8_t selcode,
-                                uint8_t out_uid[5]) {
+static int type_a_anticollision(h2_fm175xx_t* reader, uint32_t timeout_ms,
+                                uint8_t selcode, uint8_t out_uid[5]) {
   int rc = clear_bit_mask(reader, H2_FM175XX_REG_TX_MODE, 0x80u);
   if (rc == H2_FM175XX_OK) {
     rc = clear_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
@@ -294,7 +337,7 @@ static int type_a_anticollision(h2_fm175xx_t* reader, uint8_t selcode,
     rc = write_reg(reader, H2_FM175XX_REG_COLL, 0x80u);
   }
   if (rc == H2_FM175XX_OK) {
-    rc = set_timer(reader, 1u);
+    rc = set_timer(reader, timeout_ms);
   }
   if (rc != H2_FM175XX_OK) {
     return rc;
@@ -314,8 +357,9 @@ static int type_a_anticollision(h2_fm175xx_t* reader, uint8_t selcode,
   return H2_FM175XX_OK;
 }
 
-static int type_a_select(h2_fm175xx_t* reader, uint8_t selcode,
-                         const uint8_t uid[5], uint8_t* out_sak) {
+static int type_a_select(h2_fm175xx_t* reader, uint32_t timeout_ms,
+                         uint8_t selcode, const uint8_t uid[5],
+                         uint8_t* out_sak) {
   uint8_t send[7] = {selcode, 0x70u, uid[0], uid[1], uid[2], uid[3], uid[4]};
   uint8_t recv[5] = {0};
   size_t bits = 0u;
@@ -330,13 +374,24 @@ static int type_a_select(h2_fm175xx_t* reader, uint8_t selcode,
     rc = clear_bit_mask(reader, H2_FM175XX_REG_STATUS2, 0x08u);
   }
   if (rc == H2_FM175XX_OK) {
-    rc = set_timer(reader, 1u);
+    rc = set_timer(reader, timeout_ms);
   }
   if (rc == H2_FM175XX_OK) {
     rc = transceive(reader, send, sizeof(send), recv, sizeof(recv), &bits);
   }
   if (rc != H2_FM175XX_OK) {
     return rc;
+  }
+  /* Some family members strip the checked CRC; others retain its two bytes.
+   * A short MIFARE NAK or a partial packet is never a successful selection. */
+  if (bits == 24u) {
+    uint16_t crc = (uint16_t)(0x6363u ^ recv[0]);
+    for (unsigned i = 0u; i < 8u; ++i)
+      crc = (uint16_t)((crc >> 1u) ^ ((crc & 1u) ? 0x8408u : 0u));
+    if (recv[1] != (uint8_t)crc || recv[2] != (uint8_t)(crc >> 8u))
+      return H2_FM175XX_ERR_PROTOCOL;
+  } else if (bits != 8u) {
+    return H2_FM175XX_ERR_PROTOCOL;
   }
   *out_sak = recv[0];
   return H2_FM175XX_OK;
@@ -367,11 +422,9 @@ int h2_fm175xx_init(h2_fm175xx_t* reader,
   return H2_FM175XX_OK;
 }
 
-int h2_fm175xx_open_type_a(h2_fm175xx_t* reader) {
-  if (reader == NULL) {
-    return H2_FM175XX_ERR_INVALID_ARG;
-  }
-  int rc = write_reg(reader, H2_FM175XX_REG_COMMAND, H2_FM175XX_CMD_SOFT_RESET);
+static int configure_type_a(h2_fm175xx_t* reader, uint8_t rf_config,
+                            uint8_t rx_threshold, int preserve_tx_drive) {
+  int rc = write_reg(reader, H2_FM175XX_REG_COMMAND, H2_FM175XX_CMD_IDLE);
   sleep_ms(reader, 2u);
   if (rc == H2_FM175XX_OK) {
     rc = set_bit_mask(reader, H2_FM175XX_REG_CONTROL, 0x10u);
@@ -380,41 +433,115 @@ int h2_fm175xx_open_type_a(h2_fm175xx_t* reader) {
     rc = set_bit_mask(reader, H2_FM175XX_REG_TX_AUTO, 0x40u);
   }
   if (rc == H2_FM175XX_OK) {
+    /* CRC_A uses the 0x6363 preset. Do not inherit a reset/default preset. */
+    rc = write_reg(reader, H2_FM175XX_REG_MODE, 0x3du);
+  }
+  if (rc == H2_FM175XX_OK) {
     rc = write_reg(reader, H2_FM175XX_REG_TX_MODE, 0x00u);
   }
   if (rc == H2_FM175XX_OK) {
     rc = write_reg(reader, H2_FM175XX_REG_RX_MODE, 0x00u);
   }
   if (rc == H2_FM175XX_OK) {
-    rc = write_reg(reader, H2_FM175XX_REG_GSN, 0xf8u);
+    /* Select the analog receiver input and the Type A receive-wait setting.
+     * Do not inherit another protocol's input selection. */
+    rc = write_reg(reader, H2_FM175XX_REG_RX_SEL, 0x86u);
   }
   if (rc == H2_FM175XX_OK) {
+    uint8_t selection = 0u;
+    rc = read_reg(reader, H2_FM175XX_REG_RX_SEL, &selection);
+    if (rc == H2_FM175XX_OK && selection != 0x86u) rc = H2_FM175XX_ERR_IO;
+  }
+  if (rc == H2_FM175XX_OK && !preserve_tx_drive) {
+    rc = write_reg(reader, H2_FM175XX_REG_GSN, 0xf8u);
+  }
+  if (rc == H2_FM175XX_OK && !preserve_tx_drive) {
     rc = write_reg(reader, H2_FM175XX_REG_GWGSP, 0x3fu);
   }
   if (rc == H2_FM175XX_OK) {
-    rc = write_reg(reader, H2_FM175XX_REG_RFCFG, 0x68u);
+    rc = write_reg(reader, H2_FM175XX_REG_RFCFG, rf_config);
   }
   if (rc == H2_FM175XX_OK) {
-    rc = write_reg(reader, H2_FM175XX_REG_RX_THRES, 0x74u);
+    rc = write_reg(reader, H2_FM175XX_REG_RX_THRES, rx_threshold);
   }
   if (rc == H2_FM175XX_OK) {
     rc = write_reg(reader, H2_FM175XX_REG_TX_CTRL, 0x83u);
   }
+  if (rc == H2_FM175XX_OK) {
+    /* A newly powered passive tag needs field-settling time before HLTA/WUPA.
+     */
+    sleep_ms(reader, 5u);
+    uint8_t tx_control = 0u;
+    rc = read_reg(reader, H2_FM175XX_REG_TX_CTRL, &tx_control);
+    if (rc == H2_FM175XX_OK && (tx_control & 0x03u) != 0x03u)
+      rc = H2_FM175XX_ERR_IO;
+  }
   return rc;
+}
+
+static int open_type_a(h2_fm175xx_t* reader, uint8_t rf_config,
+                       uint8_t rx_threshold, int preserve_tx_drive) {
+  if (reader == NULL) return H2_FM175XX_ERR_INVALID_ARG;
+  int rc = write_reg(reader, H2_FM175XX_REG_COMMAND, H2_FM175XX_CMD_SOFT_RESET);
+  if (rc != H2_FM175XX_OK) return rc;
+  sleep_ms(reader, 2u);
+  return configure_type_a(reader, rf_config, rx_threshold, preserve_tx_drive);
+}
+
+int h2_fm175xx_open_type_a(h2_fm175xx_t* reader) {
+  return open_type_a(reader, 0x68u, 0x74u, 0);
+}
+
+int h2_fm175xx_open_type_a_profile(h2_fm175xx_t* reader,
+                                   const h2_fm175xx_type_a_profile_t* profile) {
+  if (profile == NULL || profile->preserve_tx_drive > 1u)
+    return H2_FM175XX_ERR_INVALID_ARG;
+  return open_type_a(reader, profile->rf_config, profile->rx_threshold,
+                     profile->preserve_tx_drive);
 }
 
 int h2_fm175xx_type_a_activate(h2_fm175xx_t* reader,
                                h2_fm175xx_type_a_card_t* out_card) {
-  if (reader == NULL || out_card == NULL) {
+  return h2_fm175xx_type_a_activate_timed(reader, out_card, 1u);
+}
+
+static int activate_type_a(h2_fm175xx_t* reader,
+                           h2_fm175xx_type_a_card_t* out_card,
+                           uint32_t timeout_ms, uint8_t rf_config,
+                           uint8_t rx_threshold, int retune,
+                           int preserve_tx_drive) {
+  if (reader == NULL || out_card == NULL || timeout_ms == 0u ||
+      timeout_ms > 50u) {
     return H2_FM175XX_ERR_INVALID_ARG;
   }
   memset(out_card, 0, sizeof(*out_card));
+  uint8_t tx_control = 0u;
+  int rc = read_reg(reader, H2_FM175XX_REG_TX_CTRL, &tx_control);
+  if (rc != H2_FM175XX_OK) return rc;
+  /* The device can reset independently of its host-side handle. A disabled
+   * field must restore the complete Type A setup, not masquerade as no tag. */
+  if ((tx_control & 0x03u) != 0x03u || retune) {
+    /* RF cycling is not a request to reset the reader on every poll. */
+    rc = configure_type_a(reader, rf_config, rx_threshold, preserve_tx_drive);
+    if (rc != H2_FM175XX_OK) return rc;
+    if (retune) {
+      uint8_t gain = 0u, threshold = 0u;
+      rc = read_reg(reader, H2_FM175XX_REG_RFCFG, &gain);
+      if (rc == H2_FM175XX_OK)
+        rc = read_reg(reader, H2_FM175XX_REG_RX_THRES, &threshold);
+      if (rc != H2_FM175XX_OK) return rc;
+      /* Compare defined gain/decoder fields, excluding reserved bits. */
+      if ((gain & 0x70u) != (rf_config & 0x70u) ||
+          (threshold & 0xf7u) != (rx_threshold & 0xf7u))
+        return H2_FM175XX_ERR_IO;
+    }
+  }
   /* Polling and content reads share the reader. The preceding scan leaves
    * its tag ACTIVE, where REQA is ignored. End that selection, then WUPA
    * wakes both a newly presented IDLE tag and the retained HALT tag. */
-  int rc = type_a_halt(reader);
+  rc = type_a_halt(reader, timeout_ms);
   if (rc == H2_FM175XX_OK) {
-    rc = type_a_request(reader, out_card->atqa);
+    rc = type_a_request(reader, timeout_ms, out_card->atqa);
   }
   if (rc != H2_FM175XX_OK) {
     return rc;
@@ -431,11 +558,11 @@ int h2_fm175xx_type_a_activate(h2_fm175xx_t* reader,
   static const uint8_t selcodes[3] = {0x93u, 0x95u, 0x97u};
   for (uint8_t i = 0u; i < levels; ++i) {
     uint8_t* uid = out_card->uid + (i * 5u);
-    rc = type_a_anticollision(reader, selcodes[i], uid);
+    rc = type_a_anticollision(reader, timeout_ms, selcodes[i], uid);
     if (rc != H2_FM175XX_OK) {
       return rc;
     }
-    rc = type_a_select(reader, selcodes[i], uid, &out_card->sak[i]);
+    rc = type_a_select(reader, timeout_ms, selcodes[i], uid, &out_card->sak[i]);
     if (rc != H2_FM175XX_OK) {
       return rc;
     }
@@ -443,6 +570,29 @@ int h2_fm175xx_type_a_activate(h2_fm175xx_t* reader,
   out_card->uid_len = (uint8_t)(levels * 5u);
   out_card->sak_len = levels;
   return H2_FM175XX_OK;
+}
+
+int h2_fm175xx_type_a_activate_timed(h2_fm175xx_t* reader,
+                                     h2_fm175xx_type_a_card_t* out_card,
+                                     uint32_t timeout_ms) {
+  return activate_type_a(reader, out_card, timeout_ms, 0x68u, 0x74u, 0, 0);
+}
+
+int h2_fm175xx_type_a_activate_tuned(h2_fm175xx_t* reader,
+                                     h2_fm175xx_type_a_card_t* out_card,
+                                     uint32_t timeout_ms, uint8_t rf_config,
+                                     uint8_t rx_threshold) {
+  return activate_type_a(reader, out_card, timeout_ms, rf_config, rx_threshold,
+                         1, 0);
+}
+
+int h2_fm175xx_type_a_activate_profile(
+    h2_fm175xx_t* reader, h2_fm175xx_type_a_card_t* out_card,
+    uint32_t timeout_ms, const h2_fm175xx_type_a_profile_t* profile) {
+  if (profile == NULL || profile->preserve_tx_drive > 1u)
+    return H2_FM175XX_ERR_INVALID_ARG;
+  return activate_type_a(reader, out_card, timeout_ms, profile->rf_config,
+                         profile->rx_threshold, 1, profile->preserve_tx_drive);
 }
 
 int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,

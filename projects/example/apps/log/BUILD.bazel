@@ -1,8 +1,0 @@
-package(default_visibility = ["//visibility:public"])
-
-filegroup(
-    name = "log",
-    srcs = [
-        "//projects/example/apps/log/app:log",
-    ],
-)

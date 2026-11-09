@@ -1,10 +1,10 @@
 #include "h2_runtime_internal.h"
 
-#include "h2/pal/hal/h2_pal_ble.h"
-#include "h2/pal/hal/h2_pal_gpio_irq.h"
-#include "h2/pal/hal/h2_pal_modem.h"
-#include "h2/pal/net/h2_pal_netif.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
+#include "hal/h2_pal_ble.h"
+#include "hal/h2_pal_gpio_irq.h"
+#include "hal/h2_pal_modem.h"
+#include "net/h2_pal_netif.h"
+#include "hal/h2_pal_wifi.h"
 
 #include <string.h>
 

@@ -1,0 +1,24 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pcm",
+    srcs = ["src/h2_pcm_channels.c"],
+    hdrs = ["include/h2_pcm_channels.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "channels_test",
+    srcs = ["tests/test_pcm_channels.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":pcm"],
+)

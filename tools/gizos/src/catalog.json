@@ -204,9 +204,17 @@
       "name": "bk7258",
       "kind": "bk",
       "version": "3.1.1",
-      "default": true,
       "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
       "commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
+      "requiredFile": "Makefile"
+    },
+    {
+      "name": "bk7258",
+      "kind": "bk",
+      "version": "3.1.1-r6bbf627",
+      "default": true,
+      "repository": "https://github.com/GizClaw/bk_avdk_smp.git",
+      "commit": "6bbf62746a5e904a508dee056cac6b17675637f5",
       "requiredFile": "Makefile"
     },
     {

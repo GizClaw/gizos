@@ -1,0 +1,7 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "h2_h200_profile.cmake",
+    "partition.csv",
+    "sdkconfig.h2loader.defaults",
+])

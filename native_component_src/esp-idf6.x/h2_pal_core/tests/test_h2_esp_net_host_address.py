@@ -8,7 +8,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[4]
 
 SDK = r'''
-#include "h2/pal/net/h2_pal_net.h"
+#include "net/h2_pal_net.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -151,7 +151,7 @@ class ESPHostAddress(unittest.TestCase):
             binary = Path(temporary) / "host"
             test.write_text(SDK + source[start:end] + CASES)
             build = subprocess.run([compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                                    "-I" + str(ROOT / "libs/pal/include"), str(test), "-o", str(binary)],
+                                    "-I" + str(ROOT / "pal/include"), str(test), "-o", str(binary)],
                                    capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
             result = subprocess.run([str(binary)], capture_output=True, text=True)

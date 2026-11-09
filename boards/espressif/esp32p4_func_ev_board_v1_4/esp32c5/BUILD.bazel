@@ -1,0 +1,16 @@
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "esp32c5",
+    srcs = [],
+    hdrs = [],
+    data = [
+        "sdkconfig.defaults",
+    ],
+    tags = [
+        "manual",
+    ],
+    target_compatible_with = ["@platforms//:incompatible"],
+)

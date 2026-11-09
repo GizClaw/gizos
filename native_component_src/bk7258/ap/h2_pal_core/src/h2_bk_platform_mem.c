@@ -2,6 +2,7 @@
 #include "h2_bk_resource_stats_internal.h"
 
 #include <os/mem.h>
+#include <string.h>
 #if defined(H2_BK_MEM_DIAGNOSTICS) && H2_BK_MEM_DIAGNOSTICS
 #include <os/os.h>
 #include <stdio.h>
@@ -113,11 +114,28 @@ static void bk_platform_free(void* user, void* ptr) {
   os_free(ptr);
 }
 
+static h2_pal_result_t bk_platform_get_stats(void* user,
+                                             h2_pal_mem_region_t region,
+                                             h2_pal_mem_stats_t* out_stats) {
+  (void)user;
+  if (out_stats == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_stats, 0, sizeof(*out_stats));
+  if (region != H2_PAL_MEM_REGION_INTERNAL &&
+      region != H2_PAL_MEM_REGION_INTERNAL_EXECUTABLE &&
+      region != H2_PAL_MEM_REGION_EXTERNAL)
+    return H2_PAL_ERR_INVALID_ARG;
+  /* The SDK's free/minimum counters do not expose a complete region snapshot,
+   * including the largest free block. PAL allocation accounting is unrelated.
+   */
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_mem_api_t* bk_platform_allocator(h2_bk_heap_kind_t kind) {
   static const h2_pal_mem_vtable_t vtable = {
       .alloc = bk_platform_alloc,
       .realloc = bk_platform_realloc,
       .free = bk_platform_free,
+      .get_stats = bk_platform_get_stats,
   };
   static h2_bk_heap_context_t contexts[3] = {
       {.kind = H2_BK_HEAP_DEFAULT},

@@ -1,50 +1,22 @@
 #include "h2_esp_es8311_audio_system.h"
 #include "h2_esp_es8311_gain.h"
 
-#include <string.h>
+#include "h2_pcm_channels.h"
 
-static int frame_is_s16_16k(const h2_audio_frame_t* frame,
-                            uint32_t sample_rate_hz) {
-  return frame != NULL && frame->data != NULL &&
-         frame->sample_rate_hz == sample_rate_hz &&
-         frame->sample_format == H2_AUDIO_SAMPLE_S16LE;
-}
+#include <string.h>
 
 static int process_mic_fallback(
     const h2_esp_es8311_audio_system_config_t* config,
     const h2_audio_frame_t* raw_frame, h2_audio_frame_t* out_frame) {
-  if (!frame_is_s16_16k(raw_frame, config->sample_rate_hz) ||
-      !frame_is_s16_16k(out_frame, config->sample_rate_hz) ||
+  if (raw_frame->sample_rate_hz != config->sample_rate_hz ||
+      out_frame->sample_rate_hz != config->sample_rate_hz ||
       raw_frame->channels != config->raw_channels ||
       out_frame->channels != config->processed_channels ||
-      config->processed_channels != 1u || config->raw_channels == 0u ||
-      config->mic_channel_index >= config->raw_channels) {
+      config->processed_channels != 1u) {
     return H2_AUDIO_ERR_UNSUPPORTED;
   }
-
-  const size_t raw_frame_bytes = h2_audio_frame_frame_bytes(raw_frame);
-  const size_t out_frame_bytes = h2_audio_frame_frame_bytes(out_frame);
-  if (raw_frame_bytes == 0u || out_frame_bytes == 0u) {
-    return H2_AUDIO_ERR_INVALID_ARG;
-  }
-
-  const size_t raw_frames = raw_frame->bytes / raw_frame_bytes;
-  size_t out_frames = out_frame->capacity / out_frame_bytes;
-  if (out_frames > raw_frames) {
-    out_frames = raw_frames;
-  }
-  if (out_frames == 0u) {
-    return H2_AUDIO_ERR_INVALID_ARG;
-  }
-
-  const int16_t* raw = (const int16_t*)raw_frame->data;
-  int16_t* out = (int16_t*)out_frame->data;
-  for (size_t i = 0u; i < out_frames; ++i) {
-    out[i] = raw[(i * config->raw_channels) + config->mic_channel_index];
-  }
-  out_frame->bytes = out_frames * out_frame_bytes;
-  out_frame->samples_per_channel = (uint16_t)out_frames;
-  return H2_AUDIO_OK;
+  return h2_pcm_s16_select_mono(raw_frame, out_frame,
+                                &config->mic_channel_index, 1u);
 }
 
 int h2_esp_es8311_audio_system_init(

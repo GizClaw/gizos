@@ -1,0 +1,23 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "POSIX_HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "coverage_report",
+    srcs = ["coverage_report.py"],
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "coverage_report_test",
+    srcs = ["tests/test_coverage_report.py"],
+    legacy_create_init = 0,
+    main = "tests/test_coverage_report.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [":coverage_report"],
+)
+
+exports_files([
+    "coverage_report.py",
+])

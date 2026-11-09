@@ -198,7 +198,7 @@ exit "${FORMAT_TEST_BUILDIFIER_STATUS:-0}"
 
     def test_failed_tool_download_does_not_skip_remaining_tools(self):
         self.change("sample.lua", "BUILD.bazel")
-        self.tool("curl", "exit 22\n")
+        self.tool("python3", "printf '%s\\n' 'simulated download helper failure' >&2; exit 22\n")
         result = self.run_format(STYLUA="")
         self.assert_failed(result, "stylua")
         self.assertIn("buildifier ", self.log.read_text())

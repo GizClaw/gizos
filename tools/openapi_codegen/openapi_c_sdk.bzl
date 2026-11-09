@@ -1,7 +1,7 @@
 """Bazel rule for generating a PAL-backed C SDK from OpenAPI JSON."""
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 def _openapi_c_sources_impl(ctx):
     header = ctx.outputs.header

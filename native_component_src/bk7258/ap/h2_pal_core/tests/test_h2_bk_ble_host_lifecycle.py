@@ -1,0 +1,99 @@
+"""Exercise production BK BLE Host functions with persistent SDK service tables."""
+
+from pathlib import Path
+import re
+import subprocess
+import tempfile
+import unittest
+
+COMPONENT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[5]
+
+
+def function_source(text, name):
+    match = re.search(r"static [^\n]+\b" + name + r"\([^;]+?\) \{", text)
+    if match is None:
+        raise ValueError(f"Missing production function: {name}")
+    return text[match.start():text.index("\n}", match.start()) + 2]
+
+
+class BKBLEHostLifecycle(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        source = (COMPONENT / "src/h2_bk_platform_ble.c").read_text()
+        functions = [
+            "h2_bk_ble_uuid_from_pal",
+            "h2_bk_ble_uuid_equal",
+            "h2_bk_ble_service_characteristic_first",
+            "h2_bk_ble_update_out_handles",
+            "h2_bk_ble_clear_out_handle_ptrs",
+            "h2_bk_ble_unregister_gatt_services",
+            "h2_bk_ble_start_configured_services",
+            "h2_bk_ble_start",
+            "h2_bk_ble_stop",
+            "h2_bk_ble_register_gatt_services",
+        ]
+        body = "\n\n".join(function_source(source, name) for name in functions)
+        probe = (COMPONENT / "tests/ble_host_lifecycle_probe.c").read_text()
+        cls.directory = tempfile.TemporaryDirectory(prefix="bk-ble-host-")
+        cls.addClassCleanup(cls.directory.cleanup)
+        unit = Path(cls.directory.name) / "probe.c"
+        cls.binary = Path(cls.directory.name) / "probe"
+        unit.write_text(probe.replace("/* PRODUCTION_FUNCTIONS */", body))
+        compiler = [
+            "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+            "-I" + str(ROOT / "pal/include"),
+            "-I" + str(COMPONENT / "src"),
+        ]
+        subprocess.run([*compiler, str(unit), "-o", str(cls.binary)], check=True)
+        legacy_functions = [
+            "h2_bk_ble_uuid_from_pal",
+            "h2_bk_ble_build_legacy_attr_db",
+            "h2_bk_ble_set_local_mtu",
+        ]
+        legacy_body = "\n\n".join(function_source(source, name)
+                                    for name in legacy_functions)
+        legacy_probe = (COMPONENT / "tests/ble_legacy_uuid_probe.c").read_text()
+        legacy_unit = Path(cls.directory.name) / "legacy.c"
+        cls.legacy_binary = Path(cls.directory.name) / "legacy"
+        legacy_unit.write_text(legacy_probe.replace("/* PRODUCTION_FUNCTIONS */",
+                                                    legacy_body))
+        subprocess.run([*compiler, str(legacy_unit), "-o", str(cls.legacy_binary)],
+                       check=True)
+
+    def run_scenario(self, scenario):
+        result = subprocess.run(
+            [str(self.binary), str(scenario)], capture_output=True,
+            text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_legacy_gatt_preserves_uuid_widths_and_start_errors(self):
+        result = subprocess.run([str(self.legacy_binary)], capture_output=True,
+                                text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_restart_reuses_installed_service_tables(self):
+        self.run_scenario(0)
+
+    def test_stop_releases_borrowed_bindings(self):
+        self.run_scenario(1)
+
+    def test_failed_detach_retains_ownership_for_retry(self):
+        self.run_scenario(2)
+
+    def test_permission_changes_after_stop_are_rejected(self):
+        self.run_scenario(3)
+
+    def test_property_changes_after_stop_are_rejected(self):
+        self.run_scenario(4)
+
+    def test_maximum_length_changes_after_stop_are_rejected(self):
+        self.run_scenario(5)
+
+    def test_unchanged_schema_rebinds_callbacks_after_stop(self):
+        self.run_scenario(6)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -6,7 +6,7 @@
 #endif
 #include "h2_h2loader_host.h"
 #include "h2_h2loader_host_package.h"
-#include "h2/pal/os/h2_pal_fs.h"
+#include "os/h2_pal_fs.h"
 #include <assert.h>
 #include "h2_h2loader_cli_target.h"
 static h2_pal_result_t fake_connect(

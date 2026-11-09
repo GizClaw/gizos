@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { artifactFilename, PLATFORMS, validateReleaseIdentity, writeArtifactMetadata } from './release-index.mjs';
 import { tauriEnvironment } from './package-environment.mjs';
+import { packageDmg } from './package-dmg.mjs';
 
 const directory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const root = resolve(directory, '../..');
@@ -31,8 +32,9 @@ const config = {
 const configPath = join(directory, 'src-tauri/gizloader.generated.conf.json');
 writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 // Use the locked local Tauri CLI, with Bun available to beforeBuildCommand.
-execute(process.execPath, [join(directory, 'node_modules/@tauri-apps/cli/tauri.js'), 'build',
-  '--config', configPath, '--bundles', mac ? 'app,dmg' : 'nsis'], {
+// Build/sign/notarize the app with Tauri; assemble the DMG from staged contents.
+execute(process.execPath, [join(directory, 'node_modules/@tauri-apps/cli/tauri.js'), 'build', '--verbose',
+  '--config', configPath, '--bundles', mac ? 'app' : 'nsis'], {
   env: tauriEnvironment(process.env),
 });
 const cargoTarget = process.env.CARGO_TARGET_DIR ? resolve(directory, process.env.CARGO_TARGET_DIR) : join(directory, 'src-tauri/target');
@@ -50,9 +52,13 @@ if (mac) {
     const architecture = execute('/usr/bin/lipo', ['-archs', binary], { encoding: 'utf8', stdio: 'pipe' }).trim();
     if (architecture !== expected) throw new Error(`Expected ${expected} packaged ${name}, found ${architecture}`);
   }
+  source = packageDmg({
+    bundle, version, arch: process.arch,
+    icon: join(directory, 'src-tauri/icons/icon.icns'), execute,
+  });
   const candidates = readdirSync(join(bundle, 'dmg')).filter(name => name.includes(`_${version}_`) && name.endsWith('.dmg'));
   if (candidates.length !== 1) throw new Error('Expected exactly one DMG');
-  source = join(bundle, 'dmg', candidates[0]);
+  if (join(bundle, 'dmg', candidates[0]) !== source) throw new Error('Expected the DMG created by this build');
   if (identity) {
     // A DMG signature is separate from the signed/notarized app inside it.
     execute('codesign', ['--force', '--timestamp', '--sign', identity, source]);

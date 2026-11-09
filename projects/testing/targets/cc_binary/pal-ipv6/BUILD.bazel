@@ -1,0 +1,50 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_binary(
+    name = "pal_ipv6",
+    srcs = ["main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _HOST,
+    deps = [
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/backends/h2peer",
+        "//pal/providers/backends/h2sctp",
+        "//pal/providers/backends/wolfssl",
+        "//pal/providers/platforms/desktop/pal_core",
+        "//projects/testing/e2e/pal-ipv6/libs/runner",
+        "//projects/testing/integration/pal-net-tls/libs/runner",
+    ] + select({
+        "@platforms//os:macos": ["//pal/providers/platforms/darwin/pal_core:host_os"],
+        "//conditions:default": ["//pal/providers/platforms/linux/pal_core"],
+    }),
+)
+
+py_test(
+    name = "desktop_pal_ipv6_test",
+    srcs = ["run_desktop.py"],
+    args = [
+        "--binary",
+        "$(location :pal_ipv6)",
+        "--server",
+        "$(location //tools/webrtc-test-server:webrtc_test_server)",
+    ],
+    data = [
+        ":pal_ipv6",
+        "//tools/webrtc-test-server:webrtc_test_server",
+    ],
+    legacy_create_init = 0,
+    main = "run_desktop.py",
+    target_compatible_with = _HOST,
+    deps = ["//projects/testing/e2e/pal-ipv6/libs/fixture"],
+)

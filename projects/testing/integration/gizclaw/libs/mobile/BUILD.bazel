@@ -1,0 +1,47 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel/mobile:mobile_e2e.bzl", "mobile_e2e_suite")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//projects/testing:__subpackages__"])
+
+cc_library(
+    name = "runner",
+    srcs = ["mobile_runner.c"],
+    hdrs = ["mobile_runner.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    deps = [
+        "//libs/runtime",
+        "//projects/testing/integration/gizclaw:app_config_fixture",
+        "//projects/testing/integration/gizclaw/app:gizclaw_e2e",
+    ],
+)
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    case_count = 8,
+    expected = {
+        "rc": 0,
+        "teardown": 0,
+        "selected": 8,
+        "failed": 0,
+        "cleanup_rc": 0,
+        "retained_resources": 0,
+        "complete": True,
+    },
+    fixtures = {
+        "pcm": "//projects/testing/integration/gizclaw:voice_prompt",
+        "app_config": "//projects/testing/integration/gizclaw:app_config_fixture_contract",
+    },
+    hook = "suite.py",
+    package = "com.haivivi.gizos.e2e.gizclaw",
+    registry = "//projects/testing/integration/gizclaw/app:src/h2_gizclaw_e2e_catalog_all.c",
+    # FENCE is an opt-in suite outside SUITE_ALL, which this lane executes.
+    registry_pattern = '[{]"([^"]+)", H2_GIZCLAW_E2E_SUITE_(?!FENCE,)',
+    report = "gizclaw-result.json",
+    timeout_seconds = 1800,
+    deps = ["//projects/testing/integration/gizclaw:coverage_library"],
+)
+
+exports_files(["suite.py"])

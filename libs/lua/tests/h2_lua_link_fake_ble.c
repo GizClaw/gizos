@@ -1,6 +1,6 @@
 #include "h2_lua_link_fake_ble.h"
 
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 #include "h2_desktop_platform.h"
 
 #include <assert.h>

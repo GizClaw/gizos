@@ -1,0 +1,133 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "POSIX_HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_SERVICE_SOURCES = [
+    "src/h2_device_app.c",
+    "src/h2_device_app_preflight.c",
+    "src/h2_device_loader.c",
+]
+
+_SERVICE_HEADERS = [
+    "include/h2_device_app_preflight.h",
+    "include/h2_device_service.h",
+]
+
+exports_files(_SERVICE_SOURCES + _SERVICE_HEADERS)
+
+filegroup(
+    name = "service_sources",
+    srcs = _SERVICE_SOURCES,
+)
+
+filegroup(
+    name = "service_headers",
+    srcs = _SERVICE_HEADERS,
+)
+
+filegroup(
+    name = "service_fixture_sources",
+    testonly = True,
+    srcs = [
+        ":service_headers",
+        ":service_sources",
+        "//libs/h2loader/device:device_sources",
+        "//libs/h2loader/device:h2loader_headers",
+    ],
+)
+
+filegroup(
+    name = "firmware_sources",
+    srcs = [
+        ":service_sources",
+        "//libs/h2loader/device:firmware_sources",
+        "//projects/h2loader/apps/headless:src/app.c",
+        "//projects/h2loader/apps/headless:src/h2loader_bleikcp.c",
+        "//projects/h2loader/apps/headless:src/task_names.c",
+    ],
+)
+
+cc_library(
+    name = "firmware_api",
+    hdrs = [":service_headers"],
+    includes = ["include"],
+    deps = [
+        "//libs/crypto/sha256",
+        "//libs/h2loader/device:api",
+        "//libs/h2loader/device:tasks",
+        "//libs/runtime",
+        "//projects/h2loader/apps/headless:loader",
+    ],
+)
+
+cc_library(
+    name = "service",
+    srcs = [":service_sources"],
+    hdrs = [":service_headers"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        "//libs/h2loader/device",
+        "//libs/runtime",
+        "//projects/h2loader/apps/headless:loader",
+    ],
+)
+
+cc_test(
+    name = "app_preflight_cpp_link_test",
+    srcs = ["tests/test_h2_device_app_preflight_cpp.cc"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":service"],
+)
+
+cc_test(
+    name = "app_preflight_test",
+    srcs = ["tests/test_h2_device_app_preflight.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":service"],
+)
+
+cc_test(
+    name = "app_lifecycle_test",
+    srcs = ["tests/test_h2_device_app.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":service",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+py_test(
+    name = "command_service_test",
+    srcs = ["tests/test_command_service.py"],
+    data = [
+        "src/h2_device_loader.c",
+        "tests/command_service_fixture.c",
+        "//pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_command_service.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "jieli_ble_session_test",
+    srcs = ["tests/test_jieli_ble_session.py"],
+    data = [
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c",
+        "//projects/h2loader/libs/device_service:src/h2_device_app.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_ble_session.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)

@@ -1,12 +1,12 @@
 #ifndef H2_BK_PLATFORM_CORE_H
 #define H2_BK_PLATFORM_CORE_H
 
-#include "h2/pal/os/h2_pal_log.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_queue.h"
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/os/h2_pal_task.h"
-#include "h2/pal/os/h2_pal_time.h"
+#include "os/h2_pal_log.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_queue.h"
+#include "os/h2_pal_sync.h"
+#include "os/h2_pal_task.h"
+#include "os/h2_pal_time.h"
 
 #include <stdbool.h>
 #include <stdint.h>

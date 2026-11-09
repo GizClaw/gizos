@@ -32,7 +32,7 @@ filegroup(
     srcs = glob(["bin/*"]) + [
         ":selected_compiler_inputs",
         ":selected_sdk_headers",
-        "@gizos//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+        "@gizos//tools/bazel/native/versions:esp_idf_tool_versions.txt",
     ],
 )
 
@@ -41,7 +41,7 @@ filegroup(
     srcs = glob(["bin/*"]) + [
         ":selected_archiver_inputs",
         ":selected_compiler_inputs",
-        "@gizos//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+        "@gizos//tools/bazel/native/versions:esp_idf_tool_versions.txt",
     ],
 )
 

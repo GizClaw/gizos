@@ -1,0 +1,110 @@
+load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+load("//tools/bazel/native/jieli:jieli_task_policy.bzl", "jieli_target_task_policy")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_lib_component(
+    name = "firmware_lib",
+    native_deps = ["//projects/h2loader/libs/device_service:firmware_api"],
+    native_srcs = [
+        "//projects/h2loader/libs/device_service:firmware_sources",
+        "//libs/archive/bundle:src/h2_bundle_archive.c",
+        "//libs/archive/bundle:src/h2_bundle_installer.c",
+        "//libs/archive/bundle:src/h2_bundle_manifest.c",
+        "//libs/archive/bundle:src/h2_bundle_path.c",
+        "//libs/archive/bundle:src/h2_bundle_tar.c",
+        "//libs/archive/bundle:src/h2_bundle_types.c",
+    ],
+    deps = [
+        "//libs/command",
+        "//libs/net/bleikcp",
+        "//libs/net/iostreamikcp",
+        "//libs/runtime",
+        "//libs/sync/atomic",
+    ],
+)
+
+firmware_native_component(
+    name = "pal_smoke",
+    srcs = ["src/pal_ble_smoke.c"],
+    component_name = "jieli_ac791n_devkit_pal_ble_smoke",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":firmware_lib",
+        "//boards/jieli/jieli_ac791n_devkit/ac791n",
+        "//libs/sync/atomic",
+        "//native_component_src/jieli/wl82/h2_pixa",
+        "//native_component_src/jieli/wl82/zlib",
+        "//pal:pal_header_files",
+    ],
+)
+
+jieli_target_task_policy(
+    name = "pal_smoke_task_policy",
+    default_policy = "10 4096 128",
+    graph = [":pal_smoke"],
+    policies = [
+        "h2loader/appcmd 10 12288 128",
+        "h2loader/blecmd 10 12288 128",
+        "$bleikcp/server 10 12288 128",
+        "$bleikcp/kcp 10 1536 128",
+        "$runtime/input 10 4096 128",
+        "$runtime/nfc 10 4096 128",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/uartcmd 10 4096 128",
+    ],
+    sdk_policies = [
+        "app_core 15 4096 256",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 64",
+        "dw_update 21 512 32",
+        "h2pal/heartbeat 10 512 0",
+        "h2console_rx 12 1024 128",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+        "audio_server 16 1024 256",
+        "audio_decoder 30 1024 64",
+        "audio_encoder 12 384 64",
+        "audio_mix 28 512 0",
+    ],
+)
+
+h2loader_jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":pal_smoke",
+        "//boards/jieli/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "pal-ble-smoke",
+    target = "wl82",
+    task_policy = ":pal_smoke_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":firmware",
+    image = "pal-ble-smoke",
+    role = "app",
+    tags = ["no-release"],
+    target = "wl82",
+)
+
+h2loader_zlib_tar(
+    name = "package_v2",
+    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/pal-ble-smoke/jieli/jieli_ac791n_devkit:package",
+)

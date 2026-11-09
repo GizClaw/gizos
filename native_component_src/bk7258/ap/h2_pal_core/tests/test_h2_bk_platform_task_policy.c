@@ -11,6 +11,7 @@ void h2_bk_platform_task_test_reset(void);
 static struct {
   int fail_alloc, fail_sem, fail_create, fail_join, creates, frees;
   int sem_created, sem_destroyed, task_deleted, stack_fail;
+  int core, psram, static_creates;
   uint8_t priority;
   uint32_t stack;
   const char* name;
@@ -56,28 +57,40 @@ static int create(beken_thread_t* out, uint8_t pr, const char* name,
 }
 int rtos_create_thread(beken_thread_t* a, uint8_t b, const char* c,
                        beken_thread_function_t d, uint32_t e, void* f) {
+  s.core = -1;
+  s.psram = 0;
   return create(a, b, c, d, e, f);
 }
 int rtos_create_psram_thread(beken_thread_t* a, uint8_t b, const char* c,
                              beken_thread_function_t d, uint32_t e, void* f) {
+  s.core = -1;
+  s.psram = 1;
   return create(a, b, c, d, e, f);
 }
 int rtos_core0_create_thread(beken_thread_t* a, uint8_t b, const char* c,
                              beken_thread_function_t d, uint32_t e, void* f) {
+  s.core = 0;
+  s.psram = 0;
   return create(a, b, c, d, e, f);
 }
 int rtos_core0_create_psram_thread(beken_thread_t* a, uint8_t b, const char* c,
                                    beken_thread_function_t d, uint32_t e,
                                    void* f) {
+  s.core = 0;
+  s.psram = 1;
   return create(a, b, c, d, e, f);
 }
 int rtos_core1_create_thread(beken_thread_t* a, uint8_t b, const char* c,
                              beken_thread_function_t d, uint32_t e, void* f) {
+  s.core = 1;
+  s.psram = 0;
   return create(a, b, c, d, e, f);
 }
 int rtos_core1_create_psram_thread(beken_thread_t* a, uint8_t b, const char* c,
                                    beken_thread_function_t d, uint32_t e,
                                    void* f) {
+  s.core = 1;
+  s.psram = 1;
   return create(a, b, c, d, e, f);
 }
 void rtos_delete_thread(beken_thread_t* x) { assert(x == NULL); }
@@ -107,7 +120,9 @@ TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t fn, const char* name,
                                            UBaseType_t priority,
                                            StackType_t* stack,
                                            StaticTask_t* tcb, BaseType_t core) {
-  assert(stack && tcb && core == 0);
+  assert(stack && tcb);
+  s.core = core;
+  ++s.static_creates;
   beken_thread_t task;
   return create(&task, (uint8_t)(configMAX_PRIORITIES - 1u - priority), name,
                 fn, depth * sizeof(StackType_t), arg) == kNoErr
@@ -130,6 +145,24 @@ static h2_pal_result_t resolve(void* u, const char* n,
                                  .priority = 5,
                                  .min_stack_size = 8192,
                                  .stack_region = H2_BK_TASK_STACK_PSRAM};
+    return H2_PAL_OK;
+  }
+  if (n && strncmp(n, "reserve/", 8u) == 0) {
+    *out = (h2_bk_task_policy_t){
+        .core = H2_BK_TASK_CORE_ANY,
+        .priority = 6u,
+        .min_stack_size = 24576u,
+        .stack_region = H2_BK_TASK_STACK_DEFAULT,
+    };
+    if (strcmp(n, "reserve/psram") == 0)
+      out->stack_region = H2_BK_TASK_STACK_PSRAM;
+    if (strcmp(n, "reserve/core1") == 0) out->core = 1u;
+    if (strcmp(n, "reserve/stack") == 0) out->min_stack_size = 0u;
+    if (strcmp(n, "reserve/overflow") == 0)
+      out->min_stack_size = UINT16_MAX * sizeof(StackType_t) + 1u;
+    if (strcmp(n, "reserve/priority") == 0)
+      out->priority = configMAX_PRIORITIES;
+    if (strcmp(n, "reserve/region") == 0) out->stack_region = 2;
     return H2_PAL_OK;
   }
   if (n && strcmp(n, "invalid") == 0) {
@@ -160,7 +193,62 @@ static void reset(void) {
   assert(s.sem_created == s.sem_destroyed);
   memset(&s, 0, sizeof(s));
 }
+static void test_reserve(void) {
+  reset();
+  h2_bk_task_policy_t policy = {.min_stack_size = 1u};
+  assert(h2_bk_platform_task_reserve_policy("known", NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_bk_platform_task_reserve_policy("known", &policy) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(policy.min_stack_size == 0u && policy.sdk_name == NULL);
+  h2_bk_task_policy_config_t c = cfg();
+  assert(h2_bk_platform_task_configure(&c) == H2_PAL_ERR_INVALID_STATE);
+  const char* names[] = {
+      "known",         "missing",          "invalid",          "resolver-error",
+      "reserve/stack", "reserve/overflow", "reserve/priority", "reserve/region",
+      "reserve/core1", "reserve/any"};
+  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+    reset();
+    c = cfg();
+    assert(h2_bk_platform_task_configure(NULL) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
+    int expected = H2_PAL_ERR_TASK;
+    if (i == 0u || i == 9u) expected = H2_PAL_OK;
+    if (i == 1u) expected = H2_PAL_ERR_NOT_FOUND;
+#if CONFIG_SOC_SMP && CONFIG_CPU_CNT > 1
+    if (i == 8u) expected = H2_PAL_OK;
+#endif
+    policy = (h2_bk_task_policy_t){.min_stack_size = 1u};
+    assert(h2_bk_platform_task_reserve_policy(names[i], &policy) == expected);
+    assert(h2_bk_platform_task_configure(&c) == H2_PAL_ERR_INVALID_STATE);
+    assert(s.creates == 0 && s.sem_created == 0);
+    if (expected != H2_PAL_OK)
+      assert(policy.min_stack_size == 0u && policy.sdk_name == NULL);
+    else
+      assert(policy.min_stack_size == (i == 0u ? 8192u : 24576u));
+  }
+  for (int psram = 0; psram < 2; ++psram) {
+    for (int allocator = 0; allocator < 2; ++allocator) {
+      reset();
+      c = cfg();
+      if (allocator) c.psram_stack_allocator = &stack_mem;
+      assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
+      h2_pal_task_options_t options = {
+          .name = psram ? "reserve/psram" : "reserve/any",
+      };
+      h2_pal_task_t* task = NULL;
+      assert(h2_pal_task_start(h2_bk_platform_task_api(), &options, entry, NULL,
+                               &task) == H2_PAL_OK);
+      assert(s.core == tskNO_AFFINITY && s.priority == 6u && s.stack == 24576u);
+      assert(s.static_creates == (psram && allocator));
+      if (!s.static_creates) assert(s.psram == psram);
+      assert(h2_pal_task_join(h2_bk_platform_task_api(), task) == H2_PAL_OK);
+    }
+  }
+}
+
 int main(void) {
+  test_reserve();
   const h2_pal_task_api_t* api = h2_bk_platform_task_api();
   h2_pal_task_options_t o = {.name = "known", .min_stack_size = 1};
   h2_pal_task_t* t = (void*)1;

@@ -17,7 +17,7 @@
  * consumer instead.
  */
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "h2_runtime_event.h"
 #include "h2_runtime_types.h"
 

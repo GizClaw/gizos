@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repository_root=$(git rev-parse --show-toplevel)
-fixture_root="$repository_root/tools/bazel/tests/downstream_consumer"
+fixture_root="$repository_root/tools/bazel/firmware/tests/downstream_consumer"
 
 # The fixture root ignores every rc file, so Bazel would otherwise fall back to
 # its built-in output root and repository cache. Reuse the locations the
@@ -75,7 +75,7 @@ cp "$repository_root/libs/lua/tests/app_fixture/xyz/tone.pcm" "$consumer_root/xy
 touch "$consumer_root/lua_app_catalog.jsonl" \
     "$consumer_root/lua_app_release_files.jsonl" \
     "$consumer_root/lua_app_default_files.txt"
-cp "$repository_root/projects/showcase/assets/fonts/NotoSansSC-Bold.ttf" \
+cp "$repository_root/libs/ui/fonts/noto_sans_sc/NotoSansSC-Bold.ttf" \
     "$consumer_root/font.ttf"
 cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
 cp "$fixture_root/partition.csv" "$consumer_root/partition.csv"
@@ -93,7 +93,7 @@ case "$(uname -s)-$(uname -m)" in
         host_os=macos
         platform=macos_arm64
         # Resolves the consumer root's host C/C++ toolchain.
-        host_test_targets=(@gizos//tools/bazel/tests/host_cc_toolchain:xcode_sdk_builtin_test)
+        host_test_targets=(@gizos//tools/bazel/toolchains/tests/host_cc_toolchain:xcode_sdk_builtin_test)
         ;;
     Linux-x86_64)
         host_os=linux
@@ -313,8 +313,7 @@ cp BUILD.bazel.complete BUILD.bazel
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
     @gizos//tools/openapi_codegen:openapi_codegen \
-    @gizos//libs/gizclaw/web/tests/local:local \
-    @gizos//projects/gizclaw/targets/npm_package/firmware:release_tarball \
+    @gizos//projects/testing/integration/gizclaw/libs/web/tests/local:local \
     //:firmware_lib \
     //:embedded_menu_font_test \
     //:font_consumer \
@@ -354,9 +353,8 @@ test ! -e "$consumer_root/private_bk_task_policy"
     //:lua_app_release_test \
     //:lingxi_consumer_test \
     //:onenet_consumer_test \
-    @gizos//libs/gizclaw:h2_gizclaw_local_test \
-    @gizos//libs/lua/apps/web/tests/scoped_http:browser_test \
-    @gizos//projects/gizclaw/targets/npm_package/firmware:package_test \
+    @gizos//libs/clients/gizclaw:h2_gizclaw_local_test \
+    @gizos//projects/testing/unit/lua-runtime/libs/web/tests/scoped_http:browser_test \
     //:private_esp_task_policy_test \
     //:private_bk_ap_task_policy_test \
     //:private_bk_cp_task_policy_test \

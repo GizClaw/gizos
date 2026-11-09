@@ -3,9 +3,9 @@
 
 #include "h2_audio_mixer.h"
 #include "h2_es8311_volume.h"
-#include "h2/pal/hal/h2_pal_audio.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_queue.h"
+#include "hal/h2_pal_audio.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_queue.h"
 
 #include "driver/i2c_master.h"
 #include "driver/i2s_std.h"

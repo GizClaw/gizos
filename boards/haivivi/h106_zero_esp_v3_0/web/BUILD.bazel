@@ -1,0 +1,25 @@
+load("//tools/bazel/web:web_board.bzl", "h2_web_board")
+
+package(default_visibility = ["//visibility:public"])
+
+# Browser counterpart of the board: 240x240 ST7789 display and the eight keys
+# of the H106 Web target (same keyboard keys). Buttons reach Lua apps as
+# args.<name>. The device skin draws the enclosure, front and back, and
+# every key in SVG.
+h2_web_board(
+    name = "web",
+    buttons = {
+        "left": "ArrowLeft",
+        "right": "ArrowRight",
+        "ok": "Enter",
+        "record": " ",
+        "back": "Escape",
+        "power": "p",
+        "volume_down": "[",
+        "volume_up": "]",
+    },
+    default_skin = "device",
+    display_height = 240,
+    display_width = 240,
+    skins = {"device": "device.html"},
+)

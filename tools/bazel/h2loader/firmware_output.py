@@ -1,0 +1,256 @@
+"""Publication helpers for H2Loader Bazel artifact rules."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+from tools.bazel.h2loader.firmware_artifacts import (
+    BundleEntry,
+    data_entry_name,
+    package_manifest,
+    write_factory_bundle,
+    write_package,
+)
+
+
+GIT_LFS_POINTER_HEADER = b"version https://git-lfs.github.com/spec/v1"
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def package_entries(
+    source_root: Path,
+    data_root: str,
+    files: list[str],
+    sources: list[str] | None = None,
+) -> list[BundleEntry]:
+    """Bundles package data under `data_root`.
+
+    `files` holds each entry's repository-relative name. `sources` holds where
+    its bytes are, one per file and in the same order; a generated file is read
+    from its output location while it keeps its repository-relative name, so a
+    rule may produce package data instead of requiring a checked-in copy under
+    the declared root. Omitting `sources` reads each file from its own name.
+    """
+    if sources is None:
+        sources = list(files)
+    # Check the pairing before the empty shortcut: sources without files means
+    # the caller lost the correspondence, and silently packaging nothing would
+    # hide it.
+    if len(sources) != len(files):
+        raise ValueError(
+            f"package data needs one source per file: {len(files)} files, {len(sources)} sources"
+        )
+    if not files:
+        return []
+    root = Path(data_root)
+    if root.is_absolute() or ".." in root.parts:
+        raise ValueError(f"package data root must be repository-relative: {data_root}")
+    entries: list[BundleEntry] = []
+    names: set[str] = set()
+    for value, read_value in zip(files, sources):
+        logical_source = Path(value)
+        if logical_source.is_absolute() or not read_value:
+            raise ValueError(f"package data escapes declared root {data_root}: {value}")
+        try:
+            relative_path = logical_source.relative_to(root)
+        except ValueError as error:
+            raise ValueError(f"package data escapes declared root {data_root}: {value}") from error
+        if not relative_path.parts or ".." in relative_path.parts:
+            raise ValueError(f"package data escapes declared root {data_root}: {value}")
+        source = source_root / Path(read_value)
+        if not source.is_file():
+            raise ValueError(f"package data file is missing: {value}")
+        data = source.read_bytes()
+        if data.splitlines()[:1] == [GIT_LFS_POINTER_HEADER]:
+            raise ValueError(
+                f"package data is an unresolved Git LFS pointer: {value}; "
+                "materialize Git LFS objects before packaging"
+            )
+        name = data_entry_name(relative_path.as_posix())
+        if name in names:
+            raise ValueError(f"duplicate package data path: {name}")
+        names.add(name)
+        entries.append(BundleEntry(name=name, data=data))
+    return entries
+
+
+def publish_managed_package(
+    *,
+    source_root: Path,
+    app_image: Path,
+    app_path: str,
+    data_root: str,
+    data_files: list[str],
+    data_sources: list[str],
+    output: Path,
+    board: str,
+    role: str,
+    target: str,
+    version: str,
+    package_format: int = 2,
+) -> None:
+    entries = package_entries(source_root, data_root, data_files, data_sources)
+    write_package(
+        output,
+        app_path,
+        app_image.read_bytes(),
+        entries,
+        role=role,
+        board=board,
+        target=target,
+        version=version,
+        package_format=package_format,
+    )
+
+
+def publish_esp_recovery(
+    *,
+    flash_root: Path,
+    flash_metadata: Path,
+    output: Path,
+    board: str,
+    target: str,
+) -> None:
+    metadata = json.loads(flash_metadata.read_text(encoding="utf-8"))
+    flash_files = metadata.get("flash_files")
+    if not isinstance(flash_files, dict) or not flash_files:
+        raise ValueError("ESP flash metadata has no flash_files object")
+    members: list[tuple[int, str, Path]] = []
+    names: set[str] = set()
+    for offset, relative in sorted(flash_files.items(), key=lambda item: int(item[0], 0)):
+        relative_path = Path(relative)
+        if relative_path.is_absolute() or not relative_path.parts or ".." in relative_path.parts:
+            raise ValueError(f"ESP flash file escapes flash root: {relative}")
+        source = flash_root / relative_path
+        if not source.is_file():
+            raise ValueError(f"ESP flash file is missing: {relative}")
+        name = source.name
+        if name in names:
+            raise ValueError(f"ESP recovery has duplicate basename: {name}")
+        names.add(name)
+        members.append((int(offset, 0), name, source))
+    write_factory_bundle(
+        output,
+        driver=1,
+        board=board,
+        target=target,
+        baud=115200,
+        files=members,
+    )
+
+
+def publish_bk_recovery(
+    *,
+    recovery_image: Path,
+    recovery_config: Path,
+    output: Path,
+    board: str,
+    target: str,
+) -> None:
+    config = json.loads(recovery_config.read_text(encoding="utf-8"))
+    offset = config.get("offset")
+    baud = config.get("baud")
+    if not isinstance(offset, str) or not isinstance(baud, int):
+        raise ValueError(f"invalid BK recovery config: {recovery_config}")
+    write_factory_bundle(
+        output,
+        driver=2,
+        board=board,
+        target=target,
+        baud=baud,
+        files=[(int(offset, 0), recovery_image.name, recovery_image)],
+    )
+
+
+def publish_metadata(
+    *,
+    output: Path,
+    entry: str,
+    platform: str,
+    board: str,
+    image: str,
+    role: str,
+    target: str,
+    version: str,
+    app_image: Path,
+    package: Path,
+    factory: Path | None,
+    recovery: Path | None,
+    native: list[tuple[str, Path]],
+    package_format: int = 2,
+) -> None:
+    def asset(
+        path: Path,
+        operation: str,
+        release_suffix: str | None,
+        name: str | None = None,
+        flash_offset: int | None = None,
+    ) -> dict[str, str | int]:
+        asset_name = name or path.name
+        normalized = Path(asset_name)
+        if normalized.is_absolute() or ".." in normalized.parts:
+            raise ValueError(f"invalid artifact name: {asset_name}")
+        result: dict[str, str | int] = {
+            "name": normalized.as_posix(),
+            "operation": operation,
+            "sha256": sha256(path),
+            "size": path.stat().st_size,
+        }
+        if release_suffix is not None:
+            result["release_suffix"] = release_suffix
+        if flash_offset is not None:
+            result["flash_offset"] = flash_offset
+        return result
+
+    if type(package_format) is not int or package_format not in (1, 2):
+        raise ValueError(f"unsupported package format: {package_format}")
+    suffix = ".update.tar" if package_format == 2 else ".update.tar.zlib"
+    release_assets = [asset(package, "managed-install", suffix)]
+    if recovery is not None:
+        release_assets.append(asset(recovery, "recovery", ".recovery.h2fb"))
+    if factory is not None:
+        release_assets.append(
+            asset(
+                factory,
+                "factory-flash",
+                ".combined_factory.bin",
+                flash_offset=0,
+            )
+        )
+    metadata = {
+        "entry": entry,
+        "platform": platform,
+        "board": board,
+        "image": image,
+        "role": role,
+        "target": target,
+        "version": version,
+        "package_format": package_format,
+        "package_manifest": package_manifest(
+            app_image.read_bytes(),
+            role=role,
+            board=board,
+            target=target,
+            version=version,
+            package_format=package_format,
+        ),
+        "assets": release_assets,
+        "native_artifacts": [
+            asset(path, "native-debug-or-flash", None, name)
+            for name, path in native
+        ],
+    }
+    names = [item["name"] for item in metadata["native_artifacts"]]
+    if len(names) != len(set(names)):
+        raise ValueError("native artifact metadata contains duplicate names")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")

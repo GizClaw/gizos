@@ -32,9 +32,9 @@ go vet ./...
 Run the PAL compatibility executable from the repository root:
 
 ```sh
-bazel test --config=macos_arm64  //libs/pal/providers/desktop:h2peer_pal_pion_test
+bazel test --config=macos_arm64  //pal/providers/platforms/desktop:h2peer_pal_pion_test
 bazel run -c opt --config=macos_arm64 \
-  //projects/e2e/targets/cc_binary/webrtc-performance:h2peer-performance -- \
+  //projects/testing/targets/cc_binary/webrtc-performance:h2peer-performance -- \
   --profile=benchmark --runs=10 --transfer-bytes=10485760
 ```
 

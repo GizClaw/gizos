@@ -4,7 +4,7 @@
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
 #include "h2_fm175xx.h"
-#include "h2/pal/hal/h2_pal_input.h"
+#include "hal/h2_pal_input.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +47,8 @@ typedef struct h2_esp_nfc_fm175xx {
   h2_fm175xx_t reader;
   h2_pal_nfc_api_t api;
   int opened;
+  unsigned scan_count;
+  int last_scan_error;
 } h2_esp_nfc_fm175xx_t;
 
 h2_pal_result_t h2_esp_nfc_fm175xx_init(

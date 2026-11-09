@@ -2,7 +2,7 @@
 #define H2_H2LOADER_WEB_STATUS_JSON_H
 
 #include "h2_h2loader_host.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #include <stddef.h>
 

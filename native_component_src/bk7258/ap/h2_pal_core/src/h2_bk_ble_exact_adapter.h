@@ -1,7 +1,7 @@
 #ifndef H2_BK_BLE_EXACT_ADAPTER_H
 #define H2_BK_BLE_EXACT_ADAPTER_H
 
-#include "h2/pal/hal/h2_pal_ble.h"
+#include "hal/h2_pal_ble.h"
 
 typedef enum h2_bk_ble_exact_stack {
   H2_BK_BLE_EXACT_STACK_ETHERMIND = 0,

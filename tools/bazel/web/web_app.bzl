@@ -4,9 +4,9 @@ load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel:web_archive.bzl", "web_archive_browser_test", "web_archive_serve")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/web:web_archive.bzl", "web_archive_browser_test", "web_archive_serve")
 load(":web_board.bzl", "H2WebBoardInfo")
 
 _DEFAULT_BOARD = Label("//tools/bazel/web:default_board")
@@ -179,8 +179,8 @@ def h2_web_app(
         target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
         deps = deps + [
             ":" + name + "_board",
-            Label("//libs/pal/providers/web/pal_core"),
-            Label("//libs/atomic/providers/c11"),
+            Label("//pal/providers/platforms/web/pal_core"),
+            Label("//libs/sync/atomic/providers/c11"),
         ],
     )
     outputs = ["index.html", "index.js", "index.wasm"]

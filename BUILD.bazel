@@ -4,7 +4,7 @@ exports_files([".github/workflows/release.yml"])
 
 exports_files(
     ["MODULE.bazel"],
-    visibility = ["//projects/e2e:__subpackages__"],
+    visibility = ["//projects/testing:__subpackages__"],
 )
 
 filegroup(

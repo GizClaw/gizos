@@ -1,0 +1,2 @@
+# Optional IPv6 PAL bench; selected by the private firmware entry.
+CONFIG_IPV6=y

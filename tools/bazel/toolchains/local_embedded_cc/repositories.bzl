@@ -329,7 +329,7 @@ def _extension_impl(_module_ctx):
         target_system_name = "bk7258-elf",
         toolchain_identifier = "bk7258-local-arm-10.3.1",
         version_key = "arm_gcc",
-        versions_file = "//tools/bazel:native_versions/bk_tool_versions.txt",
+        versions_file = "//tools/bazel/native/versions:bk_tool_versions.txt",
     )
 
     local_embedded_cc_repository(
@@ -353,7 +353,7 @@ def _extension_impl(_module_ctx):
         target_system_name = "esp32c3-elf",
         toolchain_identifier = "esp32c3-local-esp-16.1.0",
         version_key = "esp32c3",
-        versions_file = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+        versions_file = "//tools/bazel/native/versions:esp_idf_tool_versions.txt",
     )
 
     local_embedded_cc_repository(
@@ -380,7 +380,7 @@ def _extension_impl(_module_ctx):
         target_system_name = "esp32c5-elf",
         toolchain_identifier = "esp32c5-local-esp-15.2.0",
         version_key = "esp32c5",
-        versions_file = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+        versions_file = "//tools/bazel/native/versions:esp_idf_tool_versions.txt",
     )
 
     local_embedded_cc_repository(
@@ -407,7 +407,7 @@ def _extension_impl(_module_ctx):
         target_system_name = "esp32p4-elf",
         toolchain_identifier = "esp32p4-local-esp-15.2.0",
         version_key = "esp32p4",
-        versions_file = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+        versions_file = "//tools/bazel/native/versions:esp_idf_tool_versions.txt",
     )
 
     local_embedded_cc_repository(
@@ -441,7 +441,7 @@ def _extension_impl(_module_ctx):
         target_system_name = "esp32s31-elf",
         toolchain_identifier = "esp32s31-local-esp-16.1.0",
         version_key = "esp32s31",
-        versions_file = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+        versions_file = "//tools/bazel/native/versions:esp_idf_tool_versions.txt",
     )
 
     local_embedded_cc_repository(
@@ -488,7 +488,7 @@ def _extension_impl(_module_ctx):
             "-Wno-missing-braces",
         ],
         version_key = "jieli_clang",
-        versions_file = "//tools/bazel:native_versions/jieli_tool_versions.txt",
+        versions_file = "//tools/bazel/native/versions:jieli_tool_versions.txt",
     )
 
     local_embedded_cc_repository(
@@ -533,7 +533,7 @@ def _extension_impl(_module_ctx):
             "-Wno-missing-braces",
         ],
         version_key = "jieli_clang",
-        versions_file = "//tools/bazel:native_versions/jieli_tool_versions.txt",
+        versions_file = "//tools/bazel/native/versions:jieli_tool_versions.txt",
     )
 
 local_embedded_cc_toolchains = module_extension(implementation = _extension_impl)
