@@ -1,6 +1,6 @@
 set(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_nfc_fm175xx)
 
 idf_component_register(
@@ -8,7 +8,7 @@ idf_component_register(
   INCLUDE_DIRS
     "include"
     "${CMAKE_CURRENT_LIST_DIR}/../../../libs/drivers/nfc/fm175xx/include"
-    "${CMAKE_CURRENT_LIST_DIR}/../../../libs/pal/include"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../pal/include"
   PRIV_INCLUDE_DIRS
     "src"
   REQUIRES

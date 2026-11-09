@@ -60,7 +60,7 @@ class RequestLock(unittest.TestCase):
                        # The SDK RPC ABI is 32-bit; this host fixture keeps the
                        # allocated buffer separately instead of decoding it.
                        "-Wno-pointer-to-int-cast", "-pthread",
-                       "-I" + str(ROOT / "libs/pal/include"),
+                       "-I" + str(ROOT / "pal/include"),
                        "-I" + str(PACKAGE / "src"),
                        "-I" + str(ROOT / "native_component_src/bk7258/shared"),
                        str(unit), "-o", str(binary)]

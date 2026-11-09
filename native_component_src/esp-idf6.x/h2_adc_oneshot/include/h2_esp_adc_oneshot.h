@@ -69,8 +69,8 @@ esp_err_t h2_esp_adc_oneshot_read_mv(h2_esp_adc_oneshot_t* service,
  *
  * The service owns the resulting state. Reinitializing a channel discards its
  * previous raw filter and jump baseline. This task-context API is serialized
- * with reads and must not run from an ISR. Raw deltas up to and including ten
- * counts are smoothed; larger deltas use the component-owned reseed policy.
+ * with reads and must not run from an ISR. Raw deltas below twenty
+ * counts are smoothed; larger deltas use the portable stabilizer reseed policy.
  */
 esp_err_t h2_esp_adc_oneshot_stabilizer_init(h2_esp_adc_oneshot_t* service,
                                              adc_channel_t channel);
@@ -91,7 +91,7 @@ esp_err_t h2_esp_adc_oneshot_stabilizer_deinit(h2_esp_adc_oneshot_t* service,
  * A channel without an installed stabilizer performs one raw read and returns
  * DIRECT with equal stable and immediate raw values. An installed stabilizer
  * runs its complete raw-count transaction, including component-owned delays,
- * while holding the service mutex. The fixed ten-count smoothing boundary is
+ * while holding the service mutex. The fixed twenty-count reseed boundary is
  * measured from the last successfully published stable raw baseline. On
  * failure, channel state and @p out_reading remain unchanged. This task-context
  * API must not run from an ISR. Board-specific conversion into physical units

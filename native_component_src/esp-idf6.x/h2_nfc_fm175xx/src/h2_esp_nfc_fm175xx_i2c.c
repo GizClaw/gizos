@@ -8,8 +8,7 @@
 static int i2c_write_reg(void* user, uint8_t reg, uint8_t value) {
   i2c_master_dev_handle_t dev = (i2c_master_dev_handle_t)user;
   const uint8_t data[2] = {reg, value};
-  return i2c_master_transmit(dev, data, sizeof(data), pdMS_TO_TICKS(20)) ==
-                 ESP_OK
+  return i2c_master_transmit(dev, data, sizeof(data), 20) == ESP_OK
              ? H2_FM175XX_OK
              : H2_FM175XX_ERR_IO;
 }
@@ -28,7 +27,7 @@ static int i2c_write_regs(void* user, uint8_t reg, const uint8_t* data,
     memcpy(buf + 1, data, len);
   }
   return i2c_master_transmit((i2c_master_dev_handle_t)user, buf, len + 1u,
-                             pdMS_TO_TICKS(20)) == ESP_OK
+                             20) == ESP_OK
              ? H2_FM175XX_OK
              : H2_FM175XX_ERR_IO;
 }
@@ -38,7 +37,7 @@ static int i2c_read_reg(void* user, uint8_t reg, uint8_t* out_value) {
     return H2_FM175XX_ERR_INVALID_ARG;
   }
   return i2c_master_transmit_receive((i2c_master_dev_handle_t)user, &reg, 1u,
-                                     out_value, 1u, pdMS_TO_TICKS(20)) == ESP_OK
+                                     out_value, 1u, 20) == ESP_OK
              ? H2_FM175XX_OK
              : H2_FM175XX_ERR_IO;
 }
@@ -49,14 +48,16 @@ static int i2c_read_regs(void* user, uint8_t reg, uint8_t* out_data,
     return H2_FM175XX_ERR_INVALID_ARG;
   }
   return i2c_master_transmit_receive((i2c_master_dev_handle_t)user, &reg, 1u,
-                                     out_data, len, pdMS_TO_TICKS(20)) == ESP_OK
+                                     out_data, len, 20) == ESP_OK
              ? H2_FM175XX_OK
              : H2_FM175XX_ERR_IO;
 }
 
 static void i2c_sleep_ms(void* user, uint32_t ms) {
   (void)user;
-  vTaskDelay(pdMS_TO_TICKS(ms));
+  /* Round up so sub-tick RF waits block instead of becoming a yield. */
+  const uint64_t ticks = ((uint64_t)ms * configTICK_RATE_HZ + 999u) / 1000u;
+  vTaskDelay((TickType_t)ticks);
 }
 
 int h2_esp_nfc_fm175xx_i2c_open(h2_esp_nfc_fm175xx_t* adapter,

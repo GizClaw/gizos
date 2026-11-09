@@ -33,7 +33,7 @@ bun run desktop:build
 
 Run these commands from `tools/gizloader`. `prepare:native` builds `//tools/gizloader/native:gizloader-cli` and `:gizloader-session` against this checkout, stages target-suffixed sidecars and records their hashes. It does not download or clone a second SDK. Cargo and Bazel use normal per-user caches.
 
-The application is a Tauri/Rust supervisor with a React workbench. `native/` contains the native CLI composition and persistent Host Core session adapter. `src-tauri/src/` owns port preferences, immutable package snapshots, sessions, cancellation, downloads and logs. `src/desktop/loader/` contains the workbench and independent log window. The firmware protocol definitions are imported directly from GizOS.
+The application is a Tauri/Rust supervisor with a React workbench. `cli/` owns the command implementation, native process entry, OS adapters and CLI regression sources. `native/` builds the CLI/session sidecars and owns the persistent Host Core session adapter and application metadata. The public command is `gizloader`. `src-tauri/src/` owns port preferences, immutable package snapshots, sessions, cancellation, downloads and logs. `src/desktop/loader/` contains the workbench and independent log window. The firmware protocol definitions are imported directly from GizOS.
 
 ## macOS permissions and signing
 

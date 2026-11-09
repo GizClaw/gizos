@@ -1,7 +1,7 @@
 #ifndef LIERDA_TEST_SDK_H
 #define LIERDA_TEST_SDK_H
 
-#include "h2/pal/net/h2_pal_netif.h"
+#include "net/h2_pal_netif.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

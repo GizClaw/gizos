@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.bazel import cache_options  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from tools.bazel.release_bundle import (  # noqa: E402
+from tools.bazel.h2loader.release_bundle import (  # noqa: E402
     validate_catalog, validate_index,
 )
 
@@ -244,7 +244,7 @@ def build_catalog(root: Path, bazel: str, output: Path) -> None:
                 f"--config={config}",
                 expression,
                 "--output=starlark",
-                "--starlark:file=tools/bazel/firmware_catalog.cquery",
+                "--starlark:file=tools/bazel/h2loader/firmware_catalog.cquery",
             ],
         )
         if "ERROR:" in result.stderr:
@@ -342,7 +342,7 @@ def build_firmware(
                 f"--config={slice_name}",
                 label,
                 "--output=starlark",
-                "--starlark:file=tools/bazel/firmware_release_files.cquery",
+                "--starlark:file=tools/bazel/h2loader/firmware_release_files.cquery",
             ],
         )
         paths = [Path(line) for line in result.stdout.splitlines() if line]
@@ -365,9 +365,9 @@ def build_firmware_bundle(
     environment["H2_FIRMWARE_RELEASE_INPUT_DIR"] = str(input_dir.resolve())
     options = [
         "--repo_env=H2_FIRMWARE_RELEASE_INPUT_DIR",
-        f"--//tools/bazel:release_batch={batch}",
+        f"--//tools/bazel/release:release_batch={batch}",
     ]
-    label = "//tools/bazel:firmware_release_bundle"
+    label = "//tools/bazel/h2loader:firmware_release_bundle"
     command(
         root,
         [bazel, "build", *cache_options(), *options, label],
@@ -393,8 +393,8 @@ def build_npm_packages(
     batch: str,
     output: Path,
 ) -> None:
-    label = "//tools/bazel:npm_release_bundle"
-    options = [f"--//tools/bazel:release_batch={batch}"]
+    label = "//tools/bazel/release:npm_release_bundle"
+    options = [f"--//tools/bazel/release:release_batch={batch}"]
     command(root, [bazel, "build", *cache_options(), *options, label])
     result = command(root, [bazel, "cquery", *options, "--output=files", label])
     paths = [Path(line) for line in result.stdout.splitlines() if line]

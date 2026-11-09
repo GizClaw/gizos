@@ -1,7 +1,7 @@
 #ifndef H2_ESP_BLE_GATT_SCHEMA_H
 #define H2_ESP_BLE_GATT_SCHEMA_H
 
-#include "h2/pal/hal/h2_pal_ble.h"
+#include "hal/h2_pal_ble.h"
 
 #include <stdbool.h>
 #include <stddef.h>

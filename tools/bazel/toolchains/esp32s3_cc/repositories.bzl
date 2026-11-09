@@ -341,7 +341,7 @@ _esp32s3_cc_repository = repository_rule(
         ),
         "_versions_file": attr.label(
             allow_single_file = True,
-            default = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+            default = "//tools/bazel/native/versions:esp_idf_tool_versions.txt",
         ),
         "sdk_locator": attr.label(
             allow_single_file = True,

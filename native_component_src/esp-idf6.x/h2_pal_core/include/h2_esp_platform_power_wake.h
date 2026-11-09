@@ -1,7 +1,7 @@
 #ifndef H2_ESP_PLATFORM_POWER_WAKE_H
 #define H2_ESP_PLATFORM_POWER_WAKE_H
 
-#include "h2/pal/hal/h2_pal_power.h"
+#include "hal/h2_pal_power.h"
 
 #include <stdint.h>
 

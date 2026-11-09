@@ -1,0 +1,3 @@
+set(H2_ESP_PHYSICAL_BOARD "h200" CACHE STRING "Physical board BSP" FORCE)
+set(H2_ESP_BOARD_IDENTITY "h200" CACHE STRING "H2Loader board identity" FORCE)
+set(H2_ESP_H200_BATTERY_PROFILE "original" CACHE STRING "H200 battery profile" FORCE)

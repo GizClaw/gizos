@@ -1,5 +1,5 @@
 #include "h2_bk_platform_core.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 #include "h2_peer.h"
 #include "h2_sctp.h"
 

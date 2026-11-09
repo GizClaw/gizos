@@ -1,7 +1,7 @@
 #ifndef H2_BM8563_TRANSPORT_H
 #define H2_BM8563_TRANSPORT_H
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #include <stddef.h>
 #include <stdint.h>

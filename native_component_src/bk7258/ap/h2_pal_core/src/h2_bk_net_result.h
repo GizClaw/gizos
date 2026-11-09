@@ -1,6 +1,6 @@
 #ifndef H2_BK_NET_RESULT_H
 #define H2_BK_NET_RESULT_H
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include <errno.h>
 
 /* UDP sends are atomic: temporary socket/pbuf pressure consumes no datagram.

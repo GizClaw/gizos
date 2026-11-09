@@ -1,0 +1,52 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "h2loader/e2e/serial",
+    ],
+)
+
+cc_library(
+    name = "h2loader_serial_e2e",
+    srcs = [
+        "src/h2_h2loader_serial_e2e.c",
+        "src/h2_h2loader_serial_e2e_task_names.c",
+    ],
+    hdrs = [
+        "include/h2_h2loader_serial_e2e.h",
+        "include/h2_h2loader_serial_e2e_task_names.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+    ],
+    deps = [
+        ":tasks",
+        "//libs/h2loader/host",
+        "//libs/runtime",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "h2loader_serial_e2e_test",
+    srcs = ["tests/test_h2_h2loader_serial_e2e.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2loader_serial_e2e",
+        "//pal:unsupported",
+    ],
+)

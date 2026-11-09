@@ -1,12 +1,12 @@
 set(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_gizclaw)
 
 idf_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
-    "${REPO_ROOT}/libs/gizclaw/include"
+    "${REPO_ROOT}/libs/clients/gizclaw/include"
   REQUIRES
     h2_firmware_lib
     esp_audio_codec

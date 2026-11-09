@@ -3,7 +3,7 @@
 
 /* Scope: Runtime component kind and app-facing component ids. */
 
-#include "h2/pal/hal/h2_pal_periph.h"
+#include "hal/h2_pal_periph.h"
 #include "h2_runtime_types.h"
 
 #ifdef __cplusplus

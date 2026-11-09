@@ -32,33 +32,33 @@ def main():
         if not required.is_file():
             parser.error(f'missing dependency source: {required}')
     includes = [repo / name for name in [
-        'libs/app_test/include', 'libs/atomic/include', 'libs/bundle/include',
+        'libs/testing/include', 'libs/sync/atomic/include', 'libs/archive/bundle/include',
         'libs/crypto/sha256/include', 'libs/encoding/include',
-        'libs/gizclaw/include', 'libs/lua/apps/include', 'libs/pal/include',
-        'libs/pal/providers/desktop/pal_core/include', 'libs/semver/include',
+        'libs/clients/gizclaw/include', 'libs/lua/apps/include', 'pal/include',
+        'pal/providers/platforms/desktop/pal_core/include', 'libs/semver/include',
         'libs/lua/include', 'libs/command/include',
-        'libs/runtime/include', 'libs/wifi_sta/include',
-        'libs/pal/providers/yyjson/include',
-        'projects/e2e/apps/gizclaw/app/include',
+        'libs/runtime/include', 'libs/net/wifi_sta/include',
+        'pal/providers/backends/yyjson/include',
+        'projects/testing/integration/gizclaw/app/include',
     ]]
-    includes += [repo / 'libs/gizclaw/src', sdk / 'include', sdk / 'generated', nanopb, yyjson]
+    includes += [repo / 'libs/clients/gizclaw/src', sdk / 'include', sdk / 'generated', nanopb, yyjson]
     common = [
         'libs/lua/apps/src/h2_lua_apps.c',
         'libs/lua/apps/src/h2_lua_app_install.c',
-        'libs/app_test/src/pal/h2_app_test_fs.c',
-        'libs/atomic/providers/c11/src/h2_atomic_c11.c',
+        'libs/testing/src/pal/h2_app_test_fs.c',
+        'libs/sync/atomic/providers/c11/src/h2_atomic_c11.c',
         'libs/crypto/sha256/src/h2_sha256.c',
         'libs/semver/src/h2_semver.c',
         'libs/encoding/src/h2_encoding.c',
         'libs/encoding/src/h2_encoding_tables.c',
-        'libs/bundle/src/h2_bundle_tar.c',
-        'libs/bundle/src/h2_bundle_path.c',
-        'libs/pal/providers/desktop/pal_core/src/h2_desktop_platform_core.cpp',
-        'libs/pal/providers/desktop/pal_core/src/h2_desktop_resource_stats.cpp',
+        'libs/archive/bundle/src/h2_bundle_tar.c',
+        'libs/archive/bundle/src/h2_bundle_path.c',
+        'pal/providers/platforms/desktop/pal_core/src/h2_desktop_platform_core.cpp',
+        'pal/providers/platforms/desktop/pal_core/src/h2_desktop_resource_stats.cpp',
     ]
     device = [
-        repo / 'libs/gizclaw/src/h2_gizclaw_lua_apps.c',
-        repo / 'libs/gizclaw/src/h2_gizclaw_lua_stream.c',
+        repo / 'libs/clients/gizclaw/src/h2_gizclaw_lua_apps.c',
+        repo / 'libs/clients/gizclaw/src/h2_gizclaw_lua_stream.c',
         sdk / 'src/gzc_common.c',
         sdk / 'src/gzc_buffer.c',
         sdk / 'src/gzc_platform.c',
@@ -68,7 +68,7 @@ def main():
     targets = {
         'apps': (repo / 'libs/lua/apps/tests/test_apps.c', []),
         'close_failure': (repo / 'libs/lua/apps/tests/test_close_failure.c', []),
-        'device': (repo / 'libs/gizclaw/tests/test_h2_gizclaw_lua_apps.c', device),
+        'device': (repo / 'libs/clients/gizclaw/tests/test_h2_gizclaw_lua_apps.c', device),
     }
     with tempfile.TemporaryDirectory(prefix='gizos-lua-host-') as directory:
         output = Path(directory)
@@ -99,9 +99,9 @@ def main():
                             '-lz', '-o', str(executable)], check=True)
             subprocess.run([str(executable)], check=True, timeout=60)
             print(f'{name}: PASS', flush=True)
-        for name in ['libs/gizclaw/src/h2_gizclaw_client.c',
-                     'libs/gizclaw/src/h2_gizclaw_device.c',
-                     'projects/e2e/apps/gizclaw/app/src/h2_gizclaw_e2e_lua_apps.c']:
+        for name in ['libs/clients/gizclaw/src/h2_gizclaw_client.c',
+                     'libs/clients/gizclaw/src/h2_gizclaw_device.c',
+                     'projects/testing/integration/gizclaw/app/src/h2_gizclaw_e2e_lua_apps.c']:
             compile_source(repo / name)
         print('SDK consumer and E2E compilation: PASS', flush=True)
 

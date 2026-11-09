@@ -1,0 +1,33 @@
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "esp32s3",
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_private.h",
+    ],
+    component_directory = "boards/waveshare/esp32s3_a7670e_4g/esp32s3",
+    component_name = "h2_esp_board",
+    data = [
+        "CMakeLists.txt",
+        "idf_component.yml",
+        "sdkconfig.defaults",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//pal",
+    ],
+)

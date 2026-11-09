@@ -1,0 +1,7 @@
+package(default_visibility = ["//pal:provider_assembly"])
+
+filegroup(
+    name = "ios",
+    srcs = ["//pal/providers/platforms/ios/pal_core"],
+    tags = ["manual"],
+)

@@ -1,8 +1,8 @@
 #ifndef H2_NFC_TYPE2_H
 #define H2_NFC_TYPE2_H
 
-#include "h2/pal/core/h2_pal_errors.h"
-#include "h2/pal/os/h2_pal_mem.h"
+#include "core/h2_pal_errors.h"
+#include "os/h2_pal_mem.h"
 
 #include <stddef.h>
 #include <stdint.h>

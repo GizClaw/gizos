@@ -977,7 +977,10 @@ mod macos {
             assert!(caller_alive(&writer).unwrap());
             assert_eq!(writer.metadata().unwrap().len(), 0);
             drop(reader);
-            assert!(!caller_alive(&writer).unwrap());
+            // Parallel subprocess tests can inherit the reader between fork and exec.
+            // Wait for those close-on-exec copies, as the polling worker does.
+            wait_for(|| !caller_alive(&writer).unwrap());
+            assert_eq!(writer.metadata().unwrap().len(), 0);
         }
 
         #[test]

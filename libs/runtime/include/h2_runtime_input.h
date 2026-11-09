@@ -8,8 +8,8 @@
  * state publication all belong to the Runtime and live from init to deinit.
  */
 
-#include "h2/pal/core/h2_pal_errors.h"
-#include "h2/pal/os/h2_pal_task.h"
+#include "core/h2_pal_errors.h"
+#include "os/h2_pal_task.h"
 #include "h2_runtime_types.h"
 
 #include <stdint.h>

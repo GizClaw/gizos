@@ -28,7 +28,7 @@ def main():
     component = repo / "native_component_src/bk7258/ap/h2_pal_core"
     locator = json.loads(args.locator.read_text()) if args.locator else None
     sdk = args.sdk or Path(locator["paths"]["checkout"] if locator else os.environ["BK7258_PATH"])
-    expected = (repo / "tools/bazel/native_versions/bk7258_sdk_commit.txt").read_text().strip()
+    expected = (repo / "tools/bazel/native/versions/bk7258_sdk_commit.txt").read_text().strip()
     actual = subprocess.check_output(["git", "-C", str(sdk), "rev-parse", "HEAD"], text=True).strip()
     assert actual == expected, (actual, expected)
     assert not subprocess.check_output(["git", "-C", str(sdk), "status", "--porcelain=v1", "--untracked-files=no"], text=True)
@@ -47,8 +47,8 @@ def main():
         patched.write_text(original)
         compile_sources = [patched if p == sources[1] else p for p in sources]
         includes = [component / "tests/pref_nor_sdk", component / "include",
-            component / "src/flashdb", component / "src", fdb / "inc", fdb / "port/fal/inc", repo / "libs/pal/include"]
-        cmd = [compiler, *(["-fsanitize=address", "-fno-omit-frame-pointer"] if os.environ.get("H2_PREF_NOR_SANITIZE") else []), *(["-DH2_PREF_NOR_DEBUG", "-DFDB_DEBUG_ENABLE"] if os.environ.get("H2_PREF_NOR_DEBUG") else []), "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Wno-unused-parameter",
+            component / "src/flashdb", component / "src", fdb / "inc", fdb / "port/fal/inc", repo / "pal/include"]
+        cmd = [compiler, *(["-fsanitize=address,bounds", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"] if os.environ.get("H2_PREF_NOR_SANITIZE") else []), *(["-DH2_PREF_NOR_DEBUG", "-DFDB_DEBUG_ENABLE"] if os.environ.get("H2_PREF_NOR_DEBUG") else []), "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Wno-unused-parameter",
             *["-I" + str(p) for p in includes], *map(str, compile_sources),
             str(component / "src/h2_bk_platform_pref_flashdb_port.c"),
             str(component / "tests/test_h2_bk_pref_real_nor.c"), "-o", str(binary)]
@@ -62,6 +62,8 @@ def main():
         subprocess.run([str(binary),str(Path(tmp)/"port-cache.bin"),"clean"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"remove-prefetch.bin"),"remove-prefetch"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"remove-prefetch.bin"),"clean"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"independent-write-cache.bin"),"independent-write-cache"],check=True,timeout=90)
+        subprocess.run([str(binary),str(Path(tmp)/"independent-write-cache.bin"),"clean"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"cache.bin"),"cache"],check=True,timeout=90)
         subprocess.run([str(binary),str(Path(tmp)/"cache.bin"),"clean"],check=True,timeout=90)
         if args.compare_baseline:

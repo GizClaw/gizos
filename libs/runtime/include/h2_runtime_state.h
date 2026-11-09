@@ -9,7 +9,7 @@
  * cycle still in progress and does not retain Runtime-owned storage.
  */
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "h2_runtime_component.h"
 #include "h2_runtime_input_button.h"
 #include "h2_runtime_input_imu.h"

@@ -1,0 +1,3 @@
+# GizClaw's public BK launcher emits its nonce and immutable ledger through
+# SDK printf, which is filtered at INFO. Apply after the quiet H106 E2E defaults.
+CONFIG_LOG_LEVEL=3

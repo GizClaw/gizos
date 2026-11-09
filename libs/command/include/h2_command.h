@@ -1,7 +1,7 @@
 #ifndef H2_COMMAND_H
 #define H2_COMMAND_H
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "h2_trie.h"
 
 #include <stddef.h>

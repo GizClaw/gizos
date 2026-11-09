@@ -1,0 +1,77 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "POSIX_HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "firmware_archive_abi",
+    srcs = ["firmware_archive_abi.py"],
+    legacy_create_init = 0,
+    main = "firmware_archive_abi.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "firmware_archive_abi_test",
+    srcs = [
+        "firmware_archive_abi.py",
+        "tests/test_firmware_archive_abi.py",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_firmware_archive_abi.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)
+
+py_library(
+    name = "native_runtime",
+    srcs = ["native_runtime.py"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_library(
+    name = "native_ccache",
+    srcs = ["native_ccache.py"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_library(
+    name = "toolchain_identity",
+    srcs = ["toolchain_identity.py"],
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "toolchain_identity_test",
+    srcs = ["tests/test_toolchain_identity.py"],
+    legacy_create_init = 0,
+    main = "tests/test_toolchain_identity.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [":toolchain_identity"],
+)
+
+py_test(
+    name = "native_runtime_test",
+    srcs = ["tests/test_native_runtime.py"],
+    legacy_create_init = 0,
+    main = "tests/test_native_runtime.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [":native_runtime"],
+)
+
+py_test(
+    name = "native_ccache_test",
+    srcs = ["tests/test_native_ccache.py"],
+    legacy_create_init = 0,
+    main = "tests/test_native_ccache.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [":native_ccache"],
+)
+
+exports_files([
+    "firmware_archive_abi.py",
+    "native_ccache.py",
+    "native_component.cmake",
+    "native_runtime.py",
+    "remote_scrubbing_config.textproto",
+    "toolchain_identity.py",
+])

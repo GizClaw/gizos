@@ -4,7 +4,7 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 # The generated iperf_config.h below mirrors the feature set `configure`
 # detects on a plain Linux or macOS host minus optional dependencies
 # (OpenSSL authentication, kernel SCTP). It exists only as a local test tool
-# for //libs/iperf: the PAL-based client and server are validated against this
+# for //libs/net/iperf: the PAL-based client and server are validated against this
 # official implementation on the loopback interface.
 
 package(default_visibility = ["//visibility:public"])

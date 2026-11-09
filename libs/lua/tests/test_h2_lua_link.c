@@ -1,5 +1,5 @@
 #include "h2_test_allocator.h"
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 #include "h2_desktop_platform.h"
 #include "h2_lua.h"
 #include "h2_lua_capability.h"

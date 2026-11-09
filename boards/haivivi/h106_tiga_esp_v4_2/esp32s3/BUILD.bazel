@@ -1,0 +1,557 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "esp32s3",
+    srcs = [
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_audio_es8311.c",
+        "src/h2_esp_board_battery_curve.c",
+        "src/h2_esp_board_boot_transition.c",
+        "src/h2_esp_board_button_adc.c",
+        "src/h2_esp_board_display_st7789.c",
+        "src/h2_esp_board_extflash.c",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_input.c",
+        "src/h2_esp_board_led.c",
+        "src/h2_esp_board_modem_quectel.c",
+        "src/h2_esp_board_nfc.c",
+        "src/h2_esp_board_power.c",
+        "src/h2_esp_board_reboot.c",
+        "src/h2_esp_board_runtime.c",
+        "src/h2_esp_board_task.c",
+        "src/h2_esp_board_vibration.c",
+        "src/h2_esp_tiga_call_monitor_controller.c",
+    ],
+    hdrs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "include/h2_esp_tiga_battery_adc.h",
+        "src/h2_esp_board_battery_curve.h",
+        "src/h2_esp_board_boot_transition.h",
+        "src/h2_esp_board_button_adc.h",
+        "src/h2_esp_board_extflash_recovery.h",
+        "src/h2_esp_board_modem_audio.h",
+        "src/h2_esp_board_modem_handshake.h",
+        "src/h2_esp_board_modem_lifecycle.h",
+        "src/h2_esp_board_modem_poll.h",
+        "src/h2_esp_board_modem_ri.h",
+        "src/h2_esp_board_modem_sleep.h",
+        "src/h2_esp_board_private.h",
+        "src/h2_esp_board_sleep_enter.h",
+        "src/h2_esp_board_sleep_gpio.h",
+        "src/h2_esp_board_sleep_i2c.h",
+        "src/h2_esp_tiga_board_internal.h",
+        "src/h2_esp_tiga_call_monitor_controller.h",
+    ],
+    component_directory = "boards/haivivi/h106_tiga_esp_v4_2/esp32s3",
+    component_name = "h2_esp_board",
+    data = [
+        "CMakeLists.txt",
+        "idf_component.yml",
+        "sdkconfig.defaults",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "tiga_led_test",
+    srcs = [
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_led.c",
+        "src/h2_esp_board_private.h",
+        "tests/led_include/led_strip.h",
+        "tests/system_include/esp_err.h",
+        "tests/test_h2_esp_board_led.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/led_include",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "tiga_display_st7789_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_display_st7789.c",
+        "src/h2_esp_board_private.h",
+        "src/h2_esp_tiga_board_internal.h",
+        "tests/test_h2_esp_board_display_st7789.c",
+    ] + glob(["tests/system_include/**"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//pal",
+        "//pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "tiga_audio_lifecycle_test",
+    srcs = [
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_audio_es8311.c",
+        "src/h2_esp_board_private.h",
+        "src/h2_esp_tiga_board_internal.h",
+        "tests/audio_include/h2_esp_es8311_audio_system.h",
+        "tests/audio_include/h2_esp_lazy_audio.h",
+        "tests/test_h2_esp_board_audio.c",
+    ] + glob(["tests/system_include/**"]),
+    conlyopts = H2_C11_OPTS + [
+        "-DEXT_RAM_BSS_ATTR=",
+        "-DtskIDLE_PRIORITY=0",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/audio_include",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "tiga_runtime_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_private.h",
+        "src/h2_esp_board_runtime.c",
+        "tests/test_h2_esp_board_runtime.c",
+    ] + glob(["tests/system_include/**"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//pal",
+        "//pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "tiga_boot_transition_test",
+    srcs = [
+        "src/h2_esp_board_boot_transition.c",
+        "src/h2_esp_board_boot_transition.h",
+        "tests/test_h2_esp_board_boot_transition.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "tiga_battery_curve_test",
+    srcs = [
+        "src/h2_esp_board_battery_curve.c",
+        "src/h2_esp_board_battery_curve.h",
+        "tests/test_h2_esp_board_battery_curve.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "tiga_button_adc_test",
+    srcs = [
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_button_adc.c",
+        "src/h2_esp_board_button_adc.h",
+        "tests/test_h2_esp_board_button_adc.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "tiga_call_monitor_controller_test",
+    srcs = [
+        "src/h2_esp_tiga_call_monitor_controller.c",
+        "src/h2_esp_tiga_call_monitor_controller.h",
+        "tests/test_h2_esp_tiga_call_monitor_controller.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "tiga_extflash_recovery_test",
+    srcs = [
+        "src/h2_esp_board_extflash_recovery.h",
+        "tests/extflash_include/esp_littlefs.h",
+        "tests/extflash_include/esp_partition.h",
+        "tests/system_include/esp_err.h",
+        "tests/test_h2_esp_board_extflash_recovery.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/extflash_include",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "tiga_sleep_enter_test",
+    srcs = [
+        "src/h2_esp_board_sleep_enter.h",
+        "tests/test_h2_esp_board_sleep_enter.c",
+    ] + glob(["tests/system_include/**"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "tiga_sleep_gpio_test",
+    srcs = [
+        "src/h2_esp_board_sleep_gpio.h",
+        "tests/test_h2_esp_board_sleep_gpio.c",
+    ] + glob(["tests/system_include/**"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "tiga_modem_sleep_test",
+    srcs = [
+        "src/h2_esp_board_modem_sleep.h",
+        "tests/test_h2_esp_board_modem_sleep.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/sync/atomic/providers/c11"],
+)
+
+cc_test(
+    name = "tiga_modem_audio_test",
+    srcs = [
+        "src/h2_esp_board_modem_audio.h",
+        "tests/test_h2_esp_board_modem_audio.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "tiga_nfc_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_nfc.c",
+        "src/h2_esp_board_private.h",
+        "src/h2_esp_board_sleep_i2c.h",
+        "src/h2_esp_tiga_board_internal.h",
+        "tests/nfc_include/h2_esp_nfc_fm175xx.h",
+        "tests/test_h2_esp_board_nfc.c",
+    ] + glob(["tests/system_include/**"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/nfc_include",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "tiga_sleep_i2c_test",
+    srcs = [
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_sleep_i2c.h",
+        "tests/test_h2_esp_board_sleep_i2c.c",
+    ] + glob(["tests/system_include/**"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "reboot_test",
+    srcs = [
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_reboot.c",
+        "tests/test_h2_esp_board_reboot.c",
+    ] + glob(["tests/system_include/**"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "modem_poll_test",
+    srcs = [
+        "src/h2_esp_board_modem_poll.h",
+        "tests/test_h2_esp_board_modem_poll.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "modem_ri_test",
+    srcs = [
+        "src/h2_esp_board_modem_ri.h",
+        "tests/system_include/driver/gpio.h",
+        "tests/system_include/driver/rtc_io.h",
+        "tests/system_include/esp_err.h",
+        "tests/system_include/esp_private/gpio.h",
+        "tests/test_h2_esp_board_modem_ri.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "modem_handshake_test",
+    srcs = [
+        "src/h2_esp_board_modem_handshake.h",
+        "tests/test_h2_esp_board_modem_handshake.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "tiga_fs_cleanup_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "include/h2_esp_board_config.h",
+        "src/h2_esp_board_fs_mount.c",
+        "src/h2_esp_board_private.h",
+        "tests/test_h2_esp_board_fs.c",
+    ] + glob([
+        "tests/fs_include/**",
+        "tests/system_include/**",
+    ]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/fs_include",
+        "tests/system_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//pal",
+        "//pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "tiga_extflash_clear_test",
+    srcs = [
+        "src/h2_esp_board_extflash.c",
+        "tests/h2_esp_extflash_clear_test_sdk.h",
+        "tests/test_h2_esp_board_extflash_clear.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    local_defines = ["H2_ESP_BOARD_EXTFLASH_CLEAR_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//pal"],
+)
+
+cc_test(
+    name = "modem_lifecycle_test",
+    srcs = [
+        "src/h2_esp_board_modem_lifecycle.h",
+        "tests/test_h2_esp_board_modem_lifecycle.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//pal"],
+)

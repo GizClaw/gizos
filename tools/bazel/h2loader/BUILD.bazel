@@ -1,0 +1,151 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/bazel/firmware:app_version.bzl", "app_version")
+load("//tools/bazel/firmware:firmware.bzl", "firmware_version")
+load("//tools/bazel/h2loader:release_bundle.bzl", "firmware_release_bundle")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load(":h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load(":h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+load(":tests/package_rules.bzl", "package_rules_firmware")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "h2loader_firmware.bzl",
+    "h2loader_tar_zlib.bzl",
+    "h2loader_zlib_tar.bzl",
+])
+
+py_library(
+    name = "firmware_artifacts",
+    srcs = ["firmware_artifacts.py"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "firmware_artifacts_test",
+    srcs = ["tests/test_firmware_artifacts.py"],
+    data = [
+        "tests/fixtures/h2loader_format1.sha256",
+        "tests/fixtures/h2loader_format1.tar.zlib",
+        "tests/fixtures/h2loader_format2.sha256",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_firmware_artifacts.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":firmware_artifacts",
+        ":firmware_output",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "firmware_output",
+    srcs = ["firmware_output.py"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":firmware_artifacts",
+    ],
+)
+
+py_binary(
+    name = "h2loader_tar_zlib_runner",
+    srcs = ["h2loader_tar_zlib_runner.py"],
+    legacy_create_init = 0,
+    main = "h2loader_tar_zlib_runner.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":firmware_output"],
+)
+
+py_test(
+    name = "h2loader_tar_zlib_runner_test",
+    srcs = ["tests/test_h2loader_tar_zlib_runner.py"],
+    data = ["h2loader_tar_zlib_runner.py"],
+    legacy_create_init = 0,
+    main = "tests/test_h2loader_tar_zlib_runner.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":firmware_output"],
+)
+
+_HOST_PACKAGE_TEST = HOST_TOOL_COMPATIBILITY
+
+app_version(
+    name = "package_rules_app_version",
+    value = "1.0.0",
+)
+
+firmware_version(
+    name = "package_rules_version",
+    build = "//tools/bazel/h2loader/tests/fixtures/boards/fixture:version",
+    build_metadata = "fixture",
+    main_version = ":package_rules_app_version",
+    variant = "e2e",
+)
+
+package_rules_firmware(
+    name = "package_rules_native",
+    target_compatible_with = _HOST_PACKAGE_TEST,
+    version = ":package_rules_version",
+)
+
+h2loader_tar_zlib(
+    name = "package_rules_old",
+    board = "fixture",
+    firmware = ":package_rules_native",
+    image = "app",
+    role = "app",
+    target = "esp32s3",
+)
+
+h2loader_zlib_tar(
+    name = "package_rules_new",
+    source = ":package_rules_old",
+)
+
+py_test(
+    name = "package_rules_test",
+    srcs = ["tests/test_package_rules.py"],
+    args = [
+        "$(locations :package_rules_old)",
+        "$(locations :package_rules_new)",
+    ],
+    data = [
+        ":package_rules_new",
+        ":package_rules_old",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_package_rules.py",
+    target_compatible_with = _HOST_PACKAGE_TEST,
+)
+
+py_binary(
+    name = "release_bundle_assembler",
+    srcs = ["release_bundle.py"],
+    legacy_create_init = 0,
+    main = "release_bundle.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+firmware_release_bundle(
+    name = "firmware_release_bundle",
+    srcs = ["@h2_firmware_release_inputs//:all"],
+    tags = ["manual"],
+)
+
+py_test(
+    name = "release_bundle_test",
+    srcs = [
+        "release_bundle.py",
+        "tests/test_release_bundle.py",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_release_bundle.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+exports_files([
+    "firmware_catalog.cquery",
+    "firmware_release_files.cquery",
+    "release_bundle.bzl",
+    "release_bundle.py",
+])

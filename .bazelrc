@@ -5,6 +5,8 @@ common --noenable_workspace
 common --enable_platform_specific_config
 common --announce_rc
 common --repository_cache=~/.cache/bazel/repository
+common --distdir=~/.cache/bazel/distdir
+common --downloader_config=tools/bazel/repositories/downloader.cfg
 
 # GizClaw modules (gizclaw_c_sdk) are served from our own Bazel registry.
 # --registry replaces the default list, so BCR has to be named explicitly.
@@ -26,7 +28,7 @@ build:windows --define=h2_host_os=windows
 
 build --strip=never
 build --repo_env=GIZOS_BK_TOOLCHAIN_ROOT
-build --experimental_remote_scrubbing_config=tools/bazel/remote_scrubbing_config.textproto
+build --experimental_remote_scrubbing_config=tools/bazel/native/remote_scrubbing_config.textproto
 
 build:linux_x86_64 --platforms=//tools/bazel/platforms:linux_x86_64
 build:linux_x86_64 --extra_toolchains=//tools/bazel/platforms:linux_x86_64_test_toolchain

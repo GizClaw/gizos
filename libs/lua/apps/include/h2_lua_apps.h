@@ -1,10 +1,10 @@
 #ifndef H2_LUA_APPS_H
 #define H2_LUA_APPS_H
 
-#include "h2/pal/application/h2_pal_http.h"
-#include "h2/pal/os/h2_pal_fs.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_sync.h"
+#include "application/h2_pal_http.h"
+#include "os/h2_pal_fs.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_sync.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

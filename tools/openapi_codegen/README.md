@@ -17,7 +17,7 @@ openapi_c_sdk(
     name = "service_api",
     package_name = "service",
     schema = "@service_openapi//file",
-    deps = ["//libs/pal"],
+    deps = ["//pal"],
 )
 ```
 

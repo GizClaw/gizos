@@ -3,10 +3,10 @@
 #include "h2_runtime_task_names.h"
 #include "h2_runtime_test.h"
 
-#include "h2/pal/hal/h2_pal_ble.h"
-#include "h2/pal/hal/h2_pal_gpio_irq.h"
-#include "h2/pal/hal/h2_pal_modem.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
+#include "hal/h2_pal_ble.h"
+#include "hal/h2_pal_gpio_irq.h"
+#include "hal/h2_pal_modem.h"
+#include "hal/h2_pal_wifi.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -912,6 +912,118 @@ static void test_runtime_firmware_info_provider(void) {
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   assert(strcmp(runtime->ble_local_name, config.ble_local_name) == 0);
   h2_runtime_deinit(runtime);
+}
+
+static h2_pal_result_t test_device_identity_get(
+    void* user, h2_pal_device_identity_t* out_identity) {
+  memcpy(out_identity->bytes, user, 6u);
+  out_identity->size = 6u;
+  return H2_PAL_OK;
+}
+
+static void test_runtime_device_identity_provider(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  h2_pal_device_identity_t identity;
+  assert(runtime->device_identity != NULL && runtime->image != NULL);
+  h2_pal_image_info_t image_info;
+  assert(h2_pal_image_get_info(runtime->image, 1u, H2_PAL_IMAGE_VIEW_STORED,
+                               &image_info) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_device_identity_get(runtime->device_identity, &identity) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_deinit(runtime);
+
+  static const h2_pal_device_identity_vtable_t vtable = {
+      .get = test_device_identity_get,
+  };
+  uint8_t bytes[6] = {1u, 2u, 3u, 4u, 5u, 6u};
+  h2_pal_device_identity_api_t api = {.user = bytes, .vtable = &vtable};
+  config.device_identity = &api;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->device_identity != &api);
+  api.user = NULL;
+  api.vtable = NULL;
+  assert(h2_pal_device_identity_get(runtime->device_identity, &identity) ==
+         H2_PAL_OK);
+  assert(identity.size == sizeof(bytes));
+  assert(memcmp(identity.bytes, bytes, sizeof(bytes)) == 0);
+  h2_runtime_deinit(runtime);
+}
+
+static h2_pal_result_t test_runtime_image_get_info(
+    void* user, uint32_t partition_id, h2_pal_image_view_t view,
+    h2_pal_image_info_t* out_info) {
+  assert(partition_id == 1u && view == H2_PAL_IMAGE_VIEW_STORED);
+  out_info->capacity = *(const uint64_t*)user;
+  out_info->flags = H2_PAL_IMAGE_FLAG_READABLE;
+  return H2_PAL_OK;
+}
+
+static void test_runtime_image_provider(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  uint64_t capacity = 64u;
+  static const h2_pal_image_vtable_t vtable = {.get_info =
+                                                   test_runtime_image_get_info};
+  h2_pal_image_api_t api = {.user = &capacity, .vtable = &vtable};
+  config.image = &api;
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->image != &api);
+  api.user = NULL;
+  api.vtable = NULL;
+  h2_pal_image_info_t info;
+  assert(h2_pal_image_get_info(runtime->image, 1u, H2_PAL_IMAGE_VIEW_STORED,
+                               &info) == H2_PAL_OK);
+  assert(info.capacity == capacity && info.image_size == 0u);
+  h2_runtime_deinit(runtime);
+}
+
+static h2_pal_result_t test_io_lifecycle(void* user) {
+  ++*(unsigned*)user;
+  return H2_PAL_OK;
+}
+
+static void test_runtime_optional_stream_and_memory(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->mem_external == NULL);
+  assert(runtime->io_stream != h2_pal_unsupported_io_stream_api());
+  assert(runtime->io_stream->vtable ==
+         h2_pal_unsupported_io_stream_api()->vtable);
+  assert(h2_pal_io_stream_start(runtime->io_stream) == H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_deinit(runtime);
+
+  unsigned calls = 0;
+  static const h2_pal_io_stream_vtable_t vtable = {
+      .start = test_io_lifecycle, .release = test_io_lifecycle};
+  h2_pal_io_stream_api_t stream = {.user = &calls, .vtable = &vtable};
+  h2_pal_mem_api_t external = *h2_pal_unsupported_mem_api();
+  external.user = &calls;
+  config.io_stream = &stream;
+  config.mem_external = &external;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(runtime->io_stream != &stream && runtime->mem_external != &external);
+  assert(runtime->mem->user == env.mem.user);
+  assert(runtime->mem->vtable == env.mem.vtable);
+  stream.user = NULL;
+  stream.vtable = NULL;
+  external.user = NULL;
+  external.vtable = NULL;
+  assert(runtime->mem_external->user == &calls);
+  assert(runtime->mem_external->vtable == h2_pal_unsupported_mem_api()->vtable);
+  assert(calls == 0u); /* Init does not start the physical provider. */
+  assert(h2_pal_io_stream_start(runtime->io_stream) == H2_PAL_OK);
+  assert(calls == 1u);
+  h2_runtime_deinit(runtime);
+  assert(calls == 1u); /* Deinit never releases a borrowed physical console. */
 }
 
 static void test_runtime_capabilities_are_bound_at_init(void) {
@@ -2953,6 +3065,32 @@ static void run_nfc_task_once(test_runtime_env_t* env, h2_runtime_t* runtime) {
   env->task_state.handles[1]->entry(env->task_state.handles[1]->ctx);
   env->time_state.stop_after_sleep_runtime = NULL;
   h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+}
+
+static void test_nfc_initial_empty_scan_and_unchanged_state(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 20u, H2_PAL_PERIPH_TYPE_NFC_READER, NULL, 0u);
+  env.nfc_state.scan = (h2_pal_nfc_scan_t){.stage = H2_PAL_NFC_STAGE_ABSENT};
+  h2_runtime_t* runtime = test_runtime_create(&env);
+  run_nfc_task_once(&env, runtime);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE);
+  h2_runtime_nfc_state_t state;
+  assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.status == H2_RUNTIME_NFC_STATE_ABSENT && state.result == 0);
+  uint64_t baseline = state.updated_at_ms;
+  env.time_state.now_ms += H2_RUNTIME_NFC_POLL_INTERVAL_MS;
+  run_nfc_task_once(&env, runtime);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.status == H2_RUNTIME_NFC_STATE_ABSENT &&
+         state.updated_at_ms == baseline);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_nfc_discovery_and_state(void) {
@@ -5373,6 +5511,9 @@ int main(void) {
   test_wifi_best_saved();
   test_time_adjusted_event();
   test_runtime_firmware_info_provider();
+  test_runtime_device_identity_provider();
+  test_runtime_image_provider();
+  test_runtime_optional_stream_and_memory();
   test_runtime_capabilities_are_bound_at_init();
   test_runtime_rejects_incomplete_video_decoder();
   test_runtime_rejects_missing_wifi_csi();
@@ -5414,6 +5555,7 @@ int main(void) {
   test_push_button_uses_mapping_and_retained_pressed_state();
   test_test_control_discards_stale_push_edges();
   test_button_push_rejects_non_push_and_invalid_payload();
+  test_nfc_initial_empty_scan_and_unchanged_state();
   test_nfc_discovery_and_state();
   test_nfc_background_task_does_not_block_input_task();
   test_imu_tilt_event_and_state();

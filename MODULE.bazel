@@ -70,22 +70,9 @@ http_archive = use_repo_rule(
 # the same canonical protocol, without copying root-only overrides.
 http_archive(
     name = "gizclaw_c_sdk",
-    patch_args = ["-p1"],
-    patches = ["//third_party:gizclaw_sdk_deferred.patch"],
-    sha256 = "c9aaf31ddde5317bffad98749d39016b27632b2c93b7697300cb42e2f55436a0",
-    strip_prefix = "gizclaw-c-sdk-0.34.0",
-    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.34.0.tar.gz"],
-)
-
-# Canonical object codecs and numeric/name registries from the C SDK release's
-# source commit. The overlay exposes only upstream source files.
-http_archive(
-    name = "h2_gizclaw_protocol",
-    build_file = "//third_party:gizclaw_protocol.BUILD.bazel",
-    sha256 = "f61641fe34a15a06ff8bb37139a75b2a0b3dff484cb1ac780baddc5a29d86c19",
-    strip_prefix = "gizclaw-54938382b9877a55204c3bf4bec56baddae125d6",
-    type = "tar.gz",
-    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/54938382b9877a55204c3bf4bec56baddae125d6"],
+    sha256 = "d31c5615846a878d344a762af9450636af5ed0b37e2283d105d6c1520f1e5700",
+    strip_prefix = "gizclaw-c-sdk-0.35.15",
+    urls = ["https://static-volc.gizclaw.com/bazel/archives/gizclaw_c_sdk/gizclaw-c-sdk-0.35.15.tar.gz"],
 )
 
 # The declaration emitter is a pinned host tool, independent of runtime code.
@@ -175,7 +162,7 @@ use_repo(
 register_toolchains("@go_toolchains//:all")
 
 consumer_go_host_toolchains = use_extension(
-    "//tools/bazel:go_host_toolchains.bzl",
+    "//tools/bazel/toolchains:go_host_toolchains.bzl",
     "go_host_toolchains",
     dev_dependency = True,
 )
@@ -192,15 +179,15 @@ use_repo(python, "python_3_11")
 register_toolchains("@python_3_11//:all")
 
 register_toolchains(
-    "//tools/bazel:mobile_e2e_python_ios",
-    "//tools/bazel:mobile_e2e_python_android",
+    "//tools/bazel/mobile:mobile_e2e_python_ios",
+    "//tools/bazel/mobile:mobile_e2e_python_android",
 )
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     hub_name = "bk7258_pip",
     python_version = "3.11",
-    requirements_lock = "//tools/bazel:bk7258_requirements.txt",
+    requirements_lock = "//tools/bazel/native/bk7258:bk7258_requirements.txt",
     target_platforms = [
         "{os}_{arch}",
         "linux_x86_64",
@@ -283,13 +270,13 @@ use_repo(
 )
 
 firmware_release_inputs = use_extension(
-    "//tools/bazel:release_inputs.bzl",
+    "//tools/bazel/release:release_inputs.bzl",
     "release_inputs",
 )
 use_repo(firmware_release_inputs, "h2_firmware_release_inputs")
 
 vendor_repositories = use_extension(
-    "//tools/bazel/vendor:repositories.bzl",
+    "//tools/bazel/repositories:repositories.bzl",
     "vendor_repositories",
 )
 
@@ -300,18 +287,6 @@ vendor_repositories.repository(
     sha256 = "96115bda02a1947e97acff3568863b76f8661b4744507aac4d2817d53bf3d380",
     strip_prefix = "dr_libs-5690d4671d7ad07ae6021756d7222eb159745f06",
     urls = ["https://codeload.github.com/mackron/dr_libs/tar.gz/5690d4671d7ad07ae6021756d7222eb159745f06"],
-)
-vendor_repositories.repository(
-    name = "h2_vendor_esp_serial_flasher",
-    build_file = "//third_party:esp_serial_flasher.BUILD.bazel",
-    patches = [
-        "//tools/bazel/vendor:patches/esp_serial_flasher_msvc_packing.patch",
-        "//tools/bazel/vendor:patches/esp_serial_flasher_msvc_weak.patch",
-        "//tools/bazel/vendor:patches/esp_serial_flasher_slip_first_byte.patch",
-    ],
-    sha256 = "d3497d4f63b49f5cc5c6e87e81ad9a280d7fc9ac8fa37b7a5d9a722fbd40393c",
-    strip_prefix = "esp-serial-flasher-71bac88f810728e178782c58aa73523356dfb48f",
-    urls = ["https://codeload.github.com/espressif/esp-serial-flasher/tar.gz/71bac88f810728e178782c58aa73523356dfb48f"],
 )
 vendor_repositories.repository(
     name = "h2_vendor_ffmpeg",
@@ -443,18 +418,6 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/GizClaw/pixa/tar.gz/5bb311b60234e752f4e45e739c9c6719c2eec2af"],
 )
 vendor_repositories.repository(
-    name = "h2_vendor_pixelroot32",
-    build_file = "//third_party:pixelroot32.BUILD.bazel",
-    patches = [
-        "//tools/bazel/vendor:patches/pixelroot32_msvc_display_guard.patch",
-        "//tools/bazel/vendor:patches/pixelroot32_msvc_shadow.patch",
-        "//tools/bazel/vendor:patches/pixelroot32_portable_popcount.patch",
-    ],
-    sha256 = "22570ef5f5b640d00bc8dcf2c56ee6bc2884af035f08845562bbc832f1c1e3bf",
-    strip_prefix = "PixelRoot32-Game-Engine-46ae7b4a4a904537ec22e8856c4e812a2f04cf95",
-    urls = ["https://codeload.github.com/PixelRoot32-Game-Engine/PixelRoot32-Game-Engine/tar.gz/46ae7b4a4a904537ec22e8856c4e812a2f04cf95"],
-)
-vendor_repositories.repository(
     name = "h2_vendor_portaudio",
     build_file = "//third_party:portaudio.BUILD.bazel",
     sha256 = "b397f7ffd82d8bc62d2ee6022f947d8446c8e90b451fb95b494093ef5c14e5dc",
@@ -486,10 +449,7 @@ vendor_repositories.repository(
 vendor_repositories.repository(
     name = "h2_vendor_tinyh264",
     build_file = "//third_party:tinyh264.BUILD.bazel",
-    patches = [
-        "//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch",
-        "//tools/bazel/vendor:patches/tinyh264_standard_string_header.patch",
-    ],
+    patches = ["//third_party/tinyh264_patch:tinyh264.patch"],
     sha256 = "c0499a09b10194aba6380a5d70b235a9eb51098195475593e2f9ff3a9f315171",
     strip_prefix = "tinyh264-524a702b6d98f8b9271238fdda9a064a1e6861e7",
     urls = ["https://codeload.github.com/udevbe/tinyh264/tar.gz/524a702b6d98f8b9271238fdda9a064a1e6861e7"],
@@ -514,7 +474,6 @@ use_repo(
     "h2_vendor_corehttp",
     "h2_vendor_coremqtt",
     "h2_vendor_dr_libs",
-    "h2_vendor_esp_serial_flasher",
     "h2_vendor_ffmpeg",
     "h2_vendor_ikcp",
     "h2_vendor_iperf",
@@ -524,7 +483,6 @@ use_repo(
     "h2_vendor_mklittlefs",
     "h2_vendor_opus",
     "h2_vendor_pixa",
-    "h2_vendor_pixelroot32",
     "h2_vendor_portaudio",
     "h2_vendor_qrcodegen",
     "h2_vendor_sdl3",
@@ -538,7 +496,7 @@ use_repo(
 )
 
 esp_repositories = use_extension(
-    "//tools/bazel/native_repositories:esp_repositories.bzl",
+    "//tools/bazel/native/esp_idf:repositories.bzl",
     "esp_repositories",
 )
 use_repo(
@@ -549,7 +507,7 @@ use_repo(
 )
 
 bk_repositories = use_extension(
-    "//tools/bazel/native_repositories:bk_repositories.bzl",
+    "//tools/bazel/native/bk7258:repositories.bzl",
     "bk_repositories",
 )
 use_repo(
@@ -559,7 +517,7 @@ use_repo(
 )
 
 native_repositories = use_extension(
-    "//tools/bazel/native_repositories:repositories.bzl",
+    "//tools/bazel/native/jieli:repositories.bzl",
     "native_repositories",
 )
 use_repo(

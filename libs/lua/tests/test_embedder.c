@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#include "h2/pal/h2_pal_unsupported.h"
+#include "h2_pal_unsupported.h"
 #include "h2_lua_capability.h"
 #include "h2_lua_event.h"
 #include "h2_lua_job.h"
@@ -29,8 +29,8 @@ static void mem_free(void* user, void* ptr) {
   (void)user;
   free(ptr);
 }
-static const h2_pal_mem_vtable_t mem_vtable = {mem_alloc, mem_realloc,
-                                               mem_free};
+static const h2_pal_mem_vtable_t mem_vtable = {mem_alloc, mem_realloc, mem_free,
+                                               NULL};
 static const h2_pal_mem_api_t mem_api = {.vtable = &mem_vtable};
 
 static h2_pal_result_t monotonic_us(void* user, uint64_t* out) {

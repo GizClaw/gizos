@@ -1,6 +1,6 @@
 #ifndef H2_BK_UART_IO_TEST_SDK_H
 #define H2_BK_UART_IO_TEST_SDK_H
-#include "h2/pal/hal/h2_pal_uart_io_stream.h"
+#include "hal/h2_pal_uart_io_stream.h"
 #include <stdbool.h>
 #include <stdint.h>
 #define CONFIG_SYS_PRINT_DEV_UART 1

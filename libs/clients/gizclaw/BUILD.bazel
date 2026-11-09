@@ -1,0 +1,760 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "public_api_inventory",
+    srcs = ["tests/public_api.inc"],
+)
+
+cc_test(
+    name = "h2_gizclaw_public_api_test",
+    srcs = ["tests/test_h2_gizclaw_public_api.c"],
+    additional_compiler_inputs = ["tests/public_api.inc"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":local",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$gizclaw/audio/download",
+        "$gizclaw/device",
+        "$gizclaw/lua/install",
+        "$gizclaw/data-up",
+        "$gizclaw/data-down",
+        "$gizclaw/net",
+        "$gizclaw/audio/uplink",
+        "$gizclaw/audio/downlink",
+    ],
+)
+
+_FIRMWARE_COMPATIBLE_SRCS = [
+    "src/h2_gizclaw_audio_decoder.c",
+    "src/h2_gizclaw_audio_decoder_internal.h",
+    "src/h2_gizclaw_audio_pacer.h",
+    "src/h2_gizclaw_audio_play.c",
+    "src/h2_gizclaw_api_key.c",
+    "src/h2_gizclaw_ble_binding.c",
+    "src/h2_gizclaw_app_config.c",
+    "src/h2_gizclaw_debug.c",
+    "src/h2_gizclaw_device.c",
+    "src/h2_gizclaw_local.c",
+    "src/h2_gizclaw_local_internal.h",
+    "include/h2_gizclaw_local.h",
+    "src/h2_gizclaw_lua_apps.c",
+    "src/h2_gizclaw_lua_apps_internal.h",
+    "src/h2_gizclaw_lua_stream.c",
+    "src/h2_gizclaw_lua_stream_internal.h",
+    "src/h2_gizclaw_mhs.c",
+    "src/h2_gizclaw_mhs_internal.h",
+    "src/h2_gizclaw_device_internal.h",
+    "src/h2_gizclaw_async_rpc.c",
+    "src/h2_gizclaw_client.c",
+    "src/h2_gizclaw_conversation.c",
+    "src/h2_gizclaw_diagnostics.c",
+    "src/h2_gizclaw_download.c",
+    "src/h2_gizclaw_firmware.c",
+    "src/h2_gizclaw_download_internal.h",
+    "src/h2_gizclaw_internal.h",
+    "src/h2_gizclaw_mp3.c",
+    "src/h2_gizclaw_peer_async.c",
+    "src/h2_gizclaw_pcm_ring.c",
+    "src/h2_gizclaw_pcm_ring.h",
+    "src/h2_gizclaw_pcm_track.c",
+    "src/h2_gizclaw_pcm_track_internal.h",
+    "src/h2_gizclaw_profile.c",
+    "src/h2_gizclaw_profile_internal.h",
+    "src/h2_gizclaw_registration.c",
+    "src/h2_gizclaw_registration_internal.h",
+    "src/h2_gizclaw_request.c",
+    "src/h2_gizclaw_resample.c",
+    "src/h2_gizclaw_resample_internal.h",
+    "src/h2_gizclaw_response.c",
+    "src/h2_gizclaw_response_internal.h",
+    "src/h2_gizclaw_service.c",
+    "src/h2_gizclaw_session.c",
+    "src/h2_gizclaw_session_internal.h",
+    "src/h2_gizclaw_resource.c",
+    "src/h2_gizclaw_time.c",
+    "src/h2_gizclaw_service_internal.h",
+    "src/h2_gizclaw_social.c",
+    "src/h2_gizclaw_social_internal.h",
+    "src/h2_gizclaw_social_ops.c",
+    "src/h2_gizclaw_speech.c",
+    "src/h2_gizclaw_telemetry.c",
+    "src/h2_gizclaw_time_stretch.c",
+    "src/h2_gizclaw_time_stretch_internal.h",
+    "src/h2_gizclaw_wav.c",
+    "src/h2_gizclaw_workflow.c",
+    "src/h2_gizclaw_workflow_internal.h",
+    "src/h2_gizclaw_workspace.c",
+]
+
+# dr_mp3's low-level frame decoder for the player: Layer III only, no stdio,
+# and the portable C path on every target so host tests decode the way
+# firmware does. The decoder keeps its 16 KiB scratch inside the caller-owned
+# drmp3dec, not on the stack.
+cc_library(
+    name = "dr_mp3",
+    srcs = ["src/h2_gizclaw_dr_mp3.c"],
+    copts = select({
+        "//tools/bazel/platforms:is_windows_x86_64": [],
+        "//conditions:default": ["-w"],
+    }),
+    defines = [
+        "DR_MP3_NO_SIMD",
+        "DR_MP3_NO_STDIO",
+        "DR_MP3_ONLY_MP3",
+    ],
+    deps = ["@h2_vendor_dr_libs//:dr_mp3_headers"],
+)
+
+cc_library(
+    name = "gizclaw",
+    srcs = _FIRMWARE_COMPATIBLE_SRCS + ["src/h2_gizclaw_task_names.c"],
+    hdrs = [
+        "include/h2_gizclaw.h",
+        "include/h2_gizclaw_api_key.h",
+        "include/h2_gizclaw_app_config.h",
+        "include/h2_gizclaw_ble_binding.h",
+        "include/h2_gizclaw_client.h",
+        "include/h2_gizclaw_config.h",
+        "include/h2_gizclaw_conversation.h",
+        "include/h2_gizclaw_debug.h",
+        "include/h2_gizclaw_firmware.h",
+        "include/h2_gizclaw_lua_apps.h",
+        "include/h2_gizclaw_mhs.h",
+        "include/h2_gizclaw_ota.h",
+        "include/h2_gizclaw_pcm_track.h",
+        "include/h2_gizclaw_player.h",
+        "include/h2_gizclaw_profile.h",
+        "include/h2_gizclaw_registration.h",
+        "include/h2_gizclaw_resource.h",
+        "include/h2_gizclaw_rpc.h",
+        "include/h2_gizclaw_service.h",
+        "include/h2_gizclaw_session.h",
+        "include/h2_gizclaw_social.h",
+        "include/h2_gizclaw_speech.h",
+        "include/h2_gizclaw_task_names.h",
+        "include/h2_gizclaw_telemetry.h",
+        "include/h2_gizclaw_tool.h",
+        "include/h2_gizclaw_types.h",
+        "include/h2_gizclaw_vtable.h",
+        "include/h2_gizclaw_workflow.h",
+        "include/h2_gizclaw_workspace.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "//tools/bazel/platforms:is_bk7258": ["-Wno-error=type-limits"],
+        "//conditions:default": [],
+    }),
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+    deps = [
+        ":dr_mp3",
+        ":tasks",
+        "//libs/audio/ogg_opus",
+        "//libs/lua/apps",
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//pal",
+        "//third_party:vendor_third_party_opus",
+        "//third_party:vendor_third_party_yyjson",
+    ] + select({
+        "@platforms//cpu:wasm32": ["//third_party:vendor_third_party_gizclaw"],
+        "//tools/bazel/platforms:is_bk7258": ["//third_party:vendor_third_party_gizclaw_firmware"],
+        "//tools/bazel/platforms:is_esp32p4": ["//third_party:vendor_third_party_gizclaw_firmware"],
+        "//tools/bazel/platforms:is_esp32s3": ["//third_party:vendor_third_party_gizclaw_firmware"],
+        "//tools/bazel/platforms:is_esp32s31": ["//third_party:vendor_third_party_gizclaw_firmware"],
+        "//conditions:default": ["//third_party:vendor_third_party_gizclaw"],
+    }),
+)
+
+cc_library(
+    name = "gizclaw_test_support",
+    testonly = True,
+    srcs = [
+        "include/h2_gizclaw_local.h",
+        "src/h2_gizclaw_api_key.c",
+        "src/h2_gizclaw_app_config.c",
+        "src/h2_gizclaw_async_rpc.c",
+        "src/h2_gizclaw_audio_decoder.c",
+        "src/h2_gizclaw_audio_decoder_internal.h",
+        "src/h2_gizclaw_audio_pacer.h",
+        "src/h2_gizclaw_audio_play.c",
+        "src/h2_gizclaw_ble_binding.c",
+        "src/h2_gizclaw_client.c",
+        "src/h2_gizclaw_conversation.c",
+        "src/h2_gizclaw_debug.c",
+        "src/h2_gizclaw_device.c",
+        "src/h2_gizclaw_device_internal.h",
+        "src/h2_gizclaw_diagnostics.c",
+        "src/h2_gizclaw_download.c",
+        "src/h2_gizclaw_download_internal.h",
+        "src/h2_gizclaw_firmware.c",
+        "src/h2_gizclaw_internal.h",
+        "src/h2_gizclaw_local.c",
+        "src/h2_gizclaw_local_internal.h",
+        "src/h2_gizclaw_lua_apps.c",
+        "src/h2_gizclaw_lua_apps_internal.h",
+        "src/h2_gizclaw_lua_stream.c",
+        "src/h2_gizclaw_lua_stream_internal.h",
+        "src/h2_gizclaw_mhs.c",
+        "src/h2_gizclaw_mhs_internal.h",
+        "src/h2_gizclaw_mp3.c",
+        "src/h2_gizclaw_pcm_ring.c",
+        "src/h2_gizclaw_pcm_ring.h",
+        "src/h2_gizclaw_pcm_track.c",
+        "src/h2_gizclaw_pcm_track_internal.h",
+        "src/h2_gizclaw_peer_async.c",
+        "src/h2_gizclaw_profile.c",
+        "src/h2_gizclaw_profile_internal.h",
+        "src/h2_gizclaw_registration.c",
+        "src/h2_gizclaw_registration_internal.h",
+        "src/h2_gizclaw_request.c",
+        "src/h2_gizclaw_resample.c",
+        "src/h2_gizclaw_resample_internal.h",
+        "src/h2_gizclaw_resource.c",
+        "src/h2_gizclaw_response.c",
+        "src/h2_gizclaw_response_internal.h",
+        "src/h2_gizclaw_service.c",
+        "src/h2_gizclaw_session.c",
+        "src/h2_gizclaw_session_internal.h",
+        "src/h2_gizclaw_social.c",
+        "src/h2_gizclaw_social_internal.h",
+        "src/h2_gizclaw_social_ops.c",
+        "src/h2_gizclaw_speech.c",
+        "src/h2_gizclaw_task_names.c",
+        "src/h2_gizclaw_telemetry.c",
+        "src/h2_gizclaw_time.c",
+        "src/h2_gizclaw_time_stretch.c",
+        "src/h2_gizclaw_time_stretch_internal.h",
+        "src/h2_gizclaw_wav.c",
+        "src/h2_gizclaw_workflow.c",
+        "src/h2_gizclaw_workflow_internal.h",
+        "src/h2_gizclaw_workspace.c",
+    ],
+    hdrs = [
+        "include/h2_gizclaw.h",
+        "include/h2_gizclaw_api_key.h",
+        "include/h2_gizclaw_app_config.h",
+        "include/h2_gizclaw_ble_binding.h",
+        "include/h2_gizclaw_client.h",
+        "include/h2_gizclaw_config.h",
+        "include/h2_gizclaw_conversation.h",
+        "include/h2_gizclaw_debug.h",
+        "include/h2_gizclaw_firmware.h",
+        "include/h2_gizclaw_local.h",
+        "include/h2_gizclaw_lua_apps.h",
+        "include/h2_gizclaw_mhs.h",
+        "include/h2_gizclaw_ota.h",
+        "include/h2_gizclaw_pcm_track.h",
+        "include/h2_gizclaw_player.h",
+        "include/h2_gizclaw_profile.h",
+        "include/h2_gizclaw_registration.h",
+        "include/h2_gizclaw_resource.h",
+        "include/h2_gizclaw_rpc.h",
+        "include/h2_gizclaw_service.h",
+        "include/h2_gizclaw_session.h",
+        "include/h2_gizclaw_social.h",
+        "include/h2_gizclaw_speech.h",
+        "include/h2_gizclaw_task_names.h",
+        "include/h2_gizclaw_telemetry.h",
+        "include/h2_gizclaw_tool.h",
+        "include/h2_gizclaw_types.h",
+        "include/h2_gizclaw_vtable.h",
+        "include/h2_gizclaw_workflow.h",
+        "include/h2_gizclaw_workspace.h",
+        "src/h2_gizclaw_service_internal.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    deps = [
+        ":dr_mp3",
+        "//libs/audio/ogg_opus",
+        "//libs/lua/apps",
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//pal",
+        "//third_party:vendor_third_party_gizclaw",
+        "//third_party:vendor_third_party_opus",
+        "//third_party:vendor_third_party_yyjson",
+    ],
+)
+
+cc_library(
+    name = "pcm_track_test_internal",
+    testonly = True,
+    hdrs = ["src/h2_gizclaw_pcm_track_internal.h"],
+    includes = ["src"],
+    deps = [":gizclaw"],
+)
+
+cc_test(
+    name = "h2_gizclaw_pcm_track_test",
+    srcs = [
+        "src/h2_gizclaw_audio_pacer.h",
+        "src/h2_gizclaw_pcm_ring.h",
+        "src/h2_gizclaw_pcm_track_internal.h",
+        "tests/test_h2_gizclaw_pcm_track.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_ogg_opus_test",
+    srcs = [
+        "tests/ogg_opus_fixture.h",
+        "tests/test_h2_gizclaw_ogg_opus.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/audio/ogg_opus",
+        "//pal",
+        "//third_party:vendor_third_party_opus",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_audio_decoder_test",
+    srcs = [
+        "src/h2_gizclaw_audio_decoder.c",
+        "src/h2_gizclaw_audio_decoder_internal.h",
+        "src/h2_gizclaw_mp3.c",
+        "src/h2_gizclaw_resample.c",
+        "src/h2_gizclaw_resample_internal.h",
+        "src/h2_gizclaw_wav.c",
+        "tests/ogg_opus_fixture.h",
+        "tests/test_h2_gizclaw_audio_decoder.c",
+    ],
+    args = [
+        "$(rootpath tests/fixtures/tone_1k_44k_stereo_cbr64.mp3)",
+        "$(rootpath tests/fixtures/tone_1k_22k_mono_vbr.mp3)",
+        "$(rootpath tests/fixtures/tone_1k_8k_mono_cbr8_notag.mp3)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = [
+        "tests/fixtures/README.md",
+        "tests/fixtures/SHA256SUMS",
+        "tests/fixtures/tone_1k_22k_mono_vbr.mp3",
+        "tests/fixtures/tone_1k_44k_stereo_cbr64.mp3",
+        "tests/fixtures/tone_1k_8k_mono_cbr8_notag.mp3",
+    ],
+    includes = ["src"],
+    linkopts = select({
+        "//tools/bazel/platforms:is_windows_x86_64": [],
+        "//conditions:default": ["-lm"],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":dr_mp3",
+        "//libs/audio/ogg_opus",
+        "//pal",
+        "//third_party:vendor_third_party_opus",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_time_stretch_test",
+    srcs = [
+        "src/h2_gizclaw_time_stretch.c",
+        "src/h2_gizclaw_time_stretch_internal.h",
+        "tests/test_h2_gizclaw_time_stretch.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "h2_gizclaw_channel_lifecycle_test",
+    timeout = "moderate",
+    srcs = [
+        "src/h2_gizclaw_internal.h",
+        "tests/test_h2_gizclaw_channel_lifecycle.c",
+    ],
+    args = ["$(rootpath //tools/webrtc-test-server:webrtc_test_server)"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["//tools/webrtc-test-server:webrtc_test_server"],
+    includes = ["src"],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop:webrtc_h2peer_test_support_test_support",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_client_test",
+    srcs = [
+        "src/h2_gizclaw_internal.h",
+        "src/h2_gizclaw_profile_internal.h",
+        "src/h2_gizclaw_registration_internal.h",
+        "tests/test_h2_gizclaw_client.c",
+        "tests/test_h2_gizclaw_home.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_lua_apps_test",
+    srcs = [
+        "src/h2_gizclaw_lua_apps_internal.h",
+        "src/h2_gizclaw_lua_stream_internal.h",
+        "tests/test_h2_gizclaw_lua_apps.c",
+        "//libs/lua/apps:test_fixtures",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_protocol_test",
+    srcs = ["tests/test_h2_gizclaw_protocol.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        ":local_tasks",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_mhs_test",
+    srcs = ["tests/test_h2_gizclaw_mhs.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_service_test",
+    srcs = [
+        "src/h2_gizclaw_service_internal.h",
+        "tests/ogg_opus_fixture.h",
+        "tests/test_h2_gizclaw_service.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal:unsupported",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_api_key_state_test",
+    srcs = [
+        "src/h2_gizclaw_service_internal.h",
+        "tests/test_h2_gizclaw_api_key_state.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)
+
+# Manual: a timed start against a real HTTPS server (see player_live in the
+# source for arguments). Needs the network, so it never runs in CI.
+cc_test(
+    name = "h2_gizclaw_player_live_test",
+    srcs = [
+        "src/h2_gizclaw_service_internal.h",
+        "tests/ogg_opus_fixture.h",
+        "tests/test_h2_gizclaw_service.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    linkopts = ["-lm"],
+    local_defines = [
+        "H2_GIZCLAW_TESTING",
+        "H2_GIZCLAW_PLAYER_LIVE",
+    ],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/backends/corehttp:corehttp_test_support",
+        "//pal/providers/platforms/desktop/app_support:app_support_test_support",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)
+
+cc_test(
+    name = "gzc_firmware_platform_link_test",
+    srcs = ["tests/test_gzc_firmware_platform_link.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["@gizclaw_c_sdk//:gizclaw_core"],
+)
+
+cc_test(
+    name = "h2_gizclaw_session_test",
+    srcs = [
+        "src/h2_gizclaw_response.c",
+        "src/h2_gizclaw_response_internal.h",
+        "src/h2_gizclaw_session.c",
+        "src/h2_gizclaw_session_internal.h",
+        "src/h2_gizclaw_workflow_internal.h",
+        "tests/test_h2_gizclaw_session.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_resource_test",
+    srcs = [
+        "src/h2_gizclaw_resource.c",
+        "src/h2_gizclaw_response.c",
+        "src/h2_gizclaw_response_internal.h",
+        "tests/test_h2_gizclaw_resource.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_app_config_test",
+    srcs = [
+        "src/h2_gizclaw_app_config.c",
+        "src/h2_gizclaw_response.c",
+        "src/h2_gizclaw_response_internal.h",
+        "tests/test_h2_gizclaw_app_config.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_ble_binding_test",
+    srcs = [
+        "src/h2_gizclaw_service_internal.h",
+        "tests/test_h2_gizclaw_ble_binding.c",
+    ],
+    args = ["$(rootpath tests/fixtures/ble_binding_v1.json)"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["tests/fixtures/ble_binding_v1.json"],
+    includes = ["src"],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+        "//third_party:vendor_third_party_yyjson",
+    ],
+)
+
+h2_tasks(
+    name = "local_tasks",
+    tasks = ["$gizclaw/local"],
+)
+
+cc_library(
+    name = "local",
+    hdrs = ["include/h2_gizclaw_local.h"],
+    deps = [
+        ":gizclaw",
+        ":local_tasks",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_local_test",
+    srcs = ["tests/test_h2_gizclaw_local.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":local",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop/pal_core:pal_core_test_support",
+    ],
+)

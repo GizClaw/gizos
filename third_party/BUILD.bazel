@@ -1,12 +1,12 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "corehttp.BUILD.bazel",
     "coremqtt.BUILD.bazel",
-    "esp_serial_flasher.BUILD.bazel",
     "ffmpeg.BUILD.bazel",
-    "gizclaw_protocol.BUILD.bazel",
-    "gizclaw_sdk_deferred.patch",
     "ikcp.BUILD.bazel",
     "iperf.BUILD.bazel",
     "libsrtp.BUILD.bazel",
@@ -15,7 +15,6 @@ exports_files([
     "mklittlefs.BUILD.bazel",
     "opus.BUILD.bazel",
     "pixa.BUILD.bazel",
-    "pixelroot32.BUILD.bazel",
     "portaudio.BUILD.bazel",
     "sdl3.BUILD.bazel",
     "speexdsp.BUILD.bazel",
@@ -32,10 +31,8 @@ filegroup(
     srcs = [
         "corehttp.BUILD.bazel",
         "coremqtt.BUILD.bazel",
-        "esp_serial_flasher.BUILD.bazel",
+        "fdk_aac.BUILD.bazel",
         "ffmpeg.BUILD.bazel",
-        "gizclaw_protocol.BUILD.bazel",
-        "gizclaw_sdk_deferred.patch",
         "ikcp.BUILD.bazel",
         "iperf.BUILD.bazel",
         "libsrtp.BUILD.bazel",
@@ -44,7 +41,6 @@ filegroup(
         "mklittlefs.BUILD.bazel",
         "opus.BUILD.bazel",
         "pixa.BUILD.bazel",
-        "pixelroot32.BUILD.bazel",
         "portaudio.BUILD.bazel",
         "sdl3.BUILD.bazel",
         "speexdsp.BUILD.bazel",
@@ -54,5 +50,134 @@ filegroup(
         "wolfssl.BUILD.bazel",
         "yyjson.BUILD.bazel",
         "zlib.BUILD.bazel",
+        "//third_party/tinyh264_patch:tinyh264.patch",
     ],
 )
+
+cc_library(
+    name = "vendor_third_party_ikcp",
+    tags = ["manual"],
+    deps = ["@h2_vendor_ikcp//:ikcp"],
+)
+
+cc_library(
+    name = "vendor_third_party_qrcodegen",
+    tags = ["manual"],
+    deps = ["@h2_vendor_qrcodegen//:qrcodegen"],
+)
+
+cc_library(
+    name = "vendor_third_party_yyjson",
+    tags = ["manual"],
+    deps = ["@h2_vendor_yyjson//:yyjson"],
+)
+
+cc_library(
+    name = "vendor_third_party_lua",
+    tags = ["manual"],
+    deps = ["@h2_vendor_lua//:lua"],
+)
+
+cc_library(
+    name = "vendor_third_party_ffmpeg",
+    data = ["@h2_vendor_ffmpeg//:all_sources"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "vendor_third_party_gizclaw",
+    tags = ["manual"],
+    target_compatible_with = select({
+        "@platforms//cpu:wasm32": [],
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["@gizclaw_c_sdk//:gizclaw"],
+)
+
+cc_library(
+    name = "vendor_third_party_gizclaw_firmware",
+    tags = ["manual"],
+    deps = ["@gizclaw_c_sdk//:gizclaw_core"],
+)
+
+cc_library(
+    name = "vendor_third_party_lvgl",
+    data = ["@h2_vendor_lvgl//:all_sources"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "vendor_third_party_mklittlefs",
+    tags = ["manual"],
+    deps = ["@h2_vendor_mklittlefs//:mklittlefs"],
+)
+
+cc_library(
+    name = "vendor_third_party_opus",
+    tags = ["manual"],
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = ["@h2_vendor_opus//:opus"],
+)
+
+cc_library(
+    name = "vendor_third_party_opus_headers",
+    tags = ["manual"],
+    deps = ["@h2_vendor_opus//:headers"],
+)
+
+cc_library(
+    name = "vendor_third_party_pixa",
+    tags = ["manual"],
+    deps = ["@h2_vendor_pixa//:pixa"],
+)
+
+cc_library(
+    name = "vendor_third_party_portaudio",
+    data = ["@h2_vendor_portaudio//:all_sources"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "vendor_third_party_zlib",
+    tags = ["manual"],
+    deps = ["@h2_vendor_zlib//:zlib"],
+)
+
+cc_library(
+    name = "vendor_third_party_corehttp",
+    data = ["@h2_vendor_corehttp//:all_sources"],
+    tags = ["manual"],
+    deps = ["@h2_vendor_corehttp//:headers"],
+)
+
+cc_library(
+    name = "vendor_third_party_coremqtt",
+    tags = ["manual"],
+    deps = ["@h2_vendor_coremqtt//:coremqtt"],
+)
+
+cc_library(
+    name = "vendor_third_party_sdl3",
+    data = ["@h2_vendor_sdl3//:all_sources"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "vendor_third_party_tinyh264",
+    tags = ["manual"],
+    deps = ["@h2_vendor_tinyh264//:tinyh264"],
+)
+
+cc_library(
+    name = "vendor_third_party_tlsf",
+    tags = ["manual"],
+    deps = ["@h2_vendor_tlsf//:tlsf"],
+)
+
+exports_files([
+    "fdk_aac.BUILD.bazel",
+])

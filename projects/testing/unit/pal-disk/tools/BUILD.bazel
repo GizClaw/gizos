@@ -1,0 +1,24 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "verify",
+    srcs = ["verify.py"],
+    legacy_create_init = False,
+    main = "verify.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "verify_test",
+    srcs = [
+        "test_verify.py",
+        "verify.py",
+    ],
+    imports = ["."],
+    legacy_create_init = False,
+    main = "test_verify.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)

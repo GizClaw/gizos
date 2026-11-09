@@ -1,7 +1,7 @@
 #ifndef H2_BK_WIFI_IPV6_AP_H
 #define H2_BK_WIFI_IPV6_AP_H
 
-#include "h2/pal/hal/h2_pal_wifi.h"
+#include "hal/h2_pal_wifi.h"
 #include "h2_bk_wifi_ipv6.h"
 #include <string.h>
 

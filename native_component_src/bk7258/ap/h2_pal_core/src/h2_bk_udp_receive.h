@@ -1,7 +1,7 @@
 #ifndef H2_BK_UDP_RECEIVE_H
 #define H2_BK_UDP_RECEIVE_H
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>

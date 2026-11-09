@@ -1,7 +1,7 @@
 #ifndef H2_ESP_PLATFORM_DTLS_STATE_H
 #define H2_ESP_PLATFORM_DTLS_STATE_H
 
-#include "h2/pal/net/h2_pal_dtls.h"
+#include "net/h2_pal_dtls.h"
 
 #include <stddef.h>
 #include <stdint.h>

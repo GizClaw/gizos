@@ -1,0 +1,236 @@
+"""H2Loader-managed native firmware declarations."""
+
+load("//tools/bazel/native/bk7258:bk7258.bzl", "bk7258_firmware")
+load("//tools/bazel/native/esp_idf:esp_idf.bzl", "esp_idf_firmware")
+load("//tools/bazel/native/jieli:jieli.bzl", "jieli_firmware")
+
+_ESP_LAYOUTS = {
+    ("esp32s3", "amoled"): struct(root = "//boards/waveshare/esp32s3_touch_amoled_1_8/esp32s3/layouts/h2loader"),
+    ("esp32s3", "devkit"): struct(
+        root = "//boards/espressif/esp32s3_devkitc_1/esp32s3/layouts/h2loader",
+        consoles = {
+            "uart": "loader_uart.defaults",
+            "usb": "loader_usb.defaults",
+        },
+    ),
+    ("esp32s3", "szp"): struct(root = "//boards/jlc/esp32s3_szp/esp32s3/layouts/h2loader"),
+    ("esp32s3", "waveshare_esp32s3_a7670e_4g"): struct(root = "//boards/waveshare/esp32s3_a7670e_4g/esp32s3/layouts/h2loader"),
+    ("esp32s3", "waveshare_esp32s3_touch_amoled_1_75c"): struct(root = "//boards/waveshare/esp32s3_touch_amoled_1_75c/esp32s3/layouts/h2loader"),
+    ("esp32p4", "waveshare_esp32p4_wifi6_touch_lcd_4_3"): struct(root = "//boards/waveshare/esp32p4_wifi6_touch_lcd_4_3/esp32p4/layouts/h2loader"),
+}
+
+_BK7258_BOARDS = {
+    ("bk7258", "bk7258_v3_202405"): struct(
+        root = "//boards/beken/bk7258_v3_202405/bk7258",
+        layouts = ["h2loader", "loader", "media", "wifi_csi"],
+    ),
+}
+
+_JIELI_LAYOUTS = {
+    ("wl82", "jieli_ac791n_devkit"): struct(
+        root = "//boards/jieli/jieli_ac791n_devkit/ac791n/layouts/h2loader",
+    ),
+}
+
+def _require_layout(layouts, target, board):
+    key = (target, board)
+    if key not in layouts:
+        fail("unsupported H2Loader firmware layout: %s/%s" % (target, board))
+    return layouts[key]
+
+def _support_files(kwargs, layout_files):
+    support_files = kwargs.pop("support_files", [])
+    return support_files + layout_files
+
+def _require_layout_files(layout_files, required_fields, target, board):
+    missing = [field for field in required_fields if field not in layout_files]
+    if missing:
+        fail("incomplete H2Loader layout files for %s/%s: missing %s" % (
+            target,
+            board,
+            ", ".join(missing),
+        ))
+    return layout_files
+
+def _require_target_policy(policy, field, target, board):
+    if policy == None:
+        fail("H2Loader firmware target %s/%s is missing %s" % (target, board, field))
+    return policy
+
+def h2loader_esp_idf_firmware(name, board, target, task_policy = None, layout = "h2loader", layout_files = None, console = None, **kwargs):
+    """Declares ESP-IDF firmware from one repository-owned board layout.
+
+    Every board owns exactly one canonical sdkconfig.defaults; a layout only
+    adds hardware/SDK settings such as the partition table, rollback, or a
+    registered console/memory variant. The concrete firmware target passes its
+    task policy explicitly. There is no named config-profile registry. A
+    downstream repository with a private board passes layout_files containing
+    its exact partition and project-support labels; the private board is not
+    added to GizOS's built-in registry.
+    """
+    for removed in ("config_profile", "config_profiles"):
+        if removed in kwargs:
+            fail("h2loader_esp_idf_firmware no longer accepts %s; declare a board layout" % removed)
+    if layout_files == None:
+        entry = _require_layout(_ESP_LAYOUTS, target, board)
+        if layout == "h2loader":
+            layout_root = entry.root
+        else:
+            if layout not in getattr(entry, "variants", []):
+                fail("unsupported H2Loader ESP layout: %s/%s" % (board, layout))
+            layout_root = entry.root.rsplit("/", 1)[0] + "/" + layout
+        layout_files = {
+            "partition": entry.root + ":partition.csv",
+            "project_support_files": [layout_root + ":sdkconfig.h2loader.defaults"],
+            "support_files": getattr(entry, "support", []),
+        }
+        consoles = getattr(entry, "consoles", {})
+        if consoles:
+            if console not in consoles:
+                fail("H2Loader firmware target %s/%s requires console to be one of %s" % (
+                    target,
+                    board,
+                    ", ".join(sorted(consoles)),
+                ))
+            console_defaults = consoles[console]
+            layout_files["support_files"] = layout_files["support_files"] + [
+                layout_root + ":" + console_defaults,
+            ]
+            cmake_definitions = dict(kwargs.pop("cmake_definitions", {}))
+            if "H2_ESP_CONSOLE_DEFAULTS" in cmake_definitions:
+                fail("H2_ESP_CONSOLE_DEFAULTS is owned by console")
+            cmake_definitions["H2_ESP_CONSOLE_DEFAULTS"] = console_defaults
+            kwargs["cmake_definitions"] = cmake_definitions
+        elif console != None:
+            fail("H2Loader firmware target %s/%s does not define console profiles" % (target, board))
+    else:
+        layout_files = _require_layout_files(
+            layout_files,
+            ["partition", "project_support_files"],
+            target,
+            board,
+        )
+    if "partition" in kwargs:
+        fail("h2loader_esp_idf_firmware owns partition")
+    if "project_support_files" in kwargs:
+        fail("h2loader_esp_idf_firmware owns project_support_files")
+    esp_idf_firmware(
+        name = name,
+        board = board,
+        task_policy = _require_target_policy(task_policy, "task_policy", target, board),
+        partition = layout_files["partition"],
+        project_support_files = layout_files["project_support_files"],
+        support_files = _support_files(kwargs, layout_files.get("support_files", [])),
+        target = target,
+        **kwargs
+    )
+
+def h2loader_jieli_firmware(name, board, target, task_policy = None, **kwargs):
+    """Declares JieLi firmware using the board's one H2Loader layout.
+
+    As with ESP, the physical board owns SDK, memory and flash layout. A
+    concrete firmware target may vary only its task policy and launcher graph.
+    """
+    entry = _require_layout(_JIELI_LAYOUTS, target, board)
+    for owned in ("project_makefile", "sdk_patches"):
+        if owned in kwargs:
+            fail("h2loader_jieli_firmware owns " + owned)
+    graph = kwargs.pop("graph", [])
+    graph = graph + [_require_target_policy(task_policy, "task_policy", target, board)]
+    jieli_firmware(
+        name = name,
+        board = board,
+        graph = [entry.root + ":layout"] + graph,
+        project_makefile = entry.root + ":project.mk",
+        sdk_patches = [
+            entry.root + ":sdk_patches/h2_retained_ram.patch",
+            entry.root + ":sdk_patches/preserve_exception_log.patch",
+            entry.root + ":sdk_patches/crash_recovery.patch",
+            entry.root + ":sdk_patches/early_app_boot.patch",
+            entry.root + ":sdk_patches/uart1_console.patch",
+            entry.root + ":sdk_patches/bounded_cdc_write.patch",
+            entry.root + ":sdk_patches/ble_data_length.patch",
+            entry.root + ":sdk_patches/wifi_ap_credentials.patch",
+            entry.root + ":sdk_patches/wifi_ap_config.patch",
+            entry.root + ":sdk_patches/warm_boot.patch",
+        ],
+        target = target,
+        **kwargs
+    )
+
+def h2loader_bk7258_firmware(
+        name,
+        board,
+        target,
+        ap_task_policy = None,
+        cp_task_policy = None,
+        layout = "h2loader",
+        layout_files = None,
+        **kwargs):
+    """Declares BK7258 firmware from one repository-owned board layout.
+
+    Every layout under boards/<company>/<board>/bk7258/layouts/<layout>/ owns one
+    complete AP configuration, CP configuration, GPIO selection, RAM-region
+    plan, partition metadata, and optional recovery flashing config. The
+    concrete firmware target passes its AP and CP task policies explicitly.
+    There is no named config-profile registry. A downstream repository with a
+    private board passes layout_files containing the exact labels owned by that
+    layout.
+    """
+    for removed in ("config_profile", "config_profiles", "gpio_profile", "memory_profile"):
+        if removed in kwargs:
+            fail("h2loader_bk7258_firmware no longer accepts %s; declare a board layout" % removed)
+    if layout_files == None:
+        entry = _require_layout(_BK7258_BOARDS, target, board)
+        if layout not in entry.layouts:
+            fail("unsupported H2Loader BK7258 layout: %s/%s" % (board, layout))
+        layout_root = entry.root + "/layouts/" + layout
+        layout_files = {
+            "ap_config": [
+                entry.root + ":ap.defaults",
+                layout_root + ":ap.defaults",
+            ],
+            "ap_gpio": layout_root + ":ap_gpio",
+            "cp_config": [
+                entry.root + ":cp.defaults",
+                layout_root + ":cp.defaults",
+            ],
+            "cp_gpio": layout_root + ":cp_gpio",
+            "project_support_files": [layout_root + ":layout"],
+            "ram_regions": layout_root + ":ram_regions",
+        }
+        if layout in ("h2loader", "loader"):
+            layout_files["recovery_config"] = layout_root + ":recovery_config"
+    else:
+        required_layout_files = [
+            "ap_config",
+            "ap_gpio",
+            "cp_config",
+            "cp_gpio",
+            "project_support_files",
+            "ram_regions",
+        ]
+        layout_files = _require_layout_files(
+            layout_files,
+            required_layout_files,
+            target,
+            board,
+        )
+    if "project_support_files" in kwargs:
+        fail("h2loader_bk7258_firmware owns project_support_files")
+    bk7258_firmware(
+        name = name,
+        ap_task_policy = _require_target_policy(ap_task_policy, "ap_task_policy", target, board),
+        board = board,
+        cp_task_policy = _require_target_policy(cp_task_policy, "cp_task_policy", target, board),
+        ap_config = layout_files["ap_config"],
+        cp_config = layout_files["cp_config"],
+        ap_gpio = layout_files["ap_gpio"],
+        cp_gpio = layout_files["cp_gpio"],
+        project_support_files = layout_files["project_support_files"],
+        recovery_config = layout_files.get("recovery_config"),
+        ram_regions = layout_files["ram_regions"],
+        support_files = _support_files(kwargs, layout_files.get("support_files", [])),
+        target = target,
+        **kwargs
+    )

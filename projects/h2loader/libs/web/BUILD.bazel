@@ -1,9 +1,9 @@
 load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -33,9 +33,9 @@ cc_library(
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
         ":tasks",
-        "//libs/h2loader_host",
-        "//libs/pal",
-        "//libs/pal/providers/web/pal_core",
+        "//libs/h2loader/host",
+        "//pal",
+        "//pal/providers/platforms/web/pal_core",
         "//projects/h2loader/libs/web/status_json:h2loader_web_status_json",
     ],
 )
@@ -79,7 +79,7 @@ wasm_cc_binary(
 )
 
 filegroup(
-    name = "h2loader_web",
+    name = "web",
     srcs = [
         "src/h2loader.js",
         "src/h2loader_ports.js",
@@ -109,9 +109,9 @@ cc_binary(
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
         ":tasks",
-        "//libs/h2loader_host",
-        "//libs/pal",
-        "//libs/pal/providers/web/pal_core",
+        "//libs/h2loader/host",
+        "//pal",
+        "//pal/providers/platforms/web/pal_core",
         "//projects/h2loader/libs/web/status_json:h2loader_web_status_json",
     ],
 )

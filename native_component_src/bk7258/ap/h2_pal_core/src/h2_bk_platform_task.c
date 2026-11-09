@@ -8,6 +8,7 @@
 #include "semphr.h"
 #include "h2_bk_resource_stats_internal.h"
 #include "h2_bk_task_lifetime_internal.h"
+#include "h2_bk_task_create_internal.h"
 
 struct h2_pal_task {
   beken_thread_t thread;
@@ -52,7 +53,8 @@ static void bk_task_fail(const char* name, const char* stage,
 }
 
 static bool bk_task_policy_shape_valid(const h2_bk_task_policy_t* policy) {
-  return policy != NULL && policy->core <= 1u &&
+  return policy != NULL &&
+         (policy->core <= 1u || policy->core == H2_BK_TASK_CORE_ANY) &&
          policy->priority < configMAX_PRIORITIES &&
          policy->min_stack_size != 0u &&
          (policy->stack_region == H2_BK_TASK_STACK_DEFAULT ||
@@ -74,35 +76,32 @@ static h2_pal_result_t bk_task_policy_resolve(const char* name,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-static int bk_task_create(beken_thread_t* thread,
-                          const h2_bk_task_policy_t* policy, const char* name,
-                          beken_thread_function_t entry, uint32_t stack_size,
-                          void* ctx) {
-#if defined(CONFIG_SOC_SMP) && CONFIG_SOC_SMP && defined(CONFIG_CPU_CNT) && \
-    CONFIG_CPU_CNT > 1
-  if (policy->core == 1u) {
-    return policy->stack_region == H2_BK_TASK_STACK_PSRAM
-               ? rtos_core1_create_psram_thread(thread,
-                                                (uint8_t)policy->priority, name,
-                                                entry, stack_size, ctx)
-               : rtos_core1_create_thread(thread, (uint8_t)policy->priority,
-                                          name, entry, stack_size, ctx);
+h2_pal_result_t h2_bk_platform_task_reserve_policy(
+    const char* name, h2_bk_task_policy_t* out_policy) {
+  if (out_policy == NULL) return H2_PAL_ERR_INVALID_ARG;
+  *out_policy = (h2_bk_task_policy_t){0};
+  s_task_started = true;
+  if (!s_task_configured) {
+    bk_task_fail(name, "configure", "not-configured");
+    return H2_PAL_ERR_INVALID_STATE;
   }
-  return policy->stack_region == H2_BK_TASK_STACK_PSRAM
-             ? rtos_core0_create_psram_thread(thread, (uint8_t)policy->priority,
-                                              name, entry, stack_size, ctx)
-             : rtos_core0_create_thread(thread, (uint8_t)policy->priority, name,
-                                        entry, stack_size, ctx);
-#else
-  if (policy->core != 0u) {
-    return kGeneralErr;
+  h2_bk_task_policy_t policy = {0};
+  h2_pal_result_t rc = bk_task_policy_resolve(name, &policy);
+  if (rc != H2_PAL_OK) return rc;
+  if (!bk_task_policy_shape_valid(&policy) ||
+      policy.min_stack_size > UINT16_MAX * sizeof(StackType_t)) {
+    bk_task_fail(name, "validate", "invalid-policy");
+    return H2_PAL_ERR_TASK;
   }
-  return policy->stack_region == H2_BK_TASK_STACK_PSRAM
-             ? rtos_create_psram_thread(thread, (uint8_t)policy->priority, name,
-                                        entry, stack_size, ctx)
-             : rtos_create_thread(thread, (uint8_t)policy->priority, name,
-                                  entry, stack_size, ctx);
+#if !(defined(CONFIG_SOC_SMP) && CONFIG_SOC_SMP && defined(CONFIG_CPU_CNT) && \
+      CONFIG_CPU_CNT > 1)
+  if (policy.core != 0u && policy.core != H2_BK_TASK_CORE_ANY) {
+    bk_task_fail(name, "validate", "unavailable-core");
+    return H2_PAL_ERR_TASK;
+  }
 #endif
+  *out_policy = policy;
+  return H2_PAL_OK;
 }
 
 static void bk_task_trampoline(void* raw) {
@@ -131,28 +130,12 @@ static int bk_task_start(void* user, const h2_pal_task_options_t* options,
   if (options == NULL || entry == NULL || out_task == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  s_task_started = true;
-  if (!s_task_configured) {
-    bk_task_fail(options->name, "configure", "not-configured");
-    return H2_PAL_ERR_INVALID_STATE;
-  }
-
   h2_bk_task_policy_t policy = {0};
-  h2_pal_result_t rc = bk_task_policy_resolve(options->name, &policy);
+  h2_pal_result_t rc =
+      h2_bk_platform_task_reserve_policy(options->name, &policy);
   if (rc != H2_PAL_OK) {
     return rc;
   }
-  if (!bk_task_policy_shape_valid(&policy)) {
-    bk_task_fail(options->name, "validate", "invalid-policy");
-    return H2_PAL_ERR_TASK;
-  }
-#if !(defined(CONFIG_SOC_SMP) && CONFIG_SOC_SMP && defined(CONFIG_CPU_CNT) && \
-      CONFIG_CPU_CNT > 1)
-  if (policy.core != 0u) {
-    bk_task_fail(options->name, "validate", "unavailable-core");
-    return H2_PAL_ERR_TASK;
-  }
-#endif
   if (options->min_stack_size > UINT32_MAX) {
     bk_task_fail(options->name, "validate", "stack-overflow");
     return H2_PAL_ERR_TASK;
@@ -206,12 +189,14 @@ static int bk_task_start(void* user, const h2_pal_task_options_t* options,
     task->thread = xTaskCreateStaticPinnedToCore(
         bk_task_trampoline, sdk_name, stack_size / sizeof(StackType_t), task,
         configMAX_PRIORITIES - 1u - policy.priority, task->stack,
-        &task->task_storage, policy.core);
+        &task->task_storage,
+        policy.core == H2_BK_TASK_CORE_ANY ? tskNO_AFFINITY
+                                           : (BaseType_t)policy.core);
     ret = task->thread != NULL ? kNoErr : kGeneralErr;
   } else {
-    ret = bk_task_create(&task->thread, &policy, sdk_name,
-                         (beken_thread_function_t)bk_task_trampoline,
-                         stack_size, task);
+    ret = h2_bk_task_create(&task->thread, &policy, sdk_name,
+                            (beken_thread_function_t)bk_task_trampoline,
+                            stack_size, task);
   }
   if (ret != kNoErr) {
     bk_task_free(task);

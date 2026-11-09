@@ -1,7 +1,7 @@
 #ifndef H2_JIELI_WL82_ALLOCATOR_H
 #define H2_JIELI_WL82_ALLOCATOR_H
 
-#include "h2/pal/os/h2_pal_mem.h"
+#include "os/h2_pal_mem.h"
 #include "h2_jieli_wl82_sdk_port.h"
 
 /* PAL object ownership follows the allocator supplied at creation. SDK-native

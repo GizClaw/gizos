@@ -1,0 +1,9 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# The artifact launcher supplies the role; both Apps share the session implementation.
+cc_library(
+    name = "host_app",
+    deps = ["//projects/testing/e2e/lua_link/libs/session:lua_link_e2e"],
+)

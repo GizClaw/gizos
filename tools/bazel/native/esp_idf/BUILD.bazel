@@ -1,0 +1,44 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "POSIX_HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "esp_idf_runner",
+    srcs = ["esp_idf_runner.py"],
+    legacy_create_init = 0,
+    main = "esp_idf_runner.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//tools/bazel/native:native_ccache",
+        "//tools/bazel/native:native_runtime",
+    ],
+)
+
+py_test(
+    name = "esp_idf_runner_test",
+    srcs = ["tests/test_esp_idf_runner.py"],
+    data = [
+        "esp_idf_runner.py",
+        "//tools/bazel/native/versions:esp_idf_tool_versions.txt",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_esp_idf_runner.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//tools/bazel/native:native_ccache",
+        "//tools/bazel/native:native_runtime",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+exports_files([
+    "esp_idf.bzl",
+    "esp_idf_runner.py",
+])
+
+exports_files([
+    "esp_idf.bzl",
+    "esp_idf_runner.py",
+    "repositories.bzl",
+])

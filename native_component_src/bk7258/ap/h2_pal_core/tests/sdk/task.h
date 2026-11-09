@@ -1,6 +1,7 @@
 #ifndef TEST_TASK_H
 #define TEST_TASK_H
 #include "FreeRTOS.h"
+#define tskNO_AFFINITY (-1)
 typedef void* TaskHandle_t;
 typedef void (*TaskFunction_t)(void*);
 TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t, const char*,

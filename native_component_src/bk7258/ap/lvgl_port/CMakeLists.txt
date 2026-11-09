@@ -1,8 +1,8 @@
 set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
-set(H2_LVGL_ROOT "${REPO_ROOT}/libs/lvgl")
+set(H2_LVGL_ROOT "${REPO_ROOT}/libs/ui/lvgl")
 set(H2_LVGL_CONFIG_ROOT "${REPO_ROOT}/third_party/lvgl_patch/config/bk7258")
 
-include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES lvgl_port ap)
 
 armino_component_register(
@@ -11,7 +11,7 @@ armino_component_register(
         "."
         "${H2_LVGL_CONFIG_ROOT}"
         "${H2_LVGL_ROOT}/include"
-        "${REPO_ROOT}/libs/pal/include"
+        "${REPO_ROOT}/pal/include"
     REQUIRES h2_firmware_lib
     PRIV_REQUIRES h2_pal_core bk_common bk_rtos driver)
 

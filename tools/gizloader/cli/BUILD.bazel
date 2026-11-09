@@ -1,0 +1,264 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "POSIX_HOST_TOOL_COMPATIBILITY", "WINDOWS_X86_64_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "h2loader/cli/speed",
+    ],
+)
+
+cc_library(
+    name = "h2loader_cli_app",
+    srcs = [
+        "src/h2_h2loader_cli_app.c",
+        "src/h2_h2loader_cli_bleikcp_speed.c",
+        "src/h2_h2loader_cli_output.c",
+        "src/h2_h2loader_cli_package_command.c",
+        "src/h2_h2loader_cli_server_command.c",
+        "src/h2_h2loader_cli_task_names.c",
+        "src/h2_h2loader_cli_transport.c",
+    ],
+    hdrs = [
+        "include/h2_h2loader_cli_app.h",
+        "include/h2_h2loader_cli_task_names.h",
+        "src/h2_h2loader_cli_internal.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+    ],
+    deps = [
+        ":tasks",
+        "//libs/command",
+        "//libs/h2loader/host",
+        "//libs/net/bleikcp",
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "cli_control_lines_test",
+    srcs = ["tests/test_cli_control_lines.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":h2loader_cli_app",
+        "//libs/net/iostreamikcp",
+        "//pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "h2loader_cli_app_test",
+    srcs = [
+        "tests/test_h2_h2loader_cli_app.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":h2loader_cli_app",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "h2loader_cli_server_command_test",
+    srcs = [
+        "tests/test_h2_h2loader_cli_server_command.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":h2loader_cli_app",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "h2loader_cli_package_command_test",
+    srcs = [
+        "tests/test_h2_h2loader_cli_package_command.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":h2loader_cli_app",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "h2loader_cli_bleikcp_speed_test",
+    srcs = [
+        "tests/test_h2_h2loader_cli_bleikcp_speed.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":h2loader_cli_app",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+# Native process entry, OS adapters and their regression coverage.
+filegroup(
+    name = "cli_main",
+    srcs = ["main.c"],
+)
+
+exports_files(["test_h2_h2loader_cli_native.py"])
+
+cc_library(
+    name = "platform",
+    srcs = select({
+        "@platforms//os:macos": ["platform_darwin.c"],
+        "@platforms//os:linux": ["platform_linux.c"],
+        "@platforms//os:windows": ["platform_windows.c"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["h2_h2loader_cli_target.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_macos_x86_64": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_windows_x86_64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2loader_cli_app",
+        ":host_path",
+        "//pal",
+    ] + select({
+        "@platforms//os:macos": [
+            "//pal/providers/platforms/darwin/pal_core",
+            "//pal/providers/platforms/desktop/pal_core",
+        ],
+        "@platforms//os:linux": [
+            "//pal/providers/platforms/desktop/pal_core",
+            "//pal/providers/platforms/linux/pal_core",
+            "//pal/providers/platforms/linux/serial_host",
+        ],
+        "@platforms//os:windows": [
+            "//pal/providers/platforms/windows/pal_core",
+            "//pal/providers/platforms/windows/serial_host",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+cc_binary(
+    name = "startup_failure_fixture",
+    srcs = [
+        "h2_h2loader_cli_startup_failure_fixture.c",
+        "h2_h2loader_cli_target.h",
+        "main.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    visibility = ["//tools/gizloader/native:__pkg__"],
+    deps = [":h2loader_cli_app"],
+)
+
+cc_library(
+    name = "host_path",
+    srcs = select({
+        "@platforms//os:windows": ["h2_h2loader_cli_host_path_windows.c"],
+        "//conditions:default": ["h2_h2loader_cli_host_path_posix.c"],
+    }),
+    hdrs = ["h2_h2loader_cli_host_path.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_macos_x86_64": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_windows_x86_64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "host_path_test",
+    srcs = ["h2_h2loader_cli_host_path_test.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [":host_path"],
+)
+
+cc_test(
+    name = "windows_host_path_test",
+    srcs = ["h2_h2loader_cli_host_path_windows_test.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [":host_path"],
+)
+
+cc_test(
+    name = "target_lifecycle_test",
+    srcs = ["h2_h2loader_cli_target_test.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_macos_x86_64": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2loader_cli_app",
+        ":platform",
+        "//pal",
+    ],
+)
+
+py_test(
+    name = "h2loader_serial_handoff_test",
+    srcs = ["tests/test_h2loader_serial_handoff.py"],
+    data = [
+        "tests/fixtures/h2loader_serial_handoff.c",
+        "//libs/h2loader/host:include/h2_h2loader_host.h",
+        "//libs/h2loader/host:include/h2_h2loader_host_catalog.h",
+        "//libs/h2loader/host:src/h2_h2loader_host_serial.c",
+        "//libs/net/iostreamikcp:include/h2_iostreamikcp.h",
+        "//libs/net/iostreamikcp:include/h2_iostreamikcp_types.h",
+        "//libs/net/iostreamikcp:src/h2_iostreamikcp_frame.c",
+        "//pal:pal_header_files",
+        "//tools/gizloader/cli:src/h2_h2loader_cli_app.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_h2loader_serial_handoff.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)

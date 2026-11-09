@@ -5,6 +5,7 @@
 typedef void* beken_thread_t;
 typedef void* beken_semaphore_t;
 typedef void* beken_mutex_t;
+typedef void* beken_thread_arg_t;
 typedef void (*beken_thread_function_t)(void*);
 #define kNoErr 0
 #define kGeneralErr -1

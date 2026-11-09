@@ -1,0 +1,1025 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "evidence_output",
+    srcs = ["src/h2_gizclaw_e2e_output.c"],
+    hdrs = [
+        "include/h2_gizclaw_e2e.h",
+        "src/h2_gizclaw_e2e_output.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    deps = [
+        "//libs/clients/gizclaw",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_output_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_output.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":evidence_output"],
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "gizclaw/e2e/runner",
+        "gizclaw/e2e/wifi",
+        "gizclaw/e2e/launcher",
+        "gizclaw/e2e/job",
+    ],
+)
+
+cc_library(
+    name = "gizclaw_e2e",
+    srcs = [
+        "src/h2_gizclaw_e2e_concurrency.h",
+        "src/h2_gizclaw_e2e_firmware.c",
+        "src/h2_gizclaw_e2e_firmware.h",
+        "src/h2_gizclaw_e2e_report.h",
+        "src/h2_gizclaw_e2e_resource.h",
+        "src/h2_gizclaw_e2e_rpc.h",
+        "src/h2_gizclaw_e2e_service.h",
+        "src/h2_gizclaw_e2e_voice.h",
+    ],
+    hdrs = ["include/h2_gizclaw_e2e.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    # The opus vendor build crashes the JieLi pi32v2 clang 4.0.1 backend.
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":connectivity",
+        ":device_case",
+        ":fence_case",
+        ":fixture",
+        ":lua_apps_case",
+        ":request_cases",
+        ":resource_case",
+        ":rpc_cases",
+        ":runner",
+        ":session_cancel_case",
+        ":tasks",
+        ":voice_case",
+        "//libs/clients/gizclaw",
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//pal",
+    ] + select({
+        "//tools/bazel/platforms:is_bk7258": [
+            "//third_party:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
+        "//tools/bazel/platforms:is_esp32p4": [
+            "//third_party:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
+        "//tools/bazel/platforms:is_esp32s3": [
+            "//third_party:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
+        "//tools/bazel/platforms:is_esp32s31": [
+            "//third_party:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
+        "//conditions:default": [
+            "//third_party:vendor_third_party_gizclaw",
+            "//third_party:vendor_third_party_opus",
+        ],
+    }),
+)
+
+cc_test(
+    name = "gizclaw_e2e_test",
+    srcs = ["tests/test_h2_gizclaw_e2e.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_e2e",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_fixture_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_fixture.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":fixture",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_connectivity_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_connectivity.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":connectivity",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+# Actor ownership and cleanup use only the production Service/req/rpc surface.
+# Keep their local tests runnable independently of the remaining case migration.
+cc_library(
+    name = "fixture",
+    srcs = [
+        "src/h2_gizclaw_e2e_fixture.c",
+        "src/h2_gizclaw_e2e_task_names.c",
+    ],
+    hdrs = [
+        "include/h2_gizclaw_e2e.h",
+        "include/h2_gizclaw_e2e_task_names.h",
+        "src/h2_gizclaw_e2e_internal.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":evidence_output",
+        "//libs/clients/gizclaw",
+        "//libs/encoding",
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//libs/testing:testing_audio",
+        "//libs/testing:testing_pal",
+        "//pal",
+        "//pal/providers/backends/corehttp",
+    ],
+)
+
+cc_library(
+    name = "connectivity",
+    srcs = ["src/h2_gizclaw_e2e_connectivity.c"],
+    hdrs = ["src/h2_gizclaw_e2e_rpc.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "rpc_cases",
+    srcs = [
+        "src/h2_gizclaw_e2e_deferred.c",
+        "src/h2_gizclaw_e2e_rpc.c",
+    ],
+    hdrs = ["src/h2_gizclaw_e2e_rpc.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":contact_case",
+        ":device_http",
+        ":fixture",
+        ":friend_case",
+        ":group_case",
+        ":metadata_case",
+        ":profile_case",
+        ":runner",
+        ":speech_case",
+        ":telemetry_case",
+        ":voice_case",
+        ":workflow_case",
+        ":workspace_case",
+        "//libs/clients/gizclaw",
+        "//libs/sync/atomic",
+        "//pal",
+        "//pal/providers/backends/yyjson",
+    ] + select({
+        "//tools/bazel/platforms:is_bk7258": ["//third_party:vendor_third_party_gizclaw_firmware"],
+        "//tools/bazel/platforms:is_esp32p4": ["//third_party:vendor_third_party_gizclaw_firmware"],
+        "//tools/bazel/platforms:is_esp32s3": ["//third_party:vendor_third_party_gizclaw_firmware"],
+        "//conditions:default": ["//third_party:vendor_third_party_gizclaw"],
+    }),
+)
+
+cc_library(
+    name = "group_case",
+    srcs = ["src/h2_gizclaw_e2e_group.c"],
+    hdrs = ["src/h2_gizclaw_e2e_group.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        ":social_ping_case",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_group_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_group.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":group_case",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_library(
+    name = "workspace_case",
+    srcs = ["src/h2_gizclaw_e2e_workspace.c"],
+    hdrs = ["src/h2_gizclaw_e2e_workspace.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_workspace_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_workspace.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":workspace_case",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_library(
+    name = "friend_case",
+    srcs = ["src/h2_gizclaw_e2e_friend.c"],
+    hdrs = ["src/h2_gizclaw_e2e_friend.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        ":social_ping_case",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_friend_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_friend.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":friend_case",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "telemetry_case",
+    srcs = ["src/h2_gizclaw_e2e_telemetry.c"],
+    hdrs = ["src/h2_gizclaw_e2e_telemetry.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_telemetry_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_telemetry.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":telemetry_case",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "contact_case",
+    srcs = ["src/h2_gizclaw_e2e_contact.c"],
+    hdrs = ["src/h2_gizclaw_e2e_contact.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_contact_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_contact.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":contact_case",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "workflow_case",
+    srcs = ["src/h2_gizclaw_e2e_workflow.c"],
+    hdrs = ["src/h2_gizclaw_e2e_workflow.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_workflow_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_workflow.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":workflow_case",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "profile_case",
+    srcs = ["src/h2_gizclaw_e2e_profile.c"],
+    hdrs = ["src/h2_gizclaw_e2e_profile.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_profile_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_profile.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":profile_case",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "speech_case",
+    srcs = ["src/h2_gizclaw_e2e_speech.c"],
+    hdrs = ["src/h2_gizclaw_e2e_speech.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//libs/sync/atomic",
+        "//libs/testing:testing_audio",
+        "//libs/testing:testing_pal",
+        "//pal",
+        "//pal/providers/backends/yyjson",
+    ],
+)
+
+cc_library(
+    name = "voice_case",
+    srcs = ["src/h2_gizclaw_e2e_voice.c"],
+    hdrs = ["src/h2_gizclaw_e2e_voice.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//libs/sync/atomic",
+        "//libs/testing:testing_audio",
+        "//libs/testing:testing_pal",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_voice_test",
+    srcs = [
+        "tests/h2_gizclaw_pcm_track_fake.h",
+        "tests/test_h2_gizclaw_e2e_voice.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":voice_case",
+        "//libs/clients/gizclaw",
+        "//libs/sync/atomic",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal",
+        "//pal/providers/platforms/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_speech_test",
+    srcs = [
+        "tests/h2_gizclaw_pcm_track_fake.h",
+        "tests/test_h2_gizclaw_e2e_speech.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":speech_case",
+        "//libs/clients/gizclaw",
+        "//libs/sync/atomic",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "fence_case",
+    srcs = ["src/h2_gizclaw_e2e_fence.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":runner_core",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_fence_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_fence.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":fence_case",
+        "//libs/testing:testing_pal",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "runner",
+    deps = [
+        ":catalog_all",
+        ":runner_core",
+    ],
+)
+
+cc_library(
+    name = "catalog_all",
+    srcs = ["src/h2_gizclaw_e2e_catalog_all.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [":runner_core"],
+)
+
+cc_library(
+    name = "catalog_connectivity",
+    srcs = ["src/h2_gizclaw_e2e_catalog_connectivity.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [":runner_core"],
+)
+
+cc_library(
+    name = "connectivity_app",
+    deps = [
+        ":catalog_connectivity",
+        ":connectivity",
+        ":runner_core",
+    ],
+)
+
+cc_library(
+    name = "runner_core",
+    srcs = [
+        "src/h2_gizclaw_e2e.c",
+        "src/h2_gizclaw_e2e_report.c",
+    ],
+    hdrs = [
+        "src/h2_gizclaw_e2e_catalog.h",
+        "src/h2_gizclaw_e2e_concurrency.h",
+        "src/h2_gizclaw_e2e_fence.h",
+        "src/h2_gizclaw_e2e_firmware.h",
+        "src/h2_gizclaw_e2e_report.h",
+        "src/h2_gizclaw_e2e_resource.h",
+        "src/h2_gizclaw_e2e_rpc.h",
+        "src/h2_gizclaw_e2e_service.h",
+        "src/h2_gizclaw_e2e_voice.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//pal",
+        "//projects/testing/integration/gizclaw:app_config_fixture",
+    ],
+)
+
+cc_library(
+    name = "request_cases",
+    srcs = [
+        "src/h2_gizclaw_e2e_concurrency.c",
+        "src/h2_gizclaw_e2e_service.c",
+    ],
+    hdrs = [
+        "src/h2_gizclaw_e2e_concurrency.h",
+        "src/h2_gizclaw_e2e_service.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_request_cases_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_request_cases.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":request_cases",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_connectivity_runner_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_runner.c"],
+    args = ["connectivity"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":catalog_connectivity",
+        ":runner_core",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_runner_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_runner.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":runner",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_report_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_report.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Reporting is owned by runner_core; this unit test does not run cases.
+    deps = [
+        ":runner_core",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_firmware_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_firmware.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_e2e",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+    ],
+)
+
+cc_library(
+    name = "device_case",
+    srcs = [
+        "src/h2_gizclaw_e2e_ble_binding.c",
+        "src/h2_gizclaw_e2e_device.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":debug_case",
+        ":device_http",
+        ":fixture",
+        ":runner_core",
+        "//libs/clients/gizclaw",
+        "//libs/sync/atomic",
+        "//libs/testing:testing_audio",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/yyjson",
+    ],
+)
+
+cc_library(
+    name = "device_app",
+    srcs = ["src/h2_gizclaw_e2e_catalog_device.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [
+        ":device_case",
+        ":runner_core",
+    ],
+)
+
+cc_library(
+    name = "resource_case",
+    srcs = ["src/h2_gizclaw_e2e_resource.c"],
+    hdrs = ["src/h2_gizclaw_e2e_resource.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//libs/runtime",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_resource_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_resource.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":resource_case",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_device_audio_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_device_audio.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device_case",
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "metadata_case",
+    srcs = ["src/h2_gizclaw_e2e_metadata.c"],
+    hdrs = ["src/h2_gizclaw_e2e_metadata.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_metadata_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_metadata.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":metadata_case",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_library(
+    name = "debug_case",
+    srcs = ["src/h2_gizclaw_e2e_debug.c"],
+    hdrs = ["src/h2_gizclaw_e2e_debug.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_debug_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_debug.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":debug_case",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+    ],
+)
+
+cc_library(
+    name = "social_ping_case",
+    srcs = ["src/h2_gizclaw_e2e_social_ping.c"],
+    hdrs = ["src/h2_gizclaw_e2e_social_ping.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_social_ping_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_social_ping.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":social_ping_case",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_library(
+    name = "session_cancel_case",
+    srcs = ["src/h2_gizclaw_e2e_session_cancel.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/clients/gizclaw",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_session_cancel_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_session_cancel.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":session_cancel_case",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+    ],
+)
+
+exports_files(["src/h2_gizclaw_e2e_catalog_all.c"])
+
+cc_library(
+    name = "device_http",
+    srcs = ["src/h2_gizclaw_e2e_device_http.c"],
+    hdrs = ["src/h2_gizclaw_e2e_device_http.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    deps = [
+        ":fixture",
+        ":runner_core",
+        "//libs/clients/gizclaw",
+        "//pal/providers/backends/yyjson",
+    ],
+)
+
+cc_library(
+    name = "lua_apps_case",
+    srcs = ["src/h2_gizclaw_e2e_lua_apps.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":device_http",
+        ":fixture",
+        ":runner_core",
+        "//libs/clients/gizclaw",
+        "//libs/crypto/sha256",
+        "//libs/encoding",
+        "//libs/lua:lua_runtime",
+        "//libs/sync/atomic",
+        "//pal/providers/backends/yyjson",
+    ],
+)
+
+cc_library(
+    name = "lua_apps_app",
+    srcs = ["src/h2_gizclaw_e2e_catalog_lua_apps.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [
+        ":lua_apps_case",
+        ":runner_core",
+    ],
+)

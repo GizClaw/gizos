@@ -2,7 +2,7 @@
  * one serial connection, one SDK caller. The input thread never touches serial.
  * Device bytes are hex-framed and cannot inject control messages. */
 #include "h2_h2loader_cli_target.h"
-#include "projects/h2loader/apps/cli/app/src/h2_h2loader_cli_internal.h"
+#include "tools/gizloader/cli/src/h2_h2loader_cli_internal.h"
 #include "h2_bleikcp.h"
 #include <errno.h>
 #include <stdatomic.h>

@@ -1,7 +1,7 @@
 #include "h2_es8311_power.h"
 #include "h2_esp_es8311_es7210_audio_system.h"
 #include "h2_esp_es8311_es7210_gain.h"
-#include "h2/pal/hal/h2_pal_audio_task_names.h"
+#include "hal/h2_pal_audio_task_names.h"
 
 #include "driver/gpio.h"
 #include "esp_check.h"

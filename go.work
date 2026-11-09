@@ -1,7 +1,7 @@
 go 1.24.0
 
 use (
-	./libs/pal/providers/pion
+	./pal/providers/backends/pion
 	./tools/openapi_codegen
 	./tools/webrtc-test-server
 )

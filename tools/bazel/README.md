@@ -1,4 +1,4 @@
-# Bazel CI dependency graph
+# Bazel build tooling
 
 This directory owns the native Bazel build/ownership graph used to compile
 stable host C/C++ and Go packages and every supported firmware platform.
@@ -7,26 +7,102 @@ Native packages use real `cc_library`, `cc_binary`, `cc_test`, `go_library`,
 launchers use the local-only `esp_idf_firmware` external rule and all maintained
 BK7258 launchers use `bk7258_firmware`; fixed non-build endpoints may still
 use `filegroup`.
-H2Loader ESP/BK7258 delivery targets use the project-owned wrappers and
-platform-neutral package rule in `projects/h2loader/tools/bazel/` on top of
+H2Loader ESP/BK7258 delivery targets use the host tooling's wrappers and
+platform-neutral package rule in `tools/bazel/h2loader/` on top of
 those native firmware providers.
 Web artifacts use the official Emscripten `wasm_cc_binary` transition and
 `rules_pkg` `pkg_tar`; both rules participate in graph validation.
 ESP-IDF CMake and BK SDK Make/CMake remain the native compiler
 owners beneath the Bazel entry.
 
+## Directory responsibilities
+
+The root contains this index only. Each capability owns its rules, tools, BUILD declarations and local tests. SDK-specific packages live under `native/{esp_idf,bk7258,jieli}/`, with identity pins in `native/versions/`. Analysis tests follow the rule they exercise; there is no shared top-level test bucket or compatibility forwarding target.
+
+### `firmware/`
+
+Owns shared firmware graph contracts so SDKs and artifact entries compose the same declared inputs.
+
+1. **Include:** App/board version metadata, native and portable component graphs, task declarations, task-policy generation and their analysis tests.
+2. **Exclude:** SDK invocation, physical board wiring, App business logic and project-specific package formats.
+
+### `native/`
+
+Owns native build execution so SDK actions share one runtime and validation contract.
+
+1. **Include:** SDK rules and runners, locator validation, compiler-cache integration, archive ABI checks, identity pins, native CMake support, post-processing and tool tests.
+2. **Exclude:** Board-driver behavior, App lifecycle code, Device boot policy and H2Loader package or release policy.
+
+### `mobile/`
+
+Owns mobile artifact support so Android and iOS packages use consistent host orchestration.
+
+1. **Include:** Mobile SDK rules, packaging tools, host-runtime adapters and packaged-App E2E execution support.
+2. **Exclude:** Mobile PAL implementations, product screens, business logic and suite-specific acceptance assertions.
+
+### `web/`
+
+Owns Web artifact tooling so layout, archive serving and browser execution reuse one implementation.
+
+1. **Include:** Web build rules, layout injection, archive serving, browser execution support and tool tests.
+2. **Exclude:** Product UI, browser PAL implementations and project-specific web bindings.
+
+### `desktop/`
+
+Owns desktop build support so host artifacts have validated layouts and runtime dependencies.
+
+1. **Include:** Desktop layout generation, Linux dynamic-library closure validation, declared runtime allowlists and tool tests.
+2. **Exclude:** Desktop PAL implementations, App behavior, media recording and product-specific packaging policy.
+
+### `release/`
+
+Owns repository release orchestration so release inputs, dispatch and npm bundles share one workflow owner.
+
+1. **Include:** Release-batch metadata, downloaded-input setup, npm bundle assembly, workflow validation and orchestration tests.
+2. **Exclude:** H2Loader canonical-board allowlists, firmware package-format implementation and product release policy.
+
+### `h2loader/`
+
+Owns H2Loader build support so final entries share package, recovery and canonical release tooling.
+
+1. **Include:** H2Loader firmware wrappers, package/recovery writers, release assembly, cquery formatters and their host tests/fixtures.
+2. **Exclude:** Portable firmware libraries, App behavior, physical wiring, Runtime lifetime and final task policy.
+
+### `coverage/`
+
+Owns coverage reporting so test results and eligible C/C++ targets can be reconciled consistently.
+
+1. **Include:** Coverage inventory, output collection, result reconciliation, report generation and tool tests.
+2. **Exclude:** Product test behavior, device acceptance logic and an independently maintained test inventory.
+
+### `toolchains/`
+
+Owns compiler integration so target builds use declared compilers, options and toolchain contracts.
+
+1. **Include:** Host/embedded compiler setup, C/C++ options, Go host-toolchain registration, build-setting headers and toolchain analysis tests.
+2. **Exclude:** SDK firmware build orchestration, physical BSP configuration and App behavior.
+
+### `platforms/`
+
+Owns platform declarations so compatibility and test execution selection use shared conditions.
+
+1. **Include:** Platform constraints, compatibility selectors and execution-toolchain declarations.
+2. **Exclude:** PAL implementations, compiler invocation and product feature policy.
+
+### `repositories/`
+
+Owns upstream repository acquisition so pinned source setup stays separate from dependency APIs.
+
+1. **Include:** Generic archive/local-source repository rules and extension registration.
+2. **Exclude:** Upstream overlays, patches, production dependency facades and native SDK installation locators.
+
+Firmware tests and their C fixtures belong to their BSP, PAL component, library or project owner. Move harnesses, fixtures and BUILD declarations together.
+
 ## One firmware graph, two compilation boundaries
 
-Every maintained firmware endpoint declares one `graph` rooted at a package-local
-`firmware_native_component`. Portable libraries that do not consume final SDK-generated
-configuration remain ordinary `cc_library` targets. Each firmware entry owns exactly
-one `firmware_lib_component`, which collects every Bazel library selected by that
-image into the single generated native component `h2_firmware_lib`. Its physical
-archives remain separate and are linked as one rescan group. SDK-dependent components,
-boards, and launchers declare direct
-sources, headers, include roots, metadata, dependencies, and an optional AP/CP
-execution unit through `firmware_native_component`; that rule describes ownership but
-does not precompile those sources.
+Every maintained firmware endpoint declares one `graph` rooted at a package-local `firmware_native_component`. Portable libraries remain ordinary `cc_library` owners. Each firmware entry selects its validated Bazel archive closure and explicit SDK-compiled portable sources through one `firmware_lib_component`, producing the generated native component `h2_firmware_lib`. Archives remain separate and link as one rescan group; archive ABI validation remains enabled.
+
+Use `native_srcs` for the library's declared portable source inventory and `native_deps` for its public headers/include roots when the SDK must supply the C runtime ABI. Header-only dependencies do not import archives, compiler options or defines. This changes compilation, not ownership: H2Loader uses the same `//projects/h2loader/libs/device_service:firmware_sources` and `:firmware_api` inventory on every chip. Boards and SDK components retain their own direct sources, registration, configuration and execution unit through `firmware_native_component`.
 
 The runners turn this same graph into invocation-local native manifests.
 ESP-IDF receives ordered component directories/names and direct source lists,
@@ -42,7 +118,7 @@ Use the exact Bazel version from `.bazelversion`:
 
 ```sh
 bazel test //tools/bazel/...
-bazel test //tools/bazel:bk7258_runner_test //tools/bazel:esp_idf_runner_test //projects/h2loader/tools/bazel:h2loader_tar_zlib_runner_test
+bazel test //tools/bazel/native/bk7258:bk7258_runner_test //tools/bazel/native/esp_idf:esp_idf_runner_test //tools/bazel/h2loader:h2loader_tar_zlib_runner_test
 make bazel-build BAZEL_CONFIG=linux_x86_64
 make bazel-test BAZEL_CONFIG=linux_x86_64
 ```
@@ -75,6 +151,12 @@ version. The Intel configuration selects the x86_64 target platform and Xcode
 CPU. Native installer CI runs each architecture on its corresponding Mac runner
 and checks the App and both sidecars before publishing separate DMGs. See the
 [Gizloader build guide](../gizloader/README.md) for desktop packaging and signing.
+
+## Verified dependency downloads
+
+Bazel prefers its official mirror for GitHub release archives and retains the original URL as a fallback. CI also runs `python3 -I tools/bazel/repositories/prefetch.py` before graph evaluation. This derives archive URLs and checksums from the existing `MODULE.bazel.lock`, verifies registry metadata against its locked digest, and stages complete verified archives in the per-user `~/.cache/bazel/distdir`. No separate dependency inventory is maintained; Bazel still applies the declared archive integrity and patches.
+
+The shared `github_release.py` downloader falls back from a failed GitHub release URL to the official release-asset API. It replaces destinations only after complete verification against the declared SHA-256 or SHA-384 pin and never retries an integrity mismatch through another origin. Its optional `GH_TOKEN` is sent only to the API and is not forwarded on redirects. Transient API HTTP/connection failures get at most three attempts with bounded backoff and bounded `Retry-After` handling; permanent errors and integrity mismatches fail immediately. Failure messages report the locked archive name and safe HTTP status without signed redirect URLs. Formatter and native compiler-cache downloads retain their existing version and SHA-256 checks. Bun prefetch and repository setup share the original pins through `tools/gizos/bun_runtime.json`, and Bazel retains its own digest check during extraction. The prefetcher reads the selected host yq version from the module lock and its public checksum table from the verified upstream archive; it preserves yq's SHA-384 SRI and interprets literal data without executing vendor code.
 
 ## Windows compatible graph
 
@@ -122,7 +204,7 @@ locators, preserving their existing sandbox/remote-execution contract.
 ```sh
 bun tools/gizos/src/cli.ts setup idf 6.2
 eval "$(bun tools/gizos/src/cli.ts env idf 6.2 --shell sh)"
-bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/ble-broadcaster/devkit:package
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package
 ```
 
 Use `env` to inspect paths, `config set root /path/to/shared/store` to configure
@@ -143,26 +225,18 @@ CMake/Ninja intermediates and device-operation executables are not outputs.
 
 The action copies only the selected launcher project into an invocation-local temporary tree, points it at the read-only repository source, and invokes the native `idf.py build` followed by `idf.py merge-bin`. It is explicitly unsandboxed and ineligible for remote execution, while its declared outputs may use the local disk cache or the authenticated remote cache. The runner constructs a fixed subprocess environment from the validated locators, pinned SDK version, and the final `FirmwareVersionInfo` selected by the firmware target.
 
-An App manually maintains its shared base with `app_version(name, value)` from `//tools/bazel:app_version.bzl`. Each board independently maintains an integer build number with `board_version(name, build)` from `//tools/bazel:board_version.bzl` in `boards/<board>/BUILD.bazel`. Both are version metadata; board versions have no source, BSP, file-collection, or platform dependencies. Existing filegroups and chip BSP/component targets keep their original responsibilities. Each firmware target declares `firmware_version`, passes its base declaration as `main_version` and its numeric counter declaration as `build`, and may set optional `variant` and `build_metadata` strings. The rule owns SemVer composition and validation; the meaning of these strings belongs to the caller. Non-empty `build_metadata` is appended after a plus and does not affect precedence. A non-empty variant and the numeric board build use separate SemVer prerelease identifiers, so standard SemVer comparison orders board builds numerically. An omitted or empty variant keeps the numeric board build as the sole prerelease identifier; callers supply the variant name without a separator. The `main_version` input requires the provider and declaration marker emitted by `app_version`, including aliases forwarding them; the `build` input requires `BoardVersionInfo`. Native firmware rules consume the final label through their existing `version` attribute, and package and release metadata inherit that value. Legacy complete `firmware_version(value = ...)` declarations, Lua App versions, and the diagnostic compatibility setting remain supported.
+An App manually maintains its shared base with `app_version(name, value)` from `//tools/bazel/firmware:app_version.bzl`. Each board independently maintains an integer build number with `board_version(name, build)` from `//tools/bazel/firmware:board_version.bzl` in `boards/<company>/<board>/BUILD.bazel`. Both are version metadata; board versions have no source, BSP, file-collection, or platform dependencies. Existing filegroups and chip BSP/component targets keep their original responsibilities. Each firmware target declares `firmware_version`, passes its base declaration as `main_version` and its numeric counter declaration as `build`, and may set `board_name`, `variant` and `build_metadata`. A named-board version is `{main_version}-{board_name}.{build}-{variant}`, for example `0.1.49-bk7258-v3-202405.6-mfg`; underscores in the version's board name become hyphens without changing the package's board identity. An empty variant omits the final hyphen. Callers without `board_name` retain `{main_version}-{variant}.{build}` or `{main_version}-{build}` when the variant is empty. The rule owns SemVer composition and the shared 31-byte limit; the meaning of the caller-owned fields remains with the target. Non-empty `build_metadata` is appended after a plus and does not affect precedence. The `main_version` input requires the provider and declaration marker emitted by `app_version`, including aliases forwarding them; the `build` input requires `BoardVersionInfo`. Native firmware rules consume the final label through their existing `version` attribute, and package and release metadata inherit that value. Legacy complete `firmware_version(value = ...)` declarations, Lua App versions, and the diagnostic compatibility setting remain supported.
 
 A firmware target may explicitly opt in to the allowlisted `H2LOADER_WIFI_CREDENTIALS` JSON object containing exact `ssid` and `password` fields; the runner validates it and exposes the two values only to that target's ESP-IDF subprocess. Unrelated ESP-IDF subprocesses never receive them. The runner neither activates the SDK nor performs flash, erase, monitor, reset, serial, network, or installation operations.
 
 ## BK7258 external builds
 
-Install BK with `bun tools/gizos/src/cli.ts setup bk 3.1.1`, then activate it
-with `env bk 3.1.1 --shell sh`. This exports `BK7258_PATH`. A repository
-rule validates SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` and a
-clean tracked checkout. Another repository rule consumes the shared GNU Arm
-root from `GIZOS_BK_TOOLCHAIN_ROOT`, or downloads Arm GNU 10.3-2021.10 when unset.
-Both paths verify the committed expanded-tree SHA-256; downloads also verify the archive,
-and exposes compiler version `10.3.1` through a locator. The action receives
-those locators and a Bazel Python runtime; it does not inherit SDK, toolchain,
-archive, Python, or `PATH` variables from the caller.
+Set up and activate the catalog's `3.1.1-r6bbf627` entry before requesting a BK7258 build. The native repository consumes `BK7258_PATH` from that environment. A repository rule validates the SDK commit in [`native/versions/bk7258_sdk_commit.txt`](native/versions/bk7258_sdk_commit.txt) and a clean tracked checkout. Another repository rule consumes the shared GNU Arm root from `GIZOS_BK_TOOLCHAIN_ROOT`, or downloads Arm GNU 10.3-2021.10 when unset. Both paths verify the committed expanded-tree SHA-256; downloads also verify the archive. The compiler version `10.3.1` is exposed through a locator. The action receives those locators and a Bazel Python runtime; it does not inherit SDK, toolchain, archive, Python, or `PATH` variables from the caller.
 
 ```sh
-bun tools/gizos/src/cli.ts setup bk 3.1.1
-eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1 --shell sh)"
-bazel build --config=bk7258  //projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405:package
+bun tools/gizos/src/cli.ts setup bk 3.1.1-r6bbf627
+eval "$(bun tools/gizos/src/cli.ts env bk 3.1.1-r6bbf627 --shell sh)"
+bazel build --config=bk7258 //projects/testing/targets/h2_loader_tar_zlib/unit/pal-display/beken/bk7258_v3_202405:package
 ```
 
 `Bk7258FirmwareInfo` exposes target-owned AP and CP ELF,
@@ -189,20 +263,13 @@ validates this contract with a fake SDK runner and graph tests; a real build
 remains a canonical local devenv check. Committed SDK and toolchain identity
 inputs bind the stable external execution environment into the action key.
 
+The BK native action writes the paired-image RBL payload and footer using a fixed ordinary format. Board metadata supplies package naming and layout; no image transformation mode is exposed.
+
 ## H2Loader package builds
 
-Every package below `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/`
-declares an internal `:firmware` target using `h2loader_esp_idf_firmware` or
-`h2loader_bk7258_firmware`, followed by the public `:package` target using
-`h2loader_tar_zlib`. The H2Loader wrappers select partition and recovery inputs
-from the declared `target` and `board`, then delegate native compilation to the
-generic rules in this directory. The package rule consumes `FirmwareInfo` or `Bk7258FirmwareInfo`, writes
-the target-specific image path, installs optional `package_data` relative to
-`package_data_root`, and produces the single `.update.tar.zlib` plus
-`.firmware.json`. For Loader role it creates recovery from standard native outputs and owns
-`FirmwareReleaseInfo`, `DefaultInfo`, and the `release` output group for the
-deliverable. CI and release tags bind to `:package`, so release builds always
-traverse the native `:firmware` dependency before packaging.
+Firmware package entries use `projects/<owner>/targets/h2_loader_tar_zlib/<app-or-category>/.../<manufacturer>/<board>/`, with manufacturer and model matching their physical BSP. The entry selects one native firmware graph and exposes `:package` through `h2loader_tar_zlib` for format 1. Where supported, `:package_v2` uses `h2loader_zlib_tar(source = ":package")` for format 2 in the same BUILD file. Both formats reuse the same native inputs; package board/image identities are independent of directory names.
+
+The project-owned ESP/BK/JieLi wrappers select board layout and recovery inputs, then delegate native compilation to the generic rules here. Package rules consume native providers and add managed identity, optional data, update archives, recovery envelopes and release metadata. Current canonical release tags select `:package_v2`; only explicit canonical Loader entries may opt in. A native `:firmware` target has no H2Loader package identity. Detailed package composition belongs to the [H2Loader README](../../projects/h2loader/README.md).
 
 Every build/ownership unit declares its sources and dependency edges in its own
 `BUILD.bazel`. Add or update that local package when a source boundary or
@@ -246,7 +313,7 @@ claim macOS, Windows, firmware, device, network, audio, or rendered UI coverage.
 
 ## Web archive preview
 
-Web `pkg_tar` owners can expose a local preview target with `web_archive_serve(name = "serve", archive = ":<archive>")` from `//tools/bazel:web_archive.bzl`. The runner extracts the archive into a temporary directory, rejects unsafe tar members, applies the archive's `_headers` policy, serves WASM with `application/wasm`, and removes the temporary directory when it exits. Development-only cross-origin requests can opt into the same-origin path `/_h2/http-proxy?url=<encoded-url>` by passing one `--http-proxy-origin <scheme://host:port>` flag for every exact allowed upstream origin. The proxy accepts GET, HEAD, POST, PUT, PATCH, and DELETE, uses a 60-second upstream timeout, never follows upstream redirects, and limits each request and response body to 64 MiB. It strips connection, length, cookie, origin, referrer, host, transfer-encoding, and `Sec-*` transport/browser headers as applicable while forwarding other request and response headers. The proxy is disabled without an allowlist and rejects credentials or fragments in target URLs. An artifact must explicitly select that path through a value such as `Module.h2WebHttpProxyUrl = "/_h2/http-proxy?url="`; production hosting should provide the required CORS policy or an equivalent trusted proxy. H2Loader is now distributed as `@gizclaw/h2loader`; its product frontend and local preview belong to `GizClaw/www`, not a GizOS `pkg_tar` target.
+Web `pkg_tar` owners can expose a local preview target with `web_archive_serve(name = "serve", archive = ":<archive>")` from `//tools/bazel/web:web_archive.bzl`. The runner extracts the archive into a temporary directory, rejects unsafe tar members, applies the archive's `_headers` policy, serves WASM with `application/wasm`, and removes the temporary directory when it exits. Development-only cross-origin requests can opt into the same-origin path `/_h2/http-proxy?url=<encoded-url>` by passing one `--http-proxy-origin <scheme://host:port>` flag for every exact allowed upstream origin. The proxy accepts GET, HEAD, POST, PUT, PATCH, and DELETE, uses a 60-second upstream timeout, never follows upstream redirects, and limits each request and response body to 64 MiB. It strips connection, length, cookie, origin, referrer, host, transfer-encoding, and `Sec-*` transport/browser headers as applicable while forwarding other request and response headers. The proxy is disabled without an allowlist and rejects credentials or fragments in target URLs. An artifact must explicitly select that path through a value such as `Module.h2WebHttpProxyUrl = "/_h2/http-proxy?url="`; production hosting should provide the required CORS policy or an equivalent trusted proxy. H2Loader is now distributed as `@gizclaw/h2loader`; its product frontend and local preview belong to `GizClaw/www`, not a GizOS `pkg_tar` target.
 
 CI targets use platform compatibility to expose the graph that belongs to the selected execution class. CI does not compute an affected target list. Each static platform job directly invokes:
 
@@ -323,4 +390,4 @@ toolchain, checkout-cleanliness, output, package, or Release validation.
 
 ## Mobile E2E
 
-[Packaged mobile runners](mobile_e2e.md) share simulator/emulator lifecycle, artifact identity and failure evidence through a direct Python Bazel test. Suite fixtures, phase plans and qualification assertions remain suite-owned.
+[Packaged mobile runners](mobile/mobile_e2e.md) share simulator/emulator lifecycle, artifact identity and failure evidence through a direct Python Bazel test. Suite fixtures, phase plans and qualification assertions remain suite-owned.

@@ -12,15 +12,16 @@
 #ifndef H2_JIELI_WL82_PLATFORM_CORE_H
 #define H2_JIELI_WL82_PLATFORM_CORE_H
 
-#include "h2/pal/os/h2_pal_firmware_info.h"
-#include "h2/pal/os/h2_pal_log.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_queue.h"
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/os/h2_pal_system_event.h"
-#include "h2/pal/os/h2_pal_task.h"
-#include "h2/pal/os/h2_pal_time.h"
-#include "h2/pal/os/h2_pal_timer.h"
+#include "os/h2_pal_device_identity.h"
+#include "os/h2_pal_firmware_info.h"
+#include "os/h2_pal_log.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_queue.h"
+#include "os/h2_pal_sync.h"
+#include "os/h2_pal_system_event.h"
+#include "os/h2_pal_task.h"
+#include "os/h2_pal_time.h"
+#include "os/h2_pal_timer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,6 +32,11 @@ extern "C" {
 
 /** SDK heap allocator (malloc/realloc/free). */
 const h2_pal_mem_api_t* h2_jieli_wl82_platform_mem_api(void);
+
+/** Persisted controller BLE identity in the existing Loader UID byte order.
+ * First use provisions the same base address as board controller startup. */
+const h2_pal_device_identity_api_t* h2_jieli_wl82_platform_device_identity_api(
+    void);
 
 /** Buffered text sink: `[LEVEL][scope] message\r\n`.
  * The board layout selects UART/USB delivery; calls are not ISR-safe. */

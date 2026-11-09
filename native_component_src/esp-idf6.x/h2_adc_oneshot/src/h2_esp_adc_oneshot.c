@@ -1,5 +1,5 @@
 #include "h2_esp_adc_oneshot.h"
-#include "h2_esp_adc_stabilizer_internal.h"
+#include "h2_adc_stabilizer.h"
 
 #include "esp_adc/adc_cali_scheme.h"
 #include "freertos/FreeRTOS.h"

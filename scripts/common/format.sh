@@ -29,6 +29,8 @@ for arg in "$@"; do
   esac
 done
 
+script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+download_script="$script_directory/../../tools/bazel/repositories/github_release.py"
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/format.XXXXXX")
@@ -65,7 +67,7 @@ download_tool() {
   if [[ ! -x "$dir/$name" ]]; then
     echo "Downloading $name $version" >&2
     local file="$tmp_dir/$name.download"
-    curl -fsSL --retry 3 -o "$file" "$url" || return 1
+    python3 -I "$download_script" "$url" "$sha" "$file" || return 1
     actual_sha=$(sha256_of "$file") || return 1
     if [[ "$actual_sha" != "$sha" ]]; then
       echo "$name download checksum mismatch: $url" >&2

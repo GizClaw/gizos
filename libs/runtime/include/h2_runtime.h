@@ -7,7 +7,7 @@
  */
 
 #include "h2_pal.h"
-#include "h2/pal/os/h2_pal_disk.h"
+#include "os/h2_pal_disk.h"
 #include "h2_runtime_component.h"
 #include "h2_runtime_custom_event.h"
 #include "h2_runtime_event.h"
@@ -46,8 +46,17 @@ typedef struct h2_runtime_config {
   const char* ble_local_name;
 
   const h2_pal_firmware_info_api_t* firmware_info;
+  /** Optional at configuration; Runtime binds canonical unsupported if absent.
+   */
+  const h2_pal_device_identity_api_t* device_identity;
 
   const h2_pal_mem_api_t* mem;
+  /** Optional borrowed task-context external-memory allocator; copied when
+   * present, NULL when unavailable. Does not change ordinary/ISR allocation. */
+  const h2_pal_mem_api_t* mem_external;
+  /** Optional board-selected byte stream; Runtime copies the API, binds
+   * canonical unsupported if absent, and never starts/releases the provider. */
+  const h2_pal_io_stream_api_t* io_stream;
 
   const h2_pal_log_api_t* log;
   const h2_pal_time_api_t* time;
@@ -58,6 +67,9 @@ typedef struct h2_runtime_config {
 
   const h2_pal_fs_api_t* fs;
   const h2_pal_disk_api_t* disk;
+  /** Optional at configuration; Runtime binds canonical unsupported if absent.
+   */
+  const h2_pal_image_api_t* image;
   const h2_pal_pref_api_t* pref;
   const h2_pal_crypto_api_t* crypto;
   const h2_pal_http_api_t* http;
@@ -124,8 +136,17 @@ struct h2_runtime {
   const char* ble_local_name;
 
   const h2_pal_firmware_info_api_t* firmware_info;
+  /** Optional at configuration; Runtime binds canonical unsupported if absent.
+   */
+  const h2_pal_device_identity_api_t* device_identity;
 
   const h2_pal_mem_api_t* mem;
+  /** Optional borrowed task-context external-memory allocator; copied when
+   * present, NULL when unavailable. Does not change ordinary/ISR allocation. */
+  const h2_pal_mem_api_t* mem_external;
+  /** Optional board-selected byte stream; Runtime copies the API, binds
+   * canonical unsupported if absent, and never starts/releases the provider. */
+  const h2_pal_io_stream_api_t* io_stream;
 
   const h2_pal_log_api_t* log;
   /* Successful set_wall_ms publishes TIME_ADJUSTED; use this API in services.
@@ -138,6 +159,9 @@ struct h2_runtime {
 
   const h2_pal_fs_api_t* fs;
   const h2_pal_disk_api_t* disk;
+  /** Optional at configuration; Runtime binds canonical unsupported if absent.
+   */
+  const h2_pal_image_api_t* image;
   const h2_pal_pref_api_t* pref;
   const h2_pal_crypto_api_t* crypto;
   const h2_pal_http_api_t* http;

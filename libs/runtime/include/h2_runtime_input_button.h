@@ -14,7 +14,7 @@
  * events before closing the queue.
  */
 
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 #include "h2_runtime_component.h"
 #include "h2_runtime_input_button_defs.h"
 #include "h2_runtime_input.h"

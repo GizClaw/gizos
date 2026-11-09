@@ -1,0 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "h2peer-performance",
+    srcs = ["main.c"],
+    args = [
+        "$(rootpath //tools/webrtc-test-server:webrtc_test_server)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["//tools/webrtc-test-server:webrtc_test_server"],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//pal",
+        "//pal/providers/platforms/desktop:webrtc_h2peer_test_support",
+        "//pal/providers/platforms/desktop/app_support",
+        "//pal/providers/platforms/desktop/pal_core:webrtc_test_providers",
+        "//projects/testing/benchmark/webrtc-performance/app:webrtc_performance",
+    ],
+)

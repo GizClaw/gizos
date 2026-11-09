@@ -1,0 +1,19 @@
+load(":firmware.bzl", "firmware_version_flag")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_version_flag(
+    name = "firmware_version",
+    build_setting_default = "bazel-native-artifacts",
+)
+
+exports_files([
+    "app_version.bzl",
+    "board_version.bzl",
+    "firmware.bzl",
+    "firmware_components.bzl",
+    "native_component.bzl",
+    "target_task_policy.bzl",
+    "target_task_policy_codegen.bzl",
+    "tasks.bzl",
+])

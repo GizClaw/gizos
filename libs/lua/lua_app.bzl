@@ -1,6 +1,6 @@
 """Versioned Lua application packages: one entry and optional sibling data."""
 
-load("//tools/bazel:app_version.bzl", "AppVersionInfo", "validate_app_version")
+load("//tools/bazel/firmware:app_version.bzl", "AppVersionInfo", "validate_app_version")
 
 LuaAppInfo = provider(
     doc = "Portable Lua app identity and its verified release outputs.",

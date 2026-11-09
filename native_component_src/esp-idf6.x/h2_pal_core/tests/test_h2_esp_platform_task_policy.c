@@ -229,6 +229,20 @@ static h2_pal_result_t resolve(void* user, const char* name,
     };
     return H2_PAL_OK;
   }
+  if (name != NULL && strncmp(name, "shape/", 6u) == 0) {
+    *out = (h2_esp_task_policy_t){
+        .priority = 4u,
+        .core = H2_ESP_TASK_CORE_ANY,
+        .min_stack_size = 4096u,
+        .stack_region = H2_ESP_TASK_STACK_INTERNAL,
+    };
+    if (strcmp(name, "shape/stack") == 0) out->min_stack_size = 0u;
+    if (strcmp(name, "shape/core") == 0) out->core = -2;
+    if (strcmp(name, "shape/unavailable-core") == 0)
+      out->core = CONFIG_FREERTOS_NUMBER_OF_CORES;
+    if (strcmp(name, "shape/region") == 0) out->stack_region = 2;
+    return H2_PAL_OK;
+  }
   if (name != NULL && strcmp(name, "resolver-error") == 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -370,7 +384,57 @@ static void test_psram_stack_allocator(void) {
   }
 }
 
+static void test_reserve_policy(void) {
+  reset();
+  h2_esp_task_policy_t policy = {.min_stack_size = 7u};
+  assert(h2_esp_platform_task_reserve_policy("known", NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_esp_platform_task_reserve_policy("known", &policy) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(policy.min_stack_size == 0u);
+  h2_esp_task_policy_config_t cfg = config();
+  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_STATE);
+
+  const char* names[] = {"known",
+                         "unknown",
+                         "invalid",
+                         "resolver-error",
+                         "shape/stack",
+                         "shape/core",
+                         "shape/unavailable-core",
+                         "shape/region",
+                         "dynamic-high"};
+  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+    reset();
+    cfg = config();
+    assert(h2_esp_platform_task_configure(NULL) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
+    policy = (h2_esp_task_policy_t){.min_stack_size = 7u};
+    h2_pal_result_t expected = H2_PAL_ERR_TASK;
+    if (i == 0u) expected = H2_PAL_OK;
+    if (i == 1u) expected = H2_PAL_ERR_NOT_FOUND;
+    if (i == 8u && CONFIG_SPIRAM && CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM)
+      expected = H2_PAL_OK;
+    assert(h2_esp_platform_task_reserve_policy(names[i], &policy) == expected);
+    assert(strcmp(s.resolver_name, names[i]) == 0);
+    assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_STATE);
+    assert(s.creates == 0 && s.tcb_allocations == 0 && s.deletes == 0);
+    if (expected == H2_PAL_OK) {
+      assert(policy.min_stack_size == (i == 0u ? 8192u : 12288u));
+      assert(policy.priority == (i == 0u ? 9u : 6u));
+      assert(policy.core ==
+             (i == 0u ? H2_ESP_TASK_CORE_1 : H2_ESP_TASK_CORE_ANY));
+      assert(policy.stack_region ==
+             (i == 0u ? H2_ESP_TASK_STACK_INTERNAL : H2_ESP_TASK_STACK_PSRAM));
+    } else {
+      assert(policy.min_stack_size == 0u && policy.priority == 0u);
+    }
+  }
+}
+
 int main(void) {
+  test_reserve_policy();
+  if (!CONFIG_SPIRAM || !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM) return 0;
   test_psram_stack_allocator();
   const h2_pal_task_api_t* api = h2_esp_platform_task_api();
   h2_pal_task_t* task = (h2_pal_task_t*)(uintptr_t)7u;

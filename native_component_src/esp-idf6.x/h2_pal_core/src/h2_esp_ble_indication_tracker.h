@@ -1,7 +1,7 @@
 #ifndef H2_ESP_BLE_INDICATION_TRACKER_H
 #define H2_ESP_BLE_INDICATION_TRACKER_H
 
-#include "h2/pal/hal/h2_pal_ble.h"
+#include "hal/h2_pal_ble.h"
 
 typedef enum h2_esp_ble_indication_state {
   H2_ESP_BLE_INDICATION_IDLE = 0,

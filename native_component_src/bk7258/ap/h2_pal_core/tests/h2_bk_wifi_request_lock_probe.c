@@ -1,7 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
-#include "h2/pal/hal/h2_pal_wifi_settings.h"
-#include "h2/pal/net/h2_pal_netif.h"
-#include "h2/pal/os/h2_pal_system_event.h"
+#include "hal/h2_pal_wifi_settings.h"
+#include "net/h2_pal_netif.h"
+#include "os/h2_pal_system_event.h"
 #include "h2_bk_wifi_ipv6_internal.h"
 #include "h2_bk_wifi_rpc.h"
 #include <assert.h>

@@ -1,5 +1,5 @@
 #include "h2_jieli_wl82_sdk_port_fake.h"
-#include "h2/pal/core/h2_pal_errors.h"
+#include "core/h2_pal_errors.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +22,20 @@ typedef struct fake_timer {
   int repeat;
   int active;
 } fake_timer_t;
+
+static uint8_t s_device_identity[6];
+static int s_device_identity_result = H2_PAL_ERR_UNSUPPORTED;
+
+void h2_jieli_fake_set_device_identity(int result, const uint8_t identity[6]) {
+  s_device_identity_result = result;
+  if (identity != NULL) memcpy(s_device_identity, identity, 6u);
+}
+
+int h2_jieli_sdk_device_identity(uint8_t out_identity[6]) {
+  if (out_identity == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memcpy(out_identity, s_device_identity, sizeof(s_device_identity));
+  return s_device_identity_result;
+}
 
 static char s_log[H2_JIELI_FAKE_LOG_CAPACITY];
 static size_t s_log_length;
@@ -100,6 +114,8 @@ void h2_jieli_fake_event_drain(void) {
 }
 
 void h2_jieli_fake_reset(void) {
+  memset(s_device_identity, 0, sizeof(s_device_identity));
+  s_device_identity_result = H2_PAL_ERR_UNSUPPORTED;
   s_event_head = s_event_count = 0u;
   s_event_capacity = 8u;
   s_event_starts = s_event_start_fail = s_event_post_fail = s_in_interrupt = 0;

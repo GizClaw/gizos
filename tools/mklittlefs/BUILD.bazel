@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//tools/bazel:cc_options.bzl", "H2_CXX11_OPTS", "H2_WALL_COPTS")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_CXX11_OPTS", "H2_WALL_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -21,5 +21,5 @@ cc_binary(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//tools/bazel:vendor_third_party_mklittlefs"],
+    deps = ["//third_party:vendor_third_party_mklittlefs"],
 )

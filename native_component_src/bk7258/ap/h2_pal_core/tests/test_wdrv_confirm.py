@@ -30,7 +30,7 @@ def main():
     component = repo / "native_component_src/bk7258/ap/h2_pal_core"
     locator = json.loads(args.locator.read_text()) if args.locator else None
     sdk = args.sdk or Path(locator["paths"]["checkout"] if locator else os.environ["BK7258_PATH"])
-    expected = (repo / "tools/bazel/native_versions/bk7258_sdk_commit.txt").read_text().strip()
+    expected = (repo / "tools/bazel/native/versions/bk7258_sdk_commit.txt").read_text().strip()
     actual = subprocess.check_output(["git", "-C", str(sdk), "rev-parse", "HEAD"], text=True).strip()
     assert actual == expected, (actual, expected)
     assert not subprocess.check_output(

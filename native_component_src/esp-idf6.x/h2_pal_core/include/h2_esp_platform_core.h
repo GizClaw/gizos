@@ -1,35 +1,37 @@
 #ifndef H2_ESP_PLATFORM_CORE_H
 #define H2_ESP_PLATFORM_CORE_H
 
-#include "h2/pal/application/h2_pal_webrtc.h"
-#include "h2/pal/hal/h2_pal_ble.h"
-#include "h2/pal/hal/h2_pal_modem.h"
-#include "h2/pal/hal/h2_pal_power.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
-#include "h2/pal/hal/h2_pal_wifi_csi.h"
-#include "h2/pal/hal/h2_pal_wifi_settings.h"
-#include "h2/pal/net/h2_pal_dtls.h"
-#include "h2/pal/net/h2_pal_net.h"
-#include "h2/pal/net/h2_pal_netif.h"
-#include "h2/pal/os/h2_pal_crypto.h"
-#include "h2/pal/os/h2_pal_disk.h"
-#include "h2/pal/os/h2_pal_firmware_info.h"
-#include "h2/pal/os/h2_pal_fs.h"
-#include "h2/pal/os/h2_pal_log.h"
-#include "h2/pal/os/h2_pal_mem.h"
-#include "h2/pal/os/h2_pal_pref.h"
-#include "h2/pal/os/h2_pal_queue.h"
-#include "h2/pal/os/h2_pal_sync.h"
-#include "h2/pal/os/h2_pal_system_event.h"
-#include "h2/pal/os/h2_pal_task.h"
-#include "h2/pal/os/h2_pal_time.h"
-#include "h2/pal/os/h2_pal_timer.h"
+#include "application/h2_pal_webrtc.h"
+#include "hal/h2_pal_ble.h"
+#include "hal/h2_pal_modem.h"
+#include "hal/h2_pal_power.h"
+#include "hal/h2_pal_wifi.h"
+#include "hal/h2_pal_wifi_csi.h"
+#include "hal/h2_pal_wifi_settings.h"
+#include "net/h2_pal_dtls.h"
+#include "net/h2_pal_net.h"
+#include "net/h2_pal_netif.h"
+#include "os/h2_pal_crypto.h"
+#include "os/h2_pal_device_identity.h"
+#include "os/h2_pal_disk.h"
+#include "os/h2_pal_firmware_info.h"
+#include "os/h2_pal_fs.h"
+#include "os/h2_pal_io_stream.h"
+#include "os/h2_pal_log.h"
+#include "os/h2_pal_mem.h"
+#include "os/h2_pal_pref.h"
+#include "os/h2_pal_queue.h"
+#include "os/h2_pal_sync.h"
+#include "os/h2_pal_system_event.h"
+#include "os/h2_pal_task.h"
+#include "os/h2_pal_time.h"
+#include "os/h2_pal_timer.h"
 #if defined(CONFIG_ESP_CONSOLE_UART) && CONFIG_ESP_CONSOLE_UART
-#include "h2/pal/hal/h2_pal_uart_io_stream.h"
+#include "hal/h2_pal_uart_io_stream.h"
 #endif
 #if defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) && \
     CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-#include "h2/pal/hal/h2_pal_usb_jtag_io_stream.h"
+#include "hal/h2_pal_usb_jtag_io_stream.h"
 #endif
 
 #include <stdbool.h>
@@ -100,10 +102,16 @@ const h2_pal_timer_api_t* h2_esp_platform_timer_api(void);
 
 h2_pal_mem_api_t* h2_esp_platform_default_allocator(void);
 h2_pal_mem_api_t* h2_esp_platform_psram_allocator(void);
+/** Optional external heap for task-context work, NULL without a PSRAM heap. */
+const h2_pal_mem_api_t* h2_esp_platform_external_allocator(void);
+/** Board-configured console; getter performs no driver operations. */
+const h2_pal_io_stream_api_t* h2_esp_platform_io_stream_api(void);
 h2_pal_mem_api_t* h2_esp_platform_internal_allocator(void);
 h2_pal_mem_api_t* h2_esp_platform_dma_allocator(void);
 const h2_pal_log_api_t* h2_esp_platform_log_api(void);
 const h2_pal_firmware_info_api_t* h2_esp_platform_firmware_info_api(void);
+/** Local Bluetooth MAC, or local factory eFuse MAC on ESP32-P4. */
+const h2_pal_device_identity_api_t* h2_esp_platform_device_identity_api(void);
 /**
  * Reads the subtype of a named data partition from an internal-stack context.
  *
@@ -146,6 +154,15 @@ h2_pal_result_t h2_esp_platform_ppp_quiesce(void* netif_handle,
 const h2_pal_task_api_t* h2_esp_platform_task_api(void);
 h2_pal_result_t h2_esp_platform_task_configure(
     const h2_esp_task_policy_config_t* config);
+/** Resolve and validate a native task's generated target policy, sealing Task
+ * configuration against later replacement even when lookup fails. Call from
+ * serialized startup task context after task_configure, never from an ISR.
+ * name is borrowed for this call and passed unchanged to the resolver (NULL
+ * follows the resolver's unnamed-task contract). out_policy is caller-owned,
+ * required, and cleared on failure. No native task or stack is allocated.
+ * Returns INVALID_ARG, INVALID_STATE, NOT_FOUND, TASK, or OK. */
+h2_pal_result_t h2_esp_platform_task_reserve_policy(
+    const char* name, h2_esp_task_policy_t* out_policy);
 const h2_pal_queue_api_t* h2_esp_platform_queue_api(void);
 const h2_pal_time_api_t* h2_esp_platform_time_api(void);
 const h2_pal_system_event_api_t* h2_esp_platform_system_event_api(void);
