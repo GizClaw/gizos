@@ -372,8 +372,9 @@ static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
       .verify = exchange->provider->config.tls_verify,
   };
   h2_pal_net_socket_t tls_socket = -1;
-  rc = h2_pal_net_tls_wrap(exchange->provider->config.net, exchange->socket,
-                           &tls, tls_timeout_ms, &tls_socket);
+  rc = h2_pal_net_tls_wrap_bounded(exchange->provider->config.net,
+                                   exchange->socket, &tls, tls_timeout_ms,
+                                   &tls_socket);
   H2_COREHTTP_TRACE_PHASE(exchange, "tls", rc);
   if (rc == H2_PAL_OK) {
     exchange->socket = tls_socket;

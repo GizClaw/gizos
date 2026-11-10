@@ -133,6 +133,10 @@ h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
                                     const h2_pal_net_tls_config_t* config,
                                     uint32_t timeout_ms,
                                     h2_pal_net_socket_t* out_token);
+h2_pal_result_t h2_windows_tls_wrap_bounded(
+    h2_windows_platform_t* platform, h2_pal_net_socket_t token,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out_token);
 int h2_windows_tls_send(h2_windows_platform_t* platform,
                         h2_windows_socket_slot_t* slot, const uint8_t* data,
                         size_t len, uint32_t timeout_ms);

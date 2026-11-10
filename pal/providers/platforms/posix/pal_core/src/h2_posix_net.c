@@ -468,13 +468,13 @@ static h2_pal_result_t tls_setup_inline(const h2_pal_net_tls_config_t* config,
 static h2_pal_result_t h2_posix_tls_setup(const h2_pal_net_tls_config_t* config,
                                           uint64_t deadline,
                                           WOLFSSL_CTX** out_ctx,
-                                          WOLFSSL** out_ssl) {
+                                          WOLFSSL** out_ssl, int allow_inline) {
   *out_ctx = NULL;
   *out_ssl = NULL;
   if (h2_posix_tls_remaining_ms(deadline) == 0u) return H2_PAL_ERR_TIMEOUT;
   tls_setup_job_t* job;
   h2_pal_result_t result = tls_setup_create_job(config, &job);
-  if (result == H2_PAL_ERR_UNSUPPORTED) {
+  if (result == H2_PAL_ERR_UNSUPPORTED && allow_inline) {
     return tls_setup_inline(config, deadline, out_ctx, out_ssl);
   }
   if (result != H2_PAL_OK) return result;
@@ -1639,10 +1639,10 @@ static int desktop_net_tcp_recv(void* user, h2_pal_net_socket_t socket_fd,
   return got < 0 ? desktop_net_socket_error() : (int)got;
 }
 
-static h2_pal_result_t desktop_net_tls_wrap(
+static h2_pal_result_t desktop_net_tls_wrap_impl(
     void* user, h2_pal_net_socket_t tcp_socket,
     const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_tls_socket) {
+    h2_pal_net_socket_t* out_tls_socket, int allow_inline) {
   (void)user;
   if (tcp_socket < 0 || config == NULL || out_tls_socket == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -1680,7 +1680,7 @@ static h2_pal_result_t desktop_net_tls_wrap(
   WOLFSSL_CTX* ctx = NULL;
   WOLFSSL* ssl = NULL;
   h2_pal_result_t setup_result =
-      h2_posix_tls_setup(config, deadline, &ctx, &ssl);
+      h2_posix_tls_setup(config, deadline, &ctx, &ssl, allow_inline);
   if (setup_result != H2_PAL_OK) {
     (void)pthread_mutex_lock(&s_tls_lock);
     tls_clear_reserved_slot(slot, slot_generation);
@@ -1738,6 +1738,22 @@ static h2_pal_result_t desktop_net_tls_wrap(
   (void)pthread_mutex_unlock(&s_tls_lock);
   *out_tls_socket = tcp_socket;
   return H2_PAL_OK;
+}
+
+static h2_pal_result_t desktop_net_tls_wrap(
+    void* user, h2_pal_net_socket_t tcp_socket,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out_tls_socket) {
+  return desktop_net_tls_wrap_impl(user, tcp_socket, config, timeout_ms,
+                                   out_tls_socket, 1);
+}
+
+static h2_pal_result_t desktop_net_tls_wrap_bounded(
+    void* user, h2_pal_net_socket_t tcp_socket,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out_tls_socket) {
+  return desktop_net_tls_wrap_impl(user, tcp_socket, config, timeout_ms,
+                                   out_tls_socket, 0);
 }
 
 static void desktop_net_close(void* user, h2_pal_net_socket_t socket_fd) {
@@ -1875,6 +1891,7 @@ const h2_pal_net_api_t* h2_posix_net_api(void) {
       .tcp_send_timeout = desktop_net_tcp_send_timeout,
       .tcp_recv = desktop_net_tcp_recv,
       .tls_wrap = desktop_net_tls_wrap,
+      .tls_wrap_bounded = desktop_net_tls_wrap_bounded,
       .close = desktop_net_close,
       .tcp_listen = desktop_net_tcp_listen,
       .tcp_accept = desktop_net_tcp_accept,

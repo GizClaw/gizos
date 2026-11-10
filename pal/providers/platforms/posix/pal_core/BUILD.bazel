@@ -336,6 +336,8 @@ cc_test(
     deps = [
         ":entropy",
         "//pal",
+        "//pal/providers/backends/corehttp",
+        "//pal/providers/backends/corehttp:fake_net_test_support",
         "//pal/providers/backends/wolfssl",
     ],
 )

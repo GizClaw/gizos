@@ -34,7 +34,12 @@ h2_pal_result_t h2_test_windows_tls_wrap(h2_windows_platform_t* platform,
 
 /* The real platform supplies socket locking/lifetime. Keep its TLS entry
  * symbols separate from this copy of the provider with controlled timing. */
+h2_pal_result_t h2_test_windows_tls_wrap_bounded(
+    h2_windows_platform_t* platform, h2_pal_net_socket_t token,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out_token);
 #define h2_windows_tls_wrap h2_test_windows_tls_wrap
+#define h2_windows_tls_wrap_bounded h2_test_windows_tls_wrap_bounded
 #define h2_windows_tls_send h2_test_windows_tls_send
 #define h2_windows_tls_recv h2_test_windows_tls_recv
 #define h2_windows_tls_release h2_test_windows_tls_release

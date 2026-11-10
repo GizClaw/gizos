@@ -31,6 +31,7 @@ typedef struct tls_server {
 
 static const char* s_cert_path;
 static const char* s_key_path;
+static int s_bounded;
 
 static void* test_alloc(void* user, size_t len) {
   (void)user;
@@ -161,7 +162,10 @@ static h2_pal_result_t connect_tls(uint16_t port, const test_file_t* ca,
   tls.root_ca_pem_len = ca->len;
   tls.verify = H2_PAL_NET_TLS_VERIFY_REQUIRED;
   h2_pal_net_socket_t tls_socket = -1;
-  rc = h2_pal_net_tls_wrap(net, socket_fd, &tls, 1000u, &tls_socket);
+  rc = s_bounded
+           ? h2_pal_net_tls_wrap_bounded(net, socket_fd, &tls, 1000u,
+                                         &tls_socket)
+           : h2_pal_net_tls_wrap(net, socket_fd, &tls, 1000u, &tls_socket);
   if (rc == H2_PAL_OK) {
     assert(h2_pal_net_tcp_send_timeout(net, tls_socket, (const uint8_t*)"ping",
                                        4u, 1000u) == 4);
@@ -225,6 +229,7 @@ int main(int argc, char** argv) {
   assert(h2_pal_net_tls_wrap(&no_tls, 0, &tls, 1u, &out_socket) ==
          H2_PAL_ERR_UNSUPPORTED);
 
+  s_bounded = 1;
   run_case(&ca, "localhost", H2_PAL_OK, 0);
   run_case(&ca, "127.0.0.1", H2_PAL_OK, 0);
   run_case(&ca, "127.0.0.2", H2_PAL_ERR_TLS_VERIFY, 0);
@@ -240,6 +245,7 @@ int main(int argc, char** argv) {
   };
   assert(!legacy.providers_thread_safe);
   assert(h2_wolfssl_init(&legacy) == H2_PAL_OK);
+  s_bounded = 0;
   run_case(&ca, "localhost", H2_PAL_OK, 0);
   run_case(&ca, "127.0.0.1", H2_PAL_OK, 0);
   run_case(&ca, "127.0.0.2", H2_PAL_ERR_TLS_VERIFY, 0);

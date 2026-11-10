@@ -331,14 +331,14 @@ static h2_pal_result_t windows_tls_setup(h2_windows_platform_t* platform,
                                          const h2_pal_net_tls_config_t* config,
                                          uint64_t deadline,
                                          WOLFSSL_CTX** out_context,
-                                         WOLFSSL** out_ssl) {
+                                         WOLFSSL** out_ssl, int allow_inline) {
   *out_context = NULL;
   *out_ssl = NULL;
   if (windows_tls_remaining(platform, deadline) == 0u)
     return H2_PAL_ERR_TIMEOUT;
   windows_tls_setup_job_t* job;
   h2_pal_result_t result = windows_tls_create_job(platform, config, &job);
-  if (result == H2_PAL_ERR_UNSUPPORTED) {
+  if (result == H2_PAL_ERR_UNSUPPORTED && allow_inline) {
     return windows_tls_setup_inline(platform, config, deadline, out_context,
                                     out_ssl);
   }
@@ -432,11 +432,10 @@ static h2_pal_result_t windows_tls_handshake(
   }
 }
 
-h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
-                                    h2_pal_net_socket_t token,
-                                    const h2_pal_net_tls_config_t* config,
-                                    uint32_t timeout_ms,
-                                    h2_pal_net_socket_t* out_token) {
+static h2_pal_result_t windows_tls_wrap_impl(
+    h2_windows_platform_t* platform, h2_pal_net_socket_t token,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out_token, int allow_inline) {
   if (platform == NULL || config == NULL || out_token == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -457,8 +456,8 @@ h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
     return H2_PAL_ERR_INVALID_STATE;
   }
   WOLFSSL_CTX* context = NULL;
-  h2_pal_result_t result =
-      windows_tls_setup(platform, config, deadline, &context, &slot->tls);
+  h2_pal_result_t result = windows_tls_setup(
+      platform, config, deadline, &context, &slot->tls, allow_inline);
   h2_pal_net_tls_verify_t verify_mode = config->verify;
   if (verify_mode == H2_PAL_NET_TLS_VERIFY_DEFAULT) {
     verify_mode = H2_PAL_NET_TLS_VERIFY_REQUIRED;
@@ -485,6 +484,23 @@ h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
   *out_token = token;
   h2_windows_net_unlock_slot(slot);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
+                                    h2_pal_net_socket_t token,
+                                    const h2_pal_net_tls_config_t* config,
+                                    uint32_t timeout_ms,
+                                    h2_pal_net_socket_t* out_token) {
+  return windows_tls_wrap_impl(platform, token, config, timeout_ms, out_token,
+                               1);
+}
+
+h2_pal_result_t h2_windows_tls_wrap_bounded(
+    h2_windows_platform_t* platform, h2_pal_net_socket_t token,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out_token) {
+  return windows_tls_wrap_impl(platform, token, config, timeout_ms, out_token,
+                               0);
 }
 
 static int windows_tls_io_result(WOLFSSL* ssl, int result) {

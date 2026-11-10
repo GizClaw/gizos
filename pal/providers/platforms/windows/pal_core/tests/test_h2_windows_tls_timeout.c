@@ -1,5 +1,6 @@
 #include "h2_windows_tls_timeout_hooks.h"
 #include "h2_wolfssl.h"
+#include "fake_net.h"
 #undef h2_windows_monotonic_ms
 #undef CreateThread
 
@@ -111,6 +112,14 @@ static h2_pal_result_t test_tls_wrap(void* user, h2_pal_net_socket_t token,
   return h2_test_windows_tls_wrap(user, token, config, timeout_ms, out_token);
 }
 
+static h2_pal_result_t test_tls_wrap_bounded(
+    void* user, h2_pal_net_socket_t token,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out_token) {
+  return h2_test_windows_tls_wrap_bounded(user, token, config, timeout_ms,
+                                          out_token);
+}
+
 typedef struct timeout_case {
   const char* name;
   uint32_t setup_ms;
@@ -160,6 +169,7 @@ static void run_case(h2_windows_platform_t* platform,
   h2_pal_net_api_t net = *h2_windows_net_api(platform);
   h2_pal_net_vtable_t vtable = *net.vtable;
   vtable.tls_wrap = test_tls_wrap;
+  vtable.tls_wrap_bounded = test_tls_wrap_bounded;
   net.vtable = &vtable;
   h2_pal_net_socket_t token = -1;
   assert(h2_pal_net_tcp_open_bound(&net, H2_PAL_NET_FAMILY_IPV4, NULL,
@@ -182,7 +192,7 @@ static void run_case(h2_windows_platform_t* platform,
   };
   h2_pal_net_socket_t out = 123;
   h2_pal_result_t result =
-      h2_pal_net_tls_wrap(&net, token, &config, test->timeout_ms, &out);
+      h2_pal_net_tls_wrap_bounded(&net, token, &config, test->timeout_ms, &out);
   if (result != test->expected) {
     fprintf(stderr, "%s: got %d, expected %d\n", test->name, result,
             test->expected);
@@ -212,7 +222,8 @@ static void run_case(h2_windows_platform_t* platform,
     setup_ms = connect_ms = 0u;
     first_error = ca_result = WOLFSSL_SUCCESS;
     connects = 0u;
-    assert(h2_pal_net_tls_wrap(&net, token, &config, 100u, &out) == H2_PAL_OK);
+    assert(h2_pal_net_tls_wrap_bounded(&net, token, &config, 100u, &out) ==
+           H2_PAL_OK);
     assert(out == token);
   }
   h2_pal_net_close(&net, token);
@@ -225,6 +236,7 @@ static void test_blocked_loads(h2_windows_platform_t* platform, int deferred) {
   h2_pal_net_api_t net = *h2_windows_net_api(platform);
   h2_pal_net_vtable_t vtable = *net.vtable;
   vtable.tls_wrap = test_tls_wrap;
+  vtable.tls_wrap_bounded = test_tls_wrap_bounded;
   net.vtable = &vtable;
   setup_ms = connect_ms = 0u;
   first_error = ca_result = WOLFSSL_SUCCESS;
@@ -255,7 +267,7 @@ static void test_blocked_loads(h2_windows_platform_t* platform, int deferred) {
                                      &token) == H2_PAL_OK);
     h2_pal_net_socket_t out = 123;
     ULONGLONG before = GetTickCount64();
-    assert(h2_pal_net_tls_wrap(&net, token, config, 20u, &out) ==
+    assert(h2_pal_net_tls_wrap_bounded(&net, token, config, 20u, &out) ==
            H2_PAL_ERR_TIMEOUT);
     assert(GetTickCount64() - before < 2000u && out == -1);
     h2_windows_socket_slot_t* slot = h2_windows_net_lock_slot(platform, token);
@@ -277,7 +289,7 @@ static void test_blocked_loads(h2_windows_platform_t* platform, int deferred) {
       .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
   };
   h2_pal_net_socket_t out = 123;
-  assert(h2_pal_net_tls_wrap(&net, token, &config, 100u, &out) ==
+  assert(h2_pal_net_tls_wrap_bounded(&net, token, &config, 100u, &out) ==
          H2_PAL_ERR_NO_SPACE);
   assert(out == -1);
   h2_pal_net_close(&net, token);
@@ -326,8 +338,8 @@ static void test_thread_failure(h2_windows_platform_t* platform) {
   now_ms = 1000u;
   fail_thread = 1;
   h2_pal_net_socket_t out = 123;
-  assert(h2_test_windows_tls_wrap(platform, token, &config, 100u, &out) ==
-         H2_PAL_ERR_IO);
+  assert(h2_test_windows_tls_wrap_bounded(platform, token, &config, 100u,
+                                          &out) == H2_PAL_ERR_IO);
   assert(out == -1);
   h2_pal_net_close(net, token);
   drain_backend();
@@ -384,6 +396,97 @@ static int serial_entropy(void* user, uint8_t* out, size_t len) {
   return h2_windows_entropy(provider->platform, out, len);
 }
 
+static const h2_pal_net_vtable_t* http_fake_base;
+static h2_windows_platform_t* http_native_platform;
+
+static int http_native_open(void* user, h2_pal_net_family_t family,
+                            h2_pal_net_socket_t* out) {
+  int result = http_fake_base->tcp_open(user, family, out);
+  if (result != H2_PAL_OK) return result;
+  return h2_pal_net_tcp_open_bound(h2_windows_net_api(http_native_platform),
+                                   family, NULL, out);
+}
+
+static void http_native_close(void* user, h2_pal_net_socket_t socket) {
+  h2_pal_net_close(h2_windows_net_api(http_native_platform), socket);
+  http_fake_base->close(user, socket);
+}
+
+static h2_pal_result_t http_native_bounded(
+    void* user, h2_pal_net_socket_t socket,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out) {
+  fake_http_platform_t* http = user;
+  ++http->tls_bounded_count;
+  http->tls_timeout_ms = timeout_ms;
+  return h2_test_windows_tls_wrap_bounded(http_native_platform, socket, config,
+                                          timeout_ms, out);
+}
+
+static h2_pal_result_t http_native_legacy(void* user,
+                                          h2_pal_net_socket_t socket,
+                                          const h2_pal_net_tls_config_t* config,
+                                          uint32_t timeout_ms,
+                                          h2_pal_net_socket_t* out) {
+  fake_http_platform_t* http = user;
+  ++http->tls_wrap_count;
+  return h2_test_windows_tls_wrap(http_native_platform, socket, config,
+                                  timeout_ms, out);
+}
+
+static void test_http_bounded_rejection(serial_provider_t* provider,
+                                        h2_windows_platform_t* platform) {
+  fake_http_platform_t http;
+  fake_http_platform_init(&http);
+  fake_http_platform_add_response(
+      &http, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+  http_fake_base = http.net.vtable;
+  http_native_platform = platform;
+  h2_pal_net_vtable_t vtable = *http_fake_base;
+  vtable.tcp_open = http_native_open;
+  vtable.close = http_native_close;
+  vtable.tls_wrap = http_native_legacy;
+  vtable.tls_wrap_bounded = http_native_bounded;
+  http.net.vtable = &vtable;
+  const h2_corehttp_config_t config = {
+      .allocator = &http.mem,
+      .net = &http.net,
+      .time = &http.time,
+      .default_timeout_ms = 100u,
+      .default_connect_timeout_ms = 50u,
+  };
+  h2_corehttp_t* client = NULL;
+  h2_pal_http_api_t api;
+  assert(h2_corehttp_create(&config, &client, &api) == H2_PAL_OK);
+  const char url[] = "https://legacy.test/bounded";
+  const h2_pal_http_request_t request = {
+      .method = H2_PAL_HTTP_GET,
+      .url = {.data = url, .len = sizeof(url) - 1u},
+      .timeout_ms = 100,
+      .connect_timeout_ms = 50,
+  };
+  now_ms = 1000u;
+  unsigned callbacks = provider->calls;
+  unsigned entropy_callbacks = provider->entropy_calls;
+  unsigned started = workers_started;
+  unsigned loaded = ca_loads;
+  ULONGLONG before = GetTickCount64();
+  h2_pal_http_response_t response;
+  assert(h2_pal_http_request(&api, &request, &response) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(GetTickCount64() - before < 2000u);
+  assert(response.rejection == H2_PAL_HTTP_REJECTION_NONE);
+  assert(provider->calls == callbacks &&
+         provider->entropy_calls == entropy_callbacks);
+  assert(workers_started == started && ca_loads == loaded);
+  assert(http.tls_bounded_count == 1 && http.tls_wrap_count == 0);
+  assert(http.tls_timeout_ms > 0u && http.tls_timeout_ms <= 50u);
+  assert(http.connect_count == 1 && http.close_count == 1);
+  assert(http.request_len == 0u && http.recv_count == 0);
+  h2_corehttp_destroy(client);
+  http_fake_base = NULL;
+}
+
 static void test_legacy_inline_setup(h2_windows_platform_t* platform) {
   drain_backend();
   wait_platform_idle(platform);
@@ -404,6 +507,7 @@ static void test_legacy_inline_setup(h2_windows_platform_t* platform) {
   assert(!config.providers_thread_safe);
   assert(h2_wolfssl_init(&config) == H2_PAL_OK);
   assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_ERR_UNSUPPORTED);
+  test_http_bounded_rejection(&provider, platform);
   const h2_pal_net_api_t* net = h2_windows_net_api(platform);
   const h2_pal_net_tls_config_t tls = {
       .server_name = "localhost",
@@ -426,6 +530,14 @@ static void test_legacy_inline_setup(h2_windows_platform_t* platform) {
     wait_budget_ms = 0u;
     h2_pal_net_socket_t out = 123;
     h2_pal_result_t expected = i % 4u == 0u ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT;
+    unsigned calls = provider.calls;
+    unsigned entropy_calls = provider.entropy_calls;
+    ULONGLONG before = GetTickCount64();
+    assert(h2_test_windows_tls_wrap_bounded(platform, token, &tls, 100u,
+                                            &out) == H2_PAL_ERR_UNSUPPORTED);
+    assert(GetTickCount64() - before < 2000u && out == -1);
+    assert(provider.calls == calls && provider.entropy_calls == entropy_calls);
+    assert(workers_started == started && ca_loads == loaded);
     assert(h2_test_windows_tls_wrap(platform, token, &tls, 100u, &out) ==
            expected);
     assert(out == (expected == H2_PAL_OK ? token : -1));
@@ -468,7 +580,7 @@ static void test_resume_blocked_load(h2_windows_platform_t* platform) {
       .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
   };
   h2_pal_net_socket_t out = -1;
-  assert(h2_test_windows_tls_wrap(platform, token, &old, 20u, &out) ==
+  assert(h2_test_windows_tls_wrap_bounded(platform, token, &old, 20u, &out) ==
          H2_PAL_ERR_TIMEOUT);
   h2_pal_net_close(net, token);
   AcquireSRWLockExclusive(&gate_lock);
@@ -495,8 +607,8 @@ static void test_resume_blocked_load(h2_windows_platform_t* platform) {
   };
   assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL, &token) ==
          H2_PAL_OK);
-  assert(h2_test_windows_tls_wrap(platform, token, &fresh, 1000u, &out) ==
-         H2_PAL_OK);
+  assert(h2_test_windows_tls_wrap_bounded(platform, token, &fresh, 1000u,
+                                          &out) == H2_PAL_OK);
   assert(out == token);
   h2_pal_net_close(net, token);
   assert(h2_wolfssl_deinit() == H2_PAL_ERR_INVALID_STATE);
@@ -609,13 +721,13 @@ int main(void) {
   const h2_pal_net_tls_config_t tls = {0};
   h2_pal_net_socket_t out = 123;
   clock_result = H2_PAL_ERR_IO;
-  assert(h2_test_windows_tls_wrap(platform, token, &tls, 100u, &out) ==
+  assert(h2_test_windows_tls_wrap_bounded(platform, token, &tls, 100u, &out) ==
          H2_PAL_ERR_IO);
   assert(out == -1);
   clock_result = H2_PAL_OK;
   now_ms = UINT64_MAX - 10u;
   out = 123;
-  assert(h2_test_windows_tls_wrap(platform, token, &tls, 100u, &out) ==
+  assert(h2_test_windows_tls_wrap_bounded(platform, token, &tls, 100u, &out) ==
          H2_PAL_ERR_IO);
   assert(out == -1);
   h2_pal_net_close(net, token);

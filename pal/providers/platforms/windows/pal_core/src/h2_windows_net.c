@@ -843,6 +843,14 @@ static h2_pal_result_t windows_net_tls_wrap_entry(
   return h2_windows_tls_wrap(user, token, config, timeout_ms, out_token);
 }
 
+static h2_pal_result_t windows_net_tls_wrap_bounded_entry(
+    void* user, h2_pal_net_socket_t token,
+    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
+    h2_pal_net_socket_t* out_token) {
+  return h2_windows_tls_wrap_bounded(user, token, config, timeout_ms,
+                                     out_token);
+}
+
 static h2_pal_result_t windows_net_icmp_echo(
     void* user, const h2_pal_net_addr_t* addr, const h2_pal_net_bind_t* binding,
     uint32_t timeout_ms, h2_pal_net_icmp_echo_result_t* out_result) {
@@ -1022,6 +1030,7 @@ const h2_pal_net_vtable_t h2_windows_net_vtable = {
     .tcp_send_timeout = windows_net_tcp_send_timeout,
     .tcp_recv = windows_net_tcp_recv,
     .tls_wrap = windows_net_tls_wrap_entry,
+    .tls_wrap_bounded = windows_net_tls_wrap_bounded_entry,
     .icmp_echo = windows_net_icmp_echo,
     .close = windows_net_close,
     .tcp_listen = windows_net_tcp_listen,
