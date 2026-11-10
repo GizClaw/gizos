@@ -12,16 +12,28 @@ h2_desktop_recording_output::h2_desktop_recording_output() = default;
 
 h2_desktop_recording_output::~h2_desktop_recording_output() { (void)finish(); }
 
-bool h2_desktop_recording_output::start(int fd) {
-  fd_ = fd;
+bool h2_desktop_recording_output::prepare() {
   try {
     bytes_.resize(capacity);
     writer_ = std::thread(&h2_desktop_recording_output::run, this);
   } catch (...) {
-    (void)close(fd_);
-    fd_ = -1;
     return false;
   }
+  return true;
+}
+
+void h2_desktop_recording_output::attach(int fd) noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  fd_ = fd;
+  wake_.notify_one();
+}
+
+bool h2_desktop_recording_output::start(int fd) {
+  if (!prepare()) {
+    (void)close(fd);
+    return false;
+  }
+  attach(fd);
   return true;
 }
 
@@ -60,6 +72,14 @@ int h2_desktop_recording_output::finish() {
 }
 
 void h2_desktop_recording_output::run() {
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    wake_.wait(lock, [&] { return fd_ >= 0 || closing_; });
+    if (fd_ < 0) {
+      count_ = 0u;
+      return;
+    }
+  }
   // Darwin sends pipe SIGPIPE to the process, so masking only this thread is
   // insufficient there. Suppress generation on the owned output instead.
   // Linux directs it to the writer: block it for this thread's entire lifetime;

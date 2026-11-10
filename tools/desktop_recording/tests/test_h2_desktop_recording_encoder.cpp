@@ -396,11 +396,23 @@ void replacement_output(const char* temporary) {
       std::string(temporary) + "/" + std::string(246u, 'x') + ".mp4";
   h2_desktop_recording_encoder_config_t config = {
       long_path.c_str(), 64u, 48u, h2_desktop_recording_now_us()};
-  config.force_legacy_publication = true;
   h2_desktop_recording_encoder_t* state = nullptr;
   assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_OK);
   h2_desktop_recording_encoder_destroy(state);
   assert(unlink(long_path.c_str()) == 0);
+}
+
+void write_only_parent(const char* temporary) {
+  const std::string parent = std::string(temporary) + "/write-only";
+  assert(mkdir(parent.c_str(), 0300) == 0);
+  const std::string path = parent + "/recording.mp4";
+  const h2_desktop_recording_encoder_config_t config = {
+      path.c_str(), 64u, 48u, h2_desktop_recording_now_us()};
+  h2_desktop_recording_encoder_t* state = nullptr;
+  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_OK);
+  h2_desktop_recording_encoder_destroy(state);
+  assert(unlink(path.c_str()) == 0 && chmod(parent.c_str(), 0700) == 0);
+  assert(rmdir(parent.c_str()) == 0);
 }
 
 void long_parent_output(const char* temporary) {
@@ -473,6 +485,7 @@ int main() {
   failed_initialization(temporary);
   replacement_output(temporary);
   long_parent_output(temporary);
+  write_only_parent(temporary);
   blocked_diagnostics(temporary);
   struct sigaction action = {};
   assert(sigaction(SIGPIPE, nullptr, &action) == 0);

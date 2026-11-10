@@ -15,6 +15,10 @@ class h2_desktop_recording_output {
   static constexpr size_t capacity = 4u * 1024u * 1024u;
   h2_desktop_recording_output();
   ~h2_desktop_recording_output();
+  // Allocate/start the writer before a destination exists.
+  bool prepare();
+  // Attach after preparation; no allocation or thread creation remains.
+  void attach(int fd) noexcept;
   // Takes ownership of fd, including on thread creation failure.
   bool start(int fd);
   // Copies all bytes or returns a negative errno; never partially accepts.
@@ -22,6 +26,7 @@ class h2_desktop_recording_output {
   int result();
   size_t pending();
   // Drain accepted bytes, close fd, and join. Idempotent, control thread only.
+  // Without attach, discard initialization bytes and join without file I/O.
   int finish();
 
  private:

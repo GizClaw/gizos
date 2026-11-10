@@ -1,7 +1,3 @@
-#if defined(__linux__) && !defined(_GNU_SOURCE)
-#define _GNU_SOURCE
-#endif
-
 #include "h2_desktop_recording_internal.h"
 #include "h2_desktop_recording_output.h"
 
@@ -15,14 +11,9 @@ extern "C" {
 
 #include <algorithm>
 #include <array>
-#include <cerrno>
-#include <random>
-#include <sys/stat.h>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
-#include <cstdlib>
-#include <string>
 #include <cstring>
 #include <fcntl.h>
 #include <mutex>
@@ -30,10 +21,6 @@ extern "C" {
 #include <thread>
 #include <unistd.h>
 #include <vector>
-#if defined(__linux__)
-#include <linux/fs.h>
-#include <sys/syscall.h>
-#endif
 
 namespace {
 constexpr uint32_t kRate = 16000u;
@@ -63,6 +50,8 @@ struct h2_desktop_recording_encoder {
   std::condition_variable wake;
   bool stopping = false;
   bool finished = false;
+  bool initialized = false;
+  bool initialization_canceled = false;
   std::thread worker;
   h2_pal_result_t result = H2_PAL_OK;
   h2_desktop_recording_stats_t stats = {};
@@ -266,86 +255,9 @@ bool setup_codec(h2_desktop_recording_encoder_t* state, bool is_video) {
   return true;
 }
 
-// Keep incomplete output in a private directory. Publishing uses an atomic
-// no-replace rename, so failure cleanup never unlinks the caller's destination.
-struct InitialOutput {
-  std::string directory;
-  std::string basename;
-  int parent_fd = -1;
-  int directory_fd = -1;
-  bool created_directory = false;
-  bool created_recording = false;
-  ~InitialOutput() {
-    if (directory_fd >= 0) {
-      if (created_recording) (void)unlinkat(directory_fd, "recording", 0);
-      (void)close(directory_fd);
-    }
-    if (parent_fd >= 0) {
-      if (created_directory)
-        (void)unlinkat(parent_fd, directory.c_str(), AT_REMOVEDIR);
-      (void)close(parent_fd);
-    }
-  }
-  int open_output(const h2_desktop_recording_encoder_config_t* config) {
-    if (config->output_fd >= 0) return dup(config->output_fd);
-    const std::string destination(config->path);
-    const size_t separator = destination.find_last_of('/');
-    const std::string parent = separator == std::string::npos
-                                   ? "."
-                                   : destination.substr(0, separator + 1u);
-    basename = separator == std::string::npos
-                   ? destination
-                   : destination.substr(separator + 1u);
-    parent_fd = open(parent.c_str(), O_RDONLY | O_DIRECTORY);
-    if (parent_fd < 0) return -1;
-    std::random_device entropy;
-    for (unsigned attempt = 0u; attempt < 32u; ++attempt) {
-      char name[48];
-      std::snprintf(name, sizeof(name), ".h2-recording-%08x%08x",
-                    static_cast<unsigned>(entropy()),
-                    static_cast<unsigned>(entropy()));
-      directory = name;
-      if (mkdirat(parent_fd, directory.c_str(), 0700) == 0) {
-        created_directory = true;
-        break;
-      }
-      if (errno != EEXIST) return -1;
-    }
-    if (!created_directory) return -1;
-    directory_fd = openat(parent_fd, directory.c_str(),
-                          O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-    if (directory_fd < 0) return -1;
-    const int fd =
-        openat(directory_fd, "recording", O_CREAT | O_EXCL | O_WRONLY, 0600);
-    created_recording = fd >= 0;
-    return fd;
-  }
-  bool publish(const h2_desktop_recording_encoder_config_t* config) {
-    if (config->output_fd >= 0) return true;
-    if (!config->force_legacy_publication) {
-#if defined(__APPLE__)
-      return renameatx_np(directory_fd, "recording", parent_fd,
-                          basename.c_str(), RENAME_EXCL) == 0;
-#elif defined(__linux__) && defined(SYS_renameat2)
-      if (syscall(SYS_renameat2, directory_fd, "recording", parent_fd,
-                  basename.c_str(), RENAME_NOREPLACE) == 0)
-        return true;
-      if (errno != ENOSYS && errno != EINVAL && errno != EOPNOTSUPP)
-        return false;
-#endif
-    }
-    // Older Linux kernels/filesystems can still atomically publish with linkat.
-    // Never fall back to check-then-rename, which could overwrite another file.
-    return linkat(directory_fd, "recording", parent_fd, basename.c_str(), 0) ==
-           0;
-  }
-};
-
 bool setup(h2_desktop_recording_encoder_t* state,
-           const h2_desktop_recording_encoder_config_t* config,
-           InitialOutput* initial_output) {
-  const int fd = initial_output->open_output(config);
-  if (fd < 0 || !state->output.start(fd)) {
+           const h2_desktop_recording_encoder_config_t* config) {
+  if (!state->output.prepare()) {
     return false;
   }
   if (config->after_output_start != nullptr)
@@ -620,11 +532,13 @@ h2_pal_result_t h2_desktop_recording_encoder_create(
   state->width = config->width;
   state->height = config->height;
   state->start_us = config->start_us;
-  InitialOutput initial_output;
   const auto failed_setup = [&]() {
-    if (state->worker.joinable())
-      (void)h2_desktop_recording_encoder_finish(state, config->start_us,
-                                                nullptr);
+    {
+      std::lock_guard<std::mutex> lock(state->mutex);
+      state->initialization_canceled = true;
+      state->wake.notify_one();
+    }
+    if (state->worker.joinable()) state->worker.join();
     release(state);
   };
   try {
@@ -637,14 +551,34 @@ h2_pal_result_t h2_desktop_recording_encoder_create(
                                 sizeof(state->pcm) +
                                 sizeof(state->pcm_timestamps) +
                                 h2_desktop_recording_output::capacity;
-    if (!setup(state, config, &initial_output)) {
+    if (!setup(state, config)) {
       failed_setup();
       return H2_PAL_ERR_IO;
     }
-    state->worker = std::thread(run, state);
-    if (!initial_output.publish(config)) {
+    state->worker = std::thread([state]() {
+      {
+        std::unique_lock<std::mutex> lock(state->mutex);
+        state->wake.wait(lock, [&] {
+          return state->initialized || state->initialization_canceled;
+        });
+        if (state->initialization_canceled) return;
+      }
+      run(state);
+    });
+    const int fd = config->output_fd >= 0
+                       ? dup(config->output_fd)
+                       : open(config->path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    if (fd < 0) {
       failed_setup();
       return H2_PAL_ERR_IO;
+    }
+    // Both workers and FFmpeg are prepared. Attaching the exclusively created
+    // file has no fallible setup left and never needs to unlink a destination.
+    state->output.attach(fd);
+    {
+      std::lock_guard<std::mutex> lock(state->mutex);
+      state->initialized = true;
+      state->wake.notify_one();
     }
   } catch (...) {
     failed_setup();
