@@ -15,6 +15,9 @@ typedef enum {
 } h2_esp_board_fs_backend_t;
 
 static h2_esp_board_fs_backend_t s_fs_backend;
+/* Copy the unwrapped provider API before Runtime installs its board adapters.
+ */
+static h2_pal_fs_api_t s_selected_fs;
 
 int h2_esp_board_fs_init(h2_pal_fs_api_t* fs) {
   if (fs == NULL) return H2_PAL_FS_ERR_INVALID_ARG;
@@ -36,13 +39,17 @@ int h2_esp_board_fs_init(h2_pal_fs_api_t* fs) {
   if (partition_rc == H2_PAL_OK &&
       partition_subtype == ESP_PARTITION_SUBTYPE_DATA_SPIFFS) {
     int rc = h2_esp_platform_spiffs_fs_init(fs, &spiffs_config);
-    if (rc == H2_PAL_FS_OK) s_fs_backend = H2_ESP_BOARD_FS_INTERNAL_SPIFFS;
+    if (rc == H2_PAL_FS_OK) {
+      s_fs_backend = H2_ESP_BOARD_FS_INTERNAL_SPIFFS;
+      s_selected_fs = *fs;
+    }
     return rc;
   }
   if (partition_rc == H2_PAL_OK) {
     int rc = h2_esp_platform_littlefs_fs_init(fs, &littlefs_config);
     if (rc == H2_PAL_FS_OK) {
       s_fs_backend = H2_ESP_BOARD_FS_INTERNAL_LITTLEFS;
+      s_selected_fs = *fs;
       return rc;
     }
     int cleanup_rc =
@@ -67,6 +74,7 @@ int h2_esp_board_fs_deinit(void) {
       (s_fs_backend == H2_ESP_BOARD_FS_INTERNAL_SPIFFS &&
        spiffs_rc == H2_PAL_FS_OK)) {
     s_fs_backend = H2_ESP_BOARD_FS_NONE;
+    memset(&s_selected_fs, 0, sizeof(s_selected_fs));
   }
   if (littlefs_rc != H2_PAL_FS_OK) return littlefs_rc;
   return spiffs_rc != H2_PAL_FS_OK ? spiffs_rc : h2loader_rc;
@@ -81,14 +89,19 @@ int h2_esp_board_h2loader_fs_init(h2_pal_fs_api_t* fs) {
     return rc;
   }
   rc = h2_esp_platform_littlefs_fs_use_base_path(fs, H2_ESP_BOARD_FS_BASE_PATH);
-  if (rc == H2_PAL_FS_OK) s_fs_backend = H2_ESP_BOARD_FS_EXTFLASH;
+  if (rc == H2_PAL_FS_OK) {
+    s_fs_backend = H2_ESP_BOARD_FS_EXTFLASH;
+    s_selected_fs = *fs;
+  }
   return rc;
 }
 
 int h2_esp_board_h2loader_fs_deinit(void) {
   int rc = h2_esp_board_extflash_unmount_data();
-  if (rc == H2_PAL_FS_OK && s_fs_backend == H2_ESP_BOARD_FS_EXTFLASH)
+  if (rc == H2_PAL_FS_OK && s_fs_backend == H2_ESP_BOARD_FS_EXTFLASH) {
     s_fs_backend = H2_ESP_BOARD_FS_NONE;
+    memset(&s_selected_fs, 0, sizeof(s_selected_fs));
+  }
   return rc;
 }
 
@@ -96,9 +109,19 @@ int h2_esp_board_fs_prepare(const char* path) {
   if (path == NULL || path[0] == '\0') return H2_PAL_FS_ERR_INVALID_ARG;
   if (strcmp(path, "/dl") != 0 && strcmp(path, "/data") != 0)
     return H2_PAL_FS_ERR_UNSUPPORTED;
-  if (s_fs_backend == H2_ESP_BOARD_FS_INTERNAL_LITTLEFS ||
-      s_fs_backend == H2_ESP_BOARD_FS_INTERNAL_SPIFFS) {
-    /* fs_init already mounted the selected internal partition at /h2fs. */
+  if (s_fs_backend == H2_ESP_BOARD_FS_INTERNAL_LITTLEFS) {
+    /* A fresh mount has no Loader directories. mkdir is idempotent, but a
+     * regular file at the requested root must not count as a ready directory.
+     */
+    int rc = h2_pal_fs_mkdir(&s_selected_fs, path);
+    if (rc != H2_PAL_FS_OK) return rc;
+    h2_pal_fs_stat_t st;
+    rc = h2_pal_fs_stat(&s_selected_fs, path, &st);
+    if (rc != H2_PAL_FS_OK) return rc;
+    return st.is_dir ? H2_PAL_FS_OK : H2_PAL_ERR_INVALID_STATE;
+  }
+  if (s_fs_backend == H2_ESP_BOARD_FS_INTERNAL_SPIFFS) {
+    /* SPIFFS uses virtual directories in its flat file namespace. */
     return H2_PAL_FS_OK;
   }
   if (s_fs_backend == H2_ESP_BOARD_FS_EXTFLASH)
@@ -127,11 +150,14 @@ int h2_esp_board_fs_unmount(const char* path) {
 }
 
 int h2_esp_board_fs_clear(const char* path) {
-  if (path == NULL) {
-    return H2_PAL_FS_ERR_INVALID_ARG;
-  }
-  return strcmp(path, "/data") == 0 ? h2_esp_board_extflash_clear_data()
-                                    : H2_PAL_FS_ERR_UNSUPPORTED;
+  if (path == NULL) return H2_PAL_FS_ERR_INVALID_ARG;
+  if (strcmp(path, "/data") != 0) return H2_PAL_FS_ERR_UNSUPPORTED;
+  if (s_fs_backend == H2_ESP_BOARD_FS_INTERNAL_LITTLEFS ||
+      s_fs_backend == H2_ESP_BOARD_FS_INTERNAL_SPIFFS)
+    return h2_pal_fs_clear(&s_selected_fs, path);
+  if (s_fs_backend == H2_ESP_BOARD_FS_EXTFLASH)
+    return h2_esp_board_extflash_clear_data();
+  return H2_PAL_ERR_INVALID_STATE;
 }
 
 int h2_esp_board_fs_mount_all(void) {
