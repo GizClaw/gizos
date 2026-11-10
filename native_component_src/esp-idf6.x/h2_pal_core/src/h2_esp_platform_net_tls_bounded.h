@@ -63,6 +63,9 @@ _Alignas(portBYTE_ALIGNMENT) static StackType_t
                        [H2_ESP_NET_TLS_WORKER_STACK_BYTES /
                         sizeof(StackType_t)];
 static int s_esp_native_initializing, s_esp_native_initialized;
+static int s_esp_native_budget_expired, s_esp_native_recovery_queued;
+_Static_assert(configUSE_TIMERS == 1 && INCLUDE_xTimerPendFunctionCall == 1,
+               "ESP Net deferred recovery requires the SDK timer service");
 
 static int esp_net_tls_available(void) {
   portENTER_CRITICAL(&s_esp_net_mux);
@@ -298,6 +301,7 @@ static int esp_net_native_init(uint64_t deadline_ms) {
     return ready;
   }
   s_esp_native_initializing = 1;
+  s_esp_native_budget_expired = 0;
   portEXIT_CRITICAL(&s_esp_net_mux);
   SemaphoreHandle_t* wakes[2u + 2u * H2_ESP_NET_TLS_WORKER_MAX] = {
       &s_esp_net_reaper_wake,     &s_esp_tls_cleanup_wake,
@@ -343,35 +347,72 @@ static int esp_net_native_init(uint64_t deadline_ms) {
       }
     }
   }
+  int expired =
+      deadline_ms != 0u && esp_net_timeout_remaining_ms(deadline_ms) == 0u;
   portENTER_CRITICAL(&s_esp_net_mux);
   esp_net_native_status_locked();
+  s_esp_native_budget_expired = expired;
   s_esp_native_initializing = 0;
   int ready = s_esp_net_native_ready;
   portEXIT_CRITICAL(&s_esp_net_mux);
   esp_net_socket_kick();
   return ready;
 }
-/* Polling never creates an executor. A positive-budget operation may recover
- * static actors itself, or wait for the one creator without terminal failure.
- * This readiness wait neither enters the TLS heap path nor shares its lock. */
-static h2_pal_result_t esp_net_native_ensure(uint32_t timeout_ms,
-                                             uint64_t deadline_ms) {
+/* The SDK creates this daemon/queue before running application tasks. The
+ * callback does only the fixed static bootstrap above: no heap, wait, native
+ * close or TLS setup/destruction. No caller/lease/fd is queued. */
+static void esp_net_native_recover(void* unused, uint32_t value) {
+  (void)unused;
+  (void)value;
+  (void)esp_net_native_init(0u);
+  portENTER_CRITICAL(&s_esp_net_mux);
+  s_esp_native_recovery_queued = 0;
+  portEXIT_CRITICAL(&s_esp_net_mux);
+}
+static void esp_net_native_request_recovery(void) {
+  if (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING) return;
+  portENTER_CRITICAL(&s_esp_net_mux);
+  int submit = !s_esp_net_native_ready && !s_esp_native_recovery_queued;
+  if (submit) s_esp_native_recovery_queued = 1;
+  portEXIT_CRITICAL(&s_esp_net_mux);
+  if (submit &&
+      xTimerPendFunctionCall(esp_net_native_recover, NULL, 0u, 0u) != pdPASS) {
+    /* Full system queue: this poll still returns immediately and a later
+     * poll may retry. There is no stale borrowed request to release. */
+    portENTER_CRITICAL(&s_esp_net_mux);
+    s_esp_native_recovery_queued = 0;
+    portEXIT_CRITICAL(&s_esp_net_mux);
+  }
+}
+static h2_pal_result_t esp_net_native_ensure(
+    const esp_net_socket_lease_t* lease, uint32_t timeout_ms,
+    uint64_t deadline_ms) {
+  if (!esp_net_socket_alive(lease)) return H2_PAL_ERR_CLOSED;
   if (timeout_ms == 0u) {
     portENTER_CRITICAL(&s_esp_net_mux);
     int ready = s_esp_net_native_ready;
     portEXIT_CRITICAL(&s_esp_net_mux);
+    if (!ready) esp_net_native_request_recovery();
     return ready ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
   }
   (void)esp_net_native_init(deadline_ms);
   for (;;) {
+    if (!esp_net_socket_alive(lease)) return H2_PAL_ERR_CLOSED;
     if (esp_net_timeout_remaining_ms(deadline_ms) == 0u)
       return H2_PAL_ERR_TIMEOUT;
     portENTER_CRITICAL(&s_esp_net_mux);
     int ready = s_esp_net_native_ready,
-        initializing = s_esp_native_initializing;
+        initializing = s_esp_native_initializing,
+        retry = s_esp_native_budget_expired;
     portEXIT_CRITICAL(&s_esp_net_mux);
     if (ready) return H2_PAL_OK;
-    if (!initializing) return H2_PAL_ERR_UNAVAILABLE;
+    if (!initializing) {
+      if (!retry) return H2_PAL_ERR_UNAVAILABLE;
+      /* The prior creator used a different deadline. Keep this caller's
+       * original budget and compete for the same serialized bootstrap. */
+      (void)esp_net_native_init(deadline_ms);
+      continue;
+    }
     vTaskDelay(1u);
   }
 }

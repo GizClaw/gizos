@@ -27,6 +27,9 @@ typedef struct esp_net_socket_lease {
   uint32_t generation;
   int fd;
 } esp_net_socket_lease_t;
+static h2_pal_result_t esp_net_native_ensure(
+    const esp_net_socket_lease_t* lease, uint32_t timeout_ms,
+    uint64_t deadline_ms);
 
 static portMUX_TYPE s_esp_net_mux = portMUX_INITIALIZER_UNLOCKED;
 static esp_net_socket_record_t s_esp_net_records[CONFIG_LWIP_MAX_SOCKETS];
@@ -620,12 +623,19 @@ static h2_pal_result_t esp_net_tcp_connect_managed(
     void* user, h2_pal_net_socket_t fd, const h2_pal_net_addr_t* address,
     uint32_t timeout_ms) {
   uint64_t deadline = esp_net_now_ms() + timeout_ms;
-  h2_pal_result_t native = esp_net_native_ensure(timeout_ms, deadline);
-  if (native != H2_PAL_OK) return native;
+  H2_ESP_NET_LEASE_BEGIN(SOCK_STREAM);
+  h2_pal_result_t native = esp_net_native_ensure(&lease, timeout_ms, deadline);
+  if (native != H2_PAL_OK) {
+    if (!esp_net_socket_alive(&lease)) native = H2_PAL_ERR_CLOSED;
+    esp_net_socket_unpin(&lease, 0);
+    return native;
+  }
   uint32_t remaining =
       timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline);
-  if (timeout_ms != 0u && remaining == 0u) return H2_PAL_ERR_TIMEOUT;
-  H2_ESP_NET_LEASE_BEGIN(SOCK_STREAM);
+  if (timeout_ms != 0u && remaining == 0u) {
+    esp_net_socket_unpin(&lease, 0);
+    return H2_PAL_ERR_TIMEOUT;
+  }
   rc = esp_net_socket_begin_connect(&lease);
   if (rc != H2_PAL_OK) {
     esp_net_socket_unpin(&lease, 0);
@@ -642,9 +652,13 @@ static h2_pal_result_t esp_net_tcp_accept_managed(void* user,
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out = -1;
   uint64_t deadline = esp_net_now_ms() + timeout_ms;
-  h2_pal_result_t native = esp_net_native_ensure(timeout_ms, deadline);
-  if (native != H2_PAL_OK) return native;
   H2_ESP_NET_LEASE_BEGIN(SOCK_STREAM);
+  h2_pal_result_t native = esp_net_native_ensure(&lease, timeout_ms, deadline);
+  if (native != H2_PAL_OK) {
+    if (!esp_net_socket_alive(&lease)) native = H2_PAL_ERR_CLOSED;
+    esp_net_socket_unpin(&lease, 0);
+    return native;
+  }
   esp_net_socket_lease_t owner;
   rc = esp_net_socket_reserve_accept(&owner);
   if (rc != H2_PAL_OK) {

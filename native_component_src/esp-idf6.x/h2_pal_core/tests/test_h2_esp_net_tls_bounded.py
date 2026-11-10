@@ -60,10 +60,25 @@ class ESPBoundedTLS(unittest.TestCase):
                         "write-cancel-plain",
                         "write-cancel-tls",
                         "write-cancel-bounded",
+                        "init-cancel-connect",
+                        "init-cancel-accept",
+                        "init-lease-deadline",
+                        "poll-only-connect",
+                        "poll-only-accept",
+                        "poll-admission-retry",
+                        "long-waiter-connect",
+                        "long-waiter-accept",
+                        "callback-waiter-connect",
+                        "callback-waiter-accept",
+                        "callback-after-all-close",
+                        "waiter-before-callback",
                     ):
                         command = [str(binary)] + ([] if case is None else [case])
                         result = subprocess.run(command, capture_output=True, text=True, timeout=20)
                         self.assertEqual(result.returncode, 0, str(case) + "\n" + result.stdout + result.stderr)
+                        for line in result.stdout.splitlines():
+                            if line.startswith("ESP_BOOTSTRAP "):
+                                print(line, flush=True)
                         print("mbedTLS " + str(version) + " process=" + (case or "default") + " PASS", flush=True)
 
 

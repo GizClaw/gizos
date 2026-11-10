@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 
 #include "esp_netif.h"
 #include "esp_log.h"
@@ -91,8 +92,6 @@ static uint64_t esp_net_now_ms(void);
 static uint32_t esp_net_timeout_remaining_ms(uint64_t deadline_ms);
 static int esp_net_tls_bounded_init(void);
 static int esp_net_native_init(uint64_t deadline_ms);
-static h2_pal_result_t esp_net_native_ensure(uint32_t timeout_ms,
-                                             uint64_t deadline_ms);
 static void esp_net_tls_publish_sync(esp_net_tls_sync_t* sync);
 static int esp_net_tls_available(void);
 static int esp_net_socket_wait(int fd, int write_ready, uint32_t timeout_ms);

@@ -121,6 +121,20 @@ static int test_fail_task, test_task_count, test_allocations, test_alloc_fail;
 static int test_dynamic_task_calls, test_static_task_attempts,
     test_alloc_persistent;
 static unsigned test_static_delay_ms;
+static int test_inline_static_attempts;
+typedef void (*PendedFunction_t)(void*, uint32_t);
+#define configUSE_TIMERS 1
+#define INCLUDE_xTimerPendFunctionCall 1
+#define taskSCHEDULER_RUNNING 2
+static _Atomic int test_scheduler_state = taskSCHEDULER_RUNNING;
+static int test_daemon_pending, test_daemon_executing, test_daemon_hold;
+static int test_deferred_enqueues, test_deferred_executions,
+    test_fail_deferred_enqueue;
+static PendedFunction_t test_deferred_function;
+static void* test_deferred_context;
+static uint32_t test_deferred_value;
+static int test_callback_gated, test_callback_gated_samples;
+static int64_t test_callback_max_ungated_us;
 static _Atomic int64_t test_clock_fixed_us, test_clock_resume_us;
 static _Atomic int test_early_delay_return, test_early_delay_observed;
 static int test_emulate_dontwait_fd = -1, test_plain_send_entered;
@@ -139,6 +153,10 @@ static int test_probe_send_fd = -1, test_probe_send_flags,
            test_probe_send_result;
 static int test_probe_recv_fd = -1, test_probe_recv_flags,
            test_probe_recv_result;
+static int test_probe_select_fd = -1, test_probe_select_write,
+           test_probe_select_result;
+static int64_t test_probe_select_timeout_us, test_probe_select_start,
+    test_probe_select_end;
 static int64_t test_probe_send_start, test_probe_send_end,
     test_probe_recv_start, test_probe_recv_end;
 static int test_native_connect_calls, test_native_accept_calls;
@@ -184,6 +202,7 @@ static struct timespec test_after_ms(uint32_t ms) {
 }
 
 static SemaphoreHandle_t test_semaphore_create(int available) {
+  assert(test_is_worker != 4);
   test_sdk_gate(9);
   ++test_sem_creates;
   SemaphoreHandle_t sem = calloc(1, sizeof(*sem));
@@ -220,6 +239,7 @@ static SemaphoreHandle_t xSemaphoreCreateBinaryStatic(
   return storage;
 }
 static int xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks) {
+  assert(test_is_worker != 4);
   assert(sem != NULL);
   assert(pthread_mutex_lock(&sem->mutex) == 0);
   struct timespec until =
@@ -262,6 +282,7 @@ static int xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks) {
   return acquired;
 }
 static void vTaskDelay(TickType_t ticks) {
+  assert(test_is_worker != 4);
   if (ticks == 1u && atomic_exchange(&test_early_delay_return, 0)) {
     atomic_store(&test_early_delay_observed, 1);
     return;
@@ -300,6 +321,7 @@ static int xTaskCreate(void (*entry)(void*), const char* name, uint32_t stack,
   assert((strcmp(name, "h2_tls") == 0 || strcmp(name, "h2_net_reap") == 0 ||
           strcmp(name, "h2_tls_free") == 0) &&
          stack == 8192u && priority == 1u);
+  assert(test_is_worker != 4);
   ++test_dynamic_task_calls;
   test_sdk_gate(8);
   if (test_fail_task) {
@@ -334,6 +356,7 @@ static TaskHandle_t xTaskCreateStaticPinnedToCore(
          task != NULL);
   assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_static_task_attempts;
+  if (!test_is_worker) ++test_inline_static_attempts;
   assert(pthread_mutex_unlock(&test_lock) == 0);
   test_sdk_gate(16);
   if (test_static_delay_ms) vTaskDelay(test_static_delay_ms);
@@ -353,7 +376,85 @@ static TaskHandle_t xTaskCreateStaticPinnedToCore(
   return &task->thread;
 }
 
+static int xTaskGetSchedulerState(void) {
+  return atomic_load(&test_scheduler_state);
+}
+static int xTimerPendFunctionCall(PendedFunction_t function, void* context,
+                                  uint32_t value, TickType_t ticks) {
+  assert(function != NULL && context == NULL && value == 0u && ticks == 0u);
+  assert(xTaskGetSchedulerState() == taskSCHEDULER_RUNNING);
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  int failed = test_fail_deferred_enqueue || test_daemon_pending;
+  if (test_fail_deferred_enqueue > 0) --test_fail_deferred_enqueue;
+  if (!failed) {
+    test_deferred_function = function;
+    test_deferred_context = context;
+    test_deferred_value = value;
+    test_daemon_pending = 1;
+    ++test_deferred_enqueues;
+    assert(pthread_cond_broadcast(&test_changed) == 0);
+  }
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  return failed ? 0 : pdPASS;
+}
+static void* test_system_daemon(void* unused) {
+  (void)unused;
+  test_is_worker = 4;
+  for (;;) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    while (!test_daemon_pending || test_daemon_hold)
+      assert(pthread_cond_wait(&test_changed, &test_lock) == 0);
+    PendedFunction_t function = test_deferred_function;
+    void* context = test_deferred_context;
+    uint32_t value = test_deferred_value;
+    test_daemon_pending = 0;
+    test_daemon_executing = 1;
+    test_callback_gated = 0;
+    ++test_deferred_executions;
+    int64_t started = esp_timer_get_time();
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    function(context, value);
+    int64_t elapsed = esp_timer_get_time() - started;
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    test_daemon_executing = 0;
+    if (test_callback_gated)
+      ++test_callback_gated_samples;
+    else if (elapsed > test_callback_max_ungated_us)
+      test_callback_max_ungated_us = elapsed;
+    assert(pthread_cond_broadcast(&test_changed) == 0);
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+  }
+  return NULL;
+}
+static void test_sdk_runtime_start(void) {
+  /* Model the SDK daemon that already exists before application/provider use.
+   * This is not a Net-owned task or caller-side runtime creation path. */
+  pthread_t daemon;
+  assert(pthread_create(&daemon, NULL, test_system_daemon, NULL) == 0);
+  assert(pthread_detach(daemon) == 0);
+}
+static void test_sdk_deferred_drain(void) {
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  test_daemon_hold = 0;
+  assert(pthread_cond_broadcast(&test_changed) == 0);
+  struct timespec until = test_after_ms(3000u);
+  while (test_daemon_pending || test_daemon_executing)
+    assert(pthread_cond_timedwait(&test_changed, &test_lock, &until) == 0);
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+}
+static void test_sdk_report(void) {
+  test_sdk_deferred_drain();
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  if (test_deferred_executions)
+    printf(
+        "ESP_BOOTSTRAP host_callbacks=%d max_ungated_host_us=%lld gated_samples=%d (host fixture only; no ESP runtime timing)\n",
+        test_deferred_executions, (long long)test_callback_max_ungated_us,
+        test_callback_gated_samples);
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+}
 static void* test_allocate(size_t length) {
+  assert(test_is_worker !=
+         4); /* No opaque TLS allocation on the system daemon. */
   test_sdk_gate(7);
   assert(pthread_mutex_lock(&test_lock) == 0);
   int fail = test_alloc_fail || test_alloc_persistent;
@@ -368,6 +469,7 @@ static void* test_allocate(size_t length) {
   return fail ? NULL : malloc(length);
 }
 static void test_deallocate(void* memory) {
+  assert(test_is_worker != 4);
   if (test_is_worker == 1) test_sdk_gate(11);
   assert(memory != NULL);
   assert(pthread_mutex_lock(&test_lock) == 0);
@@ -402,7 +504,10 @@ static int h2_esp_net_tls_verify_certificate(
 }
 
 static void test_sdk_gate(int stage) {
+  if (test_is_worker == 4) assert(stage == 16);
   assert(pthread_mutex_lock(&test_lock) == 0);
+  if (test_is_worker == 4 && stage == 16 && test_gate_stage == 16)
+    test_callback_gated = 1;
   /* Select exactly one primary stall even when helpers win the first native
    * close claims. Helpers proceed once the primary reaches destruction. */
   while (stage == 6 && test_gate_stage == 6 && test_gate_primary_only &&
@@ -582,7 +687,22 @@ static int test_select(int count, fd_set* reads, fd_set* writes, fd_set* errors,
     assert(pthread_cond_broadcast(&test_changed) == 0);
   }
   assert(pthread_mutex_unlock(&test_lock) == 0);
-  return select(count, reads, writes, errors, timeout);
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  test_probe_select_fd = count - 1;
+  test_probe_select_write = writes != NULL;
+  test_probe_select_timeout_us =
+      timeout ? (int64_t)timeout->tv_sec * 1000000 + timeout->tv_usec : -1;
+  test_probe_select_start = esp_timer_get_time();
+  test_probe_select_end = 0;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  int result = select(count, reads, writes, errors, timeout);
+  int error = errno;
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  test_probe_select_result = result;
+  test_probe_select_end = esp_timer_get_time();
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  errno = error;
+  return result;
 }
 #define select test_select
 static int test_send(int fd, const void* bytes, size_t length, int flags) {
@@ -735,6 +855,7 @@ static void test_close_profile(int fd, int closing) {
   }
 }
 static int test_close(int fd) {
+  assert(test_is_worker != 4);
   /* Idle setup actors may close exclusively owned retired native records. */
   test_close_profile(fd, 1);
   assert(pthread_mutex_lock(&test_lock) == 0);
@@ -744,6 +865,7 @@ static int test_close(int fd) {
   return close(fd);
 }
 static int test_shutdown(int fd, int how) {
+  assert(test_is_worker != 4);
 #if defined(__APPLE__)
   /* Darwin AF_UNIX SHUT_RD clears SO_RCVTIMEO. The captured racing receive
    * then remained in __recvfrom with a zero timeout after shutdown completed.
