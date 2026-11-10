@@ -49,6 +49,20 @@ struct esp_net_tls_worker {
 static esp_net_tls_worker_t s_esp_tls_workers[H2_ESP_NET_TLS_WORKER_MAX];
 static esp_net_tls_job_t s_esp_tls_jobs[H2_ESP_NET_TLS_WORKER_MAX];
 static int s_esp_tls_pool_ready, s_esp_tls_legacy_ready;
+/* ESP Xtensa/RISC-V ports count task stack depth in bytes. Reserve 32 KiB
+ * once in internal BSS; static TCB/queue controls replace their heap storage.
+ */
+_Static_assert(sizeof(StackType_t) == 1u, "ESP static task depth uses bytes");
+_Static_assert(H2_ESP_NET_TLS_WORKER_STACK_BYTES % portBYTE_ALIGNMENT == 0u,
+               "each permanent stack must retain the port alignment");
+static StaticSemaphore_t
+    s_esp_native_wake_storage[2u + 2u * H2_ESP_NET_TLS_WORKER_MAX];
+static StaticTask_t s_esp_native_task_storage[2u + H2_ESP_NET_TLS_WORKER_MAX];
+_Alignas(portBYTE_ALIGNMENT) static StackType_t
+    s_esp_native_stacks[2u + H2_ESP_NET_TLS_WORKER_MAX]
+                       [H2_ESP_NET_TLS_WORKER_STACK_BYTES /
+                        sizeof(StackType_t)];
+static int s_esp_native_initializing, s_esp_native_initialized;
 
 static int esp_net_tls_available(void) {
   portENTER_CRITICAL(&s_esp_net_mux);
@@ -152,18 +166,27 @@ static void esp_net_tls_job_worker(void* user) {
   esp_net_tls_worker_t* worker = user;
   for (;;) {
     (void)xSemaphoreTake(worker->wake, portMAX_DELAY);
+    esp_net_socket_reap_t native;
+    size_t cleanup_index = 0u;
+    uint32_t cleanup_generation = 0u;
+    int close_fd = 0, cleanup = 0;
+    uint64_t now = esp_net_now_ms();
     portENTER_CRITICAL(&s_esp_net_mux);
     esp_net_tls_job_t* job = worker->job;
     int submitted = job != NULL && job->submitted;
-    size_t cleanup_index = 0u;
-    uint32_t cleanup_generation = 0u;
-    int cleanup =
-        job == NULL && s_esp_tls_cleanup_busy &&
-        esp_net_tls_cleanup_take_locked(&cleanup_index, &cleanup_generation);
-    if (cleanup) worker->cleanup_busy = 1;
+    if (job == NULL &&
+        (s_esp_tls_cleanup_busy || s_esp_tls_cleanup_task == NULL)) {
+      close_fd = esp_net_socket_reap_take_locked(&native, now);
+      cleanup = !close_fd && esp_net_tls_cleanup_take_locked(
+                                 &cleanup_index, &cleanup_generation);
+      worker->cleanup_busy = close_fd || cleanup;
+    }
     portEXIT_CRITICAL(&s_esp_net_mux);
-    if (cleanup) {
-      esp_net_tls_cleanup_slot(cleanup_index, cleanup_generation);
+    if (close_fd || cleanup) {
+      if (close_fd)
+        esp_net_socket_reap(&native);
+      else
+        esp_net_tls_cleanup_slot(cleanup_index, cleanup_generation);
       portENTER_CRITICAL(&s_esp_net_mux);
       worker->cleanup_busy = 0;
       portEXIT_CRITICAL(&s_esp_net_mux);
@@ -241,75 +264,97 @@ static void esp_net_tls_job_worker(void* user) {
   }
 }
 
-/* Only called during provider initialization, never by the bounded entry.
- * Keep partial permanent resources for a later initialization retry. */
-static int esp_net_tls_bounded_init(void) {
-  if (s_esp_net_reaper_wake == NULL) {
-    SemaphoreHandle_t wake = xSemaphoreCreateBinary();
-    portENTER_CRITICAL(&s_esp_net_mux);
-    s_esp_net_reaper_wake = wake;
-    portEXIT_CRITICAL(&s_esp_net_mux);
-  }
-  if (s_esp_net_reaper_task == NULL && s_esp_net_reaper_wake != NULL) {
-    TaskHandle_t task = NULL;
-    if (xTaskCreate(esp_net_socket_reaper, "h2_net_reap",
-                    H2_ESP_NET_TLS_WORKER_STACK_BYTES, NULL,
-                    tskIDLE_PRIORITY + 1u, &task) == pdPASS) {
-      portENTER_CRITICAL(&s_esp_net_mux);
-      s_esp_net_reaper_task = task;
-      portEXIT_CRITICAL(&s_esp_net_mux);
-      esp_net_socket_kick();
-    }
-  }
-  if (s_esp_tls_cleanup_wake == NULL) {
-    SemaphoreHandle_t wake = xSemaphoreCreateBinary();
-    portENTER_CRITICAL(&s_esp_net_mux);
-    s_esp_tls_cleanup_wake = wake;
-    portEXIT_CRITICAL(&s_esp_net_mux);
-  }
-  if (s_esp_tls_cleanup_task == NULL && s_esp_tls_cleanup_wake != NULL) {
-    TaskHandle_t task = NULL;
-    if (xTaskCreate(esp_net_tls_cleanup_worker, "h2_tls_free",
-                    H2_ESP_NET_TLS_WORKER_STACK_BYTES, NULL,
-                    tskIDLE_PRIORITY + 1u, &task) == pdPASS) {
-      portENTER_CRITICAL(&s_esp_net_mux);
-      s_esp_tls_cleanup_task = task;
-      portEXIT_CRITICAL(&s_esp_net_mux);
-    }
-  }
-  int ready = s_esp_net_reaper_task != NULL && s_esp_tls_cleanup_task != NULL &&
-              s_esp_tls_sync != NULL;
-  portENTER_CRITICAL(&s_esp_net_mux);
-  s_esp_tls_legacy_ready = ready;
-  portEXIT_CRITICAL(&s_esp_net_mux);
-  if (!ready) return 0;
+/* Native cancellation and blocking-close actors do not depend on optional
+ * TLS allocation. IDF's static create paths use only these fixed internal
+ * buffers (including newlib reentrancy/port TLS initialization), no heap. */
+static void esp_net_native_status_locked(void) {
+  int blocking = s_esp_tls_cleanup_task != NULL;
+  int full = s_esp_net_reaper_task != NULL && s_esp_tls_cleanup_task != NULL;
   for (size_t i = 0u; i < H2_ESP_NET_TLS_WORKER_MAX; ++i) {
-    esp_net_tls_worker_t* worker = &s_esp_tls_workers[i];
-    esp_net_tls_job_t* job = &s_esp_tls_jobs[i];
-    if (worker->wake == NULL) {
-      SemaphoreHandle_t wake = xSemaphoreCreateBinary();
+    blocking |= s_esp_tls_workers[i].task != NULL;
+    full &= s_esp_tls_workers[i].task != NULL &&
+            s_esp_tls_jobs[i].caller_wake != NULL;
+  }
+  /* Finite lease polling also cancels I/O if the read-shutdown actor is
+   * unavailable during a partial static bootstrap. */
+  s_esp_net_native_ready = blocking;
+  s_esp_native_initialized = full;
+  s_esp_tls_legacy_ready =
+      s_esp_net_reaper_task != NULL && blocking && s_esp_tls_sync != NULL;
+  s_esp_tls_pool_ready = full && s_esp_tls_sync != NULL;
+}
+static void esp_net_tls_publish_sync(esp_net_tls_sync_t* sync) {
+  portENTER_CRITICAL(&s_esp_net_mux);
+  s_esp_tls_sockets = sync->sockets;
+  s_esp_tls_sync = sync;
+  esp_net_native_status_locked();
+  portEXIT_CRITICAL(&s_esp_net_mux);
+}
+static int esp_net_native_init(uint64_t deadline_ms) {
+  portENTER_CRITICAL(&s_esp_net_mux);
+  if (s_esp_native_initialized || s_esp_native_initializing) {
+    int ready = s_esp_net_native_ready;
+    portEXIT_CRITICAL(&s_esp_net_mux);
+    return ready;
+  }
+  s_esp_native_initializing = 1;
+  portEXIT_CRITICAL(&s_esp_net_mux);
+  SemaphoreHandle_t* wakes[2u + 2u * H2_ESP_NET_TLS_WORKER_MAX] = {
+      &s_esp_net_reaper_wake,     &s_esp_tls_cleanup_wake,
+      &s_esp_tls_workers[0].wake, &s_esp_tls_jobs[0].caller_wake,
+      &s_esp_tls_workers[1].wake, &s_esp_tls_jobs[1].caller_wake,
+  };
+  for (size_t i = 0u; i < 2u + 2u * H2_ESP_NET_TLS_WORKER_MAX; ++i) {
+    if (deadline_ms != 0u && esp_net_timeout_remaining_ms(deadline_ms) == 0u)
+      break;
+    if (*wakes[i] == NULL) {
+      SemaphoreHandle_t wake =
+          xSemaphoreCreateBinaryStatic(&s_esp_native_wake_storage[i]);
       portENTER_CRITICAL(&s_esp_net_mux);
-      worker->wake = wake;
+      *wakes[i] = wake;
       portEXIT_CRITICAL(&s_esp_net_mux);
     }
-    if (job->caller_wake == NULL) {
-      SemaphoreHandle_t wake = xSemaphoreCreateBinary();
-      portENTER_CRITICAL(&s_esp_net_mux);
-      job->caller_wake = wake;
-      portEXIT_CRITICAL(&s_esp_net_mux);
+  }
+  TaskHandle_t* tasks[2u + H2_ESP_NET_TLS_WORKER_MAX] = {
+      &s_esp_net_reaper_task, &s_esp_tls_cleanup_task,
+      &s_esp_tls_workers[0].task, &s_esp_tls_workers[1].task};
+  TaskFunction_t entries[2u + H2_ESP_NET_TLS_WORKER_MAX] = {
+      esp_net_socket_reaper, esp_net_tls_cleanup_worker, esp_net_tls_job_worker,
+      esp_net_tls_job_worker};
+  void* users[2u + H2_ESP_NET_TLS_WORKER_MAX] = {
+      NULL, NULL, &s_esp_tls_workers[0], &s_esp_tls_workers[1]};
+  const char* names[2u + H2_ESP_NET_TLS_WORKER_MAX] = {
+      "h2_net_reap", "h2_tls_free", "h2_tls", "h2_tls"};
+  for (size_t i = 0u; i < 2u + H2_ESP_NET_TLS_WORKER_MAX; ++i) {
+    if (deadline_ms != 0u && esp_net_timeout_remaining_ms(deadline_ms) == 0u)
+      break;
+    SemaphoreHandle_t wake = i == 0u   ? s_esp_net_reaper_wake
+                             : i == 1u ? s_esp_tls_cleanup_wake
+                                       : s_esp_tls_workers[i - 2u].wake;
+    if (*tasks[i] == NULL && wake != NULL) {
+      TaskHandle_t task = xTaskCreateStaticPinnedToCore(
+          entries[i], names[i], H2_ESP_NET_TLS_WORKER_STACK_BYTES, users[i],
+          tskIDLE_PRIORITY + 1u, s_esp_native_stacks[i],
+          &s_esp_native_task_storage[i], tskNO_AFFINITY);
+      if (task != NULL) {
+        portENTER_CRITICAL(&s_esp_net_mux);
+        *tasks[i] = task;
+        portEXIT_CRITICAL(&s_esp_net_mux);
+      }
     }
-    if (worker->task == NULL && worker->wake != NULL &&
-        job->caller_wake != NULL) {
-      TaskHandle_t task = NULL;
-      if (xTaskCreate(esp_net_tls_job_worker, "h2_tls",
-                      H2_ESP_NET_TLS_WORKER_STACK_BYTES, worker,
-                      tskIDLE_PRIORITY + 1u, &task) == pdPASS)
-        worker->task = task;
-    }
-    ready &= worker->task != NULL;
   }
   portENTER_CRITICAL(&s_esp_net_mux);
-  s_esp_tls_pool_ready = ready;
+  esp_net_native_status_locked();
+  s_esp_native_initializing = 0;
+  int ready = s_esp_net_native_ready;
+  portEXIT_CRITICAL(&s_esp_net_mux);
+  esp_net_socket_kick();
+  return ready;
+}
+static int esp_net_tls_bounded_init(void) {
+  portENTER_CRITICAL(&s_esp_net_mux);
+  esp_net_native_status_locked();
+  int ready = s_esp_tls_pool_ready;
   portEXIT_CRITICAL(&s_esp_net_mux);
   return ready;
 }
@@ -324,8 +369,8 @@ static int esp_net_tls_job_service(esp_net_tls_job_t* job, int fd,
     uint32_t remaining = esp_net_timeout_remaining_ms(job->deadline_ms);
     return remaining == 0u
                ? H2_PAL_ERR_TIMEOUT
-               : h2_esp_net_wait_fd(fd, request == ESP_NET_TLS_JOB_SEND,
-                                    remaining);
+               : esp_net_socket_wait(fd, request == ESP_NET_TLS_JOB_SEND,
+                                     remaining);
   }
   job->io_result = result >= 0 ? result
                    : request == ESP_NET_TLS_JOB_SEND

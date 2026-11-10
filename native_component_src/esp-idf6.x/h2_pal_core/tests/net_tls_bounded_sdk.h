@@ -30,11 +30,19 @@ typedef uint32_t TickType_t;
 typedef struct test_semaphore {
   pthread_mutex_t mutex;
   pthread_cond_t changed;
-  int available, waiters;
+  int available, waiters, is_static;
 }* SemaphoreHandle_t;
+typedef struct test_semaphore StaticSemaphore_t;
+typedef uint8_t StackType_t;
+typedef void (*TaskFunction_t)(void*);
 typedef struct {
-  unsigned char unused;
-} StaticSemaphore_t;
+  pthread_t thread;
+  TaskFunction_t entry;
+  void* user;
+  int role;
+} StaticTask_t;
+#define portBYTE_ALIGNMENT 16u
+#define tskNO_AFFINITY (-1)
 typedef pthread_t* TaskHandle_t;
 typedef pthread_mutex_t portMUX_TYPE;
 #define portMUX_INITIALIZER_UNLOCKED PTHREAD_MUTEX_INITIALIZER
@@ -109,6 +117,18 @@ static _Thread_local int test_is_worker;
 static int test_gate_stage, test_gate_entered, test_gate_release,
     test_gate_primary_only;
 static int test_fail_task, test_task_count, test_allocations, test_alloc_fail;
+static int test_dynamic_task_calls, test_static_task_attempts,
+    test_alloc_persistent;
+static unsigned test_static_delay_ms;
+static int test_hold_recv_fd = -1, test_recv_held, test_recv_release;
+static int test_write_wait_fd = -1, test_write_wait_entered;
+static int test_send_prefix_fd = -1;
+static size_t test_send_prefix_length;
+static int test_hold_cancel_claim, test_cancel_claim_entered,
+    test_cancel_claim_release;
+static const unsigned char* test_ssl_write_pointer;
+static size_t test_ssl_write_length;
+static int test_ssl_write_pending, test_ssl_write_retries;
 static int test_parse_fail, test_ca_checks, test_sni_checks, test_alpn_checks;
 static int test_contexts, test_io_calls, test_closed;
 static int test_native_connect_calls, test_native_accept_calls;
@@ -119,6 +139,7 @@ static int test_copy_gate, test_copy_entered, test_copy_release;
 static int test_publish_block, test_publish_held, test_publish_release;
 static int test_listener_shutdown_noop;
 static int test_simulate_fin_wait, test_expect_normal_fd = -1;
+static int test_fin_wait_fd = -1;
 static int test_fail_normal_linger, test_normal_linger_attempts;
 static int test_fail_abortive_linger, test_hold_accept, test_accept_entered,
     test_accept_release;
@@ -161,15 +182,29 @@ static SemaphoreHandle_t test_semaphore_create(int available) {
 }
 static SemaphoreHandle_t xSemaphoreCreateMutexStatic(
     StaticSemaphore_t* storage) {
-  (void)storage;
-  test_registry = test_semaphore_create(1);
-  return test_registry;
+  memset(storage, 0, sizeof(*storage));
+  assert(pthread_mutex_init(&storage->mutex, NULL) == 0);
+  assert(pthread_cond_init(&storage->changed, NULL) == 0);
+  storage->available = 1;
+  storage->is_static = 1;
+  ++test_sem_creates;
+  test_registry = storage;
+  return storage;
 }
 static SemaphoreHandle_t xSemaphoreCreateMutex(void) {
   return test_semaphore_create(1);
 }
 static SemaphoreHandle_t xSemaphoreCreateBinary(void) {
   return test_semaphore_create(0);
+}
+static SemaphoreHandle_t xSemaphoreCreateBinaryStatic(
+    StaticSemaphore_t* storage) {
+  memset(storage, 0, sizeof(*storage));
+  assert(pthread_mutex_init(&storage->mutex, NULL) == 0);
+  assert(pthread_cond_init(&storage->changed, NULL) == 0);
+  storage->is_static = 1;
+  ++test_sem_creates;
+  return storage;
 }
 static int xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks) {
   assert(sem != NULL);
@@ -190,8 +225,17 @@ static int xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks) {
   int acquired = sem->available;
   if (acquired) sem->available = 0;
   assert(pthread_mutex_unlock(&sem->mutex) == 0);
-  if (acquired && test_is_worker == 2 && ticks == portMAX_DELAY)
+  if (acquired && test_is_worker == 2 && ticks == portMAX_DELAY) {
     test_sdk_gate(14);
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    if (test_hold_cancel_claim) {
+      test_cancel_claim_entered = 1;
+      assert(pthread_cond_broadcast(&test_changed) == 0);
+      while (!test_cancel_claim_release)
+        assert(pthread_cond_wait(&test_changed, &test_lock) == 0);
+    }
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+  }
   if (acquired && test_is_worker == 3 && ticks == portMAX_DELAY) {
     assert(pthread_mutex_lock(&test_lock) == 0);
     if (test_hold_cleanup_claim) {
@@ -219,7 +263,7 @@ static void vSemaphoreDelete(SemaphoreHandle_t sem) {
   ++test_sem_deletes;
   assert(pthread_cond_destroy(&sem->changed) == 0);
   assert(pthread_mutex_destroy(&sem->mutex) == 0);
-  free(sem);
+  if (!sem->is_static) free(sem);
 }
 
 typedef struct {
@@ -239,6 +283,7 @@ static int xTaskCreate(void (*entry)(void*), const char* name, uint32_t stack,
   assert((strcmp(name, "h2_tls") == 0 || strcmp(name, "h2_net_reap") == 0 ||
           strcmp(name, "h2_tls_free") == 0) &&
          stack == 8192u && priority == 1u);
+  ++test_dynamic_task_calls;
   test_sdk_gate(8);
   if (test_fail_task) {
     --test_fail_task;
@@ -258,10 +303,43 @@ static int xTaskCreate(void (*entry)(void*), const char* name, uint32_t stack,
   return pdPASS;
 }
 
+static void* test_static_task_entry(void* context) {
+  StaticTask_t* task = context;
+  test_is_worker = task->role;
+  task->entry(task->user);
+  abort();
+}
+static TaskHandle_t xTaskCreateStaticPinnedToCore(
+    TaskFunction_t entry, const char* name, uint32_t stack, void* user,
+    unsigned priority, StackType_t* buffer, StaticTask_t* task, int core) {
+  assert(stack == 8192u && priority == 1u && core == tskNO_AFFINITY);
+  assert(buffer != NULL && ((uintptr_t)buffer % portBYTE_ALIGNMENT) == 0u &&
+         task != NULL);
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  ++test_static_task_attempts;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  test_sdk_gate(16);
+  if (test_static_delay_ms) vTaskDelay(test_static_delay_ms);
+  if (test_fail_task) {
+    if (test_fail_task > 0) --test_fail_task;
+    return NULL;
+  }
+  task->entry = entry;
+  task->user = user;
+  task->role = strcmp(name, "h2_tls") == 0        ? 1
+               : strcmp(name, "h2_net_reap") == 0 ? 2
+                                                  : 3;
+  assert(pthread_create(&task->thread, NULL, test_static_task_entry, task) ==
+         0);
+  assert(pthread_detach(task->thread) == 0);
+  ++test_task_count;
+  return &task->thread;
+}
+
 static void* test_allocate(size_t length) {
   test_sdk_gate(7);
   assert(pthread_mutex_lock(&test_lock) == 0);
-  int fail = test_alloc_fail;
+  int fail = test_alloc_fail || test_alloc_persistent;
   test_alloc_fail = 0;
   if (!fail) ++test_allocations;
   if (test_is_worker == 1)
@@ -308,6 +386,11 @@ static int h2_esp_net_tls_verify_certificate(
 
 static void test_sdk_gate(int stage) {
   assert(pthread_mutex_lock(&test_lock) == 0);
+  /* Select exactly one primary stall even when helpers win the first native
+   * close claims. Helpers proceed once the primary reaches destruction. */
+  while (stage == 6 && test_gate_stage == 6 && test_gate_primary_only &&
+         test_is_worker == 1 && test_gate_entered == 0)
+    assert(pthread_cond_wait(&test_changed, &test_lock) == 0);
   if (test_gate_stage == stage &&
       (!test_gate_primary_only || test_is_worker == 3)) {
     ++test_gate_entered;
@@ -473,9 +556,25 @@ static void mbedtls_x509_crt_free(mbedtls_x509_crt* ca) {
   assert(ca->self == ca);
 }
 
+static int test_select(int count, fd_set* reads, fd_set* writes, fd_set* errors,
+                       struct timeval* timeout) {
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  if (test_write_wait_fd >= 0 && writes != NULL &&
+      FD_ISSET(test_write_wait_fd, writes)) {
+    test_write_wait_entered = 1;
+    assert(pthread_cond_broadcast(&test_changed) == 0);
+  }
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  return select(count, reads, writes, errors, timeout);
+}
+#define select test_select
 static int test_send(int fd, const void* bytes, size_t length, int flags) {
   assert(!test_is_worker);
+  assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_io_calls;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  if (fd == test_send_prefix_fd && length > test_send_prefix_length)
+    length = test_send_prefix_length;
   int result = (int)send(fd, bytes, length, flags);
   if (result >= 0) test_sdk_gate(12);
   return result;
@@ -483,7 +582,17 @@ static int test_send(int fd, const void* bytes, size_t length, int flags) {
 static int test_recv(int fd, void* bytes, size_t length, int flags) {
   assert(!test_is_worker);
   test_sdk_gate(10);
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  if (fd == test_hold_recv_fd) {
+    test_recv_held = 1;
+    assert(pthread_cond_broadcast(&test_changed) == 0);
+    while (!test_recv_release)
+      assert(pthread_cond_wait(&test_changed, &test_lock) == 0);
+  }
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_io_calls;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
   int result = (int)recv(fd, bytes, length, flags);
   if (result >= 0) test_sdk_gate(13);
   return result;
@@ -557,7 +666,9 @@ static void test_close_profile(int fd, int closing) {
     } else
       assert(getsockopt(fd, SOL_SOCKET, SO_LINGER, &profile, &length) == 0);
     assert(pthread_mutex_lock(&test_lock) == 0);
-    int normal = fd == test_expect_normal_fd, fin_wait = test_simulate_fin_wait;
+    int normal = fd == test_expect_normal_fd;
+    int fin_wait = test_simulate_fin_wait &&
+                   (test_fin_wait_fd < 0 || test_fin_wait_fd == fd);
     assert(pthread_mutex_unlock(&test_lock) == 0);
     if (normal) assert(profile.l_onoff == 0);
     struct sockaddr_storage peer;
@@ -569,7 +680,7 @@ static void test_close_profile(int fd, int closing) {
   }
 }
 static int test_close(int fd) {
-  assert(test_is_worker != 1);
+  /* Idle setup actors may close exclusively owned retired native records. */
   test_close_profile(fd, 1);
   assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_closed;
@@ -578,7 +689,7 @@ static int test_close(int fd) {
   return close(fd);
 }
 static int test_shutdown(int fd, int how) {
-  test_close_profile(fd, 0);
+  if (how != SHUT_RD) test_close_profile(fd, 0);
   int listening = 0;
   socklen_t length = sizeof(listening);
   int type = 0;
@@ -665,7 +776,18 @@ static const h2_pal_netif_api_t* h2_esp_platform_netif_api(void) {
 static int mbedtls_ssl_write(mbedtls_ssl_context* ssl,
                              const unsigned char* data, size_t length) {
   assert(ssl->self == ssl);
-  return ssl->send_fn(ssl->bio, data, length);
+  if (test_ssl_write_pending) {
+    assert(data == test_ssl_write_pointer && length == test_ssl_write_length);
+    ++test_ssl_write_retries;
+  }
+  int result = ssl->send_fn(ssl->bio, data, length);
+  test_ssl_write_pending = result == MBEDTLS_ERR_SSL_WANT_WRITE ||
+                           result == MBEDTLS_ERR_SSL_WANT_READ;
+  if (test_ssl_write_pending) {
+    test_ssl_write_pointer = data;
+    test_ssl_write_length = length;
+  }
+  return result;
 }
 static int mbedtls_ssl_read(mbedtls_ssl_context* ssl, unsigned char* data,
                             size_t length) {

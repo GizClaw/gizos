@@ -20,6 +20,7 @@ typedef struct esp_net_socket_record {
   int fd, type, role, tls_slot, abortive_close, close_prepared;
   uint32_t generation, tls_generation;
   size_t references;
+  uint64_t retry_at_ms;
 } esp_net_socket_record_t;
 typedef struct esp_net_socket_lease {
   size_t index;
@@ -40,7 +41,15 @@ typedef struct esp_net_tls_cleanup {
 static esp_net_tls_cleanup_t s_esp_tls_cleanup[H2_ESP_NET_TLS_SOCKET_MAX];
 static int s_esp_tls_cleanup_busy;
 static size_t s_esp_tls_cleanup_cursor, s_esp_net_reap_cursor;
-static int esp_net_socket_reap_one(void);
+typedef struct esp_net_socket_reap {
+  esp_net_socket_lease_t lease;
+  int type, abortive, slot_index;
+  uint32_t tls_generation;
+} esp_net_socket_reap_t;
+static int esp_net_socket_reap_take_locked(esp_net_socket_reap_t* work,
+                                           uint64_t now);
+static void esp_net_socket_reap(const esp_net_socket_reap_t* work);
+static int s_esp_net_native_ready;
 #define H2_ESP_NET_CANCEL_POLL_MS 20u
 static void esp_net_tls_jobs_wake(void);
 static h2_pal_result_t esp_net_tls_wrap(void*, h2_pal_net_socket_t,
@@ -49,23 +58,18 @@ static h2_pal_result_t esp_net_tls_wrap(void*, h2_pal_net_socket_t,
 
 static int esp_net_socket_has_executor(void) {
   portENTER_CRITICAL(&s_esp_net_mux);
-  int ready = s_esp_net_reaper_task != NULL || s_esp_tls_cleanup_task != NULL;
-  portEXIT_CRITICAL(&s_esp_net_mux);
-  return ready;
-}
-static int esp_net_socket_has_reaper(void) {
-  portENTER_CRITICAL(&s_esp_net_mux);
-  int ready = s_esp_net_reaper_task != NULL;
+  int ready = s_esp_net_native_ready;
   portEXIT_CRITICAL(&s_esp_net_mux);
   return ready;
 }
 static void esp_net_socket_kick(void) {
   portENTER_CRITICAL(&s_esp_net_mux);
-  SemaphoreHandle_t wake = s_esp_net_reaper_task != NULL
-                               ? s_esp_net_reaper_wake
-                               : s_esp_tls_cleanup_wake;
+  SemaphoreHandle_t cancel = s_esp_net_reaper_wake;
+  SemaphoreHandle_t work = s_esp_tls_cleanup_wake;
   portEXIT_CRITICAL(&s_esp_net_mux);
-  if (wake != NULL) (void)xSemaphoreGive(wake);
+  if (cancel != NULL) (void)xSemaphoreGive(cancel);
+  if (work != NULL) (void)xSemaphoreGive(work);
+  esp_net_tls_jobs_wake();
 }
 /* Caller holds s_esp_net_mux. Only these native closes have no protocol wait.
  */
@@ -190,13 +194,40 @@ static int esp_net_socket_alive(const esp_net_socket_lease_t* lease) {
   return alive;
 }
 
+/* The public operation already owns its generation lease. Read-only native
+ * shutdown does not wake every write/select path, so use finite waits while
+ * retaining the same SSL lock, input pointer/length and absolute deadline. */
+static int esp_net_socket_wait(int fd, int write_ready, uint32_t timeout_ms) {
+  uint64_t deadline = esp_net_now_ms() + timeout_ms;
+  for (;;) {
+    int alive = 0;
+    portENTER_CRITICAL(&s_esp_net_mux);
+    for (size_t i = 0u; i < CONFIG_LWIP_MAX_SOCKETS; ++i) {
+      if (s_esp_net_records[i].used && s_esp_net_records[i].fd == fd) {
+        alive = !s_esp_net_records[i].closed;
+        break;
+      }
+    }
+    portEXIT_CRITICAL(&s_esp_net_mux);
+    if (!alive) return H2_PAL_ERR_CLOSED;
+    uint32_t remaining =
+        timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline);
+    uint32_t slice = remaining > H2_ESP_NET_CANCEL_POLL_MS
+                         ? H2_ESP_NET_CANCEL_POLL_MS
+                         : remaining;
+    int result = h2_esp_net_wait_fd(fd, write_ready, slice);
+    if (result != H2_PAL_ERR_TIMEOUT || timeout_ms == 0u) return result;
+    if (esp_net_timeout_remaining_ms(deadline) == 0u) return H2_PAL_ERR_TIMEOUT;
+  }
+}
+
 static int esp_net_socket_begin_connect(const esp_net_socket_lease_t* lease) {
   int result = H2_PAL_ERR_CLOSED;
   portENTER_CRITICAL(&s_esp_net_mux);
   esp_net_socket_record_t* record = &s_esp_net_records[lease->index];
   if (record->used && !record->closed &&
       record->generation == lease->generation) {
-    if (s_esp_net_reaper_task == NULL && s_esp_tls_cleanup_task == NULL)
+    if (!s_esp_net_native_ready)
       result = H2_PAL_ERR_UNAVAILABLE;
     else if (record->role == ESP_NET_SOCKET_LISTENER)
       result = H2_PAL_ERR_INVALID_STATE;
@@ -242,8 +273,8 @@ static int esp_net_socket_prepare_close(const esp_net_socket_lease_t* lease,
         0)
       return H2_PAL_ERR_IO;
   }
-  /* Profile restoration must precede shutdown, and is performed once: some
-   * native stacks reject another setsockopt after shutdown has completed. */
+  /* Restore the profile before native FIN/close, once. Read-only cancellation
+   * can precede this: lwIP retains the TX/linger state after SHUT_RD. */
   portENTER_CRITICAL(&s_esp_net_mux);
   record->close_prepared = 1;
   portEXIT_CRITICAL(&s_esp_net_mux);
@@ -349,31 +380,24 @@ static void esp_net_tls_cleanup_slot(size_t i, uint32_t generation) {
 static void esp_net_tls_cleanup_worker(void* unused) {
   (void)unused;
   for (;;) {
-    /* During partial initialization this executor also owns pending native
-     * closes. No TCP connection can be published without at least one executor.
-     */
-    if (!esp_net_socket_has_reaper()) {
-      portENTER_CRITICAL(&s_esp_net_mux);
-      s_esp_tls_cleanup_busy = 1;
-      portEXIT_CRITICAL(&s_esp_net_mux);
-      esp_net_tls_jobs_wake();
-      int progressed = esp_net_socket_reap_one();
-      portENTER_CRITICAL(&s_esp_net_mux);
-      s_esp_tls_cleanup_busy = 0;
-      portEXIT_CRITICAL(&s_esp_net_mux);
-      if (progressed) continue;
-    }
+    esp_net_socket_reap_t native;
     size_t index = 0u;
     uint32_t generation = 0u;
+    uint64_t now = esp_net_now_ms();
     portENTER_CRITICAL(&s_esp_net_mux);
-    int claimed = esp_net_tls_cleanup_take_locked(&index, &generation);
-    if (claimed) s_esp_tls_cleanup_busy = 1;
+    int close_fd = esp_net_socket_reap_take_locked(&native, now);
+    int cleanup =
+        !close_fd && esp_net_tls_cleanup_take_locked(&index, &generation);
+    if (close_fd || cleanup) s_esp_tls_cleanup_busy = 1;
     portEXIT_CRITICAL(&s_esp_net_mux);
-    if (claimed) {
-      /* Wake on the idle->busy transition too. Earlier admission wakes may
-       * already have been consumed by helpers while stealing was disabled. */
+    if (close_fd || cleanup) {
+      /* An actual work claim publishes busy and wakes helpers atomically with
+       * ownership. Old admission wakes may already have been consumed. */
       esp_net_tls_jobs_wake();
-      esp_net_tls_cleanup_slot(index, generation);
+      if (close_fd)
+        esp_net_socket_reap(&native);
+      else
+        esp_net_tls_cleanup_slot(index, generation);
       portENTER_CRITICAL(&s_esp_net_mux);
       s_esp_tls_cleanup_busy = 0;
       portEXIT_CRITICAL(&s_esp_net_mux);
@@ -405,100 +429,116 @@ static void esp_net_close(void* user, h2_pal_net_socket_t fd) {
     }
   }
   portEXIT_CRITICAL(&s_esp_net_mux);
-  esp_net_tls_jobs_wake();
   esp_net_socket_kick();
   if (close_fd >= 0) esp_net_socket_plain_close(&close_lease, type, abortive);
 }
 
-/* A single claimed native operation, executable by the normal reaper or the
- * cleanup executor during partial initialization. All SDK work is outside
- * s_esp_net_mux, with a reference or an exclusive reclamation claim. */
-static int esp_net_socket_reap_one(void) {
-  portENTER_CRITICAL(&s_esp_net_mux);
-  size_t start = s_esp_net_reap_cursor;
-  portEXIT_CRITICAL(&s_esp_net_mux);
+/* Caller holds the Net mux. Claim actual closed-record work before excluding
+ * this helper from TLS admission; empty scans must not create false NO_SPACE.
+ * The caller publishes its own busy flag in this same critical section. */
+static int esp_net_socket_reap_take_locked(esp_net_socket_reap_t* work,
+                                           uint64_t now) {
   for (size_t offset = 0u; offset < CONFIG_LWIP_MAX_SOCKETS; ++offset) {
-    size_t i = (start + offset) % CONFIG_LWIP_MAX_SOCKETS;
-    int fd = -1, shutdown_fd = -1, slot_index = -1, type = 0, abortive = 0;
-    uint32_t generation = 0u, tls_generation = 0u;
+    size_t i = (s_esp_net_reap_cursor + offset) % CONFIG_LWIP_MAX_SOCKETS;
+    esp_net_socket_record_t* record = &s_esp_net_records[i];
+    if (record->used && record->closed && record->fd >= 0 && !record->reaping &&
+        !record->unpublished && record->references == 0u &&
+        now >= record->retry_at_ms) {
+      record->reaping = 1;
+      *work =
+          (esp_net_socket_reap_t){.lease = {i, record->generation, record->fd},
+                                  .type = record->type,
+                                  .abortive = record->abortive_close,
+                                  .slot_index = record->tls_slot,
+                                  .tls_generation = record->tls_generation};
+      s_esp_net_reap_cursor = (i + 1u) % CONFIG_LWIP_MAX_SOCKETS;
+      return 1;
+    }
+  }
+  return 0;
+}
+/* One exclusively owned native close. Only primary/idle TLS helpers execute
+ * this; setup/handshake jobs never receive a borrowed or live caller fd. */
+static void esp_net_socket_reap(const esp_net_socket_reap_t* work) {
+  const esp_net_socket_lease_t* lease = &work->lease;
+  esp_net_socket_record_t* record = &s_esp_net_records[lease->index];
+  if (esp_net_socket_prepare_close(lease, work->type, work->abortive) !=
+      H2_PAL_OK) {
+    uint64_t retry = esp_net_now_ms() +
+                     (1000u + configTICK_RATE_HZ - 1u) / configTICK_RATE_HZ;
+    portENTER_CRITICAL(&s_esp_net_mux);
+    record->retry_at_ms = retry;
+    record->reaping = 0;
+    portEXIT_CRITICAL(&s_esp_net_mux);
+    vTaskDelay(1u);
+    esp_net_socket_kick();
+    return;
+  }
+  int slot_index = work->slot_index;
+  esp_net_tls_socket_t* slot = NULL;
+  if (slot_index >= 0) {
+    (void)xSemaphoreTake(s_esp_tls_sync->io_mutexes[slot_index], portMAX_DELAY);
+    (void)xSemaphoreTake(s_esp_tls_sync->registry_mutex, portMAX_DELAY);
+    esp_net_tls_socket_t* candidate = &s_esp_tls_sockets[slot_index];
+    if (candidate->state == ESP_NET_TLS_SOCKET_ACTIVE &&
+        candidate->fd == lease->fd &&
+        s_esp_tls_sync->generations[slot_index] == work->tls_generation) {
+      candidate->state = ESP_NET_TLS_SOCKET_CLOSING;
+      candidate->fd = -1;
+      slot = candidate;
+    }
+    (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+  }
+  portENTER_CRITICAL(&s_esp_net_mux);
+  record->used = 0;
+  portEXIT_CRITICAL(&s_esp_net_mux);
+  (void)close(lease->fd);
+  if (slot_index >= 0) esp_net_tls_release((size_t)slot_index);
+  if (slot != NULL) {
+    portENTER_CRITICAL(&s_esp_net_mux);
+    s_esp_tls_cleanup[slot_index] =
+        (esp_net_tls_cleanup_t){1, work->tls_generation};
+    portEXIT_CRITICAL(&s_esp_net_mux);
+    (void)xSemaphoreGive(s_esp_tls_cleanup_wake);
+    esp_net_tls_jobs_wake();
+  }
+}
+/* Read-side cancellation is independent of all three blocking SDK lanes.
+ * For a pinned connection no managed FIN/close has begun. SHUT_RD therefore
+ * follows lwIP tcp_shutdown(rx=1,tx=0), without FIN allocation or TX abort. */
+static int esp_net_socket_cancel_one(void) {
+  for (size_t i = 0u; i < CONFIG_LWIP_MAX_SOCKETS; ++i) {
+    int shutdown_fd = -1, close_fd = -1, type = 0, abortive = 0;
+    esp_net_socket_lease_t lease = {0};
     portENTER_CRITICAL(&s_esp_net_mux);
     esp_net_socket_record_t* record = &s_esp_net_records[i];
-    if (record->used && record->closed && !record->reaping &&
-        !record->unpublished) {
-      if (record->references == 0u) {
-        record->reaping = 1;
-        fd = record->fd;
-        slot_index = record->tls_slot;
-        tls_generation = record->tls_generation;
-      } else if (!record->shutdown_started) {
+    if (record->used && record->closed && !record->unpublished &&
+        !record->reaping) {
+      if (record->references > 0u && record->type == SOCK_STREAM &&
+          record->role == ESP_NET_SOCKET_CONNECTION &&
+          !record->shutdown_started) {
         record->shutdown_started = 1;
         ++record->references;
         shutdown_fd = record->fd;
+      } else if (record->references == 0u &&
+                 esp_net_socket_inline_close(record)) {
+        record->reaping = 1;
+        close_fd = record->fd;
+        type = record->type;
+        abortive = record->abortive_close;
       }
-      generation = record->generation;
-      type = record->type;
-      abortive = record->abortive_close;
-      if (fd >= 0 || shutdown_fd >= 0)
-        s_esp_net_reap_cursor = (i + 1u) % CONFIG_LWIP_MAX_SOCKETS;
+      lease = (esp_net_socket_lease_t){i, record->generation, record->fd};
     }
     portEXIT_CRITICAL(&s_esp_net_mux);
     if (shutdown_fd >= 0) {
-      esp_net_socket_lease_t lease = {i, generation, shutdown_fd};
-      int prepared =
-          esp_net_socket_prepare_close(&lease, type, abortive) == H2_PAL_OK;
-      if (prepared)
-        (void)shutdown(shutdown_fd, SHUT_RDWR);
-      else {
-        portENTER_CRITICAL(&s_esp_net_mux);
-        record->shutdown_started = 0;
-        portEXIT_CRITICAL(&s_esp_net_mux);
-      }
+      (void)shutdown(shutdown_fd, SHUT_RD);
       esp_net_socket_unpin(&lease, 0);
-      if (!prepared) {
-        vTaskDelay(1u);
-        esp_net_socket_kick();
-      }
       return 1;
     }
-    if (fd < 0) continue;
-    esp_net_socket_lease_t lease = {i, generation, fd};
-    if (esp_net_socket_prepare_close(&lease, type, abortive) != H2_PAL_OK) {
-      portENTER_CRITICAL(&s_esp_net_mux);
-      record->reaping = 0;
-      portEXIT_CRITICAL(&s_esp_net_mux);
-      vTaskDelay(1u);
-      esp_net_socket_kick();
+    if (close_fd >= 0) {
+      esp_net_socket_plain_close(&lease, type, abortive);
       return 1;
     }
-    esp_net_tls_socket_t* slot = NULL;
-    if (slot_index >= 0) {
-      (void)xSemaphoreTake(s_esp_tls_sync->io_mutexes[slot_index],
-                           portMAX_DELAY);
-      (void)xSemaphoreTake(s_esp_tls_sync->registry_mutex, portMAX_DELAY);
-      esp_net_tls_socket_t* candidate = &s_esp_tls_sockets[slot_index];
-      if (candidate->state == ESP_NET_TLS_SOCKET_ACTIVE &&
-          candidate->fd == fd &&
-          s_esp_tls_sync->generations[slot_index] == tls_generation) {
-        candidate->state = ESP_NET_TLS_SOCKET_CLOSING;
-        candidate->fd = -1;
-        slot = candidate;
-      }
-      (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-    }
-    portENTER_CRITICAL(&s_esp_net_mux);
-    record->used = 0;
-    portEXIT_CRITICAL(&s_esp_net_mux);
-    (void)close(fd);
-    if (slot_index >= 0) esp_net_tls_release((size_t)slot_index);
-    if (slot != NULL) {
-      portENTER_CRITICAL(&s_esp_net_mux);
-      s_esp_tls_cleanup[slot_index] =
-          (esp_net_tls_cleanup_t){1, tls_generation};
-      portEXIT_CRITICAL(&s_esp_net_mux);
-      (void)xSemaphoreGive(s_esp_tls_cleanup_wake);
-      esp_net_tls_jobs_wake();
-    }
-    return 1;
   }
   return 0;
 }
@@ -506,7 +546,7 @@ static void esp_net_socket_reaper(void* unused) {
   (void)unused;
   for (;;) {
     (void)xSemaphoreTake(s_esp_net_reaper_wake, portMAX_DELAY);
-    while (esp_net_socket_reap_one()) {
+    while (esp_net_socket_cancel_one()) {
     }
   }
 }
@@ -576,13 +616,21 @@ static int esp_net_tcp_listen_managed(void* user, h2_pal_net_family_t family,
 static h2_pal_result_t esp_net_tcp_connect_managed(
     void* user, h2_pal_net_socket_t fd, const h2_pal_net_addr_t* address,
     uint32_t timeout_ms) {
+  uint64_t deadline = esp_net_now_ms() + timeout_ms;
+  int ready = esp_net_native_init(timeout_ms == 0u ? 0u : deadline);
+  if (timeout_ms != 0u && esp_net_timeout_remaining_ms(deadline) == 0u)
+    return H2_PAL_ERR_TIMEOUT;
+  if (!ready) return H2_PAL_ERR_UNAVAILABLE;
+  uint32_t remaining =
+      timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline);
+  if (timeout_ms != 0u && remaining == 0u) return H2_PAL_ERR_TIMEOUT;
   H2_ESP_NET_LEASE_BEGIN(SOCK_STREAM);
   rc = esp_net_socket_begin_connect(&lease);
   if (rc != H2_PAL_OK) {
     esp_net_socket_unpin(&lease, 0);
     return rc;
   }
-  H2_ESP_NET_LEASE_END(esp_net_tcp_connect(user, fd, address, timeout_ms));
+  H2_ESP_NET_LEASE_END(esp_net_tcp_connect(user, fd, address, remaining));
 }
 static h2_pal_result_t esp_net_tcp_accept_managed(void* user,
                                                   h2_pal_net_socket_t fd,
@@ -592,7 +640,11 @@ static h2_pal_result_t esp_net_tcp_accept_managed(void* user,
   (void)user;
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out = -1;
-  if (!esp_net_socket_has_executor()) return H2_PAL_ERR_UNAVAILABLE;
+  uint64_t deadline = esp_net_now_ms() + timeout_ms;
+  int ready = esp_net_native_init(timeout_ms == 0u ? 0u : deadline);
+  if (timeout_ms != 0u && esp_net_timeout_remaining_ms(deadline) == 0u)
+    return H2_PAL_ERR_TIMEOUT;
+  if (!ready) return H2_PAL_ERR_UNAVAILABLE;
   H2_ESP_NET_LEASE_BEGIN(SOCK_STREAM);
   esp_net_socket_lease_t owner;
   rc = esp_net_socket_reserve_accept(&owner);
@@ -600,7 +652,6 @@ static h2_pal_result_t esp_net_tcp_accept_managed(void* user,
     esp_net_socket_unpin(&lease, 0);
     return rc;
   }
-  uint64_t deadline = esp_net_now_ms() + timeout_ms;
   h2_pal_net_socket_t accepted = -1;
   for (;;) {
     if (!esp_net_socket_alive(&lease)) {
@@ -653,7 +704,27 @@ static int esp_net_tcp_recv_managed(void* user, h2_pal_net_socket_t fd,
                                     uint8_t* data, size_t length,
                                     uint32_t timeout_ms) {
   H2_ESP_NET_LEASE_BEGIN(SOCK_STREAM);
-  H2_ESP_NET_LEASE_END(esp_net_tcp_recv(user, fd, data, length, timeout_ms));
+  uint64_t deadline = esp_net_now_ms() + timeout_ms;
+  for (;;) {
+    if (!esp_net_socket_alive(&lease)) {
+      rc = H2_PAL_ERR_CLOSED;
+      break;
+    }
+    uint32_t remaining =
+        timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline);
+    if (timeout_ms != 0u && remaining == 0u) {
+      rc = H2_PAL_ERR_TIMEOUT;
+      break;
+    }
+    uint32_t slice = remaining > H2_ESP_NET_CANCEL_POLL_MS
+                         ? H2_ESP_NET_CANCEL_POLL_MS
+                         : remaining;
+    rc = esp_net_tcp_recv(user, fd, data, length, slice);
+    if (rc != H2_PAL_ERR_TIMEOUT || timeout_ms == 0u) break;
+  }
+  if (rc < 0 && !esp_net_socket_alive(&lease)) rc = H2_PAL_ERR_CLOSED;
+  esp_net_socket_unpin(&lease, 0);
+  return rc;
 }
 static int esp_net_udp_sendto_managed(void* user, h2_pal_net_socket_t fd,
                                       const h2_pal_net_addr_t* address,

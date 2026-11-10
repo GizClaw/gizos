@@ -89,12 +89,16 @@ static size_t s_esp_resolver_count;
 static uint64_t esp_net_now_ms(void);
 static uint32_t esp_net_timeout_remaining_ms(uint64_t deadline_ms);
 static int esp_net_tls_bounded_init(void);
+static int esp_net_native_init(uint64_t deadline_ms);
+static void esp_net_tls_publish_sync(esp_net_tls_sync_t* sync);
 static int esp_net_tls_available(void);
+static int esp_net_socket_wait(int fd, int write_ready, uint32_t timeout_ms);
 static void esp_net_socket_bind_accept(void* owner, int fd);
 static portMUX_TYPE s_esp_tls_init_mux = portMUX_INITIALIZER_UNLOCKED;
 static int s_esp_tls_initializing, s_esp_tls_initialized;
 
 static void esp_net_tls_init(void) {
+  (void)esp_net_native_init(0u);
   portENTER_CRITICAL(&s_esp_tls_init_mux);
   if (s_esp_tls_initializing || s_esp_tls_initialized) {
     portEXIT_CRITICAL(&s_esp_tls_init_mux);
@@ -129,8 +133,7 @@ static void esp_net_tls_init(void) {
       h2_pal_mem_free(h2_esp_platform_default_allocator(), sync);
       goto finished;
     }
-    s_esp_tls_sockets = sync->sockets;
-    s_esp_tls_sync = sync;
+    esp_net_tls_publish_sync(sync);
   }
   int initialized = esp_net_tls_bounded_init();
   portENTER_CRITICAL(&s_esp_tls_init_mux);
@@ -332,10 +335,10 @@ static void esp_net_tls_free(esp_net_tls_socket_t* socket) {
 static int esp_net_tls_wait(esp_net_tls_socket_t* socket, int result,
                             uint32_t timeout_ms) {
   if (result == MBEDTLS_ERR_SSL_WANT_READ) {
-    return h2_esp_net_wait_fd(socket->fd, 0, timeout_ms);
+    return esp_net_socket_wait(socket->fd, 0, timeout_ms);
   }
   if (result == MBEDTLS_ERR_SSL_WANT_WRITE) {
-    return h2_esp_net_wait_fd(socket->fd, 1, timeout_ms);
+    return esp_net_socket_wait(socket->fd, 1, timeout_ms);
   }
   return H2_PAL_ERR_IO;
 }
@@ -1579,7 +1582,7 @@ static int esp_net_tcp_send_timeout(void* user, h2_pal_net_socket_t socket_fd,
   for (;;) {
     uint32_t remaining_ms =
         timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline_ms);
-    int ready = h2_esp_net_wait_fd(socket_fd, 1, remaining_ms);
+    int ready = esp_net_socket_wait(socket_fd, 1, remaining_ms);
     if (ready != H2_PAL_OK) {
       if (ready == H2_PAL_ERR_TIMEOUT) {
         return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
