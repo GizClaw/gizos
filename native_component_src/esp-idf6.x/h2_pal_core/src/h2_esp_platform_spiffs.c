@@ -7,9 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#include <dirent.h>
 #include <errno.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,13 +27,11 @@ typedef struct h2_esp_platform_spiffs_context h2_esp_platform_spiffs_context_t;
 typedef enum h2_esp_spiffs_safe_op {
   H2_ESP_SPIFFS_OPEN = 1,
   H2_ESP_SPIFFS_READ,
-  H2_ESP_SPIFFS_SEEK,
   H2_ESP_SPIFFS_WRITE,
   H2_ESP_SPIFFS_SYNC,
   H2_ESP_SPIFFS_CLOSE,
   H2_ESP_SPIFFS_STAT,
   H2_ESP_SPIFFS_REMOVE,
-  H2_ESP_SPIFFS_CLEAR,
   H2_ESP_SPIFFS_RENAME,
   H2_ESP_SPIFFS_MOUNT,
   H2_ESP_SPIFFS_UNMOUNT,
@@ -52,7 +48,6 @@ typedef struct h2_esp_spiffs_safe_call {
   uint8_t* data;
   size_t len;
   size_t processed;
-  uint64_t position;
   h2_pal_fs_stat_t stat_value;
   uint32_t max_files;
   int format_if_mount_failed;
@@ -200,16 +195,6 @@ static int spiffs_read_unsafe(void* user, h2_pal_fs_file_t* raw_file,
   return H2_PAL_FS_OK;
 }
 
-static int spiffs_seek_unsafe(h2_pal_fs_file_t* raw_file, uint64_t position) {
-  h2_esp_platform_file_t* file = (h2_esp_platform_file_t*)raw_file;
-  if (file == NULL || file->fp == NULL) return H2_PAL_FS_ERR_INVALID_ARG;
-  errno = 0;
-  if (fseek(file->fp, (long)position, SEEK_SET) != 0)
-    return map_errno(H2_PAL_FS_ERR_IO);
-  clearerr(file->fp);
-  return H2_PAL_FS_OK;
-}
-
 static int spiffs_write_unsafe(void* user, h2_pal_fs_file_t* raw_file,
                                const void* data, size_t len,
                                size_t* out_written) {
@@ -320,117 +305,26 @@ static int spiffs_remove_unsafe(void* user, const char* path) {
                                     : map_errno(H2_PAL_FS_ERR_IO);
 }
 
-/* SPIFFS has flat objects, including names with slashes. Enumerate the mount
- * root so both exact names and the historical slash-to-underscore aliases are
- * visible. Never format the partition or recurse through pseudo-directories. */
-static int spiffs_clear_unsafe(h2_esp_platform_spiffs_context_t* ctx,
-                               const char* path) {
-  char exact[H2_ESP_SPIFFS_PATH_SIZE];
-  char flat[H2_ESP_SPIFFS_PATH_SIZE];
-  int rc = translate_path_exact(ctx, path, exact, sizeof(exact));
-  if (rc != H2_PAL_FS_OK) return rc;
-  rc = translate_path_flattened(ctx, path, flat, sizeof(flat));
-  if (rc != H2_PAL_FS_OK) return rc;
-  const size_t base_len = strlen(ctx->config->base_path);
-  const char* scope = exact + base_len + 1u;
-  const char* flat_scope = flat + base_len + 1u;
-  const size_t scope_len = strlen(scope);
-  /* A literal root file such as data_backup is indistinguishable from a
-   * historical flattened alias. Preflight the complete inventory before
-   * removing anything; ambiguous names require explicit caller intervention. */
-  for (unsigned pass = 0u; pass < 2u; ++pass) {
-    errno = 0;
-    DIR* dir = opendir(ctx->config->base_path);
-    if (dir == NULL) return map_errno(H2_PAL_FS_ERR_IO);
-    for (;;) {
-      errno = 0;
-      struct dirent* entry = readdir(dir);
-      if (entry == NULL) {
-        rc = errno == 0 ? H2_PAL_FS_OK : map_errno(H2_PAL_FS_ERR_IO);
-        break;
-      }
-      const char* name = entry->d_name;
-      if (strncmp(name, flat_scope, scope_len) == 0 && name[scope_len] == '_') {
-        rc = H2_PAL_FS_ERR_UNSUPPORTED;
-        break;
-      }
-      if (pass == 0u || strncmp(name, scope, scope_len) != 0 ||
-          name[scope_len] != '/')
-        continue;
-      char child[H2_ESP_SPIFFS_PATH_SIZE];
-      int n =
-          snprintf(child, sizeof(child), "%s/%s", ctx->config->base_path, name);
-      if (n < 0 || (size_t)n >= sizeof(child)) {
-        rc = H2_PAL_FS_ERR_NO_SPACE;
-        break;
-      }
-      errno = 0;
-      if (remove(child) != 0) {
-        rc = map_errno(H2_PAL_FS_ERR_IO);
-        break;
-      }
-    }
-    errno = 0;
-    if (closedir(dir) != 0 && rc == H2_PAL_FS_OK)
-      rc = map_errno(H2_PAL_FS_ERR_IO);
-    if (rc != H2_PAL_FS_OK) return rc;
-  }
-  return H2_PAL_FS_OK;
-}
-
-static int spiffs_path_exists(const char* path, int* exists) {
-  struct stat st;
-  errno = 0;
-  if (stat(path, &st) == 0) {
-    *exists = 1;
-    return H2_PAL_FS_OK;
-  }
-  if (errno != ENOENT) return map_errno(H2_PAL_FS_ERR_IO);
-  *exists = 0;
-  return H2_PAL_FS_OK;
-}
-
 static int spiffs_rename_unsafe(void* user, const char* old_path,
                                 const char* new_path) {
   h2_esp_platform_spiffs_context_t* ctx =
       (h2_esp_platform_spiffs_context_t*)user;
-  char exact_old[H2_ESP_SPIFFS_PATH_SIZE];
-  char exact_new[H2_ESP_SPIFFS_PATH_SIZE];
-  char flat_old[H2_ESP_SPIFFS_PATH_SIZE];
-  char flat_new[H2_ESP_SPIFFS_PATH_SIZE];
-  int rc = translate_path_exact(ctx, old_path, exact_old, sizeof(exact_old));
-  if (rc != H2_PAL_FS_OK) return rc;
-  rc = translate_path_exact(ctx, new_path, exact_new, sizeof(exact_new));
-  if (rc != H2_PAL_FS_OK) return rc;
-  rc = translate_path_flattened(ctx, old_path, flat_old, sizeof(flat_old));
-  if (rc != H2_PAL_FS_OK) return rc;
-  rc = translate_path_flattened(ctx, new_path, flat_new, sizeof(flat_new));
-  if (rc != H2_PAL_FS_OK) return rc;
-
-  int native_exists;
-  int legacy_exists = 0;
-  rc = spiffs_path_exists(exact_old, &native_exists);
-  if (rc != H2_PAL_FS_OK) return rc;
-  if (strcmp(exact_old, flat_old) != 0) {
-    rc = spiffs_path_exists(flat_old, &legacy_exists);
-    if (rc != H2_PAL_FS_OK) return rc;
+  char real_old_path[192];
+  char real_new_path[192];
+  int rc = translate_path_flattened(ctx, old_path, real_old_path,
+                                    sizeof(real_old_path));
+  if (rc != H2_PAL_FS_OK) {
+    return rc;
   }
-  if (native_exists && legacy_exists) return H2_PAL_FS_ERR_UNSUPPORTED;
-  if (!native_exists && !legacy_exists) return H2_PAL_FS_ERR_NOT_FOUND;
-  if (strcmp(old_path, new_path) == 0) return H2_PAL_FS_OK;
-  const char* source = native_exists ? exact_old : flat_old;
-  if (strcmp(source, exact_new) == 0) return H2_PAL_FS_ERR_UNSUPPORTED;
-  if (strcmp(exact_new, flat_new) != 0) {
-    int alias_exists;
-    rc = spiffs_path_exists(flat_new, &alias_exists);
-    if (rc != H2_PAL_FS_OK) return rc;
-    /* Never hide an old destination behind a new native file, or unlink an
-     * underscore name whose ownership cannot be established. */
-    if (alias_exists) return H2_PAL_FS_ERR_UNSUPPORTED;
+  rc = translate_path_flattened(ctx, new_path, real_new_path,
+                                sizeof(real_new_path));
+  if (rc != H2_PAL_FS_OK) {
+    return rc;
   }
   errno = 0;
-  return rename(source, exact_new) == 0 ? H2_PAL_FS_OK
-                                        : map_errno(H2_PAL_FS_ERR_IO);
+  return rename(real_old_path, real_new_path) == 0
+             ? H2_PAL_FS_OK
+             : map_errno(H2_PAL_FS_ERR_IO);
 }
 
 static void IRAM_ATTR spiffs_safe_callback(void* context) {
@@ -447,8 +341,6 @@ static void IRAM_ATTR spiffs_safe_callback(void* context) {
   } else if (call->op == H2_ESP_SPIFFS_READ) {
     call->result = spiffs_read_unsafe(&local_context, call->file, call->data,
                                       call->len, &call->processed);
-  } else if (call->op == H2_ESP_SPIFFS_SEEK) {
-    call->result = spiffs_seek_unsafe(call->file, call->position);
   } else if (call->op == H2_ESP_SPIFFS_WRITE) {
     call->result = spiffs_write_unsafe(&local_context, call->file, call->data,
                                        call->len, &call->processed);
@@ -461,8 +353,6 @@ static void IRAM_ATTR spiffs_safe_callback(void* context) {
         spiffs_stat_unsafe(&local_context, call->path, &call->stat_value);
   } else if (call->op == H2_ESP_SPIFFS_REMOVE) {
     call->result = spiffs_remove_unsafe(&local_context, call->path);
-  } else if (call->op == H2_ESP_SPIFFS_CLEAR) {
-    call->result = spiffs_clear_unsafe(&local_context, call->path);
   } else if (call->op == H2_ESP_SPIFFS_RENAME) {
     call->result =
         spiffs_rename_unsafe(&local_context, call->path, call->second_path);
@@ -578,20 +468,6 @@ static int spiffs_read(void* user, h2_pal_fs_file_t* file, void* data,
   return rc;
 }
 
-static int spiffs_seek(void* user, h2_pal_fs_file_t* file, uint64_t position) {
-  const uintmax_t off_max =
-      ((uintmax_t)1u << (sizeof(off_t) * CHAR_BIT - 1u)) - 1u;
-  if (file == NULL || position > (uint64_t)LONG_MAX || position > off_max)
-    return H2_PAL_FS_ERR_INVALID_ARG;
-  h2_esp_spiffs_safe_call_t call = {
-      .op = H2_ESP_SPIFFS_SEEK,
-      .context = (h2_esp_platform_spiffs_context_t*)user,
-      .file = file,
-      .position = position,
-  };
-  return spiffs_run_safe(&call);
-}
-
 static int spiffs_write(void* user, h2_pal_fs_file_t* file, const void* data,
                         size_t len, size_t* out_written) {
   if (file == NULL || (data == NULL && len != 0u) || out_written == NULL) {
@@ -687,21 +563,6 @@ static int spiffs_remove(void* user, const char* path) {
   return spiffs_path_call(H2_ESP_SPIFFS_REMOVE, user, path, NULL, NULL);
 }
 
-static int spiffs_clear(void* user, const char* path) {
-  if (path == NULL || path[0] != '/' || path[1] == '\0')
-    return H2_PAL_FS_ERR_INVALID_ARG;
-  for (const char* part = path + 1;;) {
-    const char* end = strchr(part, '/');
-    size_t len = end != NULL ? (size_t)(end - part) : strlen(part);
-    if (len == 0u || (len == 1u && part[0] == '.') ||
-        (len == 2u && part[0] == '.' && part[1] == '.'))
-      return H2_PAL_FS_ERR_INVALID_ARG;
-    if (end == NULL) break;
-    part = end + 1;
-  }
-  return spiffs_path_call(H2_ESP_SPIFFS_CLEAR, user, path, NULL, NULL);
-}
-
 static int spiffs_rename(void* user, const char* old_path,
                          const char* new_path) {
   return new_path != NULL ? spiffs_path_call(H2_ESP_SPIFFS_RENAME, user,
@@ -715,13 +576,11 @@ int h2_esp_platform_spiffs_fs_init(
       .mkdir = spiffs_mkdir,
       .open = spiffs_open,
       .read = spiffs_read,
-      .seek = spiffs_seek,
       .write = spiffs_write,
       .sync = spiffs_sync,
       .close = spiffs_close,
       .stat = spiffs_stat,
       .remove = spiffs_remove,
-      .clear = spiffs_clear,
       .rename = spiffs_rename,
   };
 

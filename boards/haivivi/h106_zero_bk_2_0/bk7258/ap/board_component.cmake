@@ -5,9 +5,9 @@ armino_component_register_ex(CONFIG_COMPONENT_NAME h2_bk7258_board
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "${H2_ZERO_BK_CONFIG_INCLUDE}"
-    "$ENV{H2_GIZOS_ROOT}/boards/haivivi/h106_zero_bk_2_0/bk7258/include"
-    "$ENV{H2_GIZOS_ROOT}/boards/haivivi/h106_zero_bk_2_0/bk7258/ap/include"
-    "$ENV{H2_GIZOS_ROOT}/boards/haivivi/h106_zero_bk_2_0/bk7258/ap/src"
+    "$ENV{H2_REPO_ROOT}/boards/haivivi/h106_zero_bk_2_0/bk7258/include"
+    "$ENV{H2_REPO_ROOT}/boards/haivivi/h106_zero_bk_2_0/bk7258/ap/include"
+    "$ENV{H2_REPO_ROOT}/boards/haivivi/h106_zero_bk_2_0/bk7258/ap/src"
   PRIV_REQUIRES
     audio_play
     audio_record

@@ -121,8 +121,9 @@ int h2_esp_board_fs_prepare(const char* path) {
     return st.is_dir ? H2_PAL_FS_OK : H2_PAL_ERR_INVALID_STATE;
   }
   if (s_fs_backend == H2_ESP_BOARD_FS_INTERNAL_SPIFFS) {
-    /* SPIFFS uses virtual directories in its flat file namespace. */
-    return H2_PAL_FS_OK;
+    /* Preserve the provider's unsupported prepare contract. This adapter
+     * must not enable Loader operations that SPIFFS does not implement. */
+    return h2_pal_fs_prepare(&s_selected_fs, path);
   }
   if (s_fs_backend == H2_ESP_BOARD_FS_EXTFLASH)
     return h2_esp_board_extflash_mount_data();
