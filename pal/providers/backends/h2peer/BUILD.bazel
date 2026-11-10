@@ -439,6 +439,43 @@ cc_test(
     ],
 )
 
+# Real SCTP callback/event ownership and worker gating; only datagrams and
+# DTLS packet emission are controlled by the fixture.
+cc_test(
+    name = "network_sctp_receive_test",
+    srcs = [
+        "src/h2_peer_internal.h",
+        "src/h2_peer_webrtc.c",
+        "src/ice/h2_peer_ice.h",
+        "src/providers/h2_peer_portable_backend.h",
+        "src/providers/portable/sctp.c",
+        "tests/test_network_sctp_receive.cc",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["src"],
+    local_defines = [
+        "h2_peer_portable_async_receive_supported=h2_test_sctp_async_receive_supported",
+        "h2_peer_portable_receive_datagram=h2_test_sctp_receive_datagram",
+        "h2_peer_portable_service_datagram=h2_test_sctp_service_datagram",
+        "dtls_srtp_write=h2_test_sctp_emit",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2peer",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/backends/h2sctp:test_peer",
+        "//pal/providers/platforms/desktop/pal_core",
+    ],
+)
+
 cc_test(
     name = "poll_wait_granularity_test",
     srcs = ["tests/test_poll_wait_granularity.cc"],
