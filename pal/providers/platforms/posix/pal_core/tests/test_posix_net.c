@@ -1,6 +1,8 @@
 #include "h2_posix_pal_core.h"
 
 #include <assert.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,8 +35,40 @@ static void fill_send_buffer(const h2_pal_net_api_t* net,
   }
 }
 
+static void closed_send_preserves_signals(const h2_pal_net_api_t* net,
+                                          int timed, int pending_before) {
+  sigset_t pipe_mask, original_mask, pending, after_mask;
+  assert(sigemptyset(&pipe_mask) == 0);
+  assert(sigaddset(&pipe_mask, SIGPIPE) == 0);
+  assert(pthread_sigmask(SIG_BLOCK, &pipe_mask, &original_mask) == 0);
+  assert(sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE) == 0);
+  if (pending_before) assert(raise(SIGPIPE) == 0);
+  int pair[2];
+  make_stream_pair(pair);
+  close(pair[1]);
+  const uint8_t byte = 0u;
+  int result = timed
+                   ? h2_pal_net_tcp_send_timeout(net, pair[0], &byte, 1u, 100u)
+                   : h2_pal_net_tcp_send(net, pair[0], &byte, 1u);
+  assert(result == H2_PAL_ERR_CLOSED);
+  assert(pthread_sigmask(SIG_BLOCK, NULL, &after_mask) == 0);
+  assert(sigismember(&after_mask, SIGPIPE) == 1);
+  assert(sigpending(&pending) == 0);
+  assert(sigismember(&pending, SIGPIPE) == pending_before);
+  if (pending_before) {
+    int signal_number = 0;
+    assert(sigwait(&pipe_mask, &signal_number) == 0 &&
+           signal_number == SIGPIPE);
+  }
+  close(pair[0]);
+  assert(pthread_sigmask(SIG_SETMASK, &original_mask, NULL) == 0);
+}
+
 int main(void) {
   const h2_pal_net_api_t* net = h2_posix_net_api();
+  for (int timed = 0; timed < 2; ++timed)
+    for (int pending = 0; pending < 2; ++pending)
+      closed_send_preserves_signals(net, timed, pending);
   assert(net != NULL && net->vtable != NULL &&
          net->vtable->tcp_send_timeout != NULL);
 

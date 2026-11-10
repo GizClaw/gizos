@@ -61,8 +61,9 @@ static pthread_mutex_t s_tls_lock = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t s_tls_generation;
 static size_t s_resolver_count;
 
-/* wolfSSL can write during handshake, read, and shutdown. Keep SIGPIPE local to
- * the operation without changing the process-wide signal disposition. */
+/* TCP sends and wolfSSL handshake/read/shutdown can generate SIGPIPE. Keep it
+ * local to the operation without changing the process-wide signal disposition.
+ */
 static int sigpipe_guard_begin(desktop_sigpipe_guard_t* guard) {
   if (guard == NULL || sigemptyset(&guard->mask) != 0 ||
       sigaddset(&guard->mask, SIGPIPE) != 0) {
@@ -79,7 +80,10 @@ static int sigpipe_guard_begin(desktop_sigpipe_guard_t* guard) {
     (void)pthread_sigmask(SIG_SETMASK, &guard->previous_mask, NULL);
     return 0;
   }
-  guard->consume_generated_signal = !was_blocked && !was_pending;
+  /* A new signal belongs to this operation even if the caller had SIGPIPE
+   * blocked already. Retaining it could terminate the process on a later
+   * unblock. Preserve only a signal that was pending before this operation. */
+  guard->consume_generated_signal = !was_pending;
   return 1;
 }
 
