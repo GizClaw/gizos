@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 /* The real provider runs against a flat SPIFFS object inventory, as returned
  * by ESP-IDF's root readdir. File contents use real host stdio, including EOF.
@@ -110,6 +111,10 @@ static int test_rename(const char* old_path, const char* new_path) {
   }
   for (size_t i = 0u; i < s_count; ++i) {
     if (s_alive[i] && strcmp(old_path + 8u, s_names[i]) == 0) {
+      for (size_t j = 0u; j < s_count; ++j) {
+        if (j != i && s_alive[j] && strcmp(new_path + 8u, s_names[j]) == 0)
+          s_alive[j] = 0;
+      }
       assert(strlen(new_path + 8u) < sizeof(s_renamed_name));
       strcpy(s_renamed_name, new_path + 8u);
       s_names[i] = s_renamed_name;
@@ -120,6 +125,24 @@ static int test_rename(const char* old_path, const char* new_path) {
   return -1;
 }
 
+static int s_stat_error;
+static int test_stat(const char* path, struct stat* st) {
+  assert(s_worker && s_locked && strncmp(path, "/spiffs/", 8u) == 0);
+  if (s_stat_error != 0) {
+    errno = s_stat_error;
+    return -1;
+  }
+  for (size_t i = 0u; i < s_count; ++i) {
+    if (s_alive[i] && strcmp(path + 8u, s_names[i]) == 0) {
+      memset(st, 0, sizeof(*st));
+      return 0;
+    }
+  }
+  errno = ENOENT;
+  return -1;
+}
+
+#define stat(path, st) test_stat(path, st)
 #define rename(old_path, new_path) test_rename(old_path, new_path)
 #define fopen test_fopen
 #define fseek test_fseek
@@ -128,6 +151,7 @@ static int test_rename(const char* old_path, const char* new_path) {
 #define closedir test_closedir
 #define remove(path) test_remove(path)
 #include "src/h2_esp_platform_spiffs.c"
+#undef stat
 #undef rename
 #undef fopen
 #undef fseek
@@ -221,17 +245,28 @@ static void test_seek(const h2_pal_fs_api_t* fs) {
   assert(h2_pal_fs_close(fs, file) == 0);
 }
 static void test_clear(const h2_pal_fs_api_t* fs) {
-  const char* names[] = {"data/a",          "data/sub/b",   "data_sub_c",
-                         "dl/image",        "dl_image",     "data-other/a",
-                         "database/a",      "other",        "data",
-                         "data-other_flat", "database_flat"};
+  const char* names[] = {"data/a",       "data/sub/b",   "dl/image",
+                         "dl_image",     "data-other/a", "database/a",
+                         "other",        "data",         "data-other_flat",
+                         "database_flat"};
   inventory(names, sizeof(names) / sizeof(names[0]));
   assert(h2_pal_fs_clear(fs, "/data") == 0);
-  for (size_t i = 0; i < s_count; ++i) assert(s_alive[i] == (i >= 3));
+  for (size_t i = 0; i < s_count; ++i) assert(s_alive[i] == (i >= 2));
   assert(h2_pal_fs_clear(fs, "/data") == 0);
   inventory(names, sizeof(names) / sizeof(names[0]));
   assert(h2_pal_fs_clear(fs, "/data/sub") == 0);
-  for (size_t i = 0; i < s_count; ++i) assert(s_alive[i] == (i != 1 && i != 2));
+  for (size_t i = 0; i < s_count; ++i) assert(s_alive[i] == (i != 1));
+
+  /* Literal underscore siblings cannot safely be identified as aliases.
+   * They appear after real descendants to catch partial deletion on failure. */
+  const char* ambiguous[] = {"data/a", "data/sub/b", "data_backup",
+                             "data_sub_c"};
+  inventory(ambiguous, sizeof(ambiguous) / sizeof(ambiguous[0]));
+  unsigned before = s_removes;
+  assert(h2_pal_fs_clear(fs, "/data") == H2_PAL_FS_ERR_UNSUPPORTED);
+  assert(h2_pal_fs_clear(fs, "/data/sub") == H2_PAL_FS_ERR_UNSUPPORTED);
+  for (size_t i = 0; i < s_count; ++i) assert(s_alive[i]);
+  assert(s_removes == before);
   const char* bad[] = {"",          "/",        "data",     "/.",
                        "/..",       "/data/..", "/data/.",  "/data/../dl",
                        "/data/./a", "//data",   "/data//a", "/data/"};
@@ -256,12 +291,12 @@ static void test_clear(const h2_pal_fs_api_t* fs) {
   assert(s_dir_closes == closes + 1 && s_alive[0]);
   s_read_error = 0;
   s_remove_error = ENOSPC;
-  s_close_error = EIO;
   assert(h2_pal_fs_clear(fs, "/data") == H2_PAL_FS_ERR_NO_SPACE);
-  assert(s_dir_closes == closes + 2 && s_alive[0]);
+  assert(s_dir_closes == closes + 3 && s_alive[0]);
   s_remove_error = 0;
+  s_close_error = EIO;
   assert(h2_pal_fs_clear(fs, "/data") == H2_PAL_FS_ERR_IO);
-  assert(!s_alive[0]);
+  assert(s_alive[0]);
   inventory(names, 1);
   s_safe_error = H2_PAL_ERR_TIMEOUT;
   assert(h2_pal_fs_clear(fs, "/data") == H2_PAL_ERR_TIMEOUT && s_alive[0]);
@@ -288,8 +323,48 @@ static void test_staging_rename(const h2_pal_fs_api_t* fs) {
   inventory(flat, 2u);
   calls = s_rename_calls;
   assert(h2_pal_fs_rename(fs, "/dl/update.tmp", "/dl/update") == H2_PAL_OK);
-  assert(s_rename_calls == calls + 2u);
-  assert(strcmp(s_names[0], "dl_update") == 0 && s_alive[1]);
+  assert(s_rename_calls == calls + 1u);
+  assert(strcmp(s_names[0], "dl/update") == 0 && s_alive[1]);
+
+  const char* mixed_destination[] = {"data/index.tmp", "data_index.json"};
+  inventory(mixed_destination, 2u);
+  calls = s_rename_calls;
+  unsigned removes = s_removes;
+  assert(h2_pal_fs_rename(fs, "/data/index.tmp", "/data/index.json") ==
+         H2_PAL_FS_ERR_UNSUPPORTED);
+  assert(s_rename_calls == calls && s_removes == removes);
+  assert(s_alive[0] && s_alive[1]);
+  assert(strcmp(s_names[0], "data/index.tmp") == 0);
+  assert(strcmp(s_names[1], "data_index.json") == 0);
+
+  const char* mixed_source[] = {"data/index.tmp", "data_index.tmp"};
+  inventory(mixed_source, 2u);
+  assert(h2_pal_fs_rename(fs, "/data/index.tmp", "/data/index.json") ==
+         H2_PAL_FS_ERR_UNSUPPORTED);
+  assert(s_rename_calls == calls && s_alive[0] && s_alive[1]);
+
+  /* A normal replacement has no hidden alias to resurrect after deletion. */
+  const char* native[] = {"data/index.tmp", "data/index.json"};
+  inventory(native, 2u);
+  assert(h2_pal_fs_rename(fs, "/data/index.tmp", "/data/index.json") ==
+         H2_PAL_OK);
+  assert(s_alive[0] && !s_alive[1]);
+  assert(h2_pal_fs_remove(fs, "/data/index.json") == H2_PAL_OK);
+  h2_pal_fs_stat_t st;
+  assert(h2_pal_fs_stat(fs, "/data/index.json", &st) ==
+         H2_PAL_FS_ERR_NOT_FOUND);
+  assert(!s_alive[0] && !s_alive[1]);
+
+  inventory(flat, 2u);
+  assert(h2_pal_fs_rename(fs, "/dl/update.tmp", "/dl_update.tmp") ==
+         H2_PAL_FS_ERR_UNSUPPORTED);
+  assert(s_alive[0] && strcmp(s_names[0], "dl_update.tmp") == 0);
+  inventory(exact, 2u);
+  s_stat_error = EACCES;
+  calls = s_rename_calls;
+  assert(h2_pal_fs_rename(fs, "/dl/update.tmp", "/dl/update") == H2_PAL_ERR_IO);
+  assert(s_rename_calls == calls && s_alive[0]);
+  s_stat_error = 0;
 
   inventory(exact, 2u);
   s_rename_error = EACCES;

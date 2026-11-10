@@ -30,6 +30,7 @@ class BoardComponentTest(unittest.TestCase):
             )
             probe = root / "probe.cmake"
             probe.write_text(f'''
+cmake_policy(SET CMP0057 NEW)
 function(armino_component_register_ex)
   cmake_parse_arguments(P "" "CONFIG_COMPONENT_NAME" "SRCS;INCLUDE_DIRS;PRIV_REQUIRES" ${{ARGN}})
   if(NOT P_CONFIG_COMPONENT_NAME STREQUAL "h2_bk7258_board" OR
@@ -50,7 +51,6 @@ function(armino_component_register_ex)
   endif()
   set(REGISTERED TRUE PARENT_SCOPE)
 endfunction()
-cmake_policy(SET CMP0057 NEW)
 include("{staged}/CMakeLists.txt")
 if(NOT REGISTERED)
   message(FATAL_ERROR "BSP was not registered")

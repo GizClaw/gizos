@@ -335,67 +335,102 @@ static int spiffs_clear_unsafe(h2_esp_platform_spiffs_context_t* ctx,
   const char* scope = exact + base_len + 1u;
   const char* flat_scope = flat + base_len + 1u;
   const size_t scope_len = strlen(scope);
-  errno = 0;
-  DIR* dir = opendir(ctx->config->base_path);
-  if (dir == NULL) return map_errno(H2_PAL_FS_ERR_IO);
-  for (;;) {
+  /* A literal root file such as data_backup is indistinguishable from a
+   * historical flattened alias. Preflight the complete inventory before
+   * removing anything; ambiguous names require explicit caller intervention. */
+  for (unsigned pass = 0u; pass < 2u; ++pass) {
     errno = 0;
-    struct dirent* entry = readdir(dir);
-    if (entry == NULL) {
-      rc = errno == 0 ? H2_PAL_FS_OK : map_errno(H2_PAL_FS_ERR_IO);
-      break;
-    }
-    const char* name = entry->d_name;
-    if (!((strncmp(name, scope, scope_len) == 0 && name[scope_len] == '/') ||
-          (strncmp(name, flat_scope, scope_len) == 0 &&
-           name[scope_len] == '_')))
-      continue;
-    char child[H2_ESP_SPIFFS_PATH_SIZE];
-    int n =
-        snprintf(child, sizeof(child), "%s/%s", ctx->config->base_path, name);
-    if (n < 0 || (size_t)n >= sizeof(child)) {
-      rc = H2_PAL_FS_ERR_NO_SPACE;
-      break;
+    DIR* dir = opendir(ctx->config->base_path);
+    if (dir == NULL) return map_errno(H2_PAL_FS_ERR_IO);
+    for (;;) {
+      errno = 0;
+      struct dirent* entry = readdir(dir);
+      if (entry == NULL) {
+        rc = errno == 0 ? H2_PAL_FS_OK : map_errno(H2_PAL_FS_ERR_IO);
+        break;
+      }
+      const char* name = entry->d_name;
+      if (strncmp(name, flat_scope, scope_len) == 0 && name[scope_len] == '_') {
+        rc = H2_PAL_FS_ERR_UNSUPPORTED;
+        break;
+      }
+      if (pass == 0u || strncmp(name, scope, scope_len) != 0 ||
+          name[scope_len] != '/')
+        continue;
+      char child[H2_ESP_SPIFFS_PATH_SIZE];
+      int n =
+          snprintf(child, sizeof(child), "%s/%s", ctx->config->base_path, name);
+      if (n < 0 || (size_t)n >= sizeof(child)) {
+        rc = H2_PAL_FS_ERR_NO_SPACE;
+        break;
+      }
+      errno = 0;
+      if (remove(child) != 0) {
+        rc = map_errno(H2_PAL_FS_ERR_IO);
+        break;
+      }
     }
     errno = 0;
-    if (remove(child) != 0) {
+    if (closedir(dir) != 0 && rc == H2_PAL_FS_OK)
       rc = map_errno(H2_PAL_FS_ERR_IO);
-      break;
-    }
+    if (rc != H2_PAL_FS_OK) return rc;
   }
+  return H2_PAL_FS_OK;
+}
+
+static int spiffs_path_exists(const char* path, int* exists) {
+  struct stat st;
   errno = 0;
-  if (closedir(dir) != 0 && rc == H2_PAL_FS_OK)
-    rc = map_errno(H2_PAL_FS_ERR_IO);
-  return rc;
+  if (stat(path, &st) == 0) {
+    *exists = 1;
+    return H2_PAL_FS_OK;
+  }
+  if (errno != ENOENT) return map_errno(H2_PAL_FS_ERR_IO);
+  *exists = 0;
+  return H2_PAL_FS_OK;
 }
 
 static int spiffs_rename_unsafe(void* user, const char* old_path,
                                 const char* new_path) {
   h2_esp_platform_spiffs_context_t* ctx =
       (h2_esp_platform_spiffs_context_t*)user;
-  char real_old_path[192];
-  char real_new_path[192];
-  int rc =
-      translate_path_exact(ctx, old_path, real_old_path, sizeof(real_old_path));
+  char exact_old[H2_ESP_SPIFFS_PATH_SIZE];
+  char exact_new[H2_ESP_SPIFFS_PATH_SIZE];
+  char flat_old[H2_ESP_SPIFFS_PATH_SIZE];
+  char flat_new[H2_ESP_SPIFFS_PATH_SIZE];
+  int rc = translate_path_exact(ctx, old_path, exact_old, sizeof(exact_old));
   if (rc != H2_PAL_FS_OK) return rc;
-  rc =
-      translate_path_exact(ctx, new_path, real_new_path, sizeof(real_new_path));
+  rc = translate_path_exact(ctx, new_path, exact_new, sizeof(exact_new));
   if (rc != H2_PAL_FS_OK) return rc;
+  rc = translate_path_flattened(ctx, old_path, flat_old, sizeof(flat_old));
+  if (rc != H2_PAL_FS_OK) return rc;
+  rc = translate_path_flattened(ctx, new_path, flat_new, sizeof(flat_new));
+  if (rc != H2_PAL_FS_OK) return rc;
+
+  int native_exists;
+  int legacy_exists = 0;
+  rc = spiffs_path_exists(exact_old, &native_exists);
+  if (rc != H2_PAL_FS_OK) return rc;
+  if (strcmp(exact_old, flat_old) != 0) {
+    rc = spiffs_path_exists(flat_old, &legacy_exists);
+    if (rc != H2_PAL_FS_OK) return rc;
+  }
+  if (native_exists && legacy_exists) return H2_PAL_FS_ERR_UNSUPPORTED;
+  if (!native_exists && !legacy_exists) return H2_PAL_FS_ERR_NOT_FOUND;
+  if (strcmp(old_path, new_path) == 0) return H2_PAL_FS_OK;
+  const char* source = native_exists ? exact_old : flat_old;
+  if (strcmp(source, exact_new) == 0) return H2_PAL_FS_ERR_UNSUPPORTED;
+  if (strcmp(exact_new, flat_new) != 0) {
+    int alias_exists;
+    rc = spiffs_path_exists(flat_new, &alias_exists);
+    if (rc != H2_PAL_FS_OK) return rc;
+    /* Never hide an old destination behind a new native file, or unlink an
+     * underscore name whose ownership cannot be established. */
+    if (alias_exists) return H2_PAL_FS_ERR_UNSUPPORTED;
+  }
   errno = 0;
-  if (rename(real_old_path, real_new_path) == 0) return H2_PAL_FS_OK;
-  if (errno != ENOENT) return map_errno(H2_PAL_FS_ERR_IO);
-  /* Match open's native-name-first policy; only older flat sources need the
-   * historical encoding for both names. */
-  rc = translate_path_flattened(ctx, old_path, real_old_path,
-                                sizeof(real_old_path));
-  if (rc != H2_PAL_FS_OK) return rc;
-  rc = translate_path_flattened(ctx, new_path, real_new_path,
-                                sizeof(real_new_path));
-  if (rc != H2_PAL_FS_OK) return rc;
-  errno = 0;
-  return rename(real_old_path, real_new_path) == 0
-             ? H2_PAL_FS_OK
-             : map_errno(H2_PAL_FS_ERR_IO);
+  return rename(source, exact_new) == 0 ? H2_PAL_FS_OK
+                                        : map_errno(H2_PAL_FS_ERR_IO);
 }
 
 static void IRAM_ATTR spiffs_safe_callback(void* context) {
