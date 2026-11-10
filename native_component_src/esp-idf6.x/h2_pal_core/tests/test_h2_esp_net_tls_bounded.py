@@ -38,7 +38,29 @@ class ESPBoundedTLS(unittest.TestCase):
                          "-I" + str(OWNER / "src"), "-I" + str(OWNER / "tests"),
                          str(test), "-o", str(binary)], capture_output=True, text=True)
                     self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
-                    for case in (None, "cancel-no-reaper", "legacy-retry", "legacy-sync-retry", "plain-connect-retry", "plain-accept-retry", "plain-connect-no-tls-heap", "plain-accept-no-tls-heap", "native-init-budget", "native-init-concurrent"):
+                    for case in (
+                        None,
+                        "cancel-no-reaper",
+                        "legacy-retry",
+                        "legacy-sync-retry",
+                        "plain-connect-retry",
+                        "plain-accept-retry",
+                        "plain-connect-no-tls-heap",
+                        "plain-accept-no-tls-heap",
+                        "native-init-budget",
+                        "native-init-concurrent",
+                        "ordinary-send-cancel",
+                        "retry-next-tick",
+                        "zero-connect-recovery",
+                        "zero-accept-recovery",
+                        "zero-ready-poll",
+                        "concurrent-connect-recovery",
+                        "concurrent-accept-recovery",
+                        "concurrent-recovery-deadline",
+                        "write-cancel-plain",
+                        "write-cancel-tls",
+                        "write-cancel-bounded",
+                    ):
                         command = [str(binary)] + ([] if case is None else [case])
                         result = subprocess.run(command, capture_output=True, text=True, timeout=20)
                         self.assertEqual(result.returncode, 0, str(case) + "\n" + result.stdout + result.stderr)

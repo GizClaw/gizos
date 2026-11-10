@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -120,6 +121,9 @@ static int test_fail_task, test_task_count, test_allocations, test_alloc_fail;
 static int test_dynamic_task_calls, test_static_task_attempts,
     test_alloc_persistent;
 static unsigned test_static_delay_ms;
+static _Atomic int64_t test_clock_fixed_us, test_clock_resume_us;
+static _Atomic int test_early_delay_return, test_early_delay_observed;
+static int test_emulate_dontwait_fd = -1, test_plain_send_entered;
 static int test_hold_recv_fd = -1, test_recv_held, test_recv_release;
 static int test_write_wait_fd = -1, test_write_wait_entered;
 static int test_send_prefix_fd = -1;
@@ -131,6 +135,12 @@ static size_t test_ssl_write_length;
 static int test_ssl_write_pending, test_ssl_write_retries;
 static int test_parse_fail, test_ca_checks, test_sni_checks, test_alpn_checks;
 static int test_contexts, test_io_calls, test_closed;
+static int test_probe_send_fd = -1, test_probe_send_flags,
+           test_probe_send_result;
+static int test_probe_recv_fd = -1, test_probe_recv_flags,
+           test_probe_recv_result;
+static int64_t test_probe_send_start, test_probe_send_end,
+    test_probe_recv_start, test_probe_recv_end;
 static int test_native_connect_calls, test_native_accept_calls;
 static int test_caller_allocations, test_worker_allocations, test_sem_creates,
     test_sem_deletes;
@@ -155,7 +165,10 @@ static void test_sdk_gate(int stage);
 static int64_t esp_timer_get_time(void) {
   struct timespec now;
   assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
-  return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
+  int64_t value = (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
+  return value < atomic_load(&test_clock_resume_us)
+             ? atomic_load(&test_clock_fixed_us)
+             : value;
 }
 
 static struct timespec test_after_ms(uint32_t ms) {
@@ -249,6 +262,10 @@ static int xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks) {
   return acquired;
 }
 static void vTaskDelay(TickType_t ticks) {
+  if (ticks == 1u && atomic_exchange(&test_early_delay_return, 0)) {
+    atomic_store(&test_early_delay_observed, 1);
+    return;
+  }
   struct timespec pause = {ticks / 1000u, (long)(ticks % 1000u) * 1000000};
   assert(nanosleep(&pause, NULL) == 0);
 }
@@ -572,10 +589,36 @@ static int test_send(int fd, const void* bytes, size_t length, int flags) {
   assert(!test_is_worker);
   assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_io_calls;
+  test_probe_send_fd = fd;
+  test_probe_send_flags = flags;
+  test_probe_send_start = esp_timer_get_time();
+  test_probe_send_end = 0;
   assert(pthread_mutex_unlock(&test_lock) == 0);
   if (fd == test_send_prefix_fd && length > test_send_prefix_length)
     length = test_send_prefix_length;
+  /* Match lwIP MSG_DONTWAIT even on Darwin's blocking AF_UNIX pressure path.
+   * The ordinary flags=0 syscall remains a real blocked native send. */
+  int original_flags = -1;
+  if (fd == test_emulate_dontwait_fd) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    test_plain_send_entered = 1;
+    assert(pthread_cond_broadcast(&test_changed) == 0);
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    if (flags & MSG_DONTWAIT) {
+      original_flags = fcntl(fd, F_GETFL, 0);
+      assert(original_flags >= 0);
+      assert(fcntl(fd, F_SETFL, original_flags | O_NONBLOCK) == 0);
+    }
+  }
   int result = (int)send(fd, bytes, length, flags);
+  int error = errno;
+  if (original_flags >= 0) assert(fcntl(fd, F_SETFL, original_flags) == 0);
+  errno = error;
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  test_probe_send_result = result;
+  test_probe_send_end = esp_timer_get_time();
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  errno = error;
   if (result >= 0) test_sdk_gate(12);
   return result;
 }
@@ -593,7 +636,19 @@ static int test_recv(int fd, void* bytes, size_t length, int flags) {
   assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_io_calls;
   assert(pthread_mutex_unlock(&test_lock) == 0);
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  test_probe_recv_fd = fd;
+  test_probe_recv_flags = flags;
+  test_probe_recv_start = esp_timer_get_time();
+  test_probe_recv_end = 0;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
   int result = (int)recv(fd, bytes, length, flags);
+  int error = errno;
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  test_probe_recv_result = result;
+  test_probe_recv_end = esp_timer_get_time();
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  errno = error;
   if (result >= 0) test_sdk_gate(13);
   return result;
 }
@@ -689,6 +744,14 @@ static int test_close(int fd) {
   return close(fd);
 }
 static int test_shutdown(int fd, int how) {
+#if defined(__APPLE__)
+  /* Darwin AF_UNIX SHUT_RD clears SO_RCVTIMEO. The captured racing receive
+   * then remained in __recvfrom with a zero timeout after shutdown completed.
+   * This host transport is not lwIP: keep its finite receive timeout intact
+   * and exercise production lease polling. AF_INET and Linux use native
+   * shutdown; the real SDK's rx-only shutdown path is checked separately. */
+  if (how == SHUT_RD && test_is_unix_socket(fd)) return 0;
+#endif
   if (how != SHUT_RD) test_close_profile(fd, 0);
   int listening = 0;
   socklen_t length = sizeof(listening);

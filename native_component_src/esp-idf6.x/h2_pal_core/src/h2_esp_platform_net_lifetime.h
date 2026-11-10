@@ -50,7 +50,6 @@ static int esp_net_socket_reap_take_locked(esp_net_socket_reap_t* work,
                                            uint64_t now);
 static void esp_net_socket_reap(const esp_net_socket_reap_t* work);
 static int s_esp_net_native_ready;
-#define H2_ESP_NET_CANCEL_POLL_MS 20u
 static void esp_net_tls_jobs_wake(void);
 static h2_pal_result_t esp_net_tls_wrap(void*, h2_pal_net_socket_t,
                                         const h2_pal_net_tls_config_t*,
@@ -470,7 +469,11 @@ static void esp_net_socket_reap(const esp_net_socket_reap_t* work) {
     record->retry_at_ms = retry;
     record->reaping = 0;
     portEXIT_CRITICAL(&s_esp_net_mux);
-    vTaskDelay(1u);
+    /* A one-tick delay may end at the next boundary almost immediately.
+     * Retain this actor's wake responsibility until monotonic eligibility. */
+    do {
+      vTaskDelay(1u);
+    } while (esp_net_now_ms() < retry);
     esp_net_socket_kick();
     return;
   }
@@ -617,10 +620,8 @@ static h2_pal_result_t esp_net_tcp_connect_managed(
     void* user, h2_pal_net_socket_t fd, const h2_pal_net_addr_t* address,
     uint32_t timeout_ms) {
   uint64_t deadline = esp_net_now_ms() + timeout_ms;
-  int ready = esp_net_native_init(timeout_ms == 0u ? 0u : deadline);
-  if (timeout_ms != 0u && esp_net_timeout_remaining_ms(deadline) == 0u)
-    return H2_PAL_ERR_TIMEOUT;
-  if (!ready) return H2_PAL_ERR_UNAVAILABLE;
+  h2_pal_result_t native = esp_net_native_ensure(timeout_ms, deadline);
+  if (native != H2_PAL_OK) return native;
   uint32_t remaining =
       timeout_ms == 0u ? 0u : esp_net_timeout_remaining_ms(deadline);
   if (timeout_ms != 0u && remaining == 0u) return H2_PAL_ERR_TIMEOUT;
@@ -641,10 +642,8 @@ static h2_pal_result_t esp_net_tcp_accept_managed(void* user,
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out = -1;
   uint64_t deadline = esp_net_now_ms() + timeout_ms;
-  int ready = esp_net_native_init(timeout_ms == 0u ? 0u : deadline);
-  if (timeout_ms != 0u && esp_net_timeout_remaining_ms(deadline) == 0u)
-    return H2_PAL_ERR_TIMEOUT;
-  if (!ready) return H2_PAL_ERR_UNAVAILABLE;
+  h2_pal_result_t native = esp_net_native_ensure(timeout_ms, deadline);
+  if (native != H2_PAL_OK) return native;
   H2_ESP_NET_LEASE_BEGIN(SOCK_STREAM);
   esp_net_socket_lease_t owner;
   rc = esp_net_socket_reserve_accept(&owner);

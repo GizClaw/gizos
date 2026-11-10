@@ -351,6 +351,30 @@ static int esp_net_native_init(uint64_t deadline_ms) {
   esp_net_socket_kick();
   return ready;
 }
+/* Polling never creates an executor. A positive-budget operation may recover
+ * static actors itself, or wait for the one creator without terminal failure.
+ * This readiness wait neither enters the TLS heap path nor shares its lock. */
+static h2_pal_result_t esp_net_native_ensure(uint32_t timeout_ms,
+                                             uint64_t deadline_ms) {
+  if (timeout_ms == 0u) {
+    portENTER_CRITICAL(&s_esp_net_mux);
+    int ready = s_esp_net_native_ready;
+    portEXIT_CRITICAL(&s_esp_net_mux);
+    return ready ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
+  }
+  (void)esp_net_native_init(deadline_ms);
+  for (;;) {
+    if (esp_net_timeout_remaining_ms(deadline_ms) == 0u)
+      return H2_PAL_ERR_TIMEOUT;
+    portENTER_CRITICAL(&s_esp_net_mux);
+    int ready = s_esp_net_native_ready,
+        initializing = s_esp_native_initializing;
+    portEXIT_CRITICAL(&s_esp_net_mux);
+    if (ready) return H2_PAL_OK;
+    if (!initializing) return H2_PAL_ERR_UNAVAILABLE;
+    vTaskDelay(1u);
+  }
+}
 static int esp_net_tls_bounded_init(void) {
   portENTER_CRITICAL(&s_esp_net_mux);
   esp_net_native_status_locked();

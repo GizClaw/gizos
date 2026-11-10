@@ -38,6 +38,7 @@
 #define H2_ESP_NET_TLS_ALPN_MAX 2u
 #define H2_ESP_NET_TLS_ALPN_LEN 16u
 #define H2_ESP_NET_RESOLVER_MAX 8u
+#define H2_ESP_NET_CANCEL_POLL_MS 20u
 
 typedef enum esp_net_tls_socket_state {
   ESP_NET_TLS_SOCKET_FREE = 0,
@@ -90,6 +91,8 @@ static uint64_t esp_net_now_ms(void);
 static uint32_t esp_net_timeout_remaining_ms(uint64_t deadline_ms);
 static int esp_net_tls_bounded_init(void);
 static int esp_net_native_init(uint64_t deadline_ms);
+static h2_pal_result_t esp_net_native_ensure(uint32_t timeout_ms,
+                                             uint64_t deadline_ms);
 static void esp_net_tls_publish_sync(esp_net_tls_sync_t* sync);
 static int esp_net_tls_available(void);
 static int esp_net_socket_wait(int fd, int write_ready, uint32_t timeout_ms);
@@ -1520,16 +1523,25 @@ static int esp_net_tcp_send(void* user, h2_pal_net_socket_t socket_fd,
     }
     return result == 0 ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
   }
-  int sent = send(socket_fd, data, (int)len, 0);
-  if (sent == 0) {
-    return H2_PAL_ERR_CLOSED;
+  /* Preserve the ordinary wait-for-capacity behavior without entering an
+   * uncancellable native send. The outer managed lease owns this fd until a
+   * positive prefix or cancellation is returned. TLS retains its single-call
+   * WANT behavior above. */
+  for (;;) {
+    int sent = send(socket_fd, data, (int)len, MSG_DONTWAIT);
+    if (sent > 0) return sent;
+    if (sent == 0) return H2_PAL_ERR_CLOSED;
+    if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+      int error = errno;
+      ESP_LOGE("h2_net", "stage=tcp_send errno=%d", error);
+      errno = error;
+      return esp_net_socket_error();
+    }
+    int ready = esp_net_socket_wait(socket_fd, 1, H2_ESP_NET_CANCEL_POLL_MS);
+    if (ready != H2_PAL_OK && ready != H2_PAL_ERR_TIMEOUT &&
+        ready != H2_PAL_ERR_WOULD_BLOCK)
+      return ready;
   }
-  if (sent < 0) {
-    int error = errno;
-    ESP_LOGE("h2_net", "stage=tcp_send errno=%d", error);
-    errno = error;
-  }
-  return sent < 0 ? esp_net_socket_error() : sent;
 }
 
 static int esp_net_tcp_send_timeout(void* user, h2_pal_net_socket_t socket_fd,
