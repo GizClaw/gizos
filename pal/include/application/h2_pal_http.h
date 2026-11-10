@@ -187,7 +187,8 @@ typedef enum h2_pal_http_rejection {
  * content_length is -1 when unknown. body_len counts delivered body bytes even
  * in streaming/discard mode, where body is NULL. allocator is non-NULL only
  * when the response owns body; caller-provided buffers are never freed.
- * Release every response with response_free, including after a failed request.
+ * Release every response with response_free, including after a failed request,
+ * before reusing its storage. The common dispatcher resets it before dispatch.
  */
 typedef struct h2_pal_http_response {
   int status_code;
@@ -258,6 +259,9 @@ static inline int h2_pal_http_request_uses_allocator(
 static inline int h2_pal_http_do(const h2_pal_http_api_t* api,
                                  const h2_pal_http_request_t* request,
                                  h2_pal_http_response_t* out_response) {
+  /* Generic/legacy providers may return without populating the response.
+   * Never let a previous rejection authorize replay of a different failure. */
+  h2_pal_http_response_reset(out_response);
   if (api == NULL || api->vtable == NULL || api->vtable->request == NULL ||
       request == NULL || out_response == NULL || request->url.data == NULL ||
       request->url.len == 0u ||

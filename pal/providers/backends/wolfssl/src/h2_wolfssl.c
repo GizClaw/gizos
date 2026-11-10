@@ -3,6 +3,7 @@
 #include "h2_pal_unsupported.h"
 #include "h2_wolfcrypt_crypto.h"
 
+#include <stdatomic.h>
 #include <string.h>
 
 #include <wolfssl/ssl.h>
@@ -15,12 +16,16 @@ typedef struct h2_wolfssl_state {
   wolfSSL_Free_cb previous_free;
   wolfSSL_Realloc_cb previous_realloc;
   size_t owner_refs;
-  size_t live_sessions;
   int ready;
 } h2_wolfssl_state_t;
 
 h2_pal_mem_api_t h2_wolfssl_mem_api;
 static h2_wolfssl_state_t h2_wolfssl_state;
+/* The ready bit and operation count change in one atomic transaction, so final
+ * teardown cannot race a new worker/session acquiring the borrowed providers.
+ */
+#define H2_WOLFSSL_READY (SIZE_MAX / 2u + 1u)
+static atomic_size_t h2_wolfssl_usage;
 
 int h2_wolfssl_entropy_fill(uint8_t* out, size_t len) {
   if (!h2_wolfssl_state.ready || h2_wolfssl_state.entropy == NULL) {
@@ -32,24 +37,34 @@ int h2_wolfssl_entropy_fill(uint8_t* out, size_t len) {
   return h2_wolfssl_state.entropy(h2_wolfssl_state.entropy_user, out, len);
 }
 
-int h2_wolfssl_is_ready(void) { return h2_wolfssl_state.ready; }
+int h2_wolfssl_is_ready(void) {
+  return (atomic_load(&h2_wolfssl_usage) & H2_WOLFSSL_READY) != 0u;
+}
+
+h2_pal_result_t h2_wolfssl_operation_acquire(void) {
+  size_t usage = atomic_load(&h2_wolfssl_usage);
+  for (;;) {
+    if ((usage & H2_WOLFSSL_READY) == 0u) {
+      return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (usage == SIZE_MAX) {
+      return H2_PAL_ERR_FULL;
+    }
+    if (atomic_compare_exchange_weak(&h2_wolfssl_usage, &usage, usage + 1u)) {
+      return H2_PAL_OK;
+    }
+  }
+}
+
+void h2_wolfssl_operation_release(void) {
+  (void)atomic_fetch_sub(&h2_wolfssl_usage, 1u);
+}
 
 h2_pal_result_t h2_wolfssl_session_acquire(void) {
-  if (!h2_wolfssl_state.ready) {
-    return H2_PAL_ERR_INVALID_STATE;
-  }
-  if (h2_wolfssl_state.live_sessions == SIZE_MAX) {
-    return H2_PAL_ERR_FULL;
-  }
-  ++h2_wolfssl_state.live_sessions;
-  return H2_PAL_OK;
+  return h2_wolfssl_operation_acquire();
 }
 
-void h2_wolfssl_session_release(void) {
-  if (h2_wolfssl_state.live_sessions > 0u) {
-    --h2_wolfssl_state.live_sessions;
-  }
-}
+void h2_wolfssl_session_release(void) { h2_wolfssl_operation_release(); }
 
 h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t* config) {
   h2_wolfcrypt_crypto_config_t crypto_config;
@@ -99,6 +114,7 @@ h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t* config) {
     h2_wolfcrypt_crypto_deinit();
     goto restore_allocators;
   }
+  atomic_store(&h2_wolfssl_usage, H2_WOLFSSL_READY);
   return H2_PAL_OK;
 
 restore_allocators:
@@ -119,7 +135,8 @@ h2_pal_result_t h2_wolfssl_deinit(void) {
     --h2_wolfssl_state.owner_refs;
     return H2_PAL_OK;
   }
-  if (h2_wolfssl_state.live_sessions != 0u) {
+  size_t idle = H2_WOLFSSL_READY;
+  if (!atomic_compare_exchange_strong(&h2_wolfssl_usage, &idle, 0u)) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   (void)wolfSSL_Cleanup();

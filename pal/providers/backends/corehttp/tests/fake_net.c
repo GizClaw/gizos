@@ -163,10 +163,10 @@ static h2_pal_result_t fake_connect(void* user, h2_pal_net_socket_t socket,
   if (platform->connect_remaining_ms) return H2_PAL_ERR_TIMEOUT;
   if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
     if (platform->fail_ipv6_connect) return H2_PAL_ERR_IO;
-    uint32_t delay = platform->ipv6_connect_remaining_ms;
-    if (delay > timeout_ms) delay = timeout_ms;
-    platform->now_ms += delay;
-    platform->ipv6_connect_remaining_ms -= delay;
+    uint32_t ipv6_delay = platform->ipv6_connect_remaining_ms;
+    if (ipv6_delay > timeout_ms) ipv6_delay = timeout_ms;
+    platform->now_ms += ipv6_delay;
+    platform->ipv6_connect_remaining_ms -= ipv6_delay;
     if (platform->ipv6_connect_remaining_ms) return H2_PAL_ERR_TIMEOUT;
   }
   platform->connected_family = addr->family;
