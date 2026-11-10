@@ -57,6 +57,13 @@ static int s_provider_clear_calls;
 static int s_provider_clear_result;
 static void* s_fs_user;
 static const char* s_clear_path;
+static unsigned s_fs_mount_calls;
+static h2_pal_result_t s_fs_mount_result;
+static const char* s_fs_mount_path;
+static unsigned s_provider_prepare_calls;
+static h2_pal_result_t s_provider_prepare_result;
+static const char* s_provider_prepare_path;
+static bool s_provider_has_prepare;
 static unsigned s_arena_init_calls;
 static esp_err_t s_mac_result;
 static bool s_mac_zero;
@@ -72,6 +79,13 @@ static void reset_stubs(void) {
   s_provider_clear_result = H2_PAL_FS_OK;
   s_fs_user = NULL;
   s_clear_path = NULL;
+  s_fs_mount_calls = 0u;
+  s_fs_mount_result = H2_PAL_OK;
+  s_fs_mount_path = NULL;
+  s_provider_prepare_calls = 0u;
+  s_provider_prepare_result = H2_PAL_OK;
+  s_provider_prepare_path = NULL;
+  s_provider_has_prepare = false;
   s_arena_init_calls = 0;
   s_mac_result = ESP_OK;
   s_mac_zero = false;
@@ -122,9 +136,26 @@ static int provider_fs_clear(void* user, const char* path) {
   return s_provider_clear_result;
 }
 
+static h2_pal_result_t provider_fs_prepare(void* user, const char* path) {
+  ++s_provider_prepare_calls;
+  assert(user == s_fs_user);
+  assert(path == s_provider_prepare_path);
+  return s_provider_prepare_result;
+}
+
 static const h2_pal_fs_vtable_t s_provider_fs_vtable = {
     .clear = provider_fs_clear,
 };
+static const h2_pal_fs_vtable_t s_preparing_provider_fs_vtable = {
+    .clear = provider_fs_clear,
+    .prepare = provider_fs_prepare,
+};
+
+int h2_esp_board_fs_mount(const char* path) {
+  ++s_fs_mount_calls;
+  assert(strcmp(path, s_fs_mount_path) == 0);
+  return s_fs_mount_result;
+}
 
 /* ---- link-only stubs --------------------------------------------------- */
 
@@ -143,7 +174,11 @@ h2_pal_result_t h2_corehttp_create(const h2_corehttp_config_t* config,
 
 int h2_esp_board_fs_init(h2_pal_fs_api_t* fs) {
   assert(s_arena_init_calls == 1u);
-  *fs = (h2_pal_fs_api_t){.user = s_fs_user, .vtable = &s_provider_fs_vtable};
+  *fs = (h2_pal_fs_api_t){
+      .user = s_fs_user,
+      .vtable = s_provider_has_prepare ? &s_preparing_provider_fs_vtable
+                                       : &s_provider_fs_vtable,
+  };
   return H2_PAL_OK;
 }
 
@@ -313,6 +348,83 @@ static void test_fs_clear_keeps_provider_after_reconfiguration(void) {
   }
 }
 
+static void test_fs_prepare_mounts_owned_filesystems(void) {
+  reset_stubs();
+  h2_runtime_config_t config;
+  assert(h2_esp_board_runtime_config(&config) == H2_PAL_OK);
+  assert(config.fs->vtable->prepare != NULL);
+  assert(s_provider_fs_vtable.prepare == NULL);
+  static const char* const paths[] = {
+      "/dl", "/dl/", "/dl/state.json", "/data", "/data/", "/data/app/file",
+  };
+  for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+    s_fs_mount_path = i < 3u ? "/dl" : "/data";
+    assert(h2_pal_fs_prepare(config.fs, paths[i]) == H2_PAL_OK);
+  }
+  assert(s_fs_mount_calls == 6u);
+  s_fs_mount_result = H2_PAL_FS_ERR_IO;
+  s_fs_mount_path = "/dl";
+  assert(h2_pal_fs_prepare(config.fs, "/dl/stage") == H2_PAL_FS_ERR_IO);
+  assert(s_fs_mount_calls == 7u);
+  assert(s_fs_clear_calls == 0 && s_provider_clear_calls == 0);
+  assert(h2_esp_board_runtime_deinit() == H2_PAL_OK);
+}
+
+static void test_fs_prepare_rejects_unowned_paths(void) {
+  reset_stubs();
+  h2_runtime_config_t config;
+  assert(h2_esp_board_runtime_config(&config) == H2_PAL_OK);
+  assert(config.fs->vtable->prepare != NULL);
+  assert(config.fs->vtable->prepare(config.fs->user, NULL) ==
+         H2_PAL_FS_ERR_INVALID_ARG);
+  assert(config.fs->vtable->prepare(config.fs->user, "") ==
+         H2_PAL_FS_ERR_INVALID_ARG);
+  static const char* const paths[] = {
+      "/", "dl", "data/file", "/dl-other", "/data-other", "/other/file",
+  };
+  for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+    assert(h2_pal_fs_prepare(config.fs, paths[i]) == H2_PAL_FS_ERR_UNSUPPORTED);
+  }
+  assert(s_fs_mount_calls == 0u && s_provider_prepare_calls == 0u);
+  assert(s_fs_clear_calls == 0 && s_provider_clear_calls == 0);
+  assert(h2_esp_board_runtime_deinit() == H2_PAL_OK);
+}
+
+static void test_fs_prepare_preserves_provider_and_reconfiguration(void) {
+  int users[3] = {0};
+  for (unsigned round = 0u; round < 3u; ++round) {
+    reset_stubs();
+    s_fs_user = &users[round];
+    s_provider_has_prepare = round != 1u;
+    h2_runtime_config_t config;
+    assert(h2_esp_board_runtime_config(&config) == H2_PAL_OK);
+    assert(config.fs->vtable->prepare != NULL);
+    assert(s_preparing_provider_fs_vtable.prepare == provider_fs_prepare);
+    if (s_provider_has_prepare) {
+      static const char* const paths[] = {"/dl/state", "/data/file",
+                                          "/other/../path"};
+      for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+        s_provider_prepare_path = paths[i];
+        s_provider_prepare_result =
+            i == 0u ? H2_PAL_OK : H2_PAL_FS_ERR_INVALID_ARG;
+        assert(h2_pal_fs_prepare(config.fs, paths[i]) ==
+               s_provider_prepare_result);
+      }
+      /* Cached configuration must retain the original callback and user. */
+      assert(h2_esp_board_runtime_config(&config) == H2_PAL_OK);
+      assert(h2_pal_fs_prepare(config.fs, s_provider_prepare_path) ==
+             s_provider_prepare_result);
+      assert(s_provider_prepare_calls == 4u && s_fs_mount_calls == 0u);
+    } else {
+      s_fs_mount_path = "/data";
+      assert(h2_pal_fs_prepare(config.fs, "/data/file") == H2_PAL_OK);
+      assert(s_provider_prepare_calls == 0u && s_fs_mount_calls == 1u);
+    }
+    assert(s_fs_clear_calls == 0 && s_provider_clear_calls == 0);
+    assert(h2_esp_board_runtime_deinit() == H2_PAL_OK);
+  }
+}
+
 static const h2_pal_mem_api_t s_arena_api;
 static const h2_pal_mem_api_t* s_arena_mem;
 static h2_esp_task_policy_config_t s_task_config;
@@ -374,6 +486,9 @@ int main(void) {
   test_later_failure_is_reported_when_audio_succeeds();
   test_fs_clear_routes_owned_paths();
   test_fs_clear_keeps_provider_after_reconfiguration();
+  test_fs_prepare_mounts_owned_filesystems();
+  test_fs_prepare_rejects_unowned_paths();
+  test_fs_prepare_preserves_provider_and_reconfiguration();
   for (unsigned mode = 0u; mode < 2u; ++mode) {
     reset_stubs();
     s_mac_result = mode == 0u ? ESP_FAIL : ESP_OK;
