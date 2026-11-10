@@ -15,6 +15,7 @@
 #include "esp_netif.h"
 #include "esp_log.h"
 #include "esp_crt_bundle.h"
+#include "esp_timer.h"
 #include "h2_esp_platform_net_tls_verify.h"
 
 #include <mbedtls/ssl.h>
@@ -86,6 +87,7 @@ static size_t s_esp_resolver_count;
 
 static uint64_t esp_net_now_ms(void);
 static uint32_t esp_net_timeout_remaining_ms(uint64_t deadline_ms);
+static void esp_net_tls_track(size_t index, h2_pal_net_socket_t fd);
 
 static void esp_net_tls_init(void) {
   if (s_esp_tls_sync == NULL) {
@@ -140,8 +142,9 @@ static int esp_net_tls_find_free(void) {
 }
 
 static TickType_t esp_net_tls_timeout_ticks(uint32_t timeout_ms) {
-  TickType_t ticks = pdMS_TO_TICKS(timeout_ms);
-  return timeout_ms != 0u && ticks == 0u ? 1u : ticks;
+  uint64_t ticks = (uint64_t)timeout_ms * configTICK_RATE_HZ / 1000u;
+  if (timeout_ms != 0u && ticks == 0u) ticks = 1u;
+  return ticks >= portMAX_DELAY ? portMAX_DELAY - 1u : (TickType_t)ticks;
 }
 
 static int esp_net_tls_take_mutex(SemaphoreHandle_t mutex, int bounded,
@@ -302,6 +305,7 @@ static void esp_net_tls_free(esp_net_tls_socket_t* socket) {
   mbedtls_ssl_free(&socket->ssl);
   mbedtls_ssl_config_free(&socket->config);
   mbedtls_x509_crt_free(&socket->ca);
+  esp_net_tls_track((size_t)(socket - s_esp_tls_sockets), -1);
   memset(socket, 0, sizeof(*socket));
   socket->fd = -1;
 }
@@ -409,6 +413,55 @@ static int esp_net_tls_verify_dates(void* user, mbedtls_x509_crt* cert,
   return rc;
 }
 
+static h2_pal_result_t esp_net_tls_setup(
+    esp_net_tls_socket_t* slot, const h2_pal_net_tls_config_t* config) {
+  mbedtls_ssl_init(&slot->ssl);
+  mbedtls_ssl_config_init(&slot->config);
+  mbedtls_x509_crt_init(&slot->ca);
+  h2_pal_result_t rc = esp_net_tls_copy_alpn(slot, config);
+  int result = rc == H2_PAL_OK ? mbedtls_ssl_config_defaults(
+                                     &slot->config, MBEDTLS_SSL_IS_CLIENT,
+                                     MBEDTLS_SSL_TRANSPORT_STREAM,
+                                     MBEDTLS_SSL_PRESET_DEFAULT)
+                               : -1;
+  if (result == 0) {
+#if MBEDTLS_VERSION_MAJOR < 4
+    mbedtls_ssl_conf_rng(&slot->config, esp_net_tls_random, slot);
+#else
+    if (psa_crypto_init() != PSA_SUCCESS) {
+      rc = H2_PAL_ERR_IO;
+    }
+#endif
+  }
+  if (result == 0 && rc == H2_PAL_OK) {
+    rc = esp_net_tls_load_ca(slot, config);
+    if (rc == H2_PAL_OK &&
+        config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+      slot->verify = (h2_esp_net_tls_verify_t){
+          .delegate = slot->config.MBEDTLS_PRIVATE(f_vrfy),
+          .delegate_user = slot->config.MBEDTLS_PRIVATE(p_vrfy),
+          .certificate_bundle =
+              config->root_ca_pem == NULL || config->root_ca_pem_len == 0u,
+      };
+      mbedtls_ssl_conf_verify(&slot->config, esp_net_tls_verify_dates, slot);
+    }
+  } else if (rc == H2_PAL_OK) {
+    rc = H2_PAL_ERR_IO;
+  }
+  if (rc == H2_PAL_OK && config->alpn != NULL && config->alpn[0] != '\0' &&
+      mbedtls_ssl_conf_alpn_protocols(&slot->config, slot->alpn) != 0) {
+    rc = H2_PAL_ERR_IO;
+  }
+  if (rc == H2_PAL_OK && mbedtls_ssl_setup(&slot->ssl, &slot->config) != 0) {
+    rc = H2_PAL_ERR_IO;
+  }
+  if (rc == H2_PAL_OK &&
+      mbedtls_ssl_set_hostname(&slot->ssl, config->server_name) != 0) {
+    rc = H2_PAL_ERR_INVALID_ARG;
+  }
+  return rc;
+}
+
 static h2_pal_result_t esp_net_tls_handshake(
     esp_net_tls_socket_t* socket, uint32_t timeout_ms,
     h2_pal_net_tls_verify_t verify_mode) {
@@ -507,10 +560,7 @@ static int esp_net_socket_error(void) {
 }
 
 static uint64_t esp_net_now_ms(void) {
-  struct timeval now;
-  return gettimeofday(&now, NULL) == 0
-             ? (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_usec / 1000u
-             : 0u;
+  return (uint64_t)esp_timer_get_time() / 1000u;
 }
 
 static uint32_t esp_net_timeout_remaining_ms(uint64_t deadline_ms) {
@@ -1578,11 +1628,14 @@ static int esp_net_tcp_recv(void* user, h2_pal_net_socket_t socket_fd,
   return h2_esp_net_stream_recv(socket_fd, data, len, timeout_ms);
 }
 
+#include "h2_esp_platform_net_tls_bounded.h"
+
 static void esp_net_close(void* user, h2_pal_net_socket_t socket_fd) {
   (void)user;
   if (socket_fd >= 0) {
-    if (s_esp_tls_sync != NULL && xSemaphoreTake(s_esp_tls_sync->registry_mutex,
-                                                 portMAX_DELAY) == pdTRUE) {
+    if (esp_net_tls_has_identity(socket_fd) && s_esp_tls_sync != NULL &&
+        xSemaphoreTake(s_esp_tls_sync->registry_mutex, portMAX_DELAY) ==
+            pdTRUE) {
       int slot_index = esp_net_tls_find(socket_fd);
       if (slot_index >= 0) {
         esp_net_tls_socket_t* slot = &s_esp_tls_sockets[slot_index];
@@ -1654,53 +1707,11 @@ static h2_pal_result_t esp_net_tls_wrap(void* user,
   memset(slot, 0, sizeof(*slot));
   slot->state = ESP_NET_TLS_SOCKET_CONFIGURING;
   slot->fd = socket_fd;
+  esp_net_tls_track((size_t)slot_index, socket_fd);
   s_esp_tls_sync->generations[slot_index] += 1u;
   uint32_t generation = s_esp_tls_sync->generations[slot_index];
   (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
-  mbedtls_ssl_init(&slot->ssl);
-  mbedtls_ssl_config_init(&slot->config);
-  mbedtls_x509_crt_init(&slot->ca);
-  h2_pal_result_t rc = esp_net_tls_copy_alpn(slot, config);
-  int result = rc == H2_PAL_OK ? mbedtls_ssl_config_defaults(
-                                     &slot->config, MBEDTLS_SSL_IS_CLIENT,
-                                     MBEDTLS_SSL_TRANSPORT_STREAM,
-                                     MBEDTLS_SSL_PRESET_DEFAULT)
-                               : -1;
-  if (result == 0) {
-#if MBEDTLS_VERSION_MAJOR < 4
-    mbedtls_ssl_conf_rng(&slot->config, esp_net_tls_random, slot);
-#else
-    if (psa_crypto_init() != PSA_SUCCESS) {
-      rc = H2_PAL_ERR_IO;
-    }
-#endif
-  }
-  if (result == 0 && rc == H2_PAL_OK) {
-    rc = esp_net_tls_load_ca(slot, config);
-    if (rc == H2_PAL_OK &&
-        config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-      slot->verify = (h2_esp_net_tls_verify_t){
-          .delegate = slot->config.MBEDTLS_PRIVATE(f_vrfy),
-          .delegate_user = slot->config.MBEDTLS_PRIVATE(p_vrfy),
-          .certificate_bundle =
-              config->root_ca_pem == NULL || config->root_ca_pem_len == 0u,
-      };
-      mbedtls_ssl_conf_verify(&slot->config, esp_net_tls_verify_dates, slot);
-    }
-  } else if (rc == H2_PAL_OK) {
-    rc = H2_PAL_ERR_IO;
-  }
-  if (rc == H2_PAL_OK && config->alpn != NULL && config->alpn[0] != '\0' &&
-      mbedtls_ssl_conf_alpn_protocols(&slot->config, slot->alpn) != 0) {
-    rc = H2_PAL_ERR_IO;
-  }
-  if (rc == H2_PAL_OK && mbedtls_ssl_setup(&slot->ssl, &slot->config) != 0) {
-    rc = H2_PAL_ERR_IO;
-  }
-  if (rc == H2_PAL_OK &&
-      mbedtls_ssl_set_hostname(&slot->ssl, config->server_name) != 0) {
-    rc = H2_PAL_ERR_INVALID_ARG;
-  }
+  h2_pal_result_t rc = esp_net_tls_setup(slot, config);
   if (rc == H2_PAL_OK) {
 #if defined(H2_ESP_NET_IO_TRACE)
     ESP_LOGI(
@@ -1865,6 +1876,7 @@ const h2_pal_net_api_t* h2_esp_platform_net_api(void) {
       .tcp_send_timeout = esp_net_tcp_send_timeout,
       .tcp_recv = esp_net_tcp_recv,
       .tls_wrap = esp_net_tls_wrap,
+      .tls_wrap_bounded = esp_net_tls_wrap_bounded,
       .icmp_echo = esp_net_icmp_echo,
       .close = esp_net_close,
       .tcp_listen = esp_net_tcp_listen,

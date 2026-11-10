@@ -1,0 +1,47 @@
+"""Execute the production ESP TLS lifecycle against gated SDK effects."""
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[4]
+OWNER = ROOT / "native_component_src/esp-idf6.x/h2_pal_core"
+
+
+class ESPBoundedTLS(unittest.TestCase):
+    def test_production_setup_and_socket_ownership(self):
+        source = (OWNER / "src/h2_esp_platform_net.c").read_text()
+        # Compile complete production TLS helpers and entry points. SDK stubs
+        # gate real setup/handshake calls; assertions inspect runtime effects.
+        helpers = source[source.index("#define H2_ESP_NET_TLS_SOCKET_MAX"):
+                         source.index("static int family_to_lwip(")]
+        clock_start = source.index("static uint64_t esp_net_now_ms(void) {")
+        clock = source[clock_start:source.index("static int net_has_reserved_suffix(", clock_start)]
+        entries = source[source.index("static void esp_net_close("):
+                         source.index("typedef struct esp_net_ping_context {")]
+        compiler = shutil.which("cc")
+        self.assertTrue(compiler, "a native C compiler is required")
+        text = ("#include \"net_tls_bounded_sdk.h\"\n" + helpers + clock +
+                "\n#include \"h2_esp_platform_net_tls_bounded.h\"\n" + entries +
+                (OWNER / "tests/test_h2_esp_net_tls_bounded.c").read_text())
+        with tempfile.TemporaryDirectory(prefix="h2-esp-tls-") as temporary:
+            test = Path(temporary) / "tls.c"
+            test.write_text(text)
+            for version in (3, 4):
+                with self.subTest(mbedtls_major=version):
+                    binary = Path(temporary) / ("tls-" + str(version))
+                    build = subprocess.run(
+                        [compiler, "-std=c11", "-D_POSIX_C_SOURCE=200809L", "-D_DARWIN_C_SOURCE", "-pthread",
+                         "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+                         "-DMBEDTLS_VERSION_MAJOR=" + str(version),
+                         "-I" + str(ROOT / "pal/include"),
+                         "-I" + str(OWNER / "src"), "-I" + str(OWNER / "tests"),
+                         str(test), "-o", str(binary)], capture_output=True, text=True)
+                    self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
+                    result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=20)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
