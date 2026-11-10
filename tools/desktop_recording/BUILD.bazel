@@ -3,6 +3,12 @@ load("//tools/bazel/toolchains:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COP
 
 package(default_visibility = ["//visibility:public"])
 
+_RECORDER_COMPATIBILITY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": ["@platforms//cpu:x86_64"],
+    "//tools/bazel/platforms:host_macos_target_macos": ["@platforms//cpu:arm64"],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
 cc_library(
     name = "desktop_recording",
     srcs = [
@@ -17,11 +23,7 @@ cc_library(
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
     linkopts = ["-lpthread"],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = _RECORDER_COMPATIBILITY,
     deps = [
         "//pal/providers/platforms/desktop/app_support:capture",
         "@h2_vendor_ffmpeg//:ffmpeg",
@@ -34,6 +36,7 @@ cc_test(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["src"],
+    target_compatible_with = _RECORDER_COMPATIBILITY,
     deps = [
         ":desktop_recording",
         "@h2_vendor_ffmpeg//:ffmpeg",

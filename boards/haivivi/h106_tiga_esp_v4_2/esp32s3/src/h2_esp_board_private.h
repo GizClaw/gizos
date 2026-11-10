@@ -50,6 +50,9 @@ int h2_esp_board_fs_deinit(void);
 int h2_esp_board_h2loader_fs_init(h2_pal_fs_api_t* fs);
 int h2_esp_board_h2loader_fs_deinit(void);
 int h2_esp_board_fs_mount(const char* path);
+/* Prepare the backend selected by fs_init; never select another storage device.
+ */
+int h2_esp_board_fs_prepare(const char* path);
 int h2_esp_board_fs_unmount(const char* path);
 int h2_esp_board_fs_clear(const char* path);
 int h2_esp_board_fs_mount_all(void);

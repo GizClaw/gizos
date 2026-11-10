@@ -151,7 +151,7 @@ static const h2_pal_fs_vtable_t s_preparing_provider_fs_vtable = {
     .prepare = provider_fs_prepare,
 };
 
-int h2_esp_board_fs_mount(const char* path) {
+int h2_esp_board_fs_prepare(const char* path) {
   ++s_fs_mount_calls;
   assert(strcmp(path, s_fs_mount_path) == 0);
   return s_fs_mount_result;

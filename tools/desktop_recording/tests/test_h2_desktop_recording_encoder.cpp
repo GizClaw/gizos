@@ -3,6 +3,8 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/log.h>
+#include <libavutil/mem.h>
 }
 #include <algorithm>
 #include <cassert>
@@ -10,6 +12,7 @@ extern "C" {
 #include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -215,6 +218,117 @@ size_t fill_pipe(int fd) {
   return count;
 }
 
+// Isolate a possible deadlock and reap it on failure, rather than hanging the
+// whole test. Called before this process starts any recorder workers.
+void with_deadline(void (*test)(const char*), const char* temporary) {
+  const pid_t child = fork();
+  assert(child >= 0);
+  if (child == 0) {
+    test(temporary);
+    _exit(0);
+  }
+  int status = 0;
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (true) {
+    const pid_t result = waitpid(child, &status, WNOHANG);
+    if (result == child) break;
+    assert(result == 0 || (result < 0 && errno == EINTR));
+    if (std::chrono::steady_clock::now() >= deadline) {
+      assert(kill(child, SIGKILL) == 0);
+      while (waitpid(child, &status, 0) < 0) assert(errno == EINTR);
+      assert(false && "recorder operation exceeded deadline");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+void full_stderr(const char* temporary) {
+  // Suppress FFmpeg's independent codec diagnostics in this child so the test
+  // specifically checks the recorder's capture/result/teardown path.
+  av_log_set_level(AV_LOG_QUIET);
+  int pipe_fd[2];
+  assert(pipe(pipe_fd) == 0);
+  assert(fill_pipe(pipe_fd[1]) > 0u);
+  assert(dup2(pipe_fd[1], STDERR_FILENO) == STDERR_FILENO);
+  assert(close(pipe_fd[1]) == 0);
+  // Keep the read end open without draining; any stderr write will block.
+  for (unsigned source = 0u; source < 2u; ++source) {
+    const std::string path = std::string(temporary) + "/full-stderr-" +
+                             std::to_string(source) + ".mp4";
+    h2_desktop_recording_t* recorder = nullptr;
+    assert(h2_desktop_recording_create(path.c_str(), 64u, 48u, &recorder) ==
+           H2_PAL_OK);
+    const auto* hooks = h2_desktop_recording_hooks(recorder);
+    std::vector<uint16_t> pixels(64u * 48u, 0xf800u);
+    const h2_sdl3_capture_frame_t video = {
+        pixels.data(), 64u, 48u, 128u, 255u, h2_desktop_recording_now_us()};
+    hooks->on_display(hooks->user, &video);
+    if (source == 0u) {
+      hooks->on_display(hooks->user, nullptr);
+    } else {
+      hooks->on_speaker(hooks->user, nullptr);
+    }
+    assert(h2_desktop_recording_result(recorder) == H2_PAL_ERR_INVALID_ARG);
+    h2_desktop_recording_stats_t stats = {};
+    assert(h2_desktop_recording_stop(recorder, &stats) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(stats.result == H2_PAL_ERR_INVALID_ARG &&
+           stats.captured_video_frames == 1u);
+    h2_desktop_recording_destroy(recorder);
+  }
+  assert(close(pipe_fd[0]) == 0);
+}
+
+void failed_setup(const char* temporary) {
+  const std::string path = std::string(temporary) + "/setup-retry.mp4";
+  h2_desktop_recording_t* recorder = nullptr;
+  for (unsigned attempt = 0u; attempt < 3u; ++attempt) {
+    // The output worker uses C++ allocation. This FFmpeg limit rejects the
+    // 32768-byte AVIO buffer after exclusive open and writer start succeed.
+    av_max_alloc(32768u);
+    const auto result =
+        h2_desktop_recording_create(path.c_str(), 64u, 48u, &recorder);
+    av_max_alloc(SIZE_MAX);
+    assert(result == H2_PAL_ERR_IO && recorder == nullptr);
+    assert(access(path.c_str(), F_OK) < 0 && errno == ENOENT);
+  }
+  assert(h2_desktop_recording_create(path.c_str(), 64u, 48u, &recorder) ==
+         H2_PAL_OK);
+  const auto* hooks = h2_desktop_recording_hooks(recorder);
+  std::vector<uint16_t> pixels(64u * 48u, 0xf800u);
+  const h2_sdl3_capture_frame_t video = {
+      pixels.data(), 64u, 48u, 128u, 255u, h2_desktop_recording_now_us()};
+  hooks->on_display(hooks->user, &video);
+  assert(h2_desktop_recording_stop(recorder, nullptr) == H2_PAL_OK);
+  h2_desktop_recording_destroy(recorder);
+
+  const std::string existing = std::string(temporary) + "/setup-existing.mp4";
+  const int fd = open(existing.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
+  assert(fd >= 0 && write(fd, "keep", 4u) == 4);
+  assert(h2_desktop_recording_create(existing.c_str(), 64u, 48u, &recorder) ==
+         H2_PAL_ERR_IO);
+  assert(recorder == nullptr);
+  const int probe = dup(fd);
+  assert(probe >= 0 && close(probe) == 0);
+  h2_desktop_recording_encoder_config_t config = {
+      existing.c_str(), 64u, 48u, h2_desktop_recording_now_us(), fd};
+  h2_desktop_recording_encoder_t* encoder = nullptr;
+  av_max_alloc(32768u);
+  const auto result = h2_desktop_recording_encoder_create(&config, &encoder);
+  av_max_alloc(SIZE_MAX);
+  assert(result == H2_PAL_ERR_IO && encoder == nullptr);
+  // Failure closes the owned duplicate, while preserving the borrowed file,
+  // its contents and the caller's open descriptor.
+  const int after = dup(fd);
+  assert(after == probe && close(after) == 0);
+  char contents[4];
+  assert(pread(fd, contents, sizeof(contents), 0) == 4);
+  assert(std::memcmp(contents, "keep", 4u) == 0);
+  assert(access(existing.c_str(), F_OK) == 0 && close(fd) == 0);
+}
+
 void delayed_output(const char* temporary) {
   int pipe_fd[2];
   assert(pipe(pipe_fd) == 0);
@@ -384,6 +498,8 @@ int main() {
   const char* temporary = std::getenv("TEST_TMPDIR");
   assert(temporary != nullptr);
   assert(std::signal(SIGPIPE, SIG_DFL) != SIG_ERR);
+  with_deadline(full_stderr, temporary);
+  with_deadline(failed_setup, temporary);
   public_recording_api(temporary);
   output_boundaries();
   delayed_output(temporary);

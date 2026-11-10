@@ -62,9 +62,9 @@ static h2_pal_result_t runtime_fs_prepare(void* user, const char* path) {
   if (s_runtime_fs_provider_prepare != NULL)
     return s_runtime_fs_provider_prepare(user, path);
   if (strcmp(path, "/dl") == 0 || strncmp(path, "/dl/", 4u) == 0)
-    return h2_esp_board_fs_mount("/dl");
+    return h2_esp_board_fs_prepare("/dl");
   if (strcmp(path, "/data") == 0 || strncmp(path, "/data/", 6u) == 0)
-    return h2_esp_board_fs_mount("/data");
+    return h2_esp_board_fs_prepare("/data");
   return H2_PAL_FS_ERR_UNSUPPORTED;
 }
 
