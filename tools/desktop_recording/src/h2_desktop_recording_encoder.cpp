@@ -14,6 +14,8 @@ extern "C" {
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <cstring>
 #include <fcntl.h>
 #include <mutex>
@@ -253,16 +255,48 @@ bool setup_codec(h2_desktop_recording_encoder_t* state, bool is_video) {
   return true;
 }
 
+// Keep incomplete output in a private directory. Publishing uses an atomic
+// no-replace link, so failure cleanup never unlinks the caller's destination.
+struct InitialOutput {
+  std::string directory;
+  int directory_fd = -1;
+  bool created_directory = false;
+  bool created_recording = false;
+  ~InitialOutput() {
+    if (directory_fd >= 0) {
+      if (created_recording) (void)unlinkat(directory_fd, "recording", 0);
+      (void)close(directory_fd);
+    }
+    if (created_directory) (void)rmdir(directory.c_str());
+  }
+  int open_output(const h2_desktop_recording_encoder_config_t* config) {
+    if (config->output_fd >= 0) return dup(config->output_fd);
+    directory = std::string(config->path) + ".init-XXXXXX";
+    if (mkdtemp(directory.data()) == nullptr) return -1;
+    created_directory = true;
+    directory_fd = open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (directory_fd < 0) return -1;
+    const int fd =
+        openat(directory_fd, "recording", O_CREAT | O_EXCL | O_WRONLY, 0600);
+    created_recording = fd >= 0;
+    return fd;
+  }
+  bool publish(const h2_desktop_recording_encoder_config_t* config) {
+    return config->output_fd >= 0 ||
+           linkat(directory_fd, "recording", AT_FDCWD, config->path, 0) == 0;
+  }
+};
+
 bool setup(h2_desktop_recording_encoder_t* state,
            const h2_desktop_recording_encoder_config_t* config,
-           bool* created_output) {
-  const int fd = config->output_fd >= 0
-                     ? dup(config->output_fd)
-                     : open(config->path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-  *created_output = fd >= 0 && config->output_fd < 0;
-  if (fd < 0 || !state->output.start(fd) || config->fail_after_output_start) {
+           InitialOutput* initial_output) {
+  const int fd = initial_output->open_output(config);
+  if (fd < 0 || !state->output.start(fd)) {
     return false;
   }
+  if (config->after_output_start != nullptr)
+    config->after_output_start(config->test_user);
+  if (config->fail_after_output_start) return false;
   if (avformat_alloc_output_context2(&state->format, nullptr, "mp4", nullptr) <
           0 ||
       state->format == nullptr) {
@@ -532,10 +566,12 @@ h2_pal_result_t h2_desktop_recording_encoder_create(
   state->width = config->width;
   state->height = config->height;
   state->start_us = config->start_us;
-  bool created_output = false;
+  InitialOutput initial_output;
   const auto failed_setup = [&]() {
-    release(state);  // Joins the writer and closes the file before removal.
-    if (created_output) (void)unlink(config->path);
+    if (state->worker.joinable())
+      (void)h2_desktop_recording_encoder_finish(state, config->start_us,
+                                                nullptr);
+    release(state);
   };
   try {
     state->current_pixels.resize(state->width * state->height);
@@ -547,11 +583,15 @@ h2_pal_result_t h2_desktop_recording_encoder_create(
                                 sizeof(state->pcm) +
                                 sizeof(state->pcm_timestamps) +
                                 h2_desktop_recording_output::capacity;
-    if (!setup(state, config, &created_output)) {
+    if (!setup(state, config, &initial_output)) {
       failed_setup();
       return H2_PAL_ERR_IO;
     }
     state->worker = std::thread(run, state);
+    if (!initial_output.publish(config)) {
+      failed_setup();
+      return H2_PAL_ERR_IO;
+    }
   } catch (...) {
     failed_setup();
     return H2_PAL_ERR_NO_MEMORY;

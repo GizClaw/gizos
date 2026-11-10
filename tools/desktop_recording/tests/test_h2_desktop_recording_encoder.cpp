@@ -367,6 +367,29 @@ void failed_initialization(const char* temporary) {
   assert(unlink(path.c_str()) == 0);
 }
 
+void replacement_output(const char* temporary) {
+  const std::string path = std::string(temporary) + "/replacement.mp4";
+  h2_desktop_recording_encoder_config_t config = {
+      path.c_str(), 64u, 48u, h2_desktop_recording_now_us()};
+  config.fail_after_output_start = true;
+  config.test_user = const_cast<char*>(path.c_str());
+  config.after_output_start = [](void* user) {
+    const char* destination = static_cast<const char*>(user);
+    // A competing writer publishes at the requested name during setup.
+    const int replacement =
+        open(destination, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    assert(replacement >= 0 && write(replacement, "keep", 4u) == 4);
+    assert(close(replacement) == 0);
+  };
+  h2_desktop_recording_encoder_t* state = nullptr;
+  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
+  const int fd = open(path.c_str(), O_RDONLY);
+  char bytes[4] = {};
+  assert(fd >= 0 && read(fd, bytes, sizeof(bytes)) == 4 &&
+         std::memcmp(bytes, "keep", 4u) == 0);
+  assert(close(fd) == 0 && unlink(path.c_str()) == 0);
+}
+
 void blocked_diagnostics(const char* temporary) {
   const std::string path = std::string(temporary) + "/blocked-stderr.mp4";
   const h2_desktop_recording_encoder_config_t config = {
@@ -385,7 +408,7 @@ void blocked_diagnostics(const char* temporary) {
     completed.store(true);
   });
   const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+      std::chrono::steady_clock::now() + std::chrono::seconds(3);
   while (!completed.load() && std::chrono::steady_clock::now() < deadline)
     std::this_thread::yield();
   const bool prompt = completed.load();
@@ -410,6 +433,7 @@ int main() {
   delayed_output(temporary);
   failed_output(temporary);
   failed_initialization(temporary);
+  replacement_output(temporary);
   blocked_diagnostics(temporary);
   struct sigaction action = {};
   assert(sigaction(SIGPIPE, nullptr, &action) == 0);

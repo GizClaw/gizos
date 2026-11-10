@@ -15,6 +15,8 @@ struct h2_desktop_recording_encoder_config {
   int output_fd = -1;
   // Private failure injection after exclusive creation/writer startup.
   bool fail_after_output_start = false;
+  void (*after_output_start)(void* user) = nullptr;
+  void* test_user = nullptr;
 };
 using h2_desktop_recording_encoder_config_t =
     h2_desktop_recording_encoder_config;
