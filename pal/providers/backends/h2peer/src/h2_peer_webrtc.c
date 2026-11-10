@@ -1700,6 +1700,21 @@ int h2_peer_network_service_channel(h2_pal_webrtc_peer_t* peer,
   }
 }
 
+static h2_pal_result_t h2_peer_webrtc_service_uplink(
+    h2_pal_webrtc_peer_t* peer);
+
+static int h2_peer_network_service_uplink(h2_pal_webrtc_peer_t* peer,
+                                          int* transport_terminal) {
+  if (!*transport_terminal) {
+    h2_pal_result_t result = h2_peer_webrtc_service_uplink(peer);
+    if (result != H2_PAL_OK) {
+      h2_peer_record_network_event_error(peer, result);
+      *transport_terminal = 1;
+    }
+  }
+  return h2_peer_network_service_rtp(peer);
+}
+
 static void h2_peer_network_task(void* context) {
   h2_pal_webrtc_peer_t* peer = (h2_pal_webrtc_peer_t*)context;
   int transport_terminal = 0;
@@ -1738,6 +1753,8 @@ static void h2_peer_network_task(void* context) {
       }
     }
 
+    /* Send an already queued frame before spending a full receive burst. */
+    int rtp_progress = h2_peer_network_service_rtp(peer);
     int transport_progress = 0;
     for (size_t packet_count = 0u; packet_count < H2_PEER_NETWORK_UDP_BURST_MAX;
          ++packet_count) {
@@ -1748,14 +1765,17 @@ static void h2_peer_network_task(void* context) {
         break;
       }
       transport_progress = 1;
+      /* A packet may take substantial SCTP/crypto work. New Track data or API
+       * RTP must not wait for all remaining packets. Only pump uplink here;
+       * keep the downlink drain and DataChannel budgets at their round limits.
+       */
+      rtp_progress |= h2_peer_network_service_uplink(peer, &transport_terminal);
     }
 
     // Merge newly readied channels every round so a channel still draining a
     // deep queue cannot hide another channel's first message.
     channel_snapshot |= h2_atomic_exchange_explicit(&peer->channel_ready, 0u,
                                                     H2_ATOMIC_ACQ_REL);
-    h2_peer_tx_item_t* rtp_pending =
-        h2_atomic_load_explicit(&peer->rtp_pending, H2_ATOMIC_ACQUIRE);
     const int has_channel_work = channel_snapshot != 0u;
     bool writable = false;
     if (has_channel_work) {
@@ -1770,10 +1790,7 @@ static void h2_peer_network_task(void* context) {
       }
     }
 
-    const int rtp_progress =
-        rtp_pending != NULL && rtp_pending != H2_PEER_TX_RESERVED
-            ? h2_peer_network_service_rtp(peer)
-            : 0;
+    rtp_progress |= h2_peer_network_service_rtp(peer);
     const int channel_progress =
         writable ? h2_peer_network_service_channel(peer, &channel_snapshot) : 0;
     if (rtp_progress || channel_progress) {
@@ -2161,6 +2178,22 @@ h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t* peer) {
     --peer->media_receive_count;
     h2_peer_free(h2_peer_mem(peer), frame);
   }
+  return h2_peer_webrtc_service_uplink(peer);
+}
+
+/* Uplink is also checked between incoming datagrams. Do not repeatedly drain
+ * the downlink FIFO at those service points: it retains its existing budget. */
+static h2_pal_result_t h2_peer_webrtc_service_uplink(
+    h2_pal_webrtc_peer_t* peer) {
+  h2_pal_webrtc_track_t* track = peer->media_track;
+  if (track == NULL || track->vtable == NULL ||
+      h2_atomic_load(&peer->state) != H2_PAL_WEBRTC_PEER_CONNECTED ||
+      h2_atomic_load(&peer->closed)) {
+    return H2_PAL_OK;
+  }
+  const h2_pal_result_t failure = (h2_pal_result_t)h2_atomic_load_explicit(
+      &peer->network_transport_result, H2_ATOMIC_ACQUIRE);
+  if (failure != H2_PAL_OK) return failure;
   if (track->vtable->read == NULL) return H2_PAL_OK;
   /* Reading the Track may consume its EOS and let the caller send a control
    * boundary. Do not advance it while the preceding RTP frame is queued. */
