@@ -50,6 +50,9 @@ struct Fixture {
   std::atomic<bool> go{false}, active{false}, block_consumer{true};
   std::atomic<uint64_t> now_ms{1};
   std::atomic<size_t> allocations{0}, frees{0};
+  std::atomic<bool> fail_next_allocation{false};
+  bool fail_first_event = false;
+  unsigned event_allocation_failures = 0, callback_no_memory = 0;
   std::deque<Packet> replies;
   Packet last_data;
   std::set<uint32_t> dropped_tsns;
@@ -89,8 +92,13 @@ Packet payload(unsigned sequence) {
   return data;
 }
 void* allocate(void* user, size_t len) {
+  auto& f = *static_cast<Fixture*>(user);
+  if (network_thread && f.fail_next_allocation.exchange(false)) {
+    ++f.event_allocation_failures;
+    return nullptr;
+  }
   void* p = std::malloc(len);
-  if (p) static_cast<Fixture*>(user)->allocations.fetch_add(1);
+  if (p) f.allocations.fetch_add(1);
   return p;
 }
 void release(void* user, void* p) {
@@ -178,10 +186,16 @@ h2_pal_result_t on_message(char* data, size_t len, void* user, uint16_t sid,
                            int is_text) {
   auto& f = *static_cast<Fixture*>(user);
   assert(sid == 0 && !is_text && len == kMessageBytes);
+  if (f.fail_first_event) {
+    f.fail_first_event = false;
+    f.fail_next_allocation.store(true);
+  }
   h2_pal_result_t rc = h2_peer_webrtc_emit_channel_message(
       f.peer, f.channel, reinterpret_cast<uint8_t*>(data), len, is_text);
   if (rc == H2_PAL_ERR_WOULD_BLOCK)
     ++f.callback_wb;
+  else if (rc == H2_PAL_ERR_NO_MEMORY)
+    ++f.callback_no_memory;
   else {
     assert(rc == H2_PAL_OK);
     ++f.callback_ok;
@@ -229,10 +243,12 @@ void wait_for(Fixture& f, bool Fixture::* flag) {
                           [&] { return f.*flag; })) {
     std::fprintf(stderr,
                  "timeout submitted=%u delivered=%u used=%zu send=%zu "
-                 "events=%u/%zu wb=%u sack=%u/%u probes=%u\n",
+                 "events=%u/%zu wb=%u sack=%u/%u probes=%u "
+                 "event_oom=%u callback_no_memory=%u delivery_pending=%d\n",
                  f.submitted, f.delivered, f.used, f.send_used, f.event_count,
                  f.event_bytes, f.callback_wb, f.sack_zero, f.sack_open,
-                 f.probes);
+                 f.probes, f.event_allocation_failures, f.callback_no_memory,
+                 int(f.receiver.association->delivery_pending));
     assert(false);
   }
 }
@@ -340,8 +356,12 @@ extern "C" h2_pal_result_t h2_test_sctp_service_datagram(h2_pal_webrtc_peer_t*,
   return H2_PAL_OK;
 }
 
-static void run_case(bool interleaved) {
+static void run_case(bool interleaved, bool allocation_failure = false) {
   Fixture f;
+  // Start the allocator case without queue backpressure: an earlier blocked
+  // callback would already arm delivery_pending and hide a missing OOM retry.
+  f.fail_first_event = allocation_failure;
+  f.block_consumer.store(!allocation_failure);
   current = &f;
   f.real_task = h2_desktop_platform_task_api();
   f.real_queue = h2_desktop_platform_queue_api();
@@ -414,23 +434,23 @@ static void run_case(bool interleaved) {
   f.remote.association->peer_interleaving = interleaved;
   f.receiver.association->peer_interleaving = interleaved;
   f.go.store(true);
-  wait_for(f, &Fixture::full);
-  f.block_consumer.store(false);
-  wait_for(f, &Fixture::held);
   std::vector<h2_pal_webrtc_event_t> held;
-  for (;;) {
-    h2_pal_webrtc_event_t event{};
-    auto rc = h2_pal_webrtc_peer_poll(f.api, f.peer, 0, &event);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK) break;
-    assert(rc == H2_PAL_OK &&
-           event.kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
-    auto expected = payload(static_cast<unsigned>(held.size()));
-    assert(event.data_len == expected.size() &&
-           !std::memcmp(event.data, expected.data(), expected.size()));
-    held.push_back(event);
-  }
-  assert(!held.empty());
-  {
+  if (!allocation_failure) {
+    wait_for(f, &Fixture::full);
+    f.block_consumer.store(false);
+    wait_for(f, &Fixture::held);
+    for (;;) {
+      h2_pal_webrtc_event_t event{};
+      auto rc = h2_pal_webrtc_peer_poll(f.api, f.peer, 0, &event);
+      if (rc == H2_PAL_ERR_WOULD_BLOCK) break;
+      assert(rc == H2_PAL_OK &&
+             event.kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
+      auto expected = payload(static_cast<unsigned>(held.size()));
+      assert(event.data_len == expected.size() &&
+             !std::memcmp(event.data, expected.data(), expected.size()));
+      held.push_back(event);
+    }
+    assert(!held.empty());
     std::unique_lock<std::mutex> lock(f.lock);
     unsigned received = f.receive_calls;
     unsigned slept = f.held_sleeps;
@@ -462,12 +482,19 @@ static void run_case(bool interleaved) {
     f.delivered = delivered;
   }
   wait_for(f, &Fixture::done);
+  assert(h2_atomic_int_load(&f.peer->network_transport_result,
+                            H2_ATOMIC_RELAXED) == H2_PAL_OK);
   h2_pal_webrtc_peer_close(f.api, f.peer);
   h2_peer_destroy(&f.owner);
   assert(f.callback_wb > 0 && f.callback_ok == kMessages);
-  assert(f.sack_zero > 0 && f.sack_open > 0 && f.gap_sacks > 0 &&
-         f.dropped_updates == 1);
-  assert(f.emit_wb > 0 && f.empty_services > 0 && f.probes > 0);
+  assert(f.callback_no_memory == 0);
+  assert(f.event_allocation_failures == (allocation_failure ? 1u : 0u));
+  if (!allocation_failure) {
+    assert(f.sack_zero > 0 && f.sack_open > 0 && f.gap_sacks > 0 &&
+           f.dropped_updates == 1);
+    assert(f.empty_services > 0 && f.probes > 0);
+  }
+  assert(f.emit_wb > 0);
   assert(f.reordered > 0 && f.duplicated > 0 && !f.dropped_tsns.empty());
   assert(f.receiver.association->receive_used == 0);
   assert(f.receiver.association->rx_fragments == nullptr);
@@ -477,11 +504,13 @@ static void run_case(bool interleaved) {
       "wire=%s seed=0x50390a bytes=%zu messages=%u max_receive=%zu "
       "callback_wb=%u sacks_zero/open=%u/%u emit_wb=%u "
       "lost_data=%zu reordered=%u duplicate=%u lost_update=%u "
-      "probes=%u empty_service=%u final_receive=%zu final_events=%u/%zu\n",
+      "probes=%u empty_service=%u final_receive=%zu final_events=%u/%zu "
+      "event_oom=%u callback_no_memory=%u\n",
       interleaved ? "I-DATA" : "DATA", kMessages * kMessageBytes, f.delivered,
       f.max_used, f.callback_wb, f.sack_zero, f.sack_open, f.emit_wb,
       f.dropped_tsns.size(), f.reordered, f.duplicated, f.dropped_updates,
-      f.probes, f.empty_services, f.used, f.event_count, f.event_bytes);
+      f.probes, f.empty_services, f.used, f.event_count, f.event_bytes,
+      f.event_allocation_failures, f.callback_no_memory);
   f.active.store(false);
   sctp_destroy_association(&f.receiver);
   assert(h2_sctp_destroy(&f.provider) == H2_PAL_OK);
@@ -490,6 +519,8 @@ static void run_case(bool interleaved) {
   current = nullptr;
 }
 int main() {
+  run_case(false, true);
+  run_case(true, true);
   run_case(false);
   run_case(true);
 }

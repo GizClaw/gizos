@@ -625,7 +625,11 @@ h2_pal_result_t h2_peer_webrtc_emit_channel_message(
       .is_text = is_text != 0,
   };
   h2_pal_result_t result = h2_peer_queue_network_event(peer, &event, data, len);
-  return result == H2_PAL_ERR_FULL ? H2_PAL_ERR_WOULD_BLOCK : result;
+  /* Reliable messages remain owned by SCTP until an event accepts them.
+   * Allocation pressure, like a full queue, must retain that retry path. */
+  return result == H2_PAL_ERR_FULL || result == H2_PAL_ERR_NO_MEMORY
+             ? H2_PAL_ERR_WOULD_BLOCK
+             : result;
 }
 
 struct h2_peer_media_frame {
