@@ -15,6 +15,9 @@ extern "C" {
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
+#include <random>
+#include <sys/stat.h>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -29,6 +32,7 @@ extern "C" {
 #include <vector>
 #if defined(__linux__)
 #include <linux/fs.h>
+#include <sys/syscall.h>
 #endif
 
 namespace {
@@ -266,6 +270,8 @@ bool setup_codec(h2_desktop_recording_encoder_t* state, bool is_video) {
 // no-replace rename, so failure cleanup never unlinks the caller's destination.
 struct InitialOutput {
   std::string directory;
+  std::string basename;
+  int parent_fd = -1;
   int directory_fd = -1;
   bool created_directory = false;
   bool created_recording = false;
@@ -274,19 +280,40 @@ struct InitialOutput {
       if (created_recording) (void)unlinkat(directory_fd, "recording", 0);
       (void)close(directory_fd);
     }
-    if (created_directory) (void)rmdir(directory.c_str());
+    if (parent_fd >= 0) {
+      if (created_directory)
+        (void)unlinkat(parent_fd, directory.c_str(), AT_REMOVEDIR);
+      (void)close(parent_fd);
+    }
   }
   int open_output(const h2_desktop_recording_encoder_config_t* config) {
     if (config->output_fd >= 0) return dup(config->output_fd);
     const std::string destination(config->path);
     const size_t separator = destination.find_last_of('/');
-    directory = (separator == std::string::npos
-                     ? "./"
-                     : destination.substr(0, separator + 1u)) +
-                ".h2-recording-XXXXXX";
-    if (mkdtemp(directory.data()) == nullptr) return -1;
-    created_directory = true;
-    directory_fd = open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    const std::string parent = separator == std::string::npos
+                                   ? "."
+                                   : destination.substr(0, separator + 1u);
+    basename = separator == std::string::npos
+                   ? destination
+                   : destination.substr(separator + 1u);
+    parent_fd = open(parent.c_str(), O_RDONLY | O_DIRECTORY);
+    if (parent_fd < 0) return -1;
+    std::random_device entropy;
+    for (unsigned attempt = 0u; attempt < 32u; ++attempt) {
+      char name[48];
+      std::snprintf(name, sizeof(name), ".h2-recording-%08x%08x",
+                    static_cast<unsigned>(entropy()),
+                    static_cast<unsigned>(entropy()));
+      directory = name;
+      if (mkdirat(parent_fd, directory.c_str(), 0700) == 0) {
+        created_directory = true;
+        break;
+      }
+      if (errno != EEXIST) return -1;
+    }
+    if (!created_directory) return -1;
+    directory_fd = openat(parent_fd, directory.c_str(),
+                          O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
     if (directory_fd < 0) return -1;
     const int fd =
         openat(directory_fd, "recording", O_CREAT | O_EXCL | O_WRONLY, 0600);
@@ -295,15 +322,22 @@ struct InitialOutput {
   }
   bool publish(const h2_desktop_recording_encoder_config_t* config) {
     if (config->output_fd >= 0) return true;
+    if (!config->force_legacy_publication) {
 #if defined(__APPLE__)
-    return renameatx_np(directory_fd, "recording", AT_FDCWD, config->path,
-                        RENAME_EXCL) == 0;
-#elif defined(__linux__)
-    return renameat2(directory_fd, "recording", AT_FDCWD, config->path,
-                     RENAME_NOREPLACE) == 0;
-#else
-    return false;
+      return renameatx_np(directory_fd, "recording", parent_fd,
+                          basename.c_str(), RENAME_EXCL) == 0;
+#elif defined(__linux__) && defined(SYS_renameat2)
+      if (syscall(SYS_renameat2, directory_fd, "recording", parent_fd,
+                  basename.c_str(), RENAME_NOREPLACE) == 0)
+        return true;
+      if (errno != ENOSYS && errno != EINVAL && errno != EOPNOTSUPP)
+        return false;
 #endif
+    }
+    // Older Linux kernels/filesystems can still atomically publish with linkat.
+    // Never fall back to check-then-rename, which could overwrite another file.
+    return linkat(directory_fd, "recording", parent_fd, basename.c_str(), 0) ==
+           0;
   }
 };
 
