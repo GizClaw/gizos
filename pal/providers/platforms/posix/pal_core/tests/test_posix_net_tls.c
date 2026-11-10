@@ -232,8 +232,22 @@ int main(int argc, char** argv) {
   run_case(&ca, "not-localhost", H2_PAL_ERR_TLS_VERIFY, 0);
   run_case(&ca, "localhost", H2_PAL_ERR_IO, 1);
 
+  assert(h2_wolfssl_deinit() == H2_PAL_OK);
+  /* Omitted capability remains source-compatible and uses inline setup. */
+  const h2_wolfssl_config_t legacy = {
+      .mem = {.user = NULL, .vtable = &mem_vtable},
+      .entropy = h2_posix_entropy,
+  };
+  assert(!legacy.providers_thread_safe);
+  assert(h2_wolfssl_init(&legacy) == H2_PAL_OK);
+  run_case(&ca, "localhost", H2_PAL_OK, 0);
+  run_case(&ca, "127.0.0.1", H2_PAL_OK, 0);
+  run_case(&ca, "127.0.0.2", H2_PAL_ERR_TLS_VERIFY, 0);
+  run_case(&wrong_ca, "localhost", H2_PAL_ERR_TLS_VERIFY, 0);
+  run_case(&ca, "not-localhost", H2_PAL_ERR_TLS_VERIFY, 0);
+  run_case(&ca, "localhost", H2_PAL_ERR_IO, 1);
+  assert(h2_wolfssl_deinit() == H2_PAL_OK);
   free(ca.data);
   free(wrong_ca.data);
-  assert(h2_wolfssl_deinit() == H2_PAL_OK);
   return 0;
 }

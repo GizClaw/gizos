@@ -51,6 +51,7 @@ cc_test(
         "//pal",
         "//pal/providers/backends/h2peer",
         "//pal/providers/backends/h2sctp",
+        "//pal/providers/backends/wolfssl",
     ],
 )
 

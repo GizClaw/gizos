@@ -249,7 +249,28 @@ static void h2_posix_tls_free(WOLFSSL* ssl, WOLFSSL_CTX* ctx) {
 }
 
 static h2_pal_result_t tls_setup_configure(tls_setup_job_t* job) {
+  if (job->config.verify == H2_PAL_NET_TLS_VERIFY_DEFAULT) {
+    job->config.verify = H2_PAL_NET_TLS_VERIFY_REQUIRED;
+  }
   const h2_pal_net_tls_config_t* config = &job->config;
+  if (config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
+      config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (config->verify == H2_PAL_NET_TLS_VERIFY_REQUIRED &&
+      (config->server_name == NULL || config->server_name[0] == '\0')) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (config->server_name != NULL && strlen(config->server_name) > UINT16_MAX) {
+    return H2_PAL_ERR_IO;
+  }
+  if (config->alpn != NULL && strlen(config->alpn) > 255u) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (config->verify == H2_PAL_NET_TLS_VERIFY_REQUIRED &&
+      config->root_ca_pem != NULL && config->root_ca_pem_len > INT32_MAX) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
   job->ctx = wolfSSL_CTX_new(wolfSSLv23_client_method());
   if (job->ctx == NULL) return H2_PAL_ERR_NO_MEMORY;
   if (wolfSSL_CTX_SetMinVersion(job->ctx, WOLFSSL_TLSV1_2) != WOLFSSL_SUCCESS) {
@@ -361,18 +382,19 @@ static h2_pal_result_t tls_setup_create_job(
           : 0u;
   if (ca > INT32_MAX) return H2_PAL_ERR_INVALID_ARG;
   size_t bytes = name + alpn + ca;
+  h2_pal_result_t result = h2_wolfssl_operation_acquire_concurrent();
+  if (result != H2_PAL_OK) return result;
   (void)pthread_mutex_lock(&jobs_lock);
   if (jobs_count == H2_POSIX_TLS_SETUP_MAX ||
       bytes > H2_POSIX_TLS_SETUP_BYTES_MAX - jobs_bytes) {
     (void)pthread_mutex_unlock(&jobs_lock);
+    h2_wolfssl_operation_release();
     return H2_PAL_ERR_NO_SPACE;
   }
   ++jobs_count;
   jobs_bytes += bytes;
   (void)pthread_mutex_unlock(&jobs_lock);
-  h2_pal_result_t result = h2_wolfssl_operation_acquire_concurrent();
   tls_setup_job_t* job = NULL;
-  if (result != H2_PAL_OK) goto fail_admission;
   job = calloc(1u, sizeof(*job) + bytes);
   if (job == NULL) {
     result = H2_PAL_ERR_NO_MEMORY;
@@ -410,11 +432,36 @@ fail_job:
   free(job);
 fail_lease:
   h2_wolfssl_operation_release();
-fail_admission:
   (void)pthread_mutex_lock(&jobs_lock);
   --jobs_count;
   jobs_bytes -= bytes;
   (void)pthread_mutex_unlock(&jobs_lock);
+  return result;
+}
+
+/* Legacy providers stay on the caller's thread. Opaque setup cannot be
+ * preempted, but it consumes the same deadline and never restarts the budget.
+ */
+static h2_pal_result_t tls_setup_inline(const h2_pal_net_tls_config_t* config,
+                                        uint64_t deadline,
+                                        WOLFSSL_CTX** out_ctx,
+                                        WOLFSSL** out_ssl) {
+  if (h2_posix_tls_remaining_ms(deadline) == 0u) return H2_PAL_ERR_TIMEOUT;
+  h2_pal_result_t result = h2_wolfssl_operation_acquire();
+  if (result != H2_PAL_OK) return result;
+  tls_setup_job_t setup = {.config = *config};
+  result = tls_setup_configure(&setup);
+  if (result == H2_PAL_OK && h2_posix_tls_remaining_ms(deadline) == 0u) {
+    result = H2_PAL_ERR_TIMEOUT;
+  }
+  if (result == H2_PAL_OK) {
+    *out_ctx = setup.ctx;
+    *out_ssl = setup.ssl;
+    return H2_PAL_OK;
+  }
+  if (setup.ssl != NULL) wolfSSL_free(setup.ssl);
+  if (setup.ctx != NULL) wolfSSL_CTX_free(setup.ctx);
+  h2_wolfssl_operation_release();
   return result;
 }
 
@@ -427,6 +474,9 @@ static h2_pal_result_t h2_posix_tls_setup(const h2_pal_net_tls_config_t* config,
   if (h2_posix_tls_remaining_ms(deadline) == 0u) return H2_PAL_ERR_TIMEOUT;
   tls_setup_job_t* job;
   h2_pal_result_t result = tls_setup_create_job(config, &job);
+  if (result == H2_PAL_ERR_UNSUPPORTED) {
+    return tls_setup_inline(config, deadline, out_ctx, out_ssl);
+  }
   if (result != H2_PAL_OK) return result;
   pthread_attr_t attr;
   if (pthread_attr_init(&attr) != 0) {

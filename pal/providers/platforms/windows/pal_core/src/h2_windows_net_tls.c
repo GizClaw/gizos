@@ -249,18 +249,19 @@ static h2_pal_result_t windows_tls_create_job(
           : 0u;
   if (ca > INT32_MAX) return H2_PAL_ERR_INVALID_ARG;
   size_t bytes = name + alpn + ca;
+  h2_pal_result_t result = h2_wolfssl_operation_acquire_concurrent();
+  if (result != H2_PAL_OK) return result;
   AcquireSRWLockExclusive(&windows_tls_jobs_lock);
   if (windows_tls_jobs_count == H2_WINDOWS_TLS_SETUP_MAX ||
       bytes > H2_WINDOWS_TLS_SETUP_BYTES_MAX - windows_tls_jobs_bytes) {
     ReleaseSRWLockExclusive(&windows_tls_jobs_lock);
+    h2_wolfssl_operation_release();
     return H2_PAL_ERR_NO_SPACE;
   }
   ++windows_tls_jobs_count;
   windows_tls_jobs_bytes += bytes;
   ReleaseSRWLockExclusive(&windows_tls_jobs_lock);
-  h2_pal_result_t result = h2_wolfssl_operation_acquire_concurrent();
   windows_tls_setup_job_t* job = NULL;
-  if (result != H2_PAL_OK) goto fail_admission;
   job = h2_windows_heap_alloc(sizeof(*job) + bytes);
   if (job == NULL) {
     result = H2_PAL_ERR_NO_MEMORY;
@@ -293,11 +294,36 @@ static h2_pal_result_t windows_tls_create_job(
   return H2_PAL_OK;
 fail_lease:
   h2_wolfssl_operation_release();
-fail_admission:
   AcquireSRWLockExclusive(&windows_tls_jobs_lock);
   --windows_tls_jobs_count;
   windows_tls_jobs_bytes -= bytes;
   ReleaseSRWLockExclusive(&windows_tls_jobs_lock);
+  return result;
+}
+
+/* No unknown Memory/entropy callback is moved to a background thread. The
+ * inline compatibility path can observe timeout only after opaque setup
+ * returns. */
+static h2_pal_result_t windows_tls_setup_inline(
+    h2_windows_platform_t* platform, const h2_pal_net_tls_config_t* config,
+    uint64_t deadline, WOLFSSL_CTX** out_context, WOLFSSL** out_ssl) {
+  if (windows_tls_remaining(platform, deadline) == 0u)
+    return H2_PAL_ERR_TIMEOUT;
+  h2_pal_result_t result = h2_wolfssl_operation_acquire();
+  if (result != H2_PAL_OK) return result;
+  windows_tls_setup_job_t setup = {.config = *config};
+  result = windows_tls_configure(&setup);
+  if (result == H2_PAL_OK && windows_tls_remaining(platform, deadline) == 0u) {
+    result = H2_PAL_ERR_TIMEOUT;
+  }
+  if (result == H2_PAL_OK) {
+    *out_context = setup.context;
+    *out_ssl = setup.ssl;
+    return H2_PAL_OK;
+  }
+  if (setup.ssl != NULL) wolfSSL_free(setup.ssl);
+  if (setup.context != NULL) wolfSSL_CTX_free(setup.context);
+  h2_wolfssl_operation_release();
   return result;
 }
 
@@ -312,6 +338,10 @@ static h2_pal_result_t windows_tls_setup(h2_windows_platform_t* platform,
     return H2_PAL_ERR_TIMEOUT;
   windows_tls_setup_job_t* job;
   h2_pal_result_t result = windows_tls_create_job(platform, config, &job);
+  if (result == H2_PAL_ERR_UNSUPPORTED) {
+    return windows_tls_setup_inline(platform, config, deadline, out_context,
+                                    out_ssl);
+  }
   if (result != H2_PAL_OK) return result;
   job->refs = 2u;
   HANDLE thread =

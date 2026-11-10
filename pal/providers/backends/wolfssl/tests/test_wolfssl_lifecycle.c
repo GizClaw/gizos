@@ -73,8 +73,11 @@ static void test_deferred_owners(
   h2_wolfssl_deinit_deferred();
   assert(h2_wolfssl_operation_acquire() == H2_PAL_ERR_INVALID_STATE);
   assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_ERR_INVALID_STATE);
-  assert(h2_wolfssl_init(config) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_wolfssl_init(config) == H2_PAL_OK);
+  assert(h2_wolfssl_operation_acquire() == H2_PAL_OK);
+  h2_wolfssl_operation_release();
   assert(h2_wolfssl_init(changed) == H2_PAL_ERR_INVALID_STATE);
+  h2_wolfssl_deinit_deferred();
   h2_wolfssl_operation_release();
   assert(h2_wolfssl_init(changed) == H2_PAL_ERR_INVALID_STATE);
   h2_wolfssl_operation_release();

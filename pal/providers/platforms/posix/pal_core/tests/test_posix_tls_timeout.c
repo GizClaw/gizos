@@ -340,7 +340,6 @@ static void test_blocked_loads(int deferred) {
   changed.providers_thread_safe = false;
   if (deferred) {
     h2_wolfssl_deinit_deferred();
-    assert(h2_wolfssl_init(&backend) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_wolfssl_init(&changed) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_wolfssl_operation_acquire() == H2_PAL_ERR_INVALID_STATE);
     assert(h2_wolfssl_operation_acquire_concurrent() ==
@@ -440,7 +439,7 @@ static int serial_entropy(void* user, uint8_t* out, size_t len) {
   return h2_posix_entropy(NULL, out, len);
 }
 
-static void test_serial_provider_rejection(void) {
+static void test_legacy_inline_setup(void) {
   drain_backend();
   serial_provider_t provider = {.owner = pthread_self()};
   const h2_pal_mem_vtable_t vtable = {
@@ -452,37 +451,43 @@ static void test_serial_provider_rejection(void) {
       .mem = {.user = &provider, .vtable = &vtable},
       .entropy_user = &provider,
       .entropy = serial_entropy,
-      /* Deliberately omitted providers_thread_safe: neither callback is safe.
-       */
   };
   assert(!config.providers_thread_safe);
   assert(h2_wolfssl_init(&config) == H2_PAL_OK);
-  assert(h2_wolfssl_operation_acquire() == H2_PAL_OK);
-  h2_wolfssl_operation_release();
   assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_ERR_UNSUPPORTED);
   const h2_pal_net_api_t* net = h2_posix_net_api();
-  h2_pal_net_socket_t socket_fd = -1;
-  assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL,
-                                   &socket_fd) == H2_PAL_OK);
-  int flags = fcntl(socket_fd, F_GETFL, 0);
   const h2_pal_net_tls_config_t tls = {
       .server_name = "localhost",
       .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
   };
-  now_ms = 1000u;
   unsigned started = workers_started;
-  unsigned loaded = ca_loads;
   for (unsigned i = 0u; i < 32u; ++i) {
-    unsigned calls = provider.calls;
-    unsigned entropy_calls = provider.entropy_calls;
+    h2_pal_net_socket_t socket_fd = -1;
+    assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL,
+                                     &socket_fd) == H2_PAL_OK);
+    int flags = fcntl(socket_fd, F_GETFL, 0);
+    size_t baseline = provider.live;
+    unsigned loaded = ca_loads;
+    now_ms = 1000u;
+    setup_ms = i % 4u == 0u ? 0u : i % 4u == 2u ? 100u : 60u;
+    connect_ms = i % 4u == 1u ? 5u : i % 4u == 3u ? 40u : 0u;
+    first_error = i % 4u == 1u ? WOLFSSL_ERROR_WANT_READ : WOLFSSL_SUCCESS;
+    ca_result = WOLFSSL_SUCCESS;
+    wait_ready = 0;
+    connects = waits = 0u;
+    wait_budget_ms = 0u;
     h2_pal_net_socket_t out = 123;
-    assert(h2_pal_net_tls_wrap(net, socket_fd, &tls, 100u, &out) ==
-           H2_PAL_ERR_UNSUPPORTED);
-    assert(out == -1 && fcntl(socket_fd, F_GETFL, 0) == flags);
-    assert(workers_started == started && ca_loads == loaded);
-    assert(provider.calls == calls && provider.entropy_calls == entropy_calls);
-    /* Unrelated direct uses of the same non-atomic state remain on this thread.
-     */
+    h2_pal_result_t expected = i % 4u == 0u ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT;
+    assert(h2_pal_net_tls_wrap(net, socket_fd, &tls, 100u, &out) == expected);
+    assert(out == (expected == H2_PAL_OK ? socket_fd : -1));
+    assert(workers_started == started && ca_loads == loaded + 1u);
+    if (expected != H2_PAL_OK) assert(fcntl(socket_fd, F_GETFL, 0) == flags);
+    if (i % 4u == 1u) assert(wait_budget_ms == 35u);
+    if (i % 4u == 2u) assert(connects == 0u);
+    h2_pal_net_close(net, socket_fd);
+    assert(provider.live == baseline);
+    /* The same deliberately non-atomic providers remain usable directly on
+     * their owning thread. Every callback asserts that no worker invokes it. */
     void* memory = h2_pal_mem_alloc(&config.mem, 16u);
     assert(memory != NULL);
     memory = h2_pal_mem_realloc(&config.mem, memory, 32u);
@@ -491,9 +496,75 @@ static void test_serial_provider_rejection(void) {
     uint8_t bytes[8];
     assert(serial_entropy(&provider, bytes, sizeof(bytes)) == H2_PAL_OK);
   }
-  h2_pal_net_close(net, socket_fd);
   assert(h2_wolfssl_deinit() == H2_PAL_OK);
   assert(provider.live == 0u);
+  assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
+}
+
+static void test_resume_blocked_load(void) {
+  const h2_pal_net_api_t* net = h2_posix_net_api();
+  setup_ms = connect_ms = 0u;
+  backward_wall = 0;
+  first_error = ca_result = WOLFSSL_SUCCESS;
+  connects = waits = 0u;
+  blocking = 1;
+  entered = 0u;
+  release_loaders = 0;
+  h2_pal_net_socket_t old_socket = -1;
+  assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL,
+                                   &old_socket) == H2_PAL_OK);
+  const h2_pal_net_tls_config_t old_config = {
+      .server_name = "localhost",
+      .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
+  };
+  h2_pal_net_socket_t out = -1;
+  assert(h2_pal_net_tls_wrap(net, old_socket, &old_config, 20u, &out) ==
+         H2_PAL_ERR_TIMEOUT);
+  h2_pal_net_close(net, old_socket);
+  pthread_mutex_lock(&gate_lock);
+  while (entered != 1u) {
+    struct timespec limit;
+    assert(clock_gettime(CLOCK_REALTIME, &limit) == 0);
+    limit.tv_sec += 5;
+    assert(pthread_cond_timedwait(&gate, &gate_lock, &limit) == 0);
+  }
+  pthread_mutex_unlock(&gate_lock);
+  h2_wolfssl_deinit_deferred();
+  h2_wolfssl_config_t changed = backend;
+  changed.providers_thread_safe = false;
+  assert(h2_wolfssl_init(&changed) == H2_PAL_ERR_INVALID_STATE);
+  size_t retained = allocations;
+  assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
+  assert(allocations == retained);
+  assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_OK);
+  h2_wolfssl_operation_release();
+  uint8_t random[8];
+  assert(h2_pal_crypto_random(h2_wolfssl_crypto_api(), random,
+                              sizeof(random)) == H2_PAL_OK);
+  /* The old system-CA load stays gated. A new request may use another admission
+   * slot; this test configuration needs no CA load, so it can finish now. */
+  const h2_pal_net_tls_config_t fresh = {
+      .server_name = "localhost",
+      .verify = H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY,
+  };
+  h2_pal_net_socket_t new_socket = -1;
+  assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL,
+                                   &new_socket) == H2_PAL_OK);
+  assert(h2_pal_net_tls_wrap(net, new_socket, &fresh, 1000u, &out) ==
+         H2_PAL_OK);
+  assert(out == new_socket);
+  h2_pal_net_close(net, new_socket);
+  assert(h2_wolfssl_deinit() == H2_PAL_ERR_INVALID_STATE);
+  h2_wolfssl_deinit_deferred();
+  assert(h2_wolfssl_init(&changed) == H2_PAL_ERR_INVALID_STATE);
+  pthread_mutex_lock(&gate_lock);
+  release_loaders = 1;
+  pthread_cond_broadcast(&gate);
+  pthread_mutex_unlock(&gate_lock);
+  wait_for_init(&changed);
+  assert(h2_wolfssl_deinit() == H2_PAL_OK);
+  assert(allocations == 0u);
+  blocking = 0;
   assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
 }
 
@@ -574,10 +645,18 @@ static void test_deferred_release_vs_reinit(void) {
     pthread_cond_broadcast(&race.condition);
     pthread_mutex_unlock(&race.lock);
     h2_wolfssl_deinit_deferred();
-    wait_for_init(&changed);
+    const h2_wolfssl_config_t* wanted = i % 2u == 0u ? &backend : &changed;
+    wait_for_init(wanted);
     assert(pthread_join(worker, NULL) == 0);
-    assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_wolfssl_init(&backend) == H2_PAL_ERR_INVALID_STATE);
+    if (wanted == &backend) {
+      assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_OK);
+      h2_wolfssl_operation_release();
+      assert(h2_wolfssl_init(&changed) == H2_PAL_ERR_INVALID_STATE);
+    } else {
+      assert(h2_wolfssl_operation_acquire_concurrent() ==
+             H2_PAL_ERR_UNSUPPORTED);
+      assert(h2_wolfssl_init(&backend) == H2_PAL_ERR_INVALID_STATE);
+    }
     assert(h2_wolfssl_deinit() == H2_PAL_OK);
     assert(allocations == 0u);
     pthread_cond_destroy(&race.condition);
@@ -624,9 +703,10 @@ int main(void) {
     run_case(&cases[i]);
   }
   test_setup_admission_failures();
-  test_serial_provider_rejection();
+  test_legacy_inline_setup();
   test_blocked_loads(0);
   test_blocked_loads(1);
+  test_resume_blocked_load();
   test_acquire_vs_deinit();
   test_deferred_release_vs_reinit();
   assert(h2_wolfssl_deinit() == H2_PAL_OK);

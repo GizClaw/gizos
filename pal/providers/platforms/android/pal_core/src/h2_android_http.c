@@ -22,7 +22,7 @@ h2_pal_result_t h2_android_http_create(const uint8_t* root_ca_pem,
   const h2_pal_mem_api_t* memory = h2_android_platform_mem_api();
   h2_android_http_t* http = h2_pal_mem_alloc(memory, sizeof(*http));
   if (http == NULL) {
-    (void)h2_android_tls_release();
+    h2_android_tls_release_deferred();
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(http, 0, sizeof(*http));
@@ -38,7 +38,7 @@ h2_pal_result_t h2_android_http_create(const uint8_t* root_ca_pem,
   rc = h2_corehttp_create(&config, &http->provider, &http->api);
   if (rc != H2_PAL_OK) {
     h2_pal_mem_free(memory, http);
-    (void)h2_android_tls_release();
+    h2_android_tls_release_deferred();
     return (h2_pal_result_t)rc;
   }
   *out = http;

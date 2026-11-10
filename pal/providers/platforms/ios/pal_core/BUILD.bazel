@@ -303,10 +303,13 @@ cc_library(
 cc_test(
     name = "http_owner_lifecycle_test",
     srcs = [
+        "include/h2_ios_net.h",
         "include/h2_ios_platform.h",
         "src/h2_ios_crypto.c",
         "src/h2_ios_http.c",
+        "src/h2_ios_net.c",
         "src/h2_ios_tls_internal.h",
+        "src/h2_ios_webrtc.c",
         "tests/test_ios_http_owner_lifecycle.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -321,9 +324,12 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/sync/atomic/providers/c11",
         "//pal",
         "//pal:unsupported",
         "//pal/providers/backends/corehttp",
+        "//pal/providers/backends/h2peer",
+        "//pal/providers/backends/h2sctp",
         "//pal/providers/backends/wolfssl",
         "//pal/providers/platforms/posix/pal_core:net",
     ],

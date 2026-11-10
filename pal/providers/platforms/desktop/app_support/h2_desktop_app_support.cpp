@@ -125,6 +125,14 @@ const h2_pal_touch_api_t* OwnedDisplay::touch() const {
 
 OwnedNetworkServices::~OwnedNetworkServices() {
   const int rc = reset();
+  if (rc != H2_PAL_OK && wolfssl_owner && peer_handle == nullptr &&
+      sctp_handle == nullptr && mqtt_handle == nullptr) {
+    // Only the backend reference remains, borrowing static native providers.
+    // A void C/RAII destructor cannot retain this owner for a later retry.
+    h2_wolfssl_deinit_deferred();
+    wolfssl_owner = false;
+    return;
+  }
   if (rc != H2_PAL_OK)
     std::fprintf(
         stderr, "H2_DESKTOP network cleanup failed rc=%d; providers retained\n",

@@ -25,7 +25,11 @@ typedef struct h2_wolfssl_config {
   /**
    * Explicit permission to invoke both Memory and entropy concurrently with
    * each other and with their callers' direct uses. Defaults to false; native
-   * asynchronous TLS setup requires true. This does not extend their lifetime.
+   * asynchronous TLS setup requires true. False preserves inline TLS setup on
+   * the calling thread. Its single deadline includes setup and handshake, but
+   * an opaque synchronous load cannot be interrupted: timeout is observed when
+   * it returns, and no fresh handshake budget is granted. This flag does not
+   * extend provider lifetime.
    */
   bool providers_thread_safe;
 } h2_wolfssl_config_t;
@@ -35,8 +39,9 @@ typedef struct h2_wolfssl_config {
  *
  * Repeated calls with the same Memory/entropy identity and thread-safety flag
  * add owner references. A different configuration is rejected until final
- * cleanup. Lifecycle transitions are synchronized; init during initialization,
- * deferred draining, or cleanup returns H2_PAL_ERR_INVALID_STATE.
+ * cleanup. An exactly matching configuration may resume deferred draining
+ * without reinitializing live state. Lifecycle transitions are synchronized;
+ * init during initialization or cleanup returns H2_PAL_ERR_INVALID_STATE.
  * The borrowed Memory/entropy providers must remain alive until final cleanup,
  * including after a native TLS timeout. With providers_thread_safe=false,
  * callers must serialize provider callbacks with their own direct uses of the
@@ -56,10 +61,11 @@ h2_pal_result_t h2_wolfssl_deinit(void);
 
 /**
  * Consume this owner's reference without retaining an owner for retry.
- * If this is the final owner, reject new acquisitions and initialization;
- * active operations/contexts retain the backend until their final release,
- * which performs cleanup before returning. With no active operations cleanup
- * happens in this call. No-op when uninitialized or already draining.
+ * If this is the final owner, reject new acquisitions until an exactly matching
+ * init resumes ownership. Otherwise active operations/contexts retain the
+ * backend until their final release, which performs cleanup before returning.
+ * With no active operations cleanup happens in this call. No-op when
+ * uninitialized or already draining.
  *
  * This API does not own or copy the underlying PAL providers. Their vtables,
  * Memory user context, and entropy user context must outlive deferred cleanup,

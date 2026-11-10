@@ -22,7 +22,7 @@ typedef struct h2_wolfssl_state {
 h2_pal_mem_api_t h2_wolfssl_mem_api;
 static h2_wolfssl_state_t h2_wolfssl_state;
 /* Admission, draining, and the active count change atomically. A draining
- * backend has no owner references and cannot accept new work or owners. */
+ * backend has no owner references; matching init may pin and resume it. */
 #define H2_WOLFSSL_READY (SIZE_MAX / 2u + 1u)
 #define H2_WOLFSSL_DRAINING (H2_WOLFSSL_READY >> 1u)
 #define H2_WOLFSSL_PHASE (H2_WOLFSSL_READY | H2_WOLFSSL_DRAINING)
@@ -135,7 +135,21 @@ h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t* config) {
   }
   lifecycle_lock();
   size_t usage = atomic_load(&h2_wolfssl_usage);
-  if ((usage & H2_WOLFSSL_PHASE) == H2_WOLFSSL_READY) {
+  int pinned = 0;
+  while ((usage & H2_WOLFSSL_PHASE) == H2_WOLFSSL_DRAINING) {
+    if ((usage & H2_WOLFSSL_COUNT) == H2_WOLFSSL_COUNT) {
+      lifecycle_unlock();
+      return H2_PAL_ERR_FULL;
+    }
+    /* Pin before reading identity: the last release can otherwise claim
+     * cleanup and clear the borrowed provider fields beneath this caller. */
+    if (atomic_compare_exchange_weak(&h2_wolfssl_usage, &usage, usage + 1u)) {
+      ++usage;
+      pinned = 1;
+      break;
+    }
+  }
+  if (pinned || (usage & H2_WOLFSSL_PHASE) == H2_WOLFSSL_READY) {
     if (config->mem.user != h2_wolfssl_mem_api.user ||
         config->mem.vtable != h2_wolfssl_mem_api.vtable ||
         config->entropy_user != h2_wolfssl_state.entropy_user ||
@@ -143,13 +157,23 @@ h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t* config) {
         config->providers_thread_safe !=
             ((usage & H2_WOLFSSL_CONCURRENT) != 0u)) {
       lifecycle_unlock();
+      if (pinned) h2_wolfssl_operation_release();
       return H2_PAL_ERR_INVALID_STATE;
     }
     if (h2_wolfssl_state.owner_refs == SIZE_MAX) {
       lifecycle_unlock();
+      if (pinned) h2_wolfssl_operation_release();
       return H2_PAL_ERR_FULL;
     }
     ++h2_wolfssl_state.owner_refs;
+    if (pinned) {
+      size_t ready;
+      do {
+        ready = (usage & ~H2_WOLFSSL_PHASE) | H2_WOLFSSL_READY;
+      } while (!atomic_compare_exchange_weak(&h2_wolfssl_usage, &usage, ready));
+      /* READY and the real owner prevent cleanup when this pin is dropped. */
+      h2_wolfssl_operation_release();
+    }
     lifecycle_unlock();
     return H2_PAL_OK;
   }

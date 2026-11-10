@@ -1,4 +1,6 @@
 #include "h2_ios_platform.h"
+#include "h2_ios_net.h"
+#include "h2_pal_unsupported.h"
 #include "h2_wolfssl.h"
 
 #include <assert.h>
@@ -8,8 +10,12 @@
 #include <time.h>
 
 static atomic_size_t allocations;
+static atomic_int fail_after = -1;
 static void* allocate(void* user, size_t len) {
   (void)user;
+  int remaining = atomic_load(&fail_after);
+  if (remaining == 0) return NULL;
+  if (remaining > 0) atomic_fetch_sub(&fail_after, 1);
   void* memory = malloc(len == 0u ? 1u : len);
   if (memory != NULL) atomic_fetch_add(&allocations, 1u);
   return memory;
@@ -47,12 +53,57 @@ const h2_pal_time_api_t* h2_ios_platform_time_api(void) {
   static const h2_pal_time_api_t api = {.vtable = &methods};
   return &api;
 }
+/* Allocation failures below happen before a peer/task can start. */
+const h2_pal_queue_api_t* h2_ios_platform_queue_api(void) {
+  return h2_pal_unsupported_queue_api();
+}
+const h2_pal_sync_api_t* h2_ios_platform_sync_api(void) {
+  return h2_pal_unsupported_sync_api();
+}
+const h2_pal_task_api_t* h2_ios_platform_task_api(void) {
+  return h2_pal_unsupported_task_api();
+}
+const h2_pal_log_api_t* h2_ios_platform_log_api(void) {
+  return h2_pal_unsupported_log_api();
+}
 static int different_entropy(void* user, uint8_t* out, size_t len) {
   (void)user;
   memset(out, 0, len);
   return H2_PAL_OK;
 }
+static void test_failed_recovery(void) {
+  for (unsigned kind = 0u; kind < 3u; ++kind) {
+    for (int successful = 0; successful < (kind == 1u ? 1 : 2); ++successful) {
+      h2_ios_http_t* previous = NULL;
+      assert(h2_ios_http_create(NULL, 0u, &previous) == H2_PAL_OK);
+      assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_OK);
+      h2_ios_http_destroy(previous);
+      atomic_store(&fail_after, successful);
+      if (kind == 0u) {
+        h2_ios_http_t* next = NULL;
+        assert(h2_ios_http_create(NULL, 0u, &next) == H2_PAL_ERR_NO_MEMORY);
+        assert(next == NULL);
+      } else if (kind == 1u) {
+        h2_ios_net_t* next = NULL;
+        assert(h2_ios_net_create(&next) == H2_PAL_ERR_NO_MEMORY);
+        assert(next == NULL);
+      } else {
+        h2_ios_webrtc_t* next = NULL;
+        assert(h2_ios_webrtc_create(&next) != H2_PAL_OK);
+        assert(next == NULL);
+      }
+      atomic_store(&fail_after, -1);
+      /* Failed factories returned no retry owner: their resumed TLS reference
+       * must be consumed, leaving only the previous setup's lease. */
+      assert(h2_wolfssl_operation_acquire() == H2_PAL_ERR_INVALID_STATE);
+      h2_wolfssl_operation_release();
+      assert(atomic_load(&allocations) == 0u);
+    }
+  }
+}
+
 int main(void) {
+  test_failed_recovery();
   h2_ios_http_t* http = NULL;
   assert(h2_ios_http_create(NULL, 0u, &http) == H2_PAL_OK);
   assert(http != NULL);

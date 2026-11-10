@@ -140,10 +140,13 @@ cc_test(
 cc_test(
     name = "http_owner_lifecycle_test",
     srcs = [
+        "include/h2_android_net.h",
         "include/h2_android_platform.h",
         "src/h2_android_crypto.c",
         "src/h2_android_http.c",
+        "src/h2_android_net.c",
         "src/h2_android_tls_internal.h",
+        "src/h2_android_webrtc.c",
         "tests/host_include/android/bitmap.h",
         "tests/host_include/jni.h",
         "tests/test_android_http_owner_lifecycle.c",
@@ -163,9 +166,12 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/sync/atomic/providers/c11",
         "//pal",
         "//pal:unsupported",
         "//pal/providers/backends/corehttp",
+        "//pal/providers/backends/h2peer",
+        "//pal/providers/backends/h2sctp",
         "//pal/providers/backends/wolfssl",
         "//pal/providers/platforms/posix/pal_core:net",
     ],
