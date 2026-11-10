@@ -272,6 +272,7 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
 #else
       h2_linux_entropy,
 #endif
+      true, /* Native malloc and OS entropy allow concurrent setup. */
   };
   h2_pal_result_t result = h2_wolfssl_init(&wolfssl);
   if (result != H2_PAL_OK) {

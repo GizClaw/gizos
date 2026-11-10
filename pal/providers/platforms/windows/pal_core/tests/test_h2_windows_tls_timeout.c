@@ -7,10 +7,12 @@
 #include <stdio.h>
 #include <stdatomic.h>
 #include <string.h>
+#include <stdlib.h>
 
 static atomic_uint_fast64_t now_ms;
 static atomic_int blocking;
 static atomic_int fail_thread;
+static atomic_uint workers_started;
 static SRWLOCK gate_lock = SRWLOCK_INIT;
 static CONDITION_VARIABLE gate = CONDITION_VARIABLE_INIT;
 static unsigned entered;
@@ -42,6 +44,7 @@ HANDLE WINAPI h2_test_tls_create_thread(LPSECURITY_ATTRIBUTES attributes,
                                         LPTHREAD_START_ROUTINE entry,
                                         void* argument, DWORD flags,
                                         DWORD* id) {
+  ++workers_started;
   if (atomic_exchange(&fail_thread, 0)) return NULL;
   return CreateThread(attributes, stack, entry, argument, flags, id);
 }
@@ -134,6 +137,24 @@ static void drain_backend(void) {
   assert(result == H2_PAL_OK);
 }
 
+static void wait_for_init(const h2_wolfssl_config_t* config) {
+  ULONGLONG deadline = GetTickCount64() + 5000u;
+  h2_pal_result_t result;
+  while ((result = h2_wolfssl_init(config)) == H2_PAL_ERR_INVALID_STATE) {
+    assert(GetTickCount64() < deadline);
+    Sleep(1u);
+  }
+  assert(result == H2_PAL_OK);
+}
+
+static void wait_platform_idle(h2_windows_platform_t* platform) {
+  ULONGLONG deadline = GetTickCount64() + 5000u;
+  while (InterlockedCompareExchange(&platform->live_objects, 0, 0) != 0) {
+    assert(GetTickCount64() < deadline);
+    Sleep(1u);
+  }
+}
+
 static void run_case(h2_windows_platform_t* platform,
                      const timeout_case_t* test) {
   h2_pal_net_api_t net = *h2_windows_net_api(platform);
@@ -200,7 +221,7 @@ static void run_case(h2_windows_platform_t* platform,
   assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
 }
 
-static void test_blocked_loads(h2_windows_platform_t* platform) {
+static void test_blocked_loads(h2_windows_platform_t* platform, int deferred) {
   h2_pal_net_api_t net = *h2_windows_net_api(platform);
   h2_pal_net_vtable_t vtable = *net.vtable;
   vtable.tls_wrap = test_tls_wrap;
@@ -264,10 +285,29 @@ static void test_blocked_loads(h2_windows_platform_t* platform) {
   while (entered != 8u) {
     assert(SleepConditionVariableSRW(&gate, &gate_lock, 5000u, 0));
   }
+  h2_wolfssl_config_t changed = backend;
+  changed.providers_thread_safe = false;
+  if (deferred) {
+    h2_wolfssl_deinit_deferred();
+    assert(h2_wolfssl_init(&backend) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_wolfssl_init(&changed) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_wolfssl_operation_acquire() == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_wolfssl_operation_acquire_concurrent() ==
+           H2_PAL_ERR_INVALID_STATE);
+    h2_windows_platform_t* retained = platform;
+    assert(h2_windows_platform_destroy(&retained) == H2_PAL_ERR_INVALID_STATE);
+    assert(retained == platform);
+  }
   release_loaders = 1;
   WakeAllConditionVariable(&gate);
   ReleaseSRWLockExclusive(&gate_lock);
-  drain_backend();
+  if (deferred) {
+    wait_for_init(&changed);
+    assert(h2_wolfssl_deinit() == H2_PAL_OK);
+  } else {
+    drain_backend();
+  }
+  wait_platform_idle(platform);
   assert(platform->live_allocations == 0);
   assert(InterlockedCompareExchange(&platform->live_objects, 0, 0) == 0);
   assert(connects == 0u && waits == 0u);
@@ -292,8 +332,116 @@ static void test_thread_failure(h2_windows_platform_t* platform) {
   assert(out == -1);
   h2_pal_net_close(net, token);
   drain_backend();
+  wait_platform_idle(platform);
   assert(platform->live_allocations == 0);
   assert(InterlockedCompareExchange(&platform->live_objects, 0, 0) == 0);
+  assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
+}
+
+typedef struct serial_provider {
+  DWORD owner;
+  h2_windows_platform_t* platform;
+  size_t live;
+  unsigned calls;
+  unsigned entropy_calls;
+} serial_provider_t;
+
+static void* serial_alloc(void* user, size_t len) {
+  serial_provider_t* provider = user;
+  assert(provider->owner == GetCurrentThreadId());
+  ++provider->calls;
+  void* result = malloc(len);
+  if (result != NULL) ++provider->live;
+  return result;
+}
+
+static void* serial_realloc(void* user, void* memory, size_t len) {
+  serial_provider_t* provider = user;
+  assert(provider->owner == GetCurrentThreadId());
+  ++provider->calls;
+  if (memory == NULL) return serial_alloc(user, len);
+  if (len == 0u) {
+    free(memory);
+    --provider->live;
+    return NULL;
+  }
+  return realloc(memory, len);
+}
+
+static void serial_free(void* user, void* memory) {
+  serial_provider_t* provider = user;
+  assert(provider->owner == GetCurrentThreadId());
+  ++provider->calls;
+  if (memory != NULL) {
+    --provider->live;
+    free(memory);
+  }
+}
+
+static int serial_entropy(void* user, uint8_t* out, size_t len) {
+  serial_provider_t* provider = user;
+  assert(provider->owner == GetCurrentThreadId());
+  ++provider->entropy_calls;
+  return h2_windows_entropy(provider->platform, out, len);
+}
+
+static void test_serial_provider_rejection(h2_windows_platform_t* platform) {
+  drain_backend();
+  wait_platform_idle(platform);
+  serial_provider_t provider = {
+      .owner = GetCurrentThreadId(),
+      .platform = platform,
+  };
+  const h2_pal_mem_vtable_t vtable = {
+      .alloc = serial_alloc,
+      .realloc = serial_realloc,
+      .free = serial_free,
+  };
+  const h2_wolfssl_config_t config = {
+      .mem = {.user = &provider, .vtable = &vtable},
+      .entropy_user = &provider,
+      .entropy = serial_entropy,
+      /* Default false: both callbacks use deliberately non-atomic state. */
+  };
+  assert(!config.providers_thread_safe);
+  assert(h2_wolfssl_init(&config) == H2_PAL_OK);
+  assert(h2_wolfssl_operation_acquire() == H2_PAL_OK);
+  h2_wolfssl_operation_release();
+  assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_ERR_UNSUPPORTED);
+  const h2_pal_net_api_t* net = h2_windows_net_api(platform);
+  h2_pal_net_socket_t token = -1;
+  assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL, &token) ==
+         H2_PAL_OK);
+  const h2_pal_net_tls_config_t tls = {
+      .server_name = "localhost",
+      .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
+  };
+  now_ms = 1000u;
+  unsigned started = workers_started;
+  unsigned loaded = ca_loads;
+  for (unsigned i = 0u; i < 32u; ++i) {
+    unsigned calls = provider.calls;
+    unsigned entropy_calls = provider.entropy_calls;
+    h2_pal_net_socket_t out = 123;
+    assert(h2_test_windows_tls_wrap(platform, token, &tls, 100u, &out) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(out == -1);
+    assert(workers_started == started && ca_loads == loaded);
+    assert(provider.calls == calls && provider.entropy_calls == entropy_calls);
+    h2_windows_socket_slot_t* slot = h2_windows_net_lock_slot(platform, token);
+    assert(slot != NULL && slot->tls == NULL && slot->tls_context == NULL);
+    h2_windows_net_unlock_slot(slot);
+    void* memory = h2_pal_mem_alloc(&config.mem, 16u);
+    assert(memory != NULL);
+    memory = h2_pal_mem_realloc(&config.mem, memory, 32u);
+    assert(memory != NULL);
+    h2_pal_mem_free(&config.mem, memory);
+    uint8_t bytes[8];
+    assert(serial_entropy(&provider, bytes, sizeof(bytes)) == H2_PAL_OK);
+  }
+  h2_pal_net_close(net, token);
+  assert(h2_wolfssl_deinit() == H2_PAL_OK);
+  assert(provider.live == 0u);
   assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
 }
 
@@ -305,6 +453,9 @@ int main(void) {
       .mem = *h2_windows_mem_api(platform),
       .entropy_user = platform,
       .entropy = h2_windows_entropy,
+      /* Windows Heap, interlocked accounting, and BCrypt entropy are
+         concurrent. */
+      .providers_thread_safe = true,
   };
   assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
   const timeout_case_t cases[] = {
@@ -341,7 +492,9 @@ int main(void) {
     run_case(platform, &cases[i]);
   }
   test_thread_failure(platform);
-  test_blocked_loads(platform);
+  test_serial_provider_rejection(platform);
+  test_blocked_loads(platform, 0);
+  test_blocked_loads(platform, 1);
   const h2_pal_net_api_t* net = h2_windows_net_api(platform);
   h2_pal_net_socket_t token = -1;
   assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL, &token) ==
@@ -360,6 +513,7 @@ int main(void) {
   assert(out == -1);
   h2_pal_net_close(net, token);
   assert(h2_wolfssl_deinit() == H2_PAL_OK);
+  wait_platform_idle(platform);
   assert(h2_windows_platform_destroy(&platform) == H2_PAL_OK);
   return 0;
 }

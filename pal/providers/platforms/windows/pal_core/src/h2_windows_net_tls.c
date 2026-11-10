@@ -206,8 +206,10 @@ static void windows_tls_release_job(windows_tls_setup_job_t* job) {
   /* Platform destruction does not wait for setup jobs: it refuses while this
    * object reference is held. The final decrement must be our last PAL access.
    */
-  (void)InterlockedDecrement(&platform->live_objects);
+  /* Final lease release may perform deferred cleanup using this platform's
+   * allocator, so retain the object reference through that cleanup. */
   if (lease) h2_wolfssl_operation_release();
+  (void)InterlockedDecrement(&platform->live_objects);
 }
 
 static DWORD WINAPI windows_tls_setup_thread(void* argument) {
@@ -256,7 +258,7 @@ static h2_pal_result_t windows_tls_create_job(
   ++windows_tls_jobs_count;
   windows_tls_jobs_bytes += bytes;
   ReleaseSRWLockExclusive(&windows_tls_jobs_lock);
-  h2_pal_result_t result = h2_wolfssl_operation_acquire();
+  h2_pal_result_t result = h2_wolfssl_operation_acquire_concurrent();
   windows_tls_setup_job_t* job = NULL;
   if (result != H2_PAL_OK) goto fail_admission;
   job = h2_windows_heap_alloc(sizeof(*job) + bytes);

@@ -106,7 +106,9 @@ h2_pal_result_t h2_android_json_provider_destroy(void** provider);
  * Output is NULL on failure. API remains borrowed until destroy. Close all
  * responses and let every synchronous request return before destroy or Core
  * shutdown. The owner holds its own TLS lifecycle reference, independent of
- * Crypto callers.
+ * Crypto callers. Destroy transfers final cleanup to the backend while a
+ * timed-out setup is still active; the native Memory/entropy providers remain
+ * valid until that work finishes, without retaining this HTTP owner.
  */
 typedef struct h2_android_http h2_android_http_t;
 h2_pal_result_t h2_android_http_create(const uint8_t* root_ca_pem,

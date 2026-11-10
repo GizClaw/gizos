@@ -209,6 +209,7 @@ int main(int argc, char** argv) {
       .mem = {.user = NULL, .vtable = &mem_vtable},
       .entropy_user = NULL,
       .entropy = h2_posix_entropy,
+      .providers_thread_safe = true,
   };
   assert(h2_wolfssl_init(&wolfssl) == H2_PAL_OK);
 

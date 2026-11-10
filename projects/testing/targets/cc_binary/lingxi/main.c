@@ -174,7 +174,8 @@ int main(int argc, char** argv) {
     timeout_ms = (uint32_t)value;
   }
   const h2_pal_mem_api_t* mem = h2_desktop_platform_default_allocator();
-  const h2_wolfssl_config_t tls_config = {.mem = *mem, .entropy = host_entropy};
+  const h2_wolfssl_config_t tls_config = {
+      .mem = *mem, .entropy = host_entropy, .providers_thread_safe = true};
   h2_pal_result_t rc = h2_wolfssl_init(&tls_config);
   if (rc != H2_PAL_OK) return 2;
   h2_corehttp_t* http_provider = NULL;

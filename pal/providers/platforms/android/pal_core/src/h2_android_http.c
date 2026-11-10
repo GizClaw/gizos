@@ -51,5 +51,5 @@ void h2_android_http_destroy(h2_android_http_t* http) {
   if (http == NULL) return;
   h2_corehttp_destroy(http->provider);
   h2_pal_mem_free(h2_android_platform_mem_api(), http);
-  (void)h2_android_tls_release();
+  h2_android_tls_release_deferred();
 }

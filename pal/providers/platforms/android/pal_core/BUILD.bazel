@@ -136,6 +136,41 @@ cc_test(
     deps = [":video_contract"],
 )
 
+# Exercise the actual mobile HTTP/crypto owner without Android UI/JNI calls.
+cc_test(
+    name = "http_owner_lifecycle_test",
+    srcs = [
+        "include/h2_android_platform.h",
+        "src/h2_android_crypto.c",
+        "src/h2_android_http.c",
+        "src/h2_android_tls_internal.h",
+        "tests/host_include/android/bitmap.h",
+        "tests/host_include/jni.h",
+        "tests/test_android_http_owner_lifecycle.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = [
+        "include",
+        "tests/host_include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//pal",
+        "//pal:unsupported",
+        "//pal/providers/backends/corehttp",
+        "//pal/providers/backends/wolfssl",
+        "//pal/providers/platforms/posix/pal_core:net",
+    ],
+)
+
 cc_shared_library(
     name = "sdk_binary",
     shared_lib_name = "libh2_pal_core.so",

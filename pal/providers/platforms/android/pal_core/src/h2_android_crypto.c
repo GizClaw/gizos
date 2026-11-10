@@ -35,10 +35,12 @@ int h2_android_tls_acquire(void) {
   const h2_wolfssl_config_t config = {
       .mem = *h2_android_platform_mem_api(),
       .entropy = entropy,
+      .providers_thread_safe = true,
   };
   return h2_wolfssl_init(&config);
 }
 int h2_android_tls_release(void) { return h2_wolfssl_deinit(); }
+void h2_android_tls_release_deferred(void) { h2_wolfssl_deinit_deferred(); }
 
 static pthread_mutex_t lifecycle = PTHREAD_MUTEX_INITIALIZER;
 static int ready;

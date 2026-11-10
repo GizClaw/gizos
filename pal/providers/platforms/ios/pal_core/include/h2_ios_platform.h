@@ -130,6 +130,9 @@ void h2_ios_platform_crypto_shutdown(void);
  * NULL on failure. API remains borrowed until destroy. Close all responses and
  * let every synchronous request return before destroy or Core shutdown. The
  * owner holds its own TLS lifecycle reference, independent of Crypto callers.
+ * Destroy transfers final cleanup to the backend while a timed-out setup is
+ * still active; native Memory/entropy providers outlive that work without
+ * retaining this HTTP owner.
  */
 typedef struct h2_ios_http h2_ios_http_t;
 h2_pal_result_t h2_ios_http_create(const uint8_t *root_ca_pem, size_t root_ca_pem_len,

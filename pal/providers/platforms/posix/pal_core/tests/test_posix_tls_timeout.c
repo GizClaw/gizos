@@ -35,6 +35,7 @@ static atomic_uint_fast64_t wall_ms;
 static int backward_wall;
 static atomic_int blocking;
 static atomic_int fail_thread;
+static atomic_uint workers_started;
 static pthread_mutex_t gate_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t gate = PTHREAD_COND_INITIALIZER;
 static unsigned entered;
@@ -70,6 +71,7 @@ int h2_test_clock_gettime(clockid_t clock, struct timespec* now) {
 
 int h2_test_pthread_create(pthread_t* thread, const pthread_attr_t* attr,
                            void* (*entry)(void*), void* arg) {
+  ++workers_started;
   if (atomic_exchange(&fail_thread, 0)) return EAGAIN;
   return pthread_create(thread, attr, entry, arg);
 }
@@ -180,6 +182,9 @@ static const h2_pal_mem_vtable_t memory = {
 static const h2_wolfssl_config_t backend = {
     .mem = {.vtable = &memory},
     .entropy = h2_posix_entropy,
+    /* malloc/realloc/free, atomic accounting, and OS entropy permit
+       concurrency. */
+    .providers_thread_safe = true,
 };
 
 static uint64_t real_ms(void) {
@@ -198,6 +203,17 @@ static void drain_backend(void) {
   }
   assert(result == H2_PAL_OK);
   assert(allocations == 0u);
+}
+
+static void wait_for_init(const h2_wolfssl_config_t* config) {
+  uint64_t deadline = real_ms() + 5000u;
+  h2_pal_result_t result;
+  while ((result = h2_wolfssl_init(config)) == H2_PAL_ERR_INVALID_STATE) {
+    assert(real_ms() < deadline);
+    const struct timespec tick = {.tv_nsec = 1000000};
+    nanosleep(&tick, NULL);
+  }
+  assert(result == H2_PAL_OK);
 }
 
 static void run_case(const timeout_case_t* test) {
@@ -256,7 +272,7 @@ static void run_case(const timeout_case_t* test) {
   assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
 }
 
-static void test_blocked_loads(void) {
+static void test_blocked_loads(int deferred) {
   const h2_pal_net_api_t* net = h2_posix_net_api();
   setup_ms = connect_ms = 0u;
   backward_wall = 0;
@@ -320,10 +336,27 @@ static void test_blocked_loads(void) {
     limit.tv_sec += 5;
     assert(pthread_cond_timedwait(&gate, &gate_lock, &limit) == 0);
   }
+  h2_wolfssl_config_t changed = backend;
+  changed.providers_thread_safe = false;
+  if (deferred) {
+    h2_wolfssl_deinit_deferred();
+    assert(h2_wolfssl_init(&backend) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_wolfssl_init(&changed) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_wolfssl_operation_acquire() == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_wolfssl_operation_acquire_concurrent() ==
+           H2_PAL_ERR_INVALID_STATE);
+  }
   release_loaders = 1;
   pthread_cond_broadcast(&gate);
   assert(pthread_mutex_unlock(&gate_lock) == 0);
-  drain_backend();
+  if (deferred) {
+    wait_for_init(&changed);
+    /* Exactly one deinit now suffices: there is no synthetic retained owner. */
+    assert(h2_wolfssl_deinit() == H2_PAL_OK);
+    assert(allocations == 0u);
+  } else {
+    drain_backend();
+  }
   assert(connects == 0u && waits == 0u);
   blocking = 0;
   assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
@@ -358,6 +391,109 @@ static void test_setup_admission_failures(void) {
   free(ca);
   h2_pal_net_close(net, socket_fd);
   drain_backend();
+  assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
+}
+
+typedef struct serial_provider {
+  pthread_t owner;
+  size_t live;
+  unsigned calls;
+  unsigned entropy_calls;
+} serial_provider_t;
+
+static void* serial_alloc(void* user, size_t len) {
+  serial_provider_t* provider = user;
+  assert(pthread_equal(provider->owner, pthread_self()));
+  ++provider->calls;
+  void* result = malloc(len);
+  if (result != NULL) ++provider->live;
+  return result;
+}
+
+static void* serial_realloc(void* user, void* memory, size_t len) {
+  serial_provider_t* provider = user;
+  assert(pthread_equal(provider->owner, pthread_self()));
+  ++provider->calls;
+  if (memory == NULL) return serial_alloc(user, len);
+  if (len == 0u) {
+    free(memory);
+    --provider->live;
+    return NULL;
+  }
+  return realloc(memory, len);
+}
+
+static void serial_free(void* user, void* memory) {
+  serial_provider_t* provider = user;
+  assert(pthread_equal(provider->owner, pthread_self()));
+  ++provider->calls;
+  if (memory != NULL) {
+    --provider->live;
+    free(memory);
+  }
+}
+
+static int serial_entropy(void* user, uint8_t* out, size_t len) {
+  serial_provider_t* provider = user;
+  assert(pthread_equal(provider->owner, pthread_self()));
+  ++provider->entropy_calls;
+  return h2_posix_entropy(NULL, out, len);
+}
+
+static void test_serial_provider_rejection(void) {
+  drain_backend();
+  serial_provider_t provider = {.owner = pthread_self()};
+  const h2_pal_mem_vtable_t vtable = {
+      .alloc = serial_alloc,
+      .realloc = serial_realloc,
+      .free = serial_free,
+  };
+  const h2_wolfssl_config_t config = {
+      .mem = {.user = &provider, .vtable = &vtable},
+      .entropy_user = &provider,
+      .entropy = serial_entropy,
+      /* Deliberately omitted providers_thread_safe: neither callback is safe.
+       */
+  };
+  assert(!config.providers_thread_safe);
+  assert(h2_wolfssl_init(&config) == H2_PAL_OK);
+  assert(h2_wolfssl_operation_acquire() == H2_PAL_OK);
+  h2_wolfssl_operation_release();
+  assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_ERR_UNSUPPORTED);
+  const h2_pal_net_api_t* net = h2_posix_net_api();
+  h2_pal_net_socket_t socket_fd = -1;
+  assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL,
+                                   &socket_fd) == H2_PAL_OK);
+  int flags = fcntl(socket_fd, F_GETFL, 0);
+  const h2_pal_net_tls_config_t tls = {
+      .server_name = "localhost",
+      .verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
+  };
+  now_ms = 1000u;
+  unsigned started = workers_started;
+  unsigned loaded = ca_loads;
+  for (unsigned i = 0u; i < 32u; ++i) {
+    unsigned calls = provider.calls;
+    unsigned entropy_calls = provider.entropy_calls;
+    h2_pal_net_socket_t out = 123;
+    assert(h2_pal_net_tls_wrap(net, socket_fd, &tls, 100u, &out) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(out == -1 && fcntl(socket_fd, F_GETFL, 0) == flags);
+    assert(workers_started == started && ca_loads == loaded);
+    assert(provider.calls == calls && provider.entropy_calls == entropy_calls);
+    /* Unrelated direct uses of the same non-atomic state remain on this thread.
+     */
+    void* memory = h2_pal_mem_alloc(&config.mem, 16u);
+    assert(memory != NULL);
+    memory = h2_pal_mem_realloc(&config.mem, memory, 32u);
+    assert(memory != NULL);
+    h2_pal_mem_free(&config.mem, memory);
+    uint8_t bytes[8];
+    assert(serial_entropy(&provider, bytes, sizeof(bytes)) == H2_PAL_OK);
+  }
+  h2_pal_net_close(net, socket_fd);
+  assert(h2_wolfssl_deinit() == H2_PAL_OK);
+  assert(provider.live == 0u);
   assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
 }
 
@@ -413,6 +549,43 @@ static void test_acquire_vs_deinit(void) {
   }
 }
 
+static void* race_final_release(void* argument) {
+  lease_race_t* race = argument;
+  pthread_mutex_lock(&race->lock);
+  while (!race->start) pthread_cond_wait(&race->condition, &race->lock);
+  pthread_mutex_unlock(&race->lock);
+  h2_wolfssl_operation_release();
+  return NULL;
+}
+
+static void test_deferred_release_vs_reinit(void) {
+  h2_wolfssl_config_t changed = backend;
+  changed.providers_thread_safe = false;
+  for (unsigned i = 0u; i < 100u; ++i) {
+    assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_OK);
+    lease_race_t race = {
+        .lock = PTHREAD_MUTEX_INITIALIZER,
+        .condition = PTHREAD_COND_INITIALIZER,
+    };
+    pthread_t worker;
+    assert(pthread_create(&worker, NULL, race_final_release, &race) == 0);
+    pthread_mutex_lock(&race.lock);
+    race.start = 1;
+    pthread_cond_broadcast(&race.condition);
+    pthread_mutex_unlock(&race.lock);
+    h2_wolfssl_deinit_deferred();
+    wait_for_init(&changed);
+    assert(pthread_join(worker, NULL) == 0);
+    assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_wolfssl_init(&backend) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_wolfssl_deinit() == H2_PAL_OK);
+    assert(allocations == 0u);
+    pthread_cond_destroy(&race.condition);
+    pthread_mutex_destroy(&race.lock);
+    assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
+  }
+}
+
 int main(void) {
   assert(h2_wolfssl_init(&backend) == H2_PAL_OK);
   const timeout_case_t cases[] = {
@@ -451,8 +624,11 @@ int main(void) {
     run_case(&cases[i]);
   }
   test_setup_admission_failures();
-  test_blocked_loads();
+  test_serial_provider_rejection();
+  test_blocked_loads(0);
+  test_blocked_loads(1);
   test_acquire_vs_deinit();
+  test_deferred_release_vs_reinit();
   assert(h2_wolfssl_deinit() == H2_PAL_OK);
   assert(allocations == 0u);
   return 0;

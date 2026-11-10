@@ -21,11 +21,40 @@ typedef struct h2_wolfssl_state {
 
 h2_pal_mem_api_t h2_wolfssl_mem_api;
 static h2_wolfssl_state_t h2_wolfssl_state;
-/* The ready bit and operation count change in one atomic transaction, so final
- * teardown cannot race a new worker/session acquiring the borrowed providers.
- */
+/* Admission, draining, and the active count change atomically. A draining
+ * backend has no owner references and cannot accept new work or owners. */
 #define H2_WOLFSSL_READY (SIZE_MAX / 2u + 1u)
+#define H2_WOLFSSL_DRAINING (H2_WOLFSSL_READY >> 1u)
+#define H2_WOLFSSL_PHASE (H2_WOLFSSL_READY | H2_WOLFSSL_DRAINING)
+#define H2_WOLFSSL_BUSY H2_WOLFSSL_PHASE
+#define H2_WOLFSSL_CONCURRENT (H2_WOLFSSL_DRAINING >> 1u)
+#define H2_WOLFSSL_COUNT (H2_WOLFSSL_CONCURRENT - 1u)
 static atomic_size_t h2_wolfssl_usage;
+static atomic_flag h2_wolfssl_lifecycle = ATOMIC_FLAG_INIT;
+
+static void lifecycle_lock(void) {
+  while (atomic_flag_test_and_set_explicit(&h2_wolfssl_lifecycle,
+                                           memory_order_acquire)) {
+  }
+}
+
+static void lifecycle_unlock(void) {
+  atomic_flag_clear_explicit(&h2_wolfssl_lifecycle, memory_order_release);
+}
+
+/* Called only by the thread that claimed BUSY from READY/idle or DRAINING/idle.
+ * Never hold the bookkeeping lock across provider callbacks or opaque cleanup.
+ */
+static void cleanup(void) {
+  (void)wolfSSL_Cleanup();
+  h2_wolfcrypt_crypto_deinit();
+  (void)wolfSSL_SetAllocators(h2_wolfssl_state.previous_malloc,
+                              h2_wolfssl_state.previous_free,
+                              h2_wolfssl_state.previous_realloc);
+  memset(&h2_wolfssl_state, 0, sizeof(h2_wolfssl_state));
+  memset(&h2_wolfssl_mem_api, 0, sizeof(h2_wolfssl_mem_api));
+  atomic_store(&h2_wolfssl_usage, 0u);
+}
 
 int h2_wolfssl_entropy_fill(uint8_t* out, size_t len) {
   if (!h2_wolfssl_state.ready || h2_wolfssl_state.entropy == NULL) {
@@ -38,16 +67,22 @@ int h2_wolfssl_entropy_fill(uint8_t* out, size_t len) {
 }
 
 int h2_wolfssl_is_ready(void) {
-  return (atomic_load(&h2_wolfssl_usage) & H2_WOLFSSL_READY) != 0u;
+  size_t phase = atomic_load(&h2_wolfssl_usage) & H2_WOLFSSL_PHASE;
+  /* Existing leased DTLS sessions still need their API to destroy themselves
+   * while draining; acquisition below rejects any new session or operation. */
+  return phase == H2_WOLFSSL_READY || phase == H2_WOLFSSL_DRAINING;
 }
 
-h2_pal_result_t h2_wolfssl_operation_acquire(void) {
+static h2_pal_result_t operation_acquire(int concurrent) {
   size_t usage = atomic_load(&h2_wolfssl_usage);
   for (;;) {
-    if ((usage & H2_WOLFSSL_READY) == 0u) {
+    if ((usage & H2_WOLFSSL_PHASE) != H2_WOLFSSL_READY) {
       return H2_PAL_ERR_INVALID_STATE;
     }
-    if (usage == SIZE_MAX) {
+    if (concurrent && (usage & H2_WOLFSSL_CONCURRENT) == 0u) {
+      return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if ((usage & H2_WOLFSSL_COUNT) == H2_WOLFSSL_COUNT) {
       return H2_PAL_ERR_FULL;
     }
     if (atomic_compare_exchange_weak(&h2_wolfssl_usage, &usage, usage + 1u)) {
@@ -56,8 +91,30 @@ h2_pal_result_t h2_wolfssl_operation_acquire(void) {
   }
 }
 
+h2_pal_result_t h2_wolfssl_operation_acquire(void) {
+  return operation_acquire(0);
+}
+
+h2_pal_result_t h2_wolfssl_operation_acquire_concurrent(void) {
+  return operation_acquire(1);
+}
+
 void h2_wolfssl_operation_release(void) {
-  (void)atomic_fetch_sub(&h2_wolfssl_usage, 1u);
+  size_t usage = atomic_load(&h2_wolfssl_usage);
+  for (;;) {
+    if ((usage & H2_WOLFSSL_COUNT) == 0u) return;
+    if (atomic_compare_exchange_weak(&h2_wolfssl_usage, &usage, usage - 1u)) {
+      break;
+    }
+  }
+  if ((usage & H2_WOLFSSL_PHASE) == H2_WOLFSSL_DRAINING &&
+      (usage & H2_WOLFSSL_COUNT) == 1u) {
+    size_t idle = usage - 1u;
+    if (atomic_compare_exchange_strong(&h2_wolfssl_usage, &idle,
+                                       H2_WOLFSSL_BUSY)) {
+      cleanup();
+    }
+  }
 }
 
 h2_pal_result_t h2_wolfssl_session_acquire(void) {
@@ -76,19 +133,32 @@ h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t* config) {
       config->entropy == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (h2_wolfssl_state.ready) {
+  lifecycle_lock();
+  size_t usage = atomic_load(&h2_wolfssl_usage);
+  if ((usage & H2_WOLFSSL_PHASE) == H2_WOLFSSL_READY) {
     if (config->mem.user != h2_wolfssl_mem_api.user ||
         config->mem.vtable != h2_wolfssl_mem_api.vtable ||
         config->entropy_user != h2_wolfssl_state.entropy_user ||
-        config->entropy != h2_wolfssl_state.entropy) {
+        config->entropy != h2_wolfssl_state.entropy ||
+        config->providers_thread_safe !=
+            ((usage & H2_WOLFSSL_CONCURRENT) != 0u)) {
+      lifecycle_unlock();
       return H2_PAL_ERR_INVALID_STATE;
     }
     if (h2_wolfssl_state.owner_refs == SIZE_MAX) {
+      lifecycle_unlock();
       return H2_PAL_ERR_FULL;
     }
     ++h2_wolfssl_state.owner_refs;
+    lifecycle_unlock();
     return H2_PAL_OK;
   }
+  if (usage != 0u) {
+    lifecycle_unlock();
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  atomic_store(&h2_wolfssl_usage, H2_WOLFSSL_BUSY);
+  lifecycle_unlock();
 
   memset(&h2_wolfssl_state, 0, sizeof(h2_wolfssl_state));
   h2_wolfssl_mem_api = config->mem;
@@ -114,7 +184,10 @@ h2_pal_result_t h2_wolfssl_init(const h2_wolfssl_config_t* config) {
     h2_wolfcrypt_crypto_deinit();
     goto restore_allocators;
   }
-  atomic_store(&h2_wolfssl_usage, H2_WOLFSSL_READY);
+  atomic_store(
+      &h2_wolfssl_usage,
+      H2_WOLFSSL_READY |
+          (config->providers_thread_safe ? H2_WOLFSSL_CONCURRENT : 0u));
   return H2_PAL_OK;
 
 restore_allocators:
@@ -124,39 +197,69 @@ restore_allocators:
 fail:
   memset(&h2_wolfssl_state, 0, sizeof(h2_wolfssl_state));
   memset(&h2_wolfssl_mem_api, 0, sizeof(h2_wolfssl_mem_api));
+  atomic_store(&h2_wolfssl_usage, 0u);
   return H2_PAL_ERR_IO;
 }
 
 h2_pal_result_t h2_wolfssl_deinit(void) {
-  if (!h2_wolfssl_state.ready) {
+  lifecycle_lock();
+  size_t usage = atomic_load(&h2_wolfssl_usage);
+  if (usage == 0u) {
+    lifecycle_unlock();
     return H2_PAL_OK;
+  }
+  if ((usage & H2_WOLFSSL_PHASE) != H2_WOLFSSL_READY) {
+    lifecycle_unlock();
+    return H2_PAL_ERR_INVALID_STATE;
   }
   if (h2_wolfssl_state.owner_refs > 1u) {
     --h2_wolfssl_state.owner_refs;
+    lifecycle_unlock();
     return H2_PAL_OK;
   }
-  size_t idle = H2_WOLFSSL_READY;
-  if (!atomic_compare_exchange_strong(&h2_wolfssl_usage, &idle, 0u)) {
+  if ((usage & H2_WOLFSSL_COUNT) != 0u ||
+      !atomic_compare_exchange_strong(&h2_wolfssl_usage, &usage,
+                                      H2_WOLFSSL_BUSY)) {
+    lifecycle_unlock();
     return H2_PAL_ERR_INVALID_STATE;
   }
-  (void)wolfSSL_Cleanup();
-  h2_wolfcrypt_crypto_deinit();
-  (void)wolfSSL_SetAllocators(h2_wolfssl_state.previous_malloc,
-                              h2_wolfssl_state.previous_free,
-                              h2_wolfssl_state.previous_realloc);
-  memset(&h2_wolfssl_state, 0, sizeof(h2_wolfssl_state));
-  memset(&h2_wolfssl_mem_api, 0, sizeof(h2_wolfssl_mem_api));
+  h2_wolfssl_state.owner_refs = 0u;
+  lifecycle_unlock();
+  cleanup();
   return H2_PAL_OK;
 }
 
+void h2_wolfssl_deinit_deferred(void) {
+  lifecycle_lock();
+  size_t usage = atomic_load(&h2_wolfssl_usage);
+  if ((usage & H2_WOLFSSL_PHASE) != H2_WOLFSSL_READY) {
+    lifecycle_unlock();
+    return;
+  }
+  if (--h2_wolfssl_state.owner_refs != 0u) {
+    lifecycle_unlock();
+    return;
+  }
+  for (;;) {
+    size_t next = (usage & H2_WOLFSSL_COUNT) == 0u
+                      ? H2_WOLFSSL_BUSY
+                      : (usage & ~H2_WOLFSSL_PHASE) | H2_WOLFSSL_DRAINING;
+    if (atomic_compare_exchange_weak(&h2_wolfssl_usage, &usage, next)) {
+      lifecycle_unlock();
+      if (next == H2_WOLFSSL_BUSY) cleanup();
+      return;
+    }
+  }
+}
+
 const h2_pal_crypto_api_t* h2_wolfssl_crypto_api(void) {
-  return h2_wolfssl_state.ready ? h2_wolfcrypt_crypto_api()
-                                : h2_pal_unsupported_crypto_api();
+  return h2_wolfssl_is_ready() ? h2_wolfcrypt_crypto_api()
+                               : h2_pal_unsupported_crypto_api();
 }
 
 extern const h2_pal_dtls_api_t h2_wolfssl_dtls_provider;
 
 const h2_pal_dtls_api_t* h2_wolfssl_dtls_api(void) {
-  return h2_wolfssl_state.ready ? &h2_wolfssl_dtls_provider
-                                : h2_pal_unsupported_dtls_api();
+  return h2_wolfssl_is_ready() ? &h2_wolfssl_dtls_provider
+                               : h2_pal_unsupported_dtls_api();
 }

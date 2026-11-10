@@ -12,6 +12,7 @@
 #define host_entropy h2_linux_entropy
 #endif
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,8 +25,12 @@ typedef struct allocations {
   unsigned invalid;
 } allocations_t;
 
+/* TLS setup may finish after a timed-out MQTT call has resumed. */
+static pthread_mutex_t tracker_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static void* tracked_realloc(void* user, void* pointer, size_t length) {
   allocations_t* tracker = user;
+  pthread_mutex_lock(&tracker_lock);
   for (unsigned index = 0u; index < 128u; ++index) {
     if (tracker->slots[index] == pointer) {
       void* next = h2_pal_mem_realloc(tracker->backing, pointer,
@@ -34,10 +39,12 @@ static void* tracked_realloc(void* user, void* pointer, size_t length) {
         if (pointer == NULL) ++tracker->live;
         tracker->slots[index] = next;
       }
+      pthread_mutex_unlock(&tracker_lock);
       return next;
     }
   }
   ++tracker->invalid;
+  pthread_mutex_unlock(&tracker_lock);
   return NULL;
 }
 
@@ -48,15 +55,26 @@ static void* tracked_alloc(void* user, size_t length) {
 static void tracked_free(void* user, void* pointer) {
   allocations_t* tracker = user;
   if (pointer == NULL) return;
+  pthread_mutex_lock(&tracker_lock);
   for (unsigned index = 0u; index < 128u; ++index) {
     if (tracker->slots[index] == pointer) {
       tracker->slots[index] = NULL;
       --tracker->live;
       h2_pal_mem_free(tracker->backing, pointer);
+      pthread_mutex_unlock(&tracker_lock);
       return;
     }
   }
   ++tracker->invalid;
+  pthread_mutex_unlock(&tracker_lock);
+}
+
+static void allocation_counts(allocations_t* tracker, unsigned* live,
+                              unsigned* invalid) {
+  pthread_mutex_lock(&tracker_lock);
+  *live = tracker->live;
+  *invalid = tracker->invalid;
+  pthread_mutex_unlock(&tracker_lock);
 }
 
 static const h2_pal_mem_vtable_t tracked_vtable = {
@@ -64,6 +82,8 @@ static const h2_pal_mem_vtable_t tracked_vtable = {
 
 static void report(void* user, const h2_pal_mqtt_e2e_case_result_t* result) {
   allocations_t* tracker = user;
+  unsigned live, invalid;
+  allocation_counts(tracker, &live, &invalid);
   printf(
       "H2_PAL_MQTT_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu,\"connected\":%u,\"received\":%u,\"disconnected\":%u,\"live_allocations\":%u,\"invalid_frees\":%u}\n",
       result->id,
@@ -71,8 +91,7 @@ static void report(void* user, const h2_pal_mqtt_e2e_case_result_t* result) {
       : result->blocked ? "BLOCKED"
                         : "FAIL",
       result->detail, result->line, (unsigned long long)result->elapsed_ms,
-      result->connected, result->received, result->disconnected, tracker->live,
-      tracker->invalid);
+      result->connected, result->received, result->disconnected, live, invalid);
   fflush(stdout);
 }
 
@@ -125,7 +144,10 @@ static int parse_bool(const char* text, int* out) {
 #endif
 
 int main(int argc, char** argv) {
-  allocations_t tracker = {.backing = h2_desktop_platform_default_allocator()};
+  /* A reported teardown failure may leave a bounded setup job until process
+   * exit; its copied Memory API must never point into an expired main frame. */
+  static allocations_t tracker;
+  tracker.backing = h2_desktop_platform_default_allocator();
   h2_pal_mem_api_t memory = {.user = &tracker, .vtable = &tracked_vtable};
   h2_runtime_t runtime = {.mem = &memory,
                           .net = host_net(),
@@ -203,7 +225,8 @@ int main(int argc, char** argv) {
   untrusted.root_ca_pem_len = wrong_ca_len;
   wrong_name.root_ca_pem = trusted.root_ca_pem;
   wrong_name.root_ca_pem_len = ca_len;
-  h2_wolfssl_config_t tls = {.mem = memory, .entropy = host_entropy};
+  h2_wolfssl_config_t tls = {
+      .mem = memory, .entropy = host_entropy, .providers_thread_safe = true};
   if (h2_wolfssl_init(&tls) != H2_PAL_OK) return 2;
   h2_coremqtt_t* provider = NULL;
   h2_pal_mqtt_api_t api;
@@ -221,12 +244,13 @@ int main(int argc, char** argv) {
   int rc = h2_pal_mqtt_e2e_run(&config, &result);
   h2_coremqtt_destroy(provider);
   int cleanup = h2_wolfssl_deinit();
+  unsigned live, invalid;
+  allocation_counts(&tracker, &live, &invalid);
   printf(
       "H2_PAL_MQTT_SUMMARY {\"selected\":%u,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"retained_allocations\":%u,\"invalid_frees\":%u,\"cleanup\":%d}\n",
-      result.selected, result.passed, result.failed, result.blocked,
-      tracker.live, tracker.invalid, cleanup);
-  return rc == H2_PAL_OK && cleanup == H2_PAL_OK && tracker.live == 0u &&
-                 tracker.invalid == 0u
+      result.selected, result.passed, result.failed, result.blocked, live,
+      invalid, cleanup);
+  return rc == H2_PAL_OK && cleanup == H2_PAL_OK && live == 0u && invalid == 0u
              ? 0
              : 1;
 }

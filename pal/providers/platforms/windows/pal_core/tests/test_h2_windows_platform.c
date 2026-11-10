@@ -206,6 +206,7 @@ int main(void) {
       .mem = *mem,
       .entropy_user = platform,
       .entropy = h2_windows_entropy,
+      .providers_thread_safe = true,
   };
   assert(h2_wolfssl_init(&wolfssl_config) == H2_PAL_OK);
   h2_pal_net_tls_config_t tls_config = {

@@ -370,7 +370,7 @@ static h2_pal_result_t tls_setup_create_job(
   ++jobs_count;
   jobs_bytes += bytes;
   (void)pthread_mutex_unlock(&jobs_lock);
-  h2_pal_result_t result = h2_wolfssl_operation_acquire();
+  h2_pal_result_t result = h2_wolfssl_operation_acquire_concurrent();
   tls_setup_job_t* job = NULL;
   if (result != H2_PAL_OK) goto fail_admission;
   job = calloc(1u, sizeof(*job) + bytes);
