@@ -8,6 +8,9 @@
 #include <fcntl.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#if defined(__APPLE__)
+#include <poll.h>
+#endif
 #include <signal.h>
 #include <assert.h>
 #include <errno.h>
@@ -154,7 +157,7 @@ static int test_probe_send_fd = -1, test_probe_send_flags,
 static int test_probe_recv_fd = -1, test_probe_recv_flags,
            test_probe_recv_result;
 static int test_probe_select_fd = -1, test_probe_select_write,
-           test_probe_select_result;
+           test_probe_select_result, test_probe_select_poll;
 static int64_t test_probe_select_timeout_us, test_probe_select_start,
     test_probe_select_end;
 static int64_t test_probe_send_start, test_probe_send_end,
@@ -678,6 +681,7 @@ static void mbedtls_x509_crt_free(mbedtls_x509_crt* ca) {
   assert(ca->self == ca);
 }
 
+static int test_is_unix_socket(int fd);
 static int test_select(int count, fd_set* reads, fd_set* writes, fd_set* errors,
                        struct timeval* timeout) {
   assert(pthread_mutex_lock(&test_lock) == 0);
@@ -694,8 +698,41 @@ static int test_select(int count, fd_set* reads, fd_set* writes, fd_set* errors,
       timeout ? (int64_t)timeout->tv_sec * 1000000 + timeout->tv_usec : -1;
   test_probe_select_start = esp_timer_get_time();
   test_probe_select_end = 0;
+  test_probe_select_poll = 0;
   assert(pthread_mutex_unlock(&test_lock) == 0);
-  int result = select(count, reads, writes, errors, timeout);
+  int result;
+#if defined(__APPLE__)
+  /* AF_UNIX stands in for lwIP. macOS 15 CI recorded a 20 ms write select
+   * with no return by the 150 ms cancellation check. Poll the same socket
+   * with the production-requested interval for this host SDK effect. */
+  int64_t milliseconds = timeout ? (int64_t)timeout->tv_sec * 1000 +
+                                       (timeout->tv_usec + 999) / 1000
+                                 : -1;
+  if (reads == NULL && writes != NULL && errors == NULL && count > 0 &&
+      milliseconds >= 0 && milliseconds <= INT_MAX &&
+      test_is_unix_socket(count - 1)) {
+    assert(FD_ISSET(count - 1, writes));
+    for (int fd = 0; fd < count - 1; ++fd) assert(!FD_ISSET(fd, writes));
+    struct pollfd fd = {.fd = count - 1, .events = POLLOUT};
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    test_probe_select_poll = 1;
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    result = poll(&fd, 1u, (int)milliseconds);
+    if (result > 0 && (fd.revents & POLLNVAL)) {
+      errno = EBADF;
+      result = -1;
+    } else if (result > 0) {
+      result = (fd.revents & (POLLOUT | POLLERR | POLLHUP)) != 0;
+    }
+    if (result >= 0) {
+      FD_ZERO(writes);
+      if (result > 0) FD_SET(fd.fd, writes);
+    }
+  } else
+#endif
+  {
+    result = select(count, reads, writes, errors, timeout);
+  }
   int error = errno;
   assert(pthread_mutex_lock(&test_lock) == 0);
   test_probe_select_result = result;

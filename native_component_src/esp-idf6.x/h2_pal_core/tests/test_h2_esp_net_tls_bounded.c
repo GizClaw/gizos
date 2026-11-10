@@ -855,10 +855,11 @@ static void test_cancel_diagnostic(const char* phase, int fd, int mode,
   assert(pthread_mutex_lock(&test_lock) == 0);
   fprintf(
       stderr,
-      "ESP_CANCEL select fd=%d write=%d timeout_us=%lld result=%d start=%lld end=%lld\n",
+      "ESP_CANCEL select fd=%d write=%d timeout_us=%lld result=%d start=%lld end=%lld poll=%d\n",
       test_probe_select_fd, test_probe_select_write,
       (long long)test_probe_select_timeout_us, test_probe_select_result,
-      (long long)test_probe_select_start, (long long)test_probe_select_end);
+      (long long)test_probe_select_start, (long long)test_probe_select_end,
+      test_probe_select_poll);
   fprintf(
       stderr,
       "ESP_CANCEL send fd=%d flags=%d result=%d start=%lld end=%lld recv fd=%d flags=%d result=%d start=%lld end=%lld write_wait=%d gate=%d entered=%d released=%d\n",
