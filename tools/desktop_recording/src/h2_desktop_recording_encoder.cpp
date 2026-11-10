@@ -1,3 +1,7 @@
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include "h2_desktop_recording_internal.h"
 #include "h2_desktop_recording_output.h"
 
@@ -23,6 +27,9 @@ extern "C" {
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#if defined(__linux__)
+#include <linux/fs.h>
+#endif
 
 namespace {
 constexpr uint32_t kRate = 16000u;
@@ -256,7 +263,7 @@ bool setup_codec(h2_desktop_recording_encoder_t* state, bool is_video) {
 }
 
 // Keep incomplete output in a private directory. Publishing uses an atomic
-// no-replace link, so failure cleanup never unlinks the caller's destination.
+// no-replace rename, so failure cleanup never unlinks the caller's destination.
 struct InitialOutput {
   std::string directory;
   int directory_fd = -1;
@@ -271,7 +278,12 @@ struct InitialOutput {
   }
   int open_output(const h2_desktop_recording_encoder_config_t* config) {
     if (config->output_fd >= 0) return dup(config->output_fd);
-    directory = std::string(config->path) + ".init-XXXXXX";
+    const std::string destination(config->path);
+    const size_t separator = destination.find_last_of('/');
+    directory = (separator == std::string::npos
+                     ? "./"
+                     : destination.substr(0, separator + 1u)) +
+                ".h2-recording-XXXXXX";
     if (mkdtemp(directory.data()) == nullptr) return -1;
     created_directory = true;
     directory_fd = open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
@@ -282,8 +294,16 @@ struct InitialOutput {
     return fd;
   }
   bool publish(const h2_desktop_recording_encoder_config_t* config) {
-    return config->output_fd >= 0 ||
-           linkat(directory_fd, "recording", AT_FDCWD, config->path, 0) == 0;
+    if (config->output_fd >= 0) return true;
+#if defined(__APPLE__)
+    return renameatx_np(directory_fd, "recording", AT_FDCWD, config->path,
+                        RENAME_EXCL) == 0;
+#elif defined(__linux__)
+    return renameat2(directory_fd, "recording", AT_FDCWD, config->path,
+                     RENAME_NOREPLACE) == 0;
+#else
+    return false;
+#endif
   }
 };
 

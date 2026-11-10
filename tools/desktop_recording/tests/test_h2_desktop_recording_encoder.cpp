@@ -369,25 +369,36 @@ void failed_initialization(const char* temporary) {
 
 void replacement_output(const char* temporary) {
   const std::string path = std::string(temporary) + "/replacement.mp4";
-  h2_desktop_recording_encoder_config_t config = {
-      path.c_str(), 64u, 48u, h2_desktop_recording_now_us()};
-  config.fail_after_output_start = true;
-  config.test_user = const_cast<char*>(path.c_str());
-  config.after_output_start = [](void* user) {
-    const char* destination = static_cast<const char*>(user);
-    // A competing writer publishes at the requested name during setup.
-    const int replacement =
-        open(destination, O_CREAT | O_EXCL | O_WRONLY, 0600);
-    assert(replacement >= 0 && write(replacement, "keep", 4u) == 4);
-    assert(close(replacement) == 0);
-  };
+  for (bool fail_in_setup : {true, false}) {
+    h2_desktop_recording_encoder_config_t config = {
+        path.c_str(), 64u, 48u, h2_desktop_recording_now_us()};
+    config.fail_after_output_start = fail_in_setup;
+    config.test_user = const_cast<char*>(path.c_str());
+    config.after_output_start = [](void* user) {
+      const char* destination = static_cast<const char*>(user);
+      const int replacement =
+          open(destination, O_CREAT | O_EXCL | O_WRONLY, 0600);
+      assert(replacement >= 0 && write(replacement, "keep", 4u) == 4);
+      assert(close(replacement) == 0);
+    };
+    h2_desktop_recording_encoder_t* state = nullptr;
+    assert(h2_desktop_recording_encoder_create(&config, &state) ==
+           H2_PAL_ERR_IO);
+    assert(state == nullptr);
+    const int fd = open(path.c_str(), O_RDONLY);
+    char bytes[4] = {};
+    assert(fd >= 0 && read(fd, bytes, sizeof(bytes)) == 4 &&
+           std::memcmp(bytes, "keep", 4u) == 0);
+    assert(close(fd) == 0 && unlink(path.c_str()) == 0);
+  }
+  const std::string long_path =
+      std::string(temporary) + "/" + std::string(246u, 'x') + ".mp4";
+  const h2_desktop_recording_encoder_config_t config = {
+      long_path.c_str(), 64u, 48u, h2_desktop_recording_now_us()};
   h2_desktop_recording_encoder_t* state = nullptr;
-  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
-  const int fd = open(path.c_str(), O_RDONLY);
-  char bytes[4] = {};
-  assert(fd >= 0 && read(fd, bytes, sizeof(bytes)) == 4 &&
-         std::memcmp(bytes, "keep", 4u) == 0);
-  assert(close(fd) == 0 && unlink(path.c_str()) == 0);
+  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_OK);
+  h2_desktop_recording_encoder_destroy(state);
+  assert(unlink(long_path.c_str()) == 0);
 }
 
 void blocked_diagnostics(const char* temporary) {
