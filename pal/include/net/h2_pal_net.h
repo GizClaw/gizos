@@ -234,16 +234,15 @@ typedef struct h2_pal_net_vtable {
   int (*get_host_addr_family)(void* user, const char* iface_prefix,
                               h2_pal_net_family_t family,
                               h2_pal_net_addr_t* out_addr);
-  /** Optional bounded TLS entry; timeout_ms covers setup and handshake.
+  /** Optional strict bounded TLS entry; timeout_ms covers setup and handshake.
    * Honor that budget or return UNSUPPORTED before starting setup that cannot
    * safely be bounded. Never fall back to cooperative setup in this callback.
-   * Providers with a separate cooperative compatibility mode must supply it.
    * Failure leaves the input socket owned by the caller; any work retained
    * after return must own its inputs and keep its providers alive
-   * independently. NULL preserves dispatch to tls_wrap for providers without a
-   * separate mode, retaining their existing timeout contract. This additive
-   * vtable tail changes the binary layout: rebuild provider and consumer
-   * binaries together. */
+   * independently. A NULL entry is an unsupported bounded capability; it never
+   * selects tls_wrap. The ordinary compatibility entry remains separate. This
+   * additive vtable tail changes the binary layout: rebuild provider and
+   * consumer binaries together. */
   h2_pal_result_t (*tls_wrap_bounded)(void* user,
                                       h2_pal_net_socket_t tcp_socket,
                                       const h2_pal_net_tls_config_t* config,
@@ -530,10 +529,9 @@ static inline h2_pal_result_t h2_pal_net_tls_wrap(
                                out_tls_socket);
 }
 
-/** Prefer an explicit bounded TLS entry. A provider's UNSUPPORTED rejection is
- * terminal; only an absent entry selects its original tls_wrap timeout
- * contract. This dispatch does not make arbitrary serialized callbacks
- * preemptible. */
+/** Require an explicit bounded TLS entry. Missing capability and UNSUPPORTED
+ * rejection are terminal; this helper never invokes the compatibility entry.
+ * Call h2_pal_net_tls_wrap() explicitly for the ordinary provider contract. */
 static inline h2_pal_result_t h2_pal_net_tls_wrap_bounded(
     const h2_pal_net_api_t* api, h2_pal_net_socket_t tcp_socket,
     const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
@@ -543,12 +541,11 @@ static inline h2_pal_result_t h2_pal_net_tls_wrap_bounded(
       tcp_socket < 0) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (api->vtable != NULL && api->vtable->tls_wrap_bounded != NULL) {
-    return api->vtable->tls_wrap_bounded(api->user, tcp_socket, config,
-                                         timeout_ms, out_tls_socket);
+  if (api->vtable == NULL || api->vtable->tls_wrap_bounded == NULL) {
+    return H2_PAL_ERR_UNSUPPORTED;
   }
-  return h2_pal_net_tls_wrap(api, tcp_socket, config, timeout_ms,
-                             out_tls_socket);
+  return api->vtable->tls_wrap_bounded(api->user, tcp_socket, config,
+                                       timeout_ms, out_tls_socket);
 }
 
 static inline h2_pal_result_t h2_pal_net_icmp_echo(
