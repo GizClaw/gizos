@@ -2440,11 +2440,29 @@ static void test_all_sockets_close_before_callback(void) {
   test_wait_idle();
 }
 
+static void test_host_readiness_contract(void) {
+  int pair[2];
+  assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+  assert(h2_esp_net_wait_fd(pair[0], 0, 0u) == H2_PAL_ERR_TIMEOUT);
+  assert(h2_esp_net_wait_fd(pair[0], 1, 0u) == H2_PAL_OK);
+  assert(send(pair[1], "R", 1u, 0) == 1);
+  assert(h2_esp_net_wait_fd(pair[0], 0, 100u) == H2_PAL_OK);
+  char byte;
+  assert(recv(pair[0], &byte, 1u, 0) == 1 && byte == 'R');
+  assert(close(pair[1]) == 0);
+  assert(h2_esp_net_wait_fd(pair[0], 0, 100u) == H2_PAL_OK);
+  assert(recv(pair[0], &byte, 1u, 0) == 0);
+  assert(close(pair[0]) == 0);
+  assert(h2_esp_net_wait_fd(pair[0], 0, 0u) == H2_PAL_ERR_IO);
+}
+
 int main(int argc, char** argv) {
   test_sdk_runtime_start();
   if (argc == 2) {
     signal(SIGPIPE, SIG_IGN);
-    if (strcmp(argv[1], "waiter-before-callback") == 0) {
+    if (strcmp(argv[1], "host-readiness-contract") == 0) {
+      test_host_readiness_contract();
+    } else if (strcmp(argv[1], "waiter-before-callback") == 0) {
       test_waiter_owns_before_callback();
     } else if (strcmp(argv[1], "callback-waiter-connect") == 0 ||
                strcmp(argv[1], "callback-waiter-accept") == 0) {

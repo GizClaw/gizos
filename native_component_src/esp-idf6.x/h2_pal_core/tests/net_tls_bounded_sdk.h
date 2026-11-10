@@ -681,7 +681,6 @@ static void mbedtls_x509_crt_free(mbedtls_x509_crt* ca) {
   assert(ca->self == ca);
 }
 
-static int test_is_unix_socket(int fd);
 static int test_select(int count, fd_set* reads, fd_set* writes, fd_set* errors,
                        struct timeval* timeout) {
   assert(pthread_mutex_lock(&test_lock) == 0);
@@ -702,18 +701,20 @@ static int test_select(int count, fd_set* reads, fd_set* writes, fd_set* errors,
   assert(pthread_mutex_unlock(&test_lock) == 0);
   int result;
 #if defined(__APPLE__)
-  /* AF_UNIX stands in for lwIP. macOS 15 CI recorded a 20 ms write select
-   * with no return by the 150 ms cancellation check. Poll the same socket
-   * with the production-requested interval for this host SDK effect. */
+  /* Host sockets stand in for lwIP. macOS 15 CI missed cancellation while
+   * read/write wait completion had not been published. Model either SDK
+   * single-fd wait with real poll readiness and the production-requested
+   * interval. */
   int64_t milliseconds = timeout ? (int64_t)timeout->tv_sec * 1000 +
                                        (timeout->tv_usec + 999) / 1000
                                  : -1;
-  if (reads == NULL && writes != NULL && errors == NULL && count > 0 &&
-      milliseconds >= 0 && milliseconds <= INT_MAX &&
-      test_is_unix_socket(count - 1)) {
-    assert(FD_ISSET(count - 1, writes));
-    for (int fd = 0; fd < count - 1; ++fd) assert(!FD_ISSET(fd, writes));
-    struct pollfd fd = {.fd = count - 1, .events = POLLOUT};
+  fd_set* fds = reads != NULL ? reads : writes;
+  if ((reads == NULL) != (writes == NULL) && errors == NULL && count > 0 &&
+      milliseconds >= 0 && milliseconds <= INT_MAX) {
+    assert(FD_ISSET(count - 1, fds));
+    for (int fd = 0; fd < count - 1; ++fd) assert(!FD_ISSET(fd, fds));
+    short readiness = reads != NULL ? POLLIN : POLLOUT;
+    struct pollfd fd = {.fd = count - 1, .events = readiness};
     assert(pthread_mutex_lock(&test_lock) == 0);
     test_probe_select_poll = 1;
     assert(pthread_mutex_unlock(&test_lock) == 0);
@@ -722,11 +723,11 @@ static int test_select(int count, fd_set* reads, fd_set* writes, fd_set* errors,
       errno = EBADF;
       result = -1;
     } else if (result > 0) {
-      result = (fd.revents & (POLLOUT | POLLERR | POLLHUP)) != 0;
+      result = (fd.revents & (readiness | POLLERR | POLLHUP)) != 0;
     }
     if (result >= 0) {
-      FD_ZERO(writes);
-      if (result > 0) FD_SET(fd.fd, writes);
+      FD_ZERO(fds);
+      if (result > 0) FD_SET(fd.fd, fds);
     }
   } else
 #endif

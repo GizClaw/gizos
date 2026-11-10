@@ -72,6 +72,7 @@ class ESPBoundedTLS(unittest.TestCase):
                         "callback-waiter-accept",
                         "callback-after-all-close",
                         "waiter-before-callback",
+                        "host-readiness-contract",
                     ):
                         command = [str(binary)] + ([] if case is None else [case])
                         result = subprocess.run(command, capture_output=True, text=True, timeout=20)
