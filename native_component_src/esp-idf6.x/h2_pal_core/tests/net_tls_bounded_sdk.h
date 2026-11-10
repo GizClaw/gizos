@@ -114,6 +114,8 @@ static int test_caller_allocations, test_worker_allocations, test_sem_creates,
 static size_t test_expected_ca_length = 4u, test_max_allocation;
 static int test_copy_gate, test_copy_entered, test_copy_release;
 static int test_publish_block, test_publish_held, test_publish_release;
+static int test_listener_shutdown_noop;
+static int test_simulate_fin_wait, test_expect_normal_fd = -1;
 static SemaphoreHandle_t test_registry;
 static pthread_t test_publish_thread;
 static void test_sdk_gate(int stage);
@@ -175,7 +177,13 @@ static int xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks) {
   int acquired = sem->available;
   if (acquired) sem->available = 0;
   assert(pthread_mutex_unlock(&sem->mutex) == 0);
+  if (acquired && test_is_worker == 2 && ticks == portMAX_DELAY)
+    test_sdk_gate(14);
   return acquired;
+}
+static void vTaskDelay(TickType_t ticks) {
+  struct timespec pause = {ticks / 1000u, (long)(ticks % 1000u) * 1000000};
+  assert(nanosleep(&pause, NULL) == 0);
 }
 static int xSemaphoreGive(SemaphoreHandle_t sem) {
   assert(pthread_mutex_lock(&sem->mutex) == 0);
@@ -205,7 +213,8 @@ static void* test_task_entry(void* user) {
 }
 static int xTaskCreate(void (*entry)(void*), const char* name, uint32_t stack,
                        void* user, unsigned priority, TaskHandle_t* out) {
-  assert((strcmp(name, "h2_tls") == 0 || strcmp(name, "h2_net_reap") == 0) &&
+  assert((strcmp(name, "h2_tls") == 0 || strcmp(name, "h2_net_reap") == 0 ||
+          strcmp(name, "h2_tls_free") == 0) &&
          stack == 8192u && priority == 1u);
   test_sdk_gate(8);
   if (test_fail_task) {
@@ -215,7 +224,10 @@ static int xTaskCreate(void (*entry)(void*), const char* name, uint32_t stack,
   test_start_t* start = malloc(sizeof(*start));
   pthread_t* thread = malloc(sizeof(*thread));
   assert(start && thread);
-  *start = (test_start_t){entry, user, strcmp(name, "h2_tls") == 0 ? 1 : 2};
+  *start = (test_start_t){entry, user,
+                          strcmp(name, "h2_tls") == 0        ? 1
+                          : strcmp(name, "h2_net_reap") == 0 ? 2
+                                                             : 3};
   assert(pthread_create(thread, NULL, test_task_entry, start) == 0);
   assert(pthread_detach(*thread) == 0);
   *out = thread;
@@ -440,25 +452,93 @@ static void mbedtls_x509_crt_free(mbedtls_x509_crt* ca) {
 static int test_send(int fd, const void* bytes, size_t length, int flags) {
   assert(!test_is_worker);
   ++test_io_calls;
-  return (int)send(fd, bytes, length, flags);
+  int result = (int)send(fd, bytes, length, flags);
+  if (result >= 0) test_sdk_gate(12);
+  return result;
 }
 static int test_recv(int fd, void* bytes, size_t length, int flags) {
   assert(!test_is_worker);
   test_sdk_gate(10);
   ++test_io_calls;
-  return (int)recv(fd, bytes, length, flags);
+  int result = (int)recv(fd, bytes, length, flags);
+  if (result >= 0) test_sdk_gate(13);
+  return result;
+}
+/* AF_UNIX transports stand in for lwIP TCP. Darwin rejects SO_LINGER changes
+ * on a disconnected AF_UNIX socket, while lwIP updates conn->linger even after
+ * shutdown. Model that SDK field here; real AF_INET regressions use the kernel
+ * option and verify delivered bytes followed by graceful EOF. */
+static struct linger test_unix_linger[FD_SETSIZE];
+static int test_is_unix_socket(int fd) {
+  struct sockaddr_storage address;
+  socklen_t length = sizeof(address);
+  return getsockname(fd, (struct sockaddr*)&address, &length) == 0 &&
+         address.ss_family == AF_UNIX;
+}
+static int test_setsockopt(int fd, int level, int option, const void* value,
+                           socklen_t length) {
+  if (level == SOL_SOCKET && option == SO_LINGER && test_is_unix_socket(fd)) {
+    assert(fd >= 0 && fd < FD_SETSIZE && length == sizeof(struct linger));
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    test_unix_linger[fd] = *(const struct linger*)value;
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    return 0;
+  }
+  return setsockopt(fd, level, option, value, length);
+}
+static void test_close_profile(int fd, int closing) {
+  int type = 0;
+  socklen_t length = sizeof(type);
+  if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
+      type == SOCK_STREAM) {
+    struct linger profile;
+    length = sizeof(profile);
+    if (test_is_unix_socket(fd)) {
+      assert(fd >= 0 && fd < FD_SETSIZE);
+      assert(pthread_mutex_lock(&test_lock) == 0);
+      profile = test_unix_linger[fd];
+      assert(pthread_mutex_unlock(&test_lock) == 0);
+    } else
+      assert(getsockopt(fd, SOL_SOCKET, SO_LINGER, &profile, &length) == 0);
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    int normal = fd == test_expect_normal_fd, fin_wait = test_simulate_fin_wait;
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    if (normal) assert(profile.l_onoff == 0);
+    if (closing && fin_wait && !(profile.l_onoff && profile.l_linger == 0))
+      test_sdk_gate(15);
+  }
 }
 static int test_close(int fd) {
-  assert(test_is_worker != 1);
+  assert(test_is_worker != 1 && test_is_worker != 3);
+  test_close_profile(fd, 1);
   assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_closed;
   assert(pthread_cond_broadcast(&test_changed) == 0);
   assert(pthread_mutex_unlock(&test_lock) == 0);
   return close(fd);
 }
+static int test_shutdown(int fd, int how) {
+  test_close_profile(fd, 0);
+  int listening = 0;
+  socklen_t length = sizeof(listening);
+  int type = 0;
+  if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
+      type == SOCK_DGRAM) {
+    errno = EOPNOTSUPP;
+    return -1;
+  }
+  length = sizeof(listening);
+  if (test_listener_shutdown_noop &&
+      getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &listening, &length) == 0 &&
+      listening)
+    return 0;
+  return shutdown(fd, how);
+}
 #define send test_send
 #define recv test_recv
 #define close test_close
+#define shutdown test_shutdown
+#define setsockopt test_setsockopt
 
 typedef int esp_err_t;
 static esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void*),

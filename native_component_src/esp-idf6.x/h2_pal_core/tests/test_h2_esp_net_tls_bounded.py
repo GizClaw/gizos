@@ -22,7 +22,7 @@ class ESPBoundedTLS(unittest.TestCase):
                          source.index("typedef struct esp_net_ping_context {")]
         compiler = shutil.which("cc")
         self.assertTrue(compiler, "a native C compiler is required")
-        text = ("#include \"net_tls_bounded_sdk.h\"\n" + helpers + address + sockets +
+        text = ("#include \"net_tls_bounded_sdk.h\"\n#include \"h2_esp_platform_net_socket.c\"\n" + helpers + address + sockets +
                 (OWNER / "tests/test_h2_esp_net_tls_bounded.c").read_text())
         with tempfile.TemporaryDirectory(prefix="h2-esp-tls-") as temporary:
             test = Path(temporary) / "tls.c"
@@ -36,11 +36,12 @@ class ESPBoundedTLS(unittest.TestCase):
                          "-DMBEDTLS_VERSION_MAJOR=" + str(version),
                          "-I" + str(ROOT / "pal/include"),
                          "-I" + str(OWNER / "src"), "-I" + str(OWNER / "tests"),
-                         str(test), str(OWNER / "src/h2_esp_platform_net_socket.c"),
-                         "-o", str(binary)], capture_output=True, text=True)
+                         str(test), "-o", str(binary)], capture_output=True, text=True)
                     self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
-                    result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=20)
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    for case in (None, "legacy-sync-retry"):
+                        command = [str(binary)] + ([] if case is None else [case])
+                        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+                        self.assertEqual(result.returncode, 0, str(case) + "\n" + result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

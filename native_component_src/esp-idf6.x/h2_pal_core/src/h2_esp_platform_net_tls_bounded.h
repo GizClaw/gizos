@@ -244,7 +244,24 @@ static int esp_net_tls_bounded_init(void) {
       esp_net_socket_kick();
     }
   }
-  int ready = s_esp_net_reaper_task != NULL && s_esp_tls_sync != NULL;
+  if (s_esp_tls_cleanup_wake == NULL) {
+    SemaphoreHandle_t wake = xSemaphoreCreateBinary();
+    portENTER_CRITICAL(&s_esp_net_mux);
+    s_esp_tls_cleanup_wake = wake;
+    portEXIT_CRITICAL(&s_esp_net_mux);
+  }
+  if (s_esp_tls_cleanup_task == NULL && s_esp_tls_cleanup_wake != NULL) {
+    TaskHandle_t task = NULL;
+    if (xTaskCreate(esp_net_tls_cleanup_worker, "h2_tls_free",
+                    H2_ESP_NET_TLS_WORKER_STACK_BYTES, NULL,
+                    tskIDLE_PRIORITY + 1u, &task) == pdPASS) {
+      portENTER_CRITICAL(&s_esp_net_mux);
+      s_esp_tls_cleanup_task = task;
+      portEXIT_CRITICAL(&s_esp_net_mux);
+    }
+  }
+  int ready = s_esp_net_reaper_task != NULL && s_esp_tls_cleanup_task != NULL &&
+              s_esp_tls_sync != NULL;
   portENTER_CRITICAL(&s_esp_net_mux);
   s_esp_tls_legacy_ready = ready;
   portEXIT_CRITICAL(&s_esp_net_mux);
@@ -318,6 +335,7 @@ static h2_pal_result_t esp_net_tls_wrap_bounded(
        config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
        config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY))
     return H2_PAL_ERR_INVALID_ARG;
+  esp_net_socket_request_profile(fd, 1);
   portENTER_CRITICAL(&s_esp_net_mux);
   int ready = s_esp_tls_pool_ready;
   portEXIT_CRITICAL(&s_esp_net_mux);
@@ -331,7 +349,8 @@ static h2_pal_result_t esp_net_tls_wrap_bounded(
       alpn_length >= H2_ESP_NET_TLS_ALPN_LEN)
     return H2_PAL_ERR_NO_SPACE;
   esp_net_socket_lease_t lease;
-  int rc = esp_net_socket_pin(fd, SOCK_STREAM, 1, &lease);
+  int rc =
+      esp_net_socket_pin(fd, SOCK_STREAM, ESP_NET_SOCKET_BOUNDED_WRAP, &lease);
   if (rc != H2_PAL_OK) return rc;
   esp_net_tls_job_t* job = NULL;
   rc = esp_net_tls_take_mutex(s_esp_tls_sync->registry_mutex, 1, timeout_ms,

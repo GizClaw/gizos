@@ -1,0 +1,8 @@
+config H2_ESP_NET_BOUNDED_CLOSE
+    bool
+    default y
+    select LWIP_SO_LINGER
+    help
+        Net provisions zero-linger cleanup before a bounded TLS attempt. Only
+        unsuccessful or canceled bounded handshakes retain abortive close;
+        ordinary sockets and successfully published TLS restore normal linger.

@@ -1,4 +1,5 @@
 /* Compiled with the production Net socket operations and TLS implementation. */
+static void test_cancel_without_reaper(void);
 static const h2_pal_net_tls_config_t test_config = {
     .server_name = "h2.example",
     .alpn = "h2",
@@ -138,6 +139,7 @@ static void test_initialization_failure_and_plain_network(void) {
       1; /* Reaper creation fails before optional TLS workers start. */
   esp_net_tls_init();
   assert(!s_esp_tls_initialized && !s_esp_tls_pool_ready);
+  test_cancel_without_reaper();
   h2_pal_net_socket_t plain_fd = -1;
   h2_pal_net_addr_t plain_address;
   assert(esp_net_tcp_open_managed(NULL, H2_PAL_NET_FAMILY_IPV4, &plain_fd) ==
@@ -159,6 +161,8 @@ static void test_initialization_failure_and_plain_network(void) {
                                                  esp_net_tls_wrap_managed};
   const h2_pal_net_api_t legacy_api = {.vtable = &legacy_vtable};
   out = 123;
+  test_fail_task = 1; /* A second transient failure keeps this first ordinary
+                         retry unavailable. */
   assert(h2_pal_net_tls_wrap(&legacy_api, pair[0], &test_config, 20u, &out) ==
          H2_PAL_ERR_UNAVAILABLE);
   assert(out == -1 && allocations == test_caller_allocations &&
@@ -169,8 +173,14 @@ static void test_initialization_failure_and_plain_network(void) {
   assert(recv(pair[1], plain, 5u, 0) == 5);
   esp_net_close(NULL, pair[0]);
   assert(close(pair[1]) == 0);
-  esp_net_tls_init();
-  assert(s_esp_tls_initialized && s_esp_tls_pool_ready && test_task_count == 3);
+  test_pair(pair, 1);
+  /* Reuse the retained API; ordinary TLS must retry initialization itself. */
+  assert(h2_pal_net_tls_wrap(&legacy_api, pair[0], &test_config, 1000u, &out) ==
+         H2_PAL_OK);
+  test_check_hello(pair[1]);
+  esp_net_close(NULL, out);
+  assert(close(pair[1]) == 0);
+  assert(s_esp_tls_initialized && s_esp_tls_pool_ready && test_task_count == 4);
   test_wait_idle();
 }
 
@@ -592,6 +602,8 @@ static void test_public_socket_operations(void) {
          H2_PAL_OK);
   assert(esp_net_tcp_accept_managed(NULL, listener, &server, &peer, 1000u) ==
          H2_PAL_OK);
+  assert((fcntl(listener, F_GETFL, 0) & O_NONBLOCK) != 0);
+  assert((fcntl(server, F_GETFL, 0) & O_NONBLOCK) == 0);
   assert(esp_net_tcp_send_timeout_managed(NULL, client, (const uint8_t*)"PING",
                                           4u, 100u) == 4);
   uint8_t bytes[4];
@@ -643,7 +655,392 @@ static void test_public_socket_operations(void) {
   test_wait_idle();
 }
 
-int main(void) {
+static void test_wait_pinned(int fd) {
+  uint64_t until = esp_net_now_ms() + 1000u;
+  for (;;) {
+    int pinned = 0;
+    portENTER_CRITICAL(&s_esp_net_mux);
+    for (size_t i = 0u; i < CONFIG_LWIP_MAX_SOCKETS; ++i)
+      if (s_esp_net_records[i].used && s_esp_net_records[i].fd == fd)
+        pinned = s_esp_net_records[i].references != 0u;
+    portEXIT_CRITICAL(&s_esp_net_mux);
+    if (pinned) return;
+    assert(esp_net_now_ms() < until);
+    test_pause_ms(1u);
+  }
+}
+static int test_call_done(test_call_t* call, uint32_t timeout_ms) {
+  uint64_t until = esp_net_now_ms() + timeout_ms;
+  for (;;) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    int done = call->done;
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    if (done) return 1;
+    if (esp_net_now_ms() >= until) return 0;
+    test_pause_ms(1u);
+  }
+}
+static void* test_cancellable_receive(void* user) {
+  test_call_t* call = user;
+  if (call->legacy == 1)
+    call->result =
+        esp_net_tcp_accept_managed(NULL, call->fd, &call->out, NULL, 1000u);
+  else if (call->legacy == 2) {
+    uint8_t byte;
+    call->result =
+        esp_net_udp_recvfrom_managed(NULL, call->fd, NULL, &byte, 1u, 1000u);
+  } else {
+    uint8_t byte;
+    call->result = esp_net_tcp_recv_managed(NULL, call->fd, &byte, 1u, 1000u);
+  }
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  call->done = 1;
+  assert(pthread_cond_broadcast(&test_changed) == 0);
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  return NULL;
+}
+
+typedef struct test_completed_io {
+  int fd, receive, result;
+  uint8_t data[4];
+} test_completed_io_t;
+static void* test_do_completed_io(void* user) {
+  test_completed_io_t* call = user;
+  call->result =
+      call->receive
+          ? esp_net_tcp_recv_managed(NULL, call->fd, call->data, 4u, 1000u)
+          : esp_net_tcp_send_timeout_managed(NULL, call->fd,
+                                             (const uint8_t*)"SENT", 4u, 1000u);
+  return NULL;
+}
+static void test_completed_io_survives_close(void) {
+  for (int tls = 0; tls <= 1; ++tls) {
+    for (int receive = 0; receive <= 1; ++receive) {
+      int pair[2];
+      test_pair(pair, tls);
+      if (tls) {
+        h2_pal_net_socket_t out = -1;
+        assert(esp_net_tls_wrap_bounded(NULL, pair[0], &test_config, 1000u,
+                                        &out) == H2_PAL_OK);
+        test_check_hello(pair[1]);
+        test_wait_jobs();
+      }
+      if (receive) assert(send(pair[1], "RECV", 4u, 0) == 4);
+      test_gate_begin(receive ? 13 : 12);
+      test_completed_io_t call = {.fd = pair[0], .receive = receive};
+      pthread_t thread;
+      assert(pthread_create(&thread, NULL, test_do_completed_io, &call) == 0);
+      test_gate_wait();
+      /* The native syscall has already consumed/copied all four bytes. */
+      esp_net_close(NULL, pair[0]);
+      test_gate_end();
+      assert(pthread_join(thread, NULL) == 0);
+      assert(call.result == 4);
+      if (receive)
+        assert(memcmp(call.data, "RECV", 4u) == 0);
+      else {
+        char bytes[4];
+        assert(recv(pair[1], bytes, 4u, 0) == 4 &&
+               memcmp(bytes, "SENT", 4u) == 0);
+      }
+      assert(close(pair[1]) == 0);
+      test_wait_idle();
+    }
+  }
+}
+
+static void test_idle_close_reopens_immediately(void) {
+  test_gate_begin(14);
+  esp_net_socket_kick();
+  test_gate_wait();
+  h2_pal_net_socket_t first = -1, second = -1;
+  h2_pal_net_addr_t address, rebound;
+  assert(esp_net_tcp_listen_managed(NULL, H2_PAL_NET_FAMILY_IPV4, 0u, NULL,
+                                    &first, &address) == H2_PAL_OK);
+  esp_net_close(NULL, first);
+  assert(fcntl(first, F_GETFD) < 0 && errno == EBADF);
+  assert(esp_net_tcp_listen_managed(NULL, H2_PAL_NET_FAMILY_IPV4, address.port,
+                                    NULL, &second, &rebound) == H2_PAL_OK);
+  esp_net_close(NULL, second);
+  for (size_t i = 0u; i < CONFIG_LWIP_MAX_SOCKETS + 2u; ++i) {
+    assert(esp_net_tcp_open_managed(NULL, H2_PAL_NET_FAMILY_IPV4, &first) ==
+           H2_PAL_OK);
+    esp_net_close(NULL, first);
+    assert(fcntl(first, F_GETFD) < 0 && errno == EBADF);
+  }
+  test_gate_end();
+  test_wait_idle();
+}
+
+static void test_unrelated_close_during_tls_destructor(void) {
+  int tls_pair[2];
+  test_pair(tls_pair, 1);
+  h2_pal_net_socket_t tls = -1;
+  assert(esp_net_tls_wrap_bounded(NULL, tls_pair[0], &test_config, 1000u,
+                                  &tls) == H2_PAL_OK);
+  test_check_hello(tls_pair[1]);
+  test_wait_jobs();
+  test_gate_begin(6);
+  esp_net_close(NULL, tls);
+  test_gate_wait();
+  int plain[2];
+  test_pair(plain, 0);
+  test_call_t call = {.fd = plain[0]};
+  pthread_t receiver;
+  assert(pthread_create(&receiver, NULL, test_cancellable_receive, &call) == 0);
+  test_wait_pinned(plain[0]);
+  esp_net_close(NULL, plain[0]);
+  assert(test_call_done(&call, 150u));
+  assert(pthread_join(receiver, NULL) == 0 && call.result == H2_PAL_ERR_CLOSED);
+  test_wait_closed(plain[0]);
+  h2_pal_net_socket_t listener = -1;
+  h2_pal_net_addr_t address;
+  assert(esp_net_tcp_listen_managed(NULL, H2_PAL_NET_FAMILY_IPV4, 0u, NULL,
+                                    &listener, &address) == H2_PAL_OK);
+  esp_net_close(NULL, listener);
+  assert(fcntl(listener, F_GETFD) < 0 && errno == EBADF);
+  assert(close(plain[1]) == 0 && close(tls_pair[1]) == 0);
+  test_gate_end();
+  test_wait_idle();
+}
+
+static void test_cancel_without_reaper(void) {
+  for (int accept_call = 0; accept_call <= 2; ++accept_call) {
+    int pair[2] = {-1, -1};
+    h2_pal_net_socket_t fd = -1;
+    if (accept_call == 1) {
+      h2_pal_net_addr_t address;
+      assert(esp_net_tcp_listen_managed(NULL, H2_PAL_NET_FAMILY_IPV4, 0u, NULL,
+                                        &fd, &address) == H2_PAL_OK);
+      /* ESP lwIP FULLDUPLEX listener shutdown may leave accept/select asleep.
+       */
+      test_listener_shutdown_noop = 1;
+    } else if (accept_call == 2) {
+      h2_pal_net_addr_t address;
+      assert(esp_net_udp_open_managed(NULL, H2_PAL_NET_FAMILY_IPV4, 0u, &fd,
+                                      &address) == H2_PAL_OK);
+    } else {
+      test_pair(pair, 0);
+      fd = pair[0];
+    }
+    test_call_t call = {.fd = fd, .legacy = accept_call};
+    pthread_t thread;
+    assert(pthread_create(&thread, NULL, test_cancellable_receive, &call) == 0);
+    test_wait_pinned(fd);
+    esp_net_close(NULL, fd);
+    assert(test_call_done(&call, 150u));
+    assert(pthread_join(thread, NULL) == 0 && call.result == H2_PAL_ERR_CLOSED);
+    assert(fcntl(fd, F_GETFD) < 0 && errno == EBADF);
+    if (!accept_call) assert(close(pair[1]) == 0);
+    test_listener_shutdown_noop = 0;
+  }
+}
+
+static void test_retained_legacy_api_retry(int sync_failure) {
+  const h2_pal_net_vtable_t vtable = {.tls_wrap = esp_net_tls_wrap_managed};
+  const h2_pal_net_api_t api = {.vtable = &vtable};
+  if (sync_failure)
+    test_alloc_fail = 1;
+  else
+    test_fail_task = 1;
+  esp_net_tls_init();
+  assert(!s_esp_tls_initialized);
+  int pair[2];
+  test_pair(pair, 1);
+  h2_pal_net_socket_t out = 123;
+  /* No getter or explicit initialization retry between failure and this call.
+   */
+  assert(h2_pal_net_tls_wrap(&api, pair[0], &test_config, 1000u, &out) ==
+         H2_PAL_OK);
+  assert(out == pair[0]);
+  test_check_hello(pair[1]);
+  esp_net_close(NULL, out);
+  assert(close(pair[1]) == 0);
+  test_wait_idle();
+}
+
+static void* test_call_close(void* user) {
+  test_call_t* call = user;
+  esp_net_close(NULL, call->fd);
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  call->done = 1;
+  assert(pthread_cond_broadcast(&test_changed) == 0);
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  return NULL;
+}
+static void test_failed_bounded_close_has_no_fin_wait(void) {
+  int pair[2];
+  test_pair(pair, 1);
+  test_gate_begin(1);
+  h2_pal_net_socket_t out = -1;
+  assert(esp_net_tls_wrap_bounded(NULL, pair[0], &test_config, 40u, &out) ==
+         H2_PAL_ERR_TIMEOUT);
+  test_gate_wait();
+  test_gate_begin(15);
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  test_simulate_fin_wait = 1;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  test_call_t call = {.fd = pair[0]};
+  pthread_t thread;
+  assert(pthread_create(&thread, NULL, test_call_close, &call) == 0);
+  assert(test_call_done(&call, 150u));
+  assert(pthread_join(thread, NULL) == 0);
+  assert(fcntl(pair[0], F_GETFD) < 0 && errno == EBADF);
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  assert(test_gate_entered == 0);
+  test_simulate_fin_wait = 0;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  test_gate_end();
+  assert(close(pair[1]) == 0);
+  test_wait_idle();
+}
+static void test_graceful_close_profiles(void) {
+  for (int mode = 0; mode <= 2; ++mode) {
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    assert(listener >= 0);
+    struct sockaddr_in address = {.sin_family = AF_INET,
+                                  .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
+    socklen_t length = sizeof(address);
+    assert(bind(listener, (struct sockaddr*)&address, length) == 0 &&
+           listen(listener, 1) == 0);
+    assert(getsockname(listener, (struct sockaddr*)&address, &length) == 0);
+    h2_pal_net_socket_t fd = -1;
+    assert(esp_net_tcp_open_managed(NULL, H2_PAL_NET_FAMILY_IPV4, &fd) ==
+           H2_PAL_OK);
+    h2_pal_net_addr_t remote = {.family = H2_PAL_NET_FAMILY_IPV4,
+                                .port = ntohs(address.sin_port),
+                                .ip = {127, 0, 0, 1}};
+    assert(esp_net_tcp_connect_managed(NULL, fd, &remote, 1000u) == H2_PAL_OK);
+    int peer = accept(listener, NULL, NULL);
+    assert(peer >= 0);
+    assert(close(listener) == 0);
+    if (mode != 0) {
+      assert(send(peer, "WORLD", 5u, 0) == 5);
+      h2_pal_net_socket_t out = -1;
+      assert((mode == 1 ? esp_net_tls_wrap_bounded : esp_net_tls_wrap_managed)(
+                 NULL, fd, &test_config, 1000u, &out) == H2_PAL_OK);
+      test_check_hello(peer);
+      test_wait_jobs();
+    }
+    assert(esp_net_tcp_send_timeout_managed(NULL, fd, (const uint8_t*)"DATA",
+                                            4u, 100u) == 4);
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    test_expect_normal_fd = fd;
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    esp_net_close(NULL, fd);
+    char data[4];
+    assert(recv(peer, data, 4u, 0) == 4 && memcmp(data, "DATA", 4u) == 0);
+    assert(recv(peer, data, 1u, 0) == 0); /* EOF, never an abortive reset. */
+    test_wait_closed(fd);
+    assert(close(peer) == 0);
+    test_wait_idle();
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    test_expect_normal_fd = -1;
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+  }
+}
+static void test_full_cleanup_queue_preserves_network(void) {
+  int first_fd = -1;
+  for (size_t i = 0u; i < H2_ESP_NET_TLS_SOCKET_MAX; ++i) {
+    int pair[2];
+    test_pair(pair, 1);
+    h2_pal_net_socket_t out = -1;
+    assert(esp_net_tls_wrap_bounded(NULL, pair[0], &test_config, 1000u, &out) ==
+           H2_PAL_OK);
+    test_check_hello(pair[1]);
+    test_wait_jobs();
+    if (i == 0u) {
+      first_fd = out;
+      test_gate_begin(6);
+    }
+    esp_net_close(NULL, out);
+    test_wait_closed(out);
+    if (i == 0u) {
+      test_gate_wait();
+      assert(pthread_mutex_lock(&test_lock) == 0);
+      test_gate_stage = 0;
+      assert(pthread_mutex_unlock(&test_lock) == 0);
+    }
+    assert(close(pair[1]) == 0);
+  }
+  /* One destructor is stuck, the other seven slots are queued. No admission
+   * can block the close engine, and none may become FREE before destruction. */
+  uint64_t until = esp_net_now_ms() + 1000u;
+  for (;;) {
+    size_t pending = 0u;
+    portENTER_CRITICAL(&s_esp_net_mux);
+    for (size_t i = 0u; i < H2_ESP_NET_TLS_SOCKET_MAX; ++i)
+      pending += s_esp_tls_cleanup[i].pending != 0;
+    portEXIT_CRITICAL(&s_esp_net_mux);
+    if (pending == H2_ESP_NET_TLS_SOCKET_MAX - 1u) break;
+    assert(esp_net_now_ms() < until);
+    test_pause_ms(1u);
+  }
+  assert(xSemaphoreTake(s_esp_tls_sync->registry_mutex, portMAX_DELAY));
+  for (size_t i = 0u; i < H2_ESP_NET_TLS_SOCKET_MAX; ++i)
+    assert(s_esp_tls_sockets[i].state == ESP_NET_TLS_SOCKET_CLOSING &&
+           s_esp_tls_sockets[i].fd == -1);
+  assert(xSemaphoreGive(s_esp_tls_sync->registry_mutex));
+  int rejected[2];
+  test_pair(rejected, 1);
+  h2_pal_net_socket_t out = -1;
+  assert(esp_net_tls_wrap_bounded(NULL, rejected[0], &test_config, 100u,
+                                  &out) == H2_PAL_ERR_NO_SPACE);
+  esp_net_close(NULL, rejected[0]);
+  assert(close(rejected[1]) == 0);
+  int fresh[2];
+  test_reuse_pair(fresh, first_fd);
+  assert(esp_net_tcp_send_managed(NULL, fresh[0], (const uint8_t*)"Q", 1u) ==
+         1);
+  char byte;
+  assert(recv(fresh[1], &byte, 1u, 0) == 1 && byte == 'Q');
+  test_gate_end();
+  until = esp_net_now_ms() + 3000u;
+  for (;;) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    int contexts = test_contexts;
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    if (contexts == 0) break;
+    assert(esp_net_now_ms() < until);
+    test_pause_ms(1u);
+  }
+  assert(esp_net_tcp_send_managed(NULL, fresh[0], (const uint8_t*)"Z", 1u) ==
+         1);
+  assert(recv(fresh[1], &byte, 1u, 0) == 1 && byte == 'Z');
+  esp_net_close(NULL, fresh[0]);
+  assert(close(fresh[1]) == 0);
+  test_wait_idle();
+}
+
+int main(int argc, char** argv) {
+  if (argc == 2) {
+    signal(SIGPIPE, SIG_IGN);
+    if (strcmp(argv[1], "legacy-retry") == 0 ||
+        strcmp(argv[1], "legacy-sync-retry") == 0) {
+      test_retained_legacy_api_retry(strcmp(argv[1], "legacy-sync-retry") == 0);
+    } else if (strcmp(argv[1], "cancel-no-reaper") == 0) {
+      test_fail_task = 1;
+      esp_net_tls_init();
+      test_cancel_without_reaper();
+    } else {
+      esp_net_tls_init();
+      if (strcmp(argv[1], "completed-io") == 0)
+        test_completed_io_survives_close();
+      else if (strcmp(argv[1], "idle-close") == 0)
+        test_idle_close_reopens_immediately();
+      else if (strcmp(argv[1], "destructor-isolation") == 0)
+        test_unrelated_close_during_tls_destructor();
+      else if (strcmp(argv[1], "native-close-profiles") == 0) {
+        test_failed_bounded_close_has_no_fin_wait();
+        test_graceful_close_profiles();
+      } else if (strcmp(argv[1], "cleanup-queue") == 0)
+        test_full_cleanup_queue_preserves_network();
+      else
+        abort();
+    }
+    return 0;
+  }
+
   (void)s_esp_resolver_count;
   signal(SIGPIPE, SIG_IGN);
   test_initialization_failure_and_plain_network();
@@ -661,7 +1058,13 @@ int main(void) {
   test_deferred_destructor_and_reuse();
   test_late_accepted_cleanup();
   test_public_socket_operations();
-  assert(test_task_count == 3);
+  test_completed_io_survives_close();
+  test_idle_close_reopens_immediately();
+  test_unrelated_close_during_tls_destructor();
+  test_failed_bounded_close_has_no_fin_wait();
+  test_graceful_close_profiles();
+  test_full_cleanup_queue_preserves_network();
+  assert(test_task_count == 4);
   puts(
       "ESP production TLS deadlines, initialized resource pool, large CA, close/pins/generations, concurrent wraps and all socket entries PASS");
   return 0;

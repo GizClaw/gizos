@@ -253,6 +253,7 @@ firmware_native_component(
     ],
     data = [
         "CMakeLists.txt",
+        "Kconfig",
         "idf_component.yml",
     ],
     tags = [

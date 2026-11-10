@@ -1419,6 +1419,11 @@ static int esp_net_tcp_listen(void* user, h2_pal_net_family_t family,
   if (fd < 0) {
     return fd;
   }
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+    (void)close(fd);
+    return H2_PAL_ERR_IO;
+  }
   if (bind_config != NULL && bind_config->type == H2_PAL_NET_BIND_NETIF) {
     int result = esp_net_bind_interface(fd, bind_config->netif);
     if (result != H2_PAL_OK) {
@@ -1469,6 +1474,11 @@ static h2_pal_result_t esp_net_tcp_accept(void* user,
     if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
       return H2_PAL_ERR_WOULD_BLOCK;
     }
+    return H2_PAL_ERR_IO;
+  }
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags < 0 || fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0) {
+    (void)close(fd);
     return H2_PAL_ERR_IO;
   }
   if (out_peer_addr != NULL) {
