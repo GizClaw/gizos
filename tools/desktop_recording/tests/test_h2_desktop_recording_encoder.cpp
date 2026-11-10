@@ -5,6 +5,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 }
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <csignal>
@@ -339,6 +340,66 @@ void failed_output(const char* temporary) {
              state, h2_desktop_recording_now_us(), nullptr) == H2_PAL_ERR_IO);
   h2_desktop_recording_encoder_destroy(state);
 }
+void failed_initialization(const char* temporary) {
+  const std::string path = std::string(temporary) + "/failed-setup.mp4";
+  h2_desktop_recording_encoder_config_t config = {
+      path.c_str(), 64u, 48u, h2_desktop_recording_now_us()};
+  config.fail_after_output_start = true;
+  h2_desktop_recording_encoder_t* state = nullptr;
+  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
+  assert(state == nullptr && access(path.c_str(), F_OK) != 0 &&
+         errno == ENOENT);
+  config.fail_after_output_start = false;
+  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_OK);
+  h2_desktop_recording_encoder_destroy(state);
+  assert(unlink(path.c_str()) == 0);
+
+  const int fd = open(path.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
+  assert(fd >= 0 && write(fd, "keep", 4u) == 4);
+  config.fail_after_output_start = true;
+  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
+  config.output_fd = fd;
+  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
+  char bytes[4] = {};
+  assert(pread(fd, bytes, sizeof(bytes), 0) == 4 &&
+         std::memcmp(bytes, "keep", 4u) == 0);
+  assert(access(path.c_str(), F_OK) == 0 && close(fd) == 0);
+  assert(unlink(path.c_str()) == 0);
+}
+
+void blocked_diagnostics(const char* temporary) {
+  const std::string path = std::string(temporary) + "/blocked-stderr.mp4";
+  const h2_desktop_recording_encoder_config_t config = {
+      path.c_str(), 64u, 48u, h2_desktop_recording_now_us()};
+  h2_desktop_recording_encoder_t* state = nullptr;
+  assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_OK);
+  int descriptors[2];
+  assert(pipe(descriptors) == 0);
+  (void)fill_pipe(descriptors[1]);
+  const int saved = dup(STDERR_FILENO);
+  assert(saved >= 0 && dup2(descriptors[1], STDERR_FILENO) == STDERR_FILENO);
+  assert(close(descriptors[1]) == 0);
+  std::atomic<bool> completed{false};
+  std::thread callback([&]() {
+    h2_desktop_recording_encoder_video(state, nullptr);
+    completed.store(true);
+  });
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+  while (!completed.load() && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::yield();
+  const bool prompt = completed.load();
+  assert(dup2(saved, STDERR_FILENO) == STDERR_FILENO && close(saved) == 0);
+  // Drain a blocked old implementation before asserting, so failures cannot
+  // hang.
+  char drain[4096];
+  assert(read(descriptors[0], drain, sizeof(drain)) > 0);
+  callback.join();
+  assert(close(descriptors[0]) == 0);
+  assert(prompt);
+  assert(h2_desktop_recording_encoder_result(state) == H2_PAL_ERR_INVALID_ARG);
+  h2_desktop_recording_encoder_destroy(state);
+}
 }  // namespace
 
 int main() {
@@ -348,6 +409,8 @@ int main() {
   output_boundaries();
   delayed_output(temporary);
   failed_output(temporary);
+  failed_initialization(temporary);
+  blocked_diagnostics(temporary);
   struct sigaction action = {};
   assert(sigaction(SIGPIPE, nullptr, &action) == 0);
   assert(action.sa_handler == SIG_DFL);

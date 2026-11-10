@@ -13,6 +13,8 @@ struct h2_desktop_recording_encoder_config {
   // blocked/broken writes without replacing the real encoder or POSIX I/O.
   // Public creation always leaves this at -1 and exclusively creates path.
   int output_fd = -1;
+  // Private failure injection after exclusive creation/writer startup.
+  bool fail_after_output_start = false;
 };
 using h2_desktop_recording_encoder_config_t =
     h2_desktop_recording_encoder_config;
