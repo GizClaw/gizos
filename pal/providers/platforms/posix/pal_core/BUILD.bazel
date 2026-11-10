@@ -303,6 +303,41 @@ cc_library(
     ],
 )
 
+# Controlled setup/handshake delays exercise the real provider's timeout budget.
+cc_test(
+    name = "tls_timeout_test",
+    srcs = [
+        "include/h2_posix_pal_core.h",
+        "src/h2_posix_net.c",
+        "tests/test_posix_tls_timeout.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    linkopts = ["-lpthread"],
+    local_defines = [
+        "gettimeofday=h2_test_gettimeofday",
+        "select=h2_test_tls_select",
+        "wolfSSL_CTX_load_system_CA_certs=h2_test_tls_load_system_ca",
+        "wolfSSL_CTX_load_verify_buffer=h2_test_tls_load_ca",
+        "wolfSSL_connect=h2_test_tls_connect",
+        "wolfSSL_get_error=h2_test_tls_get_error",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":entropy",
+        "//pal",
+        "//pal/providers/backends/wolfssl",
+    ],
+)
+
 # Controlled OS resolver answers exercise the actual production implementation.
 cc_test(
     name = "resolver_list_test",

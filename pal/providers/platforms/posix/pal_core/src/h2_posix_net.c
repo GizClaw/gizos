@@ -332,18 +332,21 @@ static int tls_is_verify_error(int error) {
 }
 
 static h2_pal_result_t tls_wait_handshake(WOLFSSL* ssl, int fd,
-                                          uint32_t timeout_ms,
+                                          uint64_t deadline,
                                           h2_pal_net_tls_verify_t verify_mode) {
-  uint64_t deadline = timeout_deadline_ms(timeout_ms);
   for (;;) {
+    if (timeout_remaining_ms(deadline) == 0u) {
+      return H2_PAL_ERR_TIMEOUT;
+    }
     desktop_sigpipe_guard_t guard;
     if (!sigpipe_guard_begin(&guard)) {
       return H2_PAL_ERR_IO;
     }
     int rc = wolfSSL_connect(ssl);
     sigpipe_guard_end(&guard);
-    if (rc == 1) {
-      return H2_PAL_OK;
+    if (rc == WOLFSSL_SUCCESS) {
+      return timeout_remaining_ms(deadline) == 0u ? H2_PAL_ERR_TIMEOUT
+                                                  : H2_PAL_OK;
     }
     int err = wolfSSL_get_error(ssl, rc);
     if (err == WOLFSSL_ERROR_WANT_READ || err == WOLFSSL_ERROR_WANT_WRITE) {
@@ -1341,6 +1344,8 @@ static h2_pal_result_t desktop_net_tls_wrap(
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_tls_socket = -1;
+  /* Certificate loading and TLS setup share the handshake's budget. */
+  uint64_t deadline = timeout_deadline_ms(timeout_ms);
   (void)pthread_mutex_lock(&s_tls_lock);
   if (tls_find_slot(tcp_socket) >= 0) {
     (void)pthread_mutex_unlock(&s_tls_lock);
@@ -1492,7 +1497,7 @@ static h2_pal_result_t desktop_net_tls_wrap(
     return H2_PAL_ERR_IO;
   }
   h2_pal_result_t rc =
-      tls_wait_handshake(ssl, tcp_socket, timeout_ms, verify_mode);
+      tls_wait_handshake(ssl, tcp_socket, deadline, verify_mode);
   if (rc != H2_PAL_OK) {
     (void)fcntl(tcp_socket, F_SETFL, flags);
     wolfSSL_free(ssl);

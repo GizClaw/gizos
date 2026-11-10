@@ -89,8 +89,10 @@ typedef int (*h2_pal_http_response_header_fn)(
  * default. Retries and redirects may start a new connection budget, but
  * neither timeout can extend the original complete-call deadline. Providers
  * without independent connection timing (such as browser Fetch) return
- * UNSUPPORTED for a positive connect_timeout_ms before starting I/O; when
- * unset they bound setup only by the complete-call deadline.
+ * UNSUPPORTED with response.rejection = CONNECT_TIMEOUT for a positive
+ * connect_timeout_ms before starting I/O; when unset they bound setup only by
+ * the complete-call deadline. A generic UNSUPPORTED result does not identify
+ * this rejection and may occur after I/O (for example during a redirect).
  * retry_count is the number of additional attempts, not the total attempts.
  * Cancellation returns CLOSED and stops subsequent callback delivery.
  *
@@ -169,6 +171,16 @@ static inline int h2_pal_http_deliver_response_header(
                                      header_name, header_value);
 }
 
+/** Identifies an option rejected before request I/O or response delivery.
+ * Cancellation may still be polled, but no header/body callback has run.
+ * Providers must leave NONE for all other failures, including unsupported
+ * transport capabilities or redirect schemes discovered during a request.
+ */
+typedef enum h2_pal_http_rejection {
+  H2_PAL_HTTP_REJECTION_NONE = 0,
+  H2_PAL_HTTP_REJECTION_CONNECT_TIMEOUT = 1,
+} h2_pal_http_rejection_t;
+
 /**
  * Response from a completed synchronous request. HTTP status errors remain
  * responses (request returns OK); transport and callback errors are PAL errors.
@@ -183,6 +195,10 @@ typedef struct h2_pal_http_response {
   uint8_t* body;
   size_t body_len;
   const h2_pal_mem_api_t* allocator;
+  /** Valid with UNSUPPORTED only; CONNECT_TIMEOUT guarantees no I/O/response.
+   * A caller may then explicitly clear that option and submit a new request.
+   */
+  h2_pal_http_rejection_t rejection;
 } h2_pal_http_response_t;
 
 typedef struct h2_pal_http_vtable {
@@ -208,6 +224,7 @@ static inline void h2_pal_http_response_reset(
   response->body = NULL;
   response->body_len = 0;
   response->allocator = NULL;
+  response->rejection = H2_PAL_HTTP_REJECTION_NONE;
 }
 
 static inline int h2_pal_http_status_has_error(int status_code) {

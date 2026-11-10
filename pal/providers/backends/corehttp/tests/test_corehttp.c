@@ -870,10 +870,28 @@ static int test_redirect_preserves_method_and_blocks_downgrade(void) {
   request = (h2_pal_http_request_t){
       .method = H2_PAL_HTTP_GET,
       .url = {.data = "http://example.test/start", .len = 25u},
+      .connect_timeout_ms = 1000,
   };
   CHECK(h2_pal_http_request(&api, &request, &response) ==
         H2_PAL_ERR_UNSUPPORTED);
+  CHECK(response.status_code == 0);
+  CHECK(response.rejection == H2_PAL_HTTP_REJECTION_NONE);
   CHECK(platform.open_count == 1 && platform.close_count == 1);
+  h2_pal_http_response_free(&api, &response);
+  h2_corehttp_destroy(provider);
+
+  fake_http_platform_init(&platform);
+  fake_http_platform_add_response(
+      &platform, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+  platform.tls_result = H2_PAL_ERR_UNSUPPORTED;
+  provider = create_provider(&platform, &api, NULL, 0u);
+  CHECK(provider != NULL);
+  request.url = (h2_pal_http_str_t){"https://example.test/start", 26u};
+  CHECK(h2_pal_http_request(&api, &request, &response) ==
+        H2_PAL_ERR_UNSUPPORTED);
+  CHECK(response.rejection == H2_PAL_HTTP_REJECTION_NONE);
+  CHECK(platform.open_count == 1 && platform.close_count == 1);
+  h2_pal_http_response_free(&api, &response);
   h2_corehttp_destroy(provider);
   return 0;
 }

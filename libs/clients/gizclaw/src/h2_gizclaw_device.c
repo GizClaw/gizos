@@ -1017,12 +1017,12 @@ static void audio_download_worker(void* user) {
   h2_pal_http_response_t response = {0};
   int rc = h2_pal_http_request(d->config.http, &request, &response);
   if (rc == H2_PAL_ERR_UNSUPPORTED && request.connect_timeout_ms > 0 &&
-      response.status_code == 0 && download->length == 0 &&
-      !download->range_seen && !audio_cancel(download)) {
-    /* Fetch cannot expose the connection boundary and rejects this option
-     * before I/O. Fall back explicitly to the reader's no-progress watchdog
-     * and cancellation, retaining the whole-song backpressure budget. Never
-     * replay a request that has already delivered headers or body bytes. */
+      response.rejection == H2_PAL_HTTP_REJECTION_CONNECT_TIMEOUT &&
+      !audio_cancel(download)) {
+    /* Only this rejection guarantees no I/O or response delivery. Fetch cannot
+     * expose the connection boundary; use the reader's no-progress watchdog
+     * and cancellation while retaining whole-song backpressure. Generic
+     * UNSUPPORTED (for example a redirect scheme or TLS) must not replay. */
     h2_pal_http_response_free(d->config.http, &response);
     request.connect_timeout_ms = 0;
     rc = h2_pal_http_request(d->config.http, &request, &response);

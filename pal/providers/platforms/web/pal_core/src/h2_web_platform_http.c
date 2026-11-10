@@ -684,10 +684,13 @@ static int h2_web_http_request(void* user, const h2_pal_http_request_t* request,
   if (h2_pal_http_request_is_canceled(request)) {
     return H2_PAL_ERR_CLOSED;
   }
-  /* Fetch exposes no DNS/TCP/TLS completion boundary. Do not silently
-   * replace an explicit connection budget with a response-header timer. */
-  if ((request->interface_name != NULL && request->interface_name[0] != '\0') ||
-      request->connect_timeout_ms > 0) {
+  if (request->interface_name != NULL && request->interface_name[0] != '\0') {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  /* Fetch exposes no DNS/TCP/TLS completion boundary. Identify this exact
+   * pre-I/O rejection instead of substituting a response-header timer. */
+  if (request->connect_timeout_ms > 0) {
+    out_response->rejection = H2_PAL_HTTP_REJECTION_CONNECT_TIMEOUT;
     return H2_PAL_ERR_UNSUPPORTED;
   }
 

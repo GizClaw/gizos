@@ -150,8 +150,18 @@ static void run(void* user) {
   CHECK(h2_pal_http_request(http, &connect_limited, &response) ==
         H2_PAL_ERR_UNSUPPORTED);
   CHECK(response.body == NULL && response.status_code == 0);
+  CHECK(response.rejection == H2_PAL_HTTP_REJECTION_CONNECT_TIMEOUT);
   CHECK(h2_web_main_call(test_fetch_calls, NULL).i32 == 1);
   h2_pal_http_response_free(http, &response);
+  CHECK(response.rejection == H2_PAL_HTTP_REJECTION_NONE);
+  // Unsupported routing must not be mistaken for connection-budget rejection.
+  connect_limited.interface_name = "eth0";
+  CHECK(h2_pal_http_request(http, &connect_limited, &response) ==
+        H2_PAL_ERR_UNSUPPORTED);
+  CHECK(response.rejection == H2_PAL_HTTP_REJECTION_NONE);
+  CHECK(h2_web_main_call(test_fetch_calls, NULL).i32 == 1);
+  h2_pal_http_response_free(http, &response);
+  connect_limited.interface_name = NULL;
   // A caller may explicitly use its own watchdog instead of connection timing.
   connect_limited.connect_timeout_ms = 0;
   CHECK(h2_pal_http_request(http, &connect_limited, &response) == H2_PAL_OK);

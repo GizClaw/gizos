@@ -4552,6 +4552,7 @@ struct player_handoff_test {
   void* cancel_user;
   unsigned scenario, requests, created, closes, joined, join_failures, hooks;
   unsigned writes[4], items[4], unsupported_requests, responses_freed;
+  unsigned unsupported_stage;
   bool allow_all, hold_join, release_http, connect_unsupported;
 };
 static int player_handoff_write(h2_pal_audio_track_t* api,
@@ -4614,6 +4615,7 @@ static int player_handoff_http(void* user, const h2_pal_http_request_t* request,
     ++test->unsupported_requests;
     pthread_mutex_unlock(&test->mutex);
     h2_pal_http_response_reset(response);
+    response->rejection = H2_PAL_HTTP_REJECTION_CONNECT_TIMEOUT;
     return H2_PAL_ERR_UNSUPPORTED;
   }
   assert(request->connect_timeout_ms == (test->connect_unsupported ? 0 : 2345));
@@ -4632,6 +4634,19 @@ static int player_handoff_http(void* user, const h2_pal_http_request_t* request,
   test->cancel = request->cancel_cb;
   test->cancel_user = request->cancel_user;
   pthread_mutex_unlock(&test->mutex);
+  if (item == 1u && test->unsupported_stage != 0u) {
+    if (test->unsupported_stage == 2u) {
+      /* A one-use GET has been consumed; an unsupported redirect scheme
+       * resets status_code just like a TLS capability error. Neither error
+       * identifies a rejected connection budget or permits replay. */
+      response->status_code = 302;
+      assert(h2_pal_http_deliver_response_header(request, "Location", 8u,
+                                                 "ftp://other.test/file",
+                                                 21u) == H2_PAL_OK);
+    }
+    h2_pal_http_response_reset(response);
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
   uint8_t* body = bodies[item];
   memcpy(body, "RIFF", 4u);
   put32(body + 4u, 16036u);
@@ -4769,16 +4784,19 @@ static void player_handoff_wait_ring_released(seek_ring_memory_t* memory) {
   assert(!"idle player retained its download ring");
 }
 static void test_device_player_reuses_download_handoffs(void) {
-  /* Repeat each lifecycle scenario with Fetch's connection-budget rejection. */
-  for (unsigned mode = 0u; mode < 12u; ++mode) {
-    const unsigned scenario = mode % 6u;
+  /* Repeat each lifecycle scenario with Fetch's explicit rejection, then
+   * reject generic TLS/redirect errors without replaying a consumed GET. */
+  for (unsigned mode = 0u; mode < 14u; ++mode) {
+    const unsigned scenario = mode < 12u ? mode % 6u : 2u;
     seek_ring_memory_t memory = {.mutex = PTHREAD_MUTEX_INITIALIZER};
-    player_handoff_test_t test = {.mutex = PTHREAD_MUTEX_INITIALIZER,
-                                  .memory = &memory,
-                                  .scenario = scenario,
-                                  .allow_all = scenario == 1u,
-                                  .hold_join = scenario == 3u,
-                                  .connect_unsupported = mode >= 6u};
+    player_handoff_test_t test = {
+        .mutex = PTHREAD_MUTEX_INITIALIZER,
+        .memory = &memory,
+        .scenario = scenario,
+        .allow_all = scenario == 1u,
+        .hold_join = scenario == 3u,
+        .connect_unsupported = mode >= 6u && mode < 12u,
+        .unsupported_stage = mode >= 12u ? mode - 11u : 0u};
     const h2_pal_mem_vtable_t mv = {.alloc = seek_ring_alloc,
                                     .realloc = seek_ring_realloc,
                                     .free = seek_ring_free};
