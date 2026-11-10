@@ -15,6 +15,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -29,7 +30,7 @@ typedef uint32_t TickType_t;
 typedef struct test_semaphore {
   pthread_mutex_t mutex;
   pthread_cond_t changed;
-  int available;
+  int available, waiters;
 }* SemaphoreHandle_t;
 typedef struct {
   unsigned char unused;
@@ -105,10 +106,12 @@ typedef struct {
 static pthread_mutex_t test_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t test_changed = PTHREAD_COND_INITIALIZER;
 static _Thread_local int test_is_worker;
-static int test_gate_stage, test_gate_entered, test_gate_release;
+static int test_gate_stage, test_gate_entered, test_gate_release,
+    test_gate_primary_only;
 static int test_fail_task, test_task_count, test_allocations, test_alloc_fail;
 static int test_parse_fail, test_ca_checks, test_sni_checks, test_alpn_checks;
 static int test_contexts, test_io_calls, test_closed;
+static int test_native_connect_calls, test_native_accept_calls;
 static int test_caller_allocations, test_worker_allocations, test_sem_creates,
     test_sem_deletes;
 static size_t test_expected_ca_length = 4u, test_max_allocation;
@@ -116,6 +119,14 @@ static int test_copy_gate, test_copy_entered, test_copy_release;
 static int test_publish_block, test_publish_held, test_publish_release;
 static int test_listener_shutdown_noop;
 static int test_simulate_fin_wait, test_expect_normal_fd = -1;
+static int test_fail_normal_linger, test_normal_linger_attempts;
+static int test_fail_abortive_linger, test_hold_accept, test_accept_entered,
+    test_accept_release;
+static int test_last_accepted_fd = -1;
+static int test_accept_would_block, test_fail_accepted_fcntl_command;
+static uint64_t test_linger_first_failure_ms, test_linger_last_failure_ms;
+static int test_hold_cleanup_claim, test_cleanup_claim_entered,
+    test_cleanup_claim_release;
 static SemaphoreHandle_t test_registry;
 static pthread_t test_publish_thread;
 static void test_sdk_gate(int stage);
@@ -167,7 +178,9 @@ static int xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks) {
       test_after_ms(ticks == portMAX_DELAY ? 10000u : ticks);
   while (!sem->available) {
     if (ticks == 0u) break;
+    ++sem->waiters;
     int rc = pthread_cond_timedwait(&sem->changed, &sem->mutex, &until);
+    --sem->waiters;
     assert(rc == 0 || rc == ETIMEDOUT);
     if (rc == ETIMEDOUT) {
       assert(ticks != portMAX_DELAY);
@@ -179,6 +192,16 @@ static int xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks) {
   assert(pthread_mutex_unlock(&sem->mutex) == 0);
   if (acquired && test_is_worker == 2 && ticks == portMAX_DELAY)
     test_sdk_gate(14);
+  if (acquired && test_is_worker == 3 && ticks == portMAX_DELAY) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    if (test_hold_cleanup_claim) {
+      test_cleanup_claim_entered = 1;
+      assert(pthread_cond_broadcast(&test_changed) == 0);
+      while (!test_cleanup_claim_release)
+        assert(pthread_cond_wait(&test_changed, &test_lock) == 0);
+    }
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+  }
   return acquired;
 }
 static void vTaskDelay(TickType_t ticks) {
@@ -285,7 +308,8 @@ static int h2_esp_net_tls_verify_certificate(
 
 static void test_sdk_gate(int stage) {
   assert(pthread_mutex_lock(&test_lock) == 0);
-  if (test_gate_stage == stage) {
+  if (test_gate_stage == stage &&
+      (!test_gate_primary_only || test_is_worker == 3)) {
     ++test_gate_entered;
     assert(pthread_cond_broadcast(&test_changed) == 0);
     while (!test_gate_release)
@@ -477,6 +501,38 @@ static int test_is_unix_socket(int fd) {
 }
 static int test_setsockopt(int fd, int level, int option, const void* value,
                            socklen_t length) {
+  if (level == SOL_SOCKET && option == SO_LINGER &&
+      length == sizeof(struct linger) &&
+      ((const struct linger*)value)->l_onoff &&
+      ((const struct linger*)value)->l_linger == 0) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    int fail = test_fail_abortive_linger > 0;
+    if (fail) --test_fail_abortive_linger;
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    if (fail) {
+      errno = ENOMEM;
+      return -1;
+    }
+  }
+  if (level == SOL_SOCKET && option == SO_LINGER &&
+      length == sizeof(struct linger) &&
+      !((const struct linger*)value)->l_onoff) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    ++test_normal_linger_attempts;
+    int fail = test_fail_normal_linger > 0;
+    if (fail) {
+      --test_fail_normal_linger;
+      uint64_t now = (uint64_t)esp_timer_get_time() / 1000u;
+      if (test_linger_first_failure_ms == 0u)
+        test_linger_first_failure_ms = now;
+      test_linger_last_failure_ms = now;
+    }
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+    if (fail) {
+      errno = ENOMEM;
+      return -1;
+    }
+  }
   if (level == SOL_SOCKET && option == SO_LINGER && test_is_unix_socket(fd)) {
     assert(fd >= 0 && fd < FD_SETSIZE && length == sizeof(struct linger));
     assert(pthread_mutex_lock(&test_lock) == 0);
@@ -504,12 +560,16 @@ static void test_close_profile(int fd, int closing) {
     int normal = fd == test_expect_normal_fd, fin_wait = test_simulate_fin_wait;
     assert(pthread_mutex_unlock(&test_lock) == 0);
     if (normal) assert(profile.l_onoff == 0);
-    if (closing && fin_wait && !(profile.l_onoff && profile.l_linger == 0))
+    struct sockaddr_storage peer;
+    socklen_t peer_length = sizeof(peer);
+    int connected = getpeername(fd, (struct sockaddr*)&peer, &peer_length) == 0;
+    if (closing && connected && fin_wait &&
+        !(profile.l_onoff && profile.l_linger == 0))
       test_sdk_gate(15);
   }
 }
 static int test_close(int fd) {
-  assert(test_is_worker != 1 && test_is_worker != 3);
+  assert(test_is_worker != 1);
   test_close_profile(fd, 1);
   assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_closed;
@@ -534,6 +594,59 @@ static int test_shutdown(int fd, int how) {
     return 0;
   return shutdown(fd, how);
 }
+static int test_connect(int fd, const struct sockaddr* address,
+                        socklen_t length) {
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  ++test_native_connect_calls;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  return connect(fd, address, length);
+}
+static int test_accept(int fd, struct sockaddr* address, socklen_t* length) {
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  ++test_native_accept_calls;
+  int would_block = test_accept_would_block;
+  if (would_block) --test_accept_would_block;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  if (would_block) {
+    errno = EAGAIN;
+    return -1;
+  }
+  int accepted = accept(fd, address, length);
+  if (accepted >= 0) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    test_last_accepted_fd = accepted;
+    if (test_hold_accept) {
+      test_accept_entered = 1;
+      assert(pthread_cond_broadcast(&test_changed) == 0);
+      while (!test_accept_release)
+        assert(pthread_cond_wait(&test_changed, &test_lock) == 0);
+    }
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+  }
+  return accepted;
+}
+static int test_fcntl(int fd, int command, ...) {
+  int value = 0;
+  if (command == F_SETFL) {
+    va_list args;
+    va_start(args, command);
+    value = va_arg(args, int);
+    va_end(args);
+  }
+  assert(pthread_mutex_lock(&test_lock) == 0);
+  int fail = fd == test_last_accepted_fd &&
+             command == test_fail_accepted_fcntl_command;
+  if (fail) test_fail_accepted_fcntl_command = 0;
+  assert(pthread_mutex_unlock(&test_lock) == 0);
+  if (fail) {
+    errno = ENOMEM;
+    return -1;
+  }
+  return fcntl(fd, command, value);
+}
+#define fcntl test_fcntl
+#define connect test_connect
+#define accept test_accept
 #define send test_send
 #define recv test_recv
 #define close test_close

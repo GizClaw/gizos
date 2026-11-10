@@ -44,6 +44,7 @@ struct esp_net_tls_worker {
   SemaphoreHandle_t wake;
   TaskHandle_t task;
   esp_net_tls_job_t* job;
+  int cleanup_busy;
 };
 static esp_net_tls_worker_t s_esp_tls_workers[H2_ESP_NET_TLS_WORKER_MAX];
 static esp_net_tls_job_t s_esp_tls_jobs[H2_ESP_NET_TLS_WORKER_MAX];
@@ -154,7 +155,21 @@ static void esp_net_tls_job_worker(void* user) {
     portENTER_CRITICAL(&s_esp_net_mux);
     esp_net_tls_job_t* job = worker->job;
     int submitted = job != NULL && job->submitted;
+    size_t cleanup_index = 0u;
+    uint32_t cleanup_generation = 0u;
+    int cleanup =
+        job == NULL && s_esp_tls_cleanup_busy &&
+        esp_net_tls_cleanup_take_locked(&cleanup_index, &cleanup_generation);
+    if (cleanup) worker->cleanup_busy = 1;
     portEXIT_CRITICAL(&s_esp_net_mux);
+    if (cleanup) {
+      esp_net_tls_cleanup_slot(cleanup_index, cleanup_generation);
+      portENTER_CRITICAL(&s_esp_net_mux);
+      worker->cleanup_busy = 0;
+      portEXIT_CRITICAL(&s_esp_net_mux);
+      (void)xSemaphoreGive(worker->wake);
+      continue;
+    }
     if (!submitted) continue;
     size_t index = job->slot_index;
     esp_net_tls_socket_t* slot = &s_esp_tls_sockets[index];
@@ -221,6 +236,8 @@ static void esp_net_tls_job_worker(void* user) {
     worker->job = NULL;
     portEXIT_CRITICAL(&s_esp_net_mux);
     (void)xSemaphoreGive(s_esp_tls_sync->registry_mutex);
+    /* Queue admission wakes can be consumed while this job was running. */
+    (void)xSemaphoreGive(worker->wake);
   }
 }
 
@@ -360,7 +377,8 @@ static h2_pal_result_t esp_net_tls_wrap_bounded(
     portENTER_CRITICAL(&s_esp_net_mux);
     if (index >= 0) {
       for (size_t i = 0u; i < H2_ESP_NET_TLS_WORKER_MAX; ++i) {
-        if (s_esp_tls_workers[i].job == NULL) {
+        if (s_esp_tls_workers[i].job == NULL &&
+            !s_esp_tls_workers[i].cleanup_busy) {
           job = &s_esp_tls_jobs[i];
           SemaphoreHandle_t wake = job->caller_wake;
           memset(job, 0, sizeof(*job));
@@ -479,7 +497,7 @@ static h2_pal_result_t esp_net_tls_wrap_bounded(
                                                 : ESP_NET_TLS_JOB_ABANDONED);
   }
   if (!esp_net_socket_alive(&lease) && rc != H2_PAL_OK) rc = H2_PAL_ERR_CLOSED;
-  esp_net_socket_unpin(&lease, 1);
+  esp_net_socket_unpin(&lease, ESP_NET_SOCKET_BOUNDED_WRAP);
   return rc;
 }
 

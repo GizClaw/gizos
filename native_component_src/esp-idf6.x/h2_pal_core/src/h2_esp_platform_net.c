@@ -90,6 +90,7 @@ static uint64_t esp_net_now_ms(void);
 static uint32_t esp_net_timeout_remaining_ms(uint64_t deadline_ms);
 static int esp_net_tls_bounded_init(void);
 static int esp_net_tls_available(void);
+static void esp_net_socket_bind_accept(void* owner, int fd);
 static portMUX_TYPE s_esp_tls_init_mux = portMUX_INITIALIZER_UNLOCKED;
 static int s_esp_tls_initializing, s_esp_tls_initialized;
 
@@ -1458,7 +1459,6 @@ static h2_pal_result_t esp_net_tcp_accept(void* user,
                                           h2_pal_net_socket_t* out_socket,
                                           h2_pal_net_addr_t* out_peer_addr,
                                           uint32_t timeout_ms) {
-  (void)user;
   if (listen_fd < 0 || out_socket == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -1476,9 +1476,13 @@ static h2_pal_result_t esp_net_tcp_accept(void* user,
     }
     return H2_PAL_ERR_IO;
   }
+  /* The pre-reserved accept owner must bind the fd before any post-accept
+   * operation can fail. The managed caller retires it without inline FIN wait.
+   */
+  esp_net_socket_bind_accept(user, fd);
+  *out_socket = fd;
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags < 0 || fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0) {
-    (void)close(fd);
     return H2_PAL_ERR_IO;
   }
   if (out_peer_addr != NULL) {

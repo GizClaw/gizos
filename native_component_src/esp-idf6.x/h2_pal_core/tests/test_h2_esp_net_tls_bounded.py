@@ -38,10 +38,11 @@ class ESPBoundedTLS(unittest.TestCase):
                          "-I" + str(OWNER / "src"), "-I" + str(OWNER / "tests"),
                          str(test), "-o", str(binary)], capture_output=True, text=True)
                     self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
-                    for case in (None, "legacy-sync-retry"):
+                    for case in (None, "cancel-no-reaper", "legacy-retry", "legacy-sync-retry"):
                         command = [str(binary)] + ([] if case is None else [case])
                         result = subprocess.run(command, capture_output=True, text=True, timeout=20)
                         self.assertEqual(result.returncode, 0, str(case) + "\n" + result.stdout + result.stderr)
+                        print("mbedTLS " + str(version) + " process=" + (case or "default") + " PASS", flush=True)
 
 
 if __name__ == "__main__":
