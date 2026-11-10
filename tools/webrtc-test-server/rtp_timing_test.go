@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -435,6 +437,290 @@ func TestRTPTimingFailedOffersReleaseReservation(t *testing.T) {
 		if len(s.rtpTimings) != 0 {
 			t.Fatal("failed offer retained a recording reservation")
 		}
+	}
+}
+
+func loopbackTimingSetting() webrtc.SettingEngine {
+	var setting webrtc.SettingEngine
+	setting.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	setting.SetIncludeLoopbackCandidate(true)
+	setting.SetIPFilter(func(ip net.IP) bool { return ip.IsLoopback() })
+	return setting
+}
+
+func newTimingStateServer(setting webrtc.SettingEngine, capacity int) *server {
+	setting.DetachDataChannels()
+	s := newTestServer()
+	s.rtpTimingCapacity = capacity
+	s.setting = &setting
+	s.api = webrtc.NewAPI(webrtc.WithSettingEngine(setting))
+	return s
+}
+
+func newTimingOffer(t *testing.T, gather bool) (*webrtc.PeerConnection, string) {
+	t.Helper()
+	setting := loopbackTimingSetting()
+	client, err := webrtc.NewAPI(webrtc.WithSettingEngine(setting)).NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if _, err := client.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio); err != nil {
+		t.Fatal(err)
+	}
+	offer, err := client.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gather {
+		// Valid candidate-free SDP drives the answering peer's real ICE checks
+		// to Failed without connecting to another endpoint.
+		return client, offer.SDP
+	}
+	gathered := webrtc.GatheringCompletePromise(client)
+	if err := client.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-gathered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("loopback offer gathering timed out")
+	}
+	return client, client.LocalDescription().SDP
+}
+
+func postTimingOffer(s *server, offer string) *httptest.ResponseRecorder {
+	response := httptest.NewRecorder()
+	s.routes(func() {}).ServeHTTP(response,
+		httptest.NewRequest(http.MethodPost, "/offer", strings.NewReader(offer)))
+	return response
+}
+
+func timingOfferedSession(t *testing.T, s *server, offer string) *session {
+	t.Helper()
+	response := postTimingOffer(s, offer)
+	if response.Code != http.StatusOK {
+		t.Fatalf("offer status=%d error=%s", response.Code, response.Body.String())
+	}
+	id := response.Header().Get("X-H2-Session-ID")
+	s.mu.Lock()
+	item := s.sessions[id]
+	s.mu.Unlock()
+	if item == nil {
+		t.Fatal("accepted offer has no session")
+	}
+	return item
+}
+
+func waitTimingCondition(t *testing.T, description string, ready func() bool) {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if ready() {
+			return
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("timed out waiting for %s", description)
+		case <-ticker.C:
+		}
+	}
+}
+
+func TestRTPTimingFailedStateCompletesAndAdmitsNextOffer(t *testing.T) {
+	setting := loopbackTimingSetting()
+	setting.SetICETimeouts(250*time.Millisecond, 250*time.Millisecond, 20*time.Millisecond)
+	s := newTimingStateServer(setting, 2)
+	defer s.closeAll()
+	_, offer := newTimingOffer(t, false)
+	items := make([]*session, 0, maxRTPTimingSessions)
+	for range maxRTPTimingSessions {
+		items = append(items, timingOfferedSession(t, s, offer))
+	}
+	for _, item := range items {
+		waitTimingCondition(t, "actual ICE failure", func() bool {
+			return item.pc.ICEConnectionState() == webrtc.ICEConnectionStateFailed ||
+				item.pc.ConnectionState() == webrtc.PeerConnectionStateClosed
+		})
+		waitTimingCondition(t, "Failed callback to close PC and complete recording", func() bool {
+			snapshot, retained := item.timing.snapshot(item.id)
+			return retained && snapshot.Complete && item.pc.ConnectionState() == webrtc.PeerConnectionStateClosed
+		})
+		response := timingRequest(s, http.MethodGet, item.id, "rtp-timing")
+		var snapshot rtpTimingSnapshot
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &snapshot) != nil || !snapshot.Complete {
+			t.Fatalf("failed session recording unavailable: status=%d", response.Code)
+		}
+	}
+	replacement := postTimingOffer(s, offer)
+	if replacement.Code != http.StatusOK {
+		t.Fatalf("eight Failed recordings blocked next offer: status=%d error=%s", replacement.Code, replacement.Body.String())
+	}
+	s.mu.Lock()
+	retainedCount := len(s.rtpTimings)
+	s.mu.Unlock()
+	if retainedCount != maxRTPTimingSessions {
+		t.Fatalf("next offer exceeded recording bound: %d", retainedCount)
+	}
+	evicted := 0
+	for _, item := range items {
+		response := timingRequest(s, http.MethodGet, item.id, "rtp-timing")
+		if response.Code == http.StatusNotFound {
+			evicted++
+			if _, retained := item.timing.snapshot(item.id); retained {
+				t.Fatal("evicted Failed recording buffer was not released")
+			}
+		} else if response.Code != http.StatusOK {
+			t.Fatalf("retained Failed recording status=%d", response.Code)
+		}
+	}
+	if evicted != 1 {
+		t.Fatalf("next offer evicted %d completed recordings, want 1", evicted)
+	}
+}
+
+func TestRTPTimingDisabledFailedStateKeepsExistingLifecycle(t *testing.T) {
+	setting := loopbackTimingSetting()
+	setting.SetICETimeouts(50*time.Millisecond, 50*time.Millisecond, 20*time.Millisecond)
+	s := newTimingStateServer(setting, 0)
+	defer s.closeAll()
+	_, offer := newTimingOffer(t, false)
+	item := timingOfferedSession(t, s, offer)
+	waitTimingCondition(t, "Failed state with timing disabled", func() bool {
+		return item.pc.ConnectionState() == webrtc.PeerConnectionStateFailed
+	})
+	if item.timing != nil {
+		t.Fatal("disabled Failed session allocated a recorder")
+	}
+	response := timingRequest(s, http.MethodGet, item.id, "rtp-timing")
+	var snapshot rtpTimingSnapshot
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &snapshot) != nil || snapshot.Enabled {
+		t.Fatalf("disabled Failed session snapshot: status=%d enabled=%t", response.Code, snapshot.Enabled)
+	}
+}
+
+func TestRTPTimingFailedStateWaitsForInFlightEcho(t *testing.T) {
+	setting := loopbackTimingSetting()
+	setting.SetICETimeouts(250*time.Millisecond, 250*time.Millisecond, 20*time.Millisecond)
+	s := newTimingStateServer(setting, 2)
+	defer s.closeAll()
+	_, offer := newTimingOffer(t, false)
+	item := timingOfferedSession(t, s, offer)
+	writing := make(chan struct{})
+	releaseWrite := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseWrite) }) }
+	defer release()
+	echoDone := make(chan struct{})
+	go func() {
+		defer close(echoDone)
+		runEchoPackets([]*rtp.Packet{{Header: rtp.Header{Version: 2, SequenceNumber: 7}}},
+			func(*rtp.Packet) error {
+				close(writing)
+				<-releaseWrite
+				return io.ErrClosedPipe
+			}, &item.media, item.timing)
+	}()
+	select {
+	case <-writing:
+	case <-time.After(5 * time.Second):
+		t.Fatal("echo did not reach write before ICE failure")
+	}
+	waitTimingCondition(t, "Failed callback to close PC", func() bool {
+		return item.pc.ConnectionState() == webrtc.PeerConnectionStateClosed
+	})
+	response := timingRequest(s, http.MethodGet, item.id, "rtp-timing")
+	var inFlight rtpTimingSnapshot
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &inFlight) != nil ||
+		inFlight.Complete || len(inFlight.Records) != 1 || inFlight.Records[0].EchoSubmitNS == 0 ||
+		inFlight.Records[0].EchoCompleteNS != 0 {
+		t.Fatalf("Failed callback completed or lost in-flight echo: status=%d snapshot=%+v", response.Code, inFlight)
+	}
+	// Even a future retention cutoff cannot release an unfinished recording.
+	s.mu.Lock()
+	s.pruneRTPTimings(time.Now().Add(2 * rtpTimingTTL))
+	s.mu.Unlock()
+	if _, retained := item.timing.snapshot(item.id); !retained {
+		t.Fatal("in-flight Failed recording was released before echo returned")
+	}
+	release()
+	select {
+	case <-echoDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("in-flight echo did not exit")
+	}
+	waitTimingCondition(t, "Failed recording completion after echo return", func() bool {
+		snapshot, retained := item.timing.snapshot(item.id)
+		return retained && snapshot.Complete
+	})
+	final := timingSnapshot(t, item.timing)
+	if len(final.Records) != 1 || final.Records[0].Outcome != "write_error" ||
+		final.Records[0].EchoCompleteNS < final.Records[0].EchoSubmitNS {
+		t.Fatalf("in-flight echo completion lost: %+v", final)
+	}
+}
+
+type timingDroppingPacketConn struct {
+	net.PacketConn
+	drop atomic.Bool
+}
+
+func (conn *timingDroppingPacketConn) ReadFrom(buffer []byte) (int, net.Addr, error) {
+	for {
+		n, addr, err := conn.PacketConn.ReadFrom(buffer)
+		if err != nil || !conn.drop.Load() {
+			return n, addr, err
+		}
+	}
+}
+
+func TestRTPTimingDisconnectedStateRemainsRecoverable(t *testing.T) {
+	packetConn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropping := &timingDroppingPacketConn{PacketConn: packetConn}
+	mux := webrtc.NewICEUDPMux(nil, dropping)
+	defer mux.Close()
+	setting := loopbackTimingSetting()
+	setting.SetICEUDPMux(mux)
+	// Disable terminal failure to keep the disconnected recovery window open.
+	setting.SetICETimeouts(100*time.Millisecond, 0, 20*time.Millisecond)
+	s := newTimingStateServer(setting, 2)
+	defer s.closeAll()
+	client, offer := newTimingOffer(t, true)
+	response := postTimingOffer(s, offer)
+	if response.Code != http.StatusOK {
+		t.Fatalf("offer status=%d", response.Code)
+	}
+	s.mu.Lock()
+	item := s.sessions[response.Header().Get("X-H2-Session-ID")]
+	s.mu.Unlock()
+	if err := client.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: response.Body.String()}); err != nil {
+		t.Fatal(err)
+	}
+	waitTimingCondition(t, "loopback connection", func() bool {
+		return item.pc.ConnectionState() == webrtc.PeerConnectionStateConnected
+	})
+	dropping.drop.Store(true)
+	waitTimingCondition(t, "actual disconnected state", func() bool {
+		return item.pc.ConnectionState() == webrtc.PeerConnectionStateDisconnected
+	})
+	if snapshot := timingSnapshot(t, item.timing); snapshot.Complete {
+		t.Fatal("Disconnected completed the recording")
+	}
+	dropping.drop.Store(false)
+	waitTimingCondition(t, "recovery from Disconnected", func() bool {
+		return item.pc.ConnectionState() == webrtc.PeerConnectionStateConnected
+	})
+	if snapshot := timingSnapshot(t, item.timing); snapshot.Complete {
+		t.Fatal("recovered session was closed by Disconnected callback")
+	}
+	if response := timingRequest(s, http.MethodGet, item.id, "rtp-timing"); response.Code != http.StatusOK {
+		t.Fatalf("recovered session recording status=%d", response.Code)
 	}
 }
 

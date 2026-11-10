@@ -885,7 +885,15 @@ func (s *server) createAnswer(
 	item.pc = pc
 	if item.timing != nil {
 		pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-			if state == webrtc.PeerConnectionStateClosed {
+			switch state {
+			case webrtc.PeerConnectionStateFailed:
+				// Failed is terminal for this fixture. Close outside the callback
+				// to unblock RTP I/O before joining the recorder's echo workers.
+				go func() {
+					_ = pc.Close()
+					item.timing.finish()
+				}()
+			case webrtc.PeerConnectionStateClosed:
 				go item.timing.finish()
 			}
 		})
