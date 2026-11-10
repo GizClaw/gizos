@@ -9,6 +9,7 @@
 #undef wolfSSL_CTX_load_system_CA_certs
 #undef wolfSSL_connect
 #undef wolfSSL_get_error
+#undef wolfSSL_SetIOWriteFlags
 
 #include "h2_posix_pal_core.h"
 #include "h2_wolfssl.h"
@@ -26,9 +27,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 
 #include <wolfssl/ssl.h>
+#include <wolfssl/wolfio.h>
 #include <wolfssl/error-ssl.h>
 
 static atomic_uint_fast64_t now_ms;
@@ -106,6 +109,20 @@ int h2_test_tls_load_system_ca(WOLFSSL_CTX* ctx) {
   now_ms += setup_ms;
   if (backward_wall) wall_ms = 1u;
   return ca_result;
+}
+
+void h2_test_tls_write_flags(WOLFSSL* ssl, int flags) {
+  assert(ssl != NULL);
+#if defined(__APPLE__)
+  int enabled = 0;
+  socklen_t length = sizeof(enabled);
+  assert(getsockopt(wolfSSL_get_fd(ssl), SOL_SOCKET, SO_NOSIGPIPE, &enabled,
+                    &length) == 0);
+  assert(enabled == 1 && flags == 0);
+#else
+  assert((flags & MSG_NOSIGNAL) != 0);
+#endif
+  wolfSSL_SetIOWriteFlags(ssl, flags);
 }
 
 int h2_test_tls_connect(WOLFSSL* ssl) {
