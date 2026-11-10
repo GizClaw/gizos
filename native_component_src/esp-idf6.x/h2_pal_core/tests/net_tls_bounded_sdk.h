@@ -2,6 +2,13 @@
 #define H2_ESP_NET_TLS_BOUNDED_TEST_SDK_H
 
 #include "net/h2_pal_net.h"
+#include "net/h2_pal_netif.h"
+#include "h2_esp_platform_net_socket.h"
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <signal.h>
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
@@ -32,6 +39,11 @@ typedef pthread_mutex_t portMUX_TYPE;
 #define portMUX_INITIALIZER_UNLOCKED PTHREAD_MUTEX_INITIALIZER
 #define portENTER_CRITICAL(lock) assert(pthread_mutex_lock(lock) == 0)
 #define portEXIT_CRITICAL(lock) assert(pthread_mutex_unlock(lock) == 0)
+#define CONFIG_LWIP_MAX_SOCKETS 32u
+#define LWIP_IPV6 1
+#ifndef SO_BINDTODEVICE
+#define SO_BINDTODEVICE 0x7fff
+#endif
 #define configTICK_RATE_HZ 1000u
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
 #define portMAX_DELAY UINT32_MAX
@@ -55,6 +67,7 @@ typedef pthread_mutex_t portMUX_TYPE;
 #define MBEDTLS_ERR_NET_SEND_FAILED (-102)
 #define MBEDTLS_ERR_NET_RECV_FAILED (-103)
 #define MBEDTLS_ERR_X509_CERT_VERIFY_FAILED (-104)
+#define MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY (-105)
 #define MBEDTLS_X509_BADCERT_OTHER 1u
 #define MBEDTLS_X509_BADCERT_FUTURE 2u
 #define MBEDTLS_X509_BADCERT_EXPIRED 4u
@@ -79,8 +92,8 @@ typedef struct mbedtls_ssl_context {
   struct mbedtls_ssl_context* self;
   mbedtls_ssl_config* config;
   void* bio;
-  int (*send)(void*, const unsigned char*, size_t);
-  int (*recv)(void*, unsigned char*, size_t);
+  int (*send_fn)(void*, const unsigned char*, size_t);
+  int (*recv_fn)(void*, unsigned char*, size_t);
   int phase;
 } mbedtls_ssl_context;
 typedef struct {
@@ -96,6 +109,10 @@ static int test_gate_stage, test_gate_entered, test_gate_release;
 static int test_fail_task, test_task_count, test_allocations, test_alloc_fail;
 static int test_parse_fail, test_ca_checks, test_sni_checks, test_alpn_checks;
 static int test_contexts, test_io_calls, test_closed;
+static int test_caller_allocations, test_worker_allocations, test_sem_creates,
+    test_sem_deletes;
+static size_t test_expected_ca_length = 4u, test_max_allocation;
+static int test_copy_gate, test_copy_entered, test_copy_release;
 static int test_publish_block, test_publish_held, test_publish_release;
 static SemaphoreHandle_t test_registry;
 static pthread_t test_publish_thread;
@@ -120,6 +137,8 @@ static struct timespec test_after_ms(uint32_t ms) {
 }
 
 static SemaphoreHandle_t test_semaphore_create(int available) {
+  test_sdk_gate(9);
+  ++test_sem_creates;
   SemaphoreHandle_t sem = calloc(1, sizeof(*sem));
   assert(sem != NULL);
   assert(pthread_mutex_init(&sem->mutex, NULL) == 0);
@@ -166,7 +185,7 @@ static int xSemaphoreGive(SemaphoreHandle_t sem) {
   return pdTRUE;
 }
 static void vSemaphoreDelete(SemaphoreHandle_t sem) {
-  if (test_is_worker) test_sdk_gate(6);
+  ++test_sem_deletes;
   assert(pthread_cond_destroy(&sem->changed) == 0);
   assert(pthread_mutex_destroy(&sem->mutex) == 0);
   free(sem);
@@ -175,17 +194,20 @@ static void vSemaphoreDelete(SemaphoreHandle_t sem) {
 typedef struct {
   void (*entry)(void*);
   void* user;
+  int role;
 } test_start_t;
 static void* test_task_entry(void* user) {
   test_start_t start = *(test_start_t*)user;
   free(user);
-  test_is_worker = 1;
+  test_is_worker = start.role;
   start.entry(start.user);
   abort();
 }
 static int xTaskCreate(void (*entry)(void*), const char* name, uint32_t stack,
                        void* user, unsigned priority, TaskHandle_t* out) {
-  assert(strcmp(name, "h2_tls") == 0 && stack == 8192u && priority == 1u);
+  assert((strcmp(name, "h2_tls") == 0 || strcmp(name, "h2_net_reap") == 0) &&
+         stack == 8192u && priority == 1u);
+  test_sdk_gate(8);
   if (test_fail_task) {
     --test_fail_task;
     return 0;
@@ -193,7 +215,7 @@ static int xTaskCreate(void (*entry)(void*), const char* name, uint32_t stack,
   test_start_t* start = malloc(sizeof(*start));
   pthread_t* thread = malloc(sizeof(*thread));
   assert(start && thread);
-  *start = (test_start_t){entry, user};
+  *start = (test_start_t){entry, user, strcmp(name, "h2_tls") == 0 ? 1 : 2};
   assert(pthread_create(thread, NULL, test_task_entry, start) == 0);
   assert(pthread_detach(*thread) == 0);
   *out = thread;
@@ -202,14 +224,21 @@ static int xTaskCreate(void (*entry)(void*), const char* name, uint32_t stack,
 }
 
 static void* test_allocate(size_t length) {
+  test_sdk_gate(7);
   assert(pthread_mutex_lock(&test_lock) == 0);
   int fail = test_alloc_fail;
   test_alloc_fail = 0;
   if (!fail) ++test_allocations;
+  if (test_is_worker == 1)
+    ++test_worker_allocations;
+  else
+    ++test_caller_allocations;
+  if (length > test_max_allocation) test_max_allocation = length;
   assert(pthread_mutex_unlock(&test_lock) == 0);
   return fail ? NULL : malloc(length);
 }
 static void test_deallocate(void* memory) {
+  if (test_is_worker == 1) test_sdk_gate(11);
   assert(memory != NULL);
   assert(pthread_mutex_lock(&test_lock) == 0);
   --test_allocations;
@@ -294,7 +323,9 @@ static int mbedtls_x509_crt_parse(mbedtls_x509_crt* ca,
                                   const unsigned char* pem, size_t length) {
   assert(ca->self == ca);
   test_sdk_gate(2);
-  assert(length == 5u && memcmp(pem, "ROOT", 5u) == 0);
+  assert(length == test_expected_ca_length + 1u && pem[length - 1u] == 0 &&
+         memcmp(pem, "ROOT", 4u) == 0);
+  for (size_t i = 4u; i + 1u < length; ++i) assert(pem[i] == ' ');
   assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_ca_checks;
   int fail = test_parse_fail;
@@ -344,8 +375,8 @@ static void mbedtls_ssl_set_bio(mbedtls_ssl_context* ssl, void* user,
   (void)timeout_fn;
   assert(ssl->self == ssl);
   ssl->bio = user;
-  ssl->send = send_fn;
-  ssl->recv = recv_fn;
+  ssl->send_fn = send_fn;
+  ssl->recv_fn = recv_fn;
 }
 static void* test_registry_blocker(void* unused) {
   (void)unused;
@@ -363,15 +394,16 @@ static int mbedtls_ssl_handshake(mbedtls_ssl_context* ssl) {
   assert(ssl->self == ssl && ssl->config->self == ssl->config);
   test_sdk_gate(5);
   if (ssl->phase == 0) {
-    int rc = ssl->send(ssl->bio, (const unsigned char*)"HELLO", 5u);
+    int rc = ssl->send_fn(ssl->bio, (const unsigned char*)"HELLO", 5u);
     if (rc < 0) return rc;
     assert(rc == 5);
     ++ssl->phase;
   }
   if (ssl->phase == 1) {
     unsigned char input[5];
-    int rc = ssl->recv(ssl->bio, input, sizeof(input));
+    int rc = ssl->recv_fn(ssl->bio, input, sizeof(input));
     if (rc < 0) return rc;
+    if (rc == 0) return MBEDTLS_ERR_NET_RECV_FAILED;
     assert(rc == 5 && memcmp(input, "WORLD", 5u) == 0);
     ++ssl->phase;
   }
@@ -391,6 +423,7 @@ static uint32_t mbedtls_ssl_get_verify_result(mbedtls_ssl_context* ssl) {
   return 0;
 }
 static void mbedtls_ssl_free(mbedtls_ssl_context* ssl) {
+  test_sdk_gate(6);
   assert(ssl->self == ssl);
   assert(pthread_mutex_lock(&test_lock) == 0);
   --test_contexts;
@@ -411,27 +444,55 @@ static int test_send(int fd, const void* bytes, size_t length, int flags) {
 }
 static int test_recv(int fd, void* bytes, size_t length, int flags) {
   assert(!test_is_worker);
+  test_sdk_gate(10);
   ++test_io_calls;
   return (int)recv(fd, bytes, length, flags);
 }
 static int test_close(int fd) {
-  assert(!test_is_worker);
+  assert(test_is_worker != 1);
+  assert(pthread_mutex_lock(&test_lock) == 0);
   ++test_closed;
+  assert(pthread_cond_broadcast(&test_changed) == 0);
+  assert(pthread_mutex_unlock(&test_lock) == 0);
   return close(fd);
 }
 #define send test_send
 #define recv test_recv
 #define close test_close
 
-static int h2_esp_net_wait_fd(int fd, int write_ready, uint32_t timeout_ms) {
-  assert(!test_is_worker);
-  fd_set descriptors;
-  FD_ZERO(&descriptors);
-  FD_SET(fd, &descriptors);
-  struct timeval wait = {timeout_ms / 1000u, (int)(timeout_ms % 1000u) * 1000};
-  int rc = select(fd + 1, write_ready ? NULL : &descriptors,
-                  write_ready ? &descriptors : NULL, NULL, &wait);
-  return rc > 0 ? H2_PAL_OK : rc == 0 ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
+typedef int esp_err_t;
+static esp_err_t esp_netif_tcpip_exec(esp_err_t (*callback)(void*),
+                                      void* user) {
+  return callback(user);
 }
+#define netif_index_to_name(index, name) if_indextoname(index, name)
+static const h2_pal_netif_api_t* h2_esp_platform_netif_api(void) {
+  return NULL;
+}
+static int mbedtls_ssl_write(mbedtls_ssl_context* ssl,
+                             const unsigned char* data, size_t length) {
+  assert(ssl->self == ssl);
+  return ssl->send_fn(ssl->bio, data, length);
+}
+static int mbedtls_ssl_read(mbedtls_ssl_context* ssl, unsigned char* data,
+                            size_t length) {
+  assert(ssl->self == ssl);
+  return ssl->recv_fn(ssl->bio, data, length);
+}
+static void* test_memcpy(void* dest, const void* source, size_t length) {
+  if (!test_is_worker && length == 2048u) {
+    assert(pthread_mutex_lock(&test_lock) == 0);
+    if (test_copy_gate) {
+      test_copy_entered = 1;
+      assert(pthread_cond_broadcast(&test_changed) == 0);
+      while (!test_copy_release)
+        assert(pthread_cond_wait(&test_changed, &test_lock) == 0);
+    }
+    assert(pthread_mutex_unlock(&test_lock) == 0);
+  }
+  return memcpy(dest, source, length);
+}
+#undef memcpy
+#define memcpy test_memcpy
 
 #endif
