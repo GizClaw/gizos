@@ -156,6 +156,11 @@ static h2_pal_result_t fake_connect(void* user, h2_pal_net_socket_t socket,
     return H2_PAL_ERR_INVALID_ARG;
   }
   platform->connect_count += 1;
+  uint32_t delay = platform->connect_remaining_ms;
+  if (delay > timeout_ms) delay = timeout_ms;
+  platform->now_ms += delay;
+  platform->connect_remaining_ms -= delay;
+  if (platform->connect_remaining_ms) return H2_PAL_ERR_TIMEOUT;
   if (addr->family == H2_PAL_NET_FAMILY_IPV6) {
     if (platform->fail_ipv6_connect) return H2_PAL_ERR_IO;
     uint32_t delay = platform->ipv6_connect_remaining_ms;
@@ -199,6 +204,11 @@ static int fake_recv(void* user, h2_pal_net_socket_t socket, uint8_t* data,
     return H2_PAL_ERR_INVALID_ARG;
   }
   platform->recv_count += 1;
+  if (platform->recv_delay_ms >= timeout_ms) {
+    platform->now_ms += timeout_ms;
+    return H2_PAL_ERR_TIMEOUT;
+  }
+  platform->now_ms += platform->recv_delay_ms;
   if (platform->recv_result != H2_PAL_OK) return platform->recv_result;
   if (platform->recv_would_block_count > 0u) {
     platform->recv_would_block_count -= 1u;
@@ -228,6 +238,12 @@ static h2_pal_result_t fake_tls_wrap(void* user, h2_pal_net_socket_t socket,
     return H2_PAL_ERR_INVALID_ARG;
   }
   platform->tls_wrap_count += 1;
+  platform->tls_timeout_ms = timeout_ms;
+  if (!platform->tls_ignore_timeout && platform->tls_delay_ms >= timeout_ms) {
+    platform->now_ms += timeout_ms;
+    return H2_PAL_ERR_TIMEOUT;
+  }
+  platform->now_ms += platform->tls_delay_ms;
   if (platform->tls_result != H2_PAL_OK) return platform->tls_result;
   platform->tls_config = *config;
   if (config->server_name != NULL) {

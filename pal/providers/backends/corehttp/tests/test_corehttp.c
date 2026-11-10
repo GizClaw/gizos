@@ -659,7 +659,8 @@ static int test_cancel_deadline_and_malformed_response(void) {
 
   cancel = 0;
   platform.recv_would_block_count = 8u;
-  platform.time_step_ms = 10u;
+  platform.time_step_ms = 0u;
+  platform.recv_delay_ms = 10u;
   request.timeout_ms = 25;
   CHECK(h2_pal_http_request(&api, &request, &response) == H2_PAL_ERR_TIMEOUT);
   CHECK(platform.close_count == 1);
@@ -1027,6 +1028,197 @@ static h2_pal_result_t candidate_poll(void* user,
   out->addrs[0].ip[15] = 1u;
   return H2_PAL_OK;
 }
+static int test_connection_deadlines(void) {
+  static const struct {
+    const char* name;
+    int total_ms, connect_ms, dns_timeouts;
+    uint32_t default_connect_ms, tcp_ms, tls_ms, recv_ms;
+    int late_success;
+    h2_pal_result_t result;
+    uint64_t elapsed_ms;
+    uint32_t tls_budget;
+    int sockets;
+  } cases[] = {
+      {.name = "long stream uses finite connection default",
+       .total_ms = INT_MAX,
+       .tls_ms = 15001u,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 15000u,
+       .tls_budget = 15000u,
+       .sockets = 1},
+      {.name = "provider connection default",
+       .total_ms = 1000,
+       .default_connect_ms = 40u,
+       .tls_ms = 41u,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 40u,
+       .tls_budget = 40u,
+       .sockets = 1},
+      {.name = "request overrides provider connection default",
+       .total_ms = 1000,
+       .connect_ms = 60,
+       .default_connect_ms = 40u,
+       .tls_ms = 50u,
+       .result = H2_PAL_OK,
+       .elapsed_ms = 50u,
+       .tls_budget = 60u,
+       .sockets = 1},
+      {.name = "DNS exhausts only connection budget",
+       .total_ms = 1000,
+       .connect_ms = 40,
+       .dns_timeouts = 8,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 40u},
+      {.name = "TCP exhausts only connection budget",
+       .total_ms = 1000,
+       .connect_ms = 40,
+       .tcp_ms = 41u,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 40u,
+       .sockets = 1},
+      {.name = "DNS TCP TLS share one budget",
+       .total_ms = 1000,
+       .connect_ms = 100,
+       .dns_timeouts = 1,
+       .tcp_ms = 35u,
+       .tls_ms = 41u,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 100u,
+       .tls_budget = 40u,
+       .sockets = 1},
+      {.name = "overall budget caps connection",
+       .total_ms = 70,
+       .connect_ms = 100,
+       .dns_timeouts = 1,
+       .tcp_ms = 35u,
+       .tls_ms = 11u,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 70u,
+       .tls_budget = 10u,
+       .sockets = 1},
+      {.name = "response outlives connection budget",
+       .total_ms = 1000,
+       .connect_ms = 40,
+       .tls_ms = 10u,
+       .recv_ms = 20u,
+       .result = H2_PAL_OK,
+       .elapsed_ms = 110u,
+       .tls_budget = 40u,
+       .sockets = 1},
+      {.name = "response retains original overall deadline",
+       .total_ms = 65,
+       .connect_ms = 40,
+       .tls_ms = 10u,
+       .recv_ms = 20u,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 65u,
+       .tls_budget = 40u,
+       .sockets = 1},
+      {.name = "reject late native TLS success",
+       .total_ms = 1000,
+       .connect_ms = 40,
+       .tls_ms = 41u,
+       .late_success = 1,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 41u,
+       .tls_budget = 40u,
+       .sockets = 1},
+      {.name = "reject success at connection deadline",
+       .total_ms = 1000,
+       .connect_ms = 40,
+       .tls_ms = 40u,
+       .late_success = 1,
+       .result = H2_PAL_ERR_TIMEOUT,
+       .elapsed_ms = 40u,
+       .tls_budget = 40u,
+       .sockets = 1},
+  };
+  for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    fake_http_platform_t platform;
+    fake_http_platform_init(&platform);
+    platform.time_step_ms = 0u;
+    platform.resolve_timeout_count = cases[i].dns_timeouts;
+    platform.connect_remaining_ms = cases[i].tcp_ms;
+    platform.tls_delay_ms = cases[i].tls_ms;
+    platform.tls_ignore_timeout = cases[i].late_success;
+    platform.recv_delay_ms = cases[i].recv_ms;
+    platform.recv_fragment = 8u;
+    fake_http_platform_add_response(
+        &platform, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+    h2_corehttp_config_t config = {
+        .allocator = &platform.mem,
+        .net = &platform.net,
+        .time = &platform.time,
+        .io_slice_ms = 25u,
+        .default_connect_timeout_ms = cases[i].default_connect_ms};
+    h2_corehttp_t* provider = NULL;
+    h2_pal_http_api_t api;
+    CHECK(h2_corehttp_create(&config, &provider, &api) == H2_PAL_OK);
+    h2_pal_http_request_t request = {.method = H2_PAL_HTTP_GET,
+                                     .url = {"https://example.test/", 21u},
+                                     .timeout_ms = cases[i].total_ms,
+                                     .connect_timeout_ms = cases[i].connect_ms};
+    h2_pal_http_response_t response;
+    int rc = h2_pal_http_request(&api, &request, &response);
+    if (rc != cases[i].result || platform.now_ms != cases[i].elapsed_ms)
+      fprintf(stderr, "%s: rc=%d elapsed=%llu\n", cases[i].name, rc,
+              (unsigned long long)platform.now_ms);
+    CHECK(rc == cases[i].result);
+    CHECK(platform.now_ms == cases[i].elapsed_ms);
+    CHECK(platform.tls_timeout_ms == cases[i].tls_budget);
+    CHECK(platform.tls_wrap_count == (cases[i].tls_budget != 0u));
+    CHECK(platform.open_count == cases[i].sockets);
+    CHECK(platform.close_count == platform.open_count);
+    CHECK(platform.resolver_close_count == 1);
+    if (rc != H2_PAL_OK && cases[i].recv_ms == 0u)
+      CHECK(platform.request_len == 0u && platform.recv_count == 0);
+    if (rc == H2_PAL_OK)
+      CHECK(response.status_code == 200 && response.body_len == 2u);
+    h2_pal_http_response_free(&api, &response);
+    h2_corehttp_destroy(provider);
+  }
+  return 0;
+}
+
+static int test_reconnect_deadlines(void) {
+  for (unsigned redirect = 0u; redirect < 2u; ++redirect) {
+    for (unsigned short_total = 0u; short_total < 2u; ++short_total) {
+      fake_http_platform_t platform;
+      fake_http_platform_init(&platform);
+      platform.time_step_ms = 0u;
+      platform.tls_delay_ms = 40u;
+      fake_http_platform_add_response(
+          &platform,
+          redirect
+              ? "HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 0\r\n\r\n"
+              : "HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r\n");
+      fake_http_platform_add_response(
+          &platform, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+      h2_pal_http_api_t api;
+      h2_corehttp_t* provider = create_provider(&platform, &api, NULL, 0u);
+      CHECK(provider != NULL);
+      h2_pal_http_request_t request = {.method = H2_PAL_HTTP_GET,
+                                       .url = {"https://example.test/", 21u},
+                                       .timeout_ms = short_total ? 70 : 1000,
+                                       .connect_timeout_ms = 50,
+                                       .retry_count = redirect ? 0 : 1};
+      h2_pal_http_response_t response;
+      CHECK(h2_pal_http_request(&api, &request, &response) ==
+            (short_total ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK));
+      CHECK(platform.now_ms == (short_total ? 70u : 80u));
+      CHECK(platform.tls_timeout_ms == (short_total ? 30u : 50u));
+      CHECK(platform.tls_wrap_count == 2);
+      CHECK(platform.open_count == 2 && platform.close_count == 2);
+      CHECK(platform.resolver_close_count == 2);
+      if (!short_total)
+        CHECK(response.status_code == 200 && response.body_len == 2u);
+      h2_pal_http_response_free(&api, &response);
+      h2_corehttp_destroy(provider);
+    }
+  }
+  return 0;
+}
+
 static int test_multi_address_connect_budget(void) {
   for (unsigned rejected = 0u; rejected < 2u; ++rejected) {
     fake_http_platform_t platform;
@@ -1062,7 +1254,50 @@ static int test_multi_address_connect_budget(void) {
   return 0;
 }
 
+static int test_address_fallback_connection_deadline(void) {
+  for (unsigned fallback = 0u; fallback < 2u; ++fallback) {
+    fake_http_platform_t platform;
+    fake_http_platform_init(&platform);
+    platform.time_step_ms = 0u;
+    candidate_base = platform.net.vtable;
+    h2_pal_net_vtable_t vtable = *candidate_base;
+    vtable.resolve_start_family = candidate_start;
+    vtable.resolve_poll_all = candidate_poll;
+    platform.net.vtable = &vtable;
+    platform.resolve_timeout_count = 1;
+    platform.fail_ipv6_connect = (int)fallback;
+    platform.connect_remaining_ms = fallback ? 25u : 0u;
+    platform.ipv6_connect_remaining_ms = fallback ? 0u : 300u;
+    platform.tls_delay_ms = 51u;
+    for (unsigned i = 0u; i < 2u; ++i)
+      fake_http_platform_add_response(
+          &platform, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+    h2_pal_http_api_t api;
+    h2_corehttp_t* provider = create_provider(&platform, &api, NULL, 0u);
+    CHECK(provider != NULL);
+    h2_pal_http_request_t request = {.method = H2_PAL_HTTP_GET,
+                                     .url = {"https://example.test/", 21u},
+                                     .timeout_ms = 1000,
+                                     .connect_timeout_ms = 100};
+    h2_pal_http_response_t response;
+    CHECK(h2_pal_http_request(&api, &request, &response) == H2_PAL_ERR_TIMEOUT);
+    CHECK(platform.now_ms == 100u);
+    CHECK(platform.open_count == (fallback ? 2 : 1));
+    CHECK(platform.close_count == platform.open_count);
+    CHECK(platform.resolver_close_count == 1);
+    CHECK(platform.tls_wrap_count == (fallback ? 1 : 0));
+    CHECK(platform.tls_timeout_ms == (fallback ? 50u : 0u));
+    CHECK(platform.request_len == 0u);
+    h2_pal_http_response_free(&api, &response);
+    h2_corehttp_destroy(provider);
+  }
+  return 0;
+}
+
 int main(void) {
+  if (test_address_fallback_connection_deadline() != 0) return 1;
+  if (test_connection_deadlines() != 0) return 1;
+  if (test_reconnect_deadlines() != 0) return 1;
   if (test_multi_address_connect_budget() != 0) return 1;
   if (test_request_allocator() != 0) return 1;
   if (test_failure_diagnostics() != 0) return 1;

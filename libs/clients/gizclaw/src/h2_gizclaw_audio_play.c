@@ -5,6 +5,7 @@
 #include "pb_decode.h"
 #include "h2_atomic.h"
 
+#include <stdio.h>
 #include <string.h>
 
 struct h2_gizclaw_audio_play {
@@ -21,6 +22,9 @@ struct h2_gizclaw_audio_play {
   h2_ogg_opus_t* decoder;
   uint8_t pcm[H2_OGG_OPUS_PCM_BYTES];
   size_t pcm_len, pcm_offset;
+#ifdef H2_GIZCLAW_AUDIO_PLAY_TRACE
+  size_t trace_pcm_written, trace_backpressure;
+#endif
 };
 typedef struct h2_gizclaw_audio_play audio_play_t;
 static const char audio_play_tag;
@@ -133,6 +137,18 @@ static void play_stop(void* user) {
     (void)h2_pal_cond_wait(sync, service->progress_cond, service->mutex,
                            H2_PAL_SYNC_WAIT_FOREVER);
   (void)h2_pal_mutex_unlock(sync, service->mutex);
+#ifdef H2_GIZCLAW_AUDIO_PLAY_TRACE
+  const bool ready = h2_atomic_load_explicit(&play->ready, H2_ATOMIC_ACQUIRE);
+  char message[192];
+  (void)snprintf(message, sizeof(message),
+                 "stage=audio_play_stop ready=%d size=%zu received=%zu "
+                 "pcm_written=%zu backpressure=%zu result=%d",
+                 ready ? 1 : 0, ready ? play->size : 0u,
+                 ready ? play->received : 0u, play->trace_pcm_written,
+                 play->trace_backpressure, h2_atomic_load(&play->result));
+  (void)h2_pal_log_write(service->client_config.log, H2_PAL_LOG_INFO, "gizclaw",
+                         message);
+#endif
 }
 
 static void play_destroy(void* user) {
@@ -165,10 +181,19 @@ static h2_pal_result_t play_step(audio_play_t* play) {
     if (len > 640) len = 640;
     rc = h2_gizclaw_service_pcm_write_internal(
         play->service, play->pcm + play->pcm_offset, len);
-    if (rc == H2_PAL_OK)
+    if (rc == H2_PAL_OK) {
       play->pcm_offset += len;
-    else if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT)
+#ifdef H2_GIZCLAW_AUDIO_PLAY_TRACE
+      play->trace_pcm_written += len;
+#endif
+    } else if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
       return rc < 0 ? rc : H2_PAL_ERR_IO;
+    }
+#ifdef H2_GIZCLAW_AUDIO_PLAY_TRACE
+    else {
+      ++play->trace_backpressure;
+    }
+#endif
   }
   return H2_PAL_ERR_WOULD_BLOCK;
 }

@@ -40,6 +40,9 @@ typedef struct h2_corehttp_config {
   uint32_t default_timeout_ms;
   /** Maximum bounded I/O slice used to observe cancellation. */
   uint32_t io_slice_ms;
+  /** Finite connection default; zero selects 15000 ms, independently of total.
+   */
+  uint32_t default_connect_timeout_ms;
 } h2_corehttp_config_t;
 
 /**

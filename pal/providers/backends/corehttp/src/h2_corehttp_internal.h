@@ -11,6 +11,7 @@
 #define H2_COREHTTP_DEFAULT_HEADER_BYTES 16384u
 #define H2_COREHTTP_DEFAULT_REDIRECTS 5u
 #define H2_COREHTTP_DEFAULT_TIMEOUT_MS 10000u
+#define H2_COREHTTP_DEFAULT_CONNECT_TIMEOUT_MS 15000u
 #define H2_COREHTTP_DEFAULT_IO_SLICE_MS 100u
 #define H2_COREHTTP_RECV_BYTES 2048u
 
@@ -45,6 +46,7 @@ struct h2_corehttp_exchange {
   const uint8_t* body;
   size_t body_len;
   uint64_t deadline_ms;
+  uint64_t connect_deadline_ms;
   h2_pal_net_socket_t socket;
   struct NetworkContext network;
   TransportInterface_t transport;
