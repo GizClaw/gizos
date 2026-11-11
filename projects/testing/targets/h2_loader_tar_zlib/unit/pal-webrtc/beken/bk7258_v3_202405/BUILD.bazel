@@ -17,7 +17,7 @@ bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",
     ap_policies = [
-        "$bk/net/tls 9 0 16384 psram",
+        "$bk/net/tls default",
         "bk/pal-webrtc 6 any 24576 default",
         "h2_touch           default",
         "pal-webrtc/e2e/runner 7 0 65536 psram",
