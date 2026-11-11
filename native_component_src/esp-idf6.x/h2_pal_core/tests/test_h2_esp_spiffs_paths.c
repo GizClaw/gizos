@@ -15,6 +15,7 @@
  * boundaries are replaced. Slash and underscore paths are separate files. */
 static char s_root[96];
 static int s_locked;
+static bool s_mounted;
 
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* storage) {
   return storage;
@@ -44,14 +45,20 @@ h2_pal_result_t h2_esp_platform_safe_call(
   memcpy(context, copied, context_size);
   return H2_PAL_OK;
 }
+bool esp_spiffs_mounted(const char* label) {
+  assert(s_locked && strcmp(label, "storage") == 0);
+  return s_mounted;
+}
 esp_err_t esp_vfs_spiffs_register(const esp_vfs_spiffs_conf_t* config) {
   assert(s_locked && strcmp(config->base_path, s_root) == 0);
   assert(strcmp(config->partition_label, "storage") == 0);
   assert(!config->format_if_mount_failed);
+  s_mounted = true;
   return ESP_OK;
 }
 esp_err_t esp_vfs_spiffs_unregister(const char* label) {
   assert(s_locked && strcmp(label, "storage") == 0);
+  s_mounted = false;
   return ESP_OK;
 }
 

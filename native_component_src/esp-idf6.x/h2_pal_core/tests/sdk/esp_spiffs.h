@@ -10,6 +10,7 @@ typedef struct {
   size_t max_files;
   bool format_if_mount_failed;
 } esp_vfs_spiffs_conf_t;
+bool esp_spiffs_mounted(const char* label);
 esp_err_t esp_vfs_spiffs_register(const esp_vfs_spiffs_conf_t* config);
 esp_err_t esp_vfs_spiffs_unregister(const char* label);
 #endif

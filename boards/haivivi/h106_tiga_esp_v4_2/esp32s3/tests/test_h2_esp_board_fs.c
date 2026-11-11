@@ -62,10 +62,19 @@ static const h2_pal_fs_vtable_t s_provider_vtable = {
     .stat = provider_stat,
     .clear = provider_clear,
 };
-/* The existing SPIFFS provider has no prepare, clear, or seek callback. */
+static unsigned s_provider_prepare_calls;
+static int s_provider_prepare_result;
+static int provider_prepare(void* user, const char* path) {
+  assert(user == &s_backend && s_backend == SPIFFS);
+  (void)path_index(path);
+  ++s_provider_prepare_calls;
+  return s_provider_prepare_result;
+}
 static const h2_pal_fs_vtable_t s_spiffs_vtable = {
     .mkdir = provider_mkdir,
     .stat = provider_stat,
+    .clear = provider_clear,
+    .prepare = provider_prepare,
 };
 static void set_provider_api(h2_pal_fs_api_t* fs) {
   *fs = (h2_pal_fs_api_t){.user = &s_backend, .vtable = &s_provider_vtable};
@@ -129,17 +138,22 @@ static void test_prepare_uses_selected_backend(void) {
     assert(h2_esp_board_fs_init(&fs) == H2_PAL_OK);
     const unsigned mounts = s_extflash_mount_calls;
     s_extflash_mount_result = H2_PAL_ERR_IO;
-    int expected = H2_PAL_OK;
-    if (s_backend == EXTFLASH) expected = H2_PAL_ERR_IO;
-    if (s_backend == SPIFFS) expected = H2_PAL_ERR_UNSUPPORTED;
+    const unsigned prepares = s_provider_prepare_calls;
+    const int expected = s_backend == EXTFLASH ? H2_PAL_ERR_IO : H2_PAL_OK;
     assert(h2_esp_board_fs_prepare("/dl") == expected);
     assert(h2_esp_board_fs_prepare("/data") == expected);
+    assert(s_provider_prepare_calls ==
+           prepares + (s_backend == SPIFFS ? 2u : 0u));
+    if (s_backend == SPIFFS) {
+      s_provider_prepare_result = H2_PAL_ERR_TIMEOUT;
+      assert(h2_esp_board_fs_prepare("/data") == H2_PAL_ERR_TIMEOUT);
+      s_provider_prepare_result = H2_PAL_OK;
+    }
     assert(s_extflash_mount_calls ==
            mounts + (s_backend == EXTFLASH ? 2u : 0u));
     assert(s_extflash_clear_calls == 0u);
     s_extflash_mount_result = H2_PAL_OK;
-    assert(h2_esp_board_fs_prepare("/data") ==
-           (s_backend == SPIFFS ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK));
+    assert(h2_esp_board_fs_prepare("/data") == H2_PAL_OK);
     assert(h2_esp_board_fs_deinit() == H2_PAL_OK);
     assert(h2_esp_board_fs_prepare("/dl") == H2_PAL_ERR_INVALID_STATE);
   }
@@ -223,22 +237,20 @@ static void test_clear_uses_selected_backend(void) {
     const unsigned internal = s_provider_clear_calls;
     s_provider_clear_result = H2_PAL_ERR_IO;
     s_extflash_clear_result = H2_PAL_ERR_TIMEOUT;
-    int expected = H2_PAL_ERR_UNSUPPORTED;
-    if (s_backend == EXTFLASH) expected = H2_PAL_ERR_TIMEOUT;
-    if (s_backend == LITTLEFS) expected = H2_PAL_ERR_IO;
+    const int expected =
+        s_backend == EXTFLASH ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
     assert(h2_esp_board_fs_clear("/data") == expected);
     assert(s_extflash_clear_calls ==
            external + (s_backend == EXTFLASH ? 1u : 0u));
     assert(s_provider_clear_calls ==
-           internal + (s_backend == LITTLEFS ? 1u : 0u));
+           internal + (s_backend == EXTFLASH ? 0u : 1u));
     const unsigned mounts = s_extflash_mount_calls;
     assert(h2_esp_board_fs_clear("/data-other") == H2_PAL_ERR_UNSUPPORTED);
     assert(h2_esp_board_fs_clear("/data/../dl") == H2_PAL_ERR_UNSUPPORTED);
     assert(s_extflash_mount_calls == mounts);
     s_provider_clear_result = H2_PAL_OK;
     s_extflash_clear_result = H2_PAL_OK;
-    assert(h2_esp_board_fs_clear("/data") ==
-           (s_backend == SPIFFS ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK));
+    assert(h2_esp_board_fs_clear("/data") == H2_PAL_OK);
     assert(h2_esp_board_fs_deinit() == H2_PAL_OK);
     assert(h2_esp_board_fs_clear("/data") == H2_PAL_ERR_INVALID_STATE);
   }

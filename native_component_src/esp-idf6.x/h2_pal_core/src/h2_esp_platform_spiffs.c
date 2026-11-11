@@ -7,7 +7,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include <dirent.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,11 +29,13 @@ typedef struct h2_esp_platform_spiffs_context h2_esp_platform_spiffs_context_t;
 typedef enum h2_esp_spiffs_safe_op {
   H2_ESP_SPIFFS_OPEN = 1,
   H2_ESP_SPIFFS_READ,
+  H2_ESP_SPIFFS_SEEK,
   H2_ESP_SPIFFS_WRITE,
   H2_ESP_SPIFFS_SYNC,
   H2_ESP_SPIFFS_CLOSE,
   H2_ESP_SPIFFS_STAT,
   H2_ESP_SPIFFS_REMOVE,
+  H2_ESP_SPIFFS_CLEAR,
   H2_ESP_SPIFFS_RENAME,
   H2_ESP_SPIFFS_MOUNT,
   H2_ESP_SPIFFS_UNMOUNT,
@@ -48,6 +52,7 @@ typedef struct h2_esp_spiffs_safe_call {
   uint8_t* data;
   size_t len;
   size_t processed;
+  uint64_t position;
   h2_pal_fs_stat_t stat_value;
   uint32_t max_files;
   int format_if_mount_failed;
@@ -92,8 +97,15 @@ static int translate_path_exact(const h2_esp_platform_spiffs_context_t* ctx,
       path == NULL || out == NULL || out_len == 0u || path[0] != '/') {
     return H2_PAL_FS_ERR_INVALID_ARG;
   }
-  if (strstr(path, "/../") != NULL || strstr(path, "/./") != NULL) {
-    return H2_PAL_FS_ERR_INVALID_ARG;
+  for (const char* part = path + 1u; *part != '\0';) {
+    const char* end = strchr(part, '/');
+    const size_t size = end != NULL ? (size_t)(end - part) : strlen(part);
+    if (size == 0u || (size == 1u && part[0] == '.') ||
+        (size == 2u && part[0] == '.' && part[1] == '.'))
+      return H2_PAL_FS_ERR_INVALID_ARG;
+    if (end == NULL) break;
+    if (end[1] == '\0') return H2_PAL_FS_ERR_INVALID_ARG;
+    part = end + 1u;
   }
   len = snprintf(out, out_len, "%s%s", ctx->config->base_path, path);
   if (len < 0 || (size_t)len >= out_len) {
@@ -103,9 +115,9 @@ static int translate_path_exact(const h2_esp_platform_spiffs_context_t* ctx,
 }
 
 static int spiffs_mkdir(void* user, const char* path) {
-  (void)user;
-  (void)path;
-  return H2_PAL_FS_OK;
+  char real_path[H2_ESP_SPIFFS_PATH_SIZE];
+  /* SPIFFS directories are prefixes in the flat object namespace. */
+  return translate_path_exact(user, path, real_path, sizeof(real_path));
 }
 
 static int spiffs_open_unsafe(void* user, const char* path,
@@ -163,6 +175,17 @@ static int spiffs_read_unsafe(void* user, h2_pal_fs_file_t* raw_file,
   if (ferror(file->fp) != 0) {
     return map_errno(H2_PAL_FS_ERR_IO);
   }
+  return H2_PAL_FS_OK;
+}
+
+static int spiffs_seek_unsafe(h2_pal_fs_file_t* raw_file, uint64_t position) {
+  h2_esp_platform_file_t* file = (h2_esp_platform_file_t*)raw_file;
+  if (file == NULL || file->fp == NULL || position > (uint64_t)LONG_MAX)
+    return H2_PAL_FS_ERR_INVALID_ARG;
+  errno = 0;
+  if (fseek(file->fp, (long)position, SEEK_SET) != 0)
+    return map_errno(H2_PAL_FS_ERR_IO);
+  clearerr(file->fp);
   return H2_PAL_FS_OK;
 }
 
@@ -250,6 +273,47 @@ static int spiffs_remove_unsafe(void* user, const char* path) {
   return remove(real_path) == 0 ? H2_PAL_FS_OK : map_errno(H2_PAL_FS_ERR_IO);
 }
 
+/* The SDK enumerates slash-containing names from the mount root. Match only
+ * literal descendants, so /data_name and /data-other remain independent. */
+static int spiffs_clear_unsafe(h2_esp_platform_spiffs_context_t* ctx,
+                               const char* path) {
+  char real_path[H2_ESP_SPIFFS_PATH_SIZE];
+  int rc = translate_path_exact(ctx, path, real_path, sizeof(real_path));
+  if (rc != H2_PAL_FS_OK) return rc;
+  if (path[1] == '\0') return H2_PAL_FS_ERR_INVALID_ARG;
+  const char* scope = path + 1u;
+  const size_t scope_len = strlen(scope);
+  errno = 0;
+  DIR* dir = opendir(ctx->config->base_path);
+  if (dir == NULL) return map_errno(H2_PAL_FS_ERR_IO);
+  for (;;) {
+    errno = 0;
+    struct dirent* entry = readdir(dir);
+    if (entry == NULL) {
+      rc = errno == 0 ? H2_PAL_FS_OK : map_errno(H2_PAL_FS_ERR_IO);
+      break;
+    }
+    if (strncmp(entry->d_name, scope, scope_len) != 0 ||
+        entry->d_name[scope_len] != '/')
+      continue;
+    const int size = snprintf(real_path, sizeof(real_path), "%s/%s",
+                              ctx->config->base_path, entry->d_name);
+    if (size < 0 || (size_t)size >= sizeof(real_path)) {
+      rc = H2_PAL_FS_ERR_NO_SPACE;
+      break;
+    }
+    errno = 0;
+    if (remove(real_path) != 0) {
+      rc = map_errno(H2_PAL_FS_ERR_IO);
+      break;
+    }
+  }
+  errno = 0;
+  if (closedir(dir) != 0 && rc == H2_PAL_FS_OK)
+    rc = map_errno(H2_PAL_FS_ERR_IO);
+  return rc;
+}
+
 static int spiffs_rename_unsafe(void* user, const char* old_path,
                                 const char* new_path) {
   h2_esp_platform_spiffs_context_t* ctx =
@@ -286,6 +350,8 @@ static void IRAM_ATTR spiffs_safe_callback(void* context) {
   } else if (call->op == H2_ESP_SPIFFS_READ) {
     call->result = spiffs_read_unsafe(&local_context, call->file, call->data,
                                       call->len, &call->processed);
+  } else if (call->op == H2_ESP_SPIFFS_SEEK) {
+    call->result = spiffs_seek_unsafe(call->file, call->position);
   } else if (call->op == H2_ESP_SPIFFS_WRITE) {
     call->result = spiffs_write_unsafe(&local_context, call->file, call->data,
                                        call->len, &call->processed);
@@ -298,10 +364,16 @@ static void IRAM_ATTR spiffs_safe_callback(void* context) {
         spiffs_stat_unsafe(&local_context, call->path, &call->stat_value);
   } else if (call->op == H2_ESP_SPIFFS_REMOVE) {
     call->result = spiffs_remove_unsafe(&local_context, call->path);
+  } else if (call->op == H2_ESP_SPIFFS_CLEAR) {
+    call->result = spiffs_clear_unsafe(&local_context, call->path);
   } else if (call->op == H2_ESP_SPIFFS_RENAME) {
     call->result =
         spiffs_rename_unsafe(&local_context, call->path, call->second_path);
   } else if (call->op == H2_ESP_SPIFFS_MOUNT) {
+    if (esp_spiffs_mounted(call->second_path)) {
+      call->result = H2_PAL_FS_OK;
+      return;
+    }
     esp_vfs_spiffs_conf_t config = {
         .base_path = call->path,
         .partition_label = call->second_path,
@@ -309,9 +381,7 @@ static void IRAM_ATTR spiffs_safe_callback(void* context) {
         .format_if_mount_failed = call->format_if_mount_failed != 0,
     };
     esp_err_t err = esp_vfs_spiffs_register(&config);
-    call->result = err == ESP_OK || err == ESP_ERR_INVALID_STATE
-                       ? H2_PAL_FS_OK
-                       : H2_PAL_FS_ERR_IO;
+    call->result = err == ESP_OK ? H2_PAL_FS_OK : H2_PAL_FS_ERR_IO;
   } else if (call->op == H2_ESP_SPIFFS_UNMOUNT) {
     esp_err_t err = esp_vfs_spiffs_unregister(call->path);
     call->result = err == ESP_OK || err == ESP_ERR_INVALID_STATE
@@ -413,6 +483,18 @@ static int spiffs_read(void* user, h2_pal_fs_file_t* file, void* data,
   return rc;
 }
 
+static int spiffs_seek(void* user, h2_pal_fs_file_t* file, uint64_t position) {
+  if (file == NULL || position > (uint64_t)LONG_MAX)
+    return H2_PAL_FS_ERR_INVALID_ARG;
+  h2_esp_spiffs_safe_call_t call = {
+      .op = H2_ESP_SPIFFS_SEEK,
+      .context = user,
+      .file = file,
+      .position = position,
+  };
+  return spiffs_run_safe(&call);
+}
+
 static int spiffs_write(void* user, h2_pal_fs_file_t* file, const void* data,
                         size_t len, size_t* out_written) {
   if (file == NULL || (data == NULL && len != 0u) || out_written == NULL) {
@@ -508,6 +590,31 @@ static int spiffs_remove(void* user, const char* path) {
   return spiffs_path_call(H2_ESP_SPIFFS_REMOVE, user, path, NULL, NULL);
 }
 
+static int spiffs_clear(void* user, const char* path) {
+  return spiffs_path_call(H2_ESP_SPIFFS_CLEAR, user, path, NULL, NULL);
+}
+
+static int spiffs_prepare(void* user, const char* path) {
+  h2_esp_platform_spiffs_context_t* ctx = user;
+  char real_path[H2_ESP_SPIFFS_PATH_SIZE];
+  int rc = translate_path_exact(ctx, path, real_path, sizeof(real_path));
+  if (rc != H2_PAL_FS_OK) return rc;
+  if (ctx->config->partition_label == NULL) return H2_PAL_FS_ERR_INVALID_ARG;
+  h2_esp_spiffs_safe_call_t call = {
+      .op = H2_ESP_SPIFFS_MOUNT,
+      .max_files = ctx->config->max_files,
+      .format_if_mount_failed = ctx->config->format_if_mount_failed ? 1 : 0,
+  };
+  const int base_size =
+      snprintf(call.path, sizeof(call.path), "%s", ctx->config->base_path);
+  const int label_size = snprintf(call.second_path, sizeof(call.second_path),
+                                  "%s", ctx->config->partition_label);
+  if (base_size < 0 || (size_t)base_size >= sizeof(call.path) ||
+      label_size < 0 || (size_t)label_size >= sizeof(call.second_path))
+    return H2_PAL_FS_ERR_NO_SPACE;
+  return spiffs_run_safe(&call);
+}
+
 static int spiffs_rename(void* user, const char* old_path,
                          const char* new_path) {
   return new_path != NULL ? spiffs_path_call(H2_ESP_SPIFFS_RENAME, user,
@@ -521,12 +628,15 @@ int h2_esp_platform_spiffs_fs_init(
       .mkdir = spiffs_mkdir,
       .open = spiffs_open,
       .read = spiffs_read,
+      .seek = spiffs_seek,
       .write = spiffs_write,
       .sync = spiffs_sync,
       .close = spiffs_close,
       .stat = spiffs_stat,
+      .clear = spiffs_clear,
       .remove = spiffs_remove,
       .rename = spiffs_rename,
+      .prepare = spiffs_prepare,
   };
 
   static const h2_pal_fs_api_t osal = {
@@ -539,20 +649,7 @@ int h2_esp_platform_spiffs_fs_init(
   }
   s_spiffs_config = *config;
 
-  h2_esp_spiffs_safe_call_t call = {
-      .op = H2_ESP_SPIFFS_MOUNT,
-      .max_files = s_spiffs_config.max_files,
-      .format_if_mount_failed = s_spiffs_config.format_if_mount_failed ? 1 : 0,
-  };
-  int base_written =
-      snprintf(call.path, sizeof(call.path), "%s", s_spiffs_config.base_path);
-  int label_written = snprintf(call.second_path, sizeof(call.second_path), "%s",
-                               s_spiffs_config.partition_label);
-  if (base_written < 0 || (size_t)base_written >= sizeof(call.path) ||
-      label_written < 0 || (size_t)label_written >= sizeof(call.second_path)) {
-    return H2_PAL_FS_ERR_NO_SPACE;
-  }
-  int rc = spiffs_run_safe(&call);
+  int rc = spiffs_prepare(&s_spiffs_context, "/");
   if (rc != H2_PAL_FS_OK) {
     return rc;
   }
