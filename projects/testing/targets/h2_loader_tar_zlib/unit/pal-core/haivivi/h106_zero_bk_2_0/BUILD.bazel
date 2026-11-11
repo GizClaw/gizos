@@ -16,6 +16,7 @@ bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",
     ap_policies = [
+        "$bk/net/tls 9 0 16384 psram",
         "bk/pal-core 7 0 24576 default",
         "pal-core/e2e/core 7 0 4096 psram",
         "pal-core/e2e/runner 7 0 65536 psram",

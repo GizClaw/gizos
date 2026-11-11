@@ -107,6 +107,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_firmware_info.c"
   "src/h2_bk_platform_sync.c"
   "src/h2_bk_platform_net.c"
+  "src/h2_bk_tls_lifetime.c"
   "src/h2_bk_net_addr.c"
   "src/h2_bk_platform_netif.c"
   "src/h2_bk_platform_task.c"
