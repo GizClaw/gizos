@@ -143,9 +143,18 @@ jobs:
             apt_sources=/etc/apt/sources.list.d/ubuntu.sources
           fi
           test -s "$apt_sources"
+          # Bypass runner mirror lists that can select an unavailable Azure origin.
+          apt_ci_sources="$RUNNER_TEMP/ubuntu-ci.${apt_sources##*.}"
+          sed \
+            -e 's|mirror+file:/etc/apt/apt-mirrors\.txt|https://archive.ubuntu.com/ubuntu|g' \
+            -e 's|mirror+file:/etc/apt/apt-mirrors-security\.txt|https://security.ubuntu.com/ubuntu|g' \
+            -e 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            -e 's|https://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            "$apt_sources" > "$apt_ci_sources"
           apt_network_options=(
-            -o "Dir::Etc::sourcelist=$apt_sources"
+            -o "Dir::Etc::sourcelist=$apt_ci_sources"
             -o Dir::Etc::sourceparts=-
+            -o APT::Update::Error-Mode=any
             -o Acquire::Retries=0
             -o Acquire::http::Timeout=30
             -o Acquire::https::Timeout=30
@@ -351,9 +360,18 @@ jobs:
             apt_sources=/etc/apt/sources.list.d/ubuntu.sources
           fi
           test -s "$apt_sources"
+          # Bypass runner mirror lists that can select an unavailable Azure origin.
+          apt_ci_sources="$RUNNER_TEMP/ubuntu-ci.${apt_sources##*.}"
+          sed \
+            -e 's|mirror+file:/etc/apt/apt-mirrors\.txt|https://archive.ubuntu.com/ubuntu|g' \
+            -e 's|mirror+file:/etc/apt/apt-mirrors-security\.txt|https://security.ubuntu.com/ubuntu|g' \
+            -e 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            -e 's|https://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            "$apt_sources" > "$apt_ci_sources"
           apt_network_options=(
-            -o "Dir::Etc::sourcelist=$apt_sources"
+            -o "Dir::Etc::sourcelist=$apt_ci_sources"
             -o Dir::Etc::sourceparts=-
+            -o APT::Update::Error-Mode=any
             -o Acquire::Retries=0
             -o Acquire::http::Timeout=30
             -o Acquire::https::Timeout=30
@@ -1092,9 +1110,29 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          sudo apt-get -o Acquire::Retries=0 \
-            -o Acquire::http::Timeout=30 \
-            -o Acquire::https::Timeout=30 install --yes \
+          apt_sources=/etc/apt/sources.list
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            apt_sources=/etc/apt/sources.list.d/ubuntu.sources
+          fi
+          test -s "$apt_sources"
+          # Bypass runner mirror lists that can select an unavailable Azure origin.
+          apt_ci_sources="$RUNNER_TEMP/ubuntu-ci.${apt_sources##*.}"
+          sed \
+            -e 's|mirror+file:/etc/apt/apt-mirrors\.txt|https://archive.ubuntu.com/ubuntu|g' \
+            -e 's|mirror+file:/etc/apt/apt-mirrors-security\.txt|https://security.ubuntu.com/ubuntu|g' \
+            -e 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            -e 's|https://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            "$apt_sources" > "$apt_ci_sources"
+          apt_network_options=(
+            -o "Dir::Etc::sourcelist=$apt_ci_sources"
+            -o Dir::Etc::sourceparts=-
+            -o APT::Update::Error-Mode=any
+            -o Acquire::Retries=0
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+          )
+          sudo apt-get "${apt_network_options[@]}" update
+          sudo apt-get "${apt_network_options[@]}" install --yes \
             libdbus-1-3 libegl1 libfontconfig1 libgl1 libglib2.0-0 \
             libice6 libsm6 libx11-6 libxext6 libxkbcommon0
 
