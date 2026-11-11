@@ -328,6 +328,7 @@ cc_test(
     includes = ["include"],
     linkopts = ["-lpthread"],
     local_defines = [
+        "clock_gettime=h2_test_clock_gettime",
         "gettimeofday=h2_test_gettimeofday",
         "select=h2_test_tls_select",
         "wolfSSL_CTX_load_system_CA_certs=h2_test_tls_load_system_ca",

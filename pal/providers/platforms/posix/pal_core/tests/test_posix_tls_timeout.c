@@ -1,6 +1,7 @@
 /* The target substitutes only the clock, certificate loading, and handshake
  * I/O. Socket ownership, TLS allocation/setup, and cleanup use the real
  * provider. */
+#undef clock_gettime
 #undef gettimeofday
 #undef select
 #undef wolfSSL_CTX_load_verify_buffer
@@ -19,12 +20,15 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <time.h>
 
 #include <wolfssl/ssl.h>
 #include <wolfssl/wolfio.h>
 #include <wolfssl/error-ssl.h>
 
 static uint64_t now_ms;
+static uint64_t wall_ms;
+static int backward_wall;
 static uint32_t setup_ms;
 static uint32_t connect_ms;
 static uint32_t ready_ms;
@@ -40,9 +44,21 @@ static size_t allocations;
 
 int h2_test_gettimeofday(struct timeval* now, void* timezone) {
   (void)timezone;
-  now->tv_sec = (time_t)(now_ms / 1000u);
-  now->tv_usec = (suseconds_t)(now_ms % 1000u) * 1000;
+  now->tv_sec = (time_t)(wall_ms / 1000u);
+  now->tv_usec = (suseconds_t)(wall_ms % 1000u) * 1000;
   return 0;
+}
+
+int h2_test_clock_gettime(clockid_t clock, struct timespec* now) {
+  assert(clock == CLOCK_MONOTONIC);
+  now->tv_sec = (time_t)(now_ms / 1000u);
+  now->tv_nsec = (long)(now_ms % 1000u) * 1000000L;
+  return 0;
+}
+
+static void advance_ms(uint32_t elapsed_ms) {
+  now_ms += elapsed_ms;
+  wall_ms += elapsed_ms;
 }
 
 int h2_test_tls_load_ca(WOLFSSL_CTX* ctx, const unsigned char* data, long len,
@@ -50,14 +66,16 @@ int h2_test_tls_load_ca(WOLFSSL_CTX* ctx, const unsigned char* data, long len,
   assert(ctx != NULL && data != NULL && len > 0);
   assert(format == WOLFSSL_FILETYPE_PEM);
   ++ca_loads;
-  now_ms += setup_ms;
+  advance_ms(setup_ms);
+  if (backward_wall) wall_ms -= 60000u;
   return ca_result;
 }
 
 int h2_test_tls_load_system_ca(WOLFSSL_CTX* ctx) {
   assert(ctx != NULL);
   ++ca_loads;
-  now_ms += setup_ms;
+  advance_ms(setup_ms);
+  if (backward_wall) wall_ms -= 60000u;
   return ca_result;
 }
 
@@ -77,7 +95,7 @@ void h2_test_tls_write_flags(WOLFSSL* ssl, int flags) {
 
 int h2_test_tls_connect(WOLFSSL* ssl) {
   assert(ssl != NULL);
-  now_ms += connect_ms;
+  advance_ms(connect_ms);
   last_error = connects++ == 0u ? first_error : WOLFSSL_SUCCESS;
   return last_error == WOLFSSL_SUCCESS ? WOLFSSL_SUCCESS : WOLFSSL_FAILURE;
 }
@@ -95,7 +113,7 @@ int h2_test_tls_select(int nfds, fd_set* read_fds, fd_set* write_fds,
   ++waits;
   wait_budget_ms =
       (uint32_t)timeout->tv_sec * 1000u + (uint32_t)timeout->tv_usec / 1000u;
-  now_ms += wait_ready ? ready_ms : wait_budget_ms;
+  advance_ms(wait_ready ? ready_ms : wait_budget_ms);
   return wait_ready ? 1 : 0;
 }
 
@@ -142,7 +160,7 @@ typedef struct timeout_case {
   uint32_t wait_budget_ms;
 } timeout_case_t;
 
-static void run_case(const timeout_case_t* test) {
+static void run_case(const timeout_case_t* test, int rollback_wall) {
   const h2_pal_net_api_t* net = h2_posix_net_api();
   h2_pal_net_socket_t socket_fd = -1;
   assert(h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, NULL,
@@ -151,6 +169,8 @@ static void run_case(const timeout_case_t* test) {
   assert(flags >= 0);
   size_t baseline = allocations;
   now_ms = 1000u;
+  wall_ms = 1000000u;
+  backward_wall = rollback_wall;
   setup_ms = test->setup_ms;
   connect_ms = test->connect_ms;
   first_error = test->first_error;
@@ -176,6 +196,10 @@ static void run_case(const timeout_case_t* test) {
   assert(result == test->expected);
   assert(ca_loads == 1u);
   assert(connects == test->connects && waits == test->waits);
+  if (wait_budget_ms != test->wait_budget_ms) {
+    fprintf(stderr, "%s: socket wait budget %u ms, expected %u ms\n",
+            test->name, wait_budget_ms, test->wait_budget_ms);
+  }
   assert(wait_budget_ms == test->wait_budget_ms);
   assert(out == (result == H2_PAL_OK ? socket_fd : -1));
   assert(fcntl(socket_fd, F_GETFL, 0) >= 0);
@@ -237,7 +261,20 @@ int main(void) {
        WOLFSSL_FAILURE, H2_PAL_ERR_IO, 0, 0, 0},
   };
   for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-    run_case(&cases[i]);
+    run_case(&cases[i], 0);
+  }
+  /* A 60-second wall-clock rollback during either CA loader must not enlarge
+   * the remaining socket wait: 100 - 60 setup - 5 handshake = 35 ms. */
+  const timeout_case_t backward_cases[] = {
+      {"CA load with backward wall clock", 60, 100, 5, WOLFSSL_ERROR_WANT_READ,
+       0, 0, 0, WOLFSSL_SUCCESS, H2_PAL_ERR_TIMEOUT, 1, 1, 35},
+      {"system CA with backward wall clock", 60, 100, 5,
+       WOLFSSL_ERROR_WANT_WRITE, 0, 0, 1, WOLFSSL_SUCCESS, H2_PAL_ERR_TIMEOUT,
+       1, 1, 35},
+  };
+  for (size_t i = 0u; i < sizeof(backward_cases) / sizeof(backward_cases[0]);
+       ++i) {
+    run_case(&backward_cases[i], 1);
   }
   assert(h2_wolfssl_deinit() == H2_PAL_OK);
   assert(allocations == 0u);

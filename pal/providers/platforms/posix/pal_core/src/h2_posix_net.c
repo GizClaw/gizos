@@ -15,6 +15,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <wolfssl/ssl.h>
@@ -160,11 +161,12 @@ static int desktop_net_socket_error(void) {
 }
 
 static uint64_t desktop_now_ms(void) {
-  struct timeval now;
-  if (gettimeofday(&now, NULL) != 0) {
+  /* Socket budgets follow elapsed time, independent of wall-clock changes. */
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
     return 0u;
   }
-  return ((uint64_t)now.tv_sec * 1000u) + ((uint64_t)now.tv_usec / 1000u);
+  return ((uint64_t)now.tv_sec * 1000u) + ((uint64_t)now.tv_nsec / 1000000u);
 }
 
 static uint64_t timeout_deadline_ms(uint32_t timeout_ms) {
