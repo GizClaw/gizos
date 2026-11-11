@@ -213,6 +213,12 @@ typedef struct h2_g99_config {
    * frame Main presented. */
   h2_g99_frame_fn frame;
   void* frame_user;
+  /** Optional allocator for the bounded RGB565 render buffer; NULL uses
+   * Runtime mem. The buffer uses up to 16 rows, falling back to eight when
+   * fragmented. LVGL objects, fonts and artwork retain Runtime mem so this
+   * optimization cannot exhaust an internal-only heap. Borrowed through run().
+   */
+  const h2_pal_mem_api_t* render_mem;
 } h2_g99_config_t;
 
 /**

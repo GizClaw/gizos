@@ -132,6 +132,7 @@ typedef struct h2_g99_app {
    * it with the finger: drag_offset items past the selection. */
   bool dragging;
   float drag_offset;
+  uint64_t drag_last_ms;
   /* Touch diagnostics for the current press: touch reads LVGL made and the
    * longest gap between two of them. */
   uint32_t press_samples;

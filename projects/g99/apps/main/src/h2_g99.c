@@ -200,6 +200,15 @@ static h2_pal_result_t handle(h2_g99_app_t* app, h2_g99_action_t action) {
   const h2_g99_nav_result_t result =
       h2_g99_nav_input(&app->nav, action, app->now_ms);
   h2_pal_result_t rc = H2_PAL_OK;
+  if (result != H2_G99_NAV_IGNORED &&
+      (action == H2_G99_ACTION_HOME || action == H2_G99_ACTION_SCREEN)) {
+    /* A page/screen change consumes the old pointer gesture. Its retained
+     * fractional offset must not reappear after the transition. */
+    app->dragging = false;
+    app->drag_offset = 0.0f;
+    app->press_active = false;
+    app->press_ignored = true;
+  }
   switch (result) {
     case H2_G99_NAV_IGNORED:
     case H2_G99_NAV_FORWARD_TO_APP:
@@ -343,6 +352,11 @@ static h2_pal_result_t poll_events(h2_g99_app_t* app) {
     h2_runtime_timestamp_ms_t* last = &app->last_press[event.component_id];
     if (*last == down->pressed_at_ms) continue;
     *last = down->pressed_at_ms;
+    if (action == H2_G99_ACTION_HOME || action == H2_G99_ACTION_SCREEN)
+      h2_g99_log(app, "key component=%u route=%d ready=%d screen=%d",
+                 (unsigned)event.component_id, (int)app->nav.route,
+                 h2_g99_nav_input_ready(&app->nav) ? 1 : 0,
+                 app->nav.screen_on ? 1 : 0);
     const h2_pal_result_t handled = handle(app, action);
     if (handled != H2_PAL_OK) return handled;
   }
@@ -479,6 +493,7 @@ static h2_pal_result_t open_display(h2_g99_app_t* app,
 
 static h2_pal_result_t loop(h2_g99_app_t* app) {
   const h2_g99_config_t* config = app->config;
+  uint64_t profile_ms = 0u;
   while (config->should_stop == NULL ||
          config->should_stop(config->should_stop_user) == 0) {
     app->now_ms = now_ms(app);
@@ -506,12 +521,24 @@ static h2_pal_result_t loop(h2_g99_app_t* app) {
     } else {
       const uint64_t work_start = h2_g99_now_us(app);
       h2_g99_ui_frame(app);
+      const uint64_t layout_end = h2_g99_now_us(app);
       h2_g99_ui_pump(app);
+      const uint64_t work_end = h2_g99_now_us(app);
+      if (app->frame_presented && work_end - work_start > 50000u &&
+          app->now_ms - profile_ms >= 1000u) {
+        profile_ms = app->now_ms;
+        h2_g99_log(
+            app, "slow frame layout_us=%u lvgl_us=%u draw_us=%u present_us=%u",
+            (unsigned)clamp_u32(layout_end - work_start),
+            (unsigned)clamp_u32(work_end - layout_end),
+            (unsigned)clamp_u32(app->frame_draw_us),
+            (unsigned)clamp_u32(app->frame_present_us));
+      }
       if (app->flush_result != H2_PAL_OK) {
         h2_g99_log(app, "display flush rc=%d", (int)app->flush_result);
         return app->flush_result;
       }
-      report_frame(app, h2_g99_now_us(app) - work_start);
+      report_frame(app, work_end - work_start);
     }
     publish(app);
     (void)h2_pal_time_sleep_ms(app->runtime->time, H2_G99_LOOP_MS);

@@ -2,11 +2,11 @@
 #include <string.h>
 
 int h2_mosaico_surface_blit(uint16_t* surface, const h2_display_rect_t* rect,
-                            const void* pixels, size_t stride, int* first,
-                            int* end) {
-  if (!surface || !rect || !pixels || !first || !end || rect->x < 0 ||
-      rect->y < 0 || rect->width <= 0 || rect->height <= 0 ||
-      rect->width > H2_MOSAICO_WIDTH || rect->height > H2_MOSAICO_HEIGHT ||
+                            const void* pixels, size_t stride,
+                            h2_display_rect_t* dirty) {
+  if (!surface || !rect || !pixels || !dirty || rect->x < 0 || rect->y < 0 ||
+      rect->width <= 0 || rect->height <= 0 || rect->width > H2_MOSAICO_WIDTH ||
+      rect->height > H2_MOSAICO_HEIGHT ||
       rect->x > H2_MOSAICO_WIDTH - rect->width ||
       rect->y > H2_MOSAICO_HEIGHT - rect->height)
     return H2_PAL_ERR_INVALID_ARG;
@@ -25,8 +25,14 @@ int h2_mosaico_surface_blit(uint16_t* surface, const h2_display_rect_t* rect,
       dest[x] = (uint16_t)((pixel << 8) | (pixel >> 8));
     }
   }
-  *first = rect->y / H2_MOSAICO_DMA_ROWS * H2_MOSAICO_DMA_ROWS;
-  *end = (rect->y + rect->height + H2_MOSAICO_DMA_ROWS - 1) /
-         H2_MOSAICO_DMA_ROWS * H2_MOSAICO_DMA_ROWS;
+  const int first_x =
+      rect->x / H2_MOSAICO_COLUMN_ALIGNMENT * H2_MOSAICO_COLUMN_ALIGNMENT;
+  const int end_x = (rect->x + rect->width + H2_MOSAICO_COLUMN_ALIGNMENT - 1) /
+                    H2_MOSAICO_COLUMN_ALIGNMENT * H2_MOSAICO_COLUMN_ALIGNMENT;
+  const int first_y = rect->y / H2_MOSAICO_DMA_ROWS * H2_MOSAICO_DMA_ROWS;
+  const int end_y = (rect->y + rect->height + H2_MOSAICO_DMA_ROWS - 1) /
+                    H2_MOSAICO_DMA_ROWS * H2_MOSAICO_DMA_ROWS;
+  *dirty =
+      (h2_display_rect_t){first_x, first_y, end_x - first_x, end_y - first_y};
   return H2_PAL_OK;
 }

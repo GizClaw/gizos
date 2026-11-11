@@ -15,7 +15,11 @@
  * handles. */
 static esp_lcd_panel_handle_t panel;
 static esp_lcd_touch_handle_t touch;
+/* Keep the panel's eight-row alignment while grouping four chunks into
+ * one address window. The pinned SPI IO splits it into bus-sized DMA jobs. */
+enum { H2_MOSAICO_DMA_BATCH_ROWS = H2_MOSAICO_DMA_ROWS * 4 };
 static uint16_t* row;
+static size_t dma_pixels;
 static uint16_t* surface;
 static bool opened;
 static bool touch_opened;
@@ -61,8 +65,13 @@ static int display_open(void* user) {
     const bsp_display_config_t config = BSP_DISPLAY_DEFAULT_CONFIG();
     rc = result(bsp_display_new(&config, &panel));
     if (rc == H2_PAL_OK && !row) {
-      row = heap_caps_malloc(BSP_LCD_H_RES * H2_MOSAICO_DMA_ROWS * sizeof(*row),
-                             MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+      for (int rows = H2_MOSAICO_DMA_BATCH_ROWS;
+           row == NULL && rows >= H2_MOSAICO_DMA_ROWS; rows /= 2) {
+        const size_t pixels = (size_t)BSP_LCD_H_RES * (size_t)rows;
+        row = heap_caps_malloc(pixels * sizeof(*row),
+                               MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        if (row != NULL) dma_pixels = pixels;
+      }
       if (!row) rc = H2_PAL_ERR_NO_MEMORY;
     }
     if (rc == H2_PAL_OK && !surface) {
@@ -77,6 +86,7 @@ static int display_open(void* user) {
     else {
       heap_caps_free(row);
       row = NULL;
+      dma_pixels = 0u;
       heap_caps_free(surface);
       surface = NULL;
     }
@@ -117,24 +127,34 @@ static int display_draw(void* user, const h2_display_rect_t* rect,
   if (rc != H2_PAL_OK) return rc;
   if (!opened) rc = H2_PAL_ERR_INVALID_STATE;
   if (rc == H2_PAL_OK) rc = drain();
-  int first = 0, end = 0;
+  h2_display_rect_t dirty = {0};
   if (rc == H2_PAL_OK)
-    rc = h2_mosaico_surface_blit(surface, rect, pixels, stride, &first, &end);
-  /* The hardware differential test accepts eight-row transfers but silently
-   * ignores our one-row windows. Expand partial updates against a shadow so
-   * alignment never overwrites neighboring pixels with duplicated content. */
-  for (int y = first; rc == H2_PAL_OK && y < end; y += H2_MOSAICO_DMA_ROWS) {
-    memcpy(row, surface + (size_t)y * BSP_LCD_H_RES,
-           BSP_LCD_H_RES * H2_MOSAICO_DMA_ROWS * sizeof(*row));
-    rc = result(esp_lcd_panel_draw_bitmap(panel, 0, y, BSP_LCD_H_RES,
-                                          y + H2_MOSAICO_DMA_ROWS, row));
+    rc = h2_mosaico_surface_blit(surface, rect, pixels, stride, &dirty);
+  /* Keep the qualified four-column/eight-row panel alignment, packing only
+   * the dirty span. Narrow regions can use more rows in the same DMA block. */
+  const size_t rows_per_batch =
+      rc == H2_PAL_OK ? (dma_pixels / (size_t)dirty.width) /
+                            H2_MOSAICO_DMA_ROWS * H2_MOSAICO_DMA_ROWS
+                      : 0u;
+  if (rc == H2_PAL_OK && rows_per_batch == 0u) rc = H2_PAL_ERR_NO_MEMORY;
+  const int bottom = dirty.y + dirty.height;
+  for (int y = dirty.y; rc == H2_PAL_OK && y < bottom;) {
+    const int rows = (size_t)(bottom - y) < rows_per_batch
+                         ? bottom - y
+                         : (int)rows_per_batch;
+    for (int r = 0; r < rows; ++r)
+      memcpy(row + (size_t)r * (size_t)dirty.width,
+             surface + (size_t)(y + r) * BSP_LCD_H_RES + (size_t)dirty.x,
+             (size_t)dirty.width * sizeof(*row));
+    rc = result(esp_lcd_panel_draw_bitmap(
+        panel, dirty.x, y, dirty.x + dirty.width, y + rows, row));
     const int drained = drain();
     if (rc == H2_PAL_OK) rc = drained;
     if (rc == H2_PAL_OK && transfer_capture) {
-      const h2_display_rect_t chunk = {0, y, BSP_LCD_H_RES,
-                                       H2_MOSAICO_DMA_ROWS};
+      const h2_display_rect_t chunk = {dirty.x, y, dirty.width, rows};
       transfer_capture(transfer_capture_user, &chunk, row);
     }
+    y += rows;
   }
   xSemaphoreGive(mutex);
   return rc;
@@ -167,6 +187,7 @@ static int display_close(void* user) {
     if (rc == H2_PAL_OK) {
       heap_caps_free(row);
       row = NULL;
+      dma_pixels = 0u;
       heap_caps_free(surface);
       surface = NULL;
       opened = false;

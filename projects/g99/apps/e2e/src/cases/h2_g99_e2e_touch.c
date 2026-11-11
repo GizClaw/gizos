@@ -236,8 +236,48 @@ static h2_pal_result_t failed_reads(h2_g99_e2e_t* e2e) {
   return controller_drag(e2e, H2_G99_E2E_TOUCH_FAILED_READS);
 }
 
+/* A full-height gesture requests several items, but the visible wheel
+ * follows at bounded speed, reaches only one detent and always settles. */
+static h2_pal_result_t wheel_limits(h2_g99_e2e_t* e2e) {
+  h2_g99_observation_t o;
+  h2_pal_result_t rc = menu_at(e2e, H2_G99_MAIN_LIBRARY, "MAIN(Library)", &o);
+  if (rc != H2_PAL_OK) return rc;
+  int32_t x = 0, centre = 0;
+  wheel_point(&o, 0, &x, &centre);
+  const int32_t low = o.height * 9 / 10;
+  const int32_t high = o.height / 10;
+  const drag_range_t forward = {0.9f, 1.001f};
+  const drag_range_t backward = {-1.001f, -0.9f};
+  const h2_g99_e2e_expect_t library =
+      h2_g99_e2e_main_ready(H2_G99_MAIN_LIBRARY);
+  const h2_g99_e2e_expect_t lab = h2_g99_e2e_main_ready(H2_G99_MAIN_LAB);
+  rc = h2_g99_e2e_touch_down(e2e, x, low);
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_touch_move(e2e, x, high);
+  if (rc == H2_PAL_OK)
+    rc =
+        h2_g99_e2e_wait(e2e, &library, drag_within, &forward, H2_G99_E2E_NAV_MS,
+                        "full drag bounded to one item", NULL);
+  const h2_pal_result_t released = h2_g99_e2e_touch_up(e2e);
+  if (rc == H2_PAL_OK) rc = released;
+  if (rc == H2_PAL_OK)
+    rc = menu_at(e2e, H2_G99_MAIN_LAB, "Lab after bounded snap", &o);
+  if (rc == H2_PAL_OK && o.wheel_drag != 0.0f) rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_touch_down(e2e, x, high);
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_touch_move(e2e, x, low);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &lab, drag_within, &backward, H2_G99_E2E_NAV_MS,
+                         "reverse drag bounded to one item", NULL);
+  const h2_pal_result_t reverse_released = h2_g99_e2e_touch_up(e2e);
+  if (rc == H2_PAL_OK) rc = reverse_released;
+  if (rc == H2_PAL_OK)
+    rc = menu_at(e2e, H2_G99_MAIN_LIBRARY, "Library after reverse snap", &o);
+  if (rc == H2_PAL_OK && o.wheel_drag != 0.0f) rc = H2_PAL_ERR_INVALID_STATE;
+  return rc;
+}
+
 static const h2_g99_e2e_case_t kCases[] = {
     {"wheel-drag", 0u, wheel_drag},
+    {"wheel-limits", 0u, wheel_limits},
     {"wheel-follow", 0u, wheel_follow},
     {"wheel-flick", H2_G99_E2E_CAP_FRAME_BUDGET, wheel_flick},
     {"wheel-tap", 0u, wheel_tap},

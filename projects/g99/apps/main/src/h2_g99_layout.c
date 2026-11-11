@@ -27,6 +27,39 @@ float h2_g99_ease_out(float t) {
   return 1.0f - t * t * t;
 }
 
+/* A critically damped spring, normalized to end exactly on the item.
+ * A finite endpoint prevents a released wheel remaining between two slots. */
+float h2_g99_ease_snap(float t) {
+  t = h2_g99_clamp01(t);
+  if (t == 0.0f || t == 1.0f) return t;
+  return (1.0f - (1.0f + 6.0f * t) * expf(-6.0f * t)) /
+         (1.0f - 7.0f * expf(-6.0f));
+}
+
+float h2_g99_wheel_follow(float current, float target, uint32_t elapsed_ms) {
+  if (!isfinite(current)) current = 0.0f;
+  if (!isfinite(target)) target = current;
+  current = current < -1.0f ? -1.0f : (current > 1.0f ? 1.0f : current);
+  target = target < -1.0f ? -1.0f : (target > 1.0f ? 1.0f : target);
+  /* Never repay a stalled frame as one large jump. At most 3.6 items/s and
+   * 0.18 item per update, independent of screen size and pointer distance. */
+  if (elapsed_ms == 0u) return current;
+  if (elapsed_ms > 50u) elapsed_ms = 50u;
+  const float limit = 3.6f * (float)elapsed_ms / 1000.0f;
+  float delta = (target - current) * (1.0f - expf(-(float)elapsed_ms / 45.0f));
+  if (delta > limit) delta = limit;
+  if (delta < -limit) delta = -limit;
+  const float next = current + delta;
+  return fabsf(target - next) < 0.001f ? target : next;
+}
+
+int h2_g99_wheel_snap(float offset) {
+  /* Keep deliberate short flicks: the next magnetic detent takes over
+   * after 30% of a slot. A gesture can advance only one item. */
+  if (!isfinite(offset) || fabsf(offset) < 0.3f) return 0;
+  return offset > 0.0f ? 1 : -1;
+}
+
 bool h2_g99_layout_compute(int32_t width, int32_t height,
                            h2_g99_layout_t* out) {
   if (out == NULL || width <= 0 || height <= 0) return false;
@@ -103,7 +136,9 @@ void h2_g99_wheel_slot(const h2_g99_layout_t* layout, h2_g99_wheel_kind_t kind,
     size = (s0 + (s1 - s0) * t) * layout->k;
     opacity = o0 + (o1 - o0) * t;
   }
-  float glow = 1.0f - a * 2.0f;
+  /* The nearest slot is at most half an item away. Retain at least
+   * half its glow at that boundary, so selection never disappears. */
+  float glow = 1.0f - a;
   if (glow < 0.0f) glow = 0.0f;
   place(layout, d * h2_g99_wheel_step(layout, kind), size, opacity, glow, out);
 }

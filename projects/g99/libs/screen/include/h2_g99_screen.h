@@ -9,10 +9,10 @@
  * a logical point (x, y) shows at panel point (y, H - 1 - x), where H is the
  * panel height. The board's own display and touch providers are unchanged.
  *
- * The board panel transfers whole rows, and once rotated a logical row band
- * covers every panel row. Drawing therefore lands in a panel-sized frame,
- * and present() sends the panel rows drawn since the previous present in one
- * board draw; every G99 drawer presents after each frame.
+ * Drawing lands in a panel-sized frame. Rotated dirty rectangles retain both
+ * axes; present() sends only changed rectangles once a full frame has
+ * established the panel contents. Adjacent regions are coalesced when doing
+ * so costs no more pixels. The board owns any hardware alignment.
  * Pure C; no SDK handles. Only RGB565 bitmaps are accepted. */
 
 #include "h2_pal.h"
@@ -38,11 +38,13 @@ typedef struct h2_g99_screen {
   int32_t panel_height;
   /* Panel-oriented RGB565 frame, allocated from `mem` on the first open. */
   uint16_t* frame;
-  /* Panel rows [dirty_first, dirty_end) drawn since the last present. */
-  int32_t dirty_first;
-  int32_t dirty_end;
+  /* Pending panel-oriented regions; bounded merging never drops a draw. */
+  h2_display_rect_t dirty[32];
+  uint8_t dirty_count;
   h2_pal_display_api_t display;
   h2_pal_touch_api_t touch;
+  /* Pixel comparison is safe after a complete frame reached the panel. */
+  bool frame_valid;
 } h2_g99_screen_t;
 
 /**

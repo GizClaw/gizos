@@ -5,9 +5,52 @@
 /* Square tiles keep the source reads and the frame writes cache local. */
 #define TILE 16
 
-static void clear_dirty(h2_g99_screen_t* s) {
-  s->dirty_first = s->panel_height;
-  s->dirty_end = 0;
+static void clear_dirty(h2_g99_screen_t* s) { s->dirty_count = 0u; }
+
+static h2_display_rect_t bounds(const h2_display_rect_t* a,
+                                const h2_display_rect_t* b) {
+  const int32_t x = a->x < b->x ? a->x : b->x;
+  const int32_t y = a->y < b->y ? a->y : b->y;
+  const int32_t right =
+      a->x + a->width > b->x + b->width ? a->x + a->width : b->x + b->width;
+  const int32_t bottom =
+      a->y + a->height > b->y + b->height ? a->y + a->height : b->y + b->height;
+  return (h2_display_rect_t){x, y, right - x, bottom - y};
+}
+
+static uint64_t area(const h2_display_rect_t* rect) {
+  return (uint64_t)rect->width * (uint64_t)rect->height;
+}
+
+static void mark_dirty(h2_g99_screen_t* s, h2_display_rect_t rect) {
+  for (uint8_t i = 0u; i < s->dirty_count;) {
+    const h2_display_rect_t merged = bounds(&s->dirty[i], &rect);
+    if (area(&merged) <= area(&s->dirty[i]) + area(&rect)) {
+      rect = merged;
+      s->dirty[i] = s->dirty[--s->dirty_count];
+      i = 0u;
+    } else {
+      ++i;
+    }
+  }
+  const size_t capacity = sizeof(s->dirty) / sizeof(s->dirty[0]);
+  if (s->dirty_count < capacity) {
+    s->dirty[s->dirty_count++] = rect;
+    return;
+  }
+  /* When the list is full, grow the cheapest existing region. Every pending
+   * pixel stays covered without an unconditional full-screen fallback. */
+  uint8_t nearest = 0u;
+  uint64_t added = UINT64_MAX;
+  for (uint8_t i = 0u; i < s->dirty_count; ++i) {
+    const h2_display_rect_t merged = bounds(&s->dirty[i], &rect);
+    const uint64_t cost = area(&merged) - area(&s->dirty[i]);
+    if (cost < added) {
+      nearest = i;
+      added = cost;
+    }
+  }
+  s->dirty[nearest] = bounds(&s->dirty[nearest], &rect);
 }
 
 /* ---------- display ---------- */
@@ -51,6 +94,7 @@ static int display_open(void* user) {
     return rc;
   }
   clear_dirty(s);
+  s->frame_valid = false;
   return H2_PAL_OK;
 }
 
@@ -89,43 +133,75 @@ static int display_draw_bitmap(void* user, const h2_display_rect_t* rect,
     return H2_PAL_ERR_INVALID_ARG;
   const uint8_t* src = pixels;
   const size_t pitch = (size_t)s->panel_width;
+  const bool compare = s->frame_valid;
+  uint16_t tile[TILE * TILE];
   for (int32_t ty = 0; ty < rect->height; ty += TILE) {
     const int32_t th = rect->height - ty < TILE ? rect->height - ty : TILE;
     for (int32_t tx = 0; tx < rect->width; tx += TILE) {
       const int32_t tw = rect->width - tx < TILE ? rect->width - tx : TILE;
+      /* Bulk-copy rows into aligned storage. Besides keeping the transpose
+       * cache local, this avoids a two-byte memcpy through the PSRAM stack
+       * for every pixel on strict-alignment RISC-V compilers. */
+      for (int32_t r = 0; r < th; ++r)
+        memcpy(&tile[r * TILE],
+               src + (size_t)(ty + r) * stride_bytes +
+                   (size_t)tx * sizeof(uint16_t),
+               (size_t)tw * sizeof(uint16_t));
+      int32_t x1 = tw, y1 = th, x2 = -1, y2 = -1;
       for (int32_t c = tx; c < tx + tw; ++c) {
         uint16_t* dst =
             &s->frame[(size_t)(s->panel_height - 1 - rect->x - c) * pitch +
                       (size_t)(rect->y + ty)];
-        const uint8_t* column =
-            src + (size_t)ty * stride_bytes + (size_t)c * sizeof(uint16_t);
-        for (int32_t r = 0; r < th; ++r)
-          memcpy(&dst[r], column + (size_t)r * stride_bytes, sizeof(uint16_t));
+        for (int32_t r = 0; r < th; ++r) {
+          const uint16_t pixel = tile[r * TILE + c - tx];
+          if (!compare || dst[r] != pixel) {
+            dst[r] = pixel;
+            const int32_t x = c - tx;
+            if (x < x1) x1 = x;
+            if (x > x2) x2 = x;
+            if (r < y1) y1 = r;
+            if (r > y2) y2 = r;
+          }
+        }
       }
+      /* LVGL invalidation includes old object bounds and transparent pixels.
+       * Keep those unchanged pixels out of the physical transfer. */
+      if (compare && x2 >= x1)
+        mark_dirty(s,
+                   (h2_display_rect_t){rect->y + ty + y1,
+                                       s->panel_height - 1 - rect->x - tx - x2,
+                                       y2 - y1 + 1, x2 - x1 + 1});
     }
   }
-  const int32_t first = s->panel_height - rect->x - rect->width;
-  const int32_t end = s->panel_height - rect->x;
-  if (first < s->dirty_first) s->dirty_first = first;
-  if (end > s->dirty_end) s->dirty_end = end;
+  if (!s->frame_valid)
+    mark_dirty(
+        s, (h2_display_rect_t){rect->y, s->panel_height - rect->x - rect->width,
+                               rect->height, rect->width});
   return H2_PAL_OK;
 }
 
-/* One board draw of whole panel rows covers everything drawn since the
- * previous present; the board transfers whole rows either way. */
+/* Preserve rotated dirty bounds and the full-frame source stride. Retain
+ * pending regions on any draw/present failure so a retry can finish them. */
 static int display_present(void* user) {
   h2_g99_screen_t* s = user;
-  if (s->frame != NULL && s->dirty_first < s->dirty_end) {
-    const h2_display_rect_t rows = {0, s->dirty_first, s->panel_width,
-                                    s->dirty_end - s->dirty_first};
+  bool full_frame = false;
+  for (uint8_t i = 0u; i < s->dirty_count; ++i) {
+    const h2_display_rect_t* rect = &s->dirty[i];
     const int rc = h2_pal_display_draw_bitmap(
-        s->board_display, &rows,
-        &s->frame[(size_t)s->dirty_first * (size_t)s->panel_width],
+        s->board_display, rect,
+        &s->frame[(size_t)rect->y * (size_t)s->panel_width + (size_t)rect->x],
         (size_t)s->panel_width * sizeof(uint16_t), H2_DISPLAY_PIXEL_RGB565);
     if (rc != H2_PAL_OK) return rc;
+    if (rect->x == 0 && rect->y == 0 && rect->width == s->panel_width &&
+        rect->height == s->panel_height)
+      full_frame = true;
+  }
+  const int rc = h2_pal_display_present(s->board_display);
+  if (rc == H2_PAL_OK) {
+    if (full_frame) s->frame_valid = true;
     clear_dirty(s);
   }
-  return h2_pal_display_present(s->board_display);
+  return rc;
 }
 
 static int display_set_brightness(void* user, uint32_t percent) {
@@ -136,6 +212,7 @@ static int display_set_brightness(void* user, uint32_t percent) {
 static int display_close(void* user) {
   h2_g99_screen_t* s = user;
   clear_dirty(s);
+  s->frame_valid = false;
   return h2_pal_display_close(s->board_display);
 }
 

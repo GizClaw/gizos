@@ -119,6 +119,8 @@ const h2_runtime_component_mapper_t* h2_g99_web_component_mapper(void) {
 
 h2_runtime_component_id_t h2_g99_web_component(const char* name) {
   if (name == NULL) return H2_RUNTIME_COMPONENT_ID_NONE;
+  if (strcmp(name, "ai") == 0) return H2_G99_COMPONENT_HOME;
+  if (strcmp(name, "boot") == 0) return H2_G99_COMPONENT_SCREEN;
   for (size_t i = 0u; i < WEB_BUTTON_COUNT; ++i)
     if (strcmp(s_buttons[i].name, name) == 0) return s_buttons[i].component_id;
   return H2_RUNTIME_COMPONENT_ID_NONE;

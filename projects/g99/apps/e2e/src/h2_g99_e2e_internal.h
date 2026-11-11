@@ -40,6 +40,8 @@ extern "C" {
  * between two touch reads, and the frames a wheel rotation must show. */
 #define H2_G99_E2E_TOUCH_GAP_BUDGET_MS 50u
 #define H2_G99_E2E_ROTATE_MIN_FRAMES 5u
+/* Active animation must sustain at least 20 FPS on a budgeted target. */
+#define H2_G99_E2E_FRAME_BUDGET_US 50000u
 
 typedef enum h2_g99_e2e_status {
   H2_G99_E2E_PASS = 0,
@@ -64,16 +66,13 @@ typedef enum h2_g99_e2e_touch_model {
   H2_G99_E2E_TOUCH_FAILED_READS,
 } h2_g99_e2e_touch_model_t;
 
-/* Scripted touch source Main reads instead of Runtime touch. While a case
- * scripts it, it reports the finger the way a touch controller reports a
- * real one: Main sees only the positions it happens to read. Otherwise it
- * passes Runtime touch through. Fields below `api` are guarded by the
- * suite mutex. */
+/* Suite-owned touch source. Main sees only the scripted positions it reads;
+ * physical touches cannot leak between automated cases. Fields below `api`
+ * are guarded by the suite mutex. */
 typedef struct h2_g99_e2e_finger {
   h2_g99_e2e_t* e2e;
   const h2_pal_touch_api_t* real;
   h2_pal_touch_api_t api;
-  bool scripted;
   bool down;
   int32_t x;
   int32_t y;

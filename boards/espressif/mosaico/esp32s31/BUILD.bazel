@@ -34,6 +34,34 @@ cc_test(
     deps = ["//pal"],
 )
 
+cc_test(
+    name = "display_transfer_test",
+    srcs = [
+        "include/h2_mosaico_display_capture.h",
+        "src/h2_mosaico_display.c",
+        "src/h2_mosaico_display.h",
+        "src/h2_mosaico_surface.c",
+        "src/h2_mosaico_surface.h",
+        "tests/test_display_transfer.c",
+        "tests/touch_fakes/bsp/display.h",
+        "tests/touch_fakes/bsp/esp_mosaico.h",
+        "tests/touch_fakes/driver/gpio.h",
+        "tests/touch_fakes/esp_heap_caps.h",
+        "tests/touch_fakes/freertos/FreeRTOS.h",
+        "tests/touch_fakes/freertos/semphr.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/touch_fakes",
+    ],
+    local_defines = ["H2_MOSAICO_DISPLAY_TEST_ALLOCATOR=1"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//pal"],
+)
+
 firmware_native_component(
     name = "bsp",
     srcs = ["@h2_vendor_esp_mosaico_bsp//:bsp_sources"],
@@ -262,6 +290,7 @@ firmware_native_component(
         "include/h2_mosaico_usb_console.h",
         "include/h2_mosaico_usb_diagnostic.h",
         "include/h2_mosaico_usb_transport.h",
+        "src/h2_mosaico_usb_common.h",
     ],
     component_directory = "boards/espressif/mosaico/esp32s31/src/usb",
     component_name = "h2_mosaico_usb",
@@ -311,6 +340,7 @@ cc_test(
         "include/h2_mosaico_usb_console.h",
         "include/h2_mosaico_usb_transport.h",
         "src/h2_mosaico_usb_common.c",
+        "src/h2_mosaico_usb_common.h",
         "src/h2_mosaico_usb_console.c",
         "tests/test_usb.c",
         "tests/usb_fakes/h2_mosaico_usb_test_sdk.h",

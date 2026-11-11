@@ -10,6 +10,7 @@
 #include "hal/h2_pal_display.h"
 #include "os/h2_pal_fs.h"
 #include "h2_esp_board.h"
+#include "h2_esp_platform_core.h"
 #include "h2_device_service.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_g99_e2e.h"
@@ -79,6 +80,7 @@ static void e2e_entry(void* user) {
         .capabilities =
             H2_G99_E2E_CAP_WIFI_TEST_NETWORK | H2_G99_E2E_CAP_FRAME_BUDGET,
         .select = select,
+        .render_mem = h2_esp_platform_internal_allocator(),
     };
     h2_g99_e2e_summary_t summary;
     rc = h2_g99_e2e_run(&target, &summary);

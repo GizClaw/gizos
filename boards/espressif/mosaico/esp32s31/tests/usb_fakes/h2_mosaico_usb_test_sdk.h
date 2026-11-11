@@ -14,6 +14,12 @@ typedef int esp_err_t;
 enum { ESP_OK, ESP_FAIL, ESP_ERR_NOT_FINISHED, ESP_ERR_TIMEOUT };
 typedef int TickType_t;
 typedef struct {
+  bool held;
+} portMUX_TYPE;
+#define portMUX_INITIALIZER_UNLOCKED {false}
+void portENTER_CRITICAL(portMUX_TYPE*);
+void portEXIT_CRITICAL(portMUX_TYPE*);
+typedef struct {
   int held;
 } StaticSemaphore_t;
 typedef StaticSemaphore_t* SemaphoreHandle_t;
@@ -42,6 +48,7 @@ int tinyusb_driver_install(const tinyusb_config_t*);
 int tinyusb_cdcacm_init(const tinyusb_config_cdcacm_t*);
 bool tud_cdc_n_ready(int);
 bool tud_cdc_n_write_clear(int);
+size_t tud_cdc_n_write_available(int);
 void tud_cdc_n_read_flush(int);
 size_t tinyusb_cdcacm_write_queue(int, const void*, size_t);
 int tinyusb_cdcacm_write_flush(int, TickType_t);

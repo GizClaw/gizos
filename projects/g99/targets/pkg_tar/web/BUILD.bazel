@@ -12,9 +12,8 @@ exports_files([
     "web_buttons.h",
 ])
 
-# Product-owned Web boards until GizOS ships an esp_mosaico web board; the
-# targets then switch `board` to //boards/espressif/mosaico/web. Buttons use
-# the desktop keys: Esc = AI (home), Space = BOOT (screen), arrows, Enter = OK.
+# Product-owned logical landscape canvas. The physical Mosaico Web target
+# selects //boards/espressif/mosaico/web and maps its AI/BOOT keys in main.c.
 _BUTTONS = {
     "home": "Escape",
     "screen": " ",
@@ -22,16 +21,6 @@ _BUTTONS = {
     "down": "ArrowDown",
     "ok": "Enter",
 }
-
-# Mosaico: 480 x 480 square AMOLED.
-h2_web_board(
-    name = "mosaico_board",
-    buttons = _BUTTONS,
-    default_skin = "canvas",
-    display_height = 480,
-    display_width = 480,
-    skins = {"canvas": "canvas.html"},
-)
 
 # Expected BK7258 board: 320 x 240 landscape.
 h2_web_board(

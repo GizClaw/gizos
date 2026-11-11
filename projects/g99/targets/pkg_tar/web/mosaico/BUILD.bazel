@@ -1,8 +1,75 @@
 load("//projects/g99/targets/pkg_tar/web:g99_web.bzl", "g99_web")
+load("//tools/bazel/web:web_archive.bzl", "web_archive_browser_test")
 
 package(default_visibility = ["//visibility:public"])
 
 g99_web(
     name = "g99-web-mosaico",
-    board = "//projects/g99/targets/pkg_tar/web:mosaico_board",
+    board = "//boards/espressif/mosaico/web",
+)
+
+# Exercise actual skin buttons as well as entry-owned virtual keyboard keys.
+web_archive_browser_test(
+    name = "device_controls_test",
+    archive = ":g99-web-mosaico",
+    canvas_min = 1000,
+    clicks = [
+        [
+            "H2_G99_WEB arrival=2 route=library ",
+            '[data-h2-button="ai"]',
+        ],
+        [
+            "H2_G99_WEB arrival=3 route=main ",
+            '[data-h2-button="boot"]',
+        ],
+        [
+            "G99_OBS .*ready=1 screen=0 ",
+            '[data-h2-button="boot"]',
+        ],
+        [
+            "H2_G99_SKIN_WAKE",
+            "#stop",
+        ],
+    ],
+    evals = [
+        [
+            "G99_OBS .*ready=1 screen=0 ",
+            """
+          const deadline = performance.now() + 4000;
+          function verifyWake() {
+            if (globalThis.h2G99State?.screenOn) {
+              const canvas = document.getElementById('canvas');
+              const screen = document.querySelector('[data-h2-slot="display"]');
+              const c = canvas.getBoundingClientRect(), s = screen.getBoundingClientRect();
+              if (canvas.width !== 480 || canvas.height !== 480 ||
+                  Math.abs(c.width - c.height) > 1 || c.left < s.left - 1 ||
+                  c.top < s.top - 1 || c.right > s.right + 1 || c.bottom > s.bottom + 1)
+                throw new Error('Mosaico screen geometry mismatch');
+              console.log('H2_G99_SKIN_WAKE');
+            } else if (performance.now() < deadline) {
+              setTimeout(verifyWake, 20);
+            } else {
+              throw new Error('Mosaico BOOT did not wake Main');
+            }
+          }
+          setTimeout(verifyWake, 20);
+        """,
+        ],
+    ],
+    fails = [
+        "H2_G99_WEB input_failed",
+        "H2_WEB_APP .* result=FAIL",
+    ],
+    passes = [
+        "H2_G99_WEB arrival=2 route=library ",
+        "H2_G99_WEB arrival=3 route=main ",
+        "G99_OBS .*ready=1 screen=0 ",
+        "H2_G99_SKIN_WAKE",
+        "H2_WEB_APP name=g99-web-mosaico result=PASS rc=0 destroy=0",
+    ],
+    presses = [[
+        "H2_G99_WEB arrival=1 route=main main=2 ",
+        "Enter",
+    ]],
+    timeout_s = 30,
 )

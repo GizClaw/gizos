@@ -26,6 +26,7 @@ calibration is applied. SPI NAND, OV3640 and other product features are excluded
 
 - `boards/espressif/mosaico/esp32s31` owns physical device wiring, the existing PAL
   driver implementations and generic USB CDC transport.
+- [`boards/espressif/mosaico/web`](web/README.md) owns the browser board metadata, physical button names and reusable enclosure skin.
 - Portable H2Loader protocol/session logic is owned by
   `libs/h2loader/device`. Final firmware entries use the common Device service
   through `Runtime.io_stream`; board and native providers own TinyUSB setup and

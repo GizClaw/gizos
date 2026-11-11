@@ -14,7 +14,7 @@ G99 owns the GizPocket handheld console's portable Main, product Loader UI, Desk
 
 ## Main behavior
 
-Main uses the logical screen size (`k = min(W, H) / 240`) and gives the display to the Lua host while an app runs. Its menu displays five entries; Library and Settings open, while the other entries report that they are unavailable. Library contains Orbit. HOME exits Orbit and returns to Library.
+Main uses the logical screen size (`k = min(W, H) / 240`) and gives the display to the Lua host while an app runs. Wheel dragging is damped and limited to one item per gesture, 3.6 items/s and 0.18 item per update; release snaps to an exact detent. The nearest icon retains its glow at half-slot positions and the information panel changes once at snap. Its menu displays five entries; Library and Settings open, while the other entries report that they are unavailable. Library contains Orbit. HOME exits Orbit and returns to Library.
 
 Settings implements Wi-Fi scan/password/connect/save, volume, brightness, screen timeout and About. Preferences use the production `g99` namespace; product regression uses the separate `g99_e2e` namespace. Main's brightness defaults to 100%.
 
@@ -38,7 +38,7 @@ Esc is HOME, Space is SCREEN, Up/Down turn the wheel, Enter is OK, and the mouse
 
 ## Web
 
-Web runs the same Main on the logical canvas, with the Desktop key mapping and origin-local settings. Device rotation is not applied to this canvas. These product-owned canvas skins do not claim to reproduce the physical enclosure.
+Web runs the same Main with origin-local settings. Mosaico selects the public [Web board and enclosure skin](../../boards/espressif/mosaico/web/README.md); the landscape entry retains a plain logical canvas. The G99 entry maps physical AI/BOOT to HOME/SCREEN and adds virtual Up/Down/Enter keyboard navigation. Device rotation is not applied to the logical Web canvas.
 
 ```sh
 bazel run --config=macos_arm64 //projects/g99/targets/pkg_tar/web/mosaico:serve
@@ -66,7 +66,7 @@ bazel build --config=esp32s31 \
   //projects/g99/targets/h2_loader_tar_zlib/e2e/espressif/mosaico:package
 ```
 
-G99's current device configuration rotates content 90° counter-clockwise and applies the inverse transform to touch. The wrapper uses an allocator-provided RGB565 frame and coalesces dirty panel rows. This policy belongs only to G99. All three entries use its single configuration header.
+G99's current device configuration rotates content 90° counter-clockwise and applies the inverse transform to touch. The wrapper uses an allocator-provided RGB565 frame and coalesces two-dimensional dirty regions. After a complete frame establishes the panel contents, it excludes unchanged pixels from subsequent transfers. The BSP expands them only to the panel's four-column/eight-row boundaries and packs them into DMA batches. This policy belongs only to G99. All three entries use its single configuration header.
 
 Loader shows the brand alone at power-on, installation state/progress and failures, then Starting after an install. UI failure is reported while the command service remains available. It uses one UI worker for initialization, all drawing and teardown. Main and E2E retain USB recovery commands for their boot lifetime. Main confirms once its menu and input are ready; E2E confirms a completed run, including a completed run with failing cases, and reports the failures separately.
 
@@ -82,4 +82,4 @@ bazel test --config=macos_arm64 //projects/g99/targets/pkg_tar/web/e2e/...
 
 Desktop and Web tests cover both logical sizes without devices or external service credentials. Loader tests cover rendered states, serialized submissions from concurrent callers, render failures and retained ownership after a failed join. Screen tests cover rotation, unrotated passthrough, touch coordinates and allocation failure.
 
-Only the device E2E entry declares `frame-budget`; shared-host performance cases report observations without enforcing hardware budgets. Device Wi-Fi cases require the documented test AP. Building a package or passing host/browser tests does not establish physical-device acceptance. The migrated images, static background, touch compatibility behavior and hardware frame budgets still require a fresh device run.
+The device frame budget requires at least 20 FPS (50 ms per active animation frame), including Library/Settings entry and exit. Only the device E2E entry declares `frame-budget`; shared-host performance cases report observations without enforcing hardware budgets. Device Wi-Fi cases require the documented test AP. Building a package or passing host/browser tests does not establish physical-device acceptance. Device acceptance requires the on-board E2E plus a separate physical drag and AI return check in the interactive Main image.

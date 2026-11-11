@@ -8,14 +8,32 @@
 #include <string.h>
 #include <fcntl.h>
 static int64_t now;
+static uint8_t transmitted[32768];
+static size_t transmitted_length;
 static bool endpoint_ready = true, blocked, nested;
 static int drivers, cdcs, clears, rx_clears, queued, delay_calls;
 static esp_vfs_t console;
+static bool console_active;
+static ssize_t write_console(int fd, const void* data, size_t len) {
+  assert(!console_active);
+  console_active = true;
+  const ssize_t result = console.write(fd, data, len);
+  console_active = false;
+  return result;
+}
 static void (*line_callback)(int, cdcacm_event_t*);
 static int block_after;
 static bool disconnect_during_clear, disconnect_during_queue,
     disconnect_during_flush, flush_blocked;
 static SemaphoreHandle_t mutex;
+void portENTER_CRITICAL(portMUX_TYPE* lock) {
+  assert(!lock->held);
+  lock->held = true;
+}
+void portEXIT_CRITICAL(portMUX_TYPE* lock) {
+  assert(lock->held);
+  lock->held = false;
+}
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* s) {
   mutex = s;
   return s;
@@ -50,6 +68,10 @@ bool tud_cdc_n_ready(int n) {
   assert(n == 0);
   return endpoint_ready;
 }
+size_t tud_cdc_n_write_available(int n) {
+  assert(n == 0);
+  return endpoint_ready && !blocked ? 2048u : 0u;
+}
 bool tud_cdc_n_write_clear(int n) {
   assert(n == 0);
   clears++;
@@ -67,14 +89,18 @@ void tud_cdc_n_read_flush(int n) {
   rx_clears++;
 }
 size_t tinyusb_cdcacm_write_queue(int n, const void* p, size_t size) {
+  assert(!console_active); /* stdio must only enqueue, never enter SDK TX. */
   assert(n == 0 && p && mutex->held);
   if (nested) {
     nested = false;
     /* Exercise the actual registered VFS path while a frame owns TX. */
-    assert(console.write(0, "log", 3) == -1);
+    assert(write_console(0, "log", 3) == 3);
   }
   if (blocked || (block_after && queued >= block_after)) return 0;
   size_t count = size > 2 ? 2 : size;
+  assert(count <= sizeof(transmitted) - transmitted_length);
+  memcpy(transmitted + transmitted_length, p, count);
+  transmitted_length += count;
   queued += (int)count;
   if (disconnect_during_queue) {
     disconnect_during_queue = false;
@@ -84,6 +110,7 @@ size_t tinyusb_cdcacm_write_queue(int n, const void* p, size_t size) {
   return count;
 }
 int tinyusb_cdcacm_write_flush(int n, TickType_t t) {
+  assert(!console_active);
   assert(t == 0); /* Blocking SDK flush may log recursively on timeout. */
   assert(n == 0 && mutex->held);
   if (disconnect_during_flush) {
@@ -145,14 +172,14 @@ int main(void) {
     if (flush)
       assert(h2_mosaico_usb_flush(NULL) == H2_PAL_ERR_CLOSED);
     else
-      assert(console.write(0, "log", 3) == -1);
+      assert(write_console(0, "log", 3) == 3);
     endpoint_ready = true;
     line_callback(0, &initial_low);
     assert(h2_mosaico_usb_read(NULL, &initial_data, 1, &initial_out, 0) ==
            H2_PAL_ERR_CLOSED);
     assert(h2_mosaico_usb_read(NULL, &initial_data, 1, &initial_out, 0) ==
            H2_PAL_OK);
-    assert(console.write(0, "log", 3) == 3);
+    assert(write_console(0, "log", 3) == 3);
   }
   queued = clears = rx_clears = 0;
   cdcacm_event_t connected_event = {.line_state_changed_data = {.dtr = true}};
@@ -163,12 +190,12 @@ int main(void) {
   assert(h2_pal_io_stream_write(stream, "frame!", 6, &out, 20) == H2_PAL_OK &&
          out == 6 && queued == 6);
   assert(!mutex->held);
-  assert(console.write(0, "log", 3) == 3);
+  assert(write_console(0, "log", 3) == 3);
   block_after = queued + 2;
   assert(h2_mosaico_usb_write(NULL, "frame", 5, &out, 2) == H2_PAL_ERR_CLOSED &&
          out == 2);
   assert(!mutex->held && clears == 1 && delay_calls > 0);
-  assert(console.write(0, "log", 3) == -1);
+  assert(write_console(0, "log", 3) == 3);
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
          H2_PAL_ERR_CLOSED);
   cdcacm_event_t event = {.line_state_changed_data = {.dtr = false}};
@@ -184,12 +211,12 @@ int main(void) {
   blocked = false;
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK &&
          out == 1);
-  assert(console.write(0, "log", 3) == 3 && !mutex->held && rx_clears == 1);
+  assert(write_console(0, "log", 3) == 3 && !mutex->held && rx_clears == 1);
   /* TinyUSB reports every SET_CONTROL_LINE_STATE, including an RTS-only or
    * redundant DTR-low request. It must not close the active new stream. */
   line_callback(0, &event);
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
-  assert(rx_clears == 1 && console.write(0, "log", 3) == 3);
+  assert(rx_clears == 1 && write_console(0, "log", 3) == 3);
   assert(h2_mosaico_usb_write(NULL, NULL, 1, &out, 0) ==
          H2_PAL_ERR_INVALID_ARG);
   line_callback(0, &connected_event);
@@ -200,7 +227,7 @@ int main(void) {
   disconnect_during_clear = true;
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
          H2_PAL_ERR_CLOSED);
-  assert(console.write(0, "log", 3) == -1);
+  assert(write_console(0, "log", 3) == 3);
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
          H2_PAL_ERR_CLOSED);
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
@@ -212,7 +239,7 @@ int main(void) {
          out == 0);
   endpoint_ready = true;
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
-  assert(console.write(0, "log", 3) == 3);
+  assert(write_console(0, "log", 3) == 3);
 
   /* Closing during queueing must prevent the remainder of the old frame. */
   line_callback(0, &connected_event);
@@ -241,7 +268,7 @@ int main(void) {
   flush_blocked = true;
   assert(h2_mosaico_usb_write(NULL, "frame", 5, &out, 2) == H2_PAL_ERR_CLOSED &&
          out == 5);
-  assert(!mutex->held && console.write(0, "log", 3) == -1);
+  assert(!mutex->held && write_console(0, "log", 3) == 3);
   /* DTR is already low. A failed stream remains gated until another host
    * request, but a repeated low request now permits a fresh handshake. */
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
@@ -254,6 +281,46 @@ int main(void) {
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
          H2_PAL_ERR_CLOSED);
   assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
-  assert(rx_clears == old_rx_clears + 1 && console.write(0, "log", 3) == 3);
+  assert(rx_clears == old_rx_clears + 1 && write_console(0, "log", 3) == 3);
+  /* Backpressure queues diagnostics without blocking the UI or closing
+   * the reliable command session. Its reads pump logs after recovery. */
+  blocked = true;
+  const int64_t console_started = now;
+  assert(write_console(0, "log", 3) == 3);
+  assert(now == console_started && !mutex->held);
+  blocked = false;
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
+  assert(write_console(0, "log", 3) == 3);
+  /* Oversized diagnostics are dropped as whole writes without hurting RX. */
+  char oversized[8193] = {0};
+  const int before_oversized = queued;
+  assert(write_console(0, oversized, sizeof(oversized)) ==
+         (ssize_t)sizeof(oversized));
+  assert(queued == before_oversized);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
+  /* Accepted diagnostic bytes survive backpressure and ring wrap in order. */
+  uint8_t diagnostic[6200];
+  for (size_t i = 0u; i < sizeof(diagnostic); ++i)
+    diagnostic[i] = (uint8_t)(i * 73u);
+  for (int pass = 0; pass < 2; ++pass) {
+    transmitted_length = 0u;
+    blocked = true;
+    assert(write_console(0, diagnostic, sizeof(diagnostic)) ==
+           (ssize_t)sizeof(diagnostic));
+    assert(transmitted_length == 0u);
+    blocked = false;
+    for (int pump = 0; pump < 8; ++pump)
+      assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) ==
+             H2_PAL_OK);
+    assert(transmitted_length == sizeof(diagnostic));
+    assert(memcmp(transmitted, diagnostic, sizeof(diagnostic)) == 0);
+  }
+  /* A console callback while a frame owns TX is queued after that frame. */
+  transmitted_length = 0u;
+  nested = true;
+  assert(h2_mosaico_usb_write(NULL, "frame!", 6, &out, 20) == H2_PAL_OK);
+  assert(transmitted_length == 6u && memcmp(transmitted, "frame!", 6) == 0);
+  assert(h2_mosaico_usb_read(NULL, data, sizeof(data), &out, 0) == H2_PAL_OK);
+  assert(transmitted_length == 9u && memcmp(transmitted, "frame!log", 9) == 0);
   return 0;
 }

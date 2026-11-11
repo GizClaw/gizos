@@ -15,8 +15,9 @@ extern "C" {
 const h2_pal_periph_api_t* h2_g99_web_periph_api(void);
 const h2_runtime_component_mapper_t* h2_g99_web_component_mapper(void);
 
-/** Logical component for a web board Button name ("home", "screen", "up",
- * "down", "ok"); H2_RUNTIME_COMPONENT_ID_NONE for any other name. */
+/** Maps physical board names "ai"/"boot" to HOME/SCREEN and supports
+ * the logical canvas keys "home", "screen", "up", "down", "ok".
+ * Returns H2_RUNTIME_COMPONENT_ID_NONE for any other name. */
 h2_runtime_component_id_t h2_g99_web_component(const char* name);
 
 /** Pushes one ordered edge of a mapped component into Runtime. Call from the

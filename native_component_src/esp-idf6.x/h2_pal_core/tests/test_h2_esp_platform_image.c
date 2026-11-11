@@ -258,6 +258,20 @@ static void test_images(void) {
   assert(s_safe_calls > 20u);
 }
 
+typedef struct boot_inventory {
+  unsigned count;
+  uint32_t flags[2];
+} boot_inventory_t;
+
+static h2_pal_result_t collect_boot_partition(
+    void* user, const h2_pal_power_boot_partition_t* partition) {
+  boot_inventory_t* inventory = user;
+  assert(partition->id == 1u || partition->id == 2u);
+  inventory->flags[partition->id - 1u] = partition->flags;
+  ++inventory->count;
+  return H2_PAL_OK;
+}
+
 static void test_power(void) {
   const h2_pal_power_api_t* power = h2_esp_platform_power_api();
   h2_pal_power_capabilities_t capabilities;
@@ -284,6 +298,15 @@ static void test_power(void) {
   for (unsigned state = ESP_OTA_IMG_NEW; state <= ESP_OTA_IMG_UNDEFINED;
        ++state) {
     s_state[0] = (esp_ota_img_states_t)state;
+    boot_inventory_t inventory = {0};
+    assert(h2_pal_power_list_boot_partitions(power, collect_boot_partition,
+                                             &inventory) == H2_PAL_OK);
+    assert(inventory.count == 2u);
+    const int bootable =
+        state != ESP_OTA_IMG_INVALID && state != ESP_OTA_IMG_ABORTED;
+    assert(!!(inventory.flags[0] & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE) ==
+           bootable);
+    assert(inventory.flags[1] & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE);
     const unsigned before = s_confirms;
     h2_pal_power_image_state_t observed;
     assert(h2_pal_power_get_image_state(power, 1u, &observed) == H2_PAL_OK);
@@ -299,7 +322,16 @@ static void test_power(void) {
     assert(s_confirms == before + (unsigned)pending &&
            !confirmation.was_pending);
   }
+  /* Factory-written OTA images have no state record yet. Both existing
+   * partitions still enumerate, while explicit rollback states stay excluded.
+   */
   s_state_error = ESP_ERR_NOT_FOUND;
+  boot_inventory_t inventory = {0};
+  assert(h2_pal_power_list_boot_partitions(power, collect_boot_partition,
+                                           &inventory) == H2_PAL_OK);
+  assert(inventory.count == 2u);
+  assert(inventory.flags[0] & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE);
+  assert(inventory.flags[1] & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE);
   h2_pal_power_image_state_t observed;
   assert(h2_pal_power_get_image_state(power, 2u, &observed) == H2_PAL_OK);
   assert(observed.state == H2_PAL_POWER_IMAGE_STATE_UNKNOWN);
@@ -307,6 +339,10 @@ static void test_power(void) {
          H2_PAL_OK);
   assert(!confirmation.was_pending);
   s_state_error = ESP_FAIL;
+  memset(&inventory, 0, sizeof(inventory));
+  assert(h2_pal_power_list_boot_partitions(power, collect_boot_partition,
+                                           &inventory) == H2_PAL_ERR_IO);
+  assert(inventory.count == 0u);
   assert(h2_pal_power_confirm_running_image(power, NULL, &confirmation) ==
          H2_PAL_ERR_IO);
   assert(!confirmation.partition_id);

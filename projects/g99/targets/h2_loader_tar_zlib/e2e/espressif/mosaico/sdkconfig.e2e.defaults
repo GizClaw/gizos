@@ -1,0 +1,4 @@
+# Preserve crash evidence when an unconfirmed E2E image rolls back.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=8
+CONFIG_ESP_COREDUMP_STACK_SIZE=4096

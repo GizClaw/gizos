@@ -34,6 +34,7 @@ static struct {
   h2_pal_task_t* input_task;
   h2_pal_result_t input_result;
   h2_runtime_component_id_t buttons[H2_WEB_BOARD_MAX_BUTTONS];
+  size_t button_count;
   bool buttons_bound;
   /* Observation bookkeeping, touched only by the Main task. */
   double started_at;
@@ -109,7 +110,7 @@ static void input_worker(void* user) {
     }
     if (pending != 0) {
       const unsigned index = ((unsigned)pending >> 1u) - 1u;
-      if (index >= H2_WEB_BOARD_BUTTON_COUNT) {
+      if (index >= s_web.button_count) {
         s_web.input_result = H2_PAL_ERR_INVALID_ARG;
         break;
       }
@@ -142,15 +143,40 @@ static void input_worker(void* user) {
   }
 }
 
+static h2_pal_result_t bind_button(const char* name, const char* key) {
+  const h2_runtime_component_id_t component = h2_g99_web_component(name);
+  if (component == H2_RUNTIME_COMPONENT_ID_NONE) return H2_PAL_ERR_INVALID_ARG;
+  if (s_web.button_count >= H2_WEB_BOARD_MAX_BUTTONS)
+    return H2_PAL_ERR_NO_SPACE;
+  /* Even a partially failed bind must close DOM admission during cleanup. */
+  s_web.buttons_bound = true;
+  const h2_pal_result_t rc = page_action(1, (int)s_web.button_count, key, name);
+  if (rc == H2_PAL_OK) s_web.buttons[s_web.button_count++] = component;
+  return rc;
+}
+
 static h2_pal_result_t bind_buttons(void) {
   for (size_t i = 0u; i < H2_WEB_BOARD_BUTTON_COUNT; ++i) {
-    s_web.buttons[i] = h2_g99_web_component(h2_web_board_buttons[i].name);
-    if (s_web.buttons[i] == H2_RUNTIME_COMPONENT_ID_NONE)
-      return H2_PAL_ERR_INVALID_ARG;
-    /* Even a partially failed bind must close DOM admission during cleanup. */
-    s_web.buttons_bound = true;
-    const h2_pal_result_t rc = page_action(
-        1, (int)i, h2_web_board_buttons[i].key, h2_web_board_buttons[i].name);
+    const h2_pal_result_t rc =
+        bind_button(h2_web_board_buttons[i].name, h2_web_board_buttons[i].key);
+    if (rc != H2_PAL_OK) return rc;
+  }
+  /* Keyboard navigation is entry-owned emulation. Keep these virtual keys
+   * out of a public board's physical button inventory. */
+  static const struct {
+    const char* name;
+    const char* key;
+  } virtual_keys[] = {
+      {"up", "ArrowUp"}, {"down", "ArrowDown"}, {"ok", "Enter"}};
+  for (size_t i = 0u; i < sizeof(virtual_keys) / sizeof(virtual_keys[0]); ++i) {
+    const h2_runtime_component_id_t component =
+        h2_g99_web_component(virtual_keys[i].name);
+    bool bound = false;
+    for (size_t j = 0u; j < s_web.button_count; ++j)
+      if (s_web.buttons[j] == component) bound = true;
+    if (bound) continue;
+    const h2_pal_result_t rc =
+        bind_button(virtual_keys[i].name, virtual_keys[i].key);
     if (rc != H2_PAL_OK) return rc;
   }
   return H2_PAL_OK;

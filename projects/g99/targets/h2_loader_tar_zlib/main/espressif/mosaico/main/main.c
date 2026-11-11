@@ -7,6 +7,7 @@
 
 #include "esp_app_desc.h"
 #include "h2_esp_board.h"
+#include "h2_esp_platform_core.h"
 #include "h2_device_service.h"
 #include "h2_esp_target_task_policy.h"
 #include "h2_g99.h"
@@ -80,12 +81,25 @@ static void on_frame(void* user, const h2_g99_frame_stats_t* f) {
  * input. Runs once, on the Main task. */
 static void observe(void* user, const h2_g99_observation_t* o) {
   (void)user;
-  if (s_confirmed || o->lifecycle != H2_G99_LIFECYCLE_RUNNING ||
-      o->route != H2_G99_ROUTE_MAIN || !o->input_ready)
-    return;
-  s_confirmed = true;
-  const int rc = h2_device_app_confirm(&s_management, s_runtime);
-  printf("H2_G99_MAIN_CONFIRM rc=%d\n", rc);
+  static bool observed;
+  static h2_g99_route_t route;
+  static uint8_t main_selection, sub_selection;
+  if (o->lifecycle != H2_G99_LIFECYCLE_RUNNING || !o->input_ready) return;
+  if (!observed || route != o->route || main_selection != o->main_selection ||
+      sub_selection != o->sub_selection) {
+    observed = true;
+    route = o->route;
+    main_selection = o->main_selection;
+    sub_selection = o->sub_selection;
+    printf("H2_G99_STATE route=%d main=%u sub=%u screen=%d\n", o->route,
+           (unsigned)o->main_selection, (unsigned)o->sub_selection,
+           o->screen_on ? 1 : 0);
+  }
+  if (!s_confirmed && o->route == H2_G99_ROUTE_MAIN) {
+    s_confirmed = true;
+    const int rc = h2_device_app_confirm(&s_management, s_runtime);
+    printf("H2_G99_MAIN_CONFIRM rc=%d\n", rc);
+  }
 }
 
 static void main_entry(void* user) {
@@ -96,6 +110,7 @@ static void main_entry(void* user) {
       .board_name = "esp_mosaico",
       .observe = observe,
       .frame = on_frame,
+      .render_mem = h2_esp_platform_internal_allocator(),
   };
   printf("H2_G99_MAIN_BOOT version=%s board=esp_mosaico\n", version);
   const h2_pal_result_t rc = h2_g99_run(s_runtime, &config);

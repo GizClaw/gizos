@@ -1,4 +1,5 @@
 #include "h2_mosaico_usb_transport.h"
+#include "h2_mosaico_usb_common.h"
 #include "h2_mosaico_usb_console.h"
 #ifdef H2_MOSAICO_USB_HOST_TEST
 #include "h2_mosaico_usb_test_sdk.h"
@@ -14,6 +15,15 @@
 #endif
 #include <stdbool.h>
 #include <stdatomic.h>
+#include <string.h>
+
+enum { CONSOLE_BYTES = 8192, CONSOLE_PUMP_BYTES = 1024 };
+static uint8_t console_bytes[CONSOLE_BYTES];
+static size_t console_head, console_length;
+static portMUX_TYPE console_lock = portMUX_INITIALIZER_UNLOCKED;
+/* TX owns this staging block; queue locking never spans an SDK call. */
+static uint8_t console_pending[CONSOLE_PUMP_BYTES];
+static size_t console_pending_offset, console_pending_length;
 
 /* Boot-lifetime driver and lock. Initialization is called serially at startup;
  * failure retains completed stages and can be retried by that same caller. */
@@ -103,6 +113,69 @@ static bool link_closed(void) {
   return atomic_load(&failed) || atomic_load(&disconnected) ||
          !tud_cdc_n_ready(0);
 }
+/* TX owns the staging block. Critical sections copy bounded memory only,
+ * so console writes cannot lose printf fragments to cross-core contention. */
+static void pump_console(void) {
+  if (!cdc_ready || !tx_lock || !xSemaphoreTake(tx_lock, 0)) return;
+  if (!tud_cdc_n_ready(0) && !atomic_load(&failed) &&
+      !atomic_load(&disconnected)) {
+    atomic_store(&disconnected, true);
+    (void)fail_link();
+  }
+  size_t budget = CONSOLE_PUMP_BYTES;
+  while (budget > 0u && !link_closed()) {
+    if (console_pending_length == 0u) {
+      portENTER_CRITICAL(&console_lock);
+      const size_t bytes = console_length < sizeof(console_pending)
+                               ? console_length
+                               : sizeof(console_pending);
+      const size_t first = bytes < CONSOLE_BYTES - console_head
+                               ? bytes
+                               : CONSOLE_BYTES - console_head;
+      memcpy(console_pending, &console_bytes[console_head], first);
+      memcpy(console_pending + first, console_bytes, bytes - first);
+      console_head = (console_head + bytes) % CONSOLE_BYTES;
+      console_length -= bytes;
+      portEXIT_CRITICAL(&console_lock);
+      console_pending_offset = 0u;
+      console_pending_length = bytes;
+      if (bytes == 0u) break;
+    }
+    size_t count = tud_cdc_n_write_available(0);
+    if (count > console_pending_length) count = console_pending_length;
+    if (count > budget) count = budget;
+    if (count == 0u) break;
+    count = tinyusb_cdcacm_write_queue(
+        0, console_pending + console_pending_offset, count);
+    if (count == 0u) break;
+    console_pending_offset += count;
+    console_pending_length -= count;
+    budget -= count;
+  }
+  if (!link_closed()) (void)tinyusb_cdcacm_write_flush(0, 0);
+  xSemaphoreGive(tx_lock);
+}
+
+void h2_mosaico_usb_console_output(const void* data, size_t len) {
+  if (len == 0u || data == NULL) return;
+  /* Observe closure without entering SDK TX while stdio owns its FILE lock. */
+  if (cdc_ready && !tud_cdc_n_ready(0)) {
+    atomic_store(&disconnected, true);
+    atomic_store(&failed, true);
+    atomic_store(&report_closed, true);
+  }
+  portENTER_CRITICAL(&console_lock);
+  if (len <= CONSOLE_BYTES - console_length) {
+    const size_t tail = (console_head + console_length) % CONSOLE_BYTES;
+    const size_t first =
+        len < CONSOLE_BYTES - tail ? len : CONSOLE_BYTES - tail;
+    memcpy(&console_bytes[tail], data, first);
+    memcpy(console_bytes, (const uint8_t*)data + first, len - first);
+    console_length += len;
+  }
+  portEXIT_CRITICAL(&console_lock);
+}
+
 /* The pinned blocking SDK flush logs on timeout. Poll its nonblocking path
  * instead: logging while holding TX would reenter this same console/lock. */
 static int drain_tx(int64_t start, uint32_t timeout) {
@@ -203,6 +276,7 @@ h2_pal_result_t h2_mosaico_usb_read(void* user, void* data, size_t len,
       atomic_store(&failed, true);
       return H2_PAL_ERR_CLOSED;
     }
+    pump_console();
     if (atomic_exchange(&report_closed, false)) return H2_PAL_ERR_CLOSED;
     if (atomic_exchange(&disconnected, false)) {
       if (!xSemaphoreTake(tx_lock, ticks(remaining(start, timeout)))) {

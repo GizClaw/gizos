@@ -32,11 +32,6 @@ static h2_pal_result_t finger_poll(void* user, h2_pal_touch_event_t* out) {
   h2_g99_e2e_t* e2e = f->e2e;
   const uint64_t now = h2_g99_e2e_now_ms(e2e);
   h2_g99_e2e_lock(e2e);
-  if (!f->scripted) {
-    h2_g99_e2e_unlock(e2e);
-    return f->real != NULL ? h2_pal_touch_poll_event(f->real, out)
-                           : H2_PAL_ERR_WOULD_BLOCK;
-  }
   const uint64_t since = f->reads > 0u ? f->last_read_ms : f->begun_ms;
   if (now > since && now - since > f->max_gap_ms)
     f->max_gap_ms = (uint32_t)(now - since);
@@ -104,12 +99,11 @@ void h2_g99_e2e_finger_init(h2_g99_e2e_t* e2e, const h2_pal_touch_api_t* real) {
 
 /* ---------- scripting, from the suite task ---------- */
 
-/* Takes the touch source over with the finger up and counters cleared. */
+/* Starts a measurement with the suite-owned finger up and counters cleared. */
 static void begin(h2_g99_e2e_t* e2e) {
   h2_g99_e2e_finger_t* f = &e2e->finger;
   const uint64_t now = h2_g99_e2e_now_ms(e2e);
   h2_g99_e2e_lock(e2e);
-  f->scripted = true;
   f->down = false;
   f->reported_down = false;
   f->hovering = false;
@@ -189,8 +183,8 @@ static h2_pal_result_t wait_lifted(h2_g99_e2e_t* e2e) {
   }
 }
 
-/* Hands the touch source back to Runtime touch. The gap still open at the
- * end counts as well, so a Main that stopped reading shows. */
+/* Leaves the suite-owned pointer released. The gap still open at the end
+ * counts as well, so a Main that stopped reading shows. */
 static void finish(h2_g99_e2e_t* e2e, h2_g99_e2e_touch_stats_t* out) {
   h2_g99_e2e_finger_t* f = &e2e->finger;
   const uint64_t now = h2_g99_e2e_now_ms(e2e);
@@ -202,14 +196,12 @@ static void finish(h2_g99_e2e_t* e2e, h2_g99_e2e_touch_stats_t* out) {
     out->reads = f->reads;
     out->max_gap_ms = f->max_gap_ms;
   }
-  f->scripted = false;
   f->down = false;
   f->hovering = false;
   h2_g99_e2e_unlock(e2e);
 }
 
-/* Lifts the finger and waits until Main read it and ended the press, then
- * hands touch back. */
+/* Lifts the finger and waits until Main read it and ended the press. */
 static h2_pal_result_t lift(h2_g99_e2e_t* e2e, h2_g99_e2e_touch_stats_t* out) {
   place(e2e, false, 0, 0);
   h2_pal_result_t rc = wait_read(e2e, "lift");

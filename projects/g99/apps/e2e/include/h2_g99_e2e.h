@@ -64,6 +64,9 @@ typedef struct h2_g99_e2e_target {
   /** Optional abort request polled between and inside cases. */
   int (*should_abort)(void* user);
   void* abort_user;
+  /** Optional Main render-buffer allocator, borrowed for the entire suite run.
+   */
+  const h2_pal_mem_api_t* render_mem;
 } h2_g99_e2e_target_t;
 
 typedef struct h2_g99_e2e_summary {

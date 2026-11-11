@@ -292,7 +292,12 @@ static h2_pal_result_t power_get_partition_bootable(uint32_t partition_id,
   }
   call->partition_id = partition_id;
   h2_pal_result_t rc = power_ota_call(call);
-  if (rc == H2_PAL_OK) {
+  if (rc == H2_PAL_ERR_NOT_FOUND && call->partition != NULL) {
+    /* Factory-written OTA partitions may have no state record yet. Treat
+     * that as undefined state, as get_image_state and confirmation do. */
+    *out_bootable = 1;
+    rc = H2_PAL_OK;
+  } else if (rc == H2_PAL_OK) {
     *out_bootable = call->state != ESP_OTA_IMG_INVALID &&
                     call->state != ESP_OTA_IMG_ABORTED;
   }

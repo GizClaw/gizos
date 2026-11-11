@@ -245,7 +245,55 @@ static void test_wheel_bounds(void) {
   }
 }
 
+/* Large pointer jumps and a delayed frame remain bounded; reversing and
+ * returning to the origin converge without overshoot. */
+static void test_wheel_motion(void) {
+  float offset = h2_g99_wheel_follow(0.0f, 1000.0f, 10000u);
+  CHECK(offset > 0.0f && offset <= 0.181f);
+  CHECK(h2_g99_wheel_follow(offset, 1.0f, 0u) == offset);
+  for (int i = 0; i < 100; ++i) {
+    const float next = h2_g99_wheel_follow(offset, 1000.0f, 10u);
+    CHECK(next >= offset && next <= 1.0f);
+    CHECK(next - offset <= 0.037f);
+    offset = next;
+  }
+  NEAR(offset, 1.0f, 0.001f);
+  for (int i = 0; i < 100; ++i) {
+    const float next = h2_g99_wheel_follow(offset, -1000.0f, 10u);
+    CHECK(next <= offset && next >= -1.0f);
+    CHECK(offset - next <= 0.037f);
+    offset = next;
+  }
+  NEAR(offset, -1.0f, 0.001f);
+  for (int i = 0; i < 100; ++i) offset = h2_g99_wheel_follow(offset, 0.0f, 10u);
+  CHECK(offset == 0.0f);
+  CHECK(h2_g99_wheel_snap(0.29f) == 0);
+  CHECK(h2_g99_wheel_snap(0.5f) == 1);
+  CHECK(h2_g99_wheel_snap(-0.5f) == -1);
+  CHECK(h2_g99_wheel_snap(1000.0f) == 1);
+  CHECK(h2_g99_wheel_snap(-1000.0f) == -1);
+  CHECK(h2_g99_ease_snap(-1.0f) == 0.0f);
+  CHECK(h2_g99_ease_snap(2.0f) == 1.0f);
+  float previous = 0.0f;
+  for (int i = 0; i <= 100; ++i) {
+    const float value = h2_g99_ease_snap((float)i / 100.0f);
+    CHECK(value >= previous && value <= 1.0f);
+    previous = value;
+  }
+  CHECK(previous == 1.0f);
+  h2_g99_layout_t layout;
+  CHECK(h2_g99_layout_compute(480, 480, &layout));
+  for (int i = 0; i <= 100; ++i) {
+    const float position = (float)i / 100.0f;
+    h2_g99_slot_t before, after;
+    h2_g99_wheel_slot(&layout, H2_G99_WHEEL_ICONS, -position, &before);
+    h2_g99_wheel_slot(&layout, H2_G99_WHEEL_ICONS, 1.0f - position, &after);
+    CHECK(before.glow >= 0.5f || after.glow >= 0.5f);
+  }
+}
+
 int main(void) {
+  test_wheel_motion();
   test_square_480();
   test_landscape_320();
   test_rejects_invalid();

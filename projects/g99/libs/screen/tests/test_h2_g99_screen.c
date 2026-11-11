@@ -24,6 +24,9 @@ typedef struct panel {
   int height;
   int draws;
   int presents;
+  int fail_draw;
+  int fail_present;
+  uint32_t drawn_pixels;
   h2_display_rect_t last;
   uint16_t pixels[MAX_SIDE * MAX_SIDE];
 } panel_t;
@@ -47,6 +50,10 @@ static int panel_draw(void* user, const h2_display_rect_t* rect,
                       const void* pixels, size_t stride,
                       h2_display_pixel_format_t format) {
   panel_t* p = user;
+  if (p->fail_draw) {
+    p->fail_draw = 0;
+    return H2_PAL_ERR_IO;
+  }
   if (format != H2_DISPLAY_PIXEL_RGB565 || rect->x < 0 || rect->y < 0 ||
       rect->x + rect->width > p->width || rect->y + rect->height > p->height)
     return H2_PAL_ERR_INVALID_ARG;
@@ -55,6 +62,7 @@ static int panel_draw(void* user, const h2_display_rect_t* rect,
            (const uint8_t*)pixels + (size_t)y * stride,
            (size_t)rect->width * sizeof(uint16_t));
   ++p->draws;
+  p->drawn_pixels += (uint32_t)rect->width * (uint32_t)rect->height;
   p->last = *rect;
   return H2_PAL_OK;
 }
@@ -62,6 +70,10 @@ static int panel_draw(void* user, const h2_display_rect_t* rect,
 static int panel_present(void* user) {
   panel_t* p = user;
   ++p->presents;
+  if (p->fail_present) {
+    p->fail_present = 0;
+    return H2_PAL_ERR_IO;
+  }
   return H2_PAL_OK;
 }
 
@@ -170,8 +182,7 @@ static void setup(int panel_w, int panel_h) {
   CHECK(h2_pal_display_open(h2_g99_screen_display(&s_screen)) == H2_PAL_OK);
 }
 
-/* LVGL renders 480 x 48 bands; they reach the board as one draw of whole
- * panel rows on present. */
+/* Adjacent full-screen LVGL bands coalesce into one initial frame. */
 static void test_bands_coalesce(void) {
   setup(480, 480);
   const h2_pal_display_api_t* d = h2_g99_screen_display(&s_screen);
@@ -196,8 +207,7 @@ static void test_bands_coalesce(void) {
   CHECK(s_panel.draws == 1 && s_panel.presents == 2);
 }
 
-/* A sub-rectangle with a row stride on a non-square panel sends the panel
- * rows of its logical columns only, keeping the rest of those rows. */
+/* A strided sub-rectangle retains both rotated dirty bounds. */
 static void test_partial_rect(void) {
   setup(6, 4); /* logical 4 x 6 */
   const h2_pal_display_api_t* d = h2_g99_screen_display(&s_screen);
@@ -221,7 +231,7 @@ static void test_partial_rect(void) {
   CHECK(h2_pal_display_present(d) == H2_PAL_OK);
   /* Logical columns 1 and 2 are panel rows 2 and 1. */
   CHECK(s_panel.draws == 2);
-  CHECK(s_panel.last.x == 0 && s_panel.last.y == 1 && s_panel.last.width == 6 &&
+  CHECK(s_panel.last.x == 2 && s_panel.last.y == 1 && s_panel.last.width == 3 &&
         s_panel.last.height == 2);
   CHECK(count_wrong(1, 2, 2, 3, 1000) == 0);
   CHECK(count_wrong(1, 0, 2, 2, 0) == 0);
@@ -236,6 +246,118 @@ static void test_partial_rect(void) {
   CHECK(h2_pal_display_draw_bitmap(d, &rect, rect_pixels, STRIDE * 2,
                                    H2_DISPLAY_PIXEL_RGB888) ==
         H2_PAL_ERR_UNSUPPORTED);
+}
+
+/* Broad LVGL invalidations transmit only the pixels that changed. */
+static void test_changed_pixels(void) {
+  setup(480, 480);
+  const h2_pal_display_api_t* d = h2_g99_screen_display(&s_screen);
+  const h2_display_rect_t all = {0, 0, 480, 480};
+  memset(s_frame, 0, sizeof(s_frame));
+  /* Even an initial black frame must replace the previous panel contents. */
+  memset(s_panel.pixels, 0xff, sizeof(s_panel.pixels));
+  CHECK(h2_pal_display_draw_bitmap(d, &all, s_frame, 960,
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(s_panel.draws == 1 && s_panel.drawn_pixels == 480u * 480u);
+  CHECK(shown(0, 0) == 0 && shown(479, 479) == 0);
+  const int draws = s_panel.draws;
+  CHECK(h2_pal_display_draw_bitmap(d, &all, s_frame, 960,
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(s_panel.draws == draws);
+  s_frame[20 * 480 + 10] = 111;
+  s_frame[420 * 480 + 400] = 222;
+  s_panel.drawn_pixels = 0u;
+  CHECK(h2_pal_display_draw_bitmap(d, &all, s_frame, 960,
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(s_panel.draws == draws + 2 && s_panel.drawn_pixels == 2u);
+  CHECK(shown(10, 20) == 111 && shown(400, 420) == 222);
+  /* A failed update stays pending even when the retry pixels are identical. */
+  s_frame[20 * 480 + 10] = 333;
+  CHECK(h2_pal_display_draw_bitmap(d, &all, s_frame, 960,
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  s_panel.fail_present = 1;
+  CHECK(h2_pal_display_present(d) == H2_PAL_ERR_IO);
+  CHECK(h2_pal_display_draw_bitmap(d, &all, s_frame, 960,
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(shown(10, 20) == 333);
+  /* A new display session must establish its panel contents again. */
+  CHECK(h2_pal_display_close(d) == H2_PAL_OK);
+  CHECK(h2_pal_display_open(d) == H2_PAL_OK);
+  const int before = s_panel.draws;
+  CHECK(h2_pal_display_draw_bitmap(d, &all, s_frame, 960,
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(s_panel.draws == before + 1);
+}
+
+/* Pixel buffers and their row stride need not be uint16_t-aligned. */
+static void test_unaligned_pixels(void) {
+  setup(6, 4);
+  const h2_pal_display_api_t* d = h2_g99_screen_display(&s_screen);
+  uint8_t storage[1 + 7 * 3] = {0};
+  for (int y = 0; y < 3; ++y)
+    for (int x = 0; x < 2; ++x) {
+      const uint16_t pixel = value(x + 1, y + 2);
+      memcpy(&storage[1 + y * 7 + x * 2], &pixel, sizeof(pixel));
+    }
+  const h2_display_rect_t rect = {1, 2, 2, 3};
+  CHECK(h2_pal_display_draw_bitmap(d, &rect, storage + 1, 7,
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(count_wrong(1, 2, 2, 3, 0) == 0);
+}
+
+static void test_disjoint_dirty_regions(void) {
+  setup(480, 480);
+  const h2_pal_display_api_t* d = h2_g99_screen_display(&s_screen);
+  const h2_display_rect_t a = {10, 20, 1, 1};
+  const h2_display_rect_t b = {400, 420, 1, 1};
+  const uint16_t first = 111u, second = 222u;
+  CHECK(h2_pal_display_draw_bitmap(d, &a, &first, sizeof(first),
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  CHECK(h2_pal_display_draw_bitmap(d, &b, &second, sizeof(second),
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(s_panel.draws == 2 && s_panel.drawn_pixels == 2u);
+  CHECK(shown(10, 20) == first && shown(400, 420) == second);
+}
+
+static void test_dirty_list_pressure(void) {
+  setup(480, 480);
+  const h2_pal_display_api_t* d = h2_g99_screen_display(&s_screen);
+  for (int i = 0; i < 40; ++i) {
+    const h2_display_rect_t rect = {5 + i * 10, 10 + (i % 2) * 30, 1, 1};
+    const uint16_t pixel = (uint16_t)(100 + i);
+    CHECK(h2_pal_display_draw_bitmap(d, &rect, &pixel, sizeof(pixel),
+                                     H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  }
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(s_panel.drawn_pixels < 4096u);
+  for (int i = 0; i < 40; ++i)
+    CHECK(shown(5 + i * 10, 10 + (i % 2) * 30) == (uint16_t)(100 + i));
+}
+
+static void test_dirty_retry(void) {
+  setup(6, 4);
+  const h2_pal_display_api_t* d = h2_g99_screen_display(&s_screen);
+  const h2_display_rect_t rect = {1, 2, 1, 1};
+  const uint16_t pixel = 1234u;
+  CHECK(h2_pal_display_draw_bitmap(d, &rect, &pixel, sizeof(pixel),
+                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+  s_panel.fail_draw = 1;
+  CHECK(h2_pal_display_present(d) == H2_PAL_ERR_IO);
+  CHECK(s_panel.draws == 0 && s_panel.presents == 0);
+  s_panel.fail_present = 1;
+  CHECK(h2_pal_display_present(d) == H2_PAL_ERR_IO);
+  CHECK(s_panel.draws == 1);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(s_panel.draws == 2 && shown(1, 2) == pixel);
+  CHECK(h2_pal_display_present(d) == H2_PAL_OK);
+  CHECK(s_panel.draws == 2);
 }
 
 /* Without memory for the frame the display does not open. */
@@ -319,6 +441,11 @@ static void test_unrotated(void) {
 int main(void) {
   test_bands_coalesce();
   test_partial_rect();
+  test_changed_pixels();
+  test_unaligned_pixels();
+  test_disjoint_dirty_regions();
+  test_dirty_list_pressure();
+  test_dirty_retry();
   test_no_memory();
   test_stride_overflow();
   test_touch();

@@ -1,0 +1,19 @@
+load("//tools/bazel/web:web_board.bzl", "h2_web_board")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["README.md"])
+
+# The physical board exposes AI and BOOT as GPIO buttons. The power switch
+# controls the hardware power circuit; Start/Stop control the browser lifetime.
+h2_web_board(
+    name = "web",
+    buttons = {
+        "ai": "Escape",
+        "boot": " ",
+    },
+    default_skin = "device",
+    display_height = 480,
+    display_width = 480,
+    skins = {"device": "device.html"},
+)

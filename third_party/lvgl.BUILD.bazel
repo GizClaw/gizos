@@ -1209,6 +1209,32 @@ filegroup(
     srcs = _LVGL_FIRMWARE_SRCS,
 )
 
+# Derived from one inventory: optimize the S31's hot placement/style and
+# image paths while retaining the staging-size policy for other LVGL code.
+_LVGL_FIRMWARE_RENDER_PATHS = [
+    "/lv_obj_pos.c",
+    "/lv_obj_style.c",
+    "/lv_draw_sw_img.c",
+    "/lv_draw_sw_transform.c",
+    "/lv_draw_sw_blend_to_rgb565.c",
+]
+
+_LVGL_FIRMWARE_RENDER_SRCS = [
+    source
+    for source in _LVGL_FIRMWARE_SRCS
+    if [path for path in _LVGL_FIRMWARE_RENDER_PATHS if source.endswith(path)]
+]
+
+filegroup(
+    name = "firmware_render_sources",
+    srcs = _LVGL_FIRMWARE_RENDER_SRCS,
+)
+
+filegroup(
+    name = "firmware_core_sources",
+    srcs = [source for source in _LVGL_FIRMWARE_SRCS if source not in _LVGL_FIRMWARE_RENDER_SRCS],
+)
+
 filegroup(
     name = "desktop_driver_sources",
     srcs = [

@@ -13,15 +13,57 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
 
 namespace {
 
+// Constrain the suite's render allocator to eight rows. A 16-row request
+// must fall back, and no persistent LVGL/font allocation may enter this heap.
+struct RenderMemory {
+  alignas(
+      std::max_align_t) uint8_t pixels[h2_desktop_layout::width * 8u * 2u] = {};
+  bool allocated = false;
+  bool invalid = false;
+  unsigned allocations = 0u;
+  unsigned oversized = 0u;
+};
+
+void* render_alloc(void* user, size_t bytes) {
+  auto* memory = static_cast<RenderMemory*>(user);
+  if (memory->allocated) {
+    memory->invalid = true;
+    return nullptr;
+  }
+  if (bytes > sizeof(memory->pixels)) {
+    ++memory->oversized;
+    return nullptr;
+  }
+  if (bytes == 0u) return nullptr;
+  memory->allocated = true;
+  ++memory->allocations;
+  return memory->pixels;
+}
+
+void render_free(void* user, void* pixels) {
+  auto* memory = static_cast<RenderMemory*>(user);
+  if (pixels != memory->pixels || !memory->allocated) {
+    memory->invalid = true;
+    return;
+  }
+  memory->allocated = false;
+}
+
+const h2_pal_mem_vtable_t kRenderMemory = {render_alloc, nullptr, render_free,
+                                           nullptr};
+
 struct Run {
   h2_g99_e2e_target_t target = {};
   h2_g99_e2e_summary_t summary = {};
+  RenderMemory render;
+  h2_pal_mem_api_t render_api = {&render, &kRenderMemory};
   h2_pal_result_t result = H2_PAL_OK;
   std::atomic<bool> abort{false};
   std::atomic<bool> done{false};
@@ -54,6 +96,7 @@ int main() {
   }
   Run run;
   run.target.runtime = platform.runtime();
+  run.target.render_mem = &run.render_api;
   run.target.board = layout.app_name;
   run.target.target = "desktop";
   run.target.display_width = static_cast<int32_t>(layout.width);
@@ -77,6 +120,12 @@ int main() {
   }
   worker.join();
   const int cleanup = platform.close();
+  if (run.render.invalid || run.render.allocated ||
+      run.render.allocations == 0u || run.render.oversized == 0u) {
+    std::fprintf(stderr,
+                 "g99 e2e: render allocator isolation/fallback failed\n");
+    return 2;
+  }
   if (run.result != H2_PAL_OK || cleanup != H2_PAL_OK) return 2;
   return h2_g99_e2e_exit_code(&run.summary);
 }

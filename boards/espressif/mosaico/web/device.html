@@ -1,0 +1,66 @@
+<!-- ESP-Mosaico front enclosure, independently drawn from Espressif's
+     official V1.2 photographs and button-location diagram. The public board
+     owns this geometry and its AI/BOOT names; each App maps their meaning.
+     Sources and the official 3MF reference are listed in README.md. -->
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; color: #e8edf2; background: #101318; }
+  body { display: grid; min-height: 100svh; margin: 0; place-items: center; background: radial-gradient(ellipse at 50% 32%, #2a3038, #101318 72%); }
+  .mosaico { --u: min(1px, calc((100vw - 40px) / 560), calc((100svh - 160px) / 600)); display: grid; justify-items: center; gap: 12px; padding: 18px 0; }
+  .mosaico-name { margin: 0; color: #aab3bf; font-size: 12px; font-weight: 500; letter-spacing: 0.15em; }
+  .mosaico-device { position: relative; width: calc(560 * var(--u)); height: calc(600 * var(--u)); }
+  .mosaico-frame { display: block; width: 100%; height: 100%; filter: drop-shadow(0 18px 22px #0008); pointer-events: none; }
+  .mosaico-display { position: absolute; left: calc(40 * var(--u)); top: calc(50 * var(--u)); width: calc(480 * var(--u)); height: calc(480 * var(--u)); overflow: hidden; border-radius: calc(48 * var(--u)); background: #000; }
+  .mosaico #canvas { display: block; width: calc(480 * var(--u)); height: calc(480 * var(--u)); background: #000; }
+  .mosaico-key { position: absolute; border: 1px solid #979ca2; padding: 0; cursor: pointer; transition: filter 70ms ease-out, transform 70ms ease-out; }
+  .mosaico-key:hover { filter: brightness(1.12); }
+  .mosaico-key:focus-visible { outline: 3px solid #72a5ff; outline-offset: 4px; }
+  .mosaico-key[data-pressed="true"] { transform: translateY(calc(2 * var(--u))); filter: brightness(0.74); }
+  .mosaico-ai { left: calc(370 * var(--u)); top: calc(7 * var(--u)); width: calc(84 * var(--u)); height: calc(19 * var(--u)); border-color: #ce3a08; border-radius: calc(6 * var(--u)) calc(6 * var(--u)) 0 0; background: repeating-linear-gradient(0deg, #ff5a1e 0 3px, #e8440b 3px 4px); box-shadow: inset 0 1px 1px #ffb093; }
+  .mosaico-boot { left: calc(96 * var(--u)); top: calc(560 * var(--u)); width: calc(104 * var(--u)); height: calc(18 * var(--u)); border-radius: calc(9 * var(--u)); background: repeating-linear-gradient(70deg, #f4f4f1 0 5px, #d8d9d6 5px 6px); box-shadow: inset 0 1px 2px #fff; }
+  .mosaico [data-h2-slot="controls"] { display: flex; gap: 8px; }
+  .mosaico [data-h2-slot="controls"] button { padding: 8px 24px; border: 1px solid #454c56; border-radius: 999px; color: #ecf0f5; background: #313741; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+  .mosaico [data-h2-slot="controls"] #start { color: #fff; border-color: #e84c13; background: #e84c13; }
+  .mosaico [data-h2-slot="controls"] button:disabled { cursor: default; opacity: 0.45; }
+  .mosaico-hint { margin: 0; color: #aab3bf; font-size: 12px; text-align: center; line-height: 1.7; }
+  .mosaico-hint span { color: #747f8d; }
+  .mosaico #status { min-height: 16px; max-width: 90vw; margin: 0; color: #7f8b9b; font-size: 11px; overflow-wrap: anywhere; }
+</style>
+<main class="mosaico">
+  <p class="mosaico-name">ESP-MOSAICO</p>
+  <div class="mosaico-device">
+    <svg class="mosaico-frame" viewBox="0 0 560 600" role="img" aria-label="ESP-Mosaico enclosure, screen side">
+      <defs>
+        <linearGradient id="mosaico-case" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="0.55" stop-color="#eeeFEB"/><stop offset="1" stop-color="#c6c9c8"/></linearGradient>
+        <linearGradient id="mosaico-bottom" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#e9eae6"/><stop offset="1" stop-color="#b7bdbb"/></linearGradient>
+        <linearGradient id="mosaico-glass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#181a1b"/><stop offset="0.4" stop-color="#050606"/><stop offset="1" stop-color="#0c0d0e"/></linearGradient>
+        <pattern id="mosaico-grip" width="8" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(-20)"><rect width="8" height="12" fill="#e8e9e5"/><path d="M0 0V12" stroke="#c4c7c2"/></pattern>
+      </defs>
+      <path d="M22 524H538V562Q538 584 516 584H44Q22 584 22 562Z" fill="url(#mosaico-bottom)" stroke="#9ea5a1"/>
+      <rect x="10" y="20" width="540" height="540" rx="24" fill="url(#mosaico-case)" stroke="#b6bdbb" stroke-width="1.5"/>
+      <path d="M34 21H526Q549 21 549 44" fill="none" stroke="#fff" stroke-width="3"/>
+      <rect x="19" y="29" width="522" height="522" rx="58" fill="url(#mosaico-glass)" stroke="#333735" stroke-width="1.5"/>
+      <path d="M44 35H516" stroke="#fff" stroke-opacity="0.12" stroke-linecap="round"/>
+      <g fill="#454c47">
+        <ellipse cx="157" cy="21" rx="9" ry="2.3"/><ellipse cx="179" cy="21" rx="9" ry="2.3"/><ellipse cx="201" cy="21" rx="9" ry="2.3"/><ellipse cx="223" cy="21" rx="9" ry="2.3"/><ellipse cx="245" cy="21" rx="9" ry="2.3"/><ellipse cx="267" cy="21" rx="9" ry="2.3"/><ellipse cx="289" cy="21" rx="9" ry="2.3"/>
+      </g>
+      <rect x="244" y="565" width="72" height="12" rx="6" fill="#202727" stroke="#969f99" stroke-width="2"/>
+      <rect x="253" y="570" width="54" height="2" rx="1" fill="#8e9691"/>
+      <g fill="#323b34">
+        <rect x="120" y="553" width="25" height="3" rx="2"/><rect x="266" y="554" width="25" height="3" rx="2"/><rect x="412" y="553" width="25" height="3" rx="2"/>
+      </g>
+      <g aria-label="Hardware power button">
+        <title>POWER · Start / Stop control power in this preview</title>
+        <rect x="360" y="560" width="104" height="18" rx="9" fill="url(#mosaico-grip)" stroke="#969d96"/>
+      </g>
+      <g fill="#707b76" font-family="system-ui, sans-serif" font-size="8" text-anchor="middle" letter-spacing="1">
+        <text x="148" y="593">BOOT</text><text x="280" y="593">USB-C</text><text x="412" y="593">POWER</text>
+      </g>
+    </svg>
+    <div class="mosaico-display" data-h2-slot="display"></div>
+    <button type="button" class="mosaico-key mosaico-ai" data-h2-button="ai" aria-label="AI" title="AI · Esc"></button>
+    <button type="button" class="mosaico-key mosaico-boot" data-h2-button="boot" aria-label="BOOT" title="BOOT · Space"></button>
+  </div>
+  <div data-h2-slot="controls"></div>
+  <p class="mosaico-hint">AI · Esc &nbsp; BOOT · Space &nbsp; Touch · drag / tap<br><span>Start / Stop control the preview</span></p>
+  <div data-h2-slot="status"></div>
+</main>

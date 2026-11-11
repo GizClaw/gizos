@@ -104,8 +104,9 @@ h2_pal_result_t h2_g99_e2e_session_open(h2_g99_e2e_t* e2e,
   e2e->main_config.settings_namespace = H2_G99_E2E_SETTINGS_NAMESPACE;
   e2e->main_config.frame = on_frame;
   e2e->main_config.frame_user = e2e;
-  /* Main reads touch through the scripted finger; it passes Runtime touch
-   * through whenever no case scripts it. */
+  e2e->main_config.render_mem = target->render_mem;
+  /* The suite owns pointer input throughout automation. The real touch
+   * device is opened for its capability contract, not fed into the cases. */
   h2_g99_e2e_finger_init(e2e, target->runtime->touch);
   e2e->main_config.touch = &e2e->finger.api;
   const h2_pal_mutex_config_t config = {"g99-e2e", e2e->runtime->mem, 0u};

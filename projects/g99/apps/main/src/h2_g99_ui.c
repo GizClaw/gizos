@@ -12,10 +12,8 @@ extern const size_t h2_g99_font_size;
 
 /* Wall clock offset until Settings > Date and time exists. */
 #define H2_G99_UTC_OFFSET_MINUTES 480
-/* A finger turns the wheel once it moved this far (k units), and lifting
- * it past this fraction of an item turns at least one item. */
+/* A finger turns the wheel after moving this many design units. */
 #define H2_G99_DRAG_SLOP 8.0f
-#define H2_G99_DRAG_MIN_TURN 0.3f
 
 static const h2_g99_icon_t kMainIcons[H2_G99_MAIN_COUNT] = {
     H2_G99_ICON_ME, H2_G99_ICON_STORE, H2_G99_ICON_LIBRARY, H2_G99_ICON_LAB,
@@ -165,6 +163,19 @@ static bool argb_alloc(h2_g99_app_t* app, h2_g99_image_t* img, int32_t w,
   return image_alloc(app, img, w, h, LV_COLOR_FORMAT_ARGB8888, 4u);
 }
 
+/* Monochrome wheel art needs only its coverage. Transforming an A8 mask
+ * interpolates one channel; the image style supplies the constant colour. */
+static void image_to_alpha(h2_g99_app_t* app, h2_g99_image_t* img) {
+  const size_t size = (size_t)img->dsc.header.w * img->dsc.header.h;
+  for (size_t i = 0u; i < size; ++i) img->pixels[i] = img->pixels[i * 4u + 3u];
+  uint8_t* pixels = h2_pal_mem_realloc(app->runtime->mem, img->pixels, size);
+  if (pixels != NULL) img->pixels = pixels;
+  img->dsc.header.cf = LV_COLOR_FORMAT_A8;
+  img->dsc.header.stride = img->dsc.header.w;
+  img->dsc.data_size = (uint32_t)size;
+  img->dsc.data = img->pixels;
+}
+
 static void image_free(h2_g99_app_t* app, h2_g99_image_t* img) {
   if (img->pixels != NULL) h2_pal_mem_free(app->runtime->mem, img->pixels);
   memset(img, 0, sizeof(*img));
@@ -196,16 +207,6 @@ static bool wheel_turnable(const h2_g99_app_t* app) {
 static float wheel_pitch(const h2_g99_app_t* app) {
   return h2_g99_wheel_step(&app->layout, wheel_kind(app->nav.route)) *
          (float)app->layout.radius;
-}
-
-/* Item shown at the selection when the wheel stands at `position`. */
-static uint8_t nearest_item(const h2_g99_app_t* app, h2_g99_route_t route,
-                            float position) {
-  if (route == H2_G99_ROUTE_BOOT) route = H2_G99_ROUTE_MAIN;
-  const int n = (int)h2_g99_nav_route_count(&app->nav, route);
-  if (n <= 0) return 0u;
-  const int i = (int)lroundf(position);
-  return (uint8_t)(((i % n) + n) % n);
 }
 
 /* ---------- display flush ---------- */
@@ -307,18 +308,20 @@ static void follow_drag(h2_g99_app_t* app, lv_point_t point) {
   }
   /* Dragging up brings the next items to the centre. */
   const float pitch = wheel_pitch(app);
-  app->drag_offset = pitch > 0.0f ? -(float)dy / pitch : 0.0f;
+  const float target = pitch > 0.0f ? -(float)dy / pitch : 0.0f;
+  const uint64_t elapsed =
+      app->now_ms >= app->drag_last_ms ? app->now_ms - app->drag_last_ms : 0u;
+  app->drag_last_ms = app->now_ms;
+  app->drag_offset = h2_g99_wheel_follow(
+      app->drag_offset, target, (uint32_t)(elapsed > 50u ? 50u : elapsed));
   app->nav.last_input_ms = app->now_ms;
 }
 
-/* Lets go of a dragged wheel: it turns on to the nearest item, at least to
- * the next one once the drag passed H2_G99_DRAG_MIN_TURN of an item, or
- * settles back. Writes what happened for the touch log. */
+/* A release always starts a finite, damped transition to a magnetic
+ * detent, including a small drag that settles back on the current item. */
 static void end_drag(h2_g99_app_t* app, char* outcome, size_t size) {
   const float offset = app->drag_offset;
-  int steps = (int)lroundf(offset);
-  if (steps == 0 && fabsf(offset) >= H2_G99_DRAG_MIN_TURN)
-    steps = offset > 0.0f ? 1 : -1;
+  const int steps = h2_g99_wheel_snap(offset);
   app->dragging = false;
   app->drag_offset = 0.0f;
   const h2_g99_nav_result_t result =
@@ -340,6 +343,7 @@ static void on_catcher(lv_event_t* event) {
     app->press_start = point;
     app->dragging = false;
     app->drag_offset = 0.0f;
+    app->drag_last_ms = app->now_ms;
     app->press_samples = 1u;
     app->press_gap_ms = 0u;
     app->press_last_ms = h2_g99_now_us(app) / 1000u;
@@ -774,16 +778,21 @@ uint8_t h2_g99_ui_wifi_rows(const h2_g99_app_t* app) {
 
 static void build_info(h2_g99_app_t* app, h2_g99_layer_t* layer) {
   lv_obj_clean(layer->info);
+  /* Keep page coordinates in screen units, while the parent clips opacity
+   * changes and invalidation to the actual info area. */
+  lv_obj_t* content = full(layer->info, app);
+  if (content == NULL) return;
+  lv_obj_set_pos(content, -app->layout.panel_x, -app->layout.panel_y);
   switch (layer->route) {
     case H2_G99_ROUTE_MAIN:
     case H2_G99_ROUTE_BOOT:
-      main_info(app, layer->info, layer->sel);
+      main_info(app, content, layer->sel);
       break;
     case H2_G99_ROUTE_LIBRARY:
-      library_info(app, layer->info, layer->sel);
+      library_info(app, content, layer->sel);
       break;
     case H2_G99_ROUTE_SETTINGS:
-      settings_info(app, layer->info, layer->sel);
+      settings_info(app, content, layer->sel);
       break;
     default:
       break;
@@ -826,7 +835,8 @@ static const h2_g99_image_t* item_image(h2_g99_app_t* app, h2_g99_route_t route,
 }
 
 static void apply_slots(h2_g99_app_t* app, h2_g99_layer_t* layer,
-                        h2_g99_route_t route, placed_t* list, int count) {
+                        h2_g99_route_t route, placed_t* list, int count,
+                        int32_t dx) {
   /* Draw far slots first so the selection stays on top. */
   for (int i = 1; i < count; ++i) {
     placed_t key = list[i];
@@ -855,7 +865,7 @@ static void apply_slots(h2_g99_app_t* app, h2_g99_layer_t* layer,
       layer->slot_src[i] = img;
     }
     lv_obj_set_hidden(obj, false);
-    lv_obj_set_pos(obj, (int32_t)lroundf(p->slot.x) - base / 2,
+    lv_obj_set_pos(obj, (int32_t)lroundf(p->slot.x) - base / 2 + dx,
                    (int32_t)lroundf(p->slot.y) - base / 2);
     lv_image_set_scale(obj,
                        (uint32_t)lroundf(p->slot.size / (float)base * 256.0f));
@@ -874,7 +884,8 @@ static void apply_slots(h2_g99_app_t* app, h2_g99_layer_t* layer,
                              ? glow_slot->size * 1.35f + 6.0f * app->layout.k
                              : glow_slot->size * 1.24f + 12.0f * app->layout.k;
   lv_obj_set_hidden(layer->glow, false);
-  lv_obj_set_pos(layer->glow, (int32_t)lroundf(glow_slot->x) - app->glow_px / 2,
+  lv_obj_set_pos(layer->glow,
+                 (int32_t)lroundf(glow_slot->x) - app->glow_px / 2 + dx,
                  (int32_t)lroundf(glow_slot->y) - app->glow_px / 2);
   lv_image_set_scale(
       layer->glow, (uint32_t)lroundf(diameter / (float)app->glow_px * 256.0f));
@@ -882,7 +893,7 @@ static void apply_slots(h2_g99_app_t* app, h2_g99_layer_t* layer,
 }
 
 static void place_wheel(h2_g99_app_t* app, h2_g99_layer_t* layer,
-                        h2_g99_route_t route, float sel) {
+                        h2_g99_route_t route, float sel, float dx) {
   if (route == H2_G99_ROUTE_BOOT) route = H2_G99_ROUTE_MAIN;
   const int n = (int)h2_g99_nav_route_count(&app->nav, route);
   placed_t list[H2_G99_WHEEL_SLOTS];
@@ -902,7 +913,7 @@ static void place_wheel(h2_g99_app_t* app, h2_g99_layer_t* layer,
     h2_g99_wheel_slot(&app->layout, kind, d, &list[count].slot);
     ++count;
   }
-  apply_slots(app, layer, route, list, count);
+  apply_slots(app, layer, route, list, count, (int32_t)lroundf(dx));
 }
 
 static void place_boot_wheel(h2_g99_app_t* app, h2_g99_layer_t* layer,
@@ -913,14 +924,23 @@ static void place_boot_wheel(h2_g99_app_t* app, h2_g99_layer_t* layer,
     list[d + 2].item = H2_G99_MAIN_LIBRARY + d;
     h2_g99_boot_slot(&app->layout, d, unfold, &list[d + 2].slot);
   }
-  apply_slots(app, layer, H2_G99_ROUTE_MAIN, list, 5);
+  apply_slots(app, layer, H2_G99_ROUTE_MAIN, list, 5, 0);
 }
 
-static void set_layer(h2_g99_layer_t* layer, float wheel_dx,
-                      float wheel_opacity, float info_opacity) {
-  lv_obj_set_x(layer->wheel, (int32_t)lroundf(wheel_dx));
-  set_opa(layer->wheel, opa_of(wheel_opacity));
-  set_opa(layer->info, opa_of(info_opacity));
+static void set_layer(h2_g99_layer_t* layer, float wheel_opacity,
+                      float info_opacity) {
+  /* Animate the actual elements. Moving/fading an empty container invalidates
+   * its whole column or panel even though only sparse children changed. */
+  const lv_opa_t wheel = opa_of(wheel_opacity);
+  set_opa(layer->glow, wheel);
+  for (size_t i = 0u; i < H2_G99_WHEEL_SLOTS; ++i)
+    set_opa(layer->slots[i], wheel);
+  lv_obj_t* content = lv_obj_get_child(layer->info, 0);
+  if (content != NULL) {
+    const lv_opa_t info = opa_of(info_opacity);
+    for (uint32_t i = 0u; i < lv_obj_get_child_count(content); ++i)
+      set_opa(lv_obj_get_child(content, (int32_t)i), info);
+  }
 }
 
 /* ---------- frame ---------- */
@@ -955,7 +975,7 @@ void h2_g99_ui_frame(h2_g99_app_t* app) {
       set_opa(app->wordmark, opa_of(frame.brand_opacity));
       show_page(app, f, H2_G99_ROUTE_MAIN, H2_G99_MAIN_LIBRARY);
       place_boot_wheel(app, f, frame.unfold);
-      set_layer(f, 0.0f, 1.0f, frame.info_opacity);
+      set_layer(f, 1.0f, frame.info_opacity);
       hide_layer(b);
       return;
     }
@@ -965,25 +985,24 @@ void h2_g99_ui_frame(h2_g99_app_t* app) {
       h2_g99_page_frame(&app->layout, p, &frame);
       show_page(app, f, nav->from_route, nav->from_sel);
       show_page(app, b, nav->to_route, nav->to_sel);
-      place_wheel(app, f, nav->from_route, (float)nav->from_sel);
-      place_wheel(app, b, nav->to_route, (float)nav->to_sel);
-      set_layer(f, frame.old_wheel_dx, frame.old_wheel_opacity,
-                frame.old_info_opacity);
-      set_layer(b, frame.new_wheel_dx, frame.new_wheel_opacity,
-                frame.new_info_opacity);
+      place_wheel(app, f, nav->from_route, (float)nav->from_sel,
+                  frame.old_wheel_dx);
+      place_wheel(app, b, nav->to_route, (float)nav->to_sel,
+                  frame.new_wheel_dx);
+      set_layer(f, frame.old_wheel_opacity, frame.old_info_opacity);
+      set_layer(b, frame.new_wheel_opacity, frame.new_info_opacity);
       app->swap_pending = true;
       return;
     }
     case H2_G99_TRANSITION_ROTATE: {
-      /* The wheel eases from where it started (a released drag) onto its
-       * target; the info area shows the item at the selection. It switches
-       * without a fade: fading it would redraw it on every frame. */
+      /* Ease from the released position to its detent. Project the target
+       * information once; an opacity fade would repaint it every frame. */
       const float sel =
           (float)nav->from_sel + nav->rotate_from +
-          ((float)nav->rotate_dir - nav->rotate_from) * h2_g99_ease_out(p);
-      show_page(app, f, nav->route, nearest_item(app, nav->route, sel));
-      place_wheel(app, f, nav->route, sel);
-      set_layer(f, 0.0f, 1.0f, 1.0f);
+          ((float)nav->rotate_dir - nav->rotate_from) * h2_g99_ease_snap(p);
+      show_page(app, f, nav->route, nav->to_sel);
+      place_wheel(app, f, nav->route, sel, 0.0f);
+      set_layer(f, 1.0f, 1.0f);
       hide_layer(b);
       return;
     }
@@ -999,13 +1018,14 @@ void h2_g99_ui_frame(h2_g99_app_t* app) {
   }
   const uint8_t sel =
       nav->route == H2_G99_ROUTE_MAIN ? nav->main_sel : nav->sub_sel;
-  /* A finger turning the wheel moves it and the item shown with it. */
+  /* A finger moves only the wheel until a detent is committed. */
   const bool dragged = app->dragging && wheel_turnable(app);
   const float position = (float)sel + (dragged ? app->drag_offset : 0.0f);
-  show_page(app, f, nav->route,
-            dragged ? nearest_item(app, nav->route, position) : sel);
-  place_wheel(app, f, nav->route, position);
-  set_layer(f, 0.0f, 1.0f, 1.0f);
+  /* Keep the committed selection while held. Rebuild its information
+   * once at snap, rather than repeatedly at a noisy half-slot crossing. */
+  show_page(app, f, nav->route, sel);
+  place_wheel(app, f, nav->route, position, 0.0f);
+  set_layer(f, 1.0f, 1.0f);
   hide_layer(b);
 }
 
@@ -1121,15 +1141,31 @@ void h2_g99_ui_close_keyboard(h2_g99_app_t* app, char* buffer,
 static bool create_layer(h2_g99_app_t* app, h2_g99_layer_t* layer) {
   layer->wheel = full(app->screen, app);
   if (layer->wheel == NULL) return false;
+  const int32_t wheel_right =
+      app->layout.sel_x + (app->glow_px + 1) / 2 + px(app, 2.0f);
+  lv_obj_set_width(layer->wheel, wheel_right < app->layout.width
+                                     ? wheel_right
+                                     : app->layout.width);
   layer->glow = image(layer->wheel, &app->glow, 0, 0);
+  if (layer->glow == NULL) return false;
+  lv_obj_set_style_image_recolor(layer->glow, lv_color_hex(H2_G99_COLOR_PURPLE),
+                                 LV_PART_MAIN);
   for (int i = 0; i < H2_G99_WHEEL_SLOTS; ++i) {
     layer->slots[i] = image(layer->wheel, &app->icons[0], 0, 0);
     layer->slot_src[i] = &app->icons[0];
     if (layer->slots[i] == NULL) return false;
+    lv_obj_set_style_image_recolor(layer->slots[i], lv_color_hex(0xFFFFFFu),
+                                   LV_PART_MAIN);
+    /* A8 uses the colour directly. Transparent recolour opacity preserves
+     * the multicolour Orbit cover when the same slot changes source. */
+    lv_obj_set_style_image_recolor_opa(layer->slots[i], LV_OPA_TRANSP,
+                                       LV_PART_MAIN);
     lv_obj_set_hidden(layer->slots[i], true);
   }
-  layer->info = full(app->screen, app);
+  layer->info = plain(app->screen);
   if (layer->glow == NULL || layer->info == NULL) return false;
+  lv_obj_set_pos(layer->info, app->layout.panel_x, app->layout.panel_y);
+  lv_obj_set_size(layer->info, app->layout.panel_w, app->layout.panel_h);
   hide_layer(layer);
   return true;
 }
@@ -1142,6 +1178,52 @@ static lv_font_t* make_font(int32_t size) {
   return font;
 }
 
+/* Populate TinyTTF's real bitmap cache before interactive animation.
+ * Layout-only glyph metrics do not rasterize these glyphs. */
+static bool warm_text(lv_font_t* font, const char* value) {
+  /* Only built-in UTF-8 literals reach this initializer. */
+  const uint8_t* text = (const uint8_t*)value;
+  while (*text != 0u) {
+    uint32_t codepoint = *text++;
+    if (codepoint >= 0x80u) {
+      const unsigned extra = codepoint < 0xe0u   ? 1u
+                             : codepoint < 0xf0u ? 2u
+                                                 : 3u;
+      codepoint &= 0x7fu >> (extra + 1u);
+      for (unsigned i = 0u; i < extra; ++i) {
+        if ((*text & 0xc0u) != 0x80u) return false;
+        codepoint = (codepoint << 6u) | (*text++ & 0x3fu);
+      }
+    }
+    lv_font_glyph_dsc_t glyph;
+    memset(&glyph, 0, sizeof(glyph));
+    if (!lv_font_get_glyph_dsc(font, &glyph, codepoint, 0u)) return false;
+    if (glyph.resolved_font != font || glyph.box_w == 0u || glyph.box_h == 0u)
+      continue;
+    const void* bitmap = lv_font_get_glyph_bitmap(&glyph, NULL);
+    lv_font_glyph_release_draw_data(&glyph);
+    if (bitmap == NULL) return false;
+  }
+  return true;
+}
+
+static bool warm_fonts(h2_g99_app_t* app) {
+  for (size_t i = 0u; i < H2_G99_MAIN_COUNT; ++i)
+    if (!warm_text(app->font_hero, kMainNames[i])) return false;
+  for (size_t i = 0u; i < H2_G99_SETTING_COUNT; ++i)
+    if (!warm_text(app->font_title, kSettingNames[i])) return false;
+  return warm_text(app->font_title, kAppName) &&
+         warm_text(app->font_small, kAppAuthor) &&
+         warm_text(app->font_small, kAppDescription) &&
+         warm_text(app->font_small,
+                   "0123456789:/ · 资料库 设置 来源 绘图 输入 OK 开始 AI 返回 "
+                   "未连接 未发现网络") &&
+         warm_text(app->font_body,
+                   "0123456789%Wi-Fi · 已安装 个应用 即将推出 已连接 电量 "
+                   "开始游戏 内置 几何 按键") &&
+         warm_text(app->font_big, "0123456789%");
+}
+
 static bool render_art(h2_g99_app_t* app) {
   const h2_g99_layout_t* l = &app->layout;
   app->icon_px = px(app, 34.0f);
@@ -1152,6 +1234,7 @@ static bool render_art(h2_g99_app_t* app) {
         !h2_g99_art_icon((h2_g99_icon_t)i, 0xFFFFFFu, app->icons[i].pixels,
                          app->icon_px))
       return false;
+    image_to_alpha(app, &app->icons[i]);
   }
   const int32_t tiny = (int32_t)lroundf((float)l->font_small * 1.1f);
   if (!argb_alloc(app, &app->tiny_wifi, tiny, tiny) ||
@@ -1172,6 +1255,7 @@ static bool render_art(h2_g99_app_t* app) {
       !argb_alloc(app, &app->glow, app->glow_px, app->glow_px) ||
       !h2_g99_art_glow(app->glow.pixels, app->glow_px))
     return false;
+  image_to_alpha(app, &app->glow);
   const h2_g99_brand_layout_t* brand = &l->brand;
   if (!argb_alloc(app, &app->brand, brand->icon_image_w, brand->icon_image_h) ||
       !h2_g99_art_brand_icon(app->brand.pixels, brand->icon_image_w,
@@ -1203,6 +1287,11 @@ static void free_art(h2_g99_app_t* app) {
   image_free(app, &app->bg);
 }
 
+static const h2_pal_mem_api_t* render_mem(const h2_g99_app_t* app) {
+  return app->config->render_mem != NULL ? app->config->render_mem
+                                         : app->runtime->mem;
+}
+
 h2_pal_result_t h2_g99_ui_init(h2_g99_app_t* app) {
   if (app == NULL || app->lvgl_ready) return H2_PAL_ERR_INVALID_STATE;
   const h2_g99_layout_t* l = &app->layout;
@@ -1210,9 +1299,15 @@ h2_pal_result_t h2_g99_ui_init(h2_g99_app_t* app) {
     free_art(app);
     return H2_PAL_ERR_NO_MEMORY;
   }
-  const int32_t rows = l->height / 10 > 16 ? l->height / 10 : 16;
+  /* Bound the fast allocation to one small buffer. All persistent LVGL
+   * objects and glyph caches use Runtime memory, not this scarce heap. */
+  const int32_t rows = l->height < 16 ? l->height : 16;
   app->render_bytes = (size_t)l->width * (size_t)rows * 2u;
-  app->render_buffer = h2_pal_mem_alloc(app->runtime->mem, app->render_bytes);
+  app->render_buffer = h2_pal_mem_alloc(render_mem(app), app->render_bytes);
+  if (app->render_buffer == NULL && rows > 8) {
+    app->render_bytes = (size_t)l->width * 8u * 2u;
+    app->render_buffer = h2_pal_mem_alloc(render_mem(app), app->render_bytes);
+  }
   if (app->render_buffer == NULL) {
     free_art(app);
     return H2_PAL_ERR_NO_MEMORY;
@@ -1225,7 +1320,7 @@ h2_pal_result_t h2_g99_ui_init(h2_g99_app_t* app) {
       .time_api = app->runtime->time,
   };
   if (h2_lvgl_platform_init(&platform) != 0) {
-    h2_pal_mem_free(app->runtime->mem, app->render_buffer);
+    h2_pal_mem_free(render_mem(app), app->render_buffer);
     app->render_buffer = NULL;
     free_art(app);
     return H2_PAL_ERR_UNAVAILABLE;
@@ -1245,7 +1340,12 @@ h2_pal_result_t h2_g99_ui_init(h2_g99_app_t* app) {
     h2_g99_ui_deinit(app);
     return H2_PAL_ERR_NO_MEMORY;
   }
+  if (!warm_fonts(app)) {
+    h2_g99_ui_deinit(app);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   lv_display_set_user_data(app->display, app);
+  lv_timer_set_period(lv_display_get_refr_timer(app->display), 16u);
   lv_display_set_color_format(app->display, LV_COLOR_FORMAT_RGB565);
   lv_display_set_flush_cb(app->display, display_flush);
   lv_display_set_buffers(app->display, app->render_buffer, NULL,
@@ -1296,8 +1396,13 @@ h2_pal_result_t h2_g99_ui_init(h2_g99_app_t* app) {
       app->touch = NULL;
     } else {
       for (lv_indev_t* indev = lv_indev_get_next(NULL); indev != NULL;
-           indev = lv_indev_get_next(indev))
+           indev = lv_indev_get_next(indev)) {
+        /* Sample at the filter's cadence instead of the display's refresh
+         * period, which can leave a quick gesture unread between frames. */
+        lv_timer_t* timer = lv_indev_get_read_timer(indev);
+        if (timer != NULL) lv_timer_set_period(timer, H2_G99_TOUCH_READ_MS);
         lv_indev_add_event_cb(indev, on_indev_press, LV_EVENT_PRESSED, app);
+      }
     }
   }
   app->touch_request = (h2_g99_touch_request_t){-1, -1, -1, H2_G99_TEXT_NONE};
@@ -1323,7 +1428,7 @@ void h2_g99_ui_deinit(h2_g99_app_t* app) {
     app->lvgl_ready = false;
   }
   if (app->render_buffer != NULL)
-    h2_pal_mem_free(app->runtime->mem, app->render_buffer);
+    h2_pal_mem_free(render_mem(app), app->render_buffer);
   app->render_buffer = NULL;
   free_art(app);
 }

@@ -25,6 +25,22 @@ static void report_frames(h2_g99_e2e_t* e2e, const char* phase,
       f->frames > 0u ? (unsigned)(f->pixels / f->frames) : 0u);
 }
 
+static h2_pal_result_t check_frame_budget(h2_g99_e2e_t* e2e, const char* phase,
+                                          const h2_g99_e2e_frames_t* f) {
+  if (budgeted(e2e) &&
+      (f->frames < 2u || f->max_interval_us > H2_G99_E2E_FRAME_BUDGET_US ||
+       f->max_work_us > H2_G99_E2E_FRAME_BUDGET_US)) {
+    h2_g99_e2e_fail(e2e,
+                    "%s exceeded 20 FPS budget: frames=%u interval_max_us=%u "
+                    "work_max_us=%u budget_us=%u",
+                    phase, (unsigned)f->frames, (unsigned)f->max_interval_us,
+                    (unsigned)f->max_work_us,
+                    (unsigned)H2_G99_E2E_FRAME_BUDGET_US);
+    return H2_PAL_ERR_TIMEOUT;
+  }
+  return H2_PAL_OK;
+}
+
 /* At rest Main has nothing new to draw and keeps reading touch often enough
  * that a quick drag registers. */
 static h2_pal_result_t idle_frames(h2_g99_e2e_t* e2e) {
@@ -79,12 +95,48 @@ static h2_pal_result_t rotate_frames(h2_g99_e2e_t* e2e) {
                     (unsigned)f.max_interval_us, (unsigned)f.max_work_us);
     return H2_PAL_ERR_TIMEOUT;
   }
-  return rc;
+  return rc == H2_PAL_OK ? check_frame_budget(e2e, "rotate", &f) : rc;
+}
+
+/* Exercise both page entries and exits through production logical keys. */
+static h2_pal_result_t page_frames(h2_g99_e2e_t* e2e) {
+  static const uint8_t items[] = {H2_G99_MAIN_LIBRARY, H2_G99_MAIN_SETTINGS};
+  static const h2_g99_route_t routes[] = {H2_G99_ROUTE_LIBRARY,
+                                          H2_G99_ROUTE_SETTINGS};
+  static const char* const names[][2] = {{"enter-library", "back-library"},
+                                         {"enter-settings", "back-settings"}};
+  for (size_t i = 0u; i < sizeof(items) / sizeof(items[0]); ++i) {
+    /* Include the first page entry after a fresh Main startup. */
+    h2_pal_result_t rc = h2_g99_e2e_main_restart(e2e);
+    if (rc == H2_PAL_OK)
+      rc = h2_g99_e2e_wait_rest(e2e, H2_G99_E2E_START_MS, "fresh Main");
+    if (rc == H2_PAL_OK) rc = h2_g99_e2e_main_select(e2e, items[i]);
+    if (rc != H2_PAL_OK) return rc;
+    const h2_g99_e2e_expect_t page = h2_g99_e2e_page_ready(routes[i], 0);
+    const h2_g99_e2e_expect_t menu = h2_g99_e2e_main_ready(items[i]);
+    const h2_g99_e2e_expect_t* expected[] = {&page, &menu};
+    const uint32_t keys[] = {H2_G99_COMPONENT_OK, H2_G99_COMPONENT_HOME};
+    for (size_t j = 0u; j < 2u; ++j) {
+      h2_g99_e2e_frames_reset(e2e);
+      const uint64_t start = h2_g99_e2e_now_ms(e2e);
+      rc = h2_g99_e2e_press_until(e2e, keys[j], expected[j], H2_G99_E2E_NAV_MS,
+                                  names[i][j]);
+      h2_g99_e2e_frames_t frames;
+      h2_g99_e2e_frames_get(e2e, &frames);
+      report_frames(e2e, names[i][j],
+                    (uint32_t)(h2_g99_e2e_now_ms(e2e) - start), &frames);
+      if (rc != H2_PAL_OK) return rc;
+      rc = check_frame_budget(e2e, names[i][j], &frames);
+      if (rc != H2_PAL_OK) return rc;
+    }
+  }
+  return h2_g99_e2e_main_select(e2e, H2_G99_MAIN_LIBRARY);
 }
 
 static const h2_g99_e2e_case_t kCases[] = {
     {"idle-frames", 0u, idle_frames},
     {"rotate-frames", 0u, rotate_frames},
+    {"page-frames", 0u, page_frames},
 };
 
 const h2_g99_e2e_group_t h2_g99_e2e_perf_group = {

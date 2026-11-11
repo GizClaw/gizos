@@ -276,6 +276,28 @@ cc_library(
     ],
 )
 
+# The S31's placement/style and RGB565 image paths need throughput, while
+# other widget/font code must fit the board's managed-update staging budget.
+cc_library(
+    name = "firmware_render",
+    srcs = ["@h2_vendor_lvgl//:firmware_render_sources"],
+    conlyopts = H2_C11_OPTS,
+    copts = _LVGL_COPTS + [
+        "-D_GNU_SOURCE",
+        "-O2",
+    ],
+    defines = ["LV_USE_LODEPNG=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_esp32s31": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":headers",
+        "@h2_vendor_lvgl//:esp_idf6_x_config",
+        "@h2_vendor_lvgl//:header_group",
+    ],
+)
+
 cc_library(
     name = "firmware",
     srcs = [
@@ -285,8 +307,10 @@ cc_library(
         "src/h2_lvgl_memory.h",
         "src/h2_lvgl_osal.c",
         "src/h2_lvgl_touch.c",
-        "@h2_vendor_lvgl//:firmware_sources",
-    ],
+    ] + select({
+        "//tools/bazel/platforms:is_esp32s31": ["@h2_vendor_lvgl//:firmware_core_sources"],
+        "//conditions:default": ["@h2_vendor_lvgl//:firmware_sources"],
+    }),
     hdrs = [
         "include/h2_lvgl_fs.h",
         "include/h2_lvgl_osal.h",
@@ -315,7 +339,10 @@ cc_library(
         "//tools/bazel/platforms:is_bk7258": ["@h2_vendor_lvgl//:bk7258_config"],
         "//tools/bazel/platforms:is_esp32p4": ["@h2_vendor_lvgl//:esp_idf6_x_config"],
         "//tools/bazel/platforms:is_esp32s3": ["@h2_vendor_lvgl//:esp_idf6_x_config"],
-        "//tools/bazel/platforms:is_esp32s31": ["@h2_vendor_lvgl//:esp_idf6_x_config"],
+        "//tools/bazel/platforms:is_esp32s31": [
+            ":firmware_render",
+            "@h2_vendor_lvgl//:esp_idf6_x_config",
+        ],
         "//conditions:default": [],
     }),
 )

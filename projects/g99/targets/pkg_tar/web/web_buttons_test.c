@@ -42,6 +42,8 @@ static h2_pal_result_t stop_early(void* user,
 }
 
 static void test_names(void) {
+  CHECK(h2_g99_web_component("ai") == H2_G99_COMPONENT_HOME);
+  CHECK(h2_g99_web_component("boot") == H2_G99_COMPONENT_SCREEN);
   CHECK(h2_g99_web_component("home") == H2_G99_COMPONENT_HOME);
   CHECK(h2_g99_web_component("screen") == H2_G99_COMPONENT_SCREEN);
   CHECK(h2_g99_web_component("up") == H2_G99_COMPONENT_UP);

@@ -1,5 +1,6 @@
 #include "h2_mosaico_usb_console.h"
 #include "h2_mosaico_usb_transport.h"
+#include "h2_mosaico_usb_common.h"
 #ifdef H2_MOSAICO_USB_HOST_TEST
 #include "h2_mosaico_usb_test_sdk.h"
 #else
@@ -30,13 +31,10 @@ static int console_close(int fd) {
 }
 static ssize_t console_write(int fd, const void* data, size_t len) {
   (void)fd;
-  size_t count = 0;
-  int rc = h2_mosaico_usb_write(NULL, data, len, &count, 1000);
-  if (rc != H2_PAL_OK) {
-    errno = EIO;
-    return -1;
-  }
-  return (ssize_t)count;
+  /* Diagnostics are best effort and must not poison stdio or the reliable
+   * command session when the host is absent, slow or receiving a frame. */
+  h2_mosaico_usb_console_output(data, len);
+  return (ssize_t)len;
 }
 /* This VFS deliberately has no read callback: Loader is the sole RX owner. */
 int h2_mosaico_usb_console_init(void) {

@@ -124,6 +124,18 @@ float h2_g99_clamp01(float value);
 float h2_g99_ease_in(float t);
 float h2_g99_ease_out(float t);
 
+/** Critically damped wheel easing, clamped to exact endpoints 0 and 1. */
+float h2_g99_ease_snap(float t);
+
+/** Advances a held wheel toward target, in items relative to its selection.
+ * Range is [-1, 1], speed at most 3.6 items/s and a late update advances at
+ * most 0.18 item. Invalid current/target values recover to a finite offset. */
+float h2_g99_wheel_follow(float current, float target, uint32_t elapsed_ms);
+
+/** Magnetic detent after release: -1, 0 or 1. A deliberate 30% drag advances
+ * one item; smaller drags return to the current selection. */
+int h2_g99_wheel_snap(float offset);
+
 #ifdef __cplusplus
 }
 #endif

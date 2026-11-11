@@ -5,7 +5,10 @@ extern "C" {
 #endif
 /* Install the boot-lifetime USB CDC console before starting Runtime tasks.
  * Returns zero on success, a nonzero platform error on failure. Call exactly
- * once from serialized startup. No handles are borrowed from the caller. */
+ * once from serialized startup. No handles are borrowed from the caller.
+ * Output is best effort through a bounded queue; full queues may
+ * drop diagnostic writes. The command service owns RX and pumps queued logs
+ * under the same TX lock as reliable framed responses. */
 int h2_mosaico_usb_console_init(void);
 #ifdef __cplusplus
 }
