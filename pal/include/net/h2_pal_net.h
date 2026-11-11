@@ -168,6 +168,9 @@ typedef struct h2_pal_net_vtable {
                           const uint8_t* data, size_t len, uint32_t timeout_ms);
   int (*tcp_recv)(void* user, h2_pal_net_socket_t socket, uint8_t* data,
                   size_t len, uint32_t timeout_ms);
+  /** Synchronous TLS setup and handshake. timeout_ms bounds provider socket
+   * waits; non-interruptible crypto or SDK calls may exceed that budget.
+   */
   h2_pal_result_t (*tls_wrap)(void* user, h2_pal_net_socket_t tcp_socket,
                               const h2_pal_net_tls_config_t* config,
                               uint32_t timeout_ms,

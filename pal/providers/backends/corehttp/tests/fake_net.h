@@ -29,6 +29,11 @@ typedef struct fake_http_platform {
   size_t request_len;
   uint64_t now_ms;
   uint64_t time_step_ms;
+  uint32_t connect_remaining_ms;
+  uint32_t tls_delay_ms;
+  uint32_t tls_timeout_ms;
+  uint32_t recv_delay_ms;
+  int tls_ignore_timeout;
   h2_pal_result_t connect_result;
   h2_pal_result_t send_result;
   h2_pal_result_t recv_result;

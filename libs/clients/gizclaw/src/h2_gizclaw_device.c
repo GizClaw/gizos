@@ -1004,6 +1004,7 @@ static void audio_download_worker(void* user) {
       /* Backpressure can span the whole song. The reader enforces a bounded
        * no-progress timeout and cancels this request on stop or starvation. */
       .timeout_ms = INT_MAX,
+      .connect_timeout_ms = d->config.connect_timeout_ms,
       .retry_count = 0,
       .chunk_buf = chunk,
       .chunk_buf_cap = sizeof(chunk),
@@ -1015,6 +1016,17 @@ static void audio_download_worker(void* user) {
   };
   h2_pal_http_response_t response = {0};
   int rc = h2_pal_http_request(d->config.http, &request, &response);
+  if (rc == H2_PAL_ERR_UNSUPPORTED && request.connect_timeout_ms > 0 &&
+      response.rejection == H2_PAL_HTTP_REJECTION_CONNECT_TIMEOUT &&
+      !audio_cancel(download)) {
+    /* Only this rejection guarantees no I/O or response delivery. Fetch cannot
+     * expose the connection boundary; use the reader's no-progress watchdog
+     * and cancellation while retaining whole-song backpressure. Generic
+     * UNSUPPORTED (for example a redirect scheme or TLS) must not replay. */
+    h2_pal_http_response_free(d->config.http, &response);
+    request.connect_timeout_ms = 0;
+    rc = h2_pal_http_request(d->config.http, &request, &response);
+  }
   lock(d);
   const uint64_t partial =
       download->range_total ? download->range_last - download->range_first + 1

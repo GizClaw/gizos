@@ -110,17 +110,16 @@ static int windows_tls_verify_error(int error) {
 
 static h2_pal_result_t windows_tls_handshake(
     h2_windows_platform_t* platform, h2_windows_socket_slot_t* slot,
-    uint32_t timeout_ms, h2_pal_net_tls_verify_t verify_mode) {
-  uint64_t now = 0u;
-  if (h2_windows_monotonic_ms(platform, &now) != H2_PAL_OK ||
-      UINT64_MAX - now < timeout_ms) {
-    return H2_PAL_ERR_IO;
-  }
-  uint64_t deadline = now + timeout_ms;
+    uint64_t deadline, h2_pal_net_tls_verify_t verify_mode) {
   for (;;) {
+    if (windows_tls_remaining(platform, deadline) == 0u) {
+      return H2_PAL_ERR_TIMEOUT;
+    }
     int result = wolfSSL_connect(slot->tls);
     if (result == WOLFSSL_SUCCESS) {
-      return H2_PAL_OK;
+      return windows_tls_remaining(platform, deadline) == 0u
+                 ? H2_PAL_ERR_TIMEOUT
+                 : H2_PAL_OK;
     }
     int error = wolfSSL_get_error(slot->tls, result);
     if (error != WOLFSSL_ERROR_WANT_READ && error != WOLFSSL_ERROR_WANT_WRITE) {
@@ -150,6 +149,13 @@ h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_token = -1;
+  /* Certificate loading and TLS setup share the handshake's budget. */
+  uint64_t now = 0u;
+  if (h2_windows_monotonic_ms(platform, &now) != H2_PAL_OK ||
+      UINT64_MAX - now < timeout_ms) {
+    return H2_PAL_ERR_IO;
+  }
+  uint64_t deadline = now + timeout_ms;
   h2_windows_socket_slot_t* slot = h2_windows_net_lock_slot(platform, token);
   if (slot == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -221,7 +227,7 @@ h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
     wolfSSL_SetIOReadCtx(slot->tls, slot);
     wolfSSL_SetIOWriteCtx(slot->tls, slot);
     slot->tls_context = context;
-    result = windows_tls_handshake(platform, slot, timeout_ms, verify_mode);
+    result = windows_tls_handshake(platform, slot, deadline, verify_mode);
   }
   if (result != H2_PAL_OK) {
     if (slot->tls != NULL) {

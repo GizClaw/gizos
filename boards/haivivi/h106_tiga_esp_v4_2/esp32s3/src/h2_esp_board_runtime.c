@@ -15,6 +15,8 @@
 static h2_pal_fs_api_t s_runtime_fs;
 static h2_pal_fs_vtable_t s_runtime_fs_vtable;
 static int (*s_runtime_fs_provider_clear)(void* user, const char* path);
+static h2_pal_result_t (*s_runtime_fs_provider_prepare)(void* user,
+                                                        const char* path);
 static h2_runtime_config_t s_runtime_config;
 static h2_corehttp_t* s_runtime_http;
 static h2_pal_http_api_t s_runtime_http_api;
@@ -55,6 +57,17 @@ static int runtime_fs_clear(void* user, const char* path) {
              : H2_PAL_FS_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t runtime_fs_prepare(void* user, const char* path) {
+  if (path == NULL || path[0] == '\0') return H2_PAL_FS_ERR_INVALID_ARG;
+  if (s_runtime_fs_provider_prepare != NULL)
+    return s_runtime_fs_provider_prepare(user, path);
+  if (strcmp(path, "/dl") == 0 || strncmp(path, "/dl/", 4u) == 0)
+    return h2_esp_board_fs_prepare("/dl");
+  if (strcmp(path, "/data") == 0 || strncmp(path, "/data/", 6u) == 0)
+    return h2_esp_board_fs_prepare("/data");
+  return H2_PAL_FS_ERR_UNSUPPORTED;
+}
+
 h2_pal_result_t h2_esp_board_task_configure(
     const h2_esp_task_policy_config_t* config) {
   if (config == NULL || config->resolver == NULL) {
@@ -88,7 +101,9 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
   if (rc == H2_PAL_OK && s_runtime_fs.vtable != NULL) {
     s_runtime_fs_vtable = *s_runtime_fs.vtable;
     s_runtime_fs_provider_clear = s_runtime_fs_vtable.clear;
+    s_runtime_fs_provider_prepare = s_runtime_fs_vtable.prepare;
     s_runtime_fs_vtable.clear = runtime_fs_clear;
+    s_runtime_fs_vtable.prepare = runtime_fs_prepare;
     s_runtime_fs.vtable = &s_runtime_fs_vtable;
   }
   const h2_corehttp_config_t http_config = {
@@ -177,6 +192,7 @@ h2_pal_result_t h2_esp_board_runtime_deinit(void) {
       s_runtime_fs_pending = 0;
       memset(&s_runtime_fs, 0, sizeof(s_runtime_fs));
       s_runtime_fs_provider_clear = NULL;
+      s_runtime_fs_provider_prepare = NULL;
     }
     if (first_error == H2_PAL_OK) first_error = fs_rc;
   }
