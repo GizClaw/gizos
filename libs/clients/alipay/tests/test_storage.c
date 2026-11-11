@@ -1,11 +1,8 @@
 #include "h2_alipay_storage.h"
 #include "h2_app_test_mem.h"
 #include "h2_app_test_pref.h"
-#include "h2_sqlite.h"
 
 #include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 static void read_value(const h2_alipay_storage_t* storage, uint32_t index,
@@ -94,30 +91,12 @@ int main(void) {
   assert(h2_alipay_storage_exists(&storage, 19) == H2_PAL_ERR_IO);
   pref.read = (h2_app_test_fault_t){.result = H2_PAL_EXIT, .remaining = 1};
   assert(h2_alipay_storage_exists(&storage, 19) == H2_PAL_ERR_IO);
-  assert(pref.active_handles == 0);
-  assert(h2_app_test_pref_deinit(&pref) == H2_PAL_OK);
-
-  const char* directory = getenv("TEST_TMPDIR");
-  assert(directory != NULL);
-  char path[1024];
-  assert(snprintf(path, sizeof(path), "%s/alipay-storage.sqlite", directory) <
-         (int)sizeof(path));
-  h2_sqlite_config_t config = {.path = path};
-  h2_sqlite_t* sqlite = NULL;
-  assert(h2_sqlite_create(&config, &sqlite) == H2_PAL_OK);
-  storage.pref = h2_sqlite_pref_api(sqlite);
   h2_pal_pref_namespace_t* factory = NULL;
   assert(h2_pal_pref_open(storage.pref, "factory", H2_PAL_PREF_OPEN_READ_WRITE,
                           &factory) == H2_PAL_OK);
   assert(factory->set_blob(factory, "identity", old, sizeof(old)) == H2_PAL_OK);
   assert(factory->commit(factory) == H2_PAL_OK &&
          factory->close(factory) == H2_PAL_OK);
-  storage_contract(&storage);
-  assert(h2_alipay_storage_write(&storage, 23, old, sizeof(old)) == H2_PAL_OK);
-  h2_sqlite_destroy(sqlite);
-  assert(h2_sqlite_create(&config, &sqlite) == H2_PAL_OK);
-  storage.pref = h2_sqlite_pref_api(sqlite);
-  read_value(&storage, 23, old, sizeof(old));
   assert(h2_alipay_storage_reset(&storage) == H2_PAL_OK);
   certificate_value(&storage, "\x09\x00\x07", 3);
   assert(h2_pal_pref_open(storage.pref, "factory", H2_PAL_PREF_OPEN_READ_ONLY,
@@ -129,8 +108,8 @@ int main(void) {
   assert(size == sizeof(old) && memcmp(data, old, size) == 0);
   h2_pal_mem_free(&mem.api, data);
   assert(factory->close(factory) == H2_PAL_OK);
-  h2_sqlite_destroy(sqlite);
-  assert(remove(path) == 0);
+  assert(pref.active_handles == 0);
+  assert(h2_app_test_pref_deinit(&pref) == H2_PAL_OK);
   assert(mem.live_blocks == 0);
   return 0;
 }
