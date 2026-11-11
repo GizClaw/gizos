@@ -74,9 +74,8 @@ def main():
         config_path = args.pjd / "partitions" / args.soc / "ota_rbl.config"
         if config_path.exists():
             config = json.loads(config_path.read_text())
-            if (not isinstance(config, dict) or set(config) - {"gzip", "aes", "key", "iv", "outf"}
-                    or str(config.get("gzip", "0")) != "0"
-                    or str(config.get("aes", "0")) != "0"):
+            if (not isinstance(config, dict) or set(config) - {"gzip", "outf"}
+                    or str(config.get("gzip", "0")) != "0"):
                 raise ValueError("unsupported RBL packaging configuration")
         metadata = Path(os.environ["PARTITIONS_DIR"]) / "configurationab.json"
         pack(args.infile, args.outfile, metadata,
