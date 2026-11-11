@@ -6,6 +6,9 @@ set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   bk_cli
   lwip_intf_v2_1
   wpa_supplicant-2.10)
+if(CONFIG_PSA_MBEDTLS)
+  list(APPEND H2_BK_PLATFORM_CORE_PRIV_REQUIRES psa_mbedtls)
+endif()
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_pal_core cp)
 
@@ -17,6 +20,15 @@ armino_component_register(
     "${REPO_ROOT}/native_component_src/bk7258/shared"
   PRIV_REQUIRES
     ${H2_BK_PLATFORM_CORE_PRIV_REQUIRES})
+
+include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_lwip_config.cmake")
+if(CONFIG_PSA_MBEDTLS)
+  armino_component_get_property(H2_BK_CP_MBEDTLS_LIB psa_mbedtls COMPONENT_LIB)
+  target_include_directories(${H2_BK_CP_MBEDTLS_LIB} PUBLIC
+    "${REPO_ROOT}/native_component_src/bk7258/shared")
+  target_compile_definitions(${H2_BK_CP_MBEDTLS_LIB} PUBLIC
+    MBEDTLS_USER_CONFIG_FILE="h2_bk_mbedtls_record_config.h")
+endif()
 
 # The public AP SDK disconnect lacks a radio-disassociate RPC; legacy
 # BK_CMD_DISCONNECT stops the entire service. Add a paired private command

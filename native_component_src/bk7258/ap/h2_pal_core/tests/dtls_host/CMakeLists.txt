@@ -11,6 +11,7 @@ set(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON)
 set(CMAKE_C_STANDARD 11)
 add_compile_options(-include "${CMAKE_CURRENT_SOURCE_DIR}/host_log.h")
 add_compile_definitions(MBEDTLS_USER_CONFIG_FILE="${CMAKE_CURRENT_SOURCE_DIR}/host_config.h")
+include_directories("${H2_REPO_ROOT}/native_component_src/bk7258/shared")
 
 # The SDK omits upstream's top-level generator assets. Its library directory
 # supports standalone inclusion with the four pre-generated sources below.

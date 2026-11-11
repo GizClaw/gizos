@@ -116,11 +116,15 @@ static h2_pal_result_t fixture_device_identity_get(
 static h2_pal_result_t fixture_mem_get_stats(void* user,
                                              h2_pal_mem_region_t region,
                                              h2_pal_mem_stats_t* out_stats) {
-  (void)user;
+  uint32_t unavailable = *(const uint32_t*)user;
   out_stats->total_bytes = 1024u;
   out_stats->free_bytes = 512u;
   out_stats->minimum_free_bytes = 128u;
-  out_stats->largest_free_block_bytes = 256u;
+  out_stats->largest_free_block_bytes =
+      unavailable & H2_PAL_MEM_STATS_UNAVAILABLE_LARGEST_FREE_BLOCK_BYTES
+          ? 0u
+          : 256u;
+  out_stats->unavailable_fields = unavailable;
   return region == H2_PAL_MEM_REGION_EXTERNAL ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
@@ -156,14 +160,24 @@ static void test_identity_and_memory_contracts(void) {
   static const h2_pal_mem_vtable_t mem_vtable = {
       .get_stats = fixture_mem_get_stats,
   };
-  const h2_pal_mem_api_t mem_api = {.vtable = &mem_vtable};
+  uint32_t unavailable = 0u;
+  const h2_pal_mem_api_t mem_api = {.user = &unavailable,
+                                    .vtable = &mem_vtable};
   h2_pal_mem_stats_t stats;
   const h2_pal_mem_stats_t empty_stats = {0};
   assert(h2_pal_mem_get_stats(&mem_api, H2_PAL_MEM_REGION_INTERNAL, &stats) ==
          H2_PAL_OK);
   assert(stats.total_bytes == 1024u && stats.free_bytes == 512u &&
          stats.minimum_free_bytes == 128u &&
-         stats.largest_free_block_bytes == 256u);
+         stats.largest_free_block_bytes == 256u &&
+         stats.unavailable_fields == 0u);
+  unavailable = H2_PAL_MEM_STATS_UNAVAILABLE_LARGEST_FREE_BLOCK_BYTES;
+  assert(h2_pal_mem_get_stats(&mem_api, H2_PAL_MEM_REGION_INTERNAL, &stats) ==
+         H2_PAL_OK);
+  assert(stats.total_bytes == 1024u && stats.free_bytes == 512u &&
+         stats.minimum_free_bytes == 128u &&
+         stats.largest_free_block_bytes == 0u &&
+         stats.unavailable_fields == unavailable);
   assert(h2_pal_mem_get_stats(&mem_api, H2_PAL_MEM_REGION_EXTERNAL, &stats) ==
          H2_PAL_ERR_IO);
   assert(memcmp(&stats, &empty_stats, sizeof(stats)) == 0);

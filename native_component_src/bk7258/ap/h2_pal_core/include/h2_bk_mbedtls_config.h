@@ -1,6 +1,8 @@
 #ifndef H2_BK_MBEDTLS_CONFIG_H
 #define H2_BK_MBEDTLS_CONFIG_H
 
+#include "h2_bk_mbedtls_record_config.h"
+
 /* The SDK minimal profile disables upstream's fixed-base precomputation.
  * Restore the normal software-ECP setting: the SDK's read-only base-point
  * tables avoid repeated scalar setup during certificate/signature work. */

@@ -26,6 +26,7 @@ env:
   ANDROID_BUILD_TOOLS_VERSION: "35.0.0"
   ANDROID_NDK_VERSION: "28.2.13676358"
   BAZEL_VERSION: "9.2.0"
+  BAZEL_GRAPH_CONFIG: gizclaw-ci
   BAZEL_LINUX_X86_64_SHA256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
   BAZEL_MACOS_ARM64_SHA256: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
   BAZEL_WINDOWS_X86_64_SHA256: 5fc2f2805b8c697a54732558576938d06bab63aa0f9b6610cc01d2cae0388705
@@ -1388,9 +1389,9 @@ jobs:
           }
           & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal --test_output=errors //tools/gizos:gizos_lock_test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:BAZEL_BIN "--output_user_root=$outputRoot" build @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
+          & $env:BAZEL_BIN "--output_user_root=$outputRoot" build @cacheArgs --config=windows_x86_64 --config=gizclaw-ci --lockfile_mode=off --remote_download_outputs=minimal //...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
+          & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --config=gizclaw-ci --lockfile_mode=off --remote_download_outputs=minimal //...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Save Bazel repository cache seed

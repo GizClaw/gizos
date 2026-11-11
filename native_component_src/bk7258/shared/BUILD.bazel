@@ -1,6 +1,11 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "POSIX_HOST_TOOL_COMPATIBILITY")
+
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "h2_bk_lwip_config.cmake",
+    "h2_bk_mbedtls_record_config.h",
     "h2_bk_wifi_rpc.h",
     "h2_bk_wifi_ipv6.h",
     "h2_bk_wifi_ipv6.cmake",
@@ -11,3 +16,28 @@ exports_files([
     "h2_bk_cp_psram.cmake",
     "h2_bk_cp_lease.cmake",
 ])
+
+py_test(
+    name = "sdk_config_test",
+    srcs = ["tests/test_sdk_config.py"],
+    args = [
+        "--locator",
+        "$(location @gizos_bk7258_sdk//:locator.json)",
+    ],
+    data = [
+        "h2_bk_lwip_config.cmake",
+        "h2_bk_mbedtls_record_config.h",
+        "//boards/beken/bk7258_v3_202405/bk7258:ap.defaults",
+        "//boards/beken/bk7258_v3_202405/bk7258:cp.defaults",
+        "//boards/haivivi/h106_zero_bk_2_0/bk7258:ap.defaults",
+        "//boards/haivivi/h106_zero_bk_2_0/bk7258:cp.defaults",
+        "//tools/bazel/native/versions:bk7258_sdk_commit.txt",
+        "@gizos_bk7258_sdk//:locator.json",
+    ],
+    env_inherit = ["PATH"],
+    legacy_create_init = False,
+    local = True,
+    main = "tests/test_sdk_config.py",
+    tags = ["manual"],
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)

@@ -261,7 +261,12 @@ static h2_pal_result_t mem_get_stats(void* user, h2_pal_mem_region_t region,
   out_stats->free_bytes = 500u;
   out_stats->minimum_free_bytes = 250u;
   out_stats->largest_free_block_bytes = 300u;
-  return fail_external && region == H2_PAL_MEM_REGION_EXTERNAL
+  if (fail_external == 2) {
+    out_stats->largest_free_block_bytes = 0u;
+    out_stats->unavailable_fields =
+        H2_PAL_MEM_STATS_UNAVAILABLE_LARGEST_FREE_BLOCK_BYTES;
+  }
+  return fail_external == 1 && region == H2_PAL_MEM_REGION_EXTERNAL
              ? H2_PAL_ERR_UNSUPPORTED
              : H2_PAL_OK;
 }
@@ -293,6 +298,10 @@ static void check_observations(void) {
   assert(h2_loader_pal_memory_stats_read(&mem, &stats) ==
          H2_PAL_ERR_UNSUPPORTED);
   const h2_loader_memory_stats_t empty_stats = {0};
+  assert(memcmp(&stats, &empty_stats, sizeof(stats)) == 0);
+  fail_external = 2;
+  assert(h2_loader_pal_memory_stats_read(&mem, &stats) ==
+         H2_PAL_ERR_UNSUPPORTED);
   assert(memcmp(&stats, &empty_stats, sizeof(stats)) == 0);
 }
 

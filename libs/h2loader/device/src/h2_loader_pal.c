@@ -243,6 +243,8 @@ h2_pal_result_t h2_loader_pal_memory_stats_read(
     h2_pal_mem_stats_t stats;
     h2_pal_result_t rc = h2_pal_mem_get_stats(mem, regions[i], &stats);
     if (rc != H2_PAL_OK) return rc;
+    /* The existing wire record has no per-field validity mask. */
+    if (stats.unavailable_fields != 0u) return H2_PAL_ERR_UNSUPPORTED;
     *destinations[i] = (h2_loader_memory_region_stats_t){
         .total_bytes = stats.total_bytes,
         .free_bytes = stats.free_bytes,

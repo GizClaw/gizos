@@ -7,7 +7,7 @@ import sys
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common.bazel import cache_options  # noqa: E402
+from common.bazel import cache_options, graph_options  # noqa: E402
 
 
 if __name__ == "__main__":
@@ -17,6 +17,7 @@ if __name__ == "__main__":
         if config:
             args.append(f"--config={config}")
         args.extend(cache_options())
+        args.extend(graph_options())
         args.append("//...")
         os.execvp(args[0], args)
     except ValueError as error:

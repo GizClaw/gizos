@@ -7,6 +7,8 @@ set(BK_FLASHDB_DIR "${BK_ARMINO_PATH}/components/flashdb")
 set(BK_WIFI_DRIVER_DIR "${BK_ARMINO_PATH}/components/bk_wifi_driver")
 option(H2_BK_PLATFORM_ENABLE_WEBRTC "Enable BK WebRTC platform implementation backed by H2Peer" OFF)
 option(H2_BK_PLATFORM_BT_ALLOCATOR_PSRAM "Route BK Bluetooth host allocations to PSRAM" OFF)
+option(H2_BK_NET_TLS_CERT_TRACE "Trace SDK certificate operations during qualification" OFF)
+option(H2_BK_NET_RTP_TRACE "Observe UDP/RTP timing during qualification" OFF)
 set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   bk_common
   bk_cli
@@ -176,6 +178,21 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
   MBEDTLS_X509_CREATE_C
   MBEDTLS_X509_CRT_WRITE_C)
 
+if(H2_BK_NET_RTP_TRACE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_BK_NET_RTP_TRACE=1)
+endif()
+
+if(H2_BK_NET_TLS_CERT_TRACE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_BK_NET_TLS_CERT_TRACE=1)
+  foreach(H2_BK_TLS_TRACE_SYMBOL IN ITEMS
+      mbedtls_x509_crt_parse
+      mbedtls_x509_crt_parse_der_nocopy
+      mbedtls_x509_crt_verify_restartable
+      mbedtls_pk_verify_ext)
+    armino_build_set_property(LINK_OPTIONS "-Wl,--wrap=${H2_BK_TLS_TRACE_SYMBOL}" APPEND)
+  endforeach()
+endif()
+
 # The SDK reduced Mbed TLS profile omits ALPN even though the HTTP transport
 # requires an explicit http/1.1 offer. Enable the existing public Mbed TLS
 # implementation for both the SDK library and its consumers.
@@ -192,6 +209,7 @@ set_property(SOURCE "${BK_ARMINO_PATH}/components/os_source/freertos_smp_v2p0/Fr
   "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_task_tls_hooks.h")
 # lwIP's vendor fork writes its own global int errno, bypassing newlib.
 # Bind socket error writes and PAL reads to the same task-local value.
+include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_lwip_config.cmake")
 target_compile_options(__armino_lwip_intf_v2_1 PRIVATE
   "-include" "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_socket_errno_writer.h")
 set_property(SOURCE "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c"
@@ -278,6 +296,8 @@ target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
   MBEDTLS_POLY1305_C
   MBEDTLS_CHACHAPOLY_C)
 
+target_include_directories(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
+  "${REPO_ROOT}/native_component_src/bk7258/shared")
 if(CONFIG_SW_CRYPTO)
   target_include_directories(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
     "${CMAKE_CURRENT_LIST_DIR}/include")
@@ -293,6 +313,9 @@ if(CONFIG_SW_CRYPTO)
     "${BK_ARMINO_PATH}/components/psa_mbedtls/mbedtls_port/mbedtls/library/platform.c"
     TARGET_DIRECTORY ${H2_BK_PSA_MBEDTLS_LIB}
     PROPERTIES COMPILE_OPTIONS "-include;driver/trng.h")
+else()
+  target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
+    MBEDTLS_USER_CONFIG_FILE="h2_bk_mbedtls_record_config.h")
 endif()
 
 if(CONFIG_BT AND H2_BK_PLATFORM_BT_ALLOCATOR_PSRAM)

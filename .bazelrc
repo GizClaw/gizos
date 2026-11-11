@@ -8,6 +8,9 @@ common --repository_cache=~/.cache/bazel/repository
 common --distdir=~/.cache/bazel/distdir
 common --downloader_config=tools/bazel/repositories/downloader.cfg
 
+# Suite-owned public inputs for the BK CI compile graph; live builds stay explicit.
+import %workspace%/projects/testing/integration/gizclaw/ci.bazelrc
+
 # GizClaw modules (gizclaw_c_sdk) are served from our own Bazel registry.
 # --registry replaces the default list, so BCR has to be named explicitly.
 # BCR stays first: only modules BCR does not have fall through to ours.
@@ -15,6 +18,7 @@ common --registry=https://bcr.bazel.build
 common --registry=https://static-volc.gizclaw.com/bazel/
 
 common:ci-graph --enable_bzlmod
+common:ci-graph --config=gizclaw-ci
 common:ci-graph --noenable_platform_specific_config
 common:ci-graph --define=h2_ci_graph=true
 common:ci-graph --define=h2_host_os=linux
