@@ -8,8 +8,9 @@
 extern "C" {
 #endif
 
-#define H2_ALIPAY_TRACE_EVENTS 128u
+#define H2_ALIPAY_TRACE_EVENTS 512u
 #define H2_ALIPAY_TRACE_BYTES 128u
+#define H2_ALIPAY_TRACE_DIAGNOSTIC_CLASSES 3u
 /** Fixed bounded runtime evidence. No dynamic allocation or IO on push.
  * One serialized producer; drain/reset only after that worker has joined.
  * Raw bytes are opt-in, prefixes are explicitly marked, and digest covers
@@ -33,6 +34,13 @@ typedef struct h2_alipay_trace {
   uint32_t sequence, next_call, dropped;
   size_t truncated_bytes;
   bool private_raw;
+  /** Optional per-class sample budget: vendor.log, successful clock.get_utc,
+   * successful memory.alloc. Zero retains every event. Summarized diagnostics
+   * have explicit counters; SDK/HAL failures and other operations are retained
+   * normally. Sequence numbers describe retained events, not summaries. */
+  uint32_t diagnostic_limit;
+  uint32_t diagnostic_seen[H2_ALIPAY_TRACE_DIAGNOSTIC_CLASSES];
+  uint32_t diagnostic_summarized[H2_ALIPAY_TRACE_DIAGNOSTIC_CLASSES];
 } h2_alipay_trace_t;
 
 void h2_alipay_trace_reset(h2_alipay_trace_t* trace, bool private_raw);

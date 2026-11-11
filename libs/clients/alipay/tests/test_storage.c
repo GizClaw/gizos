@@ -1,0 +1,136 @@
+#include "h2_alipay_storage.h"
+#include "h2_app_test_mem.h"
+#include "h2_app_test_pref.h"
+#include "h2_sqlite.h"
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void read_value(const h2_alipay_storage_t* storage, uint32_t index,
+                       const void* expected, uint32_t length) {
+  uint8_t data[64];
+  uint32_t size = sizeof(data);
+  assert(h2_alipay_storage_read(storage, index, data, &size) == H2_PAL_OK);
+  assert(size == length && memcmp(data, expected, length) == 0);
+}
+
+static void certificate_value(const h2_alipay_storage_t* storage,
+                              const void* expected, size_t expected_size) {
+  h2_pal_pref_namespace_t* ns = NULL;
+  assert(h2_pal_pref_open(storage->pref, "alipay_cert",
+                          H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+  void* data = NULL;
+  size_t size = 0;
+  assert(ns->get_blob(ns, storage->mem, "certificate", &data, &size) ==
+         H2_PAL_OK);
+  assert(size == expected_size && memcmp(data, expected, size) == 0);
+  h2_pal_mem_free(storage->mem, data);
+  assert(ns->close(ns) == H2_PAL_OK);
+}
+
+static void storage_contract(h2_alipay_storage_t* storage) {
+  static const uint8_t first[] = {0, 1, 0xff, 3};
+  static const uint8_t replacement[] = {9, 0, 7};
+  assert(h2_alipay_storage_exists(storage, 7) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_alipay_storage_write(storage, 7, first, sizeof(first)) ==
+         H2_PAL_OK);
+  assert(h2_alipay_storage_exists(storage, 7) == 0);
+  read_value(storage, 7, first, sizeof(first));
+  uint8_t short_buffer[] = {0xaa, 0xbb};
+  uint32_t size = sizeof(short_buffer);
+  assert(h2_alipay_storage_read(storage, 7, short_buffer, &size) ==
+         H2_PAL_ERR_NO_SPACE);
+  assert(size == sizeof(first) && short_buffer[0] == 0xaa &&
+         short_buffer[1] == 0xbb);
+  assert(h2_alipay_storage_write(storage, 7, replacement,
+                                 sizeof(replacement)) == H2_PAL_OK);
+  read_value(storage, 7, replacement, sizeof(replacement));
+  assert(h2_alipay_storage_write(storage, UINT32_MAX, first, sizeof(first)) ==
+         H2_PAL_OK);
+  read_value(storage, UINT32_MAX, first, sizeof(first));
+  assert(h2_alipay_storage_delete(storage, 7) == H2_PAL_OK);
+  assert(h2_alipay_storage_exists(storage, 7) == H2_PAL_ERR_NOT_FOUND);
+  read_value(storage, UINT32_MAX, first, sizeof(first));
+  assert(h2_alipay_storage_save_certificate(storage, first, sizeof(first)) ==
+         H2_PAL_OK);
+  assert(h2_alipay_storage_save_certificate(storage, replacement,
+                                            sizeof(replacement)) == H2_PAL_OK);
+  assert(h2_alipay_storage_reset(storage) == H2_PAL_OK);
+  assert(h2_alipay_storage_exists(storage, UINT32_MAX) == H2_PAL_ERR_NOT_FOUND);
+  certificate_value(storage, replacement, sizeof(replacement));
+  assert(h2_alipay_storage_write(storage, 0, NULL, 0) == H2_PAL_OK);
+  read_value(storage, 0, "", 0);
+  assert(h2_alipay_storage_read(storage, 0, NULL, &size) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_alipay_storage_read(storage, 0, short_buffer, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_alipay_storage_write(storage, 0, NULL, 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_alipay_storage_save_certificate(storage, NULL, 0) ==
+         H2_PAL_ERR_INVALID_ARG);
+}
+
+int main(void) {
+  h2_app_test_mem_t mem = {0};
+  h2_app_test_mem_init(&mem, NULL);
+  h2_app_test_pref_t pref = {0};
+  assert(h2_app_test_pref_init(&pref, &mem.api) == H2_PAL_OK);
+  h2_alipay_storage_t storage = {.pref = &pref.api, .mem = &mem.api};
+  storage_contract(&storage);
+  const uint8_t old[] = {1, 2, 3};
+  const uint8_t updated[] = {4, 5};
+  assert(h2_alipay_storage_write(&storage, 19, old, sizeof(old)) == H2_PAL_OK);
+  pref.commit =
+      (h2_app_test_fault_t){.result = H2_PAL_ERR_WRITE, .remaining = 1};
+  assert(h2_alipay_storage_write(&storage, 19, updated, sizeof(updated)) ==
+         H2_PAL_ERR_WRITE);
+  read_value(&storage, 19, old, sizeof(old));
+  pref.commit = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1};
+  assert(h2_alipay_storage_reset(&storage) == H2_PAL_ERR_IO);
+  read_value(&storage, 19, old, sizeof(old));
+  pref.open = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1};
+  assert(h2_alipay_storage_exists(&storage, 19) == H2_PAL_ERR_IO);
+  pref.read = (h2_app_test_fault_t){.result = H2_PAL_EXIT, .remaining = 1};
+  assert(h2_alipay_storage_exists(&storage, 19) == H2_PAL_ERR_IO);
+  assert(pref.active_handles == 0);
+  assert(h2_app_test_pref_deinit(&pref) == H2_PAL_OK);
+
+  const char* directory = getenv("TEST_TMPDIR");
+  assert(directory != NULL);
+  char path[1024];
+  assert(snprintf(path, sizeof(path), "%s/alipay-storage.sqlite", directory) <
+         (int)sizeof(path));
+  h2_sqlite_config_t config = {.path = path};
+  h2_sqlite_t* sqlite = NULL;
+  assert(h2_sqlite_create(&config, &sqlite) == H2_PAL_OK);
+  storage.pref = h2_sqlite_pref_api(sqlite);
+  h2_pal_pref_namespace_t* factory = NULL;
+  assert(h2_pal_pref_open(storage.pref, "factory", H2_PAL_PREF_OPEN_READ_WRITE,
+                          &factory) == H2_PAL_OK);
+  assert(factory->set_blob(factory, "identity", old, sizeof(old)) == H2_PAL_OK);
+  assert(factory->commit(factory) == H2_PAL_OK &&
+         factory->close(factory) == H2_PAL_OK);
+  storage_contract(&storage);
+  assert(h2_alipay_storage_write(&storage, 23, old, sizeof(old)) == H2_PAL_OK);
+  h2_sqlite_destroy(sqlite);
+  assert(h2_sqlite_create(&config, &sqlite) == H2_PAL_OK);
+  storage.pref = h2_sqlite_pref_api(sqlite);
+  read_value(&storage, 23, old, sizeof(old));
+  assert(h2_alipay_storage_reset(&storage) == H2_PAL_OK);
+  certificate_value(&storage, "\x09\x00\x07", 3);
+  assert(h2_pal_pref_open(storage.pref, "factory", H2_PAL_PREF_OPEN_READ_ONLY,
+                          &factory) == H2_PAL_OK);
+  void* data = NULL;
+  size_t size = 0;
+  assert(factory->get_blob(factory, &mem.api, "identity", &data, &size) ==
+         H2_PAL_OK);
+  assert(size == sizeof(old) && memcmp(data, old, size) == 0);
+  h2_pal_mem_free(&mem.api, data);
+  assert(factory->close(factory) == H2_PAL_OK);
+  h2_sqlite_destroy(sqlite);
+  assert(remove(path) == 0);
+  assert(mem.live_blocks == 0);
+  return 0;
+}

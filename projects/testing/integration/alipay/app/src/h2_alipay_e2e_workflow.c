@@ -22,8 +22,7 @@ h2_pal_result_t h2_alipay_e2e_execute(h2_runtime_t* runtime,
     return result->result;
   const h2_alipay_api_t* api = config->alipay;
   const h2_alipay_vtable_t* vtable = api->vtable;
-  if (vtable->pre_init == NULL || vtable->check_ready == NULL ||
-      vtable->binding_status == NULL || vtable->get_binding_code == NULL) {
+  if (vtable->pre_init == NULL || vtable->get_binding_code == NULL) {
     result->result = H2_PAL_ERR_UNSUPPORTED;
     return result->result;
   }
@@ -50,18 +49,6 @@ h2_pal_result_t h2_alipay_e2e_execute(h2_runtime_t* runtime,
   result->result = result->reentry_rc;
   if (result->result != H2_PAL_OK) return result->result;
   if (!result->reused) {
-    result->result = H2_PAL_ERR_INVALID_STATE;
-    return result->result;
-  }
-  result->stage = H2_ALIPAY_E2E_PREREQUISITES;
-  result->result =
-      vtable->check_ready(api->user, config->feature, &result->blocker);
-  if (result->result != H2_PAL_OK) return result->result;
-  bool bound = false;
-  result->result = vtable->binding_status(api->user, &bound);
-  if (result->result != H2_PAL_OK) return result->result;
-  if (bound) {
-    result->stage = H2_ALIPAY_E2E_BOUND;
     result->result = H2_PAL_ERR_INVALID_STATE;
     return result->result;
   }

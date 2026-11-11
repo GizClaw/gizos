@@ -32,42 +32,44 @@ type captureOptions struct {
 	Package, Renderer string
 }
 type event struct {
-	Run        string `json:"run_id"`
-	Case       string `json:"case_id"`
-	Seq        uint32 `json:"seq"`
-	Call       uint32 `json:"call_id"`
-	Parent     uint32 `json:"parent_id"`
-	Connection uint32 `json:"connection_id"`
-	Operation  string `json:"operation"`
-	Boundary   string `json:"boundary"`
-	Source     string `json:"source"`
-	Item       uint32 `json:"item"`
-	Length     int    `json:"length"`
-	Captured   int    `json:"captured"`
-	SHA        string `json:"sha256"`
-	Hex        string `json:"hex"`
-	Complete   bool   `json:"complete"`
-	Dropped    uint32 `json:"dropped"`
-	Truncated  uint64 `json:"truncated_bytes"`
-	Events     int    `json:"events"`
-	Private    bool   `json:"private_raw"`
+	Diagnostics json.RawMessage `json:"diagnostics"`
+	Run         string          `json:"run_id"`
+	Case        string          `json:"case_id"`
+	Seq         uint32          `json:"seq"`
+	Call        uint32          `json:"call_id"`
+	Parent      uint32          `json:"parent_id"`
+	Connection  uint32          `json:"connection_id"`
+	Operation   string          `json:"operation"`
+	Boundary    string          `json:"boundary"`
+	Source      string          `json:"source"`
+	Item        uint32          `json:"item"`
+	Length      int             `json:"length"`
+	Captured    int             `json:"captured"`
+	SHA         string          `json:"sha256"`
+	Hex         string          `json:"hex"`
+	Complete    bool            `json:"complete"`
+	Dropped     uint32          `json:"dropped"`
+	Truncated   uint64          `json:"truncated_bytes"`
+	Events      int             `json:"events"`
+	Private     bool            `json:"private_raw"`
 }
 type runCapture struct {
-	dir       string
-	file      *os.File
-	meta      bool
-	ended     bool
-	complete  bool
-	dropped   uint32
-	truncated uint64
-	count     int
-	last      uint32
-	lastCall  uint32
-	roots     map[uint32]uint32
-	pending   *event
-	code      []byte
-	qr        bool
-	private   bool
+	diagnostics json.RawMessage
+	dir         string
+	file        *os.File
+	meta        bool
+	ended       bool
+	complete    bool
+	dropped     uint32
+	truncated   uint64
+	count       int
+	last        uint32
+	lastCall    uint32
+	roots       map[uint32]uint32
+	pending     *event
+	code        []byte
+	qr          bool
+	private     bool
 }
 
 func writeJSON(path string, value any) error {
@@ -135,6 +137,9 @@ func capture(input io.Reader, output string, options captureOptions) (returnErr 
 				"e2e_acceptance":  "use independent H2_E2E_CASE, canonical SUMMARY and first matching replay",
 				"raw_complete":    run.private && complete && run.truncated == 0,
 				"qr_file_written": run.qr}
+			if len(run.diagnostics) != 0 {
+				status["diagnostics"] = run.diagnostics
+			}
 			if err := writeJSON(filepath.Join(run.dir, "integrity.json"), status); err != nil && returnErr == nil {
 				returnErr = err
 			}
@@ -304,6 +309,7 @@ func capture(input io.Reader, output string, options captureOptions) (returnErr 
 				}
 			}
 		case "END":
+			run.diagnostics = e.Diagnostics
 			run.ended = true
 			run.dropped = e.Dropped
 			run.truncated = e.Truncated

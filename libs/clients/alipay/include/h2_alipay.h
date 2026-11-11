@@ -48,11 +48,11 @@ typedef enum h2_alipay_blocker {
  * failure, for the entire SDK process/boot. Dependencies stay alive until
  * reset: the original SDK has no symmetric callback unregistration API.
  *
- * check_ready validates persistent commissioning evidence without provisioning
- * or activation. A READY flag in RAM is not evidence. Only read binding_status
- * after check_ready: the vendor bool cannot distinguish storage failure from
- * unbound. Failed get_binding_code clears output. No operation polls, unbinds,
- * resets or completes account binding. Output buffers belong to the caller.
+ * check_ready is a legacy optional policy callback; the vendor adapter leaves
+ * it NULL and binding calls do not invoke it. binding_status is an optional
+ * SDK query, not a prerequisite for requesting a binding code. Failed
+ * get_binding_code clears output. No operation polls, unbinds or completes
+ * account binding. Output buffers belong to the caller.
  */
 typedef struct h2_alipay_vtable {
   h2_pal_result_t (*pre_init)(void* user, int* sdk_rc, bool* first_attempt);

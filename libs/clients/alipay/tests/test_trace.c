@@ -42,5 +42,35 @@ int main(void) {
     assert(memcmp(out.bytes, raw, 128) == 0);
   }
   assert(!h2_alipay_trace_next(&trace, &out));
+  h2_alipay_trace_reset(&trace, false);
+  trace.diagnostic_limit = 4u;
+  in = (h2_alipay_trace_event_t){.call_id = 1};
+  strcpy(in.operation, "alipay_get_binding_code.enter");
+  h2_alipay_trace_push(&trace, &in, NULL, 0);
+  const char* diagnostics[] = {"vendor.log", "clock.get_utc", "memory.alloc"};
+  for (unsigned index = 0; index < 10000; ++index)
+    for (unsigned category = 0; category < 3; ++category) {
+      strcpy(in.operation, diagnostics[category]);
+      h2_alipay_trace_push(&trace, &in, NULL, 0);
+    }
+  in.result = -5;
+  strcpy(in.operation, "memory.alloc");
+  h2_alipay_trace_push(&trace, &in, NULL, 0);
+  strcpy(in.operation, "clock.get_utc");
+  h2_alipay_trace_push(&trace, &in, NULL, 0);
+  in.result = 99;
+  strcpy(in.operation, "alipay_get_binding_code.return");
+  h2_alipay_trace_push(&trace, &in, NULL, 0);
+  assert(trace.dropped == 0 && trace.count == 16);
+  for (unsigned category = 0; category < 3; ++category)
+    assert(trace.diagnostic_seen[category] == 10000 &&
+           trace.diagnostic_summarized[category] == 9996);
+  unsigned retained = 0, failures = 0;
+  while (h2_alipay_trace_next(&trace, &out)) {
+    assert(out.sequence == ++retained);
+    if (out.result != 0) ++failures;
+  }
+  assert(retained == 16 && failures == 3);
+  assert(strcmp(out.operation, "alipay_get_binding_code.return") == 0);
   return 0;
 }

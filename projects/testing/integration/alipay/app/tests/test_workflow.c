@@ -5,7 +5,7 @@
 typedef struct fixture {
   int prepared, init_calls, ready_calls, status_calls, code_calls;
   int network_rc, sdk_rc, ready_rc, code_rc;
-  bool bad_reentry, bound, bad_length;
+  bool bad_reentry, bound, bad_length, optional_missing;
 } fixture_t;
 
 static h2_pal_result_t prepare(h2_runtime_t* runtime, void* user) {
@@ -40,7 +40,7 @@ static h2_pal_result_t status(void* user, bool* bound) {
 static h2_pal_result_t code(void* user, uint32_t feature, char* out,
                             size_t capacity, size_t* length, int* sdk_rc) {
   fixture_t* f = user;
-  assert(f->status_calls == 1 && !f->bound && feature == 7);
+  assert(f->status_calls == 0 && f->ready_calls == 0 && feature == 7);
   ++f->code_calls;
   assert(capacity >= 8);
   memcpy(out, "real://", 8);
@@ -56,7 +56,12 @@ static const h2_alipay_vtable_t vtable = {
 };
 static h2_alipay_e2e_result_t run(fixture_t* fixture) {
   h2_runtime_t runtime = {0};
-  const h2_alipay_api_t api = {.user = fixture, .vtable = &vtable};
+  h2_alipay_vtable_t calls = vtable;
+  if (fixture->optional_missing) {
+    calls.check_ready = NULL;
+    calls.binding_status = NULL;
+  }
+  const h2_alipay_api_t api = {.user = fixture, .vtable = &calls};
   const h2_alipay_e2e_config_t config = {
       .alipay = &api, .feature = 7, .prepare = prepare, .user = fixture};
   h2_alipay_e2e_result_t result;
@@ -82,13 +87,14 @@ int main(void) {
   f = (fixture_t){.ready_rc = H2_PAL_ERR_UNAVAILABLE};
   r = run(&f);
   assert(r.init_sdk_rc == 0 && r.reused);
-  assert(r.blocker == H2_ALIPAY_BLOCKER_SECURITY_SCHEME);
-  assert(f.status_calls == 0 && f.code_calls == 0);
-  assert(r.code_sdk_rc == H2_ALIPAY_E2E_NOT_CALLED && r.length == 0);
+  assert(r.blocker == H2_ALIPAY_BLOCKER_NONE);
+  assert(f.ready_calls == 0 && f.status_calls == 0 && f.code_calls == 1);
+  assert(r.stage == H2_ALIPAY_E2E_CODE_READY && r.code_sdk_rc == 0);
 
   f = (fixture_t){.bound = true};
   r = run(&f);
-  assert(r.stage == H2_ALIPAY_E2E_BOUND && f.code_calls == 0);
+  assert(r.stage == H2_ALIPAY_E2E_CODE_READY && f.status_calls == 0 &&
+         f.code_calls == 1);
 
   f = (fixture_t){.code_rc = -91};
   r = run(&f);
@@ -99,7 +105,7 @@ int main(void) {
   r = run(&f);
   assert(r.result == H2_PAL_ERR_FORMAT && r.length == 0 && r.code[0] == '\0');
 
-  f = (fixture_t){0};
+  f = (fixture_t){.optional_missing = true};
   r = run(&f);
   assert(r.stage == H2_ALIPAY_E2E_CODE_READY && r.result == H2_PAL_OK);
   assert(r.length == 7 && strcmp(r.code, "real://") == 0);

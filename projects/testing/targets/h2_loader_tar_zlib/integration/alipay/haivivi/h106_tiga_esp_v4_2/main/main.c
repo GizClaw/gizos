@@ -1,5 +1,6 @@
 #include "h2_alipay_e2e.h"
 #include "h2_alipay_e2e_target.h"
+#include "h2_alipay_tiga_gateway.h"
 #include "h2_e2e_fixture_wifi.h"
 #include "h2_esp_alipay.h"
 #include "h2_esp_board.h"
@@ -110,13 +111,15 @@ static h2_pal_result_t prepare(h2_runtime_t* rt, void* user) {
   if (esp_netif_sntp_init(&time_config) != ESP_OK) return H2_PAL_ERR_IO;
   esp_err_t time_rc = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(60000));
   esp_netif_sntp_deinit();
+  printf("H2_ALIPAY_E2E_TIME server=pool.ntp.org sync_rc=%d\n", (int)time_rc);
   if (time_rc != ESP_OK) return H2_PAL_ERR_TIMEOUT;
   struct timeval wall;
   if (gettimeofday(&wall, NULL) != 0 || wall.tv_sec <= 0) return H2_PAL_ERR_IO;
   rc = h2_pal_time_set_wall_ms(
       rt->time, (uint64_t)wall.tv_sec * 1000 + (uint64_t)wall.tv_usec / 1000);
   if (rc == H2_PAL_OK) puts("H2_ALIPAY_E2E_TIME calibrated=true");
-  return rc;
+  if (rc != H2_PAL_OK) return rc;
+  return h2_alipay_tiga_gateway_probe(rt);
 }
 static void trace_report(const h2_alipay_e2e_result_t* r) {
   const h2_alipay_api_t* api = h2_esp_alipay_api();
@@ -131,9 +134,10 @@ static void trace_report(const h2_alipay_e2e_result_t* r) {
       "\"sdk_version\":null,\"firmware_version_hex\":\"%s\","
       "\"firmware_rc\":0,\"firmware_git_sha\":null,"
       "\"git_sha_source\":\"host_build_manifest_required\","
-      "\"private_raw\":false,\"plaintext_http_available\":false}\n",
+      "\"private_raw\":false,\"plaintext_http_available\":false,"
+      "\"diagnostic_limit\":%u}\n",
       run_id, runtime->board, runtime->target, api->sdk_manifest_sha256,
-      version_hex);
+      version_hex, (unsigned)trace->diagnostic_limit);
   for (size_t i = 0; i < trace->count; ++i) {
     const h2_alipay_trace_event_t* e = &trace->events[i];
     char digest[65], detail[sizeof(e->detail) * 2 + 1];
@@ -168,9 +172,18 @@ static void trace_report(const h2_alipay_e2e_result_t* r) {
       "H2_ALIPAY_END {\"run_id\":\"%s\","
       "\"case_id\":\"alipay/standalone\",\"complete\":%s,"
       "\"dropped\":%u,\"truncated_bytes\":%zu,\"events\":%zu,"
-      "\"raw_complete\":false}\n",
+      "\"raw_complete\":false,\"diagnostics\":{\"limit\":%u,"
+      "\"vendor_logs\":{\"seen\":%u,\"summarized\":%u},"
+      "\"clock_success\":{\"seen\":%u,\"summarized\":%u},"
+      "\"allocation_success\":{\"seen\":%u,\"summarized\":%u}}}\n",
       run_id, trace->dropped == 0 ? "true" : "false", (unsigned)trace->dropped,
-      trace->truncated_bytes, trace->count);
+      trace->truncated_bytes, trace->count, (unsigned)trace->diagnostic_limit,
+      (unsigned)trace->diagnostic_seen[0],
+      (unsigned)trace->diagnostic_summarized[0],
+      (unsigned)trace->diagnostic_seen[1],
+      (unsigned)trace->diagnostic_summarized[1],
+      (unsigned)trace->diagnostic_seen[2],
+      (unsigned)trace->diagnostic_summarized[2]);
 }
 static void report(h2_runtime_t* rt, void* user,
                    const h2_alipay_e2e_result_t* r, bool replay) {
@@ -240,7 +253,7 @@ static void run(void* user) {
   (void)h2_alipay_e2e_target_capture(capture, NULL);
   const h2_alipay_e2e_config_t config = {
       .alipay = api,
-      .feature = 0, /* No approved feature/shape configuration was supplied. */
+      .feature = h2_alipay_e2e_target_feature(),
       .prepare = prepare,
       .observe = observe,
       .report = report,

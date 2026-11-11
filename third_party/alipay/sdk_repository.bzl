@@ -61,7 +61,8 @@ def _sdk_impl(ctx):
                 continue
             ctx.file(path, '#error "Alipay SDK missing: set ALIPAY_SDK_PATH"\n')
     includes = sorted({path.rpartition("/")[0] or ".": True for path in headers}.keys())
-    lines.append("cc_library(name = \"bind_net\", hdrs = %s, includes = %s, deps = %s)" % (repr(headers), repr(includes), repr(deps)))
+    lines.append("cc_library(name = \"headers\", hdrs = %s, includes = %s)" % (repr(headers), repr(includes)))
+    lines.append("cc_library(name = \"bind_net\", deps = %s)" % repr([":headers"] + deps))
     lines.append('filegroup(name = "archives", srcs = %s)' % repr(archives))
     ctx.file("BUILD.bazel", "\n".join(lines) + "\n")
 

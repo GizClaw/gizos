@@ -52,8 +52,10 @@ h2_pal_result_t h2_alipay_tiga_read_imei(void* user, char* out,
   if (runtime == NULL || out == NULL || capacity == 0u)
     return H2_PAL_ERR_INVALID_ARG;
   out[0] = '\0';
+  h2_pal_result_t result = h2_pal_modem_open(runtime->modem, 15000u);
+  if (result != H2_PAL_OK) return result;
   h2_pal_modem_identity_t identity = {0};
-  h2_pal_result_t result = h2_pal_modem_get_identity(runtime->modem, &identity);
+  result = h2_pal_modem_get_identity(runtime->modem, &identity);
   if (result != H2_PAL_OK) return result;
   const char* end = memchr(identity.imei, '\0', sizeof(identity.imei));
   if (end == NULL || end == identity.imei) return H2_PAL_ERR_UNAVAILABLE;
