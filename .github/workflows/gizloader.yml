@@ -134,7 +134,21 @@ jobs:
         run: bun run --cwd tools/gizloader test
       - name: Install Chromium
         working-directory: tools/gizloader
-        run: bunx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Hosted Ubuntu mirror lists may select an unavailable Azure endpoint.
+          # Keep the runner's package/signature policy and use official mirrors.
+          if [[ "${RUNNER_ENVIRONMENT:-}" == 'github-hosted' ]]; then
+            for apt_mirror_list in /etc/apt/apt-mirrors.txt /etc/apt/apt-security-mirrors.txt; do
+              if [[ -f "$apt_mirror_list" ]] && grep -q '://azure\.archive\.ubuntu\.com/ubuntu' "$apt_mirror_list"; then
+                apt_mirror_host=archive.ubuntu.com
+                if [[ "$apt_mirror_list" == *security* ]]; then apt_mirror_host=security.ubuntu.com; fi
+                sudo sed -i "s@://azure\\.archive\\.ubuntu\\.com/ubuntu@://$apt_mirror_host/ubuntu@g" "$apt_mirror_list"
+              fi
+            done
+          fi
+          bunx playwright install --with-deps chromium
       - name: Exercise desktop browser fixtures
         working-directory: tools/gizloader
         shell: bash
