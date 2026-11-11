@@ -252,6 +252,13 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
 h2_pal_result_t h2_h2loader_host_serial_disconnect(
     h2_h2loader_host_serial_connection_t** inout_connection);
 
+/** Close as above and optionally report whether the link closed or a READY
+ * epoch was observed during its lifetime, including final teardown pumping.
+ * The result is initialized to zero even for an already-NULL connection. */
+h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
+    h2_h2loader_host_serial_connection_t** inout_connection,
+    uint8_t* out_link_closed);
+
 /** Run authoritative status over the established reliable session. */
 h2_pal_result_t h2_h2loader_host_serial_read_status(
     h2_h2loader_host_serial_connection_t* connection,

@@ -451,13 +451,18 @@ static void record_progress(void* user, uint64_t acknowledged, uint64_t total) {
   }
 }
 
-static h2_pal_result_t disconnect_transport(
-    h2_e2e_transport_context_t* context) {
-  h2_pal_result_t serial_result =
-      h2_h2loader_host_serial_disconnect(&context->serial_connection);
+static h2_pal_result_t disconnect_transport_with_reset(
+    h2_e2e_transport_context_t* context, uint8_t* out_link_closed) {
+  h2_pal_result_t serial_result = h2_h2loader_host_serial_disconnect_with_reset(
+      &context->serial_connection, out_link_closed);
   h2_pal_result_t ble_result =
       h2_h2loader_host_ble_disconnect(&context->ble_connection);
   return serial_result == H2_PAL_OK ? ble_result : serial_result;
+}
+
+static h2_pal_result_t disconnect_transport(
+    h2_e2e_transport_context_t* context) {
+  return disconnect_transport_with_reset(context, NULL);
 }
 
 static h2_pal_result_t resolve_ble_candidate(
@@ -1029,15 +1034,18 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
     context->monitor_logs = 1u;
     rc = begin_monitor_window(context);
     if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context);
-    context->monitor_logs = 0u;
     if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
         !cancelled(context->config)) {
       reset_transition_seen = 1u;
       rc = H2_PAL_OK;
     }
   }
+  /* Teardown can pump again while a deferred reset emits its only boot log. */
+  uint8_t close_observed_reset = 0u;
+  h2_pal_result_t close_rc =
+      disconnect_transport_with_reset(context, &close_observed_reset);
   context->monitor_logs = 0u;
-  h2_pal_result_t close_rc = disconnect_transport(context);
+  if (close_observed_reset) reset_transition_seen = 1u;
   if (rc == H2_PAL_OK && close_rc == H2_PAL_ERR_CLOSED &&
       !cancelled(context->config)) {
     reset_transition_seen = 1u;
@@ -1063,7 +1071,9 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
     if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
         !reset_transition_seen && !cancelled(context->config)) {
       reset_transition_seen = 1u;
+      context->monitor_logs = 1u;
       rc = disconnect_transport(context);
+      context->monitor_logs = 0u;
       if (rc == H2_PAL_ERR_CLOSED) rc = H2_PAL_OK;
       continue;
     }
@@ -1077,9 +1087,10 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
     }
     break;
   }
-  close_rc = disconnect_transport(context);
+  close_rc = disconnect_transport_with_reset(context, &close_observed_reset);
   context->monitor_logs = 0u;
   context->monitor_reboot = 0u;
+  if (rc == H2_PAL_OK && close_observed_reset) rc = H2_PAL_ERR_CLOSED;
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 

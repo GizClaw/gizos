@@ -57,12 +57,21 @@ h2_pal_result_t h2_iostreamikcp_poll(h2_iostreamikcp_t* stream,
   ++stream->polls;
   if (stream->polls == 1u) {
     enqueue(stream, accepted);
+    if (stream->fast_boot == 2) {
+      /* Acceptance is already decoded when raw boot output follows in this
+       * same poll. READY closes it before the ordinary response reader runs. */
+      for (size_t i = 0u; i < sizeof(boot) - 1u; ++i) {
+        h2_pal_result_t rc =
+            serial_stream_log(stream->log_user, (const uint8_t*)boot + i, 1u);
+        if (rc != H2_PAL_OK) return rc;
+      }
+    }
   } else if (stream->polls == 2u) {
     /* The accepted terminal has been parsed. FINAL arrives during ACK grace,
      * after the response reader returned, and remains queued for monitoring. */
     assert(accept_count == 1u);
     enqueue(stream, final);
-    if (stream->fast_boot) {
+    if (stream->fast_boot == 1) {
       for (size_t i = 0u; i < sizeof(boot) - 1u; ++i) {
         h2_pal_result_t rc =
             serial_stream_log(stream->log_user, (const uint8_t*)boot + i, 1u);
@@ -143,7 +152,7 @@ int main(void) {
   (void)serial_status_diagnostics;
   (void)serial_stream_now_ms;
   (void)find_line_marker;
-  for (int fast_boot = 0; fast_boot < 2; ++fast_boot) {
+  for (int fast_boot = 0; fast_boot < 3; ++fast_boot) {
     clock_ms = 0u;
     accept_count = 0u;
     h2_iostreamikcp_t stream = {.fast_boot = fast_boot};

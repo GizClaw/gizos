@@ -40,10 +40,12 @@ static h2_pal_result_t monitor_output(void *, const uint8_t *, size_t);
 static int connects, disconnects, monitors, statuses, windows, cancel_flag;
 static int monitor_results[3], status_results[2], partitions[2];
 static int reconnect_results[2], begin_results[3], close_results[3];
+static uint8_t close_resets[3];
 static int command_result, command_terminal, grace_closed;
 static size_t initial_handshake_bytes, command_bytes, grace_bytes;
 static const char *queued_control;
-static size_t handshake_bytes[2], window_bytes[3], status_bytes[2];
+static size_t handshake_bytes[2], window_bytes[3], status_bytes[2], close_bytes[3];
+static const char *close_control;
 static void *monitor_connections[3];
 static int cancelled(config_t *c) { (void)c; return cancel_flag; }
 static void count_output(void *u) { (void)u; }
@@ -70,8 +72,19 @@ static int execute_command(h2_e2e_transport_context_t *c,
 }
 static int disconnect_transport(h2_e2e_transport_context_t *c) {
   assert(disconnects<3);
+  int rc=emit_logs(c, close_bytes[disconnects]);
+  if (close_control != NULL)
+    for (const char *p=close_control; *p; ++p)
+      assert(monitor_output(c,(const uint8_t*)p,1)==H2_PAL_OK);
   c->serial_connection=NULL;
-  return close_results[disconnects++];
+  int close_rc=close_results[disconnects++];
+  return rc == H2_PAL_OK ? close_rc : rc;
+}
+static int disconnect_transport_with_reset(h2_e2e_transport_context_t *c, uint8_t *out) {
+  int index=disconnects;
+  int rc=disconnect_transport(c);
+  *out=close_resets[index] || rc==H2_PAL_ERR_CLOSED;
+  return rc;
 }
 static int reconnect_after_reboot(h2_e2e_transport_context_t *c, uint32_t p,
     h2_h2loader_host_status_t *s) {
@@ -116,7 +129,8 @@ static void reset(void) {
   grace_closed=0;
   command_terminal=H2_H2LOADER_HOST_COMMAND_TERMINAL_OK;
   initial_handshake_bytes=command_bytes=grace_bytes=0;
-  queued_control=NULL;
+  queued_control=close_control=NULL;
+  memset(close_bytes,0,sizeof(close_bytes));
   for (size_t i=0; i<3; ++i) {
     monitor_results[i]=H2_PAL_EXIT;
     window_bytes[i]=1;
@@ -127,6 +141,7 @@ static void reset(void) {
   memset(reconnect_results,0,sizeof(reconnect_results));
   memset(begin_results,0,sizeof(begin_results));
   memset(close_results,0,sizeof(close_results));
+  memset(close_resets,0,sizeof(close_resets));
   memset(monitor_connections,0,sizeof(monitor_connections));
   partitions[0]=partitions[1]=1;
 }
@@ -223,6 +238,21 @@ int main(void) {
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK);
   assert(result.log_bytes==3);
 
+  /* A deferred boot can occur only while serial teardown pumps the old link. */
+  RESET_CASE(); close_bytes[0]=3; window_bytes[0]=window_bytes[1]=0;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK);
+  assert(ctx.monitor_output_bytes==3 && result.status_valid);
+  RESET_CASE(); close_bytes[0]=3; close_resets[0]=1;
+  monitor_results[1]=H2_PAL_ERR_CLOSED;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_CLOSED && connects==1);
+  assert(!result.status_valid);
+  RESET_CASE(); close_resets[1]=1;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_CLOSED);
+  RESET_CASE(); window_bytes[0]=window_bytes[1]=0;
+  close_control="H2_LOADER_REBOOT_FINAL result=OK\r\n";
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_NOT_FOUND);
+  assert(ctx.monitor_output_bytes==0 && !result.status_valid);
+
   /* Losing the USB device during reset also makes its teardown return CLOSED. */
   RESET_CASE(); monitor_results[0]=H2_PAL_ERR_CLOSED;
   close_results[0]=H2_PAL_ERR_CLOSED;
@@ -313,7 +343,7 @@ class RebootMonitorTests(unittest.TestCase):
                                        'static h2_pal_result_t serial_wait_ready_marker('),
             '/* SERIAL_READ */': section(serial, 'static int response_has_complete_marker(',
                                         'static h2_pal_result_t serial_write_command('),
-            '/* SERIAL_COMMAND */': section(serial, 'static h2_pal_result_t serial_command_read(',
+            '/* SERIAL_COMMAND */': section(serial, 'static void serial_notify_accepted(',
                                            'typedef struct serial_stage_output'),
             '/* SERIAL_MONITOR */': section(serial, 'static h2_pal_result_t serial_drain_decoded_logs(',
                                            'h2_pal_result_t h2_h2loader_host_serial_disconnect('),
