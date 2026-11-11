@@ -4,6 +4,7 @@ SDK/time boundaries are scripted here; this is lifecycle regression, never a
 physical-board qualification receipt or a replacement for the c93 oracle.
 """
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -104,8 +105,11 @@ int main(int argc,char **argv){
 
     def test_real_filter_forwards_fresh_boot_before_session_ack(self):
         serial = (ROOT / "libs/h2loader/host/src/h2_h2loader_host_serial.c").read_text()
-        log_output = section(serial, "static h2_pal_result_t serial_log_output(", "static h2_pal_result_t serial_status_emit(")
-        handshake = section(serial, "typedef struct session_ack_context", "/* A USB-UART adapter survives")
+        handshake = serial[:serial.index('static h2_pal_result_t serial_pump(')]
+        handshake = handshake.replace('#include "h2_h2loader_host_internal.h"', '')
+        handshake = re.sub(r'\bstatic\s+h2_pal_result_t\s+serial_finish_command_response\s*\(\s*void\s*\*\s*transport\s*\)\s*;', '', handshake)
+        drain = section(serial, '/* Console output during a monitor session',
+                        'h2_pal_result_t h2_h2loader_host_serial_monitor_logs(')
         frame = (ROOT / "libs/net/iostreamikcp/src/h2_iostreamikcp_frame.c").read_text().replace(
             '#include "h2_iostreamikcp_internal.h"', '#include "h2_iostreamikcp.h"\n#define H2_IOSTREAMIKCP_FRAME_MAGIC_LEN 6u\n#define H2_IOSTREAMIKCP_FRAME_LEN_OFFSET 12u')
         fixture = r'''
@@ -114,17 +118,21 @@ int main(int argc,char **argv){
 #include <string.h>
 #include "h2_h2loader_host.h"
 #include "h2_iostreamikcp.h"
-#define H2_H2LOADER_HOST_SERIAL_POLL_MS 10u
-#define H2_H2LOADER_HOST_SERIAL_SESSION_RETRY_MS 200u
-struct h2_h2loader_host_serial_connection {
- const h2_pal_time_api_t *time;const h2_pal_uart_io_stream_api_t *uart;
- h2_h2loader_host_transport_log_fn on_log;void *log_user;
- uint8_t pending_input[512];size_t pending_input_len;
- int log_line_open;
-};
 /* FRAME */
-/* LOG */
+h2_pal_result_t h2_iostreamikcp_read(h2_iostreamikcp_t *stream, uint8_t *out,
+                                    size_t capacity, size_t *length) {
+ (void)stream;(void)out;(void)capacity;(void)length;
+ assert(0 && "pre-ACK OPEN fixture must not consume admitted KCP data");
+ return H2_PAL_ERR_INVALID_STATE;
+}
+h2_pal_result_t h2_iostreamikcp_input_frame(h2_iostreamikcp_t *stream,
+                                          const h2_iostreamikcp_frame_t *frame) {
+ (void)stream;(void)frame;
+ assert(0 && "pre-ACK OPEN fixture must not retire DATA frames");
+ return H2_PAL_ERR_INVALID_STATE;
+}
 /* HANDSHAKE */
+/* DRAIN */
 static uint64_t now;
 static uint8_t wire[512];static size_t wire_size,position,limit;
 static char received[512];static size_t logged;
@@ -142,6 +150,7 @@ static const h2_pal_uart_io_stream_api_t uart_api={.vtable=&uart_methods};
 static h2_pal_result_t sink(void *u,const uint8_t *data,size_t n){(void)u;assert(logged+n<sizeof(received));memcpy(received+logged,data,n);logged+=n;received[logged]=0;return 0;}
 int main(void){
  (void)serial_stream_now_ms;
+ (void)serial_wait_ready_marker;
  const char fresh[]="H2_STORAGE_BOOT contract=2 version=wire-test phase=1 nonce=17\n";
  for(int ack=0;ack<2;++ack)for(size_t chunk=1;chunk<=128;chunk*=2){
    now=0;position=0;logged=0;limit=chunk;memcpy(wire,fresh,sizeof(fresh)-1);wire_size=sizeof(fresh)-1;
@@ -153,7 +162,7 @@ int main(void){
  }
  puts("PASS native fresh BOOT reaches sink with fragmented/no/delayed session ACK");return 0;
 }
-'''.replace("/* FRAME */", frame).replace("/* LOG */", log_output).replace("/* HANDSHAKE */", handshake)
+'''.replace("/* FRAME */", frame).replace("/* HANDSHAKE */", handshake).replace("/* DRAIN */", drain)
         output = compile_run(fixture, includes=["pal/include", "libs/h2loader/host/include", "libs/net/iostreamikcp/include"])
         self.assertIn("PASS native fresh BOOT reaches sink", output)
 
