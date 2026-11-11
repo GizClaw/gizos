@@ -317,7 +317,7 @@
   "moduleExtensions": {
     "//third_party/alipay:sdk_repository.bzl%alipay_sdk": {
       "general": {
-        "bzlTransitiveDigest": "fLu/PVRCpxJPWA233JrtelRPVnhjHRnL7jTuBIAa5iA=",
+        "bzlTransitiveDigest": "E/jdo17/n4j1VtFI5p41yp1OQlG9EY/z0wPePlZzMhE=",
         "usagesDigest": "pz9eHdJaP5znG3yGZWiCPaEAjTURTgpkCmAxynIEZBQ=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

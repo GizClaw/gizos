@@ -14,7 +14,7 @@ typedef struct page_fixture {
   pthread_t ui_thread;
   uint16_t* frame;
   char code[H2_ALIPAY_BINDING_CODE_CAPACITY];
-  int prepare_rc, ready_rc, draw_rc, observe_rc, start_rc;
+  int prepare_rc, ready_rc, draw_rc, observe_rc, start_rc, code_rc;
   unsigned opens, closes, draws, presents, init_calls, code_calls, reports;
   unsigned joins;
   bool retry_join, joined;
@@ -140,8 +140,8 @@ static h2_pal_result_t binding_code(void* user, uint32_t feature, char* code,
   *length = strlen(fixture->code);
   assert(*length < capacity);
   memcpy(code, fixture->code, *length + 1u);
-  *sdk_rc = 0;
-  return H2_PAL_OK;
+  *sdk_rc = fixture->code_rc;
+  return fixture->code_rc == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 static h2_pal_result_t observe(void* user, const uint8_t* pixels, size_t stride,
@@ -267,12 +267,13 @@ int main(void) {
   page_fixture_t blocked = {.width = 240,
                             .height = 240,
                             .frame = frame,
-                            .ready_rc = H2_PAL_ERR_UNAVAILABLE};
+                            .ready_rc = H2_PAL_ERR_UNAVAILABLE,
+                            .code_rc = -91};
   assert(run(&blocked) == H2_PAL_OK);
-  assert(blocked.result.blocker == H2_ALIPAY_BLOCKER_SECURITY_SCHEME);
-  assert(blocked.result.code_sdk_rc == H2_ALIPAY_E2E_NOT_CALLED);
-  assert(blocked.code_calls == 0u && !blocked.result.qr_visible);
-  save_frame(&blocked, "tiga-blocked");
+  assert(blocked.result.blocker == H2_ALIPAY_BLOCKER_NONE);
+  assert(blocked.result.code_sdk_rc == -91);
+  assert(blocked.code_calls == 1u && !blocked.result.qr_visible);
+  save_frame(&blocked, "tiga-sdk-error");
   page_fixture_t offline = {.width = 240,
                             .height = 240,
                             .frame = frame,

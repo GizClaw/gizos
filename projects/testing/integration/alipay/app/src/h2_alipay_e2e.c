@@ -67,9 +67,9 @@ static int show_result(alipay_page_t* page, int width, int height) {
     lv_label_set_text(page->status, "pre_init: FAIL");
   (void)snprintf(text, sizeof(text),
                  "Network / time: %d\nCached reentry: %s\n"
-                 "Stage: %d   Result: %d\nBlocker: %d\n%s",
+                 "Stage: %d   Result: %d\nSDK return: %d\n%s",
                  r->prepare_rc, r->reused ? "PASS" : "NOT PASSED",
-                 (int)r->stage, r->result, (int)r->blocker,
+                 (int)r->stage, r->result, r->code_sdk_rc,
                  r->code_sdk_rc == H2_ALIPAY_E2E_NOT_CALLED
                      ? "Binding code: NOT CALLED"
                  : r->result == H2_PAL_OK ? "Binding code: READY"

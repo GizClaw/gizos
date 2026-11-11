@@ -57,7 +57,8 @@ typedef struct h2_alipay_e2e_config {
 
 /** Synchronous worker operation. Caller owns result; configuration and
  * Runtime remain borrowed through completion. Network preparation precedes
- * initialization, cached reentry, readiness, binding status and code.
+ * initialization, cached reentry and one binding-code call. Legacy readiness
+ * and binding-status callbacks are not prerequisites and are not invoked.
  * Does not provision, activate, poll, finish binding, unbind or reset. */
 h2_pal_result_t h2_alipay_e2e_execute(h2_runtime_t* runtime,
                                       const h2_alipay_e2e_config_t* config,

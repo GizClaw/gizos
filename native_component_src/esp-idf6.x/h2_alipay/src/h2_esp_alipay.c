@@ -1,5 +1,6 @@
 #include "h2_esp_alipay.h"
 #include "h2_esp_alipay_internal.h"
+#include "h2_alipay_storage.h"
 #include "alipay_bind.h"
 #include "h2_alipay_sdk_identity.h"
 #include "alipay_account_manage.h"
@@ -19,6 +20,7 @@
 #include <time.h>
 
 static h2_esp_alipay_config_t s_config;
+static h2_alipay_storage_t s_storage;
 static SemaphoreHandle_t s_lock;
 static h2_alipay_initialization_t s_initialization;
 static h2_alipay_trace_t* s_trace;
@@ -169,69 +171,6 @@ retval_e alipay_get_mac(uint8_t* out, uint32_t* length) {
   return result;
 }
 
-static h2_pal_result_t ready_impl(void* user, uint32_t feature,
-                                  h2_alipay_blocker_t* blocker) {
-  (void)user;
-  if (blocker == NULL) return H2_PAL_ERR_INVALID_ARG;
-  *blocker = H2_ALIPAY_BLOCKER_SECURITY_SCHEME;
-  const h2_esp_alipay_secure_t* secure = s_config.secure;
-  if (secure == NULL || secure->check_ready == NULL)
-    return H2_PAL_ERR_UNAVAILABLE;
-  *blocker = H2_ALIPAY_BLOCKER_SECURE_STORAGE;
-  if (secure->read == NULL || secure->write == NULL || secure->remove == NULL ||
-      secure->exists == NULL)
-    return H2_PAL_ERR_UNAVAILABLE;
-  const uint32_t shapes = FEATURE_ELLIPSE | FEATURE_SQUARE | FEATURE_CIRCLE;
-  const uint32_t functions =
-      FEATURE_PAYCODE | FEATURE_TRANSITCODE | FEATURE_NFCPAY | FEATURE_BLEPAY;
-  const uint32_t shape = feature & shapes;
-  *blocker = H2_ALIPAY_BLOCKER_FEATURES;
-  if ((feature & functions) == 0u || (feature & ~(shapes | functions)) != 0u ||
-      shape == 0u || (shape & (shape - 1u)) != 0u)
-    return H2_PAL_ERR_INVALID_ARG;
-  h2_pal_result_t rc = secure->check_ready(secure->user, feature, blocker);
-  if (rc != H2_PAL_OK) return rc;
-  *blocker = H2_ALIPAY_BLOCKER_IDENTITY;
-  uint8_t value[49];
-  uint32_t length = sizeof(value);
-  if (alipay_get_sn(value, &length) != ALIPAY_RV_OK)
-    return H2_PAL_ERR_UNAVAILABLE;
-  length = sizeof(value);
-  if (alipay_get_imei(value, &length) != ALIPAY_RV_OK)
-    return H2_PAL_ERR_UNAVAILABLE;
-  length = sizeof(value);
-  if (alipay_get_mac(value, &length) != ALIPAY_RV_OK)
-    return H2_PAL_ERR_UNAVAILABLE;
-  *blocker = H2_ALIPAY_BLOCKER_NETWORK;
-  if (!alipay_is_network_connected()) return H2_PAL_ERR_UNAVAILABLE;
-  *blocker = H2_ALIPAY_BLOCKER_TIME;
-  uint64_t ms = 0u;
-  rc = h2_pal_time_get_wall_ms(s_config.time, &ms);
-  if (rc != H2_PAL_OK || ms / 1000u > UINT32_MAX) return H2_PAL_ERR_UNAVAILABLE;
-  *blocker = H2_ALIPAY_BLOCKER_NONE;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t ready_unlocked(void* user, uint32_t feature,
-                                      h2_alipay_blocker_t* blocker) {
-  const uint64_t started = h2_esp_alipay_now();
-  h2_pal_result_t rc = ready_impl(user, feature, blocker);
-  char detail[48];
-  (void)snprintf(detail, sizeof(detail), "feature=%u", (unsigned)feature);
-  h2_esp_alipay_trace("commissioning.check", "hal_secure", rc,
-                      blocker != NULL ? (uint32_t)*blocker : 0, 0, started,
-                      detail, NULL, 0);
-  return rc;
-}
-
-static h2_pal_result_t ready(void* user, uint32_t feature,
-                             h2_alipay_blocker_t* blocker) {
-  if (xSemaphoreTake(s_lock, portMAX_DELAY) != pdTRUE)
-    return H2_PAL_ERR_UNAVAILABLE;
-  h2_pal_result_t rc = ready_unlocked(user, feature, blocker);
-  xSemaphoreGive(s_lock);
-  return rc;
-}
 static bool binding_status_unlocked(void) {
   uint64_t started = h2_esp_alipay_now();
   h2_esp_alipay_trace("alipay_get_binding_status.enter", "sdk", 0, 0, 0,
@@ -272,30 +211,25 @@ static h2_pal_result_t binding_code(void* user, uint32_t feature, char* code,
     return H2_PAL_ERR_UNAVAILABLE;
   h2_pal_result_t rc = H2_PAL_ERR_INVALID_STATE;
   if (s_initialization.attempted && s_initialization.sdk_rc == 0) {
-    h2_alipay_blocker_t blocker;
-    rc = ready_unlocked(NULL, feature, &blocker);
-    if (rc == H2_PAL_OK && binding_status_unlocked())
-      rc = H2_PAL_ERR_INVALID_STATE;
-    if (rc == H2_PAL_OK) {
-      int size = (int)capacity - 1;
-      const uint64_t started = h2_esp_alipay_now();
-      h2_esp_alipay_trace("alipay_get_binding_code.enter", "sdk", 0, feature, 0,
-                          started, NULL, NULL, 0);
-      s_parent = s_trace->next_call;
-      *sdk_rc = alipay_get_binding_code(feature, code, &size);
-      h2_esp_alipay_trace("alipay_get_binding_code.return", "sdk", *sdk_rc,
-                          size > 0 ? (uint32_t)size : 0, 0, started, NULL, NULL,
-                          0);
-      s_parent = 0;
-      if (*sdk_rc != ALIPAY_RV_OK)
-        rc = H2_PAL_ERR_IO;
-      else if (size <= 0 || (size_t)size >= capacity || code[0] == '\0' ||
-               memchr(code, '\0', (size_t)size) != NULL)
-        rc = H2_PAL_ERR_INVALID_STATE;
-      else {
-        code[size] = '\0';
-        *length = (size_t)size;
-      }
+    int size = (int)capacity;
+    const uint64_t started = h2_esp_alipay_now();
+    h2_esp_alipay_trace("alipay_get_binding_code.enter", "sdk", 0, feature, 0,
+                        started, NULL, NULL, 0);
+    s_parent = s_trace->next_call;
+    *sdk_rc = alipay_get_binding_code(feature, code, &size);
+    h2_esp_alipay_trace("alipay_get_binding_code.return", "sdk", *sdk_rc,
+                        size > 0 ? (uint32_t)size : 0, 0, started, NULL, NULL,
+                        0);
+    s_parent = 0;
+    if (*sdk_rc != ALIPAY_RV_OK)
+      rc = H2_PAL_ERR_IO;
+    else if (size <= 0 || (size_t)size >= capacity || code[0] == '\0' ||
+             memchr(code, '\0', (size_t)size) != NULL)
+      rc = H2_PAL_ERR_FORMAT;
+    else {
+      code[size] = '\0';
+      *length = (size_t)size;
+      rc = H2_PAL_OK;
     }
   }
   if (rc != H2_PAL_OK) memset(code, 0, capacity);
@@ -305,7 +239,6 @@ static h2_pal_result_t binding_code(void* user, uint32_t feature, char* code,
 
 static const h2_alipay_vtable_t s_vtable = {
     .pre_init = pre_init,
-    .check_ready = ready,
     .binding_status = binding_status,
     .get_binding_code = binding_code,
 };
@@ -331,7 +264,9 @@ h2_pal_result_t h2_esp_alipay_configure(const h2_esp_alipay_config_t* config) {
     return H2_PAL_ERR_NO_MEMORY;
   }
   h2_alipay_trace_reset(trace, false);
+  trace->diagnostic_limit = 16u;
   s_config = *config;
+  s_storage = (h2_alipay_storage_t){.pref = config->pref, .mem = config->mem};
   s_trace = trace;
   s_api.trace = trace;
   s_lock = lock;
@@ -391,27 +326,6 @@ void* alipay_realloc(void* ptr, uint32_t size) {
   return h2_pal_mem_realloc(s_config.mem, ptr, size);
 }
 void alipay_free(void* ptr) { h2_pal_mem_free(s_config.mem, ptr); }
-int32_t get_Rng_number(uint8_t* data, unsigned size) {
-  if (data == NULL) return -1;
-  esp_fill_random(data, size);
-  return 0;
-}
-int alipay_rand(void) {
-  uint32_t value;
-  do {
-    value = esp_random() & INT_MAX;
-  } while (value == 0u);
-  return (int)value;
-}
-void alipay_srand(unsigned int seed) { (void)seed; }
-int ALIPAY_mbedtls_hardware_poll(void* user, unsigned char* output,
-                                 size_t length, size_t* written) {
-  (void)user;
-  if (output == NULL || written == NULL) return -1;
-  esp_fill_random(output, length);
-  *written = length;
-  return 0;
-}
 void alipay_log_ext(const char* format, ...) {
   /* Vendor logs can contain SN, tokens and certificate material. Preserve only
    * caller-owned step/return diagnostics, never SDK payloads in shared logs. */
@@ -473,12 +387,13 @@ void alipay_binding_process_notify(int status) { (void)status; }
 int alipay_psa_storage_read(uint32_t index, uint8_t* data, uint32_t* size) {
   const h2_esp_alipay_secure_t* s = s_config.secure;
   uint64_t started = h2_esp_alipay_now();
-  int rc =
-      s != NULL && s->read != NULL ? s->read(s->user, index, data, size) : -1;
+  int rc = s != NULL
+               ? (s->read != NULL ? s->read(s->user, index, data, size) : -1)
+               : h2_alipay_storage_read(&s_storage, index, data, size);
   char detail[48];
   (void)snprintf(detail, sizeof(detail), "length=%u",
                  size != NULL && rc == 0 ? (unsigned)*size : 0u);
-  h2_esp_alipay_trace("storage.read", "hal_secure", rc, index, 0, started,
+  h2_esp_alipay_trace("storage.read", "hal_storage", rc, index, 0, started,
                       detail, NULL, 0);
   return rc;
 }
@@ -486,33 +401,51 @@ int alipay_psa_storage_write(uint32_t index, const uint8_t* data,
                              uint32_t size) {
   const h2_esp_alipay_secure_t* s = s_config.secure;
   uint64_t started = h2_esp_alipay_now();
-  int rc =
-      s != NULL && s->write != NULL ? s->write(s->user, index, data, size) : -1;
+  int rc = s != NULL
+               ? (s->write != NULL ? s->write(s->user, index, data, size) : -1)
+               : h2_alipay_storage_write(&s_storage, index, data, size);
   char detail[48];
   (void)snprintf(detail, sizeof(detail), "length=%u", (unsigned)size);
-  h2_esp_alipay_trace("storage.write", "hal_secure", rc, index, 0, started,
+  h2_esp_alipay_trace("storage.write", "hal_storage", rc, index, 0, started,
                       detail, NULL, 0);
   return rc;
 }
 int alipay_psa_storage_delete(uint32_t index) {
   const h2_esp_alipay_secure_t* s = s_config.secure;
   uint64_t started = h2_esp_alipay_now();
-  int rc = s != NULL && s->remove != NULL ? s->remove(s->user, index) : -1;
-  h2_esp_alipay_trace("storage.remove", "hal_secure", rc, index, 0, started,
+  int rc = s != NULL ? (s->remove != NULL ? s->remove(s->user, index) : -1)
+                     : h2_alipay_storage_delete(&s_storage, index);
+  h2_esp_alipay_trace("storage.remove", "hal_storage", rc, index, 0, started,
                       NULL, NULL, 0);
   return rc;
 }
 int alipay_psa_storage_exists(uint32_t index) {
   const h2_esp_alipay_secure_t* s = s_config.secure;
   uint64_t started = h2_esp_alipay_now();
-  int rc = s != NULL && s->exists != NULL ? s->exists(s->user, index) : -1;
-  h2_esp_alipay_trace("storage.exists", "hal_secure", rc, index, 0, started,
+  int rc = s != NULL ? (s->exists != NULL ? s->exists(s->user, index) : -1)
+                     : h2_alipay_storage_exists(&s_storage, index);
+  h2_esp_alipay_trace("storage.exists", "hal_storage", rc, index, 0, started,
                       NULL, NULL, 0);
   return rc;
 }
-int alipay_psa_storage_reset(void) { return -1; }
+int alipay_psa_storage_reset(void) {
+  const h2_esp_alipay_secure_t* s = s_config.secure;
+  uint64_t started = h2_esp_alipay_now();
+  int rc = s != NULL ? (s->reset != NULL ? s->reset(s->user) : -1)
+                     : h2_alipay_storage_reset(&s_storage);
+  h2_esp_alipay_trace("storage.reset", "hal_storage", rc, 0, 0, started, NULL,
+                      NULL, 0);
+  return rc;
+}
 int alipay_secure_save_data(void* data, uint32_t size) {
-  (void)data;
-  (void)size;
-  return -1;
+  const h2_esp_alipay_secure_t* s = s_config.secure;
+  uint64_t started = h2_esp_alipay_now();
+  int rc = s != NULL
+               ? (s->save_certificate != NULL
+                      ? s->save_certificate(s->user, data, size)
+                      : -1)
+               : h2_alipay_storage_save_certificate(&s_storage, data, size);
+  h2_esp_alipay_trace("storage.certificate.write", "hal_storage", rc, size, 0,
+                      started, NULL, NULL, 0);
+  return rc;
 }

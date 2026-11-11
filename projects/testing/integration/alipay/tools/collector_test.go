@@ -123,3 +123,32 @@ func TestFailureFinalizesIncompleteArtifact(t *testing.T) {
 		t.Fatal("failed export was labeled complete")
 	}
 }
+
+func TestDiagnosticSamplingIsExplicit(t *testing.T) {
+	diagnostics := map[string]any{"limit": 16,
+		"vendor_logs": map[string]any{"seen": 10000, "summarized": 9984}}
+	input := meta(false) + eventRow(1, nil) + row("END", map[string]any{
+		"events": 1, "complete": true, "dropped": 0, "diagnostics": diagnostics})
+	out := dir(t)
+	if err := capture(strings.NewReader(input), out, opts(false)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, testRun+"-alipay--binding-code", "integrity.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status struct {
+		Complete    bool `json:"events_complete"`
+		Diagnostics struct {
+			Limit  int                            `json:"limit"`
+			Vendor struct{ Seen, Summarized int } `json:"vendor_logs"`
+		} `json:"diagnostics"`
+	}
+	if err := json.Unmarshal(data, &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.Complete || status.Diagnostics.Limit != 16 ||
+		status.Diagnostics.Vendor.Seen != 10000 || status.Diagnostics.Vendor.Summarized != 9984 {
+		t.Fatalf("diagnostic summary lost: %s", data)
+	}
+}

@@ -72,12 +72,14 @@ firmware_lib_component(
 firmware_native_component(
     name = "launcher",
     srcs = [
+        "main/h2_alipay_tiga_gateway.c",
         "main/h2_alipay_tiga_identity.c",
         "main/main.c",
         "main/tiga_config.c",
     ],
     hdrs = [
         "main/h2_alipay_e2e_target.h",
+        "main/h2_alipay_tiga_gateway.h",
         "main/h2_alipay_tiga_identity.h",
         "//projects/testing/libs/fixture-wifi:h2_e2e_fixture_wifi.h",
     ],
@@ -92,6 +94,7 @@ firmware_native_component(
     deps = [
         ":firmware_lib",
         "//boards/haivivi/h106_tiga_esp_v4_2/esp32s3",
+        "//libs/clients/alipay:bind_net_sdk",
         "//libs/runtime",
         "//libs/sync/atomic",
         "//native_component_src/esp-idf6.x/h2_adc_oneshot",
