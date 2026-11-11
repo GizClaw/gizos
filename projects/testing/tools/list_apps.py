@@ -6,6 +6,10 @@ from pathlib import Path
 
 
 CATEGORIES = ("unit", "e2e", "integration", "benchmark")
+ARTIFACT_RULES = {
+    "h2_loader_tar_zlib": "h2loader_tar_zlib(",
+    "h2_loader_zlib_tar": "h2loader_zlib_tar(",
+}
 EXCLUDED_ENTRIES = frozenset(("peripherals", "perpheral", "chip", "loader"))
 
 
@@ -27,17 +31,19 @@ def discover_apps(repository):
     return sorted(apps)
 
 
-def discover_entries(repository, kind):
+def discover_entries(repository, kind, artifact_kind="h2_loader_tar_zlib"):
     if kind not in CATEGORIES:
         raise ValueError("Testing category must be " + ", ".join(CATEGORIES))
-    root = Path(repository) / "projects/testing/targets/h2_loader_tar_zlib" / kind
+    if artifact_kind not in ARTIFACT_RULES:
+        raise ValueError("Artifact kind must be " + ", ".join(ARTIFACT_RULES))
+    root = Path(repository) / "projects/testing/targets" / artifact_kind / kind
     if not root.is_dir():
-        raise ValueError(f"projects/testing/targets/h2_loader_tar_zlib/{kind} is missing")
+        raise ValueError(f"projects/testing/targets/{artifact_kind}/{kind} is missing")
     entries = []
     for build in sorted(root.rglob("BUILD.bazel")):
         parts = build.parent.relative_to(root).parts
         # Support exports/test helper packages without treating them as firmware.
-        if "h2loader_tar_zlib(" not in build.read_text():
+        if ARTIFACT_RULES[artifact_kind] not in build.read_text():
             continue
         if len(parts) < 3:
             continue
@@ -59,9 +65,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", required=True, type=Path)
     parser.add_argument("--kind", choices=CATEGORIES)
+    parser.add_argument("--artifact-kind", choices=ARTIFACT_RULES, default="h2_loader_tar_zlib")
     arguments = parser.parse_args()
     if arguments.kind is not None:
-        entries = discover_entries(arguments.repository, arguments.kind)
+        entries = discover_entries(arguments.repository, arguments.kind, arguments.artifact_kind)
         result = {"kind": arguments.kind, "entries": entries, "total": len(entries)}
     else:
         apps = discover_apps(arguments.repository)

@@ -62,6 +62,7 @@ def validate_package_manifest(item: dict[str, object]) -> None:
 
 RELEASE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,190}$")
 LOADER_ROOT = "projects/h2loader/targets/h2_loader_tar_zlib/loader/"
+LOADER_ZLIB_TAR_ROOT = "projects/h2loader/targets/h2_loader_zlib_tar/loader/"
 LOADER_ENTRIES = {
     "amoled": LOADER_ROOT + "waveshare/esp32s3_touch_amoled_1_8",
     "devkit": LOADER_ROOT + "espressif/esp32s3_devkitc_1",
@@ -74,6 +75,18 @@ LOADER_ENTRIES = {
     "esp_mosaico": LOADER_ROOT + "espressif/mosaico",
 }
 PLATFORM_TARGETS = {"esp": {"esp32s3", "esp32p4"}, "bk7258": {"bk7258"}, "jieli": {"wl82"}}
+
+
+def canonical_loader_entry(item: dict[str, object]) -> str | None:
+    wire_format = package_format(item)
+    entry = LOADER_ENTRIES.get(item.get("board"))
+    if entry is not None and wire_format == 2:
+        return entry.replace(LOADER_ROOT, LOADER_ZLIB_TAR_ROOT, 1)
+    return entry
+
+
+def canonical_package_target(item: dict[str, object]) -> str:
+    return "package_usb" if item.get("board") == "devkit" else "package"
 
 
 def release_name_from_identity(item: dict[str, object]) -> str:
@@ -98,13 +111,14 @@ def validate_catalog(catalog: object) -> list[dict[str, object]]:
         ):
             raise ValueError("firmware catalog contains an invalid entry")
         validate_firmware_version(item.get("version"), item["entry"])
-        package_target = "package_v2" if package_format(item) == 2 else "package"
+        package_target = canonical_package_target(item)
+        expected_entry = canonical_loader_entry(item)
         if item["target"] not in PLATFORM_TARGETS.get(item["platform"], set()):
             raise ValueError("firmware catalog contains an invalid entry platform/target")
         # Only exact canonical Loader entries may opt in. Alternate packages and
         # all diagnostic/application launchers remain excluded even if tagged.
         if (
-            item["entry"] != LOADER_ENTRIES.get(item["board"])
+            item["entry"] != expected_entry
             or item["label"] != "//" + item["entry"] + ":" + package_target
             or item["image"] != "loader"
             or item["role"] != "h2loader"
@@ -173,9 +187,20 @@ def validate_index(index: object, batch: str) -> dict[str, dict[str, object]]:
             or index["firmware_count"] != len(index["firmware"])):
         raise ValueError("firmware index identity is invalid")
     firmware = index["firmware"]
-    validate_catalog([{**item, "label": "//" + str(item.get("entry"))
-                       + (":package_v2" if package_format(item) == 2 else ":package")}
-                      if isinstance(item, dict) else item for item in firmware])
+    catalog = []
+    for item in firmware:
+        if not isinstance(item, dict):
+            catalog.append(item)
+            continue
+        identity = dict(item)
+        # Published format-2 indexes predate the separate zlib_tar entry root.
+        # Adapt only an exact historical board path, without rewriting the index.
+        if (package_format(item) == 2 and isinstance(item.get("board"), str)
+                and item.get("entry") == LOADER_ENTRIES.get(item["board"])):
+            identity["entry"] = canonical_loader_entry(item)
+        identity["label"] = "//" + str(identity.get("entry")) + ":" + canonical_package_target(identity)
+        catalog.append(identity)
+    validate_catalog(catalog)
     assets = {}
     for item in firmware:
         validate_package_manifest(item)

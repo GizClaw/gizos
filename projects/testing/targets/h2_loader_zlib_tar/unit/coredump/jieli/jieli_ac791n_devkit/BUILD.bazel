@@ -1,0 +1,13 @@
+load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "minimal_package",
+    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/coredump/jieli/jieli_ac791n_devkit:minimal_package",
+)
+
+h2loader_zlib_tar(
+    name = "smoke_package",
+    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/coredump/jieli/jieli_ac791n_devkit:smoke_package",
+)
