@@ -65,38 +65,38 @@ static void test_dispatch(void) {
   h2_pal_net_socket_t out = 123;
 
   CHECK(h2_pal_net_tls_wrap_bounded(&api, 7, &config, 25u, &out) ==
-         H2_PAL_ERR_UNSUPPORTED);
+        H2_PAL_ERR_UNSUPPORTED);
   CHECK(out == -1 && probe.legacy_calls == 0u && probe.bounded_calls == 0u);
 
   CHECK(h2_pal_net_tls_wrap(&api, 7, &config, 25u, &out) == H2_PAL_OK);
   CHECK(out == 8 && probe.legacy_calls == 1u && probe.bounded_calls == 0u);
   CHECK(probe.socket == 7 && probe.config == &config &&
-         probe.timeout_ms == 25u);
+        probe.timeout_ms == 25u);
 
   probe = (tls_probe_t){.bounded_result = H2_PAL_ERR_UNSUPPORTED};
   vtable.tls_wrap_bounded = bounded_wrap;
   out = 123;
   CHECK(h2_pal_net_tls_wrap_bounded(&api, 7, &config, 25u, &out) ==
-         H2_PAL_ERR_UNSUPPORTED);
+        H2_PAL_ERR_UNSUPPORTED);
   CHECK(out == -1 && probe.legacy_calls == 0u && probe.bounded_calls == 1u);
 
   probe = (tls_probe_t){0};
   CHECK(h2_pal_net_tls_wrap_bounded(&api, 7, &config, 25u, &out) == H2_PAL_OK);
   CHECK(out == 8 && probe.legacy_calls == 0u && probe.bounded_calls == 1u);
   CHECK(probe.socket == 7 && probe.config == &config &&
-         probe.timeout_ms == 25u);
+        probe.timeout_ms == 25u);
 
   api.vtable = NULL;
   out = 123;
   CHECK(h2_pal_net_tls_wrap_bounded(&api, 7, &config, 25u, &out) ==
-         H2_PAL_ERR_UNSUPPORTED);
+        H2_PAL_ERR_UNSUPPORTED);
   CHECK(out == -1);
   CHECK(h2_pal_net_tls_wrap_bounded(NULL, 7, &config, 25u, &out) ==
-         H2_PAL_ERR_INVALID_ARG);
+        H2_PAL_ERR_INVALID_ARG);
   CHECK(h2_pal_net_tls_wrap_bounded(&api, 7, NULL, 25u, &out) ==
-         H2_PAL_ERR_INVALID_ARG);
+        H2_PAL_ERR_INVALID_ARG);
   CHECK(h2_pal_net_tls_wrap_bounded(&api, 7, &config, 25u, NULL) ==
-         H2_PAL_ERR_INVALID_ARG);
+        H2_PAL_ERR_INVALID_ARG);
 }
 
 int main(int argc, char** argv) {
@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
     CHECK(strcmp(argv[1], "missing") == 0);
   }
   CHECK(h2_pal_net_tls_wrap_bounded(&api, 7, &config, 25u, &out) ==
-         H2_PAL_ERR_UNSUPPORTED);
+        H2_PAL_ERR_UNSUPPORTED);
   CHECK(out == -1 && probe.legacy_calls == 0u);
   CHECK(probe.bounded_calls == (vtable.tls_wrap_bounded != NULL ? 1u : 0u));
   return 0;
