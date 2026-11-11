@@ -121,6 +121,8 @@ struct h2_sctp {
   size_t packet_pool_size;
   const h2_pal_crypto_api_t* crypto;
   h2_pal_sctp_api_t api;
+  const h2_pal_sync_api_t* sync;
+  h2_pal_mutex_t* registry_mutex;
   struct h2_pal_sctp_association* associations;
   size_t association_count;
 };

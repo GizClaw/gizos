@@ -297,7 +297,8 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
         /* packet_mem: pooled packets use the default allocator. */ nullptr,
         /* packet_pool_size: H2_SCTP_DEFAULT_PACKET_POOL_SIZE. */ 0u};
     h2_sctp_t* provider = nullptr;
-    result = h2_sctp_create(&sctp, &provider);
+    result = h2_sctp_create_with_sync(&sctp, h2_desktop_platform_sync_api(),
+                                      &provider);
     services->sctp_handle = provider;
     if (result == H2_PAL_OK) {
       const h2_peer_config_t peer = {

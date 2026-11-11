@@ -7,7 +7,158 @@
 #include <assert.h>
 #include <string.h>
 
+typedef struct mutex_fixture {
+  h2_pal_result_t create_result, lock_result, destroy_result;
+  bool live, locked, missing_handle;
+  unsigned locks, unlocks;
+  const h2_pal_mem_api_t* mem;
+  const h2_pal_crypto_api_t* crypto;
+} mutex_fixture_t;
+
+static h2_pal_result_t create_mutex(void* user,
+                                    const h2_pal_mutex_config_t* config,
+                                    h2_pal_mutex_t** out_mutex) {
+  mutex_fixture_t* fixture = user;
+  assert(config->flags == H2_PAL_MUTEX_FLAG_NONE && !fixture->live);
+  *out_mutex = NULL;
+  if (fixture->create_result != H2_PAL_OK) return fixture->create_result;
+  if (fixture->missing_handle) return H2_PAL_OK;
+  fixture->live = true;
+  *out_mutex = (h2_pal_mutex_t*)fixture;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t destroy_mutex(void* user, h2_pal_mutex_t* mutex) {
+  mutex_fixture_t* fixture = user;
+  assert(mutex == (h2_pal_mutex_t*)fixture && fixture->live &&
+         !fixture->locked);
+  if (fixture->destroy_result != H2_PAL_OK) return fixture->destroy_result;
+  fixture->live = false;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t lock_mutex(void* user, h2_pal_mutex_t* mutex) {
+  mutex_fixture_t* fixture = user;
+  assert(mutex == (h2_pal_mutex_t*)fixture && fixture->live &&
+         !fixture->locked);
+  ++fixture->locks;
+  if (fixture->lock_result != H2_PAL_OK) return fixture->lock_result;
+  fixture->locked = true;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t unlock_mutex(void* user, h2_pal_mutex_t* mutex) {
+  mutex_fixture_t* fixture = user;
+  assert(mutex == (h2_pal_mutex_t*)fixture && fixture->locked);
+  fixture->locked = false;
+  ++fixture->unlocks;
+  return H2_PAL_OK;
+}
+
+static void* unlocked_alloc(void* user, size_t size) {
+  mutex_fixture_t* fixture = user;
+  assert(!fixture->locked);
+  return h2_pal_mem_alloc(fixture->mem, size);
+}
+
+static void unlocked_free(void* user, void* pointer) {
+  mutex_fixture_t* fixture = user;
+  assert(!fixture->locked);
+  h2_pal_mem_free(fixture->mem, pointer);
+}
+
+static h2_pal_result_t unlocked_random(void* user, uint8_t* out, size_t len) {
+  mutex_fixture_t* fixture = user;
+  assert(!fixture->locked);
+  return (h2_pal_result_t)h2_pal_crypto_random(fixture->crypto, out, len);
+}
+
+static void test_mutex_failures(void) {
+  h2_sctp_test_endpoint_t endpoint;
+  assert(h2_sctp_test_endpoint_init(&endpoint, H2_PAL_SCTP_ROLE_PASSIVE, 5001u,
+                                    5000u, 256u, 1024u, 4096u,
+                                    4096u) == H2_PAL_OK);
+  const h2_pal_sctp_association_config_t association_config =
+      endpoint.association->config;
+  h2_sctp_test_endpoint_deinit(&endpoint);
+  mutex_fixture_t fixture = {.mem = &endpoint.mem_api,
+                             .crypto = &endpoint.crypto_api};
+  const h2_pal_sync_vtable_t sync_vtable = {
+      .create_mutex = create_mutex,
+      .destroy_mutex = destroy_mutex,
+      .lock_mutex = lock_mutex,
+      .unlock_mutex = unlock_mutex,
+  };
+  const h2_pal_sync_api_t sync = {&fixture, &sync_vtable};
+  const h2_pal_mem_vtable_t mem_vtable = {.alloc = unlocked_alloc,
+                                          .free = unlocked_free};
+  const h2_pal_mem_api_t mem = {&fixture, &mem_vtable};
+  const h2_pal_crypto_vtable_t crypto_vtable = {.random = unlocked_random};
+  const h2_pal_crypto_api_t crypto = {&fixture, &crypto_vtable};
+  const h2_sctp_config_t config = {.mem = &mem, .crypto = &crypto};
+  assert(h2_sctp_create_with_sync(&config, NULL, &endpoint.provider) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(endpoint.provider == NULL);
+  const h2_pal_sync_api_t unsupported = {0};
+  assert(h2_sctp_create_with_sync(&config, &unsupported, &endpoint.provider) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(endpoint.provider == NULL);
+  fixture.create_result = H2_PAL_ERR_IO;
+  assert(h2_sctp_create_with_sync(&config, &sync, &endpoint.provider) ==
+         H2_PAL_ERR_IO);
+  assert(endpoint.provider == NULL && !fixture.live);
+  assert(endpoint.allocation_count == endpoint.free_count);
+  fixture.create_result = H2_PAL_OK;
+  fixture.missing_handle = true;
+  assert(h2_sctp_create_with_sync(&config, &sync, &endpoint.provider) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(endpoint.provider == NULL && !fixture.live);
+  assert(endpoint.allocation_count == endpoint.free_count);
+  fixture.missing_handle = false;
+  assert(h2_sctp_create_with_sync(&config, &sync, &endpoint.provider) ==
+         H2_PAL_OK);
+  endpoint.api = h2_sctp_api(endpoint.provider);
+  const size_t live = endpoint.allocation_count - endpoint.free_count;
+  fixture.lock_result = H2_PAL_ERR_IO;
+  assert(h2_pal_sctp_association_create(endpoint.api, &association_config,
+                                        &endpoint.association) ==
+         H2_PAL_ERR_IO);
+  assert(endpoint.association == NULL && fixture.unlocks == 0u);
+  /* The failed publication releases assembly and packet-pool storage too. */
+  assert(endpoint.allocation_count - endpoint.free_count == live);
+  fixture.lock_result = H2_PAL_OK;
+  assert(h2_pal_sctp_association_create(endpoint.api, &association_config,
+                                        &endpoint.association) == H2_PAL_OK);
+  assert(fixture.unlocks == 1u && !fixture.locked);
+  endpoint.reenter_on_state = true;
+  assert(h2_pal_sctp_association_start(endpoint.api, endpoint.association,
+                                       1u) == H2_PAL_OK);
+  assert(endpoint.reentrant_result == H2_PAL_ERR_BUSY);
+  assert(endpoint.reentrant_close_result == H2_PAL_ERR_BUSY);
+  h2_pal_sctp_association_t* retained = endpoint.association;
+  fixture.lock_result = H2_PAL_ERR_IO;
+  assert(h2_pal_sctp_association_close(endpoint.api, &endpoint.association) ==
+         H2_PAL_ERR_IO);
+  assert(endpoint.association == retained && fixture.unlocks == 1u);
+  assert(h2_sctp_destroy(&endpoint.provider) == H2_PAL_ERR_INVALID_STATE);
+  fixture.lock_result = H2_PAL_OK;
+  assert(h2_pal_sctp_association_close(endpoint.api, &endpoint.association) ==
+         H2_PAL_OK);
+  assert(endpoint.association == NULL && fixture.unlocks == 2u);
+  h2_sctp_t* retained_provider = endpoint.provider;
+  fixture.destroy_result = H2_PAL_ERR_IO;
+  assert(h2_sctp_destroy(&endpoint.provider) == H2_PAL_ERR_IO);
+  assert(endpoint.provider == retained_provider && fixture.live);
+  assert(endpoint.allocation_count - endpoint.free_count == live);
+  fixture.destroy_result = H2_PAL_OK;
+  h2_sctp_test_endpoint_deinit(&endpoint);
+  assert(!fixture.live && endpoint.provider == NULL);
+  assert(endpoint.allocation_count == endpoint.free_count);
+  assert(endpoint.packet_allocation_count == endpoint.packet_free_count);
+}
+
 int main(void) {
+  test_mutex_failures();
   h2_sctp_test_endpoint_t endpoint;
   assert(h2_sctp_test_endpoint_init(&endpoint, H2_PAL_SCTP_ROLE_PASSIVE, 5001u,
                                     5000u, 256u, 1024u, 4096u,

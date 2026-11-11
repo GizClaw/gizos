@@ -3,6 +3,7 @@
 
 #include "os/h2_pal_crypto.h"
 #include "os/h2_pal_mem.h"
+#include "os/h2_pal_sync.h"
 #include "net/h2_pal_sctp.h"
 
 #ifdef __cplusplus
@@ -47,9 +48,33 @@ typedef struct h2_sctp_config {
  * The config and API objects are borrowed. The provider copies their pointer
  * values and never destroys either backend. On every failure, out_provider is
  * cleared and all partially allocated state is released.
+ *
+ * This legacy constructor provides no internal synchronization. The caller
+ * must serialize association creation and close on this provider. Operations
+ * on each association, including its synchronous callbacks, must also be
+ * serialized. Stop all calls using the provider before destroying it.
  */
 h2_pal_result_t h2_sctp_create(const h2_sctp_config_t* config,
                                h2_sctp_t** out_provider);
+
+/**
+ * Creates a provider with a blocking, nonrecursive registry mutex.
+ *
+ * The required Sync API object and its backend are borrowed until
+ * h2_sctp_destroy() succeeds, including after a failed destruction attempt.
+ * The provider owns only the mutex it creates; it never destroys Sync itself.
+ * Mutex creation failures clear out_provider and release partial state.
+ *
+ * Distinct associations may be created, used and closed concurrently when the
+ * borrowed allocators and Crypto provider support concurrent calls. The mutex
+ * protects only registry changes: allocation, Crypto, callbacks and resource
+ * release occur outside it. Serialize operations on each association,
+ * including its synchronous callbacks. Provider creation and destruction
+ * remain caller-serialized; stop all calls using the provider before destroy.
+ */
+h2_pal_result_t h2_sctp_create_with_sync(const h2_sctp_config_t* config,
+                                         const h2_pal_sync_api_t* sync,
+                                         h2_sctp_t** out_provider);
 
 /**
  * Returns the borrowed PAL SCTP view owned by provider.
@@ -63,7 +88,9 @@ const h2_pal_sctp_api_t* h2_sctp_api(h2_sctp_t* provider);
  * Destroys a provider after every association has been closed.
  *
  * A NULL provider is a successful no-op. Live associations cause
- * H2_PAL_ERR_INVALID_STATE without clearing or damaging the provider.
+ * H2_PAL_ERR_INVALID_STATE without clearing or damaging the provider. A mutex
+ * destruction failure also retains the provider and its mutex for retry;
+ * borrowed capabilities must remain valid until destruction succeeds.
  */
 h2_pal_result_t h2_sctp_destroy(h2_sctp_t** provider);
 

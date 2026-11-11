@@ -102,7 +102,8 @@ int main(int argc, char** argv) {
   h2_sctp_t* sctp = NULL;
   const h2_sctp_config_t sctp_config = {.mem = runtime->mem,
                                         .crypto = runtime->crypto};
-  if (h2_sctp_create(&sctp_config, &sctp) != H2_PAL_OK) {
+  if (h2_sctp_create_with_sync(&sctp_config, h2_desktop_platform_sync_api(),
+                               &sctp) != H2_PAL_OK) {
     (void)h2_wolfssl_deinit();
     return 2;
   }
