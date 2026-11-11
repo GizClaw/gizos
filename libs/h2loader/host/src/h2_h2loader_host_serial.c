@@ -1205,6 +1205,8 @@ static h2_pal_result_t serial_finish_command_response(void* transport) {
   if (connection == NULL || connection->stream == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (connection->log_sink_result != H2_PAL_OK)
+    return connection->log_sink_result;
   /* serial_read_until() already flushed the KCP ACK after the complete
    * terminal line. Keep pumping for a bounded grace period so the peer can
    * consume that ACK before this side closes the physical session. */
@@ -1284,6 +1286,8 @@ h2_pal_result_t h2_h2loader_host_serial_execute_command(
     if (out_result != NULL &&
         out_result->terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK)
       out_result->accepted_link_closed = connection->reset_observed != 0;
+    if (rc == H2_PAL_OK && connection->log_sink_result != H2_PAL_OK)
+      rc = connection->log_sink_result;
     connection->active_request = NULL;
     if (reboot) connection->status_output = NULL;
     connection->drain_console = 0;

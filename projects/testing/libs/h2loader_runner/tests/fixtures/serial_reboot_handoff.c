@@ -91,9 +91,16 @@ h2_pal_result_t h2_iostreamikcp_poll(h2_iostreamikcp_t* stream,
     stream->late_sent = 1;
     enqueue(stream, boot); /* Reliable DATA console output, not raw UART. */
   }
-  if ((stream->polls == 1u && stream->fast_boot != 5) ||
-      (stream->polls == 2u && stream->fast_boot == 5)) {
+  if ((stream->polls == 1u && stream->fast_boot != 5 &&
+       stream->fast_boot != 20) ||
+      (stream->polls == 2u &&
+       (stream->fast_boot == 5 || stream->fast_boot == 20))) {
     enqueue(stream, accepted);
+    if (stream->fast_boot == 20) {
+      static const uint8_t diagnostic[] = "accepted reboot diagnostic\n";
+      return serial_stream_log(stream->log_user, diagnostic,
+                               sizeof(diagnostic) - 1u);
+    }
     if (stream->fast_boot == 12) {
       enqueue(stream, boot);
       return h2_iostreamikcp_input(stream, (const uint8_t*)boot,
@@ -163,7 +170,7 @@ h2_pal_result_t h2_iostreamikcp_update(h2_iostreamikcp_t* stream,
 }
 
 h2_pal_result_t h2_iostreamikcp_flush(h2_iostreamikcp_t* stream) {
-  if ((stream->fast_boot == 4 ||
+  if ((stream->fast_boot == 4 || stream->fast_boot == 20 ||
        (stream->fast_boot == 19 && stream->close_phase)) &&
       !stream->flush_closed_once) {
     stream->flush_closed_once = 1;
@@ -308,6 +315,14 @@ static h2_pal_result_t fixture_sink(void* user, const uint8_t* data,
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t reboot_timeout_sink(void* user, const uint8_t* data,
+                                           size_t len) {
+  (void)user;
+  (void)data;
+  (void)len;
+  return H2_PAL_ERR_TIMEOUT;
+}
+
 static h2_pal_result_t stage_sink(void* user, const uint8_t* data, size_t len) {
   h2_iostreamikcp_t* stream = user;
   (void)data;
@@ -332,7 +347,7 @@ int main(void) {
   (void)serial_status_diagnostics;
   (void)serial_stream_now_ms;
   (void)find_line_marker;
-  for (int fast_boot = 0; fast_boot < 20; ++fast_boot) {
+  for (int fast_boot = 0; fast_boot < 21; ++fast_boot) {
     clock_ms = 0u;
     accept_count = 0u;
     freed = 0u;
@@ -341,6 +356,7 @@ int main(void) {
     const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms = monotonic};
     const h2_pal_time_api_t time = {.vtable = &time_vtable};
     test_config_t config = {0};
+    if (fast_boot == 20) config.on_log = reboot_timeout_sink;
     if (fast_boot == 10 || fast_boot == 11) {
       config.on_log = fixture_sink;
       config.log_user = &stream;
@@ -410,8 +426,24 @@ int main(void) {
         .accepted_user = &context,
     };
     h2_h2loader_host_command_result_t result = {0};
-    assert(h2_h2loader_host_serial_execute_command(&connection, &request,
-                                                   &result) == H2_PAL_OK);
+    h2_pal_result_t command_rc =
+        h2_h2loader_host_serial_execute_command(&connection, &request, &result);
+    if (fast_boot == 20) {
+      assert(command_rc == H2_PAL_ERR_TIMEOUT);
+      assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+      assert(result.transport_result == H2_PAL_ERR_TIMEOUT &&
+             accept_count == 1u);
+      assert(stream.flush_closed_once ==
+             0); /* A failing sink forbids ACK-grace I/O. */
+      h2_h2loader_host_serial_connection_t* owned = &connection;
+      uint32_t resets = 99u;
+      assert(h2_h2loader_host_serial_disconnect_with_reset(&owned, &resets) ==
+             H2_PAL_ERR_TIMEOUT);
+      assert(owned == NULL && freed == 1u && stream.stream_closed &&
+             resets == 0u);
+      continue;
+    }
+    assert(command_rc == H2_PAL_OK);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
     assert(accept_count == 1u && context.monitor_logs);
     assert(result.accepted_link_closed ==
