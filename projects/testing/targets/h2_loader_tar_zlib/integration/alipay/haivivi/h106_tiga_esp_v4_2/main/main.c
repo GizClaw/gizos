@@ -251,10 +251,9 @@ static void run(void* user) {
   transferred = NULL;
   fail("app-returned", rc);
 }
-void app_main(void) {
-  int rc = h2_esp_target_task_policy_install();
-  if (rc != H2_PAL_OK) fail("task-policy", rc);
-  rc = h2_esp_board_runtime_config(&runtime_config);
+static void image_entry(void* user) {
+  (void)user;
+  int rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc != H2_PAL_OK) fail("board", rc);
   rc = h2_device_app_commands_prepare_named(&management, &runtime_config,
                                             "alipay-e2e", 1u, 3u);
@@ -263,9 +262,13 @@ void app_main(void) {
   if (rc != H2_PAL_OK) fail("runtime", rc);
   printf("H2_ALIPAY_E2E_BOOT board=%s target=%s version=%s\n", runtime->board,
          runtime->target, esp_app_get_description()->version);
-  const h2_pal_task_options_t options = {.name = "alipay/e2e/runner",
-                                         .min_stack_size = 65536};
-  h2_pal_task_t* runner = NULL;
-  rc = h2_pal_task_start(runtime->task, &options, run, NULL, &runner);
-  if (rc != H2_PAL_OK) fail("runner", rc);
+  run(NULL);
+}
+
+void app_main(void) {
+  int rc = h2_esp_target_task_policy_install_with_configure(
+      h2_esp_board_task_configure);
+  if (rc == H2_PAL_OK)
+    rc = h2_esp_board_start_entry_task("alipay/e2e/runner", image_entry, NULL);
+  if (rc != H2_PAL_OK) fail("entry", rc);
 }
