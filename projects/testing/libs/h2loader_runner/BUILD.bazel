@@ -69,6 +69,7 @@ py_test(
         "//libs/h2loader/host:src/h2_h2loader_host_serial.c",
         "//libs/net/iostreamikcp:include/h2_iostreamikcp.h",
         "//libs/net/iostreamikcp:include/h2_iostreamikcp_types.h",
+        "//libs/net/iostreamikcp:src/h2_iostreamikcp_frame.c",
         "//pal:pal_header_files",
         "//projects/testing/libs/h2loader_runner:src/h2_h2loader_e2e_runner.c",
     ],

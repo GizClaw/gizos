@@ -41,6 +41,9 @@ struct h2_h2loader_host_serial_connection {
   int reset_observed;
   uint32_t ready_epoch_count;
   int drain_console;
+  int retiring;
+  int replayed_ready_lf;
+  h2_pal_result_t log_sink_result;
   const h2_h2loader_host_command_request_t* active_request;
   int accepted_notified;
 };
@@ -73,7 +76,12 @@ static h2_pal_result_t serial_log_output(void* user, const uint8_t* data,
                                          size_t len) {
   h2_h2loader_host_serial_connection_t* connection = user;
   if (connection->on_log == NULL || len == 0u) return H2_PAL_OK;
-  return connection->on_log(connection->log_user, data, len);
+  h2_pal_result_t rc = connection->on_log(connection->log_user, data, len);
+  /* A closed output sink is an I/O failure, not evidence of an MCU reset. */
+  if (rc == H2_PAL_ERR_CLOSED) rc = H2_PAL_ERR_IO;
+  if (rc != H2_PAL_OK && connection->log_sink_result == H2_PAL_OK)
+    connection->log_sink_result = rc;
+  return rc;
 }
 
 static h2_pal_result_t serial_status_emit(serial_status_output_t* output,
@@ -435,6 +443,25 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
   h2_h2loader_host_serial_connection_t* connection = user;
   static const char marker[] = "H2_LOADER_READY ";
   int reset = 0;
+  /* The filter retains a byte when its callback returns CLOSED. The READY
+   * newline was already delivered; consume its replay without duplicating it.
+   */
+  if (!connection->decoded_log_active && connection->replayed_ready_lf &&
+      len != 0u) {
+    connection->replayed_ready_lf = 0;
+    if (data[0] == '\n') {
+      ++data;
+      --len;
+    }
+  }
+  if (connection->status_output != NULL && !connection->decoded_log_active) {
+    h2_pal_result_t rc =
+        serial_status_capture_pending(connection->status_output);
+    if (rc == H2_PAL_ERR_CLOSED)
+      reset = 1;
+    else if (rc != H2_PAL_OK)
+      return rc;
+  }
   if (!connection->decoded_log_active && connection->drain_console &&
       connection->status_output == NULL) {
     h2_pal_result_t rc = serial_drain_decoded_logs(connection);
@@ -473,11 +500,6 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
       connection->ready_line_rejected = 1;
     }
   }
-  if (connection->status_output != NULL && !connection->decoded_log_active) {
-    h2_pal_result_t rc =
-        serial_status_capture_pending(connection->status_output);
-    if (rc != H2_PAL_OK) return rc;
-  }
   if (connection->on_log != NULL) {
     h2_pal_result_t rc =
         connection->decoded_log_active
@@ -490,8 +512,12 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
       return rc;
     }
   }
-  return serial_observe_result(connection,
-                               reset ? H2_PAL_ERR_CLOSED : H2_PAL_OK);
+  h2_pal_result_t rc =
+      serial_observe_result(connection, reset ? H2_PAL_ERR_CLOSED : H2_PAL_OK);
+  if (reset && connection->retiring) return H2_PAL_OK;
+  if (reset && !connection->decoded_log_active && len == 1u && data[0] == '\n')
+    connection->replayed_ready_lf = 1;
+  return rc;
 }
 
 static h2_pal_result_t serial_wait_ready_marker(
@@ -539,8 +565,12 @@ static h2_pal_result_t serial_wait_ready_marker(
 static h2_pal_result_t serial_pump(
     h2_h2loader_host_serial_connection_t* connection, uint32_t timeout_ms) {
   uint64_t now = 0u;
+  if (connection->log_sink_result != H2_PAL_OK)
+    return connection->log_sink_result;
   h2_pal_result_t rc = serial_observe_result(
       connection, h2_iostreamikcp_poll(connection->stream, timeout_ms));
+  if (connection->log_sink_result != H2_PAL_OK)
+    return connection->log_sink_result;
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
       rc != H2_PAL_ERR_WOULD_BLOCK) {
     return rc;
@@ -979,7 +1009,17 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
   }
   *inout_connection = NULL;
   connection->drain_console = 1;
+  connection->retiring = 1;
+  h2_pal_result_t cleanup_rc = H2_PAL_OK;
   if (connection->stream != NULL) {
+    /* Resume bytes retained after the first READY callback without reading the
+     * UART again. Retirement counts every buffered epoch before freeing it. */
+    cleanup_rc = connection->log_sink_result != H2_PAL_OK
+                     ? connection->log_sink_result
+                     : serial_observe_result(
+                           connection,
+                           h2_iostreamikcp_input(connection->stream, NULL, 0u));
+    if (cleanup_rc == H2_PAL_ERR_CLOSED) cleanup_rc = H2_PAL_OK;
     /* A status/stage operation can return as soon as the final response is
      * decoded, while the peer is still waiting for the KCP ACK to cross
      * the AP/CP UART tunnel. Pump a bounded grace period before closing so
@@ -991,15 +1031,18 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
      * than retransmitting that payload while tearing down a failed
      * session; the CLOSE below retires it. */
     h2_iostreamikcp_stats_t stats = {0};
-    if (h2_iostreamikcp_get_stats(connection->stream, &stats) == H2_PAL_OK &&
+    if (cleanup_rc == H2_PAL_OK &&
+        h2_iostreamikcp_get_stats(connection->stream, &stats) == H2_PAL_OK &&
         stats.waitsnd == 0u) {
-      (void)serial_finish_command_response(connection);
+      cleanup_rc = serial_finish_command_response(connection);
+      if (cleanup_rc == H2_PAL_ERR_CLOSED) cleanup_rc = H2_PAL_OK;
     }
     /* Retire the peer's KCP session explicitly. Otherwise an immediate
      * next CLI process must interrupt an old command flush with its OPEN,
      * and that replacement frame can be lost in BK's CP/AP UART tunnel.
      * Peers without CLOSE support simply time out this best-effort step. */
-    if (connection->conversation_id != 0u) {
+    if (connection->conversation_id != 0u && cleanup_rc == H2_PAL_OK &&
+        connection->log_sink_result == H2_PAL_OK) {
       h2_pal_result_t retire_rc = serial_session_control(
           connection, connection->conversation_id,
           H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE,
@@ -1015,6 +1058,10 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
         connection->ready_epoch_count != 0u
             ? connection->ready_epoch_count
             : (connection->reset_observed || rc == H2_PAL_ERR_CLOSED ? 1u : 0u);
+  if (connection->log_sink_result != H2_PAL_OK)
+    rc = connection->log_sink_result;
+  else if (cleanup_rc != H2_PAL_OK)
+    rc = cleanup_rc;
   h2_pal_mem_free(connection->allocator, connection);
   return rc;
 }

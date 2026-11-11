@@ -337,7 +337,13 @@ class RebootMonitorTests(unittest.TestCase):
             start = text.index(begin)
             return text[start:text.index(end, start)]
 
+        frame = (ROOT / 'libs/net/iostreamikcp/src/h2_iostreamikcp_frame.c').read_text()
+        frame = frame.replace('#include "h2_iostreamikcp_internal.h"',
+                              '#include "h2_iostreamikcp.h"\n'
+                              '#define H2_IOSTREAMIKCP_FRAME_MAGIC_LEN 6u\n'
+                              '#define H2_IOSTREAMIKCP_FRAME_LEN_OFFSET 12u')
         for marker, code in {
+            '/* FRAME */': frame,
             '/* SERIAL_DEFINITIONS */': section(serial, 'typedef struct serial_status_output',
                                                'static h2_pal_result_t serial_finish_command_response('),
             '/* SERIAL_NOW */': section(serial, 'static h2_pal_result_t serial_now(',

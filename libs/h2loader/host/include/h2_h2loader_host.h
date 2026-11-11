@@ -226,7 +226,9 @@ typedef struct h2_h2loader_host_serial_connection_config {
   const char* ready_marker;
   /** Optional bounded delay after command delivery and before response read. */
   uint32_t post_command_delay_ms;
-  /** Optional borrowed sink for bytes proven not to belong to a frame. */
+  /** Optional borrowed sink for console diagnostics. Sink failures abort the
+   * operation and cleanup still releases the connection. CLOSED from this sink
+   * is reported as IO, so it cannot be mistaken for a physical reset. */
   h2_h2loader_host_transport_log_fn on_log;
   void* log_user;
   /** Leave DTR and RTS untouched for the complete connection lifecycle. */

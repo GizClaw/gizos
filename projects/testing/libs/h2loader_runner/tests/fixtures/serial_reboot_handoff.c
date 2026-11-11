@@ -10,8 +10,10 @@
 #define H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE 8192u
 #define H2_H2LOADER_HOST_SERIAL_SESSION_CLOSE_TIMEOUT_MS 1000u
 
+/* FRAME */
+
 /* Production serial response parsing, ACK-grace handling and monitoring are
- * inserted below. Only the framed stream and clock are scripted. */
+ * inserted below. The real frame filter is used for buffered READY replay. */
 struct h2_iostreamikcp {
   uint8_t queue[2048];
   size_t length;
@@ -25,16 +27,18 @@ struct h2_iostreamikcp {
   int late_sent;
   int stream_closed;
   int command_written;
+  int raw_banners_sent;
+  h2_iostreamikcp_filter_t filter;
   void* log_user;
 };
 
 static uint64_t clock_ms;
 static unsigned accept_count;
 static const char accepted[] =
-    "H2_LOADER_REBOOT target=loader result=accepted\n";
+    "H2_LOADER_REBOOT target=loader result=accepted\r\n";
 static const char final[] =
     "H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\r\n";
-static const char boot[] = "ESP boot\nH2_LOADER_READY status=ready\n";
+static const char boot[] = "H2_LOADER_READY status=ready\n";
 
 static h2_pal_result_t serial_stream_log(void*, const uint8_t*, size_t);
 
@@ -65,7 +69,8 @@ h2_pal_result_t h2_iostreamikcp_poll(h2_iostreamikcp_t* stream,
   clock_ms += timeout_ms;
   ++stream->polls;
   if (stream->close_phase && !stream->late_sent &&
-      (stream->fast_boot == 6 || stream->fast_boot == 7)) {
+      (stream->fast_boot == 6 || stream->fast_boot == 7 ||
+       stream->fast_boot == 10 || stream->fast_boot == 11)) {
     stream->late_sent = 1;
     enqueue(stream, boot); /* Reliable DATA console output, not raw UART. */
   }
@@ -87,6 +92,13 @@ h2_pal_result_t h2_iostreamikcp_poll(h2_iostreamikcp_t* stream,
      * after the response reader returned, and remains queued for monitoring. */
     assert(accept_count == 1u);
     enqueue(stream, final);
+    if (stream->fast_boot == 9 && !stream->raw_banners_sent) {
+      uint8_t both[2u * (sizeof(boot) - 1u)];
+      memcpy(both, boot, sizeof(boot) - 1u);
+      memcpy(both + sizeof(boot) - 1u, boot, sizeof(boot) - 1u);
+      stream->raw_banners_sent = 1;
+      return h2_iostreamikcp_input(stream, both, sizeof(both));
+    }
     if (stream->fast_boot == 1 || stream->fast_boot == 7) {
       for (size_t i = 0u; i < sizeof(boot) - 1u; ++i) {
         h2_pal_result_t rc =
@@ -138,6 +150,18 @@ h2_pal_result_t h2_iostreamikcp_input_frame(
   memcpy(stream->queue + stream->length, frame->payload, frame->payload_len);
   stream->length += frame->payload_len;
   return H2_PAL_OK;
+}
+
+static h2_pal_result_t fixture_frame(void* user,
+                                     const h2_iostreamikcp_frame_t* frame) {
+  return h2_iostreamikcp_input_frame(user, frame);
+}
+
+h2_pal_result_t h2_iostreamikcp_input(h2_iostreamikcp_t* stream,
+                                      const uint8_t* data, size_t len) {
+  return h2_iostreamikcp_filter_input_with_log(
+      &stream->filter, data, len, fixture_frame, stream, serial_stream_log,
+      stream->log_user);
 }
 
 void h2_iostreamikcp_close(h2_iostreamikcp_t* stream) {
@@ -222,18 +246,33 @@ static int bounded(void* user) {
   return 0;
 }
 
+static h2_pal_result_t fixture_sink(void* user, const uint8_t* data,
+                                    size_t len) {
+  h2_iostreamikcp_t* stream = user;
+  (void)data;
+  (void)len;
+  if (stream->close_phase)
+    return stream->fast_boot == 11 ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
+  return H2_PAL_OK;
+}
+
 int main(void) {
   (void)serial_status_diagnostics;
   (void)serial_stream_now_ms;
   (void)find_line_marker;
-  for (int fast_boot = 0; fast_boot < 9; ++fast_boot) {
+  for (int fast_boot = 0; fast_boot < 12; ++fast_boot) {
     clock_ms = 0u;
     accept_count = 0u;
     freed = 0u;
     h2_iostreamikcp_t stream = {.fast_boot = fast_boot};
+    h2_iostreamikcp_filter_init(&stream.filter);
     const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms = monotonic};
     const h2_pal_time_api_t time = {.vtable = &time_vtable};
     test_config_t config = {0};
+    if (fast_boot == 10 || fast_boot == 11) {
+      config.on_log = fixture_sink;
+      config.log_user = &stream;
+    }
     test_result_t evidence = {0};
     h2_e2e_transport_context_t context = {
         .config = &config,
@@ -270,20 +309,23 @@ int main(void) {
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
     assert(accept_count == 1u && context.monitor_logs);
     assert(result.accepted_link_closed ==
-           (fast_boot != 0 && fast_boot != 6 && fast_boot != 8));
-    assert(context.monitor_output_bytes == ((fast_boot == 1 || fast_boot == 2 ||
-                                             fast_boot == 5 || fast_boot == 7)
-                                                ? sizeof(boot) - 1u
-                                                : 0u));
+           (fast_boot != 0 && fast_boot != 6 && fast_boot != 8 &&
+            fast_boot != 10 && fast_boot != 11));
+    assert(context.monitor_output_bytes ==
+           ((fast_boot == 1 || fast_boot == 2 || fast_boot == 5 ||
+             fast_boot == 7 || fast_boot == 9)
+                ? sizeof(boot) - 1u
+                : 0u));
     unsigned polls = 4u;
     assert(h2_h2loader_host_serial_monitor_logs(&connection, bounded, &polls) ==
            H2_PAL_EXIT);
     /* FINAL is drained without becoming evidence, including in ACK grace. */
     assert(stream.offset == stream.length);
-    assert(context.monitor_output_bytes == ((fast_boot == 1 || fast_boot == 2 ||
-                                             fast_boot == 5 || fast_boot == 7)
-                                                ? sizeof(boot) - 1u
-                                                : 0u));
+    assert(context.monitor_output_bytes ==
+           ((fast_boot == 1 || fast_boot == 2 || fast_boot == 5 ||
+             fast_boot == 7 || fast_boot == 9)
+                ? sizeof(boot) - 1u
+                : 0u));
     if (fast_boot == 8) {
       session_ack_context_t closing = {.closing_connection = &connection};
       const h2_iostreamikcp_frame_t frame = {
@@ -296,14 +338,19 @@ int main(void) {
     stream.close_phase = 1;
     h2_h2loader_host_serial_connection_t* owned = &connection;
     uint32_t resets = 0u;
-    assert(h2_h2loader_host_serial_disconnect_with_reset(&owned, &resets) ==
-           H2_PAL_OK);
+    h2_pal_result_t close_rc =
+        h2_h2loader_host_serial_disconnect_with_reset(&owned, &resets);
+    assert(close_rc ==
+           ((fast_boot == 10 || fast_boot == 11) ? H2_PAL_ERR_IO : H2_PAL_OK));
     assert(owned == NULL && freed == 1u && stream.stream_closed);
-    assert(resets == (fast_boot == 0 ? 0u : (fast_boot == 7 ? 2u : 1u)));
+    assert(
+        resets ==
+        (fast_boot == 0 ? 0u : ((fast_boot == 7 || fast_boot == 9) ? 2u : 1u)));
     if (fast_boot == 6 || fast_boot == 8)
       assert(context.monitor_output_bytes == sizeof(boot) - 1u);
-    if (fast_boot == 7)
+    if (fast_boot == 7 || fast_boot == 9)
       assert(context.monitor_output_bytes == 2u * (sizeof(boot) - 1u));
+    if (fast_boot == 9) assert(stream.filter.len == 0u);
   }
   return 0;
 }
