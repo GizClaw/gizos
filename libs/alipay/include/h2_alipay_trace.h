@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define H2_ALIPAY_TRACE_EVENTS 128u
 #define H2_ALIPAY_TRACE_BYTES 128u
 /** Fixed bounded runtime evidence. No dynamic allocation or IO on push.
@@ -38,4 +42,7 @@ void h2_alipay_trace_push(h2_alipay_trace_t* trace,
                           const void* data, size_t length);
 bool h2_alipay_trace_next(h2_alipay_trace_t* trace,
                           h2_alipay_trace_event_t* event);
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -40,12 +40,18 @@ def _sdk_impl(ctx):
             ctx.symlink(source, path)
     lines = ['load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")', 'package(default_visibility = ["//visibility:public"])']
     deps = []
+    archives = []
     for module in _MODULES:
         name = module.replace("/", "_")
         archive = [path for path in manifest if path.startswith(module + "/lib/")][0]
+        archives.append(archive)
         if not root:
-            # Exact native build fails explicitly; host graphs need no licensed SDK.
-            ctx.file(archive, "SDK unavailable; set ALIPAY_SDK_PATH to the original output directory")
+            # Host graphs can load this package; an exact SDK build fails.
+            lines.append("genrule(name = %s, outs = [%s], cmd = %s)" % (
+                repr("missing_" + name),
+                repr(archive),
+                repr("echo 'Alipay SDK unavailable; set ALIPAY_SDK_PATH to the original output directory' >&2; exit 1"),
+            ))
         lines.append('cc_import(name = "%s", static_library = "%s")' % (name, archive))
         deps.append(":" + name)
     headers = [path for path in manifest if path.endswith(".h")] + ["h2_alipay_sdk_identity.h"]
@@ -56,6 +62,7 @@ def _sdk_impl(ctx):
             ctx.file(path, '#error "Alipay SDK missing: set ALIPAY_SDK_PATH"\n')
     includes = sorted({path.rpartition("/")[0] or ".": True for path in headers}.keys())
     lines.append("cc_library(name = \"bind_net\", hdrs = %s, includes = %s, deps = %s)" % (repr(headers), repr(includes), repr(deps)))
+    lines.append('filegroup(name = "archives", srcs = %s)' % repr(archives))
     ctx.file("BUILD.bazel", "\n".join(lines) + "\n")
 
 _alipay_sdk = repository_rule(

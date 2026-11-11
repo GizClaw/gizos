@@ -34,3 +34,18 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":alipay"],
 )
+
+cc_test(
+    name = "trace_cpp_test",
+    size = "small",
+    srcs = ["tests/test_trace_cpp.cc"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":alipay"],
+)
+
+# Explicit input preflight; the cc_library import above has no own compilation.
+filegroup(
+    name = "bind_net_sdk_archives",
+    srcs = ["@alipay_sdk//:archives"],
+    target_compatible_with = ["//tools/bazel/platforms:target_esp32s3"],
+)
