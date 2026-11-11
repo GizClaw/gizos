@@ -2,6 +2,7 @@
 
 _MODULES = [
     "app/bind_net",
+    "app/setting",
     "fwk/common",
     "fwk/bind_status",
     "fwk/crypt",

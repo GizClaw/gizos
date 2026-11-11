@@ -8,6 +8,7 @@
   "app/bind_net/inc/alipay_bind.h": "879f3ed320244ce4e83297f7e88ae1c596ea45db9b0364812979be806c8de8a9",
   "app/bind_net/lib/libapp_bind_net_esp32s3_gcc16.a": "71c6bf54af82da6a6ece45da154013b9ba7686339a43259ff23d03329d1633e9",
   "app/setting/inc/alipay_account_manage.h": "ee8964b6b5ac2910a1ab7c75ab8faf9840af75f56a0507fa0cc1f58c29f43585",
+  "app/setting/lib/libapp_setting_esp32s3_gcc16.a": "c637ab5048e9659ad5b055d05c180a157bf1ba2a3ca8de464c185d462e6e2a0a",
   "fwk/bind_status/lib/libfwk_bind_status_esp32s3_gcc16.a": "0be09ae78e0a8d3bbeb9afff0562fd6e3eef09951f8a24a55cb2e9febed4851d",
   "fwk/common/lib/libfwk_common_esp32s3_gcc16.a": "1e0a648dd341e2025561f695f8c82dee41575cfed7c37dabba2c1773d00e5d40",
   "fwk/crypt/lib/libfwk_crypt_esp32s3_gcc16.a": "a7f0a8eb21176e9618bdc63d4529681d846b71bb91ad7d1153d33b0e00f01602",
