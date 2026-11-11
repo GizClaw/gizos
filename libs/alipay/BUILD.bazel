@@ -5,7 +5,10 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "alipay",
-    srcs = ["src/h2_alipay_trace.c"],
+    srcs = [
+        "src/h2_alipay_once.c",
+        "src/h2_alipay_trace.c",
+    ],
     hdrs = [
         "include/h2_alipay.h",
         "include/h2_alipay_trace.h",

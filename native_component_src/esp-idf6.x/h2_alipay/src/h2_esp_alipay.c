@@ -20,8 +20,7 @@
 
 static h2_esp_alipay_config_t s_config;
 static SemaphoreHandle_t s_lock;
-static bool s_attempted;
-static int s_init_rc;
+static h2_alipay_initialization_t s_initialization;
 static h2_alipay_trace_t s_trace;
 static uint32_t s_parent;
 uint64_t h2_esp_alipay_now(void) {
@@ -61,22 +60,23 @@ static h2_pal_result_t pre_init(void* user, int* sdk_rc, bool* first) {
   if (sdk_rc == NULL || first == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (xSemaphoreTake(s_lock, portMAX_DELAY) != pdTRUE)
     return H2_PAL_ERR_UNAVAILABLE;
-  *first = !s_attempted;
-  if (!s_attempted) {
-    s_attempted = true;
+  *first = !s_initialization.attempted;
+  if (!s_initialization.attempted) {
     const uint64_t started = h2_esp_alipay_now();
     h2_esp_alipay_trace("alipay_pre_init.enter", "sdk", 0, 0, 0, started, NULL,
                         NULL, 0);
     s_parent = s_trace.next_call;
-    s_init_rc = alipay_pre_init();
-    h2_esp_alipay_trace("alipay_pre_init.return", "sdk", s_init_rc, 0, 0,
-                        started, NULL, NULL, 0);
+    (void)h2_alipay_initialize_once(&s_initialization, alipay_pre_init, sdk_rc,
+                                    first);
+    h2_esp_alipay_trace("alipay_pre_init.return", "sdk",
+                        s_initialization.sdk_rc, 0, 0, started, NULL, NULL, 0);
     s_parent = 0;
   }
   if (!*first)
-    h2_esp_alipay_trace("alipay_pre_init.reused", "sdk", s_init_rc, 0, 0,
-                        h2_esp_alipay_now(), NULL, NULL, 0);
-  *sdk_rc = s_init_rc;
+    h2_esp_alipay_trace("alipay_pre_init.reused", "sdk",
+                        s_initialization.sdk_rc, 0, 0, h2_esp_alipay_now(),
+                        NULL, NULL, 0);
+  *sdk_rc = s_initialization.sdk_rc;
   xSemaphoreGive(s_lock);
   return H2_PAL_OK;
 }
@@ -92,12 +92,24 @@ static retval_e copy_text(const char* text, uint8_t* out, uint32_t* length) {
 }
 
 retval_e alipay_get_companyName(uint8_t* out, uint32_t* length) {
-  return copy_text(s_config.company, out, length);
+  uint64_t started = h2_esp_alipay_now();
+  retval_e rc = copy_text(s_config.company, out, length);
+  h2_esp_alipay_trace("identity.company", "hal", rc, rc == 0 ? *length : 0, 0,
+                      started, "product_configuration", NULL, 0);
+  return rc;
 }
 retval_e alipay_get_productModel(uint8_t* out, uint32_t* length) {
-  return copy_text(s_config.model, out, length);
+  uint64_t started = h2_esp_alipay_now();
+  retval_e rc = copy_text(s_config.model, out, length);
+  h2_esp_alipay_trace("identity.model", "hal", rc, rc == 0 ? *length : 0, 0,
+                      started, "product_configuration", NULL, 0);
+  return rc;
 }
-uint32_t alipay_get_productType(void) { return s_config.product_type; }
+uint32_t alipay_get_productType(void) {
+  h2_esp_alipay_trace("identity.product_type", "hal", 0, s_config.product_type,
+                      0, h2_esp_alipay_now(), "product_configuration", NULL, 0);
+  return s_config.product_type;
+}
 
 static retval_e identity(bool imei, uint8_t* out, uint32_t* length) {
   if (out == NULL || length == NULL || *length == 0u)
@@ -144,8 +156,8 @@ retval_e alipay_get_mac(uint8_t* out, uint32_t* length) {
   return result;
 }
 
-static h2_pal_result_t ready(void* user, uint32_t feature,
-                             h2_alipay_blocker_t* blocker) {
+static h2_pal_result_t ready_impl(void* user, uint32_t feature,
+                                  h2_alipay_blocker_t* blocker) {
   (void)user;
   if (blocker == NULL) return H2_PAL_ERR_INVALID_ARG;
   *blocker = H2_ALIPAY_BLOCKER_SECURITY_SCHEME;
@@ -187,13 +199,25 @@ static h2_pal_result_t ready(void* user, uint32_t feature,
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t ready(void* user, uint32_t feature,
+                             h2_alipay_blocker_t* blocker) {
+  const uint64_t started = h2_esp_alipay_now();
+  h2_pal_result_t rc = ready_impl(user, feature, blocker);
+  char detail[48];
+  (void)snprintf(detail, sizeof(detail), "feature=%u", (unsigned)feature);
+  h2_esp_alipay_trace("commissioning.check", "hal_secure", rc,
+                      blocker != NULL ? (uint32_t)*blocker : 0, 0, started,
+                      detail, NULL, 0);
+  return rc;
+}
+
 static h2_pal_result_t binding_status(void* user, bool* bound) {
   (void)user;
   if (bound == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (xSemaphoreTake(s_lock, portMAX_DELAY) != pdTRUE)
     return H2_PAL_ERR_UNAVAILABLE;
   h2_pal_result_t rc = H2_PAL_ERR_INVALID_STATE;
-  if (s_attempted && s_init_rc == 0) {
+  if (s_initialization.attempted && s_initialization.sdk_rc == 0) {
     *bound = alipay_get_binding_status();
     rc = H2_PAL_OK;
   }
@@ -214,7 +238,7 @@ static h2_pal_result_t binding_code(void* user, uint32_t feature, char* code,
   if (xSemaphoreTake(s_lock, portMAX_DELAY) != pdTRUE)
     return H2_PAL_ERR_UNAVAILABLE;
   h2_pal_result_t rc = H2_PAL_ERR_INVALID_STATE;
-  if (s_attempted && s_init_rc == 0) {
+  if (s_initialization.attempted && s_initialization.sdk_rc == 0) {
     h2_alipay_blocker_t blocker;
     rc = ready(NULL, feature, &blocker);
     if (rc == H2_PAL_OK && alipay_get_binding_status())
@@ -349,6 +373,25 @@ void alipay_log_ext(const char* format, ...) {
   int n = vsnprintf(text, sizeof(text), format, args);
   va_end(args);
   if (n < 0) return;
+  const char* header = strstr(text, "Operation-Type:");
+  if (header != NULL) {
+    header += strlen("Operation-Type:");
+    while (*header == ' ' || *header == '\t') ++header;
+    char operation[80];
+    size_t i = 0;
+    while (i + 1 < sizeof(operation) &&
+           ((header[i] >= 'a' && header[i] <= 'z') ||
+            (header[i] >= 'A' && header[i] <= 'Z') ||
+            (header[i] >= '0' && header[i] <= '9') || header[i] == '.' ||
+            header[i] == '_' || header[i] == '-')) {
+      operation[i] = header[i];
+      ++i;
+    }
+    operation[i] = '\0';
+    if (i != 0)
+      h2_esp_alipay_trace("rpc.operation_type", "sdk_log_observed", 0, 0, 0,
+                          h2_esp_alipay_now(), operation, NULL, 0);
+  }
   size_t observed = (size_t)n < sizeof(text) ? (size_t)n : sizeof(text) - 1;
   h2_esp_alipay_trace(
       "vendor.log", "sdk_log", 0, (uint32_t)n, 0, h2_esp_alipay_now(),

@@ -13,6 +13,17 @@ extern "C" {
 
 #define H2_ALIPAY_BINDING_CODE_CAPACITY 256u
 
+/** Adapter-owned boot state. Serialize access; never reset after an SDK
+ * attempt. An error is cached too, since callback registration may have
+ * partially completed. The driver callback is invoked at most once. */
+typedef struct h2_alipay_initialization {
+  bool attempted;
+  int sdk_rc;
+} h2_alipay_initialization_t;
+h2_pal_result_t h2_alipay_initialize_once(h2_alipay_initialization_t* state,
+                                          int (*initialize)(void), int* sdk_rc,
+                                          bool* first_attempt);
+
 typedef enum h2_alipay_source {
   H2_ALIPAY_SOURCE_CONTROLLED = 0,
   H2_ALIPAY_SOURCE_VENDOR_SDK = 1,

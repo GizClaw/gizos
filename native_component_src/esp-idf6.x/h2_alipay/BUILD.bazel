@@ -15,7 +15,6 @@ firmware_native_component(
     component_directory = "native_component_src/esp-idf6.x/h2_alipay",
     component_name = "h2_alipay",
     data = ["CMakeLists.txt"],
-    include_roots = ["native_component_src/esp-idf6.x/h2_alipay/include"],
     deps = [
         "//libs/alipay",
         "//libs/alipay:bind_net_sdk",

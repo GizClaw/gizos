@@ -1,7 +1,24 @@
 #include "h2_alipay_trace.h"
+#include "h2_alipay.h"
 #include <assert.h>
 #include <string.h>
+static int init_calls, init_result;
+static int initialize(void) {
+  ++init_calls;
+  return init_result;
+}
 int main(void) {
+  for (int failure = 0; failure < 2; ++failure) {
+    h2_alipay_initialization_t state = {0};
+    int sdk_rc;
+    bool first;
+    init_result = failure ? -57 : 0;
+    int before = init_calls;
+    assert(h2_alipay_initialize_once(&state, initialize, &sdk_rc, &first) == 0);
+    assert(first && sdk_rc == init_result && init_calls == before + 1);
+    assert(h2_alipay_initialize_once(&state, initialize, &sdk_rc, &first) == 0);
+    assert(!first && sdk_rc == init_result && init_calls == before + 1);
+  }
   static h2_alipay_trace_t trace;
   h2_alipay_trace_event_t in = {
       .call_id = 7, .parent_id = 2, .connection_id = 3};
