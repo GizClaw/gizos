@@ -73,6 +73,7 @@ typedef enum h2_bk_tls_tcp_state {
   H2_BK_TLS_TCP_ACTIVE,
   H2_BK_TLS_TCP_FAILED,
   H2_BK_TLS_TCP_CLOSED,
+  H2_BK_TLS_TCP_ACCEPT_RESERVED,
 } h2_bk_tls_tcp_state_t;
 
 typedef struct h2_bk_tls_tcp_record {
@@ -84,6 +85,9 @@ typedef struct h2_bk_tls_tcp_record {
   bool caller_owned;
   bool context_present;
   bool reaping;
+  bool idle; /* Never connected, or a listener: native close cannot wait for
+                FIN. */
+  bool tls_owned; /* Persists after context disposal, including legacy TLS. */
 } h2_bk_tls_tcp_record_t;
 
 typedef enum h2_bk_tls_job_state {
@@ -134,9 +138,31 @@ void h2_bk_tls_lifetime_set_worker_ready(h2_bk_tls_lifetime_t* manager,
  * leaves that unpublished native fd owned by its opener. Once registered, every
  * native TCP operation must hold a ref, and every close must use tcp_close. */
 h2_pal_result_t h2_bk_tls_tcp_register(h2_bk_tls_lifetime_t* manager, int fd);
+/* Only socket-open/listen may mark a newly registered, unpublished fd idle.
+ * connect_begin clears that property before any native connection attempt. */
+h2_pal_result_t h2_bk_tls_tcp_mark_idle(h2_bk_tls_lifetime_t* manager, int fd);
+h2_pal_result_t h2_bk_tls_tcp_connect_begin(h2_bk_tls_lifetime_t* manager,
+                                            const h2_bk_tls_tcp_ref_t* ref);
+/* Reserve an accepted-fd record before entering native accept. Finish consumes
+ * both refs and atomically checks listener ownership before publication. A late
+ * accepted fd is retained for graceful plain-worker cleanup, never closed on
+ * the timed caller. Finish may retire a closed idle listener when consuming its
+ * last ref, using the same no-FIN proof as tcp_close. On failure out_socket
+ * stays -1. */
+h2_pal_result_t h2_bk_tls_accept_begin(h2_bk_tls_lifetime_t* manager, int fd,
+                                       h2_bk_tls_tcp_ref_t* listener_ref,
+                                       h2_bk_tls_tcp_ref_t* accepted_ref);
+h2_pal_result_t h2_bk_tls_accept_finish(h2_bk_tls_lifetime_t* manager,
+                                        h2_bk_tls_tcp_ref_t* listener_ref,
+                                        h2_bk_tls_tcp_ref_t* accepted_ref,
+                                        int fd, h2_pal_result_t result,
+                                        h2_pal_net_socket_t* out_socket);
 h2_pal_result_t h2_bk_tls_tcp_acquire(h2_bk_tls_lifetime_t* manager, int fd,
                                       h2_bk_tls_tcp_ref_t* out_ref,
                                       bool* out_tls);
+/* Last release may retire a closed idle/listener fd outside the guard, using
+ * tcp_close's no-FIN proof. Connected/TLS release only updates metadata/wakes.
+ */
 h2_pal_result_t h2_bk_tls_tcp_release(h2_bk_tls_lifetime_t* manager,
                                       h2_bk_tls_tcp_ref_t* ref);
 
@@ -151,10 +177,11 @@ h2_pal_result_t h2_bk_tls_legacy_finish(h2_bk_tls_lifetime_t* manager,
                                         h2_bk_tls_tcp_ref_t* ref,
                                         h2_pal_result_t result);
 
-/* Consume caller ownership promptly. Never waits, disposes TLS or calls native
- * close. Already logically closed records are idempotent until reaped.
- * NOT_FOUND identifies an unregistered fd (e.g. UDP); it must not be a stale
- * TCP handle. */
+/* Consume caller ownership promptly. Only an unpinned idle plain fd is closed
+ * inline (the provider must prove its native close cannot wait for FIN). All
+ * other native close/disposal runs on workers. Already logically closed records
+ * are idempotent until reaped. NOT_FOUND identifies an unregistered fd (e.g.
+ * UDP); it must not be a stale TCP handle. */
 h2_pal_result_t h2_bk_tls_tcp_close(h2_bk_tls_lifetime_t* manager, int fd);
 /* Fail closed for unknown/logically closed/failed/canceled/expired records.
  * Call only while the native operation owns its lifetime ref. */
@@ -181,6 +208,11 @@ h2_pal_result_t h2_bk_tls_wrap_bounded(h2_bk_tls_lifetime_t* manager, int fd,
  * slot until caller close. Dynamic roots may be freed after wrap and waiter
  * finish, including ACTIVE jobs; the fd stays pinned during free. */
 bool h2_bk_tls_worker_step(h2_bk_tls_lifetime_t* manager);
+/* Dedicated plain cleanup lane: at most one graceful native close per claim,
+ * outside the guard. Never runs TLS setup, disposal or root allocation/free.
+ * A stalled native close retains its record/generation; callers never join it.
+ */
+bool h2_bk_tls_plain_worker_step(h2_bk_tls_lifetime_t* manager);
 /* Next COPY_READY or unclaimed DONE/waiter deadline, or UINT32_MAX if no timed
  * recheck is needed. Zero means recheck now. Native semaphore waits may use
  * forever only for UINT32_MAX; all other values are finite. wake_worker must

@@ -16,7 +16,7 @@ FAMILY_PROBE = r"""
 #include <string.h>
 #include <unistd.h>
 #define closesocket close
-static int bk_net_track_tcp(int fd) {
+static int bk_net_track_idle_tcp(int fd) {
   assert(fd >= 0);
   return H2_PAL_OK;
 }

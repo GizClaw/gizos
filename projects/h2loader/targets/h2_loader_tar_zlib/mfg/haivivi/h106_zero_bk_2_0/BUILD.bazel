@@ -29,6 +29,7 @@ bk7258_target_task_policy(
     ap_default_policy = "7 0 16384 psram",
     ap_policies = [
         "$bk/net/tls default",
+        "$bk/net/plain-close default",
         "bk/h2loader 6 0 49152 psram",
         "zero_bk/audio/mic 6 1 4096 psram",
         "zero_bk/audio/mix 5 1 4096 psram",

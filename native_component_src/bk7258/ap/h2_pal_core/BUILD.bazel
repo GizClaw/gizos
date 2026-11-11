@@ -76,7 +76,10 @@ cc_test(
 
 h2_tasks(
     name = "tls_tasks",
-    tasks = ["$bk/net/tls"],
+    tasks = [
+        "$bk/net/tls",
+        "$bk/net/plain-close",
+    ],
 )
 
 firmware_native_component(

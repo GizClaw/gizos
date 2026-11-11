@@ -307,7 +307,9 @@ static void native_close(void* raw, int fd) {
 static void* worker_main(void* raw) {
   fixture_t* fixture = raw;
   for (;;) {
-    if (h2_bk_tls_worker_step(&fixture->manager)) continue;
+    if (h2_bk_tls_worker_step(&fixture->manager) ||
+        h2_bk_tls_plain_worker_step(&fixture->manager))
+      continue;
     assert(pthread_mutex_lock(&fixture->events) == 0);
     bool stop = fixture->stop;
     if (!stop) {
@@ -385,7 +387,8 @@ static void fixture_destroy(fixture_t* fixture) {
     assert(result == H2_PAL_OK || result == H2_PAL_ERR_NOT_FOUND);
   }
   if (fixture->worker_count == 0u)
-    while (h2_bk_tls_worker_step(&fixture->manager)) {
+    while (h2_bk_tls_worker_step(&fixture->manager) ||
+           h2_bk_tls_plain_worker_step(&fixture->manager)) {
     }
   for (size_t fd = 0u; fd < TEST_FDS; ++fd) {
     assert(pthread_mutex_lock(&fixture->events) == 0);
@@ -1215,7 +1218,58 @@ static void test_queued_large_allocation_cancel(void) {
   fixture_destroy(&fixture);
 }
 
+static void test_accept_reservation_and_cancellation(void) {
+  fixture_t fixture;
+  fixture_init(&fixture, 0u);
+  open_fd(&fixture, 70, STAGE_NONE);
+  h2_bk_tls_tcp_ref_t listener_ref, accepted_ref;
+  assert(h2_bk_tls_accept_begin(&fixture.manager, 70, &listener_ref,
+                                &accepted_ref) == H2_PAL_OK);
+  for (int fd = 71; fd < 71 + (int)H2_BK_TLS_TCP_MAX - 2; ++fd)
+    open_fd(&fixture, fd, STAGE_NONE);
+  assert(h2_bk_tls_tcp_register(&fixture.manager, 140) == H2_PAL_ERR_NO_SPACE);
+  int out = 123;
+  assert(h2_bk_tls_accept_finish(&fixture.manager, &listener_ref, &accepted_ref,
+                                 -1, H2_PAL_ERR_TIMEOUT,
+                                 &out) == H2_PAL_ERR_TIMEOUT);
+  assert(out == -1 && listener_ref.generation == 0u &&
+         accepted_ref.generation == 0u);
+  open_fd(&fixture, 140, STAGE_NONE);
+  assert(h2_bk_tls_accept_begin(&fixture.manager, 70, &listener_ref,
+                                &accepted_ref) == H2_PAL_ERR_NO_SPACE);
+  /* A failed reservation must not pin the listener. */
+  assert(h2_bk_tls_tcp_mark_idle(&fixture.manager, 70) == H2_PAL_OK);
+  assert(h2_bk_tls_tcp_close(&fixture.manager, 70) == H2_PAL_OK);
+  assert(fixture.plans[70].closes == 1u);
+  fixture_destroy(&fixture);
+
+  fixture_init(&fixture, 0u);
+  open_fd(&fixture, 70, STAGE_NONE);
+  assert(h2_bk_tls_tcp_mark_idle(&fixture.manager, 70) == H2_PAL_OK);
+  assert(h2_bk_tls_accept_begin(&fixture.manager, 70, &listener_ref,
+                                &accepted_ref) == H2_PAL_OK);
+  h2_bk_tls_tcp_ref_t stale = accepted_ref;
+  assert(h2_bk_tls_tcp_close(&fixture.manager, 70) == H2_PAL_OK);
+  fixture.plans[71].live =
+      true; /* Native accept returned this unpublished fd. */
+  assert(h2_bk_tls_accept_finish(&fixture.manager, &listener_ref, &accepted_ref,
+                                 71, H2_PAL_OK, &out) == H2_PAL_ERR_CLOSED);
+  assert(out == -1 && fixture.plans[70].closes == 1u &&
+         fixture.plans[71].closes == 0u);
+  assert(h2_bk_tls_tcp_release(&fixture.manager, &stale) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(!h2_bk_tls_worker_step(&fixture.manager));
+  assert(h2_bk_tls_plain_worker_step(&fixture.manager));
+  assert(!h2_bk_tls_plain_worker_step(&fixture.manager));
+  assert(fixture.plans[70].closes == 1u && fixture.plans[71].closes == 1u);
+  open_fd(&fixture, 71, STAGE_NONE);
+  assert(h2_bk_tls_tcp_release(&fixture.manager, &stale) ==
+         H2_PAL_ERR_INVALID_STATE);
+  fixture_destroy(&fixture);
+}
+
 int main(void) {
+  test_accept_reservation_and_cancellation();
   test_queued_large_allocation_cancel();
   test_large_root_success();
   test_large_allocation_cancel(false);

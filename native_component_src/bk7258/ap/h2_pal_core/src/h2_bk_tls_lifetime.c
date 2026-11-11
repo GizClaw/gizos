@@ -36,6 +36,30 @@ static h2_bk_tls_tcp_record_t* find_ref(h2_bk_tls_lifetime_t* manager,
              : NULL;
 }
 
+/* Caller holds the guard. An idle claim excludes workers and fd registration
+ * until native close has returned and that same generation is retired. */
+static int claim_idle_close(h2_bk_tls_tcp_record_t* tcp) {
+  if (tcp == NULL || tcp->state != H2_BK_TLS_TCP_CLOSED || !tcp->idle ||
+      tcp->tls_owned || tcp->refs != 0u || tcp->reaping || tcp->fd < 0)
+    return -1;
+  tcp->reaping = true;
+  return tcp->fd;
+}
+
+/* Only proven idle/listener closes may execute on the releasing caller. Native
+ * connected close can wait for FIN and always belongs to the plain worker. */
+static void finish_idle_close(h2_bk_tls_lifetime_t* manager,
+                              const h2_bk_tls_tcp_ref_t* ref, int fd) {
+  if (fd < 0) return;
+  manager->ops.close_fd(manager->ops.user, fd);
+  uintptr_t guard = manager->ops.enter(manager->ops.user);
+  h2_bk_tls_tcp_record_t* tcp = &manager->tcp[ref->index];
+  if (tcp->generation == ref->generation && tcp->fd == fd &&
+      tcp->state == H2_BK_TLS_TCP_CLOSED && tcp->reaping)
+    *tcp = (h2_bk_tls_tcp_record_t){.fd = -1, .job = -1};
+  manager->ops.leave(manager->ops.user, guard);
+}
+
 static void abandon_job(h2_bk_tls_tcp_record_t* tcp, h2_bk_tls_job_t* job,
                         h2_pal_result_t result) {
   job->abandoned = true;
@@ -94,6 +118,116 @@ h2_pal_result_t h2_bk_tls_tcp_register(h2_bk_tls_lifetime_t* manager, int fd) {
   return result;
 }
 
+h2_pal_result_t h2_bk_tls_tcp_mark_idle(h2_bk_tls_lifetime_t* manager, int fd) {
+  if (!lifetime_valid(manager)) return H2_PAL_ERR_INVALID_ARG;
+  uintptr_t guard = manager->ops.enter(manager->ops.user);
+  h2_bk_tls_tcp_record_t* tcp = find_tcp(manager, fd);
+  h2_pal_result_t result = H2_PAL_ERR_INVALID_STATE;
+  if (tcp != NULL && tcp->caller_owned && tcp->refs == 0u &&
+      tcp->state == H2_BK_TLS_TCP_PLAIN && !tcp->tls_owned) {
+    tcp->idle = true;
+    result = H2_PAL_OK;
+  }
+  manager->ops.leave(manager->ops.user, guard);
+  return result;
+}
+
+h2_pal_result_t h2_bk_tls_tcp_connect_begin(h2_bk_tls_lifetime_t* manager,
+                                            const h2_bk_tls_tcp_ref_t* ref) {
+  if (!lifetime_valid(manager) || ref == NULL) return H2_PAL_ERR_INVALID_ARG;
+  uintptr_t guard = manager->ops.enter(manager->ops.user);
+  h2_bk_tls_tcp_record_t* tcp = find_ref(manager, ref);
+  h2_pal_result_t result = H2_PAL_ERR_CLOSED;
+  if (tcp != NULL && tcp->caller_owned && tcp->state == H2_BK_TLS_TCP_PLAIN) {
+    tcp->idle = false;
+    result = H2_PAL_OK;
+  }
+  manager->ops.leave(manager->ops.user, guard);
+  return result;
+}
+
+h2_pal_result_t h2_bk_tls_accept_begin(h2_bk_tls_lifetime_t* manager, int fd,
+                                       h2_bk_tls_tcp_ref_t* listener_ref,
+                                       h2_bk_tls_tcp_ref_t* accepted_ref) {
+  if (listener_ref != NULL) clear_ref(listener_ref);
+  if (accepted_ref != NULL) clear_ref(accepted_ref);
+  if (!lifetime_valid(manager) || listener_ref == NULL || accepted_ref == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  uintptr_t guard = manager->ops.enter(manager->ops.user);
+  h2_bk_tls_tcp_record_t* listener = find_tcp(manager, fd);
+  h2_pal_result_t result = H2_PAL_ERR_CLOSED;
+  if (listener != NULL && listener->caller_owned &&
+      listener->state == H2_BK_TLS_TCP_PLAIN) {
+    result = H2_PAL_ERR_NO_SPACE;
+    if (listener->refs != UINT32_MAX) {
+      for (size_t i = 0u; i < H2_BK_TLS_TCP_MAX; ++i) {
+        h2_bk_tls_tcp_record_t* accepted = &manager->tcp[i];
+        if (accepted->state != H2_BK_TLS_TCP_FREE) continue;
+        if (++manager->generation == 0u) ++manager->generation;
+        *accepted =
+            (h2_bk_tls_tcp_record_t){.fd = -1,
+                                     .generation = manager->generation,
+                                     .refs = 1u,
+                                     .job = -1,
+                                     .state = H2_BK_TLS_TCP_ACCEPT_RESERVED};
+        ++listener->refs;
+        *listener_ref =
+            (h2_bk_tls_tcp_ref_t){.generation = listener->generation,
+                                  .index = (size_t)(listener - manager->tcp)};
+        *accepted_ref = (h2_bk_tls_tcp_ref_t){
+            .generation = accepted->generation, .index = i};
+        result = H2_PAL_OK;
+        break;
+      }
+    }
+  }
+  manager->ops.leave(manager->ops.user, guard);
+  return result;
+}
+
+h2_pal_result_t h2_bk_tls_accept_finish(h2_bk_tls_lifetime_t* manager,
+                                        h2_bk_tls_tcp_ref_t* listener_ref,
+                                        h2_bk_tls_tcp_ref_t* accepted_ref,
+                                        int fd, h2_pal_result_t result,
+                                        h2_pal_net_socket_t* out_socket) {
+  if (out_socket != NULL) *out_socket = -1;
+  if (!lifetime_valid(manager) || listener_ref == NULL ||
+      accepted_ref == NULL || out_socket == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  uintptr_t guard = manager->ops.enter(manager->ops.user);
+  h2_bk_tls_tcp_record_t* listener = find_ref(manager, listener_ref);
+  h2_bk_tls_tcp_record_t* accepted = find_ref(manager, accepted_ref);
+  if (listener == NULL || accepted == NULL ||
+      accepted->state != H2_BK_TLS_TCP_ACCEPT_RESERVED) {
+    manager->ops.leave(manager->ops.user, guard);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (!listener->caller_owned) result = H2_PAL_ERR_CLOSED;
+  /* A native close can release its fd just before retiring old metadata.
+   * Never publish a second generation under that still-occupied fd number. */
+  if (fd >= 0 && result == H2_PAL_OK && find_tcp(manager, fd) != NULL)
+    result = H2_PAL_ERR_INVALID_STATE;
+  if (fd >= 0) {
+    accepted->fd = fd;
+    accepted->refs = 0u;
+    accepted->caller_owned = result == H2_PAL_OK;
+    accepted->state =
+        result == H2_PAL_OK ? H2_BK_TLS_TCP_PLAIN : H2_BK_TLS_TCP_CLOSED;
+    if (result == H2_PAL_OK) *out_socket = fd;
+  } else {
+    *accepted = (h2_bk_tls_tcp_record_t){.fd = -1, .job = -1};
+  }
+  --listener->refs;
+  h2_bk_tls_tcp_ref_t idle_ref = *listener_ref;
+  int idle_fd = claim_idle_close(listener);
+  clear_ref(listener_ref);
+  clear_ref(accepted_ref);
+  manager->ops.leave(manager->ops.user, guard);
+  finish_idle_close(manager, &idle_ref, idle_fd);
+  manager->ops.wake_worker(manager->ops.user);
+  return result;
+}
+
 h2_pal_result_t h2_bk_tls_tcp_acquire(h2_bk_tls_lifetime_t* manager, int fd,
                                       h2_bk_tls_tcp_ref_t* out_ref,
                                       bool* out_tls) {
@@ -128,12 +262,16 @@ h2_pal_result_t h2_bk_tls_tcp_release(h2_bk_tls_lifetime_t* manager,
   uintptr_t guard = manager->ops.enter(manager->ops.user);
   h2_bk_tls_tcp_record_t* tcp = find_ref(manager, ref);
   h2_pal_result_t result = H2_PAL_ERR_INVALID_STATE;
+  h2_bk_tls_tcp_ref_t idle_ref = *ref;
+  int idle_fd = -1;
   if (tcp != NULL && tcp->state != H2_BK_TLS_TCP_LEGACY) {
     --tcp->refs;
+    idle_fd = claim_idle_close(tcp);
     clear_ref(ref);
     result = H2_PAL_OK;
   }
   manager->ops.leave(manager->ops.user, guard);
+  finish_idle_close(manager, &idle_ref, idle_fd);
   if (result == H2_PAL_OK) manager->ops.wake_worker(manager->ops.user);
   return result;
 }
@@ -152,6 +290,7 @@ h2_pal_result_t h2_bk_tls_legacy_begin(h2_bk_tls_lifetime_t* manager, int fd,
       result = H2_PAL_ERR_BUSY;
       if (tcp->refs == 0u) {
         tcp->state = H2_BK_TLS_TCP_LEGACY;
+        tcp->tls_owned = true;
         tcp->refs = 1u;
         out_ref->index = (size_t)(tcp - manager->tcp);
         out_ref->generation = tcp->generation;
@@ -193,16 +332,43 @@ h2_pal_result_t h2_bk_tls_tcp_close(h2_bk_tls_lifetime_t* manager, int fd) {
   if (!lifetime_valid(manager) || fd < 0) return H2_PAL_ERR_INVALID_ARG;
   uintptr_t guard = manager->ops.enter(manager->ops.user);
   h2_bk_tls_tcp_record_t* tcp = find_tcp(manager, fd);
+  h2_bk_tls_tcp_ref_t idle_ref = {0};
+  int idle_fd = -1;
   if (tcp != NULL) {
     tcp->caller_owned = false;
     tcp->state = H2_BK_TLS_TCP_CLOSED;
     if (tcp->job >= 0)
       abandon_job(tcp, &manager->jobs[tcp->job], H2_PAL_ERR_CLOSED);
+    idle_ref = (h2_bk_tls_tcp_ref_t){.generation = tcp->generation,
+                                     .index = (size_t)(tcp - manager->tcp)};
+    idle_fd = claim_idle_close(tcp);
   }
   manager->ops.leave(manager->ops.user, guard);
   if (tcp == NULL) return H2_PAL_ERR_NOT_FOUND;
+  finish_idle_close(manager, &idle_ref, idle_fd);
   manager->ops.wake_worker(manager->ops.user);
   return H2_PAL_OK;
+}
+
+bool h2_bk_tls_plain_worker_step(h2_bk_tls_lifetime_t* manager) {
+  if (!lifetime_valid(manager)) return false;
+  uintptr_t guard = manager->ops.enter(manager->ops.user);
+  for (size_t i = 0u; i < H2_BK_TLS_TCP_MAX; ++i) {
+    h2_bk_tls_tcp_record_t* tcp = &manager->tcp[i];
+    if (tcp->state != H2_BK_TLS_TCP_CLOSED || tcp->tls_owned ||
+        tcp->refs != 0u || tcp->reaping)
+      continue;
+    tcp->reaping = true;
+    int fd = tcp->fd;
+    manager->ops.leave(manager->ops.user, guard);
+    manager->ops.close_fd(manager->ops.user, fd);
+    guard = manager->ops.enter(manager->ops.user);
+    *tcp = (h2_bk_tls_tcp_record_t){.fd = -1, .job = -1};
+    manager->ops.leave(manager->ops.user, guard);
+    return true;
+  }
+  manager->ops.leave(manager->ops.user, guard);
+  return false;
 }
 
 bool h2_bk_tls_bio_canceled(h2_bk_tls_lifetime_t* manager, int fd) {
@@ -390,6 +556,7 @@ h2_pal_result_t h2_bk_tls_wrap_bounded(h2_bk_tls_lifetime_t* manager, int fd,
           job->dynamic_ca = NULL;
           tcp->job = (int)i;
           tcp->state = H2_BK_TLS_TCP_CONFIGURING;
+          tcp->tls_owned = true;
           tcp->refs =
               1u; /* Preparation/queued work owns a native lifetime pin. */
           result = H2_PAL_OK;
@@ -524,8 +691,8 @@ bool h2_bk_tls_worker_step(h2_bk_tls_lifetime_t* manager) {
 
   for (size_t i = 0u; i < H2_BK_TLS_TCP_MAX; ++i) {
     h2_bk_tls_tcp_record_t* tcp = &manager->tcp[i];
-    if (tcp->state != H2_BK_TLS_TCP_CLOSED || tcp->refs != 0u ||
-        tcp->context_present || tcp->reaping)
+    if (tcp->state != H2_BK_TLS_TCP_CLOSED || !tcp->tls_owned ||
+        tcp->refs != 0u || tcp->context_present || tcp->reaping)
       continue;
     h2_bk_tls_job_t* job = tcp->job >= 0 ? &manager->jobs[tcp->job] : NULL;
     if (job != NULL &&
