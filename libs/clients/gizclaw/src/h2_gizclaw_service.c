@@ -995,6 +995,7 @@ h2_pal_result_t h2_gizclaw_service_init(
       h2_atomic_ptr_init(&service->media_request, NULL) != H2_ATOMIC_OK ||
       h2_atomic_ptr_init(&service->speech_request, NULL) != H2_ATOMIC_OK ||
       h2_atomic_ptr_init(&service->pcm_track, NULL) != H2_ATOMIC_OK ||
+      h2_atomic_size_init(&service->pcm_downlink_writes, 0u) != H2_ATOMIC_OK ||
       h2_atomic_uint_init(&service->media_callback_refs, 0u) != H2_ATOMIC_OK ||
       h2_atomic_int_init(&service->media_holder_tag, 0) != H2_ATOMIC_OK)
     goto fail;
@@ -1049,6 +1050,7 @@ fail:
   h2_atomic_ptr_destroy(&service->media_request);
   h2_atomic_ptr_destroy(&service->speech_request);
   h2_atomic_ptr_destroy(&service->pcm_track);
+  h2_atomic_size_destroy(&service->pcm_downlink_writes);
   h2_atomic_uint_destroy(&service->media_callback_refs);
   h2_atomic_int_destroy(&service->media_holder_tag);
   h2_pal_mem_free(config->client_config->allocator, service);
@@ -1115,7 +1117,8 @@ h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t* service,
       h2_atomic_load(&service->media_request) != NULL)
     rc = H2_PAL_ERR_INVALID_STATE;
   else {
-    rc = h2_gizclaw_pcm_track_attach_internal(track);
+    rc = h2_gizclaw_pcm_track_attach_internal(track,
+                                              &service->pcm_downlink_writes);
     if (rc == H2_PAL_OK) h2_atomic_store(&service->pcm_track, track);
   }
   unlock_service(service);
@@ -1182,11 +1185,10 @@ static void pcm_track_release(h2_gizclaw_service_t* service) {
 
 size_t h2_gizclaw_service_pcm_downlink_writes_internal(
     h2_gizclaw_service_t* service) {
-  h2_gizclaw_track_t* track = pcm_track_acquire(service);
-  if (track == NULL) return 0u;
-  const size_t writes = h2_gizclaw_pcm_track_downlink_writes_internal(track);
-  pcm_track_release(service);
-  return writes;
+  /* Session attachment pins Service, so observing its lifetime counter needs
+   * neither a fallible PAL lock nor a currently bound Track. */
+  return h2_atomic_load_explicit(&service->pcm_downlink_writes,
+                                 H2_ATOMIC_ACQUIRE);
 }
 
 bool h2_gizclaw_service_pcm_readable_internal(h2_gizclaw_service_t* service) {
@@ -1272,6 +1274,9 @@ h2_pal_result_t h2_gizclaw_service_pcm_write_internal(
   h2_pal_result_t rc = track->vtable->write == NULL
                            ? H2_PAL_ERR_UNSUPPORTED
                            : track->vtable->write(track->user, pcm, len);
+  if (rc == H2_PAL_OK && !h2_gizclaw_pcm_track_owned_internal(track))
+    h2_atomic_fetch_add_explicit(&service->pcm_downlink_writes, len,
+                                 H2_ATOMIC_RELEASE);
   pcm_track_release(service);
   return rc;
 }
@@ -1560,6 +1565,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t* service) {
   h2_atomic_ptr_destroy(&service->media_request);
   h2_atomic_ptr_destroy(&service->speech_request);
   h2_atomic_ptr_destroy(&service->pcm_track);
+  h2_atomic_size_destroy(&service->pcm_downlink_writes);
   h2_atomic_uint_destroy(&service->media_callback_refs);
   h2_atomic_int_destroy(&service->media_holder_tag);
   h2_pal_mem_free(service->config.client_config->allocator, service);

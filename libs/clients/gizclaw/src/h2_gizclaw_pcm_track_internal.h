@@ -3,6 +3,8 @@
 
 #include "h2_gizclaw_pcm_track.h"
 
+#include "h2_atomic.h"
+
 /* Private audio-port implementation. The public Track is opaque; application
  * code cannot supply callbacks. Fault-injection tests use this boundary. */
 typedef struct h2_gizclaw_track_vtable {
@@ -16,9 +18,16 @@ struct h2_gizclaw_track {
   const h2_gizclaw_track_vtable_t* vtable;
 };
 
-/* Service binding pins library-owned Tracks until all accesses have ended. */
-h2_pal_result_t h2_gizclaw_pcm_track_attach_internal(h2_gizclaw_track_t* track);
+/* Service binding pins library-owned Tracks until all accesses have ended.
+ * Optional downlink_activity is the Service lifetime counter, borrowed until
+ * detach. Bind before publishing the Track; quiesce managed captures and all
+ * Service borrowers before detach. NULL selects a standalone Track counter. */
+h2_pal_result_t h2_gizclaw_pcm_track_attach_internal(
+    h2_gizclaw_track_t* track, h2_atomic_size_t* downlink_activity);
 void h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t* track);
+/* Owned Tracks commit the Service activity counter atomically with PCM writes
+ * under the capture mutex. Custom Tracks require Service-side accounting. */
+bool h2_gizclaw_pcm_track_owned_internal(h2_gizclaw_track_t* track);
 /* Drop downlink PCM queued before now. Called by the writer side when a new
  * audio request starts or the current one is cancelled; applied by the
  * consumer on its next read. */

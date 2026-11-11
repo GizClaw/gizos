@@ -283,6 +283,9 @@ struct h2_gizclaw_service {
   size_t downlink_refs;
   h2_atomic_ptr_t speech_request;
   h2_atomic_ptr_t pcm_track;
+  /* Lifetime byte count of accepted downlink PCM, independent of Track binding.
+   * Library-owned Tracks borrow this counter only while bound to Service. */
+  h2_atomic_size_t pcm_downlink_writes;
   /* Protected by mutex. Unset closes admission before waiting for callbacks. */
   size_t pcm_track_refs;
   bool pcm_track_unsetting;

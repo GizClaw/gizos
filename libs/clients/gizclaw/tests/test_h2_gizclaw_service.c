@@ -14422,6 +14422,79 @@ static h2_pal_result_t capture_control_lock(void* user, h2_pal_mutex_t* mutex) {
   return fault->original->vtable->lock_mutex(user, mutex);
 }
 
+static void test_pcm_activity_survives_track_replacement(void) {
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_service(&env, 4u);
+  h2_gizclaw_track_t *first = NULL, *second = NULL;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = service->client_config.allocator,
+      .sync = service->config.sync,
+      .uplink_capacity = 32u,
+      .downlink_capacity = 32u};
+  assert(h2_gizclaw_pcm_track_create(&config, &first) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_create(&config, &second) == H2_PAL_OK);
+  const uint8_t pcm[6] = {1, 2, 3, 4, 5, 6};
+  /* Local ring offsets deliberately differ from the Service counter. */
+  assert(first->vtable->write(first->user, pcm, 4u) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_write_internal(service, pcm, sizeof(pcm)) ==
+         H2_PAL_OK);
+  h2_gizclaw_pcm_capture_id_t id;
+  assert(h2_gizclaw_pcm_capture_begin(first, &id) == H2_PAL_OK);
+  capture_pcm(first, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(first, id) == H2_PAL_OK);
+  h2_gizclaw_pcm_input_t input = {0};
+  assert(h2_gizclaw_service_pcm_adopt_internal(service, &input, first, id) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_prepare(&input, first) == H2_PAL_OK);
+  assert(input.ended && input.end_downlink_write_index == sizeof(pcm));
+  const size_t end_mark = input.end_downlink_write_index;
+  h2_gizclaw_pcm_input_deinit(&input);
+  assert(h2_gizclaw_service_unset_track(service, first) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) == end_mark);
+
+  /* Freeze before binding, then retain audio accepted after the new binding
+   * even if adoption is delayed. Neither local ring origin is comparable. */
+  assert(second->vtable->write(second->user, pcm, 2u) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_capture_begin(second, &id) == H2_PAL_OK);
+  capture_pcm(second, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(second, id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, second) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) == end_mark);
+
+  capture_control_fault_t fault = {.service = service,
+                                   .original = service->config.sync,
+                                   .fail_mutex = service->mutex};
+  h2_pal_sync_vtable_t sync_vtable = *fault.original->vtable;
+  sync_vtable.lock_mutex = capture_control_lock;
+  const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                  .vtable = &sync_vtable};
+  s_capture_control_fault = &fault;
+  service->config.sync = &sync;
+  capture_control_fail_after = 1u;
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) == end_mark);
+  assert(capture_control_fail_after == 1u && fault.failures == 0u);
+  assert(h2_pal_mutex_lock(&sync, service->mutex) == H2_PAL_ERR_IO);
+  service->config.sync = fault.original;
+  s_capture_control_fault = NULL;
+
+  assert(h2_gizclaw_service_pcm_write_internal(service, pcm, 2u) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) ==
+         end_mark + 2u);
+  assert(h2_gizclaw_service_pcm_adopt_internal(service, &input, second, id) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_prepare(&input, second) == H2_PAL_OK);
+  assert(input.ended && input.end_downlink_write_index == end_mark);
+  h2_gizclaw_pcm_input_deinit(&input);
+  assert(h2_gizclaw_service_unset_track(service, second) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&second) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) ==
+         end_mark + 2u);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_speech_adopt_preserves_service_lock_error(void) {
   test_env_t env;
   h2_gizclaw_service_t* service = create_service(&env, 4u);
@@ -17127,6 +17200,7 @@ int main(int argc, char** argv) {
     return 0;
   }
   if (argc == 2 && strcmp(argv[1], "--managed-capture-only") == 0) {
+    test_pcm_activity_survives_track_replacement();
     test_speech_adopt_preserves_service_lock_error();
     test_session_rejects_admitted_speech_input();
     test_conversation_completion_retries_owner_lock();
@@ -17187,6 +17261,7 @@ int main(int argc, char** argv) {
   test_workspace_selection_boundaries();
   test_req_remote_error_mapping();
   test_workspace_pending_error_mapping();
+  test_pcm_activity_survives_track_replacement();
   test_speech_adopt_preserves_service_lock_error();
   test_session_rejects_admitted_speech_input();
   test_conversation_completion_retries_owner_lock();

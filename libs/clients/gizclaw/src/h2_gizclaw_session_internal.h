@@ -64,8 +64,9 @@ h2_pal_result_t h2_gizclaw_conversation_audio_control_internal(
 h2_pal_result_t h2_gizclaw_conversation_audio_end_snapshot_internal(
     h2_gizclaw_conversation_t* conversation, bool* ended, bool* empty,
     size_t* end_downlink_write_index);
-/* Track byte-write position; use the same units as the capture's ACK-time
- * end_downlink_write_index. No Track access escapes the Service borrow. */
+/* Lifetime Service byte-write position, also used for a bound capture's
+ * ACK-time end_downlink_write_index. Session attachment pins the counter's
+ * owner; this atomic observation needs no PAL lock or currently bound Track. */
 size_t h2_gizclaw_service_pcm_downlink_writes_internal(
     h2_gizclaw_service_t* service);
 typedef enum h2_gizclaw_cancel_source {

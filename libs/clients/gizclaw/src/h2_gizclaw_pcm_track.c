@@ -14,6 +14,11 @@ typedef struct pcm_track {
   h2_gizclaw_pcm_ring_t downlink;
   h2_gizclaw_pcm_capture_snapshot_t capture;
   size_t capture_end_downlink_write_index;
+  bool capture_end_service_counter;
+  /* Borrowed only while bound. The release publication also publishes the
+   * binding baseline for a capture ended before this Service was available. */
+  h2_atomic_ptr_t downlink_activity;
+  size_t downlink_activity_start;
   /* Between leases the mutex owner reserves -1 to replace the full-width ID.
    * Positive counts pin Track and the ID while failed submitters publish a
    * return. Reuse/destruction also waits for those publishers to finish. */
@@ -38,6 +43,19 @@ typedef struct pcm_track {
 } pcm_track_t;
 
 static void retire_reader(pcm_track_t* track);
+
+/* The Service counter is stable across Track replacement. A capture that ends
+ * before binding keeps a local mark until adoption translates it to the
+ * binding baseline, before any audio delivered through that binding. */
+static void freeze_capture(pcm_track_t* track) {
+  const h2_atomic_size_t* activity =
+      h2_atomic_load_explicit(&track->downlink_activity, H2_ATOMIC_ACQUIRE);
+  track->capture_end_service_counter = activity != NULL;
+  track->capture_end_downlink_write_index = h2_atomic_load_explicit(
+      activity != NULL ? activity : &track->downlink.write_index,
+      H2_ATOMIC_ACQUIRE);
+  track->capture.state = H2_GIZCLAW_PCM_CAPTURE_FROZEN;
+}
 
 /* The caller holds the Track mutex. Collect an already published reader
  * cancellation first, preserving its DISCARD semantics on producer failure. */
@@ -199,7 +217,18 @@ static h2_pal_result_t write_downlink(void* user, const uint8_t* pcm,
                                       size_t len) {
   pcm_track_t* track = user;
   if ((len & 1u) != 0u) return H2_PAL_ERR_INVALID_ARG;
-  return h2_gizclaw_pcm_ring_write(&track->downlink, pcm, len);
+  h2_pal_result_t rc = track_lock(track);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_gizclaw_pcm_ring_write(&track->downlink, pcm, len);
+  if (rc == H2_PAL_OK) {
+    h2_atomic_size_t* activity =
+        h2_atomic_load_explicit(&track->downlink_activity, H2_ATOMIC_ACQUIRE);
+    if (activity != NULL)
+      h2_atomic_fetch_add_explicit(activity, len, H2_ATOMIC_RELEASE);
+  }
+  /* END freezes the same counter under this mutex, after every earlier
+   * accepted PCM write has committed its activity. */
+  return track_unlock(track, rc);
 }
 
 static const h2_gizclaw_track_vtable_t pcm_vtable = {.read = read_uplink,
@@ -207,6 +236,10 @@ static const h2_gizclaw_track_vtable_t pcm_vtable = {.read = read_uplink,
 
 static pcm_track_t* owned_track(h2_gizclaw_track_t* track) {
   return track != NULL && track->vtable == &pcm_vtable ? track->user : NULL;
+}
+
+bool h2_gizclaw_pcm_track_owned_internal(h2_gizclaw_track_t* base) {
+  return owned_track(base) != NULL;
 }
 
 static h2_pal_result_t capture_lock(h2_gizclaw_track_t* base,
@@ -259,6 +292,7 @@ h2_pal_result_t h2_gizclaw_pcm_track_create(
       h2_atomic_bool_init(&track->legacy_lease, false) != H2_ATOMIC_OK ||
       h2_atomic_bool_init(&track->reader_retire_pending, false) !=
           H2_ATOMIC_OK ||
+      h2_atomic_ptr_init(&track->downlink_activity, NULL) != H2_ATOMIC_OK ||
       h2_atomic_int_init(&track->producer_return_users, 0) != H2_ATOMIC_OK ||
       h2_atomic_int_init(&track->producer_return_result, H2_PAL_OK) !=
           H2_ATOMIC_OK ||
@@ -290,6 +324,7 @@ h2_pal_result_t h2_gizclaw_pcm_track_create(
     h2_atomic_bool_destroy(&track->bound);
     h2_atomic_bool_destroy(&track->legacy_lease);
     h2_atomic_bool_destroy(&track->reader_retire_pending);
+    h2_atomic_ptr_destroy(&track->downlink_activity);
     h2_atomic_int_destroy(&track->producer_return_users);
     h2_atomic_int_destroy(&track->producer_return_result);
     h2_atomic_size_destroy(&track->downlink_discard_until);
@@ -324,6 +359,7 @@ h2_pal_result_t h2_gizclaw_pcm_track_destroy(h2_gizclaw_track_t** base) {
   h2_atomic_bool_destroy(&track->bound);
   h2_atomic_bool_destroy(&track->legacy_lease);
   h2_atomic_bool_destroy(&track->reader_retire_pending);
+  h2_atomic_ptr_destroy(&track->downlink_activity);
   h2_atomic_int_destroy(&track->producer_return_users);
   h2_atomic_int_destroy(&track->producer_return_result);
   h2_atomic_size_destroy(&track->downlink_discard_until);
@@ -353,6 +389,7 @@ h2_pal_result_t h2_gizclaw_pcm_capture_begin(
   discard_uplink(track);
   track->capture = (h2_gizclaw_pcm_capture_snapshot_t){
       .id = id, .state = H2_GIZCLAW_PCM_CAPTURE_CAPTURING, .result = H2_PAL_OK};
+  track->capture_end_service_counter = false;
   *out_id = id;
   return track_unlock(track, H2_PAL_OK);
 }
@@ -415,9 +452,7 @@ h2_pal_result_t h2_gizclaw_pcm_capture_frame_submit(
     if (track->capture.result == H2_PAL_OK) track->capture.result = rc;
     track->capture.state = H2_GIZCLAW_PCM_CAPTURE_FAILED;
   } else if (track->capture.state == H2_GIZCLAW_PCM_CAPTURE_STOPPING) {
-    track->capture_end_downlink_write_index = h2_atomic_load_explicit(
-        &track->downlink.write_index, H2_ATOMIC_ACQUIRE);
-    track->capture.state = H2_GIZCLAW_PCM_CAPTURE_FROZEN;
+    freeze_capture(track);
   }
   return track_unlock(track, rc);
 }
@@ -432,9 +467,7 @@ h2_pal_result_t h2_gizclaw_pcm_capture_end(h2_gizclaw_track_t* base,
       if (track->capture.producer_busy) {
         track->capture.state = H2_GIZCLAW_PCM_CAPTURE_STOPPING;
       } else {
-        track->capture_end_downlink_write_index = h2_atomic_load_explicit(
-            &track->downlink.write_index, H2_ATOMIC_ACQUIRE);
-        track->capture.state = H2_GIZCLAW_PCM_CAPTURE_FROZEN;
+        freeze_capture(track);
       }
       break;
     case H2_GIZCLAW_PCM_CAPTURE_STOPPING:
@@ -533,21 +566,31 @@ void h2_gizclaw_pcm_track_discard_downlink_internal(h2_gizclaw_track_t* base) {
                            H2_ATOMIC_RELEASE);
 }
 
-h2_pal_result_t h2_gizclaw_pcm_track_attach_internal(h2_gizclaw_track_t* base) {
+h2_pal_result_t h2_gizclaw_pcm_track_attach_internal(
+    h2_gizclaw_track_t* base, h2_atomic_size_t* downlink_activity) {
   pcm_track_t* track = owned_track(base);
   if (track == NULL) return H2_PAL_OK;
   bool expected = false;
-  return h2_atomic_compare_exchange_strong_explicit(&track->bound, &expected,
-                                                    true, H2_ATOMIC_ACQ_REL,
-                                                    H2_ATOMIC_ACQUIRE)
-             ? H2_PAL_OK
-             : H2_PAL_ERR_BUSY;
+  if (!h2_atomic_compare_exchange_strong_explicit(
+          &track->bound, &expected, true, H2_ATOMIC_ACQ_REL, H2_ATOMIC_ACQUIRE))
+    return H2_PAL_ERR_BUSY;
+  track->downlink_activity_start =
+      downlink_activity != NULL
+          ? h2_atomic_load_explicit(downlink_activity, H2_ATOMIC_ACQUIRE)
+          : 0u;
+  h2_atomic_store_explicit(&track->downlink_activity, downlink_activity,
+                           H2_ATOMIC_RELEASE);
+  return H2_PAL_OK;
 }
 
 void h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t* base) {
   pcm_track_t* track = owned_track(base);
-  if (track != NULL)
+  if (track != NULL) {
+    /* Service quiesces its borrowers and managed captures before detaching. */
+    h2_atomic_store_explicit(&track->downlink_activity, NULL,
+                             H2_ATOMIC_RELEASE);
     h2_atomic_store_explicit(&track->bound, false, H2_ATOMIC_RELEASE);
+  }
 }
 
 size_t h2_gizclaw_pcm_track_pending_internal(h2_gizclaw_track_t* base) {
@@ -586,6 +629,13 @@ h2_pal_result_t h2_gizclaw_pcm_input_adopt(h2_gizclaw_pcm_input_t* input,
       track->capture.state != H2_GIZCLAW_PCM_CAPTURE_STOPPING &&
       track->capture.state != H2_GIZCLAW_PCM_CAPTURE_FROZEN)
     return track_unlock(track, H2_PAL_ERR_CLOSED);
+  if (track->capture.state == H2_GIZCLAW_PCM_CAPTURE_FROZEN &&
+      !track->capture_end_service_counter &&
+      h2_atomic_load_explicit(&track->downlink_activity, H2_ATOMIC_ACQUIRE) !=
+          NULL) {
+    track->capture_end_downlink_write_index = track->downlink_activity_start;
+    track->capture_end_service_counter = true;
+  }
   if (input->legacy_lease) release_legacy(input, track);
   *input = (h2_gizclaw_pcm_input_t){.track = base,
                                     .tail_allocator = allocator,
