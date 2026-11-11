@@ -42,7 +42,8 @@ struct h2_h2loader_host_serial_connection {
   uint32_t ready_epoch_count;
   int drain_console;
   int retiring;
-  int replayed_ready_lf;
+  int raw_replay_pending;
+  uint8_t raw_replay_byte;
   h2_pal_result_t log_sink_result;
   const h2_h2loader_host_command_request_t* active_request;
   int accepted_notified;
@@ -443,13 +444,14 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
   h2_h2loader_host_serial_connection_t* connection = user;
   static const char marker[] = "H2_LOADER_READY ";
   int reset = 0;
-  /* The filter retains a byte when its callback returns CLOSED. The READY
-   * newline was already delivered; consume its replay without duplicating it.
-   */
-  if (!connection->decoded_log_active && connection->replayed_ready_lf &&
+  const size_t raw_len = len;
+  const uint8_t raw_byte = len != 0u ? data[0] : 0u;
+  /* A nested decoded READY may retire the filter on any already-processed
+   * raw byte. Its replay must neither reach the sink nor alter READY state. */
+  if (!connection->decoded_log_active && connection->raw_replay_pending &&
       len != 0u) {
-    connection->replayed_ready_lf = 0;
-    if (data[0] == '\n') {
+    connection->raw_replay_pending = 0;
+    if (data[0] == connection->raw_replay_byte) {
       ++data;
       --len;
     }
@@ -515,8 +517,10 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
   h2_pal_result_t rc =
       serial_observe_result(connection, reset ? H2_PAL_ERR_CLOSED : H2_PAL_OK);
   if (reset && connection->retiring) return H2_PAL_OK;
-  if (reset && !connection->decoded_log_active && len == 1u && data[0] == '\n')
-    connection->replayed_ready_lf = 1;
+  if (reset && !connection->decoded_log_active && raw_len == 1u) {
+    connection->raw_replay_pending = 1;
+    connection->raw_replay_byte = raw_byte;
+  }
   return rc;
 }
 
@@ -782,6 +786,8 @@ static h2_pal_result_t serial_read_until(
 
 static h2_pal_result_t serial_write_command(
     h2_h2loader_host_serial_connection_t* connection, const char* command) {
+  if (connection->log_sink_result != H2_PAL_OK)
+    return connection->log_sink_result;
   h2_pal_result_t rc = h2_iostreamikcp_write(
       connection->stream, (const uint8_t*)command, strlen(command));
   if (rc != H2_PAL_OK) {
@@ -1020,6 +1026,11 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
                            connection,
                            h2_iostreamikcp_input(connection->stream, NULL, 0u));
     if (cleanup_rc == H2_PAL_ERR_CLOSED) cleanup_rc = H2_PAL_OK;
+    if (cleanup_rc == H2_PAL_OK) {
+      /* Replay may decode DATA even when outbound work prevents ACK grace. */
+      cleanup_rc = serial_drain_decoded_logs(connection);
+      if (cleanup_rc == H2_PAL_ERR_CLOSED) cleanup_rc = H2_PAL_OK;
+    }
     /* A status/stage operation can return as soon as the final response is
      * decoded, while the peer is still waiting for the KCP ACK to cross
      * the AP/CP UART tunnel. Pump a bounded grace period before closing so
@@ -1335,6 +1346,8 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
       asset->bytes == 0u || !h2_h2loader_host_is_sha256(asset->sha256)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (connection->log_sink_result != H2_PAL_OK)
+    return connection->log_sink_result;
   int command_len =
       snprintf(command, sizeof(command), "h2loader stage %llu %s\n",
                (unsigned long long)asset->bytes, asset->sha256);
@@ -1382,6 +1395,8 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
                          "H2_LOADER_STAGE result=", response, sizeof(response),
                          &response_len, connection->command_timeout_ms + 30000u,
                          serial_stage_output, &output, 0u, NULL);
+  if (connection->log_sink_result != H2_PAL_OK)
+    return connection->log_sink_result;
   /* Every payload byte has already been KCP-acknowledged here.  BK can
    * publish the durable candidate but lose the final terminal while its
    * AP/CP UART path is quiesced for Flash sync.  Let the managed operation
@@ -1426,6 +1441,8 @@ h2_pal_result_t h2_h2loader_host_serial_activate(
   rc = serial_read_until(connection, accepted, NULL, response, sizeof(response),
                          &response_len, connection->command_timeout_ms + 30000u,
                          NULL, NULL, 0u, NULL);
+  if (connection->log_sink_result != H2_PAL_OK)
+    return connection->log_sink_result;
   if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
       response_has_complete_marker(response, response_len, accepted)) {
     return H2_PAL_OK;

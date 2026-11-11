@@ -228,7 +228,8 @@ typedef struct h2_h2loader_host_serial_connection_config {
   uint32_t post_command_delay_ms;
   /** Optional borrowed sink for console diagnostics. Sink failures abort the
    * operation and cleanup still releases the connection. CLOSED from this sink
-   * is reported as IO, so it cannot be mistaken for a physical reset. */
+   * is reported as IO, so it cannot be mistaken for a physical reset. The first
+   * failure is latched; reconnect before issuing another command. */
   h2_h2loader_host_transport_log_fn on_log;
   void* log_user;
   /** Leave DTR and RTS untouched for the complete connection lifecycle. */
