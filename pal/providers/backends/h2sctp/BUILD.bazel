@@ -41,7 +41,22 @@ cc_library(
         "include",
         "src",
     ],
-    deps = ["//pal"],
+    deps = [
+        "//libs/sync/atomic",
+        "//pal",
+    ],
+)
+
+# Production assemblies select their atomic implementation. Standalone source
+# tests link the portable C11 implementation through this test-only facade.
+cc_library(
+    name = "h2sctp_host_test",
+    testonly = True,
+    visibility = ["//visibility:private"],
+    deps = [
+        ":h2sctp",
+        "//libs/sync/atomic/providers/c11",
+    ],
 )
 
 cc_test(
@@ -61,7 +76,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_test(
@@ -81,7 +96,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_test(
@@ -101,7 +116,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [
+        ":h2sctp_host_test",
+        "//pal:test_allocator",
+    ],
 )
 
 cc_test(
@@ -121,7 +139,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_test(
@@ -141,7 +159,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_test(
@@ -162,8 +180,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":h2sctp",
-        "//libs/sync/atomic/providers/c11",
+        ":h2sctp_host_test",
         "//pal:test_allocator",
     ],
 )
@@ -185,7 +202,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_test(
@@ -205,7 +222,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_test(
@@ -227,7 +244,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_test(
@@ -241,7 +258,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_test(
@@ -255,12 +272,12 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )
 
 cc_library(
     name = "h2sctp_test_support",
     testonly = True,
     visibility = ["//libs:__subpackages__"],
-    deps = [":h2sctp"],
+    deps = [":h2sctp_host_test"],
 )

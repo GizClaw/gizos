@@ -1,5 +1,6 @@
 #include "h2_sctp_internal.h"
 #include "h2_sctp_test_peer.h"
+#include "h2_test_allocator.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -13,6 +14,7 @@ typedef struct mutex_fixture {
   unsigned locks, unlocks;
   const h2_pal_mem_api_t* mem;
   const h2_pal_crypto_api_t* crypto;
+  h2_sctp_registry_entry_t* releasing_entry;
 } mutex_fixture_t;
 
 static h2_pal_result_t create_mutex(void* user,
@@ -64,6 +66,9 @@ static void* unlocked_alloc(void* user, size_t size) {
 static void unlocked_free(void* user, void* pointer) {
   mutex_fixture_t* fixture = user;
   assert(!fixture->locked);
+  if (fixture->releasing_entry != NULL)
+    assert(!h2_atomic_bool_load(&fixture->releasing_entry->retired,
+                                H2_ATOMIC_ACQUIRE));
   h2_pal_mem_free(fixture->mem, pointer);
 }
 
@@ -135,20 +140,25 @@ static void test_mutex_failures(void) {
                                        1u) == H2_PAL_OK);
   assert(endpoint.reentrant_result == H2_PAL_ERR_BUSY);
   assert(endpoint.reentrant_close_result == H2_PAL_ERR_BUSY);
-  h2_pal_sctp_association_t* retained = endpoint.association;
+  fixture.releasing_entry = endpoint.association->registry_entry;
   fixture.lock_result = H2_PAL_ERR_IO;
-  assert(h2_pal_sctp_association_close(endpoint.api, &endpoint.association) ==
-         H2_PAL_ERR_IO);
-  assert(endpoint.association == retained && fixture.unlocks == 1u);
-  assert(h2_sctp_destroy(&endpoint.provider) == H2_PAL_ERR_INVALID_STATE);
-  fixture.lock_result = H2_PAL_OK;
+  unsigned callbacks = endpoint.state_events;
+  unsigned locks = fixture.locks;
   assert(h2_pal_sctp_association_close(endpoint.api, &endpoint.association) ==
          H2_PAL_OK);
-  assert(endpoint.association == NULL && fixture.unlocks == 2u);
+  assert(endpoint.association == NULL && fixture.unlocks == 1u);
+  assert(fixture.locks == locks + 1u && endpoint.state_events == callbacks);
+  assert(h2_atomic_bool_load(&fixture.releasing_entry->retired,
+                             H2_ATOMIC_ACQUIRE));
+  fixture.releasing_entry = NULL;
+  /* Only the provider and its metadata survive, with no callback borrow. */
+  assert(endpoint.allocation_count - endpoint.free_count == live + 1u);
   h2_sctp_t* retained_provider = endpoint.provider;
   fixture.destroy_result = H2_PAL_ERR_IO;
   assert(h2_sctp_destroy(&endpoint.provider) == H2_PAL_ERR_IO);
   assert(endpoint.provider == retained_provider && fixture.live);
+  assert(endpoint.provider->registry == NULL);
+  assert(endpoint.provider->association_count == 0u);
   assert(endpoint.allocation_count - endpoint.free_count == live);
   fixture.destroy_result = H2_PAL_OK;
   h2_sctp_test_endpoint_deinit(&endpoint);
@@ -157,8 +167,101 @@ static void test_mutex_failures(void) {
   assert(endpoint.packet_allocation_count == endpoint.packet_free_count);
 }
 
+/* Callback owners and per-association allocators may die immediately after
+ * close, even if registry collection has to wait for another association. */
+static void test_close_detaches_borrowed_storage(void) {
+  for (unsigned collect = 0u; collect < 4u; ++collect) {
+    h2_sctp_test_endpoint_t endpoint;
+    assert(h2_sctp_test_endpoint_init(&endpoint, H2_PAL_SCTP_ROLE_PASSIVE,
+                                      5001u, 5000u, 256u, 1024u, 4096u,
+                                      4096u) == H2_PAL_OK);
+    h2_pal_sctp_association_config_t config = endpoint.association->config;
+    h2_sctp_test_endpoint_deinit(&endpoint);
+    mutex_fixture_t fixture = {0};
+    const h2_pal_sync_vtable_t sync_vtable = {
+        .create_mutex = create_mutex,
+        .destroy_mutex = destroy_mutex,
+        .lock_mutex = lock_mutex,
+        .unlock_mutex = unlock_mutex,
+    };
+    const h2_pal_sync_api_t sync = {&fixture, &sync_vtable};
+    const h2_sctp_config_t provider_config = {.mem = &endpoint.mem_api,
+                                              .crypto = &endpoint.crypto_api};
+    assert(h2_sctp_create_with_sync(&provider_config, &sync,
+                                    &endpoint.provider) == H2_PAL_OK);
+    endpoint.api = h2_sctp_api(endpoint.provider);
+    h2_pal_sctp_association_t* survivor = NULL;
+    if (collect == 1u || collect == 3u)
+      assert(h2_pal_sctp_association_create(endpoint.api, &config, &survivor) ==
+             H2_PAL_OK);
+    h2_test_allocator_t arena;
+    h2_test_allocator_init(&arena);
+    h2_sctp_test_endpoint_t* callback_owner =
+        h2_pal_mem_alloc(&arena.api, sizeof(*callback_owner));
+    assert(callback_owner != NULL);
+    memset(callback_owner, 0, sizeof(*callback_owner));
+    config.callbacks.user = callback_owner;
+    config.allocator = &arena.api;
+    /* A registry allocation failure must release every unpublished association
+     * allocation too, while leaving the existing provider usable. */
+    endpoint.fail_allocation_at = endpoint.allocation_count + 1u;
+    assert(h2_pal_sctp_association_create(endpoint.api, &config,
+                                          &endpoint.association) ==
+           H2_PAL_ERR_NO_MEMORY);
+    assert(endpoint.association == NULL && h2_atomic_load(&arena.live) == 1u);
+    endpoint.fail_allocation_at = 0u;
+    assert(h2_pal_sctp_association_create(endpoint.api, &config,
+                                          &endpoint.association) == H2_PAL_OK);
+    assert(h2_pal_sctp_association_start(endpoint.api, endpoint.association,
+                                         1u) == H2_PAL_OK);
+    assert(callback_owner->state_events == 1u);
+    assert(h2_atomic_load(&arena.live) > 1u);
+    fixture.lock_result = H2_PAL_ERR_IO;
+    unsigned locks = fixture.locks;
+    unsigned unlocks = fixture.unlocks;
+    assert(h2_pal_sctp_association_close(endpoint.api, &endpoint.association) ==
+           H2_PAL_OK);
+    assert(endpoint.association == NULL);
+    assert(fixture.locks == locks + 1u && fixture.unlocks == unlocks);
+    assert(h2_atomic_load(&arena.live) == 1u);
+    assert(callback_owner->state_events == 1u);
+    h2_pal_mem_free(&arena.api, callback_owner);
+    assert(h2_atomic_load(&arena.live) == 0u);
+    h2_test_allocator_destroy(&arena);
+    memset(&arena, 0, sizeof(arena));
+    /* From here both the callback context and allocator API are gone. Only
+     * metadata allocated by provider_config.mem can remain in the registry. */
+    config.allocator = NULL;
+    config.callbacks.user = &endpoint;
+    if (collect == 0u) {
+      fixture.lock_result = H2_PAL_OK;
+      assert(h2_pal_sctp_association_create(
+                 endpoint.api, &config, &endpoint.association) == H2_PAL_OK);
+      assert(endpoint.provider->association_count == 1u);
+      assert(h2_pal_sctp_association_close(endpoint.api,
+                                           &endpoint.association) == H2_PAL_OK);
+    } else if (collect == 1u || collect == 3u) {
+      if (collect == 3u) {
+        /* Destruction rejects an unrelated live association after collecting
+         * the retired entry, without needing the persistently failed lock. */
+        assert(h2_sctp_destroy(&endpoint.provider) == H2_PAL_ERR_INVALID_STATE);
+        assert(endpoint.provider->association_count == 1u);
+      }
+      fixture.lock_result = H2_PAL_OK;
+      assert(h2_pal_sctp_association_close(endpoint.api, &survivor) ==
+             H2_PAL_OK);
+      assert(endpoint.provider->registry == NULL);
+    }
+    h2_sctp_test_endpoint_deinit(&endpoint);
+    assert(!fixture.live && endpoint.provider == NULL);
+    assert(endpoint.allocation_count ==
+           endpoint.free_count + endpoint.allocation_failure_count);
+  }
+}
+
 int main(void) {
   test_mutex_failures();
+  test_close_detaches_borrowed_storage();
   h2_sctp_test_endpoint_t endpoint;
   assert(h2_sctp_test_endpoint_init(&endpoint, H2_PAL_SCTP_ROLE_PASSIVE, 5001u,
                                     5000u, 256u, 1024u, 4096u,

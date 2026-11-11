@@ -12,7 +12,7 @@ set(H2_SCTP_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 if(DEFINED H2_REPOSITORY_ROOT)
   set(H2_SCTP_REPO_ROOT "${H2_REPOSITORY_ROOT}")
 else()
-  get_filename_component(H2_SCTP_REPO_ROOT "${H2_SCTP_ROOT}/../.." ABSOLUTE)
+  get_filename_component(H2_SCTP_REPO_ROOT "${H2_SCTP_ROOT}/../../../.." ABSOLUTE)
 endif()
 
 add_library(h2sctp STATIC
@@ -27,6 +27,8 @@ target_include_directories(h2sctp
   PUBLIC
     "${H2_SCTP_ROOT}/include"
     "${H2_SCTP_REPO_ROOT}/pal/include"
-  PRIVATE "${H2_SCTP_ROOT}/src")
+  PRIVATE
+    "${H2_SCTP_ROOT}/src"
+    "${H2_SCTP_REPO_ROOT}/libs/sync/atomic/include")
 target_compile_features(h2sctp PUBLIC c_std_11)
 target_compile_options(h2sctp PRIVATE -Wall -Wextra -Werror)

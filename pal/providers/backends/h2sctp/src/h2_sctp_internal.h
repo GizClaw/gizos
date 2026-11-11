@@ -3,6 +3,8 @@
 
 #include "h2_sctp.h"
 
+#include "h2_atomic.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -115,6 +117,14 @@ typedef struct h2_sctp_rx_fragment {
   struct h2_sctp_rx_fragment* next;
 } h2_sctp_rx_fragment_t;
 
+/* Provider-owned metadata never points back into an association or its
+ * allocator/callback context. Only retired is written without the registry
+ * mutex; links are changed under that mutex or during quiescent destruction. */
+typedef struct h2_sctp_registry_entry {
+  h2_atomic_bool_t retired;
+  struct h2_sctp_registry_entry* next;
+} h2_sctp_registry_entry_t;
+
 struct h2_sctp {
   const h2_pal_mem_api_t* mem;
   const h2_pal_mem_api_t* packet_mem;
@@ -123,7 +133,7 @@ struct h2_sctp {
   h2_pal_sctp_api_t api;
   const h2_pal_sync_api_t* sync;
   h2_pal_mutex_t* registry_mutex;
-  struct h2_pal_sctp_association* associations;
+  h2_sctp_registry_entry_t* registry;
   size_t association_count;
 };
 
@@ -218,7 +228,7 @@ struct h2_pal_sctp_association {
   h2_sctp_tx_fragment_t* tx_fragments_tail;
   h2_sctp_rx_fragment_t* rx_fragments;
   h2_sctp_rx_fragment_t* rx_fragments_tail;
-  struct h2_pal_sctp_association* next;
+  h2_sctp_registry_entry_t* registry_entry;
   uint64_t sack_deadline_ms;
 };
 
