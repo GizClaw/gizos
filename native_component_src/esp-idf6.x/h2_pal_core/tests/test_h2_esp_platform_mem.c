@@ -82,6 +82,16 @@ static h2_esp_platform_resource_stats_t stats(void) {
   assert(h2_esp_platform_get_resource_stats(&value) == H2_PAL_OK);
   return value;
 }
+/* Compare public observations, not unspecified structure padding. */
+static void assert_stats_equal(const h2_pal_mem_stats_t* actual,
+                               const h2_pal_mem_stats_t* expected) {
+  assert(actual->total_bytes == expected->total_bytes);
+  assert(actual->free_bytes == expected->free_bytes);
+  assert(actual->minimum_free_bytes == expected->minimum_free_bytes);
+  assert(actual->largest_free_block_bytes ==
+         expected->largest_free_block_bytes);
+  assert(actual->unavailable_fields == expected->unavailable_fields);
+}
 static void test_whole_region_observations(void) {
   const h2_pal_mem_api_t* apis[] = {
       h2_esp_platform_default_allocator(),
@@ -111,7 +121,7 @@ static void test_whole_region_observations(void) {
       stats_queries = 0u;
       assert(h2_pal_mem_get_stats(api, regions[j], &value) == H2_PAL_OK);
       assert(stats_queries == 4u);
-      assert(memcmp(&value, &observed_stats, sizeof(value)) == 0);
+      assert_stats_equal(&value, &observed_stats);
       assert(stats().allocations == 1u && stats().allocation_bytes == 32u);
     }
     h2_pal_mem_stats_t value;
@@ -131,15 +141,14 @@ static void test_whole_region_observations(void) {
   stats_queries = 0u;
   memset(&value, 0xa5, sizeof(value));
   assert(api->vtable->get_stats(api->user, regions[2], &value) == H2_PAL_OK);
-  assert(stats_queries == 1u && memcmp(&value, &empty, sizeof(value)) == 0);
+  assert(stats_queries == 1u);
+  assert_stats_equal(&value, &empty);
   observed_stats.total_bytes = 65536u;
   expected_stats_caps = masks[0];
   stats_queries = 0u;
   assert(h2_pal_mem_get_stats(api, regions[0], &value) == H2_PAL_OK);
   assert(stats_queries == 4u);
-  assert(value.total_bytes == 65536u && value.free_bytes == 0u &&
-         value.minimum_free_bytes == 0u &&
-         value.largest_free_block_bytes == 0u);
+  assert_stats_equal(&value, &observed_stats);
 }
 
 static void test_optional_external_allocator(void) {
