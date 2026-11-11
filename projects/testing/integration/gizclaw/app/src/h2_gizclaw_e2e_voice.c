@@ -1162,12 +1162,21 @@ static int verify_track_replacement(voice_state_t* state, const char* id) {
   while (rc == H2_PAL_OK) {
     rc = h2_gizclaw_req_wait(state->play, 10u);
     if (rc == H2_PAL_OK) break;
-    if (rc != H2_PAL_ERR_TIMEOUT) return rc;
+    if (rc != H2_PAL_ERR_TIMEOUT) break;
     rc = within(state, started, HISTORY_TIMEOUT_MS);
     if (rc == H2_PAL_OK) rc = step(state);
   }
   if (rc == H2_PAL_OK) rc = drain_completed_output(state);
-  if (rc != H2_PAL_OK) return rc;
+  if (rc != H2_PAL_OK) {
+    h2_gizclaw_e2e_emit(
+        "H2_GIZCLAW_E2E stage=voice-replace-progress rc=%d "
+        "replacement_bytes=%zu block_playback=%d old_reads=%zu old_writes=%zu\n",
+        rc, h2_atomic_load(&state->replacement_written),
+        h2_atomic_load(&state->block_playback) ? 1 : 0,
+        h2_atomic_load(&state->read_attempts) - reads,
+        h2_atomic_load(&state->write_attempts) - writes);
+    return rc;
+  }
   h2_gizclaw_req_release(state->play);
   state->play = NULL;
   rc = evidence(

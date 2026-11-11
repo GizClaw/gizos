@@ -44,6 +44,22 @@ cc_library(
     deps = ["//pal"],
 )
 
+# Reuse the public two-endpoint transport fixture at the H2Peer event boundary.
+cc_library(
+    name = "test_peer",
+    testonly = True,
+    srcs = ["tests/h2_sctp_test_peer.c"],
+    hdrs = [
+        "src/h2_sctp_internal.h",
+        "tests/h2_sctp_test_peer.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    visibility = ["//pal/providers/backends/h2peer:__pkg__"],
+    deps = [":h2sctp"],
+)
+
 cc_test(
     name = "association_test",
     srcs = [

@@ -20,6 +20,7 @@ go_library(
     srcs = [
         "conformance.go",
         "main.go",
+        "rtp_timing.go",
     ],
     importpath = "h2vivi/firmwares/tools/webrtc-test-server",
     target_compatible_with = select({
@@ -59,6 +60,7 @@ go_test(
     srcs = [
         "conformance_test.go",
         "main_test.go",
+        "rtp_timing_test.go",
     ],
     embed = [":server_lib"],
     target_compatible_with = select({

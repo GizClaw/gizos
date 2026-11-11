@@ -113,6 +113,27 @@ cc_test(
     deps = [":pal_core"],
 )
 
+# Compile the TLS provider with controlled setup/handshake timing while the real
+# platform owns socket tokens, locks, allocations, and cleanup.
+cc_test(
+    name = "tls_timeout_test",
+    srcs = [
+        "src/h2_windows_internal.h",
+        "src/h2_windows_net_tls.c",
+        "tests/h2_windows_tls_timeout_hooks.h",
+        "tests/test_h2_windows_tls_timeout.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "/FIpal/providers/platforms/windows/pal_core/tests/h2_windows_tls_timeout_hooks.h",
+    ],
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":pal_core",
+        "//pal/providers/backends/wolfssl",
+    ],
+)
+
 cc_test(
     name = "netif_event_test",
     srcs = [

@@ -1,6 +1,7 @@
 #include "h2_app_test_mem.h"
 #include "h2_app_test_time.h"
 #include "h2_gizclaw_e2e_voice.h"
+#include "h2_gizclaw_e2e_output.h"
 #include "h2_app_test_audio_fake.h"
 #include "h2_desktop_platform.h"
 
@@ -782,6 +783,18 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
   return H2_PAL_OK;
 }
 
+static unsigned s_replacement_failure_records;
+static void capture_replacement_failure(void* user, const char* record,
+                                        size_t len) {
+  (void)user;
+  static const char prefix[] =
+      "H2_GIZCLAW_E2E stage=voice-replace-progress rc=-4 ";
+  assert(record != NULL);
+  if (len >= sizeof(prefix) - 1u &&
+      !memcmp(record, prefix, sizeof(prefix) - 1u))
+    ++s_replacement_failure_records;
+}
+
 static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   assert(test_mem.live_blocks == 0u && s_track == NULL &&
          s_conversation == NULL);
@@ -839,9 +852,17 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
     assert(h2_gizclaw_session_select(fixture->actors[0].session, &selection,
                                      30000u) == H2_PAL_OK);
   }
+  if (mode == REPLACEMENT_PLAY_ERROR) {
+    s_replacement_failure_records = 0u;
+    h2_gizclaw_e2e_set_evidence_observer(capture_replacement_failure, NULL);
+  }
   if (s_emit) printf("H2_GIZCLAW_E2E stage=coverage-begin case=voice\n");
   int rc = s_group ? h2_gizclaw_e2e_run_group_talk(fixture)
                    : h2_gizclaw_e2e_run_voice(fixture);
+  if (mode == REPLACEMENT_PLAY_ERROR) {
+    h2_gizclaw_e2e_set_evidence_observer(NULL, NULL);
+    assert(s_replacement_failure_records == 1u);
+  }
   assert(rc == expected);
   assert(strcmp(fixture->workspace_name, "test-workspace") == 0);
   assert(fixture->workspace_created && fixture->friend_group_created);

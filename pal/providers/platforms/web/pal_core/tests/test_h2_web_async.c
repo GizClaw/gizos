@@ -25,7 +25,9 @@ EM_JS(void, test_install_fetch,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
   h2WebMain(context, result, completion, ["i32", "pointer"], null,
     (delay_ms, ticks_address) => {
+  Module['h2TestFetchCalls'] = 0;
   globalThis.fetch = (url, options) => new Promise((resolve, reject) => {
+    ++Module['h2TestFetchCalls'];
     const initial_ticks = ticks_address ? Atomics.load(HEAP32, ticks_address >>> 2) : 0;
     // Complete only after a separate PAL task makes progress during this
     // request. A stalled task still fails through the request's own timeout.
@@ -44,6 +46,14 @@ EM_JS(void, test_install_fetch,
     });
   });
 });
+});
+/* clang-format on */
+
+/* clang-format off */
+EM_JS(void, test_fetch_calls,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => Module['h2TestFetchCalls']);
 });
 /* clang-format on */
 
@@ -132,6 +142,31 @@ static void run(void* user) {
   CHECK(response.status_code == 418 && response.body_len == 11u &&
         memcmp(response.body, "teapot body", 11u) == 0);
   CHECK(state->ticks - ticks >= 5);
+  h2_pal_http_response_free(http, &response);
+
+  // Fetch cannot independently time DNS, TCP and TLS establishment.
+  h2_pal_http_request_t connect_limited = request;
+  connect_limited.connect_timeout_ms = 50;
+  CHECK(h2_pal_http_request(http, &connect_limited, &response) ==
+        H2_PAL_ERR_UNSUPPORTED);
+  CHECK(response.body == NULL && response.status_code == 0);
+  CHECK(response.rejection == H2_PAL_HTTP_REJECTION_CONNECT_TIMEOUT);
+  CHECK(h2_web_main_call(test_fetch_calls, NULL).i32 == 1);
+  h2_pal_http_response_free(http, &response);
+  CHECK(response.rejection == H2_PAL_HTTP_REJECTION_NONE);
+  // Unsupported routing must not be mistaken for connection-budget rejection.
+  connect_limited.interface_name = "eth0";
+  CHECK(h2_pal_http_request(http, &connect_limited, &response) ==
+        H2_PAL_ERR_UNSUPPORTED);
+  CHECK(response.rejection == H2_PAL_HTTP_REJECTION_NONE);
+  CHECK(h2_web_main_call(test_fetch_calls, NULL).i32 == 1);
+  h2_pal_http_response_free(http, &response);
+  connect_limited.interface_name = NULL;
+  // A caller may explicitly use its own watchdog instead of connection timing.
+  connect_limited.connect_timeout_ms = 0;
+  CHECK(h2_pal_http_request(http, &connect_limited, &response) == H2_PAL_OK);
+  CHECK(response.status_code == 418 && response.body_len == 11u);
+  CHECK(h2_web_main_call(test_fetch_calls, NULL).i32 == 2);
   h2_pal_http_response_free(http, &response);
 
   // A timeout aborts the pending fetch without freezing the ticker.

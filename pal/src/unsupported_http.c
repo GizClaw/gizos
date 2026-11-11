@@ -6,14 +6,14 @@ static int unsupported_http_request(void* p0, const h2_pal_http_request_t* p1,
                                     h2_pal_http_response_t* p2) {
   (void)p0;
   (void)p1;
-  (void)p2;
+  h2_pal_http_response_reset(p2);
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
 static void unsupported_http_response_free(void* p0,
                                            h2_pal_http_response_t* p1) {
   (void)p0;
-  (void)p1;
+  h2_pal_http_response_reset(p1);
 }
 
 static const h2_pal_http_vtable_t unsupported_http_vtable = {
