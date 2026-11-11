@@ -315,6 +315,19 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//libs/alipay:sdk_repository.bzl%alipay_sdk": {
+      "general": {
+        "bzlTransitiveDigest": "cTK1hW8VecobCECQZQUfo6B7U75tITlZxkb5aMFRD6s=",
+        "usagesDigest": "pdfEF87exoHF8hgCWvxI2SLDW6MDux7JoUN+3IN6gso=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "alipay_sdk": {
+            "repoRuleId": "@@//libs/alipay:sdk_repository.bzl%_alipay_sdk",
+            "attributes": {}
+          }
+        }
+      }
+    },
     "//tools/bazel:go_host_toolchains.bzl%go_host_toolchains": {
       "general": {
         "bzlTransitiveDigest": "0/ucshTZjGqyJ/esN1xgxq/2tN9K0SVn1AsH9fOTO+U=",
