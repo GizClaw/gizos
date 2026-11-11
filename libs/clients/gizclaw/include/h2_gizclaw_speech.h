@@ -38,10 +38,11 @@ typedef struct h2_gizclaw_speech_extract_response {
  * Track's actual PCM format; no microphone or codec is created by this API.
  * service_audio_end freezes the current PCM prefix, drains it and sends EOS.
  * wait alone does not end recording. timeout_ms bounds the network operation.
- * Terminal detach retires PCM after worker references drain and the audio
- * mutex is acquired. A failed audio lock retains the request and input for a
- * paced uplink/Service-stop retry; no unprotected input cleanup occurs. Once
- * retired, handles and undispatched completions retain only the response.
+ * Terminal detach retires PCM under the audio and input mutexes, waiting for
+ * in-flight input operations. Workers retain the request for their lifetime.
+ * Failed lock acquisition retains the request and input for a paced uplink/
+ * Service-stop retry; no unprotected input cleanup occurs. Once retired,
+ * handles and undispatched completions retain only the response.
  */
 h2_pal_result_t h2_gizclaw_req_create_speech_transcribe(
     h2_gizclaw_service_t* service, uint64_t identity,

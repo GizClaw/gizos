@@ -46,6 +46,11 @@ typedef void (*h2_gizclaw_operation_completion_fn)(
 bool h2_gizclaw_cancel_requested(const h2_gizclaw_cancel_token_t* cancel_token);
 h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t* operation);
 void h2_gizclaw_operation_release(h2_gizclaw_operation_t* operation);
+/* Completion-dispatch task only: retain the terminal operation and its user
+ * for one retry on a later poll. Call before changing ownership or invoking
+ * application callbacks, then return without releasing any resources. */
+void h2_gizclaw_operation_retry_completion_internal(
+    h2_gizclaw_operation_t* operation, h2_pal_result_t result);
 
 typedef struct h2_gizclaw_req_vtable {
   h2_pal_result_t (*do_request)(h2_gizclaw_req_t* request, void* user,
@@ -154,7 +159,7 @@ void h2_gizclaw_req_sink_done_internal(h2_gizclaw_req_t* request,
                                        h2_pal_result_t result);
 
 /* PCM is supplied only by the Service uplink task, not application code.
- * admit reserves the route; detach waits for in-flight uplink references.
+ * admit reserves the route; detach quiesces input access under its owner lock.
  * Closing input queues protocol EOS after the last accepted slot drains. */
 h2_pal_result_t h2_gizclaw_req_create_pcm_stream_internal(
     h2_gizclaw_service_t* service, uint64_t identity,
@@ -205,6 +210,7 @@ struct h2_gizclaw_operation {
   bool dispatch_queued;
   bool notification_driven;
   bool ready;
+  h2_pal_result_t completion_retry_result; /* Completion-dispatch task only. */
   h2_gizclaw_cancel_token_t cancel_token;
   h2_gizclaw_operation_t* next_pending;
   uint64_t trace_sequence;
@@ -241,6 +247,9 @@ struct h2_gizclaw_service {
   void* original_cancel_user;
   h2_pal_queue_t* request_queue;
   h2_pal_queue_t* dispatch_queue;
+  /* A dequeued terminal completion retains both operation references until a
+   * later poll can acquire its owner's lock. Only the dispatch task writes. */
+  h2_atomic_ptr_t pending_completion;
   h2_pal_mutex_t* mutex;
   h2_pal_mutex_t* audio_mutex;
   h2_gizclaw_conversation_t* audio_conversation;

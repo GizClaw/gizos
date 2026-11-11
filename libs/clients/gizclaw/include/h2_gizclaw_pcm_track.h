@@ -93,7 +93,9 @@ h2_pal_result_t h2_gizclaw_pcm_capture_frame_acquire(
  * appending PCM. END accepts the one leased frame then freezes; DISCARD drops
  * it and succeeds. A matching lease is released even on error. Submitting
  * without a lease returns INVALID_STATE; a stale submit never releases a newer
- * capture's lease. */
+ * capture's lease. After a synchronization failure, the matching lease return
+ * is collected by the next successfully synchronized Track operation; do not
+ * submit the frame again. */
 h2_pal_result_t h2_gizclaw_pcm_capture_frame_submit(
     h2_gizclaw_track_t* track, h2_gizclaw_pcm_capture_id_t id,
     const uint8_t* pcm, size_t len, h2_pal_result_t producer_result);

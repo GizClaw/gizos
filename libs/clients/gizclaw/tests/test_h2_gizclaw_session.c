@@ -100,7 +100,8 @@ static h2_pal_result_t cleanup_sleep(void* user, uint32_t ms) {
   return cleanup_sleep_error;
 }
 static unsigned closed_after_reload;
-static h2_gizclaw_conversation_completion_fn terminal;
+static h2_gizclaw_session_conversation_completion_fn session_terminal;
+static h2_gizclaw_session_input_end_notify_fn input_end_notify;
 static h2_gizclaw_conversation_callback_fn on_event;
 static void* terminal_user;
 static unsigned terminal_count;
@@ -111,7 +112,34 @@ static h2_gizclaw_track_t* adopted_track;
 static h2_gizclaw_pcm_capture_id_t adopted_id;
 static h2_pal_result_t audio_adopt_result, audio_snapshot_result;
 static bool audio_capture_ended, audio_capture_empty;
+static size_t audio_end_downlink_write_index, pcm_downlink_writes;
+static unsigned audio_snapshots;
+static h2_runtime_t* notified_runtime;
+static unsigned runtime_notifies;
+static bool inspect_runtime_notify;
+static uint64_t notified_revision;
 static char audio_error_log[H2_PAL_LOG_MESSAGE_MAX];
+
+h2_pal_result_t h2_runtime_notify(h2_runtime_t* runtime) {
+  assert(runtime == notified_runtime);
+  ++runtime_notifies;
+  if (inspect_runtime_notify) {
+    /* Only the notification-only callback enables this reentrant read. State
+     * publication legitimately wakes while holding the Session mutex. */
+    h2_gizclaw_session_state_t state;
+    assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
+    notified_revision = state.revision;
+  }
+  return H2_PAL_OK;
+}
+
+/* Deliver copied terminal facts at the fake Service boundary, as the real
+ * Service does before retiring a generation. No snapshot is needed here. */
+static void terminal(void* user, h2_gizclaw_conversation_t* conversation,
+                     const h2_gizclaw_operation_result_t* result) {
+  session_terminal(user, conversation, result, audio_capture_ended,
+                   audio_capture_empty, audio_end_downlink_write_index);
+}
 static h2_atomic_int_t last_cancel_source;
 static unsigned end_noops;
 static size_t downlink_writes;
@@ -153,21 +181,36 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
                : h2_gizclaw_service_audio_end(service);
 }
 
-h2_pal_result_t h2_gizclaw_service_audio_adopt_internal(
-    h2_gizclaw_service_t* service, h2_gizclaw_track_t* track,
-    h2_gizclaw_pcm_capture_id_t id, h2_gizclaw_audio_log_t* log) {
-  assert(service == (h2_gizclaw_service_t*)&lists && log != NULL);
+h2_pal_result_t h2_gizclaw_conversation_audio_control_internal(
+    h2_gizclaw_conversation_t* conversation, bool start,
+    h2_gizclaw_track_t* track, h2_gizclaw_pcm_capture_id_t id,
+    h2_gizclaw_audio_log_t* log, bool* out_empty) {
+  assert(conversation == (h2_gizclaw_conversation_t*)&conversations);
+  assert(log != NULL);
+  if (id == 0u) {
+    assert(track == NULL);
+    return h2_gizclaw_service_audio_control_internal(
+        (h2_gizclaw_service_t*)&lists, start, log, out_empty);
+  }
+  assert(start && track != NULL);
   ++audio_adopts;
   adopted_track = track;
   adopted_id = id;
+  if (audio_adopt_result == H2_PAL_OK) {
+    audio_capture_ended = audio_capture_empty = false;
+    audio_end_downlink_write_index = 0u;
+  }
   return audio_adopt_result;
 }
 
-h2_pal_result_t h2_gizclaw_service_audio_end_snapshot_internal(
-    h2_gizclaw_service_t* service, bool* ended, bool* empty) {
-  assert(service == (h2_gizclaw_service_t*)&lists);
+h2_pal_result_t h2_gizclaw_conversation_audio_end_snapshot_internal(
+    h2_gizclaw_conversation_t* conversation, bool* ended, bool* empty,
+    size_t* end_downlink_write_index) {
+  assert(conversation == (h2_gizclaw_conversation_t*)&conversations);
+  ++audio_snapshots;
   *ended = audio_capture_ended;
   *empty = audio_capture_empty;
+  *end_downlink_write_index = audio_end_downlink_write_index;
   return audio_snapshot_result;
 }
 
@@ -415,16 +458,18 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
                                                parameters, true);
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_conversation_create(
+h2_pal_result_t h2_gizclaw_conversation_create_session_internal(
     h2_gizclaw_service_t* service, h2_gizclaw_str_t workspace,
     h2_gizclaw_conversation_callback_fn callback,
-    h2_gizclaw_conversation_completion_fn completion, void* user,
+    h2_gizclaw_session_conversation_completion_fn completion,
+    h2_gizclaw_session_input_end_notify_fn notify, void* user,
     h2_gizclaw_conversation_t** out) {
   (void)service;
   (void)workspace;
   on_event = callback;
   (void)h2_atomic_fetch_add(&conversations, 1u);
-  terminal = completion;
+  session_terminal = completion;
+  input_end_notify = notify;
   terminal_user = user;
   *out = (h2_gizclaw_conversation_t*)&conversations;
   return H2_PAL_OK;
@@ -484,6 +529,13 @@ static h2_gizclaw_session_config_t session_config(size_t tag_count) {
   adopted_id = 0u;
   audio_adopt_result = audio_snapshot_result = H2_PAL_OK;
   audio_capture_ended = audio_capture_empty = false;
+  audio_end_downlink_write_index = pcm_downlink_writes = 0u;
+  audio_snapshots = runtime_notifies = 0u;
+  inspect_runtime_notify = false;
+  notified_revision = 0u;
+  notified_runtime = NULL;
+  session_terminal = NULL;
+  input_end_notify = NULL;
   releases = text_sends = 0u;
   text_result = H2_PAL_OK;
   text_seen[0] = '\0';
@@ -1338,7 +1390,7 @@ static void test_audio_adopt_and_automatic_end_snapshot(void) {
     assert(audio_starts == 0u && audio_ends == 0u);
     assert(snapshot().revision == state.revision);
     if (mode == 0u) {
-      ++downlink_writes;
+      ++pcm_downlink_writes;
       assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
     }
     const h2_gizclaw_operation_result_t sent = {
@@ -1404,6 +1456,215 @@ static void test_managed_end_before_snapshot_and_completion(void) {
       teardown();
     }
   }
+}
+
+typedef struct captured_completion {
+  unsigned count;
+  h2_gizclaw_operation_result_t result;
+} captured_completion_t;
+
+static void capture_completion(void* user,
+                               h2_gizclaw_conversation_t* conversation,
+                               const h2_gizclaw_operation_result_t* result) {
+  (void)conversation;
+  captured_completion_t* captured = user;
+  ++captured->count;
+  captured->result = *result;
+}
+
+static void test_managed_completion_keeps_terminal_result(void) {
+  for (unsigned empty = 0u; empty < 2u; ++empty) {
+    for (unsigned failure = 0u; failure < 3u; ++failure) {
+      setup(1u);
+      assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+      h2_gizclaw_conversation_t* conversation = NULL;
+      captured_completion_t captured = {0};
+      assert(h2_gizclaw_session_conversation_create(
+                 session, &selection, 1000u, NULL, capture_completion,
+                 &captured, &conversation) == H2_PAL_OK);
+      char track_token;
+      assert(h2_gizclaw_session_audio_adopt(
+                 session, (h2_gizclaw_track_t*)&track_token, 31u) == H2_PAL_OK);
+      audio_capture_ended = true;
+      audio_capture_empty = empty != 0u;
+      audio_snapshot_result = H2_PAL_ERR_IO;
+      const unsigned queries = audio_snapshots;
+      const h2_gizclaw_operation_result_t result = {
+          .identity = 31u,
+          .terminal_kind = failure == 2u ? H2_GIZCLAW_OPERATION_CANCELED
+                                         : H2_GIZCLAW_OPERATION_FINISHED,
+          .result = failure == 0u   ? H2_PAL_OK
+                    : failure == 1u ? H2_PAL_ERR_FORMAT
+                                    : H2_PAL_ERR_CLOSED,
+          .error_code = "original-code",
+          .retryable = true};
+      terminal(terminal_user, conversation, &result);
+      assert(audio_snapshots == queries && captured.count == 1u);
+      assert(captured.result.identity == result.identity &&
+             captured.result.terminal_kind == result.terminal_kind &&
+             captured.result.result == result.result &&
+             strcmp(captured.result.error_code, result.error_code) == 0 &&
+             captured.result.retryable == result.retryable);
+      const h2_gizclaw_session_state_t state = snapshot();
+      assert(!state.conversation_input_open &&
+             state.last_error == result.result);
+      assert(strcmp(state.error_code, result.error_code) == 0 &&
+             state.retryable);
+      assert(state.conversation ==
+             (failure == 0u && empty == 0u
+                  ? H2_GIZCLAW_SESSION_CONVERSATION_WAITING
+                  : H2_GIZCLAW_SESSION_CONVERSATION_IDLE));
+      h2_gizclaw_session_conversation_release(session, conversation);
+      teardown();
+    }
+  }
+}
+
+typedef struct adopt_start_context {
+  h2_gizclaw_track_t* track;
+  h2_pal_result_t result;
+} adopt_start_context_t;
+
+static void adopt_start_thread(void* user) {
+  adopt_start_context_t* context = user;
+  context->result =
+      h2_gizclaw_session_audio_adopt(session, context->track, 42u);
+}
+
+static void test_managed_restart_without_snapshot(void) {
+  const h2_pal_task_api_t* tasks = h2_desktop_platform_task_api();
+  for (unsigned adopt = 0u; adopt < 2u; ++adopt) {
+    setup(1u);
+    assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+    h2_gizclaw_conversation_t* conversation = NULL;
+    assert(h2_gizclaw_session_conversation_create(session, &selection, 1000u,
+                                                  NULL, NULL, NULL,
+                                                  &conversation) == H2_PAL_OK);
+    char track_token;
+    adopt_start_context_t context = {.track = (h2_gizclaw_track_t*)&track_token,
+                                     .result = H2_PAL_ERR_IO};
+    assert(h2_gizclaw_session_audio_adopt(session, context.track, 41u) ==
+           H2_PAL_OK);
+    const h2_gizclaw_session_state_t before = snapshot();
+    audio_capture_ended = true;
+    audio_snapshot_result = H2_PAL_ERR_IO;
+    /* Failed reconciliation cannot mutate state, cancel, or replace input. */
+    assert(h2_gizclaw_session_audio_adopt(session, context.track, 42u) ==
+           H2_PAL_ERR_IO);
+    assert(h2_gizclaw_session_audio_start(session) == H2_PAL_ERR_IO);
+    assert(!h2_atomic_load(&cancel_entered) && audio_starts == 0u &&
+           audio_adopts == 1u);
+    audio_snapshot_result = H2_PAL_OK;
+    audio_capture_ended = false;
+    assert(snapshot().revision == before.revision);
+    audio_capture_ended = true;
+    h2_pal_task_t* task = NULL;
+    h2_pal_result_t start_result = H2_PAL_ERR_IO;
+    assert(h2_pal_task_start(tasks, NULL,
+                             adopt != 0u ? adopt_start_thread : start_thread,
+                             adopt != 0u ? (void*)&context : &start_result,
+                             &task) == H2_PAL_OK);
+    /* No snapshot between producer acknowledgement and this start. The old
+     * generation still requires cancellation dispatch before replacement. */
+    wait_flag(&cancel_entered);
+    assert(h2_atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
+    assert(audio_adopts == 1u && audio_starts == 0u);
+    const h2_gizclaw_operation_result_t canceled = {
+        .terminal_kind = H2_GIZCLAW_OPERATION_CANCELED,
+        .result = H2_PAL_ERR_CLOSED};
+    terminal(terminal_user, conversation, &canceled);
+    assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
+    assert((adopt != 0u ? context.result : start_result) == H2_PAL_OK);
+    assert(audio_adopts == (adopt != 0u ? 2u : 1u) &&
+           audio_starts == (adopt != 0u ? 0u : 1u));
+    assert(snapshot().conversation_input_open &&
+           snapshot().conversation ==
+               H2_GIZCLAW_SESSION_CONVERSATION_RECORDING);
+    terminal(terminal_user, conversation, &canceled);
+    h2_gizclaw_session_conversation_release(session, conversation);
+    teardown();
+  }
+}
+
+static void test_managed_wait_uses_acknowledged_watermark(void) {
+  for (unsigned dispatch_first = 0u; dispatch_first < 2u; ++dispatch_first) {
+    for (unsigned reply_after_ack = 0u; reply_after_ack < 2u;
+         ++reply_after_ack) {
+      setup(1u);
+      assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+      h2_gizclaw_conversation_t* conversation = NULL;
+      assert(h2_gizclaw_session_conversation_create(
+                 session, &selection, 1000u, NULL, NULL, NULL, &conversation) ==
+             H2_PAL_OK);
+      char track_token;
+      assert(h2_gizclaw_session_audio_adopt(
+                 session, (h2_gizclaw_track_t*)&track_token, 51u) == H2_PAL_OK);
+      pcm_downlink_writes = 640u; /* Sound while RECORDING/STOPPING. */
+      assert(snapshot().conversation ==
+             H2_GIZCLAW_SESSION_CONVERSATION_RECORDING);
+      audio_capture_ended = true;
+      audio_end_downlink_write_index = pcm_downlink_writes;
+      if (reply_after_ack != 0u) pcm_downlink_writes += 640u;
+      const h2_gizclaw_operation_result_t sent = {
+          .terminal_kind = H2_GIZCLAW_OPERATION_FINISHED, .result = H2_PAL_OK};
+      if (dispatch_first != 0u) terminal(terminal_user, conversation, &sent);
+      /* Both a delayed first read and completion must retain the ACK position,
+       * excluding earlier sound while preserving any already-arrived reply. */
+      assert(snapshot().conversation ==
+             (reply_after_ack != 0u ? H2_GIZCLAW_SESSION_CONVERSATION_IDLE
+                                    : H2_GIZCLAW_SESSION_CONVERSATION_WAITING));
+      if (dispatch_first == 0u) terminal(terminal_user, conversation, &sent);
+      if (reply_after_ack == 0u) {
+        pcm_downlink_writes += 640u;
+        assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+      }
+      /* Text returns to the legacy Conversation counter's units. */
+      assert(h2_gizclaw_session_send_text(
+                 session, (h2_gizclaw_str_t){"hi", 2u}) == H2_PAL_OK);
+      assert(snapshot().conversation ==
+             H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+      ++downlink_writes;
+      assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+      terminal(terminal_user, conversation, &sent);
+      h2_gizclaw_session_conversation_release(session, conversation);
+      teardown();
+    }
+  }
+}
+
+static void test_input_end_notification_only_wakes_session_runtime(void) {
+  h2_gizclaw_session_config_t config = session_config(1u);
+  char runtime_token;
+  notified_runtime = (h2_runtime_t*)&runtime_token;
+  config.runtime = notified_runtime;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  h2_gizclaw_conversation_t* conversation = NULL;
+  assert(h2_gizclaw_session_conversation_create(session, &selection, 1000u,
+                                                NULL, NULL, NULL,
+                                                &conversation) == H2_PAL_OK);
+  char track_token;
+  assert(h2_gizclaw_session_audio_adopt(
+             session, (h2_gizclaw_track_t*)&track_token, 61u) == H2_PAL_OK);
+  const h2_gizclaw_session_state_t before = snapshot();
+  const unsigned wakes = runtime_notifies, queries = audio_snapshots;
+  assert(input_end_notify != NULL);
+  input_end_notify(terminal_user);
+  assert(runtime_notifies == wakes + 1u && audio_snapshots == queries);
+  /* A Runtime sink can reenter a copied Session read: the notification callback
+   * neither holds its mutex nor publishes owner-thread state. */
+  inspect_runtime_notify = true;
+  input_end_notify(terminal_user);
+  inspect_runtime_notify = false;
+  assert(runtime_notifies == wakes + 2u &&
+         notified_revision == before.revision);
+  assert(snapshot().revision == before.revision);
+  audio_capture_ended = true;
+  const h2_gizclaw_operation_result_t sent = {
+      .terminal_kind = H2_GIZCLAW_OPERATION_FINISHED, .result = H2_PAL_OK};
+  terminal(terminal_user, conversation, &sent);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  teardown();
 }
 
 /* Mirrors the synchronous delete RPC's Session participation at the typed
@@ -2092,6 +2353,10 @@ int main(void) {
   test_control_boundaries();
   test_audio_adopt_and_automatic_end_snapshot();
   test_managed_end_before_snapshot_and_completion();
+  test_managed_completion_keeps_terminal_result();
+  test_managed_restart_without_snapshot();
+  test_managed_wait_uses_acknowledged_watermark();
+  test_input_end_notification_only_wakes_session_runtime();
   test_run_stop();
   test_workspace_delete();
   test_pending_workspace_recovery();
@@ -2337,6 +2602,11 @@ size_t h2_gizclaw_conversation_downlink_writes_internal(
     h2_gizclaw_service_t* service) {
   (void)service;
   return downlink_writes;
+}
+size_t h2_gizclaw_service_pcm_downlink_writes_internal(
+    h2_gizclaw_service_t* service) {
+  assert(service == (h2_gizclaw_service_t*)&lists);
+  return pcm_downlink_writes;
 }
 void h2_gizclaw_conversation_downlink_interrupt_internal(
     h2_gizclaw_service_t* service) {

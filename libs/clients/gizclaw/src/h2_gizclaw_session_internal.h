@@ -36,10 +36,38 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
 h2_pal_result_t h2_gizclaw_service_audio_adopt_internal(
     h2_gizclaw_service_t* service, h2_gizclaw_track_t* track,
     h2_gizclaw_pcm_capture_id_t id, h2_gizclaw_audio_log_t* log);
-/* Observe producer-acknowledged END on the current conversation, retaining
- * final managed facts after request retirement until the route starts again. */
-h2_pal_result_t h2_gizclaw_service_audio_end_snapshot_internal(
-    h2_gizclaw_service_t* service, bool* ended, bool* empty);
+/* Session-only callbacks preserve copied terminal input facts after request
+ * retirement. The notification callback only wakes the Session's Runtime; it
+ * must not acquire the Session mutex or mutate Session state. It runs after the
+ * input lock is released while the request's media lease still pins the route,
+ * callback context and Session lifetime. */
+typedef void (*h2_gizclaw_session_conversation_completion_fn)(
+    void* user, h2_gizclaw_conversation_t* conversation,
+    const h2_gizclaw_operation_result_t* result, bool ended, bool empty,
+    size_t end_downlink_write_index);
+typedef void (*h2_gizclaw_session_input_end_notify_fn)(void* user);
+h2_pal_result_t h2_gizclaw_conversation_create_session_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t workspace,
+    h2_gizclaw_conversation_callback_fn callback,
+    h2_gizclaw_session_conversation_completion_fn completion,
+    h2_gizclaw_session_input_end_notify_fn input_end_notify, void* user,
+    h2_gizclaw_conversation_t** out_conversation);
+/* Validate the expected route under audio_mutex through admission. An admitted
+ * Speech request returns BUSY without consuming capture or changing its input.
+ * NULL track/id select legacy input; nonzero id selects capture adoption. */
+h2_pal_result_t h2_gizclaw_conversation_audio_control_internal(
+    h2_gizclaw_conversation_t* conversation, bool start,
+    h2_gizclaw_track_t* track, h2_gizclaw_pcm_capture_id_t id,
+    h2_gizclaw_audio_log_t* log, bool* out_empty);
+/* Observe acknowledged END on the expected conversation, retaining final
+ * managed facts after request retirement until that route starts again. */
+h2_pal_result_t h2_gizclaw_conversation_audio_end_snapshot_internal(
+    h2_gizclaw_conversation_t* conversation, bool* ended, bool* empty,
+    size_t* end_downlink_write_index);
+/* Track byte-write position; use the same units as the capture's ACK-time
+ * end_downlink_write_index. No Track access escapes the Service borrow. */
+size_t h2_gizclaw_service_pcm_downlink_writes_internal(
+    h2_gizclaw_service_t* service);
 typedef enum h2_gizclaw_cancel_source {
   H2_GIZCLAW_CANCEL_UNSPECIFIED,
   H2_GIZCLAW_CANCEL_API,

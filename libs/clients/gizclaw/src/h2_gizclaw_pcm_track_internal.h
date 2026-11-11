@@ -25,6 +25,9 @@ void h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t* track);
 void h2_gizclaw_pcm_track_discard_downlink_internal(h2_gizclaw_track_t* track);
 /* Snapshot only while the single uplink consumer is paused. */
 size_t h2_gizclaw_pcm_track_pending_internal(h2_gizclaw_track_t* track);
+/* Monotonic downlink byte counter; no Track mutex needed. Caller pins Track.
+ * Non-owned Tracks return zero. */
+size_t h2_gizclaw_pcm_track_downlink_writes_internal(h2_gizclaw_track_t* track);
 /* True while a managed window or either lease prevents Track unbinding/reuse.
  * Non-owned Tracks return false. Mutex errors conservatively report busy. */
 bool h2_gizclaw_pcm_capture_busy_internal(h2_gizclaw_track_t* track);
@@ -34,12 +37,14 @@ bool h2_gizclaw_pcm_capture_busy_internal(h2_gizclaw_track_t* track);
  * their ring access with capture control and producer frame submission.
  * Legacy inputs pin the ring until tail save or deinit. Saved tails own their
  * storage; prepare/read/deinit then need no live Track. Do not copy live
- * inputs. Deinit always clears the input: managed Mutex failures transfer
- * retirement to Track-owned atomic state, collected on the next successful
- * Track lock. */
+ * inputs. Deinit always clears the input: managed retirement is published to
+ * Track-owned atomic state without locking, then collected on the next
+ * successful Track lock. No Track access follows retirement publication. */
 typedef struct h2_gizclaw_pcm_input {
   h2_gizclaw_track_t* track;
-  size_t begin, end;
+  size_t begin,
+      end; /* Legacy ring watermarks; managed inputs use Track state. */
+  size_t end_downlink_write_index; /* Managed producer-acknowledged END. */
   uint8_t* tail;
   const h2_pal_mem_api_t* tail_allocator;
   size_t tail_len, tail_offset;

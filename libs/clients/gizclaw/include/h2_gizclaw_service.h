@@ -293,7 +293,9 @@ void h2_gizclaw_req_release(h2_gizclaw_req_t* request);
  * This API has one consumer and must not be called recursively. A callback may
  * create/submit requests, cancel or release handles, and stop the service. It
  * must not recursively call poll or deinit. Pending callbacks remain valid
- * after stop and are drained by poll.
+ * after stop and are drained by poll. If a completion cannot acquire its
+ * cleanup lock, poll returns that PAL error and retains the completion and its
+ * resources for a later poll; no application callback is dispatched for it.
  */
 h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
                                         size_t max_callbacks,

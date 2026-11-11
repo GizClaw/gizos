@@ -466,7 +466,7 @@ static void capture_before_adopt(const h2_pal_mem_api_t* allocator,
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_ERR_BUSY);
   assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_ERR_CLOSED);
   assert(h2_gizclaw_pcm_input_adopt(&input, track, allocator, id) == H2_PAL_OK);
-  assert(input.capture_id == id && input.begin == 4u);
+  assert(input.capture_id == id && input.track == track);
   assert(h2_gizclaw_pcm_input_adopt(&input, track, allocator, id) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_input_adopt(&other, track, allocator, id) ==
          H2_PAL_ERR_BUSY);
@@ -940,10 +940,7 @@ typedef struct reader_deinit_gate {
   h2_gizclaw_pcm_input_t* input;
   bool entered, resume;
 } reader_deinit_gate_t;
-static _Thread_local bool reader_deinit_task;
-
-static void pause_reader_deinit(void* user) {
-  if (!reader_deinit_task) return;
+static void* reader_deinit_entry(void* user) {
   reader_deinit_gate_t* gate = user;
   assert(pthread_mutex_lock(&gate->mutex) == 0);
   gate->entered = true;
@@ -951,12 +948,7 @@ static void pause_reader_deinit(void* user) {
   while (!gate->resume)
     assert(pthread_cond_wait(&gate->progress, &gate->mutex) == 0);
   assert(pthread_mutex_unlock(&gate->mutex) == 0);
-}
-static void* reader_deinit_entry(void* user) {
-  reader_deinit_gate_t* gate = user;
-  reader_deinit_task = true;
   h2_gizclaw_pcm_input_deinit(gate->input);
-  reader_deinit_task = false;
   return NULL;
 }
 
@@ -973,9 +965,6 @@ static void capture_reader_deinit_pins_track(const h2_pal_mem_api_t* allocator,
   reader_deinit_gate_t gate = {.input = &input};
   assert(pthread_mutex_init(&gate.mutex, NULL) == 0);
   assert(pthread_cond_init(&gate.progress, NULL) == 0);
-  sync_state_t* state = sync->user;
-  state->before_lock = pause_reader_deinit;
-  state->before_lock_user = &gate;
   pthread_t reader;
   assert(pthread_create(&reader, NULL, reader_deinit_entry, &gate) == 0);
   assert(pthread_mutex_lock(&gate.mutex) == 0);
@@ -983,8 +972,8 @@ static void capture_reader_deinit_pins_track(const h2_pal_mem_api_t* allocator,
     assert(pthread_cond_wait(&gate.progress, &gate.mutex) == 0);
   assert(pthread_mutex_unlock(&gate.mutex) == 0);
 
-  /* Deinit is paused before acquiring the PAL mutex. Another Track user must
-   * not collect its lease and allow destruction while it still needs Track. */
+  /* The reader has not published retirement yet. Keep its lifetime pin until
+   * deinit transfers that ownership to a future Track lock. */
   const h2_gizclaw_pcm_capture_snapshot_t snapshot =
       capture_snapshot(track, id, H2_GIZCLAW_PCM_CAPTURE_FROZEN);
   assert(snapshot.consumer_busy && snapshot.pending_bytes == sizeof(pcm));
@@ -995,11 +984,15 @@ static void capture_reader_deinit_pins_track(const h2_pal_mem_api_t* allocator,
   gate.resume = true;
   assert(pthread_cond_broadcast(&gate.progress) == 0);
   assert(pthread_mutex_unlock(&gate.mutex) == 0);
+  /* Collection/destruction may finish before the deinit task returns. */
+  for (size_t spin = 0u; track != NULL && spin < 100000u; ++spin) {
+    h2_pal_result_t rc = h2_gizclaw_pcm_track_destroy(&track);
+    assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_BUSY);
+    if (track != NULL) sched_yield();
+  }
+  assert(track == NULL);
   assert(pthread_join(reader, NULL) == 0);
-  state->before_lock = NULL;
-  state->before_lock_user = NULL;
   assert(input.track == NULL && !input.active && input.capture_id == 0u);
-  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
   assert(pthread_cond_destroy(&gate.progress) == 0);
   assert(pthread_mutex_destroy(&gate.mutex) == 0);
 }
@@ -1034,9 +1027,13 @@ static void capture_reader_retirement_retry(const h2_pal_mem_api_t* allocator,
                  track, id, NULL, 0u, H2_PAL_ERR_IO) == H2_PAL_ERR_IO);
     state->fail_locks = 1u;
     h2_gizclaw_pcm_input_deinit(input);
-    assert(state->fail_locks == 0u && input->track == NULL && !input->active &&
+    assert(state->fail_locks == 1u && input->track == NULL && !input->active &&
            input->capture_id == 0u);
     free(input); /* No subsequent operation may inspect this retired owner. */
+    h2_gizclaw_pcm_capture_snapshot_t failed_snapshot;
+    assert(h2_gizclaw_pcm_capture_snapshot(track, id, &failed_snapshot) ==
+           H2_PAL_ERR_IO);
+    assert(state->fail_locks == 0u); /* Deinit never attempts a PAL lock. */
     if (mode == 1u || mode == 3u || mode == 4u) {
       assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
       continue;
@@ -1103,6 +1100,185 @@ static void legacy_reader_retirement_retry(const h2_pal_mem_api_t* allocator,
       assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
       assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
     }
+    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  }
+}
+
+static void capture_submit_lock_failure(const h2_pal_mem_api_t* allocator,
+                                        const h2_pal_sync_api_t* sync) {
+  sync_state_t* state = sync->user;
+  h2_gizclaw_track_t* track = capture_track(allocator, sync, 8u);
+  h2_gizclaw_pcm_capture_id_t id, next;
+  const uint8_t pcm[2] = {0x32, 0x71};
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_OK);
+  state->fail_locks = 1u;
+  assert(h2_gizclaw_pcm_capture_frame_submit(track, id, pcm, sizeof(pcm),
+                                             H2_PAL_OK) == H2_PAL_ERR_IO);
+  assert(state->fail_locks == 0u);
+  /* The producer has returned its one frame and will not submit again. */
+  assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
+  h2_gizclaw_pcm_capture_snapshot_t snapshot;
+  assert(h2_gizclaw_pcm_capture_snapshot(track, id, &snapshot) == H2_PAL_OK);
+  assert(snapshot.state == H2_GIZCLAW_PCM_CAPTURE_DISCARDED &&
+         !snapshot.producer_busy && !snapshot.consumer_busy &&
+         snapshot.pending_bytes == 0u && snapshot.captured_bytes == 0u);
+  assert(h2_gizclaw_pcm_capture_begin(track, &next) == H2_PAL_OK && next != id);
+  assert(h2_gizclaw_pcm_capture_discard(track, next) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+}
+
+static void capture_submit_lock_failure_states(
+    const h2_pal_mem_api_t* allocator, const h2_pal_sync_api_t* sync) {
+  sync_state_t* state = sync->user;
+  const uint8_t pcm[2] = {1, 2};
+  /* Capturing, END, DISCARD, and reader retirement before/after the failure. */
+  for (unsigned mode = 0u; mode < 5u; ++mode) {
+    h2_gizclaw_track_t* track = capture_track(allocator, sync, 8u);
+    h2_gizclaw_pcm_capture_id_t id, next;
+    h2_gizclaw_pcm_input_t input = {0};
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+    if (mode >= 3u)
+      assert(h2_gizclaw_pcm_input_adopt(&input, track, allocator, id) ==
+             H2_PAL_OK);
+    capture_submit(track, id, pcm, sizeof(pcm));
+    assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_OK);
+    if (mode == 1u) assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+    if (mode == 2u)
+      assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
+    if (mode == 3u) h2_gizclaw_pcm_input_deinit(&input);
+    state->fail_locks = 1u;
+    assert(h2_gizclaw_pcm_capture_frame_submit(track, id, pcm, sizeof(pcm),
+                                               H2_PAL_OK) == H2_PAL_ERR_IO);
+    if (mode == 4u) h2_gizclaw_pcm_input_deinit(&input);
+    h2_gizclaw_pcm_capture_snapshot_t snapshot =
+        capture_snapshot(track, id,
+                         mode >= 2u ? H2_GIZCLAW_PCM_CAPTURE_DISCARDED
+                                    : H2_GIZCLAW_PCM_CAPTURE_FAILED);
+    assert(!snapshot.producer_busy && !snapshot.consumer_busy &&
+           snapshot.captured_bytes == sizeof(pcm));
+    assert(snapshot.pending_bytes == (mode >= 2u ? 0u : sizeof(pcm)));
+    assert(snapshot.result == (mode >= 2u ? H2_PAL_OK : H2_PAL_ERR_IO));
+    assert(!h2_gizclaw_pcm_capture_busy_internal(track));
+    assert(h2_gizclaw_pcm_capture_begin(track, &next) == H2_PAL_OK &&
+           next != id);
+    assert(h2_gizclaw_pcm_capture_frame_acquire(track, next) == H2_PAL_OK);
+    const h2_gizclaw_pcm_capture_id_t stale[] = {id,
+                                                 next + (UINT64_C(1) << 32)};
+    for (size_t which = 0u; which < 2u; ++which) {
+      state->fail_locks = 1u;
+      assert(h2_gizclaw_pcm_capture_frame_submit(track, stale[which], pcm,
+                                                 sizeof(pcm),
+                                                 H2_PAL_OK) == H2_PAL_ERR_IO);
+      snapshot =
+          capture_snapshot(track, next, H2_GIZCLAW_PCM_CAPTURE_CAPTURING);
+      assert(snapshot.producer_busy && snapshot.result == H2_PAL_OK &&
+             snapshot.pending_bytes == 0u && snapshot.captured_bytes == 0u);
+      assert(h2_gizclaw_pcm_capture_frame_submit(track, stale[which], pcm,
+                                                 sizeof(pcm), H2_PAL_OK) ==
+             H2_PAL_ERR_NOT_FOUND);
+    }
+    assert(h2_gizclaw_pcm_capture_frame_submit(
+               track, next, NULL, 0u, H2_PAL_ERR_TIMEOUT) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_capture_discard(track, next) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  }
+}
+
+static void failed_capture_legacy_reuse(const h2_pal_mem_api_t* allocator,
+                                        const h2_pal_sync_api_t* sync) {
+  const uint8_t old_pcm[2] = {0xee, 0xff};
+  const uint8_t fresh[4] = {1, 2, 3, 4};
+  for (unsigned adopted = 0u; adopted < 2u; ++adopted) {
+    /* START with DISCARD before/after prepare, raw writer, and raw reader. */
+    for (unsigned mode = 0u; mode < 4u; ++mode) {
+      h2_gizclaw_track_t* track = capture_track(allocator, sync, 8u);
+      h2_gizclaw_pcm_capture_id_t id;
+      h2_gizclaw_pcm_input_t managed = {0}, legacy = {0};
+      assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+      if (adopted)
+        assert(h2_gizclaw_pcm_input_adopt(&managed, track, allocator, id) ==
+               H2_PAL_OK);
+      capture_submit(track, id, old_pcm, sizeof(old_pcm));
+      assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_OK);
+      assert(h2_gizclaw_pcm_capture_frame_submit(
+                 track, id, NULL, 0u, H2_PAL_ERR_IO) == H2_PAL_ERR_IO);
+      h2_gizclaw_pcm_capture_snapshot_t snapshot =
+          capture_snapshot(track, id, H2_GIZCLAW_PCM_CAPTURE_FAILED);
+      assert(snapshot.result == H2_PAL_ERR_IO &&
+             snapshot.pending_bytes == sizeof(old_pcm));
+      if (adopted) h2_gizclaw_pcm_input_deinit(&managed);
+      uint8_t out[4] = {0};
+      size_t len = 99u;
+      if (mode < 2u) {
+        assert(h2_gizclaw_pcm_input_start(&legacy, track, allocator) ==
+               H2_PAL_OK);
+      } else if (mode == 3u) {
+        assert(track->vtable->read(track->user, out, sizeof(old_pcm), &len) ==
+               H2_PAL_ERR_WOULD_BLOCK);
+        assert(len == 0u && out[0] == 0u);
+      }
+      assert(h2_gizclaw_pcm_track_write(track, fresh, sizeof(fresh)) ==
+             H2_PAL_OK);
+      if (mode == 1u)
+        assert(h2_gizclaw_pcm_input_prepare(&legacy, track) == H2_PAL_OK);
+      assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
+      if (mode < 2u) {
+        assert(h2_gizclaw_pcm_input_prepare(&legacy, track) == H2_PAL_OK);
+        assert(h2_gizclaw_pcm_input_read(&legacy, track, out, sizeof(out),
+                                         &len) == H2_PAL_OK);
+        h2_gizclaw_pcm_input_deinit(&legacy);
+      } else {
+        assert(track->vtable->read(track->user, out, sizeof(out), &len) ==
+               H2_PAL_OK);
+      }
+      assert(len == sizeof(fresh) && memcmp(out, fresh, sizeof(fresh)) == 0);
+      snapshot = capture_snapshot(track, id, H2_GIZCLAW_PCM_CAPTURE_DISCARDED);
+      assert(snapshot.result == H2_PAL_ERR_IO && snapshot.pending_bytes == 0u &&
+             snapshot.captured_bytes == sizeof(old_pcm) &&
+             !snapshot.producer_busy && !snapshot.consumer_busy);
+      assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+    }
+  }
+}
+
+static void capture_end_downlink_watermark(const h2_pal_mem_api_t* allocator,
+                                           const h2_pal_sync_api_t* sync) {
+  const uint8_t pcm[2] = {1, 2};
+  assert(h2_gizclaw_pcm_track_downlink_writes_internal(NULL) == 0u);
+  for (unsigned pending_frame = 0u; pending_frame < 2u; ++pending_frame) {
+    h2_gizclaw_track_t* track = capture_track(allocator, sync, 8u);
+    h2_gizclaw_pcm_capture_id_t id;
+    h2_gizclaw_pcm_input_t input = {0};
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_input_adopt(&input, track, allocator, id) ==
+           H2_PAL_OK);
+    capture_submit(track, id, pcm, sizeof(pcm));
+    assert(track->vtable->write(track->user, pcm, sizeof(pcm)) == H2_PAL_OK);
+    if (pending_frame)
+      assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+    if (pending_frame) {
+      /* Sound while STOPPING still precedes the producer's END acknowledgement.
+       */
+      assert(track->vtable->write(track->user, pcm, sizeof(pcm)) == H2_PAL_OK);
+      assert(h2_gizclaw_pcm_capture_frame_submit(track, id, pcm, sizeof(pcm),
+                                                 H2_PAL_OK) == H2_PAL_OK);
+    }
+    const size_t acknowledged = pending_frame ? 4u : 2u;
+    assert(h2_gizclaw_pcm_track_downlink_writes_internal(track) ==
+           acknowledged);
+    /* PREPARE may run after newer downlink PCM arrives. Its END watermark must
+     * still be the immutable value frozen at acknowledgement. */
+    assert(track->vtable->write(track->user, pcm, sizeof(pcm)) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_downlink_writes_internal(track) ==
+           acknowledged + sizeof(pcm));
+    assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
+    assert(input.ended && input.end_downlink_write_index == acknowledged);
+    assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
+    assert(input.end_downlink_write_index == acknowledged);
+    h2_gizclaw_pcm_input_deinit(&input);
     assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
   }
 }
@@ -1179,6 +1355,10 @@ int main(void) {
   sync_state_t sync_state = {0};
   const h2_pal_sync_api_t sync = {.user = &sync_state, .vtable = &sync_vtable};
   capture_unsupported(&allocator);
+  capture_submit_lock_failure(&allocator, &sync);
+  capture_submit_lock_failure_states(&allocator, &sync);
+  failed_capture_legacy_reuse(&allocator, &sync);
+  capture_end_downlink_watermark(&allocator, &sync);
   capture_before_adopt(&allocator, &sync);
   capture_streaming(&allocator, &sync);
   capture_legacy_isolation(&allocator, &sync);
