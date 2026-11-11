@@ -19,6 +19,7 @@ cc_binary(
     }),
     deps = [
         "//libs/net/iperf",
+        "//libs/sync/atomic/providers/c11",
         "//pal",
         "//pal/providers/backends/h2sctp",
         "//pal/providers/platforms/desktop/pal_core:core",
