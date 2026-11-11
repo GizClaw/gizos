@@ -118,6 +118,10 @@ h2_pal_wifi_ap_t* h2_bk_platform_wifi_ap(void);
 h2_pal_wifi_settings_t* h2_bk_platform_wifi_settings(void);
 const h2_pal_wifi_csi_api_t* h2_bk_platform_wifi_csi(void);
 h2_pal_modem_t* h2_bk_platform_modem_unsupported(void);
+/** Static Log PAL for caller-framed console records. Writes through the SDK
+ * console without a prefix, level filter or added newline. Callers serialize
+ * their records; no driver/session ownership is acquired or released. */
+const h2_pal_log_api_t* h2_bk_platform_console_log_api(void);
 const h2_pal_io_stream_api_t* h2_bk_platform_io_stream_api(void);
 const h2_pal_uart_io_stream_api_t* h2_bk_platform_uart_io_stream_api(void);
 void h2_bk_platform_uart_io_stream_deinit(void);

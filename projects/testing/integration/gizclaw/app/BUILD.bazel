@@ -39,6 +39,43 @@ cc_test(
     deps = [":evidence_output"],
 )
 
+cc_library(
+    name = "execution",
+    srcs = ["src/h2_gizclaw_e2e_execution.c"],
+    hdrs = [
+        "include/h2_gizclaw_e2e.h",
+        "include/h2_gizclaw_e2e_execution.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        "//libs/clients/gizclaw",
+        "//libs/runtime",
+        "//libs/sync/atomic",
+        "//pal",
+        "//projects/testing/integration/gizclaw/libs/device:ledger",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_execution_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_execution.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":execution",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+    ],
+)
+
 h2_tasks(
     name = "tasks",
     tasks = [
@@ -73,6 +110,7 @@ cc_library(
     deps = [
         ":connectivity",
         ":device_case",
+        ":execution",
         ":fence_case",
         ":fixture",
         ":lua_apps_case",

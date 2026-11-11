@@ -125,3 +125,43 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
         name = name,
         srcs = [":" + name + "_source"],
     )
+
+# Deployable BK launchers require the live fixture and an explicit HTTP trust
+# source. Optional Lua/fence fields and physical-audio policy remain optional;
+# the general fixture above still supports empty inputs for offline consumers.
+_BK_REQUIRED_FIELDS = [
+    "key",
+    "profile",
+    "value",
+    "endpoint",
+    "token",
+    "device_api_url",
+    "audio_url",
+    "root_ca_hex",
+]
+
+def _bk_fixture_check_impl(ctx):
+    missing = [
+        name
+        for name in _BK_REQUIRED_FIELDS
+        if not getattr(ctx.attr, name)[BuildSettingInfo].value
+    ]
+    if missing:
+        fail("BK GizClaw E2E configuration is incomplete; missing required fixture fields: %s. " % ", ".join(missing) +
+             "Set //projects/testing/integration/gizclaw:app_config_fixture_<field> build settings, " +
+             "or select the corresponding named .bazelrc configuration with --config=<name>. " +
+             "A deployable firmware/package cannot use an empty fixture.")
+    marker = ctx.actions.declare_file(ctx.label.name + ".checked")
+    ctx.actions.write(marker, "BK GizClaw E2E fixture requirements satisfied\n")
+    return [DefaultInfo(files = depset([marker]))]
+
+bk_gizclaw_fixture_check = rule(
+    implementation = _bk_fixture_check_impl,
+    attrs = {
+        name: attr.label(
+            default = Label("//projects/testing/integration/gizclaw:app_config_fixture_" + name),
+            providers = [BuildSettingInfo],
+        )
+        for name in _BK_REQUIRED_FIELDS
+    },
+)

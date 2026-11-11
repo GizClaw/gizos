@@ -23,6 +23,7 @@ static int captured_fflush(FILE* stream);
 #undef printf
 #undef puts
 #undef fflush
+#define record(message) h2_iperf_client_output_record(&output, message)
 
 const char h2_iperf_client_app_task_name[] = "iperf-client/run";
 struct h2_pal_task {
@@ -37,6 +38,7 @@ typedef enum scenario {
   WRITE_ERROR,
   PARTIAL_WRITE,
   DRAIN_TIMEOUT,
+  RELEASE_ERROR,
   RESTART_ERROR,
   BENCH_ERROR,
   CONFIRM_ERROR,
@@ -61,6 +63,7 @@ static struct h2_pal_task runner_task;
 static h2_pal_mem_api_t normal_mem, psram_mem;
 static h2_pal_pref_api_t prefs;
 static const h2_pal_uart_io_stream_api_t uart;
+static const h2_pal_io_stream_api_t stream;
 
 static void capture(const char* line) {
   if (strstr(line, "H2_IPERF_CLIENT_BOOT ") == line) ++f.boot_records;
@@ -121,8 +124,7 @@ static int write_uart(void* user, const void* bytes, size_t size,
                       size_t* written, uint32_t timeout) {
   (void)user;
   assert(f.uart_live && bytes && written && size >= 2 && size <= 1024);
-  assert(timeout == 5000 &&
-         h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE));
+  assert(timeout == 5000 && output.active);
   const char* data = bytes;
   assert(data[size - 2] == '\r' && data[size - 1] == '\n');
   char line[1025];
@@ -148,6 +150,28 @@ static int write_uart(void* user, const void* bytes, size_t size,
 static const h2_pal_uart_io_stream_vtable_t uart_vtable = {
     .configure = configure, .write = write_uart};
 static const h2_pal_uart_io_stream_api_t uart = {.vtable = &uart_vtable};
+static int flush_stream(void* user) {
+  (void)user;
+  return f.scenario == DRAIN_TIMEOUT ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+}
+static int release_stream(void* user) {
+  (void)user;
+  assert(!f.manager_live && !output.active);
+  ++f.deinits;
+  if (f.scenario == RELEASE_ERROR) return H2_PAL_ERR_IO;
+  f.uart_live = 0;
+  return H2_PAL_OK;
+}
+static const h2_pal_io_stream_vtable_t stream_vtable = {
+    .write = write_uart, .flush = flush_stream, .release = release_stream};
+static const h2_pal_io_stream_api_t stream = {.vtable = &stream_vtable};
+static int sleep_time(void* user, uint32_t milliseconds) {
+  (void)user;
+  rtos_delay_milliseconds(milliseconds);
+  return H2_PAL_OK;
+}
+static const h2_pal_time_vtable_t time_vtable = {.sleep_ms = sleep_time};
+static const h2_pal_time_api_t time_api = {.vtable = &time_vtable};
 static int start_task(void* user, const h2_pal_task_options_t* options,
                       h2_pal_task_entry_t entry_fn, void* context,
                       h2_pal_task_t** out) {
@@ -178,7 +202,9 @@ h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t* config) {
                                   .log = &board_api,
                                   .task = &task_api,
                                   .firmware_info = &image_api,
-                                  .pref = &prefs};
+                                  .pref = &prefs,
+                                  .time = &time_api,
+                                  .io_stream = &stream};
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_bk7258_board_runtime_deinit(void) {
@@ -189,14 +215,16 @@ h2_pal_result_t h2_bk7258_board_runtime_deinit(void) {
 }
 h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
                                 h2_runtime_t** out) {
-  assert(config->mem == &psram_mem && config->log == &ledger_api);
+  assert(config->mem == &psram_mem && config->log == &output.log);
   *out = NULL;
   if (f.scenario == RUNTIME_ERROR) return H2_PAL_ERR_IO;
   f.runtime = (h2_runtime_t){.mem = config->mem,
                              .log = config->log,
                              .task = config->task,
                              .firmware_info = config->firmware_info,
-                             .pref = config->pref};
+                             .pref = config->pref,
+                             .time = config->time,
+                             .io_stream = config->io_stream};
   *out = &f.runtime;
   f.runtime_live = 1;
   return H2_PAL_OK;
@@ -204,12 +232,6 @@ h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
 h2_pal_mem_api_t* h2_bk_platform_psram_allocator(void) { return &psram_mem; }
 const h2_pal_uart_io_stream_api_t* h2_bk_platform_uart_io_stream_api(void) {
   return &uart;
-}
-void h2_bk_platform_uart_io_stream_deinit(void) {
-  assert(!f.manager_live &&
-         !h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE));
-  ++f.deinits;
-  f.uart_live = 0;
 }
 int h2_device_app_commands_start_serial_named(h2_device_app_commands_t* state,
                                               h2_runtime_t* rt,
@@ -223,7 +245,7 @@ int h2_device_app_commands_start_serial_named(h2_device_app_commands_t* state,
   ++f.starts;
   if (f.starts == 2) {
     assert(!f.uart_live && f.deinits == 1);
-    assert(!h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE));
+    assert(!output.active);
     if (f.scenario == RESTART_ERROR) return H2_PAL_ERR_IO;
   }
   /* Model the inspected management contract: restart synchronously configures
@@ -306,10 +328,7 @@ static void reset(scenario_t scenario) {
   f.scenario = scenario;
   f.now = scenario == DRAIN_TIMEOUT ? UINT32_MAX - 6000u : 0;
   runtime = NULL;
-  board_log = NULL;
-  console = NULL;
-  console_error = H2_PAL_OK;
-  h2_atomic_bool_store(&console_writable, false, H2_ATOMIC_RELEASE);
+  output = (h2_iperf_client_output_t){0};
 }
 static void test(scenario_t scenario) {
   reset(scenario);
@@ -339,39 +358,41 @@ static void test(scenario_t scenario) {
   if (scenario == STOP_ERROR) {
     assert(f.manager_live && f.uart_live && f.starts == 1 &&
            !f.raw_configures && !f.deinits && !f.bench_calls);
+  } else if (scenario == RELEASE_ERROR) {
+    assert(f.starts == 1 && f.stops == 1 && f.deinits == 1);
+    assert(!f.manager_live && f.uart_live && !output.active);
   } else {
     assert(f.starts == 2 && f.stops == 1 && f.raw_configures == 1 &&
            f.deinits == 1);
     assert(f.bench_calls == (scenario != CONFIG_ERROR));
     assert(f.manager_live == (scenario != RESTART_ERROR));
   }
-  if (scenario == DRAIN_TIMEOUT) assert(f.delays == 5000);
 }
 static void test_records(void) {
   reset(SUCCESS);
   assert(record("closed") == H2_PAL_ERR_INVALID_STATE);
-  assert(console_error == H2_PAL_ERR_INVALID_STATE && !f.writes);
+  assert(output.error == H2_PAL_ERR_INVALID_STATE && !f.writes);
   const char* bad[] = {NULL, "", "bad\rrow", "bad\nrow"};
   for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i) {
     reset(SUCCESS);
-    console = &uart;
+    output.stream = &stream;
     f.uart_live = 1;
-    h2_atomic_bool_store(&console_writable, true, H2_ATOMIC_RELEASE);
+    output.active = true;
     assert(record(bad[i]) == H2_PAL_ERR_INVALID_ARG);
-    assert(console_error == H2_PAL_ERR_INVALID_ARG && !f.writes);
+    assert(output.error == H2_PAL_ERR_INVALID_ARG && !f.writes);
   }
   char line[1024];
   memset(line, 'x', sizeof(line));
   line[1023] = '\0';
   reset(SUCCESS);
-  console = &uart;
+  output.stream = &stream;
   f.uart_live = 1;
-  h2_atomic_bool_store(&console_writable, true, H2_ATOMIC_RELEASE);
+  output.active = true;
   assert(record(line) == H2_PAL_ERR_INVALID_ARG &&
-         console_error == H2_PAL_ERR_INVALID_ARG);
+         output.error == H2_PAL_ERR_INVALID_ARG);
   line[1022] = '\0';
   assert(record(line) == H2_PAL_OK && f.writes == 1);
-  assert(console_error == H2_PAL_ERR_INVALID_ARG);
+  assert(output.error == H2_PAL_ERR_INVALID_ARG);
 }
 int main(int argc, char** argv) {
   const struct {
@@ -385,6 +406,7 @@ int main(int argc, char** argv) {
                {"write", WRITE_ERROR},
                {"partial", PARTIAL_WRITE},
                {"drain", DRAIN_TIMEOUT},
+               {"release", RELEASE_ERROR},
                {"restart", RESTART_ERROR},
                {"bench", BENCH_ERROR},
                {"confirm", CONFIRM_ERROR},

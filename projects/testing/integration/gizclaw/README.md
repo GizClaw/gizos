@@ -1,5 +1,7 @@
 # GizClaw E2E
 
+The App's `h2_gizclaw_e2e_execution` API owns bounded evidence capture, full-suite execution, qualification and framed replay through public Runtime/PAL capabilities. It receives an initialized Runtime, explicit test configuration and a caller-framed Log PAL; it does not select a board, native provider, network connection policy or trust source. Each BK board owns its final launcher, Runtime lifetime, management service and firmware-confirmation decision. Deployable-fixture requirements live beside the suite's existing configuration generator in `fixture.bzl`, with analysis tests in `tests/fixture_test.bzl`; there is no shared board entry under `targets/`.
+
 AMOLED 当前TCP配置与Tiga/Zero ESP一致：收发窗口11520字节、接收邮箱12项，TCP/IP优先级22且固定CPU0；乱序上限和selective ACK使用SDK默认值（0/关闭）。
 
 最新ESP源已保留main的SDK证书bundle委托与日期校验：R53在source503cb56c上重建，managed与独立normal各8/8及227/227通过，cleanup/retained均为0、confirm=0且nonce不同；App分区2/2、Stage为空、原P1和空crash基线保留。Bazel实际5166个输入确认后续资格元数据变更不进入固件。完整新来源、包/配置/账本SHA与两轮播放计数见[post-main TLS qualification](evidence/amoled-main-tls-qualification.json)。下述R52听感观察和原始六平台资格继续保留各自执行身份。

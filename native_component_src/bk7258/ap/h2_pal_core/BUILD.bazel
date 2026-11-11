@@ -124,6 +124,7 @@ firmware_native_component(
         "src/h2_bk_ble_gatts_tx_tracker.h",
         "src/h2_bk_net_addr.h",
         "src/h2_bk_net_result.h",
+        "src/h2_bk_net_rtp_trace.h",
         "src/h2_bk_netif_internal.h",
         "src/h2_bk_pref_large.h",
         "src/h2_bk_psa_calls.h",
@@ -137,6 +138,7 @@ firmware_native_component(
         "src/h2_bk_udp_receive.h",
         "src/h2_bk_wifi_ipv6_internal.h",
         "src/h2_bk_wifi_ipv6_sync.h",
+        "//native_component_src/bk7258/shared:h2_bk_mbedtls_record_config.h",
     ],
     data = [
         "CMakeLists.txt",
@@ -147,6 +149,7 @@ firmware_native_component(
         "src/h2_bk_wdrv_component.cmake",
         "src/h2_bk_wdrv_confirm.cmake",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_ring.h",
+        "//native_component_src/bk7258/shared:h2_bk_lwip_config.cmake",
         "//native_component_src/bk7258/shared:h2_bk_wifi_ipv6.h",
         "//native_component_src/bk7258/shared:h2_bk_wifi_lease.h",
         "//native_component_src/bk7258/shared:h2_bk_wifi_rpc.h",

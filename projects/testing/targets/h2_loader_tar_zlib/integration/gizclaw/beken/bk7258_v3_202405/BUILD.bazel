@@ -70,41 +70,27 @@ firmware_lib_component(
         "//pal/providers/backends/h2sctp",
         "//pal/providers/backends/yyjson",
         "//projects/testing/integration/gizclaw/app:gizclaw_e2e",
-        "//projects/testing/integration/gizclaw/libs/device:ledger",
     ],
-)
-
-firmware_native_component(
-    name = "ap_launcher_component",
-    srcs = [
-        "ap/ap_main.c",
-        "ap/h2_gizclaw_e2e_bk_config.c",
-    ],
-    hdrs = ["ap/h2_gizclaw_e2e_bk_config.h"],
-    component_directory = "projects/testing/targets/h2_loader_tar_zlib/integration/gizclaw/beken/bk7258_v3_202405/ap",
-    component_name = "ap",
-    data = [
-        "ap/CMakeLists.txt",
-        "//projects/testing/integration/gizclaw:voice_prompt",
-    ],
-    execution_unit = "ap",
 )
 
 firmware_native_component(
     name = "gizclaw_e2e_launcher",
-    srcs = [],
-    hdrs = [],
+    srcs = ["ap/ap_main.c"],
+    component_directory = "projects/testing/targets/h2_loader_tar_zlib/integration/gizclaw/beken/bk7258_v3_202405/ap",
+    component_name = "ap",
     data = [
+        "ap/CMakeLists.txt",
+        "//projects/testing/integration/gizclaw:required_fixture",
+        "//projects/testing/integration/gizclaw:voice_prompt",
     ],
+    execution_unit = "ap",
     tags = ["manual"],
     deps = [
-        ":ap_launcher_component",
         ":entry_tasks",
         ":firmware_lib",
         "//boards/beken/bk7258_v3_202405/bk7258",
         "//libs/h2loader/device",
         "//libs/runtime",
-        "//libs/sync/atomic",
         "//native_component_src/bk7258/ap/h2_gizclaw",
         "//native_component_src/bk7258/ap/h2_pal_core",
         "//native_component_src/bk7258/ap/opus_port",
@@ -114,7 +100,6 @@ firmware_native_component(
         "//pal",
         "//projects/h2loader/apps/headless:tasks",
         "//projects/testing/integration/gizclaw/app:gizclaw_e2e",
-        "//projects/testing/integration/gizclaw/libs/device:ledger",
     ],
 )
 
@@ -124,8 +109,6 @@ h2loader_bk7258_firmware(
         "CMakeLists.txt",
         "ap/CMakeLists.txt",
         "ap/ap_main.c",
-        "ap/h2_gizclaw_e2e_bk_config.c",
-        "ap/h2_gizclaw_e2e_bk_config.h",
         "//projects/testing/integration/gizclaw:voice_prompt",
     ],
     ap_task_policy = ":ap_task_policy",

@@ -26,6 +26,7 @@ firmware_native_component(
     ],
     hdrs = [
         "include/h2_bk_platform_core.h",
+        "//native_component_src/bk7258/shared:h2_bk_mbedtls_record_config.h",
     ],
     data = [
         "CMakeLists.txt",
@@ -34,6 +35,7 @@ firmware_native_component(
         "//native_component_src/bk7258/shared:h2_bk_dhcp_ring.h",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_trace.cmake",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_trace.h",
+        "//native_component_src/bk7258/shared:h2_bk_lwip_config.cmake",
         "//native_component_src/bk7258/shared:h2_bk_wifi_ipv6.cmake",
         "//native_component_src/bk7258/shared:h2_bk_wifi_ipv6.h",
         "//native_component_src/bk7258/shared:h2_bk_wifi_lease.h",

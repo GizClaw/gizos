@@ -15,12 +15,9 @@ armino_component_register(
     "${REPO_ROOT}/projects/testing/integration/gizclaw/app/include"
     "${REPO_ROOT}/libs/clients/gizclaw/include"
     "${REPO_ROOT}/pal/providers/backends/corehttp/include"
-    "${REPO_ROOT}/projects/testing/integration/gizclaw/libs/device"
     "${REPO_ROOT}/libs/h2loader/device/include"
-    "${REPO_ROOT}/boards/beken/bk7258_v3_202405/bk7258/ap/include"
+    "${REPO_ROOT}/projects/h2loader/libs/device_service/include"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/include"
-    "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src"
-    "${REPO_ROOT}/libs/sync/atomic/include"
     "${REPO_ROOT}/pal/include"
     "${REPO_ROOT}/libs/runtime/include"
   REQUIRES
