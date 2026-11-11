@@ -1,6 +1,4 @@
 #include "h2_desktop_app_support.h"
-#include "h2_desktop_app_support_c.h"
-#include "h2_wolfssl.h"
 #include "h2_peer.h"
 #include "h2_sctp.h"
 
@@ -75,51 +73,8 @@ static void test_retained_peer_keeps_dependencies(void) {
   assert(services.reset() == H2_PAL_OK);
 }
 
-static int different_entropy(void*, uint8_t* out, size_t len) {
-  if (len != 0u) memset(out, 0, len);
-  return H2_PAL_OK;
-}
-
-static void test_tls_owner_teardown(void) {
-  {
-    h2::desktop::OwnedNetworkServices services;
-    assert(h2::desktop::open_network_services(false, false, &services) ==
-           H2_PAL_OK);
-    assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_OK);
-    // Explicit reset still leaves a retryable owner while work is active.
-    assert(services.reset() == H2_PAL_ERR_INVALID_STATE);
-    assert(services.wolfssl_owner);
-    h2_wolfssl_operation_release();
-    assert(services.reset() == H2_PAL_OK);
-    assert(!services.wolfssl_owner);
-  }
-  for (unsigned c_api = 0u; c_api < 2u; ++c_api) {
-    // Model the lease retained by a setup that already returned TIMEOUT.
-    if (c_api) {
-      h2_desktop_network_services_t* services = nullptr;
-      assert(h2_desktop_network_services_create(0, 0, &services) == H2_PAL_OK);
-      assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_OK);
-      h2_desktop_network_services_destroy(services);
-    } else {
-      h2::desktop::OwnedNetworkServices services;
-      assert(h2::desktop::open_network_services(false, false, &services) ==
-             H2_PAL_OK);
-      assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_OK);
-    }
-    assert(h2_wolfssl_operation_acquire() == H2_PAL_ERR_INVALID_STATE);
-    const h2_wolfssl_config_t changed = {
-        *h2_desktop_platform_default_allocator(), nullptr, different_entropy,
-        true};
-    assert(h2_wolfssl_init(&changed) == H2_PAL_ERR_INVALID_STATE);
-    h2_wolfssl_operation_release();
-    assert(h2_wolfssl_init(&changed) == H2_PAL_OK);
-    assert(h2_wolfssl_deinit() == H2_PAL_OK);
-  }
-}
-
 int main(void) {
   test_retained_peer_keeps_dependencies();
-  test_tls_owner_teardown();
   h2::desktop::OwnedNetworkServices services;
   assert(h2::desktop::open_network_services(true, false, &services) ==
          H2_PAL_OK);

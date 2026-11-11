@@ -15,10 +15,6 @@ typedef struct h2_desktop_network_services h2_desktop_network_services_t;
 h2_pal_result_t h2_desktop_network_services_create(
     int with_mqtt, int with_webrtc,
     h2_desktop_network_services_t** out_services);
-/* Quiesce borrowed clients/peers before destroy. Pending native TLS setup
- * transfers its final backend reference to deferred cleanup; no retry handle
- * is retained by this void API. Native PAL dependencies have static lifetime.
- */
 void h2_desktop_network_services_destroy(
     h2_desktop_network_services_t* services);
 const h2_pal_net_api_t* h2_desktop_host_net_api(void);

@@ -13,7 +13,7 @@ h2_pal_result_t h2_ios_net_create(h2_ios_net_t** out) {
   h2_ios_net_t* owner =
       h2_pal_mem_alloc(h2_ios_platform_mem_api(), sizeof(*owner));
   if (!owner) {
-    h2_ios_tls_release_deferred();
+    (void)h2_ios_tls_release();
     return H2_PAL_ERR_NO_MEMORY;
   }
   owner->tls_reference = 1;

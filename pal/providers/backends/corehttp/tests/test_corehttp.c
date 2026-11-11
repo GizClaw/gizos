@@ -1312,52 +1312,7 @@ static int test_address_fallback_connection_deadline(void) {
   return 0;
 }
 
-static int test_bounded_tls_dispatch(void) {
-  for (unsigned mode = 0u; mode < 3u; ++mode) {
-    fake_http_platform_t platform;
-    fake_http_platform_init(&platform);
-    platform.time_step_ms = 0u;
-    /* A legacy callback can ignore its budget during opaque setup. The strict
-     * path must reject its missing capability without entering that work. */
-    platform.tls_ignore_timeout = mode == 2u;
-    platform.tls_delay_ms = mode == 2u ? 250u : 0u;
-    fake_http_platform_add_response(
-        &platform, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-    h2_pal_net_vtable_t vtable = *platform.net.vtable;
-    if (mode == 2u) vtable.tls_wrap_bounded = NULL;
-    platform.net.vtable = &vtable;
-    platform.tls_bounded_result =
-        mode == 0u ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK;
-    h2_pal_http_api_t api;
-    h2_corehttp_t* provider = create_provider(&platform, &api, NULL, 0u);
-    CHECK(provider != NULL);
-    const char url[] = "https://example.test/bounded";
-    const h2_pal_http_request_t request = {
-        .method = H2_PAL_HTTP_GET,
-        .url = {.data = url, .len = sizeof(url) - 1u},
-        .timeout_ms = 100,
-        .connect_timeout_ms = 50,
-    };
-    h2_pal_http_response_t response;
-    h2_pal_result_t result = h2_pal_http_request(&api, &request, &response);
-    CHECK(platform.tls_bounded_count == (mode == 2u ? 0 : 1));
-    CHECK(platform.tls_wrap_count == (mode == 1u ? 1 : 0));
-    CHECK(result == (mode == 1u ? H2_PAL_OK : H2_PAL_ERR_UNSUPPORTED));
-    CHECK(platform.connect_count == 1 && platform.close_count == 1);
-    if (mode != 1u) {
-      CHECK(platform.request_len == 0u && platform.recv_count == 0);
-      CHECK(response.rejection == H2_PAL_HTTP_REJECTION_NONE);
-      CHECK(platform.now_ms == 0u);
-    } else {
-      CHECK(response.status_code == 200 && platform.tls_timeout_ms <= 50u);
-    }
-    h2_corehttp_destroy(provider);
-  }
-  return 0;
-}
-
 int main(void) {
-  if (test_bounded_tls_dispatch() != 0) return 1;
   if (test_address_fallback_connection_deadline() != 0) return 1;
   if (test_connection_deadlines() != 0) return 1;
   if (test_reconnect_deadlines() != 0) return 1;

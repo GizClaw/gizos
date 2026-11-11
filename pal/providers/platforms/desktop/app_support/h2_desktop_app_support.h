@@ -103,8 +103,6 @@ struct OwnedNetworkServices {
 
   // Close before destroying the composition. On failure keep this object and
   // retry; dependent providers are never freed under an unjoined peer task.
-  // Destruction can defer a TLS-only reference borrowing static native PALs,
-  // once every peer/SCTP/MQTT handle has been closed.
   int reset();
 
   const h2_pal_crypto_api_t* crypto() const;

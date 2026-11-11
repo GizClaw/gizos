@@ -4,8 +4,6 @@
 #include "h2_bk_net_addr.h"
 #include "h2_bk_net_result.h"
 #include "h2_bk_netif_internal.h"
-#include "h2_bk_task_create_internal.h"
-#include "h2_bk_tls_lifetime.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -15,7 +13,6 @@
 #include <sys/time.h>
 
 #include <components/netif.h>
-#include <driver/aon_rtc.h>
 #include <lwip/inet.h>
 #include <lwip/netdb.h>
 #include <lwip/sockets.h>
@@ -67,10 +64,6 @@ static size_t s_bk_resolver_count;
 static int wait_fd(int fd, int write_ready, uint32_t timeout_ms);
 static uint64_t bk_net_now_ms(void);
 static uint32_t bk_net_timeout_remaining_ms(uint64_t deadline_ms);
-static h2_bk_tls_lifetime_t* bk_net_lifetime(void);
-static int bk_net_track_tcp(int fd);
-static int bk_net_track_idle_tcp(int fd);
-static void bk_net_close(void* user, h2_pal_net_socket_t socket_fd);
 
 static void bk_net_tls_init(void) {
   if (!s_bk_tls_mutex_ready && rtos_init_mutex(&s_bk_tls_mutex) == kNoErr) {
@@ -197,32 +190,22 @@ static int bk_net_tls_random(void* user, unsigned char* out, size_t len) {
 static int bk_net_tls_send_raw(void* user, const unsigned char* data,
                                size_t len) {
   bk_net_tls_socket_t* socket = (bk_net_tls_socket_t*)user;
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  if (manager != NULL && h2_bk_tls_bio_canceled(manager, socket->fd))
-    return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
   int sent = send(socket->fd, data, len, MSG_DONTWAIT);
-  int socket_error = sent < 0 ? errno : 0;
   if (sent >= 0) {
     return sent;
   }
-  return socket_error == EAGAIN || socket_error == EWOULDBLOCK ||
-                 socket_error == EINTR
+  return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
              ? MBEDTLS_ERR_SSL_WANT_WRITE
              : MBEDTLS_ERR_SSL_INTERNAL_ERROR;
 }
 
 static int bk_net_tls_recv_raw(void* user, unsigned char* data, size_t len) {
   bk_net_tls_socket_t* socket = (bk_net_tls_socket_t*)user;
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  if (manager != NULL && h2_bk_tls_bio_canceled(manager, socket->fd))
-    return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
   int received = recv(socket->fd, data, len, MSG_DONTWAIT);
-  int socket_error = received < 0 ? errno : 0;
   if (received >= 0) {
     return received;
   }
-  return socket_error == EAGAIN || socket_error == EWOULDBLOCK ||
-                 socket_error == EINTR
+  return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
              ? MBEDTLS_ERR_SSL_WANT_READ
              : MBEDTLS_ERR_SSL_INTERNAL_ERROR;
 }
@@ -350,40 +333,35 @@ static int bk_net_tls_verify_dates(void* user, mbedtls_x509_crt* cert,
 }
 
 static h2_pal_result_t bk_net_tls_handshake(
-    bk_net_tls_socket_t* socket, uint64_t deadline_ms,
+    bk_net_tls_socket_t* socket, uint32_t timeout_ms,
     h2_pal_net_tls_verify_t verify_mode) {
-  if (socket == NULL) return H2_PAL_ERR_INVALID_ARG;
+  uint64_t deadline = bk_net_now_ms() + timeout_ms;
   for (;;) {
-    if (bk_net_timeout_remaining_ms(deadline_ms) == 0u)
-      return H2_PAL_ERR_TIMEOUT;
-    if (mbedtls_ssl_is_handshake_over(&socket->ssl)) break;
-    const int result = mbedtls_ssl_handshake_step(&socket->ssl);
-    const uint32_t remaining = bk_net_timeout_remaining_ms(deadline_ms);
-    if (remaining == 0u) return H2_PAL_ERR_TIMEOUT;
+    int result = mbedtls_ssl_handshake(&socket->ssl);
     if (result == 0) {
-      if (mbedtls_ssl_is_handshake_over(&socket->ssl)) break;
-      rtos_delay_milliseconds(1u);
-      continue;
+      if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+        return H2_PAL_OK;
+      }
+      if (mbedtls_ssl_get_verify_result(&socket->ssl) != 0u) {
+        return H2_PAL_ERR_TLS_VERIFY;
+      }
+      return H2_PAL_OK;
     }
-#if defined(MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS)
-    if (result == MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
-      rtos_delay_milliseconds(1u);
-      continue;
-    }
-#endif
     if (result != MBEDTLS_ERR_SSL_WANT_READ &&
-        result != MBEDTLS_ERR_SSL_WANT_WRITE)
+        result != MBEDTLS_ERR_SSL_WANT_WRITE) {
       return result == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
                  ? H2_PAL_ERR_TLS_VERIFY
                  : H2_PAL_ERR_IO;
-    const int rc = bk_net_tls_wait(socket, result, remaining);
-    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK) return rc;
+    }
+    uint32_t remaining = bk_net_timeout_remaining_ms(deadline);
+    if (remaining == 0u) {
+      return H2_PAL_ERR_TIMEOUT;
+    }
+    int wait_result = bk_net_tls_wait(socket, result, remaining);
+    if (wait_result != H2_PAL_OK && wait_result != H2_PAL_ERR_WOULD_BLOCK) {
+      return wait_result;
+    }
   }
-  if (verify_mode != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY &&
-      mbedtls_ssl_get_verify_result(&socket->ssl) != 0u)
-    return H2_PAL_ERR_TLS_VERIFY;
-  return bk_net_timeout_remaining_ms(deadline_ms) == 0u ? H2_PAL_ERR_TIMEOUT
-                                                        : H2_PAL_OK;
 }
 
 static void set_recv_timeout(int fd, uint32_t timeout_ms) {
@@ -418,9 +396,10 @@ static int bk_net_socket_error(void) {
 }
 
 static uint64_t bk_net_now_ms(void) {
-  /* Use Time PAL's monotonic domain. Bare-metal gettimeofday may resolve to
-   * newlib's ENOSYS stub, and UTC adjustments must not change I/O budgets. */
-  return bk_aon_rtc_get_us() / 1000u;
+  struct timeval now;
+  return gettimeofday(&now, NULL) == 0
+             ? (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_usec / 1000u
+             : 0u;
 }
 
 static uint32_t bk_net_timeout_remaining_ms(uint64_t deadline_ms) {
@@ -890,11 +869,6 @@ static int bk_net_tcp_open(void* user, h2_pal_net_family_t family,
   if (fd < 0) {
     return H2_PAL_ERR_IO;
   }
-  int tracked = bk_net_track_idle_tcp(fd);
-  if (tracked != H2_PAL_OK) {
-    (void)closesocket(fd);
-    return tracked;
-  }
   *out_socket = fd;
   return H2_PAL_OK;
 }
@@ -917,7 +891,7 @@ static int bk_net_tcp_open_bound(void* user, h2_pal_net_family_t family,
     if (rc == H2_PAL_OK)
       rc = bk_net_bind_interface(*out_socket, bind_config->netif);
     if (rc != H2_PAL_OK && *out_socket >= 0) {
-      bk_net_close(NULL, *out_socket);
+      closesocket(*out_socket);
       *out_socket = -1;
     }
     return rc;
@@ -937,17 +911,17 @@ static int bk_net_tcp_open_bound(void* user, h2_pal_net_family_t family,
   result = h2_bk_net_to_sockaddr(&bind_addr, &storage, &sock_len);
   if (result != H2_PAL_OK ||
       bind(*out_socket, (struct sockaddr*)&storage, sock_len) < 0) {
-    bk_net_close(NULL, *out_socket);
+    closesocket(*out_socket);
     *out_socket = -1;
     return result == H2_PAL_OK ? H2_PAL_ERR_IO : result;
   }
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t bk_net_tcp_connect_native(void* user,
-                                                 h2_pal_net_socket_t socket_fd,
-                                                 const h2_pal_net_addr_t* addr,
-                                                 uint32_t timeout_ms) {
+static h2_pal_result_t bk_net_tcp_connect(void* user,
+                                          h2_pal_net_socket_t socket_fd,
+                                          const h2_pal_net_addr_t* addr,
+                                          uint32_t timeout_ms) {
   (void)user;
   if (socket_fd < 0 || addr == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -1050,18 +1024,15 @@ static int bk_net_tcp_listen(void* user, h2_pal_net_family_t family,
   }
   (void)h2_bk_net_from_sockaddr((const struct sockaddr*)&storage,
                                 out_bind_addr);
-  rc = bk_net_track_idle_tcp(fd);
-  if (rc != H2_PAL_OK) {
-    (void)closesocket(fd);
-    return rc;
-  }
   *out_socket = fd;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t bk_net_tcp_accept_native(
-    void* user, h2_pal_net_socket_t listen_fd, h2_pal_net_socket_t* out_socket,
-    h2_pal_net_addr_t* out_peer_addr, uint32_t timeout_ms) {
+static h2_pal_result_t bk_net_tcp_accept(void* user,
+                                         h2_pal_net_socket_t listen_fd,
+                                         h2_pal_net_socket_t* out_socket,
+                                         h2_pal_net_addr_t* out_peer_addr,
+                                         uint32_t timeout_ms) {
   (void)user;
   if (listen_fd < 0 || out_socket == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -1088,8 +1059,8 @@ static h2_pal_result_t bk_net_tcp_accept_native(
   return H2_PAL_OK;
 }
 
-static int bk_net_tcp_send_native(void* user, h2_pal_net_socket_t socket_fd,
-                                  const uint8_t* data, size_t len) {
+static int bk_net_tcp_send(void* user, h2_pal_net_socket_t socket_fd,
+                           const uint8_t* data, size_t len) {
   (void)user;
   if (socket_fd < 0 || (data == NULL && len != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -1123,10 +1094,9 @@ static int bk_net_tcp_send_native(void* user, h2_pal_net_socket_t socket_fd,
   return sent < 0 ? bk_net_socket_error() : sent;
 }
 
-static int bk_net_tcp_send_timeout_native(void* user,
-                                          h2_pal_net_socket_t socket_fd,
-                                          const uint8_t* data, size_t len,
-                                          uint32_t timeout_ms) {
+static int bk_net_tcp_send_timeout(void* user, h2_pal_net_socket_t socket_fd,
+                                   const uint8_t* data, size_t len,
+                                   uint32_t timeout_ms) {
   (void)user;
   if (socket_fd < 0 || (data == NULL && len != 0u) || len > (size_t)INT_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -1204,9 +1174,8 @@ static int bk_net_tcp_send_timeout_native(void* user,
   }
 }
 
-static int bk_net_tcp_recv_native(void* user, h2_pal_net_socket_t socket_fd,
-                                  uint8_t* data, size_t len,
-                                  uint32_t timeout_ms) {
+static int bk_net_tcp_recv(void* user, h2_pal_net_socket_t socket_fd,
+                           uint8_t* data, size_t len, uint32_t timeout_ms) {
   (void)user;
   if (socket_fd < 0 || data == NULL || len == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -1270,7 +1239,7 @@ static int bk_net_tcp_recv_native(void* user, h2_pal_net_socket_t socket_fd,
   }
 }
 
-static void bk_net_tls_dispose_context(void* user, int socket_fd) {
+static void bk_net_close(void* user, h2_pal_net_socket_t socket_fd) {
   (void)user;
   if (socket_fd >= 0) {
     if (s_bk_tls_mutex_ready && rtos_lock_mutex(&s_bk_tls_mutex) == kNoErr) {
@@ -1296,13 +1265,15 @@ static void bk_net_tls_dispose_context(void* user, int socket_fd) {
         (void)rtos_unlock_mutex(&s_bk_tls_mutex);
       }
     }
+    closesocket(socket_fd);
   }
 }
 
-static h2_pal_result_t bk_net_tls_wrap_impl(
-    void* user, h2_pal_net_socket_t socket_fd,
-    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_socket) {
+static h2_pal_result_t bk_net_tls_wrap(void* user,
+                                       h2_pal_net_socket_t socket_fd,
+                                       const h2_pal_net_tls_config_t* config,
+                                       uint32_t timeout_ms,
+                                       h2_pal_net_socket_t* out_socket) {
   (void)user;
   if (socket_fd < 0 || config == NULL || out_socket == NULL ||
       config->server_name == NULL || config->server_name[0] == '\0' ||
@@ -1317,8 +1288,7 @@ static h2_pal_result_t bk_net_tls_wrap_impl(
     return H2_PAL_ERR_INVALID_ARG;
   }
   bk_net_tls_init();
-  uint64_t started_ms = bk_net_now_ms();
-  uint64_t deadline_ms = h2_pal_time_deadline_ms(started_ms, timeout_ms);
+  uint64_t deadline_ms = bk_net_now_ms() + timeout_ms;
   int lock_result =
       bk_net_tls_take_mutex(&s_bk_tls_mutex, 1, timeout_ms, deadline_ms);
   if (lock_result != H2_PAL_OK) {
@@ -1377,13 +1347,14 @@ static h2_pal_result_t bk_net_tls_wrap_impl(
   if (rc == H2_PAL_OK) {
     mbedtls_ssl_set_bio(&slot->ssl, slot, bk_net_tls_send_raw,
                         bk_net_tls_recv_raw, NULL);
-    rc = bk_net_tls_handshake(slot, deadline_ms, config->verify);
+    uint32_t remaining_ms = bk_net_timeout_remaining_ms(deadline_ms);
+    rc = remaining_ms == 0u
+             ? H2_PAL_ERR_TIMEOUT
+             : bk_net_tls_handshake(slot, remaining_ms, config->verify);
   }
   if (rtos_lock_mutex(&s_bk_tls_mutex) == kNoErr) {
     if (slot->state == BK_NET_TLS_SOCKET_CONFIGURING && slot->fd == socket_fd &&
         s_bk_tls_generations[slot_index] == generation) {
-      if (rc == H2_PAL_OK && bk_net_timeout_remaining_ms(deadline_ms) == 0u)
-        rc = H2_PAL_ERR_TIMEOUT;
       if (rc != H2_PAL_OK) {
         bk_net_tls_free(slot);
         s_bk_tls_generations[slot_index] += 1u;
@@ -1402,354 +1373,8 @@ static h2_pal_result_t bk_net_tls_wrap_impl(
   return rc;
 }
 
-/* A process-lifetime native owner pins lwIP descriptors across abandoned TLS
- * work. Allocation/task creation happen only in API bootstrap, never in the
- * bounded callback. Metadata guards never cover native calls or destruction. */
-static h2_bk_tls_lifetime_t* s_bk_tls_lifetime;
-static int
-    s_bk_tls_lifetime_init_state; /* 0 new, 1 initializing, 2 ready, 3 retry */
-static int s_bk_tls_pool_state;   /* 0 new, 1 starting, 2 ready, 3 retry */
-static beken_semaphore_t s_bk_plain_work;
-static bool s_bk_plain_work_ready;
-static h2_pal_task_t* s_bk_plain_worker;
-static bool s_bk_plain_worker_ready;
-static beken_semaphore_t s_bk_tls_work;
-static bool s_bk_tls_work_ready;
-static h2_pal_task_t* s_bk_tls_workers[H2_BK_TLS_JOB_MAX];
-
-static h2_bk_tls_lifetime_t* bk_net_lifetime(void) {
-  uint32_t guard = rtos_enter_critical();
-  h2_bk_tls_lifetime_t* manager = s_bk_tls_lifetime;
-  rtos_exit_critical(guard);
-  return manager;
-}
-
-static uintptr_t bk_net_lifetime_enter(void* user) {
-  (void)user;
-  return rtos_enter_critical();
-}
-
-static void bk_net_lifetime_leave(void* user, uintptr_t guard) {
-  (void)user;
-  rtos_exit_critical((uint32_t)guard);
-}
-
-static uint64_t bk_net_lifetime_clock(void* user) {
-  (void)user;
-  return bk_net_now_ms();
-}
-
-static void bk_net_lifetime_wait(void* user, uint32_t timeout_ms) {
-  (void)user;
-  rtos_delay_milliseconds(timeout_ms);
-}
-
-static void bk_net_lifetime_wake(void* user) {
-  (void)user;
-  uint32_t guard = rtos_enter_critical();
-  bool wake = s_bk_tls_work_ready;
-  bool plain_wake = s_bk_plain_work_ready;
-  rtos_exit_critical(guard);
-  if (wake) (void)rtos_set_semaphore(&s_bk_tls_work);
-  if (plain_wake) (void)rtos_set_semaphore(&s_bk_plain_work);
-}
-
-static void bk_net_lifetime_release(h2_bk_tls_lifetime_t* manager,
-                                    h2_bk_tls_tcp_ref_t* ref) {
-  (void)h2_bk_tls_tcp_release(manager, ref);
-}
-
-static void bk_net_lifetime_close_fd(void* user, int fd) {
-  (void)user;
-  (void)closesocket(fd);
-}
-
-/* Large trust bundles are allocated/freed only by prestarted workers. The
- * bounded caller copies into owned storage without entering the heap. */
-static void* bk_net_lifetime_alloc_root(void* user, size_t bytes) {
-  (void)user;
-  return h2_pal_mem_alloc(h2_bk_platform_psram_allocator(), bytes);
-}
-
-static void bk_net_lifetime_free_root(void* user, void* root) {
-  (void)user;
-  h2_pal_mem_free(h2_bk_platform_psram_allocator(), root);
-}
-
-static h2_pal_result_t bk_net_lifetime_wrap(
-    void* user, int fd, const h2_pal_net_tls_config_t* config,
-    uint64_t deadline_ms) {
-  (void)user;
-  uint32_t remaining = bk_net_timeout_remaining_ms(deadline_ms);
-  if (remaining == 0u) return H2_PAL_ERR_TIMEOUT;
-  h2_pal_net_socket_t wrapped = -1;
-  h2_pal_result_t rc =
-      bk_net_tls_wrap_impl(NULL, fd, config, remaining, &wrapped);
-  return rc == H2_PAL_OK && wrapped != fd ? H2_PAL_ERR_INVALID_STATE : rc;
-}
-
-static void bk_net_tls_worker(void* context) {
-  h2_bk_tls_lifetime_t* manager = context;
-  for (;;) {
-    if (h2_bk_tls_worker_step(manager)) continue;
-    uint32_t timeout_ms = h2_bk_tls_worker_wait_ms(manager);
-    (void)rtos_get_semaphore(&s_bk_tls_work, timeout_ms == UINT32_MAX
-                                                 ? BEKEN_WAIT_FOREVER
-                                                 : timeout_ms);
-  }
-}
-
-static void bk_net_plain_worker(void* context) {
-  h2_bk_tls_lifetime_t* manager = context;
-  for (;;) {
-    if (h2_bk_tls_plain_worker_step(manager)) continue;
-    (void)rtos_get_semaphore(&s_bk_plain_work, BEKEN_WAIT_FOREVER);
-  }
-}
-
-static void bk_net_lifetime_prepare(void) {
-  uint32_t guard = rtos_enter_critical();
-  bool initialize =
-      s_bk_tls_lifetime_init_state == 0 || s_bk_tls_lifetime_init_state == 3;
-  if (initialize) s_bk_tls_lifetime_init_state = 1;
-  int init_state = s_bk_tls_lifetime_init_state;
-  rtos_exit_critical(guard);
-  if (initialize) {
-    bk_net_tls_init();
-    h2_bk_tls_lifetime_t* manager = NULL;
-    if (s_bk_tls_mutex_ready) {
-      manager =
-          h2_pal_mem_alloc(h2_bk_platform_psram_allocator(), sizeof(*manager));
-    }
-    const h2_bk_tls_lifetime_ops_t ops = {
-        .enter = bk_net_lifetime_enter,
-        .leave = bk_net_lifetime_leave,
-        .clock_ms = bk_net_lifetime_clock,
-        .wait_ms = bk_net_lifetime_wait,
-        .wake_worker = bk_net_lifetime_wake,
-        .wrap = bk_net_lifetime_wrap,
-        .dispose = bk_net_tls_dispose_context,
-        .close_fd = bk_net_lifetime_close_fd,
-        .alloc_root = bk_net_lifetime_alloc_root,
-        .free_root = bk_net_lifetime_free_root};
-    if (manager != NULL &&
-        h2_bk_tls_lifetime_init(manager, &ops) != H2_PAL_OK) {
-      h2_pal_mem_free(h2_bk_platform_psram_allocator(), manager);
-      manager = NULL;
-    }
-    guard = rtos_enter_critical();
-    s_bk_tls_lifetime = manager;
-    s_bk_tls_lifetime_init_state = manager != NULL ? 2 : 3;
-    init_state = s_bk_tls_lifetime_init_state;
-    rtos_exit_critical(guard);
-  }
-  if (init_state != 2 || !h2_bk_task_policy_is_configured()) return;
-
-  guard = rtos_enter_critical();
-  bool start = s_bk_tls_pool_state == 0 || s_bk_tls_pool_state == 3;
-  if (start) s_bk_tls_pool_state = 1;
-  h2_bk_tls_lifetime_t* manager = s_bk_tls_lifetime;
-  rtos_exit_critical(guard);
-  if (!start) return;
-  /* Keep every successfully created object across a transient failure. No
-   * worker is stopped or joined, and a live manager is never reinitialized. */
-  if (!s_bk_plain_work_ready) {
-    if (rtos_init_semaphore(&s_bk_plain_work, 1) != kNoErr) goto retry;
-    guard = rtos_enter_critical();
-    s_bk_plain_work_ready = true;
-    rtos_exit_critical(guard);
-  }
-  if (s_bk_plain_worker == NULL) {
-    const h2_pal_task_options_t options = {.name = "$bk/net/plain-close",
-                                           .min_stack_size = 4096u};
-    if (h2_pal_task_start(h2_bk_platform_task_api(), &options,
-                          bk_net_plain_worker, manager,
-                          &s_bk_plain_worker) != H2_PAL_OK)
-      goto retry;
-    guard = rtos_enter_critical();
-    s_bk_plain_worker_ready = true;
-    rtos_exit_critical(guard);
-  }
-  if (!s_bk_tls_work_ready) {
-    if (rtos_init_semaphore(&s_bk_tls_work, H2_BK_TLS_JOB_MAX) != kNoErr)
-      goto retry;
-    guard = rtos_enter_critical();
-    s_bk_tls_work_ready = true;
-    rtos_exit_critical(guard);
-  }
-  const h2_pal_task_options_t options = {.name = "$bk/net/tls",
-                                         .min_stack_size = 16384u};
-  for (size_t i = 0u; i < H2_BK_TLS_JOB_MAX; ++i) {
-    if (s_bk_tls_workers[i] != NULL) continue;
-    if (h2_pal_task_start(h2_bk_platform_task_api(), &options,
-                          bk_net_tls_worker, manager,
-                          &s_bk_tls_workers[i]) != H2_PAL_OK)
-      goto retry;
-  }
-  h2_bk_tls_lifetime_set_worker_ready(manager, true);
-  guard = rtos_enter_critical();
-  s_bk_tls_pool_state = 2;
-  rtos_exit_critical(guard);
-  /* Preserve backlog/wakes accumulated before a worker reached its wait. */
-  bk_net_lifetime_wake(NULL);
-  return;
-
-retry:
-  guard = rtos_enter_critical();
-  s_bk_tls_pool_state = 3;
-  rtos_exit_critical(guard);
-  bk_net_lifetime_wake(NULL);
-}
-
-static int bk_net_track_tcp(int fd) {
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  uint32_t guard = rtos_enter_critical();
-  bool ready = s_bk_plain_worker_ready;
-  rtos_exit_critical(guard);
-  /* Retryable bootstrap must not publish untracked descriptors, nor sockets
-   * whose eventual graceful cleanup has no independent native owner. */
-  return manager != NULL && ready ? h2_bk_tls_tcp_register(manager, fd)
-                                  : H2_PAL_ERR_UNAVAILABLE;
-}
-
-static int bk_net_track_idle_tcp(int fd) {
-  int rc = bk_net_track_tcp(fd);
-  if (rc == H2_PAL_OK) (void)h2_bk_tls_tcp_mark_idle(bk_net_lifetime(), fd);
-  return rc;
-}
-
-static h2_pal_result_t bk_net_tcp_connect(void* user, h2_pal_net_socket_t fd,
-                                          const h2_pal_net_addr_t* addr,
-                                          uint32_t timeout_ms) {
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  h2_bk_tls_tcp_ref_t ref;
-  bool tls = false;
-  h2_pal_result_t rc = manager != NULL
-                           ? h2_bk_tls_tcp_acquire(manager, fd, &ref, &tls)
-                           : H2_PAL_OK;
-  if (rc != H2_PAL_OK) return rc;
-  if (tls)
-    rc = H2_PAL_ERR_INVALID_STATE;
-  else if (manager != NULL)
-    rc = h2_bk_tls_tcp_connect_begin(manager, &ref);
-  if (rc == H2_PAL_OK)
-    rc = bk_net_tcp_connect_native(user, fd, addr, timeout_ms);
-  if (manager != NULL) bk_net_lifetime_release(manager, &ref);
-  return rc;
-}
-
-static h2_pal_result_t bk_net_tcp_accept(void* user,
-                                         h2_pal_net_socket_t listen_fd,
-                                         h2_pal_net_socket_t* out_socket,
-                                         h2_pal_net_addr_t* out_peer_addr,
-                                         uint32_t timeout_ms) {
-  if (out_socket == NULL) return H2_PAL_ERR_INVALID_ARG;
-  *out_socket = -1;
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  if (manager == NULL) return H2_PAL_ERR_UNAVAILABLE;
-  h2_bk_tls_tcp_ref_t listener_ref, accepted_ref;
-  h2_pal_result_t rc =
-      h2_bk_tls_accept_begin(manager, listen_fd, &listener_ref, &accepted_ref);
-  if (rc != H2_PAL_OK) return rc;
-  int fd = -1;
-  rc =
-      bk_net_tcp_accept_native(user, listen_fd, &fd, out_peer_addr, timeout_ms);
-  return h2_bk_tls_accept_finish(manager, &listener_ref, &accepted_ref, fd, rc,
-                                 out_socket);
-}
-
-static int bk_net_tcp_send(void* user, h2_pal_net_socket_t fd,
-                           const uint8_t* data, size_t len) {
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  h2_bk_tls_tcp_ref_t ref;
-  bool tls;
-  int rc = manager != NULL ? h2_bk_tls_tcp_acquire(manager, fd, &ref, &tls)
-                           : H2_PAL_OK;
-  if (rc != H2_PAL_OK) return rc;
-  rc = bk_net_tcp_send_native(user, fd, data, len);
-  if (manager != NULL) bk_net_lifetime_release(manager, &ref);
-  return rc;
-}
-
-static int bk_net_tcp_send_timeout(void* user, h2_pal_net_socket_t fd,
-                                   const uint8_t* data, size_t len,
-                                   uint32_t timeout_ms) {
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  h2_bk_tls_tcp_ref_t ref;
-  bool tls;
-  int rc = manager != NULL ? h2_bk_tls_tcp_acquire(manager, fd, &ref, &tls)
-                           : H2_PAL_OK;
-  if (rc != H2_PAL_OK) return rc;
-  rc = bk_net_tcp_send_timeout_native(user, fd, data, len, timeout_ms);
-  if (manager != NULL) bk_net_lifetime_release(manager, &ref);
-  return rc;
-}
-
-static int bk_net_tcp_recv(void* user, h2_pal_net_socket_t fd, uint8_t* data,
-                           size_t len, uint32_t timeout_ms) {
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  h2_bk_tls_tcp_ref_t ref;
-  bool tls;
-  int rc = manager != NULL ? h2_bk_tls_tcp_acquire(manager, fd, &ref, &tls)
-                           : H2_PAL_OK;
-  if (rc != H2_PAL_OK) return rc;
-  rc = bk_net_tcp_recv_native(user, fd, data, len, timeout_ms);
-  if (manager != NULL) bk_net_lifetime_release(manager, &ref);
-  return rc;
-}
-
-static void bk_net_close(void* user, h2_pal_net_socket_t fd) {
-  if (fd < 0) return;
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  if (manager != NULL) {
-    if (h2_bk_tls_tcp_close(manager, fd) != H2_PAL_ERR_NOT_FOUND) {
-      return;
-    }
-  } else {
-    bk_net_tls_dispose_context(user, fd);
-  }
-  (void)closesocket(fd);
-}
-
-static h2_pal_result_t bk_net_tls_wrap(void* user, h2_pal_net_socket_t fd,
-                                       const h2_pal_net_tls_config_t* config,
-                                       uint32_t timeout_ms,
-                                       h2_pal_net_socket_t* out_socket) {
-  if (out_socket == NULL) return H2_PAL_ERR_INVALID_ARG;
-  *out_socket = -1;
-  if (fd < 0 || config == NULL || config->server_name == NULL ||
-      config->server_name[0] == '\0' || timeout_ms == 0u ||
-      (config->root_ca_pem == NULL && config->root_ca_pem_len != 0u) ||
-      (config->verify != H2_PAL_NET_TLS_VERIFY_DEFAULT &&
-       config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
-       config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY))
-    return H2_PAL_ERR_INVALID_ARG;
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  if (manager == NULL)
-    return bk_net_tls_wrap_impl(user, fd, config, timeout_ms, out_socket);
-  h2_bk_tls_tcp_ref_t ref;
-  h2_pal_result_t rc = h2_bk_tls_legacy_begin(manager, fd, &ref);
-  if (rc != H2_PAL_OK) return rc;
-  rc = bk_net_tls_wrap_impl(user, fd, config, timeout_ms, out_socket);
-  rc = h2_bk_tls_legacy_finish(manager, &ref, rc);
-  if (rc != H2_PAL_OK) *out_socket = -1;
-  return rc;
-}
-
-static h2_pal_result_t bk_net_tls_wrap_bounded(
-    void* user, h2_pal_net_socket_t fd, const h2_pal_net_tls_config_t* config,
-    uint32_t timeout_ms, h2_pal_net_socket_t* out_socket) {
-  (void)user;
-  h2_bk_tls_lifetime_t* manager = bk_net_lifetime();
-  if (manager == NULL) {
-    if (out_socket != NULL) *out_socket = -1;
-    return H2_PAL_ERR_UNSUPPORTED;
-  }
-  return h2_bk_tls_wrap_bounded(manager, fd, config, timeout_ms, out_socket);
-}
-
 const h2_pal_net_api_t* h2_bk_platform_net_api(void) {
-  bk_net_lifetime_prepare();
+  bk_net_tls_init();
   static const h2_pal_net_vtable_t vtable = {
       .resolve_addr = bk_net_resolve_addr,
       .resolve_all = h2_bk_net_resolve_all,
@@ -1772,7 +1397,6 @@ const h2_pal_net_api_t* h2_bk_platform_net_api(void) {
       .tcp_send_timeout = bk_net_tcp_send_timeout,
       .tcp_recv = bk_net_tcp_recv,
       .tls_wrap = bk_net_tls_wrap,
-      .tls_wrap_bounded = bk_net_tls_wrap_bounded,
       .close = bk_net_close,
       .tcp_listen = bk_net_tcp_listen,
       .tcp_accept = bk_net_tcp_accept,

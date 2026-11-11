@@ -231,8 +231,6 @@ static int bk_task_join(void* user, h2_pal_task_t* task) {
   return H2_PAL_OK;
 }
 
-bool h2_bk_task_policy_is_configured(void) { return s_task_configured; }
-
 h2_pal_result_t h2_bk_platform_task_configure(
     const h2_bk_task_policy_config_t* config) {
   if (s_task_configured || s_task_started) {

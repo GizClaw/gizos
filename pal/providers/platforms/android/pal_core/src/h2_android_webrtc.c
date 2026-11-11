@@ -18,7 +18,7 @@ h2_pal_result_t h2_android_webrtc_create(h2_android_webrtc_t** out) {
   const h2_pal_mem_api_t* memory = h2_android_platform_mem_api();
   h2_android_webrtc_t* owner = h2_pal_mem_alloc(memory, sizeof(*owner));
   if (!owner) {
-    h2_android_tls_release_deferred();
+    (void)h2_android_tls_release();
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(owner, 0, sizeof(*owner));
@@ -43,7 +43,7 @@ h2_pal_result_t h2_android_webrtc_create(h2_android_webrtc_t** out) {
   if (rc != H2_PAL_OK) {
     (void)h2_sctp_destroy(&owner->sctp);
     h2_pal_mem_free(memory, owner);
-    h2_android_tls_release_deferred();
+    (void)h2_android_tls_release();
     return (h2_pal_result_t)rc;
   }
   *out = owner;

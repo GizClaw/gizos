@@ -10,10 +10,6 @@ h2_pal_result_t h2_test_windows_monotonic_ms(h2_windows_platform_t* platform,
 int h2_test_tls_load_ca(WOLFSSL_CTX* context, const unsigned char* data,
                         long len, int format);
 int h2_test_tls_load_system_ca(WOLFSSL_CTX* context);
-HANDLE WINAPI h2_test_tls_create_thread(LPSECURITY_ATTRIBUTES attributes,
-                                        SIZE_T stack,
-                                        LPTHREAD_START_ROUTINE entry,
-                                        void* argument, DWORD flags, DWORD* id);
 int h2_test_tls_connect(WOLFSSL* ssl);
 int h2_test_tls_get_error(WOLFSSL* ssl, int result);
 int WSAAPI h2_test_tls_select(int nfds, fd_set* read_fds, fd_set* write_fds,
@@ -26,7 +22,6 @@ h2_pal_result_t h2_test_windows_tls_wrap(h2_windows_platform_t* platform,
 
 #define h2_windows_monotonic_ms h2_test_windows_monotonic_ms
 #define select h2_test_tls_select
-#define CreateThread h2_test_tls_create_thread
 #define wolfSSL_CTX_load_verify_buffer h2_test_tls_load_ca
 #define wolfSSL_CTX_load_system_CA_certs h2_test_tls_load_system_ca
 #define wolfSSL_connect h2_test_tls_connect
@@ -34,12 +29,7 @@ h2_pal_result_t h2_test_windows_tls_wrap(h2_windows_platform_t* platform,
 
 /* The real platform supplies socket locking/lifetime. Keep its TLS entry
  * symbols separate from this copy of the provider with controlled timing. */
-h2_pal_result_t h2_test_windows_tls_wrap_bounded(
-    h2_windows_platform_t* platform, h2_pal_net_socket_t token,
-    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_token);
 #define h2_windows_tls_wrap h2_test_windows_tls_wrap
-#define h2_windows_tls_wrap_bounded h2_test_windows_tls_wrap_bounded
 #define h2_windows_tls_send h2_test_windows_tls_send
 #define h2_windows_tls_recv h2_test_windows_tls_recv
 #define h2_windows_tls_release h2_test_windows_tls_release

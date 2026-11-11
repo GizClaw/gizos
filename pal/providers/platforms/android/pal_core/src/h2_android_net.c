@@ -13,7 +13,7 @@ h2_pal_result_t h2_android_net_create(h2_android_net_t** out) {
   h2_android_net_t* owner =
       h2_pal_mem_alloc(h2_android_platform_mem_api(), sizeof(*owner));
   if (!owner) {
-    h2_android_tls_release_deferred();
+    (void)h2_android_tls_release();
     return H2_PAL_ERR_NO_MEMORY;
   }
   owner->tls_reference = 1;

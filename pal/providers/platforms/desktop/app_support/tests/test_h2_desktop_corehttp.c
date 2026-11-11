@@ -1,7 +1,6 @@
 #include "h2_corehttp.h"
 #include "h2_desktop_app_support_c.h"
 #include "h2_desktop_platform.h"
-#include "h2_wolfssl.h"
 
 #include <assert.h>
 #include <netinet/in.h>
@@ -398,13 +397,6 @@ int main(int argc, char** argv) {
   assert(signal(SIGPIPE, SIG_IGN) != SIG_ERR);
   h2_desktop_network_services_t* network = NULL;
   assert(h2_desktop_network_services_create(0, 0, &network) == H2_PAL_OK);
-  /* An abandoned setup still owns this lease after its request timed out.
-   * Destroy the C owner, then recover a compatible owner before it finishes. */
-  assert(h2_wolfssl_operation_acquire_concurrent() == H2_PAL_OK);
-  h2_desktop_network_services_destroy(network);
-  network = NULL;
-  assert(h2_wolfssl_operation_acquire() == H2_PAL_ERR_INVALID_STATE);
-  assert(h2_desktop_network_services_create(0, 0, &network) == H2_PAL_OK);
   test_file_t ca = read_file(argv[1]);
   test_file_t wrong_ca = read_file(argv[2]);
   h2_corehttp_config_t config = {
@@ -419,8 +411,6 @@ int main(int argc, char** argv) {
   h2_pal_http_api_t http = {0};
   assert(h2_corehttp_create(&config, &provider, &http) == H2_PAL_OK);
   run_methods(&http);
-  /* Plain HTTP made progress while the old setup lease remained outstanding. */
-  h2_wolfssl_operation_release();
   run_redirect_stream(&http);
   run_stall(&http, 1);
   run_stall(&http, 0);

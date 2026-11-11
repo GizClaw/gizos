@@ -69,30 +69,11 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "fake_net_test_support",
-    testonly = True,
-    srcs = ["tests/fake_net.c"],
-    hdrs = ["tests/fake_net.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["tests"],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    visibility = [
-        "//pal/providers/platforms/posix/pal_core:__pkg__",
-        "//pal/providers/platforms/windows/pal_core:__pkg__",
-    ],
-    deps = [":corehttp"],
-)
-
 cc_test(
     name = "corehttp_test",
     srcs = [
+        "tests/fake_net.c",
+        "tests/fake_net.h",
         "tests/test_corehttp.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -106,7 +87,6 @@ cc_test(
     }),
     deps = [
         ":corehttp",
-        ":fake_net_test_support",
         "//libs/sync/atomic/providers/c11",
         "//pal:test_allocator",
     ],

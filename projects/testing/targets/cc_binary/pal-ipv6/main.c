@@ -93,9 +93,7 @@ int main(int argc, char** argv) {
                      .time = h2_desktop_platform_time_api(),
                      .task = h2_desktop_platform_task_api()};
   h2_runtime_t* runtime = &owner->runtime;
-  h2_wolfssl_config_t tls = {.mem = *runtime->mem,
-                             .entropy = host_entropy,
-                             .providers_thread_safe = true};
+  h2_wolfssl_config_t tls = {.mem = *runtime->mem, .entropy = host_entropy};
   if (h2_wolfssl_init(&tls) != H2_PAL_OK) return 2;
   runtime->crypto = h2_wolfssl_crypto_api();
   owner->ice_vtable = *runtime->net->vtable;

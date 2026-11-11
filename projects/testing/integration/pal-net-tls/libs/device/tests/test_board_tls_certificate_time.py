@@ -69,9 +69,7 @@ class CertificateTime(unittest.TestCase):
         ]:
             source = (ROOT / relative).read_text()
             start = source.index('static int '+backend+'_net_tls_verify_dates(')
-            # Extract only this top-level callback, independent of helpers
-            # inserted between it and the handshake entry point.
-            end = source.index('\n}', start) + 2
+            end = source.index('static h2_pal_result_t '+backend+'_net_tls_handshake(', start)
             prelude = PRELUDE.replace('TIME_API', 'h2_'+backend+'_platform_time_api')
             if backend == 'esp':
                 prelude = prelude[:prelude.index('static const void *h2_bk_platform_log_api')]

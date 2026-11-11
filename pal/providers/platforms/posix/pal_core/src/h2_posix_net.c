@@ -1,5 +1,4 @@
 #include "h2_posix_pal_core.h"
-#include "h2_wolfssl.h"
 #include "net/h2_pal_netif.h"
 
 #include <arpa/inet.h>
@@ -11,8 +10,6 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
-#include <poll.h>
-#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
@@ -183,341 +180,6 @@ static uint32_t timeout_remaining_ms(uint64_t deadline_ms) {
   return remaining > (uint64_t)UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
 }
 
-#define H2_POSIX_TLS_SETUP_MAX 8u
-#define H2_POSIX_TLS_SETUP_BYTES_MAX (4u * 1024u * 1024u)
-
-typedef struct tls_setup_job {
-  pthread_mutex_t lock;
-  int signal[2];
-  unsigned refs;
-  int done;
-  int lease;
-  size_t bytes;
-  h2_pal_result_t result;
-  h2_pal_net_tls_config_t config;
-  WOLFSSL_CTX* ctx;
-  WOLFSSL* ssl;
-  unsigned char storage[];
-} tls_setup_job_t;
-
-static pthread_mutex_t jobs_lock = PTHREAD_MUTEX_INITIALIZER;
-static size_t jobs_count;
-static size_t jobs_bytes;
-
-static h2_pal_result_t h2_posix_tls_deadline_ms(uint32_t timeout_ms,
-                                                uint64_t* out_deadline) {
-  struct timespec now;
-  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0) {
-    return H2_PAL_ERR_IO;
-  }
-  uint64_t ms = (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
-  if (UINT64_MAX - ms < timeout_ms) return H2_PAL_ERR_IO;
-  *out_deadline = ms + timeout_ms;
-  return H2_PAL_OK;
-}
-
-static uint32_t h2_posix_tls_remaining_ms(uint64_t deadline) {
-  uint64_t now;
-  if (h2_posix_tls_deadline_ms(0u, &now) != H2_PAL_OK || now >= deadline) {
-    return 0u;
-  }
-  uint64_t remaining = deadline - now;
-  return remaining > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
-}
-
-static void h2_posix_tls_free(WOLFSSL* ssl, WOLFSSL_CTX* ctx) {
-  if (ssl != NULL) wolfSSL_free(ssl);
-  if (ctx != NULL) {
-    wolfSSL_CTX_free(ctx);
-    h2_wolfssl_operation_release();
-  }
-}
-
-static h2_pal_result_t tls_setup_configure(tls_setup_job_t* job) {
-  if (job->config.verify == H2_PAL_NET_TLS_VERIFY_DEFAULT) {
-    job->config.verify = H2_PAL_NET_TLS_VERIFY_REQUIRED;
-  }
-  const h2_pal_net_tls_config_t* config = &job->config;
-  if (config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
-      config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (config->verify == H2_PAL_NET_TLS_VERIFY_REQUIRED &&
-      (config->server_name == NULL || config->server_name[0] == '\0')) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (config->server_name != NULL && strlen(config->server_name) > UINT16_MAX) {
-    return H2_PAL_ERR_IO;
-  }
-  if (config->alpn != NULL && strlen(config->alpn) > 255u) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (config->verify == H2_PAL_NET_TLS_VERIFY_REQUIRED &&
-      config->root_ca_pem != NULL && config->root_ca_pem_len > INT32_MAX) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  job->ctx = wolfSSL_CTX_new(wolfSSLv23_client_method());
-  if (job->ctx == NULL) return H2_PAL_ERR_NO_MEMORY;
-  if (wolfSSL_CTX_SetMinVersion(job->ctx, WOLFSSL_TLSV1_2) != WOLFSSL_SUCCESS) {
-    return H2_PAL_ERR_IO;
-  }
-  if (config->verify == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-    wolfSSL_CTX_set_verify(job->ctx, WOLFSSL_VERIFY_NONE, NULL);
-  } else {
-    int loaded;
-    if (config->root_ca_pem == NULL || config->root_ca_pem_len == 0u) {
-      loaded = wolfSSL_CTX_load_system_CA_certs(job->ctx);
-      if (loaded != WOLFSSL_SUCCESS) return H2_PAL_ERR_IO;
-    } else {
-      loaded = wolfSSL_CTX_load_verify_buffer(job->ctx, config->root_ca_pem,
-                                              (long)config->root_ca_pem_len,
-                                              WOLFSSL_FILETYPE_PEM);
-      if (loaded != WOLFSSL_SUCCESS) return H2_PAL_ERR_FORMAT;
-    }
-    wolfSSL_CTX_set_verify(job->ctx, WOLFSSL_VERIFY_PEER, NULL);
-  }
-  job->ssl = wolfSSL_new(job->ctx);
-  if (job->ssl == NULL) return H2_PAL_ERR_NO_MEMORY;
-  int groups[] = {WOLFSSL_ECC_X25519, WOLFSSL_ECC_SECP256R1};
-  if (wolfSSL_set_groups(job->ssl, groups,
-                         (int)(sizeof(groups) / sizeof(groups[0]))) !=
-      WOLFSSL_SUCCESS)
-    return H2_PAL_ERR_IO;
-  if (config->server_name != NULL && config->server_name[0] != '\0') {
-    uint8_t address[sizeof(struct in6_addr)];
-    int numeric = inet_pton(AF_INET, config->server_name, address) == 1 ||
-                  inet_pton(AF_INET6, config->server_name, address) == 1;
-    if (!numeric &&
-        wolfSSL_UseSNI(job->ssl, WOLFSSL_SNI_HOST_NAME, config->server_name,
-                       (unsigned short)strlen(config->server_name)) !=
-            WOLFSSL_SUCCESS)
-      return H2_PAL_ERR_IO;
-    int checked =
-        numeric ? wolfSSL_check_ip_address(job->ssl, config->server_name)
-                : wolfSSL_check_domain_name(job->ssl, config->server_name);
-    if (checked != WOLFSSL_SUCCESS) return H2_PAL_ERR_IO;
-  }
-  if (config->alpn != NULL && config->alpn[0] != '\0' &&
-      wolfSSL_UseALPN(job->ssl, (char*)config->alpn,
-                      (word32)strlen(config->alpn),
-                      WOLFSSL_ALPN_FAILED_ON_MISMATCH) != WOLFSSL_SUCCESS) {
-    return H2_PAL_ERR_UNSUPPORTED;
-  }
-  return H2_PAL_OK;
-}
-
-static void tls_setup_release_job(tls_setup_job_t* job) {
-  (void)pthread_mutex_lock(&job->lock);
-  int destroy = --job->refs == 0u;
-  (void)pthread_mutex_unlock(&job->lock);
-  if (!destroy) return;
-  if (job->ssl != NULL) wolfSSL_free(job->ssl);
-  if (job->ctx != NULL) wolfSSL_CTX_free(job->ctx);
-  int lease = job->lease;
-  close(job->signal[0]);
-  close(job->signal[1]);
-  (void)pthread_mutex_destroy(&job->lock);
-  (void)pthread_mutex_lock(&jobs_lock);
-  --jobs_count;
-  jobs_bytes -= job->bytes;
-  (void)pthread_mutex_unlock(&jobs_lock);
-  free(job);
-  if (lease) h2_wolfssl_operation_release();
-}
-
-static void* tls_setup_thread(void* arg) {
-  tls_setup_job_t* job = arg;
-  h2_pal_result_t result = tls_setup_configure(job);
-  (void)pthread_mutex_lock(&job->lock);
-  job->result = result;
-  job->done = 1;
-  (void)pthread_mutex_unlock(&job->lock);
-  const unsigned char ready = 1u;
-  /* The job owns both pipe ends until both references are gone. One byte never
-   * fills the pipe, even if the caller has already returned on timeout. */
-  ssize_t written;
-  do {
-    written = write(job->signal[1], &ready, sizeof(ready));
-  } while (written < 0 && errno == EINTR);
-  tls_setup_release_job(job);
-  return NULL;
-}
-
-static h2_pal_result_t tls_setup_create_job(
-    const h2_pal_net_tls_config_t* config, tls_setup_job_t** out) {
-  h2_pal_net_tls_verify_t verify =
-      config->verify == H2_PAL_NET_TLS_VERIFY_DEFAULT
-          ? H2_PAL_NET_TLS_VERIFY_REQUIRED
-          : config->verify;
-  if (verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
-      verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  size_t name =
-      config->server_name == NULL ? 0u : strlen(config->server_name) + 1u;
-  size_t alpn = config->alpn == NULL ? 0u : strlen(config->alpn) + 1u;
-  if (verify == H2_PAL_NET_TLS_VERIFY_REQUIRED && name <= 1u) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (name > (size_t)UINT16_MAX + 1u) return H2_PAL_ERR_IO;
-  if (alpn > 256u) return H2_PAL_ERR_INVALID_ARG;
-  size_t ca =
-      verify == H2_PAL_NET_TLS_VERIFY_REQUIRED && config->root_ca_pem != NULL
-          ? config->root_ca_pem_len
-          : 0u;
-  if (ca > INT32_MAX) return H2_PAL_ERR_INVALID_ARG;
-  size_t bytes = name + alpn + ca;
-  h2_pal_result_t result = h2_wolfssl_operation_acquire_concurrent();
-  if (result != H2_PAL_OK) return result;
-  (void)pthread_mutex_lock(&jobs_lock);
-  if (jobs_count == H2_POSIX_TLS_SETUP_MAX ||
-      bytes > H2_POSIX_TLS_SETUP_BYTES_MAX - jobs_bytes) {
-    (void)pthread_mutex_unlock(&jobs_lock);
-    h2_wolfssl_operation_release();
-    return H2_PAL_ERR_NO_SPACE;
-  }
-  ++jobs_count;
-  jobs_bytes += bytes;
-  (void)pthread_mutex_unlock(&jobs_lock);
-  tls_setup_job_t* job = NULL;
-  job = calloc(1u, sizeof(*job) + bytes);
-  if (job == NULL) {
-    result = H2_PAL_ERR_NO_MEMORY;
-    goto fail_lease;
-  }
-  job->bytes = bytes;
-  job->lease = 1;
-  job->refs = 1u;
-  job->config = *config;
-  job->config.verify = verify;
-  unsigned char* cursor = job->storage;
-  if (name != 0u) memcpy(cursor, config->server_name, name);
-  job->config.server_name = name == 0u ? NULL : (const char*)cursor;
-  cursor += name;
-  if (alpn != 0u) memcpy(cursor, config->alpn, alpn);
-  job->config.alpn = alpn == 0u ? NULL : (const char*)cursor;
-  cursor += alpn;
-  if (ca != 0u) memcpy(cursor, config->root_ca_pem, ca);
-  job->config.root_ca_pem = ca == 0u ? NULL : cursor;
-  job->config.root_ca_pem_len = ca;
-  result = H2_PAL_ERR_IO;
-  if (pthread_mutex_init(&job->lock, NULL) != 0) goto fail_job;
-  if (pipe(job->signal) != 0) {
-    (void)pthread_mutex_destroy(&job->lock);
-    goto fail_job;
-  }
-  if (fcntl(job->signal[0], F_SETFD, FD_CLOEXEC) < 0 ||
-      fcntl(job->signal[1], F_SETFD, FD_CLOEXEC) < 0) {
-    tls_setup_release_job(job);
-    return result;
-  }
-  *out = job;
-  return H2_PAL_OK;
-fail_job:
-  free(job);
-fail_lease:
-  h2_wolfssl_operation_release();
-  (void)pthread_mutex_lock(&jobs_lock);
-  --jobs_count;
-  jobs_bytes -= bytes;
-  (void)pthread_mutex_unlock(&jobs_lock);
-  return result;
-}
-
-/* Legacy providers stay on the caller's thread. Opaque setup cannot be
- * preempted, but it consumes the same deadline and never restarts the budget.
- */
-static h2_pal_result_t tls_setup_inline(const h2_pal_net_tls_config_t* config,
-                                        uint64_t deadline,
-                                        WOLFSSL_CTX** out_ctx,
-                                        WOLFSSL** out_ssl) {
-  if (h2_posix_tls_remaining_ms(deadline) == 0u) return H2_PAL_ERR_TIMEOUT;
-  h2_pal_result_t result = h2_wolfssl_operation_acquire();
-  if (result != H2_PAL_OK) return result;
-  tls_setup_job_t setup = {.config = *config};
-  result = tls_setup_configure(&setup);
-  if (result == H2_PAL_OK && h2_posix_tls_remaining_ms(deadline) == 0u) {
-    result = H2_PAL_ERR_TIMEOUT;
-  }
-  if (result == H2_PAL_OK) {
-    *out_ctx = setup.ctx;
-    *out_ssl = setup.ssl;
-    return H2_PAL_OK;
-  }
-  if (setup.ssl != NULL) wolfSSL_free(setup.ssl);
-  if (setup.ctx != NULL) wolfSSL_CTX_free(setup.ctx);
-  h2_wolfssl_operation_release();
-  return result;
-}
-
-static h2_pal_result_t h2_posix_tls_setup(const h2_pal_net_tls_config_t* config,
-                                          uint64_t deadline,
-                                          WOLFSSL_CTX** out_ctx,
-                                          WOLFSSL** out_ssl, int allow_inline) {
-  *out_ctx = NULL;
-  *out_ssl = NULL;
-  if (h2_posix_tls_remaining_ms(deadline) == 0u) return H2_PAL_ERR_TIMEOUT;
-  tls_setup_job_t* job;
-  h2_pal_result_t result = tls_setup_create_job(config, &job);
-  if (result == H2_PAL_ERR_UNSUPPORTED && allow_inline) {
-    return tls_setup_inline(config, deadline, out_ctx, out_ssl);
-  }
-  if (result != H2_PAL_OK) return result;
-  pthread_attr_t attr;
-  if (pthread_attr_init(&attr) != 0) {
-    tls_setup_release_job(job);
-    return H2_PAL_ERR_IO;
-  }
-  int rc = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  pthread_t thread;
-  job->refs = 2u;
-  if (rc == 0) rc = pthread_create(&thread, &attr, tls_setup_thread, job);
-  (void)pthread_attr_destroy(&attr);
-  if (rc != 0) {
-    job->refs = 1u;
-    tls_setup_release_job(job);
-    return H2_PAL_ERR_IO;
-  }
-  for (;;) {
-    (void)pthread_mutex_lock(&job->lock);
-    if (job->done) {
-      result = job->result;
-      if (result == H2_PAL_OK && h2_posix_tls_remaining_ms(deadline) == 0u) {
-        result = H2_PAL_ERR_TIMEOUT;
-      }
-      if (result == H2_PAL_OK) {
-        *out_ctx = job->ctx;
-        *out_ssl = job->ssl;
-        job->ctx = NULL;
-        job->ssl = NULL;
-        job->lease = 0;
-      }
-      (void)pthread_mutex_unlock(&job->lock);
-      break;
-    }
-    (void)pthread_mutex_unlock(&job->lock);
-    uint32_t remaining = h2_posix_tls_remaining_ms(deadline);
-    if (remaining == 0u) {
-      result = H2_PAL_ERR_TIMEOUT;
-      break;
-    }
-    struct pollfd signal = {.fd = job->signal[0], .events = POLLIN};
-    int ready =
-        poll(&signal, 1u, remaining > INT_MAX ? INT_MAX : (int)remaining);
-    if (ready == 0) {
-      if (remaining > INT_MAX) continue;
-      result = H2_PAL_ERR_TIMEOUT;
-      break;
-    }
-    if (ready < 0 && errno != EINTR) {
-      result = H2_PAL_ERR_IO;
-      break;
-    }
-  }
-  tls_setup_release_job(job);
-  return result;
-}
-
 static int tls_find_slot(h2_pal_net_socket_t socket_fd) {
   for (size_t i = 0; i < H2_DESKTOP_TLS_SOCKET_MAX; ++i) {
     if (s_tls_sockets[i].in_use && s_tls_sockets[i].fd == socket_fd) {
@@ -537,8 +199,13 @@ static int tls_find_free_slot(void) {
 }
 
 static void tls_free_handles(WOLFSSL* ssl, WOLFSSL_CTX* ctx) {
-  if (ssl != NULL) (void)wolfSSL_shutdown(ssl);
-  h2_posix_tls_free(ssl, ctx);
+  if (ssl != NULL) {
+    (void)wolfSSL_shutdown(ssl);
+    wolfSSL_free(ssl);
+  }
+  if (ctx != NULL) {
+    wolfSSL_CTX_free(ctx);
+  }
 }
 
 static void tls_detach_slot_locked(int slot, WOLFSSL** out_ssl,
@@ -606,6 +273,37 @@ static void tls_release_slot(int slot) {
   tls_free_handles(ssl, ctx);
 }
 
+static h2_pal_result_t tls_load_root_ca(WOLFSSL_CTX* ctx,
+                                        const h2_pal_net_tls_config_t* config) {
+  if (config->root_ca_pem == NULL || config->root_ca_pem_len == 0u) {
+    return wolfSSL_CTX_load_system_CA_certs(ctx) == WOLFSSL_SUCCESS
+               ? H2_PAL_OK
+               : H2_PAL_ERR_IO;
+  }
+  if (config->root_ca_pem_len > (size_t)INT32_MAX) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  return wolfSSL_CTX_load_verify_buffer(ctx, config->root_ca_pem,
+                                        (long)config->root_ca_pem_len,
+                                        WOLFSSL_FILETYPE_PEM) == WOLFSSL_SUCCESS
+             ? H2_PAL_OK
+             : H2_PAL_ERR_FORMAT;
+}
+
+static h2_pal_result_t tls_configure_alpn(WOLFSSL* ssl, const char* alpn) {
+  if (alpn == NULL || alpn[0] == '\0') {
+    return H2_PAL_OK;
+  }
+  size_t len = strlen(alpn);
+  if (len > 255u) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  return wolfSSL_UseALPN(ssl, (char*)alpn, (word32)len,
+                         WOLFSSL_ALPN_FAILED_ON_MISMATCH) == WOLFSSL_SUCCESS
+             ? H2_PAL_OK
+             : H2_PAL_ERR_UNSUPPORTED;
+}
+
 static int tls_is_verify_error(int error) {
   return error == DOMAIN_NAME_MISMATCH || error == IPADDR_MISMATCH ||
          error == VERIFY_CERT_ERROR || error == VERIFY_SIGN_ERROR ||
@@ -618,17 +316,17 @@ static h2_pal_result_t tls_wait_handshake(WOLFSSL* ssl, int fd,
                                           uint64_t deadline,
                                           h2_pal_net_tls_verify_t verify_mode) {
   for (;;) {
-    if (h2_posix_tls_remaining_ms(deadline) == 0u) {
+    if (timeout_remaining_ms(deadline) == 0u) {
       return H2_PAL_ERR_TIMEOUT;
     }
     int rc = wolfSSL_connect(ssl);
     if (rc == WOLFSSL_SUCCESS) {
-      return h2_posix_tls_remaining_ms(deadline) == 0u ? H2_PAL_ERR_TIMEOUT
-                                                       : H2_PAL_OK;
+      return timeout_remaining_ms(deadline) == 0u ? H2_PAL_ERR_TIMEOUT
+                                                  : H2_PAL_OK;
     }
     int err = wolfSSL_get_error(ssl, rc);
     if (err == WOLFSSL_ERROR_WANT_READ || err == WOLFSSL_ERROR_WANT_WRITE) {
-      uint32_t remaining = h2_posix_tls_remaining_ms(deadline);
+      uint32_t remaining = timeout_remaining_ms(deadline);
       if (remaining == 0u) {
         return H2_PAL_ERR_TIMEOUT;
       }
@@ -1585,20 +1283,17 @@ static int desktop_net_tcp_recv(void* user, h2_pal_net_socket_t socket_fd,
   return got < 0 ? desktop_net_socket_error() : (int)got;
 }
 
-static h2_pal_result_t desktop_net_tls_wrap_impl(
+static h2_pal_result_t desktop_net_tls_wrap(
     void* user, h2_pal_net_socket_t tcp_socket,
     const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_tls_socket, int allow_inline) {
+    h2_pal_net_socket_t* out_tls_socket) {
   (void)user;
   if (tcp_socket < 0 || config == NULL || out_tls_socket == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_tls_socket = -1;
   /* Certificate loading and TLS setup share the handshake's budget. */
-  uint64_t deadline;
-  h2_pal_result_t clock_result =
-      h2_posix_tls_deadline_ms(timeout_ms, &deadline);
-  if (clock_result != H2_PAL_OK) return clock_result;
+  uint64_t deadline = timeout_deadline_ms(timeout_ms);
   (void)pthread_mutex_lock(&s_tls_lock);
   if (tls_find_slot(tcp_socket) >= 0) {
     (void)pthread_mutex_unlock(&s_tls_lock);
@@ -1623,24 +1318,119 @@ static h2_pal_result_t desktop_net_tls_wrap_impl(
   uint32_t slot_generation = s_tls_sockets[slot].generation;
   (void)pthread_mutex_unlock(&s_tls_lock);
 
-  WOLFSSL_CTX* ctx = NULL;
-  WOLFSSL* ssl = NULL;
-  h2_pal_result_t setup_result =
-      h2_posix_tls_setup(config, deadline, &ctx, &ssl, allow_inline);
-  if (setup_result != H2_PAL_OK) {
+  WOLFSSL_CTX* ctx = wolfSSL_CTX_new(wolfSSLv23_client_method());
+  if (ctx == NULL) {
     (void)pthread_mutex_lock(&s_tls_lock);
     tls_clear_reserved_slot(slot, slot_generation);
     (void)pthread_mutex_unlock(&s_tls_lock);
-    return setup_result;
+    return H2_PAL_ERR_NO_MEMORY;
   }
+  if (wolfSSL_CTX_SetMinVersion(ctx, WOLFSSL_TLSV1_2) != WOLFSSL_SUCCESS) {
+    wolfSSL_CTX_free(ctx);
+    (void)pthread_mutex_lock(&s_tls_lock);
+    tls_clear_reserved_slot(slot, slot_generation);
+    (void)pthread_mutex_unlock(&s_tls_lock);
+    return H2_PAL_ERR_IO;
+  }
+
   h2_pal_net_tls_verify_t verify_mode = config->verify;
   if (verify_mode == H2_PAL_NET_TLS_VERIFY_DEFAULT) {
     verify_mode = H2_PAL_NET_TLS_VERIFY_REQUIRED;
   }
+  if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+    wolfSSL_CTX_set_verify(ctx, WOLFSSL_VERIFY_NONE, NULL);
+  } else if (verify_mode == H2_PAL_NET_TLS_VERIFY_REQUIRED) {
+    if (config->server_name == NULL || config->server_name[0] == '\0') {
+      wolfSSL_CTX_free(ctx);
+      (void)pthread_mutex_lock(&s_tls_lock);
+      tls_clear_reserved_slot(slot, slot_generation);
+      (void)pthread_mutex_unlock(&s_tls_lock);
+      return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_pal_result_t ca_rc = tls_load_root_ca(ctx, config);
+    if (ca_rc != H2_PAL_OK) {
+      wolfSSL_CTX_free(ctx);
+      (void)pthread_mutex_lock(&s_tls_lock);
+      tls_clear_reserved_slot(slot, slot_generation);
+      (void)pthread_mutex_unlock(&s_tls_lock);
+      return ca_rc;
+    }
+    wolfSSL_CTX_set_verify(ctx, WOLFSSL_VERIFY_PEER, NULL);
+  } else {
+    wolfSSL_CTX_free(ctx);
+    (void)pthread_mutex_lock(&s_tls_lock);
+    tls_clear_reserved_slot(slot, slot_generation);
+    (void)pthread_mutex_unlock(&s_tls_lock);
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+
+  WOLFSSL* ssl = wolfSSL_new(ctx);
+  if (ssl == NULL) {
+    wolfSSL_CTX_free(ctx);
+    (void)pthread_mutex_lock(&s_tls_lock);
+    tls_clear_reserved_slot(slot, slot_generation);
+    (void)pthread_mutex_unlock(&s_tls_lock);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  int supported_groups[] = {
+      WOLFSSL_ECC_X25519,
+      WOLFSSL_ECC_SECP256R1,
+  };
+  if (wolfSSL_set_groups(
+          ssl, supported_groups,
+          (int)(sizeof(supported_groups) / sizeof(supported_groups[0]))) !=
+      WOLFSSL_SUCCESS) {
+    wolfSSL_free(ssl);
+    wolfSSL_CTX_free(ctx);
+    (void)pthread_mutex_lock(&s_tls_lock);
+    tls_clear_reserved_slot(slot, slot_generation);
+    (void)pthread_mutex_unlock(&s_tls_lock);
+    return H2_PAL_ERR_IO;
+  }
+  if (config->server_name != NULL && config->server_name[0] != '\0') {
+    uint8_t address[sizeof(struct in6_addr)];
+    int numeric_host = inet_pton(AF_INET, config->server_name, address) == 1 ||
+                       inet_pton(AF_INET6, config->server_name, address) == 1;
+    size_t server_name_len = strlen(config->server_name);
+    if (!numeric_host &&
+        (server_name_len > (size_t)UINT16_MAX ||
+         wolfSSL_UseSNI(ssl, WOLFSSL_SNI_HOST_NAME, config->server_name,
+                        (unsigned short)server_name_len) != WOLFSSL_SUCCESS)) {
+      wolfSSL_free(ssl);
+      wolfSSL_CTX_free(ctx);
+      (void)pthread_mutex_lock(&s_tls_lock);
+      tls_clear_reserved_slot(slot, slot_generation);
+      (void)pthread_mutex_unlock(&s_tls_lock);
+      return H2_PAL_ERR_IO;
+    }
+    /* Numeric authorities require IP SAN verification; domain matching
+     * cannot validate iPAddress SANs, and IP literals are not SNI names. */
+    int name_rc = numeric_host
+                      ? wolfSSL_check_ip_address(ssl, config->server_name)
+                      : wolfSSL_check_domain_name(ssl, config->server_name);
+    if (name_rc != WOLFSSL_SUCCESS) {
+      wolfSSL_free(ssl);
+      wolfSSL_CTX_free(ctx);
+      (void)pthread_mutex_lock(&s_tls_lock);
+      tls_clear_reserved_slot(slot, slot_generation);
+      (void)pthread_mutex_unlock(&s_tls_lock);
+      return H2_PAL_ERR_IO;
+    }
+  }
+  h2_pal_result_t alpn_rc = tls_configure_alpn(ssl, config->alpn);
+  if (alpn_rc != H2_PAL_OK) {
+    wolfSSL_free(ssl);
+    wolfSSL_CTX_free(ctx);
+    (void)pthread_mutex_lock(&s_tls_lock);
+    tls_clear_reserved_slot(slot, slot_generation);
+    (void)pthread_mutex_unlock(&s_tls_lock);
+    return alpn_rc;
+  }
   int send_flags = 0;
   if (!desktop_net_prepare_send(tcp_socket, &send_flags) ||
       wolfSSL_set_fd(ssl, tcp_socket) != WOLFSSL_SUCCESS) {
-    h2_posix_tls_free(ssl, ctx);
+    wolfSSL_free(ssl);
+    wolfSSL_CTX_free(ctx);
     (void)pthread_mutex_lock(&s_tls_lock);
     tls_clear_reserved_slot(slot, slot_generation);
     (void)pthread_mutex_unlock(&s_tls_lock);
@@ -1651,7 +1441,8 @@ static h2_pal_result_t desktop_net_tls_wrap_impl(
   wolfSSL_SetIOWriteFlags(ssl, send_flags);
   int flags = fcntl(tcp_socket, F_GETFL, 0);
   if (flags < 0 || fcntl(tcp_socket, F_SETFL, flags | O_NONBLOCK) < 0) {
-    h2_posix_tls_free(ssl, ctx);
+    wolfSSL_free(ssl);
+    wolfSSL_CTX_free(ctx);
     (void)pthread_mutex_lock(&s_tls_lock);
     tls_clear_reserved_slot(slot, slot_generation);
     (void)pthread_mutex_unlock(&s_tls_lock);
@@ -1661,7 +1452,8 @@ static h2_pal_result_t desktop_net_tls_wrap_impl(
       tls_wait_handshake(ssl, tcp_socket, deadline, verify_mode);
   if (rc != H2_PAL_OK) {
     (void)fcntl(tcp_socket, F_SETFL, flags);
-    h2_posix_tls_free(ssl, ctx);
+    wolfSSL_free(ssl);
+    wolfSSL_CTX_free(ctx);
     (void)pthread_mutex_lock(&s_tls_lock);
     tls_clear_reserved_slot(slot, slot_generation);
     (void)pthread_mutex_unlock(&s_tls_lock);
@@ -1673,37 +1465,15 @@ static h2_pal_result_t desktop_net_tls_wrap_impl(
       s_tls_sockets[slot].generation != slot_generation ||
       s_tls_sockets[slot].closing) {
     (void)pthread_mutex_unlock(&s_tls_lock);
-    h2_posix_tls_free(ssl, ctx);
+    wolfSSL_free(ssl);
+    wolfSSL_CTX_free(ctx);
     return H2_PAL_ERR_CLOSED;
-  }
-  if (h2_posix_tls_remaining_ms(deadline) == 0u) {
-    tls_clear_reserved_slot(slot, slot_generation);
-    (void)pthread_mutex_unlock(&s_tls_lock);
-    (void)fcntl(tcp_socket, F_SETFL, flags);
-    h2_posix_tls_free(ssl, ctx);
-    return H2_PAL_ERR_TIMEOUT;
   }
   s_tls_sockets[slot].ssl = ssl;
   s_tls_sockets[slot].ctx = ctx;
   (void)pthread_mutex_unlock(&s_tls_lock);
   *out_tls_socket = tcp_socket;
   return H2_PAL_OK;
-}
-
-static h2_pal_result_t desktop_net_tls_wrap(
-    void* user, h2_pal_net_socket_t tcp_socket,
-    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_tls_socket) {
-  return desktop_net_tls_wrap_impl(user, tcp_socket, config, timeout_ms,
-                                   out_tls_socket, 1);
-}
-
-static h2_pal_result_t desktop_net_tls_wrap_bounded(
-    void* user, h2_pal_net_socket_t tcp_socket,
-    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_tls_socket) {
-  return desktop_net_tls_wrap_impl(user, tcp_socket, config, timeout_ms,
-                                   out_tls_socket, 0);
 }
 
 static void desktop_net_close(void* user, h2_pal_net_socket_t socket_fd) {
@@ -1841,7 +1611,6 @@ const h2_pal_net_api_t* h2_posix_net_api(void) {
       .tcp_send_timeout = desktop_net_tcp_send_timeout,
       .tcp_recv = desktop_net_tcp_recv,
       .tls_wrap = desktop_net_tls_wrap,
-      .tls_wrap_bounded = desktop_net_tls_wrap_bounded,
       .close = desktop_net_close,
       .tcp_listen = desktop_net_tcp_listen,
       .tcp_accept = desktop_net_tcp_accept,

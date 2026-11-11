@@ -1,5 +1,4 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_GNU_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 
 package(default_visibility = ["//visibility:public"])
@@ -343,37 +342,6 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":pal"],
-)
-
-cc_test(
-    name = "pal_net_tls_test",
-    srcs = ["tests/test_pal_net_tls.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":pal"],
-)
-
-py_test(
-    name = "pal_net_tls_deadline_test",
-    srcs = ["tests/test_pal_net_tls_deadline.py"],
-    args = ["$(rlocationpath :pal_net_tls_test)"],
-    data = [":pal_net_tls_test"],
-    legacy_create_init = 0,
-    main = "tests/test_pal_net_tls_deadline.py",
-    python_version = "PY3",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = ["@rules_python//python/runfiles"],
 )
 
 cc_test(

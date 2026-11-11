@@ -13,7 +13,6 @@ int main(void) {
       .mem = *h2_windows_mem_api(platform),
       .entropy_user = platform,
       .entropy = h2_windows_entropy,
-      .providers_thread_safe = true,
   };
   assert(h2_wolfssl_init(&wolfssl_config) == H2_PAL_OK);
 

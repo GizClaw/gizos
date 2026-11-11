@@ -62,9 +62,7 @@ int main(int argc, char** argv) {
   h2_runtime_t runtime = {.mem = h2_desktop_platform_default_allocator(),
                           .net = &local_net,
                           .time = h2_desktop_platform_time_api()};
-  h2_wolfssl_config_t tls = {.mem = *runtime.mem,
-                             .entropy = host_entropy,
-                             .providers_thread_safe = true};
+  h2_wolfssl_config_t tls = {.mem = *runtime.mem, .entropy = host_entropy};
   if (h2_wolfssl_init(&tls) != H2_PAL_OK) return 2;
   h2_net_tls_fixture_client_t client = {.runtime = &runtime,
                                         .host = argv[1],

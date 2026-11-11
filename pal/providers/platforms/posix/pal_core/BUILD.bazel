@@ -329,8 +329,6 @@ cc_test(
     linkopts = ["-lpthread"],
     local_defines = [
         "gettimeofday=h2_test_gettimeofday",
-        "clock_gettime=h2_test_clock_gettime",
-        "pthread_create=h2_test_pthread_create",
         "select=h2_test_tls_select",
         "wolfSSL_CTX_load_system_CA_certs=h2_test_tls_load_system_ca",
         "wolfSSL_CTX_load_verify_buffer=h2_test_tls_load_ca",
@@ -346,8 +344,6 @@ cc_test(
     deps = [
         ":entropy",
         "//pal",
-        "//pal/providers/backends/corehttp",
-        "//pal/providers/backends/corehttp:fake_net_test_support",
         "//pal/providers/backends/wolfssl",
     ],
 )

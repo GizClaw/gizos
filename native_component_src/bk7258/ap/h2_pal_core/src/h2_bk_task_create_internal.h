@@ -5,9 +5,6 @@
 #include <os/os.h>
 #include "FreeRTOS.h"
 
-/* Bootstrap may inspect readiness without sealing an unconfigured policy. */
-bool h2_bk_task_policy_is_configured(void);
-
 static inline int h2_bk_task_create(beken_thread_t* thread,
                                     const h2_bk_task_policy_t* policy,
                                     const char* name,

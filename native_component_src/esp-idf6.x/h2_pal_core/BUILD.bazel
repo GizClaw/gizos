@@ -237,9 +237,7 @@ firmware_native_component(
         "src/h2_esp_io_phase.h",
         "src/h2_esp_platform_dtls_state.h",
         "src/h2_esp_platform_littlefs_io.h",
-        "src/h2_esp_platform_net_lifetime.h",
         "src/h2_esp_platform_net_socket.h",
-        "src/h2_esp_platform_net_tls_bounded.h",
         "src/h2_esp_platform_net_tls_verify.h",
         "src/h2_esp_platform_pref_migration.h",
         "src/h2_esp_platform_pref_nvs_legacy.h",
@@ -253,7 +251,6 @@ firmware_native_component(
     ],
     data = [
         "CMakeLists.txt",
-        "Kconfig",
         "idf_component.yml",
     ],
     tags = [
@@ -839,28 +836,6 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//pal"],
-)
-
-py_test(
-    name = "net_tls_bounded_test",
-    srcs = ["tests/test_h2_esp_net_tls_bounded.py"],
-    data = [
-        "src/h2_esp_platform_net.c",
-        "src/h2_esp_platform_net_lifetime.h",
-        "src/h2_esp_platform_net_socket.c",
-        "src/h2_esp_platform_net_socket.h",
-        "src/h2_esp_platform_net_tls_bounded.h",
-        "tests/net_tls_bounded_sdk.h",
-        "tests/test_h2_esp_net_tls_bounded.c",
-        "//pal:pal_header_files",
-    ],
-    legacy_create_init = False,
-    main = "tests/test_h2_esp_net_tls_bounded.py",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
 )
 
 cc_test(

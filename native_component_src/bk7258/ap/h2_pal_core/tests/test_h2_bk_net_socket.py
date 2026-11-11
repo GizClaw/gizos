@@ -16,14 +16,6 @@ FAMILY_PROBE = r"""
 #include <string.h>
 #include <unistd.h>
 #define closesocket close
-static int bk_net_track_idle_tcp(int fd) {
-  assert(fd >= 0);
-  return H2_PAL_OK;
-}
-static void bk_net_close(void* user, int fd) {
-  (void)user;
-  (void)close(fd);
-}
 static void set_recv_timeout(int fd, uint32_t timeout) {
   (void)fd;
   (void)timeout;
@@ -157,7 +149,7 @@ class SocketProfiles(unittest.TestCase):
         for start, end in [
             ("static int bk_net_open_socket(", "static int bk_net_bind_interface("),
             ("static int bk_net_udp_open(", "static int bk_net_udp_sendto("),
-            ("static int bk_net_tcp_open(", "static h2_pal_result_t bk_net_tcp_connect_native(")]:
+            ("static int bk_net_tcp_open(", "static h2_pal_result_t bk_net_tcp_connect(")]:
             pieces.append(source[source.index(start):source.index(end)])
         probe = FAMILY_PROBE.replace("/* PRODUCTION_ADDRESS_CONVERSION */", conversions)
         probe = probe.replace("/* PRODUCTION_SOCKET_OPENERS */", "\n".join(pieces))

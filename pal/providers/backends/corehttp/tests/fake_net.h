@@ -51,8 +51,6 @@ typedef struct fake_http_platform {
   int fail_ipv6_connect;
   h2_pal_net_family_t connected_family;
   int tls_wrap_count;
-  int tls_bounded_count;
-  h2_pal_result_t tls_bounded_result;
   int close_count;
   int bound_open_count;
   int recv_count;

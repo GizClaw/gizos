@@ -40,9 +40,7 @@ int main(int argc, char** argv) {
   runtime.mem = h2_desktop_platform_default_allocator();
   runtime.net = host_net();
   runtime.time = h2_desktop_platform_time_api();
-  h2_wolfssl_config_t tls = {.mem = *runtime.mem,
-                             .entropy = host_entropy,
-                             .providers_thread_safe = true};
+  h2_wolfssl_config_t tls = {.mem = *runtime.mem, .entropy = host_entropy};
   if (h2_wolfssl_init(&tls) != H2_PAL_OK) return 2;
   h2_corehttp_t* provider = NULL;
   h2_pal_http_api_t api;

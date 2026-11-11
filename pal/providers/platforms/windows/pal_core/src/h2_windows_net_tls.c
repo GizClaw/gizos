@@ -1,5 +1,4 @@
 #include "h2_windows_internal.h"
-#include "h2_wolfssl.h"
 
 #include <limits.h>
 #include <string.h>
@@ -101,297 +100,6 @@ static h2_pal_result_t windows_tls_configure_alpn(WOLFSSL* ssl,
              : H2_PAL_ERR_UNSUPPORTED;
 }
 
-#define H2_WINDOWS_TLS_SETUP_MAX 8u
-#define H2_WINDOWS_TLS_SETUP_BYTES_MAX (4u * 1024u * 1024u)
-
-typedef struct windows_tls_setup_job {
-  SRWLOCK lock;
-  HANDLE done_event;
-  unsigned refs;
-  int done;
-  int lease;
-  size_t bytes;
-  h2_pal_result_t result;
-  h2_pal_net_tls_config_t config;
-  h2_windows_platform_t* platform;
-  WOLFSSL_CTX* context;
-  WOLFSSL* ssl;
-  unsigned char storage[];
-} windows_tls_setup_job_t;
-
-static SRWLOCK windows_tls_jobs_lock = SRWLOCK_INIT;
-static size_t windows_tls_jobs_count;
-static size_t windows_tls_jobs_bytes;
-
-static h2_pal_result_t windows_tls_configure(windows_tls_setup_job_t* job) {
-  const h2_pal_net_tls_config_t* config = &job->config;
-  WOLFSSL_CTX* context = wolfSSL_CTX_new(wolfSSLv23_client_method());
-  if (context == NULL) {
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  job->context = context;
-  h2_pal_result_t result = H2_PAL_OK;
-  if (wolfSSL_CTX_SetMinVersion(context, WOLFSSL_TLSV1_2) != WOLFSSL_SUCCESS) {
-    result = H2_PAL_ERR_IO;
-  }
-  h2_pal_net_tls_verify_t verify_mode = config->verify;
-  if (verify_mode == H2_PAL_NET_TLS_VERIFY_DEFAULT) {
-    verify_mode = H2_PAL_NET_TLS_VERIFY_REQUIRED;
-  }
-  if (result == H2_PAL_OK &&
-      verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-    wolfSSL_CTX_set_verify(context, WOLFSSL_VERIFY_NONE, NULL);
-  } else if (result == H2_PAL_OK &&
-             verify_mode == H2_PAL_NET_TLS_VERIFY_REQUIRED) {
-    if (config->server_name == NULL || config->server_name[0] == '\0') {
-      result = H2_PAL_ERR_INVALID_ARG;
-    } else {
-      result = windows_tls_load_ca(context, config);
-      if (result == H2_PAL_OK) {
-        wolfSSL_CTX_set_verify(context, WOLFSSL_VERIFY_PEER, NULL);
-      }
-    }
-  } else if (result == H2_PAL_OK) {
-    result = H2_PAL_ERR_INVALID_ARG;
-  }
-  if (result == H2_PAL_OK) {
-    wolfSSL_CTX_SetIORecv(context, windows_tls_io_recv);
-    wolfSSL_CTX_SetIOSend(context, windows_tls_io_send);
-    job->ssl = wolfSSL_new(context);
-    if (job->ssl == NULL) {
-      result = H2_PAL_ERR_NO_MEMORY;
-    }
-  }
-  if (result == H2_PAL_OK) {
-    int groups[] = {WOLFSSL_ECC_X25519, WOLFSSL_ECC_SECP256R1};
-    if (wolfSSL_set_groups(job->ssl, groups,
-                           (int)(sizeof(groups) / sizeof(groups[0]))) !=
-        WOLFSSL_SUCCESS) {
-      result = H2_PAL_ERR_IO;
-    }
-  }
-  if (result == H2_PAL_OK && config->server_name != NULL &&
-      config->server_name[0] != '\0') {
-    size_t name_len = strlen(config->server_name);
-    if (name_len > UINT16_MAX ||
-        wolfSSL_UseSNI(job->ssl, WOLFSSL_SNI_HOST_NAME, config->server_name,
-                       (unsigned short)name_len) != WOLFSSL_SUCCESS ||
-        wolfSSL_check_domain_name(job->ssl, config->server_name) !=
-            WOLFSSL_SUCCESS) {
-      result = H2_PAL_ERR_IO;
-    }
-  }
-  if (result == H2_PAL_OK) {
-    result = windows_tls_configure_alpn(job->ssl, config->alpn);
-  }
-
-  return result;
-}
-
-static void windows_tls_release_job(windows_tls_setup_job_t* job) {
-  AcquireSRWLockExclusive(&job->lock);
-  int destroy = --job->refs == 0u;
-  ReleaseSRWLockExclusive(&job->lock);
-  if (!destroy) return;
-  if (job->ssl != NULL) wolfSSL_free(job->ssl);
-  if (job->context != NULL) wolfSSL_CTX_free(job->context);
-  h2_windows_platform_t* platform = job->platform;
-  int lease = job->lease;
-  if (job->done_event != NULL) (void)CloseHandle(job->done_event);
-  AcquireSRWLockExclusive(&windows_tls_jobs_lock);
-  --windows_tls_jobs_count;
-  windows_tls_jobs_bytes -= job->bytes;
-  ReleaseSRWLockExclusive(&windows_tls_jobs_lock);
-  h2_windows_heap_free(job);
-  /* Platform destruction does not wait for setup jobs: it refuses while this
-   * object reference is held. The final decrement must be our last PAL access.
-   */
-  /* Final lease release may perform deferred cleanup using this platform's
-   * allocator, so retain the object reference through that cleanup. */
-  if (lease) h2_wolfssl_operation_release();
-  (void)InterlockedDecrement(&platform->live_objects);
-}
-
-static DWORD WINAPI windows_tls_setup_thread(void* argument) {
-  windows_tls_setup_job_t* job = argument;
-  h2_pal_result_t result = windows_tls_configure(job);
-  AcquireSRWLockExclusive(&job->lock);
-  job->result = result;
-  job->done = 1;
-  ReleaseSRWLockExclusive(&job->lock);
-  (void)SetEvent(job->done_event);
-  windows_tls_release_job(job);
-  return 0u;
-}
-
-static h2_pal_result_t windows_tls_create_job(
-    h2_windows_platform_t* platform, const h2_pal_net_tls_config_t* config,
-    windows_tls_setup_job_t** out) {
-  h2_pal_net_tls_verify_t verify =
-      config->verify == H2_PAL_NET_TLS_VERIFY_DEFAULT
-          ? H2_PAL_NET_TLS_VERIFY_REQUIRED
-          : config->verify;
-  if (verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
-      verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  size_t name =
-      config->server_name == NULL ? 0u : strlen(config->server_name) + 1u;
-  size_t alpn = config->alpn == NULL ? 0u : strlen(config->alpn) + 1u;
-  if (verify == H2_PAL_NET_TLS_VERIFY_REQUIRED && name <= 1u) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (name > (size_t)UINT16_MAX + 1u) return H2_PAL_ERR_IO;
-  if (alpn > 256u) return H2_PAL_ERR_INVALID_ARG;
-  size_t ca =
-      verify == H2_PAL_NET_TLS_VERIFY_REQUIRED && config->root_ca_pem != NULL
-          ? config->root_ca_pem_len
-          : 0u;
-  if (ca > INT32_MAX) return H2_PAL_ERR_INVALID_ARG;
-  size_t bytes = name + alpn + ca;
-  h2_pal_result_t result = h2_wolfssl_operation_acquire_concurrent();
-  if (result != H2_PAL_OK) return result;
-  AcquireSRWLockExclusive(&windows_tls_jobs_lock);
-  if (windows_tls_jobs_count == H2_WINDOWS_TLS_SETUP_MAX ||
-      bytes > H2_WINDOWS_TLS_SETUP_BYTES_MAX - windows_tls_jobs_bytes) {
-    ReleaseSRWLockExclusive(&windows_tls_jobs_lock);
-    h2_wolfssl_operation_release();
-    return H2_PAL_ERR_NO_SPACE;
-  }
-  ++windows_tls_jobs_count;
-  windows_tls_jobs_bytes += bytes;
-  ReleaseSRWLockExclusive(&windows_tls_jobs_lock);
-  windows_tls_setup_job_t* job = NULL;
-  job = h2_windows_heap_alloc(sizeof(*job) + bytes);
-  if (job == NULL) {
-    result = H2_PAL_ERR_NO_MEMORY;
-    goto fail_lease;
-  }
-  job->bytes = bytes;
-  job->lease = 1;
-  job->refs = 1u;
-  job->platform = platform;
-  h2_windows_object_acquire(platform);
-  InitializeSRWLock(&job->lock);
-  job->config = *config;
-  job->config.verify = verify;
-  unsigned char* cursor = job->storage;
-  if (name != 0u) memcpy(cursor, config->server_name, name);
-  job->config.server_name = name == 0u ? NULL : (const char*)cursor;
-  cursor += name;
-  if (alpn != 0u) memcpy(cursor, config->alpn, alpn);
-  job->config.alpn = alpn == 0u ? NULL : (const char*)cursor;
-  cursor += alpn;
-  if (ca != 0u) memcpy(cursor, config->root_ca_pem, ca);
-  job->config.root_ca_pem = ca == 0u ? NULL : cursor;
-  job->config.root_ca_pem_len = ca;
-  job->done_event = CreateEventW(NULL, TRUE, FALSE, NULL);
-  if (job->done_event == NULL) {
-    windows_tls_release_job(job);
-    return H2_PAL_ERR_IO;
-  }
-  *out = job;
-  return H2_PAL_OK;
-fail_lease:
-  h2_wolfssl_operation_release();
-  AcquireSRWLockExclusive(&windows_tls_jobs_lock);
-  --windows_tls_jobs_count;
-  windows_tls_jobs_bytes -= bytes;
-  ReleaseSRWLockExclusive(&windows_tls_jobs_lock);
-  return result;
-}
-
-/* No unknown Memory/entropy callback is moved to a background thread. The
- * inline compatibility path can observe timeout only after opaque setup
- * returns. */
-static h2_pal_result_t windows_tls_setup_inline(
-    h2_windows_platform_t* platform, const h2_pal_net_tls_config_t* config,
-    uint64_t deadline, WOLFSSL_CTX** out_context, WOLFSSL** out_ssl) {
-  if (windows_tls_remaining(platform, deadline) == 0u)
-    return H2_PAL_ERR_TIMEOUT;
-  h2_pal_result_t result = h2_wolfssl_operation_acquire();
-  if (result != H2_PAL_OK) return result;
-  windows_tls_setup_job_t setup = {.config = *config};
-  result = windows_tls_configure(&setup);
-  if (result == H2_PAL_OK && windows_tls_remaining(platform, deadline) == 0u) {
-    result = H2_PAL_ERR_TIMEOUT;
-  }
-  if (result == H2_PAL_OK) {
-    *out_context = setup.context;
-    *out_ssl = setup.ssl;
-    return H2_PAL_OK;
-  }
-  if (setup.ssl != NULL) wolfSSL_free(setup.ssl);
-  if (setup.context != NULL) wolfSSL_CTX_free(setup.context);
-  h2_wolfssl_operation_release();
-  return result;
-}
-
-static h2_pal_result_t windows_tls_setup(h2_windows_platform_t* platform,
-                                         const h2_pal_net_tls_config_t* config,
-                                         uint64_t deadline,
-                                         WOLFSSL_CTX** out_context,
-                                         WOLFSSL** out_ssl, int allow_inline) {
-  *out_context = NULL;
-  *out_ssl = NULL;
-  if (windows_tls_remaining(platform, deadline) == 0u)
-    return H2_PAL_ERR_TIMEOUT;
-  windows_tls_setup_job_t* job;
-  h2_pal_result_t result = windows_tls_create_job(platform, config, &job);
-  if (result == H2_PAL_ERR_UNSUPPORTED && allow_inline) {
-    return windows_tls_setup_inline(platform, config, deadline, out_context,
-                                    out_ssl);
-  }
-  if (result != H2_PAL_OK) return result;
-  job->refs = 2u;
-  HANDLE thread =
-      CreateThread(NULL, 0u, windows_tls_setup_thread, job, 0u, NULL);
-  if (thread == NULL) {
-    job->refs = 1u;
-    windows_tls_release_job(job);
-    return H2_PAL_ERR_IO;
-  }
-  (void)CloseHandle(thread);
-  for (;;) {
-    AcquireSRWLockExclusive(&job->lock);
-    if (job->done) {
-      result = job->result;
-      if (result == H2_PAL_OK &&
-          windows_tls_remaining(platform, deadline) == 0u) {
-        result = H2_PAL_ERR_TIMEOUT;
-      }
-      if (result == H2_PAL_OK) {
-        *out_context = job->context;
-        *out_ssl = job->ssl;
-        job->context = NULL;
-        job->ssl = NULL;
-        job->lease = 0;
-      }
-      ReleaseSRWLockExclusive(&job->lock);
-      break;
-    }
-    ReleaseSRWLockExclusive(&job->lock);
-    uint32_t remaining = windows_tls_remaining(platform, deadline);
-    if (remaining == 0u) {
-      result = H2_PAL_ERR_TIMEOUT;
-      break;
-    }
-    DWORD wait = WaitForSingleObject(
-        job->done_event, remaining == INFINITE ? INFINITE - 1u : remaining);
-    if (wait == WAIT_TIMEOUT) {
-      if (remaining == INFINITE) continue;
-      result = H2_PAL_ERR_TIMEOUT;
-      break;
-    }
-    if (wait != WAIT_OBJECT_0) {
-      result = H2_PAL_ERR_IO;
-      break;
-    }
-  }
-  windows_tls_release_job(job);
-  return result;
-}
-
 static int windows_tls_verify_error(int error) {
   return error == DOMAIN_NAME_MISMATCH || error == IPADDR_MISMATCH ||
          error == VERIFY_CERT_ERROR || error == VERIFY_SIGN_ERROR ||
@@ -432,10 +140,11 @@ static h2_pal_result_t windows_tls_handshake(
   }
 }
 
-static h2_pal_result_t windows_tls_wrap_impl(
-    h2_windows_platform_t* platform, h2_pal_net_socket_t token,
-    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_token, int allow_inline) {
+h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
+                                    h2_pal_net_socket_t token,
+                                    const h2_pal_net_tls_config_t* config,
+                                    uint32_t timeout_ms,
+                                    h2_pal_net_socket_t* out_token) {
   if (platform == NULL || config == NULL || out_token == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -455,12 +164,64 @@ static h2_pal_result_t windows_tls_wrap_impl(
     h2_windows_net_unlock_slot(slot);
     return H2_PAL_ERR_INVALID_STATE;
   }
-  WOLFSSL_CTX* context = NULL;
-  h2_pal_result_t result = windows_tls_setup(
-      platform, config, deadline, &context, &slot->tls, allow_inline);
+  WOLFSSL_CTX* context = wolfSSL_CTX_new(wolfSSLv23_client_method());
+  if (context == NULL) {
+    h2_windows_net_unlock_slot(slot);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  h2_pal_result_t result = H2_PAL_OK;
+  if (wolfSSL_CTX_SetMinVersion(context, WOLFSSL_TLSV1_2) != WOLFSSL_SUCCESS) {
+    result = H2_PAL_ERR_IO;
+  }
   h2_pal_net_tls_verify_t verify_mode = config->verify;
   if (verify_mode == H2_PAL_NET_TLS_VERIFY_DEFAULT) {
     verify_mode = H2_PAL_NET_TLS_VERIFY_REQUIRED;
+  }
+  if (result == H2_PAL_OK &&
+      verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+    wolfSSL_CTX_set_verify(context, WOLFSSL_VERIFY_NONE, NULL);
+  } else if (result == H2_PAL_OK &&
+             verify_mode == H2_PAL_NET_TLS_VERIFY_REQUIRED) {
+    if (config->server_name == NULL || config->server_name[0] == '\0') {
+      result = H2_PAL_ERR_INVALID_ARG;
+    } else {
+      result = windows_tls_load_ca(context, config);
+      if (result == H2_PAL_OK) {
+        wolfSSL_CTX_set_verify(context, WOLFSSL_VERIFY_PEER, NULL);
+      }
+    }
+  } else if (result == H2_PAL_OK) {
+    result = H2_PAL_ERR_INVALID_ARG;
+  }
+  if (result == H2_PAL_OK) {
+    wolfSSL_CTX_SetIORecv(context, windows_tls_io_recv);
+    wolfSSL_CTX_SetIOSend(context, windows_tls_io_send);
+    slot->tls = wolfSSL_new(context);
+    if (slot->tls == NULL) {
+      result = H2_PAL_ERR_NO_MEMORY;
+    }
+  }
+  if (result == H2_PAL_OK) {
+    int groups[] = {WOLFSSL_ECC_X25519, WOLFSSL_ECC_SECP256R1};
+    if (wolfSSL_set_groups(slot->tls, groups,
+                           (int)(sizeof(groups) / sizeof(groups[0]))) !=
+        WOLFSSL_SUCCESS) {
+      result = H2_PAL_ERR_IO;
+    }
+  }
+  if (result == H2_PAL_OK && config->server_name != NULL &&
+      config->server_name[0] != '\0') {
+    size_t name_len = strlen(config->server_name);
+    if (name_len > UINT16_MAX ||
+        wolfSSL_UseSNI(slot->tls, WOLFSSL_SNI_HOST_NAME, config->server_name,
+                       (unsigned short)name_len) != WOLFSSL_SUCCESS ||
+        wolfSSL_check_domain_name(slot->tls, config->server_name) !=
+            WOLFSSL_SUCCESS) {
+      result = H2_PAL_ERR_IO;
+    }
+  }
+  if (result == H2_PAL_OK) {
+    result = windows_tls_configure_alpn(slot->tls, config->alpn);
   }
   if (result == H2_PAL_OK) {
     wolfSSL_SetIOReadCtx(slot->tls, slot);
@@ -473,10 +234,7 @@ static h2_pal_result_t windows_tls_wrap_impl(
       wolfSSL_free(slot->tls);
       slot->tls = NULL;
     }
-    if (context != NULL) {
-      wolfSSL_CTX_free(context);
-      h2_wolfssl_operation_release();
-    }
+    wolfSSL_CTX_free(context);
     slot->tls_context = NULL;
     h2_windows_net_unlock_slot(slot);
     return result;
@@ -484,23 +242,6 @@ static h2_pal_result_t windows_tls_wrap_impl(
   *out_token = token;
   h2_windows_net_unlock_slot(slot);
   return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_windows_tls_wrap(h2_windows_platform_t* platform,
-                                    h2_pal_net_socket_t token,
-                                    const h2_pal_net_tls_config_t* config,
-                                    uint32_t timeout_ms,
-                                    h2_pal_net_socket_t* out_token) {
-  return windows_tls_wrap_impl(platform, token, config, timeout_ms, out_token,
-                               1);
-}
-
-h2_pal_result_t h2_windows_tls_wrap_bounded(
-    h2_windows_platform_t* platform, h2_pal_net_socket_t token,
-    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_token) {
-  return windows_tls_wrap_impl(platform, token, config, timeout_ms, out_token,
-                               0);
 }
 
 static int windows_tls_io_result(WOLFSSL* ssl, int result) {
@@ -584,6 +325,5 @@ void h2_windows_tls_release(h2_windows_socket_slot_t* slot) {
   if (slot->tls_context != NULL) {
     wolfSSL_CTX_free(slot->tls_context);
     slot->tls_context = NULL;
-    h2_wolfssl_operation_release();
   }
 }

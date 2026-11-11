@@ -16,8 +16,6 @@ bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",
     ap_policies = [
-        "$bk/net/tls default",
-        "$bk/net/plain-close default",
         "bk/pref-backup 6 any 24576 default",
         "h2_touch           default",
         "pal-storage/e2e/runner 7 0 65536 psram",

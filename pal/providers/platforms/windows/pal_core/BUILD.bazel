@@ -130,8 +130,6 @@ cc_test(
     target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
     deps = [
         ":pal_core",
-        "//pal/providers/backends/corehttp",
-        "//pal/providers/backends/corehttp:fake_net_test_support",
         "//pal/providers/backends/wolfssl",
     ],
 )

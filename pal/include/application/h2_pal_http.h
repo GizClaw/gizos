@@ -81,14 +81,16 @@ typedef int (*h2_pal_http_response_header_fn)(
  * whitespace or control bytes is invalid. Providers must not silently discard
  * interface_name: unsupported routing returns an error before a request starts.
  *
- * A positive timeout_ms bounds the complete call, including redirects and
+ * A positive timeout_ms sets the complete-call budget, including redirects and
  * retries; a non-positive value selects the provider's finite default.
- * connect_timeout_ms separately bounds DNS, TCP and TLS for each new
- * connection, sharing one connection deadline across phases and address
- * candidates. A non-positive value selects the provider's finite connection
- * default. Retries and redirects may start a new connection budget, but
- * neither timeout can extend the original complete-call deadline. Providers
- * without independent connection timing (such as browser Fetch) return
+ * connect_timeout_ms sets a separate connection budget for DNS and socket
+ * waits, shared across address candidates and passed to synchronous TLS when
+ * needed. A non-positive value selects the provider's finite connection
+ * default. Non-interruptible crypto/SDK calls may exceed these budgets; the
+ * provider checks the deadline when control returns. Retries and redirects
+ * may start a new connection budget without resetting the complete-call
+ * deadline. Providers without independent connection timing (such as Fetch)
+ * return
  * UNSUPPORTED with response.rejection = CONNECT_TIMEOUT for a positive
  * connect_timeout_ms before starting I/O; when unset they bound setup only by
  * the complete-call deadline. A generic UNSUPPORTED result does not identify
@@ -136,7 +138,9 @@ typedef struct h2_pal_http_request {
    */
   const h2_pal_mem_api_t* allocator;
 
-  /** DNS + TCP + TLS budget per connection; non-positive uses a finite default.
+  /** Connection budget for DNS and socket waits; non-positive uses a finite
+   * default. HTTPS passes the remaining budget to synchronous TLS setup and
+   * handshake, but non-interruptible crypto/SDK calls may return after it.
    */
   int connect_timeout_ms;
 } h2_pal_http_request_t;

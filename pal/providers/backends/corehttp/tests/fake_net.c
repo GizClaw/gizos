@@ -273,18 +273,6 @@ static h2_pal_result_t fake_tls_wrap(void* user, h2_pal_net_socket_t socket,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t fake_tls_wrap_bounded(
-    void* user, h2_pal_net_socket_t socket,
-    const h2_pal_net_tls_config_t* config, uint32_t timeout_ms,
-    h2_pal_net_socket_t* out_socket) {
-  fake_http_platform_t* platform = user;
-  ++platform->tls_bounded_count;
-  if (platform->tls_bounded_result != H2_PAL_OK) {
-    return platform->tls_bounded_result;
-  }
-  return fake_tls_wrap(user, socket, config, timeout_ms, out_socket);
-}
-
 static void fake_close(void* user, h2_pal_net_socket_t socket) {
   fake_http_platform_t* platform = (fake_http_platform_t*)user;
   if (socket >= 0) {
@@ -319,7 +307,6 @@ void fake_http_platform_init(fake_http_platform_t* platform) {
       .tcp_send_timeout = fake_send_timeout,
       .tcp_recv = fake_recv,
       .tls_wrap = fake_tls_wrap,
-      .tls_wrap_bounded = fake_tls_wrap_bounded,
       .close = fake_close,
   };
   memset(platform, 0, sizeof(*platform));
