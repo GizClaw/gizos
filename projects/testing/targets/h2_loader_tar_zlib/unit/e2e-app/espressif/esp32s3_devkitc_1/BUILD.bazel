@@ -159,8 +159,41 @@ h2loader_tar_zlib(
     target = "esp32s3",
 )
 
+h2loader_esp_idf_firmware(
+    name = "firmware_uart_alt",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "devkit",
+    console = "uart",
+    graph = [":e2e_app_launcher"],
+    project = "CMakeLists.txt",
+    project_name = "h2loader_e2e_app",
+    target = "esp32s3",
+    task_policy = ":task_policy",
+    version = ":alternate_version",
+)
+
+h2loader_tar_zlib(
+    name = "package_uart_alt",
+    board = "devkit",
+    firmware = ":firmware_uart_alt",
+    image = "e2e-app-alt",
+    role = "app",
+    target = "esp32s3",
+)
+
 h2loader_checksum_matrix(
     name = "checksum-matrix",
     alternate = ":package_usb_alt",
     base = ":package_usb",
+)
+
+h2loader_checksum_matrix(
+    name = "checksum-matrix-uart",
+    alternate = ":package_uart_alt",
+    base = ":package_uart",
 )

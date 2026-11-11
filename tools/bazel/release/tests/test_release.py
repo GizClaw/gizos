@@ -41,8 +41,8 @@ def query_xml(labels, tag="firmware-release"):
 
 
 class ReleaseTest(unittest.TestCase):
-    def firmware_inputs(self, root, batch=BATCH):
-        item = catalog_entry()
+    def firmware_inputs(self, root, batch=BATCH, package_format=2):
+        item = catalog_entry(package_format=package_format)
         item["package_manifest"] = dict(format=item["package_format"], board=item["board"], role=item["role"],
             target=item["target"], version=item["version"], image_size=8, image_sha256="0" * 64)
         item["assets"] = []
@@ -255,6 +255,35 @@ class ReleaseTest(unittest.TestCase):
                     self.assertEqual(info.external_attr, 0o100644 << 16)
                     self.assertEqual(info.compress_type, zipfile.ZIP_DEFLATED)
             release.validate_archive(first / ARCHIVE, BATCH)
+
+    def test_published_indexes_repackage_without_changing_bytes(self):
+        for package_format, package_target, explicit_format in (
+                (2, "package_v2", True), (2, "package_usb_v2", True),
+                (1, "package_usb", True), (1, "package_usb", False)):
+            with self.subTest(package_format=package_format, package_target=package_target,
+                              explicit_format=explicit_format), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inputs = root / "input"
+                inputs.mkdir()
+                files = self.firmware_inputs(inputs, package_format=package_format)
+                index_path = inputs / "firmware-index.json"
+                index = json.loads(index_path.read_text())
+                item = index["firmware"][0]
+                item["entry"] = release_bundle.LOADER_ENTRIES["devkit"]
+                item["label"] = "//" + item["entry"] + ":" + package_target
+                if not explicit_format:
+                    del item["package_format"]
+                index_path.write_text(json.dumps(index, indent=2) + "\n")
+                self.write_checksums(inputs)
+                original = {path.name: path.read_bytes() for path in files}
+                output = root / "output"
+                output.mkdir()
+                release.package_bundle(files, output, BATCH)
+                release.validate_archive(output / ARCHIVE, BATCH)
+                with zipfile.ZipFile(output / ARCHIVE) as archive:
+                    self.assertEqual({info.filename.removeprefix(ARCHIVE[:-4] + "/"): archive.read(info)
+                                      for info in archive.infolist()}, original)
+                self.assertEqual({path.name: path.read_bytes() for path in files}, original)
 
     def test_zip_odd_second_batch_round_trip(self):
         for batch, seconds in (("20260920-120001", 0), ("20260920-120059", 58)):

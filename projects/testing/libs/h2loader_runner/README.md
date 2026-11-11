@@ -84,7 +84,7 @@ bytes contribute to output/log byte counters only during monitor cases.
 
 The native CLI owns BLE KCP global initialization and shutdown when BLE is selected. Callers embedding the runner must initialize BLE KCP before a real BLE run and shut it down after all runner connections have closed. The synchronous CLI borrows the required PAL interfaces directly; it does not create an application Runtime event queue that it never drains.
 
-`reboot ... --monitor` starts monitoring on the ACK's existing connection so boot logs are collected before a reconnect can consume them. It then opens a fresh session to the expected partition, observes a full stability window, and reads live status to confirm the partition. At least one actual post-ACK monitor call must receive log bytes; initial connection, command, reconnect, and status-read diagnostics do not satisfy that requirement. A healthy image may be quiet after startup. One CLOSED/TIMEOUT reset transition is allowed across the initial capture and stability windows, including a deferred reset after the ACK. A second transition, any other error, a wrong partition, or cancellation ends the case.
+`reboot ... --monitor` enables boot accounting as soon as Host Core parses the accepted terminal response, before the serial ACK-grace pump. It keeps that connection open for monitoring, then opens a fresh session to the expected partition, observes a full stability window, and reads live status. Nonempty boot output is required; initial connection, pre-acceptance, reconnect and status-read diagnostics do not satisfy it. Queued `H2_LOADER_REBOOT` control lines, including delayed `REBOOT_FINAL` responses, are still forwarded to the diagnostic sink but excluded from monitor evidence. A healthy image may be quiet after startup. One CLOSED/TIMEOUT reset transition is allowed across the initial capture and stability windows, including a deferred reset after the ACK. CLOSED while tearing down the expected reset link does not prevent reconnection; unrelated teardown errors still fail. A second transition, a wrong partition, or cancellation ends the case.
 
 
 ## BK7258 baseline
@@ -99,14 +99,14 @@ The existing crash case verifies return to Loader before App confirmation, not r
 
 Build two distinct command-responsive, confirming Apps for the same board. The
 DevKit fixture target shares the original launcher and uses a separate linked
-version for its alternate App:
+version for its alternate App. `:checksum-matrix` uses native USB Apps; `:checksum-matrix-uart` uses UART for both base and alternate Apps. Keep the selected fixtures on the connected console throughout the sequence:
 
 ```sh
-bazel build --config=esp32s3 //projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:checksum-matrix
+bazel build --config=esp32s3 //projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:checksum-matrix-uart
 bazel run --config=macos_arm64 //projects/testing/targets/cc_binary/e2e-runner -- \
   --uart <directed-port> --expected-board devkit --expected-target esp32s3 \
-  --checksum-tar-zlib <absolute-checksum-matrix-dir>/tar_zlib \
-  --checksum-zlib-tar <absolute-checksum-matrix-dir>/zlib_tar \
+  --checksum-tar-zlib <absolute-checksum-matrix-uart-dir>/tar_zlib \
+  --checksum-zlib-tar <absolute-checksum-matrix-uart-dir>/zlib_tar \
   --report /tmp/h2loader-checksum-e2e.json
 ```
 

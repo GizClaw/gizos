@@ -45,6 +45,10 @@ typedef struct h2_e2e_transport_context {
   uint64_t monitor_deadline_ms;
   size_t monitor_output_bytes;
   uint8_t monitor_logs;
+  uint8_t monitor_reboot;
+  size_t monitor_prefix_len;
+  uint8_t monitor_command_line;
+  uint8_t monitor_console_line;
   uint32_t authoritative_command_availability;
   uint8_t authoritative_command_availability_valid;
 } h2_e2e_transport_context_t;
@@ -243,6 +247,48 @@ static h2_pal_result_t count_output(void* user, const uint8_t* data,
   return H2_PAL_OK;
 }
 
+/* Reboot control responses can remain in KCP's receive queue after acceptance.
+ * Forward them to the diagnostic sink, but never count them as boot evidence.
+ * Hold only the bounded undecided prefix across arbitrary callback splits. */
+static size_t monitor_evidence_bytes(h2_e2e_transport_context_t* context,
+                                     const uint8_t* data, size_t len) {
+  static const char control_prefix[] = "H2_LOADER_REBOOT";
+  if (!context->monitor_reboot) return len;
+  size_t count = 0u;
+  for (size_t i = 0u; i < len; ++i) {
+    const uint8_t byte = data[i];
+    if (byte == '\r' || byte == '\n') {
+      if (!context->monitor_command_line) {
+        count += context->monitor_prefix_len;
+        if (context->monitor_console_line || context->monitor_prefix_len != 0u)
+          ++count;
+      }
+      context->monitor_prefix_len = 0u;
+      context->monitor_command_line = 0u;
+      context->monitor_console_line = 0u;
+    } else if (context->monitor_command_line) {
+      continue;
+    } else if (context->monitor_console_line) {
+      ++count;
+    } else if (byte == (uint8_t)control_prefix[context->monitor_prefix_len]) {
+      if (++context->monitor_prefix_len == sizeof(control_prefix) - 1u) {
+        context->monitor_prefix_len = 0u;
+        context->monitor_command_line = 1u;
+      }
+    } else {
+      count += context->monitor_prefix_len + 1u;
+      context->monitor_prefix_len = 0u;
+      context->monitor_console_line = 1u;
+    }
+  }
+  return count;
+}
+
+static void reboot_monitor_accepted(void* user) {
+  h2_e2e_transport_context_t* context = user;
+  context->monitor_logs = 1u;
+}
+
 static h2_pal_result_t monitor_output(void* user, const uint8_t* data,
                                       size_t len) {
   h2_e2e_transport_context_t* context = user;
@@ -251,9 +297,10 @@ static h2_pal_result_t monitor_output(void* user, const uint8_t* data,
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (context->monitor_logs) {
-    context->case_result->output_bytes += len;
-    context->monitor_output_bytes += len;
-    context->case_result->log_bytes += len;
+    const size_t evidence = monitor_evidence_bytes(context, data, len);
+    context->case_result->output_bytes += evidence;
+    context->monitor_output_bytes += evidence;
+    context->case_result->log_bytes += evidence;
   }
   return context->config->on_log == NULL
              ? H2_PAL_OK
@@ -950,6 +997,10 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
   unsigned reset_transition_seen = 0u;
   context->monitor_logs = 0u;
   context->monitor_output_bytes = 0u;
+  context->monitor_reboot = 1u;
+  context->monitor_prefix_len = 0u;
+  context->monitor_command_line = 0u;
+  context->monitor_console_line = 0u;
   h2_pal_result_t rc = connect_transport(context, &status);
   if (rc == H2_PAL_OK) {
     const h2_h2loader_host_command_request_t request = {
@@ -959,6 +1010,8 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
         .cancel_user = context->config->cancel_user,
         .on_output = count_output,
         .output_user = context,
+        .on_accepted = reboot_monitor_accepted,
+        .accepted_user = context,
     };
     rc = execute_command(context, &request, &result);
     context->case_result->terminal = result.terminal;
@@ -967,9 +1020,9 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
       rc = H2_PAL_ERR_IO;
     }
   }
-  /* Keep the ACK's connection open while boot logs arrive. Reconnecting first
-   * consumes them during the handshake, after which a healthy image may be
-   * quiet. Only bytes delivered by actual monitor calls count as evidence. */
+  /* Typed acceptance enables boot accounting before the serial ACK-grace
+   * pump. Keep that connection open through the following monitor window;
+   * reconnecting first can consume a quiet image's entire boot output. */
   if (rc == H2_PAL_OK) {
     context->monitor_logs = 1u;
     rc = begin_monitor_window(context);
@@ -981,8 +1034,14 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
       rc = H2_PAL_OK;
     }
   }
+  context->monitor_logs = 0u;
   h2_pal_result_t close_rc = disconnect_transport(context);
-  if (rc == H2_PAL_OK) rc = close_rc;
+  if (rc == H2_PAL_OK && close_rc == H2_PAL_ERR_CLOSED &&
+      !cancelled(context->config)) {
+    reset_transition_seen = 1u;
+  } else if (rc == H2_PAL_OK) {
+    rc = close_rc;
+  }
   /* The UART bridge can survive a CPU reset while its KCP session does not.
    * Always open a fresh session, observe a full stability window and read live
    * status. One reset transition is allowed across both phases, including a
@@ -990,6 +1049,9 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
   for (unsigned attempt = 0u; rc == H2_PAL_OK && attempt < 2u; ++attempt) {
     rc = reconnect_after_reboot(context, expected_partition, &status);
     if (rc == H2_PAL_OK) {
+      context->monitor_prefix_len = 0u;
+      context->monitor_command_line = 0u;
+      context->monitor_console_line = 0u;
       context->monitor_logs = 1u;
       rc = begin_monitor_window(context);
       if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context);
@@ -1000,6 +1062,7 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
         !reset_transition_seen && !cancelled(context->config)) {
       reset_transition_seen = 1u;
       rc = disconnect_transport(context);
+      if (rc == H2_PAL_ERR_CLOSED) rc = H2_PAL_OK;
       continue;
     }
     if (rc == H2_PAL_OK && status.running_partition != expected_partition)
@@ -1014,6 +1077,7 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
   }
   close_rc = disconnect_transport(context);
   context->monitor_logs = 0u;
+  context->monitor_reboot = 0u;
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 

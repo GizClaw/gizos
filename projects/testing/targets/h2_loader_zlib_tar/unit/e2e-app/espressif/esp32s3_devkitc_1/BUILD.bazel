@@ -8,6 +8,16 @@ h2loader_zlib_tar(
 )
 
 h2loader_zlib_tar(
+    name = "package_uart",
+    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:package_uart",
+)
+
+h2loader_zlib_tar(
     name = "package_usb_alt",
     source = "//projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:package_usb_alt",
+)
+
+h2loader_zlib_tar(
+    name = "package_uart_alt",
+    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:package_uart_alt",
 )

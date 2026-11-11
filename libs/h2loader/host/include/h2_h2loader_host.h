@@ -337,6 +337,13 @@ typedef struct h2_h2loader_host_command_request {
   /** Optional synchronous bounded-output callback and borrowed context. */
   h2_h2loader_host_command_output_fn on_output;
   void* output_user;
+  /** Optional synchronous notification after Host Core parses an accepted
+   * terminal response, before transport ACK-grace pumping. This is command
+   * acceptance only, not reboot or installation completion. The callback must
+   * be bounded and must not reenter the transport. Context is borrowed for the
+   * blocking execute call. */
+  void (*on_accepted)(void* user);
+  void* accepted_user;
 } h2_h2loader_host_command_request_t;
 
 typedef struct h2_h2loader_host_command_result {

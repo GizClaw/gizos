@@ -187,9 +187,20 @@ def validate_index(index: object, batch: str) -> dict[str, dict[str, object]]:
             or index["firmware_count"] != len(index["firmware"])):
         raise ValueError("firmware index identity is invalid")
     firmware = index["firmware"]
-    validate_catalog([{**item, "label": "//" + str(item.get("entry"))
-                       + ":" + canonical_package_target(item)}
-                      if isinstance(item, dict) else item for item in firmware])
+    catalog = []
+    for item in firmware:
+        if not isinstance(item, dict):
+            catalog.append(item)
+            continue
+        identity = dict(item)
+        # Published format-2 indexes predate the separate zlib_tar entry root.
+        # Adapt only an exact historical board path, without rewriting the index.
+        if (package_format(item) == 2 and isinstance(item.get("board"), str)
+                and item.get("entry") == LOADER_ENTRIES.get(item["board"])):
+            identity["entry"] = canonical_loader_entry(item)
+        identity["label"] = "//" + str(identity.get("entry")) + ":" + canonical_package_target(identity)
+        catalog.append(identity)
+    validate_catalog(catalog)
     assets = {}
     for item in firmware:
         validate_package_manifest(item)

@@ -23,6 +23,7 @@ typedef struct { int terminal; } h2_h2loader_host_command_result_t;
 typedef struct {
   int command; void *status; int (*is_cancelled)(void *); void *cancel_user;
   void (*on_output)(void *); void *output_user;
+  void (*on_accepted)(void *); void *accepted_user;
 } h2_h2loader_host_command_request_t;
 typedef struct {
   int (*is_cancelled)(void *); void *cancel_user;
@@ -32,13 +33,16 @@ typedef struct { int terminal, status_valid; size_t output_bytes, log_bytes; h2_
 typedef struct {
   void *serial_connection;
   int monitor_logs; size_t monitor_output_bytes; config_t *config; result_t *case_result;
+  int monitor_reboot; size_t monitor_prefix_len;
+  int monitor_command_line, monitor_console_line;
 } h2_e2e_transport_context_t;
 static h2_pal_result_t monitor_output(void *, const uint8_t *, size_t);
 static int connects, disconnects, monitors, statuses, windows, cancel_flag;
 static int monitor_results[3], status_results[2], partitions[2];
 static int reconnect_results[2], begin_results[3], close_results[3];
 static int command_result, command_terminal;
-static size_t initial_handshake_bytes, command_bytes;
+static size_t initial_handshake_bytes, command_bytes, grace_bytes;
+static const char *queued_control;
 static size_t handshake_bytes[2], window_bytes[3], status_bytes[2];
 static void *monitor_connections[3];
 static int cancelled(config_t *c) { (void)c; return cancel_flag; }
@@ -55,8 +59,12 @@ static int connect_transport(h2_e2e_transport_context_t *c, h2_h2loader_host_sta
 }
 static int execute_command(h2_e2e_transport_context_t *c,
     const h2_h2loader_host_command_request_t *q, h2_h2loader_host_command_result_t *r) {
-  (void)q; r->terminal=command_terminal;
+  r->terminal=command_terminal;
   int rc=emit_logs(c, command_bytes);
+  if (rc != H2_PAL_OK) return rc;
+  if (command_result == H2_PAL_OK && command_terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK && q->on_accepted != NULL)
+    q->on_accepted(q->accepted_user);
+  rc=emit_logs(c, grace_bytes);
   return rc == H2_PAL_OK ? command_result : rc;
 }
 static int disconnect_transport(h2_e2e_transport_context_t *c) {
@@ -87,6 +95,10 @@ static int h2_h2loader_host_serial_monitor_logs(void *connection,
   assert(cancel_fn == monitor_cancelled && c->monitor_logs && monitors<3);
   int index=monitors++;
   monitor_connections[index]=connection;
+  if (queued_control != NULL) {
+    for (const char *p=queued_control; *p; ++p)
+      assert(monitor_output(c, (const uint8_t *)p, 1)==H2_PAL_OK);
+  }
   int rc=emit_logs(c, window_bytes[index]);
   return rc == H2_PAL_OK ? monitor_results[index] : rc;
 }
@@ -101,7 +113,8 @@ static void reset(void) {
   connects=disconnects=monitors=statuses=windows=cancel_flag=0;
   command_result=H2_PAL_OK;
   command_terminal=H2_H2LOADER_HOST_COMMAND_TERMINAL_OK;
-  initial_handshake_bytes=command_bytes=0;
+  initial_handshake_bytes=command_bytes=grace_bytes=0;
+  queued_control=NULL;
   for (size_t i=0; i<3; ++i) {
     monitor_results[i]=H2_PAL_EXIT;
     window_bytes[i]=1;
@@ -184,6 +197,31 @@ int main(void) {
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_NOT_FOUND && connects==2);
   assert(!result.status_valid && ctx.monitor_output_bytes==0);
 
+  /* A fast reboot can emit all boot bytes inside serial ACK-grace pumping. */
+  RESET_CASE(); grace_bytes=3; window_bytes[0]=window_bytes[1]=0;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK);
+  assert(result.status_valid && ctx.monitor_output_bytes==3);
+
+  /* Delayed REBOOT_FINAL frames are command diagnostics, even bytewise. */
+  RESET_CASE(); window_bytes[0]=window_bytes[1]=0;
+  queued_control="H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\r\n";
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_NOT_FOUND);
+  assert(ctx.monitor_output_bytes==0 && !result.status_valid);
+  RESET_CASE(); window_bytes[0]=3; window_bytes[1]=0;
+  queued_control="H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\r\n";
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK);
+  assert(result.log_bytes==3);
+
+  /* Losing the USB device during reset also makes its teardown return CLOSED. */
+  RESET_CASE(); monitor_results[0]=H2_PAL_ERR_CLOSED;
+  close_results[0]=H2_PAL_ERR_CLOSED;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK && connects==1);
+  RESET_CASE(); close_results[0]=H2_PAL_ERR_CLOSED;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK && connects==1);
+  RESET_CASE(); monitor_results[0]=H2_PAL_ERR_CLOSED;
+  close_results[0]=H2_PAL_ERR_IO;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_IO && connects==0);
+
   /* Errors and cancellation do not turn into retry loops or success. */
   RESET_CASE(); cancel_flag=1;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_EXIT);
@@ -244,13 +282,53 @@ static void check_monitor_output(void) {
 
 
 class RebootMonitorTests(unittest.TestCase):
+    def test_real_serial_ack_grace_and_queued_control_output(self):
+        runner = SOURCE.read_text()
+        serial = (ROOT / 'libs/h2loader/host/src/h2_h2loader_host_serial.c').read_text()
+        fixture = (SOURCE.parent.parent / 'tests/fixtures/serial_reboot_handoff.c').read_text()
+
+        def section(text, begin, end):
+            start = text.index(begin)
+            return text[start:text.index(end, start)]
+
+        for marker, code in {
+            '/* SERIAL_DEFINITIONS */': section(serial, 'typedef struct serial_status_output',
+                                               'static h2_pal_result_t serial_finish_command_response('),
+            '/* SERIAL_NOW */': section(serial, 'static h2_pal_result_t serial_now(',
+                                       'static h2_pal_result_t session_frame('),
+            '/* SERIAL_PUMP */': section(serial, 'static h2_pal_result_t serial_pump(',
+                                        'static h2_pal_result_t serial_wait_delivery('),
+            '/* SERIAL_LOG */': section(serial, '/* A USB-UART adapter survives',
+                                       'static h2_pal_result_t serial_wait_ready_marker('),
+            '/* SERIAL_READ */': section(serial, 'static int response_has_complete_marker(',
+                                        'static h2_pal_result_t serial_write_command('),
+            '/* SERIAL_COMMAND */': section(serial, 'static h2_pal_result_t serial_command_read(',
+                                           'typedef struct serial_stage_output'),
+            '/* SERIAL_MONITOR */': section(serial, 'static h2_pal_result_t serial_drain_decoded_logs(',
+                                           'h2_pal_result_t h2_h2loader_host_serial_disconnect('),
+            '/* RUNNER_LOG */': section(runner, 'static size_t monitor_evidence_bytes(',
+                                       'static int monitor_cancelled('),
+        }.items():
+            fixture = fixture.replace(marker, code)
+        with tempfile.TemporaryDirectory(prefix='h2-serial-reboot-') as directory:
+            source = Path(directory) / 'test.c'
+            source.write_text(fixture)
+            binary = Path(directory) / 'test'
+            includes = ['pal/include', 'libs/h2loader/host/include',
+                        'libs/h2loader/host/src', 'libs/net/iostreamikcp/include']
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            *['-I' + str(ROOT / p) for p in includes],
+                            str(source), str(ROOT / 'libs/h2loader/host/src/h2_h2loader_host_command.c'),
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_uart_reset_without_usb_disconnect_and_bounded_recovery(self):
         source = SOURCE.read_text()
         start = source.index("static h2_pal_result_t run_reboot_monitor(")
         end = source.index("\nstatic h2_pal_result_t run_reboot_preserves_stage(", start)
         with tempfile.TemporaryDirectory(prefix="h2-reboot-test-") as directory:
             test = Path(directory) / "test.c"
-            log_start = source.index("static h2_pal_result_t monitor_output(")
+            log_start = source.index("static size_t monitor_evidence_bytes(")
             log_end = source.index("static int monitor_cancelled(", log_start)
             finish_start = re.search(r"\bstatic\s+h2_pal_result_t\s+finish_bounded_monitor\s*\(", source).start()
             finish_end = source.index("static h2_pal_result_t run_monitor(", finish_start)
