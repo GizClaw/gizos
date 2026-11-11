@@ -43,8 +43,11 @@ def _retry_delay(error, attempt):
 
 
 def _open(url, accept):
-    api = urllib.parse.urlsplit(url).netloc == "api.github.com"
-    attempts = 3 if api else 1
+    host = urllib.parse.urlsplit(url).netloc
+    api = host == "api.github.com"
+    # Direct GitHub failures use the official API fallback immediately. Registry
+    # metadata and mirrors need bounded request retries just like the API.
+    attempts = 1 if host == "github.com" else 3
     for attempt in range(attempts):
         headers = {"Accept": accept, "User-Agent": "GizOS-dependency-downloader"}
         if attempt:
@@ -59,12 +62,12 @@ def _open(url, accept):
             return urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS)
         except urllib.error.HTTPError as error:
             failure = DownloadError("HTTPS request failed (HTTP " + str(error.code) + ")")
-            delay = _retry_delay(error, attempt) if api else None
+            delay = _retry_delay(error, attempt)
             if error.fp is not None:
                 error.close()
         except _NETWORK_ERRORS:
             failure = DownloadError("HTTPS request failed")
-            delay = 2 ** attempt if api else None
+            delay = 2 ** attempt
         if delay is None or attempt + 1 == attempts:
             raise failure from None
         time.sleep(delay)
@@ -156,8 +159,9 @@ def download_verified(url, sha256, destination) -> None:
     Reuses an existing matching regular, nonsymlink destination without network.
     Raises IntegrityError for mismatches, ValueError for invalid inputs or metadata,
     RuntimeError for network failures, and OSError for local filesystem failures.
-    Each request has a finite socket timeout. Transient API request failures
-    get at most three attempts; integrity and permanent HTTP errors are not retried.
+    Each request has a finite socket timeout. Transient request failures get at
+    most three attempts, except direct GitHub URLs use the API fallback immediately.
+    Integrity and permanent HTTP errors are not retried.
     Existing destinations survive
     failure, and only this invocation's same-directory temporary file is removed.
     """
