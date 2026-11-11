@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
@@ -11,6 +13,7 @@ firmware_native_component(
     hdrs = [
         "include/h2_esp_alipay.h",
         "src/h2_esp_alipay_internal.h",
+        "src/h2_esp_alipay_socket_abi.h",
     ],
     component_directory = "native_component_src/esp-idf6.x/h2_alipay",
     component_name = "h2_alipay",
@@ -20,4 +23,16 @@ firmware_native_component(
         "//libs/alipay:bind_net_sdk",
         "//libs/pal",
     ],
+)
+
+cc_library(
+    name = "socket_abi_probe",
+    testonly = True,
+    srcs = ["tests/test_socket_abi.c"],
+    hdrs = ["src/h2_esp_alipay_socket_abi.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = ["//tools/bazel/platforms:target_esp32s3"],
+    deps = ["//libs/alipay:bind_net_sdk"],
 )

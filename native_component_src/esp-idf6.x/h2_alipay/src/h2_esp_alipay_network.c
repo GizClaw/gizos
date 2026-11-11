@@ -1,9 +1,9 @@
 #include "h2_esp_alipay_internal.h"
-#include "alipay_net_kal.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
+#include "h2_esp_alipay_socket_abi.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -54,10 +54,10 @@ void alipay_iot_fd_zero(alipay_iot_fd_set* set) {
   if (set != NULL) memset(set, 0, sizeof(*set));
 }
 void alipay_iot_fd_setbit(int fd, alipay_iot_fd_set* set) {
-  if (set != NULL && fd == 0) set->fds_bits[0] = 1u;
+  if (set != NULL && fd == 0) h2_esp_alipay_fd_bits(set)[0] = 1u;
 }
 int alipay_iot_fd_isset(int fd, alipay_iot_fd_set* set) {
-  return set != NULL && fd == 0 && set->fds_bits[0] != 0u;
+  return set != NULL && fd == 0 && h2_esp_alipay_fd_bits(set)[0] != 0u;
 }
 int alipay_iot_select(int maxfd, alipay_iot_fd_set* readset,
                       alipay_iot_fd_set* writeset, alipay_iot_fd_set* exceptset,
@@ -67,9 +67,12 @@ int alipay_iot_select(int maxfd, alipay_iot_fd_set* readset,
   FD_ZERO(&rd);
   FD_ZERO(&wr);
   FD_ZERO(&ex);
-  if (readset != NULL && readset->fds_bits[0]) FD_SET(s_socket, &rd);
-  if (writeset != NULL && writeset->fds_bits[0]) FD_SET(s_socket, &wr);
-  if (exceptset != NULL && exceptset->fds_bits[0]) FD_SET(s_socket, &ex);
+  if (readset != NULL && h2_esp_alipay_fd_bits(readset)[0])
+    FD_SET(s_socket, &rd);
+  if (writeset != NULL && h2_esp_alipay_fd_bits(writeset)[0])
+    FD_SET(s_socket, &wr);
+  if (exceptset != NULL && h2_esp_alipay_fd_bits(exceptset)[0])
+    FD_SET(s_socket, &ex);
   struct timeval tv;
   if (timeout != NULL) {
     if (timeout->tv_sec < 0 || timeout->tv_usec < 0 ||
@@ -84,11 +87,12 @@ int alipay_iot_select(int maxfd, alipay_iot_fd_set* readset,
   const int mapped = io_result(rc);
   h2_esp_alipay_trace("socket.select", "wire_below_vendor_tls", rc, error,
                       s_connection, started, "readiness", NULL, 0);
-  if (readset != NULL) readset->fds_bits[0] = rc > 0 && FD_ISSET(s_socket, &rd);
+  if (readset != NULL)
+    h2_esp_alipay_fd_bits(readset)[0] = rc > 0 && FD_ISSET(s_socket, &rd);
   if (writeset != NULL)
-    writeset->fds_bits[0] = rc > 0 && FD_ISSET(s_socket, &wr);
+    h2_esp_alipay_fd_bits(writeset)[0] = rc > 0 && FD_ISSET(s_socket, &wr);
   if (exceptset != NULL)
-    exceptset->fds_bits[0] = rc > 0 && FD_ISSET(s_socket, &ex);
+    h2_esp_alipay_fd_bits(exceptset)[0] = rc > 0 && FD_ISSET(s_socket, &ex);
   return mapped;
 }
 int alipay_iot_dns(const char* name, unsigned char ip[4]) {
