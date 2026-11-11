@@ -48,6 +48,25 @@ class InventoryTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "h2_loader_tar_zlib/e2e"):
                 discover_entries(directory, "e2e")
 
+    def test_lists_format_two_without_native_launchers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "projects/testing/targets/h2_loader_zlib_tar"
+            entry = root / "e2e/lua_link/host/espressif/esp32s3_devkitc_1"
+            entry.mkdir(parents=True)
+            (entry / "BUILD.bazel").write_text(
+                'h2loader_zlib_tar(name = "package", source = "//native:package")\n')
+            helper = root / "e2e/lua_link/tests"
+            helper.mkdir(parents=True)
+            (helper / "BUILD.bazel").write_text('cc_test(name = "test")\n')
+            self.assertEqual(discover_entries(directory, "e2e", "h2_loader_zlib_tar"), [{
+                "app": "lua_link", "role": "host", "manufacturer": "espressif", "board": "esp32s3_devkitc_1",
+                "path": "projects/testing/targets/h2_loader_zlib_tar/e2e/lua_link/host/espressif/esp32s3_devkitc_1",
+            }])
+            with self.assertRaisesRegex(ValueError, "Artifact kind"):
+                discover_entries(directory, "e2e", "unknown")
+            with self.assertRaisesRegex(ValueError, "h2_loader_zlib_tar/unit"):
+                discover_entries(directory, "unit", "h2_loader_zlib_tar")
+
     def test_reports_missing_tree(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "projects/testing"):

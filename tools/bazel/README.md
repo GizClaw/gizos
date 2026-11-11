@@ -204,7 +204,7 @@ locators, preserving their existing sandbox/remote-execution contract.
 ```sh
 bun tools/gizos/src/cli.ts setup idf 6.2
 eval "$(bun tools/gizos/src/cli.ts env idf 6.2 --shell sh)"
-bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package_usb
 ```
 
 Use `env` to inspect paths, `config set root /path/to/shared/store` to configure
@@ -267,9 +267,9 @@ The BK native action writes the paired-image RBL payload and footer using a fixe
 
 ## H2Loader package builds
 
-Firmware package entries use `projects/<owner>/targets/h2_loader_tar_zlib/<app-or-category>/.../<manufacturer>/<board>/`, with manufacturer and model matching their physical BSP. The entry selects one native firmware graph and exposes `:package` through `h2loader_tar_zlib` for format 1. Where supported, `:package_v2` uses `h2loader_zlib_tar(source = ":package")` for format 2 in the same BUILD file. Both formats reuse the same native inputs; package board/image identities are independent of directory names.
+Firmware package entries use `projects/<owner>/targets/h2_loader_tar_zlib/<app-or-category>/.../<manufacturer>/<board>/` for format 1 and the matching `h2_loader_zlib_tar` tree for format 2. Manufacturer and model match the physical BSP. The tar_zlib entry owns the native firmware graph and its `h2loader_tar_zlib` package. The zlib_tar entry exposes `h2loader_zlib_tar` with an absolute `source` label pointing to that format-1 entry. Both directories use `:package`, or DevKit's `:package_usb` and `:package_uart`; no `_v2` suffix is needed. The format-2 action borrows raw native/data inputs without building the format-1 archive. Package board/image identities are independent of directory names.
 
-The project-owned ESP/BK/JieLi wrappers select board layout and recovery inputs, then delegate native compilation to the generic rules here. Package rules consume native providers and add managed identity, optional data, update archives, recovery envelopes and release metadata. Current canonical release tags select `:package_v2`; only explicit canonical Loader entries may opt in. A native `:firmware` target has no H2Loader package identity. Detailed package composition belongs to the [H2Loader README](../../projects/h2loader/README.md).
+The project-owned ESP/BK/JieLi wrappers select board layout and recovery inputs, then delegate native compilation to the generic rules here. Package rules consume native providers and add managed identity, optional data, update archives, recovery envelopes and release metadata. Current canonical release tags select `:package` in `h2_loader_zlib_tar`, or `:package_usb` for DevKit; only explicit canonical Loader entries may opt in. Native firmware targets have no H2Loader package identity. Detailed package composition belongs to the [H2Loader README](../../projects/h2loader/README.md).
 
 Every build/ownership unit declares its sources and dependency edges in its own
 `BUILD.bazel`. Add or update that local package when a source boundary or

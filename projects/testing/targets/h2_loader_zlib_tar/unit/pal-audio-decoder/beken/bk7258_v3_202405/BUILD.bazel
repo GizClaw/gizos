@@ -1,0 +1,8 @@
+load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "package",
+    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/pal-audio-decoder/beken/bk7258_v3_202405:package",
+)

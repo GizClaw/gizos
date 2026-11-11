@@ -8,7 +8,7 @@ FirmwareReleaseInfo = provider(
     doc = "Canonical H2Loader release outputs for one firmware entry.",
     fields = {
         "board": "Physical board identity.",
-        "entry": "Source-root-relative launcher entry.",
+        "entry": "Source-root-relative artifact entry for this package format.",
         "factory": "ESP Loader combined factory image or None.",
         "image": "Image identity.",
         "metadata": "Machine-readable metadata file.",

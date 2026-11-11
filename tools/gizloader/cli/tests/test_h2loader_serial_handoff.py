@@ -13,10 +13,11 @@ class SerialHandoff(unittest.TestCase):
         prefix = serial[:serial.index('static h2_pal_result_t serial_pump(')]
         prefix = prefix.replace('#include "h2_h2loader_host_internal.h"', '')
         prefix = re.sub(r'\bstatic\s+h2_pal_result_t\s+serial_finish_command_response\s*\(\s*void\s*\*\s*transport\s*\)\s*;', '', prefix)
-        # Stop before the monitor-only decoded-log drain: this fixture exercises
-        # the handshake handoff and never calls it, so pulling it in would trip
-        # -Wunused-function.
+        # Keep the real callback dependency graph, including decoded teardown
+        # delivery. The stream stub intentionally has no admitted KCP payloads.
         connect = section(serial, 'h2_pal_result_t h2_h2loader_host_serial_connect(', '/* Console output during a monitor session')
+        drain = section(serial, '/* Console output during a monitor session',
+                        'h2_pal_result_t h2_h2loader_host_serial_monitor_logs(')
         frame = (ROOT/'libs/net/iostreamikcp/src/h2_iostreamikcp_frame.c').read_text().replace('#include "h2_iostreamikcp_internal.h"', '#include "h2_iostreamikcp.h"\n#define H2_IOSTREAMIKCP_FRAME_MAGIC_LEN 6u\n#define H2_IOSTREAMIKCP_FRAME_LEN_OFFSET 12u')
         app = (ROOT/'tools/gizloader/cli/src/h2_h2loader_cli_app.c').read_text()
         # Main keeps the serial log callback in app.c; no BLE sink dependency.
@@ -33,8 +34,14 @@ h2_pal_result_t h2_iostreamikcp_read(
     *len = 0u;
     return H2_PAL_ERR_WOULD_BLOCK;
 }
+h2_pal_result_t h2_iostreamikcp_input_frame(
+    h2_iostreamikcp_t *stream, const h2_iostreamikcp_frame_t *frame) {
+    (void)stream; (void)frame;
+    assert(0 && "OPEN-only handshake fixture cannot retire DATA frames");
+    return H2_PAL_ERR_INVALID_STATE;
+}
 '''
-        for key, value in [('FRAME',frame),('SERIAL',empty_read+prefix+connect),('OUTPUT',output),('VERIFY',verify)]:
+        for key, value in [('FRAME',frame),('SERIAL',empty_read+prefix+connect+drain),('OUTPUT',output),('VERIFY',verify)]:
             fixture=fixture.replace('/* '+key+' */',value)
         with tempfile.TemporaryDirectory() as directory:
             unit=Path(directory)/'test.c';binary=Path(directory)/'test'

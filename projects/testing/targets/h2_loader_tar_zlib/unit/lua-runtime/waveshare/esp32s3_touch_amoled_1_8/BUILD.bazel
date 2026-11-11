@@ -4,7 +4,6 @@ load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
 load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -114,9 +113,4 @@ h2loader_tar_zlib(
     role = "app",
     tags = ["h2-ci-esp-entry"],
     target = "esp32s3",
-)
-
-h2loader_zlib_tar(
-    name = "package_v2",
-    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/lua-runtime/waveshare/esp32s3_touch_amoled_1_8:package",
 )
