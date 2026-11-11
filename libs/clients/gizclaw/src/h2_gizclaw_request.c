@@ -900,6 +900,13 @@ static const h2_gizclaw_req_vtable_t managed_vtable = {
     .release = managed_release,
 };
 
+bool h2_gizclaw_req_retain_internal(h2_gizclaw_req_t* base) {
+  if (base == NULL || base->vtable != &managed_vtable) return false;
+  managed_request_t* request = (managed_request_t*)base;
+  h2_atomic_fetch_add_explicit(&request->refs, 1u, H2_ATOMIC_RELAXED);
+  return true;
+}
+
 static h2_pal_result_t create_request(h2_gizclaw_service_t* service,
                                       uint64_t identity,
                                       h2_gizclaw_rpc_method_t method,

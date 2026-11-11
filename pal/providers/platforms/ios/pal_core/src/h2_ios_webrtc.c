@@ -24,7 +24,8 @@ h2_pal_result_t h2_ios_webrtc_create(h2_ios_webrtc_t** out) {
   memset(owner, 0, sizeof(*owner));
   const h2_sctp_config_t sctp = {.mem = memory,
                                  .crypto = h2_wolfssl_crypto_api()};
-  rc = h2_sctp_create(&sctp, &owner->sctp);
+  rc =
+      h2_sctp_create_with_sync(&sctp, h2_ios_platform_sync_api(), &owner->sctp);
   if (rc == H2_PAL_OK) {
     const h2_peer_config_t config = {
         .mem = memory,

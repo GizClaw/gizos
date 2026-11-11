@@ -27,6 +27,11 @@ h2_pal_result_t h2_gizclaw_service_detach_session_internal(
 /* Keep the real Session on the fake Service boundary, including its deferred
  * diagnostics. The App test does not own or inspect private log records. */
 typedef struct h2_gizclaw_audio_log h2_gizclaw_audio_log_t;
+typedef void (*h2_gizclaw_session_conversation_completion_fn)(
+    void* user, h2_gizclaw_conversation_t* conversation,
+    const h2_gizclaw_operation_result_t* result, bool ended, bool empty,
+    size_t end_downlink_write_index);
+typedef void (*h2_gizclaw_session_input_end_notify_fn)(void* user);
 void h2_gizclaw_service_flush_audio_log_internal(
     const h2_gizclaw_service_t* service, const h2_gizclaw_audio_log_t* log) {
   (void)service;
@@ -153,6 +158,7 @@ static void assert_workspace(h2_gizclaw_str_t workspace) {
 struct h2_gizclaw_conversation {
   h2_gizclaw_conversation_callback_fn callback;
   h2_gizclaw_conversation_completion_fn completion;
+  h2_gizclaw_session_conversation_completion_fn session_completion;
   void* user;
   bool active, ended, cancelled;
   unsigned generation, replies;
@@ -218,22 +224,44 @@ h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t* service,
   s_track = NULL;
   return H2_PAL_OK;
 }
+static h2_pal_result_t create_conversation(
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t workspace,
+    h2_gizclaw_conversation_callback_fn callback,
+    h2_gizclaw_conversation_completion_fn completion,
+    h2_gizclaw_session_conversation_completion_fn session_completion,
+    void* user, h2_gizclaw_conversation_t** out) {
+  assert(service == (h2_gizclaw_service_t*)&s_service && workspace.len > 0u);
+  assert_workspace(workspace);
+  assert(s_conversation == NULL && callback != NULL);
+  assert(completion != NULL || session_completion != NULL);
+  *out = NULL;
+  if (s_mode == CREATE_ERROR) return H2_PAL_ERR_NO_MEMORY;
+  *out = allocate(NULL, sizeof(**out));
+  if (*out == NULL) return H2_PAL_ERR_NO_MEMORY;
+  **out = (h2_gizclaw_conversation_t){.callback = callback,
+                                      .completion = completion,
+                                      .session_completion = session_completion,
+                                      .user = user};
+  s_conversation = *out;
+  return H2_PAL_OK;
+}
 h2_pal_result_t h2_gizclaw_conversation_create(
     h2_gizclaw_service_t* service, h2_gizclaw_str_t workspace,
     h2_gizclaw_conversation_callback_fn callback,
     h2_gizclaw_conversation_completion_fn completion, void* user,
     h2_gizclaw_conversation_t** out) {
-  assert(service == (h2_gizclaw_service_t*)&s_service && workspace.len > 0u);
-  assert_workspace(workspace);
-  assert(s_conversation == NULL && callback != NULL && completion != NULL);
-  *out = NULL;
-  if (s_mode == CREATE_ERROR) return H2_PAL_ERR_NO_MEMORY;
-  *out = allocate(NULL, sizeof(**out));
-  if (*out == NULL) return H2_PAL_ERR_NO_MEMORY;
-  **out = (h2_gizclaw_conversation_t){
-      .callback = callback, .completion = completion, .user = user};
-  s_conversation = *out;
-  return H2_PAL_OK;
+  return create_conversation(service, workspace, callback, completion, NULL,
+                             user, out);
+}
+h2_pal_result_t h2_gizclaw_conversation_create_session_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_str_t workspace,
+    h2_gizclaw_conversation_callback_fn callback,
+    h2_gizclaw_session_conversation_completion_fn completion,
+    h2_gizclaw_session_input_end_notify_fn input_end_notify, void* user,
+    h2_gizclaw_conversation_t** out) {
+  (void)input_end_notify; /* This fixture exercises legacy PCM only. */
+  return create_conversation(service, workspace, callback, NULL, completion,
+                             user, out);
 }
 h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t* service) {
   assert(service == (h2_gizclaw_service_t*)&s_service);
@@ -274,6 +302,35 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
     *out_empty = s_conversation != NULL && s_conversation->input_bytes == 0u;
   return rc;
 }
+/* This fixture uses legacy PCM boundaries. Resolve Session's managed bridge
+ * here as well, so its fake Service never links the real Service
+ * implementation.
+ */
+h2_pal_result_t h2_gizclaw_conversation_audio_control_internal(
+    h2_gizclaw_conversation_t* conversation, bool start,
+    h2_gizclaw_track_t* track, h2_gizclaw_pcm_capture_id_t id,
+    h2_gizclaw_audio_log_t* log, bool* out_empty) {
+  assert(conversation == s_conversation);
+  if (id != 0u) return H2_PAL_ERR_UNSUPPORTED;
+  assert(track == NULL);
+  return h2_gizclaw_service_audio_control_internal(
+      (h2_gizclaw_service_t*)&s_service, start, log, out_empty);
+}
+h2_pal_result_t h2_gizclaw_conversation_audio_end_snapshot_internal(
+    h2_gizclaw_conversation_t* conversation, bool* ended, bool* empty,
+    size_t* end_downlink_write_index) {
+  assert(conversation == s_conversation);
+  *ended = false;
+  *empty = false;
+  *end_downlink_write_index = 0u;
+  return H2_PAL_OK;
+}
+size_t h2_gizclaw_service_pcm_downlink_writes_internal(
+    h2_gizclaw_service_t* service) {
+  (void)service;
+  return s_downlink_writes;
+}
+
 /* The Session's text input: a complete input that is already ended, so the
  * poll below completes it and the reply follows as downstream audio. */
 h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
@@ -323,9 +380,17 @@ static void complete(h2_gizclaw_conversation_t* value, bool cancelled) {
   if (s_realtime && s_mode == HANGUP_BAD_RESULT) result.result = H2_PAL_ERR_IO;
   if (s_realtime && s_mode == HANGUP_BAD_KIND)
     result.terminal_kind = H2_GIZCLAW_OPERATION_FINISHED;
-  value->completion(value->user, value, &result);
-  if (s_mode == DUPLICATE_COMPLETION)
+  if (value->session_completion != NULL) {
+    value->session_completion(value->user, value, &result, value->ended,
+                              value->input_bytes == 0u, s_downlink_writes);
+    if (s_mode == DUPLICATE_COMPLETION)
+      value->session_completion(value->user, value, &result, value->ended,
+                                value->input_bytes == 0u, s_downlink_writes);
+  } else {
     value->completion(value->user, value, &result);
+    if (s_mode == DUPLICATE_COMPLETION)
+      value->completion(value->user, value, &result);
+  }
 }
 /* Text accompanies a reply only while the input is still open (realtime);
  * a push-to-talk reply comes after the generation completed. */

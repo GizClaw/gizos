@@ -3659,9 +3659,12 @@ static h2_pal_result_t speaker_acquire(void* user) {
 }
 static h2_pal_result_t speaker_release(void* user) {
   speaker_test_state_t* state = user;
+  const h2_pal_result_t rc = h2_atomic_fetch_sub(&state->users, 1) > 0
+                                 ? H2_PAL_OK
+                                 : H2_PAL_ERR_INVALID_STATE;
+  /* Waiters treat releases as completion, including the user-count update. */
   h2_atomic_fetch_add(&state->releases, 1u);
-  return h2_atomic_fetch_sub(&state->users, 1) > 0 ? H2_PAL_OK
-                                                   : H2_PAL_ERR_INVALID_STATE;
+  return rc;
 }
 static h2_pal_result_t speaker_resolve_sound(void* user, const char* name,
                                              char* out_url, size_t capacity) {
@@ -8316,6 +8319,7 @@ static void test_workspace_fence_server_readback(void) {
  * requests, nanopb codecs, response parsing and confirmation all execute. */
 static struct {
   test_contact_rpc_t rpc;
+  h2_gizclaw_service_t* client_service;
   h2_gizclaw_session_t* session;
   gizclaw_rpc_v1_WorkspaceParametersPatch patch;
   h2_gizclaw_session_state_t at_send;
@@ -8328,7 +8332,10 @@ static int fence_flow_start(h2_gizclaw_client_t* client,
                             h2_gizclaw_rpc_method_t method,
                             h2_gizclaw_rpc_bytes_t payload, uint32_t timeout,
                             h2_gizclaw_rpc_request_t** out) {
-  assert(client == (h2_gizclaw_client_t*)s_env && timeout > 0u);
+  const h2_gizclaw_client_t* expected_client =
+      fence_flow.client_service != NULL ? fence_flow.client_service->client
+                                        : (h2_gizclaw_client_t*)s_env;
+  assert(client == expected_client && timeout > 0u);
   ++fence_flow.started;
   test_contact_rpc_t* rpc = &fence_flow.rpc;
   *rpc = (test_contact_rpc_t){0};
@@ -11353,6 +11360,7 @@ typedef struct speech_wire_test {
   pthread_t app_thread;
   pthread_t network_thread;
   bool network_thread_set;
+  bool real_client;
   bool extract;
   bool hold_after_first_write;
   unsigned mode;
@@ -11396,7 +11404,8 @@ static int speech_test_start(h2_gizclaw_client_t* client,
                              h2_gizclaw_rpc_stream_fn receive, void* user,
                              h2_gizclaw_rpc_request_t** out) {
   speech_wire_test_t* test = s_speech;
-  assert(client == (h2_gizclaw_client_t*)s_env);
+  assert(client == (test->real_client ? test->service->client
+                                      : (h2_gizclaw_client_t*)s_env));
   assert(!pthread_equal(pthread_self(), test->app_thread));
   test->network_thread = pthread_self();
   test->network_thread_set = true;
@@ -11611,6 +11620,422 @@ static int speech_pacing_log(void* user, h2_pal_log_level_t level,
     h2_atomic_fetch_add(&test->pacing_warnings, 1u);
   }
   return H2_PAL_OK;
+}
+
+static void detached_speech_complete(
+    void* user, h2_gizclaw_req_t* request,
+    const h2_gizclaw_operation_result_t* result) {
+  speech_wire_test_t* wire = user;
+  assert(request != NULL);
+  assert(result->result ==
+         (wire->mode == 6u ? H2_GIZCLAW_ERR_REMOTE : H2_PAL_ERR_CLOSED));
+  h2_atomic_fetch_add(&wire->callbacks, 1u);
+}
+
+static void test_speech_detach_releases_legacy_window(void) {
+  for (unsigned failure = 0u; failure < 2u; ++failure) {
+    for (unsigned queued_callback = 0u; queued_callback < 2u;
+         ++queued_callback) {
+      test_env_t env;
+      h2_gizclaw_service_t* service = create_service(&env, 4u);
+      h2_atomic_store(&env.event_emitted, true);
+      h2_gizclaw_track_t* track = NULL;
+      const h2_gizclaw_pcm_track_config_t config = {
+          .allocator = service->client_config.allocator,
+          .sync = service->config.sync};
+      assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+      assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+      assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+      h2_gizclaw_async_rpc_test_set_ops(&speech_test_ops);
+      const h2_gizclaw_speech_transcribe_options_t options = {
+          .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+      speech_wire_test_t first = {.service = service,
+                                  .app_thread = pthread_self(),
+                                  .mode = failure ? 6u : 0u};
+      speech_wire_test_atomics_init(&first);
+      s_speech = &first;
+      h2_gizclaw_req_t* previous = NULL;
+      assert(h2_gizclaw_req_create_speech_transcribe(
+                 service, 10001u, &options, 2000u, &previous) == H2_PAL_OK);
+      assert(h2_gizclaw_req_do(previous, &first, NULL, NULL,
+                               queued_callback ? detached_speech_complete
+                                               : NULL) == H2_PAL_OK);
+      assert(speech_audio_start(&first) == H2_PAL_OK);
+      wait_for_count(&first.starts, 3u);
+      if (!failure) assert(h2_gizclaw_req_cancel(previous) == H2_PAL_OK);
+      assert(h2_gizclaw_req_wait(previous, 3000u) ==
+             (failure ? H2_GIZCLAW_ERR_REMOTE : H2_PAL_ERR_CLOSED));
+      assert(h2_atomic_load(&first.destroys) == 1u);
+      assert(h2_atomic_load(&first.callbacks) == 0u);
+      if (queued_callback) {
+        h2_gizclaw_req_release(previous);
+        previous = NULL; /* Only undispatched completion retains its owner. */
+      }
+
+      /* No END was sent. A retained handle or pending callback must not retain
+       * PCM ownership once terminal detach has drained its worker references.
+       */
+      speech_wire_test_t second = {.service = service,
+                                   .app_thread = pthread_self()};
+      speech_wire_test_atomics_init(&second);
+      s_speech = &second;
+      h2_gizclaw_req_t* next = NULL;
+      assert(h2_gizclaw_req_create_speech_transcribe(
+                 service, 10002u, &options, 2000u, &next) == H2_PAL_OK);
+      assert(h2_gizclaw_req_do(next, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+      assert(speech_audio_start(&second) == H2_PAL_OK);
+      assert(h2_atomic_load(&first.callbacks) == 0u);
+      assert(h2_gizclaw_req_cancel(next) == H2_PAL_OK);
+      assert(h2_gizclaw_req_wait(next, 3000u) == H2_PAL_ERR_CLOSED);
+      h2_gizclaw_req_release(next);
+      if (previous != NULL) h2_gizclaw_req_release(previous);
+      assert(h2_gizclaw_service_poll(service, 32u, NULL) == H2_PAL_OK);
+      assert(h2_atomic_load(&first.callbacks) == queued_callback);
+      assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+      assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+      assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+      assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+      h2_gizclaw_async_rpc_test_set_ops(NULL);
+      s_speech = NULL;
+    }
+  }
+}
+
+typedef struct speech_lock_failure {
+  h2_gizclaw_service_t* service;
+  const h2_pal_sync_api_t* original;
+  h2_pal_mutex_t* audio_mutex;
+  h2_pal_mutex_t* input_mutex;
+  unsigned fail_stage; /* audio, input, or Service mutex during retirement. */
+  h2_atomic_bool_t fail_audio;
+  h2_atomic_uint_t failures;
+  pthread_mutex_t gate;
+  pthread_cond_t progress;
+  bool snapshot_entered, resume_snapshot;
+  h2_pal_result_t snapshot_result;
+  h2_gizclaw_audio_input_state_t snapshot;
+} speech_lock_failure_t;
+static speech_lock_failure_t* s_speech_lock_failure;
+static _Thread_local bool speech_snapshot_task;
+static _Thread_local bool speech_fault_audio_owned;
+
+static h2_pal_result_t speech_fault_create_mutex(
+    void* user, const h2_pal_mutex_config_t* config, h2_pal_mutex_t** out) {
+  speech_lock_failure_t* fault = s_speech_lock_failure;
+  h2_pal_result_t rc = fault->original->vtable->create_mutex(user, config, out);
+  if (rc == H2_PAL_OK && config->name != NULL &&
+      strcmp(config->name, "$gizclaw/speech-input") == 0)
+    fault->input_mutex = *out;
+  return rc;
+}
+static h2_pal_result_t speech_fault_lock_mutex(void* user,
+                                               h2_pal_mutex_t* mutex) {
+  speech_lock_failure_t* fault = s_speech_lock_failure;
+  const bool fail =
+      fault->fail_stage == 0u
+          ? mutex == fault->audio_mutex
+          : speech_fault_audio_owned &&
+                mutex == (fault->fail_stage == 1u ? fault->input_mutex
+                                                  : fault->service->mutex);
+  if (fail && h2_atomic_load(&fault->fail_audio)) {
+    h2_atomic_fetch_add(&fault->failures, 1u);
+    return H2_PAL_ERR_IO;
+  }
+  if (speech_snapshot_task && mutex == fault->input_mutex) {
+    assert(pthread_mutex_lock(&fault->gate) == 0);
+    fault->snapshot_entered = true;
+    assert(pthread_cond_broadcast(&fault->progress) == 0);
+    while (!fault->resume_snapshot)
+      assert(pthread_cond_wait(&fault->progress, &fault->gate) == 0);
+    assert(pthread_mutex_unlock(&fault->gate) == 0);
+  }
+  h2_pal_result_t rc = fault->original->vtable->lock_mutex(user, mutex);
+  if (rc == H2_PAL_OK && mutex == fault->audio_mutex)
+    speech_fault_audio_owned = true;
+  return rc;
+}
+static h2_pal_result_t speech_fault_unlock_mutex(void* user,
+                                                 h2_pal_mutex_t* mutex) {
+  speech_lock_failure_t* fault = s_speech_lock_failure;
+  h2_pal_result_t rc = fault->original->vtable->unlock_mutex(user, mutex);
+  if (rc == H2_PAL_OK && mutex == fault->audio_mutex)
+    speech_fault_audio_owned = false;
+  return rc;
+}
+static void* speech_snapshot_entry(void* user) {
+  speech_lock_failure_t* fault = user;
+  speech_snapshot_task = true;
+  fault->snapshot_result =
+      h2_gizclaw_service_audio_input_snapshot(fault->service, &fault->snapshot);
+  speech_snapshot_task = false;
+  return NULL;
+}
+
+static void test_speech_retirement_retries_audio_lock(void) {
+  for (unsigned stop_before_recovery = 0u; stop_before_recovery < 2u;
+       ++stop_before_recovery) {
+    test_env_t env;
+    h2_gizclaw_service_t* service = create_service(&env, 4u);
+    h2_atomic_store(&env.event_emitted, true);
+    service->client_config.time = h2_desktop_platform_time_api();
+    speech_lock_failure_t fault = {.service = service,
+                                   .original = service->config.sync,
+                                   .audio_mutex = service->audio_mutex};
+    assert(h2_atomic_bool_init(&fault.fail_audio, false) == H2_ATOMIC_OK);
+    assert(h2_atomic_uint_init(&fault.failures, 0u) == H2_ATOMIC_OK);
+    assert(pthread_mutex_init(&fault.gate, NULL) == 0);
+    assert(pthread_cond_init(&fault.progress, NULL) == 0);
+    h2_pal_sync_vtable_t sync_vtable = *fault.original->vtable;
+    sync_vtable.create_mutex = speech_fault_create_mutex;
+    sync_vtable.lock_mutex = speech_fault_lock_mutex;
+    sync_vtable.unlock_mutex = speech_fault_unlock_mutex;
+    const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                    .vtable = &sync_vtable};
+    s_speech_lock_failure = &fault;
+    service->config.sync = &sync;
+    h2_gizclaw_track_t* track = NULL;
+    const h2_gizclaw_pcm_track_config_t config = {
+        .allocator = service->client_config.allocator, .sync = &sync};
+    assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    h2_gizclaw_async_rpc_test_set_ops(&speech_test_ops);
+    speech_wire_test_t wire = {.service = service,
+                               .app_thread = pthread_self()};
+    speech_wire_test_atomics_init(&wire);
+    s_speech = &wire;
+    const h2_gizclaw_speech_transcribe_options_t options = {
+        .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+    h2_gizclaw_req_t* request = NULL;
+    assert(h2_gizclaw_req_create_speech_transcribe(
+               service, 11001u, &options, 2000u, &request) == H2_PAL_OK);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(speech_audio_start(&wire) == H2_PAL_OK);
+    const uint8_t pcm[2] = {1, 2};
+    assert(h2_gizclaw_pcm_track_write(track, pcm, sizeof(pcm)) == H2_PAL_OK);
+    wait_for_count(&wire.starts, 3u);
+    pthread_t snapshot;
+    assert(pthread_create(&snapshot, NULL, speech_snapshot_entry, &fault) == 0);
+    assert(pthread_mutex_lock(&fault.gate) == 0);
+    while (!fault.snapshot_entered)
+      assert(pthread_cond_wait(&fault.progress, &fault.gate) == 0);
+    assert(pthread_mutex_unlock(&fault.gate) == 0);
+
+    /* Snapshot already owns audio_mutex and is about to use input. A failed
+     * stop lock must preserve both input and request, even after caller
+     * release. */
+    h2_atomic_store(&fault.fail_audio, true);
+    assert(h2_gizclaw_req_cancel(request) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 3000u) == H2_PAL_ERR_CLOSED);
+    assert(h2_atomic_load(&fault.failures) != 0u);
+    h2_gizclaw_pcm_capture_id_t id;
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_ERR_BUSY);
+    h2_gizclaw_req_release(request);
+    if (stop_before_recovery) {
+      assert(h2_gizclaw_service_stop(service) == H2_PAL_ERR_IO);
+      assert(!service->stopped);
+    }
+    assert(h2_pal_mutex_lock(&sync, service->mutex) == H2_PAL_OK);
+    assert(h2_atomic_load(&service->speech_request) != NULL &&
+           service->request_reference_count != 0u);
+    assert(h2_pal_mutex_unlock(&sync, service->mutex) == H2_PAL_OK);
+    assert(pthread_mutex_lock(&fault.gate) == 0);
+    fault.resume_snapshot = true;
+    assert(pthread_cond_broadcast(&fault.progress) == 0);
+    assert(pthread_mutex_unlock(&fault.gate) == 0);
+    assert(pthread_join(snapshot, NULL) == 0);
+    assert(fault.snapshot_result == H2_PAL_OK && !fault.snapshot.active &&
+           !fault.snapshot.ready);
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_ERR_BUSY);
+
+    h2_atomic_store(&fault.fail_audio, false);
+    if (stop_before_recovery)
+      assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    size_t references = 1u;
+    for (unsigned spins = 0u; spins < 3000u && references != 0u; ++spins) {
+      assert(h2_pal_mutex_lock(&sync, service->mutex) == H2_PAL_OK);
+      references = service->request_reference_count;
+      assert(h2_pal_mutex_unlock(&sync, service->mutex) == H2_PAL_OK);
+      if (references != 0u)
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+    }
+    assert(references == 0u);
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
+    assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+    s_speech_lock_failure = NULL;
+    s_speech = NULL;
+    h2_gizclaw_async_rpc_test_set_ops(NULL);
+    assert(pthread_cond_destroy(&fault.progress) == 0);
+    assert(pthread_mutex_destroy(&fault.gate) == 0);
+    h2_atomic_uint_destroy(&fault.failures);
+    h2_atomic_bool_destroy(&fault.fail_audio);
+  }
+}
+
+static void test_speech_retirement_retries_inner_locks(void) {
+  for (unsigned stage = 1u; stage <= 2u; ++stage) {
+    test_env_t env;
+    h2_gizclaw_service_t* service = create_service(&env, 4u);
+    h2_atomic_store(&env.event_emitted, true);
+    speech_lock_failure_t fault = {.service = service,
+                                   .original = service->config.sync,
+                                   .audio_mutex = service->audio_mutex,
+                                   .fail_stage = stage};
+    assert(h2_atomic_bool_init(&fault.fail_audio, false) == H2_ATOMIC_OK);
+    assert(h2_atomic_uint_init(&fault.failures, 0u) == H2_ATOMIC_OK);
+    h2_pal_sync_vtable_t sync_vtable = *fault.original->vtable;
+    sync_vtable.create_mutex = speech_fault_create_mutex;
+    sync_vtable.lock_mutex = speech_fault_lock_mutex;
+    sync_vtable.unlock_mutex = speech_fault_unlock_mutex;
+    const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                    .vtable = &sync_vtable};
+    s_speech_lock_failure = &fault;
+    service->config.sync = &sync;
+    h2_gizclaw_track_t* track = NULL;
+    const h2_gizclaw_pcm_track_config_t config = {
+        .allocator = service->client_config.allocator, .sync = &sync};
+    assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+    speech_wire_test_t wire = {.service = service,
+                               .app_thread = pthread_self()};
+    speech_wire_test_atomics_init(&wire);
+    s_speech = &wire;
+    h2_gizclaw_async_rpc_test_set_ops(&speech_test_ops);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    const h2_gizclaw_speech_transcribe_options_t options = {
+        .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+    h2_gizclaw_req_t* request = NULL;
+    assert(h2_gizclaw_req_create_speech_transcribe(service, 11010u + stage,
+                                                   &options, 2000u,
+                                                   &request) == H2_PAL_OK);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(speech_audio_start(&wire) == H2_PAL_OK);
+    const uint8_t pcm[640] = {0};
+    assert(h2_gizclaw_pcm_track_write(track, pcm, sizeof(pcm)) == H2_PAL_OK);
+    wait_for_count(&wire.uploaded_bytes, sizeof(pcm));
+    /* Only fail the nested retirement acquisition while audio_mutex is held;
+     * ordinary Service/request locks and worker input accesses still succeed.
+     */
+    h2_atomic_store(&fault.fail_audio, true);
+    assert(h2_gizclaw_req_cancel(request) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_ERR_CLOSED);
+    wait_for_count(&fault.failures, 1u);
+    h2_gizclaw_req_release(request);
+    assert(h2_atomic_load(&service->speech_request) != NULL);
+    h2_gizclaw_pcm_capture_id_t id = 0u;
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_ERR_BUSY);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_ERR_IO);
+    assert(!service->stopped &&
+           h2_atomic_load(&service->speech_request) != NULL &&
+           service->request_reference_count != 0u);
+    h2_atomic_store(&fault.fail_audio, false);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_atomic_load(&service->speech_request) == NULL &&
+           service->request_reference_count == 0u);
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
+    assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+    h2_gizclaw_async_rpc_test_set_ops(NULL);
+    s_speech = NULL;
+    s_speech_lock_failure = NULL;
+    h2_atomic_uint_destroy(&fault.failures);
+    h2_atomic_bool_destroy(&fault.fail_audio);
+  }
+}
+
+typedef struct speech_admission_gate {
+  h2_gizclaw_service_t* service;
+  h2_gizclaw_req_t* request;
+  const h2_pal_sync_api_t* original;
+  h2_pal_mutex_t* audio_mutex;
+  pthread_mutex_t gate;
+  pthread_cond_t progress;
+  bool entered, resume;
+  unsigned attempts;
+  h2_pal_result_t result;
+} speech_admission_gate_t;
+static speech_admission_gate_t* s_speech_admission_gate;
+static _Thread_local bool speech_admission_task;
+
+static h2_pal_result_t speech_admission_lock(void* user,
+                                             h2_pal_mutex_t* mutex) {
+  speech_admission_gate_t* gate = s_speech_admission_gate;
+  if (speech_admission_task && mutex == gate->audio_mutex) {
+    /* First lock is admission after req_do's initial service-state check.
+     * A later cleanup attempt would fail, reproducing the stranded-route case.
+     */
+    if (gate->attempts++ != 0u) return H2_PAL_ERR_IO;
+    assert(pthread_mutex_lock(&gate->gate) == 0);
+    gate->entered = true;
+    assert(pthread_cond_broadcast(&gate->progress) == 0);
+    while (!gate->resume)
+      assert(pthread_cond_wait(&gate->progress, &gate->gate) == 0);
+    assert(pthread_mutex_unlock(&gate->gate) == 0);
+  }
+  return gate->original->vtable->lock_mutex(user, mutex);
+}
+static void* speech_admission_entry(void* user) {
+  speech_admission_gate_t* gate = user;
+  speech_admission_task = true;
+  gate->result = h2_gizclaw_req_do(gate->request, NULL, NULL, NULL, NULL);
+  speech_admission_task = false;
+  return NULL;
+}
+
+static void test_speech_admission_after_stop(void) {
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_service(&env, 4u);
+  h2_atomic_store(&env.event_emitted, true);
+  speech_admission_gate_t gate = {.service = service,
+                                  .original = service->config.sync,
+                                  .audio_mutex = service->audio_mutex};
+  assert(pthread_mutex_init(&gate.gate, NULL) == 0);
+  assert(pthread_cond_init(&gate.progress, NULL) == 0);
+  h2_pal_sync_vtable_t sync_vtable = *gate.original->vtable;
+  sync_vtable.lock_mutex = speech_admission_lock;
+  const h2_pal_sync_api_t sync = {.user = gate.original->user,
+                                  .vtable = &sync_vtable};
+  s_speech_admission_gate = &gate;
+  service->config.sync = &sync;
+  h2_gizclaw_track_t* track = NULL;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = service->client_config.allocator, .sync = &sync};
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  const h2_gizclaw_speech_transcribe_options_t options = {
+      .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+  assert(h2_gizclaw_req_create_speech_transcribe(
+             service, 12001u, &options, 2000u, &gate.request) == H2_PAL_OK);
+  pthread_t admission;
+  assert(pthread_create(&admission, NULL, speech_admission_entry, &gate) == 0);
+  assert(pthread_mutex_lock(&gate.gate) == 0);
+  while (!gate.entered)
+    assert(pthread_cond_wait(&gate.progress, &gate.gate) == 0);
+  assert(pthread_mutex_unlock(&gate.gate) == 0);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK && service->stopped);
+  assert(pthread_mutex_lock(&gate.gate) == 0);
+  gate.resume = true;
+  assert(pthread_cond_broadcast(&gate.progress) == 0);
+  assert(pthread_mutex_unlock(&gate.gate) == 0);
+  assert(pthread_join(admission, NULL) == 0);
+  assert(gate.result == H2_PAL_ERR_CLOSED && gate.attempts == 1u);
+  assert(h2_atomic_load(&service->speech_request) == NULL);
+  h2_gizclaw_req_release(gate.request);
+  assert(service->request_reference_count == 0u);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  s_speech_admission_gate = NULL;
+  assert(pthread_cond_destroy(&gate.progress) == 0);
+  assert(pthread_mutex_destroy(&gate.gate) == 0);
 }
 
 static void test_speech_managed_requests(void) {
@@ -13974,6 +14399,813 @@ static void test_conversation_public_audio_tasks(void) {
   }
 }
 
+static h2_gizclaw_pcm_capture_snapshot_t capture_snapshot(
+    h2_gizclaw_track_t* track, h2_gizclaw_pcm_capture_id_t id) {
+  h2_gizclaw_pcm_capture_snapshot_t snapshot;
+  assert(h2_gizclaw_pcm_capture_snapshot(track, id, &snapshot) == H2_PAL_OK);
+  return snapshot;
+}
+
+static void capture_pcm(h2_gizclaw_track_t* track,
+                        h2_gizclaw_pcm_capture_id_t id, const uint8_t* pcm,
+                        size_t len) {
+  assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_capture_frame_submit(track, id, pcm, len, H2_PAL_OK) ==
+         H2_PAL_OK);
+}
+
+/* Fault only the selected control caller. Workers retain the real PAL, so a
+ * paced PCM access cannot consume the adoption/completion failure. */
+typedef struct capture_control_fault {
+  h2_gizclaw_service_t* service;
+  const h2_pal_sync_api_t* original;
+  h2_pal_mutex_t* fail_mutex;
+  h2_pal_mutex_t* input_mutex;
+  h2_pal_mutex_t* track_mutex;
+  unsigned failures, input_destroys, completions, detach_unlocks;
+  h2_pal_result_t lock_error;
+  pthread_mutex_t gate;
+  pthread_cond_t progress;
+  bool control_entered, resume_control;
+  h2_pal_result_t control_result;
+} capture_control_fault_t;
+static capture_control_fault_t* s_capture_control_fault;
+static _Thread_local unsigned capture_control_fail_after;
+static _Thread_local bool capture_control_task;
+static _Thread_local bool capture_detach_task;
+
+static h2_pal_result_t capture_control_create_mutex(
+    void* user, const h2_pal_mutex_config_t* config, h2_pal_mutex_t** out) {
+  capture_control_fault_t* fault = s_capture_control_fault;
+  h2_pal_result_t rc = fault->original->vtable->create_mutex(user, config, out);
+  if (rc == H2_PAL_OK && config->name != NULL &&
+      strcmp(config->name, "$gizclaw/conversation-input") == 0)
+    fault->input_mutex = *out;
+  if (rc == H2_PAL_OK && config->name != NULL &&
+      strcmp(config->name, "pcm_capture") == 0)
+    fault->track_mutex = *out;
+  return rc;
+}
+
+static h2_pal_result_t capture_control_destroy_mutex(void* user,
+                                                     h2_pal_mutex_t* mutex) {
+  capture_control_fault_t* fault = s_capture_control_fault;
+  if (mutex == fault->input_mutex) ++fault->input_destroys;
+  return fault->original->vtable->destroy_mutex(user, mutex);
+}
+
+static h2_pal_result_t capture_control_lock(void* user, h2_pal_mutex_t* mutex) {
+  capture_control_fault_t* fault = s_capture_control_fault;
+  if (capture_control_fail_after != 0u && mutex == fault->fail_mutex &&
+      --capture_control_fail_after == 0u) {
+    ++fault->failures;
+    return fault->lock_error == H2_PAL_OK ? H2_PAL_ERR_IO : fault->lock_error;
+  }
+  if (capture_control_task && mutex == fault->input_mutex) {
+    assert(pthread_mutex_lock(&fault->gate) == 0);
+    fault->control_entered = true;
+    assert(pthread_cond_broadcast(&fault->progress) == 0);
+    while (!fault->resume_control)
+      assert(pthread_cond_wait(&fault->progress, &fault->gate) == 0);
+    assert(pthread_mutex_unlock(&fault->gate) == 0);
+  }
+  return fault->original->vtable->lock_mutex(user, mutex);
+}
+
+static h2_pal_result_t capture_detach_unlock(void* user,
+                                             h2_pal_mutex_t* mutex) {
+  capture_control_fault_t* fault = s_capture_control_fault;
+  const h2_pal_result_t rc = fault->original->vtable->unlock_mutex(user, mutex);
+  if (capture_detach_task && mutex == fault->track_mutex &&
+      ++fault->detach_unlocks == 2u) {
+    assert(pthread_mutex_lock(&fault->gate) == 0);
+    fault->control_entered = true;
+    assert(pthread_cond_broadcast(&fault->progress) == 0);
+    while (!fault->resume_control)
+      assert(pthread_cond_wait(&fault->progress, &fault->gate) == 0);
+    assert(pthread_mutex_unlock(&fault->gate) == 0);
+  }
+  return rc;
+}
+
+static void* capture_detach_entry(void* user) {
+  capture_control_fault_t* fault = user;
+  capture_detach_task = true;
+  fault->control_result = h2_gizclaw_service_unset_track(
+      fault->service, h2_atomic_load(&fault->service->pcm_track));
+  capture_detach_task = false;
+  return NULL;
+}
+
+static void test_capture_begin_during_detach(void) {
+  test_env_t first_env, second_env;
+  h2_gizclaw_service_t* first = create_service(&first_env, 4u);
+  h2_gizclaw_service_t* second = create_service(&second_env, 4u);
+  capture_control_fault_t fault = {.service = first,
+                                   .original = first->config.sync};
+  assert(pthread_mutex_init(&fault.gate, NULL) == 0);
+  assert(pthread_cond_init(&fault.progress, NULL) == 0);
+  h2_pal_sync_vtable_t vtable = *fault.original->vtable;
+  vtable.create_mutex = capture_control_create_mutex;
+  vtable.unlock_mutex = capture_detach_unlock;
+  const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                  .vtable = &vtable};
+  first->config.sync = &sync;
+  s_capture_control_fault = &fault;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = first->client_config.allocator, .sync = &sync};
+  h2_gizclaw_track_t* track = NULL;
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(first, track) == H2_PAL_OK);
+  const uint8_t pcm[6] = {1, 2, 3, 4, 5, 6};
+  assert(h2_gizclaw_service_pcm_write_internal(first, pcm, sizeof(pcm)) ==
+         H2_PAL_OK);
+  pthread_t task;
+  assert(pthread_create(&task, NULL, capture_detach_entry, &fault) == 0);
+  assert(pthread_mutex_lock(&fault.gate) == 0);
+  while (!fault.control_entered)
+    assert(pthread_cond_wait(&fault.progress, &fault.gate) == 0);
+  assert(pthread_mutex_unlock(&fault.gate) == 0);
+  /* The final detach critical section has released its lock. A new standalone
+   * capture must see no borrowed counter even before unset returns. */
+  h2_gizclaw_pcm_capture_id_t id;
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_pcm(track, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  assert(pthread_mutex_lock(&fault.gate) == 0);
+  fault.resume_control = true;
+  assert(pthread_cond_broadcast(&fault.progress) == 0);
+  assert(pthread_mutex_unlock(&fault.gate) == 0);
+  assert(pthread_join(task, NULL) == 0);
+  assert(fault.control_result == H2_PAL_OK && fault.detach_unlocks == 2u);
+  assert(h2_gizclaw_service_stop(first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(second, track) == H2_PAL_OK);
+  h2_gizclaw_pcm_input_t input = {0};
+  assert(h2_gizclaw_service_pcm_adopt_internal(second, &input, track, id) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
+  assert(input.ended && !input.empty && input.end_downlink_write_index == 0u);
+  h2_gizclaw_pcm_input_deinit(&input);
+  assert(h2_gizclaw_service_unset_track(second, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(second) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(second) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  s_capture_control_fault = NULL;
+  assert(pthread_cond_destroy(&fault.progress) == 0);
+  assert(pthread_mutex_destroy(&fault.gate) == 0);
+}
+
+static void test_frozen_capture_keeps_service_binding(void) {
+  test_env_t first_env, second_env;
+  h2_gizclaw_service_t* first = create_service(&first_env, 4u);
+  h2_gizclaw_service_t* second = create_service(&second_env, 4u);
+  capture_control_fault_t fault = {.service = first,
+                                   .original = first->config.sync};
+  h2_pal_sync_vtable_t vtable = *fault.original->vtable;
+  vtable.create_mutex = capture_control_create_mutex;
+  vtable.lock_mutex = capture_control_lock;
+  const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                  .vtable = &vtable};
+  first->config.sync = &sync;
+  s_capture_control_fault = &fault;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = first->client_config.allocator, .sync = &sync};
+  h2_gizclaw_track_t* track = NULL;
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(first, track) == H2_PAL_OK);
+  const uint8_t pcm[6] = {1, 2, 3, 4, 5, 6};
+  assert(h2_gizclaw_service_pcm_write_internal(first, pcm, sizeof(pcm)) ==
+         H2_PAL_OK);
+  h2_gizclaw_pcm_capture_id_t id;
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_pcm(track, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(first, track) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_service_set_track(second, track) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_service_stop(first) == H2_PAL_OK);
+  fault.fail_mutex = fault.track_mutex;
+  capture_control_fail_after = 1u;
+  assert(h2_gizclaw_service_deinit(first) == H2_PAL_ERR_IO);
+  assert(h2_atomic_load(&first->pcm_track) == track);
+  assert(h2_gizclaw_service_deinit(first) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(first) == sizeof(pcm));
+  assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(first, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(second, track) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_pcm(track, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  h2_gizclaw_pcm_input_t input = {0};
+  assert(h2_gizclaw_service_pcm_adopt_internal(second, &input, track, id) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
+  assert(input.ended && !input.empty && input.end_downlink_write_index == 0u);
+  h2_gizclaw_pcm_input_deinit(&input);
+  assert(h2_gizclaw_service_unset_track(second, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(second) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(second) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  s_capture_control_fault = NULL;
+}
+
+static void test_pcm_activity_survives_track_replacement(void) {
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_service(&env, 4u);
+  h2_gizclaw_track_t *first = NULL, *second = NULL;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = service->client_config.allocator,
+      .sync = service->config.sync,
+      .uplink_capacity = 32u,
+      .downlink_capacity = 32u};
+  assert(h2_gizclaw_pcm_track_create(&config, &first) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_create(&config, &second) == H2_PAL_OK);
+  const uint8_t pcm[6] = {1, 2, 3, 4, 5, 6};
+  /* Local ring offsets deliberately differ from the Service counter. */
+  assert(first->vtable->write(first->user, pcm, 4u) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_write_internal(service, pcm, sizeof(pcm)) ==
+         H2_PAL_OK);
+  h2_gizclaw_pcm_capture_id_t id;
+  assert(h2_gizclaw_pcm_capture_begin(first, &id) == H2_PAL_OK);
+  capture_pcm(first, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(first, id) == H2_PAL_OK);
+  h2_gizclaw_pcm_input_t input = {0};
+  assert(h2_gizclaw_service_pcm_adopt_internal(service, &input, first, id) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_prepare(&input, first) == H2_PAL_OK);
+  assert(input.ended && input.end_downlink_write_index == sizeof(pcm));
+  const size_t end_mark = input.end_downlink_write_index;
+  h2_gizclaw_pcm_input_deinit(&input);
+  assert(h2_gizclaw_service_unset_track(service, first) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) == end_mark);
+
+  /* Freeze before binding, then retain audio accepted after the new binding
+   * even if adoption is delayed. Neither local ring origin is comparable. */
+  assert(second->vtable->write(second->user, pcm, 2u) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_capture_begin(second, &id) == H2_PAL_OK);
+  capture_pcm(second, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(second, id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, second) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) == end_mark);
+
+  capture_control_fault_t fault = {.service = service,
+                                   .original = service->config.sync,
+                                   .fail_mutex = service->mutex};
+  h2_pal_sync_vtable_t sync_vtable = *fault.original->vtable;
+  sync_vtable.lock_mutex = capture_control_lock;
+  const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                  .vtable = &sync_vtable};
+  s_capture_control_fault = &fault;
+  service->config.sync = &sync;
+  capture_control_fail_after = 1u;
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) == end_mark);
+  assert(capture_control_fail_after == 1u && fault.failures == 0u);
+  assert(h2_pal_mutex_lock(&sync, service->mutex) == H2_PAL_ERR_IO);
+  service->config.sync = fault.original;
+  s_capture_control_fault = NULL;
+
+  assert(h2_gizclaw_service_pcm_write_internal(service, pcm, 2u) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) ==
+         end_mark + 2u);
+  assert(h2_gizclaw_service_pcm_adopt_internal(service, &input, second, id) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_prepare(&input, second) == H2_PAL_OK);
+  assert(input.ended && input.end_downlink_write_index == end_mark);
+  h2_gizclaw_pcm_input_deinit(&input);
+  assert(h2_gizclaw_service_unset_track(service, second) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&second) == H2_PAL_OK);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(service) ==
+         end_mark + 2u);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+static void test_speech_adopt_preserves_service_lock_error(void) {
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_service(&env, 4u);
+  h2_atomic_store(&env.event_emitted, true);
+  capture_control_fault_t fault = {.service = service,
+                                   .original = service->config.sync,
+                                   .fail_mutex = service->mutex};
+  h2_pal_sync_vtable_t sync_vtable = *fault.original->vtable;
+  sync_vtable.lock_mutex = capture_control_lock;
+  const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                  .vtable = &sync_vtable};
+  s_capture_control_fault = &fault;
+  service->config.sync = &sync;
+  h2_gizclaw_track_t* track = NULL;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = service->client_config.allocator,
+      .sync = &sync,
+      .uplink_capacity = 2048u};
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+  uint8_t pcm[1346];
+  for (size_t i = 0u; i < sizeof(pcm); ++i) pcm[i] = (uint8_t)(i * 13u);
+  h2_gizclaw_pcm_capture_id_t id = 0u;
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_pcm(track, id, pcm, sizeof(pcm));
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  speech_wire_test_t wire = {.service = service, .app_thread = pthread_self()};
+  speech_wire_test_atomics_init(&wire);
+  h2_atomic_store(&wire.captured_bytes, sizeof(pcm));
+  s_speech = &wire;
+  h2_gizclaw_async_rpc_test_set_ops(&speech_test_ops);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  const h2_gizclaw_speech_transcribe_options_t options = {
+      .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+  h2_gizclaw_req_t* request = NULL;
+  assert(h2_gizclaw_req_create_speech_transcribe(service, 11002u, &options,
+                                                 2000u, &request) == H2_PAL_OK);
+  assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  /* Route selection takes and releases the first Service lock. Fail only the
+   * second acquisition, inside pcm_track_acquire, after Speech's input lock. */
+  capture_control_fail_after = 2u;
+  assert(h2_gizclaw_service_audio_adopt(service, track, id) == H2_PAL_ERR_IO);
+  assert(capture_control_fail_after == 0u && fault.failures == 1u);
+  h2_gizclaw_pcm_capture_snapshot_t snapshot = capture_snapshot(track, id);
+  assert(snapshot.state == H2_GIZCLAW_PCM_CAPTURE_FROZEN && !snapshot.adopted &&
+         !snapshot.consumer_busy && snapshot.pending_bytes == sizeof(pcm) &&
+         snapshot.captured_bytes == sizeof(pcm));
+  h2_gizclaw_audio_input_state_t input = {0};
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input) == H2_PAL_OK);
+  assert(!input.active && input.generation == 0u);
+  assert(h2_gizclaw_service_audio_adopt(service, track, id) == H2_PAL_OK);
+  h2_atomic_store(&wire.audio_started, true);
+  assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK);
+  wait_for_count(&wire.destroys, 1u);
+  assert(wire.finished && wire.finishes == 3u && wire.bytes_len == sizeof(pcm));
+  assert(memcmp(wire.bytes, pcm, sizeof(pcm)) == 0);
+  h2_gizclaw_req_release(request);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  snapshot = capture_snapshot(track, id);
+  assert(snapshot.state == H2_GIZCLAW_PCM_CAPTURE_DONE &&
+         !snapshot.consumer_busy && snapshot.pending_bytes == 0u);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+  s_speech = NULL;
+  s_capture_control_fault = NULL;
+}
+
+static void capture_conversation_transport(conversation_test_t* test) {
+  h2_gizclaw_service_t* service = test->service;
+  s_conversation = test;
+  h2_atomic_store(&test->env->event_emitted, true);
+  static const h2_gizclaw_service_client_ops_t ops = {
+      .connect = conversation_test_connect, .poll = conversation_test_poll};
+  h2_gizclaw_service_test_set_client_ops(&ops);
+  h2_gizclaw_test_set_event_ops(conversation_test_send,
+                                conversation_test_read_event,
+                                conversation_test_close_event, test);
+  h2_gizclaw_test_set_packet_read(conversation_test_read_packet, test);
+  static const h2_pal_http_api_t http = {0};
+  static const h2_pal_crypto_api_t crypto = {0};
+  static const h2_pal_webrtc_api_t webrtc = {0};
+  service->client_config.http = &http;
+  service->client_config.crypto = &crypto;
+  service->client_config.webrtc = &webrtc;
+  service->client_config.connect_timeout_ms = 1000;
+  service->client_config.server_endpoint =
+      (h2_gizclaw_str_t){"127.0.0.1:1", 11};
+  service->client_config.private_key = (h2_gizclaw_str_t){"test-key", 8};
+  service->config.client_config = &service->client_config;
+  service->config.on_event = NULL;
+  service->config.prepare = NULL;
+  service->config.cleanup = NULL;
+  service->config.terminal = NULL;
+}
+
+static void test_session_rejects_admitted_speech_input(void) {
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_service(&env, 8u);
+  conversation_test_t test = {
+      .service = service, .env = &env, .app_thread = pthread_self()};
+  conversation_test_atomics_init(&test);
+  h2_atomic_store(&test.connect_gate, true);
+  capture_conversation_transport(&test);
+  h2_gizclaw_track_t* track = NULL;
+  const h2_gizclaw_pcm_track_config_t track_config = {
+      .allocator = service->client_config.allocator,
+      .sync = service->config.sync,
+      .uplink_capacity = 2048u};
+  assert(h2_gizclaw_pcm_track_create(&track_config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+  static const h2_gizclaw_async_rpc_ops_t ops = {
+      .start = fence_flow_start,
+      .result = workspace_test_result,
+      .cancel = workspace_test_destroy,
+      .destroy = fence_flow_destroy};
+  memset(&fence_flow, 0, sizeof(fence_flow));
+  fence_flow.client_service = service;
+  h2_gizclaw_async_rpc_test_set_ops(&ops);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  static const h2_gizclaw_str_t tags[] = {{"a", 1u}};
+  const h2_gizclaw_session_config_t config = {
+      .service = service,
+      .mem = service->client_config.allocator,
+      .sync = service->config.sync,
+      .time = service->client_config.time,
+      .tags = tags,
+      .tag_count = 1u,
+      .max_workflows = 1u,
+      .catalog_bytes = 4096u};
+  assert(h2_gizclaw_session_create(&config, &fence_flow.session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(fence_flow.session, "token", 1000u) ==
+         H2_PAL_OK);
+  const h2_gizclaw_workspace_parameters_patch_t patch = {
+      .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+  const h2_gizclaw_session_selection_t selection = {
+      .workflow_name = "chat", .workspace_name = "ws", .parameters = &patch};
+  assert(h2_gizclaw_session_select(fence_flow.session, &selection, 1000u) ==
+         H2_PAL_OK);
+  h2_gizclaw_conversation_t* conversation = NULL;
+  assert(h2_gizclaw_session_conversation_create(
+             fence_flow.session, &selection, 1000u, NULL,
+             conversation_test_complete, &test, &conversation) == H2_PAL_OK);
+  h2_gizclaw_session_state_t before = {0}, after = {0};
+  assert(h2_gizclaw_session_snapshot(fence_flow.session, &before) == H2_PAL_OK);
+  assert(before.workspace == H2_GIZCLAW_SESSION_READY &&
+         before.conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE &&
+         !before.conversation_input_open && !before.can_start &&
+         before.blocking_reason == H2_GIZCLAW_SESSION_BLOCK_CONVERSATION);
+  uint8_t pcm[1346];
+  for (size_t i = 0u; i < sizeof(pcm); ++i) pcm[i] = (uint8_t)(i * 7u);
+  h2_gizclaw_pcm_capture_id_t id = 0u;
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_pcm(track, id, pcm, sizeof(pcm));
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  speech_wire_test_t wire = {.service = service, .app_thread = pthread_self()};
+  speech_wire_test_atomics_init(&wire);
+  s_speech = &wire;
+  h2_gizclaw_async_rpc_test_set_ops(&speech_test_ops);
+  const h2_gizclaw_speech_transcribe_options_t options = {
+      .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+  h2_gizclaw_req_t* speech = NULL;
+  wire.real_client = true;
+  assert(h2_gizclaw_req_create_speech_transcribe(service, 11003u, &options,
+                                                 2000u, &speech) == H2_PAL_OK);
+  assert(h2_gizclaw_req_do(speech, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  wait_for_count(&wire.starts, 3u);
+  assert(h2_gizclaw_session_audio_adopt(fence_flow.session, track, id) ==
+         H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_session_audio_start(fence_flow.session) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_session_snapshot(fence_flow.session, &after) == H2_PAL_OK);
+  assert(after.revision == before.revision &&
+         after.generation == before.generation &&
+         after.conversation == before.conversation &&
+         after.conversation_input_open == before.conversation_input_open &&
+         after.last_error == before.last_error);
+  h2_gizclaw_pcm_capture_snapshot_t snapshot = capture_snapshot(track, id);
+  assert(snapshot.state == H2_GIZCLAW_PCM_CAPTURE_FROZEN && !snapshot.adopted &&
+         !snapshot.consumer_busy && snapshot.pending_bytes == sizeof(pcm));
+  h2_gizclaw_audio_input_state_t input = {0};
+  assert(h2_gizclaw_service_audio_input_snapshot(service, &input) == H2_PAL_OK);
+  assert(!input.active && input.generation == 0u);
+  assert(h2_gizclaw_req_cancel(speech) == H2_PAL_OK);
+  assert(h2_gizclaw_req_wait(speech, 2000u) == H2_PAL_ERR_CLOSED);
+  wait_for_count(&wire.destroys, 1u);
+  h2_gizclaw_req_release(speech);
+  assert(h2_atomic_load(&service->speech_request) == NULL);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+  s_speech = NULL;
+  /* The same local window remains available to its Session owner. */
+  assert(h2_gizclaw_session_audio_adopt(fence_flow.session, track, id) ==
+         H2_PAL_OK);
+  assert(capture_snapshot(track, id).adopted);
+  for (unsigned spins = 0u; spins < 2000u && !h2_atomic_load(&test.done);
+       ++spins) {
+    assert(h2_gizclaw_service_poll(service, 8u, NULL) == H2_PAL_OK);
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+  assert(h2_atomic_load(&test.done) && test.result == H2_PAL_OK);
+  assert(h2_atomic_load(&test.audio_eos) && h2_atomic_load(&test.eos) &&
+         !h2_atomic_load(&test.canceled));
+  conversation_wait_packets(&test, 3u);
+  snapshot = capture_snapshot(track, id);
+  assert(snapshot.state == H2_GIZCLAW_PCM_CAPTURE_DONE &&
+         snapshot.captured_bytes == sizeof(pcm) &&
+         snapshot.pending_bytes == 0u && !snapshot.consumer_busy);
+  h2_gizclaw_session_conversation_release(fence_flow.session, conversation);
+  assert(h2_gizclaw_session_destroy(&fence_flow.session) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+  h2_gizclaw_test_set_packet_read(NULL, NULL);
+  h2_gizclaw_service_test_set_client_ops(NULL);
+  s_conversation = NULL;
+}
+
+static void* capture_control_end_entry(void* user) {
+  capture_control_fault_t* fault = user;
+  capture_control_task = true;
+  fault->control_result = h2_gizclaw_service_audio_end(fault->service);
+  capture_control_task = false;
+  return NULL;
+}
+
+static void capture_completion(void* user,
+                               h2_gizclaw_conversation_t* conversation,
+                               const h2_gizclaw_operation_result_t* result) {
+  capture_control_fault_t* fault = s_capture_control_fault;
+  assert(++fault->completions == 1u);
+  conversation_test_complete(user, conversation, result);
+}
+
+static void test_conversation_completion_retries_owner_lock(void) {
+  for (unsigned scenario = 0u; scenario < 4u; ++scenario) {
+    const h2_pal_result_t retry_error =
+        scenario < 2u ? H2_PAL_ERR_IO : H2_PAL_ERR_TIMEOUT;
+    const bool stop_before_retry = (scenario & 1u) != 0u;
+    test_env_t env;
+    h2_gizclaw_service_t* service = create_service(&env, 4u);
+    conversation_test_t test = {.service = service,
+                                .env = &env,
+                                .app_thread = pthread_self(),
+                                .mode = 28u};
+    conversation_test_atomics_init(&test);
+    capture_conversation_transport(&test);
+    capture_control_fault_t fault = {.service = service,
+                                     .original = service->config.sync,
+                                     .fail_mutex = service->audio_mutex,
+                                     .lock_error = retry_error};
+    assert(pthread_mutex_init(&fault.gate, NULL) == 0);
+    assert(pthread_cond_init(&fault.progress, NULL) == 0);
+    h2_pal_sync_vtable_t sync_vtable = *fault.original->vtable;
+    sync_vtable.create_mutex = capture_control_create_mutex;
+    sync_vtable.destroy_mutex = capture_control_destroy_mutex;
+    sync_vtable.lock_mutex = capture_control_lock;
+    const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                    .vtable = &sync_vtable};
+    s_capture_control_fault = &fault;
+    service->config.sync = &sync;
+    h2_gizclaw_track_t* track = NULL;
+    const h2_gizclaw_pcm_track_config_t config = {
+        .allocator = service->client_config.allocator, .sync = &sync};
+    assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+    h2_gizclaw_pcm_capture_id_t id = 0u;
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+    h2_gizclaw_conversation_t* conversation = NULL;
+    assert(h2_gizclaw_conversation_create(
+               service, (h2_gizclaw_str_t){"test", 4u}, NULL,
+               capture_completion, &test, &conversation) == H2_PAL_OK);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_audio_adopt(service, track, id) == H2_PAL_OK);
+    const void* owner = service->audio_input_owner;
+    assert(owner != NULL && fault.input_mutex != NULL);
+    pthread_t control;
+    assert(pthread_create(&control, NULL, capture_control_end_entry, &fault) ==
+           0);
+    assert(pthread_mutex_lock(&fault.gate) == 0);
+    while (!fault.control_entered)
+      assert(pthread_cond_wait(&fault.progress, &fault.gate) == 0);
+    assert(pthread_mutex_unlock(&fault.gate) == 0);
+    /* END owns audio_mutex and has borrowed the published request, but has
+     * not acquired its input mutex. The independent frozen input can finish. */
+    h2_atomic_store(&test.connect_gate, true);
+    size_t queued = 0u;
+    for (unsigned spins = 0u; spins < 2000u && queued == 0u; ++spins) {
+      assert(h2_pal_mutex_lock(&sync, service->mutex) == H2_PAL_OK);
+      queued = service->dispatch_item_count;
+      assert(h2_pal_mutex_unlock(&sync, service->mutex) == H2_PAL_OK);
+      if (queued == 0u)
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+    }
+    assert(queued == 1u && h2_atomic_load(&test.eos) &&
+           !h2_atomic_load(&test.audio_bos));
+    capture_control_fail_after = 1u;
+    size_t dispatched = SIZE_MAX;
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == retry_error);
+    assert(dispatched == 0u && capture_control_fail_after == 0u &&
+           fault.failures == 1u && fault.completions == 0u &&
+           fault.input_destroys == 0u && !h2_atomic_load(&test.done));
+    h2_gizclaw_operation_t* pending =
+        h2_atomic_load(&service->pending_completion);
+    assert(pending != NULL && pending->user == owner &&
+           pending->caller_reference && pending->internal_reference);
+    assert(service->audio_input_owner == owner && service->active_count == 1u &&
+           service->caller_reference_count == 1u);
+    assert(capture_snapshot(track, id).consumer_busy);
+    assert(pthread_mutex_lock(&fault.gate) == 0);
+    fault.resume_control = true;
+    assert(pthread_cond_broadcast(&fault.progress) == 0);
+    assert(pthread_mutex_unlock(&fault.gate) == 0);
+    assert(pthread_join(control, NULL) == 0);
+    /* Completion published terminal before its owner-lock failure. The late
+     * END observes CLOSED, using the still-live request and input mutex. */
+    assert(fault.control_result == H2_PAL_ERR_CLOSED &&
+           fault.input_destroys == 0u);
+    if (stop_before_retry) {
+      assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+      assert(h2_atomic_load(&service->pending_completion) == pending &&
+             service->active_count == 1u && fault.input_destroys == 0u);
+    }
+    /* A repeated pending retry must preserve even TIMEOUT, rather than
+     * normalize it to the dispatch queue's empty result, including after stop.
+     */
+    capture_control_fail_after = 1u;
+    dispatched = SIZE_MAX;
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == retry_error);
+    assert(dispatched == 0u && capture_control_fail_after == 0u &&
+           fault.failures == 2u && fault.completions == 0u &&
+           fault.input_destroys == 0u && !h2_atomic_load(&test.done));
+    assert(h2_atomic_load(&service->pending_completion) == pending &&
+           pending->user == owner && pending->caller_reference &&
+           pending->internal_reference && service->active_count == 1u &&
+           service->caller_reference_count == 1u);
+    /* Recovery completes the retained operation exactly once. */
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+    assert(dispatched == 1u && fault.completions == 1u &&
+           fault.input_destroys == 1u && h2_atomic_load(&test.done) &&
+           test.result == H2_PAL_OK);
+    assert(h2_atomic_load(&service->pending_completion) == NULL &&
+           service->active_count == 0u &&
+           service->caller_reference_count == 0u);
+    assert(!capture_snapshot(track, id).consumer_busy);
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+    assert(dispatched == 0u && fault.completions == 1u &&
+           fault.input_destroys == 1u);
+    h2_gizclaw_conversation_release(conversation);
+    assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+    h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+    h2_gizclaw_test_set_packet_read(NULL, NULL);
+    h2_gizclaw_service_test_set_client_ops(NULL);
+    s_conversation = NULL;
+    s_capture_control_fault = NULL;
+    assert(pthread_cond_destroy(&fault.progress) == 0);
+    assert(pthread_mutex_destroy(&fault.gate) == 0);
+  }
+}
+
+static void test_conversation_adopts_local_capture(void) {
+  for (unsigned pending_frame = 0u; pending_frame < 2u; ++pending_frame) {
+    test_env_t env;
+    h2_gizclaw_service_t* service = create_service(&env, 8u);
+    conversation_test_t test = {
+        .service = service, .env = &env, .app_thread = pthread_self()};
+    conversation_test_atomics_init(&test);
+    s_conversation = &test;
+    static const h2_gizclaw_service_client_ops_t ops = {
+        .connect = conversation_test_connect, .poll = conversation_test_poll};
+    h2_gizclaw_service_test_set_client_ops(&ops);
+    h2_gizclaw_test_set_event_ops(conversation_test_send,
+                                  conversation_test_read_event,
+                                  conversation_test_close_event, &test);
+    h2_gizclaw_test_set_packet_read(conversation_test_read_packet, &test);
+    static const h2_pal_http_api_t http = {0};
+    static const h2_pal_crypto_api_t crypto = {0};
+    static const h2_pal_webrtc_api_t webrtc = {0};
+    service->client_config.http = &http;
+    service->client_config.crypto = &crypto;
+    service->client_config.webrtc = &webrtc;
+    service->client_config.time = h2_desktop_platform_time_api();
+    service->client_config.connect_timeout_ms = 1000;
+    service->client_config.server_endpoint =
+        (h2_gizclaw_str_t){"127.0.0.1:1", 11};
+    service->client_config.private_key = (h2_gizclaw_str_t){"test-key", 8};
+    service->config.client_config = &service->client_config;
+    service->config.on_event = NULL;
+    service->config.prepare = NULL;
+    service->config.cleanup = NULL;
+    service->config.terminal = NULL;
+    h2_gizclaw_track_t* track = NULL;
+    const h2_gizclaw_pcm_track_config_t config = {
+        .allocator = service->client_config.allocator,
+        .sync = service->config.sync,
+        .uplink_capacity = 8192u,
+        .downlink_capacity = 16384u};
+    assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+    const uint8_t ambient[2] = {0xff, 0xee};
+    assert(h2_gizclaw_pcm_track_write(track, ambient, sizeof(ambient)) ==
+           H2_PAL_OK);
+    uint8_t pcm[12u * 640u + 100u];
+    for (size_t i = 0u; i < sizeof(pcm); ++i) pcm[i] = (uint8_t)(i % 127u);
+    h2_gizclaw_pcm_capture_id_t id = 0u;
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+    const size_t prefix = pending_frame ? sizeof(pcm) - 100u : sizeof(pcm);
+    capture_pcm(track, id, pcm, prefix);
+    if (pending_frame)
+      assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_OK);
+    else
+      assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+    /* All local samples predate both the logical route and Peer readiness. */
+    assert(capture_snapshot(track, id).pending_bytes == prefix);
+    assert(!capture_snapshot(track, id).adopted);
+    assert(h2_gizclaw_service_audio_adopt(service, track, id) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(!capture_snapshot(track, id).adopted);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    h2_gizclaw_conversation_t* conversation = NULL;
+    assert(h2_gizclaw_conversation_create(
+               service, (h2_gizclaw_str_t){"test", 4u}, NULL,
+               conversation_test_complete, &test, &conversation) == H2_PAL_OK);
+    assert(h2_gizclaw_service_audio_adopt(service, track, id) == H2_PAL_OK);
+    assert(capture_snapshot(track, id).adopted);
+    assert(capture_snapshot(track, id).consumer_busy);
+    assert(!h2_atomic_load(&test.connected) && !h2_atomic_load(&test.bos));
+    h2_atomic_store(&test.connect_gate, true);
+    if (pending_frame) {
+      for (unsigned spins = 0u;
+           spins < 2000u && capture_snapshot(track, id).pending_bytes != 0u;
+           ++spins)
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+      assert(capture_snapshot(track, id).pending_bytes == 0u);
+      assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+      h2_gizclaw_pcm_capture_snapshot_t stopping = capture_snapshot(track, id);
+      assert(stopping.state == H2_GIZCLAW_PCM_CAPTURE_STOPPING &&
+             stopping.producer_busy);
+      /* The network advances while the mic owns the last frame. END has not
+       * committed input and must not put either EOS on the wire yet. */
+      conversation_test_probe(&test);
+      bool ended = true, empty = true;
+      size_t end_downlink_write_index = 0u;
+      assert(h2_gizclaw_conversation_audio_end_snapshot_internal(
+                 conversation, &ended, &empty, &end_downlink_write_index) ==
+             H2_PAL_OK);
+      assert(!ended && !h2_atomic_load(&test.audio_eos) &&
+             !h2_atomic_load(&test.eos) && !h2_atomic_load(&test.done));
+      assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_ERR_BUSY);
+      assert(h2_gizclaw_pcm_capture_frame_submit(track, id, pcm + prefix,
+                                                 sizeof(pcm) - prefix,
+                                                 H2_PAL_OK) == H2_PAL_OK);
+    }
+    /* Neither END path requires a caller drain loop or a second end call. */
+    for (unsigned spins = 0u; spins < 4000u && !h2_atomic_load(&test.done);
+         ++spins) {
+      assert(h2_gizclaw_service_poll(service, 32u, NULL) == H2_PAL_OK);
+      h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+    }
+    assert(h2_atomic_load(&test.done) && test.result == H2_PAL_OK);
+    bool ended_after_dispatch = false, empty_after_dispatch = true;
+    size_t end_downlink_write_index = 0u;
+    assert(h2_gizclaw_conversation_audio_end_snapshot_internal(
+               conversation, &ended_after_dispatch, &empty_after_dispatch,
+               &end_downlink_write_index) == H2_PAL_OK);
+    assert(ended_after_dispatch && !empty_after_dispatch);
+    assert(h2_atomic_load(&test.audio_eos) && h2_atomic_load(&test.eos));
+    assert(!h2_atomic_load(&test.canceled));
+    conversation_read_owned(track, test.output, 13u * 640u);
+    conversation_wait_packets(&test, 13u);
+    h2_gizclaw_pcm_capture_snapshot_t finished = capture_snapshot(track, id);
+    assert(finished.state == H2_GIZCLAW_PCM_CAPTURE_DONE &&
+           !finished.producer_busy && !finished.consumer_busy &&
+           finished.pending_bytes == 0u &&
+           finished.captured_bytes == sizeof(pcm));
+    /* Compare with the same public Opus codec contract, including zero padding
+     * of the 100-byte tail. Losing the early prefix changes every reply frame.
+     */
+    int error = OPUS_OK;
+    OpusEncoder* encoder =
+        opus_encoder_create(16000, 1, OPUS_APPLICATION_VOIP, &error);
+    assert(encoder != NULL && error == OPUS_OK);
+    assert(opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(0)) == OPUS_OK);
+    OpusDecoder* decoder = opus_decoder_create(16000, 1, &error);
+    assert(decoder != NULL && error == OPUS_OK);
+    for (size_t frame = 0u; frame < 13u; ++frame) {
+      int16_t samples[320] = {0}, decoded[320];
+      uint8_t encoded[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
+      for (size_t i = 0u; i < 320u && frame * 640u + i * 2u < sizeof(pcm);
+           ++i) {
+        const size_t offset = frame * 640u + i * 2u;
+        samples[i] =
+            (int16_t)((uint16_t)pcm[offset] | (uint16_t)pcm[offset + 1u] << 8);
+      }
+      const int len =
+          opus_encode(encoder, samples, 320, encoded, sizeof(encoded));
+      assert(len > 0 &&
+             opus_decode(decoder, encoded, len, decoded, 320, 0) == 320);
+      for (size_t i = 0u; i < 320u; ++i) {
+        const size_t offset = frame * 640u + i * 2u;
+        assert(test.output[offset] == (uint8_t)(uint16_t)decoded[i]);
+        assert(test.output[offset + 1u] ==
+               (uint8_t)((uint16_t)decoded[i] >> 8));
+      }
+    }
+    opus_decoder_destroy(decoder);
+    opus_encoder_destroy(encoder);
+    h2_gizclaw_conversation_release(conversation);
+    assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+    h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+    h2_gizclaw_test_set_packet_read(NULL, NULL);
+    h2_gizclaw_service_test_set_client_ops(NULL);
+  }
+}
+
 /* A fake Peer verifies the wire events and answers a text input with audio. */
 typedef struct conversation_text_test {
   conversation_test_t base;
@@ -15482,6 +16714,145 @@ static void test_asr_from_owned_pcm_track(void) {
   h2_gizclaw_async_rpc_test_set_ops(NULL);
 }
 
+static void test_speech_adopts_capture_across_rounds(void) {
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_service(&env, 4u);
+  h2_atomic_store(&env.event_emitted, true);
+  h2_gizclaw_async_rpc_test_set_ops(&speech_test_ops);
+  h2_gizclaw_track_t* track = NULL;
+  h2_gizclaw_track_t* other = NULL;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = service->client_config.allocator,
+      .sync = service->config.sync,
+      .uplink_capacity = 2048u,
+      .downlink_capacity = 1024u};
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_create(&config, &other) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+  const uint8_t poison[2] = {0xff, 0xee};
+  h2_gizclaw_pcm_capture_id_t other_id = 0u;
+  assert(h2_gizclaw_pcm_capture_begin(other, &other_id) == H2_PAL_OK);
+  capture_pcm(other, other_id, poison, sizeof(poison));
+  assert(h2_gizclaw_pcm_capture_end(other, other_id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_pcm_capture_id_t previous_id = 0u;
+  for (unsigned round = 0u; round < 2u; ++round) {
+    speech_wire_test_t wire = {.service = service,
+                               .app_thread = pthread_self()};
+    speech_wire_test_atomics_init(&wire);
+    s_speech = &wire;
+    uint8_t pcm[1346];
+    for (size_t i = 0u; i < sizeof(pcm); ++i)
+      pcm[i] = (uint8_t)(i + round * 37u);
+    assert(h2_gizclaw_pcm_track_write(track, poison, sizeof(poison)) ==
+           H2_PAL_OK);
+    h2_gizclaw_pcm_capture_id_t id = 0u;
+    assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+    assert(id != 0u && id != previous_id);
+    const size_t prefix = round == 0u ? sizeof(pcm) : 1280u;
+    capture_pcm(track, id, pcm, prefix);
+    if (round != 0u)
+      assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+    assert(capture_snapshot(track, id).state ==
+           (round == 0u ? H2_GIZCLAW_PCM_CAPTURE_FROZEN
+                        : H2_GIZCLAW_PCM_CAPTURE_STOPPING));
+    h2_atomic_store(&wire.captured_bytes, sizeof(pcm));
+    const h2_gizclaw_speech_transcribe_options_t options = {
+        .model_name = {"asr", 3u}, .content_type = {"audio/pcm", 9u}};
+    h2_gizclaw_req_t* request = NULL;
+    assert(h2_gizclaw_req_create_speech_transcribe(
+               service, 42u + round, &options, 2000u, &request) == H2_PAL_OK);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_service_audio_adopt(service, NULL, id) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_gizclaw_service_audio_adopt(service, track, 0u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    /* Other Track IDs may be numerically equal: identity is Track-scoped. */
+    assert(h2_gizclaw_service_audio_adopt(service, other, other_id) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(!capture_snapshot(other, other_id).adopted &&
+           capture_snapshot(other, other_id).pending_bytes == sizeof(poison));
+    if (previous_id != 0u) {
+      assert(h2_gizclaw_service_audio_adopt(service, track, previous_id) ==
+             H2_PAL_ERR_NOT_FOUND);
+      assert(capture_snapshot(track, id).producer_busy);
+      assert(!capture_snapshot(track, id).adopted &&
+             capture_snapshot(track, id).pending_bytes == prefix);
+    }
+    assert(h2_gizclaw_service_audio_adopt(service, track, id) == H2_PAL_OK);
+    h2_atomic_store(&wire.audio_started, true);
+    if (round != 0u) {
+      wait_for_count(&wire.uploaded_bytes, (unsigned)prefix);
+      assert(h2_gizclaw_req_wait(request, 0u) == H2_PAL_ERR_TIMEOUT);
+      assert(capture_snapshot(track, id).state ==
+             H2_GIZCLAW_PCM_CAPTURE_STOPPING);
+      assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_ERR_BUSY);
+      assert(h2_gizclaw_pcm_capture_frame_submit(track, id, pcm + prefix,
+                                                 sizeof(pcm) - prefix,
+                                                 H2_PAL_OK) == H2_PAL_OK);
+    }
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK);
+    wait_for_count(&wire.destroys, 1u);
+    assert(wire.finished && wire.bytes_len == sizeof(pcm));
+    assert(memcmp(wire.bytes, pcm, sizeof(pcm)) == 0);
+    uint8_t storage_bytes[64];
+    h2_gizclaw_resp_storage_t storage = {storage_bytes, sizeof(storage_bytes),
+                                         0u};
+    h2_gizclaw_speech_transcribe_response_t response = {0};
+    assert(h2_gizclaw_resp_parse_speech_transcribe(request, &storage,
+                                                   &response) == H2_PAL_OK);
+    assert(response.transcript.len == 5u &&
+           memcmp(response.transcript.data, "hello", 5u) == 0);
+    h2_gizclaw_req_release(request);
+    for (unsigned spins = 0u;
+         spins < 2000u && capture_snapshot(track, id).consumer_busy; ++spins)
+      h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+    const h2_gizclaw_pcm_capture_snapshot_t finished =
+        capture_snapshot(track, id);
+    assert(finished.state == H2_GIZCLAW_PCM_CAPTURE_DONE &&
+           finished.captured_bytes == sizeof(pcm) &&
+           finished.pending_bytes == 0u && !finished.consumer_busy &&
+           !finished.producer_busy);
+    previous_id = id;
+  }
+  assert(h2_gizclaw_pcm_capture_discard(other, other_id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&other) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+  s_speech = NULL;
+}
+
+static void test_capture_producer_lease_blocks_track_unset(void) {
+  test_env_t env;
+  h2_gizclaw_service_t* service = create_service(&env, 2u);
+  h2_gizclaw_track_t* track = NULL;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = service->client_config.allocator,
+      .sync = service->config.sync};
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+  h2_gizclaw_pcm_capture_id_t id = 0u;
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_capture_frame_acquire(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_BUSY);
+  const uint8_t pcm[2] = {0x32, 0x71};
+  assert(h2_gizclaw_pcm_capture_frame_submit(track, id, pcm, sizeof(pcm),
+                                             H2_PAL_OK) == H2_PAL_OK);
+  assert(capture_snapshot(track, id).state == H2_GIZCLAW_PCM_CAPTURE_DISCARDED);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+}
+
 static void test_owned_pcm_track_binding(void) {
   test_env_t env;
   h2_gizclaw_service_t* service = create_service(&env, 2u);
@@ -16016,7 +17387,29 @@ int main(int argc, char** argv) {
   if (argc == 2 && strcmp(argv[1], "--group-download-only") == 0) {
     return 0;
   }
+  if (argc == 2 && strcmp(argv[1], "--managed-capture-only") == 0) {
+    test_capture_begin_during_detach();
+    test_frozen_capture_keeps_service_binding();
+    test_pcm_activity_survives_track_replacement();
+    test_speech_adopt_preserves_service_lock_error();
+    test_session_rejects_admitted_speech_input();
+    test_conversation_completion_retries_owner_lock();
+    test_conversation_adopts_local_capture();
+    test_speech_adopts_capture_across_rounds();
+    test_speech_detach_releases_legacy_window();
+    test_speech_retirement_retries_audio_lock();
+    test_speech_retirement_retries_inner_locks();
+    test_speech_admission_after_stop();
+    test_capture_producer_lease_blocks_track_unset();
+    return 0;
+  }
   if (argc == 2 && strcmp(argv[1], "--pcm-stream-only") == 0) {
+    test_speech_adopts_capture_across_rounds();
+    test_speech_detach_releases_legacy_window();
+    test_speech_retirement_retries_audio_lock();
+    test_speech_retirement_retries_inner_locks();
+    test_speech_admission_after_stop();
+    test_capture_producer_lease_blocks_track_unset();
     test_asr_from_owned_pcm_track();
     test_speech_options_and_created_lifetime();
     test_speech_managed_requests();
@@ -16058,6 +17451,19 @@ int main(int argc, char** argv) {
   test_workspace_selection_boundaries();
   test_req_remote_error_mapping();
   test_workspace_pending_error_mapping();
+  test_capture_begin_during_detach();
+  test_frozen_capture_keeps_service_binding();
+  test_pcm_activity_survives_track_replacement();
+  test_speech_adopt_preserves_service_lock_error();
+  test_session_rejects_admitted_speech_input();
+  test_conversation_completion_retries_owner_lock();
+  test_conversation_adopts_local_capture();
+  test_speech_adopts_capture_across_rounds();
+  test_speech_detach_releases_legacy_window();
+  test_speech_retirement_retries_audio_lock();
+  test_speech_retirement_retries_inner_locks();
+  test_speech_admission_after_stop();
+  test_capture_producer_lease_blocks_track_unset();
   test_asr_from_owned_pcm_track();
   test_owned_pcm_track_binding();
   test_debug_set_request_paths();
