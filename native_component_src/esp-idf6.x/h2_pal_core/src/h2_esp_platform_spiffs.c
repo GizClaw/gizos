@@ -102,24 +102,6 @@ static int translate_path_exact(const h2_esp_platform_spiffs_context_t* ctx,
   return H2_PAL_FS_OK;
 }
 
-static int translate_path_flattened(const h2_esp_platform_spiffs_context_t* ctx,
-                                    const char* path, char* out,
-                                    size_t out_len) {
-  int rc = translate_path_exact(ctx, path, out, out_len);
-  size_t base_len;
-
-  if (rc != H2_PAL_FS_OK) {
-    return rc;
-  }
-  base_len = strlen(ctx->config->base_path);
-  for (size_t i = base_len + 1u; out[i] != '\0'; ++i) {
-    if (out[i] == '/') {
-      out[i] = '_';
-    }
-  }
-  return H2_PAL_FS_OK;
-}
-
 static int spiffs_mkdir(void* user, const char* path) {
   (void)user;
   (void)path;
@@ -132,7 +114,6 @@ static int spiffs_open_unsafe(void* user, const char* path,
   h2_esp_platform_spiffs_context_t* ctx =
       (h2_esp_platform_spiffs_context_t*)user;
   char real_path[192];
-  char fallback_path[192];
   h2_esp_platform_file_t* file;
   const char* fmode;
   int rc;
@@ -159,18 +140,8 @@ static int spiffs_open_unsafe(void* user, const char* path,
     free(file);
     return rc;
   }
-  rc =
-      translate_path_flattened(ctx, path, fallback_path, sizeof(fallback_path));
-  if (rc != H2_PAL_FS_OK) {
-    free(file);
-    return rc;
-  }
   errno = 0;
   file->fp = fopen(real_path, fmode);
-  if (file->fp == NULL && strcmp(real_path, fallback_path) != 0) {
-    errno = 0;
-    file->fp = fopen(fallback_path, fmode);
-  }
   if (file->fp == NULL) {
     free(file);
     return map_errno(H2_PAL_FS_ERR_IO);
@@ -248,7 +219,6 @@ static int spiffs_stat_unsafe(void* user, const char* path,
   h2_esp_platform_spiffs_context_t* ctx =
       (h2_esp_platform_spiffs_context_t*)user;
   char real_path[192];
-  char fallback_path[192];
   struct stat st;
   int rc;
 
@@ -261,18 +231,7 @@ static int spiffs_stat_unsafe(void* user, const char* path,
   }
   errno = 0;
   if (stat(real_path, &st) != 0) {
-    rc = translate_path_flattened(ctx, path, fallback_path,
-                                  sizeof(fallback_path));
-    if (rc != H2_PAL_FS_OK) {
-      return rc;
-    }
-    if (strcmp(real_path, fallback_path) == 0) {
-      return map_errno(H2_PAL_FS_ERR_IO);
-    }
-    errno = 0;
-    if (stat(fallback_path, &st) != 0) {
-      return map_errno(H2_PAL_FS_ERR_IO);
-    }
+    return map_errno(H2_PAL_FS_ERR_IO);
   }
   out_stat->size = (uint64_t)st.st_size;
   out_stat->is_dir = S_ISDIR(st.st_mode) ? 1 : 0;
@@ -283,26 +242,12 @@ static int spiffs_remove_unsafe(void* user, const char* path) {
   h2_esp_platform_spiffs_context_t* ctx =
       (h2_esp_platform_spiffs_context_t*)user;
   char real_path[192];
-  char fallback_path[192];
   int rc = translate_path_exact(ctx, path, real_path, sizeof(real_path));
   if (rc != H2_PAL_FS_OK) {
     return rc;
   }
   errno = 0;
-  if (remove(real_path) == 0) {
-    return H2_PAL_FS_OK;
-  }
-  rc =
-      translate_path_flattened(ctx, path, fallback_path, sizeof(fallback_path));
-  if (rc != H2_PAL_FS_OK) {
-    return rc;
-  }
-  if (strcmp(real_path, fallback_path) == 0) {
-    return map_errno(H2_PAL_FS_ERR_IO);
-  }
-  errno = 0;
-  return remove(fallback_path) == 0 ? H2_PAL_FS_OK
-                                    : map_errno(H2_PAL_FS_ERR_IO);
+  return remove(real_path) == 0 ? H2_PAL_FS_OK : map_errno(H2_PAL_FS_ERR_IO);
 }
 
 static int spiffs_rename_unsafe(void* user, const char* old_path,
@@ -311,13 +256,13 @@ static int spiffs_rename_unsafe(void* user, const char* old_path,
       (h2_esp_platform_spiffs_context_t*)user;
   char real_old_path[192];
   char real_new_path[192];
-  int rc = translate_path_flattened(ctx, old_path, real_old_path,
-                                    sizeof(real_old_path));
+  int rc =
+      translate_path_exact(ctx, old_path, real_old_path, sizeof(real_old_path));
   if (rc != H2_PAL_FS_OK) {
     return rc;
   }
-  rc = translate_path_flattened(ctx, new_path, real_new_path,
-                                sizeof(real_new_path));
+  rc =
+      translate_path_exact(ctx, new_path, real_new_path, sizeof(real_new_path));
   if (rc != H2_PAL_FS_OK) {
     return rc;
   }
