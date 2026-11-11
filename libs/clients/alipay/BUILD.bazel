@@ -67,3 +67,62 @@ filegroup(
     srcs = ["@alipay_sdk//:archives"],
     target_compatible_with = ["//tools/bazel/platforms:target_esp32s3"],
 )
+
+# Public PAL-only configuration, independent of the delivered SDK headers.
+cc_library(
+    name = "sdk_api",
+    hdrs = ["include/h2_alipay_sdk.h"],
+    includes = ["include"],
+    deps = [":alipay"],
+)
+
+# The private ABI is shared only with the concrete socket bridge.
+cc_library(
+    name = "sdk_native_api",
+    hdrs = [
+        "src/h2_alipay_sdk_internal.h",
+        "src/h2_alipay_sdk_socket_abi.h",
+    ],
+    includes = ["src"],
+    visibility = ["//native_component_src/esp-idf6.x/h2_alipay:__pkg__"],
+    deps = [
+        ":sdk_api",
+        "@alipay_sdk//:headers",
+    ],
+)
+
+# Source ownership stays here when a native SDK supplies the C runtime ABI.
+filegroup(
+    name = "sdk_sources",
+    srcs = [
+        "src/h2_alipay_sdk.c",
+        "src/h2_alipay_sdk_os.c",
+        "src/h2_alipay_sdk_random.c",
+        ":sdk_fd_sources",
+    ],
+)
+
+cc_test(
+    name = "sdk_test",
+    srcs = [
+        "src/h2_alipay_sdk_internal.h",
+        "src/h2_alipay_sdk_socket_abi.h",
+        "tests/test_sdk.c",
+        ":sdk_sources",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    tags = ["manual"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":sdk_api",
+        "//libs/testing:testing_pal",
+        "@alipay_sdk//:headers",
+    ],
+)
+
+filegroup(
+    name = "sdk_fd_sources",
+    srcs = ["src/h2_alipay_sdk_fd.c"],
+)

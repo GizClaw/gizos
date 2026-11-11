@@ -5,12 +5,12 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include "h2_esp_alipay_internal.h"
-#include "h2_esp_alipay_socket_abi.h"
+#include "h2_alipay_sdk_internal.h"
+#include "h2_alipay_sdk_socket_abi.h"
 
 static char endpoint[64];
-uint64_t h2_esp_alipay_now(void) { return 0; }
-void h2_esp_alipay_trace(const char* operation, const char* boundary,
+uint64_t h2_alipay_sdk_now(void) { return 0; }
+void h2_alipay_sdk_trace(const char* operation, const char* boundary,
                          int result, uint32_t item, uint32_t connection,
                          uint64_t started, const char* detail,
                          const void* bytes, size_t length) {
