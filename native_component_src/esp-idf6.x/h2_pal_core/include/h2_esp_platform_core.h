@@ -194,12 +194,6 @@ const h2_pal_wifi_csi_api_t* h2_esp_platform_wifi_csi(void);
 h2_pal_modem_t* h2_esp_platform_modem_unsupported(void);
 int h2_esp_platform_wifi_ensure_started(void);
 int h2_esp_platform_wifi_connect_saved(uint32_t timeout_ms);
-/** Initialize a literal-path SPIFFS API. Configuration strings are borrowed
- * for the API lifetime. File operations, seek, clear and prepare are
- * synchronous worker calls. mkdir validates virtual prefixes; SPIFFS has no
- * directories. clear removes only descendants of a non-root path, retaining the
- * scope and unrelated slash/underscore names. prepare reuses the configured
- * mount policy and is a no-op while mounted; it does not clear files. */
 int h2_esp_platform_spiffs_fs_init(
     h2_pal_fs_api_t* fs, const h2_esp_platform_spiffs_config_t* config);
 int h2_esp_platform_spiffs_fs_deinit(const char* partition_label);
