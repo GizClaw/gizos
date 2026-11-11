@@ -1,0 +1,13 @@
+# Standalone Alipay integration test
+
+This App displays only an Alipay test page. Its worker prepares network and calibrated UTC before calling the original SDK, verifies cached `pre_init` reentry, then checks commissioning and requests a binding code when eligible. A valid code is encoded as a QR on the same page. The final page stays visible, and result summaries repeat every ten seconds without repeating SDK calls.
+
+The [Tiga entry](../../targets/h2_loader_tar_zlib/integration/alipay/haivivi/h106_tiga_esp_v4_2/main/main.c) keeps H2Loader command transport available through the shared Device service and uses the public Tiga BSP. Its read-only identity composition reads the factory SN from `h106_factory/imei`, the actual modem IMEI from Modem PAL and the Bluetooth address from `ESP_MAC_BT`. It has no product Main, settings navigation, firmware update prompt or automatic reboot. Completed SPI DMA comparison is transport evidence, not optical panel verification.
+
+Use the [original bind_net SDK integration](../../../../libs/clients/alipay/README.md). The entry intentionally supplies no secure provider or approved feature mask; missing commissioning is reported as a blocker and no binding-code call is made. It never provisions, activates, polls binding, completes binding, unbinds, resets or makes payments. SDK trace output is summary-only. A blocked or failed test stays unconfirmed and retains its Stage package.
+
+The page supports RGB565 surfaces from 240×240 to 1024×1024. A successful binding code replaces the detailed status area with a centered QR below the title and above the compact status line. The renderer preserves four quiet modules on every side and uses an integer module scale. Controlled host page tests render the actual App with LVGL and inspect every QR pixel at square, portrait and landscape sizes; those fixtures do not establish vendor SDK success.
+
+Run source tests with `bazel test --config=macos_arm64 //libs/clients/alipay:all //projects/testing/integration/alipay/app:all //projects/testing/integration/alipay/tools:collector_test //projects/testing/targets/h2_loader_tar_zlib/integration/alipay/haivivi/h106_tiga_esp_v4_2:identity_test`.
+
+With the declared ESP-IDF environment and caller-supplied SDK selected, build `bazel build --config=esp32s3 --repo_env=ALIPAY_SDK_PATH //projects/testing/targets/h2_loader_tar_zlib/integration/alipay/haivivi/h106_tiga_esp_v4_2:package`. `:package_v2` shares the same native image. Both preserve board `tiga_esp_v4_2`, target `esp32s3`, image `alipay-e2e`, role `app` and version `0.1.0-e2e`. The explicit public Wi-Fi fixture is `HAIVIVI-MFG` / `!haivivi`; network/IP and SNTP preparation finish on the worker before any SDK call.
