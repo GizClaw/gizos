@@ -16,6 +16,8 @@ struct h2_iostreamikcp {
   size_t offset;
   unsigned polls;
   int fast_boot;
+  int update_closed_once;
+  int flush_closed_once;
   void* log_user;
 };
 
@@ -84,13 +86,20 @@ h2_pal_result_t h2_iostreamikcp_poll(h2_iostreamikcp_t* stream,
 
 h2_pal_result_t h2_iostreamikcp_update(h2_iostreamikcp_t* stream,
                                        uint32_t now_ms) {
-  (void)stream;
   (void)now_ms;
+  if (stream->fast_boot == 3 && stream->polls >= 2u &&
+      !stream->update_closed_once) {
+    stream->update_closed_once = 1;
+    return H2_PAL_ERR_CLOSED;
+  }
   return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_iostreamikcp_flush(h2_iostreamikcp_t* stream) {
-  (void)stream;
+  if (stream->fast_boot == 4 && !stream->flush_closed_once) {
+    stream->flush_closed_once = 1;
+    return H2_PAL_ERR_CLOSED;
+  }
   return H2_PAL_OK;
 }
 
@@ -152,7 +161,7 @@ int main(void) {
   (void)serial_status_diagnostics;
   (void)serial_stream_now_ms;
   (void)find_line_marker;
-  for (int fast_boot = 0; fast_boot < 3; ++fast_boot) {
+  for (int fast_boot = 0; fast_boot < 5; ++fast_boot) {
     clock_ms = 0u;
     accept_count = 0u;
     h2_iostreamikcp_t stream = {.fast_boot = fast_boot};
@@ -191,7 +200,7 @@ int main(void) {
     assert(accept_count == 1u && context.monitor_logs);
     assert(result.accepted_link_closed == (fast_boot != 0));
     assert(context.monitor_output_bytes ==
-           (fast_boot ? sizeof(boot) - 1u : 0u));
+           ((fast_boot == 1 || fast_boot == 2) ? sizeof(boot) - 1u : 0u));
     unsigned polls = 4u;
     assert(h2_h2loader_host_serial_monitor_logs(&connection, bounded, &polls) ==
            H2_PAL_EXIT);
@@ -199,7 +208,7 @@ int main(void) {
      * A boot entirely inside the ACK grace period remains accounted for. */
     assert(stream.offset == stream.length);
     assert(context.monitor_output_bytes ==
-           (fast_boot ? sizeof(boot) - 1u : 0u));
+           ((fast_boot == 1 || fast_boot == 2) ? sizeof(boot) - 1u : 0u));
   }
   return 0;
 }
