@@ -1451,6 +1451,16 @@ static void test_display_submission_fault(int mode) {
   assert(h2_lua_job_submit_text(host, NULL, "@rejected.lua",
                                 (const uint8_t*)"return 1", 8, NULL, 0,
                                 &rejected) != H2_PAL_OK);
+  /* Retain the failed Host/VM/Runtime and Display lease, but join unrelated
+   * input pollers before normal exit destroys the desktop provider globals. */
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  h2_runtime_input_status_t input;
+  assert(h2_runtime_input_status(runtime, &input) == H2_PAL_OK);
+  assert(input.phase == H2_RUNTIME_INPUT_PHASE_STOPPED &&
+         input.worker_result == H2_PAL_OK);
+  assert(h2_lua_host_destroy_checked(host) == expected);
+  assert(status(host, job).memory_used == state.memory_used);
+  assert(s_test_display_fixture.close_count == close_count);
   printf("display_fault mode=%d retained_vm=%zu error=%d PASS\n", mode,
          state.memory_used, result);
 }
