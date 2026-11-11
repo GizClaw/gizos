@@ -2,9 +2,9 @@
 #include "h2_bk_resource_stats_internal.h"
 
 #include <os/mem.h>
+#include <os/os.h>
 #include <string.h>
 #if defined(H2_BK_MEM_DIAGNOSTICS) && H2_BK_MEM_DIAGNOSTICS
-#include <os/os.h>
 #include <stdio.h>
 typedef struct allocation_row {
   void *ptr, *caller;
@@ -124,10 +124,31 @@ static h2_pal_result_t bk_platform_get_stats(void* user,
       region != H2_PAL_MEM_REGION_INTERNAL_EXECUTABLE &&
       region != H2_PAL_MEM_REGION_EXTERNAL)
     return H2_PAL_ERR_INVALID_ARG;
-  /* The SDK's free/minimum counters do not expose a complete region snapshot,
-   * including the largest free block. PAL allocation accounting is unrelated.
-   */
-  return H2_PAL_ERR_UNSUPPORTED;
+  /* These SDK counters cover the entire native heap, including allocations
+   * outside PAL. The pinned SDK exposes no largest-free-block observation and
+   * does not identify a separate executable heap. Never infer either from PAL
+   * allocation accounting or from a zero-valued SDK PSRAM-disabled stub. */
+  h2_pal_mem_stats_t stats = {0};
+  if (region == H2_PAL_MEM_REGION_INTERNAL) {
+    stats.total_bytes = rtos_get_total_heap_size();
+    stats.free_bytes = rtos_get_free_heap_size();
+    stats.minimum_free_bytes = rtos_get_minimum_free_heap_size();
+  } else if (region == H2_PAL_MEM_REGION_EXTERNAL) {
+#if CONFIG_PSRAM_AS_SYS_MEMORY
+    stats.total_bytes = rtos_get_psram_total_heap_size();
+    stats.free_bytes = rtos_get_psram_free_heap_size();
+    stats.minimum_free_bytes = rtos_get_psram_minimum_free_heap_size();
+#else
+    return H2_PAL_ERR_UNSUPPORTED;
+#endif
+  } else {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  if (stats.total_bytes == 0u) return H2_PAL_ERR_UNSUPPORTED;
+  stats.unavailable_fields =
+      H2_PAL_MEM_STATS_UNAVAILABLE_LARGEST_FREE_BLOCK_BYTES;
+  *out_stats = stats;
+  return H2_PAL_OK;
 }
 
 static h2_pal_mem_api_t* bk_platform_allocator(h2_bk_heap_kind_t kind) {

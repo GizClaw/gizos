@@ -80,11 +80,28 @@ static void run(void* user) {
     if (rc == H2_PAL_OK) rc = flushed;
   }
   output.active = false;
-  int released = h2_pal_io_stream_release(runtime->io_stream);
-  /* A failed release retains provider resources; management must not race it.
-   */
-  int restored = released == H2_PAL_OK ? start_commands() : released;
-  if (restored == H2_PAL_OK) output.active = true;
+  int released;
+  /* Release retains partial progress on failure. Keep retrying that owner;
+   * management may attach only after release completes, and the first cleanup
+   * error still prevents this execution from qualifying. */
+  while ((released = h2_pal_io_stream_release(runtime->io_stream)) !=
+         H2_PAL_OK) {
+    if (rc == H2_PAL_OK) rc = released;
+    printf("H2_IPERF_CLIENT_RECOVERY stage=uart_release rc=%d\n", released);
+    const int slept = h2_pal_time_sleep_ms(runtime->time, 100u);
+    if (slept != H2_PAL_OK) rtos_delay_milliseconds(100u);
+  }
+  int restored;
+  while ((restored = start_commands()) != H2_PAL_OK) {
+    if (rc == H2_PAL_OK) rc = restored;
+    printf("H2_IPERF_CLIENT_RECOVERY stage=management_start rc=%d\n", restored);
+    /* A failed start can retain a partial stream/session. Quiesce that owner
+     * before retrying startup, rather than racing a retained release. */
+    while (h2_device_app_commands_stop_serial(&h2_management) != H2_PAL_OK)
+      rtos_delay_milliseconds(100u);
+    rtos_delay_milliseconds(100u);
+  }
+  output.active = true;
   if (rc == H2_PAL_OK && output.error != H2_PAL_OK) rc = output.error;
   if (rc == H2_PAL_OK && restored != H2_PAL_OK) rc = restored;
   if (rc != H2_PAL_OK) fail("bench-or-console", rc);

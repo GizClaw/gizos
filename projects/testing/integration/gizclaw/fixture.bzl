@@ -135,6 +135,7 @@ _BK_REQUIRED_FIELDS = [
     "value",
     "endpoint",
     "token",
+    "time_server",
     "device_api_url",
     "audio_url",
     "root_ca_hex",

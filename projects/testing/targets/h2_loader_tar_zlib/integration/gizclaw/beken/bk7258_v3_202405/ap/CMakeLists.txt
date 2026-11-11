@@ -14,6 +14,7 @@ armino_component_register(
     "."
     "${REPO_ROOT}/projects/testing/integration/gizclaw/app/include"
     "${REPO_ROOT}/libs/clients/gizclaw/include"
+    "${REPO_ROOT}/libs/net/ntp/include"
     "${REPO_ROOT}/pal/providers/backends/corehttp/include"
     "${REPO_ROOT}/libs/h2loader/device/include"
     "${REPO_ROOT}/projects/h2loader/libs/device_service/include"

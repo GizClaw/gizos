@@ -1,0 +1,4 @@
+#ifndef H2_GIZCLAW_LAUNCHER_TEST_TASK_POLICY_H
+#define H2_GIZCLAW_LAUNCHER_TEST_TASK_POLICY_H
+int h2_bk_target_task_policy_install(void);
+#endif

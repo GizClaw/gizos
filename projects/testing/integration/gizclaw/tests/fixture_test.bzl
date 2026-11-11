@@ -5,7 +5,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("//projects/testing/integration/gizclaw:fixture.bzl", "bk_gizclaw_fixture_check")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 
-_FIELDS = ["key", "profile", "value", "endpoint", "token", "device_api_url", "audio_url", "root_ca_hex"]
+_FIELDS = ["key", "profile", "value", "endpoint", "token", "time_server", "device_api_url", "audio_url", "root_ca_hex"]
 _CANARY = "fixture-token-canary-never-include-in-diagnostics"
 
 def _failure_impl(ctx):
@@ -63,6 +63,7 @@ def fixture_test_suite(name, compatibility):
         ("trust_missing", ["root_ca_hex"]),
         ("token_missing", ["token"]),
         ("endpoint_missing", ["endpoint"]),
+        ("time_missing", ["time_server"]),
     ]:
         target = name + "_" + suffix
         bk_gizclaw_fixture_check(

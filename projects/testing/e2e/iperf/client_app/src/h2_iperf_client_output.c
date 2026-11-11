@@ -61,10 +61,12 @@ void h2_iperf_client_output_checkpoint(void* user, const char* checkpoint) {
   int size = snprintf(
       line, sizeof(line),
       "H2_IPERF_CLIENT_MEMORY board=%s checkpoint=%s internal_free=%zu "
-      "internal_min=%zu psram_free=%zu internal_stats_rc=%d external_stats_rc=%d",
+      "internal_min=%zu psram_free=%zu internal_stats_rc=%d external_stats_rc=%d "
+      "internal_unavailable=%u external_unavailable=%u",
       output->target, checkpoint, internal.free_bytes,
       internal.minimum_free_bytes, external.free_bytes, internal_rc,
-      external_rc);
+      external_rc, (unsigned)internal.unavailable_fields,
+      (unsigned)external.unavailable_fields);
   if (size <= 0 || (size_t)size >= sizeof(line)) {
     (void)latch(output, H2_PAL_ERR_NO_SPACE);
     return;

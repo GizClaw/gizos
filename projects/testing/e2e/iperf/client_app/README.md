@@ -21,6 +21,8 @@ Every valid bench invocation attempts the final saved-credential observation and
 
 Each BK board owns its launcher and selects the existing PSRAM provider for benchmark buffers and its 32-KiB runner stack. The App's portable output module writes complete records through IO Stream PAL, routes unrelated Log scopes to the supplied fallback, and observes heap regions through Memory PAL. The launcher stops UART management, configures the physical stream, runs the same App, then flushes/releases the stream and restores management before image confirmation. IO Stream PAL owns bounded native TX arbitration and drain; the App does not call SDK UART or heap APIs. Qualification captures the actual BOOT prefix and one uninterrupted raw ledger for each mode, with complete corresponding peer receipts; missing records invalidate admission.
 
+A failed stream release retains its provider state and is retried before management can reattach. Management is restored once release succeeds, while the first cleanup error still prevents that run from qualifying. Checkpoints preserve actual internal/external heap observations; their unavailable-field masks distinguish unobservable values such as BK's largest free block from measured zero.
+
 Invalid, partial or failed ledger writes retain the first error. A failed pre-confirmation record blocks confirmation. If the SDK has already confirmed the image and the final confirmation record cannot be delivered, the launcher reports the actual logging error and the capture is incomplete; it cannot undo that successful SDK confirmation. Runtime initialization failure releases the board-owned providers before entering the diagnostic hold.
 
 ## Build and verify

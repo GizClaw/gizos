@@ -55,17 +55,39 @@ static struct {
   uint32_t now;
   unsigned starts, stops, raw_configures, management_configures, deinits;
   unsigned bench_calls, confirms, confirmed_records, boot_records, writes;
+  unsigned memory_records, stats_reads;
   unsigned board_deinits, delays, parked, failure_seen, image_accepted;
   int failure_rc, board_live, runtime_live, manager_live, uart_live;
   int fault_sent, management_config;
 } f;
 static struct h2_pal_task runner_task;
-static h2_pal_mem_api_t normal_mem, psram_mem;
+static int memory_stats(void* user, h2_pal_mem_region_t region,
+                        h2_pal_mem_stats_t* stats) {
+  (void)user;
+  ++f.stats_reads;
+  *stats = (h2_pal_mem_stats_t){
+      .total_bytes = 50000u,
+      .free_bytes = region == H2_PAL_MEM_REGION_INTERNAL ? 12345u : 23456u,
+      .minimum_free_bytes = 12000u,
+      .unavailable_fields =
+          H2_PAL_MEM_STATS_UNAVAILABLE_LARGEST_FREE_BLOCK_BYTES,
+  };
+  return H2_PAL_OK;
+}
+static const h2_pal_mem_vtable_t memory_vtable = {.get_stats = memory_stats};
+static h2_pal_mem_api_t normal_mem, psram_mem = {.vtable = &memory_vtable};
 static h2_pal_pref_api_t prefs;
 static const h2_pal_uart_io_stream_api_t uart;
 static const h2_pal_io_stream_api_t stream;
 
 static void capture(const char* line) {
+  if (strstr(line, "H2_IPERF_CLIENT_MEMORY ") == line) {
+    assert(strstr(line,
+                  "internal_free=12345 internal_min=12000 psram_free=23456"));
+    assert(strstr(line, "internal_stats_rc=0 external_stats_rc=0"));
+    assert(strstr(line, "internal_unavailable=8 external_unavailable=8"));
+    ++f.memory_records;
+  }
   if (strstr(line, "H2_IPERF_CLIENT_BOOT ") == line) ++f.boot_records;
   if (strstr(line, "H2_IPERF_CLIENT_FAIL ") == line) {
     const char* rc = strstr(line, " rc=");
@@ -158,7 +180,7 @@ static int release_stream(void* user) {
   (void)user;
   assert(!f.manager_live && !output.active);
   ++f.deinits;
-  if (f.scenario == RELEASE_ERROR) return H2_PAL_ERR_IO;
+  if (f.scenario == RELEASE_ERROR && f.deinits <= 2u) return H2_PAL_ERR_IO;
   f.uart_live = 0;
   return H2_PAL_OK;
 }
@@ -244,7 +266,8 @@ int h2_device_app_commands_start_serial_named(h2_device_app_commands_t* state,
   assert(!f.manager_live);
   ++f.starts;
   if (f.starts == 2) {
-    assert(!f.uart_live && f.deinits == 1);
+    assert(!f.uart_live &&
+           f.deinits == (f.scenario == RELEASE_ERROR ? 3u : 1u));
     assert(!output.active);
     if (f.scenario == RESTART_ERROR) return H2_PAL_ERR_IO;
   }
@@ -261,8 +284,12 @@ int h2_device_app_commands_start_serial_named(h2_device_app_commands_t* state,
 }
 int h2_device_app_commands_stop_serial(h2_device_app_commands_t* state) {
   assert(state == &h2_management);
-  assert(f.manager_live && f.uart_live);
   ++f.stops;
+  if (!f.manager_live) {
+    assert(f.scenario == RESTART_ERROR && f.starts == 2u && !f.uart_live);
+    return H2_PAL_OK;
+  }
+  assert(f.uart_live);
   if (f.scenario == STOP_ERROR) return H2_PAL_ERR_TIMEOUT;
   f.manager_live = f.uart_live = 0;
   return H2_PAL_OK;
@@ -341,6 +368,9 @@ static void test(scenario_t scenario) {
   }
   assert(f.runner && f.manager_live && f.runtime_live && f.boot_records == 1);
   drive(f.runner, f.runner_user);
+  const unsigned observed =
+      scenario == STOP_ERROR || scenario == CONFIG_ERROR ? 0u : 3u;
+  assert(f.memory_records == observed && f.stats_reads == observed * 2u);
   const unsigned attempts = scenario == SUCCESS || scenario == CONFIRM_ERROR ||
                             scenario == CONFIRMED_LOG_ERROR;
   assert(f.confirms == attempts);
@@ -359,13 +389,17 @@ static void test(scenario_t scenario) {
     assert(f.manager_live && f.uart_live && f.starts == 1 &&
            !f.raw_configures && !f.deinits && !f.bench_calls);
   } else if (scenario == RELEASE_ERROR) {
-    assert(f.starts == 1 && f.stops == 1 && f.deinits == 1);
-    assert(!f.manager_live && f.uart_live && !output.active);
+    assert(f.starts == 2 && f.stops == 1 && f.deinits == 3);
+    assert(f.manager_live && f.uart_live && output.active);
+    assert(!f.confirms && f.now >= 5200u);
+  } else if (scenario == RESTART_ERROR) {
+    assert(f.starts == 3 && f.stops == 2 && f.deinits == 1);
+    assert(f.manager_live && f.uart_live && output.active && !f.confirms);
   } else {
     assert(f.starts == 2 && f.stops == 1 && f.raw_configures == 1 &&
            f.deinits == 1);
     assert(f.bench_calls == (scenario != CONFIG_ERROR));
-    assert(f.manager_live == (scenario != RESTART_ERROR));
+    assert(f.manager_live);
   }
 }
 static void test_records(void) {

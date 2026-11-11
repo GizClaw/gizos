@@ -1,0 +1,21 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//projects/testing:__subpackages__"])
+
+exports_files(["test_launcher.c"])
+
+cc_library(
+    name = "sdk",
+    testonly = True,
+    hdrs = [
+        "sdk/bk_private/bk_init.h",
+        "sdk/h2_bk7258_board.h",
+        "sdk/h2_bk_platform_core.h",
+        "sdk/h2_bk_target_task_policy.h",
+        "sdk/os/os.h",
+    ],
+    includes = ["sdk"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/runtime"],
+)

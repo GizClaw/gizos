@@ -6,8 +6,8 @@
 #include "h2_device_service.h"
 #include "h2_gizclaw_e2e_execution.h"
 #include "h2_gizclaw_e2e_task_names.h"
+#include "h2_ntp.h"
 #include <os/os.h>
-#include <components/system.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -45,14 +45,56 @@ static void hold(void) {
   for (;;) rtos_delay_milliseconds(1000u);
 }
 
+static int recover_loader(void) {
+  int rc;
+  if (!h2_management.prepared) {
+    if (runtime != NULL) {
+      rc = h2_device_app_commands_prepare_runtime(&h2_management, runtime,
+                                                  &h2_management.config);
+    } else {
+      h2_runtime_config_t config = {0};
+      rc = h2_bk7258_board_runtime_config(&config);
+      if (rc == H2_PAL_OK)
+        rc = h2_device_app_commands_prepare(&h2_management, &config,
+                                            &h2_management.config);
+    }
+    if (rc != H2_PAL_OK) return rc;
+  }
+  /* Retain a management path if selection or reboot fails. Serial startup and
+   * selection can each be retried without rerunning or confirming the App. */
+  if (!h2_management.serial_started) {
+    rc = h2_device_app_commands_start_serial(&h2_management, NULL);
+    if (rc != H2_PAL_OK) {
+      printf("H2_GIZCLAW_SETUP_WAIT stage=recovery_commands rc=%d\n", rc);
+      fflush(stdout);
+    }
+  }
+  h2_device_app_commands_admit_sessions(&h2_management);
+  rc = h2_device_app_operation_lock(&h2_management);
+  if (rc != H2_PAL_OK) return rc;
+  const h2_pal_power_api_t* power =
+      h2_device_app_commands_power(&h2_management);
+  /* Select the preserved Loader durably even after App confirmation. The
+   * Device policy performs native preparation; no image bytes are rewritten. */
+  rc = h2_pal_power_set_next_boot_partition(
+      power, h2_management.config.h2loader_partition_id);
+  if (rc == H2_PAL_OK) {
+    rtos_delay_milliseconds(250u);
+    rc = h2_pal_power_reboot(power, 0u);
+  }
+  const int unlocked = h2_device_app_operation_unlock(&h2_management);
+  return rc == H2_PAL_OK ? unlocked : rc;
+}
+
 static void fail(const char* stage, int rc) {
   printf("H2_GIZCLAW_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
-  /* CP consumed the one-shot trial boot request. A setup failure returns to
-   * the preserved Loader without admitting an unqualified App image. */
-  rtos_delay_milliseconds(250u);
-  bk_reboot();
-  hold();
+  for (;;) {
+    const int recovery_rc = recover_loader();
+    printf("H2_GIZCLAW_SETUP_WAIT stage=loader_recovery rc=%d\n", recovery_rc);
+    fflush(stdout);
+    rtos_delay_milliseconds(3000u);
+  }
 }
 
 static int network_ready(void) {
@@ -76,6 +118,33 @@ static int network_ready(void) {
     rtos_delay_milliseconds(100u);
   }
   return H2_PAL_ERR_TIMEOUT;
+}
+
+static int calibrate_clock(void) {
+  uint64_t wall_ms = 0u;
+  int rc = h2_pal_time_get_wall_ms(runtime->time, &wall_ms);
+  if (rc != H2_PAL_TIME_ERR_UNCALIBRATED) return rc;
+  const char* server = h2_gizclaw_e2e_fixture_time_server();
+  if (!server[0]) return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_net_addr_t address = {0};
+  rc = h2_pal_net_resolve_addr(runtime->net, server, &address);
+  if (rc != H2_PAL_OK) return rc;
+  address.port = H2_NTP_PORT;
+  /* Bootstrap TLS dates through the explicit fixture, before service HTTPS.
+   * NTP retains its 1000 ms, no-retry defaults; existing WiFi/App budgets
+   * stand.
+   */
+  const h2_ntp_client_config_t config = {.net = runtime->net,
+                                         .time = runtime->time,
+                                         .server = address,
+                                         .set_wall_clock = 1u};
+  h2_ntp_sync_result_t result = {0};
+  rc = h2_ntp_sync(&config, &result);
+  if (rc == H2_NTP_OK_TIME_SET_UNSUPPORTED || rc == H2_NTP_ERR_UNSUPPORTED)
+    return H2_PAL_ERR_UNSUPPORTED;
+  if (rc == H2_NTP_ERR_TIMEOUT) return H2_PAL_ERR_TIMEOUT;
+  if (rc != H2_NTP_OK) return H2_PAL_ERR_IO;
+  return h2_pal_time_get_wall_ms(runtime->time, &wall_ms);
 }
 
 static int create_fixture_http(h2_runtime_config_t* config) {
@@ -117,6 +186,7 @@ static void run(void* user) {
       !h2_gizclaw_e2e_fixture_value()[0] ||
       !h2_gizclaw_e2e_fixture_endpoint()[0] ||
       !h2_gizclaw_e2e_fixture_token()[0] ||
+      !h2_gizclaw_e2e_fixture_time_server()[0] ||
       !h2_gizclaw_e2e_fixture_device_api_url()[0] ||
       !h2_gizclaw_e2e_fixture_audio_url()[0]) {
     printf("H2_GIZCLAW_SETUP_FAIL stage=missing_app_config_fixture rc=%d\n",
@@ -130,6 +200,8 @@ static void run(void* user) {
     fflush(stdout);
     rtos_delay_milliseconds(3000u);
   }
+  rc = calibrate_clock();
+  if (rc != H2_PAL_OK) fail("time", rc);
   const char* endpoint = h2_gizclaw_e2e_fixture_endpoint();
   const char* token = h2_gizclaw_e2e_fixture_token();
   const h2_gizclaw_e2e_config_t app = {
