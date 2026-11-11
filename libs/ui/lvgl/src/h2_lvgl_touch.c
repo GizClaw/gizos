@@ -13,6 +13,7 @@ struct h2_lvgl_touch {
 };
 
 static void lvgl_touch_read(lv_indev_t* indev, lv_indev_data_t* data) {
+  data->continue_reading = false;
   h2_lvgl_touch_t* adapter = lv_indev_get_user_data(indev);
   if (adapter == NULL) {
     data->state = LV_INDEV_STATE_RELEASED;
@@ -22,16 +23,20 @@ static void lvgl_touch_read(lv_indev_t* indev, lv_indev_data_t* data) {
   h2_pal_touch_event_t event = {0};
   h2_pal_result_t result = h2_pal_touch_poll_event(adapter->touch, &event);
   if (result == H2_PAL_OK) {
-    adapter->point.x = event.x;
-    adapter->point.y = event.y;
-    adapter->state = event.kind == H2_PAL_TOUCH_EVENT_UP
-                         ? LV_INDEV_STATE_RELEASED
-                         : LV_INDEV_STATE_PRESSED;
+    if (event.kind == H2_PAL_TOUCH_EVENT_DOWN ||
+        event.kind == H2_PAL_TOUCH_EVENT_UP ||
+        adapter->state == LV_INDEV_STATE_PRESSED) {
+      adapter->point.x = event.x;
+      adapter->point.y = event.y;
+    }
+    if (event.kind == H2_PAL_TOUCH_EVENT_DOWN)
+      adapter->state = LV_INDEV_STATE_PRESSED;
+    else if (event.kind == H2_PAL_TOUCH_EVENT_UP)
+      adapter->state = LV_INDEV_STATE_RELEASED;
     adapter->last_result = H2_PAL_OK;
     data->continue_reading = true;
   } else if (result != H2_PAL_ERR_WOULD_BLOCK) {
     adapter->last_result = result;
-    adapter->state = LV_INDEV_STATE_RELEASED;
   }
   data->point = adapter->point;
   data->state = adapter->state;

@@ -1,0 +1,8 @@
+#ifndef H2_G99_SCREEN_CONFIG_H
+#define H2_G99_SCREEN_CONFIG_H
+
+#include "h2_g99_screen.h"
+
+#define H2_G99_SCREEN_ROTATION H2_G99_SCREEN_ROTATION_CCW_90
+
+#endif

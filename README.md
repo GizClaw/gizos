@@ -200,6 +200,7 @@ Board definitions are grouped by their manufacturer under `boards/<company>/<boa
 
 ## Documentation
 
+- [G99 / GizPocket](projects/g99/README.md): Main, Loader, Web preview and product regression.
 - [AI development constraints](guides/index.md): directory ownership, implementation boundaries, coding, validation, and review.
 - [Bazel and platform builds](tools/bazel/README.md).
 

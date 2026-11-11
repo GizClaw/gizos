@@ -1,0 +1,8 @@
+load("//projects/g99/targets/pkg_tar/web:g99_web.bzl", "g99_web")
+
+package(default_visibility = ["//visibility:public"])
+
+g99_web(
+    name = "g99-web-landscape",
+    board = "//projects/g99/targets/pkg_tar/web:landscape_board",
+)

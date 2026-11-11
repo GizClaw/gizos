@@ -1,0 +1,13 @@
+package(default_visibility = ["//projects/g99:__subpackages__"])
+
+# G99-owned system font. Images embed build-time subsets of it (ttf_subset_c);
+# the license ships in every app package under /data/licenses.
+alias(
+    name = "noto_sans_sc_bold",
+    actual = "@g99_noto_sans_sc_bold//file",
+)
+
+alias(
+    name = "noto_sans_sc_license",
+    actual = "@g99_noto_sans_sc_ofl//file",
+)

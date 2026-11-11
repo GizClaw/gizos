@@ -1,0 +1,21 @@
+<!-- G99 "canvas" skin: a plain backdrop with the screen at its native pixel
+     size, Start/Stop and the status line below. No device body is drawn; a
+     Mosaico skin belongs to the public esp_mosaico web board. -->
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #120e1c; color: #e8e4f0; }
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; }
+  .g99 { display: grid; gap: 14px; justify-items: center; }
+  .g99-screen { padding: 12px; border-radius: 16px; background: #000; }
+  .g99 #canvas { display: block; background: #000; }
+  .g99 [data-h2-slot="controls"] { display: flex; gap: 8px; }
+  .g99 [data-h2-slot="controls"] button { padding: 8px 22px; border: 0; border-radius: 999px; background: #9b5cff; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  .g99 [data-h2-slot="controls"] button:disabled { cursor: default; opacity: 0.5; }
+  .g99 #status { margin: 0; color: #a79fbc; font-size: 13px; }
+  .g99-keys { margin: 0; color: #6e6685; font-size: 12px; }
+</style>
+<main class="g99">
+  <div class="g99-screen" data-h2-slot="display"></div>
+  <div data-h2-slot="controls"></div>
+  <div data-h2-slot="status"></div>
+  <p class="g99-keys">Esc AI · Space BOOT · ↑ ↓ · Enter OK · click = touch</p>
+</main>

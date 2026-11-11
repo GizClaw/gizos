@@ -14,6 +14,7 @@ The board regression targets are:
 | `battery_driver_test` | BQ27220 read-only commands, signed current, percent range and I/O failures |
 | `lifecycle_driver_test` | Init retry, resource release retry, retained handles and idempotent shutdown |
 | `surface_test` | Display/touch coordinate surface boundaries |
+| `touch_test` | Pending-report IRQ gating, empty reads, error continuity and pointer edges |
 
 Lifecycle regression uses fake PWM callbacks to verify resource shutdown; it
 does not drive a physical motor. There is no standalone motor diagnostic

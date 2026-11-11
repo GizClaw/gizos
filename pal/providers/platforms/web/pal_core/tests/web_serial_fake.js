@@ -14,6 +14,15 @@ globalThis.localStorage = {
 };
 
 const h2FakeCanvasListeners = new Map();
+Module.h2WebTestPointerEvent = (kind, buttons, x, y) => {
+  const callback = h2FakeCanvasListeners.get(kind);
+  if (!callback) throw new Error(`No pointer listener: ${kind}`);
+  callback({
+    pointerId: 1, buttons, clientX: x, clientY: y,
+    preventDefault() {},
+  });
+};
+
 Module.canvas = {
   style: {},
   addEventListener(name, callback) { h2FakeCanvasListeners.set(name, callback); },

@@ -1,0 +1,38 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["e2e.cpp"])
+
+_DESKTOP = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_DEPS = [
+    "//projects/g99/apps/e2e:e2e",
+    "//projects/g99/targets/cc_binary/main:desktop",
+    "//libs/sync/atomic/providers/c11",
+    "//pal",
+    "//pal/providers/platforms/desktop/app_support",
+    "//pal/providers/platforms/desktop/app_support:bundle_rpath",
+    "//pal/providers/platforms/desktop/pal_core",
+    "//libs/runtime",
+]
+
+[
+    cc_binary(
+        name = "g99-e2e-" + size,
+        srcs = ["e2e.cpp"],
+        copts = H2_WARNING_COPTS,
+        cxxopts = H2_CXX17_OPTS,
+        target_compatible_with = _DESKTOP,
+        deps = _DEPS + ["//projects/g99/targets/cc_binary/main:" + size + "_layout_config"],
+    )
+    for size in [
+        "mosaico",  # 480 x 480
+        "landscape",  # 320 x 240
+    ]
+]

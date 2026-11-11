@@ -1,0 +1,102 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/firmware:app_version.bzl", "app_version")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+app_version(
+    name = "version",
+    value = "0.1.0",
+)
+
+# The suite runs wherever Main runs; launchers decide which targets run it.
+_COMPATIBILITY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//tools/bazel/platforms:is_esp32s31": [],
+    "@platforms//cpu:wasm32": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+# Cases a device package runs: --//projects/g99/apps/e2e:select=keys,layout
+# (same syntax as H2_E2E_SELECT on Desktop; empty runs every case). It only
+# repacks /data/e2e/select.txt, see select.bzl.
+string_flag(
+    name = "select",
+    build_setting_default = "",
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["g99-e2e/main"],
+)
+
+# Session, step and case declarations shared by the suite sources and tests.
+cc_library(
+    name = "internal",
+    hdrs = [
+        "include/h2_g99_e2e.h",
+        "src/h2_g99_e2e_internal.h",
+    ],
+    includes = [
+        "include",
+        "src",
+    ],
+    target_compatible_with = _COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = [
+        "//libs/runtime",
+        "//pal",
+        "//projects/g99/apps/main",
+    ],
+)
+
+cc_library(
+    name = "e2e",
+    srcs = [
+        "src/cases/h2_g99_e2e_keys.c",
+        "src/cases/h2_g99_e2e_layout.c",
+        "src/cases/h2_g99_e2e_navigation.c",
+        "src/cases/h2_g99_e2e_perf.c",
+        "src/cases/h2_g99_e2e_settings.c",
+        "src/cases/h2_g99_e2e_startup.c",
+        "src/cases/h2_g99_e2e_touch.c",
+        "src/cases/h2_g99_e2e_wifi.c",
+        "src/h2_g99_e2e_registry.c",
+        "src/h2_g99_e2e_report.c",
+        "src/h2_g99_e2e_runner.c",
+        "src/h2_g99_e2e_select.c",
+        "src/h2_g99_e2e_session.c",
+        "src/h2_g99_e2e_steps.c",
+        "src/h2_g99_e2e_touch.c",
+    ],
+    hdrs = ["include/h2_g99_e2e.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = _COMPATIBILITY,
+    deps = [
+        ":internal",
+        ":tasks",
+        "//libs/runtime",
+        "//pal",
+        "//projects/g99/apps/main",
+    ],
+)
+
+cc_test(
+    name = "select_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_e2e_select.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":e2e",
+        ":internal",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)

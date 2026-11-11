@@ -145,14 +145,17 @@ EMSCRIPTEN_KEEPALIVE void h2_web_platform_pointer(uintptr_t address, int32_t x,
   if (platform == NULL || platform->shutting_down) {
     return;
   }
+  platform->pointer_x = x;
+  platform->pointer_y = y;
+  if (!platform->pointer_pressed && !pressed) {
+    return;
+  }
   h2_pal_touch_event_kind_t kind = H2_PAL_TOUCH_EVENT_MOVE;
   if (!platform->pointer_pressed && pressed) {
     kind = H2_PAL_TOUCH_EVENT_DOWN;
   } else if (platform->pointer_pressed && !pressed) {
     kind = H2_PAL_TOUCH_EVENT_UP;
   }
-  platform->pointer_x = x;
-  platform->pointer_y = y;
   platform->pointer_pressed = pressed;
   h2_web_touch_push(platform, kind, x, y);
 }

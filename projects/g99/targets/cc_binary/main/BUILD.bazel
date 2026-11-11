@@ -1,0 +1,101 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//tools/bazel/desktop/layout:desktop_layout.bzl", "h2_desktop_layout_config")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_DESKTOP = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_DEPS = [
+    "//projects/g99/apps/main:main",
+    "//projects/g99/targets/cc_binary/main:desktop",
+    "//libs/sync/atomic/providers/c11",
+    "//pal",
+    "//pal/providers/platforms/desktop/app_support",
+    "//pal/providers/platforms/desktop/app_support:bundle_rpath",
+    "//pal/providers/platforms/desktop/app_support:capture",
+    "//pal/providers/platforms/desktop/pal_core",
+    "//libs/runtime",
+]
+
+# Mosaico: 480 x 480 square AMOLED.
+h2_desktop_layout_config(
+    name = "mosaico_layout_generated",
+    src = "mosaico/layout.json",
+    app_name = "g99/mosaico",
+)
+
+cc_library(
+    name = "mosaico_layout_config",
+    hdrs = [":mosaico_layout_generated"],
+    strip_include_prefix = "mosaico_layout_generated",
+    target_compatible_with = _DESKTOP,
+    deps = [
+        "//pal/providers/platforms/desktop/app_support",
+        "//pal/providers/platforms/desktop/pal_core",
+    ],
+)
+
+cc_binary(
+    name = "g99-mosaico",
+    srcs = ["main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["mosaico/layout.json"],
+    target_compatible_with = _DESKTOP,
+    deps = _DEPS + [":mosaico_layout_config"],
+)
+
+# Expected BK7258 board: 320 x 240 landscape.
+h2_desktop_layout_config(
+    name = "landscape_layout_generated",
+    src = "landscape/layout.json",
+    app_name = "g99/landscape",
+)
+
+cc_library(
+    name = "landscape_layout_config",
+    hdrs = [":landscape_layout_generated"],
+    strip_include_prefix = "landscape_layout_generated",
+    target_compatible_with = _DESKTOP,
+    deps = [
+        "//pal/providers/platforms/desktop/app_support",
+        "//pal/providers/platforms/desktop/pal_core",
+    ],
+)
+
+cc_binary(
+    name = "g99-landscape",
+    srcs = ["main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["landscape/layout.json"],
+    target_compatible_with = _DESKTOP,
+    deps = _DEPS + [":landscape_layout_config"],
+)
+
+cc_library(
+    name = "desktop",
+    srcs = ["g99_desktop.cpp"],
+    hdrs = ["g99_desktop.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//pal",
+        "//pal/providers/platforms/desktop/app_support",
+        "//pal/providers/platforms/desktop/pal_core",
+        "//projects/g99/apps/main",
+        "//third_party:vendor_third_party_yyjson",
+    ],
+)

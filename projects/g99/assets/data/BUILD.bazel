@@ -1,0 +1,35 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("//projects/g99/apps/e2e:select.bzl", "g99_e2e_select_file")
+
+package(default_visibility = ["//projects/g99:__subpackages__"])
+
+# Package data of the G99 app images, rooted at projects/g99/assets/data and
+# installed under /data on the device. Every entry is generated.
+DATA_ROOT = "projects/g99/assets/data"
+
+# The embedded system font subsets are derived from Noto Sans SC Bold; its
+# license travels with every app package.
+copy_file(
+    name = "font_license",
+    src = "//projects/g99/assets/fonts:noto_sans_sc_license",
+    out = "licenses/NotoSansSC-OFL.txt",
+)
+
+# /data/e2e/select.txt: --//projects/g99/apps/e2e:select=<selection>.
+g99_e2e_select_file(
+    name = "e2e_select",
+    out = "e2e/select.txt",
+)
+
+filegroup(
+    name = "main_data",
+    srcs = [":font_license"],
+)
+
+filegroup(
+    name = "e2e_data",
+    srcs = [
+        ":e2e_select",
+        ":font_license",
+    ],
+)

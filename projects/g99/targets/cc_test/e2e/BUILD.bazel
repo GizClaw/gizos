@@ -1,0 +1,35 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+[
+    cc_test(
+        name = size + "_test",
+        size = "medium",
+        srcs = ["//projects/g99/targets/cc_binary/e2e:e2e.cpp"],
+        copts = H2_WARNING_COPTS,
+        cxxopts = H2_CXX17_OPTS,
+        env = {"SDL_VIDEODRIVER": "dummy"},
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//projects/g99/apps/e2e",
+            "//projects/g99/targets/cc_binary/main:desktop",
+            "//projects/g99/targets/cc_binary/main:" + size + "_layout_config",
+            "//libs/runtime",
+            "//libs/sync/atomic/providers/c11",
+            "//pal",
+            "//pal/providers/platforms/desktop/app_support",
+            "//pal/providers/platforms/desktop/app_support:bundle_rpath",
+            "//pal/providers/platforms/desktop/pal_core",
+        ],
+    )
+    for size in [
+        "mosaico",
+        "landscape",
+    ]
+]

@@ -12,6 +12,61 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern void h2_web_platform_pointer(uintptr_t address, int32_t x, int32_t y,
+                                    int pressed);
+
+/* clang-format off */
+EM_JS(void, h2_web_test_pointer_event,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "i32"], null,
+    (kind, buttons) => {
+      Module.h2WebTestPointerEvent(
+        ["pointerdown", "pointermove", "pointerup", "pointercancel"][kind],
+        buttons, 1, 1);
+    });
+});
+/* clang-format on */
+
+static int test_touch_edges(h2_web_platform_t* platform) {
+  const h2_pal_touch_api_t* touch = h2_web_platform_touch_api(platform);
+  h2_pal_touch_event_t event;
+  if (h2_pal_touch_open(touch) != H2_PAL_OK) return 1;
+  (void)h2_web_main_call(h2_web_test_pointer_event,
+                         (const void*[]){&(int){1}, &(int){0}});
+  if (h2_pal_touch_poll_event(touch, &event) != H2_PAL_ERR_WOULD_BLOCK)
+    return 1;
+  h2_web_platform_pointer((uintptr_t)platform, 1, 1, 0);
+  if (h2_pal_touch_poll_event(touch, &event) != H2_PAL_ERR_WOULD_BLOCK)
+    return 1;
+  int32_t pointer_x = 0;
+  int32_t pointer_y = 0;
+  int pointer_pressed = 1;
+  if (h2_web_platform_read_pointer(platform, &pointer_x, &pointer_y,
+                                   &pointer_pressed) != H2_PAL_OK ||
+      pointer_x != 1 || pointer_y != 1 || pointer_pressed != 0)
+    return 1;
+  (void)h2_web_main_call(h2_web_test_pointer_event,
+                         (const void*[]){&(int){0}, &(int){1}});
+  if (h2_pal_touch_poll_event(touch, &event) != H2_PAL_OK ||
+      event.kind != H2_PAL_TOUCH_EVENT_DOWN)
+    return 1;
+  (void)h2_web_main_call(h2_web_test_pointer_event,
+                         (const void*[]){&(int){1}, &(int){1}});
+  if (h2_pal_touch_poll_event(touch, &event) != H2_PAL_OK ||
+      event.kind != H2_PAL_TOUCH_EVENT_MOVE)
+    return 1;
+  (void)h2_web_main_call(h2_web_test_pointer_event,
+                         (const void*[]){&(int){3}, &(int){0}});
+  if (h2_pal_touch_poll_event(touch, &event) != H2_PAL_OK ||
+      event.kind != H2_PAL_TOUCH_EVENT_UP)
+    return 1;
+  (void)h2_web_main_call(h2_web_test_pointer_event,
+                         (const void*[]){&(int){2}, &(int){0}});
+  if (h2_pal_touch_poll_event(touch, &event) != H2_PAL_ERR_WOULD_BLOCK)
+    return 1;
+  return h2_pal_touch_close(touch) != H2_PAL_OK;
+}
+
 /* clang-format off */
 EM_JS(void, h2_web_test_set_serial_mode,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
@@ -1322,8 +1377,7 @@ MAIN_THREAD_EM_ASM_INT({
       ran != 1) {
     return 7;
   }
-  if (h2_pal_touch_open(h2_web_platform_touch_api(platform)) != H2_PAL_OK ||
-      h2_pal_touch_close(h2_web_platform_touch_api(platform)) != H2_PAL_OK) {
+  if (test_touch_edges(platform)) {
     return 8;
   }
   if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK) {

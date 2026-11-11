@@ -65,6 +65,22 @@ http_archive = use_repo_rule(
     "http_archive",
 )
 
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "g99_noto_sans_sc_bold",
+    downloaded_file_path = "NotoSansSC-Bold.ttf",
+    sha256 = "0066a522a1ac007c1d72bc4fccb114f80ff7294641c78cead9715bd14d43b9ea",
+    urls = ["https://fonts.gstatic.com/s/notosanssc/v41/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaGzjCnYw.ttf"],
+)
+
+http_file(
+    name = "g99_noto_sans_sc_ofl",
+    downloaded_file_path = "OFL.txt",
+    sha256 = "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
+    urls = ["https://raw.githubusercontent.com/google/fonts/2894aab31764f10f29c421bdfd2340d3b382d384/ofl/notosanssc/OFL.txt"],
+)
+
 # Overrides in a dependency MODULE are ignored by Bzlmod. Declare the exact
 # published SDK archive here so every GizOS consumer gets
 # the same canonical protocol, without copying root-only overrides.

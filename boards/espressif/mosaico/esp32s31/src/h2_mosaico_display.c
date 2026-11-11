@@ -2,6 +2,8 @@
 #include "h2_mosaico_display_capture.h"
 #include "h2_mosaico_surface.h"
 #include "bsp/display.h"
+#include "bsp/esp_mosaico.h"
+#include "driver/gpio.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -208,8 +210,13 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
   if (rc != H2_PAL_OK) return rc;
   if (!touch_opened)
     rc = H2_PAL_ERR_INVALID_STATE;
-  else
-    rc = result(esp_lcd_touch_read_data(touch));
+  else if (gpio_get_level(BSP_LCD_TOUCH_INT) != 0)
+    rc = H2_PAL_ERR_WOULD_BLOCK;
+  else {
+    const esp_err_t read_result = esp_lcd_touch_read_data(touch);
+    rc = read_result == ESP_ERR_NOT_FINISHED ? H2_PAL_ERR_WOULD_BLOCK
+                                             : result(read_result);
+  }
   if (rc == H2_PAL_OK) {
     uint16_t x = 0, y = 0;
     uint8_t count = 0;

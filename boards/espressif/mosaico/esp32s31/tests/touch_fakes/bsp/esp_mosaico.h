@@ -1,0 +1,4 @@
+#ifndef H2_MOSAICO_TOUCH_TEST_BSP_H
+#define H2_MOSAICO_TOUCH_TEST_BSP_H
+#define BSP_LCD_TOUCH_INT 11
+#endif

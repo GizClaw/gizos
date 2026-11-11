@@ -1,0 +1,62 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/web:web_board.bzl", "h2_web_board")
+
+package(default_visibility = ["//visibility:public"])
+
+# Shared sources of the G99 Web Main packages (g99_web.bzl).
+exports_files([
+    "main.c",
+    "web_buttons.c",
+    "web_buttons.h",
+])
+
+# Product-owned Web boards until GizOS ships an esp_mosaico web board; the
+# targets then switch `board` to //boards/espressif/mosaico/web. Buttons use
+# the desktop keys: Esc = AI (home), Space = BOOT (screen), arrows, Enter = OK.
+_BUTTONS = {
+    "home": "Escape",
+    "screen": " ",
+    "up": "ArrowUp",
+    "down": "ArrowDown",
+    "ok": "Enter",
+}
+
+# Mosaico: 480 x 480 square AMOLED.
+h2_web_board(
+    name = "mosaico_board",
+    buttons = _BUTTONS,
+    default_skin = "canvas",
+    display_height = 480,
+    display_width = 480,
+    skins = {"canvas": "canvas.html"},
+)
+
+# Expected BK7258 board: 320 x 240 landscape.
+h2_web_board(
+    name = "landscape_board",
+    buttons = _BUTTONS,
+    default_skin = "canvas",
+    display_height = 240,
+    display_width = 320,
+    skins = {"canvas": "canvas.html"},
+)
+
+cc_test(
+    name = "web_buttons_test",
+    size = "small",
+    srcs = [
+        "web_buttons.c",
+        "web_buttons.h",
+        "web_buttons_test.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//projects/g99/apps/main",
+    ],
+)

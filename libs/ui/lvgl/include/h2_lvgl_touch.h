@@ -24,7 +24,10 @@ typedef struct h2_lvgl_touch_config {
 /**
  * Create one LVGL pointer indev backed by a borrowed Touch PAL.
  *
- * The Touch viewport must exactly match display resolution.
+ * The Touch viewport must exactly match display resolution. Only DOWN begins
+ * a press and UP ends it; a MOVE without an active press is ignored. Empty
+ * reads and provider errors preserve the last pointer state. Provider errors
+ * remain observable through last_result until a successful event is read.
  */
 h2_pal_result_t h2_lvgl_touch_create(const h2_lvgl_touch_config_t* config,
                                      h2_lvgl_touch_t** out_touch);

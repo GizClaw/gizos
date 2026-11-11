@@ -1,0 +1,186 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
+load("//tools/bazel/firmware:app_version.bzl", "app_version")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/lvgl/ttf_subset:ttf_subset.bzl", "ttf_subset_c")
+
+package(default_visibility = ["//visibility:public"])
+
+app_version(
+    name = "version",
+    value = "0.1.0",
+)
+
+# G99 runs on the desktop hosts, in the browser (Web Main) and on its ESP32-S31
+# board. Windows desktop is not a G99 target until its MSVC build is verified.
+_COMPATIBILITY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//tools/bazel/platforms:is_esp32s31": [],
+    "@platforms//cpu:wasm32": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["g99/wifi"],
+)
+
+h2_lua_resource(
+    name = "orbit_script",
+    src = "lua/orbit.lua",
+    symbol = "h2_g99_orbit_script",
+)
+
+# System text uses the glyphs of the UI source plus printable ASCII for SSIDs,
+# subset from the G99-owned Noto Sans SC Bold (projects/g99/assets/fonts).
+ttf_subset_c(
+    name = "font_subset",
+    font = "//projects/g99/assets/fonts:noto_sans_sc_bold",
+    out_c = "h2_g99_font.c",
+    out_h = "h2_g99_font.h",
+    ranges = ["0x20-0x7E"],
+    symbol = "h2_g99_font",
+    symbol_sources = ["src/h2_g99_ui.c"],
+)
+
+# Pure layout, navigation, settings and the touch filter: no LVGL and no SDK
+# handles. Artwork and the brand layout shared with the Loader live in
+# //projects/g99/libs/art.
+cc_library(
+    name = "core",
+    srcs = [
+        "src/h2_g99_layout.c",
+        "src/h2_g99_nav.c",
+        "src/h2_g99_settings.c",
+        "src/h2_g99_touch.c",
+    ],
+    hdrs = [
+        "include/h2_g99.h",
+        "src/h2_g99_layout.h",
+        "src/h2_g99_nav.h",
+        "src/h2_g99_settings.h",
+        "src/h2_g99_touch.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    target_compatible_with = _COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = [
+        "//libs/runtime",
+        "//pal",
+        "//projects/g99/libs/art",
+    ],
+)
+
+cc_library(
+    name = "wifi",
+    srcs = [
+        "src/h2_g99_task_names.c",
+        "src/h2_g99_wifi.c",
+    ],
+    hdrs = [
+        "include/h2_g99_task_names.h",
+        "src/h2_g99_wifi.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    target_compatible_with = _COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = [
+        ":tasks",
+        "//libs/runtime",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "main",
+    srcs = [
+        "src/h2_g99.c",
+        "src/h2_g99_internal.h",
+        "src/h2_g99_lua.c",
+        "src/h2_g99_ui.c",
+        ":font_subset",
+    ],
+    hdrs = [
+        "include/h2_g99.h",
+        "include/h2_g99_task_names.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = _COMPATIBILITY,
+    deps = [
+        ":core",
+        ":orbit_script",
+        ":wifi",
+        "//libs/lua",
+        "//libs/runtime",
+        "//libs/ui/lvgl",
+        "//pal",
+    ],
+)
+
+cc_test(
+    name = "layout_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_layout.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":core"],
+)
+
+cc_test(
+    name = "nav_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_nav.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":core"],
+)
+
+cc_test(
+    name = "settings_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_settings.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":core"],
+)
+
+cc_test(
+    name = "touch_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_touch.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":core"],
+)
+
+cc_test(
+    name = "wifi_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_wifi.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":wifi",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)

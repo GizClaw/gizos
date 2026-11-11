@@ -1,0 +1,103 @@
+{
+  "display": {
+    "title": "GizPocket Mosaico 480x480",
+    "width": 480,
+    "height": 480
+  },
+  "filesystem": {
+    "mounts": []
+  },
+  "peripherals": [
+    {
+      "periph_id": 101,
+      "kind": {
+        "button": {
+          "key": "escape"
+        }
+      }
+    },
+    {
+      "periph_id": 102,
+      "kind": {
+        "button": {
+          "key": "space"
+        }
+      }
+    },
+    {
+      "periph_id": 103,
+      "kind": {
+        "button": {
+          "key": "up"
+        }
+      }
+    },
+    {
+      "periph_id": 104,
+      "kind": {
+        "button": {
+          "key": "down"
+        }
+      }
+    },
+    {
+      "periph_id": 105,
+      "kind": {
+        "button": {
+          "key": "enter"
+        }
+      }
+    },
+    {
+      "periph_id": 401,
+      "kind": {
+        "battery": {
+          "voltage_mv": 3850,
+          "percent_x100": 7000,
+          "state": "discharging"
+        }
+      }
+    }
+  ],
+  "simulation": {
+    "wifi_sta": {
+      "connected": false,
+      "saved": false,
+      "ssid": "",
+      "rssi_dbm": -48,
+      "channel": 6,
+      "scan_outcome": "success",
+      "scan_delay_ms": 600,
+      "scan_results": [
+        {
+          "ssid": "HAIVIVI-MFG",
+          "rssi_dbm": -52,
+          "channel": 11,
+          "security": "wpa2",
+          "password": "!haivivi"
+        },
+        {
+          "ssid": "GizLab-Office",
+          "rssi_dbm": -60,
+          "channel": 6,
+          "security": "wpa2",
+          "password": "gizpocket"
+        },
+        {
+          "ssid": "Guest",
+          "rssi_dbm": -71,
+          "channel": 1,
+          "security": "open",
+          "password": ""
+        },
+        {
+          "ssid": "Studio-5G",
+          "rssi_dbm": -78,
+          "channel": 9,
+          "security": "wpa3",
+          "password": "gizpocket"
+        }
+      ]
+    }
+  }
+}
