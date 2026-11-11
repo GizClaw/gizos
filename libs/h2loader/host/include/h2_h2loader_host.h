@@ -358,6 +358,10 @@ typedef struct h2_h2loader_host_command_result {
   uint8_t output_truncated;
   /** Nonzero when success requires reconnect and live-state verification. */
   uint8_t lifecycle_transition;
+  /** Serial-only evidence that the accepted command's link closed or a new
+   * READY epoch was observed, including during ACK-grace pumping. This is not
+   * proof of reboot completion or of the final partition. */
+  uint8_t accepted_link_closed;
 } h2_h2loader_host_command_result_t;
 
 /**

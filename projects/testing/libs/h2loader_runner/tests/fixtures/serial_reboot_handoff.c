@@ -180,6 +180,7 @@ int main(void) {
                                                    &result) == H2_PAL_OK);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
     assert(accept_count == 1u && context.monitor_logs);
+    assert(result.accepted_link_closed == (fast_boot != 0));
     assert(context.monitor_output_bytes ==
            (fast_boot ? sizeof(boot) - 1u : 0u));
     unsigned polls = 4u;

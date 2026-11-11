@@ -38,6 +38,7 @@ struct h2_h2loader_host_serial_connection {
   serial_status_output_t* status_output;
   int status_pending_lf;
   int decoded_log_active;
+  int reset_observed;
 };
 
 struct serial_status_output {
@@ -386,6 +387,7 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
       return rc;
     }
   }
+  if (reset) connection->reset_observed = 1;
   return reset ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
 }
 
@@ -435,6 +437,7 @@ static h2_pal_result_t serial_pump(
     h2_h2loader_host_serial_connection_t* connection, uint32_t timeout_ms) {
   uint64_t now = 0u;
   h2_pal_result_t rc = h2_iostreamikcp_poll(connection->stream, timeout_ms);
+  if (rc == H2_PAL_ERR_CLOSED) connection->reset_observed = 1;
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
       rc != H2_PAL_ERR_WOULD_BLOCK) {
     return rc;
@@ -954,6 +957,7 @@ static h2_pal_result_t serial_finish_command_response(void* transport) {
    * consume that ACK before this side closes the physical session. */
   rc = h2_iostreamikcp_flush(connection->stream);
   if (rc != H2_PAL_OK) {
+    if (rc == H2_PAL_ERR_CLOSED) connection->reset_observed = 1;
     return rc == H2_PAL_ERR_CLOSED ? H2_PAL_OK : rc;
   }
   rc = serial_now(connection->time, &start);
@@ -986,9 +990,14 @@ h2_pal_result_t h2_h2loader_host_serial_execute_command(
     h2_h2loader_host_serial_connection_t* connection,
     const h2_h2loader_host_command_request_t* request,
     h2_h2loader_host_command_result_t* out_result) {
-  return h2_h2loader_host_command_execute_transport(
+  if (connection != NULL) connection->reset_observed = 0;
+  h2_pal_result_t rc = h2_h2loader_host_command_execute_transport(
       connection, serial_command_write, serial_command_read,
       serial_finish_command_response, request, out_result);
+  if (connection != NULL && out_result != NULL &&
+      out_result->terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK)
+    out_result->accepted_link_closed = connection->reset_observed != 0;
+  return rc;
 }
 
 typedef struct serial_stage_output {

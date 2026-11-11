@@ -1021,9 +1021,11 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
     }
   }
   /* Typed acceptance enables boot accounting before the serial ACK-grace
-   * pump. Keep that connection open through the following monitor window;
-   * reconnecting first can consume a quiet image's entire boot output. */
-  if (rc == H2_PAL_OK) {
+   * pump. A link retired during that pump already consumed the one permitted
+   * reset transition; never monitor that stale session again. */
+  if (rc == H2_PAL_OK && result.accepted_link_closed)
+    reset_transition_seen = 1u;
+  if (rc == H2_PAL_OK && !reset_transition_seen) {
     context->monitor_logs = 1u;
     rc = begin_monitor_window(context);
     if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context);

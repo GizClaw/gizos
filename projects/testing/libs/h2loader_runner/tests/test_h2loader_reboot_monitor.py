@@ -19,7 +19,7 @@ enum { H2_PAL_EXIT=2, H2_PAL_OK=0, H2_PAL_ERR_CLOSED=-1, H2_PAL_ERR_TIMEOUT=-2,
        H2_PAL_ERR_IO=-3, H2_PAL_ERR_INVALID_STATE=-4,
        H2_PAL_ERR_NOT_FOUND=-5, H2_PAL_ERR_INVALID_ARG=-6, H2_H2LOADER_HOST_COMMAND_TERMINAL_OK=1 };
 typedef struct { uint32_t running_partition; } h2_h2loader_host_status_t;
-typedef struct { int terminal; } h2_h2loader_host_command_result_t;
+typedef struct { int terminal; int accepted_link_closed; } h2_h2loader_host_command_result_t;
 typedef struct {
   int command; void *status; int (*is_cancelled)(void *); void *cancel_user;
   void (*on_output)(void *); void *output_user;
@@ -40,7 +40,7 @@ static h2_pal_result_t monitor_output(void *, const uint8_t *, size_t);
 static int connects, disconnects, monitors, statuses, windows, cancel_flag;
 static int monitor_results[3], status_results[2], partitions[2];
 static int reconnect_results[2], begin_results[3], close_results[3];
-static int command_result, command_terminal;
+static int command_result, command_terminal, grace_closed;
 static size_t initial_handshake_bytes, command_bytes, grace_bytes;
 static const char *queued_control;
 static size_t handshake_bytes[2], window_bytes[3], status_bytes[2];
@@ -60,6 +60,7 @@ static int connect_transport(h2_e2e_transport_context_t *c, h2_h2loader_host_sta
 static int execute_command(h2_e2e_transport_context_t *c,
     const h2_h2loader_host_command_request_t *q, h2_h2loader_host_command_result_t *r) {
   r->terminal=command_terminal;
+  r->accepted_link_closed=grace_closed;
   int rc=emit_logs(c, command_bytes);
   if (rc != H2_PAL_OK) return rc;
   if (command_result == H2_PAL_OK && command_terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK && q->on_accepted != NULL)
@@ -75,7 +76,7 @@ static int disconnect_transport(h2_e2e_transport_context_t *c) {
 static int reconnect_after_reboot(h2_e2e_transport_context_t *c, uint32_t p,
     h2_h2loader_host_status_t *s) {
   /* Boot logs must be monitored on the ACK's connection before reconnecting. */
-  assert(monitors>=1 && !c->monitor_logs && c->serial_connection==NULL);
+  assert((monitors>=1 || grace_closed) && !c->monitor_logs && c->serial_connection==NULL);
   assert(connects<2);
   int index=connects++;
   c->serial_connection=(void *)(uintptr_t)(index+2);
@@ -112,6 +113,7 @@ static int read_status(h2_e2e_transport_context_t *c, h2_h2loader_host_status_t 
 static void reset(void) {
   connects=disconnects=monitors=statuses=windows=cancel_flag=0;
   command_result=H2_PAL_OK;
+  grace_closed=0;
   command_terminal=H2_H2LOADER_HOST_COMMAND_TERMINAL_OK;
   initial_handshake_bytes=command_bytes=grace_bytes=0;
   queued_control=NULL;
@@ -201,6 +203,15 @@ int main(void) {
   RESET_CASE(); grace_bytes=3; window_bytes[0]=window_bytes[1]=0;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK);
   assert(result.status_valid && ctx.monitor_output_bytes==3);
+
+  /* ACK-grace can also consume the first reset; the next is not retryable. */
+  RESET_CASE(); grace_bytes=3; grace_closed=1; window_bytes[0]=0;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK);
+  assert(monitors==1 && connects==1 && result.status_valid);
+  RESET_CASE(); grace_bytes=3; grace_closed=1;
+  monitor_results[0]=H2_PAL_ERR_CLOSED;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_CLOSED && connects==1);
+  assert(!result.status_valid);
 
   /* Delayed REBOOT_FINAL frames are command diagnostics, even bytewise. */
   RESET_CASE(); window_bytes[0]=window_bytes[1]=0;
