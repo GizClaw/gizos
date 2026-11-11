@@ -58,7 +58,6 @@ cc_test(
     deps = [
         ":alipay",
         "//libs/testing:testing_pal",
-        "//pal/providers/backends/sqlite:sqlite_testing",
     ],
 )
 
