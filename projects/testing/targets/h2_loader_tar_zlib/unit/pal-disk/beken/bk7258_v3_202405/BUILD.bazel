@@ -56,6 +56,7 @@ cc_library(
         "//boards/beken/bk7258_v3_202405/bk7258/ap:tests/h2_bk7258_board_runtime_test_sdk.h",
         "//native_component_src/bk7258/ap/h2_pal_core:include/h2_bk_platform_core.h",
         "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_uart_io_stream.c",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_console_tx_internal.h",
         "//native_component_src/bk7258/ap/h2_pal_core:tests/h2_bk_uart_io_test_sdk.h",
         "//native_component_src/bk7258/ap/h2_pal_image:include/h2_bk_platform_image.h",
         "//native_component_src/bk7258/ap/h2_pal_storage:include/h2_bk_platform_storage.h",
