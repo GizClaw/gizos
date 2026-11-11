@@ -24,7 +24,10 @@ struct h2_gizclaw_track {
  * Service borrowers before detach. NULL selects a standalone Track counter. */
 h2_pal_result_t h2_gizclaw_pcm_track_attach_internal(
     h2_gizclaw_track_t* track, h2_atomic_size_t* downlink_activity);
-void h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t* track);
+/* Atomically reject live windows/leases and detach under the capture mutex.
+ * On failure the Service must keep this Track and its counter alive for retry.
+ */
+h2_pal_result_t h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t* track);
 /* Owned Tracks commit the Service activity counter atomically with PCM writes
  * under the capture mutex. Custom Tracks require Service-side accounting. */
 bool h2_gizclaw_pcm_track_owned_internal(h2_gizclaw_track_t* track);

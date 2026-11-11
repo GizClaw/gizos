@@ -14376,7 +14376,8 @@ typedef struct capture_control_fault {
   const h2_pal_sync_api_t* original;
   h2_pal_mutex_t* fail_mutex;
   h2_pal_mutex_t* input_mutex;
-  unsigned failures, input_destroys, completions;
+  h2_pal_mutex_t* track_mutex;
+  unsigned failures, input_destroys, completions, detach_unlocks;
   h2_pal_result_t lock_error;
   pthread_mutex_t gate;
   pthread_cond_t progress;
@@ -14386,6 +14387,7 @@ typedef struct capture_control_fault {
 static capture_control_fault_t* s_capture_control_fault;
 static _Thread_local unsigned capture_control_fail_after;
 static _Thread_local bool capture_control_task;
+static _Thread_local bool capture_detach_task;
 
 static h2_pal_result_t capture_control_create_mutex(
     void* user, const h2_pal_mutex_config_t* config, h2_pal_mutex_t** out) {
@@ -14394,6 +14396,9 @@ static h2_pal_result_t capture_control_create_mutex(
   if (rc == H2_PAL_OK && config->name != NULL &&
       strcmp(config->name, "$gizclaw/conversation-input") == 0)
     fault->input_mutex = *out;
+  if (rc == H2_PAL_OK && config->name != NULL &&
+      strcmp(config->name, "pcm_capture") == 0)
+    fault->track_mutex = *out;
   return rc;
 }
 
@@ -14420,6 +14425,144 @@ static h2_pal_result_t capture_control_lock(void* user, h2_pal_mutex_t* mutex) {
     assert(pthread_mutex_unlock(&fault->gate) == 0);
   }
   return fault->original->vtable->lock_mutex(user, mutex);
+}
+
+static h2_pal_result_t capture_detach_unlock(void* user,
+                                             h2_pal_mutex_t* mutex) {
+  capture_control_fault_t* fault = s_capture_control_fault;
+  const h2_pal_result_t rc = fault->original->vtable->unlock_mutex(user, mutex);
+  if (capture_detach_task && mutex == fault->track_mutex &&
+      ++fault->detach_unlocks == 2u) {
+    assert(pthread_mutex_lock(&fault->gate) == 0);
+    fault->control_entered = true;
+    assert(pthread_cond_broadcast(&fault->progress) == 0);
+    while (!fault->resume_control)
+      assert(pthread_cond_wait(&fault->progress, &fault->gate) == 0);
+    assert(pthread_mutex_unlock(&fault->gate) == 0);
+  }
+  return rc;
+}
+
+static void* capture_detach_entry(void* user) {
+  capture_control_fault_t* fault = user;
+  capture_detach_task = true;
+  fault->control_result = h2_gizclaw_service_unset_track(
+      fault->service, h2_atomic_load(&fault->service->pcm_track));
+  capture_detach_task = false;
+  return NULL;
+}
+
+static void test_capture_begin_during_detach(void) {
+  test_env_t first_env, second_env;
+  h2_gizclaw_service_t* first = create_service(&first_env, 4u);
+  h2_gizclaw_service_t* second = create_service(&second_env, 4u);
+  capture_control_fault_t fault = {.service = first,
+                                   .original = first->config.sync};
+  assert(pthread_mutex_init(&fault.gate, NULL) == 0);
+  assert(pthread_cond_init(&fault.progress, NULL) == 0);
+  h2_pal_sync_vtable_t vtable = *fault.original->vtable;
+  vtable.create_mutex = capture_control_create_mutex;
+  vtable.unlock_mutex = capture_detach_unlock;
+  const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                  .vtable = &vtable};
+  first->config.sync = &sync;
+  s_capture_control_fault = &fault;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = first->client_config.allocator, .sync = &sync};
+  h2_gizclaw_track_t* track = NULL;
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(first, track) == H2_PAL_OK);
+  const uint8_t pcm[6] = {1, 2, 3, 4, 5, 6};
+  assert(h2_gizclaw_service_pcm_write_internal(first, pcm, sizeof(pcm)) ==
+         H2_PAL_OK);
+  pthread_t task;
+  assert(pthread_create(&task, NULL, capture_detach_entry, &fault) == 0);
+  assert(pthread_mutex_lock(&fault.gate) == 0);
+  while (!fault.control_entered)
+    assert(pthread_cond_wait(&fault.progress, &fault.gate) == 0);
+  assert(pthread_mutex_unlock(&fault.gate) == 0);
+  /* The final detach critical section has released its lock. A new standalone
+   * capture must see no borrowed counter even before unset returns. */
+  h2_gizclaw_pcm_capture_id_t id;
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_pcm(track, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  assert(pthread_mutex_lock(&fault.gate) == 0);
+  fault.resume_control = true;
+  assert(pthread_cond_broadcast(&fault.progress) == 0);
+  assert(pthread_mutex_unlock(&fault.gate) == 0);
+  assert(pthread_join(task, NULL) == 0);
+  assert(fault.control_result == H2_PAL_OK && fault.detach_unlocks == 2u);
+  assert(h2_gizclaw_service_stop(first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(second, track) == H2_PAL_OK);
+  h2_gizclaw_pcm_input_t input = {0};
+  assert(h2_gizclaw_service_pcm_adopt_internal(second, &input, track, id) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
+  assert(input.ended && !input.empty && input.end_downlink_write_index == 0u);
+  h2_gizclaw_pcm_input_deinit(&input);
+  assert(h2_gizclaw_service_unset_track(second, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(second) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(second) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  s_capture_control_fault = NULL;
+  assert(pthread_cond_destroy(&fault.progress) == 0);
+  assert(pthread_mutex_destroy(&fault.gate) == 0);
+}
+
+static void test_frozen_capture_keeps_service_binding(void) {
+  test_env_t first_env, second_env;
+  h2_gizclaw_service_t* first = create_service(&first_env, 4u);
+  h2_gizclaw_service_t* second = create_service(&second_env, 4u);
+  capture_control_fault_t fault = {.service = first,
+                                   .original = first->config.sync};
+  h2_pal_sync_vtable_t vtable = *fault.original->vtable;
+  vtable.create_mutex = capture_control_create_mutex;
+  vtable.lock_mutex = capture_control_lock;
+  const h2_pal_sync_api_t sync = {.user = fault.original->user,
+                                  .vtable = &vtable};
+  first->config.sync = &sync;
+  s_capture_control_fault = &fault;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = first->client_config.allocator, .sync = &sync};
+  h2_gizclaw_track_t* track = NULL;
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(first, track) == H2_PAL_OK);
+  const uint8_t pcm[6] = {1, 2, 3, 4, 5, 6};
+  assert(h2_gizclaw_service_pcm_write_internal(first, pcm, sizeof(pcm)) ==
+         H2_PAL_OK);
+  h2_gizclaw_pcm_capture_id_t id;
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_pcm(track, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(first, track) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_service_set_track(second, track) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_service_stop(first) == H2_PAL_OK);
+  fault.fail_mutex = fault.track_mutex;
+  capture_control_fail_after = 1u;
+  assert(h2_gizclaw_service_deinit(first) == H2_PAL_ERR_IO);
+  assert(h2_atomic_load(&first->pcm_track) == track);
+  assert(h2_gizclaw_service_deinit(first) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_service_pcm_downlink_writes_internal(first) == sizeof(pcm));
+  assert(h2_gizclaw_pcm_capture_discard(track, id) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(first, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(first) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(second, track) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_capture_begin(track, &id) == H2_PAL_OK);
+  capture_pcm(track, id, pcm, 2u);
+  assert(h2_gizclaw_pcm_capture_end(track, id) == H2_PAL_OK);
+  h2_gizclaw_pcm_input_t input = {0};
+  assert(h2_gizclaw_service_pcm_adopt_internal(second, &input, track, id) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
+  assert(input.ended && !input.empty && input.end_downlink_write_index == 0u);
+  h2_gizclaw_pcm_input_deinit(&input);
+  assert(h2_gizclaw_service_unset_track(second, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(second) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(second) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  s_capture_control_fault = NULL;
 }
 
 static void test_pcm_activity_survives_track_replacement(void) {
@@ -17200,6 +17343,8 @@ int main(int argc, char** argv) {
     return 0;
   }
   if (argc == 2 && strcmp(argv[1], "--managed-capture-only") == 0) {
+    test_capture_begin_during_detach();
+    test_frozen_capture_keeps_service_binding();
     test_pcm_activity_survives_track_replacement();
     test_speech_adopt_preserves_service_lock_error();
     test_session_rejects_admitted_speech_input();
@@ -17261,6 +17406,8 @@ int main(int argc, char** argv) {
   test_workspace_selection_boundaries();
   test_req_remote_error_mapping();
   test_workspace_pending_error_mapping();
+  test_capture_begin_during_detach();
+  test_frozen_capture_keeps_service_binding();
   test_pcm_activity_survives_track_replacement();
   test_speech_adopt_preserves_service_lock_error();
   test_session_rejects_admitted_speech_input();

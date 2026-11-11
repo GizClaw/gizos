@@ -583,14 +583,19 @@ h2_pal_result_t h2_gizclaw_pcm_track_attach_internal(
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t* base) {
+h2_pal_result_t h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t* base) {
   pcm_track_t* track = owned_track(base);
-  if (track != NULL) {
-    /* Service quiesces its borrowers and managed captures before detaching. */
-    h2_atomic_store_explicit(&track->downlink_activity, NULL,
-                             H2_ATOMIC_RELEASE);
-    h2_atomic_store_explicit(&track->bound, false, H2_ATOMIC_RELEASE);
-  }
+  if (track == NULL) return H2_PAL_OK;
+  h2_pal_result_t rc = track_lock(track);
+  if (rc != H2_PAL_OK) return rc;
+  /* Freeze and detach share the lifetime lock. Validate under that same lock,
+   * since a standalone begin can race the Service's earlier admission check.
+   * A frozen, unadopted window stays with this binding until adopted/discarded.
+   */
+  if (capture_busy(track)) return track_unlock(track, H2_PAL_ERR_BUSY);
+  h2_atomic_store_explicit(&track->downlink_activity, NULL, H2_ATOMIC_RELEASE);
+  h2_atomic_store_explicit(&track->bound, false, H2_ATOMIC_RELEASE);
+  return track_unlock(track, H2_PAL_OK);
 }
 
 size_t h2_gizclaw_pcm_track_pending_internal(h2_gizclaw_track_t* base) {

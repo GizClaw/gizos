@@ -1144,12 +1144,8 @@ h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t* service,
   while (service->pcm_track_refs != 0u && rc == H2_PAL_OK)
     rc = h2_pal_cond_wait(service->config.sync, service->progress_cond,
                           service->mutex, H2_PAL_SYNC_WAIT_FOREVER);
-  if (rc == H2_PAL_OK && h2_gizclaw_pcm_capture_busy_internal(track))
-    rc = H2_PAL_ERR_BUSY;
-  if (rc == H2_PAL_OK) {
-    h2_atomic_store(&service->pcm_track, NULL);
-    h2_gizclaw_pcm_track_detach_internal(track);
-  }
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_pcm_track_detach_internal(track);
+  if (rc == H2_PAL_OK) h2_atomic_store(&service->pcm_track, NULL);
   service->pcm_track_unsetting = false;
   unlock_service(service);
   return rc;
@@ -1542,13 +1538,13 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t* service) {
                              H2_PAL_LOG_WARN, "gizclaw", message);
     return H2_PAL_ERR_INVALID_STATE;
   }
-  if (h2_gizclaw_pcm_capture_busy_internal(
-          h2_atomic_load(&service->pcm_track))) {
+  h2_gizclaw_track_t* track = h2_atomic_load(&service->pcm_track);
+  rc = h2_gizclaw_pcm_track_detach_internal(track);
+  if (rc != H2_PAL_OK) {
     unlock_service(service);
-    return H2_PAL_ERR_BUSY;
+    return rc;
   }
-  h2_gizclaw_track_t* track = h2_atomic_exchange(&service->pcm_track, NULL);
-  h2_gizclaw_pcm_track_detach_internal(track);
+  h2_atomic_store(&service->pcm_track, NULL);
   unlock_service(service);
   h2_gizclaw_conversation_downlink_destroy_internal(service);
   if (!h2_gizclaw_local_quiescent_internal(service->local))

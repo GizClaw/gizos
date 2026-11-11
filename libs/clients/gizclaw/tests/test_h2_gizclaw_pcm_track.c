@@ -87,7 +87,7 @@ static void boundaries(const h2_pal_mem_api_t* allocator) {
   assert(h2_gizclaw_pcm_track_attach_internal(track, NULL) == H2_PAL_ERR_BUSY);
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_ERR_BUSY);
   assert(track != NULL);
-  h2_gizclaw_pcm_track_detach_internal(track);
+  assert(h2_gizclaw_pcm_track_detach_internal(track) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK && track == NULL);
   assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_track_destroy(NULL) == H2_PAL_ERR_INVALID_ARG);
