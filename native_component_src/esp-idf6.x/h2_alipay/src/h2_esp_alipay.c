@@ -49,8 +49,12 @@ void h2_esp_alipay_trace(const char* operation, const char* boundary,
   }
   (void)snprintf(event.operation, sizeof(event.operation), "%s", operation);
   (void)snprintf(event.boundary, sizeof(event.boundary), "%s", boundary);
-  if (detail != NULL)
-    (void)snprintf(event.detail, sizeof(event.detail), "%s", detail);
+  if (detail != NULL) {
+    int required = snprintf(event.detail, sizeof(event.detail), "%s", detail);
+    if (required >= (int)sizeof(event.detail))
+      s_trace->truncated_bytes +=
+          (size_t)required - (sizeof(event.detail) - 1u);
+  }
   h2_alipay_trace_push(s_trace, &event, bytes, length);
 }
 
@@ -438,6 +442,7 @@ void alipay_log_ext(const char* format, ...) {
                           h2_esp_alipay_now(), operation, NULL, 0);
   }
   size_t observed = (size_t)n < sizeof(text) ? (size_t)n : sizeof(text) - 1;
+  if ((size_t)n > observed) s_trace->truncated_bytes += (size_t)n - observed;
   h2_esp_alipay_trace(
       "vendor.log", "sdk_log", 0, (uint32_t)n, 0, h2_esp_alipay_now(),
       (size_t)n > observed ? "formatted_prefix" : "formatted_message", text,

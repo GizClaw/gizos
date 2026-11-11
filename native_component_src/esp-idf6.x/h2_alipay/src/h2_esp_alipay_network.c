@@ -97,15 +97,14 @@ int alipay_iot_dns(const char* name, unsigned char ip[4]) {
   struct addrinfo* result = NULL;
   uint64_t started = h2_esp_alipay_now();
   int rc = getaddrinfo(name, NULL, &hints, &result);
-  h2_esp_alipay_trace("dns", "resolver", rc, 0, s_connection, started, name,
-                      NULL, 0);
+  h2_esp_alipay_trace("dns", "resolver", rc, 0, 0, started, name, NULL, 0);
   if (rc != 0 || result == NULL) return -1;
   memcpy(ip, &((struct sockaddr_in*)result->ai_addr)->sin_addr.s_addr, 4u);
   char address[24];
   (void)snprintf(address, sizeof(address), "%u.%u.%u.%u", ip[0], ip[1], ip[2],
                  ip[3]);
-  h2_esp_alipay_trace("dns.address", "resolver", 0, 0, s_connection, started,
-                      address, NULL, 0);
+  h2_esp_alipay_trace("dns.address", "resolver", 0, 0, 0, started, address,
+                      NULL, 0);
   freeaddrinfo(result);
   return 0;
 }
