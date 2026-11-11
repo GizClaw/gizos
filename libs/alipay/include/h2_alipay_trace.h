@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define H2_ALIPAY_TRACE_EVENTS 64u
+#define H2_ALIPAY_TRACE_EVENTS 128u
 #define H2_ALIPAY_TRACE_BYTES 128u
 /** Fixed bounded runtime evidence. No dynamic allocation or IO on push.
  * One serialized producer; drain/reset only after that worker has joined.

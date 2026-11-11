@@ -78,13 +78,18 @@ int alipay_iot_select(int maxfd, alipay_iot_fd_set* readset,
     tv.tv_sec = timeout->tv_sec;
     tv.tv_usec = timeout->tv_usec;
   }
+  uint64_t started = h2_esp_alipay_now();
   int rc = select(s_socket + 1, &rd, &wr, &ex, timeout != NULL ? &tv : NULL);
+  int error = rc < 0 ? errno : 0;
+  const int mapped = io_result(rc);
+  h2_esp_alipay_trace("socket.select", "wire_below_vendor_tls", rc, error,
+                      s_connection, started, "readiness", NULL, 0);
   if (readset != NULL) readset->fds_bits[0] = rc > 0 && FD_ISSET(s_socket, &rd);
   if (writeset != NULL)
     writeset->fds_bits[0] = rc > 0 && FD_ISSET(s_socket, &wr);
   if (exceptset != NULL)
     exceptset->fds_bits[0] = rc > 0 && FD_ISSET(s_socket, &ex);
-  return io_result(rc);
+  return mapped;
 }
 int alipay_iot_dns(const char* name, unsigned char ip[4]) {
   if (name == NULL || ip == NULL) return -1;
@@ -190,10 +195,11 @@ int alipay_iot_socket_write(int s, const void* data, int length) {
   uint64_t started = h2_esp_alipay_now();
   int rc = send(fd, data, (size_t)length, 0);
   int error = rc < 0 ? errno : 0;
+  const int mapped = io_result(rc);
   h2_esp_alipay_trace("socket.send", "wire_below_vendor_tls", rc, error,
                       s_connection, started, "stream_fragment", data,
                       rc > 0 ? (size_t)rc : 0);
-  return io_result(rc);
+  return mapped;
 }
 int alipay_iot_socket_recvfrom(int s, void* data, int length, int flags,
                                struct alipay_iot_sockaddr* from,
@@ -219,10 +225,11 @@ int alipay_iot_socket_read(int s, void* data, int length) {
   uint64_t started = h2_esp_alipay_now();
   int rc = recv(fd, data, (size_t)length, 0);
   int error = rc < 0 ? errno : 0;
+  const int mapped = io_result(rc);
   h2_esp_alipay_trace("socket.receive", "wire_below_vendor_tls", rc, error,
                       s_connection, started, "stream_fragment", data,
                       rc > 0 ? (size_t)rc : 0);
-  return io_result(rc);
+  return mapped;
 }
 int alipay_iot_socket_setsockopt(int s, int level, int option,
                                  const void* value, unsigned int length) {
