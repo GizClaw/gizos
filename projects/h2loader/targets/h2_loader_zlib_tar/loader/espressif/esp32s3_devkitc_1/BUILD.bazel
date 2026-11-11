@@ -1,0 +1,14 @@
+load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "package_usb",
+    source = "//projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package_usb",
+    tags = ["firmware-release"],
+)
+
+h2loader_zlib_tar(
+    name = "package_uart",
+    source = "//projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package_uart",
+)

@@ -627,12 +627,10 @@ static h2_pal_result_t begin_monitor_window(
 }
 
 static h2_pal_result_t finish_bounded_monitor(
-    h2_e2e_transport_context_t* context, int require_output) {
+    h2_e2e_transport_context_t* context) {
   h2_pal_result_t rc = h2_h2loader_host_serial_monitor_logs(
       context->serial_connection, monitor_cancelled, context);
   if (rc == H2_PAL_EXIT && !cancelled(context->config)) rc = H2_PAL_OK;
-  if (rc == H2_PAL_OK && require_output && context->monitor_output_bytes == 0u)
-    rc = H2_PAL_ERR_NOT_FOUND;
   return rc;
 }
 
@@ -645,7 +643,7 @@ static h2_pal_result_t run_monitor(h2_e2e_transport_context_t* context) {
     context->case_result->status_valid = 1u;
   }
   if (rc == H2_PAL_OK) rc = begin_monitor_window(context);
-  if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context, 0);
+  if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context);
   h2_pal_result_t close_rc = disconnect_transport(context);
   context->monitor_logs = 0u;
   return rc == H2_PAL_OK ? close_rc : rc;
@@ -949,7 +947,9 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
                                           uint32_t expected_partition) {
   h2_h2loader_host_status_t status;
   h2_h2loader_host_command_result_t result = {0};
-  context->monitor_logs = 1u;
+  unsigned reset_transition_seen = 0u;
+  context->monitor_logs = 0u;
+  context->monitor_output_bytes = 0u;
   h2_pal_result_t rc = connect_transport(context, &status);
   if (rc == H2_PAL_OK) {
     const h2_h2loader_host_command_request_t request = {
@@ -967,40 +967,52 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
       rc = H2_PAL_ERR_IO;
     }
   }
-  (void)disconnect_transport(context);
-  /* A reboot ACK may precede the actual reset (for example, the vendor's
-   * deferred-reset timer). The first reconnect can still reach the old
-   * instance. An external USB-UART adapter stays open across a CPU reset:
-   * logs continue, but the old KCP conversation no longer exists on the MCU.
-   * Allow one CLOSED/TIMEOUT transition (including the post-monitor status),
-   * then require a new session, full monitor window and live status. A second
-   * failure is terminal, so repeated resets are not hidden by retries. */
-  for (unsigned transition = 0u; rc == H2_PAL_OK && transition < 2u;
-       ++transition) {
+  /* Keep the ACK's connection open while boot logs arrive. Reconnecting first
+   * consumes them during the handshake, after which a healthy image may be
+   * quiet. Only bytes delivered by actual monitor calls count as evidence. */
+  if (rc == H2_PAL_OK) {
+    context->monitor_logs = 1u;
+    rc = begin_monitor_window(context);
+    if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context);
+    context->monitor_logs = 0u;
+    if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
+        !cancelled(context->config)) {
+      reset_transition_seen = 1u;
+      rc = H2_PAL_OK;
+    }
+  }
+  h2_pal_result_t close_rc = disconnect_transport(context);
+  if (rc == H2_PAL_OK) rc = close_rc;
+  /* The UART bridge can survive a CPU reset while its KCP session does not.
+   * Always open a fresh session, observe a full stability window and read live
+   * status. One reset transition is allowed across both phases, including a
+   * deferred reset after the ACK. A second transition is terminal. */
+  for (unsigned attempt = 0u; rc == H2_PAL_OK && attempt < 2u; ++attempt) {
     rc = reconnect_after_reboot(context, expected_partition, &status);
     if (rc == H2_PAL_OK) {
-      /* Handshake logs do not satisfy the monitor window's output requirement.
-       */
-      context->monitor_output_bytes = 0u;
+      context->monitor_logs = 1u;
       rc = begin_monitor_window(context);
+      if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context);
+      context->monitor_logs = 0u;
     }
-    if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context, 1);
     if (rc == H2_PAL_OK) rc = read_status(context, &status);
     if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
-        transition == 0u && !cancelled(context->config)) {
-      (void)disconnect_transport(context);
-      rc = H2_PAL_OK;
+        !reset_transition_seen && !cancelled(context->config)) {
+      reset_transition_seen = 1u;
+      rc = disconnect_transport(context);
       continue;
     }
     if (rc == H2_PAL_OK && status.running_partition != expected_partition)
       rc = H2_PAL_ERR_INVALID_STATE;
+    if (rc == H2_PAL_OK && context->monitor_output_bytes == 0u)
+      rc = H2_PAL_ERR_NOT_FOUND;
     if (rc == H2_PAL_OK) {
       context->case_result->status = status;
       context->case_result->status_valid = 1u;
     }
     break;
   }
-  h2_pal_result_t close_rc = disconnect_transport(context);
+  close_rc = disconnect_transport(context);
   context->monitor_logs = 0u;
   return rc == H2_PAL_OK ? close_rc : rc;
 }

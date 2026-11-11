@@ -17,7 +17,9 @@ class ReleaseBundleTest(unittest.TestCase):
         files = []
         for board, platform, target, version in entries:
             entry = LOADER_ENTRIES[board]
-            package_target = "package_v2" if package_format == 2 else "package"
+            if package_format == 2:
+                entry = entry.replace("/h2_loader_tar_zlib/", "/h2_loader_zlib_tar/")
+            package_target = "package_usb" if board == "devkit" else "package"
             identity = dict(entry=entry, label="//" + entry + ":" + package_target, platform=platform,
                 board=board, image="loader", role="h2loader", target=target,
                 version=version, release_name="loader-" + board)

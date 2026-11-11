@@ -3,16 +3,22 @@ load("//tools/bazel/firmware:app_version.bzl", "app_version")
 load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 
 package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["devkit/h2loader-e2e"],
+)
 
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":e2e_app_launcher"],
     policies = [
+        "devkit/h2loader-e2e 4 any 65536 psram",
         "h2loader/appcmd    8        0  4096  psram",
         "h2loader/blecmd    8        0  4096  psram",
         "$h2loader/return   8        0  4096  psram",
@@ -58,6 +64,7 @@ firmware_native_component(
     ],
     tags = ["manual"],
     deps = [
+        ":entry_tasks",
         ":firmware_lib",
         "//boards/espressif/esp32s3_devkitc_1/esp32s3",
         "//libs/h2loader/device",
@@ -68,7 +75,7 @@ firmware_native_component(
 )
 
 h2loader_esp_idf_firmware(
-    name = "firmware",
+    name = "firmware_usb",
     srcs = [
         "CMakeLists.txt",
         "main/CMakeLists.txt",
@@ -85,9 +92,35 @@ h2loader_esp_idf_firmware(
 )
 
 h2loader_tar_zlib(
-    name = "package",
+    name = "package_usb",
     board = "devkit",
-    firmware = ":firmware",
+    firmware = ":firmware_usb",
+    image = "e2e-app",
+    role = "app",
+    target = "esp32s3",
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware_uart",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "devkit",
+    console = "uart",
+    graph = [":e2e_app_launcher"],
+    project = "CMakeLists.txt",
+    project_name = "h2loader_e2e_app",
+    target = "esp32s3",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package_uart",
+    board = "devkit",
+    firmware = ":firmware_uart",
     image = "e2e-app",
     role = "app",
     target = "esp32s3",
@@ -100,7 +133,7 @@ app_version(
 )
 
 h2loader_esp_idf_firmware(
-    name = "firmware_alt",
+    name = "firmware_usb_alt",
     srcs = [
         "CMakeLists.txt",
         "main/CMakeLists.txt",
@@ -118,9 +151,9 @@ h2loader_esp_idf_firmware(
 )
 
 h2loader_tar_zlib(
-    name = "package_alt",
+    name = "package_usb_alt",
     board = "devkit",
-    firmware = ":firmware_alt",
+    firmware = ":firmware_usb_alt",
     image = "e2e-app-alt",
     role = "app",
     target = "esp32s3",
@@ -128,16 +161,6 @@ h2loader_tar_zlib(
 
 h2loader_checksum_matrix(
     name = "checksum-matrix",
-    alternate = ":package_alt",
-    base = ":package",
-)
-
-h2loader_zlib_tar(
-    name = "package_v2",
-    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:package",
-)
-
-h2loader_zlib_tar(
-    name = "package_alt_v2",
-    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:package_alt",
+    alternate = ":package_usb_alt",
+    base = ":package_usb",
 )

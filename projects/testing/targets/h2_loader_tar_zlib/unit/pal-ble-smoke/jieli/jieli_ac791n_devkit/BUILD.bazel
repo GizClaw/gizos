@@ -2,7 +2,6 @@ load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 load("//tools/bazel/native/jieli:jieli_task_policy.bzl", "jieli_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
@@ -102,9 +101,4 @@ h2loader_tar_zlib(
     role = "app",
     tags = ["no-release"],
     target = "wl82",
-)
-
-h2loader_zlib_tar(
-    name = "package_v2",
-    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/pal-ble-smoke/jieli/jieli_ac791n_devkit:package",
 )

@@ -55,18 +55,18 @@ All three check storage, display/brightness, eight keys, speaker, microphone, Wi
 Activate the pinned SDK with the [GizOS SDK manager](../../../../tools/gizos/README.md), then build the selected physical entry:
 
 ```bash
-bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_zero_esp_v3_0:package_v2
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_zlib_tar/mfg/haivivi/h106_zero_esp_v3_0:package
 ```
 
 ```bash
-bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_tiga_esp_v4_2:package_v2
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_zlib_tar/mfg/haivivi/h106_tiga_esp_v4_2:package
 ```
 
 ```bash
-bazel build --config=bk7258 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_zero_bk_2_0:package_v2
+bazel build --config=bk7258 //projects/h2loader/targets/h2_loader_zlib_tar/mfg/haivivi/h106_zero_bk_2_0:package
 ```
 
-Each entry also exposes `:firmware` and format-1 `:package`; both package formats reuse the same native image with `image=mfg` and `role=h2loader`. Entries select the existing managed Loader partitions and board-owned storage. Zero BK uses its QSPI LittleFS and full MFG peripheral configuration, not another board's SD backend or a media-disabled Loader configuration.
+The matching `h2_loader_tar_zlib` entry owns `:firmware` and the format-1 `:package`; both package formats reuse the same native image with `image=mfg` and `role=h2loader`. Entries select the existing managed Loader partitions and board-owned storage. Zero BK uses its QSPI LittleFS and full MFG peripheral configuration, not another board's SD backend or a media-disabled Loader configuration.
 
 Connect Wi-Fi through the existing Loader commands and wait for a usable IP address. No network or product provisioning credentials are embedded by these entries. Modem acceptance requires the appropriate SIM/network fixture. NFC uses the Runtime-owned reader and requires a valid fresh discovery for the current attempt. Remove a tag retained from an earlier attempt before presenting it again; stale events, malformed results and reader errors cannot complete the check. The NFC check never starts a second polling loop.
 

@@ -4,7 +4,6 @@ load("//tools/bazel/firmware:target_task_policy.bzl", "bk7258_target_task_policy
 load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
 load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -120,9 +119,4 @@ h2loader_tar_zlib(
     image = "pal-http",
     role = "app",
     target = "bk7258",
-)
-
-h2loader_zlib_tar(
-    name = "package_v2",
-    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/pal-http/beken/bk7258_v3_202405:package",
 )

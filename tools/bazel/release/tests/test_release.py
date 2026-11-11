@@ -26,7 +26,9 @@ ARCHIVE = f"firmware-release-v{BATCH}.zip"
 
 def catalog_entry(board="devkit", platform="esp", target="esp32s3", version="0.1.0", package_format=2):
     entry = release_bundle.LOADER_ENTRIES[board]
-    package_target = "package_v2" if package_format == 2 else "package"
+    if package_format == 2:
+        entry = entry.replace("/h2_loader_tar_zlib/", "/h2_loader_zlib_tar/")
+    package_target = "package_usb" if board == "devkit" else "package"
     return dict(entry=entry, label="//" + entry + ":" + package_target, board=board,
                 image="loader", role="h2loader", platform=platform, target=target,
                 version=version, release_name="loader-" + board, package_format=package_format)
@@ -102,10 +104,12 @@ class ReleaseTest(unittest.TestCase):
         )
         self.assertEqual(set(release_bundle.LOADER_ENTRIES), {board[0] for board in boards})
         for board, physical_board, platform, target in boards:
-            for package_format, package_target in ((1, "package"), (2, "package_v2")):
+            package_target = "package_usb" if board == "devkit" else "package"
+            for package_format in (1, 2):
                 with self.subTest(board=board, package_format=package_format):
                     item = catalog_entry(board, platform, target, package_format=package_format)
-                    entry = "projects/h2loader/targets/h2_loader_tar_zlib/loader/" + physical_board
+                    artifact_kind = "h2_loader_zlib_tar" if package_format == 2 else "h2_loader_tar_zlib"
+                    entry = "projects/h2loader/targets/" + artifact_kind + "/loader/" + physical_board
                     self.assertEqual(item["entry"], entry)
                     self.assertEqual(item["label"], "//" + entry + ":" + package_target)
                     self.assertEqual(item["release_name"], "loader-" + board)
@@ -127,25 +131,29 @@ class ReleaseTest(unittest.TestCase):
             (canonical + "_variant", None),
             ("projects/h2loader/targets/h2loader_tar_zlib/loader/devkit", ":package"),
             ("projects/h2loader/targets/h2loader_zlib_tar/loader/devkit", ":package"),
+            (canonical, ":package_v2"),
             (canonical, ":package_usb_v2"),
-            (canonical, ":package_uart_460800_v2"),
+            (canonical, ":package_uart"),
+            (canonical, ":package_uart_v2"),
         ):
             with self.subTest(entry=entry, label=label), tempfile.TemporaryDirectory() as directory:
-                item = {**catalog_entry(), "entry": entry, "label": "//" + entry + (label or ":package_v2")}
+                item = {**catalog_entry(), "entry": entry, "label": "//" + entry + (label or ":package_usb")}
                 path = Path(directory) / "firmware-catalog.json"
                 path.write_text(json.dumps([item]))
                 with self.assertRaisesRegex(release.ReleaseError, "diagnostic"):
                     release.load_catalog([path])
 
-    def test_catalog_rejects_package_target_and_format_mismatch(self):
-        for package_format, package_target in ((1, "package_v2"), (2, "package")):
-            with self.subTest(package_format=package_format), tempfile.TemporaryDirectory() as directory:
-                item = catalog_entry(package_format=package_format)
-                item["label"] = "//" + item["entry"] + ":" + package_target
-                path = Path(directory) / "firmware-catalog.json"
-                path.write_text(json.dumps([item]))
-                with self.assertRaisesRegex(release.ReleaseError, "diagnostic"):
-                    release.load_catalog([path])
+    def test_catalog_rejects_package_directory_and_format_mismatch(self):
+        for board, package_target in (("devkit", "package_usb"), ("amoled", "package")):
+            for package_format in (1, 2):
+                with self.subTest(board=board, package_format=package_format), tempfile.TemporaryDirectory() as directory:
+                    item = catalog_entry(board=board, package_format=package_format)
+                    wrong_entry = catalog_entry(board=board, package_format=3 - package_format)["entry"]
+                    item.update(entry=wrong_entry, label="//" + wrong_entry + ":" + package_target)
+                    path = Path(directory) / "firmware-catalog.json"
+                    path.write_text(json.dumps([item]))
+                    with self.assertRaisesRegex(release.ReleaseError, "diagnostic"):
+                        release.load_catalog([path])
 
     def test_catalog_rejects_duplicate_package_formats(self):
         with self.assertRaisesRegex(ValueError, "duplicate"):

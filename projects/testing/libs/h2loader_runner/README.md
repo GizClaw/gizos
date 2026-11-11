@@ -28,6 +28,8 @@ bazel run //projects/testing/targets/cc_binary/e2e-runner -- \
   --report /tmp/h2loader-e2e.json
 ```
 
+DevKit Loader and E2E App entries expose `:package_usb` for native USB Serial/JTAG and `:package_uart` for the USB-to-UART bridge. Their format-1 entry packages are `//projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1` and `//projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1`; format 2 uses the matching `targets/h2_loader_zlib_tar` directories with the same target names. UART is fixed at 460800 baud, which is also the runner's default. Keep the Loader and App on the same console throughout lifecycle tests.
+
 The runner always executes `help`, `status`, and `stats`; it executes `memory`
 only when the authoritative `status.command_availability` advertises that
 conditional command. Supplying Wi-Fi credentials enables
@@ -82,10 +84,7 @@ bytes contribute to output/log byte counters only during monitor cases.
 
 The native CLI owns BLE KCP global initialization and shutdown when BLE is selected. Callers embedding the runner must initialize BLE KCP before a real BLE run and shut it down after all runner connections have closed. The synchronous CLI borrows the required PAL interfaces directly; it does not create an application Runtime event queue that it never drains.
 
-`reboot ... --monitor` allows one CLOSED/TIMEOUT reset transition after the ACK.
-Each attempt reconnects to the expected partition, observes a full monitor window
-with output, and reads live status to confirm the partition. A second transition,
-any other error, a wrong partition, or cancellation ends the case.
+`reboot ... --monitor` starts monitoring on the ACK's existing connection so boot logs are collected before a reconnect can consume them. It then opens a fresh session to the expected partition, observes a full stability window, and reads live status to confirm the partition. At least one actual post-ACK monitor call must receive log bytes; initial connection, command, reconnect, and status-read diagnostics do not satisfy that requirement. A healthy image may be quiet after startup. One CLOSED/TIMEOUT reset transition is allowed across the initial capture and stability windows, including a deferred reset after the ACK. A second transition, any other error, a wrong partition, or cancellation ends the case.
 
 
 ## BK7258 baseline
