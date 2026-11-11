@@ -1,5 +1,5 @@
-#ifndef H2_ESP_ALIPAY_SOCKET_ABI_H
-#define H2_ESP_ALIPAY_SOCKET_ABI_H
+#ifndef H2_ALIPAY_SDK_SOCKET_ABI_H
+#define H2_ALIPAY_SDK_SOCKET_ABI_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -14,7 +14,7 @@ _Static_assert(sizeof(alipay_iot_fd_set) == ALIPAY_IOT_MAX_IP_SOCKET_NUM,
                "unexpected vendor fd_set ABI");
 _Static_assert(offsetof(alipay_iot_fd_set, fds_bits) == 0,
                "unexpected vendor fd_set layout");
-static inline uint8_t* h2_esp_alipay_fd_bits(alipay_iot_fd_set* set) {
+static inline uint8_t* h2_alipay_sdk_fd_bits(alipay_iot_fd_set* set) {
   return set->fds_bits;
 }
 #pragma pop_macro("fds_bits")

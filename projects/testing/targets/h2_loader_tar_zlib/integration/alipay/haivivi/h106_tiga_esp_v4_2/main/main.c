@@ -106,12 +106,25 @@ static h2_pal_result_t prepare(h2_runtime_t* rt, void* user) {
     if (rc != H2_PAL_OK) return rc;
   }
   puts("H2_ALIPAY_E2E_NETWORK ip=ready");
-  const esp_sntp_config_t time_config =
-      ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-  if (esp_netif_sntp_init(&time_config) != ESP_OK) return H2_PAL_ERR_IO;
-  esp_err_t time_rc = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(60000));
-  esp_netif_sntp_deinit();
-  printf("H2_ALIPAY_E2E_TIME server=pool.ntp.org sync_rc=%d\n", (int)time_rc);
+  static const char* const time_servers[] = {
+      "pool.ntp.org",
+      "ntp.aliyun.com",
+      "time.cloudflare.com",
+  };
+  esp_err_t time_rc = ESP_ERR_TIMEOUT;
+  for (size_t i = 0; i < sizeof(time_servers) / sizeof(time_servers[0]); ++i) {
+    const esp_sntp_config_t time_config =
+        ESP_NETIF_SNTP_DEFAULT_CONFIG(time_servers[i]);
+    time_rc = esp_netif_sntp_init(&time_config);
+    if (time_rc == ESP_OK) {
+      time_rc = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(20000));
+      esp_netif_sntp_deinit();
+    }
+    printf("H2_ALIPAY_E2E_TIME server=%s attempt=%zu sync_rc=%d\n",
+           time_servers[i], i + 1u, (int)time_rc);
+    if (time_rc != ESP_OK && time_rc != ESP_ERR_TIMEOUT) return H2_PAL_ERR_IO;
+    if (time_rc == ESP_OK) break;
+  }
   if (time_rc != ESP_OK) return H2_PAL_ERR_TIMEOUT;
   struct timeval wall;
   if (gettimeofday(&wall, NULL) != 0 || wall.tv_sec <= 0) return H2_PAL_ERR_IO;

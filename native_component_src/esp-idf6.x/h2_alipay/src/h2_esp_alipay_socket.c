@@ -1,15 +1,13 @@
-#include "h2_esp_alipay_internal.h"
+#include "h2_alipay_sdk_internal.h"
 #ifdef ESP_PLATFORM
 #include "lwip/sockets.h"
-#include "lwip/netdb.h"
 #else
 #include <arpa/inet.h>
-#include <netdb.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
-#include "h2_esp_alipay_socket_abi.h"
+#include "h2_alipay_sdk_socket_abi.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -28,15 +26,6 @@ static int io_result(int value) {
                            ? -2
                            : -1);
 }
-void alipay_iot_fd_zero(alipay_iot_fd_set* set) {
-  if (set != NULL) memset(set, 0, sizeof(*set));
-}
-void alipay_iot_fd_setbit(int fd, alipay_iot_fd_set* set) {
-  if (set != NULL && fd == 0) h2_esp_alipay_fd_bits(set)[0] |= 1u;
-}
-int alipay_iot_fd_isset(int fd, alipay_iot_fd_set* set) {
-  return set != NULL && fd == 0 && (h2_esp_alipay_fd_bits(set)[0] & 2u) != 0u;
-}
 int alipay_iot_select(int maxfd, alipay_iot_fd_set* readset,
                       alipay_iot_fd_set* writeset, alipay_iot_fd_set* exceptset,
                       alipay_iot_timeval* timeout) {
@@ -45,11 +34,11 @@ int alipay_iot_select(int maxfd, alipay_iot_fd_set* readset,
   FD_ZERO(&rd);
   FD_ZERO(&wr);
   FD_ZERO(&ex);
-  if (readset != NULL && (h2_esp_alipay_fd_bits(readset)[0] & 1u))
+  if (readset != NULL && (h2_alipay_sdk_fd_bits(readset)[0] & 1u))
     FD_SET(s_socket, &rd);
-  if (writeset != NULL && (h2_esp_alipay_fd_bits(writeset)[0] & 1u))
+  if (writeset != NULL && (h2_alipay_sdk_fd_bits(writeset)[0] & 1u))
     FD_SET(s_socket, &wr);
-  if (exceptset != NULL && (h2_esp_alipay_fd_bits(exceptset)[0] & 1u))
+  if (exceptset != NULL && (h2_alipay_sdk_fd_bits(exceptset)[0] & 1u))
     FD_SET(s_socket, &ex);
   struct timeval tv;
   if (timeout != NULL) {
@@ -59,42 +48,25 @@ int alipay_iot_select(int maxfd, alipay_iot_fd_set* readset,
     tv.tv_sec = timeout->tv_sec;
     tv.tv_usec = timeout->tv_usec;
   }
-  uint64_t started = h2_esp_alipay_now();
+  uint64_t started = h2_alipay_sdk_now();
   int rc = select(s_socket + 1, &rd, &wr, &ex, timeout != NULL ? &tv : NULL);
   int error = rc < 0 ? errno : 0;
   const int mapped = io_result(rc);
-  h2_esp_alipay_trace("socket.select", "wire_below_vendor_tls", rc, error,
+  h2_alipay_sdk_trace("socket.select", "wire_below_vendor_tls", rc, error,
                       s_connection, started, "readiness", NULL, 0);
   if (readset != NULL)
-    h2_esp_alipay_fd_bits(readset)[0] =
-        (h2_esp_alipay_fd_bits(readset)[0] & 1u) |
+    h2_alipay_sdk_fd_bits(readset)[0] =
+        (h2_alipay_sdk_fd_bits(readset)[0] & 1u) |
         (rc > 0 && FD_ISSET(s_socket, &rd) ? 2u : 0u);
   if (writeset != NULL)
-    h2_esp_alipay_fd_bits(writeset)[0] =
-        (h2_esp_alipay_fd_bits(writeset)[0] & 1u) |
+    h2_alipay_sdk_fd_bits(writeset)[0] =
+        (h2_alipay_sdk_fd_bits(writeset)[0] & 1u) |
         (rc > 0 && FD_ISSET(s_socket, &wr) ? 2u : 0u);
   if (exceptset != NULL)
-    h2_esp_alipay_fd_bits(exceptset)[0] =
-        (h2_esp_alipay_fd_bits(exceptset)[0] & 1u) |
+    h2_alipay_sdk_fd_bits(exceptset)[0] =
+        (h2_alipay_sdk_fd_bits(exceptset)[0] & 1u) |
         (rc > 0 && FD_ISSET(s_socket, &ex) ? 2u : 0u);
   return mapped;
-}
-int alipay_iot_dns(const char* name, unsigned char ip[4]) {
-  if (name == NULL || ip == NULL) return -1;
-  struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_STREAM};
-  struct addrinfo* result = NULL;
-  uint64_t started = h2_esp_alipay_now();
-  int rc = getaddrinfo(name, NULL, &hints, &result);
-  h2_esp_alipay_trace("dns", "resolver", rc, 0, 0, started, name, NULL, 0);
-  if (rc != 0 || result == NULL) return -1;
-  memcpy(ip, &((struct sockaddr_in*)result->ai_addr)->sin_addr.s_addr, 4u);
-  char address[24];
-  (void)snprintf(address, sizeof(address), "%u.%u.%u.%u", ip[0], ip[1], ip[2],
-                 ip[3]);
-  h2_esp_alipay_trace("dns.address", "resolver", 0, 0, 0, started, address,
-                      NULL, 0);
-  freeaddrinfo(result);
-  return 0;
 }
 int alipay_iot_socket_create(int domain, alipay_socket_type_enum type,
                              int protocol) {
@@ -113,8 +85,8 @@ int alipay_iot_socket_create(int domain, alipay_socket_type_enum type,
   }
   s_socket = fd;
   ++s_connection;
-  h2_esp_alipay_trace("socket.create", "wire_below_vendor_tls", 0, type,
-                      s_connection, h2_esp_alipay_now(), NULL, NULL, 0);
+  h2_alipay_sdk_trace("socket.create", "wire_below_vendor_tls", 0, type,
+                      s_connection, h2_alipay_sdk_now(), NULL, NULL, 0);
   return 0;
 }
 int alipay_iot_socket_close(int s) {
@@ -122,8 +94,8 @@ int alipay_iot_socket_close(int s) {
   if (fd < 0) return -1;
   s_socket = -1;
   int rc = close(fd) == 0 ? 0 : -1;
-  h2_esp_alipay_trace("socket.close", "wire_below_vendor_tls", rc, 0,
-                      s_connection, h2_esp_alipay_now(), NULL, NULL, 0);
+  h2_alipay_sdk_trace("socket.close", "wire_below_vendor_tls", rc, 0,
+                      s_connection, h2_alipay_sdk_now(), NULL, NULL, 0);
   return rc;
 }
 static int address(const struct alipay_iot_sockaddr* in,
@@ -158,14 +130,14 @@ int alipay_iot_socket_connect(int s, const struct alipay_iot_sockaddr* name,
                  name->data.sin_data.ip[0], name->data.sin_data.ip[1],
                  name->data.sin_data.ip[2], name->data.sin_data.ip[3],
                  ntohs(addr.sin_port));
-  uint64_t started = h2_esp_alipay_now();
-  h2_esp_alipay_trace("socket.address", "hal_socket", 0,
+  uint64_t started = h2_alipay_sdk_now();
+  h2_alipay_sdk_trace("socket.address", "hal_socket", 0,
                       name->data.sin_data.port, s_connection, started,
                       "delivery_numeric_port", NULL, 0);
   int rc = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
   int error = rc < 0 ? errno : 0;
   rc = io_result(rc);
-  h2_esp_alipay_trace("socket.connect", "wire_below_vendor_tls", rc, error,
+  h2_alipay_sdk_trace("socket.connect", "wire_below_vendor_tls", rc, error,
                       s_connection, started, endpoint, NULL, 0);
   return rc;
 }
@@ -184,11 +156,11 @@ int alipay_iot_socket_sendto(int s, const void* data, int length, int flags,
 int alipay_iot_socket_write(int s, const void* data, int length) {
   int fd = descriptor(s);
   if (fd < 0 || data == NULL || length < 0) return -1;
-  uint64_t started = h2_esp_alipay_now();
+  uint64_t started = h2_alipay_sdk_now();
   int rc = send(fd, data, (size_t)length, 0);
   int error = rc < 0 ? errno : 0;
   const int mapped = io_result(rc);
-  h2_esp_alipay_trace("socket.send", "wire_below_vendor_tls", rc, error,
+  h2_alipay_sdk_trace("socket.send", "wire_below_vendor_tls", rc, error,
                       s_connection, started, "stream_fragment", data,
                       rc > 0 ? (size_t)rc : 0);
   return mapped;
@@ -214,11 +186,11 @@ int alipay_iot_socket_recvfrom(int s, void* data, int length, int flags,
 int alipay_iot_socket_read(int s, void* data, int length) {
   int fd = descriptor(s);
   if (fd < 0 || data == NULL || length < 0) return -1;
-  uint64_t started = h2_esp_alipay_now();
+  uint64_t started = h2_alipay_sdk_now();
   int rc = recv(fd, data, (size_t)length, 0);
   int error = rc < 0 ? errno : 0;
   const int mapped = io_result(rc);
-  h2_esp_alipay_trace("socket.receive", "wire_below_vendor_tls", rc, error,
+  h2_alipay_sdk_trace("socket.receive", "wire_below_vendor_tls", rc, error,
                       s_connection, started, "stream_fragment", data,
                       rc > 0 ? (size_t)rc : 0);
   return mapped;
@@ -270,7 +242,7 @@ int alipay_iot_socket_getsockopt(int s, int level, int option, void* value,
   char detail[64];
   (void)snprintf(detail, sizeof(detail), "unsupported level=%d length=%u",
                  level, length != NULL ? *length : 0u);
-  h2_esp_alipay_trace("socket.getsockopt", "hal_socket", -1, (uint32_t)option,
-                      s_connection, h2_esp_alipay_now(), detail, NULL, 0);
+  h2_alipay_sdk_trace("socket.getsockopt", "hal_socket", -1, (uint32_t)option,
+                      s_connection, h2_alipay_sdk_now(), detail, NULL, 0);
   return -1;
 }
