@@ -452,9 +452,9 @@ static void record_progress(void* user, uint64_t acknowledged, uint64_t total) {
 }
 
 static h2_pal_result_t disconnect_transport_with_reset(
-    h2_e2e_transport_context_t* context, uint8_t* out_link_closed) {
+    h2_e2e_transport_context_t* context, uint32_t* out_reset_count) {
   h2_pal_result_t serial_result = h2_h2loader_host_serial_disconnect_with_reset(
-      &context->serial_connection, out_link_closed);
+      &context->serial_connection, out_reset_count);
   h2_pal_result_t ble_result =
       h2_h2loader_host_ble_disconnect(&context->ble_connection);
   return serial_result == H2_PAL_OK ? ble_result : serial_result;
@@ -1041,11 +1041,12 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
     }
   }
   /* Teardown can pump again while a deferred reset emits its only boot log. */
-  uint8_t close_observed_reset = 0u;
+  uint32_t close_reset_count = 0u;
   h2_pal_result_t close_rc =
-      disconnect_transport_with_reset(context, &close_observed_reset);
+      disconnect_transport_with_reset(context, &close_reset_count);
   context->monitor_logs = 0u;
-  if (close_observed_reset) reset_transition_seen = 1u;
+  if (close_reset_count > 1u && rc == H2_PAL_OK) rc = H2_PAL_ERR_CLOSED;
+  if (close_reset_count) reset_transition_seen = 1u;
   if (rc == H2_PAL_OK && close_rc == H2_PAL_ERR_CLOSED &&
       !cancelled(context->config)) {
     reset_transition_seen = 1u;
@@ -1072,9 +1073,10 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
         !reset_transition_seen && !cancelled(context->config)) {
       reset_transition_seen = 1u;
       context->monitor_logs = 1u;
-      rc = disconnect_transport(context);
+      rc = disconnect_transport_with_reset(context, &close_reset_count);
       context->monitor_logs = 0u;
       if (rc == H2_PAL_ERR_CLOSED) rc = H2_PAL_OK;
+      if (close_reset_count > 1u && rc == H2_PAL_OK) rc = H2_PAL_ERR_CLOSED;
       continue;
     }
     if (rc == H2_PAL_OK && status.running_partition != expected_partition)
@@ -1087,10 +1089,10 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t* context,
     }
     break;
   }
-  close_rc = disconnect_transport_with_reset(context, &close_observed_reset);
+  close_rc = disconnect_transport_with_reset(context, &close_reset_count);
   context->monitor_logs = 0u;
   context->monitor_reboot = 0u;
-  if (rc == H2_PAL_OK && close_observed_reset) rc = H2_PAL_ERR_CLOSED;
+  if (rc == H2_PAL_OK && close_reset_count) rc = H2_PAL_ERR_CLOSED;
   return rc == H2_PAL_OK ? close_rc : rc;
 }
 

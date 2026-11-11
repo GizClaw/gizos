@@ -39,6 +39,8 @@ struct h2_h2loader_host_serial_connection {
   int status_pending_lf;
   int decoded_log_active;
   int reset_observed;
+  uint32_t ready_epoch_count;
+  int drain_console;
   const h2_h2loader_host_command_request_t* active_request;
   int accepted_notified;
 };
@@ -134,13 +136,59 @@ static h2_pal_result_t serial_status_diagnostics(void* user,
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
+                                         size_t len);
+
+static h2_pal_result_t serial_capture_command_bytes(
+    serial_status_output_t* output, const uint8_t* data, size_t len) {
+  h2_h2loader_host_serial_connection_t* connection = output->connection;
+  const h2_h2loader_host_command_request_t* request = output->command_request;
+  size_t offset = 0u;
+  while (offset < len) {
+    if (connection->accepted_notified) {
+      connection->decoded_log_active = 1;
+      h2_pal_result_t rc =
+          serial_stream_log(connection, data + offset, len - offset);
+      connection->decoded_log_active = 0;
+      return rc;
+    }
+    size_t count = 0u;
+    while (offset + count < len) {
+      uint8_t byte = data[offset + count++];
+      if (byte == '\r' || byte == '\n') break;
+    }
+    if (count > output->response_size - output->length) {
+      output->capture_result = H2_PAL_ERR_NO_SPACE;
+      return output->capture_result;
+    }
+    memcpy(output->response + output->length, data + offset, count);
+    output->length += count;
+    output->output_bytes += count;
+    if (request->on_output != NULL) {
+      h2_pal_result_t rc =
+          request->on_output(request->output_user, data + offset, count);
+      if (rc != H2_PAL_OK) {
+        output->sink_result = rc;
+        return rc;
+      }
+    }
+    if (output->on_response != NULL)
+      output->on_response(output->response_user, output->response,
+                          output->length);
+    offset += count;
+  }
+  return H2_PAL_OK;
+}
+
 /* A raw callback can run after a decoded frame in the same UART read. Tee
  * that earlier payload into the original response before delivering raw logs.
  * This only drains the existing receive queue; it does not poll or send. */
 static h2_pal_result_t serial_status_capture_pending(
     serial_status_output_t* output) {
   while (output->capture_result == H2_PAL_OK) {
-    if (output->length == output->response_size) {
+    if (output->length == output->response_size &&
+        !(output->command_request != NULL &&
+          output->connection->accepted_notified)) {
       output->capture_result = H2_PAL_ERR_NO_SPACE;
       break;
     }
@@ -154,15 +202,11 @@ static h2_pal_result_t serial_status_capture_pending(
       break;
     }
     if (output->command_request != NULL) {
-      const h2_h2loader_host_command_request_t* request =
-          output->command_request;
-      output->output_bytes += read;
-      rc = request->on_output != NULL
-               ? request->on_output(request->output_user, input, read)
-               : H2_PAL_OK;
-    } else {
-      rc = serial_status_diagnostics(output, input, read);
+      rc = serial_capture_command_bytes(output, input, read);
+      if (rc != H2_PAL_OK) return rc;
+      continue;
     }
+    rc = serial_status_diagnostics(output, input, read);
     if (rc != H2_PAL_OK) {
       output->sink_result = rc;
       return rc;
@@ -220,11 +264,14 @@ static h2_pal_result_t serial_drain_connect_logs(
   }
 }
 
+static h2_pal_result_t serial_drain_decoded_logs(
+    h2_h2loader_host_serial_connection_t* connection);
 static h2_pal_result_t serial_finish_command_response(void* transport);
 
 typedef struct session_ack_context {
   uint32_t conversation_id;
   int received;
+  h2_h2loader_host_serial_connection_t* closing_connection;
 } session_ack_context_t;
 
 static h2_pal_result_t serial_now(const h2_pal_time_api_t* time,
@@ -250,6 +297,13 @@ static h2_pal_result_t session_frame(void* user,
   if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK &&
       frame->conv == context->conversation_id) {
     context->received = 1;
+  } else if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_DATA &&
+             context->closing_connection != NULL) {
+    h2_h2loader_host_serial_connection_t* connection =
+        context->closing_connection;
+    h2_pal_result_t rc = h2_iostreamikcp_input_frame(connection->stream, frame);
+    if (rc != H2_PAL_OK) return serial_observe_result(connection, rc);
+    return serial_drain_decoded_logs(connection);
   }
   return H2_PAL_OK;
 }
@@ -280,7 +334,11 @@ static h2_pal_result_t serial_session_control(
   h2_iostreamikcp_frame_t open_frame;
   session_ack_context_t ack = {
       .conversation_id = conversation_id,
+      .closing_connection =
+          request_flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE ? connection
+                                                                    : NULL,
   };
+  int closed_during_read = 0;
   uint8_t control[H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN] = {
       (uint8_t)conversation_id,
       (uint8_t)(conversation_id >> 8u),
@@ -337,7 +395,9 @@ static h2_pal_result_t serial_session_control(
               ? serial_stream_log
               : (connection->on_log != NULL ? serial_log_output : NULL),
           connection);
-      if (rc != H2_PAL_OK) {
+      if (rc == H2_PAL_ERR_CLOSED && ack.closing_connection != NULL) {
+        closed_during_read = 1;
+      } else if (rc != H2_PAL_OK) {
         return rc;
       }
       if (ack.received &&
@@ -351,6 +411,7 @@ static h2_pal_result_t serial_session_control(
         return H2_PAL_OK;
       }
     }
+    if (closed_during_read) return H2_PAL_ERR_CLOSED;
     if (ack.received) {
       return H2_PAL_OK;
     }
@@ -374,6 +435,14 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
   h2_h2loader_host_serial_connection_t* connection = user;
   static const char marker[] = "H2_LOADER_READY ";
   int reset = 0;
+  if (!connection->decoded_log_active && connection->drain_console &&
+      connection->status_output == NULL) {
+    h2_pal_result_t rc = serial_drain_decoded_logs(connection);
+    if (rc == H2_PAL_ERR_CLOSED)
+      reset = 1;
+    else if (rc != H2_PAL_OK)
+      return rc;
+  }
   if (connection->pending_input_len != 0u && !connection->decoded_log_active) {
     h2_pal_result_t rc = serial_drain_connect_logs(connection);
     if (rc != H2_PAL_OK) return rc;
@@ -384,6 +453,8 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
       connection->ready_line_rejected = 0;
       if (data[index] == '\n' && connection->ready_banner_pending) {
         connection->ready_banner_pending = 0;
+        if (connection->ready_epoch_count != UINT32_MAX)
+          ++connection->ready_epoch_count;
         reset = 1;
       }
       continue;
@@ -402,7 +473,7 @@ static h2_pal_result_t serial_stream_log(void* user, const uint8_t* data,
       connection->ready_line_rejected = 1;
     }
   }
-  if (connection->status_output != NULL) {
+  if (connection->status_output != NULL && !connection->decoded_log_active) {
     h2_pal_result_t rc =
         serial_status_capture_pending(connection->status_output);
     if (rc != H2_PAL_OK) return rc;
@@ -473,6 +544,13 @@ static h2_pal_result_t serial_pump(
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
       rc != H2_PAL_ERR_WOULD_BLOCK) {
     return rc;
+  }
+  if (connection->status_output != NULL &&
+      connection->status_output->command_request != NULL) {
+    rc = serial_status_capture_pending(connection->status_output);
+    if (rc != H2_PAL_OK) return serial_observe_result(connection, rc);
+    if (connection->status_output->capture_result != H2_PAL_OK)
+      return connection->status_output->capture_result;
   }
   rc = serial_now(connection->time, &now);
   if (rc != H2_PAL_OK) {
@@ -554,11 +632,24 @@ static h2_pal_result_t serial_read_until(
   uint64_t now = 0u;
   serial_status_output_t* status_output = connection->status_output;
   size_t length = status_output != NULL ? status_output->length : 0u;
-  size_t output_bytes = 0u;
+  size_t output_bytes =
+      status_output != NULL && status_output->command_request != NULL
+          ? status_output->output_bytes
+          : 0u;
   h2_pal_result_t rc;
 
   *out_len = length;
-  if (out_output_bytes != NULL) *out_output_bytes = 0u;
+  if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
+  if (status_output != NULL && status_output->capture_result != H2_PAL_OK)
+    return status_output->capture_result;
+  if (response_has_complete_marker(response, length, marker_a) &&
+      (marker_b == NULL ||
+       response_has_complete_marker(response, length, marker_b))) {
+    if (connection->reset_observed && connection->accepted_notified)
+      return H2_PAL_OK;
+    return serial_observe_result(connection,
+                                 h2_iostreamikcp_flush(connection->stream));
+  }
   rc = serial_now(connection->time, &start);
   if (rc != H2_PAL_OK) {
     return rc;
@@ -853,18 +944,18 @@ h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
   if (connection == NULL || is_cancelled == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  const int previous_drain = connection->drain_console;
+  connection->drain_console = 1;
+  h2_pal_result_t rc = H2_PAL_EXIT;
   while (!is_cancelled(cancel_user)) {
-    h2_pal_result_t rc =
-        serial_pump(connection, H2_H2LOADER_HOST_SERIAL_POLL_MS);
-    if (rc != H2_PAL_OK) {
-      return rc;
-    }
+    rc = serial_pump(connection, H2_H2LOADER_HOST_SERIAL_POLL_MS);
+    if (rc != H2_PAL_OK) break;
     rc = serial_drain_decoded_logs(connection);
-    if (rc != H2_PAL_OK) {
-      return rc;
-    }
+    if (rc != H2_PAL_OK) break;
+    rc = H2_PAL_EXIT;
   }
-  return H2_PAL_EXIT;
+  connection->drain_console = previous_drain;
+  return rc;
 }
 
 h2_pal_result_t h2_h2loader_host_serial_disconnect(
@@ -874,11 +965,11 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect(
 
 h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
     h2_h2loader_host_serial_connection_t** inout_connection,
-    uint8_t* out_link_closed) {
+    uint32_t* out_reset_count) {
   h2_h2loader_host_serial_connection_t* connection;
   h2_pal_result_t rc;
 
-  if (out_link_closed != NULL) *out_link_closed = 0u;
+  if (out_reset_count != NULL) *out_reset_count = 0u;
   if (inout_connection == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -887,6 +978,7 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
     return H2_PAL_OK;
   }
   *inout_connection = NULL;
+  connection->drain_console = 1;
   if (connection->stream != NULL) {
     /* A status/stage operation can return as soon as the final response is
      * decoded, while the peer is still waiting for the KCP ACK to cross
@@ -918,8 +1010,11 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
     connection->stream = NULL;
   }
   rc = h2_pal_serial_host_close(connection->serial, &connection->session);
-  if (out_link_closed != NULL)
-    *out_link_closed = connection->reset_observed || rc == H2_PAL_ERR_CLOSED;
+  if (out_reset_count != NULL)
+    *out_reset_count =
+        connection->ready_epoch_count != 0u
+            ? connection->ready_epoch_count
+            : (connection->reset_observed || rc == H2_PAL_ERR_CLOSED ? 1u : 0u);
   h2_pal_mem_free(connection->allocator, connection);
   return rc;
 }
@@ -979,7 +1074,14 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
 }
 
 static h2_pal_result_t serial_command_write(void* transport, const char* line) {
-  return serial_write_command(transport, line);
+  h2_h2loader_host_serial_connection_t* connection = transport;
+  h2_pal_result_t rc = serial_write_command(connection, line);
+  if (rc == H2_PAL_ERR_CLOSED && connection->accepted_notified &&
+      connection->status_output != NULL &&
+      connection->status_output->capture_result == H2_PAL_OK &&
+      connection->status_output->sink_result == H2_PAL_OK)
+    return H2_PAL_OK; /* A complete accepted response proves delivery. */
+  return rc;
 }
 
 static void serial_notify_accepted(void* user) {
@@ -988,6 +1090,10 @@ static void serial_notify_accepted(void* user) {
       connection->active_request;
   if (connection->accepted_notified || request == NULL) return;
   connection->accepted_notified = 1;
+  if (request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_APP ||
+      request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER ||
+      request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE)
+    connection->drain_console = 1;
   if (request->on_accepted != NULL)
     request->on_accepted(request->accepted_user);
 }
@@ -1015,27 +1121,15 @@ static h2_pal_result_t serial_command_read(
     h2_h2loader_host_command_output_fn on_output, void* output_user,
     uint8_t stream_output, size_t* out_output_bytes) {
   h2_h2loader_host_serial_connection_t* connection = transport;
-  serial_status_output_t output = {
-      .connection = connection,
-      .response = response,
-      .response_size = response_size,
-      .command_request = connection->active_request,
-      .on_response = serial_capture_acceptance,
-      .response_user = connection,
-  };
-  /* As with status reads, tee a decoded response that precedes raw bytes in
-   * one poll before delivering those bytes. READY may close the session in
-   * that same callback; the complete accepted response must still survive. */
+  serial_status_output_t* output = connection->status_output;
   const int capture_acceptance =
-      connection->active_request != NULL &&
-      connection->active_request->on_accepted != NULL &&
-      (connection->active_request->command ==
-           H2_H2LOADER_HOST_COMMAND_REBOOT_APP ||
-       connection->active_request->command ==
-           H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER ||
-       connection->active_request->command ==
-           H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE);
-  if (capture_acceptance) connection->status_output = &output;
+      output != NULL && output->command_request != NULL;
+  if (capture_acceptance) {
+    if (output->length > response_size) return H2_PAL_ERR_NO_SPACE;
+    memcpy(response, output->response, output->length);
+    output->response = response;
+    output->response_size = response_size;
+  }
   h2_pal_result_t rc = serial_read_until(
       connection, marker, NULL, response, response_size, out_response_len,
       connection->command_timeout_ms + 30000u, on_output, output_user,
@@ -1073,6 +1167,11 @@ static h2_pal_result_t serial_finish_command_response(void* transport) {
                            ? remaining
                            : H2_H2LOADER_HOST_SERIAL_POLL_MS;
     rc = serial_pump(connection, poll_ms);
+    if (connection->drain_console &&
+        (rc == H2_PAL_OK || rc == H2_PAL_ERR_CLOSED)) {
+      h2_pal_result_t drain_rc = serial_drain_decoded_logs(connection);
+      if (drain_rc != H2_PAL_OK) rc = drain_rc;
+    }
     if (rc == H2_PAL_ERR_CLOSED) {
       return H2_PAL_OK;
     }
@@ -1092,9 +1191,26 @@ h2_pal_result_t h2_h2loader_host_serial_execute_command(
     const h2_h2loader_host_command_request_t* request,
     h2_h2loader_host_command_result_t* out_result) {
   h2_h2loader_host_command_request_t observed_request;
+  uint8_t early_response[H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE];
+  serial_status_output_t output = {
+      .connection = connection,
+      .response = early_response,
+      .response_size = sizeof(early_response),
+      .command_request = request,
+      .on_response = serial_capture_acceptance,
+      .response_user = connection,
+  };
+  const int reboot =
+      request != NULL &&
+      (request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_APP ||
+       request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER ||
+       request->command == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE);
   if (connection != NULL) {
     connection->active_request = request;
     connection->accepted_notified = 0;
+    /* Capture before the first write: accepted data may accompany its KCP ACK.
+     */
+    if (reboot) connection->status_output = &output;
   }
   if (connection != NULL && request != NULL) {
     observed_request = *request;
@@ -1111,6 +1227,8 @@ h2_pal_result_t h2_h2loader_host_serial_execute_command(
         out_result->terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK)
       out_result->accepted_link_closed = connection->reset_observed != 0;
     connection->active_request = NULL;
+    if (reboot) connection->status_output = NULL;
+    connection->drain_console = 0;
   }
   return rc;
 }

@@ -80,10 +80,11 @@ static int disconnect_transport(h2_e2e_transport_context_t *c) {
   int close_rc=close_results[disconnects++];
   return rc == H2_PAL_OK ? close_rc : rc;
 }
-static int disconnect_transport_with_reset(h2_e2e_transport_context_t *c, uint8_t *out) {
+static int disconnect_transport_with_reset(h2_e2e_transport_context_t *c, uint32_t *out) {
   int index=disconnects;
   int rc=disconnect_transport(c);
-  *out=close_resets[index] || rc==H2_PAL_ERR_CLOSED;
+  *out=close_resets[index];
+  if (rc==H2_PAL_ERR_CLOSED && *out==0) *out=1;
   return rc;
 }
 static int reconnect_after_reboot(h2_e2e_transport_context_t *c, uint32_t p,
@@ -248,6 +249,10 @@ int main(void) {
   assert(!result.status_valid);
   RESET_CASE(); close_resets[1]=1;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_CLOSED);
+  RESET_CASE(); grace_bytes=3; grace_closed=1; close_resets[0]=2;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_CLOSED && connects==0);
+  RESET_CASE(); close_resets[0]=2;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_CLOSED && connects==0);
   RESET_CASE(); window_bytes[0]=window_bytes[1]=0;
   close_control="H2_LOADER_REBOOT_FINAL result=OK\r\n";
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_NOT_FOUND);
@@ -341,11 +346,21 @@ class RebootMonitorTests(unittest.TestCase):
                                         'static h2_pal_result_t serial_wait_delivery('),
             '/* SERIAL_LOG */': section(serial, '/* A USB-UART adapter survives',
                                        'static h2_pal_result_t serial_wait_ready_marker('),
+            '/* SERIAL_DELIVERY */': section(serial, 'static h2_pal_result_t serial_wait_delivery(',
+                                            'static int response_has_complete_marker('),
+            '/* SERIAL_WRITE */': section(serial, 'static h2_pal_result_t serial_write_command(',
+                                         'static int marker_result_is_ok('),
+            '/* SERIAL_SESSION_CONTEXT */': section(serial, 'typedef struct session_ack_context',
+                                                   'static h2_pal_result_t serial_now('),
+            '/* SERIAL_SESSION_FRAME */': section(serial, 'static h2_pal_result_t session_frame(',
+                                                 'static h2_pal_result_t uart_write_all('),
+            '/* SERIAL_DISCONNECT */': section(serial, 'h2_pal_result_t h2_h2loader_host_serial_disconnect(',
+                                              'h2_pal_result_t h2_h2loader_host_serial_read_status('),
             '/* SERIAL_READ */': section(serial, 'static int response_has_complete_marker(',
                                         'static h2_pal_result_t serial_write_command('),
-            '/* SERIAL_COMMAND */': section(serial, 'static void serial_notify_accepted(',
+            '/* SERIAL_COMMAND */': section(serial, 'static h2_pal_result_t serial_command_write(',
                                            'typedef struct serial_stage_output'),
-            '/* SERIAL_MONITOR */': section(serial, 'static h2_pal_result_t serial_drain_decoded_logs(',
+            '/* SERIAL_MONITOR */': section(serial, '/* Console output during a monitor session',
                                            'h2_pal_result_t h2_h2loader_host_serial_disconnect('),
             '/* RUNNER_LOG */': section(runner, 'static size_t monitor_evidence_bytes(',
                                        'static int monitor_cancelled('),
