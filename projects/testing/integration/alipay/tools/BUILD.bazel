@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "collector_lib",
+    srcs = [
+        "collector.go",
+        "main.go",
+    ],
+    importpath = "gizos/projects/testing/integration/alipay/tools",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+go_binary(
+    name = "alipay_trace",
+    embed = [":collector_lib"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+go_test(
+    name = "collector_test",
+    srcs = ["collector_test.go"],
+    embed = [":collector_lib"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+cc_binary(
+    name = "qr_svg",
+    srcs = ["qr/qr_svg.c"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/image/qrcode"],
+)

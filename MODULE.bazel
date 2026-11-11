@@ -568,3 +568,6 @@ http_archive(
     type = "tar.gz",
     urls = ["https://codeload.github.com/esp-mosaico/esp-mosaico-bsp/tar.gz/b60f5d8381939c5cf5c08ddabc44b8013be79064"],
 )
+
+alipay_sdk = use_extension("//third_party/alipay:sdk_repository.bzl", "alipay_sdk")
+use_repo(alipay_sdk, "alipay_sdk")
