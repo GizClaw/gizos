@@ -7,9 +7,20 @@
 typedef struct binding_fixture {
   unsigned initializations, codes, queries;
   unsigned complete_after;
+  unsigned progresses;
+  bool unlimited;
   int snapshot_rc, query_rc;
   bool existing, cancel_now, cancel_after_query;
 } binding_fixture_t;
+
+static void progress(h2_runtime_t* runtime, void* user,
+                     const h2_alipay_e2e_result_t* result) {
+  (void)runtime;
+  binding_fixture_t* fixture = user;
+  ++fixture->progresses;
+  assert(result->binding_queries == fixture->progresses &&
+         result->code_presented && result->qr_visible);
+}
 
 static int prepare(h2_runtime_t* runtime, void* user) {
   (void)runtime;
@@ -75,8 +86,9 @@ static h2_alipay_e2e_result_t run(binding_fixture_t* fixture) {
       .prepare = prepare,
       .user = fixture,
       .complete_binding = true,
-      .binding_timeout_ms = 5000u,
+      .binding_timeout_ms = fixture->unlimited ? 0u : 5000u,
       .binding_interval_ms = 2000u,
+      .binding_progress = progress,
   };
   h2_alipay_e2e_result_t result;
   if (h2_alipay_e2e_execute(&runtime, &config, &result) == H2_PAL_OK &&
@@ -84,6 +96,7 @@ static h2_alipay_e2e_result_t run(binding_fixture_t* fixture) {
     assert(h2_alipay_e2e_complete_binding(&runtime, &config, cancel, fixture,
                                           &result) == H2_PAL_ERR_INVALID_STATE);
     result.code_presented = true;
+    result.qr_visible = true;
     (void)h2_alipay_e2e_complete_binding(&runtime, &config, cancel, fixture,
                                          &result);
   }
@@ -96,6 +109,12 @@ int main(void) {
   assert(result.result == H2_PAL_OK &&
          result.stage == H2_ALIPAY_E2E_BINDING_COMPLETE &&
          result.binding_ms == 4000u && result.binding_queries == 3u);
+  fixture = (binding_fixture_t){.complete_after = 40u, .unlimited = true};
+  result = run(&fixture);
+  assert(result.result == H2_PAL_OK &&
+         result.stage == H2_ALIPAY_E2E_BINDING_COMPLETE &&
+         result.binding_ms == 78000u && result.binding_queries == 40u &&
+         fixture.codes == 1u && fixture.progresses == 40u);
   fixture = (binding_fixture_t){0};
   result = run(&fixture);
   assert(result.result == H2_PAL_ERR_TIMEOUT && result.binding_ms == 5000u &&
@@ -117,5 +136,39 @@ int main(void) {
   fixture = (binding_fixture_t){.query_rc = H2_PAL_ERR_WRITE};
   result = run(&fixture);
   assert(result.result == H2_PAL_ERR_WRITE && fixture.queries == 1u);
+
+  fixture = (binding_fixture_t){0};
+  h2_app_test_time_t time;
+  h2_app_test_time_init(&time, 100u);
+  h2_runtime_t runtime = {.time = &time.api};
+  const h2_alipay_vtable_t vtable = {.get_binding_code = code,
+                                     .binding_snapshot = snapshot};
+  const h2_alipay_api_t api = {.user = &fixture, .vtable = &vtable};
+  const h2_alipay_e2e_config_t config = {
+      .alipay = &api,
+      .complete_binding = true,
+  };
+  result =
+      (h2_alipay_e2e_result_t){.binding = {.state = H2_ALIPAY_BINDING_FAILED}};
+  assert(h2_alipay_e2e_refresh_binding(&runtime, &config, cancel, &fixture,
+                                       &result) == H2_PAL_OK);
+  assert(fixture.codes == 1u && result.stage == H2_ALIPAY_E2E_CODE_READY &&
+         !result.code_presented && !result.qr_visible &&
+         time.last_sleep_ms == 2000u);
+  result.binding.state = H2_ALIPAY_BINDING_PENDING;
+  assert(h2_alipay_e2e_refresh_binding(&runtime, &config, cancel, &fixture,
+                                       &result) == H2_PAL_ERR_INVALID_STATE);
+  assert(fixture.codes == 1u);
+  result.binding.state = H2_ALIPAY_BINDING_FAILED;
+  fixture.snapshot_rc = H2_PAL_ERR_INVALID_STATE;
+  assert(h2_alipay_e2e_refresh_binding(&runtime, &config, cancel, &fixture,
+                                       &result) == H2_PAL_ERR_INVALID_STATE);
+  assert(fixture.codes == 1u);
+  result.binding.state = H2_ALIPAY_BINDING_FAILED;
+  fixture.snapshot_rc = H2_PAL_OK;
+  fixture.existing = true;
+  assert(h2_alipay_e2e_refresh_binding(&runtime, &config, cancel, &fixture,
+                                       &result) == H2_PAL_ERR_INVALID_STATE);
+  assert(fixture.codes == 1u);
   return 0;
 }

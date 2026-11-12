@@ -292,8 +292,24 @@ static void binding_code_ready(h2_runtime_t* rt, void* user,
                                const h2_alipay_e2e_result_t* result) {
   (void)rt;
   (void)user;
-  printf("H2_ALIPAY_BINDING_WAIT source=%s timeout_ms=60000 length=%zu\n",
+  printf("H2_ALIPAY_BINDING_WAIT source=%s timeout_ms=0 length=%zu\n",
          source_name(), result->length);
+  fflush(stdout);
+}
+
+static void binding_progress(h2_runtime_t* rt, void* user,
+                             const h2_alipay_e2e_result_t* result) {
+  (void)rt;
+  (void)user;
+  if (result->binding_queries != 1u && result->binding_queries % 5u != 0u &&
+      result->binding.state == H2_ALIPAY_BINDING_PENDING)
+    return;
+  printf(
+      "H2_ALIPAY_BINDING_PROGRESS queries=%u elapsed_ms=%llu state=%d "
+      "sdk_rc=%d sdk_status=%d storage_rc=%d\n",
+      result->binding_queries, (unsigned long long)result->binding_ms,
+      (int)result->binding.state, result->binding.sdk_rc,
+      result->binding.sdk_status, result->binding.storage_rc);
   fflush(stdout);
 }
 
@@ -326,11 +342,12 @@ static void run(void* user) {
       .alipay = api,
       .feature = h2_alipay_e2e_target_feature(),
       .complete_binding = h2_alipay_e2e_target_complete_binding(),
-      .binding_timeout_ms = 60000u,
+      .binding_timeout_ms = 0u,
       .binding_interval_ms = 2000u,
       .prepare = prepare,
       .observe = observe,
       .binding_code_ready = binding_code_ready,
+      .binding_progress = binding_progress,
       .report = report,
   };
   rc = h2_alipay_e2e_run(runtime, &config);
