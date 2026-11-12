@@ -11,13 +11,19 @@ extern "C" {
  * SDK caller. Each operation closes its namespace; successful mutations are
  * committed before returning. Results are zero or a negative PAL error.
  *
- * SDK indices use pXXXXXXXX keys in alipay_psa. reset clears only that
- * namespace. The separate alipay_cert/certificate record survives PSA reset,
- * as required by vendor_cert.h. These names are persistent storage identities.
+ * SDK indices use pXXXXXXXX keys in the PSA namespace. reset clears only that
+ * namespace. The separate certificate namespace's certificate record survives
+ * PSA reset, as required by vendor_cert.h. Namespace names are persistent
+ * storage identities and must remain stable for each device identity policy.
  * Storage support does not add activation, enrollment or readiness policy. */
 typedef struct h2_alipay_storage {
   const h2_pal_pref_api_t* pref;
   const h2_pal_mem_api_t* mem;
+  /** Optional borrowed names. NULL selects alipay_psa and alipay_cert,
+   * respectively. Names must be nonempty, distinct and valid for Pref.
+   * Keep names alive until all operations finish. */
+  const char* psa_namespace;
+  const char* certificate_namespace;
 } h2_alipay_storage_t;
 
 /** Read one complete SDK value. A short buffer is left unchanged and receives

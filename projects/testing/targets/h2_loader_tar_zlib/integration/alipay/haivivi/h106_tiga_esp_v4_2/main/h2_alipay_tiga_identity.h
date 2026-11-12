@@ -4,9 +4,9 @@
 #include "h2_runtime.h"
 
 h2_pal_result_t h2_alipay_tiga_read_sn(void* user, char* out, size_t capacity);
-/** Blocking SDK-worker callback. Idempotently opens the shared Modem PAL
- * before reading its actual identity. The final entry retains the modem for
- * the SDK's boot lifetime; individual identity reads do not close it. */
+/** SDK-worker callback returning the same persistent factory SN as read_sn.
+ * This entry always uses SN for the SDK IMEI identity, including later RPC
+ * signatures. Factory read errors propagate; the callback never uses Modem. */
 h2_pal_result_t h2_alipay_tiga_read_imei(void* user, char* out,
                                          size_t capacity);
 

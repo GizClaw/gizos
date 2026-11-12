@@ -25,6 +25,8 @@ h2_pal_result_t h2_alipay_e2e_target_configure(h2_runtime_t* runtime) {
       .model = "H-106TG",
       .product_type = 3,
       .pref = runtime->pref,
+      .psa_namespace = "alipay_sn_psa",
+      .certificate_namespace = "alipay_sn_cert",
   };
   return h2_esp_alipay_configure(&config);
 }
