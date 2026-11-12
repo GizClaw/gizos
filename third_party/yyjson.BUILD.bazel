@@ -2,6 +2,14 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "source_files",
+    srcs = [
+        "src/src/yyjson.c",
+        "src/src/yyjson.h",
+    ],
+)
+
 config_setting(
     name = "is_windows_x86_64",
     constraint_values = [

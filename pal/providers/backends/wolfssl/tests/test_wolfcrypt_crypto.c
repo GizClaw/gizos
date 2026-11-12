@@ -477,6 +477,23 @@ int main(void) {
                                                  &p256) == H2_PAL_OK);
   assert(memcmp(p256.public_key.bytes, p256_generator_compressed,
                 sizeof(p256_generator_compressed)) == 0);
+  uint8_t uncompressed[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE];
+  static const uint8_t generator_y[32] = {
+      0x4f, 0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b, 0x8e, 0xe7, 0xeb,
+      0x4a, 0x7c, 0x0f, 0x9e, 0x16, 0x2b, 0xce, 0x33, 0x57, 0x6b, 0x31,
+      0x5e, 0xce, 0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5,
+  };
+  assert(h2_pal_crypto_p256_public_key_uncompress(api, &p256.public_key,
+                                                  uncompressed) == H2_PAL_OK);
+  assert(uncompressed[0] == 0x04u);
+  assert(memcmp(uncompressed + 1u, p256_generator_compressed + 1u, 32u) == 0);
+  assert(memcmp(uncompressed + 33u, generator_y, 32u) == 0);
+  assert(h2_pal_crypto_p256_public_key_uncompress(
+             NULL, &p256.public_key, uncompressed) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_crypto_p256_public_key_uncompress(api, NULL, uncompressed) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_crypto_p256_public_key_uncompress(
+             api, &p256.public_key, NULL) == H2_PAL_ERR_INVALID_ARG);
   memcpy(signature.bytes, p256_signature_kat, sizeof(p256_signature_kat));
   assert(h2_pal_crypto_ecdsa_p256_sha256_verify(api, &p256.public_key, message,
                                                 sizeof(message),
@@ -526,6 +543,11 @@ int main(void) {
   invalid_public.bytes[0] = 0x04u;
   assert(h2_pal_crypto_p256_public_key_validate(api, &invalid_public) ==
          H2_PAL_ERR_FORMAT);
+  memset(uncompressed, 0xa5, sizeof(uncompressed));
+  assert(h2_pal_crypto_p256_public_key_uncompress(
+             api, &invalid_public, uncompressed) == H2_PAL_ERR_FORMAT);
+  assert(memcmp(uncompressed, (uint8_t[sizeof(uncompressed)]){0},
+                sizeof(uncompressed)) == 0);
   memset(&invalid_public, 0xff, sizeof(invalid_public));
   invalid_public.bytes[0] = 0x02u;
   assert(h2_pal_crypto_p256_public_key_validate(api, &invalid_public) ==

@@ -3,6 +3,15 @@ load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", 
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "source_files",
+    srcs = [
+        "include/h2_encoding.h",
+        "src/h2_encoding.c",
+        "src/h2_encoding_tables.c",
+    ],
+)
+
 cc_library(
     name = "encoding",
     srcs = [

@@ -1,0 +1,90 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "alipay_independent",
+    srcs = ["src/h2_alipay_client.c"],
+    hdrs = ["include/h2_alipay_client.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":protocol",
+        "//libs/clients/alipay",
+        "//libs/crypto/sha256",
+        "//pal",
+        "@h2_vendor_yyjson//:yyjson",
+    ],
+)
+
+cc_library(
+    name = "protocol",
+    srcs = ["src/h2_alipay_protocol.c"],
+    hdrs = ["include/h2_alipay_protocol.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        "//libs/crypto/sha256",
+        "//libs/crypto/sm3",
+        "//libs/encoding",
+        "//pal",
+        "@h2_vendor_yyjson//:yyjson",
+    ],
+)
+
+cc_test(
+    name = "client_test",
+    srcs = ["tests/test_client.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay_independent",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/corehttp:corehttp_test_support",
+    ],
+)
+
+cc_test(
+    name = "protocol_test",
+    srcs = ["tests/test_protocol.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":protocol",
+        "//libs/testing:testing_pal",
+    ],
+)
+
+filegroup(
+    name = "protocol_source_files",
+    srcs = [
+        "include/h2_alipay_protocol.h",
+        "src/h2_alipay_protocol.c",
+    ],
+)
+
+py_test(
+    name = "sdk_differential_test",
+    size = "medium",
+    srcs = ["tests/sdk_differential_test.py"],
+    data = [
+        "tests/test_protocol_differential.c",
+        ":protocol_source_files",
+        "//libs/crypto/sha256:source_files",
+        "//libs/crypto/sm3:source_files",
+        "//libs/encoding:source_files",
+        "//pal:pal_header_files",
+        "//third_party/alipay:sdk_manifest.json",
+        "@alipay_sdk//:archives",
+        "@h2_vendor_yyjson//:source_files",
+    ],
+    tags = ["manual"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)

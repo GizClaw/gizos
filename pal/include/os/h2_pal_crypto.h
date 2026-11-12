@@ -18,6 +18,7 @@ extern "C" {
 #define H2_PAL_CRYPTO_SHA1_SIZE 20u
 #define H2_PAL_CRYPTO_P256_PRIVATE_KEY_SIZE 32u
 #define H2_PAL_CRYPTO_P256_PUBLIC_KEY_SIZE 33u
+#define H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE 65u
 #define H2_PAL_CRYPTO_P256_SIGNATURE_SIZE 64u
 
 /** Authenticated-encryption algorithms exposed by Crypto PAL. */
@@ -129,6 +130,9 @@ typedef struct h2_pal_crypto_vtable {
       void* user, const h2_pal_p256_public_key_t* public_key,
       const uint8_t* message, size_t message_len,
       const h2_pal_p256_signature_t* signature);
+  h2_pal_result_t (*p256_public_key_uncompress)(
+      void* user, const h2_pal_p256_public_key_t* public_key,
+      uint8_t out[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE]);
 } h2_pal_crypto_vtable_t;
 
 typedef struct h2_pal_crypto_api {
@@ -326,6 +330,20 @@ static inline h2_pal_result_t h2_pal_crypto_p256_public_key_validate(
     return H2_PAL_ERR_UNSUPPORTED;
   }
   return api->vtable->p256_public_key_validate(api->user, public_key);
+}
+
+/** Validate a compressed P-256 point and export SEC1 0x04 || X || Y, with
+ * 32-byte big-endian coordinates. Output is valid only on success. Borrowed
+ * inputs and caller-owned output must not overlap. This synchronous operation
+ * performs no key generation; absent capability returns UNSUPPORTED. */
+static inline h2_pal_result_t h2_pal_crypto_p256_public_key_uncompress(
+    const h2_pal_crypto_api_t* api, const h2_pal_p256_public_key_t* public_key,
+    uint8_t out[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE]) {
+  if (public_key == NULL || out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->p256_public_key_uncompress == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->p256_public_key_uncompress(api->user, public_key, out);
 }
 
 static inline h2_pal_result_t h2_pal_crypto_ecdsa_p256_sha256_sign(

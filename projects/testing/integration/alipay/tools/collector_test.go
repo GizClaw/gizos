@@ -71,6 +71,29 @@ func TestRejectsPrivateWithoutOptIn(t *testing.T) {
 		t.Fatal("private capture accepted")
 	}
 }
+
+func TestIndependentSourceRemainsExplicit(t *testing.T) {
+	hash := sha256.Sum256(nil)
+	input := row("META", map[string]any{"source": "independent", "private_raw": false}) +
+		row("EVENT", map[string]any{
+			"source": "runtime_independent", "seq": 1, "call_id": 1, "parent_id": 0,
+			"operation": "independent.binding_code.return", "boundary": "independent",
+			"length": 0, "captured": 0, "sha256": hex.EncodeToString(hash[:]),
+		}) + row("END", map[string]any{"events": 1, "complete": true, "dropped": 0})
+	out := dir(t)
+	if err := capture(strings.NewReader(input), out, opts(false)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, testRun+"-alipay--binding-code", "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"source":"runtime_independent"`) ||
+		strings.Contains(string(data), `"source":"runtime_vendor_sdk"`) {
+		t.Fatal("independent evidence was relabeled")
+	}
+}
+
 func TestIntegrityRejectsOrderSourceAndMissingEnd(t *testing.T) {
 	for name, input := range map[string]string{
 		"gap":          meta(false) + eventRow(2, nil),

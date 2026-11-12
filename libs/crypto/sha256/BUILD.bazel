@@ -4,6 +4,14 @@ load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "source_files",
+    srcs = [
+        "include/h2_sha256.h",
+        "src/h2_sha256.c",
+    ],
+)
+
 cc_library(
     name = "sha256",
     srcs = ["src/h2_sha256.c"],
