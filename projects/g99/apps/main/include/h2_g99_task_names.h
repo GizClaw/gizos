@@ -2,6 +2,7 @@
 #define H2_G99_TASK_NAMES_H
 
 #define H2_G99_WIFI_TASK_NAME_VALUE "g99/wifi"
+#define H2_G99_STORAGE_TASK_NAME_VALUE "g99/storage"
 
 #ifdef __cplusplus
 extern "C" {

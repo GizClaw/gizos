@@ -15,18 +15,19 @@ static int failures = 0;
   } while (0)
 
 /* A stand-in for the board: AI, BOOT and the fuel gauge. */
-static const h2_pal_periph_id_t kBoardIds[] = {101u, 102u, 301u};
+static const h2_pal_periph_id_t kBoardIds[] = {101u, 102u, 301u, 401u};
 
 static h2_pal_result_t board_list(void* user, h2_pal_periph_type_t filter,
                                   h2_pal_periph_cb_t callback,
                                   void* callback_user) {
   (void)user;
-  for (size_t i = 0u; i < 3u; ++i) {
+  for (size_t i = 0u; i < 4u; ++i) {
     h2_pal_periph_info_t info;
     memset(&info, 0, sizeof(info));
     info.id = kBoardIds[i];
-    info.type =
-        i < 2u ? H2_PAL_PERIPH_TYPE_SINGLE_BUTTON : H2_PAL_PERIPH_TYPE_BATTERY;
+    info.type = i < 2u    ? H2_PAL_PERIPH_TYPE_SINGLE_BUTTON
+                : i == 2u ? H2_PAL_PERIPH_TYPE_BATTERY
+                          : H2_PAL_PERIPH_TYPE_PWM_SWITCH;
     if (filter != H2_PAL_PERIPH_TYPE_ANY && filter != info.type) continue;
     const h2_pal_result_t rc = callback(callback_user, &info);
     if (rc != H2_PAL_OK) return rc;
@@ -37,10 +38,13 @@ static h2_pal_result_t board_list(void* user, h2_pal_periph_type_t filter,
 static h2_pal_result_t board_get(void* user, h2_pal_periph_id_t id,
                                  h2_pal_periph_info_t* out) {
   (void)user;
-  for (size_t i = 0u; i < 3u; ++i)
+  for (size_t i = 0u; i < 4u; ++i)
     if (kBoardIds[i] == id) {
       memset(out, 0, sizeof(*out));
       out->id = id;
+      out->type = i < 2u    ? H2_PAL_PERIPH_TYPE_SINGLE_BUTTON
+                  : i == 2u ? H2_PAL_PERIPH_TYPE_BATTERY
+                            : H2_PAL_PERIPH_TYPE_PWM_SWITCH;
       return H2_PAL_OK;
     }
   return H2_PAL_ERR_NOT_FOUND;
@@ -97,7 +101,7 @@ static void test_product(void) {
   int periphs = 0;
   CHECK(h2_pal_periph_list(&input.periph, H2_PAL_PERIPH_TYPE_ANY, count_periph,
                            &periphs) == H2_PAL_OK);
-  CHECK(periphs == 3);
+  CHECK(periphs == 4);
   int mappings = 0;
   CHECK(input.mapper.vtable->list(input.mapper.user, H2_RUNTIME_COMPONENT_NONE,
                                   count_mapping, &mappings) == H2_PAL_OK);
@@ -156,6 +160,21 @@ static void test_config(void) {
   config.virtual_first_id = UINT32_MAX;
   CHECK(h2_g99_mosaico_input_init(&input, &kBoard, &config) ==
         H2_PAL_ERR_INVALID_ARG);
+  config = kProduct;
+  config.haptics_periph_id = 401u;
+  CHECK(h2_g99_mosaico_input_init(&input, &kBoard, &config) == H2_PAL_OK);
+  CHECK(periph_of(&input, H2_G99_COMPONENT_HAPTICS) == 401u);
+  int motors = 0;
+  CHECK(input.mapper.vtable->list(input.mapper.user,
+                                  H2_RUNTIME_COMPONENT_PWM_SWITCH,
+                                  count_mapping, &motors) == H2_PAL_OK);
+  CHECK(motors == 1);
+  config.haptics_periph_id = 301u;
+  CHECK(h2_g99_mosaico_input_init(&input, &kBoard, &config) ==
+        H2_PAL_ERR_INVALID_ARG);
+  config.haptics_periph_id = 999u;
+  CHECK(h2_g99_mosaico_input_init(&input, &kBoard, &config) ==
+        H2_PAL_ERR_NOT_FOUND);
 }
 
 int main(void) {

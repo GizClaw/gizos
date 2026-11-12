@@ -34,11 +34,13 @@ def _web_board_page_impl(ctx):
     args = ctx.actions.args()
     args.add("--shell", ctx.file._shell)
     args.add("--layout", skin)
+    for style in ctx.files.styles:
+        args.add("--style", style)
     args.add("--out", ctx.outputs.shell)
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
-        inputs = [ctx.file._shell, skin],
+        inputs = [ctx.file._shell, skin] + ctx.files.styles,
         outputs = [ctx.outputs.shell],
         mnemonic = "H2WebAppSkin",
         progress_message = "Injecting web board skin %{label}",
@@ -69,6 +71,7 @@ _web_board_page = rule(
         "board": attr.label(mandatory = True, providers = [H2WebBoardInfo]),
         "shell": attr.output(mandatory = True),
         "skin": attr.string(),
+        "styles": attr.label_list(allow_files = [".css"]),
         "header": attr.output(mandatory = True),
         "_default_layout": attr.label(
             default = Label("//tools/bazel/web:default_layout.html"),
@@ -105,6 +108,7 @@ def h2_web_app(
         evals = [],
         board = None,
         skin = None,
+        styles = [],
         copts = [],
         linkopts = []):
     """Declares `<name>` (web tar), `serve` and `browser_test` targets.
@@ -135,6 +139,7 @@ def h2_web_app(
       skin: Name of one of the board's skins (an unknown name fails
         analysis). Omitted: the board's default_skin, or the plain
         default_layout.html when the board has none.
+      styles: Entry-owned CSS files appended after the board skin styles.
       copts: Extra C compile options for srcs.
       linkopts: Extra Emscripten link options.
     """
@@ -143,6 +148,7 @@ def h2_web_app(
         board = board if board else _DEFAULT_BOARD,
         shell = name + "_shell.html",
         skin = skin or "",
+        styles = styles,
         header = name + "_board/h2_web_board_config.h",
     )
     shell = ":" + name + "_shell.html"

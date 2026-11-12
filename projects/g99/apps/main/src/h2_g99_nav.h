@@ -90,7 +90,9 @@ h2_g99_nav_result_t h2_g99_nav_input(h2_g99_nav_t* nav, h2_g99_action_t action,
 
 /** Ends a wheel drag that left the wheel `offset` items past the selection:
  * turns `steps` items from there, or settles back for zero steps. Accepted
- * only on a wheel route at rest, with the screen on and nothing edited. */
+ * only on a wheel route at rest with the screen on. The settings wheel can
+ * leave Wi-Fi, volume and brightness editors; password and other editors
+ * reject wheel drags. */
 h2_g99_nav_result_t h2_g99_nav_rotate_from(h2_g99_nav_t* nav, int steps,
                                            float offset, uint64_t now_ms);
 
@@ -109,6 +111,8 @@ uint32_t h2_g99_nav_elapsed(const h2_g99_nav_t* nav, uint64_t now_ms);
 
 /** Number of wheel items on a route. */
 uint8_t h2_g99_nav_route_count(const h2_g99_nav_t* nav, h2_g99_route_t route);
+uint8_t h2_g99_nav_wheel_position(h2_g99_route_t route, uint8_t item);
+uint8_t h2_g99_nav_wheel_item(h2_g99_route_t route, uint8_t position);
 
 /** Whether OK can enter or edit the given item. */
 bool h2_g99_nav_main_enterable(uint8_t item);

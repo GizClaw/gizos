@@ -5,4 +5,5 @@ package(default_visibility = ["//visibility:public"])
 g99_web_e2e(
     name = "g99-web-e2e-mosaico",
     board = "//boards/espressif/mosaico/web",
+    styles = ["//projects/g99/targets/pkg_tar/web:mosaico.css"],
 )

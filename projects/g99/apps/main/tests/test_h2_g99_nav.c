@@ -245,7 +245,9 @@ static uint64_t to_settings(h2_g99_nav_t* nav, uint8_t item) {
   t = step(nav, H2_G99_ACTION_DOWN, t, H2_G99_NAV_CHANGED);
   t = step(nav, H2_G99_ACTION_DOWN, t, H2_G99_NAV_CHANGED);
   t = step(nav, H2_G99_ACTION_OK, t, H2_G99_NAV_CHANGED);
-  for (uint8_t i = 0u; i < item; ++i)
+  const uint8_t position =
+      h2_g99_nav_wheel_position(H2_G99_ROUTE_SETTINGS, item);
+  for (uint8_t i = 0u; i < position; ++i)
     t = step(nav, H2_G99_ACTION_DOWN, t, H2_G99_NAV_CHANGED);
   CHECK(nav->route == H2_G99_ROUTE_SETTINGS);
   CHECK(nav->sub_sel == item);
@@ -299,7 +301,8 @@ static void test_settings_list_editor(void) {
 static void test_settings_unimplemented_items(void) {
   for (uint8_t item = 0u; item < H2_G99_SETTING_COUNT; ++item) {
     CHECK(h2_g99_nav_setting_implemented(item) ==
-          (item <= H2_G99_SETTING_ABOUT));
+          (item <= H2_G99_SETTING_ABOUT || item == H2_G99_SETTING_HAPTICS ||
+           item == H2_G99_SETTING_STORAGE));
     CHECK(h2_g99_nav_setting_editable(item) == (item < H2_G99_SETTING_ABOUT));
   }
   h2_g99_nav_t nav;
@@ -309,7 +312,7 @@ static void test_settings_unimplemented_items(void) {
   CHECK(nav.sub_sel == H2_G99_SETTING_HAPTICS);
   CHECK(h2_g99_nav_input(&nav, H2_G99_ACTION_OK, t) == H2_G99_NAV_IGNORED);
   CHECK(!nav.editing);
-  /* The settings wheel wraps across all 13 items. */
+  /* The settings wheel wraps across its visible items. */
   h2_g99_nav_t wrap;
   const uint64_t w = to_settings(&wrap, 0u);
   (void)step(&wrap, H2_G99_ACTION_UP, w, H2_G99_NAV_CHANGED);
@@ -342,7 +345,73 @@ static void test_password_entry(void) {
   CHECK(!nav.text_entry);
 }
 
+static void test_wifi_left_wheel(void) {
+  h2_g99_nav_t nav;
+  uint64_t moment = to_settings(&nav, H2_G99_SETTING_WIFI);
+  CHECK(h2_g99_nav_input(&nav, H2_G99_ACTION_OK, moment) ==
+        H2_G99_NAV_EDIT_BEGIN);
+  h2_g99_nav_set_edit_count(&nav, 4u, 2u);
+  CHECK(h2_g99_nav_rotate_from(&nav, 0, 0.2f, moment) == H2_G99_NAV_CHANGED);
+  moment += H2_G99_ROTATE_MS;
+  CHECK(h2_g99_nav_tick(&nav, moment) == H2_G99_NAV_CHANGED);
+  CHECK(nav.editing && nav.edit_index == 2u);
+  CHECK(h2_g99_nav_rotate_from(&nav, 1, 0.7f, moment) == H2_G99_NAV_CHANGED);
+  CHECK(!nav.editing && nav.edit_count == 0u);
+  moment += H2_G99_ROTATE_MS;
+  CHECK(h2_g99_nav_tick(&nav, moment) == H2_G99_NAV_CHANGED);
+  CHECK(nav.sub_sel == H2_G99_SETTING_VOLUME);
+  CHECK(h2_g99_nav_input(&nav, H2_G99_ACTION_OK, moment) ==
+        H2_G99_NAV_EDIT_BEGIN);
+  CHECK(h2_g99_nav_rotate_from(&nav, 1, 0.7f, moment) == H2_G99_NAV_CHANGED);
+  CHECK(!nav.editing);
+}
+
+static void test_slider_editor_wheel(void) {
+  const uint8_t items[] = {H2_G99_SETTING_VOLUME, H2_G99_SETTING_BRIGHTNESS,
+                           H2_G99_SETTING_SCREEN_TIMEOUT};
+  for (size_t index = 0u; index < sizeof(items) / sizeof(items[0]); ++index) {
+    h2_g99_nav_t nav;
+    uint64_t moment = to_settings(&nav, items[index]);
+    CHECK(h2_g99_nav_input(&nav, H2_G99_ACTION_OK, moment) ==
+          H2_G99_NAV_EDIT_BEGIN);
+    CHECK(h2_g99_nav_rotate_from(&nav, 0, 0.2f, moment) == H2_G99_NAV_CHANGED);
+    moment += H2_G99_ROTATE_MS;
+    CHECK(h2_g99_nav_tick(&nav, moment) == H2_G99_NAV_CHANGED);
+    CHECK(nav.editing && nav.sub_sel == items[index]);
+    CHECK(h2_g99_nav_rotate_from(&nav, 1, 0.7f, moment) == H2_G99_NAV_CHANGED);
+    CHECK(!nav.editing);
+    moment += H2_G99_ROTATE_MS;
+    CHECK(h2_g99_nav_tick(&nav, moment) == H2_G99_NAV_CHANGED);
+    CHECK(nav.sub_sel == items[index] + 1u);
+  }
+}
+
+static void test_settings_skips_input(void) {
+  h2_g99_nav_t nav;
+  uint64_t moment = to_settings(&nav, H2_G99_SETTING_HAPTICS);
+  CHECK(h2_g99_nav_route_count(&nav, H2_G99_ROUTE_SETTINGS) == 12u);
+  moment = step(&nav, H2_G99_ACTION_DOWN, moment, H2_G99_NAV_CHANGED);
+  CHECK(nav.sub_sel == H2_G99_SETTING_STORAGE);
+  moment = step(&nav, H2_G99_ACTION_UP, moment, H2_G99_NAV_CHANGED);
+  CHECK(nav.sub_sel == H2_G99_SETTING_HAPTICS);
+  CHECK(h2_g99_nav_rotate_from(&nav, 1, 0.8f, moment) == H2_G99_NAV_CHANGED);
+  CHECK(h2_g99_nav_finish_rotate(&nav, moment));
+  CHECK(nav.sub_sel == H2_G99_SETTING_STORAGE);
+  bool visited[H2_G99_SETTING_COUNT] = {false};
+  for (unsigned index = 0u; index < 12u; ++index) {
+    CHECK(nav.sub_sel != H2_G99_SETTING_INPUT);
+    visited[nav.sub_sel] = true;
+    moment = step(&nav, H2_G99_ACTION_DOWN, moment, H2_G99_NAV_CHANGED);
+  }
+  CHECK(nav.sub_sel == H2_G99_SETTING_STORAGE);
+  for (unsigned item = 0u; item < H2_G99_SETTING_COUNT; ++item)
+    CHECK(visited[item] == (item != H2_G99_SETTING_INPUT));
+}
+
 int main(void) {
+  test_settings_skips_input();
+  test_slider_editor_wheel();
+  test_wifi_left_wheel();
   test_boot_gates_every_input();
   test_enter_back_restores_selection();
   test_rotation_wraps_and_gates();

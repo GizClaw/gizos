@@ -21,6 +21,7 @@ typedef struct h2_g99_settings {
   uint8_t volume_percent;
   uint8_t brightness_percent;
   uint8_t screen_timeout_index;
+  uint8_t haptics_enabled;
 } h2_g99_settings_t;
 
 void h2_g99_settings_defaults(h2_g99_settings_t* settings);

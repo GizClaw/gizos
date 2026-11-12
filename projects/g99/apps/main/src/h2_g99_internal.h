@@ -8,6 +8,8 @@
 #include "h2_g99_settings.h"
 #include "h2_g99_touch.h"
 #include "h2_g99_wifi.h"
+#include "h2_g99_haptics.h"
+#include "h2_g99_storage_worker.h"
 #include "h2_lua.h"
 #include "h2_lvgl_touch.h"
 #include "lvgl.h"
@@ -32,9 +34,17 @@ typedef struct h2_g99_image {
 typedef struct h2_g99_layer {
   lv_obj_t* wheel;
   lv_obj_t* glow;
+  lv_obj_t* poster;
   lv_obj_t* slots[H2_G99_WHEEL_SLOTS];
   const void* slot_src[H2_G99_WHEEL_SLOTS];
   lv_obj_t* info;
+  lv_obj_t* wifi_rows[H2_G99_WIFI_MAX_NETWORKS];
+  lv_obj_t* timeout_rows[H2_G99_SCREEN_TIMEOUT_COUNT];
+  lv_obj_t* wifi_controls;
+  lv_obj_t* wifi_connect;
+  uint64_t wifi_reveal_ms;
+  lv_obj_t* slider;
+  lv_obj_t* slider_number;
   h2_g99_route_t route;
   uint8_t sel;
   uint32_t info_rev;
@@ -47,6 +57,12 @@ typedef struct h2_g99_touch_request {
   int row;
   int value;
   int text;
+  int wifi_focus;
+  bool value_end;
+  int haptics;
+  int timeout;
+  int library_menu;
+  bool feedback;
 } h2_g99_touch_request_t;
 
 enum {
@@ -63,6 +79,11 @@ typedef struct h2_g99_app {
   h2_g99_settings_t settings;
   h2_g99_wifi_t* wifi;
   h2_g99_wifi_snapshot_t wifi_state;
+  h2_g99_storage_t* storage;
+  h2_g99_storage_snapshot_t storage_state;
+  uint64_t storage_query_ms;
+  h2_g99_haptics_t haptics;
+  bool haptics_available;
   uint64_t last_scan_ms;
   bool scanned;
   h2_g99_lifecycle_t lifecycle;
@@ -102,6 +123,14 @@ typedef struct h2_g99_app {
   lv_obj_t* keyboard_panel;
   lv_obj_t* keyboard_text;
   lv_obj_t* keyboard;
+  lv_obj_t* library_overlay;
+  lv_obj_t* library_scrim;
+  lv_obj_t* library_drawer;
+  bool library_menu_open;
+  float library_menu_progress;
+  float library_menu_from;
+  uint64_t library_menu_ms;
+  uint32_t library_menu_duration_ms;
   char keyboard_ssid[H2_PAL_WIFI_SSID_MAX + 1];
   h2_g99_layer_t layers[2];
   uint8_t front;
@@ -111,18 +140,20 @@ typedef struct h2_g99_app {
   h2_g99_background_t bg_spec;
   h2_g99_image_t icons[H2_G99_ICON_COUNT];
   h2_g99_image_t cover;
+  h2_g99_image_t library_poster;
   h2_g99_image_t glow;
   h2_g99_image_t brand;
   h2_g99_image_t mark;
   h2_g99_image_t tiny_wifi;
   h2_g99_image_t tiny_lock;
   h2_g99_image_t tiny_check;
-  h2_g99_image_t tiny_pick;
   int32_t icon_px;
   int32_t thumb_px;
   int32_t glow_px;
   bool press_active;
   bool press_ignored;
+  bool press_wifi;
+  bool press_timeout;
   lv_point_t press_start;
   /* Touch reaches LVGL through this filter, see h2_g99_touch.h; its
    * counters at the start of the current press. */
@@ -136,9 +167,22 @@ typedef struct h2_g99_app {
   /* Touch diagnostics for the current press: touch reads LVGL made and the
    * longest gap between two of them. */
   uint32_t press_samples;
+  uint64_t press_start_ms;
   uint64_t press_last_ms;
   uint32_t press_gap_ms;
   h2_g99_touch_request_t touch_request;
+  h2_g99_list_motion_t wifi_motion;
+  h2_g99_rect_t wifi_list_rect;
+  bool wifi_motion_ready;
+  h2_g99_list_motion_t timeout_motion;
+  h2_g99_rect_t timeout_list_rect;
+  bool timeout_motion_ready;
+  bool wifi_connect_pressed;
+  bool wifi_connect_dragged;
+  lv_point_t wifi_connect_start;
+  bool slider_pressed;
+  bool slider_dirty;
+  bool haptics_pressed;
 
   /* Frame statistics for config->frame, accumulated until a frame is
    * presented. */
@@ -171,8 +215,10 @@ void h2_g99_ui_open_keyboard(h2_g99_app_t* app, const char* ssid);
 void h2_g99_ui_set_keyboard_text(h2_g99_app_t* app, const char* text);
 /** Copies the typed text and closes the keyboard; buffer may be NULL. */
 void h2_g99_ui_close_keyboard(h2_g99_app_t* app, char* text, size_t capacity);
-/** Number of Wi-Fi rows shown, see the Settings page layout. */
-uint8_t h2_g99_ui_wifi_rows(const h2_g99_app_t* app);
+void h2_g99_ui_wifi_select(h2_g99_app_t* app, uint8_t selection, bool animate);
+void h2_g99_ui_timeout_select(h2_g99_app_t* app, uint8_t selection,
+                              bool animate);
+void h2_g99_ui_library_menu(h2_g99_app_t* app, bool open);
 
 /* Text (h2_g99_ui.c). */
 const char* h2_g99_main_name(uint8_t item);

@@ -160,7 +160,7 @@ static h2_pal_result_t wait_read(h2_g99_e2e_t* e2e, const char* what) {
 }
 
 /* Waits until Main read the lifted finger again H2_G99_E2E_LIFT_MS after
- * it read the lift, which ends the press in Main. */
+ * it read the lift, or the release launched the Lua app and suspended UI. */
 static h2_pal_result_t wait_lifted(h2_g99_e2e_t* e2e) {
   h2_g99_e2e_finger_t* f = &e2e->finger;
   h2_g99_e2e_lock(e2e);
@@ -172,6 +172,11 @@ static h2_pal_result_t wait_lifted(h2_g99_e2e_t* e2e) {
     const bool held = f->last_read_ms >= lifted_ms + H2_G99_E2E_LIFT_MS;
     h2_g99_e2e_unlock(e2e);
     if (held) return H2_PAL_OK;
+    h2_g99_observation_t observation;
+    if (h2_g99_e2e_observe(e2e, &observation, NULL) &&
+        observation.route == H2_G99_ROUTE_APP &&
+        observation.lifecycle == H2_G99_LIFECYCLE_APP_RUNNING)
+      return H2_PAL_OK;
     const uint64_t elapsed = h2_g99_e2e_now_ms(e2e) - start;
     if (elapsed >= H2_G99_E2E_LIFT_MS + H2_G99_E2E_TOUCH_READ_MS ||
         !h2_g99_e2e_main_running(e2e) || h2_g99_e2e_aborted(e2e)) {

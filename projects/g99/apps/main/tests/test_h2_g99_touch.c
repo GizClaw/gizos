@@ -138,7 +138,7 @@ static void test_read_interval(void) {
 
 /* Mosaico CST9220, driver 0.1.1: a read between two reports finds an empty
  * frame, which the board reports as a release; the next report presses
- * again. The press continues, also when the next read comes late. */
+ * again. The press continues only within the release window. */
 static void test_empty_frames(void) {
   const h2_pal_touch_api_t* api = setup(&kClockApi);
   h2_pal_touch_event_t e;
@@ -150,10 +150,11 @@ static void test_empty_frames(void) {
   CHECK(is(poll_at(api, 1032u, &e), &e, H2_PAL_TOUCH_EVENT_MOVE, 50, 60));
   contact(H2_PAL_TOUCH_EVENT_UP, 50, 60);
   CHECK(poll_at(api, 1048u, &e) == H2_PAL_ERR_WOULD_BLOCK);
-  /* A 150 ms frame: the finger is still there at the next read. */
+  /* An expired release ends before the next contact is consumed. */
   contact(H2_PAL_TOUCH_EVENT_DOWN, 50, 90);
-  CHECK(is(poll_at(api, 1200u, &e), &e, H2_PAL_TOUCH_EVENT_MOVE, 50, 90));
-  CHECK(g_filter.stats.rejoined == 2u);
+  CHECK(is(poll_at(api, 1200u, &e), &e, H2_PAL_TOUCH_EVENT_UP, 50, 60));
+  CHECK(is(poll_at(api, 1200u, &e), &e, H2_PAL_TOUCH_EVENT_DOWN, 50, 90));
+  CHECK(g_filter.stats.rejoined == 1u);
   /* The finger lifts: the last release holds. */
   contact(H2_PAL_TOUCH_EVENT_UP, 50, 90);
   CHECK(poll_at(api, 1216u, &e) == H2_PAL_ERR_WOULD_BLOCK);
@@ -225,6 +226,56 @@ static void test_without_clock(void) {
   CHECK(h2_pal_touch_close(api) == H2_PAL_OK);
 }
 
+static void test_release_deadline(void) {
+  const uint64_t gaps[] = {49u, 50u, 120u};
+  for (size_t index = 0u; index < sizeof(gaps) / sizeof(gaps[0]); ++index) {
+    const h2_pal_touch_api_t* api = setup(&kClockApi);
+    h2_pal_touch_event_t event;
+    contact(H2_PAL_TOUCH_EVENT_DOWN, 60, 300);
+    CHECK(poll_at(api, 1000u, &event) == H2_PAL_OK);
+    contact(H2_PAL_TOUCH_EVENT_UP, 60, 220);
+    CHECK(poll_at(api, 1040u, &event) == H2_PAL_ERR_WOULD_BLOCK);
+    contact(H2_PAL_TOUCH_EVENT_DOWN, 60, 420);
+    const uint64_t next = 1040u + gaps[index];
+    if (gaps[index] < H2_G99_TOUCH_RELEASE_MS) {
+      CHECK(is(poll_at(api, next, &event), &event, H2_PAL_TOUCH_EVENT_MOVE, 60,
+               420));
+      CHECK(g_filter.stats.rejoined == 1u);
+    } else {
+      CHECK(is(poll_at(api, next, &event), &event, H2_PAL_TOUCH_EVENT_UP, 60,
+               220));
+      CHECK(is(poll_at(api, next, &event), &event, H2_PAL_TOUCH_EVENT_DOWN, 60,
+               420));
+      CHECK(g_filter.stats.rejoined == 0u);
+    }
+  }
+}
+
+static void test_missing_release_restart(void) {
+  const h2_pal_touch_api_t* api = setup(&kClockApi);
+  h2_pal_touch_event_t event;
+  contact(H2_PAL_TOUCH_EVENT_DOWN, 60, 300);
+  CHECK(poll_at(api, 1000u, &event) == H2_PAL_OK);
+  contact(H2_PAL_TOUCH_EVENT_MOVE, 60, 220);
+  CHECK(poll_at(api, 1040u, &event) == H2_PAL_OK);
+  CHECK(poll_at(api, 3040u, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  CHECK(g_filter.down);
+  contact(H2_PAL_TOUCH_EVENT_DOWN, 60, 420);
+  CHECK(
+      is(poll_at(api, 3080u, &event), &event, H2_PAL_TOUCH_EVENT_UP, 60, 220));
+  CHECK(is(poll_at(api, 3080u, &event), &event, H2_PAL_TOUCH_EVENT_DOWN, 60,
+           420));
+  contact(H2_PAL_TOUCH_EVENT_MOVE, 60, 380);
+  CHECK(is(poll_at(api, 3120u, &event), &event, H2_PAL_TOUCH_EVENT_MOVE, 60,
+           380));
+  contact(H2_PAL_TOUCH_EVENT_DOWN, 60, 100);
+  CHECK(poll_at(api, 3160u, &event) == H2_PAL_OK);
+  CHECK(h2_pal_touch_close(api) == H2_PAL_OK);
+  CHECK(h2_pal_touch_open(api) == H2_PAL_OK);
+  CHECK(poll_at(api, 3200u, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  CHECK(!g_filter.down && !g_filter.pending_down);
+}
+
 int main(void) {
   test_clean_press();
   test_read_interval();
@@ -232,6 +283,8 @@ int main(void) {
   test_failed_reads();
   test_hover();
   test_without_clock();
+  test_release_deadline();
+  test_missing_release_restart();
   if (failures != 0) {
     fprintf(stderr, "%d touch check(s) failed\n", failures);
     return 1;

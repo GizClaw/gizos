@@ -10,6 +10,7 @@
 #define H2_G99_LOOP_MS 5u
 #define H2_G99_BATTERY_PERIOD_MS 5000u
 #define H2_G99_RESCAN_MS 15000u
+#define H2_G99_STORAGE_REFRESH_MS 5000u
 
 void h2_g99_log(const h2_g99_app_t* app, const char* format, ...) {
   if (app == NULL || app->runtime == NULL || format == NULL) return;
@@ -84,6 +85,31 @@ static void save_settings(h2_g99_app_t* app) {
   if (rc != H2_PAL_OK) h2_g99_log(app, "settings save rc=%d", (int)rc);
 }
 
+static void feedback(h2_g99_app_t* app) {
+  if (app->settings.haptics_enabled && app->haptics_available)
+    (void)h2_g99_haptics_pulse(&app->haptics, app->runtime, app->now_ms);
+}
+
+static void poll_storage(h2_g99_app_t* app) {
+  if (app->storage == NULL) return;
+  const bool visible = app->nav.screen_on &&
+                       app->nav.route == H2_G99_ROUTE_SETTINGS &&
+                       app->nav.sub_sel == H2_G99_SETTING_STORAGE &&
+                       app->nav.anim == H2_G99_TRANSITION_NONE;
+  if (visible && !app->storage_state.pending &&
+      (app->storage_query_ms == 0u ||
+       app->now_ms - app->storage_query_ms >= H2_G99_STORAGE_REFRESH_MS)) {
+    (void)h2_g99_storage_request(app->storage);
+    app->storage_query_ms = app->now_ms;
+  }
+  h2_g99_storage_snapshot_t next;
+  if (h2_g99_storage_get(app->storage, &next) == H2_PAL_OK &&
+      next.version != app->storage_state.version) {
+    app->storage_state = next;
+    app->info_rev++;
+  }
+}
+
 /* ---------- Wi-Fi ---------- */
 
 static void maybe_scan(h2_g99_app_t* app) {
@@ -103,6 +129,9 @@ static bool wifi_page_visible(const h2_g99_app_t* app) {
 }
 
 static void poll_wifi(h2_g99_app_t* app) {
+  if ((app->press_active && app->press_wifi) || app->wifi_connect_pressed ||
+      app->wifi_motion.dragging || app->wifi_motion.snapping)
+    return;
   h2_g99_wifi_snapshot_t next;
   h2_g99_wifi_get(app->wifi, &next);
   if (next.version == app->wifi_state.version &&
@@ -110,16 +139,30 @@ static void poll_wifi(h2_g99_app_t* app) {
     return;
   const bool finished_connect =
       next.connects_done != app->wifi_state.connects_done;
+  uint8_t focus =
+      app->wifi_motion_ready ? app->wifi_motion.target : app->nav.edit_index;
+  char focused_ssid[H2_PAL_WIFI_SSID_MAX + 1] = {0};
+  if (focus < app->wifi_state.network_count)
+    (void)snprintf(focused_ssid, sizeof(focused_ssid), "%s",
+                   app->wifi_state.networks[focus].ssid);
   app->wifi_state = next;
+  for (uint8_t index = 0u; index < next.network_count; ++index) {
+    if (strcmp(focused_ssid, next.networks[index].ssid) == 0) {
+      focus = index;
+      break;
+    }
+  }
   app->info_rev++;
   if (app->nav.editing && app->nav.sub_sel == H2_G99_SETTING_WIFI) {
     if (finished_connect && next.last_result == H2_PAL_OK) {
       h2_g99_nav_end_edit(&app->nav);
     } else {
-      h2_g99_nav_set_edit_count(&app->nav, next.network_count,
-                                app->nav.edit_index);
+      h2_g99_nav_set_edit_count(&app->nav, next.network_count, focus);
     }
   }
+  if (app->nav.route == H2_G99_ROUTE_SETTINGS &&
+      app->nav.sub_sel == H2_G99_SETTING_WIFI)
+    h2_g99_ui_wifi_select(app, focus, false);
   if (finished_connect)
     h2_g99_log(app, "wifi connect rc=%d connected=%d", (int)next.last_result,
                next.connected ? 1 : 0);
@@ -155,12 +198,12 @@ static void begin_edit(h2_g99_app_t* app) {
   switch (app->nav.sub_sel) {
     case H2_G99_SETTING_WIFI:
       h2_g99_nav_set_edit_count(&app->nav, app->wifi_state.network_count, 0u);
-      app->scanned = false;
       maybe_scan(app);
       break;
     case H2_G99_SETTING_SCREEN_TIMEOUT:
       h2_g99_nav_set_edit_count(&app->nav, H2_G99_SCREEN_TIMEOUT_COUNT,
                                 app->settings.screen_timeout_index);
+      h2_g99_ui_timeout_select(app, app->settings.screen_timeout_index, false);
       break;
     default:
       h2_g99_nav_set_edit_count(&app->nav, 0u, 0u);
@@ -184,12 +227,6 @@ static void activate_edit(h2_g99_app_t* app) {
     case H2_G99_SETTING_WIFI:
       activate_wifi(app, app->nav.edit_index);
       break;
-    case H2_G99_SETTING_SCREEN_TIMEOUT:
-      app->settings.screen_timeout_index = app->nav.edit_index;
-      apply_settings(app);
-      save_settings(app);
-      h2_g99_nav_end_edit(&app->nav);
-      break;
     default:
       h2_g99_nav_end_edit(&app->nav);
       break;
@@ -197,17 +234,52 @@ static void activate_edit(h2_g99_app_t* app) {
 }
 
 static h2_pal_result_t handle(h2_g99_app_t* app, h2_g99_action_t action) {
+  if (app->library_overlay != NULL && app->nav.screen_on &&
+      action != H2_G99_ACTION_SCREEN) {
+    app->nav.last_input_ms = app->now_ms;
+    if (action == H2_G99_ACTION_HOME) h2_g99_ui_library_menu(app, false);
+    return H2_PAL_OK;
+  }
   const h2_g99_nav_result_t result =
       h2_g99_nav_input(&app->nav, action, app->now_ms);
   h2_pal_result_t rc = H2_PAL_OK;
   if (result != H2_G99_NAV_IGNORED &&
-      (action == H2_G99_ACTION_HOME || action == H2_G99_ACTION_SCREEN)) {
+      (action == H2_G99_ACTION_HOME || action == H2_G99_ACTION_SCREEN ||
+       (result == H2_G99_NAV_CHANGED &&
+        app->nav.anim == H2_G99_TRANSITION_ROTATE))) {
     /* A page/screen change consumes the old pointer gesture. Its retained
      * fractional offset must not reappear after the transition. */
     app->dragging = false;
     app->drag_offset = 0.0f;
     app->press_active = false;
     app->press_ignored = true;
+    app->press_wifi = false;
+    app->press_timeout = false;
+    app->wifi_motion.dragging = false;
+    app->wifi_motion.snapping = false;
+    app->wifi_motion_ready = false;
+    app->timeout_motion.dragging = false;
+    app->timeout_motion.snapping = false;
+    app->timeout_motion_ready = false;
+    app->wifi_connect_pressed = false;
+    app->wifi_connect_dragged = true;
+    app->haptics_pressed = false;
+    (void)h2_g99_haptics_stop(&app->haptics, app->runtime);
+  }
+  if (result != H2_G99_NAV_IGNORED &&
+      (app->slider_pressed || app->slider_dirty ||
+       app->touch_request.value_end)) {
+    app->slider_pressed = false;
+    app->press_ignored = true;
+    app->touch_request.value = -1;
+    app->touch_request.value_end = false;
+    if (app->slider_dirty) save_settings(app);
+    app->slider_dirty = false;
+  }
+  if (result != H2_G99_NAV_IGNORED && app->haptics_pressed) {
+    app->haptics_pressed = false;
+    app->press_ignored = true;
+    app->touch_request.haptics = -1;
   }
   switch (result) {
     case H2_G99_NAV_IGNORED:
@@ -237,6 +309,16 @@ static h2_pal_result_t handle(h2_g99_app_t* app, h2_g99_action_t action) {
     case H2_G99_NAV_EDIT_DECREASE:
       step_value(app, -1);
       break;
+    case H2_G99_NAV_EDIT_MOVED:
+      if (app->nav.sub_sel == H2_G99_SETTING_WIFI)
+        h2_g99_ui_wifi_select(app, app->nav.edit_index, true);
+      else if (app->nav.sub_sel == H2_G99_SETTING_SCREEN_TIMEOUT) {
+        app->settings.screen_timeout_index = app->nav.edit_index;
+        apply_settings(app);
+        save_settings(app);
+        h2_g99_ui_timeout_select(app, app->nav.edit_index, true);
+      }
+      break;
     case H2_G99_NAV_EDIT_ACTIVATE:
       activate_edit(app);
       break;
@@ -249,6 +331,8 @@ static h2_pal_result_t handle(h2_g99_app_t* app, h2_g99_action_t action) {
     default:
       break;
   }
+  if (result != H2_G99_NAV_SCREEN_OFF && result != H2_G99_NAV_SCREEN_ON)
+    feedback(app);
   /* The info area follows a wheel rotation by its selection alone; a
    * rebuild would redraw it on top of every rotation. */
   if (result != H2_G99_NAV_CHANGED || app->nav.anim != H2_G99_TRANSITION_ROTATE)
@@ -258,12 +342,30 @@ static h2_pal_result_t handle(h2_g99_app_t* app, h2_g99_action_t action) {
 
 static void handle_touch(h2_g99_app_t* app) {
   h2_g99_touch_request_t request = app->touch_request;
-  app->touch_request = (h2_g99_touch_request_t){-1, -1, -1, H2_G99_TEXT_NONE};
+  app->touch_request = (h2_g99_touch_request_t){.action = -1,
+                                                .row = -1,
+                                                .value = -1,
+                                                .text = H2_G99_TEXT_NONE,
+                                                .wifi_focus = -1,
+                                                .haptics = -1,
+                                                .timeout = -1,
+                                                .library_menu = -1};
+  if (request.feedback) feedback(app);
   if (request.text == H2_G99_TEXT_SUBMIT && app->nav.text_entry)
     (void)handle(app, H2_G99_ACTION_OK);
   if (request.text == H2_G99_TEXT_CANCEL && app->nav.text_entry)
     (void)handle(app, H2_G99_ACTION_HOME);
   if (request.action >= 0) (void)handle(app, (h2_g99_action_t)request.action);
+  if (request.wifi_focus >= 0 && app->nav.route == H2_G99_ROUTE_SETTINGS &&
+      app->nav.sub_sel == H2_G99_SETTING_WIFI &&
+      h2_g99_nav_input_ready(&app->nav) && !app->nav.text_entry &&
+      app->wifi_state.network_count > 0u) {
+    if (!app->nav.editing) (void)handle(app, H2_G99_ACTION_OK);
+    h2_g99_nav_set_edit_count(&app->nav, app->wifi_state.network_count,
+                              (uint8_t)request.wifi_focus);
+    app->nav.last_input_ms = app->now_ms;
+    app->info_rev++;
+  }
   if (request.row >= 0 && app->nav.route == H2_G99_ROUTE_SETTINGS &&
       h2_g99_nav_input_ready(&app->nav)) {
     if (!app->nav.editing) (void)handle(app, H2_G99_ACTION_OK);
@@ -275,16 +377,62 @@ static void handle_touch(h2_g99_app_t* app) {
   }
   if (request.value >= 0 && app->nav.route == H2_G99_ROUTE_SETTINGS &&
       h2_g99_nav_input_ready(&app->nav)) {
+    uint8_t* value = NULL;
     if (app->nav.sub_sel == H2_G99_SETTING_VOLUME)
-      app->settings.volume_percent = (uint8_t)request.value;
+      value = &app->settings.volume_percent;
     else if (app->nav.sub_sel == H2_G99_SETTING_BRIGHTNESS)
-      app->settings.brightness_percent = (uint8_t)request.value;
-    else
-      return;
+      value = &app->settings.brightness_percent;
+    if (value == NULL) return;
+    const uint8_t previous = *value;
+    *value = (uint8_t)request.value;
     h2_g99_settings_normalize(&app->settings);
-    apply_settings(app);
-    save_settings(app);
-    app->info_rev++;
+    if (*value != previous) {
+      apply_settings(app);
+      app->slider_dirty = true;
+      app->info_rev++;
+    }
+    if (request.value_end) {
+      h2_g99_nav_end_edit(&app->nav);
+      if (app->slider_dirty) save_settings(app);
+      app->slider_dirty = false;
+      app->info_rev++;
+      h2_g99_log(app, "slider setting=%u value=%u released",
+                 (unsigned)app->nav.sub_sel, (unsigned)*value);
+    }
+  }
+  if (request.haptics >= 0 && app->nav.route == H2_G99_ROUTE_SETTINGS &&
+      app->nav.sub_sel == H2_G99_SETTING_HAPTICS &&
+      h2_g99_nav_input_ready(&app->nav)) {
+    const uint8_t enabled = request.haptics != 0 ? 1u : 0u;
+    if (enabled != app->settings.haptics_enabled) {
+      app->settings.haptics_enabled = enabled;
+      save_settings(app);
+      if (enabled)
+        feedback(app);
+      else
+        (void)h2_g99_haptics_stop(&app->haptics, app->runtime);
+      app->info_rev++;
+    }
+  }
+  if (request.timeout >= 0 &&
+      request.timeout < (int)H2_G99_SCREEN_TIMEOUT_COUNT &&
+      app->nav.route == H2_G99_ROUTE_SETTINGS &&
+      app->nav.sub_sel == H2_G99_SETTING_SCREEN_TIMEOUT &&
+      h2_g99_nav_input_ready(&app->nav)) {
+    h2_g99_nav_end_edit(&app->nav);
+    app->nav.last_input_ms = app->now_ms;
+    if (app->settings.screen_timeout_index != (uint8_t)request.timeout) {
+      app->settings.screen_timeout_index = (uint8_t)request.timeout;
+      apply_settings(app);
+      save_settings(app);
+      app->info_rev++;
+    }
+  }
+  if (request.library_menu >= 0 && app->nav.screen_on &&
+      app->nav.route == H2_G99_ROUTE_LIBRARY &&
+      h2_g99_nav_input_ready(&app->nav)) {
+    h2_g99_ui_library_menu(app, request.library_menu != 0);
+    feedback(app);
   }
 }
 
@@ -420,6 +568,8 @@ static void observe_layout(const h2_g99_app_t* app,
       route == H2_G99_ROUTE_LIBRARY ? H2_G99_WHEEL_THUMBS : H2_G99_WHEEL_ICONS,
       h2_g99_nav_route_count(&app->nav, route), &next->wheel_rect);
   const h2_g99_layout_t* l = &app->layout;
+  if (route == H2_G99_ROUTE_LIBRARY)
+    next->wheel_rect = (h2_g99_rect_t){0, 0, l->panel_x, l->height};
   next->info_rect = (h2_g99_rect_t){
       l->panel_x, l->panel_y, l->panel_x + l->panel_w, l->panel_y + l->panel_h};
 }
@@ -455,7 +605,7 @@ static void publish(h2_g99_app_t* app) {
   next.text_entry = app->nav.text_entry;
   observe_wifi(app, &next);
   observe_layout(app, &next);
-  next.wheel_drag = app->dragging ? app->drag_offset : 0.0f;
+  next.wheel_drag = app->dragging && !app->press_wifi ? app->drag_offset : 0.0f;
   next.sequence = app->observation.sequence;
   if (app->observation_sent &&
       memcmp(&next, &app->observation, sizeof(next)) == 0)
@@ -509,6 +659,8 @@ static h2_pal_result_t loop(h2_g99_app_t* app) {
         app->nav.route != H2_G99_ROUTE_BOOT)
       app->lifecycle = H2_G99_LIFECYCLE_RUNNING;
     poll_wifi(app);
+    poll_storage(app);
+    (void)h2_g99_haptics_tick(&app->haptics, app->runtime, app->now_ms);
     poll_battery(app);
     poll_clock(app);
     if (wifi_page_visible(app)) maybe_scan(app);
@@ -578,6 +730,14 @@ h2_pal_result_t h2_g99_run(h2_runtime_t* runtime,
       rc = H2_PAL_OK;
     }
     h2_g99_wifi_get(app->wifi, &app->wifi_state);
+    h2_runtime_component_info_t haptics_info = {0};
+    app->haptics_available =
+        h2_runtime_component_get(runtime, H2_G99_COMPONENT_HAPTICS,
+                                 &haptics_info) == H2_PAL_OK &&
+        haptics_info.kind == H2_RUNTIME_COMPONENT_PWM_SWITCH;
+    rc = h2_g99_storage_create(runtime, config->storage, &app->storage);
+    if (rc == H2_PAL_OK)
+      rc = h2_g99_storage_get(app->storage, &app->storage_state);
   }
   if (rc == H2_PAL_OK) rc = h2_g99_ui_init(app);
   if (rc == H2_PAL_OK) {
@@ -595,6 +755,12 @@ h2_pal_result_t h2_g99_run(h2_runtime_t* runtime,
   app->lifecycle =
       rc == H2_PAL_OK ? H2_G99_LIFECYCLE_STOPPING : H2_G99_LIFECYCLE_FAILED;
   publish(app);
+  if (app->slider_dirty) save_settings(app);
+  const h2_pal_result_t haptics_rc =
+      h2_g99_haptics_stop(&app->haptics, runtime);
+  if (haptics_rc != H2_PAL_OK) return haptics_rc;
+  const h2_pal_result_t storage_rc = h2_g99_storage_destroy(&app->storage);
+  if (storage_rc != H2_PAL_OK) return storage_rc;
   if (app->host != NULL) {
     const h2_pal_result_t stop_rc = h2_g99_lua_stop(app);
     if (rc == H2_PAL_OK) rc = stop_rc;

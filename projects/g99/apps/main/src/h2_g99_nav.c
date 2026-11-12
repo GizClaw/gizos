@@ -38,10 +38,22 @@ uint8_t h2_g99_nav_route_count(const h2_g99_nav_t* nav, h2_g99_route_t route) {
     case H2_G99_ROUTE_LIBRARY:
       return nav->library_count;
     case H2_G99_ROUTE_SETTINGS:
-      return H2_G99_SETTING_COUNT;
+      return H2_G99_SETTING_COUNT - 1u;
     default:
       return 0u;
   }
+}
+
+uint8_t h2_g99_nav_wheel_position(h2_g99_route_t route, uint8_t item) {
+  return route == H2_G99_ROUTE_SETTINGS && item > H2_G99_SETTING_INPUT
+             ? item - 1u
+             : item;
+}
+
+uint8_t h2_g99_nav_wheel_item(h2_g99_route_t route, uint8_t position) {
+  return route == H2_G99_ROUTE_SETTINGS && position >= H2_G99_SETTING_INPUT
+             ? position + 1u
+             : position;
 }
 
 bool h2_g99_nav_main_enterable(uint8_t item) {
@@ -49,7 +61,8 @@ bool h2_g99_nav_main_enterable(uint8_t item) {
 }
 
 bool h2_g99_nav_setting_implemented(uint8_t item) {
-  return item <= H2_G99_SETTING_ABOUT;
+  return item <= H2_G99_SETTING_ABOUT || item == H2_G99_SETTING_HAPTICS ||
+         item == H2_G99_SETTING_STORAGE;
 }
 
 bool h2_g99_nav_setting_editable(uint8_t item) {
@@ -85,7 +98,9 @@ static h2_g99_nav_result_t start_rotate(h2_g99_nav_t* nav, int8_t dir,
   const uint8_t count = h2_g99_nav_route_count(nav, nav->route);
   if (count < 2u) return H2_G99_NAV_IGNORED;
   const uint8_t from = current_sel(nav);
-  const uint8_t to = (uint8_t)(((int)from + dir + count) % count);
+  const uint8_t position = h2_g99_nav_wheel_position(nav->route, from);
+  const uint8_t to = h2_g99_nav_wheel_item(
+      nav->route, (uint8_t)(((int)position + dir + count) % count));
   start_anim(nav, H2_G99_TRANSITION_ROTATE, H2_G99_ROTATE_MS, nav->route, from,
              to, now_ms);
   nav->rotate_dir = dir;
@@ -232,8 +247,14 @@ h2_g99_nav_result_t h2_g99_nav_input(h2_g99_nav_t* nav, h2_g99_action_t action,
 h2_g99_nav_result_t h2_g99_nav_rotate_from(h2_g99_nav_t* nav, int steps,
                                            float offset, uint64_t now_ms) {
   if (nav == NULL || !nav->screen_on || nav->anim != H2_G99_TRANSITION_NONE ||
-      nav->editing || nav->text_entry)
+      nav->text_entry)
     return H2_G99_NAV_IGNORED;
+  const bool wheel_editor = nav->route == H2_G99_ROUTE_SETTINGS &&
+                            (nav->sub_sel == H2_G99_SETTING_WIFI ||
+                             nav->sub_sel == H2_G99_SETTING_SCREEN_TIMEOUT ||
+                             nav->sub_sel == H2_G99_SETTING_VOLUME ||
+                             nav->sub_sel == H2_G99_SETTING_BRIGHTNESS);
+  if (nav->editing && !wheel_editor) return H2_G99_NAV_IGNORED;
   if (nav->route != H2_G99_ROUTE_MAIN && nav->route != H2_G99_ROUTE_LIBRARY &&
       nav->route != H2_G99_ROUTE_SETTINGS)
     return H2_G99_NAV_IGNORED;
@@ -243,7 +264,10 @@ h2_g99_nav_result_t h2_g99_nav_rotate_from(h2_g99_nav_t* nav, int steps,
   if (steps < -127) steps = -127;
   nav->last_input_ms = now_ms;
   const uint8_t from = current_sel(nav);
-  const uint8_t to = (uint8_t)((((int)from + steps) % count + count) % count);
+  const uint8_t position = h2_g99_nav_wheel_position(nav->route, from);
+  const uint8_t to = h2_g99_nav_wheel_item(
+      nav->route, (uint8_t)((((int)position + steps) % count + count) % count));
+  if (wheel_editor && steps != 0) h2_g99_nav_end_edit(nav);
   start_anim(nav, H2_G99_TRANSITION_ROTATE, H2_G99_ROTATE_MS, nav->route, from,
              to, now_ms);
   nav->rotate_dir = (int8_t)steps;

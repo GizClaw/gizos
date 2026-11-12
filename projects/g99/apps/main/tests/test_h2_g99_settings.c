@@ -124,11 +124,12 @@ static void test_defaults_and_ranges(void) {
   CHECK(h2_g99_screen_timeout_ms(2u) == 60000u);
   CHECK(h2_g99_screen_timeout_ms(3u) == 300000u);
   CHECK(h2_g99_screen_timeout_ms(4u) == 0u);
-  s = (h2_g99_settings_t){150u, 0u, 9u};
+  s = (h2_g99_settings_t){150u, 0u, 9u, 2u};
   h2_g99_settings_normalize(&s);
   CHECK(s.volume_percent == 100u);
   CHECK(s.brightness_percent == H2_G99_BRIGHTNESS_MIN_PERCENT);
   CHECK(s.screen_timeout_index == 1u);
+  CHECK(s.haptics_enabled == 0u);
 }
 
 static void test_steps_clamp(void) {
@@ -154,7 +155,7 @@ static void test_persistence_round_trip(void) {
   /* A device that never saved settings loads defaults without error. */
   CHECK(h2_g99_settings_load(&api, NULL, &loaded) == H2_PAL_OK);
   CHECK(loaded.volume_percent == 60u);
-  const h2_g99_settings_t saved = {30u, 80u, 4u};
+  const h2_g99_settings_t saved = {30u, 80u, 4u, 1u};
   CHECK(h2_g99_settings_save(&api, NULL, &saved) == H2_PAL_OK);
   CHECK(pref.commits == 1);
   CHECK(!pref.open);
@@ -162,6 +163,7 @@ static void test_persistence_round_trip(void) {
   CHECK(loaded.volume_percent == 30u);
   CHECK(loaded.brightness_percent == 80u);
   CHECK(loaded.screen_timeout_index == 4u);
+  CHECK(loaded.haptics_enabled == 1u);
   CHECK(!pref.open);
   /* Out-of-range stored values fall back to the defaults. */
   find(pref.committed, "volume", false)->value = 250u;
@@ -171,7 +173,7 @@ static void test_persistence_round_trip(void) {
   CHECK(loaded.brightness_percent == 80u);
   CHECK(loaded.screen_timeout_index == 1u);
   /* Saving normalizes; a stored brightness of zero is never written. */
-  const h2_g99_settings_t dark = {10u, 0u, 0u};
+  const h2_g99_settings_t dark = {10u, 0u, 0u, 0u};
   CHECK(h2_g99_settings_save(&api, NULL, &dark) == H2_PAL_OK);
   CHECK(find(pref.committed, "brightness", false)->value ==
         H2_G99_BRIGHTNESS_MIN_PERCENT);
@@ -186,7 +188,7 @@ static void test_failures(void) {
   h2_pal_pref_api_t api;
   fake_init(&pref, &api);
   pref.fail_set = true;
-  const h2_g99_settings_t value = {50u, 50u, 2u};
+  const h2_g99_settings_t value = {50u, 50u, 2u, 1u};
   CHECK(h2_g99_settings_save(&api, NULL, &value) == H2_PAL_ERR_IO);
   CHECK(pref.commits == 0);
   CHECK(!pref.open);
@@ -199,7 +201,7 @@ static void test_namespace_selection(void) {
   h2_pal_pref_api_t api;
   fake_init(&pref, &api);
   pref.name = "g99_e2e";
-  const h2_g99_settings_t value = {20u, 70u, 3u};
+  const h2_g99_settings_t value = {20u, 70u, 3u, 0u};
   /* An E2E namespace receives the writes; the default one is never opened. */
   CHECK(h2_g99_settings_save(&api, NULL, &value) == H2_PAL_ERR_INVALID_ARG);
   CHECK(pref.commits == 0);

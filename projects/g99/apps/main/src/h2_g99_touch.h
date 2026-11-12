@@ -15,7 +15,8 @@
  *   a move, which the old LVGL bridge treated as a pressed pointer.
  *
  * The filter reads its source at most once per H2_G99_TOUCH_READ_MS, counts
- * a release only after H2_G99_TOUCH_RELEASE_MS without contact, takes a
+ * a release only after H2_G99_TOUCH_RELEASE_MS without contact, completes an
+ * expired release before reading the next contact, takes a
  * failed read as no news (a press whose source keeps failing for
  * H2_G99_TOUCH_LOST_MS ends where it was), and drops moves without contact.
  * Pure C; no LVGL. */
@@ -64,6 +65,8 @@ typedef struct h2_g99_touch_filter {
   /* Time of the last source read. */
   bool read_once;
   uint64_t read_ms;
+  bool pending_down;
+  h2_pal_touch_event_t pending_contact;
   h2_g99_touch_stats_t stats;
 } h2_g99_touch_filter_t;
 

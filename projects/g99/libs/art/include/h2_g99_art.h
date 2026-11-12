@@ -23,8 +23,10 @@ extern "C" {
 #define H2_G99_COLOR_DIM 0x6E6685u
 #define H2_G99_COLOR_OK 0x62E3A0u
 #define H2_G99_COLOR_ERROR 0xFF5C7Au
-/** Pixel heart inside the brand icon screen. */
+/** Eyes and smile on the brand icon face. */
 #define H2_G99_COLOR_GLOW 0xD7C2FFu
+/** Cheeks on the brand icon face. */
+#define H2_G99_COLOR_BLUSH 0xFF5C7Au
 /** Loader status text. */
 #define H2_G99_COLOR_STATUS 0xE8E4F0u
 
@@ -49,6 +51,7 @@ typedef enum h2_g99_icon {
   H2_G99_ICON_RESET,
   H2_G99_ICON_LOCK,
   H2_G99_ICON_CHECK,
+  H2_G99_ICON_COMMUNITY,
   H2_G99_ICON_COUNT,
 } h2_g99_icon_t;
 
@@ -59,8 +62,8 @@ bool h2_g99_art_icon(h2_g99_icon_t icon, uint32_t rgb, uint8_t* argb,
 /** Renders the built-in Orbit app cover with rounded corners. */
 bool h2_g99_art_cover(uint8_t* argb, int32_t size);
 
-/** Renders the handheld brand icon into a width x height ARGB8888 buffer
- * (92:120 design), including its drop shadow. */
+/** Renders the smiling-face brand icon into a width x height ARGB8888 buffer
+ * (square 112-unit body plus a 4-unit drop shadow). */
 bool h2_g99_art_brand_icon(uint8_t* argb, int32_t width, int32_t height);
 
 /** Renders the "GizPocket" wordmark with its shadow into an ARGB8888 buffer

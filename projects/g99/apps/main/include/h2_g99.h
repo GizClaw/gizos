@@ -14,6 +14,7 @@
 #include "hal/h2_pal_touch.h"
 #include "h2_runtime.h"
 #include "h2_runtime_custom_event.h"
+#include "h2_g99_storage.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -36,6 +37,8 @@ enum {
 
 /** Optional Battery component; an unmapped battery shows no percentage. */
 #define H2_G99_COMPONENT_BATTERY 40u
+/** Optional PWM-switch component for short vibration feedback pulses. */
+#define H2_G99_COMPONENT_HAPTICS 41u
 
 /** Owner of G99 Runtime custom events. */
 #define H2_G99_CUSTOM_EVENT_OWNER 0x0099u
@@ -85,7 +88,9 @@ typedef enum h2_g99_main_item {
   H2_G99_MAIN_COUNT,
 } h2_g99_main_item_t;
 
-/** Settings entries in wheel order. Only the first five are implemented. */
+/** Stable Settings identifiers. INPUT is retained for compatibility and omitted
+ * from the wheel. Wi-Fi, volume, brightness, timeout, About, haptics and
+ * storage are implemented. */
 typedef enum h2_g99_setting_item {
   H2_G99_SETTING_WIFI = 0,
   H2_G99_SETTING_VOLUME,
@@ -137,7 +142,8 @@ typedef struct h2_g99_observation {
   bool editing;
   /** Focused row inside the edited settings item. */
   uint8_t edit_index;
-  /** True when route input is accepted (no boot or transition running). */
+  /** True when UI input is ready (no boot or page transition running).
+   * An open Library drawer captures input before background navigation. */
   bool input_ready;
   bool screen_on;
   uint8_t volume_percent;
@@ -160,8 +166,8 @@ typedef struct h2_g99_observation {
   char wifi_focused_ssid[H2_PAL_WIFI_SSID_MAX + 1];
   /** Result of the last finished scan or connect attempt. */
   int32_t wifi_last_result;
-  /** Layout of the current page at rest: the bounds of every visible wheel
-   * slot (at full size, including tilt) and the info area. */
+  /** Layout at rest: visible wheel slots at full size including tilt, or
+   * Library's left screenshot area, and the information area. */
   h2_g99_rect_t wheel_rect;
   h2_g99_rect_t info_rect;
   /** Items a finger has turned the wheel past the selection while it drags
@@ -219,6 +225,9 @@ typedef struct h2_g99_config {
    * optimization cannot exhaust an internal-only heap. Borrowed through run().
    */
   const h2_pal_mem_api_t* render_mem;
+  /** Optional target-owned, read-only storage statistics provider. Copied into
+   * the storage worker; user and query remain borrowed until it joins. */
+  const h2_g99_storage_api_t* storage;
 } h2_g99_config_t;
 
 /**

@@ -21,6 +21,7 @@ esp_target_task_policy(
     graph = [":launcher"],
     policies = [
         "g99/main 4 1 65536 psram",
+        "g99/storage        4 any 16384 psram",
         "g99/wifi           4 any 8192  psram",
         "h2loader/appcmd    8 0   4096  psram",
         "h2loader/blecmd    8 0   4096  psram",

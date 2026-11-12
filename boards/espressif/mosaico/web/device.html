@@ -5,11 +5,12 @@
 <style>
   :root { color-scheme: dark; font-family: system-ui, sans-serif; color: #e8edf2; background: #101318; }
   body { display: grid; min-height: 100svh; margin: 0; place-items: center; background: radial-gradient(ellipse at 50% 32%, #2a3038, #101318 72%); }
-  .mosaico { --u: min(1px, calc((100vw - 40px) / 560), calc((100svh - 160px) / 600)); display: grid; justify-items: center; gap: 12px; padding: 18px 0; }
+  .mosaico { --mosaico-view-width: 560; --mosaico-view-height: 600; --mosaico-body-rotation: 0deg; --mosaico-display-rotation: 0deg; --u: min(1px, calc((100vw - 40px) / var(--mosaico-view-width)), calc((100svh - 160px) / var(--mosaico-view-height))); display: grid; justify-items: center; gap: 12px; padding: 18px 0; }
   .mosaico-name { margin: 0; color: #aab3bf; font-size: 12px; font-weight: 500; letter-spacing: 0.15em; }
-  .mosaico-device { position: relative; width: calc(560 * var(--u)); height: calc(600 * var(--u)); }
+  .mosaico-device { position: relative; width: calc(var(--mosaico-view-width) * var(--u)); height: calc(var(--mosaico-view-height) * var(--u)); }
+  .mosaico-body { position: absolute; left: 50%; top: 50%; width: calc(560 * var(--u)); height: calc(600 * var(--u)); transform: translate(-50%, -50%) rotate(var(--mosaico-body-rotation)); }
   .mosaico-frame { display: block; width: 100%; height: 100%; filter: drop-shadow(0 18px 22px #0008); pointer-events: none; }
-  .mosaico-display { position: absolute; left: calc(40 * var(--u)); top: calc(50 * var(--u)); width: calc(480 * var(--u)); height: calc(480 * var(--u)); overflow: hidden; border-radius: calc(48 * var(--u)); background: #000; }
+  .mosaico-display { position: absolute; left: calc(40 * var(--u)); top: calc(50 * var(--u)); width: calc(480 * var(--u)); height: calc(480 * var(--u)); overflow: hidden; border-radius: calc(48 * var(--u)); background: #000; transform: rotate(var(--mosaico-display-rotation)); }
   .mosaico #canvas { display: block; width: calc(480 * var(--u)); height: calc(480 * var(--u)); background: #000; }
   .mosaico-key { position: absolute; border: 1px solid #979ca2; padding: 0; cursor: pointer; transition: filter 70ms ease-out, transform 70ms ease-out; }
   .mosaico-key:hover { filter: brightness(1.12); }
@@ -28,6 +29,7 @@
 <main class="mosaico">
   <p class="mosaico-name">ESP-MOSAICO</p>
   <div class="mosaico-device">
+    <div class="mosaico-body">
     <svg class="mosaico-frame" viewBox="0 0 560 600" role="img" aria-label="ESP-Mosaico enclosure, screen side">
       <defs>
         <linearGradient id="mosaico-case" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="0.55" stop-color="#eeeFEB"/><stop offset="1" stop-color="#c6c9c8"/></linearGradient>
@@ -59,6 +61,7 @@
     <div class="mosaico-display" data-h2-slot="display"></div>
     <button type="button" class="mosaico-key mosaico-ai" data-h2-button="ai" aria-label="AI" title="AI · Esc"></button>
     <button type="button" class="mosaico-key mosaico-boot" data-h2-button="boot" aria-label="BOOT" title="BOOT · Space"></button>
+    </div>
   </div>
   <div data-h2-slot="controls"></div>
   <p class="mosaico-hint">AI · Esc &nbsp; BOOT · Space &nbsp; Touch · drag / tap<br><span>Start / Stop control the preview</span></p>

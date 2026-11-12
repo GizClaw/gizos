@@ -2,7 +2,7 @@
 #define H2_G99_BRAND_H
 
 /* The GizPocket brand screen shared by the Loader and Main's boot first
- * frame: a centred handheld icon over the pixel "GizPocket" wordmark on
+ * frame: a centred smiling-face icon over the pixel "GizPocket" wordmark on
  * black, and the Loader's status line and progress bar below it. Both images
  * place the brand with this one layout so their frames match pixel for
  * pixel. Every value derives from the screen size; nothing here draws. */
@@ -24,8 +24,8 @@ typedef struct h2_g99_brand_layout {
   /** Wordmark cell, max(1, floor(min(W, H) / 96)), and its shadow offset. */
   int32_t cell;
   int32_t shadow;
-  /** Icon body (92:120 design) and the image that also holds its shadow,
-   * as rendered by h2_g99_art_brand_icon(). */
+  /** Square icon body and the image that also holds its shadow, as rendered
+   * by h2_g99_art_brand_icon(). */
   int32_t icon_w;
   int32_t icon_h;
   int32_t icon_image_w;

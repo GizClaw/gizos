@@ -8,12 +8,14 @@ static const uint32_t kTimeouts[H2_G99_SCREEN_TIMEOUT_COUNT] = {
 static const char kVolumeKey[] = "volume";
 static const char kBrightnessKey[] = "brightness";
 static const char kTimeoutKey[] = "screen_off";
+static const char kHapticsKey[] = "haptics";
 
 void h2_g99_settings_defaults(h2_g99_settings_t* settings) {
   if (settings == NULL) return;
   settings->volume_percent = 60u;
   settings->brightness_percent = 100u;
   settings->screen_timeout_index = 1u;
+  settings->haptics_enabled = 0u;
 }
 
 void h2_g99_settings_normalize(h2_g99_settings_t* settings) {
@@ -24,6 +26,7 @@ void h2_g99_settings_normalize(h2_g99_settings_t* settings) {
     settings->brightness_percent = H2_G99_BRIGHTNESS_MIN_PERCENT;
   if (settings->screen_timeout_index >= H2_G99_SCREEN_TIMEOUT_COUNT)
     settings->screen_timeout_index = 1u;
+  if (settings->haptics_enabled > 1u) settings->haptics_enabled = 0u;
 }
 
 uint32_t h2_g99_screen_timeout_ms(uint8_t index) {
@@ -81,6 +84,7 @@ h2_pal_result_t h2_g99_settings_load(const h2_pal_pref_api_t* pref,
   read_u32(ns, kBrightnessKey, 100u, &out->brightness_percent);
   read_u32(ns, kTimeoutKey, H2_G99_SCREEN_TIMEOUT_COUNT - 1u,
            &out->screen_timeout_index);
+  read_u32(ns, kHapticsKey, 1u, &out->haptics_enabled);
   h2_g99_settings_normalize(out);
   return ns->close != NULL ? (h2_pal_result_t)ns->close(ns) : H2_PAL_OK;
 }
@@ -104,6 +108,8 @@ h2_pal_result_t h2_g99_settings_save(const h2_pal_pref_api_t* pref,
       rc = ns->set_u32(ns, kBrightnessKey, value.brightness_percent);
     if (rc == H2_PAL_OK)
       rc = ns->set_u32(ns, kTimeoutKey, value.screen_timeout_index);
+    if (rc == H2_PAL_OK)
+      rc = ns->set_u32(ns, kHapticsKey, value.haptics_enabled);
     if (rc == H2_PAL_OK) rc = ns->commit(ns);
   }
   const int close_rc = ns->close != NULL ? ns->close(ns) : H2_PAL_OK;

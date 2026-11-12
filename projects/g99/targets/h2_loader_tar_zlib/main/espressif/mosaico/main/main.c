@@ -14,6 +14,7 @@
 #include "h2_g99_mosaico_input.h"
 #include "h2_g99_screen_config.h"
 #include "h2_mosaico_usb_console.h"
+#include "h2_mosaico_storage.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -31,6 +32,22 @@ static h2_g99_screen_t s_screen;
 static h2_runtime_t* s_runtime;
 static h2_device_app_commands_t s_management;
 static bool s_confirmed;
+
+static h2_pal_result_t storage_query(void* user,
+                                     h2_g99_storage_volume_t* internal,
+                                     h2_g99_storage_volume_t* external) {
+  (void)user;
+  internal->result = h2_mosaico_storage_internal(&internal->used_bytes,
+                                                 &internal->total_bytes);
+  external->result =
+      h2_mosaico_storage_nand(&external->used_bytes, &external->total_bytes);
+  return H2_PAL_OK;
+}
+
+static const h2_g99_storage_api_t kStorage = {
+    .external_kind = H2_G99_STORAGE_NAND,
+    .query = storage_query,
+};
 
 /* Frame timing of the current run, written by the Main task only. */
 static struct {
@@ -111,10 +128,13 @@ static void main_entry(void* user) {
       .observe = observe,
       .frame = on_frame,
       .render_mem = h2_esp_platform_internal_allocator(),
+      .storage = &kStorage,
   };
   printf("H2_G99_MAIN_BOOT version=%s board=esp_mosaico\n", version);
   const h2_pal_result_t rc = h2_g99_run(s_runtime, &config);
   printf("H2_G99_MAIN_EXIT rc=%d\n", rc);
+  if (rc == H2_PAL_OK)
+    printf("H2_G99_STORAGE_CLOSE rc=%d\n", h2_mosaico_storage_deinit());
   for (;;) (void)h2_pal_time_sleep_ms(s_runtime->time, 1000u);
 }
 
@@ -134,6 +154,7 @@ void app_main(void) {
       .home_periph_id = 101u,
       .screen_periph_id = 102u,
       .battery_periph_id = 301u,
+      .haptics_periph_id = 401u,
   };
   rc = h2_esp_board_runtime_config(&config);
   if (rc == H2_PAL_OK)

@@ -5,7 +5,7 @@ load("//tools/bazel/web:web_archive.bzl", "web_archive_browser_test")
 
 _WEB = "//projects/g99/targets/pkg_tar/web"
 
-def g99_web(name, board):
+def g99_web(name, board, styles = [], external_storage = "spi_flash"):
     """Declares the archive `<name>`, `serve`, `browser_test` and `navigation_test`.
 
     Main embeds its font and the Orbit app, so the page preloads no files.
@@ -14,7 +14,11 @@ def g99_web(name, board):
     Args:
       name: Archive target name; the tar is `<name>.web.tar`.
       board: h2_web_board() target with Buttons home, screen, up, down and ok.
+      styles: Product-owned CSS applied after the board skin.
+      external_storage: Preview storage medium, "nand" or "spi_flash".
     """
+    if external_storage not in ["nand", "spi_flash"]:
+        fail("unknown G99 external storage kind: %s" % external_storage)
     passed = "H2_WEB_APP name=%s result=PASS rc=0 destroy=0" % name
     failed = "H2_WEB_APP name=%s result=FAIL" % name
     h2_web_app(
@@ -26,7 +30,11 @@ def g99_web(name, board):
         ],
         app_name = name,
         board = board,
-        copts = [r'-DH2_G99_WEB_NAME=\"%s\"' % name],
+        styles = styles,
+        copts = [
+            r'-DH2_G99_WEB_NAME=\"%s\"' % name,
+            "-DH2_G99_PREVIEW_NAND=" + ("1" if external_storage == "nand" else "0"),
+        ],
         linkopts = [
             "-O2",
             "-sMINIFY_HTML=0",
@@ -66,7 +74,7 @@ def g99_web(name, board):
         timeout_s = 90,
     )
 
-def g99_web_e2e(name, board):
+def g99_web_e2e(name, board, styles = []):
     """Declares the E2E archive `<name>`, `serve` and its `browser_test`.
 
     The page runs the G99 product E2E suite (//projects/g99/apps/e2e)
@@ -77,6 +85,7 @@ def g99_web_e2e(name, board):
     Args:
       name: Archive target name; the tar is `<name>.web.tar`.
       board: h2_web_board() target; its display size is the size under test.
+      styles: Product-owned CSS applied after the board skin.
     """
     passed = "H2_WEB_APP name=%s result=PASS rc=0 destroy=0" % name
     h2_web_app(
@@ -88,6 +97,7 @@ def g99_web_e2e(name, board):
         ],
         app_name = name,
         board = board,
+        styles = styles,
         copts = [
             r'-DH2_G99_WEB_NAME=\"%s\"' % name,
             "-DH2_G99_WEB_E2E=1",

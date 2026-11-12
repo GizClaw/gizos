@@ -292,7 +292,44 @@ static void test_wheel_motion(void) {
   }
 }
 
+static void test_list_motion(void) {
+  h2_g99_list_motion_t motion = {0};
+  h2_g99_list_select(&motion, 0u, 4u, 1000u, false);
+  h2_g99_list_begin(&motion, 1000u);
+  h2_g99_list_drag(&motion, 100.0f, 4u, 6000u);
+  CHECK(motion.position > 0.0f && motion.position <= 0.401f);
+  float previous = motion.position;
+  for (uint64_t moment = 6010u; moment < 7010u; moment += 10u) {
+    h2_g99_list_drag(&motion, 100.0f, 4u, moment);
+    CHECK(motion.position >= previous && motion.position <= 3.0f);
+    CHECK(motion.position - previous <= 0.081f);
+    previous = motion.position;
+  }
+  NEAR(motion.position, 3.0f, 0.001f);
+  motion.position = 1.65f;
+  CHECK(h2_g99_list_release(&motion, 4u, 8000u) == 2u);
+  CHECK(motion.snapping && !motion.dragging);
+  h2_g99_list_tick(&motion, 8000u + H2_G99_ROTATE_MS / 2u);
+  CHECK(motion.position > 1.65f && motion.position < 2.0f);
+  h2_g99_list_tick(&motion, 8000u + H2_G99_ROTATE_MS);
+  CHECK(motion.position == 2.0f && !motion.snapping);
+  h2_g99_list_select(&motion, 0u, 4u, 9000u, true);
+  h2_g99_list_tick(&motion, 9050u);
+  h2_g99_list_begin(&motion, 9060u);
+  CHECK(motion.position == 0.0f && motion.origin == 0.0f);
+  CHECK(!motion.snapping && motion.dragging);
+  h2_g99_list_drag(&motion, -100.0f, 4u, 9110u);
+  CHECK(motion.position == 0.0f);
+  h2_g99_list_select(&motion, 255u, 1u, 9200u, false);
+  CHECK(motion.position == 0.0f && motion.target == 0u);
+  CHECK(h2_g99_list_release(&motion, 0u, 9300u) == 0u);
+  motion.position = NAN;
+  CHECK(h2_g99_list_release(&motion, 4u, 9400u) == 0u);
+  CHECK(motion.position == 0.0f && !motion.snapping);
+}
+
 int main(void) {
+  test_list_motion();
   test_wheel_motion();
   test_square_480();
   test_landscape_320();

@@ -136,6 +136,33 @@ float h2_g99_wheel_follow(float current, float target, uint32_t elapsed_ms);
  * one item; smaller drags return to the current selection. */
 int h2_g99_wheel_snap(float offset);
 
+typedef struct h2_g99_list_motion {
+  float position;
+  float origin;
+  float snap_from;
+  uint8_t target;
+  uint64_t last_ms;
+  uint64_t snap_ms;
+  bool dragging;
+  bool snapping;
+} h2_g99_list_motion_t;
+
+/** Sets a bounded list's visual selection, optionally using the wheel's
+ * finite damped snap. Empty lists settle at zero. */
+void h2_g99_list_select(h2_g99_list_motion_t* motion, uint8_t selection,
+                        uint8_t count, uint64_t now_ms, bool animate);
+/** Begins a new drag after completing the previous snap. */
+void h2_g99_list_begin(h2_g99_list_motion_t* motion, uint64_t now_ms);
+/** Follows travel in rows from the press origin, bounded to the list and
+ * eight rows/second; a late update advances at most 0.4 row. */
+void h2_g99_list_drag(h2_g99_list_motion_t* motion, float travel, uint8_t count,
+                      uint64_t now_ms);
+/** Starts snapping to the nearest row and returns its bounded index. */
+uint8_t h2_g99_list_release(h2_g99_list_motion_t* motion, uint8_t count,
+                            uint64_t now_ms);
+/** Advances a snap to an exact row within H2_G99_ROTATE_MS. */
+void h2_g99_list_tick(h2_g99_list_motion_t* motion, uint64_t now_ms);
+
 #ifdef __cplusplus
 }
 #endif

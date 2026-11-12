@@ -1,0 +1,2 @@
+dependencies:
+  espressif/spi_nand_flash: "==1.4.4"

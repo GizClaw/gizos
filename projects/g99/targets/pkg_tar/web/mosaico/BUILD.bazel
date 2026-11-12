@@ -6,6 +6,8 @@ package(default_visibility = ["//visibility:public"])
 g99_web(
     name = "g99-web-mosaico",
     board = "//boards/espressif/mosaico/web",
+    external_storage = "nand",
+    styles = ["//projects/g99/targets/pkg_tar/web:mosaico.css"],
 )
 
 # Exercise actual skin buttons as well as entry-owned virtual keyboard keys.
@@ -45,6 +47,12 @@ web_archive_browser_test(
                   Math.abs(c.width - c.height) > 1 || c.left < s.left - 1 ||
                   c.top < s.top - 1 || c.right > s.right + 1 || c.bottom > s.bottom + 1)
                 throw new Error('Mosaico screen geometry mismatch');
+              const boot = document.querySelector('[data-h2-button="boot"]').getBoundingClientRect();
+              const ai = document.querySelector('[data-h2-button="ai"]').getBoundingClientRect();
+              const power = document.querySelector('[aria-label="Hardware power button"]').getBoundingClientRect();
+              if (boot.right > s.left || power.right > s.left ||
+                  ai.left < s.right)
+                throw new Error('G99 enclosure orientation mismatch');
               console.log('H2_G99_SKIN_WAKE');
             } else if (performance.now() < deadline) {
               setTimeout(verifyWake, 20);

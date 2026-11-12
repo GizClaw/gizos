@@ -2,9 +2,8 @@
 
 #include <string.h>
 
-/* Touch cases drag and tap the main wheel with the scripted finger. Their
- * points come from the published layout: the wheel column left of the info
- * area, around the vertical centre where the selection sits. */
+/* Touch cases drag and tap with the scripted finger across the wheel and
+ * information areas, using the published screen dimensions and layout. */
 
 static h2_pal_result_t menu_at(h2_g99_e2e_t* e2e, int selection,
                                const char* what, h2_g99_observation_t* out) {
@@ -39,7 +38,8 @@ static void report_frames(h2_g99_e2e_t* e2e, const char* phase,
  * Library back. A drag that Main read as a tap at its start would enter
  * Library instead, and on Lab would do nothing. */
 static h2_pal_result_t drag_there_and_back(h2_g99_e2e_t* e2e,
-                                           uint32_t duration_ms, bool sampled) {
+                                           uint32_t duration_ms, bool sampled,
+                                           int32_t x_permille) {
   h2_g99_observation_t o;
   h2_pal_result_t rc = menu_at(e2e, H2_G99_MAIN_LIBRARY, "MAIN(Library)", &o);
   if (rc != H2_PAL_OK) return rc;
@@ -47,6 +47,7 @@ static h2_pal_result_t drag_there_and_back(h2_g99_e2e_t* e2e,
   wheel_point(&o, 0, &x, &centre);
   wheel_point(&o, -250, &x, &above);
   wheel_point(&o, 250, &x, &below);
+  if (x_permille >= 0) x = o.width * x_permille / 1000;
   h2_g99_e2e_touch_stats_t up = {0u, 0u};
   h2_g99_e2e_touch_stats_t down = {0u, 0u};
   h2_g99_e2e_frames_t frames = {0};
@@ -73,7 +74,7 @@ static h2_pal_result_t drag_there_and_back(h2_g99_e2e_t* e2e,
 
 /* A deliberate drag: Main reads its start and end point. */
 static h2_pal_result_t wheel_drag(h2_g99_e2e_t* e2e) {
-  return drag_there_and_back(e2e, 400u, true);
+  return drag_there_and_back(e2e, 400u, true, -1);
 }
 
 typedef struct drag_range {
@@ -103,13 +104,14 @@ static void wait_frame(h2_g99_e2e_t* e2e, h2_g99_e2e_frames_t* out) {
  * part of an item (0.43 on the shipped layouts) while the selection stays,
  * and Main draws frames meanwhile. Back at the start and lifted, the wheel
  * stays where it was. */
-static h2_pal_result_t wheel_follow(h2_g99_e2e_t* e2e) {
+static h2_pal_result_t wheel_follow_at(h2_g99_e2e_t* e2e, int32_t x_permille) {
   h2_g99_observation_t o;
   h2_pal_result_t rc = menu_at(e2e, H2_G99_MAIN_LIBRARY, "MAIN(Library)", &o);
   if (rc != H2_PAL_OK) return rc;
   int32_t x = 0, centre = 0, up = 0;
   wheel_point(&o, 0, &x, &centre);
   wheel_point(&o, -100, &x, &up);
+  if (x_permille >= 0) x = o.width * x_permille / 1000;
   const h2_g99_e2e_expect_t menu = h2_g99_e2e_main_ready(H2_G99_MAIN_LIBRARY);
   const drag_range_t turned = {0.2f, 0.7f};
   const drag_range_t back = {-0.05f, 0.05f};
@@ -142,35 +144,136 @@ static h2_pal_result_t wheel_follow(h2_g99_e2e_t* e2e) {
   return rc;
 }
 
+static h2_pal_result_t wheel_follow(h2_g99_e2e_t* e2e) {
+  return wheel_follow_at(e2e, -1);
+}
+
+static h2_pal_result_t wheel_restart(h2_g99_e2e_t* e2e) {
+  h2_g99_observation_t observation;
+  h2_pal_result_t rc =
+      menu_at(e2e, H2_G99_MAIN_LIBRARY, "MAIN(Library)", &observation);
+  if (rc != H2_PAL_OK) return rc;
+  const int32_t horizontal = observation.width * 4 / 5;
+  const int32_t first_start = observation.height / 2;
+  const int32_t first_end = observation.height / 4;
+  const int32_t second_start = observation.height * 9 / 10;
+  const int32_t second_end = observation.height * 13 / 20;
+  const drag_range_t forward = {0.5f, 1.001f};
+  const drag_range_t settled = {-0.001f, 0.001f};
+  const h2_g99_e2e_expect_t library =
+      h2_g99_e2e_main_ready(H2_G99_MAIN_LIBRARY);
+  const h2_g99_e2e_expect_t lab = h2_g99_e2e_main_ready(H2_G99_MAIN_LAB);
+  const h2_g99_e2e_expect_t settings =
+      h2_g99_e2e_main_ready(H2_G99_MAIN_SETTINGS);
+  rc = h2_g99_e2e_touch_down(e2e, horizontal, first_start);
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_touch_move(e2e, horizontal, first_end);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &library, drag_within, &forward,
+                         H2_G99_E2E_NAV_MS, "first upward drag held", NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_touch_down(e2e, horizontal, second_start);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &lab, drag_within, &settled, H2_G99_E2E_NAV_MS,
+                         "new contact settles the missing release", NULL);
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_touch_move(e2e, horizontal, second_end);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &lab, drag_within, &forward, H2_G99_E2E_NAV_MS,
+                         "second upward drag uses its own origin", NULL);
+  const h2_pal_result_t lifted = h2_g99_e2e_touch_up(e2e);
+  if (rc == H2_PAL_OK) rc = lifted;
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &settings, drag_within, &settled,
+                         H2_G99_E2E_NAV_MS, "second upward drag snapped", NULL);
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_main_select(e2e, H2_G99_MAIN_LIBRARY);
+  return rc;
+}
+
+static h2_pal_result_t full_screen_drag(h2_g99_e2e_t* e2e) {
+  const int32_t columns[] = {50, 500, 950};
+  for (size_t index = 0u; index < sizeof(columns) / sizeof(columns[0]);
+       ++index) {
+    h2_pal_result_t rc = wheel_follow_at(e2e, columns[index]);
+    if (rc == H2_PAL_OK)
+      rc = drag_there_and_back(e2e, 400u, true, columns[index]);
+    if (rc != H2_PAL_OK) return rc;
+  }
+  return H2_PAL_OK;
+}
+
 /* A quick 150 ms flick that Main reads only when it gets to it, as with a
  * real finger. */
 static h2_pal_result_t wheel_flick(h2_g99_e2e_t* e2e) {
-  return drag_there_and_back(e2e, 150u, false);
+  return drag_there_and_back(e2e, 150u, false, -1);
 }
 
-/* A tap below the centre turns the wheel to the next item, a tap above it
- * back, and a tap on the centre enters the selected page. */
 static h2_pal_result_t wheel_tap(h2_g99_e2e_t* e2e) {
-  h2_g99_observation_t o;
-  h2_pal_result_t rc = menu_at(e2e, H2_G99_MAIN_LIBRARY, "MAIN(Library)", &o);
-  if (rc != H2_PAL_OK) return rc;
-  int32_t x = 0, centre = 0, above = 0, below = 0;
-  wheel_point(&o, 0, &x, &centre);
-  wheel_point(&o, -200, &x, &above);
-  wheel_point(&o, 200, &x, &below);
-  rc = h2_g99_e2e_tap(e2e, x, below);
+  const int32_t positions[][2] = {
+      {200, 100}, {200, 500}, {200, 900}, {800, 100}, {800, 500}, {800, 900},
+  };
+  const h2_g99_e2e_expect_t library =
+      h2_g99_e2e_page_ready(H2_G99_ROUTE_LIBRARY, 0);
+  const h2_g99_e2e_expect_t menu = h2_g99_e2e_main_ready(H2_G99_MAIN_LIBRARY);
+  for (size_t index = 0u; index < sizeof(positions) / sizeof(positions[0]);
+       ++index) {
+    h2_g99_observation_t observation;
+    h2_pal_result_t rc =
+        menu_at(e2e, H2_G99_MAIN_LIBRARY, "MAIN(Library)", &observation);
+    if (rc == H2_PAL_OK)
+      rc = h2_g99_e2e_tap(e2e, observation.width * positions[index][0] / 1000,
+                          observation.height * positions[index][1] / 1000);
+    if (rc == H2_PAL_OK)
+      rc = h2_g99_e2e_wait(e2e, &library, NULL, NULL, H2_G99_E2E_NAV_MS,
+                           "Library after a full-screen tap", NULL);
+    if (rc == H2_PAL_OK)
+      rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_HOME, &menu,
+                                  H2_G99_E2E_NAV_MS, "MAIN(Library)");
+    if (rc != H2_PAL_OK) return rc;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t page_tap(h2_g99_e2e_t* e2e) {
+  h2_pal_result_t rc = h2_g99_e2e_open_setting(e2e, H2_G99_SETTING_VOLUME);
+  h2_g99_observation_t observation;
+  const h2_g99_e2e_expect_t volume =
+      h2_g99_e2e_page_ready(H2_G99_ROUTE_SETTINGS, H2_G99_SETTING_VOLUME);
   if (rc == H2_PAL_OK)
-    rc = menu_at(e2e, H2_G99_MAIN_LAB, "MAIN(Lab) after tapping below", NULL);
-  if (rc == H2_PAL_OK) rc = h2_g99_e2e_tap(e2e, x, above);
+    rc = h2_g99_e2e_wait(e2e, &volume, NULL, NULL, H2_G99_E2E_NAV_MS,
+                         "Volume ready", &observation);
   if (rc == H2_PAL_OK)
-    rc = menu_at(e2e, H2_G99_MAIN_LIBRARY, "MAIN(Library) after tapping above",
-                 NULL);
-  if (rc == H2_PAL_OK) rc = h2_g99_e2e_tap(e2e, x, centre);
+    rc =
+        h2_g99_e2e_tap(e2e, observation.width * 4 / 5, observation.height / 10);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_stays(e2e, &volume, 200u,
+                          "slider background does not enter editing");
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_tap(e2e, observation.width / 10, observation.height / 10);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_stays(e2e, &volume, 200u,
+                          "background taps leave the slider ready");
+  const h2_g99_e2e_expect_t settings =
+      h2_g99_e2e_main_ready(H2_G99_MAIN_SETTINGS);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_HOME, &settings,
+                                H2_G99_E2E_NAV_MS, "MAIN(Settings)");
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_main_select(e2e, H2_G99_MAIN_LIBRARY);
   const h2_g99_e2e_expect_t library =
       h2_g99_e2e_page_ready(H2_G99_ROUTE_LIBRARY, 0);
   if (rc == H2_PAL_OK)
-    rc = h2_g99_e2e_wait(e2e, &library, NULL, NULL, H2_G99_E2E_NAV_MS,
-                         "Library after tapping the centre", NULL);
+    rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_OK, &library,
+                                H2_G99_E2E_NAV_MS, "Library ready");
+  if (rc == H2_PAL_OK)
+    rc =
+        h2_g99_e2e_tap(e2e, observation.width * 4 / 5, observation.height / 10);
+  h2_g99_e2e_expect_t running = h2_g99_e2e_any();
+  running.route = H2_G99_ROUTE_APP;
+  running.lifecycle = H2_G99_LIFECYCLE_APP_RUNNING;
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &running, NULL, NULL, H2_G99_E2E_NAV_MS,
+                         "Orbit after tapping Library background", NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_HOME, &library,
+                                H2_G99_E2E_NAV_MS, "Library after Orbit");
   const h2_g99_e2e_expect_t menu = h2_g99_e2e_main_ready(H2_G99_MAIN_LIBRARY);
   if (rc == H2_PAL_OK)
     rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_HOME, &menu,
@@ -213,7 +316,7 @@ static h2_pal_result_t hover_ignored(h2_g99_e2e_t* e2e) {
   if (rc == H2_PAL_OK)
     rc = stays_undragged(e2e, H2_G99_MAIN_LIBRARY, 300u,
                          "after hovering over the wheel");
-  if (rc == H2_PAL_OK) rc = drag_there_and_back(e2e, 400u, true);
+  if (rc == H2_PAL_OK) rc = drag_there_and_back(e2e, 400u, true, -1);
   return rc;
 }
 
@@ -224,7 +327,7 @@ static h2_pal_result_t controller_drag(h2_g99_e2e_t* e2e,
                                        h2_g99_e2e_touch_model_t model) {
   h2_g99_e2e_touch_model(e2e, model);
   h2_pal_result_t rc = wheel_follow(e2e);
-  if (rc == H2_PAL_OK) rc = drag_there_and_back(e2e, 400u, true);
+  if (rc == H2_PAL_OK) rc = drag_there_and_back(e2e, 400u, true, -1);
   return rc;
 }
 
@@ -275,12 +378,51 @@ static h2_pal_result_t wheel_limits(h2_g99_e2e_t* e2e) {
   return rc;
 }
 
+static h2_pal_result_t wifi_region(h2_g99_e2e_t* e2e) {
+  h2_pal_result_t rc = h2_g99_e2e_open_setting(e2e, H2_G99_SETTING_WIFI);
+  h2_g99_observation_t observation;
+  h2_g99_e2e_expect_t wifi =
+      h2_g99_e2e_page_ready(H2_G99_ROUTE_SETTINGS, H2_G99_SETTING_WIFI);
+  wifi.editing = H2_G99_E2E_ANY;
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &wifi, NULL, NULL, H2_G99_E2E_NAV_MS,
+                         "Wi-Fi page", &observation);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_drag(e2e, observation.width * 4 / 5, observation.height / 2,
+                         observation.width / 10, observation.height / 4, 300u,
+                         true, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &wifi, NULL, NULL, H2_G99_E2E_NAV_MS,
+                         "right-side gesture stays on Wi-Fi", &observation);
+  if (rc == H2_PAL_OK &&
+      (observation.wheel_drag != 0.0f || observation.text_entry)) {
+    h2_g99_e2e_fail(e2e, "Wi-Fi gesture escaped its right-side region");
+    rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  const h2_g99_e2e_expect_t page =
+      h2_g99_e2e_page_ready(H2_G99_ROUTE_SETTINGS, H2_G99_SETTING_WIFI);
+  if (rc == H2_PAL_OK && observation.editing)
+    rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_HOME, &page,
+                                H2_G99_E2E_NAV_MS, "close Wi-Fi selection");
+  const h2_g99_e2e_expect_t settings =
+      h2_g99_e2e_main_ready(H2_G99_MAIN_SETTINGS);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_HOME, &settings,
+                                H2_G99_E2E_NAV_MS, "MAIN(Settings)");
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_main_select(e2e, H2_G99_MAIN_LIBRARY);
+  return rc;
+}
+
 static const h2_g99_e2e_case_t kCases[] = {
     {"wheel-drag", 0u, wheel_drag},
     {"wheel-limits", 0u, wheel_limits},
     {"wheel-follow", 0u, wheel_follow},
+    {"wheel-restart", 0u, wheel_restart},
     {"wheel-flick", H2_G99_E2E_CAP_FRAME_BUDGET, wheel_flick},
     {"wheel-tap", 0u, wheel_tap},
+    {"full-screen-drag", 0u, full_screen_drag},
+    {"page-tap", 0u, page_tap},
+    {"wifi-region", 0u, wifi_region},
     {"hover-ignored", 0u, hover_ignored},
     {"empty-frames", 0u, empty_frames},
     {"failed-reads", 0u, failed_reads},

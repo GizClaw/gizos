@@ -8,6 +8,7 @@ package(default_visibility = ["//visibility:public"])
 # Shared sources of the G99 Web Main packages (g99_web.bzl).
 exports_files([
     "main.c",
+    "mosaico.css",
     "web_buttons.c",
     "web_buttons.h",
 ])

@@ -128,6 +128,8 @@ static h2_pal_result_t connect_through_settings(h2_g99_e2e_t* e2e) {
   h2_g99_observation_t o;
   if (rc == H2_PAL_OK)
     rc = h2_g99_e2e_wait(e2e, &list, scanned, NULL, SCAN_MS, "Wi-Fi scan", &o);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_stays(e2e, &list, 300u, "Wi-Fi controls revealed");
   /* Rows wrap, so at most one full turn finds the network. */
   for (unsigned i = 0u; rc == H2_PAL_OK && i <= o.wifi_network_count; ++i) {
     if (h2_g99_e2e_observe(e2e, &o, NULL) &&
@@ -149,8 +151,11 @@ static h2_pal_result_t connect_through_settings(h2_g99_e2e_t* e2e) {
   h2_g99_e2e_expect_t keyboard = list;
   keyboard.text_entry = 1;
   if (rc == H2_PAL_OK)
-    rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_OK, &keyboard,
-                                H2_G99_E2E_NAV_MS, "password keyboard");
+    rc = h2_g99_e2e_tap(e2e, (o.info_rect.x1 + o.info_rect.x2) / 2,
+                        o.height * 17 / 20);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &keyboard, NULL, NULL, H2_G99_E2E_NAV_MS,
+                         "Connect button opens password entry", NULL);
   if (rc == H2_PAL_OK) rc = h2_g99_e2e_type(e2e, H2_G99_E2E_WIFI_PASSWORD);
   /* Text and keys share Runtime's ordered event queue. */
   if (rc == H2_PAL_OK) rc = h2_g99_e2e_press(e2e, H2_G99_COMPONENT_OK);
@@ -215,7 +220,124 @@ static h2_pal_result_t reconnect_after_restart(h2_g99_e2e_t* e2e) {
   return finish(e2e, &j, rc);
 }
 
+static bool list_settled(const h2_g99_observation_t* observation,
+                         const void* argument) {
+  (void)argument;
+  return observation->edit_index == 1u && observation->wheel_drag == 0.0f &&
+         !observation->text_entry;
+}
+
+static bool left_following(const h2_g99_observation_t* observation,
+                           const void* argument) {
+  (void)argument;
+  return observation->wheel_drag > 0.6f && observation->edit_index == 1u &&
+         !observation->text_entry;
+}
+
+static h2_pal_result_t wait_list_idle(h2_g99_e2e_t* e2e) {
+  const uint64_t start = h2_g99_e2e_now_ms(e2e);
+  uint64_t changed_at = start;
+  uint32_t previous = 0u;
+  for (;;) {
+    h2_g99_e2e_frames_t frames;
+    h2_g99_e2e_frames_get(e2e, &frames);
+    const uint64_t now = h2_g99_e2e_now_ms(e2e);
+    if (frames.frames != previous) {
+      changed_at = now;
+      previous = frames.frames;
+    }
+    if (now - changed_at >= 120u && frames.frames >= 2u) {
+      h2_g99_e2e_metric(e2e, "phase=wifi-snap frames=%u",
+                        (unsigned)frames.frames);
+      return H2_PAL_OK;
+    }
+    if (now - start >= H2_G99_E2E_NAV_MS) {
+      h2_g99_e2e_fail(e2e, "Wi-Fi snap did not draw and settle");
+      return H2_PAL_ERR_TIMEOUT;
+    }
+    h2_g99_e2e_sleep(e2e, H2_G99_E2E_POLL_MS);
+  }
+}
+
+static h2_pal_result_t dual_wheel_gestures(h2_g99_e2e_t* e2e) {
+  h2_pal_result_t rc = h2_g99_e2e_open_setting(e2e, H2_G99_SETTING_WIFI);
+  h2_g99_e2e_expect_t wifi =
+      h2_g99_e2e_page_ready(H2_G99_ROUTE_SETTINGS, H2_G99_SETTING_WIFI);
+  h2_g99_observation_t observation = {0};
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &wifi, scanned, NULL, SCAN_MS, "Wi-Fi networks",
+                         &observation);
+  if (rc == H2_PAL_OK && observation.wifi_network_count < 2u) {
+    h2_g99_e2e_fail(e2e, "Wi-Fi gesture fixture needs at least two networks");
+    return H2_PAL_ERR_NOT_FOUND;
+  }
+  const int32_t right =
+      (observation.info_rect.x1 + observation.info_rect.x2) / 2;
+  const int32_t row_height = observation.height / 10;
+  const int32_t start = observation.height / 2;
+  h2_g99_e2e_frames_reset(e2e);
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_touch_down(e2e, right, start);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_touch_move(e2e, observation.width / 10,
+                               start - row_height * 7 / 10);
+  wifi.editing = 1;
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &wifi, NULL, NULL, H2_G99_E2E_NAV_MS,
+                         "right-side selection", NULL);
+  if (rc == H2_PAL_OK)
+    rc =
+        h2_g99_e2e_stays(e2e, &wifi, 300u, "right list follows across divider");
+  h2_g99_e2e_frames_t following;
+  h2_g99_e2e_frames_get(e2e, &following);
+  if (rc == H2_PAL_OK && following.frames < 3u) {
+    h2_g99_e2e_fail(e2e, "right Wi-Fi list did not draw while held");
+    rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  h2_g99_e2e_frames_reset(e2e);
+  h2_pal_result_t lifted = h2_g99_e2e_touch_up(e2e);
+  if (rc == H2_PAL_OK) rc = lifted;
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &wifi, list_settled, NULL, H2_G99_E2E_NAV_MS,
+                         "right list snaps to one network", &observation);
+  if (rc == H2_PAL_OK) rc = wait_list_idle(e2e);
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_tap(e2e, right, observation.height / 2);
+  if (rc == H2_PAL_OK)
+    rc =
+        h2_g99_e2e_stays(e2e, &wifi, 150u, "tapping a network only selects it");
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_drag(e2e, right, observation.height * 17 / 20,
+                         observation.width / 10, observation.height / 4, 250u,
+                         true, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_stays(e2e, &wifi, 150u,
+                          "dragging the Connect button never connects");
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_touch_down(e2e, observation.width / 10,
+                               observation.height * 3 / 4);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_touch_move(e2e, right, observation.height / 2);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &wifi, left_following, NULL, H2_G99_E2E_NAV_MS,
+                         "left wheel follows across divider", NULL);
+  lifted = h2_g99_e2e_touch_up(e2e);
+  if (rc == H2_PAL_OK) rc = lifted;
+  const h2_g99_e2e_expect_t volume =
+      h2_g99_e2e_page_ready(H2_G99_ROUTE_SETTINGS, H2_G99_SETTING_VOLUME);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_wait(e2e, &volume, NULL, NULL, H2_G99_E2E_NAV_MS,
+                         "left wheel leaves Wi-Fi for Volume", NULL);
+  const h2_g99_e2e_expect_t settings =
+      h2_g99_e2e_main_ready(H2_G99_MAIN_SETTINGS);
+  if (rc == H2_PAL_OK)
+    rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_HOME, &settings,
+                                H2_G99_E2E_NAV_MS, "MAIN(Settings)");
+  if (rc == H2_PAL_OK) rc = h2_g99_e2e_main_select(e2e, H2_G99_MAIN_LIBRARY);
+  return rc;
+}
+
 static const h2_g99_e2e_case_t kCases[] = {
+    {"dual-wheel-gestures", H2_G99_E2E_CAP_WIFI_TEST_NETWORK,
+     dual_wheel_gestures},
     {"connect-test-network", H2_G99_E2E_CAP_WIFI_TEST_NETWORK,
      connect_test_network},
     {"reconnect-after-restart", H2_G99_E2E_CAP_WIFI_TEST_NETWORK,

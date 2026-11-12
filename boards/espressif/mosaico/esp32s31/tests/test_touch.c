@@ -11,6 +11,9 @@ static unsigned int read_count;
 static uint8_t point_count;
 static uint16_t point_x;
 static uint16_t point_y;
+static int64_t now_us;
+
+int64_t esp_timer_get_time(void) { return now_us; }
 
 int gpio_get_level(int gpio) {
   assert(gpio == BSP_LCD_TOUCH_INT);
@@ -89,26 +92,46 @@ int main(void) {
   assert(event.kind == H2_PAL_TOUCH_EVENT_DOWN);
   irq_level = 1;
   point_count = 0u;
-  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_WOULD_BLOCK);
-  assert(read_count == 1u);
+  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_OK);
+  assert(event.kind == H2_PAL_TOUCH_EVENT_UP && event.x == 10 && event.y == 20);
+  assert(read_count == 2u);
   irq_level = 0;
   read_result = ESP_ERR_NOT_FINISHED;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  irq_level = 1;
   read_result = ESP_FAIL;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO);
   read_result = ESP_OK;
   point_count = 1u;
   point_x = 11u;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_OK);
+  assert(event.kind == H2_PAL_TOUCH_EVENT_DOWN);
+  for (unsigned int sample = 0u; sample < 100u; ++sample) {
+    now_us += 20000;
+    assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  }
+  point_x = 12u;
+  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_OK);
   assert(event.kind == H2_PAL_TOUCH_EVENT_MOVE);
+  read_result = ESP_ERR_NOT_FINISHED;
+  now_us += 499000;
+  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  now_us += 1000;
+  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_OK);
+  assert(event.kind == H2_PAL_TOUCH_EVENT_UP && event.x == 12 && event.y == 20);
+  read_result = ESP_OK;
+  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_OK);
+  assert(event.kind == H2_PAL_TOUCH_EVENT_DOWN && event.x == 12);
   point_x = 480u;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO);
   point_count = 0u;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_OK);
-  assert(event.kind == H2_PAL_TOUCH_EVENT_UP && event.x == 11 && event.y == 20);
+  assert(event.kind == H2_PAL_TOUCH_EVENT_UP && event.x == 12 && event.y == 20);
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_WOULD_BLOCK);
   assert(h2_pal_touch_close(touch) == H2_PAL_OK);
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  irq_level = 0;
   point_count = 1u;
   point_x = 11u;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_OK);

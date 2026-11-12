@@ -25,6 +25,7 @@ esp_target_task_policy(
         "g99/e2e 4 any 65536 psram",
         "g99-e2e/main       4 1   262144 psram",
         "g99/wifi           4 any 8192  psram",
+        "g99/storage        4 any 16384 psram",
         "h2loader/appcmd    8 0   4096  psram",
         "h2loader/blecmd    8 0   4096  psram",
         "$h2loader/return   8 0   4096  psram",

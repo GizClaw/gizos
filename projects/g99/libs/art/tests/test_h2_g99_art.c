@@ -45,6 +45,12 @@ static void test_icons(void) {
   CHECK(alpha_at(argb, kSize, 12.0f, 14.0f) == 0u);
   CHECK(alpha_at(argb, kSize, 12.0f, 3.5f) == 255u);
   CHECK(alpha_at(argb, kSize, 0.5f, 0.5f) == 0u);
+  CHECK(h2_g99_art_icon(H2_G99_ICON_COMMUNITY, 0xFFFFFFu, argb, kSize));
+  CHECK(alpha_at(argb, kSize, 8.5f, 8.3f) == 255u);
+  CHECK(alpha_at(argb, kSize, 17.2f, 8.5f) == 255u);
+  CHECK(alpha_at(argb, kSize, 8.5f, 11.5f) == 255u);
+  CHECK(alpha_at(argb, kSize, 8.5f, 13.5f) == 255u);
+  CHECK(alpha_at(argb, kSize, 13.0f, 6.0f) == 0u);
   CHECK(!h2_g99_art_icon(H2_G99_ICON_COUNT, 0u, argb, kSize));
   CHECK(!h2_g99_art_icon(H2_G99_ICON_ME, 0u, NULL, kSize));
   CHECK(!h2_g99_art_icon(H2_G99_ICON_ME, 0u, argb, 0));
@@ -75,12 +81,15 @@ static void test_wordmark(void) {
 }
 
 static void test_brand_cover_glow(void) {
-  enum { kW = 48, kH = 62 };
+  enum { kW = 62, kH = 62 };
   static uint8_t brand[kW * kH * 4];
   CHECK(h2_g99_art_brand_icon(brand, kW, kH));
-  /* Screen area is the deep colour; the far corner is transparent. */
-  const uint8_t* screen = brand + ((size_t)10 * kW + 10) * 4u;
+  /* Screen area is the deep colour, an eye is the glow colour and the far
+   * corner is transparent. */
+  const uint8_t* screen = brand + ((size_t)20 * kW + 10) * 4u;
   CHECK(screen[3] == 255u && screen[2] == 0x1Cu);
+  const uint8_t* eye = brand + ((size_t)22 * kW + 21) * 4u;
+  CHECK(eye[3] == 255u && eye[2] == 0xD7u);
   CHECK(brand[((size_t)(kH - 1) * kW) * 4u + 3u] == 0u);
   enum { kCover = 100 };
   static uint8_t cover[kCover * kCover * 4];

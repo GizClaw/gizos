@@ -4,6 +4,8 @@ The browser counterpart of ESP-Mosaico owns its 480 × 480 touch display, physic
 
 `device.html` draws the white front case, black glass, orange AI button, speaker openings, BOOT/POWER controls and USB-C port in SVG/CSS. AI and BOOT supply normal button edges through `data-h2-button`; the physical power circuit is represented by the page's Start/Stop lifecycle. The canvas keeps its native 480 × 480 backing resolution while the enclosure scales to the viewport.
 
+The default skin uses the board's native orientation. Entries can supply CSS through `h2_web_app.styles` and set `--mosaico-view-width`, `--mosaico-view-height`, `--mosaico-body-rotation` and `--mosaico-display-rotation` to present their product orientation while reusing the physical geometry. G99 owns its rotated presentation in its Web entry.
+
 ## Reference material
 
 - [Espressif V1.2 hardware guide and photographs](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp-mosaico/user_guide.html).

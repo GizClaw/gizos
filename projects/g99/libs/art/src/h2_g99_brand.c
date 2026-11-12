@@ -33,9 +33,9 @@ bool h2_g99_brand_layout(int32_t width, int32_t height,
   l.cell = max_i(1, short_side / 96);
   l.shadow = max_i(1, l.cell / 2);
   l.icon_h = 12 * l.cell;
-  l.icon_w = round_i(92.0f / 120.0f * (float)l.icon_h);
-  l.icon_image_w = round_i((float)l.icon_h * 96.0f / 120.0f);
-  l.icon_image_h = round_i((float)l.icon_h * 124.0f / 120.0f);
+  l.icon_w = l.icon_h;
+  l.icon_image_w = round_i((float)l.icon_h * 116.0f / 112.0f);
+  l.icon_image_h = l.icon_image_w;
   l.gap = 3 * l.cell;
   l.wordmark_image_w = H2_G99_WORDMARK_COLS * l.cell + l.shadow;
   l.wordmark_image_h = H2_G99_WORDMARK_ROWS * l.cell + l.shadow;

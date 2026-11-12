@@ -27,6 +27,9 @@
 #ifndef H2_G99_WEB_E2E
 #define H2_G99_WEB_E2E 0
 #endif
+#ifndef H2_G99_PREVIEW_NAND
+#define H2_G99_PREVIEW_NAND 0
+#endif
 
 static struct {
   h2_web_platform_t* platform;
@@ -386,6 +389,28 @@ static h2_pal_result_t run_suite(void) {
 }
 #endif
 
+#if !H2_G99_WEB_E2E
+static h2_pal_result_t preview_storage(void* user,
+                                       h2_g99_storage_volume_t* internal,
+                                       h2_g99_storage_volume_t* external) {
+  (void)user;
+  *internal =
+      (h2_g99_storage_volume_t){H2_G99_STORAGE_INTERNAL_FLASH, H2_PAL_OK,
+                                7u * 1024u * 1024u, 16u * 1024u * 1024u};
+  *external = (h2_g99_storage_volume_t){
+      H2_G99_PREVIEW_NAND ? H2_G99_STORAGE_NAND : H2_G99_STORAGE_SPI_FLASH,
+      H2_PAL_OK, 24u * 1024u * 1024u, 120u * 1024u * 1024u};
+  return H2_PAL_OK;
+}
+
+static const h2_g99_storage_api_t kPreviewStorage = {
+    .external_kind =
+        H2_G99_PREVIEW_NAND ? H2_G99_STORAGE_NAND : H2_G99_STORAGE_SPI_FLASH,
+    .simulated = true,
+    .query = preview_storage,
+};
+#endif
+
 static h2_pal_result_t run_main(void) {
 #if H2_G99_WEB_E2E
   return run_suite();
@@ -398,6 +423,7 @@ static h2_pal_result_t run_main(void) {
       .board_name = H2_G99_WEB_NAME,
       .should_stop = should_stop,
       .observe = observe,
+      .storage = &kPreviewStorage,
   };
   s_web.started_at = emscripten_get_now();
   s_web.settled_route = H2_G99_ROUTE_BOOT;

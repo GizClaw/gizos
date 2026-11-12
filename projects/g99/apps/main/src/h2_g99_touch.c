@@ -18,6 +18,16 @@ static void reset(h2_g99_touch_filter_t* f) {
   f->releasing = false;
   f->failing = false;
   f->read_once = false;
+  f->pending_down = false;
+}
+
+static h2_pal_result_t release(h2_g99_touch_filter_t* f,
+                               h2_pal_touch_event_t* out) {
+  f->down = false;
+  f->releasing = false;
+  f->failing = false;
+  *out = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, f->x, f->y};
+  return H2_PAL_OK;
 }
 
 /* Without a new contact: reports a release that held, or the end of a press
@@ -30,11 +40,7 @@ static h2_pal_result_t settle(h2_g99_touch_filter_t* f, bool timed,
   const bool lost =
       f->failing && (!timed || now - f->fail_ms >= H2_G99_TOUCH_LOST_MS);
   if (!released && !lost) return H2_PAL_ERR_WOULD_BLOCK;
-  f->down = false;
-  f->releasing = false;
-  f->failing = false;
-  *out = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, f->x, f->y};
-  return H2_PAL_OK;
+  return release(f, out);
 }
 
 static h2_pal_result_t filter_poll(void* user, h2_pal_touch_event_t* out) {
@@ -43,6 +49,18 @@ static h2_pal_result_t filter_poll(void* user, h2_pal_touch_event_t* out) {
   memset(out, 0, sizeof(*out));
   uint64_t now = 0u;
   const bool timed = clock_ms(f, &now);
+  if (f->pending_down) {
+    f->pending_down = false;
+    f->source_down = true;
+    f->down = true;
+    f->x = f->pending_contact.x;
+    f->y = f->pending_contact.y;
+    *out = f->pending_contact;
+    return H2_PAL_OK;
+  }
+  if (f->releasing &&
+      (!timed || now - f->release_ms >= H2_G99_TOUCH_RELEASE_MS))
+    return release(f, out);
   /* LVGL reads again right after each event; one source read per burst
    * keeps those reads off a controller that has no new report yet. */
   if (timed && f->read_once && now - f->read_ms < H2_G99_TOUCH_READ_MS)
@@ -85,6 +103,12 @@ static h2_pal_result_t filter_poll(void* user, h2_pal_touch_event_t* out) {
     if (event.kind != H2_PAL_TOUCH_EVENT_DOWN &&
         event.kind != H2_PAL_TOUCH_EVENT_MOVE)
       continue;
+    if (event.kind == H2_PAL_TOUCH_EVENT_DOWN && f->down && f->source_down &&
+        !f->releasing) {
+      f->pending_down = true;
+      f->pending_contact = event;
+      return release(f, out);
+    }
     f->source_down = true;
     f->x = event.x;
     f->y = event.y;

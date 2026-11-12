@@ -19,6 +19,7 @@ static const mapping_t kMappings[] = {
     {H2_RUNTIME_COMPONENT_BUTTON, H2_G99_COMPONENT_UP, true},
     {H2_RUNTIME_COMPONENT_BUTTON, H2_G99_COMPONENT_DOWN, true},
     {H2_RUNTIME_COMPONENT_BUTTON, H2_G99_COMPONENT_OK, true},
+    {H2_RUNTIME_COMPONENT_PWM_SWITCH, H2_G99_COMPONENT_HAPTICS, false},
 };
 
 #define MAPPING_COUNT (sizeof(kMappings) / sizeof(kMappings[0]))
@@ -43,6 +44,7 @@ static h2_pal_periph_id_t mapped_id(const h2_g99_mosaico_input_t* input,
   if (index == 0u) return input->config.home_periph_id;
   if (index == 1u) return input->config.screen_periph_id;
   if (index == 2u) return input->config.battery_periph_id;
+  if (index == 6u) return input->config.haptics_periph_id;
   return input->config.virtual_first_id + (h2_pal_periph_id_t)(index - 3u);
 }
 
@@ -98,6 +100,7 @@ static h2_pal_result_t mapper_list(void* user, h2_runtime_component_t filter,
   for (size_t i = 0u; i < MAPPING_COUNT; ++i) {
     const mapping_t* m = &kMappings[i];
     if (m->virtual_key && !input->config.virtual_keys) continue;
+    if (mapped_id(input, i) == 0u) continue;
     if (filter != H2_RUNTIME_COMPONENT_NONE && filter != m->kind) continue;
     const h2_runtime_component_mapping_entry_t entry = {m->component_id,
                                                         mapped_id(input, i)};
@@ -116,6 +119,7 @@ static h2_pal_result_t mapper_get(void* user,
     const mapping_t* m = &kMappings[i];
     if (m->component_id != component_id) continue;
     if (m->virtual_key && !input->config.virtual_keys) break;
+    if (mapped_id(input, i) == 0u) break;
     *out_id = mapped_id(input, i);
     return H2_PAL_OK;
   }
@@ -141,6 +145,17 @@ h2_pal_result_t h2_g99_mosaico_input_init(
     h2_pal_periph_info_t info;
     const h2_pal_result_t rc = h2_pal_periph_get(board, ids[index], &info);
     if (rc != H2_PAL_OK) return rc;
+  }
+  if (config->haptics_periph_id != 0u) {
+    for (size_t index = 0u; index < 3u; ++index)
+      if (config->haptics_periph_id == ids[index])
+        return H2_PAL_ERR_INVALID_ARG;
+    h2_pal_periph_info_t info;
+    const h2_pal_result_t rc =
+        h2_pal_periph_get(board, config->haptics_periph_id, &info);
+    if (rc != H2_PAL_OK) return rc;
+    if (info.type != H2_PAL_PERIPH_TYPE_PWM_SWITCH)
+      return H2_PAL_ERR_INVALID_ARG;
   }
   if (config->virtual_keys) {
     if (config->virtual_first_id == 0u ||

@@ -1,0 +1,6 @@
+.mosaico {
+  --mosaico-view-width: 600;
+  --mosaico-view-height: 560;
+  --mosaico-body-rotation: 90deg;
+  --mosaico-display-rotation: -90deg;
+}

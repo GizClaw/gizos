@@ -1,0 +1,10 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "usage",
+    srcs = [
+        "apply.cmake",
+        "include/h2_spi_nand_flash_usage.h",
+        "usage.c.inc",
+    ],
+)

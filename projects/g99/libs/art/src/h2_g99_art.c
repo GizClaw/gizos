@@ -201,6 +201,11 @@ static const float kUpdateHead[] = {15.4f, 2.6f, 21.6f, 6.8f, 14.6f, 9.8f};
 static const float kResetHead[] = {8.6f, 2.6f, 2.4f, 6.8f, 9.4f, 9.8f};
 static const float kCheck[] = {3.5f,  12.6f, 5.7f,  10.4f, 9.6f, 14.3f,
                                18.3f, 5.6f,  20.5f, 7.8f,  9.6f, 18.7f};
+static const float kLanguageOutline[] = {
+    2.0f,  22.0f, 9.8f,  2.0f,  14.2f, 2.0f,  22.0f, 22.0f,
+    17.5f, 22.0f, 15.8f, 17.5f, 8.2f,  17.5f, 6.5f,  22.0f};
+static const float kLanguageCounter[] = {9.6f,  13.5f, 14.4f,
+                                         13.5f, 12.0f, 6.5f};
 
 static void gear(shape_list_t* l) {
   /* Sixteen arcs alternating between the tooth and the root radius. */
@@ -223,6 +228,14 @@ static void icon_shapes(h2_g99_icon_t icon, shape_list_t* l) {
     case H2_G99_ICON_ME:
       circle(l, OP_ADD, 12.0f, 7.5f, 4.5f);
       ring(l, OP_ADD, 12.0f, 21.5f, 0.0f, 8.5f, 180.0f, 360.0f);
+      break;
+    case H2_G99_ICON_COMMUNITY:
+      circle(l, OP_ADD, 17.2f, 8.5f, 3.3f);
+      ring(l, OP_ADD, 17.2f, 19.0f, 0.0f, 6.0f, 180.0f, 360.0f);
+      circle(l, OP_SUB, 8.5f, 8.3f, 5.0f);
+      ring(l, OP_SUB, 8.5f, 20.0f, 0.0f, 8.1f, 180.0f, 360.0f);
+      circle(l, OP_ADD, 8.5f, 8.3f, 3.7f);
+      ring(l, OP_ADD, 8.5f, 20.0f, 0.0f, 6.8f, 180.0f, 360.0f);
       break;
     case H2_G99_ICON_STORE:
       poly(l, OP_ADD, kStoreBody, 4);
@@ -306,11 +319,8 @@ static void icon_shapes(h2_g99_icon_t icon, shape_list_t* l) {
       rrect(l, OP_SUB, 11.0f, 11.0f, 6.0f, 2.0f, 1.0f);
       break;
     case H2_G99_ICON_LANGUAGE:
-      circle(l, OP_ADD, 12.0f, 12.0f, 10.0f);
-      rrect(l, OP_SUB, 2.0f, 11.2f, 20.0f, 1.6f, 0.8f);
-      rrect(l, OP_SUB, 11.2f, 2.0f, 1.6f, 20.0f, 0.8f);
-      rrect(l, OP_SUB, 4.2f, 6.4f, 15.6f, 1.6f, 0.8f);
-      rrect(l, OP_SUB, 4.2f, 16.0f, 15.6f, 1.6f, 0.8f);
+      poly(l, OP_ADD, kLanguageOutline, 8);
+      poly(l, OP_SUB, kLanguageCounter, 3);
       break;
     case H2_G99_ICON_RESET:
       ring(l, OP_ADD, 12.0f, 12.0f, 6.2f, 9.0f, -50.0f, 240.0f);
@@ -405,36 +415,31 @@ bool h2_g99_art_cover(uint8_t* argb, int32_t size) {
   return true;
 }
 
-static const char* const kHeart[4] = {".#.#.", "#####", ".###.", "..#.."};
-
 bool h2_g99_art_brand_icon(uint8_t* argb, int32_t width, int32_t height) {
   if (argb == NULL || width <= 0 || height <= 0) return false;
   memset(argb, 0, (size_t)width * (size_t)height * 4u);
-  /* Design box 96 x 124: the 92 x 120 body plus its 4-unit shadow. */
-  const float ux = 96.0f / (float)width;
-  const float uy = 124.0f / (float)height;
+  /* Design box 116 x 116: the 112 x 112 body plus its 4-unit shadow. */
+  const float ux = 116.0f / (float)width;
+  const float uy = 116.0f / (float)height;
   shape_list_t l = {0};
-  rrect(&l, OP_ADD, 4.0f, 4.0f, 92.0f, 120.0f, 14.0f);
+  rrect(&l, OP_ADD, 4.0f, 4.0f, 112.0f, 112.0f, 30.0f);
   layer(argb, width, height, ux, uy, &l, H2_G99_COLOR_SHADOW);
   l.count = 0;
-  rrect(&l, OP_ADD, 0.0f, 0.0f, 92.0f, 120.0f, 14.0f);
+  rrect(&l, OP_ADD, 0.0f, 0.0f, 112.0f, 112.0f, 30.0f);
   layer(argb, width, height, ux, uy, &l, H2_G99_COLOR_PURPLE);
   l.count = 0;
-  rrect(&l, OP_ADD, 12.0f, 12.0f, 68.0f, 50.0f, 6.0f);
-  rrect(&l, OP_ADD, 22.0f, 72.0f, 8.0f, 24.0f, 2.0f);
-  rrect(&l, OP_ADD, 14.0f, 80.0f, 24.0f, 8.0f, 2.0f);
-  circle(&l, OP_ADD, 70.0f, 78.0f, 6.0f);
-  circle(&l, OP_ADD, 58.0f, 90.0f, 6.0f);
-  rrect(&l, OP_ADD, 30.0f, 104.0f, 12.0f, 4.0f, 2.0f);
-  rrect(&l, OP_ADD, 50.0f, 104.0f, 12.0f, 4.0f, 2.0f);
+  rrect(&l, OP_ADD, 14.0f, 16.0f, 84.0f, 66.0f, 16.0f);
+  rrect(&l, OP_ADD, 42.0f, 92.0f, 28.0f, 7.0f, 3.5f);
   layer(argb, width, height, ux, uy, &l, H2_G99_COLOR_DEEP);
   l.count = 0;
-  for (int r = 0; r < 4; ++r)
-    for (int c = 0; c < 5; ++c)
-      if (kHeart[r][c] == '#')
-        rrect(&l, OP_ADD, 36.0f + (float)c * 4.0f, 29.0f + (float)r * 4.0f,
-              4.0f, 4.0f, 0.0f);
+  rrect(&l, OP_ADD, 34.0f, 32.0f, 10.0f, 18.0f, 4.0f);
+  rrect(&l, OP_ADD, 68.0f, 32.0f, 10.0f, 18.0f, 4.0f);
+  ring(&l, OP_ADD, 56.0f, 50.0f, 12.0f, 17.0f, 25.0f, 155.0f);
   layer(argb, width, height, ux, uy, &l, H2_G99_COLOR_GLOW);
+  l.count = 0;
+  circle(&l, OP_ADD, 28.0f, 60.0f, 4.0f);
+  circle(&l, OP_ADD, 84.0f, 60.0f, 4.0f);
+  layer(argb, width, height, ux, uy, &l, H2_G99_COLOR_BLUSH);
   return true;
 }
 

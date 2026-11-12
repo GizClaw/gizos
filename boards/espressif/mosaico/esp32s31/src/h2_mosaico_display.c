@@ -5,6 +5,7 @@
 #include "bsp/esp_mosaico.h"
 #include "driver/gpio.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -24,6 +25,9 @@ static uint16_t* surface;
 static bool opened;
 static bool touch_opened;
 static bool pressed;
+static bool touch_retry;
+static int64_t touch_contact_us;
+enum { H2_MOSAICO_TOUCH_LOST_US = 500000 };
 static uint16_t last_x, last_y;
 static StaticSemaphore_t lock_storage;
 static SemaphoreHandle_t mutex;
@@ -205,6 +209,8 @@ static int touch_open(void* user) {
     if (rc == H2_PAL_OK) {
       touch_opened = true;
       pressed = false;
+      touch_retry = false;
+      touch_contact_us = 0;
     }
   }
   xSemaphoreGive(mutex);
@@ -229,12 +235,14 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
   memset(out, 0, sizeof(*out));
   int rc = lock();
   if (rc != H2_PAL_OK) return rc;
+  const int64_t now_us = esp_timer_get_time();
   if (!touch_opened)
     rc = H2_PAL_ERR_INVALID_STATE;
-  else if (gpio_get_level(BSP_LCD_TOUCH_INT) != 0)
+  else if (!pressed && !touch_retry && gpio_get_level(BSP_LCD_TOUCH_INT) != 0)
     rc = H2_PAL_ERR_WOULD_BLOCK;
   else {
     const esp_err_t read_result = esp_lcd_touch_read_data(touch);
+    touch_retry = read_result != ESP_OK;
     rc = read_result == ESP_ERR_NOT_FINISHED ? H2_PAL_ERR_WOULD_BLOCK
                                              : result(read_result);
   }
@@ -245,17 +253,28 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
         esp_lcd_touch_get_coordinates(touch, &x, &y, NULL, &count, 1) && count;
     if (down && (x >= BSP_LCD_H_RES || y >= BSP_LCD_V_RES))
       rc = H2_PAL_ERR_IO;
-    else if (down && (!pressed || x != last_x || y != last_y)) {
-      *out = (h2_pal_touch_event_t){
-          pressed ? H2_PAL_TOUCH_EVENT_MOVE : H2_PAL_TOUCH_EVENT_DOWN, x, y};
-      pressed = true;
-      last_x = x;
-      last_y = y;
+    else if (down) {
+      touch_contact_us = now_us;
+      if (!pressed || x != last_x || y != last_y) {
+        *out = (h2_pal_touch_event_t){
+            pressed ? H2_PAL_TOUCH_EVENT_MOVE : H2_PAL_TOUCH_EVENT_DOWN, x, y};
+        pressed = true;
+        last_x = x;
+        last_y = y;
+      } else {
+        rc = H2_PAL_ERR_WOULD_BLOCK;
+      }
     } else if (!down && pressed) {
       *out = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, last_x, last_y};
       pressed = false;
     } else
       rc = H2_PAL_ERR_WOULD_BLOCK;
+  }
+  if (touch_opened && pressed &&
+      now_us - touch_contact_us >= H2_MOSAICO_TOUCH_LOST_US) {
+    *out = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, last_x, last_y};
+    pressed = false;
+    rc = H2_PAL_OK;
   }
   xSemaphoreGive(mutex);
   return rc;
@@ -266,6 +285,7 @@ static int touch_close(void* user) {
   if (rc != H2_PAL_OK) return rc;
   touch_opened = false;
   pressed = false;
+  touch_retry = false;
   xSemaphoreGive(mutex);
   return H2_PAL_OK;
 }

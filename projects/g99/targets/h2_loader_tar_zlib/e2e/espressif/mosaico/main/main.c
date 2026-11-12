@@ -114,6 +114,7 @@ void app_main(void) {
       .home_periph_id = 101u,
       .screen_periph_id = 102u,
       .battery_periph_id = 301u,
+      .haptics_periph_id = 401u,
       .virtual_first_id = 901u,
       .virtual_keys = true,
   };

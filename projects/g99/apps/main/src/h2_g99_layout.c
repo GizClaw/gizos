@@ -60,6 +60,75 @@ int h2_g99_wheel_snap(float offset) {
   return offset > 0.0f ? 1 : -1;
 }
 
+void h2_g99_list_select(h2_g99_list_motion_t* motion, uint8_t selection,
+                        uint8_t count, uint64_t now_ms, bool animate) {
+  if (motion == NULL) return;
+  motion->target =
+      count == 0u ? 0u : (selection < count ? selection : count - 1u);
+  motion->snap_from = motion->position;
+  motion->snap_ms = now_ms;
+  motion->dragging = false;
+  motion->snapping = animate && isfinite(motion->position) &&
+                     fabsf(motion->position - motion->target) >= 0.001f;
+  if (!motion->snapping) motion->position = motion->target;
+}
+
+void h2_g99_list_begin(h2_g99_list_motion_t* motion, uint64_t now_ms) {
+  if (motion == NULL) return;
+  motion->position = motion->target;
+  motion->origin = motion->position;
+  motion->last_ms = now_ms;
+  motion->dragging = true;
+  motion->snapping = false;
+}
+
+void h2_g99_list_drag(h2_g99_list_motion_t* motion, float travel, uint8_t count,
+                      uint64_t now_ms) {
+  if (motion == NULL || !motion->dragging) return;
+  const float maximum = count > 0u ? (float)(count - 1u) : 0.0f;
+  float target = motion->origin + travel;
+  if (!isfinite(target)) target = motion->origin;
+  target = target < 0.0f ? 0.0f : (target > maximum ? maximum : target);
+  uint64_t elapsed = now_ms >= motion->last_ms ? now_ms - motion->last_ms : 0u;
+  motion->last_ms = now_ms;
+  if (elapsed > 50u) elapsed = 50u;
+  const float limit = 8.0f * (float)elapsed / 1000.0f;
+  float delta =
+      (target - motion->position) * (1.0f - expf(-(float)elapsed / 45.0f));
+  if (delta > limit) delta = limit;
+  if (delta < -limit) delta = -limit;
+  motion->position += delta;
+  if (fabsf(target - motion->position) < 0.001f) motion->position = target;
+  if (motion->position < 0.0f) motion->position = 0.0f;
+  if (motion->position > maximum) motion->position = maximum;
+}
+
+uint8_t h2_g99_list_release(h2_g99_list_motion_t* motion, uint8_t count,
+                            uint64_t now_ms) {
+  if (motion == NULL) return 0u;
+  const float position = isfinite(motion->position) ? motion->position : 0.0f;
+  const float maximum = count > 0u ? (float)(count - 1u) : 0.0f;
+  const float bounded =
+      position < 0.0f ? 0.0f : (position > maximum ? maximum : position);
+  h2_g99_list_select(motion, (uint8_t)lroundf(bounded), count, now_ms, true);
+  return motion->target;
+}
+
+void h2_g99_list_tick(h2_g99_list_motion_t* motion, uint64_t now_ms) {
+  if (motion == NULL || !motion->snapping) return;
+  const uint64_t elapsed =
+      now_ms >= motion->snap_ms ? now_ms - motion->snap_ms : 0u;
+  if (elapsed >= H2_G99_ROTATE_MS) {
+    motion->position = motion->target;
+    motion->snapping = false;
+    return;
+  }
+  motion->position =
+      motion->snap_from +
+      ((float)motion->target - motion->snap_from) *
+          h2_g99_ease_snap((float)elapsed / (float)H2_G99_ROTATE_MS);
+}
+
 bool h2_g99_layout_compute(int32_t width, int32_t height,
                            h2_g99_layout_t* out) {
   if (out == NULL || width <= 0 || height <= 0) return false;

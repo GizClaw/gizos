@@ -166,17 +166,22 @@ h2_pal_result_t h2_g99_e2e_main_select(h2_g99_e2e_t* e2e, uint8_t item) {
 }
 
 h2_pal_result_t h2_g99_e2e_open_setting(h2_g99_e2e_t* e2e, uint8_t item) {
+  if (item >= H2_G99_SETTING_COUNT || item == H2_G99_SETTING_INPUT)
+    return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc = h2_g99_e2e_main_select(e2e, H2_G99_MAIN_SETTINGS);
   if (rc != H2_PAL_OK) return rc;
   const h2_g99_e2e_expect_t first =
       h2_g99_e2e_page_ready(H2_G99_ROUTE_SETTINGS, 0);
   rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_OK, &first,
                               H2_G99_E2E_NAV_MS, "Settings");
-  for (uint8_t sel = 0u; rc == H2_PAL_OK && sel < item; ++sel) {
+  for (uint8_t sel = 0u; rc == H2_PAL_OK && sel < item;) {
+    uint8_t selection = sel + 1u;
+    if (selection == H2_G99_SETTING_INPUT) ++selection;
     const h2_g99_e2e_expect_t next =
-        h2_g99_e2e_page_ready(H2_G99_ROUTE_SETTINGS, sel + 1);
+        h2_g99_e2e_page_ready(H2_G99_ROUTE_SETTINGS, selection);
     rc = h2_g99_e2e_press_until(e2e, H2_G99_COMPONENT_DOWN, &next,
                                 H2_G99_E2E_NAV_MS, "settings wheel rotation");
+    sel = selection;
   }
   return rc;
 }

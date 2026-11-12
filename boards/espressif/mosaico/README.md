@@ -4,6 +4,8 @@ CoreBoard V1.2 board composition for the pinned ESP-IDF 6.2 baseline. Sources
 implement PAL wiring, default SC101IOT Camera injection and Type-C OTG CDC
 Loader integration.
 
+The CST9220 touch provider continues reading while a contact is active or a report needs retrying, including when the IRQ line has returned high. Fresh stationary contact reports preserve a held finger. A contact with no valid report for 500 ms is released at its last coordinates so a skipped release cannot leave pointer clients pressed indefinitely.
+
 This delivery supports PAL E2E execution on Mosaico. The accepted device-suite results and their image-specific limits are recorded in [GizClaw/gizos#708](https://github.com/GizClaw/gizos/issues/708). They do not qualify every physical peripheral or a complete product. Lingxi and OneNET remain outside acceptance.
 
 Use the maintained `IDF_PATH` / `IDF_TOOLS_PATH` and build configuration:
@@ -20,7 +22,9 @@ layout; no `e2e-app/esp_mosaico` package is required. Ownership and validation b
 
 Only the user's left-slot SC101IOT, 1280x720 UYVY, is in scope. Camera provider
 injection does not probe or start capture. AEC calibration is limited to the controlled fixture conditions; no product
-calibration is applied. SPI NAND, OV3640 and other product features are excluded.
+calibration is applied. OV3640 and other product features remain outside that acceptance.
+
+The board exposes [read-only storage usage queries](esp32s31/include/h2_mosaico_storage.h) for product workers. Internal Flash usage combines current image lengths, allocated LittleFS blocks and reserved boot/partition/metadata regions. NAND usage uses mapped logical pages and usable FTL capacity through the pinned [SPI NAND extension](../../../third_party/spi_nand_flash_patch/README.md). It initializes NAND lazily, borrows an existing handle when present, and releases only handles it initialized after queries have joined. This adds statistics, not a NAND filesystem or device acceptance.
 
 ## Ownership and test discovery
 

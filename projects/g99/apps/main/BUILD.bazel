@@ -3,7 +3,7 @@ load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
 load("//tools/bazel/firmware:app_version.bzl", "app_version")
 load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
-load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/lvgl/ttf_subset:ttf_subset.bzl", "ttf_subset_c")
 
 package(default_visibility = ["//visibility:public"])
@@ -25,13 +25,31 @@ _COMPATIBILITY = select({
 
 h2_tasks(
     name = "tasks",
-    tasks = ["g99/wifi"],
+    tasks = [
+        "g99/storage",
+        "g99/wifi",
+    ],
+)
+
+cc_library(
+    name = "storage_api",
+    hdrs = ["include/h2_g99_storage.h"],
+    includes = ["include"],
+    deps = ["//pal"],
 )
 
 h2_lua_resource(
     name = "orbit_script",
     src = "lua/orbit.lua",
     symbol = "h2_g99_orbit_script",
+)
+
+genrule(
+    name = "orbit_cover",
+    srcs = ["resources/orbit_cover.png"],
+    outs = ["h2_g99_orbit_cover.c"],
+    cmd = "$(execpath //tools/lvgl/conv_png) --input $(location resources/orbit_cover.png) --output $@ --symbol h2_g99_orbit_cover",
+    tools = ["//tools/lvgl/conv_png"],
 )
 
 # System text uses the glyphs of the UI source plus printable ASCII for SSIDs,
@@ -53,6 +71,7 @@ cc_library(
     name = "core",
     srcs = [
         "src/h2_g99_layout.c",
+        "src/h2_g99_library.c",
         "src/h2_g99_nav.c",
         "src/h2_g99_settings.c",
         "src/h2_g99_touch.c",
@@ -60,6 +79,7 @@ cc_library(
     hdrs = [
         "include/h2_g99.h",
         "src/h2_g99_layout.h",
+        "src/h2_g99_library.h",
         "src/h2_g99_nav.h",
         "src/h2_g99_settings.h",
         "src/h2_g99_touch.h",
@@ -73,9 +93,49 @@ cc_library(
     target_compatible_with = _COMPATIBILITY,
     visibility = ["//visibility:private"],
     deps = [
+        ":storage_api",
         "//libs/runtime",
         "//pal",
         "//projects/g99/libs/art",
+    ],
+)
+
+cc_library(
+    name = "storage",
+    srcs = ["src/h2_g99_storage_worker.c"],
+    hdrs = [
+        "include/h2_g99_task_names.h",
+        "src/h2_g99_storage_worker.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    target_compatible_with = _COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = [
+        ":storage_api",
+        ":tasks",
+        "//libs/runtime",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "haptics",
+    srcs = ["src/h2_g99_haptics.c"],
+    hdrs = ["src/h2_g99_haptics.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = _COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = [
+        ":core",
+        "//libs/runtime",
+        "//pal",
     ],
 )
 
@@ -112,6 +172,7 @@ cc_library(
         "src/h2_g99_lua.c",
         "src/h2_g99_ui.c",
         ":font_subset",
+        ":orbit_cover",
     ],
     hdrs = [
         "include/h2_g99.h",
@@ -123,13 +184,25 @@ cc_library(
     target_compatible_with = _COMPATIBILITY,
     deps = [
         ":core",
+        ":haptics",
         ":orbit_script",
+        ":storage",
         ":wifi",
         "//libs/lua",
         "//libs/runtime",
         "//libs/ui/lvgl",
         "//pal",
     ],
+)
+
+cc_test(
+    name = "library_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_library.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":core"],
 )
 
 cc_test(
@@ -170,6 +243,30 @@ cc_test(
     copts = H2_WARNING_COPTS,
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":core"],
+)
+
+cc_test(
+    name = "haptics_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_haptics.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":core",
+        ":haptics",
+    ],
+)
+
+cc_test(
+    name = "storage_test",
+    size = "small",
+    srcs = ["tests/test_h2_g99_storage.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    linkopts = ["-pthread"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":storage"],
 )
 
 cc_test(

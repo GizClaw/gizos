@@ -14,6 +14,8 @@ static unsigned captured_pixels;
 static size_t dma_limit = SIZE_MAX;
 static unsigned rejected_allocations;
 
+int64_t esp_timer_get_time(void) { return 0; }
+
 void* h2_mosaico_test_dma_alloc(size_t size, unsigned int caps) {
   assert(caps == (MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
   if (size > dma_limit) {

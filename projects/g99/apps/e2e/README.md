@@ -2,7 +2,7 @@
 
 This suite drives the production G99 [Main](../main/include/h2_g99.h) end to end. It starts Main through `h2_g99_run()` on its own task, presses the logical HOME, SCREEN, UP, DOWN and OK components through Runtime Test Control, enters text through the public `H2_G99_EVENT_TEXT_INPUT` event, and touches the screen with a scripted finger it hands Main as `h2_g99_config_t.touch`. It asserts only on the published `h2_g99_observation_t` and the `h2_g99_frame_stats_t` Main reports through `h2_g99_config_t.frame`, and never reaches into Main's internals.
 
-The scripted finger opens the target's Runtime touch to validate its capability contract, then owns pointer input for the automated run. Physical touches are tested separately in Main and cannot leak between automated cases. While a case scripts it, it answers Main's touch reads the way a touch controller does: down, a move to wherever the finger is at that moment, or up. A slow Main therefore misses intermediate positions exactly as it would with a real finger. Deliberate drags and taps wait until Main read the touch-down and the end point; flicks move on the clock alone. A lifted finger stays up until Main read it up again 80 ms after the lift, so the next gesture is a new press and not the continuation Main makes of a contact that returns within 50 ms.
+The scripted finger opens the target's Runtime touch to validate its capability contract, then owns pointer input for the automated run. Physical touches are tested separately in Main and cannot leak between automated cases. While a case scripts it, it answers Main's touch reads the way a touch controller does: down, a move to wherever the finger is at that moment, or up. A slow Main therefore misses intermediate positions exactly as it would with a real finger. Deliberate drags and taps wait until Main read the touch-down and the end point; flicks move on the clock alone. A lifted finger stays up until Main read it up again 80 ms after the lift, so the next gesture is a new press and not the continuation Main makes of a contact that returns within 50 ms. If that release launches a Lua app, its published APP_RUNNING state completes the wait because the menu no longer polls touch.
 
 Every case starts with a clean finger that reports each change at the next read, like the desktop and Web sources. The controller cases switch it to the Mosaico CST9220 instead, which publishes one report every 25 ms: with driver 0.1.1 a read between two reports finds an empty frame that the board reports as a release, and with driver 0.1.2 that read fails. The finger can also hover, moving without contact the way the Web platform reports a mouse with no button pressed.
 
@@ -31,18 +31,25 @@ Cases run in this order, and each starts from rest: Main running on MAIN with Li
 
 | Case | Checks |
 | --- | --- |
+| `settings/haptics-switch` | The direct vibration switch saves, releases ownership so the wheel can enter Storage, and restores the persisted state after restarting Main. |
+| `settings/timeout-wheel` | Right-side drag and tap snap to and immediately save the centered timeout without confirmation; crossing sides keeps gesture ownership, the left wheel still navigates, and the choice survives restart. |
 | `startup/boot-animation` | MAIN(Library) appears no earlier than 900 ms after the boot animation starts; DOWN and OK pressed during the animation are dropped, not replayed. |
 | `startup/menu-ready` | A fresh Main is RUNNING on its menu with input ready, its settings store readable and the target's screen size within 5 s. |
 | `navigation/library-enter-back` | OK enters Library and AI returns to MAIN(Library); DOWN during each transition is ignored. |
+| `navigation/library-menu` | The three-dot management drawer blocks background launch, dismisses by outside tap, screen-off or AI, and leaves the game launch/return path usable. |
 | `navigation/settings-enter-back` | Settings enters and AI returns with the main selection restored; entering again starts on the first item. |
-| `navigation/non-enterable` | OK on 我的, 应用中心 and 实验室 stays on the main menu. |
+| `navigation/non-enterable` | OK on 圈子, 应用中心 and 实验室 stays on the main menu. |
 | `keys/home-exits-app` | AI leaves the running Orbit app for Library. |
 | `keys/screen-toggle` | BOOT turns the screen off and on; a key pressed while off only wakes the screen. |
 | `layout/page-geometry` | On MAIN, Library and Settings the wheel and info areas lie inside the screen and do not overlap. |
 | `touch/wheel-drag` | A deliberate quarter-screen drag up from the wheel centre turns the main wheel to the next item, and the same drag down turns it back. |
 | `touch/wheel-follow` | A held finger turns the wheel with it: a tenth of the screen up turns it about 0.4 items with the selection unchanged while Main draws; back at the start and lifted, the wheel stays put. |
+| `touch/wheel-restart` | A second DOWN without the first gesture's UP completes the first snap, resets the touch origin and lets a second upward drag advance another item; both gestures settle at exact detents. |
 | `touch/wheel-flick` | The quarter-screen drags as 150 ms flicks that Main reads only when it gets to them. Needs `frame-budget`. |
-| `touch/wheel-tap` | A tap below the centre turns to the next item, above it back, and on the centre enters Library. |
+| `touch/wheel-tap` | Taps at six positions above, on and below the wheel centre and on the information panel all enter the selected Library page. |
+| `touch/full-screen-drag` | Left, centre and right background drags follow the held finger, return without changing selection, and snap one item in either direction on release. |
+| `touch/page-tap` | Background taps on Volume leave its direct slider ready without entering an editor; a Library background tap still launches Orbit. |
+| `touch/wifi-region` | A right-side Wi-Fi gesture crossing into the left side stays on Wi-Fi and never moves the settings wheel or starts a connection, including with no usable station. |
 | `touch/hover-ignored` | A pointer moving over the wheel without contact leaves it still; pressed and dragged afterwards, it turns the wheel one item and back. |
 | `touch/empty-frames` | With the CST9220 driver 0.1.1 model, a held finger still turns the wheel with it and a deliberate drag still turns it one item and back. |
 | `touch/failed-reads` | The same with the driver 0.1.2 model, whose reads between two reports fail. |
@@ -50,7 +57,11 @@ Cases run in this order, and each starts from rest: Main running on MAIN with Li
 | `perf/rotate-frames` | Reports a key rotation; with `frame-budget` it draws at least five frames and holds the 50 ms / 20 FPS budget. |
 | `perf/page-frames` | Reports the first Library and Settings entry/back animations after restarting Main; with `frame-budget` every measured frame holds the 50 ms / 20 FPS budget. |
 | `settings/persist-across-restart` | Volume, brightness and screen timeout changed in Settings survive a Main restart; the original values are restored the same way. |
+| `settings/slider-release` | Volume and brightness support taps and continuous pointer drags, retain ownership across the wheel, end editing on release and permit an immediate wheel gesture. Released values survive a restart and original settings are restored. |
+| `settings/slider-cancel` | SCREEN interrupts a held slider, cancelled movement cannot change its value after wake, a new pointer can turn the wheel and the value applied before cancellation is persisted. |
+| `settings/menu-items` | The settings wheel cycles through twelve visible entries, skips the retired Input identifier and wraps from Reset to Wi-Fi. |
 | `wifi/connect-test-network` | Settings › Wi-Fi scans, connects to `HAIVIVI-MFG` with password `!haivivi` and closes the list. Needs `wifi`. |
+| `wifi/dual-wheel-gestures` | The right network wheel follows and snaps independently; crossing the divider preserves gesture ownership, and a subsequent left-side drag can leave the active Wi-Fi selector for Volume. Needs the `wifi` fixture's scan list. |
 | `wifi/reconnect-after-restart` | After a Main restart with the link dropped, Main reconnects to the saved network on its own. Needs `wifi`. |
 
 A case whose capability the target does not declare reports UNSUPPORTED. Screen-off pause of a running app is not asserted: the pinned Lua host has no pause event.
