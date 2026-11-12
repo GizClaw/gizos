@@ -571,3 +571,6 @@ http_archive(
 
 alipay_sdk = use_extension("//third_party/alipay:sdk_repository.bzl", "alipay_sdk")
 use_repo(alipay_sdk, "alipay_sdk")
+
+alipay_api = use_extension("//third_party/alipay:api_repository.bzl", "alipay_api")
+use_repo(alipay_api, "alipay_api")

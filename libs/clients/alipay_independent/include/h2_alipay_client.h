@@ -1,7 +1,6 @@
 #ifndef H2_ALIPAY_CLIENT_H
 #define H2_ALIPAY_CLIENT_H
 
-#include "h2_alipay.h"
 #include "h2_alipay_protocol.h"
 #include "application/h2_pal_http.h"
 #include "os/h2_pal_crypto.h"
@@ -11,6 +10,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define H2_ALIPAY_CLIENT_BINDING_CODE_CAPACITY 256u
 
 /** Borrowed dependencies and strings, valid until the blocking call returns.
  * HTTP must provide verified HTTPS and response-header delivery. crypto must
@@ -62,7 +63,7 @@ typedef struct h2_alipay_client_result {
   int rpc_status;
   unsigned requests;
   bool registered;
-  char code[H2_ALIPAY_BINDING_CODE_CAPACITY];
+  char code[H2_ALIPAY_CLIENT_BINDING_CODE_CAPACITY];
   size_t length;
   char token[129];
   h2_pal_p256_private_key_t private_key;

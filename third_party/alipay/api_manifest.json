@@ -1,0 +1,18 @@
+{
+  "app/account_online/inc/account_online.h": "96546d8946bb86fb155594e7c70028595069525dd7ea078b7f6bbdfb6e0f0494",
+  "app/aid_code/inc/aid_code.h": "7e971c44623a37a5b552da86fb728f6f192582ad1e141b2294c2bdb94d470a05",
+  "app/bind_net/inc/alipay_bind.h": "879f3ed320244ce4e83297f7e88ae1c596ea45db9b0364812979be806c8de8a9",
+  "app/bind_sync/inc/alipay_sync.h": "60d658428133383a7dae7167026b3ff679288473cfed3fff1b3792ee5016348a",
+  "app/migration/inc/alipay_deprecated_vendor.h": "5181e3e49b44c086945a9eee9dc1835a63319253be50f457593321c0ab0e936a",
+  "app/migration/inc/alipay_migration.h": "e7c7f521903e43bd4b0e95ac2c13bbca31b8fe30b03e19567623b0cc26508662",
+  "app/nfc_offline_pay/inc/alipay_nfc_offline_pay.h": "9ac5c26afa93d8730de4b667eb0a103c53f9b0fa23f66d268ef2067c1617b138",
+  "app/pay_code/inc/alipay_pay.h": "64c8725681c06ef1e8bc413a6646b5914641c3d1197b2ebddfb9a75064df2d7f",
+  "app/pay_result/inc/alipay_pay_result.h": "ad5fc829f1ec05cbab001a1514a154d0448dd10781085e3a585acd5360ec6723",
+  "app/provision_ota/inc/alipay_provision_overtheair.h": "f68f1fd1f31e0e4024777c238f6032f2e1b825f34c8be863b962e3ac9a7fd0c2",
+  "app/scan_pay/inc/alipay_dzs_pay.h": "2a84cd7830655c89570925ac83da12983f199eca833b6c6a0fac767daaddbf81",
+  "app/scan_pay/inc/alipay_nfc_online_pay.h": "8ceef69c7de55eece45415b9fecf01c72fedb94c090bfe8a2f9e7b9b14b3e68a",
+  "app/scan_pay/inc/alipay_scan_pay.h": "e7f0f19a660e92df807927b36cb18b8173de740d2689f2584df62e2cd83223d4",
+  "app/setting/inc/alipay_account_manage.h": "ee8964b6b5ac2910a1ab7c75ab8faf9840af75f56a0507fa0cc1f58c29f43585",
+  "app/trans_code/inc/alipay_transit.h": "bdf063d6e7fe061ac4d079ae09a358031dd1f5b8e285ab105be53866fc158e8d",
+  "share/common/inc/alipay_common.h": "ae12d99712a72731c88a0074571e5497294325b2aa6e3ff39538174940da2178"
+}

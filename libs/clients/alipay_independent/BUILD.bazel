@@ -6,7 +6,7 @@ load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
-    name = "alipay_independent",
+    name = "client",
     srcs = ["src/h2_alipay_client.c"],
     hdrs = ["include/h2_alipay_client.h"],
     conlyopts = H2_C11_OPTS,
@@ -14,10 +14,44 @@ cc_library(
     includes = ["include"],
     deps = [
         ":protocol",
-        "//libs/clients/alipay",
         "//libs/crypto/sha256",
         "//pal",
         "@h2_vendor_yyjson//:yyjson",
+    ],
+)
+
+cc_library(
+    name = "alipay_independent",
+    srcs = ["src/h2_alipay_independent.c"],
+    hdrs = ["include/h2_alipay_independent.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        ":client",
+        "@alipay_api//:headers",
+    ],
+)
+
+cc_test(
+    name = "sdk_compatible_cpp_test",
+    srcs = ["tests/test_sdk_compatible_cpp.cc"],
+    tags = ["manual"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":alipay_independent"],
+)
+
+cc_test(
+    name = "sdk_compatible_test",
+    srcs = ["tests/test_sdk_compatible.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    tags = ["manual"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay_independent",
+        "//libs/testing:testing_pal",
     ],
 )
 
@@ -44,7 +78,7 @@ cc_test(
     copts = H2_WARNING_COPTS,
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
-        ":alipay_independent",
+        ":client",
         "//libs/testing:testing_pal",
         "//pal/providers/backends/corehttp:corehttp_test_support",
     ],

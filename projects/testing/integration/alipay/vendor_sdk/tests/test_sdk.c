@@ -2,6 +2,7 @@
 #include "h2_alipay_storage.h"
 #include "h2_alipay_sdk_internal.h"
 #include "h2_alipay_sdk_socket_abi.h"
+#include "h2_alipay_binding_storage.h"
 #include "h2_app_test_mem.h"
 #include "h2_app_test_sync.h"
 #include "h2_app_test_crypto.h"
@@ -19,6 +20,12 @@
 #include <string.h>
 
 static unsigned init_calls, code_calls;
+static unsigned query_calls;
+static bool sdk_bound, query_writes, omit_seed, fail_marker_commit;
+static bool change_readback, fail_material_delete, fail_material_reset;
+static int query_status = ALIPAY_STATUS_UNKNOWN, query_result;
+static h2_app_test_pref_t* binding_pref;
+static const h2_alipay_storage_t* binding_storage;
 static int code_result;
 static h2_pal_result_t identity_result;
 static int netif_result, dns_result;
@@ -33,7 +40,39 @@ int alipay_pre_init(void) {
   ++init_calls;
   return 0;
 }
-bool alipay_get_binding_status(void) { return false; }
+bool alipay_get_binding_status(void) { return sdk_bound; }
+retval_e alipay_query_binding_result(binding_status_e* status) {
+  ++query_calls;
+  *status = query_status;
+  if (query_writes) {
+    uint8_t key[32], seed[48];
+    memset(key, 0x23, sizeof(key));
+    memset(seed, 0x59, sizeof(seed));
+    (void)alipay_psa_storage_write(7u, (const uint8_t*)"TEST_UID", 8u);
+    (void)alipay_psa_storage_write(6u, (const uint8_t*)"TEST_TID", 8u);
+    (void)alipay_psa_storage_write(1u, key, sizeof(key));
+    if (!omit_seed) (void)alipay_psa_storage_write(2u, seed, sizeof(seed));
+  }
+  if (change_readback)
+    assert(h2_alipay_storage_write(binding_storage, 7u,
+                                   (const uint8_t*)"OTHER_UID",
+                                   9u) == H2_PAL_OK);
+  if (fail_material_delete || fail_material_reset) {
+    binding_pref->commit =
+        (h2_app_test_fault_t){.result = H2_PAL_ERR_WRITE, .remaining = 1u};
+    if (fail_material_delete)
+      assert(alipay_psa_storage_delete(6u) == H2_PAL_ERR_WRITE);
+    else
+      assert(alipay_psa_storage_reset() == H2_PAL_ERR_WRITE);
+  }
+  sdk_bound = query_status == ALIPAY_STATUS_BINDING_OK;
+  if (fail_marker_commit) {
+    binding_pref->commit =
+        (h2_app_test_fault_t){.result = H2_PAL_ERR_WRITE, .remaining = 1u};
+    fail_marker_commit = false;
+  }
+  return query_result;
+}
 retval_e alipay_get_binding_code(uint32_t feature, char* code, int* size) {
   assert(feature == (FEATURE_PAYCODE | FEATURE_SQUARE));
   ++code_calls;
@@ -85,6 +124,146 @@ static h2_pal_result_t entropy(void* user, uint8_t* out, size_t length) {
   memset(out, 0xa5, length);
   return H2_PAL_OK;
 }
+
+static void new_binding(const h2_alipay_api_t* api) {
+  char code[32];
+  size_t size = 0u;
+  int sdk_rc = 1;
+  code_result = 0;
+  query_result = 0;
+  query_status = ALIPAY_STATUS_UNKNOWN;
+  query_writes = omit_seed = fail_marker_commit = false;
+  change_readback = fail_material_delete = fail_material_reset = false;
+  assert(api->vtable->get_binding_code(
+             api->user, FEATURE_PAYCODE | FEATURE_SQUARE, code, sizeof(code),
+             &size, &sdk_rc) == H2_PAL_OK);
+}
+
+static void binding_contract(const h2_alipay_api_t* api,
+                             h2_app_test_pref_t* pref,
+                             const h2_alipay_storage_t* storage) {
+  binding_pref = pref;
+  binding_storage = storage;
+  h2_alipay_trace_reset(api->trace, false);
+  h2_alipay_binding_result_t result;
+  sdk_bound = false;
+  assert(api->vtable->binding_snapshot(api->user, &result) == H2_PAL_OK);
+  assert(result.state == H2_ALIPAY_BINDING_UNBOUND);
+  new_binding(api);
+  unsigned before = query_calls;
+  assert(api->vtable->query_binding_result(api->user, &result) == H2_PAL_OK);
+  assert(result.state == H2_ALIPAY_BINDING_PENDING && result.sdk_rc == 0 &&
+         result.sdk_status == ALIPAY_STATUS_UNKNOWN);
+  query_status = ALIPAY_STATUS_START_BINDING;
+  assert(api->vtable->query_binding_result(api->user, &result) == H2_PAL_OK);
+  assert(result.state == H2_ALIPAY_BINDING_STARTED);
+  query_writes = true;
+  query_status = ALIPAY_STATUS_BINDING_OK;
+  assert(api->vtable->query_binding_result(api->user, &result) == H2_PAL_OK);
+  assert(query_calls == before + 3u);
+  assert(result.state == H2_ALIPAY_BINDING_COMPLETE &&
+         result.tid_length == 8u && result.uid_length == 8u &&
+         result.shared_key_length == 32u && result.seed_length == 48u);
+  uint8_t data[128];
+  uint32_t size = sizeof(data);
+  assert(h2_alipay_storage_read(storage, 6u, data, &size) == H2_PAL_OK &&
+         size == 8u && memcmp(data, "TEST_TID", 8u) == 0);
+  size = sizeof(data);
+  assert(h2_alipay_storage_read(storage, 1u, data, &size) == H2_PAL_OK &&
+         size == 32u && data[0] == 0x23);
+  assert(api->vtable->binding_snapshot(api->user, &result) == H2_PAL_OK &&
+         result.state == H2_ALIPAY_BINDING_COMPLETE);
+  before = query_calls;
+  assert(api->vtable->query_binding_result(api->user, &result) == H2_PAL_OK &&
+         query_calls == before);
+
+  new_binding(api);
+  query_writes = true;
+  query_status = ALIPAY_STATUS_BINDING_FAIL;
+  assert(api->vtable->query_binding_result(api->user, &result) ==
+         H2_PAL_ERR_IO);
+  assert(result.sdk_rc == 0 && result.state == H2_ALIPAY_BINDING_FAILED);
+  uint8_t digest[32];
+  assert(h2_alipay_binding_storage_read(storage, &result, digest) == H2_PAL_OK);
+  assert(h2_alipay_binding_storage_verify(storage, digest) ==
+         H2_PAL_ERR_NOT_FOUND);
+
+  h2_alipay_trace_reset(api->trace, false);
+  new_binding(api);
+  query_writes = omit_seed = true;
+  query_status = ALIPAY_STATUS_BINDING_OK;
+  assert(api->vtable->query_binding_result(api->user, &result) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(result.state == H2_ALIPAY_BINDING_NEEDS_VERIFICATION);
+
+  new_binding(api);
+  query_writes = true;
+  query_status = ALIPAY_STATUS_BINDING_OK;
+  pref->commit =
+      (h2_app_test_fault_t){.result = H2_PAL_ERR_WRITE, .remaining = 1u};
+  assert(api->vtable->query_binding_result(api->user, &result) ==
+         H2_PAL_ERR_WRITE);
+  before = query_calls;
+  assert(api->vtable->query_binding_result(api->user, &result) ==
+         H2_PAL_ERR_WRITE);
+  assert(query_calls == before && result.storage_rc == H2_PAL_ERR_WRITE);
+
+  new_binding(api);
+  query_writes = change_readback = true;
+  query_status = ALIPAY_STATUS_BINDING_OK;
+  assert(api->vtable->query_binding_result(api->user, &result) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(result.state == H2_ALIPAY_BINDING_NEEDS_VERIFICATION);
+  before = query_calls;
+  assert(api->vtable->query_binding_result(api->user, &result) ==
+             H2_PAL_ERR_INVALID_STATE &&
+         query_calls == before);
+  assert(h2_alipay_binding_storage_read(storage, &result, digest) == H2_PAL_OK);
+  assert(h2_alipay_binding_storage_verify(storage, digest) ==
+         H2_PAL_ERR_NOT_FOUND);
+
+  for (unsigned operation = 0u; operation < 2u; ++operation) {
+    new_binding(api);
+    query_writes = true;
+    fail_material_delete = operation == 0u;
+    fail_material_reset = operation == 1u;
+    query_status = ALIPAY_STATUS_BINDING_OK;
+    assert(api->vtable->query_binding_result(api->user, &result) ==
+           H2_PAL_ERR_WRITE);
+    assert(result.state == H2_ALIPAY_BINDING_NEEDS_VERIFICATION);
+    before = query_calls;
+    assert(api->vtable->query_binding_result(api->user, &result) ==
+               H2_PAL_ERR_WRITE &&
+           result.storage_rc == H2_PAL_ERR_WRITE && query_calls == before);
+  }
+
+  h2_alipay_trace_reset(api->trace, false);
+  new_binding(api);
+  query_writes = fail_marker_commit = true;
+  query_status = ALIPAY_STATUS_BINDING_OK;
+  assert(api->vtable->query_binding_result(api->user, &result) ==
+         H2_PAL_ERR_WRITE);
+  before = query_calls;
+  assert(api->vtable->query_binding_result(api->user, &result) == H2_PAL_OK &&
+         query_calls == before && result.state == H2_ALIPAY_BINDING_COMPLETE);
+  assert(api->vtable->binding_snapshot(api->user, &result) == H2_PAL_OK);
+  assert(h2_alipay_storage_write(storage, 7u, (const uint8_t*)"OTHER_UID",
+                                 9u) == H2_PAL_OK);
+  assert(api->vtable->binding_snapshot(api->user, &result) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(result.state == H2_ALIPAY_BINDING_NEEDS_VERIFICATION);
+  assert(alipay_psa_storage_write(1u, data, 31u) == H2_PAL_OK);
+  assert(api->vtable->binding_snapshot(api->user, &result) ==
+         H2_PAL_ERR_FORMAT);
+  pref->read = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u};
+  before = query_calls;
+  assert(api->vtable->binding_snapshot(api->user, &result) == H2_PAL_ERR_IO);
+  assert(result.state == H2_ALIPAY_BINDING_NEEDS_VERIFICATION &&
+         result.storage_rc == H2_PAL_ERR_IO && query_calls == before);
+  for (size_t index = 0u; index < api->trace->count; ++index)
+    assert(api->trace->events[index].captured == 0u);
+}
+
 int main(void) {
   h2_app_test_mem_t mem = {0};
   h2_app_test_mem_init(&mem, NULL);
@@ -278,6 +457,7 @@ int main(void) {
   alipay_log_ext("Result-Status: 999999999999999999999999999999999999");
   assert(errno == EAGAIN && api->trace->count == prior_events);
   assert(api->trace->dropped == 0);
+  binding_contract(api, &pref, &sn);
   assert(h2_app_test_pref_deinit(&pref) == H2_PAL_OK);
   /* This bridge deliberately retains its process-lifetime SDK state. */
   h2_app_test_mem_release_all(&mem);

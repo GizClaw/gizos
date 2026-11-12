@@ -9,6 +9,7 @@
  * All borrowed providers must remain alive until hardware reset. */
 h2_pal_result_t h2_alipay_e2e_target_configure(h2_runtime_t* runtime);
 uint32_t h2_alipay_e2e_target_feature(void);
+bool h2_alipay_e2e_target_complete_binding(void);
 const h2_alipay_api_t* h2_alipay_e2e_target_api(void);
 
 /* Quiescent-only completed-transfer tap. Pixels are panel-order RGB565.

@@ -10,17 +10,33 @@ typedef struct alipay_page {
   h2_runtime_t* runtime;
   const h2_alipay_e2e_config_t* config;
   h2_alipay_e2e_result_t result;
+  h2_alipay_e2e_result_t binding_result;
   h2_atomic_bool_t done;
+  h2_atomic_bool_t canceled;
   h2_pal_task_t* worker;
   lv_display_t* display;
   lv_obj_t* status;
   lv_obj_t* detail;
+  lv_obj_t* qr_canvas;
   uint8_t* pixels;
   uint16_t* qr_pixels;
   size_t stride;
   uint32_t flushes;
   int display_rc;
 } alipay_page_t;
+
+static bool canceled(void* user) {
+  alipay_page_t* page = user;
+  return h2_atomic_bool_load(&page->canceled, H2_ATOMIC_ACQUIRE);
+}
+
+static void complete_binding(void* user) {
+  alipay_page_t* page = user;
+  (void)h2_alipay_e2e_complete_binding(page->runtime, page->config, canceled,
+                                       page, &page->binding_result);
+  h2_atomic_bool_store(&page->done, true, H2_ATOMIC_RELEASE);
+  (void)h2_runtime_notify(page->runtime);
+}
 
 static void execute(void* user) {
   alipay_page_t* page = user;
@@ -77,11 +93,11 @@ static int show_result(alipay_page_t* page, int width, int height) {
   lv_label_set_text(page->detail, text);
   if (r->stage != H2_ALIPAY_E2E_CODE_READY || r->result != H2_PAL_OK)
     return H2_PAL_OK;
-  uint8_t modules[H2_QRCODE_BUFFER_LEN_FOR_VERSION(12)];
+  uint8_t modules[H2_QRCODE_BUFFER_LEN_FOR_VERSION(17)];
   uint8_t scratch[sizeof(modules)];
   h2_qrcode_t qr = {0};
   int rc =
-      h2_qrcode_encode_text(r->code, H2_QRCODE_ECC_MEDIUM, 12, modules,
+      h2_qrcode_encode_text(r->code, H2_QRCODE_ECC_HIGH, 17, modules,
                             sizeof(modules), scratch, sizeof(scratch), &qr);
   if (rc != H2_PAL_OK) return rc;
   h2_qrcode_layout_t layout;
@@ -102,6 +118,7 @@ static int show_result(alipay_page_t* page, int width, int height) {
   rc = h2_qrcode_render_rgb565_band(&qr, &layout, 0, UINT16_MAX, UINT16_MAX, 0,
                                     canvas_width, span, page->qr_pixels, count);
   if (rc == H2_PAL_OK) {
+    page->qr_canvas = canvas;
     lv_canvas_set_buffer(canvas, page->qr_pixels, span, span,
                          LV_COLOR_FORMAT_RGB565);
     lv_obj_set_pos(canvas, (width - span) / 2, 28 + (height - 52 - span) / 2);
@@ -131,6 +148,7 @@ h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
     return H2_PAL_ERR_INVALID_ARG;
   alipay_page_t page = {.runtime = runtime, .config = config};
   bool platform_open = false, lvgl_open = false, atomic_open = false;
+  bool cancel_open = false;
   int rc = h2_pal_display_open(runtime->display);
   if (rc != H2_PAL_OK) return rc;
   h2_display_info_t info = {0};
@@ -190,6 +208,11 @@ h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
     goto done;
   }
   atomic_open = true;
+  if (h2_atomic_bool_init(&page.canceled, false) != H2_ATOMIC_OK) {
+    rc = H2_PAL_ERR_NO_MEMORY;
+    goto done;
+  }
+  cancel_open = true;
   const h2_pal_task_options_t worker = {.name = "alipay/e2e/sdk",
                                         .min_stack_size = 65536};
   rc = h2_pal_task_start(runtime->task, &worker, execute, &page, &page.worker);
@@ -223,6 +246,76 @@ h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
   page.result.qr_visible = page.result.stage == H2_ALIPAY_E2E_CODE_READY &&
                            page.result.result == H2_PAL_OK &&
                            page.result.display_rc == H2_PAL_OK;
+  page.result.code_presented = page.result.qr_visible;
+  if (config->complete_binding && page.result.qr_visible) {
+    if (config->binding_code_ready != NULL)
+      config->binding_code_ready(runtime, config->user, &page.result);
+    page.binding_result = page.result;
+    h2_atomic_bool_store(&page.done, false, H2_ATOMIC_RELEASE);
+    lv_label_set_text(page.status, "Scan with Alipay / waiting for binding");
+    lv_refr_now(page.display);
+    rc = h2_pal_task_start(runtime->task, &worker, complete_binding, &page,
+                           &page.worker);
+    if (rc != H2_PAL_OK) {
+      page.result.result = rc;
+    } else {
+      bool exit_requested = false;
+      while (!h2_atomic_bool_load(&page.done, H2_ATOMIC_ACQUIRE)) {
+        if (config->should_exit != NULL && config->should_exit(config->user)) {
+          exit_requested = true;
+          h2_atomic_bool_store(&page.canceled, true, H2_ATOMIC_RELEASE);
+        }
+        rc = drain(runtime);
+        if (rc != H2_PAL_OK) {
+          h2_atomic_bool_store(&page.canceled, true, H2_ATOMIC_RELEASE);
+          break;
+        }
+        int wait = h2_runtime_wait_notify(runtime, 100);
+        if (wait != H2_PAL_OK && wait != H2_PAL_ERR_TIMEOUT) {
+          rc = wait;
+          h2_atomic_bool_store(&page.canceled, true, H2_ATOMIC_RELEASE);
+          break;
+        }
+      }
+      while (h2_pal_task_join(runtime->task, page.worker) != H2_PAL_OK)
+        (void)h2_pal_time_sleep_ms(runtime->time, 100);
+      page.worker = NULL;
+      if (rc != H2_PAL_OK || exit_requested) {
+        if (rc == H2_PAL_OK) rc = H2_PAL_ERR_CLOSED;
+        goto done;
+      }
+      page.result = page.binding_result;
+    }
+  }
+  if (config->complete_binding) {
+    if (page.qr_canvas != NULL) {
+      lv_obj_delete(page.qr_canvas);
+      page.qr_canvas = NULL;
+    }
+    page.result.qr_visible = false;
+    lv_obj_set_hidden(page.detail, false);
+    lv_label_set_text(
+        page.status,
+        page.result.result == H2_PAL_OK &&
+                page.result.binding.state == H2_ALIPAY_BINDING_COMPLETE
+            ? "Bound / credentials verified in KV"
+            : "Binding incomplete / see diagnostic status");
+    char text[160];
+    (void)snprintf(
+        text, sizeof(text),
+        "Binding state: %d   Result: %d\n"
+        "TID: %zu B / UID: %zu B\nKey: %zu B / seed: %zu B",
+        (int)page.result.binding.state, page.result.result,
+        page.result.binding.tid_length, page.result.binding.uid_length,
+        page.result.binding.shared_key_length, page.result.binding.seed_length);
+    lv_label_set_text(page.detail, text);
+    lv_obj_set_pos(page.status, 16, 44);
+    lv_refr_now(page.display);
+    if (page.display_rc != H2_PAL_OK) page.result.display_rc = page.display_rc;
+    if (page.result.display_rc == H2_PAL_OK && config->observe != NULL)
+      page.result.display_rc = config->observe(
+          config->user, page.pixels, page.stride, info.width, info.height);
+  }
   uint64_t reported = 0;
   (void)h2_pal_time_get_monotonic_ms(runtime->time, &reported);
   if (config->report != NULL)
@@ -246,6 +339,7 @@ h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
   }
   if (rc == H2_PAL_OK) rc = page.result.display_rc;
 done:
+  if (cancel_open) h2_atomic_bool_destroy(&page.canceled);
   if (atomic_open) h2_atomic_bool_destroy(&page.done);
   if (page.display != NULL) lv_display_delete(page.display);
   if (lvgl_open) lv_deinit();

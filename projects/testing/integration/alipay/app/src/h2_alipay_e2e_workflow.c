@@ -26,6 +26,11 @@ h2_pal_result_t h2_alipay_e2e_execute(h2_runtime_t* runtime,
     result->result = H2_PAL_ERR_UNSUPPORTED;
     return result->result;
   }
+  if (config->complete_binding && (vtable->binding_snapshot == NULL ||
+                                   vtable->query_binding_result == NULL)) {
+    result->result = H2_PAL_ERR_UNSUPPORTED;
+    return result->result;
+  }
   result->prepare_rc = config->prepare(runtime, config->user);
   result->result = result->prepare_rc;
   if (result->result != H2_PAL_OK) return result->result;
@@ -52,6 +57,19 @@ h2_pal_result_t h2_alipay_e2e_execute(h2_runtime_t* runtime,
     result->result = H2_PAL_ERR_INVALID_STATE;
     return result->result;
   }
+  if (config->complete_binding) {
+    result->stage = H2_ALIPAY_E2E_PREREQUISITES;
+    result->result = vtable->binding_snapshot(api->user, &result->binding);
+    if (result->result != H2_PAL_OK) return result->result;
+    if (result->binding.state == H2_ALIPAY_BINDING_COMPLETE) {
+      result->stage = H2_ALIPAY_E2E_BINDING_COMPLETE;
+      return H2_PAL_OK;
+    }
+    if (result->binding.state != H2_ALIPAY_BINDING_UNBOUND) {
+      result->result = H2_PAL_ERR_INVALID_STATE;
+      return result->result;
+    }
+  }
   result->stage = H2_ALIPAY_E2E_GET_CODE;
   started = now(runtime);
   result->result = vtable->get_binding_code(
@@ -72,4 +90,68 @@ h2_pal_result_t h2_alipay_e2e_execute(h2_runtime_t* runtime,
   result->code[result->length] = '\0';
   result->stage = H2_ALIPAY_E2E_CODE_READY;
   return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_alipay_e2e_complete_binding(
+    h2_runtime_t* runtime, const h2_alipay_e2e_config_t* config,
+    bool (*cancel)(void*), void* cancel_user, h2_alipay_e2e_result_t* result) {
+  if (runtime == NULL || config == NULL || result == NULL ||
+      !config->complete_binding || config->alipay == NULL ||
+      config->alipay->vtable == NULL ||
+      config->alipay->vtable->query_binding_result == NULL ||
+      result->stage != H2_ALIPAY_E2E_CODE_READY ||
+      result->result != H2_PAL_OK || !result->code_presented)
+    return H2_PAL_ERR_INVALID_STATE;
+  uint64_t started, current;
+  int rc = h2_pal_time_get_monotonic_ms(runtime->time, &started);
+  if (rc != H2_PAL_OK) {
+    result->result = rc;
+    return rc;
+  }
+  uint32_t timeout =
+      config->binding_timeout_ms != 0u ? config->binding_timeout_ms : 60000u;
+  uint32_t interval =
+      config->binding_interval_ms != 0u ? config->binding_interval_ms : 2000u;
+  result->stage = H2_ALIPAY_E2E_WAIT_BINDING;
+  for (;;) {
+    rc = h2_pal_time_get_monotonic_ms(runtime->time, &current);
+    if (rc != H2_PAL_OK) break;
+    result->binding_ms = current - started;
+    if (cancel != NULL && cancel(cancel_user)) {
+      rc = H2_PAL_ERR_CLOSED;
+      break;
+    }
+    if (result->binding_ms >= timeout) {
+      rc = H2_PAL_ERR_TIMEOUT;
+      break;
+    }
+    ++result->binding_queries;
+    rc = config->alipay->vtable->query_binding_result(config->alipay->user,
+                                                      &result->binding);
+    if (rc != H2_PAL_OK) break;
+    if (result->binding.state == H2_ALIPAY_BINDING_COMPLETE) {
+      result->stage = H2_ALIPAY_E2E_BINDING_COMPLETE;
+      break;
+    }
+    if (result->binding.state != H2_ALIPAY_BINDING_PENDING &&
+        result->binding.state != H2_ALIPAY_BINDING_STARTED) {
+      rc = H2_PAL_ERR_INVALID_STATE;
+      break;
+    }
+    rc = h2_pal_time_get_monotonic_ms(runtime->time, &current);
+    if (rc != H2_PAL_OK) break;
+    uint64_t elapsed = current - started;
+    if (elapsed >= timeout) {
+      rc = H2_PAL_ERR_TIMEOUT;
+      break;
+    }
+    uint64_t remaining = timeout - elapsed;
+    rc = h2_pal_time_sleep_ms(
+        runtime->time, remaining < interval ? (uint32_t)remaining : interval);
+    if (rc != H2_PAL_OK) break;
+  }
+  if (h2_pal_time_get_monotonic_ms(runtime->time, &current) == H2_PAL_OK)
+    result->binding_ms = current - started;
+  result->result = rc;
+  return rc;
 }
