@@ -655,6 +655,18 @@ static h2_pal_result_t h2_mbedtls_crypto_hmac_sha1(
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_mbedtls_crypto_p256_public_key_uncompress(
+    void* user, const h2_pal_p256_public_key_t* public_key,
+    uint8_t out[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE]) {
+  (void)user;
+  if (public_key == NULL || out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE);
+  int rc = h2_p256_public_key_uncompress(public_key, out);
+  if (rc != H2_PAL_OK)
+    memset(out, 0, H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE);
+  return rc;
+}
+
 static h2_pal_result_t h2_mbedtls_crypto_p256_keypair_from_private(
     void* user, const h2_pal_p256_private_key_t* private_key,
     h2_pal_p256_keypair_t* out_keypair) {
@@ -902,6 +914,8 @@ static void h2_esp_platform_crypto_init_api(
       .p256_public_key_validate = h2_mbedtls_crypto_p256_public_key_validate,
       .ecdsa_p256_sha256_sign = h2_mbedtls_crypto_ecdsa_p256_sha256_sign,
       .ecdsa_p256_sha256_verify = h2_mbedtls_crypto_ecdsa_p256_sha256_verify,
+      .p256_public_key_uncompress =
+          h2_mbedtls_crypto_p256_public_key_uncompress,
   };
   api->user = backend;
   api->vtable = &vtable;

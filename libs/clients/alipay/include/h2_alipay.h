@@ -27,6 +27,7 @@ h2_pal_result_t h2_alipay_initialize_once(h2_alipay_initialization_t* state,
 typedef enum h2_alipay_source {
   H2_ALIPAY_SOURCE_CONTROLLED = 0,
   H2_ALIPAY_SOURCE_VENDOR_SDK = 1,
+  H2_ALIPAY_SOURCE_INDEPENDENT = 2,
 } h2_alipay_source_t;
 
 typedef enum h2_alipay_blocker {
@@ -44,7 +45,9 @@ typedef enum h2_alipay_blocker {
 
 /** Blocking operations, serialized by the adapter. Call from a business
  * worker, never UI/ISR. PAL success describes the adapter call; sdk_rc is
- * the unchanged vendor return. pre_init caches its first attempt, including
+ * the unchanged vendor return for VENDOR_SDK. INDEPENDENT uses zero on
+ * success and a negative PAL result on failure in this compatibility field.
+ * pre_init caches its first attempt, including
  * failure, for the entire SDK process/boot. Dependencies stay alive until
  * reset: the original SDK has no symmetric callback unregistration API.
  *

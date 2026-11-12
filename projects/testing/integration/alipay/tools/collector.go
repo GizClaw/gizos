@@ -196,8 +196,8 @@ func capture(input io.Reader, output string, options captureOptions) (returnErr 
 			if run.meta {
 				return errors.New("duplicate runtime metadata")
 			}
-			if e.Source != "vendor_sdk" {
-				return errors.New("runtime capture source is not vendor SDK")
+			if e.Source != "vendor_sdk" && e.Source != "independent" {
+				return errors.New("unsupported runtime capture source")
 			}
 			run.meta = true
 			run.private = e.Private
@@ -208,7 +208,7 @@ func capture(input io.Reader, output string, options captureOptions) (returnErr 
 				return err
 			}
 		case "EVENT":
-			if (e.Source != "runtime_vendor_sdk" && e.Source != "runtime_product") || e.Seq != run.last+1 || e.Call == 0 || e.Parent >= e.Call || e.Captured < 0 || e.Captured > 128 || e.Length < e.Captured {
+			if (e.Source != "runtime_vendor_sdk" && e.Source != "runtime_product" && e.Source != "runtime_independent") || e.Seq != run.last+1 || e.Call == 0 || e.Parent >= e.Call || e.Captured < 0 || e.Captured > 128 || e.Length < e.Captured {
 				return errors.New("invalid event order, source, identity or length")
 			}
 			if e.Boundary == "wire_below_vendor_tls" && e.Connection == 0 {

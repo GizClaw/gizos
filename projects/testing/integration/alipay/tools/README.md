@@ -2,7 +2,7 @@
 
 This Go tool reads an existing H2Loader monitor stream or file. It does not access the serial port, reset/install a device, send SDK requests, contact a gateway or change a credential. Build and device lifecycle stay with H2Loader and the [standalone App](../README.md).
 
-The standalone entry records summaries only using the [original SDK integration](../../../../../libs/clients/alipay/README.md). The collector also understands explicitly authorized historical private captures with `-private`; that flag does not enable capture in firmware. Keep monitor logs and output directories local.
+The standalone entry records numeric summaries for the separate [SDK adapter](../../../../../libs/clients/alipay_sdk/README.md) and [independent client](../../../../../libs/clients/alipay_independent/README.md). The collector also understands explicitly authorized historical private captures with `-private`; that flag does not enable capture in firmware. Keep monitor logs and output directories local.
 
 ```sh
 bazel run --config=macos_arm64 //projects/testing/integration/alipay/tools:alipay_trace -- \

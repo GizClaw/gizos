@@ -2,7 +2,6 @@
 #include "h2_alipay_e2e_target.h"
 #include "h2_alipay_tiga_gateway.h"
 #include "h2_e2e_fixture_wifi.h"
-#include "h2_esp_alipay.h"
 #include "h2_esp_board.h"
 #include "h2_device_service.h"
 #include "h2_esp_target_task_policy.h"
@@ -135,21 +134,22 @@ static h2_pal_result_t prepare(h2_runtime_t* rt, void* user) {
   return h2_alipay_tiga_gateway_probe(rt);
 }
 static void trace_report(const h2_alipay_e2e_result_t* r) {
-  const h2_alipay_api_t* api = h2_esp_alipay_api();
+  const h2_alipay_api_t* api = h2_alipay_e2e_target_api();
   const h2_alipay_trace_t* trace = api->trace;
   const char* version = esp_app_get_description()->version;
   char version_hex[2 * sizeof(esp_app_get_description()->version) + 1];
   hex((const uint8_t*)version, strlen(version), version_hex);
   printf(
       "H2_ALIPAY_META {\"schema\":1,\"run_id\":\"%s\","
-      "\"case_id\":\"alipay/standalone\",\"source\":\"vendor_sdk\","
+      "\"case_id\":\"alipay/standalone\",\"source\":\"independent\","
       "\"board\":\"%s\",\"target\":\"%s\",\"sdk_manifest_sha256\":\"%s\","
       "\"sdk_version\":null,\"firmware_version_hex\":\"%s\","
       "\"firmware_rc\":0,\"firmware_git_sha\":null,"
       "\"git_sha_source\":\"host_build_manifest_required\","
       "\"private_raw\":false,\"plaintext_http_available\":false,"
       "\"diagnostic_limit\":%u}\n",
-      run_id, runtime->board, runtime->target, api->sdk_manifest_sha256,
+      run_id, runtime->board, runtime->target,
+      api->sdk_manifest_sha256 != NULL ? api->sdk_manifest_sha256 : "",
       version_hex, (unsigned)trace->diagnostic_limit);
   for (size_t i = 0; i < trace->count; ++i) {
     const h2_alipay_trace_event_t* e = &trace->events[i];
@@ -158,22 +158,25 @@ static void trace_report(const h2_alipay_e2e_result_t* r) {
     hex((const uint8_t*)e->detail, strlen(e->detail), detail);
     printf(
         "H2_ALIPAY_EVENT {\"run_id\":\"%s\","
-        "\"case_id\":\"alipay/standalone\",\"source\":\"runtime_vendor_sdk\","
+        "\"case_id\":\"alipay/standalone\",\"source\":\"%s\","
         "\"seq\":%u,\"call_id\":%u,\"parent_id\":%u,\"connection_id\":%u,"
         "\"mono_ms\":%llu,\"utc_ms\":%llu,\"utc_valid\":%s,"
         "\"wall_source\":%u,\"duration_ms\":%llu,\"operation\":\"%s\","
         "\"boundary\":\"%s\",\"result\":%d,\"item\":%u,\"length\":%zu,"
         "\"captured\":%zu,\"sha256\":\"%s\",\"detail_hex\":\"%s\"}\n",
-        run_id, (unsigned)e->sequence, (unsigned)e->call_id,
-        (unsigned)e->parent_id, (unsigned)e->connection_id,
-        (unsigned long long)e->mono_ms, (unsigned long long)e->utc_ms,
-        e->utc_valid ? "true" : "false", (unsigned)e->wall_source,
-        (unsigned long long)e->duration_ms, e->operation, e->boundary,
-        e->result, (unsigned)e->item, e->length, e->captured, digest, detail);
+        run_id,
+        strcmp(e->boundary, "independent") == 0 ? "runtime_independent"
+                                                : "runtime_vendor_sdk",
+        (unsigned)e->sequence, (unsigned)e->call_id, (unsigned)e->parent_id,
+        (unsigned)e->connection_id, (unsigned long long)e->mono_ms,
+        (unsigned long long)e->utc_ms, e->utc_valid ? "true" : "false",
+        (unsigned)e->wall_source, (unsigned long long)e->duration_ms,
+        e->operation, e->boundary, e->result, (unsigned)e->item, e->length,
+        e->captured, digest, detail);
   }
   printf(
       "H2_ALIPAY_RESULT {\"run_id\":\"%s\","
-      "\"case_id\":\"alipay/standalone\",\"source\":\"vendor_sdk\","
+      "\"case_id\":\"alipay/standalone\",\"source\":\"independent\","
       "\"stage\":%d,\"result\":%d,\"blocker\":%d,\"pre_init_rc\":%d,"
       "\"first_init\":%s,\"code_rc\":%d,\"length\":%zu,"
       "\"qr_visible\":%s,\"init_ms\":%llu,\"code_ms\":%llu}\n",
@@ -214,14 +217,14 @@ static void report(h2_runtime_t* rt, void* user,
   bool blocked = r->code_sdk_rc == H2_ALIPAY_E2E_NOT_CALLED;
   bool display_error = r->display_rc != H2_PAL_OK;
   printf(
-      "H2_ALIPAY_E2E_CASE case=alipay/pre-init source=vendor_sdk "
+      "H2_ALIPAY_E2E_CASE case=alipay/pre-init source=independent "
       "status=%s sdk_rc=%d reused=%d\n",
       initialized    ? "PASS"
       : init_blocked ? "BLOCKED"
                      : "FAIL",
       r->init_sdk_rc, r->reused);
   printf(
-      "H2_ALIPAY_E2E_CASE case=alipay/binding-code source=vendor_sdk "
+      "H2_ALIPAY_E2E_CASE case=alipay/binding-code source=independent "
       "status=%s sdk_rc=%d blocker=%d qr_visible=%d display_rc=%d\n",
       display_error ? "ERROR"
       : code        ? "PASS"
@@ -245,10 +248,10 @@ static void run(void* user) {
   (void)user;
   int rc = h2_alipay_e2e_target_configure(runtime);
   if (rc != H2_PAL_OK) fail("alipay-configure", rc);
-  const h2_alipay_api_t* api = h2_esp_alipay_api();
-  if (api == NULL || api->source != H2_ALIPAY_SOURCE_VENDOR_SDK ||
+  const h2_alipay_api_t* api = h2_alipay_e2e_target_api();
+  if (api == NULL || api->source != H2_ALIPAY_SOURCE_INDEPENDENT ||
       api->trace == NULL)
-    fail("vendor-sdk", H2_PAL_ERR_INVALID_STATE);
+    fail("independent-client", H2_PAL_ERR_INVALID_STATE);
   uint8_t nonce[16];
   rc = h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce));
   if (rc != H2_PAL_OK) fail("run-id", rc);
