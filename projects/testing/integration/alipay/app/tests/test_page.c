@@ -20,6 +20,8 @@ typedef struct page_fixture {
   bool retry_join, joined;
   bool complete_binding, already_bound;
   unsigned binding_calls;
+  unsigned failed_bindings;
+  unsigned progresses;
   unsigned code_ready_calls, observations;
   int binding_rc;
   h2_pal_task_t* worker;
@@ -166,13 +168,17 @@ static h2_pal_result_t query_binding(void* user,
                                      h2_alipay_binding_result_t* out) {
   page_fixture_t* fixture = user;
   assert(!pthread_equal(pthread_self(), fixture->ui_thread));
-  assert(fixture->code_ready_calls == 1u);
+  assert(fixture->code_ready_calls == fixture->code_calls);
   ++fixture->binding_calls;
   memset(out, 0, sizeof(*out));
   out->state = fixture->binding_rc == H2_PAL_OK
                    ? H2_ALIPAY_BINDING_COMPLETE
                    : H2_ALIPAY_BINDING_NEEDS_VERIFICATION;
   out->storage_rc = fixture->binding_rc;
+  if (fixture->binding_calls <= fixture->failed_bindings) {
+    out->state = H2_ALIPAY_BINDING_FAILED;
+    return H2_PAL_ERR_IO;
+  }
   if (fixture->binding_rc == H2_PAL_OK) {
     out->tid_length = out->uid_length = 8u;
     out->shared_key_length = 32u;
@@ -219,6 +225,15 @@ static void code_ready(h2_runtime_t* runtime, void* user,
   ++fixture->code_ready_calls;
 }
 
+static void binding_progress(h2_runtime_t* runtime, void* user,
+                             const h2_alipay_e2e_result_t* result) {
+  (void)runtime;
+  page_fixture_t* fixture = user;
+  assert(!pthread_equal(pthread_self(), fixture->ui_thread));
+  assert(result->code_presented && result->qr_visible);
+  ++fixture->progresses;
+}
+
 static int run(page_fixture_t* fixture) {
   fixture->ui_thread = pthread_self();
   const h2_pal_display_vtable_t display_vtable = {
@@ -248,10 +263,12 @@ static int run(page_fixture_t* fixture) {
   const h2_alipay_e2e_config_t app = {
       .alipay = &api,
       .complete_binding = fixture->complete_binding,
+      .binding_interval_ms = 1u,
       .user = fixture,
       .prepare = prepare,
       .observe = observe,
       .binding_code_ready = code_ready,
+      .binding_progress = binding_progress,
       .report = report,
       .should_exit = should_exit};
   int result = h2_alipay_e2e_run(runtime, &app);
@@ -384,5 +401,16 @@ int main(void) {
          write_failed.result.binding.state ==
              H2_ALIPAY_BINDING_NEEDS_VERIFICATION &&
          write_failed.binding_calls == 1u && !write_failed.result.qr_visible);
+  page_fixture_t refreshed = {.width = 240,
+                              .height = 240,
+                              .frame = frame,
+                              .complete_binding = true,
+                              .failed_bindings = 1u};
+  strcpy(refreshed.code, "controlled://refreshed-sdk-binding");
+  assert(run(&refreshed) == H2_PAL_OK);
+  assert(refreshed.code_calls == 2u && refreshed.code_ready_calls == 2u &&
+         refreshed.binding_calls == 2u && refreshed.progresses == 2u &&
+         refreshed.result.stage == H2_ALIPAY_E2E_BINDING_COMPLETE &&
+         refreshed.result.binding.state == H2_ALIPAY_BINDING_COMPLETE);
   return 0;
 }

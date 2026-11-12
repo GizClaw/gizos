@@ -103,6 +103,7 @@ flowchart TD
 | --- | --- | --- |
 | Binding durability | Complete manual phone authorization, reboot, inspect the same namespace | Completion marker and all four materials match; no new registration, rebind or finishBind on snapshot |
 | Binding interruption | Inject failures at material writes, commit, completion-marker write and readback | No false COMPLETE; no repeated finishBind after SDK completion; recovery remains explicit |
+| Persistent binding QR | Keep the SDK pending beyond 60 seconds, then complete authorization; separately return a terminal invalid session | QR remains visible and the same session is polled; terminal failure requests a new code only after a local UNBOUND snapshot, and the UI presents it before polling |
 | Local corruption | Change/remove one material, corrupt the marker or leave bound state without a marker | NEEDS_VERIFICATION; no automatic reset or payment attempt |
 | Payer QR generation | Open the payment page after verified binding; inject SDK errors, nonnumeric bytes and wrong lengths | Only a successful 18/19-digit code becomes a QR; failure clears the displayed code and exposes no secrets |
 | Payer QR refresh | Tap, cross the 60-second deadline, then sleep/wake into the payment page | The correct event generates a fresh code; hidden pages stop refreshing; the previous attempt retains its own query code |

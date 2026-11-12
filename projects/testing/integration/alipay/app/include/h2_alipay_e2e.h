@@ -45,9 +45,9 @@ typedef struct h2_alipay_e2e_config {
    * Existing verified credentials skip code generation. Unverified local
    * credentials are reported without resetting or rebinding the account. */
   bool complete_binding;
-  /** Zero selects 60000 ms total and 2000 ms between queries.
-   * Deadlines are checked between blocking SDK calls; no SDK call is
-   * interrupted and its provider's own finite transport budget still applies.
+  /** Zero timeout waits indefinitely; zero interval selects 2000 ms.
+   * An explicit test deadline is checked between blocking SDK calls.
+   * No SDK call is interrupted; finite transport budgets still apply.
    */
   uint32_t binding_timeout_ms;
   uint32_t binding_interval_ms;
@@ -64,6 +64,11 @@ typedef struct h2_alipay_e2e_config {
    * Must not invoke SDK operations or change LVGL objects. */
   void (*binding_code_ready)(h2_runtime_t* runtime, void* user,
                              const h2_alipay_e2e_result_t* result);
+  /** Optional worker-thread progress after each completed binding query.
+   * result is borrowed for this call. Must not invoke SDK/LVGL or retain
+   * result pointers. Use only non-secret status/length diagnostics. */
+  void (*binding_progress)(h2_runtime_t* runtime, void* user,
+                           const h2_alipay_e2e_result_t* result);
   /** UI-thread result callback, only after the worker joins and the final
    * page is flushed. Called again every 10 seconds with replay=true.
    * May read the quiescent SDK trace; must not call the SDK or LVGL. */
@@ -91,6 +96,15 @@ h2_pal_result_t h2_alipay_e2e_execute(h2_runtime_t* runtime,
  * disables cancellation. No UI callback or rendering occurs here.
  * Cancellation stops new queries and never resets/deletes binding material. */
 h2_pal_result_t h2_alipay_e2e_complete_binding(
+    h2_runtime_t* runtime, const h2_alipay_e2e_config_t* config,
+    bool (*cancel)(void*), void* cancel_user, h2_alipay_e2e_result_t* result);
+
+/** Worker continuation after a terminal SDK binding failure. Refreshes only
+ * when a local snapshot confirms UNBOUND. Never refreshes pending sessions,
+ * overwrites unverified credentials, or repeats a completed finishBind.
+ * Requests one new code after the configured polling interval; the caller
+ * must display it before resuming completion. No provisioning/reset/unbind. */
+h2_pal_result_t h2_alipay_e2e_refresh_binding(
     h2_runtime_t* runtime, const h2_alipay_e2e_config_t* config,
     bool (*cancel)(void*), void* cancel_user, h2_alipay_e2e_result_t* result);
 
