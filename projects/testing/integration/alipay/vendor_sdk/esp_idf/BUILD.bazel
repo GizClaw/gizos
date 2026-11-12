@@ -12,13 +12,13 @@ firmware_native_component(
         "src/h2_esp_alipay_socket.c",
     ],
     hdrs = ["include/h2_esp_alipay.h"],
-    component_directory = "native_component_src/esp-idf6.x/h2_alipay",
+    component_directory = "projects/testing/integration/alipay/vendor_sdk/esp_idf",
     component_name = "h2_alipay",
     data = ["CMakeLists.txt"],
-    native_srcs = ["//libs/clients/alipay_sdk:sdk_sources"],
+    native_srcs = ["//projects/testing/integration/alipay/vendor_sdk:sdk_sources"],
     deps = [
-        "//libs/clients/alipay_sdk:bind_net_sdk",
-        "//libs/clients/alipay_sdk:sdk_native_api",
+        "//projects/testing/integration/alipay/vendor_sdk:bind_net_sdk",
+        "//projects/testing/integration/alipay/vendor_sdk:sdk_native_api",
     ],
 )
 
@@ -29,7 +29,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = ["//tools/bazel/platforms:target_esp32s3"],
-    deps = ["//libs/clients/alipay_sdk:sdk_native_api"],
+    deps = ["//projects/testing/integration/alipay/vendor_sdk:sdk_native_api"],
 )
 
 cc_test(
@@ -37,11 +37,11 @@ cc_test(
     srcs = [
         "src/h2_esp_alipay_socket.c",
         "tests/test_socket.c",
-        "//libs/clients/alipay_sdk:sdk_fd_sources",
+        "//projects/testing/integration/alipay/vendor_sdk:sdk_fd_sources",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     tags = ["manual"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = ["//libs/clients/alipay_sdk:sdk_native_api"],
+    deps = ["//projects/testing/integration/alipay/vendor_sdk:sdk_native_api"],
 )

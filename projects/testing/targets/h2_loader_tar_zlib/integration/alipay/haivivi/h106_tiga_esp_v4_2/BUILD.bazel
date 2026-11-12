@@ -50,12 +50,18 @@ esp_target_task_policy(
     policies = _TASK_POLICIES,
 )
 
+esp_target_task_policy(
+    name = "task_policy_sdk",
+    default_policy = "4 any 4096 psram",
+    directory = "task_policy_sdk",
+    graph = [":launcher_sdk"],
+    policies = _TASK_POLICIES,
+)
+
 _FIRMWARE_LIB_DEPS = [
     "//libs/archive/bundle",
     "//libs/audio/mixer:audio_mixer",
     "//libs/audio/pcm",
-    "//libs/clients/alipay",
-    "//libs/clients/alipay_independent",
     "//libs/command",
     "//libs/drivers/adc",
     "//libs/drivers/audio/es8311",
@@ -72,6 +78,7 @@ _FIRMWARE_LIB_DEPS = [
     "//pal/providers/backends/corehttp",
     "//pal/providers/devices/modem/quectel:quectel_modem",
     "//projects/testing/integration/alipay/app:alipay_e2e",
+    "//projects/testing/integration/alipay/diagnostics",
 ]
 
 firmware_lib_component(
@@ -79,8 +86,8 @@ firmware_lib_component(
     native_deps = ["//projects/h2loader/libs/device_service:firmware_api"],
     native_srcs = ["//projects/h2loader/libs/device_service:firmware_sources"],
     deps = _FIRMWARE_LIB_DEPS + [
-        "//libs/clients/alipay_sdk",
-        "//libs/clients/alipay_sdk:bind_net_sdk",
+        "//projects/testing/integration/alipay/vendor_sdk:alipay_sdk",
+        "//projects/testing/integration/alipay/vendor_sdk:bind_net_sdk",
     ],
 )
 
@@ -88,7 +95,17 @@ firmware_lib_component(
     name = "firmware_lib_independent",
     native_deps = ["//projects/h2loader/libs/device_service:firmware_api"],
     native_srcs = ["//projects/h2loader/libs/device_service:firmware_sources"],
-    deps = _FIRMWARE_LIB_DEPS,
+    deps = _FIRMWARE_LIB_DEPS + ["//projects/testing/integration/alipay/independent"],
+)
+
+firmware_lib_component(
+    name = "firmware_lib_sdk",
+    native_deps = ["//projects/h2loader/libs/device_service:firmware_api"],
+    native_srcs = ["//projects/h2loader/libs/device_service:firmware_sources"],
+    deps = _FIRMWARE_LIB_DEPS + [
+        "//projects/testing/integration/alipay/vendor_sdk:alipay_sdk",
+        "//projects/testing/integration/alipay/vendor_sdk:bind_net_sdk",
+    ],
 )
 
 filegroup(
@@ -96,9 +113,18 @@ filegroup(
     srcs = [
         "main/h2_alipay_tiga_gateway.c",
         "main/h2_alipay_tiga_identity.c",
-        "main/h2_alipay_tiga_protocol.c",
         "main/main.c",
     ],
+)
+
+filegroup(
+    name = "protocol_sources",
+    srcs = ["main/h2_alipay_tiga_protocol.c"],
+)
+
+filegroup(
+    name = "sdk_configuration_sources",
+    srcs = ["main/h2_alipay_tiga_sdk.c"],
 )
 
 _MAIN_HEADERS = [
@@ -106,6 +132,7 @@ _MAIN_HEADERS = [
     "main/h2_alipay_tiga_gateway.h",
     "main/h2_alipay_tiga_identity.h",
     "main/h2_alipay_tiga_protocol.h",
+    "main/h2_alipay_tiga_sdk.h",
     "//projects/testing/libs/fixture-wifi:h2_e2e_fixture_wifi.h",
 ]
 
@@ -134,6 +161,7 @@ firmware_native_component(
     srcs = [
         "main/tiga_config.c",
         ":main_sources",
+        ":sdk_configuration_sources",
     ],
     hdrs = _MAIN_HEADERS,
     component_directory = "projects/testing/targets/h2_loader_tar_zlib/integration/alipay/haivivi/h106_tiga_esp_v4_2/main",
@@ -142,8 +170,7 @@ firmware_native_component(
     tags = ["manual"],
     deps = _NATIVE_DEPS + [
         ":firmware_lib",
-        "//libs/clients/alipay_sdk:bind_net_sdk",
-        "//native_component_src/esp-idf6.x/h2_alipay",
+        "//projects/testing/integration/alipay/vendor_sdk/esp_idf:h2_alipay",
     ],
 )
 
@@ -152,6 +179,7 @@ firmware_native_component(
     srcs = [
         "main/tiga_config_independent.c",
         ":main_sources",
+        ":protocol_sources",
     ],
     hdrs = _MAIN_HEADERS,
     component_directory = "projects/testing/targets/h2_loader_tar_zlib/integration/alipay/haivivi/h106_tiga_esp_v4_2/main",
@@ -159,6 +187,24 @@ firmware_native_component(
     data = _MAIN_DATA,
     tags = ["manual"],
     deps = _NATIVE_DEPS + [":firmware_lib_independent"],
+)
+
+firmware_native_component(
+    name = "launcher_sdk",
+    srcs = [
+        "main/tiga_config_sdk.c",
+        ":main_sources",
+        ":sdk_configuration_sources",
+    ],
+    hdrs = _MAIN_HEADERS,
+    component_directory = "projects/testing/targets/h2_loader_tar_zlib/integration/alipay/haivivi/h106_tiga_esp_v4_2/main",
+    component_name = "main",
+    data = _MAIN_DATA,
+    tags = ["manual"],
+    deps = _NATIVE_DEPS + [
+        ":firmware_lib_sdk",
+        "//projects/testing/integration/alipay/vendor_sdk/esp_idf:h2_alipay",
+    ],
 )
 
 h2loader_esp_idf_firmware(
@@ -229,6 +275,40 @@ h2loader_zlib_tar(
     source = ":package_independent",
 )
 
+h2loader_esp_idf_firmware(
+    name = "firmware_sdk",
+    srcs = ["CMakeLists.txt"],
+    board = "tiga_esp_v4_2",
+    cmake_definitions = {
+        "H2_E2E_WIFI_SSID": "HAIVIVI-MFG",
+        "H2_E2E_WIFI_PASSWORD": "!haivivi",
+    },
+    graph = [":launcher_sdk"],
+    layout_files = {
+        "partition": "//boards/haivivi/h106_tiga_esp_v4_2/esp32s3/layouts/h2loader:partition.csv",
+        "project_support_files": ["//boards/haivivi/h106_tiga_esp_v4_2/esp32s3/layouts/e2e:sdkconfig.h2loader.defaults"],
+    },
+    project = "CMakeLists.txt",
+    project_name = "h2_alipay_e2e",
+    target = "esp32s3",
+    task_policy = ":task_policy_sdk",
+    version = ":version",
+)
+
+h2loader_tar_zlib(
+    name = "package_sdk",
+    board = "tiga_esp_v4_2",
+    firmware = ":firmware_sdk",
+    image = "alipay-e2e-sdk",
+    role = "app",
+    target = "esp32s3",
+)
+
+h2loader_zlib_tar(
+    name = "package_sdk_v2",
+    source = ":package_sdk",
+)
+
 cc_test(
     name = "identity_test",
     srcs = [
@@ -264,11 +344,13 @@ cc_test(
         "main",
         "tests",
     ],
+    tags = ["manual"],
     target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
     deps = [
-        "//libs/clients/alipay_independent",
         "//libs/runtime",
         "//libs/testing:testing_pal",
+        "//projects/testing/integration/alipay/diagnostics",
+        "//projects/testing/integration/alipay/independent",
     ],
 )
 
@@ -278,6 +360,8 @@ cc_test(
         "main/h2_alipay_e2e_target.h",
         "main/h2_alipay_tiga_identity.h",
         "main/h2_alipay_tiga_protocol.h",
+        "main/h2_alipay_tiga_sdk.c",
+        "main/h2_alipay_tiga_sdk.h",
         "main/tiga_config.c",
         "tests/h2_esp_alipay.h",
         "tests/h2_esp_board.h",
@@ -292,8 +376,8 @@ cc_test(
     tags = ["manual"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
-        "//libs/clients/alipay_sdk",
         "//libs/runtime",
+        "//projects/testing/integration/alipay/vendor_sdk:alipay_sdk",
         "@alipay_sdk//:headers",
     ],
 )

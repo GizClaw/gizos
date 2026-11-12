@@ -109,6 +109,7 @@ int main(void) {
   r = run(&f);
   assert(r.stage == H2_ALIPAY_E2E_CODE_READY && r.result == H2_PAL_OK);
   assert(r.length == 7 && strcmp(r.code, "real://") == 0);
-  assert(!r.qr_visible && r.display_rc == H2_ALIPAY_E2E_NOT_CALLED);
+  assert(!r.qr_visible && !r.code_presented &&
+         r.display_rc == H2_ALIPAY_E2E_NOT_CALLED);
   return 0;
 }

@@ -6,7 +6,11 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "alipay_sdk",
-    srcs = ["src/h2_alipay_storage.c"],
+    srcs = [
+        "src/h2_alipay_binding_storage.c",
+        "src/h2_alipay_binding_storage.h",
+        "src/h2_alipay_storage.c",
+    ],
     hdrs = [
         "include/h2_alipay_sdk.h",
         "include/h2_alipay_storage.h",
@@ -15,8 +19,9 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
-        "//libs/clients/alipay",
+        "//libs/crypto/sha256",
         "//pal",
+        "//projects/testing/integration/alipay/diagnostics",
     ],
 )
 
@@ -35,11 +40,12 @@ filegroup(
 cc_library(
     name = "sdk_native_api",
     hdrs = [
+        "src/h2_alipay_binding_storage.h",
         "src/h2_alipay_sdk_internal.h",
         "src/h2_alipay_sdk_socket_abi.h",
     ],
     includes = ["src"],
-    visibility = ["//native_component_src/esp-idf6.x/h2_alipay:__pkg__"],
+    visibility = ["//projects/testing/integration/alipay/vendor_sdk/esp_idf:__pkg__"],
     deps = [
         ":alipay_sdk",
         "@alipay_sdk//:headers",
@@ -49,6 +55,7 @@ cc_library(
 filegroup(
     name = "sdk_sources",
     srcs = [
+        "src/h2_alipay_binding_storage.h",
         "src/h2_alipay_sdk.c",
         "src/h2_alipay_sdk_os.c",
         "src/h2_alipay_sdk_random.c",

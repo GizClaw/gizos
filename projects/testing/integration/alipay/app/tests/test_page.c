@@ -18,6 +18,10 @@ typedef struct page_fixture {
   unsigned opens, closes, draws, presents, init_calls, code_calls, reports;
   unsigned joins;
   bool retry_join, joined;
+  bool complete_binding, already_bound;
+  unsigned binding_calls;
+  unsigned code_ready_calls, observations;
+  int binding_rc;
   h2_pal_task_t* worker;
   h2_alipay_e2e_result_t result;
 } page_fixture_t;
@@ -144,12 +148,46 @@ static h2_pal_result_t binding_code(void* user, uint32_t feature, char* code,
   return fixture->code_rc == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
+static h2_pal_result_t snapshot(void* user, h2_alipay_binding_result_t* out) {
+  page_fixture_t* fixture = user;
+  assert(!pthread_equal(pthread_self(), fixture->ui_thread));
+  memset(out, 0, sizeof(*out));
+  out->state = fixture->already_bound ? H2_ALIPAY_BINDING_COMPLETE
+                                      : H2_ALIPAY_BINDING_UNBOUND;
+  if (fixture->already_bound) {
+    out->tid_length = out->uid_length = 8u;
+    out->shared_key_length = 32u;
+    out->seed_length = 48u;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t query_binding(void* user,
+                                     h2_alipay_binding_result_t* out) {
+  page_fixture_t* fixture = user;
+  assert(!pthread_equal(pthread_self(), fixture->ui_thread));
+  assert(fixture->code_ready_calls == 1u);
+  ++fixture->binding_calls;
+  memset(out, 0, sizeof(*out));
+  out->state = fixture->binding_rc == H2_PAL_OK
+                   ? H2_ALIPAY_BINDING_COMPLETE
+                   : H2_ALIPAY_BINDING_NEEDS_VERIFICATION;
+  out->storage_rc = fixture->binding_rc;
+  if (fixture->binding_rc == H2_PAL_OK) {
+    out->tid_length = out->uid_length = 8u;
+    out->shared_key_length = 32u;
+    out->seed_length = 48u;
+  }
+  return fixture->binding_rc;
+}
+
 static h2_pal_result_t observe(void* user, const uint8_t* pixels, size_t stride,
                                int width, int height) {
   page_fixture_t* fixture = user;
   ui_thread(fixture);
   assert(fixture->joined && width == fixture->width &&
          height == fixture->height);
+  ++fixture->observations;
   for (int row = 0; row < height; ++row)
     assert(memcmp(pixels + (size_t)row * stride,
                   fixture->frame + (size_t)row * width,
@@ -171,6 +209,16 @@ static bool should_exit(void* user) {
   return ((page_fixture_t*)user)->reports != 0u;
 }
 
+static void code_ready(h2_runtime_t* runtime, void* user,
+                       const h2_alipay_e2e_result_t* result) {
+  (void)runtime;
+  page_fixture_t* fixture = user;
+  ui_thread(fixture);
+  assert(fixture->joined && fixture->observations > 0u &&
+         result->code_presented && result->qr_visible);
+  ++fixture->code_ready_calls;
+}
+
 static int run(page_fixture_t* fixture) {
   fixture->ui_thread = pthread_self();
   const h2_pal_display_vtable_t display_vtable = {
@@ -186,17 +234,26 @@ static int run(page_fixture_t* fixture) {
   config.sync = h2_desktop_platform_sync_api();
   h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-  const h2_alipay_vtable_t vtable = {pre_init, ready, binding_status,
-                                     binding_code};
+  const h2_alipay_vtable_t vtable = {
+      .pre_init = pre_init,
+      .check_ready = ready,
+      .binding_status = binding_status,
+      .get_binding_code = binding_code,
+      .binding_snapshot = snapshot,
+      .query_binding_result = query_binding,
+  };
   const h2_alipay_api_t api = {.user = fixture,
                                .vtable = &vtable,
                                .source = H2_ALIPAY_SOURCE_CONTROLLED};
-  const h2_alipay_e2e_config_t app = {.alipay = &api,
-                                      .user = fixture,
-                                      .prepare = prepare,
-                                      .observe = observe,
-                                      .report = report,
-                                      .should_exit = should_exit};
+  const h2_alipay_e2e_config_t app = {
+      .alipay = &api,
+      .complete_binding = fixture->complete_binding,
+      .user = fixture,
+      .prepare = prepare,
+      .observe = observe,
+      .binding_code_ready = code_ready,
+      .report = report,
+      .should_exit = should_exit};
   int result = h2_alipay_e2e_run(runtime, &app);
   assert(h2_runtime_destroy(&runtime) == H2_PAL_OK);
   assert(fixture->opens == 1u && fixture->closes == 1u);
@@ -204,10 +261,10 @@ static int run(page_fixture_t* fixture) {
 }
 
 static void verify_qr(const page_fixture_t* fixture) {
-  uint8_t modules[H2_QRCODE_BUFFER_LEN_FOR_VERSION(12)],
+  uint8_t modules[H2_QRCODE_BUFFER_LEN_FOR_VERSION(17)],
       scratch[sizeof(modules)];
   h2_qrcode_t qr;
-  assert(h2_qrcode_encode_text(fixture->code, H2_QRCODE_ECC_MEDIUM, 12, modules,
+  assert(h2_qrcode_encode_text(fixture->code, H2_QRCODE_ECC_HIGH, 17, modules,
                                sizeof(modules), scratch, sizeof(scratch),
                                &qr) == H2_PAL_OK);
   int available_width = fixture->width - 16;
@@ -299,5 +356,33 @@ int main(void) {
   strcpy(transport_failed.code, "https://controlled.invalid/code");
   assert(run(&transport_failed) == H2_PAL_ERR_IO);
   assert(!transport_failed.result.qr_visible);
+  page_fixture_t binding = {
+      .width = 240, .height = 240, .frame = frame, .complete_binding = true};
+  strcpy(binding.code, "controlled://sdk-binding-code");
+  assert(run(&binding) == H2_PAL_OK);
+  assert(binding.binding_calls == 1u && binding.code_calls == 1u &&
+         binding.result.code_presented && !binding.result.qr_visible &&
+         binding.result.binding.state == H2_ALIPAY_BINDING_COMPLETE &&
+         binding.result.stage == H2_ALIPAY_E2E_BINDING_COMPLETE);
+  save_frame(&binding, "tiga-sdk-binding-complete");
+  page_fixture_t existing = {.width = 240,
+                             .height = 240,
+                             .frame = frame,
+                             .complete_binding = true,
+                             .already_bound = true};
+  assert(run(&existing) == H2_PAL_OK);
+  assert(existing.code_calls == 0u && existing.binding_calls == 0u &&
+         existing.result.stage == H2_ALIPAY_E2E_BINDING_COMPLETE);
+  page_fixture_t write_failed = {.width = 240,
+                                 .height = 240,
+                                 .frame = frame,
+                                 .complete_binding = true,
+                                 .binding_rc = H2_PAL_ERR_WRITE};
+  strcpy(write_failed.code, "controlled://sdk-binding-code");
+  assert(run(&write_failed) == H2_PAL_OK);
+  assert(write_failed.result.result == H2_PAL_ERR_WRITE &&
+         write_failed.result.binding.state ==
+             H2_ALIPAY_BINDING_NEEDS_VERIFICATION &&
+         write_failed.binding_calls == 1u && !write_failed.result.qr_visible);
   return 0;
 }

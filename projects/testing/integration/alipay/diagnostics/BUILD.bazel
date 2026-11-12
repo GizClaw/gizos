@@ -5,7 +5,7 @@ load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
-    name = "alipay",
+    name = "diagnostics",
     srcs = [
         "src/h2_alipay_once.c",
         "src/h2_alipay_trace.c",
@@ -28,7 +28,7 @@ cc_test(
     size = "small",
     srcs = ["tests/test_trace.c"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = [":alipay"],
+    deps = [":diagnostics"],
 )
 
 cc_test(
@@ -36,5 +36,5 @@ cc_test(
     size = "small",
     srcs = ["tests/test_trace_cpp.cc"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = [":alipay"],
+    deps = [":diagnostics"],
 )

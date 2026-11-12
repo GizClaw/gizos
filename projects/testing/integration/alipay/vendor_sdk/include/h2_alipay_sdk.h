@@ -67,7 +67,15 @@ typedef struct h2_alipay_sdk_config {
  * Configure the process singleton once before any SDK operation; copies
  * config, borrows all pointers until reset. Duplicate configure is rejected.
  * The SDK's PSA callbacks use persistent Pref or the explicit override.
- * Binding calls follow the original SDK without a local readiness gate. */
+ * Binding-code requests follow the original SDK without a local readiness gate.
+ * query_binding_result and binding_snapshot require default Pref storage
+ * (secure == NULL). They expose only material lengths and status, verify four
+ * committed SDK records, and keep a matching completion record in that same
+ * PSA namespace. Pending status is not success even when SDK rc is zero.
+ * After SDK completion, repeating the query only retries local verification;
+ * it never repeats queryBindInfo/finishBind. Raw keys and seed stay in KV.
+ * A local bound flag without the matching completion record requires explicit
+ * verification rather than an automatic reset or a new binding. */
 h2_pal_result_t h2_alipay_sdk_configure(const h2_alipay_sdk_config_t* config);
 /** NULL until configured; never identifies a synthetic SDK as vendor. */
 const h2_alipay_api_t* h2_alipay_sdk_api(void);

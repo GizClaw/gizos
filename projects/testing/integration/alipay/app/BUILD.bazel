@@ -21,8 +21,8 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
-        "//libs/clients/alipay",
         "//libs/runtime",
+        "//projects/testing/integration/alipay/diagnostics",
     ],
 )
 
@@ -47,6 +47,18 @@ cc_test(
     copts = H2_WARNING_COPTS,
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":workflow"],
+)
+
+cc_test(
+    name = "binding_workflow_test",
+    srcs = ["tests/test_binding_workflow.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":workflow",
+        "//libs/testing:testing_pal",
+    ],
 )
 
 cc_test(
