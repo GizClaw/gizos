@@ -8,9 +8,11 @@
 #include "vendor_device_info.h"
 #include "vendor_psa.h"
 #include "vendor_cert.h"
+#include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -140,7 +142,7 @@ static retval_e identity(bool imei, uint8_t* out, uint32_t* length) {
   }
   char detail[64];
   (void)snprintf(detail, sizeof(detail), "%s provider_rc=%d",
-                 imei && s_config.has_modem ? "modem" : "factory_sn",
+                 imei && s_config.has_modem ? "imei_provider" : "factory_sn",
                  provider_rc);
   h2_alipay_sdk_trace(imei ? "identity.imei" : "identity.sn", "hal", result,
                       result == ALIPAY_RV_OK ? *length : 0, 0, started, detail,
@@ -273,7 +275,12 @@ h2_pal_result_t h2_alipay_sdk_configure(const h2_alipay_sdk_config_t* config) {
   h2_alipay_trace_reset(trace, false);
   trace->diagnostic_limit = 16u;
   s_config = *config;
-  s_storage = (h2_alipay_storage_t){.pref = config->pref, .mem = config->mem};
+  s_storage = (h2_alipay_storage_t){
+      .pref = config->pref,
+      .mem = config->mem,
+      .psa_namespace = config->psa_namespace,
+      .certificate_namespace = config->certificate_namespace,
+  };
   s_trace = trace;
   s_api.trace = trace;
   s_lock = lock;
@@ -333,6 +340,29 @@ void* alipay_realloc(void* ptr, uint32_t size) {
   return h2_pal_mem_realloc(s_config.mem, ptr, size);
 }
 void alipay_free(void* ptr) { h2_pal_mem_free(s_config.mem, ptr); }
+
+static void trace_log_number(const char* text, const char* marker,
+                             const char* operation) {
+  const char* value = strstr(text, marker);
+  if (value == NULL) return;
+  value += strlen(marker);
+  while (*value == ' ' || *value == '\t') ++value;
+  if ((*value < '0' || *value > '9') && *value != '-' && *value != '+') return;
+  int saved_errno = errno;
+  errno = 0;
+  char* end = NULL;
+  long number = strtol(value, &end, 10);
+  bool valid =
+      end != value && errno == 0 && number >= INT_MIN && number <= INT_MAX &&
+      (*end == '\0' || *end == ' ' || *end == '\t' || *end == '\r' ||
+       *end == '\n' || *end == '"' || *end == ')' || *end == ',' ||
+       *end == '>' || (*end == '.' && (end[1] == '\0' || end[1] == ' ')));
+  if (valid)
+    h2_alipay_sdk_trace(operation, "sdk_log_observed", (int)number, 0, 0,
+                        h2_alipay_sdk_now(), marker, NULL, 0);
+  errno = saved_errno;
+}
+
 void alipay_log_ext(const char* format, ...) {
   /* Vendor logs can contain SN, tokens and certificate material. Preserve only
    * caller-owned step/return diagnostics, never SDK payloads in shared logs. */
@@ -343,6 +373,22 @@ void alipay_log_ext(const char* format, ...) {
   int n = vsnprintf(text, sizeof(text), format, args);
   va_end(args);
   if (n < 0) return;
+  trace_log_number(text, "Result-Status:", "rpc.result_status");
+  trace_log_number(text, "result-status:", "rpc.result_status");
+  trace_log_number(text, "Header:<Result-Status> = <", "rpc.result_status");
+  trace_log_number(text, "Header:<result-status> = <", "rpc.result_status");
+  trace_log_number(text, "error_code:", "rpc.error_code");
+  trace_log_number(text, "error_code=", "rpc.error_code");
+  trace_log_number(text,
+                   "RPC network error! error code=", "rpc.transport_error");
+  trace_log_number(text,
+                   "alipay_send_rpc_simple error! ret =", "rpc.sdk_error");
+  if (strstr(text, "A response.") != NULL)
+    trace_log_number(text, "status=", "rpc.http_status");
+  if (strstr(text, "res_code:") != NULL) {
+    trace_log_number(text, "status:", "rpc.http_status");
+    trace_log_number(text, "res_code:", "rpc.result_status");
+  }
   const char* header = strstr(text, "Operation-Type:");
   if (header != NULL) {
     header += strlen("Operation-Type:");

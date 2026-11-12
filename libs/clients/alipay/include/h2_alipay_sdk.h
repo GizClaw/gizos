@@ -39,7 +39,9 @@ typedef struct h2_alipay_sdk_config {
   const h2_pal_netif_api_t* netif;
   void* identity_user;
   h2_pal_result_t (*read_sn)(void*, char*, size_t);
-  /** Required when a modem is fitted; no transport-dependent SN fallback. */
+  /** Product-selected SDK IMEI identity when has_modem is true. May return
+   * the factory SN under an explicit SN substitution policy. Keep the value
+   * stable across registration, binding and later signed requests. */
   h2_pal_result_t (*read_imei)(void*, char*, size_t);
   /** Borrowed device identity callback. Returns six MAC bytes on success. */
   h2_pal_result_t (*read_mac)(void*, uint8_t out[6]);
@@ -50,6 +52,12 @@ typedef struct h2_alipay_sdk_config {
   const h2_alipay_sdk_storage_t* secure;
   /** Borrowed persistent Pref PAL, used when secure is NULL. */
   const h2_pal_pref_api_t* pref;
+  /** Optional borrowed Pref namespaces, used when secure is NULL.
+   * NULL preserves alipay_psa and alipay_cert, respectively. Select stable,
+   * nonempty, distinct names for each identity policy; keep them until reset.
+   * Changing identity must not reuse another identity's stored SDK context. */
+  const char* psa_namespace;
+  const char* certificate_namespace;
 } h2_alipay_sdk_config_t;
 
 /** Platform-independent original-SDK bridge. The supplied PAL APIs and

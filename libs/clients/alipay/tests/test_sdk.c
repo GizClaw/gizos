@@ -1,4 +1,5 @@
 #include "h2_alipay_sdk.h"
+#include "h2_alipay_storage.h"
 #include "h2_alipay_sdk_internal.h"
 #include "h2_alipay_sdk_socket_abi.h"
 #include "h2_app_test_mem.h"
@@ -11,7 +12,9 @@
 #include "vendor_os.h"
 #include "vendor_device_info.h"
 #include "vendor_psa.h"
+#include "vendor_cert.h"
 #include <assert.h>
+#include <errno.h>
 #include <limits.h>
 #include <string.h>
 
@@ -92,6 +95,14 @@ int main(void) {
   assert(h2_pal_time_set_wall_ms(&time.api, 1800000000123u) == H2_PAL_OK);
   h2_app_test_pref_t pref;
   assert(h2_app_test_pref_init(&pref, &mem.api) == H2_PAL_OK);
+  h2_alipay_storage_t legacy = {.pref = &pref.api, .mem = &mem.api};
+  h2_alipay_storage_t sn = {
+      .pref = &pref.api,
+      .mem = &mem.api,
+      .psa_namespace = "alipay_sn_psa",
+      .certificate_namespace = "alipay_sn_cert",
+  };
+  assert(h2_alipay_storage_write(&legacy, 8, (const uint8_t*)"old", 3) == 0);
   static const h2_pal_netif_vtable_t netif_vtable = {.get_status = net_status};
   h2_pal_netif_api_t netif = {NULL, &netif_vtable};
   static const h2_pal_net_vtable_t net_vtable = {.resolve_all = resolve};
@@ -100,21 +111,24 @@ int main(void) {
   h2_pal_result_t random_result = H2_PAL_OK;
   h2_pal_crypto_api_t crypto = {&random_result, &crypto_vtable};
   const h2_pal_log_api_t log = {0};
-  h2_alipay_sdk_config_t config = {.mem = &mem.api,
-                                   .time = &time.api,
-                                   .log = &log,
-                                   .sync = &sync.api,
-                                   .crypto = &crypto,
-                                   .net = &net,
-                                   .netif = &netif,
-                                   .pref = &pref.api,
-                                   .read_sn = text_identity,
-                                   .read_imei = text_identity,
-                                   .read_mac = mac_identity,
-                                   .has_modem = true,
-                                   .company = "test",
-                                   .model = "test",
-                                   .product_type = 3};
+  h2_alipay_sdk_config_t config = {
+      .mem = &mem.api,
+      .time = &time.api,
+      .log = &log,
+      .sync = &sync.api,
+      .crypto = &crypto,
+      .net = &net,
+      .netif = &netif,
+      .pref = &pref.api,
+      .psa_namespace = sn.psa_namespace,
+      .certificate_namespace = sn.certificate_namespace,
+      .read_sn = text_identity,
+      .read_imei = text_identity,
+      .read_mac = mac_identity,
+      .has_modem = true,
+      .company = "test",
+      .model = "test",
+      .product_type = 3};
   const size_t baseline_blocks = mem.live_blocks;
   /* No SDK call or singleton state remains after a failed configure. */
   mem.fail_at = mem.calls + 1;
@@ -197,9 +211,72 @@ int main(void) {
   assert(alipay_is_network_connected() == 0);
   netif_result = H2_PAL_ERR_UNAVAILABLE;
   assert(alipay_is_network_connected() == 0);
+  assert(alipay_psa_storage_exists(8) == H2_PAL_ERR_NOT_FOUND);
   assert(alipay_psa_storage_write(8, (const uint8_t*)"abc", 3) == 0);
   size = sizeof(bytes);
   assert(alipay_psa_storage_read(8, bytes, &size) == 0 && size == 3);
+  assert(memcmp(bytes, "abc", 3) == 0);
+  size = sizeof(bytes);
+  assert(h2_alipay_storage_read(&sn, 8, bytes, &size) == 0 && size == 3 &&
+         memcmp(bytes, "abc", 3) == 0);
+  size = sizeof(bytes);
+  assert(h2_alipay_storage_read(&legacy, 8, bytes, &size) == 0 && size == 3 &&
+         memcmp(bytes, "old", 3) == 0);
+  assert(alipay_secure_save_data("certificate", 11) == 0);
+  h2_pal_pref_namespace_t* certificate = NULL;
+  assert(h2_pal_pref_open(&pref.api, sn.certificate_namespace,
+                          H2_PAL_PREF_OPEN_READ_ONLY,
+                          &certificate) == H2_PAL_OK);
+  void* certificate_data = NULL;
+  size_t certificate_size = 0;
+  assert(certificate->get_blob(certificate, &mem.api, "certificate",
+                               &certificate_data,
+                               &certificate_size) == H2_PAL_OK);
+  assert(certificate_size == 11 &&
+         memcmp(certificate_data, "certificate", 11) == 0);
+  h2_pal_mem_free(&mem.api, certificate_data);
+  assert(certificate->close(certificate) == H2_PAL_OK);
+  for (unsigned index = 0; index < 32u; ++index)
+    alipay_log_ext("diagnostic sample %u", index);
+  size_t prior_events = api->trace->count;
+  errno = EAGAIN;
+  alipay_log_ext(
+      "A response. (version=\"HTTP/1.1\", status=200, phrase=\"OK\")");
+  alipay_log_ext("Result-Status: 1000\r\n");
+  alipay_log_ext("result-status: 4001\r\nsecret=not-exported");
+  alipay_log_ext("-------- rpc_id: 7, error_code: -12");
+  alipay_log_ext("error_code=42");
+  alipay_log_ext("RPC network error! error code=23.");
+  alipay_log_ext("alipay_send_rpc_simple error! ret = 7.");
+  alipay_log_ext("Header:<Result-Status> = <2000>");
+  alipay_log_ext("Header:<result-status> = <4001>");
+  alipay_log_ext("status:200 res_code:2000");
+  assert(errno == EAGAIN);
+  assert(api->trace->count == prior_events + 11u);
+  const char* operations[] = {
+      "rpc.http_status", "rpc.result_status", "rpc.result_status",
+      "rpc.error_code",  "rpc.error_code",    "rpc.transport_error",
+      "rpc.sdk_error",   "rpc.result_status", "rpc.result_status",
+      "rpc.http_status", "rpc.result_status",
+  };
+  const int results[] = {200, 1000, 4001, -12, 42,  23,
+                         7,   2000, 4001, 200, 2000};
+  for (size_t index = 0; index < 11u; ++index) {
+    const h2_alipay_trace_event_t* event =
+        &api->trace->events[prior_events + index];
+    assert(strcmp(event->operation, operations[index]) == 0);
+    assert(strcmp(event->boundary, "sdk_log_observed") == 0);
+    assert(event->result == results[index]);
+    assert(event->length == 0u && event->captured == 0u);
+    assert(strstr(event->detail, "not-exported") == NULL);
+  }
+  prior_events = api->trace->count;
+  alipay_log_ext("Result-Status: invalid");
+  alipay_log_ext("Result-Status: 1000invalid");
+  alipay_log_ext("Result-Status: 1000.5");
+  alipay_log_ext("Result-Status:\r\n1000");
+  alipay_log_ext("Result-Status: 999999999999999999999999999999999999");
+  assert(errno == EAGAIN && api->trace->count == prior_events);
   assert(api->trace->dropped == 0);
   assert(h2_app_test_pref_deinit(&pref) == H2_PAL_OK);
   /* This bridge deliberately retains its process-lifetime SDK state. */
