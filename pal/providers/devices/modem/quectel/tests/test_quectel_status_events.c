@@ -1,6 +1,7 @@
 #include "h2_quectel_modem.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <string.h>
 
 _Static_assert(
@@ -357,6 +358,7 @@ static void test_missing_insertion(const h2_pal_system_event_api_t* events) {
 typedef struct call_transport {
   h2_quectel_modem_t* modem;
   const char* during_command;
+  const char* reply;
 } call_transport_t;
 
 static h2_pal_result_t call_command(void* user, const char* cmd, char* response,
@@ -366,12 +368,146 @@ static h2_pal_result_t call_command(void* user, const char* cmd, char* response,
     h2_quectel_handle_urc_line(transport->modem, transport->during_command);
   }
   if (strcmp(cmd, "AT+CLCC") == 0) {
-    const char* text = "+CLCC: 1,1,0,0,0,\"123\",129\r\nOK\r\n";
+    const char* text = transport->reply != NULL
+                           ? transport->reply
+                           : "+CLCC: 1,1,0,0,0,\"123\",129\r\nOK\r\n";
     assert(size > strlen(text));
     strcpy(response, text);
     return H2_PAL_OK;
   }
   return command(NULL, cmd, response, size, timeout_ms);
+}
+
+static void test_polled_voice_call_list(
+    const h2_pal_system_event_api_t* events) {
+  static const struct {
+    const char* before;
+    const char* reply;
+    h2_pal_result_t result;
+    h2_pal_modem_call_state_t state;
+    const char* number;
+    bool new_occurrence;
+  } cases[] = {
+      {NULL,
+       "+CLCC: 1,0,0,1,0,\"\",128\r\n"
+       "+CLCC: 7,1,4,0,0,\"13800138000\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_INCOMING, "13800138000", false},
+      {NULL,
+       "+CLCC: 7,1,4,0,0,\"13800138000\",129\r\n"
+       "+CLCC: 1,0,0,1,0,\"\",128\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_INCOMING, "13800138000", false},
+      {NULL,
+       "+CLCC: 1,0,0,1,0,\"\",128\r\n"
+       "+CLCC: 3,0,3,0,0,\"10086\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_ALERTING, "10086", false},
+      {NULL,
+       "+CLCC: 1,0,0,2,0,\"123\",129\r\n"
+       "+CLCC: 7,1,5,0,0,\"13800138000\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_WAITING, "13800138000", false},
+      {NULL, "+CLCC: 1,0,0,1,0,\"\",128\r\nOK\r\n", H2_PAL_OK,
+       H2_PAL_MODEM_CALL_STATE_IDLE, "", false},
+      {NULL, "OK\r\n", H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_IDLE, "", false},
+      {NULL,
+       "+CLCC: 1,0,0,1,0,\"\",128\r\n"
+       "+CLCC: 2,0,0,1,0,\"\",128\r\n"
+       "+CLCC: 3,0,0,1,0,\"\",128\r\n"
+       "+CLCC: 4,0,0,1,0,\"\",128\r\n"
+       "+CLCC: 7,1,4,0,0,\"13800138000\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_INCOMING, "13800138000", false},
+      {"+CLIP: \"13800138000\",129", "+CLCC: 7,1,4,0,0,\"\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_INCOMING, "13800138000", false},
+      {"^DSCI: 7,1,4,0,123,129",
+       "+CLCC: 8,1,4,0,0,\"456\",129\r\n"
+       "+CLCC: 7,1,4,0,0,\"123\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_INCOMING, "123", false},
+      {NULL,
+       "+CLCC: 7,1,4,0,0,\"123\",129\r\n"
+       "+CLCC: 8,1,4,0,0,\"456\",129\r\nOK\r\n",
+       H2_PAL_ERR_FORMAT, H2_PAL_MODEM_CALL_STATE_IDLE, "", false},
+      {NULL, "+CLCC: 7,1,4,0,0,\"123\",129\r\n+CLCC: bad\r\nOK\r\n",
+       H2_PAL_ERR_FORMAT, H2_PAL_MODEM_CALL_STATE_IDLE, "", false},
+      {NULL, "+CLCC: 7,1,4\r\nOK\r\n", H2_PAL_ERR_FORMAT,
+       H2_PAL_MODEM_CALL_STATE_IDLE, "", false},
+      {"+CLCC: 7,1,4,0,0,\"123\",129",
+       "+CLCC: 8,1,5,0,0,\"456\",129\r\n"
+       "+CLCC: 7,1,4,0,0,\"123\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_INCOMING, "123", false},
+      {"^DSCI: 3,0,3,0,10086,129",
+       "+CLCC: 8,1,5,0,0,\"456\",129\r\n"
+       "+CLCC: 3,0,0,0,0,\"10086\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_ACTIVE, "10086", false},
+      {"RING",
+       "+CLCC: 3,0,0,0,0,\"10086\",129\r\n"
+       "+CLCC: 7,1,4,0,0,\"123\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_INCOMING, "123", false},
+      {"+CLCC: 7,1,4,0,0,\"123\",129", "+CLCC: 8,1,4,0,0,\"456\",129\r\nOK\r\n",
+       H2_PAL_OK, H2_PAL_MODEM_CALL_STATE_INCOMING, "456", true},
+  };
+  for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    h2_quectel_modem_t modem;
+    call_transport_t transport = {.modem = &modem, .reply = cases[i].reply};
+    const h2_quectel_modem_config_t config = {.command = call_command,
+                                              .transport_user = &transport,
+                                              .system_events = events};
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    if (cases[i].before != NULL)
+      h2_quectel_handle_urc_line(&modem, cases[i].before);
+    const uint32_t generation = modem.call_generation;
+    const int32_t old_id = modem.incoming_call_id;
+    h2_pal_modem_call_status_t status;
+    assert(h2_pal_modem_get_call_status(&modem.platform, &status) ==
+           cases[i].result);
+    if (cases[i].result != H2_PAL_OK) {
+      assert(modem.call_generation == generation);
+    } else {
+      assert(status.state == cases[i].state);
+      assert(strcmp(status.number, cases[i].number) == 0);
+      if (cases[i].state == H2_PAL_MODEM_CALL_STATE_IDLE)
+        assert(modem.call_generation == generation && !modem.call_hold);
+      else if (cases[i].state == H2_PAL_MODEM_CALL_STATE_INCOMING ||
+               cases[i].state == H2_PAL_MODEM_CALL_STATE_WAITING)
+        assert(status.direction == H2_PAL_MODEM_CALL_DIRECTION_INCOMING);
+      else
+        assert(status.direction == H2_PAL_MODEM_CALL_DIRECTION_OUTGOING);
+      if (cases[i].new_occurrence)
+        assert(status.call_id != old_id && modem.incoming_modem_call_id == 8);
+    }
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+  }
+}
+
+static void test_polled_voice_disappearance(
+    const h2_pal_system_event_api_t* events) {
+  const char* absent[] = {"OK\r\n", "+CLCC: 1,0,0,1,0,\"\",128\r\nOK\r\n"};
+  for (size_t i = 0u; i < sizeof(absent) / sizeof(absent[0]); ++i) {
+    h2_quectel_modem_t modem;
+    const char* voice = "+CLCC: 7,1,4,0,0,\"123\",129\r\nOK\r\n";
+    call_transport_t transport = {.modem = &modem, .reply = voice};
+    const h2_quectel_modem_config_t config = {.command = call_command,
+                                              .transport_user = &transport,
+                                              .system_events = events};
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    h2_pal_modem_call_status_t status;
+    assert(h2_pal_modem_get_call_status(&modem.platform, &status) == H2_PAL_OK);
+    const int32_t first_id = status.call_id;
+    const unsigned ended = ended_events;
+    transport.reply = absent[i];
+    assert(h2_pal_modem_get_call_status(&modem.platform, &status) == H2_PAL_OK);
+    assert(status.state == H2_PAL_MODEM_CALL_STATE_ENDED &&
+           status.call_id == first_id && ended_events == ended + 1u);
+    assert(modem.incoming_call_id == 0 && !modem.call_hold);
+    assert(h2_pal_modem_get_call_status(&modem.platform, &status) == H2_PAL_OK);
+    assert(status.state == H2_PAL_MODEM_CALL_STATE_IDLE &&
+           ended_events == ended + 1u);
+    h2_quectel_handle_urc_line(&modem, "+CLIP: \"123\",129");
+    assert(modem.incoming_call_id == 0);
+    /* A reused modem index must establish a fresh application occurrence. */
+    transport.reply = voice;
+    assert(h2_pal_modem_get_call_status(&modem.platform, &status) == H2_PAL_OK);
+    assert(status.state == H2_PAL_MODEM_CALL_STATE_INCOMING &&
+           status.call_id != first_id && modem.incoming_modem_call_id == 7);
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+  }
 }
 
 static void test_dsci_during_command(const h2_pal_system_event_api_t* events) {
@@ -514,6 +650,70 @@ static h2_pal_result_t watchdog_busy(void* user, h2_pal_mutex_t* mutex) {
   unsigned* attempts = user;
   (*attempts)++;
   return H2_PAL_ERR_BUSY;
+}
+
+static void test_nonvoice_clcc_urcs(const h2_pal_system_event_api_t* events) {
+  h2_quectel_modem_t modem;
+  const h2_quectel_modem_config_t config = {.command = command,
+                                            .system_events = events};
+  assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+  const char* ignored[] = {
+      "+CLCC: 1,0,0,1,0,\"\",128",    "+CLCC: 7,1,4,1,0,\"123\",129",
+      "+CLCC: 7,1,4,2,0,\"123\",129", "+CLCC: 7,1,4",
+      "+CLCC: 0,1,4,0,0,\"123\",129", "+CLCC: 7,2,4,0,0,\"123\",129",
+      "+CLCC: 7,1,6,0,0,\"123\",129"};
+  for (unsigned phase = 0u; phase < 2u; ++phase) {
+    if (phase == 1u)
+      h2_quectel_handle_urc_line(&modem, "+CLCC: 7,1,4,0,0,\"123\",129");
+    const uint32_t generation = modem.call_generation;
+    const int32_t id = modem.incoming_call_id;
+    const unsigned incoming = call_events, changed = changed_events;
+    for (size_t i = 0u; i < sizeof(ignored) / sizeof(ignored[0]); ++i)
+      h2_quectel_handle_urc_line(&modem, ignored[i]);
+    assert(modem.call_generation == generation &&
+           modem.incoming_call_id == id && call_events == incoming &&
+           changed_events == changed);
+    assert(modem.call_hold == phase);
+  }
+  assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+}
+
+static void test_watchdog_voice_call_list(
+    const h2_pal_system_event_api_t* events) {
+  const char* replies[] = {
+      "+CLCC: 1,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 7,1,4,0,0,\"123\",129\r\nOK\r\n",
+      "+CLCC: 1,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 2,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 3,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 4,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 7,1,4,0,0,\"123\",129\r\nOK\r\n",
+      "+CLCC: 7,1,4,1,0,\"123\",129\r\nOK\r\n",
+  };
+  for (size_t i = 0u; i < sizeof(replies) / sizeof(replies[0]); ++i) {
+    h2_quectel_modem_t modem;
+    watchdog_transport_t transport = {.modem = &modem, .reply = replies[i]};
+    const h2_quectel_modem_config_t config = {.command = watchdog_command,
+                                              .transport_user = &transport,
+                                              .system_events = events};
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    modem.opened = 1u;
+    h2_quectel_handle_urc_line(&modem, "RING");
+    const int32_t id = modem.incoming_call_id;
+    const unsigned incoming = call_events, ended = ended_events;
+    h2_quectel_call_watchdog(&modem);
+    assert(transport.polls == 1u && last_call.call_id == id);
+    if (i < 2u) {
+      assert(call_events == incoming + 1u && ended_events == ended);
+      assert(strcmp(last_call.number, "123") == 0);
+      assert(modem.incoming_modem_call_id == 7 && modem.call_hold);
+    } else {
+      assert(call_events == incoming && ended_events == ended + 1u);
+      assert(!modem.call_hold);
+    }
+    modem.opened = 0u;
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+  }
 }
 
 static void test_ring_watchdog(const h2_pal_system_event_api_t* events) {
@@ -794,6 +994,41 @@ static void test_raw_watchdog(const h2_pal_system_event_api_t* events) {
   }
 }
 
+static void test_raw_voice_call_list(const h2_pal_system_event_api_t* events) {
+  const char* reply =
+      "+CLCC: 1,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 2,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 3,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 4,0,0,1,0,\"\",128\r\n"
+      "+CLCC: 7,1,4,0,0,\"123\",129\r\nOK\r\n";
+  for (unsigned watchdog = 0u; watchdog < 2u; ++watchdog) {
+    h2_quectel_modem_t modem;
+    raw_watchdog_transport_t transport = {.cursor = reply};
+    const h2_quectel_modem_config_t config = {.read = watchdog_read,
+                                              .write = watchdog_write,
+                                              .transport_user = &transport,
+                                              .system_events = events};
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    modem.opened = 1u;
+    if (watchdog) {
+      h2_quectel_handle_urc_line(&modem, "RING");
+      h2_quectel_call_watchdog(&modem);
+    } else {
+      h2_pal_modem_call_status_t status;
+      assert(h2_pal_modem_get_call_status(&modem.platform, &status) ==
+             H2_PAL_OK);
+      assert(status.state == H2_PAL_MODEM_CALL_STATE_INCOMING);
+      assert(strcmp(status.number, "123") == 0);
+    }
+    assert(last_call.state == H2_PAL_MODEM_CALL_STATE_INCOMING);
+    assert(strcmp(last_call.number, "123") == 0);
+    assert(modem.incoming_modem_call_id == 7);
+    assert(modem.operation_depth == 0u);
+    modem.opened = 0u;
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+  }
+}
+
 static void test_unterminated_raw_line(void) {
   const int bytes[] = {'x', '\r'};
   for (unsigned i = 0u; i < 2u; i++) {
@@ -809,7 +1044,10 @@ static void test_unterminated_raw_line(void) {
     h2_pal_modem_call_status_t status;
     assert(h2_pal_modem_get_call_status(&modem.platform, &status) ==
            H2_PAL_ERR_TRUNCATED);
-    assert(t.reads == H2_QUECTEL_LINE_MAX * 2u && modem.operation_depth == 0u);
+    /* Streaming responses use the collector's line capacity. An endless
+     * unterminated line must still stop and release the operation lock. */
+    assert(t.reads == H2_QUECTEL_AT_LINE_MAX * 2u &&
+           modem.operation_depth == 0u);
     modem.opened = 0u;
     assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
   }
@@ -966,6 +1204,7 @@ int main(void) {
   assert(call_events == 2u);
   assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
   test_raw_watchdog(&events);
+  test_raw_voice_call_list(&events);
   test_ring_watchdog(&events);
   test_empty_caller_id(&events);
   test_watchdog_caller_id_update(&events);
@@ -973,6 +1212,10 @@ int main(void) {
   test_delayed_raw_cpin(&events);
   test_dsci(&events);
   test_dsci_during_command(&events);
+  test_polled_voice_call_list(&events);
+  test_polled_voice_disappearance(&events);
+  test_nonvoice_clcc_urcs(&events);
+  test_watchdog_voice_call_list(&events);
   test_sim_absent_rx(&events);
   test_insertion_recovery(&events);
   test_missing_insertion(&events);
