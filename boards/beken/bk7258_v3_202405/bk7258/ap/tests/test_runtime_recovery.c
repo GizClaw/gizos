@@ -74,6 +74,7 @@ h2_pal_ble_t* h2_bk_platform_ble(void) {
     return (type*)h2_pal_unsupported_##capability##_api(); \
   }
 BUSINESS_API(h2_pal_mem_api_t, h2_bk7258_board_default_allocator, mem)
+BUSINESS_API(h2_pal_mem_api_t, h2_bk7258_board_psram_allocator, mem)
 BUSINESS_API(const h2_pal_log_api_t, h2_bk7258_board_log_api, log)
 BUSINESS_API(const h2_pal_time_api_t, h2_bk7258_board_time_api, time)
 BUSINESS_API(const h2_pal_task_api_t, h2_bk7258_board_task_api, task)
@@ -133,8 +134,7 @@ int main(void) {
   assert(h2_bk7258_board_recovery_runtime_config(&config) == H2_PAL_OK);
   assert(!strcmp(config.board, "bk7258_v3_202405"));
   assert(config.io_stream == h2_bk_platform_io_stream_api());
-  assert(config.mem == h2_bk_platform_default_allocator());
-  assert(config.mem_external == h2_bk_platform_psram_allocator());
+  assert(config.mem == h2_bk_platform_psram_allocator());
   assert(config.image == h2_bk_platform_image_api());
   assert(config.device_identity == h2_bk_platform_device_identity_api());
   assert(config.pref == h2_bk_platform_pref_api());

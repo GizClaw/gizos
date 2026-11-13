@@ -101,7 +101,7 @@ static void arm_runtime(void) {
   assert(config.image == h2_esp_platform_image_api());
   assert(config.device_identity == h2_esp_platform_device_identity_api());
   assert(config.io_stream == h2_esp_platform_io_stream_api());
-  assert(config.mem_external == h2_esp_board_psram_allocator());
+  assert(config.mem == h2_esp_board_psram_allocator());
 }
 
 esp_err_t esp_read_mac(uint8_t* mac, esp_mac_type_t type) {

@@ -151,20 +151,7 @@ static void test_whole_region_observations(void) {
   assert_stats_equal(&value, &observed_stats);
 }
 
-static void test_optional_external_allocator(void) {
-  expected_stats_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-  stats_queries = 0u;
-  observed_stats.total_bytes = 0u;
-  assert(h2_esp_platform_external_allocator() == NULL && stats_queries == 1u);
-  stats_queries = 0u;
-  observed_stats.total_bytes = 65536u;
-  assert(h2_esp_platform_external_allocator() ==
-         h2_esp_platform_psram_allocator());
-  assert(stats_queries == 1u);
-}
-
 int main(void) {
-  test_optional_external_allocator();
   h2_pal_mem_api_t* apis[] = {
       h2_esp_platform_default_allocator(),
       h2_esp_platform_psram_allocator(),

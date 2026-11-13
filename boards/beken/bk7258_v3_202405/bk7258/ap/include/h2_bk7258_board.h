@@ -36,12 +36,6 @@ h2_pal_result_t h2_bk7258_board_runtime_deinit(void);
  * not optical panel output. Capacity is a pixel count. */
 int h2_bk7258_board_display_capture(uint16_t* pixels, size_t capacity);
 
-/** Borrowed image-lifetime allocator for Display bitmap working sets.
- * Open Display once before allocating; its media pool is process-owned and
- * remains available while Display is open and after it closes. Release every
- * allocation through this allocator, independently of Runtime. */
-const h2_pal_mem_api_t* h2_bk7258_board_display_allocator(void);
-
 /** Board PSRAM allocator for large target-specific working sets. */
 h2_pal_mem_api_t* h2_bk7258_board_psram_allocator(void);
 

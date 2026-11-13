@@ -48,7 +48,6 @@ h2_pal_result_t h2_jieli_ac791n_devkit_runtime_config(
       .device_identity = h2_jieli_wl82_platform_device_identity_api(),
       .image = h2_jieli_wl82_platform_image_api(),
       .io_stream = h2_jieli_wl82_platform_io_stream_api(),
-      .mem_external = NULL,
       .mem = h2_jieli_wl82_platform_mem_api(),
       .log = h2_jieli_wl82_platform_log_api(),
       .time = h2_jieli_wl82_platform_time_api(),

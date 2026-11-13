@@ -56,7 +56,7 @@ static struct {
   h2_pal_task_entry_t runner;
   void (*watchdog)(void*);
   unsigned policy, init, entries, boards, runtimes, commands, tasks;
-  unsigned allocator_calls, allocations, frees, captures, observations;
+  unsigned allocations, frees, captures, observations;
   unsigned qualifications, confirms, demos, patterns, replays, reboots;
   unsigned opens, infos, closes, waits, failed, ready, stable;
   int display_open;
@@ -70,7 +70,6 @@ static struct {
   unsigned registrations, detachments;
 #endif
 } f;
-static const h2_pal_mem_api_t control_memory = {0};
 
 static void capture_log(const char* line) {
   if (strstr(line, "H2_DISPLAY_OBSERVATION ") == line) {
@@ -126,10 +125,6 @@ static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
                                                   .free = release};
 static const h2_pal_mem_api_t bitmap_allocator = {.user = &f,
                                                   .vtable = &memory_vtable};
-const h2_pal_mem_api_t* h2_bk7258_board_display_allocator(void) {
-  ++f.allocator_calls;
-  return &bitmap_allocator;
-}
 static h2_display_info_t board_info(void) {
   h2_display_info_t info = {WIDTH, HEIGHT, H2_DISPLAY_PIXEL_RGB565};
   if (f.scenario == BAD_GEOMETRY) info.width = 4097;
@@ -221,12 +216,12 @@ h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t* config) {
   ++f.boards;
   if (f.scenario == BOARD_ERROR) return H2_PAL_ERR_IO;
   *config = (h2_runtime_config_t){
-      .mem = &control_memory, .display = &display_api, .task = &task_api};
+      .mem = &bitmap_allocator, .display = &display_api, .task = &task_api};
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
                                 h2_runtime_t** out) {
-  assert(config->mem == &control_memory && config->display == &display_api);
+  assert(config->mem == &bitmap_allocator && config->display == &display_api);
   assert(config->system_event == h2_pal_unsupported_system_event_api());
   ++f.runtimes;
   *out = NULL;
@@ -241,7 +236,7 @@ int h2_device_app_commands_start_serial_named(h2_device_app_commands_t* state,
                                               const char* name,
                                               uint32_t capabilities) {
   assert(state == &h2_management);
-  assert(value == &f.runtime && value->mem == &control_memory);
+  assert(value == &f.runtime && value->mem == &bitmap_allocator);
   assert(!strcmp(name, "pal-display") &&
          capabilities == H2_LOADER_CAPABILITY_UART);
   ++f.commands;
@@ -271,7 +266,7 @@ const h2_pal_power_api_t* h2_device_app_commands_power(
 int h2_display_device_run(h2_runtime_t* value, const char* version,
                           h2_pal_display_e2e_observe_fn observer, void* user,
                           const h2_pal_mem_api_t* memory) {
-  assert(value == &f.runtime && value->mem == &control_memory);
+  assert(value == &f.runtime && value->mem == &bitmap_allocator);
   assert(!strcmp(version, H2_DISPLAY_VERSION) && observer && !user);
   assert(memory == &bitmap_allocator && scanout && !finished && !f.confirms);
   assert(!f.display_open);

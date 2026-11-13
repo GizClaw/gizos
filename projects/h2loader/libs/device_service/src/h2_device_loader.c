@@ -274,8 +274,7 @@ static int loader_run(h2_device_loader_t* context, h2_runtime_t* runtime,
       .time = runtime->time,
       .allocator = runtime_loader_config->command_allocator != NULL
                        ? runtime_loader_config->command_allocator
-                       : (runtime->mem_external != NULL ? runtime->mem_external
-                                                        : runtime->mem),
+                       : runtime->mem,
       .loader_partition_id = runtime_loader_config->loader_partition_id != 0u
                                  ? runtime_loader_config->loader_partition_id
                                  : 1u,

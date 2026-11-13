@@ -46,7 +46,6 @@ int h2_bk_pal_disk_management_start(void) {
       .image = h2_bk_platform_image_api(),
       .io_stream = h2_bk_platform_io_stream_api(),
       .mem = h2_bk_platform_psram_allocator(),
-      .mem_external = h2_bk_platform_psram_allocator(),
       .log = h2_bk_platform_log_api(),
       .time = h2_bk_platform_time_api(),
       .timer = h2_bk_platform_timer_api(),

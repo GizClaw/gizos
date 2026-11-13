@@ -12,6 +12,7 @@ package(default_visibility = ["//visibility:public"])
 
 firmware_version(
     name = "version",
+    board_name = "ac791n_devkit",
     build = "//boards/jieli/jieli_ac791n_devkit:version",
     main_version = "//projects/h2loader/apps/headless:version",
 )
@@ -31,6 +32,7 @@ firmware_lib_component(
         "//libs/archive/bundle:src/h2_bundle_installer.c",
         "//libs/archive/bundle:src/h2_bundle_manifest.c",
         "//libs/archive/bundle:src/h2_bundle_path.c",
+        "//libs/archive/bundle:src/h2_bundle_segmented.c",
         "//libs/archive/bundle:src/h2_bundle_tar.c",
         "//libs/archive/bundle:src/h2_bundle_types.c",
     ],
@@ -54,7 +56,9 @@ jieli_target_task_policy(
     graph = [":loader_launcher"],
     policies = [
         "h2loader/appcmd 10 12288 128",
-        "h2loader/startup 10 4096 128",
+        # Startup retains the Loader/command state while inspecting packages
+        # and confirming a recovery image; budget 64 KiB (SDK words).
+        "h2loader/startup 10 16384 128",
         "h2loader/blecmd 10 12288 128",
         "$bleikcp/server 10 12288 128",
         "$bleikcp/kcp 10 1536 128",

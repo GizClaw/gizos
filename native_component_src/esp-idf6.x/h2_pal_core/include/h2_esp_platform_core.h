@@ -102,8 +102,6 @@ const h2_pal_timer_api_t* h2_esp_platform_timer_api(void);
 
 h2_pal_mem_api_t* h2_esp_platform_default_allocator(void);
 h2_pal_mem_api_t* h2_esp_platform_psram_allocator(void);
-/** Optional external heap for task-context work, NULL without a PSRAM heap. */
-const h2_pal_mem_api_t* h2_esp_platform_external_allocator(void);
 /** Board-configured console; getter performs no driver operations. */
 const h2_pal_io_stream_api_t* h2_esp_platform_io_stream_api(void);
 h2_pal_mem_api_t* h2_esp_platform_internal_allocator(void);

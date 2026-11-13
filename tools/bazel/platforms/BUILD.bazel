@@ -223,6 +223,11 @@ config_setting(
 )
 
 config_setting(
+    name = "is_macos_application",
+    define_values = {"h2_desktop_target": "macos"},
+)
+
+config_setting(
     name = "is_macos_arm64",
     constraint_values = [
         "@platforms//cpu:arm64",
@@ -249,6 +254,11 @@ config_setting(
 config_setting(
     name = "is_ios_sim_arm64",
     define_values = {"h2_mobile_target": "ios_sim_arm64"},
+)
+
+config_setting(
+    name = "is_ios_arm64",
+    define_values = {"h2_mobile_target": "ios_arm64"},
 )
 
 config_setting(
@@ -340,6 +350,14 @@ platform(
 
 platform(
     name = "ios_sim_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:ios",
+    ],
+)
+
+platform(
+    name = "ios_arm64",
     constraint_values = [
         "@platforms//cpu:arm64",
         "@platforms//os:ios",

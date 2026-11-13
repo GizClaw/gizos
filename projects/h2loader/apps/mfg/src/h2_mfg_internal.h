@@ -22,7 +22,6 @@ struct h2_mfg {
   uint64_t last_log_ms;
   char detail[160];
   uint16_t* frame;
-  const h2_pal_mem_api_t* frame_allocator;
   h2_display_info_t display;
   int display_open;
   int touch_open;

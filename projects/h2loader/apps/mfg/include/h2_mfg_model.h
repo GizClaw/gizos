@@ -122,9 +122,6 @@ typedef struct h2_mfg_profile {
   int camera_async;
   uint32_t preview_width;
   uint32_t preview_height;
-  /** Optional framebuffer allocator, borrowed for the entire session. Invoked
-   * after Display opens; NULL prefers Runtime external memory, then default. */
-  const h2_pal_mem_api_t* frame_allocator;
 } h2_mfg_profile_t;
 
 typedef int (*h2_mfg_save_fn)(void* user,

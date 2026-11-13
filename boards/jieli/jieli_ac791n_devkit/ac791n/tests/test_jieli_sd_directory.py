@@ -80,7 +80,7 @@ int main(void) {
     def test_single_level_directory_and_create_failures(self):
         source = SOURCE.read_text()
         begin = source.index("static int directory_status(")
-        end = source.index("static int fs_mkdir(", begin)
+        end = source.index("static h2_pal_result_t fs_prepare(", begin)
         fixture = r'''
 #include <assert.h>
 #include <stddef.h>

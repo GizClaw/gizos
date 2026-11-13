@@ -21,6 +21,7 @@ HOST_OR_MOBILE_TOOL_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:host_macos_target_macos"): [],
     Label("//tools/bazel/platforms:host_windows_target_windows"): [],
     Label("//tools/bazel/platforms:is_ios_sim_arm64"): [],
+    Label("//tools/bazel/platforms:is_ios_arm64"): [],
     Label("//tools/bazel/platforms:is_android_arm64"): [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
@@ -53,6 +54,19 @@ LINUX_ARM64_ARTIFACT_COMPATIBILITY = select({
 MACOS_ARTIFACT_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:is_macos_arm64"): [],
     Label("//tools/bazel/platforms:is_macos_x86_64"): [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+# Apple App rules change the target platform through incoming transitions.
+# Gate final bundles on the requested configuration, not that rewritten OS.
+MACOS_APPLICATION_ARTIFACT_COMPATIBILITY = select({
+    Label("//tools/bazel/platforms:is_macos_application"): ["@platforms//os:macos"],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+IOS_ARTIFACT_COMPATIBILITY = select({
+    Label("//tools/bazel/platforms:is_ios_sim_arm64"): ["@platforms//os:ios"],
+    Label("//tools/bazel/platforms:is_ios_arm64"): ["@platforms//os:ios"],
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
