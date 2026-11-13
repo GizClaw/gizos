@@ -380,8 +380,8 @@ void h2_fruit_slice_render_background(h2_fruit_slice_canvas_t* canvas) {
       const float grain =
           sinf((float)y * 0.045f + phase +
                2.4f * sinf((float)y * 0.012f + (float)inside * 0.05f + phase));
-      const float fleck = (float)(hash32((uint32_t)(x * 73856093) ^
-                                         (uint32_t)(y / 3 * 19349663)) &
+      const float fleck = (float)(hash32((uint32_t)x * 73856093u ^
+                                         (uint32_t)(y / 3) * 19349663u) &
                                   15u) /
                           15.0f;
       wood = scaled(wood, 1.0f + 0.10f * grain + 0.05f * (fleck - 0.5f));

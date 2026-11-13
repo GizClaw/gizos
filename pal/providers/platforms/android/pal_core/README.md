@@ -22,7 +22,7 @@ The existing C `h2_android_platform_create(env, external_view, config)` interfac
 
 - `:view` provides the Java owner and its always-linked JNI bridge to Bazel Android Apps.
 - `:aar` packages `classes.jar`, native JNI exports, consumer callback retention rules, Prefab headers and the native library.
-- `:touch_state_test` checks native pointer edges, empty snapshots, coordinate validation and release behavior on a host compiler.
+- `:touch_state_test` checks captured native pointer edges, complete taps and separate strokes between polls, bounded-queue recovery, coordinate validation and release behavior on a host compiler. Adjacent MOVE samples coalesce; DOWN/UP boundaries are buffered. If edges alone exhaust the queue, polling reports an I/O loss before restarting a held pointer with DOWN.
 
 ```sh
 bazel test //pal/providers/platforms/android/pal_core:touch_state_test //tools/bazel/mobile:mobile_package_test

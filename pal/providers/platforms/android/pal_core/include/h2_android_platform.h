@@ -44,9 +44,11 @@ const h2_pal_audio_decoder_api_t* h2_android_platform_audio_decoder_api(void);
 const h2_pal_video_decoder_api_t* h2_android_platform_video_decoder_api(void);
 const h2_pal_display_api_t* h2_android_platform_display_api(
     h2_android_platform_t* platform);
-/** Borrow a stateful Touch PAL in logical display coordinates. The provider
- * serializes snapshot and edge state; repeated polls without change return
- * WOULD_BLOCK. Closing Touch does not release the platform-owned View. */
+/** Borrow a Touch PAL in logical display coordinates. Capture buffers DOWN/UP
+ * edges between polls and may coalesce MOVE samples. Queue exhaustion reports
+ * IO once before resynchronizing a held pointer with DOWN, allowing callers to
+ * cancel a stale stroke. Empty polls return WOULD_BLOCK. All state is mutex
+ * protected. Closing Touch does not release the platform-owned View. */
 const h2_pal_touch_api_t* h2_android_platform_touch_api(
     h2_android_platform_t* platform);
 

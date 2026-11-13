@@ -223,6 +223,11 @@ config_setting(
 )
 
 config_setting(
+    name = "is_macos_application",
+    define_values = {"h2_desktop_target": "macos"},
+)
+
+config_setting(
     name = "is_macos_arm64",
     constraint_values = [
         "@platforms//cpu:arm64",

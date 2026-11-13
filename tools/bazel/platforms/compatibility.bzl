@@ -57,6 +57,19 @@ MACOS_ARTIFACT_COMPATIBILITY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
+# Apple App rules change the target platform through incoming transitions.
+# Gate final bundles on the requested configuration, not that rewritten OS.
+MACOS_APPLICATION_ARTIFACT_COMPATIBILITY = select({
+    Label("//tools/bazel/platforms:is_macos_application"): ["@platforms//os:macos"],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+IOS_ARTIFACT_COMPATIBILITY = select({
+    Label("//tools/bazel/platforms:is_ios_sim_arm64"): ["@platforms//os:ios"],
+    Label("//tools/bazel/platforms:is_ios_arm64"): ["@platforms//os:ios"],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
 MACOS_ARM64_ARTIFACT_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:is_macos_arm64"): [],
     "//conditions:default": ["@platforms//:incompatible"],

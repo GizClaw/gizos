@@ -1,6 +1,7 @@
 load("@rules_apple//apple:apple.bzl", "local_provisioning_profile")
 load("@rules_apple//apple:ios.bzl", "ios_application")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//tools/bazel/platforms:compatibility.bzl", "IOS_ARTIFACT_COMPATIBILITY")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
@@ -13,7 +14,7 @@ objc_library(
         "Foundation",
         "UIKit",
     ],
-    target_compatible_with = ["@platforms//os:ios"],
+    target_compatible_with = IOS_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/runtime",
         "//pal/providers/platforms/ios/pal_core:platform",
@@ -48,6 +49,6 @@ ios_application(
         "//tools/bazel/platforms:is_ios_arm64": ":development_profile",
         "//conditions:default": None,
     }),
-    target_compatible_with = ["@platforms//os:ios"],
+    target_compatible_with = IOS_ARTIFACT_COMPATIBILITY,
     deps = [":launcher"],
 )
