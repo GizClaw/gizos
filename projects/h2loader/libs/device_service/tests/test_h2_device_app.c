@@ -388,10 +388,10 @@ int main(void) {
       .release = release_stream,
   };
   const h2_pal_io_stream_api_t stream = {.vtable = &stream_vt};
-  const h2_pal_mem_api_t external = {.vtable = &mem_vt};
+  const h2_pal_mem_api_t command_mem = {.vtable = &mem_vt};
   h2_runtime_config_t stream_config = preinit;
   stream_config.io_stream = &stream;
-  stream_config.mem_external = &external;
+  stream_config.mem = &command_mem;
   h2_device_app_commands_t managed = {.config = commands};
   task_failure = 1;
   assert(h2_device_app_commands_prepare_named(
@@ -399,7 +399,7 @@ int main(void) {
   assert(managed.prepared && !managed.serial_started &&
          !managed.io_stream_started && stream_starts == 1u &&
          stream_releases == 1u);
-  assert(managed.client_config.allocator == &external);
+  assert(managed.client_config.allocator == &command_mem);
   task_failure = 0;
   stream_start_failure = 1;
   assert(h2_device_app_commands_start_serial(&managed, NULL) == H2_PAL_ERR_IO);

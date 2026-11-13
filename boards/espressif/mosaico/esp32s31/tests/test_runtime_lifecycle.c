@@ -84,13 +84,11 @@ int main(void) {
   assert(config.device_identity == h2_esp_platform_device_identity_api());
   assert(config.image == h2_esp_platform_image_api());
   assert(config.io_stream == h2_mosaico_io_stream_api());
-  assert(config.mem_external == h2_esp_platform_external_allocator());
   assert(h2_esp_board_runtime_config(&config) == 0 && creates == 1);
   assert(config.camera == h2_mosaico_camera());
   assert(config.device_identity == h2_esp_platform_device_identity_api());
   assert(config.image == h2_esp_platform_image_api());
   assert(config.io_stream == h2_mosaico_io_stream_api());
-  assert(config.mem_external == h2_esp_platform_external_allocator());
   assert(config.fs->user == &provider);
   assert(h2_pal_fs_prepare(config.fs, "/dl") == H2_PAL_OK);
   assert(h2_pal_fs_prepare(config.fs, "/dl") == H2_PAL_OK);
@@ -121,11 +119,6 @@ int main(void) {
   assert(h2_esp_board_runtime_config(&config) == 0 && creates == 2);
   assert(h2_esp_board_runtime_deinit() == 0 && destroys == 2);
   return 0;
-}
-
-const h2_pal_mem_api_t* h2_esp_platform_external_allocator(void) {
-  static const h2_pal_mem_api_t api = {0};
-  return &api;
 }
 
 const h2_pal_io_stream_api_t* h2_esp_platform_io_stream_api(void) {

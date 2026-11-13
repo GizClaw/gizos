@@ -127,7 +127,6 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
       .image = h2_esp_platform_image_api(),
       .io_stream = h2_esp_platform_io_stream_api(),
       .mem = h2_esp_board_psram_allocator(),
-      .mem_external = h2_esp_board_psram_allocator(),
       .log = h2_esp_board_log_api(),
       .time = h2_esp_board_time_api(),
       .timer = h2_esp_platform_timer_api(),

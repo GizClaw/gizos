@@ -21,6 +21,7 @@ firmware_lib_component(
         "//libs/archive/bundle:src/h2_bundle_installer.c",
         "//libs/archive/bundle:src/h2_bundle_manifest.c",
         "//libs/archive/bundle:src/h2_bundle_path.c",
+        "//libs/archive/bundle:src/h2_bundle_segmented.c",
         "//libs/archive/bundle:src/h2_bundle_tar.c",
         "//libs/archive/bundle:src/h2_bundle_types.c",
     ],

@@ -252,6 +252,11 @@ config_setting(
 )
 
 config_setting(
+    name = "is_ios_arm64",
+    define_values = {"h2_mobile_target": "ios_arm64"},
+)
+
+config_setting(
     name = "is_android_arm64",
     define_values = {"h2_mobile_target": "android_arm64"},
 )
@@ -340,6 +345,14 @@ platform(
 
 platform(
     name = "ios_sim_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:ios",
+    ],
+)
+
+platform(
+    name = "ios_arm64",
     constraint_values = [
         "@platforms//cpu:arm64",
         "@platforms//os:ios",

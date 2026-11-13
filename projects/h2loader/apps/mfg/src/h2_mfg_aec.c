@@ -330,12 +330,8 @@ int h2_mfg_aec_enter(h2_mfg_t* m) {
   unsigned measured = (WINDOW_SAMPLES + samples - 1) / samples;
   size_t bytes =
       sizeof(*m->aec) + 2 * (size_t)measured * samples * sizeof(int16_t);
-  const h2_pal_mem_api_t* allocator = m->rt->mem_external;
+  const h2_pal_mem_api_t* allocator = m->rt->mem;
   m->aec = h2_pal_mem_alloc(allocator, bytes);
-  if (m->aec == NULL) {
-    allocator = m->rt->mem;
-    m->aec = h2_pal_mem_alloc(allocator, bytes);
-  }
   if (m->aec == NULL) {
     (void)snprintf(m->detail, sizeof(m->detail),
                    "AEC recording buffer %zu bytes unavailable", bytes);
@@ -355,10 +351,9 @@ int h2_mfg_aec_enter(h2_mfg_t* m) {
     return H2_PAL_ERR_NO_MEMORY;
   }
   char memory[128];
-  (void)snprintf(
-      memory, sizeof(memory),
-      "H2_MFG_AEC_MEMORY recording_bytes=%zu recording=%s pcm_bytes=%zu", bytes,
-      allocator == m->rt->mem_external ? "external" : "default", m->pcm_bytes);
+  (void)snprintf(memory, sizeof(memory),
+                 "H2_MFG_AEC_MEMORY recording_bytes=%zu pcm_bytes=%zu", bytes,
+                 m->pcm_bytes);
   (void)h2_pal_log_write(m->rt->log, H2_PAL_LOG_INFO, "mfg/aec", memory);
   rc = h2_pal_audio_get_speaker_volume_percent(m->rt->audio, &m->saved_volume);
   if (rc == 0) m->volume_saved = 1;

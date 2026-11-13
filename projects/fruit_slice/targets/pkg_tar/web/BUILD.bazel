@@ -1,0 +1,69 @@
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/web:web_archive.bzl", "web_archive_serve")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_binary(
+    name = "_wasm/index",
+    srcs = ["main.c"],
+    additional_linker_inputs = ["shell.html"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    features = ["-output_format_js"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=8",
+        "--shell-file",
+        "$(location shell.html)",
+        "--oformat=html",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/runtime",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/platforms/web/pal_core",
+        "//projects/fruit_slice/app:fruit_slice",
+    ],
+)
+
+wasm_cc_binary(
+    name = "fruit_slice_wasm",
+    cc_target = ":_wasm/index",
+    outputs = [
+        "index.html",
+        "index.js",
+        "index.wasm",
+    ],
+    target_compatible_with = _HOST,
+    threads = "emscripten",
+)
+
+pkg_tar(
+    name = "fruit_slice",
+    srcs = [
+        "_headers",
+        ":fruit_slice_wasm",
+    ],
+    out = "fruit-slice.web.tar",
+    mode = "0644",
+    portable_mtime = True,
+    strip_prefix = ".",
+    target_compatible_with = _HOST,
+)
+
+web_archive_serve(
+    name = "serve",
+    archive = ":fruit_slice",
+)

@@ -593,42 +593,33 @@ static void recording_release(void* user, void* pointer) {
 static void recording_memory_placement(void) {
   const h2_pal_mem_vtable_t memory = {.alloc = recording_allocate,
                                       .free = recording_release};
-  for (unsigned scenario = 0; scenario < 4; ++scenario) {
+  for (unsigned scenario = 0; scenario < 2; ++scenario) {
     fake_t f;
     setup_format(&f, 320, 1);
     teardown(&f);
-    recording_heap_t external = {.limit = scenario == 0 ? SIZE_MAX : 0};
-    recording_heap_t ordinary = {
-        .limit = scenario == 0 || scenario == 3 ? 65536u : SIZE_MAX};
-    const h2_pal_mem_api_t external_api = {.user = &external,
-                                           .vtable = &memory};
-    const h2_pal_mem_api_t ordinary_api = {.user = &ordinary,
-                                           .vtable = &memory};
-    f.rt.mem = &ordinary_api;
-    f.rt.mem_external = scenario == 2 ? NULL : &external_api;
+    recording_heap_t heap = {.limit = scenario == 0 ? SIZE_MAX : 65536u};
+    const h2_pal_mem_api_t heap_api = {.user = &heap, .vtable = &memory};
+    f.rt.mem = &heap_api;
     const int rc = h2_mfg_hardware_enter(&f.mfg, f.now);
-    if (scenario == 3) {
+    if (scenario == 1) {
       assert(rc == H2_PAL_ERR_NO_MEMORY && f.mfg.aec == NULL);
       assert(!f.mfg.model.ready && !f.speaker && !f.mic);
       assert(strstr(f.mfg.detail, "recording buffer") != NULL);
     } else {
       assert(rc == H2_PAL_OK && f.mfg.aec != NULL);
-      if (scenario == 0) {
-        while (f.now < 25000) assert(tick(&f) == 0 && !f.mfg.model.ready);
-        f.human_speech = 1;
-        while (!f.mfg.model.ready && f.now < 65000) assert(tick(&f) == 0);
-        assert(f.mfg.model.ready && f.echo_replay_frames != 0);
-        f.close_error = 1;
-        assert(h2_mfg_hardware_leave(&f.mfg) == H2_PAL_ERR_BUSY);
-        assert(external.live == 1 && ordinary.live == 1);
-        f.close_error = 0;
-      }
+      while (f.now < 25000) assert(tick(&f) == 0 && !f.mfg.model.ready);
+      f.human_speech = 1;
+      while (!f.mfg.model.ready && f.now < 65000) assert(tick(&f) == 0);
+      assert(f.mfg.model.ready && f.echo_replay_frames != 0);
+      f.close_error = 1;
+      assert(h2_mfg_hardware_leave(&f.mfg) == H2_PAL_ERR_BUSY);
+      assert(heap.live == 2u);
+      f.close_error = 0;
     }
-    assert(external.large_attempts == (scenario == 2 ? 0u : 1u));
-    assert(ordinary.large_attempts == (scenario == 0 ? 0u : 1u));
+    assert(heap.large_attempts == 1u);
     teardown(&f);
-    assert(external.live == 0 && ordinary.live == 0);
-    assert(external.frees == (scenario == 0 ? 1u : 0u));
+    assert(heap.live == 0u);
+    assert(heap.frees == heap.attempts - (scenario == 1 ? 1u : 0u));
   }
 }
 

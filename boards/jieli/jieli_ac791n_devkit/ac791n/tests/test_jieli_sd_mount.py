@@ -8,11 +8,18 @@ ROOT = Path(__file__).resolve().parents[5]
 class MountTest(unittest.TestCase):
     def test_mount_ownership(self):
         text = (ROOT / "boards/jieli/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_sd_fs.c").read_text()
-        code = text[text.index("h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init("):]
+        code = text[text.index("static h2_pal_result_t fs_prepare("):text.index("static int fs_mkdir(")]
+        code += text[text.index("h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init("):]
         stub = r'''
 #include <assert.h>
 #include <stdlib.h>
 #include "os/h2_pal_fs.h"
+#define H2_JIELI_SD_PATH_MAX 192u
+h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t*);
+static int translate_path(const char* path, char* out) {
+ (void)out;
+ return path && path[0]=='/' ? H2_PAL_OK : H2_PAL_ERR_INVALID_ARG;
+}
 #define H2_JIELI_SD_MOUNT "mount"
 #define H2_JIELI_SD_ROOT "root/"
 #define H2_JIELI_SD_FS_TYPE "fat"
@@ -80,8 +87,16 @@ int main(void) {
  fail_directory=0;
  assert(h2_jieli_ac791n_devkit_sd_fs_init(&api)==H2_PAL_OK);
  assert(mounts==2);
+ assert(h2_pal_fs_prepare(&api,"/dl")==H2_PAL_OK);
+ assert(h2_pal_fs_prepare(&api,"/data/file")==H2_PAL_OK);
+ assert(mounts==2 && unmounts==2);
+ assert(h2_pal_fs_prepare(&api,"invalid")==H2_PAL_ERR_INVALID_ARG);
  assert(h2_jieli_ac791n_devkit_sd_fs_deinit()==H2_PAL_OK);
  assert(unmounts==3 && !existing);
+ assert(h2_pal_fs_prepare(&api,"/dl")==H2_PAL_OK);
+ assert(mounts==3 && existing);
+ assert(h2_jieli_ac791n_devkit_sd_fs_deinit()==H2_PAL_OK);
+ assert(unmounts==4 && !existing);
 }
 '''
         with tempfile.TemporaryDirectory() as directory:

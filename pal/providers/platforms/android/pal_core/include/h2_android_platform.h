@@ -23,8 +23,16 @@ typedef struct h2_android_platform_config {
   int32_t display_height;
 } h2_android_platform_config_t;
 
+/** Create a platform around an external View exposing void requestFrame().
+ * The View is retained as a JNI global reference until destroy. For an owned
+ * display/touch View, Java hosts can use
+ * com.gizclaw.gizos.pal.H2AndroidPlatform and mount its getView() instead.
+ * Existing external-View consumers remain supported. The returned owner must
+ * outlive every borrowed PAL API. */
 h2_android_platform_t* h2_android_platform_create(
     JNIEnv* env, jobject view, const h2_android_platform_config_t* config);
+/** Stop/join all Runtime, media, Display, Touch and Java copy/input callers
+ * before destroying the platform. NULL is allowed. */
 void h2_android_platform_destroy(h2_android_platform_t* platform);
 
 const h2_pal_mem_api_t* h2_android_platform_mem_api(void);
@@ -35,6 +43,11 @@ const h2_pal_audio_api_t* h2_android_platform_audio_api(
 const h2_pal_audio_decoder_api_t* h2_android_platform_audio_decoder_api(void);
 const h2_pal_video_decoder_api_t* h2_android_platform_video_decoder_api(void);
 const h2_pal_display_api_t* h2_android_platform_display_api(
+    h2_android_platform_t* platform);
+/** Borrow a stateful Touch PAL in logical display coordinates. The provider
+ * serializes snapshot and edge state; repeated polls without change return
+ * WOULD_BLOCK. Closing Touch does not release the platform-owned View. */
+const h2_pal_touch_api_t* h2_android_platform_touch_api(
     h2_android_platform_t* platform);
 
 h2_pal_result_t h2_android_platform_read_pointer(void* user, int32_t* out_x,

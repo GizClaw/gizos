@@ -21,6 +21,7 @@ HOST_OR_MOBILE_TOOL_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:host_macos_target_macos"): [],
     Label("//tools/bazel/platforms:host_windows_target_windows"): [],
     Label("//tools/bazel/platforms:is_ios_sim_arm64"): [],
+    Label("//tools/bazel/platforms:is_ios_arm64"): [],
     Label("//tools/bazel/platforms:is_android_arm64"): [],
     "//conditions:default": ["@platforms//:incompatible"],
 })

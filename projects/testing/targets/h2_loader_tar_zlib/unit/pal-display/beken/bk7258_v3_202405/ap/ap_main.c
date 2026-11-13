@@ -126,8 +126,8 @@ static void run(void* unused) {
 #ifdef H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE
   display_info = H2_BK7258_BOARD_DISPLAY_TRANSFER_CAPTURE(NULL, NULL);
 #else
-  /* Query the open provider and prime its process-owned media slab, leaving
-   * Display closed for the public cases even when get_info fails. */
+  /* Query the open provider, leaving Display closed for the public cases
+   * even when get_info fails. */
   int prepare = h2_pal_display_open(runtime->display);
   if (!prepare) {
     prepare = h2_pal_display_get_info(runtime->display, &display_info);
@@ -136,7 +136,7 @@ static void run(void* unused) {
   }
   if (prepare) fail("media-prepare", prepare);
 #endif
-  bitmap_memory = h2_bk7258_board_display_allocator();
+  bitmap_memory = runtime->mem;
   if (display_info.width < 16 || display_info.height < 16 ||
       display_info.width > 4096 || display_info.height > 4096 ||
       display_info.native_format != H2_DISPLAY_PIXEL_RGB565)

@@ -1,7 +1,6 @@
 #ifndef H2_TEST_RUNTIME_PLATFORM_H
 #define H2_TEST_RUNTIME_PLATFORM_H
 #include "h2_pal.h"
-const h2_pal_mem_api_t* h2_esp_platform_external_allocator(void);
 const h2_pal_io_stream_api_t* h2_esp_platform_io_stream_api(void);
 const h2_pal_timer_api_t* h2_esp_platform_timer_api(void);
 const h2_pal_firmware_info_api_t* h2_esp_platform_firmware_info_api(void);

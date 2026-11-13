@@ -13,7 +13,8 @@ The board regression targets are:
 | `imu_driver_test`, `mag_test` | BMI270/BMM150 conversion, compensated overflow output preservation and acquisition failure cleanup |
 | `battery_driver_test` | BQ27220 read-only commands, signed current, percent range and I/O failures |
 | `lifecycle_driver_test` | Init retry, resource release retry, retained handles and idempotent shutdown |
-| `surface_test` | Display/touch coordinate surface boundaries |
+| `surface_test` | RGB565 byte order, strided input and aligned surface boundaries |
+| `display_test` | Narrow aligned DMA windows, merged partial updates, borrowed input lifetime, transfer retry and continuous touch across ACK-only reports |
 
 Lifecycle regression uses fake PWM callbacks to verify resource shutdown; it
 does not drive a physical motor. There is no standalone motor diagnostic

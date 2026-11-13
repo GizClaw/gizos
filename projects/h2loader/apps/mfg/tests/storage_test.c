@@ -102,30 +102,23 @@ int main(void) {
                                     .remove = remove_file};
   const h2_mfg_step_t step = {"storage", H2_MFG_STORAGE, 1};
   const h2_mfg_profile_t profile = {.steps = &step, .total = 1};
-  for (unsigned scenario = 0; scenario < 6; ++scenario) {
-    heap_t external = {.fail = scenario == 1 || scenario == 3};
-    heap_t ordinary = {.fail = scenario == 0 || scenario >= 3};
-    filesystem_t fs = {.fail_write = scenario == 4,
-                       .corrupt_read = scenario == 5};
-    const h2_pal_mem_api_t external_api = {.user = &external,
-                                           .vtable = &memory};
-    const h2_pal_mem_api_t ordinary_api = {.user = &ordinary,
-                                           .vtable = &memory};
+  for (unsigned scenario = 0; scenario < 4; ++scenario) {
+    heap_t heap = {.fail = scenario == 1};
+    filesystem_t fs = {.fail_write = scenario == 2,
+                       .corrupt_read = scenario == 3};
+    const h2_pal_mem_api_t mem_api = {.user = &heap, .vtable = &memory};
     const h2_pal_fs_api_t fs_api = {.user = &fs, .vtable = &files};
-    h2_runtime_t runtime = {
-        .mem = &ordinary_api,
-        .mem_external = scenario == 2 ? NULL : &external_api,
-        .fs = &fs_api};
+    h2_runtime_t runtime = {.mem = &mem_api, .fs = &fs_api};
     h2_mfg_t m = {.rt = &runtime,
                   .profile = &profile,
                   .model = {.profile = &profile, .summary = {.total = 1}}};
     const char* action = NULL;
     int rc = h2_mfg_hardware_tick(&m, 100, &action);
-    if (scenario == 3) {
+    if (scenario == 1) {
       assert(rc == H2_PAL_ERR_NO_MEMORY && fs.opens == 0);
-    } else if (scenario >= 4) {
+    } else if (scenario >= 2) {
       assert(rc == H2_PAL_ERR_IO && fs.removes == 1);
-      assert(fs.closes == (scenario == 4 ? 1u : 2u));
+      assert(fs.closes == (scenario == 2 ? 1u : 2u));
     } else {
       assert(rc == H2_PAL_OK && m.model.ready);
       assert(action && strcmp(action, "confirm") == 0);
@@ -133,11 +126,9 @@ int main(void) {
              fs.removes == 1);
     }
     if (rc != H2_PAL_OK) assert(!m.model.ready && action == NULL);
-    assert(external.allocations == (scenario == 2 ? 0u : 1u));
-    assert(ordinary.allocations == (scenario >= 1 && scenario <= 3 ? 1u : 0u));
-    assert(external.frees == (scenario == 0 || scenario >= 4 ? 1u : 0u));
-    assert(ordinary.frees == (scenario == 1 || scenario == 2 ? 1u : 0u));
-    assert(external.owned == NULL && ordinary.owned == NULL);
+    assert(heap.allocations == 1u);
+    assert(heap.frees == (scenario == 1 ? 0u : 1u));
+    assert(heap.owned == NULL);
   }
   return 0;
 }

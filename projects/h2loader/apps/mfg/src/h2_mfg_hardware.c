@@ -26,12 +26,8 @@ static int has_check(const h2_mfg_t* m, h2_mfg_check_t check) {
 static int storage(h2_mfg_t* m) {
   enum { SIZE = 65536, CHUNK = 512 };
   const char* path = "/data/.gizos-mfg-probe";
-  const h2_pal_mem_api_t* allocator = m->rt->mem_external;
+  const h2_pal_mem_api_t* allocator = m->rt->mem;
   uint8_t* data = h2_pal_mem_alloc(allocator, SIZE);
-  if (data == NULL) {
-    allocator = m->rt->mem;
-    data = h2_pal_mem_alloc(allocator, SIZE);
-  }
   if (data == NULL) return H2_PAL_ERR_NO_MEMORY;
   volatile uint8_t* ram = data;
   for (size_t i = 0; i < SIZE; ++i) ram[i] = (uint8_t)(i ^ (i >> 8) ^ 0xa5);
@@ -87,14 +83,7 @@ static int display_open(h2_mfg_t* m) {
     return H2_PAL_ERR_FORMAT;
   const size_t bytes =
       (size_t)m->display.width * m->display.height * sizeof(*m->frame);
-  m->frame_allocator = m->profile->frame_allocator != NULL
-                           ? m->profile->frame_allocator
-                           : m->rt->mem_external;
-  m->frame = h2_pal_mem_alloc(m->frame_allocator, bytes);
-  if (m->frame == NULL && m->profile->frame_allocator == NULL) {
-    m->frame_allocator = m->rt->mem;
-    m->frame = h2_pal_mem_alloc(m->frame_allocator, bytes);
-  }
+  m->frame = h2_pal_mem_alloc(m->rt->mem, bytes);
   if (m->frame == NULL) {
     (void)snprintf(m->detail, sizeof(m->detail),
                    "Display frame allocation %zu bytes failed", bytes);
@@ -227,10 +216,8 @@ int h2_mfg_hardware_close(h2_mfg_t* m) {
     if (rc != 0) return rc;
     m->display_open = 0;
   }
-  h2_pal_mem_free(m->frame_allocator != NULL ? m->frame_allocator : m->rt->mem,
-                  m->frame);
+  h2_pal_mem_free(m->rt->mem, m->frame);
   m->frame = NULL;
-  m->frame_allocator = NULL;
   return H2_PAL_OK;
 }
 

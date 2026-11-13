@@ -676,7 +676,10 @@ static void fill_partition(h2_pal_power_boot_partition_t* partition,
                            uint32_t id, uint32_t flags) {
   memset(partition, 0, sizeof(*partition));
   partition->id = id;
-  partition->flags = H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE | flags;
+  partition->flags =
+      H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE | flags |
+      (id == BANK_1_ID ? H2_PAL_POWER_BOOT_PARTITION_FLAG_RECOVERY
+                       : H2_PAL_POWER_BOOT_PARTITION_FLAG_APP);
   if (id == state.running_partition_id)
     partition->flags |= H2_PAL_POWER_BOOT_PARTITION_FLAG_RUNNING;
   if (id == state.next_partition_id)
@@ -923,7 +926,9 @@ h2_pal_result_t h2_jieli_wl82_platform_image_configure(
   }
   if (!state.callbacks_initialized) {
     h2_atomic_result_t rc = h2_atomic_bool_init(&state.burn_waiting, false);
-    if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
+    if (rc != H2_ATOMIC_OK)
+      return rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                         : H2_PAL_ERR_NO_MEMORY;
     if (os_sem_create(&state.update_sem, 0) != OS_NO_ERR) {
       h2_atomic_bool_destroy(&state.burn_waiting);
       return H2_PAL_ERR_NO_MEMORY;

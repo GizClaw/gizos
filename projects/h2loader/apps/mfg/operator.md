@@ -98,7 +98,7 @@ Serial `mfg status` includes the latest `touch_x`, `touch_y`, `display_width` an
 
 The board profile lists its checks in execution order. With the default interaction policy, wait for green PASS on a display board and short-press its first listed button to confirm the current check. ESP-Mosaico instead selects touch navigation and uses AI/BOOT only as measured inputs. On a board with Touch, opening the acceptance screen also opens the touch provider, including when a cold boot resumes a later or failed check. PASS, FAIL and RETRY accept touch input. FAIL records a failure; RETRY starts that check with fresh observations. The serial interface also works on boards without displays.
 
-The 64 KiB RAM probe and the larger AEC recording buffers prefer Runtime's external-memory allocator and fall back to its default allocator. Each buffer is released through the allocator that supplied it, after its users stop. AEC recordings are wiped before release; failed cleanup retains their owner for retry. Allocation failure and filesystem readback errors remain failures. A profile may supply a borrowed `frame_allocator` for display buffers; MFG invokes it after Display opens and returns every frame through that allocator. This lets a target use its display memory pool while keeping Runtime's general external heap available for other working sets.
+The 64 KiB RAM probe, the AEC recording buffers and the Display frame use Runtime's `mem` allocator, which boards with PSRAM point at their PSRAM heap. Each buffer is released after its users stop. AEC recordings are wiped before release; failed cleanup retains their owner for retry. Allocation failure and filesystem readback errors remain failures.
 
 For the 1.75C:
 

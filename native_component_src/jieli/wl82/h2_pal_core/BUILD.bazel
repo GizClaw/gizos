@@ -26,6 +26,7 @@ firmware_native_component(
     name = "h2_pal_core",
     srcs = PROVIDER_SRCS + [
         "src/h2_jieli_wl82_atomic_provider.c",
+        "src/h2_jieli_wl82_pthread_once.c",
         "src/h2_jieli_wl82_sdk_port.c",
     ],
     hdrs = [
@@ -38,14 +39,51 @@ firmware_native_component(
     include_roots = [
         "pal/include",
         "libs/sync/atomic/include",
-        "libs/sync/atomic/providers/unsupported",
+        "libs/sync/atomic/providers/locked",
         "native_component_src/jieli/wl82/h2_pal_core/include",
     ],
     tags = ["manual"],
     deps = [
-        "//libs/sync/atomic",
-        "//libs/sync/atomic:unsupported_template",
+        "//libs/sync/atomic:locked_template",
         "//pal:pal_header_files",
+    ],
+)
+
+cc_test(
+    name = "pthread_once_test",
+    srcs = [
+        "include/h2_jieli_wl82_sdk_port.h",
+        "src/h2_jieli_wl82_pthread_once.c",
+        "tests/once_sdk/system/os/pthread.h",
+        "tests/src/test_jieli_wl82_pthread_once.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-UNDEBUG"],
+    includes = [
+        "include",
+        "tests/once_sdk",
+    ],
+    linkopts = ["-pthread"],
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)
+
+# Run the public Atomic contract against the provider compiled into firmware,
+# rather than substituting the host C11 provider as the other PAL tests do.
+cc_test(
+    name = "atomic_provider_test",
+    srcs = [
+        "include/h2_jieli_wl82_sdk_port.h",
+        "src/h2_jieli_wl82_atomic_provider.c",
+        "tests/src/h2_jieli_wl82_atomic_test_sdk.c",
+        "//libs/sync/atomic/providers/c11:tests/test_h2_atomic_c11.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-UNDEBUG"],
+    includes = ["include"],
+    linkopts = ["-pthread"],
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/sync/atomic:locked_template",
     ],
 )
 

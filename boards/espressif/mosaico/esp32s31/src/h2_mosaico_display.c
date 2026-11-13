@@ -1,10 +1,14 @@
 #include "h2_mosaico_display.h"
 #include "h2_mosaico_display_capture.h"
 #include "h2_mosaico_surface.h"
+#ifdef H2_MOSAICO_DISPLAY_HOST_TEST
+#include "h2_mosaico_display_test_sdk.h"
+#else
 #include "bsp/display.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#endif
 
 #include <string.h>
 
@@ -15,6 +19,9 @@ static esp_lcd_panel_handle_t panel;
 static esp_lcd_touch_handle_t touch;
 static uint16_t* row;
 static uint16_t* surface;
+enum { DMA_BANDS = H2_MOSAICO_HEIGHT / H2_MOSAICO_DMA_ROWS };
+static uint64_t dirty_bands;
+static uint16_t dirty_x0[DMA_BANDS], dirty_x1[DMA_BANDS];
 static bool opened;
 static bool touch_opened;
 static bool pressed;
@@ -114,34 +121,65 @@ static int display_draw(void* user, const h2_display_rect_t* rect,
   int rc = lock();
   if (rc != H2_PAL_OK) return rc;
   if (!opened) rc = H2_PAL_ERR_INVALID_STATE;
-  if (rc == H2_PAL_OK) rc = drain();
   int first = 0, end = 0;
   if (rc == H2_PAL_OK)
     rc = h2_mosaico_surface_blit(surface, rect, pixels, stride, &first, &end);
-  /* The hardware differential test accepts eight-row transfers but silently
-   * ignores our one-row windows. Expand partial updates against a shadow so
-   * alignment never overwrites neighboring pixels with duplicated content. */
-  for (int y = first; rc == H2_PAL_OK && y < end; y += H2_MOSAICO_DMA_ROWS) {
-    memcpy(row, surface + (size_t)y * BSP_LCD_H_RES,
-           BSP_LCD_H_RES * H2_MOSAICO_DMA_ROWS * sizeof(*row));
-    rc = result(esp_lcd_panel_draw_bitmap(panel, 0, y, BSP_LCD_H_RES,
-                                          y + H2_MOSAICO_DMA_ROWS, row));
-    const int drained = drain();
-    if (rc == H2_PAL_OK) rc = drained;
-    if (rc == H2_PAL_OK && transfer_capture) {
-      const h2_display_rect_t chunk = {0, y, BSP_LCD_H_RES,
-                                       H2_MOSAICO_DMA_ROWS};
-      transfer_capture(transfer_capture_user, &chunk, row);
+  if (rc == H2_PAL_OK) {
+    /* CO5300 requires four-column windows and the verified eight-row
+     * transfers. Keep neighboring pixels in the shadow, and merge draws
+     * until present instead of transmitting the same band repeatedly. */
+    const int x0 = rect->x & ~3;
+    const int x1 = (rect->x + rect->width + 3) & ~3;
+    for (int band = first / H2_MOSAICO_DMA_ROWS;
+         band < end / H2_MOSAICO_DMA_ROWS; ++band) {
+      const uint64_t bit = UINT64_C(1) << band;
+      if (!(dirty_bands & bit)) {
+        dirty_x0[band] = (uint16_t)x0;
+        dirty_x1[band] = (uint16_t)x1;
+      } else {
+        if (x0 < dirty_x0[band]) dirty_x0[band] = (uint16_t)x0;
+        if (x1 > dirty_x1[band]) dirty_x1[band] = (uint16_t)x1;
+      }
+      dirty_bands |= bit;
     }
   }
   xSemaphoreGive(mutex);
   return rc;
 }
+/* Called with the display lock. DMA borrows row until drain completes;
+ * failed bands stay dirty so a later present can retry their latest pixels. */
+static int flush_pending(void) {
+  if (dirty_bands == 0u) return H2_PAL_OK;
+  const int pending_rc = drain();
+  if (pending_rc != H2_PAL_OK) return pending_rc;
+  for (int band = 0; band < DMA_BANDS; ++band) {
+    const uint64_t bit = UINT64_C(1) << band;
+    if (!(dirty_bands & bit)) continue;
+    const int x0 = dirty_x0[band], x1 = dirty_x1[band];
+    const int y = band * H2_MOSAICO_DMA_ROWS;
+    const size_t width = (size_t)(x1 - x0);
+    for (int r = 0; r < H2_MOSAICO_DMA_ROWS; ++r)
+      memcpy(row + (size_t)r * width,
+             surface + (size_t)(y + r) * BSP_LCD_H_RES + (size_t)x0,
+             width * sizeof(*row));
+    int rc = result(esp_lcd_panel_draw_bitmap(panel, x0, y, x1,
+                                              y + H2_MOSAICO_DMA_ROWS, row));
+    const int drained = drain();
+    if (rc == H2_PAL_OK) rc = drained;
+    if (rc != H2_PAL_OK) return rc;
+    dirty_bands &= ~bit;
+    if (transfer_capture) {
+      const h2_display_rect_t chunk = {x0, y, (int)width, H2_MOSAICO_DMA_ROWS};
+      transfer_capture(transfer_capture_user, &chunk, row);
+    }
+  }
+  return H2_PAL_OK;
+}
 static int display_present(void* user) {
   (void)user;
   int rc = lock();
   if (rc != H2_PAL_OK) return rc;
-  rc = opened ? drain() : H2_PAL_ERR_INVALID_STATE;
+  rc = opened ? flush_pending() : H2_PAL_ERR_INVALID_STATE;
   xSemaphoreGive(mutex);
   return rc;
 }
@@ -167,6 +205,7 @@ static int display_close(void* user) {
       row = NULL;
       heap_caps_free(surface);
       surface = NULL;
+      dirty_bands = 0u;
       opened = false;
     }
   }
@@ -208,8 +247,13 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
   if (rc != H2_PAL_OK) return rc;
   if (!touch_opened)
     rc = H2_PAL_ERR_INVALID_STATE;
-  else
-    rc = result(esp_lcd_touch_read_data(touch));
+  else {
+    /* HYN212 may return only the ACK for the previous report. No new
+     * snapshot means no event, not an I/O error or a pointer release. */
+    const esp_err_t touch_rc = esp_lcd_touch_read_data(touch);
+    rc = touch_rc == ESP_ERR_NOT_FINISHED ? H2_PAL_ERR_WOULD_BLOCK
+                                          : result(touch_rc);
+  }
   if (rc == H2_PAL_OK) {
     uint16_t x = 0, y = 0;
     uint8_t count = 0;

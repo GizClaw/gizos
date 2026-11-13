@@ -1,0 +1,14 @@
+load("@rules_apple//apple:macos.bzl", "macos_application")
+load("//tools/bazel/platforms:compatibility.bzl", "MACOS_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+macos_application(
+    name = "fruit_slice",
+    bundle_id = "com.gizclaw.fruitslice",
+    bundle_name = "FruitSlice",
+    infoplists = ["Info.plist"],
+    minimum_os_version = "13.0",
+    target_compatible_with = MACOS_ARTIFACT_COMPATIBILITY,
+    deps = ["//projects/fruit_slice/targets/cc_binary/desktop:launcher"],
+)

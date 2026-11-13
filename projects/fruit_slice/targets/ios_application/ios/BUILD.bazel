@@ -1,0 +1,53 @@
+load("@rules_apple//apple:apple.bzl", "local_provisioning_profile")
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+objc_library(
+    name = "launcher",
+    srcs = ["main.m"],
+    copts = H2_WARNING_COPTS + ["-fobjc-arc"],
+    sdk_frameworks = [
+        "Foundation",
+        "UIKit",
+    ],
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = [
+        "//libs/runtime",
+        "//pal/providers/platforms/ios/pal_core:platform",
+        "//pal/providers/platforms/ios/pal_core:storage",
+        "//pal/providers/platforms/ios/pal_core:system_event",
+        "//pal/providers/platforms/posix/atomic",
+        "//projects/fruit_slice/app:fruit_slice",
+        "//projects/fruit_slice/libs/native-host:native_host",
+    ],
+)
+
+local_provisioning_profile(
+    name = "development_profile",
+    profile_name = "iOS Team Provisioning Profile: *",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_ios_arm64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+ios_application(
+    name = "fruit_slice",
+    bundle_id = "com.gizclaw.fruitslice",
+    bundle_name = "FruitSlice",
+    families = [
+        "iphone",
+        "ipad",
+    ],
+    infoplists = ["Info.plist"],
+    minimum_os_version = "16.0",
+    provisioning_profile = select({
+        "//tools/bazel/platforms:is_ios_arm64": ":development_profile",
+        "//conditions:default": None,
+    }),
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = [":launcher"],
+)

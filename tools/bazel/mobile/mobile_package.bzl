@@ -1,6 +1,7 @@
 """Local native SDK packaging and imports; no publishing side effects."""
 
 load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
+load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 
 def _package_impl(ctx):
     artifact = ctx.actions.declare_file(ctx.label.name + (".xcframework.zip" if ctx.attr.kind == "swift" else ".aar"))
@@ -21,12 +22,26 @@ def _package_impl(ctx):
         "--bundle",
         bundle.path,
     ])
+    inputs = [ctx.file.binary] + ctx.files.headers
+    if ctx.attr.java_library:
+        if ctx.attr.kind != "android":
+            fail("java_library is only supported for Android AARs")
+        jars = ctx.attr.java_library[JavaInfo].runtime_output_jars
+        if len(jars) != 1:
+            fail("java_library must provide exactly one runtime classes JAR")
+        args.add_all(["--classes-jar", jars[0].path])
+        inputs.append(jars[0])
+    if ctx.file.consumer_proguard:
+        if ctx.attr.kind != "android":
+            fail("consumer_proguard is only supported for Android AARs")
+        args.add_all(["--consumer-proguard", ctx.file.consumer_proguard.path])
+        inputs.append(ctx.file.consumer_proguard)
     for header in ctx.files.headers:
         args.add_all(["--header", header.path])
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
-        inputs = [ctx.file.binary] + ctx.files.headers,
+        inputs = inputs,
         outputs = [artifact, bundle],
         mnemonic = "MobileSDKPackage",
     )
@@ -41,6 +56,8 @@ _mobile_package = rule(
         "kind": attr.string(mandatory = True, values = ["swift", "android"]),
         "binary": attr.label(allow_single_file = True, mandatory = True),
         "headers": attr.label_list(allow_files = [".h"]),
+        "java_library": attr.label(providers = [JavaInfo]),
+        "consumer_proguard": attr.label(allow_single_file = True),
         "module_name": attr.string(mandatory = True),
         "version": attr.string(mandatory = True),
         "_tool": attr.label(default = "//tools/bazel/mobile:mobile_package_tool", executable = True, cfg = "exec"),
@@ -59,12 +76,14 @@ def h2_swift_package(name, xcframework, headers, module_name, version, **kwargs)
         **kwargs
     )
 
-def h2_android_aar(name, shared_library, headers, module_name, version, **kwargs):
-    """Package an arm64 Android shared library with Prefab headers and a POM."""
+def h2_android_aar(name, shared_library, headers, module_name, version, java_library = None, consumer_proguard = None, **kwargs):
+    """Package an arm64 library, optional Java classes, Prefab headers and a POM."""
     _mobile_package(
         name = name,
         kind = "android",
         binary = shared_library,
+        java_library = java_library,
+        consumer_proguard = consumer_proguard,
         headers = headers,
         module_name = module_name,
         version = version,

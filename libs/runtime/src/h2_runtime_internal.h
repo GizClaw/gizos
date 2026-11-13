@@ -324,7 +324,6 @@ struct h2_runtime_private {
   struct h2_runtime_test_control* test_control;
 
   h2_pal_mem_api_t mem_proxy;
-  h2_pal_mem_api_t mem_external_proxy;
   h2_pal_io_stream_api_t io_stream_proxy;
   h2_pal_firmware_info_api_t firmware_info_proxy;
   h2_pal_device_identity_api_t device_identity_proxy;

@@ -81,10 +81,8 @@ int h2_device_app_commands_prepare(
       .image = runtime->image,
       .power = runtime->power,
       .time = runtime->time,
-      .allocator = config->command_allocator != NULL
-                       ? config->command_allocator
-                       : (runtime->mem_external != NULL ? runtime->mem_external
-                                                        : runtime->mem),
+      .allocator = config->command_allocator != NULL ? config->command_allocator
+                                                     : runtime->mem,
       .app_entry_path = config->app_entry_path,
       .fs = runtime->fs,
       .pref = runtime->pref,
@@ -157,7 +155,6 @@ int h2_device_app_commands_prepare_runtime(
       .task = runtime->task,
       .sync = runtime->sync,
       .mem = runtime->mem,
-      .mem_external = runtime->mem_external,
       .io_stream = runtime->io_stream,
       .pref = runtime->pref,
       .power = runtime->power,
