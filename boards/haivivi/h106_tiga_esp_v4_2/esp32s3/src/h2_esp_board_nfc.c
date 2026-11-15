@@ -120,10 +120,30 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
   return rc;
 }
 
+static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
+                                      const uint8_t* expected_uid,
+                                      uint8_t expected_uid_len,
+                                      h2_pal_nfc_data_type_t type,
+                                      const uint8_t* bytes, size_t length) {
+  (void)user;
+  if (id != H2_TIGA_ESP_NFC_READER_ID) return H2_PAL_ERR_NOT_FOUND;
+  if (!h2_esp_board_nfc_enabled()) return H2_PAL_ERR_UNSUPPORTED;
+  if (h2_atomic_flag_test_and_set(&s_nfc_busy, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  int rc = H2_PAL_ERR_UNSUPPORTED;
+  if (h2_esp_board_nfc_enabled() && s_nfc_initialized)
+    rc = h2_pal_nfc_write_nfc_data(h2_esp_nfc_fm175xx_api(&s_nfc), id,
+                                   expected_uid, expected_uid_len, type, bytes,
+                                   length);
+  h2_atomic_flag_clear(&s_nfc_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
+
 const h2_pal_nfc_api_t* h2_esp_board_nfc_api(void) {
   static const h2_pal_nfc_vtable_t vtable = {
       .scan_nfc_reader = scan_nfc_reader,
       .read_nfc_data = read_nfc_data,
+      .write_nfc_data = write_nfc_data,
   };
   static h2_pal_nfc_api_t api = {
       .vtable = &vtable,

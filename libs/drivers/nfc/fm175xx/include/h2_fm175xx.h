@@ -91,6 +91,17 @@ int h2_fm175xx_type_a_activate_profile(
     uint32_t timeout_ms, const h2_fm175xx_type_a_profile_t* profile);
 int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
                              size_t capacity, size_t* out_len);
+/** Read the first NDEF TLV of a selected, formatted Type 2 tag. Complete
+ * message bytes exclude the CC/TLV header. Caller serializes selection/I/O. */
+int h2_fm175xx_ntag_read_ndef(h2_fm175xx_t* reader, uint8_t* out_data,
+                              size_t capacity, size_t* out_len);
+/** Replace a selected Type 2 tag's first data TLV with NDEF and verify it.
+ * Only unlocked, freely writable CC version 1 tags whose first TLV is NDEF
+ * or empty are supported. No manufacturer/lock/config pages are written.
+ * Length is invalidated before payload writes and published last. Failure
+ * can leave an empty/incomplete message; do not retry a payment implicitly. */
+int h2_fm175xx_ntag_write_ndef(h2_fm175xx_t* reader, const uint8_t* data,
+                               size_t length);
 
 #ifdef __cplusplus
 }

@@ -220,7 +220,22 @@ static int capture(const uint8_t* data, uint32_t size, char** out,
   *length = 2u;
   return 0;
 }
+static int oracle_query_rc;
+int oracle_query_result(void) { return oracle_query_rc; }
+extern int alipay_query_binding_result(int32_t* status);
+static void test_query_wrapper(void) {
+  const int results[] = {0, 7, 25, 21, 26, 36, 99};
+  const int32_t statuses[] = {0xa5, 0xff, 0xff, 0, 0, 0, 0};
+  for (size_t i = 0u; i < sizeof(results) / sizeof(*results); ++i) {
+    oracle_query_rc = results[i];
+    int32_t status = -1;
+    assert(alipay_query_binding_result(&status) == 0);
+    assert(status == statuses[i]);
+  }
+}
+
 int main(void) {
+  test_query_wrapper();
   void* callbacks[58] = {0};
   callbacks[2] = memory;
   callbacks[3] = memory_set;
@@ -347,8 +362,10 @@ int main(void) {
          strcmp(independent_code, binding_code) == 0);
   ++comparisons;
   char result[160];
-  snprintf(result, sizeof(result),
-           "{\"original_binary_comparisons\":%u,\"failed\":0}\n", comparisons);
+  snprintf(
+      result, sizeof(result),
+      "{\"original_binary_comparisons\":%u,\"query_wrapper_comparisons\":7,\"failed\":0}\n",
+      comparisons);
   emit(result);
   (void)semihost(1, 0, 0, 0);
   for (;;) {

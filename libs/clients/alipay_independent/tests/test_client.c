@@ -163,6 +163,7 @@ static void initialize(fixture_t* fixture) {
               .model = "H-106TG",
           },
       .company = "HAIVIVI",
+      .product_type = 3u,
       .pref_namespace = "alipay_direct",
       .feature = 16385u,
       .compile_timestamp_s = 1794449000u,
@@ -206,6 +207,14 @@ int main(void) {
   assert(h2_alipay_client_get_binding_code(&fixture.config, &result) ==
          H2_PAL_ERR_INVALID_STATE);
   assert(fixture.registrations + fixture.preparations == requests);
+  failure_clears(&result);
+  destroy(&fixture);
+
+  initialize(&fixture);
+  fixture.config.product_type = 0u;
+  assert(h2_alipay_client_get_binding_code(&fixture.config, &result) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(fixture.registrations == 0u && fixture.preparations == 0u);
   failure_clears(&result);
   destroy(&fixture);
 

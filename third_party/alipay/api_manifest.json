@@ -14,5 +14,6 @@
   "app/scan_pay/inc/alipay_scan_pay.h": "e7f0f19a660e92df807927b36cb18b8173de740d2689f2584df62e2cd83223d4",
   "app/setting/inc/alipay_account_manage.h": "ee8964b6b5ac2910a1ab7c75ab8faf9840af75f56a0507fa0cc1f58c29f43585",
   "app/trans_code/inc/alipay_transit.h": "bdf063d6e7fe061ac4d079ae09a358031dd1f5b8e285ab105be53866fc158e8d",
+  "hal/device_info/inc/vendor_device_info.h": "3f6d0c373c2a0facebc773fcca4cbaede8351c2608f1af87ec27f3fdcd050579",
   "share/common/inc/alipay_common.h": "ae12d99712a72731c88a0074571e5497294325b2aa6e3ff39538174940da2178"
 }

@@ -7,7 +7,13 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "client",
-    srcs = ["src/h2_alipay_client.c"],
+    srcs = [
+        "src/h2_alipay_binding.c",
+        "src/h2_alipay_client.c",
+        "src/h2_alipay_client_internal.h",
+        "src/h2_alipay_paycode.c",
+        "src/h2_alipay_payment.c",
+    ],
     hdrs = ["include/h2_alipay_client.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -52,6 +58,7 @@ cc_test(
     deps = [
         ":alipay_independent",
         "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
     ],
 )
 
@@ -118,6 +125,56 @@ py_test(
         "//third_party/alipay:sdk_manifest.json",
         "@alipay_sdk//:archives",
         "@h2_vendor_yyjson//:source_files",
+    ],
+    tags = ["manual"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+cc_test(
+    name = "binding_test",
+    srcs = ["tests/test_binding.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":client",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+cc_test(
+    name = "payment_test",
+    srcs = [
+        "src/h2_alipay_client_internal.h",
+        "tests/test_payment.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    tags = ["manual"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay_independent",
+        "//libs/crypto/sha256",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+py_test(
+    name = "sdk_payment_differential_test",
+    size = "medium",
+    srcs = ["tests/sdk_payment_differential_test.py"],
+    data = [
+        "include/h2_alipay_client.h",
+        "src/h2_alipay_client_internal.h",
+        "src/h2_alipay_paycode.c",
+        "tests/test_payment_differential.c",
+        ":protocol_source_files",
+        "//pal:pal_header_files",
+        "//third_party/alipay:sdk_manifest.json",
+        "@alipay_sdk//:archives",
     ],
     tags = ["manual"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,

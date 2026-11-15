@@ -15,7 +15,11 @@ h2_tasks(
 
 cc_library(
     name = "workflow",
-    srcs = ["src/h2_alipay_e2e_workflow.c"],
+    srcs = [
+        "src/h2_alipay_e2e_workflow.c",
+        "src/h2_alipay_payment_model.c",
+        "src/h2_alipay_payment_model.h",
+    ],
     hdrs = ["include/h2_alipay_e2e.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -28,7 +32,12 @@ cc_library(
 
 cc_library(
     name = "alipay_e2e",
-    srcs = ["src/h2_alipay_e2e.c"],
+    srcs = [
+        "src/h2_alipay_e2e.c",
+        "src/h2_alipay_payment_model.h",
+        "src/h2_alipay_payment_page.c",
+        "src/h2_alipay_payment_page.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     deps = [
@@ -71,6 +80,39 @@ cc_test(
         ":alipay_e2e",
         "//libs/image/qrcode",
         "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop/pal_core:core",
+        "//projects/testing/libs/host_runtime",
+    ],
+)
+
+cc_test(
+    name = "payment_model_test",
+    srcs = [
+        "src/h2_alipay_payment_model.h",
+        "tests/test_payment_model.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":workflow"],
+)
+
+cc_test(
+    name = "payment_page_test",
+    srcs = [
+        "src/h2_alipay_payment_page.h",
+        "tests/test_payment_page.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay_e2e",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/ui/lvgl",
+        "//libs/ui/lvgl:display",
         "//pal/providers/platforms/desktop/pal_core:core",
         "//projects/testing/libs/host_runtime",
     ],

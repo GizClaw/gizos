@@ -2,6 +2,7 @@
 #define H2_ALIPAY_SDK_H
 
 #include "h2_alipay.h"
+#include "h2_alipay_payment.h"
 #include "os/h2_pal_mem.h"
 #include "os/h2_pal_time.h"
 #include "os/h2_pal_log.h"
@@ -50,7 +51,8 @@ typedef struct h2_alipay_sdk_config {
   const char* model;
   uint32_t product_type;
   const h2_alipay_sdk_storage_t* secure;
-  /** Borrowed persistent Pref PAL, used when secure is NULL. */
+  /** Borrowed Pref PAL in the declared storage scope, used when secure is NULL.
+   */
   const h2_pal_pref_api_t* pref;
   /** Optional borrowed Pref namespaces, used when secure is NULL.
    * NULL preserves alipay_psa and alipay_cert, respectively. Select stable,
@@ -58,6 +60,9 @@ typedef struct h2_alipay_sdk_config {
    * Changing identity must not reuse another identity's stored SDK context. */
   const char* psa_namespace;
   const char* certificate_namespace;
+  /** Describes the injected Pref's retention; does not select a provider.
+   * Session mode requires the final entry to supply an isolated RAM backend. */
+  h2_alipay_storage_scope_t storage_scope;
 } h2_alipay_sdk_config_t;
 
 /** Platform-independent original-SDK bridge. The supplied PAL APIs and
@@ -66,19 +71,23 @@ typedef struct h2_alipay_sdk_config {
  * offered after SDK registration because this delivery cannot unregister.
  * Configure the process singleton once before any SDK operation; copies
  * config, borrows all pointers until reset. Duplicate configure is rejected.
- * The SDK's PSA callbacks use persistent Pref or the explicit override.
+ * The SDK's PSA callbacks use the injected Pref or the explicit override.
  * Binding-code requests follow the original SDK without a local readiness gate.
  * query_binding_result and binding_snapshot require default Pref storage
  * (secure == NULL). They expose only material lengths and status, verify four
  * committed SDK records, and keep a matching completion record in that same
  * PSA namespace. Pending status is not success even when SDK rc is zero.
  * After SDK completion, repeating the query only retries local verification;
- * it never repeats queryBindInfo/finishBind. Raw keys and seed stay in KV.
- * A local bound flag without the matching completion record requires explicit
- * verification rather than an automatic reset or a new binding. */
+ * it never repeats queryBindInfo/finishBind. Raw keys and seed stay in the
+ * selected store. A local bound flag without the matching completion record
+ * requires explicit verification rather than an automatic reset or a new
+ * binding. */
 h2_pal_result_t h2_alipay_sdk_configure(const h2_alipay_sdk_config_t* config);
 /** NULL until configured; never identifies a synthetic SDK as vendor. */
 const h2_alipay_api_t* h2_alipay_sdk_api(void);
+
+/** Original SDK payment operations; configure and pre_init first. */
+const h2_alipay_payment_api_t* h2_alipay_sdk_payment_api(void);
 
 #ifdef __cplusplus
 }

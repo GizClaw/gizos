@@ -2,6 +2,7 @@
 #define H2_ALIPAY_E2E_H
 
 #include "h2_alipay.h"
+#include "h2_alipay_payment.h"
 #include "h2_runtime.h"
 #include <limits.h>
 
@@ -37,6 +38,13 @@ typedef struct h2_alipay_e2e_result {
   int display_rc;
 } h2_alipay_e2e_result_t;
 
+typedef struct h2_alipay_payment_buttons {
+  h2_runtime_component_id_t previous;
+  h2_runtime_component_id_t next;
+  h2_runtime_component_id_t activate;
+  h2_runtime_component_id_t back;
+} h2_alipay_payment_buttons_t;
+
 typedef struct h2_alipay_e2e_config {
   /** Borrowed until run returns, including the SDK's boot lifetime contract. */
   const h2_alipay_api_t* alipay;
@@ -70,13 +78,25 @@ typedef struct h2_alipay_e2e_config {
   void (*binding_progress)(h2_runtime_t* runtime, void* user,
                            const h2_alipay_e2e_result_t* result);
   /** UI-thread result callback, only after the worker joins and the final
-   * page is flushed. Called again every 10 seconds with replay=true.
+   * page is flushed. Binding-only fixtures replay every 10 seconds; a payment
+   * fixture reports binding once before transferring control to its menu.
    * May read the quiescent SDK trace; must not call the SDK or LVGL. */
   void (*report)(h2_runtime_t* runtime, void* user,
                  const h2_alipay_e2e_result_t* result, bool replay);
   /** Optional UI-thread exit request. An in-flight worker is joined before
    * return, so this cannot cancel a blocking SDK call. NULL keeps the page. */
   bool (*should_exit)(void* user);
+  /** Optional payment menu after verified binding. NULL retains the binding
+   * qualification fixture. Hardware acquisition remains Runtime-owned. */
+  const h2_alipay_payment_api_t* payment;
+  h2_runtime_component_id_t payment_nfc_component_id;
+  /** Optional one-time UI-thread notification after the initial payment menu
+   * has completed display verification. No Alipay SDK operation is allowed. */
+  h2_pal_result_t (*payment_ready)(h2_runtime_t* runtime, void* user);
+  /** Optional Runtime Button inputs, handled on release. Supply all four
+   * distinct mapped Button component ids, or leave all zero for touch only.
+   * Touch may be unsupported when these inputs are configured. */
+  h2_alipay_payment_buttons_t payment_buttons;
 } h2_alipay_e2e_config_t;
 
 /** Synchronous worker operation. Caller owns result; configuration and

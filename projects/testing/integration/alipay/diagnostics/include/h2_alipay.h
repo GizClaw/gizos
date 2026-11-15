@@ -30,6 +30,13 @@ typedef enum h2_alipay_source {
   H2_ALIPAY_SOURCE_INDEPENDENT = 2,
 } h2_alipay_source_t;
 
+/** Retention selected by final-entry storage assembly. Session mode verifies
+ * writes/readback only within this boot; it never establishes durability. */
+typedef enum h2_alipay_storage_scope {
+  H2_ALIPAY_STORAGE_PERSISTENT = 0,
+  H2_ALIPAY_STORAGE_SESSION = 1,
+} h2_alipay_storage_scope_t;
+
 typedef enum h2_alipay_blocker {
   H2_ALIPAY_BLOCKER_NONE = 0,
   H2_ALIPAY_BLOCKER_SECURITY_SCHEME,
@@ -53,12 +60,12 @@ typedef enum h2_alipay_binding_state {
 } h2_alipay_binding_state_t;
 
 /** Caller-owned, non-secret binding diagnostics. COMPLETE requires the SDK
- * completion result and durable readback of TID, UID, shared key and seed,
- * plus a completion record matching those values. Lengths exclude any NUL.
- * No account identifiers, key bytes or seed bytes are returned.
- * sdk_rc and sdk_status preserve vendor results; storage_rc is a PAL result.
- * For a successful local snapshot, sdk_status maps the SDK's local boolean
- * to bound/unbound and sdk_rc is zero; no server response was obtained.
+ * completion result and readback of TID, UID, shared key and seed in the API's
+ * selected storage scope, plus a completion record matching those values.
+ * Lengths exclude any NUL. No account identifiers, key bytes or seed bytes are
+ * returned. sdk_rc and sdk_status preserve vendor results; storage_rc is a PAL
+ * result. For a successful local snapshot, sdk_status maps the SDK's local
+ * boolean to bound/unbound and sdk_rc is zero; no server response was obtained.
  */
 typedef struct h2_alipay_binding_result {
   h2_alipay_binding_state_t state;
@@ -85,10 +92,10 @@ typedef struct h2_alipay_binding_result {
  * get_binding_code clears output. Optional query_binding_result performs one
  * binding-result query, including the vendor's finishBind path. It requires a
  * successful code request in this boot and never runs an automatic retry.
- * binding_snapshot checks only local durable state; it makes no RPC.
- * Missing optional operations are unsupported. The adapter never calls
- * standalone unbind/reset APIs; the vendor may perform its own failed-binding
- * cleanup. Output buffers belong to the caller.
+ * binding_snapshot checks only local state in the selected storage scope; it
+ * makes no RPC. Missing optional operations are unsupported. The adapter never
+ * calls standalone unbind/reset APIs; the vendor may perform its own
+ * failed-binding cleanup. Output buffers belong to the caller.
  */
 typedef struct h2_alipay_vtable {
   h2_pal_result_t (*pre_init)(void* user, int* sdk_rc, bool* first_attempt);
@@ -111,6 +118,7 @@ typedef struct h2_alipay_api {
   /** Bounded trace; only read/reset after all SDK callers join. */
   h2_alipay_trace_t* trace;
   const char* sdk_manifest_sha256;
+  h2_alipay_storage_scope_t storage_scope;
 } h2_alipay_api_t;
 
 #ifdef __cplusplus

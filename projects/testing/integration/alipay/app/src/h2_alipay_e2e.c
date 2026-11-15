@@ -1,4 +1,5 @@
 #include "h2_alipay_e2e.h"
+#include "h2_alipay_payment_page.h"
 #include "h2_atomic.h"
 #include "h2_lvgl_platform.h"
 #include "h2_qrcode.h"
@@ -23,6 +24,7 @@ typedef struct alipay_page {
   size_t stride;
   uint32_t flushes;
   int display_rc;
+  bool payment_notified;
 } alipay_page_t;
 
 static bool canceled(void* user) {
@@ -202,6 +204,22 @@ static void present_result(alipay_page_t* page, int width, int height) {
   page->result.code_presented = page->result.qr_visible;
 }
 
+static int payment_presented(void* user) {
+  alipay_page_t* page = user;
+  int rc = page->display_rc;
+  if (rc == 0 && page->config->observe != NULL)
+    rc = page->config->observe(
+        page->config->user, page->pixels, page->stride,
+        (int)lv_display_get_horizontal_resolution(page->display),
+        (int)lv_display_get_vertical_resolution(page->display));
+  if (rc == 0 && !page->payment_notified &&
+      page->config->payment_ready != NULL) {
+    rc = page->config->payment_ready(page->runtime, page->config->user);
+    if (rc == 0) page->payment_notified = true;
+  }
+  return rc;
+}
+
 h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
                                   const h2_alipay_e2e_config_t* config) {
   if (runtime == NULL || config == NULL || config->prepare == NULL ||
@@ -249,7 +267,11 @@ h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
   lv_obj_set_style_bg_color(screen, lv_color_hex(0xffffff), 0);
   lv_obj_set_style_text_color(screen, lv_color_hex(0x111111), 0);
   lv_obj_set_style_text_font(screen, &lv_font_montserrat_14, 0);
-  lv_obj_t* title = label("Alipay E2E", 8, 6, info.width - 16);
+  lv_obj_t* title =
+      label(config->alipay->storage_scope == H2_ALIPAY_STORAGE_SESSION
+                ? "Alipay E2E / session"
+                : "Alipay E2E / persistent",
+            8, 6, info.width - 16);
   page.status =
       label("Connecting network / initializing...", 16, 44, info.width - 32);
   page.detail = label("Waiting for real SDK result", 16, 76, info.width - 32);
@@ -322,7 +344,9 @@ h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
         page.status,
         page.result.result == H2_PAL_OK &&
                 page.result.binding.state == H2_ALIPAY_BINDING_COMPLETE
-            ? "Bound / credentials verified in KV"
+            ? (config->alipay->storage_scope == H2_ALIPAY_STORAGE_SESSION
+                   ? "Bound / session readback OK"
+                   : "Bound / credentials verified in KV")
             : "Binding incomplete / see diagnostic status");
     char text[160];
     (void)snprintf(
@@ -344,6 +368,13 @@ h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
   (void)h2_pal_time_get_monotonic_ms(runtime->time, &reported);
   if (config->report != NULL)
     config->report(runtime, config->user, &page.result, false);
+  if (config->payment != NULL && page.result.result == H2_PAL_OK &&
+      page.result.binding.state == H2_ALIPAY_BINDING_COMPLETE &&
+      page.result.display_rc == H2_PAL_OK) {
+    rc = h2_alipay_payment_page_run(runtime, config, page.display, info.width,
+                                    info.height, payment_presented, &page);
+    goto done;
+  }
   while (config->should_exit == NULL || !config->should_exit(config->user)) {
     rc = drain(runtime);
     if (rc != H2_PAL_OK) break;

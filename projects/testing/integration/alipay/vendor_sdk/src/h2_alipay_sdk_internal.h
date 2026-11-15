@@ -7,4 +7,6 @@ void h2_alipay_sdk_trace(const char* operation, const char* boundary,
                          uint64_t started_ms, const char* detail,
                          const void* bytes, size_t length);
 uint64_t h2_alipay_sdk_now(void);
+int h2_alipay_sdk_call_lock(void);
+int h2_alipay_sdk_call_unlock(int result);
 #endif

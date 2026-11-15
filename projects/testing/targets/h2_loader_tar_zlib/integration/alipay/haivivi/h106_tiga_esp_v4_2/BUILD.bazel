@@ -75,6 +75,7 @@ _FIRMWARE_LIB_DEPS = [
     "//libs/sync/atomic",
     "//libs/ui/lvgl",
     "//pal:unsupported",
+    "//pal/providers/backends/memory:memory_pref",
     "//pal/providers/backends/corehttp",
     "//pal/providers/devices/modem/quectel:quectel_modem",
     "//projects/testing/integration/alipay/app:alipay_e2e",
@@ -104,7 +105,7 @@ firmware_lib_component(
     native_srcs = ["//projects/h2loader/libs/device_service:firmware_sources"],
     deps = _FIRMWARE_LIB_DEPS + [
         "//projects/testing/integration/alipay/vendor_sdk:alipay_sdk",
-        "//projects/testing/integration/alipay/vendor_sdk:bind_net_sdk",
+        "//projects/testing/integration/alipay/vendor_sdk:payment_sdk",
     ],
 )
 
@@ -113,6 +114,7 @@ filegroup(
     srcs = [
         "main/h2_alipay_tiga_gateway.c",
         "main/h2_alipay_tiga_identity.c",
+        "main/h2_alipay_tiga_storage.c",
         "main/main.c",
     ],
 )
@@ -133,6 +135,7 @@ _MAIN_HEADERS = [
     "main/h2_alipay_tiga_identity.h",
     "main/h2_alipay_tiga_protocol.h",
     "main/h2_alipay_tiga_sdk.h",
+    "main/h2_alipay_tiga_storage.h",
     "//projects/testing/libs/fixture-wifi:h2_e2e_fixture_wifi.h",
 ]
 
@@ -143,6 +146,7 @@ _MAIN_DATA = [
 ]
 
 _NATIVE_DEPS = [
+    "//pal/providers/backends/memory:memory_pref",
     "//boards/haivivi/h106_tiga_esp_v4_2/esp32s3",
     "//libs/runtime",
     "//libs/sync/atomic",
@@ -334,6 +338,8 @@ cc_test(
         "main/h2_alipay_tiga_identity.h",
         "main/h2_alipay_tiga_protocol.c",
         "main/h2_alipay_tiga_protocol.h",
+        "main/h2_alipay_tiga_storage.c",
+        "main/h2_alipay_tiga_storage.h",
         "tests/esp_mac.h",
         "tests/test_protocol_adapter.c",
     ],
@@ -349,6 +355,7 @@ cc_test(
     deps = [
         "//libs/runtime",
         "//libs/testing:testing_pal",
+        "//pal/providers/backends/memory:memory_pref",
         "//projects/testing/integration/alipay/diagnostics",
         "//projects/testing/integration/alipay/independent",
     ],
@@ -362,6 +369,8 @@ cc_test(
         "main/h2_alipay_tiga_protocol.h",
         "main/h2_alipay_tiga_sdk.c",
         "main/h2_alipay_tiga_sdk.h",
+        "main/h2_alipay_tiga_storage.c",
+        "main/h2_alipay_tiga_storage.h",
         "main/tiga_config.c",
         "tests/h2_esp_alipay.h",
         "tests/h2_esp_board.h",
@@ -377,7 +386,82 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         "//libs/runtime",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/memory:memory_pref",
         "//projects/testing/integration/alipay/vendor_sdk:alipay_sdk",
         "@alipay_sdk//:headers",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware_sdk_persistent",
+    srcs = ["CMakeLists.txt"],
+    board = "tiga_esp_v4_2",
+    cmake_definitions = {
+        "H2_E2E_WIFI_SSID": "HAIVIVI-MFG",
+        "H2_E2E_WIFI_PASSWORD": "!haivivi",
+        "H2_ALIPAY_E2E_PERSISTENT_STORAGE": "ON",
+    },
+    graph = [":launcher_sdk"],
+    layout_files = {
+        "partition": "//boards/haivivi/h106_tiga_esp_v4_2/esp32s3/layouts/h2loader:partition.csv",
+        "project_support_files": ["//boards/haivivi/h106_tiga_esp_v4_2/esp32s3/layouts/e2e:sdkconfig.h2loader.defaults"],
+    },
+    project = "CMakeLists.txt",
+    project_name = "h2_alipay_e2e",
+    target = "esp32s3",
+    task_policy = ":task_policy_sdk",
+    version = ":version",
+)
+
+h2loader_tar_zlib(
+    name = "package_sdk_persistent",
+    board = "tiga_esp_v4_2",
+    firmware = ":firmware_sdk_persistent",
+    image = "alipay-e2e-sdk-persistent",
+    role = "app",
+    target = "esp32s3",
+)
+
+cc_test(
+    name = "session_storage_test",
+    srcs = [
+        "main/h2_alipay_tiga_identity.c",
+        "main/h2_alipay_tiga_identity.h",
+        "main/h2_alipay_tiga_storage.c",
+        "main/h2_alipay_tiga_storage.h",
+        "tests/test_session_storage.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["main"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/runtime",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/memory:memory_pref",
+        "//projects/testing/integration/alipay/diagnostics",
+    ],
+)
+
+cc_test(
+    name = "persistent_storage_test",
+    srcs = [
+        "main/h2_alipay_tiga_identity.c",
+        "main/h2_alipay_tiga_identity.h",
+        "main/h2_alipay_tiga_storage.c",
+        "main/h2_alipay_tiga_storage.h",
+        "tests/test_session_storage.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    defines = ["H2_ALIPAY_E2E_PERSISTENT_STORAGE=1"],
+    includes = ["main"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/runtime",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/memory:memory_pref",
+        "//projects/testing/integration/alipay/diagnostics",
     ],
 )

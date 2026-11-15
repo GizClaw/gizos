@@ -3,6 +3,7 @@
 #include "h2_pal_unsupported.h"
 
 #include <limits.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include <wolfssl/wolfcrypt/aes.h>
@@ -509,6 +510,43 @@ static h2_pal_result_t h2_wolfcrypt_aes_ctr_xor(
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_wolfcrypt_aes_cbc(
+    void* user, h2_pal_crypto_cipher_direction_t direction, const uint8_t* key,
+    size_t key_len, const uint8_t iv[16], const uint8_t* input,
+    size_t input_len, h2_pal_crypto_buf_t* out) {
+  (void)user;
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  out->len = 0u;
+  if (key == NULL || iv == NULL ||
+      (key_len != 16u && key_len != 24u && key_len != 32u) ||
+      (direction != H2_PAL_CRYPTO_CIPHER_ENCRYPT &&
+       direction != H2_PAL_CRYPTO_CIPHER_DECRYPT) ||
+      (input == NULL && input_len != 0u) || input_len % 16u != 0u ||
+      input_len > UINT32_MAX || (out->data == NULL && out->cap != 0u) ||
+      h2_wolfcrypt_nonexact_overlap(input, input_len, out->data, input_len))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (out->cap < input_len) return H2_PAL_ERR_NO_SPACE;
+  if (input_len == 0u) return H2_PAL_OK;
+  Aes aes;
+  int rc = wc_AesInit(&aes, NULL, INVALID_DEVID);
+  if (rc != 0) return H2_PAL_ERR_IO;
+  rc = wc_AesSetKey(&aes, key, (word32)key_len, iv,
+                    direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT ? AES_ENCRYPTION
+                                                              : AES_DECRYPTION);
+  if (rc == 0)
+    rc = direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT
+             ? wc_AesCbcEncrypt(&aes, out->data, input, (word32)input_len)
+             : wc_AesCbcDecrypt(&aes, out->data, input, (word32)input_len);
+  wc_AesFree(&aes);
+  h2_wolfcrypt_secure_zero(&aes, sizeof(aes));
+  if (rc != 0) {
+    h2_wolfcrypt_secure_zero(out->data, input_len);
+    return H2_PAL_ERR_IO;
+  }
+  out->len = input_len;
+  return H2_PAL_OK;
+}
+
 static h2_pal_result_t h2_wolfcrypt_md5(
     void* user, const uint8_t* input, size_t input_len,
     uint8_t out_digest[H2_PAL_CRYPTO_MD5_SIZE]) {
@@ -747,6 +785,44 @@ static h2_pal_result_t h2_wolfcrypt_p256_public_key_uncompress(
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_wolfcrypt_p256_shared_secret(
+    void* user, const h2_pal_p256_private_key_t* private_key,
+    const h2_pal_p256_public_key_t* public_key, uint8_t out[32]) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, 32u);
+  if (private_key == NULL || public_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_p256_private_key_valid(private_key)) return H2_PAL_ERR_FORMAT;
+  int rc = h2_wolfcrypt_p256_public_key_validate(user, public_key);
+  if (rc != H2_PAL_OK) return rc;
+  ecc_key local, remote;
+  if (wc_ecc_init(&local) != 0) return H2_PAL_ERR_IO;
+  if (wc_ecc_init(&remote) != 0) {
+    wc_ecc_free(&local);
+    return H2_PAL_ERR_IO;
+  }
+  WC_RNG rng;
+  int wolf_rc = wc_InitRng(&rng);
+  bool rng_ready = wolf_rc == 0;
+  if (wolf_rc == 0)
+    wolf_rc = wc_ecc_import_private_key_ex(private_key->bytes, 32u, NULL, 0u,
+                                           &local, ECC_SECP256R1);
+  if (wolf_rc == 0) wolf_rc = wc_ecc_set_rng(&local, &rng);
+  if (wolf_rc == 0)
+    wolf_rc =
+        wc_ecc_import_x963_ex(public_key->bytes, 33u, &remote, ECC_SECP256R1);
+  word32 length = 32u;
+  if (wolf_rc == 0)
+    wolf_rc = wc_ecc_shared_secret(&local, &remote, out, &length);
+  wc_ecc_free(&remote);
+  wc_ecc_free(&local);
+  if (rng_ready) (void)wc_FreeRng(&rng);
+  if (wolf_rc != 0 || length != 32u) {
+    h2_wolfcrypt_secure_zero(out, 32u);
+    return H2_PAL_ERR_IO;
+  }
+  return H2_PAL_OK;
+}
+
 static int h2_wolfcrypt_sha256(const uint8_t* message, size_t message_len,
                                uint8_t hash[H2_WOLFCRYPT_SHA256_SIZE]) {
   wc_Sha256 sha;
@@ -941,6 +1017,8 @@ static const h2_pal_crypto_vtable_t h2_wolfcrypt_vtable = {
     .ecdsa_p256_sha256_sign = h2_wolfcrypt_p256_sign,
     .ecdsa_p256_sha256_verify = h2_wolfcrypt_p256_verify,
     .p256_public_key_uncompress = h2_wolfcrypt_p256_public_key_uncompress,
+    .p256_shared_secret = h2_wolfcrypt_p256_shared_secret,
+    .aes_cbc = h2_wolfcrypt_aes_cbc,
 };
 
 static const h2_pal_crypto_api_t h2_wolfcrypt_api = {

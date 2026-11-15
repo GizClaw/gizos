@@ -54,7 +54,6 @@
 #define NO_ECC224
 #define NO_ECC384
 #define NO_ECC521
-#define NO_ECC_DHE
 #define NO_ECC_CDH
 
 #define WOLFSSL_SP_MATH
