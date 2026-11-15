@@ -9,7 +9,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
+from tools.bazel.native.bk7258 import bk7258_runner as runner
 
 
 ROOT = Path(__file__).resolve().parents[5]
@@ -740,6 +742,32 @@ class Bk7258RunnerTest(unittest.TestCase):
                     environment_updates={name: None},
                 )
                 self.assertIn("locator is not configured", result.stderr)
+
+    def test_arm64_environment_uses_sdk_translation_contract(self):
+        userspace = self.root / "x86-64"
+        userspace.mkdir()
+        locators = {}
+        for kind, paths, metadata in (
+            ("bk7258-sdk", {"root": str(self.sdk)}, {"x86_64_runtime": {
+                "kind": "qemu-binfmt-v1", "ld_prefix": str(userspace),
+            }}),
+            ("bk-arm-toolchain", {"bin": str(self.toolchain)}, {}),
+        ):
+            path = self.root / f"{kind}.json"
+            path.write_text(json.dumps({
+                "schema": "h2.native-locator.v1", "kind": kind, "enabled": True,
+                "paths": paths, "metadata": metadata,
+            }), encoding="utf-8")
+            locators[kind] = str(path)
+        arguments = mock.Mock(sdk_locator=locators["bk7258-sdk"],
+                              toolchain_locator=locators["bk-arm-toolchain"])
+        with mock.patch("platform.system", return_value="Linux"), \
+                mock.patch("platform.machine", return_value="aarch64"), \
+                mock.patch.dict(os.environ, {"QEMU_LD_PREFIX": "/caller-only"}):
+            environment = runner.require_environment(arguments)
+        self.assertEqual(environment["QEMU_LD_PREFIX"], str(userspace.resolve()))
+        self.assertEqual(environment["COMPILER_TOOLCHAIN_PATH"], str(self.toolchain.resolve()))
+        self.assertNotIn("GIZMOTH_X86_64_TRANSLATION", environment)
 
     def test_ambient_native_build_jobs_do_not_change_fixed_parallelism(self):
         for value in ("0", "invalid"):

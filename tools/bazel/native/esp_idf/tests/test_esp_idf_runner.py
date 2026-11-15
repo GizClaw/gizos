@@ -827,6 +827,23 @@ class EspIdfRunnerTest(unittest.TestCase):
         result, _ = self._run()
         self.assertIn("expected exactly one xtensa-esp-elf-gcc", result.stderr)
 
+    def test_locator_ninja_wins_over_older_system_ninja(self):
+        managed = self.root / "managed-ninja" / "ninja"
+        managed.parent.mkdir()
+        shutil.copy2(self.tool_bin / "ninja", managed)
+        self.tool_bin.joinpath("ninja").write_text(
+            "#!/bin/sh\necho 1.11.1\n", encoding="utf-8"
+        )
+        result, output = self._run(selected_tools={"ninja": str(managed)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(output.joinpath("app.bin").is_file())
+
+    def test_missing_locator_ninja_does_not_fall_back(self):
+        result, _ = self._run(selected_tools={"ninja": str(self.root / "missing-ninja")})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Ninja", result.stderr)
+        self.assertIn("missing-ninja", result.stderr)
+
     def test_ninja_missing_fails_closed(self):
         self.tool_bin.joinpath("ninja").unlink()
         result, _ = self._run(tool_versions=(

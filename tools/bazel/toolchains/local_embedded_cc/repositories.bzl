@@ -1,5 +1,7 @@
 """Embedded C/C++ toolchains materialized from native dependency repositories."""
 
+load("//tools/bazel/native:host_execution.bzl", "X86_64_RUNTIME_ENVIRON", "linux_x86_64_runtime", "x86_64_runtime_environment")
+
 _TOOLS = ["ar", "as", "cpp", "gcc", "gcov", "ld", "nm", "objcopy", "objdump", "strip"]
 
 def _contract(repository_ctx):
@@ -19,11 +21,14 @@ def _exec_host(repository_ctx):
         return "macos_x86_64"
     if name == "linux" and arch in ("amd64", "x86_64"):
         return "linux_x86_64"
+    if name == "linux" and arch in ("aarch64", "arm64"):
+        return "linux_arm64"
     fail("unsupported local embedded toolchain execution platform: %s/%s" % (name, arch))
 
 def _exec_constraints(repository_ctx):
     return {
         "linux_x86_64": ["@platforms//cpu:x86_64", "@platforms//os:linux"],
+        "linux_arm64": ["@platforms//cpu:arm64", "@platforms//os:linux"],
         "macos_arm64": ["@platforms//cpu:arm64", "@platforms//os:macos"],
         "macos_x86_64": ["@platforms//cpu:x86_64", "@platforms//os:macos"],
     }[_exec_host(repository_ctx)]
@@ -83,8 +88,8 @@ def _mirror_tree(repository_ctx, source_root, destination_root):
         if source.startswith(prefix):
             repository_ctx.symlink(source, destination_root + "/" + source[len(prefix):])
 
-def _builtin_includes(repository_ctx, compiler, language, compile_flags):
-    result = repository_ctx.execute([compiler, "-E", "-x", language, "/dev/null", "-v"] + compile_flags)
+def _builtin_includes(repository_ctx, compiler, language, compile_flags, environment):
+    result = repository_ctx.execute([compiler, "-E", "-x", language, "/dev/null", "-v"] + compile_flags, environment = environment)
     if result.return_code:
         fail("failed to inspect %s %s compiler includes:\n%s" % (repository_ctx.attr.name, language, result.stderr))
     directories = []
@@ -125,14 +130,20 @@ def _mirrored_include(roots, directory):
             return "inputs/compiler/include/%d/%s" % (index, directory[len(root) + 1:])
     fail("include directory %s is outside every mirrored root" % directory)
 
-def _wrapper(repository_ctx, executable):
+def _wrapper(repository_ctx, executable, environment):
+    exports = "\n".join([
+        "export %s='%s'" % (name, value.replace("'", "'\"'\"'"))
+        for name, value in environment.items()
+    ])
     return """#!/bin/sh
 set -eu
+%s
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 selected="${root}/inputs/toolchain/bin/%s"
 [ -x "${selected}" ] || { echo "error: missing tool: ${selected}" >&2; exit 1; }
 exec "${selected}" "$@"
 """ % (
+        exports,
         executable,
     )
 
@@ -163,12 +174,21 @@ def _repository_impl(repository_ctx):
         # incompatible toolchain instead of failing repository evaluation.
         _unavailable(repository_ctx)
         return
+    environment = {}
+    if _exec_host(repository_ctx) == "linux_arm64" and "linux_x86_64" in repository_ctx.attr.exec_hosts:
+        environment = x86_64_runtime_environment(linux_x86_64_runtime(repository_ctx))
     tool_names = _tool_names(repository_ctx)
     compiler = bin_dir.get_child(tool_names["gcc"])
-    version = repository_ctx.execute([compiler, "--version"], quiet = True)
+    version = repository_ctx.execute([compiler, "--version"], environment = environment, quiet = True)
     actual_version = version.stdout.splitlines()[0] if version.stdout else ""
     expected_version = _contract(repository_ctx).get(repository_ctx.attr.version_key)
-    if version.return_code or actual_version != expected_version:
+    if version.return_code:
+        fail("cannot execute %s compiler on %s: %s" % (
+            repository_ctx.attr.name,
+            _exec_host(repository_ctx),
+            version.stderr.strip(),
+        ))
+    if actual_version != expected_version:
         fail("%s compiler version mismatch: expected %r, got %r" % (
             repository_ctx.attr.name,
             expected_version,
@@ -184,8 +204,8 @@ def _repository_impl(repository_ctx):
     # Compile actions search only the mirrored copies of these directories,
     # through execroot-relative paths, so dependency files and cache entries
     # never name the output base that holds the downloaded compiler.
-    c_includes = _builtin_includes(repository_ctx, compiler, "c", probe_flags)
-    cxx_includes = _builtin_includes(repository_ctx, compiler, "c++", probe_flags)
+    c_includes = _builtin_includes(repository_ctx, compiler, "c", probe_flags, environment)
+    cxx_includes = _builtin_includes(repository_ctx, compiler, "c++", probe_flags, environment)
     include_roots = _include_roots(c_includes + cxx_includes)
     c_include_directories = [_mirrored_include(include_roots, directory) for directory in c_includes]
     cxx_include_directories = [_mirrored_include(include_roots, directory) for directory in cxx_includes]
@@ -214,7 +234,7 @@ def _repository_impl(repository_ctx):
         if executable not in mirrored:
             _mirror_file(repository_ctx, bin_dir.get_child(executable), "inputs/toolchain/bin/" + executable)
             mirrored[executable] = True
-        repository_ctx.file("bin/" + name, _wrapper(repository_ctx, executable), executable = True)
+        repository_ctx.file("bin/" + name, _wrapper(repository_ctx, executable, environment), executable = True)
     repository_ctx.template(
         "BUILD.bazel",
         repository_ctx.attr.build_file,
@@ -269,6 +289,7 @@ local_embedded_cc_repository = repository_rule(
         "version_key": attr.string(mandatory = True),
         "versions_file": attr.label(allow_single_file = True, mandatory = True),
     },
+    environ = X86_64_RUNTIME_ENVIRON,
 )
 
 def _extension_impl(_module_ctx):
@@ -405,7 +426,7 @@ def _extension_impl(_module_ctx):
             "-Wno-shift-negative-value",
         ],
         compiler_kind = "clang",
-        exec_hosts = ["linux_x86_64"],
+        exec_hosts = ["linux_x86_64", "linux_arm64"],
         layout = "bin_dir",
         locator = "@h2_jieli_toolchain//:locator.json",
         locator_path = "pi32v2_bin",
@@ -451,7 +472,7 @@ def _extension_impl(_module_ctx):
             "-Wno-shift-negative-value",
         ],
         compiler_kind = "clang",
-        exec_hosts = ["linux_x86_64"],
+        exec_hosts = ["linux_x86_64", "linux_arm64"],
         layout = "bin_dir",
         locator = "@h2_jieli_toolchain//:locator.json",
         locator_path = "pi32v2_bin",

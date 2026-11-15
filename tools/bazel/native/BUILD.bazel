@@ -69,6 +69,7 @@ py_test(
 
 exports_files([
     "firmware_archive_abi.py",
+    "host_execution.bzl",
     "native_ccache.py",
     "native_component.cmake",
     "native_runtime.py",

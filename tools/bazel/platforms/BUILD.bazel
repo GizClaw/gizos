@@ -276,6 +276,15 @@ config_setting(
 )
 
 config_setting(
+    name = "host_linux_target_linux_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    define_values = {"h2_host_os": "linux"},
+)
+
+config_setting(
     name = "host_macos_target_macos",
     constraint_values = ["@platforms//os:macos"],
     define_values = {"h2_host_os": "macos"},

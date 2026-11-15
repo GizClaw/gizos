@@ -1,5 +1,7 @@
 """Versioned locators for the BK7258 SDK and shared Arm toolchain."""
 
+load("//tools/bazel/native:host_execution.bzl", "X86_64_RUNTIME_ENVIRON", "linux_x86_64_runtime")
+
 _LOCATOR_SCHEMA = "h2.native-locator.v1"
 
 def _write_locator(repository_ctx, kind, enabled, paths = {}, metadata = {}):
@@ -127,7 +129,11 @@ def _local_sdk_repository_impl(repository_ctx):
             "checkout": str(actual_root.realpath),
             "root": str(root.realpath),
         },
-        metadata = {"commit": expected},
+        metadata = {
+            "commit": expected,
+            # The SDK still contains x86-64 packers even with native Arm GCC.
+            "x86_64_runtime": linux_x86_64_runtime(repository_ctx),
+        },
     )
 
 _local_sdk_repository = repository_rule(
@@ -138,7 +144,7 @@ _local_sdk_repository = repository_rule(
         "kind": attr.string(mandatory = True),
         "required_files": attr.string_list(),
     },
-    environ = ["BK7258_PATH"],
+    environ = ["BK7258_PATH"] + X86_64_RUNTIME_ENVIRON,
 )
 
 def _archive_contract(repository_ctx):
@@ -164,6 +170,8 @@ def _arm_host(repository_ctx):
     arch = repository_ctx.os.arch.lower()
     if name == "linux" and arch in ("amd64", "x86_64"):
         return "linux_x86_64"
+    if name == "linux" and arch in ("aarch64", "arm64"):
+        return "linux_arm64"
     if name in ("mac os x", "macos") and arch in ("amd64", "x86_64"):
         return "macos_x86_64"
     if name in ("mac os x", "macos") and arch in ("aarch64", "arm64"):

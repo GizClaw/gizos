@@ -29,6 +29,7 @@ from tools.bazel.native.native_runtime import (  # noqa: E402
     NativeRuntimeError,
     fixed_environment,
     locator_path,
+    linux_x86_64_environment,
     read_locator,
     read_expected_commit as _read_expected_commit,
 )
@@ -100,6 +101,7 @@ def required_environment(arguments: argparse.Namespace) -> dict[str, str]:
     toolchain_bin = locator_path(toolchain_locator, "pi32v2_bin", "jieli-toolchain")
     postbuild = locator_path(postbuild_locator, "root", "jieli-postbuild")
     environment = fixed_environment([toolchain_bin])
+    environment.update(linux_x86_64_environment(toolchain_locator, postbuild_locator))
     environment.update(
         {
             "H2_NATIVE_BUILD_JOBS": "4",
@@ -176,21 +178,20 @@ def validate_toolchain(environment: dict[str, str]) -> Path:
     return toolchain_bin
 
 
-def require_supported_host() -> None:
-    """Fail closed before touching the SDK when the host cannot run the tools.
-
-    JieLi only publishes x86_64 Linux builds of clang, lto-wrapper and the Qt
-    post-build programs; Bazel compatibility already skips other hosts, and
-    this check keeps a direct runner invocation equally explicit.
-    """
+def require_supported_host(environment: dict[str, str] | None = None) -> None:
+    """Require Linux x86-64 or the locator-validated ARM64 translation runtime."""
     system = platform.system()
     machine = platform.machine().lower()
-    if system != "Linux" or machine not in ("x86_64", "amd64"):
-        raise RunnerError(
-            "UNSUPPORTED: the JieLi toolchain ships Linux x86_64 binaries only; "
-            f"host is {system} {machine}. Run the build on a Linux x86_64 host or "
-            "inside the Linux dev container."
-        )
+    if system == "Linux":
+        if machine in ("x86_64", "amd64"):
+            return
+        if machine in ("aarch64", "arm64") and environment and environment.get("QEMU_LD_PREFIX"):
+            return
+    raise RunnerError(
+        "UNSUPPORTED: the JieLi toolchain ships Linux x86_64 binaries only; "
+        f"host is {system} {machine}. Linux ARM64 requires the managed "
+        "qemu-binfmt-v1 locator contract."
+    )
 
 
 def raise_open_file_limit() -> None:
@@ -433,11 +434,11 @@ def build(arguments: argparse.Namespace) -> None:
     for patch in sdk_patches:
         if not patch.is_file() or patch.suffix != ".patch":
             raise RunnerError(f"JieLi SDK patch is invalid: {patch}")
-    require_supported_host()
     try:
         environment = required_environment(arguments)
     except NativeRuntimeError as error:
         raise RunnerError(str(error)) from error
+    require_supported_host(environment)
     post_script = Path(arguments.post_script)
     if not post_script.is_absolute():
         post_script = source_root / post_script

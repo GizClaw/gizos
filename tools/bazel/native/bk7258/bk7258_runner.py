@@ -25,6 +25,7 @@ from tools.bazel.native.native_runtime import (
     find_external_repository_source_root,
     fixed_environment,
     locator_path,
+    linux_x86_64_environment,
     read_locator,
     read_expected_commit as _read_expected_commit,
     resolve_component_includes as _resolve_component_includes,
@@ -64,6 +65,7 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
     sdk = locator_path(sdk_locator, "root", "bk7258-sdk")
     toolchain = locator_path(toolchain_locator, "bin", "bk-arm-toolchain")
     environment = fixed_environment([toolchain])
+    environment.update(linux_x86_64_environment(sdk_locator))
     environment.update({
         "BK7258_PATH": str(sdk),
         "COMPILER_TOOLCHAIN_PATH": str(toolchain),

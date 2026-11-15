@@ -2,6 +2,7 @@
 
 HOST_TOOL_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:host_linux_target_linux"): [],
+    Label("//tools/bazel/platforms:host_linux_target_linux_arm64"): [],
     Label("//tools/bazel/platforms:host_macos_target_macos"): [],
     Label("//tools/bazel/platforms:host_windows_target_windows"): [],
     "//conditions:default": ["@platforms//:incompatible"],
@@ -9,6 +10,7 @@ HOST_TOOL_COMPATIBILITY = select({
 
 POSIX_HOST_TOOL_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:host_linux_target_linux"): [],
+    Label("//tools/bazel/platforms:host_linux_target_linux_arm64"): [],
     Label("//tools/bazel/platforms:host_macos_target_macos"): [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
