@@ -188,10 +188,7 @@ managed_python_host(
 managed_python = use_extension("//tools/bazel/toolchains/python:extension.bzl", "managed_python")
 use_repo(managed_python, "gizos_managed_python_toolchains")
 
-register_toolchains(
-    "@gizos_managed_python_toolchains//:all",
-    dev_dependency = True,
-)
+register_toolchains("@gizos_managed_python_toolchains//:all")
 
 register_toolchains("@python_3_11//:all")
 

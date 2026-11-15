@@ -411,13 +411,15 @@ class Bk7258RunnerTest(unittest.TestCase):
         toolchain_bin = (environment_updates or {}).get(
             "COMPILER_TOOLCHAIN_PATH", str(self.toolchain)
         )
+        userspace = self.root / "x86-runtime"
+        userspace.mkdir(exist_ok=True)
         sdk_locator = self.root / f"{name}-bk7258-sdk-locator.json"
         sdk_locator.write_text(json.dumps({
             "schema": "h2.native-locator.v1",
             "kind": "bk7258-sdk",
             "enabled": bool(sdk_root),
             "paths": {"root": sdk_root} if sdk_root else {},
-            "metadata": {},
+            "metadata": {"x86_64_runtime": {"kind": "qemu-binfmt-v1", "ld_prefix": str(userspace)}},
         }), encoding="utf-8")
         toolchain_locator = self.root / f"{name}-toolchain-locator.json"
         toolchain_locator.write_text(json.dumps({

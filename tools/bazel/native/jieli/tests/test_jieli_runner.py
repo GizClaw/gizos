@@ -30,7 +30,8 @@ def write_executable(path: Path, body: str) -> Path:
     return path
 
 
-def write_locator(path: Path, kind: str, paths: dict[str, str], enabled: bool = True) -> Path:
+def write_locator(path: Path, kind: str, paths: dict[str, str], enabled: bool = True,
+                  metadata: dict[str, object] | None = None) -> Path:
     path.write_text(
         json.dumps(
             {
@@ -38,7 +39,8 @@ def write_locator(path: Path, kind: str, paths: dict[str, str], enabled: bool = 
                 "kind": kind,
                 "enabled": enabled,
                 "paths": paths,
-                "metadata": {"archive": f"{kind}.tar.xz", "tree_sha256": "0" * 64},
+                "metadata": {"archive": f"{kind}.tar.xz", "tree_sha256": "0" * 64,
+                             **(metadata or {})},
             }
         ),
         encoding="utf-8",
@@ -117,13 +119,18 @@ class JieliRunnerFixture:
             f"jieli-{self.family}-sdk",
             {"root": str(sdk_root), "checkout": str(self.checkout)},
         )
+        self.userspace = root / "x86-runtime"
+        self.userspace.mkdir()
+        runtime = {"x86_64_runtime": {"kind": "qemu-binfmt-v1", "ld_prefix": str(self.userspace)}}
         self.toolchain_locator = write_locator(
             root / "toolchain-locator.json",
             "jieli-toolchain",
             {"root": str(self.toolchain), "pi32v2_bin": str(self.toolchain_bin)},
+            metadata=runtime,
         )
         self.postbuild_locator = write_locator(
-            root / "postbuild-locator.json", "jieli-postbuild", {"root": str(self.postbuild)}
+            root / "postbuild-locator.json", "jieli-postbuild", {"root": str(self.postbuild)},
+            metadata=runtime,
         )
         self.outputs = root / "outputs"
 
