@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <string.h>
 
+static void wipe(void* data, size_t length) {
+  volatile uint8_t* bytes = data;
+  while (length-- != 0u) *bytes++ = 0u;
+}
+
 static int sdk_result(int result) {
   return result <= 0 ? result : H2_PAL_ERR_IO;
 }
@@ -70,6 +75,7 @@ int h2_alipay_storage_read(const h2_alipay_storage_t* storage, uint32_t index,
         memcpy(data, value, length);
     }
   }
+  if (value != NULL) wipe(value, length);
   h2_pal_mem_free(storage->mem, value);
   return rc;
 }
@@ -101,6 +107,7 @@ int h2_alipay_storage_exists(const h2_alipay_storage_t* storage,
   void* value = NULL;
   size_t size = 0;
   int rc = get(storage, index, &value, &size);
+  if (value != NULL) wipe(value, size);
   h2_pal_mem_free(storage->mem, value);
   return rc;
 }

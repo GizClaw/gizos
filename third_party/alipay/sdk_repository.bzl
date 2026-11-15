@@ -17,6 +17,8 @@ _MODULES = [
     "3rdparty/bitmap",
 ]
 
+_PAYMENT_MODULES = ["app/pay_code", "app/pay_result", "app/nfc_offline_pay", "app/scan_pay", "fwk/bs_crypt"]
+
 def _sdk_impl(ctx):
     root = ctx.os.environ.get("ALIPAY_SDK_PATH", "")
     manifest = json.decode(ctx.read(ctx.attr.manifest))
@@ -31,7 +33,7 @@ def _sdk_impl(ctx):
     if root:
         root = ctx.path(root)
         for path, digest in manifest.items():
-            source = root.get_child(path)
+            source = root.dirname.get_child(path) if path == "libblueshield_gcc16.a" else root.get_child(path)
             if not source.exists:
                 fail("Alipay SDK input missing: %s" % source)
             check = ctx.execute([digest_tool, "-a", "256", str(source)], quiet = True)
@@ -41,7 +43,7 @@ def _sdk_impl(ctx):
     lines = ['load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")', 'package(default_visibility = ["//visibility:public"])']
     deps = []
     archives = []
-    for module in _MODULES:
+    for module in _MODULES + _PAYMENT_MODULES:
         name = module.replace("/", "_")
         archive = [path for path in manifest if path.startswith(module + "/lib/")][0]
         archives.append(archive)
@@ -53,7 +55,13 @@ def _sdk_impl(ctx):
                 repr("echo 'Alipay SDK unavailable; set ALIPAY_SDK_PATH to the original output directory' >&2; exit 1"),
             ))
         lines.append('cc_import(name = "%s", static_library = "%s")' % (name, archive))
-        deps.append(":" + name)
+        if module in _MODULES:
+            deps.append(":" + name)
+    blue = "libblueshield_gcc16.a"
+    archives.append(blue)
+    if not root:
+        lines.append("genrule(name = \"missing_blueshield\", outs = [%s], cmd = \"echo Alipay_BlueShield_missing >&2; exit 1\")" % repr(blue))
+    lines.append('cc_import(name = "blueshield", static_library = "%s")' % blue)
     headers = [path for path in manifest if path.endswith(".h")] + ["h2_alipay_sdk_identity.h"]
     if not root:
         for path in headers:
@@ -63,6 +71,7 @@ def _sdk_impl(ctx):
     includes = sorted({path.rpartition("/")[0] or ".": True for path in headers}.keys())
     lines.append("cc_library(name = \"headers\", hdrs = %s, includes = %s)" % (repr(headers), repr(includes)))
     lines.append("cc_library(name = \"bind_net\", deps = %s)" % repr([":headers"] + deps))
+    lines.append("cc_library(name = \"payments\", deps = %s)" % repr([":bind_net", ":blueshield"] + [":" + module.replace("/", "_") for module in _PAYMENT_MODULES]))
     lines.append('filegroup(name = "archives", srcs = %s)' % repr(archives))
     ctx.file("BUILD.bazel", "\n".join(lines) + "\n")
 

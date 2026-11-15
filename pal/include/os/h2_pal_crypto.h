@@ -28,6 +28,11 @@ typedef enum h2_pal_crypto_aead_algorithm {
   H2_PAL_CRYPTO_AEAD_CHACHA20_POLY1305 = 3,
 } h2_pal_crypto_aead_algorithm_t;
 
+typedef enum h2_pal_crypto_cipher_direction {
+  H2_PAL_CRYPTO_CIPHER_ENCRYPT = 0,
+  H2_PAL_CRYPTO_CIPHER_DECRYPT = 1,
+} h2_pal_crypto_cipher_direction_t;
+
 /** RFC 7748 X25519 private scalar bytes in little-endian wire form. */
 typedef struct h2_pal_x25519_private_key {
   uint8_t bytes[H2_PAL_CRYPTO_X25519_KEY_SIZE];
@@ -133,6 +138,15 @@ typedef struct h2_pal_crypto_vtable {
   h2_pal_result_t (*p256_public_key_uncompress)(
       void* user, const h2_pal_p256_public_key_t* public_key,
       uint8_t out[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE]);
+  h2_pal_result_t (*p256_shared_secret)(
+      void* user, const h2_pal_p256_private_key_t* private_key,
+      const h2_pal_p256_public_key_t* public_key, uint8_t out[32]);
+  h2_pal_result_t (*aes_cbc)(void* user,
+                             h2_pal_crypto_cipher_direction_t direction,
+                             const uint8_t* key, size_t key_len,
+                             const uint8_t iv[H2_PAL_CRYPTO_AES_BLOCK_SIZE],
+                             const uint8_t* input, size_t input_len,
+                             h2_pal_crypto_buf_t* out);
 } h2_pal_crypto_vtable_t;
 
 typedef struct h2_pal_crypto_api {
@@ -265,6 +279,32 @@ static inline h2_pal_result_t h2_pal_crypto_aes_ctr_xor(
                                   input, input_len, out);
 }
 
+/** AES-CBC with no padding. key_len is 16, 24 or 32; input_len is a
+ * multiple of 16. The immutable IV is not updated. out is caller-owned and
+ * must have capacity for input_len; exact in-place operation is supported,
+ * partial overlap is invalid. len is zero on failure and input_len on success.
+ * Padding and its validation belong to the calling protocol. No output
+ * allocation or implicit authentication is performed. */
+static inline h2_pal_result_t h2_pal_crypto_aes_cbc(
+    const h2_pal_crypto_api_t* api, h2_pal_crypto_cipher_direction_t direction,
+    const uint8_t* key, size_t key_len,
+    const uint8_t iv[H2_PAL_CRYPTO_AES_BLOCK_SIZE], const uint8_t* input,
+    size_t input_len, h2_pal_crypto_buf_t* out) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  out->len = 0u;
+  if ((direction != H2_PAL_CRYPTO_CIPHER_ENCRYPT &&
+       direction != H2_PAL_CRYPTO_CIPHER_DECRYPT) ||
+      key == NULL || iv == NULL ||
+      (key_len != 16u && key_len != 24u && key_len != 32u) ||
+      (input_len != 0u && input == NULL) || input_len % 16u != 0u ||
+      (out->data == NULL && out->cap != 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL || api->vtable->aes_cbc == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->aes_cbc(api->user, direction, key, key_len, iv, input,
+                              input_len, out);
+}
+
 static inline h2_pal_result_t h2_pal_crypto_md5(
     const h2_pal_crypto_api_t* api, const uint8_t* input, size_t input_len,
     uint8_t out_digest[H2_PAL_CRYPTO_MD5_SIZE]) {
@@ -344,6 +384,29 @@ static inline h2_pal_result_t h2_pal_crypto_p256_public_key_uncompress(
       api->vtable->p256_public_key_uncompress == NULL)
     return H2_PAL_ERR_UNSUPPORTED;
   return api->vtable->p256_public_key_uncompress(api->user, public_key, out);
+}
+
+/** Raw P-256 ECDH: the 32-byte big-endian X coordinate, without a KDF.
+ * Synchronous; borrowed inputs and caller-owned output must not overlap.
+ * Providers validate scalar range and the remote point. Failure (including
+ * unavailable capability) clears all 32 output bytes; NULL out is INVALID_ARG.
+ * Callers must wipe successful secret bytes after use. */
+static inline h2_pal_result_t h2_pal_crypto_p256_shared_secret(
+    const h2_pal_crypto_api_t* api,
+    const h2_pal_p256_private_key_t* private_key,
+    const h2_pal_p256_public_key_t* public_key, uint8_t out[32]) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  volatile uint8_t* bytes = out;
+  for (size_t i = 0u; i < 32u; ++i) bytes[i] = 0u;
+  if (private_key == NULL || public_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->p256_shared_secret == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  h2_pal_result_t rc =
+      api->vtable->p256_shared_secret(api->user, private_key, public_key, out);
+  if (rc != H2_PAL_OK)
+    for (size_t i = 0u; i < 32u; ++i) bytes[i] = 0u;
+  return rc;
 }
 
 static inline h2_pal_result_t h2_pal_crypto_ecdsa_p256_sha256_sign(

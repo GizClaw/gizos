@@ -1,0 +1,424 @@
+#include "h2_alipay_independent.h"
+#include "h2_alipay_client_internal.h"
+#include "alipay_pay.h"
+#include "alipay_bind.h"
+#include "alipay_pay_result.h"
+#include "alipay_account_manage.h"
+#include "h2_app_test_mem.h"
+#include "h2_app_test_pref.h"
+#include "h2_app_test_time.h"
+#include "h2_app_test_sync.h"
+#include "h2_wolfcrypt_crypto.h"
+#include "h2_sha256.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+typedef struct fixture {
+  h2_app_test_mem_t mem;
+  h2_app_test_pref_t pref;
+  h2_app_test_time_t time;
+  h2_app_test_sync_t sync;
+  h2_pal_http_api_t http;
+  h2_alipay_client_config_t config;
+  const char* response;
+  unsigned queries, acks, frees;
+  int network_rc, ack_rc, rpc_status, http_status;
+  uint32_t entropy;
+} fixture_t;
+
+static const char first_code[] = "284960766182755224";
+static int entropy(void* user, uint8_t* data, size_t length) {
+  uint32_t* state = user;
+  for (size_t i = 0u; i < length; ++i) {
+    *state = *state * 1664525u + 1013904223u;
+    data[i] = (uint8_t)(*state >> 24u);
+  }
+  return 0;
+}
+static int http(void* user, const h2_pal_http_request_t* req,
+                h2_pal_http_response_t* response) {
+  fixture_t* f = user;
+  const char* operation = NULL;
+  size_t operation_length = 0u;
+  for (size_t i = 0u; i < req->header_count; ++i) {
+    const h2_pal_http_header_t* h = &req->headers[i];
+    if (h->name.len == 14u &&
+        memcmp(h->name.data, "Operation-Type", 14u) == 0) {
+      operation = h->value.data;
+      operation_length = h->value.len;
+    }
+    if (h->name.len == 4u && memcmp(h->name.data, "Sign", 4u) == 0)
+      assert(h->value.len == 64u);
+  }
+  assert(operation != NULL);
+  bool ack =
+      operation_length >= 12u &&
+      memcmp(operation + operation_length - 12u, "payResultAck", 12u) == 0;
+  assert(ack ||
+         (operation_length >= 16u && memcmp(operation + operation_length - 16u,
+                                            "queryOrderStatus", 16u) == 0));
+  if (ack)
+    ++f->acks;
+  else
+    ++f->queries;
+  static const char query[] =
+      "[{\"dynamicId\":\"284960766182755224\",\"userId\":\"TEST_UID\","
+      "\"tid\":\"TEST_TID\",\"extInfo\":{\"sdkType\":\"INSIDE_WATCH\","
+      "\"clientVersion\":\"4.61\",\"sdkHost\":\"H106\"}}]";
+  static const char acknowledged[] =
+      "[{\"dynamicId\":\"284960766182755224\",\"userId\":\"TEST_UID\","
+      "\"tid\":\"TEST_TID\",\"extInfo\":{\"sdkType\":\"INSIDE_WATCH\","
+      "\"ackType\":\"RPC\",\"clientVersion\":\"4.61\",\"sdkHost\":\"H106\"}}]";
+  const char* expected = ack ? acknowledged : query;
+  assert(req->body_len == strlen(expected) &&
+         memcmp(req->body, expected, req->body_len) == 0);
+  if (f->network_rc != 0) return f->network_rc;
+  if (ack && f->ack_rc != 0) return f->ack_rc;
+  const char* body = ack ? "{}" : f->response;
+  size_t size = strlen(body);
+  assert(size <= req->response_buf_cap);
+  memcpy(req->response_buf, body, size);
+  response->body = req->response_buf;
+  response->body_len = size;
+  response->status_code = f->http_status;
+  char rpc[16];
+  int length = snprintf(rpc, sizeof(rpc), "%d", f->rpc_status);
+  assert(length > 0 && (size_t)length < sizeof(rpc));
+  return h2_pal_http_deliver_response_header(req, "Result-Status", 13u, rpc,
+                                             (size_t)length);
+}
+static void response_free(void* user, h2_pal_http_response_t* response) {
+  ++((fixture_t*)user)->frees;
+  h2_pal_http_response_reset(response);
+}
+static void hash(const uint8_t* data, size_t size, uint8_t out[32]) {
+  h2_sha256_t h;
+  h2_sha256_init(&h);
+  h2_sha256_update(&h, data, size);
+  h2_sha256_finish(&h, out);
+}
+static size_t encrypt(fixture_t* f, const uint8_t key[16], const uint8_t* input,
+                      size_t size, uint8_t* output) {
+  uint8_t iv[16], padded[144];
+  assert(h2_alipay_paycode_iv(f->config.identity.mac, iv) == 0);
+  size_t length = (size / 16u + 1u) * 16u;
+  assert(length <= sizeof(padded));
+  memcpy(padded, input, size);
+  memset(padded + size, (int)(length - size), length - size);
+  h2_pal_crypto_buf_t out = {.data = output, .cap = 144u};
+  assert(h2_pal_crypto_aes_cbc(f->config.crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT,
+                               key, 16u, iv, padded, length, &out) == 0 &&
+         out.len == length);
+  memset(padded, 0, sizeof(padded));
+  return length;
+}
+static void store(fixture_t* f, const char* index, bool corrupt) {
+  uint8_t data[1024] = {0}, middle[144], seed[144], key[32];
+  char plain[96];
+  for (unsigned i = 0u; i < 32u; ++i) key[i] = (uint8_t)i;
+  int size =
+      snprintf(plain, sizeof(plain),
+               "%s###3132333435363738393031323334353637383930###60###", index);
+  assert(size > 0 && (size_t)size < sizeof(plain));
+  size_t first = encrypt(f, key, (const uint8_t*)plain, (size_t)size, middle);
+  size_t length = encrypt(f, key + 16u, middle, first, seed);
+  assert(length == 80u);
+  if (corrupt) seed[length - 1u] ^= 1u;
+  memcpy(data, "APB1", 4u);
+  h2_alipay_client_fingerprint(&f->config, data + 4u);
+  data[36] = BINDING_COMPLETE;
+  data[39] = 8u;
+  data[41] = 8u;
+  data[47] = (uint8_t)length;
+  size_t used = 49u;
+  memcpy(data + used, "TEST_TID", 8u);
+  used += 8u;
+  memcpy(data + used, "TEST_UID", 8u);
+  used += 8u;
+  memcpy(data + used, seed, length);
+  used += length;
+  memcpy(data + used, key, 32u);
+  used += 32u;
+  hash(data, used, data + used);
+  used += 32u;
+  h2_pal_pref_namespace_t* ns = NULL;
+  assert(h2_pal_pref_open(&f->pref.api, "payment", H2_PAL_PREF_OPEN_READ_WRITE,
+                          &ns) == 0);
+  assert(ns->set_blob(ns, "binding", data, used) == 0);
+  memset(data, 0, sizeof(data));
+  memcpy(data, "APC1", 4u);
+  h2_alipay_client_fingerprint(&f->config, data + 4u);
+  memcpy(data + 36u, "0123456789ABCDEF", 16u);
+  data[52] = 7u;
+  memcpy(data + 53u, "DEVICE1", 7u);
+  assert(ns->set_blob(ns, "context", data, 60u) == 0);
+  assert(ns->commit(ns) == 0 && ns->close(ns) == 0);
+  memset(data, 0, sizeof(data));
+  memset(key, 0, sizeof(key));
+  memset(seed, 0, sizeof(seed));
+  memset(middle, 0, sizeof(middle));
+}
+static void initialize(fixture_t* f) {
+  memset(f, 0, sizeof(*f));
+  h2_app_test_mem_init(&f->mem, NULL);
+  assert(h2_app_test_pref_init(&f->pref, &f->mem.api) == 0);
+  h2_app_test_time_init(&f->time, 0u);
+  assert(h2_pal_time_set_wall_ms(&f->time.api, 59000u) == 0);
+  h2_app_test_sync_init(&f->sync);
+  const h2_wolfcrypt_crypto_config_t crypto = {&f->entropy, entropy};
+  assert(h2_wolfcrypt_crypto_init(&crypto) == 0);
+  static const h2_pal_http_vtable_t vt = {http, response_free};
+  f->http = (h2_pal_http_api_t){f, &vt};
+  f->config = (h2_alipay_client_config_t){
+      .mem = &f->mem.api,
+      .time = &f->time.api,
+      .pref = &f->pref.api,
+      .http = &f->http,
+      .crypto = h2_wolfcrypt_crypto_api(),
+      .identity = {"TEST_SN", "TEST_SN", "12:34:56:78:9A:BC", "H106"},
+      .company = "HAIVIVI",
+      .pref_namespace = "payment",
+      .product_type = 3u,
+      .feature = 16385u,
+      .compile_timestamp_s = 1794449000u};
+  f->response = "{}";
+  f->rpc_status = 1000;
+  f->http_status = 200;
+}
+static void destroy(fixture_t* f) {
+  assert(h2_alipay_independent_release() == 0);
+  assert(f->pref.active_handles == 0u);
+  assert(h2_app_test_pref_deinit(&f->pref) == 0);
+  assert(f->mem.live_blocks == 0u);
+  h2_wolfcrypt_crypto_deinit();
+}
+static void generation(fixture_t* f) {
+  h2_alipay_client_payment_t result;
+  uint8_t out[32];
+  memset(out, 0xa5, sizeof(out));
+  size_t length = sizeof(out);
+  assert(h2_alipay_client_get_paycode(&f->config, out, &length, &result) ==
+         H2_PAL_ERR_NOT_FOUND);
+  assert(out[0] == 0xa5 && f->queries == 0u);
+  store(f, "1234567890", false);
+  length = sizeof(out);
+  int first_result =
+      h2_alipay_client_get_paycode(&f->config, out, &length, &result);
+  if (first_result != 0)
+    fprintf(stderr, "generation rc=%d stage=%d\n", first_result,
+            (int)result.stage);
+  assert(first_result == 0);
+  assert(length == 18u && strcmp((char*)out, first_code) == 0 &&
+         out[19] == 0xa5);
+  assert(f->queries == 0u && result.requests == 0u);
+  for (size_t capacity = 0u; capacity < 19u; ++capacity) {
+    memset(out, 0xa5, sizeof(out));
+    length = capacity;
+    assert(h2_alipay_client_get_paycode(&f->config, out, &length, &result) ==
+           H2_PAL_ERR_NO_SPACE);
+    assert(length == 18u && out[0] == 0xa5 && out[31] == 0xa5);
+  }
+  assert(h2_pal_time_set_wall_ms(&f->time.api, 60000u) == 0);
+  length = sizeof(out);
+  assert(h2_alipay_client_get_paycode(&f->config, out, &length, &result) == 0);
+  assert(strcmp((char*)out, "289288341400287082") == 0);
+  assert(h2_pal_time_set_wall_ms(&f->time.api, 59000u) == 0);
+  store(f, "12345678901", false);
+  length = sizeof(out);
+  assert(h2_alipay_client_get_paycode(&f->config, out, &length, &result) == 0 &&
+         length == 19u);
+  store(f, "1234567890", true);
+  length = sizeof(out);
+  out[0] = 0xa5;
+  assert(h2_alipay_client_get_paycode(&f->config, out, &length, &result) != 0 &&
+         out[0] == 0xa5);
+  store(f, "1234567890", false);
+  f->mem.fail_at = f->mem.calls + 1u;
+  length = sizeof(out);
+  assert(h2_alipay_client_get_paycode(&f->config, out, &length, &result) ==
+         H2_PAL_ERR_NO_MEMORY);
+  f->mem.fail_at = 0u;
+}
+static void query(fixture_t* f) {
+  const char* bodies[] = {
+      "{}",
+      "{\"action\":\"pay_success\",\"sdkBizData\":{\"realAmount\":\"0.00\",\"originAmount\":\"1.00\"}}",
+      "{\"entireData\":\"{\\\"action\\\":\\\"pay_success\\\",\\\"sdkBizData\\\":\\\"{\\\\\\\"originAmount\\\\\\\":\\\\\\\"2.34\\\\\\\"}\\\"}\"}",
+      "{\"action\":\"CLOSECODE\"}",
+      "{\"action\":\"failure_info\",\"sdkBizData\":\"limited\"}",
+      "{\"action\":\"soundWavePaySuccessPush\",\"realAmount\":\"0\"}",
+      "{\"action\":\"unsupported\"}",
+  };
+  const h2_alipay_client_payment_state_t expected[] = {
+      H2_ALIPAY_CLIENT_PAYMENT_PENDING, H2_ALIPAY_CLIENT_PAYMENT_PAID,
+      H2_ALIPAY_CLIENT_PAYMENT_PAID,    H2_ALIPAY_CLIENT_PAYMENT_DISABLED,
+      H2_ALIPAY_CLIENT_PAYMENT_FAILED,  H2_ALIPAY_CLIENT_PAYMENT_PAID,
+      H2_ALIPAY_CLIENT_PAYMENT_PENDING};
+  h2_alipay_client_payment_t result;
+  char ext[128];
+  for (size_t i = 0u; i < sizeof(bodies) / sizeof(*bodies); ++i) {
+    f->response = bodies[i];
+    size_t length = sizeof(ext);
+    unsigned before = f->acks;
+    assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                               ext, &length) == 0);
+    assert(result.state == expected[i]);
+    assert(f->acks - before ==
+           (expected[i] == H2_ALIPAY_CLIENT_PAYMENT_PAID ? 1u : 0u));
+    if (i == 1u) assert(strcmp(result.amount, "0.00") == 0);
+    if (i == 2u) assert(strcmp(result.amount, "2.34") == 0);
+    if (i == 4u) assert(length == 7u && memcmp(ext, "limited", 7u) == 0);
+  }
+  size_t length = 1u;
+  ext[0] = (char)0xa5;
+  f->response = bodies[4];
+  assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                             ext,
+                                             &length) == H2_PAL_ERR_NO_SPACE);
+  assert(length == 7u && (unsigned char)ext[0] == 0xa5 &&
+         result.state == H2_ALIPAY_CLIENT_PAYMENT_UNKNOWN);
+  f->response = bodies[1];
+  f->ack_rc = H2_PAL_ERR_TIMEOUT;
+  length = sizeof(ext);
+  assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                             ext, &length) == 0);
+  assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_PAID &&
+         result.ack_result == H2_PAL_ERR_TIMEOUT);
+  f->ack_rc = 0;
+  f->network_rc = H2_PAL_ERR_TIMEOUT;
+  length = sizeof(ext);
+  assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                             ext,
+                                             &length) == H2_PAL_ERR_TIMEOUT);
+  assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_UNKNOWN &&
+         result.amount[0] == '\0');
+  f->network_rc = 0;
+  f->response = "{invalid";
+  length = sizeof(ext);
+  assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                             ext,
+                                             &length) == H2_PAL_ERR_FORMAT);
+  f->response = bodies[1];
+  f->rpc_status = 1001;
+  length = sizeof(ext);
+  assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                             ext, &length) != 0);
+  assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_UNKNOWN);
+  f->rpc_status = 1000;
+  f->response = "{}";
+}
+static void failures(fixture_t* f) {
+  h2_alipay_client_payment_t result;
+  char ext[128];
+  const char* invalid[] = {
+      "{\"action\":\"pay_success\",\"sdkBizData\":{\"realAmount\":\"1234567890123456789012345678901234\"}}",
+      "{\"action\":\"pay_success\",\"sdkBizData\":{\"realAmount\":1}}",
+      "{\"action\":\"pay_success\",\"sdkBizData\":{\"realAmount\":\"1\\u00002\"}}",
+      "{\"entireData\":\"bad json\"}",
+      "{\"action\":false}",
+  };
+  for (size_t i = 0u; i < sizeof(invalid) / sizeof(*invalid); ++i) {
+    f->response = invalid[i];
+    size_t length = sizeof(ext);
+    memset(&result, 0xa5, sizeof(result));
+    unsigned before = f->acks;
+    assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                               ext, &length) != 0);
+    assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_UNKNOWN &&
+           result.amount[0] == '\0');
+    assert(f->acks == before && result.result != 0);
+  }
+  f->response =
+      "{\"action\":\"pay_success\",\"sdkBizData\":{\"realAmount\":\"0.00\"}}";
+  size_t live = f->mem.live_blocks, calls = f->mem.calls, length = sizeof(ext);
+  assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                             ext, &length) == 0);
+  size_t count = f->mem.calls - calls;
+  assert(count > 10u && f->mem.live_blocks == live);
+  for (size_t n = 1u; n <= count; ++n) {
+    f->mem.fail_at = f->mem.calls + n;
+    length = sizeof(ext);
+    int rc = h2_alipay_client_query_order_result(&f->config, first_code,
+                                                 &result, ext, &length);
+    f->mem.fail_at = 0u;
+    assert(f->mem.live_blocks == live && f->pref.active_handles == 0u);
+    if (rc != 0)
+      assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_UNKNOWN &&
+             result.amount[0] == '\0');
+    else
+      assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_PAID);
+    assert(result.result == rc);
+  }
+  result.state = H2_ALIPAY_CLIENT_PAYMENT_PAID;
+  length = sizeof(ext);
+  assert(h2_alipay_client_query_order_result(NULL, first_code, &result, ext,
+                                             &length) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_UNKNOWN &&
+         result.result == H2_PAL_ERR_INVALID_ARG);
+  f->response = "{}";
+}
+static void abi(fixture_t* f) {
+  retval_e (*generate)(uint8_t*, uint32_t*) = alipay_get_paycode;
+  retval_e (*lookup)(char*, alipay_payment_status_e*, char*, char*, uint32_t*) =
+      alipay_query_order_result_string;
+  assert(h2_alipay_independent_configure(&f->config, &f->sync.api) == 0);
+  assert(alipay_pre_init() == 0 && alipay_get_binding_status());
+  struct {
+    uint32_t before, length, after;
+  } size = {0x12345678u, 32u, 0x87654321u};
+  struct {
+    uint8_t before, code[32], after;
+  } code = {.before = 0xa5, .after = 0x5a};
+  assert(generate(code.code, &size.length) == 0);
+  assert(size.length == 18u && strcmp((char*)code.code, first_code) == 0);
+  assert(size.before == 0x12345678u && size.after == 0x87654321u &&
+         code.before == 0xa5 && code.after == 0x5a);
+  struct {
+    uint32_t before;
+    alipay_payment_status_e status;
+    uint32_t after;
+  } status = {0x12345678u, ALIPAY_PAYMENT_STATUS_UNKNOWN, 0x87654321u};
+  struct {
+    char before, amount[32], after;
+  } money = {.before = 'A', .after = 'Z'};
+  char ext[128];
+  size.length = sizeof(ext);
+  f->response =
+      "{\"action\":\"pay_success\",\"sdkBizData\":{\"realAmount\":\"0.00\"}}";
+  assert(lookup((char*)code.code, &status.status, money.amount, ext,
+                &size.length) == 0);
+  assert(status.status == ALIPAY_PAYMENT_STATUS_SUCCESS &&
+         strcmp(money.amount, "0.00") == 0);
+  assert(status.before == 0x12345678u && status.after == 0x87654321u &&
+         size.before == 0x12345678u && size.after == 0x87654321u &&
+         money.before == 'A' && money.after == 'Z');
+  f->response = "{\"action\":\"failure_info\",\"sdkBizData\":\"limited\"}";
+  size.length = 1u;
+  assert(lookup((char*)code.code, &status.status, money.amount, ext,
+                &size.length) != 0);
+  assert(status.status == ALIPAY_PAYMENT_STATUS_UNKNOWN && size.length == 7u);
+  store(f, "1234567890", true);
+  size.length = sizeof(code.code);
+  assert(generate(code.code, &size.length) == 99);
+  store(f, "1234567890", false);
+  f->response = "{\"action\":\"DELSEED\"}";
+  size.length = sizeof(ext);
+  assert(lookup((char*)code.code, &status.status, money.amount, ext,
+                &size.length) == 0);
+  assert(status.status == ALIPAY_PAYMENT_STATUS_UNBIND_BY_USER &&
+         !alipay_get_binding_status());
+  size.length = sizeof(code.code);
+  assert(generate(code.code, &size.length) == 4);
+}
+int main(void) {
+  fixture_t f;
+  initialize(&f);
+  generation(&f);
+  query(&f);
+  failures(&f);
+  abi(&f);
+  destroy(&f);
+  return 0;
+}

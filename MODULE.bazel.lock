@@ -330,7 +330,7 @@
     },
     "//third_party/alipay:sdk_repository.bzl%alipay_sdk": {
       "general": {
-        "bzlTransitiveDigest": "E/jdo17/n4j1VtFI5p41yp1OQlG9EY/z0wPePlZzMhE=",
+        "bzlTransitiveDigest": "qcaYH73a0EnmXkmIuVQaYCp3vCaSqZphTCx0UjOC19Y=",
         "usagesDigest": "pz9eHdJaP5znG3yGZWiCPaEAjTURTgpkCmAxynIEZBQ=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

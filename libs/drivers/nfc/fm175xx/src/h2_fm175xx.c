@@ -605,6 +605,7 @@ int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
     return rc;
   }
   const size_t total_len = 16u + (8u * out_data[14]);
+  if (total_len > 1024u) return H2_FM175XX_ERR_UNAVAILABLE;
   if (total_len > capacity) {
     return H2_FM175XX_ERR_NO_MEMORY;
   }
@@ -620,4 +621,113 @@ int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
   }
   *out_len = total_len;
   return H2_FM175XX_OK;
+}
+
+int h2_fm175xx_ntag_read_ndef(h2_fm175xx_t* reader, uint8_t* out_data,
+                              size_t capacity, size_t* out_len) {
+  if (out_data == NULL || out_len == NULL) return H2_FM175XX_ERR_INVALID_ARG;
+  *out_len = 0u;
+  uint8_t raw[1024];
+  size_t size = 0u;
+  int rc = h2_fm175xx_ntag_read_all(reader, raw, sizeof(raw), &size);
+  if (rc != H2_FM175XX_OK) return rc;
+  if (raw[12] != 0xe1u || (raw[13] >> 4u) != 1u || (raw[15] >> 4u) != 0u)
+    return H2_FM175XX_ERR_UNAVAILABLE;
+  for (size_t offset = 16u; offset < size;) {
+    uint8_t type = raw[offset++];
+    if (type == 0u) continue;
+    if (type == 0xfeu) break;
+    if (offset == size) return H2_FM175XX_ERR_PROTOCOL;
+    size_t length = raw[offset++];
+    if (length == 255u) {
+      if (size - offset < 2u) return H2_FM175XX_ERR_PROTOCOL;
+      length = ((size_t)raw[offset] << 8u) | raw[offset + 1u];
+      offset += 2u;
+    }
+    if (length > size - offset) return H2_FM175XX_ERR_PROTOCOL;
+    if (type == 3u) {
+      if (length == 0u) return H2_FM175XX_ERR_UNAVAILABLE;
+      if (length > capacity) return H2_FM175XX_ERR_NO_MEMORY;
+      memcpy(out_data, raw + offset, length);
+      *out_len = length;
+      return H2_FM175XX_OK;
+    }
+    offset += length;
+  }
+  return H2_FM175XX_ERR_UNAVAILABLE;
+}
+
+static int ntag_write_page(h2_fm175xx_t* reader, uint8_t page,
+                           const uint8_t data[4]) {
+  const uint8_t command[] = {0xa2u, page, data[0], data[1], data[2], data[3]};
+  uint8_t reply[2] = {0};
+  size_t bits = 0u;
+  int rc = clear_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
+  if (rc == H2_FM175XX_OK) rc = set_timer(reader, 10u);
+  if (rc == H2_FM175XX_OK)
+    rc = transceive(reader, command, sizeof(command), reply, sizeof(reply),
+                    &bits);
+  int restored = set_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
+  if (rc != H2_FM175XX_OK) return rc;
+  if (restored != H2_FM175XX_OK) return restored;
+  return bits == 4u && (reply[0] & 15u) == 10u ? H2_FM175XX_OK
+                                               : H2_FM175XX_ERR_PROTOCOL;
+}
+
+int h2_fm175xx_ntag_write_ndef(h2_fm175xx_t* reader, const uint8_t* data,
+                               size_t length) {
+  if (reader == NULL || data == NULL || length == 0u || length > 1003u)
+    return H2_FM175XX_ERR_INVALID_ARG;
+  uint8_t raw[1024];
+  size_t size = 0u;
+  int rc = h2_fm175xx_ntag_read_all(reader, raw, sizeof(raw), &size);
+  if (rc != H2_FM175XX_OK) return rc;
+  if (size < 20u || raw[12] != 0xe1u || (raw[13] >> 4u) != 1u ||
+      raw[15] != 0u || raw[10] != 0u || raw[11] != 0u ||
+      (raw[16] != 3u && raw[16] != 0u && raw[16] != 0xfeu))
+    return H2_FM175XX_ERR_UNAVAILABLE;
+  size_t previous_end = 16u;
+  if (raw[16] == 3u) {
+    size_t old_length = raw[17], old_header = 2u;
+    if (old_length == 255u) {
+      old_length = ((size_t)raw[18] << 8u) | raw[19];
+      old_header = 4u;
+    }
+    if (old_header + old_length > size - 16u) return H2_FM175XX_ERR_PROTOCOL;
+    previous_end += old_header + old_length;
+  }
+  /* Do not overwrite other data/control TLVs after an existing message. */
+  for (size_t i = previous_end; i < size; ++i) {
+    if (raw[i] == 0xfeu) break;
+    if (raw[i] != 0u) return H2_FM175XX_ERR_UNAVAILABLE;
+  }
+  size_t header = length < 255u ? 2u : 4u;
+  if (size < 20u || header + length + 1u > size - 16u)
+    return H2_FM175XX_ERR_NO_MEMORY;
+  size_t span = (header + length + 1u + 3u) & ~(size_t)3u;
+  if (span > size - 16u) return H2_FM175XX_ERR_NO_MEMORY;
+  /* Empty NDEF followed by the terminator is the safe interrupted state. */
+  const uint8_t empty[4] = {3u, 0u, 0xfeu, 0u};
+  rc = ntag_write_page(reader, 4u, empty);
+  if (rc != H2_FM175XX_OK) return rc;
+  memset(raw + 16u, 0, span);
+  raw[16] = 3u;
+  raw[17] = length < 255u ? (uint8_t)length : 255u;
+  if (header == 4u) {
+    raw[18] = (uint8_t)(length >> 8u);
+    raw[19] = (uint8_t)length;
+  }
+  memcpy(raw + 16u + header, data, length);
+  raw[16u + header + length] = 0xfeu;
+  for (size_t offset = 20u; rc == H2_FM175XX_OK && offset < 16u + span;
+       offset += 4u)
+    rc = ntag_write_page(reader, (uint8_t)(offset / 4u), raw + offset);
+  if (rc == H2_FM175XX_OK) rc = ntag_write_page(reader, 4u, raw + 16u);
+  if (rc != H2_FM175XX_OK) return rc;
+  size_t verified = 0u;
+  rc = h2_fm175xx_ntag_read_ndef(reader, raw, sizeof(raw), &verified);
+  if (rc == H2_FM175XX_OK &&
+      (verified != length || memcmp(raw, data, length) != 0))
+    rc = H2_FM175XX_ERR_PROTOCOL;
+  return rc;
 }

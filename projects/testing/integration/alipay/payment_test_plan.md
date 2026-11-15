@@ -4,7 +4,7 @@ This plan follows the current SDK binding implementation. H106 supports two inte
 
 ## Prerequisites
 
-Require a successful SDK binding result and a later matching `binding_snapshot`, including TID, UID, shared key, seed and the completion record. Provision a dedicated approved account and merchant fixture. Select the actually enabled `FEATURE_NFCPAY` and/or `FEATURE_BLEPAY` product capabilities before qualification; the present binding fixture advertises `PAYCODE | SQUARE` only.
+Require a successful SDK binding result and a later matching `binding_snapshot`, including TID, UID, shared key, seed and the completion record. Use an account and merchant fixture authorized for the intended test; personal-account eligibility and child/family permissions follow the applicable Alipay scheme. This is test preparation, not an invented local SDK readiness gate. Select the actually enabled `FEATURE_NFCPAY` and/or `FEATURE_BLEPAY` product capabilities before qualification; the SDK payment fixture advertises `PAYCODE | BLEPAY | SQUARE`; the independent binding fixture retains `PAYCODE | SQUARE`.
 
 The payment fixture must not inherit the binding fixture's mandatory gateway probe or SNTP connection. For device-offline cases, prepare a valid clock and stored credentials beforehand, disable device Wi-Fi/PPP routing, retain UART management and record any attempted business IP I/O. The merchant terminal's network is a separate test input.
 
@@ -57,7 +57,7 @@ flowchart TD
 
 Result polling and retention have bounded lifetimes. Refreshing the visible QR does not erase an unresolved attempt or make its status belong to the new code. Leaving the page stops new work and joins any in-flight worker before buffers or SDK dependencies are released.
 
-Source documents are the supplied `SDK说明文档/基础支付方案/支付宝智能穿戴-支付接口调用说明.pdf` and RTOS integration guide, together with the current `pay_code` and `pay_result` headers and module dependency declarations. The present SDK adapter exposes binding only; payer-code generation and payment-result adaptation are subsequent implementation work.
+Source documents are the supplied `SDK说明文档/基础支付方案/支付宝智能穿戴-支付接口调用说明.pdf` and RTOS integration guide, together with the current `pay_code` and `pay_result` headers and module dependency declarations. The SDK adapter and shared App now implement payer generation, bounded original-code queries and the direct-BLE tap branch. Real merchant settlement, optical scanning and unsupported NFC/legacy transports remain qualification work.
 
 ## Tap-payment scenario boundaries
 
@@ -101,7 +101,7 @@ flowchart TD
 
 | Case | Procedure | Required evidence |
 | --- | --- | --- |
-| Binding durability | Complete manual phone authorization, reboot, inspect the same namespace | Completion marker and all four materials match; no new registration, rebind or finishBind on snapshot |
+| Binding durability (explicit persistent variant) | Complete manual phone authorization, reboot, inspect the same namespace | Completion marker and all four materials match; no new registration, rebind or finishBind on snapshot |
 | Binding interruption | Inject failures at material writes, commit, completion-marker write and readback | No false COMPLETE; no repeated finishBind after SDK completion; recovery remains explicit |
 | Persistent binding QR | Keep the SDK pending beyond 60 seconds, then complete authorization; separately return a terminal invalid session | QR remains visible and the same session is polled; terminal failure requests a new code only after a local UNBOUND snapshot, and the UI presents it before polling |
 | Local corruption | Change/remove one material, corrupt the marker or leave bound state without a marker | NEEDS_VERIFICATION; no automatic reset or payment attempt |

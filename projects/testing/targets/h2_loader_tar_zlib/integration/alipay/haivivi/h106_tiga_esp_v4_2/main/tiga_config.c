@@ -22,3 +22,7 @@ h2_display_info_t h2_alipay_e2e_target_capture(h2_alipay_e2e_capture_fn capture,
                                                void* user) {
   return h2_esp_board_display_set_transfer_capture(capture, user);
 }
+
+const h2_alipay_payment_api_t* h2_alipay_e2e_target_payment_api(void) {
+  return NULL;
+}

@@ -149,6 +149,8 @@ def main():
         (network, "InternalRpcModel.pb3.pb-c.c.obj", []),
         (network, "main_mqtt.c.obj", ["--globalize-symbol=BOX_device_id"]),
         (bindings, "bind_net.c.obj", []),
+        (bindings, "alipay_bind.c.obj", [
+            "--redefine-sym=alipay_inner_query_binding_result=oracle_query_result"]),
         (secure, "ecdh_bind.c.obj", [
             "--redefine-sym=IFAA_ecc_generate=oracle_generate",
             "--redefine-sym=IFAA_ecc_set_rng_function=oracle_set_rng"]),
@@ -183,10 +185,17 @@ def main():
         "libs/clients/alipay_independent/include", "libs/crypto/sha256/include",
         "libs/crypto/sm3/include", "libs/encoding/include", "pal/include",
     ]
+    version = run([str(compiler), "-dumpversion"], directory,
+                  "compiler-version").stdout.decode().strip()
+    target_lib = compiler.parent.parent / "xtensa-esp-elf/lib/esp32s3"
+    gcc_lib = compiler.parent.parent / "lib/gcc/xtensa-esp-elf" / version / "esp32s3"
+    if not (target_lib / "crt1-sim.o").is_file() or not (gcc_lib / "libgcc.a").is_file():
+        raise FileNotFoundError("Xtensa compiler requires ESP32-S3 simulator libraries")
     elf = directory / "protocol-differential.elf"
     command = [
         str(compiler), "-std=c11", "-Os", "-Wall", "-Wextra", "-Werror",
-        "-mlongcalls", "-ffunction-sections", "-fdata-sections",
+        "-mdynconfig=" + str(compiler.parent.parent / "lib/xtensa_esp32s3.so"),
+        "-B" + str(target_lib) + "/", "-B" + str(gcc_lib) + "/", "-mlongcalls", "-ffunction-sections", "-fdata-sections",
         "--specs=sim.elf.specs", "-DYYJSON_DISABLE_FAST_FP_CONV=1",
         *["-I" + str(root / name) for name in includes],
         "-I" + str(yyjson / "src/src"),

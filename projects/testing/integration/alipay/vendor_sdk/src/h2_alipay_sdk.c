@@ -89,6 +89,21 @@ void h2_alipay_sdk_trace(const char* operation, const char* boundary,
 
 const h2_alipay_sdk_config_t* h2_alipay_sdk_config(void) { return &s_config; }
 
+int h2_alipay_sdk_call_lock(void) {
+  if (s_lock == NULL) return H2_PAL_ERR_INVALID_STATE;
+  int rc = h2_pal_mutex_lock(s_config.sync, s_lock);
+  if (rc != H2_PAL_OK) return rc;
+  if (!s_initialization.attempted || s_initialization.sdk_rc != 0) {
+    (void)h2_pal_mutex_unlock(s_config.sync, s_lock);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  return H2_PAL_OK;
+}
+int h2_alipay_sdk_call_unlock(int result) {
+  int unlocked = h2_pal_mutex_unlock(s_config.sync, s_lock);
+  return result != H2_PAL_OK ? result : unlocked;
+}
+
 static h2_pal_result_t pre_init(void* user, int* sdk_rc, bool* first) {
   (void)user;
   if (sdk_rc == NULL || first == NULL) return H2_PAL_ERR_INVALID_ARG;
@@ -449,7 +464,9 @@ h2_pal_result_t h2_alipay_sdk_configure(const h2_alipay_sdk_config_t* config) {
       config->company == NULL || config->model == NULL ||
       strlen(config->company) == 0u || strlen(config->company) > 15u ||
       strlen(config->model) == 0u || strlen(config->model) > 23u ||
-      config->product_type > 5u)
+      config->product_type > 5u ||
+      (config->storage_scope != H2_ALIPAY_STORAGE_PERSISTENT &&
+       config->storage_scope != H2_ALIPAY_STORAGE_SESSION))
     return H2_PAL_ERR_INVALID_ARG;
   h2_alipay_trace_t* trace = h2_pal_mem_alloc(config->mem, sizeof(*trace));
   if (trace == NULL) return H2_PAL_ERR_NO_MEMORY;
@@ -476,6 +493,7 @@ h2_pal_result_t h2_alipay_sdk_configure(const h2_alipay_sdk_config_t* config) {
   };
   s_trace = trace;
   s_api.trace = trace;
+  s_api.storage_scope = config->storage_scope;
   s_lock = lock;
   return H2_PAL_OK;
 }

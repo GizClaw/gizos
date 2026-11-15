@@ -23,3 +23,7 @@ idf_component_register(
     esp_driver_usb_serial_jtag)
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
 include("$ENV{H2_GIZOS_ROOT}/projects/testing/libs/fixture-wifi/fixture_wifi.cmake")
+
+if(H2_ALIPAY_E2E_PERSISTENT_STORAGE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_ALIPAY_E2E_PERSISTENT_STORAGE=1)
+endif()

@@ -305,9 +305,13 @@ int main(void) {
       .read_imei = text_identity,
       .read_mac = mac_identity,
       .has_modem = true,
-      .company = "test",
-      .model = "test",
-      .product_type = 3};
+      .company = "HAIVIVI",
+      .model = "H106",
+      .product_type = 3,
+      .storage_scope = H2_ALIPAY_STORAGE_SESSION};
+  config.storage_scope = (h2_alipay_storage_scope_t)99;
+  assert(h2_alipay_sdk_configure(&config) == H2_PAL_ERR_INVALID_ARG);
+  config.storage_scope = H2_ALIPAY_STORAGE_SESSION;
   const size_t baseline_blocks = mem.live_blocks;
   /* No SDK call or singleton state remains after a failed configure. */
   mem.fail_at = mem.calls + 1;
@@ -322,6 +326,27 @@ int main(void) {
   assert(h2_alipay_sdk_configure(&config) == H2_PAL_ERR_INVALID_STATE);
   const h2_alipay_api_t* api = h2_alipay_sdk_api();
   assert(api != NULL);
+  assert(api->storage_scope == H2_ALIPAY_STORAGE_SESSION);
+  uint8_t product_text[24];
+  uint32_t product_length = sizeof(product_text);
+  assert(alipay_get_companyName(product_text, &product_length) == ALIPAY_RV_OK);
+  assert(product_length == 7u && strcmp((char*)product_text, "HAIVIVI") == 0);
+  product_length = sizeof(product_text);
+  assert(alipay_get_productModel(product_text, &product_length) ==
+         ALIPAY_RV_OK);
+  assert(product_length == 4u && strcmp((char*)product_text, "H106") == 0);
+  memset(product_text, 0x5a, sizeof(product_text));
+  product_length = 4u;
+  assert(alipay_get_productModel(product_text, &product_length) ==
+         ALIPAY_RV_WRONG_PARAM);
+  assert(product_text[0] == 0x5au && product_length == 4u);
+  product_length = 5u;
+  assert(alipay_get_productModel(product_text, &product_length) ==
+         ALIPAY_RV_OK);
+  assert(product_length == 4u && product_text[4] == '\0');
+  assert(alipay_get_companyName(NULL, &product_length) ==
+         ALIPAY_RV_WRONG_PARAM);
+  assert(alipay_get_productModel(product_text, NULL) == ALIPAY_RV_WRONG_PARAM);
   int rc;
   bool first;
   assert(api->vtable->pre_init(api->user, &rc, &first) == H2_PAL_OK &&

@@ -5,22 +5,39 @@
 #include "h2_app_test_time.h"
 #include "h2_app_test_sync.h"
 #include "h2_app_test_pref.h"
+#include "h2_memory_pref.h"
+#include "h2_alipay_tiga_storage.h"
 #include "h2_alipay_e2e_independent.h"
 #include "esp_mac.h"
+#include "vendor_device_info.h"
 
 #include <assert.h>
 #include <string.h>
 
 static unsigned requests, responses_freed;
 
+static bool contains(const uint8_t* data, size_t length, const char* text) {
+  size_t size = strlen(text);
+  for (size_t index = 0u; index + size <= length; ++index)
+    if (memcmp(data + index, text, size) == 0) return true;
+  return false;
+}
+
 static int request(void* user, const h2_pal_http_request_t* request,
                    h2_pal_http_response_t* response) {
   (void)user;
   ++requests;
+  assert(contains(request->body, request->body_len,
+                  requests == 1u   ? "ALIPAY_BRAND_NAME_H106"
+                  : requests == 2u ? "\"deviceModel\":\"QZ.SB.LY.HAIVIVI-H106\""
+                                   : "\"operationMode\":\"NETWORK\""));
   static const uint8_t name[] = {0x0a, 7u, 'D', 'E', 'V', 'I', 'C', 'E', '1'};
   static const uint8_t token[] = "{\"success\":true,\"token\":\"TEST_TOKEN\"}";
-  const uint8_t* data = requests == 1u ? name : token;
-  size_t length = requests == 1u ? sizeof(name) : sizeof(token) - 1u;
+  static const uint8_t pending[] = "{\"needQuery\":true}";
+  const uint8_t* data = requests == 1u   ? name
+                        : requests == 2u ? token
+                                         : pending;
+  size_t length = requests == 1u ? sizeof(name) : strlen((const char*)data);
   assert(length <= request->response_buf_cap);
   memcpy(request->response_buf, data, length);
   response->status_code = 200;
@@ -85,23 +102,45 @@ int main(void) {
       .p256_public_key_uncompress = uncompress,
   };
   const h2_pal_crypto_api_t crypto = {NULL, &crypto_vtable};
-  h2_app_test_pref_t pref;
-  assert(h2_app_test_pref_init(&pref, &mem.api) == H2_PAL_OK);
+  const h2_memory_pref_config_t pref_config = {&mem.api, 8u, 16u, 4096u, 8u};
+  h2_memory_pref_t* pref = NULL;
+  assert(h2_memory_pref_create(&pref_config, &pref) == 0);
+  const h2_pal_pref_api_t* persistent = h2_memory_pref_api(pref);
   h2_runtime_t runtime = {
       .mem = &mem.api,
       .time = &time.api,
       .sync = &sync.api,
       .http = &http,
       .crypto = &crypto,
-      .pref = &pref.api,
+      .pref = persistent,
   };
+  h2_alipay_e2e_product_info_t product;
+  h2_alipay_e2e_target_product_info(NULL);
+  h2_alipay_e2e_target_product_info(&product);
+  assert(product.company_rc != ALIPAY_RV_OK);
+  assert(product.model_rc != ALIPAY_RV_OK);
+  assert(product.company[0] == '\0' && product.model[0] == '\0');
+  h2_pal_pref_namespace_t* old_namespace = NULL;
+  assert(h2_pal_pref_open(persistent, "alipay_h106_ctx",
+                          H2_PAL_PREF_OPEN_READ_WRITE,
+                          &old_namespace) == H2_PAL_OK);
+  static const char old_context[] = "OLD_MODEL_CONTEXT";
+  assert(old_namespace->set_blob(old_namespace, "context", old_context,
+                                 sizeof(old_context)) == H2_PAL_OK);
+  assert(old_namespace->commit(old_namespace) == H2_PAL_OK);
+  assert(old_namespace->close(old_namespace) == H2_PAL_OK);
   assert(h2_alipay_tiga_protocol_configure(&runtime, 0u) ==
          H2_PAL_ERR_INVALID_ARG);
   assert(h2_alipay_tiga_protocol_configure(&runtime, 1794449000u) == H2_PAL_OK);
   assert(h2_alipay_tiga_protocol_configure(&runtime, 1794449000u) ==
          H2_PAL_ERR_INVALID_STATE);
+  h2_alipay_e2e_target_product_info(&product);
+  assert(product.company_rc == H2_PAL_OK && product.model_rc == H2_PAL_OK);
+  assert(strcmp(product.company, "HAIVIVI") == 0);
+  assert(strcmp(product.model, "H106") == 0);
   const h2_alipay_api_t* api = h2_alipay_e2e_target_api();
   assert(api != NULL && api->source == H2_ALIPAY_SOURCE_INDEPENDENT);
+  assert(api->storage_scope == H2_ALIPAY_STORAGE_SESSION);
   char code[H2_ALIPAY_BINDING_CODE_CAPACITY] = "previous code";
   size_t length = 13u;
   int implementation_rc = 1;
@@ -117,6 +156,12 @@ int main(void) {
   assert(api->vtable->pre_init(api->user, &implementation_rc, &first) ==
          H2_PAL_OK);
   assert(!first && implementation_rc == H2_PAL_OK);
+  assert(alipay_get_productType() == 3u);
+  bool bound = true;
+  h2_alipay_binding_result_t binding;
+  assert(api->vtable->binding_status(api->user, &bound) == 0 && !bound);
+  assert(api->vtable->binding_snapshot(api->user, &binding) == 0 &&
+         binding.state == H2_ALIPAY_BINDING_UNBOUND);
   size_t baseline = mem.live_blocks;
   mem.fail_at = mem.calls + 1u;
   assert(api->vtable->get_binding_code(api->user, 16385u, code, sizeof(code),
@@ -131,6 +176,20 @@ int main(void) {
                                        &implementation_rc) == H2_PAL_OK);
   assert(implementation_rc == 0 && length > 0u && requests == 2u &&
          responses_freed == 2u);
+  assert(contains((const uint8_t*)code, length, "QZ.SB.LY.HAIVIVI-H106"));
+  assert(h2_pal_pref_open(persistent, "h106_pay_ctx",
+                          H2_PAL_PREF_OPEN_READ_ONLY,
+                          &old_namespace) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_pal_pref_open(persistent, "alipay_h106_ctx",
+                          H2_PAL_PREF_OPEN_READ_ONLY,
+                          &old_namespace) == H2_PAL_OK);
+  void* old_bytes = NULL;
+  size_t old_length = 0u;
+  assert(old_namespace->get_blob(old_namespace, &mem.api, "context", &old_bytes,
+                                 &old_length) == H2_PAL_ERR_NOT_FOUND);
+  assert(old_length == 0u && old_bytes == NULL);
+  h2_pal_mem_free(&mem.api, old_bytes);
+  assert(old_namespace->close(old_namespace) == H2_PAL_OK);
   unsigned observed = 0u;
   for (size_t index = 0u; index < api->trace->count; ++index) {
     const h2_alipay_trace_event_t* event = &api->trace->events[index];
@@ -141,8 +200,13 @@ int main(void) {
     }
   }
   assert(observed == 2u);
+  assert(api->vtable->query_binding_result(api->user, &binding) == 0);
+  assert(binding.state == H2_ALIPAY_BINDING_PENDING && binding.sdk_rc == 0 &&
+         binding.sdk_status == 0xff && requests == 3u && responses_freed == 3u);
   assert(h2_alipay_e2e_independent_release() == H2_PAL_OK);
-  assert(h2_app_test_pref_deinit(&pref) == H2_PAL_OK);
+  assert(h2_alipay_tiga_storage_audit() == 0);
+  assert(h2_alipay_tiga_storage_release() == 0);
+  assert(h2_memory_pref_destroy(&pref) == 0);
   assert(mem.live_blocks == 0u);
   return 0;
 }

@@ -2,6 +2,7 @@
 #include "h2_fm175xx_defs.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <string.h>
 
 typedef enum card_state {
@@ -24,6 +25,8 @@ typedef struct fixture {
   unsigned halts;
   unsigned wakes;
   unsigned reads;
+  unsigned writes;
+  unsigned reject_write;
   int fail_register;
   uint8_t silence_irq;
   uint8_t silence_error;
@@ -117,6 +120,15 @@ static void exchange(fixture_t* f) {
     memcpy(f->rx, f->memory + offset, 16u);
     f->rx_len = 16u;
     ++f->reads;
+  } else if (f->tx_len == 6u && f->tx[0] == 0xa2u && f->card == ACTIVE) {
+    const size_t offset = (size_t)f->tx[1] * 4u;
+    assert(offset >= 16u && offset + 4u <= sizeof(f->memory));
+    ++f->writes;
+    bool accepted = f->writes != f->reject_write;
+    if (accepted) memcpy(f->memory + offset, f->tx + 2u, 4u);
+    f->rx[0] = accepted ? 0x0au : 0u;
+    f->rx_len = 1u;
+    f->rx_last_bits = 4u;
   } else {
     return;
   }
@@ -284,6 +296,33 @@ int main(void) {
          H2_FM175XX_OK);
   assert(len == sizeof(f.memory) && memcmp(pages, f.memory, len) == 0);
   assert(f.reads == 10u);
+  /* NDEF readback excludes tag headers. Writes invalidate length first,
+   * preserve manufacturer/lock pages, then publish and verify the message. */
+  static const uint8_t message[] = {0xd1u, 1u, 2u, 'U', 4u, 'x'};
+  uint8_t identity_pages[16];
+  memcpy(identity_pages, f.memory, sizeof(identity_pages));
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) == 0);
+  assert(memcmp(identity_pages, f.memory, sizeof(identity_pages)) == 0);
+  assert(h2_fm175xx_ntag_read_ndef(&reader, pages, sizeof(pages), &len) == 0);
+  assert(len == sizeof(message) && memcmp(pages, message, len) == 0);
+  unsigned saved_writes = f.writes;
+  f.memory[15] = 15u;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+         H2_FM175XX_ERR_UNAVAILABLE);
+  assert(f.writes == saved_writes);
+  f.memory[15] = 0u;
+  f.memory[10] = 1u;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+         H2_FM175XX_ERR_UNAVAILABLE);
+  f.memory[10] = 0u;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, pages, sizeof(pages)) ==
+         H2_FM175XX_ERR_NO_MEMORY);
+  f.reject_write = f.writes + 2u;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(f.memory[16] == 3u && f.memory[17] == 0u);
+  f.reject_write = 0u;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) == 0);
   /* An empty RX indication before the timer expires must leave the command
    * alive: the real card's ATQA, UID, SAK and page replies can follow it. */
   f.empty_before_reply = 1;

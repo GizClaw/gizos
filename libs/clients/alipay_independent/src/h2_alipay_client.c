@@ -1,5 +1,6 @@
 #include "h2_alipay_client.h"
 
+#include "h2_alipay_client_internal.h"
 #include "h2_sha256.h"
 #include "yyjson.h"
 #include <inttypes.h>
@@ -7,36 +8,22 @@
 #include <stdio.h>
 #include <string.h>
 
-typedef struct client_state {
-  uint8_t fingerprint[32];
-  char device_name[132];
-  char biztid[17];
-} client_state_t;
-
-typedef struct client_workspace {
-  client_state_t state;
-  h2_pal_p256_keypair_t keypair;
-  uint8_t public_key[65];
-  char canonical[8192];
-  uint8_t response[8192];
-} client_workspace_t;
-
 typedef struct response_headers {
   h2_alipay_client_result_t* result;
   bool seen;
 } response_headers_t;
 
-static void wipe(void* data, size_t length) {
+void h2_alipay_client_wipe(void* data, size_t length) {
   volatile uint8_t* bytes = data;
   while (length-- != 0u) *bytes++ = 0u;
 }
 
 void h2_alipay_client_result_clear(h2_alipay_client_result_t* result) {
-  if (result != NULL) wipe(result, sizeof(*result));
+  if (result != NULL) h2_alipay_client_wipe(result, sizeof(*result));
 }
 
-static void fingerprint(const h2_alipay_client_config_t* config,
-                        uint8_t out[32]) {
+void h2_alipay_client_fingerprint(const h2_alipay_client_config_t* config,
+                                  uint8_t out[32]) {
   const char* values[] = {
       config->identity.sn,    config->identity.imei, config->identity.mac,
       config->identity.model, config->company,
@@ -51,16 +38,17 @@ static void fingerprint(const h2_alipay_client_config_t* config,
   h2_sha256_finish(&digest, out);
 }
 
-static int finish_namespace(h2_pal_pref_namespace_t* namespace, int result) {
+int h2_alipay_client_finish_namespace(h2_pal_pref_namespace_t* namespace,
+                                      int result) {
   int closed = namespace->close != NULL ? namespace->close(namespace)
                                         : H2_PAL_ERR_UNSUPPORTED;
   result = result != H2_PAL_OK ? result : closed;
   return result <= 0 ? result : H2_PAL_ERR_IO;
 }
 
-static int load_state(const h2_alipay_client_config_t* config,
-                      client_state_t* state) {
-  fingerprint(config, state->fingerprint);
+int h2_alipay_client_load_state(const h2_alipay_client_config_t* config,
+                                client_state_t* state) {
+  h2_alipay_client_fingerprint(config, state->fingerprint);
   h2_pal_pref_namespace_t* namespace = NULL;
   int rc = h2_pal_pref_open(config->pref, config->pref_namespace,
                             H2_PAL_PREF_OPEN_READ_ONLY, &namespace);
@@ -72,7 +60,7 @@ static int load_state(const h2_alipay_client_config_t* config,
            ? namespace->get_blob(namespace, config->mem, "context", &raw,
                                  &length)
            : H2_PAL_ERR_UNSUPPORTED;
-  rc = finish_namespace(namespace, rc);
+  rc = h2_alipay_client_finish_namespace(namespace, rc);
   if (rc == H2_PAL_OK) {
     const uint8_t* data = raw;
     if (data == NULL || length < 54u || length > 184u ||
@@ -113,10 +101,10 @@ static int save_state(const h2_alipay_client_config_t* config,
   if (rc != H2_PAL_OK) return rc < 0 ? rc : H2_PAL_ERR_IO;
   if (namespace == NULL) return H2_PAL_ERR_INVALID_STATE;
   if (namespace->set_blob == NULL || namespace->commit == NULL)
-    return finish_namespace(namespace, H2_PAL_ERR_UNSUPPORTED);
+    return h2_alipay_client_finish_namespace(namespace, H2_PAL_ERR_UNSUPPORTED);
   rc = namespace->set_blob(namespace, "context", data, 53u + name_length);
   if (rc == H2_PAL_OK) rc = namespace->commit(namespace);
-  return finish_namespace(namespace, rc);
+  return h2_alipay_client_finish_namespace(namespace, rc);
 }
 
 static bool header_is(h2_pal_http_str_t value, const char* expected) {
@@ -149,11 +137,12 @@ static int response_header(void* user, const h2_pal_http_request_t* request,
   return H2_PAL_OK;
 }
 
-static int post(const h2_alipay_client_config_t* config,
-                client_workspace_t* workspace,
-                h2_alipay_client_result_t* result, const char* operation,
-                bool binary, const uint8_t* body, size_t body_length,
-                size_t* response_length) {
+int h2_alipay_client_post(const h2_alipay_client_config_t* config,
+                          client_workspace_t* workspace,
+                          h2_alipay_client_result_t* result,
+                          const char* operation, bool binary,
+                          const uint8_t* body, size_t body_length,
+                          size_t* response_length) {
   *response_length = 0u;
   uint64_t utc_ms = 0u;
   int rc = h2_pal_time_get_wall_ms(config->time, &utc_ms);
@@ -189,8 +178,8 @@ static int post(const h2_alipay_client_config_t* config,
     if (rc == H2_PAL_OK)
       rc = h2_alipay_protocol_signature(
           key, (const uint8_t*)workspace->canonical, length, signature);
-    wipe(key, sizeof(key));
-    wipe(workspace->canonical, sizeof(workspace->canonical));
+    h2_alipay_client_wipe(key, sizeof(key));
+    h2_alipay_client_wipe(workspace->canonical, sizeof(workspace->canonical));
     if (rc != H2_PAL_OK) return rc;
   }
   static const char url[] = "https://iotapi.alipay.com/mgw.htm";
@@ -227,25 +216,47 @@ static int post(const h2_alipay_client_config_t* config,
       *response_length = response.body_len;
   }
   h2_pal_http_response_free(config->http, &response);
-  wipe(signature, sizeof(signature));
+  h2_alipay_client_wipe(signature, sizeof(signature));
   return rc;
 }
 
-static void* json_alloc(void* user, size_t size) {
-  return h2_pal_mem_alloc(user, size);
+typedef union json_block {
+  max_align_t alignment;
+  size_t size;
+} json_block_t;
+
+void* h2_alipay_client_json_alloc(void* user, size_t size) {
+  if (size > SIZE_MAX - sizeof(json_block_t)) return NULL;
+  json_block_t* block = h2_pal_mem_alloc(user, sizeof(*block) + size);
+  if (block == NULL) return NULL;
+  block->size = size;
+  return block + 1;
 }
-static void* json_realloc(void* user, void* previous, size_t old_size,
-                          size_t size) {
+void h2_alipay_client_json_free(void* user, void* data) {
+  if (data == NULL) return;
+  json_block_t* block = (json_block_t*)data - 1;
+  h2_alipay_client_wipe(block, sizeof(*block) + block->size);
+  h2_pal_mem_free(user, block);
+}
+void* h2_alipay_client_json_realloc(void* user, void* previous, size_t old_size,
+                                    size_t size) {
   (void)old_size;
-  return h2_pal_mem_realloc(user, previous, size);
+  void* next = h2_alipay_client_json_alloc(user, size);
+  if (next == NULL) return NULL;
+  if (previous != NULL) {
+    json_block_t* block = (json_block_t*)previous - 1;
+    memcpy(next, previous, block->size < size ? block->size : size);
+    h2_alipay_client_json_free(user, previous);
+  }
+  return next;
 }
-static void json_free(void* user, void* data) { h2_pal_mem_free(user, data); }
 
 static int read_token(const h2_alipay_client_config_t* config,
                       client_workspace_t* workspace, size_t length,
                       char token[129]) {
-  yyjson_alc allocator = {json_alloc, json_realloc, json_free,
-                          (void*)config->mem};
+  yyjson_alc allocator = {h2_alipay_client_json_alloc,
+                          h2_alipay_client_json_realloc,
+                          h2_alipay_client_json_free, (void*)config->mem};
   yyjson_read_err error;
   yyjson_doc* document = yyjson_read_opts((char*)workspace->response, length,
                                           0u, &allocator, &error);
@@ -278,19 +289,36 @@ static int read_token(const h2_alipay_client_config_t* config,
   return rc;
 }
 
+h2_pal_result_t h2_alipay_client_validate_config(
+    const h2_alipay_client_config_t* config) {
+  if (config == NULL || config->mem == NULL || config->time == NULL ||
+      config->http == NULL || config->pref == NULL || config->crypto == NULL ||
+      config->company == NULL || config->pref_namespace == NULL ||
+      config->pref_namespace[0] == '\0' || config->company[0] == '\0' ||
+      strlen(config->company) > 15u)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (config->product_type != 3u) return H2_PAL_ERR_UNSUPPORTED;
+  for (const char* p = config->company; *p != '\0'; ++p)
+    if ((unsigned char)*p < 0x20u || (unsigned char)*p > 0x7eu || *p == '#')
+      return H2_PAL_ERR_INVALID_ARG;
+  size_t length = 0u;
+  int rc =
+      h2_alipay_protocol_registration(&config->identity, NULL, 0u, &length);
+  return rc == H2_PAL_ERR_NO_SPACE ? H2_PAL_OK : rc;
+}
+
 h2_pal_result_t h2_alipay_client_get_binding_code(
     const h2_alipay_client_config_t* config, h2_alipay_client_result_t* out) {
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_alipay_client_result_clear(out);
-  if (config == NULL || config->mem == NULL || config->time == NULL ||
-      config->http == NULL || config->pref == NULL || config->crypto == NULL ||
-      config->company == NULL || config->pref_namespace == NULL ||
-      config->company[0] == '\0' || strlen(config->company) > 15u)
-    return H2_PAL_ERR_INVALID_ARG;
+  int rc = h2_alipay_client_validate_config(config);
+  if (rc != H2_PAL_OK) return rc;
+  h2_alipay_client_binding_t binding;
+  rc = h2_alipay_client_binding_snapshot(config, &binding);
+  if (rc != H2_PAL_OK) return rc;
+  if (binding.state != H2_ALIPAY_CLIENT_UNBOUND)
+    return H2_PAL_ERR_INVALID_STATE;
   size_t required = 0u;
-  int rc =
-      h2_alipay_protocol_registration(&config->identity, NULL, 0u, &required);
-  if (rc != H2_PAL_ERR_NO_SPACE) return rc;
   client_workspace_t* workspace =
       h2_pal_mem_alloc(config->mem, sizeof(*workspace));
   if (workspace == NULL) return H2_PAL_ERR_NO_MEMORY;
@@ -298,7 +326,7 @@ h2_pal_result_t h2_alipay_client_get_binding_code(
   char* body = NULL;
   size_t body_length = 0u, response_length = 0u;
   out->stage = H2_ALIPAY_CLIENT_STORAGE;
-  rc = load_state(config, &workspace->state);
+  rc = h2_alipay_client_load_state(config, &workspace->state);
   bool fresh = rc == H2_PAL_ERR_NOT_FOUND;
   if (rc != H2_PAL_OK && !fresh) goto done;
   if (fresh) {
@@ -335,8 +363,9 @@ h2_pal_result_t h2_alipay_client_get_binding_code(
     rc = h2_alipay_protocol_registration(&config->identity, registration,
                                          sizeof(registration), &required);
     if (rc == H2_PAL_OK)
-      rc = post(config, workspace, out, "iothub.internal.device.active", true,
-                registration, required, &response_length);
+      rc = h2_alipay_client_post(config, workspace, out,
+                                 "iothub.internal.device.active", true,
+                                 registration, required, &response_length);
     if (rc == H2_PAL_OK)
       rc = h2_alipay_protocol_device_name(workspace->response, response_length,
                                           workspace->state.device_name,
@@ -349,9 +378,10 @@ h2_pal_result_t h2_alipay_client_get_binding_code(
     if (rc != H2_PAL_OK) goto done;
   }
   out->stage = H2_ALIPAY_CLIENT_PREPARE_BIND;
-  rc = post(config, workspace, out,
-            "alipay.mobile.alideviceinfo.changecode.prepareBind", false,
-            (const uint8_t*)body, body_length, &response_length);
+  rc = h2_alipay_client_post(
+      config, workspace, out,
+      "alipay.mobile.alideviceinfo.changecode.prepareBind", false,
+      (const uint8_t*)body, body_length, &response_length);
   if (rc == H2_PAL_OK) {
     out->stage = H2_ALIPAY_CLIENT_TOKEN;
     rc = read_token(config, workspace, response_length, out->token);
@@ -365,14 +395,14 @@ h2_pal_result_t h2_alipay_client_get_binding_code(
   }
   if (rc == H2_PAL_OK) out->private_key = workspace->keypair.private_key;
 done:
-  if (body != NULL) wipe(body, body_length);
+  if (body != NULL) h2_alipay_client_wipe(body, body_length);
   h2_pal_mem_free(config->mem, body);
-  wipe(workspace, sizeof(*workspace));
+  h2_alipay_client_wipe(workspace, sizeof(*workspace));
   h2_pal_mem_free(config->mem, workspace);
   if (rc != H2_PAL_OK) {
-    wipe(out->code, sizeof(out->code));
-    wipe(out->token, sizeof(out->token));
-    wipe(&out->private_key, sizeof(out->private_key));
+    h2_alipay_client_wipe(out->code, sizeof(out->code));
+    h2_alipay_client_wipe(out->token, sizeof(out->token));
+    h2_alipay_client_wipe(&out->private_key, sizeof(out->private_key));
     out->length = 0u;
   }
   return rc;

@@ -31,6 +31,12 @@ cc_library(
     deps = ["@alipay_sdk//:bind_net"],
 )
 
+cc_library(
+    name = "payment_sdk",
+    target_compatible_with = ["//tools/bazel/platforms:target_esp32s3"],
+    deps = ["@alipay_sdk//:payments"],
+)
+
 filegroup(
     name = "bind_net_sdk_archives",
     srcs = ["@alipay_sdk//:archives"],
@@ -53,13 +59,21 @@ cc_library(
 )
 
 filegroup(
-    name = "sdk_sources",
+    name = "binding_sources",
     srcs = [
         "src/h2_alipay_binding_storage.h",
         "src/h2_alipay_sdk.c",
         "src/h2_alipay_sdk_os.c",
         "src/h2_alipay_sdk_random.c",
         ":sdk_fd_sources",
+    ],
+)
+
+filegroup(
+    name = "sdk_sources",
+    srcs = [
+        "src/h2_alipay_sdk_payment.c",
+        ":binding_sources",
     ],
 )
 
@@ -74,7 +88,7 @@ cc_test(
         "src/h2_alipay_sdk_internal.h",
         "src/h2_alipay_sdk_socket_abi.h",
         "tests/test_sdk.c",
-        ":sdk_sources",
+        ":binding_sources",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -98,5 +112,23 @@ cc_test(
     deps = [
         ":alipay_sdk",
         "//libs/testing:testing_pal",
+    ],
+)
+
+cc_test(
+    name = "payment_test",
+    srcs = [
+        "src/h2_alipay_sdk_internal.h",
+        "src/h2_alipay_sdk_payment.c",
+        "tests/test_payment.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    tags = ["manual"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay_sdk",
+        "@alipay_sdk//:headers",
     ],
 )

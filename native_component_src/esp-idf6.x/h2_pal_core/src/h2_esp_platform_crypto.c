@@ -618,6 +618,60 @@ static h2_pal_result_t h2_mbedtls_crypto_md5(
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_mbedtls_crypto_aes_cbc(
+    void* user, h2_pal_crypto_cipher_direction_t direction, const uint8_t* key,
+    size_t key_len, const uint8_t iv[16], const uint8_t* input,
+    size_t input_len, h2_pal_crypto_buf_t* out) {
+  (void)user;
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  out->len = 0u;
+  if (key == NULL || iv == NULL ||
+      (key_len != 16u && key_len != 24u && key_len != 32u) ||
+      (direction != H2_PAL_CRYPTO_CIPHER_ENCRYPT &&
+       direction != H2_PAL_CRYPTO_CIPHER_DECRYPT) ||
+      (input == NULL && input_len != 0u) || input_len % 16u != 0u ||
+      (out->data == NULL && out->cap != 0u) ||
+      h2_crypto_nonexact_overlap(input, input_len, out->data, input_len))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (out->cap < input_len) return H2_PAL_ERR_NO_SPACE;
+  if (input_len == 0u) return H2_PAL_OK;
+  int rc = h2_psa_init();
+  if (rc != H2_PAL_OK) return rc;
+  psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+  psa_set_key_type(&attributes, PSA_KEY_TYPE_AES);
+  psa_set_key_bits(&attributes, key_len * 8u);
+  psa_set_key_usage_flags(&attributes, direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT
+                                           ? PSA_KEY_USAGE_ENCRYPT
+                                           : PSA_KEY_USAGE_DECRYPT);
+  psa_set_key_algorithm(&attributes, PSA_ALG_CBC_NO_PADDING);
+  mbedtls_svc_key_id_t imported = MBEDTLS_SVC_KEY_ID_INIT;
+  psa_status_t status = psa_import_key(&attributes, key, key_len, &imported);
+  psa_reset_key_attributes(&attributes);
+  psa_cipher_operation_t operation = PSA_CIPHER_OPERATION_INIT;
+  if (status == PSA_SUCCESS)
+    status = direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT
+                 ? psa_cipher_encrypt_setup(&operation, imported,
+                                            PSA_ALG_CBC_NO_PADDING)
+                 : psa_cipher_decrypt_setup(&operation, imported,
+                                            PSA_ALG_CBC_NO_PADDING);
+  if (status == PSA_SUCCESS) status = psa_cipher_set_iv(&operation, iv, 16u);
+  size_t used = 0u, finished = 0u;
+  if (status == PSA_SUCCESS)
+    status = psa_cipher_update(&operation, input, input_len, out->data,
+                               out->cap, &used);
+  if (status == PSA_SUCCESS)
+    status = psa_cipher_finish(&operation, out->data + used, out->cap - used,
+                               &finished);
+  (void)psa_cipher_abort(&operation);
+  (void)psa_destroy_key(imported);
+  if (status != PSA_SUCCESS || used + finished != input_len) {
+    memset(out->data, 0, input_len);
+    return status == PSA_SUCCESS ? H2_PAL_ERR_IO : h2_psa_to_platform(status);
+  }
+  out->len = input_len;
+  return H2_PAL_OK;
+}
+
 static h2_pal_result_t h2_mbedtls_crypto_hmac_sha1(
     void* user, const uint8_t* key, size_t key_len, const uint8_t* input,
     size_t input_len, uint8_t out_digest[H2_PAL_CRYPTO_SHA1_SIZE]) {
@@ -892,6 +946,45 @@ static h2_pal_result_t h2_mbedtls_crypto_ecdsa_p256_sha256_verify(
   return h2_psa_to_platform(status);
 }
 
+static h2_pal_result_t h2_mbedtls_crypto_p256_shared_secret(
+    void* user, const h2_pal_p256_private_key_t* private_key,
+    const h2_pal_p256_public_key_t* public_key, uint8_t out[32]) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, 32u);
+  if (private_key == NULL || public_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  uint8_t uncompressed[65];
+  int rc = h2_mbedtls_crypto_p256_public_key_uncompress(user, public_key,
+                                                        uncompressed);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_psa_init();
+  if (rc != H2_PAL_OK) return rc;
+  psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+  psa_set_key_type(&attributes,
+                   PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+  psa_set_key_bits(&attributes, 256u);
+  psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+  psa_set_key_algorithm(&attributes, PSA_ALG_ECDH);
+  mbedtls_svc_key_id_t key = MBEDTLS_SVC_KEY_ID_INIT;
+  psa_status_t status =
+      psa_import_key(&attributes, private_key->bytes, 32u, &key);
+  psa_reset_key_attributes(&attributes);
+  if (status != PSA_SUCCESS)
+    return status == PSA_ERROR_INVALID_ARGUMENT ? H2_PAL_ERR_FORMAT
+                                                : h2_psa_to_platform(status);
+  size_t length = 0u;
+  status = psa_raw_key_agreement(PSA_ALG_ECDH, key, uncompressed,
+                                 sizeof(uncompressed), out, 32u, &length);
+  psa_status_t destroyed = psa_destroy_key(key);
+  if (status == PSA_SUCCESS) status = destroyed;
+  if (status != PSA_SUCCESS || length != 32u) {
+    volatile uint8_t* bytes = out;
+    for (size_t i = 0u; i < 32u; ++i) bytes[i] = 0u;
+    return status == PSA_SUCCESS ? H2_PAL_ERR_FORMAT
+                                 : h2_psa_to_platform(status);
+  }
+  return H2_PAL_OK;
+}
+
 static void h2_esp_platform_crypto_init_api(
     h2_pal_crypto_api_t* api, h2_esp_platform_crypto_backend_t* backend) {
   if (api == NULL) {
@@ -916,6 +1009,8 @@ static void h2_esp_platform_crypto_init_api(
       .ecdsa_p256_sha256_verify = h2_mbedtls_crypto_ecdsa_p256_sha256_verify,
       .p256_public_key_uncompress =
           h2_mbedtls_crypto_p256_public_key_uncompress,
+      .p256_shared_secret = h2_mbedtls_crypto_p256_shared_secret,
+      .aes_cbc = h2_mbedtls_crypto_aes_cbc,
   };
   api->user = backend;
   api->vtable = &vtable;

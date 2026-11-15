@@ -18,7 +18,7 @@ typedef struct page_fixture {
   unsigned opens, closes, draws, presents, init_calls, code_calls, reports;
   unsigned joins;
   bool retry_join, joined;
-  bool complete_binding, already_bound;
+  bool complete_binding, already_bound, session_storage;
   unsigned binding_calls;
   unsigned failed_bindings;
   unsigned progresses;
@@ -257,9 +257,12 @@ static int run(page_fixture_t* fixture) {
       .binding_snapshot = snapshot,
       .query_binding_result = query_binding,
   };
-  const h2_alipay_api_t api = {.user = fixture,
-                               .vtable = &vtable,
-                               .source = H2_ALIPAY_SOURCE_CONTROLLED};
+  const h2_alipay_api_t api = {
+      .user = fixture,
+      .vtable = &vtable,
+      .source = H2_ALIPAY_SOURCE_CONTROLLED,
+      .storage_scope = fixture->session_storage ? H2_ALIPAY_STORAGE_SESSION
+                                                : H2_ALIPAY_STORAGE_PERSISTENT};
   const h2_alipay_e2e_config_t app = {
       .alipay = &api,
       .complete_binding = fixture->complete_binding,
@@ -382,6 +385,15 @@ int main(void) {
          binding.result.binding.state == H2_ALIPAY_BINDING_COMPLETE &&
          binding.result.stage == H2_ALIPAY_E2E_BINDING_COMPLETE);
   save_frame(&binding, "tiga-sdk-binding-complete");
+  page_fixture_t session = {.width = 240,
+                            .height = 240,
+                            .frame = frame,
+                            .complete_binding = true,
+                            .session_storage = true};
+  strcpy(session.code, "controlled://session-binding-code");
+  assert(run(&session) == 0 && session.binding_calls == 1u &&
+         session.result.binding.state == H2_ALIPAY_BINDING_COMPLETE);
+  save_frame(&session, "tiga-sdk-binding-session");
   page_fixture_t existing = {.width = 240,
                              .height = 240,
                              .frame = frame,

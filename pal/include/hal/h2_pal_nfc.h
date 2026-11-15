@@ -65,6 +65,16 @@ typedef struct h2_pal_nfc_vtable {
                                    h2_pal_nfc_data_type_t requested_type,
                                    const h2_pal_mem_api_t* allocator,
                                    h2_pal_nfc_data_read_t* out_data);
+  /** Blocking write to the selected tag, guarded by its exact nonempty UID.
+   * NDEF bytes are a complete message, without tag-specific headers/TLVs.
+   * Success requires completed write/readback. A failed physical write may
+   * leave partial content; callers must not blindly retry a transaction.
+   * Caller serializes read/write; absent capability returns UNSUPPORTED. */
+  h2_pal_result_t (*write_nfc_data)(void* user, h2_pal_periph_id_t id,
+                                    const uint8_t* expected_uid,
+                                    uint8_t expected_uid_len,
+                                    h2_pal_nfc_data_type_t type,
+                                    const uint8_t* bytes, size_t length);
 } h2_pal_nfc_vtable_t;
 
 typedef struct h2_pal_nfc_api {
@@ -102,6 +112,20 @@ static inline h2_pal_result_t h2_pal_nfc_read_nfc_data(
   return api->vtable->read_nfc_data(api->user, id, expected_uid,
                                     expected_uid_len, requested_type, allocator,
                                     out_data);
+}
+
+static inline h2_pal_result_t h2_pal_nfc_write_nfc_data(
+    const h2_pal_nfc_api_t* api, h2_pal_periph_id_t id,
+    const uint8_t* expected_uid, uint8_t expected_uid_len,
+    h2_pal_nfc_data_type_t type, const uint8_t* bytes, size_t length) {
+  if (expected_uid == NULL || expected_uid_len == 0u ||
+      expected_uid_len > H2_PAL_NFC_UID_MAX_LEN || bytes == NULL ||
+      length == 0u || type != H2_PAL_NFC_DATA_NDEF)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL || api->vtable->write_nfc_data == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->write_nfc_data(api->user, id, expected_uid,
+                                     expected_uid_len, type, bytes, length);
 }
 
 /** RF technologies supported by the independent card-emulation capability. */

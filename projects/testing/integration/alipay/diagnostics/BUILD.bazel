@@ -12,6 +12,7 @@ cc_library(
     ],
     hdrs = [
         "include/h2_alipay.h",
+        "include/h2_alipay_payment.h",
         "include/h2_alipay_trace.h",
     ],
     conlyopts = H2_C11_OPTS,
