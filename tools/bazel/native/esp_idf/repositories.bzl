@@ -1,7 +1,7 @@
 """Versioned locators for native SDKs, tools, and compiler-cache runtime."""
 
 _LOCATOR_SCHEMA = "h2.native-locator.v1"
-_FIXED_SYSTEM_PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+_FIXED_SYSTEM_PATH = ["/opt/gizmoth/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
 
 def _write_locator(repository_ctx, kind, enabled, paths = {}, metadata = {}):
     repository_ctx.file(

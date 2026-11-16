@@ -344,7 +344,7 @@
     },
     "//tools/bazel/native/esp_idf:repositories.bzl%esp_repositories": {
       "general": {
-        "bzlTransitiveDigest": "KhFrNb79uqCciXJsBA6eYUZ3Sp1MlOjF5qBsZ6NpXok=",
+        "bzlTransitiveDigest": "Lz701UL5L3DEiZLtkfBIp2Jh8ghaxsCkxq1pJnU1mJ4=",
         "usagesDigest": "FpiQGzYc4XH7eJq+rJweOINr7PZkynWwhG2y1gFNZzY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

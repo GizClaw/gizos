@@ -14,7 +14,7 @@ from collections.abc import Iterable
 
 COMMIT = re.compile(r"[0-9a-f]{40}")
 LOCATOR_SCHEMA = "h2.native-locator.v1"
-FIXED_SYSTEM_PATH = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
+FIXED_SYSTEM_PATH = ("/opt/gizmoth/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
 
 
 class NativeRuntimeError(RuntimeError):

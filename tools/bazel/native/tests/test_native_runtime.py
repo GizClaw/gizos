@@ -47,9 +47,18 @@ class NativeRuntimeTest(unittest.TestCase):
                 native_runtime.read_locator(str(locator), "jieli-ac695n-sdk")
 
     def test_fixed_environment_does_not_inherit_caller_path(self):
-        environment = native_runtime.fixed_environment()
+        with mock.patch.dict(os.environ, {"PATH": "/caller-only"}):
+            environment = native_runtime.fixed_environment()
         self.assertNotIn("caller-only", environment["PATH"])
         self.assertEqual(environment["TZ"], "UTC")
+
+    def test_fixed_environment_prefers_explicit_tools_then_managed_commands(self):
+        with mock.patch.object(Path, "is_dir", return_value=True):
+            environment = native_runtime.fixed_environment([Path("/pinned/bin")])
+        self.assertEqual(
+            environment["PATH"].split(os.pathsep)[:2],
+            ["/pinned/bin", "/opt/gizmoth/bin"],
+        )
 
     @mock.patch.object(native_runtime.platform, "system", return_value="Linux")
     @mock.patch.object(native_runtime.platform, "machine", return_value="aarch64")
