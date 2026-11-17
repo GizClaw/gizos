@@ -33,6 +33,7 @@ linux_arm64_compatibility_test(
         ":linux_host": True,
         "//conditions:default": False,
     }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     target_under_test = ":host_tools",
 )
 
@@ -46,6 +47,7 @@ linux_x86_64_compatibility_test(
         ":linux_host": True,
         "//conditions:default": False,
     }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     target_under_test = ":host_tools",
 )
 
@@ -59,6 +61,7 @@ macos_arm64_compatibility_test(
         ":macos_host": True,
         "//conditions:default": False,
     }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     target_under_test = ":host_tools",
 )
 
@@ -69,6 +72,7 @@ windows_x86_64_compatibility_test(
         "//conditions:default": False,
     }),
     expected_posix = False,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     target_under_test = ":host_tools",
 )
 
@@ -76,5 +80,6 @@ firmware_compatibility_test(
     name = "firmware_test",
     expected_host = False,
     expected_posix = False,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     target_under_test = ":host_tools",
 )
