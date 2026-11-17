@@ -3,12 +3,18 @@
 
 /* Software RGB565 renderer for the game model.
  *
- * The picture has three layers: a background image (lawn, house edge and
- * toolbar panel), a static layer with independent parts that change only when
- * their key changes, and the moving scene. Each part is drawn through the same
- * code twice: a measure pass records which horizontal bands the primitives
- * cover, then a paint pass draws them. The run loop restores only bands
- * covered in this or the previous frame and pushes only those rows. */
+ * The picture has three layers: a background image (the courtyard in
+ * perspective: lawn, patio, house wall, fence, front wall and the toolbar
+ * plank), a static layer with independent parts that change only when their
+ * key changes, and the moving scene. Each part is drawn through the same code
+ * twice: a measure pass records which horizontal bands the primitives cover,
+ * then a paint pass draws them. The run loop restores only bands covered in
+ * this or the previous frame and pushes only those rows.
+ *
+ * Plants live in the static layer, so a moving pest behind a nearer plant
+ * would otherwise be painted over it. While the static field part is painted
+ * it records, per pixel, the lane of the nearest plant covering it; the scene
+ * skips pixels that a nearer lane's plant owns. */
 
 #include "h2_garden_guard_game.h"
 
@@ -37,6 +43,13 @@ typedef struct h2_garden_guard_canvas {
   /** Vertical clip rows [clip_y0, clip_y1), managed by the renderer while it
    * draws; zero clip_y1 selects the full height. */
   int32_t clip_y0, clip_y1;
+  /** Optional borrowed occlusion map: one byte per pixel with stride_pixels,
+   * 0 for open ground and lane + 1 under a plant figure. The static field
+   * part writes it and the scene reads it; NULL disables occlusion. The
+   * owner clears it wherever it restores static pixels. */
+  uint8_t* depth;
+  /** Occlusion mode and lane, managed by the renderer while it draws. */
+  uint8_t depth_mode, depth_layer;
 } h2_garden_guard_canvas_t;
 
 /** Independently cached parts of the static layer. */

@@ -30,6 +30,8 @@ typedef struct session {
   uint16_t* background;
   /* Background plus the static parts; the scene is composed on top of it. */
   uint16_t* static_layer;
+  /* Lane of the nearest plant figure per static pixel, for occlusion. */
+  uint8_t* depth;
   h2_garden_guard_static_key_t static_key[PART_COUNT];
   dirty_t static_cover[PART_COUNT];
   dirty_t previous;
@@ -183,6 +185,22 @@ static void dirty_all(dirty_t* out, const session_t* s) {
   }
 }
 
+/* Forget plant ownership wherever static pixels are restored. */
+static void clear_depth(const session_t* s, const dirty_t* dirty) {
+  const int32_t width = s->display.width, height = s->display.height;
+  for (int32_t band = 0; band < H2_GARDEN_GUARD_MAX_BANDS; ++band) {
+    if (!(dirty->bands & ((uint64_t)1 << band))) continue;
+    const int32_t y0 = band * H2_GARDEN_GUARD_BAND_ROWS;
+    if (y0 >= height) break;
+    int32_t y1 = y0 + H2_GARDEN_GUARD_BAND_ROWS;
+    if (y1 > height) y1 = height;
+    const int32_t x0 = dirty->x0[band], x1 = dirty->x1[band];
+    for (int32_t y = y0; y < y1; ++y)
+      memset(s->depth + (size_t)y * (size_t)width + (size_t)x0, 0,
+             (size_t)(x1 - x0));
+  }
+}
+
 /* Copy every dirty column range from source to destination. */
 static void copy_dirty(const session_t* s, uint16_t* destination,
                        const uint16_t* source, const dirty_t* dirty) {
@@ -208,7 +226,8 @@ static h2_garden_guard_canvas_t layer_canvas(const session_t* s,
                                     .width = s->display.width,
                                     .height = s->display.height,
                                     .stride_pixels = (size_t)s->display.width,
-                                    .measure = measure};
+                                    .measure = measure,
+                                    .depth = s->depth};
 }
 
 /* Rebuild the static parts whose key changed, adding what changed. A part
@@ -245,6 +264,7 @@ static void update_static_layer(session_t* s, dirty_t* changed) {
     }
   }
   copy_dirty(s, s->static_layer, s->background, changed);
+  clear_depth(s, changed);
   for (unsigned p = 0; p < PART_COUNT; ++p) {
     if (!repaint[p]) continue;
     h2_garden_guard_canvas_t canvas = layer_canvas(s, s->static_layer, false);
@@ -460,7 +480,9 @@ static h2_pal_result_t prepare(session_t* s) {
   s->frame = h2_pal_mem_alloc(s->allocator, bytes);
   s->background = h2_pal_mem_alloc(s->allocator, bytes);
   s->static_layer = h2_pal_mem_alloc(s->allocator, bytes);
-  if (s->frame == NULL || s->background == NULL || s->static_layer == NULL) {
+  s->depth = h2_pal_mem_alloc(s->allocator, bytes / sizeof(uint16_t));
+  if (s->frame == NULL || s->background == NULL || s->static_layer == NULL ||
+      s->depth == NULL) {
     char message[96];
     (void)snprintf(message, sizeof(message),
                    "H2_GARDEN_GUARD_ALLOC_FAIL what=frames bytes=%u",
@@ -522,6 +544,7 @@ h2_pal_result_t h2_garden_guard_run(h2_runtime_t* runtime,
     const int closed = h2_pal_display_close(runtime->display);
     if (rc == H2_PAL_OK) rc = closed;
   }
+  h2_pal_mem_free(allocator, s->depth);
   h2_pal_mem_free(allocator, s->static_layer);
   h2_pal_mem_free(allocator, s->background);
   h2_pal_mem_free(allocator, s->frame);

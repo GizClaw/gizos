@@ -17,6 +17,9 @@
 
 static uint16_t background[MAX_PIXELS];
 static uint16_t pixels[MAX_PIXELS];
+static uint16_t static_pixels[MAX_PIXELS];
+static uint16_t unoccluded[MAX_PIXELS];
+static uint8_t depth[MAX_PIXELS];
 static h2_garden_guard_game_t game;
 
 static h2_garden_guard_canvas_t canvas_for(uint16_t* target, bool measure) {
@@ -184,7 +187,77 @@ static void test_scene(void) {
   CHECK(at(pixels, 200.0f, 150.0f) != at(background, 200.0f, 150.0f));
 }
 
-/* In portrait, pests entering above the lawn are clipped below the toolbar. */
+/* A foreground plant must hide a pest in the previous lane without hiding
+ * that pest's uncovered pixels. Every changed pixel must be transferable
+ * using the measured dirty bands, including the raised head and shadows. */
+static void test_depth_and_dirty_coverage(void) {
+  /* A shallow landscape viewport makes adjacent upright figures overlap. */
+  init(480, 240);
+  start_playing();
+  game.plants[4][4] = (h2_garden_guard_plant_t){
+      .kind = H2_GARDEN_GUARD_PLANT_SUNFLOWER, .hp = 300.0f};
+  memset(depth, 0, sizeof(depth));
+  h2_garden_guard_canvas_t canvas = canvas_for(pixels, false);
+  canvas.depth = depth;
+  h2_garden_guard_render_static(&canvas, &game, H2_GARDEN_GUARD_PART_FIELD);
+  memcpy(static_pixels, pixels, sizeof(pixels));
+  game.pests[0] = (h2_garden_guard_pest_t){.active = true,
+                                           .kind = H2_GARDEN_GUARD_PEST_BEETLE,
+                                           .lane = 3u,
+                                           .x = 4.5f,
+                                           .hp = 190};
+  canvas = canvas_for(pixels, false);
+  h2_garden_guard_render_scene(&canvas, &game);
+  memcpy(unoccluded, pixels, sizeof(pixels));
+  memcpy(pixels, static_pixels, sizeof(pixels));
+  h2_garden_guard_canvas_t measured = canvas_for(NULL, true);
+  measured.depth = depth;
+  h2_garden_guard_render_scene(&measured, &game);
+  canvas = canvas_for(pixels, false);
+  canvas.depth = depth;
+  h2_garden_guard_render_scene(&canvas, &game);
+  unsigned hidden = 0, visible = 0;
+  for (int32_t y = 0; y < game.layout.height; ++y)
+    for (int32_t x = 0; x < game.layout.width; ++x) {
+      const size_t i = (size_t)y * (size_t)game.layout.width + (size_t)x;
+      if (depth[i] == 5u) {
+        CHECK(pixels[i] == static_pixels[i]);
+        if (unoccluded[i] != static_pixels[i]) ++hidden;
+      }
+      if (pixels[i] != static_pixels[i]) {
+        ++visible;
+        const int band = y / H2_GARDEN_GUARD_BAND_ROWS;
+        CHECK(measured.bands & ((uint64_t)1 << band));
+        CHECK(x >= measured.band_x0[band] && x < measured.band_x1[band]);
+      }
+    }
+  CHECK(hidden > 0u && visible > 0u);
+  CHECK(measured.bands != h2_garden_guard_all_bands(game.layout.height));
+
+  /* A moving foreground object can cover a plant in the same lane. */
+  game.pests[0].lane = 4u;
+  memcpy(pixels, static_pixels, sizeof(pixels));
+  canvas = canvas_for(pixels, false);
+  canvas.depth = depth;
+  h2_garden_guard_render_scene(&canvas, &game);
+  unsigned in_front = 0;
+  for (size_t i = 0; i < 480u * 240u; ++i)
+    if (depth[i] == 5u && pixels[i] != static_pixels[i]) ++in_front;
+  CHECK(in_front > 0u);
+
+  /* Drag outlines are moving-scene content; their coverage disappears on
+   * release so the previous frame's bands can be restored. */
+  game.pests[0].active = false;
+  game.hover_lane = 0;
+  game.hover_col = 8;
+  check_coverage(H2_GARDEN_GUARD_PART_FIELD, true);
+  game.hover_lane = game.hover_col = -1;
+  canvas = canvas_for(NULL, true);
+  h2_garden_guard_render_scene(&canvas, &game);
+  CHECK(canvas.bands == 0u);
+}
+
+/* Pests entering from the right are clipped away from the toolbar. */
 static void test_portrait_clip(void) {
   init(480, 800);
   const h2_garden_guard_layout_t* l = &game.layout;
@@ -222,6 +295,7 @@ int main(void) {
   test_background();
   test_static_parts();
   test_scene();
+  test_depth_and_dirty_coverage();
   test_portrait_clip();
   test_small_extent();
   puts("garden guard render tests passed");

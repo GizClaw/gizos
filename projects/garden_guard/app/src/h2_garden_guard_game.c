@@ -6,6 +6,12 @@
 
 #define STEP_MAX_MS 20u
 #define CARD_DENIED_MS 450u
+/* Far lawn width over near lawn width. */
+#define FAR_RATIO 0.7f
+/* Deepest lawn row, in near cell widths per lane. */
+#define MAX_DEPTH_PER_LANE 1.2f
+/* Characters stand slightly in front of their lane's centre line. */
+#define FOOT_IN_LANE 0.58f
 #define SKY_SUN_FIRST_MS 5000u
 #define SUNFLOWER_FIRST_MS 6000u
 #define SUNFLOWER_PERIOD_MS 12000u
@@ -157,27 +163,30 @@ static void compute_layout(h2_garden_guard_layout_t* l, int32_t width,
   const float w = (float)width, h = (float)height;
   l->unit = fminf(w, h) / 480.0f;
   l->portrait = height > width;
-  float bar = floorf(fminf(h * 0.18f, w * 0.135f));
+  float bar = floorf(fminf(h * 0.165f, w * 0.135f));
   if (bar < 20.0f) bar = 20.0f;
   l->bar_h = bar;
-  if (l->portrait) {
-    const float house = floorf(h * 0.05f);
-    l->field_x = 0.0f;
-    l->field_y = bar;
-    l->field_w = w;
-    l->field_h = h - bar - house;
-    l->cell_along = l->field_h / (float)H2_GARDEN_GUARD_COLS;
-    l->cell_lane = l->field_w / (float)H2_GARDEN_GUARD_LANES;
-  } else {
-    const float house = floorf(w * 0.06f);
-    l->field_x = house;
-    l->field_y = bar;
-    l->field_w = w - house;
-    l->field_h = h - bar;
-    l->cell_along = l->field_w / (float)H2_GARDEN_GUARD_COLS;
-    l->cell_lane = l->field_h / (float)H2_GARDEN_GUARD_LANES;
-  }
-  l->sprite = fminf(l->cell_along, l->cell_lane);
+
+  /* A patio on the house side and an entry path on the other frame the
+   * lawn; the front wall below its near edge shows that it is raised. */
+  const float patio = floorf(w * 0.075f), path = floorf(w * 0.045f);
+  l->near_w = w - patio - path;
+  l->mid_x = patio + l->near_w * 0.5f;
+  l->far_ratio = FAR_RATIO;
+  l->sprite = l->near_w / (float)H2_GARDEN_GUARD_COLS;
+  const float facade = floorf(fmaxf(h * 0.05f, 8.0f));
+  l->near_y = h - facade;
+  /* Keep far-row figures clear of the toolbar, and cap the depth so the
+   * camera does not look straight down on tall displays. */
+  const float courtyard = fmaxf(l->sprite * FAR_RATIO * 0.8f, h * 0.04f);
+  const float depth =
+      fminf(l->near_y - bar - courtyard,
+            l->sprite * (float)H2_GARDEN_GUARD_LANES * MAX_DEPTH_PER_LANE);
+  l->far_y = l->near_y - depth;
+  l->field_x = patio;
+  l->field_y = l->far_y;
+  l->field_w = l->near_w;
+  l->field_h = depth;
 
   float pad = floorf(bar * 0.08f);
   if (pad < 1.0f) pad = 1.0f;
@@ -193,35 +202,103 @@ static void compute_layout(h2_garden_guard_layout_t* l, int32_t width,
   }
 }
 
+float h2_garden_guard_depth_scale(const h2_garden_guard_layout_t* layout,
+                                  float f) {
+  return 1.0f / (1.0f + f * (1.0f / layout->far_ratio - 1.0f));
+}
+
+/* Screen rows are linear in the perspective factor t. */
+static float row_of_scale(const h2_garden_guard_layout_t* l, float t) {
+  return l->far_y +
+         (l->near_y - l->far_y) * (t - l->far_ratio) / (1.0f - l->far_ratio);
+}
+
+void h2_garden_guard_ground_point(const h2_garden_guard_layout_t* layout,
+                                  float u, float f, float* out_x,
+                                  float* out_y) {
+  const float t = h2_garden_guard_depth_scale(layout, f);
+  *out_x = layout->mid_x + (u - 0.5f) * layout->near_w * t;
+  *out_y = row_of_scale(layout, t);
+}
+
+bool h2_garden_guard_ground_at(const h2_garden_guard_layout_t* layout, float x,
+                               float y, float* out_u, float* out_f) {
+  const float t = layout->far_ratio + (y - layout->far_y) /
+                                          (layout->near_y - layout->far_y) *
+                                          (1.0f - layout->far_ratio);
+  if (!(t > 0.05f)) return false;
+  *out_f = (1.0f / t - 1.0f) / (1.0f / layout->far_ratio - 1.0f);
+  *out_u = 0.5f + (x - layout->mid_x) / (layout->near_w * t);
+  return true;
+}
+
+float h2_garden_guard_lane_depth(uint32_t lane) {
+  return 1.0f - ((float)lane + FOOT_IN_LANE) / (float)H2_GARDEN_GUARD_LANES;
+}
+
+float h2_garden_guard_lane_size(const h2_garden_guard_layout_t* layout,
+                                uint32_t lane) {
+  return layout->sprite *
+         h2_garden_guard_depth_scale(layout, h2_garden_guard_lane_depth(lane));
+}
+
 void h2_garden_guard_field_point(const h2_garden_guard_layout_t* layout,
                                  uint32_t lane, float along, float* out_x,
                                  float* out_y) {
-  const float across = ((float)lane + 0.5f) * layout->cell_lane;
-  if (layout->portrait) {
-    *out_x = layout->field_x + across;
-    *out_y = layout->field_y + layout->field_h - along * layout->cell_along;
-  } else {
-    *out_x = layout->field_x + along * layout->cell_along;
-    *out_y = layout->field_y + across;
-  }
+  h2_garden_guard_ground_point(layout, along / (float)H2_GARDEN_GUARD_COLS,
+                               h2_garden_guard_lane_depth(lane), out_x, out_y);
 }
 
 bool h2_garden_guard_cell_at(const h2_garden_guard_layout_t* layout, float x,
                              float y, uint32_t* out_lane, uint32_t* out_col) {
-  float lane, along;
-  if (layout->portrait) {
-    lane = (x - layout->field_x) / layout->cell_lane;
-    along = (layout->field_y + layout->field_h - y) / layout->cell_along;
-  } else {
-    lane = (y - layout->field_y) / layout->cell_lane;
-    along = (x - layout->field_x) / layout->cell_along;
-  }
+  float u, f;
+  if (!h2_garden_guard_ground_at(layout, x, y, &u, &f)) return false;
+  const float lane = (1.0f - f) * (float)H2_GARDEN_GUARD_LANES;
+  const float along = u * (float)H2_GARDEN_GUARD_COLS;
   if (!(lane >= 0.0f && lane < (float)H2_GARDEN_GUARD_LANES && along >= 0.0f &&
         along < (float)H2_GARDEN_GUARD_COLS))
     return false;
   *out_lane = (uint32_t)lane;
   *out_col = (uint32_t)along;
   return true;
+}
+
+float h2_garden_guard_plant_height(h2_garden_guard_plant_kind_t kind) {
+  switch (kind) {
+    case H2_GARDEN_GUARD_PLANT_SUNFLOWER:
+      return 1.06f;
+    case H2_GARDEN_GUARD_PLANT_SHOOTER:
+      return 0.96f;
+    case H2_GARDEN_GUARD_PLANT_PUMPKIN:
+      return 0.72f;
+    default:
+      return 0.0f;
+  }
+}
+
+bool h2_garden_guard_plant_at(const h2_garden_guard_game_t* game, float x,
+                              float y, uint32_t* out_lane, uint32_t* out_col) {
+  /* Nearer figures are drawn over farther ones, so they win the hit. */
+  for (uint32_t i = 0; i < H2_GARDEN_GUARD_LANES; ++i) {
+    const uint32_t lane = H2_GARDEN_GUARD_LANES - 1u - i;
+    const float size = h2_garden_guard_lane_size(&game->layout, lane);
+    for (uint32_t col = 0; col < H2_GARDEN_GUARD_COLS; ++col) {
+      const uint8_t kind = game->plants[lane][col].kind;
+      if (kind == H2_GARDEN_GUARD_PLANT_NONE) continue;
+      float gx, gy;
+      h2_garden_guard_field_point(&game->layout, lane, (float)col + 0.5f, &gx,
+                                  &gy);
+      const float top = gy - h2_garden_guard_plant_height(
+                                 (h2_garden_guard_plant_kind_t)kind) *
+                                 size;
+      if (fabsf(x - gx) <= 0.42f * size && y >= top && y <= gy + 0.12f * size) {
+        *out_lane = lane;
+        *out_col = col;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 int32_t h2_garden_guard_card_at(const h2_garden_guard_layout_t* layout, float x,
@@ -282,6 +359,8 @@ static void clear_world(h2_garden_guard_game_t* game) {
   memset(game->suns, 0, sizeof(game->suns));
   game->selected = H2_GARDEN_GUARD_CARD_NONE;
   game->drag_from_card = false;
+  game->hover_lane = -1;
+  game->hover_col = -1;
   game->banner_ms = 0;
 }
 
@@ -376,6 +455,8 @@ static bool collect_suns_at(h2_garden_guard_game_t* game, float x, float y) {
   for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_SUNS; ++i) {
     h2_garden_guard_sun_t* sun = &game->suns[i];
     if (!sun->active || sun->collecting) continue;
+    /* A sun still behind the toolbar must not steal a card tap. */
+    if (sun->y < game->layout.bar_h) continue;
     const float dx = sun->x - x, dy = sun->y - y;
     if (dx * dx + dy * dy > reach * reach) continue;
     sun->collecting = true;
@@ -409,7 +490,8 @@ static void plant_burst(h2_garden_guard_game_t* game, uint32_t lane,
                         uint32_t col, uint16_t color) {
   float x, y;
   h2_garden_guard_field_point(&game->layout, lane, (float)col + 0.5f, &x, &y);
-  add_particles(game, x, y, 8u, color, 110.0f * game->layout.unit,
+  const float size = h2_garden_guard_lane_size(&game->layout, lane);
+  add_particles(game, x, y - 0.3f * size, 8u, color, 110.0f * game->layout.unit,
                 3.5f * game->layout.unit);
 }
 
@@ -454,6 +536,21 @@ static void apply_card(h2_garden_guard_game_t* game, uint32_t lane,
   plant_burst(game, lane, col, H2_GARDEN_GUARD_RGB(150, 112, 70));
 }
 
+/* Cell a selected card applies to. Plants stand up out of their cell, so
+ * the shovel takes the figure under the point before the ground cell. */
+static bool target_cell(const h2_garden_guard_game_t* game, float x, float y,
+                        uint32_t* lane, uint32_t* col) {
+  if (game->selected == H2_GARDEN_GUARD_CARD_SHOVEL &&
+      h2_garden_guard_plant_at(game, x, y, lane, col))
+    return true;
+  return h2_garden_guard_cell_at(&game->layout, x, y, lane, col);
+}
+
+static void clear_hover(h2_garden_guard_game_t* game) {
+  game->hover_lane = -1;
+  game->hover_col = -1;
+}
+
 static void press(h2_garden_guard_game_t* game, float x, float y) {
   switch (game->phase) {
     case H2_GARDEN_GUARD_PHASE_TITLE:
@@ -484,7 +581,7 @@ static void press(h2_garden_guard_game_t* game, float x, float y) {
   }
   uint32_t lane, col;
   if (game->selected != H2_GARDEN_GUARD_CARD_NONE &&
-      h2_garden_guard_cell_at(&game->layout, x, y, &lane, &col)) {
+      target_cell(game, x, y, &lane, &col)) {
     apply_card(game, lane, col);
     return;
   }
@@ -498,28 +595,41 @@ void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
     case H2_GARDEN_GUARD_POINTER_DOWN:
       game->pointer_down = true;
       game->drag_from_card = false;
+      clear_hover(game);
       press(game, x, y);
       break;
-    case H2_GARDEN_GUARD_POINTER_MOVE:
+    case H2_GARDEN_GUARD_POINTER_MOVE: {
+      if (!game->pointer_down || game->phase != H2_GARDEN_GUARD_PHASE_PLAYING)
+        break;
       /* Sweeping across suns collects them. */
-      if (game->pointer_down && game->phase == H2_GARDEN_GUARD_PHASE_PLAYING)
-        (void)collect_suns_at(game, x, y);
+      (void)collect_suns_at(game, x, y);
+      /* A dragged card marks the cell it would land on. */
+      uint32_t lane, col;
+      clear_hover(game);
+      if (game->drag_from_card && game->selected != H2_GARDEN_GUARD_CARD_NONE &&
+          target_cell(game, x, y, &lane, &col)) {
+        game->hover_lane = (int32_t)lane;
+        game->hover_col = (int32_t)col;
+      }
       break;
+    }
     case H2_GARDEN_GUARD_POINTER_UP: {
       uint32_t lane, col;
       /* Dragging a card onto the lawn plants where it is released. */
       if (game->pointer_down && game->drag_from_card &&
           game->phase == H2_GARDEN_GUARD_PHASE_PLAYING &&
           game->selected != H2_GARDEN_GUARD_CARD_NONE &&
-          h2_garden_guard_cell_at(&game->layout, x, y, &lane, &col))
+          target_cell(game, x, y, &lane, &col))
         apply_card(game, lane, col);
       game->pointer_down = false;
       game->drag_from_card = false;
+      clear_hover(game);
       break;
     }
     default:
       game->pointer_down = false;
       game->drag_from_card = false;
+      clear_hover(game);
       break;
   }
 }
@@ -595,11 +705,12 @@ static void step_sky(h2_garden_guard_game_t* game) {
       game->time_ms + (uint64_t)random_range(game, 9000.0f, 12000.0f);
   const h2_garden_guard_layout_t* l = &game->layout;
   const float r = h2_garden_guard_sun_radius(l);
-  const float x = random_range(game, l->field_x + 2.0f * r,
-                               l->field_x + l->field_w - 2.0f * r);
-  const float rest = random_range(game, l->field_y + l->field_h * 0.25f,
-                                  l->field_y + l->field_h - 1.5f * r);
-  add_sun(game, x, l->field_y - r, rest);
+  const float u = random_range(game, 0.06f, 0.94f);
+  const float f = random_range(game, 0.08f, 0.9f);
+  float x, rest;
+  h2_garden_guard_ground_point(l, u, f, &x, &rest);
+  /* Fall out from behind the toolbar onto the lawn. */
+  add_sun(game, x, l->bar_h - r, rest);
 }
 
 static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
@@ -613,9 +724,9 @@ static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
         plant->timer_ms = (int32_t)SUNFLOWER_PERIOD_MS;
         float x, y;
         h2_garden_guard_field_point(l, lane, (float)col + 0.5f, &x, &y);
-        /* Land beside the flower so it stays visible under the sun. */
-        add_sun(game, x + l->sprite * 0.32f, y - l->sprite * 0.1f,
-                y + l->sprite * 0.3f);
+        const float size = h2_garden_guard_lane_size(l, lane);
+        /* Drop from the flower head to the ground beside its stem. */
+        add_sun(game, x + 0.34f * size, y - 0.85f * size, y + 0.06f * size);
       } else if (plant->kind == H2_GARDEN_GUARD_PLANT_SHOOTER) {
         if (plant->timer_ms > 0) plant->timer_ms -= (int32_t)dt;
         if (plant->timer_ms > 0) continue;
@@ -655,6 +766,7 @@ static void kill_pest(h2_garden_guard_game_t* game,
                       h2_garden_guard_pest_t* pest) {
   float x, y;
   h2_garden_guard_field_point(&game->layout, pest->lane, pest->x, &x, &y);
+  y -= 0.28f * h2_garden_guard_lane_size(&game->layout, pest->lane);
   add_particles(game, x, y, 10u, pest_color(pest->kind),
                 150.0f * game->layout.unit, 4.0f * game->layout.unit);
   game->score += k_pests[pest->kind].score;
@@ -683,6 +795,8 @@ static void step_peas(h2_garden_guard_game_t* game, float seconds) {
     pea->active = false;
     float x, y;
     h2_garden_guard_field_point(&game->layout, pea->lane, pea->x, &x, &y);
+    y -= H2_GARDEN_GUARD_PEA_HEIGHT *
+         h2_garden_guard_lane_size(&game->layout, pea->lane);
     add_particles(game, x, y, 3u, H2_GARDEN_GUARD_RGB(140, 220, 90),
                   90.0f * game->layout.unit, 2.5f * game->layout.unit);
     hit->flash_ms = 120u;

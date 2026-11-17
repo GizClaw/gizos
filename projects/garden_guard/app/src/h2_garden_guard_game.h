@@ -6,9 +6,15 @@
  *
  * The field has LANES lanes of COLS cells. Positions along a lane are in
  * cells: 0 is the house edge and COLS the far edge where pests enter. Plant
- * column c covers [c, c + 1). The layout maps lanes and cells to display
- * pixels: landscape displays run lanes horizontally with the house on the
- * left; portrait displays run them vertically with the house at the bottom.
+ * column c covers [c, c + 1). Lane 0 is the farthest from the viewer.
+ *
+ * The lawn is a ground plane seen from its front edge by a camera looking
+ * down at it. Ground coordinates are u across the lawn (0 at the house edge
+ * on the left, 1 at the entry edge on the right) and f in depth (0 at the
+ * near edge, 1 at the far edge). The layout projects them with a pinhole
+ * perspective: far rows are narrower and shorter on screen, vertical lines
+ * stay vertical, and upright characters scale with depth. Every display shape
+ * uses the same projection; portrait displays only get a taller courtyard.
  * Suns, particles and the toolbar use display pixels directly. */
 
 #include <stdbool.h>
@@ -46,6 +52,8 @@ extern "C" {
 #define H2_GARDEN_GUARD_FIRST_WAVE_MS 20000u
 #define H2_GARDEN_GUARD_BANNER_MS 2200u
 #define H2_GARDEN_GUARD_WIN_BONUS 250u
+/** Height of a flying pea above the ground, in lane sizes. */
+#define H2_GARDEN_GUARD_PEA_HEIGHT 0.6f
 
 typedef enum h2_garden_guard_phase {
   H2_GARDEN_GUARD_PHASE_TITLE = 0,
@@ -107,13 +115,19 @@ typedef struct h2_garden_guard_layout {
   int32_t width, height;
   /** Scale relative to a 480-pixel short side. */
   float unit;
-  /** Lanes run vertically with the house at the bottom. */
+  /** Taller than wide; the courtyard behind the lawn gets the extra rows. */
   bool portrait;
-  /** Lawn rectangle, pixels. */
+  /** Screen rows of the lawn's near and far edges. */
+  float near_y, far_y;
+  /** Screen column of the lawn's centre line, which stays vertical. */
+  float mid_x;
+  /** Lawn width at the near edge, pixels. */
+  float near_w;
+  /** Perspective factor at the far edge: far width over near width. */
+  float far_ratio;
+  /** Bounding box of the lawn on screen, pixels. */
   float field_x, field_y, field_w, field_h;
-  /** Pixel length of one cell along a lane, and the width of a lane. */
-  float cell_along, cell_lane;
-  /** Nominal sprite diameter: the shorter cell side. */
+  /** Cell width at the near edge: the scale of the nearest characters. */
   float sprite;
   /** Toolbar strip along the top edge. */
   float bar_h;
@@ -192,6 +206,8 @@ typedef struct h2_garden_guard_game {
   /** The current press started on a card: releasing over the lawn plants. */
   bool drag_from_card;
   bool pointer_down;
+  /** Cell under a card being dragged, or -1 values when there is none. */
+  int32_t hover_lane, hover_col;
   uint32_t card_cooldown_ms[H2_GARDEN_GUARD_CARD_COUNT];
   /** Brief red flash on a card that could not be used. */
   uint32_t card_denied_ms[H2_GARDEN_GUARD_CARD_COUNT];
@@ -242,14 +258,44 @@ uint32_t h2_garden_guard_card_cooldown(h2_garden_guard_card_t card);
 /** Full health of a plant kind; zero for NONE. */
 float h2_garden_guard_plant_max_hp(h2_garden_guard_plant_kind_t kind);
 
-/** Pixel center of a lane position given in cells. */
+/** Perspective factor at depth f: 1 at the near edge, far_ratio at f = 1. */
+float h2_garden_guard_depth_scale(const h2_garden_guard_layout_t* layout,
+                                  float f);
+
+/** Project ground coordinates (u, f) to display pixels. Values outside the
+ * lawn are allowed and land on the patio, path, courtyard or front wall. */
+void h2_garden_guard_ground_point(const h2_garden_guard_layout_t* layout,
+                                  float u, float f, float* out_x, float* out_y);
+
+/** Inverse of h2_garden_guard_ground_point for a display pixel; false only
+ * above the horizon. */
+bool h2_garden_guard_ground_at(const h2_garden_guard_layout_t* layout, float x,
+                               float y, float* out_u, float* out_f);
+
+/** Depth f where characters of a lane stand. */
+float h2_garden_guard_lane_depth(uint32_t lane);
+
+/** Character scale of a lane in pixels: the cell width at its depth. */
+float h2_garden_guard_lane_size(const h2_garden_guard_layout_t* layout,
+                                uint32_t lane);
+
+/** Display pixel where a character at a lane position given in cells stands
+ * on the ground. */
 void h2_garden_guard_field_point(const h2_garden_guard_layout_t* layout,
                                  uint32_t lane, float along, float* out_x,
                                  float* out_y);
 
-/** Cell under a display point; false outside the lawn. */
+/** Ground cell under a display point; false outside the lawn. */
 bool h2_garden_guard_cell_at(const h2_garden_guard_layout_t* layout, float x,
                              float y, uint32_t* out_lane, uint32_t* out_col);
+
+/** Height of a plant kind's upright figure in lane sizes. */
+float h2_garden_guard_plant_height(h2_garden_guard_plant_kind_t kind);
+
+/** Plant whose upright figure covers a display point, nearest lane first;
+ * false when no figure is there. */
+bool h2_garden_guard_plant_at(const h2_garden_guard_game_t* game, float x,
+                              float y, uint32_t* out_lane, uint32_t* out_col);
 
 /** Card under a display point, or H2_GARDEN_GUARD_CARD_NONE. */
 int32_t h2_garden_guard_card_at(const h2_garden_guard_layout_t* layout, float x,

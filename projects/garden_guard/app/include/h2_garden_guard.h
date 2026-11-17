@@ -46,12 +46,14 @@ typedef struct h2_garden_guard_config {
  *
  * Requires an initialized Runtime whose Display reports RGB565 within the
  * supported extent and whose Touch provider is available; Touch coordinates
- * are scaled to the Display extent. Landscape displays run the lanes
- * horizontally and portrait displays vertically. The run opens and closes
+ * are scaled to the Display extent. The lawn is drawn in perspective from
+ * its front edge with lanes running right to left on every display shape;
+ * taller displays show more courtyard behind it. The run opens and closes
  * Display and Touch, drains Runtime events, and paces frames with
  * h2_runtime_wait_notify(). Pref is optional: when unavailable the best score
- * is kept in memory only. Game state and three RGB565 frame-sized buffers come
- * from Runtime mem before the first frame; frames never allocate. Diagnostics
+ * is kept in memory only. Game state, three RGB565 frame-sized buffers and a
+ * one-byte-per-pixel occlusion map come from Runtime mem before the first
+ * frame; frames never allocate. Diagnostics
  * use Runtime log. Every allocation and provider session ends before return.
  * The config is borrowed for the call; NULL selects defaults.
  *

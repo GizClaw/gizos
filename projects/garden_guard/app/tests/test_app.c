@@ -367,6 +367,34 @@ static void test_touch_starts_and_plants(void) {
   CHECK(fx.display.full_frames == 1u);
 }
 
+static void test_shovel_restores_raised_figure(void) {
+  reset(65u, WIDTH, HEIGHT);
+  fx.touch.info = (h2_pal_touch_info_t){WIDTH / 2, HEIGHT / 2};
+  fx.touch_from_frame = 5u;
+  h2_garden_guard_game_t layout_game;
+  h2_garden_guard_game_init(&layout_game, WIDTH, HEIGHT, 1u, 0u);
+  const h2_garden_guard_layout_t* l = &layout_game.layout;
+  float x, y;
+  h2_garden_guard_field_point(l, 4u, 0.5f, &x, &y);
+  const float head_y = y - 0.75f * h2_garden_guard_lane_size(l, 4u);
+  script_tap(240.0f, 160.0f);
+  script_tap(l->card_x[H2_GARDEN_GUARD_CARD_SUNFLOWER] + l->card_w * 0.5f,
+             l->card_y + l->card_h * 0.5f);
+  script_tap(x, y);
+  script_tap(470.0f, 20.0f);
+  script_tap(l->card_x[H2_GARDEN_GUARD_CARD_SHOVEL] + l->card_w * 0.5f,
+             l->card_y + l->card_h * 0.5f);
+  script_tap(x, head_y);
+  fx.probes[0] = (probe_t){.frame = 8u, .x = x, .y = head_y};
+  fx.probes[1] = (probe_t){.frame = 12u, .x = x, .y = head_y};
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.script_next == fx.touch.script_count);
+  CHECK(fx.probes[0].value != fx.probes[1].value);
+  CHECK(shadow_at(x, head_y) == fx.probes[0].value);
+  CHECK(fx.display.full_frames == 1u);
+  CHECK(fx.display.pixels_drawn < (size_t)WIDTH * HEIGHT * fx.frames / 2u);
+}
+
 static void test_portrait_display(void) {
   reset(6u, 480, 800);
   CHECK(run() == H2_PAL_OK);
@@ -411,6 +439,7 @@ int main(void) {
   CHECK(h2_garden_guard_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
   test_idle_title_pushes_once();
   test_touch_starts_and_plants();
+  test_shovel_restores_raised_figure();
   test_portrait_display();
   test_display_open_failure();
   test_unsupported_display();
