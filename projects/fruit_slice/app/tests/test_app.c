@@ -4,6 +4,7 @@
 #include "h2_fruit_slice.h"
 #include "h2_fruit_slice_game.h"
 #include "h2_pal_unsupported.h"
+#include "h2_sqlite.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,7 +53,11 @@ typedef struct fixture {
   h2_pal_result_t ready_result;
   unsigned touch_from_frame;
   uint16_t probe_before;
-  bool use_pref;
+  bool use_pref, fast_clock;
+  unsigned autoplay_until;
+  uint64_t clock_ms;
+  uint32_t earned_fruit_credit;
+  const h2_pal_pref_api_t* pref_override;
 } fixture_t;
 
 static fixture_t fx;
@@ -206,10 +211,37 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   fake_touch_t* t = user;
   CHECK(t->opened);
   if (t->poll_error != H2_PAL_OK) return t->poll_error;
+  /* Accelerated first-install regression: ordinary pointer strokes play
+   * real rounds, then leave enough game time for misses to end the last run. */
+  if (fx.autoplay_until != 0u && fx.frames >= 2u &&
+      fx.frames < fx.autoplay_until && t->last_frame != fx.frames) {
+    t->last_frame = fx.frames;
+    const unsigned point = (fx.frames - 2u) % 150u;
+    *out = (h2_pal_touch_event_t){point == 0u     ? H2_PAL_TOUCH_EVENT_DOWN
+                                  : point == 149u ? H2_PAL_TOUCH_EVENT_UP
+                                                  : H2_PAL_TOUCH_EVENT_MOVE,
+                                  point % 2u == 0u ? 0 : WIDTH,
+                                  point < 2u ? 346 : 280};
+    return H2_PAL_OK;
+  }
   /* One event per frame keeps strokes spread over game time. */
   if (fx.frames < fx.touch_from_frame || t->last_frame == fx.frames ||
       t->script_next == t->script_count)
     return H2_PAL_ERR_WOULD_BLOCK;
+  if (fx.autoplay_until != 0u && fx.frames == fx.touch_from_frame) {
+    h2_pal_pref_namespace_t* ns = NULL;
+    CHECK(h2_pal_pref_open(fx.pref_override, H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+    void* data = NULL;
+    size_t size = 0u;
+    CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(),
+                       "progress_v1", &data, &size) == H2_PAL_OK);
+    h2_fruit_slice_progress_t earned = {0};
+    CHECK(h2_fruit_slice_progress_decode(&earned, data, size));
+    fx.earned_fruit_credit = earned.fruit_credit;
+    h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+    CHECK(ns->close(ns) == H2_PAL_OK);
+  }
   t->last_frame = fx.frames;
   *out = t->script[t->script_next++];
   return H2_PAL_OK;
@@ -266,7 +298,19 @@ static void reset(unsigned exit_after) {
   fx.touch_from_frame = UINT32_MAX;
 }
 
+static h2_pal_result_t accelerated_clock(void* user, uint64_t* out_ms) {
+  (void)user;
+  fx.clock_ms += 10u;
+  *out_ms = fx.clock_ms;
+  return H2_PAL_OK;
+}
+
 static h2_pal_result_t run(void) {
+  const h2_pal_time_api_t* real_time = h2_desktop_platform_time_api();
+  h2_pal_time_vtable_t time_vtable = *real_time->vtable;
+  time_vtable.get_monotonic_ms = accelerated_clock;
+  const h2_pal_time_api_t time_api = {.user = real_time->user,
+                                      .vtable = &time_vtable};
   h2_runtime_config_t config = {0};
   config.board = "fruit-slice-test";
   config.target = "desktop";
@@ -274,14 +318,16 @@ static h2_pal_result_t run(void) {
   config.firmware_info = h2_pal_unsupported_firmware_info_api();
   config.mem = &fx.mem_api;
   config.log = h2_desktop_platform_log_api();
-  config.time = h2_desktop_platform_time_api();
+  config.time = fx.fast_clock ? &time_api : real_time;
   config.timer = h2_pal_unsupported_timer_api();
   config.task = h2_desktop_platform_task_api();
   config.queue = h2_desktop_platform_queue_api();
   config.sync = h2_desktop_platform_sync_api();
   config.fs = h2_pal_unsupported_fs_api();
   config.disk = h2_pal_unsupported_disk_api();
-  config.pref = fx.use_pref ? &pref_api : h2_pal_unsupported_pref_api();
+  config.pref = fx.pref_override != NULL ? fx.pref_override
+                : fx.use_pref            ? &pref_api
+                                         : h2_pal_unsupported_pref_api();
   config.crypto = h2_pal_unsupported_crypto_api();
   config.http = h2_pal_unsupported_http_api();
   config.net = h2_pal_unsupported_net_api();
@@ -315,12 +361,13 @@ static h2_pal_result_t run(void) {
   config.video_decoder = h2_pal_unsupported_video_decoder_api();
   h2_runtime_t* runtime = NULL;
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-  const h2_fruit_slice_config_t game = {.seed = 42u,
-                                        .brightness_percent = 80u,
-                                        .frame_period_ms = 10u,
-                                        .ready = ready,
-                                        .should_exit = should_exit,
-                                        .user = &fx};
+  const h2_fruit_slice_config_t game = {
+      .seed = 42u,
+      .brightness_percent = 80u,
+      .frame_period_ms = fx.fast_clock ? 1u : 10u,
+      .ready = ready,
+      .should_exit = should_exit,
+      .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
   CHECK(fx.allocations == fx.frees);
@@ -493,7 +540,108 @@ static void test_unreadable_progress_is_preserved(void) {
   CHECK(saved.coins == 40u && saved.owned == 1u && saved.score_task == 2u);
 }
 
+static void test_fresh_sqlite_storage(void) {
+  const char* temporary = getenv("TEST_TMPDIR");
+  CHECK(temporary != NULL);
+  char database[512];
+  const int length =
+      snprintf(database, sizeof(database), "%s/first-launch.sqlite", temporary);
+  CHECK(length > 0 && (size_t)length < sizeof(database));
+  h2_sqlite_t* storage = NULL;
+  const h2_sqlite_config_t config = {.path = database};
+  CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+  /* Like mobile storage creation, provider creation has not created a DB. */
+  h2_pal_pref_namespace_t* ns = NULL;
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_ONLY, &ns) != H2_PAL_OK);
+  /* Accelerate time but keep production spawning, score/task transitions,
+   * pointer input, save effects and rendering. Nothing seeds the profile. */
+  reset(1525u);
+  fx.pref_override = h2_sqlite_pref_api(storage);
+  fx.fast_clock = true;
+  fx.autoplay_until = 1202u;
+  fx.touch_from_frame = 1505u;
+  script_tap(120, 450);
+  script_tap(396, 151);
+  script_tap(396, 151);
+  script_tap(396, 151); /* Three earned rewards = 45 coins. */
+  script_tap(240, 450);
+  script_tap(360, 450);
+  script_tap(396, 247); /* Buy/equip katana for 40 coins. */
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.script_next == fx.touch.script_count);
+  CHECK(fx.earned_fruit_credit >= 30u);
+  const uint32_t remaining_credit = fx.earned_fruit_credit - 30u;
+  void* data = NULL;
+  size_t size = 0u;
+  h2_sqlite_destroy(storage);
+  CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+  CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "progress_v1",
+                     &data, &size) == H2_PAL_OK);
+  h2_fruit_slice_progress_t saved = {0};
+  CHECK(h2_fruit_slice_progress_decode(&saved, data, size));
+  CHECK(saved.coins == 5u && saved.fruit_credit == remaining_credit &&
+        saved.owned == 3u && saved.equipped == 1u);
+  h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+  CHECK(ns->close(ns) == H2_PAL_OK);
+  /* A new App call must load that ownership/equipment: switching to classic
+   * writes equipped=0 and leaves the wallet and consumed task credits alone. */
+  reset(8u);
+  fx.pref_override = h2_sqlite_pref_api(storage);
+  fx.touch_from_frame = 2u;
+  script_tap(360, 450);
+  script_tap(396, 151);
+  CHECK(run() == H2_PAL_OK);
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+  CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "progress_v1",
+                     &data, &size) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_progress_decode(&saved, data, size));
+  CHECK(saved.coins == 5u && saved.fruit_credit == remaining_credit &&
+        saved.owned == 3u && saved.equipped == 0u);
+  h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+  CHECK(ns->set_u32(ns, H2_FRUIT_SLICE_PREF_BEST_KEY, 21u) == H2_PAL_OK);
+  CHECK(ns->commit(ns) == H2_PAL_OK);
+  CHECK(ns->close(ns) == H2_PAL_OK);
+
+  /* The writable initialization must still preserve future and corrupt blobs
+   * even when a session-only achievement claim makes the model dirty. */
+  for (unsigned invalid = 0; invalid < 2u; ++invalid) {
+    uint8_t bytes[H2_FRUIT_SLICE_PROGRESS_BYTES];
+    h2_fruit_slice_progress_encode(&saved, bytes);
+    bytes[invalid == 0u ? 4u : 0u] = invalid == 0u ? 2u : 0u;
+    CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                           H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+    CHECK(ns->set_blob(ns, "progress_v1", bytes, sizeof(bytes)) == H2_PAL_OK);
+    CHECK(ns->commit(ns) == H2_PAL_OK);
+    CHECK(ns->close(ns) == H2_PAL_OK);
+    reset(8u);
+    fx.pref_override = h2_sqlite_pref_api(storage);
+    fx.touch_from_frame = 2u;
+    script_tap(120, 450);
+    script_tap(396, 343);
+    CHECK(run() == H2_PAL_OK);
+    CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                           H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+    CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(),
+                       "progress_v1", &data, &size) == H2_PAL_OK);
+    CHECK(size == sizeof(bytes) && memcmp(data, bytes, sizeof(bytes)) == 0);
+    h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+    CHECK(ns->close(ns) == H2_PAL_OK);
+  }
+  h2_sqlite_destroy(storage);
+  CHECK(remove(database) == 0);
+}
+
 int main(void) {
+  test_fresh_sqlite_storage();
   test_unreadable_progress_is_preserved();
   test_progress_persists_across_sessions();
   CHECK(h2_fruit_slice_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);

@@ -97,8 +97,11 @@ static void load_progress(session_t* s) {
   h2_pal_pref_namespace_t* ns = NULL;
   void* data = NULL;
   size_t size = 0u;
+  /* Open writable to initialize a fresh provider's database/namespace. This
+   * does not replace an existing blob: missing data is distinguished from a
+   * read failure below, so unreadable profiles still cannot be overwritten. */
   int rc = h2_pal_pref_open(s->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
-                            H2_PAL_PREF_OPEN_READ_ONLY, &ns);
+                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
   if (rc == H2_PAL_OK && ns == NULL) rc = H2_PAL_ERR_INVALID_STATE;
   if (rc == H2_PAL_OK) {
     rc = ns->get_blob != NULL
