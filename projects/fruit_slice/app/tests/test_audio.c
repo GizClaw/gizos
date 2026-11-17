@@ -3,6 +3,7 @@
 #include "h2_fruit_slice.h"
 #include "h2_desktop_platform.h"
 #include "h2_pal_unsupported.h"
+#include "h2_sqlite.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -220,6 +221,41 @@ static void test_resampling_and_music_loop(void) {
   CHECK(h2_fruit_slice_audio_close(&audio) == 0);
 }
 
+static void test_sqlite_first_session_preferences(void) {
+  const char* temporary = getenv("TEST_TMPDIR");
+  CHECK(temporary != NULL);
+  char database[1024];
+  CHECK(snprintf(database, sizeof(database), "%s/audio-first-session.sqlite",
+                 temporary) > 0);
+  (void)remove(database);
+  h2_sqlite_t* pref = NULL;
+  const h2_sqlite_config_t config = {.path = database};
+  CHECK(h2_sqlite_create(&config, &pref) == H2_PAL_OK);
+  h2_pal_pref_namespace_t* ns = NULL;
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(pref),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_ERR_IO);
+  fixture_t f = {0};
+  h2_runtime_t rt = runtime_for(&f);
+  rt.pref = h2_sqlite_pref_api(pref);
+  h2_fruit_slice_audio_t audio;
+  CHECK(h2_fruit_slice_audio_init(&audio, &rt) == H2_PAL_OK);
+  CHECK(audio.mute == 0u);
+  /* A missing database on the initial RO load cannot latch a permanent
+   * read-only state: the first change must create and commit the database. */
+  CHECK(h2_fruit_slice_audio_set_mute(&audio, H2_FRUIT_SLICE_MUTE_MUSIC) ==
+        H2_PAL_OK);
+  CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
+  h2_sqlite_destroy(pref);
+  CHECK(h2_sqlite_create(&config, &pref) == H2_PAL_OK);
+  rt.pref = h2_sqlite_pref_api(pref);
+  CHECK(h2_fruit_slice_audio_init(&audio, &rt) == H2_PAL_OK);
+  CHECK(audio.mute == H2_FRUIT_SLICE_MUTE_MUSIC);
+  CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
+  h2_sqlite_destroy(pref);
+  CHECK(remove(database) == 0);
+}
+
 static bool take(h2_fruit_slice_game_t* game, h2_fruit_slice_sound_t wanted) {
   h2_fruit_slice_sound_t sound;
   bool found = false;
@@ -262,6 +298,7 @@ int main(void) {
   test_bank_mute_and_lifecycle();
   test_bursts_backpressure_and_partial_failure();
   test_resampling_and_music_loop();
+  test_sqlite_first_session_preferences();
   test_actual_game_transitions();
   puts("fruit slice audio tests passed");
   return 0;

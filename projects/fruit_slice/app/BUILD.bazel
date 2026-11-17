@@ -69,6 +69,7 @@ cc_test(
         ":fruit_slice",
         "//libs/sync/atomic/providers/c11",
         "//pal:unsupported",
+        "//pal/providers/backends/sqlite",
         "//pal/providers/platforms/desktop/pal_core:core",
     ],
 )
