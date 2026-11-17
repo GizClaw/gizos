@@ -80,6 +80,8 @@ typedef enum h2_sdl3_event_kind {
   H2_SDL3_EVENT_KEY,
   H2_SDL3_EVENT_TEXT,
   H2_SDL3_EVENT_WHEEL,
+  /** Window regained keyboard focus; paired with FOCUS_LOST for App pause. */
+  H2_SDL3_EVENT_FOCUS_GAINED,
 } h2_sdl3_event_kind_t;
 
 typedef struct h2_sdl3_event {

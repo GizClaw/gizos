@@ -162,6 +162,7 @@ objc_library(
     testonly = True,
     srcs = [
         "tests/test_h2_ios_platform.m",
+        "tests/test_ios_audio_close.m",
         "tests/test_ios_corebluetooth.c",
         "tests/test_ios_corebluetooth_uuid.c",
         "tests/test_ios_system_event.c",
@@ -170,10 +171,14 @@ objc_library(
         "-fobjc-arc",
     ] + H2_WARNING_COPTS,
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    textual_hdrs = ["src/h2_ios_audio.m"],
     visibility = ["//visibility:public"],
     deps = [
+        ":audio_wait",
         ":corebluetooth_uuid",
         ":pal_core",
+        "//libs/runtime",
+        "//pal:unsupported",
         "//pal/providers/platforms/posix/atomic",
     ],
 )

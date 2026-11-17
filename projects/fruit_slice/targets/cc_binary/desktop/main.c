@@ -3,12 +3,13 @@
 #include "h2_fruit_slice.h"
 #include "h2_fruit_slice_native_host.h"
 #include "h2_fruit_slice_desktop_pref.h"
+#include "h2_portaudio.h"
 #include "h2_sdl3.h"
 #include <stdio.h>
 
 typedef struct window {
   h2_sdl3_t* sdl;
-  bool closed;
+  bool closed, paused;
 } window_t;
 
 static bool should_exit(void* user) {
@@ -19,12 +20,17 @@ static bool should_exit(void* user) {
         (event.kind == H2_SDL3_EVENT_KEY && event.pressed &&
          event.key == H2_SDL3_KEY_ESCAPE))
       window->closed = true;
+    if (event.kind == H2_SDL3_EVENT_FOCUS_LOST) window->paused = true;
+    if (event.kind == H2_SDL3_EVENT_FOCUS_GAINED) window->paused = false;
   }
   return window->closed;
 }
 
+static bool is_paused(void* user) { return ((window_t*)user)->paused; }
+
 static h2_runtime_config_t runtime_config(h2_sdl3_t* sdl,
-                                          h2_sqlite_t* preferences) {
+                                          h2_sqlite_t* preferences,
+                                          h2_portaudio_t* audio) {
   h2_runtime_config_t config = h2_fruit_slice_native_defaults();
   config.board = "desktop";
   config.target = "desktop";
@@ -39,6 +45,7 @@ static h2_runtime_config_t runtime_config(h2_sdl3_t* sdl,
   config.display = h2_sdl3_display(sdl);
   config.touch = h2_sdl3_touch(sdl);
   config.pref = h2_sqlite_pref_api(preferences);
+  if (audio) config.audio = h2_portaudio_audio(audio);
   return config;
 }
 
@@ -63,16 +70,28 @@ int main(int argc, char** argv) {
     h2_sqlite_destroy(preferences);
     return 1;
   }
-  const h2_runtime_config_t config = runtime_config(window.sdl, preferences);
+  h2_portaudio_t* audio = NULL;
+  const h2_portaudio_config_t audio_config = {
+      .allocator = h2_desktop_platform_default_allocator(),
+      .queue = h2_desktop_platform_queue_api(),
+      .sync = h2_desktop_platform_sync_api(),
+      .require_real_devices = 1};
+  const int audio_rc = h2_portaudio_create(&audio_config, &audio);
+  if (audio_rc != H2_PAL_OK)
+    fprintf(stderr, "fruit-slice: optional audio unavailable rc=%d\n",
+            audio_rc);
+  const h2_runtime_config_t config =
+      runtime_config(window.sdl, preferences, audio);
   h2_runtime_t* runtime = NULL;
   rc = h2_runtime_init(&config, &runtime);
   if (rc == H2_PAL_OK) {
-    const h2_fruit_slice_config_t game = {.should_exit = should_exit,
-                                          .user = &window};
+    const h2_fruit_slice_config_t game = {
+        .should_exit = should_exit, .is_paused = is_paused, .user = &window};
     rc = h2_fruit_slice_run(runtime, &game);
   }
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;
   if (destroyed == H2_PAL_OK) {
+    h2_portaudio_destroy(audio);
     h2_sdl3_destroy(window.sdl);
     h2_sqlite_destroy(preferences);
   }

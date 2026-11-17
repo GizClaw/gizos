@@ -56,7 +56,12 @@ const h2_pal_time_api_t *h2_ios_platform_time_api(void);
 const h2_pal_queue_api_t *h2_ios_platform_queue_api(void);
 const h2_pal_display_api_t *h2_ios_platform_display_api(h2_ios_platform_t *platform);
 
-/** Native AudioQueue input/output owner. */
+/** Native AudioQueue input/output owner.
+ * A valid playback track's close waits up to 3000 ms for its tail, cancels
+ * remaining PCM with AudioQueueReset, and consumes its handle on every result.
+ * The first drain/reset error is returned after releasing the track. Callers
+ * must not retry that handle; stop_speaker can dispose the native queue even
+ * after a failed drain/reset. Track and speaker lifecycle must be serialized. */
 typedef struct h2_ios_audio h2_ios_audio_t;
 /**
  * @brief Create an owned native AudioQueue provider without starting devices.

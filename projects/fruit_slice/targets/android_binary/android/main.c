@@ -15,11 +15,12 @@ typedef struct game_host {
 
 static bool should_exit(void* user) {
   game_host_t* host = user;
-  while (atomic_load(&host->paused) && !atomic_load(&host->stopped)) {
-    const struct timespec delay = {.tv_nsec = 10000000};
-    nanosleep(&delay, NULL);
-  }
   return atomic_load(&host->stopped);
+}
+
+static bool is_paused(void* user) {
+  game_host_t* host = user;
+  return atomic_load(&host->paused);
 }
 
 JNIEXPORT jlong JNICALL Java_com_gizclaw_fruitslice_MainActivity_nativeCreate(
@@ -78,12 +79,13 @@ JNIEXPORT jint JNICALL Java_com_gizclaw_fruitslice_MainActivity_nativeRun(
   config.system_event = h2_android_system_event_api();
   config.display = h2_android_platform_display_api(host->platform);
   config.touch = h2_android_platform_touch_api(host->platform);
+  config.audio = h2_android_platform_audio_api(host->platform);
   config.fs = h2_android_storage_fs_api(host->storage);
   config.pref = h2_android_storage_pref_api(host->storage);
   int rc = h2_runtime_init(&config, &host->runtime);
   if (rc == H2_PAL_OK) {
-    const h2_fruit_slice_config_t game = {.should_exit = should_exit,
-                                          .user = host};
+    const h2_fruit_slice_config_t game = {
+        .should_exit = should_exit, .is_paused = is_paused, .user = host};
     rc = h2_fruit_slice_run(host->runtime, &game);
   }
   const int destroyed =

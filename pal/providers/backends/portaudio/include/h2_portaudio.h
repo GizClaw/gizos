@@ -21,7 +21,9 @@ typedef struct h2_portaudio_config {
   const h2_pal_queue_api_t* queue;
   /** 借用的必填 Sync PAL，并转交给内部 Audio Mixer。 */
   const h2_pal_sync_api_t* sync;
-  /** 非零时要求真实输入和输出设备，不允许 synthetic fallback。 */
+  /** Nonzero requires a real device for each requested start operation;
+   * get_info reports mic/playback availability independently. No synthetic
+   * input/output fallback is permitted in this mode. */
   int require_real_devices;
 } h2_portaudio_config_t;
 

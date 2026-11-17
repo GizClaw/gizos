@@ -25,6 +25,7 @@ typedef struct h2_portaudio_device_ops {
                                      double* out_latency);
   int (*open_output)(void* user, int device, double suggested_latency,
                      void** out_stream);
+  int (*default_input_device)(void* user);
 } h2_portaudio_device_ops_t;
 
 typedef struct h2_portaudio_echo_test_ops {
@@ -46,6 +47,10 @@ int h2_portaudio_device_unavailable_error_for_test(void);
 int h2_portaudio_internal_error_for_test(void);
 
 int h2_portaudio_no_device_for_test(void);
+
+int h2_portaudio_get_device_info_for_test(const h2_portaudio_device_ops_t* ops,
+                                          int require_real_devices,
+                                          h2_audio_info_t* out_info);
 
 int h2_portaudio_open_default_output_for_test(
     const h2_portaudio_device_ops_t* ops, void** out_stream);

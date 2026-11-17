@@ -442,6 +442,7 @@ int poll_events(OwnedDisplay* display, OwnedLvgl* lvgl) {
               event.repeat);
         }
         break;
+      case H2_SDL3_EVENT_FOCUS_GAINED:
       case H2_SDL3_EVENT_TEXT:
       case H2_SDL3_EVENT_WHEEL:
         break;

@@ -13,6 +13,42 @@ static const float k_radius[H2_FRUIT_SLICE_KIND_COUNT] = {46.0f, 34.0f, 32.0f,
 #define SPLAT_LIFE_MS 900u
 #define POPUP_LIFE_MS 900u
 
+static bool low_sound(unsigned sound) {
+  return sound == H2_FRUIT_SLICE_SOUND_SWING ||
+         sound == H2_FRUIT_SLICE_SOUND_SLICE ||
+         sound == H2_FRUIT_SLICE_SOUND_COIN;
+}
+
+bool h2_fruit_slice_game_sound(h2_fruit_slice_game_t* game,
+                               h2_fruit_slice_sound_t sound) {
+  if (game == NULL || (unsigned)sound >= H2_FRUIT_SLICE_SOUND_COUNT)
+    return false;
+  if (low_sound((unsigned)sound)) {
+    for (unsigned i = 0; i < game->sound_count; ++i)
+      if (game->sounds[i] == (unsigned)sound) return true;
+  }
+  if (game->sound_count == H2_FRUIT_SLICE_SOUND_QUEUE) {
+    if (low_sound((unsigned)sound)) return false;
+    unsigned i = 0;
+    while (i < game->sound_count && !low_sound(game->sounds[i])) ++i;
+    if (i == game->sound_count) return false;
+    memmove(game->sounds + i, game->sounds + i + 1u,
+            game->sound_count - i - 1u);
+    --game->sound_count;
+  }
+  game->sounds[game->sound_count++] = (uint8_t)sound;
+  return true;
+}
+
+bool h2_fruit_slice_game_take_sound(h2_fruit_slice_game_t* game,
+                                    h2_fruit_slice_sound_t* sound) {
+  if (game == NULL || sound == NULL || game->sound_count == 0u) return false;
+  *sound = (h2_fruit_slice_sound_t)game->sounds[0];
+  --game->sound_count;
+  memmove(game->sounds, game->sounds + 1u, game->sound_count);
+  return true;
+}
+
 static uint32_t random_next(h2_fruit_slice_game_t* game) {
   uint32_t x = game->rng;
   x ^= x << 13;
@@ -133,6 +169,7 @@ static void enter_playing(h2_fruit_slice_game_t* game) {
   game->lives = H2_FRUIT_SLICE_LIVES;
   game->waves = 0;
   game->new_best = false;
+  game->result_sounded = false;
   game->next_wave_ms = game->time_ms + 700u;
 }
 
@@ -141,6 +178,7 @@ static void enter_game_over(h2_fruit_slice_game_t* game) {
   game->phase_started_ms = game->time_ms;
   game->pending_spawns = 0;
   game->stroke_slices = 0;
+  (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_FAIL);
   if (game->score > game->best) {
     game->best = game->score;
     game->best_changed = true;
@@ -311,10 +349,12 @@ static void slice_fruit(h2_fruit_slice_game_t* game, unsigned index, float ux,
     game->flash_x = fruit.body.x;
     game->flash_y = fruit.body.y;
     if (game->phase == H2_FRUIT_SLICE_PHASE_PLAYING) enter_game_over(game);
+    (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_BOMB);
     return;
   }
 
   if (fruit.menu) enter_playing(game);
+  (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_SLICE);
   add_half(game, &fruit, nx, ny, ux, uy);
   add_half(game, &fruit, -nx, -ny, ux, uy);
   const uint16_t juice = h2_fruit_slice_game_juice(kind);
@@ -337,6 +377,8 @@ static void finish_combo(h2_fruit_slice_game_t* game) {
       game->phase != H2_FRUIT_SLICE_PHASE_PLAYING)
     return;
   game->score += slices;
+  (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_COMBO);
+  (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_CHEER);
   char text[H2_FRUIT_SLICE_POPUP_TEXT_MAX];
   (void)snprintf(text, sizeof(text), "COMBO +%u", (unsigned)slices);
   add_popup(game, text, game->stroke_last_x, game->stroke_last_y,
@@ -361,6 +403,8 @@ static void slice_segment(h2_fruit_slice_game_t* game, float x0, float y0,
   const float length2 = dx * dx + dy * dy;
   const float minimum = 2.0f * game->unit;
   if (length2 < minimum * minimum) return;
+  if (length2 > 400.0f * game->unit * game->unit)
+    (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_SWING);
   const float length = sqrtf(length2);
   const float ux = dx / length, uy = dy / length;
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
@@ -386,6 +430,25 @@ static void add_trail_point(h2_fruit_slice_game_t* game, float x, float y) {
 void h2_fruit_slice_game_pointer(h2_fruit_slice_game_t* game,
                                  h2_fruit_slice_pointer_t kind, float x,
                                  float y) {
+  if (game->audio_touch) {
+    if (kind == H2_FRUIT_SLICE_POINTER_UP ||
+        kind == H2_FRUIT_SLICE_POINTER_CANCEL)
+      game->audio_touch = false;
+    return;
+  }
+  if (kind == H2_FRUIT_SLICE_POINTER_DOWN &&
+      game->phase == H2_FRUIT_SLICE_PHASE_TITLE && y >= 8.0f * game->unit &&
+      y <= 44.0f * game->unit &&
+      x >= (float)game->width - 184.0f * game->unit &&
+      x <= (float)game->width - 8.0f * game->unit) {
+    game->audio_mute ^= x < (float)game->width - 96.0f * game->unit
+                            ? H2_FRUIT_SLICE_MUTE_SFX
+                            : H2_FRUIT_SLICE_MUTE_MUSIC;
+    game->audio_touch = true;
+    (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_EQUIP);
+    game->pointer_down = game->has_last = false;
+    return;
+  }
   switch (kind) {
     case H2_FRUIT_SLICE_POINTER_DOWN:
       finish_combo(game);
@@ -433,6 +496,7 @@ static void advance_body(h2_fruit_slice_body_t* body, float gravity, float dt) {
 
 static void record_miss(h2_fruit_slice_game_t* game, float x) {
   ++game->missed_total;
+  (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_MISS);
   if (game->lives > 0) --game->lives;
   h2_fruit_slice_miss_t* slot = &game->misses[0];
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_MISSES; ++i) {
@@ -457,6 +521,12 @@ static uint16_t age(uint16_t value, uint32_t ms) {
 
 static void step_once(h2_fruit_slice_game_t* game, uint32_t ms) {
   game->time_ms += ms;
+  if (game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER && !game->result_sounded &&
+      game->time_ms - game->phase_started_ms >=
+          H2_FRUIT_SLICE_RESTART_DELAY_MS) {
+    game->result_sounded = true;
+    (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_RESULT);
+  }
   const float dt = (float)ms / 1000.0f;
   const float w = (float)game->width, h = (float)game->height;
 
