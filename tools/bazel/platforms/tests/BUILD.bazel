@@ -1,0 +1,85 @@
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "POSIX_HOST_TOOL_COMPATIBILITY")
+load(":compatibility_tests.bzl", "compatibility_fixture", "firmware_compatibility_test", "linux_arm64_compatibility_test", "linux_x86_64_compatibility_test", "macos_arm64_compatibility_test", "windows_x86_64_compatibility_test")
+
+config_setting(
+    name = "linux_host",
+    define_values = {"h2_host_os": "linux"},
+)
+
+config_setting(
+    name = "macos_host",
+    define_values = {"h2_host_os": "macos"},
+)
+
+config_setting(
+    name = "windows_host",
+    define_values = {"h2_host_os": "windows"},
+)
+
+compatibility_fixture(
+    name = "host_tools",
+    testonly = True,
+    host_constraints = HOST_TOOL_COMPATIBILITY,
+    posix_constraints = POSIX_HOST_TOOL_COMPATIBILITY,
+)
+
+linux_arm64_compatibility_test(
+    name = "linux_arm64_test",
+    expected_host = select({
+        ":linux_host": True,
+        "//conditions:default": False,
+    }),
+    expected_posix = select({
+        ":linux_host": True,
+        "//conditions:default": False,
+    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    target_under_test = ":host_tools",
+)
+
+linux_x86_64_compatibility_test(
+    name = "linux_x86_64_test",
+    expected_host = select({
+        ":linux_host": True,
+        "//conditions:default": False,
+    }),
+    expected_posix = select({
+        ":linux_host": True,
+        "//conditions:default": False,
+    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    target_under_test = ":host_tools",
+)
+
+macos_arm64_compatibility_test(
+    name = "macos_arm64_test",
+    expected_host = select({
+        ":macos_host": True,
+        "//conditions:default": False,
+    }),
+    expected_posix = select({
+        ":macos_host": True,
+        "//conditions:default": False,
+    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    target_under_test = ":host_tools",
+)
+
+windows_x86_64_compatibility_test(
+    name = "windows_x86_64_test",
+    expected_host = select({
+        ":windows_host": True,
+        "//conditions:default": False,
+    }),
+    expected_posix = False,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    target_under_test = ":host_tools",
+)
+
+firmware_compatibility_test(
+    name = "firmware_test",
+    expected_host = False,
+    expected_posix = False,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    target_under_test = ":host_tools",
+)

@@ -175,7 +175,20 @@ use_repo(
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.defaults(python_version = "3.11")
 python.toolchain(python_version = "3.11")
-use_repo(python, "python_3_11")
+use_repo(python, "python_3_11", "python_3_11_host")
+
+managed_python_host = use_repo_rule("//tools/bazel/toolchains/python:repositories.bzl", "managed_python_host")
+
+managed_python_host(
+    name = "gizos_python_host",
+    fallback = "@python_3_11_host//:python",
+    python_version = "3.11",
+)
+
+managed_python = use_extension("//tools/bazel/toolchains/python:extension.bzl", "managed_python")
+use_repo(managed_python, "gizos_managed_python_toolchains")
+
+register_toolchains("@gizos_managed_python_toolchains//:all")
 
 register_toolchains("@python_3_11//:all")
 
@@ -187,6 +200,7 @@ register_toolchains(
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     hub_name = "bk7258_pip",
+    python_interpreter_target = "@gizos_python_host//:python",
     python_version = "3.11",
     requirements_lock = "//tools/bazel/native/bk7258:bk7258_requirements.txt",
     target_platforms = [
@@ -196,6 +210,7 @@ pip.parse(
 )
 pip.parse(
     hub_name = "lvgl_ttf_subset_pip",
+    python_interpreter_target = "@gizos_python_host//:python",
     python_version = "3.11",
     requirements_lock = "//tools/lvgl/ttf_subset:requirements.txt",
 )

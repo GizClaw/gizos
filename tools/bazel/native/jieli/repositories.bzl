@@ -1,5 +1,7 @@
 """Versioned locators for JieLi SDK and tool installations."""
 
+load("//tools/bazel/native:host_execution.bzl", "X86_64_RUNTIME_ENVIRON", "linux_x86_64_runtime", "x86_64_runtime_environment")
+
 _LOCATOR_SCHEMA = "h2.native-locator.v1"
 
 def _write_locator(repository_ctx, kind, enabled, paths = {}, metadata = {}):
@@ -147,6 +149,7 @@ _local_sdk_repository = repository_rule(
     },
     environ = [
         "JIELI_AC695N_SDK_PATH",
+        "JIELI_AC707N_SDK_PATH",
         "JIELI_AC791N_SDK_PATH",
     ],
 )
@@ -208,6 +211,31 @@ def _jieli_tools_repository_impl(repository_ctx):
     ], quiet = True)
     if result.return_code:
         fail("JieLi %s identity validation failed: %s" % (kind, result.stderr.strip()))
+    runtime = linux_x86_64_runtime(repository_ctx)
+    if runtime and kind == "jieli-toolchain":
+        versions = {}
+        for line in repository_ctx.read(repository_ctx.attr.versions_file).splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                versions[key] = value
+        expected = versions.get("jieli_clang")
+        if not expected:
+            fail("JieLi tool-version contract has no jieli_clang entry")
+
+        # Device-free compiler probes also verify binfmt and userspace usability.
+        # Never invoke post-build/download tools for capability discovery.
+        for family in ["pi32v2", "q32s"]:
+            compiler = root.get_child(family).get_child("bin").get_child("clang")
+            probe = repository_ctx.execute(
+                [compiler, "--version"],
+                environment = x86_64_runtime_environment(runtime),
+                quiet = True,
+            )
+            actual = probe.stdout.splitlines()[0] if probe.stdout else ""
+            if probe.return_code:
+                fail("cannot execute JieLi %s compiler through the managed x86-64 runtime: %s" % (family, probe.stderr.strip()))
+            if actual != expected:
+                fail("JieLi %s compiler version mismatch: expected %r, found %r" % (family, expected, actual))
     repository_ctx.watch_tree(root)
     paths = {"root": str(root.realpath)}
     for name, relative in repository_ctx.attr.exported_paths.items():
@@ -222,6 +250,7 @@ def _jieli_tools_repository_impl(repository_ctx):
             "archive_sha256": contract.archive_sha256,
             "directory": contract.directory,
             "tree_sha256": contract.tree_sha256,
+            "x86_64_runtime": runtime,
         },
     )
 
@@ -235,8 +264,12 @@ _jieli_tools_repository = repository_rule(
         "identity_tool": attr.label(allow_single_file = True, mandatory = True),
         "kind": attr.string(mandatory = True),
         "required_files": attr.string_list(),
+        "versions_file": attr.label(
+            allow_single_file = True,
+            default = "//tools/bazel/native/versions:jieli_tool_versions.txt",
+        ),
     },
-    environ = ["JIELI_TOOLCHAIN_ROOT", "JIELI_POSTBUILD_ROOT"],
+    environ = ["JIELI_TOOLCHAIN_ROOT", "JIELI_POSTBUILD_ROOT"] + X86_64_RUNTIME_ENVIRON,
 )
 
 def _extension_impl(_module_ctx):

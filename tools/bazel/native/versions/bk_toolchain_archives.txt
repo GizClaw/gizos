@@ -1,3 +1,4 @@
 # host URL archive_sha256 expanded_tree_sha256 strip_prefix
+linux_arm64 https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-aarch64-linux.tar.bz2 f605b5f23ca898e9b8b665be208510a54a6e9fdd0fa5bfc9592002f6e7431208 4531145d1b78e49dc2d092d20ca6cd110d6a09faf546b6e9ccc4e47fc53c37ca gcc-arm-none-eabi-10.3-2021.10
 linux_x86_64 https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2 97dbb4f019ad1650b732faffcc881689cedc14e2b7ee863d390e0a41ef16c9a3 30e721e18882a9db5927e3f3741ab9f10402a14e71aa54e8a06cefb6430c6f50 gcc-arm-none-eabi-10.3-2021.10
 macos_x86_64 https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-mac.tar.bz2 fb613dacb25149f140f73fe9ff6c380bb43328e6bf813473986e9127e2bc283b 4887873b8e582a56f72612c24d0c604d377529555f837b13d425d9fcdf9b917c gcc-arm-none-eabi-10.3-2021.10

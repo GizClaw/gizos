@@ -1,0 +1,47 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "POSIX_HOST_TOOL_COMPATIBILITY")
+load(":tests/selection_test.bzl", "managed_python_selection_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "extension.bzl",
+    "repositories.bzl",
+    "validate_runtime.py",
+])
+
+py_library(
+    name = "runtime_validation",
+    srcs = ["validate_runtime.py"],
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)
+
+managed_python_selection_test(
+    name = "selection_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "runtime_validation_test",
+    srcs = ["tests/test_validate_runtime.py"],
+    legacy_create_init = 0,
+    main = "tests/test_validate_runtime.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+    deps = [":runtime_validation"],
+)
+
+py_test(
+    name = "selected_runtime_test",
+    srcs = ["tests/test_selected_runtime.py"],
+    data = [
+        "@gizos_python_host//:python",
+        "@gizos_python_host//:runtime.json",
+    ],
+    env = {
+        "GIZOS_PYTHON_RUNTIME": "$(rootpath @gizos_python_host//:runtime.json)",
+        "GIZOS_SELECTED_PYTHON": "$(rootpath @gizos_python_host//:python)",
+    },
+    legacy_create_init = 0,
+    main = "tests/test_selected_runtime.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)

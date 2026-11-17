@@ -126,11 +126,17 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
         python_root / "bin",
         compiler.parent,
     ])
-    ninja = shutil.which("ninja", path=environment["PATH"])
-    if ninja is None:
-        ninja = str(find_unique_executable(tools_root, "ninja", "Ninja"))
-        environment["PATH"] = f"{Path(ninja).parent}{os.pathsep}{environment['PATH']}"
+    selected_ninja = tools_locator.get("paths", {}).get("ninja")
+    if selected_ninja:
+        ninja = require_executable(locator_path(tools_locator, "ninja", "esp-idf-tools"), "Ninja")
+        environment["PATH"] = f"{ninja.parent}{os.pathsep}{environment['PATH']}"
+    else:
+        ninja = shutil.which("ninja", path=environment["PATH"])
+        if ninja is None:
+            ninja = str(find_unique_executable(tools_root, "ninja", "Ninja"))
+            environment["PATH"] = f"{Path(ninja).parent}{os.pathsep}{environment['PATH']}"
     environment.update({
+        "ESP_IDF_VERSION": EXPECTED_IDF_VERSION,
         "IDF_PATH": str(idf_path),
         "IDF_PYTHON_ENV_PATH": str(python_root),
         "IDF_TOOLS_PATH": str(tools_root),

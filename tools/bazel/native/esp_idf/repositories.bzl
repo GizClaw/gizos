@@ -1,7 +1,7 @@
 """Versioned locators for native SDKs, tools, and compiler-cache runtime."""
 
 _LOCATOR_SCHEMA = "h2.native-locator.v1"
-_FIXED_SYSTEM_PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+_FIXED_SYSTEM_PATH = ["/opt/gizmoth/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
 
 def _write_locator(repository_ctx, kind, enabled, paths = {}, metadata = {}):
     repository_ctx.file(
@@ -289,6 +289,8 @@ def _esp_tools_repository_impl(repository_ctx):
         "IDF_PATH": str(idf_root.realpath),
         "IDF_PYTHON_ENV_PATH": str(python_root.realpath),
         "IDF_TOOLS_PATH": str(tools_root.realpath),
+        # The validated Python contract above selects this SDK major/minor.
+        "ESP_IDF_VERSION": "6.2",
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "PATH": ":".join(_FIXED_SYSTEM_PATH),
@@ -312,7 +314,17 @@ def _esp_tools_repository_impl(repository_ctx):
                 contract[key],
                 actual,
             ))
-    ninja = _system_executable(repository_ctx, "ninja")
+    ninja_root = tools_root.get_child("tools").get_child("ninja")
+    if ninja_root.exists:
+        # Ninja follows GizOS's exact backend contract, independently of the
+        # SDK's optional Ninja recommendation.
+        ninja = ninja_root.get_child(contract["ninja"]).get_child("ninja")
+        if not ninja.exists:
+            fail("SDK-selected Ninja is missing: %s" % ninja)
+    else:
+        ninja = _system_executable(repository_ctx, "ninja")
+    selected_paths["ninja"] = str(ninja.realpath)
+    environment["PATH"] = str(ninja.dirname.realpath) + ":" + environment["PATH"]
     ninja_version = _command_output(
         repository_ctx,
         [str(ninja), "--version"],

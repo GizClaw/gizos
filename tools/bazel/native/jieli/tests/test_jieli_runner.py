@@ -30,7 +30,8 @@ def write_executable(path: Path, body: str) -> Path:
     return path
 
 
-def write_locator(path: Path, kind: str, paths: dict[str, str], enabled: bool = True) -> Path:
+def write_locator(path: Path, kind: str, paths: dict[str, str], enabled: bool = True,
+                  metadata: dict[str, object] | None = None) -> Path:
     path.write_text(
         json.dumps(
             {
@@ -38,7 +39,8 @@ def write_locator(path: Path, kind: str, paths: dict[str, str], enabled: bool = 
                 "kind": kind,
                 "enabled": enabled,
                 "paths": paths,
-                "metadata": {"archive": f"{kind}.tar.xz", "tree_sha256": "0" * 64},
+                "metadata": {"archive": f"{kind}.tar.xz", "tree_sha256": "0" * 64,
+                             **(metadata or {})},
             }
         ),
         encoding="utf-8",
@@ -117,13 +119,18 @@ class JieliRunnerFixture:
             f"jieli-{self.family}-sdk",
             {"root": str(sdk_root), "checkout": str(self.checkout)},
         )
+        self.userspace = root / "x86-runtime"
+        self.userspace.mkdir()
+        runtime = {"x86_64_runtime": {"kind": "qemu-binfmt-v1", "ld_prefix": str(self.userspace)}}
         self.toolchain_locator = write_locator(
             root / "toolchain-locator.json",
             "jieli-toolchain",
             {"root": str(self.toolchain), "pi32v2_bin": str(self.toolchain_bin)},
+            metadata=runtime,
         )
         self.postbuild_locator = write_locator(
-            root / "postbuild-locator.json", "jieli-postbuild", {"root": str(self.postbuild)}
+            root / "postbuild-locator.json", "jieli-postbuild", {"root": str(self.postbuild)},
+            metadata=runtime,
         )
         self.outputs = root / "outputs"
 
@@ -190,7 +197,7 @@ class JieliRunnerTest(unittest.TestCase):
     def setUp(self) -> None:
         # The build flow is exercised on every CI host; the real host gate is
         # covered by test_unsupported_hosts_fail_closed.
-        patcher = mock.patch.object(runner, "require_supported_host", lambda: None)
+        patcher = mock.patch.object(runner, "require_supported_host", lambda environment=None: None)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -230,6 +237,28 @@ class JieliRunnerTest(unittest.TestCase):
             self.assertEqual(environment["H2_NATIVE_BUILD_JOBS"], "4")
             self.assertTrue(environment["PATH"].startswith(str(fixture.toolchain_bin)))
             self.assertNotIn("JIELI_AC695N_SDK_PATH", environment)
+
+    def test_arm64_build_uses_declared_translation_runtime(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = JieliRunnerFixture(Path(temporary).resolve())
+            userspace = fixture.root / "x86-64 userspace"
+            userspace.mkdir()
+            for path in (fixture.toolchain_locator, fixture.postbuild_locator):
+                document = json.loads(path.read_text(encoding="utf-8"))
+                document["metadata"]["x86_64_runtime"] = {
+                    "kind": "qemu-binfmt-v1", "ld_prefix": str(userspace),
+                }
+                path.write_text(json.dumps(document), encoding="utf-8")
+            fixture.post_script.write_text(
+                fixture.post_script.read_text(encoding="utf-8")
+                + f'test "$QEMU_LD_PREFIX" = "{userspace}" || exit 19\n', encoding="utf-8",
+            )
+            with mock.patch.object(runner.platform, "system", return_value="Linux"), \
+                    mock.patch.object(runner.platform, "machine", return_value="aarch64"), \
+                    mock.patch.object(runner, "require_supported_host", ORIGINAL_REQUIRE_SUPPORTED_HOST), \
+                    mock.patch.dict(os.environ, {"QEMU_LD_PREFIX": "/caller-only"}):
+                runner.build(fixture.arguments())
+            self.assertTrue((fixture.outputs / "manifest.json").is_file())
 
     def test_copy_sdk_skips_only_top_level_vcs_and_doc_directories(self):
         with tempfile.TemporaryDirectory() as temporary:
