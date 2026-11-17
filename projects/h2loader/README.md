@@ -9,7 +9,7 @@ This project owns the portable headless Loader and manufacturing acceptance Apps
 | `libs/mfg-peer`, `libs/mfg-aec-source` | Manufacturing peer and acoustic-fixture support |
 | `targets` | Firmware and npm artifact composition, minimal SDK startup registration |
 
-Vendor image/update, boot, Flash/cache and physical transport mechanisms belong to platform PAL providers under [`native_component_src`](../../native_component_src). Firmware entries are grouped as `targets/h2_loader_tar_zlib/<app>/<manufacturer>/<board>`, for example `targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1`. Each BUILD file owns the native firmware and its package variants: `:package` retains format 1 and `:package_v2` provides format 2 where supported. Both reuse the same image graph. Directory manufacturer/model names match the physical BSP; package board and image identities retain their existing values.
+Vendor image/update, boot, Flash/cache and physical transport mechanisms belong to platform PAL providers under [`native_component_src`](../../native_component_src). Firmware packages are grouped by artifact kind: `targets/h2_loader_tar_zlib/<app>/<manufacturer>/<board>` for format 1 and `targets/h2_loader_zlib_tar/<app>/<manufacturer>/<board>` for format 2. Each format has its own BUILD entry with matching target names: `:package`, or DevKit's `:package_usb` and `:package_uart`. The tar_zlib entry owns native compilation and startup; the zlib_tar entry uses `h2loader_zlib_tar(source = "//projects/h2loader/targets/h2_loader_tar_zlib/...:package")` to borrow the same raw firmware/data inputs without rebuilding the format-1 package. The canonical DevKit release uses USB; UART is fixed at 460800 baud. Directory manufacturer/model names match the physical BSP; package board and image identities retain their existing values.
 
 Physical wiring and layout geometry belong to [`boards/<company>/<board>`](../../boards). The project has no native business code tree or chip-specific Loader components. Final entries call the common Device service with public Runtime capabilities. Generic `firmware_lib_component` source declarations handle vendor C-runtime ABI requirements.
 
@@ -26,7 +26,7 @@ bazel test --config=macos_arm64 //libs/h2loader/device:h2loader_pal_test
 Build a final firmware package through its target, for example:
 
 ```bash
-bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package_usb
 ```
 
 Native builds require a configured vendor SDK/toolchain and supported native host. Package builds do not flash devices or publish releases. Host fixtures and build-graph analysis do not establish hardware acceptance.

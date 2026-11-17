@@ -11,6 +11,7 @@ cc_library(
     target_compatible_with = select({
         "//tools/bazel/platforms:is_android_arm64": ["@platforms//os:android"],
         "//tools/bazel/platforms:is_ios_sim_arm64": ["@platforms//os:ios"],
+        "//tools/bazel/platforms:is_ios_arm64": ["@platforms//os:ios"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//libs/sync/atomic:locked_template"],

@@ -1451,6 +1451,16 @@ static void test_display_submission_fault(int mode) {
   assert(h2_lua_job_submit_text(host, NULL, "@rejected.lua",
                                 (const uint8_t*)"return 1", 8, NULL, 0,
                                 &rejected) != H2_PAL_OK);
+  /* Retain the failed Host/VM/Runtime and Display lease, but join unrelated
+   * input pollers before normal exit destroys the desktop provider globals. */
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  h2_runtime_input_status_t input;
+  assert(h2_runtime_input_status(runtime, &input) == H2_PAL_OK);
+  assert(input.phase == H2_RUNTIME_INPUT_PHASE_STOPPED &&
+         input.worker_result == H2_PAL_OK);
+  assert(h2_lua_host_destroy_checked(host) == expected);
+  assert(status(host, job).memory_used == state.memory_used);
+  assert(s_test_display_fixture.close_count == close_count);
   printf("display_fault mode=%d retained_vm=%zu error=%d PASS\n", mode,
          state.memory_used, result);
 }
@@ -3960,18 +3970,51 @@ static void test_display_single_buffer(void) {
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   heap_test_run(
       host,
-      "local d=require('display');d.clear('red');"
+      "local d=require('display');local sequence=1;d.clear('red');\n"
       "local n,p,r=d.submit({retained=true,tiles=true});"
-      "assert(n==1 and p==240*320 and r==1);"
-      "local s=d.status();assert(not s.busy and s.completed==1);"
-      "d.fill_rect(239,319,1,1,'blue');"
-      "n,p,r=d.submit({retained=false});assert(n==2 and p==1 and r==1);"
-      "s=d.flush();assert(s.completed==2 and s.changed_frames==2);"
-      "n,p,r=d.submit();assert(n==3 and p==0 and r==0);"
-      "assert(d.present()==0)",
+      "assert(n==1 and p==240*320 and r==1);\n"
+      "local function submit(pixels,changed,options) "
+      "sequence=sequence+1;local n,p,r=d.submit(options);"
+      "assert(n==sequence and p==pixels and r==(pixels>0 and 1 or 0));"
+      "local s=d.flush();assert(not s.busy and s.error==0);"
+      "assert(s.submitted==sequence and s.completed==sequence and "
+      "s.successful==sequence and s.changed_frames==changed);"
+      "assert(s.pixels==pixels and s.rects==r) end\n"
+      /* Collect red from the first frame before comparing this blue draw. */
+      "d.fill_rect(239,319,1,1,'blue');submit(1,2,{retained=false});\n"
+      "submit(0,2);\n"
+      "for _,options in ipairs({{}, {tiles=true}, {tiles=false}, "
+      "{bounds=true}, {bounds=true,tiles=true}}) do "
+      "d.fill_rect(239,319,1,1,'blue');submit(0,2,options) end\n"
+      "d.clear('red');submit(240*320,3);d.clear('red');submit(0,3);\n"
+      "d.begin_frame({clear=true,color='blue'});d.clear('red');"
+      "p,r=d.end_frame();assert(p==0 and r==0);sequence=sequence+1;"
+      "assert(d.status().changed_frames==3);\n"
+      "d.fill_rect(239,319,1,1,'blue');d.fill_rect(239,319,1,1,'red');"
+      "submit(0,3);\n"
+      "d.fill_rect(0,0,2,1,'blue');submit(2,4);\n"
+      /* Equal color counts at different positions still represent a change. */
+      "d.fill_rect(0,0,1,1,'red');d.fill_rect(2,0,1,1,'blue');submit(3,5);\n"
+      "local region=d.capture_region(2,0,1,1);"
+      "d.draw_region(region,2,0);submit(0,5);\n"
+      "d.fill_rect(239,319,1,1,'blue');submit(1,6);\n"
+      "d.fill_rect(239,319,1,1,'red');p,r=d.present();"
+      "assert(p==1 and r==1);sequence=sequence+1;"
+      "assert(d.status().changed_frames==7);\n"
+      /* Non-retained dirty coverage still transports identical pixels. */
+      "d.fill_rect(239,319,1,1,'red');submit(1,7,{retained=false});"
+      "submit(0,7,{retained=false});\n"
+      "d.fill_rect(2,0,1,1,'blue');p,r=d.present({retained=true});"
+      "assert(p==0 and r==0);sequence=sequence+1;"
+      "local s=d.status();assert(s.successful==sequence and "
+      "s.completed==sequence and s.changed_frames==7 and s.pixels==0)",
       H2_LUA_JOB_SUCCEEDED);
   assert(s_test_display_fixture.pixels[0] == 0xf800u);
-  assert(s_test_display_fixture.pixels[240u * 320u - 1u] == 0x001fu);
+  assert(s_test_display_fixture.pixels[1] == 0x001fu);
+  assert(s_test_display_fixture.pixels[2] == 0x001fu);
+  assert(s_test_display_fixture.pixels[240u * 320u - 1u] == 0xf800u);
+  assert(s_test_display_fixture.draw_count == 8u);
+  assert(s_test_display_fixture.present_count == 20u);
   assert(h2_atomic_load(&mem.pool_allocs) == 1u);
   assert(h2_atomic_load(&mem.rejected) == 0u);
   assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
@@ -4034,7 +4077,8 @@ static void test_display_single_buffer_blocked(void) {
 
 /* Failed transport must freeze the sole working buffer until checked teardown.
  * Run in an isolated process because the provider is deliberately faulted. */
-static void test_display_single_fault(void) {
+static void test_display_single_fault(int mode) {
+  assert(mode >= 1 && mode <= 4);
   test_display_reset();
   h2_runtime_t* runtime = create_runtime();
   h2_lua_host_config_t config = {.runtime = runtime,
@@ -4043,21 +4087,50 @@ static void test_display_single_fault(void) {
                                  .display_single_buffer = 1};
   h2_lua_host_t* host = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "region_test", test_region_open, NULL) ==
+         H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  s_test_display_fixture.fail_draw = 1;
   const char script[] =
-      "local d=require('display');d.clear('red');"
-      "local n,e=d.submit();assert(n==nil and e<0);"
-      "assert(not pcall(d.clear,'blue'))";
+      "local d,t=require('display'),require('region_test');d.clear('red');"
+      "local mode=tonumber(args.mode);local successful=mode==1 and 0 or 1;"
+      "if mode~=1 then assert(d.submit()==1);"
+      "assert(d.flush().changed_frames==1);"
+      "d.fill_rect(7,7,1,1,mode==4 and 'red' or 'blue') end;"
+      "t.fail(mode<=2 and 1 or 0,mode>=3);"
+      "local n,e=d.submit();assert(n==nil and e<0 and e~=d.BUSY);"
+      "local s=d.status();assert(not s.busy and s.error==e);"
+      "assert(s.submitted==successful+1 and s.completed==s.submitted);"
+      "assert(s.successful==successful and s.changed_frames==successful);"
+      "assert(s.pixels==(mode==3 and 1 or 0) and "
+      "s.rects==(mode==3 and 1 or 0));"
+      "local n2,e2=d.submit();assert(n2==nil and e2==e);"
+      "n2,e2=d.flush();assert(n2==nil and e2==e);"
+      "assert(not pcall(d.present));assert(not pcall(d.clear,'blue'));"
+      "s=d.status();assert(s.submitted==successful+1 and "
+      "s.completed==s.submitted and s.successful==successful and "
+      "s.changed_frames==successful)";
+  char mode_text[2] = {(char)('0' + mode), '\0'};
+  h2_lua_arg_t args[] = {{"mode", mode_text}};
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@single-fault.lua",
                                 (const uint8_t*)script, sizeof(script) - 1,
-                                NULL, 0, &job) == H2_PAL_OK);
+                                args, 1, &job) == H2_PAL_OK);
   run_until_terminal(host, job, 6000);
   assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
   assert(h2_lua_host_destroy_checked(host) == H2_PAL_ERR_IO);
   assert(h2_lua_host_destroy_checked(host) == H2_PAL_ERR_IO);
   assert(s_test_display_fixture.close_count == 0);
+  assert(s_test_display_fixture.draw_count ==
+         (mode == 1 || mode == 4 ? 1u : 2u));
+  assert(s_test_display_fixture.present_count == (mode == 1   ? 0u
+                                                  : mode == 2 ? 1u
+                                                              : 2u));
+  assert(s_test_display_fixture.pixels[63] == (mode == 1   ? 0u
+                                               : mode == 3 ? 0x001fu
+                                                           : 0xf800u));
+  /* Keep faulted owners, but stop unrelated Runtime input pollers. */
+  assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  printf("display_single_fault mode=%d PASS\n", mode);
 }
 
 /* Everything the Host allocates goes through config.allocator, so a caller
@@ -4460,8 +4533,9 @@ int main(int argc, char** argv) {
   assert(h2_atomic_int_init(&s_test_audio_mic_start_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_mic_stop_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_mic_block, 0) == H2_ATOMIC_OK);
-  if (argc == 2 && strcmp(argv[1], "--display-single-fault") == 0) {
-    test_display_single_fault();
+  if ((argc == 2 || argc == 3) &&
+      strcmp(argv[1], "--display-single-fault") == 0) {
+    test_display_single_fault(argc == 3 ? atoi(argv[2]) : 1);
     return 0;
   }
   if (argc == 3 && strcmp(argv[1], "--display-fault") == 0) {

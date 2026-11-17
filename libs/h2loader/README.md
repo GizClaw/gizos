@@ -39,8 +39,8 @@ Runtime or project dependency. Runtime/Loader App composition belongs to
 [`projects/h2loader/libs/device_service`](../../projects/h2loader/libs/device_service).
 Caller-owned service state and borrowed providers must outlive tasks and pending
 callbacks. Firmware targets own product and task policy.
-They consume `Runtime.io_stream` and `Runtime.mem_external`; board and native
-providers select and configure the physical transport and optional external heap.
+They consume `Runtime.io_stream` and `Runtime.mem`; board and native providers
+select and configure the physical transport and the heap behind `mem`.
 
 Native SDK operations stay in platform PAL providers under
 [`native_component_src`](../../native_component_src). Providers do not import

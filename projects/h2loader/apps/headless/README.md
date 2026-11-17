@@ -7,7 +7,7 @@ The App uses Runtime, PAL and portable H2Loader/command libraries. [`../../libs/
 ```sh
 bazel test --config=macos_arm64 //projects/h2loader/apps/headless:lifetime_test
 bazel build --config=esp32s3 \
-  //projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package
+  //projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package_usb
 ```
 
 Host tests use declared host dependencies; firmware packages require the matching pinned SDK/toolchain. Package builds do not flash devices or establish hardware qualification. Public C APIs and existing Loader image/package identities remain defined by their contracts and final entries.

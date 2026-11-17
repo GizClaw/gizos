@@ -2,9 +2,16 @@
 #include "h2_peer.h"
 #include "h2_sctp.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
+
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 static h2_pal_mqtt_client_config_t client_config(uint8_t* buffer,
                                                  size_t buffer_len) {
@@ -73,7 +80,71 @@ static void test_retained_peer_keeps_dependencies(void) {
   assert(services.reset() == H2_PAL_OK);
 }
 
+static void test_concurrent_sctp_associations(void) {
+  h2::desktop::OwnedNetworkServices services;
+  assert(h2::desktop::open_network_services(false, true, &services) ==
+         H2_PAL_OK);
+  const auto* api = h2_sctp_api(static_cast<h2_sctp_t*>(services.sctp_handle));
+  h2_pal_sctp_association_config_t config = {};
+  config.role = H2_PAL_SCTP_ROLE_PASSIVE;
+  config.local_port = config.remote_port = 5000u;
+  config.inbound_streams = config.outbound_streams = 2u;
+  config.max_packet_size = 256u;
+  config.max_message_size = 128u;
+  config.send_buffer_size = config.receive_buffer_size = 4096u;
+  config.cookie_lifetime_ms = 60000u;
+  config.callbacks.emit_packet = [](void*, h2_pal_sctp_association_t*,
+                                    const uint8_t*, size_t) -> h2_pal_result_t {
+    return H2_PAL_OK;
+  };
+  config.callbacks.on_state = [](void*, h2_pal_sctp_association_t*,
+                                 h2_pal_sctp_state_t, h2_pal_result_t) {};
+  config.callbacks.on_message =
+      [](void*, h2_pal_sctp_association_t*,
+         const h2_pal_sctp_received_message_t*) -> h2_pal_result_t {
+    return H2_PAL_OK;
+  };
+  config.callbacks.on_stream_reset =
+      [](void*, h2_pal_sctp_association_t*,
+         const h2_pal_sctp_stream_reset_event_t*) {};
+
+  constexpr unsigned owners = 8u;
+  std::mutex mutex;
+  std::condition_variable changed;
+  unsigned arrived = 0u, generation = 0u;
+  const auto barrier = [&] {
+    std::unique_lock<std::mutex> lock(mutex);
+    const unsigned current = generation;
+    if (++arrived == owners) {
+      arrived = 0u;
+      ++generation;
+      changed.notify_all();
+    } else {
+      changed.wait(lock, [&] { return generation != current; });
+    }
+  };
+  // Independent protocol owners share the Desktop SCTP provider. Align both
+  // lifecycle boundaries so registry insertions and removals overlap.
+  std::thread workers[owners];
+  for (auto& worker : workers) {
+    worker = std::thread([&] {
+      for (unsigned round = 0u; round < 1024u; ++round) {
+        h2_pal_sctp_association_t* association = nullptr;
+        barrier();
+        assert(h2_pal_sctp_association_create(api, &config, &association) ==
+               H2_PAL_OK);
+        barrier();
+        assert(h2_pal_sctp_association_close(api, &association) == H2_PAL_OK);
+        assert(association == nullptr);
+      }
+    });
+  }
+  for (auto& worker : workers) worker.join();
+  assert(services.reset() == H2_PAL_OK);
+}
+
 int main(void) {
+  test_concurrent_sctp_associations();
   test_retained_peer_keeps_dependencies();
   h2::desktop::OwnedNetworkServices services;
   assert(h2::desktop::open_network_services(true, false, &services) ==

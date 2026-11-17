@@ -466,5 +466,8 @@ include $(H2_JIELI_PROJECT_RULES)
 
 LFLAGS += -T $(H2_JIELI_LAYOUT_ROOT)/sdk_abi.ld
 
+# The SDK pthread_once stub asserts; compiler-rt emutls needs a real once gate.
+LFLAGS += --wrap=pthread_once
+
 # Extract the real supplicant so its strong definitions override wl_wifi weak stubs.
 LFLAGS += --undefined=wpa_supplicant_get_state

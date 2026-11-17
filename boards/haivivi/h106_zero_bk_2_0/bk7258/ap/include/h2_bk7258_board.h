@@ -56,10 +56,6 @@ h2_pal_result_t h2_bk7258_board_runtime_deinit(void);
 int h2_bk7258_board_fs_init(h2_pal_fs_api_t* fs);
 int h2_bk7258_board_fs_deinit(void);
 
-/** Borrowed image-lifetime allocator for Display bitmap working sets.
- * Release allocations through this API; it uses this Board's PSRAM arena. */
-const h2_pal_mem_api_t* h2_bk7258_board_display_allocator(void);
-
 /** Board PSRAM allocator for large target-specific working sets. */
 h2_pal_mem_api_t* h2_bk7258_board_psram_allocator(void);
 

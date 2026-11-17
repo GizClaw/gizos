@@ -25,12 +25,8 @@ static int storage(h2_mfg_t* m) {
   size_t size = m->profile->storage_ram_bytes;
   if (size == 0) size = SIZE;
   if (size < CHUNK || size > SIZE) return H2_PAL_ERR_INVALID_ARG;
-  const h2_pal_mem_api_t* allocator = m->rt->mem_external;
+  const h2_pal_mem_api_t* allocator = m->rt->mem;
   uint8_t* data = h2_pal_mem_alloc(allocator, size);
-  if (data == NULL) {
-    allocator = m->rt->mem;
-    data = h2_pal_mem_alloc(allocator, size);
-  }
   if (data == NULL) return H2_PAL_ERR_NO_MEMORY;
   volatile uint8_t* ram = data;
   for (size_t i = 0; i < size; ++i) ram[i] = (uint8_t)(i ^ (i >> 8) ^ 0xa5);
@@ -93,12 +89,8 @@ static int display_open(h2_mfg_t* m) {
       (size_t)m->display.width * m->frame_rows * sizeof(*m->frame);
   m->frame_allocator = m->profile->frame_allocator != NULL
                            ? m->profile->frame_allocator
-                           : m->rt->mem_external;
+                           : m->rt->mem;
   m->frame = h2_pal_mem_alloc(m->frame_allocator, bytes);
-  if (m->frame == NULL && m->profile->frame_allocator == NULL) {
-    m->frame_allocator = m->rt->mem;
-    m->frame = h2_pal_mem_alloc(m->frame_allocator, bytes);
-  }
   if (m->frame == NULL) {
     (void)snprintf(m->detail, sizeof(m->detail),
                    "Display frame allocation %zu bytes failed", bytes);

@@ -1,15 +1,13 @@
 #include "bk_private/bk_init.h"
-#include "h2_atomic_static.h"
 #include "h2_bk7258_board.h"
 #include "h2_device_service.h"
 #include "h2_bk_platform_core.h"
 #include "h2_bk_target_task_policy.h"
 #include "h2_iperf_client_app.h"
+#include "h2_iperf_client_output.h"
 #include <common/sys_config.h>
-#include <driver/uart.h>
 #include <os/os.h>
 #include <stdio.h>
-#include <string.h>
 
 static h2_device_app_commands_t h2_management = {
     .config =
@@ -30,44 +28,9 @@ static h2_device_app_commands_t h2_management = {
             .ble_advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
         },
 };
-
 static h2_runtime_t* runtime;
-static const h2_pal_log_api_t* board_log;
-static const h2_pal_uart_io_stream_api_t* console;
-H2_ATOMIC_DEFINE_STATIC(bool, console_writable, false);
-static int console_error;
+static h2_iperf_client_output_t output;
 
-static int console_result(int rc) {
-  if (rc != H2_PAL_OK && console_error == H2_PAL_OK) console_error = rc;
-  return rc;
-}
-static int record(const char* message) {
-  if (!h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE))
-    return console_result(H2_PAL_ERR_INVALID_STATE);
-  if (!message) return console_result(H2_PAL_ERR_INVALID_ARG);
-  char line[1024];
-  size_t length = strlen(message);
-  if (length == 0 || length > sizeof(line) - 2 || strchr(message, '\r') ||
-      strchr(message, '\n'))
-    return console_result(H2_PAL_ERR_INVALID_ARG);
-  memcpy(line, message, length);
-  line[length++] = '\r';
-  line[length++] = '\n';
-  size_t written = 0;
-  int rc = h2_pal_uart_io_stream_write(console, line, length, &written, 5000u);
-  if (rc == H2_PAL_OK && written != length) rc = H2_PAL_ERR_IO;
-  return console_result(rc);
-}
-static int ledger_log(void* user, h2_pal_log_level_t level, const char* scope,
-                      const char* message) {
-  (void)user;
-  if (h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE) && scope &&
-      strncmp(scope, "iperf", 5u) == 0)
-    return record(message);
-  return h2_pal_log_write(board_log, level, scope, message);
-}
-static const h2_pal_log_vtable_t ledger_vtable = {.write = ledger_log};
-static const h2_pal_log_api_t ledger_api = {.vtable = &ledger_vtable};
 static void hold(void) {
   for (;;) rtos_delay_milliseconds(1000u);
 }
@@ -75,28 +38,13 @@ static void fail(const char* stage, int rc) {
   char line[160];
   snprintf(line, sizeof(line),
            "H2_IPERF_CLIENT_FAIL board=bk7258 stage=%s rc=%d", stage, rc);
-  if (h2_atomic_bool_load(&console_writable, H2_ATOMIC_ACQUIRE))
-    (void)record(line);
+  if (output.active)
+    (void)h2_iperf_client_output_record(&output, line);
   else {
     puts(line);
     fflush(stdout);
   }
   hold();
-}
-static void memory(void* user, const char* checkpoint) {
-  (void)user;
-  h2_bk_platform_resource_stats_t resources = {0};
-  int rc = h2_bk_platform_get_resource_stats(&resources);
-  char line[320];
-  snprintf(
-      line, sizeof(line),
-      "H2_IPERF_CLIENT_MEMORY board=bk7258 checkpoint=%s internal_free=%u "
-      "internal_min=%u psram_free=%u resource_rc=%d allocations=%u bytes=%u",
-      checkpoint, (unsigned)rtos_get_free_heap_size(),
-      (unsigned)rtos_get_minimum_free_heap_size(),
-      (unsigned)rtos_get_psram_free_heap_size(), rc,
-      (unsigned)resources.allocations, (unsigned)resources.allocation_bytes);
-  (void)record(line);
 }
 static int start_commands(void) {
   return h2_device_app_commands_start_serial_named(
@@ -105,10 +53,11 @@ static int start_commands(void) {
 }
 static void run(void* user) {
   (void)user;
-  rtos_delay_milliseconds(5000u);
-  int rc = h2_device_app_commands_stop_serial(&h2_management);
+  int rc = h2_pal_time_sleep_ms(runtime->time, 5000u);
+  if (rc != H2_PAL_OK) fail("grace", rc);
+  rc = h2_device_app_commands_stop_serial(&h2_management);
   if (rc != H2_PAL_OK) fail("command-stop", rc);
-  console = h2_bk_platform_uart_io_stream_api();
+  const h2_pal_uart_io_stream_api_t* uart = h2_bk_platform_uart_io_stream_api();
   const h2_pal_uart_io_stream_config_t config = {
       .baud_rate = CONFIG_UART_PRINT_BAUD_RATE,
       .data_bits = 8u,
@@ -117,32 +66,47 @@ static void run(void* user) {
       .flow_control = H2_PAL_UART_FLOW_CONTROL_NONE,
       .rx_buffer_size = 8192u,
       .tx_buffer_size = 2048u};
-  rc = h2_pal_uart_io_stream_configure(console, &config);
+  rc = h2_pal_uart_io_stream_configure(uart, &config);
   if (rc == H2_PAL_OK) {
-    h2_atomic_bool_store(&console_writable, true, H2_ATOMIC_RELEASE);
-    (void)record(
+    output.active = true;
+    (void)h2_iperf_client_output_record(
+        &output,
         "H2_IPERF_CLIENT_PHASE board=bk7258 phase=public-network-begin");
-    memory(NULL, "matrix-start");
-    rc = h2_iperf_client_app_bench(runtime, "bk7258", memory, NULL);
-    memory(NULL, "matrix-end");
-    uint32_t started = rtos_get_time();
-    while (!bk_uart_is_tx_over(CONFIG_UART_PRINT_PORT)) {
-      if ((uint32_t)(rtos_get_time() - started) >= 5000u) {
-        if (rc == H2_PAL_OK) rc = H2_PAL_ERR_TIMEOUT;
-        break;
-      }
-      rtos_delay_milliseconds(1u);
-    }
+    h2_iperf_client_output_checkpoint(&output, "matrix-start");
+    rc = h2_iperf_client_app_bench(runtime, "bk7258",
+                                   h2_iperf_client_output_checkpoint, &output);
+    h2_iperf_client_output_checkpoint(&output, "matrix-end");
+    int flushed = h2_pal_io_stream_flush(runtime->io_stream);
+    if (rc == H2_PAL_OK) rc = flushed;
   }
-  h2_atomic_bool_store(&console_writable, false, H2_ATOMIC_RELEASE);
-  h2_bk_platform_uart_io_stream_deinit();
-  int restored = start_commands();
-  if (restored == H2_PAL_OK)
-    h2_atomic_bool_store(&console_writable, true, H2_ATOMIC_RELEASE);
-  if (rc == H2_PAL_OK && console_error != H2_PAL_OK) rc = console_error;
+  output.active = false;
+  int released;
+  /* Release retains partial progress on failure. Keep retrying that owner;
+   * management may attach only after release completes, and the first cleanup
+   * error still prevents this execution from qualifying. */
+  while ((released = h2_pal_io_stream_release(runtime->io_stream)) !=
+         H2_PAL_OK) {
+    if (rc == H2_PAL_OK) rc = released;
+    printf("H2_IPERF_CLIENT_RECOVERY stage=uart_release rc=%d\n", released);
+    const int slept = h2_pal_time_sleep_ms(runtime->time, 100u);
+    if (slept != H2_PAL_OK) rtos_delay_milliseconds(100u);
+  }
+  int restored;
+  while ((restored = start_commands()) != H2_PAL_OK) {
+    if (rc == H2_PAL_OK) rc = restored;
+    printf("H2_IPERF_CLIENT_RECOVERY stage=management_start rc=%d\n", restored);
+    /* A failed start can retain a partial stream/session. Quiesce that owner
+     * before retrying startup, rather than racing a retained release. */
+    while (h2_device_app_commands_stop_serial(&h2_management) != H2_PAL_OK)
+      rtos_delay_milliseconds(100u);
+    rtos_delay_milliseconds(100u);
+  }
+  output.active = true;
+  if (rc == H2_PAL_OK && output.error != H2_PAL_OK) rc = output.error;
   if (rc == H2_PAL_OK && restored != H2_PAL_OK) rc = restored;
   if (rc != H2_PAL_OK) fail("bench-or-console", rc);
-  rc = record(
+  rc = h2_iperf_client_output_record(
+      &output,
       "H2_IPERF_CLIENT_PHASE board=bk7258 phase=confirm-begin "
       "control_restored=1");
   if (rc != H2_PAL_OK) fail("confirm-log", rc);
@@ -150,7 +114,7 @@ static void run(void* user) {
   char line[160];
   snprintf(line, sizeof(line), "H2_IPERF_CLIENT_CONFIRMED board=bk7258 rc=%d",
            rc);
-  int logged = record(line);
+  int logged = h2_iperf_client_output_record(&output, line);
   if (rc == H2_PAL_OK) rc = logged;
   if (rc != H2_PAL_OK) fail("confirm", rc);
   hold();
@@ -160,10 +124,9 @@ static void entry(void* user) {
   h2_runtime_config_t config = {0};
   int rc = h2_bk7258_board_runtime_config(&config);
   if (rc != H2_PAL_OK) fail("board", rc);
-  /* Bulk iperf receive buffers must leave internal SRAM to Wi-Fi/control RX. */
   config.mem = h2_bk_platform_psram_allocator();
-  board_log = config.log;
-  config.log = &ledger_api;
+  h2_iperf_client_output_init(&output, &config, "bk7258");
+  config.log = &output.log;
   rc = h2_runtime_init(&config, &runtime);
   if (rc != H2_PAL_OK) {
     (void)h2_bk7258_board_runtime_deinit();

@@ -9,7 +9,7 @@ package(default_visibility = ["//visibility:public"])
 
 app_version(
     name = "version",
-    value = "0.1.44",
+    value = "0.1.49",
 )
 
 cc_library(

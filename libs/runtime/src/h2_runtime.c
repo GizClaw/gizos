@@ -476,7 +476,6 @@ h2_pal_result_t h2_runtime_init(const h2_runtime_config_t* config,
             : h2_pal_unsupported_device_identity_api());
   runtime->device_identity = &private_state->device_identity_proxy;
   H2_RUNTIME_BIND_PROXY(mem);
-  H2_RUNTIME_BIND_PROXY(mem_external);
   private_state->io_stream_proxy =
       *(config->io_stream != NULL ? config->io_stream
                                   : h2_pal_unsupported_io_stream_api());

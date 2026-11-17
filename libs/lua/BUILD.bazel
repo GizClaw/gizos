@@ -235,6 +235,7 @@ cc_library(
         ":lua_core",
         ":numeric_prepared",
         "//libs/container/trie",
+        "//libs/crypto/sha256",
         "//libs/encoding",
         "//libs/image/raster2d",
         "//libs/image/raster2d:span_internal",

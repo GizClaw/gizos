@@ -351,6 +351,21 @@ int main(int argc, char** argv) {
                                       H2_PAL_POWER_CAPABILITY_PREPARE_BOOT |
                                       H2_PAL_POWER_CAPABILITY_CONFIRM_IMAGE;
   assert((capabilities.flags & image_capabilities) == image_capabilities);
+  /* App preflight relies on role flags from the running query, not only from
+   * partition enumeration. Next/running must describe the same partition. */
+  h2_pal_power_boot_partition_t running_partition, next_partition;
+  assert(h2_pal_power_get_running_boot_partition(power, &running_partition) ==
+         H2_PAL_OK);
+  const uint32_t role_flag = running_partition.id == 2u
+                                 ? H2_PAL_POWER_BOOT_PARTITION_FLAG_APP
+                                 : H2_PAL_POWER_BOOT_PARTITION_FLAG_RECOVERY;
+  assert((running_partition.flags & role_flag) != 0u);
+  assert((running_partition.flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_RUNNING) !=
+         0u);
+  assert(h2_pal_power_get_next_boot_partition(power, &next_partition) ==
+         H2_PAL_OK);
+  assert(next_partition.id == running_partition.id &&
+         (next_partition.flags & role_flag) != 0u);
   if (warm_return) {
     assert(state.running_partition_id == 2 &&
            origin_request.origin_magic == 0u);

@@ -63,6 +63,21 @@ cc_test(
     }),
 )
 
+cc_test(
+    name = "dns_cancel_recovery_test",
+    srcs = [
+        "src/h2_pal_ipv6_e2e.c",
+        "tests/test_dns_cancel_recovery.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    local_defines = ["h2_pal_net_tls_e2e_run=h2_test_transport_run"],
+    deps = [
+        ":pal_ipv6_e2e",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
 exports_files([
     "include/h2_pal_ipv6_cases.inc",
     "src/h2_pal_ipv6_e2e.c",

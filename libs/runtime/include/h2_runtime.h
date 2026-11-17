@@ -50,10 +50,9 @@ typedef struct h2_runtime_config {
    */
   const h2_pal_device_identity_api_t* device_identity;
 
+  /** Board-selected general allocator. Boards with PSRAM select their PSRAM
+   * heap; memory a board driver needs elsewhere stays inside that driver. */
   const h2_pal_mem_api_t* mem;
-  /** Optional borrowed task-context external-memory allocator; copied when
-   * present, NULL when unavailable. Does not change ordinary/ISR allocation. */
-  const h2_pal_mem_api_t* mem_external;
   /** Optional board-selected byte stream; Runtime copies the API, binds
    * canonical unsupported if absent, and never starts/releases the provider. */
   const h2_pal_io_stream_api_t* io_stream;
@@ -140,10 +139,9 @@ struct h2_runtime {
    */
   const h2_pal_device_identity_api_t* device_identity;
 
+  /** Board-selected general allocator. Boards with PSRAM select their PSRAM
+   * heap; memory a board driver needs elsewhere stays inside that driver. */
   const h2_pal_mem_api_t* mem;
-  /** Optional borrowed task-context external-memory allocator; copied when
-   * present, NULL when unavailable. Does not change ordinary/ISR allocation. */
-  const h2_pal_mem_api_t* mem_external;
   /** Optional board-selected byte stream; Runtime copies the API, binds
    * canonical unsupported if absent, and never starts/releases the provider. */
   const h2_pal_io_stream_api_t* io_stream;

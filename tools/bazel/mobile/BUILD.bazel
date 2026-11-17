@@ -44,6 +44,17 @@ py_binary(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
+py_test(
+    name = "mobile_package_test",
+    srcs = [
+        "mobile_package.py",
+        "tests/test_mobile_package.py",
+    ],
+    legacy_create_init = False,
+    main = "tests/test_mobile_package.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
 exports_files([
     "mobile_app_sdk.bzl",
     "mobile_e2e.bzl",

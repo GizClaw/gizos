@@ -68,7 +68,6 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out_config) {
       .device_identity = h2_esp_platform_device_identity_api(),
       .image = h2_esp_platform_image_api(),
       .io_stream = h2_esp_platform_io_stream_api(),
-      .mem_external = h2_esp_platform_external_allocator(),
       /* Protocol buffers (H2Peer, h2sctp, GizClaw) from PSRAM like the
        * DevKit; with them in internal RAM a live Peer leaves under 10 KiB
        * for the next TLS session and mbedtls_ssl_setup fails. */

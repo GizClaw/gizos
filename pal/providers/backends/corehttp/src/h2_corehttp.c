@@ -137,8 +137,8 @@ static h2_pal_result_t validate_request(const h2_pal_http_request_t* request) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t remaining_ms(h2_corehttp_exchange_t* exchange,
-                                    bool slice, uint32_t* out_ms) {
+static h2_pal_result_t remaining_connect_ms(h2_corehttp_exchange_t* exchange,
+                                            bool slice, uint32_t* out_ms) {
   if (h2_pal_http_request_is_canceled(exchange->request)) {
     return H2_PAL_ERR_CLOSED;
   }
@@ -148,10 +148,10 @@ static h2_pal_result_t remaining_ms(h2_corehttp_exchange_t* exchange,
   if (rc != H2_PAL_OK) {
     return rc;
   }
-  if (h2_pal_time_deadline_expired(now_ms, exchange->deadline_ms)) {
+  if (h2_pal_time_deadline_expired(now_ms, exchange->connect_deadline_ms)) {
     return H2_PAL_ERR_TIMEOUT;
   }
-  uint64_t remaining = exchange->deadline_ms - now_ms;
+  uint64_t remaining = exchange->connect_deadline_ms - now_ms;
   if (remaining > UINT32_MAX) {
     remaining = UINT32_MAX;
   }
@@ -166,8 +166,56 @@ static h2_pal_result_t remaining_ms(h2_corehttp_exchange_t* exchange,
   return H2_PAL_OK;
 }
 
+#ifdef H2_COREHTTP_TRACE_TIMING
+static uint64_t trace_now(h2_corehttp_exchange_t* exchange) {
+  uint64_t now = 0u;
+  (void)h2_pal_time_get_monotonic_ms(exchange->provider->config.time, &now);
+  return now;
+}
+
+static uint64_t trace_phase(h2_corehttp_exchange_t* exchange, const char* phase,
+                            uint64_t started, int rc) {
+  uint64_t now = trace_now(exchange);
+  char message[192];
+  (void)snprintf(
+      message, sizeof(message),
+      "stage=http_timing phase=%s elapsed_ms=%llu remaining_ms=%llu rc=%d",
+      phase, (unsigned long long)(now >= started ? now - started : 0u),
+      (unsigned long long)(now < exchange->deadline_ms
+                               ? exchange->deadline_ms - now
+                               : 0u),
+      rc);
+  (void)h2_pal_log_write(exchange->provider->config.log, H2_PAL_LOG_INFO,
+                         "corehttp", message);
+  return trace_now(exchange);
+}
+#define H2_COREHTTP_TRACE_BEGIN(exchange) \
+  uint64_t trace_started = trace_now(exchange)
+#define H2_COREHTTP_TRACE_PHASE(exchange, phase, rc) \
+  trace_started = trace_phase(exchange, phase, trace_started, rc)
+#else
+#define H2_COREHTTP_TRACE_BEGIN(exchange) ((void)0)
+#define H2_COREHTTP_TRACE_PHASE(exchange, phase, rc) ((void)0)
+#endif
+
 static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
                                       const h2_corehttp_url_t* url) {
+  H2_COREHTTP_TRACE_BEGIN(exchange);
+  exchange->stage = "connect";
+  uint64_t started_ms = 0u;
+  h2_pal_result_t rc = h2_pal_time_get_monotonic_ms(
+      exchange->provider->config.time, &started_ms);
+  if (rc != H2_PAL_OK) return rc;
+  uint32_t connect_timeout_ms =
+      exchange->request->connect_timeout_ms > 0
+          ? (uint32_t)exchange->request->connect_timeout_ms
+          : exchange->provider->config.default_connect_timeout_ms;
+  exchange->connect_deadline_ms =
+      h2_pal_time_deadline_ms(started_ms, connect_timeout_ms);
+  if (exchange->connect_deadline_ms > exchange->deadline_ms)
+    exchange->connect_deadline_ms = exchange->deadline_ms;
+  if (h2_pal_time_deadline_expired(started_ms, exchange->connect_deadline_ms))
+    return H2_PAL_ERR_TIMEOUT;
   const h2_pal_net_api_t* net = exchange->provider->config.net;
   h2_pal_net_addr_t sources[2] = {{0}, {0}};
   h2_pal_result_t source_results[2] = {H2_PAL_ERR_UNAVAILABLE,
@@ -205,8 +253,8 @@ static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
   h2_pal_net_addr_list_t addresses = {0};
   exchange->stage = "dns";
   h2_pal_net_resolver_t* resolver = NULL;
-  h2_pal_result_t rc = h2_pal_net_resolve_start_family(
-      net, url->host, H2_PAL_NET_FAMILY_ANY, &resolver);
+  rc = h2_pal_net_resolve_start_family(net, url->host, H2_PAL_NET_FAMILY_ANY,
+                                       &resolver);
   bool multiple = rc != H2_PAL_ERR_UNSUPPORTED;
   if (!multiple) {
     rc = h2_pal_net_resolve_start(net, url->host, &resolver);
@@ -216,7 +264,7 @@ static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
   }
   for (;;) {
     uint32_t timeout_ms = 0u;
-    rc = remaining_ms(exchange, true, &timeout_ms);
+    rc = remaining_connect_ms(exchange, true, &timeout_ms);
     if (rc != H2_PAL_OK) {
       break;
     }
@@ -232,6 +280,7 @@ static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
     }
   }
   h2_pal_net_resolve_close(net, resolver);
+  H2_COREHTTP_TRACE_PHASE(exchange, "dns", rc);
   if (rc != H2_PAL_OK) {
     return rc;
   }
@@ -261,13 +310,13 @@ static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
     if (rc != H2_PAL_OK) {
       return rc;
     }
-    /* Poll a pending address under the original request deadline. Only a
-     * terminal failure permits fallback; TIMEOUT/WOULD_BLOCK keep this
-     * socket alive rather than imposing an arbitrary candidate budget. */
-    if (started >= exchange->deadline_ms) {
+    /* All address candidates share the DNS + TCP + TLS connection deadline.
+     * Only a terminal failure permits fallback; TIMEOUT/WOULD_BLOCK keep
+     * this socket alive without resetting the connection budget. */
+    if (started >= exchange->connect_deadline_ms) {
       return H2_PAL_ERR_TIMEOUT;
     }
-    uint64_t candidate_deadline = exchange->deadline_ms;
+    uint64_t candidate_deadline = exchange->connect_deadline_ms;
     exchange->stage = "tcp_open";
     rc = h2_pal_net_tcp_open_bound(net, remote.family, bind_ptr,
                                    &exchange->socket);
@@ -277,7 +326,7 @@ static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
     exchange->stage = "tcp_connect";
     for (;;) {
       uint32_t timeout_ms = 0u;
-      rc = remaining_ms(exchange, true, &timeout_ms);
+      rc = remaining_connect_ms(exchange, true, &timeout_ms);
       if (rc != H2_PAL_OK) {
         break;
       }
@@ -304,16 +353,17 @@ static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
       return H2_PAL_ERR_CLOSED;
     }
   }
+  H2_COREHTTP_TRACE_PHASE(exchange, "tcp", rc);
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  uint32_t tls_timeout_ms = 0u;
+  rc = remaining_connect_ms(exchange, false, &tls_timeout_ms);
   if (rc != H2_PAL_OK || !url->secure) {
     return rc;
   }
 
   exchange->stage = "tls_wrap";
-  uint32_t tls_timeout_ms = 0u;
-  rc = remaining_ms(exchange, false, &tls_timeout_ms);
-  if (rc != H2_PAL_OK) {
-    return rc;
-  }
   h2_pal_net_tls_config_t tls = {
       .server_name = url->host,
       .alpn = "http/1.1",
@@ -324,8 +374,12 @@ static h2_pal_result_t open_transport(h2_corehttp_exchange_t* exchange,
   h2_pal_net_socket_t tls_socket = -1;
   rc = h2_pal_net_tls_wrap(exchange->provider->config.net, exchange->socket,
                            &tls, tls_timeout_ms, &tls_socket);
+  H2_COREHTTP_TRACE_PHASE(exchange, "tls", rc);
   if (rc == H2_PAL_OK) {
     exchange->socket = tls_socket;
+    /* Native setup/crypto may finish late; do not publish an expired
+     * connection. */
+    rc = remaining_connect_ms(exchange, false, &tls_timeout_ms);
   }
   return rc;
 }
@@ -493,13 +547,16 @@ static h2_pal_result_t perform_attempt(
   exchange.redirect_available = redirect_available;
 
   rc = open_transport(&exchange, &url);
+  H2_COREHTTP_TRACE_BEGIN(&exchange);
   if (rc == H2_PAL_OK) {
     exchange.stage = "send";
     rc = send_request(&exchange, &url, forward_authorization);
+    H2_COREHTTP_TRACE_PHASE(&exchange, "send", rc);
   }
   if (rc == H2_PAL_OK) {
     exchange.stage = "receive";
     rc = h2_corehttp_receive_response(&exchange);
+    H2_COREHTTP_TRACE_PHASE(&exchange, "receive", rc);
   }
   if (exchange.socket >= 0) {
     h2_pal_net_close(provider->config.net, exchange.socket);
@@ -689,6 +746,10 @@ h2_pal_result_t h2_corehttp_create(const h2_corehttp_config_t* config,
   }
   if (provider->config.default_timeout_ms == 0u) {
     provider->config.default_timeout_ms = H2_COREHTTP_DEFAULT_TIMEOUT_MS;
+  }
+  if (provider->config.default_connect_timeout_ms == 0u) {
+    provider->config.default_connect_timeout_ms =
+        H2_COREHTTP_DEFAULT_CONNECT_TIMEOUT_MS;
   }
   if (provider->config.io_slice_ms == 0u) {
     provider->config.io_slice_ms = H2_COREHTTP_DEFAULT_IO_SLICE_MS;

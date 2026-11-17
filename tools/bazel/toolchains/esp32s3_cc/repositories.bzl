@@ -328,6 +328,8 @@ def _exec_constraints(repository_ctx):
         return ["@platforms//cpu:arm64", "@platforms//os:macos"]
     if name == "linux" and arch in ("amd64", "x86_64"):
         return ["@platforms//cpu:x86_64", "@platforms//os:linux"]
+    if name == "linux" and arch in ("aarch64", "arm64"):
+        return ["@platforms//cpu:arm64", "@platforms//os:linux"]
     return None
 
 _esp32s3_cc_repository = repository_rule(

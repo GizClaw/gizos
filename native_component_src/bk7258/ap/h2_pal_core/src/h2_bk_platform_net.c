@@ -4,6 +4,7 @@
 #include "h2_bk_net_addr.h"
 #include "h2_bk_net_result.h"
 #include "h2_bk_netif_internal.h"
+#include "h2_bk_net_rtp_trace.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -13,6 +14,7 @@
 #include <sys/time.h>
 
 #include <components/netif.h>
+#include <driver/aon_rtc.h>
 #include <lwip/inet.h>
 #include <lwip/netdb.h>
 #include <lwip/sockets.h>
@@ -20,6 +22,13 @@
 #include <mbedtls/x509_crt.h>
 #include <os/os.h>
 #include "h2_bk_udp_receive.h"
+
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+#include "FreeRTOS.h"
+#include "task.h"
+#include <armstar.h>
+#include <soc/soc.h>
+#endif
 
 #define H2_BK_NET_TLS_SOCKET_MAX 8u
 #define H2_BK_NET_TLS_ALPN_MAX 2u
@@ -41,6 +50,12 @@ typedef struct bk_net_tls_socket {
   mbedtls_x509_crt ca;
   char alpn_storage[H2_BK_NET_TLS_ALPN_MAX][H2_BK_NET_TLS_ALPN_LEN];
   const char* alpn[H2_BK_NET_TLS_ALPN_MAX + 1u];
+  uint64_t random_ms, bio_ms;
+  size_t random_calls, bio_calls;
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+  size_t sent_bytes, received_bytes;
+  int last_recv_result, last_recv_errno;
+#endif
 } bk_net_tls_socket_t;
 
 typedef struct bk_net_resolver {
@@ -64,6 +79,105 @@ static size_t s_bk_resolver_count;
 static int wait_fd(int fd, int write_ready, uint32_t timeout_ms);
 static uint64_t bk_net_now_ms(void);
 static uint32_t bk_net_timeout_remaining_ms(uint64_t deadline_ms);
+
+#if defined(H2_BK_NET_RTP_TRACE)
+static h2_bk_net_rtp_trace_event_t* s_rtp_trace_records;
+static size_t s_rtp_trace_capacity;
+static h2_bk_net_rtp_trace_stats_t s_rtp_trace_stats;
+#endif
+
+h2_pal_result_t h2_bk_net_rtp_trace_start(h2_bk_net_rtp_trace_event_t* records,
+                                          size_t capacity) {
+  if (records == NULL || capacity == 0u) return H2_PAL_ERR_INVALID_ARG;
+#if defined(H2_BK_NET_RTP_TRACE)
+  uint32_t critical = rtos_enter_critical();
+  if (s_rtp_trace_records != NULL) {
+    rtos_exit_critical(critical);
+    return H2_PAL_ERR_BUSY;
+  }
+  memset(&s_rtp_trace_stats, 0, sizeof(s_rtp_trace_stats));
+  s_rtp_trace_capacity = capacity;
+  s_rtp_trace_records = records;
+  rtos_exit_critical(critical);
+  return H2_PAL_OK;
+#else
+  return H2_PAL_ERR_UNSUPPORTED;
+#endif
+}
+
+h2_pal_result_t h2_bk_net_rtp_trace_stop(
+    h2_bk_net_rtp_trace_stats_t* out_stats) {
+  if (out_stats == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_stats, 0, sizeof(*out_stats));
+#if defined(H2_BK_NET_RTP_TRACE)
+  uint32_t critical = rtos_enter_critical();
+  if (s_rtp_trace_records == NULL) {
+    rtos_exit_critical(critical);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  *out_stats = s_rtp_trace_stats;
+  s_rtp_trace_records = NULL;
+  s_rtp_trace_capacity = 0u;
+  rtos_exit_critical(critical);
+  return H2_PAL_OK;
+#else
+  return H2_PAL_ERR_UNSUPPORTED;
+#endif
+}
+
+#if defined(H2_BK_NET_RTP_TRACE)
+static uint32_t bk_net_trace_u32(const uint8_t* value) {
+  return (uint32_t)value[0] << 24u | (uint32_t)value[1] << 16u |
+         (uint32_t)value[2] << 8u | value[3];
+}
+
+static void bk_net_trace_datagram(uint8_t direction, int fd,
+                                  const uint8_t* packet, size_t size,
+                                  int result, int socket_errno,
+                                  uint64_t started_us, uint64_t completed_us) {
+  const int is_rtp = packet != NULL && size >= 12u && size <= UINT16_MAX &&
+                     (packet[0] & 0xc0u) == 0x80u &&
+                     !(packet[1] >= 192u && packet[1] <= 223u);
+  const uint64_t elapsed_us =
+      completed_us >= started_us ? completed_us - started_us : 0u;
+  uint32_t critical = rtos_enter_critical();
+  if (s_rtp_trace_records != NULL) {
+    if (direction == H2_BK_RTP_TRACE_SEND) {
+      ++s_rtp_trace_stats.send_calls;
+      if (elapsed_us > s_rtp_trace_stats.max_send_us) {
+        s_rtp_trace_stats.max_send_us = elapsed_us;
+        s_rtp_trace_stats.max_send_started_us = started_us;
+      }
+    } else {
+      ++s_rtp_trace_stats.receive_calls;
+      if (elapsed_us > s_rtp_trace_stats.max_receive_us) {
+        s_rtp_trace_stats.max_receive_us = elapsed_us;
+        s_rtp_trace_stats.max_receive_started_us = started_us;
+      }
+    }
+    if (is_rtp) {
+      if (s_rtp_trace_stats.count < s_rtp_trace_capacity) {
+        s_rtp_trace_records[s_rtp_trace_stats.count++] =
+            (h2_bk_net_rtp_trace_event_t){
+                .started_us = started_us,
+                .completed_us = completed_us,
+                .ssrc = bk_net_trace_u32(packet + 8u),
+                .rtp_timestamp = bk_net_trace_u32(packet + 4u),
+                .fd = fd,
+                .result = result,
+                .socket_errno = socket_errno,
+                .sequence = (uint16_t)((uint16_t)packet[2] << 8u | packet[3]),
+                .packet_bytes = (uint16_t)size,
+                .direction = direction,
+                .payload_type = packet[1] & 0x7fu};
+      } else {
+        ++s_rtp_trace_stats.overflow;
+      }
+    }
+  }
+  rtos_exit_critical(critical);
+}
+#endif
 
 static void bk_net_tls_init(void) {
   if (!s_bk_tls_mutex_ready && rtos_init_mutex(&s_bk_tls_mutex) == kNoErr) {
@@ -180,32 +294,77 @@ static void bk_net_tls_release(size_t slot_index) {
 }
 
 static int bk_net_tls_random(void* user, unsigned char* out, size_t len) {
-  (void)user;
-  return h2_pal_crypto_random(h2_bk_platform_crypto_api(), out, len) ==
-                 H2_PAL_OK
-             ? 0
-             : -1;
+  bk_net_tls_socket_t* socket = user;
+  uint64_t started = bk_net_now_ms();
+  int rc = h2_pal_crypto_random(h2_bk_platform_crypto_api(), out, len);
+  uint64_t completed = bk_net_now_ms();
+  if (socket != NULL) {
+    ++socket->random_calls;
+    if (completed >= started) socket->random_ms += completed - started;
+  }
+  if (completed >= started && completed - started >= 1000u) {
+    char message[160];
+    (void)snprintf(message, sizeof(message),
+                   "stage=tls_random bytes=%zu elapsed_ms=%llu rc=%d", len,
+                   (unsigned long long)(completed - started), rc);
+    (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_WARN, "pal/net",
+                           message);
+  }
+  return rc == H2_PAL_OK ? 0 : -1;
+}
+
+static void bk_net_tls_trace_io(bk_net_tls_socket_t* socket, const char* stage,
+                                uint64_t started, size_t bytes, int result,
+                                int socket_error) {
+  uint64_t completed = bk_net_now_ms();
+  ++socket->bio_calls;
+  if (completed >= started) socket->bio_ms += completed - started;
+  if (completed < started || completed - started < 1000u) return;
+  char message[192];
+  (void)snprintf(message, sizeof(message),
+                 "stage=%s bytes=%zu elapsed_ms=%llu result=%d socket_errno=%d",
+                 stage, bytes, (unsigned long long)(completed - started),
+                 result, socket_error);
+  (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_WARN, "pal/net",
+                         message);
 }
 
 static int bk_net_tls_send_raw(void* user, const unsigned char* data,
                                size_t len) {
   bk_net_tls_socket_t* socket = (bk_net_tls_socket_t*)user;
+  uint64_t started = bk_net_now_ms();
   int sent = send(socket->fd, data, len, MSG_DONTWAIT);
+  int socket_error = sent < 0 ? errno : 0;
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+  if (sent > 0) socket->sent_bytes += (size_t)sent;
+#endif
+  bk_net_tls_trace_io(socket, "tls_bio_send", started, len, sent, socket_error);
   if (sent >= 0) {
     return sent;
   }
-  return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
+  return socket_error == EAGAIN || socket_error == EWOULDBLOCK ||
+                 socket_error == EINTR
              ? MBEDTLS_ERR_SSL_WANT_WRITE
              : MBEDTLS_ERR_SSL_INTERNAL_ERROR;
 }
 
 static int bk_net_tls_recv_raw(void* user, unsigned char* data, size_t len) {
   bk_net_tls_socket_t* socket = (bk_net_tls_socket_t*)user;
+  uint64_t started = bk_net_now_ms();
   int received = recv(socket->fd, data, len, MSG_DONTWAIT);
+  int socket_error = received < 0 ? errno : 0;
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+  if (received > 0) socket->received_bytes += (size_t)received;
+  socket->last_recv_result = received;
+  socket->last_recv_errno = socket_error;
+#endif
+  bk_net_tls_trace_io(socket, "tls_bio_recv", started, len, received,
+                      socket_error);
   if (received >= 0) {
     return received;
   }
-  return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
+  return socket_error == EAGAIN || socket_error == EWOULDBLOCK ||
+                 socket_error == EINTR
              ? MBEDTLS_ERR_SSL_WANT_READ
              : MBEDTLS_ERR_SSL_INTERNAL_ERROR;
 }
@@ -244,6 +403,179 @@ static h2_pal_result_t bk_net_tls_copy_alpn(
   socket->alpn[0] = socket->alpn_storage[0];
   return H2_PAL_OK;
 }
+
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+static void bk_net_tls_trace_handshake(bk_net_tls_socket_t* socket,
+                                       const char* phase, size_t step,
+                                       uint32_t budget_ms, uint64_t elapsed_ms,
+                                       int result) {
+  /* FIONREAD observes queued bytes without consuming data or clearing SO_ERROR.
+   * A failed query is explicit; it is never treated as an empty receive queue.
+   */
+  int queued = 0;
+  int query_result = ioctl(socket->fd, FIONREAD, &queued);
+  if (query_result != 0) queued = -1;
+  char message[384];
+  (void)snprintf(
+      message, sizeof(message),
+      "stage=tls_handshake_io phase=%s thread=%p fd=%d step=%zu state=%d "
+      "in_left=%zu out_left=%zu queued=%d query_rc=%d tx_bytes=%zu rx_bytes=%zu "
+      "recv_result=%d recv_errno=%d budget_ms=%u elapsed_ms=%llu rc=%d",
+      phase, (void*)xTaskGetCurrentTaskHandle(), socket->fd, step,
+      socket->ssl.MBEDTLS_PRIVATE(state), socket->ssl.MBEDTLS_PRIVATE(in_left),
+      socket->ssl.MBEDTLS_PRIVATE(out_left), queued, query_result,
+      socket->sent_bytes, socket->received_bytes, socket->last_recv_result,
+      socket->last_recv_errno, (unsigned)budget_ms,
+      (unsigned long long)elapsed_ms, result);
+  (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_WARN, "pal/net",
+                         message);
+}
+
+/* Qualification-only wrappers observe the real SDK operations. No certificate,
+ * hash, signature, key bytes or application credentials enter the trace. */
+static size_t bk_net_cert_count(const mbedtls_x509_crt* chain) {
+  size_t count = 0u;
+  for (; chain != NULL; chain = chain->next) {
+    if (chain->raw.len != 0u) ++count;
+  }
+  return count;
+}
+
+typedef struct bk_net_cert_sample {
+  uint64_t started_ms;
+  uint32_t cpu_ticks;
+  uint32_t all_ticks;
+  uint32_t reg8;
+} bk_net_cert_sample_t;
+
+static bk_net_cert_sample_t bk_net_cert_begin(void) {
+  /* Flush the currently running slice into FreeRTOS' existing counter. No
+   * priority, affinity or frequency change is made by this diagnostic. */
+  rtos_delay_milliseconds(1u);
+  TaskStatus_t task;
+  vTaskGetInfo(NULL, &task, pdFALSE, eInvalid);
+  return (bk_net_cert_sample_t){.started_ms = bk_net_now_ms(),
+                                .cpu_ticks = task.ulRunTimeCounter,
+                                .all_ticks = portGET_RUN_TIME_COUNTER_VALUE(),
+                                .reg8 = REG_READ(SOC_SYS_REG_BASE + 0x8u * 4u)};
+}
+
+static void bk_net_cert_trace(const char* operation,
+                              const bk_net_cert_sample_t* sample, size_t bytes,
+                              size_t count, const mbedtls_pk_context* key,
+                              int result) {
+  uint64_t completed = bk_net_now_ms();
+  uint32_t all_ticks = portGET_RUN_TIME_COUNTER_VALUE();
+  uint32_t reg8 = REG_READ(SOC_SYS_REG_BASE + 0x8u * 4u);
+  rtos_delay_milliseconds(1u);
+  TaskStatus_t task;
+  vTaskGetInfo(NULL, &task, pdFALSE, eInvalid);
+  char message[384];
+  (void)snprintf(
+      message, sizeof(message),
+      "stage=tls_certificate op=%s thread=%p name=%s elapsed_ms=%llu "
+      "cpu_ticks=%u total_ticks=%u reg8_start=0x%x reg8_end=0x%x "
+      "bytes=%zu count=%zu key=%s bits=%zu key_context=%p rc=%d",
+      operation, (void*)xTaskGetCurrentTaskHandle(), task.pcTaskName,
+      (unsigned long long)(completed - sample->started_ms),
+      (unsigned)(task.ulRunTimeCounter - sample->cpu_ticks),
+      (unsigned)(all_ticks - sample->all_ticks), (unsigned)sample->reg8,
+      (unsigned)reg8, bytes, count,
+      key == NULL ? "none" : mbedtls_pk_get_name(key),
+      key == NULL ? 0u : mbedtls_pk_get_bitlen(key),
+      key == NULL ? NULL : key->MBEDTLS_PRIVATE(pk_ctx), result);
+  (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_WARN, "pal/net",
+                         message);
+}
+
+static void bk_net_cert_trace_hardware(void) {
+  /* Decode the same read-only selectors as the SDK's bk_pm_cpu_freq_dump().
+   * This is register readback, not a PM vote or an oscillator measurement. */
+  uint32_t critical = rtos_enter_critical();
+  uint32_t reg8 = REG_READ(SOC_SYS_REG_BASE + 0x8u * 4u);
+  uint32_t reg4 = REG_READ(SOC_SYS_REG_BASE + 0x4u * 4u);
+  uint32_t reg5 = REG_READ(SOC_SYS_REG_BASE + 0x5u * 4u);
+  uint32_t ccr = SCB->CCR;
+  uint32_t mpu = MPU->CTRL;
+  rtos_exit_critical(critical);
+  uint32_t source = (reg8 >> 4u) & 3u;
+  uint32_t source_hz = source == 3u   ? 480000000u
+                       : source == 2u ? 320000000u
+                                      : 0u;
+  uint32_t divider = (reg8 & 15u) + 1u;
+  uint32_t cpu0_hz = source_hz / divider / ((reg4 & 16u) != 0u ? 1u : 2u);
+  uint32_t cpu1_hz = source_hz / divider / ((reg5 & 16u) != 0u ? 1u : 2u);
+  char message[256];
+  (void)snprintf(message, sizeof(message),
+                 "stage=tls_hardware thread=%p reg8=0x%x reg4=0x%x reg5=0x%x "
+                 "cpu0_hz=%u cpu1_hz=%u ccr=0x%x mpu=0x%x stack=%p",
+                 (void*)xTaskGetCurrentTaskHandle(), (unsigned)reg8,
+                 (unsigned)reg4, (unsigned)reg5, (unsigned)cpu0_hz,
+                 (unsigned)cpu1_hz, (unsigned)ccr, (unsigned)mpu,
+                 (void*)&critical);
+  (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_INFO, "pal/net",
+                         message);
+}
+
+extern int __real_mbedtls_x509_crt_parse(mbedtls_x509_crt*,
+                                         const unsigned char*, size_t);
+int __wrap_mbedtls_x509_crt_parse(mbedtls_x509_crt* chain,
+                                  const unsigned char* data, size_t bytes) {
+  bk_net_cert_sample_t sample = bk_net_cert_begin();
+  int rc = __real_mbedtls_x509_crt_parse(chain, data, bytes);
+  bk_net_cert_trace("parse_pem", &sample, bytes, bk_net_cert_count(chain),
+                    &chain->pk, rc);
+  return rc;
+}
+
+extern int __real_mbedtls_x509_crt_parse_der_nocopy(mbedtls_x509_crt*,
+                                                    const unsigned char*,
+                                                    size_t);
+int __wrap_mbedtls_x509_crt_parse_der_nocopy(mbedtls_x509_crt* chain,
+                                             const unsigned char* data,
+                                             size_t bytes) {
+  bk_net_cert_sample_t sample = bk_net_cert_begin();
+  int rc = __real_mbedtls_x509_crt_parse_der_nocopy(chain, data, bytes);
+  bk_net_cert_trace("parse_der", &sample, bytes, bk_net_cert_count(chain),
+                    &chain->pk, rc);
+  return rc;
+}
+
+extern int __real_mbedtls_pk_verify_ext(mbedtls_pk_type_t, const void*,
+                                        mbedtls_pk_context*, mbedtls_md_type_t,
+                                        const unsigned char*, size_t,
+                                        const unsigned char*, size_t);
+int __wrap_mbedtls_pk_verify_ext(mbedtls_pk_type_t type, const void* options,
+                                 mbedtls_pk_context* key, mbedtls_md_type_t md,
+                                 const unsigned char* hash, size_t hash_bytes,
+                                 const unsigned char* signature,
+                                 size_t signature_bytes) {
+  bk_net_cert_sample_t sample = bk_net_cert_begin();
+  int rc = __real_mbedtls_pk_verify_ext(type, options, key, md, hash,
+                                        hash_bytes, signature, signature_bytes);
+  bk_net_cert_trace("verify_signature", &sample, signature_bytes, 1u, key, rc);
+  return rc;
+}
+
+extern int __real_mbedtls_x509_crt_verify_restartable(
+    mbedtls_x509_crt*, mbedtls_x509_crt*, mbedtls_x509_crl*,
+    const mbedtls_x509_crt_profile*, const char*, uint32_t*,
+    int (*)(void*, mbedtls_x509_crt*, int, uint32_t*), void*,
+    mbedtls_x509_crt_restart_ctx*);
+int __wrap_mbedtls_x509_crt_verify_restartable(
+    mbedtls_x509_crt* chain, mbedtls_x509_crt* trusted, mbedtls_x509_crl* crl,
+    const mbedtls_x509_crt_profile* profile, const char* hostname,
+    uint32_t* flags, int (*verify)(void*, mbedtls_x509_crt*, int, uint32_t*),
+    void* user, mbedtls_x509_crt_restart_ctx* restart) {
+  bk_net_cert_trace_hardware();
+  bk_net_cert_sample_t sample = bk_net_cert_begin();
+  int rc = __real_mbedtls_x509_crt_verify_restartable(
+      chain, trusted, crl, profile, hostname, flags, verify, user, restart);
+  bk_net_cert_trace("verify_chain", &sample, 0u, bk_net_cert_count(chain),
+                    &chain->pk, rc);
+  return rc;
+}
+#endif
 
 static h2_pal_result_t bk_net_tls_load_ca(
     bk_net_tls_socket_t* socket, const h2_pal_net_tls_config_t* config) {
@@ -336,8 +668,18 @@ static h2_pal_result_t bk_net_tls_handshake(
     bk_net_tls_socket_t* socket, uint32_t timeout_ms,
     h2_pal_net_tls_verify_t verify_mode) {
   uint64_t deadline = bk_net_now_ms() + timeout_ms;
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+  size_t step = 0u;
+#endif
   for (;;) {
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+    uint64_t started = bk_net_now_ms();
+#endif
     int result = mbedtls_ssl_handshake(&socket->ssl);
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+    bk_net_tls_trace_handshake(socket, "handshake-return", step++, timeout_ms,
+                               bk_net_now_ms() - started, result);
+#endif
     if (result == 0) {
       if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
         return H2_PAL_OK;
@@ -396,10 +738,8 @@ static int bk_net_socket_error(void) {
 }
 
 static uint64_t bk_net_now_ms(void) {
-  struct timeval now;
-  return gettimeofday(&now, NULL) == 0
-             ? (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_usec / 1000u
-             : 0u;
+  /* The linked libc gettimeofday is an ENOSYS stub on this SDK. */
+  return bk_aon_rtc_get_us() / 1000u;
 }
 
 static uint32_t bk_net_timeout_remaining_ms(uint64_t deadline_ms) {
@@ -777,11 +1117,18 @@ static int bk_net_udp_sendto(void* user, h2_pal_net_socket_t socket_fd,
   if (rc != H2_PAL_OK) {
     return rc;
   }
+#if defined(H2_BK_NET_RTP_TRACE)
+  uint64_t started_us = bk_aon_rtc_get_us();
+#endif
   int sent = sendto(socket_fd, data, (int)len, 0, (struct sockaddr*)&storage,
                     sock_len);
+  int send_error = sent < 0 ? errno : 0;
+  int result = h2_bk_net_udp_send_result(sent, send_error);
+#if defined(H2_BK_NET_RTP_TRACE)
+  bk_net_trace_datagram(H2_BK_RTP_TRACE_SEND, socket_fd, data, len, result,
+                        send_error, started_us, bk_aon_rtc_get_us());
+#endif
   if (sent < 0) {
-    int send_error = errno;
-    int result = h2_bk_net_udp_send_result(sent, send_error);
     if (result == H2_PAL_ERR_WOULD_BLOCK) return result;
     char message[96];
     (void)snprintf(message, sizeof(message),
@@ -803,8 +1150,16 @@ static int bk_net_udp_recvfrom(void* user, h2_pal_net_socket_t socket_fd,
   }
   struct sockaddr_storage storage;
   socklen_t sock_len = sizeof(storage);
+#if defined(H2_BK_NET_RTP_TRACE)
+  uint64_t started_us = bk_aon_rtc_get_us();
+#endif
   int got = h2_bk_udp_receive(socket_fd, data, len, (struct sockaddr*)&storage,
                               &sock_len, timeout_ms);
+#if defined(H2_BK_NET_RTP_TRACE)
+  bk_net_trace_datagram(H2_BK_RTP_TRACE_RECEIVE, socket_fd, data,
+                        got > 0 ? (size_t)got : 0u, got, 0, started_us,
+                        bk_aon_rtc_get_us());
+#endif
   if (got < 0) {
     return got;
   }
@@ -1288,7 +1643,8 @@ static h2_pal_result_t bk_net_tls_wrap(void* user,
     return H2_PAL_ERR_INVALID_ARG;
   }
   bk_net_tls_init();
-  uint64_t deadline_ms = bk_net_now_ms() + timeout_ms;
+  uint64_t started_ms = bk_net_now_ms();
+  uint64_t deadline_ms = started_ms + timeout_ms;
   int lock_result =
       bk_net_tls_take_mutex(&s_bk_tls_mutex, 1, timeout_ms, deadline_ms);
   if (lock_result != H2_PAL_OK) {
@@ -1347,11 +1703,24 @@ static h2_pal_result_t bk_net_tls_wrap(void* user,
   if (rc == H2_PAL_OK) {
     mbedtls_ssl_set_bio(&slot->ssl, slot, bk_net_tls_send_raw,
                         bk_net_tls_recv_raw, NULL);
+#if defined(H2_BK_NET_TLS_CERT_TRACE)
+    char message[192];
+    (void)snprintf(message, sizeof(message),
+                   "stage=tls_peer thread=%p fd=%d host=%s budget_ms=%u",
+                   (void*)xTaskGetCurrentTaskHandle(), socket_fd,
+                   config->server_name, (unsigned)timeout_ms);
+    (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_INFO, "pal/net",
+                           message);
+#endif
     uint32_t remaining_ms = bk_net_timeout_remaining_ms(deadline_ms);
     rc = remaining_ms == 0u
              ? H2_PAL_ERR_TIMEOUT
              : bk_net_tls_handshake(slot, remaining_ms, config->verify);
   }
+  uint64_t random_ms = slot->random_ms;
+  uint64_t bio_ms = slot->bio_ms;
+  size_t random_calls = slot->random_calls;
+  size_t bio_calls = slot->bio_calls;
   if (rtos_lock_mutex(&s_bk_tls_mutex) == kNoErr) {
     if (slot->state == BK_NET_TLS_SOCKET_CONFIGURING && slot->fd == socket_fd &&
         s_bk_tls_generations[slot_index] == generation) {
@@ -1370,6 +1739,23 @@ static h2_pal_result_t bk_net_tls_wrap(void* user,
     rc = H2_PAL_ERR_UNAVAILABLE;
   }
   bk_net_tls_release((size_t)slot_index);
+  uint64_t completed_ms = bk_net_now_ms();
+  if (rc != H2_PAL_OK ||
+      (completed_ms >= started_ms && completed_ms - started_ms >= 1000u)) {
+    char message[256];
+    (void)snprintf(
+        message, sizeof(message),
+        "stage=tls_wrap elapsed_ms=%llu budget_ms=%u "
+        "random_ms=%llu bio_ms=%llu random_calls=%zu bio_calls=%zu rc=%d",
+        (unsigned long long)(completed_ms >= started_ms
+                                 ? completed_ms - started_ms
+                                 : 0u),
+        (unsigned)timeout_ms, (unsigned long long)random_ms,
+        (unsigned long long)bio_ms, random_calls, bio_calls, rc);
+    (void)h2_pal_log_write(h2_bk_platform_log_api(),
+                           rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN,
+                           "pal/net", message);
+  }
   return rc;
 }
 

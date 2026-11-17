@@ -321,6 +321,8 @@ static const char* factory_heading(h2_mfg_check_t check) {
       return "摄像头测试";
     case H2_MFG_NFC:
       return "NFC 测试";
+    case H2_MFG_POWER:
+      return "电源测试";
     default:
       return "硬件测试";
   }
@@ -556,6 +558,11 @@ static int factory_draw(h2_mfg_t* m, uint64_t now) {
         factory_center(m, line, 2, ui->text);
         factory_center(m, m->ble_probed ? "蓝牙通信已确认" : "等待蓝牙通信确认",
                        3, m->ble_probed ? ui->passed : ui->muted);
+        break;
+      case H2_MFG_POWER:
+        factory_center(m, "使用电源开关", 0, ui->text);
+        factory_center(m, "先关机 再开机", 1, ui->text);
+        factory_center(m, "恢复后点击确认", 3, ui->text);
         break;
       case H2_MFG_NFC:
         factory_center(m,

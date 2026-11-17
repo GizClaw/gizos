@@ -10,15 +10,16 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <wolfssl/ssl.h>
+#include <wolfssl/wolfio.h>
 #include <wolfssl/error-ssl.h>
 #include <wolfssl/wolfcrypt/error-crypt.h>
 
@@ -36,12 +37,6 @@ typedef struct desktop_tls_socket {
   pthread_mutex_t lock;
 } desktop_tls_socket_t;
 
-typedef struct desktop_sigpipe_guard {
-  sigset_t mask;
-  sigset_t previous_mask;
-  int consume_generated_signal;
-} desktop_sigpipe_guard_t;
-
 typedef struct desktop_net_resolver {
   pthread_mutex_t lock;
   pthread_cond_t done;
@@ -58,41 +53,32 @@ static pthread_mutex_t s_tls_lock = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t s_tls_generation;
 static size_t s_resolver_count;
 
-/* wolfSSL can write during handshake, read, and shutdown. Keep SIGPIPE local to
- * the operation without changing the process-wide signal disposition. */
-static int sigpipe_guard_begin(desktop_sigpipe_guard_t* guard) {
-  if (guard == NULL || sigemptyset(&guard->mask) != 0 ||
-      sigaddset(&guard->mask, SIGPIPE) != 0) {
-    return 0;
+/* Suppress only kernel signals caused by writes to this socket. Never inspect
+ * or consume process signals: another thread may own an unrelated SIGPIPE. */
+static int desktop_net_prepare_send(int fd, int* send_flags) {
+#if defined(__APPLE__)
+  /* TCP uses the socket option supported by the minimum Darwin runtime. */
+  const int enabled = 1;
+  if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, sizeof(enabled)) ==
+      0) {
+    *send_flags = 0;
+    return 1;
   }
-  if (pthread_sigmask(SIG_BLOCK, &guard->mask, &guard->previous_mask) != 0) {
-    return 0;
+  /* Darwin local stream sockets can reject SO_NOSIGPIPE. When the SDK offers
+   * MSG_NOSIGNAL, use it for those descriptors without changing TCP's policy.
+   */
+#ifdef MSG_NOSIGNAL
+  if (errno == EINVAL) {
+    *send_flags = MSG_NOSIGNAL;
+    return 1;
   }
-  sigset_t pending;
-  int was_blocked = sigismember(&guard->previous_mask, SIGPIPE);
-  int was_pending =
-      sigpending(&pending) == 0 ? sigismember(&pending, SIGPIPE) : -1;
-  if (was_blocked < 0 || was_pending < 0) {
-    (void)pthread_sigmask(SIG_SETMASK, &guard->previous_mask, NULL);
-    return 0;
-  }
-  guard->consume_generated_signal = !was_blocked && !was_pending;
+#endif
+  return 0;
+#else
+  (void)fd;
+  *send_flags = MSG_NOSIGNAL;
   return 1;
-}
-
-static void sigpipe_guard_end(desktop_sigpipe_guard_t* guard) {
-  if (guard == NULL) {
-    return;
-  }
-  int operation_errno = errno;
-  sigset_t pending;
-  if (guard->consume_generated_signal && sigpending(&pending) == 0 &&
-      sigismember(&pending, SIGPIPE) == 1) {
-    int signal_number = 0;
-    (void)sigwait(&guard->mask, &signal_number);
-  }
-  (void)pthread_sigmask(SIG_SETMASK, &guard->previous_mask, NULL);
-  errno = operation_errno;
+#endif
 }
 
 static int family_to_posix(h2_pal_net_family_t family) {
@@ -175,11 +161,12 @@ static int desktop_net_socket_error(void) {
 }
 
 static uint64_t desktop_now_ms(void) {
-  struct timeval now;
-  if (gettimeofday(&now, NULL) != 0) {
+  /* Socket budgets follow elapsed time, independent of wall-clock changes. */
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
     return 0u;
   }
-  return ((uint64_t)now.tv_sec * 1000u) + ((uint64_t)now.tv_usec / 1000u);
+  return ((uint64_t)now.tv_sec * 1000u) + ((uint64_t)now.tv_nsec / 1000000u);
 }
 
 static uint64_t timeout_deadline_ms(uint32_t timeout_ms) {
@@ -215,11 +202,7 @@ static int tls_find_free_slot(void) {
 
 static void tls_free_handles(WOLFSSL* ssl, WOLFSSL_CTX* ctx) {
   if (ssl != NULL) {
-    desktop_sigpipe_guard_t guard;
-    if (sigpipe_guard_begin(&guard)) {
-      (void)wolfSSL_shutdown(ssl);
-      sigpipe_guard_end(&guard);
-    }
+    (void)wolfSSL_shutdown(ssl);
     wolfSSL_free(ssl);
   }
   if (ctx != NULL) {
@@ -332,18 +315,16 @@ static int tls_is_verify_error(int error) {
 }
 
 static h2_pal_result_t tls_wait_handshake(WOLFSSL* ssl, int fd,
-                                          uint32_t timeout_ms,
+                                          uint64_t deadline,
                                           h2_pal_net_tls_verify_t verify_mode) {
-  uint64_t deadline = timeout_deadline_ms(timeout_ms);
   for (;;) {
-    desktop_sigpipe_guard_t guard;
-    if (!sigpipe_guard_begin(&guard)) {
-      return H2_PAL_ERR_IO;
+    if (timeout_remaining_ms(deadline) == 0u) {
+      return H2_PAL_ERR_TIMEOUT;
     }
     int rc = wolfSSL_connect(ssl);
-    sigpipe_guard_end(&guard);
-    if (rc == 1) {
-      return H2_PAL_OK;
+    if (rc == WOLFSSL_SUCCESS) {
+      return timeout_remaining_ms(deadline) == 0u ? H2_PAL_ERR_TIMEOUT
+                                                  : H2_PAL_OK;
     }
     int err = wolfSSL_get_error(ssl, rc);
     if (err == WOLFSSL_ERROR_WANT_READ || err == WOLFSSL_ERROR_WANT_WRITE) {
@@ -1115,14 +1096,7 @@ static int desktop_net_tcp_send(void* user, h2_pal_net_socket_t socket_fd,
   WOLFSSL* ssl = NULL;
   if (tls_acquire_slot(socket_fd, &tls_slot, &ssl)) {
     (void)pthread_mutex_lock(&s_tls_sockets[tls_slot].lock);
-    desktop_sigpipe_guard_t guard;
-    if (!sigpipe_guard_begin(&guard)) {
-      (void)pthread_mutex_unlock(&s_tls_sockets[tls_slot].lock);
-      tls_release_slot(tls_slot);
-      return H2_PAL_ERR_IO;
-    }
     int sent = wolfSSL_write(ssl, data, (int)len);
-    sigpipe_guard_end(&guard);
     if (sent > 0) {
       (void)pthread_mutex_unlock(&s_tls_sockets[tls_slot].lock);
       tls_release_slot(tls_slot);
@@ -1136,12 +1110,9 @@ static int desktop_net_tcp_send(void* user, h2_pal_net_socket_t socket_fd,
     }
     return err == WOLFSSL_ERROR_ZERO_RETURN ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
   }
-  desktop_sigpipe_guard_t guard;
-  if (!sigpipe_guard_begin(&guard)) {
-    return H2_PAL_ERR_IO;
-  }
-  ssize_t sent = send(socket_fd, data, len, 0);
-  sigpipe_guard_end(&guard);
+  int send_flags = 0;
+  if (!desktop_net_prepare_send(socket_fd, &send_flags)) return H2_PAL_ERR_IO;
+  ssize_t sent = send(socket_fd, data, len, send_flags);
   if (sent == 0) {
     return H2_PAL_ERR_CLOSED;
   }
@@ -1165,14 +1136,7 @@ static int desktop_net_tcp_send_timeout(void* user,
     (void)pthread_mutex_lock(&s_tls_sockets[tls_slot].lock);
     uint64_t deadline = timeout_deadline_ms(timeout_ms);
     for (;;) {
-      desktop_sigpipe_guard_t guard;
-      if (!sigpipe_guard_begin(&guard)) {
-        (void)pthread_mutex_unlock(&s_tls_sockets[tls_slot].lock);
-        tls_release_slot(tls_slot);
-        return H2_PAL_ERR_IO;
-      }
       int sent = wolfSSL_write(ssl, data, (int)len);
-      sigpipe_guard_end(&guard);
       if (sent > 0) {
         (void)pthread_mutex_unlock(&s_tls_sockets[tls_slot].lock);
         tls_release_slot(tls_slot);
@@ -1202,6 +1166,8 @@ static int desktop_net_tcp_send_timeout(void* user,
       }
     }
   }
+  int send_flags = 0;
+  if (!desktop_net_prepare_send(socket_fd, &send_flags)) return H2_PAL_ERR_IO;
   uint64_t deadline = timeout_deadline_ms(timeout_ms);
   for (;;) {
     uint32_t remaining = timeout_ms == 0u ? 0u : timeout_remaining_ms(deadline);
@@ -1216,20 +1182,14 @@ static int desktop_net_tcp_send_timeout(void* user,
       }
       return ready;
     }
-    desktop_sigpipe_guard_t guard;
-    if (!sigpipe_guard_begin(&guard)) {
-      return H2_PAL_ERR_IO;
-    }
     int flags = fcntl(socket_fd, F_GETFL, 0);
     if (flags < 0 || fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-      sigpipe_guard_end(&guard);
       return H2_PAL_ERR_IO;
     }
-    ssize_t sent = send(socket_fd, data, len, 0);
+    ssize_t sent = send(socket_fd, data, len, send_flags);
     int send_errno = errno;
     (void)fcntl(socket_fd, F_SETFL, flags);
     errno = send_errno;
-    sigpipe_guard_end(&guard);
     if (sent > 0) {
       return (int)sent;
     }
@@ -1282,14 +1242,7 @@ static int desktop_net_tcp_recv(void* user, h2_pal_net_socket_t socket_fd,
           return ready;
         }
       }
-      desktop_sigpipe_guard_t guard;
-      if (!sigpipe_guard_begin(&guard)) {
-        (void)pthread_mutex_unlock(&s_tls_sockets[tls_slot].lock);
-        tls_release_slot(tls_slot);
-        return H2_PAL_ERR_IO;
-      }
       int got = wolfSSL_read(ssl, data, (int)len);
-      sigpipe_guard_end(&guard);
       if (got > 0) {
         (void)pthread_mutex_unlock(&s_tls_sockets[tls_slot].lock);
         tls_release_slot(tls_slot);
@@ -1341,6 +1294,8 @@ static h2_pal_result_t desktop_net_tls_wrap(
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_tls_socket = -1;
+  /* Certificate loading and TLS setup share the handshake's budget. */
+  uint64_t deadline = timeout_deadline_ms(timeout_ms);
   (void)pthread_mutex_lock(&s_tls_lock);
   if (tls_find_slot(tcp_socket) >= 0) {
     (void)pthread_mutex_unlock(&s_tls_lock);
@@ -1473,7 +1428,9 @@ static h2_pal_result_t desktop_net_tls_wrap(
     (void)pthread_mutex_unlock(&s_tls_lock);
     return alpn_rc;
   }
-  if (wolfSSL_set_fd(ssl, tcp_socket) != WOLFSSL_SUCCESS) {
+  int send_flags = 0;
+  if (!desktop_net_prepare_send(tcp_socket, &send_flags) ||
+      wolfSSL_set_fd(ssl, tcp_socket) != WOLFSSL_SUCCESS) {
     wolfSSL_free(ssl);
     wolfSSL_CTX_free(ctx);
     (void)pthread_mutex_lock(&s_tls_lock);
@@ -1482,6 +1439,8 @@ static h2_pal_result_t desktop_net_tls_wrap(
     return H2_PAL_ERR_IO;
   }
 
+  /* wolfSSL may write from connect, read and shutdown as well as write. */
+  wolfSSL_SetIOWriteFlags(ssl, send_flags);
   int flags = fcntl(tcp_socket, F_GETFL, 0);
   if (flags < 0 || fcntl(tcp_socket, F_SETFL, flags | O_NONBLOCK) < 0) {
     wolfSSL_free(ssl);
@@ -1492,7 +1451,7 @@ static h2_pal_result_t desktop_net_tls_wrap(
     return H2_PAL_ERR_IO;
   }
   h2_pal_result_t rc =
-      tls_wait_handshake(ssl, tcp_socket, timeout_ms, verify_mode);
+      tls_wait_handshake(ssl, tcp_socket, deadline, verify_mode);
   if (rc != H2_PAL_OK) {
     (void)fcntl(tcp_socket, F_SETFL, flags);
     wolfSSL_free(ssl);

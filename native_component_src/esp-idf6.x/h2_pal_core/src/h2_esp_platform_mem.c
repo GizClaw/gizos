@@ -115,12 +115,6 @@ h2_pal_mem_api_t* h2_esp_platform_psram_allocator(void) {
   return esp_platform_allocator(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
-const h2_pal_mem_api_t* h2_esp_platform_external_allocator(void) {
-  if (heap_caps_get_total_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == 0u)
-    return NULL;
-  return h2_esp_platform_psram_allocator();
-}
-
 h2_pal_mem_api_t* h2_esp_platform_internal_allocator(void) {
   return esp_platform_allocator(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 }

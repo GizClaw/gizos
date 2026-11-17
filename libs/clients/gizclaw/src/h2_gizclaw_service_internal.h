@@ -46,6 +46,11 @@ typedef void (*h2_gizclaw_operation_completion_fn)(
 bool h2_gizclaw_cancel_requested(const h2_gizclaw_cancel_token_t* cancel_token);
 h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t* operation);
 void h2_gizclaw_operation_release(h2_gizclaw_operation_t* operation);
+/* Completion-dispatch task only: retain the terminal operation and its user
+ * for one retry on a later poll. Call before changing ownership or invoking
+ * application callbacks, then return without releasing any resources. */
+void h2_gizclaw_operation_retry_completion_internal(
+    h2_gizclaw_operation_t* operation, h2_pal_result_t result);
 
 typedef struct h2_gizclaw_req_vtable {
   h2_pal_result_t (*do_request)(h2_gizclaw_req_t* request, void* user,
@@ -60,6 +65,9 @@ typedef struct h2_gizclaw_req_vtable {
 struct h2_gizclaw_req {
   const h2_gizclaw_req_vtable_t* vtable;
 };
+/* Pin a known live managed request; pair with req_release. The caller already
+ * owns a reference or holds an owner's mutex that protects an existing one. */
+bool h2_gizclaw_req_retain_internal(h2_gizclaw_req_t* request);
 
 /* One owner-task submission, with no pending poll or retry. Even WOULD_BLOCK
  * is terminal. Context ownership transfers only on successful construction. */
@@ -151,7 +159,7 @@ void h2_gizclaw_req_sink_done_internal(h2_gizclaw_req_t* request,
                                        h2_pal_result_t result);
 
 /* PCM is supplied only by the Service uplink task, not application code.
- * admit reserves the route; detach waits for in-flight uplink references.
+ * admit reserves the route; detach quiesces input access under its owner lock.
  * Closing input queues protocol EOS after the last accepted slot drains. */
 h2_pal_result_t h2_gizclaw_req_create_pcm_stream_internal(
     h2_gizclaw_service_t* service, uint64_t identity,
@@ -202,6 +210,7 @@ struct h2_gizclaw_operation {
   bool dispatch_queued;
   bool notification_driven;
   bool ready;
+  h2_pal_result_t completion_retry_result; /* Completion-dispatch task only. */
   h2_gizclaw_cancel_token_t cancel_token;
   h2_gizclaw_operation_t* next_pending;
   uint64_t trace_sequence;
@@ -238,6 +247,9 @@ struct h2_gizclaw_service {
   void* original_cancel_user;
   h2_pal_queue_t* request_queue;
   h2_pal_queue_t* dispatch_queue;
+  /* A dequeued terminal completion retains both operation references until a
+   * later poll can acquire its owner's lock. Only the dispatch task writes. */
+  h2_atomic_ptr_t pending_completion;
   h2_pal_mutex_t* mutex;
   h2_pal_mutex_t* audio_mutex;
   h2_gizclaw_conversation_t* audio_conversation;
@@ -271,6 +283,9 @@ struct h2_gizclaw_service {
   size_t downlink_refs;
   h2_atomic_ptr_t speech_request;
   h2_atomic_ptr_t pcm_track;
+  /* Lifetime byte count of accepted downlink PCM, independent of Track binding.
+   * Library-owned Tracks borrow this counter only while bound to Service. */
+  h2_atomic_size_t pcm_downlink_writes;
   /* Protected by mutex. Unset closes admission before waiting for callbacks. */
   size_t pcm_track_refs;
   bool pcm_track_unsetting;
@@ -345,12 +360,21 @@ h2_pal_result_t h2_gizclaw_service_pcm_input_internal(
     h2_gizclaw_service_t* service, h2_gizclaw_pcm_input_t* input,
     h2_gizclaw_pcm_input_action_t action, uint8_t* pcm, size_t len,
     size_t* out_len);
+h2_pal_result_t h2_gizclaw_service_pcm_adopt_internal(
+    h2_gizclaw_service_t* service, h2_gizclaw_pcm_input_t* input,
+    h2_gizclaw_track_t* expected_track, h2_gizclaw_pcm_capture_id_t id);
+h2_pal_result_t h2_gizclaw_speech_audio_adopt_internal(
+    void* context, h2_gizclaw_track_t* track, h2_gizclaw_pcm_capture_id_t id);
 h2_pal_result_t h2_gizclaw_speech_audio_start_internal(void* context);
 h2_pal_result_t h2_gizclaw_speech_audio_end_internal(void* context);
 h2_pal_result_t h2_gizclaw_speech_input_snapshot_internal(void* context,
                                                           bool* active,
                                                           bool* ready);
 void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t* service);
+/* Retry pending retirement once. Failure keeps its Service-owned request
+ * reference; stop must retry before declaring the Service fully stopped. */
+h2_pal_result_t h2_gizclaw_speech_retire_internal(
+    h2_gizclaw_service_t* service);
 void h2_gizclaw_conversation_uplink_step_internal(
     h2_gizclaw_service_t* service);
 void h2_gizclaw_conversation_downlink_step_internal(

@@ -6,7 +6,6 @@ h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t* config);
 h2_pal_result_t h2_bk7258_board_start_entry_task(const char* name,
                                                  void (*entry)(void*),
                                                  void* user);
-const h2_pal_mem_api_t* h2_bk7258_board_display_allocator(void);
 int h2_bk7258_board_display_capture(uint16_t* out, size_t count);
 
 #ifdef H2_TEST_DISPLAY_TRANSFER

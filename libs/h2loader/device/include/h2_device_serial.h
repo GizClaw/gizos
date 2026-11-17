@@ -37,12 +37,12 @@ typedef struct h2_device_serial_config {
   uint32_t admission_fallback_ms;
   uint32_t idle_timeout_ms;
   uint32_t post_write_poll_ms;
-  /** Zero selects 4096 bytes. Overrides must be between the stream MTU and
-   * 4096 bytes, inclusive. */
-  size_t rx_buffer_size;
   /** Zero selects 20 segments. Positive overrides follow the iostreamikcp
    * minimum and maximum receive-window limits. */
   uint32_t receive_window;
+  /** Zero selects 4096 bytes. Overrides must be between the stream MTU and
+   * 4096 bytes, inclusive. Appended to preserve positional initializers. */
+  size_t rx_buffer_size;
 } h2_device_serial_config_t;
 
 /** One command task owns the parser/KCP state. Physical I/O and all public PAL

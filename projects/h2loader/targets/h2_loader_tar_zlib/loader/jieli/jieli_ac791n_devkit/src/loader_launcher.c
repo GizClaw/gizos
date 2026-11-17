@@ -100,7 +100,9 @@ static void loader_task(void* user) {
           H2_DEVICE_BOOT_STORED_SHADOW | H2_DEVICE_BOOT_PREPARE_SELECTION |
           H2_DEVICE_BOOT_FACTORY_IDENTITY,
       .identity_policy = H2_DEVICE_IDENTITY_COMMITTED,
-      .serial_idle_timeout_ms = 30000u,
+      /* Log monitoring does not send protocol keepalives. Keep its session
+       * until the host closes or replaces it, as other Loader entries do. */
+      .serial_idle_timeout_ms = 0u,
       .force_command_mode = crash_recovery_active,
       .ble_advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
       .extend_app = h2loader_board_extend_app,

@@ -81,8 +81,20 @@ typedef int (*h2_pal_http_response_header_fn)(
  * whitespace or control bytes is invalid. Providers must not silently discard
  * interface_name: unsupported routing returns an error before a request starts.
  *
- * A positive timeout_ms bounds the complete call, including redirects and
+ * A positive timeout_ms sets the complete-call budget, including redirects and
  * retries; a non-positive value selects the provider's finite default.
+ * connect_timeout_ms sets a separate connection budget for DNS and socket
+ * waits, shared across address candidates and passed to synchronous TLS when
+ * needed. A non-positive value selects the provider's finite connection
+ * default. Non-interruptible crypto/SDK calls may exceed these budgets; the
+ * provider checks the deadline when control returns. Retries and redirects
+ * may start a new connection budget without resetting the complete-call
+ * deadline. Providers without independent connection timing (such as Fetch)
+ * return
+ * UNSUPPORTED with response.rejection = CONNECT_TIMEOUT for a positive
+ * connect_timeout_ms before starting I/O; when unset they bound setup only by
+ * the complete-call deadline. A generic UNSUPPORTED result does not identify
+ * this rejection and may occur after I/O (for example during a redirect).
  * retry_count is the number of additional attempts, not the total attempts.
  * Cancellation returns CLOSED and stops subsequent callback delivery.
  *
@@ -125,6 +137,12 @@ typedef struct h2_pal_http_request {
    * this allocator for short-lived request scratch allocations.
    */
   const h2_pal_mem_api_t* allocator;
+
+  /** Connection budget for DNS and socket waits; non-positive uses a finite
+   * default. HTTPS passes the remaining budget to synchronous TLS setup and
+   * handshake, but non-interruptible crypto/SDK calls may return after it.
+   */
+  int connect_timeout_ms;
 } h2_pal_http_request_t;
 
 static inline int h2_pal_http_request_is_canceled(
@@ -157,13 +175,24 @@ static inline int h2_pal_http_deliver_response_header(
                                      header_name, header_value);
 }
 
+/** Identifies an option rejected before request I/O or response delivery.
+ * Cancellation may still be polled, but no header/body callback has run.
+ * Providers must leave NONE for all other failures, including unsupported
+ * transport capabilities or redirect schemes discovered during a request.
+ */
+typedef enum h2_pal_http_rejection {
+  H2_PAL_HTTP_REJECTION_NONE = 0,
+  H2_PAL_HTTP_REJECTION_CONNECT_TIMEOUT = 1,
+} h2_pal_http_rejection_t;
+
 /**
  * Response from a completed synchronous request. HTTP status errors remain
  * responses (request returns OK); transport and callback errors are PAL errors.
  * content_length is -1 when unknown. body_len counts delivered body bytes even
  * in streaming/discard mode, where body is NULL. allocator is non-NULL only
  * when the response owns body; caller-provided buffers are never freed.
- * Release every response with response_free, including after a failed request.
+ * Release every response with response_free, including after a failed request,
+ * before reusing its storage. The common dispatcher resets it before dispatch.
  */
 typedef struct h2_pal_http_response {
   int status_code;
@@ -171,6 +200,10 @@ typedef struct h2_pal_http_response {
   uint8_t* body;
   size_t body_len;
   const h2_pal_mem_api_t* allocator;
+  /** Valid with UNSUPPORTED only; CONNECT_TIMEOUT guarantees no I/O/response.
+   * A caller may then explicitly clear that option and submit a new request.
+   */
+  h2_pal_http_rejection_t rejection;
 } h2_pal_http_response_t;
 
 typedef struct h2_pal_http_vtable {
@@ -196,6 +229,7 @@ static inline void h2_pal_http_response_reset(
   response->body = NULL;
   response->body_len = 0;
   response->allocator = NULL;
+  response->rejection = H2_PAL_HTTP_REJECTION_NONE;
 }
 
 static inline int h2_pal_http_status_has_error(int status_code) {
@@ -229,6 +263,9 @@ static inline int h2_pal_http_request_uses_allocator(
 static inline int h2_pal_http_do(const h2_pal_http_api_t* api,
                                  const h2_pal_http_request_t* request,
                                  h2_pal_http_response_t* out_response) {
+  /* Generic/legacy providers may return without populating the response.
+   * Never let a previous rejection authorize replay of a different failure. */
+  h2_pal_http_response_reset(out_response);
   if (api == NULL || api->vtable == NULL || api->vtable->request == NULL ||
       request == NULL || out_response == NULL || request->url.data == NULL ||
       request->url.len == 0u ||

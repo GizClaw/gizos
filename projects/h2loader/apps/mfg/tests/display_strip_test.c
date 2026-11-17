@@ -132,8 +132,9 @@ static int service(h2_mfg_t* m) {
   return (int)f->services == f->service_error_at ? H2_PAL_ERR_IO : 0;
 }
 
-static void render(uint16_t* output, unsigned rows, unsigned check, int factory,
-                   int fail_y, int service_error_at) {
+static void render(uint16_t* output, unsigned rows, unsigned check,
+                   const h2_mfg_ui_config_t* ui, int fail_y,
+                   int service_error_at) {
   fixture_t f = {.output = output,
                  .rows = rows == 0 ? HEIGHT : rows,
                  .fail_y = fail_y,
@@ -149,7 +150,7 @@ static void render(uint16_t* output, unsigned rows, unsigned check, int factory,
                               .button_names = {"OK", "UP", "DOWN"},
                               .button_count = 3,
                               .display_buffer_rows = rows,
-                              .ui = factory ? &factory_ui : NULL};
+                              .ui = ui};
   h2_mfg_t m = {
       .rt = &rt,
       .profile = &profile,
@@ -189,24 +190,61 @@ static void render(uint16_t* output, unsigned rows, unsigned check, int factory,
   assert(f.allocation == NULL);
 }
 
+static void assert_factory_label(const uint16_t* actual, const char* text,
+                                 h2_mfg_ui_rect_t area) {
+  uint16_t* expected = malloc(WIDTH * HEIGHT * sizeof(uint16_t));
+  assert(expected != NULL);
+  /* Render the required copy through the public profile's title slot. Comparing
+   * pixels verifies the actual POWER heading/instructions in their configured
+   * rectangles without inspecting source text. */
+  h2_mfg_ui_config_t ui = {.width = WIDTH,
+                           .height = HEIGHT,
+                           .title = text,
+                           .background = factory_ui.background,
+                           .text = factory_ui.text,
+                           .title_area = area};
+  render(expected, 0, sizeof(steps) / sizeof(steps[0]), &ui, -1, 0);
+  unsigned ink = 0;
+  for (int y = area.y; y < area.y + area.height; ++y) {
+    for (int x = area.x; x < area.x + area.width; ++x) {
+      size_t i = (size_t)y * WIDTH + x;
+      assert(actual[i] == expected[i]);
+      ink += expected[i] != ui.background;
+    }
+  }
+  assert(ink != 0);
+  free(expected);
+}
+
+static void assert_power_instructions(const uint16_t* actual) {
+  assert_factory_label(actual, "电源测试", factory_ui.heading);
+  assert_factory_label(actual, "使用电源开关", factory_ui.rows[0]);
+  assert_factory_label(actual, "先关机 再开机", factory_ui.rows[1]);
+  assert_factory_label(actual, "恢复后点击确认", factory_ui.rows[3]);
+}
+
 int main(void) {
   size_t bytes = WIDTH * HEIGHT * sizeof(uint16_t);
   uint16_t* reference = malloc(bytes);
   uint16_t* actual = malloc(bytes);
   assert(reference != NULL && actual != NULL);
   for (int factory = 0; factory < 2; ++factory) {
+    const h2_mfg_ui_config_t* ui = factory ? &factory_ui : NULL;
     for (unsigned check = 0; check <= sizeof(steps) / sizeof(steps[0]);
          ++check) {
-      render(reference, 0, check, factory, -1, 0);
+      render(reference, 0, check, ui, -1, 0);
+      if (factory && check < sizeof(steps) / sizeof(steps[0]) &&
+          steps[check].check == H2_MFG_POWER)
+        assert_power_instructions(reference);
       const unsigned sizes[] = {1, 4, 7, 8, 127};
       for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
         memset(actual, 0xa5, bytes);
-        render(actual, sizes[i], check, factory, -1, 0);
+        render(actual, sizes[i], check, ui, -1, 0);
         assert(memcmp(reference, actual, bytes) == 0);
       }
     }
-    render(actual, 8, 0, factory, 16, 0);
-    render(actual, 4, 0, factory, -1, 3);
+    render(actual, 8, 0, ui, 16, 0);
+    render(actual, 4, 0, ui, -1, 3);
   }
   free(reference);
   free(actual);

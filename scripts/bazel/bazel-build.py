@@ -10,7 +10,7 @@ import tempfile
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common.bazel import cache_options  # noqa: E402
+from common.bazel import cache_options, graph_options  # noqa: E402
 
 
 if __name__ == "__main__":
@@ -53,6 +53,7 @@ if __name__ == "__main__":
                 )
             args.append(f"--define=h2_native_build_jobs={native_build_jobs}")
         args.extend(cache_options())
+        args.extend(graph_options())
         download_outputs = os.environ.get(
             "BAZEL_BUILD_REMOTE_DOWNLOAD_OUTPUTS", ""
         ).strip()

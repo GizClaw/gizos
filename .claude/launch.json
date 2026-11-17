@@ -5,5 +5,10 @@
     "runtimeExecutable": "node",
     "runtimeArgs": ["tools/gizloader/node_modules/vite/bin/vite.js", "tools/gizloader", "--host", "0.0.0.0", "--port", "4176"],
     "port": 4176
+  }, {
+    "name": "fruit-slice-web",
+    "runtimeExecutable": "bazel",
+    "runtimeArgs": ["run", "-c", "opt", "//projects/fruit_slice/targets/pkg_tar/web:serve", "--", "--port", "8765"],
+    "port": 8765
   }]
 }

@@ -233,7 +233,8 @@ static void association_allocators(void) {
     unsigned before = ep->allocation_count;
     assert(h2_pal_sctp_association_create(ep->api, &config, &ep->association) ==
            H2_PAL_OK);
-    assert(ep->allocation_count == before);
+    /* Registry metadata always belongs to the provider allocator. */
+    assert(ep->allocation_count == before + 1u);
     assert(h2_atomic_load(&arenas[i].live) ==
            2u); /* association + rx_assembly */
     assert(ep->packet_allocation_count == ep->packet_free_count + 1u);

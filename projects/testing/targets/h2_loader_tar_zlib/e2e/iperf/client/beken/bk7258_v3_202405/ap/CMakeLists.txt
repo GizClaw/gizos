@@ -3,7 +3,7 @@ h2_bazel_native_component_sources(H2_COMPONENT_SOURCES ap ap)
 
 set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 if("${REPO_ROOT}" STREQUAL "")
-  get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../../../../../.." ABSOLUTE)
+  message(FATAL_ERROR "H2_GIZOS_ROOT is required")
 endif()
 
 set(H2_REPOSITORY_ROOT "${REPO_ROOT}")
@@ -14,7 +14,6 @@ armino_component_register(
     "."
     "${REPO_ROOT}/projects/testing/e2e/iperf/client_app/include"
     "${REPO_ROOT}/libs/h2loader/device/include"
-    "${REPO_ROOT}/boards/beken/bk7258_v3_202405/bk7258/ap/include"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/include"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src"
     "${REPO_ROOT}/libs/sync/atomic/include"

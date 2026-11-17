@@ -41,7 +41,8 @@ const h2_pal_webrtc_api_t* h2_bk_platform_webrtc_api(void) {
     };
     h2_bk_platform_peer_initialized = 1;
     h2_peer_config_t wired_config = config;
-    if (h2_sctp_create(&sctp_config, &h2_bk_platform_sctp) == H2_PAL_OK) {
+    if (h2_sctp_create_with_sync(&sctp_config, h2_bk_platform_sync_api(),
+                                 &h2_bk_platform_sctp) == H2_PAL_OK) {
       wired_config.sctp = h2_sctp_api(h2_bk_platform_sctp);
     }
     if (wired_config.sctp == NULL ||

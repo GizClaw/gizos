@@ -315,6 +315,17 @@ static int ensure_directory(const char* path) {
   return create_directory_component(component);
 }
 
+static h2_pal_result_t fs_prepare(void* user, const char* path) {
+  (void)user;
+  char native_path[H2_JIELI_SD_PATH_MAX];
+  int rc = translate_path(path, native_path);
+  if (rc != H2_PAL_OK) return rc;
+  /* Runtime construction mounts SD eagerly. Reuse that same bounded mount
+   * policy for prepare, including after an explicit provider teardown. */
+  h2_pal_fs_api_t api;
+  return h2_jieli_ac791n_devkit_sd_fs_init(&api);
+}
+
 static int fs_mkdir(void* user, const char* path) {
   (void)user;
   char mapped[H2_JIELI_SD_PATH_MAX];
@@ -630,6 +641,7 @@ static int wait_sd_online(void) {
 
 h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t* out_api) {
   static const h2_pal_fs_vtable_t vtable = {
+      .prepare = fs_prepare,
       .mkdir = fs_mkdir,
       .open = fs_open,
       .read = fs_read,

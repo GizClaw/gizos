@@ -456,7 +456,110 @@ static void test_incoming_reset_waits_for_output(void) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
+/* A full receive window can be acknowledged before a blocked consumer drains
+ * it. Service must publish the recovered credit without another inbound DATA.
+ */
+static void test_service_reopens_receive_window(bool block_window_update,
+                                                bool duplicate_data) {
+  h2_sctp_test_pair_t pair = {.now_ms = 1u};
+  assert(h2_sctp_test_endpoint_init(&pair.active, H2_PAL_SCTP_ROLE_ACTIVE,
+                                    5000u, 5001u, 2048u, 1500u, 4096u,
+                                    1500u) == H2_PAL_OK);
+  assert(h2_sctp_test_endpoint_init(&pair.passive, H2_PAL_SCTP_ROLE_PASSIVE,
+                                    5001u, 5000u, 2048u, 1500u, 4096u,
+                                    1500u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  uint8_t payload[1500];
+  fill_payload(payload, sizeof(payload), 0x40u);
+  pair.passive.message_would_block_count = 1u;
+  send_message(&pair, 1u, 53u, false, payload, sizeof(payload));
+  uint8_t saved_packet[2048];
+  assert(pair.active.packet_head != NULL);
+  const size_t saved_len = pair.active.packet_head->len;
+  assert(saved_len <= sizeof(saved_packet));
+  memcpy(saved_packet, pair.active.packet_head->data, saved_len);
+  assert(h2_sctp_test_transfer(&pair.active, &pair.passive, pair.now_ms) == 1u);
+  assert(pair.passive.message_count == 0u);
+  assert(h2_sctp_test_transfer(&pair.passive, &pair.active, pair.now_ms) == 1u);
+  bool writable = true;
+  assert(h2_pal_sctp_association_is_writable(
+             pair.active.api, pair.active.association, &writable) == H2_PAL_OK);
+  assert(!writable);
+
+  /* This submission stays queued until the receiver advertises credit. */
+  send_message(&pair, 1u, 53u, false, payload, 17u);
+  assert(pair.active.packet_head == NULL);
+  pair.passive.emit_would_block_count = block_window_update ? 1u : 0u;
+  uint64_t deadline = H2_PAL_SCTP_NO_DEADLINE;
+  assert(h2_pal_sctp_association_service(
+             pair.passive.api, pair.passive.association, ++pair.now_ms,
+             &deadline) == H2_PAL_OK);
+  assert(pair.passive.message_count == 1u);
+  if (block_window_update) {
+    assert(deadline == pair.now_ms);
+    assert(h2_pal_sctp_association_service(
+               pair.passive.api, pair.passive.association, ++pair.now_ms,
+               &deadline) == H2_PAL_OK);
+  }
+  if (duplicate_data) {
+    /* A peer's probe/retransmission also refreshes the window, without
+     * delivering the already consumed message a second time. */
+    assert(h2_pal_sctp_association_input_packet(
+               pair.passive.api, pair.passive.association, saved_packet,
+               saved_len, ++pair.now_ms) == H2_PAL_OK);
+    assert(pair.passive.message_count == 1u);
+  }
+  assert(h2_sctp_test_transfer(&pair.passive, &pair.active, pair.now_ms) >= 1u);
+  assert(h2_sctp_test_transfer(&pair.active, &pair.passive, pair.now_ms) == 1u);
+  assert(pair.passive.message_count == 2u);
+  assert(pair.passive.messages[0].len == sizeof(payload));
+  assert(memcmp(pair.passive.messages[0].data, payload, sizeof(payload)) == 0);
+  assert(pair.passive.messages[1].len == 17u);
+  assert(memcmp(pair.passive.messages[1].data, payload, 17u) == 0);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
+/* Keep BEGIN in the assembly buffer, receive END beyond a TSN hole, then
+ * close the hole. The next fragmented message must not borrow freed state. */
+static void test_mixed_reassembly_then_next_message(bool interleaved) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  /* Select the negotiated wire mode; all sends/input use production APIs. */
+  pair.active.association->peer_interleaving = interleaved;
+  pair.passive.association->peer_interleaving = interleaved;
+  uint8_t payload[600];
+  fill_payload(payload, sizeof(payload), 0x70u);
+  send_message(&pair, 1u, 53u, false, payload, sizeof(payload));
+  h2_sctp_test_packet_t* first = pair.active.packet_head;
+  assert(first != NULL && first->next != NULL && first->next->next != NULL);
+  h2_sctp_test_packet_t* second = first->next;
+  h2_sctp_test_packet_t* third = second->next;
+  assert(third->next == NULL);
+  first->next = third;
+  third->next = second;
+  second->next = NULL;
+  pair.active.packet_tail = second;
+  (void)h2_sctp_test_pump(&pair, 32u);
+  assert(pair.passive.message_count == 1u);
+  assert(pair.passive.messages[0].len == sizeof(payload));
+  assert(memcmp(pair.passive.messages[0].data, payload, sizeof(payload)) == 0);
+
+  fill_payload(payload, sizeof(payload), 0x90u);
+  send_message(&pair, 1u, 53u, false, payload, sizeof(payload));
+  (void)h2_sctp_test_pump(&pair, 32u);
+  assert(pair.passive.message_count == 2u);
+  assert(pair.passive.messages[1].len == sizeof(payload));
+  assert(memcmp(pair.passive.messages[1].data, payload, sizeof(payload)) == 0);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 int main(void) {
+  test_service_reopens_receive_window(false, true);
+  test_mixed_reassembly_then_next_message(true);
+  test_mixed_reassembly_then_next_message(false);
+  test_service_reopens_receive_window(false, false);
+  test_service_reopens_receive_window(true, false);
   test_incoming_reset_waits_for_last_tsn();
   test_incoming_reset_waits_for_output();
   test_incoming_reset_delivers_next_generation();

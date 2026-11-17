@@ -152,10 +152,14 @@ static int open_command_service(
     (void)h2_device_activity_bind(&owner->wifi_activity, runtime->wifi_sta,
                                   runtime->time, loader_wifi_activity, owner);
     *out_service = owner;
-  } else if (close_command_service(owner, owner) != H2_PAL_OK) {
-    /* A partial-open service is a close-only handle which still borrows owner.
-     */
-    *out_service = owner;
+  } else {
+    int close_rc = close_command_service(owner, owner);
+    if (close_rc != H2_PAL_OK) {
+      /* The blocking App retains owner, Runtime and command dependencies until
+       * checked close succeeds, before loader_run releases serial state. */
+      *out_service = owner;
+      return close_rc;
+    }
   }
   return rc;
 }
@@ -318,8 +322,7 @@ static int loader_run(h2_device_loader_t* context, h2_runtime_t* runtime,
       .time = runtime->time,
       .allocator = runtime_loader_config->command_allocator != NULL
                        ? runtime_loader_config->command_allocator
-                       : (runtime->mem_external != NULL ? runtime->mem_external
-                                                        : runtime->mem),
+                       : runtime->mem,
       .loader_partition_id = runtime_loader_config->loader_partition_id != 0u
                                  ? runtime_loader_config->loader_partition_id
                                  : 1u,

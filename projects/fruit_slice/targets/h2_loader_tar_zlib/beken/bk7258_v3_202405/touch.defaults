@@ -1,0 +1,8 @@
+# V3 capacitive touch on the board's simulated I2C; the board adapter detects
+# GT911 or GT1151 and maps coordinates to the display extent.
+CONFIG_TP=y
+CONFIG_I2C=y
+CONFIG_SIM_I2C=y
+CONFIG_SIM_I2C_HW_BOARD_V3=y
+CONFIG_TP_GT911=y
+CONFIG_TP_GT1151=y

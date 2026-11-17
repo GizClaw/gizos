@@ -241,6 +241,21 @@ h2_pal_result_t h2_gizclaw_session_conversation_create(
  */
 h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t* session);
 h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t* session);
+/** Adopt a local capture on the Session-owned conversation route. Uses the
+ * audio_start cancellation/dispatch barrier, retaining PCM captured before
+ * Workspace preparation. The bound Track and nonzero id must match the local
+ * capture; repeated adoption while input is open returns BUSY. See
+ * service_audio_adopt for ownership, failure and EOS semantics. capture_end
+ * automatically closes input after producer acknowledgement, projecting
+ * RECORDING to WAITING (or IDLE for empty input). Completion applies this even
+ * before another snapshot; managed realtime never restarts a legacy input.
+ * audio_end on an adopted window only requests END: input stays open until
+ * producer acknowledgement and its final frame is retained. No application
+ * drain is needed.
+ */
+h2_pal_result_t h2_gizclaw_session_audio_adopt(h2_gizclaw_session_t* session,
+                                               h2_gizclaw_track_t* track,
+                                               h2_gizclaw_pcm_capture_id_t id);
 /** Submit one complete UTF-8 user input
  * (1..H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES bytes, no terminator required) on
  * the Session-owned conversation route of the current Workspace, without

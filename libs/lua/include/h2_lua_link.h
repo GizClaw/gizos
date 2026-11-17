@@ -33,11 +33,17 @@ typedef struct h2_lua_link_config {
  *
  * Call once after h2_lua_host_create() and before h2_lua_host_start(). The
  * Runtime's BLE Host must already be started by the caller and stay running
- * until h2_lua_host_destroy() returns; the provider never starts or stops it
- * and never uses Wi-Fi or network APIs. Returns H2_PAL_ERR_UNSUPPORTED, and
- * leaves `link` unavailable, when the Runtime has no BLE Host or system-event
- * API or the BLE Host lacks an operation the link needs.
- * h2_lua_host_destroy() joins the provider's tasks and frees it.
+ * until h2_lua_host_join() or h2_lua_host_destroy_checked() succeeds; the
+ * provider never starts or stops it and never uses Wi-Fi or network APIs.
+ * Returns H2_PAL_ERR_UNSUPPORTED, and leaves `link` unavailable, when the
+ * Runtime has no BLE Host or system-event API or the BLE Host lacks an
+ * operation the link needs.
+ * Failed server cleanup retains its handle, callback/configuration storage and
+ * PAL dependencies. New host()/join() calls return busy. Checked Host join or
+ * destruction retries retained cleanup once per call; on failure keep the
+ * Host, Runtime, allocator and BLE Host alive and retry with the same Host.
+ * Returning from void h2_lua_host_destroy() does not establish successful
+ * cleanup. Successful destruction joins the provider's tasks and frees it.
  */
 h2_pal_result_t h2_lua_link_enable(h2_lua_host_t* host,
                                    const h2_lua_link_config_t* config);

@@ -15,10 +15,6 @@ h2_pal_mem_api_t* h2_bk7258_board_psram_allocator(void) {
   return h2_bk_platform_psram_allocator();
 }
 
-const h2_pal_mem_api_t* h2_bk7258_board_display_allocator(void) {
-  return h2_bk7258_board_psram_allocator();
-}
-
 const h2_pal_log_api_t* h2_bk7258_board_log_api(void) {
   return h2_bk_platform_log_api();
 }

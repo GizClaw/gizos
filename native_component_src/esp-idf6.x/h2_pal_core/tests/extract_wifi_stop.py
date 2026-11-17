@@ -6,6 +6,9 @@ import sys
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
 entries = (
+    "h2_esp_wifi_post_sta_lost_ip",
+    "h2_esp_wifi_release_address_state",
+    "h2_esp_wifi_quiesce_address_events",
     "h2_esp_wifi_teardown_dhcp_stop",
     "h2_esp_wifi_teardown_stop",
     "h2_esp_wifi_teardown_deinit",
@@ -17,7 +20,7 @@ entries = (
 functions = []
 for entry in entries:
     match = re.search(
-        rf"^(?:static )?int {re.escape(entry)}\([^;{{]*\)\s*\{{",
+        rf"^(?:static )?(?:int|void) {re.escape(entry)}\([^;{{]*\)\s*\{{",
         source,
         re.M,
     )

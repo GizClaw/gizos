@@ -79,6 +79,12 @@ cpu/wl82/liba/event.a:event.c.o:-------- T sys_event_notify
 
 The host fake, pthread driver and `//native_component_src/jieli/wl82/h2_pal_core:jieli_sys_event_port_test` cover queueing, ownership, quiescence and the SDK port contract. These checks establish software behavior only; native linking and the AC791N board acceptance round remain separate validation.
 
+## Atomic operations and compiler TLS
+
+The firmware links `h2_jieli_wl82_atomic_provider.c` against the shared locked Atomic implementation. Its SDK lock masks local interrupts and uses the SDK cross-core testset spinlock. Host regressions exercise this actual provider, rather than substituting the host C11 backend; an unsupported provider can otherwise compile successfully while every dynamic Atomic initialization fails on the device.
+
+The pinned SDK's `pthread_once` is an assertion stub. The pi32v2 compiler-rt emulated TLS runtime calls it on first access to a `_Thread_local` variable, including the KCP allocation context. The board layout links with `--wrap=pthread_once` and the native core supplies `h2_jieli_wl82_pthread_once.c`. Its zero-initialized SDK control word transitions through unstarted, running and complete under the same cross-core lock. Initializers execute outside the lock; waiting callers yield until completion. The SDK does not support POSIX thread cancellation. Host tests cover concurrent first use, publication and nested initialization of distinct control words; the native ELF and on-device startup must also be checked when changing the toolchain or SDK.
+
 ## Caller allocator ownership
 
 Mutex, semaphore, condition and queue configs honor `config->allocator`.

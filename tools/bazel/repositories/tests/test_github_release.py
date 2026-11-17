@@ -70,6 +70,66 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(self.urlopen.call_count, 1)
         self.assertGreater(self.urlopen.call_args.kwargs["timeout"], 0)
 
+    def test_registry_connection_failure_retries_then_succeeds(self):
+        url = "https://bcr.bazel.build/modules/rules_cc/1.0/source.json"
+        os.environ["GH_TOKEN"] = "test-secret-token"
+        self.urlopen.side_effect = [urllib.error.URLError("private signed URL"), io.BytesIO(_DATA)]
+        release.download_verified(url, _HASH, self.destination)
+        self.assert_clean(_DATA)
+        self.assertEqual(self.urlopen.call_count, 2)
+        self.sleep.assert_called_once_with(1)
+        for call in self.urlopen.call_args_list:
+            self.assertEqual(call.args[0].full_url, url)
+            self.assertIsNone(call.args[0].get_header("Authorization"))
+            self.assertTrue(0 < call.kwargs["timeout"] <= 60)
+        self.assertEqual(self.urlopen.call_args.args[0].get_header("Cache-control"), "no-cache")
+
+    def test_registry_and_mirror_transient_http_failure_retries(self):
+        for url in ("https://bcr.bazel.build/modules/rules_cc/1.0/source.json",
+                    "https://static-volc.gizclaw.com/bazel/modules/rules_cc/1.0/source.json",
+                    "https://mirror.bazel.build/github.com/owner/repo/archive.zip"):
+            with self.subTest(url=url):
+                self.destination.write_bytes(b"old destination")
+                self.urlopen.reset_mock()
+                self.sleep.reset_mock()
+                error = urllib.error.HTTPError(url, 503, "private redirect", {}, None)
+                self.urlopen.side_effect = [error, io.BytesIO(_DATA)]
+                release.download_verified(url, _HASH, self.destination)
+                self.assert_clean(_DATA)
+                self.assertEqual(self.urlopen.call_count, 2)
+                self.sleep.assert_called_once_with(1)
+                self.assertTrue(all(call.args[0].full_url == url for call in self.urlopen.call_args_list))
+
+    def test_registry_retry_exhaustion_preserves_destination_and_redacts(self):
+        self.urlopen.side_effect = TimeoutError("private signed URL")
+        with self.assertRaisesRegex(release.DownloadError, "^HTTPS download failed$") as error:
+            release.download_verified("https://bcr.bazel.build/modules/rules_cc/1.0/source.json", _HASH, self.destination)
+        self.assertNotIn("private", str(error.exception))
+        self.assertEqual(self.urlopen.call_count, 3)
+        self.assertEqual(self.sleep.call_args_list, [mock.call(1), mock.call(2)])
+        self.assert_clean()
+
+    def test_permanent_registry_http_errors_are_not_retried(self):
+        url = "https://bcr.bazel.build/modules/rules_cc/1.0/source.json"
+        for code in (401, 403, 404):
+            with self.subTest(code=code):
+                self.urlopen.reset_mock()
+                self.sleep.reset_mock()
+                self.urlopen.side_effect = urllib.error.HTTPError(url, code, "private URL", {}, None)
+                with self.assertRaisesRegex(release.DownloadError, "^HTTPS download failed$"):
+                    release.download_verified(url, _HASH, self.destination)
+                self.assertEqual(self.urlopen.call_count, 1)
+                self.sleep.assert_not_called()
+                self.assert_clean()
+
+    def test_registry_retry_after_is_respected(self):
+        url = "https://bcr.bazel.build/modules/rules_cc/1.0/source.json"
+        error = urllib.error.HTTPError(url, 429, "rate limited", {"Retry-After": "7"}, None)
+        self.urlopen.side_effect = [error, io.BytesIO(_DATA)]
+        release.download_verified(url, _HASH, self.destination)
+        self.sleep.assert_called_once_with(7)
+        self.assert_clean(_DATA)
+
     def test_matching_cache_is_reused_without_network(self):
         self.destination.write_bytes(_DATA)
         release.download_verified(_URL, _HASH.upper(), self.destination)
@@ -256,14 +316,15 @@ class DownloadTests(unittest.TestCase):
             self.assertIsNone(self.urlopen.call_args.args[0].get_header("Authorization"))
 
     def test_non_exact_github_hosts_do_not_fall_back(self):
-        for url in ("https://github.com.evil.invalid/o/r/releases/download/v/a",
-                    "https://github.com:443/o/r/releases/download/v/a",
-                    "https://github.com/o/r/releases/download/v/a?query=yes"):
+        for url, attempts in (("https://github.com.evil.invalid/o/r/releases/download/v/a", 3),
+                              ("https://github.com:443/o/r/releases/download/v/a", 3),
+                              ("https://github.com/o/r/releases/download/v/a?query=yes", 1)):
             self.urlopen.reset_mock()
             self.urlopen.side_effect = urllib.error.URLError("private redirect URL")
             with self.assertRaisesRegex(RuntimeError, "^HTTPS download failed$"):
                 release.download_verified(url, _HASH, self.destination)
-            self.assertEqual(self.urlopen.call_count, 1)
+            self.assertEqual(self.urlopen.call_count, attempts)
+            self.assertTrue(all(call.args[0].full_url == url for call in self.urlopen.call_args_list))
             self.assert_clean()
 
     def test_invalid_hash_and_insecure_urls_before_io(self):

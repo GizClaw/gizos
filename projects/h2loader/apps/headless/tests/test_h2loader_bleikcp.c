@@ -21,6 +21,7 @@ static unsigned task_joins;
 static unsigned join_failures;
 static unsigned service_closes;
 static unsigned close_failures;
+static int close_result;
 static unsigned shutdown_failures;
 static unsigned sleeps;
 static int open_result;
@@ -106,9 +107,11 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
 int h2_loader_ble_service_close(h2_loader_ble_service_t* service) {
   assert(service >= services && service < services + service_count);
   ++service_closes;
+  assert(live_allocations == 1u && global_refs == 1u);
+  assert(service->config.handler_user != NULL);
   if (close_failures != 0u) {
     --close_failures;
-    return H2_PAL_ERR_TASK;
+    return close_result;
   }
   return H2_PAL_OK;
 }
@@ -148,6 +151,7 @@ static void reset(void) {
   memset(services, 0, sizeof(services));
   service_count = task_starts = task_joins = service_closes = sleeps = 0u;
   join_failures = close_failures = shutdown_failures = 0u;
+  close_result = H2_PAL_ERR_TASK;
   open_result = command_init_result = H2_PAL_OK;
   partial_open = false;
   command_polls = 0u;
@@ -219,14 +223,34 @@ static void test_open_cleanup(void) {
   assert(api->open(api->user, &runtime, &command, "test", 0u, &service) ==
          H2_PAL_ERR_NO_MEMORY);
   assert(service == NULL && live_allocations == 0u && global_refs == 0u);
-  partial_open = true;
-  close_failures = 2u;
+  const int errors[] = {H2_PAL_ERR_TASK, H2_PAL_ERR_TIMEOUT,
+                        H2_PAL_ERR_UNSUPPORTED};
+  for (size_t i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+    reset();
+    open_result = H2_PAL_ERR_NO_MEMORY;
+    partial_open = true;
+    close_failures = 2u;
+    close_result = errors[i];
+    assert(api->open(api->user, &runtime, &command, "test", 0u, &service) ==
+           errors[i]);
+    assert(service != NULL && live_allocations == 1u && global_refs == 1u);
+    assert(service_closes == 1u && sleeps == 0u);
+    assert(api->close(api->user, service) == errors[i]);
+    assert(live_allocations == 1u && global_refs == 1u);
+    shutdown_failures = 1u;
+    assert(api->close(api->user, service) == H2_PAL_ERR_BUSY);
+    assert(live_allocations == 1u && global_refs == 1u && service_closes == 3u);
+    assert(api->close(api->user, service) == H2_PAL_OK);
+    assert(live_allocations == 0u && global_refs == 0u && service_closes == 3u);
+  }
+  reset();
+  open_result = H2_PAL_ERR_IO;
+  shutdown_failures = 1u;
   assert(api->open(api->user, &runtime, &command, "test", 0u, &service) ==
-         H2_PAL_ERR_NO_MEMORY);
+         H2_PAL_ERR_BUSY);
   assert(service != NULL && live_allocations == 1u && global_refs == 1u);
-  assert(api->close(api->user, service) == H2_PAL_ERR_TASK);
   assert(api->close(api->user, service) == H2_PAL_OK);
-  assert(live_allocations == 0u && global_refs == 0u);
+  assert(live_allocations == 0u && global_refs == 0u && service_closes == 0u);
 }
 
 int main(void) {

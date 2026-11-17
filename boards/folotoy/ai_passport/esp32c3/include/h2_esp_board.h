@@ -5,8 +5,12 @@
 extern "C" {
 #endif
 
+/** Initializes or returns the borrowed board configuration. After any failed
+ * teardown, returns INVALID_STATE with cleared output until deinit succeeds.
+ * Serialize configuration and teardown with all provider users stopped. */
 h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out);
-/** Call only after Runtime and every borrowed provider user have stopped. */
+/** Call only after Runtime and every borrowed provider user have stopped.
+ * Failure retains cleanup-only ownership for a later deinit retry. */
 h2_pal_result_t h2_esp_board_runtime_deinit(void);
 /** Loader mount points share the board's data filesystem. */
 int h2_esp_board_fs_mount(const char* path);

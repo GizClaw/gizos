@@ -36,6 +36,7 @@ static const h2_mfg_recording_store_t* const store =
 typedef struct test_entropy {
   uint32_t state;
   unsigned calls, fail_on;
+  int repeat_prefix;
   uint8_t* key_address;
   uint8_t key[16];
   uint8_t* nonce_address[16];
@@ -66,7 +67,9 @@ static int entropy_fill(void* user, uint8_t* out, size_t length) {
   if (length == sizeof(entropy->key)) entropy->key_address = out;
   for (size_t i = 0; i < length; ++i) {
     entropy->state = entropy->state * UINT32_C(1664525) + UINT32_C(1013904223);
-    out[i] = (uint8_t)(entropy->state >> 24);
+    out[i] = entropy->repeat_prefix && length == 4
+                 ? 0xa7
+                 : (uint8_t)(entropy->state >> 24);
     /* Exercise a source that has already produced partial output on failure. */
     if (entropy->calls == entropy->fail_on && i == length / 2)
       return H2_PAL_ERR_IO;
@@ -74,7 +77,7 @@ static int entropy_fill(void* user, uint8_t* out, size_t length) {
   if (length == sizeof(entropy->key)) {
     memcpy(entropy->key, out, length);
   } else {
-    CHECK(length == sizeof(entropy->nonce[0]));
+    CHECK(length == 4);
     CHECK(entropy->nonce_count < 16);
     entropy->nonce_address[entropy->nonce_count] = out;
     memcpy(entropy->nonce[entropy->nonce_count++], out, length);
@@ -527,7 +530,7 @@ static void test_invalid_dimensions(void) {
 static void check_aes_gcm_record(unsigned recording, unsigned samples) {
   uint8_t nonce[12] = {0}, aad[8] = {0};
   int16_t actual[MAX_SAMPLES], expected[MAX_SAMPLES];
-  memcpy(nonce, fixture.entropy.nonce[recording], 8);
+  memcpy(nonce, fixture.entropy.nonce_address[recording], 8);
   aad[0] = (uint8_t)recording;
   h2_pal_crypto_buf_t plaintext = {.data = (uint8_t*)actual,
                                    .cap = samples * sizeof(*actual)};
@@ -626,6 +629,49 @@ static void test_retry_renews_nonce(void) {
   check_read(0, 0, 256);
   CHECK(store->close(store->user) == 0);
   check_outside_recordings(2, FRAME_COUNT, 256);
+}
+
+static void test_repeating_entropy_does_not_reuse_nonce(void) {
+  reset_fixture();
+  fixture.entropy.repeat_prefix = 1;
+  CHECK(store->open(store->user, 2, 2, 256) == 0);
+  int16_t pcm[256] = {17};
+  uint8_t old[3][512], previous_prefix[8];
+  CHECK(store->begin(store->user, 0) == 0);
+  memcpy(previous_prefix, fixture.entropy.nonce_address[0], 8);
+  CHECK(previous_prefix[4] == 1);
+  CHECK(store->write_frame(store->user, 0, 0, pcm, 256) == 0);
+  CHECK(store->write_frame(store->user, 0, 1, pcm, 256) == 0);
+  memcpy(old[0], frame_bytes(0, 0, 2, 256), sizeof(old[0]));
+  memcpy(old[1], frame_bytes(0, 1, 2, 256), sizeof(old[1]));
+  CHECK(memcmp(old[0], old[1], sizeof(old[0])) != 0);
+  CHECK(store->begin(store->user, 1) == 0);
+  CHECK(fixture.entropy.nonce_address[1][4] == 2);
+  CHECK(store->write_frame(store->user, 1, 0, pcm, 256) == 0);
+  memcpy(old[2], frame_bytes(1, 0, 2, 256), sizeof(old[2]));
+  CHECK(memcmp(old[0], old[2], sizeof(old[0])) != 0);
+  /* Failed entropy and erase attempts must consume their generations too. */
+  fixture.entropy.fail_on = fixture.entropy.calls + 1;
+  CHECK(store->begin(store->user, 0) == H2_PAL_ERR_IO);
+  check_bytes(fixture.entropy.nonce_address[0], 8, 0);
+  fixture.fail_erase_on = fixture.erase_calls + 1;
+  CHECK(store->begin(store->user, 0) == H2_PAL_ERR_IO);
+  check_bytes(fixture.entropy.nonce_address[0], 8, 0);
+  CHECK(store->begin(store->user, 0) == 0);
+  CHECK(fixture.entropy.nonce_address[3][4] == 5);
+  CHECK(memcmp(previous_prefix, fixture.entropy.nonce_address[3], 8) != 0);
+  for (unsigned i = 1; i < fixture.entropy.nonce_count; ++i)
+    CHECK(memcmp(fixture.entropy.nonce[0], fixture.entropy.nonce[i], 4) == 0);
+  CHECK(store->write_frame(store->user, 0, 0, pcm, 256) == 0);
+  for (unsigned i = 0; i < 3; ++i)
+    /* Compare encrypted PCM without tags: different AAD alone is insufficient.
+     */
+    CHECK(memcmp(old[i], frame_bytes(0, 0, 2, 256), sizeof(old[i])) != 0);
+  int16_t actual[256] = {0};
+  CHECK(store->read_frame(store->user, 0, 0, actual, 256) == 0);
+  CHECK(memcmp(actual, pcm, sizeof(pcm)) == 0);
+  CHECK(store->close(store->user) == 0);
+  check_outside_recordings(2, 2, 256);
 }
 
 static void test_tamper_and_read_failure(void) {
@@ -770,6 +816,7 @@ static void test_failed_open_cleanup(void) {
     CHECK(store->open(store->user, 2, FRAME_COUNT, 320) ==
           (missing_crypto ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_IO));
     check_no_flash_changes();
+    if (!missing_crypto) check_bytes(fixture.entropy.key_address, 16, 0);
     CHECK(store->begin(store->user, 0) != 0);
     CHECK(store->open(store->user, 1, FRAME_COUNT, 256) ==
           H2_PAL_ERR_INVALID_STATE);
@@ -1029,6 +1076,7 @@ int main(void) {
   RUN(test_invalid_dimensions);
   RUN(test_full_recordings);
   RUN(test_retry_renews_nonce);
+  RUN(test_repeating_entropy_does_not_reuse_nonce);
   RUN(test_tamper_and_read_failure);
   RUN(test_partial_write_requires_begin);
   RUN(test_begin_failures_disable_recording);

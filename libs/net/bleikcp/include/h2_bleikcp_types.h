@@ -101,7 +101,8 @@ typedef struct h2_bleikcp_config {
   /**
    * Server only: caller-owned characteristics registered in the same
    * service after TX and RX, in order. The array, UUIDs, callbacks and
-   * handle storage stay borrowed until h2_bleikcp_server_close() returns.
+   * handle storage stay borrowed until h2_bleikcp_server_close() succeeds,
+   * including cleanup-only handles returned by a failed server open.
    * At most H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX; clients ignore it.
    */
   const h2_pal_ble_gatt_characteristic_t* extra_characteristics;

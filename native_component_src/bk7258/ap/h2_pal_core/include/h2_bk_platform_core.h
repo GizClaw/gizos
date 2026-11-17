@@ -118,6 +118,12 @@ h2_pal_wifi_ap_t* h2_bk_platform_wifi_ap(void);
 h2_pal_wifi_settings_t* h2_bk_platform_wifi_settings(void);
 const h2_pal_wifi_csi_api_t* h2_bk_platform_wifi_csi(void);
 h2_pal_modem_t* h2_bk_platform_modem_unsupported(void);
+/** Static task-context Log PAL for caller-framed console records, without a
+ * prefix, level filter or added newline. A complete record shares bounded TX
+ * arbitration with management; the 5-second deadline includes contention and
+ * FIFO drain. A partial write is an error and must not be resumed as a record.
+ * No management/RX session is configured or released. */
+const h2_pal_log_api_t* h2_bk_platform_console_log_api(void);
 const h2_pal_io_stream_api_t* h2_bk_platform_io_stream_api(void);
 const h2_pal_uart_io_stream_api_t* h2_bk_platform_uart_io_stream_api(void);
 void h2_bk_platform_uart_io_stream_deinit(void);

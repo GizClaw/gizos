@@ -28,21 +28,6 @@ typedef struct h2_device_loader_config {
   uint32_t digest_yield_ms;
   uint32_t serial_idle_timeout_ms;
   uint32_t serial_post_write_poll_ms;
-  /** Optional reliable-serial receive budgets; zero selects 4096 bytes/20
-   * segments. rx_buffer_size is at least the stream MTU and at most 4096. */
-  size_t serial_rx_buffer_size;
-  uint32_t serial_receive_window;
-  /** Image-owned command-task minimum; zero keeps 48 KiB, otherwise >=20 KiB.
-   */
-  size_t command_task_stack_size;
-  /** Optional service work run by the serial owner before each poll, outside
-   * Loader/MFG operation locks. Errors keep serial recovery available. */
-  int (*poll_command_service)(void* user, h2_runtime_t* runtime,
-                              const h2_loader_command_config_t* command);
-  /** Optional shutdown/join outside Loader/MFG operation locks. Retried while
-   * serial recovery continues until H2_PAL_OK, retaining command dependencies.
-   */
-  int (*stop_command_service)(void* user, h2_runtime_t* runtime);
   h2_loader_ble_advertising_mode_t ble_advertising_mode;
   int force_command_mode;
   uint32_t mfg_required_total;
@@ -66,6 +51,21 @@ typedef struct h2_device_loader_config {
   /** Product policy may extend UI/MFG configuration before services start. */
   int (*extend_app)(h2_runtime_t* runtime, h2loader_app_config_t* config);
   const h2loader_app_command_service_api_t* command_service;
+  /** Optional reliable-serial receive budgets; zero selects 4096 bytes/20
+   * segments. rx_buffer_size is at least the stream MTU and at most 4096. */
+  size_t serial_rx_buffer_size;
+  uint32_t serial_receive_window;
+  /** Image-owned command-task minimum; zero keeps 48 KiB, otherwise >=20 KiB.
+   */
+  size_t command_task_stack_size;
+  /** Optional service work run by the serial owner before each poll, outside
+   * Loader/MFG operation locks. Errors keep serial recovery available. */
+  int (*poll_command_service)(void* user, h2_runtime_t* runtime,
+                              const h2_loader_command_config_t* command);
+  /** Optional shutdown/join outside Loader/MFG operation locks. Retried while
+   * serial recovery continues until H2_PAL_OK, retaining command dependencies.
+   */
+  int (*stop_command_service)(void* user, h2_runtime_t* runtime);
 } h2_device_loader_config_t;
 
 /** Caller-owned state, borrowed public APIs retained through blocking run. */
@@ -124,6 +124,9 @@ typedef struct h2_device_app_commands {
   int prepared;
   int serial_started;
   int io_stream_started;
+  int ble_global_initialized;
+  int ble_started;
+  int ble_activity_observing;
 } h2_device_app_commands_t;
 
 /** Prepare without publishing a transport, also usable for BLE-only products.
@@ -140,9 +143,19 @@ int h2_device_app_commands_prepare_serial(
     h2_device_app_commands_t* state, const h2_runtime_config_t* runtime_config,
     const h2_device_app_commands_config_t* config,
     const h2_iostreamikcp_io_t* physical_io);
+/** Starts BLE with bounded open retries. Failed partial-open cleanup returns
+ * immediately with state, Runtime, client and PAL dependencies still borrowed.
+ * Retry stop_ble until success before restarting or releasing those borrows.
+ * Serial recovery remains available. Retry waits propagate cancellation/errors.
+ */
 int h2_device_app_commands_start(h2_device_app_commands_t* state,
                                  h2_runtime_t* runtime,
                                  const h2_device_app_commands_config_t* config);
+/** Attempts BLE shutdown once, including a failed start's cleanup-only service.
+ * Success clears the Runtime borrow and BLE global reference. A failure retains
+ * remaining resources and dependencies for retry. Serial is stopped separately.
+ */
+int h2_device_app_commands_stop_ble(h2_device_app_commands_t* state);
 int h2_device_app_commands_stop_serial(h2_device_app_commands_t* state);
 void h2_device_app_commands_admit_sessions(h2_device_app_commands_t* state);
 int h2_device_app_operation_lock(h2_device_app_commands_t* state);

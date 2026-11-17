@@ -1,5 +1,6 @@
 #include "h2_lua_display.h"
 #include "h2_encoding.h"
+#include "h2_sha256.h"
 #include "h2_raster2d.h"
 #include "../../../image/raster2d/src/h2_raster2d_internal.h"
 #include "h2_lua_numeric.h"
@@ -105,6 +106,9 @@ typedef struct display_submission {
   uint64_t started_us, completed_us;
   int clock_valid;
   size_t pixels, rects;
+  /* Single-buffer equality cannot keep old pixels. Commit only the digest of
+   * a fully successful attempt, even if Lua draws before collecting it. */
+  uint8_t pending_digest[32], presented_digest[32];
 } display_submission_t;
 
 static h2_pal_result_t display_submission_open(lua_State* state,
@@ -4773,8 +4777,13 @@ static h2_pal_result_t display_submission_collect(h2_lua_job_t* job) {
     } else {
       ++submission->successful;
       if (submission->changed) ++submission->changed_frames;
-      display_presented_t* frame = job->display_presented;
-      if (frame != NULL) job->display_presented_valid = 1;
+      if (job->host->config.display_single_buffer) {
+        memcpy(submission->presented_digest, submission->pending_digest,
+               sizeof(submission->presented_digest));
+        job->display_presented_valid = 1;
+      } else if (job->display_presented != NULL) {
+        job->display_presented_valid = 1;
+      }
     }
     h2_lua_display_worker_ack(worker);
   }
@@ -4837,13 +4846,32 @@ static h2_pal_result_t display_submission_prepare(lua_State* state,
   worker->tiles =
       single_buffer ? NULL : (uint8_t*)(frame->pixels + frame->pixel_count);
   uint8_t* planning_tiles = worker->tiles;
-  submission->changed =
-      single_buffer ? job->dirty_valid
-                    : !job->display_presented_valid ||
+  if (single_buffer) {
+    if (!job->display_presented_valid || job->dirty_valid) {
+      /* Dirty bounds describe attempted writes, including no-ops and draws
+       * reverted within the frame. Compare final content without a second
+       * framebuffer; no allocations or Lua callbacks can change A here. */
+      h2_sha256_t digest;
+      h2_sha256_init(&digest);
+      h2_sha256_update(&digest, (const uint8_t*)job->framebuffer,
+                       (size_t)job->display_info.width *
+                           job->display_info.height * sizeof(uint16_t));
+      h2_sha256_finish(&digest, submission->pending_digest);
+    } else {
+      memcpy(submission->pending_digest, submission->presented_digest,
+             sizeof(submission->pending_digest));
+    }
+    submission->changed =
+        !job->display_presented_valid ||
+        memcmp(submission->pending_digest, submission->presented_digest,
+               sizeof(submission->pending_digest)) != 0;
+  } else {
+    submission->changed = !job->display_presented_valid ||
                           memcmp(job->framebuffer, frame->pixels, size) != 0;
+  }
   /* Switching retained policy refreshes the full baseline, as present did. */
   if (single_buffer) {
-    if (job->dirty_valid) {
+    if (job->dirty_valid && (!retained || submission->changed)) {
       worker->plan.count = 1;
       worker->plan.rects[0] = (h2_lua_display_plan_rect_t){
           (uint16_t)job->dirty_min_x, (uint16_t)job->dirty_min_y,

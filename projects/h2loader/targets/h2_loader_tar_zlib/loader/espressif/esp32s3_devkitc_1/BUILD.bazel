@@ -2,9 +2,9 @@ load("//tools/bazel/firmware:firmware.bzl", "firmware_version")
 load("//tools/bazel/firmware:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel/firmware:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -14,10 +14,16 @@ firmware_version(
     main_version = "//projects/h2loader/apps/headless:version",
 )
 
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["devkit/h2loader"],
+)
+
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
     graph = [":h2loader_launcher"],
     policies = [
+        "devkit/h2loader 4 any 65536 psram",
         "h2loader/appcmd    8        0  4096  psram",
         "h2loader/blecmd    8        0  4096  psram",
         "$h2loader/return   8        0  4096  psram",
@@ -67,6 +73,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        ":entry_tasks",
         ":firmware_lib",
         "//boards/espressif/esp32s3_devkitc_1/esp32s3",
         "//libs/archive/bundle",
@@ -78,7 +85,7 @@ firmware_native_component(
 )
 
 h2loader_esp_idf_firmware(
-    name = "firmware",
+    name = "firmware_usb",
     srcs = [
         "CMakeLists.txt",
         "main/CMakeLists.txt",
@@ -98,16 +105,16 @@ h2loader_esp_idf_firmware(
 )
 
 h2loader_tar_zlib(
-    name = "package",
+    name = "package_usb",
     board = "devkit",
-    firmware = ":firmware",
+    firmware = ":firmware_usb",
     image = "loader",
     role = "h2loader",
     target = "esp32s3",
 )
 
 h2loader_esp_idf_firmware(
-    name = "firmware_uart_460800",
+    name = "firmware_uart",
     srcs = [
         "CMakeLists.txt",
         "main/CMakeLists.txt",
@@ -126,22 +133,11 @@ h2loader_esp_idf_firmware(
 )
 
 h2loader_tar_zlib(
-    name = "package_uart_460800",
+    name = "package_uart",
     board = "devkit",
-    firmware = ":firmware_uart_460800",
+    firmware = ":firmware_uart",
     image = "loader",
     role = "h2loader",
     tags = ["no-release"],
     target = "esp32s3",
-)
-
-h2loader_zlib_tar(
-    name = "package_v2",
-    source = "//projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package",
-    tags = ["firmware-release"],
-)
-
-h2loader_zlib_tar(
-    name = "package_uart_460800_v2",
-    source = "//projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1:package_uart_460800",
 )

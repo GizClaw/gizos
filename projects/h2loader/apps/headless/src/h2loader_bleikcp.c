@@ -156,10 +156,16 @@ static int open_command_service(
           config != NULL ? config->input_frame_capacity : 0u,
   };
   rc = h2_loader_ble_service_open(&service_config, &owned->service);
-  if (rc == H2_PAL_OK || close_command_service(NULL, owned) != H2_PAL_OK) {
+  if (rc == H2_PAL_OK) {
+    *out_service = owned;
+    return rc;
+  }
+  int close_rc = close_command_service(NULL, owned);
+  if (close_rc != H2_PAL_OK) {
     /* A partial-open cleanup failure retains the same close/retry ownership
      * as an ordinary service close failure. Never drop its borrowed context. */
     *out_service = owned;
+    return close_rc;
   }
   return rc;
 }

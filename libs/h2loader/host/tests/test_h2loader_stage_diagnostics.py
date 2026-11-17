@@ -19,10 +19,12 @@ class StageDiagnosticsTest(unittest.TestCase):
 typedef int h2_pal_result_t;
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_IO -4
+#define H2_PAL_ERR_CLOSED -9
 typedef struct {
  int (*on_log)(void *, const uint8_t *, size_t);
  void *log_user;
  int log_line_open;
+ h2_pal_result_t log_sink_result;
 } h2_h2loader_host_serial_connection_t;
 static size_t logged;
 static int log_result;
@@ -58,6 +60,10 @@ int main(void) {
  assert(serial_stage_output(&o,(const uint8_t *)errors[0],strlen(errors[0]))==-4);
  o=(serial_stage_output_t){.connection=&c}; c.on_log=log_output; log_result=-7;
  assert(serial_stage_output(&o,(const uint8_t *)ok,strlen(ok))==-7);
+ assert(c.log_sink_result==-7);
+ c.log_sink_result=0; log_result=H2_PAL_ERR_CLOSED;
+ assert(serial_stage_output(&o,(const uint8_t *)ok,strlen(ok))==H2_PAL_ERR_IO);
+ assert(c.log_sink_result==H2_PAL_ERR_IO);
  return 0;
 }
 '''

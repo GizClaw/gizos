@@ -226,7 +226,10 @@ typedef struct h2_h2loader_host_serial_connection_config {
   const char* ready_marker;
   /** Optional bounded delay after command delivery and before response read. */
   uint32_t post_command_delay_ms;
-  /** Optional borrowed sink for bytes proven not to belong to a frame. */
+  /** Optional borrowed sink for console diagnostics. Sink failures abort the
+   * operation and cleanup still releases the connection. CLOSED from this sink
+   * is reported as IO, so it cannot be mistaken for a physical reset. The first
+   * failure is latched; reconnect before issuing another command. */
   h2_h2loader_host_transport_log_fn on_log;
   void* log_user;
   /** Leave DTR and RTS untouched for the complete connection lifecycle. */
@@ -251,6 +254,15 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
 /** Close a serial connection. Repeating the call with NULL is a no-op. */
 h2_pal_result_t h2_h2loader_host_serial_disconnect(
     h2_h2loader_host_serial_connection_t** inout_connection);
+
+/** Close as above and optionally report the observed reset count, including
+ * final teardown pumping. Each complete READY banner identifies a new epoch;
+ * transport closure alone proves at least one reset, without double-counting
+ * repeated errors on the same retired link. Count saturates at UINT32_MAX.
+ * The count is initialized to zero even for an already-NULL connection. */
+h2_pal_result_t h2_h2loader_host_serial_disconnect_with_reset(
+    h2_h2loader_host_serial_connection_t** inout_connection,
+    uint32_t* out_reset_count);
 
 /** Run authoritative status over the established reliable session. */
 h2_pal_result_t h2_h2loader_host_serial_read_status(
@@ -337,6 +349,13 @@ typedef struct h2_h2loader_host_command_request {
   /** Optional synchronous bounded-output callback and borrowed context. */
   h2_h2loader_host_command_output_fn on_output;
   void* output_user;
+  /** Optional synchronous notification after Host Core parses an accepted
+   * terminal response, before transport ACK-grace pumping. This is command
+   * acceptance only, not reboot or installation completion. The callback must
+   * be bounded and must not reenter the transport. Context is borrowed for the
+   * blocking execute call. */
+  void (*on_accepted)(void* user);
+  void* accepted_user;
 } h2_h2loader_host_command_request_t;
 
 typedef struct h2_h2loader_host_command_result {
@@ -351,6 +370,10 @@ typedef struct h2_h2loader_host_command_result {
   uint8_t output_truncated;
   /** Nonzero when success requires reconnect and live-state verification. */
   uint8_t lifecycle_transition;
+  /** Serial-only evidence that the accepted command's link closed or a new
+   * READY epoch was observed, including during ACK-grace pumping. This is not
+   * proof of reboot completion or of the final partition. */
+  uint8_t accepted_link_closed;
 } h2_h2loader_host_command_result_t;
 
 /**

@@ -42,7 +42,28 @@ Install the package with the normal H2Loader CLI `send --file <package>` and `re
 
 ## AI Passport
 
-```sh
+The current image composes the shared MFG App base `0.1.49` with numeric board build `1`; AI Passport does not freeze the shared App version for other boards. The recorded physical acceptance of `0.1.44-1` belongs only to that installed image and its hashes. New source builds require their own validation and do not imply a new device acceptance run.
+
+The revision-4 profile stores the following zero-based indices. This table and the ordered `steps` array in the concrete AI Passport `profile.c` define the meaning of each persisted status; `H2_MFG_*` enum ordinals are not storage indices.
+
+| Stored index | Profile name / check | Required evidence |
+| --- | --- | --- |
+| 0 | `storage` / `H2_MFG_STORAGE` | Simultaneous RAM probe and filesystem readback |
+| 1 | `display` / `H2_MFG_DISPLAY` | Operator confirms panel and brightness |
+| 2 | `buttons` / `H2_MFG_BUTTONS` | Actual UP, DOWN and OK cycles |
+| 3 | `battery` / `H2_MFG_BATTERY` | Valid CW2017 voltage and SOC, operator confirmation |
+| 4 | `speaker` / `H2_MFG_SPEAKER` | Actual tone playback and operator listening |
+| 5 | `mic` / `H2_MFG_MIC` | Raw microphone response with AEC disabled |
+| 6 | `aec` / `H2_MFG_AEC` | Genuine AEC windows, authenticated replay and operator listening |
+| 7 | `wifi` / `H2_MFG_WIFI` | Real connected station with usable IP |
+| 8 | `ble` / `H2_MFG_BLE` | Actual current-ticket Loader command round trip over BLE |
+| 9 | `power` / `H2_MFG_POWER` | Physical off/on, resumed session and operator confirmation |
+
+Revision 3 has exactly the same indices 0 through 8 and `total=9`. Only the declared revision-3/total-9 append migration preserves those nine statuses and initializes index 9 as UNTESTED in revision 4/total 10. Existing revision-4/total-10 records retain each position. Reordered, replaced or removed checks require a new acceptance revision that invalidates incompatible results; enum growth and a software version bump do not remap saved positions. A partial record such as only index 6 PASSED credits AEC alone. SKIPPED and UNSUPPORTED never satisfy a required check.
+
+Format 1 (`tar_zlib`) uses the entry below. Format 2 (`zlib_tar`) uses `//projects/h2loader/targets/h2_loader_zlib_tar/mfg/folotoy/ai_passport:package`, borrowing the same native image through `source`; it owns no duplicate native graph. The ordinary Loader has the same two format-specific entry paths under `loader/folotoy/ai_passport`.
+
+```bash
 bazel build --config=esp32c3 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/folotoy/ai_passport:package
 ```
 
@@ -81,18 +102,18 @@ All three check storage, display/brightness, eight keys, speaker, microphone, Wi
 Activate the pinned SDK with the [GizOS SDK manager](../../../../tools/gizos/README.md), then build the selected physical entry:
 
 ```bash
-bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_zero_esp_v3_0:package_v2
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_zlib_tar/mfg/haivivi/h106_zero_esp_v3_0:package
 ```
 
 ```bash
-bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_tiga_esp_v4_2:package_v2
+bazel build --config=esp32s3 //projects/h2loader/targets/h2_loader_zlib_tar/mfg/haivivi/h106_tiga_esp_v4_2:package
 ```
 
 ```bash
-bazel build --config=bk7258 //projects/h2loader/targets/h2_loader_tar_zlib/mfg/haivivi/h106_zero_bk_2_0:package_v2
+bazel build --config=bk7258 //projects/h2loader/targets/h2_loader_zlib_tar/mfg/haivivi/h106_zero_bk_2_0:package
 ```
 
-Each entry also exposes `:firmware` and format-1 `:package`; both package formats reuse the same native image with `image=mfg` and `role=h2loader`. Entries select the existing managed Loader partitions and board-owned storage. Zero BK uses its QSPI LittleFS and full MFG peripheral configuration, not another board's SD backend or a media-disabled Loader configuration.
+The matching `h2_loader_tar_zlib` entry owns `:firmware` and the format-1 `:package`; both package formats reuse the same native image with `image=mfg` and `role=h2loader`. Entries select the existing managed Loader partitions and board-owned storage. Zero BK uses its QSPI LittleFS and full MFG peripheral configuration, not another board's SD backend or a media-disabled Loader configuration.
 
 Connect Wi-Fi through the existing Loader commands and wait for a usable IP address. No network or product provisioning credentials are embedded by these entries. Modem acceptance requires the appropriate SIM/network fixture. NFC uses the Runtime-owned reader and requires a valid fresh discovery for the current attempt. Remove a tag retained from an earlier attempt before presenting it again; stale events, malformed results and reader errors cannot complete the check. The NFC check never starts a second polling loop.
 
@@ -124,7 +145,7 @@ Serial `mfg status` includes the latest `touch_x`, `touch_y`, `display_width` an
 
 The board profile lists its checks in execution order. With the default interaction policy, wait for green PASS on a display board and short-press its first listed button to confirm the current check. ESP-Mosaico instead selects touch navigation and uses AI/BOOT only as measured inputs. On a board with Touch, opening the acceptance screen also opens the touch provider, including when a cold boot resumes a later or failed check. PASS, FAIL and RETRY accept touch input. FAIL records a failure; RETRY starts that check with fresh observations. The serial interface also works on boards without displays.
 
-The RAM probe (64 KiB unless a profile selects a bounded size) and the larger AEC RAM recording buffers prefer Runtime's external-memory allocator and fall back to its default allocator. Each buffer is released through the allocator that supplied it, after its users stop. AEC recordings are wiped before release; failed cleanup retains their owner for retry. Allocation failure and filesystem readback errors remain failures. A profile may supply a borrowed `frame_allocator` for display buffers; MFG invokes it after Display opens and returns every frame through that allocator. This lets a target use its display memory pool while keeping Runtime's general external heap available for other working sets.
+The RAM probe (64 KiB unless a profile selects a bounded size), AEC recording buffers and Display frame use Runtime's `mem` allocator, which boards with PSRAM point at their PSRAM heap. Each buffer is released through the allocator that supplied it, after its users stop. AEC recordings and the complete callback queue allocations are wiped before release, including consumed slots and interrupted recordings; failed cleanup retains their owner for retry. Allocation failure and filesystem readback errors remain failures. A profile may supply a borrowed `frame_allocator` for display buffers; MFG invokes it after Display opens and returns every frame through that allocator. This lets a target use its display memory pool while keeping Runtime's general heap available for other working sets.
 
 For the 1.75C:
 

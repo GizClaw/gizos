@@ -317,7 +317,7 @@
   "moduleExtensions": {
     "//tools/bazel/native/bk7258:repositories.bzl%bk_repositories": {
       "general": {
-        "bzlTransitiveDigest": "Bp9HrXupFWTsfc/knmBhnfcm0WWW7B9qeQ4QtNu3h6U=",
+        "bzlTransitiveDigest": "INlZcSgYJVl4pDXj19gk06BPlQsoOHVUIoSedY5ko7I=",
         "usagesDigest": "CmJBPyoNefgrd6q6Eyw0J5nYszc2Yl4Ai6lVwp0OC3g=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -344,7 +344,7 @@
     },
     "//tools/bazel/native/esp_idf:repositories.bzl%esp_repositories": {
       "general": {
-        "bzlTransitiveDigest": "i9vS4V8CtQVV51kSASWjQ8Eiab2yJPoRaDXhC0IeKQ4=",
+        "bzlTransitiveDigest": "DP6sIP2MfFHltlzKAx27V7moveXyVzzQlZpWQeuKpcg=",
         "usagesDigest": "FpiQGzYc4XH7eJq+rJweOINr7PZkynWwhG2y1gFNZzY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -376,7 +376,7 @@
     },
     "//tools/bazel/native/jieli:repositories.bzl%native_repositories": {
       "general": {
-        "bzlTransitiveDigest": "cN4Tbx5dLr+mXuodjdLFO0/Tk+reYaJVREfJZCoKp6Q=",
+        "bzlTransitiveDigest": "R2Lr57qAi/5opsggfEquv6Q6NXo1ugru8HCS45eXj84=",
         "usagesDigest": "77WaZ/lRY51RwKz8FLfiQ6wX/tzXhrbKwd00La5dupU=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1164,7 +1164,7 @@
     },
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl%esp32s3_cc_toolchain": {
       "general": {
-        "bzlTransitiveDigest": "ZJ85DMJDmNF9fPCb21jvE/s5AUz2YlfGIoYcIp6O5r4=",
+        "bzlTransitiveDigest": "Fzebaf5buREdmkeTVzFdRxGnRenwN06YH/4HXbG9rG0=",
         "usagesDigest": "ThNWcQs68cS58YVY8fxEeAgWxkPnQNftCcSnKccvnDE=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1177,7 +1177,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "dBiUMNsbgwUcBE6ADDA7OTcIsJYVlaRZwOGdMV/+8wM=",
+        "bzlTransitiveDigest": "9MoM2nhdxH0NtSX3UhqbW20zH4PmsY7ZiRBEfOegJWE=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1345,7 +1345,8 @@
               ],
               "compiler_kind": "clang",
               "exec_hosts": [
-                "linux_x86_64"
+                "linux_x86_64",
+                "linux_arm64"
               ],
               "layout": "bin_dir",
               "locator": "@@+native_repositories+h2_jieli_toolchain//:locator.json",
@@ -1396,7 +1397,8 @@
               ],
               "compiler_kind": "clang",
               "exec_hosts": [
-                "linux_x86_64"
+                "linux_x86_64",
+                "linux_arm64"
               ],
               "layout": "bin_dir",
               "locator": "@@+native_repositories+h2_jieli_toolchain//:locator.json",
@@ -1425,6 +1427,28 @@
               ],
               "version_key": "jieli_clang",
               "versions_file": "@@//tools/bazel/native/versions:jieli_tool_versions.txt"
+            }
+          }
+        }
+      }
+    },
+    "//tools/bazel/toolchains/python:extension.bzl%managed_python": {
+      "os:osx,arch:aarch64": {
+        "bzlTransitiveDigest": "tUtpL4Cua3y5qTZDWZQ0S2aVaSC6KwRCR4kOaR1acIQ=",
+        "usagesDigest": "GfkYmNdRynJ9xinpqtYsbpI/jOxaWVCQrGKPgmHSRqM=",
+        "recordedInputs": [
+          "REPO_MAPPING:,gizos_python_host +managed_python_host+gizos_python_host",
+          "REPO_MAPPING:,rules_python rules_python+",
+          "REPO_MAPPING:rules_python+,rules_python rules_python+"
+        ],
+        "generatedRepoSpecs": {
+          "gizos_managed_python_toolchains": {
+            "repoRuleId": "@@rules_python+//python/private:local_runtime_toolchains_repo.bzl%local_runtime_toolchains_repo",
+            "attributes": {
+              "runtimes": [],
+              "exec_compatible_with": {},
+              "target_compatible_with": {},
+              "target_settings": {}
             }
           }
         }

@@ -81,10 +81,8 @@ int h2_device_app_commands_prepare(
       .image = runtime->image,
       .power = runtime->power,
       .time = runtime->time,
-      .allocator = config->command_allocator != NULL
-                       ? config->command_allocator
-                       : (runtime->mem_external != NULL ? runtime->mem_external
-                                                        : runtime->mem),
+      .allocator = config->command_allocator != NULL ? config->command_allocator
+                                                     : runtime->mem,
       .app_entry_path = config->app_entry_path,
       .fs = runtime->fs,
       .pref = runtime->pref,
@@ -157,7 +155,6 @@ int h2_device_app_commands_prepare_runtime(
       .task = runtime->task,
       .sync = runtime->sync,
       .mem = runtime->mem,
-      .mem_external = runtime->mem_external,
       .io_stream = runtime->io_stream,
       .pref = runtime->pref,
       .power = runtime->power,
@@ -262,11 +259,14 @@ int h2_device_app_commands_start(
       runtime->system_event == NULL || runtime->mem == NULL || config == NULL ||
       (config->hardware_capabilities & H2_LOADER_CAPABILITY_BLE) == 0u)
     return H2_PAL_ERR_INVALID_ARG;
-  if (!self->prepared || self->service != NULL) return H2_PAL_ERR_INVALID_STATE;
+  if (!self->prepared || self->runtime != NULL || self->service != NULL ||
+      self->ble_global_initialized)
+    return H2_PAL_ERR_INVALID_STATE;
   if (!config_matches(self, config)) return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_bleikcp_global_init();
   if (rc != H2_PAL_OK) return rc;
   self->runtime = runtime;
+  self->ble_global_initialized = 1;
   const h2_loader_ble_service_config_t service = {
       .local_name = runtime->ble_local_name != NULL ? runtime->ble_local_name
                                                     : config->ble_local_name,
@@ -292,18 +292,19 @@ int h2_device_app_commands_start(
   for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
     rc = h2_loader_ble_service_open(&service, &self->service);
     if (rc == H2_PAL_OK) {
-      (void)h2_pal_wifi_sta_set_activity_observer(runtime->wifi_sta,
-                                                  app_wifi_activity, self);
+      self->ble_started = 1;
+      self->ble_activity_observing =
+          h2_pal_wifi_sta_set_activity_observer(
+              runtime->wifi_sta, app_wifi_activity, self) == H2_PAL_OK;
       return H2_PAL_OK;
     }
-    /* Failed open can retain workers and callbacks. Join them before retrying
-     * or dropping the BLE global reference; serial recovery stays available. */
-    while (self->service != NULL) {
-      if (h2_loader_ble_service_close(self->service) == H2_PAL_OK) {
-        self->service = NULL;
-      } else {
-        (void)h2_pal_time_sleep_ms(runtime->time, 50u);
-      }
+    if (self->service != NULL) {
+      /* A failed join still owns its task and borrows. Return the close-only
+       * service to the owner instead of hanging startup or reopening over it.
+       */
+      int close_rc = h2_loader_ble_service_close(self->service);
+      if (close_rc != H2_PAL_OK) return close_rc;
+      self->service = NULL;
     }
     if (attempt == attempts - 1u) break;
     printf("H2_DEVICE_APP_BLE_START_RETRY rc=%d attempt=%u delay_ms=%u\n", rc,
@@ -312,10 +313,33 @@ int h2_device_app_commands_start(
     if (rc != H2_PAL_OK) break;
     retry_ms = retry_ms < 2500u ? retry_ms * 2u : 5000u;
   }
-  self->runtime = NULL;
-  (void)h2_bleikcp_global_shutdown();
-  return rc;
+  int close_rc = h2_device_app_commands_stop_ble(self);
+  return close_rc == H2_PAL_OK ? rc : close_rc;
 }
+
+int h2_device_app_commands_stop_ble(h2_device_app_commands_t* self) {
+  if (self == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (self->ble_activity_observing) {
+    int rc = h2_pal_wifi_sta_set_activity_observer(self->runtime->wifi_sta,
+                                                   NULL, NULL);
+    if (rc != H2_PAL_OK) return rc;
+    self->ble_activity_observing = 0;
+  }
+  self->ble_started = 0;
+  if (self->service != NULL) {
+    int rc = h2_loader_ble_service_close(self->service);
+    if (rc != H2_PAL_OK) return rc;
+    self->service = NULL;
+  }
+  if (self->ble_global_initialized) {
+    int rc = h2_bleikcp_global_shutdown();
+    if (rc != H2_PAL_OK) return rc;
+    self->ble_global_initialized = 0;
+  }
+  self->runtime = NULL;
+  return H2_PAL_OK;
+}
+
 int h2_device_app_operation_lock(h2_device_app_commands_t* self) {
   return self != NULL && self->prepared
              ? h2_pal_mutex_lock(self->client_config.operation_sync,
@@ -377,19 +401,20 @@ void h2_device_app_commands_admit_sessions(h2_device_app_commands_t* self) {
 }
 int h2_device_app_commands_pause_ble_advertising(
     h2_device_app_commands_t* self) {
-  return self != NULL && self->service != NULL
+  return self != NULL && self->ble_started && self->service != NULL
              ? h2_loader_ble_service_pause_advertising(self->service)
              : H2_PAL_ERR_INVALID_STATE;
 }
 int h2_device_app_commands_resume_ble_advertising(
     h2_device_app_commands_t* self) {
-  return self != NULL && self->service != NULL
+  return self != NULL && self->ble_started && self->service != NULL
              ? h2_loader_ble_service_resume_advertising(self->service)
              : H2_PAL_ERR_INVALID_STATE;
 }
 int h2_device_app_commands_advertise_ble_service(
     h2_device_app_commands_t* self, const h2_pal_ble_uuid_t* uuid) {
-  return self != NULL && self->service != NULL && uuid != NULL
+  return self != NULL && self->ble_started && self->service != NULL &&
+                 uuid != NULL
              ? h2_loader_ble_service_set_additional_advertised_services(
                    self->service, uuid, 1u)
              : H2_PAL_ERR_INVALID_STATE;

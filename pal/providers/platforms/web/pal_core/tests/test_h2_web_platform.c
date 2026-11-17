@@ -351,8 +351,12 @@ static void h2_web_test_serial_read_edge(void* user) {
   }
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void*[]){&(int){test->mode}});
+  /* Only the timeout case tests a deadline. Other cases verify data/closure
+   * across async worker turns and must tolerate coverage-runner scheduling. */
+  const uint32_t read_timeout_ms =
+      test->expected == H2_PAL_ERR_TIMEOUT ? 1u : 2000u;
   const h2_pal_result_t result = h2_pal_uart_io_stream_read(
-      stream, bytes, sizeof(bytes), &transferred, 1u);
+      stream, bytes, sizeof(bytes), &transferred, read_timeout_ms);
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void*[]){&(int){0}});
   const h2_pal_result_t close_result =
@@ -724,7 +728,10 @@ static int h2_web_test_run_task(h2_web_platform_t* platform,
                         &task) != H2_PAL_OK) {
     return 0;
   }
-  for (int iteration = 0; iteration < 64; ++iteration) {
+  /* Bound elapsed time, rather than assuming a fixed number of Worker turns
+   * is enough under coverage instrumentation and concurrent compilation. */
+  const double deadline = emscripten_get_now() + 3000.0;
+  while (emscripten_get_now() < deadline) {
     if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK) return 0;
     if (h2_pal_task_join(h2_web_platform_task_api(platform), task) ==
         H2_PAL_OK) {

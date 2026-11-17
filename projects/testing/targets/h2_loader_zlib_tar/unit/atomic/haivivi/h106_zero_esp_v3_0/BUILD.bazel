@@ -1,0 +1,8 @@
+load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+h2loader_zlib_tar(
+    name = "package",
+    source = "//projects/testing/targets/h2_loader_tar_zlib/unit/atomic/haivivi/h106_zero_esp_v3_0:package",
+)

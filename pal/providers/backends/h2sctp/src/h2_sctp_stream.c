@@ -358,7 +358,9 @@ static h2_pal_result_t h2_sctp_stream_deliver_one(
   if (delivery_result != H2_PAL_OK) {
     return delivery_result;
   }
-  if (assembled) {
+  /* A message can mix assembly-backed and separately stored fragments after
+   * reordering. Release its assembly state even when delivery needed a copy. */
+  if (association->rx_assembly_begin == begin) {
     association->rx_assembly_len = 0u;
     association->rx_assembly_count = 0u;
     association->rx_assembly_begin = NULL;
@@ -433,8 +435,17 @@ h2_pal_result_t h2_sctp_stream_service(h2_pal_sctp_association_t* association) {
   if (!association->delivery_pending) {
     return H2_PAL_OK;
   }
+  const size_t receive_used = association->receive_used;
   const h2_pal_result_t result = h2_sctp_stream_deliver_ready(association);
   association->delivery_pending = result != H2_PAL_OK;
+  if (association->receive_used < receive_used) {
+    /* DATA may already have advertised a full window while delivery blocked.
+     * Publish recovered credit even if no further inbound packet arrives. */
+    if (association->sack_pending_packets == 0u) {
+      association->sack_pending_packets = 1u;
+    }
+    association->sack_deadline_ms = association->last_now_ms;
+  }
   return result;
 }
 

@@ -39,26 +39,14 @@ static int control(shell_dev_t* dev, int cmd, void* arg) {
 }
 static shell_drv_t driver = {control};
 shell_dev_t shell_uart = {&driver};
-int rtos_init_mutex(beken_mutex_t* m) {
-  *m = 0;
-  return 0;
-}
-int rtos_deinit_mutex(beken_mutex_t* m) {
-  (void)m;
-  return 0;
-}
-int rtos_trylock_mutex(beken_mutex_t* m) {
-  if (now_ms < lock_until || *m) return -1;
-  *m = 1;
-  return 0;
-}
-int rtos_unlock_mutex(beken_mutex_t* m) {
-  assert(*m);
-  *m = 0;
-  return 0;
-}
 uint32_t rtos_get_time(void) { return now_ms; }
-uint32_t rtos_enter_critical(void) { return 0; }
+uint32_t rtos_enter_critical(void) {
+  if (lock_until != 0u) {
+    s_direct_tx_busy = now_ms < lock_until;
+    if (now_ms >= lock_until) lock_until = 0u;
+  }
+  return 0;
+}
 void rtos_exit_critical(uint32_t l) { (void)l; }
 void rtos_delay_milliseconds(uint32_t n) { now_ms += n; }
 int bk_uart_set_baud_rate(uart_id_t id, uint32_t n) {
@@ -139,7 +127,7 @@ static void reset(void) {
   s_direct_initialized = 1;
   s_direct_releasing = 0;
   s_direct_release_steps = 0;
-  s_direct_write_mutex = 0;
+  s_direct_tx_busy = 0;
 }
 
 #define main launcher_main
@@ -203,8 +191,7 @@ int main(void) {
   reset();
   capacity = 3;
   assert(emit(NULL, "boot", &result) == H2_PAL_ERR_TIMEOUT);
-  assert(accepted == 3 && now_ms == 1000 && resumes == 1 &&
-         !s_direct_write_mutex);
+  assert(accepted == 3 && now_ms == 1000 && resumes == 1 && !s_direct_tx_busy);
   reset();
   byte_error = 1;
   assert(emit(NULL, "boot", &result) == H2_PAL_ERR_IO);

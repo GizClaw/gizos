@@ -28,6 +28,8 @@ bazel run //projects/testing/targets/cc_binary/e2e-runner -- \
   --report /tmp/h2loader-e2e.json
 ```
 
+DevKit Loader and E2E App entries expose `:package_usb` for native USB Serial/JTAG and `:package_uart` for the USB-to-UART bridge. Their format-1 entry packages are `//projects/h2loader/targets/h2_loader_tar_zlib/loader/espressif/esp32s3_devkitc_1` and `//projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1`; format 2 uses the matching `targets/h2_loader_zlib_tar` directories with the same target names. UART is fixed at 460800 baud, which is also the runner's default. Keep the Loader and App on the same console throughout lifecycle tests.
+
 The runner always executes `help`, `status`, and `stats`; it executes `memory`
 only when the authoritative `status.command_availability` advertises that
 conditional command. Supplying Wi-Fi credentials enables
@@ -82,10 +84,7 @@ bytes contribute to output/log byte counters only during monitor cases.
 
 The native CLI owns BLE KCP global initialization and shutdown when BLE is selected. Callers embedding the runner must initialize BLE KCP before a real BLE run and shut it down after all runner connections have closed. The synchronous CLI borrows the required PAL interfaces directly; it does not create an application Runtime event queue that it never drains.
 
-`reboot ... --monitor` allows one CLOSED/TIMEOUT reset transition after the ACK.
-Each attempt reconnects to the expected partition, observes a full monitor window
-with output, and reads live status to confirm the partition. A second transition,
-any other error, a wrong partition, or cancellation ends the case.
+`reboot ... --monitor` enables boot accounting as soon as Host Core parses the accepted terminal response, before the serial ACK-grace pump. It keeps that connection open for monitoring, then opens a fresh session to the expected partition, observes a full stability window, and reads live status. Nonempty boot output is required; initial connection, pre-acceptance, reconnect and status-read diagnostics do not satisfy it. Queued `H2_LOADER_REBOOT` control lines, including delayed `REBOOT_FINAL` responses, are still forwarded to the diagnostic sink but excluded from monitor evidence. A healthy image may be quiet after startup. One CLOSED/TIMEOUT reset transition is allowed across ACK-grace, initial capture and stability windows, including a deferred reset after the ACK. A link already retired during ACK-grace is reported in the typed result and is not monitored again. Accepted-response capture is installed before writing the command, including the KCP delivery-wait window. Boot accounting remains active until the old link finishes teardown pumping; both raw bytes and reliable DATA-frame console output are drained. Teardown returns an observed reset count before freeing the connection, so a second READY epoch on the same surviving UART link cannot collapse into the first reset. CLOSED while tearing down the expected reset link does not prevent reconnection; unrelated teardown errors still fail. Retirement consumes the exact raw byte retained after a READY callback once, then resumes buffered filter input and drains any DATA it decodes even when ACK grace is skipped. The same replay rule applies when a nested decoded READY interrupts a different raw byte. Sink failures from raw or framed teardown logs remain failures after native close; sink CLOSED is classified as output IO rather than MCU reset. A second transition, a wrong partition, or cancellation ends the case.
 
 
 ## BK7258 baseline
@@ -100,14 +99,14 @@ The existing crash case verifies return to Loader before App confirmation, not r
 
 Build two distinct command-responsive, confirming Apps for the same board. The
 DevKit fixture target shares the original launcher and uses a separate linked
-version for its alternate App:
+version for its alternate App. `:checksum-matrix` uses native USB Apps; `:checksum-matrix-uart` uses UART for both base and alternate Apps. Keep the selected fixtures on the connected console throughout the sequence:
 
 ```sh
-bazel build --config=esp32s3 //projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:checksum-matrix
+bazel build --config=esp32s3 //projects/testing/targets/h2_loader_tar_zlib/unit/e2e-app/espressif/esp32s3_devkitc_1:checksum-matrix-uart
 bazel run --config=macos_arm64 //projects/testing/targets/cc_binary/e2e-runner -- \
   --uart <directed-port> --expected-board devkit --expected-target esp32s3 \
-  --checksum-tar-zlib <absolute-checksum-matrix-dir>/tar_zlib \
-  --checksum-zlib-tar <absolute-checksum-matrix-dir>/zlib_tar \
+  --checksum-tar-zlib <absolute-checksum-matrix-uart-dir>/tar_zlib \
+  --checksum-zlib-tar <absolute-checksum-matrix-uart-dir>/zlib_tar \
   --report /tmp/h2loader-checksum-e2e.json
 ```
 

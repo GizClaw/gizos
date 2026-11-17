@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
-from tools.bazel.h2loader.release_bundle import assemble, expected_asset_contracts, LOADER_ENTRIES
+from tools.bazel.h2loader.release_bundle import assemble, expected_asset_contracts, LOADER_ENTRIES, validate_catalog, validate_index
 
 BATCH = "20260920-120000"
 
@@ -17,7 +18,9 @@ class ReleaseBundleTest(unittest.TestCase):
         files = []
         for board, platform, target, version in entries:
             entry = LOADER_ENTRIES[board]
-            package_target = "package_v2" if package_format == 2 else "package"
+            if package_format == 2:
+                entry = entry.replace("/h2_loader_tar_zlib/", "/h2_loader_zlib_tar/")
+            package_target = "package_usb" if board == "devkit" else "package"
             identity = dict(entry=entry, label="//" + entry + ":" + package_target, platform=platform,
                 board=board, image="loader", role="h2loader", target=target,
                 version=version, release_name="loader-" + board)
@@ -39,6 +42,63 @@ class ReleaseBundleTest(unittest.TestCase):
         path = root / "firmware-catalog.json"
         path.write_text(json.dumps(catalog)); files.append(path)
         return files
+
+    def legacy_format_two_index(self, root):
+        files = self.inputs(root, (("devkit", "esp", "esp32s3", "1.2.3"),
+            ("bk7258_v3_202405", "bk7258", "bk7258", "4.5.6"),
+            ("jieli_ac791n_devkit", "jieli", "wl82", "0.2.0"),
+            ("waveshare_esp32p4_wifi6_touch_lcd_4_3", "esp", "esp32p4", "2.0.0")), package_format=2)
+        assemble(files, root / "output", BATCH)
+        index = json.loads((root / "output/firmware-index.json").read_text())
+        for item in index["firmware"]:
+            item["entry"] = LOADER_ENTRIES[item["board"]]
+            package_target = "package_usb_v2" if item["board"] == "devkit" else "package_v2"
+            item["label"] = "//" + item["entry"] + ":" + package_target
+        return index
+
+    def test_index_accepts_legacy_format_two_entries_without_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.legacy_format_two_index(Path(directory))
+            original = copy.deepcopy(index)
+            assets = validate_index(index, BATCH)
+            self.assertEqual(assets, {asset["name"]: asset for item in index["firmware"] for asset in item["assets"]})
+            self.assertEqual(index, original)
+            for item in index["firmware"]:
+                with self.subTest(board=item["board"]):
+                    package_target = "package_usb" if item["board"] == "devkit" else "package"
+                    catalog_item = {**item, "label": "//" + item["entry"] + ":" + package_target}
+                    with self.assertRaisesRegex(ValueError, "diagnostic"):
+                        validate_catalog([catalog_item])
+
+    def test_legacy_index_rejects_invalid_identities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            original = self.legacy_format_two_index(Path(directory))
+            for key, value in (("entry", LOADER_ENTRIES["amoled"]),
+                               ("entry", LOADER_ENTRIES["devkit"] + "/diagnostic"),
+                               ("entry", "projects/testing/diagnostic"),
+                               ("board", "unknown"), ("board", []),
+                               ("image", "app"), ("role", "app"),
+                               ("platform", "unsupported"), ("target", "unsupported"),
+                               ("version", "1.02.3"), ("release_name", "wrong"),
+                               ("package_format", True)):
+                with self.subTest(key=key, value=value):
+                    index = copy.deepcopy(original)
+                    item = next(item for item in index["firmware"] if item["board"] == "devkit")
+                    item[key] = value
+                    if key in item["package_manifest"]:
+                        item["package_manifest"][key] = value
+                    with self.assertRaises(ValueError):
+                        validate_index(index, BATCH)
+            for current_entry in (False, True):
+                with self.subTest(current_entry=current_entry):
+                    index = copy.deepcopy(original)
+                    duplicate = copy.deepcopy(index["firmware"][0])
+                    if current_entry:
+                        duplicate["entry"] = duplicate["entry"].replace("/h2_loader_tar_zlib/", "/h2_loader_zlib_tar/")
+                    index["firmware"].append(duplicate)
+                    index["firmware_count"] += 1
+                    with self.assertRaisesRegex(ValueError, "duplicate"):
+                        validate_index(index, BATCH)
 
     def test_assembles_exact_catalog_and_renames_assets(self):
         with tempfile.TemporaryDirectory() as directory:

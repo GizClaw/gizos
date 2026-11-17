@@ -32,6 +32,12 @@ h2_pal_result_t h2_iostreamikcp_read(
     assert(0 && "raw demux fixture must not read decoded data");
     return H2_PAL_ERR_INVALID_STATE;
 }
+static h2_pal_result_t serial_drain_decoded_logs(
+    h2_h2loader_host_serial_connection_t *connection) {
+    (void)connection;
+    assert(0 && "raw demux fixture must not drain decoded data");
+    return H2_PAL_ERR_INVALID_STATE;
+}
 '''
         fixture = fixture[:start] + unexpected_read + definitions + fixture[end:]
         fixture = fixture.replace('/* FRAME */', frame).replace('/* SERIAL_LOG */', callback)

@@ -189,6 +189,21 @@ static void test_sessions(void) {
   assert(transport.physical_io.read == physical_read);
 }
 
+static void test_legacy_config_initializer(void) {
+  /* This is the complete public initializer before RX budgets were appended. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+  const h2_device_serial_config_t config = {
+      s_physical, &s_mem, &s_time, NULL, NULL, 0u, 0u, 0u, 8u};
+#pragma GCC diagnostic pop
+  assert(config.receive_window == 8u && config.rx_buffer_size == 0u);
+  h2_device_serial_t transport;
+  assert(h2_device_serial_init_with_config(&transport, &config) == H2_PAL_OK);
+  open_session(&transport, 87u);
+  assert(transport.receive_window == 8u);
+  h2_device_serial_deinit(&transport);
+}
+
 static void test_receive_budgets(void) {
   h2_device_serial_t transport;
   h2_device_serial_config_t config = {
@@ -261,6 +276,7 @@ static void test_flush_and_backpressure(void) {
 int main(void) {
   test_endpoint();
   test_sessions();
+  test_legacy_config_initializer();
   test_receive_budgets();
   test_flush_and_backpressure();
   return 0;

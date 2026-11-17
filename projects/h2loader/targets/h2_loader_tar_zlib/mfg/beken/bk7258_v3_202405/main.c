@@ -12,7 +12,6 @@
 
 static h2_device_loader_t loader;
 static h2_runtime_t* runtime;
-static h2_mfg_profile_t mfg_profile;
 /* The entry holds for the entire firmware lifetime, including terminal errors.
  */
 static h2_pal_task_t* entry_task;
@@ -37,9 +36,7 @@ extern const h2_mfg_profile_t h2_mfg_board_profile;
 int h2loader_board_extend_app(h2_runtime_t* instance,
                               h2loader_app_config_t* config) {
   h2_mfg_t* mfg = NULL;
-  mfg_profile = h2_mfg_board_profile;
-  mfg_profile.frame_allocator = h2_bk7258_board_display_allocator();
-  int rc = h2_mfg_create(instance, &mfg_profile, &mfg);
+  int rc = h2_mfg_create(instance, &h2_mfg_board_profile, &mfg);
   if (rc != 0) return rc;
   config->loader.mfg_required_total = h2_mfg_board_profile.total;
   config->loader.disruptive_user = mfg;

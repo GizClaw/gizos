@@ -42,6 +42,7 @@ typedef struct recording_state {
   unsigned count, frames, samples, stride, region_size;
   unsigned written[2];
   int opened, key_live, ready[2];
+  uint32_t nonce_generation;
   uint8_t key[16], nonce_prefix[2][8], ciphertext[MAX_CIPHERTEXT];
 } recording_state_t;
 
@@ -182,12 +183,18 @@ static int open_recording(void* user, unsigned count, unsigned frames,
   s->region_size = (unsigned)region;
   s->opened = 1;
   s->key_live = 0;
+  s->nonce_generation = 0;
   memset(s->ready, 0, sizeof(s->ready));
   memset(s->written, 0, sizeof(s->written));
   rc = h2_pal_crypto_random(s->runtime->crypto, s->key, sizeof(s->key));
-  if (rc == 0) s->key_live = 1;
+  if (rc == 0)
+    s->key_live = 1;
+  else
+    clear_bytes(s->key, sizeof(s->key));
   return rc;
 }
+
+static void le32(uint8_t* bytes, unsigned value);
 
 static int begin_recording(void* user, unsigned recording) {
   recording_state_t* s = user;
@@ -195,14 +202,24 @@ static int begin_recording(void* user, unsigned recording) {
     return H2_PAL_ERR_INVALID_STATE;
   s->ready[recording] = 0;
   s->written[recording] = 0;
-  /* Each retry gets a fresh nonce prefix and an erased recording region. */
+  clear_bytes(s->nonce_prefix[recording], sizeof(s->nonce_prefix[recording]));
+  /* Consume a generation for every attempt, including entropy/erase failures.
+   * A successful but repeating random source cannot repeat a nonce under this
+   * key: generation is shared by both recordings and must never wrap. */
+  if (s->nonce_generation == UINT32_MAX) return H2_PAL_ERR_NO_SPACE;
+  uint32_t generation = ++s->nonce_generation;
   int rc =
-      h2_pal_crypto_random(s->runtime->crypto, s->nonce_prefix[recording], 8);
-  if (rc == 0)
+      h2_pal_crypto_random(s->runtime->crypto, s->nonce_prefix[recording], 4);
+  if (rc == 0) {
+    le32(s->nonce_prefix[recording] + 4, generation);
     rc = h2_pal_disk_erase(s->runtime->disk, PARTITION_ID,
                            SCRATCH_OFFSET + recording * s->region_size,
                            s->region_size);
-  if (rc == 0) s->ready[recording] = 1;
+  }
+  if (rc == 0)
+    s->ready[recording] = 1;
+  else
+    clear_bytes(s->nonce_prefix[recording], sizeof(s->nonce_prefix[recording]));
   return rc;
 }
 

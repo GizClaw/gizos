@@ -45,7 +45,8 @@ int main(void) {
   assert(pixels[1][120 * WIDTH + 280] == 0u);
 
   /* A slot that missed several updates must catch up with the complete
-   * current image, while the front slot keeps its preceding snapshot. */
+   * current image, while the front slot keeps its preceding snapshot.
+   * Distant changes copy only their own bands, not their bounding box. */
   const h2_display_rect_t left = {0, 0, 8, 8};
   const h2_display_rect_t right = {792, 472, 8, 8};
   paint(shadow, &left, 0x07e0u);
@@ -58,20 +59,52 @@ int main(void) {
   h2_bk7258_display_buffer_release(&buffers[1]);
   assert(h2_bk7258_display_buffer_claim(&buffers[1]));
   assert(h2_bk7258_display_buffer_copy(&buffers[1], shadow, WIDTH) ==
-         PIXELS * sizeof(uint16_t));
+         (240u * 240u + 2u * 8u * 8u) * sizeof(uint16_t));
   assert(memcmp(pixels[1], shadow, PIXELS * sizeof(uint16_t)) == 0);
   h2_bk7258_display_buffer_release(&buffers[0]);
   assert(h2_bk7258_display_buffer_claim(&buffers[0]));
-  (void)h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH);
+  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH) ==
+         2u * 8u * 8u * sizeof(uint16_t));
   assert(memcmp(pixels[0], shadow, PIXELS * sizeof(uint16_t)) == 0);
   h2_bk7258_display_buffer_release(&buffers[0]);
   assert(h2_bk7258_display_buffer_claim(&buffers[0]));
   assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH) == 0u);
+
+  /* Changes inside one band merge only their own rows and columns. */
+  const h2_display_rect_t first = {0, 40, 8, 4};
+  const h2_display_rect_t second = {100, 44, 8, 4};
+  paint(shadow, &first, 0xffffu);
+  paint(shadow, &second, 0xffe0u);
+  h2_bk7258_display_buffer_dirty(&buffers[0], &first);
+  h2_bk7258_display_buffer_dirty(&buffers[0], &second);
+  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH) ==
+         108u * 8u * sizeof(uint16_t));
+  assert(memcmp(pixels[0], shadow, PIXELS * sizeof(uint16_t)) == 0);
   for (unsigned i = 0u; i < 2u; ++i) {
     h2_bk7258_display_buffer_release(&buffers[i]);
     h2_atomic_bool_destroy(&available[i]);
     free(pixels[i]);
   }
   free(shadow);
+
+  /* Rows past the last band fold into it and are still copied. */
+  enum { TALL_WIDTH = 4, TALL_HEIGHT = 1100, TALL = TALL_WIDTH * TALL_HEIGHT };
+  uint16_t* tall_shadow = calloc(TALL, sizeof(uint16_t));
+  uint16_t* tall = calloc(TALL, sizeof(uint16_t));
+  assert(tall_shadow && tall);
+  h2_atomic_bool_t tall_available = {0};
+  h2_bk7258_display_buffer_t tall_buffer = {0};
+  assert(h2_atomic_bool_init(&tall_available, false) == H2_ATOMIC_OK);
+  h2_bk7258_display_buffer_init(&tall_buffer, tall, &tall_available, TALL_WIDTH,
+                                TALL_HEIGHT);
+  for (size_t i = 0u; i < TALL; ++i) tall_shadow[i] = (uint16_t)(i + 1u);
+  assert(h2_bk7258_display_buffer_claim(&tall_buffer));
+  assert(h2_bk7258_display_buffer_copy(&tall_buffer, tall_shadow, TALL_WIDTH) ==
+         TALL * sizeof(uint16_t));
+  assert(memcmp(tall, tall_shadow, TALL * sizeof(uint16_t)) == 0);
+  h2_bk7258_display_buffer_release(&tall_buffer);
+  h2_atomic_bool_destroy(&tall_available);
+  free(tall);
+  free(tall_shadow);
   return 0;
 }

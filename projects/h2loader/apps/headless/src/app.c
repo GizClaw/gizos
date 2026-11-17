@@ -45,12 +45,9 @@ static void start_additional_command_service(
   int rc = command_service->open(command_service->user, runtime, command, board,
                                  capabilities, out_service);
   printf("H2_LOADER_COMMAND_SERVICE stage=open-return code=%d\n", rc);
-  if (rc != H2_PAL_OK) {
-    /* Keep serial recovery running while partial-open cleanup is retried. */
-    (void)close_additional_command_service(runtime, command_service,
-                                           *out_service);
-    *out_service = NULL;
-  }
+  /* A failed open may return a cleanup-only handle. Keep it until final checked
+   * shutdown so startup can continue while serial recovery remains available.
+   * The blocking App retains every borrowed command dependency until then. */
 }
 
 static int close_additional_command_service(

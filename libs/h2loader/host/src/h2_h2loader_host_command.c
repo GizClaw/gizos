@@ -474,6 +474,8 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
         contract.accepted_disconnect_token != NULL &&
         contains(response, response_len, contract.accepted_disconnect_token)) {
       out_result->terminal = H2_H2LOADER_HOST_COMMAND_TERMINAL_OK;
+      if (request->on_accepted != NULL)
+        request->on_accepted(request->accepted_user);
       if (finish_response == NULL) {
         return H2_PAL_OK;
       }
@@ -485,6 +487,9 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
   }
   out_result->terminal = h2_h2loader_host_command_parse_terminal(
       response, response_len, &contract);
+  if (out_result->terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
+      request->on_accepted != NULL)
+    request->on_accepted(request->accepted_user);
   if (finish_response != NULL) {
     rc = finish_response(transport);
     out_result->transport_result = rc;

@@ -1,6 +1,7 @@
 #include "h2_esp_wifi_teardown.h"
 #include "core/h2_pal_errors.h"
 #include "hal/h2_pal_wifi.h"
+#include "os/h2_pal_system_event.h"
 
 #include <assert.h>
 #include <stddef.h>
@@ -35,6 +36,12 @@ enum {
   H2_ESP_WIFI_EVENT_CONNECTED = 1u << 0,
   H2_ESP_WIFI_EVENT_DISCONNECTED = 1u << 1,
   H2_ESP_WIFI_EVENT_GOT_IP = 1u << 2,
+  H2_ESP_WIFI_EVENT_ADDRESS_RELEASED = 1u << 3,
+  H2_ESP_WIFI_ADDRESS_EVENT = 1,
+  H2_ESP_WIFI_ADDRESS_RELEASE = 1,
+  H2_ESP_WIFI_EVENT_TIMEOUT_MS = 1000u,
+  pdFALSE = 0,
+  pdTRUE = 1,
   TEST_UNRELATED_EVENT = 1u << 8,
 };
 
@@ -56,7 +63,14 @@ static int s_h2_esp_wifi_sta_dns_handler_registered;
 static int s_h2_esp_wifi_had_ip;
 static int s_h2_esp_wifi_sta_disconnect_reason;
 static h2_pal_wifi_sta_status_t s_h2_esp_wifi_association;
+static int s_h2_esp_wifi_events_registered;
+static int s_h2_esp_wifi_address_release_pending;
+static int s_h2_esp_wifi_cleanup_pending;
 static unsigned s_h2_esp_wifi_connect_busy;
+#define pdMS_TO_TICKS(ms) (ms)
+static void h2_esp_wifi_release_address_state(void);
+static void h2_esp_wifi_post_sta_lost_ip(h2_pal_wifi_sta_state_t next_state,
+                                         int disconnect_reason);
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
 static int s_h2_esp_wifi_ap_lock;
 static int s_h2_esp_wifi_ap_active;
@@ -68,6 +82,10 @@ static struct {
   esp_err_t disconnect_result, dhcp_result, stop_result, deinit_result;
   int reconnect_enabled, reconnect_attempts, activity;
   unsigned reconnect_disabled, timer_stops, netif_destroys, reconciles;
+  esp_err_t post_result;
+  unsigned release_posts, event_waits, lost_ip_events;
+  int release_queued, defer_release, disconnect_first;
+  h2_pal_wifi_sta_status_t lost_ip;
   int reenter_stop;
   unsigned calls[16];
   size_t call_count;
@@ -165,8 +183,48 @@ static EventBits_t xEventGroupSetBits(EventGroupHandle_t group,
   return group->bits;
 }
 
-/* Includes teardown SDK adapters, driver teardown, release_driver and the
- * public stop entry from h2_esp_platform_wifi.c. */
+static void h2_esp_wifi_post_sta_system_event(
+    h2_pal_system_event_type_t type, const h2_pal_wifi_sta_status_t* status) {
+  assert(type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP);
+  assert(s_h2_esp_wifi_sta_netif == &s_netif);
+  ++s_sdk.lost_ip_events;
+  s_sdk.lost_ip = *status;
+}
+
+static esp_err_t esp_event_post(int base, int id, const void* data,
+                                size_t length, unsigned timeout) {
+  assert(base == H2_ESP_WIFI_ADDRESS_EVENT);
+  assert(id == H2_ESP_WIFI_ADDRESS_RELEASE && data == NULL && length == 0u);
+  assert(timeout == H2_ESP_WIFI_EVENT_TIMEOUT_MS);
+  ++s_sdk.release_posts;
+  if (s_sdk.post_result == ESP_OK) {
+    assert(!s_sdk.release_queued);
+    s_sdk.release_queued = 1;
+  }
+  return s_sdk.post_result;
+}
+
+static void deliver_release(void) {
+  assert(s_sdk.release_queued);
+  if (s_sdk.disconnect_first)
+    h2_esp_wifi_post_sta_lost_ip(H2_PAL_WIFI_STA_STATE_DISCONNECTED, 77);
+  h2_esp_wifi_release_address_state();
+  s_sdk.release_queued = 0;
+}
+
+static EventBits_t xEventGroupWaitBits(EventGroupHandle_t group,
+                                       EventBits_t bits, int clear, int all,
+                                       unsigned timeout) {
+  assert(group == &s_events && bits == H2_ESP_WIFI_EVENT_ADDRESS_RELEASED);
+  assert(clear == pdFALSE && all == pdTRUE);
+  assert(timeout == H2_ESP_WIFI_EVENT_TIMEOUT_MS);
+  ++s_sdk.event_waits;
+  if (s_sdk.release_queued && !s_sdk.defer_release) deliver_release();
+  return group->bits;
+}
+
+/* Includes actual address-loss and teardown functions, with SDK/event-loop
+ * injection to exercise both disconnect orderings and bounded failure. */
 #include "h2_esp_wifi_stop_test_source.inc"
 
 static void reset_connected(void) {
@@ -178,10 +236,16 @@ static void reset_connected(void) {
                   TEST_UNRELATED_EVENT;
   s_h2_esp_wifi_started = 1;
   s_h2_esp_wifi_sta_dns_handler_registered = 1;
+  s_h2_esp_wifi_events_registered = 1;
+  s_h2_esp_wifi_address_release_pending = 0;
+  s_h2_esp_wifi_cleanup_pending = 0;
   s_h2_esp_wifi_had_ip = 1;
   s_h2_esp_wifi_sta_disconnect_reason = 77;
   memset(&s_h2_esp_wifi_association, 0, sizeof(s_h2_esp_wifi_association));
   s_h2_esp_wifi_association.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+  s_h2_esp_wifi_association.ip_valid = 1u;
+  memset(&s_h2_esp_wifi_association.ip, 0x5a,
+         sizeof(s_h2_esp_wifi_association.ip));
   s_h2_esp_wifi_association.ssid_len = 4u;
   memcpy(s_h2_esp_wifi_association.ssid, "wifi", 5u);
   s_h2_esp_wifi_connect_busy = 0u;
@@ -201,7 +265,10 @@ static void assert_released(void) {
   assert(s_h2_esp_wifi_sta_disconnect_reason == 0);
   assert(memcmp(&s_h2_esp_wifi_association, &empty, sizeof(empty)) == 0);
   assert(s_events.bits ==
-         (H2_ESP_WIFI_EVENT_DISCONNECTED | TEST_UNRELATED_EVENT));
+         (H2_ESP_WIFI_EVENT_DISCONNECTED | H2_ESP_WIFI_EVENT_ADDRESS_RELEASED |
+          TEST_UNRELATED_EVENT));
+  assert(s_h2_esp_wifi_address_release_pending == 0);
+  assert(s_h2_esp_wifi_cleanup_pending == 0);
   assert(s_sdk.reconnect_enabled == 0);
   assert(s_sdk.reconnect_attempts == 0);
   assert(s_sdk.activity == 0);
@@ -218,6 +285,18 @@ static void test_successful_release(void) {
   assert(s_sdk.timer_stops == 1u);
   assert(s_sdk.netif_destroys == 1u);
   assert(s_sdk.reconciles == 1u);
+  assert(s_sdk.release_posts == 1u && s_sdk.event_waits == 1u);
+  assert(s_sdk.lost_ip_events == 1u);
+  assert(s_sdk.lost_ip.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED);
+  assert(s_sdk.lost_ip.disconnect_reason == 77);
+  assert(s_sdk.lost_ip.ssid_len == 4u);
+  assert(memcmp(s_sdk.lost_ip.ssid, "wifi", 5u) == 0);
+  assert(s_sdk.lost_ip.ip_valid == 0u);
+  const unsigned char empty_ip[sizeof(s_sdk.lost_ip.ip)] = {0};
+  assert(memcmp(&s_sdk.lost_ip.ip, empty_ip, sizeof(empty_ip)) == 0);
+  /* A disconnect delivered after release must not publish another LOST_IP. */
+  h2_esp_wifi_post_sta_lost_ip(H2_PAL_WIFI_STA_STATE_DISCONNECTED, 77);
+  assert(s_sdk.lost_ip_events == 1u);
 }
 
 static void test_busy_transaction_is_untouched(void) {
@@ -325,8 +404,69 @@ static void test_unassociated_station_can_stop(void) {
   }
 }
 
+static void test_disconnect_before_release_publishes_once(void) {
+  reset_connected();
+  s_sdk.disconnect_first = 1;
+  assert(h2_esp_platform_wifi_stop() == H2_PAL_OK);
+  assert_released();
+  assert(s_sdk.lost_ip_events == 1u);
+  assert(s_sdk.lost_ip.ssid_len == 4u && s_sdk.lost_ip.ip_valid == 0u);
+}
+
+static void test_event_post_failure_retains_address_state(void) {
+  reset_connected();
+  s_sdk.post_result = TEST_SDK_FAILURE;
+  assert(h2_esp_platform_wifi_stop() == H2_PAL_ERR_IO);
+  assert(s_h2_esp_wifi_sta_netif == &s_netif);
+  assert(s_h2_esp_wifi_had_ip == 1);
+  assert(s_h2_esp_wifi_association.ssid_len == 4u);
+  assert(s_h2_esp_wifi_address_release_pending == 0);
+  assert(s_h2_esp_wifi_cleanup_pending == 1);
+  assert(s_sdk.lost_ip_events == 0u && s_sdk.netif_destroys == 0u);
+  assert(s_sdk.event_waits == 0u && s_h2_esp_wifi_connect_busy == 0u);
+  s_sdk.post_result = ESP_OK;
+  assert(h2_esp_platform_wifi_stop() == H2_PAL_OK);
+  assert_released();
+  assert(s_sdk.release_posts == 2u && s_sdk.lost_ip_events == 1u);
+}
+
+static void test_event_timeout_retry_reuses_pending_release(void) {
+  for (int late = 0; late <= 1; ++late) {
+    reset_connected();
+    s_sdk.defer_release = 1;
+    assert(h2_esp_platform_wifi_stop() == H2_PAL_ERR_TIMEOUT);
+    assert(s_h2_esp_wifi_sta_netif == &s_netif);
+    assert(s_h2_esp_wifi_had_ip == 1);
+    assert(s_h2_esp_wifi_association.ssid_len == 4u);
+    assert(s_h2_esp_wifi_address_release_pending == 1);
+    assert(s_h2_esp_wifi_cleanup_pending == 1);
+    assert(s_sdk.netif_destroys == 0u && s_sdk.lost_ip_events == 0u);
+    assert(s_h2_esp_wifi_connect_busy == 0u);
+    assert(h2_esp_platform_wifi_stop() == H2_PAL_ERR_TIMEOUT);
+    assert(s_sdk.release_posts == 1u && s_sdk.event_waits == 2u);
+    if (late) deliver_release();
+    s_sdk.defer_release = 0;
+    assert(h2_esp_platform_wifi_stop() == H2_PAL_OK);
+    assert_released();
+    assert(s_sdk.release_posts == 1u && s_sdk.event_waits == 3u);
+    assert(s_sdk.lost_ip_events == 1u && s_sdk.netif_destroys == 1u);
+  }
+}
+
+static void test_stop_without_address_does_not_publish_loss(void) {
+  reset_connected();
+  s_h2_esp_wifi_had_ip = 0;
+  assert(h2_esp_platform_wifi_stop() == H2_PAL_OK);
+  assert_released();
+  assert(s_sdk.lost_ip_events == 0u);
+}
+
 int main(void) {
   test_successful_release();
+  test_disconnect_before_release_publishes_once();
+  test_event_post_failure_retains_address_state();
+  test_event_timeout_retry_reuses_pending_release();
+  test_stop_without_address_does_not_publish_loss();
   test_busy_transaction_is_untouched();
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
   test_active_ap_is_untouched();

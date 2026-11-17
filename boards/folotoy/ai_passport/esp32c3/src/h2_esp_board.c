@@ -9,7 +9,7 @@ static h2_pal_fs_api_t filesystem;
 static h2_corehttp_t* http;
 static h2_pal_http_api_t http_api;
 static h2_runtime_config_t runtime_config;
-static int fs_ready, ready;
+static int fs_ready, ready, cleanup_pending;
 
 static int init_files(void) {
   const h2_esp_platform_littlefs_config_t config = {
@@ -45,6 +45,7 @@ int h2_esp_board_fs_mount(const char* path) {
   if (path == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (strcmp(path, "/data") != 0 && strcmp(path, "/dl") != 0)
     return H2_PAL_ERR_UNSUPPORTED;
+  if (cleanup_pending) return H2_PAL_ERR_INVALID_STATE;
   return fs_ready ? h2_pal_fs_mkdir(&filesystem, path)
                   : H2_PAL_ERR_INVALID_STATE;
 }
@@ -52,10 +53,12 @@ int h2_esp_board_fs_mount(const char* path) {
 h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out) {
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
+  if (cleanup_pending) return H2_PAL_ERR_INVALID_STATE;
   if (ready) {
     *out = runtime_config;
     return 0;
   }
+  cleanup_pending = 1;
   int rc = h2_passport_peripherals_init();
   if (rc == 0) rc = init_files();
   const h2_corehttp_config_t config = {
@@ -114,18 +117,25 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t* out) {
       .system_event = h2_esp_platform_system_event_api(),
       .video_decoder = h2_pal_unsupported_video_decoder_api(),
   };
+  cleanup_pending = 0;
   ready = 1;
   *out = runtime_config;
   return 0;
 }
 
 h2_pal_result_t h2_esp_board_runtime_deinit(void) {
+  /* Every failure below leaves cleanup-only ownership: no cached configuration
+   * can be borrowed after even one provider has been released. */
+  cleanup_pending = 1;
+  ready = 0;
+  memset(&runtime_config, 0, sizeof(runtime_config));
   int rc = h2_passport_peripherals_deinit();
   if (rc != 0) return rc;
   rc = h2_passport_display_deinit();
   if (rc != 0) return rc;
   h2_corehttp_destroy(http);
   http = NULL;
+  memset(&http_api, 0, sizeof(http_api));
   if (fs_ready) {
     rc = h2_esp_platform_littlefs_fs_deinit("data");
     if (rc != 0) return rc;
@@ -134,6 +144,6 @@ h2_pal_result_t h2_esp_board_runtime_deinit(void) {
   memset(&filesystem, 0, sizeof(filesystem));
   memset(&http_api, 0, sizeof(http_api));
   memset(&runtime_config, 0, sizeof(runtime_config));
-  ready = 0;
+  cleanup_pending = 0;
   return 0;
 }

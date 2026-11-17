@@ -59,6 +59,7 @@ type session struct {
 	channels  channelStats
 	auth      authenticationWitness
 	media     mediaWitness
+	timing    *rtpTiming
 }
 
 type iceMode string
@@ -175,6 +176,9 @@ type server struct {
 	iceMode     iceMode
 	udpDrops    atomic.Uint64
 	turnStats   turnStats
+
+	rtpTimingCapacity int
+	rtpTimings        map[*rtpTiming]string
 }
 
 type inboundDroppingPacketConn struct {
@@ -287,16 +291,21 @@ func main() {
 	iceModeValue := flag.String("ice-mode", string(iceModeUDP), "ICE transport mode: udp, tcp, mixed, or mixed-drop-udp")
 	dtlsKeyLog := flag.String("dtls-key-log", "", "optional DTLS key log path for local packet diagnostics")
 	dtlsCipherSuites := flag.String("dtls-cipher-suites", "", "optional comma-separated DTLS cipher suite preference (server order wins): gcm, ccm, ccm8, chacha")
+	rtpTimingCapacity := registerRTPTimingFlag(flag.CommandLine)
 	flag.Parse()
+	if err := validateRTPTimingCapacity(*rtpTimingCapacity); err != nil {
+		log.Fatal(err)
+	}
 	mode, err := parseICEMode(*iceModeValue)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	s := &server{
-		candidateIP: net.ParseIP(*candidateIP),
-		iceMode:     mode,
-		sessions:    make(map[string]*session),
+		candidateIP:       net.ParseIP(*candidateIP),
+		iceMode:           mode,
+		sessions:          make(map[string]*session),
+		rtpTimingCapacity: *rtpTimingCapacity,
 	}
 	if *candidateIP != "" && s.candidateIP == nil {
 		log.Fatalf("invalid --candidate-ip %q", *candidateIP)
@@ -638,6 +647,25 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if parts[1] == "rtp-timing" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		timing, found := s.rtpTimingForSession(parts[0])
+		if !found {
+			http.NotFound(w, r)
+			return
+		}
+		snapshot, retained := timing.snapshot(parts[0])
+		if !retained {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(snapshot)
+		return
+	}
 	if parts[1] == "media-stats" || parts[1] == "media-fault" {
 		s.mu.Lock()
 		item := s.sessions[parts[0]]
@@ -783,8 +811,10 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := item.pc.Close(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	closeErr := item.pc.Close()
+	item.timing.finish()
+	if closeErr != nil {
+		http.Error(w, closeErr.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -830,7 +860,16 @@ func (s *server) createAnswer(
 	if s.api == nil {
 		return "", nil, fmt.Errorf("ICE API is not configured")
 	}
-	item := &session{}
+	item, err := s.newSession()
+	if err != nil {
+		return "", nil, err
+	}
+	keepTiming := false
+	defer func() {
+		if !keepTiming {
+			s.discardRTPTiming(item)
+		}
+	}()
 	api := s.api
 	if s.setting != nil {
 		setting := *s.setting
@@ -844,6 +883,21 @@ func (s *server) createAnswer(
 		return "", nil, err
 	}
 	item.pc = pc
+	if item.timing != nil {
+		pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+			switch state {
+			case webrtc.PeerConnectionStateFailed:
+				// Failed is terminal for this fixture. Close outside the callback
+				// to unblock RTP I/O before joining the recorder's echo workers.
+				go func() {
+					_ = pc.Close()
+					item.timing.finish()
+				}()
+			case webrtc.PeerConnectionStateClosed:
+				go item.timing.finish()
+			}
+		})
+	}
 	var reverseOnce sync.Once
 	startReverseChannels := func() {
 		if reverseChannels == 0 || item.channels.opened.Load() != 3 {
@@ -917,7 +971,7 @@ func (s *server) createAnswer(
 		if remote.Codec().MimeType != webrtc.MimeTypeOpus {
 			return
 		}
-		go echoOpus(remote, audioTrack, &item.media)
+		go echoOpus(remote, audioTrack, &item.media, item.timing)
 	})
 
 	offer := webrtc.SessionDescription{
@@ -954,6 +1008,7 @@ func (s *server) createAnswer(
 		_ = pc.Close()
 		return "", nil, fmt.Errorf("empty local answer")
 	}
+	keepTiming = true
 	return local.SDP, item, nil
 }
 
@@ -973,22 +1028,49 @@ func opusEchoPacket(packet *rtp.Packet) *rtp.Packet {
 	}
 }
 
-func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, witness *mediaWitness) {
+func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, witness *mediaWitness, timing *rtpTiming) {
+	echoOpusPackets(func() (*rtp.Packet, error) {
+		packet, _, err := remote.ReadRTP()
+		return packet, err
+	}, local.WriteRTP, witness, timing)
+}
+
+func echoOpusPackets(read func() (*rtp.Packet, error), write func(*rtp.Packet) error, witness *mediaWitness, timing *rtpTiming) {
+	if timing != nil {
+		if !timing.startEcho() {
+			return
+		}
+		defer timing.workers.Done()
+	}
 	defer witness.log("stopped")
 	for {
-		packet, _, err := remote.ReadRTP()
+		packet, err := read()
 		if err != nil {
 			witness.readErrors.Add(1)
 			return
 		}
+		index := -1
+		if timing != nil {
+			index = timing.receive(packet)
+		}
 		ordinal := witness.noteInput(packet.SequenceNumber)
 		if witness.shouldDrop(ordinal) {
+			if timing != nil {
+				timing.drop(index)
+			}
 			// Keep the original gap visible to the receiving RTP decoder.
 			witness.log("injected-drop")
 			continue
 		}
 		echo := opusEchoPacket(packet)
-		if err := local.WriteRTP(echo); err != nil {
+		if timing != nil {
+			timing.submit(index)
+		}
+		err = write(echo)
+		if timing != nil {
+			timing.complete(index, err == nil)
+		}
+		if err != nil {
 			witness.writeErrors.Add(1)
 			return
 		}
@@ -1194,10 +1276,7 @@ func (channel *performanceChannel) sendDownload(total uint32) {
 			for channel.dc.Transport().BufferedAmount() >
 				performanceBufferedAmountLow {
 				if time.Now().After(deadline) {
-					log.Printf(
-						"H2_WEBRTC_TEST_SERVER_PERF download_backpressure_timeout buffered=%d",
-						channel.dc.Transport().BufferedAmount(),
-					)
+					logDownloadBackpressureTimeout(channel.dc.Transport())
 					return
 				}
 				time.Sleep(time.Millisecond)
@@ -1235,6 +1314,21 @@ func (channel *performanceChannel) sendDownload(total uint32) {
 			nextProgress += 1024 * 1024
 		}
 	}
+}
+
+type sctpTransportStatistics interface {
+	BufferedAmount() int
+	Stats() webrtc.SCTPTransportStats
+}
+
+func logDownloadBackpressureTimeout(transport sctpTransportStatistics) {
+	buffered := transport.BufferedAmount()
+	stats := transport.Stats()
+	log.Printf(
+		"H2_WEBRTC_TEST_SERVER_PERF download_backpressure_timeout buffered=%d cwnd=%d rwnd=%d mtu=%d srtt_ms=%.3f bytes_sent=%d bytes_received=%d",
+		buffered, stats.CongestionWindow, stats.ReceiverWindow, stats.MTU,
+		stats.SmoothedRoundTripTime*1000, stats.BytesSent, stats.BytesReceived,
+	)
 }
 
 func attachReverseDataChannel(
@@ -1301,6 +1395,11 @@ func (s *server) track(item *session) string {
 	item.media.sessionID.Store(id)
 	item.createdAt = time.Now()
 	s.sessions[id] = item
+	if item.timing != nil {
+		if _, present := s.rtpTimings[item.timing]; present {
+			s.rtpTimings[item.timing] = id
+		}
+	}
 	return id
 }
 
@@ -1319,13 +1418,19 @@ func (s *server) cleanupLoop(ctx context.Context) {
 
 func (s *server) cleanup() {
 	now := time.Now()
+	var expired []*session
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for id, item := range s.sessions {
 		if now.Sub(item.createdAt) >= sessionTTL {
-			_ = item.pc.Close()
+			expired = append(expired, item)
 			delete(s.sessions, id)
 		}
+	}
+	s.pruneRTPTimings(now)
+	s.mu.Unlock()
+	for _, item := range expired {
+		_ = item.pc.Close()
+		item.timing.finish()
 	}
 }
 
@@ -1333,9 +1438,16 @@ func (s *server) closeAll() {
 	s.mu.Lock()
 	sessions := s.sessions
 	s.sessions = make(map[string]*session)
+	timings := s.rtpTimings
+	s.rtpTimings = nil
 	s.mu.Unlock()
 	for _, item := range sessions {
 		_ = item.pc.Close()
+		item.timing.finish()
+	}
+	for timing := range timings {
+		timing.finish()
+		timing.release()
 	}
 }
 

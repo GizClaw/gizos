@@ -22,6 +22,16 @@ void h2_passport_recording_bind(h2_runtime_t* runtime, h2_loader_t* loader);
  */
 int h2_passport_recording_prepare(void);
 
+/* Each open requires a fresh CSPRNG-generated AES-128 key. A nonce is four
+ * random bytes, a non-wrapping per-open begin generation (LE32), and frame
+ * index (LE32). All recordings and failed/retried begins consume generations,
+ * so repeated random prefixes cannot reuse a key/nonce within one open.
+ * Counter exhaustion fails before erase; reopen requires a new random key.
+ * AAD binds recording and frame indices. Authentication/read failures clear
+ * caller plaintext; seal/write failures disable that recording until begin.
+ * Entropy failures disable the affected key/recording and wipe partial output.
+ * Close wipes key/prefix/scratch before checked erasure and retains ownership
+ * if erasure fails. RAM speech buffers/queues belong to the MFG App owner. */
 extern const h2_mfg_recording_store_t h2_passport_recording_store;
 
 #endif

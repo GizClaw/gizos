@@ -30,6 +30,7 @@ struct h2_bleikcp_server {
   bool protocol_error_pending;
   bool handling;
   bool closing;
+  bool service_registered;
   bool disconnected;
   h2_bleikcp_t* active_stream;
 };
@@ -348,44 +349,36 @@ int h2_bleikcp_server_open(const h2_bleikcp_api_t* api,
   if (rc != H2_PAL_OK) goto fail;
   rc = h2_pal_ble_register_gatt_services(api->ble, &server->service, 1u);
   if (rc != H2_PAL_OK) goto fail;
+  server->service_registered = true;
   *out_server = server;
   return H2_PAL_OK;
 
-fail:
-  if (server->dispatch_task != NULL) {
-    (void)h2_pal_mutex_lock(api->sync, server->mutex);
-    server->closing = true;
-    (void)h2_pal_cond_broadcast(api->sync, server->cond);
-    (void)h2_pal_mutex_unlock(api->sync, server->mutex);
-    /* Open has not published a handle. Retain the server and its callback
-     * context until the task is actually joined, including transient errors. */
-    while (h2_pal_task_join(api->task, server->dispatch_task) != H2_PAL_OK) {
-      (void)h2_pal_time_sleep_ms(api->time, 10u);
-    }
-    server->dispatch_task = NULL;
+fail: {
+  int close_rc = h2_bleikcp_server_close(server);
+  if (close_rc != H2_PAL_OK) {
+    /* The caller must retain the task's context and all borrowed dependencies
+     * until a later checked close succeeds, including unsupported joins. */
+    *out_server = server;
+    return close_rc;
   }
-  for (size_t i = 0u; i < H2_BLEIKCP_SERVER_SUBSCRIPTION_COUNT; ++i) {
-    h2_pal_system_event_unsubscribe(api->system_event,
-                                    server->subscriptions[i]);
-  }
-  if (server->cond != NULL) (void)h2_pal_cond_destroy(api->sync, server->cond);
-  if (server->mutex != NULL)
-    (void)h2_pal_mutex_destroy(api->sync, server->mutex);
-  h2_pal_mem_free(api->allocator, server);
   return rc;
+}
 }
 
 int h2_bleikcp_server_close(h2_bleikcp_server_t* server) {
   if (server == NULL) return H2_PAL_ERR_INVALID_ARG;
-  (void)h2_pal_mutex_lock(server->api.sync, server->mutex);
-  server->closing = true;
-  server->dispatch_pending = false;
-  if (server->active_stream != NULL) {
-    h2_bleikcp_stream_mark_closed(server->active_stream, H2_PAL_ERR_CLOSED,
-                                  false);
+  if (server->mutex != NULL) {
+    (void)h2_pal_mutex_lock(server->api.sync, server->mutex);
+    server->closing = true;
+    server->dispatch_pending = false;
+    if (server->active_stream != NULL) {
+      h2_bleikcp_stream_mark_closed(server->active_stream, H2_PAL_ERR_CLOSED,
+                                    false);
+    }
+    if (server->cond != NULL)
+      (void)h2_pal_cond_broadcast(server->api.sync, server->cond);
+    (void)h2_pal_mutex_unlock(server->api.sync, server->mutex);
   }
-  (void)h2_pal_cond_broadcast(server->api.sync, server->cond);
-  (void)h2_pal_mutex_unlock(server->api.sync, server->mutex);
   if (server->dispatch_task != NULL) {
     int rc = h2_pal_task_join(server->api.task, server->dispatch_task);
     if (rc != H2_PAL_OK) return rc;
@@ -400,19 +393,30 @@ int h2_bleikcp_server_close(h2_bleikcp_server_t* server) {
     (void)h2_pal_mutex_unlock(server->api.sync, server->mutex);
     (void)h2_bleikcp_stream_destroy(stream);
   }
-  int rc = h2_pal_ble_unregister_gatt_service(server->api.ble,
-                                              &server->service.uuid);
-  if (rc == H2_PAL_ERR_UNSUPPORTED) {
-    rc = h2_pal_ble_unregister_gatt_services(server->api.ble);
+  if (server->service_registered) {
+    int rc = h2_pal_ble_unregister_gatt_service(server->api.ble,
+                                                &server->service.uuid);
+    if (rc == H2_PAL_ERR_UNSUPPORTED) {
+      rc = h2_pal_ble_unregister_gatt_services(server->api.ble);
+    }
+    if (rc != H2_PAL_OK) return rc;
+    server->service_registered = false;
   }
-  if (rc != H2_PAL_OK) return rc;
   for (size_t i = 0u; i < H2_BLEIKCP_SERVER_SUBSCRIPTION_COUNT; ++i) {
     h2_pal_system_event_unsubscribe(server->api.system_event,
                                     server->subscriptions[i]);
     server->subscriptions[i] = NULL;
   }
-  (void)h2_pal_cond_destroy(server->api.sync, server->cond);
-  (void)h2_pal_mutex_destroy(server->api.sync, server->mutex);
+  if (server->cond != NULL) {
+    int rc = h2_pal_cond_destroy(server->api.sync, server->cond);
+    if (rc != H2_PAL_OK) return rc;
+    server->cond = NULL;
+  }
+  if (server->mutex != NULL) {
+    int rc = h2_pal_mutex_destroy(server->api.sync, server->mutex);
+    if (rc != H2_PAL_OK) return rc;
+    server->mutex = NULL;
+  }
   h2_pal_mem_free(server->api.allocator, server);
-  return rc;
+  return H2_PAL_OK;
 }

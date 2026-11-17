@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shlex
 import sys
@@ -13,7 +14,7 @@ from collections.abc import Iterable
 
 COMMIT = re.compile(r"[0-9a-f]{40}")
 LOCATOR_SCHEMA = "h2.native-locator.v1"
-FIXED_SYSTEM_PATH = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
+FIXED_SYSTEM_PATH = ("/opt/gizmoth/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
 
 
 class NativeRuntimeError(RuntimeError):
@@ -96,6 +97,37 @@ def locator_path(document: dict[str, object], name: str, kind: str) -> Path:
     if not isinstance(value, str):
         raise NativeRuntimeError(f"{kind} locator has no {name} path")
     return Path(value)
+
+
+def linux_x86_64_environment(*locators: dict[str, object]) -> dict[str, str]:
+    """Use only the translation contract captured in declared locator inputs.
+
+    The managed VM attests binfmt registration during repository evaluation.
+    Native actions never inherit QEMU settings or a caller's runtime flag.
+    """
+    if platform.system() != "Linux" or platform.machine().lower() not in ("aarch64", "arm64"):
+        return {}
+    selected: str | None = None
+    for locator in locators:
+        metadata = locator.get("metadata", {})
+        runtime = metadata.get("x86_64_runtime") if isinstance(metadata, dict) else None
+        if not isinstance(runtime, dict) or runtime.get("kind") != "qemu-binfmt-v1":
+            raise NativeRuntimeError(
+                "UNSUPPORTED: Linux ARM64 x86-64 vendor tools require a locator validated "
+                "with GIZMOTH_X86_64_TRANSLATION=qemu-binfmt-v1"
+            )
+        raw_prefix = runtime.get("ld_prefix")
+        if not isinstance(raw_prefix, str) or not Path(raw_prefix).is_absolute():
+            raise NativeRuntimeError("invalid managed QEMU_LD_PREFIX in native locator")
+        prefix = Path(raw_prefix).resolve()
+        if not prefix.is_dir():
+            raise NativeRuntimeError(f"managed x86-64 userspace is unavailable: {prefix}")
+        if selected is not None and selected != str(prefix):
+            raise NativeRuntimeError("native locators select different x86-64 runtimes")
+        selected = str(prefix)
+    if selected is None:
+        raise NativeRuntimeError("Linux ARM64 x86-64 vendor tools require a runtime locator")
+    return {"QEMU_LD_PREFIX": selected}
 
 
 def fixed_environment(tool_directories: list[Path] | None = None) -> dict[str, str]:

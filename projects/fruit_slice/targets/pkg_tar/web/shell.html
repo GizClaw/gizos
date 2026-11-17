@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Fruit Slice</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1a120c; color: #e9dcc7;
+    font: 14px/1.4 ui-sans-serif, system-ui, sans-serif; }
+  body { display: grid; place-items: center; overscroll-behavior: none; }
+  main { display: grid; gap: 12px; justify-items: center; padding: 16px; }
+  canvas { width: min(92vw, 80vh, 640px); aspect-ratio: 1; border-radius: 18px;
+    box-shadow: 0 18px 50px #000a; touch-action: none; cursor: crosshair;
+    image-rendering: auto; background: #3a2414; }
+  p { margin: 0; opacity: .7; }
+</style>
+<main>
+  <canvas id="canvas" width="480" height="480"></canvas>
+  <p id="status">Loading…</p>
+</main>
+<script>
+  const status = document.getElementById('status');
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    print: text => console.log(text),
+    printErr: text => console.error(text),
+    onRuntimeInitialized: () => {
+      status.textContent = 'Swipe across fruit to slice it. Avoid the bombs.';
+    },
+    onAbort: reason => { status.textContent = 'Stopped: ' + reason; },
+  };
+</script>
+{{{ SCRIPT }}}
+</html>

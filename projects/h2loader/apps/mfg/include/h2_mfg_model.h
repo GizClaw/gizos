@@ -127,7 +127,7 @@ typedef struct h2_mfg_profile {
   uint32_t preview_width;
   uint32_t preview_height;
   /** Optional framebuffer allocator, borrowed for the entire session. Invoked
-   * after Display opens; NULL prefers Runtime external memory, then default. */
+   * after Display opens; NULL uses Runtime's memory allocator. */
   const h2_pal_mem_api_t* frame_allocator;
   /** Maximum RGB565 rows kept in RAM. Zero keeps the complete framebuffer.
    * Nonzero redraws each strip synchronously with the same full-screen

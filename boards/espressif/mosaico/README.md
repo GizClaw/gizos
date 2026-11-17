@@ -39,3 +39,7 @@ There is no `peripherals` firmware suite. Driver regression is grouped by
 button/registry, IMU, battery and lifecycle under the board `tests/` directory.
 No standalone motor pulse validation is scheduled. See
 `esp32s31/tests/README.md` for the regression target mapping.
+
+The CO5300 Display PAL copies borrowed RGB565 input into a board-owned shadow. `present` merges updates per eight-row band and packs four-column-aligned windows into internal DMA memory, retaining surrounding pixels without expanding every update to the full panel width. Transfers stay within the BSP's eight-row DMA limit; the DMA block is not reused until completion.
+
+The CST9220 HYN212 driver returns `ESP_ERR_NOT_FINISHED` for an ACK without a complete touch snapshot. The Touch PAL reports `H2_PAL_ERR_WOULD_BLOCK` and retains the current pointer state for that result; actual read errors remain failures.

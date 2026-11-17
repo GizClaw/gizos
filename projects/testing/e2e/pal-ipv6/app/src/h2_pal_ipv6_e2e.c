@@ -466,7 +466,10 @@ static int extra(const h2_pal_ipv6_config_t* config, unsigned index,
       uint64_t start = 0u;
       rc = h2_pal_time_get_monotonic_ms(runtime->time, &start);
       if (rc != H2_PAL_OK) return rc;
-      for (unsigned i = 0u; i < 32u; ++i) {
+      /* Keep all 32 cancellations, then complete one owned lookup within the
+       * same budget. Closed workers may still occupy every provider slot;
+       * releasing a completed probe leaves capacity for the next case. */
+      for (unsigned i = 0u; i <= 32u; ++i) {
         h2_pal_net_resolver_t* resolver = NULL;
         rc = h2_pal_net_resolve_start_family(net, "::1", H2_PAL_NET_FAMILY_IPV6,
                                              &resolver);
@@ -475,9 +478,26 @@ static int extra(const h2_pal_ipv6_config_t* config, unsigned index,
           rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
           if (rc != H2_PAL_OK || now - start >= 5000u)
             return rc != H2_PAL_OK ? rc : H2_PAL_ERR_TIMEOUT;
-          h2_pal_time_sleep_ms(runtime->time, 10u);
+          uint32_t remaining = (uint32_t)(5000u - (now - start));
+          rc = h2_pal_time_sleep_ms(runtime->time,
+                                    remaining < 10u ? remaining : 10u);
+          if (rc != H2_PAL_OK) return rc;
           --i;
           continue;
+        }
+        if (rc == H2_PAL_OK && i == 32u) {
+          uint64_t now = 0u;
+          rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
+          if (rc == H2_PAL_OK) {
+            if (now - start >= 5000u)
+              rc = H2_PAL_ERR_TIMEOUT;
+            else {
+              rc = h2_pal_net_resolve_poll_all(
+                  net, resolver, &list, (uint32_t)(5000u - (now - start)));
+              if (rc == H2_PAL_OK && !contains(&list, H2_PAL_NET_FAMILY_IPV6))
+                rc = H2_PAL_ERR_FORMAT;
+            }
+          }
         }
         h2_pal_net_resolve_close(net, resolver);
         if (rc != H2_PAL_OK) return rc;

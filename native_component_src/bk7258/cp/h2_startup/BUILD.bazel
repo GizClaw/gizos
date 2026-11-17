@@ -23,9 +23,33 @@ firmware_native_component(
         "//native_component_src/bk7258/shared/fixed_flash:layout_check.h",
     ],
     component_name = "cp",
-    data = ["CMakeLists.txt"],
+    data = [
+        "CMakeLists.txt",
+        "Kconfig",
+    ],
     execution_unit = "cp",
 )
+
+[
+    cc_test(
+        name = "startup_480m_test" if enabled else "startup_sdk_default_test",
+        srcs = [
+            "src/cp_main.c",
+            "tests/startup_test_sdk.h",
+            "tests/test_startup.c",
+        ],
+        includes = ["tests"],
+        local_defines = [
+            "H2_BK_CP_STARTUP_HOST_TEST=1",
+            "CONFIG_H2_AP_CPU_FREQ_480M={}".format(1 if enabled else 0),
+        ],
+        target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    )
+    for enabled in [
+        False,
+        True,
+    ]
+]
 
 cc_test(
     name = "fixed_boot_test",

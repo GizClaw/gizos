@@ -19,6 +19,8 @@ extern "C" {
 typedef struct h2_gizclaw_service h2_gizclaw_service_t;
 typedef struct h2_gizclaw_req h2_gizclaw_req_t;
 typedef struct h2_gizclaw_track h2_gizclaw_track_t;
+/** Nonzero Track-scoped local recording identity; zero never owns PCM. */
+typedef uint64_t h2_gizclaw_pcm_capture_id_t;
 
 /** Automatic calibration state, independent of wall validity. */
 typedef enum h2_gizclaw_time_sync_state {
@@ -176,13 +178,34 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t* service);
 h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t* service,
                                              h2_gizclaw_track_t* track);
 /** Stop admitting Track accesses and wait for in-flight reads/writes. Active
- * audio requests observe CLOSED on their next Track access. */
+ * legacy audio requests observe CLOSED on their next Track access. Managed
+ * capture windows/leases return BUSY without closing the route; end or discard
+ * capture and retire its request before unsetting. Stop external producers
+ * first.
+ */
 h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t* service,
                                                h2_gizclaw_track_t* track);
 
 /** Start the currently registered ASR or Conversation audio route. Requests
  * alone never consume mic PCM. Old buffered PCM is discarded by uplink. */
 h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t* service);
+
+/** Start the registered route with a local capture's original PCM window.
+ * track must be the Service's currently bound library-owned Track; id must name
+ * its live capture. Capturing, stopping and frozen captures may be adopted.
+ * No PCM prefix or frozen tail is copied. The Track remains borrowed until the
+ * request releases its reader lease. END through pcm_capture_end automatically
+ * drains PCM and sends protocol EOS after the in-flight producer frame returns;
+ * no audio_end call or application drain loop is required. DISCARD cancels PCM
+ * consumption; cancel the route as well when abandoning an accepted request.
+ * Uses the same route admission and task-context rules as audio_start. Failure
+ * before adoption leaves the capture owned by the caller; a later admission
+ * failure releases the reader and discards the window. Propagates capture,
+ * admission and PAL errors; a different bound Track returns INVALID_STATE.
+ */
+h2_pal_result_t h2_gizclaw_service_audio_adopt(h2_gizclaw_service_t* service,
+                                               h2_gizclaw_track_t* track,
+                                               h2_gizclaw_pcm_capture_id_t id);
 
 /** End the current recording, without a request handle or waiting for upload.
  * Uplink copies the frozen PCM tail before releasing its read cursor, then
@@ -270,7 +293,9 @@ void h2_gizclaw_req_release(h2_gizclaw_req_t* request);
  * This API has one consumer and must not be called recursively. A callback may
  * create/submit requests, cancel or release handles, and stop the service. It
  * must not recursively call poll or deinit. Pending callbacks remain valid
- * after stop and are drained by poll.
+ * after stop and are drained by poll. If a completion cannot acquire its
+ * cleanup lock, poll returns that PAL error and retains the completion and its
+ * resources for a later poll; no application callback is dispatched for it.
  */
 h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
                                         size_t max_callbacks,
@@ -286,7 +311,9 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t* service,
  * already completed (including by timeout), waking waiters before stop returns.
  * Accepted callbacks remain pending for caller-thread dispatch.
  * If a task join fails, its handle is retained; retry stop before deinit.
- * Tasks already joined successfully are not joined again.
+ * Tasks already joined successfully are not joined again. Pending Speech
+ * retirement also retains its request on audio-lock failure; retry stop after
+ * that PAL failure is resolved before deinit.
  * With optional local ingress enabled, also closes admission, cancels and
  * joins local dispatch. Local provider completions settle on their owner;
  * caller-thread operation callbacks still require poll. Retained local result
@@ -298,7 +325,8 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t* service);
  * Release a stopped, fully dispatched service with no caller-owned handles.
  *
  * This lifecycle-task API must not race submit, cancel, release or dispatch.
- * Local request handles and adapter borrows prevent release with BUSY.
+ * Local request handles, adapter borrows and managed capture windows/leases
+ * prevent release with BUSY. Discard unadopted local captures before deinit.
  */
 h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t* service);
 

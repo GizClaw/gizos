@@ -5,7 +5,6 @@ load("//tools/bazel/firmware:target_task_policy.bzl", "esp_target_task_policy")
 load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/h2loader:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//tools/bazel/h2loader:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel/h2loader:h2loader_zlib_tar.bzl", "h2loader_zlib_tar")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
@@ -155,9 +154,4 @@ h2loader_tar_zlib(
     image = "gizclaw-e2e",
     role = "app",
     target = "esp32s3",
-)
-
-h2loader_zlib_tar(
-    name = "package_v2",
-    source = "//projects/testing/targets/h2_loader_tar_zlib/integration/gizclaw/waveshare/esp32s3_touch_amoled_1_75c:package",
 )

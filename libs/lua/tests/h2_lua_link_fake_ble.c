@@ -9,6 +9,52 @@
 
 static _Thread_local fake_terminal_gate_t* s_terminal_gate;
 
+static int fake_task_start(void* user, const h2_pal_task_options_t* options,
+                           h2_pal_task_entry_t entry, void* context,
+                           h2_pal_task_t** out_task) {
+  fake_device_t* device = user;
+  int rc = h2_pal_task_start(h2_desktop_platform_task_api(), options, entry,
+                             context, out_task);
+  if (rc == H2_PAL_OK && options != NULL && options->name != NULL) {
+    pthread_mutex_lock(&device->air->mutex);
+    if (strcmp(options->name, "$lua/link") == 0) {
+      device->session_task = *out_task;
+    } else if (strcmp(options->name, "$bleikcp/server") == 0) {
+      device->server_task = *out_task;
+    }
+    pthread_mutex_unlock(&device->air->mutex);
+  }
+  return rc;
+}
+
+static int fake_task_join(void* user, h2_pal_task_t* task) {
+  fake_device_t* device = user;
+  int rc = H2_PAL_OK;
+  pthread_mutex_lock(&device->air->mutex);
+  if (task == device->session_task) {
+    device->session_join_calls++;
+    rc = device->session_join_result;
+  } else if (task == device->server_task) {
+    device->server_join_calls++;
+    rc = device->server_join_result;
+  }
+  pthread_mutex_unlock(&device->air->mutex);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_pal_task_join(h2_desktop_platform_task_api(), task);
+  if (rc == H2_PAL_OK) {
+    pthread_mutex_lock(&device->air->mutex);
+    if (task == device->session_task) device->session_task = NULL;
+    if (task == device->server_task) device->server_task = NULL;
+    pthread_mutex_unlock(&device->air->mutex);
+  }
+  return rc;
+}
+
+static const h2_pal_task_vtable_t s_fake_task_vtable = {
+    .start = fake_task_start,
+    .join = fake_task_join,
+};
+
 static h2_pal_result_t fake_sync_unlock(void* user, h2_pal_mutex_t* mutex) {
   const h2_pal_sync_api_t* sync = h2_desktop_platform_sync_api();
   h2_pal_result_t rc = sync->vtable->unlock_mutex(user, mutex);
@@ -213,6 +259,12 @@ static h2_pal_result_t fake_register(void* user,
   /* A known UUID reattaches callbacks to its retained slot; a new one takes
    * a slot for good, as the GATT table only grows. */
   pthread_mutex_lock(&device->air->mutex);
+  device->registration_attempts++;
+  if (device->register_result != H2_PAL_OK) {
+    int rc = device->register_result;
+    pthread_mutex_unlock(&device->air->mutex);
+    return rc;
+  }
   for (slot = 0u; slot < device->retained_count; ++slot) {
     if (memcmp(device->retained_uuid[slot], services[0].uuid.data, 16u) == 0) {
       break;
@@ -250,6 +302,12 @@ static h2_pal_result_t fake_register(void* user,
 static h2_pal_result_t fake_unregister(void* user) {
   fake_device_t* device = user;
   pthread_mutex_lock(&device->air->mutex);
+  device->unregister_calls++;
+  if (device->unregister_result != H2_PAL_OK) {
+    int rc = device->unregister_result;
+    pthread_mutex_unlock(&device->air->mutex);
+    return rc;
+  }
   device->service = NULL;
   pthread_mutex_unlock(&device->air->mutex);
   s_terminal_gate = device->terminal_gate;
@@ -512,6 +570,10 @@ void fake_air_init(fake_air_t* air) {
     device->sync_vtable = *device->sync.vtable;
     device->sync_vtable.unlock_mutex = fake_sync_unlock;
     device->sync.vtable = &device->sync_vtable;
+    device->task = (h2_pal_task_api_t){
+        .user = device,
+        .vtable = &s_fake_task_vtable,
+    };
     /* Another service (e.g. a management service) already holds one slot
      * and keeps advertising from the same address. */
     memset(device->retained_uuid[0], 0xa5, 16u);
@@ -538,6 +600,12 @@ fake_snapshot_t fake_snapshot(fake_device_t* device) {
   value.scanning = device->scanning;
   value.registered = device->service != NULL;
   value.connected = device->connected;
+  value.registration_attempts = device->registration_attempts;
+  value.unregister_calls = device->unregister_calls;
+  value.session_task_retained = device->session_task != NULL;
+  value.server_task_retained = device->server_task != NULL;
+  value.session_join_calls = device->session_join_calls;
+  value.server_join_calls = device->server_join_calls;
   pthread_mutex_unlock(&device->air->mutex);
   value.subscriptions = 0;
   pthread_mutex_lock(&device->bus_mutex);
@@ -573,7 +641,9 @@ h2_runtime_t* fake_create_runtime(const h2_pal_ble_host_api_t* ble,
       .log = h2_desktop_platform_log_api(),
       .time = h2_desktop_platform_time_api(),
       .timer = h2_pal_unsupported_timer_api(),
-      .task = h2_desktop_platform_task_api(),
+      .task = ble->vtable == &s_fake_ble_vtable
+                  ? &device->task
+                  : h2_desktop_platform_task_api(),
       .queue = h2_desktop_platform_queue_api(),
       .sync = ble->vtable == &s_fake_ble_vtable
                   ? &device->sync

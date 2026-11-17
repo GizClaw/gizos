@@ -117,26 +117,14 @@ firmware_lib_component(
 )
 
 firmware_native_component(
-    name = "ap_launcher_component",
-    srcs = [
-        "ap/ap_main.c",
-    ],
-    hdrs = [],
+    name = "iperf_client_launcher",
+    srcs = ["ap/ap_main.c"],
     component_directory = "projects/testing/targets/h2_loader_tar_zlib/e2e/iperf/client/beken/bk7258_v3_202405/ap",
     component_name = "ap",
     data = ["ap/CMakeLists.txt"],
     execution_unit = "ap",
-)
-
-firmware_native_component(
-    name = "iperf_client_launcher",
-    srcs = [],
-    hdrs = [],
-    data = [
-    ],
     tags = ["manual"],
     deps = [
-        ":ap_launcher_component",
         ":entry_tasks",
         ":firmware_lib",
         "//boards/beken/bk7258_v3_202405/bk7258",
@@ -154,11 +142,7 @@ firmware_native_component(
 
 h2loader_bk7258_firmware(
     name = "firmware",
-    srcs = [
-        "CMakeLists.txt",
-        "ap/CMakeLists.txt",
-        "ap/ap_main.c",
-    ],
+    srcs = ["CMakeLists.txt"],
     ap_task_policy = ":ap_task_policy",
     board = "bk7258_v3_202405",
     cp_task_policy = ":cp_task_policy",

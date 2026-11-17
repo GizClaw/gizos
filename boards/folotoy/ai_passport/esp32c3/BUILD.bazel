@@ -34,6 +34,31 @@ firmware_native_component(
 )
 
 cc_test(
+    name = "runtime_lifecycle_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "src/h2_esp_board.c",
+        "src/h2_esp_board_private.h",
+        "tests/runtime_sdk/esp_partition.h",
+        "tests/test_runtime_lifecycle.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/runtime_sdk",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core:test_platform_headers",
+        "//pal:unsupported",
+        "//pal/providers/backends/corehttp",
+    ],
+)
+
+cc_test(
     name = "display_test",
     srcs = [
         "include/h2_esp_board.h",

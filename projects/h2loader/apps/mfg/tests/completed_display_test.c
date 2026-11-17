@@ -747,16 +747,11 @@ static void frame_free(void* user, void* pointer) {
 static void framebuffer_allocator_tests(h2_runtime_t* runtime) {
   width = height = 240;
   const h2_pal_mem_vtable_t memory = {.alloc = frame_alloc, .free = frame_free};
-  for (unsigned scenario = 0; scenario < 4; ++scenario) {
-    frame_heap_t external = {.fail = scenario != 0};
-    frame_heap_t ordinary = {.fail = scenario == 0 || scenario == 3};
-    const h2_pal_mem_api_t external_api = {.user = &external,
-                                           .vtable = &memory};
-    const h2_pal_mem_api_t ordinary_api = {.user = &ordinary,
-                                           .vtable = &memory};
+  for (unsigned failure = 0; failure < 2; ++failure) {
+    frame_heap_t heap = {.fail = (int)failure};
+    const h2_pal_mem_api_t heap_api = {.user = &heap, .vtable = &memory};
     h2_runtime_t rt = *runtime;
-    rt.mem = &ordinary_api;
-    rt.mem_external = scenario == 2 ? NULL : &external_api;
+    rt.mem = &heap_api;
     const h2_mfg_step_t step = {"display", H2_MFG_DISPLAY, 0};
     const h2_mfg_profile_t profile = {.steps = &step, .total = 1};
     h2_mfg_t m = {
@@ -766,50 +761,17 @@ static void framebuffer_allocator_tests(h2_runtime_t* runtime) {
                   .current = 1,
                   .summary = {.total = 1,
                               .step_status = {H2_LOADER_MFG_STEP_PASSED}}}};
-    const int rc = h2_mfg_hardware_enter(&m, 100);
-    if (scenario == 0) {
-      assert(rc == 0 && m.frame == external.owned);
-      assert(m.frame_allocator == &external_api && ordinary.allocations == 0);
-    } else if (scenario == 3) {
-      assert(rc == H2_PAL_ERR_NO_MEMORY && m.frame == NULL);
-    } else {
-      assert(rc == 0 && m.frame == ordinary.owned);
-      assert(m.frame_allocator == &ordinary_api && ordinary.allocations == 1);
-    }
-    assert(external.allocations == (scenario == 2 ? 0u : 1u));
-    assert(h2_mfg_hardware_close(&m) == 0);
-    assert(m.frame == NULL && m.frame_allocator == NULL && !m.display_open);
-    assert(external.owned == NULL && ordinary.owned == NULL);
-    assert(external.frees == (scenario == 0 ? 1u : 0u));
-    assert(ordinary.frees == (scenario == 1 || scenario == 2 ? 1u : 0u));
-  }
-  for (unsigned failure = 0; failure < 2; ++failure) {
-    frame_heap_t supplied = {.fail = (int)failure};
-    frame_heap_t ordinary = {0};
-    const h2_pal_mem_api_t supplied_api = {.user = &supplied,
-                                           .vtable = &memory};
-    const h2_pal_mem_api_t ordinary_api = {.user = &ordinary,
-                                           .vtable = &memory};
-    h2_runtime_t rt = *runtime;
-    rt.mem = rt.mem_external = &ordinary_api;
-    const h2_mfg_step_t step = {"display", H2_MFG_DISPLAY, 0};
-    const h2_mfg_profile_t profile = {
-        .steps = &step, .total = 1, .frame_allocator = &supplied_api};
-    h2_mfg_t m = {
-        .rt = &rt,
-        .profile = &profile,
-        .model = {.profile = &profile,
-                  .current = 1,
-                  .summary = {.total = 1,
-                              .step_status = {H2_LOADER_MFG_STEP_PASSED}}}};
     opened = 0;
     const int rc = h2_mfg_hardware_enter(&m, 100);
-    assert(rc == (failure ? H2_PAL_ERR_NO_MEMORY : H2_PAL_OK));
-    assert(supplied.allocations == 1 && ordinary.allocations == 0);
-    assert(m.frame_allocator == &supplied_api);
+    if (failure) {
+      assert(rc == H2_PAL_ERR_NO_MEMORY && m.frame == NULL);
+    } else {
+      assert(rc == 0 && m.frame == heap.owned);
+    }
+    assert(heap.allocations == 1u);
     assert(h2_mfg_hardware_close(&m) == 0);
-    assert(supplied.frees == (failure ? 0u : 1u));
-    assert(supplied.owned == NULL && ordinary.owned == NULL);
+    assert(m.frame == NULL && !m.display_open);
+    assert(heap.owned == NULL && heap.frees == (failure ? 0u : 1u));
   }
 }
 

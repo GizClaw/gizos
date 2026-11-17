@@ -742,8 +742,10 @@ static void run_status_boundary(const char* prefix, const char* tail, int crlf,
   assert(rc == (error_byte ? H2_PAL_ERR_IO : H2_PAL_EXIT));
   assert(strcmp(f.output, expected) == 0 && f.output_len == strlen(expected));
   assert(strstr(f.output, "H2_LOADER_STATUS ") == NULL);
-  assert(h2_h2loader_host_serial_disconnect(&connection) == H2_PAL_OK &&
-         connection == NULL);
+  const h2_pal_result_t close_result =
+      h2_h2loader_host_serial_disconnect(&connection);
+  assert(close_result == (error_byte ? H2_PAL_ERR_IO : H2_PAL_OK));
+  assert(connection == NULL);
   assert(f.requests == 1u && f.opens == 1u && f.closes == 1u &&
          f.controls == 0u);
   assert(f.peer == NULL && f.allocations == 0u);

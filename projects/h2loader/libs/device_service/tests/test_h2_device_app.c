@@ -16,6 +16,10 @@ static int sleep_failure, task_failure, join_failure;
 static int stream_start_failure, stream_release_failure;
 static unsigned stream_starts, stream_releases;
 static unsigned ble_closes, close_failures, partial_live;
+static unsigned global_refs, shutdown_failures, observer_removals;
+static int close_result = H2_PAL_ERR_TASK;
+static int shutdown_result = H2_PAL_ERR_BUSY;
+static int observer_failure;
 static int partial_open;
 static h2_loader_ble_service_config_t ble_config;
 static const uint8_t image_bytes[] = "native-image-with-package-padding";
@@ -173,7 +177,11 @@ static int join_task(void* user, h2_pal_task_t* task) {
 static int observe_wifi(void* user, h2_pal_wifi_activity_fn callback,
                         void* context) {
   (void)user;
-  callback(context, true);
+  if (observer_failure) return H2_PAL_ERR_IO;
+  if (callback != NULL)
+    callback(context, true);
+  else
+    ++observer_removals;
   return 0;
 }
 static int physical_read(void* user, void* data, size_t len, size_t* out,
@@ -208,9 +216,17 @@ static int flush_stream(void* user) {
   return H2_PAL_OK;
 }
 
-int h2_bleikcp_global_init(void) { return 0; }
+int h2_bleikcp_global_init(void) {
+  ++global_refs;
+  return 0;
+}
 int h2_bleikcp_global_shutdown(void) {
-  assert(partial_live == 0u);
+  assert(partial_live == 0u && global_refs != 0u);
+  if (shutdown_failures != 0u) {
+    --shutdown_failures;
+    return shutdown_result;
+  }
+  --global_refs;
   ++shutdowns;
   return 0;
 }
@@ -228,6 +244,8 @@ int h2_loader_ble_service_open(const h2_loader_ble_service_config_t* config,
     }
     return H2_PAL_ERR_IO;
   }
+  assert(partial_live == 0u);
+  partial_live = 1u;
   *out = (h2_loader_ble_service_t*)&ble_opens;
   return 0;
 }
@@ -236,7 +254,7 @@ int h2_loader_ble_service_close(h2_loader_ble_service_t* service) {
   ++ble_closes;
   if (close_failures != 0u) {
     --close_failures;
-    return H2_PAL_ERR_TASK;
+    return close_result;
   }
   partial_live = 0u;
   return H2_PAL_OK;
@@ -275,7 +293,53 @@ int h2_loader_ble_app_write(void* user, const char* data, size_t len) {
   return 0;
 }
 
+static void test_legacy_loader_config(void) {
+  static const h2loader_app_command_service_api_t command_service = {0};
+  /* Original main contract, including its final command_service member. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+  const h2_device_loader_config_t config = {"board",
+                                            "entry",
+                                            NULL,
+                                            1u,
+                                            2u,
+                                            3u,
+                                            7u,
+                                            0u,
+                                            H2_DEVICE_IDENTITY_NATIVE,
+                                            4u,
+                                            5u,
+                                            6u,
+                                            H2_LOADER_BLE_ADVERTISING_EXTENDED,
+                                            1,
+                                            9u,
+                                            &allocations,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            &command_service};
+#pragma GCC diagnostic pop
+  assert(config.serial_post_write_poll_ms == 6u &&
+         config.ble_advertising_mode == H2_LOADER_BLE_ADVERTISING_EXTENDED &&
+         config.force_command_mode == 1 && config.mfg_required_total == 9u);
+  assert(config.user == &allocations &&
+         config.command_service == &command_service);
+  assert(config.serial_rx_buffer_size == 0u &&
+         config.serial_receive_window == 0u &&
+         config.command_task_stack_size == 0u &&
+         config.poll_command_service == NULL &&
+         config.stop_command_service == NULL);
+}
+
 int main(void) {
+  test_legacy_loader_config();
   const h2_pal_mem_vtable_t mem_vt = {
       .alloc = allocate, .realloc = reallocate, .free = free_memory};
   const h2_pal_mem_api_t mem = {.vtable = &mem_vt};
@@ -376,18 +440,51 @@ int main(void) {
   assert(h2_device_app_commands_start(&state, &runtime, &commands) ==
          H2_PAL_ERR_TASK);
   assert(state.serial_started && ble_opens == 1u && shutdowns == 2u);
-  ble_opens = delay_count = 0u;
   partial_open = 1;
-  close_failures = 2u;
-  sleep_failure = 0;
   h2_device_app_commands_config_t one_attempt = commands;
   one_attempt.ble_start_attempts = 1u;
+  const int cleanup_errors[] = {H2_PAL_ERR_TASK, H2_PAL_ERR_TIMEOUT,
+                                H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_CLOSED};
+  for (size_t i = 0u; i < sizeof(cleanup_errors) / sizeof(cleanup_errors[0]);
+       ++i) {
+    ble_opens = ble_closes = delay_count = 0u;
+    close_failures = 2u;
+    close_result = cleanup_errors[i];
+    assert(h2_device_app_commands_start(&state, &runtime, &one_attempt) ==
+           cleanup_errors[i]);
+    assert(ble_opens == 1u && ble_closes == 1u && delay_count == 0u);
+    assert(partial_live == 1u && state.service != NULL &&
+           state.runtime == &runtime && state.ble_global_initialized);
+    assert(global_refs == 1u && state.serial_started && !state.ble_started &&
+           !state.ble_activity_observing && !destroys);
+    assert(h2_device_app_commands_start(&state, &runtime, &one_attempt) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(ble_opens == 1u && global_refs == 1u);
+    assert(h2_device_app_commands_pause_ble_advertising(&state) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(h2_device_app_commands_resume_ble_advertising(&state) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(h2_device_app_commands_stop_ble(&state) == cleanup_errors[i]);
+    assert(partial_live == 1u && state.runtime == &runtime &&
+           state.service != NULL && global_refs == 1u);
+    shutdown_failures = 1u;
+    assert(h2_device_app_commands_stop_ble(&state) == H2_PAL_ERR_BUSY);
+    assert(partial_live == 0u && state.service == NULL &&
+           state.runtime == &runtime && global_refs == 1u &&
+           state.ble_global_initialized);
+    assert(h2_device_app_commands_stop_ble(&state) == H2_PAL_OK);
+    assert(h2_device_app_commands_stop_ble(&state) == H2_PAL_OK);
+    assert(state.runtime == NULL && !state.ble_global_initialized &&
+           global_refs == 0u && state.serial_started && !destroys);
+  }
+  ble_opens = ble_closes = delay_count = 0u;
+  close_result = H2_PAL_ERR_TASK;
+  sleep_failure = 0;
   assert(h2_device_app_commands_start(&state, &runtime, &one_attempt) ==
          H2_PAL_ERR_IO);
-  assert(ble_opens == 1u && ble_closes == 3u && shutdowns == 3u);
-  assert(delay_count == 2u && delays[0] == 50u && delays[1] == 50u);
+  assert(ble_opens == 1u && ble_closes == 1u && delay_count == 0u);
   assert(partial_live == 0u && !state.service && !state.runtime &&
-         state.serial_started);
+         global_refs == 0u && state.serial_started);
   partial_open = 0;
   ble_opens = delay_count = 0u;
   open_failures = 5u;
@@ -410,6 +507,14 @@ int main(void) {
          !state.serial_started);
   assert(h2_device_app_commands_start_serial(&state, &physical) == 0);
   assert(h2_device_app_commands_stop_serial(&state) == 0);
+  observer_failure = 1;
+  assert(h2_device_app_commands_stop_ble(&state) == H2_PAL_ERR_IO);
+  assert(state.ble_activity_observing && state.service != NULL &&
+         state.runtime == &runtime && global_refs == 1u);
+  observer_failure = 0;
+  assert(h2_device_app_commands_stop_ble(&state) == H2_PAL_OK);
+  assert(observer_removals == 1u && global_refs == 0u && !state.service &&
+         !state.runtime && !state.ble_started);
   h2_loader_deinit(&state.serial_client.loader);
   assert(allocations == 0u && !lock_depth);
 
@@ -421,10 +526,10 @@ int main(void) {
       .release = release_stream,
   };
   const h2_pal_io_stream_api_t stream = {.vtable = &stream_vt};
-  const h2_pal_mem_api_t external = {.vtable = &mem_vt};
+  const h2_pal_mem_api_t command_mem = {.vtable = &mem_vt};
   h2_runtime_config_t stream_config = preinit;
   stream_config.io_stream = &stream;
-  stream_config.mem_external = &external;
+  stream_config.mem = &command_mem;
   h2_device_app_commands_t managed = {.config = commands};
   task_failure = 1;
   assert(h2_device_app_commands_prepare_named(
@@ -432,7 +537,7 @@ int main(void) {
   assert(managed.prepared && !managed.serial_started &&
          !managed.io_stream_started && stream_starts == 1u &&
          stream_releases == 1u);
-  assert(managed.client_config.allocator == &external);
+  assert(managed.client_config.allocator == &command_mem);
   task_failure = 0;
   stream_start_failure = 1;
   assert(h2_device_app_commands_start_serial(&managed, NULL) == H2_PAL_ERR_IO);

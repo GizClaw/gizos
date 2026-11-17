@@ -98,15 +98,22 @@ def android_package(args, headers):
     binary = Path(args.binary).read_bytes()
     api, ndk_major, ndk_version = android_ident(binary)
     module = "prefab/modules/h2_pal_core/"
+    classes_path = getattr(args, "classes_jar", None)
+    classes = Path(classes_path).read_bytes() if classes_path else archive_bytes({})
+    with zipfile.ZipFile(io.BytesIO(classes)):
+        pass  # Reject an invalid JAR before emitting the AAR.
     files = {
         "AndroidManifest.xml": f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.haivivi.gizos.pal.core"><uses-sdk android:minSdkVersion="{api}"/></manifest>'.encode(),
-        "classes.jar": archive_bytes({}),
+        "classes.jar": classes,
         "jni/arm64-v8a/libh2_pal_core.so": binary,
         "prefab/prefab.json": json.dumps({"schema_version": 2, "name": "h2_pal_core", "version": args.version, "dependencies": []}).encode(),
         module + "module.json": json.dumps({"export_libraries": ["-llog", "-landroid", "-ljnigraphics", "-laaudio", "-lmediandk"], "library_name": "libh2_pal_core"}).encode(),
         module + "libs/android.arm64-v8a/abi.json": json.dumps({"abi": "arm64-v8a", "api": api, "ndk": ndk_major, "stl": "c++_static", "static": False}).encode(),
         module + "libs/android.arm64-v8a/libh2_pal_core.so": binary,
     }
+    consumer_proguard = getattr(args, "consumer_proguard", None)
+    if consumer_proguard:
+        files["proguard.txt"] = Path(consumer_proguard).read_bytes()
     files.update({module + "include/" + n: b for n, b in headers.items()})
     bundle = Path(args.bundle)
     bundle.mkdir(parents=True, exist_ok=True)
@@ -155,6 +162,8 @@ def main():
     for name in ("kind", "binary", "name", "version", "artifact", "bundle"):
         pack.add_argument("--" + name, required=True)
     pack.add_argument("--header", action="append", default=[])
+    pack.add_argument("--classes-jar")
+    pack.add_argument("--consumer-proguard")
     unpack = commands.add_parser("extract")
     for name in ("archive", "member", "header-prefix", "binary", "headers"):
         unpack.add_argument("--" + name, required=True)

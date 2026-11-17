@@ -385,6 +385,7 @@ int run_desktop(int argc, char** argv) {
       .max_redirects = 0u,
       .default_timeout_ms = 0u,
       .io_slice_ms = 0u,
+      .default_connect_timeout_ms = 0u,
   };
   if (rc == H2_PAL_OK) {
     rc = h2_corehttp_create(&http_config, &http_provider, &http_api);

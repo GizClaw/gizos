@@ -122,7 +122,7 @@ static void check_monitor(const char* raw, size_t raw_len, const char* seed,
   stream.log_user = &connection;
   assert(h2_h2loader_host_serial_monitor_logs(&connection, cancel_after_polls,
                                               &polls) == expected);
-  assert(now > 0u);
+  assert(now > 0u || expected == H2_PAL_ERR_CLOSED);
   assert(logs.len == combined_len);
   assert(memcmp(logs.bytes, combined, combined_len) == 0);
   assert(stream.offset == len);
@@ -153,9 +153,8 @@ int main(int argc, char** argv) {
     static const char raw[] = "console\nordinary console output\r\n";
     static const char decoded[] = "decoded console output\r\n";
     static const char interleaved[] =
-        "console\ndecoded console output\r\nordinary console output\r\n";
-    /* The first raw chunk precedes the entire decoded drain; subsequent
-     * iterations forward the remaining raw chunks. */
+        "decoded console output\r\nconsole\nordinary console output\r\n";
+    /* Already-decoded payload precedes the later raw chunk in this poll. */
     check_monitor(raw, sizeof(raw) - 1u, decoded, sizeof(decoded) - 1u,
                   H2_PAL_EXIT, interleaved, sizeof(interleaved) - 1u);
     static const char raw_line[] = "console\n";
@@ -163,9 +162,9 @@ int main(int argc, char** argv) {
         "H2_PAL_E2E suite=1 case=1 result=0\r\n"
         "H2_LOADER_READY board=fake target=fake\r\n";
     static const char combined[] =
-        "console\n"
         "H2_PAL_E2E suite=1 case=1 result=0\r\n"
-        "H2_LOADER_READY board=fake target=fake\r\n";
+        "H2_LOADER_READY board=fake target=fake\r\n"
+        "console\n";
     check_monitor(raw_line, sizeof(raw_line) - 1u, text, sizeof(text) - 1u,
                   H2_PAL_ERR_CLOSED, combined, sizeof(combined) - 1u);
   } else {

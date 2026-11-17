@@ -3,6 +3,7 @@
 #include "h2_atomic.h"
 
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -71,10 +72,46 @@ struct h2_mfg_aec {
   int16_t* recording;
   size_t recording_bytes;
   const h2_mfg_recording_store_t* store;
+  h2_pal_mem_api_t queue_allocator;
   h2_pal_queue_t* recording_queue;
   unsigned stored_frames;
   int store_opened, store_result, replay_frame_loaded;
 };
+
+static void erase_recording(void* pointer, size_t bytes) {
+  volatile unsigned char* data = pointer;
+  while (bytes-- != 0) *data++ = 0;
+}
+
+typedef union recording_queue_allocation {
+  max_align_t alignment;
+  size_t bytes;
+} recording_queue_allocation_t;
+
+static void* recording_queue_alloc(void* user, size_t bytes) {
+  h2_mfg_aec_t* a = user;
+  if (bytes > SIZE_MAX - sizeof(recording_queue_allocation_t)) return NULL;
+  recording_queue_allocation_t* allocation =
+      h2_pal_mem_alloc(a->owner->rt->mem, sizeof(*allocation) + bytes);
+  if (allocation == NULL) return NULL;
+  allocation->bytes = bytes;
+  return allocation + 1;
+}
+
+static void recording_queue_free(void* user, void* pointer) {
+  h2_mfg_aec_t* a = user;
+  recording_queue_allocation_t* allocation =
+      (recording_queue_allocation_t*)pointer - 1;
+  /* recv/reset do not erase consumed slots. Wipe every byte the provider
+   * allocated, including scratch space and stale or never-consumed frames.
+   * The queue invokes this only after its users stop, also on create failure.
+   */
+  erase_recording(allocation, sizeof(*allocation) + allocation->bytes);
+  h2_pal_mem_free(a->owner->rt->mem, allocation);
+}
+
+static const h2_pal_mem_vtable_t recording_queue_memory = {
+    .alloc = recording_queue_alloc, .free = recording_queue_free};
 
 static int replay(phase_t phase) {
   return phase == REPLAY || phase == REPLAY_ECHO;
@@ -134,12 +171,8 @@ static int open_recording(h2_mfg_aec_t* a) {
                      ? a->samples * sizeof(*a->recording)
                      : (a->diagnostics ? 1u : 2u) * recording_samples(a) *
                            sizeof(*a->recording);
-  a->recording_allocator = a->store == NULL ? m->rt->mem_external : m->rt->mem;
+  a->recording_allocator = m->rt->mem;
   a->recording = h2_pal_mem_alloc(a->recording_allocator, bytes);
-  if (a->recording == NULL && a->store == NULL) {
-    a->recording_allocator = m->rt->mem;
-    a->recording = h2_pal_mem_alloc(a->recording_allocator, bytes);
-  }
   if (a->recording == NULL) {
     (void)snprintf(m->detail, sizeof(m->detail),
                    "AEC recording buffer %zu bytes unavailable", bytes);
@@ -151,17 +184,16 @@ static int open_recording(h2_mfg_aec_t* a) {
   (void)snprintf(
       memory, sizeof(memory),
       "H2_MFG_AEC_MEMORY recording_bytes=%zu recording=%s pcm_bytes=%zu", bytes,
-      a->store != NULL                                ? "store"
-      : a->recording_allocator == m->rt->mem_external ? "external"
-                                                      : "default",
-      m->pcm_bytes);
+      a->store != NULL ? "store" : "default", m->pcm_bytes);
   (void)h2_pal_log_write(m->rt->log, H2_PAL_LOG_INFO, "mfg/aec", memory);
   if (a->store == NULL) return 0;
   if (a->diagnostics) {
+    a->queue_allocator =
+        (h2_pal_mem_api_t){.user = a, .vtable = &recording_queue_memory};
     const h2_pal_queue_config_t config = {.name = "mfg/aec/recording",
                                           .item_size = bytes,
                                           .item_count = RECORDING_QUEUE_FRAMES,
-                                          .allocator = m->rt->mem};
+                                          .allocator = &a->queue_allocator};
     int rc = h2_pal_queue_create(m->rt->queue, &config, &a->recording_queue);
     if (rc != 0) return store_failure(a, rc);
   }
@@ -383,11 +415,11 @@ int h2_mfg_aec_close(h2_mfg_t* m) {
     m->aec->store_opened = 0;
   }
   /* Workers are joined and storage cleanup succeeded before releasing any
-   * dependencies. Both RAM recordings and the small assembly frame are erased.
-   */
+   * dependencies. The queue allocator erases its complete backing allocations;
+   * RAM recordings and the small assembly frame are erased here. */
   h2_pal_queue_destroy(m->rt->queue, m->aec->recording_queue);
   if (m->aec->recording != NULL)
-    memset(m->aec->recording, 0, m->aec->recording_bytes);
+    erase_recording(m->aec->recording, m->aec->recording_bytes);
   h2_pal_mem_free(m->aec->recording_allocator, m->aec->recording);
   if (m->aec->atomics_initialized >= 2)
     h2_atomic_int_destroy(&m->aec->worker_result);

@@ -15,7 +15,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
-from common.bazel import cache_options  # noqa: E402
+from common.bazel import cache_options, graph_options  # noqa: E402
 import tools.bazel.coverage.coverage_report as coverage_report
 
 
@@ -163,7 +163,7 @@ def main() -> int:
     evidence_errors: list[str] = []
     bazel_exit_code = 1
     try:
-        bazel_cache_options = cache_options()
+        bazel_cache_options = cache_options() + graph_options()
         expected_tests, targets = query_graph(bazel, bazel_cache_options)
         instrumentation_filter = target_instrumentation_filter(targets)
         bazel_output = Path(

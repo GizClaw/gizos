@@ -20,6 +20,9 @@ typedef struct advertising_capture {
   size_t server_stack_size;
   h2_pal_task_t* server_task;
   unsigned fail_join;
+  int server_join_result;
+  unsigned unregisters;
+  bool fail_register;
   bool fail_unregister;
   bool fail_stop;
   bool fail_start;
@@ -61,6 +64,8 @@ static int join_task(void* user, h2_pal_task_t* task) {
     ++capture->server_joins;
   else
     ++capture->link_joins;
+  if (server && capture->server_join_result != H2_PAL_OK)
+    return capture->server_join_result;
   if (capture->fail_join == (server ? 2u : 1u)) {
     capture->fail_join = 0u;
     return H2_PAL_ERR_TASK;
@@ -98,8 +103,9 @@ static h2_pal_result_t ok(void* user) {
 }
 static h2_pal_result_t register_services(
     void* user, const h2_pal_ble_gatt_service_t* services, size_t count) {
-  (void)user;
+  advertising_capture_t* capture = user;
   assert(count == 1u);
+  if (capture->fail_register) return H2_PAL_ERR_NO_MEMORY;
   if (services->out_service_handle != NULL) *services->out_service_handle = 1u;
   for (size_t i = 0u; i < services->characteristic_count; ++i) {
     const h2_pal_ble_gatt_characteristic_t* value =
@@ -114,6 +120,7 @@ static h2_pal_result_t unregister_service(void* user,
                                           const h2_pal_ble_uuid_t* uuid) {
   advertising_capture_t* capture = user;
   (void)uuid;
+  ++capture->unregisters;
   if (capture->fail_unregister) {
     capture->fail_unregister = false;
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -262,6 +269,25 @@ static void test_mode(h2_loader_ble_advertising_mode_t mode, bool named,
     assert(service == NULL && capture.live_allocations == 0u);
     assert(capture.live_subscriptions == 0u && capture.task_starts == 0u);
   }
+  if (failure == 7u || failure == 8u) {
+    const int error =
+        failure == 7u ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_UNSUPPORTED;
+    capture.fail_register = true;
+    capture.server_join_result = error;
+    assert(h2_loader_ble_service_open(&config, &service) == error);
+    assert(service != NULL && capture.live_allocations != 0u);
+    assert(capture.task_starts == 1u && capture.server_joins == 2u &&
+           capture.link_joins == 0u && capture.live_subscriptions == 4u);
+    assert(h2_loader_ble_service_close(service) == error);
+    assert(capture.live_allocations != 0u && capture.live_subscriptions == 4u);
+    assert(h2_loader_ble_service_request_advertising_paused(service, true) ==
+           H2_PAL_ERR_CLOSED);
+    capture.server_join_result = H2_PAL_OK;
+    assert(h2_loader_ble_service_close(service) == H2_PAL_OK);
+    assert(capture.server_joins == 4u && capture.unregisters == 0u);
+    assert(capture.live_allocations == 0u && capture.live_subscriptions == 0u);
+    return;
+  }
   if (failure == 5u) {
     capture.fail_start = true;
     capture.fail_unregister = true;
@@ -331,7 +357,7 @@ int main(void) {
   test_mode(H2_LOADER_BLE_ADVERTISING_LEGACY, false, 0u, 49152u);
   test_mode(H2_LOADER_BLE_ADVERTISING_LEGACY, true, 0u, 49152u);
   test_mode(H2_LOADER_BLE_ADVERTISING_EXTENDED, true, 0u, 16384u);
-  for (unsigned failure = 1u; failure <= 6u; ++failure) {
+  for (unsigned failure = 1u; failure <= 8u; ++failure) {
     test_mode(H2_LOADER_BLE_ADVERTISING_LEGACY, true, failure, 0u);
     if (failure != 5u)
       test_mode(H2_LOADER_BLE_ADVERTISING_EXTENDED, true, failure, 0u);

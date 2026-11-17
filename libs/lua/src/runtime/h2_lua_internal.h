@@ -199,14 +199,16 @@ h2_pal_result_t h2_lua_job_close_display(h2_lua_job_t* job);
  * the provider's operations to the `link` table on top of the stack. deliver
  * runs on the owning worker with the job mutex held. job_ended runs with the
  * job mutex held before the slot is released, only requests teardown and never
- * blocks; destroy joins and frees the provider after every
- * worker has been joined.
+ * blocks. join requests teardown and attempts checked cleanup after every VM
+ * worker has been joined; failure retains the provider and its dependencies for
+ * retry. destroy frees the provider only after a successful join.
  */
 typedef struct h2_lua_link_hooks {
   void (*open_module)(void* user, lua_State* state, struct h2_lua_job* job);
   void (*deliver)(void* user, struct h2_lua_job* job);
   void (*job_ended)(void* user, h2_lua_job_id_t job_id,
                     uint32_t job_generation);
+  h2_pal_result_t (*join)(void* user);
   void (*destroy)(void* user);
 } h2_lua_link_hooks_t;
 

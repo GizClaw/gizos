@@ -276,6 +276,61 @@ h2_pal_result_t h2_sctp_retry_pending_emit(
   return result;
 }
 
+/* Independent protocol tasks share the provider registry. Never allocate,
+ * release association resources or invoke callbacks while holding this lock. */
+static h2_pal_result_t h2_sctp_registry_lock(h2_sctp_t* provider) {
+  return provider->sync == NULL
+             ? H2_PAL_OK
+             : h2_pal_mutex_lock(provider->sync, provider->registry_mutex);
+}
+
+static void h2_sctp_registry_unlock(h2_sctp_t* provider) {
+  if (provider->sync != NULL)
+    (void)h2_pal_mutex_unlock(provider->sync, provider->registry_mutex);
+}
+
+/* Detach only metadata while synchronized; allocator calls remain outside the
+ * mutex. A retiring close never touches its entry after the release store. */
+static h2_sctp_registry_entry_t* h2_sctp_registry_collect(h2_sctp_t* provider) {
+  h2_sctp_registry_entry_t* retired = NULL;
+  h2_sctp_registry_entry_t** cursor = &provider->registry;
+  while (*cursor != NULL) {
+    h2_sctp_registry_entry_t* entry = *cursor;
+    if (h2_atomic_bool_load(&entry->retired, H2_ATOMIC_ACQUIRE)) {
+      *cursor = entry->next;
+      provider->association_count--;
+      entry->next = retired;
+      retired = entry;
+    } else {
+      cursor = &entry->next;
+    }
+  }
+  return retired;
+}
+
+static void h2_sctp_registry_release(h2_sctp_t* provider,
+                                     h2_sctp_registry_entry_t* entries) {
+  while (entries != NULL) {
+    h2_sctp_registry_entry_t* next = entries->next;
+    h2_atomic_bool_destroy(&entries->retired);
+    h2_sctp_free(provider->mem, entries);
+    entries = next;
+  }
+}
+
+static void h2_sctp_release_association(
+    h2_pal_sctp_association_t* association) {
+  h2_sctp_clear_control(association);
+  h2_sctp_packet_release(association, association->pending_emit);
+  association->pending_emit = NULL;
+  h2_sctp_packet_pool_destroy(association);
+  h2_sctp_free(association->mem, association->rx_assembly);
+  h2_sctp_free(association->mem, association->peer_cookie);
+  h2_sctp_reliability_release_all(association);
+  h2_sctp_stream_release_all(association);
+  h2_sctp_free(association->mem, association);
+}
+
 static h2_pal_result_t h2_sctp_vtable_association_create(
     void* user, const h2_pal_sctp_association_config_t* config,
     h2_pal_sctp_association_t** out_association) {
@@ -335,9 +390,34 @@ static h2_pal_result_t h2_sctp_vtable_association_create(
   association->control_deadline_ms = H2_PAL_SCTP_NO_DEADLINE;
   association->heartbeat_deadline_ms = H2_PAL_SCTP_NO_DEADLINE;
   association->sack_deadline_ms = H2_PAL_SCTP_NO_DEADLINE;
-  association->next = provider->associations;
-  provider->associations = association;
+  h2_sctp_registry_entry_t* entry =
+      h2_sctp_alloc(provider->mem, sizeof(*entry));
+  if (entry == NULL) {
+    h2_sctp_release_association(association);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  h2_atomic_result_t atomic_result =
+      h2_atomic_bool_init(&entry->retired, false);
+  if (atomic_result != H2_ATOMIC_OK) {
+    h2_sctp_free(provider->mem, entry);
+    h2_sctp_release_association(association);
+    return atomic_result == H2_ATOMIC_NO_MEMORY     ? H2_PAL_ERR_NO_MEMORY
+           : atomic_result == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                                    : H2_PAL_ERR_INVALID_STATE;
+  }
+  const h2_pal_result_t lock_result = h2_sctp_registry_lock(provider);
+  if (lock_result != H2_PAL_OK) {
+    h2_sctp_registry_release(provider, entry);
+    h2_sctp_release_association(association);
+    return lock_result;
+  }
+  h2_sctp_registry_entry_t* retired = h2_sctp_registry_collect(provider);
+  entry->next = provider->registry;
+  provider->registry = entry;
   provider->association_count++;
+  h2_sctp_registry_unlock(provider);
+  h2_sctp_registry_release(provider, retired);
+  association->registry_entry = entry;
   *out_association = association;
   return H2_PAL_OK;
 }
@@ -450,26 +530,34 @@ static h2_pal_result_t h2_sctp_vtable_association_close(
   if (association->in_callback) {
     return H2_PAL_ERR_BUSY;
   }
-  h2_pal_sctp_association_t** cursor = &provider->associations;
-  while (*cursor != NULL && *cursor != association) {
+  h2_sctp_registry_entry_t* entry = association->registry_entry;
+  const h2_pal_result_t lock_result = h2_sctp_registry_lock(provider);
+  if (lock_result != H2_PAL_OK) {
+    /* The registry stores no pointer into association storage. Complete every
+     * caller-owned lifetime before publishing retirement; a concurrent creator
+     * may reclaim entry immediately after the store. Never access it again. */
+    h2_sctp_release_association(association);
+    *association_pointer = NULL;
+    h2_atomic_bool_store(&entry->retired, true, H2_ATOMIC_RELEASE);
+    return H2_PAL_OK;
+  }
+  h2_sctp_registry_entry_t* retired = h2_sctp_registry_collect(provider);
+  h2_sctp_registry_entry_t** cursor = &provider->registry;
+  while (*cursor != NULL && *cursor != entry) {
     cursor = &(*cursor)->next;
   }
   if (*cursor == NULL) {
+    h2_sctp_registry_unlock(provider);
+    h2_sctp_registry_release(provider, retired);
     return H2_PAL_ERR_INVALID_ARG;
   }
-  *cursor = association->next;
+  *cursor = entry->next;
+  entry->next = retired;
   provider->association_count--;
-  h2_sctp_clear_control(association);
-  h2_sctp_packet_release(association, association->pending_emit);
-  association->pending_emit = NULL;
-  h2_sctp_packet_pool_destroy(association);
-  h2_sctp_free(association->mem, association->rx_assembly);
-  association->rx_assembly = NULL;
-  h2_sctp_free(association->mem, association->peer_cookie);
-  h2_sctp_reliability_release_all(association);
-  h2_sctp_stream_release_all(association);
-  h2_sctp_free(association->mem, association);
+  h2_sctp_registry_unlock(provider);
+  h2_sctp_release_association(association);
   *association_pointer = NULL;
+  h2_sctp_registry_release(provider, entry);
   return H2_PAL_OK;
 }
 
@@ -486,8 +574,9 @@ static const h2_pal_sctp_vtable_t h2_sctp_vtable = {
     .association_close = h2_sctp_vtable_association_close,
 };
 
-h2_pal_result_t h2_sctp_create(const h2_sctp_config_t* config,
-                               h2_sctp_t** out_provider) {
+static h2_pal_result_t h2_sctp_create_impl(const h2_sctp_config_t* config,
+                                           const h2_pal_sync_api_t* sync,
+                                           h2_sctp_t** out_provider) {
   if (out_provider == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -502,9 +591,30 @@ h2_pal_result_t h2_sctp_create(const h2_sctp_config_t* config,
         config->packet_mem->vtable->free == NULL))) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
+  if (sync != NULL &&
+      (sync->vtable == NULL || sync->vtable->create_mutex == NULL ||
+       sync->vtable->destroy_mutex == NULL ||
+       sync->vtable->lock_mutex == NULL ||
+       sync->vtable->unlock_mutex == NULL)) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
   h2_sctp_t* provider = h2_sctp_alloc(config->mem, sizeof(*provider));
   if (provider == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
+  }
+  provider->sync = sync;
+  if (sync != NULL) {
+    const h2_pal_mutex_config_t mutex_config = {
+        .name = "h2sctp/registry",
+        .allocator = config->mem,
+        .flags = H2_PAL_MUTEX_FLAG_NONE,
+    };
+    const h2_pal_result_t result =
+        h2_pal_mutex_create(sync, &mutex_config, &provider->registry_mutex);
+    if (result != H2_PAL_OK || provider->registry_mutex == NULL) {
+      h2_sctp_free(config->mem, provider);
+      return result == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : result;
+    }
   }
   provider->mem = config->mem;
   provider->packet_mem = config->packet_mem;
@@ -521,6 +631,21 @@ h2_pal_result_t h2_sctp_create(const h2_sctp_config_t* config,
   return H2_PAL_OK;
 }
 
+h2_pal_result_t h2_sctp_create(const h2_sctp_config_t* config,
+                               h2_sctp_t** out_provider) {
+  return h2_sctp_create_impl(config, NULL, out_provider);
+}
+
+h2_pal_result_t h2_sctp_create_with_sync(const h2_sctp_config_t* config,
+                                         const h2_pal_sync_api_t* sync,
+                                         h2_sctp_t** out_provider) {
+  if (sync == NULL) {
+    if (out_provider != NULL) *out_provider = NULL;
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  return h2_sctp_create_impl(config, sync, out_provider);
+}
+
 const h2_pal_sctp_api_t* h2_sctp_api(h2_sctp_t* provider) {
   return provider == NULL ? NULL : &provider->api;
 }
@@ -533,8 +658,16 @@ h2_pal_result_t h2_sctp_destroy(h2_sctp_t** provider_pointer) {
     return H2_PAL_OK;
   }
   h2_sctp_t* provider = *provider_pointer;
-  if (provider->association_count != 0u || provider->associations != NULL) {
+  /* Destruction is caller-quiescent, so even a persistently failing registry
+   * mutex cannot prevent collection of provider-only retired bookkeeping. */
+  h2_sctp_registry_release(provider, h2_sctp_registry_collect(provider));
+  if (provider->association_count != 0u || provider->registry != NULL) {
     return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (provider->sync != NULL) {
+    const h2_pal_result_t result =
+        h2_pal_mutex_destroy(provider->sync, provider->registry_mutex);
+    if (result != H2_PAL_OK) return result;
   }
   const h2_pal_mem_api_t* mem = provider->mem;
   h2_pal_mem_free(mem, provider);

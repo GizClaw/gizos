@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <wolfssl/ssl.h>
+#include <wolfssl/wolfio.h>
 
 typedef struct test_file {
   uint8_t* data;
@@ -71,10 +72,6 @@ static void server_ready(tls_server_t* server, uint16_t port) {
 
 static void* tls_server_thread(void* arg) {
   tls_server_t* server = (tls_server_t*)arg;
-  sigset_t sigpipe_mask;
-  assert(sigemptyset(&sigpipe_mask) == 0);
-  assert(sigaddset(&sigpipe_mask, SIGPIPE) == 0);
-  assert(pthread_sigmask(SIG_BLOCK, &sigpipe_mask, NULL) == 0);
   WOLFSSL_CTX* ctx = wolfSSL_CTX_new(wolfSSLv23_server_method());
   assert(ctx != NULL);
   assert(wolfSSL_CTX_use_certificate_file(
@@ -104,6 +101,14 @@ static void* tls_server_thread(void* arg) {
     WOLFSSL* ssl = wolfSSL_new(ctx);
     assert(ssl != NULL);
     assert(wolfSSL_set_fd(ssl, fd) == WOLFSSL_SUCCESS);
+    /* The independent fixture must protect its own socket writes too. */
+#if defined(__APPLE__)
+    const int no_signal = 1;
+    assert(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_signal,
+                      sizeof(no_signal)) == 0);
+#else
+    wolfSSL_SetIOWriteFlags(ssl, MSG_NOSIGNAL);
+#endif
     if (wolfSSL_accept(ssl) == WOLFSSL_SUCCESS) {
       uint8_t request[4];
       assert(wolfSSL_read(ssl, request, sizeof(request)) ==
@@ -192,7 +197,12 @@ static void run_case(const test_file_t* ca, const char* server_name,
 
 int main(int argc, char** argv) {
   assert(argc == 1 || argc == 5);
-  assert(signal(SIGPIPE, SIG_IGN) != SIG_ERR);
+  /* The client must rely on the provider's per-socket suppression. */
+  assert(signal(SIGPIPE, SIG_DFL) != SIG_ERR);
+  sigset_t sigpipe_mask;
+  assert(sigemptyset(&sigpipe_mask) == 0);
+  assert(sigaddset(&sigpipe_mask, SIGPIPE) == 0);
+  assert(pthread_sigmask(SIG_UNBLOCK, &sigpipe_mask, NULL) == 0);
   const char* ca_path = argc == 5 ? argv[1] : "tests/fixtures/localhost_ca.pem";
   const char* wrong_ca_path =
       argc == 5 ? argv[2] : "tests/fixtures/wrong_ca.pem";

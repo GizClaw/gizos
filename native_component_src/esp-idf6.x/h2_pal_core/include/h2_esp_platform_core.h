@@ -102,8 +102,6 @@ const h2_pal_timer_api_t* h2_esp_platform_timer_api(void);
 
 h2_pal_mem_api_t* h2_esp_platform_default_allocator(void);
 h2_pal_mem_api_t* h2_esp_platform_psram_allocator(void);
-/** Optional external heap for task-context work, NULL without a PSRAM heap. */
-const h2_pal_mem_api_t* h2_esp_platform_external_allocator(void);
 /** Board-configured console; getter performs no driver operations. */
 const h2_pal_io_stream_api_t* h2_esp_platform_io_stream_api(void);
 h2_pal_mem_api_t* h2_esp_platform_internal_allocator(void);
@@ -204,6 +202,10 @@ int h2_esp_platform_wifi_ensure_started(void);
  * The native connect/disconnect transaction gate also rejects concurrent calls.
  * Returns BUSY without disrupting an active SoftAP. Repeated stops succeed;
  * teardown failures retain owned resources/state for a subsequent stop retry.
+ * Address loss and association reset execute on the SDK event loop, before
+ * netif destruction. Event submission and acknowledgment each wait at most
+ * 1000 ms; TIMEOUT retains the pending acknowledgment for the next stop.
+ * After a failed release, start returns INVALID_STATE until stop succeeds.
  * Returns UNSUPPORTED when the native Wi-Fi provider is disabled.
  */
 int h2_esp_platform_wifi_stop(void);

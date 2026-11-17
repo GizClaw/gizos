@@ -3,7 +3,18 @@
 from __future__ import annotations
 
 import os
+import re
 from urllib.parse import urlsplit
+
+
+def graph_options() -> list[str]:
+    """Return an explicitly selected extra profile for complete graph commands."""
+    profile = os.environ.get("BAZEL_GRAPH_CONFIG", "").strip()
+    if not profile:
+        return []
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", profile) is None:
+        raise ValueError("BAZEL_GRAPH_CONFIG must be one named Bazel configuration")
+    return [f"--config={profile}"]
 
 
 def cache_options() -> list[str]:

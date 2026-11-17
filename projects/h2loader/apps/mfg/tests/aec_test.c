@@ -45,7 +45,8 @@ typedef struct fake {
   int clipping, close_error, unregister_error, missing_dac;
   int opaque, disabled, register_error, partial_reads;
   int output_clipping, missing_capture, drain_error;
-  int external, in_capture, block_replay, defer_final_recording;
+  int external, in_capture, in_queue_create, block_replay,
+      defer_final_recording;
   unsigned tick_ms, blocked_replay_writes;
   int in_service;
   unsigned capture_start_delay_ms, playback_start_delay_ms;
@@ -429,8 +430,10 @@ static int capture_queue_create(void* user, const h2_pal_queue_config_t* config,
   assert(!f->in_capture && !f->mic && !f->speaker && f->capture_queue == NULL);
   assert(config->item_count == 4 &&
          config->item_size == f->frame_samples * sizeof(int16_t) &&
-         config->allocator == f->rt.mem);
+         config->allocator != NULL);
+  f->in_queue_create = 1;
   int rc = h2_pal_queue_create(h2_desktop_platform_queue_api(), config, out);
+  f->in_queue_create = 0;
   if (rc == 0) f->capture_queue = *out;
   return rc;
 }
@@ -844,11 +847,16 @@ static void opaque_mute_clipping_and_transport_failures(void) {
 typedef struct memory_budget {
   size_t limit, used, peak;
   const int* in_capture;
+  const int* in_queue_create;
+  unsigned queue_allocations, queue_frees;
 } memory_budget_t;
 
 typedef union budget_header {
   max_align_t alignment;
-  size_t bytes;
+  struct {
+    size_t bytes;
+    int recording_queue;
+  } allocation;
 } budget_header_t;
 
 static void* budget_alloc(void* user, size_t bytes) {
@@ -857,7 +865,11 @@ static void* budget_alloc(void* user, size_t bytes) {
   if (bytes > budget->limit - budget->used) return NULL;
   budget_header_t* allocation = malloc(sizeof(*allocation) + bytes);
   if (allocation == NULL) return NULL;
-  allocation->bytes = bytes;
+  allocation->allocation.bytes = bytes;
+  allocation->allocation.recording_queue =
+      budget->in_queue_create != NULL && *budget->in_queue_create;
+  budget->queue_allocations += allocation->allocation.recording_queue;
+  memset(allocation + 1, 0xa5, bytes);
   budget->used += bytes;
   if (budget->used > budget->peak) budget->peak = budget->used;
   return allocation + 1;
@@ -866,8 +878,17 @@ static void* budget_alloc(void* user, size_t bytes) {
 static void budget_free(void* user, void* pointer) {
   memory_budget_t* budget = user;
   budget_header_t* allocation = (budget_header_t*)pointer - 1;
-  assert(budget->used >= allocation->bytes);
-  budget->used -= allocation->bytes;
+  assert(budget->in_capture == NULL || !*budget->in_capture);
+  size_t bytes = allocation->allocation.bytes;
+  assert(budget->used >= bytes);
+  if (allocation->allocation.recording_queue) {
+    /* Inspect every byte returned by the production queue provider, including
+     * consumed slots, its control allocation and allocation prefix. */
+    const unsigned char* data = pointer;
+    for (size_t i = 0; i < bytes; ++i) assert(data[i] == 0);
+    ++budget->queue_frees;
+  }
+  budget->used -= bytes;
   free(allocation);
 }
 
@@ -923,7 +944,8 @@ static void external_recordings_keep_all_pcm_with_small_memory(void) {
       fake_t f;
       init_external(&f, sizes[i], opaque);
       memory_budget_t budget = {.limit = 12u * 1024u,
-                                .in_capture = &f.in_capture};
+                                .in_capture = &f.in_capture,
+                                .in_queue_create = &f.in_queue_create};
       h2_pal_mem_api_t mem = {.user = &budget, .vtable = &vtable};
       f.rt.mem = &mem;
       f.human_speech = 1;
@@ -950,7 +972,50 @@ static void external_recordings_keep_all_pcm_with_small_memory(void) {
       assert(f.recording.closes == 1 && !f.recording.live &&
              f.recording.pcm == NULL && f.capture_queue == NULL);
       assert(budget.peak <= budget.limit && budget.used == 0);
+      assert(budget.queue_frees == budget.queue_allocations);
+      assert(opaque ? budget.queue_frees == 0 : budget.queue_frees != 0);
     }
+  }
+}
+
+static void external_queue_exit_erases_all_storage(void) {
+  static const h2_pal_mem_vtable_t vtable = {.alloc = budget_alloc,
+                                             .free = budget_free};
+  for (unsigned which = 0; which < 4; ++which) {
+    fake_t f;
+    init_external(&f, SAMPLES, 0);
+    memory_budget_t budget = {.limit = 12u * 1024u,
+                              .in_capture = &f.in_capture,
+                              .in_queue_create = &f.in_queue_create};
+    h2_pal_mem_api_t mem = {.user = &budget, .vtable = &vtable};
+    f.rt.mem = &mem;
+    f.human_speech = 1;
+    assert(h2_mfg_hardware_enter(&f.mfg, 0) == 0);
+    wait_for_phase(&f, "SPEAK OVER TONE");
+    uint64_t deadline = f.now + 10000;
+    /* First consume some frames so their PCM remains in logically empty slots.
+     */
+    while (f.recording.writes[0] < 4 && f.now < deadline) assert(tick(&f) == 0);
+    assert(f.recording.writes[0] >= 4 && !f.mfg.model.ready);
+    if (which == 1 || which == 2) {
+      if (which == 1) f.recording.write_error = H2_PAL_ERR_IO;
+      if (which == 2) f.tick_ms = 250; /* Queue overflow leaves buffered PCM. */
+      int rc = 0;
+      while (rc == 0 && f.now < deadline) rc = tick(&f);
+      assert(rc == H2_PAL_ERR_IO && !f.mfg.model.ready);
+    }
+    if (which == 3) {
+      f.recording.close_error = H2_PAL_ERR_BUSY;
+      assert(h2_mfg_hardware_leave(&f.mfg) == H2_PAL_ERR_BUSY);
+      assert(budget.queue_allocations != 0 && budget.queue_frees == 0 &&
+             f.capture_queue != NULL && f.mfg.aec != NULL);
+      f.recording.close_error = 0;
+    }
+    /* which=0 interrupts a healthy recording; failed paths must erase both
+     * consumed and still-buffered slots through the same provider lifecycle. */
+    teardown(&f);
+    assert(budget.used == 0 && budget.queue_frees != 0 &&
+           budget.queue_frees == budget.queue_allocations);
   }
 }
 
@@ -1080,14 +1145,17 @@ static void external_allocation_failure_keeps_cleanup_available(void) {
                                              .free = budget_free};
   fake_t f;
   init_external(&f, SAMPLES, 0);
-  memory_budget_t budget = {.limit = 4u * 1024u, .in_capture = &f.in_capture};
+  memory_budget_t budget = {.limit = 4u * 1024u,
+                            .in_capture = &f.in_capture,
+                            .in_queue_create = &f.in_queue_create};
   h2_pal_mem_api_t mem = {.user = &budget, .vtable = &vtable};
   f.rt.mem = &mem;
   assert(h2_mfg_hardware_enter(&f.mfg, 0) == H2_PAL_ERR_NO_MEMORY);
   assert(f.mfg.aec != NULL && f.mfg.pcm != NULL && f.recording.opens == 0 &&
          f.capture_queue == NULL && !f.mfg.model.ready);
   teardown(&f);
-  assert(budget.used == 0 && f.recording.closes == 0);
+  assert(budget.used == 0 && f.recording.closes == 0 &&
+         budget.queue_frees == budget.queue_allocations);
 }
 
 static void external_paths_preserve_acoustic_and_transport_rejection(void) {
@@ -1360,43 +1428,34 @@ static void recording_release(void* user, void* pointer) {
 static void recording_memory_placement(void) {
   const h2_pal_mem_vtable_t memory = {.alloc = recording_allocate,
                                       .free = recording_release};
-  for (unsigned scenario = 0; scenario < 4; ++scenario) {
+  for (unsigned scenario = 0; scenario < 2; ++scenario) {
     fake_t f;
     setup_format(&f, 320, 1);
     teardown(&f);
-    recording_heap_t external = {.limit = scenario == 0 ? SIZE_MAX : 0};
-    recording_heap_t ordinary = {
-        .limit = scenario == 0 || scenario == 3 ? 65536u : SIZE_MAX};
-    const h2_pal_mem_api_t external_api = {.user = &external,
-                                           .vtable = &memory};
-    const h2_pal_mem_api_t ordinary_api = {.user = &ordinary,
-                                           .vtable = &memory};
-    f.rt.mem = &ordinary_api;
-    f.rt.mem_external = scenario == 2 ? NULL : &external_api;
+    recording_heap_t heap = {.limit = scenario == 0 ? SIZE_MAX : 65536u};
+    const h2_pal_mem_api_t heap_api = {.user = &heap, .vtable = &memory};
+    f.rt.mem = &heap_api;
     const int rc = h2_mfg_hardware_enter(&f.mfg, f.now);
-    if (scenario == 3) {
+    if (scenario == 1) {
       assert(rc == H2_PAL_ERR_NO_MEMORY && f.mfg.aec != NULL &&
              f.mfg.pcm != NULL);
       assert(!f.mfg.model.ready && !f.speaker && !f.mic);
       assert(strstr(f.mfg.detail, "recording buffer") != NULL);
     } else {
       assert(rc == H2_PAL_OK && f.mfg.aec != NULL);
-      if (scenario == 0) {
-        while (f.now < 25000) assert(tick(&f) == 0 && !f.mfg.model.ready);
-        f.human_speech = 1;
-        while (!f.mfg.model.ready && f.now < 65000) assert(tick(&f) == 0);
-        assert(f.mfg.model.ready && f.echo_replay_frames != 0);
-        f.close_error = 1;
-        assert(h2_mfg_hardware_leave(&f.mfg) == H2_PAL_ERR_BUSY);
-        assert(external.live == 1 && ordinary.live == 2);
-        f.close_error = 0;
-      }
+      while (f.now < 25000) assert(tick(&f) == 0 && !f.mfg.model.ready);
+      f.human_speech = 1;
+      while (!f.mfg.model.ready && f.now < 65000) assert(tick(&f) == 0);
+      assert(f.mfg.model.ready && f.echo_replay_frames != 0);
+      f.close_error = 1;
+      assert(h2_mfg_hardware_leave(&f.mfg) == H2_PAL_ERR_BUSY);
+      assert(heap.live == 3u);
+      f.close_error = 0;
     }
-    assert(external.large_attempts == (scenario == 2 ? 0u : 1u));
-    assert(ordinary.large_attempts == (scenario == 0 ? 0u : 1u));
+    assert(heap.large_attempts == 1u);
     teardown(&f);
-    assert(external.live == 0 && ordinary.live == 0);
-    assert(external.frees == (scenario == 0 ? 1u : 0u));
+    assert(heap.live == 0u);
+    assert(heap.frees == heap.attempts - (scenario == 1 ? 1u : 0u));
   }
 }
 
@@ -1407,6 +1466,7 @@ int main(void) {
   service_exhaustion_and_repeat_wait_for_controller_tick();
   service_errors_and_callback_overflow_remain_failures();
   external_recordings_keep_all_pcm_with_small_memory();
+  external_queue_exit_erases_all_storage();
   external_playback_backpressure_keeps_one_frame_loaded();
   external_retry_begins_a_fresh_voice_recording();
   external_begin_write_and_read_errors_cannot_pass();

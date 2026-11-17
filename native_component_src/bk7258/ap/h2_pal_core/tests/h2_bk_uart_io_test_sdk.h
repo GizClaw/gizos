@@ -7,11 +7,9 @@
 #define CONFIG_UART_PRINT_PORT 1
 #define CONFIG_UART_PRINT_BAUD_RATE 460800
 #define BK_OK 0
-#define kNoErr 0
 #define SHELL_IO_CTRL_TX_SUSPEND 1
 #define SHELL_IO_CTRL_TX_RESUME 2
 typedef int uart_id_t;
-typedef int beken_mutex_t;
 typedef enum {
   PM_SLEEP_MODULE_NAME_UART1 = 2,
   PM_SLEEP_MODULE_NAME_UART2 = 25,
@@ -26,10 +24,6 @@ struct shell_dev {
   shell_drv_t* dev_drv;
 };
 extern shell_dev_t shell_uart;
-int rtos_init_mutex(beken_mutex_t*);
-int rtos_deinit_mutex(beken_mutex_t*);
-int rtos_trylock_mutex(beken_mutex_t*);
-int rtos_unlock_mutex(beken_mutex_t*);
 uint32_t rtos_get_time(void);
 uint32_t rtos_enter_critical(void);
 void rtos_exit_critical(uint32_t);

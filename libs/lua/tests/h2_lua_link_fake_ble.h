@@ -58,6 +58,8 @@ typedef struct fake_device {
    * this device's BLE Host use it. */
   h2_pal_sync_api_t sync;
   h2_pal_sync_vtable_t sync_vtable;
+  /* Desktop tasks with selective, retryable session/server join failures. */
+  h2_pal_task_api_t task;
   fake_terminal_gate_t* terminal_gate;
   pthread_mutex_t bus_mutex;
   struct h2_pal_system_event_subscription subscriptions[FAKE_SUBSCRIPTION_MAX];
@@ -79,6 +81,16 @@ typedef struct fake_device {
   uint8_t retained_uuid[FAKE_GATT_SERVICE_SLOTS][16];
   size_t retained_count;
   int registrations;
+  int registration_attempts;
+  int register_result;
+  int unregister_calls;
+  int unregister_result;
+  h2_pal_task_t* session_task;
+  h2_pal_task_t* server_task;
+  int session_join_calls;
+  int session_join_result;
+  int server_join_calls;
+  int server_join_result;
   int connected;
   uint16_t conn_handle;
   int connects;
@@ -102,6 +114,12 @@ typedef struct fake_snapshot {
   int registered;
   int connected;
   int subscriptions;
+  int registration_attempts;
+  int unregister_calls;
+  int session_task_retained;
+  int server_task_retained;
+  int session_join_calls;
+  int server_join_calls;
 } fake_snapshot_t;
 
 /* Resets the air: both devices idle, each with one foreign service. */

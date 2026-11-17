@@ -1,5 +1,6 @@
 #include "h2_android_platform.h"
 #include "h2_android_audio_internal.h"
+#include "h2_android_touch_state.h"
 
 #include <aaudio/AAudio.h>
 #include <android/log.h>
@@ -55,6 +56,8 @@ struct h2_android_platform {
   uint32_t speaker_volume_percent;
   int speaker_started;
   h2_pal_display_api_t display;
+  h2_pal_touch_api_t touch;
+  h2_android_touch_state_t touch_state;
   int opened;
   uint32_t brightness_percent;
 };
@@ -673,6 +676,50 @@ static int android_display_close(void* user) {
   return H2_DISPLAY_OK;
 }
 
+static int android_touch_open(void* user) {
+  h2_android_platform_t* host = user;
+  if (!host) return H2_PAL_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  if (!host->touch_state.opened) {
+    host->touch_state = (h2_android_touch_state_t){.opened = true};
+    (void)h2_android_touch_capture(&host->touch_state, host->width,
+                                   host->height, host->pointer_x,
+                                   host->pointer_y, host->pointer_pressed != 0);
+  }
+  pthread_mutex_unlock(&host->mutex);
+  return H2_PAL_OK;
+}
+static int android_touch_info(void* user, h2_pal_touch_info_t* out) {
+  h2_android_platform_t* host = user;
+  if (!host || !out) return H2_PAL_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  int rc = host->touch_state.opened ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) *out = (h2_pal_touch_info_t){host->width, host->height};
+  pthread_mutex_unlock(&host->mutex);
+  return rc;
+}
+static int android_touch_poll(void* user, h2_pal_touch_event_t* out) {
+  h2_android_platform_t* host = user;
+  if (!host || !out) return H2_PAL_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  int rc = h2_android_touch_poll(&host->touch_state, out);
+  pthread_mutex_unlock(&host->mutex);
+  return rc;
+}
+static int android_touch_close(void* user) {
+  h2_android_platform_t* host = user;
+  if (!host) return H2_PAL_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  host->touch_state = (h2_android_touch_state_t){0};
+  pthread_mutex_unlock(&host->mutex);
+  return H2_PAL_OK;
+}
+static const h2_pal_touch_vtable_t s_android_touch_vtable = {
+    .open = android_touch_open,
+    .get_info = android_touch_info,
+    .poll_event = android_touch_poll,
+    .close = android_touch_close};
+
 static const h2_pal_display_vtable_t s_android_display_vtable = {
     .open = android_display_open,
     .get_info = android_display_get_info,
@@ -717,6 +764,7 @@ h2_android_platform_t* h2_android_platform_create(
   }
   host->display.user = host;
   host->display.vtable = &s_android_display_vtable;
+  host->touch = (h2_pal_touch_api_t){host, &s_android_touch_vtable};
   host->audio.user = host;
   host->audio.vtable = &s_android_audio_vtable;
   host->speaker_volume_percent = 100u;
@@ -760,6 +808,8 @@ void h2_android_platform_update_pointer(h2_android_platform_t* host, int32_t x,
   host->pointer_x = x;
   host->pointer_y = y;
   host->pointer_pressed = pressed;
+  (void)h2_android_touch_capture(&host->touch_state, host->width, host->height,
+                                 x, y, pressed != 0);
   pthread_mutex_unlock(&host->mutex);
 }
 
@@ -793,7 +843,8 @@ int h2_android_platform_copy_frame(h2_android_platform_t* host, JNIEnv* env,
     return 0;
   }
   pthread_mutex_lock(&host->mutex);
-  if (host->rgba != NULL) {
+  const int copied = host->rgba != NULL;
+  if (copied) {
     for (uint32_t y = 0; y < info.height; ++y) {
       uint8_t* row = (uint8_t*)pixels + (size_t)y * info.stride;
       const uint8_t* source =
@@ -808,7 +859,7 @@ int h2_android_platform_copy_frame(h2_android_platform_t* host, JNIEnv* env,
   }
   pthread_mutex_unlock(&host->mutex);
   (void)AndroidBitmap_unlockPixels(env, bitmap);
-  return host->rgba != NULL;
+  return copied;
 }
 
 const h2_pal_audio_api_t* h2_android_platform_audio_api(
@@ -819,4 +870,8 @@ const h2_pal_audio_api_t* h2_android_platform_audio_api(
 const h2_pal_display_api_t* h2_android_platform_display_api(
     h2_android_platform_t* host) {
   return host == NULL ? NULL : &host->display;
+}
+const h2_pal_touch_api_t* h2_android_platform_touch_api(
+    h2_android_platform_t* host) {
+  return host == NULL ? NULL : &host->touch;
 }

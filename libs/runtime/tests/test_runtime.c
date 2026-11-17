@@ -988,13 +988,12 @@ static h2_pal_result_t test_io_lifecycle(void* user) {
   return H2_PAL_OK;
 }
 
-static void test_runtime_optional_stream_and_memory(void) {
+static void test_runtime_optional_stream(void) {
   test_runtime_env_t env;
   test_env_init(&env);
   h2_runtime_config_t config = test_runtime_config(&env);
   h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-  assert(runtime->mem_external == NULL);
   assert(runtime->io_stream != h2_pal_unsupported_io_stream_api());
   assert(runtime->io_stream->vtable ==
          h2_pal_unsupported_io_stream_api()->vtable);
@@ -1005,20 +1004,13 @@ static void test_runtime_optional_stream_and_memory(void) {
   static const h2_pal_io_stream_vtable_t vtable = {
       .start = test_io_lifecycle, .release = test_io_lifecycle};
   h2_pal_io_stream_api_t stream = {.user = &calls, .vtable = &vtable};
-  h2_pal_mem_api_t external = *h2_pal_unsupported_mem_api();
-  external.user = &calls;
   config.io_stream = &stream;
-  config.mem_external = &external;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-  assert(runtime->io_stream != &stream && runtime->mem_external != &external);
+  assert(runtime->io_stream != &stream);
   assert(runtime->mem->user == env.mem.user);
   assert(runtime->mem->vtable == env.mem.vtable);
   stream.user = NULL;
   stream.vtable = NULL;
-  external.user = NULL;
-  external.vtable = NULL;
-  assert(runtime->mem_external->user == &calls);
-  assert(runtime->mem_external->vtable == h2_pal_unsupported_mem_api()->vtable);
   assert(calls == 0u); /* Init does not start the physical provider. */
   assert(h2_pal_io_stream_start(runtime->io_stream) == H2_PAL_OK);
   assert(calls == 1u);
@@ -5513,7 +5505,7 @@ int main(void) {
   test_runtime_firmware_info_provider();
   test_runtime_device_identity_provider();
   test_runtime_image_provider();
-  test_runtime_optional_stream_and_memory();
+  test_runtime_optional_stream();
   test_runtime_capabilities_are_bound_at_init();
   test_runtime_rejects_incomplete_video_decoder();
   test_runtime_rejects_missing_wifi_csi();

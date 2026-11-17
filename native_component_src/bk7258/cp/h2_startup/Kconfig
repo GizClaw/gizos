@@ -1,0 +1,13 @@
+menu "GizOS BK7258 startup"
+
+    config H2_AP_CPU_FREQ_480M
+        bool "Keep AP active frequency at 480 MHz"
+        default n
+        help
+            Keep the default PM frequency vote at the 480 MHz AP operating
+            point. CP applies it before powering on AP, independently of TLS
+            and audio activity. This is separate from CONFIG_CPU_FREQ_HZ.
+            Disable CPU_DEFAULT_FREQ_60M and CLK_FORCE_MAX_CPU_FREQ_320M when
+            selecting this policy. Deep sleep still uses the SDK power flow.
+
+endmenu
