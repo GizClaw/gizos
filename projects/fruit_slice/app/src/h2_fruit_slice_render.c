@@ -115,6 +115,7 @@ static const uint8_t k_colon[7] = {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00};
 static const uint8_t k_bang[7] = {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04};
 static const uint8_t k_dot[7] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C};
 static const uint8_t k_times[7] = {0x00, 0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11};
+static const uint8_t k_slash[7] = {0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10};
 
 static const uint8_t* glyph(char c) {
   if (c >= '0' && c <= '9') return k_digits[c - '0'];
@@ -131,6 +132,8 @@ static const uint8_t* glyph(char c) {
       return k_bang;
     case '.':
       return k_dot;
+    case '/':
+      return k_slash;
     default:
       return NULL;
   }
@@ -837,7 +840,9 @@ static void draw_splats(h2_fruit_slice_canvas_t* canvas,
 static void draw_trail(h2_fruit_slice_canvas_t* canvas,
                        const h2_fruit_slice_game_t* game) {
   if (game->trail_count < 2u) return;
-  const float width = 7.0f * game->unit;
+  const h2_fruit_slice_weapon_t* weapon =
+      h2_fruit_slice_weapon(game->progress.equipped);
+  const float width = weapon->trail_width * game->unit;
   for (int pass = 0; pass < 2; ++pass) {
     for (uint32_t i = 0; i + 1u < game->trail_count; ++i) {
       const h2_fruit_slice_trail_point_t* p0 = &game->trail[i];
@@ -850,8 +855,8 @@ static void draw_trail(h2_fruit_slice_canvas_t* canvas,
       const float taper = (float)(i + 1u) / (float)(game->trail_count - 1u);
       const float r = width * life * (0.35f + 0.65f * taper);
       if (pass == 0)
-        capsule(canvas, p0->x, p0->y, p1->x, p1->y, r * 1.9f,
-                H2_FRUIT_SLICE_RGB(110, 214, 255), 70u);
+        capsule(canvas, p0->x, p0->y, p1->x, p1->y, r * 1.9f, weapon->color,
+                100u);
       else
         capsule(canvas, p0->x, p0->y, p1->x, p1->y, r,
                 H2_FRUIT_SLICE_RGB(255, 255, 255), 235u);
@@ -900,7 +905,7 @@ static void draw_title(h2_fruit_slice_canvas_t* canvas,
   if (game->best > 0u) {
     char value[24];
     (void)snprintf(value, sizeof(value), "BEST %u", (unsigned)game->best);
-    text_centered(canvas, value, w * 0.5f, h * 0.88f, small,
+    text_centered(canvas, value, w * 0.5f, h * 0.82f, small,
                   H2_FRUIT_SLICE_RGB(255, 222, 80), 230u);
   }
 }
@@ -941,6 +946,111 @@ static void draw_game_over(h2_fruit_slice_canvas_t* canvas,
   }
 }
 
+static void draw_button(h2_fruit_slice_canvas_t* canvas,
+                        const h2_fruit_slice_game_t* game, uint32_t id,
+                        const char* label, bool enabled) {
+  h2_fruit_slice_rect_t r;
+  if (!h2_fruit_slice_game_button_rect(game, id, &r)) return;
+  rounded_rect(
+      canvas, r.x0, r.y0, r.x1, r.y1, 8.0f * game->unit,
+      enabled ? H2_FRUIT_SLICE_RGB(84, 56, 28) : H2_FRUIT_SLICE_RGB(38, 32, 28),
+      256u);
+  const int32_t scale =
+      fit_scale(label, (r.x1 - r.x0) * 0.9f, text_scale(game->unit, 2.5f));
+  text_centered(canvas, label, (r.x0 + r.x1) * 0.5f,
+                (r.y0 + r.y1 - (float)scale * 7.0f) * 0.5f, scale,
+                enabled ? H2_FRUIT_SLICE_RGB(255, 222, 80)
+                        : H2_FRUIT_SLICE_RGB(162, 148, 124),
+                256u);
+}
+
+static void draw_wallet(h2_fruit_slice_canvas_t* canvas,
+                        const h2_fruit_slice_game_t* game, float y) {
+  char value[40];
+  (void)snprintf(value, sizeof(value), "COINS %u",
+                 (unsigned)game->progress.coins);
+  text_centered(canvas, value, (float)canvas->width * 0.5f, y,
+                fit_scale(value, (float)canvas->width * 0.9f,
+                          text_scale(game->unit, 3.0f)),
+                H2_FRUIT_SLICE_RGB(255, 222, 80), 256u);
+}
+
+static void draw_progress_page(h2_fruit_slice_canvas_t* canvas,
+                               const h2_fruit_slice_game_t* game) {
+  const float w = (float)canvas->width, h = (float)canvas->height;
+  const bool tasks = game->phase == H2_FRUIT_SLICE_PHASE_TASKS;
+  const h2_fruit_slice_progress_t* p = &game->progress;
+  text_centered(canvas, tasks ? "COIN TASKS" : "WEAPON SHOP", w * 0.5f,
+                h * 0.04f, text_scale(game->unit, 4.0f),
+                H2_FRUIT_SLICE_RGB(255, 204, 48), 256u);
+  draw_wallet(canvas, game, h * 0.14f);
+  for (unsigned i = 0; i < 3u; ++i) {
+    const float y = h * (0.23f + 0.20f * (float)i);
+    rounded_rect(canvas, w * 0.04f, y, w * 0.68f, y + h * 0.17f,
+                 8.0f * game->unit, H2_FRUIT_SLICE_RGB(20, 14, 10), 220u);
+    const char* name =
+        tasks ? h2_fruit_slice_task(i)->name : h2_fruit_slice_weapon(i)->name;
+    const int32_t scale =
+        fit_scale(name, w * 0.59f, text_scale(game->unit, 2.5f));
+    text(canvas, name, (int32_t)(w * 0.06f), (int32_t)(y + h * 0.02f), scale,
+         H2_FRUIT_SLICE_RGB(245, 238, 222), 256u);
+    char detail[32], foot[24];
+    const char* label;
+    bool enabled;
+    uint32_t button;
+    if (tasks) {
+      const h2_fruit_slice_task_t* task = h2_fruit_slice_task(i);
+      const uint32_t progress = h2_fruit_slice_task_progress(p, i);
+      const bool claimed = i == 2u && p->score_task == 2u;
+      enabled = !claimed && progress >= task->target &&
+                p->coins <= H2_FRUIT_SLICE_PROGRESS_LIMIT - task->reward;
+      label = claimed                    ? "DONE"
+              : enabled                  ? "CLAIM"
+              : progress >= task->target ? "FULL"
+                                         : "PLAY";
+      (void)snprintf(
+          detail, sizeof(detail), "%u/%u +%u COINS",
+          (unsigned)(progress < task->target ? progress : task->target),
+          (unsigned)task->target, (unsigned)task->reward);
+      (void)snprintf(foot, sizeof(foot), "%s",
+                     task->repeatable ? "REPEATABLE" : "ONE-TIME");
+      button = H2_FRUIT_SLICE_BUTTON_CLAIM + i;
+    } else {
+      const h2_fruit_slice_weapon_t* weapon = h2_fruit_slice_weapon(i);
+      const bool owned = (p->owned & (1u << i)) != 0u;
+      enabled = owned || p->coins >= weapon->price;
+      label = p->equipped == i ? "ACTIVE"
+              : owned          ? "EQUIP"
+              : enabled        ? "BUY"
+                               : "LOCKED";
+      (void)snprintf(detail, sizeof(detail), "%s", weapon->detail);
+      (void)snprintf(foot, sizeof(foot), "%u COINS", (unsigned)weapon->price);
+      button = H2_FRUIT_SLICE_BUTTON_WEAPON + i;
+    }
+    text(canvas, detail, (int32_t)(w * 0.06f), (int32_t)(y + h * 0.075f),
+         fit_scale(detail, w * 0.59f, text_scale(game->unit, 2.0f)),
+         H2_FRUIT_SLICE_RGB(255, 210, 120), 240u);
+    text(canvas, foot, (int32_t)(w * 0.06f), (int32_t)(y + h * 0.12f),
+         fit_scale(foot, w * 0.59f, text_scale(game->unit, 2.0f)),
+         H2_FRUIT_SLICE_RGB(220, 205, 180), 240u);
+    draw_button(canvas, game, button, label, enabled);
+    if (!tasks) {
+      const h2_fruit_slice_weapon_t* weapon = h2_fruit_slice_weapon(i);
+      capsule(canvas, w * 0.74f, y + h * 0.14f, w * 0.91f, y + h * 0.14f,
+              weapon->trail_width * game->unit * 0.18f, weapon->color, 256u);
+    }
+  }
+  const char* hint = game->save_status == 1u   ? "SESSION ONLY - NO STORAGE"
+                     : game->save_status == 2u ? "SAVE FAILED - RETRYING"
+                     : game->save_status == 3u ? "SAVE UNREADABLE - REOPEN"
+                     : tasks                   ? "COMBO = 3+ FRUIT/SWIPE"
+                                               : "WIDE CUTS HIT BOMBS";
+  text_centered(canvas, hint, w * 0.5f, h * 0.84f,
+                fit_scale(hint, w * 0.95f, text_scale(game->unit, 2.0f)),
+                H2_FRUIT_SLICE_RGB(240, 232, 214), 256u);
+  draw_button(canvas, game, H2_FRUIT_SLICE_BUTTON_BACK, "BACK", true);
+}
+
 static const h2_fruit_slice_fruit_t* menu_fruit(
     const h2_fruit_slice_game_t* game) {
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i)
@@ -954,6 +1064,8 @@ void h2_fruit_slice_static_key(const h2_fruit_slice_game_t* game,
   const h2_fruit_slice_fruit_t* menu = menu_fruit(game);
   out->phase = (uint32_t)game->phase;
   out->best = game->best;
+  out->progress_revision = game->progress_revision;
+  out->save_status = game->save_status;
   out->menu_y = menu != NULL ? (int32_t)menu->body.y : -1;
   if (game->phase != H2_FRUIT_SLICE_PHASE_TITLE) {
     out->score = game->score;
@@ -964,23 +1076,52 @@ void h2_fruit_slice_static_key(const h2_fruit_slice_game_t* game,
 
 void h2_fruit_slice_render_static(h2_fruit_slice_canvas_t* canvas,
                                   const h2_fruit_slice_game_t* game) {
-  if (game->phase == H2_FRUIT_SLICE_PHASE_TITLE) {
-    draw_title(canvas, game);
+  if (game->phase == H2_FRUIT_SLICE_PHASE_TASKS ||
+      game->phase == H2_FRUIT_SLICE_PHASE_SHOP) {
+    draw_progress_page(canvas, game);
     return;
   }
-  if (game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER)
-    draw_game_over(canvas, game);
-  draw_hud(canvas, game);
+  if (game->phase == H2_FRUIT_SLICE_PHASE_TITLE) {
+    draw_title(canvas, game);
+    draw_wallet(canvas, game, (float)canvas->height * 0.35f);
+    const h2_fruit_slice_weapon_t* weapon =
+        h2_fruit_slice_weapon(game->progress.equipped);
+    text_centered(canvas, weapon->name, (float)canvas->width * 0.5f,
+                  (float)canvas->height * 0.40f, text_scale(game->unit, 2.0f),
+                  weapon->color, 256u);
+  } else {
+    if (game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER) {
+      draw_game_over(canvas, game);
+      draw_wallet(canvas, game, (float)canvas->height * 0.56f);
+    }
+    draw_hud(canvas, game);
+  }
+  if (game->phase != H2_FRUIT_SLICE_PHASE_PLAYING) {
+    bool ready = false;
+    for (unsigned i = 0; i < H2_FRUIT_SLICE_TASKS; ++i)
+      ready |= h2_fruit_slice_task_progress(&game->progress, i) >=
+                   h2_fruit_slice_task(i)->target &&
+               !(i == 2u && game->progress.score_task == 2u);
+    draw_button(canvas, game, H2_FRUIT_SLICE_BUTTON_TASKS,
+                ready ? (game->width < 240 ? "CLAIM!" : "TASKS - CLAIM!")
+                      : "COIN TASKS",
+                true);
+    draw_button(canvas, game, H2_FRUIT_SLICE_BUTTON_SHOP,
+                game->width < 240 ? "SHOP" : "WEAPON SHOP", true);
+  }
 }
 
 void h2_fruit_slice_render_scene(h2_fruit_slice_canvas_t* canvas,
                                  const h2_fruit_slice_game_t* game) {
   const float u = game->unit;
+  if (game->phase == H2_FRUIT_SLICE_PHASE_TASKS ||
+      game->phase == H2_FRUIT_SLICE_PHASE_SHOP)
+    return;
   draw_splats(canvas, game);
 
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_MISSES; ++i) {
     const h2_fruit_slice_miss_t* miss = &game->misses[i];
-    if (!miss->active) continue;
+    if (!miss->active || game->phase != H2_FRUIT_SLICE_PHASE_PLAYING) continue;
     draw_cross(canvas, miss->x, (float)canvas->height - 34.0f * u, 14.0f * u,
                4.0f * u, H2_FRUIT_SLICE_RGB(236, 40, 40),
                fade(miss->age_ms, 1200u, 512u) > 256u

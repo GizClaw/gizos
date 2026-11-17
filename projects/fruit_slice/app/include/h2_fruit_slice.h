@@ -48,7 +48,10 @@ typedef struct h2_fruit_slice_config {
  * supported extent and whose Touch provider is available; Touch coordinates
  * are scaled to the Display extent. The run opens and closes Display and
  * Touch, drains Runtime events, and paces frames with h2_runtime_wait_notify().
- * Pref is optional: when unavailable the best score is kept in memory only.
+ * Pref is optional: when unavailable the best score, coins, task progress and
+ * owned/equipped weapons are kept in memory for this call only. Successful
+ * claims, purchases and equipment changes request one versioned profile save;
+ * failed saves are retried and pending progress is flushed before cleanup.
  * Game state, three RGB565 frame-sized buffers and the fruit texture cache
  * come from Runtime mem before the first frame; frames never allocate.
  * Diagnostics use Runtime log. Every allocation, provider session and

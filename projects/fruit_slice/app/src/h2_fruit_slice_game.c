@@ -13,6 +13,117 @@ static const float k_radius[H2_FRUIT_SLICE_KIND_COUNT] = {46.0f, 34.0f, 32.0f,
 #define SPLAT_LIFE_MS 900u
 #define POPUP_LIFE_MS 900u
 
+static const h2_fruit_slice_weapon_t k_weapons[H2_FRUIT_SLICE_WEAPONS] = {
+    {"CLASSIC KNIFE", "STANDARD CUT", 0u, 0.0f, 7.0f,
+     H2_FRUIT_SLICE_RGB(110, 214, 255)},
+    {"JADE KATANA", "+10 CUT REACH", 40u, 10.0f, 11.0f,
+     H2_FRUIT_SLICE_RGB(100, 255, 152)},
+    {"FLAME AXE", "+20 CUT REACH", 90u, 20.0f, 17.0f,
+     H2_FRUIT_SLICE_RGB(255, 130, 40)},
+};
+static const h2_fruit_slice_task_t k_tasks[H2_FRUIT_SLICE_TASKS] = {
+    {"SLICE 10 FRUIT", 10u, 15u, true},
+    {"MAKE 3 COMBOS", 3u, 25u, true},
+    {"SCORE 20 IN RUN", 20u, 40u, false},
+};
+
+const h2_fruit_slice_weapon_t* h2_fruit_slice_weapon(unsigned id) {
+  return &k_weapons[id < H2_FRUIT_SLICE_WEAPONS ? id : 0u];
+}
+
+const h2_fruit_slice_task_t* h2_fruit_slice_task(unsigned id) {
+  return &k_tasks[id < H2_FRUIT_SLICE_TASKS ? id : 0u];
+}
+
+uint32_t h2_fruit_slice_task_progress(const h2_fruit_slice_progress_t* p,
+                                      unsigned id) {
+  if (id == 0u) return p->fruit_credit;
+  if (id == 1u) return p->combo_credit;
+  return id == 2u && p->score_task != 0u ? k_tasks[2].target : 0u;
+}
+
+void h2_fruit_slice_progress_encode(
+    const h2_fruit_slice_progress_t* p,
+    uint8_t out[H2_FRUIT_SLICE_PROGRESS_BYTES]) {
+  const uint32_t fields[] = {
+      0x31505346u,   1u,       p->coins,   p->fruit_credit, p->combo_credit,
+      p->score_task, p->owned, p->equipped};
+  for (unsigned i = 0; i < 8u; ++i)
+    for (unsigned byte = 0; byte < 4u; ++byte)
+      out[i * 4u + byte] = (uint8_t)(fields[i] >> (byte * 8u));
+}
+
+bool h2_fruit_slice_progress_decode(h2_fruit_slice_progress_t* p,
+                                    const void* data, size_t size) {
+  if (p == NULL || data == NULL || size != H2_FRUIT_SLICE_PROGRESS_BYTES)
+    return false;
+  const uint8_t* bytes = data;
+  uint32_t f[8] = {0};
+  for (unsigned i = 0; i < 8u; ++i)
+    for (unsigned byte = 0; byte < 4u; ++byte)
+      f[i] |= (uint32_t)bytes[i * 4u + byte] << (byte * 8u);
+  if (f[0] != 0x31505346u || f[1] != 1u ||
+      f[2] > H2_FRUIT_SLICE_PROGRESS_LIMIT ||
+      f[3] > H2_FRUIT_SLICE_PROGRESS_LIMIT ||
+      f[4] > H2_FRUIT_SLICE_PROGRESS_LIMIT || f[5] > 2u || (f[6] & 1u) == 0u ||
+      (f[6] & ~7u) != 0u || f[7] >= H2_FRUIT_SLICE_WEAPONS ||
+      (f[6] & (1u << f[7])) == 0u)
+    return false;
+  *p = (h2_fruit_slice_progress_t){f[2], f[3], f[4], f[5], f[6], f[7]};
+  return true;
+}
+
+static void progress_changed(h2_fruit_slice_game_t* game) {
+  game->progress_dirty = true;
+  ++game->progress_revision;
+}
+
+static void score_task_update(h2_fruit_slice_game_t* game) {
+  if (game->score >= k_tasks[2].target && game->progress.score_task == 0u) {
+    game->progress.score_task = 1u;
+    progress_changed(game);
+  }
+}
+
+bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,
+                                     uint32_t button,
+                                     h2_fruit_slice_rect_t* out) {
+  const float w = (float)game->width, h = (float)game->height;
+  if (game->phase == H2_FRUIT_SLICE_PHASE_TITLE ||
+      game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER) {
+    if (button != H2_FRUIT_SLICE_BUTTON_TASKS &&
+        button != H2_FRUIT_SLICE_BUTTON_SHOP)
+      return false;
+    const float left = button == H2_FRUIT_SLICE_BUTTON_TASKS ? 0.05f : 0.53f;
+    *out = (h2_fruit_slice_rect_t){w * left, h * 0.90f, w * (left + 0.42f),
+                                   h * 0.985f};
+    return true;
+  }
+  const bool tasks = game->phase == H2_FRUIT_SLICE_PHASE_TASKS;
+  if (!tasks && game->phase != H2_FRUIT_SLICE_PHASE_SHOP) return false;
+  if (button == H2_FRUIT_SLICE_BUTTON_BACK) {
+    *out = (h2_fruit_slice_rect_t){w * 0.25f, h * 0.90f, w * 0.75f, h * 0.985f};
+    return true;
+  }
+  const uint32_t base =
+      tasks ? H2_FRUIT_SLICE_BUTTON_CLAIM : H2_FRUIT_SLICE_BUTTON_WEAPON;
+  if (button < base || button >= base + 3u) return false;
+  const float top = 0.23f + 0.20f * (float)(button - base);
+  *out =
+      (h2_fruit_slice_rect_t){w * 0.70f, h * top, w * 0.95f, h * (top + 0.17f)};
+  return true;
+}
+
+static uint32_t button_at(const h2_fruit_slice_game_t* game, float x, float y) {
+  for (uint32_t id = 1u; id < H2_FRUIT_SLICE_BUTTON_WEAPON + 3u; ++id) {
+    h2_fruit_slice_rect_t r;
+    if (h2_fruit_slice_game_button_rect(game, id, &r) && x >= r.x0 &&
+        x <= r.x1 && y >= r.y0 && y <= r.y1)
+      return id;
+  }
+  return 0u;
+}
+
 static uint32_t random_next(h2_fruit_slice_game_t* game) {
   uint32_t x = game->rng;
   x ^= x << 13;
@@ -160,6 +271,8 @@ void h2_fruit_slice_game_init(h2_fruit_slice_game_t* game, int32_t width,
   game->gravity = 1.5f * (float)game->height;
   game->rng = seed != 0 ? seed : 0x9E3779B9u;
   game->best = best;
+  game->progress.owned = 1u;
+  game->progress.score_task = best >= k_tasks[2].target ? 1u : 0u;
   enter_title(game);
 }
 
@@ -324,6 +437,10 @@ static void slice_fruit(h2_fruit_slice_game_t* game, unsigned index, float ux,
   if (fruit.menu || game->phase != H2_FRUIT_SLICE_PHASE_PLAYING) return;
   ++game->score;
   ++game->sliced_total;
+  if (game->progress.fruit_credit < H2_FRUIT_SLICE_PROGRESS_LIMIT)
+    ++game->progress.fruit_credit;
+  progress_changed(game);
+  score_task_update(game);
   ++game->stroke_slices;
   game->stroke_last_slice_ms = game->time_ms;
   game->stroke_last_x = fruit.body.x;
@@ -337,6 +454,10 @@ static void finish_combo(h2_fruit_slice_game_t* game) {
       game->phase != H2_FRUIT_SLICE_PHASE_PLAYING)
     return;
   game->score += slices;
+  if (game->progress.combo_credit < H2_FRUIT_SLICE_PROGRESS_LIMIT)
+    ++game->progress.combo_credit;
+  progress_changed(game);
+  score_task_update(game);
   char text[H2_FRUIT_SLICE_POPUP_TEXT_MAX];
   (void)snprintf(text, sizeof(text), "COMBO +%u", (unsigned)slices);
   add_popup(game, text, game->stroke_last_x, game->stroke_last_y,
@@ -366,7 +487,11 @@ static void slice_segment(h2_fruit_slice_game_t* game, float x0, float y0,
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
     const h2_fruit_slice_fruit_t* fruit = &game->fruits[i];
     if (!fruit->active) continue;
-    const float reach = fruit->radius * 0.95f;
+    const float reach =
+        fruit->radius * 0.95f +
+        (fruit->menu ? 0.0f
+                     : h2_fruit_slice_weapon(game->progress.equipped)->reach *
+                           game->unit);
     if (segment_distance2(x0, y0, x1, y1, fruit->body.x, fruit->body.y) <=
         reach * reach)
       slice_fruit(game, i, ux, uy);
@@ -383,9 +508,72 @@ static void add_trail_point(h2_fruit_slice_game_t* game, float x, float y) {
       (h2_fruit_slice_trail_point_t){x, y, game->time_ms};
 }
 
+static void activate_button(h2_fruit_slice_game_t* game, uint32_t button) {
+  if (button == H2_FRUIT_SLICE_BUTTON_TASKS ||
+      button == H2_FRUIT_SLICE_BUTTON_SHOP) {
+    game->return_phase = game->phase;
+    game->phase = button == H2_FRUIT_SLICE_BUTTON_TASKS
+                      ? H2_FRUIT_SLICE_PHASE_TASKS
+                      : H2_FRUIT_SLICE_PHASE_SHOP;
+    game->trail_count = 0u;
+    return;
+  }
+  if (button == H2_FRUIT_SLICE_BUTTON_BACK) {
+    game->phase = game->return_phase;
+    return;
+  }
+  h2_fruit_slice_progress_t* p = &game->progress;
+  if (button >= H2_FRUIT_SLICE_BUTTON_CLAIM &&
+      button < H2_FRUIT_SLICE_BUTTON_CLAIM + H2_FRUIT_SLICE_TASKS) {
+    const unsigned id = button - H2_FRUIT_SLICE_BUTTON_CLAIM;
+    const h2_fruit_slice_task_t* task = h2_fruit_slice_task(id);
+    if (h2_fruit_slice_task_progress(p, id) < task->target ||
+        (id == 2u && p->score_task == 2u) ||
+        p->coins > H2_FRUIT_SLICE_PROGRESS_LIMIT - task->reward)
+      return;
+    p->coins += task->reward;
+    if (id == 0u) p->fruit_credit -= task->target;
+    if (id == 1u) p->combo_credit -= task->target;
+    if (id == 2u) p->score_task = 2u;
+    game->progress_urgent = true;
+    progress_changed(game);
+  } else if (button >= H2_FRUIT_SLICE_BUTTON_WEAPON &&
+             button < H2_FRUIT_SLICE_BUTTON_WEAPON + H2_FRUIT_SLICE_WEAPONS) {
+    const unsigned id = button - H2_FRUIT_SLICE_BUTTON_WEAPON;
+    const h2_fruit_slice_weapon_t* weapon = h2_fruit_slice_weapon(id);
+    if ((p->owned & (1u << id)) == 0u) {
+      if (p->coins < weapon->price) return;
+      p->coins -= weapon->price;
+      p->owned |= 1u << id;
+    }
+    if (p->equipped == id) return;
+    p->equipped = id;
+    game->progress_urgent = true;
+    progress_changed(game);
+  }
+}
+
 void h2_fruit_slice_game_pointer(h2_fruit_slice_game_t* game,
                                  h2_fruit_slice_pointer_t kind, float x,
                                  float y) {
+  if (kind == H2_FRUIT_SLICE_POINTER_DOWN) {
+    game->pressed_button = button_at(game, x, y);
+  }
+  if (game->pressed_button != 0u || game->phase == H2_FRUIT_SLICE_PHASE_TASKS ||
+      game->phase == H2_FRUIT_SLICE_PHASE_SHOP) {
+    /* Only a down/up on the same button activates; a swipe cannot buy or
+     * claim multiple rows and cancellation never activates a button. */
+    if (kind == H2_FRUIT_SLICE_POINTER_UP ||
+        kind == H2_FRUIT_SLICE_POINTER_CANCEL) {
+      const uint32_t pressed = game->pressed_button;
+      game->pressed_button = 0u;
+      game->pointer_down = game->has_last = false;
+      if (kind == H2_FRUIT_SLICE_POINTER_UP && pressed != 0u &&
+          pressed == button_at(game, x, y))
+        activate_button(game, pressed);
+    }
+    return;
+  }
   switch (kind) {
     case H2_FRUIT_SLICE_POINTER_DOWN:
       finish_combo(game);
@@ -456,6 +644,10 @@ static uint16_t age(uint16_t value, uint32_t ms) {
 }
 
 static void step_once(h2_fruit_slice_game_t* game, uint32_t ms) {
+  /* Menus pause the scene, including restart delays and trail ages. */
+  if (game->phase == H2_FRUIT_SLICE_PHASE_TASKS ||
+      game->phase == H2_FRUIT_SLICE_PHASE_SHOP)
+    return;
   game->time_ms += ms;
   const float dt = (float)ms / 1000.0f;
   const float w = (float)game->width, h = (float)game->height;

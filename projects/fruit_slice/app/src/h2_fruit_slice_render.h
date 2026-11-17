@@ -50,6 +50,7 @@ typedef struct h2_fruit_slice_canvas {
  * compare equal with memcmp after zero initialization. */
 typedef struct h2_fruit_slice_static_key {
   uint32_t phase, score, best, lives, new_best;
+  uint32_t progress_revision, save_status;
   /** Menu fruit center row, or -1 without a menu fruit. */
   int32_t menu_y;
 } h2_fruit_slice_static_key_t;

@@ -262,7 +262,150 @@ static void test_wide_display_scales(void) {
   CHECK(h2_fruit_slice_game_radius(&game, H2_FRUIT_SLICE_WATERMELON) == 23.0f);
 }
 
+static void tap_button(h2_fruit_slice_game_t* g, uint32_t id) {
+  h2_fruit_slice_rect_t r;
+  CHECK(h2_fruit_slice_game_button_rect(g, id, &r));
+  const float x = (r.x0 + r.x1) * 0.5f, y = (r.y0 + r.y1) * 0.5f;
+  h2_fruit_slice_game_pointer(g, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+  h2_fruit_slice_game_pointer(g, H2_FRUIT_SLICE_POINTER_UP, x, y);
+}
+
+static void test_tasks_and_shop(void) {
+  start_playing(&game, 12u, 0u);
+  /* Three real combos plus a single fruit satisfy both repeatable tasks. */
+  for (unsigned i = 0; i < 3u; ++i) {
+    clear_scene(&game);
+    for (unsigned k = 0; k < 3u; ++k)
+      place(&game, k, H2_FRUIT_SLICE_APPLE, 100.0f + (float)k * 140.0f, 240.0f);
+    swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  }
+  clear_scene(&game);
+  place(&game, 0, H2_FRUIT_SLICE_APPLE, 240.0f, 240.0f);
+  swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  CHECK(game.progress.coins == 0u);
+  CHECK(game.progress.fruit_credit == 10u && game.progress.combo_credit == 3u);
+  CHECK(game.score == 19u);
+  /* Cross the one-shot score target via gameplay, then finish on a bomb. */
+  clear_scene(&game);
+  place(&game, 0, H2_FRUIT_SLICE_APPLE, 240.0f, 240.0f);
+  swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  CHECK(game.progress.score_task == 1u);
+  clear_scene(&game);
+  place(&game, 0, H2_FRUIT_SLICE_BOMB, 240.0f, 240.0f);
+  swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_TASKS);
+  const uint64_t paused = game.time_ms;
+  h2_fruit_slice_game_step(&game, 2000u);
+  CHECK(game.time_ms == paused);
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_TASKS; ++i) {
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM + i);
+    const uint32_t coins = game.progress.coins;
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM + i);
+    CHECK(game.progress.coins == coins);
+  }
+  CHECK(game.progress.coins == 80u);
+  CHECK(game.progress.fruit_credit == 1u && game.progress.combo_credit == 0u);
+  CHECK(game.progress.score_task == 2u && game.progress_dirty);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_BACK);
+  CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_SHOP);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 2u);
+  CHECK(game.progress.coins == 80u && game.progress.owned == 1u);
+  CHECK(game.progress.equipped == 0u); /* Insufficient funds cannot equip. */
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  CHECK(game.progress.coins == 40u && game.progress.owned == 3u);
+  CHECK(game.progress.equipped == 1u);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  CHECK(game.progress.coins == 40u); /* Already-owned gear never charges. */
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  CHECK(game.progress.equipped == 1u && game.progress.coins == 40u);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_BACK);
+  h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
+  swipe(&game, 60.0f, 346.0f, 420.0f, 346.0f, 12);
+  CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING && game.score == 0u);
+  CHECK(game.progress.coins == 40u && game.progress.equipped == 1u);
+}
+
+static void test_progress_format_and_input(void) {
+  h2_fruit_slice_game_init(&game, 480, 480, 14u, 30u);
+  CHECK(game.progress.owned == 1u && game.progress.coins == 0u);
+  CHECK(game.progress.score_task == 1u); /* Existing best survives upgrade. */
+  game.progress.coins = 90u;
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_SHOP);
+  h2_fruit_slice_rect_t r;
+  CHECK(h2_fruit_slice_game_button_rect(&game,
+                                        H2_FRUIT_SLICE_BUTTON_WEAPON + 2u, &r));
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, r.x0 + 1.0f,
+                              r.y0 + 1.0f);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_CANCEL, r.x0 + 1.0f,
+                              r.y0 + 1.0f);
+  CHECK(game.progress.coins == 90u && game.progress.owned == 1u);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, r.x0 + 1.0f,
+                              r.y0 + 1.0f);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, 0.0f, 0.0f);
+  CHECK(game.progress.coins == 90u);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 2u);
+  CHECK(game.progress.coins == 0u && game.progress.equipped == 2u);
+  uint8_t bytes[H2_FRUIT_SLICE_PROGRESS_BYTES];
+  h2_fruit_slice_progress_encode(&game.progress, bytes);
+  h2_fruit_slice_game_init(&other, 480, 480, 15u, 30u);
+  CHECK(h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
+  CHECK(other.progress.owned == 5u && other.progress.equipped == 2u);
+  CHECK(other.progress.score_task == 1u);
+  CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes,
+                                        sizeof(bytes) - 1u));
+  bytes[4] = 2u; /* Future save version. */
+  CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
+  bytes[4] = 1u;
+  bytes[24] = 1u; /* Equipped axe is not owned. */
+  CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
+  CHECK(other.progress.owned == 5u && other.progress.equipped == 2u);
+  h2_fruit_slice_progress_encode(&game.progress, bytes);
+  memset(bytes + 8, 255, 4u); /* Overflowed currency is rejected. */
+  CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
+}
+
+static void test_weapon_reach(void) {
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_WEAPONS; ++id) {
+    start_playing(&game, 16u, 0u);
+    clear_scene(&game);
+    game.progress.owned = 7u;
+    game.progress.equipped = id;
+    place(&game, 0, H2_FRUIT_SLICE_APPLE, 240.0f, 240.0f);
+    swipe(&game, 40.0f, 279.0f, 440.0f, 279.0f, 1);
+    CHECK(game.score == (id == 0u ? 0u : 1u));
+    clear_scene(&game);
+    place(&game, 0, H2_FRUIT_SLICE_BOMB, 240.0f, 240.0f);
+    swipe(&game, 40.0f, 286.0f, 440.0f, 286.0f, 1);
+    CHECK((game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER) == (id == 2u));
+  }
+}
+
+static void test_progress_limits(void) {
+  h2_fruit_slice_game_init(&game, 480, 480, 24u, 0u);
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
+  game.progress.fruit_credit = 30u;
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_TASKS);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  CHECK(game.progress.coins == H2_FRUIT_SLICE_PROGRESS_LIMIT);
+  CHECK(game.progress.fruit_credit == 30u && !game.progress_dirty);
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT - 15u;
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  CHECK(game.progress.coins == H2_FRUIT_SLICE_PROGRESS_LIMIT);
+  CHECK(game.progress.fruit_credit == 20u);
+  game.progress.coins = 0u;
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  CHECK(game.progress.coins == 30u && game.progress.fruit_credit == 0u);
+}
+
 int main(void) {
+  test_progress_limits();
+  test_tasks_and_shop();
+  test_progress_format_and_input();
+  test_weapon_reach();
   test_title_starts_on_menu_slice();
   test_slice_scores_and_splits();
   test_combo_awards_bonus();

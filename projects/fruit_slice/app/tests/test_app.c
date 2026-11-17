@@ -2,6 +2,7 @@
  * and a Desktop-backed Runtime. */
 #include "h2_desktop_platform.h"
 #include "h2_fruit_slice.h"
+#include "h2_fruit_slice_game.h"
 #include "h2_pal_unsupported.h"
 
 #include <stdio.h>
@@ -51,9 +52,82 @@ typedef struct fixture {
   h2_pal_result_t ready_result;
   unsigned touch_from_frame;
   uint16_t probe_before;
+  bool use_pref;
 } fixture_t;
 
 static fixture_t fx;
+static struct {
+  uint8_t saved[H2_FRUIT_SLICE_PROGRESS_BYTES];
+  uint8_t staged[H2_FRUIT_SLICE_PROGRESS_BYTES];
+  bool exists, pending;
+  unsigned commits, failed_commits, reads, best_reads;
+  int read_result;
+  h2_pal_pref_namespace_t ns;
+} pref;
+
+static int pref_get_blob(h2_pal_pref_namespace_t* ns,
+                         const h2_pal_mem_api_t* allocator, const char* key,
+                         void** out_data, size_t* out_size) {
+  (void)ns;
+  CHECK(strcmp(key, "progress_v1") == 0);
+  ++pref.reads;
+  if (pref.read_result != H2_PAL_OK) return pref.read_result;
+  if (!pref.exists) return H2_PAL_ERR_NOT_FOUND;
+  *out_size = sizeof(pref.saved);
+  *out_data = h2_pal_mem_alloc(allocator, *out_size);
+  if (*out_data == NULL) return H2_PAL_ERR_NO_MEMORY;
+  memcpy(*out_data, pref.saved, *out_size);
+  return H2_PAL_OK;
+}
+static int pref_set_blob(h2_pal_pref_namespace_t* ns, const char* key,
+                         const void* data, size_t size) {
+  (void)ns;
+  CHECK(strcmp(key, "progress_v1") == 0 && size == sizeof(pref.staged));
+  memcpy(pref.staged, data, size);
+  pref.pending = true;
+  return H2_PAL_OK;
+}
+static int pref_get_best(h2_pal_pref_namespace_t* ns, const char* key,
+                         uint32_t* out_value) {
+  (void)ns;
+  CHECK(strcmp(key, H2_FRUIT_SLICE_PREF_BEST_KEY) == 0);
+  *out_value = 21u;
+  ++pref.best_reads;
+  return H2_PAL_OK;
+}
+static int pref_commit(h2_pal_pref_namespace_t* ns) {
+  (void)ns;
+  ++pref.commits;
+  if (pref.failed_commits != 0u) {
+    --pref.failed_commits;
+    return H2_PAL_ERR_IO;
+  }
+  CHECK(pref.pending);
+  memcpy(pref.saved, pref.staged, sizeof(pref.saved));
+  pref.exists = true;
+  pref.pending = false;
+  return H2_PAL_OK;
+}
+static int pref_close(h2_pal_pref_namespace_t* ns) {
+  (void)ns;
+  pref.pending = false;
+  return H2_PAL_OK;
+}
+static int pref_open(void* user, const char* name, h2_pal_pref_open_mode_t mode,
+                     h2_pal_pref_namespace_t** out) {
+  (void)user;
+  (void)mode;
+  CHECK(strcmp(name, H2_FRUIT_SLICE_PREF_NAMESPACE) == 0);
+  pref.ns = (h2_pal_pref_namespace_t){.get_blob = pref_get_blob,
+                                      .set_blob = pref_set_blob,
+                                      .get_u32 = pref_get_best,
+                                      .commit = pref_commit,
+                                      .close = pref_close};
+  *out = &pref.ns;
+  return H2_PAL_OK;
+}
+static const h2_pal_pref_vtable_t pref_vtable = {.open = pref_open};
+static const h2_pal_pref_api_t pref_api = {.vtable = &pref_vtable};
 
 static int display_open(void* user) {
   fake_display_t* d = user;
@@ -207,7 +281,7 @@ static h2_pal_result_t run(void) {
   config.sync = h2_desktop_platform_sync_api();
   config.fs = h2_pal_unsupported_fs_api();
   config.disk = h2_pal_unsupported_disk_api();
-  config.pref = h2_pal_unsupported_pref_api();
+  config.pref = fx.use_pref ? &pref_api : h2_pal_unsupported_pref_api();
   config.crypto = h2_pal_unsupported_crypto_api();
   config.http = h2_pal_unsupported_http_api();
   config.net = h2_pal_unsupported_net_api();
@@ -325,7 +399,103 @@ static void test_ready_failure_stops(void) {
   CHECK(fx.ready_calls == 1u && fx.display.presents == 1u);
 }
 
+static void script_tap(int32_t x, int32_t y) {
+  CHECK(fx.touch.script_count + 2u <= SCRIPT_MAX);
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, x, y};
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, x, y};
+}
+
+static void test_progress_persists_across_sessions(void) {
+  memset(&pref, 0, sizeof(pref));
+  const h2_fruit_slice_progress_t initial = {80u, 10u, 0u, 1u, 1u, 0u};
+  h2_fruit_slice_progress_encode(&initial, pref.saved);
+  pref.exists = true;
+  pref.failed_commits = 1u;
+  reset(25u);
+  fx.use_pref = true;
+  fx.touch_from_frame = 2u;
+  script_tap(120, 450); /* Tasks */
+  script_tap(396, 151); /* Claim fruit credit: first commit fails. */
+  script_tap(396, 343); /* Claim score achievement: retry succeeds. */
+  script_tap(240, 450); /* Back */
+  script_tap(360, 450); /* Shop */
+  script_tap(396, 343); /* Buy and equip axe. */
+  CHECK(run() == H2_PAL_OK);
+  CHECK(pref.commits == 3u && pref.best_reads == 1u && pref.reads == 1u);
+  h2_fruit_slice_progress_t saved = {0};
+  CHECK(h2_fruit_slice_progress_decode(&saved, pref.saved, sizeof(pref.saved)));
+  CHECK(saved.coins == 45u && saved.owned == 5u && saved.equipped == 2u);
+  CHECK(saved.fruit_credit == 0u && saved.score_task == 2u);
+  reset(25u);
+  fx.use_pref = true;
+  fx.touch_from_frame = 2u;
+  script_tap(120, 450);
+  script_tap(396, 151); /* Cannot re-claim saved consumed credits. */
+  script_tap(396, 343); /* Cannot re-claim one-shot achievement. */
+  script_tap(240, 450);
+  script_tap(360, 450);
+  script_tap(396, 151); /* Equip classic. */
+  script_tap(396, 343); /* Re-equip owned axe for free. */
+  CHECK(run() == H2_PAL_OK);
+  CHECK(h2_fruit_slice_progress_decode(&saved, pref.saved, sizeof(pref.saved)));
+  CHECK(saved.coins == 45u && saved.owned == 5u && saved.equipped == 2u);
+  CHECK(pref.commits == 5u && pref.best_reads == 2u && pref.reads == 2u);
+
+  /* A final exit flush retries a transaction that failed in the last frame. */
+  reset(8u);
+  fx.use_pref = true;
+  fx.touch_from_frame = 2u;
+  pref.failed_commits = 1u;
+  script_tap(360, 450);
+  script_tap(396, 151);
+  CHECK(run() == H2_PAL_OK);
+  CHECK(pref.failed_commits == 0u && pref.commits == 7u);
+  CHECK(h2_fruit_slice_progress_decode(&saved, pref.saved, sizeof(pref.saved)));
+  CHECK(saved.equipped == 0u && saved.coins == 45u);
+}
+
+static void test_unreadable_progress_is_preserved(void) {
+  memset(&pref, 0, sizeof(pref));
+  const h2_fruit_slice_progress_t initial = {72u, 10u, 2u, 2u, 3u, 1u};
+  h2_fruit_slice_progress_encode(&initial, pref.saved);
+  pref.exists = true;
+  for (unsigned failure = 0; failure < 2u; ++failure) {
+    if (failure == 0u)
+      pref.read_result = H2_PAL_ERR_IO;
+    else {
+      pref.read_result = H2_PAL_OK;
+      pref.saved[4] = 2u; /* A newer format must never be overwritten. */
+    }
+    uint8_t before[H2_FRUIT_SLICE_PROGRESS_BYTES];
+    memcpy(before, pref.saved, sizeof(before));
+    reset(8u);
+    fx.use_pref = true;
+    fx.touch_from_frame = 2u;
+    script_tap(120, 450);
+    script_tap(396, 343); /* Session-only claim cannot replace unread data. */
+    CHECK(run() == H2_PAL_OK);
+    CHECK(pref.commits == 0u);
+    CHECK(memcmp(before, pref.saved, sizeof(before)) == 0);
+  }
+  /* First launch with only the legacy best key can persist new rewards. */
+  pref.exists = false;
+  reset(8u);
+  fx.use_pref = true;
+  fx.touch_from_frame = 2u;
+  script_tap(120, 450);
+  script_tap(396, 343);
+  CHECK(run() == H2_PAL_OK);
+  h2_fruit_slice_progress_t saved = {0};
+  CHECK(pref.commits == 1u && pref.best_reads == 3u);
+  CHECK(h2_fruit_slice_progress_decode(&saved, pref.saved, sizeof(pref.saved)));
+  CHECK(saved.coins == 40u && saved.owned == 1u && saved.score_task == 2u);
+}
+
 int main(void) {
+  test_unreadable_progress_is_preserved();
+  test_progress_persists_across_sessions();
   CHECK(h2_fruit_slice_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
   test_runs_and_pushes_dirty_rows();
   test_scaled_touch_slices_title_melon();
