@@ -8,6 +8,7 @@
 #include "h2_fruit_slice_sound.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -55,7 +56,56 @@ typedef enum h2_fruit_slice_phase {
   H2_FRUIT_SLICE_PHASE_TITLE = 0,
   H2_FRUIT_SLICE_PHASE_PLAYING,
   H2_FRUIT_SLICE_PHASE_GAME_OVER,
+  H2_FRUIT_SLICE_PHASE_TASKS,
+  H2_FRUIT_SLICE_PHASE_SHOP,
 } h2_fruit_slice_phase_t;
+
+#define H2_FRUIT_SLICE_WEAPONS 3u
+#define H2_FRUIT_SLICE_TASKS 3u
+#define H2_FRUIT_SLICE_PROGRESS_BYTES 32u
+#define H2_FRUIT_SLICE_PROGRESS_LIMIT 999999u
+
+/* Stable weapon IDs and ownership bits are also used by saved profiles. */
+typedef struct h2_fruit_slice_weapon {
+  const char* name;
+  const char* detail;
+  uint32_t price;
+  float reach, trail_width; /**< At a 480-pixel short side. */
+  uint16_t color;
+} h2_fruit_slice_weapon_t;
+
+typedef struct h2_fruit_slice_task {
+  const char* name;
+  uint32_t target, reward;
+  bool repeatable;
+} h2_fruit_slice_task_t;
+
+typedef struct h2_fruit_slice_progress {
+  uint32_t coins, fruit_credit, combo_credit;
+  uint32_t score_task; /**< 0: locked, 1: ready, 2: claimed. */
+  uint32_t owned, equipped;
+} h2_fruit_slice_progress_t;
+
+typedef struct h2_fruit_slice_rect {
+  float x0, y0, x1, y1;
+} h2_fruit_slice_rect_t;
+
+#define H2_FRUIT_SLICE_BUTTON_TASKS 1u
+#define H2_FRUIT_SLICE_BUTTON_SHOP 2u
+#define H2_FRUIT_SLICE_BUTTON_BACK 3u
+#define H2_FRUIT_SLICE_BUTTON_CLAIM 10u
+#define H2_FRUIT_SLICE_BUTTON_WEAPON 20u
+
+const h2_fruit_slice_weapon_t* h2_fruit_slice_weapon(unsigned id);
+const h2_fruit_slice_task_t* h2_fruit_slice_task(unsigned id);
+uint32_t h2_fruit_slice_task_progress(const h2_fruit_slice_progress_t* progress,
+                                      unsigned id);
+/* Explicit little-endian wire format; decode leaves progress unchanged on
+ * malformed/unknown versions, invalid ownership or out-of-range values. */
+void h2_fruit_slice_progress_encode(const h2_fruit_slice_progress_t* progress,
+                                    uint8_t out[H2_FRUIT_SLICE_PROGRESS_BYTES]);
+bool h2_fruit_slice_progress_decode(h2_fruit_slice_progress_t* progress,
+                                    const void* data, size_t size);
 
 typedef enum h2_fruit_slice_pointer {
   H2_FRUIT_SLICE_POINTER_DOWN = 1,
@@ -139,6 +189,14 @@ typedef struct h2_fruit_slice_game {
   bool best_changed;
   bool new_best;
 
+  h2_fruit_slice_progress_t progress;
+  bool progress_dirty, progress_urgent;
+  uint32_t progress_revision; /**< Invalidates cached wallet/task/shop text. */
+  uint32_t save_status;       /**< 0: available, 1: session only, 2: retry, 3:
+                                 unreadable. */
+  h2_fruit_slice_phase_t return_phase;
+  uint32_t pressed_button;
+
   /* Main-loop effects; queue saturation drops low-priority requests first. */
   uint8_t sounds[H2_FRUIT_SLICE_SOUND_QUEUE];
   uint8_t sound_count, audio_mute;
@@ -170,6 +228,11 @@ typedef struct h2_fruit_slice_game {
 /** Reset to the title screen. width/height must be positive. */
 void h2_fruit_slice_game_init(h2_fruit_slice_game_t* game, int32_t width,
                               int32_t height, uint32_t seed, uint32_t best);
+
+/** Shared layout for tap targets and rendered buttons. False when hidden. */
+bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,
+                                     uint32_t button,
+                                     h2_fruit_slice_rect_t* out);
 
 /** Enqueue a sound effect; false if invalid or the bounded queue is full.
  * Swing/slice/coin bursts coalesce within one drain; critical effects replace

@@ -294,7 +294,74 @@ static void test_actual_game_transitions(void) {
   CHECK(game.phase == H2_FRUIT_SLICE_PHASE_TITLE); /* Settings never slice. */
 }
 
+static void tap_control(h2_fruit_slice_game_t* game, uint32_t button) {
+  h2_fruit_slice_rect_t rect;
+  CHECK(h2_fruit_slice_game_button_rect(game, button, &rect));
+  const float x = (rect.x0 + rect.x1) * 0.5f;
+  const float y = (rect.y0 + rect.y1) * 0.5f;
+  h2_fruit_slice_game_pointer(game, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+  h2_fruit_slice_game_pointer(game, H2_FRUIT_SLICE_POINTER_UP, x, y);
+}
+
+static void expect_sounds(h2_fruit_slice_game_t* game,
+                          const h2_fruit_slice_sound_t* expected,
+                          size_t count) {
+  h2_fruit_slice_sound_t sound;
+  for (size_t i = 0; i < count; ++i) {
+    CHECK(h2_fruit_slice_game_take_sound(game, &sound));
+    CHECK(sound == expected[i]);
+  }
+  CHECK(!h2_fruit_slice_game_take_sound(game, &sound));
+}
+
+static void test_economy_sound_transitions(void) {
+  h2_fruit_slice_game_t game;
+  h2_fruit_slice_game_init(&game, 480, 480, 42u, 0u);
+  game.progress.fruit_credit = 10u;
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_TASKS);
+  expect_sounds(&game, NULL, 0u);
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  const h2_fruit_slice_sound_t reward[] = {H2_FRUIT_SLICE_SOUND_TASK,
+                                           H2_FRUIT_SLICE_SOUND_COIN};
+  expect_sounds(&game, reward, 2u);
+  CHECK(game.progress.coins == 15u && game.progress.fruit_credit == 0u);
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  expect_sounds(&game, NULL, 0u); /* Consumed credit cannot celebrate again. */
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_BACK);
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_SHOP);
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  expect_sounds(&game, NULL, 0u); /* Insufficient funds. */
+  CHECK(game.progress.coins == 15u && game.progress.owned == 1u);
+
+  game.progress.coins = 40u;
+  h2_fruit_slice_rect_t rect;
+  CHECK(h2_fruit_slice_game_button_rect(
+      &game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u, &rect));
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN,
+                              rect.x0 + 1.0f, rect.y0 + 1.0f);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_CANCEL,
+                              rect.x0 + 1.0f, rect.y0 + 1.0f);
+  expect_sounds(&game, NULL, 0u);
+  CHECK(game.progress.coins == 40u && game.progress.owned == 1u);
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  const h2_fruit_slice_sound_t purchase[] = {H2_FRUIT_SLICE_SOUND_PURCHASE,
+                                             H2_FRUIT_SLICE_SOUND_EQUIP};
+  expect_sounds(&game, purchase, 2u);
+  CHECK(game.progress.coins == 0u && game.progress.owned == 3u &&
+        game.progress.equipped == 1u);
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  expect_sounds(&game, NULL, 0u); /* Already equipped. */
+  const h2_fruit_slice_sound_t equip[] = {H2_FRUIT_SLICE_SOUND_EQUIP};
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_WEAPON);
+  expect_sounds(&game, equip, 1u);
+  tap_control(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  expect_sounds(&game, equip, 1u); /* Owned equipment never purchases again. */
+  CHECK(game.progress.coins == 0u && game.progress.owned == 3u &&
+        game.progress.equipped == 1u);
+}
+
 int main(void) {
+  test_economy_sound_transitions();
   test_bank_mute_and_lifecycle();
   test_bursts_backpressure_and_partial_failure();
   test_resampling_and_music_loop();

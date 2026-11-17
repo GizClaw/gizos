@@ -346,7 +346,50 @@ static void test_clipping(void) {
   check_scene("clipping", 480, 480);
 }
 
+static void test_progress_pages(int32_t width, int32_t height) {
+  h2_fruit_slice_game_init(&game, width, height, 25u, 31u);
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
+  game.progress.fruit_credit = 10u;
+  for (unsigned page = 0; page < 2u; ++page) {
+    game.phase =
+        page == 0u ? H2_FRUIT_SLICE_PHASE_TASKS : H2_FRUIT_SLICE_PHASE_SHOP;
+    for (unsigned status = 0; status < 4u; ++status) {
+      game.save_status = status;
+      CHECK(check_layer(h2_fruit_slice_render_static, NULL, width, height) >
+            0u);
+      CHECK(check_layer(h2_fruit_slice_render_scene, NULL, width, height) ==
+            0u);
+    }
+    game.save_status = 0u;
+    h2_fruit_slice_canvas_t canvas = {.pixels = pixels,
+                                      .width = width,
+                                      .height = height,
+                                      .stride_pixels = (size_t)width};
+    h2_fruit_slice_render_background(&canvas);
+    h2_fruit_slice_render_static(&canvas, &game);
+    char name[64];
+    (void)snprintf(name, sizeof(name), "%s_%dx%d",
+                   page == 0u ? "tasks" : "shop", (int)width, (int)height);
+    write_ppm(name, width, height);
+  }
+  /* Cached text is invalidated on a purchase/claim and on storage status. */
+  h2_fruit_slice_static_key_t before, after;
+  h2_fruit_slice_static_key(&game, &before);
+  ++game.progress_revision;
+  h2_fruit_slice_static_key(&game, &after);
+  CHECK(memcmp(&before, &after, sizeof(before)) != 0);
+  before = after;
+  game.save_status = 2u;
+  h2_fruit_slice_static_key(&game, &after);
+  CHECK(memcmp(&before, &after, sizeof(before)) != 0);
+}
+
 int main(void) {
+  test_progress_pages(160, 160);
+  test_progress_pages(240, 240);
+  test_progress_pages(480, 320);
+  test_progress_pages(368, 448);
+  test_progress_pages(480, 800);
   sprites = h2_fruit_slice_sprites_create(&test_memory);
   CHECK(sprites != NULL);
   test_bands();
