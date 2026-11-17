@@ -32,9 +32,4 @@ int h2_alipay_transit_last(const h2_alipay_client_config_t* config,
                            h2_alipay_transit_t* state,
                            h2_alipay_transit_card_t* output);
 int h2_alipay_transit_discard(const h2_alipay_client_config_t* config);
-struct yyjson_val;
-int h2_alipay_transit_script_run(const h2_alipay_client_config_t* config,
-                                 const char* script, struct yyjson_val* render,
-                                 uint8_t* output, size_t* length);
-
 #endif

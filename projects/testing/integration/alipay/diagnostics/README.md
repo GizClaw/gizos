@@ -1,7 +1,5 @@
 # Alipay integration diagnostics
 
-This integration-owned package defines the test App's provider interface, initialization-once helper and bounded [trace contract](include/h2_alipay_trace.h). These are test orchestration and evidence contracts, not the production Alipay business API.
+This package owns the bounded [Trace contract](include/h2_alipay_trace.h), hashing, capture limits, sequence numbers and explicit drop/truncation statistics. It performs no IO and has one serialized producer; drain/reset only after its worker joins.
 
-The [self-implemented client](../../../../../libs/clients/alipay/README.md) owns the business API. The App-facing interface here supports controlled fixtures and non-secret evidence without an external implementation.
-
-Keep board identity, provider selection, runtime assembly and display operations in their target or App owners. General cryptography belongs to the reusable crypto packages.
+The [App API](../app/include/h2_alipay.h) owns binding/payment contracts. The concrete adapter owns initialization and compatible C callback adaptation. Trace has no dormant vendor-log, clock or allocator sampling classes; it records the operations emitted by the current adapter. Final-entry and host collector code own transport and serialization of evidence.

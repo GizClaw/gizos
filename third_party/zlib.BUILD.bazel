@@ -2,20 +2,6 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-_HEADERS = [
-    "src/crc32.h",
-    "src/deflate.h",
-    "src/gzguts.h",
-    "src/inffast.h",
-    "src/inffixed.h",
-    "src/inflate.h",
-    "src/inftrees.h",
-    "src/trees.h",
-    "src/zconf.h",
-    "src/zlib.h",
-    "src/zutil.h",
-]
-
 config_setting(
     name = "is_windows_x86_64",
     constraint_values = [
@@ -34,11 +20,6 @@ filegroup(
         "src/inftrees.c",
         "src/zutil.c",
     ],
-)
-
-filegroup(
-    name = "source_files",
-    srcs = [":firmware_sources"] + _HEADERS,
 )
 
 cc_library(
@@ -60,7 +41,19 @@ cc_library(
         "src/uncompr.c",
         "src/zutil.c",
     ],
-    hdrs = _HEADERS,
+    hdrs = [
+        "src/crc32.h",
+        "src/deflate.h",
+        "src/gzguts.h",
+        "src/inffast.h",
+        "src/inffixed.h",
+        "src/inflate.h",
+        "src/inftrees.h",
+        "src/trees.h",
+        "src/zconf.h",
+        "src/zlib.h",
+        "src/zutil.h",
+    ],
     conlyopts = select({
         ":is_windows_x86_64": [
             "/experimental:c11atomics",

@@ -1,46 +1,35 @@
 #include "h2_alipay_payment_page.h"
 #include "h2_alipay_payment_model.h"
-#include "h2_alipay_tap_radio.h"
 #include "h2_atomic.h"
-#include "h2_lvgl_touch.h"
 #include "h2_qrcode.h"
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 
-typedef enum mode { MENU, CODE, TAP, CONFIRM, RESULT } payment_mode_t;
-typedef enum action {
-  A_CODE = 1,
-  A_TAP,
-  A_REFRESH,
-  A_CONFIRM,
-  A_BACK
-} action_t;
+typedef enum mode { MENU, CODE, TAP, RESULT = 4 } payment_mode_t;
+typedef enum action { A_CODE = 1, A_TAP, A_REFRESH, A_BACK = 5 } action_t;
 typedef enum job {
   J_NONE,
   J_CODE,
   J_QUERY,
   J_TAP_START,
   J_FRAME,
-  J_CONFIRM,
-  J_TAP_QUERY,
-  J_BLE_RESULT,
-  J_BLE_FRAME,
-  J_STOP
+  J_TAP_QUERY = 6,
+  J_STOP = 9
 } job_t;
 typedef struct payment_page {
   h2_runtime_t* rt;
   const h2_alipay_e2e_config_t* config;
   const h2_alipay_payment_api_t* api;
   lv_display_t* display;
-  h2_lvgl_touch_t* touch;
   lv_group_t* button_group;
   bool buttons_enabled;
-  lv_obj_t *title, *status, *qr, *buttons[5];
+  lv_obj_t *title, *status, *qr, *buttons[4];
   uint16_t* qr_pixels;
   int width, height;
   payment_mode_t mode;
   unsigned actions[8], head, count;
-  bool queue_full, leaving, exiting, tap_active, scanning, stay_on_result;
+  bool queue_full, leaving, exiting, tap_active, stay_on_result;
   bool nfc_received;
   char terminal_message[96];
   int (*presented)(void*);
@@ -48,13 +37,6 @@ typedef struct payment_page {
   job_t job;
   h2_pal_task_t* worker;
   h2_atomic_bool_t done;
-  h2_atomic_bool_t accept_results;
-  h2_atomic_flag_t ble_lock;
-  bool ble_pending;
-  uint8_t ble_mailbox[27], job_ble[27];
-  uint8_t job_frame[512];
-  size_t job_frame_length;
-  h2_alipay_tap_radio_t* radio;
   uint8_t uid[H2_PAL_NFC_UID_MAX_LEN], uid_length;
   uint8_t generated[H2_ALIPAY_PAYMENT_CODE_CAPACITY];
   uint32_t generated_length, generation, job_generation;
@@ -62,13 +44,20 @@ typedef struct payment_page {
   h2_alipay_payment_result_t result;
   h2_alipay_payment_model_t model;
   h2_alipay_payment_attempt_t query;
-  h2_pal_ble_adv_set_t* advertising;
-  uint8_t manufacturer[33], service_uuid[16];
-  h2_pal_ble_uuid_t advertised_uuid;
   uint64_t tap_deadline, query_due, last_tick;
   uint64_t code_wall_ms, code_mono_ms, diagnostic_ms;
   unsigned key_events;
 } payment_page_t;
+
+static void log_payment(payment_page_t* page, const char* format, ...) {
+  char message[512];
+  va_list args;
+  va_start(args, format);
+  (void)vsnprintf(message, sizeof(message), format, args);
+  va_end(args);
+  (void)h2_pal_log_write(page->rt->log, H2_PAL_LOG_INFO, "alipay/payment",
+                         message);
+}
 
 static void wipe(void* data, size_t size) {
   volatile uint8_t* p = data;
@@ -95,9 +84,6 @@ static void tap_clicked(lv_event_t* e) {
 static void refresh_clicked(lv_event_t* e) {
   enqueue(lv_event_get_user_data(e), A_REFRESH);
 }
-static void confirm_clicked(lv_event_t* e) {
-  enqueue(lv_event_get_user_data(e), A_CONFIRM);
-}
 static void back_clicked(lv_event_t* e) {
   enqueue(lv_event_get_user_data(e), A_BACK);
 }
@@ -120,16 +106,15 @@ static void clear_qr(payment_page_t* p) {
 static void controls(payment_page_t* p) {
   lv_obj_set_pos(p->status, 8,
                  p->mode == MENU ? p->height - 60 : p->height - 88);
-  for (unsigned i = 0u; i < 5u; ++i) lv_obj_set_hidden(p->buttons[i], true);
+  for (unsigned i = 0u; i < 4u; ++i) lv_obj_set_hidden(p->buttons[i], true);
   if (p->mode == MENU) {
     lv_obj_set_hidden(p->buttons[0], false);
     lv_obj_set_hidden(p->buttons[1], p->api->vtable->start_tap == NULL);
   } else {
-    lv_obj_set_hidden(p->buttons[4], false);
+    lv_obj_set_hidden(p->buttons[3], false);
     if (p->mode == CODE) lv_obj_set_hidden(p->buttons[2], false);
-    if (p->mode == CONFIRM) lv_obj_set_hidden(p->buttons[3], false);
   }
-  for (unsigned i = 0u; i < 4u; ++i) {
+  for (unsigned i = 0u; i < 3u; ++i) {
     if (p->worker != NULL || p->leaving)
       lv_obj_add_state(p->buttons[i], LV_STATE_DISABLED);
     else
@@ -139,7 +124,7 @@ static void controls(payment_page_t* p) {
     lv_obj_t* focused = lv_group_get_focused(p->button_group);
     if (focused == NULL || lv_obj_is_hidden(focused) ||
         lv_obj_has_state(focused, LV_STATE_DISABLED)) {
-      for (unsigned i = 0u; i < 5u; ++i)
+      for (unsigned i = 0u; i < 4u; ++i)
         if (!lv_obj_is_hidden(p->buttons[i]) &&
             !lv_obj_has_state(p->buttons[i], LV_STATE_DISABLED)) {
           lv_group_focus_obj(p->buttons[i]);
@@ -152,35 +137,26 @@ static int open_input(payment_page_t* p) {
   const h2_alipay_payment_buttons_t* keys = &p->config->payment_buttons;
   const h2_runtime_component_id_t ids[] = {keys->previous, keys->next,
                                            keys->activate, keys->back};
-  bool any = false;
-  for (size_t i = 0u; i < 4u; ++i) any = any || ids[i] != 0u;
-  if (any) {
-    for (size_t i = 0u; i < 4u; ++i) {
-      h2_runtime_component_info_t info;
-      int rc = h2_runtime_component_get(p->rt, ids[i], &info);
-      if (rc != 0) return rc;
-      if (info.kind != H2_RUNTIME_COMPONENT_BUTTON)
-        return H2_PAL_ERR_INVALID_ARG;
-      for (size_t j = 0u; j < i; ++j)
-        if (ids[i] == ids[j]) return H2_PAL_ERR_INVALID_ARG;
-    }
-    p->buttons_enabled = true;
-    p->button_group = lv_group_create();
-    if (p->button_group == NULL) return H2_PAL_ERR_NO_MEMORY;
-    for (unsigned i = 0u; i < 5u; ++i)
-      lv_group_add_obj(p->button_group, p->buttons[i]);
+  for (size_t i = 0u; i < 4u; ++i) {
+    if (ids[i] == 0u) return H2_PAL_ERR_INVALID_ARG;
+    h2_runtime_component_info_t info;
+    int rc = h2_runtime_component_get(p->rt, ids[i], &info);
+    if (rc != 0) return rc;
+    if (info.kind != H2_RUNTIME_COMPONENT_BUTTON) return H2_PAL_ERR_INVALID_ARG;
+    for (size_t j = 0u; j < i; ++j)
+      if (ids[i] == ids[j]) return H2_PAL_ERR_INVALID_ARG;
   }
-  const h2_lvgl_touch_config_t touch = {
-      .touch = p->rt->touch, .allocator = p->rt->mem, .display = p->display};
-  int rc = h2_lvgl_touch_create(&touch, &p->touch);
-  printf("H2_ALIPAY_PAYMENT_INPUT touch_rc=%d buttons=%u\n", rc,
-         p->buttons_enabled ? 1u : 0u);
-  return rc == H2_PAL_ERR_UNSUPPORTED && p->buttons_enabled ? H2_PAL_OK : rc;
+  p->button_group = lv_group_create();
+  if (p->button_group == NULL) return H2_PAL_ERR_NO_MEMORY;
+  p->buttons_enabled = true;
+  for (unsigned i = 0u; i < 4u; ++i)
+    lv_group_add_obj(p->button_group, p->buttons[i]);
+  return H2_PAL_OK;
 }
 static int focused_index(payment_page_t* p) {
   if (p->button_group == NULL) return -1;
   lv_obj_t* focused = lv_group_get_focused(p->button_group);
-  for (unsigned i = 0u; i < 5u; ++i)
+  for (unsigned i = 0u; i < 4u; ++i)
     if (focused == p->buttons[i]) return (int)i;
   return -1;
 }
@@ -281,39 +257,6 @@ static int show_qr(payment_page_t* p) {
   lv_obj_set_pos(p->qr, (p->width - span) / 2, 32);
   return 0;
 }
-static int stop_radio(payment_page_t* p) {
-  int rc = 0;
-  if (p->scanning) {
-    rc = h2_pal_ble_stop_scan(p->rt->ble_host);
-    if (rc != 0) return rc;
-    p->scanning = false;
-  }
-  if (p->advertising != NULL) {
-    int stopped = h2_pal_ble_adv_set_stop(p->rt->ble_host, p->advertising);
-    if (stopped != 0) return stopped;
-    rc = h2_pal_ble_adv_set_destroy(p->rt->ble_host, p->advertising);
-    if (rc == 0) {
-      p->advertising = NULL;
-      wipe(p->manufacturer, sizeof(p->manufacturer));
-      wipe(p->service_uuid, sizeof(p->service_uuid));
-      p->advertised_uuid = (h2_pal_ble_uuid_t){0};
-    }
-  }
-  if (rc == 0) rc = h2_alipay_tap_radio_close(&p->radio);
-  return rc;
-}
-
-static void radio_wake(void* user) {
-  payment_page_t* page = user;
-  (void)h2_runtime_notify(page->rt);
-}
-
-static int notify_reply(void* user, bool first, bool finish,
-                        const uint8_t* data, size_t length) {
-  payment_page_t* page = user;
-  (void)first;
-  return h2_alipay_tap_radio_notify(page->radio, finish, data, length);
-}
 
 static int write_reply(void* user, const uint8_t* data, size_t length) {
   payment_page_t* page = user;
@@ -345,10 +288,10 @@ static int read_ndef_frame(payment_page_t* page, h2_pal_periph_id_t id,
         h2_pal_nfc_read_nfc_data(page->rt->nfc, id, page->uid, page->uid_length,
                                  H2_PAL_NFC_DATA_NDEF, page->rt->mem, data);
     if (rc != H2_PAL_ERR_BUSY)
-      printf(
-          "H2_ALIPAY_NFC_READ attempt=%u limit=3 pal_rc=%d bytes=%zu "
-          "busy_waits=%u\n",
-          attempt, rc, rc == 0 ? data->len : 0u, busy_waits);
+      log_payment(page,
+                  "H2_ALIPAY_NFC_READ attempt=%u limit=3 pal_rc=%d bytes=%zu "
+                  "busy_waits=%u\n",
+                  attempt, rc, rc == 0 ? data->len : 0u, busy_waits);
     if (rc == H2_PAL_OK) return rc;
     if (data->bytes != NULL) {
       wipe(data->bytes, data->len);
@@ -357,14 +300,18 @@ static int read_ndef_frame(payment_page_t* page, h2_pal_periph_id_t id,
     *data = (h2_pal_nfc_data_read_t){0};
     if (rc == H2_PAL_ERR_BUSY) {
       if (busy_waits == 100u) {
-        printf("H2_ALIPAY_NFC_BUSY phase=stop waits=%u limit=100 result=%d\n",
-               busy_waits, last_read_rc);
+        log_payment(
+            page,
+            "H2_ALIPAY_NFC_BUSY phase=stop waits=%u limit=100 result=%d\n",
+            busy_waits, last_read_rc);
         return last_read_rc;
       }
       ++busy_waits;
       if (busy_waits == 1u)
-        printf("H2_ALIPAY_NFC_BUSY phase=wait waits=%u limit=100 prior_rc=%d\n",
-               busy_waits, last_read_rc);
+        log_payment(
+            page,
+            "H2_ALIPAY_NFC_BUSY phase=wait waits=%u limit=100 prior_rc=%d\n",
+            busy_waits, last_read_rc);
     } else {
       last_read_rc = rc;
       if (attempt == 3u || (rc != H2_PAL_ERR_IO && rc != H2_PAL_ERR_TIMEOUT &&
@@ -376,62 +323,6 @@ static int read_ndef_frame(payment_page_t* page, h2_pal_periph_id_t id,
     if (waited != H2_PAL_OK) return waited;
   }
   return last_read_rc;
-}
-static bool scan_result(void* user, const h2_pal_ble_scan_result_t* result) {
-  payment_page_t* p = user;
-  if (!h2_atomic_bool_load(&p->accept_results, H2_ATOMIC_ACQUIRE)) return false;
-  uint8_t payload[27];
-  if (result->data_status != H2_PAL_BLE_ADV_DATA_COMPLETE ||
-      h2_alipay_payment_ble_result(result->raw_data.data, result->raw_data.len,
-                                   payload) != 0)
-    return false;
-  if (h2_atomic_flag_test_and_set(&p->ble_lock, H2_ATOMIC_ACQUIRE))
-    return false;
-  if (h2_atomic_bool_load(&p->accept_results, H2_ATOMIC_ACQUIRE) &&
-      !p->ble_pending) {
-    memcpy(p->ble_mailbox, payload, sizeof(payload));
-    p->ble_pending = true;
-  }
-  h2_atomic_flag_clear(&p->ble_lock, H2_ATOMIC_RELEASE);
-  (void)h2_runtime_notify(p->rt);
-  return false;
-}
-static int broadcast(void* user, uint16_t manufacturer, const uint8_t* data,
-                     size_t length, const uint8_t* service,
-                     size_t service_length, bool quick) {
-  payment_page_t* p = user;
-  (void)quick;
-  if (length > 31u || (service_length != 2u && service_length != 16u))
-    return H2_PAL_ERR_FORMAT;
-  if (p->advertising != NULL) return H2_PAL_ERR_BUSY;
-  p->manufacturer[0] = (uint8_t)manufacturer;
-  p->manufacturer[1] = (uint8_t)(manufacturer >> 8u);
-  memcpy(p->manufacturer + 2u, data, length);
-  memcpy(p->service_uuid, service, service_length);
-  p->advertised_uuid = (h2_pal_ble_uuid_t){p->service_uuid, service_length};
-  h2_pal_ble_adv_params_t params = {
-      .mode = H2_PAL_BLE_ADV_MODE_NON_CONNECTABLE,
-      .interval_min_ms = 32u,
-      .interval_max_ms = 48u,
-      .type = length + service_length + 9u <= 31u
-                  ? H2_PAL_BLE_ADV_TYPE_LEGACY
-                  : H2_PAL_BLE_ADV_TYPE_EXTENDED,
-      .primary_phy = H2_PAL_BLE_PHY_1M,
-      .secondary_phy = H2_PAL_BLE_PHY_1M,
-      .sid = length + service_length + 9u <= 31u ? 0u : 1u};
-  int rc = h2_pal_ble_adv_set_create(p->rt->ble_host, &params, &p->advertising);
-  if (rc != 0) return rc;
-  const h2_pal_ble_adv_data_t adv = {
-      .manufacturer_data = {p->manufacturer, length + 2u},
-      .service_uuids = &p->advertised_uuid,
-      .service_uuid_count = 1u};
-  rc = h2_pal_ble_adv_set_set_data(p->rt->ble_host, p->advertising, &adv);
-  if (rc == 0) rc = h2_pal_ble_adv_set_start(p->rt->ble_host, p->advertising);
-  if (rc != 0) {
-    int removed = h2_pal_ble_adv_set_destroy(p->rt->ble_host, p->advertising);
-    if (removed == 0) p->advertising = NULL;
-  }
-  return rc;
 }
 static void work(void* user) {
   payment_page_t* p = user;
@@ -449,57 +340,14 @@ static void work(void* user) {
       p->call_rc = api->query_code(p->api->user, p->query.code, &p->result);
       break;
     case J_TAP_START: {
-      h2_atomic_bool_store(&p->accept_results, false, H2_ATOMIC_RELEASE);
-      if (api->start_tap == NULL) {
+      if (api->start_tap == NULL ||
+          p->config->payment_nfc_encode_reply == NULL) {
         p->call_rc = H2_PAL_ERR_UNSUPPORTED;
         break;
       }
-      bool nfc_only = p->config->payment_nfc_only;
-      if (nfc_only &&
-          (p->config->payment_nfc_encode_reply == NULL ||
-           p->config->payment_reader_context != H2_ALIPAY_TAP_WALLET ||
-           p->config->payment_connected_ble)) {
-        p->call_rc = H2_PAL_ERR_INVALID_ARG;
-        break;
-      }
       p->nfc_received = false;
-      if (!h2_atomic_flag_test_and_set(&p->ble_lock, H2_ATOMIC_ACQUIRE)) {
-        wipe(p->ble_mailbox, sizeof(p->ble_mailbox));
-        p->ble_pending = false;
-        h2_atomic_flag_clear(&p->ble_lock, H2_ATOMIC_RELEASE);
-      }
-      if (!nfc_only) {
-        p->call_rc = h2_pal_ble_start(p->rt->ble_host);
-        if (p->call_rc != 0) break;
-        if (p->config->payment_connected_ble) {
-          if (api->receive_ble_frame == NULL) {
-            p->call_rc = H2_PAL_ERR_UNSUPPORTED;
-            break;
-          }
-          h2_alipay_tap_radio_config_t radio = {.memory = p->rt->mem,
-                                                .ble = p->rt->ble_host,
-                                                .user = p,
-                                                .wake = radio_wake};
-          memcpy(radio.mac, p->config->payment_ble_mac, sizeof(radio.mac));
-          p->call_rc = h2_alipay_tap_radio_open(&radio, &p->radio);
-          if (p->call_rc != 0) break;
-        }
-        const h2_pal_ble_scan_params_t scan = {
-            .mode = H2_PAL_BLE_SCAN_MODE_PASSIVE,
-            .interval_ms = 80u,
-            .window_ms = 60u};
-        p->call_rc =
-            h2_pal_ble_start_scan(p->rt->ble_host, &scan, scan_result, p);
-        if (p->call_rc != 0) break;
-        p->scanning = true;
-      }
-      const h2_alipay_tap_transport_t transport = {
-          .user = p,
-          .context = p->config->payment_reader_context,
-          .write_reply =
-              p->config->payment_nfc_encode_reply != NULL ? write_reply : NULL,
-          .broadcast_direct = nfc_only ? NULL : broadcast,
-          .notify = p->radio != NULL ? notify_reply : NULL};
+      const h2_alipay_tap_transport_t transport = {.user = p,
+                                                   .write_reply = write_reply};
       p->call_rc = api->start_tap(p->api->user, &transport, &p->result);
       p->tap_active = p->call_rc == 0;
       break;
@@ -514,48 +362,26 @@ static void work(void* user) {
       if (p->call_rc == 0)
         p->call_rc =
             api->receive_ndef(p->api->user, data.bytes, data.len, &p->result);
-      if (p->radio != NULL && !p->result.response_sent &&
-          (p->call_rc == 0 || p->result.confirmation_required)) {
-        int armed = h2_alipay_tap_radio_arm(p->radio);
-        if (armed != 0) p->call_rc = armed;
-      }
       if (data.bytes != NULL) {
         wipe(data.bytes, data.len);
         h2_pal_mem_free(p->rt->mem, data.bytes);
       }
-      p->nfc_received = p->call_rc == 0 || p->result.confirmation_required ||
-                        p->result.response_sent;
+      p->nfc_received = p->call_rc == 0 || p->result.response_sent;
       break;
     }
-    case J_CONFIRM:
-      p->call_rc = api->confirm_tap(p->api->user, &p->result);
-      break;
     case J_TAP_QUERY:
       p->call_rc = api->query_tap(p->api->user, &p->result);
       break;
-    case J_BLE_RESULT:
-      p->call_rc = api->receive_ble_result(p->api->user, p->job_ble,
-                                           sizeof(p->job_ble), &p->result);
-      break;
-    case J_BLE_FRAME:
-      p->call_rc = api->receive_ble_frame(p->api->user, p->job_frame,
-                                          p->job_frame_length, 23u, &p->result);
-      break;
     case J_STOP:
-      h2_atomic_bool_store(&p->accept_results, false, H2_ATOMIC_RELEASE);
       p->call_rc = p->tap_active ? api->stop_tap(p->api->user) : 0;
       if (p->call_rc == 0) {
         p->tap_active = false;
-        p->call_rc = stop_radio(p);
       }
       break;
     default:
       p->call_rc = H2_PAL_ERR_INVALID_STATE;
       break;
   }
-  if ((p->job == J_FRAME || p->job == J_CONFIRM || p->job == J_BLE_FRAME) &&
-      p->result.response_sent)
-    h2_atomic_bool_store(&p->accept_results, true, H2_ATOMIC_RELEASE);
   h2_atomic_bool_store(&p->done, true, H2_ATOMIC_RELEASE);
   (void)h2_runtime_notify(p->rt);
 }
@@ -585,27 +411,24 @@ static int start_job(payment_page_t* p, job_t job) {
   return rc;
 }
 static void paid(payment_page_t* p) {
-  h2_atomic_bool_store(&p->accept_results, false, H2_ATOMIC_RELEASE);
   clear_qr(p);
   p->mode = RESULT;
   char text[96];
   (void)snprintf(text, sizeof(text), "Payment confirmed\n%s", p->result.amount);
   status(p, text);
   (void)snprintf(p->terminal_message, sizeof(p->terminal_message), "%s", text);
-  p->stay_on_result = p->tap_active || p->scanning || p->advertising != NULL ||
-                      p->radio != NULL;
+  p->stay_on_result = p->tap_active;
   h2_alipay_payment_model_clear(&p->model);
 }
 static void finish_job(payment_page_t* p) {
   job_t job = p->job;
   p->job = J_NONE;
-  printf(
-      "H2_ALIPAY_PAYMENT operation=%u pal_rc=%d sdk_rc=%d sdk_status=%d state=%d nfc_rc=%d ble_rc=%d sent=%d confirm=%d nfc_attempted=%d ble_attempted=%d code_length=%u\n",
+  log_payment(
+      p,
+      "H2_ALIPAY_PAYMENT operation=%u pal_rc=%d sdk_rc=%d sdk_status=%d state=%d nfc_rc=%d sent=%d nfc_attempted=%d code_length=%u",
       (unsigned)job, p->call_rc, job == J_CODE ? p->sdk_rc : p->result.sdk_rc,
       p->result.sdk_status, p->result.state, p->result.nfc_write_rc,
-      p->result.ble_send_rc, p->result.response_sent,
-      p->result.confirmation_required, p->result.write_attempted,
-      p->result.broadcast_attempted,
+      p->result.response_sent, p->result.write_attempted,
       job == J_CODE ? (unsigned)p->generated_length : 0u);
   if (job == J_STOP) {
     if (p->call_rc == 0) {
@@ -622,7 +445,7 @@ static void finish_job(payment_page_t* p) {
         status(p, "Choose payment method");
       }
     } else
-      status(p, "Stopping radio; waiting for cleanup");
+      status(p, "Stopping NFC session; waiting for cleanup");
   } else if (p->job_generation == p->generation && !p->leaving) {
     if (job == J_CODE && p->mode == CODE) {
       h2_alipay_payment_model_t previous = p->model;
@@ -662,7 +485,7 @@ static void finish_job(payment_page_t* p) {
         status(p, "Tap unavailable; see status log");
         p->mode = RESULT;
       }
-    } else if (job == J_FRAME || job == J_CONFIRM || job == J_BLE_FRAME) {
+    } else if (job == J_FRAME) {
       if (job == J_FRAME && p->nfc_read_rc != 0) {
         char text[80];
         (void)snprintf(text, sizeof(text), "NFC read failed\nrc: %d",
@@ -675,21 +498,15 @@ static void finish_job(payment_page_t* p) {
                        p->result.nfc_write_rc);
         p->mode = RESULT;
         status(p, text);
-      } else if (p->result.confirmation_required) {
-        p->mode = CONFIRM;
-        status(p, "Confirm this tap payment?");
       } else if (p->call_rc == 0 && p->result.response_sent) {
         p->mode = TAP;
         p->query_due = now_ms(p) + 2000u;
         status(p, "Response sent; checking payment");
-      } else if ((job == J_BLE_FRAME || p->radio != NULL) && p->call_rc == 0) {
-        p->mode = TAP;
-        status(p, "Waiting for terminal data");
       } else {
         p->mode = RESULT;
         status(p, "Tap not completed; check merchant");
       }
-    } else if (job == J_QUERY || job == J_TAP_QUERY || job == J_BLE_RESULT) {
+    } else if (job == J_QUERY || job == J_TAP_QUERY) {
       bool belongs =
           job != J_QUERY || h2_alipay_payment_model_has(&p->model, p->query.id);
       if (p->call_rc == 0 && belongs &&
@@ -702,7 +519,7 @@ static void finish_job(payment_page_t* p) {
         clear_qr(p);
         p->mode = RESULT;
         status(p, "Payment unavailable; check account");
-      } else if (belongs && job != J_BLE_RESULT) {
+      } else if (belongs) {
         if (p->call_rc != 0 || p->result.sdk_rc != 0) {
           char text[96];
           (void)snprintf(text, sizeof(text),
@@ -716,9 +533,7 @@ static void finish_job(payment_page_t* p) {
       }
     }
   }
-  if (p->mode == RESULT && !p->leaving &&
-      (p->tap_active || p->scanning || p->advertising != NULL ||
-       p->radio != NULL)) {
+  if (p->mode == RESULT && !p->leaving && p->tap_active) {
     if (!p->stay_on_result)
       (void)snprintf(p->terminal_message, sizeof(p->terminal_message), "%s",
                      lv_label_get_text(p->status));
@@ -726,9 +541,6 @@ static void finish_job(payment_page_t* p) {
   }
   wipe(p->generated, sizeof(p->generated));
   p->generated_length = 0u;
-  wipe(p->job_ble, sizeof(p->job_ble));
-  wipe(p->job_frame, sizeof(p->job_frame));
-  p->job_frame_length = 0u;
   wipe(&p->query, sizeof(p->query));
   controls(p);
 }
@@ -782,23 +594,13 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
   p->height = height;
   p->presented = presented;
   p->presented_user = presented_user;
-  bool atomic_open = false, flag_open = false, accept_open = false;
+  bool atomic_open = false;
   int rc = 0;
   if (h2_atomic_bool_init(&p->done, false) != H2_ATOMIC_OK) {
     rc = H2_PAL_ERR_NO_MEMORY;
     goto done;
   }
   atomic_open = true;
-  if (h2_atomic_bool_init(&p->accept_results, false) != H2_ATOMIC_OK) {
-    rc = H2_PAL_ERR_NO_MEMORY;
-    goto done;
-  }
-  accept_open = true;
-  if (h2_atomic_flag_init(&p->ble_lock) != H2_ATOMIC_OK) {
-    rc = H2_PAL_ERR_NO_MEMORY;
-    goto done;
-  }
-  flag_open = true;
   lv_obj_clean(lv_screen_active());
   p->title = lv_label_create(lv_screen_active());
   p->status = lv_label_create(lv_screen_active());
@@ -819,11 +621,9 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
       make_button(p, "Tap to pay", 20, 118, width - 40, tap_clicked);
   p->buttons[2] = make_button(p, "Refresh", 8, height - 44, (width - 24) / 2,
                               refresh_clicked);
-  p->buttons[3] = make_button(p, "Confirm", 8, height - 44, (width - 24) / 2,
-                              confirm_clicked);
-  p->buttons[4] = make_button(p, "Back", width / 2 + 4, height - 44,
+  p->buttons[3] = make_button(p, "Back", width / 2 + 4, height - 44,
                               (width - 24) / 2, back_clicked);
-  for (unsigned i = 0u; i < 5u; ++i)
+  for (unsigned i = 0u; i < 4u; ++i)
     if (p->buttons[i] == NULL) {
       rc = H2_PAL_ERR_NO_MEMORY;
       goto done;
@@ -841,8 +641,9 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
                        : config->alipay->source == H2_ALIPAY_SOURCE_INDEPENDENT
                            ? "independent"
                            : "controlled";
-  printf("H2_ALIPAY_PAYMENT_READY mode=menu source=%s private_payloads=0\n",
-         source);
+  log_payment(
+      p, "H2_ALIPAY_PAYMENT_READY mode=menu source=%s private_payloads=0\n",
+      source);
   p->last_tick = now_ms(p);
   while (true) {
     uint64_t now = now_ms(p);
@@ -868,9 +669,7 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
         finish_job(p);
       }
     }
-    if (p->exiting && p->worker == NULL && !p->tap_active && !p->scanning &&
-        p->advertising == NULL && p->radio == NULL)
-      break;
+    if (p->exiting && p->worker == NULL && !p->tap_active) break;
     uint8_t bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = {.payload = bytes,
                                 .payload_capacity = sizeof(bytes)};
@@ -911,26 +710,12 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
       p->leaving = true;
       ++p->generation;
     }
-    if (p->worker == NULL && p->radio != NULL && p->tap_active && !p->leaving &&
-        p->query_due == 0u && (p->mode == TAP || p->mode == CONFIRM)) {
-      p->job_frame_length = sizeof(p->job_frame);
-      int taken = h2_alipay_tap_radio_take(p->radio, p->job_frame,
-                                           &p->job_frame_length);
-      if (taken == 0)
-        (void)start_job(p, J_BLE_FRAME);
-      else if (taken != H2_PAL_ERR_WOULD_BLOCK && taken != H2_PAL_ERR_CLOSED) {
-        p->mode = RESULT;
-        p->stay_on_result = true;
-        (void)snprintf(p->terminal_message, sizeof(p->terminal_message), "%s",
-                       "Terminal data unavailable");
-      }
-    }
     if (p->queue_full) {
       status(p, "Busy; try again");
       p->queue_full = false;
     }
-    if (p->worker == NULL && p->tap_active &&
-        (p->mode == TAP || p->mode == CONFIRM) && now >= p->tap_deadline) {
+    if (p->worker == NULL && p->tap_active && p->mode == TAP &&
+        now >= p->tap_deadline) {
       p->mode = RESULT;
       p->stay_on_result = true;
       (void)snprintf(p->terminal_message, sizeof(p->terminal_message), "%s",
@@ -959,16 +744,13 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
           (void)start_job(p, J_TAP_START);
         } else if (action == A_REFRESH && p->mode == CODE)
           (void)start_job(p, J_CODE);
-        else if (action == A_CONFIRM && p->mode == CONFIRM)
-          (void)start_job(p, J_CONFIRM);
       }
     }
     now = now_ms(p);
     if (p->stay_on_result && !p->leaving && p->worker == NULL) {
       (void)start_job(p, J_STOP);
     } else if (p->leaving && p->worker == NULL) {
-      if (p->tap_active || p->scanning || p->advertising != NULL ||
-          p->radio != NULL)
+      if (p->tap_active)
         (void)start_job(p, J_STOP);
       else {
         clear_qr(p);
@@ -1004,19 +786,7 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
                        "Result unknown; check merchant");
         controls(p);
       } else {
-        bool received = false;
-        if (!h2_atomic_flag_test_and_set(&p->ble_lock, H2_ATOMIC_ACQUIRE)) {
-          if (p->ble_pending) {
-            memcpy(p->job_ble, p->ble_mailbox, 27u);
-            wipe(p->ble_mailbox, 27u);
-            p->ble_pending = false;
-            received = true;
-          }
-          h2_atomic_flag_clear(&p->ble_lock, H2_ATOMIC_RELEASE);
-        }
-        if (received)
-          (void)start_job(p, J_BLE_RESULT);
-        else if (now >= p->query_due) {
+        if (now >= p->query_due) {
           p->query_due = now + 2000u;
           (void)start_job(p, J_TAP_QUERY);
         }
@@ -1031,12 +801,9 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
     }
   }
 done:
-  if (p->touch != NULL) h2_lvgl_touch_destroy(p->touch);
   if (p->button_group != NULL) lv_group_delete(p->button_group);
   clear_qr(p);
   lv_obj_clean(lv_screen_active());
-  if (flag_open) h2_atomic_flag_destroy(&p->ble_lock);
-  if (accept_open) h2_atomic_bool_destroy(&p->accept_results);
   if (atomic_open) h2_atomic_bool_destroy(&p->done);
   wipe(p, sizeof(*p));
   h2_pal_mem_free(rt->mem, p);

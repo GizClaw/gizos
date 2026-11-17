@@ -5,29 +5,32 @@ load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
-    name = "javascript",
+    name = "constructions",
     srcs = [
-        "src/h2_javascript.c",
-        "src/h2_javascript_quickjs.h",
+        "src/h2_crypto.c",
+        "src/h2_crypto_des.c",
+        "src/h2_crypto_signature.c",
+        "src/h2_crypto_sm2.c",
     ],
-    hdrs = ["include/h2_javascript.h"],
+    hdrs = ["include/h2_crypto.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
+        "//libs/crypto/sm3",
         "//pal",
-        "@h2_vendor_quickjs//:quickjs",
     ],
 )
 
 cc_test(
-    name = "javascript_test",
-    srcs = ["tests/test_javascript.c"],
+    name = "crypto_test",
+    srcs = ["tests/test_crypto.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
-        ":javascript",
+        ":constructions",
         "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
     ],
 )

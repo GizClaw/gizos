@@ -13,7 +13,12 @@ extern "C" {
  * Callers serialize configure/release with every operation. The facade owns
  * one pending binding session; business calls serialize through Sync PAL.
  * Headers come unchanged from the pinned header-only Alipay API delivery.
- * No vendor archive or implementation is used. The original
+ * No vendor archive or implementation is used. Image decoding is unsupported:
+ * its initialized entry returns 99 with an UNSUPPORTED diagnostic and
+ * preserves the order. Script-backed transit
+ * generation/update without downloading or evaluating a script. Native
+ * transit is retained.
+ * The original
  * alipay_get_companyName/productModel getters return injected fields after
  * configure, including before init. They make no network request; successful
  * lengths exclude the NUL terminator and input capacities must include it.
@@ -116,8 +121,8 @@ extern "C" {
  * generation uses libs/crypto for secp192k1/SHA-1 and DER encoding, tracks
  * usage and selects the last offline card. MOT double/triple-SM2 certificates
  * use libs/crypto's identity-bound SM2/SM3 and emit the original raw signature.
- * Other native certificate formats and
- * downloaded-script generators are not implemented or qualified yet.
+ * Downloaded script generators are unsupported. Other native certificate
+ * formats remain unqualified.
  * alipay_get_productType returns UINT32_MAX
  * while unconfigured/lock failure. Original query ABI: a valid initialized
  * query returns OK; UNKNOWN indicates pending/transport failure, BINDING_OK

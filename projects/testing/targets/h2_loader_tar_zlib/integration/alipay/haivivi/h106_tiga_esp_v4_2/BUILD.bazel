@@ -65,6 +65,7 @@ firmware_lib_component(
         "//pal/providers/backends/wolfssl:wolfcrypt",
         "//pal/providers/devices/modem/quectel:quectel_modem",
         "//projects/testing/integration/alipay/app:alipay_e2e",
+        "//projects/testing/integration/alipay/app:api",
         "//projects/testing/integration/alipay/diagnostics",
         "//projects/testing/integration/alipay/independent",
     ],
@@ -73,7 +74,6 @@ firmware_lib_component(
 filegroup(
     name = "main_sources",
     srcs = [
-        "main/h2_alipay_tiga_gateway.c",
         "main/h2_alipay_tiga_identity.c",
         "main/h2_alipay_tiga_storage.c",
         "main/main.c",
@@ -94,7 +94,6 @@ firmware_native_component(
     ],
     hdrs = [
         "main/h2_alipay_e2e_target.h",
-        "main/h2_alipay_tiga_gateway.h",
         "main/h2_alipay_tiga_identity.h",
         "main/h2_alipay_tiga_protocol.h",
         "main/h2_alipay_tiga_storage.h",
@@ -197,6 +196,7 @@ cc_test(
         "//libs/sync/atomic/providers/c11",
         "//libs/testing:testing_pal",
         "//pal/providers/backends/wolfssl:wolfcrypt",
+        "//projects/testing/integration/alipay/app:api",
         "//projects/testing/integration/alipay/diagnostics",
         "//projects/testing/integration/alipay/independent",
     ],
@@ -243,6 +243,7 @@ cc_test(
     deps = [
         "//libs/runtime",
         "//libs/testing:testing_pal",
+        "//projects/testing/integration/alipay/app:api",
         "//projects/testing/integration/alipay/diagnostics",
     ],
 )
@@ -265,6 +266,7 @@ cc_test(
     deps = [
         "//libs/runtime",
         "//libs/testing:testing_pal",
+        "//projects/testing/integration/alipay/app:api",
         "//projects/testing/integration/alipay/diagnostics",
     ],
 )

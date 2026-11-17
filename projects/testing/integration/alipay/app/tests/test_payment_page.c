@@ -4,7 +4,7 @@
 #include "h2_lvgl_platform.h"
 #include "h2_lvgl_display.h"
 #include "h2_runtime_test.h"
-#include "h2_qrcode_decoder.h"
+#include "h2_qrcode.h"
 #include <assert.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -14,7 +14,7 @@
 
 typedef struct fixture {
   pthread_t ui;
-  unsigned phase, cycles, touch_opens, touch_closes;
+  unsigned phase, cycles, touch_opens, touch_closes, host_starts;
   atomic_uint codes, queries, starts, stops, scans, scan_stops;
   bool scanning, hardware_buttons, production_input, payer_only;
   unsigned navigation_phase;
@@ -124,14 +124,7 @@ static int tap_start(void* user, const h2_alipay_tap_transport_t* transport,
                      h2_alipay_payment_result_t* out) {
   fixture_t* f = user;
   worker(f);
-  if (f->flow >= 6u) {
-    assert(transport->broadcast_direct == NULL && transport->notify == NULL &&
-           transport->write_reply != NULL &&
-           transport->context == H2_ALIPAY_TAP_WALLET);
-    assert(atomic_load(&f->scans) == 0u);
-  } else {
-    assert(transport->broadcast_direct != NULL);
-  }
+  assert(transport->write_reply != NULL && atomic_load(&f->scans) == 0u);
   f->transport = *transport;
   atomic_fetch_add(&f->starts, 1u);
   *out = (h2_alipay_payment_result_t){0};
@@ -146,7 +139,7 @@ static int stop(void* user) {
 static int host_start(void* user) {
   fixture_t* fixture = user;
   worker(fixture);
-  assert(fixture->flow < 6u);
+  ++fixture->host_starts;
   return 0;
 }
 static int scan_start(void* user, const h2_pal_ble_scan_params_t* params,
@@ -225,60 +218,12 @@ static int receive_ndef(void* user, const uint8_t* data, size_t length,
   fixture_t* fixture = user;
   worker(fixture);
   assert(length == 4u && memcmp(data, "TEST", 4u) == 0);
-  *out = (h2_alipay_payment_result_t){0};
-  if (fixture->flow == 2u || fixture->flow >= 6u) {
-    assert(fixture->transport.write_reply != NULL);
-    int rc =
-        fixture->transport.write_reply(fixture->transport.user, data, length);
-    out->write_attempted = true;
-    out->nfc_write_rc = rc;
-    out->response_sent = rc == 0;
-    if (rc != 0) return rc;
-  } else if (fixture->flow == 1u)
-    out->confirmation_required = true;
-  return out->confirmation_required ? H2_PAL_ERR_WOULD_BLOCK : 0;
-}
-
-static int receive_frame(void* user, const uint8_t* data, size_t length,
-                         uint16_t mtu, h2_alipay_payment_result_t* out) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(fixture->flow == 3u && length == 4u && mtu == 23u &&
-         memcmp(data, "GATT", 4u) == 0);
-  ++fixture->frames;
-  *out = (h2_alipay_payment_result_t){.confirmation_required = true};
-  return H2_PAL_ERR_WOULD_BLOCK;
-}
-
-static int confirm(void* user, h2_alipay_payment_result_t* out) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  ++fixture->confirmations;
-  assert(fixture->confirmations == 1u);
-  if (fixture->flow == 3u) {
-    const uint8_t fragment[] = {0x42u, 0u, 1u};
-    assert(fixture->transport.notify(fixture->transport.user, true, true,
-                                     fragment, sizeof(fragment)) == 0);
-  } else {
-    const uint8_t uuid[] = {0x3cu, 0xfeu}, data[] = {0x42u};
-    assert(fixture->transport.broadcast_direct(fixture->transport.user, 23u,
-                                               data, sizeof(data), uuid,
-                                               sizeof(uuid), false) == 0);
-  }
-  *out = (h2_alipay_payment_result_t){.response_sent = true,
-                                      .state = H2_ALIPAY_PAYMENT_PENDING};
-  return 0;
-}
-
-static int receive_result(void* user, const uint8_t* data, size_t length,
-                          h2_alipay_payment_result_t* out) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(length == 27u && data[0] == 1u);
-  ++fixture->results;
-  *out = (h2_alipay_payment_result_t){.state = H2_ALIPAY_PAYMENT_PAID,
-                                      .amount = "0.00"};
-  return 0;
+  assert(fixture->transport.write_reply != NULL);
+  int rc =
+      fixture->transport.write_reply(fixture->transport.user, data, length);
+  *out = (h2_alipay_payment_result_t){
+      .write_attempted = true, .nfc_write_rc = rc, .response_sent = rc == 0};
+  return rc;
 }
 
 static int query_tap(void* user, h2_alipay_payment_result_t* out) {
@@ -296,81 +241,6 @@ static int query_tap(void* user, h2_alipay_payment_result_t* out) {
   return 0;
 }
 
-static int adv_create(void* user, const h2_pal_ble_adv_params_t* params,
-                      h2_pal_ble_adv_set_t** out) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(params != NULL && !fixture->advertising);
-  *out = (h2_pal_ble_adv_set_t*)fixture;
-  return 0;
-}
-
-static int adv_data(void* user, h2_pal_ble_adv_set_t* set,
-                    const h2_pal_ble_adv_data_t* data) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(set == (h2_pal_ble_adv_set_t*)fixture &&
-         data->service_uuid_count == 1u);
-  return 0;
-}
-
-static int adv_start(void* user, h2_pal_ble_adv_set_t* set) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(set == (h2_pal_ble_adv_set_t*)fixture);
-  fixture->advertising = true;
-  ++fixture->advertising_starts;
-  return 0;
-}
-
-static int adv_stop(void* user, h2_pal_ble_adv_set_t* set) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(set == (h2_pal_ble_adv_set_t*)fixture && fixture->advertising);
-  fixture->advertising = false;
-  ++fixture->advertising_stops;
-  return 0;
-}
-
-static int adv_destroy(void* user, h2_pal_ble_adv_set_t* set) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(set == (h2_pal_ble_adv_set_t*)fixture && !fixture->advertising);
-  return 0;
-}
-
-static int gatt_register(void* user, const h2_pal_ble_gatt_service_t* service,
-                         size_t count) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(count == 1u && service->characteristic_count == 1u);
-  fixture->service = service;
-  *service->characteristics->out_value_handle = 42u;
-  return 0;
-}
-
-static int gatt_unregister(void* user, const h2_pal_ble_uuid_t* uuid) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(uuid->len == 2u && uuid->data[1] == 0x38u);
-  fixture->service = NULL;
-  return 0;
-}
-
-static int gatt_notify(void* user, uint16_t connection, uint16_t handle,
-                       const uint8_t* data, size_t length) {
-  fixture_t* fixture = user;
-  worker(fixture);
-  assert(connection == 7u && handle == 42u && length == 3u &&
-         data[0] == 0x42u && fixture->confirmations == 1u);
-  return 0;
-}
-
-static int disconnect(void* user, uint16_t connection) {
-  worker(user);
-  assert(connection == 7u);
-  return 0;
-}
 static int scan_stop(void* user) {
   fixture_t* f = user;
   worker(f);
@@ -419,23 +289,25 @@ static void save_frame(fixture_t* f, const char* name) {
 }
 
 static void verify_payer_qr(fixture_t* fixture, const char* expected) {
-  uint8_t* luma = malloc(240u * 240u);
-  assert(luma != NULL);
+  uint8_t modules[H2_QRCODE_BUFFER_LEN_FOR_VERSION(10)];
+  uint8_t scratch[sizeof(modules)];
+  h2_qrcode_t code;
+  assert(h2_qrcode_encode_text(expected, H2_QRCODE_ECC_QUARTILE, 10, modules,
+                               sizeof(modules), scratch, sizeof(scratch),
+                               &code) == 0);
+  h2_qrcode_layout_t layout;
+  assert(h2_qrcode_layout_center(&code, 224, 140, 4, &layout) == 0);
+  int span = (code.size + 8) * layout.scale;
+  int left = (240 - span) / 2;
   lv_refr_now(lv_display_get_default());
-  for (size_t index = 0u; index < 240u * 240u; ++index) {
-    uint16_t pixel = fixture->pixels[index];
-    unsigned red = ((pixel >> 11u) & 31u) * 255u / 31u;
-    unsigned green = ((pixel >> 5u) & 63u) * 255u / 63u;
-    unsigned blue = (pixel & 31u) * 255u / 31u;
-    luma[index] = (uint8_t)((red * 77u + green * 150u + blue * 29u) >> 8u);
-  }
-  uint8_t code[32];
-  size_t length = 0u;
-  assert(h2_qrcode_decode_luma(h2_desktop_platform_default_allocator(), luma,
-                               240u * 240u, 240u, 240u, 240u, code,
-                               sizeof(code), &length) == 0);
-  assert(length == strlen(expected) && memcmp(code, expected, length) == 0);
-  free(luma);
+  for (int row = 0; row < span; ++row)
+    for (int column = 0; column < span; ++column) {
+      int x = column / layout.scale - 4;
+      int y = row / layout.scale - 4;
+      uint16_t pixel = h2_qrcode_module_is_dark(&code, x, y) ? 0u : UINT16_MAX;
+      assert(fixture->pixels[(size_t)(32 + row) * 240u + left + column] ==
+             pixel);
+    }
 }
 static void key(fixture_t* f, h2_runtime_component_id_t id) {
   if (f->production_input) {
@@ -585,14 +457,6 @@ static bool flow_exit(fixture_t* fixture) {
     fixture->flow_phase = 1u;
   else if (fixture->flow_phase == 1u &&
            find_label(lv_screen_active(), "Tap the payment terminal")) {
-    uint8_t stale[31] = {30u, 0x16u, 0x38u, 0xfau, 1u};
-    const h2_pal_ble_scan_result_t stale_result = {
-        .data_status = H2_PAL_BLE_ADV_DATA_COMPLETE,
-        .raw_data = {stale, sizeof(stale)}};
-    if (fixture->flow < 6u)
-      assert(!fixture->scan_callback(fixture->scan_user, &stale_result));
-    else
-      assert(fixture->scan_callback == NULL);
     const h2_runtime_nfc_state_t state = {
         .status = H2_RUNTIME_NFC_STATE_DISCOVERED,
         .stage = H2_PAL_NFC_STAGE_DISCOVERED,
@@ -637,39 +501,6 @@ static bool flow_exit(fixture_t* fixture) {
              fixture->results == 0u);
       fixture->flow_phase = 6u;
     }
-  } else if (fixture->flow_phase == 2u && fixture->flow == 3u &&
-             find_label(lv_screen_active(), "Waiting for terminal data")) {
-    assert(fixture->service != NULL && fixture->reads == 1u);
-    const h2_pal_ble_gatt_characteristic_t* characteristic =
-        fixture->service->characteristics;
-    const h2_pal_ble_gatt_access_t access = {.conn_handle = 7u,
-                                             .attr_handle = 42u};
-    assert(characteristic->write(characteristic->user, &access,
-                                 (const uint8_t*)"GATT", 4u) == 0);
-    fixture->flow_phase = 3u;
-  } else if ((fixture->flow_phase == 2u || fixture->flow_phase == 3u) &&
-             find_label(lv_screen_active(), "Confirm this tap payment?") &&
-             click("Confirm"))
-    fixture->flow_phase = 4u;
-  else if (fixture->flow_phase == 2u && fixture->flow == 2u &&
-           find_label(lv_screen_active(), "Response sent; checking payment"))
-    fixture->flow_phase = 4u;
-  else if (fixture->flow_phase == 4u &&
-           find_label(lv_screen_active(), "Response sent; checking payment")) {
-    assert(fixture->results == 0u);
-    uint8_t advertising[31] = {30u, 0x16u, 0x37u, 0xfau, 1u};
-    h2_pal_ble_scan_result_t result = {
-        .data_status = H2_PAL_BLE_ADV_DATA_COMPLETE,
-        .raw_data = {advertising, sizeof(advertising)}};
-    assert(fixture->scan_callback != NULL);
-    assert(!fixture->scan_callback(fixture->scan_user, &result));
-    advertising[2] = 0x38u;
-    assert(!fixture->scan_callback(fixture->scan_user, &result));
-    fixture->flow_phase = 5u;
-  } else if (fixture->flow_phase == 5u &&
-             find_label(lv_screen_active(), "Payment confirmed\n0.00")) {
-    assert(fixture->results == 1u && fixture->reads == 1u);
-    fixture->flow_phase = 6u;
   }
   return fixture->flow_phase == 6u;
 }
@@ -770,18 +601,8 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
   const h2_pal_touch_vtable_t tvt = {touch_open, touch_info, touch_poll,
                                      touch_close};
   const h2_pal_touch_api_t touch = {&f, &tvt};
-  const h2_pal_ble_vtable_t bvt = {.start = host_start,
-                                   .start_scan = scan_start,
-                                   .stop_scan = scan_stop,
-                                   .adv_set_create = adv_create,
-                                   .adv_set_set_data = adv_data,
-                                   .adv_set_start = adv_start,
-                                   .adv_set_stop = adv_stop,
-                                   .adv_set_destroy = adv_destroy,
-                                   .register_gatt_services = gatt_register,
-                                   .unregister_gatt_service = gatt_unregister,
-                                   .notify = gatt_notify,
-                                   .disconnect = disconnect};
+  const h2_pal_ble_vtable_t bvt = {
+      .start = host_start, .start_scan = scan_start, .stop_scan = scan_stop};
   const h2_pal_ble_api_t ble = {.user = &f, .vtable = &bvt};
   h2_runtime_config_t config = h2_smoke_host_runtime_config(
       "test", "host", "host", h2_desktop_platform_default_allocator(),
@@ -833,21 +654,14 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
       .get_code = code,
       .query_code = query,
       .receive_ndef = receive_ndef,
-      .receive_ble_frame = receive_frame,
-      .confirm_tap = confirm,
       .query_tap = query_tap,
-      .receive_ble_result = receive_result,
       .start_tap = payer_only ? NULL : tap_start,
       .stop_tap = stop};
   const h2_alipay_payment_api_t payment = {&f, &pvt};
   const h2_alipay_e2e_config_t app = {
       .payment = &payment,
       .payment_nfc_component_id = 1u,
-      .payment_nfc_only = flow >= 6u,
-      .payment_connected_ble = flow == 3u,
-      .payment_ble_mac = {1u, 2u, 3u, 4u, 5u, 6u},
-      .payment_nfc_encode_reply =
-          flow == 2u || flow >= 6u ? encode_reply : NULL,
+      .payment_nfc_encode_reply = encode_reply,
       .user = &f,
       .should_exit = exit_requested,
       .payment_buttons = buttons ? (h2_alipay_payment_buttons_t){2u, 3u, 4u, 5u}
@@ -857,10 +671,7 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
   if (flow == 4u) {
     assert(f.flow_phase == 6u && atomic_load(&f.codes) == 2u &&
            atomic_load(&f.queries) == 3u && f.reads == 0u);
-  } else if (flow == 5u) {
-    assert(f.flow_phase == 6u && f.reads == 1u && f.results == 0u &&
-           f.writes == 0u && f.confirmations == 0u && !f.scanning);
-  } else if (flow >= 6u) {
+  } else if (flow >= 5u) {
     unsigned expected_reads = flow == 12u                   ? 8u
                               : flow == 13u || flow == 17u  ? 102u
                               : flow == 14u                 ? 101u
@@ -869,8 +680,8 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
                               : flow == 9u                  ? 3u
                               : (flow == 8u || flow == 11u) ? 2u
                                                             : 1u;
-    bool read_failed =
-        flow == 9u || flow == 10u || flow == 13u || flow == 14u || flow == 15u;
+    bool read_failed = flow == 5u || flow == 9u || flow == 10u || flow == 13u ||
+                       flow == 14u || flow == 15u;
     assert(f.flow_phase == 6u && f.reads == expected_reads &&
            f.writes == (read_failed ? 0u : 1u) &&
            f.results == (flow == 6u || flow == 8u || flow == 11u ||
@@ -879,23 +690,17 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
                              : 0u) &&
            f.confirmations == 0u && f.advertising_starts == 0u &&
            atomic_load(&f.scans) == 0u && atomic_load(&f.scan_stops) == 0u);
-  } else if (flow != 0u) {
-    assert(f.flow_phase == 6u && f.reads == 1u && f.results == 1u);
-    assert(f.writes == (flow == 2u ? 1u : 0u) &&
-           f.frames == (flow == 3u ? 1u : 0u) &&
-           f.confirmations == (flow == 2u ? 0u : 1u));
-    assert(!f.advertising && f.advertising_starts == f.advertising_stops &&
-           f.service == NULL);
   } else if (expected == 0) {
     assert(f.phase == 6u && atomic_load(&f.codes) == 2u &&
            atomic_load(&f.starts) == (payer_only ? 0u : 1u));
-    assert(atomic_load(&f.scans) == (payer_only ? 0u : 1u) &&
-           atomic_load(&f.scan_stops) == (payer_only ? 0u : 2u) && !f.scanning);
+    assert(atomic_load(&f.scans) == 0u && atomic_load(&f.scan_stops) == 0u &&
+           !f.scanning);
   } else {
     assert(f.phase == 0u && atomic_load(&f.codes) == 0u &&
            atomic_load(&f.starts) == 0u);
   }
-  assert(f.touch_opens == 1u && f.touch_closes == (touch_rc == 0 ? 1u : 0u));
+  assert(f.host_starts == 0u && atomic_load(&f.scans) == 0u);
+  assert(f.touch_opens == 0u && f.touch_closes == 0u);
   assert(lv_group_get_count() == 0u);
   h2_lvgl_display_destroy(view);
   lv_deinit();
@@ -908,23 +713,23 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
   assert(h2_runtime_destroy(&rt) == 0);
 }
 int main(void) {
-  run(false, false, false, 0, 0, 0u);
-  run(false, false, false, H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_UNSUPPORTED, 0u);
+  run(false, false, false, 0, H2_PAL_ERR_INVALID_ARG, 0u);
+  run(true, false, false, 0, 0, 0u);
   run(true, false, false, H2_PAL_ERR_UNSUPPORTED, 0, 0u);
-  run(true, false, false, H2_PAL_ERR_IO, H2_PAL_ERR_IO, 0u);
+  run(true, false, false, H2_PAL_ERR_IO, 0, 0u);
   run(true, true, false, H2_PAL_ERR_UNSUPPORTED, 0, 0u);
   run(true, true, true, H2_PAL_ERR_UNSUPPORTED, 0, 0u);
-  for (unsigned flow = 1u; flow <= 7u; ++flow)
-    run(false, false, false, 0, 0, flow);
-  run(false, false, false, 0, 0, 9u);
-  run(false, false, false, 0, 0, 8u);
-  run(false, false, false, 0, 0, 10u);
-  run(false, false, false, 0, 0, 11u);
-  run(false, false, false, 0, 0, 12u);
-  run(false, false, false, 0, 0, 13u);
-  run(false, false, false, 0, 0, 14u);
-  run(false, false, false, 0, 0, 15u);
-  run(false, false, false, 0, 0, 16u);
-  run(false, false, false, 0, 0, 17u);
+  for (unsigned flow = 4u; flow <= 7u; ++flow)
+    run(true, false, false, 0, 0, flow);
+  run(true, false, false, 0, 0, 9u);
+  run(true, false, false, 0, 0, 8u);
+  run(true, false, false, 0, 0, 10u);
+  run(true, false, false, 0, 0, 11u);
+  run(true, false, false, 0, 0, 12u);
+  run(true, false, false, 0, 0, 13u);
+  run(true, false, false, 0, 0, 14u);
+  run(true, false, false, 0, 0, 15u);
+  run(true, false, false, 0, 0, 16u);
+  run(true, false, false, 0, 0, 17u);
   return 0;
 }

@@ -36,6 +36,12 @@ h2_pal_result_t h2_wolfcrypt_test_sm2_sign(
     const uint8_t nonce[32], const h2_pal_sm2_private_key_t* private_key,
     const uint8_t digest[32], h2_pal_sm2_signature_t* signature);
 
+/** Test-only raw-digest verification through the real upstream SM2 verifier.
+ * Inputs are borrowed; invalid signatures or curve points report FORMAT. */
+h2_pal_result_t h2_wolfcrypt_test_sm2_verify_digest(
+    const h2_pal_sm2_public_key_t* public_key, const uint8_t digest[32],
+    const h2_pal_sm2_signature_t* signature);
+
 #ifdef __cplusplus
 }
 #endif

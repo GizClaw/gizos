@@ -2,6 +2,7 @@
 #define H2_ALIPAY_TAP_INTERNAL_H
 
 #include "h2_alipay_tap.h"
+#include "h2_alipay_crypto_compat.h"
 #include "h2_crypto.h"
 
 typedef struct h2_alipay_tap_tag_details {
@@ -21,7 +22,7 @@ int h2_alipay_tap_nfc_reply(h2_alipay_tap_t* tap, bool vip,
                             const uint8_t watch[2], char output[128],
                             size_t* length);
 int h2_alipay_tap_ble_reply(h2_alipay_tap_t* tap,
-                            h2_crypto_md5_aes_keyset_t* keys, bool vip,
+                            h2_alipay_md5_aes_keyset_t* keys, bool vip,
                             uint8_t mode, const uint8_t watch[2],
                             uint8_t output[20]);
 int h2_alipay_tap_cabinet_reply(h2_alipay_tap_t* tap, bool wallet,

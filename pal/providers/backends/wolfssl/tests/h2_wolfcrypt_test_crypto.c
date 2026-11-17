@@ -222,9 +222,41 @@ h2_pal_result_t h2_wolfcrypt_test_sm2_sign(
   if (key_ready) wc_ecc_free(&key);
   h2_wolfcrypt_secure_zero(sm2_nonce, sizeof(sm2_nonce));
   if (rc == 0)
-    rc = h2_pal_crypto_sm2_verify_digest(h2_wolfcrypt_crypto_api(), &public_key,
-                                         digest, signature);
+    rc = h2_wolfcrypt_test_sm2_verify_digest(&public_key, digest, signature);
   h2_wolfcrypt_secure_zero(&public_key, sizeof(public_key));
   if (rc != 0) memset(signature, 0, sizeof(*signature));
   return rc == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+
+h2_pal_result_t h2_wolfcrypt_test_sm2_verify_digest(
+    const h2_pal_sm2_public_key_t* public_key, const uint8_t digest[32],
+    const h2_pal_sm2_signature_t* signature) {
+  if (public_key == NULL || digest == NULL || signature == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (public_key->bytes[0] != 4u) return H2_PAL_ERR_FORMAT;
+  ecc_key key;
+  mp_int first, second;
+  bool key_ready = false, integers_ready = false;
+  int rc = wc_ecc_init(&key);
+  key_ready = rc == 0;
+  if (rc == 0) {
+    rc = mp_init_multi(&first, &second, NULL, NULL, NULL, NULL);
+    integers_ready = rc == 0;
+  }
+  if (rc == 0)
+    rc = wc_ecc_import_x963_ex(public_key->bytes, sizeof(public_key->bytes),
+                               &key, ECC_SM2P256V1);
+  if (rc == 0) rc = wc_ecc_check_key(&key);
+  if (rc == 0) rc = mp_read_unsigned_bin(&first, signature->bytes, 32u);
+  if (rc == 0) rc = mp_read_unsigned_bin(&second, signature->bytes + 32u, 32u);
+  int verified = 0;
+  if (rc == 0)
+    rc = wc_ecc_sm2_verify_hash_ex(&first, &second, digest, 32u, &verified,
+                                   &key);
+  if (integers_ready) {
+    mp_clear(&first);
+    mp_clear(&second);
+  }
+  if (key_ready) wc_ecc_free(&key);
+  return rc == 0 && verified == 1 ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
 }

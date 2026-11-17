@@ -101,14 +101,14 @@ int h2_alipay_client_migrate_data(
     rc = legacy_read(config, required[index], NULL, SIZE_MAX, &ignored);
     if (rc != H2_PAL_OK) goto done;
   }
-  rc = h2_crypto_p256_keypair_generate(config->crypto, &work->local);
+  rc = h2_pal_crypto_p256_keypair_generate(config->crypto, &work->local);
   if (rc != H2_PAL_OK) goto done;
   *pending_private_key = work->local.private_key;
-  rc = h2_crypto_p256_keypair_generate(config->crypto, &work->remote);
+  rc = h2_pal_crypto_p256_keypair_generate(config->crypto, &work->remote);
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_p256_shared_secret(config->crypto, &work->remote.private_key,
-                                      &work->local.public_key,
-                                      work->binding.secret);
+    rc = h2_pal_crypto_p256_shared_secret(
+        config->crypto, &work->remote.private_key, &work->local.public_key,
+        work->binding.secret);
   if (rc != H2_PAL_OK) goto done;
   size_t seed_length = 0u, key_length = 0u;
   rc = legacy_read(config, LEGACY_SEED, work->old_seed, sizeof(work->old_seed),
@@ -140,9 +140,9 @@ int h2_alipay_client_migrate_data(
         work->first, first_length, work->binding.seed,
         sizeof(work->binding.seed), &work->binding.seed_length);
   if (rc != H2_PAL_OK) goto done;
-  rc = h2_crypto_p256_shared_secret(config->crypto, pending_private_key,
-                                    &work->remote.public_key,
-                                    work->binding.secret);
+  rc = h2_pal_crypto_p256_shared_secret(config->crypto, pending_private_key,
+                                        &work->remote.public_key,
+                                        work->binding.secret);
   h2_alipay_client_wipe(pending_private_key, sizeof(*pending_private_key));
   if (rc == H2_PAL_OK)
     rc = legacy_read(config, LEGACY_NICKNAME, work->binding.nickname,

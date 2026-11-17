@@ -71,29 +71,3 @@ bool h2_alipay_payment_model_has(const h2_alipay_payment_model_t* model,
     if (model->attempts[i].id == id) return true;
   return false;
 }
-int h2_alipay_payment_ble_result(const uint8_t* adv, size_t length,
-                                 uint8_t out[27]) {
-  if (adv == NULL || out == NULL) return H2_PAL_ERR_INVALID_ARG;
-  static const uint8_t uuid[] = {0xfb, 0x34, 0x9b, 0x5f, 0x80, 0,    0, 0x80,
-                                 0,    0x10, 0,    0,    0x38, 0xfa, 0, 0};
-  bool found = false;
-  for (size_t offset = 0u; offset < length;) {
-    size_t size = adv[offset++];
-    if (size == 0u) break;
-    if (size > length - offset || size < 1u) return H2_PAL_ERR_FORMAT;
-    const uint8_t* record = adv + offset;
-    size_t header = record[0] == 0x16u ? 3u : record[0] == 0x21u ? 17u : 0u;
-    bool match =
-        header == 3u
-            ? (size >= header && record[1] == 0x38u && record[2] == 0xfau)
-            : header == 17u && size >= header &&
-                  memcmp(record + 1u, uuid, sizeof(uuid)) == 0;
-    if (match) {
-      if (size != header + 27u || found) return H2_PAL_ERR_FORMAT;
-      memcpy(out, record + header, 27u);
-      found = true;
-    }
-    offset += size;
-  }
-  return found ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
-}

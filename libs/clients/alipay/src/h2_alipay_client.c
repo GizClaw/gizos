@@ -365,7 +365,7 @@ h2_pal_result_t h2_alipay_client_get_binding_code(
     uint64_t utc_ms = 0u;
     rc = h2_pal_time_get_wall_ms(config->time, &utc_ms);
     if (rc == H2_PAL_OK)
-      rc = h2_crypto_random(config->crypto, entropy, sizeof(entropy));
+      rc = h2_pal_crypto_random(config->crypto, entropy, sizeof(entropy));
     if (rc != H2_PAL_OK) goto done;
     uint32_t random = (uint32_t)entropy[0] | ((uint32_t)entropy[1] << 8u) |
                       ((uint32_t)entropy[2] << 16u) |
@@ -375,10 +375,10 @@ h2_pal_result_t h2_alipay_client_get_binding_code(
                    (uint32_t)(utc_ms / 1000u));
   }
   out->stage = H2_ALIPAY_CLIENT_KEYPAIR;
-  rc = h2_crypto_p256_keypair_generate(config->crypto, &workspace->keypair);
+  rc = h2_pal_crypto_p256_keypair_generate(config->crypto, &workspace->keypair);
   if (rc != H2_PAL_OK) goto done;
   out->stage = H2_ALIPAY_CLIENT_PUBLIC_KEY;
-  rc = h2_crypto_p256_public_key_export(
+  rc = h2_pal_crypto_p256_public_key_uncompress(
       config->crypto, &workspace->keypair.public_key, workspace->public_key);
   if (rc != H2_PAL_OK) goto done;
   out->stage = H2_ALIPAY_CLIENT_ENCODE;

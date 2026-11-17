@@ -85,7 +85,7 @@ h2_pal_result_t h2_alipay_tap_parse_result(h2_alipay_tap_t* tap,
   uint8_t plain[19] = {0}, expected[16] = {0}, twice[64] = {0};
   size_t token_length = strlen(tap->squeeze);
   if (rc == H2_PAL_OK) {
-    rc = h2_crypto_xor_mask(data + 4u, sizeof(plain),
+    rc = h2_alipay_xor_mask(data + 4u, sizeof(plain),
                             (const uint8_t*)binding.uid + uid_length - 5u, 5u,
                             false, plain);
     if (token_length == 0u) rc = H2_ALIPAY_TAP_ERR_TOKEN;
@@ -93,7 +93,8 @@ h2_pal_result_t h2_alipay_tap_parse_result(h2_alipay_tap_t* tap,
   if (rc == H2_PAL_OK) {
     memcpy(twice, tap->squeeze, token_length);
     memcpy(twice + token_length, tap->squeeze, token_length);
-    rc = h2_crypto_md5(tap->config.crypto, twice, token_length * 2u, expected);
+    rc = h2_pal_crypto_md5(tap->config.crypto, twice, token_length * 2u,
+                           expected);
   }
   if (rc == H2_PAL_OK &&
       !h2_crypto_bytes_equal(expected, plain, sizeof(expected)))
@@ -219,10 +220,10 @@ int h2_alipay_tap_nfc_reply(h2_alipay_tap_t* tap, bool vip,
   uint8_t digest[16], masked[32];
   char encoded[48] = {0};
   size_t size = strlen(tap->paycode), encoded_length = 0u;
-  int rc = h2_crypto_md5(tap->config.crypto, (const uint8_t*)tap->squeeze, 15u,
-                         digest);
+  int rc = h2_pal_crypto_md5(tap->config.crypto, (const uint8_t*)tap->squeeze,
+                             15u, digest);
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_xor_mask((const uint8_t*)tap->paycode, size, digest,
+    rc = h2_alipay_xor_mask((const uint8_t*)tap->paycode, size, digest,
                             sizeof(digest), true, masked);
   if (rc == H2_PAL_OK)
     rc = h2_encoding_encode(&h2_encoding_base64_std, masked, size, encoded,
@@ -265,7 +266,7 @@ static void packed_append(uint8_t output[16], unsigned value, unsigned width) {
 }
 
 int h2_alipay_tap_ble_reply(h2_alipay_tap_t* tap,
-                            h2_crypto_md5_aes_keyset_t* keys, bool vip,
+                            h2_alipay_md5_aes_keyset_t* keys, bool vip,
                             uint8_t mode, const uint8_t watch[2],
                             uint8_t output[20]) {
   if (tap == NULL || keys == NULL || watch == NULL || output == NULL ||
@@ -298,18 +299,18 @@ int h2_alipay_tap_ble_reply(h2_alipay_tap_t* tap,
         (uint8_t)(((tail >> bit) & 1u) << ((91u + bit) % 8u));
   size_t cipher_length = 0u;
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_md5_aes_keyset_encrypt(keys, mode, packed + 1u, 15u, cipher,
+    rc = h2_alipay_md5_aes_keyset_encrypt(keys, mode, packed + 1u, 15u, cipher,
                                           sizeof(cipher), &cipher_length);
   if (rc == H2_PAL_OK && cipher_length != sizeof(cipher))
     rc = H2_PAL_ERR_FORMAT;
   if (rc == H2_PAL_OK) {
     masked[0] = packed[0];
     memcpy(masked + 1u, cipher, sizeof(cipher));
-    rc = h2_crypto_md5(tap->config.crypto, (const uint8_t*)tap->squeeze, 15u,
-                       digest);
+    rc = h2_pal_crypto_md5(tap->config.crypto, (const uint8_t*)tap->squeeze,
+                           15u, digest);
   }
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_xor_mask(masked, sizeof(masked), digest, sizeof(digest),
+    rc = h2_alipay_xor_mask(masked, sizeof(masked), digest, sizeof(digest),
                             false, masked);
   if (rc == H2_PAL_OK) {
     output[0] = vip ? 'M' : 'N';
@@ -343,10 +344,10 @@ int h2_alipay_tap_cabinet_reply(h2_alipay_tap_t* tap, bool wallet,
       rc = H2_PAL_ERR_NO_SPACE;
   }
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_md5(tap->config.crypto, (const uint8_t*)tap->squeeze, 15u,
-                       digest);
+    rc = h2_pal_crypto_md5(tap->config.crypto, (const uint8_t*)tap->squeeze,
+                           15u, digest);
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_xor_mask((const uint8_t*)plain, strlen(plain), digest,
+    rc = h2_alipay_xor_mask((const uint8_t*)plain, strlen(plain), digest,
                             sizeof(digest), true, masked);
   size_t encoded_length = 0u;
   if (rc == H2_PAL_OK)
@@ -401,8 +402,8 @@ int h2_alipay_tap_verify_device(const h2_pal_crypto_api_t* crypto,
     rc = h2_encoding_decode(&h2_encoding_hex, signature + 2u, 128u,
                             decoded.bytes, sizeof(decoded.bytes), &length);
   if (rc == H2_PAL_OK && length == sizeof(decoded.bytes))
-    rc = h2_crypto_ecdsa_p256_sha256_verify(crypto, &trusted, point + 1u, 64u,
-                                            &decoded);
+    rc = h2_pal_crypto_ecdsa_p256_sha256_verify(crypto, &trusted, point + 1u,
+                                                64u, &decoded);
   else if (rc == H2_PAL_OK)
     rc = H2_PAL_ERR_FORMAT;
   h2_alipay_client_wipe(point, sizeof(point));
@@ -427,10 +428,10 @@ int h2_alipay_tap_connected_reply(h2_alipay_tap_t* tap, const char* public_key,
   if (rc == H2_PAL_OK)
     rc = h2_crypto_p256_public_key_import(tap->config.crypto, point, &remote);
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_p256_keypair_generate(tap->config.crypto, &pair);
+    rc = h2_pal_crypto_p256_keypair_generate(tap->config.crypto, &pair);
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_p256_shared_secret(tap->config.crypto, &pair.private_key,
-                                      &remote, shared);
+    rc = h2_pal_crypto_p256_shared_secret(tap->config.crypto, &pair.private_key,
+                                          &remote, shared);
   if (rc == H2_PAL_OK) {
     h2_sha256_t hash;
     h2_sha256_init(&hash);
@@ -455,8 +456,8 @@ int h2_alipay_tap_connected_reply(h2_alipay_tap_t* tap, const char* public_key,
         &cipher_length);
   }
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_p256_public_key_export(tap->config.crypto, &pair.public_key,
-                                          point);
+    rc = h2_pal_crypto_p256_public_key_uncompress(tap->config.crypto,
+                                                  &pair.public_key, point);
   if (rc == H2_PAL_OK)
     rc = h2_encoding_encode(&h2_encoding_hex, point + 1u, 64u, (char*)output,
                             256u, &public_length);

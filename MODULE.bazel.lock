@@ -467,7 +467,7 @@
     "//tools/bazel/release:release_inputs.bzl%release_inputs": {
       "general": {
         "bzlTransitiveDigest": "HpWKT6TGVXgw7/VRIDg7T0dfKEMZb0Z0qD6JxXV47F0=",
-        "usagesDigest": "LIU8ZIfQBba0JNPFSj8BHKpvx7evMVMuDQWtrT5q+kY=",
+        "usagesDigest": "y/IAIp614H56FU0W+OgbAaxxMBrWlzZtYsUFd7O+/oY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_firmware_release_inputs": {
@@ -480,7 +480,7 @@
     "//tools/bazel/repositories:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "2JZy85z5MiIaUpyUMEYbak7QXyt1MNAqmSOeoGW3Et0=",
-        "usagesDigest": "GFN5bVhpOvaM7G8WDUJjUan1F4bHcgKNIdklR1S92+A=",
+        "usagesDigest": "iJx7PjYehIIdft/ehOLcvlLmpoCh3H7SlM84qoVaGrA=",
         "recordedInputs": [
           "REPO_MAPPING:,h2_vendor_wolfsm +vendor_repositories+h2_vendor_wolfsm"
         ],
@@ -581,44 +581,6 @@
               "strip_prefix": "QR-Code-generator-3c6d0b3cefb4e049dc337e82237c9644399716a8",
               "urls": [
                 "https://codeload.github.com/nayuki/QR-Code-generator/tar.gz/3c6d0b3cefb4e049dc337e82237c9644399716a8"
-              ]
-            }
-          },
-          "h2_vendor_quirc": {
-            "repoRuleId": "@@//tools/bazel/repositories:repositories.bzl%_archive_repository",
-            "attributes": {
-              "build_file": "@@//third_party:quirc.BUILD.bazel",
-              "ffmpeg_configure_adapter": false,
-              "nested_archive_sha256": {},
-              "nested_archive_strip_prefix": {},
-              "nested_archive_urls": {},
-              "overlay_files": {},
-              "patches": [
-                "@@//third_party/quirc_patch:quirc.patch"
-              ],
-              "sha256": "b8c3d3a3a6644395f9187951aba0cba7b1503566924b38c2a26c285b4686eee7",
-              "strip_prefix": "quirc-f2e4271ae43a15d9263704e07bc86cba5697d74d",
-              "urls": [
-                "https://codeload.github.com/dlbeer/quirc/tar.gz/f2e4271ae43a15d9263704e07bc86cba5697d74d"
-              ]
-            }
-          },
-          "h2_vendor_quickjs": {
-            "repoRuleId": "@@//tools/bazel/repositories:repositories.bzl%_archive_repository",
-            "attributes": {
-              "build_file": "@@//third_party:quickjs.BUILD.bazel",
-              "ffmpeg_configure_adapter": false,
-              "nested_archive_sha256": {},
-              "nested_archive_strip_prefix": {},
-              "nested_archive_urls": {},
-              "overlay_files": {},
-              "patches": [
-                "@@//third_party/quickjs_patch:quickjs.patch"
-              ],
-              "sha256": "640fb75b3ca11eec37f9df4bea0afa48a39027ca2dc60806b96d29aa03e504a6",
-              "strip_prefix": "quickjs-b5e62895c619d4ffc75c9d822c8d85f1ece77e5b",
-              "urls": [
-                "https://codeload.github.com/bellard/quickjs/tar.gz/b5e62895c619d4ffc75c9d822c8d85f1ece77e5b"
               ]
             }
           },
@@ -957,7 +919,7 @@
     "//tools/bazel/toolchains:go_host_toolchains.bzl%go_host_toolchains": {
       "general": {
         "bzlTransitiveDigest": "0/ucshTZjGqyJ/esN1xgxq/2tN9K0SVn1AsH9fOTO+U=",
-        "usagesDigest": "24awH0qk5k+ZC+p8z/9V+SgCPuTAN5kfDG2iaCh1FuA=",
+        "usagesDigest": "NHLnCka/Tmd+xU3xxo1Gxb27aWT8WFhMUedtOWymorU=",
         "recordedInputs": [
           "REPO_MAPPING:,io_bazel_rules_go rules_go+",
           "REPO_MAPPING:rules_go+,bazel_tools bazel_tools",

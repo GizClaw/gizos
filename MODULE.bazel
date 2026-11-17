@@ -334,22 +334,6 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/nayuki/QR-Code-generator/tar.gz/3c6d0b3cefb4e049dc337e82237c9644399716a8"],
 )
 vendor_repositories.repository(
-    name = "h2_vendor_quirc",
-    build_file = "//third_party:quirc.BUILD.bazel",
-    patches = ["//third_party/quirc_patch:quirc.patch"],
-    sha256 = "b8c3d3a3a6644395f9187951aba0cba7b1503566924b38c2a26c285b4686eee7",
-    strip_prefix = "quirc-f2e4271ae43a15d9263704e07bc86cba5697d74d",
-    urls = ["https://codeload.github.com/dlbeer/quirc/tar.gz/f2e4271ae43a15d9263704e07bc86cba5697d74d"],
-)
-vendor_repositories.repository(
-    name = "h2_vendor_quickjs",
-    build_file = "//third_party:quickjs.BUILD.bazel",
-    patches = ["//third_party/quickjs_patch:quickjs.patch"],
-    sha256 = "640fb75b3ca11eec37f9df4bea0afa48a39027ca2dc60806b96d29aa03e504a6",
-    strip_prefix = "quickjs-b5e62895c619d4ffc75c9d822c8d85f1ece77e5b",
-    urls = ["https://codeload.github.com/bellard/quickjs/tar.gz/b5e62895c619d4ffc75c9d822c8d85f1ece77e5b"],
-)
-vendor_repositories.repository(
     name = "h2_vendor_yyjson",
     build_file = "//third_party:yyjson.BUILD.bazel",
     sha256 = "94e9c90f8f12d8329f2c0756782d21e5c278729023cd2c5fe47e323a35947ed6",
@@ -529,8 +513,6 @@ use_repo(
     "h2_vendor_pixa",
     "h2_vendor_portaudio",
     "h2_vendor_qrcodegen",
-    "h2_vendor_quickjs",
-    "h2_vendor_quirc",
     "h2_vendor_sdl3",
     "h2_vendor_speexdsp",
     "h2_vendor_sqlite",

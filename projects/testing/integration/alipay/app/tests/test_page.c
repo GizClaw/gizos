@@ -14,7 +14,7 @@ typedef struct page_fixture {
   pthread_t ui_thread;
   uint16_t* frame;
   char code[H2_ALIPAY_BINDING_CODE_CAPACITY];
-  int prepare_rc, ready_rc, draw_rc, observe_rc, start_rc, code_rc;
+  int prepare_rc, draw_rc, observe_rc, start_rc, code_rc;
   unsigned opens, closes, draws, presents, init_calls, code_calls, reports;
   unsigned joins;
   bool retry_join, joined;
@@ -119,21 +119,6 @@ static h2_pal_result_t pre_init(void* user, int* sdk_rc, bool* first) {
   assert(!pthread_equal(pthread_self(), fixture->ui_thread));
   *first = fixture->init_calls++ == 0u;
   *sdk_rc = 0;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t ready(void* user, uint32_t feature,
-                             h2_alipay_blocker_t* blocker) {
-  (void)feature;
-  page_fixture_t* fixture = user;
-  *blocker = fixture->ready_rc == H2_PAL_OK ? H2_ALIPAY_BLOCKER_NONE
-                                            : H2_ALIPAY_BLOCKER_SECURITY_SCHEME;
-  return fixture->ready_rc;
-}
-
-static h2_pal_result_t binding_status(void* user, bool* bound) {
-  (void)user;
-  *bound = false;
   return H2_PAL_OK;
 }
 
@@ -251,8 +236,6 @@ static int run(page_fixture_t* fixture) {
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   const h2_alipay_vtable_t vtable = {
       .pre_init = pre_init,
-      .check_ready = ready,
-      .binding_status = binding_status,
       .get_binding_code = binding_code,
       .binding_snapshot = snapshot,
       .query_binding_result = query_binding,
@@ -341,13 +324,9 @@ int main(void) {
     verify_qr(&fixture);
     if (index == 0u) save_frame(&fixture, "tiga-qr-maximum-code");
   }
-  page_fixture_t blocked = {.width = 240,
-                            .height = 240,
-                            .frame = frame,
-                            .ready_rc = H2_PAL_ERR_UNAVAILABLE,
-                            .code_rc = -91};
+  page_fixture_t blocked = {
+      .width = 240, .height = 240, .frame = frame, .code_rc = -91};
   assert(run(&blocked) == H2_PAL_OK);
-  assert(blocked.result.blocker == H2_ALIPAY_BLOCKER_NONE);
   assert(blocked.result.code_sdk_rc == -91);
   assert(blocked.code_calls == 1u && !blocked.result.qr_visible);
   save_frame(&blocked, "tiga-sdk-error");

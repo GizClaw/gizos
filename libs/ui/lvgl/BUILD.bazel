@@ -267,7 +267,6 @@ cc_library(
         "src/h2_lvgl_memory.c",
         "src/h2_lvgl_memory.h",
         "src/h2_lvgl_osal.c",
-        "src/h2_lvgl_touch.c",
         "@h2_vendor_lvgl//:firmware_sources",
     ],
     hdrs = [

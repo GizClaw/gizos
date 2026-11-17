@@ -54,7 +54,7 @@ static void tag_flags(h2_alipay_tap_tag_details_t* details, const char* flags) {
     if (digit > 15u) return;
     uint8_t value = (uint8_t)digit;
     previous = last;
-    if (h2_crypto_xor_mask(&value, 1u,
+    if (h2_alipay_xor_mask(&value, 1u,
                            (const uint8_t*)out->token + positions[index], 1u,
                            false, &last) != H2_PAL_OK)
       return;
@@ -215,7 +215,7 @@ h2_pal_result_t h2_alipay_tap_decode_tag(
 int h2_alipay_tap_squeeze(const char* token, char output[16]) {
   if (token == NULL || output == NULL) return H2_PAL_ERR_INVALID_ARG;
   uint64_t hash = 0u;
-  int rc = h2_crypto_hash31((const uint8_t*)token, strlen(token), &hash);
+  int rc = h2_alipay_hash31((const uint8_t*)token, strlen(token), &hash);
   if (rc != H2_PAL_OK) return rc;
   uint64_t magnitude = hash > INT64_MAX ? UINT64_MAX - hash + 1u : hash;
   static const char alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyz";
@@ -240,9 +240,9 @@ h2_pal_result_t h2_alipay_tap_debug_token(const h2_pal_crypto_api_t* crypto,
   uint8_t digest[16], encoded[sizeof(payer) - 1u];
   int rc = h2_alipay_tap_squeeze(input, squeeze);
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_md5(crypto, (const uint8_t*)squeeze, 15u, digest);
+    rc = h2_pal_crypto_md5(crypto, (const uint8_t*)squeeze, 15u, digest);
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_xor_mask((const uint8_t*)payer, sizeof(encoded), digest,
+    rc = h2_alipay_xor_mask((const uint8_t*)payer, sizeof(encoded), digest,
                             sizeof(digest), true, encoded);
   if (rc == H2_PAL_OK) {
     size_t size = 0u;

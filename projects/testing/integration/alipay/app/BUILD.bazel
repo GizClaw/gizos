@@ -14,6 +14,19 @@ h2_tasks(
 )
 
 cc_library(
+    name = "api",
+    hdrs = [
+        "include/h2_alipay.h",
+        "include/h2_alipay_payment.h",
+    ],
+    includes = ["include"],
+    deps = [
+        "//pal",
+        "//projects/testing/integration/alipay/diagnostics",
+    ],
+)
+
+cc_library(
     name = "workflow",
     srcs = [
         "src/h2_alipay_e2e_workflow.c",
@@ -25,8 +38,8 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
+        ":api",
         "//libs/runtime",
-        "//projects/testing/integration/alipay/diagnostics",
     ],
 )
 
@@ -46,7 +59,6 @@ cc_library(
         "//libs/image/qrcode",
         "//libs/sync/atomic",
         "//libs/ui/lvgl",
-        "//projects/testing/integration/alipay/payment:tap_radio",
     ],
 )
 
@@ -111,11 +123,22 @@ cc_test(
     target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
     deps = [
         ":alipay_e2e",
-        "//libs/image/qrcode:decoder",
+        "//libs/image/qrcode",
         "//libs/sync/atomic/providers/c11",
         "//libs/ui/lvgl",
         "//libs/ui/lvgl:display",
         "//pal/providers/platforms/desktop/pal_core:core",
         "//projects/testing/libs/host_runtime",
+    ],
+)
+
+cc_test(
+    name = "public_api_cpp_test",
+    srcs = ["tests/test_public_api_cpp.cc"],
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":api",
+        "//projects/testing/integration/alipay/diagnostics",
     ],
 )

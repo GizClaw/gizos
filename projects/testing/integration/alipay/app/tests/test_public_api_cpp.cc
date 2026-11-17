@@ -1,4 +1,5 @@
 #include "h2_alipay.h"
+#include "h2_alipay_payment.h"
 
 int main() {
   h2_alipay_trace_t trace;

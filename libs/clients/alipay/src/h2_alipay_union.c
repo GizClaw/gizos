@@ -501,7 +501,7 @@ static int business_id(h2_alipay_union_t* session) {
   if (rc != H2_PAL_OK) return rc;
   if (seconds > UINT32_MAX) return H2_PAL_ERR_INVALID_STATE;
   uint8_t random[4];
-  rc = h2_crypto_random(session->config.crypto, random, sizeof(random));
+  rc = h2_pal_crypto_random(session->config.crypto, random, sizeof(random));
   if (rc != H2_PAL_OK) return rc;
   uint32_t value =
       ((uint32_t)random[0] | ((uint32_t)random[1] << 8u) |

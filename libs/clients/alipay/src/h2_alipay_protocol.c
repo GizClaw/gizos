@@ -1,6 +1,6 @@
 #include "h2_alipay_protocol.h"
 
-#include "h2_crypto.h"
+#include "h2_alipay_crypto_compat.h"
 #include "h2_encoding.h"
 #include "h2_sha256.h"
 #include "h2_sm3.h"
@@ -86,7 +86,7 @@ h2_pal_result_t h2_alipay_protocol_signing_key(
   hash_text(&context, "##");
   hash_text(&context, identity->sn);
   h2_sha256_finish(&context, device_hash);
-  int rc = h2_crypto_xor_mask(out, 32u, device_hash, sizeof(device_hash), false,
+  int rc = h2_alipay_xor_mask(out, 32u, device_hash, sizeof(device_hash), false,
                               out);
   volatile uint8_t* clear = device_hash;
   for (size_t index = 0u; index < sizeof(device_hash); ++index)

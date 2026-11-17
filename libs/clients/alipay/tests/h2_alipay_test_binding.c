@@ -56,14 +56,14 @@ h2_pal_result_t h2_alipay_test_binding_result(
   if (rc == 0) {
     memcpy(twice, squeeze, 15u);
     memcpy(twice + 15u, squeeze, 15u);
-    rc = h2_crypto_md5(config->crypto, (const uint8_t*)twice, sizeof(twice),
-                       plain);
+    rc = h2_pal_crypto_md5(config->crypto, (const uint8_t*)twice, sizeof(twice),
+                           plain);
   }
   if (rc == 0) {
     memset(out, 0, 27u);
     out[0] = out[3] = 1u;
     plain[18] = 1u;
-    rc = h2_crypto_xor_mask(plain, sizeof(plain), (const uint8_t*)"T_UID", 5u,
+    rc = h2_alipay_xor_mask(plain, sizeof(plain), (const uint8_t*)"T_UID", 5u,
                             false, out + 4u);
     out[23] = (uint8_t)(real_amount_fen >> 16u);
     out[24] = (uint8_t)(real_amount_fen >> 8u);

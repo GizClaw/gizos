@@ -65,11 +65,8 @@ typedef struct h2_alipay_client_config {
    * retain it according to the product's factory-storage contract. */
   const uint8_t* activation_asset;
   size_t activation_asset_length;
-  /** Optional JavaScript interpreter stack budget in bytes; zero uses the
-   * reusable engine's default. This is a stack-use limit, not an allocation.
-   * Integration task policy must provide at least that much remaining stack
-   * plus native callback and caller frames. Host sanitizer instrumentation
-   * can require a larger caller-selected budget. */
+  /** Retained for configuration ABI compatibility; ignored. Downloaded transit
+   * scripts are unsupported and no interpreter is linked. */
   size_t script_stack_limit;
 } h2_alipay_client_config_t;
 

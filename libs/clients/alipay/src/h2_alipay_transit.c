@@ -2,7 +2,6 @@
 
 #include "h2_alipay_client_internal.h"
 #include "h2_encoding.h"
-#include "h2_javascript.h"
 #include "yyjson.h"
 #include <limits.h>
 #include <stdio.h>
@@ -721,8 +720,8 @@ static int rct_generate(const h2_alipay_client_config_t* config,
       snprintf(material, sizeof(material), "%s%s%08X", config->identity.mac,
                config->identity.model, (unsigned)timestamp);
   if (formatted < 0) goto done;
-  rc = h2_crypto_md5(config->crypto, (const uint8_t*)material, strlen(material),
-                     nonce);
+  rc = h2_pal_crypto_md5(config->crypto, (const uint8_t*)material,
+                         strlen(material), nonce);
   if (rc == H2_PAL_OK)
     rc = append_hex(platform, message, sizeof(message) - 24u, &message_length);
   uint32_t seconds = decimal(text(root, "qrcode_valid_seconds"));
@@ -791,66 +790,6 @@ done:
   return rc == H2_PAL_OK ? 0 : rc == H2_PAL_ERR_NO_SPACE ? 15 : 43;
 }
 
-static int script_load(const h2_alipay_client_config_t* config,
-                       const char* number, const char* type, yyjson_val* render,
-                       yyjson_doc** output) {
-  *output = NULL;
-  yyjson_val* descriptor = member(render, "genCodeScript");
-  const char* name = text(descriptor, "scriptName");
-  if (name == NULL) return 43;
-  int rc = read_json(config, "transit_scripts", output);
-  if (rc == H2_PAL_OK &&
-      yyjson_is_str(yyjson_obj_get(yyjson_doc_get_root(*output), name)))
-    return 0;
-  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND)
-    return rc == H2_PAL_ERR_NO_MEMORY ? 29 : 5;
-  yyjson_doc* response = NULL;
-  int result = rpc(config, "com.alideviceinfo.transport.query.queryScript",
-                   number, type, descriptor, &response);
-  if (result != 0) {
-    yyjson_doc_free(*output);
-    *output = NULL;
-    return result;
-  }
-  yyjson_val* root = yyjson_doc_get_root(response);
-  const char* script = text(root, "scriptCode");
-  if (!yyjson_is_true(member(root, "success")) || script == NULL) {
-    result = member(root, "success") == NULL ? 7 : 26;
-    yyjson_doc_free(response);
-    yyjson_doc_free(*output);
-    *output = NULL;
-    return result;
-  }
-  yyjson_alc allocator = transit_allocator(config);
-  yyjson_mut_doc* document = *output != NULL
-                                 ? yyjson_doc_mut_copy(*output, &allocator)
-                                 : yyjson_mut_doc_new(&allocator);
-  yyjson_mut_val* cache = *output != NULL    ? yyjson_mut_doc_get_root(document)
-                          : document != NULL ? yyjson_mut_obj(document)
-                                             : NULL;
-  if (cache == NULL || !yyjson_mut_is_obj(cache)) {
-    result = 29;
-  } else {
-    yyjson_mut_doc_set_root(document, cache);
-    (void)yyjson_mut_obj_remove_str(cache, name);
-    if (!yyjson_mut_obj_add_strcpy(document, cache, name, script))
-      result = 29;
-    else {
-      rc = write_json(config, "transit_scripts", document);
-      result = rc == H2_PAL_OK ? 0 : rc == H2_PAL_ERR_NO_MEMORY ? 29 : 5;
-    }
-  }
-  yyjson_mut_doc_free(document);
-  yyjson_doc_free(response);
-  yyjson_doc_free(*output);
-  *output = NULL;
-  if (result == 0) {
-    rc = read_json(config, "transit_scripts", output);
-    if (rc != H2_PAL_OK) result = rc == H2_PAL_ERR_NO_MEMORY ? 29 : 5;
-  }
-  return result;
-}
-
 int h2_alipay_transit_update(const h2_alipay_client_config_t* config,
                              h2_alipay_transit_t* state, const char* number,
                              const char* type) {
@@ -865,9 +804,7 @@ int h2_alipay_transit_update(const h2_alipay_client_config_t* config,
     result = rc == H2_PAL_ERR_NO_MEMORY ? 29 : 5;
   } else if (strcmp(mode, "SCRIPT") == 0 ||
              strcmp(mode, "ONLINE_PRIORITY") == 0) {
-    yyjson_doc* cached = NULL;
-    if (script_load(config, number, type, render, &cached) != 0) result = 99;
-    yyjson_doc_free(cached);
+    result = 43;
   }
   yyjson_doc_free(document);
   return result;
@@ -926,8 +863,8 @@ static int native_generate(const h2_alipay_client_config_t* config,
     static const uint8_t identity[] = "1234567812345678";
     rc = sm2 ? h2_crypto_sm2_sign(config->crypto, &sm2_private, identity, 16u,
                                   packet, size, &sm2_signature)
-             : h2_crypto_ecdsa_secp192k1_sha1_sign(config->crypto, &private_key,
-                                                   packet, size, &signature);
+             : h2_pal_crypto_ecdsa_secp192k1_sha1_sign(
+                   config->crypto, &private_key, packet, size, &signature);
   }
   if (rc == H2_PAL_OK && sm2) {
     der_length = sizeof(sm2_signature.bytes);
@@ -1066,18 +1003,7 @@ int h2_alipay_transit_generate(const h2_alipay_client_config_t* config,
         result = 40;
       } else {
         if (scripted) {
-          yyjson_doc* script_document = NULL;
-          result = script_load(config, number, type, render, &script_document);
-          const char* name =
-              text(member(render, "genCodeScript"), "scriptName");
-          const char* script =
-              name != NULL ? yyjson_get_str(yyjson_obj_get(
-                                 yyjson_doc_get_root(script_document), name))
-                           : NULL;
-          if (result == 0)
-            result = h2_alipay_transit_script_run(config, script, render,
-                                                  output, length);
-          yyjson_doc_free(script_document);
+          result = 43;
         } else {
           result = native_generate(config, render, timestamp, output, length);
         }

@@ -1,5 +1,4 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
@@ -45,34 +44,5 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [
-        ":decoder",
-        ":qrcode",
-    ],
-)
-
-cc_library(
-    name = "decoder",
-    srcs = ["src/h2_qrcode_decoder.c"],
-    hdrs = ["include/h2_qrcode_decoder.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
-    deps = [
-        "//pal",
-        "@h2_vendor_quirc//:quirc",
-    ],
-)
-
-cc_test(
-    name = "decoder_test",
-    srcs = ["tests/test_decoder.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = [
-        ":decoder",
-        ":qrcode",
-        "//libs/testing:testing_pal",
-    ],
+    deps = [":qrcode"],
 )

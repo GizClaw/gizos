@@ -147,9 +147,9 @@ int h2_alipay_client_profile_certificate(
     rc = H2_PAL_ERR_NO_MEMORY;
     goto done;
   }
-  rc = h2_crypto_ecdsa_p256_sha256_sign(config->crypto, &private_key,
-                                        (const uint8_t*)message, message_length,
-                                        &signature);
+  rc = h2_pal_crypto_ecdsa_p256_sha256_sign(config->crypto, &private_key,
+                                            (const uint8_t*)message,
+                                            message_length, &signature);
   size_t der_length = 0u, encoded_length = 0u;
   if (rc == H2_PAL_OK)
     rc = h2_crypto_ecdsa_p256_der_encode(&signature, der, sizeof(der),

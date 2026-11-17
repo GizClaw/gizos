@@ -7,15 +7,6 @@ static void des_wipe(void* data, size_t length) {
   while (length-- != 0u) *bytes++ = 0u;
 }
 
-h2_pal_result_t h2_crypto_des_cbc(const h2_pal_crypto_api_t* crypto,
-                                  h2_pal_crypto_cipher_direction_t direction,
-                                  const uint8_t* key, size_t key_length,
-                                  const uint8_t iv[8], const uint8_t* input,
-                                  size_t length, h2_pal_crypto_buf_t* output) {
-  return h2_pal_crypto_des_cbc(crypto, direction, key, key_length, iv, input,
-                               length, output);
-}
-
 h2_pal_result_t h2_crypto_iso9797_alg3_mac(const h2_pal_crypto_api_t* crypto,
                                            const uint8_t key[16],
                                            const uint8_t* message,
@@ -29,8 +20,8 @@ h2_pal_result_t h2_crypto_iso9797_alg3_mac(const h2_pal_crypto_api_t* crypto,
   int rc = H2_PAL_OK;
   while (length - offset >= 8u) {
     h2_pal_crypto_buf_t encrypted = {next, 0u, sizeof(next)};
-    rc = h2_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key, 8u, chain,
-                           message + offset, 8u, &encrypted);
+    rc = h2_pal_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key, 8u,
+                               chain, message + offset, 8u, &encrypted);
     if (rc != H2_PAL_OK) break;
     if (encrypted.len != 8u) {
       rc = H2_PAL_ERR_FORMAT;
@@ -44,8 +35,8 @@ h2_pal_result_t h2_crypto_iso9797_alg3_mac(const h2_pal_crypto_api_t* crypto,
     if (remaining != 0u) memcpy(block, message + offset, remaining);
     block[remaining] = 0x80u;
     h2_pal_crypto_buf_t encrypted = {next, 0u, sizeof(next)};
-    rc = h2_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key, 16u,
-                           chain, block, sizeof(block), &encrypted);
+    rc = h2_pal_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key, 16u,
+                               chain, block, sizeof(block), &encrypted);
     if (rc == H2_PAL_OK && encrypted.len != 8u) rc = H2_PAL_ERR_FORMAT;
     if (rc == H2_PAL_OK) memcpy(output, next, 8u);
   }

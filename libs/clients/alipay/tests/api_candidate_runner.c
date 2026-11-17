@@ -8,7 +8,6 @@
 #include "h2_wolfcrypt_crypto.h"
 #include "h2_wolfcrypt_test_crypto.h"
 #include "h2_sha256.h"
-#include "h2_qrcode.h"
 #include "h2_alipay_api.h"
 #include "yyjson.h"
 
@@ -59,7 +58,6 @@ static uint8_t frame_expected[512];
 static size_t frame_length, frame_offset, frame_packet;
 static uint32_t frame_mtu;
 static unsigned certificate_fault_points;
-static unsigned image_decode_cases;
 static size_t decode(yyjson_val* root, const char* name, void* output,
                      size_t capacity);
 static void match(yyjson_val* root, const char* name, const void* data,
@@ -450,9 +448,9 @@ static int fixed_sign(void* user, const h2_pal_p256_private_key_t* private_key,
     h2_pal_p256_keypair_t pair;
     assert(h2_pal_crypto_p256_keypair_from_private(h2_wolfcrypt_crypto_api(),
                                                    private_key, &pair) == 0);
-    assert(h2_crypto_ecdsa_p256_sha256_verify(h2_wolfcrypt_crypto_api(),
-                                              &pair.public_key, message, length,
-                                              signature) == 0);
+    assert(h2_pal_crypto_ecdsa_p256_sha256_verify(h2_wolfcrypt_crypto_api(),
+                                                  &pair.public_key, message,
+                                                  length, signature) == 0);
     h2_alipay_client_wipe(&pair, sizeof(pair));
   }
   return rc;
@@ -510,7 +508,6 @@ static void initialize(fixture_t* fixture) {
       .product_type = 3u,
       .feature = 16385u,
       .compile_timestamp_s = 1794449000u};
-  fixture->config.script_stack_limit = 1024u * 1024u;
   assert(h2_alipay_independent_configure(&fixture->config,
                                          &fixture->sync.api) == 0);
   assert(alipay_pre_init() == 0 && alipay_pre_init() == 0);
@@ -881,32 +878,7 @@ static void scan_case(fixture_t* fixture, yyjson_val* root, yyjson_val* kind) {
   fixture->scan_mode = false;
 }
 
-static uint8_t* union_image(fixture_t* fixture, const char* text,
-                            uint32_t* width, size_t* image_size) {
-  uint8_t modules[H2_QRCODE_BUFFER_LEN_MAX];
-  uint8_t scratch[H2_QRCODE_BUFFER_LEN_MAX];
-  h2_qrcode_t code;
-  assert(h2_qrcode_encode_text(text, H2_QRCODE_ECC_MEDIUM, 40, modules,
-                               sizeof(modules), scratch, sizeof(scratch),
-                               &code) == 0);
-  *width = ((uint32_t)code.size + 8u) * 4u;
-  size_t luma_size = (size_t)*width * *width;
-  *image_size = luma_size + luma_size / 2u;
-  uint8_t* image = h2_pal_mem_alloc(fixture->config.mem, *image_size);
-  assert(image != NULL);
-  memset(image, 128, *image_size);
-  for (uint32_t row = 0u; row < *width; ++row)
-    for (uint32_t column = 0u; column < *width; ++column) {
-      int horizontal = (int)(column / 4u) - 4;
-      int vertical = (int)(row / 4u) - 4;
-      image[(size_t)row * *width + column] =
-          h2_qrcode_module_is_dark(&code, horizontal, vertical) ? 0u : 255u;
-    }
-  return image;
-}
-
-static void union_case(fixture_t* fixture, yyjson_val* root, bool parse,
-                       bool image_input) {
+static void union_case(fixture_t* fixture, yyjson_val* root, bool parse) {
   store(fixture, root, true);
   assert(h2_pal_time_set_wall_ms(&fixture->time.api, 1794449000000u) == 0);
   fixture->union_script = yyjson_obj_get(root, "rpc");
@@ -919,22 +891,8 @@ static void union_case(fixture_t* fixture, yyjson_val* root, bool parse,
     size_t length = decode(root, "input", input, sizeof(input) - 1u);
     input[length] = '\0';
     memset(&fixture->union_order, 0xa5, sizeof(fixture->union_order));
-    if (image_input) {
-      uint32_t width = 0u;
-      size_t image_size = 0u;
-      uint8_t* image = union_image(fixture, input, &width, &image_size);
-      uint8_t before[32], after[32];
-      hash(image, image_size, before);
-      rc = alipay_union_code_parse_with_img(image, width, width,
-                                            &fixture->union_order);
-      hash(image, image_size, after);
-      assert(memcmp(before, after, sizeof(before)) == 0);
-      h2_pal_mem_free(fixture->config.mem, image);
-    } else {
-      rc =
-          nfc ? alipay_nfc_parse_with_content(input, &fixture->union_order)
-              : alipay_union_code_parse_with_code(input, &fixture->union_order);
-    }
+    rc = nfc ? alipay_nfc_parse_with_content(input, &fixture->union_order)
+             : alipay_union_code_parse_with_code(input, &fixture->union_order);
     assert(fixture->union_order.is_success == boolean(root, "success"));
     match(root, "error", fixture->union_order.err_code,
           sizeof(fixture->union_order.err_code));
@@ -961,10 +919,6 @@ static void union_case(fixture_t* fixture, yyjson_val* root, bool parse,
   assert(rc == integer(root, "result"));
   assert(fixture->union_step == yyjson_arr_size(fixture->union_script));
   fixture->union_script = NULL;
-  if (parse && !nfc && !image_input) {
-    union_case(fixture, root, true, true);
-    ++image_decode_cases;
-  }
 }
 
 static void tap_static_case(fixture_t* fixture, yyjson_val* root) {
@@ -1549,9 +1503,9 @@ static int controlled_issuer_verify(void* user,
   int rc = h2_pal_crypto_p256_keypair_from_private(h2_wolfcrypt_crypto_api(),
                                                    &private_key, &issuer);
   if (rc == 0)
-    rc = h2_crypto_ecdsa_p256_sha256_verify(h2_wolfcrypt_crypto_api(),
-                                            &issuer.public_key, message, length,
-                                            signature);
+    rc = h2_pal_crypto_ecdsa_p256_sha256_verify(h2_wolfcrypt_crypto_api(),
+                                                &issuer.public_key, message,
+                                                length, signature);
   h2_alipay_client_wipe(&issuer, sizeof(issuer));
   return rc;
 }
@@ -2009,9 +1963,7 @@ static void transit_case(fixture_t* fixture, yyjson_val* root) {
            status.remain_use_count == integer(root, "other_case_remaining"));
   } else if (strcmp(entry, "native") == 0 || strcmp(entry, "native_sm2") == 0 ||
              strcmp(entry, "native_yct") == 0 ||
-             strcmp(entry, "native_rct") == 0 ||
-             strcmp(entry, "native_script") == 0 ||
-             strcmp(entry, "script_update") == 0) {
+             strcmp(entry, "native_rct") == 0) {
     assert(h2_pal_time_set_wall_ms(&fixture->time.api,
                                    number(root, "now") * 1000u) == 0);
     uint8_t cards[240];
@@ -2023,12 +1975,8 @@ static void transit_case(fixture_t* fixture, yyjson_val* root) {
     memset(output, 0xa5, sizeof(output));
     memset(error, 0xa5, sizeof(error));
     uint32_t length = 512u;
-    int result =
-        strcmp(entry, "script_update") == 0
-            ? alipay_transit_update_card_data("CARD_NO", "TYPE", (void*)error,
-                                              256u)
-            : alipay_transit_get_TransitCode("CARD_NO", "TYPE", output, &length,
-                                             (void*)error, 256u);
+    int result = alipay_transit_get_TransitCode("CARD_NO", "TYPE", output,
+                                                &length, (void*)error, 256u);
     transit_match_result(root, result);
     if (length != number(root, "length"))
       fprintf(stderr, "transit native entry=%s case=%d length=%u/%u\n", entry,
@@ -2151,7 +2099,7 @@ int main(int argc, char** argv) {
       ++scan_cases;
     } else if (yyjson_equals_str(kind, "union_parse") ||
                yyjson_equals_str(kind, "union_confirm")) {
-      union_case(&fixture, root, yyjson_equals_str(kind, "union_parse"), false);
+      union_case(&fixture, root, yyjson_equals_str(kind, "union_parse"));
       ++scan_cases;
     } else if (yyjson_equals_str(kind, "tap_setting")) {
       tap_setting_case(&fixture, root);
@@ -2227,13 +2175,13 @@ int main(int argc, char** argv) {
       "\"public_transit_comparisons\":%u,"
       "\"retail_mac_comparisons\":%u,"
       "\"certificate_profile_fault_points\":%u,"
-      "\"image_decode_comparisons\":%u,"
+      "\"image_decode_comparisons\":0,"
       "\"controlled_issuer_ble_comparisons\":%u,"
       "\"failed\":0}\n",
       payer_cases, query_cases, binding_cases, account_cases, unbind_cases,
       collection_cases, remote_cases, balance_cases, bitmap_query_cases,
       income_cases, scan_cases, sync_cases, migration_cases,
       tap_cipher_core_cases, provision_cases, transit_cases, retail_mac_cases,
-      certificate_fault_points, image_decode_cases, controlled_issuer_cases);
+      certificate_fault_points, controlled_issuer_cases);
   return 0;
 }

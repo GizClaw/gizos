@@ -13,9 +13,8 @@ cc_library(
     includes = ["include"],
     deps = [
         "//libs/clients/alipay",
+        "//projects/testing/integration/alipay/app:api",
         "//projects/testing/integration/alipay/diagnostics",
-        "//projects/testing/integration/alipay/payment",
-        "//projects/testing/integration/alipay/payment:nfc",
     ],
 )
 

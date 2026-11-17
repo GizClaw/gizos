@@ -7,12 +7,9 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "diagnostics",
     srcs = [
-        "src/h2_alipay_once.c",
         "src/h2_alipay_trace.c",
     ],
     hdrs = [
-        "include/h2_alipay.h",
-        "include/h2_alipay_payment.h",
         "include/h2_alipay_trace.h",
     ],
     conlyopts = H2_C11_OPTS,
@@ -20,7 +17,6 @@ cc_library(
     includes = ["include"],
     deps = [
         "//libs/crypto/sha256",
-        "//pal",
     ],
 )
 
@@ -28,14 +24,6 @@ cc_test(
     name = "trace_test",
     size = "small",
     srcs = ["tests/test_trace.c"],
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    deps = [":diagnostics"],
-)
-
-cc_test(
-    name = "trace_cpp_test",
-    size = "small",
-    srcs = ["tests/test_trace_cpp.cc"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":diagnostics"],
 )

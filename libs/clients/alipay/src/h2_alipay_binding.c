@@ -328,8 +328,8 @@ int h2_alipay_client_decode_factors(
   h2_pal_p256_public_key_t public_key;
   rc = h2_crypto_p256_public_key_import(config->crypto, point, &public_key);
   if (rc != H2_PAL_OK) return rc;
-  return h2_crypto_p256_shared_secret(config->crypto, private_key, &public_key,
-                                      record->secret);
+  return h2_pal_crypto_p256_shared_secret(config->crypto, private_key,
+                                          &public_key, record->secret);
 }
 
 h2_pal_result_t h2_alipay_client_query_binding_result(

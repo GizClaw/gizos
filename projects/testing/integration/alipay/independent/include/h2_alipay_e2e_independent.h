@@ -15,18 +15,15 @@ extern "C" {
  * Configuration/release require all workers to be joined. Business calls use
  * the original initialization, code, query and durable binding snapshot
  * interfaces, with no vendor implementation. */
-h2_pal_result_t h2_alipay_e2e_independent_configure(
-    const h2_alipay_client_config_t* config, const h2_pal_sync_api_t* sync);
-/** Same provider bridge with explicit storage retention metadata. */
 h2_pal_result_t h2_alipay_e2e_independent_configure_with_storage(
     const h2_alipay_client_config_t* config, const h2_pal_sync_api_t* sync,
     h2_alipay_storage_scope_t scope);
 /** NULL until configured. Caller borrows the API and quiescent trace. */
 const h2_alipay_api_t* h2_alipay_e2e_independent_api(void);
 /**
- * Static payer-code and NFC/BLE API; available before configure for target
+ * Static payer-code and NFC wallet API; available before configure for target
  * input assembly. Calls require configured initialization and complete binding.
- * The integration owns physical transport, user confirmation and result
+ * The integration owns physical transport and result
  * presentation. All original calls use unchanged vendor declarations with
  * the independent implementation. Payment operations require caller
  * serialization, including configure/release.

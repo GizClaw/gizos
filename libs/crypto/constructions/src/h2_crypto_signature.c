@@ -46,11 +46,3 @@ h2_pal_result_t h2_crypto_ecdsa_p256_der_encode(
   return h2_crypto_ecdsa_der_encode(signature != NULL ? signature->bytes : NULL,
                                     32u, output, capacity, length);
 }
-
-h2_pal_result_t h2_crypto_ecdsa_secp192k1_sha1_sign(
-    const h2_pal_crypto_api_t* crypto,
-    const h2_pal_secp192k1_private_key_t* private_key, const uint8_t* message,
-    size_t message_length, h2_pal_secp192k1_signature_t* signature) {
-  return h2_pal_crypto_ecdsa_secp192k1_sha1_sign(crypto, private_key, message,
-                                                 message_length, signature);
-}

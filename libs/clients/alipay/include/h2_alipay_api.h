@@ -238,6 +238,9 @@ typedef struct {
   alipay_scan_pay_fail_res_e res_fail;
 } alipay_union_code_pay_result_t;
 
+/** Retained ABI; image decoding is unsupported. After initialization a valid
+ * call returns 99, preserves order and records an UNSUPPORTED H2 diagnostic.
+ * Invalid image/dimension/output arguments return ALIPAY_RV_WRONG_PARAM. */
 retval_e alipay_union_code_parse_with_img(
     uint8_t* image, uint32_t width, uint32_t height,
     alipay_union_code_order_info_t* order);

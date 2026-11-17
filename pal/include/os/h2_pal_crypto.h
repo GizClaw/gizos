@@ -188,19 +188,11 @@ typedef struct h2_pal_crypto_vtable {
   h2_pal_result_t (*sm2_sign_digest)(
       void* user, const h2_pal_sm2_private_key_t* private_key,
       const uint8_t digest[32], h2_pal_sm2_signature_t* signature);
-  h2_pal_result_t (*sm2_verify_digest)(
-      void* user, const h2_pal_sm2_public_key_t* public_key,
-      const uint8_t digest[32], const h2_pal_sm2_signature_t* signature);
   h2_pal_result_t (*des_cbc)(void* user,
                              h2_pal_crypto_cipher_direction_t direction,
                              const uint8_t* key, size_t key_len,
                              const uint8_t iv[8], const uint8_t* input,
                              size_t input_len, h2_pal_crypto_buf_t* output);
-  h2_pal_result_t (*sha1)(void* user, const uint8_t* input, size_t input_len,
-                          uint8_t output[20]);
-  h2_pal_result_t (*hmac_md5)(void* user, const uint8_t* key, size_t key_len,
-                              const uint8_t* input, size_t input_len,
-                              uint8_t output[16]);
 } h2_pal_crypto_vtable_t;
 
 typedef struct h2_pal_crypto_api {
@@ -562,21 +554,6 @@ static inline h2_pal_result_t h2_pal_crypto_sm2_sign_digest(
   return result;
 }
 
-/** Verify a caller-computed SM2 digest using a validated curve point.
- * Inputs remain borrowed for the synchronous call. Invalid signatures report
- * FORMAT; missing optional operations report UNSUPPORTED. */
-static inline h2_pal_result_t h2_pal_crypto_sm2_verify_digest(
-    const h2_pal_crypto_api_t* api, const h2_pal_sm2_public_key_t* public_key,
-    const uint8_t digest[32], const h2_pal_sm2_signature_t* signature) {
-  if (public_key == NULL || digest == NULL || signature == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (api == NULL || api->vtable == NULL ||
-      api->vtable->sm2_verify_digest == NULL)
-    return H2_PAL_ERR_UNSUPPORTED;
-  return api->vtable->sm2_verify_digest(api->user, public_key, digest,
-                                        signature);
-}
-
 /** Synchronous legacy DES or triple-DES CBC without padding. Keys contain
  * 8 (DES), 16 (EDE2) or 24 (EDE3) bytes. Input length is a multiple of 8.
  * Inputs, IV and storage are borrowed through the call; IV is unchanged.
@@ -601,44 +578,6 @@ static inline h2_pal_result_t h2_pal_crypto_des_cbc(
     return H2_PAL_ERR_UNSUPPORTED;
   return api->vtable->des_cbc(api->user, direction, key, key_len, iv, input,
                               input_len, output);
-}
-
-/** Synchronous legacy SHA-1 digest. Inputs remain borrowed through the call;
- * NULL input is valid only for an empty message. Output is zero on failure.
- */
-static inline h2_pal_result_t h2_pal_crypto_sha1(const h2_pal_crypto_api_t* api,
-                                                 const uint8_t* input,
-                                                 size_t input_len,
-                                                 uint8_t output[20]) {
-  if (output == NULL) return H2_PAL_ERR_INVALID_ARG;
-  for (size_t index = 0u; index < 20u; ++index) output[index] = 0u;
-  if (input == NULL && input_len != 0u) return H2_PAL_ERR_INVALID_ARG;
-  if (api == NULL || api->vtable == NULL || api->vtable->sha1 == NULL)
-    return H2_PAL_ERR_UNSUPPORTED;
-  h2_pal_result_t result =
-      api->vtable->sha1(api->user, input, input_len, output);
-  if (result != H2_PAL_OK)
-    for (size_t index = 0u; index < 20u; ++index) output[index] = 0u;
-  return result;
-}
-
-/** Synchronous legacy HMAC-MD5. Inputs remain borrowed through the call;
- * NULL key/message is valid only at zero length. Output is zero on failure.
- */
-static inline h2_pal_result_t h2_pal_crypto_hmac_md5(
-    const h2_pal_crypto_api_t* api, const uint8_t* key, size_t key_len,
-    const uint8_t* input, size_t input_len, uint8_t output[16]) {
-  if (output == NULL) return H2_PAL_ERR_INVALID_ARG;
-  for (size_t index = 0u; index < 16u; ++index) output[index] = 0u;
-  if ((input == NULL && input_len != 0u) || (key == NULL && key_len != 0u))
-    return H2_PAL_ERR_INVALID_ARG;
-  if (api == NULL || api->vtable == NULL || api->vtable->hmac_md5 == NULL)
-    return H2_PAL_ERR_UNSUPPORTED;
-  h2_pal_result_t result =
-      api->vtable->hmac_md5(api->user, key, key_len, input, input_len, output);
-  if (result != H2_PAL_OK)
-    for (size_t index = 0u; index < 16u; ++index) output[index] = 0u;
-  return result;
 }
 
 #ifdef __cplusplus

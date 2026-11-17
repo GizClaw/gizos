@@ -100,9 +100,6 @@ static int request(void* user, const h2_pal_http_request_t* input,
     assert(h2_pal_http_request_is_canceled(input));
   }
   const char* response = fixture->response;
-  static const char script[] =
-      "{\"success\":true,\"scriptCode\":"
-      "\"function getCode(p){return callNative('md5',{hexData:p.hexData});}\"}";
   static const char script_operation[] =
       "com.alideviceinfo.transport.query.queryScript";
   for (size_t index = 0u; index < input->header_count; ++index)
@@ -111,7 +108,7 @@ static int request(void* user, const h2_pal_http_request_t* input,
         input->headers[index].value.len == sizeof(script_operation) - 1u &&
         memcmp(input->headers[index].value.data, script_operation,
                sizeof(script_operation) - 1u) == 0)
-      response = script;
+      assert(false);
   size_t length = strlen(response);
   assert(length <= input->response_buf_cap);
   memcpy(input->response_buf, response, length);
@@ -142,7 +139,6 @@ static void initialize(transit_fixture_t* fixture) {
       .product_type = 3u,
       .feature = 0x4001u,
       .compile_timestamp_s = 1794449000u,
-      .script_stack_limit = 1024u * 1024u,
       .pref_namespace = "transit"};
   assert(alipay_init_transit_module() == 0);
   assert(h2_alipay_independent_configure(&fixture->config,
@@ -279,6 +275,28 @@ static size_t native_faults(transit_fixture_t* fixture, const char* response) {
   return allocations;
 }
 
+static void unsupported_script(transit_fixture_t* fixture) {
+  initialize(fixture);
+  fixture->response = native_script;
+  uint8_t output[528], error[272];
+  memset(output, 0xa5, sizeof(output));
+  memset(error, 0xa5, sizeof(error));
+  uint32_t length = 512u;
+  assert(alipay_transit_get_TransitCode("NUMBER", "TYPE", output, &length,
+                                        (void*)error, 256u) == 43);
+  assert(length == 512u && fixture->requests == 1u);
+  for (size_t index = 0u; index < sizeof(output); ++index)
+    assert(output[index] == 0xa5u);
+  assert(error[256] == 0xa5u);
+  alipay_transit_card_status_t status;
+  assert(alipay_transit_check_card_status("NUMBER", "TYPE", &status) == 0 &&
+         status.is_exists && status.remain_use_count == 20);
+  assert(alipay_transit_update_card_data("NUMBER", "TYPE", (void*)error,
+                                         256u) == 43);
+  assert(fixture->requests == 2u && error[256] == 0xa5u);
+  finish(fixture);
+}
+
 int main(void) {
   uint32_t random = 1u;
   const h2_wolfcrypt_crypto_config_t crypto = {&random, entropy};
@@ -290,7 +308,7 @@ int main(void) {
   size_t sm2_faults = native_faults(&fixture, native_sm2);
   size_t yct_faults = native_faults(&fixture, native_yct);
   size_t rct_faults = native_faults(&fixture, native_rct);
-  size_t script_faults = native_faults(&fixture, native_script);
+  unsupported_script(&fixture);
   initialize(&fixture);
   alipay_tansit_CardBaseVO_t output[2];
   uint32_t length, count;
@@ -359,8 +377,8 @@ int main(void) {
   h2_wolfcrypt_crypto_deinit();
   printf(
       "transit allocation failure points: list=%zu, code=%zu, native=%zu,"
-      " sm2=%zu, yct=%zu, rct=%zu, script=%zu\n",
+      " sm2=%zu, yct=%zu, rct=%zu\n",
       list_faults, code_faults, offline_faults, sm2_faults, yct_faults,
-      rct_faults, script_faults);
+      rct_faults);
   return 0;
 }

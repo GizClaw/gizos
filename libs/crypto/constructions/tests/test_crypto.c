@@ -19,6 +19,15 @@ static void expect_byte(const uint8_t* data, size_t length, uint8_t byte) {
   for (size_t index = 0u; index < length; ++index) assert(data[index] == byte);
 }
 
+static void byte_comparison(void) {
+  static const uint8_t first[] = {0x10, 0x21, 0x32};
+  static const uint8_t second[] = {0x30, 0x21, 0x12};
+  assert(h2_crypto_bytes_equal(first, first, sizeof(first)));
+  assert(!h2_crypto_bytes_equal(first, second, sizeof(first)));
+  assert(!h2_crypto_bytes_equal(NULL, first, sizeof(first)));
+  assert(h2_crypto_bytes_equal(NULL, NULL, 0u));
+}
+
 static void signature_encoding(const h2_pal_crypto_api_t* crypto) {
   h2_pal_p256_signature_t signature = {0};
   signature.bytes[31] = 1u;
@@ -61,13 +70,14 @@ static void signature_encoding(const h2_pal_crypto_api_t* crypto) {
   uint8_t point[65], nonce[32] = {0};
   nonce[31] = 1u;
   static const uint8_t message[] = "nonce fixture";
-  assert(h2_crypto_p256_public_key_export(crypto, &pair.public_key, point) ==
-         0);
+  assert(h2_pal_crypto_p256_public_key_uncompress(crypto, &pair.public_key,
+                                                  point) == 0);
   assert(h2_wolfcrypt_test_p256_sign(nonce, &private_key, message,
                                      sizeof(message), &signature) == 0);
   assert(memcmp(signature.bytes, point + 1u, 32u) == 0);
-  assert(h2_crypto_ecdsa_p256_sha256_verify(crypto, &pair.public_key, message,
-                                            sizeof(message), &signature) == 0);
+  assert(h2_pal_crypto_ecdsa_p256_sha256_verify(crypto, &pair.public_key,
+                                                message, sizeof(message),
+                                                &signature) == 0);
   memset(nonce, 0x42, sizeof(nonce));
   static const uint8_t fixed_signature[64] = {
       0x3a, 0xd3, 0x86, 0x1a, 0x95, 0x62, 0x13, 0x92, 0x51, 0x6b, 0xb5,
@@ -80,42 +90,9 @@ static void signature_encoding(const h2_pal_crypto_api_t* crypto) {
                                      sizeof(message), &signature) == 0);
   assert(memcmp(signature.bytes, fixed_signature, sizeof(fixed_signature)) ==
          0);
-  assert(h2_crypto_ecdsa_p256_sha256_verify(crypto, &pair.public_key, message,
-                                            sizeof(message), &signature) == 0);
-}
-
-static void masks(void) {
-  static const uint8_t input[] = {0, 1, 2, 3, 4, 5, 6};
-  static const uint8_t mask[] = {0x10, 0x20, 0x30};
-  static const uint8_t forward[] = {0x10, 0x21, 0x32, 0x13, 0x24, 0x35, 0x16};
-  static const uint8_t reverse[] = {0x30, 0x21, 0x12, 0x33, 0x24, 0x15, 0x36};
-  uint8_t output[9];
-  memset(output, 0xa5, sizeof(output));
-  assert(h2_crypto_xor_mask(input, sizeof(input), mask, sizeof(mask), false,
-                            output + 1u) == 0);
-  assert(h2_crypto_bytes_equal(output + 1u, forward, sizeof(forward)));
-  assert(h2_crypto_xor_mask(output + 1u, sizeof(input), mask, sizeof(mask),
-                            false, output + 1u) == 0);
-  assert(h2_crypto_bytes_equal(output + 1u, input, sizeof(input)));
-  assert(h2_crypto_xor_mask(input, sizeof(input), mask, sizeof(mask), true,
-                            output + 1u) == 0);
-  assert(h2_crypto_bytes_equal(output + 1u, reverse, sizeof(reverse)));
-  uint64_t hash = 42u;
-  assert(h2_crypto_hash31((const uint8_t*)"abc", 3u, &hash) == 0 &&
-         hash == 96354u);
-  assert(h2_crypto_hash31(NULL, 1u, &hash) == H2_PAL_ERR_INVALID_ARG &&
-         hash == 96354u);
-  assert(h2_crypto_hash31(NULL, 0u, &hash) == 0 && hash == 0u);
-  assert(output[0] == 0xa5 && output[8] == 0xa5);
-  assert(!h2_crypto_bytes_equal(forward, reverse, sizeof(forward)));
-  assert(!h2_crypto_bytes_equal(NULL, input, sizeof(input)));
-  assert(h2_crypto_bytes_equal(NULL, NULL, 0u));
-  assert(h2_crypto_xor_mask(NULL, 0u, mask, sizeof(mask), false, NULL) == 0);
-  assert(h2_crypto_xor_mask(input, sizeof(input), NULL, sizeof(mask), false,
-                            output) == H2_PAL_ERR_INVALID_ARG);
-  assert(h2_crypto_xor_mask(input, sizeof(input), mask, 0u, false, output) ==
-         H2_PAL_ERR_INVALID_ARG);
-  assert(h2_crypto_bytes_equal(output + 1u, reverse, sizeof(reverse)));
+  assert(h2_pal_crypto_ecdsa_p256_sha256_verify(crypto, &pair.public_key,
+                                                message, sizeof(message),
+                                                &signature) == 0);
 }
 
 static void hotp(const h2_pal_crypto_api_t* crypto) {
@@ -183,9 +160,9 @@ static void padding(const h2_pal_crypto_api_t* crypto) {
       assert(cipher_length == size + 16u - size % 16u);
       assert(encrypted[0] == 0xa5u && encrypted[cipher_length + 1u] == 0xa5u);
       h2_pal_crypto_buf_t buffer = {.data = raw, .cap = sizeof(raw)};
-      assert(h2_crypto_aes_cbc(crypto, H2_PAL_CRYPTO_CIPHER_DECRYPT, key,
-                               key_length, iv, encrypted + 1u, cipher_length,
-                               &buffer) == 0);
+      assert(h2_pal_crypto_aes_cbc(crypto, H2_PAL_CRYPTO_CIPHER_DECRYPT, key,
+                                   key_length, iv, encrypted + 1u,
+                                   cipher_length, &buffer) == 0);
       assert(buffer.len == cipher_length && memcmp(raw, input, size) == 0);
       expect_byte(raw + size, cipher_length - size,
                   (uint8_t)(cipher_length - size));
@@ -207,8 +184,8 @@ static void padding(const h2_pal_crypto_api_t* crypto) {
     memset(raw, 0, 16u);
     raw[15] = (uint8_t)pad;
     h2_pal_crypto_buf_t buffer = {.data = encrypted, .cap = 16u};
-    assert(h2_crypto_aes_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key, 16u, iv,
-                             raw, 16u, &buffer) == 0);
+    assert(h2_pal_crypto_aes_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key, 16u,
+                                 iv, raw, 16u, &buffer) == 0);
     memset(decrypted, 0xa5, sizeof(decrypted));
     size_t length = 777u;
     int rc = h2_crypto_aes_cbc_pkcs7_decrypt(crypto, key, 16u, iv, encrypted,
@@ -273,12 +250,12 @@ static void partial_failure(void) {
 
 static void points(const h2_pal_crypto_api_t* crypto) {
   h2_pal_p256_keypair_t first, second;
-  assert(h2_crypto_p256_keypair_generate(crypto, &first) == 0);
-  assert(h2_crypto_p256_keypair_generate(crypto, &second) == 0);
+  assert(h2_pal_crypto_p256_keypair_generate(crypto, &first) == 0);
+  assert(h2_pal_crypto_p256_keypair_generate(crypto, &second) == 0);
   uint8_t expanded[65], secret[32], other[32];
   h2_pal_p256_public_key_t imported, retained;
-  assert(h2_crypto_p256_public_key_export(crypto, &first.public_key,
-                                          expanded) == 0);
+  assert(h2_pal_crypto_p256_public_key_uncompress(crypto, &first.public_key,
+                                                  expanded) == 0);
   assert(h2_crypto_p256_public_key_import(crypto, expanded, &imported) == 0);
   assert(memcmp(&imported, &first.public_key, sizeof(imported)) == 0);
   retained = imported;
@@ -293,84 +270,29 @@ static void points(const h2_pal_crypto_api_t* crypto) {
   expanded[0] = 4u;
   assert(h2_crypto_p256_public_key_import(NULL, expanded, &imported) ==
          H2_PAL_ERR_UNSUPPORTED);
-  assert(h2_crypto_p256_shared_secret(crypto, &first.private_key,
-                                      &second.public_key, secret) == 0);
-  assert(h2_crypto_p256_shared_secret(crypto, &second.private_key,
-                                      &first.public_key, other) == 0);
+  assert(h2_pal_crypto_p256_shared_secret(crypto, &first.private_key,
+                                          &second.public_key, secret) == 0);
+  assert(h2_pal_crypto_p256_shared_secret(crypto, &second.private_key,
+                                          &first.public_key, other) == 0);
   assert(memcmp(secret, other, sizeof(secret)) == 0);
   static const uint8_t message[] = "synthetic signature verification";
   h2_pal_p256_signature_t signature;
   assert(h2_pal_crypto_ecdsa_p256_sha256_sign(crypto, &first.private_key,
                                               message, sizeof(message),
                                               &signature) == 0);
-  assert(h2_crypto_ecdsa_p256_sha256_verify(crypto, &first.public_key, message,
-                                            sizeof(message), &signature) == 0);
-  assert(h2_crypto_ecdsa_p256_sha256_verify(crypto, &second.public_key, message,
-                                            sizeof(message),
-                                            &signature) == H2_PAL_ERR_FORMAT);
+  assert(h2_pal_crypto_ecdsa_p256_sha256_verify(crypto, &first.public_key,
+                                                message, sizeof(message),
+                                                &signature) == 0);
+  assert(h2_pal_crypto_ecdsa_p256_sha256_verify(
+             crypto, &second.public_key, message, sizeof(message),
+             &signature) == H2_PAL_ERR_FORMAT);
   signature.bytes[63] ^= 1u;
-  assert(h2_crypto_ecdsa_p256_sha256_verify(crypto, &first.public_key, message,
-                                            sizeof(message),
-                                            &signature) == H2_PAL_ERR_FORMAT);
-  assert(h2_crypto_ecdsa_p256_sha256_verify(NULL, &first.public_key, message,
-                                            sizeof(message), &signature) ==
+  assert(h2_pal_crypto_ecdsa_p256_sha256_verify(
+             crypto, &first.public_key, message, sizeof(message), &signature) ==
+         H2_PAL_ERR_FORMAT);
+  assert(h2_pal_crypto_ecdsa_p256_sha256_verify(
+             NULL, &first.public_key, message, sizeof(message), &signature) ==
          H2_PAL_ERR_UNSUPPORTED);
-}
-
-static void derived_keyset(const h2_pal_crypto_api_t* crypto) {
-  h2_app_test_mem_t memory;
-  h2_app_test_mem_init(&memory, NULL);
-  const h2_crypto_key_material_t material = {(const uint8_t*)"abc", 3u};
-  static const uint8_t expected[16] = {0xbb, 0xf5, 0xc1, 0x60, 0x51, 0x4f,
-                                       0xb8, 0xd4, 0x1d, 0x65, 0xa0, 0xfb,
-                                       0x02, 0x8c, 0xf2, 0xa4};
-  h2_crypto_md5_aes_keyset_t* keys = NULL;
-  assert(h2_crypto_md5_aes_keyset_open(&memory.api, crypto, &material, 0u,
-                                       &keys) == H2_PAL_ERR_INVALID_ARG);
-  assert(keys == NULL && memory.live_blocks == 0u);
-  assert(h2_crypto_md5_aes_keyset_open(&memory.api, crypto, &material, SIZE_MAX,
-                                       &keys) == H2_PAL_ERR_INVALID_ARG);
-  memory.fail_at = memory.calls + 1u;
-  assert(h2_crypto_md5_aes_keyset_open(&memory.api, crypto, &material, 1u,
-                                       &keys) == H2_PAL_ERR_NO_MEMORY);
-  assert(keys == NULL && memory.live_blocks == 0u);
-  memory.fail_at = 0u;
-  const h2_pal_crypto_vtable_t unsupported_vtable = {0};
-  const h2_pal_crypto_api_t unsupported = {NULL, &unsupported_vtable};
-  assert(h2_crypto_md5_aes_keyset_open(&memory.api, &unsupported, &material, 1u,
-                                       &keys) == H2_PAL_ERR_UNSUPPORTED);
-  assert(keys == NULL && memory.live_blocks == 0u);
-  assert(h2_crypto_md5_aes_keyset_open(&memory.api, crypto, &material, 1u,
-                                       &keys) == 0);
-  assert(keys != NULL && memory.live_blocks == 1u);
-  uint8_t output[18];
-  memset(output, 0xa5, sizeof(output));
-  size_t length = 0u;
-  assert(h2_crypto_md5_aes_keyset_encrypt(keys, 0u, (const uint8_t*)"payload",
-                                          7u, output + 1u, 16u, &length) == 0);
-  assert(length == 16u && memcmp(output + 1u, expected, 16u) == 0);
-  assert(output[0] == 0xa5u && output[17] == 0xa5u);
-  memset(output, 0xa5, sizeof(output));
-  assert(h2_crypto_md5_aes_keyset_decrypt(keys, 0u, expected, sizeof(expected),
-                                          output + 1u, 16u, &length) == 0);
-  assert(length == 7u && memcmp(output + 1u, "payload", 7u) == 0);
-  assert(output[0] == 0xa5u && output[17] == 0xa5u);
-  memset(output, 0xa5, sizeof(output));
-  assert(h2_crypto_md5_aes_keyset_encrypt(keys, 1u, (const uint8_t*)"payload",
-                                          7u, output, 16u,
-                                          &length) == H2_PAL_ERR_INVALID_ARG);
-  assert(length == 0u);
-  expect_byte(output, sizeof(output), 0xa5u);
-  memory.fail_at = memory.calls + 1u;
-  assert(h2_crypto_md5_aes_keyset_encrypt(keys, 0u, (const uint8_t*)"payload",
-                                          7u, output, 16u,
-                                          &length) == H2_PAL_ERR_NO_MEMORY);
-  assert(length == 0u && memory.live_blocks == 1u);
-  expect_byte(output, sizeof(output), 0xa5u);
-  memory.fail_at = 0u;
-  h2_crypto_md5_aes_keyset_close(keys);
-  h2_crypto_md5_aes_keyset_close(NULL);
-  assert(memory.live_blocks == 0u);
 }
 
 static void legacy_signature(const h2_pal_crypto_api_t* crypto) {
@@ -411,20 +333,21 @@ static void legacy_signature(const h2_pal_crypto_api_t* crypto) {
                                     &length) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_crypto_ecdsa_der_encode(signature.bytes, 33u, encoded, 56u,
                                     &length) == H2_PAL_ERR_INVALID_ARG);
-  assert(h2_crypto_ecdsa_secp192k1_sha1_sign(crypto, &private_key, message, 3u,
-                                             &signature) == 0);
+  assert(h2_pal_crypto_ecdsa_secp192k1_sha1_sign(crypto, &private_key, message,
+                                                 3u, &signature) == 0);
   assert(h2_wolfcrypt_test_secp192k1_verify(&private_key, message, 3u,
                                             &signature) == 0);
   signature.bytes[47] ^= 1u;
   assert(h2_wolfcrypt_test_secp192k1_verify(&private_key, message, 3u,
                                             &signature) != 0);
-  assert(h2_crypto_ecdsa_secp192k1_sha1_sign(NULL, &private_key, message, 3u,
-                                             &signature) ==
+  assert(h2_pal_crypto_ecdsa_secp192k1_sha1_sign(NULL, &private_key, message,
+                                                 3u, &signature) ==
          H2_PAL_ERR_UNSUPPORTED);
   expect_byte(signature.bytes, sizeof(signature.bytes), 0u);
   memset(&private_key, 0, sizeof(private_key));
-  assert(h2_crypto_ecdsa_secp192k1_sha1_sign(crypto, &private_key, message, 3u,
-                                             &signature) == H2_PAL_ERR_FORMAT);
+  assert(h2_pal_crypto_ecdsa_secp192k1_sha1_sign(crypto, &private_key, message,
+                                                 3u, &signature) ==
+         H2_PAL_ERR_FORMAT);
   expect_byte(signature.bytes, sizeof(signature.bytes), 0u);
   memset(nonce, 0, sizeof(nonce));
   assert(h2_wolfcrypt_test_secp192k1_sign(nonce, &private_key, message, 3u,
@@ -454,34 +377,39 @@ static void sm2_signature(const h2_pal_crypto_api_t* crypto) {
        0x6b, 0x14, 0x36, 0xa4, 0x21, 0xf4, 0x0f, 0x69, 0x73, 0x71, 0xb2,
        0x60, 0x11, 0x4f, 0xa8, 0xcc, 0x3e, 0x01, 0x72, 0xfb, 0xbb, 0x84,
        0x94, 0x3a, 0xe1, 0x8c, 0xb1, 0x8f, 0xc6, 0xe5, 0xf6}};
-  assert(h2_crypto_sm2_verify(crypto, &public_key, identity, 16u, message, 3u,
-                              &known) == 0);
-  h2_pal_sm2_signature_t signature;
-  uint8_t nonce[32];
-  memset(nonce, 0x42, sizeof(nonce));
   static const uint8_t digest[32] = {
       0xe2, 0x63, 0x1e, 0x76, 0xcf, 0x38, 0x54, 0x6a, 0xa6, 0xcf, 0x0f,
       0xba, 0x91, 0xa4, 0x89, 0x4f, 0xec, 0x7f, 0xf6, 0x5c, 0x7c, 0xdb,
       0x9d, 0xa0, 0x24, 0x64, 0x17, 0xfc, 0xb1, 0x86, 0x7b, 0x95};
+  assert(h2_wolfcrypt_test_sm2_verify_digest(&public_key, digest, &known) == 0);
+  h2_pal_sm2_signature_t signature;
+  uint8_t nonce[32];
+  memset(nonce, 0x42, sizeof(nonce));
   assert(h2_wolfcrypt_test_sm2_sign(nonce, &private_key, digest, &signature) ==
          0);
   assert(memcmp(&signature, &known, sizeof(known)) == 0);
   assert(h2_crypto_sm2_sign(crypto, &private_key, identity, 16u, message, 3u,
                             &signature) == 0);
-  assert(h2_crypto_sm2_verify(crypto, &public_key, identity, 16u, message, 3u,
-                              &signature) == 0);
-  assert(h2_crypto_sm2_verify(crypto, &public_key, identity, 15u, message, 3u,
-                              &signature) == H2_PAL_ERR_FORMAT);
+  assert(h2_wolfcrypt_test_sm2_verify_digest(&public_key, digest, &signature) ==
+         0);
   signature.bytes[63] ^= 1u;
-  assert(h2_crypto_sm2_verify(crypto, &public_key, identity, 16u, message, 3u,
-                              &signature) == H2_PAL_ERR_FORMAT);
+  assert(h2_wolfcrypt_test_sm2_verify_digest(&public_key, digest, &signature) ==
+         H2_PAL_ERR_FORMAT);
+  assert(h2_crypto_sm2_sign(crypto, &private_key, identity, 15u, message, 3u,
+                            &signature) == 0);
+  assert(h2_wolfcrypt_test_sm2_verify_digest(&public_key, digest, &signature) ==
+         H2_PAL_ERR_FORMAT);
   assert(h2_crypto_sm2_sign(crypto, &private_key, identity, 8192u, message, 3u,
                             &signature) == H2_PAL_ERR_INVALID_ARG);
   expect_byte(signature.bytes, sizeof(signature.bytes), 0u);
   assert(h2_crypto_sm2_sign(crypto, &private_key, NULL, 0u, NULL, 0u,
                             &signature) == 0);
-  assert(h2_crypto_sm2_verify(crypto, &public_key, NULL, 0u, NULL, 0u,
-                              &signature) == 0);
+  static const uint8_t empty_digest[32] = {
+      0xbb, 0xf9, 0xbe, 0x61, 0x63, 0xf0, 0x6f, 0xed, 0x1b, 0x2a, 0xf6,
+      0x01, 0xe2, 0xd6, 0x6c, 0x56, 0x47, 0xfc, 0x3f, 0x12, 0x87, 0x18,
+      0x1e, 0x0e, 0x1f, 0x03, 0x9c, 0xab, 0x98, 0xe8, 0x3d, 0xb8};
+  assert(h2_wolfcrypt_test_sm2_verify_digest(&public_key, empty_digest,
+                                             &signature) == 0);
   assert(h2_crypto_sm2_sign(NULL, &private_key, identity, 16u, message, 3u,
                             &signature) == H2_PAL_ERR_UNSUPPORTED);
   expect_byte(signature.bytes, sizeof(signature.bytes), 0u);
@@ -504,20 +432,21 @@ static void legacy_des(const h2_pal_crypto_api_t* crypto) {
   for (size_t key_length = 8u; key_length <= 24u; key_length += 8u) {
     memset(output, 0xa5, sizeof(output));
     h2_pal_crypto_buf_t encrypted = {output + 1u, 999u, 8u};
-    assert(h2_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key,
-                             key_length, iv, input, sizeof(input),
-                             &encrypted) == 0);
+    assert(h2_pal_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key,
+                                 key_length, iv, input, sizeof(input),
+                                 &encrypted) == 0);
     assert(encrypted.len == 8u && output[0] == 0xa5u && output[9] == 0xa5u &&
            memcmp(output + 1u, expected, 8u) == 0);
-    assert(h2_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_DECRYPT, key,
-                             key_length, iv, output + 1u, 8u, &encrypted) == 0);
+    assert(h2_pal_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_DECRYPT, key,
+                                 key_length, iv, output + 1u, 8u,
+                                 &encrypted) == 0);
     assert(memcmp(output + 1u, input, 8u) == 0);
     expect_byte(iv, sizeof(iv), 0u);
     memset(output, 0xa5, sizeof(output));
     encrypted.cap = 7u;
-    assert(h2_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key,
-                             key_length, iv, input, 8u,
-                             &encrypted) == H2_PAL_ERR_NO_SPACE);
+    assert(h2_pal_crypto_des_cbc(crypto, H2_PAL_CRYPTO_CIPHER_ENCRYPT, key,
+                                 key_length, iv, input, 8u,
+                                 &encrypted) == H2_PAL_ERR_NO_SPACE);
     assert(encrypted.len == 0u);
     expect_byte(output, sizeof(output), 0xa5u);
   }
@@ -535,46 +464,21 @@ static void legacy_des(const h2_pal_crypto_api_t* crypto) {
   expect_byte(tag, sizeof(tag), 0u);
 }
 
-static void legacy_hashes(const h2_pal_crypto_api_t* crypto) {
-  static const uint8_t sha1_expected[20] = {
-      0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e,
-      0x25, 0x71, 0x78, 0x50, 0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d};
-  static const uint8_t hmac_expected[16] = {0x92, 0x94, 0x72, 0x7a, 0x36, 0x38,
-                                            0xbb, 0x1c, 0x13, 0xf4, 0x8e, 0xf8,
-                                            0x15, 0x8b, 0xfc, 0x9d};
-  uint8_t output[20], key[16];
-  assert(h2_crypto_sha1(crypto, (const uint8_t*)"abc", 3u, output) == 0);
-  assert(memcmp(output, sha1_expected, 20u) == 0);
-  memset(key, 0x0b, sizeof(key));
-  assert(h2_crypto_hmac_md5(crypto, key, sizeof(key),
-                            (const uint8_t*)"Hi There", 8u, output) == 0);
-  assert(memcmp(output, hmac_expected, 16u) == 0);
-  assert(h2_crypto_sha1(NULL, NULL, 0u, output) == H2_PAL_ERR_UNSUPPORTED);
-  expect_byte(output, 20u, 0u);
-  assert(h2_crypto_sha1(crypto, NULL, 1u, output) == H2_PAL_ERR_INVALID_ARG);
-  expect_byte(output, 20u, 0u);
-  assert(h2_crypto_hmac_md5(NULL, NULL, 0u, NULL, 0u, output) ==
-         H2_PAL_ERR_UNSUPPORTED);
-  expect_byte(output, 16u, 0u);
-}
-
 int main(void) {
   uint32_t random = 1u;
   const h2_wolfcrypt_crypto_config_t config = {&random, entropy};
   assert(h2_wolfcrypt_crypto_init(&config) == 0);
   const h2_pal_crypto_api_t* crypto = h2_wolfcrypt_crypto_api();
+  byte_comparison();
   hotp(crypto);
-  masks();
   counter_width();
   padding(crypto);
   partial_failure();
   points(crypto);
-  derived_keyset(crypto);
   signature_encoding(crypto);
   legacy_signature(crypto);
   sm2_signature(crypto);
   legacy_des(crypto);
-  legacy_hashes(crypto);
   h2_wolfcrypt_crypto_deinit();
   return 0;
 }

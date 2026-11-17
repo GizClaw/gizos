@@ -4,7 +4,6 @@
 #include "h2_alipay_client_internal.h"
 #include "h2_alipay_tap_internal.h"
 #include "h2_alipay_transit_internal.h"
-#include "h2_qrcode_decoder.h"
 
 #include "h2_alipay_api.h"
 #include "h2_atomic_static.h"
@@ -32,7 +31,7 @@ static uint32_t s_nfc_mtu = 20u;
 static bool s_nfc_trusted, s_nfc_no_reminder;
 static char s_nfc_debug_token[128];
 static uint8_t s_sync_reply[2048];
-static h2_crypto_md5_aes_keyset_t* s_nfc_keys;
+static h2_alipay_md5_aes_keyset_t* s_nfc_keys;
 static struct {
   bool first, vip;
   size_t received, expected;
@@ -312,10 +311,10 @@ static int sync_profile(yyjson_val* input, yyjson_mut_doc* document,
   h2_pal_p256_keypair_t pair = {0};
   uint8_t point[65] = {0};
   char factor[129], mac[49];
-  int rc = h2_crypto_p256_keypair_generate(s_config.crypto, &pair);
+  int rc = h2_pal_crypto_p256_keypair_generate(s_config.crypto, &pair);
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_p256_public_key_export(s_config.crypto, &pair.public_key,
-                                          point);
+    rc = h2_pal_crypto_p256_public_key_uncompress(s_config.crypto,
+                                                  &pair.public_key, point);
   if (rc == H2_PAL_OK) {
     sync_hex(point + 1u, 64u, factor);
     if (!sync_add(document, output, "ecdhFactor", factor))
@@ -1593,36 +1592,10 @@ retval_e alipay_union_code_parse_with_img(
   int rc = h2_pal_mutex_lock(s_sync, s_lock);
   if (rc != H2_PAL_OK) return sdk_result(rc);
   memset(&s_payment, 0, sizeof(s_payment));
-  char* code = NULL;
-  size_t length = 0u;
-  rc = s_initialized ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
-  if (rc == H2_PAL_OK) {
-    code = h2_pal_mem_alloc(s_config.mem, 4097u);
-    if (code == NULL) rc = H2_PAL_ERR_NO_MEMORY;
-  }
-  if (rc == H2_PAL_OK)
-    rc = h2_qrcode_decode_luma(s_config.mem, image, (size_t)width * height,
-                               width, height, width, (uint8_t*)code, 4096u,
-                               &length);
-  if (rc == H2_PAL_OK && (length == 0u || memchr(code, '\0', length) != NULL))
-    rc = H2_PAL_ERR_FORMAT;
-  retval_e result;
-  if (rc == H2_PAL_OK) {
-    code[length] = '\0';
-    result = union_parse_locked(code, false, order);
-  } else {
-    s_payment.result = rc;
-    result = rc == H2_PAL_ERR_NO_MEMORY     ? 29
-             : rc == H2_PAL_ERR_NO_SPACE    ? 15
-             : rc == H2_PAL_ERR_INVALID_ARG ? ALIPAY_RV_WRONG_PARAM
-                                            : 99;
-  }
-  if (code != NULL) {
-    h2_alipay_client_wipe(code, 4097u);
-    h2_pal_mem_free(s_config.mem, code);
-  }
+  s_payment.result =
+      s_initialized ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_INVALID_STATE;
   int unlocked = finish(H2_PAL_OK);
-  return unlocked == H2_PAL_OK ? result : sdk_result(unlocked);
+  return unlocked == H2_PAL_OK ? 99 : sdk_result(unlocked);
 }
 
 retval_e alipay_union_code_parse_with_code(
@@ -1682,11 +1655,11 @@ static int ensure_tap(void) {
 
 static int ensure_nfc_keys(void) {
   if (s_nfc_keys != NULL) return H2_PAL_OK;
-  static const h2_crypto_key_material_t profile[] = {
+  static const h2_alipay_key_material_t profile[] = {
       {(const uint8_t*)"IMF8dz2OZyvF2wQp", 16u},
       {(const uint8_t*)"PmAQLIRXQSma971r", 16u},
       {(const uint8_t*)"ShsKXm2LJVrmQGw7", 16u}};
-  return h2_crypto_md5_aes_keyset_open(s_config.mem, s_config.crypto, profile,
+  return h2_alipay_md5_aes_keyset_open(s_config.mem, s_config.crypto, profile,
                                        3u, &s_nfc_keys);
 }
 
@@ -1720,7 +1693,7 @@ retval_e alipay_get_paycode_with_nfc_token(uint8_t* token,
   char encoded[64] = {0};
   size_t cipher_length = 0u, length = 0u;
   if (rc == H2_PAL_OK)
-    rc = h2_crypto_md5_aes_keyset_encrypt(s_nfc_keys, 0u, (const uint8_t*)code,
+    rc = h2_alipay_md5_aes_keyset_encrypt(s_nfc_keys, 0u, (const uint8_t*)code,
                                           strlen(code), cipher, sizeof(cipher),
                                           &cipher_length);
   if (rc == H2_PAL_OK)
@@ -2178,7 +2151,7 @@ h2_pal_result_t h2_alipay_independent_release(void) {
   int rc = h2_pal_mutex_destroy(s_sync, s_lock);
   if (rc != H2_PAL_OK) return rc;
   clear_scan();
-  h2_crypto_md5_aes_keyset_close(s_nfc_keys);
+  h2_alipay_md5_aes_keyset_close(s_nfc_keys);
   s_nfc_keys = NULL;
   h2_alipay_client_result_clear(&s_session);
   memset(&s_config, 0, sizeof(s_config));

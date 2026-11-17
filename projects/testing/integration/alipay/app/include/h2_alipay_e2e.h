@@ -27,7 +27,6 @@ typedef enum h2_alipay_e2e_stage {
 typedef struct h2_alipay_e2e_result {
   h2_alipay_e2e_stage_t stage;
   h2_pal_result_t result;
-  h2_alipay_blocker_t blocker;
   int prepare_rc, init_rc, init_sdk_rc, reentry_rc, reentry_sdk_rc, code_sdk_rc;
   bool first_init, reused, qr_visible, code_presented;
   uint64_t init_ms, code_ms, binding_ms;
@@ -90,15 +89,8 @@ typedef struct h2_alipay_e2e_config {
    * qualification fixture. Hardware acquisition remains Runtime-owned. */
   const h2_alipay_payment_api_t* payment;
   h2_runtime_component_id_t payment_nfc_component_id;
-  /** NFC-only payment transport: requires wallet context and an encoder.
-   * Payment BLE scan, advertising and GATT remain inactive. */
-  bool payment_nfc_only;
-  /** Optional connected payment service using existing BLE GATT PAL.
-   * mac is the final entry's Bluetooth identity in six wire-order bytes.
-   * Reader context uses the public integration enum; zero selects wallet. */
-  bool payment_connected_ble;
-  uint8_t payment_ble_mac[6];
-  h2_alipay_tap_context_t payment_reader_context;
+  /** The integration App owns an NFC wallet session. SDK BLE compatibility
+   * remains in the client library; this App acquires no payment BLE radio. */
   /** Optional terminal-specific encoder. Called on the business worker.
    * Writes a complete NDEF message into caller storage only on success.
    * NULL leaves NFC writeback unavailable; SDK bytes are not assumed to
@@ -110,19 +102,18 @@ typedef struct h2_alipay_e2e_config {
   /** Optional one-time UI-thread notification after the initial payment menu
    * has completed display verification. No Alipay SDK operation is allowed. */
   h2_pal_result_t (*payment_ready)(h2_runtime_t* runtime, void* user);
-  /** Optional Runtime Button inputs, handled on release. Supply all four
-   * distinct mapped Button component ids, or leave all zero for touch only.
-   * Touch may be unsupported when these inputs are configured. */
+  /** Required when payment is set. Supply four distinct nonzero Runtime Button
+   * component ids. Actions are handled on release through Runtime events;
+   * the payment page does not open or poll Touch PAL. */
   h2_alipay_payment_buttons_t payment_buttons;
 } h2_alipay_e2e_config_t;
 
 /** Synchronous worker operation. Caller owns result; configuration and
  * Runtime remain borrowed through completion. Network preparation precedes
- * initialization, cached reentry and one binding-code call. Legacy readiness
- * and binding-status callbacks are not prerequisites and are not invoked.
- * With complete_binding, reads the local binding snapshot before requesting
- * a code. Does not poll until the caller has actually displayed that code.
- * Does not provision, activate, unbind or reset. */
+ * initialization, cached reentry and one binding-code call. With
+ * complete_binding, reads the local binding snapshot before requesting a code.
+ * Does not poll until the caller has actually displayed that code. Does not
+ * provision, activate, unbind or reset. */
 h2_pal_result_t h2_alipay_e2e_execute(h2_runtime_t* runtime,
                                       const h2_alipay_e2e_config_t* config,
                                       h2_alipay_e2e_result_t* result);

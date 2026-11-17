@@ -168,9 +168,7 @@ int main(void) {
   assert(alipay_npay_get_quick_pay_show_flag());
   assert(alipay_npay_set_quick_pay_flag(false) == 0);
   assert(!alipay_npay_get_quick_pay_flag());
-  bool bound = true;
   h2_alipay_binding_result_t binding;
-  assert(api->vtable->binding_status(api->user, &bound) == 0 && !bound);
   assert(api->vtable->binding_snapshot(api->user, &binding) == 0 &&
          binding.state == H2_ALIPAY_BINDING_UNBOUND);
   size_t baseline = mem.live_blocks;

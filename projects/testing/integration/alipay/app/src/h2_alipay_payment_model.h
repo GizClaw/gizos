@@ -30,8 +30,4 @@ int h2_alipay_payment_model_query(h2_alipay_payment_model_t* model,
                                   h2_alipay_payment_attempt_t* out);
 bool h2_alipay_payment_model_has(const h2_alipay_payment_model_t* model,
                                  uint32_t id);
-/** Extract the exact current SDK BLE result service payload from complete AD
- * data. Accept only UUID FA38 (16 or Bluetooth-base 128-bit) and 27 bytes. */
-int h2_alipay_payment_ble_result(const uint8_t* adv, size_t length,
-                                 uint8_t out[27]);
 #endif

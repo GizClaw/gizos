@@ -72,20 +72,3 @@ h2_pal_result_t h2_crypto_sm2_sign(const h2_pal_crypto_api_t* crypto,
   sm2_wipe(&public_key, sizeof(public_key));
   return rc;
 }
-
-h2_pal_result_t h2_crypto_sm2_verify(const h2_pal_crypto_api_t* crypto,
-                                     const h2_pal_sm2_public_key_t* public_key,
-                                     const uint8_t* identity,
-                                     size_t identity_length,
-                                     const uint8_t* message,
-                                     size_t message_length,
-                                     const h2_pal_sm2_signature_t* signature) {
-  if (signature == NULL) return H2_PAL_ERR_INVALID_ARG;
-  uint8_t digest[32] = {0};
-  int rc = sm2_digest(public_key, identity, identity_length, message,
-                      message_length, digest);
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_crypto_sm2_verify_digest(crypto, public_key, digest, signature);
-  sm2_wipe(digest, sizeof(digest));
-  return rc;
-}

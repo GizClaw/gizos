@@ -60,10 +60,10 @@ int main(void) {
            session == persistent);
     for (size_t i = 0u; i < 7u; ++i)
       expect(persistent, &mem.api, legacy[i], "old", "OLD_BINDING");
-    put(session, "h106_pay_psa", "value", "PERSISTENT", false);
+    put(session, "h106_pay_ctx", "value", "PERSISTENT", false);
     assert(h2_alipay_tiga_storage_release() == 0);
     assert(h2_alipay_tiga_storage_configure(&runtime, &session) == 0);
-    expect(session, &mem.api, "h106_pay_psa", "value", "PERSISTENT");
+    expect(session, &mem.api, "h106_pay_ctx", "value", "PERSISTENT");
     assert(h2_alipay_tiga_storage_release() == 0);
     assert(h2_alipay_test_pref_idle() && mem.live_blocks == 0u);
     return 0;
@@ -99,16 +99,19 @@ int main(void) {
   char sn[49];
   assert(h2_alipay_tiga_read_sn(&runtime, sn, sizeof(sn)) == 0 &&
          strcmp(sn, "490154203237518") == 0);
-  put(session, "h106_pay_psa", "p00000001", "SESSION_KEY", false);
-  put(session, "h106_pay_psa", "binding_ready", "SESSION_MARKER", false);
+  put(session, "h106_pay_ctx", "p00000001", "SESSION_KEY", false);
+  put(session, "h106_pay_ctx", "binding_ready", "SESSION_MARKER", false);
   put(session, "h106_pay_ctx", "binding", "SESSION_CONTEXT", false);
-  expect(session, &mem.api, "h106_pay_psa", "p00000001", "SESSION_KEY");
+  expect(session, &mem.api, "h106_pay_ctx", "p00000001", "SESSION_KEY");
   expect(persistent, &mem.api, "h106_pay_psa", "p00000001", NULL);
   expect(persistent, &mem.api, "h106_pay_ctx", "binding", NULL);
-  put(session, "h106_pay_psa", "p00000001", "REPLACED", false);
-  expect(session, &mem.api, "h106_pay_psa", "p00000001", "REPLACED");
-  expect(session, &mem.api, "h106_pay_psa", "binding_ready", "SESSION_MARKER");
+  put(session, "h106_pay_ctx", "p00000001", "REPLACED", false);
+  expect(session, &mem.api, "h106_pay_ctx", "p00000001", "REPLACED");
+  expect(session, &mem.api, "h106_pay_ctx", "binding_ready", "SESSION_MARKER");
   h2_pal_pref_namespace_t* ns = NULL;
+  assert(h2_pal_pref_open(session, "h106_pay_psa", H2_PAL_PREF_OPEN_READ_WRITE,
+                          &ns) == H2_PAL_ERR_UNSUPPORTED &&
+         ns == NULL);
   assert(h2_pal_pref_open(session, "unrelated", H2_PAL_PREF_OPEN_READ_WRITE,
                           &ns) == H2_PAL_ERR_UNSUPPORTED &&
          ns == NULL);
@@ -170,7 +173,7 @@ int main(void) {
          reused == session);
   assert(h2_alipay_tiga_storage_release() == 0);
   assert(h2_alipay_tiga_storage_configure(&runtime, &session) == 0);
-  expect(session, &mem.api, "h106_pay_psa", "p00000001", NULL);
+  expect(session, &mem.api, "h106_pay_ctx", "p00000001", NULL);
   expect(session, &mem.api, "h106_pay_ctx", "binding", NULL);
   assert(h2_pal_pref_open(session, "h106_pay_ctx", H2_PAL_PREF_OPEN_READ_ONLY,
                           &ns) == 0);

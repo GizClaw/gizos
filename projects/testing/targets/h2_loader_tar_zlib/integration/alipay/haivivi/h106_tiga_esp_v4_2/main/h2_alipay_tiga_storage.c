@@ -25,7 +25,6 @@ typedef struct session_space {
 static h2_runtime_t* s_runtime;
 static h2_pal_pref_api_t s_pref;
 static session_space_t s_session[] = {
-    {.name = "h106_pay_psa"},
     {.name = "h106_pay_ctx"},
 };
 static size_t s_session_handles;
