@@ -49,7 +49,7 @@ typedef struct h2_fruit_slice_canvas {
 /** Fields of the game the static layer depends on. All-integer, so two keys
  * compare equal with memcmp after zero initialization. */
 typedef struct h2_fruit_slice_static_key {
-  uint32_t phase, score, best, lives, new_best;
+  uint32_t phase, score, best, lives, new_best, audio_mute;
   uint32_t progress_revision, save_status;
   /** Menu fruit center row, or -1 without a menu fruit. */
   int32_t menu_y;

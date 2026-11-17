@@ -255,6 +255,8 @@ void h2_sdl3_pump(h2_sdl3_t* provider) {
         h2_sdl3_enqueue_touch(provider, {H2_PAL_TOUCH_EVENT_UP, x, y});
       }
       h2_sdl3_enqueue_event(provider, make_event(H2_SDL3_EVENT_FOCUS_LOST));
+    } else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+      h2_sdl3_enqueue_event(provider, make_event(H2_SDL3_EVENT_FOCUS_GAINED));
     } else if (event.type == SDL_EVENT_WINDOW_EXPOSED) {
       std::lock_guard<std::mutex> lock(provider->display_mutex);
       (void)h2_sdl3_present(provider);

@@ -1,6 +1,6 @@
 # Fruit Slice
 
-A touch fruit-slicing game. The portable App in [`app/`](app/) depends only on Runtime and the Display, Touch and Pref PAL contracts; it renders RGB565 in software and pushes only the dirty row bands each frame. The public contract is [`h2_fruit_slice.h`](app/include/h2_fruit_slice.h).
+A touch fruit-slicing game. The portable App in [`app/`](app/) depends only on Runtime and the Display, Touch, Pref and optional Audio PAL contracts; it renders RGB565 in software and pushes only the dirty row bands each frame. The public contract is [`h2_fruit_slice.h`](app/include/h2_fruit_slice.h).
 
 | Entry | Board | Package |
 | --- | --- | --- |
@@ -34,6 +34,10 @@ Scores still measure each run. Tap **Coin Tasks** on the title or game-over scre
 Tap **Weapon Shop** to buy and immediately equip the Jade Katana (40 coins) or Flame Axe (90 coins), or switch back to the free Classic Knife. Owned weapons can be equipped again for free. The katana adds 10 pixels of cut reach and a green trail; the axe adds 20 pixels and a wider orange trail, measured at a 480-pixel short side and scaled with the display. Wider cuts also hit nearby bombs. Shop and task pages pause the scene; tap **Back** to return, then slice the menu fruit to play.
 
 The `progress_v1` Pref blob in the `fruit_slice` namespace stores coins, unclaimed task progress, the score reward's claimed state, owned weapons and equipped weapon together using an explicit versioned little-endian format. Claims, purchases and equipment changes request a save at the end of the frame; ordinary task progress is saved at most every two seconds and on orderly exit. Failed writes retain the pending state for retry and show **Save failed - retrying** on these pages. Platforms without Pref support show **Session only - no storage** and keep progress for the current App session. Missing progress starts with zero coins and the Classic Knife, preserving the separate existing `best` score. An unreadable, malformed or future-version profile remains untouched: the game uses session progress and shows **Save unreadable - reopen** until restarted. Currency and unclaimed counters cap at 999999; a full wallet must spend coins before claiming another reward.
+
+## Sound
+
+The title screen has independent SFX and BGM mute buttons. Settings persist as `fruit_slice/audio_v1`, and playback starts on the first touch. The bank includes slicing, combos with a synthetic nonverbal cheer, explosions, missed fruit, results, economy/card confirmations and an original arcade music loop. See the [sound bank](app/resources/README.md) for the rebuild command, resource license, event integration and limits. Existing Audio PAL providers power desktop, Web, mobile and supported boards; backgrounding or exiting closes game playback.
 
 ## Native desktop and mobile builds
 

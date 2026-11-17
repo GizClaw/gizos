@@ -58,6 +58,13 @@ typedef struct fixture {
   uint64_t clock_ms;
   uint32_t earned_fruit_credit;
   const h2_pal_pref_api_t* pref_override;
+  bool use_audio, audio_active;
+  unsigned audio_starts, audio_stops, audio_opens, audio_closes, audio_writes;
+  unsigned pause_from, pause_until;
+  int audio_close_result;
+  unsigned audio_stop_failures;
+  h2_pal_audio_api_t audio_api;
+  h2_pal_audio_track_t audio_track;
 } fixture_t;
 
 static fixture_t fx;
@@ -95,6 +102,7 @@ static int pref_set_blob(h2_pal_pref_namespace_t* ns, const char* key,
 static int pref_get_best(h2_pal_pref_namespace_t* ns, const char* key,
                          uint32_t* out_value) {
   (void)ns;
+  if (strcmp(key, "audio_v1") == 0) return H2_PAL_ERR_NOT_FOUND;
   CHECK(strcmp(key, H2_FRUIT_SLICE_PREF_BEST_KEY) == 0);
   *out_value = 21u;
   ++pref.best_reads;
@@ -271,6 +279,68 @@ static void counted_free(void* user, void* p) {
 static const h2_pal_mem_vtable_t mem_vtable = {.alloc = counted_alloc,
                                                .free = counted_free};
 
+static int audio_info(void* user, h2_audio_info_t* info) {
+  (void)user;
+  *info = (h2_audio_info_t){
+      .available = 1,
+      .playback_supported = 1,
+      .playback_format = {16000, 320, 1, H2_AUDIO_SAMPLE_S16LE},
+      .max_tracks = 1};
+  return H2_PAL_OK;
+}
+static int audio_start(void* user) {
+  ++((fixture_t*)user)->audio_starts;
+  return H2_PAL_OK;
+}
+static int audio_stop(void* user) {
+  fixture_t* f = user;
+  CHECK(!f->audio_active);
+  ++f->audio_stops;
+  if (f->audio_stop_failures != 0u) {
+    --f->audio_stop_failures;
+    return H2_PAL_ERR_IO;
+  }
+  return H2_PAL_OK;
+}
+static int audio_write(h2_pal_audio_track_t* track,
+                       const h2_audio_frame_t* frame, uint32_t timeout) {
+  fixture_t* f = track->user;
+  CHECK(f->audio_active && timeout == 0u && frame->bytes == 640u);
+  CHECK(!(f->frames >= f->pause_from && f->frames < f->pause_until));
+  ++f->audio_writes;
+  return H2_PAL_OK;
+}
+static int audio_track_close(h2_pal_audio_track_t* track) {
+  fixture_t* f = track->user;
+  CHECK(f->audio_active);
+  f->audio_active = false;
+  ++f->audio_closes;
+  return f->audio_close_result;
+}
+static int audio_create(void* user, const h2_audio_track_config_t* config,
+                        h2_pal_audio_track_t** out) {
+  fixture_t* f = user;
+  CHECK(!f->audio_active && config->buffer_frames == 2u);
+  f->audio_active = true;
+  ++f->audio_opens;
+  f->audio_track = (h2_pal_audio_track_t){
+      .user = f, .write = audio_write, .close = audio_track_close};
+  *out = &f->audio_track;
+  return H2_PAL_OK;
+}
+static const h2_pal_audio_vtable_t audio_vtable = {
+    .get_info = audio_info,
+    .start_speaker = audio_start,
+    .stop_speaker = audio_stop,
+    .create_track = audio_create};
+
+static bool is_paused(void* user) {
+  fixture_t* f = user;
+  if (f->pause_from != 0u && f->frames == f->pause_from + 1u)
+    CHECK(!f->audio_active);
+  return f->frames >= f->pause_from && f->frames < f->pause_until;
+}
+
 static bool should_exit(void* user) {
   fixture_t* f = user;
   if (f->frames == 3u) f->probe_before = f->display.shadow[288u * WIDTH + 240u];
@@ -294,6 +364,7 @@ static void reset(unsigned exit_after) {
   fx.display_api = (h2_pal_display_api_t){&fx.display, &display_vtable};
   fx.touch_api = (h2_pal_touch_api_t){&fx.touch, &touch_vtable};
   fx.mem_api = (h2_pal_mem_api_t){NULL, &mem_vtable};
+  fx.audio_api = (h2_pal_audio_api_t){&fx, &audio_vtable};
   fx.exit_after = exit_after;
   fx.touch_from_frame = UINT32_MAX;
 }
@@ -343,7 +414,7 @@ static h2_pal_result_t run(void) {
   config.power = h2_pal_unsupported_power_api();
   config.camera = h2_pal_unsupported_camera_api();
   config.display = &fx.display_api;
-  config.audio = h2_pal_unsupported_audio_api();
+  config.audio = fx.use_audio ? &fx.audio_api : h2_pal_unsupported_audio_api();
   config.audio_decoder = h2_pal_unsupported_audio_decoder_api();
   config.periph = h2_pal_unsupported_periph_api();
   config.button = h2_pal_unsupported_button_api();
@@ -367,6 +438,7 @@ static h2_pal_result_t run(void) {
       .frame_period_ms = fx.fast_clock ? 1u : 10u,
       .ready = ready,
       .should_exit = should_exit,
+      .is_paused = is_paused,
       .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
@@ -559,6 +631,7 @@ static void test_fresh_sqlite_storage(void) {
    * pointer input, save effects and rendering. Nothing seeds the profile. */
   reset(1525u);
   fx.pref_override = h2_sqlite_pref_api(storage);
+  fx.use_audio = true;
   fx.fast_clock = true;
   fx.autoplay_until = 1202u;
   fx.touch_from_frame = 1505u;
@@ -572,6 +645,7 @@ static void test_fresh_sqlite_storage(void) {
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.touch.script_next == fx.touch.script_count);
   CHECK(fx.earned_fruit_credit >= 30u);
+  CHECK(fx.audio_writes > 0u && fx.audio_opens == 1u && fx.audio_closes == 1u);
   const uint32_t remaining_credit = fx.earned_fruit_credit - 30u;
   void* data = NULL;
   size_t size = 0u;
@@ -590,9 +664,12 @@ static void test_fresh_sqlite_storage(void) {
   CHECK(ns->close(ns) == H2_PAL_OK);
   /* A new App call must load that ownership/equipment: switching to classic
    * writes equipped=0 and leaves the wallet and consumed task credits alone. */
-  reset(8u);
+  reset(12u);
   fx.pref_override = h2_sqlite_pref_api(storage);
+  fx.use_audio = true;
   fx.touch_from_frame = 2u;
+  script_tap(340, 20); /* Persist SFX mute independently of progression. */
+  script_tap(428, 20); /* Persist BGM mute. */
   script_tap(360, 450);
   script_tap(396, 151);
   CHECK(run() == H2_PAL_OK);
@@ -604,6 +681,9 @@ static void test_fresh_sqlite_storage(void) {
   CHECK(h2_fruit_slice_progress_decode(&saved, data, size));
   CHECK(saved.coins == 5u && saved.fruit_credit == remaining_credit &&
         saved.owned == 3u && saved.equipped == 0u);
+  uint32_t audio_preference = 0u;
+  CHECK(ns->get_u32(ns, "audio_v1", &audio_preference) == H2_PAL_OK);
+  CHECK((audio_preference & 3u) == 3u);
   h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
   CHECK(ns->set_u32(ns, H2_FRUIT_SLICE_PREF_BEST_KEY, 21u) == H2_PAL_OK);
   CHECK(ns->commit(ns) == H2_PAL_OK);
@@ -640,6 +720,50 @@ static void test_fresh_sqlite_storage(void) {
   CHECK(remove(database) == 0);
 }
 
+static void test_audio_gesture_pause_and_exit(void) {
+  reset(40u);
+  fx.use_audio = true;
+  fx.pause_from = 20u;
+  fx.pause_until = 24u;
+  fx.touch_from_frame = 5u;
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.audio_writes > 0u);
+  CHECK(fx.audio_opens == 2u && fx.audio_closes == 2u);
+  CHECK(fx.audio_starts == 2u && fx.audio_stops == 2u);
+  CHECK(!fx.audio_active);
+}
+
+static void test_audio_close_errors_release_runtime_wrapped_track(void) {
+  for (unsigned failure = 0u; failure < 3u; ++failure) {
+    reset(30u);
+    fx.use_audio = true;
+    fx.audio_close_result = failure < 2u ? H2_PAL_ERR_IO : H2_PAL_OK;
+    fx.audio_stop_failures = failure == 2u ? 1u : 0u;
+    if (failure == 0u) {
+      fx.pause_from = 20u;
+      fx.pause_until = 24u;
+    }
+    fx.touch_from_frame = 5u;
+    fx.touch.script[fx.touch.script_count++] =
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+    fx.touch.script[fx.touch.script_count++] =
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+    fx.touch.script[fx.touch.script_count++] =
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+    CHECK(run() == H2_PAL_ERR_IO);
+    CHECK(fx.audio_opens == 1u && fx.audio_closes == 1u);
+    CHECK(fx.audio_starts == 1u);
+    CHECK(fx.audio_stops == (failure == 2u ? 2u : 1u));
+    CHECK(!fx.audio_active);
+  }
+}
+
 int main(void) {
   test_fresh_sqlite_storage();
   test_unreadable_progress_is_preserved();
@@ -651,6 +775,8 @@ int main(void) {
   test_unsupported_display();
   test_persistent_touch_failure();
   test_ready_failure_stops();
+  test_audio_gesture_pause_and_exit();
+  test_audio_close_errors_release_runtime_wrapped_track();
   puts("fruit slice app tests passed");
   return 0;
 }

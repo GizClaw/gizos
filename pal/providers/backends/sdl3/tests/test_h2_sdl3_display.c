@@ -134,6 +134,18 @@ static void test_lifecycle_and_events(void) {
   assert(projected.kind == H2_SDL3_EVENT_KEY);
   assert(projected.key == H2_SDL3_KEY_A && projected.pressed == 1);
 
+  input = (SDL_Event){0};
+  input.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+  assert(SDL_PushEvent(&input));
+  assert(h2_sdl3_poll_event(provider, &projected) == H2_PAL_OK);
+  assert(projected.kind == H2_SDL3_EVENT_FOCUS_LOST);
+  assert(h2_pal_touch_poll_event(touch, &touch_event) == H2_PAL_OK);
+  assert(touch_event.kind == H2_PAL_TOUCH_EVENT_UP);
+  input.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+  assert(SDL_PushEvent(&input));
+  assert(h2_sdl3_poll_event(provider, &projected) == H2_PAL_OK);
+  assert(projected.kind == H2_SDL3_EVENT_FOCUS_GAINED);
+
   assert(h2_pal_touch_close(touch) == H2_PAL_OK);
   assert(h2_pal_display_close(display) == H2_DISPLAY_OK);
   assert(h2_pal_display_get_info(display, &info) ==

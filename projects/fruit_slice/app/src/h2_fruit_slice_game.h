@@ -5,6 +5,8 @@
  * elapsed time and pointer edges, and the renderer reads it. Coordinates are
  * display pixels with the origin at the top-left corner. */
 
+#include "h2_fruit_slice_sound.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -195,6 +197,11 @@ typedef struct h2_fruit_slice_game {
   h2_fruit_slice_phase_t return_phase;
   uint32_t pressed_button;
 
+  /* Main-loop effects; queue saturation drops low-priority requests first. */
+  uint8_t sounds[H2_FRUIT_SLICE_SOUND_QUEUE];
+  uint8_t sound_count, audio_mute;
+  bool audio_touch, result_sounded;
+
   uint64_t next_wave_ms, next_spawn_ms;
   uint32_t pending_spawns;
   bool wave_has_bomb;
@@ -226,6 +233,15 @@ void h2_fruit_slice_game_init(h2_fruit_slice_game_t* game, int32_t width,
 bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,
                                      uint32_t button,
                                      h2_fruit_slice_rect_t* out);
+
+/** Enqueue a sound effect; false if invalid or the bounded queue is full.
+ * Swing/slice/coin bursts coalesce within one drain; critical effects replace
+ * one such low-priority request when full. No PAL/audio resource is touched. */
+bool h2_fruit_slice_game_sound(h2_fruit_slice_game_t* game,
+                               h2_fruit_slice_sound_t sound);
+/** Remove the oldest effect. Called by the App after pointer/step updates. */
+bool h2_fruit_slice_game_take_sound(h2_fruit_slice_game_t* game,
+                                    h2_fruit_slice_sound_t* sound);
 
 /** Feed one pointer edge at the current game time; may slice objects. */
 void h2_fruit_slice_game_pointer(h2_fruit_slice_game_t* game,

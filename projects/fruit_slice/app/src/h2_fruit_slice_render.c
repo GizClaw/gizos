@@ -893,6 +893,19 @@ static void draw_title(h2_fruit_slice_canvas_t* canvas,
                        const h2_fruit_slice_game_t* game) {
   const float w = (float)canvas->width, h = (float)canvas->height;
   const float u = game->unit;
+  for (unsigned i = 0; i < 2u; ++i) {
+    const float x = w - (184.0f - (float)i * 88.0f) * u;
+    const bool muted = (game->audio_mute & (1u << i)) != 0u;
+    rounded_rect(canvas, x, 8.0f * u, x + 84.0f * u, 44.0f * u, 6.0f * u,
+                 H2_FRUIT_SLICE_RGB(22, 18, 16), 220u);
+    text_centered(canvas,
+                  i == 0u ? (muted ? "SFX OFF" : "SFX ON")
+                          : (muted ? "BGM OFF" : "BGM ON"),
+                  x + 42.0f * u, 19.0f * u, text_scale(u, 1.5f),
+                  muted ? H2_FRUIT_SLICE_RGB(180, 170, 160)
+                        : H2_FRUIT_SLICE_RGB(255, 222, 80),
+                  256u);
+  }
   const char* title = "FRUIT SLICE";
   const int32_t big = fit_scale(title, w * 0.9f, text_scale(u, 7.0f));
   text_centered(canvas, title, w * 0.5f, h * 0.13f, big,
@@ -1066,6 +1079,7 @@ void h2_fruit_slice_static_key(const h2_fruit_slice_game_t* game,
   out->best = game->best;
   out->progress_revision = game->progress_revision;
   out->save_status = game->save_status;
+  out->audio_mute = game->audio_mute;
   out->menu_y = menu != NULL ? (int32_t)menu->body.y : -1;
   if (game->phase != H2_FRUIT_SLICE_PHASE_TITLE) {
     out->score = game->score;
