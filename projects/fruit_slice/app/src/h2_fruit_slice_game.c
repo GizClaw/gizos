@@ -760,6 +760,10 @@ static void step_once(h2_fruit_slice_game_t* game, uint32_t ms) {
   const bool allow_reveal =
       game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER &&
       game->time_ms - game->phase_started_ms >= H2_FRUIT_SLICE_REVEAL_DELAY_MS;
+  if (allow_reveal && game->cards.reveal_queue != 0u && !game->result_sounded) {
+    game->result_sounded = true;
+    (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_RESULT);
+  }
   h2_fruit_slice_cards_step(&game->cards, ms, allow_reveal);
   h2_fruit_slice_card_cue_t cue;
   while ((cue = h2_fruit_slice_cards_take_cue(&game->cards)) !=

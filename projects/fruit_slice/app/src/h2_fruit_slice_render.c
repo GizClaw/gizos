@@ -117,6 +117,7 @@ static const uint8_t k_colon[7] = {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00};
 static const uint8_t k_bang[7] = {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04};
 static const uint8_t k_dot[7] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C};
 static const uint8_t k_times[7] = {0x00, 0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11};
+static const uint8_t k_question[7] = {0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04};
 static const uint8_t k_slash[7] = {0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10};
 
 static const uint8_t* glyph(char c) {
@@ -134,6 +135,8 @@ static const uint8_t* glyph(char c) {
       return k_bang;
     case '.':
       return k_dot;
+    case '?':
+      return k_question;
     case '/':
       return k_slash;
     default:
@@ -1107,7 +1110,8 @@ void h2_fruit_slice_render_static(h2_fruit_slice_canvas_t* canvas,
   }
   if (game->phase == H2_FRUIT_SLICE_PHASE_TITLE) {
     draw_title(canvas, game);
-    draw_wallet(canvas, game, (float)canvas->height * 0.35f);
+    draw_wallet(canvas, game,
+                (float)canvas->height * (game->width < 300 ? 0.32f : 0.35f));
     const h2_fruit_slice_weapon_t* weapon =
         h2_fruit_slice_weapon(game->progress.equipped);
     text_centered(canvas, weapon->name, (float)canvas->width * 0.5f,

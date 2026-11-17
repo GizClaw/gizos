@@ -520,6 +520,13 @@ static void draw_card(h2_fruit_slice_canvas_t* canvas,
   card_art(canvas, game, id, acx, acy, art_r, side != SIDE_FACE, angle);
   if (w >= 34.0f) {
     const char* name = side == SIDE_FACE ? card->name : "???";
+    /* Bitmap text cannot shrink below one pixel per stroke. Keep tiny card
+     * labels within their border; the detail panel retains the full name. */
+    static const char* const compact[H2_FRUIT_SLICE_CARD_COUNT] = {
+        "MELON", "ORNG", "APPLE", "KIWI",  "LEMON", "SALAD", "KNIFE", "JADE",
+        "AXE",   "BOMB", "DODGE", "SQUAD", "COMBO", "MEGA",  "SCORE", "CROWN"};
+    if (side == SIDE_FACE && h2_fruit_slice_text_width(name, 1) > w * 0.88f)
+      name = compact[id];
     const int32_t scale = h2_fruit_slice_fit_scale(
         name, w * 0.88f, (int32_t)fmaxf(1.0f, floorf(w / 56.0f)));
     h2_fruit_slice_draw_text_centered(

@@ -144,7 +144,61 @@ static void test_game_routes_and_reveal(void) {
   CHECK(heard_card);
 }
 
+static void test_play_awards_and_rare_sound(void) {
+  h2_fruit_slice_game_t g;
+  h2_fruit_slice_game_init(&g, 240, 240, 4u, 0u);
+  h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_DOWN, 0, 144);
+  h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_UP, 240, 144);
+  g.next_wave_ms = UINT64_MAX;
+  for (unsigned run = 0; run < 20u; ++run) {
+    memset(g.fruits, 0, sizeof(g.fruits));
+    for (unsigned kind = 0; kind < 5u; ++kind)
+      g.fruits[kind] = (h2_fruit_slice_fruit_t){
+          .active = true,
+          .kind = (uint8_t)kind,
+          .radius = 10,
+          .body = {.x = 30.0f + 40.0f * (float)kind, .y = 120}};
+    h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_DOWN, 0, 120);
+    h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_UP, 240, 120);
+  }
+  CHECK(g.score == 200u && g.sliced_total == 100u);
+  CHECK(g.cards.counts[H2_FRUIT_SLICE_CARD_COMBO] == 1u);
+  CHECK(g.cards.counts[H2_FRUIT_SLICE_CARD_MEGA_COMBO] == 1u);
+  CHECK(g.cards.counts[H2_FRUIT_SLICE_CARD_CLASSIC_KNIFE] == 1u);
+  CHECK(g.cards.counts[H2_FRUIT_SLICE_CARD_HIGH_SCORE] == 1u);
+  CHECK(g.cards.counts[H2_FRUIT_SLICE_CARD_LEGEND] == 1u);
+  for (unsigned kind = 0; kind < 5u; ++kind) CHECK(g.cards.counts[kind] == 1u);
+  for (unsigned n = 0; n < 8u; ++n) {
+    g.fruits[0] =
+        (h2_fruit_slice_fruit_t){.active = true,
+                                 .kind = H2_FRUIT_SLICE_BOMB,
+                                 .radius = 15,
+                                 .body = {.x = 120, .y = 260, .vy = 1}};
+    h2_fruit_slice_game_step(&g, 16u);
+  }
+  CHECK(g.cards.counts[H2_FRUIT_SLICE_CARD_CLOSE_CALL] == 1u);
+  CHECK(g.cards.counts[H2_FRUIT_SLICE_CARD_BOMB_SQUAD] == 1u);
+  g.fruits[0].active = true;
+  g.fruits[0].body.y = 120;
+  h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_DOWN, 0, 120);
+  h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_UP, 240, 120);
+  CHECK(g.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+  bool heard_rare = false;
+  for (unsigned n = 0; n < 16u && g.cards.reveal_queue; ++n) {
+    h2_fruit_slice_sound_t sound;
+    while (h2_fruit_slice_game_take_sound(&g, &sound)) {
+    }
+    h2_fruit_slice_game_step(&g, 2000u);
+    while (h2_fruit_slice_game_take_sound(&g, &sound))
+      heard_rare |= sound == H2_FRUIT_SLICE_SOUND_RARE;
+    h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_DOWN, 120, 120);
+    h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_UP, 120, 120);
+  }
+  CHECK(heard_rare && !g.cards.reveal_active && g.cards.reveal_queue == 0u);
+}
+
 int main(void) {
+  test_play_awards_and_rare_sound();
   test_catalog_and_awards();
   test_storage();
   test_game_routes_and_reveal();
