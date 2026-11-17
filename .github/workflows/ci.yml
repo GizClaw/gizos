@@ -1285,11 +1285,12 @@ jobs:
         shell: bash
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --quiet HEAD
           python3 - <<'PY'
           import os, subprocess
           from scripts.common.bazel import cache_options, graph_options
           target = '//projects/fruit_slice/targets/h2_loader_tar_zlib/jieli/jieli_ac791n_devkit:package'
-          options = ['--config=ac791n', *cache_options(), *graph_options()]
+          options = ['--config=ac791n', '--lockfile_mode=off', *cache_options(), *graph_options()]
           bazel = os.environ['BAZEL_BIN']
           subprocess.run([bazel, 'build', *options, '--remote_download_outputs=all', target], check=True)
           result = subprocess.check_output([bazel, 'cquery', *options, target, '--output=files'], text=True)

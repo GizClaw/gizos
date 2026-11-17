@@ -2,6 +2,7 @@
 
 import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -9,7 +10,7 @@ from unittest.mock import patch
 
 from tools.bazel.h2loader.firmware_artifacts import package_manifest, write_package
 from tools.bazel.h2loader.internal_delivery import (
-    BUCKET, IDENTITY, STEM, digest, upload, validate_package,
+    BUCKET, IDENTITY, STEM, digest, main, upload, validate_package,
 )
 
 
@@ -54,6 +55,16 @@ class DeliveryTest(unittest.TestCase):
         self.metadata["package_manifest"]["image_sha256"] = "0" * 64
         with self.assertRaises(ValueError):
             validate_package(self.package, json.dumps(self.metadata).encode(), self.version)
+
+    def test_changed_source_stops_before_upload(self):
+        source = "a" * 40
+        with patch.dict(os.environ, {"SOURCE_SHA": source, "WORKFLOW_SHA": "b" * 40}), \
+                patch("sys.argv", ["delivery", "--outputs", "/unused"]), \
+                patch("subprocess.check_output", side_effect=[source + "\n", "MODULE.bazel.lock\n"]), \
+                patch("urllib.request.urlopen") as request:
+            with self.assertRaisesRegex(ValueError, "tracked source changed.*MODULE.bazel.lock"):
+                main()
+            request.assert_not_called()
 
     def test_upload_is_private_create_only(self):
         receipt = {"bucket": BUCKET, "name": "internal-delivery/example", "size": "3"}

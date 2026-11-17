@@ -89,6 +89,9 @@ def main() -> None:
     actual = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     if actual != source:
         raise ValueError("source checkout mismatch")
+    changed = subprocess.check_output(["git", "diff", "--name-only", "HEAD"], text=True).strip()
+    if changed:
+        raise ValueError("tracked source changed during build: " + changed)
     subprocess.run(["git", "diff", "--quiet", "HEAD"], check=True)
     run, attempt = os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"]
     if not run.isdecimal() or not attempt.isdecimal():
