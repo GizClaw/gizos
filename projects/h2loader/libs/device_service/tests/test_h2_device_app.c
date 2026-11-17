@@ -296,8 +296,10 @@ int h2_loader_ble_app_write(void* user, const char* data, size_t len) {
 static void test_legacy_loader_config(void) {
   static const h2loader_app_command_service_api_t command_service = {0};
   /* Original main contract, including its final command_service member. */
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
   const h2_device_loader_config_t config = {"board",
                                             "entry",
                                             NULL,
@@ -325,7 +327,9 @@ static void test_legacy_loader_config(void) {
                                             NULL,
                                             NULL,
                                             &command_service};
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
   assert(config.serial_post_write_poll_ms == 6u &&
          config.ble_advertising_mode == H2_LOADER_BLE_ADVERTISING_EXTENDED &&
          config.force_command_mode == 1 && config.mfg_required_total == 9u);

@@ -191,11 +191,15 @@ static void test_sessions(void) {
 
 static void test_legacy_config_initializer(void) {
   /* This is the complete public initializer before RX budgets were appended. */
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
   const h2_device_serial_config_t config = {
       s_physical, &s_mem, &s_time, NULL, NULL, 0u, 0u, 0u, 8u};
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
   assert(config.receive_window == 8u && config.rx_buffer_size == 0u);
   h2_device_serial_t transport;
   assert(h2_device_serial_init_with_config(&transport, &config) == H2_PAL_OK);
