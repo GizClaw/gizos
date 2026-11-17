@@ -3,6 +3,7 @@
 #include "h2_xianxia_rpg_game.h"
 #include "h2_xianxia_rpg_render.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -117,17 +118,20 @@ static void log_transitions(session_t* s) {
       g->dialogue.active ? (int32_t)g->dialogue.index : -1};
   if (memcmp(now, s->logged, sizeof(now)) == 0) return;
   memcpy(s->logged, now, sizeof(now));
+  const int32_t enemy = now[3] >= 0 ? (int32_t)g->battle.enemy : -1;
   char message[256];
-  (void)snprintf(
-      message, sizeof(message),
-      "H2_XIANXIA_RPG_STATE phase=%d map=%d stage=%d battle=%d "
-      "dialogue=%d level=%u hp=%u/%u mp=%u pills=%u enemy=%d "
-      "enemy_hp=%u charging=%d won=%u turns=%u",
-      now[0], now[1], now[2], now[3], now[4], (unsigned)g->hero.level,
-      (unsigned)g->hero.hp, (unsigned)g->hero.hp_max, (unsigned)g->hero.mp,
-      (unsigned)g->hero.pills, now[3] >= 0 ? (int32_t)g->battle.enemy : -1,
-      (unsigned)g->battle.enemy_hp, g->battle.charging ? 1 : 0,
-      (unsigned)g->battles_won, (unsigned)g->turns_taken);
+  /* int32_t is long on some embedded toolchains, so use its own format. */
+  (void)snprintf(message, sizeof(message),
+                 "H2_XIANXIA_RPG_STATE phase=%" PRId32 " map=%" PRId32
+                 " stage=%" PRId32 " battle=%" PRId32 " dialogue=%" PRId32
+                 " level=%u hp=%u/%u mp=%u pills=%u enemy=%" PRId32
+                 " enemy_hp=%u charging=%d won=%u turns=%u",
+                 now[0], now[1], now[2], now[3], now[4],
+                 (unsigned)g->hero.level, (unsigned)g->hero.hp,
+                 (unsigned)g->hero.hp_max, (unsigned)g->hero.mp,
+                 (unsigned)g->hero.pills, enemy, (unsigned)g->battle.enemy_hp,
+                 g->battle.charging ? 1 : 0, (unsigned)g->battles_won,
+                 (unsigned)g->turns_taken);
   log_line(s, H2_PAL_LOG_INFO, message);
 }
 

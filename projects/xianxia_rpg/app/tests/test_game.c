@@ -584,7 +584,10 @@ static void test_utf8(void) {
   CHECK(h2_xianxia_rpg_utf8_next(&text) == 0x4ED9u);
   CHECK(h2_xianxia_rpg_utf8_next(&text) == 'a');
   CHECK(h2_xianxia_rpg_utf8_next(&text) == 0u);
-  const char broken[] = {(char)0xE4, 'x', 0};
+  /* A lead byte of a three-byte sequence followed by ASCII. */
+  const char broken[] =
+      "\xE4"
+      "x";
   text = broken;
   CHECK(h2_xianxia_rpg_utf8_next(&text) == 0xFFFDu);
   CHECK(h2_xianxia_rpg_utf8_next(&text) == 'x');
