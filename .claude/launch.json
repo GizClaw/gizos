@@ -10,5 +10,10 @@
     "runtimeExecutable": "bazel",
     "runtimeArgs": ["run", "-c", "opt", "//projects/fruit_slice/targets/pkg_tar/web:serve", "--", "--port", "8765"],
     "port": 8765
+  }, {
+    "name": "xianxia-rpg-web",
+    "runtimeExecutable": "bazel",
+    "runtimeArgs": ["run", "-c", "opt", "//projects/xianxia_rpg/targets/pkg_tar/web:serve", "--", "--port", "8791"],
+    "port": 8791
   }]
 }
