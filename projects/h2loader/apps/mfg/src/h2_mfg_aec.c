@@ -84,7 +84,13 @@ static void erase_recording(void* pointer, size_t bytes) {
 }
 
 typedef union recording_queue_allocation {
+#if defined(_MSC_VER)
+  long double alignment;
+  void* pointer_alignment;
+  uint64_t integer_alignment;
+#else
   max_align_t alignment;
+#endif
   size_t bytes;
 } recording_queue_allocation_t;
 
