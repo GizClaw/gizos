@@ -167,6 +167,7 @@ static void load_cards(session_t* s) {
   h2_pal_pref_namespace_t* ns = NULL;
   void* data = NULL;
   size_t size = 0u;
+  bool missing = false;
   int rc = h2_pal_pref_open(s->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
                             H2_PAL_PREF_OPEN_READ_WRITE, &ns);
   if (rc == H2_PAL_OK && ns == NULL) rc = H2_PAL_ERR_INVALID_STATE;
@@ -174,16 +175,22 @@ static void load_cards(session_t* s) {
     rc = ns->get_blob != NULL
              ? ns->get_blob(ns, s->allocator, CARDS_KEY, &data, &size)
              : H2_PAL_ERR_UNSUPPORTED;
-    if (rc == H2_PAL_OK && !h2_fruit_slice_cards_decode(cards, data, size))
+    missing = rc == H2_PAL_ERR_NOT_FOUND;
+    if (rc == H2_PAL_OK && !h2_fruit_slice_cards_merge(cards, data, size))
       rc = H2_PAL_ERR_INVALID_ARG;
     if (ns->close != NULL) (void)ns->close(ns);
   }
   if (data != NULL) h2_pal_mem_free(s->allocator, data);
-  if (rc == H2_PAL_OK || rc == H2_PAL_ERR_NOT_FOUND) {
+  if (rc == H2_PAL_OK || missing) {
     cards->loaded = true;
+    cards->seen_before_load = 0u;
+    cards->save_status = 0u;
   } else {
-    /* Preserve unreadable bytes, including unknown future formats. */
-    cards->save_status = rc == H2_PAL_ERR_UNSUPPORTED ? 1u : 3u;
+    /* Never write without a known baseline. Operational errors can recover;
+     * unsupported storage and invalid/future blobs stay protected. */
+    cards->save_status = rc == H2_PAL_ERR_UNSUPPORTED   ? 1u
+                         : rc == H2_PAL_ERR_INVALID_ARG ? 3u
+                                                        : 2u;
   }
   ++cards->revision;
   char message[80];
@@ -194,9 +201,9 @@ static void load_cards(session_t* s) {
 
 static void save_cards(session_t* s) {
   h2_fruit_slice_cards_t* cards = &s->game.cards;
-  if (!cards->dirty || !cards->loaded || cards->save_status == 1u ||
-      cards->save_status == 3u)
-    return;
+  if (cards->save_status == 1u || cards->save_status == 3u) return;
+  if (!cards->loaded && cards->save_status == 2u) load_cards(s);
+  if (!cards->loaded || !cards->dirty) return;
   h2_pal_pref_namespace_t* ns = NULL;
   uint8_t data[H2_FRUIT_SLICE_CARDS_BYTES];
   h2_fruit_slice_cards_encode(cards, data);
@@ -596,7 +603,9 @@ static h2_pal_result_t play(session_t* s) {
       save_progress(s);
       s->progress_save_after_ms = now + PROGRESS_RETRY_MS;
     }
-    if (s->game.cards.dirty && now >= s->cards_save_after_ms) {
+    if ((s->game.cards.dirty ||
+         (!s->game.cards.loaded && s->game.cards.save_status == 2u)) &&
+        now >= s->cards_save_after_ms) {
       save_cards(s);
       s->cards_save_after_ms = now + PROGRESS_RETRY_MS;
     }
@@ -662,6 +671,8 @@ static h2_pal_result_t prepare(session_t* s) {
                            load_best(s));
   load_progress(s);
   load_cards(s);
+  if (s->game.cards.save_status == 2u)
+    s->cards_save_after_ms = clock_ms(s) + PROGRESS_RETRY_MS;
   /* Build every fixed-size texture now so frames never allocate. */
   if (!h2_fruit_slice_sprites_prepare(s->sprites, &s->game)) {
     log_line(s, H2_PAL_LOG_ERROR, "H2_FRUIT_SLICE_ALLOC_FAIL what=textures");

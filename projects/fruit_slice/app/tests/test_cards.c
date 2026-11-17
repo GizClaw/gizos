@@ -80,8 +80,14 @@ static void test_storage(void) {
   }
   CHECK(!h2_fruit_slice_cards_decode(&restored, data, sizeof(data) - 1u));
   CHECK(!h2_fruit_slice_cards_decode(&restored, NULL, sizeof(data)));
+  h2_fruit_slice_cards_init(&restored, 240, 280, 2u);
+  h2_fruit_slice_cards_run_start(&restored);
+  h2_fruit_slice_cards_on_bomb_hit(&restored, 10, 10);
   CHECK(h2_fruit_slice_cards_merge(&restored, data, sizeof(data)));
   CHECK(restored.counts[H2_FRUIT_SLICE_CARD_BOMB] == 2u);
+  const h2_fruit_slice_cards_t merged = restored;
+  CHECK(!h2_fruit_slice_cards_merge(&restored, data, sizeof(data)));
+  CHECK(memcmp(&merged, &restored, sizeof(merged)) == 0);
 }
 
 static void tap(h2_fruit_slice_game_t* g, uint32_t button) {
@@ -197,7 +203,65 @@ static void test_play_awards_and_rare_sound(void) {
   CHECK(heard_rare && !g.cards.reveal_active && g.cards.reveal_queue == 0u);
 }
 
+static void test_pending_collection_merge(void) {
+  h2_fruit_slice_cards_t stored, c;
+  h2_fruit_slice_cards_init(&stored, 240, 240, 1u);
+  stored.counts[0] = stored.counts[1] = stored.counts[2] = 5u;
+  stored.counts[3] = 99u;
+  stored.unseen = (1u << 0) | (1u << 2) | (1u << 3);
+  uint8_t data[H2_FRUIT_SLICE_CARDS_BYTES];
+  h2_fruit_slice_cards_encode(&stored, data);
+  h2_fruit_slice_cards_init(&c, 240, 240, 2u);
+  h2_fruit_slice_cards_run_start(&c);
+  for (unsigned id = 0; id < 5u; ++id) {
+    c.pity[id] = H2_FRUIT_SLICE_CARD_DROP_PITY - 1u;
+    h2_fruit_slice_cards_on_slice(&c, id, 1u, 0u, 120, 120);
+  }
+  h2_fruit_slice_cards_on_bomb_hit(&c, 120, 120);
+  h2_fruit_slice_cards_open_album(&c); /* Inspect the locally earned melon. */
+  CHECK(c.seen_before_load == 1u && (c.unseen & 1u) == 0u);
+  h2_fruit_slice_cards_close_album(&c);
+  h2_fruit_slice_cards_run_end(&c);
+  while (h2_fruit_slice_cards_take_cue(&c) != H2_FRUIT_SLICE_CARD_CUE_NONE) {
+  }
+  h2_fruit_slice_cards_step(&c, 1u, true);
+  h2_fruit_slice_cards_step(&c, 850u, true);
+  const h2_fruit_slice_cards_t before = c;
+  CHECK(c.reveal_active && c.reveal_card == 0u && c.reveal_cued);
+  CHECK(h2_fruit_slice_cards_merge(&c, data, sizeof(data)));
+  CHECK(c.loaded && c.dirty);
+  CHECK(c.counts[0] == 6u && c.counts[1] == 6u && c.counts[2] == 6u);
+  CHECK(c.counts[3] == 99u && c.counts[4] == 1u);
+  CHECK(c.counts[H2_FRUIT_SLICE_CARD_BOMB] == 1u);
+  const uint32_t fresh = (1u << 4) | (1u << H2_FRUIT_SLICE_CARD_BOMB);
+  CHECK(c.unseen == ((1u << 2) | (1u << 3) | fresh));
+  CHECK(c.run_new == fresh && c.run_earned == before.run_earned);
+  CHECK(c.reveal_active && c.reveal_card == before.reveal_card &&
+        c.reveal_ms == before.reveal_ms && c.reveal_cued == before.reveal_cued);
+  CHECK(c.reveal_queue == (fresh | 1u) && c.reveal_total == 3u);
+  CHECK(c.cue_count == before.cue_count &&
+        memcmp(c.cues, before.cues, sizeof(c.cues)) == 0);
+  CHECK(c.rng == before.rng && c.time_ms == before.time_ms);
+  CHECK(memcmp(c.sparks, before.sparks, sizeof(c.sparks)) == 0);
+  const h2_fruit_slice_cards_t merged = c;
+  CHECK(!h2_fruit_slice_cards_merge(&c, data, sizeof(data)));
+  CHECK(memcmp(&c, &merged, sizeof(c)) == 0);
+  unsigned completed = 0u;
+  while (c.reveal_active) {
+    h2_fruit_slice_cards_step(&c, 1200u, true);
+    (void)h2_fruit_slice_cards_reveal_pointer(&c, H2_FRUIT_SLICE_POINTER_DOWN);
+    (void)h2_fruit_slice_cards_reveal_pointer(&c, H2_FRUIT_SLICE_POINTER_UP);
+    CHECK(++completed <= 3u);
+  }
+  CHECK(completed == 3u && c.reveal_queue == 0u);
+  CHECK(h2_fruit_slice_cards_take_cue(&c) == H2_FRUIT_SLICE_CARD_CUE_CARD);
+  CHECK(h2_fruit_slice_cards_take_cue(&c) == H2_FRUIT_SLICE_CARD_CUE_CARD);
+  CHECK(h2_fruit_slice_cards_take_cue(&c) == H2_FRUIT_SLICE_CARD_CUE_RARE);
+  CHECK(h2_fruit_slice_cards_take_cue(&c) == H2_FRUIT_SLICE_CARD_CUE_NONE);
+}
+
 int main(void) {
+  test_pending_collection_merge();
   test_play_awards_and_rare_sound();
   test_catalog_and_awards();
   test_storage();

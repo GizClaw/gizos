@@ -663,7 +663,7 @@ void h2_fruit_slice_cards_render_badge(h2_fruit_slice_canvas_t* canvas,
       cx + w * 0.5f + 4.0f * u, cy + h * 0.5f - 3.0f * u, 3.0f * u,
       RGB(150, 112, 40), 256u);
   mini_card(canvas, H2_FRUIT_SLICE_CARD_LEGEND, SIDE_BACK, cx, cy, w, h, 1.0f);
-  char text[8];
+  char text[12]; /* 'x', any uint32-sized unsigned value, and the terminator. */
   (void)snprintf(text, sizeof(text), "x%u", landed);
   const int32_t scale = h2_fruit_slice_text_scale(u, 3.0f);
   h2_fruit_slice_draw_text(canvas, text, (int32_t)(cx + w * 0.5f + 8.0f * u),
@@ -992,8 +992,8 @@ void h2_fruit_slice_cards_render_album_static(
         h2_fruit_slice_fit_scale(line, dw, small_pref),
         have ? lighten(rc, 60u) : RGB(170, 170, 184), 256u);
     const char* status = cards->save_status == 1u   ? "SESSION ONLY"
-                         : cards->save_status == 2u ? "SAVE RETRYING"
-                         : cards->save_status == 3u ? "SAVE UNREADABLE"
+                         : cards->save_status == 2u ? "UNSAVED - RETRYING"
+                         : cards->save_status == 3u ? "UNSAVED - PROTECTED"
                                                     : NULL;
     const char* hint = status != NULL ? status : card->hint;
     h2_fruit_slice_draw_text_centered(

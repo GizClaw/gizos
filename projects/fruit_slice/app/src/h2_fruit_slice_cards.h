@@ -130,7 +130,10 @@ typedef struct h2_fruit_slice_cards {
   /* Persistence: dirty requests a save; loaded is false when the stored
    * collection could not be read yet and must be merged before writing. */
   bool dirty, loaded;
-  uint32_t save_status; /**< 0 ok, 1 session only, 2 retry, 3 unreadable. */
+  uint32_t
+      seen_before_load; /**< Locally inspected copies while awaiting a read. */
+  uint32_t save_status; /**< 0 ok, 1 session only, 2 retry read/write, 3
+                           protected. */
 
   /** Bumped whenever anything drawn on the cached static layer changes. */
   uint32_t revision;
@@ -216,7 +219,10 @@ void h2_fruit_slice_cards_encode(const h2_fruit_slice_cards_t* cards,
                                  uint8_t out[H2_FRUIT_SLICE_CARDS_BYTES]);
 bool h2_fruit_slice_cards_decode(h2_fruit_slice_cards_t* cards,
                                  const void* data, size_t size);
-/** Add a stored collection to cards earned before it could be read. */
+/** Merge the stored baseline once, while !loaded. Until then counts contain
+ * only session awards. Preserve local inspections, cap counts at 99 and let
+ * an active reveal finish; future duplicate reveals are removed. Failure,
+ * including already loaded, leaves state unchanged. */
 bool h2_fruit_slice_cards_merge(h2_fruit_slice_cards_t* cards, const void* data,
                                 size_t size);
 

@@ -201,6 +201,7 @@ bool h2_fruit_slice_cards_decode(h2_fruit_slice_cards_t* cards,
   if (cards == NULL || !parse(data, size, counts, &unseen)) return false;
   memcpy(cards->counts, counts, sizeof(counts));
   cards->unseen = unseen;
+  cards->seen_before_load = 0u;
   cards->loaded = true;
   ++cards->revision;
   return true;
@@ -210,19 +211,33 @@ bool h2_fruit_slice_cards_merge(h2_fruit_slice_cards_t* cards, const void* data,
                                 size_t size) {
   uint8_t counts[H2_FRUIT_SLICE_CARD_COUNT];
   uint32_t unseen = 0;
-  if (cards == NULL || !parse(data, size, counts, &unseen)) return false;
+  if (cards == NULL || cards->loaded || !parse(data, size, counts, &unseen))
+    return false;
+  const uint32_t stored_owned = owned_mask(counts);
   for (unsigned id = 0; id < H2_FRUIT_SLICE_CARD_COUNT; ++id) {
     const unsigned total = (unsigned)cards->counts[id] + counts[id];
-    /* A stored copy means a card earned this session was not first. */
-    if (counts[id] != 0u) {
-      cards->reveal_queue &= ~(1u << id);
-      cards->run_new &= ~(1u << id);
-    }
     cards->counts[id] = (uint8_t)(total > H2_FRUIT_SLICE_CARD_MAX_COUNT
                                       ? H2_FRUIT_SLICE_CARD_MAX_COUNT
                                       : total);
   }
-  cards->unseen |= unseen;
+  /* Stored copies retain their old NEW/seen state unless inspected locally.
+   * A duplicate earned before the read must not make an old seen card NEW. */
+  cards->unseen =
+      ((cards->unseen & ~stored_owned) | unseen) & ~cards->seen_before_load;
+  cards->seen_before_load = 0u;
+  cards->run_new &= ~stored_owned;
+  cards->reveal_queue &= ~stored_owned;
+  if (cards->reveal_active) {
+    /* Do not reset an in-flight flip or replay its cue. The visible card
+     * finishes normally, even if recovery discovers it was a duplicate. */
+    cards->reveal_queue |= 1u << cards->reveal_card;
+    cards->reveal_total =
+        (uint8_t)(cards->reveal_index + popcount32(cards->reveal_queue));
+  }
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_CARD_FLIGHTS; ++i)
+    if (cards->flights[i].active &&
+        (stored_owned & (1u << cards->flights[i].card)) != 0u)
+      cards->flights[i].duplicate = true;
   cards->loaded = true;
   ++cards->revision;
   return true;
@@ -558,6 +573,7 @@ static void select_slot(h2_fruit_slice_cards_t* cards, unsigned slot) {
   cards->selected = (uint8_t)slot;
   cards->select_ms = 0u;
   const uint32_t bit = 1u << (unsigned)id;
+  if (!cards->loaded && cards->counts[id] != 0u) cards->seen_before_load |= bit;
   if ((cards->unseen & bit) != 0u) {
     cards->unseen &= ~bit;
     cards->dirty = true;

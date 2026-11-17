@@ -80,7 +80,7 @@ static struct {
   bool cards_enabled, cards_exists, cards_pending;
   uint8_t cards_saved[H2_FRUIT_SLICE_CARDS_BYTES],
       cards_staged[H2_FRUIT_SLICE_CARDS_BYTES];
-  unsigned cards_commits, cards_failures;
+  unsigned cards_commits, cards_failures, cards_reads;
   int cards_read_result;
   h2_pal_pref_namespace_t ns;
 } pref;
@@ -91,6 +91,7 @@ static int pref_get_blob(h2_pal_pref_namespace_t* ns,
   (void)ns;
   if (strcmp(key, "cards_v1") == 0) {
     if (!pref.cards_enabled) return H2_PAL_ERR_UNSUPPORTED;
+    ++pref.cards_reads;
     if (pref.cards_read_result != H2_PAL_OK) return pref.cards_read_result;
     if (!pref.cards_exists) return H2_PAL_ERR_NOT_FOUND;
     *out_size = sizeof(pref.cards_saved);
@@ -916,6 +917,164 @@ static void test_audio_close_errors_release_runtime_wrapped_track(void) {
   }
 }
 
+/* Wrap only the real provider boundary; all game/input/save paths stay live. */
+static struct {
+  const h2_pal_pref_api_t* real;
+  h2_pal_pref_namespace_get_blob_fn get_blob;
+  h2_pal_pref_namespace_set_blob_fn set_blob;
+  h2_pal_pref_namespace_commit_fn commit;
+  int first_read_error;
+  unsigned reads, successful_reads, recover_after_frame;
+  unsigned writes, commits, write_failures, commit_failures;
+  bool writing_cards;
+} card_fault;
+
+static int recovering_get(h2_pal_pref_namespace_t* ns,
+                          const h2_pal_mem_api_t* mem, const char* key,
+                          void** data, size_t* size) {
+  if (strcmp(key, "cards_v1") == 0) {
+    ++card_fault.reads;
+    if (card_fault.first_read_error != H2_PAL_OK) {
+      const int rc = card_fault.first_read_error;
+      card_fault.first_read_error = H2_PAL_OK;
+      return rc;
+    }
+    if (fx.frames < card_fault.recover_after_frame)
+      return H2_PAL_ERR_WOULD_BLOCK;
+    ++card_fault.successful_reads;
+  }
+  return card_fault.get_blob(ns, mem, key, data, size);
+}
+
+static int recovering_set(h2_pal_pref_namespace_t* ns, const char* key,
+                          const void* data, size_t size) {
+  card_fault.writing_cards = strcmp(key, "cards_v1") == 0;
+  if (card_fault.writing_cards) {
+    ++card_fault.writes;
+    if (card_fault.write_failures) {
+      --card_fault.write_failures;
+      return H2_PAL_ERR_IO;
+    }
+  }
+  return card_fault.set_blob(ns, key, data, size);
+}
+
+static int recovering_commit(h2_pal_pref_namespace_t* ns) {
+  if (card_fault.writing_cards) {
+    ++card_fault.commits;
+    if (card_fault.commit_failures) {
+      --card_fault.commit_failures;
+      return H2_PAL_ERR_IO;
+    }
+  }
+  return card_fault.commit(ns);
+}
+
+static int recovering_open(void* user, const char* name,
+                           h2_pal_pref_open_mode_t mode,
+                           h2_pal_pref_namespace_t** out) {
+  (void)user;
+  const int rc = h2_pal_pref_open(card_fault.real, name, mode, out);
+  if (rc == H2_PAL_OK) {
+    card_fault.get_blob = (*out)->get_blob;
+    card_fault.set_blob = (*out)->set_blob;
+    card_fault.commit = (*out)->commit;
+    card_fault.writing_cards = false;
+    (*out)->get_blob = recovering_get;
+    (*out)->set_blob = recovering_set;
+    (*out)->commit = recovering_commit;
+  }
+  return rc;
+}
+static const h2_pal_pref_vtable_t recovering_vtable = {.open = recovering_open};
+static const h2_pal_pref_api_t recovering_api = {.vtable = &recovering_vtable};
+
+static void read_sqlite_cards(h2_sqlite_t* storage,
+                              h2_fruit_slice_cards_t* cards) {
+  h2_pal_pref_namespace_t* ns = NULL;
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+  void* data = NULL;
+  size_t size = 0u;
+  CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "cards_v1",
+                     &data, &size) == H2_PAL_OK);
+  h2_fruit_slice_cards_init(cards, 480, 480, 1u);
+  CHECK(h2_fruit_slice_cards_decode(cards, data, size));
+  h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+  CHECK(ns->close(ns) == H2_PAL_OK);
+}
+
+static void test_cards_transient_sqlite_read(void) {
+  const char* temporary = getenv("TEST_TMPDIR");
+  CHECK(temporary != NULL);
+  for (unsigned failure = 0; failure < 3u; ++failure) {
+    char database[512];
+    (void)snprintf(database, sizeof(database), "%s/cards-recovery-%u.sqlite",
+                   temporary, failure);
+    const h2_sqlite_config_t config = {.path = database};
+    h2_sqlite_t* storage = NULL;
+    CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+    h2_fruit_slice_cards_t initial;
+    h2_fruit_slice_cards_init(&initial, 480, 480, 1u);
+    initial.counts[H2_FRUIT_SLICE_CARD_WATERMELON] = 5u;
+    initial.counts[H2_FRUIT_SLICE_CARD_ORANGE] = 99u;
+    initial.counts[H2_FRUIT_SLICE_CARD_CLASSIC_KNIFE] = 5u;
+    initial.unseen = 1u << H2_FRUIT_SLICE_CARD_ORANGE;
+    uint8_t bytes[H2_FRUIT_SLICE_CARDS_BYTES];
+    h2_fruit_slice_cards_encode(&initial, bytes);
+    h2_pal_pref_namespace_t* ns = NULL;
+    CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                           H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+    CHECK(ns->set_blob(ns, "cards_v1", bytes, sizeof(bytes)) == H2_PAL_OK);
+    CHECK(ns->commit(ns) == H2_PAL_OK && ns->close(ns) == H2_PAL_OK);
+    memset(&card_fault, 0, sizeof(card_fault));
+    card_fault.real = h2_sqlite_pref_api(storage);
+    card_fault.first_read_error =
+        failure == 0u ? H2_PAL_ERR_IO : H2_PAL_ERR_WOULD_BLOCK;
+    card_fault.write_failures = failure != 1u ? 1u : 0u;
+    card_fault.commit_failures = failure != 0u ? 1u : 0u;
+    /* The third case recovers after real play has already earned duplicates
+     * and a new bomb, exercising pending increments in the public App. */
+    card_fault.recover_after_frame = failure == 2u ? 330u : 0u;
+    reset(400u);
+    fx.pref_override = &recovering_api;
+    fx.fast_clock = true;
+    fx.autoplay_until = 400u;
+    CHECK(run() == H2_PAL_OK);
+    CHECK(card_fault.successful_reads == 1u);
+    CHECK(failure == 2u ? card_fault.reads > 2u : card_fault.reads == 2u);
+    /* Successful merge is never repeated by writes. */
+    CHECK(card_fault.writes >= 2u && card_fault.write_failures == 0u &&
+          card_fault.commit_failures == 0u);
+    h2_sqlite_destroy(storage);
+    CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+    h2_fruit_slice_cards_t saved;
+    read_sqlite_cards(storage, &saved);
+    CHECK(saved.counts[H2_FRUIT_SLICE_CARD_WATERMELON] >= 5u);
+    CHECK(saved.counts[H2_FRUIT_SLICE_CARD_ORANGE] == 99u);
+    CHECK(saved.counts[H2_FRUIT_SLICE_CARD_CLASSIC_KNIFE] == 6u);
+    CHECK(saved.counts[H2_FRUIT_SLICE_CARD_BOMB] == 1u);
+    CHECK((saved.unseen & (1u << H2_FRUIT_SLICE_CARD_CLASSIC_KNIFE)) == 0u);
+    CHECK((saved.unseen & (1u << H2_FRUIT_SLICE_CARD_BOMB)) != 0u);
+    CHECK((saved.unseen & initial.unseen) == initial.unseen);
+    reset(20u);
+    fx.pref_override = h2_sqlite_pref_api(storage);
+    fx.fast_clock = true;
+    fx.touch_from_frame = 2u;
+    script_tap(240,
+               450); /* Load the saved album and inspect the old NEW orange. */
+    CHECK(run() == H2_PAL_OK);
+    h2_fruit_slice_cards_t reopened;
+    read_sqlite_cards(storage, &reopened);
+    CHECK(memcmp(saved.counts, reopened.counts, sizeof(saved.counts)) == 0);
+    CHECK(reopened.unseen == (saved.unseen & ~initial.unseen));
+    h2_sqlite_destroy(storage);
+    CHECK(remove(database) == 0);
+  }
+}
+
 static void test_cards_write_retry_and_read_error(void) {
   memset(&pref, 0, sizeof(pref));
   pref.cards_enabled = true;
@@ -942,9 +1101,23 @@ static void test_cards_write_retry_and_read_error(void) {
   CHECK(run() == H2_PAL_OK);
   CHECK(pref.cards_commits == commits);
   CHECK(memcmp(saved, pref.cards_saved, sizeof(saved)) == 0);
+  const unsigned reads = pref.cards_reads;
+  reset(60u);
+  fx.display.info.width = fx.display.info.height = 240;
+  fx.touch.info.width = fx.touch.info.height = 240;
+  fx.use_pref = true;
+  fx.fast_clock = true;
+  fx.touch_from_frame = 2u;
+  fx.capture_name = "actual-app-unsaved-retry-240";
+  script_tap(120, 225);
+  CHECK(run() == H2_PAL_OK);
+  CHECK(pref.cards_reads - reads >= 2u && pref.cards_reads - reads <= 6u);
+  CHECK(pref.cards_commits == commits);
+  CHECK(memcmp(saved, pref.cards_saved, sizeof(saved)) == 0);
 }
 
 int main(void) {
+  test_cards_transient_sqlite_read();
   test_cards_write_retry_and_read_error();
   test_fresh_sqlite_storage();
   test_unreadable_progress_is_preserved();
