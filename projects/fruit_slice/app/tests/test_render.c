@@ -240,6 +240,10 @@ static void scene_playing(void) {
 }
 
 static void render_size(int32_t width, int32_t height) {
+  /* Each App session owns a cache for one fixed display geometry. */
+  h2_fruit_slice_sprites_destroy(sprites);
+  sprites = h2_fruit_slice_sprites_create(&test_memory);
+  CHECK(sprites != NULL);
   h2_fruit_slice_canvas_t canvas = {.pixels = background,
                                     .width = width,
                                     .height = height,

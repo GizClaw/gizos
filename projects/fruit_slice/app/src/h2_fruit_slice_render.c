@@ -1,5 +1,7 @@
 #include "h2_fruit_slice_render.h"
 
+#include "h2_fruit_slice_cards_render.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -656,8 +658,10 @@ bool h2_fruit_slice_sprites_prepare(h2_fruit_slice_sprites_t* sprites,
     ok = sprite_get(sprites, menus[i], false, r) != NULL &&
          sprite_get(sprites, menus[i], true, r) != NULL;
   }
-  return ok && sprite_get(sprites, H2_FRUIT_SLICE_WATERMELON, true,
-                          20.0f * game->unit) != NULL;
+  return ok &&
+         sprite_get(sprites, H2_FRUIT_SLICE_WATERMELON, true,
+                    20.0f * game->unit) != NULL &&
+         h2_fruit_slice_cards_prepare_sprites(sprites, game);
 }
 
 static uint32_t expand5(uint32_t v) { return (v << 3) | (v >> 2); }
@@ -1080,6 +1084,7 @@ void h2_fruit_slice_static_key(const h2_fruit_slice_game_t* game,
   out->progress_revision = game->progress_revision;
   out->save_status = game->save_status;
   out->audio_mute = game->audio_mute;
+  out->cards_revision = game->cards.revision;
   out->menu_y = menu != NULL ? (int32_t)menu->body.y : -1;
   if (game->phase != H2_FRUIT_SLICE_PHASE_TITLE) {
     out->score = game->score;
@@ -1090,6 +1095,11 @@ void h2_fruit_slice_static_key(const h2_fruit_slice_game_t* game,
 
 void h2_fruit_slice_render_static(h2_fruit_slice_canvas_t* canvas,
                                   const h2_fruit_slice_game_t* game) {
+  if (game->phase == H2_FRUIT_SLICE_PHASE_CARDS) {
+    h2_fruit_slice_cards_render_album_static(canvas, game);
+    draw_button(canvas, game, H2_FRUIT_SLICE_BUTTON_BACK, "BACK", true);
+    return;
+  }
   if (game->phase == H2_FRUIT_SLICE_PHASE_TASKS ||
       game->phase == H2_FRUIT_SLICE_PHASE_SHOP) {
     draw_progress_page(canvas, game);
@@ -1107,8 +1117,11 @@ void h2_fruit_slice_render_static(h2_fruit_slice_canvas_t* canvas,
     if (game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER) {
       draw_game_over(canvas, game);
       draw_wallet(canvas, game, (float)canvas->height * 0.56f);
+      h2_fruit_slice_cards_render_result(canvas, game,
+                                         (float)canvas->height * 0.45f);
     }
     draw_hud(canvas, game);
+    h2_fruit_slice_cards_render_badge(canvas, game);
   }
   if (game->phase != H2_FRUIT_SLICE_PHASE_PLAYING) {
     bool ready = false;
@@ -1117,20 +1130,37 @@ void h2_fruit_slice_render_static(h2_fruit_slice_canvas_t* canvas,
                    h2_fruit_slice_task(i)->target &&
                !(i == 2u && game->progress.score_task == 2u);
     draw_button(canvas, game, H2_FRUIT_SLICE_BUTTON_TASKS,
-                ready ? (game->width < 240 ? "CLAIM!" : "TASKS - CLAIM!")
-                      : "COIN TASKS",
-                true);
-    draw_button(canvas, game, H2_FRUIT_SLICE_BUTTON_SHOP,
-                game->width < 240 ? "SHOP" : "WEAPON SHOP", true);
+                ready ? "CLAIM!" : "TASKS", true);
+    char cards_label[24];
+    if (game->cards.unseen != 0u)
+      (void)snprintf(cards_label, sizeof(cards_label), "NEW CARD");
+    else if (game->width < 300)
+      (void)snprintf(cards_label, sizeof(cards_label), "CARDS");
+    else
+      (void)snprintf(cards_label, sizeof(cards_label), "CARDS %u/%u",
+                     h2_fruit_slice_cards_owned_total(&game->cards),
+                     (unsigned)H2_FRUIT_SLICE_CARD_COUNT);
+    draw_button(canvas, game, H2_FRUIT_SLICE_BUTTON_CARDS, cards_label, true);
+    draw_button(canvas, game, H2_FRUIT_SLICE_BUTTON_SHOP, "SHOP", true);
   }
+  h2_fruit_slice_cards_render_reveal_static(canvas, game);
 }
 
 void h2_fruit_slice_render_scene(h2_fruit_slice_canvas_t* canvas,
                                  const h2_fruit_slice_game_t* game) {
   const float u = game->unit;
+  if (game->phase == H2_FRUIT_SLICE_PHASE_CARDS) {
+    h2_fruit_slice_cards_render_album_scene(canvas, game);
+    return;
+  }
   if (game->phase == H2_FRUIT_SLICE_PHASE_TASKS ||
       game->phase == H2_FRUIT_SLICE_PHASE_SHOP)
     return;
+  if (h2_fruit_slice_cards_reveal_active(&game->cards)) {
+    /* The dimmed reveal hides the field, so only the card animates. */
+    h2_fruit_slice_cards_render_reveal_scene(canvas, game);
+    return;
+  }
   draw_splats(canvas, game);
 
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_MISSES; ++i) {
@@ -1186,4 +1216,91 @@ void h2_fruit_slice_render_scene(h2_fruit_slice_canvas_t* canvas,
     disc(canvas, game->flash_x, game->flash_y, radius,
          H2_FRUIT_SLICE_RGB(255, 248, 228), alpha);
   }
+  h2_fruit_slice_cards_render_play_scene(canvas, game);
+}
+
+bool h2_fruit_slice_canvas_region(h2_fruit_slice_canvas_t* canvas, float x0,
+                                  float y0, float x1, float y1,
+                                  h2_fruit_slice_region_t* out) {
+  region_t g;
+  const bool paint = region_begin(canvas, x0, y0, x1, y1, &g);
+  if (!paint) return false;
+  *out = (h2_fruit_slice_region_t){g.x0, g.y0, g.x1, g.y1};
+  return true;
+}
+
+uint16_t* h2_fruit_slice_canvas_row(const h2_fruit_slice_canvas_t* canvas,
+                                    int32_t y) {
+  return row_at(canvas, y);
+}
+
+uint16_t h2_fruit_slice_blend(uint16_t dst, uint16_t src, uint32_t alpha) {
+  return blend(dst, src, alpha);
+}
+
+void h2_fruit_slice_draw_disc(h2_fruit_slice_canvas_t* canvas, float cx,
+                              float cy, float r, uint16_t color,
+                              uint32_t alpha) {
+  disc(canvas, cx, cy, r, color, alpha);
+}
+
+void h2_fruit_slice_draw_capsule(h2_fruit_slice_canvas_t* canvas, float x0,
+                                 float y0, float x1, float y1, float r,
+                                 uint16_t color, uint32_t alpha) {
+  capsule(canvas, x0, y0, x1, y1, r, color, alpha);
+}
+
+void h2_fruit_slice_draw_rounded_rect(h2_fruit_slice_canvas_t* canvas, float x0,
+                                      float y0, float x1, float y1,
+                                      float radius, uint16_t color,
+                                      uint32_t alpha) {
+  rounded_rect(canvas, x0, y0, x1, y1, radius, color, alpha);
+}
+
+void h2_fruit_slice_draw_text(h2_fruit_slice_canvas_t* canvas,
+                              const char* value, int32_t x, int32_t y,
+                              int32_t scale, uint16_t color, uint32_t alpha) {
+  text(canvas, value, x, y, scale, color, alpha);
+}
+
+void h2_fruit_slice_draw_text_centered(h2_fruit_slice_canvas_t* canvas,
+                                       const char* value, float cx, float y,
+                                       int32_t scale, uint16_t color,
+                                       uint32_t alpha) {
+  text_centered(canvas, value, cx, y, scale, color, alpha);
+}
+
+int32_t h2_fruit_slice_text_scale(float unit, float base) {
+  return text_scale(unit, base);
+}
+
+int32_t h2_fruit_slice_fit_scale(const char* value, float max_width,
+                                 int32_t preferred) {
+  return fit_scale(value, max_width, preferred);
+}
+
+static bool sprite_cached(const h2_fruit_slice_sprites_t* sprites,
+                          h2_fruit_slice_kind_t kind, float radius) {
+  if (sprites == NULL || !(radius >= 1.0f && radius <= 512.0f)) return false;
+  const uint32_t key = (uint32_t)(radius * 8.0f + 0.5f);
+  for (size_t i = 0; i < sprites->count; ++i) {
+    const sprite_t* s = &sprites->entries[i];
+    if (s->kind == kind && !s->half && s->radius_eighths == key) return true;
+  }
+  return false;
+}
+
+void h2_fruit_slice_draw_fruit(h2_fruit_slice_canvas_t* canvas,
+                               h2_fruit_slice_kind_t kind, float cx, float cy,
+                               float r, float angle, uint64_t time_ms) {
+  if ((unsigned)kind >= H2_FRUIT_SLICE_KIND_COUNT || !(r > 0.0f)) return;
+  h2_fruit_slice_sprites_t* sprites = canvas->sprites;
+  if (!sprite_cached(sprites, kind, r)) canvas->sprites = NULL;
+  draw_whole(canvas, kind, cx, cy, r, angle, time_ms);
+  canvas->sprites = sprites;
+}
+
+bool h2_fruit_slice_sprites_prepare_fruit(h2_fruit_slice_sprites_t* sprites,
+                                          h2_fruit_slice_kind_t kind, float r) {
+  return sprite_get(sprites, kind, false, r) != NULL;
 }

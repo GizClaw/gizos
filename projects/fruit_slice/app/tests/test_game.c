@@ -179,6 +179,16 @@ static void test_misses_cost_lives(void) {
   CHECK(!h2_fruit_slice_game_take_best(&game, NULL));
 }
 
+static void dismiss_cards(h2_fruit_slice_game_t* g) {
+  for (unsigned n = 0; n < H2_FRUIT_SLICE_CARD_COUNT && g->cards.reveal_queue;
+       ++n) {
+    h2_fruit_slice_game_step(g, 2000u);
+    h2_fruit_slice_game_pointer(g, H2_FRUIT_SLICE_POINTER_DOWN, 240, 200);
+    h2_fruit_slice_game_pointer(g, H2_FRUIT_SLICE_POINTER_UP, 240, 200);
+  }
+  CHECK(!g->cards.reveal_active && g->cards.reveal_queue == 0u);
+}
+
 static void test_restart_waits_for_menu_fruit(void) {
   start_playing(&game, 6u, 0u);
   clear_scene(&game);
@@ -190,6 +200,9 @@ static void test_restart_waits_for_menu_fruit(void) {
   /* An early stroke cannot restart. */
   swipe(&game, 60.0f, 346.0f, 420.0f, 346.0f, 4);
   CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+  h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
+  CHECK(game.cards.reveal_active);
+  dismiss_cards(&game);
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
   CHECK(count_fruits(&game, true) == 1u);
   swipe(&game, 60.0f, 346.0f, 420.0f, 346.0f, 12);
@@ -293,6 +306,7 @@ static void test_tasks_and_shop(void) {
   clear_scene(&game);
   place(&game, 0, H2_FRUIT_SLICE_BOMB, 240.0f, 240.0f);
   swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  dismiss_cards(&game);
   tap_button(&game, H2_FRUIT_SLICE_BUTTON_TASKS);
   const uint64_t paused = game.time_ms;
   h2_fruit_slice_game_step(&game, 2000u);

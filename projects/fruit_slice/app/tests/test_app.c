@@ -81,6 +81,7 @@ static int pref_get_blob(h2_pal_pref_namespace_t* ns,
                          const h2_pal_mem_api_t* allocator, const char* key,
                          void** out_data, size_t* out_size) {
   (void)ns;
+  if (strcmp(key, "cards_v1") == 0) return H2_PAL_ERR_UNSUPPORTED;
   CHECK(strcmp(key, "progress_v1") == 0);
   ++pref.reads;
   if (pref.read_result != H2_PAL_OK) return pref.read_result;
@@ -225,11 +226,9 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
       fx.frames < fx.autoplay_until && t->last_frame != fx.frames) {
     t->last_frame = fx.frames;
     const unsigned point = (fx.frames - 2u) % 150u;
-    *out = (h2_pal_touch_event_t){point == 0u     ? H2_PAL_TOUCH_EVENT_DOWN
-                                  : point == 149u ? H2_PAL_TOUCH_EVENT_UP
-                                                  : H2_PAL_TOUCH_EVENT_MOVE,
-                                  point % 2u == 0u ? 0 : WIDTH,
-                                  point < 2u ? 346 : 280};
+    *out = (h2_pal_touch_event_t){
+        point % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
+        point % 2u == 0u ? 0 : WIDTH, point < 2u ? 346 : 280};
     return H2_PAL_OK;
   }
   /* One event per frame keeps strokes spread over game time. */
