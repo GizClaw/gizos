@@ -985,7 +985,9 @@ void h2_garden_guard_render_background(h2_garden_guard_canvas_t* canvas,
       const float fx = (float)x + 0.5f;
       const uint32_t noise =
           hash32((uint32_t)x * 73856093u ^ (uint32_t)y * 19349663u ^ 0x5A17u);
-      uint16_t color;
+      /* MSVC cannot infer that house_color assigns its out parameter whenever
+       * it returns true. Keep initialization explicit before the done paths. */
+      uint16_t color = RGB(104, 72, 48);
       if (fy < l->bar_h) {
         /* Toolbar plank with a dark lower edge. */
         color = wood_color(fx, fy, plank, noise);
