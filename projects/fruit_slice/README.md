@@ -1,6 +1,6 @@
 # Fruit Slice
 
-A touch fruit-slicing game. The portable App in [`app/`](app/) depends only on Runtime and the Display, Touch and Pref PAL contracts; it renders RGB565 in software and pushes only the dirty row bands each frame. The public contract is [`h2_fruit_slice.h`](app/include/h2_fruit_slice.h).
+A touch fruit-slicing game. The portable App in [`app/`](app/) depends only on Runtime and the Display, Touch, Pref and optional Audio PAL contracts; it renders RGB565 in software and pushes only the dirty row bands each frame. The public contract is [`h2_fruit_slice.h`](app/include/h2_fruit_slice.h).
 
 | Entry | Board | Package |
 | --- | --- | --- |
@@ -26,6 +26,10 @@ bazel run //projects/fruit_slice/targets/cc_binary/desktop:fruit_slice
 ```
 
 Bombs use a fading, expanding flash around the impact point so the effect does not blend and retransmit the full screen on every frame. Dirty row bands keep their own column spans; only adjacent equal spans are merged for display submission. Runtime statistics include `blast_frames` and `blast_max_ms` for frames with an active bomb flash.
+
+## Sound
+
+The title screen has independent SFX and BGM mute buttons. Settings persist as `fruit_slice/audio_v1`, and playback starts on the first touch. The bank includes slicing, combos with a synthetic nonverbal cheer, explosions, missed fruit, results, economy/card confirmations and an original arcade music loop. See the [sound bank](app/resources/README.md) for the rebuild command, resource license, event integration and limits. Existing Audio PAL providers power desktop, Web, mobile and supported boards; backgrounding or exiting closes game playback.
 
 ## Native desktop and mobile builds
 

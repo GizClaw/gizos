@@ -4,6 +4,8 @@
 #include "h2_pal_unsupported.h"
 #include "h2_web_platform.h"
 
+#include <emscripten.h>
+#include <emscripten/proxying.h>
 #include <emscripten/threading.h>
 #include <stdio.h>
 
@@ -41,7 +43,7 @@ static h2_runtime_config_t runtime_config(h2_web_platform_t* platform) {
   config.power = h2_pal_unsupported_power_api();
   config.camera = h2_pal_unsupported_camera_api();
   config.display = h2_web_platform_display_api(platform);
-  config.audio = h2_pal_unsupported_audio_api();
+  config.audio = h2_web_platform_audio_api(platform);
   config.audio_decoder = h2_pal_unsupported_audio_decoder_api();
   config.periph = h2_pal_unsupported_periph_api();
   config.button = h2_pal_unsupported_button_api();
@@ -60,6 +62,23 @@ static h2_runtime_config_t runtime_config(h2_web_platform_t* platform) {
   return config;
 }
 
+/* clang-format off */
+EM_JS(int, browser_hidden, (void), { return document.hidden ? 1 : 0; });
+/* clang-format on */
+
+static void read_visibility(void* user) {
+  *(bool*)user = browser_hidden() != 0;
+}
+
+static bool is_paused(void* user) {
+  (void)user;
+  bool paused = true;
+  (void)emscripten_proxy_sync(emscripten_proxy_get_system_queue(),
+                              emscripten_main_runtime_thread_id(),
+                              read_visibility, &paused);
+  return paused;
+}
+
 int main(void) {
   if (emscripten_is_main_runtime_thread()) return 2;
   const h2_web_platform_config_t surface = {.display_width = WIDTH,
@@ -72,7 +91,8 @@ int main(void) {
   const h2_runtime_config_t config = runtime_config(platform);
   h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&config, &runtime);
-  if (rc == H2_PAL_OK) rc = h2_fruit_slice_run(runtime, NULL);
+  const h2_fruit_slice_config_t game = {.is_paused = is_paused};
+  if (rc == H2_PAL_OK) rc = h2_fruit_slice_run(runtime, &game);
   printf("H2_FRUIT_SLICE_WEB_EXIT rc=%d\n", rc);
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;
   const int teardown =

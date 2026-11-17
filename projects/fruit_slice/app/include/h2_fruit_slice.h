@@ -36,8 +36,11 @@ typedef struct h2_fruit_slice_config {
   /** Optional, polled on the run thread before every frame. Returning true
    * ends the run with H2_PAL_OK after cleanup. */
   bool (*should_exit)(void* user);
-  /** Borrowed user value passed to ready and should_exit. */
+  /** Borrowed user value passed to all callbacks. */
   void* user;
+  /** Optional nonblocking lifecycle query, called on the run thread. True
+   * closes the audio track/speaker and pauses simulation until false. */
+  bool (*is_paused)(void* user);
 } h2_fruit_slice_config_t;
 
 /**
@@ -48,9 +51,12 @@ typedef struct h2_fruit_slice_config {
  * supported extent and whose Touch provider is available; Touch coordinates
  * are scaled to the Display extent. The run opens and closes Display and
  * Touch, drains Runtime events, and paces frames with h2_runtime_wait_notify().
- * Pref is optional: when unavailable the best score is kept in memory only.
- * Game state, three RGB565 frame-sized buffers and the fruit texture cache
- * come from Runtime mem before the first frame; frames never allocate.
+ * Pref is optional: when unavailable scores and audio settings stay in memory.
+ * Audio is optional; an unsupported/failed provider is logged and play
+ * continues. Title controls toggle SFX/BGM independently; audio starts on a
+ * user gesture. is_paused must be nonblocking so audio can stop before the host
+ * waits. Game state, three RGB565 frame-sized buffers and the fruit texture
+ * cache come from Runtime mem before the first frame; frames never allocate.
  * Diagnostics use Runtime log. Every allocation, provider session and
  * callback ends before return. The config is borrowed for the call; NULL
  * selects defaults.

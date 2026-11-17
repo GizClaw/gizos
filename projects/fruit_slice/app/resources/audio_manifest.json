@@ -1,0 +1,81 @@
+{
+  "sample_rate_hz": 8000,
+  "encoding": "signed PCM8",
+  "clips": {
+    "swing": {
+      "samples": 600,
+      "bytes": 600,
+      "sha256": "e68b823abb758521428d2dbfee36c1ea622ffe68c143779ecaf62e1892390034"
+    },
+    "slice": {
+      "samples": 800,
+      "bytes": 800,
+      "sha256": "6e7436f62b97600b920aba312ca2cefa8f0b0bc61a56a9648e3cf7f31d1a9b86"
+    },
+    "combo": {
+      "samples": 1976,
+      "bytes": 1976,
+      "sha256": "1438d8c5ddca91abb34e742f498b006da9e67e8bf13675d84943546c1da2078e"
+    },
+    "bomb": {
+      "samples": 3360,
+      "bytes": 3360,
+      "sha256": "2a6d02c4ae4c3f2fea36cb8e15eb4f9ba6ec310eb8d92258960a7aa292281136"
+    },
+    "miss": {
+      "samples": 1360,
+      "bytes": 1360,
+      "sha256": "25e69256574bb0bdc113531af52e81b8189958fe039b988e88cdf8d47c89854f"
+    },
+    "fail": {
+      "samples": 4560,
+      "bytes": 4560,
+      "sha256": "6a3f864c35240d2dec574a06c33be1692ec46f9d067fe0fd75085ef901ddd808"
+    },
+    "result": {
+      "samples": 3456,
+      "bytes": 3456,
+      "sha256": "e4752abeb29cb996c69838c4915a76c4b1756e928eac386d243e2d7da3a78bda"
+    },
+    "coin": {
+      "samples": 1232,
+      "bytes": 1232,
+      "sha256": "0cceb659ea97cbf499de6ce3658f034d9847144f68a63f886a9f590cbf1a139f"
+    },
+    "task": {
+      "samples": 3456,
+      "bytes": 3456,
+      "sha256": "6a71246360555116a0fa30949ec1761c55f89f06baa23e3f90432515f95fef05"
+    },
+    "purchase": {
+      "samples": 1824,
+      "bytes": 1824,
+      "sha256": "a080253016681537d4b0da96801322704f57a14308aa8f75b32c58a9048069e6"
+    },
+    "equip": {
+      "samples": 1040,
+      "bytes": 1040,
+      "sha256": "0b53b1f02f38cd72d8195fd7ff5d5638746fc964b72420ca04cd735f2a295739"
+    },
+    "card": {
+      "samples": 3040,
+      "bytes": 3040,
+      "sha256": "eebedee77e94be3fcf449d0bee969766e776ea49b24d112b61457cbf4d0a7140"
+    },
+    "rare": {
+      "samples": 4640,
+      "bytes": 4640,
+      "sha256": "33f779bac3fba2e17b6efcf14a7eb8bb115ef243502c86fd6006754fcee31354"
+    },
+    "cheer": {
+      "samples": 3360,
+      "bytes": 3360,
+      "sha256": "c7b662652c80f86f9644ab405ffb48e16d65318e9ce906e9b82a7ff3d50953a0"
+    },
+    "music": {
+      "samples": 64000,
+      "bytes": 64000,
+      "sha256": "6075467457bc5434eb8bbcbb063dd47c6645d53ee928128318b751b8d4cfca68"
+    }
+  }
+}

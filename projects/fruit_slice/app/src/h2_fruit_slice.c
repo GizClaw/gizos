@@ -1,5 +1,6 @@
 #include "h2_fruit_slice.h"
 
+#include "h2_fruit_slice_audio.h"
 #include "h2_fruit_slice_game.h"
 #include "h2_fruit_slice_render.h"
 
@@ -42,6 +43,8 @@ typedef struct session {
   uint32_t max_frame_ms, slow_frames;
   uint32_t blast_frames, blast_max_ms;
   h2_fruit_slice_game_t game;
+  h2_fruit_slice_audio_t audio;
+  bool audio_unlocked, audio_paused;
   uint8_t event_payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
 } session_t;
 
@@ -129,6 +132,7 @@ static h2_pal_result_t poll_touch(session_t* s) {
     h2_fruit_slice_pointer_t kind;
     switch (event.kind) {
       case H2_PAL_TOUCH_EVENT_DOWN:
+        s->audio_unlocked = true;
         kind = H2_FRUIT_SLICE_POINTER_DOWN;
         break;
       case H2_PAL_TOUCH_EVENT_MOVE:
@@ -367,6 +371,24 @@ static h2_pal_result_t play(session_t* s) {
     rc = h2_pal_time_get_monotonic_ms(s->runtime->time, &now);
     if (rc != H2_PAL_OK) return rc;
     const uint64_t frame_start = now;
+    if (s->config.is_paused != NULL && s->config.is_paused(s->config.user)) {
+      if (!s->audio_paused) {
+        rc = h2_fruit_slice_audio_suspend(&s->audio);
+        if (rc != H2_PAL_OK) return rc;
+        h2_fruit_slice_game_pointer(&s->game, H2_FRUIT_SLICE_POINTER_CANCEL, 0,
+                                    0);
+        s->game.sound_count = 0;
+        s->audio_paused = true;
+      }
+      last = now;
+      rc = wait_frame(s, now + 50u);
+      if (rc != H2_PAL_OK) return rc;
+      continue;
+    }
+    if (s->audio_paused) {
+      last = now;
+      s->audio_paused = false;
+    }
     uint64_t dt = now > last ? now - last : 0u;
     if (dt > DT_MAX_MS) dt = DT_MAX_MS;
     last = now;
@@ -374,6 +396,27 @@ static h2_pal_result_t play(session_t* s) {
     rc = poll_touch(s);
     if (rc != H2_PAL_OK) return rc;
     h2_fruit_slice_game_step(&s->game, (uint32_t)dt);
+    if (s->audio.mute != s->game.audio_mute) {
+      const int saved =
+          h2_fruit_slice_audio_set_mute(&s->audio, s->game.audio_mute);
+      if (saved != H2_PAL_OK)
+        log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_AUDIO_PREF_FAILED");
+    }
+    h2_fruit_slice_sound_t sound;
+    while (h2_fruit_slice_game_take_sound(&s->game, &sound))
+      h2_fruit_slice_audio_emit(&s->audio, sound, now);
+    if (s->audio_unlocked && s->audio.available) {
+      const int played = h2_fruit_slice_audio_pump(&s->audio, now);
+      if (played != H2_PAL_OK) {
+        char message[80];
+        (void)snprintf(message, sizeof(message),
+                       "H2_FRUIT_SLICE_AUDIO_DISABLED rc=%d", played);
+        log_line(s, H2_PAL_LOG_WARN, message);
+        rc = h2_fruit_slice_audio_suspend(&s->audio);
+        if (rc != H2_PAL_OK) return rc;
+        s->audio.available = false;
+      }
+    }
     rc = render_frame(s);
     if (rc != H2_PAL_OK) return rc;
     ++s->frames;
@@ -481,6 +524,14 @@ static h2_pal_result_t prepare(session_t* s) {
     log_line(s, H2_PAL_LOG_ERROR, "H2_FRUIT_SLICE_ALLOC_FAIL what=textures");
     return H2_PAL_ERR_NO_MEMORY;
   }
+  const int audio_rc = h2_fruit_slice_audio_init(&s->audio, s->runtime);
+  s->game.audio_mute = s->audio.mute;
+  if (audio_rc != H2_PAL_OK) {
+    char message[80];
+    (void)snprintf(message, sizeof(message),
+                   "H2_FRUIT_SLICE_AUDIO_UNAVAILABLE rc=%d", audio_rc);
+    log_line(s, H2_PAL_LOG_WARN, message);
+  }
   s->first_frame = true;
   return H2_PAL_OK;
 }
@@ -507,6 +558,12 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
     rc = prepare(s);
   }
   if (rc == H2_PAL_OK) rc = play(s);
+
+  /* Audio borrows Runtime until track/speaker teardown completes. */
+  while (h2_fruit_slice_audio_close(&s->audio) != H2_PAL_OK) {
+    log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_AUDIO_CLOSE_RETRY");
+    (void)h2_runtime_wait_notify(runtime, 50u);
+  }
 
   char message[64];
   (void)snprintf(message, sizeof(message),
