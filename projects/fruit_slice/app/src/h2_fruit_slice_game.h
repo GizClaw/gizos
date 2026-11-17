@@ -5,6 +5,7 @@
  * elapsed time and pointer edges, and the renderer reads it. Coordinates are
  * display pixels with the origin at the top-left corner. */
 
+#include "h2_fruit_slice_cards.h"
 #include "h2_fruit_slice_sound.h"
 
 #include <stdbool.h>
@@ -58,6 +59,7 @@ typedef enum h2_fruit_slice_phase {
   H2_FRUIT_SLICE_PHASE_GAME_OVER,
   H2_FRUIT_SLICE_PHASE_TASKS,
   H2_FRUIT_SLICE_PHASE_SHOP,
+  H2_FRUIT_SLICE_PHASE_CARDS,
 } h2_fruit_slice_phase_t;
 
 #define H2_FRUIT_SLICE_WEAPONS 3u
@@ -93,6 +95,7 @@ typedef struct h2_fruit_slice_rect {
 #define H2_FRUIT_SLICE_BUTTON_TASKS 1u
 #define H2_FRUIT_SLICE_BUTTON_SHOP 2u
 #define H2_FRUIT_SLICE_BUTTON_BACK 3u
+#define H2_FRUIT_SLICE_BUTTON_CARDS 4u
 #define H2_FRUIT_SLICE_BUTTON_CLAIM 10u
 #define H2_FRUIT_SLICE_BUTTON_WEAPON 20u
 
@@ -189,6 +192,7 @@ typedef struct h2_fruit_slice_game {
   bool best_changed;
   bool new_best;
 
+  h2_fruit_slice_cards_t cards;
   h2_fruit_slice_progress_t progress;
   bool progress_dirty, progress_urgent;
   uint32_t progress_revision; /**< Invalidates cached wallet/task/shop text. */

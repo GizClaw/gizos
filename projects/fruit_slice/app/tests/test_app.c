@@ -38,6 +38,7 @@ typedef struct fake_touch {
   h2_pal_result_t poll_error; /* Nonzero: every poll fails with it. */
   /* Scripted events delivered one per poll from frame first_frame on. */
   h2_pal_touch_event_t script[SCRIPT_MAX];
+  unsigned script_frame[SCRIPT_MAX];
   size_t script_count, script_next;
   unsigned last_frame;
 } fake_touch_t;
@@ -54,9 +55,11 @@ typedef struct fixture {
   unsigned touch_from_frame;
   uint16_t probe_before;
   bool use_pref, fast_clock;
-  unsigned autoplay_until;
+  unsigned autoplay_until, autoplay_pause_from, autoplay_pause_until;
   uint64_t clock_ms;
   uint32_t earned_fruit_credit;
+  const char* capture_name;
+  unsigned capture_every, capture_from, capture_until;
   const h2_pal_pref_api_t* pref_override;
   bool use_audio, audio_active;
   unsigned audio_starts, audio_stops, audio_opens, audio_closes, audio_writes;
@@ -74,6 +77,11 @@ static struct {
   bool exists, pending;
   unsigned commits, failed_commits, reads, best_reads;
   int read_result;
+  bool cards_enabled, cards_exists, cards_pending;
+  uint8_t cards_saved[H2_FRUIT_SLICE_CARDS_BYTES],
+      cards_staged[H2_FRUIT_SLICE_CARDS_BYTES];
+  unsigned cards_commits, cards_failures, cards_reads;
+  int cards_read_result;
   h2_pal_pref_namespace_t ns;
 } pref;
 
@@ -81,6 +89,17 @@ static int pref_get_blob(h2_pal_pref_namespace_t* ns,
                          const h2_pal_mem_api_t* allocator, const char* key,
                          void** out_data, size_t* out_size) {
   (void)ns;
+  if (strcmp(key, "cards_v1") == 0) {
+    if (!pref.cards_enabled) return H2_PAL_ERR_UNSUPPORTED;
+    ++pref.cards_reads;
+    if (pref.cards_read_result != H2_PAL_OK) return pref.cards_read_result;
+    if (!pref.cards_exists) return H2_PAL_ERR_NOT_FOUND;
+    *out_size = sizeof(pref.cards_saved);
+    *out_data = h2_pal_mem_alloc(allocator, *out_size);
+    if (*out_data == NULL) return H2_PAL_ERR_NO_MEMORY;
+    memcpy(*out_data, pref.cards_saved, *out_size);
+    return H2_PAL_OK;
+  }
   CHECK(strcmp(key, "progress_v1") == 0);
   ++pref.reads;
   if (pref.read_result != H2_PAL_OK) return pref.read_result;
@@ -94,6 +113,12 @@ static int pref_get_blob(h2_pal_pref_namespace_t* ns,
 static int pref_set_blob(h2_pal_pref_namespace_t* ns, const char* key,
                          const void* data, size_t size) {
   (void)ns;
+  if (strcmp(key, "cards_v1") == 0) {
+    CHECK(pref.cards_enabled && size == sizeof(pref.cards_staged));
+    memcpy(pref.cards_staged, data, size);
+    pref.cards_pending = true;
+    return H2_PAL_OK;
+  }
   CHECK(strcmp(key, "progress_v1") == 0 && size == sizeof(pref.staged));
   memcpy(pref.staged, data, size);
   pref.pending = true;
@@ -110,6 +135,17 @@ static int pref_get_best(h2_pal_pref_namespace_t* ns, const char* key,
 }
 static int pref_commit(h2_pal_pref_namespace_t* ns) {
   (void)ns;
+  if (pref.cards_pending) {
+    ++pref.cards_commits;
+    if (pref.cards_failures) {
+      --pref.cards_failures;
+      return H2_PAL_ERR_IO;
+    }
+    memcpy(pref.cards_saved, pref.cards_staged, sizeof(pref.cards_saved));
+    pref.cards_exists = true;
+    pref.cards_pending = false;
+    return H2_PAL_OK;
+  }
   ++pref.commits;
   if (pref.failed_commits != 0u) {
     --pref.failed_commits;
@@ -124,6 +160,7 @@ static int pref_commit(h2_pal_pref_namespace_t* ns) {
 static int pref_close(h2_pal_pref_namespace_t* ns) {
   (void)ns;
   pref.pending = false;
+  pref.cards_pending = false;
   return H2_PAL_OK;
 }
 static int pref_open(void* user, const char* name, h2_pal_pref_open_mode_t mode,
@@ -222,19 +259,30 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   /* Accelerated first-install regression: ordinary pointer strokes play
    * real rounds, then leave enough game time for misses to end the last run. */
   if (fx.autoplay_until != 0u && fx.frames >= 2u &&
-      fx.frames < fx.autoplay_until && t->last_frame != fx.frames) {
+      fx.frames < fx.autoplay_until && t->last_frame != fx.frames &&
+      !(fx.frames >= fx.autoplay_pause_from &&
+        fx.frames < fx.autoplay_pause_until)) {
     t->last_frame = fx.frames;
     const unsigned point = (fx.frames - 2u) % 150u;
-    *out = (h2_pal_touch_event_t){point == 0u     ? H2_PAL_TOUCH_EVENT_DOWN
-                                  : point == 149u ? H2_PAL_TOUCH_EVENT_UP
-                                                  : H2_PAL_TOUCH_EVENT_MOVE,
-                                  point % 2u == 0u ? 0 : WIDTH,
-                                  point < 2u ? 346 : 280};
+    *out = (h2_pal_touch_event_t){
+        point % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
+        point % 2u == 0u ? 0 : WIDTH, point < 2u ? 346 : 280};
+    return H2_PAL_OK;
+  }
+  /* Finish naturally earned reveals after autoplay stops, without slicing
+   * the restart fruit or changing the economy controls that follow. */
+  if (fx.autoplay_until != 0u && fx.frames >= fx.autoplay_until &&
+      fx.frames < fx.touch_from_frame && t->last_frame != fx.frames) {
+    t->last_frame = fx.frames;
+    *out = (h2_pal_touch_event_t){
+        fx.frames % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
+        5, 100};
     return H2_PAL_OK;
   }
   /* One event per frame keeps strokes spread over game time. */
   if (fx.frames < fx.touch_from_frame || t->last_frame == fx.frames ||
-      t->script_next == t->script_count)
+      t->script_next == t->script_count ||
+      fx.frames < t->script_frame[t->script_next])
     return H2_PAL_ERR_WOULD_BLOCK;
   if (fx.autoplay_until != 0u && fx.frames == fx.touch_from_frame) {
     h2_pal_pref_namespace_t* ns = NULL;
@@ -341,8 +389,34 @@ static bool is_paused(void* user) {
   return f->frames >= f->pause_from && f->frames < f->pause_until;
 }
 
+static void capture_frame(const fixture_t* f) {
+  const char* directory = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
+  if (directory == NULL || f->capture_name == NULL) return;
+  char path[512];
+  (void)snprintf(path, sizeof(path), "%s/%s-%04u.ppm", directory,
+                 f->capture_name, f->frames);
+  FILE* file = fopen(path, "wb");
+  CHECK(file != NULL);
+  const int width = f->display.info.width, height = f->display.info.height;
+  fprintf(file, "P6\n%d %d\n255\n", width, height);
+  for (int y = 0; y < height; ++y)
+    for (int x = 0; x < width; ++x) {
+      const uint16_t c = f->display.shadow[y * WIDTH + x];
+      const unsigned char rgb[3] = {
+          (unsigned char)((c >> 11) * 255u / 31u),
+          (unsigned char)(((c >> 5) & 63u) * 255u / 63u),
+          (unsigned char)((c & 31u) * 255u / 31u)};
+      CHECK(fwrite(rgb, 1, 3, file) == 3u);
+    }
+  CHECK(fclose(file) == 0);
+}
+
 static bool should_exit(void* user) {
   fixture_t* f = user;
+  if (f->frames == f->exit_after ||
+      (f->capture_every && f->frames >= f->capture_from && f->frames &&
+       f->frames <= f->capture_until && f->frames % f->capture_every == 0u))
+    capture_frame(f);
   if (f->frames == 3u) f->probe_before = f->display.shadow[288u * WIDTH + 240u];
   return f->frames++ >= f->exit_after;
 }
@@ -352,7 +426,7 @@ static h2_pal_result_t ready(void* user) {
   ++f->ready_calls;
   /* The first frame is complete and visible before readiness. */
   CHECK(f->display.presents == 1u);
-  CHECK(f->display.rows_drawn == HEIGHT);
+  CHECK(f->display.rows_drawn == (size_t)f->display.info.height);
   return f->ready_result;
 }
 
@@ -526,6 +600,13 @@ static void script_tap(int32_t x, int32_t y) {
       (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, x, y};
 }
 
+static void script_tap_at(unsigned frame, int32_t x, int32_t y) {
+  const size_t next = fx.touch.script_count;
+  script_tap(x, y);
+  fx.touch.script_frame[next] = frame;
+  fx.touch.script_frame[next + 1u] = frame + 1u;
+}
+
 static void test_progress_persists_across_sessions(void) {
   memset(&pref, 0, sizeof(pref));
   const h2_fruit_slice_progress_t initial = {80u, 10u, 0u, 1u, 1u, 0u};
@@ -634,6 +715,12 @@ static void test_fresh_sqlite_storage(void) {
   fx.use_audio = true;
   fx.fast_clock = true;
   fx.autoplay_until = 1202u;
+  fx.capture_name = "actual-app-play-480";
+  fx.autoplay_pause_from = 326u;
+  fx.autoplay_pause_until = 375u;
+  fx.capture_every = 4u;
+  fx.capture_from = 324u;
+  fx.capture_until = 380u;
   fx.touch_from_frame = 1505u;
   script_tap(120, 450);
   script_tap(396, 151);
@@ -660,6 +747,14 @@ static void test_fresh_sqlite_storage(void) {
   CHECK(h2_fruit_slice_progress_decode(&saved, data, size));
   CHECK(saved.coins == 5u && saved.fruit_credit == remaining_credit &&
         saved.owned == 3u && saved.equipped == 1u);
+  h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+  CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "cards_v1",
+                     &data, &size) == H2_PAL_OK);
+  h2_fruit_slice_cards_t collection;
+  h2_fruit_slice_cards_init(&collection, 240, 240, 1u);
+  CHECK(h2_fruit_slice_cards_decode(&collection, data, size));
+  CHECK(h2_fruit_slice_cards_owned_total(&collection) >= 3u);
+  CHECK(collection.counts[H2_FRUIT_SLICE_CARD_BOMB] > 0u);
   h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
   CHECK(ns->close(ns) == H2_PAL_OK);
   /* A new App call must load that ownership/equipment: switching to classic
@@ -689,6 +784,38 @@ static void test_fresh_sqlite_storage(void) {
   CHECK(ns->commit(ns) == H2_PAL_OK);
   CHECK(ns->close(ns) == H2_PAL_OK);
 
+  /* Exercise the real App album at the minimum target size, through Touch. */
+  reset(100u);
+  fx.display.info.width = fx.display.info.height = 240;
+  fx.touch.info.width = fx.touch.info.height = 240;
+  fx.pref_override = h2_sqlite_pref_api(storage);
+  fx.fast_clock = true;
+  fx.touch_from_frame = 2u;
+  fx.capture_name = "actual-app-album-240";
+  fx.capture_every = 20u;
+  fx.capture_until = 100u;
+  script_tap_at(2u, 120, 225);  /* Album, selecting first unseen card. */
+  script_tap_at(4u, 35, 45);    /* Fruit. */
+  script_tap_at(22u, 90, 45);   /* Weapons. */
+  script_tap_at(42u, 150, 45);  /* Bombs. */
+  script_tap_at(62u, 205, 45);  /* Skills. */
+  script_tap_at(82u, 120, 225); /* Back to title. */
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.script_next == fx.touch.script_count);
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+  CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "cards_v1",
+                     &data, &size) == H2_PAL_OK);
+  h2_fruit_slice_cards_t revisited;
+  h2_fruit_slice_cards_init(&revisited, 240, 240, 1u);
+  CHECK(h2_fruit_slice_cards_decode(&revisited, data, size));
+  CHECK(memcmp(collection.counts, revisited.counts,
+               sizeof(collection.counts)) == 0);
+  CHECK(revisited.unseen != collection.unseen);
+  h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+  CHECK(ns->close(ns) == H2_PAL_OK);
+
   /* The writable initialization must still preserve future and corrupt blobs
    * even when a session-only achievement claim makes the model dirty. */
   for (unsigned invalid = 0; invalid < 2u; ++invalid) {
@@ -712,6 +839,32 @@ static void test_fresh_sqlite_storage(void) {
                            H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
     CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(),
                        "progress_v1", &data, &size) == H2_PAL_OK);
+    CHECK(size == sizeof(bytes) && memcmp(data, bytes, sizeof(bytes)) == 0);
+    h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+    CHECK(ns->close(ns) == H2_PAL_OK);
+  }
+  /* Unknown and malformed collections stay byte-identical even after a new
+   * run naturally earns cards. Coin/audio keys remain independent. */
+  for (unsigned invalid = 0; invalid < 2u; ++invalid) {
+    uint8_t bytes[H2_FRUIT_SLICE_CARDS_BYTES];
+    h2_fruit_slice_cards_encode(&collection, bytes);
+    bytes[invalid == 0u ? 4u : 16u] = invalid == 0u ? 2u : 100u;
+    CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                           H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+    CHECK(ns->set_blob(ns, "cards_v1", bytes, sizeof(bytes)) == H2_PAL_OK);
+    CHECK(ns->commit(ns) == H2_PAL_OK);
+    CHECK(ns->close(ns) == H2_PAL_OK);
+    reset(400u);
+    fx.pref_override = h2_sqlite_pref_api(storage);
+    fx.fast_clock = true;
+    fx.autoplay_until = 400u;
+    CHECK(run() == H2_PAL_OK);
+    CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                           H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+    CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "cards_v1",
+                       &data, &size) == H2_PAL_OK);
     CHECK(size == sizeof(bytes) && memcmp(data, bytes, sizeof(bytes)) == 0);
     h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
     CHECK(ns->close(ns) == H2_PAL_OK);
@@ -764,7 +917,208 @@ static void test_audio_close_errors_release_runtime_wrapped_track(void) {
   }
 }
 
+/* Wrap only the real provider boundary; all game/input/save paths stay live. */
+static struct {
+  const h2_pal_pref_api_t* real;
+  h2_pal_pref_namespace_get_blob_fn get_blob;
+  h2_pal_pref_namespace_set_blob_fn set_blob;
+  h2_pal_pref_namespace_commit_fn commit;
+  int first_read_error;
+  unsigned reads, successful_reads, recover_after_frame;
+  unsigned writes, commits, write_failures, commit_failures;
+  bool writing_cards;
+} card_fault;
+
+static int recovering_get(h2_pal_pref_namespace_t* ns,
+                          const h2_pal_mem_api_t* mem, const char* key,
+                          void** data, size_t* size) {
+  if (strcmp(key, "cards_v1") == 0) {
+    ++card_fault.reads;
+    if (card_fault.first_read_error != H2_PAL_OK) {
+      const int rc = card_fault.first_read_error;
+      card_fault.first_read_error = H2_PAL_OK;
+      return rc;
+    }
+    if (fx.frames < card_fault.recover_after_frame)
+      return H2_PAL_ERR_WOULD_BLOCK;
+    ++card_fault.successful_reads;
+  }
+  return card_fault.get_blob(ns, mem, key, data, size);
+}
+
+static int recovering_set(h2_pal_pref_namespace_t* ns, const char* key,
+                          const void* data, size_t size) {
+  card_fault.writing_cards = strcmp(key, "cards_v1") == 0;
+  if (card_fault.writing_cards) {
+    ++card_fault.writes;
+    if (card_fault.write_failures) {
+      --card_fault.write_failures;
+      return H2_PAL_ERR_IO;
+    }
+  }
+  return card_fault.set_blob(ns, key, data, size);
+}
+
+static int recovering_commit(h2_pal_pref_namespace_t* ns) {
+  if (card_fault.writing_cards) {
+    ++card_fault.commits;
+    if (card_fault.commit_failures) {
+      --card_fault.commit_failures;
+      return H2_PAL_ERR_IO;
+    }
+  }
+  return card_fault.commit(ns);
+}
+
+static int recovering_open(void* user, const char* name,
+                           h2_pal_pref_open_mode_t mode,
+                           h2_pal_pref_namespace_t** out) {
+  (void)user;
+  const int rc = h2_pal_pref_open(card_fault.real, name, mode, out);
+  if (rc == H2_PAL_OK) {
+    card_fault.get_blob = (*out)->get_blob;
+    card_fault.set_blob = (*out)->set_blob;
+    card_fault.commit = (*out)->commit;
+    card_fault.writing_cards = false;
+    (*out)->get_blob = recovering_get;
+    (*out)->set_blob = recovering_set;
+    (*out)->commit = recovering_commit;
+  }
+  return rc;
+}
+static const h2_pal_pref_vtable_t recovering_vtable = {.open = recovering_open};
+static const h2_pal_pref_api_t recovering_api = {.vtable = &recovering_vtable};
+
+static void read_sqlite_cards(h2_sqlite_t* storage,
+                              h2_fruit_slice_cards_t* cards) {
+  h2_pal_pref_namespace_t* ns = NULL;
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+  void* data = NULL;
+  size_t size = 0u;
+  CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "cards_v1",
+                     &data, &size) == H2_PAL_OK);
+  h2_fruit_slice_cards_init(cards, 480, 480, 1u);
+  CHECK(h2_fruit_slice_cards_decode(cards, data, size));
+  h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+  CHECK(ns->close(ns) == H2_PAL_OK);
+}
+
+static void test_cards_transient_sqlite_read(void) {
+  const char* temporary = getenv("TEST_TMPDIR");
+  CHECK(temporary != NULL);
+  for (unsigned failure = 0; failure < 3u; ++failure) {
+    char database[512];
+    (void)snprintf(database, sizeof(database), "%s/cards-recovery-%u.sqlite",
+                   temporary, failure);
+    const h2_sqlite_config_t config = {.path = database};
+    h2_sqlite_t* storage = NULL;
+    CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+    h2_fruit_slice_cards_t initial;
+    h2_fruit_slice_cards_init(&initial, 480, 480, 1u);
+    initial.counts[H2_FRUIT_SLICE_CARD_WATERMELON] = 5u;
+    initial.counts[H2_FRUIT_SLICE_CARD_ORANGE] = 99u;
+    initial.counts[H2_FRUIT_SLICE_CARD_CLASSIC_KNIFE] = 5u;
+    initial.unseen = 1u << H2_FRUIT_SLICE_CARD_ORANGE;
+    uint8_t bytes[H2_FRUIT_SLICE_CARDS_BYTES];
+    h2_fruit_slice_cards_encode(&initial, bytes);
+    h2_pal_pref_namespace_t* ns = NULL;
+    CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                           H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+    CHECK(ns->set_blob(ns, "cards_v1", bytes, sizeof(bytes)) == H2_PAL_OK);
+    CHECK(ns->commit(ns) == H2_PAL_OK && ns->close(ns) == H2_PAL_OK);
+    memset(&card_fault, 0, sizeof(card_fault));
+    card_fault.real = h2_sqlite_pref_api(storage);
+    card_fault.first_read_error =
+        failure == 0u ? H2_PAL_ERR_IO : H2_PAL_ERR_WOULD_BLOCK;
+    card_fault.write_failures = failure != 1u ? 1u : 0u;
+    card_fault.commit_failures = failure != 0u ? 1u : 0u;
+    /* The third case recovers after real play has already earned duplicates
+     * and a new bomb, exercising pending increments in the public App. */
+    card_fault.recover_after_frame = failure == 2u ? 330u : 0u;
+    reset(400u);
+    fx.pref_override = &recovering_api;
+    fx.fast_clock = true;
+    fx.autoplay_until = 400u;
+    CHECK(run() == H2_PAL_OK);
+    CHECK(card_fault.successful_reads == 1u);
+    CHECK(failure == 2u ? card_fault.reads > 2u : card_fault.reads == 2u);
+    /* Successful merge is never repeated by writes. */
+    CHECK(card_fault.writes >= 2u && card_fault.write_failures == 0u &&
+          card_fault.commit_failures == 0u);
+    h2_sqlite_destroy(storage);
+    CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+    h2_fruit_slice_cards_t saved;
+    read_sqlite_cards(storage, &saved);
+    CHECK(saved.counts[H2_FRUIT_SLICE_CARD_WATERMELON] >= 5u);
+    CHECK(saved.counts[H2_FRUIT_SLICE_CARD_ORANGE] == 99u);
+    CHECK(saved.counts[H2_FRUIT_SLICE_CARD_CLASSIC_KNIFE] == 6u);
+    CHECK(saved.counts[H2_FRUIT_SLICE_CARD_BOMB] == 1u);
+    CHECK((saved.unseen & (1u << H2_FRUIT_SLICE_CARD_CLASSIC_KNIFE)) == 0u);
+    CHECK((saved.unseen & (1u << H2_FRUIT_SLICE_CARD_BOMB)) != 0u);
+    CHECK((saved.unseen & initial.unseen) == initial.unseen);
+    reset(20u);
+    fx.pref_override = h2_sqlite_pref_api(storage);
+    fx.fast_clock = true;
+    fx.touch_from_frame = 2u;
+    script_tap(240,
+               450); /* Load the saved album and inspect the old NEW orange. */
+    CHECK(run() == H2_PAL_OK);
+    h2_fruit_slice_cards_t reopened;
+    read_sqlite_cards(storage, &reopened);
+    CHECK(memcmp(saved.counts, reopened.counts, sizeof(saved.counts)) == 0);
+    CHECK(reopened.unseen == (saved.unseen & ~initial.unseen));
+    h2_sqlite_destroy(storage);
+    CHECK(remove(database) == 0);
+  }
+}
+
+static void test_cards_write_retry_and_read_error(void) {
+  memset(&pref, 0, sizeof(pref));
+  pref.cards_enabled = true;
+  pref.cards_failures = 1u;
+  reset(400u);
+  fx.use_pref = true;
+  fx.fast_clock = true;
+  fx.autoplay_until = 400u;
+  CHECK(run() == H2_PAL_OK);
+  CHECK(pref.cards_commits >= 2u && pref.cards_failures == 0u);
+  h2_fruit_slice_cards_t collection;
+  h2_fruit_slice_cards_init(&collection, 480, 480, 1u);
+  CHECK(h2_fruit_slice_cards_decode(&collection, pref.cards_saved,
+                                    sizeof(pref.cards_saved)));
+  CHECK(h2_fruit_slice_cards_owned_total(&collection) > 0u);
+  uint8_t saved[H2_FRUIT_SLICE_CARDS_BYTES];
+  memcpy(saved, pref.cards_saved, sizeof(saved));
+  const unsigned commits = pref.cards_commits;
+  pref.cards_read_result = H2_PAL_ERR_IO;
+  reset(400u);
+  fx.use_pref = true;
+  fx.fast_clock = true;
+  fx.autoplay_until = 400u;
+  CHECK(run() == H2_PAL_OK);
+  CHECK(pref.cards_commits == commits);
+  CHECK(memcmp(saved, pref.cards_saved, sizeof(saved)) == 0);
+  const unsigned reads = pref.cards_reads;
+  reset(60u);
+  fx.display.info.width = fx.display.info.height = 240;
+  fx.touch.info.width = fx.touch.info.height = 240;
+  fx.use_pref = true;
+  fx.fast_clock = true;
+  fx.touch_from_frame = 2u;
+  fx.capture_name = "actual-app-unsaved-retry-240";
+  script_tap(120, 225);
+  CHECK(run() == H2_PAL_OK);
+  CHECK(pref.cards_reads - reads >= 2u && pref.cards_reads - reads <= 6u);
+  CHECK(pref.cards_commits == commits);
+  CHECK(memcmp(saved, pref.cards_saved, sizeof(saved)) == 0);
+}
+
 int main(void) {
+  test_cards_transient_sqlite_read();
+  test_cards_write_retry_and_read_error();
   test_fresh_sqlite_storage();
   test_unreadable_progress_is_preserved();
   test_progress_persists_across_sessions();

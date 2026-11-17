@@ -15,6 +15,7 @@
 #define STATS_PERIOD_MS 10000u
 #define PROGRESS_RETRY_MS 2000u
 #define PROGRESS_KEY "progress_v1"
+#define CARDS_KEY "cards_v1"
 
 /* Changed bands and, per band, the half-open column range that changed. */
 typedef struct dirty {
@@ -44,7 +45,7 @@ typedef struct session {
   /* Per stats window: longest frame of work, and frames over the period. */
   uint32_t max_frame_ms, slow_frames;
   uint32_t blast_frames, blast_max_ms;
-  uint64_t progress_save_after_ms;
+  uint64_t progress_save_after_ms, cards_save_after_ms;
   h2_fruit_slice_game_t game;
   h2_fruit_slice_audio_t audio;
   bool audio_unlocked, audio_paused;
@@ -157,6 +158,75 @@ static void save_progress(session_t* s) {
   if (rc == H2_PAL_OK) s->game.progress_dirty = false;
   char message[80];
   (void)snprintf(message, sizeof(message), "H2_FRUIT_SLICE_PROGRESS_SAVE rc=%d",
+                 rc);
+  log_line(s, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, message);
+}
+
+static void load_cards(session_t* s) {
+  h2_fruit_slice_cards_t* cards = &s->game.cards;
+  h2_pal_pref_namespace_t* ns = NULL;
+  void* data = NULL;
+  size_t size = 0u;
+  bool missing = false;
+  int rc = h2_pal_pref_open(s->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
+  if (rc == H2_PAL_OK && ns == NULL) rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) {
+    rc = ns->get_blob != NULL
+             ? ns->get_blob(ns, s->allocator, CARDS_KEY, &data, &size)
+             : H2_PAL_ERR_UNSUPPORTED;
+    missing = rc == H2_PAL_ERR_NOT_FOUND;
+    if (rc == H2_PAL_OK && !h2_fruit_slice_cards_merge(cards, data, size))
+      rc = H2_PAL_ERR_INVALID_ARG;
+    if (ns->close != NULL) (void)ns->close(ns);
+  }
+  if (data != NULL) h2_pal_mem_free(s->allocator, data);
+  if (rc == H2_PAL_OK || missing) {
+    cards->loaded = true;
+    cards->seen_before_load = 0u;
+    cards->save_status = 0u;
+  } else {
+    /* Never write without a known baseline. Operational errors can recover;
+     * unsupported storage and invalid/future blobs stay protected. */
+    cards->save_status = rc == H2_PAL_ERR_UNSUPPORTED   ? 1u
+                         : rc == H2_PAL_ERR_INVALID_ARG ? 3u
+                                                        : 2u;
+  }
+  ++cards->revision;
+  char message[80];
+  (void)snprintf(message, sizeof(message), "H2_FRUIT_SLICE_CARDS_LOAD rc=%d",
+                 rc);
+  log_line(s, H2_PAL_LOG_INFO, message);
+}
+
+static void save_cards(session_t* s) {
+  h2_fruit_slice_cards_t* cards = &s->game.cards;
+  if (cards->save_status == 1u || cards->save_status == 3u) return;
+  if (!cards->loaded && cards->save_status == 2u) load_cards(s);
+  if (!cards->loaded || !cards->dirty) return;
+  h2_pal_pref_namespace_t* ns = NULL;
+  uint8_t data[H2_FRUIT_SLICE_CARDS_BYTES];
+  h2_fruit_slice_cards_encode(cards, data);
+  int rc = h2_pal_pref_open(s->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
+  if (rc == H2_PAL_OK && ns == NULL) rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) {
+    rc = ns->set_blob != NULL ? ns->set_blob(ns, CARDS_KEY, data, sizeof(data))
+                              : H2_PAL_ERR_UNSUPPORTED;
+    if (rc == H2_PAL_OK && ns->commit != NULL) rc = ns->commit(ns);
+    if (ns->close != NULL) {
+      const int closed = ns->close(ns);
+      if (rc == H2_PAL_OK) rc = closed;
+    }
+  }
+  const uint32_t status = rc == H2_PAL_OK                ? 0u
+                          : rc == H2_PAL_ERR_UNSUPPORTED ? 1u
+                                                         : 2u;
+  if (cards->save_status != status) ++cards->revision;
+  cards->save_status = status;
+  if (rc == H2_PAL_OK) cards->dirty = false;
+  char message[80];
+  (void)snprintf(message, sizeof(message), "H2_FRUIT_SLICE_CARDS_SAVE rc=%d",
                  rc);
   log_line(s, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, message);
 }
@@ -533,6 +603,12 @@ static h2_pal_result_t play(session_t* s) {
       save_progress(s);
       s->progress_save_after_ms = now + PROGRESS_RETRY_MS;
     }
+    if ((s->game.cards.dirty ||
+         (!s->game.cards.loaded && s->game.cards.save_status == 2u)) &&
+        now >= s->cards_save_after_ms) {
+      save_cards(s);
+      s->cards_save_after_ms = now + PROGRESS_RETRY_MS;
+    }
     report_stats(s, now);
 
     rc = wait_frame(s, frame_start + period);
@@ -594,6 +670,9 @@ static h2_pal_result_t prepare(session_t* s) {
   h2_fruit_slice_game_init(&s->game, s->display.width, s->display.height, seed,
                            load_best(s));
   load_progress(s);
+  load_cards(s);
+  if (s->game.cards.save_status == 2u)
+    s->cards_save_after_ms = clock_ms(s) + PROGRESS_RETRY_MS;
   /* Build every fixed-size texture now so frames never allocate. */
   if (!h2_fruit_slice_sprites_prepare(s->sprites, &s->game)) {
     log_line(s, H2_PAL_LOG_ERROR, "H2_FRUIT_SLICE_ALLOC_FAIL what=textures");
@@ -634,6 +713,7 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
   }
   if (rc == H2_PAL_OK) rc = play(s);
   save_progress(s);
+  save_cards(s);
 
   /* Audio borrows Runtime until track/speaker teardown completes. */
   int audio_closed;

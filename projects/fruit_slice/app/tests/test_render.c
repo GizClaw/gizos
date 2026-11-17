@@ -41,8 +41,12 @@ static void write_ppm(const char* name, int32_t width, int32_t height) {
   CHECK(fclose(file) == 0);
 }
 
+static size_t allocation_calls, allocated_bytes;
+
 static void* test_alloc(void* user, size_t length) {
   (void)user;
+  ++allocation_calls;
+  allocated_bytes += length;
   return malloc(length);
 }
 static void* test_realloc(void* user, void* pointer, size_t length) {
@@ -240,6 +244,10 @@ static void scene_playing(void) {
 }
 
 static void render_size(int32_t width, int32_t height) {
+  /* Each App session owns a cache for one fixed display geometry. */
+  h2_fruit_slice_sprites_destroy(sprites);
+  sprites = h2_fruit_slice_sprites_create(&test_memory);
+  CHECK(sprites != NULL);
   h2_fruit_slice_canvas_t canvas = {.pixels = background,
                                     .width = width,
                                     .height = height,
@@ -384,7 +392,66 @@ static void test_progress_pages(int32_t width, int32_t height) {
   CHECK(memcmp(&before, &after, sizeof(before)) != 0);
 }
 
+static void test_card_scenes(int32_t width, int32_t height) {
+  h2_fruit_slice_sprites_destroy(sprites);
+  allocation_calls = allocated_bytes = 0u;
+  sprites = h2_fruit_slice_sprites_create(&test_memory);
+  CHECK(sprites != NULL);
+  h2_fruit_slice_game_init(&game, width, height, 42u, 0u);
+  CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
+  const size_t prepared = allocation_calls;
+  if (width == 480 && height == 320)
+    printf(
+        "AC791N geometry: sprite bytes=%zu, game bytes=%zu, three frames=%zu\n",
+        allocated_bytes, sizeof(game), (size_t)width * (size_t)height * 6u);
+  h2_fruit_slice_canvas_t canvas = {.pixels = background,
+                                    .width = width,
+                                    .height = height,
+                                    .stride_pixels = (size_t)width};
+  h2_fruit_slice_render_background(&canvas);
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_CARD_COUNT; ++id)
+    if (id % 2u) game.cards.counts[id] = 99u;
+  game.phase = H2_FRUIT_SLICE_PHASE_CARDS;
+  h2_fruit_slice_cards_open_album(&game.cards);
+  char name[64];
+  for (unsigned tab = 0; tab < H2_FRUIT_SLICE_CARD_TABS; ++tab) {
+    game.cards.tab = (uint8_t)tab;
+    game.cards.selected = 0u;
+    game.cards.tab_ms = 0u;
+    h2_fruit_slice_cards_step(&game.cards, 120u, false);
+    (void)snprintf(name, sizeof(name), "preview-album-slide-%u-%dx%d", tab,
+                   width, height);
+    check_scene(name, width, height);
+    h2_fruit_slice_cards_step(&game.cards, 400u, false);
+    (void)snprintf(name, sizeof(name), "preview-album-%u-%dx%d", tab, width,
+                   height);
+    check_scene(name, width, height);
+  }
+  h2_fruit_slice_cards_close_album(&game.cards);
+  game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+  const unsigned ids[] = {0u, 3u, 5u, 15u};
+  const unsigned ages[] = {80u, 380u, 650u, 800u, 960u, 1200u};
+  for (unsigned rarity = 0; rarity < 4u; ++rarity) {
+    game.cards.reveal_active = false;
+    game.cards.reveal_queue = 1u << ids[rarity];
+    h2_fruit_slice_cards_step(&game.cards, 16u, true);
+    for (unsigned stage = 0; stage < 6u; ++stage) {
+      h2_fruit_slice_cards_step(&game.cards, ages[stage] - game.cards.reveal_ms,
+                                true);
+      (void)snprintf(name, sizeof(name), "preview-reveal-%u-%u-%dx%d", rarity,
+                     ages[stage], width, height);
+      check_scene(name, width, height);
+    }
+  }
+  CHECK(allocation_calls == prepared); /* No frame-time texture allocation. */
+}
+
 int main(void) {
+  test_card_scenes(240, 240);
+  test_card_scenes(480, 320);
+  test_card_scenes(480, 800);
+  h2_fruit_slice_sprites_destroy(sprites);
+  sprites = NULL;
   test_progress_pages(160, 160);
   test_progress_pages(240, 240);
   test_progress_pages(480, 320);
