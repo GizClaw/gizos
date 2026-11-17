@@ -1,7 +1,26 @@
 #include "h2_alipay_payment_model.h"
 #include <assert.h>
 #include <string.h>
+
+static void test_query_with_earlier_snapshot(void) {
+  h2_alipay_payment_model_t model = {0};
+  const uint8_t code[] = "123456789012345678";
+  assert(h2_alipay_payment_model_code(&model, code, sizeof(code) - 1u, 1001u) ==
+         0);
+  h2_alipay_payment_attempt_t attempt;
+  assert(h2_alipay_payment_model_query(&model, 1000u, &attempt) == 0);
+  assert(strcmp(attempt.code, (const char*)code) == 0);
+  assert(h2_alipay_payment_model_has(&model, attempt.id));
+  assert(h2_alipay_payment_model_query(&model, 121000u, &attempt) == 0);
+  assert(h2_alipay_payment_model_has(&model, attempt.id));
+  uint32_t id = attempt.id;
+  assert(h2_alipay_payment_model_query(&model, 121001u, &attempt) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(!h2_alipay_payment_model_has(&model, id));
+}
+
 int main(void) {
+  test_query_with_earlier_snapshot();
   h2_alipay_payment_model_t model = {0};
   /* These arrays intentionally lack a NUL byte: the model owns termination. */
   uint8_t first[18];

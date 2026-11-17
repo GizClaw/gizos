@@ -315,32 +315,6 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
-    "//third_party/alipay:api_repository.bzl%alipay_api": {
-      "general": {
-        "bzlTransitiveDigest": "0kvtsgmaofrLMMYX8KmtmFzckRBpluXh29R21NReQYA=",
-        "usagesDigest": "PxTgDZp5pXOjz6NYjMU5wFLeFF6OMRQJ0ZqCIjKfBDs=",
-        "recordedInputs": [],
-        "generatedRepoSpecs": {
-          "alipay_api": {
-            "repoRuleId": "@@//third_party/alipay:api_repository.bzl%_alipay_api",
-            "attributes": {}
-          }
-        }
-      }
-    },
-    "//third_party/alipay:sdk_repository.bzl%alipay_sdk": {
-      "general": {
-        "bzlTransitiveDigest": "qcaYH73a0EnmXkmIuVQaYCp3vCaSqZphTCx0UjOC19Y=",
-        "usagesDigest": "pz9eHdJaP5znG3yGZWiCPaEAjTURTgpkCmAxynIEZBQ=",
-        "recordedInputs": [],
-        "generatedRepoSpecs": {
-          "alipay_sdk": {
-            "repoRuleId": "@@//third_party/alipay:sdk_repository.bzl%_alipay_sdk",
-            "attributes": {}
-          }
-        }
-      }
-    },
     "//tools/bazel/native/bk7258:repositories.bzl%bk_repositories": {
       "general": {
         "bzlTransitiveDigest": "INlZcSgYJVl4pDXj19gk06BPlQsoOHVUIoSedY5ko7I=",
@@ -506,8 +480,10 @@
     "//tools/bazel/repositories:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "2JZy85z5MiIaUpyUMEYbak7QXyt1MNAqmSOeoGW3Et0=",
-        "usagesDigest": "0LkVlF4CH6yBDfQmmLaDQ9Xd7miK9eNuCh9vqgxUmbE=",
-        "recordedInputs": [],
+        "usagesDigest": "GFN5bVhpOvaM7G8WDUJjUan1F4bHcgKNIdklR1S92+A=",
+        "recordedInputs": [
+          "REPO_MAPPING:,h2_vendor_wolfsm +vendor_repositories+h2_vendor_wolfsm"
+        ],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
             "repoRuleId": "@@//tools/bazel/repositories:repositories.bzl%_fdk_aac_repository",
@@ -605,6 +581,44 @@
               "strip_prefix": "QR-Code-generator-3c6d0b3cefb4e049dc337e82237c9644399716a8",
               "urls": [
                 "https://codeload.github.com/nayuki/QR-Code-generator/tar.gz/3c6d0b3cefb4e049dc337e82237c9644399716a8"
+              ]
+            }
+          },
+          "h2_vendor_quirc": {
+            "repoRuleId": "@@//tools/bazel/repositories:repositories.bzl%_archive_repository",
+            "attributes": {
+              "build_file": "@@//third_party:quirc.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
+              "overlay_files": {},
+              "patches": [
+                "@@//third_party/quirc_patch:quirc.patch"
+              ],
+              "sha256": "b8c3d3a3a6644395f9187951aba0cba7b1503566924b38c2a26c285b4686eee7",
+              "strip_prefix": "quirc-f2e4271ae43a15d9263704e07bc86cba5697d74d",
+              "urls": [
+                "https://codeload.github.com/dlbeer/quirc/tar.gz/f2e4271ae43a15d9263704e07bc86cba5697d74d"
+              ]
+            }
+          },
+          "h2_vendor_quickjs": {
+            "repoRuleId": "@@//tools/bazel/repositories:repositories.bzl%_archive_repository",
+            "attributes": {
+              "build_file": "@@//third_party:quickjs.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
+              "overlay_files": {},
+              "patches": [
+                "@@//third_party/quickjs_patch:quickjs.patch"
+              ],
+              "sha256": "640fb75b3ca11eec37f9df4bea0afa48a39027ca2dc60806b96d29aa03e504a6",
+              "strip_prefix": "quickjs-b5e62895c619d4ffc75c9d822c8d85f1ece77e5b",
+              "urls": [
+                "https://codeload.github.com/bellard/quickjs/tar.gz/b5e62895c619d4ffc75c9d822c8d85f1ece77e5b"
               ]
             }
           },
@@ -881,6 +895,25 @@
               ]
             }
           },
+          "h2_vendor_wolfsm": {
+            "repoRuleId": "@@//tools/bazel/repositories:repositories.bzl%_archive_repository",
+            "attributes": {
+              "build_file": "@@//third_party:wolfsm.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
+              "overlay_files": {},
+              "patches": [
+                "@@//third_party/wolfsm_patch:wolfsm.patch"
+              ],
+              "sha256": "08fabd465573468762530220849b48864dcc436f2901d5cbba143b0477de2766",
+              "strip_prefix": "wolfsm-a7650b11d30eb0e69e218ffc6fc8767cee3e6d1b",
+              "urls": [
+                "https://codeload.github.com/wolfSSL/wolfsm/tar.gz/a7650b11d30eb0e69e218ffc6fc8767cee3e6d1b"
+              ]
+            }
+          },
           "h2_vendor_wolfssl": {
             "repoRuleId": "@@//tools/bazel/repositories:repositories.bzl%_archive_repository",
             "attributes": {
@@ -889,7 +922,10 @@
               "nested_archive_sha256": {},
               "nested_archive_strip_prefix": {},
               "nested_archive_urls": {},
-              "overlay_files": {},
+              "overlay_files": {
+                "@@+vendor_repositories+h2_vendor_wolfsm//:src/sm2.c": "src/wolfcrypt/src/sm2.c",
+                "@@+vendor_repositories+h2_vendor_wolfsm//:src/sm2.h": "src/wolfssl/wolfcrypt/sm2.h"
+              },
               "patches": [],
               "sha256": "94c2a0bd2cac88bf644482e1957c6c4141a606bc59a7e26c499bcf116040575a",
               "strip_prefix": "wolfssl-6074a2dbe84db676a25bced7924f90ad5acdc63c",

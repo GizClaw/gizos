@@ -7,7 +7,7 @@
 #include "h2_atomic.h"
 #include "h2_atomic_static.h"
 
-#define H2_TIGA_ESP_NFC_READ_CAP 256u
+#define H2_TIGA_ESP_NFC_READ_CAP 512u
 
 static h2_esp_nfc_fm175xx_t s_nfc;
 static int s_nfc_initialized;

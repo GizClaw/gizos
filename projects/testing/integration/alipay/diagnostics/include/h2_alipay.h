@@ -26,7 +26,6 @@ h2_pal_result_t h2_alipay_initialize_once(h2_alipay_initialization_t* state,
 
 typedef enum h2_alipay_source {
   H2_ALIPAY_SOURCE_CONTROLLED = 0,
-  H2_ALIPAY_SOURCE_VENDOR_SDK = 1,
   H2_ALIPAY_SOURCE_INDEPENDENT = 2,
 } h2_alipay_source_t;
 
@@ -117,7 +116,6 @@ typedef struct h2_alipay_api {
   h2_alipay_source_t source;
   /** Bounded trace; only read/reset after all SDK callers join. */
   h2_alipay_trace_t* trace;
-  const char* sdk_manifest_sha256;
   h2_alipay_storage_scope_t storage_scope;
 } h2_alipay_api_t;
 

@@ -1,0 +1,28 @@
+diff --git src/sm2.c src/sm2.c
+--- src/sm2.c
++++ src/sm2.c
+@@ -48,7 +48,7 @@
+ /* Maximum number of signature generations to attempt before giving up. */
+ #define ECC_SM2_MAX_SIG_GEN     64
+ 
+-#ifndef NO_HASH_WRAPPER
++#if !defined(NO_HASH_WRAPPER) && !defined(H2_WOLFSM_EXTERNAL_DIGEST)
+ /* Convert hex string to binary and hash it.
+  *
+  * @param [in] hash      Hash algorithm object.
+@@ -641,6 +641,7 @@
+  * @return  ECC_BAD_ARGE_E when hash, r, s, key or rng is NULL.
+  * @return  ECC_BAD_ARGE_E when key is not on SM2 curve.
+  */
++#ifndef NO_ASN
+ int wc_ecc_sm2_sign_hash(const byte* hash, word32 hashSz, byte* sig,
+     word32 *sigSz, WC_RNG* rng, ecc_key* key)
+ {
+@@ -729,6 +730,7 @@
+ 
+     return err;
+ }
++#endif
+ #endif
+ 
+ #ifdef HAVE_ECC_VERIFY

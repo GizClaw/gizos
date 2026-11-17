@@ -30,6 +30,38 @@ firmware_native_component(
 )
 
 cc_test(
+    name = "reader_test",
+    srcs = [
+        "include/h2_esp_nfc_fm175xx.h",
+        "src/h2_esp_nfc_fm175xx.c",
+        "src/h2_esp_nfc_fm175xx_internal.h",
+        "src/h2_esp_nfc_fm175xx_spi_address.h",
+        "tests/sdk/driver/i2c_master.h",
+        "tests/sdk/driver/spi_master.h",
+        "tests/sdk/esp_log.h",
+        "tests/test_h2_esp_nfc_fm175xx_reader.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/drivers/nfc/fm175xx",
+        "//libs/testing:testing_pal",
+        "//pal",
+    ],
+)
+
+cc_test(
     name = "i2c_transport_test",
     srcs = [
         "include/h2_esp_nfc_fm175xx.h",

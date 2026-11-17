@@ -10,7 +10,7 @@ void h2_alipay_payment_model_clear(h2_alipay_payment_model_t* model) {
 }
 static void expire(h2_alipay_payment_model_t* model, uint64_t now) {
   for (size_t i = 0u; i < H2_ALIPAY_PAYMENT_ATTEMPTS; ++i)
-    if (model->attempts[i].id != 0u &&
+    if (model->attempts[i].id != 0u && now >= model->attempts[i].created_ms &&
         now - model->attempts[i].created_ms >= 120000u)
       wipe(&model->attempts[i], sizeof(model->attempts[i]));
 }

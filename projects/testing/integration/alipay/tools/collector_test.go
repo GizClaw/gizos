@@ -21,7 +21,7 @@ func row(kind string, fields map[string]any) string {
 	return "H2_ALIPAY_" + kind + " " + string(data) + "\n"
 }
 func meta(private bool) string {
-	return row("META", map[string]any{"source": "vendor_sdk", "private_raw": private})
+	return row("META", map[string]any{"source": "independent", "private_raw": private})
 }
 func opts(private bool) captureOptions {
 	return captureOptions{Private: private, GitSHA: strings.Repeat("a", 40)}
@@ -29,12 +29,11 @@ func opts(private bool) captureOptions {
 func dir(t *testing.T) string { return filepath.Join(t.TempDir(), "capture") }
 func eventRow(seq int, raw []byte) string {
 	hash := sha256.Sum256(raw)
-	return row("EVENT", map[string]any{"source": "runtime_vendor_sdk", "seq": seq, "call_id": seq,
+	return row("EVENT", map[string]any{"source": "runtime_independent", "seq": seq, "call_id": seq,
 		"parent_id": 0, "connection_id": 0, "operation": "qr.rendered.fragment", "boundary": "application_code",
 		"item": 0, "length": len(raw), "captured": len(raw), "sha256": hex.EncodeToString(hash[:])})
 }
 func TestPrivateBytesAndCodeAreExact(t *testing.T) {
-	// Synthetic collector fixture only: this test does not execute a vendor SDK.
 	raw := []byte("controlled-code-fixture")
 	input := meta(true) + eventRow(1, raw) + row("BYTES", map[string]any{"seq": 1, "hex": hex.EncodeToString(raw)}) +
 		row("RESULT", map[string]any{"length": len(raw), "qr_visible": true, "code_rc": 0}) +
@@ -89,7 +88,7 @@ func TestIndependentSourceRemainsExplicit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(data), `"source":"runtime_independent"`) ||
-		strings.Contains(string(data), `"source":"runtime_vendor_sdk"`) {
+		strings.Contains(string(data), `"source":"runtime_product"`) {
 		t.Fatal("independent evidence was relabeled")
 	}
 }

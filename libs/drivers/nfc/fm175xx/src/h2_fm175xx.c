@@ -262,7 +262,8 @@ static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
   return post_cmd(reader, H2_FM175XX_ERR_TIMEOUT);
 }
 
-static int type_a_halt(h2_fm175xx_t* reader, uint32_t timeout_ms) {
+static int type_a_halt(h2_fm175xx_t* reader, uint32_t timeout_ms,
+                       size_t* out_bits) {
   int rc = write_reg(reader, H2_FM175XX_REG_BIT_FRAMING, 0x00u);
   if (rc == H2_FM175XX_OK) {
     rc = set_bit_mask(reader, H2_FM175XX_REG_TX_MODE, 0x80u);
@@ -283,6 +284,7 @@ static int type_a_halt(h2_fm175xx_t* reader, uint32_t timeout_ms) {
   size_t bits = 0u;
   rc =
       transceive(reader, halt, sizeof(halt), response, sizeof(response), &bits);
+  if (out_bits != NULL) *out_bits = bits;
   /* HLTA has no response. A previously selected tag enters HALT; tags
    * already in IDLE/HALT ignore it. Bus failures must still propagate. */
   return rc == H2_FM175XX_ERR_TIMEOUT
@@ -291,7 +293,8 @@ static int type_a_halt(h2_fm175xx_t* reader, uint32_t timeout_ms) {
 }
 
 static int type_a_request(h2_fm175xx_t* reader, uint32_t timeout_ms,
-                          uint8_t out_atqa[2]) {
+                          uint8_t out_atqa[2],
+                          h2_fm175xx_activation_diagnostics_t* diagnostics) {
   int rc = clear_bit_mask(reader, H2_FM175XX_REG_TX_MODE, 0x80u);
   if (rc == H2_FM175XX_OK) {
     rc = clear_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
@@ -314,6 +317,10 @@ static int type_a_request(h2_fm175xx_t* reader, uint32_t timeout_ms,
   for (size_t i = 0u; i < sizeof(requests); ++i) {
     size_t bits = 0u;
     rc = transceive(reader, &requests[i], 1u, out_atqa, 2u, &bits);
+    if (diagnostics != NULL) {
+      diagnostics->command = requests[i];
+      diagnostics->reply_bits = bits;
+    }
     if (rc == H2_FM175XX_ERR_TIMEOUT && i == 0u) continue;
     if (rc != H2_FM175XX_OK) return rc;
     return bits == 16u ? H2_FM175XX_OK : H2_FM175XX_ERR_PROTOCOL;
@@ -322,7 +329,8 @@ static int type_a_request(h2_fm175xx_t* reader, uint32_t timeout_ms,
 }
 
 static int type_a_anticollision(h2_fm175xx_t* reader, uint32_t timeout_ms,
-                                uint8_t selcode, uint8_t out_uid[5]) {
+                                uint8_t selcode, uint8_t out_uid[5],
+                                size_t* out_bits) {
   int rc = clear_bit_mask(reader, H2_FM175XX_REG_TX_MODE, 0x80u);
   if (rc == H2_FM175XX_OK) {
     rc = clear_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
@@ -346,6 +354,7 @@ static int type_a_anticollision(h2_fm175xx_t* reader, uint32_t timeout_ms,
   uint8_t recv[5] = {0};
   size_t bits = 0u;
   rc = transceive(reader, send, sizeof(send), recv, sizeof(recv), &bits);
+  if (out_bits != NULL) *out_bits = bits;
   if (rc != H2_FM175XX_OK) {
     return rc;
   }
@@ -357,9 +366,25 @@ static int type_a_anticollision(h2_fm175xx_t* reader, uint32_t timeout_ms,
   return H2_FM175XX_OK;
 }
 
+static int type_a_check_reply(const uint8_t* reply, size_t length,
+                              size_t bits) {
+  if (bits == length * 8u) return H2_FM175XX_OK;
+  if (bits != (length + 2u) * 8u) return H2_FM175XX_ERR_PROTOCOL;
+  uint16_t crc = 0x6363u;
+  for (size_t index = 0u; index < length; ++index) {
+    crc ^= reply[index];
+    for (unsigned bit = 0u; bit < 8u; ++bit)
+      crc = (uint16_t)((crc >> 1u) ^ ((crc & 1u) ? 0x8408u : 0u));
+  }
+  return reply[length] == (uint8_t)crc &&
+                 reply[length + 1u] == (uint8_t)(crc >> 8u)
+             ? H2_FM175XX_OK
+             : H2_FM175XX_ERR_PROTOCOL;
+}
+
 static int type_a_select(h2_fm175xx_t* reader, uint32_t timeout_ms,
                          uint8_t selcode, const uint8_t uid[5],
-                         uint8_t* out_sak) {
+                         uint8_t* out_sak, size_t* out_bits) {
   uint8_t send[7] = {selcode, 0x70u, uid[0], uid[1], uid[2], uid[3], uid[4]};
   uint8_t recv[5] = {0};
   size_t bits = 0u;
@@ -379,36 +404,57 @@ static int type_a_select(h2_fm175xx_t* reader, uint32_t timeout_ms,
   if (rc == H2_FM175XX_OK) {
     rc = transceive(reader, send, sizeof(send), recv, sizeof(recv), &bits);
   }
+  if (out_bits != NULL) *out_bits = bits;
   if (rc != H2_FM175XX_OK) {
     return rc;
   }
   /* Some family members strip the checked CRC; others retain its two bytes.
    * A short MIFARE NAK or a partial packet is never a successful selection. */
-  if (bits == 24u) {
-    uint16_t crc = (uint16_t)(0x6363u ^ recv[0]);
-    for (unsigned i = 0u; i < 8u; ++i)
-      crc = (uint16_t)((crc >> 1u) ^ ((crc & 1u) ? 0x8408u : 0u));
-    if (recv[1] != (uint8_t)crc || recv[2] != (uint8_t)(crc >> 8u))
-      return H2_FM175XX_ERR_PROTOCOL;
-  } else if (bits != 8u) {
-    return H2_FM175XX_ERR_PROTOCOL;
-  }
+  rc = type_a_check_reply(recv, 1u, bits);
+  if (rc != H2_FM175XX_OK) return rc;
   *out_sak = recv[0];
   return H2_FM175XX_OK;
 }
 
-static int ntag_read_once(h2_fm175xx_t* reader, uint8_t page_addr,
-                          uint8_t out[16]) {
+static int ntag_read_once_diagnostic(
+    h2_fm175xx_t* reader, uint8_t page_addr, uint8_t out[16],
+    h2_fm175xx_read_diagnostics_t* diagnostics) {
   const uint8_t send[2] = {0x30u, page_addr};
+  uint8_t reply[18];
   size_t bits = 0u;
   int rc = set_timer(reader, 5u);
   if (rc == H2_FM175XX_OK) {
-    rc = transceive(reader, send, sizeof(send), out, 16u, &bits);
+    rc = transceive(reader, send, sizeof(send), reply, sizeof(reply), &bits);
   }
-  if (rc != H2_FM175XX_OK) {
-    return rc;
+  if (rc == H2_FM175XX_OK) rc = type_a_check_reply(reply, 16u, bits);
+  if (diagnostics != NULL) {
+    ++diagnostics->read_count;
+    if (bits == 144u) ++diagnostics->retained_crc_frames;
+    diagnostics->last_reply_bits = bits;
+    diagnostics->last_page = page_addr;
+    diagnostics->last_result = rc;
+    if (rc != H2_FM175XX_OK) {
+      int status =
+          read_reg(reader, H2_FM175XX_REG_COMIRQ, &diagnostics->last_irq);
+      if (status == H2_FM175XX_OK)
+        status =
+            read_reg(reader, H2_FM175XX_REG_ERROR, &diagnostics->last_error);
+      if (status == H2_FM175XX_OK)
+        status = read_reg(reader, H2_FM175XX_REG_FIFO_LEVEL,
+                          &diagnostics->last_fifo);
+      if (status == H2_FM175XX_OK)
+        status = read_reg(reader, H2_FM175XX_REG_CONTROL,
+                          &diagnostics->last_control);
+      diagnostics->status_result = status;
+    }
   }
-  return bits == 128u ? H2_FM175XX_OK : H2_FM175XX_ERR_PROTOCOL;
+  if (rc == H2_FM175XX_OK) memcpy(out, reply, 16u);
+  return rc;
+}
+
+static int ntag_read_once(h2_fm175xx_t* reader, uint8_t page_addr,
+                          uint8_t out[16]) {
+  return ntag_read_once_diagnostic(reader, page_addr, out, NULL);
 }
 
 int h2_fm175xx_init(h2_fm175xx_t* reader,
@@ -509,7 +555,8 @@ static int activate_type_a(h2_fm175xx_t* reader,
                            h2_fm175xx_type_a_card_t* out_card,
                            uint32_t timeout_ms, uint8_t rf_config,
                            uint8_t rx_threshold, int retune,
-                           int preserve_tx_drive) {
+                           int preserve_tx_drive,
+                           h2_fm175xx_activation_diagnostics_t* diagnostics) {
   if (reader == NULL || out_card == NULL || timeout_ms == 0u ||
       timeout_ms > 50u) {
     return H2_FM175XX_ERR_INVALID_ARG;
@@ -539,9 +586,19 @@ static int activate_type_a(h2_fm175xx_t* reader,
   /* Polling and content reads share the reader. The preceding scan leaves
    * its tag ACTIVE, where REQA is ignored. End that selection, then WUPA
    * wakes both a newly presented IDLE tag and the retained HALT tag. */
-  rc = type_a_halt(reader, timeout_ms);
+  if (diagnostics != NULL) {
+    diagnostics->phase = H2_FM175XX_ACTIVATION_HALT;
+    diagnostics->command = 0x50u;
+  }
+  rc = type_a_halt(reader, timeout_ms,
+                   diagnostics == NULL ? NULL : &diagnostics->reply_bits);
   if (rc == H2_FM175XX_OK) {
-    rc = type_a_request(reader, timeout_ms, out_card->atqa);
+    if (diagnostics != NULL) {
+      diagnostics->phase = H2_FM175XX_ACTIVATION_REQUEST;
+      diagnostics->command = 0u;
+      diagnostics->reply_bits = 0u;
+    }
+    rc = type_a_request(reader, timeout_ms, out_card->atqa, diagnostics);
   }
   if (rc != H2_FM175XX_OK) {
     return rc;
@@ -558,24 +615,65 @@ static int activate_type_a(h2_fm175xx_t* reader,
   static const uint8_t selcodes[3] = {0x93u, 0x95u, 0x97u};
   for (uint8_t i = 0u; i < levels; ++i) {
     uint8_t* uid = out_card->uid + (i * 5u);
-    rc = type_a_anticollision(reader, timeout_ms, selcodes[i], uid);
+    if (diagnostics != NULL) {
+      diagnostics->phase = H2_FM175XX_ACTIVATION_ANTICOLLISION;
+      diagnostics->command = selcodes[i];
+      diagnostics->cascade_level = (uint8_t)(i + 1u);
+      diagnostics->reply_bits = 0u;
+    }
+    rc = type_a_anticollision(
+        reader, timeout_ms, selcodes[i], uid,
+        diagnostics == NULL ? NULL : &diagnostics->reply_bits);
     if (rc != H2_FM175XX_OK) {
       return rc;
     }
-    rc = type_a_select(reader, timeout_ms, selcodes[i], uid, &out_card->sak[i]);
+    if (diagnostics != NULL) {
+      diagnostics->phase = H2_FM175XX_ACTIVATION_SELECT;
+      diagnostics->reply_bits = 0u;
+    }
+    rc = type_a_select(reader, timeout_ms, selcodes[i], uid, &out_card->sak[i],
+                       diagnostics == NULL ? NULL : &diagnostics->reply_bits);
     if (rc != H2_FM175XX_OK) {
       return rc;
     }
   }
   out_card->uid_len = (uint8_t)(levels * 5u);
   out_card->sak_len = levels;
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_ACTIVATION_COMPLETE;
   return H2_FM175XX_OK;
+}
+
+int h2_fm175xx_type_a_activate_diagnostic(
+    h2_fm175xx_t* reader, h2_fm175xx_type_a_card_t* out_card,
+    h2_fm175xx_activation_diagnostics_t* diagnostics) {
+  if (diagnostics != NULL) {
+    memset(diagnostics, 0, sizeof(*diagnostics));
+    diagnostics->status_result = H2_FM175XX_ERR_UNAVAILABLE;
+  }
+  int rc =
+      activate_type_a(reader, out_card, 1u, 0x68u, 0x74u, 0, 0, diagnostics);
+  if (diagnostics != NULL && reader != NULL && rc != H2_FM175XX_OK &&
+      rc != H2_FM175XX_ERR_INVALID_ARG) {
+    int status =
+        read_reg(reader, H2_FM175XX_REG_COMIRQ, &diagnostics->last_irq);
+    if (status == H2_FM175XX_OK)
+      status = read_reg(reader, H2_FM175XX_REG_ERROR, &diagnostics->last_error);
+    if (status == H2_FM175XX_OK)
+      status =
+          read_reg(reader, H2_FM175XX_REG_FIFO_LEVEL, &diagnostics->last_fifo);
+    if (status == H2_FM175XX_OK)
+      status =
+          read_reg(reader, H2_FM175XX_REG_CONTROL, &diagnostics->last_control);
+    diagnostics->status_result = status;
+  }
+  return rc;
 }
 
 int h2_fm175xx_type_a_activate_timed(h2_fm175xx_t* reader,
                                      h2_fm175xx_type_a_card_t* out_card,
                                      uint32_t timeout_ms) {
-  return activate_type_a(reader, out_card, timeout_ms, 0x68u, 0x74u, 0, 0);
+  return activate_type_a(reader, out_card, timeout_ms, 0x68u, 0x74u, 0, 0,
+                         NULL);
 }
 
 int h2_fm175xx_type_a_activate_tuned(h2_fm175xx_t* reader,
@@ -583,7 +681,7 @@ int h2_fm175xx_type_a_activate_tuned(h2_fm175xx_t* reader,
                                      uint32_t timeout_ms, uint8_t rf_config,
                                      uint8_t rx_threshold) {
   return activate_type_a(reader, out_card, timeout_ms, rf_config, rx_threshold,
-                         1, 0);
+                         1, 0, NULL);
 }
 
 int h2_fm175xx_type_a_activate_profile(
@@ -592,7 +690,8 @@ int h2_fm175xx_type_a_activate_profile(
   if (profile == NULL || profile->preserve_tx_drive > 1u)
     return H2_FM175XX_ERR_INVALID_ARG;
   return activate_type_a(reader, out_card, timeout_ms, profile->rf_config,
-                         profile->rx_threshold, 1, profile->preserve_tx_drive);
+                         profile->rx_threshold, 1, profile->preserve_tx_drive,
+                         NULL);
 }
 
 int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
@@ -623,31 +722,73 @@ int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
   return H2_FM175XX_OK;
 }
 
+static int ntag_read_until(h2_fm175xx_t* reader, uint8_t* raw, size_t size,
+                           size_t* filled, size_t needed,
+                           h2_fm175xx_read_diagnostics_t* diagnostics) {
+  if (needed > size) return H2_FM175XX_ERR_PROTOCOL;
+  while (*filled < needed) {
+    uint8_t page[16];
+    int rc = ntag_read_once_diagnostic(reader, (uint8_t)(*filled / 4u), page,
+                                       diagnostics);
+    if (rc != H2_FM175XX_OK) return rc;
+    size_t length = size - *filled;
+    if (length > sizeof(page)) length = sizeof(page);
+    memcpy(raw + *filled, page, length);
+    *filled += length;
+  }
+  return H2_FM175XX_OK;
+}
+
 int h2_fm175xx_ntag_read_ndef(h2_fm175xx_t* reader, uint8_t* out_data,
                               size_t capacity, size_t* out_len) {
-  if (out_data == NULL || out_len == NULL) return H2_FM175XX_ERR_INVALID_ARG;
+  return h2_fm175xx_ntag_read_ndef_diagnostic(reader, out_data, capacity,
+                                              out_len, NULL);
+}
+
+int h2_fm175xx_ntag_read_ndef_diagnostic(
+    h2_fm175xx_t* reader, uint8_t* out_data, size_t capacity, size_t* out_len,
+    h2_fm175xx_read_diagnostics_t* diagnostics) {
+  if (diagnostics != NULL) {
+    memset(diagnostics, 0, sizeof(*diagnostics));
+    diagnostics->status_result = H2_FM175XX_ERR_UNAVAILABLE;
+  }
+  if (reader == NULL || out_data == NULL || out_len == NULL)
+    return H2_FM175XX_ERR_INVALID_ARG;
   *out_len = 0u;
   uint8_t raw[1024];
-  size_t size = 0u;
-  int rc = h2_fm175xx_ntag_read_all(reader, raw, sizeof(raw), &size);
+  int rc = ntag_read_once_diagnostic(reader, 0u, raw, diagnostics);
   if (rc != H2_FM175XX_OK) return rc;
   if (raw[12] != 0xe1u || (raw[13] >> 4u) != 1u || (raw[15] >> 4u) != 0u)
     return H2_FM175XX_ERR_UNAVAILABLE;
+  size_t size = 16u + 8u * raw[14];
+  if (size > sizeof(raw)) return H2_FM175XX_ERR_UNAVAILABLE;
+  size_t filled = 16u;
   for (size_t offset = 16u; offset < size;) {
+    rc = ntag_read_until(reader, raw, size, &filled, offset + 1u, diagnostics);
+    if (rc != H2_FM175XX_OK) return rc;
     uint8_t type = raw[offset++];
     if (type == 0u) continue;
     if (type == 0xfeu) break;
     if (offset == size) return H2_FM175XX_ERR_PROTOCOL;
+    rc = ntag_read_until(reader, raw, size, &filled, offset + 1u, diagnostics);
+    if (rc != H2_FM175XX_OK) return rc;
     size_t length = raw[offset++];
     if (length == 255u) {
       if (size - offset < 2u) return H2_FM175XX_ERR_PROTOCOL;
+      rc =
+          ntag_read_until(reader, raw, size, &filled, offset + 2u, diagnostics);
+      if (rc != H2_FM175XX_OK) return rc;
       length = ((size_t)raw[offset] << 8u) | raw[offset + 1u];
       offset += 2u;
     }
     if (length > size - offset) return H2_FM175XX_ERR_PROTOCOL;
     if (type == 3u) {
       if (length == 0u) return H2_FM175XX_ERR_UNAVAILABLE;
+      if (diagnostics != NULL) diagnostics->required_capacity = length;
       if (length > capacity) return H2_FM175XX_ERR_NO_MEMORY;
+      rc = ntag_read_until(reader, raw, size, &filled, offset + length,
+                           diagnostics);
+      if (rc != H2_FM175XX_OK) return rc;
       memcpy(out_data, raw + offset, length);
       *out_len = length;
       return H2_FM175XX_OK;
@@ -676,58 +817,211 @@ static int ntag_write_page(h2_fm175xx_t* reader, uint8_t page,
 
 int h2_fm175xx_ntag_write_ndef(h2_fm175xx_t* reader, const uint8_t* data,
                                size_t length) {
+  return h2_fm175xx_ntag_write_ndef_diagnostic(reader, data, length, NULL);
+}
+
+static int write_ndef_page(h2_fm175xx_t* reader, uint8_t page,
+                           const uint8_t data[4],
+                           h2_fm175xx_write_diagnostics_t* diagnostics) {
+  if (diagnostics != NULL) {
+    ++diagnostics->write_calls;
+    diagnostics->last_page = page;
+  }
+  return ntag_write_page(reader, page, data);
+}
+
+typedef struct ntag_write_layout {
+  size_t ndef_offset;
+  size_t previous_end;
+  uint8_t protected_pages[32];
+} ntag_write_layout_t;
+
+static int ntag_pages_protected(const ntag_write_layout_t* layout, size_t start,
+                                size_t end) {
+  for (size_t page = start / 4u; page < (end + 3u) / 4u; ++page) {
+    if ((layout->protected_pages[page / 8u] & (uint8_t)(1u << (page % 8u))) !=
+        0u)
+      return 1;
+  }
+  return 0;
+}
+
+static int ntag_check_dynamic_locks(h2_fm175xx_t* reader, const uint8_t* raw,
+                                    size_t size, size_t start, size_t bits) {
+  uint8_t block[16];
+  size_t cached = 1024u;
+  for (size_t index = 0u; index < (bits + 7u) / 8u; ++index) {
+    size_t address = start + index;
+    uint8_t value;
+    if (address < size) {
+      value = raw[address];
+    } else {
+      size_t base = address & ~(size_t)15u;
+      if (cached != base) {
+        int rc = ntag_read_once(reader, (uint8_t)(base / 4u), block);
+        if (rc != H2_FM175XX_OK) return rc;
+        cached = base;
+      }
+      value = block[address - cached];
+    }
+    size_t remaining = bits - index * 8u;
+    uint8_t mask = remaining < 8u ? (uint8_t)((1u << remaining) - 1u) : 255u;
+    if ((value & mask) != 0u) return H2_FM175XX_ERR_UNAVAILABLE;
+  }
+  return H2_FM175XX_OK;
+}
+
+static int ntag_control_tlv(h2_fm175xx_t* reader, const uint8_t* raw,
+                            size_t size, uint8_t type, size_t offset,
+                            ntag_write_layout_t* layout) {
+  const uint8_t* control = raw + offset;
+  size_t page_size = (size_t)1u << (control[2] & 15u);
+  size_t byte_offset = control[0] & 15u;
+  if (byte_offset >= page_size) return H2_FM175XX_ERR_PROTOCOL;
+  size_t start = (control[0] >> 4u) * page_size + byte_offset;
+  size_t count = control[1] == 0u ? 256u : control[1];
+  size_t length = type == 1u ? (count + 7u) / 8u : count;
+  if (type == 2u && (control[2] & 0xf0u) != 0u) return H2_FM175XX_ERR_PROTOCOL;
+  if (start >= 1024u || length > 1024u - start)
+    return H2_FM175XX_ERR_UNAVAILABLE;
+  if (start < offset + 3u) return H2_FM175XX_ERR_PROTOCOL;
+  if (type == 1u) {
+    int rc = ntag_check_dynamic_locks(reader, raw, size, start, count);
+    if (rc != H2_FM175XX_OK) return rc;
+  }
+  for (size_t page = start / 4u; page < (start + length + 3u) / 4u; ++page)
+    layout->protected_pages[page / 8u] |= (uint8_t)(1u << (page % 8u));
+  return H2_FM175XX_OK;
+}
+
+static int ntag_find_write_layout(h2_fm175xx_t* reader, const uint8_t* raw,
+                                  size_t size, ntag_write_layout_t* layout,
+                                  h2_fm175xx_write_diagnostics_t* diagnostics) {
+  *layout = (ntag_write_layout_t){.ndef_offset = 16u, .previous_end = 16u};
+  for (size_t offset = 16u; offset < size;) {
+    size_t start = offset;
+    if (ntag_pages_protected(layout, offset, offset + 1u))
+      return H2_FM175XX_ERR_UNAVAILABLE;
+    uint8_t type = raw[offset++];
+    if (type == 0u) continue;
+    if (type == 0xfeu) {
+      layout->ndef_offset = start;
+      layout->previous_end = start;
+      return H2_FM175XX_OK;
+    }
+    if (type != 1u && type != 2u && type != 3u)
+      return H2_FM175XX_ERR_UNAVAILABLE;
+    if (offset == size) return H2_FM175XX_ERR_PROTOCOL;
+    size_t length = raw[offset++];
+    if (type != 3u && length != 3u) return H2_FM175XX_ERR_PROTOCOL;
+    if (length == 255u) {
+      if (size - offset < 2u) return H2_FM175XX_ERR_PROTOCOL;
+      length = ((size_t)raw[offset] << 8u) | raw[offset + 1u];
+      offset += 2u;
+    }
+    if (length > size - offset) return H2_FM175XX_ERR_PROTOCOL;
+    if (ntag_pages_protected(layout, start, offset + length))
+      return H2_FM175XX_ERR_UNAVAILABLE;
+    if (type == 3u) {
+      layout->ndef_offset = start;
+      layout->previous_end = offset + length;
+      return H2_FM175XX_OK;
+    }
+    if (diagnostics != NULL)
+      memcpy(diagnostics->control_tlv, raw + start,
+             sizeof(diagnostics->control_tlv));
+    int rc = ntag_control_tlv(reader, raw, size, type, offset, layout);
+    if (rc != H2_FM175XX_OK) return rc;
+    if (diagnostics != NULL) ++diagnostics->control_tlvs;
+    offset += length;
+    layout->ndef_offset = offset;
+    layout->previous_end = offset;
+  }
+  return H2_FM175XX_OK;
+}
+
+int h2_fm175xx_ntag_write_ndef_diagnostic(
+    h2_fm175xx_t* reader, const uint8_t* data, size_t length,
+    h2_fm175xx_write_diagnostics_t* diagnostics) {
+  if (diagnostics != NULL) memset(diagnostics, 0, sizeof(*diagnostics));
   if (reader == NULL || data == NULL || length == 0u || length > 1003u)
     return H2_FM175XX_ERR_INVALID_ARG;
   uint8_t raw[1024];
   size_t size = 0u;
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_READ_TAG;
   int rc = h2_fm175xx_ntag_read_all(reader, raw, sizeof(raw), &size);
   if (rc != H2_FM175XX_OK) return rc;
-  if (size < 20u || raw[12] != 0xe1u || (raw[13] >> 4u) != 1u ||
-      raw[15] != 0u || raw[10] != 0u || raw[11] != 0u ||
-      (raw[16] != 3u && raw[16] != 0u && raw[16] != 0xfeu))
-    return H2_FM175XX_ERR_UNAVAILABLE;
-  size_t previous_end = 16u;
-  if (raw[16] == 3u) {
-    size_t old_length = raw[17], old_header = 2u;
-    if (old_length == 255u) {
-      old_length = ((size_t)raw[18] << 8u) | raw[19];
-      old_header = 4u;
-    }
-    if (old_header + old_length > size - 16u) return H2_FM175XX_ERR_PROTOCOL;
-    previous_end += old_header + old_length;
+  if (diagnostics != NULL) {
+    diagnostics->tag_capacity = size;
+    diagnostics->metadata_valid = 1u;
+    memcpy(diagnostics->cc, raw + 12u, sizeof(diagnostics->cc));
+    memcpy(diagnostics->static_locks, raw + 10u,
+           sizeof(diagnostics->static_locks));
+    if (size > 16u) diagnostics->first_tlv = raw[16];
+    diagnostics->phase = H2_FM175XX_WRITE_CC;
   }
+  if (size < 20u || raw[12] != 0xe1u || (raw[13] >> 4u) != 1u || raw[15] != 0u)
+    return H2_FM175XX_ERR_UNAVAILABLE;
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_LOCKS;
+  if (raw[10] != 0u || raw[11] != 0u) return H2_FM175XX_ERR_UNAVAILABLE;
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_LAYOUT;
+  ntag_write_layout_t layout;
+  rc = ntag_find_write_layout(reader, raw, size, &layout, diagnostics);
+  if (rc != H2_FM175XX_OK) return rc;
+  size_t start = layout.ndef_offset;
+  if (diagnostics != NULL) diagnostics->ndef_offset = start;
   /* Do not overwrite other data/control TLVs after an existing message. */
-  for (size_t i = previous_end; i < size; ++i) {
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_TRAILING_TLV;
+  for (size_t i = layout.previous_end; i < size; ++i) {
     if (raw[i] == 0xfeu) break;
     if (raw[i] != 0u) return H2_FM175XX_ERR_UNAVAILABLE;
   }
   size_t header = length < 255u ? 2u : 4u;
-  if (size < 20u || header + length + 1u > size - 16u)
-    return H2_FM175XX_ERR_NO_MEMORY;
-  size_t span = (header + length + 1u + 3u) & ~(size_t)3u;
-  if (span > size - 16u) return H2_FM175XX_ERR_NO_MEMORY;
-  /* Empty NDEF followed by the terminator is the safe interrupted state. */
-  const uint8_t empty[4] = {3u, 0u, 0xfeu, 0u};
-  rc = ntag_write_page(reader, 4u, empty);
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_CAPACITY;
+  if (header + length + 1u > size - start) return H2_FM175XX_ERR_NO_MEMORY;
+  size_t end = start + header + length + 1u;
+  size_t page_end = (end + 3u) & ~(size_t)3u;
+  if (page_end > size) return H2_FM175XX_ERR_NO_MEMORY;
+  if (ntag_pages_protected(&layout, start, end))
+    return H2_FM175XX_ERR_UNAVAILABLE;
+  size_t length_offset = start + 1u;
+  size_t length_page = length_offset & ~(size_t)3u;
+  uint8_t empty[4];
+  memcpy(empty, raw + length_page, sizeof(empty));
+  empty[length_offset - length_page] = 0u;
+  if (start >= length_page) empty[start - length_page] = 3u;
+  if (start + 2u < length_page + 4u) empty[start + 2u - length_page] = 0xfeu;
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_INVALIDATE;
+  rc = write_ndef_page(reader, (uint8_t)(length_page / 4u), empty, diagnostics);
   if (rc != H2_FM175XX_OK) return rc;
-  memset(raw + 16u, 0, span);
-  raw[16] = 3u;
-  raw[17] = length < 255u ? (uint8_t)length : 255u;
+  raw[start] = 3u;
+  raw[start + 1u] = length < 255u ? (uint8_t)length : 255u;
   if (header == 4u) {
-    raw[18] = (uint8_t)(length >> 8u);
-    raw[19] = (uint8_t)length;
+    raw[start + 2u] = (uint8_t)(length >> 8u);
+    raw[start + 3u] = (uint8_t)length;
   }
-  memcpy(raw + 16u + header, data, length);
-  raw[16u + header + length] = 0xfeu;
-  for (size_t offset = 20u; rc == H2_FM175XX_OK && offset < 16u + span;
-       offset += 4u)
-    rc = ntag_write_page(reader, (uint8_t)(offset / 4u), raw + offset);
-  if (rc == H2_FM175XX_OK) rc = ntag_write_page(reader, 4u, raw + 16u);
+  memcpy(raw + start + header, data, length);
+  raw[end - 1u] = 0xfeu;
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_PAYLOAD;
+  for (size_t offset = start & ~(size_t)3u;
+       rc == H2_FM175XX_OK && offset < page_end; offset += 4u) {
+    if (offset == length_page) continue;
+    rc = write_ndef_page(reader, (uint8_t)(offset / 4u), raw + offset,
+                         diagnostics);
+  }
+  if (rc == H2_FM175XX_OK) {
+    if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_PUBLISH;
+    rc = write_ndef_page(reader, (uint8_t)(length_page / 4u), raw + length_page,
+                         diagnostics);
+  }
   if (rc != H2_FM175XX_OK) return rc;
   size_t verified = 0u;
+  if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_VERIFY;
   rc = h2_fm175xx_ntag_read_ndef(reader, raw, sizeof(raw), &verified);
   if (rc == H2_FM175XX_OK &&
       (verified != length || memcmp(raw, data, length) != 0))
     rc = H2_FM175XX_ERR_PROTOCOL;
+  if (rc == H2_FM175XX_OK && diagnostics != NULL)
+    diagnostics->phase = H2_FM175XX_WRITE_COMPLETE;
   return rc;
 }

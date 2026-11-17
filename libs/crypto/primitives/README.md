@@ -1,0 +1,11 @@
+# Provider-backed cryptographic primitives
+
+This package owns generic cryptographic operations composed over caller-injected Crypto PAL. Existing SM3 and SHA-256 implementations remain in their respective packages. Random generation, MD5, HMAC-SHA1, AES-CBC, DES/EDE2/EDE3 CBC, P-256, legacy secp192k1/SHA-1 and SM2 curve operations reuse the selected provider; this package neither selects a concrete provider nor duplicates those algorithms.
+
+[h2_crypto.h](include/h2_crypto.h) adds complete SEC1 P-256 point validation, provider-backed ECDSA-P256/SHA-256 signing/verification, canonical DER signature encoding, AES-CBC/PKCS#7 padding, RFC 4226 HOTP and an owned keyset for the legacy MD5/lowercase-hex AES key/IV derivation. It also owns repeating/reversed XOR masks, byte comparison without data-dependent early return and the noncryptographic wrapping multiply-by-31 compatibility hash. Protocol-specific key material, identity composition, wire encoding and payer-code formatting stay with the protocol owner. Ciphertext authentication remains the caller's protocol responsibility.
+
+SM2 identity binding uses the existing `libs/crypto/sm3` implementation for `SM3(Z || message)` and PAL for key derivation, signing and verification. The provider receives an already composed digest and supplies fresh production nonces. No second SM3 implementation is compiled into the SM2 provider. Generic DER encoding accepts fixed-width ECDSA signatures with scalar sizes up to 32 bytes; protocol owners choose their actual wire representation.
+
+The ISO/IEC 9797-1 algorithm 3 retail MAC uses padding method 2, a zero initial chaining value and the injected DES/EDE2 operations. It returns all eight MAC bytes without allocation; protocol-specific truncation and packet layout remain caller-owned.
+
+Run `:crypto_test` for RFC 4226 vectors, PKCS#7 length/padding boundaries, output guard bytes, allocator/provider failures, P-256 coordinate validation, secp192k1 signatures and SM2 identity/message binding. Fixed nonce vectors are verified independently, and ordinary production signing is also exercised with its real RNG. The test selects wolfCrypt through a test-only provider facade; production callers inject their own provider.

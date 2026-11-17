@@ -21,12 +21,13 @@ typedef struct fixture {
   size_t tx_len;
   size_t rx_len;
   card_state_t card;
-  uint8_t memory[160];
+  uint8_t memory[1024];
   unsigned halts;
   unsigned wakes;
   unsigned reads;
   unsigned writes;
   unsigned reject_write;
+  unsigned discard_write;
   int fail_register;
   uint8_t silence_irq;
   uint8_t silence_error;
@@ -56,7 +57,23 @@ typedef struct fixture {
   int corrupt_sak_crc;
   int short_sak_bits;
   int fail_post_idle;
+  int read_crc_bytes;
+  int corrupt_read_crc;
+  uint8_t last_readable_page;
+  unsigned rejected_reads;
+  uint8_t read_error, read_error_page;
 } fixture_t;
+
+static uint16_t reply_crc(const uint8_t* bytes, size_t length) {
+  uint16_t crc = 0x6363u;
+  for (size_t index = 0u; index < length; ++index) {
+    uint8_t value = (uint8_t)(bytes[index] ^ (uint8_t)crc);
+    value ^= (uint8_t)(value << 4u);
+    crc = (uint16_t)((crc >> 8u) ^ ((uint16_t)value << 8u) ^
+                     ((uint16_t)value << 3u) ^ (value >> 4u));
+  }
+  return crc;
+}
 
 static void exchange(fixture_t* f) {
   f->registers[H2_FM175XX_REG_COMIRQ] = f->silence_irq ? f->silence_irq : 1u;
@@ -120,12 +137,31 @@ static void exchange(fixture_t* f) {
     memcpy(f->rx, f->memory + offset, 16u);
     f->rx_len = 16u;
     ++f->reads;
+    if (f->read_error != 0u && f->tx[1] == f->read_error_page) {
+      f->registers[H2_FM175XX_REG_ERROR] = f->read_error;
+      f->rx_len = 0u;
+      f->registers[H2_FM175XX_REG_COMIRQ] = 0x22u;
+      return;
+    } else if (f->last_readable_page != 0u &&
+               f->tx[1] > f->last_readable_page) {
+      f->rx[0] = 0u;
+      f->rx_len = 1u;
+      f->rx_last_bits = 4u;
+      ++f->rejected_reads;
+    } else if (f->read_crc_bytes) {
+      uint16_t crc = reply_crc(f->rx, 16u);
+      f->rx[16] = (uint8_t)crc;
+      f->rx[17] = (uint8_t)(crc >> 8u);
+      f->rx_len = 18u;
+      if (f->corrupt_read_crc) f->rx[17] ^= 1u;
+    }
   } else if (f->tx_len == 6u && f->tx[0] == 0xa2u && f->card == ACTIVE) {
     const size_t offset = (size_t)f->tx[1] * 4u;
     assert(offset >= 16u && offset + 4u <= sizeof(f->memory));
     ++f->writes;
     bool accepted = f->writes != f->reject_write;
-    if (accepted) memcpy(f->memory + offset, f->tx + 2u, 4u);
+    if (accepted && f->writes != f->discard_write)
+      memcpy(f->memory + offset, f->tx + 2u, 4u);
     f->rx[0] = accepted ? 0x0au : 0u;
     f->rx_len = 1u;
     f->rx_last_bits = 4u;
@@ -211,6 +247,7 @@ static void deliver_pending(fixture_t* f) {
 
 static int read_register(void* user, uint8_t reg, uint8_t* out) {
   fixture_t* f = user;
+  if (f->fail_register) return H2_FM175XX_ERR_IO;
   *out = reg == H2_FM175XX_REG_FIFO_LEVEL ? (uint8_t)(f->rx_len + f->tx_len)
                                           : f->registers[reg];
   if (reg == H2_FM175XX_REG_CONTROL)
@@ -264,7 +301,527 @@ static void sleep_ms(void* user, uint32_t ms) {
   }
 }
 
+static void prepare_ndef_reader(fixture_t* fixture, h2_fm175xx_t* reader) {
+  *fixture = (fixture_t){.card = IDLE};
+  fixture->memory[12] = 0xe1u;
+  fixture->memory[13] = 0x10u;
+  fixture->memory[14] = 18u;
+  fixture->memory[16] = 3u;
+  fixture->memory[17] = 6u;
+  const uint8_t message[] = {0xd1u, 1u, 2u, 'U', 4u, 'x'};
+  memcpy(fixture->memory + 18u, message, sizeof(message));
+  fixture->memory[24] = 0xfeu;
+  const h2_fm175xx_transport_t transport = {
+      .user = fixture,
+      .write_reg = write_register,
+      .write_regs = write_registers,
+      .read_reg = read_register,
+      .read_regs = read_registers,
+      .sleep_ms = sleep_ms,
+  };
+  assert(h2_fm175xx_init(reader, &transport) == H2_FM175XX_OK);
+  assert(h2_fm175xx_open_type_a(reader) == H2_FM175XX_OK);
+  h2_fm175xx_type_a_card_t card;
+  assert(h2_fm175xx_type_a_activate(reader, &card) == H2_FM175XX_OK);
+}
+
+static void test_read_retained_crc(void) {
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.read_crc_bytes = 1;
+  uint8_t pages[sizeof(fixture.memory)];
+  size_t length = 0u;
+  assert(h2_fm175xx_ntag_read_all(&reader, pages, sizeof(pages), &length) ==
+         H2_FM175XX_OK);
+  assert(length == 160u);
+  assert(memcmp(pages, fixture.memory, length) == 0);
+  fixture.corrupt_read_crc = 1;
+  assert(h2_fm175xx_ntag_read_all(&reader, pages, sizeof(pages), &length) ==
+         H2_FM175XX_ERR_PROTOCOL);
+}
+
+static void test_ndef_public_region(void) {
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.last_readable_page = 4u;
+  uint8_t message[32];
+  size_t length = 0u;
+  assert(h2_fm175xx_ntag_read_ndef(&reader, message, sizeof(message),
+                                   &length) == H2_FM175XX_OK);
+  assert(length == 6u && memcmp(message, fixture.memory + 18u, length) == 0);
+  assert(fixture.reads == 2u && fixture.rejected_reads == 0u);
+  assert(fixture.writes == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.last_readable_page = 4u;
+  fixture.read_crc_bytes = 1;
+  h2_fm175xx_read_diagnostics_t diagnostics;
+  assert(h2_fm175xx_ntag_read_ndef_diagnostic(&reader, message, sizeof(message),
+                                              &length,
+                                              &diagnostics) == H2_FM175XX_OK);
+  assert(length == 6u && fixture.reads == 2u);
+  assert(diagnostics.read_count == 2u &&
+         diagnostics.retained_crc_frames == 2u &&
+         diagnostics.last_reply_bits == 144u && diagnostics.last_page == 4u &&
+         diagnostics.last_result == H2_FM175XX_OK);
+  fixture.corrupt_read_crc = 1;
+  assert(h2_fm175xx_ntag_read_ndef_diagnostic(&reader, message, sizeof(message),
+                                              &length, &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(length == 0u && diagnostics.read_count == 1u &&
+         diagnostics.last_result == H2_FM175XX_ERR_PROTOCOL);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.last_readable_page = 4u;
+  memset(message, 0xa5, sizeof(message));
+  assert(h2_fm175xx_ntag_read_ndef(&reader, message, 5u, &length) ==
+         H2_FM175XX_ERR_NO_MEMORY);
+  assert(length == 0u && message[0] == 0xa5u);
+  assert(fixture.reads == 2u && fixture.rejected_reads == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.memory[17] = 145u;
+  assert(h2_fm175xx_ntag_read_ndef(&reader, message, sizeof(message),
+                                   &length) == H2_FM175XX_ERR_PROTOCOL);
+  assert(length == 0u && fixture.reads == 2u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  const uint8_t expected[] = {0xd1u, 1u, 2u, 'U', 4u, 'x'};
+  memset(fixture.memory + 16u, 0, sizeof(fixture.memory) - 16u);
+  fixture.memory[16] = 0xfdu;
+  fixture.memory[17] = 13u;
+  fixture.memory[31] = 3u;
+  fixture.memory[32] = sizeof(expected);
+  memcpy(fixture.memory + 33u, expected, sizeof(expected));
+  fixture.memory[39] = 0xfeu;
+  fixture.last_readable_page = 8u;
+  assert(h2_fm175xx_ntag_read_ndef(&reader, message, sizeof(message),
+                                   &length) == H2_FM175XX_OK);
+  assert(length == sizeof(expected) &&
+         memcmp(message, expected, sizeof(expected)) == 0);
+  assert(fixture.reads == 3u && fixture.rejected_reads == 0u);
+  fixture.memory[32] = 255u;
+  fixture.memory[33] = 1u;
+  fixture.memory[34] = 0u;
+  assert(h2_fm175xx_ntag_read_ndef(&reader, message, sizeof(message),
+                                   &length) == H2_FM175XX_ERR_PROTOCOL);
+  assert(length == 0u && fixture.rejected_reads == 0u);
+}
+
+static void test_ndef_receive_capacity(void) {
+  const size_t lengths[] = {300u, 512u, 513u};
+  for (size_t index = 0u; index < sizeof(lengths) / sizeof(lengths[0]);
+       ++index) {
+    fixture_t fixture;
+    h2_fm175xx_t reader;
+    prepare_ndef_reader(&fixture, &reader);
+    fixture.memory[14] = 126u;
+    size_t message_length = lengths[index];
+    size_t payload_length = message_length - 7u;
+    uint8_t expected[513];
+    memset(expected, 'x', sizeof(expected));
+    expected[0] = 0xc1u;
+    expected[1] = 1u;
+    expected[2] = 0u;
+    expected[3] = 0u;
+    expected[4] = (uint8_t)(payload_length >> 8u);
+    expected[5] = (uint8_t)payload_length;
+    expected[6] = 'U';
+    expected[7] = 4u;
+    fixture.memory[17] = 255u;
+    fixture.memory[18] = (uint8_t)(message_length >> 8u);
+    fixture.memory[19] = (uint8_t)message_length;
+    memcpy(fixture.memory + 20u, expected, message_length);
+    fixture.memory[20u + message_length] = 0xfeu;
+    uint8_t output[512];
+    memset(output, 0xa5, sizeof(output));
+    size_t length = 0u;
+    h2_fm175xx_read_diagnostics_t diagnostics;
+    assert(h2_fm175xx_ntag_read_ndef_diagnostic(&reader, output, 256u, &length,
+                                                &diagnostics) ==
+           H2_FM175XX_ERR_NO_MEMORY);
+    assert(length == 0u && diagnostics.required_capacity == message_length &&
+           diagnostics.read_count == 2u && diagnostics.last_result == 0);
+    int result = h2_fm175xx_ntag_read_ndef_diagnostic(
+        &reader, output, sizeof(output), &length, &diagnostics);
+    assert(diagnostics.required_capacity == message_length);
+    if (message_length > sizeof(output)) {
+      assert(result == H2_FM175XX_ERR_NO_MEMORY && length == 0u &&
+             diagnostics.read_count == 2u);
+      for (size_t byte = 0u; byte < sizeof(output); ++byte)
+        assert(output[byte] == 0xa5u);
+    } else {
+      assert(result == H2_FM175XX_OK && length == message_length &&
+             memcmp(output, expected, message_length) == 0);
+      size_t reads = (20u + message_length + 15u) / 16u;
+      assert(diagnostics.read_count == reads &&
+             diagnostics.last_page == (reads - 1u) * 4u);
+    }
+    assert(fixture.writes == 0u);
+  }
+}
+
+static void test_read_error_snapshot(void) {
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.read_error = 4u;
+  fixture.read_error_page = 4u;
+  uint8_t output[32];
+  memset(output, 0xa5, sizeof(output));
+  size_t length = 0u;
+  h2_fm175xx_read_diagnostics_t diagnostics;
+  assert(h2_fm175xx_ntag_read_ndef_diagnostic(&reader, output, sizeof(output),
+                                              &length, &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(length == 0u && diagnostics.read_count == 2u &&
+         diagnostics.last_page == 4u && diagnostics.last_reply_bits == 0u &&
+         diagnostics.last_result == H2_FM175XX_ERR_PROTOCOL &&
+         diagnostics.status_result == H2_FM175XX_OK &&
+         diagnostics.last_error == 4u && diagnostics.last_fifo == 0u);
+  assert(fixture.writes == 0u);
+  for (size_t index = 0u; index < sizeof(output); ++index)
+    assert(output[index] == 0xa5u);
+}
+
+static void test_activation_diagnostics(void) {
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  h2_fm175xx_type_a_card_t card;
+  h2_fm175xx_activation_diagnostics_t diagnostics;
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.unexpected_halt_reply = 1;
+  assert(h2_fm175xx_type_a_activate_diagnostic(&reader, &card, &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(diagnostics.phase == H2_FM175XX_ACTIVATION_HALT &&
+         diagnostics.command == 0x50u && diagnostics.reply_bits == 8u &&
+         diagnostics.cascade_level == 0u &&
+         diagnostics.status_result == H2_FM175XX_OK);
+  assert(card.uid_len == 0u && fixture.reads == 0u && fixture.writes == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.short_atqa = 1;
+  assert(h2_fm175xx_type_a_activate_diagnostic(&reader, &card, &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(diagnostics.phase == H2_FM175XX_ACTIVATION_REQUEST &&
+         diagnostics.command == 0x52u && diagnostics.reply_bits == 8u &&
+         diagnostics.status_result == H2_FM175XX_OK);
+  assert(card.uid_len == 0u && fixture.reads == 0u && fixture.writes == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.short_sak_bits = 4;
+  assert(h2_fm175xx_type_a_activate_diagnostic(&reader, &card, &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(diagnostics.phase == H2_FM175XX_ACTIVATION_SELECT &&
+         diagnostics.command == 0x93u && diagnostics.reply_bits == 4u &&
+         diagnostics.cascade_level == 1u &&
+         diagnostics.status_result == H2_FM175XX_OK);
+  assert(card.uid_len == 0u && fixture.reads == 0u && fixture.writes == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.card = ABSENT;
+  assert(h2_fm175xx_type_a_activate_diagnostic(&reader, &card, &diagnostics) ==
+         H2_FM175XX_ERR_TIMEOUT);
+  assert(diagnostics.phase == H2_FM175XX_ACTIVATION_REQUEST &&
+         diagnostics.command == 0x52u && diagnostics.reply_bits == 0u &&
+         diagnostics.status_result == H2_FM175XX_OK);
+  assert(card.uid_len == 0u && fixture.reads == 0u && fixture.writes == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.fail_register = 1;
+  assert(h2_fm175xx_type_a_activate_diagnostic(&reader, &card, &diagnostics) ==
+         H2_FM175XX_ERR_IO);
+  assert(diagnostics.phase == H2_FM175XX_ACTIVATION_FIELD &&
+         diagnostics.command == 0u && diagnostics.reply_bits == 0u &&
+         diagnostics.status_result == H2_FM175XX_ERR_IO);
+  assert(card.uid_len == 0u && fixture.reads == 0u && fixture.writes == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.sak_crc_bytes = 1;
+  assert(h2_fm175xx_type_a_activate_diagnostic(&reader, &card, &diagnostics) ==
+         H2_FM175XX_OK);
+  assert(diagnostics.phase == H2_FM175XX_ACTIVATION_COMPLETE &&
+         diagnostics.command == 0x95u && diagnostics.reply_bits == 24u &&
+         diagnostics.cascade_level == 2u &&
+         diagnostics.status_result == H2_FM175XX_ERR_UNAVAILABLE);
+  assert(card.uid_len == 10u && fixture.reads == 0u && fixture.writes == 0u);
+  assert(h2_fm175xx_type_a_activate_diagnostic(&reader, &card, NULL) ==
+         H2_FM175XX_OK);
+  assert(h2_fm175xx_type_a_activate_diagnostic(NULL, &card, &diagnostics) ==
+         H2_FM175XX_ERR_INVALID_ARG);
+  assert(diagnostics.phase == H2_FM175XX_ACTIVATION_FIELD &&
+         diagnostics.command == 0u && diagnostics.reply_bits == 0u &&
+         diagnostics.status_result == H2_FM175XX_ERR_UNAVAILABLE);
+}
+
+static void test_write_diagnostics(void) {
+  const uint8_t message[] = {0xd1u, 1u, 2u, 'U', 4u, 'y'};
+  const struct {
+    size_t offset;
+    uint8_t value;
+    h2_fm175xx_write_phase_t phase;
+  } denied[] = {
+      {12u, 0u, H2_FM175XX_WRITE_CC},
+      {13u, 0x20u, H2_FM175XX_WRITE_CC},
+      {15u, 0x0fu, H2_FM175XX_WRITE_CC},
+      {10u, 1u, H2_FM175XX_WRITE_LOCKS},
+      {11u, 1u, H2_FM175XX_WRITE_LOCKS},
+      {16u, 0xfdu, H2_FM175XX_WRITE_LAYOUT},
+      {24u, 0xfdu, H2_FM175XX_WRITE_TRAILING_TLV},
+  };
+  for (size_t index = 0u; index < sizeof(denied) / sizeof(denied[0]); ++index) {
+    fixture_t fixture;
+    h2_fm175xx_t reader;
+    prepare_ndef_reader(&fixture, &reader);
+    fixture.memory[denied[index].offset] = denied[index].value;
+    uint8_t original[sizeof(fixture.memory)];
+    memcpy(original, fixture.memory, sizeof(original));
+    h2_fm175xx_write_diagnostics_t diagnostics;
+    assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+               &reader, message, sizeof(message), &diagnostics) ==
+           H2_FM175XX_ERR_UNAVAILABLE);
+    assert(diagnostics.phase == denied[index].phase &&
+           diagnostics.metadata_valid == 1u &&
+           diagnostics.tag_capacity == 160u && diagnostics.write_calls == 0u &&
+           fixture.writes == 0u);
+    assert(memcmp(diagnostics.cc, fixture.memory + 12u, 4u) == 0);
+    assert(memcmp(diagnostics.static_locks, fixture.memory + 10u, 2u) == 0);
+    assert(memcmp(original, fixture.memory, sizeof(original)) == 0);
+  }
+
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  h2_fm175xx_write_diagnostics_t diagnostics;
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.memory[14] = 255u;
+  assert(h2_fm175xx_ntag_write_ndef_diagnostic(&reader, message,
+                                               sizeof(message), &diagnostics) ==
+         H2_FM175XX_ERR_UNAVAILABLE);
+  assert(diagnostics.phase == H2_FM175XX_WRITE_READ_TAG &&
+         diagnostics.metadata_valid == 0u && diagnostics.write_calls == 0u &&
+         fixture.writes == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  uint8_t oversized[150] = {0};
+  assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+             &reader, oversized, sizeof(oversized), &diagnostics) ==
+         H2_FM175XX_ERR_NO_MEMORY);
+  assert(diagnostics.phase == H2_FM175XX_WRITE_CAPACITY &&
+         diagnostics.write_calls == 0u && fixture.writes == 0u);
+
+  const h2_fm175xx_write_phase_t rejected[] = {
+      H2_FM175XX_WRITE_INVALIDATE, H2_FM175XX_WRITE_PAYLOAD,
+      H2_FM175XX_WRITE_PAYLOAD, H2_FM175XX_WRITE_PUBLISH};
+  for (size_t index = 0u; index < sizeof(rejected) / sizeof(rejected[0]);
+       ++index) {
+    prepare_ndef_reader(&fixture, &reader);
+    fixture.reject_write = (unsigned)(index + 1u);
+    assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+               &reader, message, sizeof(message), &diagnostics) ==
+           H2_FM175XX_ERR_PROTOCOL);
+    assert(diagnostics.phase == rejected[index] &&
+           diagnostics.write_calls == index + 1u &&
+           fixture.writes == index + 1u);
+  }
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.discard_write = 4u;
+  assert(h2_fm175xx_ntag_write_ndef_diagnostic(&reader, message,
+                                               sizeof(message), &diagnostics) ==
+         H2_FM175XX_ERR_UNAVAILABLE);
+  assert(diagnostics.phase == H2_FM175XX_WRITE_VERIFY &&
+         diagnostics.write_calls == 4u && fixture.writes == 4u &&
+         fixture.memory[17] == 0u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.discard_write = 2u;
+  assert(h2_fm175xx_ntag_write_ndef_diagnostic(&reader, message,
+                                               sizeof(message), &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(diagnostics.phase == H2_FM175XX_WRITE_VERIFY &&
+         diagnostics.write_calls == 4u && fixture.writes == 4u);
+
+  prepare_ndef_reader(&fixture, &reader);
+  assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+             &reader, message, sizeof(message), &diagnostics) == H2_FM175XX_OK);
+  assert(diagnostics.phase == H2_FM175XX_WRITE_COMPLETE &&
+         diagnostics.write_calls == 4u && fixture.writes == 4u &&
+         diagnostics.last_page == 4u);
+  uint8_t output[32];
+  size_t length = 0u;
+  assert(h2_fm175xx_ntag_read_ndef(&reader, output, sizeof(output), &length) ==
+         H2_FM175XX_OK);
+  assert(length == sizeof(message) && memcmp(output, message, length) == 0);
+  assert(h2_fm175xx_ntag_write_ndef_diagnostic(NULL, message, sizeof(message),
+                                               &diagnostics) ==
+         H2_FM175XX_ERR_INVALID_ARG);
+  assert(diagnostics.phase == H2_FM175XX_WRITE_ARGUMENT &&
+         diagnostics.metadata_valid == 0u && diagnostics.write_calls == 0u);
+}
+
+static void prepare_control_ndef(fixture_t* fixture, h2_fm175xx_t* reader,
+                                 size_t ndef_offset) {
+  prepare_ndef_reader(fixture, reader);
+  memset(fixture->memory + 16u, 0, sizeof(fixture->memory) - 16u);
+  fixture->memory[14] = 0x33u;
+  const uint8_t control[] = {1u, 3u, 0xd8u, 45u, 0x35u};
+  memcpy(fixture->memory + 16u, control, sizeof(control));
+  fixture->memory[ndef_offset] = 3u;
+  fixture->memory[ndef_offset + 1u] = 255u;
+  fixture->memory[ndef_offset + 2u] = 1u;
+  fixture->memory[ndef_offset + 3u] = 36u;
+  memset(fixture->memory + ndef_offset + 4u, 'x', 292u);
+  fixture->memory[ndef_offset + 296u] = 0xfeu;
+}
+
+static void test_write_control_prefix(void) {
+  const size_t offsets[] = {21u, 22u, 23u, 24u, 25u, 26u, 27u, 28u};
+  const size_t lengths[] = {1u, 46u, 254u, 255u, 292u, 370u};
+  for (size_t offset_index = 0u;
+       offset_index < sizeof(offsets) / sizeof(offsets[0]); ++offset_index) {
+    for (size_t length_index = 0u;
+         length_index < sizeof(lengths) / sizeof(lengths[0]); ++length_index) {
+      fixture_t fixture;
+      h2_fm175xx_t reader;
+      size_t offset = offsets[offset_index], length = lengths[length_index];
+      prepare_control_ndef(&fixture, &reader, offset);
+      uint8_t original[sizeof(fixture.memory)];
+      memcpy(original, fixture.memory, sizeof(original));
+      uint8_t message[370], output[370];
+      memset(message, 'y', sizeof(message));
+      h2_fm175xx_write_diagnostics_t diagnostics;
+      assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+                 &reader, message, length, &diagnostics) == H2_FM175XX_OK);
+      assert(diagnostics.phase == H2_FM175XX_WRITE_COMPLETE &&
+             diagnostics.write_calls == fixture.writes);
+      assert(diagnostics.ndef_offset == offset &&
+             diagnostics.control_tlvs == 1u);
+      assert(memcmp(diagnostics.control_tlv, original + 16u, 5u) == 0);
+      assert(memcmp(original, fixture.memory, offset) == 0);
+      size_t end = offset + (length < 255u ? 2u : 4u) + length + 1u;
+      assert(memcmp(original + end, fixture.memory + end,
+                    sizeof(original) - end) == 0);
+      size_t received = 0u;
+      assert(h2_fm175xx_ntag_read_ndef(&reader, output, sizeof(output),
+                                       &received) == H2_FM175XX_OK);
+      assert(received == length && memcmp(output, message, length) == 0);
+    }
+  }
+
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  prepare_control_ndef(&fixture, &reader, 26u);
+  const uint8_t reserved[] = {2u, 3u, 0xc8u, 8u, 5u};
+  memcpy(fixture.memory + 21u, reserved, sizeof(reserved));
+  memset(fixture.memory + 392u, 0xa5, 8u);
+  uint8_t original[sizeof(fixture.memory)];
+  memcpy(original, fixture.memory, sizeof(original));
+  uint8_t message[46] = {0xd1u};
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+         H2_FM175XX_OK);
+  assert(memcmp(original, fixture.memory, 26u) == 0);
+  assert(memcmp(original + 392u, fixture.memory + 392u,
+                sizeof(original) - 392u) == 0);
+}
+
+static void test_write_control_rejections(void) {
+  const uint8_t message[46] = {0xd1u};
+  const struct {
+    size_t offset;
+    uint8_t value;
+    int result;
+  } rejected[] = {
+      {17u, 2u, H2_FM175XX_ERR_PROTOCOL},
+      {17u, 255u, H2_FM175XX_ERR_PROTOCOL},
+      {18u, 0u, H2_FM175XX_ERR_PROTOCOL},
+      {20u, 0x3fu, H2_FM175XX_ERR_UNAVAILABLE},
+      {18u, 0x01u, H2_FM175XX_ERR_PROTOCOL},
+      {424u, 1u, H2_FM175XX_ERR_UNAVAILABLE},
+      {429u, 0x10u, H2_FM175XX_ERR_UNAVAILABLE},
+  };
+  for (size_t index = 0u; index < sizeof(rejected) / sizeof(rejected[0]);
+       ++index) {
+    fixture_t fixture;
+    h2_fm175xx_t reader;
+    prepare_control_ndef(&fixture, &reader, 21u);
+    fixture.memory[rejected[index].offset] = rejected[index].value;
+    uint8_t original[sizeof(fixture.memory)];
+    memcpy(original, fixture.memory, sizeof(original));
+    h2_fm175xx_write_diagnostics_t diagnostics;
+    assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+               &reader, message, sizeof(message), &diagnostics) ==
+           rejected[index].result);
+    assert(fixture.writes == 0u && diagnostics.write_calls == 0u);
+    assert(memcmp(original, fixture.memory, sizeof(original)) == 0);
+  }
+
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  prepare_control_ndef(&fixture, &reader, 26u);
+  const uint8_t overlap[] = {2u, 3u, 0x60u, 4u, 2u};
+  memcpy(fixture.memory + 21u, overlap, sizeof(overlap));
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(fixture.writes == 0u);
+
+  prepare_control_ndef(&fixture, &reader, 26u);
+  const uint8_t reserved[] = {2u, 3u, 0xf0u, 4u, 2u};
+  memcpy(fixture.memory + 21u, reserved, sizeof(reserved));
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+         H2_FM175XX_ERR_UNAVAILABLE);
+  assert(fixture.writes == 0u);
+
+  prepare_control_ndef(&fixture, &reader, 21u);
+  fixture.read_error = 4u;
+  fixture.read_error_page = 104u;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(fixture.writes == 0u);
+
+  prepare_control_ndef(&fixture, &reader, 21u);
+  fixture.memory[21] = 0xfdu;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+         H2_FM175XX_ERR_UNAVAILABLE);
+  assert(fixture.writes == 0u);
+}
+
+static void test_write_control_interruption(void) {
+  uint8_t message[292];
+  memset(message, 'y', sizeof(message));
+  for (size_t offset = 21u; offset < 25u; ++offset) {
+    fixture_t fixture;
+    h2_fm175xx_t reader;
+    prepare_control_ndef(&fixture, &reader, offset);
+    assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+           H2_FM175XX_OK);
+    unsigned calls = fixture.writes;
+    for (unsigned rejected = 1u; rejected <= calls; ++rejected) {
+      prepare_control_ndef(&fixture, &reader, offset);
+      uint8_t original[28];
+      memcpy(original, fixture.memory, offset);
+      fixture.reject_write = rejected;
+      assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) ==
+             H2_FM175XX_ERR_PROTOCOL);
+      assert(fixture.writes == rejected);
+      assert(memcmp(original, fixture.memory, offset) == 0);
+      if (rejected > 1u) assert(fixture.memory[offset + 1u] == 0u);
+    }
+  }
+}
+
 int main(void) {
+  test_write_control_prefix();
+  test_write_control_rejections();
+  test_write_control_interruption();
+  test_write_diagnostics();
+  test_activation_diagnostics();
+  test_read_error_snapshot();
+  test_read_retained_crc();
+  test_ndef_public_region();
+  test_ndef_receive_capacity();
   fixture_t f = {.card = IDLE};
   f.memory[12] = 0xe1u;
   f.memory[13] = 0x10u;
@@ -294,7 +851,7 @@ int main(void) {
   size_t len = 0u;
   assert(h2_fm175xx_ntag_read_all(&reader, pages, sizeof(pages), &len) ==
          H2_FM175XX_OK);
-  assert(len == sizeof(f.memory) && memcmp(pages, f.memory, len) == 0);
+  assert(len == 160u && memcmp(pages, f.memory, len) == 0);
   assert(f.reads == 10u);
   /* NDEF readback excludes tag headers. Writes invalidate length first,
    * preserve manufacturer/lock pages, then publish and verify the message. */
@@ -323,6 +880,17 @@ int main(void) {
   assert(f.memory[16] == 3u && f.memory[17] == 0u);
   f.reject_write = 0u;
   assert(h2_fm175xx_ntag_write_ndef(&reader, message, sizeof(message)) == 0);
+  uint8_t changed[sizeof(message)];
+  memcpy(changed, message, sizeof(changed));
+  changed[sizeof(changed) - 1u] = 'y';
+  f.discard_write = f.writes + 2u;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, changed, sizeof(changed)) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(memcmp(identity_pages, f.memory, sizeof(identity_pages)) == 0);
+  f.discard_write = 0u;
+  assert(h2_fm175xx_ntag_write_ndef(&reader, changed, sizeof(changed)) == 0);
+  assert(h2_fm175xx_ntag_read_ndef(&reader, pages, sizeof(pages), &len) == 0);
+  assert(len == sizeof(changed) && memcmp(pages, changed, len) == 0);
   /* An empty RX indication before the timer expires must leave the command
    * alive: the real card's ATQA, UID, SAK and page replies can follow it. */
   f.empty_before_reply = 1;
@@ -330,7 +898,7 @@ int main(void) {
   assert(memcmp(&first, &next, sizeof(first)) == 0);
   assert(h2_fm175xx_ntag_read_all(&reader, pages, sizeof(pages), &len) ==
          H2_FM175XX_OK);
-  assert(len == sizeof(f.memory) && memcmp(pages, f.memory, len) == 0);
+  assert(len == 160u && memcmp(pages, f.memory, len) == 0);
   assert(f.delayed_replies > 10u);
   /* An empty FIFO cannot make stale RxLastBits into a received packet. */
   f.card = IDLE;
@@ -346,7 +914,7 @@ int main(void) {
   assert(memcmp(&first, &next, sizeof(first)) == 0);
   assert(h2_fm175xx_ntag_read_all(&reader, pages, sizeof(pages), &len) ==
          H2_FM175XX_OK);
-  assert(len == sizeof(f.memory) && memcmp(pages, f.memory, len) == 0);
+  assert(len == 160u && memcmp(pages, f.memory, len) == 0);
   f.reply_on_empty_probe = 0;
   f.empty_before_reply = 0;
   /* A 3 ms reply misses the original hardware deadline but is received

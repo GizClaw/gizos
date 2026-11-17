@@ -90,6 +90,23 @@ typedef struct h2_alipay_e2e_config {
    * qualification fixture. Hardware acquisition remains Runtime-owned. */
   const h2_alipay_payment_api_t* payment;
   h2_runtime_component_id_t payment_nfc_component_id;
+  /** NFC-only payment transport: requires wallet context and an encoder.
+   * Payment BLE scan, advertising and GATT remain inactive. */
+  bool payment_nfc_only;
+  /** Optional connected payment service using existing BLE GATT PAL.
+   * mac is the final entry's Bluetooth identity in six wire-order bytes.
+   * Reader context uses the public integration enum; zero selects wallet. */
+  bool payment_connected_ble;
+  uint8_t payment_ble_mac[6];
+  h2_alipay_tap_context_t payment_reader_context;
+  /** Optional terminal-specific encoder. Called on the business worker.
+   * Writes a complete NDEF message into caller storage only on success.
+   * NULL leaves NFC writeback unavailable; SDK bytes are not assumed to
+   * already be a complete NDEF message. user is the App configuration user. */
+  h2_pal_result_t (*payment_nfc_encode_reply)(void* user, const uint8_t* data,
+                                              size_t length, uint8_t* ndef,
+                                              size_t capacity,
+                                              size_t* ndef_length);
   /** Optional one-time UI-thread notification after the initial payment menu
    * has completed display verification. No Alipay SDK operation is allowed. */
   h2_pal_result_t (*payment_ready)(h2_runtime_t* runtime, void* user);

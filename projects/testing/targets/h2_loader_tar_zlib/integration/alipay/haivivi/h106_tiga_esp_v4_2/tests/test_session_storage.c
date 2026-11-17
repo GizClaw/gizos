@@ -1,6 +1,6 @@
 #include "h2_alipay_tiga_storage.h"
 #include "h2_alipay_tiga_identity.h"
-#include "h2_memory_pref.h"
+#include "h2_alipay_test_pref.h"
 #include "h2_app_test_mem.h"
 
 #include <assert.h>
@@ -47,10 +47,7 @@ static int failing_open(void* user, const char* name,
 int main(void) {
   h2_app_test_mem_t mem;
   h2_app_test_mem_init(&mem, NULL);
-  const h2_memory_pref_config_t config = {&mem.api, 20u, 16u, 4096u, 8u};
-  h2_memory_pref_t* durable_fixture = NULL;
-  assert(h2_memory_pref_create(&config, &durable_fixture) == 0);
-  const h2_pal_pref_api_t* persistent = h2_memory_pref_api(durable_fixture);
+  const h2_pal_pref_api_t* persistent = h2_alipay_test_pref_reset();
   h2_runtime_t runtime = {.mem = &mem.api, .pref = persistent};
   const h2_pal_pref_api_t* session = NULL;
   const char* legacy[] = {"alipay_psa",   "alipay_sn_psa", "alipay_h106_psa",
@@ -68,8 +65,7 @@ int main(void) {
     assert(h2_alipay_tiga_storage_configure(&runtime, &session) == 0);
     expect(session, &mem.api, "h106_pay_psa", "value", "PERSISTENT");
     assert(h2_alipay_tiga_storage_release() == 0);
-    assert(h2_memory_pref_destroy(&durable_fixture) == 0 &&
-           mem.live_blocks == 0u);
+    assert(h2_alipay_test_pref_idle() && mem.live_blocks == 0u);
     return 0;
   }
   put(persistent, "h106_factory", "imei", "INVALID_SN", true);
@@ -109,6 +105,65 @@ int main(void) {
   expect(session, &mem.api, "h106_pay_psa", "p00000001", "SESSION_KEY");
   expect(persistent, &mem.api, "h106_pay_psa", "p00000001", NULL);
   expect(persistent, &mem.api, "h106_pay_ctx", "binding", NULL);
+  put(session, "h106_pay_psa", "p00000001", "REPLACED", false);
+  expect(session, &mem.api, "h106_pay_psa", "p00000001", "REPLACED");
+  expect(session, &mem.api, "h106_pay_psa", "binding_ready", "SESSION_MARKER");
+  h2_pal_pref_namespace_t* ns = NULL;
+  assert(h2_pal_pref_open(session, "unrelated", H2_PAL_PREF_OPEN_READ_WRITE,
+                          &ns) == H2_PAL_ERR_UNSUPPORTED &&
+         ns == NULL);
+  assert(h2_pal_pref_open(session, "h106_pay_ctx", H2_PAL_PREF_OPEN_READ_ONLY,
+                          &ns) == 0);
+  assert(ns->set_blob(ns, "binding", "X", 1u) == H2_PAL_ERR_INVALID_STATE);
+  assert(ns->set_u32(ns, "npay_quick", 1u) == H2_PAL_ERR_INVALID_STATE);
+  assert(ns->remove(ns, "binding") == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_alipay_tiga_storage_release() == H2_PAL_ERR_INVALID_STATE);
+  assert(ns->close(ns) == 0);
+  expect(session, &mem.api, "h106_pay_ctx", "binding", "SESSION_CONTEXT");
+  assert(h2_pal_pref_open(session, "h106_pay_ctx", H2_PAL_PREF_OPEN_READ_WRITE,
+                          &ns) == 0);
+  uint32_t flag = 0xa5a5a5a5u;
+  assert(ns->get_u32(ns, "npay_quick", &flag) == H2_PAL_ERR_NOT_FOUND);
+  assert(flag == 0xa5a5a5a5u);
+  const uint32_t flags[] = {0u, 1u, 2u, UINT32_MAX};
+  for (size_t index = 0u; index < sizeof(flags) / sizeof(*flags); ++index) {
+    assert(ns->set_u32(ns, "npay_quick", flags[index]) == 0);
+    assert(ns->get_u32(ns, "npay_quick", &flag) == 0 && flag == flags[index]);
+  }
+  void* wrong_type = NULL;
+  size_t wrong_size = 0u;
+  assert(ns->get_blob(ns, &mem.api, "npay_quick", &wrong_type, &wrong_size) ==
+         H2_PAL_ERR_FORMAT);
+  assert(wrong_type == NULL && wrong_size == 0u);
+  assert(ns->get_u32(ns, "binding", &flag) == H2_PAL_ERR_FORMAT);
+  assert(flag == UINT32_MAX);
+  mem.fail_at = mem.calls + 1u;
+  assert(ns->set_u32(ns, "npay_quick", 0u) == H2_PAL_ERR_NO_MEMORY);
+  mem.fail_at = 0u;
+  assert(ns->get_u32(ns, "npay_quick", &flag) == 0 && flag == UINT32_MAX);
+  h2_pal_pref_namespace_t* duplicate = NULL;
+  assert(h2_pal_pref_open(session, "h106_pay_ctx", H2_PAL_PREF_OPEN_READ_WRITE,
+                          &duplicate) == H2_PAL_ERR_BUSY &&
+         duplicate == NULL);
+  mem.fail_at = mem.calls + 1u;
+  assert(ns->set_blob(ns, "binding", "NEW", 3u) == H2_PAL_ERR_NO_MEMORY);
+  mem.fail_at = 0u;
+  expect(session, &mem.api, "h106_pay_ctx", "binding", "SESSION_CONTEXT");
+  char oversized_key[33];
+  memset(oversized_key, 'K', sizeof(oversized_key));
+  oversized_key[sizeof(oversized_key) - 1u] = '\0';
+  assert(ns->set_blob(ns, oversized_key, "X", 1u) == H2_PAL_ERR_INVALID_ARG);
+  assert(ns->set_blob(ns, "binding", "X", 16385u) == H2_PAL_ERR_NO_SPACE);
+  assert(ns->remove(ns, "binding") == 0);
+  assert(ns->remove(ns, "binding") == H2_PAL_ERR_NOT_FOUND);
+  assert(ns->commit(ns) == 0 && ns->close(ns) == 0);
+  assert(h2_pal_pref_open(session, "h106_pay_ctx", H2_PAL_PREF_OPEN_READ_ONLY,
+                          &ns) == 0);
+  assert(ns->get_u32(ns, "npay_quick", &flag) == 0 && flag == UINT32_MAX);
+  assert(ns->close(ns) == 0);
+  assert(ns->close(ns) == H2_PAL_ERR_INVALID_ARG);
+  expect(session, &mem.api, "h106_pay_ctx", "binding", NULL);
+  put(session, "h106_pay_ctx", "binding", "SESSION_CONTEXT", false);
   assert(h2_alipay_tiga_storage_audit() == 0);
   const h2_pal_pref_api_t* reused = NULL;
   assert(h2_alipay_tiga_storage_configure(&runtime, &reused) == 0 &&
@@ -117,10 +172,14 @@ int main(void) {
   assert(h2_alipay_tiga_storage_configure(&runtime, &session) == 0);
   expect(session, &mem.api, "h106_pay_psa", "p00000001", NULL);
   expect(session, &mem.api, "h106_pay_ctx", "binding", NULL);
+  assert(h2_pal_pref_open(session, "h106_pay_ctx", H2_PAL_PREF_OPEN_READ_ONLY,
+                          &ns) == 0);
+  assert(ns->get_u32(ns, "npay_quick", &flag) == H2_PAL_ERR_NOT_FOUND);
+  assert(ns->close(ns) == 0);
   put(persistent, "h106_pay_psa", "unexpected", "BAD", false);
   assert(h2_alipay_tiga_storage_audit() == H2_PAL_ERR_INVALID_STATE);
   assert(h2_alipay_tiga_storage_release() == 0);
-  assert(h2_memory_pref_destroy(&durable_fixture) == 0);
+  assert(h2_alipay_test_pref_idle());
   assert(mem.live_blocks == 0u);
   return 0;
 }

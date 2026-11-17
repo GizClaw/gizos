@@ -1,4 +1,5 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
@@ -10,9 +11,25 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
-    tags = ["manual"],
     deps = [
-        "//libs/clients/alipay_independent",
+        "//libs/clients/alipay",
         "//projects/testing/integration/alipay/diagnostics",
+        "//projects/testing/integration/alipay/payment",
+        "//projects/testing/integration/alipay/payment:nfc",
+    ],
+)
+
+cc_test(
+    name = "payment_test",
+    srcs = ["tests/test_payment.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":independent",
+        "//libs/clients/alipay:test_binding",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt",
     ],
 )

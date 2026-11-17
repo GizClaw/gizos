@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "quirc",
+    srcs = [
+        "src/lib/decode.c",
+        "src/lib/identify.c",
+        "src/lib/quirc.c",
+        "src/lib/version_db.c",
+    ],
+    hdrs = [
+        "src/lib/quirc.h",
+        "src/lib/quirc_internal.h",
+    ],
+    includes = ["src/lib"],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-lm"],
+    }),
+)

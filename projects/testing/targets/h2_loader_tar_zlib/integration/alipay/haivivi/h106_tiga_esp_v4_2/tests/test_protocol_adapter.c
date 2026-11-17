@@ -4,14 +4,16 @@
 #include "h2_app_test_mem.h"
 #include "h2_app_test_time.h"
 #include "h2_app_test_sync.h"
-#include "h2_app_test_pref.h"
-#include "h2_memory_pref.h"
+#include "h2_alipay_test_pref.h"
 #include "h2_alipay_tiga_storage.h"
 #include "h2_alipay_e2e_independent.h"
+#include "h2_alipay_context.h"
+#include "h2_wolfcrypt_crypto.h"
 #include "esp_mac.h"
-#include "vendor_device_info.h"
+#include "h2_alipay_api.h"
 
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 
 static unsigned requests, responses_freed;
@@ -55,22 +57,11 @@ static void response_free(void* user, h2_pal_http_response_t* response) {
 
 static int random_bytes(void* user, uint8_t* out, size_t length) {
   (void)user;
-  memset(out, 0x42, length);
-  return H2_PAL_OK;
-}
-
-static int keypair(void* user, h2_pal_p256_keypair_t* out) {
-  (void)user;
-  memset(out, 0x42, sizeof(*out));
-  return H2_PAL_OK;
-}
-
-static int uncompress(void* user, const h2_pal_p256_public_key_t* key,
-                      uint8_t out[65]) {
-  (void)user;
-  assert(key->bytes[0] == 0x42u);
-  memset(out, 0x42, 65u);
-  out[0] = 4u;
+  static uint32_t state = 1u;
+  for (size_t index = 0u; index < length; ++index) {
+    state = state * 1664525u + 1013904223u;
+    out[index] = (uint8_t)(state >> 24u);
+  }
   return H2_PAL_OK;
 }
 
@@ -98,14 +89,9 @@ int main(void) {
   const h2_pal_http_api_t http = {NULL, &http_vtable};
   const h2_pal_crypto_vtable_t crypto_vtable = {
       .random = random_bytes,
-      .p256_keypair_generate = keypair,
-      .p256_public_key_uncompress = uncompress,
   };
   const h2_pal_crypto_api_t crypto = {NULL, &crypto_vtable};
-  const h2_memory_pref_config_t pref_config = {&mem.api, 8u, 16u, 4096u, 8u};
-  h2_memory_pref_t* pref = NULL;
-  assert(h2_memory_pref_create(&pref_config, &pref) == 0);
-  const h2_pal_pref_api_t* persistent = h2_memory_pref_api(pref);
+  const h2_pal_pref_api_t* persistent = h2_alipay_test_pref_reset();
   h2_runtime_t runtime = {
       .mem = &mem.api,
       .time = &time.api,
@@ -131,7 +117,26 @@ int main(void) {
   assert(old_namespace->close(old_namespace) == H2_PAL_OK);
   assert(h2_alipay_tiga_protocol_configure(&runtime, 0u) ==
          H2_PAL_ERR_INVALID_ARG);
+  runtime.crypto = h2_wolfcrypt_crypto_api();
+  assert(h2_alipay_tiga_protocol_configure(&runtime, 1794449000u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  runtime.crypto = &crypto;
+  mem.fail_at = mem.calls + 1u;
+  assert(h2_alipay_tiga_protocol_configure(&runtime, 1794449000u) ==
+         H2_PAL_ERR_NO_MEMORY);
+  mem.fail_at = 0u;
+  uint8_t unavailable = 0u;
+  assert(h2_pal_crypto_random(h2_wolfcrypt_crypto_api(), &unavailable, 1u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(mem.live_blocks == 0u);
+  sync.create = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u};
+  assert(h2_alipay_tiga_protocol_configure(&runtime, 1794449000u) ==
+         H2_PAL_ERR_IO);
+  assert(h2_pal_crypto_random(h2_wolfcrypt_crypto_api(), &unavailable, 1u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(mem.live_blocks == 0u);
   assert(h2_alipay_tiga_protocol_configure(&runtime, 1794449000u) == H2_PAL_OK);
+  const h2_pal_crypto_api_t* owned_crypto = h2_wolfcrypt_crypto_api();
   assert(h2_alipay_tiga_protocol_configure(&runtime, 1794449000u) ==
          H2_PAL_ERR_INVALID_STATE);
   h2_alipay_e2e_target_product_info(&product);
@@ -157,6 +162,12 @@ int main(void) {
          H2_PAL_OK);
   assert(!first && implementation_rc == H2_PAL_OK);
   assert(alipay_get_productType() == 3u);
+  assert(!alipay_npay_get_quick_pay_flag());
+  assert(alipay_npay_set_quick_pay_flag(true) == 0);
+  assert(alipay_npay_get_quick_pay_flag());
+  assert(alipay_npay_get_quick_pay_show_flag());
+  assert(alipay_npay_set_quick_pay_flag(false) == 0);
+  assert(!alipay_npay_get_quick_pay_flag());
   bool bound = true;
   h2_alipay_binding_result_t binding;
   assert(api->vtable->binding_status(api->user, &bound) == 0 && !bound);
@@ -171,11 +182,26 @@ int main(void) {
   assert(mem.calls == mem.fail_at && mem.live_blocks == baseline);
   mem.fail_at = 0u;
   assert(h2_pal_time_set_wall_ms(&time.api, 1794449000000u) == H2_PAL_OK);
-  assert(api->vtable->get_binding_code(api->user, 16385u, code, sizeof(code),
-                                       &length,
-                                       &implementation_rc) == H2_PAL_OK);
+  int code_result = api->vtable->get_binding_code(
+      api->user, 16385u, code, sizeof(code), &length, &implementation_rc);
+  if (code_result != H2_PAL_OK) {
+    h2_alipay_independent_binding_result_t diagnostic;
+    assert(h2_alipay_independent_last_binding_result(&diagnostic) == 0);
+    fprintf(
+        stderr,
+        "target code=%d sdk=%d core=%d stage=%d requests=%u http=%d rpc=%d\n",
+        code_result, implementation_rc, diagnostic.result,
+        (int)diagnostic.stage, diagnostic.requests, diagnostic.http_status,
+        diagnostic.rpc_status);
+  }
+  assert(code_result == H2_PAL_OK);
   assert(implementation_rc == 0 && length > 0u && requests == 2u &&
          responses_freed == 2u);
+  h2_alipay_independent_binding_result_t code_diagnostic;
+  assert(h2_alipay_independent_last_binding_result(&code_diagnostic) == 0);
+  assert(code_diagnostic.result == 0 &&
+         code_diagnostic.stage == H2_ALIPAY_CLIENT_QR &&
+         code_diagnostic.requests == 2u);
   assert(contains((const uint8_t*)code, length, "QZ.SB.LY.HAIVIVI-H106"));
   assert(h2_pal_pref_open(persistent, "h106_pay_ctx",
                           H2_PAL_PREF_OPEN_READ_ONLY,
@@ -203,10 +229,30 @@ int main(void) {
   assert(api->vtable->query_binding_result(api->user, &binding) == 0);
   assert(binding.state == H2_ALIPAY_BINDING_PENDING && binding.sdk_rc == 0 &&
          binding.sdk_status == 0xff && requests == 3u && responses_freed == 3u);
-  assert(h2_alipay_e2e_independent_release() == H2_PAL_OK);
+  sync.destroy =
+      (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u};
+  assert(h2_alipay_tiga_protocol_release() == H2_PAL_ERR_IO);
+  uint8_t retained = 0u;
+  assert(h2_pal_crypto_random(owned_crypto, &retained, 1u) == 0);
+  assert(h2_alipay_tiga_protocol_release() == H2_PAL_OK);
+  assert(h2_alipay_tiga_protocol_release() == H2_PAL_OK);
+  uint8_t entropy_byte = 0u;
+  assert(h2_pal_crypto_random(owned_crypto, &entropy_byte, 1u) ==
+         H2_PAL_ERR_UNAVAILABLE);
+  assert(h2_pal_crypto_random(h2_wolfcrypt_crypto_api(), &entropy_byte, 1u) ==
+         H2_PAL_ERR_UNSUPPORTED);
   assert(h2_alipay_tiga_storage_audit() == 0);
   assert(h2_alipay_tiga_storage_release() == 0);
-  assert(h2_memory_pref_destroy(&pref) == 0);
+  assert(h2_alipay_test_pref_idle());
+  assert(mem.live_blocks == 0u);
+  const h2_wolfcrypt_crypto_config_t external_crypto = {NULL, random_bytes};
+  assert(h2_wolfcrypt_crypto_init(&external_crypto) == 0);
+  runtime.crypto = h2_wolfcrypt_crypto_api();
+  assert(h2_alipay_tiga_protocol_configure(&runtime, 1794449000u) == 0);
+  assert(h2_alipay_tiga_protocol_release() == 0);
+  assert(h2_pal_crypto_random(runtime.crypto, &entropy_byte, 1u) == 0);
+  assert(h2_alipay_tiga_storage_release() == 0);
+  h2_wolfcrypt_crypto_deinit();
   assert(mem.live_blocks == 0u);
   return 0;
 }

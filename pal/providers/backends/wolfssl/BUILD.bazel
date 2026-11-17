@@ -10,6 +10,7 @@ _WOLFCRYPT_COMPATIBILITY = select({
     "@platforms//cpu:wasm32": [],
     "@platforms//os:ios": [],
     "@platforms//os:android": [],
+    "//tools/bazel/platforms:target_esp32s3": [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
@@ -245,6 +246,47 @@ cc_test(
 cc_library(
     name = "wolfcrypt_test_support",
     testonly = True,
+    srcs = [
+        "src/h2_wolfcrypt_crypto_internal.h",
+        "src/wolfcrypt/user_settings.h",
+        "tests/h2_wolfcrypt_test_crypto.c",
+    ],
+    hdrs = ["tests/h2_wolfcrypt_test_crypto.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src/wolfcrypt",
+        "tests",
+    ],
+    local_defines = ["WOLFSSL_USER_SETTINGS"],
     visibility = ["//libs:__subpackages__"],
-    deps = [":wolfcrypt"],
+    deps = [
+        ":wolfcrypt",
+        ":wolfsm_nonce_fixture",
+    ],
+)
+
+cc_library(
+    name = "wolfsm_nonce_fixture",
+    testonly = True,
+    srcs = [
+        "src/wolfcrypt/user_settings.h",
+        "@h2_vendor_wolfsm//:src/sm2.c",
+    ],
+    conlyopts = H2_GNU_C11_OPTS,
+    copts = h2_gnu_only_copts([
+        "-Wno-sign-conversion",
+        "-Wno-unused-parameter",
+        "-fno-sanitize=undefined",
+    ]),
+    includes = ["src/wolfcrypt"],
+    local_defines = [
+        "WOLFSSL_USER_SETTINGS",
+        "wc_ecc_make_key_ex2=h2_wolfcrypt_test_sm2_make_key_ex2",
+        "wc_ecc_sm2_make_key=h2_wolfcrypt_fixture_sm2_make_key",
+        "wc_ecc_sm2_shared_secret=h2_wolfcrypt_fixture_sm2_shared_secret",
+        "wc_ecc_sm2_sign_hash_ex=h2_wolfcrypt_fixture_sm2_sign_hash_ex",
+        "wc_ecc_sm2_verify_hash_ex=h2_wolfcrypt_fixture_sm2_verify_hash_ex",
+    ],
+    deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],
 )

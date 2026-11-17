@@ -10,6 +10,12 @@ HELPER = Path(__file__).resolve().parents[1] / "h2_bazel_archive.cmake"
 
 class ArchiveGroupTest(unittest.TestCase):
     def test_imported_archives_stay_inside_group(self):
+        self._exercise(False)
+
+    def test_alwayslink_archive_preserves_registration_inside_group(self):
+        self._exercise(True)
+
+    def _exercise(self, alwayslink):
         cmake = shutil.which("cmake")
         if not cmake or not shutil.which("ninja") or not (shutil.which("cc") or shutil.which("cl")):
             self.skipTest("CMake/Ninja unavailable")
@@ -19,20 +25,22 @@ class ArchiveGroupTest(unittest.TestCase):
                 "a.c": "int b(void); int a(void) { return b(); }\n",
                 "later.c": "int later(void) { return 7; }\n",
                 "b.c": "int later(void); int b(void) { return later(); }\n",
-                "main.c": "int a(void); int main(void) { return a() == 7 ? 0 : 1; }\n",
+                "registration.c": "extern int registered; __attribute__((constructor)) static void register_value(void) { registered = 1; }\n",
+                "main.c": f"int a(void); int registered; int main(void) {{ return a() == 7 && registered == {int(alwayslink)} ? 0 : 1; }}\n",
             }.items():
                 (root / file).write_text(text)
             (root / "CMakeLists.txt").write_text(f'''cmake_minimum_required(VERSION 3.24)
 project(rescan C)
 add_library(source_a STATIC a.c later.c)
-add_library(source_b STATIC b.c)
+add_library(source_b STATIC b.c registration.c)
+set_target_properties(source_b PROPERTIES SUFFIX "{'.lo' if alwayslink else '.a'}")
 add_library(firmware INTERFACE)
 function(add_prebuilt_library name path)
   add_library(${{name}} STATIC IMPORTED GLOBAL)
   set_target_properties(${{name}} PROPERTIES IMPORTED_LOCATION "${{path}}")
 endfunction()
 set(H2_ARCHIVE "${{CMAKE_BINARY_DIR}}/libsource_a.a")
-set(H2_ARCHIVE_DEPENDENCY_0 "${{CMAKE_BINARY_DIR}}/libsource_b.a")
+set(H2_ARCHIVE_DEPENDENCY_0 "${{CMAKE_BINARY_DIR}}/libsource_b{'.lo' if alwayslink else '.a'}")
 file(TOUCH "${{H2_ARCHIVE}}" "${{H2_ARCHIVE_DEPENDENCY_0}}")
 set(COMPONENT_LIB firmware)
 include("{HELPER.as_posix()}")
@@ -57,9 +65,16 @@ target_link_libraries(probe PRIVATE "-Wl,--start-group" firmware "-Wl,--end-grou
                     start = None
             self.assertTrue(any(
                 any("libsource_a.a" in item for item in group) and
-                any("libsource_b.a" in item for item in group)
+                any("libsource_b" in item for item in group)
                 for group in groups
             ), flags[1])
+            if alwayslink:
+                self.assertIn("-Wl,--whole-archive", items)
+                self.assertIn("-Wl,--no-whole-archive", items)
+                opening = items.index("-Wl,--whole-archive")
+                closing = items.index("-Wl,--no-whole-archive")
+                self.assertTrue(any("libsource_b.lo" in item
+                                    for item in items[opening + 1:closing]))
             # Apple's linker lacks GNU archive groups. Generation is still
             # checked there; Linux exercises the real a -> b -> later cycle.
             cc = shutil.which("cc")

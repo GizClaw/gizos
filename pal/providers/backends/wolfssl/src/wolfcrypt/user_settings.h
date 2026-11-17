@@ -24,7 +24,6 @@
 #define WOLFSSL_AES_COUNTER
 #define HAVE_HKDF
 
-#define NO_DES3
 #define NO_DH
 #define NO_DSA
 #define NO_RSA
@@ -44,20 +43,24 @@
 #define HAVE_ECC
 #define HAVE_ECC_KEYGEN
 #define HAVE_ECC_SIGN
+#define WOLFSSL_ECDSA_SET_K
 #define HAVE_ECC_VERIFY
 #define HAVE_ECC_KEY_IMPORT
 #define HAVE_ECC_KEY_EXPORT
 #define HAVE_COMP_KEY
 #define ECC_TIMING_RESISTANT
 #define ECC_SHAMIR
-#define NO_ECC192
+#define HAVE_ECC_KOBLITZ
+#define WOLFSSL_CUSTOM_CURVES
+#define WOLFSSL_SM2
+#define H2_WOLFSM_EXTERNAL_DIGEST
+#define ECC_MIN_KEY_SZ 192
 #define NO_ECC224
 #define NO_ECC384
 #define NO_ECC521
 #define NO_ECC_CDH
 
-#define WOLFSSL_SP_MATH
-#define WOLFSSL_SP_SMALL
+#define WOLFSSL_SP_MATH_ALL
 #define WOLFSSL_HAVE_SP_ECC
 #define SP_WORD_SIZE 32
 

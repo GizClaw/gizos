@@ -3,6 +3,7 @@
 #include "h2_alipay_tiga_storage.h"
 #include "h2_alipay_tiga_gateway.h"
 #include "h2_alipay_tiga_identity.h"
+#include "h2_alipay_nfc.h"
 #include "h2_e2e_fixture_wifi.h"
 #include "h2_esp_board.h"
 #include "h2_esp_board_config.h"
@@ -190,11 +191,7 @@ static h2_pal_result_t prepare(h2_runtime_t* rt, void* user) {
   if (rc != H2_PAL_OK) return rc;
   return h2_alipay_tiga_gateway_probe(rt);
 }
-static const char* source_name(void) {
-  return h2_alipay_e2e_target_api()->source == H2_ALIPAY_SOURCE_VENDOR_SDK
-             ? "vendor_sdk"
-             : "independent";
-}
+static const char* source_name(void) { return "independent"; }
 
 static void trace_report(const h2_alipay_e2e_result_t* r) {
   const h2_alipay_api_t* api = h2_alipay_e2e_target_api();
@@ -205,8 +202,8 @@ static void trace_report(const h2_alipay_e2e_result_t* r) {
   printf(
       "H2_ALIPAY_META {\"schema\":1,\"run_id\":\"%s\","
       "\"case_id\":\"alipay/standalone\",\"source\":\"%s\","
-      "\"storage\":\"%s\",\"board\":\"%s\",\"target\":\"%s\",\"sdk_manifest_sha256\":\"%s\","
-      "\"sdk_version\":null,\"firmware_version_hex\":\"%s\","
+      "\"storage\":\"%s\",\"board\":\"%s\",\"target\":\"%s\","
+      "\"firmware_version_hex\":\"%s\","
       "\"firmware_rc\":0,\"firmware_git_sha\":null,"
       "\"git_sha_source\":\"host_build_manifest_required\","
       "\"private_raw\":false,\"plaintext_http_available\":false,"
@@ -214,9 +211,8 @@ static void trace_report(const h2_alipay_e2e_result_t* r) {
       run_id, source_name(),
       api->storage_scope == H2_ALIPAY_STORAGE_SESSION ? "session"
                                                       : "persistent",
-      runtime->board, runtime->target,
-      api->sdk_manifest_sha256 != NULL ? api->sdk_manifest_sha256 : "",
-      version_hex, (unsigned)trace->diagnostic_limit);
+      runtime->board, runtime->target, version_hex,
+      (unsigned)trace->diagnostic_limit);
   for (size_t i = 0; i < trace->count; ++i) {
     const h2_alipay_trace_event_t* e = &trace->events[i];
     char digest[65], detail[sizeof(e->detail) * 2 + 1];
@@ -232,7 +228,7 @@ static void trace_report(const h2_alipay_e2e_result_t* r) {
         "\"captured\":%zu,\"sha256\":\"%s\",\"detail_hex\":\"%s\"}\n",
         run_id,
         strcmp(e->boundary, "independent") == 0 ? "runtime_independent"
-                                                : "runtime_vendor_sdk",
+                                                : "runtime_product",
         (unsigned)e->sequence, (unsigned)e->call_id, (unsigned)e->parent_id,
         (unsigned)e->connection_id, (unsigned long long)e->mono_ms,
         (unsigned long long)e->utc_ms, e->utc_valid ? "true" : "false",
@@ -403,9 +399,7 @@ static void run(void* user) {
   int rc = h2_alipay_e2e_target_configure(runtime);
   if (rc != H2_PAL_OK) fail("alipay-configure", rc);
   const h2_alipay_api_t* api = h2_alipay_e2e_target_api();
-  if (api == NULL ||
-      (api->source != H2_ALIPAY_SOURCE_INDEPENDENT &&
-       api->source != H2_ALIPAY_SOURCE_VENDOR_SDK) ||
+  if (api == NULL || api->source != H2_ALIPAY_SOURCE_INDEPENDENT ||
       api->trace == NULL)
     fail("alipay-provider", H2_PAL_ERR_INVALID_STATE);
   h2_alipay_e2e_product_info_t product;
@@ -443,11 +437,14 @@ static void run(void* user) {
   if (transferred == NULL) fail("capture-memory", H2_PAL_ERR_NO_MEMORY);
   memset(transferred, 0, bytes);
   (void)h2_alipay_e2e_target_capture(capture, NULL);
-  const h2_alipay_e2e_config_t config = {
+  h2_alipay_e2e_config_t config = {
       .alipay = api,
       .feature = h2_alipay_e2e_target_feature(),
       .payment = h2_alipay_e2e_target_payment_api(),
       .payment_nfc_component_id = 1u,
+      .payment_nfc_only = true,
+      .payment_reader_context = H2_ALIPAY_TAP_WALLET,
+      .payment_nfc_encode_reply = h2_alipay_nfc_encode_text_reply,
       .payment_ready = payment_ready,
       .payment_buttons = {.previous = 2u,
                           .next = 3u,

@@ -24,10 +24,12 @@ h2_pal_result_t h2_alipay_e2e_independent_configure_with_storage(
 /** NULL until configured. Caller borrows the API and quiescent trace. */
 const h2_alipay_api_t* h2_alipay_e2e_independent_api(void);
 /**
- * Static payer-code/query API; available before configure for target input
- * assembly. Calls require configured initialization and complete binding.
- * Tap callbacks are absent. All original business calls use unchanged vendor
- * declarations with the independent implementation.
+ * Static payer-code and NFC/BLE API; available before configure for target
+ * input assembly. Calls require configured initialization and complete binding.
+ * The integration owns physical transport, user confirmation and result
+ * presentation. All original calls use unchanged vendor declarations with
+ * the independent implementation. Payment operations require caller
+ * serialization, including configure/release.
  */
 const h2_alipay_payment_api_t* h2_alipay_e2e_independent_payment_api(void);
 /** Release after workers join; a failure retains ownership for retry. */

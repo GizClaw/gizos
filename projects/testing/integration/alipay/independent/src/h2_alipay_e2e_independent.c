@@ -1,10 +1,8 @@
 #include "h2_alipay_e2e_independent.h"
 
-#include "h2_alipay_independent.h"
-#include "alipay_bind.h"
-#include "alipay_account_manage.h"
-#include "alipay_pay.h"
-#include "alipay_pay_result.h"
+#include "h2_alipay_context.h"
+#include "h2_alipay_payment_bridge.h"
+#include "h2_alipay_api.h"
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
@@ -203,97 +201,41 @@ const h2_alipay_api_t* h2_alipay_e2e_independent_api(void) {
   return s_mem != NULL ? &s_api : NULL;
 }
 
-static void wipe(void* data, size_t size) {
-  volatile uint8_t* p = data;
-  while (size-- != 0u) *p++ = 0u;
-}
-static int payer_code(void* user, uint8_t* code, uint32_t* length,
-                      int* sdk_rc) {
+static int payment_enter(void* user) {
   (void)user;
-  if (code == NULL || length == NULL || sdk_rc == NULL || *length < 20u)
-    return H2_PAL_ERR_INVALID_ARG;
-  *sdk_rc = INT_MIN;
-  if (!s_initialized || s_init_rc != 0) return H2_PAL_ERR_INVALID_STATE;
-  uint32_t capacity = *length;
-  *sdk_rc = alipay_get_paycode(code, length);
-  int rc = H2_PAL_OK;
-  if (*sdk_rc == ALIPAY_RV_OK) {
-    if ((*length != 18u && *length != 19u) || *length >= capacity)
-      rc = H2_PAL_ERR_FORMAT;
-    else
-      for (uint32_t i = 0u; i < *length; ++i)
-        if (code[i] < '0' || code[i] > '9') rc = H2_PAL_ERR_FORMAT;
-  }
-  if (rc != H2_PAL_OK || *sdk_rc != ALIPAY_RV_OK) {
-    wipe(code, capacity);
-    *length = 0u;
-  } else
-    code[*length] = '\0';
-  record("alipay_get_paycode.return", *sdk_rc, *length);
-  return rc;
+  return s_mem != NULL && s_initialized && s_init_rc == 0
+             ? H2_PAL_OK
+             : H2_PAL_ERR_INVALID_STATE;
 }
-static int payer_result(void* user, const char* code,
-                        h2_alipay_payment_result_t* out) {
+
+static int payment_leave(void* user, int result) {
   (void)user;
-  if (code == NULL || out == NULL) return H2_PAL_ERR_INVALID_ARG;
-  *out = (h2_alipay_payment_result_t){
-      .sdk_rc = INT_MIN, .sdk_status = ALIPAY_PAYMENT_STATUS_UNKNOWN};
-  if (!s_initialized || s_init_rc != 0) return H2_PAL_ERR_INVALID_STATE;
-  size_t length = 0u;
-  while (length < 20u && code[length] >= '0' && code[length] <= '9') ++length;
-  if ((length != 18u && length != 19u) || code[length] != '\0')
-    return H2_PAL_ERR_INVALID_ARG;
-  struct query_work {
-    char code[20], ext[256];
-  };
-  struct query_work* work = h2_pal_mem_alloc(s_mem, sizeof(*work));
-  if (work == NULL) return H2_PAL_ERR_NO_MEMORY;
-  memset(work, 0, sizeof(*work));
-  memcpy(work->code, code, length + 1u);
-  uint32_t ext_length = sizeof(work->ext);
-  alipay_payment_status_e status = ALIPAY_PAYMENT_STATUS_UNKNOWN;
-  out->sdk_rc = alipay_query_order_result_string(
-      work->code, &status, out->amount, work->ext, &ext_length);
-  out->sdk_status = (int)status;
-  if (out->sdk_rc == ALIPAY_RV_OK) {
-    switch (status) {
-      case ALIPAY_PAYMENT_STATUS_SUCCESS:
-        out->state = H2_ALIPAY_PAYMENT_PAID;
-        break;
-      case ALIPAY_PAYMENT_STATUS_NOTHING:
-      case ALIPAY_PAYMENT_STATUS_PROCESSING:
-        out->state = H2_ALIPAY_PAYMENT_PENDING;
-        break;
-      case ALIPAY_PAYMENT_STATUS_FAIL:
-        out->state = H2_ALIPAY_PAYMENT_REJECTED;
-        break;
-      case ALIPAY_PAYMENT_STATUS_UNBIND_BY_USER:
-        out->state = H2_ALIPAY_PAYMENT_UNBOUND;
-        break;
-      case ALIPAY_PAYMENT_STATUS_DISABLED_BY_USER:
-        out->state = H2_ALIPAY_PAYMENT_DISABLED;
-        break;
-      default:
-        break;
-    }
-  }
-  if (out->state != H2_ALIPAY_PAYMENT_PAID)
-    wipe(out->amount, sizeof(out->amount));
-  record("alipay_query_order.return", out->sdk_rc, (uint32_t)status);
-  wipe(work, sizeof(*work));
-  h2_pal_mem_free(s_mem, work);
-  return H2_PAL_OK;
+  return result;
 }
+
+static void payment_record(void* user, const char* operation, int result,
+                           uint32_t item) {
+  (void)user;
+  record(operation, result, item);
+}
+
 const h2_alipay_payment_api_t* h2_alipay_e2e_independent_payment_api(void) {
-  static const h2_alipay_payment_vtable_t vtable = {.get_code = payer_code,
-                                                    .query_code = payer_result};
-  static const h2_alipay_payment_api_t api = {.vtable = &vtable};
+  static const h2_alipay_payment_bridge_t bridge = {
+      .enter = payment_enter, .leave = payment_leave, .record = payment_record};
+  static h2_alipay_payment_api_t api = {.user = (void*)&bridge};
+  api.vtable = h2_alipay_payment_bridge_vtable();
   return &api;
 }
 
 h2_pal_result_t h2_alipay_e2e_independent_release(void) {
   if (s_mem == NULL) return H2_PAL_OK;
-  int rc = h2_alipay_independent_release();
+  int rc = H2_PAL_OK;
+  if (s_initialized && s_init_rc == 0) {
+    const h2_alipay_payment_api_t* payment =
+        h2_alipay_e2e_independent_payment_api();
+    rc = payment->vtable->stop_tap(payment->user);
+  }
+  if (rc == H2_PAL_OK) rc = h2_alipay_independent_release();
   if (rc != H2_PAL_OK) return rc;
   h2_pal_mem_free(s_mem, s_api.trace);
   memset(&s_api, 0, sizeof(s_api));

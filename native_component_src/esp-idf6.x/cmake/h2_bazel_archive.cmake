@@ -10,6 +10,11 @@ set(CMAKE_LINK_GROUP_USING_h2_idf_rescan_SUPPORTED TRUE CACHE INTERNAL
 set(CMAKE_LINK_GROUP_USING_h2_idf_rescan
   "-Wl,--start-group" "-Wl,--end-group" CACHE INTERNAL
   "ESP-IDF GNU archive rescan delimiters" FORCE)
+set(CMAKE_LINK_LIBRARY_USING_h2_idf_whole_SUPPORTED TRUE CACHE INTERNAL
+  "ESP-IDF GNU alwayslink archives" FORCE)
+set(CMAKE_LINK_LIBRARY_USING_h2_idf_whole
+  "-Wl,--whole-archive" "<LINK_ITEM>" "-Wl,--no-whole-archive" CACHE INTERNAL
+  "ESP-IDF GNU alwayslink delimiters" FORCE)
 
 function(h2_idf_import_bazel_archive target variable)
   if(NOT DEFINED ${variable} OR "${${variable}}" STREQUAL "" OR
@@ -18,7 +23,11 @@ function(h2_idf_import_bazel_archive target variable)
       "${target} requires the Bazel-built ${variable} archive")
   endif()
   add_prebuilt_library(${target}_bazel "${${variable}}")
-  set(imported_targets ${target}_bazel)
+  if("${${variable}}" MATCHES "[.]lo$")
+    set(imported_targets "$<LINK_LIBRARY:h2_idf_whole,${target}_bazel>")
+  else()
+    set(imported_targets ${target}_bazel)
+  endif()
 
   set(index 0)
   while(TRUE)
@@ -34,7 +43,12 @@ function(h2_idf_import_bazel_archive target variable)
     add_prebuilt_library(
       ${target}_bazel_dependency_${index}
       "${${dependency_variable}}")
-    list(APPEND imported_targets ${target}_bazel_dependency_${index})
+    if("${${dependency_variable}}" MATCHES "[.]lo$")
+      list(APPEND imported_targets
+        "$<LINK_LIBRARY:h2_idf_whole,${target}_bazel_dependency_${index}>")
+    else()
+      list(APPEND imported_targets ${target}_bazel_dependency_${index})
+    endif()
     math(EXPR index "${index} + 1")
   endwhile()
 
