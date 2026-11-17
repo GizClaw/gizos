@@ -1,0 +1,275 @@
+#ifndef H2_GARDEN_GUARD_GAME_H
+#define H2_GARDEN_GUARD_GAME_H
+
+/* Deterministic game model. It owns no PAL resources: the run loop feeds it
+ * elapsed time and pointer edges, and the renderer reads it.
+ *
+ * The field has LANES lanes of COLS cells. Positions along a lane are in
+ * cells: 0 is the house edge and COLS the far edge where pests enter. Plant
+ * column c covers [c, c + 1). The layout maps lanes and cells to display
+ * pixels: landscape displays run lanes horizontally with the house on the
+ * left; portrait displays run them vertically with the house at the bottom.
+ * Suns, particles and the toolbar use display pixels directly. */
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** Host-endian RGB565 from 8-bit channels. */
+#define H2_GARDEN_GUARD_RGB(r, g, b)           \
+  ((uint16_t)((((unsigned)(r) & 0xF8u) << 8) | \
+              (((unsigned)(g) & 0xFCu) << 3) | ((unsigned)(b) >> 3)))
+
+#define H2_GARDEN_GUARD_PI 3.14159265f
+
+#define H2_GARDEN_GUARD_LANES 5
+#define H2_GARDEN_GUARD_COLS 9
+#define H2_GARDEN_GUARD_WAVES 5
+
+#define H2_GARDEN_GUARD_MAX_PESTS 32
+#define H2_GARDEN_GUARD_MAX_PEAS 48
+#define H2_GARDEN_GUARD_MAX_SUNS 12
+#define H2_GARDEN_GUARD_MAX_PARTICLES 64
+#define H2_GARDEN_GUARD_BANNER_TEXT_MAX 16
+
+#define H2_GARDEN_GUARD_START_SUN 150u
+#define H2_GARDEN_GUARD_SUN_VALUE 25u
+#define H2_GARDEN_GUARD_SUN_LIMIT 9990u
+/** A resting sun disappears after this long unless it is collected. */
+#define H2_GARDEN_GUARD_SUN_LIFE_MS 9000u
+/** Taps on the result screen are ignored this long after it appears. */
+#define H2_GARDEN_GUARD_RESTART_DELAY_MS 1000u
+/** Ready time before the first wave. */
+#define H2_GARDEN_GUARD_FIRST_WAVE_MS 20000u
+#define H2_GARDEN_GUARD_BANNER_MS 2200u
+#define H2_GARDEN_GUARD_WIN_BONUS 250u
+
+typedef enum h2_garden_guard_phase {
+  H2_GARDEN_GUARD_PHASE_TITLE = 0,
+  H2_GARDEN_GUARD_PHASE_PLAYING,
+  H2_GARDEN_GUARD_PHASE_WON,
+  H2_GARDEN_GUARD_PHASE_LOST,
+} h2_garden_guard_phase_t;
+
+typedef enum h2_garden_guard_plant_kind {
+  H2_GARDEN_GUARD_PLANT_NONE = 0,
+  /** Produces a sun periodically. */
+  H2_GARDEN_GUARD_PLANT_SUNFLOWER,
+  /** Fires peas along its lane while a pest is ahead of it. */
+  H2_GARDEN_GUARD_PLANT_SHOOTER,
+  /** A tough pumpkin that holds pests back while they chew. */
+  H2_GARDEN_GUARD_PLANT_PUMPKIN,
+  H2_GARDEN_GUARD_PLANT_KIND_COUNT,
+} h2_garden_guard_plant_kind_t;
+
+/** Cards in toolbar order; plant cards map to plant kind card + 1. */
+typedef enum h2_garden_guard_card {
+  H2_GARDEN_GUARD_CARD_SUNFLOWER = 0,
+  H2_GARDEN_GUARD_CARD_SHOOTER,
+  H2_GARDEN_GUARD_CARD_PUMPKIN,
+  /** Removes a plant without refund. */
+  H2_GARDEN_GUARD_CARD_SHOVEL,
+  H2_GARDEN_GUARD_CARD_COUNT,
+} h2_garden_guard_card_t;
+
+/** Selection value when no card is selected. */
+#define H2_GARDEN_GUARD_CARD_NONE (-1)
+
+typedef enum h2_garden_guard_pest_kind {
+  H2_GARDEN_GUARD_PEST_BEETLE = 0,
+  /** A beetle whose shell plate absorbs damage first. */
+  H2_GARDEN_GUARD_PEST_SHELLBACK,
+  /** A fast, fragile ant. */
+  H2_GARDEN_GUARD_PEST_RUNNER,
+  H2_GARDEN_GUARD_PEST_KIND_COUNT,
+} h2_garden_guard_pest_kind_t;
+
+typedef enum h2_garden_guard_pointer {
+  H2_GARDEN_GUARD_POINTER_DOWN = 1,
+  H2_GARDEN_GUARD_POINTER_MOVE,
+  H2_GARDEN_GUARD_POINTER_UP,
+  /** Abandon the gesture, e.g. after a read failure. */
+  H2_GARDEN_GUARD_POINTER_CANCEL,
+} h2_garden_guard_pointer_t;
+
+typedef enum h2_garden_guard_cart_state {
+  /** Parked at the house edge, triggered by the first pest to get through. */
+  H2_GARDEN_GUARD_CART_READY = 0,
+  H2_GARDEN_GUARD_CART_SWEEPING,
+  H2_GARDEN_GUARD_CART_USED,
+} h2_garden_guard_cart_state_t;
+
+/** Display geometry shared by input hit testing and rendering. */
+typedef struct h2_garden_guard_layout {
+  int32_t width, height;
+  /** Scale relative to a 480-pixel short side. */
+  float unit;
+  /** Lanes run vertically with the house at the bottom. */
+  bool portrait;
+  /** Lawn rectangle, pixels. */
+  float field_x, field_y, field_w, field_h;
+  /** Pixel length of one cell along a lane, and the width of a lane. */
+  float cell_along, cell_lane;
+  /** Nominal sprite diameter: the shorter cell side. */
+  float sprite;
+  /** Toolbar strip along the top edge. */
+  float bar_h;
+  /** Sun counter box and the cards, left to right. */
+  float sun_x, sun_w;
+  float card_x[H2_GARDEN_GUARD_CARD_COUNT];
+  float card_y, card_w, card_h;
+} h2_garden_guard_layout_t;
+
+typedef struct h2_garden_guard_plant {
+  uint8_t kind; /**< h2_garden_guard_plant_kind_t. */
+  /** Damage stage shown by the renderer, 0 (intact) to 2. */
+  uint8_t stage;
+  float hp;
+  /** Time until the next sun or shot; a shooter waits at 0 for a target. */
+  int32_t timer_ms;
+} h2_garden_guard_plant_t;
+
+typedef struct h2_garden_guard_pest {
+  bool active;
+  /** Stopped at a plant and chewing it. */
+  bool eating;
+  uint8_t kind; /**< h2_garden_guard_pest_kind_t. */
+  uint8_t lane;
+  /** Center position along the lane, in cells. */
+  float x;
+  int32_t hp, armor;
+  /** Remaining hit flash. */
+  uint16_t flash_ms;
+  /** Animation phase offset so pests do not move in lockstep. */
+  uint16_t phase_ms;
+} h2_garden_guard_pest_t;
+
+typedef struct h2_garden_guard_pea {
+  bool active;
+  uint8_t lane;
+  float x; /**< Cells. */
+} h2_garden_guard_pea_t;
+
+typedef struct h2_garden_guard_sun {
+  bool active;
+  /** Tapped: flying to the counter, already credited. */
+  bool collecting;
+  float x, y;      /**< Center, pixels. */
+  float rest_y;    /**< Where a falling sun stops, pixels. */
+  float vx, vy;    /**< Pixels per second while collecting. */
+  uint32_t age_ms; /**< Time spent resting. */
+} h2_garden_guard_sun_t;
+
+typedef struct h2_garden_guard_particle {
+  bool active;
+  float x, y, vx, vy, size;
+  uint16_t color; /**< RGB565. */
+  uint16_t age_ms, life_ms;
+} h2_garden_guard_particle_t;
+
+typedef struct h2_garden_guard_cart {
+  uint8_t state; /**< h2_garden_guard_cart_state_t. */
+  float x;       /**< Cells while sweeping. */
+} h2_garden_guard_cart_t;
+
+typedef struct h2_garden_guard_game {
+  h2_garden_guard_layout_t layout;
+  uint32_t rng;
+  uint64_t time_ms;
+  h2_garden_guard_phase_t phase;
+  uint64_t phase_started_ms;
+
+  uint32_t sun, score, best, kills;
+  /** One-shot effect request: best rose during this run and needs saving. */
+  bool best_changed;
+  bool new_best;
+
+  /** Selected card, or H2_GARDEN_GUARD_CARD_NONE. */
+  int32_t selected;
+  /** The current press started on a card: releasing over the lawn plants. */
+  bool drag_from_card;
+  bool pointer_down;
+  uint32_t card_cooldown_ms[H2_GARDEN_GUARD_CARD_COUNT];
+  /** Brief red flash on a card that could not be used. */
+  uint32_t card_denied_ms[H2_GARDEN_GUARD_CARD_COUNT];
+
+  h2_garden_guard_plant_t plants[H2_GARDEN_GUARD_LANES][H2_GARDEN_GUARD_COLS];
+  /** Incremented whenever a plant appears, disappears or changes stage. */
+  uint32_t plant_revision;
+  h2_garden_guard_cart_t carts[H2_GARDEN_GUARD_LANES];
+
+  /** Waves started so far, 0..WAVES. */
+  uint32_t wave;
+  /** Pests of the current wave still to spawn, per kind. */
+  uint32_t wave_left[H2_GARDEN_GUARD_PEST_KIND_COUNT];
+  uint64_t next_spawn_ms, next_wave_ms, next_sky_sun_ms;
+  uint32_t last_lane;
+
+  char banner[H2_GARDEN_GUARD_BANNER_TEXT_MAX];
+  uint32_t banner_ms; /**< Remaining banner time; 0 hides it. */
+
+  h2_garden_guard_pest_t pests[H2_GARDEN_GUARD_MAX_PESTS];
+  h2_garden_guard_pea_t peas[H2_GARDEN_GUARD_MAX_PEAS];
+  h2_garden_guard_sun_t suns[H2_GARDEN_GUARD_MAX_SUNS];
+  h2_garden_guard_particle_t particles[H2_GARDEN_GUARD_MAX_PARTICLES];
+} h2_garden_guard_game_t;
+
+/** Reset to the title screen. width/height must be positive. */
+void h2_garden_guard_game_init(h2_garden_guard_game_t* game, int32_t width,
+                               int32_t height, uint32_t seed, uint32_t best);
+
+/** Feed one pointer edge at the current game time. */
+void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
+                                  h2_garden_guard_pointer_t kind, float x,
+                                  float y);
+
+/** Advance the simulation; large steps are split internally. */
+void h2_garden_guard_game_step(h2_garden_guard_game_t* game, uint32_t dt_ms);
+
+/** Take the one-shot best-score save request; false when none is pending. */
+bool h2_garden_guard_game_take_best(h2_garden_guard_game_t* game,
+                                    uint32_t* out_best);
+
+/** Sun cost of a card; zero for the shovel. */
+uint32_t h2_garden_guard_card_cost(h2_garden_guard_card_t card);
+
+/** Cooldown after a card was used, ms. */
+uint32_t h2_garden_guard_card_cooldown(h2_garden_guard_card_t card);
+
+/** Full health of a plant kind; zero for NONE. */
+float h2_garden_guard_plant_max_hp(h2_garden_guard_plant_kind_t kind);
+
+/** Pixel center of a lane position given in cells. */
+void h2_garden_guard_field_point(const h2_garden_guard_layout_t* layout,
+                                 uint32_t lane, float along, float* out_x,
+                                 float* out_y);
+
+/** Cell under a display point; false outside the lawn. */
+bool h2_garden_guard_cell_at(const h2_garden_guard_layout_t* layout, float x,
+                             float y, uint32_t* out_lane, uint32_t* out_col);
+
+/** Card under a display point, or H2_GARDEN_GUARD_CARD_NONE. */
+int32_t h2_garden_guard_card_at(const h2_garden_guard_layout_t* layout, float x,
+                                float y);
+
+/** Pixel center of the sun counter icon. */
+void h2_garden_guard_sun_counter_point(const h2_garden_guard_layout_t* layout,
+                                       float* out_x, float* out_y);
+
+/** Sun radius in pixels for this layout. */
+float h2_garden_guard_sun_radius(const h2_garden_guard_layout_t* layout);
+
+/** Pests still to defeat in this run: active, pending and future waves. */
+uint32_t h2_garden_guard_pests_remaining(const h2_garden_guard_game_t* game);
+
+/** Total pests of all waves. */
+uint32_t h2_garden_guard_pests_total(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

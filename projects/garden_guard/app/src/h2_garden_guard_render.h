@@ -1,0 +1,86 @@
+#ifndef H2_GARDEN_GUARD_RENDER_H
+#define H2_GARDEN_GUARD_RENDER_H
+
+/* Software RGB565 renderer for the game model.
+ *
+ * The picture has three layers: a background image (lawn, house edge and
+ * toolbar panel), a static layer with independent parts that change only when
+ * their key changes, and the moving scene. Each part is drawn through the same
+ * code twice: a measure pass records which horizontal bands the primitives
+ * cover, then a paint pass draws them. The run loop restores only bands
+ * covered in this or the previous frame and pushes only those rows. */
+
+#include "h2_garden_guard_game.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define H2_GARDEN_GUARD_BAND_ROWS 16
+/** One bit per band: supports heights up to 64 * 16 = 1024 rows. */
+#define H2_GARDEN_GUARD_MAX_BANDS 64
+
+typedef struct h2_garden_guard_canvas {
+  uint16_t* pixels; /**< Borrowed RGB565 rows; NULL while measuring only. */
+  int32_t width, height;
+  size_t stride_pixels;
+  /** True records coverage without writing pixels. */
+  bool measure;
+  /** Covered bands, and per covered band its half-open column range. */
+  uint64_t bands;
+  int16_t band_x0[H2_GARDEN_GUARD_MAX_BANDS];
+  int16_t band_x1[H2_GARDEN_GUARD_MAX_BANDS];
+  /** Vertical clip rows [clip_y0, clip_y1), managed by the renderer while it
+   * draws; zero clip_y1 selects the full height. */
+  int32_t clip_y0, clip_y1;
+} h2_garden_guard_canvas_t;
+
+/** Independently cached parts of the static layer. */
+typedef enum h2_garden_guard_part {
+  /** Sun counter, cards and wave progress. */
+  H2_GARDEN_GUARD_PART_TOOLBAR = 0,
+  /** Plants, parked carts and the title or result panel. */
+  H2_GARDEN_GUARD_PART_FIELD,
+  H2_GARDEN_GUARD_PART_COUNT,
+} h2_garden_guard_part_t;
+
+/** Fields of the game a static part depends on. All-integer, so two keys
+ * compare equal with memcmp after zero initialization. */
+typedef struct h2_garden_guard_static_key {
+  uint32_t phase;
+  uint32_t values[16];
+} h2_garden_guard_static_key_t;
+
+/** Bands spanning rows [0, height). */
+uint64_t h2_garden_guard_all_bands(int32_t height);
+
+/** Fill a background image of the canvas size for the game's layout. */
+void h2_garden_guard_render_background(h2_garden_guard_canvas_t* canvas,
+                                       const h2_garden_guard_game_t* game);
+
+/** Current key of one static part. */
+void h2_garden_guard_static_key(const h2_garden_guard_game_t* game,
+                                h2_garden_guard_part_t part,
+                                h2_garden_guard_static_key_t* out);
+
+/** Draw or measure one static part. */
+void h2_garden_guard_render_static(h2_garden_guard_canvas_t* canvas,
+                                   const h2_garden_guard_game_t* game,
+                                   h2_garden_guard_part_t part);
+
+/** Draw or measure the moving scene above the static layer. */
+void h2_garden_guard_render_scene(h2_garden_guard_canvas_t* canvas,
+                                  const h2_garden_guard_game_t* game);
+
+/** Pixel width of text drawn at an integer scale. */
+int32_t h2_garden_guard_text_width(const char* text, int32_t scale);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
