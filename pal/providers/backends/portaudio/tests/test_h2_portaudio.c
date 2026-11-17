@@ -451,6 +451,41 @@ static h2_pal_audio_track_t* write_test_frame(h2_pal_audio_t* audio,
   return track;
 }
 
+typedef struct fake_presence {
+  int input, output;
+} fake_presence_t;
+
+static int fake_presence_input(void* user) {
+  return ((fake_presence_t*)user)->input;
+}
+
+static int fake_presence_output(void* user) {
+  return ((fake_presence_t*)user)->output;
+}
+
+static void test_independent_capture_playback_devices(void) {
+  const int none = h2_portaudio_no_device_for_test();
+  const fake_presence_t cases[] = {
+      {none, 37}, {23, none}, {23, 37}, {none, none}};
+  for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    fake_presence_t devices = cases[i];
+    const h2_portaudio_device_ops_t ops = {
+        .user = &devices,
+        .default_input_device = fake_presence_input,
+        .default_output_device = fake_presence_output};
+    h2_audio_info_t info = {0};
+    const int result = h2_portaudio_get_device_info_for_test(&ops, 1, &info);
+    assert(result == (i == 3u ? H2_AUDIO_ERR_UNAVAILABLE : H2_AUDIO_OK));
+    assert(info.mic_supported == (devices.input != none));
+    assert(info.playback_supported == (devices.output != none));
+    assert(info.available == (i != 3u));
+    assert(info.playback_format.sample_rate_hz == 16000u);
+    assert(h2_portaudio_get_device_info_for_test(&ops, 0, &info) ==
+           H2_AUDIO_OK);
+    assert(info.available && info.mic_supported && info.playback_supported);
+  }
+}
+
 static void test_default_output_device_selection(void) {
   fake_device_t device = {
       .mode = FAKE_DEVICE_AVAILABLE,
@@ -781,6 +816,7 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t* provider,
 
 int main(void) {
   test_default_output_device_selection();
+  test_independent_capture_playback_devices();
   const h2_portaudio_config_t config = {
       .allocator = h2_desktop_platform_default_allocator(),
       .queue = h2_desktop_platform_queue_api(),

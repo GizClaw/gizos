@@ -89,21 +89,21 @@ void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
 
 int h2_fruit_slice_audio_suspend(h2_fruit_slice_audio_t* audio) {
   if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
+  int first_error = H2_PAL_OK;
   if (audio->track != NULL) {
-    int rc = h2_pal_audio_track_close(audio->track);
+    first_error = h2_pal_audio_track_close(audio->track);
     /* Runtime track wrappers are consumed by close, including on error. */
     audio->track = NULL;
-    if (rc != H2_PAL_OK) return rc;
   }
   if (audio->speaker_started) {
-    int rc = h2_pal_audio_stop_speaker(audio->runtime->audio);
-    if (rc != H2_PAL_OK) return rc;
-    audio->speaker_started = false;
+    const int rc = h2_pal_audio_stop_speaker(audio->runtime->audio);
+    if (rc == H2_PAL_OK) audio->speaker_started = false;
+    if (first_error == H2_PAL_OK) first_error = rc;
   }
   memset(audio->voices, 0, sizeof(audio->voices));
   audio->seen = 0;
   audio->started_ms = audio->submitted_samples = 0;
-  return H2_PAL_OK;
+  return first_error;
 }
 
 int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute) {

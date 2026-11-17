@@ -385,8 +385,7 @@ static int track_set_volume(h2_pal_audio_track_t *base, uint32_t value) {
 static int track_close(h2_pal_audio_track_t *base) {
   h2_ios_audio_track_t *track = (h2_ios_audio_track_t *)base;
   if (track == NULL || track->owner == NULL) return H2_AUDIO_ERR_INVALID_ARG;
-  const int rc = track_drain(base, 3000u);
-  if (rc != H2_AUDIO_OK) return rc;
+  const int drained = track_drain(base, 3000u);
   h2_ios_audio_t *owner = track->owner;
   pthread_mutex_lock(&owner->mutex);
   if (owner->track != track) {
@@ -394,9 +393,24 @@ static int track_close(h2_pal_audio_track_t *base) {
     return H2_AUDIO_ERR_INVALID_STATE;
   }
   owner->track = NULL;
+  AudioQueueRef queue = owner->output_queue;
   pthread_mutex_unlock(&owner->mutex);
+  /* Preserve the normal bounded tail drain, but cancel pending PCM even if
+   * drain failed. Reset outside the mutex: it can return buffers through
+   * output_callback. A valid close always consumes the track, matching the
+   * Runtime wrapper. stop_speaker can then dispose the queue after either
+   * drain or Reset errors without a stranded owner->track. */
+  const OSStatus reset = queue != NULL ? AudioQueueReset(queue) : noErr;
+  if (reset == noErr) {
+    pthread_mutex_lock(&owner->mutex);
+    owner->output_pending = 0u;
+    for (unsigned i = 0u; i < H2_IOS_AUDIO_QUEUE_BUFFERS; ++i) owner->output_free[i] = 1;
+    pthread_cond_broadcast(&owner->changed);
+    pthread_mutex_unlock(&owner->mutex);
+  }
   release_track(track);
-  return H2_AUDIO_OK;
+  if (drained != H2_AUDIO_OK) return drained;
+  return reset == noErr ? H2_AUDIO_OK : H2_AUDIO_ERR_IO;
 }
 
 static int audio_create_track(void *user, const h2_audio_track_config_t *config,

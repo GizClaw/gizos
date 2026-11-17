@@ -560,7 +560,9 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
   if (rc == H2_PAL_OK) rc = play(s);
 
   /* Audio borrows Runtime until track/speaker teardown completes. */
-  while (h2_fruit_slice_audio_close(&s->audio) != H2_PAL_OK) {
+  int audio_closed;
+  while ((audio_closed = h2_fruit_slice_audio_close(&s->audio)) != H2_PAL_OK) {
+    if (rc == H2_PAL_OK) rc = audio_closed;
     log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_AUDIO_CLOSE_RETRY");
     (void)h2_runtime_wait_notify(runtime, 50u);
   }

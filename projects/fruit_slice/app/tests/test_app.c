@@ -54,6 +54,8 @@ typedef struct fixture {
   bool use_audio, audio_active;
   unsigned audio_starts, audio_stops, audio_opens, audio_closes, audio_writes;
   unsigned pause_from, pause_until;
+  int audio_close_result;
+  unsigned audio_stop_failures;
   h2_pal_audio_api_t audio_api;
   h2_pal_audio_track_t audio_track;
 } fixture_t;
@@ -187,6 +189,10 @@ static int audio_stop(void* user) {
   fixture_t* f = user;
   CHECK(!f->audio_active);
   ++f->audio_stops;
+  if (f->audio_stop_failures != 0u) {
+    --f->audio_stop_failures;
+    return H2_PAL_ERR_IO;
+  }
   return H2_PAL_OK;
 }
 static int audio_write(h2_pal_audio_track_t* track,
@@ -202,7 +208,7 @@ static int audio_track_close(h2_pal_audio_track_t* track) {
   CHECK(f->audio_active);
   f->audio_active = false;
   ++f->audio_closes;
-  return H2_PAL_OK;
+  return f->audio_close_result;
 }
 static int audio_create(void* user, const h2_audio_track_config_t* config,
                         h2_pal_audio_track_t** out) {
@@ -409,6 +415,31 @@ static void test_audio_gesture_pause_and_exit(void) {
   CHECK(!fx.audio_active);
 }
 
+static void test_audio_close_errors_release_runtime_wrapped_track(void) {
+  for (unsigned failure = 0u; failure < 3u; ++failure) {
+    reset(30u);
+    fx.use_audio = true;
+    fx.audio_close_result = failure < 2u ? H2_PAL_ERR_IO : H2_PAL_OK;
+    fx.audio_stop_failures = failure == 2u ? 1u : 0u;
+    if (failure == 0u) {
+      fx.pause_from = 20u;
+      fx.pause_until = 24u;
+    }
+    fx.touch_from_frame = 5u;
+    fx.touch.script[fx.touch.script_count++] =
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+    fx.touch.script[fx.touch.script_count++] =
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+    fx.touch.script[fx.touch.script_count++] =
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+    CHECK(run() == H2_PAL_ERR_IO);
+    CHECK(fx.audio_opens == 1u && fx.audio_closes == 1u);
+    CHECK(fx.audio_starts == 1u);
+    CHECK(fx.audio_stops == (failure == 2u ? 2u : 1u));
+    CHECK(!fx.audio_active);
+  }
+}
+
 int main(void) {
   CHECK(h2_fruit_slice_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
   test_runs_and_pushes_dirty_rows();
@@ -418,6 +449,7 @@ int main(void) {
   test_persistent_touch_failure();
   test_ready_failure_stops();
   test_audio_gesture_pause_and_exit();
+  test_audio_close_errors_release_runtime_wrapped_track();
   puts("fruit slice app tests passed");
   return 0;
 }

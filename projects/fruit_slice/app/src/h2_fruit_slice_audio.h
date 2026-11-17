@@ -46,7 +46,9 @@ int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute);
  * Call every game frame after draining the game's sound queue. */
 int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms);
 /* Close track and stop speaker, discard voices. Safe to resume by pumping.
- * On teardown failure borrows remain owned by audio; retry before freeing. */
+ * Runtime consumes a valid close handle even on error; speaker stop is still
+ * attempted. On failure PCM/Runtime borrows and any live speaker remain owned
+ * by audio; retry close before freeing the owner. Returns the first error. */
 int h2_fruit_slice_audio_suspend(h2_fruit_slice_audio_t* audio);
 /* Suspend then free PCM. Retry on error before releasing Runtime/owner. */
 int h2_fruit_slice_audio_close(h2_fruit_slice_audio_t* audio);

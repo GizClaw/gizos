@@ -30,6 +30,10 @@ constexpr uint8_t kMicQueueFrames = 4u;
 constexpr size_t kEchoReferenceFrames = 16u;
 constexpr auto kPlaybackPollInterval = std::chrono::milliseconds(1);
 
+int portaudio_default_input_device(void*) {
+  return static_cast<int>(Pa_GetDefaultInputDevice());
+}
+
 int portaudio_default_output_device(void*) {
   return static_cast<int>(Pa_GetDefaultOutputDevice());
 }
@@ -67,6 +71,7 @@ const h2_portaudio_device_ops_t kPortAudioDeviceOps = {
     portaudio_default_output_device,
     portaudio_default_high_output_latency,
     portaudio_open_output_device,
+    portaudio_default_input_device,
 };
 
 int open_default_output(const h2_portaudio_device_ops_t* ops,
@@ -745,6 +750,24 @@ void reap_stopped_mic_thread(AudioState* state) {
   }
 }
 
+int device_info(const h2_portaudio_device_ops_t* ops, bool require_real,
+                h2_audio_info_t* info) {
+  const bool mic =
+      !require_real || ops->default_input_device(ops->user) != paNoDevice;
+  const bool playback =
+      !require_real || ops->default_output_device(ops->user) != paNoDevice;
+  *info = {};
+  info->available = mic || playback;
+  info->mic_supported = mic;
+  info->playback_supported = playback;
+  info->mic_format = desktop_format();
+  info->playback_format = desktop_format();
+  info->mic_queue_frames = kMicQueueFrames;
+  info->track_queue_frames = kTrackQueueFrames;
+  info->max_tracks = kMaxTracks;
+  return info->available ? H2_AUDIO_OK : H2_AUDIO_ERR_UNAVAILABLE;
+}
+
 int audio_get_info(void* user, h2_audio_info_t* info) {
   if (user == nullptr || info == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
@@ -754,21 +777,7 @@ int audio_get_info(void* user, h2_audio_info_t* info) {
   if (result != H2_AUDIO_OK) {
     return result;
   }
-  if (state->require_real_devices &&
-      (Pa_GetDefaultInputDevice() == paNoDevice ||
-       Pa_GetDefaultOutputDevice() == paNoDevice)) {
-    return H2_AUDIO_ERR_UNAVAILABLE;
-  }
-  *info = {};
-  info->available = 1;
-  info->mic_supported = 1;
-  info->playback_supported = 1;
-  info->mic_format = desktop_format();
-  info->playback_format = desktop_format();
-  info->mic_queue_frames = kMicQueueFrames;
-  info->track_queue_frames = kTrackQueueFrames;
-  info->max_tracks = kMaxTracks;
-  return H2_AUDIO_OK;
+  return device_info(&kPortAudioDeviceOps, state->require_real_devices, info);
 }
 
 int audio_start_mic(void* user) {
@@ -1149,6 +1158,16 @@ uint64_t h2_portaudio_output_underflow_count_for_test(
     return 0u;
   }
   return load_underflow_count(&provider->state);
+}
+
+int h2_portaudio_get_device_info_for_test(const h2_portaudio_device_ops_t* ops,
+                                          int require_real_devices,
+                                          h2_audio_info_t* out_info) {
+  if (ops == nullptr || out_info == nullptr ||
+      ops->default_input_device == nullptr ||
+      ops->default_output_device == nullptr)
+    return H2_AUDIO_ERR_INVALID_ARG;
+  return device_info(ops, require_real_devices != 0, out_info);
 }
 
 int h2_portaudio_set_require_real_devices_for_test(h2_portaudio_t* provider,
