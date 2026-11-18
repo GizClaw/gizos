@@ -194,6 +194,10 @@ typedef struct h2_fruit_slice_reveal_layout {
 
 const h2_fruit_slice_card_t* h2_fruit_slice_card(unsigned id);
 
+/** Stable fruit -> card mapping. -1 for fruit without an album card, bombs
+ * and invalid kinds. New fruit still count for generic run achievements. */
+int h2_fruit_slice_card_for_fruit(unsigned kind);
+
 /** Rarity accent, RGB565. */
 uint16_t h2_fruit_slice_card_rarity_color(unsigned rarity);
 const char* h2_fruit_slice_card_rarity_name(unsigned rarity);

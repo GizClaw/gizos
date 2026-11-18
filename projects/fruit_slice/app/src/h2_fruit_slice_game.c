@@ -1,12 +1,24 @@
 #include "h2_fruit_slice_game.h"
 
+#include "h2_fruit_slice_shape.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
 /* Radii for a 480-pixel short side. */
-static const float k_radius[H2_FRUIT_SLICE_KIND_COUNT] = {46.0f, 34.0f, 32.0f,
-                                                          28.0f, 30.0f, 30.0f};
+static const float k_radius[H2_FRUIT_SLICE_KIND_COUNT] = {
+    46.0f, 34.0f, 32.0f, 28.0f, 30.0f, 30.0f, 31.0f, 42.0f, 40.0f, 33.0f};
+
+h2_fruit_slice_kind_t h2_fruit_slice_kind_at(unsigned index) {
+  if (index >= H2_FRUIT_SLICE_FRUIT_KINDS) return H2_FRUIT_SLICE_KIND_COUNT;
+  return (h2_fruit_slice_kind_t)(index < H2_FRUIT_SLICE_BOMB ? index
+                                                             : index + 1u);
+}
+
+bool h2_fruit_slice_is_fruit(unsigned kind) {
+  return kind < H2_FRUIT_SLICE_KIND_COUNT && kind != H2_FRUIT_SLICE_BOMB;
+}
 
 #define STEP_MAX_MS 16u
 #define MISS_LIFE_MS 1200u
@@ -202,6 +214,14 @@ uint16_t h2_fruit_slice_game_juice(h2_fruit_slice_kind_t kind) {
       return H2_FRUIT_SLICE_RGB(132, 204, 56);
     case H2_FRUIT_SLICE_LEMON:
       return H2_FRUIT_SLICE_RGB(255, 232, 72);
+    case H2_FRUIT_SLICE_STRAWBERRY:
+      return H2_FRUIT_SLICE_RGB(242, 54, 88);
+    case H2_FRUIT_SLICE_BANANA:
+      return H2_FRUIT_SLICE_RGB(255, 232, 154);
+    case H2_FRUIT_SLICE_PINEAPPLE:
+      return H2_FRUIT_SLICE_RGB(255, 194, 38);
+    case H2_FRUIT_SLICE_GRAPES:
+      return H2_FRUIT_SLICE_RGB(172, 80, 220);
     default:
       return H2_FRUIT_SLICE_RGB(96, 96, 96);
   }
@@ -349,6 +369,36 @@ static void spawn_thrown(h2_fruit_slice_game_t* game,
   fruit->body.vy = vy;
   fruit->body.angle = random_range(game, 0.0f, 2.0f * H2_FRUIT_SLICE_PI);
   fruit->body.spin = random_range(game, -3.0f, 3.0f);
+  if (kind == H2_FRUIT_SLICE_PINEAPPLE) {
+    fruit->body.angle = random_range(game, -0.30f, 0.30f);
+    fruit->body.spin *= 0.22f;
+  } else if (kind == H2_FRUIT_SLICE_BANANA) {
+    fruit->body.spin *= 0.65f;
+  }
+}
+
+/* Keep the existing wave/score curve; only the choice within a wave changes.
+ * Strawberry is common immediately. Pineapple/grapes enter at waves 3/5 (or
+ * score 10/20), without retiring any of the old fruit. */
+static h2_fruit_slice_kind_t random_fruit(h2_fruit_slice_game_t* game) {
+  const unsigned weights[H2_FRUIT_SLICE_FRUIT_KINDS] = {
+      12u,
+      12u,
+      12u,
+      12u,
+      12u,
+      16u,
+      12u,
+      game->waves >= 3u || game->score >= 10u ? 10u : 0u,
+      game->waves >= 5u || game->score >= 20u ? 10u : 0u};
+  unsigned total = 0u;
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_FRUIT_KINDS; ++i) total += weights[i];
+  unsigned pick = random_next(game) % total;
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_FRUIT_KINDS; ++i) {
+    if (pick < weights[i]) return h2_fruit_slice_kind_at(i);
+    pick -= weights[i];
+  }
+  return H2_FRUIT_SLICE_STRAWBERRY;
 }
 
 static void update_spawns(h2_fruit_slice_game_t* game) {
@@ -368,8 +418,7 @@ static void update_spawns(h2_fruit_slice_game_t* game) {
     game->next_spawn_ms = game->time_ms;
   }
   while (game->pending_spawns > 0 && game->time_ms >= game->next_spawn_ms) {
-    h2_fruit_slice_kind_t kind =
-        (h2_fruit_slice_kind_t)(random_next(game) % H2_FRUIT_SLICE_FRUIT_KINDS);
+    h2_fruit_slice_kind_t kind = random_fruit(game);
     if (game->wave_has_bomb &&
         (game->pending_spawns == 1u || random_unit(game) < 0.4f)) {
       kind = H2_FRUIT_SLICE_BOMB;
@@ -437,6 +486,7 @@ static void add_half(h2_fruit_slice_game_t* game,
     half->body.vx += nx * separate + ux * 40.0f * game->unit;
     half->body.vy += ny * separate + uy * 40.0f * game->unit;
     half->body.angle = atan2f(ny, nx);
+    half->shape_angle = fruit->body.angle - half->body.angle;
     half->body.spin = random_range(game, -4.0f, 4.0f);
     return;
   }
@@ -484,8 +534,13 @@ static void slice_fruit(h2_fruit_slice_game_t* game, unsigned index, float ux,
   add_half(game, &fruit, nx, ny, ux, uy);
   add_half(game, &fruit, -nx, -ny, ux, uy);
   const uint16_t juice = h2_fruit_slice_game_juice(kind);
-  burst(game, fruit.body.x, fruit.body.y, ux, uy, 12, juice, 240.0f, 5.0f);
-  add_splat(game, fruit.body.x, fruit.body.y, fruit.radius * 1.15f, juice);
+  const bool small_juice = kind == H2_FRUIT_SLICE_STRAWBERRY ||
+                           kind == H2_FRUIT_SLICE_BANANA ||
+                           kind == H2_FRUIT_SLICE_GRAPES;
+  burst(game, fruit.body.x, fruit.body.y, ux, uy, small_juice ? 7u : 12u, juice,
+        small_juice ? 155.0f : 240.0f, small_juice ? 3.0f : 5.0f);
+  add_splat(game, fruit.body.x, fruit.body.y,
+            fruit.radius * (small_juice ? 0.65f : 1.15f), juice);
 
   if (fruit.menu || game->phase != H2_FRUIT_SLICE_PHASE_PLAYING) return;
   ++game->score;
@@ -537,6 +592,23 @@ static float segment_distance2(float x0, float y0, float x1, float y1, float px,
   return ex * ex + ey * ey;
 }
 
+/* Distance between two finite segments, including a crossing. */
+static float segments_distance2(float ax, float ay, float bx, float by,
+                                float cx, float cy, float dx, float dy) {
+  const float ux = bx - ax, uy = by - ay, vx = dx - cx, vy = dy - cy;
+  const float cross = ux * vy - uy * vx;
+  if (fabsf(cross) > 0.00001f) {
+    const float qx = cx - ax, qy = cy - ay;
+    const float t = (qx * vy - qy * vx) / cross;
+    const float s = (qx * uy - qy * ux) / cross;
+    if (t >= 0.0f && t <= 1.0f && s >= 0.0f && s <= 1.0f) return 0.0f;
+  }
+  return fminf(fminf(segment_distance2(ax, ay, bx, by, cx, cy),
+                     segment_distance2(ax, ay, bx, by, dx, dy)),
+               fminf(segment_distance2(cx, cy, dx, dy, ax, ay),
+                     segment_distance2(cx, cy, dx, dy, bx, by)));
+}
+
 static void slice_segment(h2_fruit_slice_game_t* game, float x0, float y0,
                           float x1, float y1) {
   const float dx = x1 - x0, dy = y1 - y0;
@@ -550,14 +622,47 @@ static void slice_segment(h2_fruit_slice_game_t* game, float x0, float y0,
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
     const h2_fruit_slice_fruit_t* fruit = &game->fruits[i];
     if (!fruit->active) continue;
-    const float reach =
-        fruit->radius * 0.95f +
-        (fruit->menu ? 0.0f
-                     : h2_fruit_slice_weapon(game->progress.equipped)->reach *
-                           game->unit);
-    if (segment_distance2(x0, y0, x1, y1, fruit->body.x, fruit->body.y) <=
-        reach * reach)
-      slice_fruit(game, i, ux, uy);
+    const float extra =
+        fruit->menu ? 0.0f
+                    : h2_fruit_slice_weapon(game->progress.equipped)->reach *
+                          game->unit;
+    unsigned count;
+    const h2_fruit_slice_shape_circle_t* circles =
+        h2_fruit_slice_shape_circles(fruit->kind, &count);
+    bool hit = false;
+    if (count != 0u) {
+      const float ca = cosf(fruit->body.angle), sa = sinf(fruit->body.angle);
+      for (unsigned c = 0; c < count && !hit; ++c) {
+        const float cx = fruit->body.x + fruit->radius * (circles[c].x * ca -
+                                                          circles[c].y * sa);
+        const float cy = fruit->body.y + fruit->radius * (circles[c].x * sa +
+                                                          circles[c].y * ca);
+        const float reach =
+            fmaxf(0.0f, fruit->radius * circles[c].radius + extra);
+        hit = segment_distance2(x0, y0, x1, y1, cx, cy) <= reach * reach;
+        if (!hit && fruit->kind == H2_FRUIT_SLICE_BANANA && c > 0u) {
+          const float px =
+              fruit->body.x +
+              fruit->radius * (circles[c - 1u].x * ca - circles[c - 1u].y * sa);
+          const float py =
+              fruit->body.y +
+              fruit->radius * (circles[c - 1u].x * sa + circles[c - 1u].y * ca);
+          /* Four short capsules connect the five body samples. End circles
+           * keep the small tips exact; a small inset follows the taper. */
+          const float thickness = fmaxf(
+              0.0f,
+              fruit->radius * fminf(circles[c].radius, circles[c - 1u].radius) +
+                  extra);
+          hit = segments_distance2(x0, y0, x1, y1, px, py, cx, cy) <=
+                thickness * thickness;
+        }
+      }
+    } else {
+      const float reach = fmaxf(0.0f, fruit->radius * 0.95f + extra);
+      hit = segment_distance2(x0, y0, x1, y1, fruit->body.x, fruit->body.y) <=
+            reach * reach;
+    }
+    if (hit) slice_fruit(game, i, ux, uy);
   }
 }
 

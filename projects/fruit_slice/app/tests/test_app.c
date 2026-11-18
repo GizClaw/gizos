@@ -266,7 +266,8 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
     const unsigned point = (fx.frames - 2u) % 150u;
     *out = (h2_pal_touch_event_t){
         point % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
-        point % 2u == 0u ? 0 : WIDTH, point < 2u ? 346 : 280};
+        point % 2u == 0u ? 0 : fx.display.info.width,
+        fx.display.info.height * (point < 2u ? 346 : 280) / HEIGHT};
     return H2_PAL_OK;
   }
   /* Finish naturally earned reveals after autoplay stops, without slicing
@@ -1061,10 +1062,12 @@ static void test_cards_transient_sqlite_read(void) {
     /* The third case recovers after real play has already earned duplicates
      * and a new bomb, exercising pending increments in the public App. */
     card_fault.recover_after_frame = failure == 2u ? 330u : 0u;
-    reset(400u);
+    /* Variety changes deterministic wave choices. 520 frames reaches the
+     * weapon's 10-point duplicate as well as the first bomb with seed 42. */
+    reset(520u);
     fx.pref_override = &recovering_api;
     fx.fast_clock = true;
-    fx.autoplay_until = 400u;
+    fx.autoplay_until = 520u;
     CHECK(run() == H2_PAL_OK);
     CHECK(card_fault.successful_reads == 1u);
     CHECK(failure == 2u ? card_fault.reads > 2u : card_fault.reads == 2u);
@@ -1139,7 +1142,29 @@ static void test_cards_write_retry_and_read_error(void) {
   CHECK(memcmp(saved, pref.cards_saved, sizeof(saved)) == 0);
 }
 
+static void test_variety_actual_frames(void) {
+  const int sizes[][2] = {{480, 320}, {160, 160}};
+  for (unsigned size = 0; size < 2u; ++size) {
+    reset(1200u);
+    fx.display.info.width = fx.touch.info.width = sizes[size][0];
+    fx.display.info.height = fx.touch.info.height = sizes[size][1];
+    fx.fast_clock = true;
+    fx.autoplay_until = 1200u;
+    /* Let a normal mid-run wave rise intact before resuming real strokes. */
+    fx.autoplay_pause_from = 580u;
+    fx.autoplay_pause_until = 610u;
+    fx.capture_name = size == 0u ? "variety-actual-app-480x320"
+                                 : "variety-actual-app-160x160";
+    fx.capture_from = 20u;
+    fx.capture_until = 1200u;
+    fx.capture_every = 20u;
+    CHECK(run() == H2_PAL_OK);
+    CHECK(fx.display.presents > 100u && fx.allocations == fx.frees);
+  }
+}
+
 int main(void) {
+  test_variety_actual_frames();
   test_cards_transient_sqlite_read();
   test_cards_write_retry_and_read_error();
   test_fresh_sqlite_storage();

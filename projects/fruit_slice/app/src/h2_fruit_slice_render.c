@@ -1,6 +1,7 @@
 #include "h2_fruit_slice_render.h"
 
 #include "h2_fruit_slice_cards_render.h"
+#include "h2_fruit_slice_shape.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -57,6 +58,34 @@ static const palette_t k_palette[H2_FRUIT_SLICE_KIND_COUNT] = {
                               {255, 246, 172},
                               0.08f,
                               0.05f},
+    [H2_FRUIT_SLICE_STRAWBERRY] = {{234, 38, 65},
+                                   {255, 85, 104},
+                                   {255, 224, 208},
+                                   {255, 139, 163},
+                                   {255, 204, 210},
+                                   0.07f,
+                                   0.0f},
+    [H2_FRUIT_SLICE_BANANA] = {{255, 211, 32},
+                               {255, 242, 102},
+                               {255, 232, 112},
+                               {255, 240, 199},
+                               {255, 250, 226},
+                               0.09f,
+                               0.0f},
+    [H2_FRUIT_SLICE_PINEAPPLE] = {{198, 133, 27},
+                                  {250, 190, 44},
+                                  {255, 230, 142},
+                                  {255, 202, 52},
+                                  {255, 239, 160},
+                                  0.07f,
+                                  0.0f},
+    [H2_FRUIT_SLICE_GRAPES] = {{116, 43, 169},
+                               {170, 79, 211},
+                               {224, 172, 248},
+                               {199, 137, 227},
+                               {230, 189, 246},
+                               0.09f,
+                               0.0f},
     [H2_FRUIT_SLICE_BOMB] = {{36, 40, 48},
                              {68, 74, 88},
                              {0, 0, 0},
@@ -600,6 +629,72 @@ void h2_fruit_slice_sprites_destroy(h2_fruit_slice_sprites_t* sprites) {
   h2_pal_mem_free(sprites->allocator, sprites);
 }
 
+/* New silhouettes use zero as a transparent texel. All visible colors have
+ * nonzero channels. Whole and full cut-face masks are prepared once; halves
+ * sample the same fruit-local mask and clip against their moving cut normal. */
+static uint16_t shaped_texel(h2_fruit_slice_kind_t kind, float x, float y,
+                             bool half) {
+  const palette_t* p = &k_palette[kind];
+  const float body = h2_fruit_slice_shape_body(kind, x, y);
+  const float leaf = h2_fruit_slice_shape_leaves(kind, x, y);
+  if (body > 0.0f && (half || leaf > 0.0f)) return 0u;
+  if (!half && leaf < 0.0f && y < -0.40f)
+    return pack(scaled((color3_t){42, 124, 58}, leaf > -0.035f ? 0.55f : 1.0f));
+  color3_t color = half ? p->flesh : p->skin;
+  float edge = -body;
+  if (kind == H2_FRUIT_SLICE_GRAPES) {
+    unsigned count;
+    const h2_fruit_slice_shape_circle_t* circles =
+        h2_fruit_slice_shape_circles(kind, &count);
+    /* Front berries overlap the back pair, but remain a single silhouette. */
+    for (unsigned i = 0; i < count; ++i) {
+      const float dx = x - circles[i].x, dy = y - circles[i].y;
+      const float d = sqrtf(dx * dx + dy * dy);
+      if (d > circles[i].radius) continue;
+      edge = circles[i].radius - d;
+      color = half ? p->flesh : mix(p->skin, p->skin_alt, 0.22f * (float)i);
+      color = scaled(color, 0.92f - 0.20f * dx / circles[i].radius -
+                                0.18f * dy / circles[i].radius);
+    }
+  }
+  if (half) {
+    if (edge < 0.035f)
+      color = scaled(p->skin, 0.50f);
+    else if (edge < p->rind)
+      color = p->skin;
+    else {
+      if (kind == H2_FRUIT_SLICE_STRAWBERRY && fabsf(x) < 0.19f * (0.9f - y))
+        color = p->flesh_alt;
+      if (kind == H2_FRUIT_SLICE_PINEAPPLE && fabsf(x) < 0.14f)
+        color = p->flesh_alt;
+      color = scaled(color, 1.0f - 0.08f * (y + 1.0f));
+    }
+  } else {
+    if (kind == H2_FRUIT_SLICE_STRAWBERRY) {
+      static const seed_point_t seeds[] = {{-0.37f, -0.27f}, {0.24f, -0.29f},
+                                           {-0.18f, 0.08f},  {0.37f, 0.12f},
+                                           {0.04f, 0.43f},   {-0.08f, 0.65f}};
+      for (unsigned i = 0; i < sizeof(seeds) / sizeof(seeds[0]); ++i) {
+        const float dx = x - seeds[i].a, dy = (y - seeds[i].b) * 0.65f;
+        if (dx * dx + dy * dy < 0.0020f) color = (color3_t){255, 225, 145};
+      }
+    } else if (kind == H2_FRUIT_SLICE_BANANA) {
+      if (fabsf(x) > 0.76f && y < -0.14f)
+        color = (color3_t){109, 65, 25};
+      else if (edge > 0.09f && edge < 0.16f)
+        color = p->skin_alt;
+    } else if (kind == H2_FRUIT_SLICE_PINEAPPLE) {
+      const float a = (x + y) * 4.5f, b = (x - y) * 4.5f;
+      if (fabsf(a - roundf(a)) < 0.10f || fabsf(b - roundf(b)) < 0.10f)
+        color = (color3_t){130, 88, 24};
+      else
+        color = mix(p->skin, p->skin_alt, 0.65f);
+    }
+    if (edge < 0.035f) color = scaled(color, 0.52f);
+  }
+  return pack(color);
+}
+
 /* Find or build one texture; NULL when unavailable (cache full, no memory or
  * an unusable radius). */
 static const sprite_t* sprite_get(h2_fruit_slice_sprites_t* sprites,
@@ -617,7 +712,8 @@ static const sprite_t* sprite_get(h2_fruit_slice_sprites_t* sprites,
   if (sprites->count == H2_FRUIT_SLICE_SPRITE_CAPACITY) return NULL;
   const float r = (float)key / 8.0f;
   const int32_t extent = (int32_t)ceilf(r) + 1;
-  const int32_t width = half ? extent + 1 : 2 * extent + 1;
+  const bool shaped = kind >= H2_FRUIT_SLICE_STRAWBERRY;
+  const int32_t width = half && !shaped ? extent + 1 : 2 * extent + 1;
   const int32_t height = 2 * extent + 1;
   uint16_t* texels = h2_pal_mem_alloc(
       sprites->allocator, (size_t)width * (size_t)height * sizeof(uint16_t));
@@ -625,6 +721,11 @@ static const sprite_t* sprite_get(h2_fruit_slice_sprites_t* sprites,
   for (int32_t ty = 0; ty < height; ++ty)
     for (int32_t tx = 0; tx < width; ++tx) {
       const float ly = (float)(ty - extent);
+      if (shaped) {
+        texels[(size_t)ty * (size_t)width + (size_t)tx] =
+            shaped_texel(kind, (float)(tx - extent) / r, ly / r, half);
+        continue;
+      }
       const color3_t color =
           half ? half_color(kind, (float)tx, ly, r)
                : whole_albedo(kind, (float)(tx - extent) / r, ly / r, r);
@@ -747,6 +848,12 @@ static void draw_whole(h2_fruit_slice_canvas_t* canvas,
                                  (size_t)s->width +
                              (size_t)texel_index(lx, s->extent, s->width)];
         }
+        if (kind >= H2_FRUIT_SLICE_STRAWBERRY) {
+          if (s == NULL)
+            albedo = shaped_texel(kind, (dx * ca + dy * sa) / r,
+                                  (dy * ca - dx * sa) / r, false);
+          if (albedo == 0u) continue;
+        }
         const float u = dx * inverse, nd2 = d2 * inverse2;
         float light = light_row - 0.132f * u - 0.28f * nd2;
         if (nd2 > 0.8464f) light *= 0.62f;
@@ -769,8 +876,10 @@ static void draw_whole(h2_fruit_slice_canvas_t* canvas,
 
 static void draw_half(h2_fruit_slice_canvas_t* canvas,
                       h2_fruit_slice_kind_t kind, float cx, float cy, float r,
-                      float angle) {
+                      float angle, float shape_angle) {
   const float nx = cosf(angle), ny = sinf(angle);
+  const bool shaped = kind >= H2_FRUIT_SLICE_STRAWBERRY;
+  const float ca = cosf(angle + shape_angle), sa = sinf(angle + shape_angle);
   region_t g;
   if (!region_begin(canvas, cx - r - 1.0f, cy - r - 1.0f, cx + r + 1.0f,
                     cy + r + 1.0f, &g))
@@ -796,7 +905,17 @@ static void draw_half(h2_fruit_slice_canvas_t* canvas,
       if (side < 0.5f) cover = fminf(cover, side + 0.5f);
       if (cover <= 0.0f) continue;
       uint16_t color = flat;
-      if (s != NULL) {
+      if (shaped) {
+        const float lx = dx * ca + dy * sa, ly = dy * ca - dx * sa;
+        color = s != NULL ? s->texels[(size_t)texel_index(ly * scale, s->extent,
+                                                          s->height) *
+                                          (size_t)s->width +
+                                      (size_t)texel_index(lx * scale, s->extent,
+                                                          s->width)]
+                          : shaped_texel(kind, lx / r, ly / r, true);
+        if (color == 0u) continue;
+        if (side < 2.0f) color = shade(color, 256u, 60u);
+      } else if (s != NULL) {
         const float a = side * scale, b = (dy * nx - dx * ny) * scale;
         color = s->texels[(size_t)texel_index(b, s->extent, s->height) *
                               (size_t)s->width +
@@ -876,7 +995,7 @@ static void draw_hud(h2_fruit_slice_canvas_t* canvas,
   const float u = game->unit;
   char value[24];
   draw_half(canvas, H2_FRUIT_SLICE_WATERMELON, 30.0f * u, 42.0f * u, 20.0f * u,
-            -H2_FRUIT_SLICE_PI * 0.5f);
+            -H2_FRUIT_SLICE_PI * 0.5f, 0.0f);
   (void)snprintf(value, sizeof(value), "%u", (unsigned)game->score);
   text(canvas, value, (int32_t)(58.0f * u), (int32_t)(14.0f * u),
        text_scale(u, 4.0f), H2_FRUIT_SLICE_RGB(255, 222, 80), 256u);
@@ -1181,7 +1300,8 @@ void h2_fruit_slice_render_scene(h2_fruit_slice_canvas_t* canvas,
     const h2_fruit_slice_half_t* half = &game->halves[i];
     if (half->active)
       draw_half(canvas, (h2_fruit_slice_kind_t)half->kind, half->body.x,
-                half->body.y, half->radius, half->body.angle);
+                half->body.y, half->radius, half->body.angle,
+                half->shape_angle);
   }
 
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {

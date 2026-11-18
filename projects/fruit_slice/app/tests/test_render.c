@@ -168,7 +168,7 @@ static void test_sprite_cache(void) {
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
     h2_fruit_slice_half_t* h = &game.halves[i];
     h->active = true;
-    h->kind = (uint8_t)(i % H2_FRUIT_SLICE_FRUIT_KINDS);
+    h->kind = (uint8_t)h2_fruit_slice_kind_at(i % H2_FRUIT_SLICE_FRUIT_KINDS);
     h->radius = 11.0f + 2.5f * (float)i;
     h->body.x = 20.0f + 20.0f * (float)i;
     h->body.y = 320.0f;
@@ -191,19 +191,20 @@ static void scene_playing(void) {
     f->active = true;
     f->kind = (uint8_t)k;
     f->radius = h2_fruit_slice_game_radius(&game, (h2_fruit_slice_kind_t)k);
-    f->body.x = w * (0.12f + 0.155f * (float)k);
-    f->body.y = h * (k % 2u ? 0.36f : 0.52f);
+    f->body.x = w * (0.10f + 0.20f * (float)(k % 5u));
+    f->body.y = h * (0.23f + 0.24f * (float)(k / 5u));
     f->body.angle = 0.4f * (float)k;
   }
   for (unsigned k = 0; k < H2_FRUIT_SLICE_FRUIT_KINDS; ++k) {
     for (unsigned side = 0; side < 2u; ++side) {
       h2_fruit_slice_half_t* half = &game.halves[k * 2u + side];
       half->active = true;
-      half->kind = (uint8_t)k;
+      half->kind = (uint8_t)h2_fruit_slice_kind_at(k);
       half->radius =
-          h2_fruit_slice_game_radius(&game, (h2_fruit_slice_kind_t)k);
-      half->body.x = w * (0.12f + 0.19f * (float)k) + (side ? 14.0f : -14.0f);
-      half->body.y = h * 0.80f;
+          h2_fruit_slice_game_radius(&game, h2_fruit_slice_kind_at(k));
+      half->body.x = w * (0.10f + 0.20f * (float)(k % 5u)) +
+                     (side ? 5.0f : -5.0f) * game.unit;
+      half->body.y = h * (0.71f + 0.20f * (float)(k / 5u));
       half->body.angle = (side ? 0.0f : H2_FRUIT_SLICE_PI) + 0.3f;
     }
   }
@@ -446,7 +447,69 @@ static void test_card_scenes(int32_t width, int32_t height) {
   CHECK(allocation_calls == prepared); /* No frame-time texture allocation. */
 }
 
+static void test_variety_scenes(int32_t width, int32_t height) {
+  h2_fruit_slice_sprites_destroy(sprites);
+  allocation_calls = allocated_bytes = 0u;
+  sprites = h2_fruit_slice_sprites_create(&test_memory);
+  CHECK(sprites != NULL);
+  h2_fruit_slice_game_init(&game, width, height, 42u, 0u);
+  CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
+  const size_t prepared = allocation_calls;
+  printf(
+      "variety resources %dx%d: allocations=%zu bytes=%zu game=%zu frames=%zu\n",
+      width, height, allocation_calls, allocated_bytes, sizeof(game),
+      (size_t)width * (size_t)height * 6u);
+  game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+  memset(game.fruits, 0, sizeof(game.fruits));
+  h2_fruit_slice_canvas_t canvas = {.pixels = background,
+                                    .width = width,
+                                    .height = height,
+                                    .stride_pixels = (size_t)width};
+  h2_fruit_slice_render_background(&canvas);
+  for (unsigned k = 0u; k < 4u; ++k) {
+    const unsigned kind = H2_FRUIT_SLICE_STRAWBERRY + k;
+    const float radius =
+        h2_fruit_slice_game_radius(&game, (h2_fruit_slice_kind_t)kind);
+    const float x = (float)width * (0.125f + 0.25f * (float)k);
+    for (unsigned row = 0u; row < 2u; ++row) {
+      h2_fruit_slice_fruit_t* f = &game.fruits[k + row * 4u];
+      *f = (h2_fruit_slice_fruit_t){
+          .active = true,
+          .kind = (uint8_t)kind,
+          .radius = radius,
+          .body = {.x = x,
+                   .y = (float)height * (0.32f + 0.25f * (float)row),
+                   .angle = row ? 1.1f : 0.0f}};
+    }
+    for (unsigned side = 0u; side < 2u; ++side) {
+      h2_fruit_slice_half_t* half = &game.halves[k * 2u + side];
+      const float angle = side ? 0.0f : H2_FRUIT_SLICE_PI;
+      *half = (h2_fruit_slice_half_t){
+          .active = true,
+          .kind = (uint8_t)kind,
+          .radius = radius,
+          .shape_angle = -angle,
+          .body = {.x = x + (side ? 5.0f : -5.0f) * game.unit,
+                   .y = (float)height * 0.84f,
+                   .angle = angle}};
+    }
+  }
+  char name[64];
+  (void)snprintf(name, sizeof(name), "variety-specimens-%dx%d", width, height);
+  check_scene(name, width, height);
+  CHECK(allocation_calls == prepared);
+  /* Texture masks preserve negative space even without an allocator. */
+  for (unsigned i = 0u; i < 8u; ++i) {
+    game.fruits[i].body.angle += 0.37f;
+    (void)check_layer(h2_fruit_slice_render_scene, sprites, width, height);
+  }
+  CHECK(allocation_calls == prepared);
+}
+
 int main(void) {
+  test_variety_scenes(480, 320);
+  test_variety_scenes(160, 160);
+  test_variety_scenes(240, 240);
   test_card_scenes(240, 240);
   test_card_scenes(480, 320);
   test_card_scenes(480, 800);

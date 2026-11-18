@@ -11,6 +11,7 @@ _PRIVATE_HEADERS = [
     "src/h2_fruit_slice_cards.h",
     "src/h2_fruit_slice_cards_render.h",
     "src/h2_fruit_slice_game.h",
+    "src/h2_fruit_slice_shape.h",
     "src/h2_fruit_slice_render.h",
 ]
 

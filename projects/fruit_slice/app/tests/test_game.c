@@ -1,5 +1,6 @@
 #include "h2_fruit_slice_game.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -415,7 +416,136 @@ static void test_progress_limits(void) {
   CHECK(game.progress.coins == 30u && game.progress.fruit_credit == 0u);
 }
 
+static void test_variety_ids_and_hits(void) {
+  CHECK(H2_FRUIT_SLICE_BOMB == 5 && H2_FRUIT_SLICE_STRAWBERRY == 6);
+  CHECK(H2_FRUIT_SLICE_CARD_FRUIT_SALAD == 5 && H2_FRUIT_SLICE_CARD_BOMB == 9);
+  CHECK(H2_FRUIT_SLICE_FRUIT_KINDS == 9u);
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_FRUIT_KINDS; ++i)
+    CHECK(h2_fruit_slice_is_fruit(h2_fruit_slice_kind_at(i)));
+  CHECK(h2_fruit_slice_kind_at(9u) == H2_FRUIT_SLICE_KIND_COUNT);
+  CHECK(!h2_fruit_slice_is_fruit(H2_FRUIT_SLICE_BOMB));
+  CHECK(!h2_fruit_slice_is_fruit(255u));
+  const unsigned sizes[][2] = {{480u, 320u}, {160u, 160u}};
+  for (unsigned size = 0; size < 2u; ++size) {
+    const float w = (float)sizes[size][0], h = (float)sizes[size][1];
+    for (unsigned k = 6u; k < H2_FRUIT_SLICE_KIND_COUNT; ++k) {
+      for (unsigned turn = 0u; turn < 8u; ++turn) {
+        h2_fruit_slice_game_init(&game, (int32_t)w, (int32_t)h, 42u, 0u);
+        game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+        h2_fruit_slice_cards_run_start(&game.cards);
+        clear_scene(&game);
+        h2_fruit_slice_fruit_t* f =
+            place(&game, 0u, (h2_fruit_slice_kind_t)k, w * 0.5f, h * 0.5f);
+        const float a = (float)turn * H2_FRUIT_SLICE_PI / 4.0f;
+        f->body.angle = a;
+        const float radius = f->radius;
+        /* A short stroke through edible flesh, rotated with the body. */
+        const float ly = k == H2_FRUIT_SLICE_BANANA ? 0.20f : 0.0f;
+        const float cx = f->body.x - sinf(a) * ly * radius;
+        const float cy = f->body.y + cosf(a) * ly * radius;
+        h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN,
+                                    cx - cosf(a) * radius * 0.2f,
+                                    cy - sinf(a) * radius * 0.2f);
+        h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP,
+                                    cx + cosf(a) * radius * 0.2f,
+                                    cy + sinf(a) * radius * 0.2f);
+        CHECK(game.sliced_total == 1u && game.score == 1u);
+        CHECK(game.progress.fruit_credit == 1u && game.cards.run_slices == 1u);
+        CHECK(count_halves(&game) == 2u && !f->active);
+        CHECK(fabsf(game.halves[0].shape_angle + game.halves[0].body.angle -
+                    a) < 0.001f);
+      }
+    }
+    /* The banana tips are edible; the obvious notch must remain empty. */
+    const float samples[][3] = {{-0.87f, -0.23f, 1.0f},
+                                {0.87f, -0.23f, 1.0f},
+                                {0.0f, -0.42f, 0.0f},
+                                {0.0f, 0.70f, 0.0f}};
+    for (unsigned s = 0; s < 4u; ++s) {
+      h2_fruit_slice_game_init(&game, (int32_t)w, (int32_t)h, 42u, 0u);
+      game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+      clear_scene(&game);
+      h2_fruit_slice_fruit_t* f =
+          place(&game, 0u, H2_FRUIT_SLICE_BANANA, w / 2, h / 2);
+      const float x = f->body.x + f->radius * samples[s][0];
+      const float y = f->body.y + f->radius * samples[s][1];
+      h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, x,
+                                  y - game.unit * 2);
+      h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, x,
+                                  y + game.unit * 2);
+      CHECK(game.sliced_total == (unsigned)samples[s][2]);
+    }
+    h2_fruit_slice_game_init(&game, (int32_t)w, (int32_t)h, 42u, 0u);
+    game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+    clear_scene(&game);
+    h2_fruit_slice_fruit_t* p =
+        place(&game, 0u, H2_FRUIT_SLICE_PINEAPPLE, w / 2, h / 2);
+    const float y = p->body.y - p->radius * 0.85f;
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN,
+                                w / 2 - 3 * game.unit, y);
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP,
+                                w / 2 + 3 * game.unit, y);
+    CHECK(p->active && game.sliced_total == 0u);
+  }
+  /* Two bunches in one stroke still produce two events, never ten berries. */
+  start_playing(&game, 42u, 0u);
+  clear_scene(&game);
+  place(&game, 0u, H2_FRUIT_SLICE_GRAPES, 180, 220);
+  place(&game, 1u, H2_FRUIT_SLICE_GRAPES, 300, 220);
+  swipe(&game, 100, 220, 380, 220, 1u);
+  CHECK(game.sliced_total == 2u && game.score == 2u &&
+        count_halves(&game) == 4u);
+}
+
+static void test_natural_variety(void) {
+  unsigned seen = 0u, sliced = 0u, opening_strawberries = 0u;
+  unsigned counts[H2_FRUIT_SLICE_KIND_COUNT] = {0};
+  for (unsigned seed = 1u; seed <= 16u; ++seed) {
+    start_playing(&game, seed, 0u);
+    /* Keep normal spawn/flight/score paths. Slice visible fruit at its body;
+     * discard bombs only after counting them, so the deterministic run lasts.
+     */
+    for (unsigned frame = 0u; frame < 3000u; ++frame) {
+      h2_fruit_slice_game_step(&game, 16u);
+      for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
+        if (game.fruits[i].active &&
+            game.fruits[i].kind == H2_FRUIT_SLICE_BOMB) {
+          ++counts[H2_FRUIT_SLICE_BOMB];
+          game.fruits[i].active = false;
+        }
+      }
+      for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
+        h2_fruit_slice_fruit_t* f = &game.fruits[i];
+        if (!f->active || f->menu || f->body.y > 360.0f) continue;
+        ++counts[f->kind];
+        seen |= 1u << f->kind;
+        if (game.waves <= 2u && f->kind == H2_FRUIT_SLICE_STRAWBERRY)
+          ++opening_strawberries;
+        if (f->kind == H2_FRUIT_SLICE_PINEAPPLE)
+          CHECK(fabsf(f->body.spin) <= 0.66f);
+        const float offset =
+            f->kind == H2_FRUIT_SLICE_BANANA ? f->radius * 0.2f : 0.0f;
+        const float y = f->body.y + cosf(f->body.angle) * offset;
+        const float x = f->body.x - sinf(f->body.angle) * offset;
+        h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, x - 2,
+                                    y);
+        h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, x + 2, y);
+        CHECK(!f->active);
+        sliced |= 1u << f->kind;
+      }
+    }
+  }
+  CHECK(opening_strawberries > 0u && counts[H2_FRUIT_SLICE_BOMB] > 0u);
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_FRUIT_KINDS; ++i) {
+    const unsigned kind = h2_fruit_slice_kind_at(i);
+    CHECK((seen & sliced & (1u << kind)) != 0u && counts[kind] >= 20u);
+    printf("natural fruit kind=%u count=%u\n", kind, counts[kind]);
+  }
+}
+
 int main(void) {
+  test_variety_ids_and_hits();
+  test_natural_variety();
   test_progress_limits();
   test_tasks_and_shop();
   test_progress_format_and_input();
