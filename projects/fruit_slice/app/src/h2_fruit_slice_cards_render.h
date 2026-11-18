@@ -43,6 +43,8 @@ bool h2_fruit_slice_cards_prepare_sprites(h2_fruit_slice_sprites_t* sprites,
                                           const h2_fruit_slice_game_t* game);
 void h2_fruit_slice_cards_render_badge(h2_fruit_slice_canvas_t* canvas,
                                        const h2_fruit_slice_game_t* game);
+/* Occupied height including drop shadow; zero without earned cards. */
+int32_t h2_fruit_slice_cards_result_height(const h2_fruit_slice_game_t* game);
 void h2_fruit_slice_cards_render_result(h2_fruit_slice_canvas_t* canvas,
                                         const h2_fruit_slice_game_t* game,
                                         float y);

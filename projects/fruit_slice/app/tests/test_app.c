@@ -52,14 +52,14 @@ typedef struct fixture {
   size_t allocations, frees;
   unsigned frames, exit_after, ready_calls;
   h2_pal_result_t ready_result;
+  h2_fruit_slice_language_t language;
   unsigned touch_from_frame;
   uint16_t probe_before;
   bool use_pref, fast_clock, layout_sweep;
   unsigned autoplay_from, autoplay_until, autoplay_pause_from,
-      autoplay_pause_until;
+      autoplay_pause_until, reveal_until;
   uint64_t clock_ms;
   uint32_t seed;
-  h2_fruit_slice_language_t language;
   uint32_t earned_fruit_credit;
   const char* capture_name;
   unsigned capture_every, capture_from, capture_until;
@@ -306,7 +306,8 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   /* Finish naturally earned reveals after autoplay stops, without slicing
    * the restart fruit or changing the economy controls that follow. */
   if (fx.autoplay_until != 0u && fx.frames >= fx.autoplay_until &&
-      (fx.frames < fx.touch_from_frame || t->script_next == t->script_count) &&
+      (fx.frames < (fx.reveal_until ? fx.reveal_until : fx.touch_from_frame) ||
+       (fx.reveal_until == 0u && t->script_next == t->script_count)) &&
       t->last_frame != fx.frames) {
     t->last_frame = fx.frames;
     *out = (h2_pal_touch_event_t){
@@ -569,12 +570,12 @@ static h2_pal_result_t run(void) {
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   const h2_fruit_slice_config_t game = {
       .seed = fx.seed,
-      .language = fx.language,
       .brightness_percent = 80u,
       .frame_period_ms = fx.fast_clock ? 1u : 10u,
       .ready = ready,
       .should_exit = should_exit,
       .is_paused = is_paused,
+      .language = fx.language,
       .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
@@ -1196,6 +1197,64 @@ static void test_cards_write_retry_and_read_error(void) {
   CHECK(memcmp(saved, pref.cards_saved, sizeof(saved)) == 0);
 }
 
+static void prepare_natural_result_profile(void) {
+  memset(&pref, 0, sizeof(pref));
+  pref.best_value = 1u;
+  const h2_fruit_slice_progress_t initial = {0u, 0u, 0u, 0u, 1u, 0u};
+  h2_fruit_slice_progress_encode(&initial, pref.saved);
+  pref.exists = pref.cards_enabled = true;
+  fx.use_pref = true;
+}
+
+static void check_natural_result_awards(void) {
+  h2_fruit_slice_progress_t progress;
+  CHECK(h2_fruit_slice_progress_decode(&progress, pref.saved,
+                                       sizeof(pref.saved)));
+  CHECK(progress.fruit_credit == 12u && progress.combo_credit == 0u);
+  h2_fruit_slice_cards_t cards;
+  h2_fruit_slice_cards_init(&cards, 160, 160, 42u);
+  CHECK(h2_fruit_slice_cards_decode(&cards, pref.cards_saved,
+                                    sizeof(pref.cards_saved)));
+  CHECK(h2_fruit_slice_cards_owned_total(&cards) == 2u);
+}
+
+static void test_natural_result_text(void) {
+  reset(620u);
+  prepare_natural_result_profile();
+  fx.display.info.width = fx.display.info.height = 160;
+  fx.touch.info.width = fx.touch.info.height = 160;
+  fx.fast_clock = true;
+  fx.autoplay_until = 340u;
+  fx.touch_from_frame = 600u;
+  fx.capture_name = "actual-result-default-zh-160x160";
+  CHECK(run() == H2_PAL_OK);
+  check_natural_result_awards();
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned size = 0; size < 3u; ++size) {
+    for (unsigned language = 0; language < 2u; ++language) {
+      reset(620u);
+      prepare_natural_result_profile();
+      fx.display.info.width = fx.touch.info.width = sizes[size][0];
+      fx.display.info.height = fx.touch.info.height = sizes[size][1];
+      fx.fast_clock = true;
+      fx.autoplay_until = 340u;
+      fx.autoplay_from = 6u;
+      fx.reveal_until = 600u;
+      fx.touch_from_frame = 2u;
+      fx.language =
+          language ? H2_FRUIT_SLICE_LANGUAGE_ZH_CN : H2_FRUIT_SLICE_LANGUAGE_EN;
+      script_tap_at(2u, 30, 16); /* Both real language-switch directions. */
+      char name[96];
+      (void)snprintf(name, sizeof(name), "actual-result-toggle-%s-%dx%d",
+                     language ? "en" : "zh", sizes[size][0], sizes[size][1]);
+      fx.capture_name = name;
+      CHECK(run() == H2_PAL_OK);
+      CHECK(fx.ready_calls == 1u);
+      check_natural_result_awards();
+    }
+  }
+}
+
 static void test_layout_app_routes(int32_t width, int32_t height,
                                    h2_fruit_slice_language_t language) {
   reset(500u);
@@ -1412,6 +1471,7 @@ int main(void) {
   test_layout_app_routes(160, 160, H2_FRUIT_SLICE_LANGUAGE_EN);
   test_layout_app_routes(240, 240, H2_FRUIT_SLICE_LANGUAGE_EN);
   test_layout_app_routes(480, 320, H2_FRUIT_SLICE_LANGUAGE_EN);
+  test_natural_result_text();
   test_cards_transient_sqlite_read();
   test_cards_write_retry_and_read_error();
   test_fresh_sqlite_storage();

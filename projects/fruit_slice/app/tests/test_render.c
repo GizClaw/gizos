@@ -1,5 +1,6 @@
 #include "h2_fruit_slice_game.h"
 #include "h2_fruit_slice_render.h"
+#include "h2_fruit_slice_cards_render.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -287,6 +288,7 @@ static void render_size(int32_t width, int32_t height) {
   game.phase_started_ms = game.time_ms;
   game.new_best = true;
   game.best = game.score;
+  game.cards.run_earned = game.cards.run_new = 0xFFFFu;
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
   (void)snprintf(name, sizeof(name), "game_over_%dx%d", (int)width,
                  (int)height);
@@ -502,7 +504,58 @@ static void test_combo_feedback_priority(void) {
   CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) == 0u);
 }
 
+static void test_result_reward_does_not_overwrite_record(void) {
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned size = 0; size < 3u; ++size) {
+    const int w = sizes[size][0], h = sizes[size][1];
+    for (unsigned language = 0; language < 2u; ++language) {
+      for (unsigned record = 0; record < 2u; ++record) {
+        h2_fruit_slice_game_init(&game, w, h, 42u, 21u);
+        game.language = (h2_fruit_slice_language_t)language;
+        game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+        game.score = 12u;
+        game.new_best = record != 0u;
+        if (record) game.best = 12u;
+        memset(game.fruits, 0, sizeof(game.fruits));
+        h2_fruit_slice_canvas_t c = {.pixels = pixels,
+                                     .width = w,
+                                     .height = h,
+                                     .stride_pixels = (size_t)w};
+        h2_fruit_slice_render_background(&c);
+        h2_fruit_slice_render_static(&c, &game);
+        memcpy(background, pixels, (size_t)w * (size_t)h * sizeof(uint16_t));
+        /* Detect the painted record ink instead of duplicating the old
+         * panel's coordinates; the combined layout uses a different stack. */
+        int protected_bottom = 0;
+        for (int y = 0; y < h / 2; ++y)
+          for (int x = 0; x < w; ++x)
+            if (background[y * w + x] == H2_FRUIT_SLICE_RGB(245, 238, 222))
+              protected_bottom = y + 2; /* Include the one-pixel shadow. */
+        CHECK(protected_bottom > 0);
+        game.cards.run_earned = game.cards.run_new = 3u;
+        h2_fruit_slice_render_background(&c);
+        h2_fruit_slice_render_static(&c, &game);
+        /* Adding two ordinary earned cards must not overwrite any pixel of
+         * the unchanged title/score/record block, or the tap navigation. */
+        CHECK(memcmp(background, pixels,
+                     (size_t)w * (size_t)protected_bottom * sizeof(uint16_t)) ==
+              0);
+        h2_fruit_slice_rect_t nav;
+        CHECK(h2_fruit_slice_game_button_rect(
+            &game, H2_FRUIT_SLICE_BUTTON_START, &nav));
+        const int nav_y = (int)nav.y0;
+        CHECK(memcmp(background + nav_y * w, pixels + nav_y * w,
+                     (size_t)w * (size_t)(h - nav_y) * sizeof(uint16_t)) == 0);
+        CHECK(h2_fruit_slice_cards_result_height(&game) > 0);
+        CHECK(memcmp(background, pixels,
+                     (size_t)w * (size_t)h * sizeof(*pixels)) != 0);
+      }
+    }
+  }
+}
+
 int main(void) {
+  test_result_reward_does_not_overwrite_record();
   test_combo_feedback_priority();
   test_card_scenes(160, 160);
   test_card_scenes(240, 240);

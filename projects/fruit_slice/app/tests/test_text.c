@@ -137,7 +137,37 @@ static void test_language_touch(void) {
   }
 }
 
+static void test_album_text_fits_above_back(void) {
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned size = 0; size < 3u; ++size) {
+    h2_fruit_slice_game_t g;
+    h2_fruit_slice_game_init(&g, sizes[size][0], sizes[size][1], 1u, 0u);
+    h2_fruit_slice_album_layout_t l;
+    h2_fruit_slice_cards_album_layout(g.width, g.height, g.unit, &l);
+    h2_fruit_slice_rect_t back;
+    h2_fruit_slice_game_back_rect(g.width, g.height, &back);
+    const float width = (l.detail.x1 - l.detail.x0) * 0.92f;
+    CHECK(l.detail.y1 < back.y0);
+    for (unsigned language = 0; language < 2u; ++language)
+      for (unsigned id = 0; id < H2_FRUIT_SLICE_CARD_COUNT; ++id) {
+        const h2_fruit_slice_card_t* card = h2_fruit_slice_card(id);
+        const char* name = h2_fruit_slice_translate(
+            (h2_fruit_slice_language_t)language, card->name);
+        const char* hint = h2_fruit_slice_translate(
+            (h2_fruit_slice_language_t)language, card->hint);
+        char copies[128];
+        (void)snprintf(copies, sizeof(copies), "%s x99", name);
+        CHECK((float)h2_fruit_slice_text_width(copies, 1) <= width);
+        CHECK((float)h2_fruit_slice_text_width(hint, 1) <= width);
+        CHECK((float)(h2_fruit_slice_text_height(copies, 1) +
+                      h2_fruit_slice_text_height(hint, 1) + 3) <=
+              l.detail.y1 - l.detail.y0);
+      }
+  }
+}
+
 int main(void) {
+  test_album_text_fits_above_back();
   test_coverage();
   test_utf8();
   test_measure_and_draw();

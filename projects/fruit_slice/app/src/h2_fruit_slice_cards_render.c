@@ -681,20 +681,35 @@ void h2_fruit_slice_cards_render_badge(h2_fruit_slice_canvas_t* canvas,
                            RGB(255, 222, 80), 256u);
 }
 
+/* Format and size the same translated line used for drawing and layout. */
+static int32_t result_text(const h2_fruit_slice_game_t* game, char text[96]) {
+  const unsigned earned = popcount32(game->cards.run_earned);
+  if (earned == 0u) return 0;
+  const unsigned fresh = popcount32(game->cards.run_new);
+  if (fresh != 0u)
+    (void)snprintf(text, 96, TR("CARDS +%u  NEW %u"), earned, fresh);
+  else
+    (void)snprintf(text, 96, TR("CARDS +%u"), earned);
+  return h2_fruit_slice_fit_scale(text, (float)game->width * 0.9f,
+                                  h2_fruit_slice_text_scale(game->unit, 2.5f));
+}
+
+int32_t h2_fruit_slice_cards_result_height(const h2_fruit_slice_game_t* game) {
+  char text[96];
+  const int32_t scale = result_text(game, text);
+  if (scale == 0) return 0;
+  const int32_t shadow = scale / 2 > 0 ? scale / 2 : 1;
+  return h2_fruit_slice_text_height(text, scale) + shadow;
+}
+
 void h2_fruit_slice_cards_render_result(h2_fruit_slice_canvas_t* canvas,
                                         const h2_fruit_slice_game_t* game,
                                         float y) {
-  const unsigned earned = popcount32(game->cards.run_earned);
-  if (earned == 0u) return;
-  const unsigned fresh = popcount32(game->cards.run_new);
   char text[96];
-  if (fresh != 0u)
-    (void)snprintf(text, sizeof(text), TR("CARDS +%u  NEW %u"), earned, fresh);
-  else
-    (void)snprintf(text, sizeof(text), TR("CARDS +%u"), earned);
+  const int32_t scale = result_text(game, text);
+  if (scale == 0) return;
+  const unsigned fresh = popcount32(game->cards.run_new);
   const float w = (float)canvas->width;
-  const int32_t scale = h2_fruit_slice_fit_scale(
-      text, w * 0.9f, h2_fruit_slice_text_scale(game->unit, 2.5f));
   h2_fruit_slice_draw_text_centered(
       canvas, text, w * 0.5f, y, scale,
       fresh != 0u ? RGB(255, 210, 90) : RGB(150, 214, 255), 256u);
