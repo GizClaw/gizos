@@ -167,6 +167,29 @@ typedef enum h2_xianxia_rpg_script_id {
   H2_XIANXIA_RPG_SCRIPT_C6_RECOVERED,
   H2_XIANXIA_RPG_SCRIPT_C6_END,
   H2_XIANXIA_RPG_SCRIPT_C6_BOTH,
+  H2_XIANXIA_RPG_SCRIPT_C7_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C7_INTRO = H2_XIANXIA_RPG_SCRIPT_C7_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C7_HELP,
+  H2_XIANXIA_RPG_SCRIPT_C7_PAST,
+  H2_XIANXIA_RPG_SCRIPT_C7_NOW,
+  H2_XIANXIA_RPG_SCRIPT_C7_LAMP,
+  H2_XIANXIA_RPG_SCRIPT_C7_WATER,
+  H2_XIANXIA_RPG_SCRIPT_C7_TREATY,
+  H2_XIANXIA_RPG_SCRIPT_C7_NEED_PAST,
+  H2_XIANXIA_RPG_SCRIPT_C7_NEED_NOW,
+  H2_XIANXIA_RPG_SCRIPT_C7_NEED_LAMP,
+  H2_XIANXIA_RPG_SCRIPT_C7_NEED_TREATY,
+  H2_XIANXIA_RPG_SCRIPT_C7_ANSWER1A,
+  H2_XIANXIA_RPG_SCRIPT_C7_ANSWER1B,
+  H2_XIANXIA_RPG_SCRIPT_C7_ANSWER2A,
+  H2_XIANXIA_RPG_SCRIPT_C7_ANSWER2B,
+  H2_XIANXIA_RPG_SCRIPT_C7_ANSWER3A,
+  H2_XIANXIA_RPG_SCRIPT_C7_ANSWER3B,
+  H2_XIANXIA_RPG_SCRIPT_C7_BATTLE,
+  H2_XIANXIA_RPG_SCRIPT_C7_RETRY,
+  H2_XIANXIA_RPG_SCRIPT_C7_REVEAL,
+  H2_XIANXIA_RPG_SCRIPT_C7_RECALL_GIVE,
+  H2_XIANXIA_RPG_SCRIPT_C7_RECALL_TAKE,
   H2_XIANXIA_RPG_SCRIPT_COUNT,
 } h2_xianxia_rpg_script_id_t;
 
@@ -356,6 +379,36 @@ typedef enum h2_xianxia_rpg_text_id {
   H2_XIANXIA_RPG_TEXT_C6_HUT,
   H2_XIANXIA_RPG_TEXT_C6_CHARM,
   H2_XIANXIA_RPG_TEXT_C6_PAUSE,
+  H2_XIANXIA_RPG_TEXT_C7_ONWARD,
+  H2_XIANXIA_RPG_TEXT_C7_NOW,
+  H2_XIANXIA_RPG_TEXT_C7_PAST,
+  H2_XIANXIA_RPG_TEXT_C7_STATUS,
+  H2_XIANXIA_RPG_TEXT_C7_HELP,
+  H2_XIANXIA_RPG_TEXT_C7_TALK,
+  H2_XIANXIA_RPG_TEXT_C7_Q1,
+  H2_XIANXIA_RPG_TEXT_C7_Q2,
+  H2_XIANXIA_RPG_TEXT_C7_Q3,
+  H2_XIANXIA_RPG_TEXT_C7_A1,
+  H2_XIANXIA_RPG_TEXT_C7_B1,
+  H2_XIANXIA_RPG_TEXT_C7_A2,
+  H2_XIANXIA_RPG_TEXT_C7_B2,
+  H2_XIANXIA_RPG_TEXT_C7_A3,
+  H2_XIANXIA_RPG_TEXT_C7_B3,
+  H2_XIANXIA_RPG_TEXT_C7_M_ATTACK,
+  H2_XIANXIA_RPG_TEXT_C7_M_SKILL,
+  H2_XIANXIA_RPG_TEXT_C7_M_PILL,
+  H2_XIANXIA_RPG_TEXT_C7_M_GUARD,
+  H2_XIANXIA_RPG_TEXT_C7_M_JOINT,
+  H2_XIANXIA_RPG_TEXT_C7_M_HIT,
+  H2_XIANXIA_RPG_TEXT_C7_M_HEAL,
+  H2_XIANXIA_RPG_TEXT_C7_M_WAIT,
+  H2_XIANXIA_RPG_TEXT_C7_M_STILL,
+  H2_XIANXIA_RPG_TEXT_C7_STONE,
+  H2_XIANXIA_RPG_TEXT_C7_LAMP,
+  H2_XIANXIA_RPG_TEXT_C7_WATER,
+  H2_XIANXIA_RPG_TEXT_C7_TREATY,
+  H2_XIANXIA_RPG_TEXT_C7_HEART,
+  H2_XIANXIA_RPG_TEXT_C7_EXIT,
   H2_XIANXIA_RPG_TEXT_COUNT,
 } h2_xianxia_rpg_text_id_t;
 
@@ -480,6 +533,17 @@ h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c6_talk_script(
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c6_tile_script(
     const h2_xianxia_rpg_game_t* game, char tile);
 size_t h2_xianxia_rpg_c6_strings(const char** out, size_t capacity);
+
+/* Chapter 7: paired-era routes and persistent heart choices. */
+char h2_xianxia_rpg_c7_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
+const char* h2_xianxia_rpg_c7_map_name(h2_xianxia_rpg_map_t map);
+const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c7_info(void);
+const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c7_script(
+    h2_xianxia_rpg_script_id_t id);
+bool h2_xianxia_rpg_c7_walkable(const h2_xianxia_rpg_game_t* game, char tile);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c7_feedback(
+    const h2_xianxia_rpg_game_t* game);
+size_t h2_xianxia_rpg_c7_strings(const char** out, size_t capacity);
 
 #ifdef __cplusplus
 }
