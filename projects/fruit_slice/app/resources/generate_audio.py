@@ -60,6 +60,36 @@ def notes(pitches, step=0.07, level=0.5):
                        index * step) for index, note in enumerate(pitches)))
 
 
+def slice_hit():
+    """60 ms unpitched peel snap with a short, softer pulp texture.
+
+    Independent seeded noise is band-limited for the 8 kHz bank. Two cascaded
+    1.4 kHz low-pass stages soften the Nyquist edge; subtracting a 220 Hz
+    low-pass avoids spending a small speaker's headroom on low rumble. No
+    oscillator, pitch sweep, reverb or external recording is involved.
+    """
+    duration = 0.060
+    rng = random.Random(0x534C4943)
+    alpha = 1.0 - math.exp(-2.0 * math.pi * 1400.0 / RATE)
+    low_alpha = 1.0 - math.exp(-2.0 * math.pi * 220.0 / RATE)
+    low = first = second = 0.0
+    out = []
+    for i in range(round(duration * RATE)):
+        t = i / RATE
+        value = rng.uniform(-1.0, 1.0)
+        first += alpha * (value - first)
+        second += alpha * (first - second)
+        low += low_alpha * (second - low)
+        band = second - low
+        snap = 0.90 * math.exp(-t / 0.0036)
+        pulp = 0.70 * (1.0 - math.exp(-t / 0.0012)) * math.exp(-t / 0.012)
+        grains = sum(gain * math.exp(-((t - center) / 0.0007) ** 2)
+                     for center, gain in ((0.007, 0.22), (0.012, 0.14), (0.020, 0.08)))
+        edge = min(1.0, t / 0.00075) * min(1.0, (duration - t) / 0.006)
+        out.append(1.9 * band * (snap + pulp + grains) * edge)
+    return out
+
+
 def cheer():
     # Harmonic source filtered by three moving vowel formants: /w/ -> /u:/.
     duration = 0.42
@@ -108,7 +138,7 @@ def music():
 def bank():
     return dict(zip(NAMES, (
         noise(0.075, 0.5, 1),
-        mix(noise(0.10, 0.7, 2), tone(720, 0.085, 0.35, -4400)),
+        slice_hit(),
         notes((76, 79, 84), 0.065, 0.5),
         mix(noise(0.42, 1.0, 3, True), tone(130, 0.38, 0.65, -270)),
         tone(370, 0.17, 0.45, -1100),
