@@ -27,6 +27,14 @@ bazel run //projects/fruit_slice/targets/cc_binary/desktop:fruit_slice
 
 Bombs use a fading, expanding flash around the impact point so the effect does not blend and retransmit the full screen on every frame. Dirty row bands keep their own column spans; only adjacent equal spans are merged for display submission. Runtime statistics include `blast_frames` and `blast_max_ms` for frames with an active bomb flash.
 
+## Fruit variety
+
+Normal waves contain the original watermelon, orange, apple, kiwi and lemon plus strawberry and banana from the opening. Pineapple joins at wave 3 or score 10; grapes join at wave 5 or score 20. The mature pool weights are 12 for each original fruit and banana, 16 for strawberry, and 10 each for pineapple and grapes. Existing wave timing, bomb chance, scores, lives, combo bonuses and sound rules remain shared. One grape bunch is one fruit and one slice event.
+
+Strawberry uses a small pointed red body with a green calyx and pink cut core. Banana uses a yellow arc with an open inner notch, dark tips and warm white flesh; its bounded hit geometry follows the arc and both ends. Pineapple has a gold body, four dark green crown leaves, coarse skin diamonds and a pale cut core; it spins more slowly and its decorative crown is outside the hit target. Grapes use five overlapping purple berries and a pale purple cut face. Whole and cut masks are prepared in the existing RGB565 texture cache before play; normal frames allocate no textures. New cut halves preserve the fruit's orientation when the blade hits.
+
+Fruit IDs 0–4 and bomb ID 5 remain stable; the four additions use IDs 6–9. The nine-fruit enumeration helper excludes bombs. The original 16-card catalog and `cards_v1` format remain unchanged: the five original fruit keep their own drops, while the four additions contribute to generic fruit, score, combo and weapon achievements without impersonating another card.
+
 ## Language
 
 The UI defaults to Simplified Chinese on all targets, including AC791N's 480x320 display. Tap **EN** at the top left of the title screen to switch to English; tap **中文** to return. The selection lasts for the App session and does not change existing preference blobs. An embedding host can set `config.language = H2_FRUIT_SLICE_LANGUAGE_EN` to start in English. Titles, gameplay hints, tasks, weapons, cards, rarity and reveal prompts use the same App-owned translation table. See the [font source, OFL license and reproducible subset](app/fonts/README.md).
