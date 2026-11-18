@@ -36,9 +36,9 @@ extern "C" {
 #define H2_XIANXIA_RPG_ENCOUNTER_MAX 3
 /** Chapters the progress record can hold, and those this build plays. */
 #define H2_XIANXIA_RPG_CHAPTER_MAX 10u
-#define H2_XIANXIA_RPG_CHAPTERS_PLAYABLE 2u
+#define H2_XIANXIA_RPG_CHAPTERS_PLAYABLE 3u
 /** Rows of the chapter screen: playable chapters and the next one. */
-#define H2_XIANXIA_RPG_CHAPTER_ROWS 3
+#define H2_XIANXIA_RPG_CHAPTER_ROWS 4
 /** Lanterns of rapport with the companion; full rapport unlocks the joint
  * strike. */
 #define H2_XIANXIA_RPG_RAPPORT_MAX 3u
@@ -101,6 +101,9 @@ typedef enum h2_xianxia_rpg_map {
   H2_XIANXIA_RPG_MAP_DOCK,
   H2_XIANXIA_RPG_MAP_REEDS,
   H2_XIANXIA_RPG_MAP_WRECK,
+  H2_XIANXIA_RPG_MAP_RAIN_PATH,
+  H2_XIANXIA_RPG_MAP_SWORD_COURT,
+  H2_XIANXIA_RPG_MAP_SWORD_HALL,
   H2_XIANXIA_RPG_MAP_COUNT,
 } h2_xianxia_rpg_map_t;
 
@@ -122,6 +125,12 @@ typedef enum h2_xianxia_rpg_stage {
   /** The wraith is gone; report back at the dock. */
   H2_XIANXIA_RPG_STAGE_C2_RETURN,
   H2_XIANXIA_RPG_STAGE_C2_CLEARED,
+  /* Chapter 3. Published stage values above remain stable. */
+  H2_XIANXIA_RPG_STAGE_C3_ASCEND,
+  H2_XIANXIA_RPG_STAGE_C3_ARRAY,
+  H2_XIANXIA_RPG_STAGE_C3_HALL,
+  H2_XIANXIA_RPG_STAGE_C3_RETURN,
+  H2_XIANXIA_RPG_STAGE_C3_CLEARED,
   H2_XIANXIA_RPG_STAGE_COUNT,
 } h2_xianxia_rpg_stage_t;
 
@@ -150,6 +159,9 @@ typedef enum h2_xianxia_rpg_actor {
   /** The mist ghost guarding the wreck, fought where it stands. */
   H2_XIANXIA_RPG_ACTOR_WRECK_GUARD,
   H2_XIANXIA_RPG_ACTOR_WRAITH,
+  H2_XIANXIA_RPG_ACTOR_SHIYAN,
+  H2_XIANXIA_RPG_ACTOR_WENZHOU,
+  H2_XIANXIA_RPG_ACTOR_SWORD_SOUL,
   H2_XIANXIA_RPG_ACTOR_COUNT,
 } h2_xianxia_rpg_actor_t;
 
@@ -165,6 +177,9 @@ typedef enum h2_xianxia_rpg_enemy {
   H2_XIANXIA_RPG_ENEMY_REED_SPRITE,
   H2_XIANXIA_RPG_ENEMY_WRECK_GUARD,
   H2_XIANXIA_RPG_ENEMY_FOG_WRAITH,
+  H2_XIANXIA_RPG_ENEMY_RAIN_CROW,
+  H2_XIANXIA_RPG_ENEMY_BROKEN_SWORD,
+  H2_XIANXIA_RPG_ENEMY_SWORD_SOUL,
   H2_XIANXIA_RPG_ENEMY_COUNT,
 } h2_xianxia_rpg_enemy_t;
 
@@ -235,6 +250,13 @@ typedef enum h2_xianxia_rpg_effect {
   H2_XIANXIA_RPG_EFFECT_C2_GUARD_BATTLE,
   H2_XIANXIA_RPG_EFFECT_C2_WRAITH_BATTLE,
   H2_XIANXIA_RPG_EFFECT_C2_HOME,
+  H2_XIANXIA_RPG_EFFECT_C3_BRIEF,
+  H2_XIANXIA_RPG_EFFECT_C3_STELE1,
+  H2_XIANXIA_RPG_EFFECT_C3_STELE2,
+  H2_XIANXIA_RPG_EFFECT_C3_STELE3,
+  H2_XIANXIA_RPG_EFFECT_C3_CAMP,
+  H2_XIANXIA_RPG_EFFECT_C3_BATTLE,
+  H2_XIANXIA_RPG_EFFECT_C3_REVEAL,
   H2_XIANXIA_RPG_EFFECT_COUNT,
 } h2_xianxia_rpg_effect_t;
 
@@ -256,11 +278,24 @@ typedef enum h2_xianxia_rpg_effect {
 #define H2_XIANXIA_RPG_FLAG_C2_BOAT (1u << 18)
 #define H2_XIANXIA_RPG_FLAG_C2_POST4 (1u << 19)
 #define H2_XIANXIA_RPG_FLAG_C2_GUARD (1u << 20)
+/** Chapter-3 local map bits reuse the low bits discarded at chapter entry.
+ * Three posts each have two clockwise direction bits (N,E,S,W). */
+#define H2_XIANXIA_RPG_C3_POST_BITS 0x3Fu
+#define H2_XIANXIA_RPG_C3_POST_INITIAL 0x18u
+#define H2_XIANXIA_RPG_FLAG_C3_OPEN (1u << 6)
+#define H2_XIANXIA_RPG_FLAG_C3_CAMP (1u << 7)
+#define H2_XIANXIA_RPG_FLAG_C3_STELE1 (1u << 21)
+#define H2_XIANXIA_RPG_FLAG_C3_STELE2 (1u << 22)
+#define H2_XIANXIA_RPG_FLAG_C3_STELE3 (1u << 23)
+#define H2_XIANXIA_RPG_FLAG_C3_WENZHOU (1u << 24)
+#define H2_XIANXIA_RPG_FLAG_C3_GLYPH (1u << 25)
 /** Flags a chapter hands to the next one. */
-#define H2_XIANXIA_RPG_FLAG_CARRY                                  \
-  (H2_XIANXIA_RPG_FLAG_C1_CLEARED | H2_XIANXIA_RPG_FLAG_C2_RUMOR | \
-   H2_XIANXIA_RPG_FLAG_C2_FISHER | H2_XIANXIA_RPG_FLAG_C2_ROPE |   \
-   H2_XIANXIA_RPG_FLAG_C2_HAND_LIGHT)
+#define H2_XIANXIA_RPG_FLAG_CARRY                                      \
+  (H2_XIANXIA_RPG_FLAG_C1_CLEARED | H2_XIANXIA_RPG_FLAG_C2_RUMOR |     \
+   H2_XIANXIA_RPG_FLAG_C2_FISHER | H2_XIANXIA_RPG_FLAG_C2_ROPE |       \
+   H2_XIANXIA_RPG_FLAG_C2_HAND_LIGHT | H2_XIANXIA_RPG_FLAG_C3_STELE1 | \
+   H2_XIANXIA_RPG_FLAG_C3_STELE2 | H2_XIANXIA_RPG_FLAG_C3_STELE3 |     \
+   H2_XIANXIA_RPG_FLAG_C3_WENZHOU | H2_XIANXIA_RPG_FLAG_C3_GLYPH)
 
 typedef struct h2_xianxia_rpg_rect {
   int32_t x, y, w, h;
@@ -402,6 +437,10 @@ typedef struct h2_xianxia_rpg_battle {
   /** Boss pattern: actions taken, and phase two with two shadows. */
   uint32_t steps;
   bool phase_two, split;
+  /** Hearing Rain's next stance: 0 falling rain, 1 eaves thrust, 2 return
+   * wind. Set before the command, not after the player has committed. */
+  uint8_t sword_stance;
+  bool sword_counter;
   uint8_t real_shadow;
   /** Command waiting for a shadow to be chosen. */
   uint8_t pending;
@@ -445,6 +484,10 @@ typedef struct h2_xianxia_rpg_records {
   /** The journey was saved after the current chapter-1 record, so Continue
    * resumes it; false after v0.1 or a new chapter-1 run changed save0..3. */
   bool journey_latest;
+  /** Chapter 3 uses its own key so released v0.2 can still continue its
+   * chapter-2 journey after rollback. Its tag covers both older journeys. */
+  bool has_journey3, journey3_latest, journey3_unreadable;
+  h2_xianxia_rpg_save_t journey3;
   h2_xianxia_rpg_progress_t progress;
   /** Each blob is missing when neither its valid nor unreadable bit is set.
    * Read errors count as unreadable: they do not prove a record is absent. */
@@ -460,6 +503,8 @@ typedef struct h2_xianxia_rpg_writes {
   h2_xianxia_rpg_save_t chapter1_save;
   bool journey;
   h2_xianxia_rpg_save_t journey_save;
+  bool journey3;
+  h2_xianxia_rpg_save_t journey3_save;
   bool progress;
   h2_xianxia_rpg_progress_t progress_record;
 } h2_xianxia_rpg_writes_t;
@@ -569,6 +614,11 @@ void h2_xianxia_rpg_journey_encode(const h2_xianxia_rpg_save_t* save,
 bool h2_xianxia_rpg_journey_decode(const uint8_t* data, size_t size,
                                    h2_xianxia_rpg_save_t* out_save,
                                    uint32_t* out_chapter1_tag);
+
+/** Fingerprint of the two older journey records, used only by journey3.
+ * NULL/zero represents an absent chapter-2 record. */
+uint32_t h2_xianxia_rpg_predecessor_tag(uint32_t chapter1_tag,
+                                        const uint8_t* chapter2, size_t size);
 
 /** Encode or decode the chapter record. */
 void h2_xianxia_rpg_progress_encode(const h2_xianxia_rpg_progress_t* progress,

@@ -104,7 +104,8 @@ static bool take_slot(h2_xianxia_rpg_game_t* g, h2_xianxia_rpg_save_t* out) {
   if (!h2_xianxia_rpg_game_take_writes(g, &writes)) return false;
   if (writes.chapter1) *out = writes.chapter1_save;
   if (writes.journey) *out = writes.journey_save;
-  return writes.chapter1 || writes.journey;
+  if (writes.journey3) *out = writes.journey3_save;
+  return writes.chapter1 || writes.journey || writes.journey3;
 }
 
 static void talk_to(h2_xianxia_rpg_game_t* g, int32_t col, int32_t row) {
@@ -178,6 +179,10 @@ static void test_layouts(void) {
       CHECK(l->dialog.y >= l->map_y + H2_XIANXIA_RPG_MAP_ROWS * l->tile);
     for (int32_t b = 0; b < H2_XIANXIA_RPG_TITLE_BUTTONS; ++b)
       CHECK(rect_inside(&l->title_buttons[b], w, h));
+    for (int32_t b = 0; b < H2_XIANXIA_RPG_CHAPTER_ROWS; ++b)
+      CHECK(rect_inside(&l->chapter_rows[b], w, h));
+    CHECK(rect_inside(&l->chapter_panel, w, h));
+    CHECK(rect_inside(&l->chapter_back, w, h));
     CHECK(rect_inside(&l->panel, w, h));
     CHECK(rect_inside(&l->message, w, h));
     for (int32_t c = 0; c < H2_XIANXIA_RPG_COMMANDS; ++c) {
@@ -231,7 +236,7 @@ static void test_title_guard_and_continue_disabled(void) {
   tap_rect(&game, &game.layout.title_buttons[2]);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
   run(&game, 300);
-  tap_rect(&game, &game.layout.chapter_rows[2]);
+  tap_rect(&game, &game.layout.chapter_rows[3]);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
   tap_rect(&game, &game.layout.chapter_back);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_TITLE);
@@ -989,7 +994,8 @@ static void test_chapter2_defaults_and_full_run(void) {
   CHECK(won >= 3u);
   run(&game, 1600);
   tap_center(&game);
-  CHECK(game.phase == H2_XIANXIA_RPG_PHASE_TITLE);
+  CHECK(game.phase == H2_XIANXIA_RPG_PHASE_PROLOGUE);
+  CHECK(game.prologue_chapter == 3u && game.prologue_carry);
   /* Reloaded, the chapter reopens its result and is marked cleared. */
   h2_xianxia_rpg_records_t r;
   memset(&r, 0, sizeof(r));
@@ -1460,6 +1466,187 @@ static void test_record_codecs(void) {
   CHECK(game.records.unreadable);
 }
 
+/* Full chapter 3 through the pointer path; no forced growth or random
+ * encounters. Checkpoint reloads preserve the puzzle, knowledge and ending. */
+static void enter_chapter3(h2_xianxia_rpg_game_t* g, uint32_t seed) {
+  h2_xianxia_rpg_game_init(g, 640, 480, seed, NULL);
+  run(g, 300);
+  tap_rect(g, &g->layout.title_buttons[2]);
+  run(g, 300);
+  tap_rect(g, &g->layout.chapter_rows[2]);
+  CHECK(g->phase == H2_XIANXIA_RPG_PHASE_PROLOGUE && !g->prologue_carry);
+  run(g, 1000);
+  tap_center(g);
+  finish_dialogue(g);
+  CHECK(g->chapter == 3u && g->hero.level == 6u && g->ally_visible);
+}
+
+static void test_chapter3_full_run(void) {
+  enter_chapter3(&game, 91u);
+  talk_to(&game, 3, 7);
+  CHECK(game.rest_map == H2_XIANXIA_RPG_MAP_RAIN_PATH);
+  talk_to(&game, 3, 6);
+  CHECK(game.stage == H2_XIANXIA_RPG_STAGE_C3_ARRAY);
+  talk_to(&game, 2, 2);
+  walk_to(&game, 7, 0);
+  CHECK(game.map == H2_XIANXIA_RPG_MAP_SWORD_COURT);
+  CHECK(!h2_xianxia_rpg_walkable(&game, game.map, 7, 3));
+  tap_tile(&game, 7, 0);
+  CHECK(game.path_len == 0u);
+  talk_to(&game, 7, 5);
+  talk_to(&game, 2, 4);
+  talk_to(&game, 12, 4);
+  CHECK(game.flags & H2_XIANXIA_RPG_FLAG_C3_STELE1);
+  CHECK(game.flags & H2_XIANXIA_RPG_FLAG_C3_STELE2);
+  tap_tile(&game, 4, 5);
+  settle(&game);
+  CHECK(h2_xianxia_rpg_c3_post_direction(game.flags, 0u) == 1u);
+  h2_xianxia_rpg_writes_t writes;
+  CHECK(h2_xianxia_rpg_game_take_writes(&game, &writes));
+  CHECK(writes.journey3 && !writes.journey && !writes.chapter1 &&
+        !writes.progress);
+  const uint32_t flags = game.flags;
+  enter_phase_title(&game);
+  tap_continue(&game);
+  CHECK(game.chapter == 3u && game.flags == flags);
+  CHECK(h2_xianxia_rpg_unfinished(&game, 3u) != NULL);
+  tap_tile(&game, 7, 7);
+  settle(&game);
+  CHECK(!h2_xianxia_rpg_c3_posts_aligned(game.flags));
+  tap_tile(&game, 7, 7);
+  settle(&game);
+  tap_tile(&game, 10, 5);
+  settle(&game);
+  CHECK(!h2_xianxia_rpg_c3_posts_aligned(game.flags));
+  tap_tile(&game, 10, 5);
+  settle(&game);
+  CHECK(h2_xianxia_rpg_c3_posts_aligned(game.flags) && game.dialogue.active);
+  finish_dialogue(&game);
+  CHECK(game.stage == H2_XIANXIA_RPG_STAGE_C3_HALL);
+  CHECK(h2_xianxia_rpg_walkable(&game, game.map, 7, 3));
+  talk_to(&game, 8, 2);
+  CHECK(game.flags & H2_XIANXIA_RPG_FLAG_C3_STELE3);
+  walk_to(&game, 7, 0);
+  finish_dialogue(&game);
+  CHECK(game.map == H2_XIANXIA_RPG_MAP_SWORD_HALL && game.rest_x == 3 &&
+        game.rest_y == 7);
+  CHECK(game.hero.hp == game.hero.hp_max);
+  CHECK(game.battles_won == 0u);
+  CHECK(h2_xianxia_rpg_game_take_writes(&game, &writes));
+  const h2_xianxia_rpg_records_t before_boss = game.records;
+  talk_to(&game, 7, 3);
+  /* Deliberate error on wind, then defeat: no progress is automatically
+   * saved and the retry begins with the first stance at full enemy HP. */
+  wait_command(&game);
+  tap_rect(&game, &game.layout.commands[H2_XIANXIA_RPG_COMMAND_GUARD]);
+  wait_command(&game);
+  CHECK(game.battle.sword_stance == 1u && game.battle.rapport == 3u);
+  const uint32_t hp = game.hero.hp;
+  tap_rect(&game, &game.layout.commands[H2_XIANXIA_RPG_COMMAND_SKILL]);
+  CHECK(!game.battle.charging && game.battle.joint);
+  wait_command(&game);
+  CHECK(game.hero.hp == hp && game.battle.sword_stance == 2u);
+  const uint32_t enemy_hp = game.battle.enemy_hp;
+  tap_rect(&game, &game.layout.commands[H2_XIANXIA_RPG_COMMAND_ATTACK]);
+  CHECK(game.battle.sword_counter && game.battle.hit_count == 0u);
+  wait_command(&game);
+  CHECK(game.battle.enemy_hp == enemy_hp && game.hero.hp < hp);
+  lose_battle(&game);
+  CHECK(game.tx == 3 && game.ty == 7 && game.hero.hp == game.hero.hp_max);
+  CHECK(!h2_xianxia_rpg_game_take_writes(&game, &writes));
+  finish_dialogue(&game);
+  talk_to(&game, 7, 3);
+  CHECK(game.battle.sword_stance == 0u && game.battle.enemy_hp == 520u);
+  /* Even with no pills left, reading the three stances wins. Several seeds
+   * guard against accidental dependence on a critical or a random drop. */
+  for (uint32_t seed = 1; seed <= 12u; ++seed) {
+    h2_xianxia_rpg_game_init(&game, 640, 480, seed, &before_boss);
+    tap_continue(&game);
+    game.hero.pills = 0u;
+    talk_to(&game, 7, 3);
+    for (int i = 0;
+         i < 2400 && game.battle.state != H2_XIANXIA_RPG_BATTLE_VICTORY; ++i) {
+      CHECK(game.battle.state != H2_XIANXIA_RPG_BATTLE_DEFEAT);
+      if (game.battle.state == H2_XIANXIA_RPG_BATTLE_COMMAND) {
+        const uint32_t stance = game.battle.sword_stance;
+        if (stance == 1u)
+          CHECK(h2_xianxia_rpg_joint_ready(&game) && game.hero.mp >= 7u);
+        tap_rect(
+            &game,
+            &game.layout.commands[stance == 1u ? H2_XIANXIA_RPG_COMMAND_SKILL
+                                               : H2_XIANXIA_RPG_COMMAND_GUARD]);
+      }
+      run(&game, 50);
+    }
+    CHECK(game.battle.state == H2_XIANXIA_RPG_BATTLE_VICTORY);
+    CHECK(game.stage == H2_XIANXIA_RPG_STAGE_C3_RETURN &&
+          game.battles_won == 1u);
+  }
+  CHECK(h2_xianxia_rpg_game_take_writes(&game, &writes));
+  enter_phase_title(&game);
+  tap_continue(&game);
+  CHECK(game.stage == H2_XIANXIA_RPG_STAGE_C3_RETURN);
+  talk_to(&game, 3, 2);
+  CHECK(game.phase == H2_XIANXIA_RPG_PHASE_ENDING);
+  CHECK(game.flags & H2_XIANXIA_RPG_FLAG_C3_WENZHOU);
+  CHECK(game.flags & H2_XIANXIA_RPG_FLAG_C3_GLYPH);
+  CHECK(h2_xianxia_rpg_game_take_writes(&game, &writes));
+  CHECK(writes.journey3 && writes.progress &&
+        writes.progress_record.cleared == 4u);
+  const uint32_t turns = game.turns_taken;
+  enter_phase_title(&game);
+  tap_continue(&game);
+  CHECK(game.phase == H2_XIANXIA_RPG_PHASE_ENDING && game.turns_taken == turns);
+  CHECK(!h2_xianxia_rpg_game_take_writes(&game, &writes));
+}
+
+static void test_chapter3_carry_and_latest(void) {
+  h2_xianxia_rpg_records_t r = {0};
+  r.has_journey = r.journey_latest = true;
+  r.journey = (h2_xianxia_rpg_save_t){.chapter = 2,
+                                      .stage = H2_XIANXIA_RPG_STAGE_C2_CLEARED,
+                                      .level = 7,
+                                      .exp = 340,
+                                      .pills = 1,
+                                      .map = H2_XIANXIA_RPG_MAP_DOCK,
+                                      .x = 6,
+                                      .y = 4,
+                                      .rest_map = H2_XIANXIA_RPG_MAP_DOCK,
+                                      .rest_x = 13,
+                                      .rest_y = 3};
+  r.progress.cleared = 2u;
+  r.progress.chapters[1] =
+      (h2_xianxia_rpg_clear_t){.level = 7,
+                               .exp = 340,
+                               .pills = 1,
+                               .trust = 1,
+                               .flags = H2_XIANXIA_RPG_FLAG_C2_ROPE};
+  h2_xianxia_rpg_game_init(&game, 640, 480, 94u, &r);
+  tap_continue(&game);
+  run(&game, 1600);
+  tap_center(&game);
+  CHECK(game.prologue_chapter == 3u && game.prologue_carry);
+  run(&game, 1000);
+  tap_center(&game);
+  finish_dialogue(&game);
+  CHECK(game.chapter == 3u && game.hero.level == 7u && game.hero.pills == 1u &&
+        game.trust == 1u);
+  CHECK(game.flags & H2_XIANXIA_RPG_FLAG_C2_ROPE);
+  h2_xianxia_rpg_writes_t w;
+  CHECK(h2_xianxia_rpg_game_take_writes(&game, &w) && w.journey3 && !w.journey);
+  r = game.records;
+  uint8_t bytes[H2_XIANXIA_RPG_JOURNEY_BYTES];
+  h2_xianxia_rpg_journey_encode(&r.journey3, 123u, bytes);
+  CHECK(h2_xianxia_rpg_journey_decode(bytes, sizeof(bytes), &r.journey3, NULL));
+  r.journey3_latest = false; /* The older build has played and saved again. */
+  h2_xianxia_rpg_game_init(&game, 640, 480, 95u, &r);
+  CHECK(h2_xianxia_rpg_continue_save(&game)->chapter == 2u);
+  CHECK(h2_xianxia_rpg_unfinished(&game, 3u) != NULL);
+  r.journey3_latest = true;
+  h2_xianxia_rpg_game_init(&game, 640, 480, 95u, &r);
+  CHECK(h2_xianxia_rpg_continue_save(&game)->chapter == 3u);
+}
+
 int main(void) {
   test_layouts();
   test_maps_are_consistent();
@@ -1478,6 +1665,8 @@ int main(void) {
   test_chapter2_defeat_fallbacks();
   test_wraith_pattern();
   test_record_codecs();
+  test_chapter3_full_run();
+  test_chapter3_carry_and_latest();
   printf("xianxia_rpg game tests passed\n");
   return 0;
 }

@@ -82,6 +82,28 @@ typedef enum h2_xianxia_rpg_script_id {
   H2_XIANXIA_RPG_SCRIPT_C2_SAIL_HOME,
   H2_XIANXIA_RPG_SCRIPT_C2_LAMP_LIT,
   H2_XIANXIA_RPG_SCRIPT_C2_BERTH,
+  H2_XIANXIA_RPG_SCRIPT_C3_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C3_INTRO = H2_XIANXIA_RPG_SCRIPT_C3_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C3_PAVILION,
+  H2_XIANXIA_RPG_SCRIPT_C3_LETTER,
+  H2_XIANXIA_RPG_SCRIPT_C3_CUT,
+  H2_XIANXIA_RPG_SCRIPT_C3_CUT_KNOWN,
+  H2_XIANXIA_RPG_SCRIPT_C3_COURT,
+  H2_XIANXIA_RPG_SCRIPT_C3_CENTER,
+  H2_XIANXIA_RPG_SCRIPT_C3_BARRIER,
+  H2_XIANXIA_RPG_SCRIPT_C3_OPEN,
+  H2_XIANXIA_RPG_SCRIPT_C3_STELE1,
+  H2_XIANXIA_RPG_SCRIPT_C3_STELE2,
+  H2_XIANXIA_RPG_SCRIPT_C3_STELE3,
+  H2_XIANXIA_RPG_SCRIPT_C3_HALL,
+  H2_XIANXIA_RPG_SCRIPT_C3_REST,
+  H2_XIANXIA_RPG_SCRIPT_C3_SHIYAN,
+  H2_XIANXIA_RPG_SCRIPT_C3_BOSS,
+  H2_XIANXIA_RPG_SCRIPT_C3_QUIET,
+  H2_XIANXIA_RPG_SCRIPT_C3_REVEAL,
+  H2_XIANXIA_RPG_SCRIPT_C3_WENZHOU,
+  H2_XIANXIA_RPG_SCRIPT_C3_REPORT,
+  H2_XIANXIA_RPG_SCRIPT_C3_REVIVE,
   H2_XIANXIA_RPG_SCRIPT_COUNT,
 } h2_xianxia_rpg_script_id_t;
 
@@ -185,6 +207,20 @@ typedef enum h2_xianxia_rpg_text_id {
   H2_XIANXIA_RPG_TEXT_HINT_TUTORIAL1,
   H2_XIANXIA_RPG_TEXT_HINT_TUTORIAL2,
   H2_XIANXIA_RPG_TEXT_HINT_TUTORIAL3,
+  H2_XIANXIA_RPG_TEXT_C3_ONWARD,
+  H2_XIANXIA_RPG_TEXT_C3_UNKNOWN,
+  H2_XIANXIA_RPG_TEXT_C3_RAIN_HINT,
+  H2_XIANXIA_RPG_TEXT_C3_THRUST_HINT,
+  H2_XIANXIA_RPG_TEXT_C3_WIND_HINT,
+  H2_XIANXIA_RPG_TEXT_C3_RAIN_HIT,
+  H2_XIANXIA_RPG_TEXT_C3_RAIN_GUARD,
+  H2_XIANXIA_RPG_TEXT_C3_THRUST_HIT,
+  H2_XIANXIA_RPG_TEXT_C3_THRUST_BREAK,
+  H2_XIANXIA_RPG_TEXT_C3_REBUFF,
+  H2_XIANXIA_RPG_TEXT_C3_COUNTER,
+  H2_XIANXIA_RPG_TEXT_C3_WIND_WAIT,
+  H2_XIANXIA_RPG_TEXT_C3_POLE_WAIT,
+  H2_XIANXIA_RPG_TEXT_C3_POSTS,
   H2_XIANXIA_RPG_TEXT_COUNT,
 } h2_xianxia_rpg_text_id_t;
 
@@ -243,6 +279,26 @@ h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c2_tile_script(
     const h2_xianxia_rpg_game_t* game, char tile);
 const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c2_info(void);
 size_t h2_xianxia_rpg_c2_strings(const char** out, size_t capacity);
+
+/* Chapter 3 tables and the clockwise sword-post puzzle. */
+char h2_xianxia_rpg_c3_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
+const char* h2_xianxia_rpg_c3_map_name(h2_xianxia_rpg_map_t map);
+const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c3_script(
+    h2_xianxia_rpg_script_id_t id);
+const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c3_info(void);
+size_t h2_xianxia_rpg_c3_npcs(
+    const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_map_t map,
+    h2_xianxia_rpg_npc_t out[H2_XIANXIA_RPG_MAX_NPCS]);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c3_talk_script(
+    const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_actor_t actor);
+bool h2_xianxia_rpg_c3_walkable(const h2_xianxia_rpg_game_t* game, char tile);
+bool h2_xianxia_rpg_c3_tile_interactive(const h2_xianxia_rpg_game_t* game,
+                                        char tile);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c3_tile_script(
+    const h2_xianxia_rpg_game_t* game, char tile);
+uint32_t h2_xianxia_rpg_c3_post_direction(uint32_t flags, uint32_t post);
+bool h2_xianxia_rpg_c3_posts_aligned(uint32_t flags);
+size_t h2_xianxia_rpg_c3_strings(const char** out, size_t capacity);
 
 #ifdef __cplusplus
 }
