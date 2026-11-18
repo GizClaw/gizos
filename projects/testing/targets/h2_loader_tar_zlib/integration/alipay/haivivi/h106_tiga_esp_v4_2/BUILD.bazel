@@ -126,7 +126,10 @@ firmware_native_component(
 
 h2loader_esp_idf_firmware(
     name = "firmware",
-    srcs = ["CMakeLists.txt"],
+    srcs = [
+        "CMakeLists.txt",
+        "sdkconfig.alipay.defaults",
+    ],
     board = "tiga_esp_v4_2",
     cmake_definitions = {
         "H2_E2E_WIFI_SSID": "HAIVIVI-MFG",

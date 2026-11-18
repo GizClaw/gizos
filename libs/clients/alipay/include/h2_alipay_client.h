@@ -257,6 +257,53 @@ typedef enum h2_alipay_client_payment_state {
   H2_ALIPAY_CLIENT_PAYMENT_PROCESSING,
 } h2_alipay_client_payment_state_t;
 
+/** Bounded response classification; unknown action text is never exported. */
+typedef enum h2_alipay_client_payment_action {
+  H2_ALIPAY_CLIENT_ACTION_UNOBSERVED = 0,
+  H2_ALIPAY_CLIENT_ACTION_ABSENT,
+  H2_ALIPAY_CLIENT_ACTION_UNKNOWN,
+  H2_ALIPAY_CLIENT_ACTION_INVALID,
+  H2_ALIPAY_CLIENT_ACTION_PAID,
+  H2_ALIPAY_CLIENT_ACTION_SOUNDWAVE,
+  H2_ALIPAY_CLIENT_ACTION_FAILURE,
+  H2_ALIPAY_CLIENT_ACTION_DISABLED,
+  H2_ALIPAY_CLIENT_ACTION_UNBOUND,
+} h2_alipay_client_payment_action_t;
+
+/** Presence/boolean observations only; no response message is retained. */
+typedef enum h2_alipay_client_query_fields {
+  H2_ALIPAY_CLIENT_QUERY_SUCCESS_TRUE = 1u,
+  H2_ALIPAY_CLIENT_QUERY_SUCCESS_FALSE = 2u,
+  H2_ALIPAY_CLIENT_QUERY_ERROR_CODE = 4u,
+  H2_ALIPAY_CLIENT_QUERY_ERROR_MESSAGE = 8u,
+  H2_ALIPAY_CLIENT_QUERY_BUSINESS = 16u,
+  H2_ALIPAY_CLIENT_QUERY_RESULT_CODE = 32u,
+  H2_ALIPAY_CLIENT_QUERY_RESULT_MESSAGE = 64u,
+} h2_alipay_client_query_fields_t;
+
+/** Query observations retained independently of a subsequent success ACK.
+ * attempted means the signed query request was entered; request_result is
+ * its PAL result before response parsing. body_length counts bytes accepted
+ * for parsing, not an unvalidated error body. No payload or token is retained.
+ */
+typedef struct h2_alipay_client_query_diagnostics {
+  bool attempted, nfc_token_present;
+  size_t code_length, tid_length, uid_length;
+  int request_result, http_status, rpc_status;
+  size_t body_length, action_length;
+  h2_alipay_client_payment_action_t action;
+  /** Hash covers exact parsed action bytes, including embedded NUL. */
+  bool action_hash_valid, action_identifier;
+  uint8_t action_sha256[32];
+  unsigned response_fields;
+  /** 0 absent, 1 object, 2 string, 3 other. Length is string bytes only. */
+  unsigned business_type;
+  size_t business_length;
+  /** Numeric errorCode, otherwise resultCode; textual messages stay private. */
+  bool response_code_valid;
+  int response_code;
+} h2_alipay_client_query_diagnostics_t;
+
 /** Last attempted payment operation, without code or credential export.
  * PAID requires a successful business response. ack_result is independent:
  * an acknowledgement error does not change that business outcome. */
@@ -266,6 +313,7 @@ typedef struct h2_alipay_client_payment {
   int result, http_status, rpc_status, ack_result;
   unsigned requests;
   char amount[32];
+  h2_alipay_client_query_diagnostics_t query;
 } h2_alipay_client_payment_t;
 
 /** Generate the delivered ECDH profile's payer code locally from completed

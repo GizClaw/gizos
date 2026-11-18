@@ -1,5 +1,6 @@
 #include "h2_alipay_payment_page.h"
 #include "h2_alipay_payment_model.h"
+#include "h2_alipay_nfc.h"
 #include "h2_atomic.h"
 #include "h2_qrcode.h"
 #include "h2_sha256.h"
@@ -7,8 +8,32 @@
 #include <stdarg.h>
 #include <string.h>
 
-typedef enum mode { MENU, CODE, TAP, RESULT = 4 } payment_mode_t;
-typedef enum action { A_CODE = 1, A_TAP, A_REFRESH, A_BACK = 5 } action_t;
+typedef enum mode {
+  MENU,
+  CODE,
+  TAP,
+  RESULT = 4,
+  UNBIND_CONFIRM,
+  UNBIND_DONE
+} payment_mode_t;
+typedef enum action {
+  A_CODE = 1,
+  A_TAP,
+  A_REFRESH,
+  A_BACK = 5,
+  A_UNBIND,
+  A_CONFIRM_UNBIND,
+  A_REBIND
+} action_t;
+typedef enum button {
+  B_CODE,
+  B_TAP,
+  B_REFRESH,
+  B_BACK,
+  B_UNBIND,
+  B_CONFIRM_UNBIND,
+  B_COUNT
+} button_t;
 typedef enum job {
   J_NONE,
   J_CODE,
@@ -16,7 +41,8 @@ typedef enum job {
   J_TAP_START,
   J_FRAME,
   J_TAP_QUERY = 6,
-  J_STOP = 9
+  J_STOP = 9,
+  J_UNBIND
 } job_t;
 typedef struct payment_page {
   h2_runtime_t* rt;
@@ -25,13 +51,13 @@ typedef struct payment_page {
   lv_display_t* display;
   lv_group_t* button_group;
   bool buttons_enabled;
-  lv_obj_t *title, *status, *qr, *buttons[4];
+  lv_obj_t *title, *status, *qr, *buttons[B_COUNT];
   uint16_t* qr_pixels;
   int width, height;
   payment_mode_t mode;
   unsigned actions[8], head, count;
   bool queue_full, leaving, exiting, tap_active, stay_on_result;
-  bool nfc_received;
+  bool nfc_received, unbound;
   char terminal_message[96];
   int (*presented)(void*);
   void* presented_user;
@@ -47,7 +73,7 @@ typedef struct payment_page {
   h2_alipay_payment_attempt_t query;
   uint64_t tap_deadline, query_due, last_tick;
   uint64_t code_wall_ms, code_mono_ms, diagnostic_ms;
-  unsigned key_events;
+  unsigned key_events, query_sequence;
 } payment_page_t;
 
 static void log_payment(payment_page_t* page, const char* format, ...) {
@@ -88,6 +114,13 @@ static void refresh_clicked(lv_event_t* e) {
 static void back_clicked(lv_event_t* e) {
   enqueue(lv_event_get_user_data(e), A_BACK);
 }
+static void unbind_clicked(lv_event_t* e) {
+  enqueue(lv_event_get_user_data(e), A_UNBIND);
+}
+static void confirm_unbind_clicked(lv_event_t* e) {
+  payment_page_t* p = lv_event_get_user_data(e);
+  enqueue(p, p->mode == UNBIND_DONE ? A_REBIND : A_CONFIRM_UNBIND);
+}
 static void status(payment_page_t* p, const char* text) {
   lv_label_set_text(p->status, text);
 }
@@ -106,17 +139,30 @@ static void clear_qr(payment_page_t* p) {
 }
 static void controls(payment_page_t* p) {
   lv_obj_set_pos(p->status, 8,
-                 p->mode == MENU ? p->height - 60 : p->height - 88);
-  for (unsigned i = 0u; i < 4u; ++i) lv_obj_set_hidden(p->buttons[i], true);
+                 p->mode == MENU ? p->height - 20
+                 : (p->mode == UNBIND_CONFIRM || p->mode == UNBIND_DONE)
+                     ? 52
+                     : p->height - 88);
+  for (unsigned i = 0u; i < B_COUNT; ++i)
+    lv_obj_set_hidden(p->buttons[i], true);
+  lv_label_set_text(lv_obj_get_child(p->buttons[B_BACK], 0),
+                    p->mode == UNBIND_CONFIRM ? "Cancel" : "Back");
+  lv_label_set_text(lv_obj_get_child(p->buttons[B_CONFIRM_UNBIND], 0),
+                    p->mode == UNBIND_DONE ? "Continue" : "Confirm");
   if (p->mode == MENU) {
-    lv_obj_set_hidden(p->buttons[0], false);
-    lv_obj_set_hidden(p->buttons[1], p->api->vtable->start_tap == NULL);
+    lv_obj_set_hidden(p->buttons[B_CODE], false);
+    lv_obj_set_hidden(p->buttons[B_TAP], p->api->vtable->start_tap == NULL);
+    lv_obj_set_hidden(p->buttons[B_UNBIND], p->api->vtable->unbind == NULL);
   } else {
-    lv_obj_set_hidden(p->buttons[3], false);
-    if (p->mode == CODE) lv_obj_set_hidden(p->buttons[2], false);
+    lv_obj_set_hidden(p->buttons[B_BACK], p->mode == UNBIND_DONE);
+    if (p->mode == CODE) lv_obj_set_hidden(p->buttons[B_REFRESH], false);
+    if (p->mode == UNBIND_CONFIRM || p->mode == UNBIND_DONE)
+      lv_obj_set_hidden(p->buttons[B_CONFIRM_UNBIND], false);
   }
-  for (unsigned i = 0u; i < 3u; ++i) {
-    if (p->worker != NULL || p->leaving)
+  for (unsigned i = 0u; i < B_COUNT; ++i) {
+    bool disabled =
+        i == B_BACK ? p->job == J_UNBIND : p->worker != NULL || p->leaving;
+    if (disabled)
       lv_obj_add_state(p->buttons[i], LV_STATE_DISABLED);
     else
       lv_obj_remove_state(p->buttons[i], LV_STATE_DISABLED);
@@ -125,7 +171,7 @@ static void controls(payment_page_t* p) {
     lv_obj_t* focused = lv_group_get_focused(p->button_group);
     if (focused == NULL || lv_obj_is_hidden(focused) ||
         lv_obj_has_state(focused, LV_STATE_DISABLED)) {
-      for (unsigned i = 0u; i < 4u; ++i)
+      for (unsigned i = 0u; i < B_COUNT; ++i)
         if (!lv_obj_is_hidden(p->buttons[i]) &&
             !lv_obj_has_state(p->buttons[i], LV_STATE_DISABLED)) {
           lv_group_focus_obj(p->buttons[i]);
@@ -150,14 +196,14 @@ static int open_input(payment_page_t* p) {
   p->button_group = lv_group_create();
   if (p->button_group == NULL) return H2_PAL_ERR_NO_MEMORY;
   p->buttons_enabled = true;
-  for (unsigned i = 0u; i < 4u; ++i)
+  for (unsigned i = 0u; i < B_COUNT; ++i)
     lv_group_add_obj(p->button_group, p->buttons[i]);
   return H2_PAL_OK;
 }
 static int focused_index(payment_page_t* p) {
   if (p->button_group == NULL) return -1;
   lv_obj_t* focused = lv_group_get_focused(p->button_group);
-  for (unsigned i = 0u; i < 4u; ++i)
+  for (unsigned i = 0u; i < B_COUNT; ++i)
     if (focused == p->buttons[i]) return (int)i;
   return -1;
 }
@@ -193,7 +239,7 @@ static void button_event(payment_page_t* p, const h2_runtime_event_t* event) {
   unsigned key_action;
   if (event->component_id == keys->back) {
     key_action = 4u;
-    if (p->mode != MENU) enqueue(p, A_BACK);
+    if (p->mode != MENU && p->job != J_UNBIND) enqueue(p, A_BACK);
   } else if (event->component_id == keys->previous) {
     key_action = 1u;
     lv_group_focus_prev(p->button_group);
@@ -269,6 +315,30 @@ static int write_reply(void* user, const uint8_t* data, size_t length) {
       page->config->user, data, length, message, sizeof(message), &size);
   if (rc == H2_PAL_OK && (size == 0u || size > sizeof(message)))
     rc = H2_PAL_ERR_FORMAT;
+  if (rc == H2_PAL_OK) {
+    log_payment(
+        page,
+        "H2_ALIPAY_NFC_HANDOFF sdk_bytes=%zu sent_bytes=%zu "
+        "raw_equal=%u extra_bytes=%zu",
+        length, size,
+        (unsigned)(size == length && memcmp(message, data, length) == 0),
+        size >= length ? size - length : 0u);
+    h2_alipay_nfc_text_diagnostics_t layout;
+    int inspected =
+        h2_alipay_nfc_inspect_text_reply(data, length, message, size, &layout);
+    log_payment(
+        page,
+        "H2_ALIPAY_NDEF_LAYOUT inspect_rc=%d sdk_bytes=%zu ndef_bytes=%zu "
+        "tnf=%u single=%u short=%u type_text=%u utf8=%u language_en=%u "
+        "payload_offset=%zu payload_bytes=%zu language_bytes=%zu "
+        "text_offset=%zu text_bytes=%zu exact_length=%u text_equal=%u",
+        inspected, length, size, layout.tnf, (unsigned)layout.single_record,
+        (unsigned)layout.short_record, (unsigned)layout.type_text,
+        (unsigned)layout.utf8, (unsigned)layout.language_en,
+        layout.payload_offset, layout.payload_length, layout.language_length,
+        layout.text_offset, layout.text_length, (unsigned)layout.exact_length,
+        (unsigned)layout.text_matches);
+  }
   h2_pal_periph_id_t id;
   if (rc == H2_PAL_OK)
     rc = h2_runtime_periph_id(page->rt, page->config->payment_nfc_component_id,
@@ -403,6 +473,11 @@ static void work(void* user) {
     case J_TAP_QUERY:
       p->call_rc = api->query_tap(p->api->user, &p->result);
       break;
+    case J_UNBIND:
+      p->call_rc = !p->tap_active && api->unbind != NULL
+                       ? api->unbind(p->api->user, &p->sdk_rc)
+                       : H2_PAL_ERR_INVALID_STATE;
+      break;
     case J_STOP:
       p->call_rc = p->tap_active ? api->stop_tap(p->api->user) : 0;
       if (p->call_rc == 0) {
@@ -419,11 +494,13 @@ static void work(void* user) {
 static int start_job(payment_page_t* p, job_t job) {
   if (p->worker != NULL) return H2_PAL_ERR_BUSY;
   if (job == J_QUERY || job == J_TAP_QUERY) {
-    char diagnostic[96];
+    char diagnostic[160];
+    ++p->query_sequence;
     (void)snprintf(
         diagnostic, sizeof(diagnostic),
-        "H2_ALIPAY_PAYMENT_QUERY phase=begin operation=%u attempt=%u",
-        (unsigned)job, (unsigned)p->query.id);
+        "H2_ALIPAY_PAYMENT_QUERY phase=begin operation=%u attempt=%u generation=%u sequence=%u",
+        (unsigned)job, (unsigned)p->query.id, (unsigned)p->generation,
+        p->query_sequence);
     (void)h2_pal_log_write(p->rt->log, H2_PAL_LOG_INFO, "alipay/payment",
                            diagnostic);
     status(p, "Checking payment result...");
@@ -456,12 +533,61 @@ static void finish_job(payment_page_t* p) {
   p->job = J_NONE;
   log_payment(
       p,
-      "H2_ALIPAY_PAYMENT operation=%u pal_rc=%d sdk_rc=%d sdk_status=%d state=%d nfc_rc=%d sent=%d nfc_attempted=%d code_length=%u",
-      (unsigned)job, p->call_rc, job == J_CODE ? p->sdk_rc : p->result.sdk_rc,
+      "H2_ALIPAY_PAYMENT operation=%u pal_rc=%d sdk_rc=%d sdk_status=%d state=%d nfc_rc=%d sent=%d nfc_attempted=%d processing_status=%d processing_error=%d transport_rc=%d code_length=%u",
+      (unsigned)job, p->call_rc,
+      (job == J_CODE || job == J_UNBIND) ? p->sdk_rc : p->result.sdk_rc,
       p->result.sdk_status, p->result.state, p->result.nfc_write_rc,
       p->result.response_sent, p->result.write_attempted,
+      p->result.processing_status, p->result.processing_error,
+      p->result.transport_rc,
       job == J_CODE ? (unsigned)p->generated_length : 0u);
-  if (job == J_STOP) {
+  if (job == J_TAP_QUERY && p->result.query_diagnostics_valid) {
+    char action_digest[65];
+    h2_sha256_hex(p->result.query_action_sha256, action_digest);
+    log_payment(
+        p,
+        "H2_ALIPAY_QUERY_SHAPE action_hash_valid=%u action_identifier=%u "
+        "action_sha256=%s response_fields=%u business_type=%u business_bytes=%zu "
+        "response_code_valid=%u response_code=%d generation=%u sequence=%u",
+        (unsigned)p->result.query_action_hash_valid,
+        (unsigned)p->result.query_action_identifier, action_digest,
+        p->result.query_response_fields, p->result.query_business_type,
+        p->result.query_business_length,
+        (unsigned)p->result.query_response_code_valid,
+        p->result.query_response_code, (unsigned)p->job_generation,
+        p->query_sequence);
+    log_payment(
+        p,
+        "H2_ALIPAY_QUERY_RESULT elapsed_ms=%llu query_rc=%d request_rc=%d "
+        "attempted=%u http_status=%d rpc_status=%d body_bytes=%zu "
+        "response_action=%u action_bytes=%zu ack_rc=%d generation=%u sequence=%u "
+        "token_present=%u code_bytes=%zu tid_bytes=%zu uid_bytes=%zu",
+        (unsigned long long)p->result.query_elapsed_ms, p->result.query_result,
+        p->result.query_request_result, (unsigned)p->result.query_attempted,
+        p->result.query_http_status, p->result.query_rpc_status,
+        p->result.query_body_length, p->result.query_action,
+        p->result.query_action_length, p->result.query_ack_result,
+        (unsigned)p->job_generation, p->query_sequence,
+        (unsigned)p->result.query_token_present, p->result.query_code_length,
+        p->result.query_tid_length, p->result.query_uid_length);
+  }
+  if (job == J_UNBIND) {
+    if (p->call_rc == H2_PAL_OK && p->sdk_rc == 0) {
+      p->unbound = true;
+      clear_qr(p);
+      h2_alipay_payment_model_clear(&p->model);
+      p->mode = UNBIND_DONE;
+      status(
+          p,
+          "Device unbound locally.\nCheck Alipay > Smart Devices\non your phone and unbind\nthere if still linked.");
+    } else {
+      p->mode = RESULT;
+      char text[96];
+      (void)snprintf(text, sizeof(text), "Unbind failed\nSDK: %d / rc: %d",
+                     p->sdk_rc, p->call_rc);
+      status(p, text);
+    }
+  } else if (job == J_STOP) {
     if (p->call_rc == 0) {
       bool retain = p->stay_on_result && !p->leaving && !p->exiting;
       p->stay_on_result = false;
@@ -647,14 +773,19 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
   lv_obj_set_pos(p->title, 8, 6);
   lv_obj_set_pos(p->status, 8, height - 88);
   lv_obj_set_width(p->status, width - 16);
-  p->buttons[0] = make_button(p, "Pay code", 20, 62, width - 40, code_clicked);
-  p->buttons[1] =
+  p->buttons[B_CODE] =
+      make_button(p, "Pay code", 20, 62, width - 40, code_clicked);
+  p->buttons[B_TAP] =
       make_button(p, "Tap to pay", 20, 118, width - 40, tap_clicked);
-  p->buttons[2] = make_button(p, "Refresh", 8, height - 44, (width - 24) / 2,
-                              refresh_clicked);
-  p->buttons[3] = make_button(p, "Back", width / 2 + 4, height - 44,
-                              (width - 24) / 2, back_clicked);
-  for (unsigned i = 0u; i < 4u; ++i)
+  p->buttons[B_REFRESH] = make_button(p, "Refresh", 8, height - 44,
+                                      (width - 24) / 2, refresh_clicked);
+  p->buttons[B_BACK] = make_button(p, "Back", width / 2 + 4, height - 44,
+                                   (width - 24) / 2, back_clicked);
+  p->buttons[B_UNBIND] =
+      make_button(p, "Unbind", 20, 174, width - 40, unbind_clicked);
+  p->buttons[B_CONFIRM_UNBIND] = make_button(
+      p, "Confirm", 8, height - 44, (width - 24) / 2, confirm_unbind_clicked);
+  for (unsigned i = 0u; i < B_COUNT; ++i)
     if (p->buttons[i] == NULL) {
       rc = H2_PAL_ERR_NO_MEMORY;
       goto done;
@@ -699,6 +830,10 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
         p->worker = NULL;
         finish_job(p);
       }
+    }
+    if (p->unbound && p->exiting && p->worker == NULL && !p->tap_active) {
+      rc = H2_ALIPAY_PAYMENT_PAGE_UNBOUND;
+      break;
     }
     if (p->exiting && p->worker == NULL && !p->tap_active) break;
     uint8_t bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
@@ -758,7 +893,11 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
       action_t action = (action_t)p->actions[p->head];
       p->head = (p->head + 1u) % 8u;
       --p->count;
-      if (action == A_BACK) {
+      if (p->unbound && (action == A_REBIND || action == A_BACK)) {
+        rc = H2_ALIPAY_PAYMENT_PAGE_UNBOUND;
+        break;
+      }
+      if (action == A_BACK && p->job != J_UNBIND) {
         p->leaving = true;
         ++p->generation;
         status(p, "Finishing current operation...");
@@ -773,6 +912,20 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
           ++p->generation;
           p->query_due = 0u;
           (void)start_job(p, J_TAP_START);
+        } else if (action == A_UNBIND && p->mode == MENU &&
+                   p->api->vtable->unbind != NULL && !p->tap_active) {
+          p->mode = UNBIND_CONFIRM;
+          ++p->generation;
+          status(p, "Unbind this device?\nYou will need to bind again.");
+          controls(p);
+          lv_group_focus_obj(p->buttons[B_BACK]);
+        } else if (action == A_CONFIRM_UNBIND && p->mode == UNBIND_CONFIRM &&
+                   p->api->vtable->unbind != NULL && !p->tap_active) {
+          /* Do not carry queued clicks into a new account session. */
+          p->head = p->count = 0u;
+          ++p->generation;
+          status(p, "Unbinding device...");
+          (void)start_job(p, J_UNBIND);
         } else if (action == A_REFRESH && p->mode == CODE)
           (void)start_job(p, J_CODE);
       }

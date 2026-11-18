@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -13,6 +14,7 @@ static struct {
   int activation_results[3];
   unsigned activation_result_count, activations, sleeps;
   unsigned reads, writes;
+  bool preread_failure;
   char diagnostics[4096];
   size_t diagnostic_length;
 } fixture;
@@ -123,6 +125,26 @@ int h2_fm175xx_ntag_write_ndef_diagnostic(
     h2_fm175xx_t* reader, const uint8_t* bytes, size_t length,
     h2_fm175xx_write_diagnostics_t* diagnostics) {
   int rc = h2_fm175xx_ntag_write_ndef(reader, bytes, length);
+  if (fixture.preread_failure) {
+    *diagnostics = (h2_fm175xx_write_diagnostics_t){
+        .phase = H2_FM175XX_WRITE_READ_TAG,
+        .preread = {.read_count = 21u,
+                    .last_page = 80u,
+                    .last_reply_bits = 4u,
+                    .last_result = H2_FM175XX_ERR_PROTOCOL,
+                    .transfer_result = H2_FM175XX_OK,
+                    .required_capacity = 512u,
+                    .short_reply_valid = 1u,
+                    .short_reply_low4 = 0u,
+                    .rx_status_result = H2_FM175XX_OK,
+                    .rx_irq = 0x20u,
+                    .rx_fifo = 1u,
+                    .rx_control = 4u,
+                    .status_result = H2_FM175XX_OK},
+        .preread_header_valid = 1u,
+        .preread_cc = {0xe1u, 0x10u, 62u, 0u}};
+    return rc;
+  }
   *diagnostics = (h2_fm175xx_write_diagnostics_t){
       .phase = rc == H2_FM175XX_OK                ? H2_FM175XX_WRITE_COMPLETE
                : rc == H2_FM175XX_ERR_UNAVAILABLE ? H2_FM175XX_WRITE_CC
@@ -468,6 +490,17 @@ int main(void) {
                 "config_status=0 tx=0x80 rx=0x00 framing=0x00") != NULL);
   assert(strstr(fixture.diagnostics, "H2_NFC_WRITE_DETAIL phase=publish") !=
          NULL);
+  setup(&adapter);
+  fixture.write_result = H2_FM175XX_ERR_PROTOCOL;
+  fixture.preread_failure = true;
+  assert(write_ndef(&adapter) == H2_PAL_ERR_IO);
+  assert(strstr(fixture.diagnostics,
+                "H2_NFC_WRITE_PREREAD count=21 page=80 bits=4 fm=-6 "
+                "transfer_rc=0 required=512 header_valid=1 cc=e1103e00") !=
+         NULL);
+  assert(strstr(fixture.diagnostics, "short_valid=1 low4=0x0") != NULL);
+  assert(strstr(fixture.diagnostics, "write_calls=0") != NULL);
+  assert(strstr(fixture.diagnostics, "H2_NFC_WRITE_REPLY") == NULL);
   setup(&adapter);
   fixture.write_result = H2_FM175XX_ERR_UNAVAILABLE;
   assert(write_ndef(&adapter) == H2_PAL_ERR_UNAVAILABLE);

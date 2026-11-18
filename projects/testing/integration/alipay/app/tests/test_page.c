@@ -2,6 +2,7 @@
 #include "h2_desktop_platform.h"
 #include "h2_qrcode.h"
 #include "h2_smoke_host_runtime.h"
+#include "lvgl.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -18,7 +19,8 @@ typedef struct page_fixture {
   unsigned opens, closes, draws, presents, init_calls, code_calls, reports;
   unsigned joins;
   bool retry_join, joined;
-  bool complete_binding, already_bound, session_storage;
+  bool complete_binding, already_bound, session_storage, rebind;
+  unsigned unbinds, payment_notifications, payment_phase, cycles;
   unsigned binding_calls;
   unsigned failed_bindings;
   unsigned progresses;
@@ -168,6 +170,7 @@ static h2_pal_result_t query_binding(void* user,
     out->tid_length = out->uid_length = 8u;
     out->shared_key_length = 32u;
     out->seed_length = 48u;
+    if (fixture->rebind) fixture->already_bound = true;
   }
   return fixture->binding_rc;
 }
@@ -196,8 +199,117 @@ static void report(h2_runtime_t* runtime, void* user,
   ++fixture->reports;
 }
 
+static lv_obj_t* find_label(lv_obj_t* parent, const char* text) {
+  if (lv_obj_check_type(parent, &lv_label_class) &&
+      strcmp(lv_label_get_text(parent), text) == 0)
+    return parent;
+  for (uint32_t i = 0u; i < lv_obj_get_child_count(parent); ++i) {
+    lv_obj_t* found = find_label(lv_obj_get_child(parent, (int32_t)i), text);
+    if (found != NULL) return found;
+  }
+  return NULL;
+}
+
+static bool click(const char* text) {
+  lv_obj_t* found = find_label(lv_screen_active(), text);
+  if (found == NULL) return false;
+  lv_obj_t* button = lv_obj_get_parent(found);
+  if (lv_obj_is_hidden(button) || lv_obj_has_state(button, LV_STATE_DISABLED))
+    return false;
+  assert(lv_obj_send_event(button, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
+  return true;
+}
+
 static bool should_exit(void* user) {
-  return ((page_fixture_t*)user)->reports != 0u;
+  page_fixture_t* f = user;
+  if (!f->rebind) return f->reports != 0u;
+  assert(++f->cycles < 2000u);
+  if (f->reports >= 2u) return true;
+  if (f->payment_phase == 0u && f->reports == 1u && click("Unbind"))
+    f->payment_phase = 1u;
+  else if (f->payment_phase == 1u && click("Confirm"))
+    f->payment_phase = 2u;
+  else if (f->payment_phase == 2u && click("Continue"))
+    f->payment_phase = 3u;
+  return false;
+}
+
+static int unbind(void* user, int* sdk_rc) {
+  page_fixture_t* f = user;
+  assert(!pthread_equal(pthread_self(), f->ui_thread));
+  assert(f->already_bound && f->unbinds == 0u);
+  f->already_bound = false;
+  ++f->unbinds;
+  *sdk_rc = 0;
+  return 0;
+}
+
+static int unused_code(void* user, uint8_t* code, uint32_t* length,
+                       int* sdk_rc) {
+  (void)user;
+  (void)code;
+  (void)length;
+  (void)sdk_rc;
+  assert(false);
+  return H2_PAL_ERR_INVALID_STATE;
+}
+
+static int unused_query(void* user, const char* code,
+                        h2_alipay_payment_result_t* out) {
+  (void)user;
+  (void)code;
+  (void)out;
+  assert(false);
+  return H2_PAL_ERR_INVALID_STATE;
+}
+
+static int payment_ready(h2_runtime_t* runtime, void* user) {
+  (void)runtime;
+  page_fixture_t* f = user;
+  ui_thread(f);
+  ++f->payment_notifications;
+  return 0;
+}
+
+static int mapping_list(void* user, h2_runtime_component_t kind,
+                        h2_runtime_component_mapping_cb_t callback,
+                        void* context) {
+  (void)user;
+  if (kind != H2_RUNTIME_COMPONENT_BUTTON) return 0;
+  for (uint32_t i = 1u; i <= 4u; ++i) {
+    const h2_runtime_component_mapping_entry_t mapping = {i, i};
+    int rc = callback(context, &mapping);
+    if (rc != 0) return rc;
+  }
+  return 0;
+}
+
+static int periph_get(void* user, h2_pal_periph_id_t id,
+                      h2_pal_periph_info_t* out) {
+  (void)user;
+  if (id < 1u || id > 4u) return H2_PAL_ERR_NOT_FOUND;
+  static const h2_pal_periph_single_button_payload_t payload = {
+      .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE};
+  *out = (h2_pal_periph_info_t){.id = id,
+                                .type = H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
+                                .name = "test button",
+                                .payload = &payload,
+                                .payload_size = sizeof(payload)};
+  return 0;
+}
+
+static int periph_list(void* user, h2_pal_periph_type_t kind,
+                       h2_pal_periph_cb_t callback, void* context) {
+  if (kind != H2_PAL_PERIPH_TYPE_ANY &&
+      kind != H2_PAL_PERIPH_TYPE_SINGLE_BUTTON)
+    return 0;
+  for (uint32_t i = 1u; i <= 4u; ++i) {
+    h2_pal_periph_info_t info;
+    assert(periph_get(user, i, &info) == 0);
+    int rc = callback(context, &info);
+    if (rc != 0) return rc;
+  }
+  return 0;
 }
 
 static void code_ready(h2_runtime_t* runtime, void* user,
@@ -232,6 +344,16 @@ static int run(page_fixture_t* fixture) {
       &display);
   config.task = &task;
   config.sync = h2_desktop_platform_sync_api();
+  static const h2_runtime_component_mapper_vtable_t mapper_vtable = {
+      .list = mapping_list};
+  const h2_runtime_component_mapper_t mapper = {.vtable = &mapper_vtable};
+  static const h2_pal_periph_vtable_t periph_vtable = {.list = periph_list,
+                                                       .get = periph_get};
+  const h2_pal_periph_api_t periph = {.vtable = &periph_vtable};
+  if (fixture->rebind) {
+    config.component_mapper = &mapper;
+    config.periph = &periph;
+  }
   h2_runtime_t* runtime = NULL;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   const h2_alipay_vtable_t vtable = {
@@ -246,6 +368,10 @@ static int run(page_fixture_t* fixture) {
       .source = H2_ALIPAY_SOURCE_CONTROLLED,
       .storage_scope = fixture->session_storage ? H2_ALIPAY_STORAGE_SESSION
                                                 : H2_ALIPAY_STORAGE_PERSISTENT};
+  static const h2_alipay_payment_vtable_t payment_vtable = {
+      .get_code = unused_code, .query_code = unused_query, .unbind = unbind};
+  const h2_alipay_payment_api_t payment = {.user = fixture,
+                                           .vtable = &payment_vtable};
   const h2_alipay_e2e_config_t app = {
       .alipay = &api,
       .complete_binding = fixture->complete_binding,
@@ -256,7 +382,10 @@ static int run(page_fixture_t* fixture) {
       .binding_code_ready = code_ready,
       .binding_progress = binding_progress,
       .report = report,
-      .should_exit = should_exit};
+      .should_exit = should_exit,
+      .payment = fixture->rebind ? &payment : NULL,
+      .payment_ready = payment_ready,
+      .payment_buttons = {1u, 2u, 3u, 4u}};
   int result = h2_alipay_e2e_run(runtime, &app);
   assert(h2_runtime_destroy(&runtime) == H2_PAL_OK);
   assert(fixture->opens == 1u && fixture->closes == 1u);
@@ -403,5 +532,20 @@ int main(void) {
          refreshed.binding_calls == 2u && refreshed.progresses == 2u &&
          refreshed.result.stage == H2_ALIPAY_E2E_BINDING_COMPLETE &&
          refreshed.result.binding.state == H2_ALIPAY_BINDING_COMPLETE);
+  page_fixture_t rebound = {.width = 240,
+                            .height = 240,
+                            .frame = frame,
+                            .complete_binding = true,
+                            .session_storage = true,
+                            .rebind = true,
+                            .retry_join = true};
+  strcpy(rebound.code, "controlled://rebound-code");
+  assert(run(&rebound) == 0);
+  assert(rebound.unbinds == 1u && rebound.reports == 2u &&
+         rebound.payment_notifications == 1u && rebound.payment_phase == 3u &&
+         rebound.code_calls == 2u && rebound.code_ready_calls == 2u &&
+         rebound.binding_calls == 2u && rebound.progresses == 2u &&
+         rebound.init_calls == 4u && rebound.already_bound &&
+         rebound.result.binding.state == H2_ALIPAY_BINDING_COMPLETE);
   return 0;
 }

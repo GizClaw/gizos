@@ -135,6 +135,10 @@ typedef struct h2_fm175xx_read_diagnostics {
   uint8_t last_irq, last_error, last_fifo, last_control;
   int rx_status_result;
   uint8_t rx_irq, rx_error, rx_fifo, rx_control;
+  /** Raw exchange result, before full READ-frame validation. */
+  int transfer_result;
+  /** Only a complete four-bit control reply is retained, never data bytes. */
+  uint8_t short_reply_valid, short_reply_low4;
 } h2_fm175xx_read_diagnostics_t;
 
 /** Read the first NDEF TLV of a selected, formatted Type 2 tag. Complete
@@ -202,6 +206,11 @@ typedef struct h2_fm175xx_write_diagnostics {
   uint8_t before_ndef_valid, expected_ndef_valid;
   uint8_t before_ndef_sha256[32];
   uint8_t expected_ndef_sha256[32];
+  /** Existing pre-write READs only. required_capacity is the CC-declared
+   * total memory extent, including the first 16 bytes. Header metadata below
+   * is valid after a complete first READ, even if a later READ fails. */
+  h2_fm175xx_read_diagnostics_t preread;
+  uint8_t preread_header_valid, preread_cc[4], preread_static_locks[2];
 } h2_fm175xx_write_diagnostics_t;
 
 /** Same single write with optional per-call diagnostics.

@@ -441,6 +441,33 @@ static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
            (unsigned)diagnostics.control_tlv[2],
            (unsigned)diagnostics.control_tlv[3],
            (unsigned)diagnostics.control_tlv[4]);
+  if (diagnostics.preread.read_count != 0u) {
+    const h2_fm175xx_read_diagnostics_t* read = &diagnostics.preread;
+    ESP_LOGW("h2_nfc_fm175xx",
+             "H2_NFC_WRITE_PREREAD count=%zu page=%u bits=%zu fm=%d "
+             "transfer_rc=%d required=%zu header_valid=%u "
+             "cc=%02x%02x%02x%02x locks=%02x%02x "
+             "short_valid=%u low4=0x%01x status_rc=%d "
+             "irq=0x%02x error=0x%02x fifo=%u control=0x%02x "
+             "rx_status=%d rx_irq=0x%02x rx_error=0x%02x "
+             "rx_fifo=%u rx_control=0x%02x",
+             read->read_count, (unsigned)read->last_page, read->last_reply_bits,
+             read->last_result, read->transfer_result, read->required_capacity,
+             (unsigned)diagnostics.preread_header_valid,
+             (unsigned)diagnostics.preread_cc[0],
+             (unsigned)diagnostics.preread_cc[1],
+             (unsigned)diagnostics.preread_cc[2],
+             (unsigned)diagnostics.preread_cc[3],
+             (unsigned)diagnostics.preread_static_locks[0],
+             (unsigned)diagnostics.preread_static_locks[1],
+             (unsigned)read->short_reply_valid,
+             (unsigned)read->short_reply_low4, read->status_result,
+             (unsigned)read->last_irq, (unsigned)read->last_error,
+             (unsigned)read->last_fifo, (unsigned)read->last_control,
+             read->rx_status_result, (unsigned)read->rx_irq,
+             (unsigned)read->rx_error, (unsigned)read->rx_fifo,
+             (unsigned)read->rx_control);
+  }
   if (diagnostics.write_calls != 0u) {
     ESP_LOGW("h2_nfc_fm175xx",
              "H2_NFC_WRITE_REPLY page=%u bits=%zu low4=0x%01x "

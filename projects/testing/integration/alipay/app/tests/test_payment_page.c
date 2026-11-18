@@ -1,4 +1,5 @@
 #include "h2_alipay_payment_page.h"
+#include "h2_alipay_nfc.h"
 #include "h2_desktop_platform.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_lvgl_platform.h"
@@ -15,7 +16,7 @@
 typedef struct fixture {
   pthread_t ui;
   unsigned phase, cycles, touch_opens, touch_closes, host_starts;
-  atomic_uint codes, queries, starts, stops, scans, scan_stops;
+  atomic_uint codes, queries, starts, stops, scans, scan_stops, unbinds;
   bool scanning, hardware_buttons, production_input, payer_only;
   unsigned navigation_phase;
   atomic_uint pressed_button, group_reads;
@@ -140,6 +141,15 @@ static int stop(void* user) {
   atomic_fetch_add(&f->stops, 1u);
   return 0;
 }
+static int unbind(void* user, int* sdk_rc) {
+  fixture_t* f = user;
+  worker(f);
+  assert(atomic_fetch_add(&f->unbinds, 1u) == 0u);
+  if (f->flow == 24u)
+    assert(atomic_load(&f->starts) == 1u && atomic_load(&f->stops) == 1u);
+  *sdk_rc = f->flow == 25u ? 57 : 0;
+  return f->flow == 25u ? H2_PAL_ERR_IO : 0;
+}
 static int host_start(void* user) {
   fixture_t* fixture = user;
   worker(fixture);
@@ -201,6 +211,9 @@ static int encode_reply(void* user, const uint8_t* data, size_t length,
   assert(length == 4u && memcmp(data, "TEST", 4u) == 0 && capacity >= 8u);
   ++fixture->reply_encodes;
   assert(fixture->received_frames == 1u && fixture->reply_encodes == 1u);
+  if (fixture->flow == 6u)
+    return h2_alipay_nfc_copy_raw_reply(NULL, data, length, out, capacity,
+                                        size);
   const uint8_t record[] = {0xd1u, 1u, 4u, 'T', 0u, 'O', 'K', '!'};
   memcpy(out, record, sizeof(record));
   *size = sizeof(record);
@@ -215,7 +228,10 @@ static int write_nfc(void* user, h2_pal_periph_id_t id, const uint8_t* uid,
   assert(id == 101u && uid_length == 4u && uid[0] == 0x42u &&
          type == H2_PAL_NFC_DATA_NDEF);
   const uint8_t record[] = {0xd1u, 1u, 4u, 'T', 0u, 'O', 'K', '!'};
-  assert(length == sizeof(record) && memcmp(data, record, length) == 0);
+  if (fixture->flow == 6u)
+    assert(length == 4u && memcmp(data, "TEST", length) == 0);
+  else
+    assert(length == sizeof(record) && memcmp(data, record, length) == 0);
   assert(fixture->accepted_writes == 0u);
   ++fixture->writes;
   if ((fixture->flow == 18u && fixture->writes <= 3u) || fixture->flow == 19u ||
@@ -458,6 +474,69 @@ static int read_radio(void* user, h2_pal_periph_id_t id,
       .id = id, .pressed_button_id = atomic_load(&f->pressed_button)};
   return 0;
 }
+static bool unbind_exit(fixture_t* f) {
+  assert(atomic_load(&f->unbinds) <= 1u);
+  if (f->flow == 24u && f->flow_phase < 4u) {
+    if (f->flow_phase == 0u && activate(f, "Tap to pay"))
+      f->flow_phase = 1u;
+    else if (f->flow_phase == 1u &&
+             find_label(lv_screen_active(), "Tap the payment terminal") &&
+             activate(f, "Back"))
+      f->flow_phase = 2u;
+    else if (f->flow_phase == 2u &&
+             find_label(lv_screen_active(), "Choose payment method"))
+      f->flow_phase = 4u;
+    return false;
+  }
+  if (f->flow_phase == 0u) f->flow_phase = 4u;
+  if (f->flow_phase == 4u && activate(f, "Unbind")) {
+    save_frame(f, "payment-menu-unbind-focused");
+    f->flow_phase = 5u;
+  } else if (f->flow_phase == 5u &&
+             find_label(lv_screen_active(),
+                        "Unbind this device?\nYou will need to bind again.")) {
+    lv_obj_t* cancel =
+        lv_obj_get_parent(find_label(lv_screen_active(), "Cancel"));
+    assert(lv_group_get_focused(lv_obj_get_group(cancel)) == cancel);
+    assert(atomic_load(&f->unbinds) == 0u);
+    save_frame(f, "unbind-confirmation-cancel-focused");
+    f->flow_phase = 7u;
+    if (f->flow == 23u) key(f, 5u);
+    if (f->flow == 26u) assert(activate(f, "Cancel"));
+  } else if (f->flow_phase == 7u) {
+    if ((f->flow == 23u || f->flow == 26u) &&
+        find_label(lv_screen_active(), "Choose payment method")) {
+      assert(atomic_load(&f->unbinds) == 0u);
+      f->flow_phase = 6u;
+      return true;
+    }
+    if (f->flow != 23u && f->flow != 26u && activate(f, "Confirm"))
+      f->flow_phase = 8u;
+  } else if (
+      f->flow_phase == 8u && f->flow == 24u &&
+      find_label(
+          lv_screen_active(),
+          "Device unbound locally.\nCheck Alipay > Smart Devices\non your phone and unbind\nthere if still linked.")) {
+    assert(atomic_load(&f->unbinds) == 1u);
+    save_frame(f, "unbind-success-reminder");
+    f->flow_phase = 10u;
+  } else if (f->flow_phase == 10u && activate(f, "Continue")) {
+    f->flow_phase = 11u;
+  } else if (f->flow_phase == 8u && f->flow == 25u) {
+    char failure[96];
+    (void)snprintf(failure, sizeof(failure), "Unbind failed\nSDK: 57 / rc: %d",
+                   H2_PAL_ERR_IO);
+    if (find_label(lv_screen_active(), failure) && activate(f, "Back"))
+      f->flow_phase = 9u;
+  } else if (f->flow_phase == 9u &&
+             find_label(lv_screen_active(), "Choose payment method")) {
+    assert(atomic_load(&f->unbinds) == 1u);
+    f->flow_phase = 6u;
+    return true;
+  }
+  return false;
+}
+
 static bool flow_exit(fixture_t* fixture) {
   if (fixture->flow == 4u) {
     char failure[96];
@@ -575,6 +654,7 @@ static bool exit_requested(void* user) {
   fixture_t* f = user;
   assert(pthread_equal(f->ui, pthread_self()));
   assert(++f->cycles < 2000u);
+  if (f->flow >= 23u) return unbind_exit(f);
   if (f->flow != 0u) return flow_exit(f);
   if (f->hardware_buttons && !f->payer_only && f->navigation_phase < 3u) {
     lv_obj_t* pay =
@@ -624,6 +704,9 @@ static bool exit_requested(void* user) {
            find_label(lv_screen_active(), "Choose payment method")) {
     lv_obj_t* tap = find_label(lv_screen_active(), "Tap to pay");
     assert(tap != NULL && lv_obj_is_hidden(lv_obj_get_parent(tap)));
+    lv_obj_t* unbind_label = find_label(lv_screen_active(), "Unbind");
+    assert(unbind_label != NULL &&
+           lv_obj_is_hidden(lv_obj_get_parent(unbind_label)));
     f->phase = 6u;
     return true;
   } else if (f->phase == 3u &&
@@ -717,7 +800,8 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
       .receive_ndef = receive_ndef,
       .query_tap = query_tap,
       .start_tap = payer_only ? NULL : tap_start,
-      .stop_tap = stop};
+      .stop_tap = stop,
+      .unbind = flow >= 23u ? unbind : NULL};
   const h2_alipay_payment_api_t payment = {&f, &pvt};
   const h2_alipay_e2e_config_t app = {
       .payment = &payment,
@@ -729,7 +813,11 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
                                  : (h2_alipay_payment_buttons_t){0}};
   assert(h2_alipay_payment_page_run(rt, &app, h2_lvgl_display_lvgl(view), 240,
                                     240, NULL, NULL) == expected);
-  if (flow == 4u) {
+  if (flow >= 23u) {
+    assert(f.flow_phase == (flow == 24u ? 11u : 6u));
+    assert(atomic_load(&f.unbinds) == (flow == 23u || flow == 26u ? 0u : 1u));
+    assert(f.reads == 0u && f.writes == 0u && atomic_load(&f.codes) == 0u);
+  } else if (flow == 4u) {
     assert(f.flow_phase == 6u && atomic_load(&f.codes) == 2u &&
            atomic_load(&f.queries) == 3u && f.reads == 0u);
   } else if (flow >= 5u) {
@@ -778,7 +866,7 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
   h2_lvgl_platform_deinit();
   if (production) {
     assert(h2_runtime_input_stop(rt) == 0);
-    assert(atomic_load(&f.group_reads) > 10u);
+    assert(atomic_load(&f.group_reads) > (flow >= 23u ? 0u : 10u));
   }
   if (f.input != NULL) h2_runtime_test_control_close(f.input);
   assert(h2_runtime_destroy(&rt) == 0);
@@ -807,5 +895,9 @@ int main(void) {
   run(true, false, false, 0, 0, 20u);
   run(true, false, false, 0, 0, 21u);
   run(true, false, false, 0, 0, 22u);
+  run(true, true, false, 0, 0, 23u);
+  run(true, true, false, 0, H2_ALIPAY_PAYMENT_PAGE_UNBOUND, 24u);
+  run(true, true, false, 0, 0, 25u);
+  run(true, true, false, 0, 0, 26u);
   return 0;
 }

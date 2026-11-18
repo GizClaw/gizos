@@ -8,7 +8,7 @@ set(H2_ESP_BOARD_DIR "${H2_REPO_ROOT}/boards/haivivi/h106_tiga_esp_v4_2/${H2_ESP
 set(IDF_TARGET "esp32s3" CACHE STRING "ESP-IDF target")
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
 set(SDKCONFIG_DEFAULTS
-  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults"
+  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.alipay.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
 
 include("$ENV{H2_BAZEL_COMPONENT_MANIFEST}")

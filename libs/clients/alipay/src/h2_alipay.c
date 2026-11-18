@@ -1382,18 +1382,19 @@ static retval_e query_payment_string(const char* pay_code, bool nfc,
   }
   int rc = h2_pal_mutex_lock(s_sync, s_lock);
   if (rc != H2_PAL_OK) return sdk_result(rc);
+  memset(&s_payment, 0, sizeof(s_payment));
   char context_code[32] = {0}, token[32] = {0};
   if (nfc) {
     if (s_tap != NULL)
       (void)h2_alipay_tap_payment_context(s_tap, context_code, token);
     pay_code = context_code;
     if (pay_code[0] == '\0') {
+      s_payment.result = H2_PAL_ERR_NOT_FOUND;
       *ext_data_len = 0u;
       (void)finish(H2_PAL_OK);
       return 21;
     }
   }
-  memset(&s_payment, 0, sizeof(s_payment));
   if (!s_initialized)
     rc = H2_PAL_ERR_INVALID_STATE;
   else {

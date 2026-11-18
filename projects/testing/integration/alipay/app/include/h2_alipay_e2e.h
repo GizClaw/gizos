@@ -136,11 +136,14 @@ h2_pal_result_t h2_alipay_e2e_refresh_binding(
     h2_runtime_t* runtime, const h2_alipay_e2e_config_t* config,
     bool (*cancel)(void*), void* cancel_user, h2_alipay_e2e_result_t* result);
 
-/** Standalone single-page App. Owns LVGL/display lifetime and at most one SDK
+/** Standalone App. Owns LVGL/display lifetime and at most one SDK
  * worker at a time;
  * Runtime lifetime belongs to the launcher. No required component mappings.
- * All UI state stays on the calling thread. Keeps the final page visible
- * until should_exit; errors in SDK prerequisites remain visible results.
+ * All UI state stays on the calling thread. A supported payment-menu unbind
+ * requires user confirmation, joins its worker and shows a phone-side reminder
+ * before returning to binding without resetting the SDK or rebooting.
+ * No account is automatically unbound. Keeps the final page visible until
+ * should_exit; errors in SDK prerequisites remain visible results.
  * Returns only after worker join and UI teardown. A failed join is retried
  * while retaining every borrowed dependency. */
 h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,

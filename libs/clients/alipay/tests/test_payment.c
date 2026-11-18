@@ -271,6 +271,11 @@ static void query(fixture_t* f) {
       H2_ALIPAY_CLIENT_PAYMENT_PAID,    H2_ALIPAY_CLIENT_PAYMENT_DISABLED,
       H2_ALIPAY_CLIENT_PAYMENT_FAILED,  H2_ALIPAY_CLIENT_PAYMENT_PAID,
       H2_ALIPAY_CLIENT_PAYMENT_PENDING};
+  const h2_alipay_client_payment_action_t actions[] = {
+      H2_ALIPAY_CLIENT_ACTION_ABSENT,  H2_ALIPAY_CLIENT_ACTION_PAID,
+      H2_ALIPAY_CLIENT_ACTION_PAID,    H2_ALIPAY_CLIENT_ACTION_DISABLED,
+      H2_ALIPAY_CLIENT_ACTION_FAILURE, H2_ALIPAY_CLIENT_ACTION_SOUNDWAVE,
+      H2_ALIPAY_CLIENT_ACTION_UNKNOWN};
   h2_alipay_client_payment_t result;
   char ext[128];
   for (size_t i = 0u; i < sizeof(bodies) / sizeof(*bodies); ++i) {
@@ -280,6 +285,12 @@ static void query(fixture_t* f) {
     assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
                                                ext, &length) == 0);
     assert(result.state == expected[i]);
+    assert(!result.query.nfc_token_present && result.query.code_length == 18u &&
+           result.query.tid_length == 8u && result.query.uid_length == 8u);
+    assert(result.query.attempted && result.query.request_result == 0 &&
+           result.query.http_status == 200 && result.query.rpc_status == 1000 &&
+           result.query.body_length == strlen(bodies[i]) &&
+           result.query.action == actions[i]);
     assert(f->acks - before ==
            (expected[i] == H2_ALIPAY_CLIENT_PAYMENT_PAID ? 1u : 0u));
     if (i == 1u) assert(strcmp(result.amount, "0.00") == 0);
@@ -301,6 +312,9 @@ static void query(fixture_t* f) {
                                              ext, &length) == 0);
   assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_PAID &&
          result.ack_result == H2_PAL_ERR_TIMEOUT);
+  assert(result.query.request_result == 0 && result.query.http_status == 200 &&
+         result.query.rpc_status == 1000 &&
+         result.query.action == H2_ALIPAY_CLIENT_ACTION_PAID);
   f->ack_rc = 0;
   f->network_rc = H2_PAL_ERR_TIMEOUT;
   length = sizeof(ext);
@@ -324,6 +338,60 @@ static void query(fixture_t* f) {
   f->rpc_status = 1000;
   f->response = "{}";
 }
+static void query_diagnostics(fixture_t* f) {
+  h2_alipay_client_payment_t result;
+  char ext[128];
+  size_t length = sizeof(ext);
+  unsigned acks = f->acks;
+  f->response =
+      "{\"action\":\"\\u0054EST_PENDING_0001\",\"success\":false,"
+      "\"errorCode\":\"1007\",\"errorMsg\":\"synthetic\","
+      "\"sdkBizData\":\"PRIVATE_FIXTURE\"}";
+  assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                             ext, &length) == 0);
+  uint8_t expected[32];
+  static const uint8_t action[] = "TEST_PENDING_0001";
+  hash(action, sizeof(action) - 1u, expected);
+  assert(result.state == H2_ALIPAY_CLIENT_PAYMENT_PENDING && f->acks == acks);
+  assert(result.query.action == H2_ALIPAY_CLIENT_ACTION_UNKNOWN &&
+         result.query.action_length == 17u && result.query.action_hash_valid &&
+         result.query.action_identifier &&
+         memcmp(result.query.action_sha256, expected, sizeof(expected)) == 0);
+  assert(result.query.response_fields == (H2_ALIPAY_CLIENT_QUERY_SUCCESS_FALSE |
+                                          H2_ALIPAY_CLIENT_QUERY_ERROR_CODE |
+                                          H2_ALIPAY_CLIENT_QUERY_ERROR_MESSAGE |
+                                          H2_ALIPAY_CLIENT_QUERY_BUSINESS));
+  assert(
+      result.query.response_code_valid && result.query.response_code == 1007 &&
+      result.query.business_type == 2u && result.query.business_length == 15u);
+  f->response = "{\"action\":\"TEST\\u0000STATE\"}";
+  length = sizeof(ext);
+  assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                             ext, &length) == 0);
+  static const uint8_t binary_action[] = "TEST\0STATE";
+  hash(binary_action, sizeof(binary_action) - 1u, expected);
+  assert(result.query.action_hash_valid && !result.query.action_identifier &&
+         result.query.action_length == sizeof(binary_action) - 1u &&
+         memcmp(result.query.action_sha256, expected, sizeof(expected)) == 0);
+  const char* codes[] = {"0",          "\"0012\"",       "-1",
+                         "2147483648", "\"2147483648\"", "\"1007\\u0000x\"",
+                         "true",       "\"TEXT_CODE\""};
+  for (size_t i = 0u; i < sizeof(codes) / sizeof(codes[0]); ++i) {
+    char body[128];
+    (void)snprintf(body, sizeof(body), "{\"resultCode\":%s}", codes[i]);
+    f->response = body;
+    length = sizeof(ext);
+    assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
+                                               ext, &length) == 0);
+    assert(!result.query.action_hash_valid && !result.query.action_identifier &&
+           result.query.response_fields == H2_ALIPAY_CLIENT_QUERY_RESULT_CODE &&
+           result.query.response_code_valid == (i < 2u) &&
+           result.query.response_code == (i == 1u ? 12 : 0));
+  }
+  assert(f->acks == acks);
+  f->response = "{}";
+}
+
 static void failures(fixture_t* f) {
   h2_alipay_client_payment_t result;
   char ext[128];
@@ -526,6 +594,7 @@ int main(void) {
   initialize(&f);
   generation(&f);
   query(&f);
+  query_diagnostics(&f);
   failures(&f);
   income(&f);
   abi(&f);

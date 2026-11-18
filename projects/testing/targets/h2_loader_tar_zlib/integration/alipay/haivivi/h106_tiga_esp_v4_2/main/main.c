@@ -10,6 +10,7 @@
 #include "h2_esp_target_task_policy.h"
 #include "h2_sha256.h"
 #include "esp_app_desc.h"
+#include "esp_log.h"
 #include "esp_netif_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -430,7 +431,7 @@ static void run(void* user) {
       .feature = h2_alipay_e2e_target_feature(),
       .payment = h2_alipay_e2e_target_payment_api(),
       .payment_nfc_component_id = 1u,
-      .payment_nfc_encode_reply = h2_alipay_nfc_encode_text_reply,
+      .payment_nfc_encode_reply = h2_alipay_nfc_copy_raw_reply,
       .payment_ready = payment_ready,
       .payment_buttons = {.previous = 2u,
                           .next = 3u,
@@ -472,10 +473,15 @@ static void image_entry(void* user) {
 
   printf("H2_ALIPAY_E2E_BOOT board=%s target=%s version=%s\n", runtime->board,
          runtime->target, esp_app_get_description()->version);
+  printf("H2_ALIPAY_NFC_PROFILE mode=raw source=independent extra_bytes=0\n");
   run(NULL);
 }
 
 void app_main(void) {
+  esp_log_level_set("alipay/payment", ESP_LOG_INFO);
+  printf(
+      "H2_ALIPAY_LOG_CONFIG default_level=%d maximum_level=%d payment_level=%d\n",
+      CONFIG_LOG_DEFAULT_LEVEL, CONFIG_LOG_MAXIMUM_LEVEL, ESP_LOG_INFO);
   int rc = h2_esp_target_task_policy_install_with_configure(
       h2_esp_board_task_configure);
   if (rc == H2_PAL_OK)

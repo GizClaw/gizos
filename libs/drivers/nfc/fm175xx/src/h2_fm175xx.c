@@ -447,6 +447,7 @@ static int ntag_read_once_diagnostic(
     rc = transceive_observe(reader, send, sizeof(send), reply, sizeof(reply),
                             &bits, diagnostics == NULL ? NULL : &observation);
   }
+  int transfer_result = rc;
   if (rc == H2_FM175XX_OK) rc = type_a_check_reply(reply, 16u, bits);
   if (diagnostics != NULL) {
     ++diagnostics->read_count;
@@ -454,6 +455,11 @@ static int ntag_read_once_diagnostic(
     diagnostics->last_reply_bits = bits;
     diagnostics->last_page = page_addr;
     diagnostics->last_result = rc;
+    diagnostics->transfer_result = transfer_result;
+    diagnostics->short_reply_valid =
+        (uint8_t)(transfer_result == H2_FM175XX_OK && bits == 4u);
+    diagnostics->short_reply_low4 =
+        diagnostics->short_reply_valid ? (uint8_t)(reply[0] & 15u) : 0u;
     diagnostics->rx_status_result = observation.result;
     diagnostics->rx_irq = observation.irq;
     diagnostics->rx_error = observation.error;
@@ -720,23 +726,33 @@ int h2_fm175xx_type_a_activate_profile(
                          NULL);
 }
 
-int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
-                             size_t capacity, size_t* out_len) {
+static int ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
+                         size_t capacity, size_t* out_len,
+                         h2_fm175xx_read_diagnostics_t* diagnostics) {
+  if (diagnostics != NULL) {
+    memset(diagnostics, 0, sizeof(*diagnostics));
+    diagnostics->last_result = H2_FM175XX_ERR_UNAVAILABLE;
+    diagnostics->transfer_result = H2_FM175XX_ERR_UNAVAILABLE;
+    diagnostics->status_result = H2_FM175XX_ERR_UNAVAILABLE;
+    diagnostics->rx_status_result = H2_FM175XX_ERR_UNAVAILABLE;
+  }
   if (reader == NULL || out_data == NULL || out_len == NULL || capacity < 16u) {
     return H2_FM175XX_ERR_INVALID_ARG;
   }
-  int rc = ntag_read_once(reader, 0u, out_data);
+  int rc = ntag_read_once_diagnostic(reader, 0u, out_data, diagnostics);
   if (rc != H2_FM175XX_OK) {
     return rc;
   }
   const size_t total_len = 16u + (8u * out_data[14]);
+  if (diagnostics != NULL) diagnostics->required_capacity = total_len;
   if (total_len > 1024u) return H2_FM175XX_ERR_UNAVAILABLE;
   if (total_len > capacity) {
     return H2_FM175XX_ERR_NO_MEMORY;
   }
   for (size_t offset = 16u; offset < total_len; offset += 16u) {
     uint8_t page[16];
-    rc = ntag_read_once(reader, (uint8_t)(offset / 4u), page);
+    rc = ntag_read_once_diagnostic(reader, (uint8_t)(offset / 4u), page,
+                                   diagnostics);
     if (rc != H2_FM175XX_OK) {
       return rc;
     }
@@ -746,6 +762,11 @@ int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
   }
   *out_len = total_len;
   return H2_FM175XX_OK;
+}
+
+int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
+                             size_t capacity, size_t* out_len) {
+  return ntag_read_all(reader, out_data, capacity, out_len, NULL);
 }
 
 static int ntag_read_until(h2_fm175xx_t* reader, uint8_t* raw, size_t size,
@@ -1047,7 +1068,14 @@ int h2_fm175xx_ntag_write_ndef_diagnostic(
   uint8_t raw[1024];
   size_t size = 0u;
   if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_READ_TAG;
-  int rc = h2_fm175xx_ntag_read_all(reader, raw, sizeof(raw), &size);
+  int rc = ntag_read_all(reader, raw, sizeof(raw), &size,
+                         diagnostics != NULL ? &diagnostics->preread : NULL);
+  if (diagnostics != NULL && diagnostics->preread.required_capacity != 0u) {
+    diagnostics->preread_header_valid = 1u;
+    memcpy(diagnostics->preread_cc, raw + 12u, sizeof(diagnostics->preread_cc));
+    memcpy(diagnostics->preread_static_locks, raw + 10u,
+           sizeof(diagnostics->preread_static_locks));
+  }
   if (rc != H2_FM175XX_OK) return rc;
   if (diagnostics != NULL) {
     diagnostics->tag_capacity = size;

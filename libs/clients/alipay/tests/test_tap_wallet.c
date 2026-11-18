@@ -128,6 +128,17 @@ static void wallet_replies(void) {
     assert(alipay_nfc_recv_data_handle(ndef, sizeof(ndef)) == 0);
     assert(observation.sends == 1u && observation.statuses == 1u);
 
+    /* Exercise a long URI record with the observed 292-byte input size. */
+    uint8_t long_ndef[292] = {0xc1u, 1u, 0u, 0u, 1u, 0x1du, 'U', 4u};
+    memset(long_ndef + 8u, 'a', sizeof(long_ndef) - 8u);
+    memcpy(long_ndef + 8u, "example.invalid/", 16u);
+    memcpy(long_ndef + sizeof(long_ndef) - (sizeof(standard_tag) - 1u),
+           standard_tag, sizeof(standard_tag) - 1u);
+    expect(standard_reply, NFC_PAYMENT_STATUS_SUCCESS,
+           NFC_PAYMENT_FAIL_ERROR_SUCCESS, callback_result);
+    assert(alipay_nfc_recv_data_handle(long_ndef, sizeof(long_ndef)) == 0);
+    assert(observation.sends == 1u && observation.statuses == 1u);
+
     expect(vip_reply, NFC_PAYMENT_STATUS_SUCCESS,
            NFC_PAYMENT_FAIL_ERROR_SUCCESS, callback_result);
     assert(alipay_nfc_recv_data_handle(vip_tag, sizeof(vip_tag) - 1u) == 0);

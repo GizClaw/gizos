@@ -1088,7 +1088,59 @@ static void test_write_control_interruption(void) {
   }
 }
 
+static void test_write_preread_diagnostics(void) {
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  const uint8_t response[] = {0xd1u, 1u, 5u, 'T', 2u, 'e', 'n', 'o', 'k'};
+  h2_fm175xx_write_diagnostics_t diagnostics;
+  prepare_ndef_reader(&fixture, &reader);
+  /* A virtual tag can expose its complete NDEF but reject later pages in
+   * the CC-declared memory. Preserve the failed page and four-bit control
+   * response while proving that pre-read failure sends no WRITE command. */
+  fixture.memory[14] = 62u;
+  fixture.memory[17] = 255u;
+  fixture.memory[18] = 1u;
+  fixture.memory[19] = 36u;
+  memset(fixture.memory + 20u, 'x', 292u);
+  fixture.memory[312] = 0xfeu;
+  fixture.last_readable_page = 76u;
+  uint8_t incoming[292];
+  size_t length = 0u;
+  assert(h2_fm175xx_ntag_read_ndef(&reader, incoming, sizeof(incoming),
+                                   &length) == H2_FM175XX_OK);
+  assert(length == 292u && fixture.rejected_reads == 0u);
+  assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+             &reader, response, sizeof(response), &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(diagnostics.phase == H2_FM175XX_WRITE_READ_TAG &&
+         diagnostics.write_calls == 0u && fixture.writes == 0u);
+  assert(diagnostics.preread.read_count == 21u &&
+         diagnostics.preread.last_page == 80u &&
+         diagnostics.preread.last_reply_bits == 4u &&
+         diagnostics.preread.transfer_result == H2_FM175XX_OK &&
+         diagnostics.preread.last_result == H2_FM175XX_ERR_PROTOCOL &&
+         diagnostics.preread.short_reply_valid == 1u &&
+         diagnostics.preread.short_reply_low4 == 0u &&
+         diagnostics.preread.required_capacity == 512u &&
+         diagnostics.preread_header_valid == 1u &&
+         diagnostics.preread_cc[0] == 0xe1u &&
+         diagnostics.preread_cc[2] == 62u && diagnostics.metadata_valid == 0u);
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.partial_read_bits = 96u;
+  fixture.read_error_page = 0u;
+  assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+             &reader, response, sizeof(response), &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(diagnostics.preread.read_count == 1u &&
+         diagnostics.preread.last_page == 0u &&
+         diagnostics.preread.last_reply_bits == 96u &&
+         diagnostics.preread.short_reply_valid == 0u &&
+         diagnostics.preread_header_valid == 0u &&
+         diagnostics.write_calls == 0u && fixture.writes == 0u);
+}
+
 int main(void) {
+  test_write_preread_diagnostics();
   test_write_control_prefix();
   test_write_control_rejections();
   test_write_control_interruption();
