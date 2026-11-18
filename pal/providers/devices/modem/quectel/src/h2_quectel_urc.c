@@ -322,7 +322,8 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t* modem, const char* line) {
 
   if (strncmp(line, "+CLCC:", 6) == 0) {
     h2_pal_modem_call_status_t status;
-    if (h2_quectel_parse_clcc_line(line, &status)) {
+    int mode;
+    if (h2_quectel_parse_clcc_line(line, &status, &mode) && mode == 0) {
       if (!modem->incoming_call_id && modem->call_status_seen &&
           modem->observed_call.state == H2_PAL_MODEM_CALL_STATE_ENDED) {
         return;
