@@ -41,6 +41,8 @@ extern "C" {
 #define H2_XIANXIA_RPG_PREF_JOURNEY4_KEY "journey4"
 /** Chapter-5 journey; preserves every older journey for rollback. */
 #define H2_XIANXIA_RPG_PREF_JOURNEY5_KEY "journey5"
+/** Version-3 chapter-6 journey with its own fact word. */
+#define H2_XIANXIA_RPG_PREF_JOURNEY6_KEY "journey6"
 /** Blob with the cleared chapters and the hero at each clear, used to enter
  * the next chapter; a v0.1 chapter-1 clear is copied into it on start. */
 #define H2_XIANXIA_RPG_PREF_CHAPTERS_KEY "chapters"

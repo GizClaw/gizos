@@ -151,6 +151,22 @@ typedef enum h2_xianxia_rpg_script_id {
   H2_XIANXIA_RPG_SCRIPT_C5_REVIVE,
   H2_XIANXIA_RPG_SCRIPT_C5_STAY,
   H2_XIANXIA_RPG_SCRIPT_C5_OTTER,
+  H2_XIANXIA_RPG_SCRIPT_C6_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C6_INTRO = H2_XIANXIA_RPG_SCRIPT_C6_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C6_BRIEF,
+  H2_XIANXIA_RPG_SCRIPT_C6_HELP,
+  H2_XIANXIA_RPG_SCRIPT_C6_HOT,
+  H2_XIANXIA_RPG_SCRIPT_C6_COLD,
+  H2_XIANXIA_RPG_SCRIPT_C6_REST,
+  H2_XIANXIA_RPG_SCRIPT_C6_FIRE_MOSS,
+  H2_XIANXIA_RPG_SCRIPT_C6_ICE_SOUL,
+  H2_XIANXIA_RPG_SCRIPT_C6_NEED_BALANCE,
+  H2_XIANXIA_RPG_SCRIPT_C6_RETREAT,
+  H2_XIANXIA_RPG_SCRIPT_C6_READY,
+  H2_XIANXIA_RPG_SCRIPT_C6_RETRY,
+  H2_XIANXIA_RPG_SCRIPT_C6_RECOVERED,
+  H2_XIANXIA_RPG_SCRIPT_C6_END,
+  H2_XIANXIA_RPG_SCRIPT_C6_BOTH,
   H2_XIANXIA_RPG_SCRIPT_COUNT,
 } h2_xianxia_rpg_script_id_t;
 
@@ -316,6 +332,29 @@ typedef enum h2_xianxia_rpg_text_id {
   H2_XIANXIA_RPG_TEXT_C5_VISIT,
   H2_XIANXIA_RPG_TEXT_C5_ENEMY,
   H2_XIANXIA_RPG_TEXT_C5_WATER,
+  H2_XIANXIA_RPG_TEXT_C6_ONWARD,
+  H2_XIANXIA_RPG_TEXT_C6_HOT,
+  H2_XIANXIA_RPG_TEXT_C6_COLD,
+  H2_XIANXIA_RPG_TEXT_C6_HELP,
+  H2_XIANXIA_RPG_TEXT_C6_BACK,
+  H2_XIANXIA_RPG_TEXT_C6_STATUS,
+  H2_XIANXIA_RPG_TEXT_C6_STEADY,
+  H2_XIANXIA_RPG_TEXT_C6_WARM,
+  H2_XIANXIA_RPG_TEXT_C6_CHILL,
+  H2_XIANXIA_RPG_TEXT_C6_RITUAL,
+  H2_XIANXIA_RPG_TEXT_C6_BREATH_HOT,
+  H2_XIANXIA_RPG_TEXT_C6_BREATH_COLD,
+  H2_XIANXIA_RPG_TEXT_C6_COOL,
+  H2_XIANXIA_RPG_TEXT_C6_HEAT,
+  H2_XIANXIA_RPG_TEXT_C6_CLEAR,
+  H2_XIANXIA_RPG_TEXT_C6_HOLD,
+  H2_XIANXIA_RPG_TEXT_C6_STOP,
+  H2_XIANXIA_RPG_TEXT_C6_WISP,
+  H2_XIANXIA_RPG_TEXT_C6_RULE,
+  H2_XIANXIA_RPG_TEXT_C6_CREEK,
+  H2_XIANXIA_RPG_TEXT_C6_SPRING,
+  H2_XIANXIA_RPG_TEXT_C6_HUT,
+  H2_XIANXIA_RPG_TEXT_C6_CHARM,
   H2_XIANXIA_RPG_TEXT_COUNT,
 } h2_xianxia_rpg_text_id_t;
 
@@ -425,6 +464,21 @@ h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c5_tile_script(
     const h2_xianxia_rpg_game_t* game, char tile);
 bool h2_xianxia_rpg_c5_walkable(const h2_xianxia_rpg_game_t* game, char tile);
 size_t h2_xianxia_rpg_c5_strings(const char** out, size_t capacity);
+
+/* Chapter 6: thermal paths and the step-based healing spring. */
+char h2_xianxia_rpg_c6_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
+const char* h2_xianxia_rpg_c6_map_name(h2_xianxia_rpg_map_t map);
+const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c6_info(void);
+const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c6_script(
+    h2_xianxia_rpg_script_id_t id);
+size_t h2_xianxia_rpg_c6_npcs(
+    const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_map_t map,
+    h2_xianxia_rpg_npc_t out[H2_XIANXIA_RPG_MAX_NPCS]);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c6_talk_script(
+    const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_actor_t actor);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c6_tile_script(
+    const h2_xianxia_rpg_game_t* game, char tile);
+size_t h2_xianxia_rpg_c6_strings(const char** out, size_t capacity);
 
 #ifdef __cplusplus
 }
