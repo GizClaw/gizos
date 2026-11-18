@@ -30,6 +30,7 @@ lvgl_font(
     symbol_sources = [
         "src/h2_xianxia_rpg_chapter2.c",
         "src/h2_xianxia_rpg_chapter3.c",
+        "src/h2_xianxia_rpg_chapter4.c",
         "src/h2_xianxia_rpg_story.c",
     ],
 )
@@ -67,6 +68,7 @@ cc_library(
         "src/h2_xianxia_rpg.c",
         "src/h2_xianxia_rpg_chapter2.c",
         "src/h2_xianxia_rpg_chapter3.c",
+        "src/h2_xianxia_rpg_chapter4.c",
         "src/h2_xianxia_rpg_game.c",
         "src/h2_xianxia_rpg_render.c",
         "src/h2_xianxia_rpg_story.c",
@@ -85,6 +87,16 @@ cc_library(
 cc_test(
     name = "game_test",
     srcs = _PRIVATE_HEADERS + ["tests/test_game.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "chapter4_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_chapter4.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["src"],

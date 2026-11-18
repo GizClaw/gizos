@@ -195,29 +195,30 @@ static const h2_xianxia_rpg_line_t k_revive[] = {
 };
 
 static const h2_xianxia_rpg_script_t
-    k_scripts[H2_XIANXIA_RPG_SCRIPT_COUNT - H2_XIANXIA_RPG_SCRIPT_C3_FIRST] = {
+    k_scripts[H2_XIANXIA_RPG_SCRIPT_C4_FIRST - H2_XIANXIA_RPG_SCRIPT_C3_FIRST] =
+        {
 #define AT(id) [H2_XIANXIA_RPG_SCRIPT_C3_##id - H2_XIANXIA_RPG_SCRIPT_C3_FIRST]
-        AT(INTRO) = SCRIPT(k_intro, NONE),
-        AT(PAVILION) = SCRIPT(k_pavilion, REST),
-        AT(LETTER) = SCRIPT(k_letter, C3_BRIEF),
-        AT(CUT) = SCRIPT(k_cut, NONE),
-        AT(CUT_KNOWN) = SCRIPT(k_cut_known, NONE),
-        AT(COURT) = SCRIPT(k_court, C3_BRIEF),
-        AT(CENTER) = SCRIPT(k_center, NONE),
-        AT(BARRIER) = SCRIPT(k_barrier, NONE),
-        AT(OPEN) = SCRIPT(k_open, NONE),
-        AT(STELE1) = SCRIPT(k_stele1, C3_STELE1),
-        AT(STELE2) = SCRIPT(k_stele2, C3_STELE2),
-        AT(STELE3) = SCRIPT(k_stele3, C3_STELE3),
-        AT(HALL) = SCRIPT(k_hall, C3_CAMP),
-        AT(REST) = SCRIPT(k_rest, REST),
-        AT(SHIYAN) = SCRIPT(k_shiyan, NONE),
-        AT(BOSS) = SCRIPT(k_boss, C3_BATTLE),
-        AT(QUIET) = SCRIPT(k_quiet, NONE),
-        AT(REVEAL) = SCRIPT(k_reveal, C3_REVEAL),
-        AT(WENZHOU) = SCRIPT(k_wenzhou, NONE),
-        AT(REPORT) = SCRIPT(k_report, ENDING),
-        AT(REVIVE) = SCRIPT(k_revive, NONE),
+            AT(INTRO) = SCRIPT(k_intro, NONE),
+            AT(PAVILION) = SCRIPT(k_pavilion, REST),
+            AT(LETTER) = SCRIPT(k_letter, C3_BRIEF),
+            AT(CUT) = SCRIPT(k_cut, NONE),
+            AT(CUT_KNOWN) = SCRIPT(k_cut_known, NONE),
+            AT(COURT) = SCRIPT(k_court, C3_BRIEF),
+            AT(CENTER) = SCRIPT(k_center, NONE),
+            AT(BARRIER) = SCRIPT(k_barrier, NONE),
+            AT(OPEN) = SCRIPT(k_open, NONE),
+            AT(STELE1) = SCRIPT(k_stele1, C3_STELE1),
+            AT(STELE2) = SCRIPT(k_stele2, C3_STELE2),
+            AT(STELE3) = SCRIPT(k_stele3, C3_STELE3),
+            AT(HALL) = SCRIPT(k_hall, C3_CAMP),
+            AT(REST) = SCRIPT(k_rest, REST),
+            AT(SHIYAN) = SCRIPT(k_shiyan, NONE),
+            AT(BOSS) = SCRIPT(k_boss, C3_BATTLE),
+            AT(QUIET) = SCRIPT(k_quiet, NONE),
+            AT(REVEAL) = SCRIPT(k_reveal, C3_REVEAL),
+            AT(WENZHOU) = SCRIPT(k_wenzhou, NONE),
+            AT(REPORT) = SCRIPT(k_report, ENDING),
+            AT(REVIVE) = SCRIPT(k_revive, NONE),
 #undef AT
 };
 static const h2_xianxia_rpg_chapter_info_t k_info = {
@@ -259,7 +260,8 @@ const char* h2_xianxia_rpg_c3_map_name(h2_xianxia_rpg_map_t map) {
 }
 const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c3_script(
     h2_xianxia_rpg_script_id_t id) {
-  if (id < H2_XIANXIA_RPG_SCRIPT_C3_FIRST || id >= H2_XIANXIA_RPG_SCRIPT_COUNT)
+  if (id < H2_XIANXIA_RPG_SCRIPT_C3_FIRST ||
+      id >= H2_XIANXIA_RPG_SCRIPT_C4_FIRST)
     return NULL;
   return &k_scripts[id - H2_XIANXIA_RPG_SCRIPT_C3_FIRST];
 }

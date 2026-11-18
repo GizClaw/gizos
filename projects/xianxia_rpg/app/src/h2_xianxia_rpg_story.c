@@ -98,6 +98,11 @@ static const char* const k_objectives[H2_XIANXIA_RPG_STAGE_COUNT] = {
     [H2_XIANXIA_RPG_STAGE_C3_HALL] = "读北碑后入殿，平息听雨",
     [H2_XIANXIA_RPG_STAGE_C3_RETURN] = "向石砚问起雨纹剑穗",
     [H2_XIANXIA_RPG_STAGE_C3_CLEARED] = "剑魄归鞘，连夜归山",
+    [H2_XIANXIA_RPG_STAGE_C4_HOME] = "问陶伯，在井边取火种",
+    [H2_XIANXIA_RPG_STAGE_C4_ESCORT] = "护火过风口，向东点亮三灯",
+    [H2_XIANXIA_RPG_STAGE_C4_GUARD] = "点祭台第三灯，守住三波",
+    [H2_XIANXIA_RPG_STAGE_C4_RETURN] = "回村向陶伯问旧灯簿",
+    [H2_XIANXIA_RPG_STAGE_C4_CLEARED] = "三灯归山，同赴照水",
 };
 
 static const char* const k_command_labels[H2_XIANXIA_RPG_COMMANDS] = {
@@ -144,6 +149,9 @@ static const h2_xianxia_rpg_enemy_info_t k_enemies[H2_XIANXIA_RPG_ENEMY_COUNT] =
         [H2_XIANXIA_RPG_ENEMY_BROKEN_SWORD] =
             {"残剑", "断锋", 72, 20, 9, 22, H2_XIANXIA_RPG_RGB(138, 160, 178),
              H2_XIANXIA_RPG_RGB(230, 182, 116)},
+        [H2_XIANXIA_RPG_ENEMY_INK_TIDE] = {"浊潮墨影", "墨浪扑灯", 150, 30, 10,
+                                           150, H2_XIANXIA_RPG_RGB(48, 56, 80),
+                                           H2_XIANXIA_RPG_RGB(150, 120, 200)},
         [H2_XIANXIA_RPG_ENEMY_SWORD_SOUL] = {"剑魄·听雨", "穿檐", 520, 32, 10,
                                              110,
                                              H2_XIANXIA_RPG_RGB(92, 146, 162),
@@ -370,7 +378,7 @@ const char* const h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_COUNT] = {
     [H2_XIANXIA_RPG_TEXT_STATUS_PLAYING] = "进行中",
     [H2_XIANXIA_RPG_TEXT_STATUS_OPEN] = "可开始",
     [H2_XIANXIA_RPG_TEXT_STATUS_SOON] = "敬请期待",
-    [H2_XIANXIA_RPG_TEXT_UPCOMING] = "第四章 · 万灯归山",
+    [H2_XIANXIA_RPG_TEXT_UPCOMING] = "第五章 · 照水旧城",
     [H2_XIANXIA_RPG_TEXT_UNREADABLE] =
         "有一份存档无法读取，已跳过；其他记录不受影响。",
     [H2_XIANXIA_RPG_TEXT_RECAP_HEAD] = "前情提要",
@@ -434,6 +442,37 @@ const char* const h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_COUNT] = {
     [H2_XIANXIA_RPG_TEXT_C3_COUNTER] = "贸然出剑！回风反击 %u 点。",
     [H2_XIANXIA_RPG_TEXT_C3_WIND_WAIT] = "你没有出剑，回风落空。剑魄再次垂袖……",
     [H2_XIANXIA_RPG_TEXT_C3_POLE_WAIT] = "江篱收篙试探，避开回风的反击。",
+    [H2_XIANXIA_RPG_TEXT_C4_ONWARD] = "轻触屏幕，继续第四章《万灯归山》",
+    [H2_XIANXIA_RPG_TEXT_C4_ESCORT] = "火种%s · 祭灯%u/3",
+    [H2_XIANXIA_RPG_TEXT_C4_COVER] = "江篱：护火",
+    [H2_XIANXIA_RPG_TEXT_C4_SCOUT] = "江篱：探路",
+    [H2_XIANXIA_RPG_TEXT_C4_HELP] = "查看灯路",
+    [H2_XIANXIA_RPG_TEXT_C4_GUARD] = "护灯",
+    [H2_XIANXIA_RPG_TEXT_C4_LAMP] = "灯%u/80 波%u/3 回%u/3 影%u",
+    [H2_XIANXIA_RPG_TEXT_C4_ALLY] = "江篱 %u/%u",
+    [H2_XIANXIA_RPG_TEXT_C4_MEND] = "续灯",
+    [H2_XIANXIA_RPG_TEXT_C4_POLE] = "撑篙",
+    [H2_XIANXIA_RPG_TEXT_C4_DOWN] = "倒下",
+    [H2_XIANXIA_RPG_TEXT_C4_HEAL] = "点青崖或江篱状态框用药",
+    [H2_XIANXIA_RPG_TEXT_C4_PILL] = "%s恢复 %u 点气血。",
+    [H2_XIANXIA_RPG_TEXT_C4_LAMP_HINT] = "扑灯：护灯替灯承伤",
+    [H2_XIANXIA_RPG_TEXT_C4_ALLY_HINT] = "扑人：可用药或出剑",
+    [H2_XIANXIA_RPG_TEXT_C4_WAVE_HINT] = "墨浪扑灯：护灯挡住",
+    [H2_XIANXIA_RPG_TEXT_C4_BLOCK] = "替祭灯挡下 %u 点伤害，灯未受损。",
+    [H2_XIANXIA_RPG_TEXT_C4_HIT_LAMP] = "墨影扑灯！祭灯损失 %u 点耐久。",
+    [H2_XIANXIA_RPG_TEXT_C4_HIT_ALLY] = "墨影扑向江篱！受到 %u 点伤害。",
+    [H2_XIANXIA_RPG_TEXT_C4_HIT_HERO] = "墨影扑向青崖！受到 %u 点伤害。",
+    [H2_XIANXIA_RPG_TEXT_C4_REPAIR] = "江篱续灯，恢复 %u 点耐久。",
+    [H2_XIANXIA_RPG_TEXT_C4_REST_ALLY] = "江篱倒下，无法行动。丹药可救起她。",
+    [H2_XIANXIA_RPG_TEXT_C4_GUARDING] = "青崖护在灯前，替灯承伤并回灵。",
+    [H2_XIANXIA_RPG_TEXT_C4_WAVE] = "守过一波！第 %u 波来了，灯的耐久保留。",
+    [H2_XIANXIA_RPG_TEXT_C4_LOST] = "祭灯熄灭……轻触回灯台，三波重试。",
+    [H2_XIANXIA_RPG_TEXT_C4_WON] = "三波已退，祭灯守住了！轻触回竹溪。",
+    [H2_XIANXIA_RPG_TEXT_C4_FIRE_LIT] = "已取",
+    [H2_XIANXIA_RPG_TEXT_C4_HERO] = "青崖 %u/%u",
+    [H2_XIANXIA_RPG_TEXT_C4_RESOURCES] = "灵%u · 药%u",
+    [H2_XIANXIA_RPG_TEXT_C4_SWITCH] = "%s·点切换",
+    [H2_XIANXIA_RPG_TEXT_C4_FIRE_NONE] = "未取",
     [H2_XIANXIA_RPG_TEXT_C3_POSTS] = "轻触转剑 · 三剑朝中碑",
     [H2_XIANXIA_RPG_TEXT_HINT_TUTORIAL3] = "合击已就绪！点“合击”与江篱联手",
 };
@@ -465,6 +504,8 @@ static const h2_xianxia_rpg_chapter_info_t k_chapter1 = {
 static bool c1_map(h2_xianxia_rpg_map_t map) { return (unsigned)map < C1_MAPS; }
 
 char h2_xianxia_rpg_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y) {
+  if (h2_xianxia_rpg_map_chapter(map) == 4u)
+    return h2_xianxia_rpg_c4_tile(map, x, y);
   if (h2_xianxia_rpg_map_chapter(map) == 3u)
     return h2_xianxia_rpg_c3_tile(map, x, y);
   if (!c1_map(map)) return h2_xianxia_rpg_c2_tile(map, x, y);
@@ -477,13 +518,15 @@ char h2_xianxia_rpg_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y) {
 uint32_t h2_xianxia_rpg_map_chapter(h2_xianxia_rpg_map_t map) {
   if (c1_map(map)) return 1u;
   if ((unsigned)map <= H2_XIANXIA_RPG_MAP_WRECK) return 2u;
-  return (unsigned)map < H2_XIANXIA_RPG_MAP_COUNT ? 3u : 0u;
+  if ((unsigned)map <= H2_XIANXIA_RPG_MAP_SWORD_HALL) return 3u;
+  return (unsigned)map < H2_XIANXIA_RPG_MAP_COUNT ? 4u : 0u;
 }
 
 uint32_t h2_xianxia_rpg_stage_chapter(h2_xianxia_rpg_stage_t stage) {
   if (stage <= H2_XIANXIA_RPG_STAGE_CLEARED) return 1u;
   if (stage <= H2_XIANXIA_RPG_STAGE_C2_CLEARED) return 2u;
-  return stage < H2_XIANXIA_RPG_STAGE_COUNT ? 3u : 0u;
+  if (stage <= H2_XIANXIA_RPG_STAGE_C3_CLEARED) return 3u;
+  return stage < H2_XIANXIA_RPG_STAGE_COUNT ? 4u : 0u;
 }
 
 const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_chapter_info(
@@ -493,6 +536,8 @@ const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_chapter_info(
       return &k_chapter1;
     case 2u:
       return h2_xianxia_rpg_c2_info();
+    case 4u:
+      return h2_xianxia_rpg_c4_info();
     case 3u:
       return h2_xianxia_rpg_c3_info();
     default:
@@ -501,6 +546,8 @@ const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_chapter_info(
 }
 
 const char* h2_xianxia_rpg_map_name(h2_xianxia_rpg_map_t map) {
+  if (h2_xianxia_rpg_map_chapter(map) == 4u)
+    return h2_xianxia_rpg_c4_map_name(map);
   if (h2_xianxia_rpg_map_chapter(map) == 3u)
     return h2_xianxia_rpg_c3_map_name(map);
   return c1_map(map) ? k_map_names[map] : h2_xianxia_rpg_c2_map_name(map);
@@ -529,6 +576,7 @@ const char* h2_xianxia_rpg_command_label(h2_xianxia_rpg_command_t command) {
 
 const h2_xianxia_rpg_script_t* h2_xianxia_rpg_script(
     h2_xianxia_rpg_script_id_t id) {
+  if (id >= H2_XIANXIA_RPG_SCRIPT_C4_FIRST) return h2_xianxia_rpg_c4_script(id);
   if (id >= H2_XIANXIA_RPG_SCRIPT_C3_FIRST) return h2_xianxia_rpg_c3_script(id);
   if (id >= H2_XIANXIA_RPG_SCRIPT_C2_FIRST) return h2_xianxia_rpg_c2_script(id);
   return (unsigned)id < H2_XIANXIA_RPG_SCRIPT_C2_FIRST ? &k_scripts[id] : NULL;
@@ -538,6 +586,8 @@ size_t h2_xianxia_rpg_npcs(const h2_xianxia_rpg_game_t* game,
                            h2_xianxia_rpg_map_t map,
                            h2_xianxia_rpg_npc_t out[H2_XIANXIA_RPG_MAX_NPCS]) {
   size_t count = 0;
+  if (h2_xianxia_rpg_map_chapter(map) == 4u)
+    return h2_xianxia_rpg_c4_npcs(game, map, out);
   switch (map) {
     case H2_XIANXIA_RPG_MAP_VILLAGE:
       out[count++] = (h2_xianxia_rpg_npc_t){H2_XIANXIA_RPG_ACTOR_ELDER, 4, 3,
@@ -566,6 +616,7 @@ size_t h2_xianxia_rpg_npcs(const h2_xianxia_rpg_game_t* game,
 
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_talk_script(
     const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_actor_t actor) {
+  if (game->chapter == 4u) return h2_xianxia_rpg_c4_talk_script(game, actor);
   const h2_xianxia_rpg_stage_t stage = game->stage;
   switch (actor) {
     case H2_XIANXIA_RPG_ACTOR_ELDER:
@@ -608,6 +659,7 @@ h2_xianxia_rpg_script_id_t h2_xianxia_rpg_talk_script(
 bool h2_xianxia_rpg_tile_interactive(const h2_xianxia_rpg_game_t* game,
                                      int32_t x, int32_t y) {
   const char tile = h2_xianxia_rpg_tile(game->map, x, y);
+  if (game->chapter == 4u) return tile == 'F' || (tile >= '1' && tile <= '3');
   if (game->chapter == 3u)
     return h2_xianxia_rpg_c3_tile_interactive(game, tile);
   if (!c1_map(game->map)) return h2_xianxia_rpg_c2_tile_interactive(game, tile);
@@ -618,6 +670,7 @@ bool h2_xianxia_rpg_tile_interactive(const h2_xianxia_rpg_game_t* game,
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_tile_script(
     const h2_xianxia_rpg_game_t* game, int32_t x, int32_t y) {
   const char tile = h2_xianxia_rpg_tile(game->map, x, y);
+  if (game->chapter == 4u) return h2_xianxia_rpg_c4_tile_script(game, tile);
   if (game->chapter == 3u) return h2_xianxia_rpg_c3_tile_script(game, tile);
   if (!c1_map(game->map)) return h2_xianxia_rpg_c2_tile_script(game, tile);
   switch (tile) {
@@ -640,6 +693,18 @@ bool h2_xianxia_rpg_exit_at(h2_xianxia_rpg_map_t map, int32_t x, int32_t y,
   static const struct {
     uint8_t map, x, y, to_map, to_x, to_y;
   } exits[] = {
+      {H2_XIANXIA_RPG_MAP_NIGHT_VILLAGE, 14, 4, H2_XIANXIA_RPG_MAP_EAST_RIDGE,
+       1, 4},
+      {H2_XIANXIA_RPG_MAP_EAST_RIDGE, 0, 4, H2_XIANXIA_RPG_MAP_NIGHT_VILLAGE,
+       13, 4},
+      {H2_XIANXIA_RPG_MAP_EAST_RIDGE, 14, 4, H2_XIANXIA_RPG_MAP_WEST_RIDGE, 1,
+       4},
+      {H2_XIANXIA_RPG_MAP_WEST_RIDGE, 0, 4, H2_XIANXIA_RPG_MAP_EAST_RIDGE, 13,
+       4},
+      {H2_XIANXIA_RPG_MAP_WEST_RIDGE, 14, 4, H2_XIANXIA_RPG_MAP_LANTERN_ALTAR,
+       1, 4},
+      {H2_XIANXIA_RPG_MAP_LANTERN_ALTAR, 0, 4, H2_XIANXIA_RPG_MAP_WEST_RIDGE,
+       13, 4},
       {H2_XIANXIA_RPG_MAP_VILLAGE, 14, 4, H2_XIANXIA_RPG_MAP_FOREST, 1, 4},
       {H2_XIANXIA_RPG_MAP_FOREST, 0, 4, H2_XIANXIA_RPG_MAP_VILLAGE, 13, 4},
       {H2_XIANXIA_RPG_MAP_FOREST, 7, 0, H2_XIANXIA_RPG_MAP_SHRINE, 7, 8},
@@ -668,6 +733,14 @@ bool h2_xianxia_rpg_exit_at(h2_xianxia_rpg_map_t map, int32_t x, int32_t y,
 
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_exit_closed(
     const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_map_t map) {
+  if (game->chapter == 4u && game->tx == 14 &&
+      game->stage < H2_XIANXIA_RPG_STAGE_C4_RETURN) {
+    const uint32_t need = map == H2_XIANXIA_RPG_MAP_EAST_RIDGE ? 1u
+                          : map == H2_XIANXIA_RPG_MAP_WEST_RIDGE
+                              ? 2u
+                              : H2_XIANXIA_RPG_FLAG_C4_FIRE;
+    if (!(game->flags & need)) return H2_XIANXIA_RPG_SCRIPT_C4_NEED_FIRE;
+  }
   /* The reed flats wait until the companion who can light the posts. */
   if (map == H2_XIANXIA_RPG_MAP_DOCK &&
       game->stage < H2_XIANXIA_RPG_STAGE_C2_TO_REEDS)
@@ -770,6 +843,9 @@ size_t h2_xianxia_rpg_story_strings(const char** out, size_t capacity) {
   count += h2_xianxia_rpg_c2_strings(
       out + (count < capacity ? count : capacity), room);
   room = count < capacity ? capacity - count : 0u;
-  return count + h2_xianxia_rpg_c3_strings(
+  count += h2_xianxia_rpg_c3_strings(
+      out + (count < capacity ? count : capacity), room);
+  room = count < capacity ? capacity - count : 0u;
+  return count + h2_xianxia_rpg_c4_strings(
                      out + (count < capacity ? count : capacity), room);
 }

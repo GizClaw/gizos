@@ -105,7 +105,9 @@ static bool take_slot(h2_xianxia_rpg_game_t* g, h2_xianxia_rpg_save_t* out) {
   if (writes.chapter1) *out = writes.chapter1_save;
   if (writes.journey) *out = writes.journey_save;
   if (writes.journey3) *out = writes.journey3_save;
-  return writes.chapter1 || writes.journey || writes.journey3;
+  if (writes.journey4) *out = writes.journey4_save;
+  return writes.chapter1 || writes.journey || writes.journey3 ||
+         writes.journey4;
 }
 
 static void talk_to(h2_xianxia_rpg_game_t* g, int32_t col, int32_t row) {
@@ -236,7 +238,7 @@ static void test_title_guard_and_continue_disabled(void) {
   tap_rect(&game, &game.layout.title_buttons[2]);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
   run(&game, 300);
-  tap_rect(&game, &game.layout.chapter_rows[3]);
+  tap_rect(&game, &game.layout.chapter_rows[4]);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
   tap_rect(&game, &game.layout.chapter_back);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_TITLE);
