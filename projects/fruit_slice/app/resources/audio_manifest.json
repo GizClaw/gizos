@@ -8,9 +8,9 @@
       "sha256": "e68b823abb758521428d2dbfee36c1ea622ffe68c143779ecaf62e1892390034"
     },
     "slice": {
-      "samples": 800,
-      "bytes": 800,
-      "sha256": "6e7436f62b97600b920aba312ca2cefa8f0b0bc61a56a9648e3cf7f31d1a9b86"
+      "samples": 480,
+      "bytes": 480,
+      "sha256": "45071cea73f00071e9e322447b0638499f7a59f194b3657a86899440118492bc"
     },
     "combo": {
       "samples": 1976,
