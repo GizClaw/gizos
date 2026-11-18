@@ -27,16 +27,24 @@ bool h2_fruit_slice_is_fruit(unsigned kind) {
 
 static const h2_fruit_slice_weapon_t k_weapons[H2_FRUIT_SLICE_WEAPONS] = {
     {"CLASSIC KNIFE", "STANDARD CUT", 0u, 0.0f, 7.0f,
-     H2_FRUIT_SLICE_RGB(110, 214, 255)},
+     H2_FRUIT_SLICE_RGB(110, 214, 255), 300u, 2.0f, 0.0f, 0u, "COMBO 300MS"},
     {"JADE KATANA", "+10 CUT REACH", 40u, 10.0f, 11.0f,
-     H2_FRUIT_SLICE_RGB(100, 255, 152)},
+     H2_FRUIT_SLICE_RGB(100, 255, 152), 300u, 2.0f, 10.0f, 0u, "COMBO 300MS"},
     {"FLAME AXE", "+20 CUT REACH", 90u, 20.0f, 17.0f,
-     H2_FRUIT_SLICE_RGB(255, 130, 40)},
+     H2_FRUIT_SLICE_RGB(255, 130, 40), 300u, 2.0f, 20.0f, 0u, "COMBO 300MS"},
+    {"BAMBOO SABER", "NARROW CUT -5", 55u, -5.0f, 4.0f,
+     H2_FRUIT_SLICE_RGB(204, 230, 120), 450u, 2.0f, -5.0f, 1u, "COMBO 450MS"},
+    {"FROST CLEAVER", "WIDE CUT +14", 85u, 14.0f, 13.0f,
+     H2_FRUIT_SLICE_RGB(96, 230, 255), 220u, 12.0f, 14.0f, 2u,
+     "MIN12 COMBO220"},
+    {"STORM BLADE", "VERT+22 SIDE-3", 110u, -3.0f, 8.0f,
+     H2_FRUIT_SLICE_RGB(232, 180, 255), 180u, 6.0f, 22.0f, 3u, "MIN6 COMBO180"},
 };
 static const h2_fruit_slice_task_t k_tasks[H2_FRUIT_SLICE_TASKS] = {
-    {"SLICE 10 FRUIT", 10u, 15u, true},
-    {"MAKE 3 COMBOS", 3u, 25u, true},
-    {"SCORE 20 IN RUN", 20u, 40u, false},
+    {"SLICE 10 FRUIT", 10u, 15u, true},   {"MAKE 3 COMBOS", 3u, 25u, true},
+    {"SCORE 20 IN RUN", 20u, 40u, false}, {"4 KINDS IN RUN", 4u, 25u, true},
+    {"DODGE 3 IN RUN", 3u, 30u, true},    {"12 WITHOUT MISS", 12u, 20u, true},
+    {"CLASSIC COMBO4", 4u, 30u, true},
 };
 
 const h2_fruit_slice_weapon_t* h2_fruit_slice_weapon(unsigned id) {
@@ -51,37 +59,105 @@ uint32_t h2_fruit_slice_task_progress(const h2_fruit_slice_progress_t* p,
                                       unsigned id) {
   if (id == 0u) return p->fruit_credit;
   if (id == 1u) return p->combo_credit;
-  return id == 2u && p->score_task != 0u ? k_tasks[2].target : 0u;
+  if (id == H2_FRUIT_SLICE_TASK_SCORE)
+    return p->score_task != 0u ? k_tasks[id].target : 0u;
+  if (id >= H2_FRUIT_SLICE_TASK_VARIETY && id < H2_FRUIT_SLICE_TASKS)
+    return p->challenge_credit[id - H2_FRUIT_SLICE_TASK_VARIETY] != 0u
+               ? k_tasks[id].target
+               : 0u;
+  return 0u;
+}
+
+static uint32_t kind_count(uint32_t bits) {
+  uint32_t count = 0u;
+  while (bits != 0u) {
+    count += bits & 1u;
+    bits >>= 1;
+  }
+  return count;
+}
+
+uint32_t h2_fruit_slice_game_task_progress(const h2_fruit_slice_game_t* game,
+                                           unsigned id) {
+  if (id >= H2_FRUIT_SLICE_TASKS) return 0u;
+  const uint32_t pending = h2_fruit_slice_task_progress(&game->progress, id);
+  if (pending != 0u || id < H2_FRUIT_SLICE_TASK_VARIETY) return pending;
+  if (game->run_challenges_awarded & (1u << (id - H2_FRUIT_SLICE_TASK_VARIETY)))
+    return 0u;
+  uint32_t value = 0u;
+  switch (id) {
+    case H2_FRUIT_SLICE_TASK_VARIETY:
+      value = kind_count(game->run_kinds);
+      break;
+    case H2_FRUIT_SLICE_TASK_DODGE:
+      value = game->run_bombs_passed;
+      break;
+    case H2_FRUIT_SLICE_TASK_STREAK:
+      value = game->run_clean_slices;
+      break;
+    case H2_FRUIT_SLICE_TASK_CLASSIC_COMBO:
+      value = game->run_classic_combo;
+      break;
+    default:
+      return 0u;
+  }
+  const uint32_t target = k_tasks[id].target;
+  return value < target ? value : target;
 }
 
 void h2_fruit_slice_progress_encode(
     const h2_fruit_slice_progress_t* p,
     uint8_t out[H2_FRUIT_SLICE_PROGRESS_BYTES]) {
-  const uint32_t fields[] = {
-      0x31505346u,   1u,       p->coins,   p->fruit_credit, p->combo_credit,
-      p->score_task, p->owned, p->equipped};
-  for (unsigned i = 0; i < 8u; ++i)
+  const uint32_t fields[] = {0x31505346u,
+                             2u,
+                             p->coins,
+                             p->fruit_credit,
+                             p->combo_credit,
+                             p->score_task,
+                             p->owned,
+                             p->equipped,
+                             p->challenge_credit[0],
+                             p->challenge_credit[1],
+                             p->challenge_credit[2],
+                             p->challenge_credit[3]};
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_PROGRESS_BYTES / 4u; ++i)
     for (unsigned byte = 0; byte < 4u; ++byte)
       out[i * 4u + byte] = (uint8_t)(fields[i] >> (byte * 8u));
 }
 
 bool h2_fruit_slice_progress_decode(h2_fruit_slice_progress_t* p,
                                     const void* data, size_t size) {
-  if (p == NULL || data == NULL || size != H2_FRUIT_SLICE_PROGRESS_BYTES)
+  if (p == NULL || data == NULL ||
+      (size != H2_FRUIT_SLICE_PROGRESS_BYTES &&
+       size != H2_FRUIT_SLICE_PROGRESS_LEGACY_BYTES))
     return false;
   const uint8_t* bytes = data;
-  uint32_t f[8] = {0};
-  for (unsigned i = 0; i < 8u; ++i)
+  uint32_t f[H2_FRUIT_SLICE_PROGRESS_BYTES / 4u] = {0};
+  for (unsigned i = 0; i < size / 4u; ++i)
     for (unsigned byte = 0; byte < 4u; ++byte)
       f[i] |= (uint32_t)bytes[i * 4u + byte] << (byte * 8u);
-  if (f[0] != 0x31505346u || f[1] != 1u ||
-      f[2] > H2_FRUIT_SLICE_PROGRESS_LIMIT ||
+  const bool legacy =
+      f[1] == 1u && size == H2_FRUIT_SLICE_PROGRESS_LEGACY_BYTES;
+  if (!legacy && !(f[1] == 2u && size == H2_FRUIT_SLICE_PROGRESS_BYTES))
+    return false;
+  const uint32_t weapon_count = legacy ? 3u : H2_FRUIT_SLICE_WEAPONS;
+  const uint32_t owned_mask = (1u << weapon_count) - 1u;
+  if (f[0] != 0x31505346u || f[2] > H2_FRUIT_SLICE_PROGRESS_LIMIT ||
       f[3] > H2_FRUIT_SLICE_PROGRESS_LIMIT ||
       f[4] > H2_FRUIT_SLICE_PROGRESS_LIMIT || f[5] > 2u || (f[6] & 1u) == 0u ||
-      (f[6] & ~7u) != 0u || f[7] >= H2_FRUIT_SLICE_WEAPONS ||
+      (f[6] & ~owned_mask) != 0u || f[7] >= weapon_count ||
       (f[6] & (1u << f[7])) == 0u)
     return false;
-  *p = (h2_fruit_slice_progress_t){f[2], f[3], f[4], f[5], f[6], f[7]};
+  for (unsigned i = 8u; i < H2_FRUIT_SLICE_PROGRESS_BYTES / 4u; ++i)
+    if (f[i] > H2_FRUIT_SLICE_PROGRESS_LIMIT) return false;
+  *p = (h2_fruit_slice_progress_t){
+      .coins = f[2],
+      .fruit_credit = f[3],
+      .combo_credit = f[4],
+      .score_task = f[5],
+      .owned = f[6],
+      .equipped = f[7],
+      .challenge_credit = {f[8], f[9], f[10], f[11]}};
   return true;
 }
 
@@ -90,10 +166,61 @@ static void progress_changed(h2_fruit_slice_game_t* game) {
   ++game->progress_revision;
 }
 
+static void challenge_update(h2_fruit_slice_game_t* game, unsigned id,
+                             uint32_t value) {
+  const uint32_t bit = 1u << (id - H2_FRUIT_SLICE_TASK_VARIETY);
+  if (value < k_tasks[id].target || (game->run_challenges_awarded & bit))
+    return;
+  game->run_challenges_awarded |= bit;
+  uint32_t* credit =
+      &game->progress.challenge_credit[id - H2_FRUIT_SLICE_TASK_VARIETY];
+  if (*credit < H2_FRUIT_SLICE_PROGRESS_LIMIT) ++*credit;
+  progress_changed(game);
+}
+
 static void score_task_update(h2_fruit_slice_game_t* game) {
   if (game->score >= k_tasks[2].target && game->progress.score_task == 0u) {
     game->progress.score_task = 1u;
     progress_changed(game);
+  }
+}
+
+void h2_fruit_slice_game_progress_layout(
+    const h2_fruit_slice_game_t* game, h2_fruit_slice_progress_layout_t* out) {
+  memset(out, 0, sizeof(*out));
+  if (game->phase != H2_FRUIT_SLICE_PHASE_TASKS &&
+      game->phase != H2_FRUIT_SLICE_PHASE_SHOP)
+    return;
+  const float w = (float)game->width, h = (float)game->height;
+  const uint32_t capacity = h < 220.0f ? 1u : h < 360.0f ? 2u : 3u;
+  const uint32_t total = game->phase == H2_FRUIT_SLICE_PHASE_TASKS
+                             ? H2_FRUIT_SLICE_TASKS
+                             : H2_FRUIT_SLICE_WEAPONS;
+  out->pages = (total + capacity - 1u) / capacity;
+  out->page =
+      game->progress_page < out->pages ? game->progress_page : out->pages - 1u;
+  out->first = out->page * capacity;
+  out->count = total - out->first;
+  if (out->count > capacity) out->count = capacity;
+  h2_fruit_slice_rect_t back;
+  h2_fruit_slice_game_back_rect(game->width, game->height, &back);
+  const float gap = fmaxf(3.0f, 6.0f * game->unit);
+  const float hint_h = fmaxf(14.0f, 16.0f * game->unit);
+  out->hint = (h2_fruit_slice_rect_t){w * 0.03f, back.y0 - gap - hint_h,
+                                      w * 0.97f, back.y0 - gap};
+  out->pager =
+      (h2_fruit_slice_rect_t){w * 0.05f, h * 0.22f, w * 0.95f,
+                              h * 0.22f + fmaxf(18.0f, 26.0f * game->unit)};
+  const float content_top = out->pager.y1 + gap;
+  const float row_h =
+      (out->hint.y0 - gap - content_top - gap * (float)(capacity - 1u)) /
+      (float)capacity;
+  for (uint32_t i = 0; i < out->count; ++i) {
+    const float top = content_top + (row_h + gap) * (float)i;
+    out->rows[i] =
+        (h2_fruit_slice_rect_t){w * 0.04f, top, w * 0.68f, top + row_h};
+    out->actions[i] =
+        (h2_fruit_slice_rect_t){w * 0.70f, top, w * 0.95f, top + row_h};
   }
 }
 
@@ -174,21 +301,32 @@ bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,
     return true;
   }
   if (game->phase == H2_FRUIT_SLICE_PHASE_CARDS) return false;
+  h2_fruit_slice_progress_layout_t layout;
+  h2_fruit_slice_game_progress_layout(game, &layout);
+  if (button == H2_FRUIT_SLICE_BUTTON_PREVIOUS ||
+      button == H2_FRUIT_SLICE_BUTTON_NEXT) {
+    if ((button == H2_FRUIT_SLICE_BUTTON_PREVIOUS && layout.page == 0u) ||
+        (button == H2_FRUIT_SLICE_BUTTON_NEXT &&
+         layout.page + 1u == layout.pages))
+      return false;
+    *out = layout.pager;
+    if (button == H2_FRUIT_SLICE_BUTTON_PREVIOUS)
+      out->x1 = w * 0.30f;
+    else
+      out->x0 = w * 0.70f;
+    return true;
+  }
   const uint32_t base =
       tasks ? H2_FRUIT_SLICE_BUTTON_CLAIM : H2_FRUIT_SLICE_BUTTON_WEAPON;
-  if (button < base || button >= base + 3u) return false;
-  const float row_gap = fmaxf(4.0f, 6.0f * game->unit);
-  const float top = h * (h < 240.0f ? 0.225f : 0.23f);
-  const float bottom =
-      footer_y - (h >= 280.0f ? fmaxf(24.0f, 32.0f * game->unit) : 4.0f);
-  const float row_h = (bottom - top - 2.0f * row_gap) / 3.0f;
-  const float y = top + (row_h + row_gap) * (float)(button - base);
-  *out = (h2_fruit_slice_rect_t){w * 0.70f, y, w * 0.95f, y + row_h};
+  if (button < base + layout.first ||
+      button >= base + layout.first + layout.count)
+    return false;
+  *out = layout.actions[button - base - layout.first];
   return true;
 }
 
 static uint32_t button_at(const h2_fruit_slice_game_t* game, float x, float y) {
-  for (uint32_t id = 1u; id < H2_FRUIT_SLICE_BUTTON_WEAPON + 3u; ++id) {
+  for (uint32_t id = 1u; id <= H2_FRUIT_SLICE_BUTTON_NEXT; ++id) {
     h2_fruit_slice_rect_t r;
     if (h2_fruit_slice_game_button_rect(game, id, &r) && x >= r.x0 &&
         x <= r.x1 && y >= r.y0 && y <= r.y1)
@@ -374,6 +512,8 @@ static void enter_playing(h2_fruit_slice_game_t* game) {
   game->waves = 0;
   game->new_best = false;
   game->result_sounded = false;
+  game->run_kinds = game->run_bombs_passed = game->run_clean_slices = 0u;
+  game->run_classic_combo = game->run_challenges_awarded = 0u;
   game->next_wave_ms = game->time_ms + 700u;
   h2_fruit_slice_cards_run_start(&game->cards);
 }
@@ -616,6 +756,14 @@ static void slice_fruit(h2_fruit_slice_game_t* game, unsigned index, float ux,
     ++game->progress.fruit_credit;
   progress_changed(game);
   score_task_update(game);
+  if ((unsigned)kind < H2_FRUIT_SLICE_KIND_COUNT && (unsigned)kind < 32u &&
+      kind != H2_FRUIT_SLICE_BOMB)
+    game->run_kinds |= 1u << (unsigned)kind;
+  if (game->run_clean_slices < k_tasks[H2_FRUIT_SLICE_TASK_STREAK].target)
+    ++game->run_clean_slices;
+  challenge_update(game, H2_FRUIT_SLICE_TASK_VARIETY,
+                   kind_count(game->run_kinds));
+  challenge_update(game, H2_FRUIT_SLICE_TASK_STREAK, game->run_clean_slices);
   h2_fruit_slice_cards_on_slice(&game->cards, fruit.kind, game->score,
                                 game->progress.equipped, fruit.body.x,
                                 fruit.body.y);
@@ -636,6 +784,10 @@ static void finish_combo(h2_fruit_slice_game_t* game) {
     ++game->progress.combo_credit;
   progress_changed(game);
   score_task_update(game);
+  if (game->progress.equipped == H2_FRUIT_SLICE_WEAPON_CLASSIC) {
+    if (slices > game->run_classic_combo) game->run_classic_combo = slices;
+    challenge_update(game, H2_FRUIT_SLICE_TASK_CLASSIC_COMBO, slices);
+  }
   h2_fruit_slice_cards_on_combo(&game->cards, slices, game->score,
                                 game->progress.equipped, game->stroke_last_x,
                                 game->stroke_last_y);
@@ -682,7 +834,12 @@ static void slice_segment(h2_fruit_slice_game_t* game, float x0, float y0,
                           float x1, float y1) {
   const float dx = x1 - x0, dy = y1 - y0;
   const float length2 = dx * dx + dy * dy;
-  const float minimum = 2.0f * game->unit;
+  const h2_fruit_slice_weapon_t* weapon =
+      h2_fruit_slice_weapon(game->progress.equipped);
+  const float minimum =
+      (game->phase == H2_FRUIT_SLICE_PHASE_PLAYING ? weapon->minimum_stroke
+                                                   : 2.0f) *
+      game->unit;
   if (length2 < minimum * minimum) return;
   if (length2 > 400.0f * game->unit * game->unit)
     (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_SWING);
@@ -693,8 +850,10 @@ static void slice_segment(h2_fruit_slice_game_t* game, float x0, float y0,
     if (!fruit->active) continue;
     const float extra =
         fruit->menu ? 0.0f
-                    : h2_fruit_slice_weapon(game->progress.equipped)->reach *
+                    : (fabsf(dy) >= 2.0f * fabsf(dx) ? weapon->vertical_reach
+                                                     : weapon->reach) *
                           game->unit;
+    /* Clamp every narrowed shape before squaring its effective radius. */
     unsigned count;
     const h2_fruit_slice_shape_circle_t* circles =
         h2_fruit_slice_shape_circles(fruit->kind, &count);
@@ -775,6 +934,18 @@ static void activate_button(h2_fruit_slice_game_t* game, uint32_t button) {
                       ? H2_FRUIT_SLICE_PHASE_TASKS
                       : H2_FRUIT_SLICE_PHASE_SHOP;
     game->trail_count = 0u;
+    game->progress_page = 0u;
+    return;
+  }
+  if (button == H2_FRUIT_SLICE_BUTTON_PREVIOUS ||
+      button == H2_FRUIT_SLICE_BUTTON_NEXT) {
+    h2_fruit_slice_progress_layout_t layout;
+    h2_fruit_slice_game_progress_layout(game, &layout);
+    if (button == H2_FRUIT_SLICE_BUTTON_PREVIOUS && layout.page > 0u)
+      game->progress_page = layout.page - 1u;
+    if (button == H2_FRUIT_SLICE_BUTTON_NEXT && layout.page + 1u < layout.pages)
+      game->progress_page = layout.page + 1u;
+    ++game->progress_revision;
     return;
   }
   if (button == H2_FRUIT_SLICE_BUTTON_CARDS) {
@@ -803,6 +974,8 @@ static void activate_button(h2_fruit_slice_game_t* game, uint32_t button) {
     if (id == 0u) p->fruit_credit -= task->target;
     if (id == 1u) p->combo_credit -= task->target;
     if (id == 2u) p->score_task = 2u;
+    if (id >= H2_FRUIT_SLICE_TASK_VARIETY)
+      --p->challenge_credit[id - H2_FRUIT_SLICE_TASK_VARIETY];
     game->progress_urgent = true;
     progress_changed(game);
     (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_TASK);
@@ -910,6 +1083,7 @@ static void advance_body(h2_fruit_slice_body_t* body, float gravity, float dt) {
 
 static void record_miss(h2_fruit_slice_game_t* game, float x) {
   ++game->missed_total;
+  game->run_clean_slices = 0u;
   (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_MISS);
   if (game->lives > 0) --game->lives;
   h2_fruit_slice_miss_t* slot = &game->misses[0];
@@ -978,9 +1152,14 @@ static void step_once(h2_fruit_slice_game_t* game, uint32_t ms) {
     } else if (fruit->body.vy > 0.0f && fruit->body.y - r > h) {
       fruit->active = false;
       if (game->phase == H2_FRUIT_SLICE_PHASE_PLAYING) {
-        if (fruit->kind == H2_FRUIT_SLICE_BOMB)
+        if (fruit->kind == H2_FRUIT_SLICE_BOMB) {
+          if (game->run_bombs_passed <
+              k_tasks[H2_FRUIT_SLICE_TASK_DODGE].target)
+            ++game->run_bombs_passed;
+          challenge_update(game, H2_FRUIT_SLICE_TASK_DODGE,
+                           game->run_bombs_passed);
           h2_fruit_slice_cards_on_bomb_passed(&game->cards, fruit->body.x, h);
-        else
+        } else
           record_miss(game, fruit->body.x);
       }
     }
@@ -1032,8 +1211,9 @@ static void step_once(h2_fruit_slice_game_t* game, uint32_t ms) {
     game->trail_count -= expired;
   }
 
-  if (game->stroke_slices != 0 && game->time_ms - game->stroke_last_slice_ms >
-                                      H2_FRUIT_SLICE_COMBO_WINDOW_MS)
+  if (game->stroke_slices != 0 &&
+      game->time_ms - game->stroke_last_slice_ms >
+          h2_fruit_slice_weapon(game->progress.equipped)->combo_window_ms)
     finish_combo(game);
 
   if (game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER &&

@@ -322,15 +322,21 @@ static void test_album_reserves_back_target(void) {
     for (unsigned page = 0; page < 2u; ++page) {
       tap(&g, page == 0u ? H2_FRUIT_SLICE_BUTTON_TASKS
                          : H2_FRUIT_SLICE_BUTTON_SHOP);
-      for (unsigned row = 0; row < 3u; ++row) {
-        h2_fruit_slice_rect_t r;
-        CHECK(h2_fruit_slice_game_button_rect(
-            &g,
-            (page == 0u ? H2_FRUIT_SLICE_BUTTON_CLAIM
-                        : H2_FRUIT_SLICE_BUTTON_WEAPON) +
-                row,
-            &r));
-        CHECK(r.y1 < back.y0);
+      for (;;) {
+        h2_fruit_slice_progress_layout_t progress;
+        h2_fruit_slice_game_progress_layout(&g, &progress);
+        for (unsigned row = 0; row < progress.count; ++row) {
+          h2_fruit_slice_rect_t r;
+          CHECK(h2_fruit_slice_game_button_rect(
+              &g,
+              (page == 0u ? H2_FRUIT_SLICE_BUTTON_CLAIM
+                          : H2_FRUIT_SLICE_BUTTON_WEAPON) +
+                  progress.first + row,
+              &r));
+          CHECK(r.y1 < progress.hint.y0 && progress.hint.y1 < back.y0);
+        }
+        if (progress.page + 1u == progress.pages) break;
+        tap(&g, H2_FRUIT_SLICE_BUTTON_NEXT);
       }
       tap(&g, H2_FRUIT_SLICE_BUTTON_BACK);
       CHECK(g.phase == H2_FRUIT_SLICE_PHASE_TITLE);

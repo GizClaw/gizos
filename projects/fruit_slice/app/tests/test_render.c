@@ -377,27 +377,43 @@ static void test_progress_pages(int32_t width, int32_t height) {
   game.language = render_language;
   game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
   game.progress.fruit_credit = 10u;
-  for (unsigned page = 0; page < 2u; ++page) {
+  for (unsigned phase = 0; phase < 2u; ++phase) {
     game.phase =
-        page == 0u ? H2_FRUIT_SLICE_PHASE_TASKS : H2_FRUIT_SLICE_PHASE_SHOP;
-    for (unsigned status = 0; status < 4u; ++status) {
-      game.save_status = status;
-      CHECK(check_layer(h2_fruit_slice_render_static, NULL, width, height) >
-            0u);
-      CHECK(check_layer(h2_fruit_slice_render_scene, NULL, width, height) ==
-            0u);
+        phase == 0u ? H2_FRUIT_SLICE_PHASE_TASKS : H2_FRUIT_SLICE_PHASE_SHOP;
+    game.progress_page = 0u;
+    h2_fruit_slice_progress_layout_t layout;
+    h2_fruit_slice_game_progress_layout(&game, &layout);
+    for (unsigned page = 0u; page < layout.pages; ++page) {
+      game.progress_page = page;
+      h2_fruit_slice_game_progress_layout(&game, &layout);
+      h2_fruit_slice_rect_t back;
+      CHECK(h2_fruit_slice_game_button_rect(&game, H2_FRUIT_SLICE_BUTTON_BACK,
+                                            &back));
+      for (unsigned row = 0u; row < layout.count; ++row) {
+        CHECK(layout.rows[row].y0 > layout.pager.y1);
+        CHECK(layout.rows[row].y1 < layout.hint.y0);
+        CHECK(layout.actions[row].y1 < back.y0);
+      }
+      for (unsigned status = 0; status < 4u; ++status) {
+        game.save_status = status;
+        CHECK(check_layer(h2_fruit_slice_render_static, NULL, width, height) >
+              0u);
+        CHECK(check_layer(h2_fruit_slice_render_scene, NULL, width, height) ==
+              0u);
+      }
+      game.save_status = 0u;
+      h2_fruit_slice_canvas_t canvas = {.pixels = pixels,
+                                        .width = width,
+                                        .height = height,
+                                        .stride_pixels = (size_t)width};
+      h2_fruit_slice_render_background(&canvas);
+      h2_fruit_slice_render_static(&canvas, &game);
+      char name[64];
+      (void)snprintf(name, sizeof(name), "%s_%u_%dx%d",
+                     phase == 0u ? "tasks" : "shop", page, (int)width,
+                     (int)height);
+      write_ppm(name, width, height);
     }
-    game.save_status = 0u;
-    h2_fruit_slice_canvas_t canvas = {.pixels = pixels,
-                                      .width = width,
-                                      .height = height,
-                                      .stride_pixels = (size_t)width};
-    h2_fruit_slice_render_background(&canvas);
-    h2_fruit_slice_render_static(&canvas, &game);
-    char name[64];
-    (void)snprintf(name, sizeof(name), "%s_%dx%d",
-                   page == 0u ? "tasks" : "shop", (int)width, (int)height);
-    write_ppm(name, width, height);
   }
   /* Cached text is invalidated on a purchase/claim and on storage status. */
   h2_fruit_slice_static_key_t before, after;
@@ -476,6 +492,35 @@ static void test_card_scenes(int32_t width, int32_t height) {
     }
   }
   CHECK(allocation_calls == prepared); /* No frame-time texture allocation. */
+}
+
+static void test_weapon_trails(void) {
+  uint64_t hashes[H2_FRUIT_SLICE_WEAPONS];
+  for (unsigned id = 0u; id < H2_FRUIT_SLICE_WEAPONS; ++id) {
+    h2_fruit_slice_game_init(&game, 240, 240, 33u, 0u);
+    game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+    game.progress.equipped = id;
+    memset(game.fruits, 0, sizeof(game.fruits));
+    game.trail_count = 3u;
+    game.trail[0] = (h2_fruit_slice_trail_point_t){30, 130, 0};
+    game.trail[1] = (h2_fruit_slice_trail_point_t){120, 90, 0};
+    game.trail[2] = (h2_fruit_slice_trail_point_t){210, 140, 0};
+    CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 240, 240) > 0u);
+    uint64_t hash = UINT64_C(1469598103934665603);
+    for (unsigned i = 0; i < 240u * 240u; ++i) {
+      hash ^= pixels[i];
+      hash *= UINT64_C(1099511628211);
+    }
+    hashes[id] = hash;
+    for (unsigned prior = 0; prior < id; ++prior) CHECK(hash != hashes[prior]);
+    h2_fruit_slice_canvas_t canvas = {
+        .pixels = pixels, .width = 240, .height = 240, .stride_pixels = 240};
+    h2_fruit_slice_render_background(&canvas);
+    h2_fruit_slice_render_scene(&canvas, &game);
+    char name[32];
+    (void)snprintf(name, sizeof(name), "weapon-trail-%u", id);
+    write_ppm(name, 240, 240);
+  }
 }
 
 static void test_variety_scenes(int32_t width, int32_t height) {
@@ -616,6 +661,7 @@ static void test_result_reward_does_not_overwrite_record(void) {
 }
 
 int main(void) {
+  test_weapon_trails();
   test_variety_scenes(480, 320);
   test_variety_scenes(160, 160);
   test_variety_scenes(240, 240);
@@ -652,6 +698,7 @@ int main(void) {
   test_variety_scenes(160, 160);
   test_variety_scenes(480, 320);
   test_progress_pages(160, 160);
+  test_progress_pages(240, 240);
   test_progress_pages(480, 320);
   test_card_scenes(160, 160);
   test_card_scenes(480, 320);

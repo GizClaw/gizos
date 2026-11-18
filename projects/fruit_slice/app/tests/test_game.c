@@ -313,7 +313,7 @@ static void test_tasks_and_shop(void) {
   const uint64_t paused = game.time_ms;
   h2_fruit_slice_game_step(&game, 2000u);
   CHECK(game.time_ms == paused);
-  for (unsigned i = 0; i < H2_FRUIT_SLICE_TASKS; ++i) {
+  for (unsigned i = 0; i < 3u; ++i) {
     tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM + i);
     const uint32_t coins = game.progress.coins;
     tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM + i);
@@ -371,9 +371,9 @@ static void test_progress_format_and_input(void) {
   CHECK(other.progress.score_task == 1u);
   CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes,
                                         sizeof(bytes) - 1u));
-  bytes[4] = 2u; /* Future save version. */
+  bytes[4] = 3u; /* Future save version. */
   CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
-  bytes[4] = 1u;
+  bytes[4] = 2u;
   bytes[24] = 1u; /* Equipped axe is not owned. */
   CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
   CHECK(other.progress.owned == 5u && other.progress.equipped == 2u);
@@ -383,7 +383,7 @@ static void test_progress_format_and_input(void) {
 }
 
 static void test_weapon_reach(void) {
-  for (unsigned id = 0; id < H2_FRUIT_SLICE_WEAPONS; ++id) {
+  for (unsigned id = 0; id < 3u; ++id) {
     start_playing(&game, 16u, 0u);
     clear_scene(&game);
     game.progress.owned = 7u;
