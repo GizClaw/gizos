@@ -52,10 +52,12 @@ typedef struct fixture {
   size_t allocations, frees;
   unsigned frames, exit_after, ready_calls;
   h2_pal_result_t ready_result;
+  h2_fruit_slice_language_t language;
   unsigned touch_from_frame;
   uint16_t probe_before;
   bool use_pref, fast_clock;
   unsigned autoplay_until, autoplay_pause_from, autoplay_pause_until;
+  unsigned autoplay_start, reveal_until;
   uint64_t clock_ms;
   uint32_t earned_fruit_credit;
   const char* capture_name;
@@ -258,12 +260,13 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   if (t->poll_error != H2_PAL_OK) return t->poll_error;
   /* Accelerated first-install regression: ordinary pointer strokes play
    * real rounds, then leave enough game time for misses to end the last run. */
-  if (fx.autoplay_until != 0u && fx.frames >= 2u &&
+  const unsigned autoplay_start = fx.autoplay_start ? fx.autoplay_start : 2u;
+  if (fx.autoplay_until != 0u && fx.frames >= autoplay_start &&
       fx.frames < fx.autoplay_until && t->last_frame != fx.frames &&
       !(fx.frames >= fx.autoplay_pause_from &&
         fx.frames < fx.autoplay_pause_until)) {
     t->last_frame = fx.frames;
-    const unsigned point = (fx.frames - 2u) % 150u;
+    const unsigned point = (fx.frames - autoplay_start) % 150u;
     *out = (h2_pal_touch_event_t){
         point % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
         point % 2u == 0u ? 0 : WIDTH, point < 2u ? 346 : 280};
@@ -272,7 +275,8 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   /* Finish naturally earned reveals after autoplay stops, without slicing
    * the restart fruit or changing the economy controls that follow. */
   if (fx.autoplay_until != 0u && fx.frames >= fx.autoplay_until &&
-      fx.frames < fx.touch_from_frame && t->last_frame != fx.frames) {
+      fx.frames < (fx.reveal_until ? fx.reveal_until : fx.touch_from_frame) &&
+      t->last_frame != fx.frames) {
     t->last_frame = fx.frames;
     *out = (h2_pal_touch_event_t){
         fx.frames % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
@@ -284,7 +288,8 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
       t->script_next == t->script_count ||
       fx.frames < t->script_frame[t->script_next])
     return H2_PAL_ERR_WOULD_BLOCK;
-  if (fx.autoplay_until != 0u && fx.frames == fx.touch_from_frame) {
+  if (fx.autoplay_until != 0u && fx.frames == fx.touch_from_frame &&
+      fx.pref_override != NULL) {
     h2_pal_pref_namespace_t* ns = NULL;
     CHECK(h2_pal_pref_open(fx.pref_override, H2_FRUIT_SLICE_PREF_NAMESPACE,
                            H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
@@ -518,6 +523,7 @@ static h2_pal_result_t run(void) {
       .ready = ready,
       .should_exit = should_exit,
       .is_paused = is_paused,
+      .language = fx.language,
       .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
@@ -1206,7 +1212,11 @@ static void test_020_sqlite_profile_upgrade(void) {
   h2_fruit_slice_cards_init(&collection, 480, 480, 1u);
   CHECK(h2_fruit_slice_cards_decode(&collection, old_cards, sizeof(old_cards)));
   const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
-  for (unsigned scenario = 0; scenario < 3u; ++scenario) {
+  for (unsigned scenario = 0; scenario < 6u; ++scenario) {
+    const unsigned variant = scenario % 3u;
+    const h2_fruit_slice_language_t language =
+        scenario < 3u ? H2_FRUIT_SLICE_LANGUAGE_ZH_CN
+                      : H2_FRUIT_SLICE_LANGUAGE_EN;
     char database[512];
     (void)snprintf(database, sizeof(database), "%s/020-upgrade-%u.sqlite",
                    temporary, scenario);
@@ -1220,9 +1230,9 @@ static void test_020_sqlite_profile_upgrade(void) {
     uint8_t legacy[32];
     memcpy(legacy, old_progress, sizeof(legacy));
     /* All old claimed states and equipment combinations survive migration. */
-    legacy[20] = (uint8_t)scenario;
-    legacy[24] = (uint8_t)((1u << (scenario + 1u)) - 1u);
-    legacy[28] = (uint8_t)scenario;
+    legacy[20] = (uint8_t)variant;
+    legacy[24] = (uint8_t)((1u << (variant + 1u)) - 1u);
+    legacy[28] = (uint8_t)variant;
     CHECK(ns->set_blob(ns, "progress_v1", legacy, sizeof(legacy)) == H2_PAL_OK);
     CHECK(ns->set_blob(ns, "cards_v1", old_cards, sizeof(old_cards)) ==
           H2_PAL_OK);
@@ -1236,27 +1246,30 @@ static void test_020_sqlite_profile_upgrade(void) {
     h2_fruit_slice_progress_t restored = sqlite_progress(storage, 32u);
     CHECK(restored.coins == 500u && restored.fruit_credit == 20u &&
           restored.combo_credit == 3u);
-    CHECK(restored.score_task == scenario &&
-          restored.owned == (1u << (scenario + 1u)) - 1u &&
-          restored.equipped == scenario);
+    CHECK(restored.score_task == variant &&
+          restored.owned == (1u << (variant + 1u)) - 1u &&
+          restored.equipped == variant);
     for (unsigned i = 0; i < H2_FRUIT_SLICE_CHALLENGES; ++i)
       CHECK(restored.challenge_credit[i] == 0u);
 
     reset(40u);
-    fx.display.info.width = fx.touch.info.width = (uint32_t)sizes[scenario][0];
-    fx.display.info.height = fx.touch.info.height =
-        (uint32_t)sizes[scenario][1];
+    fx.display.info.width = fx.touch.info.width = (uint32_t)sizes[variant][0];
+    fx.display.info.height = fx.touch.info.height = (uint32_t)sizes[variant][1];
     fx.pref_override = h2_sqlite_pref_api(storage);
     fx.fast_clock = true;
     fx.use_audio = true;
+    fx.language = language;
     fx.touch_from_frame = 2u;
-    fx.capture_name = scenario == 0u   ? "progression-160"
-                      : scenario == 1u ? "progression-240"
-                                       : "progression-480x320";
+    char capture[64];
+    (void)snprintf(capture, sizeof(capture), "progression-%s-%dx%d",
+                   language == H2_FRUIT_SLICE_LANGUAGE_EN ? "en" : "zh",
+                   sizes[variant][0], sizes[variant][1]);
+    fx.capture_name = capture;
     fx.capture_every = 2u;
     h2_fruit_slice_game_t ui;
-    h2_fruit_slice_game_init(&ui, sizes[scenario][0], sizes[scenario][1], 1u,
+    h2_fruit_slice_game_init(&ui, sizes[variant][0], sizes[variant][1], 1u,
                              141u);
+    ui.language = language;
     ui.progress = restored;
     script_control(&ui, H2_FRUIT_SLICE_BUTTON_TASKS);
     script_visit(&ui, H2_FRUIT_SLICE_BUTTON_CLAIM);
@@ -1278,8 +1291,8 @@ static void test_020_sqlite_profile_upgrade(void) {
     restored = sqlite_progress(storage, H2_FRUIT_SLICE_PROGRESS_BYTES);
     CHECK(restored.coins == 265u && restored.fruit_credit == 10u &&
           restored.combo_credit == 3u);
-    CHECK(restored.score_task == scenario && restored.equipped == 5u &&
-          restored.owned == (((1u << (scenario + 1u)) - 1u) | 56u));
+    CHECK(restored.score_task == variant && restored.equipped == 5u &&
+          restored.owned == (((1u << (variant + 1u)) - 1u) | 56u));
     CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
                            H2_FRUIT_SLICE_PREF_NAMESPACE,
                            H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
@@ -1430,9 +1443,45 @@ static void test_challenge_claim_retry_sqlite(void) {
   CHECK(remove(database) == 0);
 }
 
+static void test_natural_result_text(void) {
+  reset(620u);
+  fx.display.info.width = fx.display.info.height = 160;
+  fx.fast_clock = true;
+  fx.autoplay_until = 400u;
+  fx.touch_from_frame = 600u;
+  fx.capture_name = "actual-result-default-zh-160x160";
+  CHECK(run() == H2_PAL_OK);
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned size = 0; size < 3u; ++size) {
+    for (unsigned language = 0; language < 2u; ++language) {
+      /* Ordinary strokes, natural misses, and real reveal dismissal. No
+       * model fields or result text are injected into the running App. */
+      reset(620u);
+      fx.display.info.width = sizes[size][0];
+      fx.display.info.height = sizes[size][1];
+      fx.fast_clock = true;
+      fx.autoplay_until = 400u;
+      fx.autoplay_start = 6u;
+      fx.reveal_until = 600u;
+      fx.touch_from_frame = 2u;
+      fx.language =
+          language ? H2_FRUIT_SLICE_LANGUAGE_ZH_CN : H2_FRUIT_SLICE_LANGUAGE_EN;
+      script_tap_at(2u, 30,
+                    16); /* Both real title-language switch directions. */
+      char name[96];
+      (void)snprintf(name, sizeof(name), "actual-result-toggle-%s-%dx%d",
+                     language ? "en" : "zh", sizes[size][0], sizes[size][1]);
+      fx.capture_name = name;
+      CHECK(run() == H2_PAL_OK);
+      CHECK(fx.ready_calls == 1u);
+    }
+  }
+}
+
 int main(void) {
   test_020_sqlite_profile_upgrade();
   test_challenge_claim_retry_sqlite();
+  test_natural_result_text();
   test_cards_transient_sqlite_read();
   test_cards_write_retry_and_read_error();
   test_fresh_sqlite_storage();

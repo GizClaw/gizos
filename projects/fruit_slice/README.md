@@ -27,6 +27,10 @@ bazel run //projects/fruit_slice/targets/cc_binary/desktop:fruit_slice
 
 Bombs use a fading, expanding flash around the impact point so the effect does not blend and retransmit the full screen on every frame. Dirty row bands keep their own column spans; only adjacent equal spans are merged for display submission. Runtime statistics include `blast_frames` and `blast_max_ms` for frames with an active bomb flash.
 
+## Language
+
+The UI defaults to Simplified Chinese on all targets, including AC791N's 480x320 display. Tap **EN** at the top left of the title screen to switch to English; tap **中文** to return. The selection lasts for the App session and does not change existing preference blobs. An embedding host can set `config.language = H2_FRUIT_SLICE_LANGUAGE_EN` to start in English. Titles, gameplay hints, tasks, weapons, cards, rarity and reveal prompts use the same App-owned translation table. See the [font source, OFL license and reproducible subset](app/fonts/README.md).
+
 ## Coins and weapons
 
 Scores still measure each run. Tap **Tasks** on the title or game-over screen to claim a separate coin currency: slicing 10 fruit earns 15 coins, making three combos earns 25 coins, and reaching 20 points in one run earns a one-time 40 coins. A combo means slicing at least three fruit in one swipe. The first two tasks repeat by consuming earned progress on each claim; extra progress carries over between runs and claims. Menu fruit never count. An existing best of at least 20 unlocks the score task on upgrade.

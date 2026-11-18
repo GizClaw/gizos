@@ -194,7 +194,7 @@ void h2_fruit_slice_game_progress_layout(
   (void)h2_fruit_slice_game_button_rect(game, H2_FRUIT_SLICE_BUTTON_BACK,
                                         &back);
   const float gap = fmaxf(3.0f, 6.0f * game->unit);
-  const float hint_h = fmaxf(9.0f, 16.0f * game->unit);
+  const float hint_h = fmaxf(14.0f, 16.0f * game->unit);
   out->hint = (h2_fruit_slice_rect_t){w * 0.03f, back.y0 - gap - hint_h,
                                       w * 0.97f, back.y0 - gap};
   out->pager =
@@ -217,6 +217,13 @@ bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,
                                      uint32_t button,
                                      h2_fruit_slice_rect_t* out) {
   const float w = (float)game->width, h = (float)game->height;
+  if (button == H2_FRUIT_SLICE_BUTTON_LANGUAGE &&
+      game->phase == H2_FRUIT_SLICE_PHASE_TITLE) {
+    const float u = game->unit;
+    *out = (h2_fruit_slice_rect_t){
+        8.0f * u, 8.0f * u, 8.0f * u + fmaxf(42.0f, 84.0f * u), 44.0f * u};
+    return true;
+  }
   if (game->phase == H2_FRUIT_SLICE_PHASE_TITLE ||
       game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER) {
     if (button != H2_FRUIT_SLICE_BUTTON_TASKS &&
@@ -677,7 +684,9 @@ static void finish_combo(h2_fruit_slice_game_t* game) {
   (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_COMBO);
   (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_CHEER);
   char text[H2_FRUIT_SLICE_POPUP_TEXT_MAX];
-  (void)snprintf(text, sizeof(text), "COMBO +%u", (unsigned)slices);
+  (void)snprintf(text, sizeof(text),
+                 h2_fruit_slice_translate(game->language, "COMBO +%u"),
+                 (unsigned)slices);
   add_popup(game, text, game->stroke_last_x, game->stroke_last_y,
             H2_FRUIT_SLICE_RGB(255, 214, 64));
 }
@@ -735,6 +744,12 @@ static void add_trail_point(h2_fruit_slice_game_t* game, float x, float y) {
 }
 
 static void activate_button(h2_fruit_slice_game_t* game, uint32_t button) {
+  if (button == H2_FRUIT_SLICE_BUTTON_LANGUAGE) {
+    game->language = game->language == H2_FRUIT_SLICE_LANGUAGE_EN
+                         ? H2_FRUIT_SLICE_LANGUAGE_ZH_CN
+                         : H2_FRUIT_SLICE_LANGUAGE_EN;
+    return;
+  }
   if (button == H2_FRUIT_SLICE_BUTTON_TASKS ||
       button == H2_FRUIT_SLICE_BUTTON_SHOP) {
     game->return_phase = game->phase;
