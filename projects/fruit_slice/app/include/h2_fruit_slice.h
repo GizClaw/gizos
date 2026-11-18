@@ -49,6 +49,9 @@ typedef struct h2_fruit_slice_config {
   /** Initial UI language; zero/unknown selects Simplified Chinese. The title
    * control switches it for this session without changing stored progress. */
   h2_fruit_slice_language_t language;
+  /** Optional low-rate diagnostic hook on the run thread after each stats
+   * window (10 seconds). Must be bounded/nonblocking; borrows user. */
+  void (*report_diagnostics)(void* user);
 } h2_fruit_slice_config_t;
 
 /**

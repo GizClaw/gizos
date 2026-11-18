@@ -103,6 +103,7 @@ int h2_fruit_slice_audio_suspend(h2_fruit_slice_audio_t* audio) {
   memset(audio->voices, 0, sizeof(audio->voices));
   audio->seen = 0;
   audio->started_ms = audio->submitted_samples = 0;
+  audio->pumped = false;
   return first_error;
 }
 
@@ -169,6 +170,13 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
   if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (!audio->available) return H2_PAL_ERR_UNSUPPORTED;
   if (audio->mute == 3u) return H2_PAL_OK;
+  if (audio->pumped && now_ms >= audio->last_pump_ms) {
+    const uint64_t gap = now_ms - audio->last_pump_ms;
+    if (gap > audio->max_pump_gap_ms)
+      audio->max_pump_gap_ms = gap > UINT32_MAX ? UINT32_MAX : (uint32_t)gap;
+  }
+  audio->last_pump_ms = now_ms;
+  audio->pumped = true;
   if (audio->track == NULL) {
     int rc = h2_pal_audio_start_speaker(audio->runtime->audio);
     if (rc != H2_PAL_OK) return rc;
@@ -190,11 +198,18 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
   uint64_t due = audio->started_ms + audio->submitted_samples * 1000u /
                                          audio->format.sample_rate_hz;
   if (now_ms > due && now_ms - due > 100u) {
+    ++audio->rebases;
     audio->started_ms = now_ms;
     audio->submitted_samples = 0;
     due = now_ms;
   }
-  for (unsigned frame_index = 0; frame_index < 3u && due <= now_ms;
+  /* Queue one native frame ahead. Waiting until a frame is already due
+   * starves a 20 ms sink even with a perfectly regular 25/30 ms game loop.
+   * Keep the two-frame queue and its bounded interaction latency. */
+  const uint64_t ahead_ms =
+      ((uint64_t)audio->format.frame_samples_per_channel * 1000u +
+       audio->format.sample_rate_hz - 1u) / audio->format.sample_rate_hz;
+  for (unsigned frame_index = 0; frame_index < 3u && due <= now_ms + ahead_ms;
        ++frame_index) {
     mix_frame(audio);
     h2_audio_frame_t frame = h2_audio_frame_for_buffer(
@@ -204,6 +219,9 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
         audio->format);
     frame.bytes = frame.capacity;
     const int rc = h2_pal_audio_track_write(audio->track, &frame, 0u);
+    if (rc == H2_PAL_OK) ++audio->writes;
+    if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
+      ++audio->blocked_writes;
     if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK &&
         rc != H2_PAL_ERR_TIMEOUT)
       return rc;

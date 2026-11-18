@@ -548,6 +548,9 @@ static void test_lock_contention(void) {
   for (unsigned i = 0u; i < 32u; ++i)
     assert(h2_pal_audio_track_write(track, &frame, 0u) ==
            H2_AUDIO_ERR_WOULD_BLOCK);
+  char diagnostics[256];
+  assert(h2_jieli_ac791n_devkit_audio_diagnostics(diagnostics, sizeof(diagnostics)) ==
+         H2_AUDIO_ERR_WOULD_BLOCK);
   uint32_t start = timer_get_ms();
   assert(h2_pal_audio_track_write(track, &frame, 40u) ==
          H2_AUDIO_ERR_WOULD_BLOCK);
@@ -569,6 +572,11 @@ static void test_lock_contention(void) {
     assert(output[i * 2u + 1u] == data[i]);
   }
   assert(h2_pal_audio_track_drain(track, 0u) == H2_AUDIO_OK);
+  assert(h2_jieli_ac791n_devkit_audio_diagnostics(NULL, 256u) ==
+         H2_AUDIO_ERR_INVALID_ARG);
+  assert(h2_jieli_ac791n_devkit_audio_diagnostics(diagnostics, sizeof(diagnostics)) ==
+         H2_AUDIO_OK);
+  assert(strstr(diagnostics, "tracks=1 queued_bytes=0") != NULL);
   try_lock_error = H2_PAL_ERR_IO;
   assert(h2_pal_audio_track_write(track, &frame, 0u) == H2_AUDIO_ERR_IO);
   try_lock_error = 0;

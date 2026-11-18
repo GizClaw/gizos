@@ -27,6 +27,9 @@ typedef struct fixture {
   int create_result, write_result;
   uint32_t preference;
   uint32_t peak;
+  bool paced_sink;
+  uint64_t now_ms, consumed_at_ms;
+  uint32_t queued_ms, starved_ms, full_writes;
   h2_audio_pcm_format_t format;
 } fixture_t;
 
@@ -71,6 +74,21 @@ static int write_track(h2_pal_audio_track_t* track,
     if (magnitude > f->peak) f->peak = magnitude;
   }
   ++f->writes;
+  if (f->paced_sink) {
+    const uint64_t elapsed = f->now_ms - f->consumed_at_ms;
+    f->consumed_at_ms = f->now_ms;
+    if (elapsed > f->queued_ms) {
+      f->starved_ms += (uint32_t)(elapsed - f->queued_ms);
+      f->queued_ms = 0u;
+    } else {
+      f->queued_ms -= (uint32_t)elapsed;
+    }
+    if (f->queued_ms > 20u) {
+      ++f->full_writes;
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    f->queued_ms += 20u;
+  }
   return f->write_result;
 }
 static int create(void* user, const h2_audio_track_config_t* config,
@@ -215,7 +233,7 @@ static void test_resampling_and_music_loop(void) {
   CHECK(h2_fruit_slice_audio_init(&audio, &rt) == 0);
   for (uint64_t now = 0; now <= 10000; now += 20)
     CHECK(h2_fruit_slice_audio_pump(&audio, now) == 0);
-  CHECK(f.writes == 501u && f.peak > 0 && f.peak < 4000u);
+  CHECK(f.writes == 502u && f.peak > 0 && f.peak < 4000u);
   CHECK(h2_fruit_slice_audio_set_mute(&audio, H2_FRUIT_SLICE_MUTE_SFX) == 0);
   h2_fruit_slice_audio_emit(&audio, H2_FRUIT_SLICE_SOUND_BOMB, 11000);
   CHECK(active(&audio) == 0);
@@ -369,7 +387,29 @@ static void test_economy_sound_transitions(void) {
         game.progress.equipped == 1u);
 }
 
+/* A consumer advances independently of the producer, unlike an always-ready
+ * mock. A regular 30 ms render cadence must feed a 20 ms PCM device without
+ * periodic holes; this failed on the original due-only scheduler. */
+static void test_pcm_deadline_lookahead(void) {
+  fixture_t f = {.paced_sink = true};
+  h2_runtime_t rt = runtime_for(&f);
+  h2_fruit_slice_audio_t audio;
+  CHECK(h2_fruit_slice_audio_init(&audio, &rt) == H2_PAL_OK);
+  for (unsigned i = 0u; i <= 100u; ++i) {
+    f.now_ms = i * 30u;
+    if (i % 3u == 0u)
+      h2_fruit_slice_audio_emit(&audio, H2_FRUIT_SLICE_SOUND_SLICE, f.now_ms);
+    CHECK(h2_fruit_slice_audio_pump(&audio, f.now_ms) == H2_PAL_OK);
+  }
+  printf("pcm simulated 3000ms: starvation=%u full=%u queue=%u\n",
+         f.starved_ms, f.full_writes, f.queued_ms);
+  CHECK(f.starved_ms == 0u && f.full_writes == 0u);
+  CHECK(f.queued_ms <= 40u && audio.max_pump_gap_ms == 30u);
+  CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
+}
+
 int main(void) {
+  test_pcm_deadline_lookahead();
   test_economy_sound_transitions();
   test_bank_mute_and_lifecycle();
   test_bursts_backpressure_and_partial_failure();

@@ -2,6 +2,7 @@
 #include "h2_fruit_slice_render.h"
 #include "h2_fruit_slice_cards_render.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -660,7 +661,45 @@ static void test_result_reward_does_not_overwrite_record(void) {
   }
 }
 
+/* Scalar coverage oracle retained independently of the span fast path. */
+static void test_rounded_rect_spans(void) {
+  const float offsets[] = {-8.75f, -0.25f, 0.0f, 0.49f, 12.75f};
+  const float radii[] = {0.0f, 0.25f, 1.0f, 7.5f, 20.0f, 80.0f};
+  const uint32_t alphas[] = {0u, 1u, 190u, 256u};
+  for (unsigned o = 0; o < sizeof(offsets) / sizeof(offsets[0]); ++o)
+    for (unsigned r = 0; r < sizeof(radii) / sizeof(radii[0]); ++r)
+      for (unsigned a = 0; a < sizeof(alphas) / sizeof(alphas[0]); ++a) {
+        const float x0 = offsets[o], y0 = offsets[o] + 2.25f;
+        const float x1 = x0 + 63.25f, y1 = y0 + 42.75f;
+        const float radius = radii[r];
+        for (unsigned i = 0; i < 80u * 64u; ++i)
+          pixels[i] = background[i] = (uint16_t)(i * 7919u);
+        h2_fruit_slice_canvas_t canvas = {
+            .pixels = pixels, .width = 80, .height = 64, .stride_pixels = 80};
+        h2_fruit_slice_draw_rounded_rect(&canvas, x0, y0, x1, y1, radius,
+                                         0xfb84u, alphas[a]);
+        for (int y = (int)floorf(fmaxf(0.0f, y0)); y < (int)ceilf(fminf(64.0f, y1)); ++y)
+          for (int x = (int)floorf(fmaxf(0.0f, x0)); x < (int)ceilf(fminf(80.0f, x1)); ++x) {
+            const float dx = fmaxf(fmaxf(x0 + radius - ((float)x + 0.5f),
+                                         (float)x + 0.5f - (x1 - radius)), 0.0f);
+            const float dy = fmaxf(fmaxf(y0 + radius - ((float)y + 0.5f),
+                                         (float)y + 0.5f - (y1 - radius)), 0.0f);
+            float cover = 1.0f;
+            if (dx > 0.0f && dy > 0.0f)
+              cover = fminf(1.0f, fmaxf(0.0f, radius + 0.5f - sqrtf(dx * dx + dy * dy)));
+            else if (dx > radius || dy > radius)
+              cover = 0.0f;
+            if (cover > 0.0f)
+              background[y * 80 + x] = h2_fruit_slice_blend(
+                  background[y * 80 + x], 0xfb84u,
+                  (uint32_t)(cover * (float)alphas[a]));
+          }
+        CHECK(memcmp(pixels, background, 80u * 64u * sizeof(*pixels)) == 0);
+      }
+}
+
 int main(void) {
+  test_rounded_rect_spans();
   test_weapon_trails();
   test_variety_scenes(480, 320);
   test_variety_scenes(160, 160);
