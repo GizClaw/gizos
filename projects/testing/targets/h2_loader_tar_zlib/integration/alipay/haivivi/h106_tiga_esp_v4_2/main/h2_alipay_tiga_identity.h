@@ -3,6 +3,9 @@
 
 #include "h2_runtime.h"
 
+#define H2_ALIPAY_TIGA_GATEWAY_URL "https://iotapi.alipay.com/mgw.htm"
+#define H2_ALIPAY_TIGA_PRODUCT_TYPE 3u
+
 /* Separate manufacturer/model fields. The registration form uses their
  * combined name; SDK protocol prefixes are applied after these raw values. */
 #define H2_ALIPAY_TIGA_COMPANY_NAME "HAIVIVI"
