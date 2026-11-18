@@ -33,6 +33,8 @@ The UI defaults to Simplified Chinese on all targets, including AC791N's 480x320
 
 ## Coins and weapons
 
+Tap **Start Game** on the title screen or slice its melon to begin. After a run and any card reveals, tap **Play Again** or slice the orange to retry. The three equal footer buttons open Tasks, Cards and Shop; their drawn bounds are also their touch targets. The play HUD keeps the score on the left, remaining hearts on the right (a gray cross marks a lost life), and landed cards in the center, leaving the fruit field clear.
+
 Scores still measure each run. Tap **Tasks** on the title or game-over screen to claim a separate coin currency: slicing 10 fruit earns 15 coins, making three combos earns 25 coins, and reaching 20 points in one run earns a one-time 40 coins. A combo means slicing at least three fruit in one swipe. The first two tasks repeat by consuming earned progress on each claim; extra progress carries over between runs and claims. Menu fruit never count. An existing best of at least 20 unlocks the score task on upgrade.
 
 Four additional challenges each earn one completion credit per run: slice four distinct fruit kinds (25 coins), let three bombs fall without hitting them (30), slice twelve fruit consecutively without dropping one (20), and make a four-fruit combo with the Classic Knife (30). Their events are independent; a dropped fruit resets the clean streak, a new run resets partial attempts, and menu fruit never count. Earned completion credits accumulate across runs and restarts until claimed, consuming one credit per reward. The original three tasks and wallet are retained.

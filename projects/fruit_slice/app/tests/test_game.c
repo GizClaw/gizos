@@ -416,7 +416,75 @@ static void test_progress_limits(void) {
   CHECK(game.progress.coins == 30u && game.progress.fruit_credit == 0u);
 }
 
+static bool rects_overlap(h2_fruit_slice_rect_t a, h2_fruit_slice_rect_t b) {
+  return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+}
+
+static void test_menu_layout_and_tap_routes(void) {
+  const int32_t sizes[][2] = {{160, 160}, {240, 240}, {480, 320}, {368, 448},
+                              {480, 480}, {480, 800}, {800, 480}};
+  const uint32_t buttons[] = {
+      H2_FRUIT_SLICE_BUTTON_START, H2_FRUIT_SLICE_BUTTON_TASKS,
+      H2_FRUIT_SLICE_BUTTON_CARDS, H2_FRUIT_SLICE_BUTTON_SHOP,
+      H2_FRUIT_SLICE_BUTTON_SFX,   H2_FRUIT_SLICE_BUTTON_MUSIC};
+  for (unsigned size = 0; size < sizeof(sizes) / sizeof(sizes[0]); ++size) {
+    h2_fruit_slice_game_init(&game, sizes[size][0], sizes[size][1], 51u,
+                             UINT32_MAX);
+    h2_fruit_slice_rect_t rects[6];
+    for (unsigned i = 0; i < 6u; ++i) {
+      CHECK(h2_fruit_slice_game_button_rect(&game, buttons[i], &rects[i]));
+      CHECK(rects[i].x0 >= 8.0f && rects[i].y0 >= 8.0f);
+      CHECK(rects[i].x1 <= (float)game.width - 8.0f);
+      CHECK(rects[i].y1 <= (float)game.height - 8.0f);
+      CHECK(rects[i].y1 - rects[i].y0 >= (i < 4u ? 32.0f : 28.0f));
+      for (unsigned j = 0; j < i; ++j)
+        CHECK(!rects_overlap(rects[i], rects[j]));
+    }
+    /* The visible fruit never sits behind a menu button. */
+    const h2_fruit_slice_fruit_t* fruit = &game.fruits[0];
+    const h2_fruit_slice_rect_t fruit_rect = {
+        fruit->body.x - fruit->radius, fruit->body.y - fruit->radius,
+        fruit->body.x + fruit->radius, fruit->body.y + fruit->radius};
+    for (unsigned i = 0; i < 6u; ++i)
+      CHECK(!rects_overlap(fruit_rect, rects[i]));
+    for (unsigned i = 1; i <= 3u; ++i) {
+      tap_button(&game, buttons[i]);
+      CHECK(game.phase == (i == 1u   ? H2_FRUIT_SLICE_PHASE_TASKS
+                           : i == 2u ? H2_FRUIT_SLICE_PHASE_CARDS
+                                     : H2_FRUIT_SLICE_PHASE_SHOP));
+      tap_button(&game, H2_FRUIT_SLICE_BUTTON_BACK);
+      CHECK(game.phase == H2_FRUIT_SLICE_PHASE_TITLE);
+    }
+    const float x = (rects[0].x0 + rects[0].x1) * 0.5f;
+    const float y = (rects[0].y0 + rects[0].y1) * 0.5f;
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_CANCEL, x, y);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_TITLE);
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, 0, 0);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_TITLE);
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_SFX);
+    CHECK(game.audio_mute == H2_FRUIT_SLICE_MUTE_SFX);
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING && game.score == 0u);
+    /* Restart remains delayed; a pending reveal consumes the play tap. */
+    game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+    game.phase_started_ms = game.time_ms;
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+    game.cards.reveal_queue = 1u;
+    h2_fruit_slice_game_step(&game, 2000u);
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+    dismiss_cards(&game);
+    h2_fruit_slice_game_step(&game, 2000u);
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING);
+  }
+}
+
 int main(void) {
+  test_menu_layout_and_tap_routes();
   test_progress_limits();
   test_tasks_and_shop();
   test_progress_format_and_input();
