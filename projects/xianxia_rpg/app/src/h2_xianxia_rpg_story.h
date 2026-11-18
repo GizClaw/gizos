@@ -104,6 +104,31 @@ typedef enum h2_xianxia_rpg_script_id {
   H2_XIANXIA_RPG_SCRIPT_C3_WENZHOU,
   H2_XIANXIA_RPG_SCRIPT_C3_REPORT,
   H2_XIANXIA_RPG_SCRIPT_C3_REVIVE,
+  H2_XIANXIA_RPG_SCRIPT_C4_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C4_INTRO = H2_XIANXIA_RPG_SCRIPT_C4_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C4_BRIEF,
+  H2_XIANXIA_RPG_SCRIPT_C4_WAIT,
+  H2_XIANXIA_RPG_SCRIPT_C4_FIRE,
+  H2_XIANXIA_RPG_SCRIPT_C4_NEED_FIRE,
+  H2_XIANXIA_RPG_SCRIPT_C4_HELP,
+  H2_XIANXIA_RPG_SCRIPT_C4_COVER,
+  H2_XIANXIA_RPG_SCRIPT_C4_SCOUT,
+  H2_XIANXIA_RPG_SCRIPT_C4_OUT,
+  H2_XIANXIA_RPG_SCRIPT_C4_SAFE,
+  H2_XIANXIA_RPG_SCRIPT_C4_LAMP1,
+  H2_XIANXIA_RPG_SCRIPT_C4_LAMP2,
+  H2_XIANXIA_RPG_SCRIPT_C4_LAMP3,
+  H2_XIANXIA_RPG_SCRIPT_C4_REST,
+  H2_XIANXIA_RPG_SCRIPT_C4_BATTLE,
+  H2_XIANXIA_RPG_SCRIPT_C4_REVIVE,
+  H2_XIANXIA_RPG_SCRIPT_C4_HOME,
+  H2_XIANXIA_RPG_SCRIPT_C4_REPORT,
+  H2_XIANXIA_RPG_SCRIPT_C4_RUMOR,
+  H2_XIANXIA_RPG_SCRIPT_C4_DEPART,
+  H2_XIANXIA_RPG_SCRIPT_C4_HERB,
+  H2_XIANXIA_RPG_SCRIPT_C4_HERB_CLEAR,
+  H2_XIANXIA_RPG_SCRIPT_C4_CHILD,
+  H2_XIANXIA_RPG_SCRIPT_C4_CHILD_CLEAR,
   H2_XIANXIA_RPG_SCRIPT_COUNT,
 } h2_xianxia_rpg_script_id_t;
 
@@ -221,6 +246,37 @@ typedef enum h2_xianxia_rpg_text_id {
   H2_XIANXIA_RPG_TEXT_C3_WIND_WAIT,
   H2_XIANXIA_RPG_TEXT_C3_POLE_WAIT,
   H2_XIANXIA_RPG_TEXT_C3_POSTS,
+  H2_XIANXIA_RPG_TEXT_C4_ONWARD,
+  H2_XIANXIA_RPG_TEXT_C4_ESCORT,
+  H2_XIANXIA_RPG_TEXT_C4_COVER,
+  H2_XIANXIA_RPG_TEXT_C4_SCOUT,
+  H2_XIANXIA_RPG_TEXT_C4_HELP,
+  H2_XIANXIA_RPG_TEXT_C4_GUARD,
+  H2_XIANXIA_RPG_TEXT_C4_LAMP,
+  H2_XIANXIA_RPG_TEXT_C4_ALLY,
+  H2_XIANXIA_RPG_TEXT_C4_MEND,
+  H2_XIANXIA_RPG_TEXT_C4_POLE,
+  H2_XIANXIA_RPG_TEXT_C4_DOWN,
+  H2_XIANXIA_RPG_TEXT_C4_HEAL,
+  H2_XIANXIA_RPG_TEXT_C4_PILL,
+  H2_XIANXIA_RPG_TEXT_C4_LAMP_HINT,
+  H2_XIANXIA_RPG_TEXT_C4_ALLY_HINT,
+  H2_XIANXIA_RPG_TEXT_C4_WAVE_HINT,
+  H2_XIANXIA_RPG_TEXT_C4_BLOCK,
+  H2_XIANXIA_RPG_TEXT_C4_HIT_LAMP,
+  H2_XIANXIA_RPG_TEXT_C4_HIT_ALLY,
+  H2_XIANXIA_RPG_TEXT_C4_HIT_HERO,
+  H2_XIANXIA_RPG_TEXT_C4_REPAIR,
+  H2_XIANXIA_RPG_TEXT_C4_REST_ALLY,
+  H2_XIANXIA_RPG_TEXT_C4_GUARDING,
+  H2_XIANXIA_RPG_TEXT_C4_WAVE,
+  H2_XIANXIA_RPG_TEXT_C4_LOST,
+  H2_XIANXIA_RPG_TEXT_C4_WON,
+  H2_XIANXIA_RPG_TEXT_C4_FIRE_LIT,
+  H2_XIANXIA_RPG_TEXT_C4_FIRE_NONE,
+  H2_XIANXIA_RPG_TEXT_C4_HERO,
+  H2_XIANXIA_RPG_TEXT_C4_RESOURCES,
+  H2_XIANXIA_RPG_TEXT_C4_SWITCH,
   H2_XIANXIA_RPG_TEXT_COUNT,
 } h2_xianxia_rpg_text_id_t;
 
@@ -299,6 +355,21 @@ h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c3_tile_script(
 uint32_t h2_xianxia_rpg_c3_post_direction(uint32_t flags, uint32_t post);
 bool h2_xianxia_rpg_c3_posts_aligned(uint32_t flags);
 size_t h2_xianxia_rpg_c3_strings(const char** out, size_t capacity);
+
+/* Chapter 4: the return to the village, ridge escort and altar. */
+char h2_xianxia_rpg_c4_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
+const char* h2_xianxia_rpg_c4_map_name(h2_xianxia_rpg_map_t map);
+const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c4_script(
+    h2_xianxia_rpg_script_id_t id);
+const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c4_info(void);
+size_t h2_xianxia_rpg_c4_npcs(
+    const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_map_t map,
+    h2_xianxia_rpg_npc_t out[H2_XIANXIA_RPG_MAX_NPCS]);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c4_talk_script(
+    const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_actor_t actor);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c4_tile_script(
+    const h2_xianxia_rpg_game_t* game, char tile);
+size_t h2_xianxia_rpg_c4_strings(const char** out, size_t capacity);
 
 #ifdef __cplusplus
 }

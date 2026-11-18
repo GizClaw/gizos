@@ -25,7 +25,7 @@ extern "C" {
 #define H2_XIANXIA_RPG_BAND_ROWS 16
 /** One bit per band: supports heights up to 64 * 16 = 1024 rows. */
 #define H2_XIANXIA_RPG_MAX_BANDS 64
-#define H2_XIANXIA_RPG_KEY_FIELDS 20
+#define H2_XIANXIA_RPG_KEY_FIELDS 24
 
 typedef struct h2_xianxia_rpg_canvas {
   uint16_t* pixels; /**< Borrowed RGB565 rows; NULL while measuring only. */

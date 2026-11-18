@@ -36,6 +36,9 @@ extern "C" {
  * released v0.2 rejects journeys for chapters it cannot play. Its tag covers
  * save0..3 and journey; older builds never touch this key. */
 #define H2_XIANXIA_RPG_PREF_JOURNEY3_KEY "journey3"
+/** Chapter-4 journey, same 32-byte layout. Its tag covers save0..3,
+ * journey and journey3; released builds keep their own records on rollback. */
+#define H2_XIANXIA_RPG_PREF_JOURNEY4_KEY "journey4"
 /** Blob with the cleared chapters and the hero at each clear, used to enter
  * the next chapter; a v0.1 chapter-1 clear is copied into it on start. */
 #define H2_XIANXIA_RPG_PREF_CHAPTERS_KEY "chapters"
@@ -72,10 +75,11 @@ typedef struct h2_xianxia_rpg_config {
  * kept in memory only. Invalid records are ignored and left untouched on
  * load, including automatic migration. Player-triggered chapter starts and
  * checkpoints replace that chapter's journey (chapter 2: journey, chapter 3:
- * journey3); completing a chapter records its clear in the existing ten-slot
- * chapters blob. Rolling back preserves journey3; after older play changes a
- * journey, Continue follows that older play and the chapter-3 row still resumes
- * its own checkpoint. Game state and three RGB565 frame-sized buffers
+ * journey3, chapter 4: journey4); completing a chapter records its clear in
+ * the existing ten-slot chapters blob. Rollback preserves later journey keys;
+ * after older play changes a journey, Continue follows that older play and
+ * each later chapter row still resumes its own checkpoint. Game state and
+ * three RGB565 frame-sized buffers
  * come from Runtime mem before the
  * first frame; frames never allocate. Diagnostics use Runtime log. Every
  * allocation, provider session and callback ends before return. The config is

@@ -104,7 +104,8 @@ static void test_glyph_coverage(void) {
   }
   CHECK(missing == 0u);
   static const char* const titles[] = {
-      "竹溪仙缘", "竹溪灯影", "渡口迷雾", "雨夜剑阁", "终", "0123456789", "+",
+      "竹溪仙缘", "竹溪灯影", "渡口迷雾",   "雨夜剑阁",
+      "万灯归山", "终",       "0123456789", "+",
   };
   for (size_t i = 0; i < sizeof(titles) / sizeof(titles[0]); ++i) {
     const char* s = titles[i];
@@ -413,6 +414,54 @@ static void test_chapter3_screens(int32_t width, int32_t height) {
   check_all_layers(&game);
 }
 
+static void test_chapter4_screens(int32_t width, int32_t height) {
+  h2_xianxia_rpg_game_init(&game, width, height, 44u, NULL);
+  game.chapter = game.prologue_chapter = 4u;
+  game.phase = H2_XIANXIA_RPG_PHASE_PROLOGUE;
+  check_all_layers(&game);
+  game.phase = H2_XIANXIA_RPG_PHASE_EXPLORE;
+  game.stage = H2_XIANXIA_RPG_STAGE_C4_ESCORT;
+  game.ally_hp = game.ally_hp_max = 102u;
+  for (int m = H2_XIANXIA_RPG_MAP_NIGHT_VILLAGE;
+       m <= H2_XIANXIA_RPG_MAP_LANTERN_ALTAR; ++m) {
+    game.map = (h2_xianxia_rpg_map_t)m;
+    game.flags = H2_XIANXIA_RPG_FLAG_C4_FIRE;
+    check_all_layers(&game);
+    game.flags |= H2_XIANXIA_RPG_C4_LAMPS | H2_XIANXIA_RPG_FLAG_C4_COVER;
+    check_all_layers(&game);
+  }
+  game.phase = H2_XIANXIA_RPG_PHASE_BATTLE;
+  game.battle.enemy = H2_XIANXIA_RPG_ENEMY_INK_TIDE;
+  game.battle.boss = game.battle.ally = game.battle.lamp_battle = true;
+  game.battle.enemy_hp = game.battle.enemy_hp_max = 150u;
+  game.battle.lamp_hp = game.battle.lamp_max = 80u;
+  game.battle.wave = 1u;
+  game.battle.state = H2_XIANXIA_RPG_BATTLE_COMMAND;
+  for (uint32_t beat = 0; beat < 3u; ++beat) {
+    game.battle.wave_turn = beat;
+    check_all_layers(&game);
+  }
+  h2_xianxia_rpg_layer_key_t before, after;
+  h2_xianxia_rpg_static_key(&game, &before);
+  game.battle.ally_mend = true;
+  h2_xianxia_rpg_static_key(&game, &after);
+  CHECK(memcmp(&before, &after, sizeof(before)) != 0);
+  before = after;
+  game.ally_hp = 0u;
+  h2_xianxia_rpg_static_key(&game, &after);
+  CHECK(memcmp(&before, &after, sizeof(before)) != 0);
+  before = after;
+  game.battle.lamp_hp = 12u;
+  h2_xianxia_rpg_static_key(&game, &after);
+  CHECK(memcmp(&before, &after, sizeof(before)) != 0);
+  game.battle.state = H2_XIANXIA_RPG_BATTLE_HEAL_TARGET;
+  check_all_layers(&game);
+  game.battle.state = H2_XIANXIA_RPG_BATTLE_DEFEAT;
+  check_all_layers(&game);
+  game.phase = H2_XIANXIA_RPG_PHASE_ENDING;
+  check_all_layers(&game);
+}
+
 int main(void) {
   test_glyph_coverage();
   test_keys();
@@ -423,6 +472,7 @@ int main(void) {
     test_screens(sizes[i][0], sizes[i][1]);
     test_chapter2_screens(sizes[i][0], sizes[i][1]);
     test_chapter3_screens(sizes[i][0], sizes[i][1]);
+    test_chapter4_screens(sizes[i][0], sizes[i][1]);
   }
   printf("xianxia_rpg render tests passed\n");
   return 0;

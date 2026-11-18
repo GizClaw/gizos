@@ -36,9 +36,9 @@ extern "C" {
 #define H2_XIANXIA_RPG_ENCOUNTER_MAX 3
 /** Chapters the progress record can hold, and those this build plays. */
 #define H2_XIANXIA_RPG_CHAPTER_MAX 10u
-#define H2_XIANXIA_RPG_CHAPTERS_PLAYABLE 3u
+#define H2_XIANXIA_RPG_CHAPTERS_PLAYABLE 4u
 /** Rows of the chapter screen: playable chapters and the next one. */
-#define H2_XIANXIA_RPG_CHAPTER_ROWS 4
+#define H2_XIANXIA_RPG_CHAPTER_ROWS 5
 /** Lanterns of rapport with the companion; full rapport unlocks the joint
  * strike. */
 #define H2_XIANXIA_RPG_RAPPORT_MAX 3u
@@ -104,6 +104,10 @@ typedef enum h2_xianxia_rpg_map {
   H2_XIANXIA_RPG_MAP_RAIN_PATH,
   H2_XIANXIA_RPG_MAP_SWORD_COURT,
   H2_XIANXIA_RPG_MAP_SWORD_HALL,
+  H2_XIANXIA_RPG_MAP_NIGHT_VILLAGE,
+  H2_XIANXIA_RPG_MAP_EAST_RIDGE,
+  H2_XIANXIA_RPG_MAP_WEST_RIDGE,
+  H2_XIANXIA_RPG_MAP_LANTERN_ALTAR,
   H2_XIANXIA_RPG_MAP_COUNT,
 } h2_xianxia_rpg_map_t;
 
@@ -131,6 +135,11 @@ typedef enum h2_xianxia_rpg_stage {
   H2_XIANXIA_RPG_STAGE_C3_HALL,
   H2_XIANXIA_RPG_STAGE_C3_RETURN,
   H2_XIANXIA_RPG_STAGE_C3_CLEARED,
+  H2_XIANXIA_RPG_STAGE_C4_HOME,
+  H2_XIANXIA_RPG_STAGE_C4_ESCORT,
+  H2_XIANXIA_RPG_STAGE_C4_GUARD,
+  H2_XIANXIA_RPG_STAGE_C4_RETURN,
+  H2_XIANXIA_RPG_STAGE_C4_CLEARED,
   H2_XIANXIA_RPG_STAGE_COUNT,
 } h2_xianxia_rpg_stage_t;
 
@@ -180,6 +189,7 @@ typedef enum h2_xianxia_rpg_enemy {
   H2_XIANXIA_RPG_ENEMY_RAIN_CROW,
   H2_XIANXIA_RPG_ENEMY_BROKEN_SWORD,
   H2_XIANXIA_RPG_ENEMY_SWORD_SOUL,
+  H2_XIANXIA_RPG_ENEMY_INK_TIDE,
   H2_XIANXIA_RPG_ENEMY_COUNT,
 } h2_xianxia_rpg_enemy_t;
 
@@ -195,6 +205,8 @@ typedef enum h2_xianxia_rpg_battle_state {
   H2_XIANXIA_RPG_BATTLE_ALLY_ACT,
   /** A strike waits for the player to tap one of two shadows. */
   H2_XIANXIA_RPG_BATTLE_TARGET,
+  /** A pill waits for a tap on either party status box. */
+  H2_XIANXIA_RPG_BATTLE_HEAL_TARGET,
 } h2_xianxia_rpg_battle_state_t;
 
 /** What the companion does after the hero; shown ahead as her intent. */
@@ -257,6 +269,14 @@ typedef enum h2_xianxia_rpg_effect {
   H2_XIANXIA_RPG_EFFECT_C3_CAMP,
   H2_XIANXIA_RPG_EFFECT_C3_BATTLE,
   H2_XIANXIA_RPG_EFFECT_C3_REVEAL,
+  H2_XIANXIA_RPG_EFFECT_C4_JOIN,
+  H2_XIANXIA_RPG_EFFECT_C4_FIRE,
+  H2_XIANXIA_RPG_EFFECT_C4_LIGHT1,
+  H2_XIANXIA_RPG_EFFECT_C4_LIGHT2,
+  H2_XIANXIA_RPG_EFFECT_C4_LIGHT3,
+  H2_XIANXIA_RPG_EFFECT_C4_BATTLE,
+  H2_XIANXIA_RPG_EFFECT_C4_HOME,
+  H2_XIANXIA_RPG_EFFECT_C4_REPORT,
   H2_XIANXIA_RPG_EFFECT_COUNT,
 } h2_xianxia_rpg_effect_t;
 
@@ -289,13 +309,24 @@ typedef enum h2_xianxia_rpg_effect {
 #define H2_XIANXIA_RPG_FLAG_C3_STELE3 (1u << 23)
 #define H2_XIANXIA_RPG_FLAG_C3_WENZHOU (1u << 24)
 #define H2_XIANXIA_RPG_FLAG_C3_GLYPH (1u << 25)
+/** Chapter-4 local bits; party health is restored at saved checkpoints,
+ * like the hero's, and its maximum derives from the saved hero level. */
+#define H2_XIANXIA_RPG_C4_LAMPS 7u
+#define H2_XIANXIA_RPG_FLAG_C4_FIRE (1u << 3)
+#define H2_XIANXIA_RPG_FLAG_C4_COVER (1u << 4)
+#define H2_XIANXIA_RPG_FLAG_C4_JOINED (1u << 26)
+#define H2_XIANXIA_RPG_FLAG_C4_FAINT (1u << 27)
+#define H2_XIANXIA_RPG_FLAG_C4_GLYPH (1u << 28)
+#define H2_XIANXIA_RPG_FLAG_C4_BOOK (1u << 29)
 /** Flags a chapter hands to the next one. */
 #define H2_XIANXIA_RPG_FLAG_CARRY                                      \
   (H2_XIANXIA_RPG_FLAG_C1_CLEARED | H2_XIANXIA_RPG_FLAG_C2_RUMOR |     \
    H2_XIANXIA_RPG_FLAG_C2_FISHER | H2_XIANXIA_RPG_FLAG_C2_ROPE |       \
    H2_XIANXIA_RPG_FLAG_C2_HAND_LIGHT | H2_XIANXIA_RPG_FLAG_C3_STELE1 | \
    H2_XIANXIA_RPG_FLAG_C3_STELE2 | H2_XIANXIA_RPG_FLAG_C3_STELE3 |     \
-   H2_XIANXIA_RPG_FLAG_C3_WENZHOU | H2_XIANXIA_RPG_FLAG_C3_GLYPH)
+   H2_XIANXIA_RPG_FLAG_C3_WENZHOU | H2_XIANXIA_RPG_FLAG_C3_GLYPH |     \
+   H2_XIANXIA_RPG_FLAG_C4_JOINED | H2_XIANXIA_RPG_FLAG_C4_FAINT |      \
+   H2_XIANXIA_RPG_FLAG_C4_GLYPH | H2_XIANXIA_RPG_FLAG_C4_BOOK)
 
 typedef struct h2_xianxia_rpg_rect {
   int32_t x, y, w, h;
@@ -321,6 +352,8 @@ typedef struct h2_xianxia_rpg_layout {
   h2_xianxia_rpg_rect_t commands[H2_XIANXIA_RPG_COMMANDS];
   /** Battle: the two shadows of a split boss, as tap targets. */
   h2_xianxia_rpg_rect_t shadows[2];
+  /** Chapter 4: exploration actions and party/pill targets. */
+  h2_xianxia_rpg_rect_t escort_actions[2], party[2];
 } h2_xianxia_rpg_layout_t;
 
 typedef struct h2_xianxia_rpg_hero {
@@ -403,6 +436,8 @@ typedef struct h2_xianxia_rpg_popup {
   bool active;
   bool on_enemy;
   bool heal;
+  /** Non-enemy popup owner: 0 hero, 1 companion, 2 lantern. */
+  uint8_t target;
   uint32_t value;
   uint32_t age_ms;
   int32_t slot; /**< Small horizontal offset for multi-hit popups. */
@@ -441,6 +476,11 @@ typedef struct h2_xianxia_rpg_battle {
    * wind. Set before the command, not after the player has committed. */
   uint8_t sword_stance;
   bool sword_counter;
+  /** Three waves, each ends after three enemy actions or a defeated foe. */
+  bool lamp_battle, lamp_guard, ally_mend, heal_ally;
+  uint32_t lamp_hp, lamp_max, wave, wave_turn;
+  /** 0 hero, 1 companion, 2 lantern; used only for enemy hits. */
+  uint8_t hit_target;
   uint8_t real_shadow;
   /** Command waiting for a shadow to be chosen. */
   uint8_t pending;
@@ -488,6 +528,9 @@ typedef struct h2_xianxia_rpg_records {
    * chapter-2 journey after rollback. Its tag covers both older journeys. */
   bool has_journey3, journey3_latest, journey3_unreadable;
   h2_xianxia_rpg_save_t journey3;
+  /** Separate chapter-4 record; tag includes the bytes of journey3 too. */
+  bool has_journey4, journey4_latest, journey4_unreadable;
+  h2_xianxia_rpg_save_t journey4;
   h2_xianxia_rpg_progress_t progress;
   /** Each blob is missing when neither its valid nor unreadable bit is set.
    * Read errors count as unreadable: they do not prove a record is absent. */
@@ -505,6 +548,8 @@ typedef struct h2_xianxia_rpg_writes {
   h2_xianxia_rpg_save_t journey_save;
   bool journey3;
   h2_xianxia_rpg_save_t journey3_save;
+  bool journey4;
+  h2_xianxia_rpg_save_t journey4_save;
   bool progress;
   h2_xianxia_rpg_progress_t progress_record;
 } h2_xianxia_rpg_writes_t;
@@ -531,6 +576,7 @@ typedef struct h2_xianxia_rpg_game {
   /** Companion trust, 0..3; each lantern starts battles with rapport. */
   uint32_t trust;
   h2_xianxia_rpg_hero_t hero;
+  uint32_t ally_hp, ally_hp_max;
   uint32_t battles_won, turns_taken;
 
   /* Exploration. */
@@ -668,6 +714,11 @@ uint32_t h2_xianxia_rpg_exp_for_level(uint32_t level);
 /** Whether a command can be chosen now; reason is set when it cannot. */
 bool h2_xianxia_rpg_command_available(const h2_xianxia_rpg_game_t* game,
                                       h2_xianxia_rpg_command_t command);
+
+/** Number of relit chapter-4 lamps, and the next enemy target (0 hero,
+ * 1 companion, 2 lantern). These queries also drive the visible hints. */
+uint32_t h2_xianxia_rpg_c4_lamps(uint32_t flags);
+uint32_t h2_xianxia_rpg_lamp_target(const h2_xianxia_rpg_game_t* game);
 
 /** Number of UTF-8 codepoints in a string. */
 uint32_t h2_xianxia_rpg_utf8_length(const char* text);
