@@ -669,6 +669,9 @@ static h2_pal_result_t prepare(session_t* s) {
   }
   h2_fruit_slice_game_init(&s->game, s->display.width, s->display.height, seed,
                            load_best(s));
+  s->game.language = s->config.language == H2_FRUIT_SLICE_LANGUAGE_EN
+                         ? H2_FRUIT_SLICE_LANGUAGE_EN
+                         : H2_FRUIT_SLICE_LANGUAGE_ZH_CN;
   load_progress(s);
   load_cards(s);
   if (s->game.cards.save_status == 2u)

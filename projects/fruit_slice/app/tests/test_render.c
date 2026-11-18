@@ -1,5 +1,6 @@
 #include "h2_fruit_slice_game.h"
 #include "h2_fruit_slice_render.h"
+#include "h2_fruit_slice_cards_render.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,13 +22,16 @@
 static uint16_t background[MAX_W * MAX_H];
 static uint16_t pixels[MAX_W * MAX_H];
 static h2_fruit_slice_game_t game;
+static h2_fruit_slice_language_t render_language;
 
 /* Optional review artifact: Bazel collects files in this directory. */
 static void write_ppm(const char* name, int32_t width, int32_t height) {
   const char* directory = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
   if (directory == NULL || directory[0] == '\0') return;
   char path[512];
-  (void)snprintf(path, sizeof(path), "%s/%s.ppm", directory, name);
+  (void)snprintf(path, sizeof(path), "%s/%s%s.ppm", directory,
+                 game.language == H2_FRUIT_SLICE_LANGUAGE_EN ? "en-" : "",
+                 name);
   FILE* file = fopen(path, "wb");
   CHECK(file != NULL);
   fprintf(file, "P6\n%d %d\n255\n", (int)width, (int)height);
@@ -259,6 +263,7 @@ static void render_size(int32_t width, int32_t height) {
 
   char name[64];
   h2_fruit_slice_game_init(&game, width, height, 11u, 12u);
+  game.language = render_language;
   CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
   h2_fruit_slice_game_step(&game, 100u);
   (void)snprintf(name, sizeof(name), "title_%dx%d", (int)width, (int)height);
@@ -273,6 +278,7 @@ static void render_size(int32_t width, int32_t height) {
   game.phase_started_ms = game.time_ms;
   game.new_best = true;
   game.best = game.score;
+  game.cards.run_earned = game.cards.run_new = 3u;
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
   (void)snprintf(name, sizeof(name), "game_over_%dx%d", (int)width,
                  (int)height);
@@ -357,6 +363,7 @@ static void test_clipping(void) {
 
 static void test_progress_pages(int32_t width, int32_t height) {
   h2_fruit_slice_game_init(&game, width, height, 25u, 31u);
+  game.language = render_language;
   game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
   game.progress.fruit_credit = 10u;
   for (unsigned page = 0; page < 2u; ++page) {
@@ -399,6 +406,7 @@ static void test_card_scenes(int32_t width, int32_t height) {
   sprites = h2_fruit_slice_sprites_create(&test_memory);
   CHECK(sprites != NULL);
   h2_fruit_slice_game_init(&game, width, height, 42u, 0u);
+  game.language = render_language;
   CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
   const size_t prepared = allocation_calls;
   if (width == 480 && height == 320)
@@ -428,6 +436,18 @@ static void test_card_scenes(int32_t width, int32_t height) {
                    height);
     check_scene(name, width, height);
   }
+  /* Full names/hints with maximum duplicate counts, in both languages. */
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_CARD_COUNT; ++id) {
+    game.cards.counts[id] = 99u;
+    game.cards.tab = h2_fruit_slice_card(id)->category;
+    uint8_t ids[H2_FRUIT_SLICE_CARD_TAB_SLOTS];
+    const unsigned count = h2_fruit_slice_card_tab_cards(game.cards.tab, ids);
+    for (unsigned slot = 0; slot < count; ++slot)
+      if (ids[slot] == id) game.cards.selected = (uint8_t)slot;
+    (void)snprintf(name, sizeof(name), "preview-detail-%u-%dx%d", id, width,
+                   height);
+    check_scene(name, width, height);
+  }
   h2_fruit_slice_cards_close_album(&game.cards);
   game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
   const unsigned ids[] = {0u, 3u, 5u, 15u};
@@ -453,6 +473,7 @@ static void test_variety_scenes(int32_t width, int32_t height) {
   sprites = h2_fruit_slice_sprites_create(&test_memory);
   CHECK(sprites != NULL);
   h2_fruit_slice_game_init(&game, width, height, 42u, 0u);
+  game.language = render_language;
   CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
   const size_t prepared = allocation_calls;
   printf(
@@ -506,10 +527,78 @@ static void test_variety_scenes(int32_t width, int32_t height) {
   CHECK(allocation_calls == prepared);
 }
 
+static void test_result_reward_does_not_overwrite_record(void) {
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned size = 0; size < 3u; ++size) {
+    const int w = sizes[size][0], h = sizes[size][1];
+    for (unsigned language = 0; language < 2u; ++language) {
+      for (unsigned record = 0; record < 2u; ++record) {
+        h2_fruit_slice_game_init(&game, w, h, 42u, 21u);
+        game.language = (h2_fruit_slice_language_t)language;
+        game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+        game.score = 12u;
+        game.new_best = record != 0u;
+        if (record) game.best = 12u;
+        memset(game.fruits, 0, sizeof(game.fruits));
+        h2_fruit_slice_canvas_t c = {.pixels = pixels,
+                                     .width = w,
+                                     .height = h,
+                                     .stride_pixels = (size_t)w};
+        h2_fruit_slice_render_background(&c);
+        h2_fruit_slice_render_static(&c, &game);
+        memcpy(background, pixels, (size_t)w * (size_t)h * sizeof(uint16_t));
+        const float panel_w = (float)w * 0.78f < 420.0f * game.unit
+                                  ? (float)w * 0.78f
+                                  : 420.0f * game.unit;
+        const char* title =
+            h2_fruit_slice_translate(game.language, "GAME OVER");
+        char score[96], best[96];
+        (void)snprintf(score, sizeof(score),
+                       h2_fruit_slice_translate(game.language, "SCORE %u"),
+                       12u);
+        if (record)
+          (void)snprintf(best, sizeof(best), "%s",
+                         h2_fruit_slice_translate(game.language, "NEW BEST!"));
+        else
+          (void)snprintf(best, sizeof(best),
+                         h2_fruit_slice_translate(game.language, "BEST %u"),
+                         21u);
+        const char* lines[] = {title, score, best};
+        const float preferences[] = {6.0f, 3.0f, 2.5f};
+        int protected_bottom = (int)((float)h * 0.21f);
+        for (unsigned line = 0; line < 3u; ++line) {
+          const int scale = h2_fruit_slice_fit_scale(
+              lines[line], panel_w * 0.9f,
+              h2_fruit_slice_text_scale(game.unit, preferences[line]));
+          protected_bottom += h2_fruit_slice_text_height(lines[line], scale) +
+                              (scale / 2 > 0 ? scale / 2 : 1) + 1;
+        }
+        game.cards.run_earned = game.cards.run_new = 3u;
+        h2_fruit_slice_render_background(&c);
+        h2_fruit_slice_render_static(&c, &game);
+        /* Adding two ordinary earned cards must not overwrite any pixel of
+         * the unchanged title/score/record block, or the tap navigation. */
+        CHECK(memcmp(background, pixels,
+                     (size_t)w * (size_t)protected_bottom * sizeof(uint16_t)) ==
+              0);
+        h2_fruit_slice_rect_t nav;
+        CHECK(h2_fruit_slice_game_button_rect(
+            &game, H2_FRUIT_SLICE_BUTTON_TASKS, &nav));
+        const int nav_y = (int)nav.y0;
+        CHECK(memcmp(background + nav_y * w, pixels + nav_y * w,
+                     (size_t)w * (size_t)(h - nav_y) * sizeof(uint16_t)) == 0);
+        CHECK(h2_fruit_slice_cards_result_height(&game) > 0);
+      }
+    }
+  }
+}
+
 int main(void) {
   test_variety_scenes(480, 320);
   test_variety_scenes(160, 160);
   test_variety_scenes(240, 240);
+  test_result_reward_does_not_overwrite_record();
+  test_card_scenes(160, 160);
   test_card_scenes(240, 240);
   test_card_scenes(480, 320);
   test_card_scenes(480, 800);
@@ -525,6 +614,9 @@ int main(void) {
   test_bands();
   test_static_key();
   test_sprite_cache();
+  render_size(160, 160);
+  render_size(240, 240);
+  render_size(480, 320);
   render_size(480, 480);
   render_size(800, 480);
   render_size(368, 448);
@@ -532,6 +624,15 @@ int main(void) {
   test_blast_bounds(800, 480);
   test_blast_bounds(368, 448);
   test_clipping();
+  render_language = H2_FRUIT_SLICE_LANGUAGE_EN;
+  test_variety_scenes(160, 160);
+  test_variety_scenes(480, 320);
+  test_progress_pages(160, 160);
+  test_progress_pages(480, 320);
+  test_card_scenes(160, 160);
+  test_card_scenes(480, 320);
+  render_size(160, 160);
+  render_size(480, 320);
   h2_fruit_slice_sprites_destroy(sprites);
   puts("fruit slice render tests passed");
   return 0;

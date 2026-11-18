@@ -35,6 +35,10 @@ Strawberry uses a small pointed red body with a green calyx and pink cut core. B
 
 Fruit IDs 0–4 and bomb ID 5 remain stable; the four additions use IDs 6–9. The nine-fruit enumeration helper excludes bombs. The original 16-card catalog and `cards_v1` format remain unchanged: the five original fruit keep their own drops, while the four additions contribute to generic fruit, score, combo and weapon achievements without impersonating another card.
 
+## Language
+
+The UI defaults to Simplified Chinese on all targets, including AC791N's 480x320 display. Tap **EN** at the top left of the title screen to switch to English; tap **中文** to return. The selection lasts for the App session and does not change existing preference blobs. An embedding host can set `config.language = H2_FRUIT_SLICE_LANGUAGE_EN` to start in English. Titles, gameplay hints, tasks, weapons, cards, rarity and reveal prompts use the same App-owned translation table. See the [font source, OFL license and reproducible subset](app/fonts/README.md).
+
 ## Coins and weapons
 
 Scores still measure each run. Tap **Tasks** on the title or game-over screen to claim a separate coin currency: slicing 10 fruit earns 15 coins, making three combos earns 25 coins, and reaching 20 points in one run earns a one-time 40 coins. A combo means slicing at least three fruit in one swipe. The first two tasks repeat by consuming earned progress on each claim; extra progress carries over between runs and claims. Menu fruit never count. An existing best of at least 20 unlocks the score task on upgrade.

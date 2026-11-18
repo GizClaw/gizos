@@ -136,7 +136,7 @@ static void test_combo_awards_bonus(void) {
   bool popup = false;
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_POPUPS; ++i)
     popup |=
-        game.popups[i].active && strcmp(game.popups[i].text, "COMBO +3") == 0;
+        game.popups[i].active && strcmp(game.popups[i].text, "连击 +3") == 0;
   CHECK(popup);
 
   /* Two fruits in one stroke stay a plain score. */
@@ -214,8 +214,9 @@ static void test_restart_waits_for_menu_fruit(void) {
 
 static void test_trail_expires(void) {
   h2_fruit_slice_game_init(&game, 480, 480, 7u, 0u);
-  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, 10.0f, 10.0f);
-  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_MOVE, 30.0f, 10.0f);
+  /* Stroke below the title controls. */
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, 10.0f, 60.0f);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_MOVE, 30.0f, 60.0f);
   CHECK(game.trail_count == 2u);
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_TRAIL_LIFE_MS + 20u);
   CHECK(game.trail_count == 0u);

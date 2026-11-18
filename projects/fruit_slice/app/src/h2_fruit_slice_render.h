@@ -50,7 +50,7 @@ typedef struct h2_fruit_slice_canvas {
 /** Fields of the game the static layer depends on. All-integer, so two keys
  * compare equal with memcmp after zero initialization. */
 typedef struct h2_fruit_slice_static_key {
-  uint32_t phase, score, best, lives, new_best, audio_mute;
+  uint32_t phase, score, best, lives, new_best, audio_mute, language;
   uint32_t progress_revision, save_status, cards_revision;
   /** Menu fruit center row, or -1 without a menu fruit. */
   int32_t menu_y;
@@ -89,6 +89,8 @@ void h2_fruit_slice_render_scene(h2_fruit_slice_canvas_t* canvas,
 
 /** Pixel width of text drawn at an integer scale. */
 int32_t h2_fruit_slice_text_width(const char* text, int32_t scale);
+/** Line height used by the same UTF-8 glyph walk as drawing/measurement. */
+int32_t h2_fruit_slice_text_height(const char* text, int32_t scale);
 
 #ifdef __cplusplus
 }
