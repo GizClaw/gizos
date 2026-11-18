@@ -1,5 +1,6 @@
 #include "h2_fruit_slice_game.h"
 #include "h2_fruit_slice_render.h"
+#include "h2_fruit_slice_cards_render.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -276,6 +277,7 @@ static void render_size(int32_t width, int32_t height) {
   game.phase_started_ms = game.time_ms;
   game.new_best = true;
   game.best = game.score;
+  game.cards.run_earned = game.cards.run_new = 3u;
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
   (void)snprintf(name, sizeof(name), "game_over_%dx%d", (int)width,
                  (int)height);
@@ -464,7 +466,74 @@ static void test_card_scenes(int32_t width, int32_t height) {
   CHECK(allocation_calls == prepared); /* No frame-time texture allocation. */
 }
 
+static void test_result_reward_does_not_overwrite_record(void) {
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned size = 0; size < 3u; ++size) {
+    const int w = sizes[size][0], h = sizes[size][1];
+    for (unsigned language = 0; language < 2u; ++language) {
+      for (unsigned record = 0; record < 2u; ++record) {
+        h2_fruit_slice_game_init(&game, w, h, 42u, 21u);
+        game.language = (h2_fruit_slice_language_t)language;
+        game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+        game.score = 12u;
+        game.new_best = record != 0u;
+        if (record) game.best = 12u;
+        memset(game.fruits, 0, sizeof(game.fruits));
+        h2_fruit_slice_canvas_t c = {.pixels = pixels,
+                                     .width = w,
+                                     .height = h,
+                                     .stride_pixels = (size_t)w};
+        h2_fruit_slice_render_background(&c);
+        h2_fruit_slice_render_static(&c, &game);
+        memcpy(background, pixels, (size_t)w * (size_t)h * sizeof(uint16_t));
+        const float panel_w = (float)w * 0.78f < 420.0f * game.unit
+                                  ? (float)w * 0.78f
+                                  : 420.0f * game.unit;
+        const char* title =
+            h2_fruit_slice_translate(game.language, "GAME OVER");
+        char score[96], best[96];
+        (void)snprintf(score, sizeof(score),
+                       h2_fruit_slice_translate(game.language, "SCORE %u"),
+                       12u);
+        if (record)
+          (void)snprintf(best, sizeof(best), "%s",
+                         h2_fruit_slice_translate(game.language, "NEW BEST!"));
+        else
+          (void)snprintf(best, sizeof(best),
+                         h2_fruit_slice_translate(game.language, "BEST %u"),
+                         21u);
+        const char* lines[] = {title, score, best};
+        const float preferences[] = {6.0f, 3.0f, 2.5f};
+        int protected_bottom = (int)((float)h * 0.21f);
+        for (unsigned line = 0; line < 3u; ++line) {
+          const int scale = h2_fruit_slice_fit_scale(
+              lines[line], panel_w * 0.9f,
+              h2_fruit_slice_text_scale(game.unit, preferences[line]));
+          protected_bottom += h2_fruit_slice_text_height(lines[line], scale) +
+                              (scale / 2 > 0 ? scale / 2 : 1) + 1;
+        }
+        game.cards.run_earned = game.cards.run_new = 3u;
+        h2_fruit_slice_render_background(&c);
+        h2_fruit_slice_render_static(&c, &game);
+        /* Adding two ordinary earned cards must not overwrite any pixel of
+         * the unchanged title/score/record block, or the tap navigation. */
+        CHECK(memcmp(background, pixels,
+                     (size_t)w * (size_t)protected_bottom * sizeof(uint16_t)) ==
+              0);
+        h2_fruit_slice_rect_t nav;
+        CHECK(h2_fruit_slice_game_button_rect(
+            &game, H2_FRUIT_SLICE_BUTTON_TASKS, &nav));
+        const int nav_y = (int)nav.y0;
+        CHECK(memcmp(background + nav_y * w, pixels + nav_y * w,
+                     (size_t)w * (size_t)(h - nav_y) * sizeof(uint16_t)) == 0);
+        CHECK(h2_fruit_slice_cards_result_height(&game) > 0);
+      }
+    }
+  }
+}
+
 int main(void) {
+  test_result_reward_does_not_overwrite_record();
   test_card_scenes(160, 160);
   test_card_scenes(240, 240);
   test_card_scenes(480, 320);
