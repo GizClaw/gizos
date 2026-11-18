@@ -21,7 +21,7 @@
 
 #define WIDTH 480
 #define HEIGHT 480
-#define SCRIPT_MAX 32
+#define SCRIPT_MAX 128
 
 typedef struct fake_display {
   h2_display_info_t info;
@@ -59,9 +59,13 @@ typedef struct fixture {
       autoplay_pause_until;
   uint64_t clock_ms;
   uint32_t seed;
+  h2_fruit_slice_language_t language;
   uint32_t earned_fruit_credit;
   const char* capture_name;
   unsigned capture_every, capture_from, capture_until;
+  unsigned capture_frames[48], capture_count;
+  unsigned header_from, header_check, claim_check;
+  uint32_t header_hash;
   const h2_pal_pref_api_t* pref_override;
   bool use_audio, audio_active;
   unsigned audio_starts, audio_stops, audio_opens, audio_closes, audio_writes;
@@ -78,6 +82,7 @@ static struct {
   uint8_t staged[H2_FRUIT_SLICE_PROGRESS_BYTES];
   bool exists, pending;
   unsigned commits, failed_commits, reads, best_reads;
+  uint32_t best_value;
   int read_result;
   bool cards_enabled, cards_exists, cards_pending;
   uint8_t cards_saved[H2_FRUIT_SLICE_CARDS_BYTES],
@@ -131,7 +136,7 @@ static int pref_get_best(h2_pal_pref_namespace_t* ns, const char* key,
   (void)ns;
   if (strcmp(key, "audio_v1") == 0) return H2_PAL_ERR_NOT_FOUND;
   CHECK(strcmp(key, H2_FRUIT_SLICE_PREF_BEST_KEY) == 0);
-  *out_value = 21u;
+  *out_value = pref.best_value != 0u ? pref.best_value : 21u;
   ++pref.best_reads;
   return H2_PAL_OK;
 }
@@ -449,7 +454,26 @@ static void capture_frame(const fixture_t* f) {
 
 static bool should_exit(void* user) {
   fixture_t* f = user;
-  if (f->frames == f->exit_after || f->frames == 1u ||
+  bool requested = false;
+  if (f->frames == f->header_from || f->frames == f->header_check) {
+    uint32_t hash = 2166136261u;
+    for (int y = 0; y < 20; ++y)
+      for (int x = 0; x < f->display.info.width; ++x)
+        hash = (hash ^ f->display.shadow[y * WIDTH + x]) * 16777619u;
+    if (f->frames == f->header_from) f->header_hash = hash;
+    if (f->header_check != 0u && f->frames == f->header_check)
+      CHECK(hash ==
+            f->header_hash); /* Claim leaves the Tasks heading visible. */
+  }
+  if (f->claim_check != 0u && f->frames == f->claim_check) {
+    h2_fruit_slice_progress_t saved;
+    CHECK(
+        h2_fruit_slice_progress_decode(&saved, pref.saved, sizeof(pref.saved)));
+    CHECK(saved.coins == 40u && saved.score_task == 2u);
+  }
+  for (unsigned i = 0; i < f->capture_count; ++i)
+    requested |= f->frames == f->capture_frames[i];
+  if (requested || f->frames == f->exit_after || f->frames == 1u ||
       (f->capture_every && f->frames >= f->capture_from && f->frames &&
        f->frames <= f->capture_until && f->frames % f->capture_every == 0u))
     capture_frame(f);
@@ -545,6 +569,7 @@ static h2_pal_result_t run(void) {
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   const h2_fruit_slice_config_t game = {
       .seed = fx.seed,
+      .language = fx.language,
       .brightness_percent = 80u,
       .frame_period_ms = fx.fast_clock ? 1u : 10u,
       .ready = ready,
@@ -1171,7 +1196,8 @@ static void test_cards_write_retry_and_read_error(void) {
   CHECK(memcmp(saved, pref.cards_saved, sizeof(saved)) == 0);
 }
 
-static void test_layout_app_routes(int32_t width, int32_t height) {
+static void test_layout_app_routes(int32_t width, int32_t height,
+                                   h2_fruit_slice_language_t language) {
   reset(500u);
   fx.fast_clock = true;
   fx.display.info.width = fx.touch.info.width = width;
@@ -1179,14 +1205,17 @@ static void test_layout_app_routes(int32_t width, int32_t height) {
   fx.touch_from_frame = 2u;
   fx.autoplay_from = 40u;
   fx.seed = 111u;
+  fx.language = language;
   fx.layout_sweep = true;
   fx.autoplay_until = 300u;
   char name[64];
-  (void)snprintf(name, sizeof(name), "actual-app-layout-%dx%d", width, height);
+  (void)snprintf(name, sizeof(name), "actual-app-layout-%s-%dx%d",
+                 language == H2_FRUIT_SLICE_LANGUAGE_EN ? "en" : "zh", width,
+                 height);
   fx.capture_name = name;
-  fx.capture_every = 10u;
-  fx.capture_from = 10u;
-  fx.capture_until = 500u;
+  const unsigned captures[] = {5u, 15u, 25u, 30u, 270u, 300u, 400u, 430u};
+  memcpy(fx.capture_frames, captures, sizeof(captures));
+  fx.capture_count = sizeof(captures) / sizeof(captures[0]);
   h2_fruit_slice_game_t layout;
   h2_fruit_slice_game_init(&layout, width, height, 42u, 0u);
   const uint32_t pages[] = {H2_FRUIT_SLICE_BUTTON_TASKS,
@@ -1214,12 +1243,175 @@ static void test_layout_app_routes(int32_t width, int32_t height) {
   CHECK(fx.display.presents > 100u && fx.ready_calls == 1u);
 }
 
+static void test_layout_loaded_profile(int32_t width, int32_t height,
+                                       h2_fruit_slice_language_t language) {
+  memset(&pref, 0, sizeof(pref));
+  pref.best_value = UINT32_MAX;
+  const h2_fruit_slice_progress_t progress = {
+      H2_FRUIT_SLICE_PROGRESS_LIMIT, 10u, 3u, 1u, 7u, 2u};
+  h2_fruit_slice_progress_encode(&progress, pref.saved);
+  pref.exists = true;
+  h2_fruit_slice_cards_t stored;
+  h2_fruit_slice_cards_init(&stored, width, height, 42u);
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_CARD_COUNT; ++id)
+    stored.counts[id] = 99u;
+  h2_fruit_slice_cards_encode(&stored, pref.cards_saved);
+  pref.cards_enabled = pref.cards_exists = true;
+  reset(240u);
+  fx.use_pref = fx.fast_clock = true;
+  fx.language = language;
+  fx.display.info.width = fx.touch.info.width = width;
+  fx.display.info.height = fx.touch.info.height = height;
+  fx.touch_from_frame = 2u;
+  char name[80];
+  (void)snprintf(name, sizeof(name), "actual-app-profile-%s-%dx%d",
+                 language == H2_FRUIT_SLICE_LANGUAGE_EN ? "en" : "zh", width,
+                 height);
+  fx.capture_name = name;
+  h2_fruit_slice_game_t layout;
+  h2_fruit_slice_game_init(&layout, width, height, 42u, UINT32_MAX);
+  h2_fruit_slice_rect_t r;
+  CHECK(h2_fruit_slice_game_button_rect(&layout, H2_FRUIT_SLICE_BUTTON_LANGUAGE,
+                                        &r));
+  const int32_t lx = (int32_t)((r.x0 + r.x1) * 0.5f);
+  const int32_t ly = (int32_t)((r.y0 + r.y1) * 0.5f);
+  script_tap_at(2u, lx, ly);
+  fx.capture_frames[fx.capture_count++] = 5u;
+  script_tap_at(8u, lx, ly);
+  fx.capture_frames[fx.capture_count++] = 11u;
+  CHECK(h2_fruit_slice_game_button_rect(&layout, H2_FRUIT_SLICE_BUTTON_TASKS,
+                                        &r));
+  script_tap_at(14u, (int32_t)((r.x0 + r.x1) * 0.5f),
+                (int32_t)((r.y0 + r.y1) * 0.5f));
+  fx.capture_frames[fx.capture_count++] = 17u;
+  layout.phase = H2_FRUIT_SLICE_PHASE_TASKS;
+  CHECK(
+      h2_fruit_slice_game_button_rect(&layout, H2_FRUIT_SLICE_BUTTON_BACK, &r));
+  const int32_t bx = (int32_t)((r.x0 + r.x1) * 0.5f);
+  const int32_t by = (int32_t)((r.y0 + r.y1) * 0.5f);
+  script_tap_at(20u, bx, by);
+  layout.phase = H2_FRUIT_SLICE_PHASE_TITLE;
+  CHECK(
+      h2_fruit_slice_game_button_rect(&layout, H2_FRUIT_SLICE_BUTTON_SHOP, &r));
+  script_tap_at(24u, (int32_t)((r.x0 + r.x1) * 0.5f),
+                (int32_t)((r.y0 + r.y1) * 0.5f));
+  fx.capture_frames[fx.capture_count++] = 27u;
+  script_tap_at(30u, bx, by);
+  CHECK(h2_fruit_slice_game_button_rect(&layout, H2_FRUIT_SLICE_BUTTON_CARDS,
+                                        &r));
+  script_tap_at(34u, (int32_t)((r.x0 + r.x1) * 0.5f),
+                (int32_t)((r.y0 + r.y1) * 0.5f));
+  h2_fruit_slice_album_layout_t album;
+  h2_fruit_slice_cards_album_layout(width, height, layout.unit, &album);
+  unsigned frame = 36u;
+  for (unsigned tab = 0; tab < H2_FRUIT_SLICE_CARD_TABS; ++tab) {
+    const h2_fruit_slice_card_rect_t* t = &album.tabs[tab];
+    script_tap_at(frame, (int32_t)((t->x0 + t->x1) * 0.5f),
+                  (int32_t)((t->y0 + t->y1) * 0.5f));
+    frame += 2u;
+    uint8_t ids[H2_FRUIT_SLICE_CARD_TAB_SLOTS];
+    const unsigned count = h2_fruit_slice_card_tab_cards(tab, ids);
+    for (unsigned slot = 0; slot < count; ++slot) {
+      const h2_fruit_slice_card_rect_t* s = &album.slots[slot];
+      script_tap_at(frame, (int32_t)((s->x0 + s->x1) * 0.5f),
+                    (int32_t)((s->y0 + s->y1) * 0.5f));
+      fx.capture_frames[fx.capture_count++] = frame + 7u;
+      frame += 8u;
+    }
+  }
+  script_tap_at(frame, bx, by);
+  fx.exit_after = frame + 12u;
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.script_next == fx.touch.script_count);
+  h2_fruit_slice_progress_t after;
+  CHECK(h2_fruit_slice_progress_decode(&after, pref.saved, sizeof(pref.saved)));
+  CHECK(after.coins == progress.coins && after.owned == 7u &&
+        after.equipped == 2u);
+}
+
+static void test_layout_claim_buy_and_back(int32_t width, int32_t height,
+                                           h2_fruit_slice_language_t language) {
+  memset(&pref, 0, sizeof(pref));
+  const h2_fruit_slice_progress_t initial = {0u, 0u, 0u, 1u, 1u, 0u};
+  h2_fruit_slice_progress_encode(&initial, pref.saved);
+  pref.exists = true;
+  reset(50u);
+  fx.use_pref = fx.fast_clock = true;
+  fx.language = language;
+  fx.display.info.width = fx.touch.info.width = width;
+  fx.display.info.height = fx.touch.info.height = height;
+  fx.touch_from_frame = 2u;
+  fx.header_from = 5u;
+  fx.header_check = fx.claim_check = 12u;
+  char name[80];
+  (void)snprintf(name, sizeof(name), "actual-app-economy-%s-%dx%d",
+                 language == H2_FRUIT_SLICE_LANGUAGE_EN ? "en" : "zh", width,
+                 height);
+  fx.capture_name = name;
+  const unsigned frames[] = {5u, 12u, 17u, 23u, 32u, 38u, 44u};
+  memcpy(fx.capture_frames, frames, sizeof(frames));
+  fx.capture_count = sizeof(frames) / sizeof(frames[0]);
+  h2_fruit_slice_game_t g;
+  h2_fruit_slice_game_init(&g, width, height, 42u, 21u);
+  h2_fruit_slice_rect_t tasks, shop, claim, back, classic, jade;
+  CHECK(
+      h2_fruit_slice_game_button_rect(&g, H2_FRUIT_SLICE_BUTTON_TASKS, &tasks));
+  CHECK(h2_fruit_slice_game_button_rect(&g, H2_FRUIT_SLICE_BUTTON_SHOP, &shop));
+  g.phase = H2_FRUIT_SLICE_PHASE_TASKS;
+  CHECK(h2_fruit_slice_game_button_rect(&g, H2_FRUIT_SLICE_BUTTON_CLAIM + 2u,
+                                        &claim));
+  CHECK(h2_fruit_slice_game_button_rect(&g, H2_FRUIT_SLICE_BUTTON_BACK, &back));
+  g.phase = H2_FRUIT_SLICE_PHASE_SHOP;
+  CHECK(h2_fruit_slice_game_button_rect(&g, H2_FRUIT_SLICE_BUTTON_WEAPON,
+                                        &classic));
+  CHECK(h2_fruit_slice_game_button_rect(&g, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u,
+                                        &jade));
+#define TAP_RECT_AT(frame, r)                               \
+  script_tap_at(frame, (int32_t)(((r).x0 + (r).x1) * 0.5f), \
+                (int32_t)(((r).y0 + (r).y1) * 0.5f))
+  TAP_RECT_AT(2u, tasks);
+  TAP_RECT_AT(8u, claim);
+  TAP_RECT_AT(14u, back);
+  TAP_RECT_AT(18u, tasks);
+  if (width == 160 && height == 160)
+    script_tap_at(20u, 115,
+                  124); /* Old conflict point now visibly belongs to Back. */
+  else
+    TAP_RECT_AT(20u, back);
+  TAP_RECT_AT(24u, shop);
+  TAP_RECT_AT(28u, jade);
+  TAP_RECT_AT(34u, classic);
+  TAP_RECT_AT(40u, jade);
+  TAP_RECT_AT(46u, back);
+#undef TAP_RECT_AT
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.script_next == fx.touch.script_count);
+  h2_fruit_slice_progress_t saved;
+  CHECK(h2_fruit_slice_progress_decode(&saved, pref.saved, sizeof(pref.saved)));
+  CHECK(saved.coins == 0u && saved.owned == 3u && saved.equipped == 1u &&
+        saved.score_task == 2u);
+}
+
 int main(void) {
-  test_layout_app_routes(160, 160);
-  test_layout_app_routes(240, 240);
-  test_layout_app_routes(480, 320);
-  test_layout_app_routes(368, 448);
-  test_layout_app_routes(480, 800);
+  for (unsigned language = 0; language < 2u; ++language) {
+    const h2_fruit_slice_language_t value = language == 0u
+                                                ? H2_FRUIT_SLICE_LANGUAGE_ZH_CN
+                                                : H2_FRUIT_SLICE_LANGUAGE_EN;
+    test_layout_loaded_profile(160, 160, value);
+    test_layout_loaded_profile(240, 240, value);
+    test_layout_loaded_profile(480, 320, value);
+    test_layout_claim_buy_and_back(160, 160, value);
+    test_layout_claim_buy_and_back(240, 240, value);
+    test_layout_claim_buy_and_back(480, 320, value);
+  }
+  test_layout_app_routes(160, 160, H2_FRUIT_SLICE_LANGUAGE_ZH_CN);
+  test_layout_app_routes(240, 240, H2_FRUIT_SLICE_LANGUAGE_ZH_CN);
+  test_layout_app_routes(480, 320, H2_FRUIT_SLICE_LANGUAGE_ZH_CN);
+  test_layout_app_routes(368, 448, H2_FRUIT_SLICE_LANGUAGE_ZH_CN);
+  test_layout_app_routes(480, 800, H2_FRUIT_SLICE_LANGUAGE_ZH_CN);
+  test_layout_app_routes(160, 160, H2_FRUIT_SLICE_LANGUAGE_EN);
+  test_layout_app_routes(240, 240, H2_FRUIT_SLICE_LANGUAGE_EN);
+  test_layout_app_routes(480, 320, H2_FRUIT_SLICE_LANGUAGE_EN);
   test_cards_transient_sqlite_read();
   test_cards_write_retry_and_read_error();
   test_fresh_sqlite_storage();

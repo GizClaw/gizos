@@ -260,7 +260,54 @@ static void test_pending_collection_merge(void) {
   CHECK(h2_fruit_slice_cards_take_cue(&c) == H2_FRUIT_SLICE_CARD_CUE_NONE);
 }
 
+static void test_album_reserves_back_target(void) {
+  const int32_t sizes[][2] = {
+      {160, 160}, {240, 240}, {480, 320}, {368, 448}, {480, 800}};
+  for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+    h2_fruit_slice_game_t g;
+    h2_fruit_slice_game_init(&g, sizes[i][0], sizes[i][1], 17u, 0u);
+    tap(&g, H2_FRUIT_SLICE_BUTTON_CARDS);
+    h2_fruit_slice_rect_t back;
+    CHECK(
+        h2_fruit_slice_game_button_rect(&g, H2_FRUIT_SLICE_BUTTON_BACK, &back));
+    h2_fruit_slice_album_layout_t l;
+    h2_fruit_slice_cards_album_layout(g.width, g.height, g.unit, &l);
+    CHECK(l.detail.y1 + 3.0f <= back.y0);
+    CHECK(l.detail.y1 - l.detail.y0 >= 26.0f);
+    for (unsigned slot = 0; slot < H2_FRUIT_SLICE_CARD_TAB_SLOTS; ++slot) {
+      const h2_fruit_slice_card_rect_t* r = &l.slots[slot];
+      CHECK(r->y1 < back.y0);
+      CHECK(g.width > (float)g.height * 1.25f ? r->x1 < l.detail.x0
+                                              : r->y1 < l.detail.y0);
+      const float x = (r->x0 + r->x1) * 0.5f;
+      const float y = (r->y0 + r->y1) * 0.5f;
+      h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+      h2_fruit_slice_game_pointer(&g, H2_FRUIT_SLICE_POINTER_UP, x, y);
+      CHECK(g.cards.selected == slot && g.phase == H2_FRUIT_SLICE_PHASE_CARDS);
+    }
+    tap(&g, H2_FRUIT_SLICE_BUTTON_BACK);
+    CHECK(g.phase == H2_FRUIT_SLICE_PHASE_TITLE);
+    for (unsigned page = 0; page < 2u; ++page) {
+      tap(&g, page == 0u ? H2_FRUIT_SLICE_BUTTON_TASKS
+                         : H2_FRUIT_SLICE_BUTTON_SHOP);
+      for (unsigned row = 0; row < 3u; ++row) {
+        h2_fruit_slice_rect_t r;
+        CHECK(h2_fruit_slice_game_button_rect(
+            &g,
+            (page == 0u ? H2_FRUIT_SLICE_BUTTON_CLAIM
+                        : H2_FRUIT_SLICE_BUTTON_WEAPON) +
+                row,
+            &r));
+        CHECK(r.y1 < back.y0);
+      }
+      tap(&g, H2_FRUIT_SLICE_BUTTON_BACK);
+      CHECK(g.phase == H2_FRUIT_SLICE_PHASE_TITLE);
+    }
+  }
+}
+
 int main(void) {
+  test_album_reserves_back_target();
   test_pending_collection_merge();
   test_play_awards_and_rare_sound();
   test_catalog_and_awards();

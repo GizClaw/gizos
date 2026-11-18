@@ -5,6 +5,7 @@
  * elapsed time and pointer edges, and the renderer reads it. Coordinates are
  * display pixels with the origin at the top-left corner. */
 
+#include "h2_fruit_slice_text.h"
 #include "h2_fruit_slice_cards.h"
 #include "h2_fruit_slice_sound.h"
 
@@ -96,7 +97,7 @@ typedef struct h2_fruit_slice_rect {
 #define H2_FRUIT_SLICE_BUTTON_SHOP 2u
 #define H2_FRUIT_SLICE_BUTTON_BACK 3u
 #define H2_FRUIT_SLICE_BUTTON_CARDS 4u
-/* ID 5 is reserved for the language control. */
+#define H2_FRUIT_SLICE_BUTTON_LANGUAGE 5u
 #define H2_FRUIT_SLICE_BUTTON_START 6u
 #define H2_FRUIT_SLICE_BUTTON_SFX 7u
 #define H2_FRUIT_SLICE_BUTTON_MUSIC 8u
@@ -188,6 +189,7 @@ typedef struct h2_fruit_slice_game {
   uint32_t rng;
   uint64_t time_ms;
   h2_fruit_slice_phase_t phase;
+  h2_fruit_slice_language_t language;
   uint64_t phase_started_ms;
 
   uint32_t score, best, lives, waves;
@@ -236,6 +238,10 @@ typedef struct h2_fruit_slice_game {
 /** Reset to the title screen. width/height must be positive. */
 void h2_fruit_slice_game_init(h2_fruit_slice_game_t* game, int32_t width,
                               int32_t height, uint32_t seed, uint32_t best);
+
+/** Shared Back bounds, also used to reserve album/detail content space. */
+void h2_fruit_slice_game_back_rect(int32_t width, int32_t height,
+                                   h2_fruit_slice_rect_t* out);
 
 /** Shared layout for tap targets and rendered buttons. False when hidden. */
 bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,

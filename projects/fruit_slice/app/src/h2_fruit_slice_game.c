@@ -85,6 +85,17 @@ static void score_task_update(h2_fruit_slice_game_t* game) {
   }
 }
 
+void h2_fruit_slice_game_back_rect(int32_t width, int32_t height,
+                                   h2_fruit_slice_rect_t* out) {
+  const float w = (float)width, h = (float)height;
+  const float unit = (float)(width < height ? width : height) / 480.0f;
+  const float margin = fmaxf(8.0f, 12.0f * unit);
+  const float footer_h = fmaxf(32.0f, 60.0f * unit);
+  *out = (h2_fruit_slice_rect_t){
+      width <= 240 ? margin : w * 0.25f, h - margin - footer_h,
+      width <= 240 ? w - margin : w * 0.75f, h - margin};
+}
+
 bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,
                                      uint32_t button,
                                      h2_fruit_slice_rect_t* out) {
@@ -93,6 +104,13 @@ bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,
   const float gap = fmaxf(6.0f, 8.0f * game->unit);
   const float footer_h = fmaxf(32.0f, 60.0f * game->unit);
   const float footer_y = h - margin - footer_h;
+  if (button == H2_FRUIT_SLICE_BUTTON_LANGUAGE &&
+      game->phase == H2_FRUIT_SLICE_PHASE_TITLE) {
+    *out = (h2_fruit_slice_rect_t){margin, margin,
+                                   margin + fmaxf(42.0f, 84.0f * game->unit),
+                                   margin + fmaxf(28.0f, 36.0f * game->unit)};
+    return true;
+  }
   if (game->phase == H2_FRUIT_SLICE_PHASE_TITLE ||
       game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER) {
     if (button == H2_FRUIT_SLICE_BUTTON_START) {
@@ -140,16 +158,20 @@ bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,
       game->phase != H2_FRUIT_SLICE_PHASE_CARDS)
     return false;
   if (button == H2_FRUIT_SLICE_BUTTON_BACK) {
-    *out = (h2_fruit_slice_rect_t){w * 0.25f, footer_y, w * 0.75f, h - margin};
+    h2_fruit_slice_game_back_rect(game->width, game->height, out);
     return true;
   }
   if (game->phase == H2_FRUIT_SLICE_PHASE_CARDS) return false;
   const uint32_t base =
       tasks ? H2_FRUIT_SLICE_BUTTON_CLAIM : H2_FRUIT_SLICE_BUTTON_WEAPON;
   if (button < base || button >= base + 3u) return false;
-  const float top = 0.23f + 0.20f * (float)(button - base);
-  *out =
-      (h2_fruit_slice_rect_t){w * 0.70f, h * top, w * 0.95f, h * (top + 0.17f)};
+  const float row_gap = fmaxf(4.0f, 6.0f * game->unit);
+  const float top = h * (h < 240.0f ? 0.225f : 0.23f);
+  const float bottom =
+      footer_y - (h >= 280.0f ? fmaxf(24.0f, 32.0f * game->unit) : 4.0f);
+  const float row_h = (bottom - top - 2.0f * row_gap) / 3.0f;
+  const float y = top + (row_h + row_gap) * (float)(button - base);
+  *out = (h2_fruit_slice_rect_t){w * 0.70f, y, w * 0.95f, y + row_h};
   return true;
 }
 
@@ -565,7 +587,9 @@ static void finish_combo(h2_fruit_slice_game_t* game) {
   (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_COMBO);
   (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_CHEER);
   char text[H2_FRUIT_SLICE_POPUP_TEXT_MAX];
-  (void)snprintf(text, sizeof(text), "COMBO +%u", (unsigned)slices);
+  (void)snprintf(text, sizeof(text),
+                 h2_fruit_slice_translate(game->language, "COMBO +%u"),
+                 (unsigned)slices);
   add_popup(game, text, game->stroke_last_x, game->stroke_last_y,
             H2_FRUIT_SLICE_RGB(255, 214, 64));
 }
@@ -617,6 +641,12 @@ static void add_trail_point(h2_fruit_slice_game_t* game, float x, float y) {
 }
 
 static void activate_button(h2_fruit_slice_game_t* game, uint32_t button) {
+  if (button == H2_FRUIT_SLICE_BUTTON_LANGUAGE) {
+    game->language = game->language == H2_FRUIT_SLICE_LANGUAGE_EN
+                         ? H2_FRUIT_SLICE_LANGUAGE_ZH_CN
+                         : H2_FRUIT_SLICE_LANGUAGE_EN;
+    return;
+  }
   if (button == H2_FRUIT_SLICE_BUTTON_START) {
     if (game->phase == H2_FRUIT_SLICE_PHASE_TITLE ||
         (game->phase == H2_FRUIT_SLICE_PHASE_GAME_OVER &&

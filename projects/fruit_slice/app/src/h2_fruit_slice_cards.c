@@ -515,10 +515,12 @@ void h2_fruit_slice_cards_album_layout(int32_t width, int32_t height,
   out->title = (h2_fruit_slice_card_rect_t){0.0f, h * 0.025f, w, h * 0.10f};
   const float bar_y = landscape ? h * 0.135f : h * 0.112f;
   const float bar_h = fmaxf(6.0f, 10.0f * unit);
-  out->progress =
-      (h2_fruit_slice_card_rect_t){w * 0.18f, bar_y, w * 0.82f, bar_y + bar_h};
+  out->progress = (h2_fruit_slice_card_rect_t){
+      w * 0.18f, bar_y, w * (width < 200 ? 0.78f : 0.82f), bar_y + bar_h};
   const float tabs_y0 = landscape ? h * 0.19f : h * 0.158f;
-  const float tabs_y1 = landscape ? h * 0.285f : h * 0.225f;
+  const float tabs_y1 = height < 200 ? h * 0.265f
+                        : landscape  ? h * 0.285f
+                                     : h * 0.225f;
   const float tabs_x0 = w * 0.03f, tabs_x1 = w * 0.97f, gap = w * 0.012f;
   const float tab_w =
       (tabs_x1 - tabs_x0 - gap * (float)(H2_FRUIT_SLICE_CARD_TABS - 1u)) /
@@ -528,17 +530,25 @@ void h2_fruit_slice_cards_album_layout(int32_t width, int32_t height,
     out->tabs[i] =
         (h2_fruit_slice_card_rect_t){x0, tabs_y0, x0 + tab_w, tabs_y1};
   }
+  h2_fruit_slice_rect_t back;
+  h2_fruit_slice_game_back_rect(width, height, &back);
+  const float gap_y = fmaxf(4.0f, 6.0f * unit);
+  const float bottom = back.y0 - gap_y;
   h2_fruit_slice_card_rect_t grid;
   if (landscape) {
-    grid = (h2_fruit_slice_card_rect_t){w * 0.02f, h * 0.30f, w * 0.62f,
-                                        h * 0.885f};
-    out->detail = (h2_fruit_slice_card_rect_t){w * 0.64f, h * 0.31f, w * 0.98f,
-                                               h * 0.875f};
+    grid =
+        (h2_fruit_slice_card_rect_t){w * 0.02f, h * 0.30f, w * 0.62f, bottom};
+    out->detail =
+        (h2_fruit_slice_card_rect_t){w * 0.64f, h * 0.31f, w * 0.98f, bottom};
   } else {
-    grid = (h2_fruit_slice_card_rect_t){w * 0.03f, h * 0.24f, w * 0.97f,
-                                        h * 0.735f};
-    out->detail = (h2_fruit_slice_card_rect_t){w * 0.04f, h * 0.75f, w * 0.96f,
-                                               h * 0.885f};
+    const float detail_h =
+        height < 280 ? 30.0f : fminf(h * 0.135f, 96.0f * unit);
+    const float detail_top = bottom - detail_h;
+    grid = (h2_fruit_slice_card_rect_t){w * 0.03f,
+                                        h * (height < 200 ? 0.28f : 0.24f),
+                                        w * 0.97f, detail_top - gap_y};
+    out->detail =
+        (h2_fruit_slice_card_rect_t){w * 0.04f, detail_top, w * 0.96f, bottom};
   }
   const float cell_w = (grid.x1 - grid.x0) / 3.0f;
   const float cell_h = (grid.y1 - grid.y0) / 2.0f;
@@ -550,9 +560,9 @@ void h2_fruit_slice_cards_album_layout(int32_t width, int32_t height,
   for (unsigned i = 0; i < H2_FRUIT_SLICE_CARD_TAB_SLOTS; ++i) {
     const float cx = grid.x0 + cell_w * ((float)(i % 3u) + 0.5f);
     const float cy = grid.y0 + cell_h * ((float)(i / 3u) + 0.5f);
-    out->slots[i] = (h2_fruit_slice_card_rect_t){
-        cx - out->card_w * 0.5f, cy - out->card_h * 0.5f,
-        cx + out->card_w * 0.5f, cy + out->card_h * 0.5f};
+    out->slots[i] =
+        (h2_fruit_slice_card_rect_t){cx - cell_w * 0.46f, cy - cell_h * 0.46f,
+                                     cx + cell_w * 0.46f, cy + cell_h * 0.46f};
   }
 }
 

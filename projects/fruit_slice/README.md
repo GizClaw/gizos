@@ -27,6 +27,10 @@ bazel run //projects/fruit_slice/targets/cc_binary/desktop:fruit_slice
 
 Bombs use a fading, expanding flash around the impact point so the effect does not blend and retransmit the full screen on every frame. Dirty row bands keep their own column spans; only adjacent equal spans are merged for display submission. Runtime statistics include `blast_frames` and `blast_max_ms` for frames with an active bomb flash.
 
+## Language
+
+The UI defaults to Simplified Chinese on all targets, including AC791N's 480x320 display. Tap **EN** at the top left of the title screen to switch to English; tap **中文** to return. The selection lasts for the App session and does not change existing preference blobs. An embedding host can set `config.language = H2_FRUIT_SLICE_LANGUAGE_EN` to start in English. Titles, gameplay hints, tasks, weapons, cards, rarity and reveal prompts use the same App-owned translation table. See the [font source, OFL license and reproducible subset](app/fonts/README.md).
+
 ## Coins and weapons
 
 Tap **Start Game** on the title screen or slice its melon to begin. After a run and any card reveals, tap **Play Again** or slice the orange to retry. The three equal footer buttons open Tasks, Cards and Shop; their drawn bounds are also their touch targets. The play HUD keeps the score on the left, remaining hearts on the right (a gray cross marks a lost life), and landed cards in the center, leaving the fruit field clear.
