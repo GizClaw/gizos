@@ -65,7 +65,7 @@ typedef struct fixture {
   unsigned audio_starts, audio_stops, audio_opens, audio_closes, audio_writes;
   unsigned pause_from, pause_until;
   int audio_close_result;
-  unsigned audio_stop_failures;
+  unsigned audio_stop_failures, audio_block_writes, audio_successful_writes;
   h2_pal_audio_api_t audio_api;
   h2_pal_audio_track_t audio_track;
 } fixture_t;
@@ -356,6 +356,11 @@ static int audio_write(h2_pal_audio_track_t* track,
   CHECK(f->audio_active && timeout == 0u && frame->bytes == 640u);
   CHECK(!(f->frames >= f->pause_from && f->frames < f->pause_until));
   ++f->audio_writes;
+  if (f->audio_block_writes != 0u) {
+    --f->audio_block_writes;
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  ++f->audio_successful_writes;
   return H2_PAL_OK;
 }
 static int audio_track_close(h2_pal_audio_track_t* track) {
@@ -892,6 +897,24 @@ static void test_audio_gesture_pause_and_exit(void) {
   CHECK(!fx.audio_active);
 }
 
+static void test_audio_backpressure_keeps_stream_playing(void) {
+  reset(40u);
+  fx.use_audio = true;
+  fx.audio_block_writes = 3u;
+  fx.touch_from_frame = 5u;
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.audio_block_writes == 0u && fx.audio_successful_writes > 0u);
+  CHECK(fx.audio_writes == fx.audio_successful_writes + 3u);
+  CHECK(fx.audio_opens == 1u && fx.audio_closes == 1u);
+  CHECK(fx.audio_starts == 1u && fx.audio_stops == 1u);
+}
+
 static void test_audio_close_errors_release_runtime_wrapped_track(void) {
   for (unsigned failure = 0u; failure < 3u; ++failure) {
     reset(30u);
@@ -1130,6 +1153,7 @@ int main(void) {
   test_persistent_touch_failure();
   test_ready_failure_stops();
   test_audio_gesture_pause_and_exit();
+  test_audio_backpressure_keeps_stream_playing();
   test_audio_close_errors_release_runtime_wrapped_track();
   puts("fruit slice app tests passed");
   return 0;
