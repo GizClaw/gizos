@@ -1582,11 +1582,14 @@ static void battle_step(h2_xianxia_rpg_game_t* game, uint32_t dt_ms) {
         if (game->hero.hp == 0u || (b->lamp_battle && b->lamp_hp == 0u) ||
             (b->dual_lamps && b->west_lamp_hp == 0u)) {
           set_battle_state(game, H2_XIANXIA_RPG_BATTLE_DEFEAT);
-          battle_say(game, "%s",
-                     text(b->dual_lamps ? H2_XIANXIA_RPG_TEXT_C8_LOST
-                          : b->lamp_battle && b->lamp_hp == 0u
-                              ? H2_XIANXIA_RPG_TEXT_C4_LOST
-                              : H2_XIANXIA_RPG_TEXT_DEFEAT));
+          battle_say(
+              game, "%s",
+              text(b->dual_lamps ? (b->lamp_hp == 0u || b->west_lamp_hp == 0u
+                                        ? H2_XIANXIA_RPG_TEXT_C8_LOST
+                                        : H2_XIANXIA_RPG_TEXT_DEFEAT)
+                   : b->lamp_battle && b->lamp_hp == 0u
+                       ? H2_XIANXIA_RPG_TEXT_C4_LOST
+                       : H2_XIANXIA_RPG_TEXT_DEFEAT));
         } else if (duel_yielded(b)) {
           victory(game);
         } else if (b->dual_lamps &&

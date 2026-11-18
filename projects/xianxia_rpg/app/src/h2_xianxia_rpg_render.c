@@ -2882,9 +2882,13 @@ void h2_xianxia_rpg_background_key(const game_t* game,
  * id, or TEXT_COUNT for none. */
 static h2_xianxia_rpg_text_id_t battle_hint(const game_t* game) {
   const h2_xianxia_rpg_battle_t* b = &game->battle;
-  if (b->dual_lamps)
+  if (b->dual_lamps) {
+    if (b->state == H2_XIANXIA_RPG_BATTLE_VICTORY ||
+        b->state == H2_XIANXIA_RPG_BATTLE_DEFEAT)
+      return H2_XIANXIA_RPG_TEXT_COUNT;
     return (h2_xianxia_rpg_text_id_t)(H2_XIANXIA_RPG_TEXT_C8_TARGET_EAST +
                                       b->turn % 3u);
+  }
   if (b->enemy == H2_XIANXIA_RPG_ENEMY_MIRROR) {
     if (b->mirror_command == H2_XIANXIA_RPG_COMMAND_SKILL && b->mirror_joint)
       return H2_XIANXIA_RPG_TEXT_C7_M_JOINT;
