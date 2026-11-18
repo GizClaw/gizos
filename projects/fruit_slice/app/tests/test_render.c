@@ -269,8 +269,19 @@ static void render_size(int32_t width, int32_t height) {
   (void)snprintf(name, sizeof(name), "title_%dx%d", (int)width, (int)height);
   check_scene(name, width, height);
 
+  game.best = UINT32_MAX;
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
+  (void)snprintf(name, sizeof(name), "title_limits_%dx%d", width, height);
+  check_scene(name, width, height);
+
   scene_playing();
   (void)snprintf(name, sizeof(name), "playing_%dx%d", (int)width, (int)height);
+  check_scene(name, width, height);
+
+  game.score = game.best = UINT32_MAX;
+  game.cards.run_earned = 0xFFFFu;
+  game.cards.run_new = 0xFFFFu;
+  (void)snprintf(name, sizeof(name), "playing_limits_%dx%d", width, height);
   check_scene(name, width, height);
 
   memset(game.fruits, 0, sizeof(game.fruits));
@@ -278,7 +289,7 @@ static void render_size(int32_t width, int32_t height) {
   game.phase_started_ms = game.time_ms;
   game.new_best = true;
   game.best = game.score;
-  game.cards.run_earned = game.cards.run_new = 3u;
+  game.cards.run_earned = game.cards.run_new = 0xFFFFu;
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
   (void)snprintf(name, sizeof(name), "game_over_%dx%d", (int)width,
                  (int)height);
@@ -527,6 +538,33 @@ static void test_variety_scenes(int32_t width, int32_t height) {
   CHECK(allocation_calls == prepared);
 }
 
+static void test_combo_feedback_priority(void) {
+  h2_fruit_slice_game_init(&game, 480, 320, 57u, 0u);
+  game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+  memset(game.fruits, 0, sizeof(game.fruits));
+  game.popups[0] = (h2_fruit_slice_popup_t){.active = true,
+                                            .age_ms = 100u,
+                                            .life_ms = 900u,
+                                            .color = 0xFFFFu,
+                                            .text = "COMBO +3"};
+  game.popups[1] = (h2_fruit_slice_popup_t){.active = true,
+                                            .age_ms = 200u,
+                                            .life_ms = 900u,
+                                            .color = 0xFFFFu,
+                                            .text = "COMBO +5"};
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  memcpy(background, pixels, 480u * 320u * sizeof(*pixels));
+  game.popups[1].active = false;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  CHECK(memcmp(background, pixels, 480u * 320u * sizeof(*pixels)) == 0);
+  game.popups[1].active = true;
+  game.popups[0].active = false;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  CHECK(memcmp(background, pixels, 480u * 320u * sizeof(*pixels)) != 0);
+  game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) == 0u);
+}
+
 static void test_result_reward_does_not_overwrite_record(void) {
   const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
   for (unsigned size = 0; size < 3u; ++size) {
@@ -547,32 +585,14 @@ static void test_result_reward_does_not_overwrite_record(void) {
         h2_fruit_slice_render_background(&c);
         h2_fruit_slice_render_static(&c, &game);
         memcpy(background, pixels, (size_t)w * (size_t)h * sizeof(uint16_t));
-        const float panel_w = (float)w * 0.78f < 420.0f * game.unit
-                                  ? (float)w * 0.78f
-                                  : 420.0f * game.unit;
-        const char* title =
-            h2_fruit_slice_translate(game.language, "GAME OVER");
-        char score[96], best[96];
-        (void)snprintf(score, sizeof(score),
-                       h2_fruit_slice_translate(game.language, "SCORE %u"),
-                       12u);
-        if (record)
-          (void)snprintf(best, sizeof(best), "%s",
-                         h2_fruit_slice_translate(game.language, "NEW BEST!"));
-        else
-          (void)snprintf(best, sizeof(best),
-                         h2_fruit_slice_translate(game.language, "BEST %u"),
-                         21u);
-        const char* lines[] = {title, score, best};
-        const float preferences[] = {6.0f, 3.0f, 2.5f};
-        int protected_bottom = (int)((float)h * 0.21f);
-        for (unsigned line = 0; line < 3u; ++line) {
-          const int scale = h2_fruit_slice_fit_scale(
-              lines[line], panel_w * 0.9f,
-              h2_fruit_slice_text_scale(game.unit, preferences[line]));
-          protected_bottom += h2_fruit_slice_text_height(lines[line], scale) +
-                              (scale / 2 > 0 ? scale / 2 : 1) + 1;
-        }
+        /* Detect the painted record ink instead of duplicating the old
+         * panel's coordinates; the combined layout uses a different stack. */
+        int protected_bottom = 0;
+        for (int y = 0; y < h / 2; ++y)
+          for (int x = 0; x < w; ++x)
+            if (background[y * w + x] == H2_FRUIT_SLICE_RGB(245, 238, 222))
+              protected_bottom = y + 2; /* Include the one-pixel shadow. */
+        CHECK(protected_bottom > 0);
         game.cards.run_earned = game.cards.run_new = 3u;
         h2_fruit_slice_render_background(&c);
         h2_fruit_slice_render_static(&c, &game);
@@ -583,11 +603,13 @@ static void test_result_reward_does_not_overwrite_record(void) {
               0);
         h2_fruit_slice_rect_t nav;
         CHECK(h2_fruit_slice_game_button_rect(
-            &game, H2_FRUIT_SLICE_BUTTON_TASKS, &nav));
+            &game, H2_FRUIT_SLICE_BUTTON_START, &nav));
         const int nav_y = (int)nav.y0;
         CHECK(memcmp(background + nav_y * w, pixels + nav_y * w,
                      (size_t)w * (size_t)(h - nav_y) * sizeof(uint16_t)) == 0);
         CHECK(h2_fruit_slice_cards_result_height(&game) > 0);
+        CHECK(memcmp(background, pixels,
+                     (size_t)w * (size_t)h * sizeof(*pixels)) != 0);
       }
     }
   }
@@ -598,6 +620,7 @@ int main(void) {
   test_variety_scenes(160, 160);
   test_variety_scenes(240, 240);
   test_result_reward_does_not_overwrite_record();
+  test_combo_feedback_priority();
   test_card_scenes(160, 160);
   test_card_scenes(240, 240);
   test_card_scenes(480, 320);
@@ -617,6 +640,7 @@ int main(void) {
   render_size(160, 160);
   render_size(240, 240);
   render_size(480, 320);
+  render_size(480, 800);
   render_size(480, 480);
   render_size(800, 480);
   render_size(368, 448);

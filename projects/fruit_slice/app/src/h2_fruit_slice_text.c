@@ -4,6 +4,11 @@
 
 const h2_fruit_slice_translation_t h2_fruit_slice_translations[] = {
     {"FRUIT SLICE", "切水果"},
+    {"START GAME", "开始游戏"},
+    {"PLAY AGAIN", "再来一局"},
+    {"TAP / SLICE", "轻点或划开"},
+    {"NEW BEST %u", "新纪录 %u"},
+    {"LIVES", "生命"},
     {"中文", "中文"},
     {"SOUND OFF", "声关"},
     {"SOUND ON", "声开"},
@@ -105,7 +110,7 @@ const h2_fruit_slice_translation_t h2_fruit_slice_translations[] = {
     {"DODGE", "闪避"},
     {"SQUAD", "拆弹"},
     {"MEGA", "超连"},
-    {"SCORE", "高分"},
+    {"SCORE", "得分"},
     {"CROWN", "传奇"},
     {"NEW", "新"},
     {"NEW!", "新卡！"},

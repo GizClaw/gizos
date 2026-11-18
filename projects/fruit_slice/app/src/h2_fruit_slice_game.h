@@ -109,6 +109,9 @@ typedef struct h2_fruit_slice_rect {
 #define H2_FRUIT_SLICE_BUTTON_BACK 3u
 #define H2_FRUIT_SLICE_BUTTON_CARDS 4u
 #define H2_FRUIT_SLICE_BUTTON_LANGUAGE 5u
+#define H2_FRUIT_SLICE_BUTTON_START 6u
+#define H2_FRUIT_SLICE_BUTTON_SFX 7u
+#define H2_FRUIT_SLICE_BUTTON_MUSIC 8u
 #define H2_FRUIT_SLICE_BUTTON_CLAIM 10u
 #define H2_FRUIT_SLICE_BUTTON_WEAPON 20u
 
@@ -221,7 +224,7 @@ typedef struct h2_fruit_slice_game {
   /* Main-loop effects; queue saturation drops low-priority requests first. */
   uint8_t sounds[H2_FRUIT_SLICE_SOUND_QUEUE];
   uint8_t sound_count, audio_mute;
-  bool audio_touch, result_sounded;
+  bool result_sounded;
 
   uint64_t next_wave_ms, next_spawn_ms;
   uint32_t pending_spawns;
@@ -249,6 +252,10 @@ typedef struct h2_fruit_slice_game {
 /** Reset to the title screen. width/height must be positive. */
 void h2_fruit_slice_game_init(h2_fruit_slice_game_t* game, int32_t width,
                               int32_t height, uint32_t seed, uint32_t best);
+
+/** Shared Back bounds, also used to reserve album/detail content space. */
+void h2_fruit_slice_game_back_rect(int32_t width, int32_t height,
+                                   h2_fruit_slice_rect_t* out);
 
 /** Shared layout for tap targets and rendered buttons. False when hidden. */
 bool h2_fruit_slice_game_button_rect(const h2_fruit_slice_game_t* game,

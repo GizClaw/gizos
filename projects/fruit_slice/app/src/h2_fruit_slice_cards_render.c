@@ -692,7 +692,7 @@ static int32_t result_text(const h2_fruit_slice_game_t* game, char text[96]) {
     (void)snprintf(text, 96, TR("CARDS +%u  NEW %u"), earned, fresh);
   else
     (void)snprintf(text, 96, TR("CARDS +%u"), earned);
-  return h2_fruit_slice_fit_scale(text, (float)game->width * 0.6f,
+  return h2_fruit_slice_fit_scale(text, (float)game->width * 0.9f,
                                   h2_fruit_slice_text_scale(game->unit, 2.5f));
 }
 
