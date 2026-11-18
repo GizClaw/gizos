@@ -263,8 +263,19 @@ static void render_size(int32_t width, int32_t height) {
   (void)snprintf(name, sizeof(name), "title_%dx%d", (int)width, (int)height);
   check_scene(name, width, height);
 
+  game.best = UINT32_MAX;
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
+  (void)snprintf(name, sizeof(name), "title_limits_%dx%d", width, height);
+  check_scene(name, width, height);
+
   scene_playing();
   (void)snprintf(name, sizeof(name), "playing_%dx%d", (int)width, (int)height);
+  check_scene(name, width, height);
+
+  game.score = game.best = UINT32_MAX;
+  game.cards.run_earned = 0xFFFFu;
+  game.cards.run_new = 0xFFFFu;
+  (void)snprintf(name, sizeof(name), "playing_limits_%dx%d", width, height);
   check_scene(name, width, height);
 
   memset(game.fruits, 0, sizeof(game.fruits));
@@ -462,6 +473,10 @@ int main(void) {
   test_bands();
   test_static_key();
   test_sprite_cache();
+  render_size(160, 160);
+  render_size(240, 240);
+  render_size(480, 320);
+  render_size(480, 800);
   render_size(480, 480);
   render_size(800, 480);
   render_size(368, 448);

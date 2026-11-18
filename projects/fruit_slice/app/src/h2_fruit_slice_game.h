@@ -96,6 +96,10 @@ typedef struct h2_fruit_slice_rect {
 #define H2_FRUIT_SLICE_BUTTON_SHOP 2u
 #define H2_FRUIT_SLICE_BUTTON_BACK 3u
 #define H2_FRUIT_SLICE_BUTTON_CARDS 4u
+/* ID 5 is reserved for the language control. */
+#define H2_FRUIT_SLICE_BUTTON_START 6u
+#define H2_FRUIT_SLICE_BUTTON_SFX 7u
+#define H2_FRUIT_SLICE_BUTTON_MUSIC 8u
 #define H2_FRUIT_SLICE_BUTTON_CLAIM 10u
 #define H2_FRUIT_SLICE_BUTTON_WEAPON 20u
 
@@ -204,7 +208,7 @@ typedef struct h2_fruit_slice_game {
   /* Main-loop effects; queue saturation drops low-priority requests first. */
   uint8_t sounds[H2_FRUIT_SLICE_SOUND_QUEUE];
   uint8_t sound_count, audio_mute;
-  bool audio_touch, result_sounded;
+  bool result_sounded;
 
   uint64_t next_wave_ms, next_spawn_ms;
   uint32_t pending_spawns;

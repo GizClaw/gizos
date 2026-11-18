@@ -86,6 +86,9 @@ void h2_fruit_slice_render_static(h2_fruit_slice_canvas_t* canvas,
 void h2_fruit_slice_render_scene(h2_fruit_slice_canvas_t* canvas,
                                  const h2_fruit_slice_game_t* game);
 
+/** Pixel height of text drawn at an integer scale. */
+int32_t h2_fruit_slice_text_height(const char* text, int32_t scale);
+
 /** Pixel width of text drawn at an integer scale. */
 int32_t h2_fruit_slice_text_width(const char* text, int32_t scale);
 
