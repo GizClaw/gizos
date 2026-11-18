@@ -92,8 +92,13 @@ static h2_xianxia_rpg_records_t escort(void) {
   CHECK(g.chapter == 4u && g.hero.level == 7u && g.hero.pills == 3u);
   talk(4, 3);
   CHECK(g.flags & H2_XIANXIA_RPG_FLAG_C4_JOINED);
-  talk(8, 4);
-  CHECK(g.flags & H2_XIANXIA_RPG_FLAG_C4_FIRE);
+  go(8, 4);
+  CHECK(g.dialogue.active && (g.flags & H2_XIANXIA_RPG_FLAG_C4_FIRE));
+  h2_xianxia_rpg_writes_t fire;
+  CHECK(h2_xianxia_rpg_game_take_writes(&g, &fire) && fire.journey4);
+  CHECK(fire.journey4_save.flags & H2_XIANXIA_RPG_FLAG_C4_FIRE);
+  dialog();
+  CHECK(!h2_xianxia_rpg_game_take_writes(&g, &fire));
   CHECK(g.stage == H2_XIANXIA_RPG_STAGE_C4_ESCORT);
   const int rx = g.rest_x, ry = g.rest_y;
   go(14, 4);
@@ -113,9 +118,10 @@ static h2_xianxia_rpg_records_t escort(void) {
   go(11, 3);
   CHECK(g.tx == 6 && g.dialogue.active);
   dialog();
-  talk(11, 3);
-  CHECK(h2_xianxia_rpg_c4_lamps(g.flags) == 1u);
+  go(11, 3);
+  CHECK(g.dialogue.active && h2_xianxia_rpg_c4_lamps(g.flags) == 1u);
   CHECK(g.rest_map == H2_XIANXIA_RPG_MAP_EAST_RIDGE);
+  /* Reload during the news must already find the lit lamp checkpoint. */
   reload();
   CHECK(h2_xianxia_rpg_c4_lamps(g.flags) == 1u &&
         (g.flags & H2_XIANXIA_RPG_FLAG_C4_COVER));
@@ -145,6 +151,16 @@ static h2_xianxia_rpg_records_t escort(void) {
   CHECK(g.stage == H2_XIANXIA_RPG_STAGE_C4_GUARD);
   return g.records;
 }
+static bool damage_popup(uint32_t value, uint8_t target) {
+  for (size_t i = 0; i < H2_XIANXIA_RPG_MAX_POPUPS; ++i) {
+    const h2_xianxia_rpg_popup_t* p = &g.battle.popups[i];
+    if (p->active && !p->on_enemy && !p->heal && p->value == value &&
+        p->target == target)
+      return true;
+  }
+  return false;
+}
+
 static void battle_and_ending(const h2_xianxia_rpg_records_t* checkpoint) {
   talk(7, 3);
   wait_command();
@@ -171,6 +187,7 @@ static void battle_and_ending(const h2_xianxia_rpg_records_t* checkpoint) {
   command(H2_XIANXIA_RPG_COMMAND_ATTACK);
   wait_command();
   CHECK(g.battle.lamp_hp == 60u && h2_xianxia_rpg_lamp_target(&g) == 1u);
+  CHECK(damage_popup(20u, 2u));
   const uint32_t turns = g.turns_taken;
   box(&g.layout.party[1]);
   CHECK(g.battle.ally_mend && g.turns_taken == turns);
@@ -178,6 +195,7 @@ static void battle_and_ending(const h2_xianxia_rpg_records_t* checkpoint) {
   command(H2_XIANXIA_RPG_COMMAND_ATTACK);
   wait_command();
   CHECK(g.battle.lamp_hp == 72u && g.ally_hp == 0u);
+  CHECK(damage_popup(38u, 1u));
   const uint32_t pills = g.hero.pills, before = g.turns_taken;
   command(H2_XIANXIA_RPG_COMMAND_PILL);
   CHECK(g.battle.state == H2_XIANXIA_RPG_BATTLE_HEAL_TARGET &&

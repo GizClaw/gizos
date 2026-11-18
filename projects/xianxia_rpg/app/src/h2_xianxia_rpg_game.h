@@ -436,6 +436,8 @@ typedef struct h2_xianxia_rpg_popup {
   bool active;
   bool on_enemy;
   bool heal;
+  /** Non-enemy popup owner: 0 hero, 1 companion, 2 lantern. */
+  uint8_t target;
   uint32_t value;
   uint32_t age_ms;
   int32_t slot; /**< Small horizontal offset for multi-hit popups. */

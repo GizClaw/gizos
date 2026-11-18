@@ -3521,8 +3521,12 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
       (b->command == H2_XIANXIA_RPG_COMMAND_ATTACK ||
        b->command == H2_XIANXIA_RPG_COMMAND_SKILL))
     hx += sinf(k * PI) * (ex - hx) * 0.45f;
+  const float victim_x = b->lamp_battle && b->hit_target == 2u
+                             ? w * 0.39f + s * 0.325f
+                         : b->lamp_battle && b->hit_target == 1u ? ax
+                                                                 : hx;
   if (b->state == H2_XIANXIA_RPG_BATTLE_ENEMY_ACT && b->hit_count > 0u)
-    ex -= sinf(k * PI) * (ex - hx) * 0.3f;
+    ex -= sinf(k * PI) * (ex - victim_x) * 0.3f;
   const float shake = ((game->time_ms / 30u) % 2u ? 1.0f : -1.0f) * 3.0f * u;
   if (b->enemy_flash_ms > 0u) ex += shake;
   if (b->hero_flash_ms > 0u) hx += shake;
@@ -3605,9 +3609,11 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
       const float lx = ax - s * 0.2f, ly = hfeet - s * 0.4f;
       glow(canvas, lx, ly, s * (0.4f + 0.3f * fade), RGB(200, 255, 236),
            (uint32_t)(220.0f * fade));
-      capsule(canvas, lx, ly, ex, ey, s * 0.08f, RGB(220, 255, 240),
+      const float to_x = b->lamp_battle ? w * 0.39f + s * 0.325f : ex;
+      const float to_y = b->lamp_battle ? sh * 0.62f + s * 0.18f : ey;
+      capsule(canvas, lx, ly, to_x, to_y, s * 0.08f, RGB(220, 255, 240),
               (uint32_t)(110.0f * fade));
-      glow(canvas, ex, ey, s * 0.7f, RGB(230, 255, 245),
+      glow(canvas, to_x, to_y, s * 0.7f, RGB(230, 255, 245),
            (uint32_t)(160.0f * fade));
     }
   }
@@ -3687,7 +3693,7 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
       if (b->boss) {
         for (uint32_t i = 0; i < 3u; ++i) {
           const float y = hfeet - s * (0.2f + 0.25f * (float)i);
-          const float x = ex - (ex - hx + s * 0.4f) * t;
+          const float x = ex - (ex - victim_x + s * 0.4f) * t;
           capsule(canvas, x, y, x + s * 0.5f, y - s * 0.12f, s * 0.08f,
                   RGB(30, 30, 50), (uint32_t)(220.0f * (1.0f - t * 0.4f)));
           capsule(canvas, x, y - s * 0.04f, x + s * 0.3f, y - s * 0.1f,
@@ -3713,9 +3719,15 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
     char value[16];
     (void)snprintf(value, sizeof(value), p->heal ? "+%u" : "%u",
                    (unsigned)p->value);
-    const float px = (p->on_enemy ? ex : hx) + (float)p->slot * s * 0.18f;
-    const float py =
-        (p->on_enemy ? ey - s * 0.5f : hfeet - s * 1.1f) - t * s * 0.35f;
+    const float owner_x = p->target == 2u   ? w * 0.39f + s * 0.325f
+                          : p->target == 1u ? ax
+                                            : hx;
+    const float px = (p->on_enemy ? ex : owner_x) + (float)p->slot * s * 0.18f;
+    float py = (p->on_enemy       ? ey - s * 0.5f
+                : p->target == 2u ? sh * 0.62f
+                                  : hfeet - s * 1.1f) -
+               t * s * 0.35f;
+    if (b->lamp_battle) py = fmaxf(py, 126.0f);
     const uint16_t color = p->heal       ? RGB(130, 240, 140)
                            : p->on_enemy ? RGB(255, 236, 140)
                                          : RGB(255, 110, 90);

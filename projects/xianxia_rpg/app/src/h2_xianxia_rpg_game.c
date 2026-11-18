@@ -689,11 +689,15 @@ static void popup(h2_xianxia_rpg_game_t* game, bool on_enemy, bool heal,
     }
     if (b->popups[i].age_ms > chosen->age_ms) chosen = &b->popups[i];
   }
-  *chosen = (h2_xianxia_rpg_popup_t){.active = true,
-                                     .on_enemy = on_enemy,
-                                     .heal = heal,
-                                     .value = value,
-                                     .slot = slot};
+  *chosen = (h2_xianxia_rpg_popup_t){
+      .active = true,
+      .on_enemy = on_enemy,
+      .heal = heal,
+      .target = !on_enemy && b->lamp_battle
+                    ? (heal ? (b->heal_ally ? 1u : 0u) : b->hit_target)
+                    : 0u,
+      .value = value,
+      .slot = slot};
 }
 
 /* Damage after defense with +/- spread percent; never below 1. */
@@ -1797,7 +1801,22 @@ static void interact(h2_xianxia_rpg_game_t* game, int32_t x, int32_t y) {
     }
     return;
   }
-  start_dialogue(game, h2_xianxia_rpg_tile_script(game, x, y));
+  const h2_xianxia_rpg_script_id_t script =
+      h2_xianxia_rpg_tile_script(game, x, y);
+  /* The visible fire/lamp and its checkpoint change on the player's tap,
+   * before the accompanying news says it is lit and saved. */
+  if (game->chapter == 4u) {
+    if (script == H2_XIANXIA_RPG_SCRIPT_C4_FIRE ||
+        script == H2_XIANXIA_RPG_SCRIPT_C4_REST)
+      apply_effect(game, H2_XIANXIA_RPG_EFFECT_C4_FIRE);
+    else if (script >= H2_XIANXIA_RPG_SCRIPT_C4_LAMP1 &&
+             script <= H2_XIANXIA_RPG_SCRIPT_C4_LAMP3)
+      apply_effect(
+          game,
+          (h2_xianxia_rpg_effect_t)(H2_XIANXIA_RPG_EFFECT_C4_LIGHT1 + script -
+                                    H2_XIANXIA_RPG_SCRIPT_C4_LAMP1));
+  }
+  start_dialogue(game, script);
 }
 
 static void arrive(h2_xianxia_rpg_game_t* game) {
