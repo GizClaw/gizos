@@ -209,13 +209,15 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
     audio->submitted_samples = 0;
     due = now_ms;
   }
-  /* Queue one native frame ahead. Waiting until a frame is already due
-   * starves a 20 ms sink even with a perfectly regular 25/30 ms game loop.
-   * Keep the two-frame queue and its bounded interaction latency. */
-  const uint64_t ahead_ms =
+  /* Queue at most one native frame, capped at 20 ms, ahead. Waiting until a
+   * frame is already due starves a 20 ms sink at a 25/30 ms game cadence.
+   * Larger frames (e.g. Web's 60 ms) already provide headroom; do not add a
+   * whole extra frame of interaction latency on those providers. */
+  uint64_t ahead_ms =
       ((uint64_t)audio->format.frame_samples_per_channel * 1000u +
        audio->format.sample_rate_hz - 1u) /
       audio->format.sample_rate_hz;
+  if (ahead_ms > 20u) ahead_ms = 20u;
   for (unsigned frame_index = 0; frame_index < 3u && due <= now_ms + ahead_ms;
        ++frame_index) {
     mix_frame(audio);

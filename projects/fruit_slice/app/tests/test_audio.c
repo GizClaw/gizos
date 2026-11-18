@@ -426,7 +426,22 @@ static void test_silent_prepare_preserves_gesture_timeline(void) {
   CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
 }
 
+static void test_long_frames_keep_bounded_lookahead(void) {
+  /* The Web provider advertises 960/16000 = 60 ms. It must not enqueue
+   * 120 ms of music on the first pump and delay a subsequent short SFX. */
+  fixture_t f = {.format = {16000, 960, 1, H2_AUDIO_SAMPLE_S16LE}};
+  h2_runtime_t rt = runtime_for(&f);
+  h2_fruit_slice_audio_t audio;
+  CHECK(h2_fruit_slice_audio_init(&audio, &rt) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 0u) == H2_PAL_OK && f.writes == 1u);
+  h2_fruit_slice_audio_emit(&audio, H2_FRUIT_SLICE_SOUND_SLICE, 30u);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 39u) == H2_PAL_OK && f.writes == 1u);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 40u) == H2_PAL_OK && f.writes == 2u);
+  CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
+}
+
 int main(void) {
+  test_long_frames_keep_bounded_lookahead();
   test_silent_prepare_preserves_gesture_timeline();
   test_pcm_deadline_lookahead();
   test_economy_sound_transitions();

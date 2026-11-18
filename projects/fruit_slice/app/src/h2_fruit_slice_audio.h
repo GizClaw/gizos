@@ -50,8 +50,8 @@ void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
 /* Changes mute flags immediately and persists independently of game/profile.
  * Flushes queued PCM so muting cannot leave old audio playing. */
 int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute);
-/* At most three native frames per call, one frame of lookahead, write timeout
- * zero, no backlog replay. Service at frame boundaries and during waits. */
+/* At most three native frames per call, at most 20 ms of lookahead, write
+ * timeout zero, no backlog replay. Service at frame boundaries/during waits. */
 int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms);
 /* Close track and stop speaker, discard voices. Safe to resume by pumping.
  * Runtime consumes a valid close handle even on error; speaker stop is still
