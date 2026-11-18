@@ -232,7 +232,9 @@ static int track_vfs_read(void* file, void* data, uint32_t length) {
   }
   ++track->operations;
   int result = 0;
-  const int empty = track->state == AUDIO_OPEN && track->ring.count == 0u;
+  /* Exclude deliberate silent prewarming before the first accepted PCM. */
+  const int empty = track->state == AUDIO_OPEN && track->ring.count == 0u &&
+                    track->accepted != 0u;
   const uint32_t waiting_since = empty ? timer_get_ms() : 0u;
   if (empty) ++track->empty_waits;
   while (track->generation == (uintptr_t)file && track->state == AUDIO_OPEN &&

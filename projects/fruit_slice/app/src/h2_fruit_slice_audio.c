@@ -103,7 +103,7 @@ int h2_fruit_slice_audio_suspend(h2_fruit_slice_audio_t* audio) {
   memset(audio->voices, 0, sizeof(audio->voices));
   audio->seen = 0;
   audio->started_ms = audio->submitted_samples = 0;
-  audio->pumped = false;
+  audio->pumped = audio->timeline_started = false;
   return first_error;
 }
 
@@ -166,6 +166,23 @@ static void mix_frame(h2_fruit_slice_audio_t* audio) {
   }
 }
 
+int h2_fruit_slice_audio_prepare(h2_fruit_slice_audio_t* audio) {
+  if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!audio->available) return H2_PAL_ERR_UNSUPPORTED;
+  if (audio->mute == 3u || audio->track != NULL) return H2_PAL_OK;
+  int rc = h2_pal_audio_start_speaker(audio->runtime->audio);
+  if (rc != H2_PAL_OK) return rc;
+  audio->speaker_started = true;
+  const h2_audio_track_config_t config = {.name = "fruit-slice",
+                                          .format = audio->format,
+                                          .volume_factor_milli = 1000u,
+                                          .buffer_frames = 2u,
+                                          .allocator = audio->runtime->mem};
+  rc = h2_pal_audio_create_track(audio->runtime->audio, &config, &audio->track);
+  if (rc != H2_PAL_OK) (void)h2_fruit_slice_audio_suspend(audio);
+  return rc;
+}
+
 int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
   if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (!audio->available) return H2_PAL_ERR_UNSUPPORTED;
@@ -177,21 +194,10 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
   }
   audio->last_pump_ms = now_ms;
   audio->pumped = true;
-  if (audio->track == NULL) {
-    int rc = h2_pal_audio_start_speaker(audio->runtime->audio);
-    if (rc != H2_PAL_OK) return rc;
-    audio->speaker_started = true;
-    const h2_audio_track_config_t config = {.name = "fruit-slice",
-                                            .format = audio->format,
-                                            .volume_factor_milli = 1000u,
-                                            .buffer_frames = 2u,
-                                            .allocator = audio->runtime->mem};
-    rc = h2_pal_audio_create_track(audio->runtime->audio, &config,
-                                   &audio->track);
-    if (rc != H2_PAL_OK) {
-      (void)h2_fruit_slice_audio_suspend(audio);
-      return rc;
-    }
+  const int prepared = h2_fruit_slice_audio_prepare(audio);
+  if (prepared != H2_PAL_OK) return prepared;
+  if (!audio->timeline_started) {
+    audio->timeline_started = true;
     audio->started_ms = now_ms;
     audio->submitted_samples = 0;
   }

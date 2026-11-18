@@ -408,7 +408,26 @@ static void test_pcm_deadline_lookahead(void) {
   CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
 }
 
+static void test_silent_prepare_preserves_gesture_timeline(void) {
+  fixture_t f = {0};
+  h2_runtime_t rt = runtime_for(&f);
+  h2_fruit_slice_audio_t audio;
+  CHECK(h2_fruit_slice_audio_init(&audio, &rt) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_audio_prepare(&audio) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_audio_prepare(&audio) == H2_PAL_OK);
+  CHECK(f.opens == 1u && f.writes == 0u && audio.music_position == 0u);
+  CHECK(!audio.timeline_started);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 100000u) == H2_PAL_OK);
+  CHECK(f.opens == 1u && f.writes == 2u && audio.rebases == 0u);
+  CHECK(audio.started_ms == 100000u);
+  CHECK(h2_fruit_slice_audio_set_mute(&audio, 3u) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_audio_prepare(&audio) == H2_PAL_OK);
+  CHECK(f.opens == 1u && f.closes == 1u && !audio.speaker_started);
+  CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
+}
+
 int main(void) {
+  test_silent_prepare_preserves_gesture_timeline();
   test_pcm_deadline_lookahead();
   test_economy_sound_transitions();
   test_bank_mute_and_lifecycle();

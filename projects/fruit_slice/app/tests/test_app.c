@@ -56,8 +56,8 @@ typedef struct fixture {
   unsigned touch_from_frame;
   uint16_t probe_before;
   bool use_pref, fast_clock, layout_sweep;
-  bool paced_clock;
-  uint32_t present_cost_ms, sink_queued_ms, sink_starved_ms;
+  bool paced_clock, prewarm_audio, sink_started;
+  uint32_t present_cost_ms, sink_queued_ms, sink_starved_ms, audio_open_cost_ms;
   uint64_t sink_updated_ms;
   unsigned sink_full_writes;
   unsigned autoplay_from, autoplay_until, autoplay_pause_from,
@@ -402,7 +402,8 @@ static int audio_write(h2_pal_audio_track_t* track,
   CHECK(!(f->frames >= f->pause_from && f->frames < f->pause_until));
   ++f->audio_writes;
   if (f->paced_clock) {
-    const uint64_t elapsed = f->clock_ms - f->sink_updated_ms;
+    const uint64_t elapsed = f->sink_started ? f->clock_ms - f->sink_updated_ms : 0u;
+    f->sink_started = true;
     f->sink_updated_ms = f->clock_ms;
     if (elapsed > f->sink_queued_ms) {
       f->sink_starved_ms += (uint32_t)(elapsed - f->sink_queued_ms);
@@ -435,6 +436,8 @@ static int audio_create(void* user, const h2_audio_track_config_t* config,
   fixture_t* f = user;
   CHECK(!f->audio_active && config->buffer_frames == 2u);
   f->audio_active = true;
+  if (f->paced_clock) f->clock_ms += f->audio_open_cost_ms;
+  f->sink_started = false;
   f->sink_queued_ms = 0u;
   f->sink_updated_ms = f->clock_ms;
   ++f->audio_opens;
@@ -513,6 +516,10 @@ static h2_pal_result_t ready(void* user) {
   /* The first frame is complete and visible before readiness. */
   CHECK(f->display.presents == 1u);
   CHECK(f->display.rows_drawn == (size_t)f->display.info.height);
+  if (f->prewarm_audio) {
+    CHECK(f->audio_opens == 1u && f->audio_writes == 0u);
+    CHECK(f->clock_ms == f->audio_open_cost_ms + f->present_cost_ms);
+  }
   return f->ready_result;
 }
 
@@ -619,6 +626,7 @@ static h2_pal_result_t run(void) {
       .should_exit = should_exit,
       .is_paused = is_paused,
       .language = fx.language,
+      .prewarm_audio = fx.prewarm_audio,
       .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
@@ -989,8 +997,10 @@ static void test_fresh_sqlite_storage(void) {
   CHECK(remove(database) == 0);
 }
 
-static void test_paced_audio_through_public_entry(void) {
+static void test_paced_audio_through_public_entry(bool prewarm) {
   reset(200u);
+  fx.prewarm_audio = prewarm;
+  fx.audio_open_cost_ms = prewarm ? 500u : 0u;
   fx.display.info.height = 320;
   fx.touch.info.height = 320;
   fx.paced_clock = fx.use_audio = true;
@@ -1004,7 +1014,7 @@ static void test_paced_audio_through_public_entry(void) {
   printf("public-entry simulated 480x320: elapsed=%llu starvation=%u full=%u writes=%u\n",
          (unsigned long long)fx.clock_ms, fx.sink_starved_ms,
          fx.sink_full_writes, fx.audio_successful_writes);
-  CHECK(fx.clock_ms == 200u * 25u);
+  CHECK(fx.clock_ms == 200u * 25u + fx.audio_open_cost_ms);
   CHECK(fx.sink_starved_ms == 0u && fx.sink_full_writes == 0u);
   CHECK(fx.audio_opens == 1u && fx.audio_closes == 1u);
 }
@@ -1924,7 +1934,8 @@ static void test_layout_claim_buy_and_back(int32_t width, int32_t height,
 }
 
 int main(void) {
-  test_paced_audio_through_public_entry();
+  test_paced_audio_through_public_entry(false);
+  test_paced_audio_through_public_entry(true);
   test_bilingual_last_page_claim_and_purchase();
   test_020_sqlite_profile_upgrade();
   test_challenge_claim_retry_sqlite();

@@ -771,6 +771,22 @@ static h2_pal_result_t prepare(session_t* s) {
                    "H2_FRUIT_SLICE_AUDIO_UNAVAILABLE rc=%d", audio_rc);
     log_line(s, H2_PAL_LOG_WARN, message);
   }
+  if (audio_rc == H2_PAL_OK && s->config.prewarm_audio) {
+    const uint64_t started = clock_ms(s);
+    const int prepared = h2_fruit_slice_audio_prepare(&s->audio);
+    const uint64_t ended = clock_ms(s);
+    char message[96];
+    (void)snprintf(message, sizeof(message),
+                   "H2_FRUIT_SLICE_AUDIO_PREPARE rc=%d ms=%u", prepared,
+                   (unsigned)(ended >= started ? ended - started : 0u));
+    log_line(s, prepared == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN,
+             message);
+    if (prepared != H2_PAL_OK) {
+      rc = h2_fruit_slice_audio_suspend(&s->audio);
+      if (rc != H2_PAL_OK) return rc;
+      s->audio.available = false;
+    }
+  }
   s->first_frame = true;
   return H2_PAL_OK;
 }

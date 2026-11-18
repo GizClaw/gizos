@@ -28,7 +28,7 @@ typedef struct h2_fruit_slice_audio {
   /* Window counters: producer timing, not a hardware DAC underrun count. */
   uint64_t last_pump_ms;
   uint32_t max_pump_gap_ms, writes, blocked_writes, rebases;
-  bool pumped;
+  bool pumped, timeline_started;
   uint32_t music_position;
   uint32_t seen;
   uint8_t mute;
@@ -39,6 +39,10 @@ typedef struct h2_fruit_slice_audio {
  * speaker; first pump after a user gesture opens the single track. */
 int h2_fruit_slice_audio_init(h2_fruit_slice_audio_t* audio,
                               h2_runtime_t* runtime);
+/* Open the silent PCM path without mixing/submitting any samples. Native
+ * targets may call this during loading to move slow DAC startup off the first
+ * gesture. Fully muted audio remains closed. Idempotent; caller owns errors. */
+int h2_fruit_slice_audio_prepare(h2_fruit_slice_audio_t* audio);
 /* Drop suppressed/burst requests; four fixed voices, priority replacement.
  * now_ms is monotonic wall time. BOMB clears lower-priority voices. */
 void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,

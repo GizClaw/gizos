@@ -52,6 +52,10 @@ typedef struct h2_fruit_slice_config {
   /** Optional low-rate diagnostic hook on the run thread after each stats
    * window (10 seconds). Must be bounded/nonblocking; borrows user. */
   void (*report_diagnostics)(void* user);
+  /** Native hosts may open the silent audio path during loading. No PCM is
+   * submitted before the first user gesture; fully muted audio stays closed.
+   * Default false keeps browser/mobile gesture-based hardware startup. */
+  bool prewarm_audio;
 } h2_fruit_slice_config_t;
 
 /**
