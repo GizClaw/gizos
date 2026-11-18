@@ -208,7 +208,91 @@ static void opaque(void) {
   CHECK(g.phase == H2_XIANXIA_RPG_PHASE_TITLE);
   CHECK(!h2_xianxia_rpg_game_take_writes(&g, &w));
 }
+static void snow_frame_checkpoint(void) {
+  begin();
+  action(0);
+  h2_xianxia_rpg_writes_t w;
+  CHECK(h2_xianxia_rpg_game_take_writes(&g, &w));
+  tap((float)g.layout.map_x + 6.5f * (float)g.layout.tile,
+      (float)g.layout.map_y + 4.5f * (float)g.layout.tile);
+  unsigned writes = 0;
+  for (unsigned i = 0; i < 40; ++i) {
+    step(33);
+    if (!h2_xianxia_rpg_game_take_writes(&g, &w)) continue;
+    ++writes;
+    CHECK(w.journey8 && !g.moving);
+    CHECK(w.journey8_save.y == 4u && w.journey8_save.x == 3u + writes);
+    CHECK((w.journey8_save.flags & 15u) == writes);
+  }
+  CHECK(writes == 3u);
+}
+static void small_menu(void) {
+  h2_xianxia_rpg_game_init(&g, 320, 240, 8, NULL);
+  step(300);
+  box(&g.layout.title_buttons[2]);
+  step(300);
+  CHECK(g.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS &&
+        g.layout.chapter_rows[0].h >= 24);
+  box(&g.layout.chapter_more);
+  CHECK(g.chapter_page == 1u);
+  box(&g.layout.chapter_rows[8]);
+  CHECK(g.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
+  box(&g.layout.chapter_more);
+  CHECK(g.chapter_page == 0u);
+  box(&g.layout.chapter_more);
+  box(&g.layout.chapter_rows[7]);
+  CHECK(g.phase == H2_XIANXIA_RPG_PHASE_PROLOGUE && g.prologue_chapter == 8u);
+}
+static void clear_ownership(void) {
+  rescue(0, false);
+  h2_xianxia_rpg_progress_t before = g.records.progress;
+  for (unsigned i = 0; i < 10; ++i) {
+    if (i == 7u) continue;
+    before.reserved[i] = (uint8_t)(0xA0u + i);
+    before.chapters[i] = (h2_xianxia_rpg_clear_t){.level = 2u + i,
+                                                  .pills = i % 9u,
+                                                  .trust = i % 4u,
+                                                  .flags = 0x81234500u + i,
+                                                  .exp = 400u + i,
+                                                  .turns = 17u + i};
+  }
+  before.cleared = 0x3FFu;
+  g.records.progress = before;
+  g.phase = H2_XIANXIA_RPG_PHASE_EXPLORE;
+  g.stage = H2_XIANXIA_RPG_STAGE_C8_REVEAL;
+  talk(7, 2);
+  h2_xianxia_rpg_writes_t w;
+  CHECK(h2_xianxia_rpg_game_take_writes(&g, &w) && w.progress && w.journey8);
+  uint8_t a[168], b[168];
+  h2_xianxia_rpg_progress_encode(&before, a);
+  h2_xianxia_rpg_progress_encode(&w.progress_record, b);
+  for (unsigned i = 0; i < 10; ++i)
+    if (i != 7u) CHECK(memcmp(a + 4u + i * 16u, b + 4u + i * 16u, 16u) == 0);
+  g.records.progress_unreadable = true;
+  g.phase = H2_XIANXIA_RPG_PHASE_EXPLORE;
+  g.stage = H2_XIANXIA_RPG_STAGE_C8_REVEAL;
+  step(1000);
+  talk(7, 2);
+  CHECK(h2_xianxia_rpg_game_take_writes(&g, &w) && w.journey8 && !w.progress);
+  /* A player reaching the second team with no pills can still use coal. */
+  begin();
+  action(0);
+  talk(12, 3);
+  action(0);
+  action(1);
+  talk(3, 3);
+  talk(12, 3);
+  g.hero.pills = 0;
+  action(1);
+  CHECK(g.stage == H2_XIANXIA_RPG_STAGE_C8_INJURY &&
+        (g.facts & H2_XIANXIA_RPG_FACT_C8_COAL));
+  action(0);
+  CHECK(g.stage == H2_XIANXIA_RPG_STAGE_C8_GUARD && g.hero.pills == 0);
+}
 int main(void) {
+  snow_frame_checkpoint();
+  small_menu();
+  clear_ownership();
   rescue(0, false);
   rescue(1, true);
   opaque();

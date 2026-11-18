@@ -582,6 +582,16 @@ static void test_chapter7_screens(int32_t width, int32_t height) {
 static void test_chapter8_screens(int32_t width, int32_t height) {
   h2_xianxia_rpg_game_init(&game, width, height, 8, NULL);
   game.chapter = game.prologue_chapter = 8;
+  if (height < 400) {
+    game.phase = H2_XIANXIA_RPG_PHASE_CHAPTERS;
+    check_all_layers(&game);
+    h2_xianxia_rpg_layer_key_t a, b;
+    h2_xianxia_rpg_static_key(&game, &a);
+    game.chapter_page = 1;
+    h2_xianxia_rpg_static_key(&game, &b);
+    CHECK(memcmp(&a, &b, sizeof(a)) != 0);
+    check_all_layers(&game);
+  }
   game.phase = H2_XIANXIA_RPG_PHASE_PROLOGUE;
   check_all_layers(&game);
   game.phase = H2_XIANXIA_RPG_PHASE_EXPLORE;

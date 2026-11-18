@@ -83,7 +83,7 @@ static const h2_xianxia_rpg_line_t k_first_west[] = {
     SAY(JIANGLI,
         "你来带路，我来照路。丙三的事还没算清，但此刻，我们先做同一件事。"),
     SAY(NARRATOR,
-        "照水队已安全，丹药加一（最多九），获得一份炭火；闻舟加入。先西的归灯令扑灯伤害减少十五分；修桥需撑八回合。回营地，再去东冰崖。"),
+        "照水队已安全，丹药加一（最多九），获得一份炭火；闻舟加入。先西的归灯令扑灯伤害减少百分之十五；修桥需撑八回合。回营地，再去东冰崖。"),
 };
 static const h2_xianxia_rpg_line_t k_injury[] = {
     SAY(NARRATOR,

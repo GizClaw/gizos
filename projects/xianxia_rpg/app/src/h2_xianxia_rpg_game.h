@@ -450,7 +450,7 @@ typedef struct h2_xianxia_rpg_layout {
   h2_xianxia_rpg_rect_t chapter_panel;
   h2_xianxia_rpg_rect_t chapter_rows[H2_XIANXIA_RPG_CHAPTER_ROWS];
   h2_xianxia_rpg_rect_t chapter_restart[H2_XIANXIA_RPG_CHAPTER_ROWS];
-  h2_xianxia_rpg_rect_t chapter_back;
+  h2_xianxia_rpg_rect_t chapter_back, chapter_more;
   /** Battle: picture, lower panel, its message box and command buttons. */
   h2_xianxia_rpg_rect_t stage, panel, message;
   h2_xianxia_rpg_rect_t commands[H2_XIANXIA_RPG_COMMANDS];
@@ -699,7 +699,7 @@ typedef struct h2_xianxia_rpg_game {
   /* Title and chapter screen. */
   h2_xianxia_rpg_records_t records;
   /** Chapter the chapter card leads into, and whether it carries a clear. */
-  uint32_t prologue_chapter;
+  uint32_t prologue_chapter, chapter_page;
   bool prologue_carry;
 
   /* Progress. */

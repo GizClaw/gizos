@@ -183,22 +183,22 @@ static void compute_layout(h2_xianxia_rpg_game_t* game) {
 
   /* Chapter screen: a heading, one row per chapter and a way back. */
   const int32_t row_gap = h < 400 ? 1 : 4;
+  const int32_t visible_rows = h < 400 ? 5 : H2_XIANXIA_RPG_CHAPTER_ROWS;
   const int32_t head_h = h < 300 ? LINE_PX : LINE_PX + 8;
   const int32_t row_h =
-      (h - head_h - 32 - H2_XIANXIA_RPG_CHAPTER_ROWS * row_gap) /
-      (H2_XIANXIA_RPG_CHAPTER_ROWS + 1);
+      (h - head_h - 32 - visible_rows * row_gap) / (visible_rows + 1);
   const int32_t back_h = row_h;
   const int32_t panel_w = w - 16 < 560 ? w - 16 : 560;
-  const int32_t panel_h = 10 + head_h +
-                          H2_XIANXIA_RPG_CHAPTER_ROWS * (row_h + row_gap) +
-                          back_h + 10;
+  const int32_t panel_h =
+      10 + head_h + visible_rows * (row_h + row_gap) + back_h + 10;
   const int32_t panel_y = (h - panel_h) / 2 > 4 ? (h - panel_h) / 2 : 4;
   l->chapter_panel = rect((w - panel_w) / 2, panel_y, panel_w, panel_h);
   const int32_t restart_w = w < 400 ? 56 : 72;
   for (int32_t i = 0; i < H2_XIANXIA_RPG_CHAPTER_ROWS; ++i) {
-    const h2_xianxia_rpg_rect_t row = rect(
-        l->chapter_panel.x + 10, panel_y + 10 + head_h + i * (row_h + row_gap),
-        panel_w - 20, row_h);
+    const h2_xianxia_rpg_rect_t row =
+        rect(l->chapter_panel.x + 10,
+             panel_y + 10 + head_h + (i % visible_rows) * (row_h + row_gap),
+             panel_w - 20, row_h);
     l->chapter_rows[i] = row;
     l->chapter_restart[i] =
         rect(row.x + row.w - restart_w - 6, row.y + 6, restart_w, row.h - 12);
@@ -206,8 +206,13 @@ static void compute_layout(h2_xianxia_rpg_game_t* game) {
   const int32_t back_w = panel_w * 4 / 10 < 180 ? panel_w * 4 / 10 : 180;
   l->chapter_back = rect(
       (w - back_w) / 2,
-      panel_y + 10 + head_h + H2_XIANXIA_RPG_CHAPTER_ROWS * (row_h + row_gap),
-      back_w, back_h);
+      panel_y + 10 + head_h + visible_rows * (row_h + row_gap), back_w, back_h);
+  if (h < 400) {
+    l->chapter_back.x = l->chapter_panel.x + 10;
+    l->chapter_back.w = (panel_w - 30) / 2;
+    l->chapter_more = l->chapter_back;
+    l->chapter_more.x += l->chapter_back.w + 10;
+  }
 
   const int32_t message_h = 2 * LINE_PX + 2 * pad;
   const int32_t command_h = 46;
@@ -393,6 +398,10 @@ static void particle_spawn(h2_xianxia_rpg_game_t* game,
       p->vx = (10.0f + 14.0f * random_unit(game)) * u;
       p->vy = (16.0f + 12.0f * random_unit(game)) * u;
       break;
+    case 5: /* snow */
+      p->vx = -12.0f * u;
+      p->vy = 22.0f * u;
+      break;
     case 4: /* slanted rain */
       p->vx = -32.0f * u;
       p->vy = 220.0f * u;
@@ -426,6 +435,12 @@ static void particles_reset(h2_xianxia_rpg_game_t* game) {
                 H2_XIANXIA_RPG_MAP_ROWS * l->tile);
     const bool foggy = game->stage < H2_XIANXIA_RPG_STAGE_C2_RETURN;
     switch (game->map) {
+      case H2_XIANXIA_RPG_MAP_SNOW_CAMP:
+      case H2_XIANXIA_RPG_MAP_ICE_CLIFF:
+      case H2_XIANXIA_RPG_MAP_SNOW_CAVE:
+        kind = 5;
+        count = game->map == H2_XIANXIA_RPG_MAP_SNOW_CAVE ? 3u : 12u;
+        break;
       case H2_XIANXIA_RPG_MAP_RAIN_PATH:
       case H2_XIANXIA_RPG_MAP_SWORD_COURT:
       case H2_XIANXIA_RPG_MAP_SWORD_HALL:
@@ -2490,6 +2505,9 @@ static void explore_step(h2_xianxia_rpg_game_t* game, uint32_t dt_ms) {
     game->ally_from_x = game->ally_x;
     game->ally_from_y = game->ally_y;
     arrive(game);
+    /* A snow-step checkpoint must be stored before the next animation
+     * advances tx/ty; the App consumes writes once per frame (<=50 ms). */
+    if (game->chapter == 8u) return;
     if (game->phase != H2_XIANXIA_RPG_PHASE_EXPLORE || game->dialogue.active)
       return;
   }
@@ -2944,7 +2962,12 @@ static void chapters_tap(h2_xianxia_rpg_game_t* game, float x, float y) {
     enter_phase(game, H2_XIANXIA_RPG_PHASE_TITLE);
     return;
   }
+  if (game->height < 400 && inside(&l->chapter_more, x, y)) {
+    game->chapter_page ^= 1u;
+    return;
+  }
   for (uint32_t i = 0; i < H2_XIANXIA_RPG_CHAPTERS_PLAYABLE; ++i) {
+    if (game->height < 400 && i / 5u != game->chapter_page) continue;
     if (!inside(&l->chapter_rows[i], x, y)) continue;
     const uint32_t chapter = i + 1u;
     const h2_xianxia_rpg_save_t* unfinished =
